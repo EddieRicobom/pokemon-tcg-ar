@@ -39,8 +39,23 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+        // O OCR (≈ 6,7 MB no primeiro uso) e o índice do catálogo não entram no pré-cache da instalação:
+        // são guardados só quando o usuário usa o reconhecimento (cache em tempo de execução).
+        globIgnores: ['ocr/**', 'data/**'],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith(`${base}ocr/`),
+            handler: 'CacheFirst',
+            options: { cacheName: 'ocr-assets-v1', expiration: { maxEntries: 8 } },
+          },
+          {
+            urlPattern: ({ url }) => url.pathname === `${base}data/catalog-index.json`,
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'catalog-index-v1', expiration: { maxEntries: 1 } },
+          },
+        ],
       },
     }),
   ],
