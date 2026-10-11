@@ -7,6 +7,7 @@ on:
     branches: ['claude/**']
     paths:
       - 'scripts/verify-*.ts'
+      - 'scripts/build-catalog-index.ts'
       - '.github/workflows/external-verification.yml'
   workflow_dispatch:
 
@@ -29,6 +30,8 @@ jobs:
         run: node scripts/verify-sprites.ts | tee sprites.json
       - name: TCGdex (API e imagens)
         run: node scripts/verify-tcgdex.ts tcgdex.json
+      - name: Índice do catálogo (tamanho e tempo)
+        run: node scripts/build-catalog-index.ts catalog-index.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -36,3 +39,4 @@ jobs:
           path: |
             sprites.json
             tcgdex.json
+            catalog-index.json
