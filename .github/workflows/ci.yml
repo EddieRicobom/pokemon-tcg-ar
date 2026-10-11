@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Tipos, testes e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_PATH: /${{ github.event.repository.name }}/
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Verificar tipos
+        run: npm run typecheck
+
+      - name: Rodar testes
+        run: npm test
+
+      - name: Build de produção
+        run: npm run build
+
+      - name: Conferir base path no manifest
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const manifest = JSON.parse(fs.readFileSync('dist/manifest.webmanifest', 'utf8'));
+            const expected = process.env.BASE_PATH;
+            if (manifest.start_url !== expected || manifest.scope !== expected) {
+              console.error('start_url/scope inesperados:', manifest.start_url, manifest.scope, '(esperado:', expected + ')');
+              process.exit(1);
+            }
+            console.log('Manifest OK com base', expected);
+          "
