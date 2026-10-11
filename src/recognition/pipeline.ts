@@ -80,6 +80,8 @@ export interface RecognitionResult {
   confidence: number;
   margin: number;
   parsed: { bottom: ParsedBottom; names: string[] };
+  /** Texto cru do OCR (diagnóstico e medição); não é guardado em lugar nenhum. */
+  ocrText?: { bottom?: string; name?: string };
   quad?: Quad;
   /** Características do quadro (para guardar no cache). */
   features?: CardFeatures;
@@ -87,6 +89,13 @@ export interface RecognitionResult {
   reference?: RgbaImage;
   metrics: RecognitionMetrics;
   message: string;
+}
+
+interface ReadResult {
+  bottom: ParsedBottom;
+  names: string[];
+  bottomText?: string;
+  nameText?: string;
 }
 
 function toIdentified(card: CardRecordLike): IdentifiedCard {
@@ -138,11 +147,12 @@ export class RecognitionPipeline {
       detectMs: 0, ocrMs: 0, candidatesMs: 0, totalMs: 0, requests: 0, downloadedBytes: 0,
       candidates: 0, source: 'none', visualVerified: false, rotated180: false,
     };
+    let ocrTextOut: RecognitionResult['ocrText'];
     const finish = (result: Omit<RecognitionResult, 'metrics'>): RecognitionResult => {
       metrics.totalMs = Math.round(now() - started);
       metrics.requests = this.deps.tcgdex.stats.requests - statsBefore.requests + metrics.requests;
       metrics.downloadedBytes = this.deps.tcgdex.stats.bytes - statsBefore.bytes + downloadedBytes;
-      return { ...result, metrics };
+      return { ...result, ocrText: ocrTextOut, metrics };
     };
     const empty = { alternatives: [], confidence: 0, margin: 0, parsed: { bottom: {}, names: [] } };
 
@@ -176,12 +186,15 @@ export class RecognitionPipeline {
     // O nome só é lido quando ajuda: sem número, ou quando o número deixa mais de um candidato.
     const t2Candidates = this.deps.catalog?.candidates(read.bottom, [], this.maxCandidates()) ?? [];
     if (!read.bottom.number || t2Candidates.length > 1) {
-      read.names = (await this.readText(rectified, true)).names;
+      const nameRead = await this.readText(rectified, true);
+      read.names = nameRead.names;
+      read.nameText = nameRead.nameText;
     }
     metrics.ocrMs = Math.round(now() - t1);
 
     const features = computeFeatures(rectified);
     const parsed = { bottom: read.bottom, names: read.names };
+    ocrTextOut = { bottom: read.bottomText, name: read.nameText };
 
     const t3 = now();
     const evidence = { bottom: read.bottom, nameGuesses: read.names, features };
@@ -297,13 +310,13 @@ export class RecognitionPipeline {
     return this.deps.maxCandidates ?? 6;
   }
 
-  private async readText(rectified: RgbaImage, nameOnly: boolean): Promise<{ bottom: ParsedBottom; names: string[] }> {
+  private async readText(rectified: RgbaImage, nameOnly: boolean): Promise<ReadResult> {
     if (nameOnly) {
       const text = await this.deps.ocr.recognize(cropFraction(rectified, NAME_BOX), 'name');
-      return { bottom: {}, names: parseNameText(text) };
+      return { bottom: {}, names: parseNameText(text), nameText: text };
     }
     const text = await this.deps.ocr.recognize(cropFraction(rectified, BOTTOM_STRIP_BOX), 'bottom');
-    return { bottom: parseBottomText(text), names: [] };
+    return { bottom: parseBottomText(text), names: [], bottomText: text };
   }
 
   /** Sem índice estático: pergunta ao TCGdex pelas cartas com esse número e esse total. */

@@ -8,6 +8,9 @@ on:
     paths:
       - 'scripts/verify-*.ts'
       - 'scripts/build-catalog-index.ts'
+      - 'scripts/eval-recognition.eval.ts'
+      - 'scripts/annotate.mjs'
+      - 'src/recognition/**'
       - '.github/workflows/external-verification.yml'
   workflow_dispatch:
 
@@ -18,7 +21,7 @@ jobs:
   verify:
     name: TCGdex e sprites
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -32,6 +35,15 @@ jobs:
         run: node scripts/verify-tcgdex.ts tcgdex.json
       - name: Índice do catálogo (tamanho e tempo)
         run: node scripts/build-catalog-index.ts catalog-index.json
+      - name: Avaliação do reconhecimento (cartas reais, OCR real)
+        run: npx vitest run --config vitest.eval.config.ts
+        env:
+          CATALOG_INDEX: catalog-index.json
+          EVAL_OUT: eval-results.json
+      - name: Anotar resultado da avaliação
+        if: always()
+        run: |
+          if [ -f eval-results.summary.json ]; then node scripts/annotate.mjs eval-results.summary.json "Avaliacao"; fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -40,3 +52,4 @@ jobs:
             sprites.json
             tcgdex.json
             catalog-index.json
+            eval-results.json
