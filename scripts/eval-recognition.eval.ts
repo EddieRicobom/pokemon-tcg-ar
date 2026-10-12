@@ -17,8 +17,9 @@ import type { Level } from './eval-common';
 import { detectCard } from '../src/recognition/detect-card';
 import { rectify } from '../src/recognition/homography';
 import { cropFraction } from '../src/recognition/image';
-import { BOTTOM_STRIP_BOX } from '../src/recognition/layout';
-import { parseBottomText } from '../src/recognition/parse-ocr';
+import { BOTTOM_STRIP_BOX, NAME_BOX } from '../src/recognition/layout';
+import { parseBottomText, parseNameText } from '../src/recognition/parse-ocr';
+import { nameSimilarity } from '../src/recognition/text';
 import { CatalogLookup } from '../src/recognition/catalog-index';
 import type { CatalogIndexData } from '../src/recognition/catalog-index';
 import { RecognitionPipeline } from '../src/recognition/pipeline';
@@ -94,6 +95,9 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
     gtText?: string;
     confidence: number;
     bottomText?: string;
+    gtNameText?: string;
+    gtNameOk?: boolean;
+    pipelineNames?: string[];
     margin: number;
   }
   const rows: Row[] = [];
@@ -153,6 +157,13 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
       const trueFlat = rectify(frame, trueQuad, 630, 880);
       const gtText = trueFlat ? await ocr.recognize(cropFraction(trueFlat, BOTTOM_STRIP_BOX), 'bottom') : '';
       const gtParsed = parseBottomText(gtText);
+      // Diagnóstico 3: com o quadrilátero verdadeiro, o OCR do nome acerta? (≥ 80% de semelhança)
+      let gtNameText = '';
+      let gtNameOk = false;
+      if (trueFlat) {
+        gtNameText = await ocr.recognize(cropFraction(trueFlat, NAME_BOX), 'name');
+        gtNameOk = parseNameText(gtNameText).some((guess) => nameSimilarity(guess, card.name) >= 0.8);
+      }
       const result = await pipeline.recognize(frame);
       const predicted = result.card?.id;
       rows.push({
@@ -168,6 +179,7 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
         gtText: gtText.replace(/\s+/g, ' ').trim().slice(0, 40),
         confidence: Math.round(result.confidence * 100) / 100, margin: Math.round(result.margin * 100) / 100,
         bottomText: result.ocrText?.bottom?.replace(/\s+/g, ' ').trim().slice(0, 40),
+        gtNameText: gtNameText.replace(/\s+/g, ' ').trim().slice(0, 30), gtNameOk, pipelineNames: result.parsed.names.slice(0, 2),
       });
     }
   }
@@ -191,6 +203,7 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
       medianCornerErrPct: Math.round(median(set.filter((r) => r.cornerErrPct !== undefined).map((r) => r.cornerErrPct!)) * 10) / 10,
       gtNumberOkPct: rate((r) => r.gtNumberOk),
       gtTotalOkPct: rate((r) => r.gtTotalOk),
+      gtNameOkPct: rate((r) => r.gtNameOk === true),
       visualVerifiedPct: rate((r) => r.visualVerified),
       medianTotalMs: Math.round(median(set.map((r) => r.totalMs))),
       p95TotalMs: Math.round(percentile(set.map((r) => r.totalMs), 0.95)),
@@ -203,7 +216,7 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
     };
   });
   const failures = rows.filter((r) => !r.correct).slice(0, 25).map((r) => ({
-    id: r.id, level: r.level, status: r.status, predicted: r.predicted, ocr: r.bottomText, conf: r.confidence, cands: r.candidates,
+    id: r.id, level: r.level, status: r.status, predicted: r.predicted, ocr: r.bottomText, conf: r.confidence, cands: r.candidates, name: r.gtNameText, nameOk: r.gtNameOk, names: r.pipelineNames,
   }));
   const report = {
     note: 'Escaneamentos oficiais distorcidos por software (NÃO são fotos de câmera); amostra pequena; latência do runner do GitHub, NÃO de celular.',

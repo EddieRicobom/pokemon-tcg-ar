@@ -14,3 +14,5 @@ export const BOTTOM_LEFT_BOX: FractionBox = [0, 0.92, 0.5, 1];
 export const BOTTOM_RIGHT_BOX: FractionBox = [0.5, 0.92, 1, 1];
 /** Largura (px) da carta inteira equivalente na leitura da faixa inferior: 2× o tamanho retificado padrão. */
 export const BOTTOM_OCR_FULL_WIDTH = 1260;
+/** Largura equivalente da carta inteira ao ler o nome (letras grandes: 1,5× basta). */
+export const NAME_OCR_FULL_WIDTH = 945;

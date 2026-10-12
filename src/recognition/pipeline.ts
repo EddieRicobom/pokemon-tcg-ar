@@ -4,7 +4,7 @@ import { computeFeatures } from './hash';
 import type { CardFeatures } from './hash';
 import { rectify, rectifyRegion } from './homography';
 import { cropFraction } from './image';
-import { BOTTOM_LEFT_BOX, BOTTOM_OCR_FULL_WIDTH, BOTTOM_RIGHT_BOX, BOTTOM_STRIP_BOX, NAME_BOX } from './layout';
+import { BOTTOM_LEFT_BOX, BOTTOM_OCR_FULL_WIDTH, BOTTOM_RIGHT_BOX, BOTTOM_STRIP_BOX, NAME_BOX, NAME_OCR_FULL_WIDTH } from './layout';
 import type { OcrEngine } from './ocr';
 import { parseBottomText, parseNameText } from './parse-ocr';
 import type { ParsedBottom } from './parse-ocr';
@@ -190,7 +190,7 @@ export class RecognitionPipeline {
     }
     // O nome só é lido quando ajuda: sem número, ou quando o número deixa mais de um candidato.
     const t2Candidates = this.deps.catalog?.candidates(read.bottom, [], this.maxCandidates()) ?? [];
-    if (!read.bottom.number || t2Candidates.length > 1) {
+    if (!read.bottom.number || t2Candidates.length !== 1) {
       const nameRead = await this.readText(frame, quad, rectified, true);
       read.names = nameRead.names;
       read.nameText = nameRead.nameText;
@@ -326,7 +326,8 @@ export class RecognitionPipeline {
    */
   private async readText(frame: RgbaImage, quad: Quad, rectified: RgbaImage, nameOnly: boolean): Promise<ReadResult> {
     if (nameOnly) {
-      const text = await this.deps.ocr.recognize(cropFraction(rectified, NAME_BOX), 'name');
+      const region = rectifyRegion(frame, quad, NAME_BOX, NAME_OCR_FULL_WIDTH) ?? cropFraction(rectified, NAME_BOX);
+      const text = await this.deps.ocr.recognize(region, 'name');
       return { bottom: {}, names: parseNameText(text), nameText: text };
     }
     const strip =
