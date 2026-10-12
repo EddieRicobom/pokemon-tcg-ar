@@ -50,7 +50,8 @@ export function parseBottomText(text: string): ParsedBottom {
 
   // 058/102, 25 / 198, TG05/TG30, SV015/SV094. O prefixo vem COLADO nos dígitos (TG05): letras soltas
   // antes do número ("W 58/102", ruído do OCR em "© 1999 ... W 58/102") não são prefixo.
-  const slash = /(?:^|[^A-Za-z0-9])([A-Z]{0,5})([0-9OolI|]{1,3})\s*\/\s*([A-Z]{0,5})\s?([0-9OolI|]{1,3})(?![0-9])/.exec(rest);
+  // Aceita barra normal (/), invertida (\) ou pipe (|) como separadores, comuns em erros de OCR.
+  const slash = /(?:^|[^A-Za-z0-9])([A-Z]{0,5})([0-9OolI]{1,3})\s*[\/\\|]\s*([A-Z]{0,5})\s?([0-9OolI]{1,3})(?![0-9])/.exec(rest);
   if (slash) {
     const raw = fixDigits(slash[2] ?? '');
     const total = fixDigits(slash[4] ?? '');
