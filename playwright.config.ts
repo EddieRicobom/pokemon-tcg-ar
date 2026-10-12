@@ -13,7 +13,7 @@ export default defineConfig({
   expect: { timeout: 30 * 1000 },
   workers: 1,
   retries: 0,
-  reporter: [['list']],
+  reporter: [['list'], ['json', { outputFile: 'e2e/.tmp/pw-report.json' }]],
   use: {
     baseURL: `http://localhost:${port}`,
     viewport: { width: 420, height: 900 },

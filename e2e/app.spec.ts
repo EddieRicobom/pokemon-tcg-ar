@@ -45,8 +45,6 @@ async function waitText(page: Page, selector: string, text: string, timeout: num
   }
 }
 
-test.describe.configure({ mode: 'serial' });
-
 for (const id of cards) {
   test.describe(`carta ${id}`, () => {
     test.use({

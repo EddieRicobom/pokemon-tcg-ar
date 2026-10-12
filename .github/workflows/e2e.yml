@@ -57,7 +57,7 @@ jobs:
       - name: Resultados como anotações
         if: always()
         run: |
-          if [ -f e2e/.tmp/e2e-summary.json ]; then node scripts/annotate.mjs e2e/.tmp/e2e-summary.json E2E; fi
+          node scripts/e2e-report.mjs e2e/.tmp e2e/.tmp/e2e-report.json && node scripts/annotate.mjs e2e/.tmp/e2e-report.json E2E
 
       - uses: actions/upload-artifact@v4
         if: always()

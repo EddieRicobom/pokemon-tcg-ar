@@ -98,6 +98,7 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
     gtNameText?: string;
     gtNameOk?: boolean;
     pipelineNames?: string[];
+    debug?: RecognitionResult['debug'];
     margin: number;
   }
   const rows: Row[] = [];
@@ -179,7 +180,7 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
         gtText: gtText.replace(/\s+/g, ' ').trim().slice(0, 40),
         confidence: Math.round(result.confidence * 100) / 100, margin: Math.round(result.margin * 100) / 100,
         bottomText: result.ocrText?.bottom?.replace(/\s+/g, ' ').trim().slice(0, 40),
-        gtNameText: gtNameText.replace(/\s+/g, ' ').trim().slice(0, 30), gtNameOk, pipelineNames: result.parsed.names.slice(0, 2),
+        gtNameText: gtNameText.replace(/\s+/g, ' ').trim().slice(0, 30), gtNameOk, pipelineNames: result.parsed.names.slice(0, 2), debug: result.debug,
       });
     }
   }
@@ -216,8 +217,22 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
     };
   });
   const failures = rows.filter((r) => !r.correct).slice(0, 25).map((r) => ({
-    id: r.id, level: r.level, status: r.status, predicted: r.predicted, ocr: r.bottomText, conf: r.confidence, cands: r.candidates, name: r.gtNameText, nameOk: r.gtNameOk, names: r.pipelineNames,
+    id: r.id, level: r.level, status: r.status, predicted: r.predicted, ocr: r.bottomText, conf: r.confidence, cands: r.candidates, name: r.gtNameText, nameOk: r.gtNameOk, names: r.pipelineNames, sim: r.debug?.bestSimilarity === undefined ? undefined : Math.round(r.debug.bestSimilarity * 100) / 100, bestId: r.debug?.bestId,
   }));
+  const stats = (values: number[]) => values.length === 0 ? null : {
+    n: values.length,
+    min: Math.round(Math.min(...values) * 100) / 100,
+    p10: Math.round(percentile(values, 0.1) * 100) / 100,
+    median: Math.round(median(values) * 100) / 100,
+    p90: Math.round(percentile(values, 0.9) * 100) / 100,
+    max: Math.round(Math.max(...values) * 100) / 100,
+  };
+  const simOf = (r: Row) => r.debug?.bestSimilarity;
+  const similarity = {
+    note: 'Semelhança visual combinada (0-1) entre o quadro e a melhor candidata: certa (a candidata era a carta) x errada.',
+    correctBest: stats(rows.filter((r) => r.debug?.bestId === r.id).map(simOf).filter((v): v is number => v !== undefined)),
+    wrongBest: stats(rows.filter((r) => r.debug?.bestId !== undefined && r.debug.bestId !== r.id).map(simOf).filter((v): v is number => v !== undefined)),
+  };
   const report = {
     note: 'Escaneamentos oficiais distorcidos por software (NÃO são fotos de câmera); amostra pequena; latência do runner do GitHub, NÃO de celular.',
     checkedAt: new Date().toISOString(),
@@ -226,6 +241,7 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
     recognitions: rows.length,
     scanDownloadMiB: Math.round(scanBytes / 1048576),
     summary,
+    similarity,
     scanControl: {
       n: scanReads.length,
       numberOkPct: Math.round((scanReads.filter((r) => r.numberOk).length / (scanReads.length || 1)) * 1000) / 10,

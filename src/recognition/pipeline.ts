@@ -93,6 +93,8 @@ export interface RecognitionResult {
   /** Endereço da imagem de referência (chave no cache de arquivos). */
   referenceUrl?: string;
   metrics: RecognitionMetrics;
+  /** Diagnóstico da melhor candidata (calibração dos limiares com dados reais). */
+  debug?: { bestId?: string; bestSimilarity?: number; bestMeta?: number | null; secondId?: string; secondSimilarity?: number };
   message: string;
 }
 
@@ -153,11 +155,12 @@ export class RecognitionPipeline {
       candidates: 0, source: 'none', visualVerified: false, rotated180: false,
     };
     let ocrTextOut: RecognitionResult['ocrText'];
+    let debugOut: RecognitionResult['debug'];
     const finish = (result: Omit<RecognitionResult, 'metrics'>): RecognitionResult => {
       metrics.totalMs = Math.round(now() - started);
       metrics.requests = this.deps.tcgdex.stats.requests - statsBefore.requests + metrics.requests;
       metrics.downloadedBytes = this.deps.tcgdex.stats.bytes - statsBefore.bytes + downloadedBytes;
-      return { ...result, ocrText: ocrTextOut, metrics };
+      return { ...result, ocrText: ocrTextOut, debug: debugOut, metrics };
     };
     const empty = { alternatives: [], confidence: 0, margin: 0, parsed: { bottom: {}, names: [] } };
 
@@ -288,6 +291,11 @@ export class RecognitionPipeline {
     }));
     const ranking = rankCandidates(infos, evidence);
     const best = ranking.best;
+    const runnerUp = ranking.ranked[1];
+    debugOut = {
+      bestId: best?.candidate.id, bestSimilarity: best?.similarity?.combined, bestMeta: best?.meta,
+      secondId: runnerUp?.candidate.id, secondSimilarity: runnerUp?.similarity?.combined,
+    };
     const byId = new Map(usable.map((entry) => [entry.record.id, entry]));
     const alternatives = ranking.ranked.slice(best ? 1 : 0).map((scored: ScoredCandidate) => ({
       card: toIdentified(byId.get(scored.candidate.id)!.record), confidence: scored.confidence, reasons: scored.reasons,
