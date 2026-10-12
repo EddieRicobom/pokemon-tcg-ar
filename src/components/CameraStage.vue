@@ -121,11 +121,11 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="card" aria-labelledby="stage-title">
-    <h2 id="stage-title">Teste da câmera e do renderizador</h2>
+    <h2 id="stage-title">Teste do renderizador (GIF fixo na tela)</h2>
     <p class="note">
       Este teste só confirma que a câmera abre e que um GIF animado é desenhado com fundo
-      transparente. O Pokémon aparece <strong>fixo na tela</strong>: o app ainda
-      <strong>não reconhece nem rastreia cartas</strong>.
+      transparente. Aqui o Pokémon aparece <strong>fixo na tela</strong>: <strong>não há reconhecimento nem
+      rastreamento de carta neste teste</strong>. O AR de verdade está em “Escanear”.
     </p>
 
     <div class="viewport">

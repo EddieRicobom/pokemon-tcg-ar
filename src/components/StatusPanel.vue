@@ -61,12 +61,16 @@ const rows = computed<Row[]>(() => [
     <h2 id="project-title">Estado do projeto</h2>
     <ul class="status-list" aria-labelledby="project-title">
       <li>
-        <span>Reconhecimento de cartas</span>
-        <strong class="pending">Ainda não implementado</strong>
+        <span>Reconhecimento automático de cartas</span>
+        <strong class="pending">Implementado; precisa de teste com a câmera do aparelho</strong>
+      </li>
+      <li>
+        <span>Cache de cartas e tela Carregar</span>
+        <strong class="pending">Implementado; validado só por testes automáticos</strong>
       </li>
       <li>
         <span>Pokémon em pé sobre a carta (AR)</span>
-        <strong class="pending">Ainda não implementado</strong>
+        <strong class="pending">Implementado; AR físico ainda não foi validado em aparelho</strong>
       </li>
     </ul>
   </section>

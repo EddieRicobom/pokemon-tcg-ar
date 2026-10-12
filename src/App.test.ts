@@ -11,24 +11,46 @@ describe('App', () => {
     host?.remove();
     app = null;
     host = null;
+    window.location.hash = '';
   });
 
-  it('monta a interface em português e não finge reconhecimento nem AR', async () => {
+  async function mount(hash = ''): Promise<string> {
+    window.location.hash = hash;
     host = document.createElement('div');
     document.body.append(host);
     app = createApp(App);
     app.mount(host);
     await nextTick();
+    return host.textContent ?? '';
+  }
 
-    const text = host.textContent ?? '';
+  it('abre em "Escanear" com a câmera desligada e a navegação em português', async () => {
+    const text = await mount();
     expect(text).toContain('Pokémon TCG AR');
-    expect(text).toContain('Reconhecimento de cartas');
-    expect(text).toContain('Pokémon em pé sobre a carta (AR)');
-    expect(text.match(/Ainda não implementado/g)).toHaveLength(2);
-    expect(text).toContain('não reconhece nem rastreia cartas');
+    expect(text).toContain('Escanear carta');
+    expect(host?.querySelectorAll('nav a')).toHaveLength(3);
+    expect(host?.querySelector('video')).not.toBeNull();
+    expect(host?.querySelector('canvas')).not.toBeNull();
+    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera');
+  });
 
-    expect(host.querySelector('video')).not.toBeNull();
-    expect(host.querySelector('canvas')).not.toBeNull();
-    expect(host.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera');
+  it('não promete reconhecimento sem câmera: nenhuma carta aparece como reconhecida ao abrir', async () => {
+    const text = await mount();
+    expect(text).not.toContain('Reconhecida automaticamente');
+    expect(text).not.toContain('Escolhida por você');
+  });
+
+  it('a tela Carregar mostra a ação de limpar o cache', async () => {
+    const text = await mount('#/carregar');
+    expect(text).toContain('Cartas guardadas');
+    expect(text).toContain('Carregar todas as vistas');
+    expect(text).toContain('Limpar cache');
+  });
+
+  it('a tela Diagnóstico não esconde o que ainda falta validar', async () => {
+    const text = await mount('#/diagnostico');
+    expect(text).toContain('Estado do projeto');
+    expect(text).toContain('AR físico ainda não foi validado em aparelho');
+    expect(text).toContain('Teste do renderizador (GIF fixo na tela)');
   });
 });
