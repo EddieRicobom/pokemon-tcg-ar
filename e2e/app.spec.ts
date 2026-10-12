@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { chromium, expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 /**
@@ -9,6 +9,7 @@ import type { Page } from '@playwright/test';
  * Cada carta grava um JSON de resultado; o último teste exige que ao menos uma carta feche o fluxo todo.
  */
 const base = process.env.BASE_PATH ?? '/pokemon-tcg-ar/';
+const origin = 'http://localhost:4173';
 const dir = process.env.E2E_DIR ?? 'e2e/.tmp';
 const resultsDir = `${dir}/results`;
 const cards: string[] = existsSync(`${dir}/cards.json`) ? (JSON.parse(readFileSync(`${dir}/cards.json`, 'utf8')) as string[]) : [];
@@ -32,7 +33,7 @@ interface CardResult {
 }
 
 async function openScan(page: Page): Promise<void> {
-  await page.goto(base);
+  await page.goto(`${origin}${base}`);
   await page.getByRole('button', { name: 'Abrir câmera' }).click();
 }
 
@@ -47,8 +48,10 @@ async function waitText(page: Page, selector: string, text: string, timeout: num
 
 for (const id of cards) {
   test.describe(`carta ${id}`, () => {
-    test.use({
-      launchOptions: {
+    test(`fluxo completo de ${id}`, async () => {
+      // O vídeo da câmera falsa é um argumento do navegador, então cada carta abre o seu próprio Chromium.
+      const browser = await chromium.launch({
+        executablePath: process.env.PW_CHROMIUM_PATH || undefined,
         args: [
           '--use-fake-ui-for-media-stream',
           '--use-fake-device-for-media-stream',
@@ -57,11 +60,9 @@ for (const id of cards) {
           '--enable-unsafe-swiftshader',
           '--use-angle=swiftshader',
         ],
-      },
-      permissions: ['camera'],
-    });
-
-    test(`fluxo completo de ${id}`, async ({ page, context }) => {
+      });
+      const context = await browser.newContext({ permissions: ['camera'], viewport: { width: 420, height: 900 }, serviceWorkers: 'allow' });
+      const page = await context.newPage();
       const result: CardResult = { id, identified: false, consoleErrors: [] };
       page.on('console', (msg) => {
         if (msg.type() === 'error') result.consoleErrors.push(msg.text().slice(0, 200));
@@ -113,6 +114,7 @@ for (const id of cards) {
         await context.setOffline(false);
       } finally {
         save();
+        await browser.close();
       }
     });
   });
