@@ -3,15 +3,38 @@ import type { RenderBackend } from './session';
 
 /** Desenho em WebGL sobre um canvas transparente (por cima do vídeo da câmera). */
 export function createWebglBackend(canvas: HTMLCanvasElement): RenderBackend {
-  const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true });
+  // Opções seguras para navegadores móveis:
+  // - precision: 'mediump' evita consultas a highp com retorno nulo se a GPU móvel estiver sob carga.
+  // - antialias: false economiza buffers pesados de multisampling na GPU.
+  // - powerPreference: 'default' evita conflitos com o contexto do MindAR/TensorFlow.js.
+  let renderer: WebGLRenderer;
+  try {
+    renderer = new WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: false,
+      precision: 'mediump',
+      powerPreference: 'default',
+    });
+  } catch {
+    // Fallback básico caso o navegador recuse os parâmetros adicionais
+    renderer = new WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: false,
+    });
+  }
+
   renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   return {
     render: (scene, camera) => renderer.render(scene, camera),
     setSize: (width, height) => renderer.setSize(width, height, false),
     dispose() {
+      // Importante: NÃO chamar renderer.forceContextLoss() aqui.
+      // O forceContextLoss() invalida permanentemente o contexto do HTMLCanvasElement no DOM,
+      // quebrando qualquer sessão subsequente no mesmo elemento.
       renderer.dispose();
-      renderer.forceContextLoss();
     },
   };
 }

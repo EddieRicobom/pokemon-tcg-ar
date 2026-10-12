@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { clampLayout, DEFAULT_LAYOUT, LAYOUT_LIMITS } from '../ar/anchor';
 import type { SpriteLayout } from '../ar/anchor';
 import type { RunningAr } from '../ar/start-ar';
@@ -19,6 +19,7 @@ const props = defineProps<{ cardId?: string }>();
 const videoEl = ref<HTMLVideoElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
+const arCanvasKey = ref(0);
 
 const cameraOn = ref(false);
 const cameraBusy = ref(false);
@@ -146,6 +147,9 @@ async function startArFor(cardId: string): Promise<void> {
     return;
   }
   stopAr();
+  // Recria o elemento <canvas> para garantir contexto WebGL novo sem contaminação anterior
+  arCanvasKey.value++;
+  await nextTick();
   arMessage.value = '';
   spriteState.value = null;
   const cache = await getCache();
@@ -158,6 +162,8 @@ async function startArFor(cardId: string): Promise<void> {
     // O alvo de AR é compilado no aparelho; se ainda não está pronto, prepara agora.
     scan.value = { ...scan.value, phase: 'preparing', message: 'Compilando o alvo de rastreamento da carta…' };
     card = (await cache.prepareCard(cardId)).card;
+    // Pequena pausa para a GPU móvel e o GC liberarem buffers do TensorFlow.js Compiler antes do Three.js subir
+    await new Promise((resolve) => setTimeout(resolve, 150));
   }
   const targetBlob = await cache.getAssetBlob(card, 'target');
   if (!targetBlob) {
@@ -267,7 +273,21 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
 
     <div ref="stageEl" class="viewport">
       <video ref="videoEl" class="feed" playsinline muted></video>
-      <canvas ref="canvasEl" class="overlay" aria-label="Camada de realidade aumentada"></canvas>
+      <canvas :key="arCanvasKey" ref="canvasEl" class="overlay" aria-label="Camada de realidade aumentada"></canvas>
+      <div v-if="cameraOn && !arActive" class="card-guide" aria-hidden="true">
+        <div class="guide-frame">
+          <span class="corner top-left"></span>
+          <span class="corner top-right"></span>
+          <span class="corner bottom-left"></span>
+          <span class="corner bottom-right"></span>
+          <div class="guide-art-slot">
+            <span>Ilustração</span>
+          </div>
+          <div class="guide-bottom-slot">
+            <span>Número</span>
+          </div>
+        </div>
+      </div>
       <p v-if="!cameraOn" class="placeholder">{{ cameraBusy ? 'Abrindo a câmera…' : 'Câmera desligada' }}</p>
       <p v-if="showScanInfo" class="hud" role="status">{{ scan.message }}</p>
       <p v-else-if="arState.phase !== 'idle'" class="hud" role="status">{{ phaseText }}</p>

@@ -23,6 +23,13 @@ describe('parseBottomText', () => {
     expect(parsed.number?.total?.value).toBe(102);
   });
 
+  it('lê separador de barra com pipe ou barra invertida do OCR', () => {
+    const parsedPipe = parseBottomText('50|114');
+    expect(parsedPipe.number).toMatchObject({ value: 50, total: { value: 114 } });
+    const parsedBackslash = parseBottomText('50\\114');
+    expect(parsedBackslash.number).toMatchObject({ value: 50, total: { value: 114 } });
+  });
+
   it('letras soltas de ruído antes do número não viram prefixo', () => {
     const parsed = parseBottomText('C GAMEFREAK 999 W 58/102');
     expect(parsed.number).toMatchObject({ prefix: '', value: 58, total: { value: 102 } });
