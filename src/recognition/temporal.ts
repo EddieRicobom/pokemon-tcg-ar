@@ -30,7 +30,7 @@ export class TemporalAggregator {
   constructor(options: TemporalOptions = {}) {
     this.window = options.window ?? 6;
     this.minVotes = options.minVotes ?? 2;
-    this.instantConfidence = options.instantConfidence ?? 0.93;
+    this.instantConfidence = options.instantConfidence ?? 0.88;
   }
 
   /** Registra um quadro. Devolve o id confirmado (ou null enquanto não há votos suficientes). */

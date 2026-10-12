@@ -67,6 +67,8 @@ export class ScanController {
   private state: ScanState = { phase: 'idle', message: '', frames: 0 };
   private running = false;
   private runId = 0;
+  private lastValidResult?: RecognitionResult;
+  private noCardStreak = 0;
   private ambiguousStreak = 0;
   private lastAmbiguous: RecognitionResult | null = null;
   private readonly temporal: TemporalAggregator;
@@ -90,6 +92,8 @@ export class ScanController {
     this.temporal.reset();
     this.ambiguousStreak = 0;
     this.lastAmbiguous = null;
+    this.lastValidResult = undefined;
+    this.noCardStreak = 0;
     this.running = true;
     const id = ++this.runId;
     this.state = { phase: 'scanning', message: 'Procurando a carta…', frames: 0 };
@@ -115,7 +119,7 @@ export class ScanController {
 
   private async runLoop(id: number): Promise<void> {
     const sleep = this.deps.sleep ?? defaultSleep;
-    const interval = this.deps.minIntervalMs ?? 400;
+    const interval = this.deps.minIntervalMs ?? 200;
     while (this.running && id === this.runId) {
       const started = Date.now();
       const frame = this.deps.grabFrame();
@@ -133,6 +137,17 @@ export class ScanController {
         continue;
       }
       if (!this.running || id !== this.runId) return;
+      // Suavização temporal: se não detectou carta mas tínhamos uma leitura recente,
+      // reusa o resultado anterior por até 5 quadros seguidos para evitar "piscar".
+      if (result.status === 'no-card' && this.lastValidResult) {
+        result = this.lastValidResult;
+      } else if (result.status !== 'no-card') {
+        this.lastValidResult = result;
+        this.noCardStreak = 0;
+      } else {
+        this.noCardStreak = (this.noCardStreak ?? 0) + 1;
+        if (this.noCardStreak >= 5) this.lastValidResult = undefined;
+      }
       const frames = this.state.frames + 1;
       const last: LastAttempt = {
         status: result.status,

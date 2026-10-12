@@ -11,9 +11,9 @@ import type { Point, Quad, RgbaImage } from './types';
  */
 export const DETECT_MAX_SIDE = 320;
 export const MIN_AREA_FRACTION = 0.05;
-export const CARD_ASPECT_MIN = 0.50;
-export const CARD_ASPECT_MAX = 0.90;
-const MIN_FILL_RATIO = 0.80;
+export const CARD_ASPECT_MIN = 0.45;
+export const CARD_ASPECT_MAX = 0.95;
+const MIN_FILL_RATIO = 0.70;
 
 export interface CardDetection {
   quad: Quad;
