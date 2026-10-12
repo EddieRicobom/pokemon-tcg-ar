@@ -274,20 +274,6 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
     <div ref="stageEl" class="viewport">
       <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas :key="arCanvasKey" ref="canvasEl" class="overlay" aria-label="Camada de realidade aumentada"></canvas>
-      <div v-if="cameraOn && !arActive" class="card-guide" aria-hidden="true">
-        <div class="guide-frame">
-          <span class="corner top-left"></span>
-          <span class="corner top-right"></span>
-          <span class="corner bottom-left"></span>
-          <span class="corner bottom-right"></span>
-          <div class="guide-art-slot">
-            <span>Ilustração</span>
-          </div>
-          <div class="guide-bottom-slot">
-            <span>Número</span>
-          </div>
-        </div>
-      </div>
       <p v-if="!cameraOn" class="placeholder">{{ cameraBusy ? 'Abrindo a câmera…' : 'Câmera desligada' }}</p>
       <p v-if="showScanInfo" class="hud" role="status">{{ scan.message }}</p>
       <p v-else-if="arState.phase !== 'idle'" class="hud" role="status">{{ phaseText }}</p>
