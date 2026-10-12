@@ -34,16 +34,19 @@ interface Variant {
   fullWidth: number;
 }
 
+const L: Box = [0, 0.945, 0.5, 0.995];
+const R: Box = [0.5, 0.945, 1, 0.995];
 const VARIANTS: Variant[] = [
   { name: 'atual: faixa 90-100% PSM6', boxes: [[0, 0.9, 1, 1]], psm: PSM.SINGLE_BLOCK, binarize: false, fullWidth: 630 },
   { name: 'faixa 90-100% PSM6 2x', boxes: [[0, 0.9, 1, 1]], psm: PSM.SINGLE_BLOCK, binarize: false, fullWidth: 1260 },
-  { name: 'faixa 93-100% PSM7 wl', boxes: [[0, 0.93, 1, 1]], psm: PSM.SINGLE_LINE, whitelist: WL, binarize: false, fullWidth: 1260 },
-  { name: 'esq/dir 93-100% PSM7 wl', boxes: [[0, 0.93, 0.5, 1], [0.5, 0.93, 1, 1]], psm: PSM.SINGLE_LINE, whitelist: WL, binarize: false, fullWidth: 1260 },
-  { name: 'esq/dir 93-100% PSM7 wl binarizado', boxes: [[0, 0.93, 0.5, 1], [0.5, 0.93, 1, 1]], psm: PSM.SINGLE_LINE, whitelist: WL, binarize: true, fullWidth: 1260 },
-  { name: 'esq/dir 94,5-99,5% PSM7 wl 3x', boxes: [[0, 0.945, 0.5, 0.995], [0.5, 0.945, 1, 0.995]], psm: PSM.SINGLE_LINE, whitelist: WL, binarize: false, fullWidth: 1890 },
-  { name: 'esq/dir 92-100% PSM6 wl', boxes: [[0, 0.92, 0.5, 1], [0.5, 0.92, 1, 1]], psm: PSM.SINGLE_BLOCK, whitelist: WL, binarize: false, fullWidth: 1260 },
-  { name: 'esq/dir 92-100% PSM11 (esparso) wl', boxes: [[0, 0.92, 0.5, 1], [0.5, 0.92, 1, 1]], psm: PSM.SPARSE_TEXT, whitelist: WL, binarize: false, fullWidth: 1260 },
-  { name: 'esq/dir 91-100% PSM6 wl binarizado', boxes: [[0, 0.91, 0.5, 1], [0.5, 0.91, 1, 1]], psm: PSM.SINGLE_BLOCK, whitelist: WL, binarize: true, fullWidth: 1260 },
+  { name: 'esq/dir 94,5-99,5% PSM7 wl 2x', boxes: [L, R], psm: PSM.SINGLE_LINE, whitelist: WL, binarize: false, fullWidth: 1260 },
+  { name: 'esq/dir 94,5-99,5% PSM7 wl 3x', boxes: [L, R], psm: PSM.SINGLE_LINE, whitelist: WL, binarize: false, fullWidth: 1890 },
+  { name: 'esq/dir 94,5-99,5% PSM7 wl 4x', boxes: [L, R], psm: PSM.SINGLE_LINE, whitelist: WL, binarize: false, fullWidth: 2520 },
+  { name: 'esq/dir 94,5-99,5% PSM7 sem wl 3x', boxes: [L, R], psm: PSM.SINGLE_LINE, binarize: false, fullWidth: 1890 },
+  { name: 'esq/dir 94,5-99,5% PSM7 wl binarizado 3x', boxes: [L, R], psm: PSM.SINGLE_LINE, whitelist: WL, binarize: true, fullWidth: 1890 },
+  { name: 'linha inteira 94,5-99,5% PSM7 wl 3x', boxes: [[0, 0.945, 1, 0.995]], psm: PSM.SINGLE_LINE, whitelist: WL, binarize: false, fullWidth: 1890 },
+  { name: 'esq/dir 93-100% PSM6 wl 3x', boxes: [[0, 0.93, 0.5, 1], [0.5, 0.93, 1, 1]], psm: PSM.SINGLE_BLOCK, whitelist: WL, binarize: false, fullWidth: 1890 },
+  { name: 'esq/dir 92-100% PSM6 wl 2x', boxes: [[0, 0.92, 0.5, 1], [0.5, 0.92, 1, 1]], psm: PSM.SINGLE_BLOCK, whitelist: WL, binarize: false, fullWidth: 1260 },
 ];
 
 it('compara configurações de OCR para o número de coleção', async () => {

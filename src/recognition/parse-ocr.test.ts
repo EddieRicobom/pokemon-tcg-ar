@@ -23,6 +23,12 @@ describe('parseBottomText', () => {
     expect(parsed.number?.total?.value).toBe(102);
   });
 
+  it('letras soltas de ruído antes do número não viram prefixo', () => {
+    const parsed = parseBottomText('C GAMEFREAK 999 W 58/102');
+    expect(parsed.number).toMatchObject({ prefix: '', value: 58, total: { value: 102 } });
+    expect(parseBottomText('M K S 1995 98 N C | LV 14 25 GAMEFREAK 1999 W 60/64').number?.value).toBe(60);
+  });
+
   it('lê prefixos de subconjuntos (Galeria de Treinadores, Galarian Gallery)', () => {
     expect(parseBottomText('TG05/TG30').number).toMatchObject({ prefix: 'TG', value: 5, total: { prefix: 'TG', value: 30 } });
     expect(parseBottomText('GG10/GG70').number).toMatchObject({ prefix: 'GG', value: 10 });
