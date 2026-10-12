@@ -12,3 +12,4 @@ public/ocr/
 public/data/catalog-index.json
 test-results/
 playwright-report/
+e2e/.tmp/
