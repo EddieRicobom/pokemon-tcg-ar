@@ -142,6 +142,24 @@ describe('RecognitionPipeline', () => {
     expect(result.card?.id).toBe('base2-60');
   });
 
+  it('número mal lido (80 no lugar de 60): a segunda rodada acha a carta certa pela imagem', async () => {
+    const { deps } = makeDeps({
+      ocr: { async recognize(_i, region) { return region === 'bottom' ? '80/64' : 'Pikachu'; }, async dispose() {} },
+    });
+    const result = await new RecognitionPipeline(deps).recognize(photoOf(3));
+    expect(result.card?.id).toBe('base2-60');
+    expect(result.status).toBe('identified');
+    expect(result.metrics.variantRound).toBe(true);
+  });
+
+  it('número mal lido e imagem que não combina com nenhuma variante: não inventa carta', async () => {
+    const { deps } = makeDeps({
+      ocr: { async recognize(_i, region) { return region === 'bottom' ? '80/64' : 'Zzqxw'; }, async dispose() {} },
+    });
+    const result = await new RecognitionPipeline(deps).recognize(photoOf(1));
+    expect(result.status).not.toBe('identified');
+  });
+
   it('sem carta no quadro: não chama OCR nem rede', async () => {
     const { deps, calls } = makeDeps();
     const result = await new RecognitionPipeline(deps).recognize(uniformImage(640, 480, [80, 80, 80]));

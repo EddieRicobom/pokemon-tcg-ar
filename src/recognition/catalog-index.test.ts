@@ -73,3 +73,34 @@ describe('loadCatalogIndex', () => {
     expect(loaded?.cardCount).toBe(7);
   });
 });
+
+describe('dígitos confundidos pelo OCR', () => {
+  it('gera variações de um dígito sem repetir o original', async () => {
+    const { digitVariants } = await import('./catalog-index');
+    const variants = digitVariants(60);
+    expect(variants).toContain(80);
+    expect(variants).toContain(50);
+    expect(variants).not.toContain(60);
+    expect(digitVariants(1)).toEqual([7]);
+  });
+});
+
+describe('variantCandidates', () => {
+  it('"80/64" (60 lido como 80) leva a Jungle 60, marcada como variante', () => {
+    const found = lookup.variantCandidates(parseBottomText('80/64'), [], new Set());
+    expect(found.map((c) => c.id)).toContain('base2-60');
+    expect(found.every((c) => c.viaVariant)).toBe(true);
+  });
+
+  it('não repete ids já tentados e mantém o prefixo (TG06 → TG05, nunca 05 puro)', () => {
+    const found = lookup.variantCandidates(parseBottomText('80/64'), [], new Set(['base2-60']));
+    expect(found.map((c) => c.id)).not.toContain('base2-60');
+    const tg = lookup.variantCandidates(parseBottomText('TG06/TG30'), [], new Set());
+    expect(tg.map((c) => c.id)).toEqual(['swsh12tg-TG05']);
+    expect(lookup.variantCandidates(parseBottomText('06/30'), [], new Set()).map((c) => c.id)).not.toContain('swsh12tg-TG05');
+  });
+
+  it('sem número lido não há variantes', () => {
+    expect(lookup.variantCandidates({}, ['Pikachu'], new Set())).toEqual([]);
+  });
+});

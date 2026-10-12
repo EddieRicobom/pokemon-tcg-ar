@@ -18,6 +18,8 @@ export const VISUAL_FLOOR = 0.65;
 export const VISUAL_FULL = 0.85;
 const VISUAL_WEIGHT = 0.55;
 const NO_VISUAL_FACTOR = 0.9;
+/** Crédito parcial (0-1) de número/total que diferem do OCR só por dígitos facilmente confundidos. */
+const VARIANT_CREDIT = 0.6;
 
 export interface CandidateInfo {
   id: string;
@@ -29,6 +31,11 @@ export interface CandidateInfo {
   setTotal: number;
   setCode?: string;
   features?: CardFeatures;
+  /**
+   * Candidata vinda de uma variação plausível de dígitos mal lidos pelo OCR (6↔8, 1↔7…). O número impresso
+   * dela difere do que foi lido, então a nota de metadados dá crédito parcial; a comparação visual decide.
+   */
+  viaVariant?: boolean;
 }
 
 export interface Evidence {
@@ -67,11 +74,11 @@ export function scoreMeta(candidate: CandidateInfo, evidence: Evidence): { meta:
   if (number) {
     const local = stripToValue(candidate.localId);
     const numberOk = !!local && local.value === number.value && local.prefix === number.prefix.toUpperCase();
-    add(0.4, numberOk ? 1 : 0);
-    reasons.push(numberOk ? `número ${candidate.localId}` : `número diferente (${candidate.localId})`);
+    add(0.4, numberOk ? 1 : candidate.viaVariant ? VARIANT_CREDIT : 0);
+    reasons.push(numberOk ? `número ${candidate.localId}` : candidate.viaVariant ? `número parecido (${candidate.localId})` : `número diferente (${candidate.localId})`);
     if (number.total && number.total.prefix === '') {
       const totalOk = candidate.setOfficial === number.total.value;
-      add(0.2, totalOk ? 1 : 0);
+      add(0.2, totalOk ? 1 : candidate.viaVariant ? VARIANT_CREDIT : 0);
       reasons.push(totalOk ? `total ${candidate.setOfficial}` : `total diferente (${candidate.setOfficial})`);
     }
   }
