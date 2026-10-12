@@ -92,19 +92,25 @@ export class CatalogLookup {
 
       for (const [localId, name, ptName] of set.cards) {
         let prior = setPrior;
+        let numberMatched = false;
         if (number) {
           const local = parseLocalId(localId);
-          if (!local || local.value !== number.value || local.prefix !== number.prefix.toUpperCase()) continue;
-          prior += 0.3;
-        } else if (nameKeys.length === 0) {
+          if (local && local.value === number.value && local.prefix === number.prefix.toUpperCase()) {
+            numberMatched = true;
+            prior += 0.3;
+          }
+        }
+        if (!numberMatched && nameKeys.length === 0) {
           continue;
         }
         if (nameGuesses.length > 0) {
           const similarity = Math.max(
             ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
           );
-          if (!number && similarity < 0.85) continue;
-          prior += similarity * 0.3;
+          if (!numberMatched && similarity < 0.75) continue;
+          prior += similarity * 0.4;
+        } else if (!numberMatched) {
+          continue;
         }
         result.push({
           id: `${set.id}-${localId}`,
