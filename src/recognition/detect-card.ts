@@ -164,7 +164,7 @@ export function quadAspect(quad: Quad): number {
   return Math.min(w, h) / Math.max(w, h);
 }
 
-function edgeMask(gray: Float32Array, width: number, height: number): Uint8Array | null {
+function edgeMask(gray: Float32Array, width: number, height: number): { mask: Uint8Array; mag: Float32Array; threshold: number } | null {
   const mag = new Float32Array(width * height);
   let sum = 0;
   let sumSq = 0;
@@ -203,7 +203,7 @@ function edgeMask(gray: Float32Array, width: number, height: number): Uint8Array
       }
     }
   }
-  return dilated;
+  return { mask: dilated, mag, threshold };
 }
 
 function components(mask: Uint8Array, width: number, height: number): Point[][] {
@@ -239,37 +239,120 @@ function components(mask: Uint8Array, width: number, height: number): Point[][] 
   return result;
 }
 
+/** Fração dos pontos ao longo do contorno do quadrilátero que repousam sobre uma borda forte. */
+function edgeSupport(quad: Quad, mag: Float32Array, width: number, height: number, threshold: number): number {
+  let hits = 0;
+  let total = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = quad[i]!;
+    const b = quad[(i + 1) % 4]!;
+    for (let step = 1; step < 24; step++) {
+      const t = step / 24;
+      const x = Math.round(a.x + (b.x - a.x) * t);
+      const y = Math.round(a.y + (b.y - a.y) * t);
+      let best = 0;
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue;
+          best = Math.max(best, mag[yy * width + xx] ?? 0);
+        }
+      }
+      total++;
+      if (best > threshold * 0.6) hits++;
+    }
+  }
+  return total === 0 ? 0 : hits / total;
+}
+
+/** Fundo = mediana das cores do contorno do quadro; primeiro plano = o que se afasta dele (Otsu). */
+function foregroundMask(image: RgbaImage): Uint8Array | null {
+  const { width, height, data } = image;
+  const ring = 3;
+  const samples: [number[], number[], number[]] = [[], [], []];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (x >= ring && x < width - ring && y >= ring && y < height - ring) {
+        x = width - ring - 1;
+        continue;
+      }
+      const o = (y * width + x) * 4;
+      samples[0].push(data[o] ?? 0);
+      samples[1].push(data[o + 1] ?? 0);
+      samples[2].push(data[o + 2] ?? 0);
+    }
+  }
+  const median = (values: number[]) => [...values].sort((p, q) => p - q)[Math.floor(values.length / 2)] ?? 0;
+  const bg = [median(samples[0]), median(samples[1]), median(samples[2])];
+  const dist = new Float32Array(width * height);
+  const histogram = new Float64Array(256);
+  for (let i = 0; i < dist.length; i++) {
+    const d = Math.hypot((data[i * 4] ?? 0) - bg[0]!, (data[i * 4 + 1] ?? 0) - bg[1]!, (data[i * 4 + 2] ?? 0) - bg[2]!) / 1.732;
+    dist[i] = d;
+    histogram[Math.min(255, Math.round(d))]!++;
+  }
+  const smooth = boxBlur(dist, width, height);
+  // Otsu
+  const totalPixels = dist.length;
+  let sumAll = 0;
+  for (let i = 0; i < 256; i++) sumAll += i * histogram[i]!;
+  let sumB = 0;
+  let weightB = 0;
+  let bestVariance = -1;
+  let threshold = 0;
+  for (let t = 0; t < 256; t++) {
+    weightB += histogram[t]!;
+    if (weightB === 0) continue;
+    const weightF = totalPixels - weightB;
+    if (weightF === 0) break;
+    sumB += t * histogram[t]!;
+    const meanB = sumB / weightB;
+    const meanF = (sumAll - sumB) / weightF;
+    const variance = weightB * weightF * (meanB - meanF) ** 2;
+    if (variance > bestVariance) {
+      bestVariance = variance;
+      threshold = t;
+    }
+  }
+  if (threshold < 10) return null;
+  const mask = new Uint8Array(width * height);
+  for (let i = 0; i < mask.length; i++) mask[i] = (smooth[i] ?? 0) > threshold ? 1 : 0;
+  return mask;
+}
+
 export function detectCard(source: RgbaImage): CardDetection | null {
   const { image, scale } = limitSide(source, DETECT_MAX_SIDE);
   const { width, height } = image;
   if (width < 16 || height < 16) return null;
   const gray = boxBlur(toGray(image), width, height);
-  const mask = edgeMask(gray, width, height);
-  if (!mask) return null;
+  const edges = edgeMask(gray, width, height);
+  if (!edges) return null;
 
   const frameArea = width * height;
   let best: CardDetection | null = null;
-  for (const pixels of components(mask, width, height)) {
+  const consider = (pixels: Point[]) => {
     const hull = convexHull(pixels);
-    if (hull.length < 4) continue;
+    if (hull.length < 4) return;
     const hullArea = polygonArea(hull);
-    if (hullArea < frameArea * MIN_AREA_FRACTION) continue;
+    if (hullArea < frameArea * MIN_AREA_FRACTION) return;
     const perimeter = hull.reduce((s, p, i) => {
       const q = hull[(i + 1) % hull.length]!;
       return s + Math.hypot(p.x - q.x, p.y - q.y);
     }, 0);
     const simplified = simplifyPolygon(hull, perimeter * 0.012);
     const quadPoints = maxAreaQuad(simplified.length >= 4 ? simplified : hull);
-    if (!quadPoints) continue;
+    if (!quadPoints) return;
     const quad = orderQuad(quadPoints);
     const quadArea = polygonArea(quad);
     const areaFraction = quadArea / frameArea;
     const aspect = quadAspect(quad);
     const fillRatio = Math.min(1, quadArea / hullArea);
-    if (areaFraction < MIN_AREA_FRACTION) continue;
-    if (aspect < CARD_ASPECT_MIN || aspect > CARD_ASPECT_MAX) continue;
-    if (fillRatio < MIN_FILL_RATIO) continue;
-    const score = areaFraction * fillRatio;
+    if (areaFraction < MIN_AREA_FRACTION) return;
+    if (aspect < CARD_ASPECT_MIN || aspect > CARD_ASPECT_MAX) return;
+    if (fillRatio < MIN_FILL_RATIO) return;
+    const support = edgeSupport(quad, edges.mag, width, height, edges.threshold);
+    const score = areaFraction * fillRatio * (0.4 + 0.6 * support);
     if (!best || score > best.score) {
       best = {
         quad: quad.map((p) => ({ x: p.x / scale, y: p.y / scale })) as Quad,
@@ -279,6 +362,11 @@ export function detectCard(source: RgbaImage): CardDetection | null {
         score,
       };
     }
-  }
+  };
+
+  // Estratégia A: bordas fortes conectadas. Estratégia B: o que difere da cor do fundo.
+  for (const pixels of components(edges.mask, width, height)) consider(pixels);
+  const foreground = foregroundMask(image);
+  if (foreground) for (const pixels of components(foreground, width, height)) consider(pixels);
   return best;
 }

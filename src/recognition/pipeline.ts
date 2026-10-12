@@ -16,7 +16,8 @@ import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from './types';
 import type { Quad, RgbaImage } from './types';
 
 export interface ReferenceLoader {
-  (url: string): Promise<{ image: RgbaImage; bytes: number }>;
+  /** `blob` (opcional) é o arquivo original baixado, para o cache guardar sem baixar de novo. */
+  (url: string): Promise<{ image: RgbaImage; bytes: number; blob?: Blob }>;
 }
 
 /** Carta já conhecida no aparelho (cache): permite reconhecer sem consultar o TCGdex. */
@@ -87,6 +88,10 @@ export interface RecognitionResult {
   features?: CardFeatures;
   /** Imagem de referência usada na comparação (para o cache e o alvo de AR). */
   reference?: RgbaImage;
+  /** Arquivo original da referência (webp do TCGdex), se o carregador o forneceu. */
+  referenceBlob?: Blob;
+  /** Endereço da imagem de referência (chave no cache de arquivos). */
+  referenceUrl?: string;
   metrics: RecognitionMetrics;
   message: string;
 }
@@ -246,18 +251,22 @@ export class RecognitionPipeline {
         if (!card) return null;
         const record = recordFromTcgdex(card, candidate);
         let reference: RgbaImage | undefined;
+        let referenceBlob: Blob | undefined;
+        let referenceUrl: string | undefined;
         let referenceFeatures: CardFeatures | undefined;
         if (card.image) {
           try {
-            const loadedImage = await this.deps.loadReference((this.deps.referenceUrl ?? ((base) => cardImageUrl(base, 'low', 'webp')))(card.image));
+            referenceUrl = (this.deps.referenceUrl ?? ((base) => cardImageUrl(base, 'low', 'webp')))(card.image);
+            const loadedImage = await this.deps.loadReference(referenceUrl);
             downloadedBytes += loadedImage.bytes;
             reference = loadedImage.image;
+            referenceBlob = loadedImage.blob;
             referenceFeatures = computeFeatures(loadedImage.image);
           } catch {
             // Sem imagem (rede/CORS): essa candidata segue só pelos metadados.
           }
         }
-        return { record, reference, features: referenceFeatures, prior: candidate };
+        return { record, reference, referenceBlob, referenceUrl, features: referenceFeatures, prior: candidate };
       } catch {
         return null;
       }
@@ -295,13 +304,13 @@ export class RecognitionPipeline {
     if (ranking.decision === 'confident') {
       return finish({
         status: 'identified', card: identified, confidence: best.confidence, margin: ranking.margin, alternatives, parsed, quad,
-        features, reference: winner.reference,
+        features, reference: winner.reference, referenceBlob: winner.referenceBlob, referenceUrl: winner.referenceUrl,
         message: `${identified.name} (${identified.setName} ${identified.localId}).`,
       });
     }
     return finish({
       status: 'ambiguous', card: identified, confidence: best.confidence, margin: ranking.margin, alternatives, parsed, quad,
-      features, reference: winner.reference,
+      features, reference: winner.reference, referenceBlob: winner.referenceBlob, referenceUrl: winner.referenceUrl,
       message: 'Não tenho certeza de qual impressão é. Escolha uma das opções ou tente de novo.',
     });
   }

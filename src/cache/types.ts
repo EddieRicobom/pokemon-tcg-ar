@@ -1,0 +1,71 @@
+import type { SpriteKind } from '../ar/sprite-source';
+
+/** Mude quando o formato dos registros mudar; versões antigas são migradas ou invalidadas. */
+export const CACHE_SCHEMA_VERSION = 1;
+export const DB_NAME = 'pokemon-tcg-ar';
+export const ASSET_CACHE_NAME = `tcg-ar-assets-v${CACHE_SCHEMA_VERSION}`;
+
+export type AssetKind = 'reference' | 'sprite' | 'target';
+export type SlotState = 'ok' | 'missing' | 'unavailable' | 'error';
+
+/** Características visuais serializadas (veja recognition/hash.ts). */
+export interface StoredFeatures {
+  v: number;
+  f: number[];
+  a: number[];
+  c: number[];
+}
+
+export interface SlotInfo {
+  state: SlotState;
+  /** Chave do arquivo no Cache Storage (URL real, ou URL sintética para o alvo de AR). */
+  key?: string;
+  bytes?: number;
+  error?: string;
+  /** Só para o sprite: GIF animado ou PNG estático de reserva. */
+  kind?: SpriteKind;
+}
+
+/** Cartas já reconhecidas, com tudo que é reutilizável sem rede. Nunca guarda quadros da câmera. */
+export interface CachedCard {
+  id: string;
+  schema: number;
+  name: string;
+  setId: string;
+  setName: string;
+  localId: string;
+  setOfficial: number;
+  setTotal: number;
+  setCode?: string;
+  dexIds: number[];
+  imageBase?: string;
+  /** Características da imagem de referência: servem para reconhecer de novo sem consultar o TCGdex. */
+  features?: StoredFeatures;
+  reference: SlotInfo;
+  sprite: SlotInfo;
+  target: SlotInfo;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  scanCount: number;
+}
+
+export interface AssetRecord {
+  url: string;
+  kind: AssetKind;
+  bytes: number;
+  contentType?: string;
+  /** Ids das cartas que usam o arquivo (o mesmo GIF serve a todas as cartas do mesmo Pokémon). */
+  refs: string[];
+  storedAt: number;
+}
+
+export type CacheStatus = 'completo' | 'parcial' | 'falhou';
+
+export interface StorageInfo {
+  cards: number;
+  assets: number;
+  assetBytes: number;
+  usage?: number;
+  quota?: number;
+  persisted?: boolean;
+}

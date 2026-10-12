@@ -45,6 +45,7 @@ export function frameFromVideo(video: HTMLVideoElement, maxSide = 1280): RgbaIma
 export interface LoadedImage {
   image: RgbaImage;
   bytes: number;
+  blob: Blob;
 }
 
 /** Baixa uma imagem (precisa de CORS) e devolve os pixels no tamanho pedido. */
@@ -54,7 +55,7 @@ export async function loadImageRgba(url: string, width: number, height: number, 
   const blob = await response.blob();
   const bitmap = await createImageBitmap(blob);
   try {
-    return { image: frameFromSource(bitmap, width, height), bytes: blob.size };
+    return { image: frameFromSource(bitmap, width, height), bytes: blob.size, blob };
   } finally {
     bitmap.close();
   }
@@ -66,4 +67,14 @@ export async function canvasToBlob(image: RgbaImage, type = 'image/webp', qualit
   return new Promise((resolve, reject) => {
     (canvas as HTMLCanvasElement).toBlob((blob) => (blob ? resolve(blob) : reject(new Error('toBlob falhou'))), type, quality);
   });
+}
+
+/** Decodifica um arquivo de imagem já guardado (cache) em pixels no tamanho pedido. */
+export async function blobToRgba(blob: Blob, width: number, height: number): Promise<RgbaImage> {
+  const bitmap = await createImageBitmap(blob);
+  try {
+    return frameFromSource(bitmap, width, height);
+  } finally {
+    bitmap.close();
+  }
 }

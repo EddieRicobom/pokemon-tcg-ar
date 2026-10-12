@@ -15,6 +15,11 @@ import { PNG } from 'pngjs';
 import { createWorker, OEM, PSM } from 'tesseract.js';
 import { expect, it } from 'vitest';
 import { renderScene, prng } from '../src/recognition/__fixtures__/synthetic';
+import { detectCard } from '../src/recognition/detect-card';
+import { rectify } from '../src/recognition/homography';
+import { cropFraction } from '../src/recognition/image';
+import { BOTTOM_STRIP_BOX } from '../src/recognition/layout';
+import { parseBottomText } from '../src/recognition/parse-ocr';
 import { CatalogLookup } from '../src/recognition/catalog-index';
 import type { CatalogIndexData } from '../src/recognition/catalog-index';
 import { boxBlur } from '../src/recognition/image';
@@ -70,7 +75,7 @@ function blurImage(image: RgbaImage, passes: number): RgbaImage {
 }
 
 /** Cena com a carta em perspectiva; a dificuldade controla inclinação, rotação, desfoque, ruído e brilho. */
-function makeScene(card: RgbaImage, seed: number, level: Level): RgbaImage {
+function makeScene(card: RgbaImage, seed: number, level: Level): { scene: RgbaImage; quad: Quad } {
   const random = prng(seed);
   const W = 960;
   const H = 720;
@@ -102,7 +107,7 @@ function makeScene(card: RgbaImage, seed: number, level: Level): RgbaImage {
       for (let c = 0; c < 3; c++) scene.data[o + c] = (scene.data[o + c] ?? 0) * spec.light + glare;
     }
   }
-  return scene;
+  return { scene, quad };
 }
 
 async function createNodeOcr(): Promise<OcrEngine> {
@@ -178,13 +183,20 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
     requests: number;
     bytes: number;
     visualVerified: boolean;
+    detected: boolean;
+    cornerErrPct?: number;
+    gtNumberOk: boolean;
+    gtTotalOk: boolean;
+    gtText?: string;
     confidence: number;
     bottomText?: string;
     margin: number;
   }
   const rows: Row[] = [];
   const skipped: string[] = [];
+  const scanReads: { id: string; text: string; numberOk: boolean; totalOk: boolean }[] = [];
   let scanBytes = 0;
+  const flat = (w: number, h: number): Quad => [{ x: 0, y: 0 }, { x: w - 1, y: 0 }, { x: w - 1, y: h - 1 }, { x: 0, y: h - 1 }];
 
   for (const id of ids) {
     let card: TcgdexCard | null;
@@ -208,9 +220,35 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
       continue;
     }
     const expectedValue = Number.parseInt(card.localId.replace(/^\D*0*/, '') || '0', 10);
+    const expectedTotal = card.set.cardCount?.official ?? -1;
+    // Controle: o OCR direto sobre o escaneamento, sem cena nenhuma (isola o OCR e o recorte da faixa).
+    {
+      const canonical = rectify(scan, flat(scan.width, scan.height), 630, 880);
+      if (canonical) {
+        const text = await ocr.recognize(cropFraction(canonical, BOTTOM_STRIP_BOX), 'bottom');
+        const parsed = parseBottomText(text);
+        scanReads.push({
+          id, text: text.replace(/\s+/g, ' ').trim().slice(0, 40),
+          numberOk: parsed.number?.value === expectedValue, totalOk: parsed.number?.total?.value === expectedTotal,
+        });
+      }
+    }
     for (const level of LEVELS) {
       const seed = [...id].reduce((s, ch) => s * 31 + ch.charCodeAt(0), 7) >>> 0;
-      const frame = makeScene(scan, seed, level);
+      const { scene: frame, quad: trueQuad } = makeScene(scan, seed, level);
+      // Diagnóstico 1: o quadrilátero detectado está perto do verdadeiro?
+      const detection = detectCard(frame);
+      let cornerErrPct: number | undefined;
+      if (detection) {
+        const cardHeight = Math.hypot(trueQuad[0].x - trueQuad[3].x, trueQuad[0].y - trueQuad[3].y);
+        const rotated: Quad = [trueQuad[2], trueQuad[3], trueQuad[0], trueQuad[1]];
+        const err = (q: Quad) => Math.max(...q.map((p, i) => Math.hypot(p.x - detection.quad[i]!.x, p.y - detection.quad[i]!.y)));
+        cornerErrPct = Math.round((Math.min(err(trueQuad), err(rotated)) / cardHeight) * 1000) / 10;
+      }
+      // Diagnóstico 2: com o quadrilátero VERDADEIRO, o OCR da faixa inferior acerta?
+      const trueFlat = rectify(frame, trueQuad, 630, 880);
+      const gtText = trueFlat ? await ocr.recognize(cropFraction(trueFlat, BOTTOM_STRIP_BOX), 'bottom') : '';
+      const gtParsed = parseBottomText(gtText);
       const result = await pipeline.recognize(frame);
       const predicted = result.card?.id;
       rows.push({
@@ -221,6 +259,9 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
         candidates: result.metrics.candidates, totalMs: result.metrics.totalMs, detectMs: result.metrics.detectMs,
         ocrMs: result.metrics.ocrMs, candidatesMs: result.metrics.candidatesMs, requests: result.metrics.requests,
         bytes: result.metrics.downloadedBytes, visualVerified: result.metrics.visualVerified,
+        detected: detection !== null, cornerErrPct,
+        gtNumberOk: gtParsed.number?.value === expectedValue, gtTotalOk: gtParsed.number?.total?.value === expectedTotal,
+        gtText: gtText.replace(/\s+/g, ' ').trim().slice(0, 40),
         confidence: Math.round(result.confidence * 100) / 100, margin: Math.round(result.margin * 100) / 100,
         bottomText: result.ocrText?.bottom?.replace(/\s+/g, ' ').trim().slice(0, 40),
       });
@@ -242,6 +283,10 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
       noCardPct: rate((r) => r.status === 'no-card'),
       ambiguousTop1Pct: rate((r) => r.status === 'ambiguous' && r.predicted === r.id),
       ocrNumberOkPct: rate((r) => r.ocrNumberOk),
+      detectedPct: rate((r) => r.detected),
+      medianCornerErrPct: Math.round(median(set.filter((r) => r.cornerErrPct !== undefined).map((r) => r.cornerErrPct!)) * 10) / 10,
+      gtNumberOkPct: rate((r) => r.gtNumberOk),
+      gtTotalOkPct: rate((r) => r.gtTotalOk),
       visualVerifiedPct: rate((r) => r.visualVerified),
       medianTotalMs: Math.round(median(set.map((r) => r.totalMs))),
       p95TotalMs: Math.round(percentile(set.map((r) => r.totalMs), 0.95)),
@@ -264,7 +309,13 @@ it('avalia o reconhecimento com cartas reais do TCGdex (escaneamentos distorcido
     recognitions: rows.length,
     scanDownloadMiB: Math.round(scanBytes / 1048576),
     summary,
-    failures,
+    scanControl: {
+      n: scanReads.length,
+      numberOkPct: Math.round((scanReads.filter((r) => r.numberOk).length / (scanReads.length || 1)) * 1000) / 10,
+      totalOkPct: Math.round((scanReads.filter((r) => r.totalOk).length / (scanReads.length || 1)) * 1000) / 10,
+      samples: scanReads.slice(0, 14),
+    },
+    failures: failures.slice(0, 12),
     rows,
   };
   writeFileSync(OUT_FILE, JSON.stringify(report, null, 2));
