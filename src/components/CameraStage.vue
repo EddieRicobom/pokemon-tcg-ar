@@ -3,7 +3,7 @@ import { onBeforeUnmount, ref } from 'vue';
 import type { SpriteOverlay } from '../ar/overlay';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { decodeGif, describeGifError, fetchGif, type DecodedGif } from '../core/gif';
-import { showdownSpriteUrl } from '../core/showdown';
+import { isValidDexId, pokemonSpriteUrl } from '../ar/sprite-url';
 
 type CameraState = 'idle' | 'starting' | 'on';
 
@@ -12,7 +12,7 @@ const canvasEl = ref<HTMLCanvasElement | null>(null);
 
 const cameraState = ref<CameraState>('idle');
 const cameraMessage = ref('');
-const species = ref('pikachu');
+const dexNumber = ref('25');
 const loadingGif = ref(false);
 const gifMessage = ref('');
 const gifLabel = ref('');
@@ -68,16 +68,15 @@ async function showGif(gif: DecodedGif, label: string): Promise<void> {
   gifLabel.value = label;
 }
 
-async function loadFromShowdown(): Promise<void> {
+async function loadFromPokeApi(): Promise<void> {
   gifMessage.value = '';
 
-  let url: string;
-  try {
-    url = showdownSpriteUrl(species.value);
-  } catch (error) {
-    gifMessage.value = error instanceof Error ? error.message : 'Nome de Pokémon inválido.';
+  const dexId = Number(dexNumber.value);
+  if (!isValidDexId(dexId)) {
+    gifMessage.value = 'Digite o número da Pokédex Nacional (ex.: 25 para Pikachu).';
     return;
   }
+  const url = pokemonSpriteUrl(dexId);
 
   downloadAbort?.abort();
   const controller = new AbortController();
@@ -85,7 +84,7 @@ async function loadFromShowdown(): Promise<void> {
   loadingGif.value = true;
   try {
     const gif = await fetchGif(url, controller.signal);
-    await showGif(gif, `${species.value.trim()} (Pokémon Showdown)`);
+    await showGif(gif, `Pokédex nº ${dexId} (PokeAPI/sprites)`);
   } catch (error) {
     if (controller.signal.aborted) return;
     gifMessage.value = describeGifError(error);
@@ -121,11 +120,11 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="card" aria-labelledby="stage-title">
-    <h2 id="stage-title">Teste da câmera e do renderizador</h2>
+    <h2 id="stage-title">Teste do renderizador (GIF fixo na tela)</h2>
     <p class="note">
       Este teste só confirma que a câmera abre e que um GIF animado é desenhado com fundo
-      transparente. O Pokémon aparece <strong>fixo na tela</strong>: o app ainda
-      <strong>não reconhece nem rastreia cartas</strong>.
+      transparente. Aqui o Pokémon aparece <strong>fixo na tela</strong>: <strong>não há reconhecimento nem
+      rastreamento de carta neste teste</strong>. O AR de verdade está em “Escanear”.
     </p>
 
     <div class="viewport">
@@ -150,19 +149,18 @@ onBeforeUnmount(() => {
     </div>
     <p v-if="cameraMessage" class="message error" role="alert">{{ cameraMessage }}</p>
 
-    <form class="gif-form" @submit.prevent="loadFromShowdown">
-      <label for="species">Pokémon (nome em inglês)</label>
+    <form class="gif-form" @submit.prevent="loadFromPokeApi">
+      <label for="species">Número da Pokédex Nacional</label>
       <div class="row">
         <input
           id="species"
-          v-model="species"
+          v-model="dexNumber"
           type="text"
+          inputmode="numeric"
           autocomplete="off"
-          autocapitalize="none"
-          spellcheck="false"
         />
         <button type="submit" :disabled="loadingGif">
-          {{ loadingGif ? 'Baixando…' : 'Carregar GIF do Showdown' }}
+          {{ loadingGif ? 'Baixando…' : 'Baixar GIF' }}
         </button>
       </div>
     </form>

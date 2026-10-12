@@ -3,6 +3,9 @@ name: Deploy no GitHub Pages
 on:
   push:
     branches: [main]
+  # Reconstrói toda semana (domingo, 06:00 UTC) para o índice de cartas acompanhar novas coleções do TCGdex.
+  schedule:
+    - cron: '0 6 * * 0'
   workflow_dispatch:
 
 permissions:
@@ -19,7 +22,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       BASE_PATH: /${{ github.event.repository.name }}/
     steps:
@@ -41,8 +44,17 @@ jobs:
       - name: Rodar testes
         run: npm test
 
+      # Índice estático (só ids, nomes e contagens), gerado aqui e servido pelo Pages. Nenhum celular baixa o catálogo.
+      - name: Gerar índice do catálogo
+        run: npm run build:index
+
       - name: Build de produção
         run: npm run build
+
+      - name: Conferir o build (base path, Service Worker, OCR, índice)
+        run: node scripts/verify-dist.mjs
+        env:
+          REQUIRE_INDEX: '1'
 
       - uses: actions/upload-pages-artifact@v5
         with:

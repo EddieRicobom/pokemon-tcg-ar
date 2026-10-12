@@ -146,8 +146,8 @@ describe('composeFrames', () => {
 });
 
 describe('describeGifError', () => {
-  it('explica o 404 como nome inexistente', () => {
-    expect(describeGifError(new GifDownloadError(404))).toContain('não tem um GIF');
+  it('explica o 404 como GIF inexistente', () => {
+    expect(describeGifError(new GifDownloadError(404))).toContain('não tem GIF animado');
   });
 
   it('cita o código HTTP nos demais erros do servidor', () => {

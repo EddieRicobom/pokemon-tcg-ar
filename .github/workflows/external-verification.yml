@@ -1,0 +1,67 @@
+name: Verificação externa
+
+# Mede o que o ambiente de desenvolvimento não alcança: API e CDN do TCGdex (status, CORS,
+# limites, formato) e sprites do PokeAPI. Os resultados ficam em anotações e num artefato.
+on:
+  push:
+    branches: ['claude/**']
+    paths:
+      - 'scripts/verify-*.ts'
+      - 'scripts/build-catalog-index.ts'
+      - 'scripts/eval-recognition.eval.ts'
+      - 'scripts/eval-common.ts'
+      - 'scripts/ocr-lab.eval.ts'
+      - 'scripts/annotate.mjs'
+      - 'src/recognition/**'
+      - '.github/workflows/external-verification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: TCGdex e sprites
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Sprites do PokeAPI
+        run: node scripts/verify-sprites.ts | tee sprites.json
+      - name: TCGdex (API e imagens)
+        run: node scripts/verify-tcgdex.ts tcgdex.json
+      - name: Índice do catálogo (tamanho e tempo)
+        run: node scripts/build-catalog-index.ts catalog-index.json
+      - name: Laboratório de OCR (qual configuração lê melhor o número)
+        run: npx vitest run --config vitest.eval.config.ts scripts/ocr-lab.eval.ts
+        env:
+          CATALOG_INDEX: catalog-index.json
+          LAB_OUT: ocr-lab-results.json
+      - name: Anotar laboratório de OCR
+        if: always()
+        run: |
+          if [ -f ocr-lab-results.json ]; then node scripts/annotate.mjs ocr-lab-results.json "LabOCR"; fi
+      - name: Avaliação do reconhecimento (cartas reais, OCR real)
+        run: npx vitest run --config vitest.eval.config.ts scripts/eval-recognition.eval.ts
+        env:
+          CATALOG_INDEX: catalog-index.json
+          EVAL_OUT: eval-results.json
+      - name: Anotar resultado da avaliação
+        if: always()
+        run: |
+          if [ -f eval-results.summary.json ]; then node scripts/annotate.mjs eval-results.summary.json "Avaliacao"; fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: verificacao-externa
+          path: |
+            sprites.json
+            tcgdex.json
+            catalog-index.json
+            eval-results.json
+            ocr-lab-results.json

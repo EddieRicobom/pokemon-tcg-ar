@@ -9,23 +9,33 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "dev": "npm run prepare:assets && vite",
+    "build": "npm run prepare:assets && vue-tsc --noEmit -p tsconfig.app.json && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepare:assets": "node scripts/copy-ocr-assets.mjs",
+    "build:index": "node scripts/build-catalog-index.ts public/data/catalog-index.json"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "gifuct-js": "^2.1.2",
+    "idb": "^8.0.4",
+    "mind-ar": "^1.2.5",
+    "tesseract.js": "^7.0.0",
     "three": "^0.186.1",
     "vue": "^3.5.43"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@types/node": "^22.0.0",
+    "@types/pngjs": "^6.0.5",
     "@types/three": "^0.186.0",
     "@vitejs/plugin-vue": "^6.0.10",
+    "fake-indexeddb": "^6.2.5",
     "happy-dom": "^20.14.6",
+    "pngjs": "^7.0.0",
     "typescript": "^5.9.0",
     "vite": "^8.3.4",
     "vite-plugin-pwa": "^2.0.0",

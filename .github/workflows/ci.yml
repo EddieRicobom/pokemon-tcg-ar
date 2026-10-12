@@ -40,15 +40,5 @@ jobs:
       - name: Build de produção
         run: npm run build
 
-      - name: Conferir base path no manifest
-        run: |
-          node -e "
-            const fs = require('node:fs');
-            const manifest = JSON.parse(fs.readFileSync('dist/manifest.webmanifest', 'utf8'));
-            const expected = process.env.BASE_PATH;
-            if (manifest.start_url !== expected || manifest.scope !== expected) {
-              console.error('start_url/scope inesperados:', manifest.start_url, manifest.scope, '(esperado:', expected + ')');
-              process.exit(1);
-            }
-            console.log('Manifest OK com base', expected);
-          "
+      - name: Conferir o build (base path, Service Worker, OCR)
+        run: node scripts/verify-dist.mjs

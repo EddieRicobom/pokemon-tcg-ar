@@ -1,0 +1,74 @@
+name: Ponta a ponta (câmera falsa)
+
+# Teste AUTOMATIZADO em Chromium com câmera falsa (vídeo gerado de um escaneamento oficial da carta).
+# Não substitui a validação com a câmera, o GPU e o OCR de um celular de verdade.
+on:
+  push:
+    branches: ['claude/**']
+    paths: ['src/**', 'e2e/**', 'scripts/**', 'playwright.config.ts', '.github/workflows/e2e.yml', 'package.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  e2e:
+    name: Reconhecer, guardar e mostrar em AR
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BASE_PATH: /${{ github.event.repository.name }}/
+      E2E_CARDS: base1-4,base5-53,sv03.5-025,swsh1-65
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Instalar o Chromium do Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Gerar o índice do catálogo e o build de produção
+        run: |
+          npm run build:index
+          npm run build
+          REQUIRE_INDEX=1 node scripts/verify-dist.mjs
+
+      - name: Gerar as cenas e os vídeos da câmera falsa
+        run: |
+          command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+          npx vitest run --config vitest.eval.config.ts scripts/make-e2e-scene.eval.ts
+          for f in e2e/.tmp/*.png; do
+            id=$(basename "$f" .png)
+            ffmpeg -loglevel error -y -loop 1 -framerate 10 -t 3 -i "$f" -pix_fmt yuv420p "e2e/.tmp/$id.y4m"
+          done
+          ls -la e2e/.tmp
+
+      - name: Rodar o teste de ponta a ponta
+        run: npx playwright test
+        continue-on-error: true
+        id: e2e
+
+      - name: Resultados como anotações
+        if: always()
+        run: |
+          node scripts/e2e-report.mjs e2e/.tmp e2e/.tmp/e2e-report.json && node scripts/annotate.mjs e2e/.tmp/e2e-report.json E2E
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-resultados
+          path: |
+            e2e/.tmp/*.png
+            e2e/.tmp/e2e-summary.json
+            e2e/.tmp/results/*.json
+          if-no-files-found: ignore
+
+      - name: Falhar se o teste falhou
+        if: steps.e2e.outcome == 'failure'
+        run: exit 1

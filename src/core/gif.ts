@@ -141,11 +141,11 @@ export class GifDownloadError extends Error {
 export function describeGifError(error: unknown): string {
   if (error instanceof GifDownloadError) {
     return error.status === 404
-      ? 'O Showdown não tem um GIF com esse nome. Confira a grafia em inglês.'
+      ? 'Este Pokémon não tem GIF animado no PokeAPI/sprites (nem todos têm).'
       : `O servidor respondeu com erro ${error.status} ao baixar o GIF.`;
   }
   if (error instanceof TypeError) {
-    return 'Não foi possível baixar o GIF: a rede falhou ou o servidor do Showdown não libera o acesso (CORS). Use "Carregar GIF do aparelho".';
+    return 'Não foi possível baixar o GIF: a rede falhou ou o servidor dos sprites não respondeu (CORS ou conexão). Use "Carregar GIF do aparelho".';
   }
   return 'O arquivo não é um GIF válido.';
 }

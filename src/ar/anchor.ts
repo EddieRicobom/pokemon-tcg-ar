@@ -1,0 +1,164 @@
+/**
+ * Geometria do sprite em pé sobre a carta (matemática pura, sem Three.js, para testar).
+ *
+ * Convenção do MindAR (lida no código-fonte da versão 1.2.5, `three.js` e `controller.js`):
+ *   matriz do alvo = worldMatrix · postMatrix, onde postMatrix = T(w/2, h/2, 0) · S(w).
+ * No espaço resultante ("espaço da carta"):
+ *   origem  = centro da carta,
+ *   unidade = LARGURA da carta (a altura vale h/w ≈ 1,397 para 63×88 mm),
+ *   +X      = direita da carta, +Y = topo da carta, +Z = para fora da carta (na direção de quem olha).
+ * A carta fica no plano XY. Um sprite "em pé" fica no plano XZ, com a base encostada na carta.
+ */
+
+export interface SpriteLayout {
+  /** Altura do sprite, em larguras de carta (0,6 = 60% da largura da carta). */
+  heightRatio: number;
+  /** Deslocamento da base no plano da carta, em larguras de carta. +X direita, +Y topo da carta. */
+  offsetX: number;
+  offsetY: number;
+  /** Elevação da base acima da superfície da carta (larguras de carta). 0 = encostado. */
+  lift: number;
+  /** Giro em torno da normal da carta, em graus. 0 = sprite de frente para a borda inferior da carta. */
+  yawDeg: number;
+  /** Onde fica o ponto de ancoragem no sprite: a base (em pé) ou o centro. */
+  anchor: 'base' | 'center';
+}
+
+export const DEFAULT_LAYOUT: SpriteLayout = {
+  heightRatio: 0.7,
+  offsetX: 0,
+  offsetY: -0.15,
+  lift: 0,
+  yawDeg: 0,
+  anchor: 'base',
+};
+
+export const LAYOUT_LIMITS = {
+  heightRatio: { min: 0.15, max: 1.6 },
+  offset: { min: -0.7, max: 0.7 },
+  lift: { min: 0, max: 1 },
+  yawDeg: { min: -180, max: 180 },
+} as const;
+
+export function clampLayout(layout: SpriteLayout): SpriteLayout {
+  const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Number.isFinite(v) ? v : min));
+  return {
+    heightRatio: clamp(layout.heightRatio, LAYOUT_LIMITS.heightRatio.min, LAYOUT_LIMITS.heightRatio.max),
+    offsetX: clamp(layout.offsetX, LAYOUT_LIMITS.offset.min, LAYOUT_LIMITS.offset.max),
+    offsetY: clamp(layout.offsetY, LAYOUT_LIMITS.offset.min, LAYOUT_LIMITS.offset.max),
+    lift: clamp(layout.lift, LAYOUT_LIMITS.lift.min, LAYOUT_LIMITS.lift.max),
+    yawDeg: clamp(layout.yawDeg, LAYOUT_LIMITS.yawDeg.min, LAYOUT_LIMITS.yawDeg.max),
+    anchor: layout.anchor === 'center' ? 'center' : 'base',
+  };
+}
+
+/** Matriz 4×4 em ordem de colunas (a mesma de `THREE.Matrix4.elements`). */
+export type Mat4 = number[];
+
+export function multiply(a: Mat4, b: Mat4): Mat4 {
+  const out = new Array<number>(16).fill(0);
+  for (let col = 0; col < 4; col++) {
+    for (let row = 0; row < 4; row++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) sum += a[k * 4 + row]! * b[col * 4 + k]!;
+      out[col * 4 + row] = sum;
+    }
+  }
+  return out;
+}
+
+export function transformPoint(m: Mat4, p: [number, number, number]): [number, number, number] {
+  const [x, y, z] = p;
+  const w = m[3]! * x + m[7]! * y + m[11]! * z + m[15]!;
+  return [
+    (m[0]! * x + m[4]! * y + m[8]! * z + m[12]!) / w,
+    (m[1]! * x + m[5]! * y + m[9]! * z + m[13]!) / w,
+    (m[2]! * x + m[6]! * y + m[10]! * z + m[14]!) / w,
+  ];
+}
+
+/** postMatrix do MindAR: T(w/2, h/2, 0) · S(w), em ordem de colunas. */
+export function mindArPostMatrix(markerWidth: number, markerHeight: number): Mat4 {
+  return [markerWidth, 0, 0, 0, 0, markerWidth, 0, 0, 0, 0, markerWidth, 0, markerWidth / 2, markerHeight / 2, 0, 1];
+}
+
+/** Matriz do espaço da carta no espaço da câmera: worldMatrix · postMatrix. */
+export function cardSpaceMatrix(worldMatrix: ArrayLike<number>, markerWidth: number, markerHeight: number): Mat4 {
+  return multiply(Array.from(worldMatrix), mindArPostMatrix(markerWidth, markerHeight));
+}
+
+/** Altura da carta no espaço da carta (largura = 1). */
+export function cardHeightUnits(markerWidth: number, markerHeight: number): number {
+  return markerHeight / markerWidth;
+}
+
+/**
+ * Matriz do sprite no espaço da carta. O sprite nasce como um plano unitário no plano XY do Three.js
+ * (largura em X, altura em Y, normal +Z). Aqui ele é:
+ *   1. escalado (largura = altura × proporção do GIF, altura = heightRatio);
+ *   2. levantado para ficar com a base na origem (ou o centro, se anchor = 'center');
+ *   3. tombado +90° em torno de X: o "alto" do sprite passa a apontar para +Z (para fora da carta)
+ *      e a frente dele passa a olhar para −Y (para a borda inferior da carta);
+ *   4. girado em yaw em torno de Z e deslocado pela base.
+ */
+export function spriteMatrix(layout: SpriteLayout, spriteAspect: number): Mat4 {
+  const l = clampLayout(layout);
+  const aspect = Number.isFinite(spriteAspect) && spriteAspect > 0 ? spriteAspect : 1;
+  const height = l.heightRatio;
+  const width = height * aspect;
+  const yaw = (l.yawDeg * Math.PI) / 180;
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  // Colunas: imagem de (1,0,0), (0,1,0), (0,0,1) do plano unitário.
+  // Após escala e tombamento (+90° em X): X→X, Y→Z, Z→−Y. Depois yaw em Z.
+  const xAxis: [number, number, number] = [width * c, width * s, 0];
+  const yAxis: [number, number, number] = [0, 0, height];
+  const zAxis: [number, number, number] = [s, -c, 0];
+  // Ponto (0,0,0) do plano é o centro; a base é y = −0,5. anchor 'base' leva a base para a origem.
+  const lowerHalf = l.anchor === 'base' ? height / 2 : 0;
+  const origin: [number, number, number] = [l.offsetX, l.offsetY, l.lift + lowerHalf];
+  return [...xAxis, 0, ...yAxis, 0, ...zAxis, 0, ...origin, 1];
+}
+
+/** Os 4 cantos do sprite no espaço da carta: base-esq, base-dir, topo-dir, topo-esq. */
+export type Vec3 = [number, number, number];
+
+export function spriteCorners(layout: SpriteLayout, spriteAspect: number): [Vec3, Vec3, Vec3, Vec3] {
+  const m = spriteMatrix(layout, spriteAspect);
+  return [
+    transformPoint(m, [-0.5, -0.5, 0]),
+    transformPoint(m, [0.5, -0.5, 0]),
+    transformPoint(m, [0.5, 0.5, 0]),
+    transformPoint(m, [-0.5, 0.5, 0]),
+  ];
+}
+
+export interface CameraParams {
+  fovDeg: number;
+  near: number;
+  far: number;
+  aspect: number;
+}
+
+/**
+ * Parâmetros da câmera de perspectiva a partir da matriz de projeção do MindAR (`controller.getProjectionMatrix()`),
+ * para o vídeo exibido em "cover" dentro do contêiner. Mesma conta do `MindARThree.resize` (MIT, hiukim/mind-ar-js).
+ */
+export function cameraParamsFromProjection(
+  proj: ArrayLike<number>,
+  inputWidth: number,
+  inputHeight: number,
+  containerWidth: number,
+  containerHeight: number,
+): CameraParams {
+  const containerRatio = containerWidth / containerHeight;
+  const inputRatio = inputWidth / inputHeight;
+  const videoDisplayHeight = inputRatio > containerRatio ? containerHeight : (containerWidth / inputWidth) * inputHeight;
+  const fovAdjust = containerHeight / videoDisplayHeight;
+  return {
+    fovDeg: ((2 * Math.atan((1 / proj[5]!) * fovAdjust)) * 180) / Math.PI,
+    near: proj[14]! / (proj[10]! - 1.0),
+    far: proj[14]! / (proj[10]! + 1.0),
+    aspect: containerRatio,
+  };
+}
