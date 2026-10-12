@@ -63,8 +63,11 @@ export class CatalogLookup {
     for (const set of this.data.sets) {
       let setPrior = 0;
       if (number?.total && number.total.prefix === '') {
-        if (set.official !== number.total.value) continue;
-        setPrior += 0.3;
+        if (set.official === number.total.value || set.total === number.total.value) {
+          setPrior += 0.4;
+        } else if (Math.abs(set.official - number.total.value) <= 2) {
+          setPrior += 0.2;
+        }
       }
       if (bottom.setCode && set.code && set.code.toUpperCase() === bottom.setCode.toUpperCase()) setPrior += 0.2;
 
