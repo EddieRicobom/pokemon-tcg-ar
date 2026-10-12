@@ -41,6 +41,7 @@ jobs:
 
       - name: Gerar as cenas e os vídeos da câmera falsa
         run: |
+          command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
           npx vitest run --config vitest.eval.config.ts scripts/make-e2e-scene.eval.ts
           for f in e2e/.tmp/*.png; do
             id=$(basename "$f" .png)
