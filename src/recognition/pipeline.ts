@@ -70,6 +70,8 @@ export interface RecognitionMetrics {
   /** Resolveu só por metadados (nenhuma imagem de referência pôde ser comparada). */
   visualVerified: boolean;
   rotated180: boolean;
+  /** Houve segunda rodada com números parecidos (dígitos confundidos pelo OCR). */
+  variantRound?: boolean;
 }
 
 export type RecognitionStatus = 'identified' | 'ambiguous' | 'not-found' | 'no-card';
@@ -96,6 +98,15 @@ export interface RecognitionResult {
   /** Diagnóstico da melhor candidata (calibração dos limiares com dados reais). */
   debug?: { bestId?: string; bestSimilarity?: number; bestMeta?: number | null; secondId?: string; secondSimilarity?: number };
   message: string;
+}
+
+interface LoadedCandidate {
+  record: CardRecordLike;
+  reference?: RgbaImage;
+  referenceBlob?: Blob;
+  referenceUrl?: string;
+  features?: CardFeatures;
+  prior: CandidateInfo & { prior: number; viaVariant?: boolean };
 }
 
 interface ReadResult {
@@ -237,7 +248,8 @@ export class RecognitionPipeline {
       indexCandidates = await this.searchWithoutIndex(read.bottom);
     }
     metrics.candidates = indexCandidates.length;
-    if (indexCandidates.length === 0) {
+    const hasVariants = (this.deps.catalog?.variantCandidates(read.bottom, read.names, new Set(), 1).length ?? 0) > 0;
+    if (indexCandidates.length === 0 && !hasVariants) {
       metrics.candidatesMs = Math.round(now() - t3);
       return finish({
         status: 'not-found', alternatives: [], confidence: 0, margin: 0, parsed, quad, features,
@@ -248,48 +260,35 @@ export class RecognitionPipeline {
     }
 
     // 3) Detalhes (dexId, imagem) e imagem de referência só dos candidatos.
-    const loaded = await mapLimit(indexCandidates, 3, async (candidate) => {
-      try {
-        const card = await this.deps.tcgdex.getCard(candidate.id);
-        if (!card) return null;
-        const record = recordFromTcgdex(card, candidate);
-        let reference: RgbaImage | undefined;
-        let referenceBlob: Blob | undefined;
-        let referenceUrl: string | undefined;
-        let referenceFeatures: CardFeatures | undefined;
-        if (card.image) {
-          try {
-            referenceUrl = (this.deps.referenceUrl ?? ((base) => cardImageUrl(base, 'low', 'webp')))(card.image);
-            const loadedImage = await this.deps.loadReference(referenceUrl);
-            downloadedBytes += loadedImage.bytes;
-            reference = loadedImage.image;
-            referenceBlob = loadedImage.blob;
-            referenceFeatures = computeFeatures(loadedImage.image);
-          } catch {
-            // Sem imagem (rede/CORS): essa candidata segue só pelos metadados.
-          }
-        }
-        return { record, reference, referenceBlob, referenceUrl, features: referenceFeatures, prior: candidate };
-      } catch {
-        return null;
+    const bytes = { value: 0 };
+    let usable = await this.loadCandidates(indexCandidates, bytes);
+    const toInfos = (entries: LoadedCandidate[]): CandidateInfo[] => entries.map((entry) => ({
+      id: entry.record.id, setId: entry.record.setId, localId: entry.record.localId, name: entry.record.name,
+      altNames: entry.prior.altNames, setOfficial: entry.record.setOfficial, setTotal: entry.record.setTotal,
+      setCode: entry.record.setCode, features: entry.features, viaVariant: entry.prior.viaVariant,
+    }));
+    let ranking = usable.length > 0 ? rankCandidates(toInfos(usable), evidence) : null;
+
+    // 3b) Segunda rodada: se nada se confirmou, tenta números parecidos (dígitos que o OCR confunde).
+    if ((!ranking || ranking.decision !== 'confident') && this.deps.catalog) {
+      const tried = new Set(indexCandidates.map((c) => c.id));
+      const variants = this.deps.catalog.variantCandidates(read.bottom, read.names, tried, this.maxCandidates());
+      if (variants.length > 0) {
+        metrics.variantRound = true;
+        usable = [...usable, ...(await this.loadCandidates(variants, bytes))];
+        ranking = rankCandidates(toInfos(usable), evidence);
       }
-    });
-    const usable = loaded.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+    }
+    downloadedBytes += bytes.value;
+    metrics.candidates = usable.length;
     metrics.candidatesMs = Math.round(now() - t3);
-    if (usable.length === 0) {
+    if (usable.length === 0 || !ranking) {
       return finish({
         status: 'not-found', alternatives: [], confidence: 0, margin: 0, parsed, quad, features,
         message: 'Não consegui consultar o TCGdex agora. Verifique a conexão e tente de novo.',
       });
     }
     metrics.source = 'network';
-
-    const infos: CandidateInfo[] = usable.map((entry) => ({
-      id: entry.record.id, setId: entry.record.setId, localId: entry.record.localId, name: entry.record.name,
-      altNames: entry.prior.altNames, setOfficial: entry.record.setOfficial, setTotal: entry.record.setTotal,
-      setCode: entry.record.setCode, features: entry.features,
-    }));
-    const ranking = rankCandidates(infos, evidence);
     const best = ranking.best;
     const runnerUp = ranking.ranked[1];
     debugOut = {
@@ -321,6 +320,36 @@ export class RecognitionPipeline {
       features, reference: winner.reference, referenceBlob: winner.referenceBlob, referenceUrl: winner.referenceUrl,
       message: 'Não tenho certeza de qual impressão é. Escolha uma das opções ou tente de novo.',
     });
+  }
+
+  private async loadCandidates(list: (CandidateInfo & { prior: number; viaVariant?: boolean })[], bytes: { value: number }): Promise<LoadedCandidate[]> {
+    const loaded = await mapLimit(list, 3, async (candidate): Promise<LoadedCandidate | null> => {
+      try {
+        const card = await this.deps.tcgdex.getCard(candidate.id);
+        if (!card) return null;
+        const record = recordFromTcgdex(card, candidate);
+        let reference: RgbaImage | undefined;
+        let referenceBlob: Blob | undefined;
+        let referenceUrl: string | undefined;
+        let referenceFeatures: CardFeatures | undefined;
+        if (card.image) {
+          try {
+            referenceUrl = (this.deps.referenceUrl ?? ((base) => cardImageUrl(base, 'low', 'webp')))(card.image);
+            const loadedImage = await this.deps.loadReference(referenceUrl);
+            bytes.value += loadedImage.bytes;
+            reference = loadedImage.image;
+            referenceBlob = loadedImage.blob;
+            referenceFeatures = computeFeatures(loadedImage.image);
+          } catch {
+            // Sem imagem (rede/CORS): essa candidata segue só pelos metadados.
+          }
+        }
+        return { record, reference, referenceBlob, referenceUrl, features: referenceFeatures, prior: candidate };
+      } catch {
+        return null;
+      }
+    });
+    return loaded.filter((entry): entry is LoadedCandidate => entry !== null);
   }
 
   private maxCandidates(): number {

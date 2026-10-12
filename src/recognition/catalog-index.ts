@@ -31,6 +31,25 @@ export interface IndexCandidate extends CandidateInfo {
   prior: number;
 }
 
+/** Dígitos que o OCR costuma confundir entre si em fonte pequena. */
+const CONFUSABLE: Record<string, string[]> = {
+  '0': ['8', '6', '9'], '1': ['7'], '2': ['7'], '3': ['8', '5'], '4': ['9'],
+  '5': ['6', '3', '8'], '6': ['8', '5', '0'], '7': ['1'], '8': ['0', '6', '3', '9'], '9': ['4', '8', '0'],
+};
+
+/** Números que diferem do lido por um dígito confundível (sem repetir o original). */
+export function digitVariants(value: number): number[] {
+  const digits = String(value);
+  const out = new Set<number>();
+  for (let i = 0; i < digits.length; i++) {
+    for (const replacement of CONFUSABLE[digits[i] ?? ''] ?? []) {
+      const variant = Number.parseInt(digits.slice(0, i) + replacement + digits.slice(i + 1), 10);
+      if (variant > 0 && variant !== value) out.add(variant);
+    }
+  }
+  return [...out];
+}
+
 function parseLocalId(localId: string): { prefix: string; value: number } | null {
   const match = /^([A-Za-z]*)0*(\d+)$/.exec(localId);
   if (!match) return null;
@@ -99,6 +118,53 @@ export class CatalogLookup {
       }
     }
     // Mais evidência primeiro; em empate, a coleção mais recente.
+    result.sort((a, b) => b.prior - a.prior || (b.release ?? '').localeCompare(a.release ?? ''));
+    return result.slice(0, limit);
+  }
+
+  /**
+   * Segunda rodada, quando as candidatas exatas não se confirmaram: cartas cujo número (e/ou total) difere do
+   * que o OCR leu só por dígitos facilmente confundidos. Marcadas como `viaVariant` (crédito parcial de metadados);
+   * quem decide é a comparação visual. Nunca repete ids já tentados.
+   */
+  variantCandidates(bottom: ParsedBottom, nameGuesses: string[], excludeIds: ReadonlySet<string>, limit = 6): IndexCandidate[] {
+    const number = bottom.number;
+    if (!number) return [];
+    const numberValues = new Map<number, number>([[number.value, 0]]);
+    for (const v of digitVariants(number.value)) numberValues.set(v, 1);
+    const totalValues = new Map<number, number>();
+    if (number.total && number.total.prefix === '') {
+      totalValues.set(number.total.value, 0);
+      for (const v of digitVariants(number.total.value)) totalValues.set(v, 1);
+    }
+    const result: IndexCandidate[] = [];
+    for (const set of this.data.sets) {
+      let changed = 0;
+      if (totalValues.size > 0) {
+        const penalty = totalValues.get(set.official);
+        if (penalty === undefined) continue;
+        changed += penalty;
+      }
+      for (const [localId, name, ptName] of set.cards) {
+        const local = parseLocalId(localId);
+        if (!local || local.prefix !== number.prefix.toUpperCase()) continue;
+        const numberPenalty = numberValues.get(local.value);
+        if (numberPenalty === undefined) continue;
+        const id = `${set.id}-${localId}`;
+        if (excludeIds.has(id)) continue;
+        let prior = 0.3 - 0.1 * (changed + numberPenalty);
+        if (nameGuesses.length > 0) {
+          const similarity = Math.max(
+            ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
+          );
+          prior += similarity * 0.3;
+        }
+        result.push({
+          id, setId: set.id, localId, name, altNames: ptName ? [ptName] : undefined, setOfficial: set.official,
+          setTotal: set.total, setCode: set.code, release: set.release, prior, viaVariant: true,
+        });
+      }
+    }
     result.sort((a, b) => b.prior - a.prior || (b.release ?? '').localeCompare(a.release ?? ''));
     return result.slice(0, limit);
   }
