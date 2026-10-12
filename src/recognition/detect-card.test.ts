@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderScene, syntheticCard, uniformImage } from './__fixtures__/synthetic';
 import { convexHull, detectCard, maxAreaQuad, orderQuad, polygonArea, quadAspect } from './detect-card';
-import { applyHomography, homographyFromPoints, rectify } from './homography';
+import { applyHomography, homographyFromPoints, rectify, rectifyRegion, regionQuad } from './homography';
 import type { Quad } from './types';
 
 const W = 640;
@@ -103,5 +103,39 @@ describe('detectCard (cena sintética)', () => {
   it('rejeita retângulo com proporção implausível', () => {
     const wide: Quad = [{ x: 60, y: 150 }, { x: 580, y: 150 }, { x: 580, y: 330 }, { x: 60, y: 330 }];
     expect(detectCard(renderScene(card, wide, W, H))).toBeNull();
+  });
+});
+
+describe('regiões retificadas', () => {
+  const tilted: Quad = [{ x: 200, y: 70 }, { x: 410, y: 40 }, { x: 440, y: 350 }, { x: 230, y: 330 }];
+
+  it('regionQuad da carta inteira devolve o próprio quadrilátero', () => {
+    const q = regionQuad(tilted, [0, 0, 1, 1])!;
+    q.forEach((p, i) => {
+      expect(p.x).toBeCloseTo(tilted[i]!.x, 6);
+      expect(p.y).toBeCloseTo(tilted[i]!.y, 6);
+    });
+  });
+
+  it('a faixa inferior fica entre 90% e 100% da altura, sobre a borda de baixo', () => {
+    const q = regionQuad(tilted, [0, 0.9, 1, 1])!;
+    expect(q[3].x).toBeCloseTo(tilted[3].x, 6);
+    expect(q[3].y).toBeCloseTo(tilted[3].y, 6);
+    const left = Math.hypot(q[0].x - q[3].x, q[0].y - q[3].y);
+    const full = Math.hypot(tilted[0].x - tilted[3].x, tilted[0].y - tilted[3].y);
+    expect(left / full).toBeCloseTo(0.1, 1);
+  });
+
+  it('rectifyRegion mantém a proporção da carta e mostra o conteúdo da faixa certa', () => {
+    const scene = renderScene(card, tilted, W, H);
+    const strip = rectifyRegion(scene, tilted, [0, 0.9, 1, 1], 300)!;
+    expect(strip.width).toBe(300);
+    expect(strip.height).toBe(Math.round(300 / ((1 * 63) / (0.1 * 88))));
+    // A faixa inferior da carta sintética é bege (corpo) com borda amarela: nada escuro do título.
+    let dark = 0;
+    for (let y = Math.round(strip.height * 0.25); y < strip.height * 0.75; y++) {
+      for (let x = Math.round(strip.width * 0.2); x < strip.width * 0.8; x++) if ((strip.data[(y * strip.width + x) * 4] ?? 255) < 80) dark++;
+    }
+    expect(dark).toBe(0);
   });
 });

@@ -74,3 +74,40 @@ export function rectify(image: RgbaImage, quad: Quad, width: number, height: num
   return { width, height, data: out };
 }
 
+
+/**
+ * Cantos, no quadro, de uma região fracionária da carta (caixa em frações da carta retificada).
+ * Permite retificar só a faixa desejada na resolução que a imagem de origem realmente tem,
+ * em vez de retificar a carta inteira em 630×880 e ampliar depois.
+ */
+export function regionQuad(quad: Quad, box: readonly [number, number, number, number]): Quad | null {
+  const cardCorners: Point[] = [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 1 },
+  ];
+  const toFrame = homographyFromPoints(cardCorners, quad);
+  if (!toFrame) return null;
+  const [l, t, r, b] = box;
+  return [
+    applyHomography(toFrame, { x: l, y: t }),
+    applyHomography(toFrame, { x: r, y: t }),
+    applyHomography(toFrame, { x: r, y: b }),
+    applyHomography(toFrame, { x: l, y: b }),
+  ];
+}
+
+/** Retifica uma região da carta para `outWidth` de largura, mantendo a proporção da carta (63×88). */
+export function rectifyRegion(
+  image: RgbaImage,
+  quad: Quad,
+  box: readonly [number, number, number, number],
+  outWidth: number,
+): RgbaImage | null {
+  const sub = regionQuad(quad, box);
+  if (!sub) return null;
+  const regionAspect = ((box[2] - box[0]) * 63) / ((box[3] - box[1]) * 88);
+  const outHeight = Math.max(8, Math.round(outWidth / regionAspect));
+  return rectify(image, sub, Math.round(outWidth), outHeight);
+}

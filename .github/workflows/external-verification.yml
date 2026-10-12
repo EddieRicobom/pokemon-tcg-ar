@@ -9,6 +9,8 @@ on:
       - 'scripts/verify-*.ts'
       - 'scripts/build-catalog-index.ts'
       - 'scripts/eval-recognition.eval.ts'
+      - 'scripts/eval-common.ts'
+      - 'scripts/ocr-lab.eval.ts'
       - 'scripts/annotate.mjs'
       - 'src/recognition/**'
       - '.github/workflows/external-verification.yml'
@@ -35,8 +37,17 @@ jobs:
         run: node scripts/verify-tcgdex.ts tcgdex.json
       - name: Índice do catálogo (tamanho e tempo)
         run: node scripts/build-catalog-index.ts catalog-index.json
+      - name: Laboratório de OCR (qual configuração lê melhor o número)
+        run: npx vitest run --config vitest.eval.config.ts scripts/ocr-lab.eval.ts
+        env:
+          CATALOG_INDEX: catalog-index.json
+          LAB_OUT: ocr-lab-results.json
+      - name: Anotar laboratório de OCR
+        if: always()
+        run: |
+          if [ -f ocr-lab-results.json ]; then node scripts/annotate.mjs ocr-lab-results.json "LabOCR"; fi
       - name: Avaliação do reconhecimento (cartas reais, OCR real)
-        run: npx vitest run --config vitest.eval.config.ts
+        run: npx vitest run --config vitest.eval.config.ts scripts/eval-recognition.eval.ts
         env:
           CATALOG_INDEX: catalog-index.json
           EVAL_OUT: eval-results.json
@@ -53,3 +64,4 @@ jobs:
             tcgdex.json
             catalog-index.json
             eval-results.json
+            ocr-lab-results.json

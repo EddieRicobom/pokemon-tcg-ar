@@ -10,11 +10,10 @@
  *   npx vitest run --config vitest.eval.config.ts   (gera eval-results.json)
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { PNG } from 'pngjs';
-import { createWorker, OEM, PSM } from 'tesseract.js';
 import { expect, it } from 'vitest';
-import { renderScene, prng } from '../src/recognition/__fixtures__/synthetic';
+import { prng } from '../src/recognition/__fixtures__/synthetic';
+import { createNodeOcr, decodePng, download, LEVELS, makeScene } from './eval-common';
+import type { Level } from './eval-common';
 import { detectCard } from '../src/recognition/detect-card';
 import { rectify } from '../src/recognition/homography';
 import { cropFraction } from '../src/recognition/image';
@@ -22,9 +21,6 @@ import { BOTTOM_STRIP_BOX } from '../src/recognition/layout';
 import { parseBottomText } from '../src/recognition/parse-ocr';
 import { CatalogLookup } from '../src/recognition/catalog-index';
 import type { CatalogIndexData } from '../src/recognition/catalog-index';
-import { boxBlur } from '../src/recognition/image';
-import { prepareForOcr } from '../src/recognition/ocr';
-import type { OcrEngine } from '../src/recognition/ocr';
 import { RecognitionPipeline } from '../src/recognition/pipeline';
 import type { RecognitionResult } from '../src/recognition/pipeline';
 import { TcgdexClient } from '../src/recognition/tcgdex';
@@ -36,98 +32,6 @@ const OUT_FILE = process.env.EVAL_OUT ?? 'eval-results.json';
 const SAMPLE_SETS = Number(process.env.EVAL_SETS ?? 42);
 const LANDMARKS = ['base1-58', 'base2-60', 'sv03.5-025', 'swsh1-65', 'base1-4', 'sv01-025'];
 
-type Level = 'facil' | 'medio' | 'dificil';
-const LEVELS: Level[] = ['facil', 'medio', 'dificil'];
-
-function decodePng(buffer: Buffer): RgbaImage {
-  const png = PNG.sync.read(buffer);
-  return { width: png.width, height: png.height, data: new Uint8ClampedArray(png.data) };
-}
-
-function encodePng(image: RgbaImage): Buffer {
-  const png = new PNG({ width: image.width, height: image.height });
-  png.data = Buffer.from(image.data);
-  return PNG.sync.write(png);
-}
-
-async function download(url: string): Promise<Buffer> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return Buffer.from(await response.arrayBuffer());
-    } catch (error) {
-      if (attempt >= 3) throw new Error(`${url}: ${String(error)}`);
-      await new Promise((r) => setTimeout(r, 500 * attempt));
-    }
-  }
-}
-
-function blurImage(image: RgbaImage, passes: number): RgbaImage {
-  const out = new Uint8ClampedArray(image.data);
-  for (let c = 0; c < 3; c++) {
-    let plane: Float32Array = new Float32Array(image.width * image.height);
-    for (let i = 0; i < plane.length; i++) plane[i] = image.data[i * 4 + c] ?? 0;
-    for (let p = 0; p < passes; p++) plane = boxBlur(plane, image.width, image.height);
-    for (let i = 0; i < plane.length; i++) out[i * 4 + c] = plane[i] ?? 0;
-  }
-  return { ...image, data: out };
-}
-
-/** Cena com a carta em perspectiva; a dificuldade controla inclinação, rotação, desfoque, ruído e brilho. */
-function makeScene(card: RgbaImage, seed: number, level: Level): { scene: RgbaImage; quad: Quad } {
-  const random = prng(seed);
-  const W = 960;
-  const H = 720;
-  const spec = {
-    facil: { tilt: 0, rotate: 0.05, blur: 0, noise: 0, light: 1, glare: 0 },
-    medio: { tilt: 0.12, rotate: 0.3, blur: 1, noise: 8, light: 0.9, glare: 0.1 },
-    dificil: { tilt: 0.25, rotate: 0.6, blur: 2, noise: 18, light: 0.72, glare: 0.3 },
-  }[level];
-  const h = 520 + random() * 60;
-  const w = h * (63 / 88);
-  const angle = (random() - 0.5) * 2 * spec.rotate;
-  const cx = W / 2 + (random() - 0.5) * 60;
-  const cy = H / 2 + (random() - 0.5) * 40;
-  const corners: [number, number][] = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
-  const quad = corners.map(([x, y]) => {
-    const jitterX = (random() - 0.5) * spec.tilt * w;
-    const jitterY = (random() - 0.5) * spec.tilt * h;
-    const rx = (x + jitterX) * Math.cos(angle) - (y + jitterY) * Math.sin(angle);
-    const ry = (x + jitterX) * Math.sin(angle) + (y + jitterY) * Math.cos(angle);
-    return { x: cx + rx, y: cy + ry };
-  }) as Quad;
-  let scene = renderScene(card, quad, W, H, { noise: spec.noise, seed, background: [70 + random() * 40, 60 + random() * 40, 50 + random() * 40] });
-  if (spec.blur > 0) scene = blurImage(scene, spec.blur);
-  // Brilho global e uma faixa de reflexo diagonal.
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const o = (y * W + x) * 4;
-      const glare = spec.glare * Math.max(0, 1 - Math.abs((x + y) / (W + H) - 0.5) * 6) * 120;
-      for (let c = 0; c < 3; c++) scene.data[o + c] = (scene.data[o + c] ?? 0) * spec.light + glare;
-    }
-  }
-  return { scene, quad };
-}
-
-async function createNodeOcr(): Promise<OcrEngine> {
-  const require = createRequire(import.meta.url);
-  const langPath = require.resolve('@tesseract.js-data/eng/package.json').replace('package.json', '4.0.0_best_int');
-  const worker = await createWorker('eng', OEM.LSTM_ONLY, { langPath, gzip: true, cacheMethod: 'none' });
-  return {
-    async recognize(image, region) {
-      await worker.setParameters({
-        tessedit_pageseg_mode: region === 'name' ? PSM.SINGLE_LINE : PSM.SINGLE_BLOCK,
-        user_defined_dpi: '150',
-      });
-      const result = await worker.recognize(encodePng(prepareForOcr(image)));
-      return result.data.text;
-    },
-    dispose: async () => {
-      await worker.terminate();
-    },
-  };
-}
 
 function median(values: number[]): number {
   if (values.length === 0) return 0;

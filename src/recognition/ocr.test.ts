@@ -39,4 +39,12 @@ describe('prepareForOcr', () => {
     for (let i = 0; i < out.data.length; i += 4) values.add(out.data[i] ?? 0);
     expect(Math.max(...values) - Math.min(...values)).toBeGreaterThan(200);
   });
+
+  it('binariza em preto e branco puros', () => {
+    const out = prepareForOcr(strip(200, 100, 200, 60), 96, true);
+    const values = new Set<number>();
+    for (let i = 0; i < out.data.length; i += 4) values.add(out.data[i] ?? 0);
+    expect([...values].sort()).toEqual([0, 255]);
+    expect(out.data[0]).toBe(255);
+  });
 });

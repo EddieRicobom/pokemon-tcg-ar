@@ -13,7 +13,7 @@ export interface OcrEngine {
  * Prepara a região para o Tesseract: tons de cinza, escala mínima, contraste esticado e polaridade
  * corrigida (texto escuro sobre fundo claro; cartas escuras são invertidas). Pura e testável.
  */
-export function prepareForOcr(image: RgbaImage, minHeight = 96): RgbaImage {
+export function prepareForOcr(image: RgbaImage, minHeight = 96, binarize = false): RgbaImage {
   const scale = Math.max(1, Math.ceil(minHeight / image.height));
   const scaled = scale > 1 ? upscale(image, scale) : image;
   const gray = toGray(scaled);
@@ -29,16 +29,47 @@ export function prepareForOcr(image: RgbaImage, minHeight = 96): RgbaImage {
   const mean = (sum / gray.length - min) / range;
   const invert = mean < 0.4;
   const data = new Uint8ClampedArray(gray.length * 4);
+  const otsu = binarize ? otsuThreshold(gray, min, range, invert) : 0;
   for (let i = 0; i < gray.length; i++) {
     let value = ((gray[i] ?? 0) - min) / range;
     if (invert) value = 1 - value;
-    const byte = Math.round(value * 255);
+    const byte = binarize ? (value > otsu ? 255 : 0) : Math.round(value * 255);
     data[i * 4] = byte;
     data[i * 4 + 1] = byte;
     data[i * 4 + 2] = byte;
     data[i * 4 + 3] = 255;
   }
   return { width: scaled.width, height: scaled.height, data };
+}
+
+/** Limiar de Otsu sobre o canal já normalizado em [0, 1] (e invertido, se for o caso). */
+export function otsuThreshold(gray: Float32Array, min: number, range: number, invert: boolean): number {
+  const bins = new Float64Array(256);
+  for (const g of gray) {
+    let v = (g - min) / range;
+    if (invert) v = 1 - v;
+    bins[Math.min(255, Math.max(0, Math.round(v * 255)))]!++;
+  }
+  const total = gray.length;
+  let sumAll = 0;
+  for (let i = 0; i < 256; i++) sumAll += i * bins[i]!;
+  let sumB = 0;
+  let weightB = 0;
+  let best = -1;
+  let threshold = 128;
+  for (let t = 0; t < 256; t++) {
+    weightB += bins[t]!;
+    if (weightB === 0) continue;
+    const weightF = total - weightB;
+    if (weightF === 0) break;
+    sumB += t * bins[t]!;
+    const variance = weightB * weightF * (sumB / weightB - (sumAll - sumB) / weightF) ** 2;
+    if (variance > best) {
+      best = variance;
+      threshold = t;
+    }
+  }
+  return threshold / 255;
 }
 
 function upscale(image: RgbaImage, factor: number): RgbaImage {
