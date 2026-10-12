@@ -34,7 +34,7 @@ export function frameFromSource(source: CanvasImageSource, width: number, height
 }
 
 /** Quadro atual do vídeo, com o lado maior limitado (o reconhecimento não ganha nada com 12 MP). */
-export function frameFromVideo(video: HTMLVideoElement, maxSide = 1280): RgbaImage | null {
+export function frameFromVideo(video: HTMLVideoElement, maxSide = 1920): RgbaImage | null {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   if (!vw || !vh) return null;

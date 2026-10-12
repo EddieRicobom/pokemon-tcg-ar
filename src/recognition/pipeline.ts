@@ -2,9 +2,9 @@ import { CatalogLookup } from './catalog-index';
 import { detectCard } from './detect-card';
 import { computeFeatures } from './hash';
 import type { CardFeatures } from './hash';
-import { rectify } from './homography';
+import { rectify, rectifyRegion } from './homography';
 import { cropFraction } from './image';
-import { BOTTOM_STRIP_BOX, NAME_BOX } from './layout';
+import { BOTTOM_LEFT_BOX, BOTTOM_OCR_FULL_WIDTH, BOTTOM_RIGHT_BOX, BOTTOM_STRIP_BOX, NAME_BOX } from './layout';
 import type { OcrEngine } from './ocr';
 import { parseBottomText, parseNameText } from './parse-ocr';
 import type { ParsedBottom } from './parse-ocr';
@@ -174,12 +174,12 @@ export class RecognitionPipeline {
     if (!rectified) return finish({ ...empty, status: 'no-card', quad, message: 'A carta detectada está deformada demais para corrigir a perspectiva.' });
 
     const t1 = now();
-    let read = await this.readText(rectified, false);
+    let read = await this.readText(frame, quad, rectified, false);
     if (!read.bottom.number && read.names.length === 0) {
       const flippedQuad = rotate180(quad);
       const flipped = rectify(frame, flippedQuad, CARD_WIDTH_PX, CARD_HEIGHT_PX);
       if (flipped) {
-        const flippedRead = await this.readText(flipped, false);
+        const flippedRead = await this.readText(frame, flippedQuad, flipped, false);
         if (flippedRead.bottom.number || flippedRead.names.length > 0) {
           quad = flippedQuad;
           rectified = flipped;
@@ -191,7 +191,7 @@ export class RecognitionPipeline {
     // O nome só é lido quando ajuda: sem número, ou quando o número deixa mais de um candidato.
     const t2Candidates = this.deps.catalog?.candidates(read.bottom, [], this.maxCandidates()) ?? [];
     if (!read.bottom.number || t2Candidates.length > 1) {
-      const nameRead = await this.readText(rectified, true);
+      const nameRead = await this.readText(frame, quad, rectified, true);
       read.names = nameRead.names;
       read.nameText = nameRead.nameText;
     }
@@ -319,13 +319,37 @@ export class RecognitionPipeline {
     return this.deps.maxCandidates ?? 6;
   }
 
-  private async readText(rectified: RgbaImage, nameOnly: boolean): Promise<ReadResult> {
+  /**
+   * Lê a faixa inferior direto do quadro original (retificando só a região, em resolução maior que a da
+   * carta retificada inteira). Segunda tentativa nas metades esquerda/direita, com lista de caracteres,
+   * só quando a primeira não achou número com total: o laboratório de OCR do CI mediu as duas.
+   */
+  private async readText(frame: RgbaImage, quad: Quad, rectified: RgbaImage, nameOnly: boolean): Promise<ReadResult> {
     if (nameOnly) {
       const text = await this.deps.ocr.recognize(cropFraction(rectified, NAME_BOX), 'name');
       return { bottom: {}, names: parseNameText(text), nameText: text };
     }
-    const text = await this.deps.ocr.recognize(cropFraction(rectified, BOTTOM_STRIP_BOX), 'bottom');
-    return { bottom: parseBottomText(text), names: [], bottomText: text };
+    const strip =
+      rectifyRegion(frame, quad, BOTTOM_STRIP_BOX, BOTTOM_OCR_FULL_WIDTH) ?? cropFraction(rectified, BOTTOM_STRIP_BOX);
+    let text = await this.deps.ocr.recognize(strip, 'bottom');
+    let bottom = parseBottomText(text);
+    if (!bottom.number?.total) {
+      const sides: string[] = [];
+      for (const box of [BOTTOM_LEFT_BOX, BOTTOM_RIGHT_BOX]) {
+        const region = rectifyRegion(frame, quad, box, Math.round(BOTTOM_OCR_FULL_WIDTH * (box[2] - box[0])));
+        if (region) sides.push(await this.deps.ocr.recognize(region, 'bottom-side'));
+      }
+      if (sides.length > 0) {
+        const merged = [text, ...sides].join(' \n ');
+        const mergedParsed = parseBottomText(merged);
+        // Só adota a segunda leitura se ela melhorou (o ruído das metades pode atrapalhar o que já estava bom).
+        if (mergedParsed.number?.total || !bottom.number) {
+          text = merged;
+          bottom = mergedParsed;
+        }
+      }
+    }
+    return { bottom, names: [], bottomText: text };
   }
 
   /** Sem índice estático: pergunta ao TCGdex pelas cartas com esse número e esse total. */

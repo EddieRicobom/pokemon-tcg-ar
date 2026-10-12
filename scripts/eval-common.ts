@@ -4,7 +4,7 @@ import { PNG } from 'pngjs';
 import { createWorker, OEM, PSM } from 'tesseract.js';
 import { prng, renderScene } from '../src/recognition/__fixtures__/synthetic';
 import { boxBlur } from '../src/recognition/image';
-import { prepareForOcr } from '../src/recognition/ocr';
+import { ocrParams, prepareForOcr } from '../src/recognition/ocr';
 import type { OcrEngine } from '../src/recognition/ocr';
 import type { Quad, RgbaImage } from '../src/recognition/types';
 
@@ -91,8 +91,10 @@ export async function createNodeOcr(): Promise<OcrEngine> {
   const worker = await createWorker('eng', OEM.LSTM_ONLY, { langPath, gzip: true, cacheMethod: 'none' });
   return {
     async recognize(image, region) {
+      const params = ocrParams(region);
       await worker.setParameters({
-        tessedit_pageseg_mode: region === 'name' ? PSM.SINGLE_LINE : PSM.SINGLE_BLOCK,
+        tessedit_pageseg_mode: params.psm === '7' ? PSM.SINGLE_LINE : PSM.SINGLE_BLOCK,
+        tessedit_char_whitelist: params.whitelist,
         user_defined_dpi: '150',
       });
       const result = await worker.recognize(encodePng(prepareForOcr(image)));

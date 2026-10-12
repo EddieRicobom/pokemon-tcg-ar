@@ -1,8 +1,20 @@
 import { resizeAverage, toGray } from './image';
 import type { RgbaImage } from './types';
 
-/** Tipo de região lida: a faixa inferior (número, código do set) ou a faixa do nome. */
-export type OcrRegion = 'bottom' | 'name';
+/**
+ * Tipo de região lida: a faixa inferior inteira (número, código do set), as metades esquerda/direita dessa
+ * faixa (segunda tentativa, com lista de caracteres) ou a faixa do nome.
+ */
+export type OcrRegion = 'bottom' | 'bottom-side' | 'name';
+
+/** Caracteres que aparecem no número de coleção e no código do set (segunda tentativa de leitura). */
+export const BOTTOM_WHITELIST = '0123456789/ ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+/** Modos de página do Tesseract usados (6 = bloco, 7 = linha). Escolhidos pelo laboratório de OCR do CI. */
+export function ocrParams(region: OcrRegion): { psm: '6' | '7'; whitelist: string } {
+  if (region === 'name') return { psm: '7', whitelist: '' };
+  return { psm: '6', whitelist: region === 'bottom-side' ? BOTTOM_WHITELIST : '' };
+}
 
 export interface OcrEngine {
   recognize(image: RgbaImage, region: OcrRegion): Promise<string>;
@@ -100,8 +112,10 @@ export async function createTesseractEngine(options: TesseractEngineOptions): Pr
   });
   return {
     async recognize(image, region) {
+      const params = ocrParams(region);
       await worker.setParameters({
-        tessedit_pageseg_mode: region === 'name' ? Tesseract.PSM.SINGLE_LINE : Tesseract.PSM.SINGLE_BLOCK,
+        tessedit_pageseg_mode: params.psm === '7' ? Tesseract.PSM.SINGLE_LINE : Tesseract.PSM.SINGLE_BLOCK,
+        tessedit_char_whitelist: params.whitelist,
         user_defined_dpi: '150',
       });
       const result = await worker.recognize(options.toCanvas(prepareForOcr(image)));

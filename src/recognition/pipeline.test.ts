@@ -125,6 +125,23 @@ describe('RecognitionPipeline', () => {
     expect(calls.ocr).toEqual([]);
   });
 
+  it('segunda tentativa nas metades da faixa quando a leitura inteira não acha o número', async () => {
+    const calls2: OcrRegion[] = [];
+    const { deps } = makeDeps({
+      ocr: {
+        async recognize(_i, region) {
+          calls2.push(region);
+          if (region === 'bottom') return 'ruído ilegível';
+          return region === 'bottom-side' ? '60/64' : 'Pikachu';
+        },
+        async dispose() {},
+      },
+    });
+    const result = await new RecognitionPipeline(deps).recognize(photoOf(3));
+    expect(calls2.slice(0, 3)).toEqual(['bottom', 'bottom-side', 'bottom-side']);
+    expect(result.card?.id).toBe('base2-60');
+  });
+
   it('sem carta no quadro: não chama OCR nem rede', async () => {
     const { deps, calls } = makeDeps();
     const result = await new RecognitionPipeline(deps).recognize(uniformImage(640, 480, [80, 80, 80]));
