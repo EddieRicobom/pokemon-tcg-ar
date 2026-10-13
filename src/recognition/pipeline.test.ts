@@ -108,6 +108,16 @@ describe('RecognitionPipeline', () => {
     }
   });
 
+  it('número com total lido: a busca pela ilustração nem é consultada (só entra quando o texto não bastou)', async () => {
+    const { deps } = makeDeps();
+    let consulted = 0;
+    const art = artIndexOf({ 'base1-58': 1, 'hgss4-58': 2, 'base2-60': 3 });
+    const result = await new RecognitionPipeline({ ...deps, artSearch: async () => { consulted++; return art; } }).recognize(photoOf(1));
+    expect(result.status).toBe('identified');
+    expect(consulted).toBe(0);
+    expect(result.metrics.artCandidates).toBeUndefined();
+  });
+
   it('escolhe a impressão exata entre cartas com o mesmo número/total e devolve o dexId', async () => {
     const { deps, calls } = makeDeps();
     const result = await new RecognitionPipeline(deps).recognize(photoOf(1));

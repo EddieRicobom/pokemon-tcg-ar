@@ -26,7 +26,7 @@ let catalogPromise: Promise<CatalogLookup | null> | null = null;
 let ocrPromise: Promise<OcrEngine> | null = null;
 let pipeline: RecognitionPipeline | null = null;
 let artPromise: Promise<ArtIndex | null> | null = null;
-let artSearchOn = false;
+let artSearchOn = true;
 let captureDebugOn = false;
 let ocrListener: ((status: string, progress: number) => void) | null = null;
 

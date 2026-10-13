@@ -98,7 +98,7 @@ O reconhecimento é busca pelo vizinho mais próximo em um índice, não um clas
 - Versões das actions verificadas na data da entrega: `checkout` v7, `setup-node` v7, `configure-pages` v6, `upload-pages-artifact` v5, `deploy-pages` v5.
 
 
-## Busca pela ilustração (opcional, experimental)
+## Busca pela ilustração (reserva automática)
 
 Um índice estático (`public/data/art-index.json` + `art-index.bin`, 112 bytes por carta) é gerado no deploy por
 `scripts/build-art-index.ts`: baixa a imagem `low.webp` de cada carta no TCGdex, calcula as mesmas características do app
@@ -107,3 +107,29 @@ quando a opção está ligada); nunca as imagens. Com a opção ligada, o pipeli
 candidatas do OCR e confirma comparando com a imagem de referência real. Impressões com a mesma arte continuam ambíguas.
 A geração é incremental (`actions/cache`) e limitada por tempo (`ART_BUDGET_MIN`); o app usa o que estiver no índice.
 Precisão **não medida** com fotos reais.
+
+
+> Atualização (out/2026): a busca pela ilustração agora está **ligada por padrão** e só é consultada quando o texto não bastou
+> (número com total não lido ou nenhuma candidata). Pode ser desligada na tela Escanear.
+
+## Detecção da carta (`src/recognition/detect-card.ts`, `quad-lines.ts`)
+
+Três estratégias dão candidatas a quadrilátero, todas avaliadas pela mesma pontuação (`candidateScore`: área × apoio de borda nos 4 lados × proporção de carta 0,716):
+
+1. contornos de bordas (Sobel);
+2. máscara de primeiro plano em vários limiares (Otsu e frações), com fechamento e preenchimento de buracos;
+3. **retas**: gradiente de cor + transformada de Hough + pares de retas quase paralelas/perpendiculares, com ajuste por mínimos quadrados.
+
+Motivo: com a foto real de um celular (carta amarela num protetor sobre parede cinza), só a ilustração era achada (24% do quadro, proporção 0,86); a carta saía girada e o OCR lia o topo. Fixture e testes: `src/recognition/real-photos.test.ts`.
+
+## OCR e velocidade
+
+Ordem: faixa de baixo na orientação detectada → mesma faixa girada 180° → metades esquerda/direita (só se nada achou número e total) → nome. Cada passada do Tesseract custa segundos no celular, por isso nenhuma é repetida.
+
+## AR
+
+`ScanView` → `prepareArAssets` (`src/app/ar-prepare.ts`) → `startAr`. Etapas visíveis (`src/app/ar-stages.ts`): carta selecionada → dados/referência → alvo compilado → motor iniciado → procurando → rastreada → Pokémon exibido; qualquer erro termina em estado `error` com ações de recuperação.
+
+- Alvo `.mind`: compilado no aparelho a partir da imagem `high` do TCGdex (600 px). `TARGET_VERSION` (em `src/ar/target.ts`) entra na chave do alvo no cache; versão diferente = descartado e recompilado. Compilação tem limite de 120 s.
+- Rastreador (`mindar-engine.ts`): lê um canvas reduzido (`frame-relay.ts`, máx. 640 px), não o `<video>` direto.
+- Sprite (`card-sprite.ts`): em pé (90° da carta) e girado em torno da normal da carta para ficar de frente para a câmera (`faceCamera`).

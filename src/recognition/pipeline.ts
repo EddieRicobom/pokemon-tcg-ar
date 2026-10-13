@@ -295,7 +295,10 @@ export class RecognitionPipeline {
     }
     // 2b) Busca pela ilustração (opção): as cartas de aparência mais parecida viram candidatas extras. Elas ainda
     // passam pela comparação com a imagem de referência real; impressões com a mesma arte seguem ambíguas.
-    const artIndex = this.deps.artSearch ? await this.deps.artSearch().catch(() => null) : null;
+    // Só entra quando o texto não bastou (sem número com total, ou nenhuma candidata): quando o número já
+    // identifica a carta, não vale carregar o índice nem misturar candidatas.
+    const textWeak = indexCandidates.length === 0 || !read.bottom.number?.total;
+    const artIndex = this.deps.artSearch && textWeak ? await this.deps.artSearch().catch(() => null) : null;
     if (artIndex && this.deps.catalog) {
       const known = new Set(indexCandidates.map((c) => c.id));
       const extra = artIndex
