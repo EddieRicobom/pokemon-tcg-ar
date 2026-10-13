@@ -9,6 +9,21 @@ interface MindArController {
 }
 
 /**
+ * Ajustes do rastreador. Os padrões do MindAR (5 e 5) escondem a carta após ~5 quadros sem pose,
+ * o que no celular (quadros lentos, mão tremendo) acontece o tempo todo. Aqui:
+ * - warmupTolerance: quadros seguidos rastreados antes de mostrar (a carta já foi reconhecida, então pode ser baixo);
+ * - missTolerance: quadros sem pose antes de esconder. Enquanto isso o MindAR continua devolvendo a última pose
+ *   e tentando reencontrar a carta, então o Pokémon não some em perdas curtas;
+ * - filterMinCF/filterBeta: filtro de suavização (One Euro); menor CF = menos tremor, mais atraso.
+ */
+export const TRACKING_TUNING = {
+  warmupTolerance: 3,
+  missTolerance: 45,
+  filterMinCF: 0.0005,
+  filterBeta: 800,
+} as const;
+
+/**
  * Rastreamento com o `Controller` do MindAR (MIT). Não usamos o `MindARThree` porque ele importa
  * `sRGBEncoding`, que o Three.js r186 removeu; o `Controller` é independente do Three.js e a cena é nossa.
  * Carregado por import dinâmico: o TensorFlow.js só é baixado quando o AR é usado.
@@ -26,6 +41,7 @@ export class MindArEngine implements TrackingEngine {
       inputWidth,
       inputHeight,
       maxTrack: 1,
+      ...TRACKING_TUNING,
       onUpdate: (data: { type: string; worldMatrix?: ArrayLike<number> | null }) => {
         if (data.type === 'updateMatrix') onUpdate({ worldMatrix: data.worldMatrix ?? null });
       },

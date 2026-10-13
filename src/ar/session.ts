@@ -33,6 +33,9 @@ export interface ArSessionDeps {
   onState?: (state: ArState) => void;
   /** Quadros seguidos sem pose antes de declarar "carta perdida" na interface. */
   lostAfterFrames?: number;
+  /** Tempo (ms) que o Pokémon continua visível, na última pose, depois que o rastreador perde a carta. */
+  holdMs?: number;
+  now?: () => number;
 }
 
 /**
@@ -47,6 +50,7 @@ export class ArSession {
   private handle: number | null = null;
   private running = false;
   private missedFrames = 0;
+  private lastPoseAt = 0;
   private state: ArState = { phase: 'idle', foundCount: 0 };
 
   constructor(private readonly deps: ArSessionDeps) {
@@ -83,6 +87,10 @@ export class ArSession {
     this.loop();
   }
 
+  private clock(): number {
+    return (this.deps.now ?? (() => performance.now()))();
+  }
+
   private onTrack(update: TrackingUpdate): void {
     if (!this.info) return;
     const sprite = this.deps.sprite;
@@ -90,9 +98,11 @@ export class ArSession {
       sprite.setCardMatrix(cardSpaceMatrix(update.worldMatrix, this.info.markerWidth, this.info.markerHeight));
       sprite.setTracked(true);
       this.missedFrames = 0;
+      this.lastPoseAt = this.clock();
       if (this.state.phase !== 'tracking') this.setState({ phase: 'tracking', message: undefined, foundCount: this.state.foundCount + 1 });
     } else {
-      sprite.setTracked(false);
+      // Perda curta: mantém o Pokémon na última pose em vez de piscar enquanto o rastreador reencontra a carta.
+      if (this.clock() - this.lastPoseAt > (this.deps.holdMs ?? 700)) sprite.setTracked(false);
       this.missedFrames++;
       const limit = this.deps.lostAfterFrames ?? 10;
       if (this.state.phase === 'tracking' && this.missedFrames >= limit) {

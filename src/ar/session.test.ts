@@ -21,7 +21,7 @@ class FakeEngine implements TrackingEngine {
   stop() { this.stopped++; }
 }
 
-function setup(options: { lostAfterFrames?: number } = {}) {
+function setup(options: { lostAfterFrames?: number; holdMs?: number; now?: () => number } = {}) {
   const engine = new FakeEngine();
   const renders: number[] = [];
   const renderer: RenderBackend = {
@@ -55,7 +55,7 @@ describe('ArSession', () => {
   });
 
   it('carta encontrada: mostra o sprite e o coloca no espaço da carta; perdida: esconde', async () => {
-    const { session, engine, sprite, pose } = setup({ lostAfterFrames: 3 });
+    const { session, engine, sprite, pose } = setup({ lostAfterFrames: 3, holdMs: 0 });
     await session.start(new ArrayBuffer(8));
     expect(sprite.group.visible).toBe(false);
     engine.onUpdate!({ worldMatrix: pose });
@@ -74,6 +74,22 @@ describe('ArSession', () => {
     engine.onUpdate!({ worldMatrix: null });
     expect(session.currentState.phase).toBe('lost');
     expect(session.currentState.message).toMatch(/Perdi/);
+  });
+
+  it('perda curta: mantém o sprite na última pose durante holdMs e só então esconde', async () => {
+    let t = 1000;
+    const { session, engine, sprite, pose } = setup({ holdMs: 700, now: () => t });
+    await session.start(new ArrayBuffer(8));
+    engine.onUpdate!({ worldMatrix: pose });
+    t += 300;
+    engine.onUpdate!({ worldMatrix: null });
+    expect(sprite.group.visible).toBe(true);
+    t += 600;
+    engine.onUpdate!({ worldMatrix: null });
+    expect(sprite.group.visible).toBe(false);
+    t += 10;
+    engine.onUpdate!({ worldMatrix: pose });
+    expect(sprite.group.visible).toBe(true);
   });
 
   it('segue o movimento: cada nova pose atualiza a matriz do sprite', async () => {
