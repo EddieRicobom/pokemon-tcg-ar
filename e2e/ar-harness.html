@@ -1,0 +1,44 @@
+<!doctype html><meta charset="utf-8"><title>AR harness</title>
+<style>body{margin:0}#stage{position:relative;width:480px;height:360px}video,canvas{position:absolute;inset:0;width:100%;height:100%}video{object-fit:cover}</style>
+<div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="c"></canvas></div>
+<script type="module">
+import { compileTarget } from '../src/ar/target.ts';
+import { startAr } from '../src/ar/start-ar.ts';
+import { Controller } from 'mind-ar/src/image-target/controller.js';
+const orig = Controller.prototype._detectAndMatch;
+let n = 0;
+Controller.prototype._detectAndMatch = async function (...args) {
+  const t = performance.now();
+  const r = await orig.apply(this, args);
+  n++;
+  if (n <= 8 || n % 20 === 0) window.log.push('detectAndMatch#' + n + ' idx=' + r.targetIndex + ' ' + Math.round(performance.now() - t) + 'ms' + (r.debugExtra ? ' keys=' + Object.keys(r.debugExtra).join(',') : ''));
+  return r;
+};
+window.log = [];
+const backend = new URLSearchParams(location.search).get('backend');
+if (backend) { const tf = await import('@tensorflow/tfjs'); await tf.setBackend(backend); await tf.ready(); window.log.push('tf backend ' + tf.getBackend()); }
+const log = (m) => { window.log.push(m); };
+window.run = async () => {
+  try {
+    const v = document.getElementById('v');
+    v.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+    await v.play();
+    log('camera ' + v.videoWidth + 'x' + v.videoHeight);
+    const card = await (await fetch('./card.png')).blob();
+    const t0 = performance.now();
+    const target = await compileTarget(card, (p) => {});
+    log('compiled ' + Math.round(performance.now() - t0) + 'ms ' + target.size + 'B');
+    const gif = await (await fetch('./sprite.gif')).blob();
+    const ar = await startAr({
+      video: v, canvas: document.getElementById('c'), container: document.getElementById('stage'),
+      target: await target.arrayBuffer(), dexId: 25,
+      cachedSprite: { kind: 'gif', url: 'local.gif', blob: gif },
+      fetchSprite: async () => null,
+      onState: (s) => log('state ' + s.phase),
+      onSprite: (s) => log('sprite ' + s.kind),
+    });
+    window.ar = ar;
+    log('started');
+  } catch (e) { log('ERROR ' + (e && e.stack || e)); }
+};
+</script>
