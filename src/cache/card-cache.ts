@@ -1,3 +1,4 @@
+import { TARGET_VERSION } from '../ar/target';
 import { fetchSprite as defaultFetchSprite } from '../ar/sprite-source';
 import type { SpriteSource } from '../ar/sprite-source';
 import { computeFeatures, featuresFromJson, featuresToJson, FEATURE_VERSION } from '../recognition/hash';
@@ -27,6 +28,8 @@ export interface CardCacheDeps {
   fetchSprite?: (dexId: number) => Promise<SpriteSource | null>;
   /** Compila o alvo de AR (arquivo .mind) a partir da imagem de referência. Opcional (Marco 4). */
   buildTarget?: (reference: Blob) => Promise<Blob>;
+  /** Baixa a imagem em alta resolução só para compilar o alvo (não é guardada). Se falhar, usa a referência guardada. */
+  fetchTargetImage?: (url: string) => Promise<Blob>;
   /** Decodifica a referência em pixels (para recalcular características). */
   decodeReference?: (blob: Blob) => Promise<RgbaImage>;
   now?: () => number;
@@ -72,8 +75,9 @@ export interface PrepareResult {
 }
 
 const TARGET_PREFIX = '/__tcg-ar__/target/';
+/** A versão entra na chave: um alvo novo nunca é confundido com um antigo já guardado. */
 export function targetKey(cardId: string): string {
-  return `${TARGET_PREFIX}${encodeURIComponent(cardId)}.mind`;
+  return `${TARGET_PREFIX}v${TARGET_VERSION}/${encodeURIComponent(cardId)}.mind`;
 }
 
 const emptySlot = (): SlotInfo => ({ state: 'missing' });
@@ -309,16 +313,39 @@ export class CardCache {
       await this.save(card);
     }
 
-    // 3) Alvo de AR (compilado a partir da referência, só se o compilador estiver disponível)
+    // 3) Alvo de AR (compilado a partir da imagem em alta resolução; a de baixa só serve de reserva)
     report('alvo de AR');
+    if (card.target.state === 'ok' && card.target.version !== TARGET_VERSION) {
+      // Alvo de uma versão antiga (imagem ruim): descarta para ser recompilado, nunca reutiliza.
+      if (card.target.key) await this.release(id, card.target.key);
+      card = { ...card, target: { state: 'missing' } };
+      await this.save(card);
+    }
     if (card.target.state !== 'ok' && this.deps.buildTarget) {
-      const reference = await this.getAssetBlob(card, 'reference');
-      if (!reference) {
+      const lowReference = await this.getAssetBlob(card, 'reference');
+      let source: Blob | null = null;
+      let quality: 'alta' | 'baixa' = 'baixa';
+      if (card.imageBase) {
+        const highUrl = cardImageUrl(card.imageBase, 'high', 'webp');
+        try {
+          source = await this.withRetry(async () => {
+            if (this.deps.fetchTargetImage) return this.deps.fetchTargetImage(highUrl);
+            const response = await this.fetchImpl(highUrl);
+            if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar a imagem em alta resolução`);
+            return response.blob();
+          });
+          quality = 'alta';
+        } catch {
+          source = null; // cai para a referência de baixa resolução
+        }
+      }
+      source ??= lowReference;
+      if (!source) {
         card = { ...card, target: { state: 'missing' } };
       } else {
         try {
-          const target = await this.deps.buildTarget(reference);
-          card = { ...card, target: await this.storeAsset(id, 'target', targetKey(id), target, card.target) };
+          const target = await this.deps.buildTarget(source);
+          card = { ...card, target: { ...(await this.storeAsset(id, 'target', targetKey(id), target, card.target)), version: TARGET_VERSION, source: quality } };
         } catch (error) {
           card = { ...card, target: this.errorSlot(card.target, error) };
         }

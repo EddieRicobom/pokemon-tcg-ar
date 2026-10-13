@@ -5,7 +5,9 @@ import type { SpriteLayout } from '../ar/anchor';
 import type { RunningAr } from '../ar/start-ar';
 import type { ArState } from '../ar/session';
 import type { SpriteLoadState } from '../ar/sprite-loader';
-import type { SpriteSource } from '../ar/sprite-source';
+import { prepareArAssets } from '../app/ar-prepare';
+import { arStepList, arStatusText } from '../app/ar-stages';
+import type { ArStage } from '../app/ar-stages';
 import { ScanController } from '../app/scan-controller';
 import type { ScanState } from '../app/scan-controller';
 import { fetchSprite, getArtIndex, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress, setArtSearch, setCaptureDebug } from '../app/services';
@@ -31,7 +33,13 @@ const loadingEngine = ref('');
 const scan = ref<ScanState>({ phase: 'idle', message: '', frames: 0 });
 const arState = ref<ArState>({ phase: 'idle', foundCount: 0 });
 const spriteState = ref<SpriteLoadState | null>(null);
-const arMessage = ref('');
+const arStage = ref<ArStage>('idle');
+const arDetail = ref('');
+const arError = ref('');
+const arFailedAt = ref<ArStage>('preparing');
+const pendingArCardId = ref<string | null>(null);
+let arRun = 0;
+let lastReadyCard: unknown = null;
 const showLayout = ref(false);
 const arActive = ref(false);
 
@@ -173,23 +181,6 @@ let controller: ScanController | null = null;
 let ar: RunningAr | null = null;
 let disposed = false;
 
-const phaseText = computed(() => {
-  switch (arState.value.phase) {
-    case 'starting':
-      return 'Preparando o rastreamento…';
-    case 'searching':
-      return 'Aponte a câmera para a carta (a mesma impressão que foi reconhecida).';
-    case 'tracking':
-      return 'Carta rastreada.';
-    case 'lost':
-      return 'Perdi a carta. Aponte de novo para ela.';
-    case 'error':
-      return arState.value.message ?? 'O rastreamento falhou.';
-    default:
-      return '';
-  }
-});
-
 const spriteText = computed(() => {
   const s = spriteState.value;
   if (!s) return '';
@@ -222,7 +213,10 @@ async function ensureController(): Promise<ScanController> {
     onState: (state) => {
       scan.value = state;
       if (state.last) lastAttempt.value = state.last;
-      if (state.phase === 'ready' && state.card) void startArFor(state.card.id);
+      if (state.phase === 'ready' && state.card && state.card !== lastReadyCard) {
+        lastReadyCard = state.card;
+        void startArFor(state.card.id);
+      }
     },
   });
   return controller;
@@ -242,15 +236,16 @@ async function openCamera(): Promise<void> {
   } finally {
     cameraBusy.value = false;
   }
-  if (props.cardId) {
-    void startArFor(props.cardId);
+  const waiting = props.cardId ?? pendingArCardId.value;
+  if (waiting) {
+    void startArFor(waiting);
   } else {
     await beginScan();
   }
 }
 
 async function beginScan(): Promise<void> {
-  stopAr();
+  dismissAr();
   loadingEngine.value = 'Carregando o leitor de texto (na primeira vez baixa ≈ 7 MB e fica guardado)…';
   onOcrProgress((status, progress) => {
     loadingEngine.value = `Leitor de texto: ${status} ${Math.round(progress * 100)}%`;
@@ -270,58 +265,104 @@ async function beginScan(): Promise<void> {
 }
 
 async function startArFor(cardId: string): Promise<void> {
+  pendingArCardId.value = cardId;
+  arError.value = '';
   if (!cameraOn.value || !videoEl.value || !canvasEl.value || !stageEl.value) {
-    arMessage.value = 'Abra a câmera para ver a carta em AR.';
+    // Carta escolhida, mas sem câmera: fica esperando (o botão "Abrir câmera" continua daqui).
+    stopAr();
+    arStage.value = 'selected';
     return;
   }
+  const run = ++arRun;
   stopAr();
   // Recria o elemento <canvas> para garantir contexto WebGL novo sem contaminação anterior
   arCanvasKey.value++;
   await nextTick();
-  arMessage.value = '';
   spriteState.value = null;
-  const cache = await getCache();
-  let card = await cache.get(cardId);
-  if (!card) {
-    arMessage.value = 'Essa carta não está mais guardada neste aparelho.';
+  arStage.value = 'preparing';
+  arDetail.value = 'Preparando os dados e a imagem de referência…';
+  let assets;
+  try {
+    assets = await prepareArAssets(await getCache(), cardId, (stage, detail) => {
+      if (run !== arRun) return;
+      arStage.value = stage === 'alvo' ? 'compiling' : 'preparing';
+      arDetail.value = detail;
+    });
+  } catch (error) {
+    if (run === arRun) failAr(error instanceof Error ? error.message : String(error));
     return;
   }
-  if (card.target.state !== 'ok') {
-    // O alvo de AR é compilado no aparelho; se ainda não está pronto, prepara agora.
-    scan.value = { ...scan.value, phase: 'preparing', message: 'Compilando o alvo de rastreamento da carta…' };
-    card = (await cache.prepareCard(cardId)).card;
-    // Pequena pausa para a GPU móvel e o GC liberarem buffers do TensorFlow.js Compiler antes do Three.js subir
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  const targetBlob = await cache.getAssetBlob(card, 'target');
-  if (!targetBlob) {
-    arMessage.value = `Não foi possível preparar o alvo de rastreamento desta carta${card.target.error ? `: ${card.target.error}` : ''}. Use "Recarregar" na tela Carregar.`;
-    return;
-  }
-  const spriteBlob = card.sprite.state === 'ok' && card.sprite.key ? await cache.getAssetBlob(card, 'sprite') : null;
-  const cachedSprite: SpriteSource | null =
-    spriteBlob && card.sprite.key ? { kind: card.sprite.kind ?? 'gif', url: card.sprite.key, blob: spriteBlob } : null;
+  if (run !== arRun || disposed) return;
+  // Pequena pausa para a GPU móvel e o GC liberarem buffers do TensorFlow.js Compiler antes do Three.js subir
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  if (run !== arRun || disposed || !videoEl.value || !canvasEl.value || !stageEl.value) return;
+  arStage.value = 'engine';
+  arDetail.value = 'Iniciando o motor de rastreamento…';
   try {
     const { startAr } = await import('../ar/start-ar');
-    if (disposed || !videoEl.value || !canvasEl.value || !stageEl.value) return;
-    ar = await startAr({
+    const started = await startAr({
       video: videoEl.value,
       canvas: canvasEl.value,
       container: stageEl.value,
-      target: await targetBlob.arrayBuffer(),
-      dexId: card.dexIds[0],
-      cachedSprite,
+      target: assets.target,
+      dexId: assets.card.dexIds[0],
+      cachedSprite: assets.cachedSprite,
       fetchSprite: (dexId) => fetchSprite(dexId),
-      onState: (state) => (arState.value = state),
-      onSprite: (state) => (spriteState.value = state),
+      onState: (state) => {
+        if (run !== arRun) return;
+        arState.value = state;
+        if (state.phase === 'searching' || state.phase === 'tracking' || state.phase === 'lost') arStage.value = state.phase;
+        else if (state.phase === 'error') failAr(state.message ?? 'O rastreamento falhou.');
+      },
+      onSprite: (state) => {
+        if (run === arRun) spriteState.value = state;
+      },
     });
+    if (run !== arRun || disposed) {
+      started.stop();
+      return;
+    }
+    ar = started;
     ar.session.setLayout(clampLayout(layout));
     arActive.value = true;
-    scan.value = { ...scan.value, phase: 'ready', message: `${card.name} · ${card.setName} ${card.localId}`, card };
+    if (arStage.value === 'engine') arStage.value = 'searching';
   } catch (error) {
-    arMessage.value = `O AR não pôde ser iniciado: ${error instanceof Error ? error.message : String(error)}`;
+    if (run === arRun) failAr(`O motor de rastreamento não iniciou: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
+
+/** Todo erro do AR termina aqui: estado final coerente, mensagem visível e ações de recuperação. */
+function failAr(message: string): void {
+  arError.value = message;
+  if (arStage.value !== 'error' && arStage.value !== 'idle') arFailedAt.value = arStage.value;
+  arStage.value = 'error';
+  arDetail.value = '';
+}
+
+async function recompileAr(): Promise<void> {
+  const id = pendingArCardId.value;
+  if (!id) return;
+  arError.value = '';
+  try {
+    await (await getCache()).reload(id);
+  } catch (error) {
+    failAr(`Não consegui recarregar a carta: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  await startArFor(id);
+}
+
+function dismissAr(): void {
+  arRun++;
+  lastReadyCard = null;
+  stopAr();
+  pendingArCardId.value = null;
+  arStage.value = 'idle';
+  arError.value = '';
+}
+
+const arSteps = computed(() => arStepList(arStage.value, spriteState.value?.kind, Boolean(pendingArCardId.value), arFailedAt.value));
+const arHudText = computed(() => arStatusText(arStage.value, arDetail.value, spriteState.value?.kind));
 
 function stopAr(): void {
   ar?.stop();
@@ -331,7 +372,7 @@ function stopAr(): void {
 }
 
 async function scanAnother(): Promise<void> {
-  stopAr();
+  dismissAr();
   scan.value = { phase: 'scanning', frames: 0, message: 'Procurando a carta…' };
   if (props.cardId) {
     window.location.hash = routeHref('escanear');
@@ -346,10 +387,12 @@ async function retrySprite(): Promise<void> {
 
 function closeCamera(): void {
   controller?.stop();
+  arRun++;
   stopAr();
   stopCamera(videoEl.value, stream);
   stream = null;
   cameraOn.value = false;
+  arStage.value = pendingArCardId.value ? 'selected' : 'idle';
   scan.value = { phase: 'idle', message: '', frames: 0 };
 }
 
@@ -377,6 +420,7 @@ if (props.cardId) {
 
 onBeforeUnmount(() => {
   disposed = true;
+  arRun++;
   controller?.stop();
   stopAr();
   stopCamera(videoEl.value, stream);
@@ -405,7 +449,7 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       <canvas ref="debugCanvasEl" class="overlay debug-quad" aria-hidden="true"></canvas>
       <p v-if="!cameraOn" class="placeholder">{{ cameraBusy ? 'Abrindo a câmera…' : 'Câmera desligada' }}</p>
       <p v-if="showScanInfo" class="hud" role="status">{{ scan.message }}</p>
-      <p v-else-if="arState.phase !== 'idle'" class="hud" role="status">{{ phaseText }}</p>
+      <p v-else-if="arHudText" class="hud" role="status">{{ arHudText }}</p>
     </div>
 
     <div class="actions">
@@ -469,7 +513,21 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
 
     <p v-if="scan.phase === 'preparing'" class="message" role="status">{{ scan.message }}</p>
     <p v-if="scan.phase === 'error'" class="message error" role="alert">{{ scan.message }}</p>
-    <p v-if="arMessage" class="message error" role="alert">{{ arMessage }}</p>
+    <div v-if="arStage !== 'idle'" class="ar-panel" role="status" aria-live="polite">
+      <ol class="ar-steps">
+        <li v-for="step in arSteps" :key="step.key" :class="step.state">{{ step.label }}</li>
+      </ol>
+      <p v-if="arStage === 'selected'" class="message">Carta escolhida. Abra a câmera para ver o Pokémon sobre ela.</p>
+      <p v-if="arDetail && (arStage === 'preparing' || arStage === 'compiling' || arStage === 'engine')" class="message">{{ arDetail }}</p>
+      <template v-if="arStage === 'error'">
+        <p class="message error" role="alert">{{ arError }}</p>
+        <div class="actions">
+          <button type="button" class="primary" @click="startArFor(pendingArCardId as string)">Tentar de novo</button>
+          <button type="button" @click="recompileAr">Recompilar o alvo da carta</button>
+          <button type="button" @click="dismissAr">Escolher outra carta</button>
+        </div>
+      </template>
+    </div>
 
     <div v-if="scan.card && scan.phase === 'ready'" class="result" role="status">
       <h3>{{ scan.card.name }}</h3>

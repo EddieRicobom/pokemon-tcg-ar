@@ -591,3 +591,14 @@ small {
   font-size: 0.78rem;
   color: var(--muted);
 }
+
+/* Etapas do AR */
+.ar-panel { margin: 0.75rem 0; }
+.ar-steps { list-style: none; margin: 0 0 0.5rem; padding: 0; display: grid; gap: 0.25rem; font-size: 0.9rem; }
+.ar-steps li::before { display: inline-block; width: 1.4em; }
+.ar-steps li.pending { opacity: 0.55; }
+.ar-steps li.pending::before { content: '○'; }
+.ar-steps li.active::before { content: '◔'; }
+.ar-steps li.done::before { content: '✓'; color: #2e9e5b; }
+.ar-steps li.failed { color: #c0392b; font-weight: 600; }
+.ar-steps li.failed::before { content: '✕'; }
