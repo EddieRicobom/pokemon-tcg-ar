@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   cameraParamsFromProjection, cardHeightUnits, cardSpaceMatrix, clampLayout, DEFAULT_LAYOUT, mindArPostMatrix, multiply,
-  spriteCorners, spriteMatrix, transformPoint,
+  spriteCorners, spriteMatrix, transformPoint, cameraPositionInCardSpace, yawTowardCamera,
 } from './anchor';
 import type { SpriteLayout } from './anchor';
 
@@ -147,5 +147,34 @@ describe('cameraParamsFromProjection', () => {
     const p = cameraParamsFromProjection(proj, 640, 480, 640, 480);
     expect(p.near).toBeCloseTo(10, 3);
     expect(p.far).toBeCloseTo(100000, 0);
+  });
+});
+
+describe('sprite de frente para a câmera, sem deixar de ficar em pé', () => {
+  const at = (p: [number, number, number]): number[] => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -p[0], -p[1], -p[2], 1];
+
+  it('posição da câmera no espaço da carta é recuperada da matriz', () => {
+    expect(cameraPositionInCardSpace(at([1, -2, 3]))).toEqual([1, -2, 3].map((v) => expect.closeTo(v, 9)));
+  });
+  it('câmera do lado da borda inferior da carta: giro 0 (o padrão original)', () => {
+    expect(yawTowardCamera(at([0, -2, 2]))).toBeCloseTo(0, 6);
+  });
+  it('câmera à direita e abaixo: o sprite gira para ela', () => {
+    expect(yawTowardCamera(at([1, -2, 3]))).toBeCloseTo((Math.atan2(1, 2) * 180) / Math.PI, 6);
+  });
+  it('a frente do sprite aponta para a câmera depois do giro', () => {
+    const yaw = yawTowardCamera(at([-2, 1, 3]))!;
+    const m = spriteMatrix(DEFAULT_LAYOUT, 1, yaw);
+    // Eixo Z do plano = normal (frente): deve ter a mesma direção horizontal da câmera.
+    const normal = [m[8]!, m[9]!];
+    const len = Math.hypot(normal[0]!, normal[1]!);
+    expect(normal[0]! / len).toBeCloseTo(-2 / Math.hypot(-2, 1), 6);
+    expect(normal[1]! / len).toBeCloseTo(1 / Math.hypot(-2, 1), 6);
+    // Continua a 90° da carta: nenhum componente do eixo "alto" do sprite no plano da carta.
+    expect(m[4]).toBeCloseTo(0, 9);
+    expect(m[5]).toBeCloseTo(0, 9);
+  });
+  it('câmera quase na vertical da carta: direção instável, mantém o giro anterior (null)', () => {
+    expect(yawTowardCamera(at([0.01, -0.02, 5]))).toBeNull();
   });
 });

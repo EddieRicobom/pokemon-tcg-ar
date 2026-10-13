@@ -220,19 +220,25 @@ export class RecognitionPipeline {
     if (!rectified) return finish({ ...empty, status: 'no-card', quad, message: 'A carta detectada está deformada demais para corrigir a perspectiva.' });
 
     const t1 = now();
-    let read = await this.readText(frame, quad, rectified, false);
-    if (!read.bottom.number && read.names.length === 0) {
+    // Ordem pensada para o celular (cada passada do Tesseract custa segundos): primeiro só a faixa de baixo nas
+    // duas orientações; as metades esquerda/direita (mais lentas) só se nenhuma das duas achou número e total.
+    let read = await this.readText(frame, quad, rectified, false, false);
+    if (!read.bottom.number?.total) {
       const flippedQuad = rotate180(quad);
       const flipped = rectify(frame, flippedQuad, CARD_WIDTH_PX, CARD_HEIGHT_PX);
       if (flipped) {
-        const flippedRead = await this.readText(frame, flippedQuad, flipped, false);
-        if (flippedRead.bottom.number || flippedRead.names.length > 0) {
+        const flippedRead = await this.readText(frame, flippedQuad, flipped, false, false);
+        if (flippedRead.bottom.number?.total || (!read.bottom.number && flippedRead.bottom.number)) {
           quad = flippedQuad;
           rectified = flipped;
           read = flippedRead;
           metrics.rotated180 = true;
         }
       }
+    }
+    if (!read.bottom.number?.total) {
+      const withSides = await this.readText(frame, quad, rectified, false, true, read);
+      if (withSides.bottom.number) read = withSides;
     }
     if (viewOut) {
       viewOut = {
@@ -414,17 +420,18 @@ export class RecognitionPipeline {
    * carta retificada inteira). Segunda tentativa nas metades esquerda/direita, com lista de caracteres,
    * só quando a primeira não achou número com total: o laboratório de OCR do CI mediu as duas.
    */
-  private async readText(frame: RgbaImage, quad: Quad, rectified: RgbaImage, nameOnly: boolean): Promise<ReadResult> {
+  private async readText(frame: RgbaImage, quad: Quad, rectified: RgbaImage, nameOnly: boolean, withSides = true, previous?: ReadResult): Promise<ReadResult> {
     if (nameOnly) {
       const region = rectifyRegion(frame, quad, NAME_BOX, NAME_OCR_FULL_WIDTH) ?? cropFraction(rectified, NAME_BOX);
       const text = await this.deps.ocr.recognize(region, 'name');
       return { bottom: {}, names: parseNameText(text), nameText: text };
     }
+    // `previous`: a faixa inteira já foi lida nesta orientação; não repete a passada (cada uma custa segundos no celular).
     const strip =
-      rectifyRegion(frame, quad, BOTTOM_STRIP_BOX, BOTTOM_OCR_FULL_WIDTH) ?? cropFraction(rectified, BOTTOM_STRIP_BOX);
-    let text = await this.deps.ocr.recognize(strip, 'bottom');
-    let bottom = parseBottomText(text);
-    if (!bottom.number?.total) {
+      previous?.strip ?? rectifyRegion(frame, quad, BOTTOM_STRIP_BOX, BOTTOM_OCR_FULL_WIDTH) ?? cropFraction(rectified, BOTTOM_STRIP_BOX);
+    let text = previous?.bottomText ?? (await this.deps.ocr.recognize(strip, 'bottom'));
+    let bottom = previous?.bottom ?? parseBottomText(text);
+    if (withSides && !bottom.number?.total) {
       const sides: string[] = [];
       for (const box of [BOTTOM_LEFT_BOX, BOTTOM_RIGHT_BOX]) {
         const region = rectifyRegion(frame, quad, box, Math.round(BOTTOM_OCR_FULL_WIDTH * (box[2] - box[0])));

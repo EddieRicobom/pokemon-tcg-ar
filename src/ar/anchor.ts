@@ -22,6 +22,12 @@ export interface SpriteLayout {
   yawDeg: number;
   /** Onde fica o ponto de ancoragem no sprite: a base (em pé) ou o centro. */
   anchor: 'base' | 'center';
+  /**
+   * Gira o sprite em torno da normal da carta para ele ficar de frente para a câmera, sem sair do "em pé"
+   * (continua a 90° da carta). Sem isso, com a câmera de frente para a carta, o plano vira só um fio.
+   * Omitido = ligado.
+   */
+  faceCamera?: boolean;
 }
 
 export const DEFAULT_LAYOUT: SpriteLayout = {
@@ -49,6 +55,7 @@ export function clampLayout(layout: SpriteLayout): SpriteLayout {
     lift: clamp(layout.lift, LAYOUT_LIMITS.lift.min, LAYOUT_LIMITS.lift.max),
     yawDeg: clamp(layout.yawDeg, LAYOUT_LIMITS.yawDeg.min, LAYOUT_LIMITS.yawDeg.max),
     anchor: layout.anchor === 'center' ? 'center' : 'base',
+    faceCamera: layout.faceCamera !== false,
   };
 }
 
@@ -101,12 +108,12 @@ export function cardHeightUnits(markerWidth: number, markerHeight: number): numb
  *      e a frente dele passa a olhar para −Y (para a borda inferior da carta);
  *   4. girado em yaw em torno de Z e deslocado pela base.
  */
-export function spriteMatrix(layout: SpriteLayout, spriteAspect: number): Mat4 {
+export function spriteMatrix(layout: SpriteLayout, spriteAspect: number, extraYawDeg = 0): Mat4 {
   const l = clampLayout(layout);
   const aspect = Number.isFinite(spriteAspect) && spriteAspect > 0 ? spriteAspect : 1;
   const height = l.heightRatio;
   const width = height * aspect;
-  const yaw = (l.yawDeg * Math.PI) / 180;
+  const yaw = ((l.yawDeg + extraYawDeg) * Math.PI) / 180;
   const c = Math.cos(yaw);
   const s = Math.sin(yaw);
   // Colunas: imagem de (1,0,0), (0,1,0), (0,0,1) do plano unitário.
@@ -118,6 +125,43 @@ export function spriteMatrix(layout: SpriteLayout, spriteAspect: number): Mat4 {
   const lowerHalf = l.anchor === 'base' ? height / 2 : 0;
   const origin: [number, number, number] = [l.offsetX, l.offsetY, l.lift + lowerHalf];
   return [...xAxis, 0, ...yAxis, 0, ...zAxis, 0, ...origin, 1];
+}
+
+/**
+ * Posição da câmera no espaço da carta (inversa da matriz da carta aplicada à origem da câmera).
+ * A matriz é uma transformação rígida com escala uniforme, então basta a inversa da parte 3×3.
+ */
+export function cameraPositionInCardSpace(cardMatrix: Mat4): Vec3 | null {
+  const a = cardMatrix[0]!, b = cardMatrix[4]!, c = cardMatrix[8]!;
+  const d = cardMatrix[1]!, e = cardMatrix[5]!, f = cardMatrix[9]!;
+  const g = cardMatrix[2]!, h = cardMatrix[6]!, i = cardMatrix[10]!;
+  const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
+  const inv = [
+    (e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det,
+    (f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det,
+    (d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det,
+  ];
+  const t: Vec3 = [cardMatrix[12]!, cardMatrix[13]!, cardMatrix[14]!];
+  return [
+    -(inv[0]! * t[0] + inv[1]! * t[1] + inv[2]! * t[2]),
+    -(inv[3]! * t[0] + inv[4]! * t[1] + inv[5]! * t[2]),
+    -(inv[6]! * t[0] + inv[7]! * t[1] + inv[8]! * t[2]),
+  ];
+}
+
+/**
+ * Giro (graus, em torno da normal da carta) que deixa a frente do sprite virada para a câmera.
+ * Devolve null quando a câmera está quase na vertical da carta (a direção seria instável).
+ */
+export function yawTowardCamera(cardMatrix: Mat4): number | null {
+  const p = cameraPositionInCardSpace(cardMatrix);
+  if (!p) return null;
+  const horizontal = Math.hypot(p[0], p[1]);
+  const total = Math.hypot(p[0], p[1], p[2]);
+  if (total === 0 || horizontal / total < 0.12) return null;
+  // A frente do sprite aponta para (sen yaw, −cos yaw): queremos (p.x, p.y)/|p|.
+  return (Math.atan2(p[0], -p[1]) * 180) / Math.PI;
 }
 
 /** Os 4 cantos do sprite no espaço da carta: base-esq, base-dir, topo-dir, topo-esq. */

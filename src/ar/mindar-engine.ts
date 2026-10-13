@@ -1,9 +1,10 @@
 import type { TrackingEngine, TrackingInfo, TrackingUpdate } from './engine';
+import { FrameRelay } from './frame-relay';
 
 interface MindArController {
   addImageTargetsFromBuffer(buffer: ArrayBuffer): { dimensions: [number, number][] };
-  dummyRun(input: HTMLVideoElement): void;
-  processVideo(input: HTMLVideoElement): void;
+  dummyRun(input: HTMLVideoElement | HTMLCanvasElement): void;
+  processVideo(input: HTMLVideoElement | HTMLCanvasElement): void;
   getProjectionMatrix(): number[];
   dispose(): void;
 }
@@ -30,12 +31,16 @@ export const TRACKING_TUNING = {
  */
 export class MindArEngine implements TrackingEngine {
   private controller: MindArController | null = null;
+  private relay: FrameRelay | null = null;
 
   async start(video: HTMLVideoElement, target: ArrayBuffer, onUpdate: (update: TrackingUpdate) => void): Promise<TrackingInfo> {
     const { Controller } = await import('mind-ar/src/image-target/controller.js');
-    const inputWidth = video.videoWidth;
-    const inputHeight = video.videoHeight;
-    if (!inputWidth || !inputHeight) throw new Error('O vídeo da câmera ainda não tem imagem.');
+    if (!video.videoWidth || !video.videoHeight) throw new Error('O vídeo da câmera ainda não tem imagem.');
+    // O rastreador lê um canvas reduzido (ver frame-relay.ts), não o <video> diretamente.
+    const relay = new FrameRelay(video);
+    this.relay = relay;
+    const inputWidth = relay.width;
+    const inputHeight = relay.height;
 
     const controller = new Controller({
       inputWidth,
@@ -51,8 +56,9 @@ export class MindArEngine implements TrackingEngine {
     const { dimensions } = controller.addImageTargetsFromBuffer(target);
     const first = dimensions[0];
     if (!first) throw new Error('O alvo de AR está vazio ou é de uma versão incompatível; recompile.');
-    controller.dummyRun(video);
-    controller.processVideo(video);
+    relay.start();
+    controller.dummyRun(relay.canvas);
+    controller.processVideo(relay.canvas);
     return {
       markerWidth: first[0],
       markerHeight: first[1],
@@ -63,6 +69,8 @@ export class MindArEngine implements TrackingEngine {
   }
 
   stop(): void {
+    this.relay?.stop();
+    this.relay = null;
     this.controller?.dispose();
     this.controller = null;
   }
