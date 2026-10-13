@@ -27,10 +27,16 @@ let ocrPromise: Promise<OcrEngine> | null = null;
 let pipeline: RecognitionPipeline | null = null;
 let artPromise: Promise<ArtIndex | null> | null = null;
 let artSearchOn = false;
+let captureDebugOn = false;
 let ocrListener: ((status: string, progress: number) => void) | null = null;
 
 export function onOcrProgress(listener: ((status: string, progress: number) => void) | null): void {
   ocrListener = listener;
+}
+
+/** Diagnóstico do scan: o pipeline passa a guardar miniaturas e motivos de cada quadro. */
+export function setCaptureDebug(on: boolean): void {
+  captureDebugOn = on;
 }
 
 /** Opção "busca pela ilustração": liga/desliga sem recriar o pipeline. */
@@ -93,6 +99,7 @@ export async function getPipeline(): Promise<RecognitionPipeline> {
     catalog,
     loadReference: (url) => loadImageRgba(url, CARD_WIDTH_PX, CARD_HEIGHT_PX),
     localReferences: () => cache.localReferences(),
+    captureDebug: () => captureDebugOn,
     artSearch: () => (artSearchOn ? getArtIndex() : Promise.resolve(null)),
   });
   return pipeline;

@@ -8,13 +8,14 @@ import type { SpriteLoadState } from '../ar/sprite-loader';
 import type { SpriteSource } from '../ar/sprite-source';
 import { ScanController } from '../app/scan-controller';
 import type { ScanState } from '../app/scan-controller';
-import { fetchSprite, getArtIndex, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress, setArtSearch } from '../app/services';
+import { fetchSprite, getArtIndex, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress, setArtSearch, setCaptureDebug } from '../app/services';
 import type { ManualMatch } from '../recognition/catalog-index';
 import { recordFromTcgdex } from '../recognition/pipeline';
 import { lastAttempt } from '../app/diagnostics';
 import { routeHref } from '../app/route';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { frameFromVideo } from '../recognition/browser-image';
+import type { RgbaImage } from '../recognition/types';
 
 const props = defineProps<{ cardId?: string }>();
 
@@ -33,6 +34,74 @@ const spriteState = ref<SpriteLoadState | null>(null);
 const arMessage = ref('');
 const showLayout = ref(false);
 const arActive = ref(false);
+
+// Diagnóstico do scan: mostra o que o app está vendo (onde achou a carta, o que o OCR recebeu e leu).
+const DEBUG_KEY = 'tcg-ar-scan-debug-v1';
+function readDebugOption(): boolean {
+  try {
+    return localStorage.getItem(DEBUG_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+const debugOn = ref(readDebugOption());
+const debugCanvasEl = ref<HTMLCanvasElement | null>(null);
+const debugRectUrl = ref('');
+const debugStripUrl = ref('');
+setCaptureDebug(debugOn.value);
+
+function applyDebugOption(): void {
+  setCaptureDebug(debugOn.value);
+  try {
+    localStorage.setItem(DEBUG_KEY, debugOn.value ? '1' : '0');
+  } catch {
+    // Só não lembra da escolha na próxima vez.
+  }
+  refreshDebug();
+}
+
+function imageUrl(image?: RgbaImage): string {
+  if (!image) return '';
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  canvas.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+/** Desenha o quadrilátero achado sobre o vídeo (que está em "cover" dentro do visor). */
+function refreshDebug(): void {
+  const last = scan.value.last;
+  debugRectUrl.value = debugOn.value ? imageUrl(last?.view?.rectified) : '';
+  debugStripUrl.value = debugOn.value ? imageUrl(last?.view?.strip) : '';
+  const canvas = debugCanvasEl.value;
+  const stage = stageEl.value;
+  if (!canvas || !stage) return;
+  const w = stage.clientWidth;
+  const h = stage.clientHeight;
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  context.clearRect(0, 0, w, h);
+  const view = last?.view;
+  if (!debugOn.value || !last?.quad || !view) return;
+  const scale = Math.max(w / view.frame.width, h / view.frame.height);
+  const ox = (w - view.frame.width * scale) / 2;
+  const oy = (h - view.frame.height * scale) / 2;
+  context.lineWidth = 3;
+  context.strokeStyle = last.reused ? '#ffd166' : '#5fd38d';
+  context.beginPath();
+  last.quad.forEach((p, i) => {
+    const x = ox + p.x * scale;
+    const y = oy + p.y * scale;
+    if (i === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  });
+  context.closePath();
+  context.stroke();
+}
+watch(() => scan.value.last, refreshDebug);
 
 // Busca manual: plano B quando a leitura automática não acha a carta.
 const manualName = ref('');
@@ -333,6 +402,7 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
     <div ref="stageEl" class="viewport">
       <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas :key="arCanvasKey" ref="canvasEl" class="overlay" aria-label="Camada de realidade aumentada"></canvas>
+      <canvas ref="debugCanvasEl" class="overlay debug-quad" aria-hidden="true"></canvas>
       <p v-if="!cameraOn" class="placeholder">{{ cameraBusy ? 'Abrindo a câmera…' : 'Câmera desligada' }}</p>
       <p v-if="showScanInfo" class="hud" role="status">{{ scan.message }}</p>
       <p v-else-if="arState.phase !== 'idle'" class="hud" role="status">{{ phaseText }}</p>
@@ -351,6 +421,39 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       Busca pela ilustração (experimental)
     </label>
     <p v-if="artStatus" class="meta" role="status">{{ artStatus }}</p>
+
+    <label v-if="!cardId" class="art-option">
+      <input v-model="debugOn" type="checkbox" @change="applyDebugOption" />
+      Mostrar o que o app está vendo (diagnóstico)
+    </label>
+    <div v-if="debugOn && !cardId" class="debug-panel" role="status">
+      <template v-if="scan.last">
+        <p><strong>{{ scan.last.status }}</strong>{{ scan.last.reused ? ' (repetindo a leitura anterior)' : '' }} — {{ scan.last.message }}</p>
+        <p v-if="scan.last.view?.detect" class="meta">
+          Carta achada: {{ Math.round(scan.last.view.detect.areaFraction * 100) }}% do quadro · proporção
+          {{ scan.last.view.detect.aspect.toFixed(2) }} · preenchimento {{ Math.round(scan.last.view.detect.fillRatio * 100) }}%
+          · quadro {{ scan.last.view.frame.width }}×{{ scan.last.view.frame.height }}
+        </p>
+        <ul v-if="scan.last.view?.detectReasons.length" class="meta">
+          <li v-for="reason in scan.last.view.detectReasons" :key="reason">{{ reason }}</li>
+        </ul>
+        <div class="debug-images">
+          <figure v-if="debugRectUrl">
+            <img :src="debugRectUrl" alt="Carta endireitada" />
+            <figcaption>Carta endireitada</figcaption>
+          </figure>
+          <figure v-if="debugStripUrl">
+            <img :src="debugStripUrl" alt="Faixa de baixo como o OCR a recebe" />
+            <figcaption>Faixa de baixo (entrada do OCR)</figcaption>
+          </figure>
+        </div>
+        <p v-if="scan.last.ocrBottom !== undefined" class="meta">
+          OCR da faixa de baixo: <code class="mono">{{ scan.last.ocrBottom.replace(/\s+/g, ' ').slice(0, 120) || '(vazio)' }}</code>
+        </p>
+        <p v-if="scan.last.ocrName" class="meta">OCR do nome: <code class="mono">{{ scan.last.ocrName.replace(/\s+/g, ' ').slice(0, 80) }}</code></p>
+      </template>
+      <p v-else class="meta">Abra a câmera e aponte para a carta: aqui aparece o que o app enxerga a cada quadro.</p>
+    </div>
 
     <p v-if="cameraMessage" class="message error" role="alert">{{ cameraMessage }}</p>
     <p v-if="loadingEngine" class="message" role="status">{{ loadingEngine }}</p>

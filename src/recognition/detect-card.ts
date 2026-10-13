@@ -321,13 +321,25 @@ function foregroundMask(image: RgbaImage): Uint8Array | null {
   return mask;
 }
 
-export function detectCard(source: RgbaImage): CardDetection | null {
+/** Motivos pelos quais candidatas foram descartadas (só preenchido quando o chamador pede). */
+export interface DetectDiag {
+  reasons: string[];
+}
+
+export function detectCard(source: RgbaImage, diag?: DetectDiag): CardDetection | null {
   const { image, scale } = limitSide(source, DETECT_MAX_SIDE);
   const { width, height } = image;
   if (width < 16 || height < 16) return null;
   const gray = boxBlur(toGray(image), width, height);
   const edges = edgeMask(gray, width, height);
-  if (!edges) return null;
+  if (!edges) {
+    diag?.reasons.push('Quadro sem bordas suficientes (muito liso, escuro ou desfocado).');
+    return null;
+  }
+  const rejected: { area: number; reason: string }[] = [];
+  const reject = (area: number, reason: string) => {
+    if (diag) rejected.push({ area, reason: `${Math.round(area * 100)}% do quadro: ${reason}` });
+  };
 
   const frameArea = width * height;
   let best: CardDetection | null = null;
@@ -336,6 +348,7 @@ export function detectCard(source: RgbaImage): CardDetection | null {
     if (hull.length < 4) return;
     const hullArea = polygonArea(hull);
     if (hullArea < frameArea * MIN_AREA_FRACTION) return;
+    // (a partir daqui o objeto já é grande o bastante para valer um motivo de descarte)
     const perimeter = hull.reduce((s, p, i) => {
       const q = hull[(i + 1) % hull.length]!;
       return s + Math.hypot(p.x - q.x, p.y - q.y);
@@ -348,9 +361,9 @@ export function detectCard(source: RgbaImage): CardDetection | null {
     const areaFraction = quadArea / frameArea;
     const aspect = quadAspect(quad);
     const fillRatio = Math.min(1, quadArea / hullArea);
-    if (areaFraction < MIN_AREA_FRACTION) return;
-    if (aspect < CARD_ASPECT_MIN || aspect > CARD_ASPECT_MAX) return;
-    if (fillRatio < MIN_FILL_RATIO) return;
+    if (areaFraction < MIN_AREA_FRACTION) return reject(areaFraction, 'pequeno demais');
+    if (aspect < CARD_ASPECT_MIN || aspect > CARD_ASPECT_MAX) return reject(areaFraction, `proporção ${aspect.toFixed(2)} fora de ${CARD_ASPECT_MIN}–${CARD_ASPECT_MAX}`);
+    if (fillRatio < MIN_FILL_RATIO) return reject(areaFraction, `formato irregular (preenchimento ${Math.round(fillRatio * 100)}% < ${Math.round(MIN_FILL_RATIO * 100)}%)`);
     const support = edgeSupport(quad, edges.mag, width, height, edges.threshold);
     const score = areaFraction * fillRatio * (0.4 + 0.6 * support);
     if (!best || score > best.score) {
@@ -368,5 +381,10 @@ export function detectCard(source: RgbaImage): CardDetection | null {
   for (const pixels of components(edges.mask, width, height)) consider(pixels);
   const foreground = foregroundMask(image);
   if (foreground) for (const pixels of components(foreground, width, height)) consider(pixels);
+  if (diag && !best) {
+    if (rejected.length === 0) diag.reasons.push('Nenhum objeto grande o bastante (≥ 5% do quadro) foi achado.');
+    rejected.sort((a, b) => b.area - a.area);
+    for (const item of rejected.slice(0, 3)) diag.reasons.push(`Descartado — ${item.reason}.`);
+  }
   return best;
 }

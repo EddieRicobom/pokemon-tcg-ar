@@ -545,3 +545,49 @@ small {
   width: 22px;
   height: 22px;
 }
+
+/* Diagnóstico do scan */
+.viewport .debug-quad {
+  pointer-events: none;
+}
+
+.debug-panel {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 0.88rem;
+}
+
+.debug-panel p {
+  margin: 4px 0;
+}
+
+.debug-panel ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.debug-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.debug-images figure {
+  margin: 0;
+  max-width: 100%;
+}
+
+.debug-images img {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.debug-images figcaption {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
