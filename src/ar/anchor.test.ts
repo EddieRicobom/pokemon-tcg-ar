@@ -57,6 +57,18 @@ describe('sprite em pé sobre a carta', () => {
     close([m[8]!, m[9]!, m[10]!], [0, -1, 0]);
   });
 
+  it('o plano do sprite é perpendicular (90°) ao plano da carta em qualquer giro', () => {
+    for (const yawDeg of [0, 37, 90, -135, 180]) {
+      const m = spriteMatrix(layout({ yawDeg }), 0.8);
+      // Normal do sprite = coluna Z; normal da carta = +Z. Produto escalar 0 => 90°.
+      expect(m[10]).toBeCloseTo(0, 9);
+      // E o "alto" do sprite (coluna Y) aponta exatamente para fora da carta.
+      expect(m[4]).toBeCloseTo(0, 9);
+      expect(m[5]).toBeCloseTo(0, 9);
+      expect(m[6]).toBeGreaterThan(0);
+    }
+  });
+
   it('yaw gira em torno da normal da carta sem tirar o sprite da vertical', () => {
     const m = spriteMatrix(layout({ yawDeg: 90 }), 1);
     close([m[8]!, m[9]!, m[10]!], [1, 0, 0]);

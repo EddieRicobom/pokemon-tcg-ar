@@ -16,6 +16,20 @@ const progressText = ref<Record<string, string>>({});
 const message = ref('');
 const confirmingClear = ref(false);
 const thumbUrls: string[] = [];
+/** Cartas que acabaram de ficar completas: recebem o efeito de "carregou" por um instante. */
+const justLoaded = ref<Set<string>>(new Set());
+
+function celebrate(ids: string[]): void {
+  if (ids.length === 0) return;
+  justLoaded.value = new Set([...justLoaded.value, ...ids]);
+  setTimeout(() => {
+    const next = new Set(justLoaded.value);
+    ids.forEach((id) => next.delete(id));
+    justLoaded.value = next;
+  }, 2200);
+}
+
+const statusOf = (id: string) => rows.value.find((row) => row.id === id)?.status;
 
 const STATUS_TEXT: Record<CacheStatus, string> = {
   completo: 'Completa',
@@ -61,6 +75,7 @@ async function refresh(): Promise<void> {
 async function run(id: string, action: 'prepare' | 'reload'): Promise<void> {
   busyId.value = id;
   message.value = '';
+  const before = statusOf(id);
   try {
     const cache = await getCache();
     const onProgress = (p: { step: string; index: number; total: number }) => {
@@ -73,10 +88,12 @@ async function run(id: string, action: 'prepare' | 'reload'): Promise<void> {
     busyId.value = null;
     progressText.value = { ...progressText.value, [id]: '' };
     await refresh();
+    if (before !== 'completo' && statusOf(id) === 'completo') celebrate([id]);
   }
 }
 
 async function prepareAll(): Promise<void> {
+  const pending = new Set(rows.value.filter((r) => r.status !== 'completo').map((r) => r.id));
   bulk.value = { done: 0, count: rows.value.filter((r) => r.status !== 'completo').length, text: 'Começando…' };
   message.value = '';
   try {
@@ -93,6 +110,7 @@ async function prepareAll(): Promise<void> {
   } finally {
     bulk.value = null;
     await refresh();
+    celebrate(rows.value.filter((r) => pending.has(r.id) && r.status === 'completo').map((r) => r.id));
   }
 }
 
@@ -158,13 +176,17 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     </p>
 
     <ul class="card-list">
-      <li v-for="row in rows" :key="row.id" class="card-row">
-        <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="60" height="84" />
-        <div v-else class="thumb-missing" aria-hidden="true">sem imagem</div>
+      <li v-for="row in rows" :key="row.id" class="card-row" :class="{ loading: busyId === row.id, 'just-loaded': justLoaded.has(row.id) }">
+        <div class="thumb-wrap">
+          <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="60" height="84" />
+          <div v-else class="thumb-missing" aria-hidden="true">sem imagem</div>
+          <span v-if="justLoaded.has(row.id)" class="thumb-check" aria-hidden="true">✓</span>
+        </div>
         <div class="card-info">
           <strong>{{ row.name }}</strong>
           <span>{{ row.setName }} · {{ row.localId }}/{{ row.setOfficial }}</span>
           <span class="badge" :class="row.status">{{ STATUS_TEXT[row.status] }}</span>
+          <span v-if="justLoaded.has(row.id)" class="sr-only" role="status">Carta carregada.</span>
           <small>Última vez: {{ formatDate(row.lastSeenAt) }} · {{ row.scanCount }} leitura(s)</small>
           <small>{{ slotText('Imagem', row.reference) }}</small>
           <small>{{ slotText('Sprite', row.sprite) }}</small>
