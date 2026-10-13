@@ -9,7 +9,7 @@ import { prepareArAssets } from '../app/ar-prepare';
 import { arStepList, arStatusText } from '../app/ar-stages';
 import type { ArStage } from '../app/ar-stages';
 import { ScanController } from '../app/scan-controller';
-import type { ScanState } from '../app/scan-controller';
+import type { LastAttempt, ScanState } from '../app/scan-controller';
 import { fetchSprite, getArtIndex, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress, setArtSearch, setCaptureDebug } from '../app/services';
 import type { ManualMatch } from '../recognition/catalog-index';
 import { recordFromTcgdex } from '../recognition/pipeline';
@@ -53,6 +53,11 @@ function readDebugOption(): boolean {
   }
 }
 const debugOn = ref(readDebugOption());
+const photoAttempt = ref<LastAttempt | null>(null);
+const photoBusy = ref(false);
+const photoMessage = ref('');
+const indexStatus = ref('');
+const shownAttempt = computed(() => photoAttempt.value ?? scan.value.last ?? null);
 const debugCanvasEl = ref<HTMLCanvasElement | null>(null);
 const debugRectUrl = ref('');
 const debugStripUrl = ref('');
@@ -60,6 +65,7 @@ setCaptureDebug(debugOn.value);
 
 function applyDebugOption(): void {
   setCaptureDebug(debugOn.value);
+  if (debugOn.value) void refreshIndexStatus();
   try {
     localStorage.setItem(DEBUG_KEY, debugOn.value ? '1' : '0');
   } catch {
@@ -79,7 +85,7 @@ function imageUrl(image?: RgbaImage): string {
 
 /** Desenha o quadrilátero achado sobre o vídeo (que está em "cover" dentro do visor). */
 function refreshDebug(): void {
-  const last = scan.value.last;
+  const last = shownAttempt.value ?? undefined;
   debugRectUrl.value = debugOn.value ? imageUrl(last?.view?.rectified) : '';
   debugStripUrl.value = debugOn.value ? imageUrl(last?.view?.strip) : '';
   const canvas = debugCanvasEl.value;
@@ -109,9 +115,56 @@ function refreshDebug(): void {
   context.closePath();
   context.stroke();
 }
-watch(() => scan.value.last, refreshDebug);
+watch(shownAttempt, refreshDebug);
+
+/** Testa o reconhecimento com uma foto escolhida pelo usuário. A imagem é lida no próprio aparelho: não é enviada a lugar nenhum. */
+async function testPhoto(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  photoBusy.value = true;
+  photoMessage.value = 'Lendo a foto (só neste aparelho)…';
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('Canvas 2D indisponível.');
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+    const pipeline = await getPipeline();
+    setCaptureDebug(true);
+    const result = await pipeline.recognize({ width, height, data });
+    photoAttempt.value = {
+      status: result.status, message: result.message, confidence: result.confidence, metrics: result.metrics,
+      ocrBottom: result.ocrText?.bottom, ocrName: result.ocrText?.name, cardName: result.card?.name, quad: result.quad, view: result.view,
+    };
+    photoMessage.value = result.card ? `Resultado: ${result.card.name} (${result.card.setName} ${result.card.localId}).` : '';
+  } catch (error) {
+    photoMessage.value = `Não consegui processar a foto: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    setCaptureDebug(debugOn.value);
+    photoBusy.value = false;
+  }
+}
+function clearPhoto(): void {
+  photoAttempt.value = null;
+  photoMessage.value = '';
+}
+async function refreshIndexStatus(): Promise<void> {
+  const catalog = await getCatalog();
+  const art = artOn.value ? await getArtIndex() : null;
+  indexStatus.value = `Catálogo: ${catalog ? 'disponível' : 'INDISPONÍVEL (sem rede ou não publicado)'} · Índice de ilustrações: ${
+    !artOn.value ? 'desligado' : art ? `${art.size} cartas` : 'INDISPONÍVEL (ainda não publicado ou sem rede)'
+  }`;
+}
 
 // Busca manual: plano B quando a leitura automática não acha a carta.
+const manualOpen = ref(false);
 const manualName = ref('');
 const manualNumber = ref('');
 const manualResults = ref<ManualMatch[]>([]);
@@ -137,9 +190,10 @@ async function pickManual(id: string): Promise<void> {
 const ART_KEY = 'tcg-ar-art-search-v1';
 function readArtOption(): boolean {
   try {
-    return localStorage.getItem(ART_KEY) === '1';
+    // Ligada por padrão: é o caminho de reserva quando o número não pôde ser lido. Só desliga se o usuário pediu.
+    return localStorage.getItem(ART_KEY) !== '0';
   } catch {
-    return false;
+    return true;
   }
 }
 const artOn = ref(readArtOption());
@@ -162,7 +216,7 @@ async function applyArtOption(): Promise<void> {
     : 'O índice de ilustrações ainda não foi publicado: a opção não faz efeito por enquanto.';
 }
 setArtSearch(artOn.value);
-if (artOn.value) void applyArtOption();
+if (debugOn.value) void refreshIndexStatus();
 
 const LAYOUT_KEY = 'tcg-ar-layout-v1';
 function readLayout(): SpriteLayout {
@@ -213,6 +267,8 @@ async function ensureController(): Promise<ScanController> {
     onState: (state) => {
       scan.value = state;
       if (state.last) lastAttempt.value = state.last;
+      // Depois de várias leituras sem sucesso, abre a busca manual: o caminho seguro não deve ficar escondido.
+      if (state.phase === 'scanning' && state.frames >= 4 && state.last && state.last.status !== 'identified') manualOpen.value = true;
       if (state.phase === 'ready' && state.card && state.card !== lastReadyCard) {
         lastReadyCard = state.card;
         void startArFor(state.card.id);
@@ -462,7 +518,7 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
 
     <label v-if="!cardId" class="art-option">
       <input v-model="artOn" type="checkbox" @change="applyArtOption" />
-      Busca pela ilustração (experimental)
+      Usar a busca pela ilustração quando o número não for lido
     </label>
     <p v-if="artStatus" class="meta" role="status">{{ artStatus }}</p>
 
@@ -470,16 +526,25 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       <input v-model="debugOn" type="checkbox" @change="applyDebugOption" />
       Mostrar o que o app está vendo (diagnóstico)
     </label>
-    <div v-if="debugOn && !cardId" class="debug-panel" role="status">
-      <template v-if="scan.last">
-        <p><strong>{{ scan.last.status }}</strong>{{ scan.last.reused ? ' (repetindo a leitura anterior)' : '' }} — {{ scan.last.message }}</p>
-        <p v-if="scan.last.view?.detect" class="meta">
-          Carta achada: {{ Math.round(scan.last.view.detect.areaFraction * 100) }}% do quadro · proporção
-          {{ scan.last.view.detect.aspect.toFixed(2) }} · preenchimento {{ Math.round(scan.last.view.detect.fillRatio * 100) }}%
-          · quadro {{ scan.last.view.frame.width }}×{{ scan.last.view.frame.height }}
+    <div v-if="(debugOn || photoAttempt) && !cardId" class="debug-panel" role="status">
+      <template v-if="shownAttempt">
+        <p><strong>{{ shownAttempt.status }}</strong>{{ shownAttempt.reused ? ' (repetindo a leitura anterior)' : '' }} — {{ shownAttempt.message }}</p>
+        <p class="meta">
+          Tempos: detecção {{ shownAttempt.metrics.detectMs }} ms · OCR {{ shownAttempt.metrics.ocrMs }} ms · candidatas
+          {{ shownAttempt.metrics.candidatesMs }} ms · total {{ shownAttempt.metrics.totalMs }} ms
         </p>
-        <ul v-if="scan.last.view?.detectReasons.length" class="meta">
-          <li v-for="reason in scan.last.view.detectReasons" :key="reason">{{ reason }}</li>
+        <p class="meta">
+          Candidatas: {{ shownAttempt.metrics.candidates }}{{ shownAttempt.metrics.artCandidates ? ` (${shownAttempt.metrics.artCandidates} pela ilustração)` : '' }}
+          · origem: {{ shownAttempt.metrics.source }} · carta girada 180°: {{ shownAttempt.metrics.rotated180 ? 'sim' : 'não' }}
+          · requisições: {{ shownAttempt.metrics.requests }}
+        </p>
+        <p v-if="shownAttempt.view?.detect" class="meta">
+          Carta achada: {{ Math.round(shownAttempt.view.detect.areaFraction * 100) }}% do quadro · proporção
+          {{ shownAttempt.view.detect.aspect.toFixed(2) }} · preenchimento {{ Math.round(shownAttempt.view.detect.fillRatio * 100) }}%
+          · quadro {{ shownAttempt.view.frame.width }}×{{ shownAttempt.view.frame.height }}
+        </p>
+        <ul v-if="shownAttempt.view?.detectReasons.length" class="meta">
+          <li v-for="reason in shownAttempt.view.detectReasons" :key="reason">{{ reason }}</li>
         </ul>
         <div class="debug-images">
           <figure v-if="debugRectUrl">
@@ -491,12 +556,21 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
             <figcaption>Faixa de baixo (entrada do OCR)</figcaption>
           </figure>
         </div>
-        <p v-if="scan.last.ocrBottom !== undefined" class="meta">
-          OCR da faixa de baixo: <code class="mono">{{ scan.last.ocrBottom.replace(/\s+/g, ' ').slice(0, 120) || '(vazio)' }}</code>
+        <p v-if="shownAttempt.ocrBottom !== undefined" class="meta">
+          OCR da faixa de baixo: <code class="mono">{{ shownAttempt.ocrBottom.replace(/\s+/g, ' ').slice(0, 120) || '(vazio)' }}</code>
         </p>
-        <p v-if="scan.last.ocrName" class="meta">OCR do nome: <code class="mono">{{ scan.last.ocrName.replace(/\s+/g, ' ').slice(0, 80) }}</code></p>
+        <p v-if="shownAttempt.ocrName" class="meta">OCR do nome: <code class="mono">{{ shownAttempt.ocrName.replace(/\s+/g, ' ').slice(0, 80) }}</code></p>
       </template>
       <p v-else class="meta">Abra a câmera e aponte para a carta: aqui aparece o que o app enxerga a cada quadro.</p>
+      <p v-if="indexStatus" class="meta">{{ indexStatus }}</p>
+      <button v-if="photoAttempt" type="button" @click="clearPhoto">Voltar à câmera</button>
+    </div>
+
+    <div v-if="!cardId" class="photo-test">
+      <label class="meta">Testar com uma foto do aparelho (processada só aqui, nada é enviado):
+        <input type="file" accept="image/*" :disabled="photoBusy" @change="testPhoto" />
+      </label>
+      <p v-if="photoMessage" class="message" role="status">{{ photoMessage }}</p>
     </div>
 
     <p v-if="cameraMessage" class="message error" role="alert">{{ cameraMessage }}</p>
@@ -547,7 +621,7 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       Quadros analisados: {{ scan.frames }} · última leitura: {{ scan.last.metrics.totalMs }} ms
     </p>
 
-    <details v-if="!cardId" class="layout manual">
+    <details v-if="!cardId" class="layout manual" :open="manualOpen" @toggle="manualOpen = ($event.target as HTMLDetailsElement).open">
       <summary>Não está lendo? Buscar a carta à mão</summary>
       <label>Nome da carta (em inglês, ex.: Pikachu)
         <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual" />
