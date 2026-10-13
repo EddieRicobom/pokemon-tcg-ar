@@ -10,6 +10,8 @@ coverage/
 # Gerados no build
 public/ocr/
 public/data/catalog-index.json
+public/data/art-index.*
+.cache/
 test-results/
 playwright-report/
 e2e/.tmp/

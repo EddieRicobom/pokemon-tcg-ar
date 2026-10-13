@@ -1,3 +1,4 @@
+import type { ArtIndex } from './art-index';
 import { CatalogLookup } from './catalog-index';
 import { detectCard } from './detect-card';
 import { computeFeatures } from './hash';
@@ -46,6 +47,11 @@ export interface PipelineDeps {
   loadReference: ReferenceLoader;
   /** Referências do cache local (M3). Consultadas antes de qualquer requisição. */
   localReferences?: () => Promise<LocalReference[]>;
+  /**
+   * Busca pela ilustração (opcional): devolve o índice de ilustrações, ou null se a opção está desligada ou o índice
+   * não existe. Quando devolve, as cartas mais parecidas entram como candidatas ao lado das do OCR.
+   */
+  artSearch?: () => Promise<ArtIndex | null>;
   /** Endereço da imagem de referência a partir da base do TCGdex (padrão: low.webp). */
   referenceUrl?: (imageBase: string) => string;
   /** Candidatos baixados para comparar (padrão 6). */
@@ -72,6 +78,8 @@ export interface RecognitionMetrics {
   rotated180: boolean;
   /** Houve segunda rodada com números parecidos (dígitos confundidos pelo OCR). */
   variantRound?: boolean;
+  /** Quantas candidatas vieram da busca pela ilustração (opção ligada e índice disponível). */
+  artCandidates?: number;
 }
 
 export type RecognitionStatus = 'identified' | 'ambiguous' | 'not-found' | 'no-card';
@@ -152,6 +160,8 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   );
   return results;
 }
+
+const ART_CANDIDATES = 5;
 
 export class RecognitionPipeline {
   constructor(private readonly deps: PipelineDeps) {}
@@ -246,6 +256,19 @@ export class RecognitionPipeline {
     let indexCandidates = this.deps.catalog?.candidates(read.bottom, read.names, this.maxCandidates()) ?? [];
     if (!this.deps.catalog && read.bottom.number?.total && read.bottom.number.total.prefix === '') {
       indexCandidates = await this.searchWithoutIndex(read.bottom);
+    }
+    // 2b) Busca pela ilustração (opção): as cartas de aparência mais parecida viram candidatas extras. Elas ainda
+    // passam pela comparação com a imagem de referência real; impressões com a mesma arte seguem ambíguas.
+    const artIndex = this.deps.artSearch ? await this.deps.artSearch().catch(() => null) : null;
+    if (artIndex && this.deps.catalog) {
+      const known = new Set(indexCandidates.map((c) => c.id));
+      const extra = artIndex
+        .search(features, ART_CANDIDATES)
+        .filter((match) => !known.has(match.id))
+        .map((match) => this.deps.catalog?.byId(match.id))
+        .filter((c): c is NonNullable<typeof c> => !!c);
+      metrics.artCandidates = extra.length;
+      indexCandidates = [...indexCandidates, ...extra];
     }
     metrics.candidates = indexCandidates.length;
     const hasVariants = (this.deps.catalog?.variantCandidates(read.bottom, read.names, new Set(), 1).length ?? 0) > 0;

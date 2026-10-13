@@ -206,6 +206,24 @@ export class CatalogLookup {
     return out.slice(0, limit).map(({ exact: _exact, ...match }) => match);
   }
 
+  private byIdMap: Map<string, IndexCandidate> | null = null;
+
+  /** Dados do índice de uma carta pelo id (usado para transformar um palpite visual em candidata). */
+  byId(id: string): IndexCandidate | null {
+    if (!this.byIdMap) {
+      this.byIdMap = new Map();
+      for (const set of this.data.sets) {
+        for (const [localId, name, ptName] of set.cards) {
+          this.byIdMap.set(`${set.id}-${localId}`, {
+            id: `${set.id}-${localId}`, setId: set.id, localId, name, altNames: ptName ? [ptName] : undefined,
+            setOfficial: set.official, setTotal: set.total, setCode: set.code, release: set.release, prior: 0.2,
+          });
+        }
+      }
+    }
+    return this.byIdMap.get(id) ?? null;
+  }
+
   hasCard(id: string): boolean {
     return this.data.sets.some((set) => id.startsWith(`${set.id}-`) && set.cards.some(([localId]) => `${set.id}-${localId}` === id));
   }

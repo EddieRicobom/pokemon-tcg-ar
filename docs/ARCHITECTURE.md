@@ -96,3 +96,14 @@ O reconhecimento é busca pelo vizinho mais próximo em um índice, não um clas
 - `deploy.yml` roda na `main`: repete tipos, testes e build, e publica.
 - Passo manual único: **Settings → Pages → Source: GitHub Actions**.
 - Versões das actions verificadas na data da entrega: `checkout` v7, `setup-node` v7, `configure-pages` v6, `upload-pages-artifact` v5, `deploy-pages` v5.
+
+
+## Busca pela ilustração (opcional, experimental)
+
+Um índice estático (`public/data/art-index.json` + `art-index.bin`, 112 bytes por carta) é gerado no deploy por
+`scripts/build-art-index.ts`: baixa a imagem `low.webp` de cada carta no TCGdex, calcula as mesmas características do app
+(`computeFeatures`: dHash da carta e da arte, grade de cor) e grava o resultado. O celular só baixa esse índice (alguns MB, só
+quando a opção está ligada); nunca as imagens. Com a opção ligada, o pipeline soma as 5 cartas de aparência mais parecida às
+candidatas do OCR e confirma comparando com a imagem de referência real. Impressões com a mesma arte continuam ambíguas.
+A geração é incremental (`actions/cache`) e limitada por tempo (`ART_BUDGET_MIN`); o app usa o que estiver no índice.
+Precisão **não medida** com fotos reais.
