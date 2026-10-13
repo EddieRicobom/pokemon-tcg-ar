@@ -43,7 +43,14 @@ describe('fetchSprite', () => {
   });
 
   it('falha de rede NÃO é tratada como "GIF inexistente"', async () => {
-    await expect(fetchSprite(25, fakeFetch({ [`${GIF}/25.gif`]: 0 }))).rejects.toBeInstanceOf(SpriteNetworkError);
+    const mirror = 'https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/showdown/25.gif';
+    await expect(fetchSprite(25, fakeFetch({ [`${GIF}/25.gif`]: 0, [mirror]: 0 }))).rejects.toBeInstanceOf(SpriteNetworkError);
+  });
+
+  it('raw fora do ar: baixa o mesmo GIF pelo espelho do jsDelivr', async () => {
+    const mirror = 'https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/showdown/255.gif';
+    const sprite = await fetchSprite(255, fakeFetch({ [`${GIF}/255.gif`]: 0, [mirror]: 200 }));
+    expect(sprite).toMatchObject({ kind: 'gif', url: `${GIF}/255.gif` });
   });
 
   it('erro 500 também lança, para tentar de novo depois', async () => {
