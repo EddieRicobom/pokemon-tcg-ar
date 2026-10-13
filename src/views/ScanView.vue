@@ -585,12 +585,11 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
   <section class="card" aria-labelledby="scan-title">
     <h2 id="scan-title">{{ cardId ? 'Carta guardada' : 'Escanear carta' }}</h2>
     <p v-if="!cardId" class="note">
-      Aponte a câmera para a carta inteira, sobre um fundo liso, com boa luz e sem reflexo na parte de baixo (onde
-      fica o número). O app lê o número da carta, consulta o TCGdex só para as candidatas e confirma pela imagem.
+      Mostre a carta inteira, com boa luz e sem reflexo na parte de baixo, onde fica o número.
     </p>
     <p v-else class="note">Abra a câmera e aponte para a mesma carta física para ver o Pokémon sobre ela.</p>
 
-    <div ref="stageEl" class="viewport" :class="{ adjusting }" @pointerdown="onStageDown" @pointerup="onStageUp">
+    <div ref="stageEl" class="viewport" :class="{ adjusting, tracking: arState?.phase === 'tracking' }" @pointerdown="onStageDown" @pointerup="onStageUp">
       <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas :key="arCanvasKey" ref="canvasEl" class="overlay" aria-label="Camada de realidade aumentada"></canvas>
       <canvas ref="debugCanvasEl" class="overlay debug-quad" aria-hidden="true"></canvas>

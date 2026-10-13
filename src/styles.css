@@ -1,14 +1,38 @@
+@font-face {
+  font-family: 'Bricolage Grotesque Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+@property --foil-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
 :root {
-  --bg: #10172a;
-  --surface: #1a2340;
-  --surface-2: #232e52;
+  --bg: #0e1322;
+  --surface: #161d33;
+  --surface-2: #20294a;
+  --line: #2c3760;
   --text: #eef1fb;
-  --muted: #a9b3d1;
-  --accent: #ffcb05;
+  --muted: #a3aed0;
+  /* Ação principal: vermelho de Pokébola. O dourado fica para foco e destaques pequenos. */
+  --accent: #f2554b;
+  --on-accent: #ffffff;
+  --gold: #ffcb05;
   --ok: #5fd38d;
   --warn: #ff8a80;
   --pending: #ffd166;
-  --radius: 14px;
+  --radius: 18px;
+  --radius-sm: 12px;
+  --font-display: 'Bricolage Grotesque Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --nav-height: 68px;
+  /* O reflexo "holográfico" das cartas: aparece só quando a carta é rastreada. */
+  --foil: conic-gradient(from var(--foil-angle), #5eead4, #a78bfa, #f472b6, #fde68a, #5eead4);
+  --foil-line: linear-gradient(90deg, #5eead4, #a78bfa, #f472b6, #fde68a);
   color-scheme: dark;
 }
 
@@ -32,21 +56,53 @@ body {
 .app {
   max-width: 560px;
   margin: 0 auto;
-  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-    max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    calc(var(--nav-height) + 28px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   display: grid;
-  gap: 16px;
+  gap: 14px;
+}
+
+.app > * {
+  min-width: 0;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .app-header h1 {
   margin: 0;
-  font-size: 1.6rem;
-  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
-.app-header p {
-  margin: 4px 0 0;
-  color: var(--muted);
+/* Marca: uma pokébola vazada, feita só de CSS. */
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
+  border: 3px solid var(--text);
+  background: linear-gradient(var(--accent) 0 46%, var(--text) 46% 54%, transparent 54%);
+  position: relative;
+}
+
+.brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--bg);
+  border: 3px solid var(--text);
+  box-sizing: content-box;
+  margin: -3px 0 0 -3px;
 }
 
 .app-header .phase {
@@ -56,13 +112,17 @@ body {
 
 .card {
   background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 16px;
 }
 
 .card h2 {
   margin: 0 0 10px;
-  font-size: 1.05rem;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .card h2:not(:first-child) {
@@ -84,15 +144,15 @@ body {
 }
 
 .status-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  gap: 2px;
   font-size: 0.92rem;
+  color: var(--muted);
 }
 
 .status-list strong {
-  text-align: right;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .ok {
@@ -111,8 +171,37 @@ body {
   position: relative;
   aspect-ratio: 3 / 4;
   background: #000;
-  border-radius: 10px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
   overflow: hidden;
+}
+
+/* Carta rastreada: o contorno vira folha holográfica girando devagar (único movimento "de enfeite" do app). */
+.viewport::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: inherit;
+  padding: 3px;
+  background: var(--foil);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+
+.viewport.tracking::after {
+  opacity: 1;
+  animation: foil-spin 7s linear infinite;
+}
+
+@keyframes foil-spin {
+  to {
+    --foil-angle: 360deg;
+  }
 }
 
 .viewport .feed,
@@ -141,27 +230,44 @@ body {
   margin-top: 12px;
 }
 
+/* Ação única (ex.: "Abrir câmera"): ocupa a largura toda, fácil de tocar com o polegar. */
+.actions > button.primary:only-child {
+  width: 100%;
+}
+
 button,
 input[type='text'] {
   font: inherit;
   /* iOS aplica zoom ao focar campos com fonte menor que 16px. */
   font-size: max(1rem, 16px);
-  min-height: 44px;
-  border-radius: 10px;
+  min-height: 48px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
-  padding: 0 14px;
+  padding: 0 16px;
 }
 
 button {
   background: var(--surface-2);
+  border-color: var(--line);
   color: var(--text);
+  font-weight: 600;
   cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+button:active:not(:disabled) {
+  background: var(--line);
 }
 
 button.primary {
   background: var(--accent);
-  color: #1b1b1b;
+  border-color: var(--accent);
+  color: var(--on-accent);
   font-weight: 700;
+}
+
+button.primary:active:not(:disabled) {
+  background: #d9443b;
 }
 
 button:disabled {
@@ -172,7 +278,7 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 a:focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--gold);
   outline-offset: 2px;
 }
 
@@ -240,26 +346,63 @@ a:focus-visible {
 }
 
 /* Navegação e telas de reconhecimento, cache e AR */
+/* Barra de abas fixa na base: o polegar alcança tudo. */
 .tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 6px max(8px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  background: rgba(14, 19, 34, 0.92);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line);
 }
 
 .tabs a {
+  position: relative;
   display: grid;
-  place-items: center;
-  min-height: 44px;
-  border-radius: 10px;
-  background: var(--surface);
+  justify-items: center;
+  align-content: center;
+  gap: 2px;
+  min-height: var(--nav-height);
+  padding-top: 4px;
   color: var(--muted);
   text-decoration: none;
+  font-size: 0.78rem;
   font-weight: 600;
 }
 
+.tabs a svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .tabs a.active {
-  background: var(--accent);
-  color: #1b1b1b;
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* A aba ativa ganha a faixa holográfica (mesmo reflexo da câmera quando a carta é rastreada). */
+.tabs a.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 28%;
+  right: 28%;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--foil-line);
 }
 
 .actions.row {
@@ -272,11 +415,13 @@ a:focus-visible {
 a.button {
   display: inline-grid;
   place-items: center;
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: 10px;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
+  border: 1px solid var(--line);
   color: var(--text);
+  font-weight: 600;
   text-decoration: none;
 }
 
@@ -292,10 +437,11 @@ button.danger {
   right: 8px;
   bottom: 8px;
   margin: 0;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.6);
-  font-size: 0.85rem;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: rgba(10, 14, 26, 0.62);
+  backdrop-filter: blur(10px);
+  font-size: 0.88rem;
   pointer-events: none;
 }
 
@@ -363,10 +509,11 @@ small {
 
 .card-row {
   display: flex;
-  gap: 12px;
-  padding: 10px;
-  border-radius: 10px;
+  gap: 14px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
+  border: 1px solid var(--line);
 }
 
 .card-row img,
@@ -374,7 +521,7 @@ small {
   width: 60px;
   height: 84px;
   flex: none;
-  border-radius: 4px;
+  border-radius: 6px;
   object-fit: cover;
   background: var(--bg);
 }
@@ -391,6 +538,11 @@ small {
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+
+.card-info strong {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
 }
 
 .badge {
@@ -420,7 +572,7 @@ small {
   word-break: break-all;
 }
 
-/* Efeito de carregamento da carta (tela Carregar) */
+/* Efeito de carregamento da carta (tela Cartas) */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -534,6 +686,7 @@ small {
   background: var(--bg);
   color: var(--text);
   border-color: var(--surface-2);
+}
 
 .art-option {
   display: flex;
@@ -622,7 +775,8 @@ small {
 
 .panel-modes button.active {
   background: var(--accent);
-  color: #1b1b1b;
+  border-color: var(--accent);
+  color: var(--on-accent);
   font-weight: 700;
 }
 
@@ -645,6 +799,17 @@ small {
 
 .adjust-bar button.active {
   background: var(--accent);
-  color: #1b1b1b;
+  border-color: var(--accent);
+  color: var(--on-accent);
   font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
