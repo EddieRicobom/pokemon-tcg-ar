@@ -118,8 +118,8 @@ export function bleedTransparent(data: Uint8ClampedArray, width: number, height:
 }
 
 /** Amplia o quadro (Scale2x repetido) e prepara as bordas para o filtro bilinear. */
-export function upscaleSprite(rgba: Uint8ClampedArray, width: number, height: number): UpscaledImage {
-  const factor = upscaleFactor(width, height);
+export function upscaleSprite(rgba: Uint8ClampedArray, width: number, height: number, maxFactor: 1 | 2 | 4 = 4): UpscaledImage {
+  const factor = Math.min(upscaleFactor(width, height), maxFactor) as 1 | 2 | 4;
   let data = rgba;
   let w = width;
   let h = height;

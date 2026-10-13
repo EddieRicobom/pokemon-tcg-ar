@@ -813,3 +813,35 @@ small {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Caixa: mira para escolher o ponto do chão */
+.box-viewport {
+  touch-action: manipulation;
+}
+
+.box-viewport .crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.box-viewport .crosshair::after {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+
+.box-viewport .hud {
+  bottom: 12px;
+}

@@ -28,7 +28,7 @@ describe('App', () => {
     const text = await mount();
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
-    expect(host?.querySelectorAll('nav a')).toHaveLength(3);
+    expect(host?.querySelectorAll('nav a')).toHaveLength(4);
     expect(host?.querySelector('video')).not.toBeNull();
     expect(host?.querySelector('canvas')).not.toBeNull();
     expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera');
@@ -38,6 +38,13 @@ describe('App', () => {
     const text = await mount();
     expect(text).not.toContain('Reconhecida automaticamente');
     expect(text).not.toContain('Escolhida por você');
+  });
+
+  it('a tela Caixa abre com a câmera desligada e explica como usar', async () => {
+    const text = await mount('#/caixa');
+    expect(text).toContain('Caixa');
+    expect(text).toContain('Câmera desligada');
+    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera e sensores');
   });
 
   it('a tela Cartas mostra a ação de limpar o cache', async () => {
