@@ -167,7 +167,8 @@ describe('RecognitionPipeline', () => {
       },
     });
     const result = await new RecognitionPipeline(deps).recognize(photoOf(3));
-    expect(calls2.slice(0, 3)).toEqual(['bottom', 'bottom-side', 'bottom-side']);
+    // Primeiro a faixa inteira nas duas orientações (rápido); só depois as metades (mais lentas).
+    expect(calls2.slice(0, 4)).toEqual(['bottom', 'bottom', 'bottom-side', 'bottom-side']);
     expect(result.card?.id).toBe('base2-60');
   });
 
