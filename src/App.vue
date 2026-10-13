@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { routeHref, useRoute } from './app/route';
 import type { RouteName } from './app/route';
+import NavIcon from './components/NavIcon.vue';
 import { useInstallPrompt } from './composables/useInstallPrompt';
 import { detectCapabilities, isIosDevice } from './core/capabilities';
 import CarregarView from './views/CarregarView.vue';
@@ -17,7 +18,7 @@ const showIosHint =
 
 const tabs: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Escanear' },
-  { name: 'carregar', label: 'Carregar' },
+  { name: 'carregar', label: 'Cartas' },
   { name: 'diagnostico', label: 'Diagnóstico' },
 ];
 const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
@@ -26,8 +27,8 @@ const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
 <template>
   <main class="app">
     <header class="app-header">
+      <span class="brand-mark" aria-hidden="true"></span>
       <h1>Pokémon TCG AR</h1>
-      <p>Aponte a câmera para uma carta e veja o Pokémon animado em pé sobre ela.</p>
     </header>
 
     <nav class="tabs" aria-label="Seções do app">
@@ -38,7 +39,8 @@ const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
         :aria-current="route.name === tab.name ? 'page' : undefined"
         :class="{ active: route.name === tab.name }"
       >
-        {{ tab.label }}
+        <NavIcon :name="tab.name" />
+        <span>{{ tab.label }}</span>
       </a>
     </nav>
 

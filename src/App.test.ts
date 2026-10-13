@@ -40,7 +40,7 @@ describe('App', () => {
     expect(text).not.toContain('Escolhida por você');
   });
 
-  it('a tela Carregar mostra a ação de limpar o cache', async () => {
+  it('a tela Cartas mostra a ação de limpar o cache', async () => {
     const text = await mount('#/carregar');
     expect(text).toContain('Cartas guardadas');
     expect(text).toContain('Carregar todas as vistas');

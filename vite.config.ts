@@ -38,7 +38,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,woff2}'],
         // O OCR (≈ 6,7 MB no primeiro uso) e o índice do catálogo não entram no pré-cache da instalação:
         // são guardados só quando o usuário usa o reconhecimento (cache em tempo de execução).
         globIgnores: ['ocr/**', 'data/**'],
