@@ -16,6 +16,11 @@ export interface LastAttempt {
   ocrBottom?: string;
   ocrName?: string;
   cardName?: string;
+  /** Onde o app achou a carta (coordenadas do quadro analisado) e o que viu; só com o diagnóstico ligado. */
+  quad?: RecognitionResult['quad'];
+  view?: RecognitionResult['view'];
+  /** Esta leitura repete a anterior (a carta sumiu por poucos quadros). */
+  reused?: boolean;
 }
 
 export interface ScanChoice {
@@ -141,8 +146,10 @@ export class ScanController {
       if (!this.running || id !== this.runId) return;
       // Suavização temporal: se não detectou carta mas tínhamos uma leitura recente,
       // reusa o resultado anterior por até 5 quadros seguidos para evitar "piscar".
+      let reused = false;
       if (result.status === 'no-card' && this.lastValidResult) {
         result = this.lastValidResult;
+        reused = true;
       } else if (result.status !== 'no-card') {
         this.lastValidResult = result;
         this.noCardStreak = 0;
@@ -159,6 +166,9 @@ export class ScanController {
         ocrBottom: result.ocrText?.bottom,
         ocrName: result.ocrText?.name,
         cardName: result.card?.name,
+        quad: result.quad,
+        view: result.view,
+        reused,
       };
 
       const temporal = this.temporal.push(result);

@@ -49,11 +49,11 @@ describe('loadSpriteInto', () => {
     expect(result.kind).toBe('placeholder');
   });
 
-  it('falha de rede: erro (dá para tentar de novo) e nada na tela', async () => {
+  it('falha de rede: erro explícito (dá para tentar de novo) e o marcador rotulado fica no lugar do Pokémon', async () => {
     const sprite = new CardSprite();
     const result = await loadSpriteInto(sprite, 25, { getSprite: async () => { throw new SpriteNetworkError('Sem conexão', 'x'); } });
     expect(result).toEqual({ kind: 'error', message: 'Sem conexão' });
-    expect(sprite.mode).toBe('empty');
+    expect(sprite.mode).toBe('placeholder');
   });
 
   it('GIF corrompido: erro explícito, não troca em silêncio por imagem parada', async () => {
@@ -61,6 +61,6 @@ describe('loadSpriteInto', () => {
     const bad: SpriteSource = { kind: 'gif', url: 'https://x/bad.gif', blob: new Blob(['não é um gif']) };
     const result = await loadSpriteInto(sprite, 25, { getSprite: async () => bad });
     expect(result.kind).toBe('error');
-    expect(sprite.mode).toBe('empty');
+    expect(sprite.mode).toBe('placeholder'); // marcador rotulado, nunca uma imagem parada fingindo ser o GIF
   });
 });

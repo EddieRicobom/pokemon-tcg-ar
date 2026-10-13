@@ -8,6 +8,7 @@ import { CardCache, targetKey } from './card-cache';
 import type { CardCacheDeps } from './card-cache';
 import { openCacheDb } from './db';
 import type { CacheDb } from './db';
+import { TARGET_VERSION } from '../ar/target';
 import { SpriteNetworkError } from '../ar/sprite-source';
 
 const pikachu: CardRecordLike = {
@@ -176,6 +177,47 @@ describe('preparo (Carregar)', () => {
     const result = await cache.prepareCard('base1-58');
     expect(result.card.target).toMatchObject({ state: 'ok', key: targetKey('base1-58') });
     expect(await cache.getAssetBlob(result.card, 'target')).not.toBeNull();
+  });
+
+  it('compila o alvo com a imagem em ALTA resolução e registra a qualidade e a versão', async () => {
+    const seen: number[] = [];
+    const cache = make({ buildTarget: async (blob) => { seen.push(blob.size); return new Blob([new Uint8Array(2000)]); } });
+    await cache.recordRecognition({ card: pikachu });
+    const result = await cache.prepareCard('base1-58');
+    expect(fetchLog).toContain('https://assets.example/base1/58/high.webp');
+    expect(result.card.target).toMatchObject({ state: 'ok', version: TARGET_VERSION, source: 'alta' });
+  });
+
+  it('se a imagem em alta falhar, compila com a de baixa e marca como "baixa"', async () => {
+    failing.add('https://assets.example/base1/58/high.webp');
+    const cache = make({ buildTarget: async () => new Blob([new Uint8Array(2000)]) });
+    await cache.recordRecognition({ card: pikachu });
+    const result = await cache.prepareCard('base1-58');
+    expect(result.card.target).toMatchObject({ state: 'ok', source: 'baixa' });
+  });
+
+  it('alvo de versão antiga é descartado e recompilado, nunca reutilizado', async () => {
+    let builds = 0;
+    const cache = make({ buildTarget: async () => { builds++; return new Blob([new Uint8Array(2000)]); } });
+    await cache.recordRecognition({ card: pikachu });
+    await cache.prepareCard('base1-58');
+    // Simula um alvo gravado pelo processo antigo (sem versão, chave antiga).
+    const old = (await cache.get('base1-58'))!;
+    await backend.put('/__tcg-ar__/target/base1-58.mind', new Blob([new Uint8Array(10)]));
+    await db.put('cards', { ...old, target: { state: 'ok', key: '/__tcg-ar__/target/base1-58.mind', bytes: 10 } });
+    const fresh = make({ buildTarget: async () => { builds++; return new Blob([new Uint8Array(3000)]); } });
+    const result = await fresh.prepareCard('base1-58');
+    expect(builds).toBe(2);
+    expect(result.card.target).toMatchObject({ state: 'ok', key: targetKey('base1-58'), version: TARGET_VERSION });
+  });
+
+  it('falha na compilação vira erro visível no alvo (não trava) e Recarregar tenta de novo', async () => {
+    let fail = true;
+    const cache = make({ buildTarget: async () => { if (fail) throw new Error('compilação falhou'); return new Blob([new Uint8Array(2000)]); } });
+    await cache.recordRecognition({ card: pikachu });
+    expect((await cache.prepareCard('base1-58')).card.target).toMatchObject({ state: 'error', error: 'compilação falhou' });
+    fail = false;
+    expect((await cache.reload('base1-58')).card.target.state).toBe('ok');
   });
 
   it('carta sem imagem de referência no TCGdex não trava o preparo', async () => {

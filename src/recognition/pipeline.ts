@@ -1,11 +1,13 @@
 import type { ArtIndex } from './art-index';
 import { CatalogLookup } from './catalog-index';
 import { detectCard } from './detect-card';
+import type { CardDetection } from './detect-card';
 import { computeFeatures } from './hash';
 import type { CardFeatures } from './hash';
 import { rectify, rectifyRegion } from './homography';
-import { cropFraction } from './image';
+import { cropFraction, resizeAverage } from './image';
 import { BOTTOM_LEFT_BOX, BOTTOM_OCR_FULL_WIDTH, BOTTOM_RIGHT_BOX, BOTTOM_STRIP_BOX, NAME_BOX, NAME_OCR_FULL_WIDTH } from './layout';
+import { prepareForOcr } from './ocr';
 import type { OcrEngine } from './ocr';
 import { parseBottomText, parseNameText } from './parse-ocr';
 import type { ParsedBottom } from './parse-ocr';
@@ -52,6 +54,8 @@ export interface PipelineDeps {
    * não existe. Quando devolve, as cartas mais parecidas entram como candidatas ao lado das do OCR.
    */
   artSearch?: () => Promise<ArtIndex | null>;
+  /** Liga o diagnóstico do scan (guarda miniaturas e motivos). Consultado a cada quadro. */
+  captureDebug?: () => boolean;
   /** Endereço da imagem de referência a partir da base do TCGdex (padrão: low.webp). */
   referenceUrl?: (imageBase: string) => string;
   /** Candidatos baixados para comparar (padrão 6). */
@@ -103,9 +107,21 @@ export interface RecognitionResult {
   /** Endereço da imagem de referência (chave no cache de arquivos). */
   referenceUrl?: string;
   metrics: RecognitionMetrics;
+  /** O que o scan "viu" neste quadro (só quando o diagnóstico está ligado): para achar a raiz de falhas de leitura. */
+  view?: ScanView;
   /** Diagnóstico da melhor candidata (calibração dos limiares com dados reais). */
   debug?: { bestId?: string; bestSimilarity?: number; bestMeta?: number | null; secondId?: string; secondSimilarity?: number };
   message: string;
+}
+
+export interface ScanView {
+  frame: { width: number; height: number };
+  /** Por que nenhuma carta foi achada (ou vazio se foi). */
+  detectReasons: string[];
+  detect?: Pick<CardDetection, 'areaFraction' | 'aspect' | 'fillRatio' | 'score'>;
+  /** Carta retificada (miniatura) e a faixa inferior exatamente como o OCR a recebe (já em cinza/contraste). */
+  rectified?: RgbaImage;
+  strip?: RgbaImage;
 }
 
 interface LoadedCandidate {
@@ -122,6 +138,8 @@ interface ReadResult {
   names: string[];
   bottomText?: string;
   nameText?: string;
+  /** Faixa inferior enviada ao OCR (diagnóstico). */
+  strip?: RgbaImage;
 }
 
 function toIdentified(card: CardRecordLike): IdentifiedCard {
@@ -177,17 +195,21 @@ export class RecognitionPipeline {
     };
     let ocrTextOut: RecognitionResult['ocrText'];
     let debugOut: RecognitionResult['debug'];
+    const capture = this.deps.captureDebug?.() ?? false;
+    const diag = { reasons: [] as string[] };
+    let viewOut: ScanView | undefined = capture ? { frame: { width: frame.width, height: frame.height }, detectReasons: [] } : undefined;
     const finish = (result: Omit<RecognitionResult, 'metrics'>): RecognitionResult => {
       metrics.totalMs = Math.round(now() - started);
       metrics.requests = this.deps.tcgdex.stats.requests - statsBefore.requests + metrics.requests;
       metrics.downloadedBytes = this.deps.tcgdex.stats.bytes - statsBefore.bytes + downloadedBytes;
-      return { ...result, ocrText: ocrTextOut, debug: debugOut, metrics };
+      return { ...result, ocrText: ocrTextOut, debug: debugOut, view: viewOut, metrics };
     };
     const empty = { alternatives: [], confidence: 0, margin: 0, parsed: { bottom: {}, names: [] } };
 
     const t0 = now();
-    const detection = detectCard(frame);
+    const detection = detectCard(frame, capture ? diag : undefined);
     metrics.detectMs = Math.round(now() - t0);
+    if (viewOut) viewOut.detectReasons = diag.reasons;
     if (!detection) {
       return finish({ ...empty, status: 'no-card', message: 'Não encontrei uma carta no quadro. Enquadre a carta inteira sobre um fundo liso.' });
     }
@@ -211,6 +233,14 @@ export class RecognitionPipeline {
           metrics.rotated180 = true;
         }
       }
+    }
+    if (viewOut) {
+      viewOut = {
+        ...viewOut,
+        detect: { areaFraction: detection.areaFraction, aspect: detection.aspect, fillRatio: detection.fillRatio, score: detection.score },
+        rectified: resizeAverage(rectified, 210, 293),
+        strip: read.strip ? prepareForOcr(read.strip) : undefined,
+      };
     }
     // O nome só é lido quando ajuda: sem número, ou quando o número deixa mais de um candidato.
     const t2Candidates = this.deps.catalog?.candidates(read.bottom, [], this.maxCandidates()) ?? [];
@@ -410,7 +440,7 @@ export class RecognitionPipeline {
         }
       }
     }
-    return { bottom, names: [], bottomText: text };
+    return { bottom, names: [], bottomText: text, strip };
   }
 
   /** Sem índice estático: pergunta ao TCGdex pelas cartas com esse número e esse total. */

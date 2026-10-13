@@ -54,7 +54,14 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
 
   const observer = new ResizeObserver(() => session.resize());
   observer.observe(options.container);
-  await Promise.all([session.start(options.target), loadSprite()]);
+  try {
+    // O sprite é independente do rastreamento: se o GIF falhar, o AR continua (e a falha aparece na tela).
+    await Promise.all([session.start(options.target), loadSprite()]);
+  } catch (error) {
+    observer.disconnect();
+    session.stop(); // libera motor, WebGL e sprite para a próxima tentativa
+    throw error;
+  }
 
   return {
     session,

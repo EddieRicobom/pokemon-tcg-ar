@@ -24,6 +24,10 @@ export interface SlotInfo {
   error?: string;
   /** Só para o sprite: GIF animado ou PNG estático de reserva. */
   kind?: SpriteKind;
+  /** Só para o alvo de AR: versão do processo de compilação (alvos de outra versão são recompilados). */
+  version?: number;
+  /** Só para o alvo de AR: qualidade da imagem usada na compilação. */
+  source?: 'alta' | 'baixa';
 }
 
 /** Cartas já reconhecidas, com tudo que é reutilizável sem rede. Nunca guarda quadros da câmera. */

@@ -42,6 +42,8 @@ export async function loadSpriteInto(
   try {
     source = await (deps.getSprite ?? ((id) => fetchSprite(id)))(dexId);
   } catch (error) {
+    // Sem o GIF, mostra o marcador rotulado: assim dá para ver que o rastreamento funciona.
+    sprite.setPlaceholder();
     return emit({ kind: 'error', message: error instanceof Error ? error.message : 'Não consegui baixar o sprite.' });
   }
   if (!source) {
@@ -59,6 +61,7 @@ export async function loadSpriteInto(
     return emit({ kind: 'static', url: source.url, reason: 'Não existe GIF animado para este Pokémon; mostrando a imagem parada.' });
   } catch (error) {
     // Arquivo baixado mas ilegível (GIF corrompido, por exemplo): não esconder, avisar.
+    sprite.setPlaceholder();
     return emit({ kind: 'error', message: error instanceof Error ? `Sprite ilegível: ${error.message}` : 'Sprite ilegível.' });
   }
 }
