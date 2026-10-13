@@ -24,6 +24,13 @@ Se uma fonte falhar (sem internet, por exemplo) a página mostra a mensagem de e
 2. Fora do modo de ajuste, toque num ataque ou golpe do painel: a linha brilha e aparece a mensagem de que usar golpes ainda não está implementado. Toque nos pontinhos do rodapé do painel para trocar de página.
 3. Anote: se o arrasto acompanha o dedo sem "escorregar", se a pinça é suave e se o toque acerta a linha certa com o painel inclinado.
 
+## 1b. Caixa (Pokémon soltos no chão)
+Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Cartas").
+1. Aba "Caixa" → "Abrir câmera e sensores". Aponte o celular para o chão, a uns 1–2 m à frente, e toque na imagem (ou em "Colocar a caixa aqui", que usa a mira do centro).
+2. Os Pokémon devem passear dentro do quadrado branco, com sombra. Gire o celular: a caixa deve ficar parada no chão. Toque num Pokémon: ele dá um pulinho e aparecem nome, número e carta.
+3. Em "Ajustes da caixa" mude a altura do celular, o tamanho da caixa e o ângulo de visão. Se a caixa "escorrega" ao girar, ajuste a altura e o ângulo; ao **andar**, ela vai deslizar mesmo (limite conhecido: sem rastreamento de posição).
+4. Anote: se o celular enviou os sensores (senão aparece o aviso de arrastar), se o ponto no chão fica onde você tocou e se 10+ Pokémon ainda rodam fluido.
+
 ## 2. Reconhecimento automático
 1. Escanear de novo, carta sobre qualquer fundo, sem reflexo na faixa de baixo.
 2. No painel de diagnóstico confira: quadrilátero verde sobre a carta, "Carta endireitada" em pé, "Faixa de baixo" com o número legível, tempos por etapa.
