@@ -3,18 +3,21 @@ import type { BattleData, PartName } from '../app/pokemon-data-service';
 import { emptyBattleData } from '../app/pokemon-data-service';
 import { choosePage, REAPPEAR_AFTER_MS } from './panel-state';
 import type { PanelMode, PanelPage } from './panel-state';
-import { drawPanel, PANEL_HEIGHT_PX, PANEL_WIDTH_PX } from './stats-draw';
-import type { PanelModel } from './stats-draw';
+import type { PanelPlacement } from './anchor';
+import { drawPanel, hitTestPanel, PANEL_HEIGHT_PX, PANEL_WIDTH_PX, PRESS_FLASH_MS } from './stats-draw';
+import type { PanelHit, PanelModel } from './stats-draw';
 
-/** Distância (em larguras de carta) entre a borda inferior da carta e o painel. */
-const GAP = 0.05;
 /** Quase sobre o plano da carta (evita brigar com o plano sem flutuar). */
 const LIFT = 0.004;
 const REDRAW_MS = 50;
 
+/** Altura/largura do painel (para calcular o tamanho a partir da largura). */
+export const PANEL_ASPECT = PANEL_HEIGHT_PX / PANEL_WIDTH_PX;
+
 /**
- * Painel "no chão": um plano deitado no mesmo plano da carta, logo abaixo da borda inferior, com os dados do
- * Pokémon. É filho do grupo da carta, então segue a pose rastreada e some junto com o sprite. Só mostra dados
+ * Painel "no chão": um plano deitado no plano da carta, logo abaixo da ilustração (à frente dos pés do Pokémon),
+ * com os dados do Pokémon. É filho do grupo da carta, então segue a pose rastreada e some junto com o sprite;
+ * `setPlacement` o mantém colado ao Pokémon (posição, giro e tamanho). Só mostra dados
  * que vieram de uma fonte (PokéAPI / TCGdex); enquanto carrega ou se falhar, diz isso na página.
  */
 export class StatsPanel {
@@ -26,7 +29,7 @@ export class StatsPanel {
   private model: PanelModel;
   private enabled = true;
   private mode: PanelMode = 'auto';
-  private cardHeight = 1.375;
+  private pressed: { page: PanelPage; index: number; at: number } | null = null;
   private cycleStart: number | null = null;
   private lastVisibleAt = -Infinity;
   private page: PanelPage = 'status';
@@ -53,9 +56,8 @@ export class StatsPanel {
     this.texture.minFilter = LinearFilter;
     this.texture.generateMipmaps = false;
     const material = new MeshBasicMaterial({ map: this.texture, transparent: true, depthWrite: false, side: DoubleSide, toneMapped: false });
-    this.mesh = new Mesh(new PlaneGeometry(1, PANEL_HEIGHT_PX / PANEL_WIDTH_PX), material);
+    this.mesh = new Mesh(new PlaneGeometry(1, PANEL_ASPECT), material);
     this.object.add(this.mesh);
-    this.place();
   }
 
   get currentPage(): PanelPage {
@@ -70,16 +72,24 @@ export class StatsPanel {
     return this.model;
   }
 
-  /** Altura da carta em larguras de carta (o painel fica abaixo da borda inferior). */
-  setCardHeight(height: number): void {
-    if (!Number.isFinite(height) || height <= 0) return;
-    this.cardHeight = height;
-    this.place();
+  /** Posição, giro e largura do painel no espaço da carta (ver `panelPlacement`). */
+  setPlacement(placement: PanelPlacement): void {
+    if (![placement.x, placement.y, placement.yawRad, placement.width].every(Number.isFinite) || placement.width <= 0) return;
+    this.object.position.set(placement.x, placement.y, LIFT);
+    this.object.rotation.set(0, 0, placement.yawRad);
+    this.mesh.scale.set(placement.width, placement.width, 1);
   }
 
-  private place(): void {
-    const planeHeight = PANEL_HEIGHT_PX / PANEL_WIDTH_PX;
-    this.mesh.position.set(0, -(this.cardHeight / 2) - GAP - planeHeight / 2, LIFT);
+  /** O que há no ponto (u, v) da textura do painel (coordenadas de UV do Three.js; v cresce para cima). */
+  hit(u: number, v: number): PanelHit | null {
+    if (!Number.isFinite(u) || !Number.isFinite(v) || u < 0 || u > 1 || v < 0 || v > 1) return null;
+    return hitTestPanel(this.model, this.page, u * PANEL_WIDTH_PX, (1 - v) * PANEL_HEIGHT_PX);
+  }
+
+  /** Brilho de confirmação na linha tocada. */
+  press(page: PanelPage, index: number, nowMs: number): void {
+    this.pressed = { page, index, at: nowMs };
+    this.dirty = true;
   }
 
   setPart<K extends PartName>(part: K, result: BattleData[K]): void {
@@ -122,7 +132,9 @@ export class StatsPanel {
     this.lastDraw = nowMs;
     this.dirty = false;
     if (!this.ctx) return;
-    drawPanel(this.ctx, this.model, this.page, nowMs - this.pageStart, nowMs);
+    const age = this.pressed ? nowMs - this.pressed.at : Infinity;
+    const press = this.pressed && age <= PRESS_FLASH_MS ? { page: this.pressed.page, index: this.pressed.index, ageMs: age } : undefined;
+    drawPanel(this.ctx, this.model, this.page, nowMs - this.pageStart, nowMs, press);
     this.texture.needsUpdate = true;
     this.draws++;
   }

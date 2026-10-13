@@ -4,6 +4,7 @@ import { CardSprite } from './card-sprite';
 import type { TrackingEngine, TrackingInfo, TrackingUpdate } from './engine';
 import { ArSession } from './session';
 import { StatsPanel } from './stats-panel';
+import { Vector3 } from 'three';
 import type { ArState, RenderBackend } from './session';
 
 const f = 240 / Math.tan((45 * Math.PI) / 360);
@@ -126,19 +127,58 @@ describe('ArSession', () => {
     expect(session.currentState.phase).toBe('tracking');
   });
 
-  it('painel de status: filho do grupo da carta, posicionado pela altura do alvo, ligado/desligado pelo layout e liberado no fim', async () => {
+  it('painel de status: filho do grupo da carta, colado ao Pokémon, ligado/desligado pelo layout e liberado no fim', async () => {
     const panel = new StatsPanel('Pikachu', 25);
-    const { session, sprite } = setup({ panel });
+    const { session, sprite, tick } = setup({ panel });
     await session.start(new ArrayBuffer(8));
     expect(sprite.group.children).toContain(panel.object);
-    // markerHeight / markerWidth = 825 / 600
-    expect(panel.mesh.position.y).toBeLessThan(-(825 / 600) / 2);
+    // A cada quadro o painel é posicionado a partir do Pokémon: à frente dos pés, no chão, na escala dele.
+    tick(16);
+    const placement = sprite.placement;
+    expect(panel.object.position.x).toBeCloseTo(placement.x, 6);
+    expect(panel.object.position.y).toBeLessThan(placement.y);
+    expect(panel.mesh.scale.x).toBeGreaterThan(0.4);
     session.setLayout({ heightRatio: 0.7, offsetX: 0, offsetY: 0, lift: 0, yawDeg: 0, anchor: 'base', showStats: false });
     expect(panel.object.visible).toBe(false);
     session.setLayout({ heightRatio: 0.7, offsetX: 0, offsetY: 0, lift: 0, yawDeg: 0, anchor: 'base' });
     expect(panel.object.visible).toBe(true);
     session.stop();
     expect(sprite.group.children).not.toContain(panel.object);
+  });
+
+  it('ponto da tela → plano da carta (arrastar o Pokémon com o dedo)', async () => {
+    const { session, engine, pose } = setup();
+    await session.start(new ArrayBuffer(8));
+    expect(session.pointOnCardPlane(0, 0)).toBeNull(); // carta ainda não rastreada
+    engine.onUpdate!({ worldMatrix: pose });
+    const p = session.pointOnCardPlane(0, 0)!;
+    // Centro da tela = origem do mundo; o centro da carta está em (300, 412,5) → no espaço da carta fica (−0,5, −0,6875).
+    expect(p.x).toBeCloseTo(-0.5, 3);
+    expect(p.y).toBeCloseTo(-0.6875, 3);
+    const right = session.pointOnCardPlane(0.2, 0)!;
+    expect(right.x).toBeGreaterThan(p.x);
+    expect(Math.abs(right.y - p.y)).toBeLessThan(1e-6);
+  });
+
+  it('toque no painel: acha o golpe sob o dedo; fora do painel devolve null', async () => {
+    const panel = new StatsPanel('Pikachu', 25);
+    panel.setPart('moves', { state: 'ok', value: [{ name: 'Thunderbolt', type: 'electric', power: 90, accuracy: 100, pp: 15, damageClass: 'special' }] });
+    panel.setMode('moves');
+    const { session, engine, pose, tick } = setup({ panel });
+    await session.start(new ArrayBuffer(8));
+    engine.onUpdate!({ worldMatrix: pose });
+    tick(16);
+    session.scene.updateMatrixWorld(true);
+    session.camera.updateMatrixWorld();
+    // Ponto do painel onde fica a linha 0 de golpes (canvas 512×384; linha de y = 120 a 176).
+    const local = new Vector3(280 / 512 - 0.5, 0.75 / 2 - 148 / 512, 0);
+    const ndc = panel.mesh.localToWorld(local).project(session.camera);
+    const picked = session.pickPanel(ndc.x, ndc.y);
+    expect(picked?.page).toBe('moves');
+    expect(picked?.hit).toEqual({ kind: 'move', source: 'game', index: 0, name: 'Thunderbolt' });
+    expect(session.pickPanel(-0.99, 0.99)).toBeNull();
+    session.setLayout({ heightRatio: 0.7, offsetX: 0, offsetY: 0, lift: 0, yawDeg: 0, anchor: 'base', showStats: false });
+    expect(session.pickPanel(ndc.x, ndc.y)).toBeNull(); // desligado: não responde
   });
 
   it('recuperação: depois de perdida, encontrar de novo volta a "tracking" e conta de novo', async () => {

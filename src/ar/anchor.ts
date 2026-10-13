@@ -40,7 +40,7 @@ export interface SpriteLayout {
 export const DEFAULT_LAYOUT: SpriteLayout = {
   heightRatio: 0.7,
   offsetX: 0,
-  offsetY: -0.15,
+  offsetY: 0.1,
   lift: 0,
   yawDeg: 0,
   anchor: 'base',
@@ -137,6 +137,50 @@ export function spriteMatrix(layout: SpriteLayout, spriteAspect: number, extraYa
   const lowerHalf = l.anchor === 'base' ? height / 2 : 0;
   const origin: [number, number, number] = [l.offsetX, l.offsetY, l.lift + lowerHalf];
   return [...xAxis, 0, ...yAxis, 0, ...zAxis, 0, ...origin, 1];
+}
+
+/** Onde o Pokémon está no chão da carta: o painel de status é posicionado a partir daqui. */
+export interface SpritePlacement {
+  /** Ponto do chão (espaço da carta) sob o centro da ilustração. */
+  x: number;
+  y: number;
+  /** Giro total do sprite (layout + automático para a câmera), em graus. */
+  yawDeg: number;
+  heightRatio: number;
+}
+
+/** Largura do painel, em larguras de carta, por unidade de altura do sprite (painel e sprite crescem juntos). */
+export const PANEL_WIDTH_PER_SPRITE_HEIGHT = 1.15;
+export const PANEL_MIN_WIDTH = 0.4;
+export const PANEL_MAX_WIDTH = 1.6;
+/** Folga entre os pés do Pokémon e a borda do painel (larguras de carta). */
+export const PANEL_GAP = 0.04;
+
+export interface PanelPlacement {
+  x: number;
+  y: number;
+  /** Giro em torno da normal da carta, em radianos (o "alto" do painel aponta para o Pokémon). */
+  yawRad: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Painel logo abaixo da ilustração: deitado no chão, à frente dos pés do Pokémon (no lado para onde ele olha),
+ * girado junto com ele para o texto ficar de pé para quem olha de frente. `panelAspect` = altura/largura do painel.
+ */
+export function panelPlacement(sprite: SpritePlacement, panelAspect: number): PanelPlacement {
+  const width = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, sprite.heightRatio * PANEL_WIDTH_PER_SPRITE_HEIGHT));
+  const height = width * panelAspect;
+  const yawRad = (sprite.yawDeg * Math.PI) / 180;
+  const distance = PANEL_GAP + height / 2;
+  return {
+    x: sprite.x + Math.sin(yawRad) * distance,
+    y: sprite.y - Math.cos(yawRad) * distance,
+    yawRad,
+    width,
+    height,
+  };
 }
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  cameraParamsFromProjection, cardHeightUnits, cardSpaceMatrix, clampLayout, DEFAULT_LAYOUT, mindArPostMatrix, multiply,
+  cameraParamsFromProjection, cardHeightUnits, panelPlacement, cardSpaceMatrix, clampLayout, DEFAULT_LAYOUT, mindArPostMatrix, multiply,
   spriteCorners, spriteMatrix, transformPoint, cameraPositionInCardSpace, yawTowardCamera,
 } from './anchor';
 import type { SpriteLayout } from './anchor';
@@ -176,5 +176,32 @@ describe('sprite de frente para a câmera, sem deixar de ficar em pé', () => {
   });
   it('câmera quase na vertical da carta: direção instável, mantém o giro anterior (null)', () => {
     expect(yawTowardCamera(at([0.01, -0.02, 5]))).toBeNull();
+  });
+});
+
+
+describe('painel de status logo abaixo da ilustração', () => {
+  it('sem giro: fica à frente dos pés (para a borda inferior da carta), sem tocar nos pés', () => {
+    const p = panelPlacement({ x: 0.1, y: 0.2, yawDeg: 0, heightRatio: 0.7 }, 0.75);
+    expect(p.x).toBeCloseTo(0.1, 6);
+    expect(p.y).toBeLessThan(0.2);
+    // A borda de cima do painel (a mais próxima dos pés) fica logo depois dos pés: só a folga.
+    expect(p.y + p.height / 2).toBeCloseTo(0.2 - 0.04, 6);
+    expect(p.yawRad).toBe(0);
+  });
+  it('gira junto com o Pokémon: o painel continua no lado para onde ele olha', () => {
+    const yaw = 90;
+    const p = panelPlacement({ x: 0, y: 0, yawDeg: yaw, heightRatio: 0.7 }, 0.75);
+    // Com 90° o Pokémon olha para +X: o painel fica em +X e o "alto" dele (yawRad) aponta de volta para o Pokémon.
+    expect(p.x).toBeGreaterThan(0.2);
+    expect(Math.abs(p.y)).toBeLessThan(1e-9);
+    expect(p.yawRad).toBeCloseTo(Math.PI / 2, 9);
+  });
+  it('painel e Pokémon crescem juntos, com limites', () => {
+    const small = panelPlacement({ x: 0, y: 0, yawDeg: 0, heightRatio: 0.5 }, 0.75).width;
+    const big = panelPlacement({ x: 0, y: 0, yawDeg: 0, heightRatio: 1 }, 0.75).width;
+    expect(big).toBeGreaterThan(small);
+    expect(panelPlacement({ x: 0, y: 0, yawDeg: 0, heightRatio: 0.01 }, 0.75).width).toBe(0.4);
+    expect(panelPlacement({ x: 0, y: 0, yawDeg: 0, heightRatio: 50 }, 0.75).width).toBe(1.6);
   });
 });
