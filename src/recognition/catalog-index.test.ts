@@ -17,6 +17,14 @@ const data: CatalogIndexData = {
 const lookup = new CatalogLookup(data);
 
 describe('CatalogLookup', () => {
+  it('busca manual: nome parcial, número e combinação; mais recente primeiro', () => {
+    expect(lookup.search('pika').map((m) => m.id)).toEqual(['sv03.5-025', 'base2-60', 'base1-58']);
+    expect(lookup.search('pikachu', 58).map((m) => m.id)).toEqual(['base1-58']);
+    expect(lookup.search('', 25).map((m) => m.id)).toEqual(['sv03.5-025']);
+    expect(lookup.search('')).toEqual([]);
+    expect(lookup.search('charzard').map((m) => m.id)).toContain('base1-4'); // erro de digitação
+  });
+
   it('conta sets e cartas', () => {
     expect(lookup.setCount).toBe(5);
     expect(lookup.cardCount).toBe(7);

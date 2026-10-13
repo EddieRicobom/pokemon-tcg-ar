@@ -120,7 +120,7 @@ function toIdentified(card: CardRecordLike): IdentifiedCard {
   return { ...card, dexId: card.dexIds[0] };
 }
 
-function recordFromTcgdex(card: TcgdexCard, fallback?: CandidateInfo): CardRecordLike {
+export function recordFromTcgdex(card: TcgdexCard, fallback?: CandidateInfo): CardRecordLike {
   return {
     id: card.id,
     name: card.name,

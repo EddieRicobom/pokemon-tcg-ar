@@ -525,3 +525,9 @@ small {
     animation: none;
   }
 }
+
+.layout input[type='text'] {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--surface-2);
+}

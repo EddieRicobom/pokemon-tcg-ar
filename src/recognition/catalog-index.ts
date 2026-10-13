@@ -56,6 +56,16 @@ function parseLocalId(localId: string): { prefix: string; value: number } | null
   return { prefix: (match[1] ?? '').toUpperCase(), value: Number.parseInt(match[2] ?? '0', 10) };
 }
 
+/** Resultado da busca manual (só o que a lista mostra). */
+export interface ManualMatch {
+  id: string;
+  name: string;
+  setName: string;
+  localId: string;
+  setOfficial: number;
+  release?: string;
+}
+
 export class CatalogLookup {
   readonly generatedAt: string;
   readonly cardCount: number;
@@ -170,6 +180,30 @@ export class CatalogLookup {
     }
     result.sort((a, b) => b.prior - a.prior || (b.release ?? '').localeCompare(a.release ?? ''));
     return result.slice(0, limit);
+  }
+
+  /**
+   * Busca manual (o usuário digita): nome (contém, sem acento/caixa) e/ou número da carta. Não é reconhecimento:
+   * só lista cartas do índice para a pessoa escolher. Mais recentes primeiro, nome exato antes de parcial.
+   */
+  search(query: string, number?: number, limit = 30): ManualMatch[] {
+    const q = normalizeName(query);
+    if (!q && number === undefined) return [];
+    const out: (ManualMatch & { exact: boolean })[] = [];
+    for (const set of this.data.sets) {
+      for (const [localId, name, ptName] of set.cards) {
+        if (number !== undefined && parseLocalId(localId)?.value !== number) continue;
+        let exact = false;
+        if (q) {
+          const names = [name, ...(ptName ? [ptName] : [])].map(normalizeName);
+          exact = names.includes(q);
+          if (!exact && !names.some((n) => n.includes(q)) && !names.some((n) => nameSimilarity(query, n) >= 0.85)) continue;
+        }
+        out.push({ id: `${set.id}-${localId}`, name, setName: set.name, localId, setOfficial: set.official, release: set.release, exact });
+      }
+    }
+    out.sort((a, b) => Number(b.exact) - Number(a.exact) || (b.release ?? '').localeCompare(a.release ?? ''));
+    return out.slice(0, limit).map(({ exact: _exact, ...match }) => match);
   }
 
   hasCard(id: string): boolean {
