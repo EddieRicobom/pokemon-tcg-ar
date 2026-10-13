@@ -22,7 +22,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       BASE_PATH: /${{ github.event.repository.name }}/
     steps:
@@ -47,6 +47,21 @@ jobs:
       # Índice estático (só ids, nomes e contagens), gerado aqui e servido pelo Pages. Nenhum celular baixa o catálogo.
       - name: Gerar índice do catálogo
         run: npm run build:index
+
+      # Índice de ilustrações (opcional, experimental): 112 bytes por carta, calculados aqui a partir das imagens do TCGdex.
+      # Incremental (cache entre execuções) e com orçamento de tempo; se falhar, o deploy segue sem ele.
+      - name: Restaurar o cache do índice de ilustrações
+        uses: actions/cache@v4
+        with:
+          path: .cache/art-index
+          key: art-index-v1-${{ github.run_id }}
+          restore-keys: art-index-v1-
+
+      - name: Gerar índice de ilustrações
+        run: npm run build:art-index
+        continue-on-error: true
+        env:
+          ART_BUDGET_MIN: '14'
 
       - name: Build de produção
         run: npm run build

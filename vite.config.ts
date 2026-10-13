@@ -51,6 +51,11 @@ export default defineConfig({
             options: { cacheName: 'ocr-assets-v1', expiration: { maxEntries: 8 } },
           },
           {
+            urlPattern: ({ url }) => url.pathname.startsWith(`${base}data/art-index.`),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'art-index-v1', expiration: { maxEntries: 4 } },
+          },
+          {
             urlPattern: ({ url }) => url.pathname === `${base}data/catalog-index.json`,
             handler: 'StaleWhileRevalidate',
             options: { cacheName: 'catalog-index-v1', expiration: { maxEntries: 1 } },

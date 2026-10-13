@@ -8,7 +8,7 @@ import type { SpriteLoadState } from '../ar/sprite-loader';
 import type { SpriteSource } from '../ar/sprite-source';
 import { ScanController } from '../app/scan-controller';
 import type { ScanState } from '../app/scan-controller';
-import { fetchSprite, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress } from '../app/services';
+import { fetchSprite, getArtIndex, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress, setArtSearch } from '../app/services';
 import type { ManualMatch } from '../recognition/catalog-index';
 import { recordFromTcgdex } from '../recognition/pipeline';
 import { lastAttempt } from '../app/diagnostics';
@@ -55,6 +55,37 @@ async function pickManual(id: string): Promise<void> {
   manualResults.value = [];
   await (await ensureController()).chooseManual(id);
 }
+
+// Busca pela ilustração (opcional, experimental): sugere candidatas pela aparência da arte.
+const ART_KEY = 'tcg-ar-art-search-v1';
+function readArtOption(): boolean {
+  try {
+    return localStorage.getItem(ART_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+const artOn = ref(readArtOption());
+const artStatus = ref('');
+async function applyArtOption(): Promise<void> {
+  setArtSearch(artOn.value);
+  try {
+    localStorage.setItem(ART_KEY, artOn.value ? '1' : '0');
+  } catch {
+    // Só não lembra da escolha na próxima vez.
+  }
+  if (!artOn.value) {
+    artStatus.value = '';
+    return;
+  }
+  artStatus.value = 'Carregando o índice de ilustrações…';
+  const index = await getArtIndex();
+  artStatus.value = index
+    ? `Índice de ilustrações ativo: ${index.size} cartas (gerado em ${index.generatedAt.slice(0, 10)}).`
+    : 'O índice de ilustrações ainda não foi publicado: a opção não faz efeito por enquanto.';
+}
+setArtSearch(artOn.value);
+if (artOn.value) void applyArtOption();
 
 const LAYOUT_KEY = 'tcg-ar-layout-v1';
 function readLayout(): SpriteLayout {
@@ -314,6 +345,12 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
         <button type="button" @click="closeCamera">Fechar câmera</button>
       </template>
     </div>
+
+    <label v-if="!cardId" class="art-option">
+      <input v-model="artOn" type="checkbox" @change="applyArtOption" />
+      Busca pela ilustração (experimental)
+    </label>
+    <p v-if="artStatus" class="meta" role="status">{{ artStatus }}</p>
 
     <p v-if="cameraMessage" class="message error" role="alert">{{ cameraMessage }}</p>
     <p v-if="loadingEngine" class="message" role="status">{{ loadingEngine }}</p>

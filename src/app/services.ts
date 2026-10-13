@@ -3,6 +3,7 @@ import { createDefaultBackend } from '../cache/assets';
 import { CardCache } from '../cache/card-cache';
 import { openCacheDb } from '../cache/db';
 import { blobToRgba, loadImageRgba, rgbaToCanvas } from '../recognition/browser-image';
+import { ArtIndex } from '../recognition/art-index';
 import { loadCatalogIndex } from '../recognition/catalog-index';
 import type { CatalogLookup } from '../recognition/catalog-index';
 import { createTesseractEngine } from '../recognition/ocr';
@@ -24,10 +25,23 @@ let tcgdex: TcgdexClient | null = null;
 let catalogPromise: Promise<CatalogLookup | null> | null = null;
 let ocrPromise: Promise<OcrEngine> | null = null;
 let pipeline: RecognitionPipeline | null = null;
+let artPromise: Promise<ArtIndex | null> | null = null;
+let artSearchOn = false;
 let ocrListener: ((status: string, progress: number) => void) | null = null;
 
 export function onOcrProgress(listener: ((status: string, progress: number) => void) | null): void {
   ocrListener = listener;
+}
+
+/** Opção "busca pela ilustração": liga/desliga sem recriar o pipeline. */
+export function setArtSearch(on: boolean): void {
+  artSearchOn = on;
+}
+
+/** Índice de ilustrações (carregado só quando a opção é usada). null se ainda não foi publicado. */
+export function getArtIndex(): Promise<ArtIndex | null> {
+  artPromise ??= ArtIndex.load(assetUrl('data/art-index.json'), assetUrl('data/art-index.bin'));
+  return artPromise;
 }
 
 export function getCache(): Promise<CardCache> {
@@ -79,6 +93,7 @@ export async function getPipeline(): Promise<RecognitionPipeline> {
     catalog,
     loadReference: (url) => loadImageRgba(url, CARD_WIDTH_PX, CARD_HEIGHT_PX),
     localReferences: () => cache.localReferences(),
+    artSearch: () => (artSearchOn ? getArtIndex() : Promise.resolve(null)),
   });
   return pipeline;
 }
