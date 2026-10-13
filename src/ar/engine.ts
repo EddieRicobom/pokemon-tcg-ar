@@ -15,6 +15,7 @@ export interface TrackingInfo {
 
 export interface TrackingEngine {
   /** Prepara o alvo (compilado) e começa a processar o vídeo. */
-  start(video: HTMLVideoElement, target: ArrayBuffer, onUpdate: (update: TrackingUpdate) => void): Promise<TrackingInfo>;
+  /** `onInputChange`: o quadro da câmera mudou de proporção (girou a tela, trocou a resolução); quem chamou deve reiniciar. */
+  start(video: HTMLVideoElement, target: ArrayBuffer, onUpdate: (update: TrackingUpdate) => void, onInputChange?: () => void): Promise<TrackingInfo>;
   stop(): void;
 }

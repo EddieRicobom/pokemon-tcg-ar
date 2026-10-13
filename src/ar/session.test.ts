@@ -12,9 +12,13 @@ const info: TrackingInfo = { markerWidth: 600, markerHeight: 825, projection, in
 class FakeEngine implements TrackingEngine {
   onUpdate: ((u: TrackingUpdate) => void) | null = null;
   stopped = 0;
+  starts = 0;
+  onInputChange: (() => void) | null = null;
   failWith: Error | null = null;
-  async start(_video: HTMLVideoElement, _target: ArrayBuffer, onUpdate: (u: TrackingUpdate) => void) {
+  async start(_video: HTMLVideoElement, _target: ArrayBuffer, onUpdate: (u: TrackingUpdate) => void, onInputChange?: () => void) {
     if (this.failWith) throw this.failWith;
+    this.starts++;
+    this.onInputChange = onInputChange ?? null;
     this.onUpdate = onUpdate;
     return info;
   }
@@ -100,7 +104,25 @@ describe('ArSession', () => {
     const moved = [...pose];
     moved[12] = 80;
     engine.onUpdate!({ worldMatrix: moved });
-    expect(sprite.group.matrix.elements[12]).toBeCloseTo(first! + 80, 6);
+    // A pose nova é suavizada: não pula de uma vez...
+    expect(sprite.group.matrix.elements[12]).toBeCloseTo(first!, 6);
+    // ...mas converge para ela em poucos quadros de tela.
+    for (let t = 100; t <= 2000; t += 100) sprite.update(t);
+    expect(sprite.group.matrix.elements[12]).toBeCloseTo(first! + 80, 3);
+  });
+
+  it('câmera muda de proporção: reinicia o rastreador e volta a procurar, sem perder a sessão', async () => {
+    const { session, engine, pose } = setup();
+    await session.start(new ArrayBuffer(8));
+    engine.onUpdate!({ worldMatrix: pose });
+    expect(session.currentState.phase).toBe('tracking');
+    engine.onInputChange!();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(engine.starts).toBe(2);
+    expect(engine.stopped).toBe(1);
+    expect(session.currentState.phase).toBe('searching');
+    engine.onUpdate!({ worldMatrix: pose });
+    expect(session.currentState.phase).toBe('tracking');
   });
 
   it('recuperação: depois de perdida, encontrar de novo volta a "tracking" e conta de novo', async () => {
