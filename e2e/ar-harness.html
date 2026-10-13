@@ -14,10 +14,63 @@ Controller.prototype._detectAndMatch = async function (...args) {
   if (n <= 8 || n % 20 === 0) window.log.push('detectAndMatch#' + n + ' idx=' + r.targetIndex + ' ' + Math.round(performance.now() - t) + 'ms' + (r.debugExtra ? ' keys=' + Object.keys(r.debugExtra).join(',') : ''));
   return r;
 };
+import { CropDetector } from 'mind-ar/src/image-target/detector/crop-detector.js';
+const origMove = CropDetector.prototype.detectMoving;
+let dm = 0;
+CropDetector.prototype.detectMoving = function (...a) {
+  const r = origMove.apply(this, a);
+  dm++;
+  if (dm <= 12 || r.featurePoints.length > 0) window.log.push('detectMoving#' + dm + ' featurePoints=' + (r.featurePoints ? r.featurePoints.length : 'n/a') + ' crop=' + (this.lastRandomIndex ?? '?'));
+  return r;
+};
 window.log = [];
 const backend = new URLSearchParams(location.search).get('backend');
 if (backend) { const tf = await import('@tensorflow/tfjs'); await tf.setBackend(backend); await tf.ready(); window.log.push('tf backend ' + tf.getBackend()); }
 const log = (m) => { window.log.push(m); };
+window.detectTest = async () => {
+  const tf = await import('@tensorflow/tfjs');
+  const { Detector } = await import('mind-ar/src/image-target/detector/detector.js');
+  await tf.ready();
+  const img = await createImageBitmap(await (await fetch('./card.png')).blob());
+  const w = 300, h = 413;
+  const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+  const out = { backend: tf.getBackend() };
+  const gray = tf.tidy(() => tf.browser.fromPixels(c).mean(2));
+  const sum = (await gray.sum().data())[0];
+  out.graySum = Math.round(sum);
+  const det = new Detector(w, h);
+  const r = det.detect(gray);
+  out.featurePoints = r.featurePoints.length;
+  return out;
+};
+window.videoTest = async () => {
+  const tf = await import('@tensorflow/tfjs');
+  const { InputLoader } = await import('mind-ar/src/image-target/input-loader.js');
+  await tf.ready();
+  const v = document.getElementById('v');
+  v.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+  await v.play();
+  await new Promise((r) => setTimeout(r, 800));
+  const out = { video: v.videoWidth + 'x' + v.videoHeight, readyState: v.readyState };
+  const loader = new InputLoader(v.videoWidth, v.videoHeight);
+  const t = loader.loadInput(v);
+  out.shape = t.shape;
+  const d = await t.data();
+  let min = 1e9, max = -1e9, sum = 0;
+  for (const x of d) { min = Math.min(min, x); max = Math.max(max, x); sum += x; }
+  out.min = min; out.max = max; out.mean = sum / d.length;
+  // Mesmo vídeo desenhado num canvas 2D, para comparar.
+  const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+  const g = c.getContext('2d'); g.drawImage(v, 0, 0);
+  const px = g.getImageData(0, 0, c.width, c.height).data;
+  let s2 = 0; for (let i = 0; i < px.length; i += 4) s2 += px[i];
+  out.canvasMeanR = s2 / (px.length / 4);
+  const t2 = loader.loadInput(c);
+  const d2 = await t2.data();
+  let s3 = 0; for (const x of d2) s3 += x;
+  out.canvasInputMean = s3 / d2.length;
+  return out;
+};
 window.run = async () => {
   try {
     const v = document.getElementById('v');

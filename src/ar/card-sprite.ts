@@ -5,7 +5,7 @@ import {
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import type { RgbaImage } from '../recognition/types';
-import { clampLayout, DEFAULT_LAYOUT, spriteMatrix } from './anchor';
+import { clampLayout, DEFAULT_LAYOUT, spriteMatrix, yawTowardCamera } from './anchor';
 import type { SpriteLayout } from './anchor';
 import { makePlaceholder } from './placeholder';
 
@@ -35,6 +35,9 @@ export class CardSprite {
   private layout: SpriteLayout = DEFAULT_LAYOUT;
   private startedAt = 0;
   private shownFrame = -1;
+  /** Giro automático (graus) para o sprite olhar para a câmera; suavizado entre quadros. */
+  private autoYaw = 0;
+  private hasAutoYaw = false;
   /** Quantos quadros foram enviados à textura (diagnóstico e testes). */
   uploads = 0;
 
@@ -59,7 +62,7 @@ export class CardSprite {
   }
 
   private applyLayout(): void {
-    this.mesh.matrix.fromArray(spriteMatrix(this.layout, this.aspect));
+    this.mesh.matrix.fromArray(spriteMatrix(this.layout, this.aspect, this.layout.faceCamera === false ? 0 : this.autoYaw));
     this.mesh.matrixWorldNeedsUpdate = true;
   }
 
@@ -124,8 +127,22 @@ export class CardSprite {
 
   /** Aplica a pose da carta (matriz do espaço da carta, ordem de colunas). */
   setCardMatrix(matrix: ArrayLike<number>): void {
-    this.group.matrix.fromArray(Array.from(matrix));
+    const m = Array.from(matrix);
+    this.group.matrix.fromArray(m);
     this.group.matrixWorldNeedsUpdate = true;
+    if (this.layout.faceCamera !== false) {
+      const target = yawTowardCamera(m);
+      if (target !== null) {
+        if (!this.hasAutoYaw) this.autoYaw = target;
+        else {
+          // Interpola pelo caminho curto para o sprite não girar de uma vez a cada tremida do rastreamento.
+          const diff = ((target - this.autoYaw + 540) % 360) - 180;
+          this.autoYaw += diff * 0.3;
+        }
+        this.hasAutoYaw = true;
+        this.applyLayout();
+      }
+    }
   }
 
   /** Atualiza o quadro da animação para o instante `nowMs`. Devolve true se enviou um quadro novo à textura. */

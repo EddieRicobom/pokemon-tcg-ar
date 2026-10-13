@@ -19,4 +19,6 @@ await page.waitForTimeout(2500);
 log = await page.evaluate(() => window.log);
 console.log(log.join('\n'));
 await page.screenshot({ path: 'e2e/.tmp/ar-shot.png' });
+const gl = await page.evaluate(() => { const c = document.createElement('canvas'); const g = c.getContext('webgl2'); if (!g) return 'sem webgl2'; return { renderer: g.getParameter(g.RENDERER), floatRender: !!g.getExtension('EXT_color_buffer_float'), halfFloat: !!g.getExtension('EXT_color_buffer_half_float'), maxTex: g.getParameter(g.MAX_TEXTURE_SIZE) }; });
+console.log('glinfo', JSON.stringify(gl));
 await browser.close();
