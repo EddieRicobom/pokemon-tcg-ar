@@ -4,6 +4,7 @@ import {
 } from 'three';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
+import { upscaleFactor, upscaleSprite } from '../core/pixel-upscale';
 import type { RgbaImage } from '../recognition/types';
 import { clampLayout, DEFAULT_LAYOUT, spriteMatrix, yawTowardCamera } from './anchor';
 import type { SpriteLayout } from './anchor';
@@ -11,6 +12,9 @@ import { makePlaceholder } from './placeholder';
 
 /** Constante de tempo (ms) do suavizador de pose: o rastreador entrega ~10–20 poses/s e a tela desenha 60 quadros/s. */
 export const POSE_SMOOTHING_MS = 60;
+
+/** Memória máxima (bytes) para guardar os quadros já ampliados; acima disso, amplia de novo a cada troca de quadro. */
+const FRAME_CACHE_BYTES = 32 * 1024 * 1024;
 
 export type SpriteMode = 'empty' | 'animated' | 'static' | 'placeholder';
 
@@ -46,6 +50,11 @@ export class CardSprite {
   private hasAutoYaw = false;
   /** Quantos quadros foram enviados à textura (diagnóstico e testes). */
   uploads = 0;
+  /** Suavização ligada (padrão): ver `SpriteLayout.smooth`. */
+  private smooth = true;
+  private staticImage: RgbaImage | null = null;
+  private readonly frameCache = new Map<number, Uint8ClampedArray>();
+  private frameCacheBytes = 0;
 
   constructor() {
     this.group.matrixAutoUpdate = false;
@@ -59,8 +68,40 @@ export class CardSprite {
   }
 
   setLayout(layout: SpriteLayout): void {
+    const before = this.smooth;
     this.layout = clampLayout(layout);
+    this.smooth = this.layout.smooth !== false;
+    if (before !== this.smooth) this.rebuildTexture();
     this.applyLayout();
+  }
+
+  /** A suavização mudou: refaz a textura do sprite atual sem reiniciar a animação. */
+  private rebuildTexture(): void {
+    if (this.mode === 'animated' && this.gif) {
+      const startedAt = this.startedAt;
+      this.setAnimation(this.gif, startedAt);
+      this.shownFrame = -1;
+    } else if (this.mode === 'static' && this.staticImage) {
+      this.setStatic(this.staticImage);
+    }
+  }
+
+  /** Pixels do quadro como vão para a GPU: ampliados e com bordas preparadas (suavização) ou os originais. */
+  private frameData(index: number, rgba: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
+    if (!this.smooth) return rgba;
+    const cached = this.frameCache.get(index);
+    if (cached) return cached;
+    const up = upscaleSprite(rgba, width, height);
+    if (this.frameCacheBytes + up.data.byteLength <= FRAME_CACHE_BYTES) {
+      this.frameCache.set(index, up.data);
+      this.frameCacheBytes += up.data.byteLength;
+    }
+    return up.data;
+  }
+
+  private clearFrameCache(): void {
+    this.frameCache.clear();
+    this.frameCacheBytes = 0;
   }
 
   getLayout(): SpriteLayout {
@@ -101,14 +142,25 @@ export class CardSprite {
     const first = gif.frames[0];
     if (!first) throw new Error('GIF sem quadros.');
     this.gif = gif;
+    this.staticImage = null;
+    this.clearFrameCache();
     this.shownFrame = 0;
     this.startedAt = nowMs;
-    this.show(this.makeTexture(gif.width, gif.height, first.rgba, false), gif.width, gif.height, 'animated');
+    const data = this.frameData(0, first.rgba, gif.width, gif.height);
+    const factor = this.smooth ? upscaleFactor(gif.width, gif.height) : 1;
+    this.show(this.makeTexture(gif.width * factor, gif.height * factor, data, this.smooth), gif.width, gif.height, 'animated');
   }
 
   /** Imagem parada (PNG de reserva). Só use quando o GIF não existe. */
   setStatic(image: RgbaImage): void {
     this.gif = null;
+    this.staticImage = image;
+    this.clearFrameCache();
+    if (this.smooth) {
+      const up = upscaleSprite(image.data, image.width, image.height);
+      this.show(this.makeTexture(up.width, up.height, up.data, true), image.width, image.height, 'static');
+      return;
+    }
     this.show(this.makeTexture(image.width, image.height, image.data, Math.max(image.width, image.height) > 128), image.width, image.height, 'static');
   }
 
@@ -116,12 +168,15 @@ export class CardSprite {
   setPlaceholder(): void {
     const image = makePlaceholder();
     this.gif = null;
+    this.staticImage = null;
     this.show(this.makeTexture(image.width, image.height, image.data, false), image.width, image.height, 'placeholder');
   }
 
   clear(): void {
     this.releaseTexture();
     this.gif = null;
+    this.staticImage = null;
+    this.clearFrameCache();
     this.mode = 'empty';
     this.mesh.visible = false;
   }
@@ -166,7 +221,7 @@ export class CardSprite {
     const frame = this.gif.frames[index];
     if (!frame) return false;
     this.shownFrame = index;
-    this.texture.image.data = asBytes(frame.rgba);
+    this.texture.image.data = asBytes(this.frameData(index, frame.rgba, this.gif.width, this.gif.height));
     this.texture.needsUpdate = true;
     this.uploads++;
     return true;
