@@ -3,6 +3,7 @@ import { makePlaceholder } from './placeholder';
 import { CardSprite } from './card-sprite';
 import type { TrackingEngine, TrackingInfo, TrackingUpdate } from './engine';
 import { ArSession } from './session';
+import { StatsPanel } from './stats-panel';
 import type { ArState, RenderBackend } from './session';
 
 const f = 240 / Math.tan((45 * Math.PI) / 360);
@@ -25,7 +26,7 @@ class FakeEngine implements TrackingEngine {
   stop() { this.stopped++; }
 }
 
-function setup(options: { lostAfterFrames?: number; holdMs?: number; now?: () => number } = {}) {
+function setup(options: { lostAfterFrames?: number; holdMs?: number; now?: () => number; panel?: StatsPanel } = {}) {
   const engine = new FakeEngine();
   const renders: number[] = [];
   const renderer: RenderBackend = {
@@ -123,6 +124,21 @@ describe('ArSession', () => {
     expect(session.currentState.phase).toBe('searching');
     engine.onUpdate!({ worldMatrix: pose });
     expect(session.currentState.phase).toBe('tracking');
+  });
+
+  it('painel de status: filho do grupo da carta, posicionado pela altura do alvo, ligado/desligado pelo layout e liberado no fim', async () => {
+    const panel = new StatsPanel('Pikachu', 25);
+    const { session, sprite } = setup({ panel });
+    await session.start(new ArrayBuffer(8));
+    expect(sprite.group.children).toContain(panel.object);
+    // markerHeight / markerWidth = 825 / 600
+    expect(panel.mesh.position.y).toBeLessThan(-(825 / 600) / 2);
+    session.setLayout({ heightRatio: 0.7, offsetX: 0, offsetY: 0, lift: 0, yawDeg: 0, anchor: 'base', showStats: false });
+    expect(panel.object.visible).toBe(false);
+    session.setLayout({ heightRatio: 0.7, offsetX: 0, offsetY: 0, lift: 0, yawDeg: 0, anchor: 'base' });
+    expect(panel.object.visible).toBe(true);
+    session.stop();
+    expect(sprite.group.children).not.toContain(panel.object);
   });
 
   it('recuperação: depois de perdida, encontrar de novo volta a "tracking" e conta de novo', async () => {

@@ -1,5 +1,6 @@
 import { fetchSprite } from '../ar/sprite-source';
 import { createDefaultBackend } from '../cache/assets';
+import { loadBattleData } from './pokemon-data-service';
 import { CardCache } from '../cache/card-cache';
 import { openCacheDb } from '../cache/db';
 import { blobToRgba, loadImageRgba, rgbaToCanvas } from '../recognition/browser-image';
@@ -103,6 +104,17 @@ export async function getPipeline(): Promise<RecognitionPipeline> {
     artSearch: () => (artSearchOn ? getArtIndex() : Promise.resolve(null)),
   });
   return pipeline;
+}
+
+/** Carrega, em paralelo, atributos/golpes (PokéAPI) e ataques da carta (TCGdex) para o painel de AR. */
+export function loadBattle(cardId: string, dexId: number | undefined, onPart: Parameters<typeof loadBattleData>[2]): Promise<void> {
+  let storage: Storage | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    storage = null;
+  }
+  return loadBattleData({ cardId, dexId }, { storage, getCard: (id) => getTcgdex().getCard(id) }, onPart);
 }
 
 export { fetchSprite };

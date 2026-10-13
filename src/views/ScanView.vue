@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { clampLayout, DEFAULT_LAYOUT, LAYOUT_LIMITS } from '../ar/anchor';
+import { PANEL_PAGE_LABELS_PT, PANEL_PAGES } from '../ar/panel-state';
+import type { PanelMode } from '../ar/panel-state';
 import type { SpriteLayout } from '../ar/anchor';
 import type { RunningAr } from '../ar/start-ar';
 import type { ArState } from '../ar/session';
@@ -10,7 +12,7 @@ import { arStepList, arStatusText } from '../app/ar-stages';
 import type { ArStage } from '../app/ar-stages';
 import { ScanController } from '../app/scan-controller';
 import type { LastAttempt, ScanState } from '../app/scan-controller';
-import { fetchSprite, getArtIndex, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress, setArtSearch, setCaptureDebug } from '../app/services';
+import { fetchSprite, getArtIndex, loadBattle, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress, setArtSearch, setCaptureDebug } from '../app/services';
 import type { ManualMatch } from '../recognition/catalog-index';
 import { recordFromTcgdex } from '../recognition/pipeline';
 import { lastAttempt } from '../app/diagnostics';
@@ -41,6 +43,7 @@ const pendingArCardId = ref<string | null>(null);
 let arRun = 0;
 let lastReadyCard: unknown = null;
 const showLayout = ref(false);
+const panelMode = ref<PanelMode>('auto');
 const arActive = ref(false);
 
 // Diagnóstico do scan: mostra o que o app está vendo (onde achou a carta, o que o OCR recebeu e leu).
@@ -364,6 +367,10 @@ async function startArFor(cardId: string): Promise<void> {
       dexId: assets.card.dexIds[0],
       cachedSprite: assets.cachedSprite,
       fetchSprite: (dexId) => fetchSprite(dexId),
+      battle: {
+        name: assets.card.name,
+        load: (onPart) => loadBattle(assets.card.id, assets.card.dexIds[0], onPart),
+      },
       onState: (state) => {
         if (run !== arRun) return;
         arState.value = state;
@@ -379,6 +386,7 @@ async function startArFor(cardId: string): Promise<void> {
       return;
     }
     ar = started;
+    panelMode.value = 'auto';
     ar.session.setLayout(clampLayout(layout));
     arActive.value = true;
     if (arStage.value === 'engine') arStage.value = 'searching';
@@ -461,6 +469,11 @@ function saveLayout(): void {
   } catch {
     // Só não lembra do ajuste na próxima vez.
   }
+}
+
+function setPanelMode(mode: PanelMode): void {
+  panelMode.value = mode;
+  ar?.panel?.setMode(mode);
 }
 
 function resetLayout(): void {
@@ -636,6 +649,12 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       </button>
     </details>
 
+    <div v-if="arActive && layout.showStats" class="panel-modes" role="group" aria-label="Página do painel de status">
+      <button type="button" :class="{ active: panelMode === 'auto' }" :aria-pressed="panelMode === 'auto'" @click="setPanelMode('auto')">Auto</button>
+      <button v-for="page in PANEL_PAGES" :key="page" type="button" :class="{ active: panelMode === page }" :aria-pressed="panelMode === page" @click="setPanelMode(page)">
+        {{ PANEL_PAGE_LABELS_PT[page] }}
+      </button>
+    </div>
     <details v-if="arActive" class="layout" :open="showLayout" @toggle="onLayoutToggle">
       <summary>Ajustar posição e tamanho do Pokémon</summary>
       <label>Altura ({{ layout.heightRatio.toFixed(2) }} larguras da carta)
@@ -658,6 +677,10 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
           <option value="base">Pés (em pé sobre a carta)</option>
           <option value="center">Centro</option>
         </select>
+      </label>
+      <label class="art-option">
+        <input v-model="layout.showStats" type="checkbox" />
+        <span>Mostrar o painel de status no chão</span>
       </label>
       <label class="art-option">
         <input v-model="layout.smooth" type="checkbox" />
