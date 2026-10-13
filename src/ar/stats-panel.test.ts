@@ -3,27 +3,37 @@ import { StatsPanel } from './stats-panel';
 import { PAGE_INTERVAL_MS, REAPPEAR_AFTER_MS } from './panel-state';
 
 describe('StatsPanel (painel no chão)', () => {
-  it('fica abaixo da borda inferior da carta, no plano dela', () => {
+  it('setPlacement coloca o painel no plano da carta, girado e na largura pedida', () => {
     const panel = new StatsPanel('Pikachu', 25);
-    panel.setCardHeight(1.375);
-    const { x, y, z } = panel.mesh.position;
-    expect(x).toBe(0);
-    expect(y).toBeLessThan(-1.375 / 2); // fora da carta
-    expect(Math.abs(z)).toBeLessThan(0.01); // coplanar
-    // O topo do painel não invade a carta.
-    expect(y + 0.75 / 2).toBeLessThan(-1.375 / 2);
+    panel.setPlacement({ x: 0.1, y: -0.4, yawRad: Math.PI / 2, width: 0.8, height: 0.6 });
+    expect(panel.object.position.x).toBeCloseTo(0.1, 6);
+    expect(panel.object.position.y).toBeCloseTo(-0.4, 6);
+    expect(Math.abs(panel.object.position.z)).toBeLessThan(0.01); // coplanar com a carta
+    expect(panel.object.rotation.z).toBeCloseTo(Math.PI / 2, 6);
+    expect(panel.mesh.scale.x).toBeCloseTo(0.8, 6);
     panel.dispose();
   });
 
-  it('acompanha a altura da carta', () => {
+  it('ignora posição inválida (NaN, largura zero) sem quebrar', () => {
     const panel = new StatsPanel('Pikachu');
-    panel.setCardHeight(1.4);
-    const a = panel.mesh.position.y;
-    panel.setCardHeight(2);
-    expect(panel.mesh.position.y).toBeLessThan(a);
-    panel.setCardHeight(-1);
-    panel.setCardHeight(Number.NaN);
-    expect(panel.mesh.position.y).toBeLessThan(a);
+    panel.setPlacement({ x: 0.2, y: 0.2, yawRad: 0, width: 0.5, height: 0.4 });
+    panel.setPlacement({ x: Number.NaN, y: 0, yawRad: 0, width: 0.5, height: 0.4 });
+    panel.setPlacement({ x: 0, y: 0, yawRad: 0, width: 0, height: 0 });
+    expect(panel.object.position.x).toBeCloseTo(0.2, 6);
+    expect(panel.mesh.scale.x).toBeCloseTo(0.5, 6);
+    panel.dispose();
+  });
+
+  it('toque no painel: acerta golpes, pontos de página e descarta fora da textura', () => {
+    const panel = new StatsPanel('Pikachu', 25);
+    panel.setPart('moves', { state: 'ok', value: [{ name: 'Thunderbolt', type: 'electric', power: 90, accuracy: 100, pp: 15, damageClass: 'special' }] });
+    panel.setMode('moves');
+    panel.update(0, true);
+    // Linha 0 de golpes: y de 120 a 176 (de cima para baixo no canvas); v cresce para cima.
+    expect(panel.hit(0.5, 1 - 140 / 384)).toEqual({ kind: 'move', source: 'game', index: 0, name: 'Thunderbolt' });
+    expect(panel.hit(0.5, 0.5)).toBeNull(); // espaço vazio
+    expect(panel.hit(2, 0.5)).toBeNull();
+    expect(panel.hit(Number.NaN, 0.5)).toBeNull();
     panel.dispose();
   });
 

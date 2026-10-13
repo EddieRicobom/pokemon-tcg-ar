@@ -19,6 +19,11 @@ Com a carta rastreada, abaixo da carta aparece um painel deitado no plano dela, 
 - **Golpes do jogo** (PokéAPI): até 4 golpes por nível mais recentes, com tipo, classe, precisão, PP e poder.
 Se uma fonte falhar (sem internet, por exemplo) a página mostra a mensagem de erro; as outras continuam. Anote: se as três páginas carregaram, se o texto é legível a uma distância normal e se o painel acompanha a carta sem tremer. "Mostrar o painel de status no chão" nos ajustes liga/desliga.
 
+### Ajuste com os dedos e toque no painel
+1. Com o AR ativo, toque em "Ajustar com os dedos". Arraste com um dedo: o Pokémon e o painel seguem o dedo sobre o chão da carta. Faça pinça com dois dedos: o tamanho muda. "Concluir ajuste" sai do modo; o ajuste fica salvo.
+2. Fora do modo de ajuste, toque num ataque ou golpe do painel: a linha brilha e aparece a mensagem de que usar golpes ainda não está implementado. Toque nos pontinhos do rodapé do painel para trocar de página.
+3. Anote: se o arrasto acompanha o dedo sem "escorregar", se a pinça é suave e se o toque acerta a linha certa com o painel inclinado.
+
 ## 2. Reconhecimento automático
 1. Escanear de novo, carta sobre qualquer fundo, sem reflexo na faixa de baixo.
 2. No painel de diagnóstico confira: quadrilátero verde sobre a carta, "Carta endireitada" em pé, "Faixa de baixo" com o número legível, tempos por etapa.

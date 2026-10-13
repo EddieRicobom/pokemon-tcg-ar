@@ -10,6 +10,60 @@ import type { PanelPage } from './panel-state';
 export const PANEL_WIDTH_PX = 512;
 export const PANEL_HEIGHT_PX = 384;
 
+/** Geometria das linhas tocáveis (compartilhada entre o desenho e o teste de toque). */
+export const ATTACK_ROW = { top: (i: number) => 124 + i * 82, height: 74, max: 3 } as const;
+export const MOVE_ROW = { top: (i: number) => 120 + i * 62, height: 56, max: 4 } as const;
+const DOT_GAP = 18;
+const dotX = (i: number) => PANEL_WIDTH_PX / 2 - ((PANEL_PAGES.length - 1) * DOT_GAP) / 2 + i * DOT_GAP;
+
+/** Linha acabada de tocar (para o brilho de confirmação). */
+export interface PanelPress {
+  page: PanelPage;
+  index: number;
+  /** Tempo (ms) desde o toque. */
+  ageMs: number;
+}
+export const PRESS_FLASH_MS = 450;
+
+export type PanelHit =
+  | { kind: 'move'; source: 'card' | 'game'; index: number; name: string }
+  | { kind: 'page'; page: PanelPage };
+
+/** O que existe no ponto (x, y) do painel, em pixels do canvas: um ataque/golpe, um ponto de página ou nada. */
+export function hitTestPanel(model: PanelModel, page: PanelPage, x: number, y: number): PanelHit | null {
+  if (y >= PANEL_HEIGHT_PX - 32) {
+    for (let i = 0; i < PANEL_PAGES.length; i++) {
+      if (Math.abs(x - dotX(i)) <= DOT_GAP / 2 + 3) return { kind: 'page', page: PANEL_PAGES[i]! };
+    }
+    return null;
+  }
+  const inRow = (top: number, height: number) => y >= top && y <= top + height && x >= 16 && x <= PANEL_WIDTH_PX - 16;
+  if (page === 'attacks' && model.data.card.state === 'ok') {
+    const attacks = model.data.card.value.attacks.slice(0, ATTACK_ROW.max);
+    for (let i = 0; i < attacks.length; i++) {
+      if (inRow(ATTACK_ROW.top(i), ATTACK_ROW.height)) return { kind: 'move', source: 'card', index: i, name: attacks[i]!.name };
+    }
+  }
+  if (page === 'moves' && model.data.moves.state === 'ok') {
+    const moves = model.data.moves.value.slice(0, MOVE_ROW.max);
+    for (let i = 0; i < moves.length; i++) {
+      if (inRow(MOVE_ROW.top(i), MOVE_ROW.height)) return { kind: 'move', source: 'game', index: i, name: moves[i]!.name };
+    }
+  }
+  return null;
+}
+
+function pressGlow(ctx: CanvasRenderingContext2D, press: PanelPress | undefined, page: PanelPage, index: number, top: number, height: number): void {
+  if (!press || press.page !== page || press.index !== index || press.ageMs > PRESS_FLASH_MS) return;
+  const strength = 1 - press.ageMs / PRESS_FLASH_MS;
+  roundRect(ctx, 16, top, PANEL_WIDTH_PX - 32, height, 14);
+  ctx.fillStyle = `rgba(251,191,36,${0.35 * strength})`;
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = `rgba(251,191,36,${0.95 * strength})`;
+  ctx.stroke();
+}
+
 export interface PanelModel {
   name: string;
   dexId?: number;
@@ -87,11 +141,9 @@ function header(ctx: CanvasRenderingContext2D, model: PanelModel, page: PanelPag
 }
 
 function footerDots(ctx: CanvasRenderingContext2D, page: PanelPage): void {
-  const gap = 18;
-  const startX = PANEL_WIDTH_PX / 2 - ((PANEL_PAGES.length - 1) * gap) / 2;
   PANEL_PAGES.forEach((p, i) => {
     ctx.beginPath();
-    ctx.arc(startX + i * gap, PANEL_HEIGHT_PX - 16, p === page ? 5 : 3.5, 0, Math.PI * 2);
+    ctx.arc(dotX(i), PANEL_HEIGHT_PX - 16, p === page ? 5 : 3.5, 0, Math.PI * 2);
     ctx.fillStyle = p === page ? TEXT : 'rgba(244,246,251,0.35)';
     ctx.fill();
   });
@@ -169,7 +221,7 @@ function energyDots(ctx: CanvasRenderingContext2D, x: number, cy: number, cost: 
   return cursor - x;
 }
 
-function attacksPage(ctx: CanvasRenderingContext2D, model: PanelModel, elapsed: number, nowMs: number): void {
+function attacksPage(ctx: CanvasRenderingContext2D, model: PanelModel, elapsed: number, nowMs: number, press?: PanelPress): void {
   const { card } = model.data;
   if (partMessage(ctx, card, nowMs) || card.state !== 'ok') return;
   const info = card.value;
@@ -187,15 +239,16 @@ function attacksPage(ctx: CanvasRenderingContext2D, model: PanelModel, elapsed: 
     message(ctx, 'Esta carta não tem ataques (Treinador ou Energia).', MUTED, 160);
     return;
   }
-  info.attacks.slice(0, 3).forEach((attack, i) => {
+  info.attacks.slice(0, ATTACK_ROW.max).forEach((attack, i) => {
     const p = rowProgress(elapsed, i, 140, 450);
-    const top = 124 + i * 82;
+    const top = ATTACK_ROW.top(i);
     ctx.save();
     ctx.globalAlpha = p;
     ctx.translate((1 - p) * 24, 0);
-    roundRect(ctx, 16, top, PANEL_WIDTH_PX - 32, 74, 14);
+    roundRect(ctx, 16, top, PANEL_WIDTH_PX - 32, ATTACK_ROW.height, 14);
     ctx.fillStyle = 'rgba(255,255,255,0.07)';
     ctx.fill();
+    pressGlow(ctx, press, 'attacks', i, top, ATTACK_ROW.height);
     // Sem texto de efeito, nome e dano ficam centralizados na linha.
     const cy = attack.effect ? top + 24 : top + 37;
     const used = energyDots(ctx, 28, cy, attack.cost);
@@ -223,7 +276,7 @@ function attacksPage(ctx: CanvasRenderingContext2D, model: PanelModel, elapsed: 
   });
 }
 
-function movesPage(ctx: CanvasRenderingContext2D, model: PanelModel, elapsed: number, nowMs: number): void {
+function movesPage(ctx: CanvasRenderingContext2D, model: PanelModel, elapsed: number, nowMs: number, press?: PanelPress): void {
   const { moves } = model.data;
   if (partMessage(ctx, moves, nowMs) || moves.state !== 'ok') return;
   ctx.textBaseline = 'alphabetic';
@@ -235,15 +288,16 @@ function movesPage(ctx: CanvasRenderingContext2D, model: PanelModel, elapsed: nu
     message(ctx, 'Este Pokémon não aprende golpes por nível nos jogos.', MUTED, 160);
     return;
   }
-  moves.value.slice(0, 4).forEach((move, i) => {
+  moves.value.slice(0, MOVE_ROW.max).forEach((move, i) => {
     const p = rowProgress(elapsed, i, 120, 450);
-    const top = 120 + i * 62;
+    const top = MOVE_ROW.top(i);
     ctx.save();
     ctx.globalAlpha = p;
     ctx.translate((1 - p) * 24, 0);
-    roundRect(ctx, 16, top, PANEL_WIDTH_PX - 32, 56, 14);
+    roundRect(ctx, 16, top, PANEL_WIDTH_PX - 32, MOVE_ROW.height, 14);
     ctx.fillStyle = 'rgba(255,255,255,0.07)';
     ctx.fill();
+    pressGlow(ctx, press, 'moves', i, top, MOVE_ROW.height);
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
     ctx.fillStyle = TEXT;
@@ -271,7 +325,7 @@ function movesPage(ctx: CanvasRenderingContext2D, model: PanelModel, elapsed: nu
 }
 
 /** Desenha uma página do painel. `elapsedMs` = tempo desde que a página apareceu (anima barras e linhas). */
-export function drawPanel(ctx: CanvasRenderingContext2D, model: PanelModel, page: PanelPage, elapsedMs: number, nowMs: number): void {
+export function drawPanel(ctx: CanvasRenderingContext2D, model: PanelModel, page: PanelPage, elapsedMs: number, nowMs: number, press?: PanelPress): void {
   ctx.clearRect(0, 0, PANEL_WIDTH_PX, PANEL_HEIGHT_PX);
   roundRect(ctx, 2, 2, PANEL_WIDTH_PX - 4, PANEL_HEIGHT_PX - 4, 26);
   ctx.fillStyle = 'rgba(12,16,26,0.84)';
@@ -281,7 +335,7 @@ export function drawPanel(ctx: CanvasRenderingContext2D, model: PanelModel, page
   ctx.stroke();
   header(ctx, model, page);
   if (page === 'status') statusPage(ctx, model, elapsedMs, nowMs);
-  else if (page === 'attacks') attacksPage(ctx, model, elapsedMs, nowMs);
-  else movesPage(ctx, model, elapsedMs, nowMs);
+  else if (page === 'attacks') attacksPage(ctx, model, elapsedMs, nowMs, press);
+  else movesPage(ctx, model, elapsedMs, nowMs, press);
   footerDots(ctx, page);
 }

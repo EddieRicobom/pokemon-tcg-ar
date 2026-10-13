@@ -1,8 +1,11 @@
-import { PerspectiveCamera, Scene } from 'three';
-import { cameraParamsFromProjection, cardSpaceMatrix, DEFAULT_LAYOUT } from './anchor';
+import { Matrix4, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3 } from 'three';
+import { cameraParamsFromProjection, cardSpaceMatrix, DEFAULT_LAYOUT, panelPlacement } from './anchor';
 import type { SpriteLayout } from './anchor';
 import { CardSprite } from './card-sprite';
+import { PANEL_ASPECT } from './stats-panel';
 import type { StatsPanel } from './stats-panel';
+import type { PanelHit } from './stats-draw';
+import type { PanelPage } from './panel-state';
 import type { TrackingEngine, TrackingInfo, TrackingUpdate } from './engine';
 
 export type ArPhase = 'idle' | 'starting' | 'searching' | 'tracking' | 'lost' | 'error';
@@ -91,7 +94,6 @@ export class ArSession {
       throw error;
     }
     this.running = true;
-    this.deps.panel?.setCardHeight(this.info.markerHeight / this.info.markerWidth);
     this.resize();
     this.setState({ phase: 'searching', message: 'Aponte a câmera para a carta.' });
     this.loop();
@@ -138,6 +140,44 @@ export class ArSession {
     }
   }
 
+  private readonly raycaster = new Raycaster();
+
+  /**
+   * Ponto do plano da carta (espaço da carta, largura = 1, origem no centro) que está sob um ponto da tela
+   * (coordenadas normalizadas, −1..1, y para cima). Serve para arrastar o Pokémon com o dedo. Devolve null se a
+   * carta não está sendo mostrada ou o raio não encontra o plano.
+   */
+  pointOnCardPlane(ndcX: number, ndcY: number): { x: number; y: number } | null {
+    const group = this.deps.sprite.group;
+    if (!this.running || !group.visible) return null;
+    this.scene.updateMatrixWorld(true);
+    this.camera.updateMatrixWorld();
+    this.raycaster.setFromCamera(new Vector2(ndcX, ndcY), this.camera);
+    const inverse = new Matrix4().copy(group.matrixWorld).invert();
+    const origin = this.raycaster.ray.origin.clone().applyMatrix4(inverse);
+    const direction = this.raycaster.ray.direction.clone().transformDirection(inverse);
+    if (Math.abs(direction.z) < 1e-6) return null;
+    const t = -origin.z / direction.z;
+    if (!(t > 0)) return null;
+    const point = new Vector3().copy(origin).addScaledVector(direction, t);
+    return Number.isFinite(point.x) && Number.isFinite(point.y) ? { x: point.x, y: point.y } : null;
+  }
+
+  /**
+   * Toque no painel de status? Devolve a página mostrada e o que há sob o dedo (golpe, ponto de página ou nada),
+   * ou null se o toque não pegou no painel.
+   */
+  pickPanel(ndcX: number, ndcY: number): { page: PanelPage; hit: PanelHit | null } | null {
+    const panel = this.deps.panel;
+    if (!panel || !this.running || !this.deps.sprite.group.visible || !panel.object.visible) return null;
+    this.scene.updateMatrixWorld(true);
+    this.camera.updateMatrixWorld();
+    this.raycaster.setFromCamera(new Vector2(ndcX, ndcY), this.camera);
+    const hit = this.raycaster.intersectObject(panel.mesh, false)[0];
+    if (!hit?.uv) return null;
+    return { page: panel.currentPage, hit: panel.hit(hit.uv.x, hit.uv.y) };
+  }
+
   /** Ajusta a câmera virtual ao contêiner (chamar também ao girar/redimensionar a tela). */
   resize(): void {
     if (!this.info) return;
@@ -158,7 +198,11 @@ export class ArSession {
       if (!this.running) return;
       this.handle = schedule(tick);
       this.deps.sprite.update(now);
-      this.deps.panel?.update(now, this.deps.sprite.group.visible);
+      if (this.deps.panel) {
+        // O painel acompanha o Pokémon: logo abaixo da ilustração, girado junto com ela.
+        this.deps.panel.setPlacement(panelPlacement(this.deps.sprite.placement, PANEL_ASPECT));
+        this.deps.panel.update(now, this.deps.sprite.group.visible);
+      }
       this.deps.renderer.render(this.scene, this.camera);
     };
     this.handle = schedule(tick);

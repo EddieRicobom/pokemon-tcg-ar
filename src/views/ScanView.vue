@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { clampLayout, DEFAULT_LAYOUT, LAYOUT_LIMITS } from '../ar/anchor';
+import { GestureTracker, isTap } from '../ar/gestures';
 import { PANEL_PAGE_LABELS_PT, PANEL_PAGES } from '../ar/panel-state';
 import type { PanelMode } from '../ar/panel-state';
 import type { SpriteLayout } from '../ar/anchor';
@@ -44,6 +45,9 @@ let arRun = 0;
 let lastReadyCard: unknown = null;
 const showLayout = ref(false);
 const panelMode = ref<PanelMode>('auto');
+/** Modo "ajustar com os dedos": arrastar move o Pokémon (e o painel); pinça muda o tamanho. */
+const adjusting = ref(false);
+const moveNotice = ref('');
 const arActive = ref(false);
 
 // Diagnóstico do scan: mostra o que o app está vendo (onde achou a carta, o que o OCR recebeu e leu).
@@ -221,7 +225,8 @@ async function applyArtOption(): Promise<void> {
 setArtSearch(artOn.value);
 if (debugOn.value) void refreshIndexStatus();
 
-const LAYOUT_KEY = 'tcg-ar-layout-v1';
+// v2: novo padrão (Pokémon um pouco acima do centro da carta e painel logo à frente dos pés).
+const LAYOUT_KEY = 'tcg-ar-layout-v2';
 function readLayout(): SpriteLayout {
   try {
     const raw = localStorage.getItem(LAYOUT_KEY);
@@ -471,6 +476,72 @@ function saveLayout(): void {
   }
 }
 
+const gestures = new GestureTracker();
+
+/** Ponto da tela → coordenadas normalizadas (−1..1, y para cima) do contêiner do AR. */
+function ndcOf(clientX: number, clientY: number): { x: number; y: number } | null {
+  const rect = stageEl.value?.getBoundingClientRect();
+  if (!rect || rect.width === 0 || rect.height === 0) return null;
+  return { x: ((clientX - rect.left) / rect.width) * 2 - 1, y: -(((clientY - rect.top) / rect.height) * 2 - 1) };
+}
+
+function toggleAdjusting(): void {
+  adjusting.value = !adjusting.value;
+  gestures.reset();
+}
+
+function onGestureDown(event: PointerEvent): void {
+  (event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId);
+  gestures.down(event.pointerId, event.clientX, event.clientY);
+}
+
+function onGestureMove(event: PointerEvent): void {
+  const delta = gestures.move(event.pointerId, event.clientX, event.clientY);
+  if (!delta || !ar) return;
+  // Arrastar: o ponto do chão da carta que estava sob o dedo continua sob o dedo (vale para a perspectiva).
+  const from = ndcOf(delta.from.x, delta.from.y);
+  const to = ndcOf(delta.to.x, delta.to.y);
+  const a = from ? ar.session.pointOnCardPlane(from.x, from.y) : null;
+  const b = to ? ar.session.pointOnCardPlane(to.x, to.y) : null;
+  if (a && b) {
+    layout.offsetX += b.x - a.x;
+    layout.offsetY += b.y - a.y;
+  }
+  if (delta.scale !== 1) layout.heightRatio *= delta.scale;
+}
+
+function onGestureUp(event: PointerEvent): void {
+  gestures.up(event.pointerId);
+}
+
+// Toque no painel de status (fora do modo de ajuste): troca de página ou "usa" um ataque/golpe.
+let tapDown: { x: number; y: number; at: number } | null = null;
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function onStageDown(event: PointerEvent): void {
+  tapDown = adjusting.value ? null : { x: event.clientX, y: event.clientY, at: performance.now() };
+}
+
+function onStageUp(event: PointerEvent): void {
+  const down = tapDown;
+  tapDown = null;
+  if (!down || adjusting.value || !ar) return;
+  if (!isTap(down, { x: event.clientX, y: event.clientY, at: performance.now() })) return;
+  const n = ndcOf(event.clientX, event.clientY);
+  const picked = n ? ar.session.pickPanel(n.x, n.y) : null;
+  if (!picked?.hit) return;
+  if (picked.hit.kind === 'page') {
+    setPanelMode(picked.hit.page);
+    return;
+  }
+  setPanelMode(picked.page); // para de alternar sozinho enquanto o jogador está usando a página
+  ar.panel?.press(picked.page, picked.hit.index, performance.now());
+  // Usar golpes/ataques ainda não existe: o app diz isso em vez de fingir um efeito.
+  moveNotice.value = `«${picked.hit.name}»: usar ${picked.hit.source === 'card' ? 'ataques da carta' : 'golpes'} ainda não está implementado.`;
+  if (noticeTimer) clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => (moveNotice.value = ''), 4000);
+}
+
 function setPanelMode(mode: PanelMode): void {
   panelMode.value = mode;
   ar?.panel?.setMode(mode);
@@ -482,6 +553,13 @@ function resetLayout(): void {
 }
 
 watch(layout, saveLayout);
+// Saiu do AR (outra carta, câmera fechada): o modo de ajuste não fica ligado sozinho.
+watch(arActive, (active) => {
+  if (!active) {
+    adjusting.value = false;
+    gestures.reset();
+  }
+});
 
 if (props.cardId) {
   void ensureController().then((c) => c.loadCached(props.cardId as string));
@@ -512,11 +590,20 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
     </p>
     <p v-else class="note">Abra a câmera e aponte para a mesma carta física para ver o Pokémon sobre ela.</p>
 
-    <div ref="stageEl" class="viewport">
+    <div ref="stageEl" class="viewport" :class="{ adjusting }" @pointerdown="onStageDown" @pointerup="onStageUp">
       <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas :key="arCanvasKey" ref="canvasEl" class="overlay" aria-label="Camada de realidade aumentada"></canvas>
       <canvas ref="debugCanvasEl" class="overlay debug-quad" aria-hidden="true"></canvas>
       <p v-if="!cameraOn" class="placeholder">{{ cameraBusy ? 'Abrindo a câmera…' : 'Câmera desligada' }}</p>
+      <div
+        v-if="adjusting"
+        class="gesture-layer"
+        aria-label="Área de ajuste: arraste para mover o Pokémon e use pinça para mudar o tamanho"
+        @pointerdown.prevent="onGestureDown"
+        @pointermove.prevent="onGestureMove"
+        @pointerup="onGestureUp"
+        @pointercancel="onGestureUp"
+      ></div>
       <p v-if="showScanInfo" class="hud" role="status">{{ scan.message }}</p>
       <p v-else-if="arHudText" class="hud" role="status">{{ arHudText }}</p>
     </div>
@@ -649,6 +736,14 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       </button>
     </details>
 
+    <div v-if="arActive" class="adjust-bar">
+      <button type="button" :class="{ active: adjusting }" :aria-pressed="adjusting" @click="toggleAdjusting">
+        {{ adjusting ? 'Concluir ajuste' : 'Ajustar com os dedos' }}
+      </button>
+      <p v-if="adjusting" class="meta">Arraste para mover o Pokémon e o painel. Use pinça com dois dedos para mudar o tamanho. O ajuste fica salvo.</p>
+      <p v-else-if="layout.showStats" class="meta">Toque num ataque ou golpe do painel para usá-lo (ainda não implementado).</p>
+    </div>
+    <p v-if="moveNotice" class="message" role="status">{{ moveNotice }}</p>
     <div v-if="arActive && layout.showStats" class="panel-modes" role="group" aria-label="Página do painel de status">
       <button type="button" :class="{ active: panelMode === 'auto' }" :aria-pressed="panelMode === 'auto'" @click="setPanelMode('auto')">Auto</button>
       <button v-for="page in PANEL_PAGES" :key="page" type="button" :class="{ active: panelMode === page }" :aria-pressed="panelMode === page" @click="setPanelMode(page)">

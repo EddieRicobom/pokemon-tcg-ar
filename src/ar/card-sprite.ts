@@ -7,7 +7,7 @@ import type { DecodedGif } from '../core/gif';
 import { upscaleFactor, upscaleSprite } from '../core/pixel-upscale';
 import type { RgbaImage } from '../recognition/types';
 import { clampLayout, DEFAULT_LAYOUT, spriteMatrix, yawTowardCamera } from './anchor';
-import type { SpriteLayout } from './anchor';
+import type { SpriteLayout, SpritePlacement } from './anchor';
 import { makePlaceholder } from './placeholder';
 
 /** Constante de tempo (ms) do suavizador de pose: o rastreador entrega ~10–20 poses/s e a tela desenha 60 quadros/s. */
@@ -106,6 +106,12 @@ export class CardSprite {
 
   getLayout(): SpriteLayout {
     return this.layout;
+  }
+
+  /** Ponto do chão sob o centro da ilustração, giro total e tamanho (o painel de status se posiciona por aqui). */
+  get placement(): SpritePlacement {
+    const yaw = this.layout.yawDeg + (this.layout.faceCamera === false ? 0 : this.autoYaw);
+    return { x: this.layout.offsetX, y: this.layout.offsetY, yawDeg: yaw, heightRatio: this.layout.heightRatio };
   }
 
   private applyLayout(): void {
