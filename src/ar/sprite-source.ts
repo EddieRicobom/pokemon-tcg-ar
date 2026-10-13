@@ -1,3 +1,4 @@
+import { fetchWithMirror } from '../core/mirror';
 import { pokemonSpriteUrl, pokemonStaticSpriteUrls } from './sprite-url';
 
 export type SpriteKind = 'gif' | 'static';
@@ -19,7 +20,7 @@ export class SpriteNetworkError extends Error {
 async function tryFetch(url: string, fetchImpl: typeof fetch): Promise<Blob | null> {
   let response: Response;
   try {
-    response = await fetchImpl(url);
+    response = await fetchWithMirror(url, undefined, fetchImpl);
   } catch (error) {
     throw new SpriteNetworkError(`Sem conexão ao baixar ${url}: ${error instanceof Error ? error.message : String(error)}`, url);
   }
