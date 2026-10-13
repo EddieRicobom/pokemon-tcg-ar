@@ -41,7 +41,7 @@ describe('prepareArAssets (caminho comum da busca manual, do reconhecimento e do
 
   it('falha ao compilar o alvo: erro na etapa "alvo" com o motivo (não fica pendente)', async () => {
     const c = card({ target: slot('error', { error: 'compilação falhou' }) });
-    const error = await prepareArAssets(fakeCache(c, c), c.id).catch((e) => e as ArPrepareError);
+    const error = (await prepareArAssets(fakeCache(c, c), c.id).catch((e: unknown) => e)) as ArPrepareError;
     expect(error).toBeInstanceOf(ArPrepareError);
     expect(error.stage).toBe('alvo');
     expect(error.message).toContain('compilação falhou');
