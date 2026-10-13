@@ -15,3 +15,4 @@ public/data/art-index.*
 test-results/
 playwright-report/
 e2e/.tmp/
+eng.traineddata

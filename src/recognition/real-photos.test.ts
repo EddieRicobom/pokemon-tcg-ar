@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import Tesseract from 'tesseract.js';
@@ -83,7 +84,7 @@ describe('OCR do número na foto real', () => {
     const strip = rectifyRegion(frame, det.quad as Quad, BOTTOM_STRIP_BOX, BOTTOM_OCR_FULL_WIDTH)!;
     const prepared = prepareForOcr(strip);
     const started = performance.now();
-    const worker = await Tesseract.createWorker('eng', Tesseract.OEM.LSTM_ONLY, { langPath: join(__dirname, '../../public/ocr/lang'), gzip: true });
+    const worker = await Tesseract.createWorker('eng', Tesseract.OEM.LSTM_ONLY, { langPath: join(__dirname, '../../public/ocr/lang'), cachePath: tmpdir(), gzip: true });
     await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, user_defined_dpi: '150' });
     const png = await sharp(Buffer.from(prepared.data), { raw: { width: prepared.width, height: prepared.height, channels: 4 } }).png().toBuffer();
     const text = (await worker.recognize(png)).data.text;
