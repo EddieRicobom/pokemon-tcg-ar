@@ -87,6 +87,21 @@ window.run = async () => {
       target: await target.arrayBuffer(), dexId: 25,
       cachedSprite: { kind: 'gif', url: 'local.gif', blob: gif },
       fetchSprite: async () => null,
+      battle: {
+        name: 'Pikachu',
+        // Dados de exemplo só para ver o painel no navegador de teste (a rede real não é alcançável daqui).
+        load: async (onPart) => {
+          onPart('profile', { state: 'ok', value: { dexId: 25, types: ['electric'], stats: { hp: 35, attack: 55, defense: 40, spAttack: 50, spDefense: 50, speed: 90 } } });
+          onPart('card', { state: 'ok', value: { hp: 60, types: ['Lightning'], retreat: 1, weaknesses: [{ type: 'Fighting', value: '×2' }], attacks: [
+            { name: 'Gnaw', cost: ['Colorless'], damage: '10' },
+            { name: 'Thunder Jolt', cost: ['Lightning', 'Colorless'], damage: '30', effect: 'Flip a coin. If tails, Pikachu does 10 damage to itself.' } ] } });
+          onPart('moves', { state: 'ok', value: [
+            { name: 'Thunderbolt', type: 'electric', power: 90, accuracy: 100, pp: 15, damageClass: 'special' },
+            { name: 'Quick Attack', type: 'normal', power: 40, accuracy: 100, pp: 30, damageClass: 'physical' },
+            { name: 'Thunder Wave', type: 'electric', power: null, accuracy: 90, pp: 20, damageClass: 'status' },
+            { name: 'Iron Tail', type: 'steel', power: 100, accuracy: 75, pp: 15, damageClass: 'physical' } ] });
+        },
+      },
       onState: (s) => log('state ' + s.phase),
       onSprite: (s) => log('sprite ' + s.kind),
     });

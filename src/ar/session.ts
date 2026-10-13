@@ -2,6 +2,7 @@ import { PerspectiveCamera, Scene } from 'three';
 import { cameraParamsFromProjection, cardSpaceMatrix, DEFAULT_LAYOUT } from './anchor';
 import type { SpriteLayout } from './anchor';
 import { CardSprite } from './card-sprite';
+import type { StatsPanel } from './stats-panel';
 import type { TrackingEngine, TrackingInfo, TrackingUpdate } from './engine';
 
 export type ArPhase = 'idle' | 'starting' | 'searching' | 'tracking' | 'lost' | 'error';
@@ -24,6 +25,8 @@ export interface ArSessionDeps {
   engine: TrackingEngine;
   renderer: RenderBackend;
   sprite: CardSprite;
+  /** Painel de status no chão (opcional): filho do grupo da carta. */
+  panel?: StatsPanel;
   video: HTMLVideoElement;
   /** Tamanho em CSS do contêiner onde o vídeo é exibido em "cover". */
   getContainerSize: () => { width: number; height: number };
@@ -57,7 +60,9 @@ export class ArSession {
 
   constructor(private readonly deps: ArSessionDeps) {
     this.scene.add(deps.sprite.group);
+    if (deps.panel) deps.sprite.group.add(deps.panel.object);
     deps.sprite.setLayout(DEFAULT_LAYOUT);
+    deps.panel?.setEnabled(DEFAULT_LAYOUT.showStats !== false);
   }
 
   get currentState(): ArState {
@@ -71,6 +76,7 @@ export class ArSession {
 
   setLayout(layout: SpriteLayout): void {
     this.deps.sprite.setLayout(layout);
+    this.deps.panel?.setEnabled(layout.showStats !== false);
   }
 
   async start(target: ArrayBuffer): Promise<void> {
@@ -85,6 +91,7 @@ export class ArSession {
       throw error;
     }
     this.running = true;
+    this.deps.panel?.setCardHeight(this.info.markerHeight / this.info.markerWidth);
     this.resize();
     this.setState({ phase: 'searching', message: 'Aponte a câmera para a carta.' });
     this.loop();
@@ -151,6 +158,7 @@ export class ArSession {
       if (!this.running) return;
       this.handle = schedule(tick);
       this.deps.sprite.update(now);
+      this.deps.panel?.update(now, this.deps.sprite.group.visible);
       this.deps.renderer.render(this.scene, this.camera);
     };
     this.handle = schedule(tick);
@@ -163,6 +171,7 @@ export class ArSession {
     this.handle = null;
     this.deps.engine.stop();
     this.scene.remove(this.deps.sprite.group);
+    this.deps.panel?.dispose();
     this.deps.sprite.dispose();
     this.deps.renderer.dispose();
     this.info = null;

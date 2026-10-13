@@ -5,7 +5,9 @@ import type { ArState } from './session';
 import { loadSpriteInto } from './sprite-loader';
 import type { SpriteLoadState } from './sprite-loader';
 import type { SpriteSource } from './sprite-source';
+import { StatsPanel } from './stats-panel';
 import { createWebglBackend } from './webgl-backend';
+import type { BattleData, PartName } from '../app/pokemon-data-service';
 
 export interface StartArOptions {
   video: HTMLVideoElement;
@@ -17,6 +19,11 @@ export interface StartArOptions {
   /** Sprite já guardado no cache (se houver); senão busca na rede. */
   cachedSprite?: SpriteSource | null;
   fetchSprite: (dexId: number) => Promise<SpriteSource | null>;
+  /** Painel de status no chão: nome da carta e carregador dos dados (PokéAPI + TCGdex). Sem isso, não há painel. */
+  battle?: {
+    name: string;
+    load: (onPart: <K extends PartName>(part: K, result: BattleData[K]) => void) => Promise<void>;
+  };
   onState: (state: ArState) => void;
   onSprite: (state: SpriteLoadState) => void;
 }
@@ -24,6 +31,7 @@ export interface StartArOptions {
 export interface RunningAr {
   session: ArSession;
   sprite: CardSprite;
+  panel: StatsPanel | null;
   reloadSprite(): Promise<void>;
   stop(): void;
 }
@@ -31,10 +39,12 @@ export interface RunningAr {
 /** Ponto de entrada do AR: tudo que usa Three.js e MindAR passa por aqui (import dinâmico). */
 export async function startAr(options: StartArOptions): Promise<RunningAr> {
   const sprite = new CardSprite();
+  const panel = options.battle ? new StatsPanel(options.battle.name, options.dexId) : null;
   const session = new ArSession({
     engine: new MindArEngine(),
     renderer: createWebglBackend(options.canvas),
     sprite,
+    panel: panel ?? undefined,
     video: options.video,
     getContainerSize: () => ({ width: options.container.clientWidth, height: options.container.clientHeight }),
     onState: options.onState,
@@ -63,9 +73,20 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
     throw error;
   }
 
+  // Os dados do painel chegam em paralelo e por partes; falhas aparecem no próprio painel e não afetam o AR.
+  if (options.battle && panel) {
+    void options.battle
+      .load((part, result) => panel.setPart(part, result))
+      .catch((error: unknown) => {
+        const message = `Falha ao carregar os dados: ${error instanceof Error ? error.message : String(error)}`;
+        for (const part of ['profile', 'moves', 'card'] as const) panel.setPart(part, { state: 'error', message });
+      });
+  }
+
   return {
     session,
     sprite,
+    panel,
     reloadSprite: async () => {
       options.cachedSprite = null;
       await loadSprite();

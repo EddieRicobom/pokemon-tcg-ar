@@ -33,6 +33,8 @@ export interface SpriteLayout {
    * Omitido = ligado.
    */
   smooth?: boolean;
+  /** Mostra o painel de status no chão, abaixo da carta. Omitido = ligado. */
+  showStats?: boolean;
 }
 
 export const DEFAULT_LAYOUT: SpriteLayout = {
@@ -44,6 +46,7 @@ export const DEFAULT_LAYOUT: SpriteLayout = {
   anchor: 'base',
   faceCamera: true,
   smooth: true,
+  showStats: true,
 };
 
 export const LAYOUT_LIMITS = {
@@ -64,6 +67,7 @@ export function clampLayout(layout: SpriteLayout): SpriteLayout {
     anchor: layout.anchor === 'center' ? 'center' : 'base',
     faceCamera: layout.faceCamera !== false,
     smooth: layout.smooth !== false,
+    showStats: layout.showStats !== false,
   };
 }
 

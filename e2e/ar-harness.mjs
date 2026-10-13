@@ -19,6 +19,14 @@ await page.waitForTimeout(2500);
 log = await page.evaluate(() => window.log);
 console.log(log.join('\n'));
 await page.screenshot({ path: 'e2e/.tmp/ar-shot.png' });
+// Painel de status: exporta cada página (a textura do painel) e a cena inteira com o painel visível.
+for (const mode of ['status', 'attacks', 'moves']) {
+  await page.evaluate((m) => window.ar.panel.setMode(m), mode);
+  await page.waitForTimeout(1800);
+  const url = await page.evaluate(() => window.ar.panel.canvas.toDataURL('image/png'));
+  (await import('node:fs')).writeFileSync(`e2e/.tmp/panel-${mode}.png`, Buffer.from(url.split(',')[1], 'base64'));
+  await page.screenshot({ path: `e2e/.tmp/scene-${mode}.png` });
+}
 const gl = await page.evaluate(() => { const c = document.createElement('canvas'); const g = c.getContext('webgl2'); if (!g) return 'sem webgl2'; return { renderer: g.getParameter(g.RENDERER), floatRender: !!g.getExtension('EXT_color_buffer_float'), halfFloat: !!g.getExtension('EXT_color_buffer_half_float'), maxTex: g.getParameter(g.MAX_TEXTURE_SIZE) }; });
 console.log('glinfo', JSON.stringify(gl));
 await browser.close();
