@@ -51,6 +51,8 @@ export class ArSession {
   private running = false;
   private missedFrames = 0;
   private lastPoseAt = 0;
+  private target: ArrayBuffer | null = null;
+  private restarting = false;
   private state: ArState = { phase: 'idle', foundCount: 0 };
 
   constructor(private readonly deps: ArSessionDeps) {
@@ -73,9 +75,10 @@ export class ArSession {
 
   async start(target: ArrayBuffer): Promise<void> {
     if (this.running) return;
+    this.target = target;
     this.setState({ phase: 'starting', message: 'Preparando o rastreamento…' });
     try {
-      this.info = await this.deps.engine.start(this.deps.video, target, (update) => this.onTrack(update));
+      this.info = await this.deps.engine.start(this.deps.video, target, (update) => this.onTrack(update), () => void this.restartTracking());
     } catch (error) {
       this.setState({ phase: 'error', message: error instanceof Error ? error.message : 'Falha ao iniciar o rastreamento.' });
       this.deps.engine.stop();
@@ -85,6 +88,23 @@ export class ArSession {
     this.resize();
     this.setState({ phase: 'searching', message: 'Aponte a câmera para a carta.' });
     this.loop();
+  }
+
+  /** A câmera mudou de proporção: reinicia o rastreador com o novo tamanho de quadro (a sessão e o sprite continuam). */
+  private async restartTracking(): Promise<void> {
+    if (!this.running || this.restarting || !this.target) return;
+    this.restarting = true;
+    try {
+      this.deps.engine.stop();
+      this.info = await this.deps.engine.start(this.deps.video, this.target, (update) => this.onTrack(update), () => void this.restartTracking());
+      this.resize();
+      this.missedFrames = 0;
+      this.setState({ phase: 'searching', message: 'Aponte a câmera para a carta.' });
+    } catch (error) {
+      this.setState({ phase: 'error', message: error instanceof Error ? error.message : 'Falha ao reiniciar o rastreamento.' });
+    } finally {
+      this.restarting = false;
+    }
   }
 
   private clock(): number {
@@ -102,7 +122,7 @@ export class ArSession {
       if (this.state.phase !== 'tracking') this.setState({ phase: 'tracking', message: undefined, foundCount: this.state.foundCount + 1 });
     } else {
       // Perda curta: mantém o Pokémon na última pose em vez de piscar enquanto o rastreador reencontra a carta.
-      if (this.clock() - this.lastPoseAt > (this.deps.holdMs ?? 700)) sprite.setTracked(false);
+      if (this.clock() - this.lastPoseAt > (this.deps.holdMs ?? 1000)) sprite.setTracked(false);
       this.missedFrames++;
       const limit = this.deps.lostAfterFrames ?? 10;
       if (this.state.phase === 'tracking' && this.missedFrames >= limit) {

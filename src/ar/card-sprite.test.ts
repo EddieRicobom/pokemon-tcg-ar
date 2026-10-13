@@ -93,6 +93,45 @@ describe('CardSprite: orientação', () => {
   });
 });
 
+describe('CardSprite: suavização da pose', () => {
+  const at = (x: number) => cardSpaceMatrix([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, -5, 1], 1, 1.375);
+  // O espaço da carta tem origem no canto; o centro fica deslocado em meia largura (0,5).
+  const px = (sprite: CardSprite) => sprite.group.matrix.elements[12]! - 0.5;
+
+  it('a primeira pose aparece direto no lugar (sem deslizar da origem)', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setCardMatrix(at(2));
+    expect(px(sprite)).toBeCloseTo(2, 6);
+  });
+
+  it('uma pose nova é alcançada aos poucos, a cada quadro de tela, sem passar do alvo', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setCardMatrix(at(0));
+    sprite.update(1000);
+    sprite.setCardMatrix(at(1));
+    expect(px(sprite)).toBeCloseTo(0, 6);
+    sprite.update(1016);
+    const step1 = px(sprite);
+    expect(step1).toBeGreaterThan(0.1);
+    expect(step1).toBeLessThan(0.5);
+    sprite.update(1032);
+    expect(px(sprite)).toBeGreaterThan(step1);
+    for (let t = 1100; t < 2000; t += 50) sprite.update(t);
+    expect(px(sprite)).toBeCloseTo(1, 3);
+  });
+
+  it('depois de perder a carta, a próxima pose aparece direto no lugar novo', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setCardMatrix(at(0));
+    sprite.setTracked(false);
+    sprite.setCardMatrix(at(3));
+    expect(px(sprite)).toBeCloseTo(3, 6);
+  });
+});
+
 describe('CardSprite: animação do GIF', () => {
   it('envia à textura o quadro certo em cada instante, respeitando os atrasos, e dá a volta', () => {
     const sprite = new CardSprite();

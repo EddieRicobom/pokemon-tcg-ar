@@ -1,6 +1,6 @@
 import {
-  DataTexture, DoubleSide, Group, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat,
-  SRGBColorSpace, UnsignedByteType,
+  DataTexture, DoubleSide, Group, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, Quaternion, RGBAFormat,
+  SRGBColorSpace, UnsignedByteType, Vector3,
 } from 'three';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
@@ -8,6 +8,9 @@ import type { RgbaImage } from '../recognition/types';
 import { clampLayout, DEFAULT_LAYOUT, spriteMatrix, yawTowardCamera } from './anchor';
 import type { SpriteLayout } from './anchor';
 import { makePlaceholder } from './placeholder';
+
+/** Constante de tempo (ms) do suavizador de pose: o rastreador entrega ~10–20 poses/s e a tela desenha 60 quadros/s. */
+export const POSE_SMOOTHING_MS = 60;
 
 export type SpriteMode = 'empty' | 'animated' | 'static' | 'placeholder';
 
@@ -36,6 +39,9 @@ export class CardSprite {
   private startedAt = 0;
   private shownFrame = -1;
   /** Giro automático (graus) para o sprite olhar para a câmera; suavizado entre quadros. */
+  private readonly targetMatrix = new Matrix4();
+  private hasPose = false;
+  private lastSmoothMs = 0;
   private autoYaw = 0;
   private hasAutoYaw = false;
   /** Quantos quadros foram enviados à textura (diagnóstico e testes). */
@@ -123,12 +129,18 @@ export class CardSprite {
   /** Mostra/oculta o conjunto (rastreamento perdido → oculta). */
   setTracked(tracked: boolean): void {
     this.group.visible = tracked;
+    // Depois de sumir, a próxima pose aparece direto no lugar certo (sem deslizar da posição antiga).
+    if (!tracked) this.hasPose = false;
   }
 
   /** Aplica a pose da carta (matriz do espaço da carta, ordem de colunas). */
   setCardMatrix(matrix: ArrayLike<number>): void {
     const m = Array.from(matrix);
-    this.group.matrix.fromArray(m);
+    this.targetMatrix.fromArray(m);
+    if (!this.hasPose) {
+      this.group.matrix.copy(this.targetMatrix);
+      this.hasPose = true;
+    }
     this.group.matrixWorldNeedsUpdate = true;
     if (this.layout.faceCamera !== false) {
       const target = yawTowardCamera(m);
@@ -147,6 +159,7 @@ export class CardSprite {
 
   /** Atualiza o quadro da animação para o instante `nowMs`. Devolve true se enviou um quadro novo à textura. */
   update(nowMs: number): boolean {
+    this.smoothPose(nowMs);
     if (this.mode !== 'animated' || !this.gif || !this.texture) return false;
     const index = frameIndexAt(this.gif, nowMs - this.startedAt);
     if (index === this.shownFrame) return false;
@@ -161,6 +174,28 @@ export class CardSprite {
 
   get currentFrame(): number {
     return this.shownFrame;
+  }
+
+  private readonly tmpPos = new Vector3();
+  private readonly tmpScale = new Vector3();
+  private readonly tmpQuat = new Quaternion();
+  private readonly tgtPos = new Vector3();
+  private readonly tgtScale = new Vector3();
+  private readonly tgtQuat = new Quaternion();
+
+  /** Aproxima a pose desenhada da última pose rastreada, a cada quadro de tela (posição/escala lineares, rotação por slerp). */
+  private smoothPose(nowMs: number): void {
+    const dt = this.lastSmoothMs === 0 ? 0 : Math.min(100, Math.max(0, nowMs - this.lastSmoothMs));
+    this.lastSmoothMs = nowMs;
+    if (!this.hasPose || dt === 0) return;
+    const alpha = 1 - Math.exp(-dt / POSE_SMOOTHING_MS);
+    this.group.matrix.decompose(this.tmpPos, this.tmpQuat, this.tmpScale);
+    this.targetMatrix.decompose(this.tgtPos, this.tgtQuat, this.tgtScale);
+    this.tmpPos.lerp(this.tgtPos, alpha);
+    this.tmpScale.lerp(this.tgtScale, alpha);
+    this.tmpQuat.slerp(this.tgtQuat, alpha);
+    this.group.matrix.compose(this.tmpPos, this.tmpQuat, this.tmpScale);
+    this.group.matrixWorldNeedsUpdate = true;
   }
 
   /** Matriz mundial do plano (para testes e depuração). */
