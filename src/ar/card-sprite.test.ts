@@ -1,4 +1,4 @@
-import { Vector3 } from 'three';
+import { LinearFilter, NearestFilter, Vector3 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { encodeGif } from '../core/__fixtures__/encode-gif';
 import type { Rgb } from '../core/__fixtures__/encode-gif';
@@ -168,11 +168,40 @@ describe('CardSprite: animação do GIF', () => {
   it('preserva a transparência (alpha 0 no GIF vira alpha 0 na textura) e usa alphaTest', () => {
     const data = encodeGif(2, 1, PALETTE, [{ left: 0, top: 0, width: 2, height: 1, indices: [0, 1], delayCs: 10, disposal: 1, transparentIndex: 0 }]);
     const sprite = new CardSprite();
+    sprite.setLayout({ ...DEFAULT_LAYOUT, smooth: false });
     sprite.setAnimation(decodeGif(data));
     const pixels = pixelsOf(sprite);
     expect(pixels[3]).toBe(0);
     expect(pixels[7]).toBe(255);
     expect(sprite.mesh.material.alphaTest).toBeGreaterThan(0);
+  });
+
+  it('suavizado (padrão): textura ampliada ×4 com filtro bilinear; a transparência continua', () => {
+    const data = encodeGif(2, 1, PALETTE, [{ left: 0, top: 0, width: 2, height: 1, indices: [0, 1], delayCs: 10, disposal: 1, transparentIndex: 0 }]);
+    const sprite = new CardSprite();
+    sprite.setAnimation(decodeGif(data));
+    const texture = sprite.mesh.material.map!;
+    expect((texture.image as { width: number }).width).toBe(8);
+    expect((texture.image as { height: number }).height).toBe(4);
+    expect(texture.magFilter).toBe(LinearFilter);
+    const pixels = pixelsOf(sprite);
+    expect(pixels[3]).toBe(0); // canto esquerdo: transparente
+    expect(pixels[7 * 4 + 3]).toBe(255); // canto direito: vermelho opaco
+    expect(sprite.mesh.material.alphaTest).toBeGreaterThan(0);
+  });
+
+  it('ligar e desligar a suavização refaz a textura sem reiniciar a animação', () => {
+    const sprite = new CardSprite();
+    sprite.setAnimation(threeFrameGif(), 0);
+    sprite.update(150);
+    expect((sprite.mesh.material.map!.image as { width: number }).width).toBe(8);
+    sprite.setLayout({ ...DEFAULT_LAYOUT, smooth: false });
+    expect((sprite.mesh.material.map!.image as { width: number }).width).toBe(2);
+    expect(sprite.mesh.material.map!.magFilter).toBe(NearestFilter);
+    sprite.update(150);
+    expect(sprite.currentFrame).toBe(1);
+    sprite.setLayout({ ...DEFAULT_LAYOUT, smooth: true });
+    expect((sprite.mesh.material.map!.image as { width: number }).width).toBe(8);
   });
 
   it('GIF de um quadro não anima; estático e marcador não chamam atualização de quadro', () => {

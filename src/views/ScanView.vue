@@ -659,6 +659,10 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
           <option value="center">Centro</option>
         </select>
       </label>
+      <label class="art-option">
+        <input v-model="layout.smooth" type="checkbox" />
+        <span>Suavizar o Pokémon (menos pixelado)</span>
+      </label>
       <button type="button" @click="resetLayout">Restaurar padrão</button>
     </details>
   </section>

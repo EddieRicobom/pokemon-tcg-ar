@@ -28,6 +28,11 @@ export interface SpriteLayout {
    * Omitido = ligado.
    */
   faceCamera?: boolean;
+  /**
+   * Suaviza o sprite: amplia o GIF (Scale2x) e usa filtro bilinear, em vez de pixels grandes e serrilhados.
+   * Omitido = ligado.
+   */
+  smooth?: boolean;
 }
 
 export const DEFAULT_LAYOUT: SpriteLayout = {
@@ -37,6 +42,8 @@ export const DEFAULT_LAYOUT: SpriteLayout = {
   lift: 0,
   yawDeg: 0,
   anchor: 'base',
+  faceCamera: true,
+  smooth: true,
 };
 
 export const LAYOUT_LIMITS = {
@@ -56,6 +63,7 @@ export function clampLayout(layout: SpriteLayout): SpriteLayout {
     yawDeg: clamp(layout.yawDeg, LAYOUT_LIMITS.yawDeg.min, LAYOUT_LIMITS.yawDeg.max),
     anchor: layout.anchor === 'center' ? 'center' : 'base',
     faceCamera: layout.faceCamera !== false,
+    smooth: layout.smooth !== false,
   };
 }
 
