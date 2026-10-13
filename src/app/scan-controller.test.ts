@@ -46,10 +46,27 @@ function setup(results: RecognitionResult[]) {
     recognize: async () => queue.shift() ?? result({ status: 'no-card' }),
     cache,
     onState: (s) => states.push(s),
+    loadCardRecord: async (id) => (id === 'missing' ? null : card(id)),
     sleep: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
   });
   return { controller, cache, states };
 }
+
+describe('ScanController (busca manual)', () => {
+  it('chooseManual guarda a carta e chega a "ready" com origem manual', async () => {
+    const { controller, cache, states } = setup([]);
+    await controller.chooseManual('base1-58');
+    expect(cache.recordRecognition).toHaveBeenCalledTimes(1);
+    expect(states.at(-1)).toMatchObject({ phase: 'ready', origin: 'manual' });
+  });
+
+  it('id que o TCGdex não conhece: erro claro, nada é gravado', async () => {
+    const { controller, cache, states } = setup([]);
+    await controller.chooseManual('missing');
+    expect(cache.recordRecognition).not.toHaveBeenCalled();
+    expect(states.at(-1)?.phase).toBe('error');
+  });
+});
 
 describe('ScanController', () => {
   it('só confirma a carta depois de repetida em dois quadros e então grava no cache', async () => {

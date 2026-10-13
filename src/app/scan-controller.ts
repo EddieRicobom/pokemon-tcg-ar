@@ -1,7 +1,7 @@
 import { inputFromResult } from '../cache/card-cache';
 import type { PrepareProgress, PrepareResult } from '../cache/card-cache';
 import type { CachedCard } from '../cache/types';
-import type { IdentifiedCard, RecognitionMetrics, RecognitionResult } from '../recognition/pipeline';
+import type { CardRecordLike, IdentifiedCard, RecognitionMetrics, RecognitionResult } from '../recognition/pipeline';
 import { TemporalAggregator } from '../recognition/temporal';
 import type { RgbaImage } from '../recognition/types';
 
@@ -35,7 +35,7 @@ export interface ScanState {
   /** Carta pronta para o AR (já guardada no cache). */
   card?: CachedCard;
   /** Como a carta foi definida: reconhecimento automático, escolha entre candidatas, ou carregada do cache. */
-  origin?: 'automatico' | 'escolha' | 'cache';
+  origin?: 'automatico' | 'escolha' | 'cache' | 'manual';
 }
 
 export interface ScanDeps {
@@ -47,6 +47,8 @@ export interface ScanDeps {
     get: (id: string) => Promise<CachedCard | undefined>;
   };
   onState: (state: ScanState) => void;
+  /** Dados completos (dexId, imagem) de uma carta pelo id; usado na busca manual. */
+  loadCardRecord?: (id: string) => Promise<CardRecordLike | null>;
   sleep?: (ms: number) => Promise<void>;
   /** Intervalo mínimo entre quadros analisados (a análise pode levar mais que isso). */
   minIntervalMs?: number;
@@ -214,6 +216,29 @@ export class ScanController {
       });
       if (id !== this.runId) return;
       this.set({ phase: 'ready', card: prepared.card, progress: undefined, message: `${prepared.card.name} · ${prepared.card.setName} ${prepared.card.localId}`, origin });
+    } catch (error) {
+      if (id !== this.runId) return;
+      this.set({ phase: 'error', message: `Não consegui guardar a carta: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+
+  /** O usuário achou a carta pela busca manual (a leitura automática falhou). Fica registrado como escolha dele. */
+  async chooseManual(cardId: string): Promise<void> {
+    this.stop();
+    const id = ++this.runId;
+    this.set({ phase: 'preparing', message: 'Buscando os dados da carta…', choices: undefined, card: undefined, origin: 'manual' });
+    try {
+      const record = await this.deps.loadCardRecord?.(cardId);
+      if (!record) {
+        this.set({ phase: 'error', message: 'Não consegui obter essa carta no TCGdex. Verifique a conexão e tente de novo.' });
+        return;
+      }
+      const recorded = await this.deps.cache.recordRecognition({ card: record });
+      const prepared = await this.deps.cache.prepareCard(recorded.id, (progress) => {
+        if (id === this.runId) this.set({ progress, message: `Preparando ${progress.step}…` });
+      });
+      if (id !== this.runId) return;
+      this.set({ phase: 'ready', card: prepared.card, progress: undefined, origin: 'manual', message: `${prepared.card.name} · ${prepared.card.setName} ${prepared.card.localId}` });
     } catch (error) {
       if (id !== this.runId) return;
       this.set({ phase: 'error', message: `Não consegui guardar a carta: ${error instanceof Error ? error.message : String(error)}` });

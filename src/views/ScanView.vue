@@ -8,7 +8,9 @@ import type { SpriteLoadState } from '../ar/sprite-loader';
 import type { SpriteSource } from '../ar/sprite-source';
 import { ScanController } from '../app/scan-controller';
 import type { ScanState } from '../app/scan-controller';
-import { fetchSprite, getCache, getPipeline, onOcrProgress } from '../app/services';
+import { fetchSprite, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress } from '../app/services';
+import type { ManualMatch } from '../recognition/catalog-index';
+import { recordFromTcgdex } from '../recognition/pipeline';
 import { lastAttempt } from '../app/diagnostics';
 import { routeHref } from '../app/route';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
@@ -31,6 +33,28 @@ const spriteState = ref<SpriteLoadState | null>(null);
 const arMessage = ref('');
 const showLayout = ref(false);
 const arActive = ref(false);
+
+// Busca manual: plano B quando a leitura automática não acha a carta.
+const manualName = ref('');
+const manualNumber = ref('');
+const manualResults = ref<ManualMatch[]>([]);
+const manualMessage = ref('');
+async function searchManual(): Promise<void> {
+  manualMessage.value = '';
+  const catalog = await getCatalog();
+  if (!catalog) {
+    manualResults.value = [];
+    manualMessage.value = 'O índice de cartas não está disponível agora. Tente de novo com conexão.';
+    return;
+  }
+  const digits = manualNumber.value.replace(/\D/g, '');
+  manualResults.value = catalog.search(manualName.value, digits ? Number.parseInt(digits, 10) : undefined);
+  if (manualResults.value.length === 0) manualMessage.value = 'Nenhuma carta encontrada. Confira o nome (em inglês) ou o número.';
+}
+async function pickManual(id: string): Promise<void> {
+  manualResults.value = [];
+  await (await ensureController()).chooseManual(id);
+}
 
 const LAYOUT_KEY = 'tcg-ar-layout-v1';
 function readLayout(): SpriteLayout {
@@ -91,6 +115,10 @@ async function ensureController(): Promise<ScanController> {
     grabFrame: () => (videoEl.value ? frameFromVideo(videoEl.value) : null),
     recognize: async (frame) => (await getPipeline()).recognize(frame),
     cache,
+    loadCardRecord: async (id) => {
+      const card = await getTcgdex().getCard(id);
+      return card ? recordFromTcgdex(card) : null;
+    },
     onState: (state) => {
       scan.value = state;
       if (state.last) lastAttempt.value = state.last;
@@ -143,7 +171,7 @@ async function beginScan(): Promise<void> {
 
 async function startArFor(cardId: string): Promise<void> {
   if (!cameraOn.value || !videoEl.value || !canvasEl.value || !stageEl.value) {
-    arMessage.value = props.cardId ? 'Abra a câmera para ver a carta em AR.' : '';
+    arMessage.value = 'Abra a câmera para ver a carta em AR.';
     return;
   }
   stopAr();
@@ -311,7 +339,7 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
         <template v-if="scan.card.dexIds[0]"> · Pokédex nº {{ scan.card.dexIds[0] }}</template>
       </p>
       <p class="origin">
-        {{ scan.origin === 'escolha' ? 'Escolhida por você entre as candidatas.' : scan.origin === 'cache' ? 'Aberta do cache do aparelho.' : 'Reconhecida automaticamente.' }}
+        {{ scan.origin === 'escolha' ? 'Escolhida por você entre as candidatas.' : scan.origin === 'manual' ? 'Escolhida por você na busca manual (não foi reconhecida pela câmera).' : scan.origin === 'cache' ? 'Aberta do cache do aparelho.' : 'Reconhecida automaticamente.' }}
       </p>
       <p v-if="spriteText" class="message" :class="{ error: spriteState?.kind === 'error' }">{{ spriteText }}</p>
       <button v-if="spriteState?.kind === 'error'" type="button" @click="retrySprite">Tentar baixar o GIF de novo</button>
@@ -320,6 +348,21 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
     <p v-if="scan.last && scan.phase === 'scanning'" class="meta">
       Quadros analisados: {{ scan.frames }} · última leitura: {{ scan.last.metrics.totalMs }} ms
     </p>
+
+    <details v-if="!cardId" class="layout manual">
+      <summary>Não está lendo? Buscar a carta à mão</summary>
+      <label>Nome da carta (em inglês, ex.: Pikachu)
+        <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual" />
+      </label>
+      <label>Número da carta (opcional, ex.: 58)
+        <input v-model="manualNumber" type="text" inputmode="numeric" autocomplete="off" @keyup.enter="searchManual" />
+      </label>
+      <button type="button" class="primary" @click="searchManual">Buscar</button>
+      <p v-if="manualMessage" class="message">{{ manualMessage }}</p>
+      <button v-for="match in manualResults" :key="match.id" type="button" @click="pickManual(match.id)">
+        {{ match.name }} · {{ match.setName }} {{ match.localId }}/{{ match.setOfficial }}
+      </button>
+    </details>
 
     <details v-if="arActive" class="layout" :open="showLayout" @toggle="onLayoutToggle">
       <summary>Ajustar posição e tamanho do Pokémon</summary>
