@@ -22,7 +22,8 @@ import type { OrientationMode } from '../box/orientation-source';
 import type { BoxCreature } from '../box/creature';
 import type { BattleHud } from '../box/battle-director';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
-import type { Fighter } from '../core/battle';
+import { STATUS_LABELS_PT, summarizeBattle } from '../core/battle';
+import type { BattleSummary, Fighter } from '../core/battle';
 
 type Phase = 'idle' | 'starting' | 'placing' | 'running';
 
@@ -47,7 +48,7 @@ const videoFov = ref(63);
 const battleHud = ref<BattleHud | null>(null);
 const preparing = ref(false);
 const battleFighters = ref<Fighter[]>([]);
-const battleSummary = ref<{ winner: string; turns: number; rounds: number } | null>(null);
+const battleSummary = ref<{ winner: string; turns: number; rounds: number; stats: BattleSummary } | null>(null);
 
 let stream: MediaStream | null = null;
 let box: RunningBox | null = null;
@@ -219,6 +220,7 @@ async function startBattle(): Promise<void> {
       winner: fighters[result.winner]?.name ?? '',
       turns: result.turns.length,
       rounds: result.turns.at(-1)?.round ?? 0,
+      stats: summarizeBattle(fighters, result),
     };
   } catch (e) {
     error.value = `Não consegui começar a batalha: ${e instanceof Error ? e.message : String(e)}`;
@@ -233,6 +235,14 @@ function stopBattle(): void {
   battleHud.value = null;
   battleSummary.value = null;
 }
+
+const mvp = computed(() => {
+  const sum = battleSummary.value;
+  return sum && sum.stats.fighters[sum.stats.mvp]?.damageDealt ? sum.stats.fighters[sum.stats.mvp]! : null;
+});
+const crits = computed(() => battleSummary.value?.stats.fighters.reduce((n, f) => n + f.criticals, 0) ?? 0);
+const inflicted = computed(() => battleSummary.value?.stats.fighters.reduce((n, f) => n + f.inflicted, 0) ?? 0);
+const guards = computed(() => battleSummary.value?.stats.fighters.reduce((n, f) => n + f.guards, 0) ?? 0);
 
 const incompleteFighters = computed(() => (battleHud.value ? battleFighters.value.filter((f) => f.notes.length > 0) : []));
 
@@ -285,17 +295,22 @@ onBeforeUnmount(() => {
           <strong>{{ battleHud.banner.text }}</strong>
           <span>{{ battleHud.banner.sub }}</span>
         </div>
+        <div v-if="battleHud.flash" class="battle-flash" :style="{ background: battleHud.flash.color, opacity: battleHud.flash.strength }"></div>
         <div
           v-for="bar in battleHud.bars"
           v-show="bar.visible"
           :key="bar.id"
           class="hp-bar"
-          :class="{ down: bar.fainted }"
+          :class="[{ down: bar.fainted, guarding: bar.guard }, bar.status ? 'st-' + bar.status : '', 'pers-' + bar.personality]"
           :style="{ left: bar.x + '%', top: bar.y + '%' }"
         >
           <span class="hp-name">
             <i v-for="t in bar.types" :key="t" class="type-dot" :style="{ background: TYPE_COLORS[t] }" :title="TYPE_LABELS_PT[t]"></i>
             {{ bar.name }}
+          </span>
+          <span v-if="bar.status || bar.guard" class="hp-badges">
+            <b v-if="bar.status" class="badge" :class="'badge-' + bar.status">{{ STATUS_LABELS_PT[bar.status] }}</b>
+            <b v-if="bar.guard" class="badge badge-guard">Defesa</b>
           </span>
           <span class="hp-track"><i :class="hpTone(bar.frac)" :style="{ width: bar.frac * 100 + '%' }"></i></span>
           <span class="hp-num">{{ bar.hp }}/{{ bar.maxHp }}</span>
@@ -356,7 +371,11 @@ onBeforeUnmount(() => {
       Para batalhar, ponha pelo menos 2 Pokémon na equipe da caixa.
     </p>
     <div v-if="battleSummary && battleHud?.phase === 'finished'" class="message" role="status">
-      <strong>{{ battleSummary.winner }} venceu</strong> em {{ battleSummary.turns }} golpes ({{ battleSummary.rounds }} rodadas).
+      <strong>{{ battleSummary.winner }} venceu</strong> em {{ battleSummary.turns }} turnos ({{ battleSummary.rounds }} rodadas).
+      <template v-if="mvp">
+        <br />Mais dano: {{ mvp.name }} ({{ mvp.damageDealt }} PS, maior golpe {{ mvp.biggestHit }}, {{ mvp.knockouts }} nocaute{{ mvp.knockouts === 1 ? '' : 's' }}).
+      </template>
+      <br />{{ crits }} crítico{{ crits === 1 ? '' : 's' }} · {{ inflicted }} condição(ões) causada(s) · {{ guards }} defesa{{ guards === 1 ? '' : 's' }}.
       <template v-if="incompleteFighters.length > 0">
         <br />Dados incompletos (usei valores neutros):
         <span v-for="f in incompleteFighters" :key="f.id" class="meta"><br />· {{ f.name }}: {{ f.notes.join('; ') }}</span>

@@ -86,6 +86,18 @@ export interface BattleMove {
 
 export type DataQuality = 'completo' | 'parcial' | 'sem-dados';
 
+/** Jeito de lutar, derivado dos atributos (ver `personalityOf`). */
+export type Personality = 'agressivo' | 'defensivo' | 'veloz' | 'equilibrado';
+export const PERSONALITY_LABELS_PT: Record<Personality, string> = {
+  agressivo: 'Agressivo', defensivo: 'Defensivo', veloz: 'Veloz', equilibrado: 'Equilibrado',
+};
+
+/** Condições que um golpe pode causar (o tipo do golpe decide qual). */
+export type StatusKind = 'burn' | 'poison' | 'paralysis' | 'freeze';
+export const STATUS_LABELS_PT: Record<StatusKind, string> = {
+  burn: 'Queimado', poison: 'Envenenado', paralysis: 'Paralisado', freeze: 'Congelado',
+};
+
 export interface Fighter {
   id: string;
   name: string;
@@ -97,6 +109,7 @@ export interface Fighter {
   spDefense: number;
   speed: number;
   moves: BattleMove[];
+  personality: Personality;
   quality: DataQuality;
   /** O que faltou e foi substituído por valores neutros (para a interface avisar). */
   notes: string[];
@@ -188,7 +201,20 @@ export function buildFighter(input: FighterInput): Fighter {
     notes.push('sem golpes (usei Investida)');
   }
   const quality: DataQuality = notes.length === 0 ? 'completo' : input.profile || moves.some((m) => m.source !== 'padrao') ? 'parcial' : 'sem-dados';
-  return { id: input.id, name: input.name, types, ...stats, moves, quality, notes };
+  return { id: input.id, name: input.name, types, ...stats, moves, personality: personalityOf(stats), quality, notes };
+}
+
+/**
+ * Personalidade pelos atributos: muito mais ataque que resistência → agressivo; o contrário → defensivo;
+ * Velocidade muito acima do resto → veloz; senão equilibrado. Define como escolhe alvo e golpe e se se defende.
+ */
+export function personalityOf(stats: Pick<Fighter, 'maxHp' | 'attack' | 'defense' | 'spAttack' | 'spDefense' | 'speed'>): Personality {
+  const offense = Math.max(stats.attack, stats.spAttack);
+  const bulk = (stats.maxHp / 1.5 + stats.defense + stats.spDefense) / 3; // PS nível 50 ≈ 1,5× os demais atributos
+  if (stats.speed >= offense * 1.15 && stats.speed >= bulk * 1.15) return 'veloz';
+  if (offense >= bulk * 1.15) return 'agressivo';
+  if (bulk >= offense * 1.15) return 'defensivo';
+  return 'equilibrado';
 }
 
 // ----------------------------------------------------------------------------- dano e batalha
@@ -202,8 +228,30 @@ export interface DamageRoll {
 }
 
 const CRIT_CHANCE = 1 / 16;
+/** Defender-se corta pela metade o próximo golpe recebido. */
+const GUARD_FACTOR = 0.5;
+/** Queimado: golpes físicos saem com metade da força. */
+const BURN_ATTACK_FACTOR = 0.5;
 
-export function calculateDamage(attacker: Fighter, defender: Fighter, move: BattleMove, rng: Rng): DamageRoll {
+export interface DamageContext {
+  /** Quem ataca está queimado. */
+  burned?: boolean;
+  /** Quem defende está em guarda. */
+  guarded?: boolean;
+}
+
+function rawDamage(attacker: Fighter, defender: Fighter, move: BattleMove, ctx: DamageContext, critical: boolean, roll: number): number {
+  const a = move.special ? attacker.spAttack : attacker.attack;
+  const d = move.special ? defender.spDefense : defender.defense;
+  const effectiveness = typeEffectiveness(move.type, defender.types);
+  const stab = attacker.types.includes(move.type);
+  const base = (Math.floor((2 * LEVEL) / 5) + 2) * move.power * (a / d) / 50 + 2;
+  const burn = ctx.burned && !move.special ? BURN_ATTACK_FACTOR : 1;
+  const guard = ctx.guarded ? GUARD_FACTOR : 1;
+  return Math.max(1, Math.floor(base * (stab ? 1.5 : 1) * effectiveness * (critical ? 1.5 : 1) * roll * burn * guard));
+}
+
+export function calculateDamage(attacker: Fighter, defender: Fighter, move: BattleMove, rng: Rng, ctx: DamageContext = {}): DamageRoll {
   const effectiveness = typeEffectiveness(move.type, defender.types);
   const stab = attacker.types.includes(move.type);
   const hit = rng() * 100 < move.accuracy;
@@ -211,22 +259,63 @@ export function calculateDamage(attacker: Fighter, defender: Fighter, move: Batt
   const roll = 0.85 + rng() * 0.15;
   if (!hit) return { hit: false, damage: 0, critical: false, effectiveness, stab };
   if (effectiveness === 0) return { hit: true, damage: 0, critical: false, effectiveness, stab };
-  const a = move.special ? attacker.spAttack : attacker.attack;
-  const d = move.special ? defender.spDefense : defender.defense;
-  const base = (Math.floor((2 * LEVEL) / 5) + 2) * move.power * (a / d) / 50 + 2;
-  const damage = Math.max(1, Math.floor(base * (stab ? 1.5 : 1) * effectiveness * (critical ? 1.5 : 1) * roll));
-  return { hit: true, damage, critical, effectiveness, stab };
+  return { hit: true, damage: rawDamage(attacker, defender, move, ctx, critical, roll), critical, effectiveness, stab };
 }
 
+/** Dano esperado de um golpe (sem sorteio de crítico/variação, ponderado pela precisão): serve para escolher alvo e golpe. */
+export function expectedDamage(attacker: Fighter, defender: Fighter, move: BattleMove, ctx: DamageContext = {}): number {
+  if (typeEffectiveness(move.type, defender.types) === 0) return 0;
+  return rawDamage(attacker, defender, move, ctx, false, 0.925) * (Math.min(100, move.accuracy) / 100);
+}
+
+// --- condições (queimadura, veneno, paralisia, congelamento)
+
+/** Chance de o golpe de cada tipo causar condição no alvo (se acertar e causar dano). */
+export const STATUS_CHANCE: Partial<Record<PokemonType, { status: StatusKind; chance: number }>> = {
+  fire: { status: 'burn', chance: 0.15 },
+  poison: { status: 'poison', chance: 0.25 },
+  electric: { status: 'paralysis', chance: 0.2 },
+  ice: { status: 'freeze', chance: 0.12 },
+};
+
+const STATUS_IMMUNE_TYPES: Record<StatusKind, PokemonType> = { burn: 'fire', poison: 'poison', paralysis: 'electric', freeze: 'ice' };
+
+export function canGetStatus(status: StatusKind, types: readonly PokemonType[]): boolean {
+  if (types.includes(STATUS_IMMUNE_TYPES[status])) return false;
+  return !(status === 'poison' && types.includes('steel'));
+}
+
+/** Chance de um paralisado não conseguir agir; de um congelado descongelar a cada vez que tenta agir. */
+export const PARALYSIS_SKIP_CHANCE = 0.25;
+export const THAW_CHANCE = 0.3;
+/** Queimado perde 1/16 e envenenado 1/8 dos PS no fim de cada rodada (nunca derruba: sobra pelo menos 1 PS). */
+export const RESIDUAL_FRACTION: Record<'burn' | 'poison', number> = { burn: 1 / 16, poison: 1 / 8 };
+
+// --- sequência de eventos
+
+export type TurnKind = 'attack' | 'guard' | 'skip' | 'residual';
+
 export interface BattleTurn extends DamageRoll {
+  kind: TurnKind;
   index: number;
   round: number;
   attacker: number;
+  /** Em 'guard', 'skip' e 'residual' é o próprio Pokémon. */
   target: number;
   move: BattleMove;
   targetHpBefore: number;
   targetHpAfter: number;
   fainted: boolean;
+  /** Condição causada no alvo por este golpe. */
+  inflicted?: StatusKind;
+  /** Por que o Pokémon não agiu ('skip') ou perdeu PS no fim da rodada ('residual'). */
+  cause?: StatusKind;
+  /** O alvo estava em guarda e levou metade do dano. */
+  guardedHit?: boolean;
+  /** O alvo foi escolhido por vingança (era quem o atacou por último). */
+  revenge?: boolean;
+  /** Descongelou antes de agir (o golpe segue normal). */
+  thawed?: boolean;
 }
 
 export interface BattleResult {
@@ -237,38 +326,151 @@ export interface BattleResult {
   reason: 'ko' | 'limite';
 }
 
-function pick<T>(items: readonly T[], rng: Rng): T {
-  return items[Math.min(items.length - 1, Math.floor(rng() * items.length))]!;
+/** Sorteio ponderado (pesos ≤ 0 contam como um mínimo para ninguém ficar com chance zero). */
+function pickWeighted<T>(items: readonly T[], weights: readonly number[], rng: Rng): T {
+  const w = weights.map((x) => Math.max(1e-6, x));
+  let r = rng() * w.reduce((a, b) => a + b, 0);
+  for (const [i, item] of items.entries()) {
+    r -= w[i]!;
+    if (r <= 0) return item;
+  }
+  return items[items.length - 1]!;
 }
 
-/** Simula a batalha inteira (todos contra todos) e devolve a sequência de golpes para a cena encenar. */
+/** O quanto o golpe pesa no sorteio: personalidades agressivas preferem muito os golpes mais fortes. */
+const MOVE_SHARPNESS: Record<Personality, number> = { agressivo: 3, equilibrado: 1.6, defensivo: 1.2, veloz: 1.6 };
+const REVENGE_CHANCE: Record<Personality, number> = { agressivo: 0.3, equilibrado: 0.3, defensivo: 0.65, veloz: 0.15 };
+const GUARD_CHANCE: Record<Personality, number> = { agressivo: 0.05, equilibrado: 0.15, defensivo: 0.45, veloz: 0.1 };
+/** Só se defende abaixo desta fração de PS. */
+const GUARD_BELOW_HP = 0.45;
+
+interface Live {
+  hp: number;
+  status: StatusKind | null;
+  guard: boolean;
+  guardedLast: boolean;
+  lastHitBy: number | null;
+}
+
+/** Escolhe o alvo: personalidades agressivas miram quem dá para derrubar; defensivas retribuem a quem as acertou. */
+export function chooseTarget(attackerIndex: number, fighters: readonly Fighter[], live: readonly Live[], rng: Rng): { target: number; revenge: boolean } {
+  const attacker = fighters[attackerIndex]!;
+  const me = live[attackerIndex]!;
+  const candidates = fighters.map((_, i) => i).filter((i) => i !== attackerIndex && live[i]!.hp > 0);
+  if (me.lastHitBy !== null && candidates.includes(me.lastHitBy) && rng() < REVENGE_CHANCE[attacker.personality]) {
+    return { target: me.lastHitBy, revenge: true };
+  }
+  const bestHit = (i: number) => Math.max(...attacker.moves.map((m) => expectedDamage(attacker, fighters[i]!, m, { burned: me.status === 'burn', guarded: live[i]!.guard })));
+  const kill = (i: number) => Math.min(2, bestHit(i) / Math.max(1, live[i]!.hp));
+  const weights = candidates.map((i) => {
+    if (attacker.personality === 'agressivo') return (kill(i) + 0.15) ** 2;
+    if (attacker.personality === 'equilibrado') return kill(i) + 0.5;
+    return 1; // defensivo e veloz: sem preferência
+  });
+  return { target: pickWeighted(candidates, weights, rng), revenge: false };
+}
+
+/** Escolhe o golpe contra o alvo, ponderando pelo dano esperado (a "agudeza" depende da personalidade). */
+export function chooseMove(attacker: Fighter, defender: Fighter, rng: Rng, ctx: DamageContext = {}): BattleMove {
+  const k = MOVE_SHARPNESS[attacker.personality];
+  const weights = attacker.moves.map((m) => (expectedDamage(attacker, defender, m, ctx) + 1) ** k);
+  return pickWeighted(attacker.moves, weights, rng);
+}
+
+const GUARD_MOVE: BattleMove = { name: 'Defender', type: 'normal', power: 0, accuracy: 100, special: false, source: 'padrao' };
+
+/**
+ * Simula a batalha inteira (todos contra todos) e devolve a sequência de eventos para a cena encenar.
+ * Cada Pokémon age conforme a personalidade: escolhe alvo e golpe de modo diferente, pode se defender com poucos
+ * PS, e condições (queimadura, veneno, paralisia, congelamento) mudam o que ele consegue fazer.
+ */
 export function simulateBattle(fighters: readonly Fighter[], rng: Rng): BattleResult {
   if (fighters.length < 2) throw new Error('A batalha precisa de pelo menos 2 Pokémon.');
-  const hp = fighters.map((f) => f.maxHp);
+  const live: Live[] = fighters.map((f) => ({ hp: f.maxHp, status: null, guard: false, guardedLast: false, lastHitBy: null }));
   const turns: BattleTurn[] = [];
   let round = 0;
-  const alive = () => fighters.map((_, i) => i).filter((i) => hp[i]! > 0);
+  const alive = () => fighters.map((_, i) => i).filter((i) => live[i]!.hp > 0);
+  const blank = (kind: TurnKind, attacker: number, target: number, move: BattleMove): BattleTurn => ({
+    kind, index: turns.length, round, attacker, target, move, hit: false, damage: 0, critical: false, effectiveness: 1, stab: false,
+    targetHpBefore: live[target]!.hp, targetHpAfter: live[target]!.hp, fainted: false,
+  });
 
   while (alive().length > 1 && round < MAX_ROUNDS) {
     round++;
-    // Quem tem mais Velocidade age primeiro; empate decidido por sorteio.
+    // Quem tem mais Velocidade age primeiro (paralisia corta pela metade); empate decidido por sorteio.
     const order = alive()
-      .map((i) => ({ i, key: fighters[i]!.speed + rng() * 0.5 }))
+      .map((i) => ({ i, key: fighters[i]!.speed * (live[i]!.status === 'paralysis' ? 0.5 : 1) + rng() * 0.5 }))
       .sort((a, b) => b.key - a.key)
       .map((entry) => entry.i);
     for (const attackerIndex of order) {
-      if (hp[attackerIndex]! <= 0) continue;
-      const targets = alive().filter((i) => i !== attackerIndex);
-      if (targets.length === 0) break;
-      const target = pick(targets, rng);
+      const me = live[attackerIndex]!;
+      if (me.hp <= 0) continue;
+      if (alive().length <= 1) break;
       const attacker = fighters[attackerIndex]!;
+      me.guard = false; // a guarda dura só até a vez dele de agir de novo
+
+      // Condições que impedem de agir.
+      let thawed = false;
+      if (me.status === 'freeze') {
+        if (rng() < THAW_CHANCE) {
+          me.status = null;
+          thawed = true;
+        } else {
+          turns.push({ ...blank('skip', attackerIndex, attackerIndex, GUARD_MOVE), cause: 'freeze' });
+          me.guardedLast = false;
+          continue;
+        }
+      } else if (me.status === 'paralysis' && rng() < PARALYSIS_SKIP_CHANCE) {
+        turns.push({ ...blank('skip', attackerIndex, attackerIndex, GUARD_MOVE), cause: 'paralysis' });
+        me.guardedLast = false;
+        continue;
+      }
+
+      // Com poucos PS, quem é cauteloso se defende (nunca duas vezes seguidas).
+      if (!me.guardedLast && me.hp / attacker.maxHp < GUARD_BELOW_HP && rng() < GUARD_CHANCE[attacker.personality]) {
+        me.guard = true;
+        me.guardedLast = true;
+        turns.push({ ...blank('guard', attackerIndex, attackerIndex, GUARD_MOVE), hit: true });
+        continue;
+      }
+      me.guardedLast = false;
+
+      const { target, revenge } = chooseTarget(attackerIndex, fighters, live, rng);
+      const foe = live[target]!;
       const defender = fighters[target]!;
-      const move = pick(attacker.moves, rng);
-      const roll = calculateDamage(attacker, defender, move, rng);
-      const before = hp[target]!;
+      const ctx: DamageContext = { burned: me.status === 'burn', guarded: foe.guard };
+      const move = chooseMove(attacker, defender, rng, ctx);
+      const roll = calculateDamage(attacker, defender, move, rng, ctx);
+      const before = foe.hp;
       const after = Math.max(0, before - roll.damage);
-      hp[target] = after;
-      turns.push({ ...roll, index: turns.length, round, attacker: attackerIndex, target, move, targetHpBefore: before, targetHpAfter: after, fainted: after === 0 });
+      foe.hp = after;
+      const turn: BattleTurn = { ...blank('attack', attackerIndex, target, move), ...roll, targetHpBefore: before, targetHpAfter: after, fainted: after === 0 };
+      if (revenge) turn.revenge = true;
+      if (thawed) turn.thawed = true;
+      if (foe.guard && roll.hit && roll.damage > 0) {
+        turn.guardedHit = true;
+        foe.guard = false; // a guarda vale por um golpe
+      }
+      if (roll.hit) foe.lastHitBy = attackerIndex;
+      const effect = STATUS_CHANCE[move.type];
+      if (effect && roll.hit && roll.damage > 0 && after > 0 && foe.status === null && canGetStatus(effect.status, defender.types) && rng() < effect.chance) {
+        foe.status = effect.status;
+        turn.inflicted = effect.status;
+      }
+      turns.push(turn);
+    }
+
+    // Fim da rodada: queimadura e veneno tiram PS (sempre sobra 1, para não encerrar a luta fora de um golpe).
+    for (const i of alive()) {
+      const status = live[i]!.status;
+      if (status !== 'burn' && status !== 'poison') continue;
+      const f = fighters[i]!;
+      const loss = Math.max(1, Math.floor(f.maxHp * RESIDUAL_FRACTION[status]));
+      const before = live[i]!.hp;
+      const after = Math.max(1, before - loss);
+      if (after === before) continue;
+      live[i]!.hp = after;
+      turns.push({ ...blank('residual', i, i, GUARD_MOVE), hit: true, damage: before - after, targetHpBefore: before, targetHpAfter: after, cause: status });
     }
   }
 
@@ -278,9 +480,55 @@ export function simulateBattle(fighters: readonly Fighter[], rng: Rng): BattleRe
   if (survivors.length !== 1) {
     // Estourou o limite de rodadas: vence quem tem mais PS restante (proporcional).
     reason = 'limite';
-    winner = survivors.reduce((best, i) => (hp[i]! / fighters[i]!.maxHp > hp[best]! / fighters[best]!.maxHp ? i : best), survivors[0] ?? 0);
+    winner = survivors.reduce((best, i) => (live[i]!.hp / fighters[i]!.maxHp > live[best]!.hp / fighters[best]!.maxHp ? i : best), survivors[0] ?? 0);
   }
-  return { turns, winner, hpLeft: hp, reason };
+  return { turns, winner, hpLeft: live.map((l) => l.hp), reason };
+}
+
+// ----------------------------------------------------------------------------- resumo
+
+export interface FighterSummary {
+  id: string;
+  name: string;
+  damageDealt: number;
+  knockouts: number;
+  criticals: number;
+  /** Golpes que acertaram, errados, defesas e vezes que não conseguiu agir. */
+  hits: number;
+  misses: number;
+  guards: number;
+  skipped: number;
+  inflicted: number;
+  biggestHit: number;
+}
+
+export interface BattleSummary {
+  fighters: FighterSummary[];
+  /** Quem causou mais dano (índice). */
+  mvp: number;
+  rounds: number;
+}
+
+export function summarizeBattle(fighters: readonly Fighter[], result: BattleResult): BattleSummary {
+  const stats: FighterSummary[] = fighters.map((f) => ({
+    id: f.id, name: f.name, damageDealt: 0, knockouts: 0, criticals: 0, hits: 0, misses: 0, guards: 0, skipped: 0, inflicted: 0, biggestHit: 0,
+  }));
+  for (const turn of result.turns) {
+    const s = stats[turn.attacker]!;
+    if (turn.kind === 'guard') s.guards++;
+    else if (turn.kind === 'skip') s.skipped++;
+    else if (turn.kind === 'attack') {
+      if (turn.hit) s.hits++;
+      else s.misses++;
+      s.damageDealt += turn.damage;
+      s.biggestHit = Math.max(s.biggestHit, turn.damage);
+      if (turn.critical) s.criticals++;
+      if (turn.fainted) s.knockouts++;
+      if (turn.inflicted) s.inflicted++;
+    }
+  }
+  const mvp = stats.reduce((best, s, i) => (s.damageDealt > stats[best]!.damageDealt ? i : best), 0);
+  return { fighters: stats, mvp, rounds: result.turns.at(-1)?.round ?? 0 };
 }
 
 /** Textos curtos em português para a interface. */

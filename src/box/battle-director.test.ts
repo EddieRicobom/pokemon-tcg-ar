@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
 import { BoxScene } from './box-scene';
 import type { CreatureEntry } from './box-scene';
-import { INTRO_MAX_MS, MELEE, RANGED, turnDuration } from './battle-director';
+import { attackStyleOf, GUARD_MS, INTRO_MAX_MS, RESIDUAL_MS, SKIP_MS, turnDuration, turnPlan } from './battle-director';
 import { buildFighter, seededRng } from '../core/battle';
+import { PERSONALITY_LABELS_PT } from '../core/battle';
+import type { BattleTurn } from '../core/battle';
 import type { Fighter } from '../core/battle';
 import { lookQuaternion } from './orientation';
-import { FX_STYLES, ParticleField, typeColorHex } from './effects';
+import { BoltLine, FX_STYLES, IMPACT_STYLES, ParticleField, PHYSICAL_STYLE, RingField, SPECIAL_DELIVERY, STATUS_TINTS, typeColorHex } from './effects';
 import { POKEMON_TYPES } from '../core/pokemon-data';
 
 function entry(i: number): CreatureEntry {
@@ -67,7 +69,7 @@ describe('batalha na cena', () => {
     expect(scene.battling).toBe(true);
     expect(scene.battleHud?.phase).toBe('intro');
     expect(scene.battleHud?.banner?.text).toBe('Batalha!');
-    const total = INTRO_MAX_MS + result.turns.reduce((sum, t) => sum + turnDuration(t), 0) + 500;
+    const total = INTRO_MAX_MS + result.turns.reduce((sum, t) => sum + turnDuration(t, team[t.attacker]!.personality), 0) + 500;
     run(scene, total);
     const hud = scene.battleHud!;
     expect(hud.phase).toBe('finished');
@@ -92,7 +94,7 @@ describe('batalha na cena', () => {
       now += 33;
       scene.update(now);
     }
-    const impactAt = first.move.special ? RANGED.windup + RANGED.travel : MELEE.windup + MELEE.approach + MELEE.strike;
+    const impactAt = turnPlan(first, team[first.attacker]!.personality).impactAt;
     for (let t = 0; t < impactAt + 150; t += 33) {
       now += 33;
       scene.update(now);
@@ -118,6 +120,7 @@ describe('batalha na cena', () => {
     const turn = result.turns[0]!;
     expect(banner.text).toBe(`${team[turn.attacker]!.name} usou ${turn.move.name}!`);
     expect(banner.sub).toContain('golpe do jogo');
+    expect(banner.sub).toContain(PERSONALITY_LABELS_PT[team[turn.attacker]!.personality]);
   });
 
   it('parar a batalha devolve tudo ao normal e o passeio volta', () => {
@@ -183,5 +186,107 @@ describe('efeitos', () => {
     const field = new ParticleField(3);
     for (let i = 0; i < 8; i++) field.emit({ position: new Vector3(), velocity: new Vector3(), life: 1000, size: 0.1, color: 0xffffff });
     expect(field.activeCount).toBe(3);
+  });
+});
+
+function turnOf(partial: Partial<BattleTurn> & Pick<BattleTurn, 'kind'>): BattleTurn {
+  return {
+    round: 1, attacker: 0, target: 1, move: { name: 'Teste', type: 'normal', power: 50, accuracy: 100, special: false, source: 'jogo' },
+    hit: true, damage: 10, critical: false, effectiveness: 1, targetHpAfter: 90, fainted: false, ...partial,
+  } as BattleTurn;
+}
+
+describe('encenação por tipo de golpe e personalidade', () => {
+  it('golpes físicos e especiais usam estilos diferentes, por tipo', () => {
+    const fire = turnOf({ kind: 'attack', move: { name: 'Brasa', type: 'fire', power: 50, accuracy: 100, special: true, source: 'jogo' } });
+    const fight = turnOf({ kind: 'attack', move: { name: 'Soco', type: 'fighting', power: 50, accuracy: 100, special: false, source: 'jogo' } });
+    expect(attackStyleOf(fire)).toEqual({ family: 'ranged', delivery: SPECIAL_DELIVERY.fire });
+    expect(attackStyleOf(fight)).toEqual({ family: 'melee', variant: PHYSICAL_STYLE.fighting });
+    expect(new Set(Object.values(SPECIAL_DELIVERY)).size).toBeGreaterThan(3);
+    expect(new Set(Object.values(PHYSICAL_STYLE)).size).toBeGreaterThan(3);
+  });
+
+  it('o impacto vem depois da preparação e o turno dura mais que o impacto', () => {
+    for (const type of POKEMON_TYPES) {
+      for (const special of [true, false]) {
+        const turn = turnOf({ kind: 'attack', move: { name: 'x', type, power: 50, accuracy: 100, special, source: 'jogo' } });
+        const plan = turnPlan(turn);
+        expect(plan.impactAt).toBeGreaterThan(plan.windup);
+        expect(plan.total).toBeGreaterThan(plan.impactAt);
+      }
+    }
+  });
+
+  it('a personalidade muda o ritmo: veloz < agressivo < equilibrado < defensivo', () => {
+    const turn = turnOf({ kind: 'attack' });
+    const d = (p: 'veloz' | 'agressivo' | 'equilibrado' | 'defensivo') => turnDuration(turn, p);
+    expect(d('veloz')).toBeLessThan(d('agressivo'));
+    expect(d('agressivo')).toBeLessThan(d('equilibrado'));
+    expect(d('equilibrado')).toBeLessThan(d('defensivo'));
+  });
+
+  it('defesa, imobilizado e resíduo têm duração própria; desmaio estende o turno', () => {
+    expect(turnDuration(turnOf({ kind: 'guard' }))).toBe(GUARD_MS);
+    expect(turnDuration(turnOf({ kind: 'skip' }))).toBe(SKIP_MS);
+    expect(turnDuration(turnOf({ kind: 'residual' }))).toBe(RESIDUAL_MS);
+    expect(turnDuration(turnOf({ kind: 'residual', fainted: true }))).toBeGreaterThan(RESIDUAL_MS);
+    expect(turnDuration(turnOf({ kind: 'attack', fainted: true }))).toBeGreaterThan(turnDuration(turnOf({ kind: 'attack' })));
+  });
+});
+
+describe('batalha com condições e defesa', () => {
+  it('toda a luta roda com condições, defesa e resíduos sem travar e termina no vencedor', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const scene = ready(4);
+      const team = fighters(4).map((f, i) => ({ ...f, maxHp: f.maxHp * (i === 0 ? 3 : 1) }));
+      const result = scene.startBattle(team, seededRng(seed));
+      const total = INTRO_MAX_MS + result.turns.reduce((s, t) => s + turnDuration(t, team[t.attacker]!.personality), 0) + 800;
+      run(scene, total, 50);
+      const hud = scene.battleHud!;
+      expect(hud.phase).toBe('finished');
+      expect(hud.winner?.id).toBe(team[result.winner]!.id);
+      for (const bar of hud.bars) {
+        expect(bar.status).toBeNull();
+        expect(bar.guard).toBe(false);
+      }
+    }
+  });
+
+  it('o clarão da tela some depois de um instante', () => {
+    const scene = ready(2);
+    scene.startBattle(fighters(2), seededRng(2));
+    run(scene, INTRO_MAX_MS + 200);
+    expect(scene.battleHud!.flash === null || scene.battleHud!.flash.strength <= 1).toBe(true);
+  });
+});
+
+describe('anéis, raios e tabelas de impacto', () => {
+  it('anéis nascem e somem', () => {
+    const rings = new RingField(2);
+    rings.emit(new Vector3(), 0xffffff, 0.5, 300);
+    rings.emit(new Vector3(), 0xffffff, 0.5, 300);
+    rings.emit(new Vector3(), 0xffffff, 0.5, 300);
+    expect(rings.activeCount).toBe(2);
+    for (let i = 0; i < 4; i++) rings.update(100);
+    expect(rings.activeCount).toBe(0);
+    rings.dispose();
+  });
+
+  it('o raio aparece e se esconde', () => {
+    const bolt = new BoltLine();
+    expect(bolt.visible).toBe(false);
+    bolt.show(new Vector3(0, 0, 0), new Vector3(1, 0, 0), 0xffff00, seededRng(1), 0.1);
+    expect(bolt.visible).toBe(true);
+    bolt.hide();
+    expect(bolt.visible).toBe(false);
+    bolt.dispose();
+  });
+
+  it('cada tipo tem estilo de impacto e cada condição tem cor', () => {
+    for (const t of POKEMON_TYPES) {
+      expect(IMPACT_STYLES[t].ring).toBeGreaterThanOrEqual(0);
+      expect(IMPACT_STYLES[t].extra).toBeTruthy();
+    }
+    for (const s of ['burn', 'poison', 'paralysis', 'freeze'] as const) expect(STATUS_TINTS[s]).toBeGreaterThan(0);
   });
 });
