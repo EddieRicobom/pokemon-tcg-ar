@@ -9,7 +9,8 @@ import type { RunningAr } from '../ar/start-ar';
 import type { ArState } from '../ar/session';
 import type { SpriteLoadState } from '../ar/sprite-loader';
 import { prepareArAssets } from '../app/ar-prepare';
-import { arStepList, arStatusText } from '../app/ar-stages';
+import { arLoadHint, arLoadingMode, arStageTitle, arStepList, arStatusText, elapsedSeconds } from '../app/ar-stages';
+import ArLoading from '../components/ArLoading.vue';
 import type { ArStage } from '../app/ar-stages';
 import { ScanController } from '../app/scan-controller';
 import type { LastAttempt, ScanState } from '../app/scan-controller';
@@ -29,6 +30,7 @@ import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { frameFromVideo } from '../recognition/browser-image';
 import type { RgbaImage } from '../recognition/types';
 import { loadChunk } from '../app/stale-build';
+import { spriteIdOf } from '../core/dex-form';
 
 const props = defineProps<{ cardId?: string }>();
 
@@ -400,12 +402,12 @@ async function startArFor(cardId: string): Promise<void> {
       canvas: canvasEl.value,
       container: stageEl.value,
       target: assets.target,
-      dexId: assets.card.dexIds[0],
+      dexId: spriteIdOf(assets.card),
       cachedSprite: assets.cachedSprite,
       fetchSprite: (dexId) => fetchSprite(dexId),
       battle: {
         name: assets.card.name,
-        load: (onPart) => loadBattle(assets.card.id, assets.card.dexIds[0], onPart),
+        load: (onPart) => loadBattle(assets.card.id, spriteIdOf(assets.card), onPart),
       },
       onState: (state) => {
         if (run !== arRun) return;
@@ -634,6 +636,48 @@ const mainNotice = computed<Notice | null>(() => {
   return null;
 });
 
+/** Relógio da animação de carregamento: segundos desde que a etapa atual começou (só corre enquanto a animação aparece). */
+const loadingMode = computed(() => (cameraOn.value ? arLoadingMode(arStage.value) : null));
+const stageStartedAt = ref(Date.now());
+const clockNow = ref(Date.now());
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+watch(arStage, () => {
+  stageStartedAt.value = Date.now();
+  clockNow.value = stageStartedAt.value;
+});
+watch(
+  loadingMode,
+  (mode) => {
+    if (mode && !clockTimer) clockTimer = setInterval(() => (clockNow.value = Date.now()), 500);
+    else if (!mode && clockTimer) {
+      clearInterval(clockTimer);
+      clockTimer = null;
+    }
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  if (clockTimer) clearInterval(clockTimer);
+});
+
+const LOADING_LABEL: Record<string, string> = {
+  preparing: 'Dados e imagem da carta',
+  compiling: 'Alvo de rastreamento',
+  engine: 'Motor de rastreamento',
+};
+const loadingView = computed(() => {
+  const mode = loadingMode.value;
+  if (!mode) return null;
+  const seconds = elapsedSeconds(stageStartedAt.value, clockNow.value);
+  return {
+    mode,
+    title: arStageTitle(arStage.value),
+    hint: arLoadHint(arStage.value, seconds),
+    seconds,
+    steps: arSteps.value.filter((step) => step.key in LOADING_LABEL).map((step) => ({ ...step, label: LOADING_LABEL[step.key] ?? step.label })),
+  };
+});
+
 /** Etapas do AR enquanto o app prepara tudo (depois disso o aviso principal basta). */
 const stepsNotice = computed(() => {
   if (!cameraOn.value || !['preparing', 'compiling', 'engine'].includes(arStage.value)) return null;
@@ -703,6 +747,8 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
         @pointerup="onGestureUp"
         @pointercancel="onGestureUp"
       ></div>
+
+      <ArLoading v-if="loadingView" v-bind="loadingView" />
 
       <div v-if="immersive" class="stage-head" role="status" aria-live="polite">
         <p v-if="cameraBusy" class="pill busy"><i class="dot"></i><span class="pill-text">Abrindo a câmera…</span></p>

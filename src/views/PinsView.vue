@@ -24,6 +24,7 @@ import type { CardBattleInfo, PokemonProfile, PokemonType } from '../core/pokemo
 import { artSize, paintArena, paintBumpers, UNITS_PER_PIXEL } from '../pins/arena-art';
 import { ArenaTerrainArt } from '../pins/terrain-paint';
 import type { CachedCard } from '../cache/types';
+import { spriteIdOf } from '../core/dex-form';
 
 type Phase = 'setup' | 'loading' | 'aim' | 'rolling' | 'enemy' | 'over';
 interface Info { state: 'loading' | 'ok'; profile: PokemonProfile | null; card: CardBattleInfo | null }
@@ -138,7 +139,7 @@ function rowInfo(card: CachedCard): { cost: number | null; types: PokemonType[];
 async function loadInfo(card: CachedCard): Promise<void> {
   if (infos.value[card.id]?.state === 'ok') return;
   infos.value = { ...infos.value, [card.id]: { state: 'loading', profile: null, card: null } };
-  const data = await loadPinData(card.id, card.dexIds[0]).catch(() => ({ profile: null, card: null }));
+  const data = await loadPinData(card.id, spriteIdOf(card)).catch(() => ({ profile: null, card: null }));
   if (disposed) return;
   infos.value = { ...infos.value, [card.id]: { state: 'ok', profile: data.profile, card: data.card } };
 }
