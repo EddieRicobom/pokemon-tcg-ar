@@ -7,6 +7,7 @@ import type { SpriteLook } from '../core/sprite-look';
 import type { BoxCreature } from './creature';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES } from './floor';
 import { createWebglBackend } from '../ar/webgl-backend';
+import { sensorSettings } from '../app/sensor-settings';
 
 /** Campo de visão vertical típico da câmera traseira de um celular em pé (ajustável na tela). */
 export const DEFAULT_VIDEO_VFOV_DEG = 63;
@@ -65,7 +66,8 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   const tick = (now: number) => {
     if (!running) return;
     handle = requestAnimationFrame(tick);
-    scene.setCameraQuaternion(orientation.read());
+    orientation.latencyMs = sensorSettings.latencyMs;
+    scene.setCameraQuaternion(orientation.read(performance.now()));
     scene.update(now);
     renderer.render(scene.scene, scene.camera);
   };

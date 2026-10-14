@@ -1,6 +1,9 @@
 /** Maior lado, em pixels, do quadro entregue ao rastreador. O MindAR processa todo pixel de cada quadro: 1080×1920 é lento no celular. */
 export const TRACKING_MAX_SIDE = 640;
 
+/** Atraso (ms) entre a câmera capturar um quadro e o navegador entregá-lo, quando o navegador não informa o `captureTime`. */
+export const CAMERA_LATENCY_GUESS_MS = 50;
+
 /** Tamanho do quadro de rastreamento: mantém a proporção do vídeo e nunca amplia. */
 export function trackingSize(videoWidth: number, videoHeight: number, maxSide = TRACKING_MAX_SIDE): { width: number; height: number } {
   const scale = Math.min(1, maxSide / Math.max(videoWidth, videoHeight));
@@ -27,6 +30,8 @@ export class FrameRelay {
   private stopped = false;
 
   private notified = false;
+  /** Hora (performance.now) em que a câmera capturou o quadro que está no canvas. */
+  frameTime = 0;
 
   constructor(private readonly video: HTMLVideoElement, private readonly onInputChange?: () => void) {
     const { width, height } = trackingSize(video.videoWidth, video.videoHeight);
@@ -46,7 +51,8 @@ export class FrameRelay {
     return this.canvas.height;
   }
 
-  draw(): void {
+  draw(captureTime?: number): void {
+    this.frameTime = captureTime ?? performance.now() - CAMERA_LATENCY_GUESS_MS;
     // Se a câmera trocar de proporção no meio do caminho (tela girou, resolução renegociada), o quadro reduzido
     // ficaria esticado e o rastreador, descalibrado: avisa uma vez para reiniciar com o tamanho certo.
     if (!this.notified && aspectChanged(this.canvas.width, this.canvas.height, this.video.videoWidth, this.video.videoHeight)) {
@@ -57,13 +63,17 @@ export class FrameRelay {
   }
 
   start(): void {
-    const video = this.video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number; cancelVideoFrameCallback?: (h: number) => void };
-    const tick = () => {
-      if (this.stopped) return;
-      this.draw();
-      this.handle = video.requestVideoFrameCallback ? video.requestVideoFrameCallback(tick) : requestAnimationFrame(tick);
+    type FrameMetadata = { captureTime?: number };
+    const video = this.video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: (now: number, metadata?: FrameMetadata) => void) => number;
+      cancelVideoFrameCallback?: (h: number) => void;
     };
-    this.handle = video.requestVideoFrameCallback ? video.requestVideoFrameCallback(tick) : requestAnimationFrame(tick);
+    const tick = (_now?: number, metadata?: FrameMetadata) => {
+      if (this.stopped) return;
+      this.draw(metadata?.captureTime);
+      this.handle = video.requestVideoFrameCallback ? video.requestVideoFrameCallback(tick) : requestAnimationFrame(() => tick());
+    };
+    this.handle = video.requestVideoFrameCallback ? video.requestVideoFrameCallback(tick) : requestAnimationFrame(() => tick());
   }
 
   stop(): void {

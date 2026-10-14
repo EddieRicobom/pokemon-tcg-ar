@@ -36,3 +36,12 @@ export function visibleVerticalFov(videoVFovDeg: number, videoAspect: number, co
   const factor = containerAspect > videoAspect ? videoAspect / containerAspect : 1;
   return (2 * Math.atan(Math.tan((videoVFovDeg * DEG) / 2) * factor)) / DEG;
 }
+
+/**
+ * Quanto a orientação suavizada anda em direção à medida a cada quadro, conforme o tamanho do passo (radianos):
+ * parado (passo de décimos de grau) filtra o tremor do sensor; girando, chega a 1 e acompanha sem atraso.
+ */
+export function orientationSmoothingAlpha(stepRad: number): number {
+  const a = 0.18 + Math.max(0, stepRad) * 9;
+  return Math.min(1, Math.max(0.18, a));
+}

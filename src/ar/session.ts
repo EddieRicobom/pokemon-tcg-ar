@@ -1,4 +1,4 @@
-import { Matrix4, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3 } from 'three';
+import { Matrix4, PerspectiveCamera, Quaternion, Raycaster, Scene, Vector2, Vector3 } from 'three';
 import { cameraParamsFromProjection, cardSpaceMatrix, DEFAULT_LAYOUT, panelPlacement } from './anchor';
 import type { SpriteLayout } from './anchor';
 import { CardSprite } from './card-sprite';
@@ -15,7 +15,29 @@ export interface ArState {
   message?: string;
   /** Quantas vezes a carta foi encontrada desde que a sessão começou. */
   foundCount: number;
+  /** Leituras do rastreador por segundo (média recente), para diagnóstico. */
+  trackerHz?: number;
+  /** O giroscópio está corrigindo a pose entre as leituras do rastreador? */
+  gyro?: boolean;
 }
+
+/** Orientação do celular (giroscópio) consultável por instante: ver `OrientationFeed`. */
+export interface OrientationLookup {
+  at(t: number): Quaternion | null;
+  isFresh(nowMs: number, maxAgeMs?: number): boolean;
+}
+
+export interface GyroSettings {
+  gyro: boolean;
+  latencyMs: number;
+}
+
+/** Atraso suposto entre a câmera capturar o quadro e o resultado do rastreador, quando a hora de captura não é conhecida. */
+const DEFAULT_TRACKER_LAG_MS = 120;
+/** Tempo que o Pokémon fica na última pose (já presa ao mundo pelo giroscópio) depois que o rastreador perde a carta. */
+const HOLD_WITH_GYRO_MS = 2500;
+const HOLD_WITHOUT_GYRO_MS = 1000;
+const STATS_EVERY_MS = 1000;
 
 /** O que a sessão precisa do desenho (WebGL no navegador; falso nos testes). */
 export interface RenderBackend {
@@ -30,6 +52,9 @@ export interface ArSessionDeps {
   sprite: CardSprite;
   /** Painel de status no chão (opcional): filho do grupo da carta. */
   panel?: StatsPanel;
+  /** Giroscópio (opcional): sem ele, o AR funciona como antes. */
+  orientation?: OrientationLookup;
+  getGyroSettings?: () => GyroSettings;
   video: HTMLVideoElement;
   /** Tamanho em CSS do contêiner onde o vídeo é exibido em "cover". */
   getContainerSize: () => { width: number; height: number };
@@ -57,6 +82,9 @@ export class ArSession {
   private running = false;
   private missedFrames = 0;
   private lastPoseAt = 0;
+  private lastUpdateAt = 0;
+  private intervalEmaMs = 0;
+  private lastStatsAt = 0;
   private target: ArrayBuffer | null = null;
   private restarting = false;
   private state: ArState = { phase: 'idle', foundCount: 0 };
@@ -120,23 +148,48 @@ export class ArSession {
     return (this.deps.now ?? (() => performance.now()))();
   }
 
+  private gyroOn(nowMs: number): boolean {
+    const settings = this.deps.getGyroSettings?.() ?? { gyro: true, latencyMs: 70 };
+    return settings.gyro && Boolean(this.deps.orientation?.isFresh(nowMs));
+  }
+
   private onTrack(update: TrackingUpdate): void {
     if (!this.info) return;
     const sprite = this.deps.sprite;
+    const nowMs = this.clock();
+    const gyro = this.gyroOn(nowMs);
+    this.recordUpdate(nowMs, gyro);
     if (update.worldMatrix) {
-      sprite.setCardMatrix(cardSpaceMatrix(update.worldMatrix, this.info.markerWidth, this.info.markerHeight));
+      // Com giroscópio, a pose é guardada no mundo (orientação da câmera no instante do quadro).
+      const poseOrientation = gyro ? this.deps.orientation!.at(update.capturedAt ?? nowMs - DEFAULT_TRACKER_LAG_MS) : null;
+      sprite.setCardMatrix(cardSpaceMatrix(update.worldMatrix, this.info.markerWidth, this.info.markerHeight), poseOrientation);
       sprite.setTracked(true);
       this.missedFrames = 0;
-      this.lastPoseAt = this.clock();
+      this.lastPoseAt = nowMs;
       if (this.state.phase !== 'tracking') this.setState({ phase: 'tracking', message: undefined, foundCount: this.state.foundCount + 1 });
     } else {
       // Perda curta: mantém o Pokémon na última pose em vez de piscar enquanto o rastreador reencontra a carta.
-      if (this.clock() - this.lastPoseAt > (this.deps.holdMs ?? 1000)) sprite.setTracked(false);
+      // Com giroscópio ele continua preso ao mundo (acompanha o giro do celular) por mais tempo.
+      const hold = this.deps.holdMs ?? (gyro ? HOLD_WITH_GYRO_MS : HOLD_WITHOUT_GYRO_MS);
+      if (nowMs - this.lastPoseAt > hold) sprite.setTracked(false);
       this.missedFrames++;
       const limit = this.deps.lostAfterFrames ?? 10;
       if (this.state.phase === 'tracking' && this.missedFrames >= limit) {
         this.setState({ phase: 'lost', message: 'Perdi a carta. Aponte de novo para ela.' });
       }
+    }
+  }
+
+  /** Média móvel do intervalo entre leituras do rastreador, publicada no estado a cada segundo (diagnóstico). */
+  private recordUpdate(nowMs: number, gyro: boolean): void {
+    if (this.lastUpdateAt > 0) {
+      const interval = nowMs - this.lastUpdateAt;
+      this.intervalEmaMs = this.intervalEmaMs === 0 ? interval : this.intervalEmaMs * 0.9 + interval * 0.1;
+    }
+    this.lastUpdateAt = nowMs;
+    if (nowMs - this.lastStatsAt >= STATS_EVERY_MS && this.intervalEmaMs > 0) {
+      this.lastStatsAt = nowMs;
+      this.setState({ trackerHz: Math.round((1000 / this.intervalEmaMs) * 10) / 10, gyro });
     }
   }
 
@@ -197,6 +250,10 @@ export class ArSession {
     const tick = (now: number) => {
       if (!this.running) return;
       this.handle = schedule(tick);
+      // Giroscópio: leva a pose (presa ao mundo) de volta para a câmera pela orientação de agora − atraso da imagem.
+      const nowMs = this.clock();
+      const settings = this.deps.getGyroSettings?.() ?? { gyro: true, latencyMs: 70 };
+      this.deps.sprite.setViewOrientation(this.gyroOn(nowMs) ? this.deps.orientation!.at(nowMs - settings.latencyMs) : null);
       this.deps.sprite.update(now);
       if (this.deps.panel) {
         // O painel acompanha o Pokémon: logo abaixo da ilustração, girado junto com ela.

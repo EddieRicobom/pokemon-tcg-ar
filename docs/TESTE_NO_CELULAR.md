@@ -36,6 +36,12 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 2. Com a câmera aberta, use os botões sobre a imagem: "Tela cheia" (os botões continuam visíveis), "Filtros" (câmera, cor e contorno do Pokémon), "Formação" (equipe em fila) e "Passeio".
 3. Anote: se a tela cheia entra e sai sem a imagem esticar, se os botões cabem numa linha no seu aparelho e se os filtros mudam o Pokémon sem travar.
 
+### Giroscópio (Escanear e Caixa)
+1. Com o AR ativo, abaixo da câmera aparece "Rastreador: N leituras/s · giroscópio: corrigindo a pose". Se aparecer "sem dados do sensor", o aparelho/navegador não entregou o sensor.
+2. Mova o celular em arco, devagar e depressa, com a carta parada: o Pokémon deve acompanhar sem ficar para trás nem se adiantar à carta. Se ele se adianta, aumente "Atraso da câmera para o sensor" em Ajustes; se fica para trás, diminua. Compare com "Usar o giroscópio" desligado.
+3. Cubra a carta por um instante com a mão: o Pokémon deve ficar preso ao lugar (acompanhando o giro) por até ~2,5 s.
+4. Anote o valor de "leituras/s" e o atraso que ficou melhor.
+
 ## 2. Reconhecimento automático
 1. Escanear de novo, carta sobre qualquer fundo, sem reflexo na faixa de baixo.
 2. No painel de diagnóstico confira: quadrilátero verde sobre a carta, "Carta endireitada" em pé, "Faixa de baixo" com o número legível, tempos por etapa.

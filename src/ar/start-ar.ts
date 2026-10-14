@@ -8,6 +8,8 @@ import type { SpriteSource } from './sprite-source';
 import { StatsPanel } from './stats-panel';
 import { createWebglBackend } from './webgl-backend';
 import type { BattleData, PartName } from '../app/pokemon-data-service';
+import { sensorSettings } from '../app/sensor-settings';
+import { getOrientationFeed } from '../sensors/orientation-feed';
 
 export interface StartArOptions {
   video: HTMLVideoElement;
@@ -38,6 +40,8 @@ export interface RunningAr {
 
 /** Ponto de entrada do AR: tudo que usa Three.js e MindAR passa por aqui (import dinâmico). */
 export async function startAr(options: StartArOptions): Promise<RunningAr> {
+  const feed = getOrientationFeed();
+  feed.acquire();
   const sprite = new CardSprite();
   const panel = options.battle ? new StatsPanel(options.battle.name, options.dexId) : null;
   const session = new ArSession({
@@ -45,6 +49,8 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
     renderer: createWebglBackend(options.canvas),
     sprite,
     panel: panel ?? undefined,
+    orientation: feed,
+    getGyroSettings: () => ({ gyro: sensorSettings.gyro, latencyMs: sensorSettings.latencyMs }),
     video: options.video,
     getContainerSize: () => ({ width: options.container.clientWidth, height: options.container.clientHeight }),
     onState: options.onState,
@@ -69,6 +75,7 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
     await Promise.all([session.start(options.target), loadSprite()]);
   } catch (error) {
     observer.disconnect();
+    feed.release();
     session.stop(); // libera motor, WebGL e sprite para a próxima tentativa
     throw error;
   }
@@ -93,6 +100,7 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
     },
     stop() {
       observer.disconnect();
+      feed.release();
       session.stop();
     },
   };

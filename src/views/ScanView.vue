@@ -20,6 +20,8 @@ import { lastAttempt } from '../app/diagnostics';
 import { routeHref } from '../app/route';
 import { useFullscreen } from '../app/fullscreen';
 import { cameraFilterCss, visual } from '../app/visual-settings';
+import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
+import { requestOrientationPermission } from '../sensors/orientation-feed';
 import FilterSheet from '../components/FilterSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
@@ -298,6 +300,8 @@ async function ensureController(): Promise<ScanController> {
 }
 
 async function openCamera(): Promise<void> {
+  // iOS: a permissão dos sensores precisa ser pedida direto do toque, antes de qualquer espera.
+  void requestOrientationPermission();
   const video = videoEl.value;
   if (!video) return;
   cameraBusy.value = true;
@@ -763,6 +767,11 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       </button>
     </details>
 
+    <p v-if="arActive" class="meta" role="status">
+      Rastreador: {{ arState.trackerHz ? `${arState.trackerHz} leituras/s` : 'medindo…' }} ·
+      giroscópio: {{ !sensorSettings.gyro ? 'desligado' : arState.gyro ? 'corrigindo a pose' : 'sem dados do sensor' }}
+    </p>
+
     <div v-if="arActive" class="adjust-bar">
       <button type="button" :class="{ active: adjusting }" :aria-pressed="adjusting" @click="toggleAdjusting">
         {{ adjusting ? 'Concluir ajuste' : 'Ajustar com os dedos' }}
@@ -803,6 +812,13 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       <label class="art-option">
         <input v-model="layout.showStats" type="checkbox" />
         <span>Mostrar o painel de status no chão</span>
+      </label>
+      <label class="art-option">
+        <input v-model="sensorSettings.gyro" type="checkbox" />
+        <span>Usar o giroscópio (acompanha o giro do celular entre as leituras)</span>
+      </label>
+      <label>Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)
+        <input v-model.number="sensorSettings.latencyMs" type="range" :min="LATENCY_RANGE.min" :max="LATENCY_RANGE.max" step="5" />
       </label>
       <label class="art-option">
         <input v-model="layout.smooth" type="checkbox" />

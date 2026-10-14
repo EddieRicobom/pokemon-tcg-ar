@@ -1,69 +1,55 @@
 import { Quaternion } from 'three';
-import { lookQuaternion, orientationQuaternion } from './orientation';
+import { getOrientationFeed, requestOrientationPermission } from '../sensors/orientation-feed';
+import type { OrientationFeed, OrientationKind } from '../sensors/orientation-feed';
+import { lookQuaternion, orientationSmoothingAlpha } from './orientation';
 
 export type OrientationMode = 'sensor' | 'manual';
 export type PermissionResult = 'granted' | 'denied' | 'unsupported';
 
-interface PermissionEventClass {
-  requestPermission?: () => Promise<'granted' | 'denied'>;
-}
-
-/** Tempo esperando o primeiro evento com valores antes de cair no modo "arrastar para olhar". */
+/** Tempo esperando a primeira amostra do sensor antes de cair no modo "arrastar para olhar". */
 const SENSOR_WAIT_MS = 1500;
-/** Quanto a orientação suavizada anda em direção à medida por quadro (tira o tremor dos sensores). */
-const SMOOTHING = 0.35;
-
-function screenAngle(): number {
-  return window.screen?.orientation?.angle ?? (window as unknown as { orientation?: number }).orientation ?? 0;
-}
 
 /**
- * Orientação do celular para a Caixa. Usa o `deviceorientation`; se o aparelho não manda valores (computador,
+ * Orientação do celular para a Caixa, vinda da fonte compartilhada de sensores (`OrientationFeed`: sensor de
+ * orientação relativa quando existe, senão `deviceorientation`). Se o aparelho não manda valores (computador,
  * sensor bloqueado), cai para "arrastar para olhar", e a interface avisa qual modo está valendo.
  */
 export class OrientationSource {
   mode: OrientationMode = 'sensor';
+  /** Atraso (ms) da imagem da câmera: a Caixa usa a orientação de "agora − atraso" para casar com o vídeo. */
+  latencyMs = 70;
+  private acquired = false;
   private target = new Quaternion();
   private current = new Quaternion();
   private hasReading = false;
   private yaw = 0;
   private pitch = -0.6;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private listener: ((event: DeviceOrientationEvent) => void) | null = null;
+  private onModeChange: ((mode: OrientationMode) => void) | null = null;
+
+  constructor(private readonly feed: OrientationFeed = getOrientationFeed()) {}
+
+  /** Qual sensor está entregando (para a interface). */
+  get sensorKind(): OrientationKind | null {
+    return this.feed.kind;
+  }
 
   /** No iOS pede permissão (precisa vir de um toque); no Android é imediato. */
-  async requestPermission(): Promise<PermissionResult> {
-    const Ctor = (window as unknown as { DeviceOrientationEvent?: PermissionEventClass }).DeviceOrientationEvent;
-    if (!Ctor) return 'unsupported';
-    if (typeof Ctor.requestPermission !== 'function') return 'granted';
-    try {
-      return (await Ctor.requestPermission()) === 'granted' ? 'granted' : 'denied';
-    } catch {
-      return 'denied';
-    }
+  requestPermission(): Promise<PermissionResult> {
+    return requestOrientationPermission();
   }
 
   start(onModeChange?: (mode: OrientationMode) => void): void {
     this.stop();
-    this.listener = (event) => {
-      if (event.alpha === null || event.beta === null || event.gamma === null) return;
-      this.target = orientationQuaternion(event.alpha, event.beta, event.gamma, screenAngle());
-      if (!this.hasReading) {
-        this.hasReading = true;
-        this.current.copy(this.target);
-      }
-      if (this.mode !== 'sensor') {
-        this.mode = 'sensor';
-        onModeChange?.('sensor');
-      }
-    };
-    window.addEventListener('deviceorientation', this.listener);
+    this.onModeChange = onModeChange ?? null;
+    this.feed.acquire();
+    this.acquired = true;
     this.timer = setTimeout(() => {
       if (!this.hasReading) {
         this.mode = 'manual';
         this.target = lookQuaternion(this.yaw, this.pitch);
         this.current.copy(this.target);
-        onModeChange?.('manual');
+        this.onModeChange?.('manual');
       }
     }, SENSOR_WAIT_MS);
   }
@@ -77,16 +63,32 @@ export class OrientationSource {
   }
 
   /** Orientação suavizada; chamar uma vez por quadro. */
-  read(): Quaternion {
-    this.current.slerp(this.target, this.mode === 'manual' ? 1 : SMOOTHING);
+  read(nowMs: number = performance.now()): Quaternion {
+    if (this.feed.isFresh(nowMs, 1000)) {
+      const sample = this.feed.at(nowMs - this.latencyMs);
+      if (sample) {
+        this.target = sample;
+        if (!this.hasReading) {
+          this.hasReading = true;
+          this.current.copy(sample);
+        }
+        if (this.mode !== 'sensor') {
+          this.mode = 'sensor';
+          this.onModeChange?.('sensor');
+        }
+      }
+    }
+    if (this.mode === 'manual') this.current.copy(this.target);
+    // Parado, filtra o tremor do sensor; girando, acompanha sem atraso.
+    else this.current.slerp(this.target, orientationSmoothingAlpha(this.current.angleTo(this.target)));
     return this.current;
   }
 
   stop(): void {
-    if (this.listener) window.removeEventListener('deviceorientation', this.listener);
-    this.listener = null;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    if (this.acquired) this.feed.release();
+    this.acquired = false;
     this.hasReading = false;
   }
 }

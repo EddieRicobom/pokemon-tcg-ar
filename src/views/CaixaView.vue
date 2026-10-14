@@ -7,6 +7,8 @@ import { useFullscreen } from '../app/fullscreen';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { cameraFilterCss, visual } from '../app/visual-settings';
+import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
+import { requestOrientationPermission } from '../sensors/orientation-feed';
 import FilterSheet from '../components/FilterSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import TeamPicker from '../components/TeamPicker.vue';
@@ -72,6 +74,8 @@ async function populate(): Promise<void> {
 }
 
 async function open(): Promise<void> {
+  // iOS: a permissão dos sensores precisa ser pedida direto do toque, antes de qualquer espera.
+  void requestOrientationPermission();
   const video = videoEl.value;
   const canvas = canvasEl.value;
   const stage = stageEl.value;
@@ -283,6 +287,9 @@ onBeforeUnmount(() => {
       </label>
       <label>Tamanho da caixa ({{ boxSize.toFixed(1) }} m de lado)
         <input v-model.number="boxSize" type="range" min="1" max="6" step="0.2" @input="onBoxSize" />
+      </label>
+      <label>Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)
+        <input v-model.number="sensorSettings.latencyMs" type="range" :min="LATENCY_RANGE.min" :max="LATENCY_RANGE.max" step="5" />
       </label>
       <label>Ângulo de visão da câmera ({{ videoFov }}°)
         <input v-model.number="videoFov" type="range" min="45" max="85" step="1" @input="onFov" />

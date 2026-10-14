@@ -6,6 +6,8 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 const page = await browser.newPage({ viewport: { width: 480, height: 360 } });
 page.on('console', (m) => { if (['error', 'warning'].includes(m.type())) console.log('[console.' + m.type() + ']', m.text().slice(0, 300)); });
 page.on('pageerror', (e) => console.log('[pageerror]', String(e).slice(0, 300)));
+// Sensor de movimento falso (60 Hz, celular parado em pé): confirma que o giroscópio entra no AR.
+await page.addInitScript(() => setInterval(() => window.dispatchEvent(Object.assign(new Event('deviceorientation'), { alpha: 0, beta: 90, gamma: 0 })), 16));
 await page.goto(process.env.URL ?? 'http://localhost:5199/e2e/ar-harness.html');
 await page.evaluate(() => window.run());
 const deadline = Date.now() + 60000;
@@ -19,6 +21,7 @@ await page.waitForTimeout(2500);
 log = await page.evaluate(() => window.log);
 console.log(log.join('\n'));
 await page.screenshot({ path: 'e2e/.tmp/ar-shot.png' });
+console.log('estado final', JSON.stringify(await page.evaluate(() => window.ar.session.currentState)));
 // Painel de status: exporta cada página (a textura do painel) e a cena inteira com o painel visível.
 for (const mode of ['status', 'attacks', 'moves']) {
   await page.evaluate((m) => window.ar.panel.setMode(m), mode);

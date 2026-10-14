@@ -4,7 +4,7 @@ import { CardSprite } from './card-sprite';
 import type { TrackingEngine, TrackingInfo, TrackingUpdate } from './engine';
 import { ArSession } from './session';
 import { StatsPanel } from './stats-panel';
-import { Vector3 } from 'three';
+import { Quaternion, Vector3 } from 'three';
 import type { ArState, RenderBackend } from './session';
 
 const f = 240 / Math.tan((45 * Math.PI) / 360);
@@ -27,7 +27,7 @@ class FakeEngine implements TrackingEngine {
   stop() { this.stopped++; }
 }
 
-function setup(options: { lostAfterFrames?: number; holdMs?: number; now?: () => number; panel?: StatsPanel } = {}) {
+function setup(options: Partial<ConstructorParameters<typeof ArSession>[0]> & { panel?: StatsPanel } = {}) {
   const engine = new FakeEngine();
   const renders: number[] = [];
   const renderer: RenderBackend = {
@@ -231,5 +231,93 @@ describe('ArSession', () => {
     session.resize();
     expect(session.camera.aspect).toBeCloseTo(640 / 300, 6);
     expect(session.camera.fov).toBeLessThan(45);
+  });
+});
+
+describe('ArSession: giroscópio', () => {
+  const yaw = (deg: number) => new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), (deg * Math.PI) / 180);
+
+  /** Orientação falsa: a câmera gira `deg` graus por segundo, em torno de Y, a partir de t = 0. */
+  function fakeOrientation(degPerSec: number, opts: { fresh?: boolean } = {}) {
+    return {
+      at: (t: number) => yaw((degPerSec * t) / 1000),
+      isFresh: () => opts.fresh !== false,
+    };
+  }
+
+  it('com giroscópio a pose vai para o mundo e girar o celular move o Pokémon sem novo resultado do rastreador', async () => {
+    let t = 1000;
+    const orientation = fakeOrientation(30);
+    const { session, engine, sprite, pose, tick } = setup({ orientation, getGyroSettings: () => ({ gyro: true, latencyMs: 0 }), now: () => t });
+    await session.start(new ArrayBuffer(8));
+    engine.onUpdate!({ worldMatrix: pose, capturedAt: 1000 });
+    tick(1000);
+    const before = new Vector3(0, 0, 0).applyMatrix4(sprite.group.matrix);
+    t = 1500; // meio segundo depois: a câmera girou 15°
+    tick(1500);
+    const after = new Vector3(0, 0, 0).applyMatrix4(sprite.group.matrix);
+    expect(after.distanceTo(before)).toBeGreaterThan(50);
+    expect(after.length()).toBeCloseTo(before.length(), 3); // só rodou em torno da câmera
+  });
+
+  it('com o giroscópio desligado nas configurações, nada muda entre as leituras', async () => {
+    let t = 1000;
+    const { session, engine, sprite, pose, tick } = setup({ orientation: fakeOrientation(30), getGyroSettings: () => ({ gyro: false, latencyMs: 0 }), now: () => t });
+    await session.start(new ArrayBuffer(8));
+    engine.onUpdate!({ worldMatrix: pose, capturedAt: 1000 });
+    tick(1000);
+    const before = sprite.group.matrix.clone();
+    t = 1500;
+    tick(1500);
+    expect(sprite.group.matrix.equals(before)).toBe(true);
+  });
+
+  it('sensor parado (amostras velhas) não corrige nada', async () => {
+    let t = 1000;
+    const { session, engine, sprite, pose, tick } = setup({ orientation: fakeOrientation(30, { fresh: false }), now: () => t });
+    await session.start(new ArrayBuffer(8));
+    engine.onUpdate!({ worldMatrix: pose, capturedAt: 1000 });
+    tick(1000);
+    const before = sprite.group.matrix.clone();
+    t = 1500;
+    tick(1500);
+    expect(sprite.group.matrix.equals(before)).toBe(true);
+  });
+
+  it('o atraso do sensor desloca a orientação consultada', async () => {
+    const asked: number[] = [];
+    const orientation = { at: (t: number) => (asked.push(t), yaw(0)), isFresh: () => true };
+    let t = 5000;
+    const { session, tick } = setup({ orientation, getGyroSettings: () => ({ gyro: true, latencyMs: 80 }), now: () => t });
+    await session.start(new ArrayBuffer(8));
+    tick(5000);
+    expect(asked.at(-1)).toBe(4920);
+  });
+
+  it('com giroscópio o Pokémon fica mais tempo na última pose depois de perder a carta', async () => {
+    let t = 1000;
+    const { session, engine, sprite, pose } = setup({ orientation: fakeOrientation(0), now: () => t });
+    await session.start(new ArrayBuffer(8));
+    engine.onUpdate!({ worldMatrix: pose, capturedAt: 1000 });
+    t += 1800;
+    engine.onUpdate!({ worldMatrix: null });
+    expect(sprite.group.visible).toBe(true); // sem giroscópio já teria sumido (1 s)
+    t += 1000;
+    engine.onUpdate!({ worldMatrix: null });
+    expect(sprite.group.visible).toBe(false);
+  });
+
+  it('publica a taxa do rastreador e se o giroscópio está valendo', async () => {
+    let t = 1000;
+    const { session, engine, pose, states } = setup({ orientation: fakeOrientation(0), now: () => t });
+    await session.start(new ArrayBuffer(8));
+    for (let i = 0; i < 40; i++) {
+      engine.onUpdate!({ worldMatrix: pose, capturedAt: t });
+      t += 100; // 10 leituras por segundo
+    }
+    const last = states.at(-1)!;
+    expect(last.trackerHz).toBeGreaterThan(8);
+    expect(last.trackerHz).toBeLessThan(12);
+    expect(last.gyro).toBe(true);
   });
 });

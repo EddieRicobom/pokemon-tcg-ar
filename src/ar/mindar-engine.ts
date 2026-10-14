@@ -9,6 +9,7 @@ interface CropDetectorLike {
 interface MindArController {
   cropDetector: CropDetectorLike;
   addImageTargetsFromBuffer(buffer: ArrayBuffer): { dimensions: [number, number][] };
+  inputLoader: { loadInput(input: unknown): unknown };
   dummyRun(input: HTMLVideoElement | HTMLCanvasElement): void;
   processVideo(input: HTMLVideoElement | HTMLCanvasElement): void;
   getProjectionMatrix(): number[];
@@ -62,10 +63,19 @@ export class MindArEngine implements TrackingEngine {
       maxTrack: 1,
       ...TRACKING_TUNING,
       onUpdate: (data: { type: string; worldMatrix?: ArrayLike<number> | null }) => {
-        if (data.type === 'updateMatrix') onUpdate({ worldMatrix: data.worldMatrix ?? null });
+        if (data.type === 'updateMatrix') onUpdate({ worldMatrix: data.worldMatrix ?? null, capturedAt: iterationFrameTime });
       },
     }) as MindArController;
     this.controller = controller;
+    // Hora de captura do quadro que a iteração atual do rastreador está processando (o MindAR lê o canvas
+    // no começo de cada iteração): serve para casar a pose com a orientação do giroscópio naquele instante.
+    let iterationFrameTime = relay.frameTime;
+    const loader = controller.inputLoader;
+    const loadInput = loader.loadInput.bind(loader);
+    loader.loadInput = (input: unknown) => {
+      iterationFrameTime = relay.frameTime;
+      return loadInput(input);
+    };
 
     // Janela de busca maior: o padrão olha recortes de 128 px num quadro de 360 px de largura, e depois de uma
     // perda (reflexo, mão tremendo) a carta só era reencontrada quando caía no recorte certo.
