@@ -173,13 +173,13 @@ onBeforeUnmount(dropPeer);
           <li>Cole a resposta dele aqui e toque em «Conectar».</li>
         </ol>
         <label class="pn-code-label" for="pvp-my-code">Seu código de convite</label>
-        <textarea id="pvp-my-code" class="pn-code" readonly rows="4" :value="myCode" @focus="($event.target as HTMLTextAreaElement).select()"></textarea>
+        <textarea id="pvp-my-code" class="pn-code" readonly rows="3" :value="myCode" @focus="($event.target as HTMLTextAreaElement).select()"></textarea>
         <div class="pn-lobby-actions row">
           <button type="button" @click="copy">{{ copied ? 'Copiado!' : 'Copiar' }}</button>
           <button v-if="canShare" type="button" @click="share">Compartilhar</button>
         </div>
         <label class="pn-code-label" for="pvp-paste">Código de resposta do amigo</label>
-        <textarea id="pvp-paste" v-model="pasted" class="pn-code" rows="4" placeholder="Cole aqui o código que ele devolveu" :disabled="waiting"></textarea>
+        <textarea id="pvp-paste" v-model="pasted" class="pn-code" rows="3" placeholder="Cole aqui o código que ele devolveu" :disabled="waiting"></textarea>
         <button type="button" class="primary" :disabled="waiting || busy !== '' || pasted.trim() === ''" @click="connectHost">{{ waiting ? 'Conectando…' : 'Conectar' }}</button>
         <p v-if="waiting" class="message" role="status">Aguardando a conexão com o amigo… os dois precisam estar com esta tela aberta.</p>
       </template>
@@ -189,7 +189,7 @@ onBeforeUnmount(dropPeer);
       <h3>Entrar na sala</h3>
       <template v-if="!myCode">
         <label class="pn-code-label" for="pvp-paste-offer">Código de convite do anfitrião</label>
-        <textarea id="pvp-paste-offer" v-model="pasted" class="pn-code" rows="4" placeholder="Cole aqui o código que seu amigo mandou"></textarea>
+        <textarea id="pvp-paste-offer" v-model="pasted" class="pn-code" rows="3" placeholder="Cole aqui o código que seu amigo mandou"></textarea>
         <button type="button" class="primary" :disabled="busy !== '' || pasted.trim() === ''" @click="makeAnswer">{{ busy || 'Gerar resposta' }}</button>
       </template>
       <template v-else>
@@ -198,7 +198,7 @@ onBeforeUnmount(dropPeer);
           <li>Deixe esta tela aberta: a conexão abre sozinha quando ele colar.</li>
         </ol>
         <label class="pn-code-label" for="pvp-my-answer">Seu código de resposta</label>
-        <textarea id="pvp-my-answer" class="pn-code" readonly rows="4" :value="myCode" @focus="($event.target as HTMLTextAreaElement).select()"></textarea>
+        <textarea id="pvp-my-answer" class="pn-code" readonly rows="3" :value="myCode" @focus="($event.target as HTMLTextAreaElement).select()"></textarea>
         <div class="pn-lobby-actions row">
           <button type="button" @click="copy">{{ copied ? 'Copiado!' : 'Copiar' }}</button>
           <button v-if="canShare" type="button" @click="share">Compartilhar</button>

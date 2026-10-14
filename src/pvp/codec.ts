@@ -2,9 +2,12 @@
  * Código de pareamento do PvP: o convite (offer) e a resposta (answer) do WebRTC viram um texto curto para copiar e colar
  * (WhatsApp, por exemplo). Sem servidor: os dois celulares só trocam esses dois códigos uma vez.
  *
- * Formato: `PINz.<base64url>` (JSON comprimido com deflate-raw) ou `PINj.<base64url>` (JSON puro, quando o navegador não
- * comprime). Espaços e quebras de linha na colagem são ignorados.
+ * Formato principal: `PINc.<base64url>` (~150 caracteres): só o que muda de um SDP de canal de dados para outro, em binário,
+ * com verificação de integridade (`sdp-compact.ts`). Reserva, quando o SDP foge do padrão: `PINz.<base64url>` (JSON do SDP
+ * inteiro comprimido com deflate-raw) ou `PINj.<base64url>` (JSON puro, quando o navegador não comprime). Espaços e quebras
+ * de linha na colagem são ignorados.
  */
+import { buildSdp, compactSdp, unpackSdp } from './sdp-compact';
 
 export type CodeKind = 'offer' | 'answer';
 
@@ -49,6 +52,8 @@ async function pipe(bytes: Uint8Array, stream: CompressionStream | Decompression
 const canCompress = (): boolean => typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
 
 export async function encodeCode(kind: CodeKind, sdp: string): Promise<string> {
+  const compact = compactSdp(sdp, kind);
+  if (compact) return `PINc.${toBase64Url(compact)}`;
   const json = new TextEncoder().encode(JSON.stringify({ v: VERSION, k: kind, s: sdp }));
   if (canCompress()) return `PINz.${toBase64Url(await pipe(json, new CompressionStream('deflate-raw')))}`;
   return `PINj.${toBase64Url(json)}`;
@@ -61,8 +66,26 @@ export async function decodeCode(text: string, expect: CodeKind): Promise<Decode
   const code = text.replace(/\s+/g, '');
   if (code.length === 0) return { ok: false, message: 'Cole o código primeiro.' };
   if (code.length > MAX_CODE_LENGTH) return { ok: false, message: 'Esse texto é grande demais para ser um código do Pin Mode.' };
-  const match = /^PIN([zj])\.([A-Za-z0-9_-]+)$/.exec(code);
+  const match = /^PIN([zjc])\.([A-Za-z0-9_-]+)$/.exec(code);
   if (!match) return { ok: false, message: 'Esse texto não parece um código do Pin Mode. Copie o código inteiro, começando por PIN.' };
+  const wrongKind = () => ({
+    ok: false as const,
+    message: expect === 'offer' ? 'Esse é um código de resposta. Aqui vai o código de convite do anfitrião.' : 'Esse é um código de convite. Aqui vai o código de resposta do amigo.',
+  });
+  if (match[1] === 'c') {
+    try {
+      const unpacked = unpackSdp(fromBase64Url(match[2]!));
+      if (!unpacked.ok) {
+        return unpacked.reason === 'version'
+          ? { ok: false, message: 'Código de outra versão do app. Atualize os dois celulares.' }
+          : { ok: false, message: 'O código está incompleto ou foi alterado. Copie de novo, inteiro.' };
+      }
+      if (unpacked.parts.kind !== expect) return wrongKind();
+      return { ok: true, sdp: buildSdp(unpacked.parts) };
+    } catch {
+      return { ok: false, message: 'O código está incompleto ou foi alterado. Copie de novo, inteiro.' };
+    }
+  }
   try {
     let bytes = fromBase64Url(match[2]!);
     if (match[1] === 'z') {
@@ -71,9 +94,7 @@ export async function decodeCode(text: string, expect: CodeKind): Promise<Decode
     }
     const data = JSON.parse(new TextDecoder().decode(bytes)) as { v?: unknown; k?: unknown; s?: unknown };
     if (data.v !== VERSION || typeof data.s !== 'string' || data.s.length === 0) return { ok: false, message: 'Código de outra versão do app. Atualize os dois celulares.' };
-    if (data.k !== expect) {
-      return { ok: false, message: expect === 'offer' ? 'Esse é um código de resposta. Aqui vai o código de convite do anfitrião.' : 'Esse é um código de convite. Aqui vai o código de resposta do amigo.' };
-    }
+    if (data.k !== expect) return wrongKind();
     return { ok: true, sdp: data.s };
   } catch {
     return { ok: false, message: 'O código está incompleto ou foi alterado. Copie de novo, inteiro.' };
