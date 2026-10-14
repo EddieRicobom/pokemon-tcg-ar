@@ -28,7 +28,7 @@ describe('App', () => {
     const text = await mount();
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
-    expect(host?.querySelectorAll('nav a')).toHaveLength(5);
+    expect(host?.querySelectorAll('nav a')).toHaveLength(6);
     expect(host?.querySelector('video')).not.toBeNull();
     expect(host?.querySelector('canvas')).not.toBeNull();
     expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera');
@@ -52,6 +52,16 @@ describe('App', () => {
     expect(text).toContain('Várias cartas');
     expect(text).toContain('Câmera desligada');
     expect(text).toContain('nada é lido do texto');
+  });
+
+  it('a tela Treinador mostra nível, missões e conquistas, sem inventar progresso', async () => {
+    localStorage.removeItem('tcg-ar-trainer-v1');
+    const text = await mount('#/treinador');
+    expect(text).toContain('Missões de hoje');
+    expect(text).toContain('Conquistas');
+    expect(text).toContain('Novato');
+    expect(text).toContain('Sem sequência');
+    expect(text).toContain('0 XP');
   });
 
   it('a tela Cartas mostra a ação de limpar o cache', async () => {

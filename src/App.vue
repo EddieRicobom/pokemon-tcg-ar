@@ -3,12 +3,14 @@ import { computed } from 'vue';
 import { routeHref, useRoute } from './app/route';
 import type { RouteName } from './app/route';
 import NavIcon from './components/NavIcon.vue';
+import RewardToasts from './components/RewardToasts.vue';
 import { useInstallPrompt } from './composables/useInstallPrompt';
 import { detectCapabilities, isIosDevice } from './core/capabilities';
 import CarregarView from './views/CarregarView.vue';
 import CaixaView from './views/CaixaView.vue';
 import DiagnosticoView from './views/DiagnosticoView.vue';
 import ScanView from './views/ScanView.vue';
+import TreinadorView from './views/TreinadorView.vue';
 import VariasView from './views/VariasView.vue';
 
 const capabilities = detectCapabilities();
@@ -23,6 +25,7 @@ const tabs: { name: RouteName; label: string }[] = [
   { name: 'varias', label: 'Várias' },
   { name: 'caixa', label: 'Caixa' },
   { name: 'carregar', label: 'Cartas' },
+  { name: 'treinador', label: 'Treinador' },
   { name: 'diagnostico', label: 'Diagnóstico' },
 ];
 const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
@@ -63,7 +66,10 @@ const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
     <VariasView v-else-if="route.name === 'varias'" />
     <CaixaView v-else-if="route.name === 'caixa'" />
     <CarregarView v-else-if="route.name === 'carregar'" />
+    <TreinadorView v-else-if="route.name === 'treinador'" />
     <DiagnosticoView v-else />
+
+    <RewardToasts />
 
     <footer class="app-footer">
       <a href="https://github.com/EddieRicobom/pokemon-tcg-ar">Código-fonte no GitHub</a>

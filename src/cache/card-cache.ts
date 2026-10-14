@@ -39,6 +39,8 @@ export interface CardCacheDeps {
   backoffMs?: number;
   retries?: number;
   storage?: StorageApi;
+  /** Chamado depois de cada leitura gravada (para o Treinador dar XP). Erros aqui nunca derrubam a leitura. */
+  onRecorded?: (card: CachedCard) => void;
 }
 
 export interface RecordInput {
@@ -191,6 +193,11 @@ export class CardCache {
     }
     await this.save(card);
     await this.enforceLimits(card.id);
+    try {
+      this.deps.onRecorded?.(card);
+    } catch {
+      // O aviso é só um extra.
+    }
     return card;
   }
 

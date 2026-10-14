@@ -354,3 +354,13 @@ describe('remoção, limpeza e limites', () => {
     expect(await cache.requestPersistence()).toBeUndefined();
   });
 });
+
+describe('aviso de leitura gravada', () => {
+  it('chama onRecorded a cada leitura e ignora erros dele', async () => {
+    const seen: [string, number][] = [];
+    const cache = make({ onRecorded: (card) => { seen.push([card.id, card.scanCount]); throw new Error('falha do aviso'); } });
+    await cache.recordRecognition({ card: pikachu });
+    await cache.recordRecognition({ card: pikachu });
+    expect(seen).toEqual([['base1-58', 1], ['base1-58', 2]]);
+  });
+});

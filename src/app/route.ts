@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref } from 'vue';
 
-export type RouteName = 'escanear' | 'varias' | 'caixa' | 'carregar' | 'diagnostico';
+export type RouteName = 'escanear' | 'varias' | 'caixa' | 'carregar' | 'treinador' | 'diagnostico';
 
 export interface Route {
   name: RouteName;
@@ -17,6 +17,7 @@ export function parseRoute(hash: string): Route {
   if (first === 'varias') return { name: 'varias' };
   if (first === 'caixa') return { name: 'caixa' };
   if (first === 'carregar') return { name: 'carregar' };
+  if (first === 'treinador') return { name: 'treinador' };
   if (first === 'diagnostico') return { name: 'diagnostico' };
   const id = rest.join('/');
   return id ? { name: 'escanear', cardId: decodeURIComponent(id) } : { name: 'escanear' };

@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { parseRoute, routeHref } from './route';
 
 describe('rotas por hash', () => {
+  it('conhece a rota do Treinador', () => {
+    expect(parseRoute('#/treinador')).toEqual({ name: 'treinador' });
+    expect(routeHref('treinador')).toBe('#/treinador');
+  });
+
   it('interpreta as cinco telas e o padrão', () => {
     expect(parseRoute('')).toEqual({ name: 'escanear' });
     expect(parseRoute('#/')).toEqual({ name: 'escanear' });
