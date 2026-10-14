@@ -25,7 +25,7 @@ export interface StartBoxOptions {
   onBattleHud?: (hud: BattleHud | null) => void;
 }
 
-export type PlaceResult = { ok: true } | { ok: false; message: string };
+export type PlaceResult = { ok: true; /** A caixa foi afastada da câmera para não ficar colada. */ moved?: boolean } | { ok: false; message: string };
 
 export interface RunningBox {
   readonly orientation: OrientationSource;
@@ -131,8 +131,8 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     placeAt(ndcX, ndcY) {
       const result = scene.floorAt(ndcX, ndcY, phoneHeight);
       if (!result.ok) return { ok: false, message: FLOOR_MESSAGES[result.reason] };
-      scene.place(result.point);
-      return { ok: true };
+      const { moved } = scene.place(result.point);
+      return { ok: true, moved };
     },
     clearPlacement: () => scene.clearPlacement(),
     pick: (x, y) => scene.pick(x, y),

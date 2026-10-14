@@ -10,10 +10,14 @@ import {
   afterShot, affordable, aliveOf, ARENA_RADIUS, canUse, chooseEnemyShot, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE,
   outcomeOf, pinFromSpec, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
 } from '../core/pins';
+import { MARK_HINT_PT } from '../core/pin-terrain';
+import { TERRAIN_KINDS, TERRAIN_LABELS_PT } from '../core/terrain';
+import type { TerrainKind } from '../core/terrain';
 import type { Difficulty, PinEvent, PinSpec, PinWorld, Shot } from '../core/pins';
 import { energyLabelPt, TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { CardBattleInfo, PokemonProfile, PokemonType } from '../core/pokemon-data';
-import { artSize, paintArena, UNITS_PER_PIXEL } from '../pins/arena-art';
+import { artSize, paintArena, paintBumpers, UNITS_PER_PIXEL } from '../pins/arena-art';
+import { ArenaTerrainArt } from '../pins/terrain-paint';
 import type { CachedCard } from '../cache/types';
 
 type Phase = 'setup' | 'loading' | 'aim' | 'rolling' | 'enemy' | 'over';
@@ -30,7 +34,9 @@ const phase = ref<Phase>('setup');
 const cards = ref<CachedCard[]>([]);
 const thumbs = ref<Record<string, string>>({});
 const infos = ref<Record<string, Info>>({});
-const setup = ref<PinsSetup>({ mine: [], enemy: [], difficulty: 'normal' });
+const setup = ref<PinsSetup>({ mine: [], enemy: [], difficulty: 'normal', marks: true });
+/** Marcas que existem no chão agora (para a legenda da partida). */
+const floorMarks = ref<TerrainKind[]>([]);
 const search = ref('');
 const notice = ref('');
 const loadingCards = ref(true);
@@ -47,7 +53,12 @@ const canvasEl = ref<HTMLCanvasElement | null>(null);
 const spriteLayer = ref<HTMLElement | null>(null);
 
 let world: PinWorld | null = null;
+/** Camadas da arena: fundo, chão em blocos (muda com os golpes) e pinos de mola por cima. */
 let artCanvas: HTMLCanvasElement | null = null;
+let bumperCanvas: HTMLCanvasElement | null = null;
+let terrainArt: ArenaTerrainArt | null = null;
+let terrainCanvas: HTMLCanvasElement | null = null;
+let terrainShown = -1;
 const sprites = new Map<string, HTMLElement>();
 let raf = 0;
 let last = 0;
@@ -187,8 +198,8 @@ async function start(): Promise<void> {
   }
   if (disposed) return;
   const byId = (id: string) => cards.value.find((c) => c.id === id)!;
-  world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => specOf(byId(id))) }, rng);
-  artCanvas = buildArt(world);
+  world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => specOf(byId(id))) }, rng, { marks: setup.value.marks });
+  buildArt(world);
   shots = 0;
   shotCount.value = 0;
   popups = [];
@@ -205,8 +216,7 @@ async function start(): Promise<void> {
   startLoop();
 }
 
-function buildArt(w: PinWorld): HTMLCanvasElement {
-  const art = paintArena(w.radius, w.patches, Math.floor(rng() * 1e6));
+function canvasOf(art: { w: number; h: number; data: Uint8Array | Uint8ClampedArray }): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = art.w;
   canvas.height = art.h;
@@ -217,6 +227,30 @@ function buildArt(w: PinWorld): HTMLCanvasElement {
     ctx.putImageData(image, 0, 0);
   }
   return canvas;
+}
+
+function buildArt(w: PinWorld): void {
+  artCanvas = canvasOf(paintArena(w.radius, Math.floor(rng() * 1e6)));
+  bumperCanvas = canvasOf(paintBumpers(w.radius, w.patches));
+  terrainArt = w.terrain ? new ArenaTerrainArt(w.terrain, w.radius, Math.floor(rng() * 1e6)) : null;
+  terrainCanvas = terrainArt ? canvasOf(terrainArt.buf) : null;
+  terrainShown = terrainArt ? terrainArt.version : -1;
+  refreshFloorMarks();
+}
+
+/** Copia o chão em pixel art para o canvas só quando algum bloco mudou. */
+function syncTerrain(): void {
+  if (!terrainArt || !terrainCanvas || terrainShown === terrainArt.version) return;
+  const ctx = terrainCanvas.getContext('2d');
+  if (!ctx) return;
+  const { buf } = terrainArt;
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(buf.data), buf.w, buf.h), 0, 0);
+  terrainShown = terrainArt.version;
+}
+
+function refreshFloorMarks(): void {
+  const counts = world?.terrain?.counts() ?? {};
+  floorMarks.value = TERRAIN_KINDS.filter((k) => (counts[k] ?? 0) > 0);
 }
 
 function mountSprites(): void {
@@ -342,6 +376,8 @@ function update(dt: number): void {
 function handleEvents(events: PinEvent[]): void {
   if (!world) return;
   let added = 0;
+  let reactions = 0;
+  let marksChanged = false;
   for (const e of events) {
     if (e.type === 'hit' && e.edge !== null && added < 2) {
       const a = world.pins.find((p) => p.id === e.a);
@@ -353,14 +389,19 @@ function handleEvents(events: PinEvent[]): void {
     } else if (e.type === 'wave') {
       const p = world.pins.find((x) => x.id === e.id);
       if (p) popups.push({ text: 'Onda!', x: p.x, y: p.y - 30, age: 0, color: '#8ec5ff' });
-    } else if (e.type === 'boost') {
-      const p = world.pins.find((x) => x.id === e.id);
-      if (p) popups.push({ text: 'Turbo!', x: p.x, y: p.y - 30, age: 0, color: '#f7d02c' });
+    } else if (e.type === 'mark') {
+      terrainArt?.repaint(e.cells);
+      marksChanged = true;
+      if (e.reaction && reactions < 2) {
+        popups.push({ text: e.reaction.text, x: e.x * 0.9, y: e.y * 0.9 - 24, age: 0, color: e.reaction.color });
+        reactions++;
+      }
     } else if (e.type === 'out') {
       const p = world.pins.find((x) => x.id === e.id);
       if (p) popups.push({ text: p.side === 1 ? 'Fora!' : 'Caiu!', x: p.x * 0.85, y: p.y * 0.85, age: 0, color: p.side === 1 ? '#7dffa0' : '#ff8a8a' });
     }
   }
+  if (marksChanged) refreshFloorMarks();
   if (events.some((e) => e.type === 'out')) refreshTray();
 }
 
@@ -531,6 +572,12 @@ function draw(now: number): void {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(artCanvas, 0, 0, canvas.width, canvas.height);
+  if (terrainCanvas && terrainArt) {
+    syncTerrain();
+    const half = terrainArt.half * k;
+    ctx.drawImage(terrainCanvas, cx - half, cx - half, half * 2, half * 2);
+  }
+  if (bumperCanvas) ctx.drawImage(bumperCanvas, 0, 0, canvas.width, canvas.height);
 
   const selected = world.pins.find((p) => p.id === selectedId.value);
   const pulse = 0.5 + 0.5 * Math.sin(now / 180);
@@ -656,7 +703,16 @@ const phaseHint = computed(() => {
   return message.value;
 });
 
-const legend = (Object.keys(PATCH_LABELS_PT) as (keyof typeof PATCH_LABELS_PT)[]).map((k) => ({ key: k, ...PATCH_LABELS_PT[k] }));
+const legend = [
+  ...TERRAIN_KINDS.map((k) => ({ key: k as string, name: TERRAIN_LABELS_PT[k], hint: MARK_HINT_PT[k] })),
+  ...(Object.keys(PATCH_LABELS_PT) as (keyof typeof PATCH_LABELS_PT)[]).map((k) => ({ key: k as string, ...PATCH_LABELS_PT[k] })),
+];
+const floorLegend = computed(() => floorMarks.value.map((k) => ({ key: k, name: TERRAIN_LABELS_PT[k], hint: MARK_HINT_PT[k] })));
+
+function setMarks(on: boolean): void {
+  setup.value = { ...setup.value, marks: on };
+  saveSetup(setup.value);
+}
 </script>
 
 <template>
@@ -678,6 +734,10 @@ const legend = (Object.keys(PATCH_LABELS_PT) as (keyof typeof PATCH_LABELS_PT)[]
         <div class="diff" role="group" aria-label="Dificuldade do adversário">
           <button v-for="d in DIFFICULTIES" :key="d" type="button" :class="{ on: setup.difficulty === d }" :aria-pressed="setup.difficulty === d" @click="setDifficulty(d)">{{ DIFFICULTY_LABELS_PT[d] }}</button>
         </div>
+        <label class="check-line">
+          <input type="checkbox" :checked="setup.marks" @change="setMarks(($event.target as HTMLInputElement).checked)" />
+          <span>Marcas no chão <small>Golpes elementais e Pancada mudam o chão (gelo, lama, poças…) e o chão reage.</small></span>
+        </label>
       </div>
 
       <div class="card">
@@ -720,7 +780,11 @@ const legend = (Object.keys(PATCH_LABELS_PT) as (keyof typeof PATCH_LABELS_PT)[]
         <ul class="legend">
           <li v-for="l in legend" :key="l.key"><strong>{{ l.name }}</strong> <small>{{ l.hint }}</small></li>
         </ul>
-        <p class="note">Quem passa da borda cai. O tipo muda o chão: Voador paira sobre a lama, Água não é freada pela água, Gelo patina no gelo. Os golpes da carta dão efeitos ao disparo e recarregam conforme a energia do ataque.</p>
+        <p class="note">
+          Quem passa da borda cai. Um golpe elemental deixa um rastro do tipo dele pelo chão e um borrão grande onde acerta; a Pancada racha o chão.
+          Cada tipo sente a marca de um jeito (Voador paira, Água não é freada pela poça, Gelo patina no gelo) e, quando um golpe cai sobre outra marca,
+          o chão reage: fogo na poça, água no fogo, gelo no mato… e quem está perto leva um empurrão. Os golpes da carta recarregam conforme a energia do ataque.
+        </p>
       </div>
     </template>
 
@@ -757,6 +821,10 @@ const legend = (Object.keys(PATCH_LABELS_PT) as (keyof typeof PATCH_LABELS_PT)[]
           </div>
         </div>
       </div>
+
+      <p v-if="floorLegend.length > 0" class="floor-legend" aria-label="Marcas no chão agora">
+        <span v-for="l in floorLegend" :key="l.key" :title="l.hint">{{ l.name }}</span>
+      </p>
 
       <div class="card pins-tray">
         <h2>Seus pins <small class="count">custa energia a cada disparo</small></h2>

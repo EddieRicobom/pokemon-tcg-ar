@@ -6,6 +6,8 @@ export interface PinsSetup {
   mine: string[];
   enemy: string[];
   difficulty: Difficulty;
+  /** Os golpes elementais e a Pancada marcam o chão da arena (e a arena já começa com algumas marcas). */
+  marks: boolean;
 }
 
 export type Role = 'mine' | 'enemy';
@@ -21,7 +23,7 @@ export interface Candidate {
 }
 
 export function emptySetup(): PinsSetup {
-  return { mine: [], enemy: [], difficulty: 'normal' };
+  return { mine: [], enemy: [], difficulty: 'normal', marks: true };
 }
 
 /** Só ids de cartas que ainda existem, sem repetir nem estar nos dois lados, até o limite de cada lado. */
@@ -42,13 +44,13 @@ export function normalizeSetup(raw: unknown, available: ReadonlySet<string>): Pi
   const mine = clean(r.mine, MAX_PER_SIDE[0]);
   const enemy = clean(r.enemy, MAX_PER_SIDE[1]);
   const difficulty = DIFFICULTIES.find((d) => d === r.difficulty) ?? 'normal';
-  return { mine, enemy, difficulty };
+  return { mine, enemy, difficulty, marks: r.marks !== false };
 }
 
 /** Escolha inicial: as cartas mais recentes (para o seu lado primeiro, depois para o adversário). */
 export function defaultSetup(cards: readonly Candidate[]): PinsSetup {
   const recent = [...cards].sort((a, b) => b.lastSeenAt - a.lastSeenAt).map((c) => c.id);
-  return { mine: recent.slice(0, DEFAULT_MINE), enemy: recent.slice(DEFAULT_MINE, DEFAULT_MINE + DEFAULT_ENEMY), difficulty: 'normal' };
+  return { mine: recent.slice(0, DEFAULT_MINE), enemy: recent.slice(DEFAULT_MINE, DEFAULT_MINE + DEFAULT_ENEMY), difficulty: 'normal', marks: true };
 }
 
 export function roleOf(setup: PinsSetup, id: string): Role | null {
@@ -73,7 +75,7 @@ export function loadSetup(available: ReadonlySet<string>, cards: readonly Candid
     if (raw) {
       const saved = normalizeSetup(JSON.parse(raw), available);
       if (saved.mine.length > 0 || saved.enemy.length > 0) return saved;
-      return { ...defaultSetup(cards), difficulty: saved.difficulty };
+      return { ...defaultSetup(cards), difficulty: saved.difficulty, marks: saved.marks };
     }
   } catch {
     // Sem armazenamento ou texto quebrado: começa do padrão.

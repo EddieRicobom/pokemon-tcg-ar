@@ -1,6 +1,7 @@
 import { seededRng } from '../core/battle';
 import type { Rng } from '../core/battle';
-import type { DecorKind, GroundKind, TerrainKind } from '../core/terrain';
+import { TERRAIN_KINDS } from '../core/terrain';
+import type { DecorKind, GroundKind, TerrainGrid, TerrainKind } from '../core/terrain';
 
 /**
  * Pixel art do chão, desenhada por código (sem imagens e sem canvas, então roda e é testada em qualquer ambiente).
@@ -341,4 +342,53 @@ export function paintDecor(kind: DecorKind): PixelBuf {
   DECOR_PAINTERS[kind](buf);
   outline(buf, kind === 'rock' ? 0x2f2d2a : 0x174a22);
   return buf;
+}
+
+/**
+ * Repinta o bloco `i` da grade (chão + marca do golpe) no buffer. Sempre usa o mesmo sorteio para o mesmo bloco, então
+ * repintar não "treme". Usado pelo chão da Caixa (`ground.ts`) e pela arena do Pin Mode.
+ */
+export function paintTerrainCell(buf: PixelBuf, grid: TerrainGrid, i: number, seed: number): void {
+  const c = i % grid.cols;
+  const r = Math.floor(i / grid.cols);
+  const ox = c * TILE;
+  const oy = r * TILE;
+  for (let y = 0; y < TILE; y++) buf.data.fill(0, ((oy + y) * buf.w + ox) * 4, ((oy + y) * buf.w + ox + TILE) * 4);
+  if (!grid.inside[i]) return;
+  const salt = (seed * 31 + i * 2654435761) >>> 0;
+  const neighbor = (dc: number, dr: number): number | null => {
+    const nc = c + dc;
+    const nr = r + dr;
+    return nc < 0 || nr < 0 || nc >= grid.cols || nr >= grid.rows ? null : grid.index(nc, nr);
+  };
+  const around = [
+    [EDGE.north, neighbor(0, -1)],
+    [EDGE.east, neighbor(1, 0)],
+    [EDGE.south, neighbor(0, 1)],
+    [EDGE.west, neighbor(-1, 0)],
+  ] as const;
+  paintGround(buf, ox, oy, grid.groundAt(i), seededRng(salt));
+  let shape = 0;
+  for (const [bit, n] of around) if (n === null || !grid.inside[n]) shape |= bit;
+  if (grid.shape === 'ellipse') fadeEdges(buf, ox, oy, shape, seededRng(salt ^ 0xabcdef));
+  const kind = grid.overlayAt(i);
+  if (kind) {
+    let edges = 0;
+    for (const [bit, n] of around) if (n === null || grid.over[n] !== grid.over[i]) edges |= bit;
+    paintOverlay(buf, ox, oy, kind, edges, seededRng(salt ^ (0x1234567 + TERRAIN_KINDS.indexOf(kind))));
+  }
+}
+
+/** Os blocos a repintar quando `changed` mudou: eles e os quatro vizinhos (a borda da marca muda). */
+export function touchedCells(grid: TerrainGrid, changed: readonly number[]): Set<number> {
+  const touched = new Set<number>();
+  for (const i of changed) {
+    touched.add(i);
+    const c = i % grid.cols;
+    const r = Math.floor(i / grid.cols);
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      if (c + dc >= 0 && c + dc < grid.cols && r + dr >= 0 && r + dr < grid.rows) touched.add(grid.index(c + dc, r + dr));
+    }
+  }
+  return touched;
 }

@@ -1,9 +1,9 @@
 import { DataTexture, Group, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, Sprite, SpriteMaterial, UnsignedByteType } from 'three';
 import { seededRng } from '../core/battle';
 import type { PokemonType } from '../core/pokemon-data';
-import { applyTerrain, buildGrid, planDecor, TERRAIN_FOR_TYPE, TERRAIN_KINDS } from '../core/terrain';
+import { applyTerrain, buildGrid, planDecor, TERRAIN_FOR_TYPE } from '../core/terrain';
 import type { DecorKind, GroundShape, TerrainGrid, TerrainKind, TerrainReaction } from '../core/terrain';
-import { createBuf, EDGE, fadeEdges, paintDecor, paintGround, paintOverlay, TILE } from './ground-art';
+import { createBuf, paintDecor, paintTerrainCell, TILE, touchedCells } from './ground-art';
 import type { PixelBuf } from './ground-art';
 
 export interface GroundOptions {
@@ -85,35 +85,7 @@ export class Ground {
 
   /** Repinta um bloco (chão + marca do golpe), sempre com o mesmo sorteio para não "tremer" ao repintar. */
   private paintCell(i: number): void {
-    const { grid } = this;
-    const c = i % grid.cols;
-    const r = Math.floor(i / grid.cols);
-    const ox = c * TILE;
-    const oy = r * TILE;
-    for (let y = 0; y < TILE; y++) this.buf.data.fill(0, ((oy + y) * this.buf.w + ox) * 4, ((oy + y) * this.buf.w + ox + TILE) * 4);
-    if (!grid.inside[i]) return;
-    const salt = (this.o.seed * 31 + i * 2654435761) >>> 0;
-    const neighbor = (dc: number, dr: number): number | null => {
-      const nc = c + dc;
-      const nr = r + dr;
-      return nc < 0 || nr < 0 || nc >= grid.cols || nr >= grid.rows ? null : grid.index(nc, nr);
-    };
-    const around = [
-      [EDGE.north, neighbor(0, -1)],
-      [EDGE.east, neighbor(1, 0)],
-      [EDGE.south, neighbor(0, 1)],
-      [EDGE.west, neighbor(-1, 0)],
-    ] as const;
-    paintGround(this.buf, ox, oy, grid.groundAt(i), seededRng(salt));
-    let shape = 0;
-    for (const [bit, n] of around) if (n === null || !grid.inside[n]) shape |= bit;
-    if (grid.shape === 'ellipse') fadeEdges(this.buf, ox, oy, shape, seededRng(salt ^ 0xabcdef));
-    const kind = grid.overlayAt(i);
-    if (kind) {
-      let edges = 0;
-      for (const [bit, n] of around) if (n === null || grid.over[n] !== grid.over[i]) edges |= bit;
-      paintOverlay(this.buf, ox, oy, kind, edges, seededRng(salt ^ (0x1234567 + TERRAIN_KINDS.indexOf(kind))));
-    }
+    paintTerrainCell(this.buf, this.grid, i, this.o.seed);
   }
 
   /** Um golpe de `type` cai em (x, z): marca o chão e devolve o que mudou (ou null se o tipo não deixa marca). */
@@ -123,16 +95,7 @@ export class Ground {
     const { changed, reaction } = applyTerrain(this.grid, kind, x, z, this.o.halfW, this.o.halfD, power, this.rng);
     if (changed.length === 0) return null;
     // Os vizinhos também mudam de borda.
-    const touched = new Set<number>();
-    for (const i of changed) {
-      touched.add(i);
-      const c = i % this.grid.cols;
-      const r = Math.floor(i / this.grid.cols);
-      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        if (c + dc >= 0 && c + dc < this.grid.cols && r + dr >= 0 && r + dr < this.grid.rows) touched.add(this.grid.index(c + dc, r + dr));
-      }
-    }
-    for (const i of touched) this.paintCell(i);
+    for (const i of touchedCells(this.grid, changed)) this.paintCell(i);
     this.tex.needsUpdate = true;
     return { kind, changed: changed.length, reaction };
   }

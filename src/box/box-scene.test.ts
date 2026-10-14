@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
 import { BoxScene, MAX_CREATURES } from './box-scene';
 import type { CreatureEntry } from './box-scene';
+import { minBoxDistance } from './floor';
 import { lookQuaternion } from './orientation';
 
 function entry(i: number, size = 8): CreatureEntry {
@@ -57,11 +58,32 @@ describe('BoxScene', () => {
 
   it('o chão da caixa é desenhado no ponto escolhido (não na origem da câmera)', () => {
     const scene = sceneLookingDown();
-    const point = new Vector3(0.4, -1.3, -1.5);
+    const point = new Vector3(0.4, -1.3, -5);
     scene.place(point, 1);
     const floor = scene.scene.children.find((c) => c.type === 'Group' && c.children.length > 0);
     expect(floor?.visible).toBe(true);
     expect(floor?.position.toArray()).toEqual(point.toArray());
+  });
+
+  it('a caixa nunca nasce colada na câmera: um ponto perto é afastado, na mesma direção', () => {
+    const scene = sceneLookingDown();
+    const result = scene.place(new Vector3(0, -1.3, -1.3), 1.2);
+    expect(result.moved).toBe(true);
+    const anchor = scene.center!;
+    expect(Math.hypot(anchor.x, anchor.z)).toBeCloseTo(minBoxDistance(1.2), 6);
+    expect(anchor.y).toBe(-1.3);
+    expect(Math.abs(anchor.x)).toBeLessThan(1e-9);
+    expect(anchor.z).toBeLessThan(0);
+    // Um ponto longe fica onde está.
+    expect(scene.place(new Vector3(0, -1.3, -6), 1.2).moved).toBe(false);
+  });
+
+  it('aumentar o tamanho da caixa já colocada afasta de novo, se ficou perto demais', () => {
+    const scene = sceneLookingDown();
+    scene.place(new Vector3(0, -1.3, -3), 0.6); // 3 m: sobra folga para uma caixa pequena
+    expect(Math.hypot(scene.center!.x, scene.center!.z)).toBeCloseTo(3, 6);
+    scene.setHalfSize(2.5);
+    expect(Math.hypot(scene.center!.x, scene.center!.z)).toBeCloseTo(minBoxDistance(2.5), 6);
   });
 
   it('o Pokémon se inclina para a câmera quando ela está acima, sem passar do limite', () => {

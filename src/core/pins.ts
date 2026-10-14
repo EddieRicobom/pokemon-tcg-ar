@@ -1,7 +1,12 @@
 import { parseCardDamage, typeEffectiveness } from './battle';
 import type { Rng } from './battle';
+import { createArenaGrid, frictionAt, seedMarks, stampKind, stampType } from './pin-terrain';
+import type { MarkResult, Spot } from './pin-terrain';
 import { energyLabelPt, energyType } from './pokemon-data';
 import type { BaseStats, CardAttack, PokemonType } from './pokemon-data';
+import type { TerrainGrid, TerrainKind, TerrainReaction } from './terrain';
+
+export type { Spot };
 
 /**
  * Pin Mode: os Pokémon são pinos de boliche vistos de cima numa arena redonda. Quem empurra todos os adversários para fora
@@ -24,9 +29,14 @@ export const GROUND_DECEL = 420;
 const RESTITUTION = 0.86;
 const BUMPER_RESTITUTION = 1.25;
 const BUMPER_MIN_KICK = 150;
-const BOOST_ACCEL = 1100;
-/** Velocidade da correnteza que leva quem está na água (unidades/s). */
-const CURRENT_FLOW = 70;
+/** O pin elemental deixa uma marca a cada tanto que anda (unidades) e uma maior ao acertar alguém. */
+const TRAIL_STEP = 26;
+const TRAIL_POWER = 0.35;
+const SPLASH_POWER = 0.9;
+const CRACK_POWER = 0.75;
+/** Quando o chão reage (fogo na água, por exemplo), quem está por perto leva um empurrão. */
+const REACTION_REACH = 110;
+const REACTION_KICK = 230;
 export const STOP_SPEED = 6;
 const FALL_SECONDS = 0.75;
 /** Quantos pins cada lado leva para a arena. */
@@ -167,6 +177,8 @@ export interface Pin {
   cooldowns: number[];
   /** Efeito do golpe em uso (nulo = disparo normal). */
   active: ShotEffect | null;
+  /** Onde o pin elemental deixou a última marca deste disparo (nulo = ainda não deixou). */
+  lastMark: { x: number; y: number } | null;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -226,55 +238,24 @@ export function pinFromSpec(spec: PinSpec, side: Side): Pin {
     moves,
     cooldowns: moves.map(() => 0),
     active: null,
+    lastMark: null,
   };
 }
 
 // ----------------------------------------------------------------------------- terrenos e tipos
 
-export type PatchKind = 'ice' | 'mud' | 'water' | 'boost' | 'bumper';
+export type PatchKind = 'bumper';
 export const PATCH_LABELS_PT: Record<PatchKind, { name: string; hint: string }> = {
-  ice: { name: 'Gelo', hint: 'Quase sem atrito: o pin escorrega longe.' },
-  mud: { name: 'Lama', hint: 'Muito atrito: o pin quase para.' },
-  water: { name: 'Água', hint: 'Freia e leva o pin pela correnteza.' },
-  boost: { name: 'Turbo', hint: 'Acelera na direção da seta.' },
   bumper: { name: 'Pino de mola', hint: 'Rebate o pin com mais força.' },
 };
 
+/** Obstáculo redondo da arena (hoje só o pino de mola). O resto do chão é a grade de `terrain`. */
 export interface Patch {
   kind: PatchKind;
   x: number;
   y: number;
   r: number;
-  /** Direção (radianos) do turbo e da correnteza. */
   angle: number;
-}
-
-/** Quanto cada chão muda o atrito do chão comum (1). */
-const PATCH_FRICTION = { ice: 0.1, mud: 3.4, water: 2.0 } as const;
-
-/**
- * Afinidade do tipo com o chão: 0 = não sente o chão, 1 = sente normal (padrão), maior = sente mais.
- * Ex.: Voador paira sobre a lama; Gelo patina com controle no gelo; Água não é freada pela água; Terra anda bem na lama.
- */
-const AFFINITY: Record<'ice' | 'mud' | 'water' | 'boost', Partial<Record<PokemonType, number>>> = {
-  ice: { ice: 0, flying: 0.4, ghost: 0.5, steel: 1.2, fire: 1.2 },
-  mud: { ground: 0.2, flying: 0.2, ghost: 0.3, rock: 0.5, water: 0.6, grass: 0.6, poison: 0.6, bug: 0.8 },
-  water: { water: 0, flying: 0.2, ghost: 0.3, ice: 0.6, fire: 1.5, electric: 1.3, ground: 1.3, rock: 1.3 },
-  boost: { flying: 1.3, electric: 1.4, steel: 0.8, rock: 0.8 },
-};
-
-/** O quanto o chão afeta este pin (o menor valor entre os tipos que ele tem: um tipo "imune" basta). */
-export function affinityOf(types: readonly PokemonType[], terrain: keyof typeof AFFINITY): number {
-  if (types.length === 0) return 1;
-  const table = AFFINITY[terrain];
-  const values = types.map((t) => table[t] ?? 1);
-  // Boost: vale o maior (um tipo veloz aproveita); os atritos: vale o menor (um tipo imune basta).
-  return terrain === 'boost' ? Math.max(...values) : Math.min(...values);
-}
-
-/** Atrito (múltiplo do chão comum) que este pin sente num chão de atrito `PATCH_FRICTION`. */
-export function frictionOn(types: readonly PokemonType[], terrain: 'ice' | 'mud' | 'water'): number {
-  return Math.max(0.05, 1 + (PATCH_FRICTION[terrain] - 1) * affinityOf(types, terrain));
 }
 
 /** Bônus de empurrão pela vantagem de tipos (o melhor tipo de quem bate contra os tipos de quem apanha). */
@@ -294,32 +275,23 @@ export interface PinWorld {
   patches: Patch[];
   pins: Pin[];
   time: number;
+  /** Chão em blocos (base + marcas dos golpes), igual ao da batalha da Caixa. Sem ele, o atrito é sempre o comum. */
+  terrain?: TerrainGrid | null;
+  /** Sorteio das marcas. Sem ele os golpes não marcam o chão (a mira usa assim, só para ler). */
+  markRng?: Rng | null;
 }
 
 export type PinEvent =
   | { type: 'hit'; a: string; b: string; strength: number; /** Vantagem de tipos de quem acertou a favor de quem apanhou. */ edge: 'super' | 'weak' | 'none' | null }
   | { type: 'out'; id: string }
   | { type: 'bumper'; id: string }
-  | { type: 'boost'; id: string }
-  | { type: 'wave'; id: string };
+  | { type: 'wave'; id: string }
+  | { type: 'mark'; kind: TerrainKind; x: number; y: number; cells: number[]; reaction: TerrainReaction | null };
 
-const PATCH_SPECS: { kind: PatchKind; count: number; min: number; max: number }[] = [
-  { kind: 'ice', count: 2, min: 48, max: 68 },
-  { kind: 'mud', count: 2, min: 42, max: 60 },
-  { kind: 'water', count: 1, min: 50, max: 70 },
-  { kind: 'boost', count: 1, min: 32, max: 38 },
-  { kind: 'bumper', count: 2, min: 22, max: 27 },
-];
-
-/** Um círculo da arena que os elementos do chão devem evitar (onde um pin começa). */
-export interface Spot {
-  x: number;
-  y: number;
-  r: number;
-}
+const PATCH_SPECS: { kind: PatchKind; count: number; min: number; max: number }[] = [{ kind: 'bumper', count: 2, min: 22, max: 27 }];
 
 /**
- * Sorteia os elementos do chão dentro da arena, sem cobrir quem começa (`avoid`) e sem se sobrepor. Com muitos pins a
+ * Sorteia os obstáculos dentro da arena, sem cobrir quem começa (`avoid`) e sem se sobrepor. Com muitos pins a
  * faixa livre do meio é estreita e podem entrar menos elementos.
  */
 export function buildPatches(rng: Rng, radius = ARENA_RADIUS, avoid: readonly Spot[] = []): Patch[] {
@@ -369,14 +341,23 @@ export function layoutPins(pins: Pin[], radius = ARENA_RADIUS): void {
   }
 }
 
-export function createWorld(specs: { mine: PinSpec[]; enemy: PinSpec[] }, rng: Rng): PinWorld {
+export interface WorldOptions {
+  /** Os golpes elementais e a Pancada marcam o chão (e a arena já começa com algumas marcas). Padrão: sim. */
+  marks?: boolean;
+}
+
+export function createWorld(specs: { mine: PinSpec[]; enemy: PinSpec[] }, rng: Rng, options: WorldOptions = {}): PinWorld {
   const pins = [
     ...specs.mine.slice(0, MAX_PER_SIDE[0]).map((s) => pinFromSpec(s, 0)),
     ...specs.enemy.slice(0, MAX_PER_SIDE[1]).map((s) => pinFromSpec(s, 1)),
   ];
   layoutPins(pins);
-  const patches = buildPatches(rng, ARENA_RADIUS, pins.map((p) => ({ x: p.x, y: p.y, r: p.r })));
-  return { radius: ARENA_RADIUS, patches, pins, time: 0 };
+  const spots = pins.map((p) => ({ x: p.x, y: p.y, r: p.r }));
+  const patches = buildPatches(rng, ARENA_RADIUS, spots);
+  const terrain = createArenaGrid(Math.floor(rng() * 1e6));
+  const marks = options.marks !== false;
+  if (marks) seedMarks(terrain, ARENA_RADIUS, rng, [...spots, ...patches]);
+  return { radius: ARENA_RADIUS, patches, pins, time: 0, terrain, markRng: marks ? rng : null };
 }
 
 const standing = (pin: Pin) => pin.alive && pin.fall === 0;
@@ -422,6 +403,46 @@ function shockwave(world: PinWorld, source: Pin, events: PinEvent[]): void {
   events.push({ type: 'wave', id: source.id });
 }
 
+/** Aplica uma marca no chão, avisa a tela e, se o chão reagiu, empurra quem está perto (menos `sourceId`). */
+function applyMark(world: PinWorld, mark: MarkResult | null, x: number, y: number, sourceId: string, events: PinEvent[]): void {
+  if (!mark) return;
+  events.push({ type: 'mark', kind: mark.kind, x, y, cells: mark.cells, reaction: mark.reaction });
+  if (!mark.reaction) return;
+  for (const other of world.pins) {
+    if (other.id === sourceId || !standing(other)) continue;
+    const dx = other.x - x;
+    const dy = other.y - y;
+    const d = Math.hypot(dx, dy) || 1e-6;
+    if (d > REACTION_REACH + other.r) continue;
+    const kick = (REACTION_KICK * clamp(1 - d / (REACTION_REACH + other.r), 0.25, 1)) / Math.sqrt(massOf(other));
+    other.vx += (dx / d) * kick;
+    other.vy += (dy / d) * kick;
+  }
+}
+
+/** O pin elemental em movimento deixa um rastro de marcas no chão. */
+function leaveTrail(world: PinWorld, pin: Pin, events: PinEvent[]): void {
+  const effect = pin.active;
+  if (!world.terrain || !world.markRng || effect?.kind !== 'elemental' || !effect.type) return;
+  const last = pin.lastMark;
+  if (last && Math.hypot(pin.x - last.x, pin.y - last.y) < TRAIL_STEP) return;
+  pin.lastMark = { x: pin.x, y: pin.y };
+  applyMark(world, stampType(world.terrain, world.radius, effect.type, pin.x, pin.y, TRAIL_POWER, world.markRng), pin.x, pin.y, pin.id, events);
+}
+
+/** Primeiro choque de um golpe elemental (borrão grande do tipo) ou da Pancada (rachaduras). */
+function splash(world: PinWorld, striker: Pin, x: number, y: number, events: PinEvent[]): void {
+  const effect = striker.active;
+  if (!world.terrain || !world.markRng || !effect || effect.used) return;
+  if (effect.kind === 'elemental' && effect.type) {
+    effect.used = true;
+    applyMark(world, stampType(world.terrain, world.radius, effect.type, x, y, SPLASH_POWER, world.markRng), x, y, striker.id, events);
+  } else if (effect.kind === 'impacto') {
+    effect.used = true;
+    applyMark(world, stampKind(world.terrain, world.radius, 'crack', x, y, CRACK_POWER, world.markRng), x, y, striker.id, events);
+  }
+}
+
 /** Avança a física `dt` segundos (use passos pequenos, ~1/120). Devolve o que aconteceu, para sons e avisos. */
 export function stepWorld(world: PinWorld, dt: number, events: PinEvent[] = []): PinEvent[] {
   world.time += dt;
@@ -437,26 +458,8 @@ export function stepWorld(world: PinWorld, dt: number, events: PinEvent[] = []):
       if (pin.fall >= 1) pin.alive = false;
       continue;
     }
-    // Chão sob o pin.
-    let mu = 1;
-    for (const patch of world.patches) {
-      if (Math.hypot(pin.x - patch.x, pin.y - patch.y) > patch.r) continue;
-      if (patch.kind === 'ice' || patch.kind === 'mud' || patch.kind === 'water') {
-        mu = frictionOn(typesOf(pin), patch.kind);
-        if (patch.kind === 'water') {
-          // A correnteza leva o pin mesmo parado (o tipo de Água não sente).
-          const flow = CURRENT_FLOW * affinityOf(typesOf(pin), 'water') * dt;
-          pin.x += Math.cos(patch.angle) * flow;
-          pin.y += Math.sin(patch.angle) * flow;
-        }
-      } else if (patch.kind === 'boost') {
-        const push = BOOST_ACCEL * affinityOf(typesOf(pin), 'boost') * dt;
-        const before = Math.hypot(pin.vx, pin.vy);
-        pin.vx += Math.cos(patch.angle) * push;
-        pin.vy += Math.sin(patch.angle) * push;
-        if (before < 120 && Math.hypot(pin.vx, pin.vy) >= 120) events.push({ type: 'boost', id: pin.id });
-      }
-    }
+    // Chão sob o pin: o atrito depende do bloco (chão base ou marca) e do tipo do pin.
+    let mu = world.terrain ? frictionAt(world.terrain, world.radius, pin.x, pin.y, typesOf(pin)) : 1;
     // Atrito: desaceleração constante contra o movimento (o disparo Rápido desliza melhor).
     if (pin.active?.kind === 'turbo') mu *= TURBO_FRICTION;
     const speed = Math.hypot(pin.vx, pin.vy);
@@ -498,6 +501,7 @@ export function stepWorld(world: PinWorld, dt: number, events: PinEvent[] = []):
         events.push({ type: 'bumper', id: pin.id });
       }
     }
+    leaveTrail(world, pin, events);
   }
 
   // Choques entre pins.
@@ -545,6 +549,9 @@ export function stepWorld(world: PinWorld, dt: number, events: PinEvent[] = []):
         strength: clamp(vn / 700, 0, 1),
         edge: edgeOf(faster ? typeKnockback(tb, ta) : typeKnockback(ta, tb)),
       });
+      const hitX = a.x + nx * a.r;
+      const hitY = a.y + ny * a.r;
+      for (const striker of [a, b]) splash(world, striker, hitX, hitY, events);
       for (const striker of [a, b]) {
         if (striker.active?.kind === 'onda' && !striker.active.used) {
           striker.active.used = true;
@@ -602,6 +609,7 @@ export function canUse(pin: Pin, moveIndex: number | null): boolean {
 export function launch(pin: Pin, shot: Shot, moveIndex: number | null = null): boolean {
   if (!canUse(pin, moveIndex)) return false;
   pin.active = moveIndex === null ? null : { ...pin.moves[moveIndex]!.effect };
+  pin.lastMark = null;
   const speed = launchSpeed(pin, shot);
   pin.vx = shot.dirX * speed;
   pin.vy = shot.dirY * speed;
@@ -626,7 +634,10 @@ export function afterShot(world: PinWorld, side: Side, used: { pinId: string; mo
 /** Tira os efeitos dos golpes; o Escudo dura até a resposta do adversário (`keepGuard`). */
 export function clearEffects(world: PinWorld, keepGuard: boolean): void {
   for (const pin of world.pins) {
-    if (pin.active && !(keepGuard && pin.active.kind === 'escudo')) pin.active = null;
+    if (pin.active && !(keepGuard && pin.active.kind === 'escudo')) {
+      pin.active = null;
+      pin.lastMark = null;
+    }
   }
 }
 
@@ -640,9 +651,9 @@ export interface PathPoint {
  * `falls` diz se o pin sairia sozinho da arena.
  */
 export function previewPath(world: PinWorld, pin: Pin, shot: Shot, moveIndex: number | null = null, maxSeconds = 2.2): { points: PathPoint[]; falls: boolean } {
-  const ghost: Pin = { ...pin, types: [...pin.types], active: null };
+  const ghost: Pin = { ...pin, types: [...pin.types], active: null, lastMark: null };
   launch(ghost, shot, moveIndex);
-  const sim: PinWorld = { radius: world.radius, patches: world.patches, pins: [ghost], time: 0 };
+  const sim: PinWorld = { radius: world.radius, patches: world.patches, pins: [ghost], time: 0, terrain: world.terrain ?? null, markRng: null };
   const points: PathPoint[] = [{ x: ghost.x, y: ghost.y }];
   const dt = 1 / 60;
   for (let t = 0, n = 0; t < maxSeconds; t += dt, n++) {

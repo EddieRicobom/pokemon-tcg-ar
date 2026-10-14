@@ -24,9 +24,9 @@ export interface ArenaFrame {
   distance: number;
 }
 
-export const ARENA_MIN_DISTANCE = 0.9;
-export const ARENA_MAX_DISTANCE = 1.7;
-export const ARENA_DEFAULT_DISTANCE = 1.3;
+export const ARENA_MIN_DISTANCE = 1.8;
+export const ARENA_MAX_DISTANCE = 3.2;
+export const ARENA_DEFAULT_DISTANCE = 2.2;
 /** Fração da meia-largura visível que a arena ocupa. */
 export const ARENA_SCREEN_FILL = 0.7;
 export const ARENA_SCALE_RANGE = { min: 0.25, max: 1 } as const;

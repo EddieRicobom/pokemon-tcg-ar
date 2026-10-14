@@ -33,10 +33,6 @@ const C = {
   cliff: [0x6b, 0x5a, 0x48], cliffDark: [0x45, 0x38, 0x2b],
   railA: [0xd9, 0xd2, 0xc2], railB: [0x9b, 0x90, 0x7c],
   grassA: [0x5f, 0xb0, 0x4c], grassB: [0x58, 0xa8, 0x47], grassDark: [0x3f, 0x8a, 0x3a], grassLight: [0x82, 0xd0, 0x65],
-  iceA: [0xc6, 0xec, 0xf7], iceB: [0xdf, 0xf6, 0xfc], iceEdge: [0x8c, 0xc8, 0xdc], iceStreak: [0xff, 0xff, 0xff],
-  mudA: [0x7a, 0x52, 0x30], mudDark: [0x5e, 0x3d, 0x22], mudLight: [0x94, 0x68, 0x3f], mudEdge: [0x4a, 0x30, 0x1a],
-  waterA: [0x3b, 0x82, 0xd6], waterB: [0x4f, 0x95, 0xe6], waterRipple: [0x8c, 0xc4, 0xf5], waterEdge: [0x28, 0x5c, 0xa8],
-  padA: [0x2b, 0x2b, 0x3a], padB: [0x35, 0x35, 0x4a], padEdge: [0x16, 0x16, 0x22], chevron: [0xf7, 0xd0, 0x2c],
   bumperBody: [0xe2, 0x3b, 0x3b], bumperRing: [0x9c, 0x22, 0x22], bumperTop: [0xff, 0xe9, 0xe9], bumperShadow: [0x1f, 0x4a, 0x1c],
 } as const;
 type Rgb = readonly [number, number, number];
@@ -49,45 +45,21 @@ function put(buf: ArtBuf, x: number, y: number, c: Rgb): void {
   buf.data[i + 3] = 255;
 }
 
-function paintPatch(patch: Patch, dx: number, dy: number, px: number, py: number, seed: number): Rgb | null {
-  const d = Math.hypot(dx, dy);
-  const edge = d / patch.r;
-  if (patch.kind === 'bumper') {
-    // Sombra deslocada para baixo, depois o corpo.
-    const shadow = Math.hypot(dx - 6, dy - 8) / patch.r;
-    if (edge > 1) return shadow <= 1 ? C.bumperShadow : null;
-    if (edge < 0.42) return C.bumperTop;
-    return edge > 0.82 ? C.bumperRing : C.bumperBody;
-  }
-  if (edge > 1) return null;
-  if (patch.kind === 'ice') {
-    if (edge > 0.92) return C.iceEdge;
-    if ((px + py) % 9 === 0 || (px + py + 3) % 17 === 0) return C.iceStreak;
-    return hash(px >> 1, py >> 1, seed) < 0.5 ? C.iceA : C.iceB;
-  }
-  if (patch.kind === 'mud') {
-    if (edge > 0.92) return C.mudEdge;
-    const n = hash(px >> 1, py >> 1, seed + 5);
-    return n < 0.18 ? C.mudDark : n > 0.86 ? C.mudLight : C.mudA;
-  }
-  if (patch.kind === 'water') {
-    if (edge > 0.92) return C.waterEdge;
-    // Marolas que correm na direção da correnteza.
-    const along = px * Math.cos(patch.angle) + py * Math.sin(patch.angle);
-    const across = -px * Math.sin(patch.angle) + py * Math.cos(patch.angle);
-    if (Math.floor(along / 2) % 5 === 0 && Math.floor(across / 3) % 3 === 0) return C.waterRipple;
-    return hash(px >> 1, py >> 1, seed + 9) < 0.5 ? C.waterA : C.waterB;
-  }
-  // Turbo: placa escura com setas amarelas que apontam para onde acelera.
-  if (edge > 0.9) return C.padEdge;
-  const u = dx * Math.cos(patch.angle) + dy * Math.sin(patch.angle);
-  const v = -dx * Math.sin(patch.angle) + dy * Math.cos(patch.angle);
-  const chevron = u - Math.abs(v) * 0.9;
-  return Math.floor((chevron + 200) / 11) % 3 === 0 ? C.chevron : (px + py) % 2 === 0 ? C.padA : C.padB;
+/** Cor do pino de mola neste ponto (relativo ao centro dele), ou null fora dele. */
+function paintBumper(patch: Patch, dx: number, dy: number): Rgb | null {
+  const edge = Math.hypot(dx, dy) / patch.r;
+  // Sombra deslocada para baixo, depois o corpo.
+  const shadow = Math.hypot(dx - 6, dy - 8) / patch.r;
+  if (edge > 1) return shadow <= 1 ? C.bumperShadow : null;
+  if (edge < 0.42) return C.bumperTop;
+  return edge > 0.82 ? C.bumperRing : C.bumperBody;
 }
 
-/** Pinta a arena inteira (chão, borda, vazio ao redor e os elementos do chão). */
-export function paintArena(radius: number, patches: readonly Patch[], seed = 1): ArtBuf {
+/**
+ * Pinta o fundo da arena: grama, mureta, penhasco e o vazio ao redor. As marcas dos golpes (`terrain-paint.ts`) e os pinos
+ * de mola (`paintBumpers`) vão por cima.
+ */
+export function paintArena(radius: number, seed = 1): ArtBuf {
   const size = artSize(radius);
   const buf: ArtBuf = { w: size, h: size, data: new Uint8ClampedArray(size * size * 4) };
   for (let py = 0; py < size; py++) {
@@ -109,12 +81,29 @@ export function paintArena(radius: number, patches: readonly Patch[], seed = 1):
         const n = hash(px, py, seed);
         if (n < 0.035) color = C.grassDark;
         else if (n > 0.975) color = C.grassLight;
-        for (const patch of patches) {
-          const painted = paintPatch(patch, wx - patch.x, wy - patch.y, px, py, seed);
-          if (painted) color = painted;
-        }
       }
       put(buf, px, py, color);
+    }
+  }
+  return buf;
+}
+
+/** Camada transparente só com os pinos de mola (desenhada por cima do chão). */
+export function paintBumpers(radius: number, patches: readonly Patch[]): ArtBuf {
+  const size = artSize(radius);
+  const buf: ArtBuf = { w: size, h: size, data: new Uint8ClampedArray(size * size * 4) };
+  for (const patch of patches) {
+    if (patch.kind !== 'bumper') continue;
+    const reach = patch.r + 14;
+    const x0 = Math.max(0, Math.floor((patch.x - reach) / UNITS_PER_PIXEL + size / 2));
+    const x1 = Math.min(size - 1, Math.ceil((patch.x + reach) / UNITS_PER_PIXEL + size / 2));
+    const y0 = Math.max(0, Math.floor((patch.y - reach) / UNITS_PER_PIXEL + size / 2));
+    const y1 = Math.min(size - 1, Math.ceil((patch.y + reach) / UNITS_PER_PIXEL + size / 2));
+    for (let py = y0; py <= y1; py++) {
+      for (let px = x0; px <= x1; px++) {
+        const color = paintBumper(patch, (px + 0.5 - size / 2) * UNITS_PER_PIXEL - patch.x, (py + 0.5 - size / 2) * UNITS_PER_PIXEL - patch.y);
+        if (color) put(buf, px, py, color);
+      }
     }
   }
   return buf;
