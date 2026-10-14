@@ -2926,6 +2926,49 @@ body.no-scroll .reward-toasts {
   min-width: 118px;
 }
 
+/* ---- PvP: sala */
+
+.pn-mode button {
+  font-size: 0.85rem;
+}
+
+.pn-room {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--ok) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line));
+  font-size: 0.86rem;
+}
+
+.pn-room .pn-link {
+  margin-left: auto;
+  padding: 4px;
+}
+
+.pn-room-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.pn-opts-note {
+  margin: 0 14px 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.pn-over-wait {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 /* ---- Partida */
 
 .pins-hud {

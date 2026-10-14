@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import { loadPinData, getCache } from '../app/services';
 import { defaultSetup, loadSetup, roleOf, saveSetup, setRole, setupBlocker } from '../app/pins-setup';
 import type { PinsSetup, Role } from '../app/pins-setup';
@@ -25,6 +25,11 @@ import { artSize, paintArena, paintBumpers, UNITS_PER_PIXEL } from '../pins/aren
 import { ArenaTerrainArt } from '../pins/terrain-paint';
 import type { CachedCard } from '../cache/types';
 import { spriteIdOf } from '../core/dex-form';
+import PvpLobby from '../components/PvpLobby.vue';
+import type { PvpPeer } from '../pvp/peer';
+import { pokemonSpriteUrl } from '../ar/sprite-url';
+import { applyWorld, buildPvpWorld, prefixSpecs, PVP_MAX_PINS, shotFromWire, shotToWire, snapshotInit, snapshotWorld } from '../pvp/wire';
+import type { Frame, WireMessage, WireSpec, WireWorld } from '../pvp/wire';
 
 type Phase = 'setup' | 'loading' | 'aim' | 'rolling' | 'enemy' | 'over';
 interface Info { state: 'loading' | 'ok'; profile: PokemonProfile | null; card: CardBattleInfo | null }
@@ -37,6 +42,16 @@ const STEP = 1 / 120;
 const TEAM_COLORS = ['#4da3ff', '#ff5d5d'] as const;
 
 const phase = ref<Phase>('setup');
+// ---- PvP (contra um amigo, cada um no seu celular)
+const mode = ref<'cpu' | 'friend'>('cpu');
+const peer = shallowRef<PvpPeer | null>(null);
+const frame = ref<Frame>('host');
+/** O que sabemos do amigo na sala: pins escolhidos, se está pronto e, para o convidado, as opções do anfitrião. */
+const friend = reactive({ ready: false, specs: [] as WireSpec[], shrink: true, marks: true });
+const myReady = ref(false);
+const pvpMatch = ref(false);
+const roomNotice = ref('');
+let pendingSettled: { world: WireWorld; at: number } | null = null;
 const cards = ref<CachedCard[]>([]);
 const thumbs = ref<Record<string, string>>({});
 const infos = ref<Record<string, Info>>({});
@@ -57,7 +72,7 @@ const message = ref('');
 const tray = ref<TrayPin[]>([]);
 const selectedId = ref<string | null>(null);
 const selectedMove = ref<number | null>(null);
-const result = ref<{ won: boolean; reason: 'won' | 'lost' | 'energia'; shots: number; score: number } | null>(null);
+const result = ref<{ won: boolean; reason: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'; shots: number; score: number } | null>(null);
 const counts = ref({ mine: 0, enemy: 0 });
 const shotCount = ref(0);
 
@@ -97,6 +112,8 @@ const rng = seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0);
 // ---------------------------------------------------------------- preparação
 
 const energy = computed(() => trainer.value.energy);
+/** Energia que vale na partida: no PvP não há custo (os dois jogam com os mesmos pins e sem gastar a energia do treinador). */
+const budget = computed(() => (pvpMatch.value ? Number.POSITIVE_INFINITY : trainer.value.energy));
 const usable = computed(() => cards.value.filter((c) => c.sprite.state === 'ok' && c.dexIds.length > 0));
 const shown = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -183,6 +200,16 @@ function choose(card: CachedCard, role: Role | null): void {
   setup.value = next;
   saveSetup(next);
   void loadInfo(card);
+  if (mode.value === 'friend' && peer.value) {
+    // Mudou o time: o "pronto" vale só para o time que o amigo viu.
+    myReady.value = false;
+    void syncTeam();
+  }
+}
+
+function roleShown(card: CachedCard): Role | null {
+  const role = roleOf(setup.value, card.id);
+  return mode.value === 'friend' && role === 'enemy' ? null : role;
 }
 
 function setDifficulty(d: Difficulty): void {
@@ -201,6 +228,7 @@ function useRecent(): void {
 async function start(): Promise<void> {
   engine.unlock();
   stopReplay();
+  pvpMatch.value = false;
   if (blocker.value) {
     notice.value = blocker.value;
     return;
@@ -219,6 +247,12 @@ async function start(): Promise<void> {
   if (disposed) return;
   const byId = (id: string) => cards.value.find((c) => c.id === id)!;
   world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => specOf(byId(id))) }, rng, { marks: setup.value.marks, shrink: setup.value.shrink });
+  await beginMatch('aim');
+}
+
+/** Põe a partida (o `world` já montado) na tela: arte, contadores e a primeira fase (`aim` = sua vez, `enemy` = espera o outro). */
+async function beginMatch(first: 'aim' | 'enemy'): Promise<void> {
+  if (!world) return;
   buildArt(world);
   shownLimit = world.radius;
   recorder.start(world);
@@ -231,7 +265,8 @@ async function start(): Promise<void> {
   message.value = '';
   selectedMove.value = null;
   selectedId.value = null;
-  phase.value = 'aim';
+  pendingSettled = null;
+  phase.value = first;
   await nextTick();
   mountSprites();
   resize();
@@ -315,7 +350,7 @@ function mountSprites(): void {
 
 function pickDefaultPin(): void {
   if (!world) return;
-  const ok = affordable(world, energy.value);
+  const ok = affordable(world, budget.value);
   const current = ok.find((p) => p.id === selectedId.value);
   selectedId.value = (current ?? ok[0])?.id ?? null;
   if (selectedMove.value !== null) {
@@ -333,7 +368,7 @@ function refreshTray(): void {
     cost: p.cost,
     thumb: thumbs.value[p.id] ?? '',
     selected: p.id === selectedId.value && p.fall === 0,
-    affordable: p.cost <= energy.value && p.fall === 0,
+    affordable: p.cost <= budget.value && p.fall === 0,
     estimated: p.estimated,
     moves: p.moves.map((m, index) => ({
       index,
@@ -351,7 +386,7 @@ function selectPin(id: string): void {
   if (phase.value !== 'aim' || !world) return;
   const pin = world.pins.find((p) => p.id === id);
   if (!pin || pin.side !== 0 || !pin.alive || pin.fall > 0) return;
-  if (pin.cost > energy.value) {
+  if (pin.cost > budget.value) {
     message.value = `Sem energia para ${pin.name} (custa ${pin.cost}). Ganhe XP escaneando cartas ou jogando minigames.`;
     return;
   }
@@ -402,11 +437,15 @@ function update(dt: number): void {
     rollTime += dt;
     // Se algo teimar em se mexer (correnteza, pino de mola), a jogada acaba depois de um tempo.
     if (rollTime > 14) for (const p of world.pins) if (p.fall === 0) (p.vx = 0), (p.vy = 0);
+    // PvP: o amigo já mandou o resultado e o meu movimento ainda não parou; não espero mais que isso.
+    if (pvpMatch.value && rollOwner === 'enemy' && pendingSettled && performance.now() - pendingSettled.at > 2500) for (const p of world.pins) if (p.fall === 0) (p.vx = 0), (p.vy = 0);
     settledTime = isSettled(world) ? settledTime + dt : 0;
     if (settledTime >= 0.3) finishRoll();
   } else if (phase.value === 'enemy') {
-    enemyTimer -= dt;
-    if (enemyTimer <= 0) fireEnemy();
+    if (!pvpMatch.value) {
+      enemyTimer -= dt;
+      if (enemyTimer <= 0) fireEnemy();
+    }
   } else if (replaying.value) {
     replayAt += dt * REPLAY_SPEED;
     const range = recorder.range();
@@ -495,6 +534,7 @@ function handleEvents(events: PinEvent[]): void {
 function finishRoll(): void {
   if (!world) return;
   settledTime = 0;
+  if (pvpMatch.value) return finishPvpRoll();
   const outcome = outcomeOf(world);
   refreshTray();
   if (outcome !== 'playing') return endGame(outcome);
@@ -521,7 +561,7 @@ function finishRoll(): void {
 
 function nextAim(): void {
   if (!world) return;
-  if (affordable(world, energy.value).length === 0) return endGame('energia');
+  if (!pvpMatch.value && affordable(world, budget.value).length === 0) return endGame('energia');
   phase.value = 'aim';
   message.value = '';
   pickDefaultPin();
@@ -548,14 +588,15 @@ function fireEnemy(): void {
   phase.value = 'rolling';
 }
 
-function endGame(kind: 'won' | 'lost' | 'energia'): void {
+function endGame(kind: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'): void {
   if (!world) return;
   phase.value = 'over';
   const won = kind === 'won';
-  const score = scoreMatch(won, shots, setup.value.enemy.length);
+  const score = pvpMatch.value ? 0 : scoreMatch(won, shots, setup.value.enemy.length);
   result.value = { won, reason: kind, shots, score };
   message.value = '';
-  recordEvent({ type: 'minigame', game: 'pins', won, score });
+  // Contra um amigo não vale XP nem recorde (nada impede alguém de mexer no próprio aparelho).
+  if (!pvpMatch.value) recordEvent({ type: 'minigame', game: 'pins', won, score });
   refreshTray();
   cue({ kind: won ? 'pin-win' : 'pin-lose' });
   buzz({ kind: won ? 'win' : 'lose' });
@@ -582,7 +623,7 @@ function fireMine(shot: Shot): void {
     message.value = 'Esse golpe ainda está recarregando. Escolha outro ou o disparo normal.';
     return;
   }
-  if (!spendTrainerEnergy(pin.cost)) {
+  if (!pvpMatch.value && !spendTrainerEnergy(pin.cost)) {
     message.value = `Sem energia para ${pin.name} (custa ${pin.cost}).`;
     pickDefaultPin();
     refreshTray();
@@ -591,6 +632,7 @@ function fireMine(shot: Shot): void {
   const moveIndex = selectedMove.value;
   launch(pin, shot, moveIndex);
   afterShot(world, 0, { pinId: pin.id, moveIndex });
+  if (pvpMatch.value) peer.value?.send({ t: 'shot', pinId: pin.id, moveIndex, ...shotToWire(frame.value, shot) });
   recorder.start(world);
   cue({ kind: 'pin-launch', power: shot.power, type: pin.active?.kind === 'elemental' ? pin.active.type : null });
   buzz({ kind: 'launch', power: shot.power });
@@ -608,6 +650,10 @@ function fireMine(shot: Shot): void {
 
 function again(): void {
   cancelAnimationFrame(raf);
+  if (pvpMatch.value || mode.value === 'friend') {
+    if (frame.value === 'host' && peer.value) void startPvp();
+    return;
+  }
   void start();
 }
 
@@ -618,6 +664,270 @@ function backToSetup(): void {
   sprites.clear();
   phase.value = 'setup';
   message.value = '';
+  pvpMatch.value = false;
+  if (peer.value) {
+    // Na sala, o time pode mudar entre uma partida e outra: cada um confirma de novo.
+    myReady.value = false;
+    void syncTeam();
+  }
+}
+
+// ---------------------------------------------------------------- PvP
+
+const friendBlocker = computed(() => {
+  const n = setup.value.mine.length;
+  if (n === 0) return 'Escolha ao menos 1 pin.';
+  if (frame.value !== 'host') return null;
+  if (!friend.ready) return 'Esperando o amigo ficar pronto.';
+  if (friend.specs.length !== n) return `Vocês precisam levar o mesmo número de pins (você ${n}, amigo ${friend.specs.length}).`;
+  return null;
+});
+
+function rawSpecsOfMine(): WireSpec[] {
+  return setup.value.mine
+    .map((id) => cards.value.find((c) => c.id === id))
+    .filter((c): c is CachedCard => !!c)
+    .flatMap((card) => {
+      const sprite = spriteIdOf(card);
+      return sprite ? [{ ...specOf(card), sprite }] : [];
+    });
+}
+
+/** Manda os meus pins (já com os dados carregados) e se estou pronto. */
+async function syncTeam(): Promise<void> {
+  if (!peer.value) return;
+  const chosen = setup.value.mine.map((id) => cards.value.find((c) => c.id === id)).filter((c): c is CachedCard => !!c);
+  await Promise.all(chosen.map((c) => loadInfo(c)));
+  peer.value?.send({ t: 'team', ready: myReady.value, specs: prefixSpecs(frame.value, rawSpecsOfMine()) });
+}
+
+function sendOptions(): void {
+  if (frame.value === 'host') peer.value?.send({ t: 'options', shrink: setup.value.shrink, marks: setup.value.marks });
+}
+
+function onConnected(p: PvpPeer, role: Frame): void {
+  peer.value = p;
+  frame.value = role;
+  mode.value = 'friend';
+  roomNotice.value = '';
+  friend.ready = false;
+  friend.specs = [];
+  myReady.value = false;
+  p.onMessage = onPeerMessage;
+  p.onState = onPeerState;
+  sendOptions();
+  void syncTeam();
+}
+
+function leaveRoom(): void {
+  const p = peer.value;
+  peer.value = null;
+  if (p) {
+    p.onState = null;
+    p.onMessage = null;
+    p.close();
+  }
+  friend.ready = false;
+  friend.specs = [];
+  myReady.value = false;
+  pvpMatch.value = false;
+}
+
+function onPeerState(state: string): void {
+  if (state !== 'closed') return;
+  const inMatch = pvpMatch.value && phase.value !== 'over' && phase.value !== 'setup' && phase.value !== 'loading';
+  peer.value = null;
+  friend.ready = false;
+  friend.specs = [];
+  myReady.value = false;
+  roomNotice.value = 'O amigo saiu ou a conexão caiu.';
+  if (inMatch) endGame('saiu');
+  else if (phase.value === 'loading') phase.value = 'setup';
+}
+
+function onPeerMessage(msg: WireMessage): void {
+  const theirPrefix = frame.value === 'host' ? 'g:' : 'h:';
+  switch (msg.t) {
+    case 'team': {
+      if (!msg.specs.every((s) => s.id.startsWith(theirPrefix))) return;
+      friend.specs = msg.specs;
+      friend.ready = msg.ready;
+      const next = { ...thumbs.value };
+      for (const s of msg.specs) next[s.id] = pokemonSpriteUrl(s.sprite);
+      thumbs.value = next;
+      return;
+    }
+    case 'options':
+      if (frame.value === 'guest') {
+        friend.shrink = msg.shrink;
+        friend.marks = msg.marks;
+      }
+      return;
+    case 'start':
+      if (frame.value === 'guest') void onStartMessage(msg);
+      return;
+    case 'shot':
+      return onRemoteShot(msg);
+    case 'settled':
+      return onRemoteSettled(msg.world);
+    default:
+  }
+}
+
+async function ensureMineThumbs(specs: readonly WireSpec[]): Promise<void> {
+  const cache = await getCache();
+  const next = { ...thumbs.value };
+  for (const spec of specs) {
+    const cardId = spec.id.slice(2);
+    if (!next[cardId]) {
+      const card = cards.value.find((c) => c.id === cardId);
+      const blob = card ? await cache.getAssetBlob(card, 'sprite').catch(() => null) : null;
+      if (blob) next[cardId] = URL.createObjectURL(blob);
+    }
+    // Sem a miniatura guardada, o sprite público do Pokémon (como o do amigo).
+    next[spec.id] = next[cardId] ?? pokemonSpriteUrl(spec.sprite);
+  }
+  thumbs.value = next;
+}
+
+function registerFriendThumbs(specs: readonly WireSpec[]): void {
+  const next = { ...thumbs.value };
+  for (const s of specs) next[s.id] = pokemonSpriteUrl(s.sprite);
+  thumbs.value = next;
+}
+
+/** Anfitrião: monta a arena com os pins dos dois, manda ao amigo e começa (a primeira jogada é do anfitrião). */
+async function startPvp(): Promise<void> {
+  engine.unlock();
+  stopReplay();
+  const p = peer.value;
+  if (!p || (friendBlocker.value && phase.value !== 'over')) return;
+  const previous = phase.value;
+  phase.value = 'loading';
+  await Promise.all(setup.value.mine.map((id) => cards.value.find((c) => c.id === id)).filter((c): c is CachedCard => !!c).map((c) => loadInfo(c)));
+  const hostSpecs = prefixSpecs('host', rawSpecsOfMine());
+  const guestSpecs = friend.specs;
+  if (disposed || hostSpecs.length === 0 || hostSpecs.length !== guestSpecs.length || !peer.value) {
+    phase.value = previous === 'over' ? 'over' : 'setup';
+    return;
+  }
+  await ensureMineThumbs(hostSpecs);
+  registerFriendThumbs(guestSpecs);
+  const opts = { shrink: setup.value.shrink, marks: setup.value.marks };
+  world = createWorld({ mine: hostSpecs, enemy: guestSpecs }, rng, opts);
+  p.send({ t: 'start', hostSpecs, guestSpecs, init: snapshotInit(world, opts) });
+  pvpMatch.value = true;
+  await beginMatch('aim');
+}
+
+/** Convidado: o anfitrião começou; monta o espelho da arena e espera a vez. */
+async function onStartMessage(msg: Extract<WireMessage, { t: 'start' }>): Promise<void> {
+  if (phase.value === 'aim' || phase.value === 'rolling' || phase.value === 'enemy' || phase.value === 'loading') return;
+  const mineIds = prefixSpecs('guest', rawSpecsOfMine()).map((s) => s.id);
+  if (mineIds.length !== msg.guestSpecs.length || !mineIds.every((id, i) => id === msg.guestSpecs[i]?.id)) {
+    roomNotice.value = 'O anfitrião começou com pins diferentes dos seus. Entrem na sala de novo.';
+    leaveRoom();
+    return;
+  }
+  engine.unlock();
+  stopReplay();
+  phase.value = 'loading';
+  await ensureMineThumbs(msg.guestSpecs);
+  registerFriendThumbs(msg.hostSpecs);
+  if (disposed) return;
+  world = buildPvpWorld(msg.init, msg.hostSpecs, msg.guestSpecs, 'guest', rng);
+  setup.value = { ...setup.value, shrink: msg.init.shrink, marks: msg.init.marks };
+  pvpMatch.value = true;
+  await beginMatch('enemy');
+  message.value = 'O anfitrião começa. Aguarde a sua vez…';
+}
+
+function pvpOutcome(): 'playing' | 'won' | 'lost' | 'empate' {
+  if (!world) return 'playing';
+  const mine = aliveOf(world, 0).length;
+  const theirs = aliveOf(world, 1).length;
+  return mine === 0 && theirs === 0 ? 'empate' : theirs === 0 ? 'won' : mine === 0 ? 'lost' : 'playing';
+}
+
+/** O amigo disparou: rodo o mesmo disparo aqui para ver o movimento; o estado final vem na mensagem `settled`. */
+function onRemoteShot(msg: Extract<WireMessage, { t: 'shot' }>): void {
+  if (!world || !pvpMatch.value || phase.value !== 'enemy') return;
+  const pin = world.pins.find((p) => p.id === msg.pinId && p.side === 1 && p.alive && p.fall === 0);
+  if (!pin || !launch(pin, shotFromWire(frame.value, msg), msg.moveIndex)) return;
+  afterShot(world, 1, { pinId: pin.id, moveIndex: msg.moveIndex });
+  recorder.start(world);
+  cue({ kind: 'pin-launch', power: msg.power, type: pin.active?.kind === 'elemental' ? pin.active.type : null });
+  if (msg.moveIndex !== null) popups.push({ text: pin.moves[msg.moveIndex]?.name ?? '', x: pin.x, y: pin.y - 36, age: 0, color: '#ffb3b3' });
+  pendingSettled = null;
+  rollOwner = 'enemy';
+  rollTime = 0;
+  settledTime = 0;
+  message.value = '';
+  phase.value = 'rolling';
+}
+
+function onRemoteSettled(snap: WireWorld): void {
+  if (!world || !pvpMatch.value) return;
+  if (phase.value === 'rolling' && rollOwner === 'enemy') {
+    pendingSettled = { world: snap, at: performance.now() };
+    return;
+  }
+  if (phase.value === 'enemy') applySettled(snap);
+}
+
+/** Adota o estado de quem disparou (posições, quem caiu, chão, borda) e passa a vez para mim. */
+function applySettled(snap: WireWorld): void {
+  if (!world) return;
+  const applied = applyWorld(world, snap, frame.value);
+  if (applied.changedCells.length > 0) {
+    terrainArt?.repaint(applied.changedCells);
+    refreshFloorMarks();
+  }
+  if (applied.limitChanged || applied.patchesChanged) bumperCanvas = canvasOf(paintBumpers(world.radius, world.patches));
+  if (applied.limitChanged) {
+    popups.push({ text: 'A borda avançou!', x: 0, y: -ARENA_RADIUS * 0.45, age: 0, color: '#ffb35c' });
+    cue({ kind: 'pin-shrink' });
+    buzz({ kind: 'shrink' });
+  }
+  refreshRound();
+  refreshTray();
+  const outcome = pvpOutcome();
+  if (outcome !== 'playing') return endGame(outcome);
+  phase.value = 'aim';
+  message.value = '';
+  pickDefaultPin();
+  refreshTray();
+}
+
+function finishPvpRoll(): void {
+  if (!world) return;
+  refreshTray();
+  if (rollOwner === 'me') {
+    // O Escudo do anfitrião segue valendo durante a resposta do convidado; a rodada fecha quando o convidado joga.
+    clearEffects(world, frame.value === 'host');
+    if (frame.value === 'guest') {
+      handleEvents(advanceRound(world));
+      refreshRound();
+    }
+    peer.value?.send({ t: 'settled', world: snapshotWorld(world, frame.value) });
+    const outcome = pvpOutcome();
+    if (outcome !== 'playing') return endGame(outcome);
+    phase.value = 'enemy';
+    message.value = 'Vez do amigo…';
+    return;
+  }
+  if (pendingSettled) {
+    const snap = pendingSettled.world;
+    pendingSettled = null;
+    return applySettled(snap);
+  }
+  phase.value = 'enemy';
+  message.value = 'Sincronizando com o amigo…';
+}
+
+async function setReady(on: boolean): Promise<void> {
+  myReady.value = on;
+  await syncTeam();
 }
 
 // ---------------------------------------------------------------- toque e arrasto
@@ -861,6 +1171,7 @@ onMounted(() => window.addEventListener('resize', onResize));
 onBeforeUnmount(() => {
   disposed = true;
   cancelAnimationFrame(raf);
+  leaveRoom();
   engine.dispose();
   window.removeEventListener('resize', onResize);
   Object.values(thumbs.value).forEach((url) => URL.revokeObjectURL(url));
@@ -868,7 +1179,7 @@ onBeforeUnmount(() => {
 
 const phaseHint = computed(() => {
   if (phase.value === 'aim') return selectedId.value ? 'Sua vez: arraste para trás em qualquer ponto da arena e solte.' : 'Escolha um pin abaixo.';
-  if (phase.value === 'rolling') return rollOwner === 'me' ? 'Seu pin está rolando…' : 'O adversário disparou…';
+  if (phase.value === 'rolling') return rollOwner === 'me' ? 'Seu pin está rolando…' : pvpMatch.value ? 'O amigo disparou…' : 'O adversário disparou…';
   if (phase.value === 'over' && result.value) return result.value.won ? 'Partida encerrada: você venceu.' : 'Partida encerrada.';
   return message.value;
 });
@@ -881,29 +1192,55 @@ const floorLegend = computed(() => floorMarks.value.map((k) => ({ key: k, name: 
 
 const MAX_MINE = MAX_PER_SIDE[0];
 const MAX_ENEMY = MAX_PER_SIDE[1];
+interface Slot { id: string; name: string; card: CachedCard | null }
 const sideRows = computed(() => {
   const byId = new Map(cards.value.map((c) => [c.id, c]));
-  const slots = (ids: string[], max: number): (CachedCard | null)[] => Array.from({ length: max }, (_, i) => byId.get(ids[i] ?? '') ?? null);
+  const mineSlots = (max: number): (Slot | null)[] =>
+    Array.from({ length: max }, (_, i) => {
+      const card = byId.get(setup.value.mine[i] ?? '');
+      return card ? { id: card.id, name: card.name, card } : null;
+    });
+  if (mode.value === 'friend') {
+    const theirs = Array.from({ length: PVP_MAX_PINS }, (_, i): Slot | null => {
+      const spec = friend.specs[i];
+      return spec ? { id: spec.id, name: spec.name, card: null } : null;
+    });
+    return [
+      { role: 'mine', label: 'Você', slots: mineSlots(PVP_MAX_PINS) },
+      { role: 'enemy', label: friend.ready ? 'Amigo (pronto)' : 'Amigo', slots: theirs },
+    ];
+  }
+  const enemySlots = Array.from({ length: MAX_ENEMY }, (_, i): Slot | null => {
+    const card = byId.get(setup.value.enemy[i] ?? '');
+    return card ? { id: card.id, name: card.name, card } : null;
+  });
   return [
-    { role: 'mine', label: 'Você', slots: slots(setup.value.mine, MAX_MINE) },
-    { role: 'enemy', label: 'Adversários', slots: slots(setup.value.enemy, MAX_ENEMY) },
+    { role: 'mine', label: 'Você', slots: mineSlots(MAX_MINE) },
+    { role: 'enemy', label: 'Adversários', slots: enemySlots },
   ];
 });
 
 type OptionKey = 'shrink' | 'sound' | 'haptics' | 'marks';
-const optionRows: { key: OptionKey; title: string; hint: string }[] = [
+const allOptionRows: { key: OptionKey; title: string; hint: string }[] = [
   { key: 'shrink', title: 'Borda que encolhe', hint: 'Depois da 1ª rodada a arena diminui: uma linha tracejada avisa onde a borda vai parar.' },
   { key: 'marks', title: 'Marcas no chão', hint: 'Golpes elementais e Pancada mudam o chão (gelo, lama, poças…) e o chão reage.' },
   { key: 'sound', title: 'Sons', hint: 'Disparo, choques, chão que reage, quedas e fim da partida.' },
   { key: 'haptics', title: 'Vibração', hint: 'Só em celulares que deixam o navegador vibrar (iPhone não).' },
 ];
+/** No PvP só o anfitrião decide a borda e as marcas do chão; o convidado vê o que ele escolheu. */
+const optionRows = computed(() => (mode.value === 'friend' && frame.value === 'guest' ? allOptionRows.filter((o) => o.key === 'sound' || o.key === 'haptics') : allOptionRows));
 const optionsSummary = computed(() => {
-  const on = optionRows.filter((o) => setup.value[o.key]).length;
-  return on === optionRows.length ? 'tudo ligado' : on === 0 ? 'tudo desligado' : `${on} de ${optionRows.length} ligadas`;
+  const rows = optionRows.value;
+  const on = rows.filter((o) => setup.value[o.key]).length;
+  return on === rows.length ? 'tudo ligado' : on === 0 ? 'tudo desligado' : `${on} de ${rows.length} ligadas`;
 });
 
 /** A frase ao lado do botão Começar: o que falta ou o que vai acontecer. */
 const startNote = computed(() => {
+  if (mode.value === 'friend') {
+    if (frame.value === 'guest') return myReady.value ? 'Pronto! Aguardando o anfitrião começar.' : setup.value.mine.length === 0 ? 'Escolha ao menos 1 pin.' : `${setup.value.mine.length} pins escolhidos. Toque em «Estou pronto».`;
+    return friendBlocker.value ?? `${setup.value.mine.length} pins de cada lado. Pode começar.`;
+  }
   if (blocker.value && usable.value.length > 0) return blocker.value;
   if (usable.value.length === 0) return 'Escaneie cartas para ter pins.';
   return `${setup.value.mine.length} seus contra ${setup.value.enemy.length} adversários · ${DIFFICULTY_LABELS_PT[setup.value.difficulty]}`;
@@ -927,11 +1264,13 @@ const moveNote = computed(() => {
 function setFlag(key: OptionKey, on: boolean): void {
   setup.value = { ...setup.value, [key]: on };
   saveSetup(setup.value);
+  if (key === 'shrink') sendOptions();
 }
 
 function setMarks(on: boolean): void {
   setup.value = { ...setup.value, marks: on };
   saveSetup(setup.value);
+  sendOptions();
 }
 </script>
 
@@ -950,24 +1289,41 @@ function setMarks(on: boolean): void {
         </p>
       </header>
 
-      <section class="pn-card pn-teams" aria-label="Equipes">
+      <div class="diff pn-mode" role="group" aria-label="Contra quem jogar">
+        <button type="button" :class="{ on: mode === 'cpu' }" :aria-pressed="mode === 'cpu'" :disabled="phase === 'loading'" @click="mode = 'cpu'">Contra o computador</button>
+        <button type="button" :class="{ on: mode === 'friend' }" :aria-pressed="mode === 'friend'" :disabled="phase === 'loading'" @click="mode = 'friend'">Contra um amigo</button>
+      </div>
+
+      <p v-if="mode === 'friend' && roomNotice && !peer" class="message error" role="alert">{{ roomNotice }}</p>
+      <PvpLobby v-if="mode === 'friend' && !peer" @connected="onConnected" />
+
+      <p v-if="mode === 'friend' && peer" class="pn-room" role="status">
+        <i class="pn-room-dot" aria-hidden="true"></i>
+        Conectado com o amigo · você é {{ frame === 'host' ? 'o anfitrião' : 'o convidado' }}
+        <button type="button" class="pn-link" @click="leaveRoom">Sair da sala</button>
+      </p>
+
+      <section v-if="mode === 'cpu' || peer" class="pn-card pn-teams" aria-label="Equipes">
         <div v-for="side in sideRows" :key="side.role" class="pn-side" :class="side.role">
           <p class="pn-side-name">{{ side.label }} <b>{{ side.slots.filter(Boolean).length }}/{{ side.slots.length }}</b></p>
           <ul class="pn-slots">
             <li v-for="(slot, i) in side.slots" :key="i">
-              <button v-if="slot" type="button" class="pn-slot filled" :title="`Tirar ${slot.name}`" :aria-label="`Tirar ${slot.name} de ${side.label}`" @click="choose(slot, null)">
+              <button v-if="slot?.card" type="button" class="pn-slot filled" :title="`Tirar ${slot.name}`" :aria-label="`Tirar ${slot.name} de ${side.label}`" @click="choose(slot.card, null)">
                 <img v-if="thumbs[slot.id]" :src="thumbs[slot.id]" alt="" />
               </button>
+              <span v-else-if="slot" class="pn-slot filled" :title="slot.name" role="img" :aria-label="`${slot.name} (do amigo)`">
+                <img v-if="thumbs[slot.id]" :src="thumbs[slot.id]" alt="" />
+              </span>
               <span v-else class="pn-slot empty" aria-hidden="true"></span>
             </li>
           </ul>
         </div>
-        <div class="diff" role="group" aria-label="Dificuldade do adversário">
+        <div v-if="mode === 'cpu'" class="diff" role="group" aria-label="Dificuldade do adversário">
           <button v-for="d in DIFFICULTIES" :key="d" type="button" :class="{ on: setup.difficulty === d }" :aria-pressed="setup.difficulty === d" @click="setDifficulty(d)">{{ DIFFICULTY_LABELS_PT[d] }}</button>
         </div>
       </section>
 
-      <section class="pn-card pn-pick">
+      <section v-if="mode === 'cpu' || peer" class="pn-card pn-pick">
         <h3>Escolha os pins</h3>
         <p v-if="loadingCards" class="message">Lendo as cartas guardadas…</p>
         <p v-else-if="usable.length === 0" class="message">Nenhuma carta guardada com Pokémon ainda. <a :href="routeHref('escanear')">Escaneie uma carta</a> para ter pins.</p>
@@ -977,7 +1333,7 @@ function setMarks(on: boolean): void {
             <button type="button" class="pn-link" @click="useRecent">Mais recentes</button>
           </div>
           <ul class="pin-rows">
-            <li v-for="card in shown" :key="card.id" :class="roleOf(setup, card.id) ?? ''">
+            <li v-for="card in shown" :key="card.id" :class="roleShown(card) ?? ''">
               <span class="row-thumb" aria-hidden="true"><img v-if="thumbs[card.id]" :src="thumbs[card.id]" alt="" /></span>
               <span class="row-text">
                 <strong>{{ card.name }}</strong>
@@ -990,8 +1346,8 @@ function setMarks(on: boolean): void {
                 </small>
               </span>
               <span class="row-roles" role="group" :aria-label="`Papel de ${card.name}`">
-                <button type="button" class="r-mine" :class="{ on: roleOf(setup, card.id) === 'mine' }" :aria-pressed="roleOf(setup, card.id) === 'mine'" title="Seu pin" @click="choose(card, roleOf(setup, card.id) === 'mine' ? null : 'mine')">Meu</button>
-                <button type="button" class="r-enemy" :class="{ on: roleOf(setup, card.id) === 'enemy' }" :aria-pressed="roleOf(setup, card.id) === 'enemy'" title="Adversário" @click="choose(card, roleOf(setup, card.id) === 'enemy' ? null : 'enemy')">Inimigo</button>
+                <button type="button" class="r-mine" :class="{ on: roleShown(card) === 'mine' }" :aria-pressed="roleShown(card) === 'mine'" title="Seu pin" @click="choose(card, roleShown(card) === 'mine' ? null : 'mine')">Meu</button>
+                <button v-if="mode === 'cpu'" type="button" class="r-enemy" :class="{ on: roleShown(card) === 'enemy' }" :aria-pressed="roleShown(card) === 'enemy'" title="Adversário" @click="choose(card, roleShown(card) === 'enemy' ? null : 'enemy')">Inimigo</button>
               </span>
             </li>
           </ul>
@@ -999,8 +1355,9 @@ function setMarks(on: boolean): void {
         <p v-if="notice" class="message" role="alert">{{ notice }}</p>
       </section>
 
-      <details class="pn-card pn-opts">
+      <details v-if="mode === 'cpu' || peer" class="pn-card pn-opts">
         <summary>Opções da partida <small>{{ optionsSummary }}</small></summary>
+        <p v-if="mode === 'friend' && frame === 'guest'" class="pn-opts-note">Borda que encolhe: {{ friend.shrink ? 'ligada' : 'desligada' }} · Marcas no chão: {{ friend.marks ? 'ligadas' : 'desligadas' }} (o anfitrião escolhe).</p>
         <label v-for="o in optionRows" :key="o.key" class="pn-switch">
           <span class="pn-switch-text"><strong>{{ o.title }}</strong><small>{{ o.hint }}</small></span>
           <input type="checkbox" role="switch" :checked="setup[o.key]" @change="o.key === 'marks' ? setMarks(($event.target as HTMLInputElement).checked) : setFlag(o.key, ($event.target as HTMLInputElement).checked)" />
@@ -1008,7 +1365,7 @@ function setMarks(on: boolean): void {
         </label>
       </details>
 
-      <details class="pn-card pn-how">
+      <details v-if="mode === 'cpu' || peer" class="pn-card pn-how">
         <summary>Como funciona o chão</summary>
         <ul class="legend">
           <li v-for="l in legend" :key="l.key"><strong>{{ l.name }}</strong> <small>{{ l.hint }}</small></li>
@@ -1021,16 +1378,21 @@ function setMarks(on: boolean): void {
         </p>
       </details>
 
-      <div class="pn-start">
+      <div v-if="mode === 'cpu'" class="pn-start">
         <p class="pn-start-note" :class="{ warn: blocker !== null && usable.length > 0 }">{{ startNote }}</p>
         <button type="button" class="primary" :disabled="phase === 'loading' || blocker !== null || loadingCards" @click="start">{{ phase === 'loading' ? 'Preparando a arena…' : 'Começar' }}</button>
+      </div>
+      <div v-else-if="peer" class="pn-start">
+        <p class="pn-start-note" :class="{ warn: frame === 'host' && friendBlocker !== null }">{{ startNote }}</p>
+        <button v-if="frame === 'host'" type="button" class="primary" :disabled="phase === 'loading' || friendBlocker !== null" @click="startPvp">{{ phase === 'loading' ? 'Preparando a arena…' : 'Começar' }}</button>
+        <button v-else type="button" class="primary" :disabled="phase === 'loading' || setup.mine.length === 0" @click="setReady(!myReady)">{{ myReady ? 'Cancelar' : 'Estou pronto' }}</button>
       </div>
     </template>
 
     <template v-else>
       <div class="pins-hud">
         <p class="hud-line">
-          <span class="pn-chip gold"><span class="bolt" aria-hidden="true"></span><strong>{{ energy }}</strong></span>
+          <span class="pn-chip gold"><span class="bolt" aria-hidden="true"></span><strong>{{ pvpMatch ? '∞' : energy }}</strong></span>
           <span class="pn-score" :aria-label="`Você ${counts.mine}, adversários ${counts.enemy}`">
             <span class="sides mine"><i></i>{{ counts.mine }}</span>
             <span class="sides enemy"><i></i>{{ counts.enemy }}</span>
@@ -1056,17 +1418,22 @@ function setMarks(on: boolean): void {
         <div ref="spriteLayer" class="pin-sprites" aria-hidden="true"></div>
         <button v-if="replaying" type="button" class="pin-skip" @click.stop="stopReplay">Pular repetição</button>
         <div v-if="phase === 'over' && result && !replaying" class="pin-over" :class="result.won ? 'won' : 'lost'" role="dialog" aria-label="Fim da partida">
-          <span class="pn-over-mark" aria-hidden="true">{{ result.won ? '★' : result.reason === 'energia' ? '⚡' : '✕' }}</span>
-          <strong>{{ result.won ? 'Você venceu!' : result.reason === 'energia' ? 'Acabou a energia' : 'Você perdeu' }}</strong>
+          <span class="pn-over-mark" aria-hidden="true">{{ result.won ? '★' : result.reason === 'energia' ? '⚡' : result.reason === 'empate' ? '＝' : result.reason === 'saiu' ? '…' : '✕' }}</span>
+          <strong>{{ result.won ? 'Você venceu!' : result.reason === 'energia' ? 'Acabou a energia' : result.reason === 'empate' ? 'Empate!' : result.reason === 'saiu' ? 'O amigo saiu' : 'Você perdeu' }}</strong>
           <p class="pn-over-stats">
             <span>{{ result.shots }} disparo{{ result.shots === 1 ? '' : 's' }}</span>
-            <span v-if="result.won">nota {{ result.score }}</span>
+            <span v-if="result.won && !pvpMatch">nota {{ result.score }}</span>
           </p>
-          <p v-if="result.won">Todos os adversários caíram.</p>
+          <p v-if="result.reason === 'saiu'">A conexão com o amigo acabou. Você pode escolher os pins de novo e criar outra sala.</p>
+          <p v-else-if="result.reason === 'empate'">Os dois lados perderam o último pin na mesma jogada.</p>
+          <p v-else-if="result.won && pvpMatch">Todos os pins do seu amigo caíram.</p>
+          <p v-else-if="result.won">Todos os adversários caíram.</p>
           <p v-else-if="result.reason === 'energia'">Nenhum pin seu cabe na energia que sobrou. Ganhe XP escaneando cartas ou jogando <a :href="routeHref('treinador')">minigames</a>.</p>
+          <p v-else-if="pvpMatch">Todos os seus pins caíram.</p>
           <p v-else>Seus pins caíram todos da arena.</p>
           <div class="game-actions">
-            <button type="button" class="primary" @click="again">Jogar de novo</button>
+            <button v-if="!pvpMatch || (frame === 'host' && peer)" type="button" class="primary" @click="again">Jogar de novo</button>
+            <p v-else-if="peer" class="pn-over-wait">Aguardando o anfitrião jogar de novo…</p>
             <button v-if="canReplay" type="button" @click="startReplay">Ver a repetição</button>
             <button type="button" @click="backToSetup">Trocar pins</button>
           </div>
