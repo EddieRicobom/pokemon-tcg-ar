@@ -14,7 +14,7 @@ Projeto de fã, não oficial. Pokémon e os nomes, imagens e sprites relacionado
 | **Várias** | Rastreia até 4 cartas da equipe ao mesmo tempo, cada uma com o seu Pokémon. |
 | **Caixa** | Solta a equipe (até 6) num quadrado do chão visto pela câmera, usando o giroscópio. **Batalhar** faz os Pokémon lutarem sozinhos (todos contra todos, em equipes ou 3 contra 3) numa arena pequena com chão em pixel art que os golpes elementais marcam à frente do olhar, com personalidades, defesa, condições, golpes encenados por tipo, luz e sons dos golpes e câmera de cinema. |
 | **Cartas** | As cartas guardadas no aparelho: busca, filtros, ordem, equipe, ver em AR, remover. |
-| **Treinador** | Nível e XP, sequência de dias, 3 missões por dia, progresso por coleção e conquistas, tudo ganho escaneando cartas e vendo batalhas. Fica só no aparelho. |
+| **Treinador** | Nível e XP, sequência de dias, 3 missões por dia, progresso por coleção e conquistas, tudo ganho escaneando cartas, vendo batalhas e jogando os **minigames** com as suas cartas (Quem é esse Pokémon?, com sorteio por geração ou aleatório, Duelo de tipos e Memória). Fica só no aparelho. |
 | **Diagnóstico** | Capacidades do aparelho (HTTPS, câmera, WebGL2, Service Worker), estado do índice do catálogo, cartas guardadas e a última leitura (resultado, confiança, tempos, texto do OCR). Em Escanear, "Mostrar o que o app está vendo" desenha o contorno e as miniaturas. |
 
 Detalhes e limites de cada parte: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

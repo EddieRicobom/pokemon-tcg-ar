@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { loadPieces } from '../app/game-pieces';
+import type { LoadedPieces } from '../app/game-pieces';
 import { routeHref } from '../app/route';
-import { trainer } from '../app/trainer-store';
+import { getCache } from '../app/services';
+import { recordEvent, trainer } from '../app/trainer-store';
+import MinigameMemoria from '../components/MinigameMemoria.vue';
+import MinigameQuem from '../components/MinigameQuem.vue';
+import MinigameTipos from '../components/MinigameTipos.vue';
+import { GAME_LABELS_PT, gameBlocker } from '../core/minigames';
+import type { GameId, Grade } from '../core/minigames';
 import { ACHIEVEMENTS, dayKey, levelProgress, missionsFor, previousDay, XP } from '../core/trainer';
 
 const today = computed(() => dayKey(new Date()));
@@ -39,12 +47,52 @@ const achievements = computed(() =>
 );
 const unlockedCount = computed(() => achievements.value.filter((a) => a.unlocked).length);
 const cardCount = computed(() => trainer.value.cardIds.length);
+
+// ---- minigames
+const GAMES: GameId[] = ['quem', 'tipos', 'memoria'];
+const loaded = ref<LoadedPieces | null>(null);
+const active = ref<GameId | null>(null);
+const loadingPieces = ref(true);
+
+const gameRows = computed(() =>
+  GAMES.map((id) => ({
+    id,
+    ...GAME_LABELS_PT[id],
+    blocker: loadingPieces.value ? null : gameBlocker(id, loaded.value?.pieces ?? []),
+    best: trainer.value.games[id]?.best ?? null,
+    played: trainer.value.games[id]?.played ?? 0,
+  })),
+);
+
+onMounted(async () => {
+  try {
+    loaded.value = await loadPieces(await getCache());
+  } catch {
+    loaded.value = null;
+  } finally {
+    loadingPieces.value = false;
+  }
+});
+onBeforeUnmount(() => loaded.value?.release());
+
+function onFinished(game: GameId, grade: Grade): void {
+  recordEvent({ type: 'minigame', game, won: grade.won, score: grade.score });
+}
 </script>
 
 <template>
   <section class="trainer" aria-labelledby="trainer-title">
     <h2 id="trainer-title" class="sr-only">Treinador</h2>
 
+    <div v-if="active" class="card">
+      <h2>{{ GAME_LABELS_PT[active].title }}</h2>
+      <MinigameQuem v-if="active === 'quem'" :pieces="loaded?.pieces ?? []" :urls="loaded?.urls ?? new Map()" @finished="(g) => onFinished('quem', g)" @leave="active = null" />
+      <MinigameTipos v-else-if="active === 'tipos'" @finished="(g) => onFinished('tipos', g)" @leave="active = null" />
+      <MinigameMemoria v-else :pieces="loaded?.pieces ?? []" :urls="loaded?.urls ?? new Map()" @finished="(g) => onFinished('memoria', g)" @leave="active = null" />
+      <button type="button" class="link game-back" @click="active = null">Voltar ao Treinador</button>
+    </div>
+
+    <template v-else>
     <div class="card trainer-head">
       <div class="level-ring" role="img" :aria-label="`Nível ${progress.level}, ${Math.round(progress.frac * 100)}% do caminho para o próximo`">
         <svg viewBox="0 0 100 100" aria-hidden="true">
@@ -85,11 +133,28 @@ const cardCount = computed(() => trainer.value.cardIds.length);
     </div>
 
     <div class="card">
+      <h2>Minigames</h2>
+      <ul class="games">
+        <li v-for="g in gameRows" :key="g.id">
+          <span class="g-text">
+            <strong>{{ g.title }}</strong>
+            <small>{{ g.blurb }}</small>
+            <small v-if="g.blocker" class="g-blocker">{{ g.blocker }}</small>
+            <small v-else-if="g.best !== null" class="g-best">Melhor: {{ g.best }} pontos · {{ g.played }} partida{{ g.played === 1 ? '' : 's' }}</small>
+          </span>
+          <button type="button" class="primary" :disabled="loadingPieces || g.blocker !== null" @click="active = g.id">Jogar</button>
+        </li>
+      </ul>
+      <p class="note">Vencer rende {{ XP.minigameWin }} XP (nas {{ XP.minigamesPerDay }} primeiras vitórias do dia). Quanto mais cartas você escanear, mais jogos libera.</p>
+    </div>
+
+    <div class="card">
       <h2>Como ganhar XP</h2>
       <ul class="earn">
         <li><b>+{{ XP.newCard }}</b> carta nova escaneada</li>
         <li><b>+{{ XP.repeatCardDaily }}</b> carta já conhecida (a primeira leitura de cada dia)</li>
         <li><b>+{{ XP.battle }}</b> batalha vista até o fim (as {{ XP.battlesPerDay }} primeiras do dia)</li>
+        <li><b>+{{ XP.minigameWin }}</b> minigame vencido (as {{ XP.minigamesPerDay }} primeiras do dia)</li>
         <li><b>+{{ XP.streakPerDay }}</b> por dia de sequência, até +{{ XP.streakMax }}, no primeiro feito do dia</li>
       </ul>
       <a class="primary link-button" :href="routeHref('escanear')">Escanear uma carta</a>
@@ -117,5 +182,6 @@ const cardCount = computed(() => trainer.value.cardIds.length);
         </li>
       </ul>
     </div>
+    </template>
   </section>
 </template>

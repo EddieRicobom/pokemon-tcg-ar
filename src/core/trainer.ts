@@ -20,6 +20,8 @@ export const XP = {
   streakPerDay: 5,
   streakMax: 50,
   minigameWin: 20,
+  /** Só os primeiros minigames vencidos do dia rendem XP. */
+  minigamesPerDay: 5,
 } as const;
 
 /** XP total para chegar ao nível `level` (nível 1 = 0). */
@@ -96,17 +98,19 @@ export interface TrainerState {
   teamBattles: number;
   minigames: number;
   minigameWins: number;
+  /** Por minigame: partidas jogadas e melhor pontuação (0–100, quanto maior melhor). */
+  games: Record<string, { played: number; best: number }>;
   streak: { current: number; best: number; lastDay: string };
   /** Hoje: cartas que já valeram XP e progresso das missões. */
-  today: { day: string; cards: string[]; battles: number; progress: Partial<Record<MissionKind, number>>; done: string[]; bonus: boolean };
+  today: { day: string; cards: string[]; battles: number; minigames: number; progress: Partial<Record<MissionKind, number>>; done: string[]; bonus: boolean };
   achievements: Record<string, string>;
 }
 
 export function emptyTrainer(): TrainerState {
   return {
-    v: TRAINER_VERSION, xp: 0, cardIds: [], sets: {}, scans: 0, battles: 0, teamBattles: 0, minigames: 0, minigameWins: 0,
+    v: TRAINER_VERSION, xp: 0, cardIds: [], sets: {}, scans: 0, battles: 0, teamBattles: 0, minigames: 0, minigameWins: 0, games: {},
     streak: { current: 0, best: 0, lastDay: '' },
-    today: { day: '', cards: [], battles: 0, progress: {}, done: [], bonus: false },
+    today: { day: '', cards: [], battles: 0, minigames: 0, progress: {}, done: [], bonus: false },
     achievements: {},
   };
 }
@@ -114,7 +118,7 @@ export function emptyTrainer(): TrainerState {
 export type TrainerEvent =
   | { type: 'scan'; cardId: string; setId: string; setName: string; setTotal: number }
   | { type: 'battle'; team: boolean }
-  | { type: 'minigame'; game: string; won: boolean };
+  | { type: 'minigame'; game: string; won: boolean; score: number };
 
 export type RewardTone = 'xp' | 'new' | 'mission' | 'level' | 'achievement' | 'streak';
 
@@ -139,7 +143,7 @@ export function previousDay(day: string): string {
 }
 
 /** Missões e conquistas de minigame só valem quando os minigames existem no app. */
-export const MINIGAMES_ENABLED = false;
+export const MINIGAMES_ENABLED = true;
 
 const MISSION_POOL: MissionDef[][] = [
   [
@@ -204,6 +208,7 @@ const ALL_ACHIEVEMENTS: AchievementDef[] = [
   { id: 'equipe', title: 'Jogo de equipe', hint: 'Faça uma batalha em equipes ou 3 contra 3.', test: (s) => s.teamBattles >= 1 },
   { id: 'minigame-1', title: 'Hora do jogo', hint: 'Jogue um minigame.', test: (s) => s.minigames >= 1 },
   { id: 'minigame-10', title: 'Viciado em minigames', hint: 'Vença 10 minigames.', test: (s) => s.minigameWins >= 10 },
+  { id: 'minigame-perfeito', title: 'Gabaritou', hint: 'Faça 100 pontos num minigame.', test: (s) => Object.values(s.games).some((g) => g.best >= 100) },
   { id: 'nivel-5', title: 'Nível 5', hint: 'Chegue ao nível 5.', test: (s) => levelOf(s.xp) >= 5 },
   { id: 'nivel-10', title: 'Nível 10', hint: 'Chegue ao nível 10.', test: (s) => levelOf(s.xp) >= 10 },
 ];
@@ -225,7 +230,7 @@ export interface Applied {
 /** Começa o dia: zera o que é diário e mexe na sequência. Devolve o bônus de sequência da primeira atividade do dia. */
 function startDay(s: TrainerState, day: string, rewards: Reward[]): number {
   if (s.today.day === day) return 0;
-  s.today = { day, cards: [], battles: 0, progress: {}, done: [], bonus: false };
+  s.today = { day, cards: [], battles: 0, minigames: 0, progress: {}, done: [], bonus: false };
   const last = s.streak.lastDay;
   s.streak.current = last === previousDay(day) ? s.streak.current + 1 : 1;
   s.streak.best = Math.max(s.streak.best, s.streak.current);
@@ -296,10 +301,16 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
     if (event.team) gain += bump(s, 'team', rewards);
   } else {
     s.minigames++;
+    s.today.minigames++;
+    const stats = (s.games[event.game] ??= { played: 0, best: 0 });
+    stats.played++;
+    stats.best = Math.max(stats.best, Math.max(0, Math.min(100, Math.round(event.score))));
     if (event.won) {
       s.minigameWins++;
-      gain += XP.minigameWin;
-      rewards.push({ text: 'Minigame vencido!', sub: `+${XP.minigameWin} XP`, tone: 'xp' });
+      if (s.today.minigames <= XP.minigamesPerDay) {
+        gain += XP.minigameWin;
+        rewards.push({ text: 'Minigame vencido!', sub: `+${XP.minigameWin} XP`, tone: 'xp' });
+      }
     }
     gain += bump(s, 'play', rewards);
   }
@@ -344,6 +355,10 @@ export function normalizeTrainer(raw: unknown): TrainerState {
       if (v && typeof v.name === 'string') sets[id] = { name: v.name, total: num(v.total), ids: strs(v.ids) };
     }
   }
+  const games: Record<string, { played: number; best: number }> = {};
+  if (r.games && typeof r.games === 'object') {
+    for (const [id, g] of Object.entries(r.games)) if (g && typeof g === 'object') games[id] = { played: num(g.played), best: Math.min(100, num(g.best)) };
+  }
   const achievements: Record<string, string> = {};
   if (r.achievements && typeof r.achievements === 'object') {
     for (const [id, day] of Object.entries(r.achievements)) if (typeof day === 'string') achievements[id] = day;
@@ -354,9 +369,9 @@ export function normalizeTrainer(raw: unknown): TrainerState {
     if (value) progress[kind] = num(value);
   }
   return {
-    v: TRAINER_VERSION, xp: num(r.xp), cardIds: strs(r.cardIds), sets, scans: num(r.scans), battles: num(r.battles), teamBattles: num(r.teamBattles), minigames: num(r.minigames), minigameWins: num(r.minigameWins),
+    v: TRAINER_VERSION, xp: num(r.xp), cardIds: strs(r.cardIds), sets, scans: num(r.scans), battles: num(r.battles), teamBattles: num(r.teamBattles), minigames: num(r.minigames), minigameWins: num(r.minigameWins), games,
     streak: { current: num(r.streak?.current), best: num(r.streak?.best), lastDay: typeof r.streak?.lastDay === 'string' ? r.streak.lastDay : '' },
-    today: { day: typeof r.today?.day === 'string' ? r.today.day : '', cards: strs(r.today?.cards), battles: num(r.today?.battles), progress, done: strs(r.today?.done), bonus: r.today?.bonus === true },
+    today: { day: typeof r.today?.day === 'string' ? r.today.day : '', cards: strs(r.today?.cards), battles: num(r.today?.battles), minigames: num(r.today?.minigames), progress, done: strs(r.today?.done), bonus: r.today?.bonus === true },
     achievements,
   };
 }

@@ -2101,7 +2101,7 @@ button.link {
 
 .reward-toasts {
   position: fixed;
-  top: calc(max(10px, env(safe-area-inset-top)) + 96px);
+  top: max(8px, env(safe-area-inset-top));
   left: 0;
   right: 0;
   z-index: 80;
@@ -2109,6 +2109,11 @@ button.link {
   justify-items: center;
   gap: 6px;
   pointer-events: none;
+}
+
+/* Nas telas com câmera (rolagem travada) o topo é dos avisos da câmera: os de recompensa descem um pouco. */
+body.no-scroll .reward-toasts {
+  top: calc(max(10px, env(safe-area-inset-top)) + 96px);
 }
 
 .reward {
@@ -2145,4 +2150,207 @@ button.link {
 
 .reward.tone-streak {
   border-color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- Minigames */
+
+.games {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.games li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.g-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.g-text small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.g-text .g-blocker {
+  color: var(--pending);
+}
+
+.g-text .g-best {
+  color: var(--gold);
+}
+
+.game {
+  display: grid;
+  gap: 12px;
+}
+
+.game-step {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.game-back {
+  margin-top: 10px;
+}
+
+.silhouette-stage {
+  display: grid;
+  place-items: center;
+  height: 200px;
+  border-radius: var(--radius-sm);
+  background: radial-gradient(circle at 50% 60%, var(--surface-2), var(--bg));
+  border: 1px solid var(--line);
+}
+
+.silhouette {
+  max-width: 70%;
+  max-height: 170px;
+  image-rendering: pixelated;
+  filter: brightness(0);
+  transition: filter 300ms ease-out;
+}
+
+.silhouette.shown {
+  filter: none;
+}
+
+.game-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.game-options button {
+  min-height: 48px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+
+.game-options button.right {
+  border-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 25%, var(--surface-2));
+}
+
+.game-options button.wrong {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 22%, var(--surface-2));
+}
+
+.game-options button:disabled:not(.right):not(.wrong) {
+  opacity: 0.6;
+}
+
+.source-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.source {
+  display: grid;
+  gap: 1px;
+  min-height: 52px;
+  padding: 8px 10px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.source small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.source.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
+}
+
+.source:disabled {
+  opacity: 0.55;
+}
+
+.game-error {
+  margin: 0;
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.game-feedback {
+  margin: 0;
+  font-weight: 700;
+}
+
+.game-result {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+}
+
+.game-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.type-duel {
+  margin: 0;
+  line-height: 2.1;
+}
+
+.type-chip {
+  display: inline-block;
+  padding: 1px 10px;
+  border-radius: 999px;
+  color: #10151f;
+  font-weight: 800;
+}
+
+.memory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.memory-tile {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 3 / 4;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  background: linear-gradient(135deg, var(--accent), #a8342c);
+  overflow: hidden;
+}
+
+.memory-tile.up {
+  background: var(--surface-2);
+}
+
+.memory-tile.found {
+  border-color: var(--ok);
+}
+
+.memory-tile img {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
 }
