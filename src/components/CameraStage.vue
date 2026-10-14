@@ -7,6 +7,7 @@ import type { SpriteOverlay } from '../ar/overlay';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { decodeGif, describeGifError, fetchGif, type DecodedGif } from '../core/gif';
 import { isValidDexId, pokemonSpriteUrl } from '../ar/sprite-url';
+import { loadChunk } from '../app/stale-build';
 
 type CameraState = 'idle' | 'starting' | 'on';
 
@@ -62,7 +63,7 @@ async function showGif(gif: DecodedGif, label: string): Promise<void> {
 
   if (!overlay) {
     // Three.js só é baixado quando o usuário realmente testa o renderizador.
-    const { SpriteOverlay } = await import('../ar/overlay');
+    const { SpriteOverlay } = await loadChunk(() => import('../ar/overlay'));
     if (disposed) return;
     try {
       overlay = new SpriteOverlay(canvas);

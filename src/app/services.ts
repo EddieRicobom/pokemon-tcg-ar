@@ -14,6 +14,7 @@ import type { OcrEngine } from '../recognition/ocr';
 import { RecognitionPipeline } from '../recognition/pipeline';
 import { TcgdexClient } from '../recognition/tcgdex';
 import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from '../recognition/types';
+import { loadChunk } from './stale-build';
 
 /**
  * Serviços do app, criados sob demanda e uma vez só (nada pesado é carregado antes de o usuário
@@ -60,7 +61,7 @@ export function getCache(): Promise<CardCache> {
       db: await openCacheDb(),
       assets: backend,
       // O alvo de AR é compilado aqui, no aparelho, a partir da imagem de referência (MindAR carregado sob demanda).
-      buildTarget: async (reference) => (await import('../ar/target')).compileTarget(reference),
+      buildTarget: async (reference) => (await loadChunk(() => import('../ar/target'))).compileTarget(reference),
       decodeReference: (blob) => blobToRgba(blob, CARD_WIDTH_PX, CARD_HEIGHT_PX),
       // Cada leitura gravada rende XP no Treinador.
       onRecorded: (card) => recordEvent({ type: 'scan', cardId: card.id, setId: card.setId, setName: card.setName, setTotal: card.setOfficial }),
