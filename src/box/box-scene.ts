@@ -11,6 +11,7 @@ import { createWander, separate, stepToward, stepWander } from './wander';
 import { arenaFrame, arenaRadii } from './arena';
 import { BattleDirector } from './battle-director';
 import { FxLights } from './fx-lights';
+import { Ground } from './ground';
 import type { SoundSink } from './sound-recipes';
 import type { BattleHud } from './battle-director';
 import { simulateBattle } from '../core/battle';
@@ -57,6 +58,9 @@ export class BoxScene {
   /** Luzes dos golpes e do ambiente, compartilhadas por todos os sprites. */
   readonly fx = new FxLights();
   private lighting = true;
+  /** Chão em pixel art e terreno que muda com os golpes. */
+  private terrain = true;
+  private boxGround: Ground | null = null;
   /** Quem toca os sons das próximas batalhas (null = mudo). */
   private sound: SoundSink | null = null;
   private readonly envTarget = new Vector3(1, 1, 1);
@@ -133,14 +137,21 @@ export class BoxScene {
       (disposable.material as MeshBasicMaterial | LineBasicMaterial | undefined)?.dispose();
       this.floor.remove(child);
     }
+    this.boxGround?.dispose();
+    this.boxGround = null;
     const y = 0.002;
     const h = this.half;
     const plane = new Mesh(
       new PlaneGeometry(h * 2, h * 2),
-      new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, depthWrite: false }),
+      new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: this.terrain ? 0 : 0.1, depthWrite: false }),
     );
     plane.rotation.x = -Math.PI / 2;
     plane.position.y = y;
+    if (this.terrain) {
+      // Chão em pixel art do tamanho da caixa; os enfeites ficam só na borda, para não tapar quem passeia.
+      this.boxGround = new Ground({ halfW: h, halfD: h, shape: 'square', seed: 11, cols: Math.min(30, Math.max(10, Math.round((h * 2) / 0.2))), decor: Math.round(10 + h * 6), decorUnit: 0.2, opacity: 0.92 });
+      this.floor.add(this.boxGround.group);
+    }
     const outline = new LineLoop(
       new BufferGeometry().setAttribute('position', new Float32BufferAttribute([-h, y, -h, h, y, -h, h, y, h, -h, y, h], 3)),
       new LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
@@ -175,6 +186,22 @@ export class BoxScene {
   setLighting(on: boolean): void {
     this.lighting = on;
     if (this.director) this.director.lighting = on;
+  }
+
+  /** Liga ou desliga o chão em pixel art (na caixa e na arena) e as marcas dos golpes. Vale já na caixa e na próxima batalha. */
+  setTerrain(on: boolean): void {
+    this.terrain = on;
+    this.rebuildFloor();
+  }
+
+  /** O chão da arena em batalha (null fora de batalha ou com o terreno desligado). */
+  get battleGround(): Ground | null {
+    return this.director?.ground ?? null;
+  }
+
+  /** O chão em pixel art da caixa (null com o terreno desligado). */
+  get groundOfBox(): Ground | null {
+    return this.boxGround;
   }
 
   /** Define quem toca os sons da batalha (vale a partir da próxima batalha). */
@@ -215,7 +242,7 @@ export class BoxScene {
     this.benched = new Set(this.creatures.filter((c) => !fighting.includes(c)));
     this.floor.visible = false;
     this.director = new BattleDirector({
-      fighters, creatures: fighting, result, root: this.battleRoot, camera: this.camera, rx, rz, rng, sound: this.sound ?? undefined,
+      fighters, creatures: fighting, result, root: this.battleRoot, camera: this.camera, rx, rz, rng, sound: this.sound ?? undefined, terrain: this.terrain,
     });
     this.director.lighting = this.lighting;
     return result;
@@ -304,6 +331,13 @@ export class BoxScene {
       this.fx.setAmbient(1, 1, 1);
       this.fx.setLights([], null);
     }
+    // O chão e os enfeites seguem a luz do ambiente e escurecem no foco dos golpes, como os Pokémon.
+    const groundDim = this.lighting ? 1 - Math.min(0.55, (this.director?.ambientDim ?? 0) * 1.6) : 1;
+    const gx = this.lighting ? Math.min(1.1, this.env.x * groundDim) : 1;
+    const gy = this.lighting ? Math.min(1.1, this.env.y * groundDim) : 1;
+    const gz = this.lighting ? Math.min(1.1, this.env.z * groundDim) : 1;
+    this.boxGround?.setTint(gx, gy, gz);
+    this.director?.ground?.setTint(gx, gy, gz);
     this.camera.updateMatrixWorld(true);
     const right = this.director ? this.battleRight : new Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
     right.y = 0;

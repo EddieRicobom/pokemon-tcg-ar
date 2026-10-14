@@ -17,6 +17,7 @@ import { FloorPools } from './fx-lights';
 import type { SoundCue, SoundSink } from './sound-recipes';
 import type { FxLight } from './fx-lights';
 import { stepToward } from './wander';
+import type { Ground } from './ground';
 
 export type LabelTone = 'damage' | 'crit' | 'good' | 'bad' | 'miss' | 'info' | 'status';
 
@@ -124,6 +125,8 @@ export interface DirectorOptions {
   rng: Rng;
   /** Quem toca os sons da batalha (opcional: sem ele a batalha é muda). */
   sound?: SoundSink;
+  /** Chão em pixel art que os golpes elementais marcam (padrão: desligado). */
+  terrain?: boolean;
 }
 
 // ----------------------------------------------------------------------------- tempos de cada golpe (ms)
@@ -352,7 +355,7 @@ export class BattleDirector {
       c.state.vx = 0;
       c.state.vz = 0;
     });
-    this.stage = new ArenaStage(o.rx, o.rz);
+    this.stage = new ArenaStage(o.rx, o.rz, o.terrain === true, o.terrain === true ? Math.floor(o.rng() * 0x7fffffff) : 1);
     this.spotlight = new Sprite(new SpriteMaterial({ map: glowMap(), color: 0xffe27a, transparent: true, blending: AdditiveBlending, depthWrite: false, opacity: 0.7 }));
     this.spotlight.visible = false;
     o.root.add(this.stage.group, this.pools.group, this.spotlight, this.particles.group, this.rings.group, this.bolt.group);
@@ -984,6 +987,20 @@ export class BattleDirector {
     }
   }
 
+  /** O golpe elemental deixa a marca dele no chão onde caiu; certas combinações reagem (água apaga fogo...). */
+  private markTerrain(turn: BattleTurn, strength: number): void {
+    const ground = this.stage.ground;
+    if (!ground) return;
+    const c = this.o.creatures[turn.target]!.state;
+    const hit = ground.hit(turn.move.type, c.x, c.z, strength);
+    if (hit?.reaction) this.addLabel(hit.reaction.text, 'info', hit.reaction.color, this.top(turn.target, 0.3), 1.15);
+  }
+
+  /** O chão em pixel art da arena (null com o terreno desligado). */
+  get ground(): Ground | null {
+    return this.stage.ground;
+  }
+
   private impact(turn: BattleTurn): void {
     this.impactDone = true;
     this.projectile.visible = false;
@@ -1010,6 +1027,7 @@ export class BattleDirector {
     const guarded = turn.guardedHit === true;
     const strength = (guarded ? 0.5 : 0.8) * Math.sqrt(turn.effectiveness) * (turn.critical ? 1.4 : 1);
     emitImpact(this.particles, this.rings, at, type, strength, this.o.rng);
+    this.markTerrain(turn, strength);
     this.cue({ kind: 'impact', type, strength, critical: turn.critical, effectiveness: turn.effectiveness, guarded });
     this.flashUntil[target] = this.clock + 320;
     this.flashColor[target] = hitTint(type);

@@ -1,3 +1,4 @@
+import { Ground } from './ground';
 import { AdditiveBlending, CircleGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, RingGeometry, Vector3 } from 'three';
 
 /**
@@ -70,6 +71,8 @@ export function arenaFrame(
 /** Piso da arena: disco escuro, borda que acende na cor do golpe e anel interno. */
 export class ArenaStage {
   readonly group = new Group();
+  /** Chão em pixel art (null quando o terreno está desligado: só o disco escuro de antes). */
+  readonly ground: Ground | null;
   private readonly disc: Mesh<CircleGeometry, MeshBasicMaterial>;
   private readonly rim: Mesh<RingGeometry, MeshBasicMaterial>;
   private readonly inner: Mesh<RingGeometry, MeshBasicMaterial>;
@@ -78,11 +81,16 @@ export class ArenaStage {
   private time = 0;
   private appear = 0;
 
-  constructor(readonly rx: number, readonly rz: number) {
+  constructor(readonly rx: number, readonly rz: number, terrain = false, seed = 1) {
+    // Com terreno o chão é maior que o disco de antes; a borda que acende acompanha a borda do chão.
+    const ringX = terrain ? rx * 1.28 : rx * 1.15;
+    const ringZ = terrain ? rz * 1.5 : rz * 1.25;
     const flat = (mesh: Mesh): void => {
       mesh.rotation.x = -Math.PI / 2;
-      mesh.scale.set(rx * 1.15, rz * 1.25, 1);
+      mesh.scale.set(ringX, ringZ, 1);
     };
+    this.ground = terrain ? new Ground({ halfW: rx * 1.3, halfD: rz * 1.55, shape: 'ellipse', seed, cols: 30, decor: 24, decorUnit: Math.max(0.14, rx * 0.2), opacity: 0.96 }) : null;
+    if (this.ground) this.group.add(this.ground.group);
     this.disc = new Mesh(new CircleGeometry(1, 48), new MeshBasicMaterial({ color: 0x0a0f1e, transparent: true, opacity: 0.45, depthWrite: false, side: DoubleSide }));
     this.rim = new Mesh(new RingGeometry(0.965, 1, 64), new MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0.8, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));
     this.inner = new Mesh(new RingGeometry(0.55, 0.565, 64), new MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0.25, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));
@@ -118,7 +126,7 @@ export class ArenaStage {
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 0.004);
     this.rim.material.opacity = (0.45 + 0.25 * pulse + 0.45 * this.glow) * ease;
     this.inner.material.opacity = (0.12 + 0.12 * pulse + 0.3 * this.glow) * ease;
-    this.disc.material.opacity = 0.4 * ease;
+    this.disc.material.opacity = (this.ground ? 0 : 0.4) * ease;
   }
 
   get scaleNow(): number {
@@ -130,6 +138,7 @@ export class ArenaStage {
       mesh.geometry.dispose();
       mesh.material.dispose();
     }
+    this.ground?.dispose();
     this.group.removeFromParent();
   }
 }

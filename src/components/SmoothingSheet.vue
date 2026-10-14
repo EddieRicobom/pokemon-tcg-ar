@@ -33,6 +33,16 @@ defineEmits<{ close: [] }>();
       </p>
     </section>
     <section v-if="battle">
+      <h4>Chão e terreno</h4>
+      <div class="chips" role="group" aria-label="Chão e terreno">
+        <button type="button" :class="{ active: visual.terrain }" :aria-pressed="visual.terrain" @click="visual.terrain = true">Ligado</button>
+        <button type="button" :class="{ active: !visual.terrain }" :aria-pressed="!visual.terrain" @click="visual.terrain = false">Desligado</button>
+      </div>
+      <p class="hint">
+        {{ visual.terrain ? 'Chão com grama, flores e trilha em pixel art. Golpes de fogo, água, grama, gelo e outros deixam marcas no terreno.' : 'Sem chão detalhado nem marcas dos golpes: mais leve para celulares fracos.' }}
+      </p>
+    </section>
+    <section v-if="battle">
       <h4>Som da batalha</h4>
       <div class="chips" role="group" aria-label="Som da batalha">
         <button type="button" :class="{ active: visual.sound }" :aria-pressed="visual.sound" @click="visual.sound = true">Ligado</button>

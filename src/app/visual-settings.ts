@@ -7,16 +7,18 @@ export interface VisualSettings {
   smoothing: SmoothingMode;
   /** Luz dos golpes nos Pokémon, no chão e no vídeo (Caixa). Desligar poupa a GPU de celulares fracos. */
   lighting: boolean;
+  /** Chão em pixel art e terreno que muda com os golpes elementais (Caixa). Desligar poupa a GPU. */
+  terrain: boolean;
   /** Sons dos golpes e da vitória na batalha (Caixa). */
   sound: boolean;
 }
 
 const KEY = 'tcg-ar-visual-v2';
 const LEGACY_KEY = 'tcg-ar-visual-v1';
-const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, sound: true };
+const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, terrain: true, sound: true };
 
 export function normalizeVisual(raw: Partial<VisualSettings> | null | undefined): VisualSettings {
-  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, sound: raw?.sound !== false };
+  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, terrain: raw?.terrain !== false, sound: raw?.sound !== false };
 }
 
 function read(): VisualSettings {
@@ -35,7 +37,7 @@ export const visual = reactive<VisualSettings>(read());
 
 watch(visual, () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, sound: visual.sound }));
+    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, terrain: visual.terrain, sound: visual.sound }));
   } catch {
     // Só não lembra da escolha na próxima vez.
   }
