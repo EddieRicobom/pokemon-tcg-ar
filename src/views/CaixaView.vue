@@ -1,28 +1,31 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { isTap } from '../ar/gestures';
-import { getCache, loadBattle } from '../app/services';
+import { getCache, loadBattle, prepareMegaFor } from '../app/services';
 import { prepareFighters } from '../app/battle-setup';
+import { megaAwareLoader, planMegaBattle } from '../app/mega-battle';
 import { useFullscreen } from '../app/fullscreen';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { resetRoster, roster, rosterFor, setSlot, slotOf } from '../app/roster-store';
 import { battleMode, setBattleMode } from '../app/battle-mode-store';
-import { recordEvent } from '../app/trainer-store';
+import { recordEvent, spendTrainerEnergy, trainer } from '../app/trainer-store';
 import { visual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
 import { requestOrientationPermission } from '../sensors/orientation-feed';
+import CardMarks from '../components/CardMarks.vue';
 import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import TeamPicker from '../components/TeamPicker.vue';
 import type { BoxMode } from '../box/box-scene';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { DEFAULT_PHONE_HEIGHT_M, PHONE_HEIGHT_RANGE } from '../box/floor';
-import { loadCreatureEntries } from '../box/load-creatures';
+import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import type { RunningBox } from '../box/start-box';
 import type { OrientationMode } from '../box/orientation-source';
 import type { BoxCreature } from '../box/creature';
 import type { BattleHud } from '../box/battle-director';
+import { MEGA_ENERGY_COST } from '../core/mega';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import { TEAM_NAMES_PT, TEAM_COLORS, BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, planBattle, rosterBlocker, seededRng, STATUS_LABELS_PT, summarizeBattle } from '../core/battle';
 import type { BattleMode, BattleSummary, Fighter, RosterSlot } from '../core/battle';
@@ -51,7 +54,23 @@ const hint = ref('');
 const mode = ref<OrientationMode>('sensor');
 const population = ref({ shown: 0, available: 0, failed: 0 });
 /** Quem está na caixa agora (para a escalação das batalhas). */
-const rosterRows = ref<{ id: string; name: string }[]>([]);
+const rosterRows = ref<{ id: string; name: string; shiny: boolean; mega: boolean }[]>([]);
+/** Cartas Mega marcadas para mudar de forma na próxima batalha (cada uma custa MEGA_ENERGY_COST de energia). */
+const megaPicks = ref<string[]>([]);
+/** O que aconteceu com a forma Mega na última batalha montada (quem trocou, quem ficou normal e por quê). */
+const megaNotes = ref<{ text: string; tone: 'ok' | 'warn' }[]>([]);
+let megaNotesTimer: ReturnType<typeof setTimeout> | null = null;
+const energy = computed(() => trainer.value.energy);
+const megaWanted = computed(() => megaPicks.value.length);
+const megaAffordable = computed(() => Math.floor(energy.value / MEGA_ENERGY_COST));
+function toggleMega(id: string): void {
+  megaPicks.value = megaPicks.value.includes(id) ? megaPicks.value.filter((x) => x !== id) : [...megaPicks.value, id];
+}
+function showMegaNotes(notes: { text: string; tone: 'ok' | 'warn' }[]): void {
+  megaNotes.value = notes;
+  if (megaNotesTimer) clearTimeout(megaNotesTimer);
+  megaNotesTimer = notes.length > 0 ? setTimeout(() => (megaNotes.value = []), 9000) : null;
+}
 const currentRoster = computed(() => rosterFor(rosterRows.value.map((r) => r.id)));
 const modeBlocker = (m: BattleMode) => rosterBlocker(m, population.value.shown, currentRoster.value);
 const rosterCustom = computed(() => rosterRows.value.some((r) => slotOf(r.id) !== 'auto'));
@@ -64,7 +83,7 @@ const SLOT_CHOICES: { slot: RosterSlot; label: string; title: string }[] = [
   { slot: 'out', label: 'Fora', title: 'Fica de fora da luta' },
 ];
 const loadingCreatures = ref(false);
-const picked = ref<{ name: string; detail: string; dexId?: number } | null>(null);
+const picked = ref<{ name: string; detail: string; dexId?: number; shiny?: boolean; mega?: boolean } | null>(null);
 const phoneHeight = ref(DEFAULT_PHONE_HEIGHT_M);
 const boxSize = ref(2.4);
 const videoFov = ref(63);
@@ -98,7 +117,8 @@ async function populate(): Promise<void> {
     if (disposed || !box) return;
     box.setCreatures(loaded.entries);
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
-    rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: e.info.name }));
+    rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: e.info.name, shiny: e.info.shiny === true, mega: e.info.mega === true }));
+    megaPicks.value = megaPicks.value.filter((id) => rosterRows.value.some((r) => r.id === id && r.mega));
   } catch (e) {
     error.value = `Não consegui ler as cartas guardadas: ${e instanceof Error ? e.message : String(e)}`;
   } finally {
@@ -195,7 +215,7 @@ function moveBox(): void {
 function showPicked(creature: BoxCreature): void {
   if (visual.social) creature.react();
   else creature.poke();
-  picked.value = { name: creature.info.name, detail: creature.info.detail, dexId: creature.info.dexId };
+  picked.value = { name: creature.info.name, detail: creature.info.detail, dexId: creature.info.dexId, shiny: creature.info.shiny, mega: creature.info.mega };
   if (pickedTimer) clearTimeout(pickedTimer);
   pickedTimer = setTimeout(() => (picked.value = null), 5000);
 }
@@ -286,10 +306,37 @@ async function startBattle(): Promise<void> {
     // a menos que o jogador tenha montado a escalação (equipe fixa ou fora da luta).
     const plan = planBattle(battleMode.value, creatures.length, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0), slots);
     const fighting = plan.picks.map((i) => creatures[i]!);
-    const fighters = await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), loadBattle);
+    // Forma Mega (só desta batalha): deixa tudo pronto antes; a energia só é cobrada depois que a batalha começa.
+    restoreForms(current);
+    const wanted = fighting.filter((c) => c.info.mega === true && megaPicks.value.includes(c.info.id));
+    if (wanted.length > 0) hint.value = 'Preparando a forma Mega…';
+    const megaPlan = await planMegaBattle(
+      wanted.map((c) => ({ id: c.info.id, name: c.info.name, baseDexId: c.info.dexId })),
+      energy.value,
+      { prepare: prepareMegaFor, decode: decodeMegaSprite },
+    );
+    const fighters = await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), megaAwareLoader(loadBattle, megaPlan.entries));
     if (disposed || box !== current) return;
     battleCounted = false;
-    const result = current.startBattle(fighters, plan.mode === 'royale' ? undefined : plan);
+    for (const entry of megaPlan.entries) fighting.find((c) => c.info.id === entry.cardId)?.setForm(entry.source);
+    let result;
+    try {
+      result = current.startBattle(fighters, plan.mode === 'royale' ? undefined : plan);
+    } catch (e) {
+      restoreForms(current);
+      throw e;
+    }
+    const notes: { text: string; tone: 'ok' | 'warn' }[] = megaPlan.notes.map((text) => ({ text, tone: 'warn' }));
+    if (megaPlan.cost > 0) {
+      if (spendTrainerEnergy(megaPlan.cost)) {
+        const names = megaPlan.entries.map((e) => fighting.find((c) => c.info.id === e.cardId)?.info.name ?? 'Pokémon').join(', ');
+        notes.unshift({ text: `${names}: forma Mega só nesta batalha (−${megaPlan.cost} de energia).`, tone: 'ok' });
+        megaPicks.value = megaPicks.value.filter((id) => !megaPlan.entries.some((e) => e.cardId === id));
+      } else {
+        notes.unshift({ text: 'A energia acabou antes de a batalha começar; nada foi cobrado.', tone: 'warn' });
+      }
+    }
+    showMegaNotes(notes);
     battleFighters.value = fighters;
     battleSummary.value = {
       mode: plan.mode,
@@ -299,6 +346,7 @@ async function startBattle(): Promise<void> {
       stats: summarizeBattle(fighters, result),
     };
   } catch (e) {
+    restoreForms(current);
     error.value = `Não consegui começar a batalha: ${e instanceof Error ? e.message : String(e)}`;
     if (fullscreenForBattle) {
       fullscreenForBattle = false;
@@ -310,8 +358,20 @@ async function startBattle(): Promise<void> {
   }
 }
 
+/** Volta cada Pokémon à forma da carta (a Mega dura uma batalha só). */
+function restoreForms(running: RunningBox | null): void {
+  for (const creature of running?.scene.creatureList ?? []) creature.restoreForm();
+}
+
+async function decodeMegaSprite(ready: { sprite: { kind: 'gif' | 'static'; blob: Blob } }) {
+  return ready.sprite.kind === 'gif'
+    ? ({ kind: 'gif', gif: await browserDecoders.gif(ready.sprite.blob) } as const)
+    : ({ kind: 'image', image: await browserDecoders.image(ready.sprite.blob) } as const);
+}
+
 function stopBattle(): void {
   box?.stopBattle();
+  restoreForms(box);
   battleHud.value = null;
   battleSummary.value = null;
   showSummary.value = false;
@@ -365,10 +425,11 @@ const notices = computed<Notice[]>(() => {
   if (!immersive.value) return list;
   if (error.value) list.push({ text: error.value, tone: 'error' });
   if (phase.value === 'starting') list.push({ text: 'Abrindo a câmera e os sensores…', tone: 'busy' });
+  for (const note of megaNotes.value) list.push({ text: note.text, tone: note.tone });
   if (battleHud.value) return list;
   if (hint.value) list.push({ text: hint.value, tone: phase.value === 'placing' ? 'ok' : 'busy' });
   if (picked.value) {
-    list.push({ text: `${picked.value.name}${picked.value.dexId ? ` · Nº ${picked.value.dexId}` : ''}`, sub: picked.value.detail, tone: 'ok', gold: true });
+    list.push({ text: `${picked.value.name}${picked.value.dexId ? ` · Nº ${picked.value.dexId}` : ''}${picked.value.shiny ? ' · Shiny' : ''}${picked.value.mega ? ' · Mega' : ''}`, sub: picked.value.detail, tone: 'ok', gold: true });
   }
   if (cameraOn.value && mode.value === 'manual') {
     list.push({ text: 'Este aparelho não enviou dados dos sensores de movimento. Arraste na imagem para olhar em volta.', tone: 'warn' });
@@ -413,6 +474,7 @@ function onFov(): void {
 
 onBeforeUnmount(() => {
   disposed = true;
+  if (megaNotesTimer) clearTimeout(megaNotesTimer);
   if (pickedTimer) clearTimeout(pickedTimer);
   close();
 });
@@ -530,6 +592,9 @@ onBeforeUnmount(() => {
             </button>
           </div>
           <p class="hint">Por padrão todos os Pokémon da caixa entram na luta. Para mudar quem está na caixa (até 40), use Equipe.</p>
+          <p v-if="rosterRows.some((r) => r.mega)" class="hint mega-hint">
+            Cartas Mega podem mudar de forma por uma batalha: marque «Forma Mega» embaixo do nome delas. Energia: {{ energy }}<template v-if="megaWanted > megaAffordable"> (só dá para {{ megaAffordable }} {{ megaAffordable === 1 ? 'troca' : 'trocas' }}; as outras lutam na forma normal)</template>.
+          </p>
           <div v-if="rosterRows.length > 0" class="roster">
             <div class="roster-head">
               <strong>Escalação</strong>
@@ -538,7 +603,22 @@ onBeforeUnmount(() => {
             <p class="hint">Escolha a equipe de cada um (V = Vermelha, A = Azul) ou deixe de fora. Quem ficar em sorteio completa os lados. No 3x3 cada lado usa 3.</p>
             <ul class="roster-list">
               <li v-for="row in rosterRows" :key="row.id" :class="{ out: roster[row.id] === 'out' }">
-                <span class="roster-name">{{ row.name }}</span>
+                <span class="roster-who">
+                  <span class="roster-name">
+                    <span class="roster-label">{{ row.name }}</span>
+                    <CardMarks :card="{ name: row.name, localId: '', setOfficial: 0, shiny: row.shiny, mega: row.mega }" compact />
+                  </span>
+                  <button
+                    v-if="row.mega"
+                    type="button"
+                    class="mega-toggle"
+                    :class="{ on: megaPicks.includes(row.id) }"
+                    :aria-pressed="megaPicks.includes(row.id)"
+                    :title="`Muda para a forma Mega só nesta batalha (custa ${MEGA_ENERGY_COST} de energia)`"
+                    :aria-label="`${row.name}: forma Mega só nesta batalha, custa ${MEGA_ENERGY_COST} de energia`"
+                    @click="toggleMega(row.id)"
+                  >Mega −{{ MEGA_ENERGY_COST }} energia</button>
+                </span>
                 <span class="roster-slots" role="group" :aria-label="`Escalação de ${row.name}`">
                   <button
                     v-for="c in SLOT_CHOICES"

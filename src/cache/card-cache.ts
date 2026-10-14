@@ -1,6 +1,8 @@
 import { TARGET_VERSION } from '../ar/target';
 import { fetchSprite as defaultFetchSprite } from '../ar/sprite-source';
 import { formDexId, spriteKeyIsFor } from '../core/dex-form';
+import { isMegaName } from '../core/mega';
+import { shinyForNewCard } from '../core/shiny';
 import type { SpriteSource } from '../ar/sprite-source';
 import { computeFeatures, featuresFromJson, featuresToJson, FEATURE_VERSION } from '../recognition/hash';
 import type { CardFeatures } from '../recognition/hash';
@@ -36,6 +38,8 @@ export interface CardCacheDeps {
   /** Decodifica a referência em pixels (para recalcular características). */
   decodeReference?: (blob: Blob) => Promise<RgbaImage>;
   now?: () => number;
+  /** Fonte de sorteio do shiny (1 em 50 no primeiro escaneamento). Testes passam uma fixa. */
+  random?: () => number;
   maxCards?: number;
   maxBytes?: number;
   /** Espera base entre tentativas (testes usam 0). */
@@ -270,8 +274,13 @@ export class CardCache {
     const base = (await this.get(prepared.id)) ?? prepared;
     const { pending: _pending, ...rest } = base;
     void _pending;
+    // Só o primeiro escaneamento completo sorteia o shiny e marca a carta Mega; reescanear nunca muda isso.
     const card: CachedCard = isNew
-      ? { ...rest, firstSeenAt: timestamp, lastSeenAt: timestamp, scanCount: 1 }
+      ? {
+          ...rest, firstSeenAt: timestamp, lastSeenAt: timestamp, scanCount: 1,
+          shiny: shinyForNewCard(rest, this.deps.random),
+          ...(isMegaName(rest.name) ? { mega: true } : {}),
+        }
       : { ...rest, ...this.toRecord(input.card), lastSeenAt: timestamp, scanCount: base.scanCount + 1, schema: CACHE_SCHEMA_VERSION };
     await this.save(card);
     await this.enforceLimits(card.id);

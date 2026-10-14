@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import CardMarks from './CardMarks.vue';
 import { getCache } from '../app/services';
 import { resolveTeam, TEAM_SIZE } from '../app/team';
 import { savedTeam, setSavedTeam, toggleSaved } from '../app/team-store';
 import type { CachedCard } from '../cache/types';
+import { isShiny } from '../core/shiny';
 
 const emit = defineEmits<{ change: [ids: string[]] }>();
 
@@ -79,10 +81,11 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
       </div>
       <ul class="team-grid">
         <li v-for="row in shown" :key="row.id">
-          <button type="button" class="team-card" :class="{ picked: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" @click="toggle(row.id)">
+          <button type="button" class="team-card" :class="{ picked: team.ids.includes(row.id), 'is-shiny': isShiny(row) }" :aria-pressed="team.ids.includes(row.id)" @click="toggle(row.id)">
             <img v-if="row.thumb" :src="row.thumb" alt="" width="48" height="67" />
             <span v-else class="team-noimg" aria-hidden="true"></span>
             <span class="team-name">{{ row.name }}</span>
+            <CardMarks :card="row" compact />
             <small>{{ row.setName }}</small>
             <span v-if="team.ids.includes(row.id)" class="team-slot" aria-hidden="true">{{ team.ids.indexOf(row.id) + 1 }}</span>
           </button>

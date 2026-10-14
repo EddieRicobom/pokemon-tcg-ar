@@ -17,6 +17,7 @@ import StageButton from '../components/StageButton.vue';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { loadChunk } from '../app/stale-build';
 import { spriteIdOf } from '../core/dex-form';
+import { isShiny } from '../core/shiny';
 
 type Phase = 'idle' | 'starting' | 'running';
 
@@ -102,7 +103,7 @@ async function open(): Promise<void> {
       video: videoEl.value,
       canvas: canvasEl.value,
       container: stageEl.value,
-      cards: prepared.ready.map((r) => ({ cardId: r.card.id, name: r.card.name, dexId: spriteIdOf(r.card), target: r.target, cachedSprite: r.cachedSprite })),
+      cards: prepared.ready.map((r) => ({ cardId: r.card.id, name: r.card.name, dexId: spriteIdOf(r.card), shiny: isShiny(r.card), target: r.target, cachedSprite: r.cachedSprite })),
       fetchSprite: (dexId) => fetchSprite(dexId),
       onState: (s) => {
         if (mine === run) state.value = s;

@@ -57,6 +57,10 @@ export interface CachedCard {
    * Sobras de um escaneamento interrompido são apagadas ao abrir o app.
    */
   pending?: number;
+  /** Shiny: sorteado (1 em 50) no primeiro escaneamento completo e guardado. Ausente em cartas antigas. */
+  shiny?: boolean;
+  /** Escaneada como carta Mega (marcado no primeiro escaneamento completo). */
+  mega?: boolean;
 }
 
 export interface AssetRecord {

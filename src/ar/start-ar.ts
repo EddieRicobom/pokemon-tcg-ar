@@ -18,6 +18,8 @@ export interface StartArOptions {
   /** Alvo de rastreamento compilado (.mind). */
   target: ArrayBuffer;
   dexId: number | undefined;
+  /** Carta shiny: halo dourado e estrelinhas em volta do Pokémon. */
+  shiny?: boolean;
   /** Sprite já guardado no cache (se houver); senão busca na rede. */
   cachedSprite?: SpriteSource | null;
   fetchSprite: (dexId: number) => Promise<SpriteSource | null>;
@@ -43,6 +45,7 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
   const feed = getOrientationFeed();
   feed.acquire();
   const sprite = new CardSprite();
+  sprite.setShiny(options.shiny === true);
   const panel = options.battle ? new StatsPanel(options.battle.name, options.dexId) : null;
   const session = new ArSession({
     engine: new MindArEngine(),

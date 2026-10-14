@@ -22,6 +22,8 @@ export interface MultiCard {
   /** Alvo de rastreamento compilado (.mind) desta carta. */
   target: ArrayBuffer;
   cachedSprite: SpriteSource | null;
+  /** Carta shiny: halo dourado e estrelinhas em volta do Pokémon. */
+  shiny?: boolean;
 }
 
 export interface StartMultiOptions {
@@ -44,7 +46,11 @@ export interface RunningMulti {
 export async function startMulti(options: StartMultiOptions): Promise<RunningMulti> {
   const feed = getOrientationFeed();
   feed.acquire();
-  const slots = options.cards.map((card) => ({ cardId: card.cardId, name: card.name, sprite: new CardSprite({ frameCacheBytes: SPRITE_FRAME_CACHE_BYTES }) }));
+  const slots = options.cards.map((card) => {
+    const sprite = new CardSprite({ frameCacheBytes: SPRITE_FRAME_CACHE_BYTES });
+    sprite.setShiny(card.shiny === true);
+    return { cardId: card.cardId, name: card.name, sprite };
+  });
   const session = new MultiArSession({
     engine: new MindArEngine(),
     renderer: createWebglBackend(options.canvas),

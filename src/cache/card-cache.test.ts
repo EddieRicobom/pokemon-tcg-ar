@@ -587,6 +587,65 @@ describe('escaneamento completo, tudo ou nada (scanCard)', () => {
   });
 });
 
+describe('shiny e Mega no primeiro escaneamento', () => {
+  const withTarget = (extra: Partial<CardCacheDeps> = {}) => make({ buildTarget: async () => new Blob([new Uint8Array(50)]), fetchTargetImage: async () => new Blob([new Uint8Array(80)]), ...extra });
+  const gallade: CardRecordLike = { ...pikachu, id: 'me03-244', name: 'Mega Gallade ex', localId: '244', setOfficial: 236, setTotal: 236, dexIds: [475], imageBase: 'https://assets.example/me03/244' };
+
+  it('sorteio 1/50: um número baixo vira shiny e fica guardado; um alto, não', async () => {
+    const lucky = withTarget({ random: () => 0.01 });
+    expect((await lucky.scanCard({ card: pikachu })).saved).toBe(true);
+    expect((await lucky.get('base1-58'))?.shiny).toBe(true);
+
+    const normal = withTarget({ random: () => 0.5 });
+    await normal.scanCard({ card: pikachu2 });
+    expect((await normal.get('swsh1-65'))?.shiny).toBe(false);
+  });
+
+  it('reescanear nunca sorteia de novo: a carta mantém o que saiu no primeiro escaneamento', async () => {
+    let value = 0.5;
+    const cache = withTarget({ random: () => value });
+    await cache.scanCard({ card: pikachu });
+    value = 0.0;
+    await cache.scanCard({ card: pikachu });
+    expect((await cache.get('base1-58'))?.shiny).toBe(false);
+
+    value = 0.0;
+    await cache.scanCard({ card: pikachu2 });
+    value = 0.9;
+    await cache.scanCard({ card: pikachu2 });
+    expect((await cache.get('swsh1-65'))?.shiny).toBe(true);
+  });
+
+  it('escaneamento que falha não sorteia nem deixa carta: o sorteio é só do primeiro escaneamento completo', async () => {
+    const draws: number[] = [];
+    const cache = withTarget({ random: () => { draws.push(1); return 0.5; } });
+    failing.add('sprite:25');
+    expect((await cache.scanCard({ card: pikachu })).saved).toBe(false);
+    expect(draws).toEqual([]);
+    failing.delete('sprite:25');
+    expect((await cache.scanCard({ card: pikachu })).saved).toBe(true);
+    expect(draws).toHaveLength(1);
+  });
+
+  it('Gallade 244/236 sai shiny mesmo com o pior sorteio, e é marcada como Mega', async () => {
+    const cache = withTarget({ random: () => 0.999 });
+    expect((await cache.scanCard({ card: gallade })).saved).toBe(true);
+    expect(await cache.get('me03-244')).toMatchObject({ shiny: true, mega: true });
+  });
+
+  it('carta comum não é marcada como Mega', async () => {
+    const cache = withTarget({ random: () => 0.5 });
+    await cache.scanCard({ card: pikachu });
+    expect((await cache.get('base1-58'))?.mega).toBeUndefined();
+  });
+
+  it('a lista devolve shiny e mega junto da carta', async () => {
+    const cache = withTarget({ random: () => 0.5 });
+    await cache.scanCard({ card: gallade });
+    expect((await cache.list())[0]).toMatchObject({ id: 'me03-244', shiny: true, mega: true });
+  });
+});
+
 async function storageBytes(): Promise<number> {
   let total = 0;
   for (const record of await db.getAll('assets')) total += record.bytes;

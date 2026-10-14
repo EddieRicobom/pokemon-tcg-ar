@@ -11,6 +11,7 @@ import type { RgbaImage } from '../recognition/types';
 import { clampLayout, DEFAULT_LAYOUT, frontReach, spriteMatrix, yawTowardCamera } from './anchor';
 import type { SpriteLayout, SpritePlacement } from './anchor';
 import { makePlaceholder } from './placeholder';
+import { ShinyAura } from './shiny-aura';
 import { adaptiveTauMs, smoothingAlpha } from './smoothing';
 
 
@@ -86,6 +87,8 @@ export class CardSprite {
   /** Brilho fino que pulsa devagar em volta da sombra. */
   readonly glow: Mesh<PlaneGeometry, MeshBasicMaterial>;
   mode: SpriteMode = 'empty';
+  /** Brilho do Pokémon shiny (halo dourado e estrelinhas), pendurado no plano do sprite; null quando não é shiny. */
+  private aura: ShinyAura | null = null;
   private gif: DecodedGif | null = null;
   private texture: DataTexture | null = null;
   private aspect = 1;
@@ -129,6 +132,22 @@ export class CardSprite {
     this.shadow.renderOrder = 1;
     this.glow.renderOrder = 2;
     this.group.add(this.shadow, this.glow, this.mesh);
+  }
+
+  /** Liga ou desliga o brilho do shiny em volta do Pokémon. */
+  setShiny(on: boolean): void {
+    if (on === (this.aura !== null)) return;
+    if (on) {
+      this.aura = new ShinyAura(0);
+      this.mesh.add(this.aura.group);
+    } else {
+      this.aura?.dispose();
+      this.aura = null;
+    }
+  }
+
+  get shiny(): boolean {
+    return this.aura !== null;
   }
 
   setLayout(layout: SpriteLayout): void {
@@ -315,6 +334,7 @@ export class CardSprite {
   /** Atualiza o quadro da animação para o instante `nowMs`. Devolve true se enviou um quadro novo à textura. */
   update(nowMs: number): boolean {
     this.smoothPose(nowMs);
+    this.aura?.update(nowMs);
     if (this.glow.visible) this.glow.material.opacity = this.glowBase * (0.75 + 0.25 * Math.sin(nowMs / 650));
     if (this.mode !== 'animated' || !this.gif || !this.texture) return false;
     const index = frameIndexAt(this.gif, nowMs - this.startedAt);
@@ -387,6 +407,7 @@ export class CardSprite {
   }
 
   dispose(): void {
+    this.setShiny(false);
     this.releaseTexture();
     this.mesh.geometry.dispose();
     this.mesh.material.dispose();

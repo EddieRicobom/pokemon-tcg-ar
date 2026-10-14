@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import CardMarks from '../components/CardMarks.vue';
 import { formatBytes, formatDate } from '../app/format';
 import { routeHref } from '../app/route';
 import { getCache } from '../app/services';
 import { resolveTeam, TEAM_SIZE } from '../app/team';
 import { savedTeam, setSavedTeam, toggleSaved } from '../app/team-store';
 import type { CachedCard, CacheStatus, SlotInfo, StorageInfo } from '../cache/types';
+import { isShiny } from '../core/shiny';
 
 type Row = CachedCard & { status: CacheStatus; thumb?: string };
 
@@ -223,6 +225,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         <li v-for="row in teamRows" :key="row.id">
           <img v-if="row.thumb" :src="row.thumb" :alt="row.name" width="40" height="56" />
           <span>{{ row.name }}</span>
+          <CardMarks :card="row" compact />
         </li>
       </ul>
     </div>
@@ -262,10 +265,11 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
 
     <ul v-if="viewMode === 'grade'" class="card-grid">
       <li v-for="row in visibleRows" :key="row.id">
-        <button type="button" class="grid-card" :class="{ picked: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" :aria-label="`${row.name}: ${team.ids.includes(row.id) ? 'tirar da' : 'colocar na'} equipe`" @click="toggleTeam(row)">
+        <button type="button" class="grid-card" :class="{ picked: team.ids.includes(row.id), 'is-shiny': isShiny(row) }" :aria-pressed="team.ids.includes(row.id)" :aria-label="`${row.name}: ${team.ids.includes(row.id) ? 'tirar da' : 'colocar na'} equipe`" @click="toggleTeam(row)">
           <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="90" height="126" />
           <div v-else class="thumb-missing" aria-hidden="true">sem imagem</div>
           <strong>{{ row.name }}</strong>
+          <CardMarks :card="row" />
           <span class="badge" :class="row.status">{{ STATUS_TEXT[row.status] }}</span>
           <span v-if="team.ids.includes(row.id)" class="team-slot" aria-hidden="true">{{ team.ids.indexOf(row.id) + 1 }}</span>
         </button>
@@ -273,14 +277,14 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     </ul>
 
     <ul v-else class="card-list">
-      <li v-for="row in visibleRows" :key="row.id" class="card-row" :class="{ loading: busyId === row.id, 'just-loaded': justLoaded.has(row.id) }">
+      <li v-for="row in visibleRows" :key="row.id" class="card-row" :class="{ loading: busyId === row.id, 'just-loaded': justLoaded.has(row.id), 'is-shiny': isShiny(row) }">
         <div class="thumb-wrap">
           <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="60" height="84" />
           <div v-else class="thumb-missing" aria-hidden="true">sem imagem</div>
           <span v-if="justLoaded.has(row.id)" class="thumb-check" aria-hidden="true">✓</span>
         </div>
         <div class="card-info">
-          <strong>{{ row.name }}</strong>
+          <strong>{{ row.name }} <CardMarks :card="row" /></strong>
           <span>{{ row.setName }} · {{ row.localId }}/{{ row.setOfficial }}</span>
           <span class="badge" :class="row.status">{{ STATUS_TEXT[row.status] }}</span>
           <span v-if="justLoaded.has(row.id)" class="sr-only" role="status">Carta carregada.</span>

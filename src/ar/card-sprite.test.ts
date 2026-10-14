@@ -93,6 +93,48 @@ describe('CardSprite: orientação', () => {
   });
 });
 
+describe('CardSprite: brilho shiny', () => {
+  it('liga e desliga o brilho pendurado no plano do sprite, sem duplicar', () => {
+    const sprite = new CardSprite();
+    expect(sprite.shiny).toBe(false);
+    sprite.setShiny(true);
+    sprite.setShiny(true);
+    expect(sprite.shiny).toBe(true);
+    expect(sprite.mesh.children).toHaveLength(1);
+    sprite.setShiny(false);
+    expect(sprite.shiny).toBe(false);
+    expect(sprite.mesh.children).toHaveLength(0);
+  });
+
+  it('o halo fica ATRÁS do plano para quem olha a carta de frente, e o Pokémon continua na frente dele', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setLayout({ ...DEFAULT_LAYOUT, offsetX: 0, offsetY: 0, heightRatio: 0.8, anchor: 'base', tiltDeg: 0 });
+    sprite.setShiny(true);
+    sprite.group.updateMatrixWorld(true);
+    const halo = sprite.mesh.children[0]!.children[0]!;
+    const haloPos = new Vector3().setFromMatrixPosition(halo.matrixWorld);
+    const planePos = new Vector3().setFromMatrixPosition(sprite.mesh.matrixWorld);
+    // Observador em −Y olhando para +Y: "atrás" é mais perto de +Y.
+    expect(haloPos.y).toBeGreaterThan(planePos.y);
+    // O halo é maior que o Pokémon.
+    expect(new Vector3().setFromMatrixScale(halo.matrixWorld).x).toBeGreaterThan(new Vector3().setFromMatrixScale(sprite.mesh.matrixWorld).x);
+  });
+
+  it('anima junto com o sprite e acompanha a visibilidade dele', () => {
+    const sprite = new CardSprite();
+    sprite.setShiny(true);
+    sprite.setPlaceholder();
+    sprite.update(100);
+    sprite.update(900);
+    expect(sprite.mesh.visible).toBe(true);
+    sprite.clear();
+    expect(sprite.mesh.visible).toBe(false);
+    sprite.dispose();
+    expect(sprite.shiny).toBe(false);
+  });
+});
+
 describe('CardSprite: suavização da pose', () => {
   const at = (x: number) => cardSpaceMatrix([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, -5, 1], 1, 1.375);
   // O espaço da carta tem origem no canto; o centro fica deslocado em meia largura (0,5).
