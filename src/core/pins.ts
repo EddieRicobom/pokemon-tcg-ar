@@ -279,13 +279,23 @@ export interface PinWorld {
   terrain?: TerrainGrid | null;
   /** Sorteio das marcas. Sem ele os golpes não marcam o chão (a mira usa assim, só para ler). */
   markRng?: Rng | null;
+  /** Raio da parte da arena que ainda vale (a borda que encolhe). Sem ele vale `radius` inteiro. */
+  limit?: number;
+  /** Rodadas completas (um disparo seu + a resposta do adversário) já jogadas. */
+  round?: number;
+  /** A borda encolhe com as rodadas. */
+  shrinking?: boolean;
 }
+
+/** Raio onde o pin cai agora. */
+export const arenaLimit = (world: PinWorld): number => world.limit ?? world.radius;
 
 export type PinEvent =
   | { type: 'hit'; a: string; b: string; strength: number; /** Vantagem de tipos de quem acertou a favor de quem apanhou. */ edge: 'super' | 'weak' | 'none' | null }
   | { type: 'out'; id: string }
   | { type: 'bumper'; id: string }
   | { type: 'wave'; id: string }
+  | { type: 'shrink'; limit: number }
   | { type: 'mark'; kind: TerrainKind; x: number; y: number; cells: number[]; reaction: TerrainReaction | null };
 
 const PATCH_SPECS: { kind: PatchKind; count: number; min: number; max: number }[] = [{ kind: 'bumper', count: 2, min: 22, max: 27 }];
@@ -341,9 +351,54 @@ export function layoutPins(pins: Pin[], radius = ARENA_RADIUS): void {
   }
 }
 
+// ----------------------------------------------------------------------------- borda que encolhe
+
+/** Primeira rodada completa depois da qual a borda começa a avançar (as 2 primeiras são de aquecimento). */
+export const SHRINK_AFTER_ROUND = 2;
+/** Quanto a borda avança a cada rodada (unidades) e o menor raio que ela chega a ter. */
+export const SHRINK_STEP = 28;
+export const MIN_LIMIT = 170;
+
+/** Raio da arena depois de `round` rodadas completas. */
+export function limitForRound(radius: number, round: number): number {
+  return Math.max(MIN_LIMIT, radius - SHRINK_STEP * Math.max(0, round - SHRINK_AFTER_ROUND + 1));
+}
+
+/** Raio que a arena terá depois da próxima rodada (a tela mostra esta linha como aviso), ou null se não vai mudar. */
+export function nextLimit(world: PinWorld): number | null {
+  if (!world.shrinking) return null;
+  const next = limitForRound(world.radius, (world.round ?? 0) + 1);
+  return next < arenaLimit(world) ? next : null;
+}
+
+/**
+ * Fecha uma rodada: se a borda encolhe, os pinos de mola que ficariam no vazio somem e quem tem o centro além da nova
+ * borda cai (aviso `out`). Devolve os eventos para os sons e avisos da tela.
+ */
+export function advanceRound(world: PinWorld, events: PinEvent[] = []): PinEvent[] {
+  const next = nextLimit(world);
+  world.round = (world.round ?? 0) + 1;
+  if (next === null) return events;
+  world.limit = next;
+  events.push({ type: 'shrink', limit: next });
+  for (let i = world.patches.length - 1; i >= 0; i--) {
+    const patch = world.patches[i]!;
+    if (Math.hypot(patch.x, patch.y) + patch.r > next) world.patches.splice(i, 1);
+  }
+  for (const pin of world.pins) {
+    if (pin.alive && pin.fall === 0 && Math.hypot(pin.x, pin.y) > next) {
+      pin.fall = 1e-4;
+      events.push({ type: 'out', id: pin.id });
+    }
+  }
+  return events;
+}
+
 export interface WorldOptions {
   /** Os golpes elementais e a Pancada marcam o chão (e a arena já começa com algumas marcas). Padrão: sim. */
   marks?: boolean;
+  /** A borda da arena encolhe a cada rodada depois do aquecimento. Padrão: não (o jogo liga pela opção). */
+  shrink?: boolean;
 }
 
 export function createWorld(specs: { mine: PinSpec[]; enemy: PinSpec[] }, rng: Rng, options: WorldOptions = {}): PinWorld {
@@ -357,7 +412,7 @@ export function createWorld(specs: { mine: PinSpec[]; enemy: PinSpec[] }, rng: R
   const terrain = createArenaGrid(Math.floor(rng() * 1e6));
   const marks = options.marks !== false;
   if (marks) seedMarks(terrain, ARENA_RADIUS, rng, [...spots, ...patches]);
-  return { radius: ARENA_RADIUS, patches, pins, time: 0, terrain, markRng: marks ? rng : null };
+  return { radius: ARENA_RADIUS, patches, pins, time: 0, terrain, markRng: marks ? rng : null, limit: ARENA_RADIUS, round: 0, shrinking: options.shrink === true };
 }
 
 const standing = (pin: Pin) => pin.alive && pin.fall === 0;
@@ -563,7 +618,7 @@ export function stepWorld(world: PinWorld, dt: number, events: PinEvent[] = []):
 
   // Fora da arena: o pin cai quando o centro passa da borda.
   for (const pin of pins) {
-    if (pin.alive && pin.fall === 0 && Math.hypot(pin.x, pin.y) > world.radius) {
+    if (pin.alive && pin.fall === 0 && Math.hypot(pin.x, pin.y) > arenaLimit(world)) {
       pin.fall = 1e-4;
       events.push({ type: 'out', id: pin.id });
     }
@@ -653,7 +708,7 @@ export interface PathPoint {
 export function previewPath(world: PinWorld, pin: Pin, shot: Shot, moveIndex: number | null = null, maxSeconds = 2.2): { points: PathPoint[]; falls: boolean } {
   const ghost: Pin = { ...pin, types: [...pin.types], active: null, lastMark: null };
   launch(ghost, shot, moveIndex);
-  const sim: PinWorld = { radius: world.radius, patches: world.patches, pins: [ghost], time: 0, terrain: world.terrain ?? null, markRng: null };
+  const sim: PinWorld = { radius: world.radius, patches: world.patches, pins: [ghost], time: 0, terrain: world.terrain ?? null, markRng: null, limit: world.limit };
   const points: PathPoint[] = [{ x: ghost.x, y: ghost.y }];
   const dt = 1 / 60;
   for (let t = 0, n = 0; t < maxSeconds; t += dt, n++) {
@@ -691,7 +746,7 @@ export function chooseEnemyShot(world: PinWorld, rng: Rng, difficulty: Difficult
       const cd = Math.hypot(target.x, target.y) || 1e-6;
       // 1 = o empurrão leva o alvo direto para fora.
       const outward = (dx / d) * (target.x / cd) + (dy / d) * (target.y / cd);
-      const score = 1.2 * outward + 0.7 * (cd / world.radius) - 0.4 * (d / (2 * world.radius)) + (rng() - 0.5) * 0.5;
+      const score = 1.2 * outward + 0.7 * (cd / arenaLimit(world)) - 0.4 * (d / (2 * arenaLimit(world))) + (rng() - 0.5) * 0.5;
       if (!best || score > best.score) best = { score, pin, target };
     }
   }

@@ -2629,6 +2629,32 @@ body.no-scroll .reward-toasts {
   font-size: 0.78rem;
 }
 
+.hud-note {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.hud-note.warn,
+.sides.warn {
+  color: #ffb35c;
+}
+
+.pin-skip {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
 .floor-legend {
   display: flex;
   flex-wrap: wrap;

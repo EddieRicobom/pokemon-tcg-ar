@@ -7,10 +7,15 @@ import { routeHref } from '../app/route';
 import { recordEvent, spendTrainerEnergy, trainer } from '../app/trainer-store';
 import { seededRng } from '../core/battle';
 import {
-  afterShot, affordable, aliveOf, ARENA_RADIUS, canUse, chooseEnemyShot, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE,
-  outcomeOf, pinFromSpec, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
+  advanceRound, afterShot, affordable, aliveOf, arenaLimit, ARENA_RADIUS, canUse, chooseEnemyShot, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE,
+  nextLimit, outcomeOf, pinFromSpec, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
 } from '../core/pins';
-import { MARK_HINT_PT } from '../core/pin-terrain';
+import { MARK_HINT_PT, TYPE_FOR_TERRAIN } from '../core/pin-terrain';
+import { REPLAY_SPEED, ReplayRecorder } from '../core/pin-replay';
+import { vibrate } from '../app/haptics';
+import type { HapticCue } from '../app/haptics';
+import { SoundEngine } from '../box/sound';
+import type { SoundCue } from '../box/sound-recipes';
 import { TERRAIN_KINDS, TERRAIN_LABELS_PT } from '../core/terrain';
 import type { TerrainKind } from '../core/terrain';
 import type { Difficulty, PinEvent, PinSpec, PinWorld, Shot } from '../core/pins';
@@ -34,7 +39,14 @@ const phase = ref<Phase>('setup');
 const cards = ref<CachedCard[]>([]);
 const thumbs = ref<Record<string, string>>({});
 const infos = ref<Record<string, Info>>({});
-const setup = ref<PinsSetup>({ mine: [], enemy: [], difficulty: 'normal', marks: true });
+const setup = ref<PinsSetup>({ mine: [], enemy: [], difficulty: 'normal', marks: true, shrink: true, sound: true, haptics: true });
+/** Rodada em andamento (1, 2, …) e o aviso de que a borda vai avançar no fim dela. */
+const roundNo = ref(1);
+const borderWarn = ref(false);
+const borderNote = ref('');
+/** Repetição em câmera lenta do disparo decisivo. */
+const replaying = ref(false);
+const canReplay = ref(false);
 /** Marcas que existem no chão agora (para a legenda da partida). */
 const floorMarks = ref<TerrainKind[]>([]);
 const search = ref('');
@@ -59,6 +71,11 @@ let bumperCanvas: HTMLCanvasElement | null = null;
 let terrainArt: ArenaTerrainArt | null = null;
 let terrainCanvas: HTMLCanvasElement | null = null;
 let terrainShown = -1;
+/** O raio que a tela mostra (alcança o raio real aos poucos, para a borda "andar"). */
+let shownLimit = ARENA_RADIUS;
+const recorder = new ReplayRecorder();
+let replayAt = 0;
+const engine = new SoundEngine();
 const sprites = new Map<string, HTMLElement>();
 let raf = 0;
 let last = 0;
@@ -181,6 +198,8 @@ function useRecent(): void {
 // ---------------------------------------------------------------- partida
 
 async function start(): Promise<void> {
+  engine.unlock();
+  stopReplay();
   if (blocker.value) {
     notice.value = blocker.value;
     return;
@@ -198,8 +217,12 @@ async function start(): Promise<void> {
   }
   if (disposed) return;
   const byId = (id: string) => cards.value.find((c) => c.id === id)!;
-  world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => specOf(byId(id))) }, rng, { marks: setup.value.marks });
+  world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => specOf(byId(id))) }, rng, { marks: setup.value.marks, shrink: setup.value.shrink });
   buildArt(world);
+  shownLimit = world.radius;
+  recorder.start(world);
+  canReplay.value = false;
+  refreshRound();
   shots = 0;
   shotCount.value = 0;
   popups = [];
@@ -214,6 +237,22 @@ async function start(): Promise<void> {
   pickDefaultPin();
   refreshTray();
   startLoop();
+}
+
+function cue(c: SoundCue): void {
+  if (setup.value.sound) engine.play(c);
+}
+
+function buzz(c: HapticCue): void {
+  vibrate(c, setup.value.haptics);
+}
+
+function refreshRound(): void {
+  if (!world) return;
+  roundNo.value = (world.round ?? 0) + 1;
+  const next = nextLimit(world);
+  borderWarn.value = next !== null;
+  borderNote.value = !world.shrinking ? '' : next !== null ? 'A borda avança no fim desta rodada.' : 'A borda começa a avançar na rodada 2.';
 }
 
 function canvasOf(art: { w: number; h: number; data: Uint8Array | Uint8ClampedArray }): HTMLCanvasElement {
@@ -355,6 +394,7 @@ function update(dt: number): void {
     const events: PinEvent[] = [];
     while (acc >= STEP) {
       stepWorld(world, STEP, events);
+      recorder.capture(world);
       acc -= STEP;
     }
     handleEvents(events);
@@ -366,11 +406,18 @@ function update(dt: number): void {
   } else if (phase.value === 'enemy') {
     enemyTimer -= dt;
     if (enemyTimer <= 0) fireEnemy();
+  } else if (replaying.value) {
+    replayAt += dt * REPLAY_SPEED;
+    const range = recorder.range();
+    if (!range || replayAt >= range.to) stopReplay();
   } else if (phase.value === 'aim' || phase.value === 'over') {
     // Pins que ainda estão caindo terminam de cair.
     const events: PinEvent[] = [];
     if (world.pins.some((p) => p.alive && p.fall > 0)) stepWorld(world, dt, events);
   }
+  // A borda mostrada anda até o raio real.
+  const target = arenaLimit(world);
+  shownLimit += Math.sign(target - shownLimit) * Math.min(Math.abs(target - shownLimit), dt * 70);
 }
 
 function handleEvents(events: PinEvent[]): void {
@@ -378,7 +425,24 @@ function handleEvents(events: PinEvent[]): void {
   let added = 0;
   let reactions = 0;
   let marksChanged = false;
+  let loudest = 0;
+  let loudestEdge: 'super' | 'weak' | 'none' | null = null;
+  let hitsMine = false;
+  let bumped = false;
+  let outMine = false;
+  let outTheirs = false;
   for (const e of events) {
+    if (e.type === 'hit') {
+      if (e.strength > loudest) {
+        loudest = e.strength;
+        loudestEdge = e.edge;
+      }
+      if (e.strength >= 0.12 && [e.a, e.b].some((id) => world?.pins.find((p) => p.id === id)?.side === 0)) hitsMine = true;
+    } else if (e.type === 'bumper') bumped = true;
+    else if (e.type === 'out') {
+      if (world.pins.find((p) => p.id === e.id)?.side === 0) outMine = true;
+      else outTheirs = true;
+    }
     if (e.type === 'hit' && e.edge !== null && added < 2) {
       const a = world.pins.find((p) => p.id === e.a);
       const b = world.pins.find((p) => p.id === e.b);
@@ -395,13 +459,35 @@ function handleEvents(events: PinEvent[]): void {
       if (e.reaction && reactions < 2) {
         popups.push({ text: e.reaction.text, x: e.x * 0.9, y: e.y * 0.9 - 24, age: 0, color: e.reaction.color });
         reactions++;
+        cue({ kind: 'pin-reaction' });
+        buzz({ kind: 'reaction' });
+      } else if (e.cells.length > 12) {
+        cue({ kind: 'pin-mark', type: TYPE_FOR_TERRAIN[e.kind], big: true });
       }
+    } else if (e.type === 'shrink') {
+      popups.push({ text: 'A borda avançou!', x: 0, y: -ARENA_RADIUS * 0.45, age: 0, color: '#ffb35c' });
+      cue({ kind: 'pin-shrink' });
+      buzz({ kind: 'shrink' });
+      bumperCanvas = canvasOf(paintBumpers(world.radius, world.patches));
     } else if (e.type === 'out') {
       const p = world.pins.find((x) => x.id === e.id);
       if (p) popups.push({ text: p.side === 1 ? 'Fora!' : 'Caiu!', x: p.x * 0.85, y: p.y * 0.85, age: 0, color: p.side === 1 ? '#7dffa0' : '#ff8a8a' });
     }
   }
   if (marksChanged) refreshFloorMarks();
+  if (loudest >= 0.12) cue({ kind: 'pin-hit', strength: loudest, edge: loudestEdge });
+  if (hitsMine && loudest >= 0.3) buzz({ kind: 'hit', strength: loudest });
+  if (bumped) {
+    cue({ kind: 'pin-bumper' });
+    buzz({ kind: 'bumper' });
+  }
+  if (events.some((e) => e.type === 'wave')) cue({ kind: 'pin-wave' });
+  if (outMine || outTheirs) {
+    cue({ kind: 'pin-out', mine: outMine });
+    buzz({ kind: 'out', mine: outMine });
+    // O último a cair decide a partida: marca o momento para a repetição.
+    if (outcomeOf(world) !== 'playing' && phase.value === 'rolling') recorder.markDecisive(world);
+  }
   if (events.some((e) => e.type === 'out')) refreshTray();
 }
 
@@ -423,6 +509,12 @@ function finishRoll(): void {
     return;
   }
   clearEffects(world, false);
+  // Fim da rodada (o seu disparo e a resposta): a borda pode avançar.
+  const closing: PinEvent[] = advanceRound(world);
+  handleEvents(closing);
+  refreshRound();
+  const after = outcomeOf(world);
+  if (after !== 'playing') return endGame(after);
   nextAim();
 }
 
@@ -445,6 +537,8 @@ function fireEnemy(): void {
     return;
   }
   afterShot(world, 1, { pinId: pin.id, moveIndex: plan.moveIndex });
+  recorder.start(world);
+  cue({ kind: 'pin-launch', power: plan.shot.power, type: pin.active?.kind === 'elemental' ? pin.active.type : null });
   if (plan.moveIndex !== null) popups.push({ text: pin.moves[plan.moveIndex]!.name, x: pin.x, y: pin.y - 36, age: 0, color: '#ffb3b3' });
   rollOwner = 'enemy';
   rollTime = 0;
@@ -462,6 +556,21 @@ function endGame(kind: 'won' | 'lost' | 'energia'): void {
   message.value = '';
   recordEvent({ type: 'minigame', game: 'pins', won, score });
   refreshTray();
+  cue({ kind: won ? 'pin-win' : 'pin-lose' });
+  buzz({ kind: won ? 'win' : 'lose' });
+  canReplay.value = recorder.hasReplay;
+  if (canReplay.value) startReplay();
+}
+
+function startReplay(): void {
+  const range = recorder.range();
+  if (!range || !recorder.hasReplay) return;
+  replayAt = range.from;
+  replaying.value = true;
+}
+
+function stopReplay(): void {
+  replaying.value = false;
 }
 
 function fireMine(shot: Shot): void {
@@ -481,6 +590,9 @@ function fireMine(shot: Shot): void {
   const moveIndex = selectedMove.value;
   launch(pin, shot, moveIndex);
   afterShot(world, 0, { pinId: pin.id, moveIndex });
+  recorder.start(world);
+  cue({ kind: 'pin-launch', power: shot.power, type: pin.active?.kind === 'elemental' ? pin.active.type : null });
+  buzz({ kind: 'launch', power: shot.power });
   if (moveIndex !== null) popups.push({ text: pin.moves[moveIndex]!.name, x: pin.x, y: pin.y - 36, age: 0, color: '#ffffff' });
   shots++;
   shotCount.value = shots;
@@ -500,6 +612,7 @@ function again(): void {
 
 function backToSetup(): void {
   cancelAnimationFrame(raf);
+  stopReplay();
   world = null;
   sprites.clear();
   phase.value = 'setup';
@@ -577,11 +690,53 @@ function draw(now: number): void {
     const half = terrainArt.half * k;
     ctx.drawImage(terrainCanvas, cx - half, cx - half, half * 2, half * 2);
   }
+
+  // Na repetição os pins vêm do quadro gravado; fora dela, do mundo.
+  const frame = replaying.value ? recorder.frameAt(replayAt) : null;
+  const frameById = frame ? new Map(frame.pins.map((p) => [p.id, p])) : null;
+  const drawPins = frameById
+    ? world.pins.map((p) => {
+        const f = frameById.get(p.id);
+        return f ? { ...p, x: f.x, y: f.y, fall: f.fall, alive: f.alive } : p;
+      })
+    : world.pins;
+  const pulse = 0.5 + 0.5 * Math.sin(now / 180);
+
+  // Borda que encolhe: o que ficou fora do raio vira vazio, e a próxima borda aparece como aviso.
+  const limit = frame ? frame.limit : shownLimit;
+  if (limit < world.radius - 0.5) {
+    ctx.fillStyle = 'rgba(13,22,46,0.96)';
+    ctx.beginPath();
+    ctx.arc(cx, cx, (world.radius + 7) * k, 0, Math.PI * 2);
+    ctx.arc(cx, cx, limit * k, 0, Math.PI * 2, true);
+    ctx.fill('evenodd');
+    ctx.strokeStyle = '#d9d2c2';
+    ctx.lineWidth = Math.max(2, 5 * k);
+    ctx.setLineDash([9 * k, 7 * k]);
+    ctx.beginPath();
+    ctx.arc(cx, cx, limit * k, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  const warn = frame ? null : nextLimit(world);
+  if (warn !== null) {
+    ctx.fillStyle = `rgba(255,90,60,${0.1 + 0.1 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(cx, cx, limit * k, 0, Math.PI * 2);
+    ctx.arc(cx, cx, warn * k, 0, Math.PI * 2, true);
+    ctx.fill('evenodd');
+    ctx.strokeStyle = `rgba(255,176,60,${0.55 + 0.45 * pulse})`;
+    ctx.lineWidth = Math.max(2, 4 * k);
+    ctx.setLineDash([6 * k, 8 * k]);
+    ctx.beginPath();
+    ctx.arc(cx, cx, warn * k, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   if (bumperCanvas) ctx.drawImage(bumperCanvas, 0, 0, canvas.width, canvas.height);
 
   const selected = world.pins.find((p) => p.id === selectedId.value);
-  const pulse = 0.5 + 0.5 * Math.sin(now / 180);
-  const pinsSorted = [...world.pins].filter((p) => p.alive).sort((a, b) => a.y - b.y);
+  const pinsSorted = [...drawPins].filter((p) => p.alive).sort((a, b) => a.y - b.y);
   for (const pin of pinsSorted) {
     const x = cx + pin.x * k;
     const y = cx + pin.y * k;
@@ -686,6 +841,18 @@ function draw(now: number): void {
     ctx.fillText(p.text, tx, ty);
   }
   ctx.globalAlpha = 1;
+
+  // Repetição: tarjas de cinema e o rótulo.
+  if (frame) {
+    const bar = canvas.height * 0.085;
+    ctx.fillStyle = 'rgba(0,0,0,0.78)';
+    ctx.fillRect(0, 0, canvas.width, bar);
+    ctx.fillRect(0, canvas.height - bar, canvas.width, bar);
+    ctx.fillStyle = `rgba(255,255,255,${0.7 + 0.3 * pulse})`;
+    ctx.font = `800 ${13 * dpr}px system-ui, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillText('● REPETIÇÃO · câmera lenta', 12 * dpr, bar * 0.64);
+  }
 }
 
 const onResize = () => resize();
@@ -693,6 +860,7 @@ onMounted(() => window.addEventListener('resize', onResize));
 onBeforeUnmount(() => {
   disposed = true;
   cancelAnimationFrame(raf);
+  engine.dispose();
   window.removeEventListener('resize', onResize);
   Object.values(thumbs.value).forEach((url) => URL.revokeObjectURL(url));
 });
@@ -708,6 +876,11 @@ const legend = [
   ...(Object.keys(PATCH_LABELS_PT) as (keyof typeof PATCH_LABELS_PT)[]).map((k) => ({ key: k as string, ...PATCH_LABELS_PT[k] })),
 ];
 const floorLegend = computed(() => floorMarks.value.map((k) => ({ key: k, name: TERRAIN_LABELS_PT[k], hint: MARK_HINT_PT[k] })));
+
+function setFlag(key: 'shrink' | 'sound' | 'haptics', on: boolean): void {
+  setup.value = { ...setup.value, [key]: on };
+  saveSetup(setup.value);
+}
 
 function setMarks(on: boolean): void {
   setup.value = { ...setup.value, marks: on };
@@ -734,6 +907,18 @@ function setMarks(on: boolean): void {
         <div class="diff" role="group" aria-label="Dificuldade do adversário">
           <button v-for="d in DIFFICULTIES" :key="d" type="button" :class="{ on: setup.difficulty === d }" :aria-pressed="setup.difficulty === d" @click="setDifficulty(d)">{{ DIFFICULTY_LABELS_PT[d] }}</button>
         </div>
+        <label class="check-line">
+          <input type="checkbox" :checked="setup.shrink" @change="setFlag('shrink', ($event.target as HTMLInputElement).checked)" />
+          <span>Borda que encolhe <small>Depois da 1ª rodada a arena diminui: uma linha tracejada avisa onde a borda vai parar, e quem estiver fora cai.</small></span>
+        </label>
+        <label class="check-line">
+          <input type="checkbox" :checked="setup.sound" @change="setFlag('sound', ($event.target as HTMLInputElement).checked)" />
+          <span>Sons <small>Disparo, choques, chão que reage, quedas e fim da partida.</small></span>
+        </label>
+        <label class="check-line">
+          <input type="checkbox" :checked="setup.haptics" @change="setFlag('haptics', ($event.target as HTMLInputElement).checked)" />
+          <span>Vibração <small>Só em celulares que deixam o navegador vibrar (iPhone não).</small></span>
+        </label>
         <label class="check-line">
           <input type="checkbox" :checked="setup.marks" @change="setMarks(($event.target as HTMLInputElement).checked)" />
           <span>Marcas no chão <small>Golpes elementais e Pancada mudam o chão (gelo, lama, poças…) e o chão reage.</small></span>
@@ -795,7 +980,9 @@ function setMarks(on: boolean): void {
           <span class="sides"><i style="background: #4da3ff"></i> Você {{ counts.mine }}</span>
           <span class="sides"><i style="background: #ff5d5d"></i> Adversários {{ counts.enemy }}</span>
           <span class="sides">Disparos {{ shotCount }}</span>
+          <span v-if="setup.shrink" class="sides" :class="{ warn: borderWarn }">Rodada {{ roundNo }}</span>
         </p>
+        <p v-if="borderNote && phase !== 'over'" class="hud-note" :class="{ warn: borderWarn }" role="status">{{ borderWarn ? '⚠ ' : '' }}{{ borderNote }}</p>
         <p class="hud-hint" role="status">{{ message || phaseHint }}</p>
       </div>
 
@@ -810,13 +997,15 @@ function setMarks(on: boolean): void {
       >
         <canvas ref="canvasEl" role="img" aria-label="Arena vista de cima com os pins"></canvas>
         <div ref="spriteLayer" class="pin-sprites" aria-hidden="true"></div>
-        <div v-if="phase === 'over' && result" class="pin-over" role="dialog" aria-label="Fim da partida">
+        <button v-if="replaying" type="button" class="pin-skip" @click.stop="stopReplay">Pular repetição</button>
+        <div v-if="phase === 'over' && result && !replaying" class="pin-over" role="dialog" aria-label="Fim da partida">
           <strong>{{ result.won ? 'Você venceu!' : result.reason === 'energia' ? 'Acabou a energia' : 'Você perdeu' }}</strong>
           <p v-if="result.won">Todos os adversários caíram em {{ result.shots }} disparo{{ result.shots === 1 ? '' : 's' }}. Nota {{ result.score }}.</p>
           <p v-else-if="result.reason === 'energia'">Nenhum pin seu cabe na energia que sobrou. Ganhe XP escaneando cartas ou jogando <a :href="routeHref('treinador')">minigames</a>.</p>
           <p v-else>Seus pins caíram todos da arena.</p>
           <div class="game-actions">
             <button type="button" class="primary" @click="again">Jogar de novo</button>
+            <button v-if="canReplay" type="button" @click="startReplay">Ver a repetição</button>
             <button type="button" @click="backToSetup">Trocar pins</button>
           </div>
         </div>

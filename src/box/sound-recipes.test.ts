@@ -21,6 +21,10 @@ function allCues(): SoundCue[] {
   }
   for (const status of STATUSES) cues.push({ kind: 'status', status }, { kind: 'tick', cause: status }, { kind: 'skip', cause: status });
   for (const personality of PERSONALITIES) cues.push({ kind: 'victory', personality });
+  for (const power of [0.1, 1]) cues.push({ kind: 'pin-launch', power, type: null }, { kind: 'pin-launch', power, type: 'fire' });
+  for (const edge of ['super', 'weak', 'none', null] as const) cues.push({ kind: 'pin-hit', strength: 0.15, edge }, { kind: 'pin-hit', strength: 1, edge });
+  for (const type of [null, ...POKEMON_TYPES]) cues.push({ kind: 'pin-mark', type, big: true }, { kind: 'pin-mark', type, big: false });
+  cues.push({ kind: 'pin-bumper' }, { kind: 'pin-wave' }, { kind: 'pin-reaction' }, { kind: 'pin-out', mine: true }, { kind: 'pin-out', mine: false }, { kind: 'pin-shrink' }, { kind: 'pin-win' }, { kind: 'pin-lose' });
   return cues;
 }
 
@@ -81,5 +85,15 @@ describe('receitas de som', () => {
   it('o desmaio desce de tom', () => {
     const tone = layersFor({ kind: 'faint' }).find((l) => l.src === 'tone')!;
     expect(tone.f1!).toBeLessThan(tone.f0!);
+  });
+
+  it('sons do Pin Mode: batida forte soa mais alto, o super efetivo acrescenta notas e perder é diferente de ganhar', () => {
+    const hit = (strength: number, edge: 'super' | 'weak' | 'none' | null = null) => layersFor({ kind: 'pin-hit', strength, edge });
+    expect(totalGain(hit(1))).toBeGreaterThan(totalGain(hit(0.15)));
+    expect(hit(1, 'super').length).toBeGreaterThan(hit(1).length);
+    expect(JSON.stringify(layersFor({ kind: 'pin-win' }))).not.toBe(JSON.stringify(layersFor({ kind: 'pin-lose' })));
+    expect(JSON.stringify(layersFor({ kind: 'pin-out', mine: true }))).not.toBe(JSON.stringify(layersFor({ kind: 'pin-out', mine: false })));
+    const mark = (big: boolean) => totalGain(layersFor({ kind: 'pin-mark', type: 'water', big }));
+    expect(mark(true)).toBeGreaterThan(mark(false));
   });
 });

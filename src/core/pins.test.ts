@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng } from './battle';
 import {
-  afterShot, affordable, ARENA_RADIUS, aliveOf, buildPatches, canUse, chooseEnemyShot, clearEffects, cooldownFor, createWorld, effectForAttack, isSettled, launch,
+  advanceRound, afterShot, affordable, arenaLimit, limitForRound, MIN_LIMIT, nextLimit, SHRINK_AFTER_ROUND, SHRINK_STEP, ARENA_RADIUS, aliveOf, buildPatches, canUse, chooseEnemyShot, clearEffects, cooldownFor, createWorld, effectForAttack, isSettled, launch,
   launchSpeed, layoutPins, massOf, MAX_MOVES, MAX_PER_SIDE, MAX_PULL, MIN_PULL, outcomeOf, pinFromSpec, previewPath, scoreMatch, shotFromDrag, stepWorld, STOP_SPEED, typeKnockback,
   typesOf, weightMass,
 } from './pins';
-import { cellOfWorld, createArenaGrid, frictionOfCell, stampType, terrainAffinity } from './pin-terrain';
+import { cellOfWorld, createArenaGrid, frictionOfCell, stampType, terrainAffinity, TYPE_FOR_TERRAIN } from './pin-terrain';
 import type { Patch, Pin, PinEvent, PinSpec, PinWorld } from './pins';
-import { TERRAIN_KINDS } from './terrain';
+import { TERRAIN_FOR_TYPE, TERRAIN_KINDS } from './terrain';
 import type { TerrainGrid, TerrainKind } from './terrain';
 import type { BaseStats, PokemonType } from './pokemon-data';
 
@@ -526,6 +526,10 @@ describe('marcas no chão (como na batalha da Caixa)', () => {
   };
   const marksOf = (events: PinEvent[]) => events.filter((e): e is Extract<PinEvent, { type: 'mark' }> => e.type === 'mark');
 
+  it('cada marca tem um tipo que a deixa (para o som)', () => {
+    for (const kind of TERRAIN_KINDS) expect(TERRAIN_FOR_TYPE[TYPE_FOR_TERRAIN[kind]]).toBe(kind);
+  });
+
   it('o ponto do mundo cai no bloco certo (y negativo = alto da tela = linha 0)', () => {
     const grid = flatGrid();
     stampType(grid, ARENA_RADIUS, 'fire', 0, -250, 0.6, seededRng(1));
@@ -668,5 +672,77 @@ describe('marcas no chão (como na batalha da Caixa)', () => {
       expect(off.terrain!.counts()).toEqual({});
       expect(off.markRng).toBeNull();
     }
+  });
+});
+
+describe('borda que encolhe', () => {
+  const shrinkWorld = (pins: Pin[], patches: Patch[] = []): PinWorld => ({ ...world(pins, patches), limit: ARENA_RADIUS, round: 0, shrinking: true });
+
+  it('as primeiras rodadas são de aquecimento e depois a borda avança até um mínimo', () => {
+    expect(limitForRound(ARENA_RADIUS, 0)).toBe(ARENA_RADIUS);
+    expect(limitForRound(ARENA_RADIUS, SHRINK_AFTER_ROUND - 1)).toBe(ARENA_RADIUS);
+    expect(limitForRound(ARENA_RADIUS, SHRINK_AFTER_ROUND)).toBe(ARENA_RADIUS - SHRINK_STEP);
+    expect(limitForRound(ARENA_RADIUS, SHRINK_AFTER_ROUND + 1)).toBe(ARENA_RADIUS - 2 * SHRINK_STEP);
+    expect(limitForRound(ARENA_RADIUS, 99)).toBe(MIN_LIMIT);
+  });
+
+  it('avisa o próximo raio com antecedência e não avisa quando desligada', () => {
+    const w = shrinkWorld([pinAt('a', 0, 0, 100)]);
+    expect(nextLimit(w)).toBeNull();
+    w.round = SHRINK_AFTER_ROUND - 1;
+    expect(nextLimit(w)).toBe(ARENA_RADIUS - SHRINK_STEP);
+    w.shrinking = false;
+    expect(nextLimit(w)).toBeNull();
+  });
+
+  it('ao fechar a rodada a borda avança, quem fica além cai e os pinos de mola do vazio somem', () => {
+    const inside = pinAt('in', 0, 0, 100);
+    const edge = pinAt('edge', 0, ARENA_RADIUS - 20, 0);
+    const bumpers: Patch[] = [
+      { kind: 'bumper', x: 0, y: -100, r: 25, angle: 0 },
+      { kind: 'bumper', x: ARENA_RADIUS - 40, y: 0, r: 25, angle: 0 },
+    ];
+    const w = shrinkWorld([inside, edge, pinAt('e', 1, 0, -200)], bumpers);
+    w.round = SHRINK_AFTER_ROUND - 1;
+    const events = advanceRound(w);
+    expect(w.round).toBe(SHRINK_AFTER_ROUND);
+    expect(arenaLimit(w)).toBe(ARENA_RADIUS - SHRINK_STEP);
+    expect(events).toContainEqual({ type: 'shrink', limit: ARENA_RADIUS - SHRINK_STEP });
+    expect(events.filter((e) => e.type === 'out')).toEqual([{ type: 'out', id: 'edge' }]);
+    expect(edge.fall).toBeGreaterThan(0);
+    expect(inside.fall).toBe(0);
+    expect(w.patches).toHaveLength(1);
+    expect(w.patches[0]!.y).toBe(-100);
+  });
+
+  it('antes do fim do aquecimento só conta a rodada', () => {
+    const w = shrinkWorld([pinAt('a', 0, 0, 100), pinAt('b', 1, 0, -100)]);
+    expect(advanceRound(w)).toEqual([]);
+    expect(w.round).toBe(1);
+    expect(arenaLimit(w)).toBe(ARENA_RADIUS);
+  });
+
+  it('o pin cai na borda nova, e a mira também a respeita', () => {
+    const w = shrinkWorld([pinAt('a', 0, 0, 100)]);
+    w.limit = 200;
+    const pin = w.pins[0]!;
+    pin.vx = 400;
+    pin.y = 0;
+    pin.x = 150;
+    const events = run(w, 1);
+    expect(events.some((e) => e.type === 'out' && e.id === 'a')).toBe(true);
+    const fresh = pinAt('b', 0, 150, 0);
+    const ghostWorld = shrinkWorld([fresh]);
+    ghostWorld.limit = 200;
+    expect(previewPath(ghostWorld, fresh, { dirX: 1, dirY: 0, power: 1 }).falls).toBe(true);
+  });
+
+  it('o mundo criado liga a borda só quando pedido', () => {
+    const specs = { mine: [spec('m')], enemy: [spec('e')] };
+    expect(createWorld(specs, seededRng(1)).shrinking).toBe(false);
+    const w = createWorld(specs, seededRng(1), { shrink: true });
+    expect(w.shrinking).toBe(true);
+    expect(arenaLimit(w)).toBe(ARENA_RADIUS);
+    expect(w.round).toBe(0);
   });
 });
