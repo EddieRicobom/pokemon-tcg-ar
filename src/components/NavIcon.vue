@@ -1,5 +1,5 @@
 <script setup lang="ts">
-export type NavIconName = 'escanear' | 'varias' | 'caixa' | 'carregar' | 'diagnostico';
+export type NavIconName = 'escanear' | 'varias' | 'caixa' | 'carregar' | 'diagnostico' | 'treinador';
 defineProps<{ name: NavIconName }>();
 </script>
 
@@ -25,6 +25,11 @@ defineProps<{ name: NavIconName }>();
     <template v-else-if="name === 'carregar'">
       <rect x="8" y="3.5" width="11" height="15" rx="2" />
       <path d="M5.5 7.5A2 2 0 0 0 4.5 9.2V19a2 2 0 0 0 2 2h8.3" />
+    </template>
+    <!-- Treinador: medalha com estrela -->
+    <template v-else-if="name === 'treinador'">
+      <circle cx="12" cy="9" r="5.5" />
+      <path d="m12 6.6.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2L9.1 8.7l2-.3L12 6.6ZM8.6 13.6 7 20l5-2.4 5 2.4-1.6-6.4" />
     </template>
     <!-- Diagnóstico: linha de pulso -->
     <template v-else>

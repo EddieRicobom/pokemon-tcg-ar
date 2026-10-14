@@ -7,6 +7,7 @@ import { useFullscreen } from '../app/fullscreen';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { battleMode, setBattleMode } from '../app/battle-mode-store';
+import { recordEvent } from '../app/trainer-store';
 import { visual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
 import { requestOrientationPermission } from '../sensors/orientation-feed';
@@ -221,6 +222,17 @@ const shakeStyle = computed(() => {
 });
 
 /** Carrega os dados de cada Pokémon da caixa (jogo + carta) e começa a luta automática. */
+/** A batalha em cena já rendeu XP ao Treinador (só conta quando termina). */
+let battleCounted = false;
+watch(
+  () => battleHud.value?.phase,
+  (phase) => {
+    if (phase !== 'finished' || battleCounted) return;
+    battleCounted = true;
+    recordEvent({ type: 'battle', team: battleSummary.value ? battleSummary.value.mode !== 'royale' : false });
+  },
+);
+
 async function startBattle(): Promise<void> {
   const current = box;
   if (!current || preparing.value) return;
@@ -253,6 +265,7 @@ async function startBattle(): Promise<void> {
     const fighting = plan.picks.map((i) => creatures[i]!);
     const fighters = await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), loadBattle);
     if (disposed || box !== current) return;
+    battleCounted = false;
     const result = current.startBattle(fighters, plan.mode === 'royale' ? undefined : plan);
     battleFighters.value = fighters;
     battleSummary.value = {

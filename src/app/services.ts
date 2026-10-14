@@ -1,6 +1,7 @@
 import { fetchSprite } from '../ar/sprite-source';
 import { createDefaultBackend } from '../cache/assets';
 import { loadBattleData } from './pokemon-data-service';
+import { recordEvent, syncTrainerHistory } from './trainer-store';
 import { CardCache } from '../cache/card-cache';
 import { openCacheDb } from '../cache/db';
 import { blobToRgba, loadImageRgba, rgbaToCanvas } from '../recognition/browser-image';
@@ -60,10 +61,14 @@ export function getCache(): Promise<CardCache> {
       // O alvo de AR é compilado aqui, no aparelho, a partir da imagem de referência (MindAR carregado sob demanda).
       buildTarget: async (reference) => (await import('../ar/target')).compileTarget(reference),
       decodeReference: (blob) => blobToRgba(blob, CARD_WIDTH_PX, CARD_HEIGHT_PX),
+      // Cada leitura gravada rende XP no Treinador.
+      onRecorded: (card) => recordEvent({ type: 'scan', cardId: card.id, setId: card.setId, setName: card.setName, setTotal: card.setOfficial }),
     });
     // Se o navegador apagou arquivos por falta de espaço, as cartas voltam a "parcial" em vez de fingirem estar prontas.
     await cache.verifyIntegrity().catch(() => 0);
     void cache.requestPersistence();
+    // As cartas que já estavam guardadas entram no Treinador sem XP.
+    void cache.list().then((cards) => syncTrainerHistory(cards)).catch(() => undefined);
     return cache;
   })();
   return cachePromise;

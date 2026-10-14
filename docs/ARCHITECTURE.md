@@ -167,6 +167,13 @@ Tela "Caixa": todos os Pokémon das cartas já guardadas no aparelho (até 30, a
 - O som não acompanha a câmera lenta (usa o relógio real). O navegador só libera o áudio dentro de um toque: `CaixaView.startBattle` chama `unlockAudio()` antes de qualquer `await`.
 - "Suavizar" → "Som da batalha: Ligado/Desligado" (`visual.sound`, padrão ligado).
 
+### Treinador (`src/core/trainer.ts`, `src/app/trainer-store.ts`, `src/views/TreinadorView.vue`)
+
+- **Conta pura**: `applyEvent(estado, evento, dia)` devolve o novo estado e as recompensas (`Reward`); o dia (`YYYY-MM-DD`, fuso do aparelho) vem de fora, então os testes não dependem do relógio. Eventos: `scan` (carta lida), `battle` (batalha vista até o fim; `team` quando foi Equipes ou 3x3) e `minigame`.
+- **XP**: carta nova +50; carta já conhecida +10 só na primeira leitura do dia (reler a mesma carta não rende nada, para não virar fazenda); batalha +15 nas 5 primeiras do dia; missão +40 e as 3 do dia +100; bônus de sequência (+5 por dia, até +50) no primeiro feito do dia. Nível: XP para o nível N = 50·N·(N−1). Títulos: Novato, Colecionador, Treinador, Veterano, Mestre de cartas, Campeão, Lenda.
+- **Missões do dia** (`missionsFor`): fixas para cada data (hash do dia), sempre uma de leitura e mais duas. **Sequência**: dias seguidos com qualquer feito; pular um dia zera. **Conquistas**: lista em `ACHIEVEMENTS`, cada uma com um teste sobre o estado. Missões e conquistas de minigame ficam desligadas até `MINIGAMES_ENABLED`.
+- **Ligações**: `CardCache` recebe `onRecorded` e `services.getCache` o liga a `recordEvent`; assim cada leitura gravada (automática, escolha ou busca manual) conta, e abrir uma carta guardada não. As cartas que já estavam guardadas entram uma vez, sem XP (`importHistory`). `CaixaView` registra a batalha quando ela termina. `RewardToasts` (no `App.vue`) mostra até 4 avisos por vez (nível, conquista, missão, sequência, carta nova, XP). Persistência em `localStorage` (`tcg-ar-trainer-v1`, normalizado ao ler). Nada vai para servidor.
+
 ### Giroscópio e suavização (tracking mais fluido)
 
 - **Fonte de sensores** (`src/sensors/orientation-feed.ts`): uma só para o AR da carta e a Caixa. Prefere o `RelativeOrientationSensor` (Generic Sensor API, Chrome/Android, 60 Hz, sem bússola e sem os saltos magnéticos) e cai no evento `deviceorientation`. A conversão do quaternion do sensor para a câmera do Three.js é testada contra a conta do evento W3C. Guarda 1,5 s de histórico com a hora de cada amostra (`at(t)` interpola), para consultar a orientação **no instante** do quadro.
