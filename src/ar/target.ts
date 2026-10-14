@@ -1,6 +1,8 @@
 interface MindArCompiler {
   compileImageTargets(images: ImageBitmap[], progress: (percent: number) => void): Promise<unknown>;
-  exportData(): ArrayBuffer;
+  exportData(): Uint8Array;
+  importData(buffer: ArrayBuffer): unknown[];
+  data: unknown[];
 }
 
 /**
@@ -31,8 +33,30 @@ export async function compileTarget(reference: Blob, onProgress?: (percent: numb
     } finally {
       clearTimeout(timer);
     }
-    return new Blob([compiler.exportData()], { type: 'application/octet-stream' });
+    return new Blob([compiler.exportData() as BlobPart], { type: 'application/octet-stream' });
   } finally {
     bitmap.close();
   }
+}
+
+/**
+ * Junta vários alvos compilados (um por carta, formato .mind) num só, na ordem dada: o índice do alvo no resultado
+ * é a posição da carta na lista. É assim que o MindAR rastreia várias cartas ao mesmo tempo (o rastreador só
+ * aceita um arquivo). Um arquivo de versão incompatível faz a junção falhar, em vez de ser ignorado em silêncio.
+ */
+export async function mergeTargets(buffers: readonly ArrayBuffer[]): Promise<ArrayBuffer> {
+  if (buffers.length === 0) throw new Error('Nenhum alvo de rastreamento para juntar.');
+  if (buffers.length === 1) return buffers[0]!;
+  const { CompilerBase } = await import('mind-ar/src/image-target/compiler-base.js');
+  const merged = new CompilerBase() as MindArCompiler;
+  const all: unknown[] = [];
+  buffers.forEach((buffer, i) => {
+    const reader = new CompilerBase() as MindArCompiler;
+    const list = reader.importData(buffer);
+    if (list.length === 0) throw new Error(`O alvo ${i + 1} está vazio ou é de uma versão incompatível; recompile.`);
+    all.push(...list);
+  });
+  merged.data = all;
+  const out = merged.exportData();
+  return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
 }

@@ -2,6 +2,8 @@
 export interface TrackingUpdate {
   /** Matriz 4×4 em ordem de colunas (mundo OpenGL), ou null se a carta foi perdida. */
   worldMatrix: ArrayLike<number> | null;
+  /** Qual alvo (carta) esta pose é, quando o rastreador tem vários; 0 com um só. */
+  targetIndex?: number;
   /** Hora (performance.now) em que a câmera capturou o quadro de onde saiu esta pose, quando se sabe. */
   capturedAt?: number;
 }
@@ -9,15 +11,31 @@ export interface TrackingUpdate {
 export interface TrackingInfo {
   markerWidth: number;
   markerHeight: number;
+  /** Tamanho de cada alvo, na ordem em que foram dados (com um só alvo, só o primeiro). */
+  markers?: { width: number; height: number }[];
   /** Matriz de projeção 4×4 (ordem de colunas) do rastreador. */
   projection: ArrayLike<number>;
   inputWidth: number;
   inputHeight: number;
 }
 
+export interface TrackingOptions {
+  /** Quantas cartas podem ser rastreadas ao mesmo tempo (padrão 1). */
+  maxTrack?: number;
+}
+
 export interface TrackingEngine {
-  /** Prepara o alvo (compilado) e começa a processar o vídeo. */
-  /** `onInputChange`: o quadro da câmera mudou de proporção (girou a tela, trocou a resolução); quem chamou deve reiniciar. */
-  start(video: HTMLVideoElement, target: ArrayBuffer, onUpdate: (update: TrackingUpdate) => void, onInputChange?: () => void): Promise<TrackingInfo>;
+  /**
+   * Prepara o(s) alvo(s) compilado(s) e começa a processar o vídeo. Com vários alvos, o índice de cada um em
+   * `TrackingUpdate.targetIndex` é a posição dele na lista.
+   * `onInputChange`: o quadro da câmera mudou de proporção (girou a tela, trocou a resolução); quem chamou deve reiniciar.
+   */
+  start(
+    video: HTMLVideoElement,
+    target: ArrayBuffer | readonly ArrayBuffer[],
+    onUpdate: (update: TrackingUpdate) => void,
+    onInputChange?: () => void,
+    options?: TrackingOptions,
+  ): Promise<TrackingInfo>;
   stop(): void;
 }

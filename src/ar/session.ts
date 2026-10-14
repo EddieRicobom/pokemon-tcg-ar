@@ -82,6 +82,8 @@ export class ArSession {
   private running = false;
   private missedFrames = 0;
   private lastPoseAt = 0;
+  /** Quando chegou a primeira pose nula depois de uma pose boa (o MindAR desistiu da carta); null se está vendo a carta. */
+  private lostAt: number | null = null;
   private lastUpdateAt = 0;
   private intervalEmaMs = 0;
   private lastStatsAt = 0;
@@ -166,18 +168,32 @@ export class ArSession {
       sprite.setTracked(true);
       this.missedFrames = 0;
       this.lastPoseAt = nowMs;
+      this.lostAt = null;
       if (this.state.phase !== 'tracking') this.setState({ phase: 'tracking', message: undefined, foundCount: this.state.foundCount + 1 });
     } else {
       // Perda curta: mantém o Pokémon na última pose em vez de piscar enquanto o rastreador reencontra a carta.
       // Com giroscópio ele continua preso ao mundo (acompanha o giro do celular) por mais tempo.
       const hold = this.deps.holdMs ?? (gyro ? HOLD_WITH_GYRO_MS : HOLD_WITHOUT_GYRO_MS);
       if (nowMs - this.lastPoseAt > hold) sprite.setTracked(false);
+      // O MindAR manda a pose nula uma vez só, depois de desistir (até lá repete a última pose): o tempo de
+      // segurar conta daqui e é conferido a cada quadro de tela (`expireLost`).
+      else if (this.lostAt === null) this.lostAt = nowMs;
       this.missedFrames++;
       const limit = this.deps.lostAfterFrames ?? 10;
       if (this.state.phase === 'tracking' && this.missedFrames >= limit) {
         this.setState({ phase: 'lost', message: 'Perdi a carta. Aponte de novo para ela.' });
       }
     }
+  }
+
+  /** Passou o tempo de segurar depois do aviso de carta perdida: esconde o Pokémon (não vem mais nenhuma leitura para avisar). */
+  private expireLost(nowMs: number): void {
+    if (this.lostAt === null) return;
+    const hold = this.deps.holdMs ?? (this.gyroOn(nowMs) ? HOLD_WITH_GYRO_MS : HOLD_WITHOUT_GYRO_MS);
+    if (nowMs - this.lostAt <= hold) return;
+    this.lostAt = null;
+    this.deps.sprite.setTracked(false);
+    if (this.state.phase === 'tracking') this.setState({ phase: 'lost', message: 'Perdi a carta. Aponte de novo para ela.' });
   }
 
   /** Média móvel do intervalo entre leituras do rastreador, publicada no estado a cada segundo (diagnóstico). */
@@ -252,6 +268,7 @@ export class ArSession {
       this.handle = schedule(tick);
       // Giroscópio: leva a pose (presa ao mundo) de volta para a câmera pela orientação de agora − atraso da imagem.
       const nowMs = this.clock();
+      this.expireLost(nowMs);
       const settings = this.deps.getGyroSettings?.() ?? { gyro: true, latencyMs: 70 };
       this.deps.sprite.setViewOrientation(this.gyroOn(nowMs) ? this.deps.orientation!.at(nowMs - settings.latencyMs) : null);
       this.deps.sprite.update(now);

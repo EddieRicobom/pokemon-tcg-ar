@@ -17,6 +17,11 @@ import { adaptiveTauMs, smoothingAlpha } from './smoothing';
 /** Memória máxima (bytes) para guardar os quadros já ampliados; acima disso, amplia de novo a cada troca de quadro. */
 const FRAME_CACHE_BYTES = 32 * 1024 * 1024;
 
+export interface CardSpriteOptions {
+  /** Limite da memória dos quadros ampliados (várias cartas dividem a memória do aparelho). */
+  frameCacheBytes?: number;
+}
+
 export type SpriteMode = 'empty' | 'animated' | 'static' | 'placeholder';
 
 /** Quadro como vai para a GPU (ampliado, com o visual aplicado). */
@@ -70,7 +75,10 @@ export class CardSprite {
   private readonly frameCache = new Map<number, PreparedFrame>();
   private frameCacheBytes = 0;
 
-  constructor() {
+  private readonly frameCacheLimit: number;
+
+  constructor(options: CardSpriteOptions = {}) {
+    this.frameCacheLimit = options.frameCacheBytes ?? FRAME_CACHE_BYTES;
     this.group.matrixAutoUpdate = false;
     this.group.visible = false;
     // alphaTest em vez de blending: a transparência do GIF é binária e evita halos e problemas de ordem.
@@ -109,7 +117,7 @@ export class CardSprite {
     const base = this.smooth ? upscaleSprite(rgba, width, height) : { data: rgba, width, height, factor: 1 };
     let prepared: PreparedFrame = { data: base.data, width: base.width, height: base.height };
     if (!isDefaultLook(this.look)) prepared = applyLook(base.data, base.width, base.height, this.look, Math.max(1, Math.round(base.factor / 2)));
-    if (this.frameCacheBytes + prepared.data.byteLength <= FRAME_CACHE_BYTES) {
+    if (this.frameCacheBytes + prepared.data.byteLength <= this.frameCacheLimit) {
       this.frameCache.set(index, prepared);
       this.frameCacheBytes += prepared.data.byteLength;
     }

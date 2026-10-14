@@ -28,7 +28,7 @@ describe('App', () => {
     const text = await mount();
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
-    expect(host?.querySelectorAll('nav a')).toHaveLength(4);
+    expect(host?.querySelectorAll('nav a')).toHaveLength(5);
     expect(host?.querySelector('video')).not.toBeNull();
     expect(host?.querySelector('canvas')).not.toBeNull();
     expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera');
@@ -45,6 +45,13 @@ describe('App', () => {
     expect(text).toContain('Caixa');
     expect(text).toContain('Câmera desligada');
     expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera e sensores');
+  });
+
+  it('a tela Várias cartas abre com a câmera desligada e explica o limite de cartas', async () => {
+    const text = await mount('#/varias');
+    expect(text).toContain('Várias cartas');
+    expect(text).toContain('Câmera desligada');
+    expect(text).toContain('nada é lido do texto');
   });
 
   it('a tela Cartas mostra a ação de limpar o cache', async () => {

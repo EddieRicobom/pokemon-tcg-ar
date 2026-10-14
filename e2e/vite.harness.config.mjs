@@ -7,5 +7,5 @@ const here = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   root: resolve(here, '..'),
   base: './',
-  build: { outDir: 'e2e/.tmp/harness-dist', emptyOutDir: true, rollupOptions: { input: resolve(here, 'ar-harness.html') } },
+  build: { outDir: 'e2e/.tmp/harness-dist', emptyOutDir: true, rollupOptions: { input: [resolve(here, 'ar-harness.html'), resolve(here, 'ar-harness-multi.html')] } },
 });
