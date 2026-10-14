@@ -36,6 +36,8 @@ export interface RunningBox {
   setSmoothing(mode: SmoothingMode): void;
   startBattle(fighters: readonly Fighter[]): BattleResult;
   stopBattle(): void;
+  /** Traz a arena da batalha de volta para a frente do olhar. */
+  recenterBattle(): void;
   setPhoneHeight(meters: number): void;
   setHalfSize(meters: number): void;
   setVideoFov(deg: number): void;
@@ -107,6 +109,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setSmoothing: (mode) => scene.setSmoothing(mode),
     startBattle: (fighters) => scene.startBattle(fighters),
     stopBattle: () => scene.stopBattle(),
+    recenterBattle: () => scene.recenterBattle(),
     setPhoneHeight(meters) {
       phoneHeight = meters;
     },

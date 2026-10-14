@@ -1,5 +1,6 @@
 import { AdditiveBlending, Sprite, SpriteMaterial, Vector3 } from 'three';
-import type { PerspectiveCamera, Scene } from 'three';
+import type { Object3D, PerspectiveCamera } from 'three';
+import { ArenaStage } from './arena';
 import { effectivenessLabel, PERSONALITY_LABELS_PT, STATUS_LABELS_PT } from '../core/battle';
 import type { BattleResult, BattleTurn, Fighter, Personality, Rng, StatusKind } from '../core/battle';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
@@ -45,6 +46,17 @@ export interface HudLabel {
   visible: boolean;
   /** 0–1. */
   age: number;
+  /** Tamanho relativo do texto (golpes grandes, números maiores). */
+  size: number;
+}
+
+/** Aviso grande no meio da tela (crítico, super efetivo, nocaute…). */
+export interface HudCallout {
+  key: number;
+  text: string;
+  color: string;
+  /** 0–1. */
+  age: number;
 }
 
 export interface BattleHud {
@@ -54,6 +66,11 @@ export interface BattleHud {
   labels: HudLabel[];
   /** Clarão sobre a tela toda (golpes fortes). */
   flash: { color: string; strength: number } | null;
+  /** Tremor e "soco" de zoom da imagem desenhada (em pixels e fator), nos golpes fortes. */
+  shake: { x: number; y: number; zoom: number };
+  /** Escurecimento da câmera (0–1) para dar foco ao golpe. */
+  dim: number;
+  callout: HudCallout | null;
   winner: { id: string; name: string; hpLeft: number; maxHp: number } | null;
   turn: number;
   totalTurns: number;
@@ -64,10 +81,12 @@ export interface DirectorOptions {
   fighters: readonly Fighter[];
   creatures: readonly BoxCreature[];
   result: BattleResult;
-  scene: Scene;
+  /** Raiz da arena: ela fica no chão, girada para a tela e encolhida; tudo da batalha mora dentro dela. */
+  root: Object3D;
   camera: PerspectiveCamera;
-  anchor: () => Vector3;
-  half: number;
+  /** Meios-eixos da arena (unidades da arena). */
+  rx: number;
+  rz: number;
   rng: Rng;
 }
 
@@ -151,6 +170,10 @@ const HP_TWEEN_MS = 450;
 const LABEL_TTL_MS = 1250;
 const CONFETTI_MS = 3500;
 const FLASH_MS = 260;
+const CALLOUT_MS = 950;
+/** Faixa horizontal (% da tela) onde barras e avisos ficam inteiros, mesmo se o Pokémon estiver na borda. */
+const BAR_X = { min: 14, max: 86 };
+const LABEL_X = { min: 19, max: 81 };
 
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
@@ -177,6 +200,7 @@ interface FloatLabel {
   color: string;
   at: Vector3;
   born: number;
+  size: number;
 }
 
 /** Efeitos de um quadro para um Pokémon, somados e depois escritos em `BoxCreature.fx`. */
@@ -231,6 +255,17 @@ export class BattleDirector {
   private lastConfetti = 0;
   private lastBolt = 0;
   private cachedHud: BattleHud | null = null;
+  private readonly stage: ArenaStage;
+  private readonly spotlight: Sprite;
+  /** Relógio real (sem câmera lenta) e o que depende dele. */
+  private realClock = 0;
+  private slowUntil = 0;
+  private slowScale = 1;
+  private shakePower = 0;
+  private dimNow = 0;
+  private callout: { key: number; text: string; color: string; born: number } | null = null;
+  private calloutSeq = 0;
+  private lastRing = 0;
 
   constructor(private readonly o: DirectorOptions) {
     const n = o.fighters.length;
@@ -246,23 +281,39 @@ export class BattleDirector {
     this.guard = new Array<boolean>(n).fill(false);
     this.ambientAt = new Array<number>(n).fill(0);
     this.frames = Array.from({ length: n }, newFrame);
-    const radius = Math.min(o.half * 0.62, Math.max(0.45, 0.2 + n * 0.1));
+    // Elipse de frente para a tela: o primeiro à esquerda, os outros em volta (z > 0 = mais perto do celular).
     for (let i = 0; i < n; i++) {
-      const angle = (i / n) * Math.PI * 2 + Math.PI / 2;
-      this.home.push({ x: Math.cos(angle) * radius, z: Math.sin(angle) * radius });
+      const angle = Math.PI + (i / n) * Math.PI * 2;
+      this.home.push({ x: Math.cos(angle) * o.rx, z: Math.sin(angle) * o.rz });
     }
     for (const c of o.creatures) Object.assign(c.fx, neutralFx());
-    o.scene.add(this.particles.group, this.rings.group, this.bolt.group);
+    // Entram correndo de fora da arena.
+    o.creatures.forEach((c, i) => {
+      const spot = this.home[i]!;
+      c.state.x = spot.x * 2.3;
+      c.state.z = spot.z * 1.5;
+      c.state.vx = 0;
+      c.state.vz = 0;
+    });
+    this.stage = new ArenaStage(o.rx, o.rz);
+    this.spotlight = new Sprite(new SpriteMaterial({ map: glowMap(), color: 0xffe27a, transparent: true, blending: AdditiveBlending, depthWrite: false, opacity: 0.7 }));
+    this.spotlight.visible = false;
+    o.root.add(this.stage.group, this.spotlight, this.particles.group, this.rings.group, this.bolt.group);
     this.projectile = new Sprite(new SpriteMaterial({ map: glowMap(), color: 0xffffff, transparent: true, blending: AdditiveBlending, depthWrite: false }));
     this.projectile.visible = false;
-    o.scene.add(this.projectile);
+    o.root.add(this.projectile);
     this.shields = o.fighters.map(() => {
       const shield = new Sprite(new SpriteMaterial({ map: glowMap(), color: 0x7fd4ff, transparent: true, blending: AdditiveBlending, depthWrite: false, opacity: 0.55 }));
       shield.visible = false;
-      o.scene.add(shield);
+      o.root.add(shield);
       return shield;
     });
     this.banner = { text: 'Batalha!', sub: `${n} Pokémon, todos contra todos`, color: '#ffcb05' };
+  }
+
+  /** Meio-eixo x da arena (para recentralizar sem refazer o cálculo). */
+  get arenaRx(): number {
+    return this.o.rx;
   }
 
   get finished(): boolean {
@@ -297,8 +348,7 @@ export class BattleDirector {
 
   private world(i: number, lift = 0): Vector3 {
     const c = this.o.creatures[i]!;
-    const a = this.o.anchor();
-    return new Vector3(a.x + c.state.x + c.fx.dx, a.y + lift, a.z + c.state.z + c.fx.dz);
+    return new Vector3(c.state.x + c.fx.dx, lift, c.state.z + c.fx.dz);
   }
 
   private chest(i: number): Vector3 {
@@ -310,8 +360,8 @@ export class BattleDirector {
     return this.world(i, this.o.creatures[i]!.height + extra);
   }
 
-  private addLabel(text: string, tone: LabelTone, color: string, at: Vector3): void {
-    this.labels.push({ key: ++this.labelSeq, text, tone, color, at: at.clone(), born: this.clock });
+  private addLabel(text: string, tone: LabelTone, color: string, at: Vector3, size = 1): void {
+    this.labels.push({ key: ++this.labelSeq, text, tone, color, at: at.clone(), born: this.clock, size });
     if (this.labels.length > 14) this.labels.shift();
   }
 
@@ -323,9 +373,36 @@ export class BattleDirector {
     return Math.floor(t / period) !== Math.floor((t - dt) / period);
   }
 
+  /** Congela (parada de 1 quadro nos golpes fortes) ou desacelera o tempo da batalha por `realMs` de tempo real. */
+  private slowMo(realMs: number, scale: number): void {
+    if (this.realClock >= this.slowUntil) {
+      this.slowScale = scale;
+      this.slowUntil = this.realClock + realMs;
+    } else {
+      this.slowScale = Math.min(this.slowScale, scale);
+      this.slowUntil = Math.max(this.slowUntil, this.realClock + realMs);
+    }
+  }
+
+  private shake(power: number): void {
+    this.shakePower = Math.min(1, Math.max(this.shakePower, power));
+  }
+
+  private shout(text: string, color: string): void {
+    this.callout = { key: ++this.calloutSeq, text, color, born: this.realClock };
+  }
+
+  get slowed(): boolean {
+    return this.realClock < this.slowUntil;
+  }
+
   update(dtMs: number): void {
-    const dt = Math.min(Math.max(dtMs, 0), 100);
+    const real = Math.min(Math.max(dtMs, 0), 100);
+    this.realClock += real;
+    const dt = this.realClock < this.slowUntil ? real * this.slowScale : real;
+    this.shakePower = Math.max(0, this.shakePower - real / 380);
     this.clock += dt;
+    this.stage.update(real);
     this.particles.update(dt);
     this.rings.update(dt);
     this.labels = this.labels.filter((l) => this.clock - l.born < LABEL_TTL_MS);
@@ -338,8 +415,46 @@ export class BattleDirector {
     else this.updateFinished();
 
     this.applyPersistent();
+    this.updateDirecting(real);
     this.commit();
     this.cachedHud = null;
+  }
+
+  /** Foco do cinema: escurece a câmera durante o golpe, acende a borda da arena e liga o refletor do vencedor. */
+  private updateDirecting(real: number): void {
+    const turn = this.phase === 'fight' ? this.currentTurnData() : null;
+    let dimTarget = 0;
+    let glow = 0;
+    if (turn && turn.kind === 'attack') {
+      const plan = turnPlan(turn, this.personality(turn.attacker));
+      const t = this.turnClock;
+      if (t > plan.windup * 0.2 && t < plan.impactAt + 350) {
+        dimTarget = 0.34;
+        glow = 1;
+      }
+    }
+    if (this.slowed && this.slowScale >= 0.2 && this.slowScale < 0.5) dimTarget = Math.max(dimTarget, 0.3);
+    if (this.phase === 'finished') {
+      dimTarget = 0.32;
+      glow = 0.6;
+    }
+    this.dimNow += (dimTarget - this.dimNow) * Math.min(1, real / 160);
+    this.stage.setGlow(glow);
+    if (this.phase === 'finished') this.updateSpotlight();
+  }
+
+  private updateSpotlight(): void {
+    const w = this.o.result.winner;
+    const c = this.o.creatures[w]!;
+    this.spotlight.visible = true;
+    const pulse = 1 + 0.05 * Math.sin(this.clock * 0.006);
+    this.spotlight.position.set(c.state.x, 0.95, c.state.z);
+    this.spotlight.scale.set(Math.max(0.5, c.width * 2.2) * pulse, 2.2, 1);
+    // Ondas de luz no chão.
+    if (this.clock - this.lastRing > 900) {
+      this.lastRing = this.clock;
+      this.rings.emit(this.world(w), 0xffe27a, 0.5, 900);
+    }
   }
 
   // ------------------------------------------------------------------------- comportamento parado
@@ -433,6 +548,8 @@ export class BattleDirector {
       }
       this.phase = 'fight';
       this.turnClock = 0;
+      this.shout('Já!', '#ffcb05');
+      this.rings.emit(new Vector3(0, 0, 0), 0xffcb05, Math.max(this.o.rx, 0.5) * 1.3, 800);
       this.startTurn();
     }
   }
@@ -459,6 +576,9 @@ export class BattleDirector {
         sub: `${personality} · ${TYPE_LABELS_PT[turn.move.type]} · ${turn.move.special ? 'especial' : 'físico'} · ${source}`,
         color: TYPE_COLORS[turn.move.type],
       };
+      // A borda da arena acende na cor do golpe e um anel de carga abre sob quem ataca.
+      this.stage.setColor(typeColorHex(turn.move.type));
+      this.rings.emit(this.world(turn.attacker), typeColorHex(turn.move.type), 0.45, 600);
       if (turn.thawed) {
         this.status[turn.attacker] = null;
         this.addLabel('Descongelou!', 'status', STATUS_COLORS_CSS.freeze, this.top(turn.attacker, 0.15));
@@ -725,23 +845,21 @@ export class BattleDirector {
     const b = this.home[target]!;
     const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
     const frac = turn.damage / this.o.fighters[target]!.maxHp;
-    const mag = Math.min(0.28, 0.05 + frac * 0.6) * (guarded ? 0.4 : 1);
+    const mag = Math.min(0.2, 0.04 + frac * 0.5) * (guarded ? 0.4 : 1);
     this.knock[target] = { x: ((b.x - a.x) / len) * mag, z: ((b.z - a.z) / len) * mag, at: this.clock };
     this.hpAnim[target] = { from: this.shownHp[target]!, to: turn.targetHpAfter, at: this.clock };
-    this.addLabel(`-${turn.damage}`, turn.critical ? 'crit' : 'damage', css, top);
+    const maxHp = this.o.fighters[target]!.maxHp;
+    const size = Math.min(2.4, 0.9 + (turn.damage / maxHp) * 2.6 + (turn.critical ? 0.3 : 0));
+    this.addLabel(`-${turn.damage}`, turn.critical ? 'crit' : 'damage', css, top, size);
     let lift = 0.12;
     if (guarded) {
       this.guard[target] = false;
       this.addLabel('Bloqueou parte!', 'info', '#7fd4ff', top.clone().add(new Vector3(0, lift, 0)));
       lift += 0.12;
     }
-    const label = effectivenessLabel(turn.effectiveness);
+    const label = turn.effectiveness >= 2 ? null : effectivenessLabel(turn.effectiveness);
     if (label) {
       this.addLabel(label, turn.effectiveness > 1 ? 'good' : 'bad', turn.effectiveness > 1 ? '#86efac' : '#fca5a5', top.clone().add(new Vector3(0, lift, 0)));
-      lift += 0.12;
-    }
-    if (turn.critical) {
-      this.addLabel('Golpe crítico!', 'crit', '#fde047', top.clone().add(new Vector3(0, lift, 0)));
       lift += 0.12;
     }
     if (turn.inflicted) {
@@ -759,6 +877,26 @@ export class BattleDirector {
     if (turn.critical) this.flash('#ffffff', 0.35);
     else if (IMPACT_STYLES[type].flash) this.flash(css, 0.28);
     else if (turn.effectiveness >= 4) this.flash(css, 0.3);
+    this.dramatize(turn, frac, guarded);
+  }
+
+  /** Tremor da imagem, parada rápida / câmera lenta e aviso grande, conforme a força do golpe. */
+  private dramatize(turn: BattleTurn, frac: number, guarded: boolean): void {
+    this.shake(Math.min(1, (0.2 + frac * 1.3) * (guarded ? 0.5 : 1) * (turn.critical ? 1.3 : 1) * (turn.fainted ? 1.3 : 1)));
+    if (turn.fainted) {
+      this.shout('Nocaute!', '#fb7185');
+      this.slowMo(700, 0.3);
+      this.rings.emit(this.world(turn.target), 0xffffff, 0.8, 800);
+      emitBurst(this.particles, this.chest(turn.target), turn.move.type, 1.6, this.o.rng);
+    } else if (turn.critical) {
+      this.shout('Crítico!', '#fde047');
+      this.slowMo(160, 0.08);
+    } else if (turn.effectiveness >= 2) {
+      this.shout(turn.effectiveness >= 4 ? 'Super efetivo ×4!' : 'Super efetivo!', '#86efac');
+      this.slowMo(110, 0.08);
+    } else if (frac > 0.3) {
+      this.slowMo(90, 0.08);
+    }
   }
 
   private afterImpact(turn: BattleTurn): void {
@@ -849,6 +987,8 @@ export class BattleDirector {
       this.shownHp[i] = this.o.result.hpLeft[i] ?? 0;
       this.hpAnim[i] = { from: this.shownHp[i]!, to: this.shownHp[i]!, at: this.clock };
     }
+    this.shout('Vitória!', '#ffcb05');
+    this.slowMo(600, 0.4);
     this.banner = {
       text: `${fighter.name} venceu!`,
       sub: this.o.result.reason === 'ko' ? `Restaram ${this.o.result.hpLeft[w]} de ${fighter.maxHp} PS` : 'Fim do tempo: venceu quem tinha mais PS',
@@ -871,7 +1011,7 @@ export class BattleDirector {
   }
 
   private project(point: Vector3): { x: number; y: number; visible: boolean } {
-    const p = point.clone().project(this.o.camera);
+    const p = this.o.root.localToWorld(point.clone()).project(this.o.camera);
     return { x: (p.x * 0.5 + 0.5) * 100, y: (1 - (p.y * 0.5 + 0.5)) * 100, visible: p.z < 1 && Math.abs(p.x) < 1.15 && Math.abs(p.y) < 1.15 };
   }
 
@@ -885,22 +1025,27 @@ export class BattleDirector {
       const hp = Math.max(0, Math.round(this.shownHp[i]!));
       return {
         id: f.id, name: f.name, types: f.types, personality: f.personality, status: this.status[i] ?? null, guard: this.guard[i] ?? false,
-        hp, maxHp: f.maxHp, frac: clamp01(this.shownHp[i]! / f.maxHp), ...pos, fainted: c.fx.faint >= 0.5, quality: f.quality,
+        hp, maxHp: f.maxHp, frac: clamp01(this.shownHp[i]! / f.maxHp), ...pos, x: Math.min(BAR_X.max, Math.max(BAR_X.min, pos.x)), fainted: c.fx.faint >= 0.5, quality: f.quality,
       };
     });
     const labels: HudLabel[] = this.labels.map((l) => {
       const age = clamp01((this.clock - l.born) / LABEL_TTL_MS);
       const pos = this.project(l.at.clone().add(new Vector3(0, age * 0.3, 0)));
-      return { key: l.key, text: l.text, tone: l.tone, color: l.color, ...pos, age };
+      return { key: l.key, text: l.text, tone: l.tone, color: l.color, ...pos, x: Math.min(LABEL_X.max, Math.max(LABEL_X.min, pos.x)), age, size: l.size };
     });
     const flashAge = this.screenFlash ? (this.clock - this.screenFlash.at) / FLASH_MS : 1;
     const w = result.winner;
+    const calloutAge = this.callout ? (this.realClock - this.callout.born) / CALLOUT_MS : 1;
+    const power = this.shakePower * this.shakePower;
     this.cachedHud = {
       phase: this.phase,
       banner: this.banner,
       bars,
       labels,
       flash: this.screenFlash && flashAge < 1 ? { color: this.screenFlash.color, strength: this.screenFlash.strength * (1 - flashAge) } : null,
+      shake: { x: Math.sin(this.realClock * 0.13) * 11 * power, y: Math.cos(this.realClock * 0.17) * 8 * power, zoom: 1 + 0.035 * power },
+      dim: this.dimNow,
+      callout: this.callout && calloutAge < 1 ? { key: this.callout.key, text: this.callout.text, color: this.callout.color, age: calloutAge } : null,
       winner: this.phase === 'finished' ? { id: fighters[w]!.id, name: fighters[w]!.name, hpLeft: result.hpLeft[w] ?? 0, maxHp: fighters[w]!.maxHp } : null,
       turn: Math.min(this.turnIndex + 1, result.turns.length),
       totalTurns: result.turns.length,
@@ -917,6 +1062,9 @@ export class BattleDirector {
     this.bolt.dispose();
     this.projectile.material.dispose();
     this.projectile.removeFromParent();
+    this.stage.dispose();
+    this.spotlight.material.dispose();
+    this.spotlight.removeFromParent();
     for (const s of this.shields) {
       s.material.dispose();
       s.removeFromParent();

@@ -69,7 +69,7 @@ describe('batalha na cena', () => {
     expect(scene.battling).toBe(true);
     expect(scene.battleHud?.phase).toBe('intro');
     expect(scene.battleHud?.banner?.text).toBe('Batalha!');
-    const total = INTRO_MAX_MS + result.turns.reduce((sum, t) => sum + turnDuration(t, team[t.attacker]!.personality), 0) + 500;
+    const total = INTRO_MAX_MS + result.turns.reduce((sum, t) => sum + turnDuration(t, team[t.attacker]!.personality), 0) * 1.3 + 3000;
     run(scene, total);
     const hud = scene.battleHud!;
     expect(hud.phase).toBe('finished');
@@ -240,7 +240,7 @@ describe('batalha com condições e defesa', () => {
       const scene = ready(4);
       const team = fighters(4).map((f, i) => ({ ...f, maxHp: f.maxHp * (i === 0 ? 3 : 1) }));
       const result = scene.startBattle(team, seededRng(seed));
-      const total = INTRO_MAX_MS + result.turns.reduce((s, t) => s + turnDuration(t, team[t.attacker]!.personality), 0) + 800;
+      const total = (INTRO_MAX_MS + result.turns.reduce((s, t) => s + turnDuration(t, team[t.attacker]!.personality), 0)) * 1.3 + 3000;
       run(scene, total, 50);
       const hud = scene.battleHud!;
       expect(hud.phase).toBe('finished');
@@ -288,5 +288,105 @@ describe('anéis, raios e tabelas de impacto', () => {
       expect(IMPACT_STYLES[t].extra).toBeTruthy();
     }
     for (const s of ['burn', 'poison', 'paralysis', 'freeze'] as const) expect(STATUS_TINTS[s]).toBeGreaterThan(0);
+  });
+});
+
+describe('arena da batalha', () => {
+  const lookAt = (scene: BoxScene, yawDeg: number, pitchDeg: number) => scene.setCameraQuaternion(lookQuaternion((yawDeg * Math.PI) / 180, (pitchDeg * Math.PI) / 180));
+
+  it('a arena nasce na frente do olhar, pequena e no chão', () => {
+    const scene = ready(3);
+    lookAt(scene, 0, -45);
+    scene.startBattle(fighters(3), seededRng(5));
+    const root = scene.scene.children.find((c) => c.children.length > 0 && c.scale.x < 1 && c.scale.x > 0.2)!;
+    expect(root).toBeDefined();
+    // No chão (a câmera fica a 1,3 m do chão, como no `ready`: -1,3).
+    expect(root.position.y).toBeCloseTo(-1.3, 5);
+    // Dentro de uma distância confortável do celular.
+    const dist = Math.hypot(root.position.x, root.position.z);
+    expect(dist).toBeGreaterThanOrEqual(0.89);
+    expect(dist).toBeLessThanOrEqual(1.71);
+    // E menor que a caixa: encolhida.
+    expect(root.scale.x).toBeLessThan(1);
+  });
+
+  it('os Pokémon ficam lado a lado de frente para a tela (mais largos que fundos)', () => {
+    const scene = ready(4);
+    scene.startBattle(fighters(4), seededRng(5));
+    run(scene, INTRO_MAX_MS + 200);
+    const xs = scene.creatureList.map((c) => c.state.x);
+    const zs = scene.creatureList.map((c) => c.state.z);
+    const spread = (v: number[]) => Math.max(...v) - Math.min(...v);
+    expect(spread(xs)).toBeGreaterThan(spread(zs) * 1.5);
+  });
+
+  it('com 2 Pokémon, um fica de cada lado', () => {
+    const scene = ready(2);
+    scene.startBattle(fighters(2), seededRng(1));
+    run(scene, INTRO_MAX_MS + 200);
+    const [a, b] = scene.creatureList;
+    expect(a!.state.x).toBeLessThan(0);
+    expect(b!.state.x).toBeGreaterThan(0);
+  });
+
+  it('recentrar leva a arena para onde o celular olha agora; parar devolve os Pokémon à cena', () => {
+    const scene = ready(3);
+    lookAt(scene, 0, -45);
+    scene.startBattle(fighters(3), seededRng(2));
+    const root = scene.creatureList[0]!.group.parent!;
+    const before = root.position.clone();
+    lookAt(scene, 90, -45);
+    scene.recenterBattle();
+    expect(root.position.distanceTo(before)).toBeGreaterThan(0.5);
+    // Virou 90° para o lado: a arena sai do eixo -z e vai para onde o celular aponta (o lado -x neste referencial).
+    expect(Math.abs(root.position.x)).toBeGreaterThan(0.5);
+    expect(Math.abs(root.position.z)).toBeLessThan(0.2);
+    scene.stopBattle();
+    for (const c of scene.creatureList) expect(c.group.parent).toBe(scene.scene);
+  });
+
+  it('as barras de PS ficam sobre a tela com a arena encolhida (todos cabem sem virar o celular)', () => {
+    for (const n of [2, 4, 6]) {
+      const scene = ready(n);
+      lookAt(scene, 0, -45);
+      scene.startBattle(fighters(n), seededRng(4));
+      // Fim da entrada, antes do primeiro golpe: todos parados em seus lugares.
+      let now = run(scene, 0);
+      while (scene.battleHud!.phase === 'intro') {
+        now += 33;
+        scene.update(now);
+      }
+      const bars = scene.battleHud!.bars;
+      expect(bars.every((b) => b.visible)).toBe(true);
+      for (const b of bars) {
+        expect(b.x).toBeGreaterThan(2);
+        expect(b.x).toBeLessThan(98);
+        expect(b.y).toBeGreaterThan(2);
+        expect(b.y).toBeLessThan(98);
+      }
+    }
+  });
+
+  it('cinema: nocaute traz aviso grande, câmera lenta, tremor e a tela escurece; no fim há refletor', () => {
+    const scene = ready(2);
+    const team = fighters(2);
+    const result = scene.startBattle(team, seededRng(7));
+    let now = run(scene, 0);
+    const seen = { callout: new Set<string>(), shake: 0, dim: 0 };
+    const end = INTRO_MAX_MS + (result.turns.reduce((s, t) => s + turnDuration(t, team[t.attacker]!.personality), 0)) * 1.3 + 3000;
+    for (let t = 0; t < end; t += 33) {
+      now += 33;
+      scene.update(now);
+      const hud = scene.battleHud!;
+      if (hud.callout) seen.callout.add(hud.callout.text);
+      seen.shake = Math.max(seen.shake, Math.abs(hud.shake.x) + Math.abs(hud.shake.y));
+      seen.dim = Math.max(seen.dim, hud.dim);
+    }
+    expect(seen.callout.has('Já!')).toBe(true);
+    expect(seen.callout.has('Nocaute!')).toBe(true);
+    expect(seen.callout.has('Vitória!')).toBe(true);
+    expect(seen.shake).toBeGreaterThan(1);
+    expect(seen.dim).toBeGreaterThan(0.1);
+    expect(scene.battleHud!.phase).toBe('finished');
   });
 });

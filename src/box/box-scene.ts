@@ -8,6 +8,7 @@ import { intersectFloor } from './floor';
 import type { FloorResult } from './floor';
 import { formationSlots } from './formation';
 import { createWander, separate, stepToward, stepWander } from './wander';
+import { arenaFrame, arenaRadii } from './arena';
 import { BattleDirector } from './battle-director';
 import type { BattleHud } from './battle-director';
 import { simulateBattle } from '../core/battle';
@@ -43,13 +44,18 @@ export class BoxScene {
   private smoothing: SmoothingMode = DEFAULT_SMOOTHING;
   mode: BoxMode = 'passeio';
   private director: BattleDirector | null = null;
+  /** Raiz da arena da batalha: no chão, girada para a tela e encolhida. Os Pokémon moram nela só durante a luta. */
+  private readonly battleRoot = new Group();
+  private readonly battleCamera = new Vector3();
+  private readonly battleZero = new Vector3();
+  private readonly battleRight = new Vector3(1, 0, 0);
   private readonly rng: Rng;
 
   constructor(rng: Rng = Math.random) {
     this.rng = rng;
     this.camera.position.set(0, 0, 0);
     this.floor.visible = false;
-    this.scene.add(this.floor);
+    this.scene.add(this.floor, this.battleRoot);
   }
 
   get placed(): boolean {
@@ -172,16 +178,50 @@ export class BoxScene {
     if (fighters.length < 2 || fighters.length !== this.creatures.length) throw new Error('A batalha precisa de um lutador para cada Pokémon da caixa (mínimo 2).');
     this.stopBattle();
     const result = simulateBattle(fighters, rng);
+    const { rx, rz } = arenaRadii(fighters.length);
+    this.frameArena(rx);
+    for (const creature of this.creatures) this.battleRoot.add(creature.group);
+    this.floor.visible = false;
     this.director = new BattleDirector({
-      fighters, creatures: this.creatures, result, scene: this.scene, camera: this.camera,
-      anchor: () => this.anchor ?? new Vector3(), half: this.half, rng,
+      fighters, creatures: this.creatures, result, root: this.battleRoot, camera: this.camera, rx, rz, rng,
     });
     return result;
   }
 
+  /**
+   * Põe a arena logo à frente do olhar, no chão, com o tamanho que cabe na tela. Vale no começo da luta e quando
+   * o jogador pede para recentralizar (virou o celular para outro lado).
+   */
+  private frameArena(rx: number): void {
+    if (!this.anchor) return;
+    this.camera.updateMatrixWorld(true);
+    const forward = new Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    const fallback = { x: this.anchor.x, z: this.anchor.z };
+    const frame = arenaFrame(forward, this.anchor.y, this.camera.fov, this.camera.aspect, rx, fallback);
+    this.battleRoot.position.copy(frame.center);
+    this.battleRoot.rotation.set(0, frame.yaw, 0);
+    this.battleRoot.scale.setScalar(frame.scale);
+    this.battleRoot.updateMatrixWorld(true);
+  }
+
+  /** Traz a arena de volta para a frente do olhar, sem reiniciar a luta. */
+  recenterBattle(): void {
+    if (!this.director) return;
+    this.frameArena(this.director.arenaRx);
+  }
+
   stopBattle(): void {
+    const director = this.director;
     this.director?.dispose();
     this.director = null;
+    if (director) {
+      // Os Pokémon voltam para a cena e para o passeio dentro da caixa.
+      for (const creature of this.creatures) {
+        this.scene.add(creature.group);
+        Object.assign(creature.state, createWander(this.half, this.rng));
+      }
+      this.floor.visible = this.anchor !== null;
+    }
   }
 
   /** Troca a população da caixa (até `MAX_CREATURES`). */
@@ -201,9 +241,11 @@ export class BoxScene {
   update(nowMs: number): void {
     const dt = this.lastNow === 0 ? 0 : nowMs - this.lastNow;
     this.lastNow = nowMs;
-    const base = this.anchor;
-    for (const creature of this.creatures) creature.group.visible = base !== null;
-    if (!base) return;
+    const placed = this.anchor;
+    for (const creature of this.creatures) creature.group.visible = placed !== null;
+    if (!placed) return;
+    // Na batalha tudo é medido dentro da arena (a origem dela é o centro).
+    const base = this.director ? this.battleZero : placed;
     if (this.director) {
       this.director.update(dt);
     } else if (this.mode === 'formacao') {
@@ -218,10 +260,10 @@ export class BoxScene {
       separate(this.creatures.map((c) => c.state), 0.28, this.half);
     }
     this.camera.updateMatrixWorld(true);
-    const right = new Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    const right = this.director ? this.battleRight : new Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
     right.y = 0;
     if (right.lengthSq() > 1e-6) right.normalize();
-    const camera = this.camera.position;
+    const camera = this.director ? this.battleRoot.worldToLocal(this.battleCamera.copy(this.camera.position)) : this.camera.position;
     for (const creature of this.creatures) creature.update(nowMs, dt, base, camera, right);
   }
 
