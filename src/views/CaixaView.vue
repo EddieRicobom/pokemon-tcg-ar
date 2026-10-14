@@ -125,6 +125,7 @@ async function open(): Promise<void> {
   box.setVideoFov(videoFov.value);
   box.setSmoothing(visual.smoothing);
   box.setLighting(visual.lighting);
+  box.setTerrain(visual.terrain);
   box.setSound(visual.sound);
   box.setMode(boxMode.value);
   phase.value = 'placing';
@@ -210,6 +211,7 @@ function onPointerUp(event: PointerEvent): void {
 
 watch(() => visual.smoothing, (smoothing) => box?.setSmoothing(smoothing));
 watch(() => visual.lighting, (on) => box?.setLighting(on));
+watch(() => visual.terrain, (on) => box?.setTerrain(on));
 watch(() => visual.sound, (on) => box?.setSound(on));
 
 const canBattle = computed(() => phase.value === 'running' && population.value.shown >= 2 && !loadingCreatures.value && !preparing.value);

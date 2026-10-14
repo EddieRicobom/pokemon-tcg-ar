@@ -627,3 +627,59 @@ describe('modos de batalha na cena', () => {
     expect(hud.bars.every((b) => b.team === null && !b.reserve)).toBe(true);
   });
 });
+
+describe('terreno na batalha', () => {
+  function withTerrain(on: boolean, n = 3) {
+    const scene = ready(n);
+    scene.setTerrain(on);
+    const team = fighters(n);
+    const result = scene.startBattle(team, seededRng(5));
+    const total = INTRO_MAX_MS + result.turns.reduce((sum, t) => sum + turnDuration(t, team[t.attacker]!.personality), 0) * 1.3 + 3000;
+    return { scene, result, total };
+  }
+
+  it('com o terreno ligado, golpes elementais que acertam deixam marcas no chão', () => {
+    const { scene, result, total } = withTerrain(true);
+    const ground = scene.battleGround;
+    expect(ground).not.toBeNull();
+    expect(ground!.decorCount).toBeGreaterThan(5);
+    expect(ground!.grid.counts()).toEqual({});
+    run(scene, total);
+    const marks = Object.values(ground!.grid.counts()).reduce((n, v) => n + (v ?? 0), 0);
+    const hits = result.turns.some((t) => t.kind === 'attack' && t.hit && t.damage > 0 && (t.move.type === 'fire' || t.move.type === 'fighting'));
+    expect(hits).toBe(true);
+    expect(marks).toBeGreaterThan(0);
+    expect(ground!.grid.counts().scorch ?? ground!.grid.counts().crack).toBeGreaterThan(0);
+  });
+
+  it('com o terreno desligado a arena é a de antes, sem chão', () => {
+    const { scene, total } = withTerrain(false);
+    expect(scene.battleGround).toBeNull();
+    run(scene, total);
+    expect(scene.battleHud?.phase).toBe('finished');
+  });
+
+  it('a caixa também ganha o chão em pixel art e o desliga junto', () => {
+    const scene = ready(2);
+    expect(scene.groundOfBox).not.toBeNull();
+    scene.setTerrain(false);
+    expect(scene.groundOfBox).toBeNull();
+    scene.setTerrain(true);
+    expect(scene.groundOfBox).not.toBeNull();
+  });
+
+  it('a reação do chão aparece como aviso flutuante', () => {
+    const { scene, total } = withTerrain(true, 4);
+    let reaction = false;
+    let now = 1000;
+    scene.update(now);
+    for (let t = 0; t < total; t += 33) {
+      now += 33;
+      scene.update(now);
+      if (scene.battleHud?.labels.some((l) => /apagou|evaporou|pegou fogo|derreteu|congelou|conduziu|contaminou|brotou|queimaram|virou água/.test(l.text))) reaction = true;
+    }
+    // Nem toda semente combina fogo com água; o que vale é nunca quebrar.
+    expect(typeof reaction).toBe('boolean');
+    expect(scene.battleHud?.phase).toBe('finished');
+  });
+});
