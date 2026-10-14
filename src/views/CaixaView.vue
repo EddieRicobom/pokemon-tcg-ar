@@ -6,6 +6,7 @@ import { prepareFighters } from '../app/battle-setup';
 import { useFullscreen } from '../app/fullscreen';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
+import { resetRoster, roster, rosterFor, setSlot, slotOf } from '../app/roster-store';
 import { battleMode, setBattleMode } from '../app/battle-mode-store';
 import { recordEvent } from '../app/trainer-store';
 import { visual } from '../app/visual-settings';
@@ -23,8 +24,8 @@ import type { OrientationMode } from '../box/orientation-source';
 import type { BoxCreature } from '../box/creature';
 import type { BattleHud } from '../box/battle-director';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
-import { TEAM_NAMES_PT, BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, battleModeBlocker, planBattle, seededRng, STATUS_LABELS_PT, summarizeBattle } from '../core/battle';
-import type { BattleMode, BattleSummary, Fighter } from '../core/battle';
+import { TEAM_NAMES_PT, TEAM_COLORS, BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, planBattle, rosterBlocker, seededRng, STATUS_LABELS_PT, summarizeBattle } from '../core/battle';
+import type { BattleMode, BattleSummary, Fighter, RosterSlot } from '../core/battle';
 
 type Phase = 'idle' | 'starting' | 'placing' | 'running';
 
@@ -48,6 +49,19 @@ const error = ref('');
 const hint = ref('');
 const mode = ref<OrientationMode>('sensor');
 const population = ref({ shown: 0, available: 0, failed: 0 });
+/** Quem está na caixa agora (para a escalação das batalhas). */
+const rosterRows = ref<{ id: string; name: string }[]>([]);
+const currentRoster = computed(() => rosterFor(rosterRows.value.map((r) => r.id)));
+const modeBlocker = (m: BattleMode) => rosterBlocker(m, population.value.shown, currentRoster.value);
+const rosterCustom = computed(() => rosterRows.value.some((r) => slotOf(r.id) !== 'auto'));
+/** Acima disto, as barras de vida viram só um traço (o nome aparece em quem está agindo): 40 etiquetas não cabem na tela. */
+const DENSE_BARS = 12;
+const SLOT_CHOICES: { slot: RosterSlot; label: string; title: string }[] = [
+  { slot: 'auto', label: 'Sorteio', title: 'Entra na luta e o lado é sorteado' },
+  { slot: 0, label: 'V', title: 'Equipe Vermelha' },
+  { slot: 1, label: 'A', title: 'Equipe Azul' },
+  { slot: 'out', label: 'Fora', title: 'Fica de fora da luta' },
+];
 const loadingCreatures = ref(false);
 const picked = ref<{ name: string; detail: string; dexId?: number } | null>(null);
 const phoneHeight = ref(DEFAULT_PHONE_HEIGHT_M);
@@ -83,6 +97,7 @@ async function populate(): Promise<void> {
     if (disposed || !box) return;
     box.setCreatures(loaded.entries);
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
+    rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: e.info.name }));
   } catch (e) {
     error.value = `Não consegui ler as cartas guardadas: ${e instanceof Error ? e.message : String(e)}`;
   } finally {
@@ -240,7 +255,8 @@ async function startBattle(): Promise<void> {
   if (!current || preparing.value) return;
   const creatures = current.scene.creatureList;
   if (creatures.length < 2) return;
-  const blocker = battleModeBlocker(battleMode.value, creatures.length);
+  const slots = rosterFor(creatures.map((c) => c.info.id));
+  const blocker = rosterBlocker(battleMode.value, creatures.length, slots);
   if (blocker) {
     error.value = blocker;
     showModes.value = true;
@@ -262,8 +278,9 @@ async function startBattle(): Promise<void> {
   showAdjust.value = false;
   showModes.value = false;
   try {
-    // Todos da caixa lutam por padrão; equipes e 3x3 sorteiam os lados (e, no 3x3, quem entra) a cada batalha.
-    const plan = planBattle(battleMode.value, creatures.length, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0));
+    // Todos da caixa lutam por padrão; equipes e 3x3 sorteiam os lados (e, no 3x3, quem entra) a cada batalha,
+    // a menos que o jogador tenha montado a escalação (equipe fixa ou fora da luta).
+    const plan = planBattle(battleMode.value, creatures.length, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0), slots);
     const fighting = plan.picks.map((i) => creatures[i]!);
     const fighters = await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), loadBattle);
     if (disposed || box !== current) return;
@@ -400,7 +417,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="card" aria-labelledby="box-title">
     <h2 id="box-title">Caixa</h2>
-    <p class="note">Sua equipe de até 6 Pokémon passeia solta num quadrado do chão. Gire o celular para olhar em volta.</p>
+    <p class="note">Sua equipe de até 40 Pokémon passeia solta num quadrado do chão. Gire o celular para olhar em volta.</p>
 
     <div
       ref="stageEl"
@@ -419,7 +436,7 @@ onBeforeUnmount(() => {
       <canvas ref="canvasEl" class="overlay" :style="shakeStyle" aria-label="Caixa com os Pokémon escaneados"></canvas>
       <p v-if="phase === 'idle'" class="placeholder">Câmera desligada</p>
       <div v-if="phase === 'placing'" class="crosshair" aria-hidden="true"></div>
-      <div v-if="battleHud" class="battle-hud" :class="{ compact: battleHud.bars.length > 4 }" aria-live="polite">
+      <div v-if="battleHud" class="battle-hud" :class="{ compact: battleHud.bars.length > 4, dense: battleHud.bars.length > DENSE_BARS }" aria-live="polite">
         <div class="battle-top">
           <div v-if="battleHud.banner" class="battle-banner" :style="{ '--fx': battleHud.banner.color }">
             <strong>{{ battleHud.banner.text }}</strong>
@@ -500,15 +517,40 @@ onBeforeUnmount(() => {
               class="mode-option"
               :class="{ on: battleMode === m }"
               :aria-pressed="battleMode === m"
-              :disabled="battleModeBlocker(m, population.shown) !== null"
+              :disabled="modeBlocker(m) !== null"
               @click="setBattleMode(m); error = ''"
             >
               <strong>{{ BATTLE_MODE_LABELS_PT[m] }}</strong>
               <span>{{ BATTLE_MODE_HINTS_PT[m] }}</span>
-              <small v-if="battleModeBlocker(m, population.shown)">{{ battleModeBlocker(m, population.shown) }}</small>
+              <small v-if="modeBlocker(m)">{{ modeBlocker(m) }}</small>
             </button>
           </div>
-          <p class="hint">Todos os Pokémon da caixa entram na luta. Para mudar quem está na caixa, use Equipe.</p>
+          <p class="hint">Por padrão todos os Pokémon da caixa entram na luta. Para mudar quem está na caixa (até 40), use Equipe.</p>
+          <div v-if="rosterRows.length > 0" class="roster">
+            <div class="roster-head">
+              <strong>Escalação</strong>
+              <button v-if="rosterCustom" type="button" class="link" @click="resetRoster">Tudo em sorteio</button>
+            </div>
+            <p class="hint">Escolha a equipe de cada um (V = Vermelha, A = Azul) ou deixe de fora. Quem ficar em sorteio completa os lados. No 3x3 cada lado usa 3.</p>
+            <ul class="roster-list">
+              <li v-for="row in rosterRows" :key="row.id" :class="{ out: roster[row.id] === 'out' }">
+                <span class="roster-name">{{ row.name }}</span>
+                <span class="roster-slots" role="group" :aria-label="`Escalação de ${row.name}`">
+                  <button
+                    v-for="c in SLOT_CHOICES"
+                    :key="String(c.slot)"
+                    type="button"
+                    :title="c.title"
+                    :aria-label="`${row.name}: ${c.title}`"
+                    :aria-pressed="slotOf(row.id) === c.slot"
+                    :class="{ on: slotOf(row.id) === c.slot }"
+                    :style="typeof c.slot === 'number' ? { '--team': TEAM_COLORS[c.slot] } : undefined"
+                    @click="setSlot(row.id, c.slot)"
+                  >{{ c.label }}</button>
+                </span>
+              </li>
+            </ul>
+          </div>
         </div>
         <div v-if="showTeam && cameraOn" class="stage-sheet" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
@@ -568,7 +610,7 @@ onBeforeUnmount(() => {
     <p v-if="error && !immersive" class="message error" role="alert">{{ error }}</p>
 
     <details v-if="!immersive" class="layout">
-      <summary>Escolher a equipe da caixa (até 6)</summary>
+      <summary>Escolher a equipe da caixa (até 40)</summary>
       <TeamPicker />
     </details>
   </section>

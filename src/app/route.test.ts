@@ -4,6 +4,8 @@ import { parseRoute, routeHref } from './route';
 describe('rotas por hash', () => {
   it('conhece a rota do Treinador', () => {
     expect(parseRoute('#/treinador')).toEqual({ name: 'treinador' });
+    expect(parseRoute('#/pins')).toEqual({ name: 'pins' });
+    expect(routeHref('pins')).toBe('#/pins');
     expect(routeHref('treinador')).toBe('#/treinador');
   });
 

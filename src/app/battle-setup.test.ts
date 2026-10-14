@@ -40,3 +40,13 @@ describe('prepareFighters', () => {
     expect(fighters[1]?.moves[0]?.name).toBe('Bolha');
   });
 });
+
+describe('prazo da preparação', () => {
+  it('cresce com a quantidade de lutadores, com teto', async () => {
+    const { prepareTimeoutFor, PREPARE_TIMEOUT_MS } = await import('./battle-setup');
+    expect(prepareTimeoutFor(6)).toBe(PREPARE_TIMEOUT_MS);
+    expect(prepareTimeoutFor(8)).toBe(PREPARE_TIMEOUT_MS);
+    expect(prepareTimeoutFor(40)).toBeGreaterThan(PREPARE_TIMEOUT_MS);
+    expect(prepareTimeoutFor(400)).toBe(30000);
+  });
+});

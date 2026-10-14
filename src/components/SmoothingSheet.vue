@@ -22,6 +22,16 @@ defineEmits<{ close: [] }>();
       </div>
       <p class="hint">{{ SMOOTHING_HINTS_PT[visual.smoothing] }}</p>
     </section>
+    <section v-if="!battle">
+      <h4>Sombra no chão</h4>
+      <div class="chips" role="group" aria-label="Sombra no chão">
+        <button type="button" :class="{ active: visual.shadow }" :aria-pressed="visual.shadow" @click="visual.shadow = true">Ligada</button>
+        <button type="button" :class="{ active: !visual.shadow }" :aria-pressed="!visual.shadow" @click="visual.shadow = false">Desligada</button>
+      </div>
+      <p class="hint">
+        {{ visual.shadow ? 'Uma sombra suave e um brilho fino aparecem na carta, embaixo do Pokémon.' : 'Sem sombra nem brilho: mais leve para celulares fracos.' }}
+      </p>
+    </section>
     <section v-if="battle">
       <h4>Luz dos golpes</h4>
       <div class="chips" role="group" aria-label="Luz dos golpes">

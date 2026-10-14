@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref } from 'vue';
 
-export type RouteName = 'escanear' | 'varias' | 'caixa' | 'carregar' | 'treinador' | 'diagnostico';
+export type RouteName = 'escanear' | 'varias' | 'caixa' | 'pins' | 'carregar' | 'treinador' | 'diagnostico';
 
 export interface Route {
   name: RouteName;
@@ -16,6 +16,7 @@ export function parseRoute(hash: string): Route {
   const [first, ...rest] = path.split('/');
   if (first === 'varias') return { name: 'varias' };
   if (first === 'caixa') return { name: 'caixa' };
+  if (first === 'pins') return { name: 'pins' };
   if (first === 'carregar') return { name: 'carregar' };
   if (first === 'treinador') return { name: 'treinador' };
   if (first === 'diagnostico') return { name: 'diagnostico' };

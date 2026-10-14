@@ -243,8 +243,8 @@ async function applyArtOption(): Promise<void> {
 setArtSearch(artOn.value);
 if (debugOn.value) void refreshIndexStatus();
 
-// v2: novo padrão (Pokémon um pouco acima do centro da carta e painel logo à frente dos pés).
-const LAYOUT_KEY = 'tcg-ar-layout-v2';
+// v3: novo padrão (Pokémon no centro da ilustração, inclinado 30° para trás, com sombra no chão).
+const LAYOUT_KEY = 'tcg-ar-layout-v3';
 function readLayout(): SpriteLayout {
   try {
     const raw = localStorage.getItem(LAYOUT_KEY);
@@ -254,10 +254,13 @@ function readLayout(): SpriteLayout {
   }
   return { ...DEFAULT_LAYOUT };
 }
-const layout = reactive<SpriteLayout>({ ...readLayout(), smoothing: visual.smoothing });
+const layout = reactive<SpriteLayout>({ ...readLayout(), smoothing: visual.smoothing, showShadow: visual.shadow });
 // A suavização dos pixels vem da escolha compartilhada (também usada em Várias e na Caixa).
 watch(() => visual.smoothing, (smoothing) => {
   layout.smoothing = smoothing;
+});
+watch(() => visual.shadow, (shadow) => {
+  layout.showShadow = shadow;
 });
 
 let stream: MediaStream | null = null;
@@ -577,7 +580,7 @@ function setPanelMode(mode: PanelMode): void {
 }
 
 function resetLayout(): void {
-  Object.assign(layout, DEFAULT_LAYOUT);
+  Object.assign(layout, DEFAULT_LAYOUT, { smoothing: visual.smoothing, showShadow: visual.shadow });
   saveLayout();
 }
 
@@ -769,13 +772,17 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
             <label>Altura acima da carta ({{ layout.lift.toFixed(2) }})
               <input v-model.number="layout.lift" type="range" :min="LAYOUT_LIMITS.lift.min" :max="LAYOUT_LIMITS.lift.max" step="0.05" />
             </label>
+            <label>Inclinação para trás ({{ Math.round(layout.tiltDeg ?? 0) }}°)
+              <input v-model.number="layout.tiltDeg" type="range" :min="LAYOUT_LIMITS.tiltDeg.min" :max="LAYOUT_LIMITS.tiltDeg.max" step="5" />
+            </label>
             <label>Giro ({{ Math.round(layout.yawDeg) }}°)
               <input v-model.number="layout.yawDeg" type="range" :min="LAYOUT_LIMITS.yawDeg.min" :max="LAYOUT_LIMITS.yawDeg.max" step="5" />
             </label>
             <label>Ponto de apoio
               <select v-model="layout.anchor">
-                <option value="base">Pés (em pé sobre a carta)</option>
-                <option value="center">Centro</option>
+                <option value="rest">Centro, encostado na carta</option>
+                <option value="base">Pés (sobre o ponto)</option>
+                <option value="center">Centro (no ar)</option>
               </select>
             </label>
             <label class="art-option">

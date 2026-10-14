@@ -2,12 +2,13 @@ import {
   DataTexture, DoubleSide, Group, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, Quaternion, RGBAFormat,
   SRGBColorSpace, UnsignedByteType, Vector3,
 } from 'three';
+import { groundGlowAlpha, groundShadowAlpha, groundShadowSize } from './ground-shadow';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import { DEFAULT_SMOOTHING, isLinearSmoothing, normalizeSmoothing, upscaleSprite } from '../core/pixel-upscale';
 import type { SmoothingMode } from '../core/pixel-upscale';
 import type { RgbaImage } from '../recognition/types';
-import { clampLayout, DEFAULT_LAYOUT, spriteMatrix, yawTowardCamera } from './anchor';
+import { clampLayout, DEFAULT_LAYOUT, frontReach, spriteMatrix, yawTowardCamera } from './anchor';
 import type { SpriteLayout, SpritePlacement } from './anchor';
 import { makePlaceholder } from './placeholder';
 import { adaptiveTauMs, smoothingAlpha } from './smoothing';
@@ -30,6 +31,39 @@ interface PreparedFrame {
   height: number;
 }
 
+/** Altura (larguras de carta) da sombra sobre o plano da carta: o suficiente para não brigar com ele. */
+const GROUND_LIFT = 0.002;
+const GROUND_TEXTURE_SIZE = 64;
+
+/** Plano horizontal com uma textura RGBA feita por código (cor fixa, transparência vinda de `alphaAt`). */
+function makeGroundQuad(
+  alphaAt: (u: number, v: number) => number,
+  rgb: [number, number, number],
+  z: number,
+): Mesh<PlaneGeometry, MeshBasicMaterial> {
+  const n = GROUND_TEXTURE_SIZE;
+  const data = new Uint8Array(n * n * 4);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const i = (y * n + x) * 4;
+      data[i] = rgb[0];
+      data[i + 1] = rgb[1];
+      data[i + 2] = rgb[2];
+      data[i + 3] = Math.round(255 * alphaAt(((x + 0.5) / n) * 2 - 1, ((y + 0.5) / n) * 2 - 1));
+    }
+  }
+  const texture = new DataTexture(data, n, n, RGBAFormat, UnsignedByteType);
+  texture.magFilter = LinearFilter;
+  texture.minFilter = LinearFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  const material = new MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, opacity: 0.5 });
+  const quad = new Mesh(new PlaneGeometry(1, 1), material);
+  quad.position.z = z;
+  quad.visible = false;
+  return quad;
+}
+
 function asBytes(rgba: Uint8ClampedArray): Uint8Array {
   return new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength);
 }
@@ -47,6 +81,10 @@ function asBytes(rgba: Uint8ClampedArray): Uint8Array {
 export class CardSprite {
   readonly group = new Group();
   readonly mesh: Mesh<PlaneGeometry, MeshBasicMaterial>;
+  /** Sombra suave no chão da carta, sob o Pokémon (desligável por `SpriteLayout.showShadow`). */
+  readonly shadow: Mesh<PlaneGeometry, MeshBasicMaterial>;
+  /** Brilho fino que pulsa devagar em volta da sombra. */
+  readonly glow: Mesh<PlaneGeometry, MeshBasicMaterial>;
   mode: SpriteMode = 'empty';
   private gif: DecodedGif | null = null;
   private texture: DataTexture | null = null;
@@ -54,6 +92,7 @@ export class CardSprite {
   private layout: SpriteLayout = DEFAULT_LAYOUT;
   private startedAt = 0;
   private shownFrame = -1;
+  private glowBase = 0;
   /** Giro automático (graus) para o sprite olhar para a câmera; suavizado entre quadros. */
   private readonly targetMatrix = new Matrix4();
   /** Pose suavizada, no quadro de referência em que foi medida (câmera, ou mundo quando há giroscópio). */
@@ -84,7 +123,12 @@ export class CardSprite {
     this.mesh = new Mesh(new PlaneGeometry(1, 1), material);
     this.mesh.matrixAutoUpdate = false;
     this.mesh.visible = false;
-    this.group.add(this.mesh);
+    this.shadow = makeGroundQuad(groundShadowAlpha, [0, 0, 0], GROUND_LIFT);
+    this.glow = makeGroundQuad(groundGlowAlpha, [190, 225, 255], GROUND_LIFT * 2);
+    // As transparências vêm depois do sprite opaco; a sombra fica atrás do brilho.
+    this.shadow.renderOrder = 1;
+    this.glow.renderOrder = 2;
+    this.group.add(this.shadow, this.glow, this.mesh);
   }
 
   setLayout(layout: SpriteLayout): void {
@@ -132,12 +176,34 @@ export class CardSprite {
   /** Ponto do chão sob o centro da ilustração, giro total e tamanho (o painel de status se posiciona por aqui). */
   get placement(): SpritePlacement {
     const yaw = this.layout.yawDeg + (this.layout.faceCamera === false ? 0 : this.autoYaw);
-    return { x: this.layout.offsetX, y: this.layout.offsetY, yawDeg: yaw, heightRatio: this.layout.heightRatio };
+    return { x: this.layout.offsetX, y: this.layout.offsetY, yawDeg: yaw, heightRatio: this.layout.heightRatio, frontReach: frontReach(this.layout) };
   }
 
   private applyLayout(): void {
-    this.mesh.matrix.fromArray(spriteMatrix(this.layout, this.aspect, this.layout.faceCamera === false ? 0 : this.autoYaw));
+    const extraYaw = this.layout.faceCamera === false ? 0 : this.autoYaw;
+    const m = spriteMatrix(this.layout, this.aspect, extraYaw);
+    this.mesh.matrix.fromArray(m);
     this.mesh.matrixWorldNeedsUpdate = true;
+    this.applyGround(m, extraYaw);
+  }
+
+  /** Sombra e brilho no chão, sob a projeção do sprite (a posição x,y do centro do sprite na carta). */
+  private applyGround(spriteMat: ArrayLike<number>, extraYaw: number): void {
+    const on = this.layout.showShadow !== false && this.mesh.visible;
+    this.shadow.visible = on;
+    this.glow.visible = on;
+    if (!on) return;
+    const size = groundShadowSize(this.layout, this.aspect);
+    const yaw = ((this.layout.yawDeg + extraYaw) * Math.PI) / 180;
+    for (const quad of [this.shadow, this.glow]) {
+      quad.position.set(spriteMat[12]!, spriteMat[13]!, quad === this.shadow ? GROUND_LIFT : GROUND_LIFT * 2);
+      quad.rotation.set(0, 0, yaw);
+    }
+    this.shadow.scale.set(size.width, size.depth, 1);
+    this.glow.scale.set(size.width * 1.12, size.depth * 1.12, 1);
+    this.shadow.material.opacity = size.opacity;
+    this.glowBase = size.opacity * 0.4;
+    this.glow.material.opacity = this.glowBase;
   }
 
   private makeTexture(width: number, height: number, rgba: Uint8ClampedArray, smooth: boolean): DataTexture {
@@ -202,6 +268,8 @@ export class CardSprite {
     this.clearFrameCache();
     this.mode = 'empty';
     this.mesh.visible = false;
+    this.shadow.visible = false;
+    this.glow.visible = false;
   }
 
   /** Mostra/oculta o conjunto (rastreamento perdido → oculta). */
@@ -247,6 +315,7 @@ export class CardSprite {
   /** Atualiza o quadro da animação para o instante `nowMs`. Devolve true se enviou um quadro novo à textura. */
   update(nowMs: number): boolean {
     this.smoothPose(nowMs);
+    if (this.glow.visible) this.glow.material.opacity = this.glowBase * (0.75 + 0.25 * Math.sin(nowMs / 650));
     if (this.mode !== 'animated' || !this.gif || !this.texture) return false;
     const index = frameIndexAt(this.gif, nowMs - this.startedAt);
     if (index === this.shownFrame) return false;
@@ -321,6 +390,11 @@ export class CardSprite {
     this.releaseTexture();
     this.mesh.geometry.dispose();
     this.mesh.material.dispose();
-    this.group.remove(this.mesh);
+    for (const quad of [this.shadow, this.glow]) {
+      quad.material.map?.dispose();
+      quad.geometry.dispose();
+      quad.material.dispose();
+    }
+    this.group.remove(this.mesh, this.shadow, this.glow);
   }
 }

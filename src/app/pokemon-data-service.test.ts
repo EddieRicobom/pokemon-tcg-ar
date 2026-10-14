@@ -103,3 +103,58 @@ describe('dados de batalha (PokéAPI + TCGdex)', () => {
     expect(data.moves).toMatchObject({ state: 'ok', value: [] });
   });
 });
+
+describe('peso e perfil para o Pin Mode', () => {
+  const withWeight = { ...pokemon, weight: 60 };
+
+  it('lê o peso em kg (a PokéAPI traz em hectogramas)', async () => {
+    const { parsePokeApiProfile } = await import('../core/pokemon-data');
+    expect(parsePokeApiProfile(withWeight, 25)?.weightKg).toBe(6);
+    expect(parsePokeApiProfile(pokemon, 25)?.weightKg).toBeUndefined();
+  });
+
+  it('perfil guardado sem peso é buscado de novo para ganhar o peso', async () => {
+    const storage = memoryStorage();
+    const { parsePokeApiProfile } = await import('../core/pokemon-data');
+    const old = parsePokeApiProfile(pokemon, 25)!;
+    storage.setItem('tcg-ar-profile-v1:25', JSON.stringify(old));
+    const fetchImpl = fakeFetch({ '/pokemon/25': withWeight, '/move/thunder-shock/': move('thunder-shock'), '/move/quick-attack/': move('quick-attack') });
+    const { data } = await run({ fetchImpl, storage });
+    expect(fetchImpl).toHaveBeenCalled();
+    expect(data.profile).toMatchObject({ state: 'ok', value: { weightKg: 6 } });
+    expect(JSON.parse(storage.getItem('tcg-ar-profile-v1:25')!).weightKg).toBe(6);
+  });
+
+  it('loadProfile usa o guardado e só busca quando falta', async () => {
+    const { loadProfile } = await import('./pokemon-data-service');
+    const storage = memoryStorage();
+    const fetchImpl = fakeFetch({ '/pokemon/25': withWeight });
+    expect((await loadProfile(25, { fetchImpl, storage }))?.weightKg).toBe(6);
+    const offline = fakeFetch({});
+    expect((await loadProfile(25, { fetchImpl: offline, storage }))?.weightKg).toBe(6);
+    expect(offline).not.toHaveBeenCalled();
+    expect(await loadProfile(undefined, { fetchImpl, storage })).toBeNull();
+    expect(await loadProfile(999, { fetchImpl: fakeFetch({}), storage: memoryStorage() })).toBeNull();
+  });
+
+  it('sem peso na resposta, guarda "consultado" e não pergunta de novo', async () => {
+    const { loadProfile } = await import('./pokemon-data-service');
+    const storage = memoryStorage();
+    await loadProfile(25, { fetchImpl: fakeFetch({ '/pokemon/25': pokemon }), storage });
+    const offline = fakeFetch({});
+    const again = await loadProfile(25, { fetchImpl: offline, storage });
+    expect(offline).not.toHaveBeenCalled();
+    expect(again?.weightKg).toBe(0);
+  });
+
+  it('loadCardInfo lê os ataques da carta e guarda', async () => {
+    const { loadCardInfo } = await import('./pokemon-data-service');
+    const storage = memoryStorage();
+    const getCard = vi.fn(async () => card);
+    const first = await loadCardInfo('base1-58', { storage, getCard });
+    expect(first?.attacks.length).toBeGreaterThan(0);
+    const second = await loadCardInfo('base1-58', { storage, getCard: async () => { throw new Error('rede'); } });
+    expect(second?.attacks).toEqual(first?.attacks);
+    expect(await loadCardInfo('x', { storage: memoryStorage(), getCard: async () => { throw new Error('rede'); } })).toBeNull();
+  });
+});

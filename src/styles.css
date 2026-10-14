@@ -377,6 +377,15 @@ a:focus-visible {
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: -0.01em;
+  min-width: 0;
+}
+
+/* Sete abas: em telas estreitas o rótulo encolhe um pouco para "Treinador" e "Diagnóstico" não se tocarem. */
+@media (max-width: 420px) {
+  .tabs a {
+    font-size: 0.6rem;
+    letter-spacing: -0.02em;
+  }
 }
 
 .tabs a svg {
@@ -1484,6 +1493,34 @@ button.link {
   opacity: 0.5;
 }
 
+/* Muitos lutadores (até 40): só o traço de vida; o nome aparece em quem está agindo. */
+.battle-hud.dense .hp-bar {
+  min-width: 30px;
+  padding: 2px 3px;
+  gap: 0;
+}
+
+.battle-hud.dense .hp-bar .hp-name,
+.battle-hud.dense .hp-bar .hp-badges {
+  display: none;
+}
+
+.battle-hud.dense .hp-bar.acting {
+  z-index: 2;
+}
+
+.battle-hud.dense .hp-bar.acting .hp-name {
+  display: inline-flex;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 3px);
+  transform: translateX(-50%);
+  padding: 2px 7px;
+  border-radius: 8px;
+  background: rgba(30, 38, 66, 0.92);
+  box-shadow: 0 0 0 1.5px var(--gold, #ffcb05);
+}
+
 .hp-bar.teamed {
   border-bottom: 3px solid var(--team);
 }
@@ -2353,4 +2390,421 @@ body.no-scroll .reward-toasts {
   max-width: 100%;
   max-height: 100%;
   image-rendering: pixelated;
+}
+
+/* ---------------------------------------------------------------- Escalação das batalhas */
+
+.roster {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.roster-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.roster-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+.roster-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.roster-list li.out .roster-name {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.roster-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.roster-slots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.roster-slots button {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.roster-slots button.on {
+  border-color: var(--team, var(--accent));
+  background: color-mix(in srgb, var(--team, var(--accent)) 30%, var(--surface-2));
+}
+
+/* ---------------------------------------------------------------- Pin Mode */
+
+.pins {
+  display: grid;
+  gap: 12px;
+}
+
+.bolt {
+  display: inline-block;
+  width: 0.7em;
+  height: 1em;
+  margin-right: 6px;
+  vertical-align: -0.12em;
+  background: var(--gold, #ffd23f);
+  clip-path: polygon(55% 0, 12% 56%, 44% 56%, 36% 100%, 88% 38%, 54% 38%);
+}
+
+.energy-line {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.diff {
+  display: flex;
+  gap: 6px;
+}
+
+.diff button {
+  flex: 1;
+  min-height: 40px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+
+.diff button.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
+}
+
+.pin-rows {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.pin-rows li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid transparent;
+}
+
+.pin-rows li.mine {
+  --team: #4da3ff;
+  border-color: var(--team);
+  background: color-mix(in srgb, var(--team) 12%, transparent);
+}
+
+.pin-rows li.enemy {
+  --team: #ff5d5d;
+  border-color: var(--team);
+  background: color-mix(in srgb, var(--team) 12%, transparent);
+}
+
+/* A mesma ficha redonda do jogo: borda da equipe (azul = você, vermelha = adversário) e o GIF no centro. */
+.row-thumb,
+.chip-token {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 3px solid var(--team, var(--line));
+  background: radial-gradient(circle at 50% 40%, #f4f8ff, #b8c6e0);
+}
+
+.row-thumb img,
+.chip-token img {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.row-text {
+  display: grid;
+  min-width: 0;
+}
+
+.row-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.row-text small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.cost {
+  color: var(--gold, #ffd23f);
+  font-weight: 800;
+}
+
+.type-dot {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin: 0 3px 0 4px;
+  border-radius: 50%;
+}
+
+.row-roles {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.row-roles button {
+  min-height: 36px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.row-roles button.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 25%, var(--surface-2));
+}
+
+.legend {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.legend small {
+  color: var(--muted);
+}
+
+.pins-hud {
+  padding: 10px 14px;
+}
+
+.hud-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0;
+}
+
+.hud-line .sides {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.hud-line .sides i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.hud-hint {
+  margin: 4px 0 0;
+  min-height: 1.3em;
+  font-size: 0.88rem;
+}
+
+.pin-stage {
+  position: relative;
+  width: min(100%, 560px);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  border-radius: var(--radius);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  background: #0d162e;
+}
+
+.pin-stage.aiming {
+  cursor: crosshair;
+}
+
+.pin-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.pin-sprites {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pin-token {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-style: solid;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: radial-gradient(circle at 50% 40%, #f4f8ff, #b8c6e0);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
+  will-change: transform;
+}
+
+.pin-token img {
+  width: 88%;
+  height: 88%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.pin-over {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+  background: rgba(8, 12, 26, 0.82);
+}
+
+.pin-over strong {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+}
+
+.pin-over p {
+  margin: 0;
+}
+
+.tray {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+}
+
+.tray-pin {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.tray li.on .tray-pin {
+  border-color: #ffec78;
+  background: color-mix(in srgb, #ffec78 16%, var(--surface-2));
+}
+
+.tray li.dim .tray-pin {
+  opacity: 0.5;
+}
+
+.tray li .chip-token {
+  --team: #4da3ff;
+}
+
+.tray-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+}
+
+.move-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.move-list button {
+  display: grid;
+  gap: 1px;
+  text-align: left;
+  min-height: 52px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.move-list button small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.move-list button.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
+}
+
+.move-list button:disabled:not(.on) {
+  opacity: 0.55;
+}
+
+.move-list .cd {
+  color: var(--gold, #ffd23f);
 }

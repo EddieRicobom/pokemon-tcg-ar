@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ACHIEVEMENTS, applyEvent, dayKey, emptyTrainer, importHistory, levelOf, levelProgress, missionsFor, normalizeTrainer, previousDay, titleOf, XP, xpForLevel,
+  ACHIEVEMENTS, applyEvent, dayKey, emptyTrainer, importHistory, levelOf, levelProgress, missionsFor, normalizeTrainer, previousDay, spendEnergy, STARTER_ENERGY, titleOf, XP, xpForLevel,
 } from './trainer';
 import type { TrainerEvent, TrainerState } from './trainer';
 
@@ -239,5 +239,40 @@ describe('histórico e armazenamento', () => {
     expect(normalizeTrainer({ v: 1, games: { q: { played: 3, best: 500 }, z: 4 } }).games).toEqual({ q: { played: 3, best: 100 } });
     const live = play([[scan(1), '2026-10-14']]).state;
     expect(normalizeTrainer(JSON.parse(JSON.stringify(live)))).toEqual(live);
+  });
+});
+
+describe('energia do Pin Mode', () => {
+  const scan = (id: string): TrainerEvent => ({ type: 'scan', cardId: id, setId: 's', setName: 'S', setTotal: 100 });
+
+  it('quem começa agora tem a energia inicial', () => {
+    expect(emptyTrainer().energy).toBe(STARTER_ENERGY);
+  });
+
+  it('sobe na mesma quantia do XP ganho', () => {
+    const before = emptyTrainer();
+    const { state } = applyEvent(before, scan('a'), '2026-10-14');
+    expect(state.xp).toBeGreaterThan(0);
+    expect(state.energy - before.energy).toBe(state.xp - before.xp);
+  });
+
+  it('gastar não mexe no XP e não passa do que há', () => {
+    const s = { ...emptyTrainer(), xp: 200, energy: 30 };
+    const spent = spendEnergy(s, 12)!;
+    expect(spent.energy).toBe(18);
+    expect(spent.xp).toBe(200);
+    expect(s.energy).toBe(30);
+    expect(spendEnergy(s, 31)).toBeNull();
+    expect(spendEnergy(s, 30)!.energy).toBe(0);
+  });
+
+  it('progresso antigo sem energia parte do XP já ganho', () => {
+    const old = JSON.parse(JSON.stringify({ ...emptyTrainer(), xp: 350 })) as Record<string, unknown>;
+    delete old.energy;
+    expect(normalizeTrainer(old).energy).toBe(350);
+    const fresh = JSON.parse(JSON.stringify({ ...emptyTrainer(), xp: 0 })) as Record<string, unknown>;
+    delete fresh.energy;
+    expect(normalizeTrainer(fresh).energy).toBe(STARTER_ENERGY);
+    expect(normalizeTrainer({ ...emptyTrainer(), energy: 12 }).energy).toBe(12);
   });
 });

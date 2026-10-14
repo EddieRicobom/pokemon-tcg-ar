@@ -12,6 +12,15 @@
 
 import { DEFAULT_SMOOTHING, normalizeSmoothing } from '../core/pixel-upscale';
 import type { SmoothingMode } from '../core/pixel-upscale';
+import { ARTWORK_BOX } from '../recognition/layout';
+
+/** Altura da carta física (63×88 mm) em larguras de carta. */
+const CARD_HEIGHT_RATIO = 88 / 63;
+/** Centro da ilustração no espaço da carta (+Y = topo): a caixa da arte é medida a partir do topo da carta. */
+export const ILLUSTRATION_CENTER_X = 0;
+export const ILLUSTRATION_CENTER_Y = (0.5 - (ARTWORK_BOX[1] + ARTWORK_BOX[3]) / 2) * CARD_HEIGHT_RATIO;
+/** Inclinação padrão do Pokémon para trás (graus a partir da vertical, afastando o topo de quem olha). */
+export const DEFAULT_TILT_DEG = 30;
 
 export interface SpriteLayout {
   /** Altura do sprite, em larguras de carta (0,6 = 60% da largura da carta). */
@@ -23,8 +32,21 @@ export interface SpriteLayout {
   lift: number;
   /** Giro em torno da normal da carta, em graus. 0 = sprite de frente para a borda inferior da carta. */
   yawDeg: number;
-  /** Onde fica o ponto de ancoragem no sprite: a base (em pé) ou o centro. */
-  anchor: 'base' | 'center';
+  /**
+   * Onde fica o ponto de ancoragem no sprite:
+   *  - `base`: o meio da borda de baixo fica no ponto (em pé sobre ele);
+   *  - `center`: o centro do sprite fica no ponto, na altura `lift`;
+   *  - `rest`: o centro fica logo acima do ponto e a borda de baixo encosta na carta (acima por `lift`), de modo que a
+   *    "sombra" do sprite no chão fica centrada no ponto. É o padrão: o Pokémon aparece no centro da ilustração.
+   */
+  anchor: 'base' | 'center' | 'rest';
+  /**
+   * Inclinação para trás, em graus a partir da vertical: 0 = em pé (90° da carta); 30 = o topo se afasta de quem olha
+   * e o sprite fica a 60° da carta, mais voltado para quem escaneia de cima. Omitido = 0.
+   */
+  tiltDeg?: number;
+  /** Mostra a sombra suave (e o brilho) no chão sob o Pokémon. Omitido = ligado. */
+  showShadow?: boolean;
   /**
    * Gira o sprite em torno da normal da carta para ele ficar de frente para a câmera, sem sair do "em pé"
    * (continua a 90° da carta). Sem isso, com a câmera de frente para a carta, o plano vira só um fio.
@@ -39,11 +61,13 @@ export interface SpriteLayout {
 
 export const DEFAULT_LAYOUT: SpriteLayout = {
   heightRatio: 0.7,
-  offsetX: 0,
-  offsetY: 0.1,
+  offsetX: ILLUSTRATION_CENTER_X,
+  offsetY: ILLUSTRATION_CENTER_Y,
   lift: 0,
   yawDeg: 0,
-  anchor: 'base',
+  anchor: 'rest',
+  tiltDeg: DEFAULT_TILT_DEG,
+  showShadow: true,
   faceCamera: true,
   smoothing: DEFAULT_SMOOTHING,
   showStats: true,
@@ -54,6 +78,7 @@ export const LAYOUT_LIMITS = {
   offset: { min: -0.7, max: 0.7 },
   lift: { min: 0, max: 1 },
   yawDeg: { min: -180, max: 180 },
+  tiltDeg: { min: 0, max: 75 },
 } as const;
 
 export function clampLayout(layout: SpriteLayout): SpriteLayout {
@@ -64,7 +89,9 @@ export function clampLayout(layout: SpriteLayout): SpriteLayout {
     offsetY: clamp(layout.offsetY, LAYOUT_LIMITS.offset.min, LAYOUT_LIMITS.offset.max),
     lift: clamp(layout.lift, LAYOUT_LIMITS.lift.min, LAYOUT_LIMITS.lift.max),
     yawDeg: clamp(layout.yawDeg, LAYOUT_LIMITS.yawDeg.min, LAYOUT_LIMITS.yawDeg.max),
-    anchor: layout.anchor === 'center' ? 'center' : 'base',
+    anchor: layout.anchor === 'center' || layout.anchor === 'rest' ? layout.anchor : 'base',
+    tiltDeg: layout.tiltDeg === undefined ? 0 : clamp(layout.tiltDeg, LAYOUT_LIMITS.tiltDeg.min, LAYOUT_LIMITS.tiltDeg.max),
+    showShadow: layout.showShadow !== false,
     faceCamera: layout.faceCamera !== false,
     // `smooth` (liga/desliga) é o formato antigo, ainda presente em layouts salvos.
     smoothing: normalizeSmoothing(layout.smoothing, (layout as { smooth?: boolean }).smooth),
@@ -129,15 +156,33 @@ export function spriteMatrix(layout: SpriteLayout, spriteAspect: number, extraYa
   const yaw = ((l.yawDeg + extraYawDeg) * Math.PI) / 180;
   const c = Math.cos(yaw);
   const s = Math.sin(yaw);
+  // Ângulo do "alto" do sprite com o plano da carta: 90° em pé, menos a inclinação para trás.
+  const rise = ((90 - (l.tiltDeg ?? 0)) * Math.PI) / 180;
+  const cr = Math.cos(rise);
+  const sr = Math.sin(rise);
   // Colunas: imagem de (1,0,0), (0,1,0), (0,0,1) do plano unitário.
-  // Após escala e tombamento (+90° em X): X→X, Y→Z, Z→−Y. Depois yaw em Z.
+  // Após escala e tombamento (rise em torno de X): X→X, Y→(0, cr, sr), Z→(0, −sr, cr). Depois yaw em Z.
+  // Em pé (rise = 90°) isso dá exatamente Y→Z e Z→−Y. Inclinar leva o topo para +Y (para longe de quem olha).
   const xAxis: [number, number, number] = [width * c, width * s, 0];
-  const yAxis: [number, number, number] = [0, 0, height];
-  const zAxis: [number, number, number] = [s, -c, 0];
-  // Ponto (0,0,0) do plano é o centro; a base é y = −0,5. anchor 'base' leva a base para a origem.
-  const lowerHalf = l.anchor === 'base' ? height / 2 : 0;
-  const origin: [number, number, number] = [l.offsetX, l.offsetY, l.lift + lowerHalf];
+  const yAxis: [number, number, number] = [-height * s * cr, height * c * cr, height * sr];
+  const zAxis: [number, number, number] = [s * sr, -c * sr, cr];
+  const half: [number, number, number] = [yAxis[0] / 2, yAxis[1] / 2, yAxis[2] / 2];
+  // Ponto (0,0,0) do plano é o centro; a base é y = −0,5.
+  let origin: [number, number, number];
+  if (l.anchor === 'base') origin = [l.offsetX + half[0], l.offsetY + half[1], l.lift + half[2]];
+  else if (l.anchor === 'rest') origin = [l.offsetX, l.offsetY, l.lift + half[2]];
+  else origin = [l.offsetX, l.offsetY, l.lift];
   return [...xAxis, 0, ...yAxis, 0, ...zAxis, 0, ...origin, 1];
+}
+
+/**
+ * Distância (larguras de carta, no chão) do ponto de ancoragem até a borda de baixo do sprite, na direção em que ele
+ * olha. É por aí que o painel de status começa. Em pé sobre a base é 0; inclinado, o sprite avança sobre o chão.
+ */
+export function frontReach(layout: SpriteLayout): number {
+  const l = clampLayout(layout);
+  if (l.anchor === 'base') return 0;
+  return (l.heightRatio / 2) * Math.sin((((l.tiltDeg ?? 0)) * Math.PI) / 180);
 }
 
 /** Onde o Pokémon está no chão da carta: o painel de status é posicionado a partir daqui. */
@@ -148,6 +193,8 @@ export interface SpritePlacement {
   /** Giro total do sprite (layout + automático para a câmera), em graus. */
   yawDeg: number;
   heightRatio: number;
+  /** Quanto a borda de baixo do sprite avança, no chão, na frente do ponto (ver `frontReach`). Omitido = 0. */
+  frontReach?: number;
 }
 
 /** Largura do painel, em larguras de carta, por unidade de altura do sprite (painel e sprite crescem juntos). */
@@ -174,7 +221,7 @@ export function panelPlacement(sprite: SpritePlacement, panelAspect: number): Pa
   const width = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, sprite.heightRatio * PANEL_WIDTH_PER_SPRITE_HEIGHT));
   const height = width * panelAspect;
   const yawRad = (sprite.yawDeg * Math.PI) / 180;
-  const distance = PANEL_GAP + height / 2;
+  const distance = (sprite.frontReach ?? 0) + PANEL_GAP + height / 2;
   return {
     x: sprite.x + Math.sin(yawRad) * distance,
     y: sprite.y - Math.cos(yawRad) * distance,

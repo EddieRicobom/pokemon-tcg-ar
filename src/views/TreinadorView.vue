@@ -104,6 +104,7 @@ function onFinished(game: GameId, grade: Grade): void {
       <div class="trainer-who">
         <p class="trainer-title">{{ progress.title }}</p>
         <p class="trainer-xp">{{ trainer.xp }} XP · faltam {{ progress.span - progress.into }} para o nível {{ progress.level + 1 }}</p>
+        <p class="trainer-xp"><span class="bolt" aria-hidden="true"></span>{{ trainer.energy }} de energia · <a :href="routeHref('pins')">gaste no Pin Mode</a></p>
         <p class="streak" :class="streak.state">
           <span class="flame" aria-hidden="true"></span>
           <template v-if="streak.state === 'ativa'">Sequência de {{ streak.days }} dia{{ streak.days === 1 ? '' : 's' }}</template>
@@ -157,6 +158,7 @@ function onFinished(game: GameId, grade: Grade): void {
         <li><b>+{{ XP.minigameWin }}</b> minigame vencido (as {{ XP.minigamesPerDay }} primeiras do dia)</li>
         <li><b>+{{ XP.streakPerDay }}</b> por dia de sequência, até +{{ XP.streakMax }}, no primeiro feito do dia</li>
       </ul>
+      <p class="note">Todo XP ganho vira a mesma quantia de energia para o Pin Mode. O XP em si não é gasto: o nível continua subindo.</p>
       <a class="primary link-button" :href="routeHref('escanear')">Escanear uma carta</a>
     </div>
 

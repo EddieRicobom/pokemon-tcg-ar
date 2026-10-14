@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import { applyEvent, dayKey, emptyTrainer, importHistory, normalizeTrainer } from '../core/trainer';
+import { applyEvent, dayKey, emptyTrainer, importHistory, normalizeTrainer, spendEnergy } from '../core/trainer';
 import type { Reward, TrainerEvent, TrainerState } from '../core/trainer';
 
 const KEY = 'tcg-ar-trainer-v1';
@@ -47,6 +47,15 @@ export function recordEvent(event: TrainerEvent, now: Date = new Date()): Reward
   const shown = [...rewards].sort((a, b) => rank[a.tone] - rank[b.tone]).slice(0, 4);
   rewardFeed.value = [...rewardFeed.value, ...shown.map((reward) => ({ key: ++seq, reward }))].slice(-6);
   return rewards;
+}
+
+/** Gasta energia do Pin Mode. Devolve false (e não muda nada) se não houver energia suficiente. */
+export function spendTrainerEnergy(amount: number): boolean {
+  const next = spendEnergy(trainer.value, amount);
+  if (!next) return false;
+  trainer.value = next;
+  write(next);
+  return true;
 }
 
 /** Traz as cartas que já estavam guardadas (sem dar XP por elas). Seguro de chamar mais de uma vez. */

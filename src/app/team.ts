@@ -1,6 +1,8 @@
-/** A equipe da Caixa: até 6 cartas escolhidas entre as guardadas. Lógica pura + persistência em localStorage. */
+/** A equipe da Caixa: até 40 cartas escolhidas entre as guardadas. Lógica pura + persistência em localStorage. */
 
-export const TEAM_SIZE = 6;
+/** A caixa comporta até 40 Pokémon; sem escolha do usuário entram só os 6 mais recentes. */
+export const TEAM_SIZE = 40;
+export const AUTO_TEAM_SIZE = 6;
 const TEAM_KEY = 'tcg-ar-team-v1';
 
 export interface TeamCandidate {
@@ -38,7 +40,7 @@ export function resolveTeam(saved: unknown, cards: readonly TeamCandidate[], max
   const recent = [...cards]
     .filter((card) => card.sprite.state === 'ok')
     .sort((a, b) => b.lastSeenAt - a.lastSeenAt)
-    .slice(0, max)
+    .slice(0, Math.min(max, AUTO_TEAM_SIZE))
     .map((card) => card.id);
   return { ids: recent, auto: true };
 }
