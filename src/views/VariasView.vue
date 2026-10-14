@@ -21,11 +21,13 @@ type Phase = 'idle' | 'starting' | 'running';
 const videoEl = ref<HTMLVideoElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
-const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl);
 const showFilters = ref(false);
 const canvasKey = ref(0);
 
 const phase = ref<Phase>('idle');
+/** Com a câmera ligada (ou abrindo) o visor cobre a janela e tudo aparece sobre a imagem: sem rolar a página. */
+const immersive = computed(() => phase.value !== 'idle');
+const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl, immersive);
 const error = ref('');
 const progress = ref('');
 const state = ref<MultiArState>({ phase: 'idle', visible: [] });
@@ -149,32 +151,45 @@ onBeforeUnmount(() => {
       Coloque até {{ MULTI_MAX_TRACK }} cartas da sua equipe na mesa: cada uma ganha o seu Pokémon ao mesmo tempo. As cartas são reconhecidas pela imagem guardada; nada é lido do texto.
     </p>
 
-    <div ref="stageEl" class="viewport box-viewport" :class="{ 'pseudo-full': pseudo, 'has-bar': cameraOn }">
+    <div ref="stageEl" class="viewport box-viewport" :class="{ 'pseudo-full': pseudo, immersive }">
       <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas :key="canvasKey" ref="canvasEl" class="overlay" aria-label="Pokémon sobre as cartas"></canvas>
       <p v-if="phase === 'idle'" class="placeholder">Câmera desligada</p>
-      <div v-if="cameraOn && visibleNames.length > 0" class="multi-chips" aria-live="polite">
-        <span v-for="name in visibleNames" :key="name">{{ name }}</span>
+
+      <div v-if="immersive" class="stage-head" role="status" aria-live="polite">
+        <p v-if="phase === 'starting'" class="pill busy"><i class="dot"></i><span class="pill-text">{{ progress || 'Preparando…' }}</span></p>
+        <div v-else-if="visibleNames.length > 0" class="multi-chips">
+          <span v-for="name in visibleNames" :key="name">{{ name }}</span>
+        </div>
+        <p v-else class="pill busy"><i class="dot"></i><span class="pill-text">Aponte a câmera para as cartas da equipe.</span></p>
+        <p v-if="failed.length > 0" class="pill warn">
+          <i class="dot"></i>
+          <span class="pill-text">Ficaram de fora: {{ failed.map((f) => f.name).join(', ') }}<small class="pill-sub">{{ failed[0]?.reason }}</small></span>
+        </p>
+        <p v-if="cameraOn && state.trackerHz" class="pill small">
+          {{ state.trackerHz }} leituras/s · {{ state.gyro ? 'giroscópio ativo' : 'sem giroscópio' }}
+        </p>
       </div>
-      <p v-if="phase === 'starting' && progress" class="hud" role="status">{{ progress }}</p>
-      <p v-else-if="cameraOn && visibleNames.length === 0" class="hud" role="status">Aponte a câmera para as cartas da equipe.</p>
-      <SmoothingSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
-      <div v-if="cameraOn" class="stage-bar" @pointerdown.stop @pointerup.stop>
-        <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
-        <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters" />
-        <StageButton icon="close" label="Fechar" @click="close" />
+
+      <div v-if="immersive" class="stage-foot" @pointerdown.stop @pointerup.stop>
+        <SmoothingSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
+        <div v-if="cameraOn" class="stage-bar">
+          <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
+          <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters" />
+          <StageButton icon="close" label="Fechar" @click="close" />
+        </div>
+        <button v-else type="button" class="stage-cta" @click="close">Cancelar</button>
       </div>
     </div>
 
     <div class="actions">
-      <button v-if="phase !== 'running'" type="button" class="primary" :disabled="phase === 'starting' || teamNames.length === 0" @click="open">
+      <button type="button" class="primary" :disabled="phase !== 'idle' || teamNames.length === 0" @click="open">
         {{ phase === 'starting' ? 'Preparando…' : 'Abrir câmera e rastrear a equipe' }}
       </button>
-      <button v-else type="button" @click="close">Fechar câmera</button>
     </div>
 
     <p v-if="error" class="message error" role="alert">{{ error }}</p>
-    <p v-if="failed.length > 0" class="message" role="status">
+    <p v-if="failed.length > 0 && !immersive" class="message" role="status">
       Ficaram de fora:
       <span v-for="f in failed" :key="f.name" class="meta"><br />· {{ f.name }}: {{ f.reason }}</span>
     </p>
@@ -185,9 +200,6 @@ onBeforeUnmount(() => {
       Equipe{{ teamAuto ? ' (automática: as mais recentes)' : '' }}: {{ teamNames.map((t) => t.name).join(', ') }}.
       Troque em <a :href="routeHref('carregar')">Cartas</a>.
       <template v-if="teamNames.length > MULTI_MAX_TRACK"> O rastreador acompanha até {{ MULTI_MAX_TRACK }} cartas por vez.</template>
-    </p>
-    <p v-if="cameraOn && state.trackerHz" class="meta" role="status">
-      Rastreador: {{ state.trackerHz }} leituras/s · giroscópio: {{ state.gyro ? 'corrigindo a pose' : 'sem dados do sensor' }}
     </p>
   </section>
 </template>

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
+import { useFullscreen } from '../app/fullscreen';
+import StageButton from './StageButton.vue';
+import StageSheet from './StageSheet.vue';
 import type { SpriteOverlay } from '../ar/overlay';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { decodeGif, describeGifError, fetchGif, type DecodedGif } from '../core/gif';
@@ -10,7 +13,14 @@ type CameraState = 'idle' | 'starting' | 'on';
 const videoEl = ref<HTMLVideoElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 
+const stageEl = ref<HTMLElement | null>(null);
+const dockEl = ref<HTMLElement | null>(null);
+const sheetOpen = ref(false);
+
 const cameraState = ref<CameraState>('idle');
+/** Com a câmera ligada (ou abrindo) o visor cobre a janela e o formulário vira uma folha sobre a imagem. */
+const immersive = computed(() => cameraState.value !== 'idle');
+const { fullscreen, pseudo, toggle: toggleFullscreen } = useFullscreen(stageEl, immersive);
 const cameraMessage = ref('');
 const dexNumber = ref('25');
 const loadingGif = ref(false);
@@ -40,6 +50,7 @@ async function openCamera(): Promise<void> {
 }
 
 function closeCamera(): void {
+  sheetOpen.value = false;
   stopCamera(videoEl.value, stream);
   stream = null;
   cameraState.value = 'idle';
@@ -127,50 +138,57 @@ onBeforeUnmount(() => {
       rastreamento de carta neste teste</strong>. O AR de verdade está em “Escanear”.
     </p>
 
-    <div class="viewport">
+    <div ref="stageEl" class="viewport" :class="{ 'pseudo-full': pseudo, immersive }">
       <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas ref="canvasEl" class="overlay" aria-label="Camada de desenho do Pokémon"></canvas>
       <p v-if="cameraState !== 'on'" class="placeholder">
         {{ cameraState === 'starting' ? 'Abrindo a câmera…' : 'Câmera desligada' }}
       </p>
+
+      <div v-if="immersive" class="stage-head" role="status" aria-live="polite">
+        <p v-if="cameraState === 'starting'" class="pill busy"><i class="dot"></i><span class="pill-text">Abrindo a câmera…</span></p>
+        <p v-if="gifLabel" class="pill gold"><span class="pill-text">Exibindo: {{ gifLabel }}<small class="pill-sub">Fixo na tela: não rastreia carta.</small></span></p>
+        <p v-else-if="cameraState === 'on'" class="pill"><i class="dot"></i><span class="pill-text">Escolha um Pokémon em «Pokémon» para desenhar na tela.</span></p>
+        <p v-if="loadingGif" class="pill busy"><i class="dot"></i><span class="pill-text">Baixando o GIF…</span></p>
+        <p v-if="gifMessage" class="pill error"><i class="dot"></i><span class="pill-text">{{ gifMessage }}</span></p>
+      </div>
+
+      <div v-if="immersive" class="stage-foot" @pointerdown.stop @pointerup.stop>
+        <div ref="dockEl" class="stage-dock"></div>
+        <div v-if="cameraState === 'on'" class="stage-bar">
+          <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
+          <StageButton icon="search" label="Pokémon" :active="sheetOpen" @click="sheetOpen = !sheetOpen" />
+          <StageButton icon="close" label="Fechar" @click="closeCamera" />
+        </div>
+      </div>
     </div>
 
     <div class="actions">
-      <button
-        v-if="cameraState !== 'on'"
-        type="button"
-        class="primary"
-        :disabled="cameraState === 'starting'"
-        @click="openCamera"
-      >
+      <button v-if="cameraState !== 'on'" type="button" class="primary" :disabled="cameraState === 'starting'" @click="openCamera">
         Abrir câmera
       </button>
-      <button v-else type="button" @click="closeCamera">Fechar câmera</button>
     </div>
     <p v-if="cameraMessage" class="message error" role="alert">{{ cameraMessage }}</p>
 
-    <form class="gif-form" @submit.prevent="loadFromPokeApi">
-      <label for="species">Número da Pokédex Nacional</label>
-      <div class="row">
-        <input
-          id="species"
-          v-model="dexNumber"
-          type="text"
-          inputmode="numeric"
-          autocomplete="off"
-        />
-        <button type="submit" :disabled="loadingGif">
-          {{ loadingGif ? 'Baixando…' : 'Baixar GIF' }}
-        </button>
-      </div>
-    </form>
+    <!-- Com a câmera desligada o formulário fica aqui; com ela ligada vira a folha «Pokémon» sobre a imagem. -->
+    <StageSheet :docked="immersive" :host="dockEl" :open="sheetOpen" title="Pokémon para desenhar" @close="sheetOpen = false">
+      <form class="gif-form" @submit.prevent="loadFromPokeApi">
+        <label for="species">Número da Pokédex Nacional</label>
+        <div class="row">
+          <input id="species" v-model="dexNumber" type="text" inputmode="numeric" autocomplete="off" />
+          <button type="submit" :disabled="loadingGif">
+            {{ loadingGif ? 'Baixando…' : 'Baixar GIF' }}
+          </button>
+        </div>
+      </form>
 
-    <label class="file-picker">
-      <span>Ou carregue um GIF do aparelho</span>
-      <input type="file" accept="image/gif" @change="loadFromFile" />
-    </label>
+      <label class="file-picker">
+        <span>Ou carregue um GIF do aparelho</span>
+        <input type="file" accept="image/gif" @change="loadFromFile" />
+      </label>
+    </StageSheet>
 
-    <p v-if="gifLabel" class="message" role="status">Exibindo: {{ gifLabel }}</p>
-    <p v-if="gifMessage" class="message error" role="alert">{{ gifMessage }}</p>
+    <p v-if="gifLabel && !immersive" class="message" role="status">Exibindo: {{ gifLabel }}</p>
+    <p v-if="gifMessage && !immersive" class="message error" role="alert">{{ gifMessage }}</p>
   </section>
 </template>

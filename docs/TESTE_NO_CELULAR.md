@@ -31,6 +31,11 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 3. Em "Ajustes da caixa" mude a altura do celular, o tamanho da caixa e o ângulo de visão. Se a caixa "escorrega" ao girar, ajuste a altura e o ângulo; ao **andar**, ela vai deslizar mesmo (limite conhecido: sem rastreamento de posição).
 4. Anote: se o celular enviou os sensores (senão aparece o aviso de arrastar), se o ponto no chão fica onde você tocou e se 10+ Pokémon ainda rodam fluido.
 
+### Câmera em tela cheia, sem rolar a página (Escanear, Várias, Caixa e Diagnóstico)
+1. Em cada aba, toque em abrir a câmera: a imagem deve cobrir a tela inteira e a página de trás não deve rolar. Nada de importante fica "lá embaixo".
+2. No topo aparecem os avisos (etapas, "procurando a carta", carta rastreada ou perdida, nome da carta lida, "N leituras/s · giroscópio"). Na base ficam os botões; «Buscar», «Teste», «Ajustes», «Suavizar» e «Equipe» abrem folhas **sobre** a imagem e fecham em «Fechar» ou tocando de novo no botão.
+3. Confira se os avisos cabem sem cobrir o Pokémon, se os botões cabem (podem ocupar duas linhas) e se «Fechar» devolve a página como estava. Anote o aparelho e o navegador.
+
 ### Equipe, tela cheia e suavização (Caixa, Várias e Escanear)
 1. Em Cartas, toque em "Pôr na equipe" nas cartas desejadas (até 6; a ordem aparece como número na grade). Na Caixa a equipe também pode ser trocada pelo botão "Equipe" sobre a câmera.
 2. Com a câmera aberta, use os botões sobre a imagem: "Tela cheia" (os botões continuam visíveis), "Suavizar" (Nítido, Bordas suaves, Suave, Macio: qualidade dos pixels do GIF), "Formação" (equipe em fila) e "Passeio".
@@ -39,7 +44,7 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 ### Várias cartas (aba "Várias")
 1. Em Cartas, ponha na equipe as cartas que quer usar (as que já foram escaneadas neste aparelho). Na aba "Várias", toque em "Abrir câmera e rastrear a equipe": o app prepara uma carta de cada vez (a primeira vez compila o alvo, alguns segundos por carta).
 2. Ponha 2 a 4 cartas da equipe na mesa, separadas e bem iluminadas. Cada uma deve ganhar o seu Pokémon, e o nome das cartas vistas aparece em etiquetas no alto.
-3. Tire uma carta da mesa: o Pokémon dela deve sumir em poucos segundos sem afetar as outras. Anote o "leituras/s" mostrado abaixo da câmera com 1, 2, 3 e 4 cartas.
+3. Tire uma carta da mesa: o Pokémon dela deve sumir em poucos segundos sem afetar as outras. Anote o "leituras/s" mostrado no topo da câmera com 1, 2, 3 e 4 cartas.
 4. Anote: se alguma carta demora a ser achada, se o Pokémon "pula" de uma carta para outra e se o celular esquenta ou perde fluidez.
 
 ### Batalha automática (Caixa)
@@ -69,8 +74,14 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 4. Em "Suavizar" há "Som da batalha": Desligado deve silenciar tudo, sem travar a batalha.
 5. Se nada tocar, anote o aparelho e o navegador. Sons picotados ou estalos também importam.
 
+### Perder a carta (Escanear e Várias)
+1. Com o Pokémon sobre a carta, tire a carta da vista (ou cubra com a mão). Esperado: em **1 a 3 segundos** o aviso vira «Perdi a carta» e o Pokémon some (com giroscópio ele fica preso ao mundo por até 2,5 s). Antes dessa correção ele ficava parado no lugar por muito mais tempo.
+2. Mostre a carta de novo: o Pokémon deve voltar rápido.
+3. Em Várias, tire uma carta e deixe as outras: só o Pokémon da carta retirada some.
+4. Foco: aproxime e afaste a carta devagar; ela deve continuar nítida (foco contínuo) e o rastreio não deve se perder só por isso. Anote o aparelho; o iPhone não permite pedir foco contínuo.
+
 ### Giroscópio (Escanear e Caixa)
-1. Com o AR ativo, abaixo da câmera aparece "Rastreador: N leituras/s · giroscópio: corrigindo a pose". Se aparecer "sem dados do sensor", o aparelho/navegador não entregou o sensor.
+1. Com o AR ativo, no topo da câmera aparece "N leituras/s · giroscópio ativo". Se aparecer "sem giroscópio", o aparelho/navegador não entregou o sensor.
 2. Mova o celular em arco, devagar e depressa, com a carta parada: o Pokémon deve acompanhar sem ficar para trás nem se adiantar à carta. Se ele se adianta, aumente "Atraso da câmera para o sensor" em Ajustes; se fica para trás, diminua. Compare com "Usar o giroscópio" desligado.
 3. Cubra a carta por um instante com a mão: o Pokémon deve ficar preso ao lugar (acompanhando o giro) por até ~2,5 s.
 4. Anote o valor de "leituras/s" e o atraso que ficou melhor.

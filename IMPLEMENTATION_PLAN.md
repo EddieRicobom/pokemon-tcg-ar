@@ -27,6 +27,8 @@ Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado �
 
 ### Caixa e batalha 🔶
 - ✅ Caixa de Pokémon soltos no chão pelo giroscópio, equipe de até 6, formação, tela cheia.
+- ✅ Telas com câmera em modo imersivo (a imagem cobre a janela; avisos no topo e folhas sobre a imagem, sem rolar). 🔶 Falta ver em celular real.
+- ✅ Rastreio: pose repetida pelo MindAR não segura mais o Pokémon (some em poucos segundos); foco/exposição contínuos e 720p. 🔶 Efeito do foco e do 720p só em celular real.
 - ✅ Batalha automática de exibição: motor puro e seeded (nível 50, tipos, STAB, críticos, defesa, condições, personalidades), arena pequena à frente do olhar, golpes encenados por tipo, câmera de cinema, **luz dos golpes** (sprites, chão e vídeo) com opção de desligar, **sons sintetizados** (golpes por tipo e fanfarra do vencedor, com opção de desligar), resumo no visor. O áudio em celular real ainda não foi ouvido (🔶).
 - ⬜ O **RPG de ação** planejado (escanear cartas para montar equipe e jogar): a batalha é só exibição, sem escolha de golpes pelo jogador, itens, trocas nem progressão.
 

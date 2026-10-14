@@ -103,6 +103,43 @@ describe('ArSession', () => {
     expect(session.currentState.phase).toBe('tracking');
   });
 
+  it('pose repetida (o rastreador já perdeu a carta) não mantém o Pokémon na tela: some depois do tempo de segurar', async () => {
+    let t = 1000;
+    const { session, engine, sprite, pose } = setup({ holdMs: 700, lostAfterFrames: 3, now: () => t });
+    await session.start(new ArrayBuffer(8));
+    engine.onUpdate!({ worldMatrix: pose, fresh: true });
+    expect(sprite.group.visible).toBe(true);
+    // O MindAR segue entregando a última pose por dezenas de quadros, mas já não está rastreando.
+    for (let i = 0; i < 3; i++) {
+      t += 100;
+      engine.onUpdate!({ worldMatrix: pose, fresh: false });
+    }
+    expect(session.currentState.phase).toBe('lost');
+    expect(sprite.group.visible).toBe(true); // ainda dentro do tempo de segurar
+    t += 600;
+    engine.onUpdate!({ worldMatrix: pose, fresh: false });
+    expect(sprite.group.visible).toBe(false);
+    // Reencontrou a carta: volta na hora.
+    t += 50;
+    engine.onUpdate!({ worldMatrix: pose, fresh: true });
+    expect(sprite.group.visible).toBe(true);
+    expect(session.currentState.phase).toBe('tracking');
+  });
+
+  it('pose repetida não move o Pokémon', async () => {
+    let t = 1000;
+    const { session, engine, sprite, pose } = setup({ holdMs: 5000, now: () => t });
+    await session.start(new ArrayBuffer(8));
+    engine.onUpdate!({ worldMatrix: pose, fresh: true });
+    const x = sprite.group.matrix.elements[12];
+    const moved = [...pose];
+    moved[12] = 120;
+    t += 100;
+    engine.onUpdate!({ worldMatrix: moved, fresh: false });
+    for (let k = 100; k <= 2000; k += 100) sprite.update(k);
+    expect(sprite.group.matrix.elements[12]).toBeCloseTo(x!, 6);
+  });
+
   it('perda curta: mantém o sprite na última pose durante holdMs e só então esconde', async () => {
     let t = 1000;
     const { session, engine, sprite, pose } = setup({ holdMs: 700, now: () => t });
