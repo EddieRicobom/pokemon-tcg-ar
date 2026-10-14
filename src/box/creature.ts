@@ -18,6 +18,27 @@ export interface CreatureInfo {
   detail: string;
 }
 
+/** Efeitos de batalha aplicados por cima da animação normal (a direção da batalha escreve aqui). */
+export interface CreatureFx {
+  /** Deslocamento (m) somado à posição no chão. */
+  dx: number;
+  dy: number;
+  dz: number;
+  /** Escala geral e achatamento vertical (agachar antes do golpe). */
+  scale: number;
+  squash: number;
+  /** Cor multiplicada à textura (0xffffff = normal; vermelho = levou golpe). */
+  tint: number;
+  /** 0 = de pé, 1 = desmaiado (tombado e escurecido). */
+  faint: number;
+  /** Direção em que olha (no chão); null = segue o movimento. */
+  facing: { x: number; z: number } | null;
+}
+
+export function neutralFx(): CreatureFx {
+  return { dx: 0, dy: 0, dz: 0, scale: 1, squash: 1, tint: 0xffffff, faint: 0, facing: null };
+}
+
 export type CreatureSource = { kind: 'gif'; gif: DecodedGif } | { kind: 'image'; image: RgbaImage };
 
 /** Metros de altura por pixel do sprite (96 px ≈ 0,34 m): Pokémon maiores no GIF ficam maiores na caixa. */
@@ -61,6 +82,7 @@ export class BoxCreature {
   private flip = 1;
   /** Brilho de "foi tocado" (ms restantes). */
   private pulseMs = 0;
+  readonly fx: CreatureFx = neutralFx();
 
   constructor(readonly info: CreatureInfo, source: CreatureSource, readonly state: WanderState) {
     const first = source.kind === 'gif' ? source.gif.frames[0]?.rgba : source.image.data;
@@ -131,7 +153,8 @@ export class BoxCreature {
    */
   update(nowMs: number, dtMs: number, base: Vector3, camera: Vector3, right: Vector3): void {
     const s = this.state;
-    this.group.position.set(base.x + s.x, base.y, base.z + s.z);
+    const fx = this.fx;
+    this.group.position.set(base.x + s.x + fx.dx, base.y, base.z + s.z + fx.dz);
     const toCameraX = camera.x - this.group.position.x;
     const toCameraZ = camera.z - this.group.position.z;
     this.mesh.rotation.order = 'YXZ';
@@ -140,18 +163,25 @@ export class BoxCreature {
     const elevation = Math.atan2(camera.y - this.group.position.y, Math.hypot(toCameraX, toCameraZ));
     this.mesh.rotation.x = -Math.min(MAX_LEAN_RAD, Math.max(0, elevation * LEAN_FRACTION));
     const moving = s.vx !== 0 || s.vz !== 0;
-    if (moving) {
-      const side = s.vx * right.x + s.vz * right.z;
+    const heading = fx.facing ?? (moving ? { x: s.vx, z: s.vz } : null);
+    if (heading) {
+      const side = heading.x * right.x + heading.z * right.z;
       if (Math.abs(side) > 0.02) this.flip = (side > 0) === SPRITE_FACES_LEFT ? -1 : 1;
     }
-    this.mesh.scale.x = this.width * this.flip;
+    this.mesh.scale.x = this.width * this.flip * fx.scale;
+    this.mesh.scale.y = this.height * fx.scale * fx.squash;
+    this.mesh.rotation.z = fx.faint * 1.35 * -this.flip;
+    // Desmaiado fica escuro; levar golpe tinge de vermelho.
+    const dark = 1 - fx.faint * 0.6;
+    this.mesh.material.color.setHex(fx.tint).multiplyScalar(dark);
     let hop = moving ? Math.abs(Math.sin(s.hopPhase)) * 0.05 : 0;
     if (this.pulseMs > 0) {
       this.pulseMs = Math.max(0, this.pulseMs - dtMs);
       hop += Math.sin((1 - this.pulseMs / 500) * Math.PI) * 0.12;
     }
+    hop += fx.dy;
     this.mesh.position.y = hop;
-    const shadowScale = 1 - Math.min(0.3, hop * 2);
+    const shadowScale = 1 - Math.min(0.3, Math.max(0, hop) * 2);
     this.shadow.scale.set(this.width * 0.8 * shadowScale, this.width * 0.45 * shadowScale, 1);
 
     if (this.gif) {

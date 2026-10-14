@@ -1211,3 +1211,149 @@ button.link {
 .team-picker input::placeholder {
   color: var(--muted);
 }
+
+/* ---------- Batalha na Caixa ---------- */
+@media (max-width: 420px) {
+  .stage-btn {
+    min-width: 44px;
+    padding: 6px 3px;
+    font-size: 0.66rem;
+  }
+}
+
+.battle-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.battle-banner {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: max-content;
+  max-width: 92%;
+  padding: 6px 14px;
+  border-radius: 16px;
+  border: 2px solid var(--fx, #ffcb05);
+  background: rgba(10, 14, 26, 0.74);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--fx, #ffcb05) 55%, transparent);
+  text-align: center;
+  animation: banner-pop 260ms ease-out;
+}
+
+.battle-banner strong {
+  font-size: 1.02rem;
+}
+
+.battle-banner span {
+  font-size: 0.74rem;
+  opacity: 0.85;
+}
+
+@keyframes banner-pop {
+  from {
+    transform: translateX(-50%) scale(0.85);
+    opacity: 0;
+  }
+}
+
+.hp-bar {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: grid;
+  gap: 2px;
+  min-width: 88px;
+  padding: 3px 7px 4px;
+  border-radius: 10px;
+  background: rgba(10, 14, 26, 0.7);
+  font-size: 0.7rem;
+  line-height: 1.15;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.hp-bar.down {
+  opacity: 0.5;
+}
+
+.hp-name {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-weight: 700;
+}
+
+.type-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.hp-track {
+  display: block;
+  height: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.hp-track i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: #4ade80;
+}
+
+.hp-track i.warn {
+  background: #facc15;
+}
+
+.hp-track i.low {
+  background: #f87171;
+}
+
+.hp-num {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.float-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-weight: 800;
+  font-size: 1.05rem;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000, 0 1px 4px #000, 0 0 10px #000;
+}
+
+.float-label.damage {
+  font-size: 1.35rem;
+}
+
+.float-label.crit {
+  font-size: 1.2rem;
+}
+
+.float-label.good,
+.float-label.bad,
+.float-label.info,
+.float-label.miss {
+  font-size: 0.86rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-banner {
+    animation: none;
+  }
+}

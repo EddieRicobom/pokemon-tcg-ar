@@ -8,6 +8,10 @@ import { intersectFloor } from './floor';
 import type { FloorResult } from './floor';
 import { formationSlots } from './formation';
 import { createWander, separate, stepToward, stepWander } from './wander';
+import { BattleDirector } from './battle-director';
+import type { BattleHud } from './battle-director';
+import { simulateBattle } from '../core/battle';
+import type { BattleResult, Fighter } from '../core/battle';
 import { DEFAULT_LOOK } from '../core/sprite-look';
 import type { SpriteLook } from '../core/sprite-look';
 import type { Rng } from './wander';
@@ -38,6 +42,7 @@ export class BoxScene {
   private lastNow = 0;
   private look: SpriteLook = DEFAULT_LOOK;
   mode: BoxMode = 'passeio';
+  private director: BattleDirector | null = null;
   private readonly rng: Rng;
 
   constructor(rng: Rng = Math.random) {
@@ -148,8 +153,40 @@ export class BoxScene {
     this.mode = mode;
   }
 
+  /** Há uma batalha em cena (rodando ou com o resultado na tela). */
+  get battling(): boolean {
+    return this.director !== null;
+  }
+
+  /** Texto e posições da batalha para a interface desenhar por cima; null fora de batalha. */
+  get battleHud(): BattleHud | null {
+    return this.director?.hud ?? null;
+  }
+
+  /**
+   * Começa uma batalha automática entre os Pokémon da caixa. `fighters` vem na mesma ordem das criaturas
+   * (um por Pokémon, mesmo `id`); precisa de pelo menos 2. Devolve o resultado simulado.
+   */
+  startBattle(fighters: readonly Fighter[], rng: Rng = this.rng): BattleResult {
+    if (!this.anchor) throw new Error('Coloque a caixa no chão antes de batalhar.');
+    if (fighters.length < 2 || fighters.length !== this.creatures.length) throw new Error('A batalha precisa de um lutador para cada Pokémon da caixa (mínimo 2).');
+    this.stopBattle();
+    const result = simulateBattle(fighters, rng);
+    this.director = new BattleDirector({
+      fighters, creatures: this.creatures, result, scene: this.scene, camera: this.camera,
+      anchor: () => this.anchor ?? new Vector3(), half: this.half, rng,
+    });
+    return result;
+  }
+
+  stopBattle(): void {
+    this.director?.dispose();
+    this.director = null;
+  }
+
   /** Troca a população da caixa (até `MAX_CREATURES`). */
   setCreatures(entries: CreatureEntry[]): void {
+    this.stopBattle();
     for (const creature of this.creatures) creature.dispose();
     this.creatures = [];
     for (const entry of entries.slice(0, MAX_CREATURES)) {
@@ -167,7 +204,9 @@ export class BoxScene {
     const base = this.anchor;
     for (const creature of this.creatures) creature.group.visible = base !== null;
     if (!base) return;
-    if (this.mode === 'formacao') {
+    if (this.director) {
+      this.director.update(dt);
+    } else if (this.mode === 'formacao') {
       // Em fila de frente para a câmera: cada um anda até a sua vaga.
       const slots = formationSlots(this.creatures.length, this.half, -base.x, -base.z);
       this.creatures.forEach((creature, i) => {
@@ -198,6 +237,7 @@ export class BoxScene {
   }
 
   dispose(): void {
+    this.stopBattle();
     for (const creature of this.creatures) creature.dispose();
     this.creatures = [];
     for (const child of [...this.floor.children]) {
