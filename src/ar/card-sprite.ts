@@ -11,9 +11,8 @@ import type { RgbaImage } from '../recognition/types';
 import { clampLayout, DEFAULT_LAYOUT, spriteMatrix, yawTowardCamera } from './anchor';
 import type { SpriteLayout, SpritePlacement } from './anchor';
 import { makePlaceholder } from './placeholder';
+import { adaptiveTauMs, smoothingAlpha } from './smoothing';
 
-/** Constante de tempo (ms) do suavizador de pose: o rastreador entrega ~10–20 poses/s e a tela desenha 60 quadros/s. */
-export const POSE_SMOOTHING_MS = 60;
 
 /** Memória máxima (bytes) para guardar os quadros já ampliados; acima disso, amplia de novo a cada troca de quadro. */
 const FRAME_CACHE_BYTES = 32 * 1024 * 1024;
@@ -53,6 +52,11 @@ export class CardSprite {
   private shownFrame = -1;
   /** Giro automático (graus) para o sprite olhar para a câmera; suavizado entre quadros. */
   private readonly targetMatrix = new Matrix4();
+  /** Pose suavizada, no quadro de referência em que foi medida (câmera, ou mundo quando há giroscópio). */
+  private readonly smoothed = new Matrix4();
+  /** Rotação inversa da câmera atual (só vale com giroscópio): leva a pose do mundo de volta para a câmera. */
+  private readonly viewRotation = new Matrix4();
+  private worldFrame = false;
   private hasPose = false;
   private lastSmoothMs = 0;
   private autoYaw = 0;
@@ -203,15 +207,24 @@ export class CardSprite {
     if (!tracked) this.hasPose = false;
   }
 
-  /** Aplica a pose da carta (matriz do espaço da carta, ordem de colunas). */
-  setCardMatrix(matrix: ArrayLike<number>): void {
+  /**
+   * Aplica a pose da carta (matriz do espaço da carta, ordem de colunas, no quadro da câmera).
+   * `poseOrientation` = orientação da câmera no instante do quadro (giroscópio): a pose passa a ser guardada no
+   * "mundo" e, a cada quadro de tela, volta para a câmera pela orientação atual (`setViewOrientation`). Assim o
+   * Pokémon acompanha o giro do celular na hora, sem esperar o próximo resultado do rastreador.
+   */
+  setCardMatrix(matrix: ArrayLike<number>, poseOrientation?: Quaternion | null): void {
     const m = Array.from(matrix);
     this.targetMatrix.fromArray(m);
-    if (!this.hasPose) {
-      this.group.matrix.copy(this.targetMatrix);
+    const world = Boolean(poseOrientation);
+    if (poseOrientation) this.targetMatrix.premultiply(new Matrix4().makeRotationFromQuaternion(poseOrientation));
+    if (!this.hasPose || world !== this.worldFrame) {
+      this.smoothed.copy(this.targetMatrix);
       this.hasPose = true;
     }
-    this.group.matrixWorldNeedsUpdate = true;
+    if (world !== this.worldFrame) this.viewRotation.identity();
+    this.worldFrame = world;
+    this.applyGroupMatrix();
     if (this.layout.faceCamera !== false) {
       const target = yawTowardCamera(m);
       if (target !== null) {
@@ -253,19 +266,38 @@ export class CardSprite {
   private readonly tgtScale = new Vector3();
   private readonly tgtQuat = new Quaternion();
 
-  /** Aproxima a pose desenhada da última pose rastreada, a cada quadro de tela (posição/escala lineares, rotação por slerp). */
+  /** Orientação atual da câmera (giroscópio, já atrasada para casar com a imagem). Sem efeito se a pose não veio com orientação. */
+  setViewOrientation(q: Quaternion | null): void {
+    if (q && this.worldFrame) this.viewRotation.makeRotationFromQuaternion(this.tmpQuat.copy(q).invert());
+    else this.viewRotation.identity();
+    this.applyGroupMatrix();
+  }
+
+  /** group.matrix = (volta do mundo para a câmera) · pose suavizada. */
+  private applyGroupMatrix(): void {
+    this.group.matrix.multiplyMatrices(this.viewRotation, this.smoothed);
+    this.group.matrixWorldNeedsUpdate = true;
+  }
+
+  /**
+   * Aproxima a pose suavizada da última pose rastreada, a cada quadro de tela (posição/escala lineares, rotação
+   * por slerp). A constante de tempo se adapta: parado, filtra o tremor; em movimento, não fica para trás.
+   */
   private smoothPose(nowMs: number): void {
     const dt = this.lastSmoothMs === 0 ? 0 : Math.min(100, Math.max(0, nowMs - this.lastSmoothMs));
     this.lastSmoothMs = nowMs;
     if (!this.hasPose || dt === 0) return;
-    const alpha = 1 - Math.exp(-dt / POSE_SMOOTHING_MS);
-    this.group.matrix.decompose(this.tmpPos, this.tmpQuat, this.tmpScale);
+    this.smoothed.decompose(this.tmpPos, this.tmpQuat, this.tmpScale);
     this.targetMatrix.decompose(this.tgtPos, this.tgtQuat, this.tgtScale);
+    const widthUnits = Math.max(1e-6, this.tgtScale.x);
+    const error = this.tmpPos.distanceTo(this.tgtPos) / widthUnits;
+    const angle = this.tmpQuat.angleTo(this.tgtQuat);
+    const alpha = smoothingAlpha(dt, adaptiveTauMs(error, angle));
     this.tmpPos.lerp(this.tgtPos, alpha);
     this.tmpScale.lerp(this.tgtScale, alpha);
     this.tmpQuat.slerp(this.tgtQuat, alpha);
-    this.group.matrix.compose(this.tmpPos, this.tmpQuat, this.tmpScale);
-    this.group.matrixWorldNeedsUpdate = true;
+    this.smoothed.compose(this.tmpPos, this.tmpQuat, this.tmpScale);
+    this.applyGroupMatrix();
   }
 
   /** Matriz mundial do plano (para testes e depuração). */

@@ -2,6 +2,8 @@
 export interface TrackingUpdate {
   /** Matriz 4×4 em ordem de colunas (mundo OpenGL), ou null se a carta foi perdida. */
   worldMatrix: ArrayLike<number> | null;
+  /** Hora (performance.now) em que a câmera capturou o quadro de onde saiu esta pose, quando se sabe. */
+  capturedAt?: number;
 }
 
 export interface TrackingInfo {

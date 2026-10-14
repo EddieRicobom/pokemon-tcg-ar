@@ -1,4 +1,4 @@
-import { LinearFilter, NearestFilter, Vector3 } from 'three';
+import { LinearFilter, Matrix4, NearestFilter, Quaternion, Vector3 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { encodeGif } from '../core/__fixtures__/encode-gif';
 import type { Rgb } from '../core/__fixtures__/encode-gif';
@@ -296,5 +296,80 @@ describe('CardSprite: filtros de aparência', () => {
     sprite.setLayout({ ...DEFAULT_LAYOUT, outline: 'white' });
     sprite.setLayout({ ...DEFAULT_LAYOUT });
     expect(dims(sprite).width).toBe(original);
+  });
+});
+
+describe('CardSprite: giroscópio', () => {
+  const yaw = (deg: number) => new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), (deg * Math.PI) / 180);
+  const pose = cardSpaceMatrix([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -5, 1], 1, 1.375);
+  const centerOnScreen = (sprite: CardSprite) => new Vector3(0, 0, 0).applyMatrix4(sprite.group.matrix);
+
+  it('com a câmera parada a pose é a medida', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setCardMatrix(pose, yaw(10));
+    sprite.setViewOrientation(yaw(10));
+    const here = centerOnScreen(sprite);
+    const reference = new Vector3(0, 0, 0).applyMatrix4(new Matrix4().fromArray(Array.from(pose)));
+    expect(here.distanceTo(reference)).toBeLessThan(1e-6);
+  });
+
+  it('girar o celular move a carta na tela na hora, em sentido oposto, sem novo resultado do rastreador', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setCardMatrix(pose, yaw(0));
+    sprite.setViewOrientation(yaw(0));
+    const before = centerOnScreen(sprite);
+    sprite.setViewOrientation(yaw(10)); // a câmera girou 10° (para a esquerda, em torno de Y)
+    const after = centerOnScreen(sprite);
+    // o mundo gira ao contrário: a distância à câmera se mantém e o x muda de sinal convenientemente
+    expect(after.length()).toBeCloseTo(before.length(), 6);
+    expect(Math.abs(after.x - before.x)).toBeGreaterThan(0.3);
+    // girar de volta restaura
+    sprite.setViewOrientation(yaw(0));
+    expect(centerOnScreen(sprite).distanceTo(before)).toBeLessThan(1e-6);
+  });
+
+  it('o resultado é exatamente a rotação inversa da câmera aplicada à pose medida', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setCardMatrix(pose, yaw(5));
+    sprite.setViewOrientation(yaw(25));
+    const relative = yaw(25).invert().multiply(yaw(5));
+    const expected = new Vector3(0, 0, 0).applyMatrix4(new Matrix4().fromArray(Array.from(pose))).applyQuaternion(relative);
+    expect(centerOnScreen(sprite).distanceTo(expected)).toBeLessThan(1e-6);
+  });
+
+  it('sem orientação na pose, setViewOrientation não faz nada', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setCardMatrix(pose);
+    const before = centerOnScreen(sprite);
+    sprite.setViewOrientation(yaw(40));
+    expect(centerOnScreen(sprite).distanceTo(before)).toBeLessThan(1e-9);
+  });
+
+  it('passar a pose para o mundo e de volta não desliza (volta direto)', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setCardMatrix(pose, yaw(0));
+    sprite.setCardMatrix(pose); // giroscópio sumiu
+    sprite.setViewOrientation(yaw(30));
+    const reference = new Vector3(0, 0, 0).applyMatrix4(new Matrix4().fromArray(Array.from(pose)));
+    expect(centerOnScreen(sprite).distanceTo(reference)).toBeLessThan(1e-6);
+  });
+
+  it('a suavização é adaptativa: salto grande converge mais rápido que tremor pequeno', () => {
+    const run = (dx: number) => {
+      const sprite = new CardSprite();
+      sprite.setStatic(makePlaceholder(8));
+      const at = (x: number) => cardSpaceMatrix([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, -5, 1], 1, 1.375);
+      sprite.setCardMatrix(at(0));
+      sprite.update(1000);
+      sprite.setCardMatrix(at(dx));
+      sprite.update(1016);
+      return (sprite.group.matrix.elements[12]! - 0.5) / dx; // fração do caminho andada em um quadro
+    };
+    expect(run(1)).toBeGreaterThan(run(0.01) * 1.5);
   });
 });

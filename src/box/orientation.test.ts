@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { lookDirection, lookQuaternion, orientationQuaternion, visibleVerticalFov } from './orientation';
+import { lookDirection, lookQuaternion, orientationQuaternion, orientationSmoothingAlpha, visibleVerticalFov } from './orientation';
 
 describe('orientação do celular', () => {
   it('celular de pé (beta 90) olha para a frente, na horizontal', () => {
@@ -42,5 +42,23 @@ describe('campo de visão visível', () => {
   it('entradas inválidas devolvem o campo original', () => {
     expect(visibleVerticalFov(63, 0, 1)).toBe(63);
     expect(visibleVerticalFov(63, 1, NaN)).toBe(63);
+  });
+});
+
+describe('suavização da orientação', () => {
+  it('parado filtra bastante e girando acompanha por inteiro', () => {
+    expect(orientationSmoothingAlpha(0)).toBeCloseTo(0.18, 9);
+    expect(orientationSmoothingAlpha(0.002)).toBeLessThan(0.25);
+    expect(orientationSmoothingAlpha(0.2)).toBe(1);
+  });
+  it('é monótona e fica entre 0,18 e 1', () => {
+    let last = 0;
+    for (const step of [0, 0.001, 0.01, 0.05, 0.09, 0.5]) {
+      const a = orientationSmoothingAlpha(step);
+      expect(a).toBeGreaterThanOrEqual(last);
+      expect(a).toBeLessThanOrEqual(1);
+      last = a;
+    }
+    expect(orientationSmoothingAlpha(-1)).toBeCloseTo(0.18, 9);
   });
 });
