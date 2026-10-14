@@ -1,5 +1,5 @@
 <script setup lang="ts">
-export type NavIconName = 'escanear' | 'caixa' | 'carregar' | 'diagnostico';
+export type NavIconName = 'escanear' | 'varias' | 'caixa' | 'carregar' | 'diagnostico';
 defineProps<{ name: NavIconName }>();
 </script>
 
@@ -9,6 +9,12 @@ defineProps<{ name: NavIconName }>();
     <template v-if="name === 'escanear'">
       <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
       <circle cx="12" cy="12" r="2.6" />
+    </template>
+    <!-- Várias: três cartas lado a lado -->
+    <template v-else-if="name === 'varias'">
+      <rect x="3" y="7" width="6" height="10" rx="1.4" />
+      <rect x="9" y="5" width="6" height="14" rx="1.4" />
+      <rect x="15" y="7" width="6" height="10" rx="1.4" />
     </template>
     <!-- Caixa: cubo -->
     <template v-else-if="name === 'caixa'">

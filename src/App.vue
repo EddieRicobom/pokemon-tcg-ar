@@ -9,6 +9,7 @@ import CarregarView from './views/CarregarView.vue';
 import CaixaView from './views/CaixaView.vue';
 import DiagnosticoView from './views/DiagnosticoView.vue';
 import ScanView from './views/ScanView.vue';
+import VariasView from './views/VariasView.vue';
 
 const capabilities = detectCapabilities();
 const { canInstall, installed, install } = useInstallPrompt();
@@ -19,6 +20,7 @@ const showIosHint =
 
 const tabs: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Escanear' },
+  { name: 'varias', label: 'Várias' },
   { name: 'caixa', label: 'Caixa' },
   { name: 'carregar', label: 'Cartas' },
   { name: 'diagnostico', label: 'Diagnóstico' },
@@ -58,6 +60,7 @@ const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
     </section>
 
     <ScanView v-if="route.name === 'escanear'" :key="scanKey" :card-id="route.cardId" />
+    <VariasView v-else-if="route.name === 'varias'" />
     <CaixaView v-else-if="route.name === 'caixa'" />
     <CarregarView v-else-if="route.name === 'carregar'" />
     <DiagnosticoView v-else />

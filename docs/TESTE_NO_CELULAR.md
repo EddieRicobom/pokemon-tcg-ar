@@ -36,6 +36,12 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 2. Com a câmera aberta, use os botões sobre a imagem: "Tela cheia" (os botões continuam visíveis), "Filtros" (câmera, cor e contorno do Pokémon), "Formação" (equipe em fila) e "Passeio".
 3. Anote: se a tela cheia entra e sai sem a imagem esticar, se os botões cabem numa linha no seu aparelho e se os filtros mudam o Pokémon sem travar.
 
+### Várias cartas (aba "Várias")
+1. Em Cartas, ponha na equipe as cartas que quer usar (as que já foram escaneadas neste aparelho). Na aba "Várias", toque em "Abrir câmera e rastrear a equipe": o app prepara uma carta de cada vez (a primeira vez compila o alvo, alguns segundos por carta).
+2. Ponha 2 a 4 cartas da equipe na mesa, separadas e bem iluminadas. Cada uma deve ganhar o seu Pokémon, e o nome das cartas vistas aparece em etiquetas no alto.
+3. Tire uma carta da mesa: o Pokémon dela deve sumir em poucos segundos sem afetar as outras. Anote o "leituras/s" mostrado abaixo da câmera com 1, 2, 3 e 4 cartas.
+4. Anote: se alguma carta demora a ser achada, se o Pokémon "pula" de uma carta para outra e se o celular esquenta ou perde fluidez.
+
 ### Batalha automática (Caixa)
 1. Com a caixa colocada e 2 ou mais Pokémon na equipe, toque em "Batalhar" (sobre a câmera). Eles se reúnem em roda e lutam sozinhos até sobrar um.
 2. Confira: o anúncio do golpe (nome, tipo e se veio da carta ou do jogo), as barras de PS descendo, os números de dano, "Super efetivo!"/"Pouco efetivo…" (ex.: Água contra Fogo), o desmaio e a comemoração do vencedor. "De novo" refaz com novos sorteios; "Parar" volta ao passeio.

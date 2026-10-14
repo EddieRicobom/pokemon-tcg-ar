@@ -82,6 +82,27 @@ describe('ArSession', () => {
     expect(session.currentState.message).toMatch(/Perdi/);
   });
 
+  it('uma única pose nula (o MindAR desistiu da carta) esconde o Pokémon depois do tempo de segurar, sem novas leituras', async () => {
+    let t = 1000;
+    const { session, engine, sprite, pose, tick } = setup({ holdMs: 700, now: () => t });
+    await session.start(new ArrayBuffer(8));
+    engine.onUpdate!({ worldMatrix: pose });
+    t += 50;
+    engine.onUpdate!({ worldMatrix: null }); // a única que o MindAR manda
+    expect(sprite.group.visible).toBe(true);
+    t += 500;
+    tick(t);
+    expect(sprite.group.visible).toBe(true);
+    t += 400;
+    tick(t);
+    expect(sprite.group.visible).toBe(false);
+    expect(session.currentState.phase).toBe('lost');
+    // Achando a carta de novo, volta.
+    engine.onUpdate!({ worldMatrix: pose });
+    expect(sprite.group.visible).toBe(true);
+    expect(session.currentState.phase).toBe('tracking');
+  });
+
   it('perda curta: mantém o sprite na última pose durante holdMs e só então esconde', async () => {
     let t = 1000;
     const { session, engine, sprite, pose } = setup({ holdMs: 700, now: () => t });

@@ -1357,3 +1357,27 @@ button.link {
     animation: none;
   }
 }
+
+/* ---------- Várias cartas ---------- */
+.multi-chips {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  left: 8px;
+  right: 8px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.multi-chips span {
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgba(10, 14, 26, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 203, 5, 0.6);
+  font-size: 0.8rem;
+  font-weight: 700;
+}

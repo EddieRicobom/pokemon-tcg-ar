@@ -1,4 +1,5 @@
-import type { TrackingEngine, TrackingInfo, TrackingUpdate } from './engine';
+import type { TrackingEngine, TrackingInfo, TrackingOptions, TrackingUpdate } from './engine';
+import { mergeTargets } from './target';
 import { FrameRelay } from './frame-relay';
 
 interface CropDetectorLike {
@@ -48,7 +49,13 @@ export class MindArEngine implements TrackingEngine {
   private controller: MindArController | null = null;
   private relay: FrameRelay | null = null;
 
-  async start(video: HTMLVideoElement, target: ArrayBuffer, onUpdate: (update: TrackingUpdate) => void, onInputChange?: () => void): Promise<TrackingInfo> {
+  async start(
+    video: HTMLVideoElement,
+    target: ArrayBuffer | readonly ArrayBuffer[],
+    onUpdate: (update: TrackingUpdate) => void,
+    onInputChange?: () => void,
+    options: TrackingOptions = {},
+  ): Promise<TrackingInfo> {
     const { Controller } = await import('mind-ar/src/image-target/controller.js');
     if (!video.videoWidth || !video.videoHeight) throw new Error('O vídeo da câmera ainda não tem imagem.');
     // O rastreador lê um canvas reduzido (ver frame-relay.ts), não o <video> diretamente.
@@ -60,10 +67,10 @@ export class MindArEngine implements TrackingEngine {
     const controller = new Controller({
       inputWidth,
       inputHeight,
-      maxTrack: 1,
+      maxTrack: Math.max(1, Math.floor(options.maxTrack ?? 1)),
       ...TRACKING_TUNING,
-      onUpdate: (data: { type: string; worldMatrix?: ArrayLike<number> | null }) => {
-        if (data.type === 'updateMatrix') onUpdate({ worldMatrix: data.worldMatrix ?? null, capturedAt: iterationFrameTime });
+      onUpdate: (data: { type: string; targetIndex?: number; worldMatrix?: ArrayLike<number> | null }) => {
+        if (data.type === 'updateMatrix') onUpdate({ worldMatrix: data.worldMatrix ?? null, targetIndex: data.targetIndex ?? 0, capturedAt: iterationFrameTime });
       },
     }) as MindArController;
     this.controller = controller;
@@ -84,7 +91,8 @@ export class MindArEngine implements TrackingEngine {
     controller.cropDetector.cropSize = size;
     controller.cropDetector.detector = new Detector(size, size);
 
-    const { dimensions } = controller.addImageTargetsFromBuffer(target);
+    const buffer = Array.isArray(target) ? await mergeTargets(target as readonly ArrayBuffer[]) : (target as ArrayBuffer);
+    const { dimensions } = controller.addImageTargetsFromBuffer(buffer);
     const first = dimensions[0];
     if (!first) throw new Error('O alvo de AR está vazio ou é de uma versão incompatível; recompile.');
     relay.start();
@@ -93,6 +101,7 @@ export class MindArEngine implements TrackingEngine {
     return {
       markerWidth: first[0],
       markerHeight: first[1],
+      markers: dimensions.map(([width, height]) => ({ width, height })),
       projection: controller.getProjectionMatrix(),
       inputWidth,
       inputHeight,

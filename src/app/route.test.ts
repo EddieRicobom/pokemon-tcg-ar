@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { parseRoute, routeHref } from './route';
 
 describe('rotas por hash', () => {
-  it('interpreta as quatro telas e o padrão', () => {
+  it('interpreta as cinco telas e o padrão', () => {
     expect(parseRoute('')).toEqual({ name: 'escanear' });
     expect(parseRoute('#/')).toEqual({ name: 'escanear' });
+    expect(parseRoute('#/varias')).toEqual({ name: 'varias' });
     expect(parseRoute('#/caixa')).toEqual({ name: 'caixa' });
     expect(parseRoute('#/carregar')).toEqual({ name: 'carregar' });
     expect(parseRoute('#/diagnostico')).toEqual({ name: 'diagnostico' });
@@ -22,6 +23,7 @@ describe('rotas por hash', () => {
 
   it('monta os endereços', () => {
     expect(routeHref('escanear')).toBe('#/');
+    expect(routeHref('varias')).toBe('#/varias');
     expect(routeHref('caixa')).toBe('#/caixa');
     expect(routeHref('carregar')).toBe('#/carregar');
     expect(routeHref('diagnostico')).toBe('#/diagnostico');
