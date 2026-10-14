@@ -42,7 +42,8 @@ export interface RunningBox {
   setSound(on: boolean): void;
   /** Libera o áudio do navegador: chame direto de um toque do usuário (ex.: no clique de Batalhar). */
   unlockAudio(): void;
-  startBattle(fighters: readonly Fighter[]): BattleResult;
+  /** `plan` escolhe quem luta e as equipes (modos Equipes e 3x3); sem ele, todos da caixa lutam entre si. */
+  startBattle(fighters: readonly Fighter[], plan?: { picks: readonly number[]; teams?: readonly number[]; relay?: boolean }): BattleResult;
   stopBattle(): void;
   /** Traz a arena da batalha de volta para a frente do olhar. */
   recenterBattle(): void;
@@ -139,7 +140,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setLighting: (on) => scene.setLighting(on),
     setSound: (on) => sound.setEnabled(on),
     unlockAudio: () => sound.unlock(),
-    startBattle: (fighters) => scene.startBattle(fighters),
+    startBattle: (fighters, plan) => scene.startBattle(fighters, undefined, plan),
     stopBattle: () => scene.stopBattle(),
     recenterBattle: () => scene.recenterBattle(),
     setPhoneHeight(meters) {

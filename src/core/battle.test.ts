@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildFighter, calculateDamage, canGetStatus, cardDamageToPower, chooseMove, chooseTarget, effectivenessLabel, effectivenessTone, expectedDamage,
-  FALLBACK_MOVE, parseCardDamage, personalityOf, seededRng, simulateBattle, STATUS_CHANCE, summarizeBattle, TYPE_CHART, typeEffectiveness,
+  battleModeBlocker, buildFighter, calculateDamage, canGetStatus, cardDamageToPower, chooseMove, chooseTarget, effectivenessLabel, effectivenessTone, expectedDamage,
+  FALLBACK_MOVE, parseCardDamage, personalityOf, planBattle, seededRng, simulateBattle, STATUS_CHANCE, summarizeBattle, TYPE_CHART, typeEffectiveness,
 } from './battle';
 import type { Fighter } from './battle';
 import { POKEMON_TYPES } from './pokemon-data';
@@ -391,5 +391,106 @@ describe('summarizeBattle', () => {
     expect(summary.fighters.reduce((n, f) => n + f.knockouts, 0)).toBe(1);
     expect(summary.rounds).toBe(result.turns.at(-1)?.round);
     expect(summary.fighters[summary.mvp]!.damageDealt).toBe(Math.max(...summary.fighters.map((f) => f.damageDealt)));
+  });
+});
+
+describe('equipes e revezamento', () => {
+  const six = () => Array.from({ length: 6 }, (_, i) => fighter({ id: `p${i}`, name: `P${i}`, speed: 60 + i * 10 }));
+
+  it('sem equipes o resultado é o mesmo de sempre (todos contra todos)', () => {
+    const base = simulateBattle(six(), seededRng(9));
+    const explicit = simulateBattle(six(), seededRng(9), { teams: [0, 1, 2, 3, 4, 5] });
+    expect(explicit.turns).toEqual(base.turns);
+    expect(base.teams).toBeUndefined();
+  });
+
+  it('em equipes ninguém ataca aliado e vence a equipe que sobra', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const teams = [0, 1, 0, 1, 0, 1];
+      const result = simulateBattle(six(), seededRng(seed), { teams });
+      for (const turn of result.turns.filter((t) => t.kind === 'attack')) expect(teams[turn.attacker]).not.toBe(teams[turn.target]);
+      const standing = new Set(result.hpLeft.map((hp, i) => (hp > 0 ? teams[i] : -1)).filter((x) => x !== -1));
+      expect(standing.size).toBe(1);
+      expect(result.winningTeam).toBe([...standing][0]);
+      expect(teams[result.winner]).toBe(result.winningTeam);
+      expect(result.hpLeft[result.winner]).toBeGreaterThan(0);
+    }
+  });
+
+  it('valida as equipes', () => {
+    expect(() => simulateBattle(six(), seededRng(1), { teams: [0, 0, 0, 0, 0, 0] })).toThrow();
+    expect(() => simulateBattle(six(), seededRng(1), { teams: [0, 1] })).toThrow();
+  });
+
+  it('no revezamento só um de cada equipe luta por vez e o próximo entra quando o outro cai', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const teams = [0, 0, 0, 1, 1, 1];
+      const result = simulateBattle(six(), seededRng(seed), { teams, relay: true });
+      expect(result.relay).toBe(true);
+      const hp = six().map((f) => f.maxHp);
+      const front = [0, 3];
+      for (const turn of result.turns) {
+        if (turn.kind === 'attack') {
+          expect(front).toContain(turn.attacker);
+          expect(front).toContain(turn.target);
+          hp[turn.target] = turn.targetHpAfter;
+          if (turn.fainted) {
+            const team = teams[turn.target]!;
+            const next = hp.findIndex((h, i) => h > 0 && teams[i] === team);
+            const after = result.turns[turn.index + 1];
+            if (next >= 0) {
+              expect(after?.kind).toBe('enter');
+              expect(after?.attacker).toBe(next);
+              front[team] = next;
+            }
+          }
+        }
+      }
+      expect(result.hpLeft.filter((h, i) => h > 0 && teams[i] === result.winningTeam).length).toBeGreaterThan(0);
+      expect(new Set(result.hpLeft.map((h, i) => (h > 0 ? teams[i] : -1)).filter((x) => x !== -1)).size).toBe(1);
+    }
+  });
+
+  it('o resumo ignora entradas', () => {
+    const fighters = six();
+    const result = simulateBattle(fighters, seededRng(3), { teams: [0, 0, 0, 1, 1, 1], relay: true });
+    const summary = summarizeBattle(fighters, result);
+    expect(summary.fighters.reduce((n, f) => n + f.damageDealt, 0)).toBe(result.turns.filter((t) => t.kind === 'attack').reduce((n, t) => n + t.damage, 0));
+  });
+});
+
+describe('planBattle', () => {
+  it('royale usa todos e não consome sorteio', () => {
+    let calls = 0;
+    const plan = planBattle('royale', 5, () => (calls++, 0.3));
+    expect(plan).toEqual({ mode: 'royale', picks: [0, 1, 2, 3, 4], relay: false });
+    expect(calls).toBe(0);
+  });
+
+  it('equipes reparte todos de forma equilibrada', () => {
+    for (const count of [2, 3, 5, 6, 9]) {
+      const plan = planBattle('equipes', count, seededRng(count));
+      expect([...plan.picks].sort((a, b) => a - b)).toEqual(Array.from({ length: count }, (_, i) => i));
+      const sizes = [0, 1].map((t) => plan.teams!.filter((x) => x === t).length);
+      expect(Math.abs(sizes[0]! - sizes[1]!)).toBeLessThanOrEqual(1);
+      expect(plan.relay).toBe(false);
+    }
+  });
+
+  it('3x3 sorteia 6 e é repetível', () => {
+    const one = planBattle('tres', 9, seededRng(5));
+    const two = planBattle('tres', 9, seededRng(5));
+    expect(one).toEqual(two);
+    expect(one.picks).toHaveLength(6);
+    expect(new Set(one.picks).size).toBe(6);
+    expect(one.teams).toEqual([0, 1, 0, 1, 0, 1]);
+    expect(one.relay).toBe(true);
+  });
+
+  it('avisa quando faltam Pokémon', () => {
+    expect(battleModeBlocker('tres', 4)).toContain('6');
+    expect(battleModeBlocker('tres', 6)).toBeNull();
+    expect(battleModeBlocker('royale', 1)).not.toBeNull();
+    expect(() => planBattle('tres', 5, seededRng(1))).toThrow();
   });
 });

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 export type StageIconName =
   | 'fullscreen' | 'exit-fullscreen' | 'filters' | 'close' | 'rescan' | 'adjust' | 'panel' | 'team' | 'move'
-  | 'formation' | 'wander' | 'battle' | 'stop' | 'tools' | 'search' | 'sliders' | 'photo';
+  | 'formation' | 'wander' | 'battle' | 'stop' | 'tools' | 'search' | 'sliders' | 'photo' | 'modes';
 defineProps<{ icon: StageIconName; label: string; active?: boolean; disabled?: boolean; attention?: boolean }>();
 </script>
 
@@ -20,6 +20,7 @@ defineProps<{ icon: StageIconName; label: string; active?: boolean; disabled?: b
       <g v-else-if="icon === 'formation'"><circle cx="6" cy="14" r="2" /><circle cx="12" cy="10" r="2" /><circle cx="18" cy="14" r="2" /><path d="M4 20h16" /></g>
       <path v-else-if="icon === 'wander'" d="M4 17c3-9 5 3 8-5s5 3 8-5" />
       <g v-else-if="icon === 'battle'"><path d="m5 5 8 8M5 5h4M5 5v4M19 5l-8 8M19 5h-4M19 5v4M7 17l-2 2M17 17l2 2M9 15l-3 3M15 15l3 3" /></g>
+      <g v-else-if="icon === 'modes'"><path d="m12 4 8 4-8 4-8-4 8-4ZM4 12l8 4 8-4M4 16l8 4 8-4" /></g>
       <rect v-else-if="icon === 'stop'" x="6" y="6" width="12" height="12" rx="2" />
       <g v-else-if="icon === 'search'"><circle cx="11" cy="11" r="6" /><path d="m20 20-4.2-4.2" /></g>
       <path v-else-if="icon === 'sliders'" d="M4 7h9M17 7h3M4 17h3M11 17h9M15 4v6M9 14v6" />

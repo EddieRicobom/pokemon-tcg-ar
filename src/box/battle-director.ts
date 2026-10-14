@@ -1,7 +1,7 @@
 import { AdditiveBlending, Sprite, SpriteMaterial, Vector3 } from 'three';
 import type { Object3D, PerspectiveCamera } from 'three';
 import { ArenaStage } from './arena';
-import { effectivenessLabel, PERSONALITY_LABELS_PT, STATUS_LABELS_PT } from '../core/battle';
+import { effectivenessLabel, PERSONALITY_LABELS_PT, STATUS_LABELS_PT, TEAM_COLORS, TEAM_NAMES_PT } from '../core/battle';
 import type { BattleResult, BattleTurn, Fighter, Personality, Rng, StatusKind } from '../core/battle';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
@@ -39,6 +39,20 @@ export interface HudBar {
   /** É a vez dele (quem está agindo agora). */
   acting: boolean;
   quality: Fighter['quality'];
+  /** Equipe (0 ou 1) e a cor dela; nulos em "todos contra todos". */
+  team: number | null;
+  teamColor: string | null;
+  /** 3x3: está esperando a vez no banco. */
+  reserve: boolean;
+}
+
+/** Placar das equipes: quantos ainda estão de pé. */
+export interface HudTeamScore {
+  team: number;
+  name: string;
+  color: string;
+  alive: number;
+  total: number;
 }
 
 export interface HudLabel {
@@ -89,7 +103,9 @@ export interface BattleHud {
   /** Luzes dos golpes (carga, projétil, impacto) para clarear o vídeo em volta. */
   lights: HudLight[];
   callout: HudCallout | null;
-  winner: { id: string; name: string; hpLeft: number; maxHp: number } | null;
+  winner: { id: string; name: string; hpLeft: number; maxHp: number; team: number | null; teamName: string | null } | null;
+  /** Só nas batalhas por equipes. */
+  scoreboard: HudTeamScore[] | null;
   turn: number;
   totalTurns: number;
   round: number;
@@ -119,6 +135,7 @@ const FAINT_EXTRA_MS = 450;
 export const GUARD_MS = 950;
 export const SKIP_MS = 850;
 export const RESIDUAL_MS = 900;
+export const ENTER_MS = 1000;
 
 const MELEE_TIMES: Record<PhysicalStyle, { windup: number; approach: number; strike: number }> = {
   tackle: { windup: 350, approach: 520, strike: 170 },
@@ -161,6 +178,7 @@ export function attackStyleOf(turn: Pick<BattleTurn, 'move'>): AttackStyle {
 
 export function turnPlan(turn: Pick<BattleTurn, 'kind' | 'move' | 'fainted'>, personality: Personality = 'equilibrado'): TurnPlan {
   const faint = turn.fainted ? FAINT_EXTRA_MS : 0;
+  if (turn.kind === 'enter') return { style: null, windup: 0, travel: 0, strike: 0, impactAt: 0, total: ENTER_MS };
   if (turn.kind === 'guard') return { style: null, windup: 0, travel: 0, strike: 0, impactAt: 0, total: GUARD_MS };
   if (turn.kind === 'skip') return { style: null, windup: 0, travel: 0, strike: 0, impactAt: 0, total: SKIP_MS };
   if (turn.kind === 'residual') return { style: null, windup: 0, travel: 0, strike: 0, impactAt: 0, total: RESIDUAL_MS + faint };
@@ -265,6 +283,10 @@ export class BattleDirector {
   private labels: FloatLabel[] = [];
   private banner: BattleHud['banner'] = null;
   private readonly home: { x: number; z: number }[] = [];
+  /** Equipe de cada um (ou null), quem já está em campo e de onde o reserva sai ao entrar. */
+  private readonly teamOf: (number | null)[];
+  private readonly onField: boolean[];
+  private enterFrom = { x: 0, z: 0 };
   private readonly shownHp: number[];
   private readonly hpAnim: { from: number; to: number; at: number }[];
   private readonly flashUntil: number[];
@@ -308,10 +330,18 @@ export class BattleDirector {
     this.guard = new Array<boolean>(n).fill(false);
     this.ambientAt = new Array<number>(n).fill(0);
     this.frames = Array.from({ length: n }, newFrame);
-    // Elipse de frente para a tela: o primeiro à esquerda, os outros em volta (z > 0 = mais perto do celular).
-    for (let i = 0; i < n; i++) {
-      const angle = Math.PI + (i / n) * Math.PI * 2;
-      this.home.push({ x: Math.cos(angle) * o.rx, z: Math.sin(angle) * o.rz });
+    const teams = o.result.teams;
+    this.teamOf = o.fighters.map((_, i) => teams?.[i] ?? null);
+    this.onField = o.fighters.map((_, i) => !o.result.relay || this.teamFront(i) === i);
+    if (teams) {
+      // Equipes: uma de cada lado da tela, de frente uma para a outra (z > 0 = mais perto do celular).
+      for (let i = 0; i < n; i++) this.home.push(this.teamSpot(i));
+    } else {
+      // Elipse de frente para a tela: o primeiro à esquerda, os outros em volta.
+      for (let i = 0; i < n; i++) {
+        const angle = Math.PI + (i / n) * Math.PI * 2;
+        this.home.push({ x: Math.cos(angle) * o.rx, z: Math.sin(angle) * o.rz });
+      }
     }
     for (const c of o.creatures) Object.assign(c.fx, neutralFx());
     // Entram correndo de fora da arena.
@@ -335,7 +365,8 @@ export class BattleDirector {
       o.root.add(shield);
       return shield;
     });
-    this.banner = { text: 'Batalha!', sub: `${n} Pokémon, todos contra todos`, color: '#ffcb05' };
+    const intro = !teams ? `${n} Pokémon, todos contra todos` : o.result.relay ? `${TEAM_NAMES_PT[0]} contra ${TEAM_NAMES_PT[1]}, um duelo por vez` : `${n} Pokémon em duas equipes`;
+    this.banner = { text: o.result.relay ? '3 contra 3!' : teams ? 'Batalha de equipes!' : 'Batalha!', sub: intro, color: '#ffcb05' };
     this.cue({ kind: 'intro' });
   }
 
@@ -354,6 +385,39 @@ export class BattleDirector {
 
   get currentTurn(): number {
     return this.turnIndex;
+  }
+
+  /** Membros da equipe, na ordem em que entram. */
+  private teamMembers(team: number): number[] {
+    return this.teamOf.flatMap((t, i) => (t === team ? [i] : []));
+  }
+
+  /** O primeiro da equipe de `i` (quem abre a luta no 3x3). */
+  private teamFront(i: number): number {
+    return this.teamMembers(this.teamOf[i] ?? 0)[0] ?? i;
+  }
+
+  /** Onde `i` fica: no 3x3 o primeiro de cada equipe fica no centro e os outros esperam nas pontas; senão a equipe se alinha de um lado. */
+  private teamSpot(i: number): { x: number; z: number } {
+    const { rx, rz } = this.o;
+    const team = this.teamOf[i] ?? 0;
+    const side = team === 0 ? -1 : 1;
+    const members = this.teamMembers(team);
+    const k = members.indexOf(i);
+    if (this.o.result.relay) {
+      if (k === 0) return { x: side * rx * 0.42, z: 0 };
+      const reserves = members.length - 1;
+      const u = reserves === 1 ? 0.5 : (k - 1) / (reserves - 1);
+      return { x: side * rx * 0.95, z: (-0.75 + 1.5 * u) * rz };
+    }
+    const m = members.length;
+    const z = m === 1 ? 0 : (-0.8 + (1.6 * k) / (m - 1)) * rz;
+    return { x: side * rx * (0.5 + 0.22 * (Math.abs(z) / rz)), z };
+  }
+
+  /** O lugar de combate de quem entra no 3x3 (o centro da equipe). */
+  private frontSpot(team: number): { x: number; z: number } {
+    return { x: (team === 0 ? -1 : 1) * this.o.rx * 0.42, z: 0 };
   }
 
   /** Posição de cada um na roda de batalha (relativa ao centro da caixa). */
@@ -669,6 +733,21 @@ export class BattleDirector {
         emitBurst(this.particles, this.chest(turn.attacker), 'ice', 0.8, this.o.rng);
       }
       if (turn.revenge) this.addLabel('Vingança!', 'info', '#fda4af', this.top(turn.attacker, 0.22));
+    } else if (turn.kind === 'enter') {
+      const team = this.teamOf[turn.attacker] ?? 0;
+      const c = this.o.creatures[turn.attacker]!;
+      this.enterFrom = { x: c.state.x, z: c.state.z };
+      this.home[turn.attacker] = this.frontSpot(team);
+      this.onField[turn.attacker] = true;
+      const waiting = this.teamMembers(team).filter((j) => !this.onField[j] && this.faintAt[j]! < 0).length;
+      this.banner = {
+        text: `${fighter.name} entra na luta!`,
+        sub: `${TEAM_NAMES_PT[team]} · ${waiting === 0 ? 'último da equipe' : waiting === 1 ? 'resta 1 no banco' : `restam ${waiting} no banco`}`,
+        color: TEAM_COLORS[team] ?? '#ffcb05',
+      };
+      this.cue({ kind: 'enter' });
+      this.shout('Entra!', TEAM_COLORS[team] ?? '#ffcb05');
+      this.rings.emit(this.world(turn.attacker), typeColorHex(fighter.types[0] ?? 'normal'), 0.5, 700);
     } else if (turn.kind === 'guard') {
       this.cue({ kind: 'guard' });
       this.banner = { text: `${fighter.name} se defendeu!`, sub: `${personality} · o próximo golpe causa metade do dano`, color: '#7fd4ff' };
@@ -699,7 +778,7 @@ export class BattleDirector {
     this.turnClock += dt;
     const t = this.turnClock;
     const plan = turnPlan(turn, this.personality(turn.attacker));
-    this.o.creatures.forEach((_, i) => this.face(i, i === turn.target ? turn.attacker : turn.target));
+    if (turn.kind !== 'enter') this.o.creatures.forEach((_, i) => this.face(i, i === turn.target ? turn.attacker : turn.target));
 
     if (turn.kind === 'attack' && !this.launchDone && t >= plan.windup && plan.style) {
       this.launchDone = true;
@@ -710,6 +789,7 @@ export class BattleDirector {
     if (turn.kind === 'attack') this.runAttack(turn, plan, t, dt);
     else if (turn.kind === 'guard') this.runGuard(turn, t, dt);
     else if (turn.kind === 'skip') this.runSkip(turn, t);
+    else if (turn.kind === 'enter') this.runEnter(turn, t);
     else this.runResidual(turn, t);
 
     if (t >= plan.total) this.endTurn(turn);
@@ -1028,6 +1108,23 @@ export class BattleDirector {
     if (this.every(t, dt, 60)) emitCharge(this.particles, this.chest(i), 'steel', this.o.rng);
   }
 
+  /** 3x3: o próximo da equipe corre do banco até o centro. */
+  private runEnter(turn: BattleTurn, t: number): void {
+    const i = turn.attacker;
+    const c = this.o.creatures[i]!;
+    const f = this.frames[i]!;
+    const to = this.home[i]!;
+    const u = easeInOut(clamp01(t / (ENTER_MS * 0.75)));
+    c.state.x = this.enterFrom.x + (to.x - this.enterFrom.x) * u;
+    c.state.z = this.enterFrom.z + (to.z - this.enterFrom.z) * u;
+    c.fx.facing = { x: to.x - this.enterFrom.x, z: to.z - this.enterFrom.z };
+    if (u < 1) f.dy += Math.abs(Math.sin(t * 0.016)) * 0.07;
+    else {
+      c.fx.facing = { x: -to.x, z: 0 };
+      f.scale *= 1 + 0.1 * Math.sin(clamp01((t - ENTER_MS * 0.75) / (ENTER_MS * 0.25)) * Math.PI);
+    }
+  }
+
   private runSkip(turn: BattleTurn, t: number): void {
     const i = turn.attacker;
     const f = this.frames[i]!;
@@ -1090,20 +1187,30 @@ export class BattleDirector {
     this.shout('Vitória!', '#ffcb05');
     this.cue({ kind: 'victory', personality: this.personality(w) });
     this.slowMo(600, 0.4);
-    this.banner = {
-      text: `${fighter.name} venceu!`,
-      sub: this.o.result.reason === 'ko' ? `Restaram ${this.o.result.hpLeft[w]} de ${fighter.maxHp} PS` : 'Fim do tempo: venceu quem tinha mais PS',
-      color: '#ffcb05',
-    };
+    const winTeam = this.o.result.winningTeam;
+    const left = this.o.result.reason === 'ko' ? `Restaram ${this.o.result.hpLeft[w]} de ${fighter.maxHp} PS` : 'Fim do tempo: venceu quem tinha mais PS';
+    this.banner = winTeam === undefined
+      ? { text: `${fighter.name} venceu!`, sub: left, color: '#ffcb05' }
+      : {
+          text: `${TEAM_NAMES_PT[winTeam] ?? 'A equipe'} venceu!`,
+          sub: this.o.result.reason === 'ko' ? `${fighter.name} terminou de pé com ${this.o.result.hpLeft[w]} de ${fighter.maxHp} PS` : left,
+          color: TEAM_COLORS[winTeam] ?? '#ffcb05',
+        };
   }
 
   private updateFinished(): void {
     const w = this.o.result.winner;
-    const f = this.frames[w]!;
     const since = this.clock - this.finishedAt;
-    const style = CELEBRATE[this.personality(w)];
-    f.dy += Math.abs(Math.sin(since * style.freq)) * style.height;
-    f.scale *= 1 + style.scale * Math.abs(Math.sin(since * style.freq));
+    // Em equipes, todos os que terminaram de pé na equipe vencedora comemoram.
+    const winTeam = this.o.result.winningTeam;
+    const celebrating = winTeam === undefined ? [w] : this.teamMembers(winTeam).filter((j) => (this.o.result.hpLeft[j] ?? 0) > 0);
+    for (const j of celebrating) {
+      const f = this.frames[j]!;
+      const style = CELEBRATE[this.personality(j)];
+      const phase = since * style.freq + (j === w ? 0 : j * 0.9);
+      f.dy += Math.abs(Math.sin(phase)) * style.height;
+      f.scale *= 1 + style.scale * Math.abs(Math.sin(phase));
+    }
     if (since < CONFETTI_MS && this.clock - this.lastConfetti > 50) {
       this.lastConfetti = this.clock;
       emitConfetti(this.particles, this.world(w), this.o.rng);
@@ -1128,6 +1235,8 @@ export class BattleDirector {
       return {
         id: f.id, name: f.name, types: f.types, personality: f.personality, status: this.status[i] ?? null, guard: this.guard[i] ?? false,
         hp, maxHp: f.maxHp, frac: clamp01(this.shownHp[i]! / f.maxHp), ...pos, x: Math.min(BAR_X.max, Math.max(BAR_X.min, pos.x)), fainted: c.fx.faint >= 0.5, acting: actor === i, quality: f.quality,
+        team: this.teamOf[i] ?? null, teamColor: this.teamOf[i] === null || this.teamOf[i] === undefined ? null : (TEAM_COLORS[this.teamOf[i]!] ?? null),
+        reserve: !this.onField[i]! && this.faintAt[i]! < 0 && this.phase !== 'finished',
       };
     });
     const labels: HudLabel[] = this.labels.map((l) => {
@@ -1153,7 +1262,18 @@ export class BattleDirector {
       dim: this.dimNow,
       lights,
       callout: this.callout && calloutAge < 1 ? { key: this.callout.key, text: this.callout.text, color: this.callout.color, age: calloutAge } : null,
-      winner: this.phase === 'finished' ? { id: fighters[w]!.id, name: fighters[w]!.name, hpLeft: result.hpLeft[w] ?? 0, maxHp: fighters[w]!.maxHp } : null,
+      winner: this.phase === 'finished'
+        ? { id: fighters[w]!.id, name: fighters[w]!.name, hpLeft: result.hpLeft[w] ?? 0, maxHp: fighters[w]!.maxHp, team: result.winningTeam ?? null, teamName: result.winningTeam === undefined ? null : (TEAM_NAMES_PT[result.winningTeam] ?? null) }
+        : null,
+      scoreboard: result.teams
+        ? [0, 1].map((team) => {
+            const members = this.teamMembers(team);
+            return {
+              team, name: TEAM_NAMES_PT[team] ?? `Equipe ${team + 1}`, color: TEAM_COLORS[team] ?? '#ffffff', total: members.length,
+              alive: members.filter((j) => bars[j]!.hp > 0 && !bars[j]!.fainted).length,
+            };
+          })
+        : null,
       turn: Math.min(this.turnIndex + 1, result.turns.length),
       totalTurns: result.turns.length,
       round: result.turns[Math.min(this.turnIndex, result.turns.length - 1)]?.round ?? 1,
