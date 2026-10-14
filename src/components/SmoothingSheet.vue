@@ -49,7 +49,17 @@ defineEmits<{ close: [] }>();
         <button type="button" :class="{ active: !visual.terrain }" :aria-pressed="!visual.terrain" @click="visual.terrain = false">Desligado</button>
       </div>
       <p class="hint">
-        {{ visual.terrain ? 'Chão com grama, flores e trilha em pixel art. Golpes de fogo, água, grama, gelo e outros deixam marcas no terreno.' : 'Sem chão detalhado nem marcas dos golpes: mais leve para celulares fracos.' }}
+        {{ visual.terrain ? 'Chão com relevo, grama, flores e trilha em pixel art. Golpes de fogo, água, grama, gelo e outros deixam marcas no terreno.' : 'Sem chão detalhado, relevo nem marcas dos golpes: mais leve para celulares fracos.' }}
+      </p>
+    </section>
+    <section v-if="battle">
+      <h4>Emoções e encontros</h4>
+      <div class="chips" role="group" aria-label="Emoções e encontros">
+        <button type="button" :class="{ active: visual.social }" :aria-pressed="visual.social" @click="visual.social = true">Ligado</button>
+        <button type="button" :class="{ active: !visual.social }" :aria-pressed="!visual.social" @click="visual.social = false">Desligado</button>
+      </div>
+      <p class="hint">
+        {{ visual.social ? 'De vez em quando os Pokémon se cumprimentam, dançam, brincam de pega-pega ou se desafiam, e mostram emoções em balões de emoji. Toque num Pokémon para ele reagir.' : 'Os Pokémon só passeiam, sem encontros nem balões.' }}
       </p>
     </section>
     <section v-if="battle">
