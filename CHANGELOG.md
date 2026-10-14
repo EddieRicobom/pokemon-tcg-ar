@@ -4,6 +4,10 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 
 ## [Não lançado]
 
+### Sons da batalha (2026-10-14)
+
+- Sons sintetizados na hora (WebAudio, sem arquivos) para a batalha: carga, lançamento, impacto com timbre próprio para cada um dos 18 tipos, crítico, super efetivo, defesa, erro, imunidade, condições, nocaute e uma fanfarra do Pokémon vencedor que muda com a personalidade. Opção "Som da batalha" ligado/desligado em "Suavizar".
+
 ### Luz difícil no scan e leveza do rastreador (2026-10-14)
 
 - Normalização de contraste local do quadro da câmera (ideia do Momentoos): em meia resolução, 1 quadro normalizado a cada 3, com volta ao quadro cru se falhar. Medido em Chromium sem GPU: ~6–8 leituras/s (a primeira versão, 1 a cada 2 quadros em resolução cheia, caía para ~4).

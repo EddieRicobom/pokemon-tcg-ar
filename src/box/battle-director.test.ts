@@ -6,6 +6,7 @@ import { attackStyleOf, GUARD_MS, INTRO_MAX_MS, RESIDUAL_MS, SKIP_MS, turnDurati
 import { buildFighter, seededRng } from '../core/battle';
 import { PERSONALITY_LABELS_PT } from '../core/battle';
 import type { BattleTurn } from '../core/battle';
+import type { SoundCue } from './sound-recipes';
 import type { Fighter } from '../core/battle';
 import { lookQuaternion } from './orientation';
 import { BoltLine, FX_STYLES, IMPACT_STYLES, ParticleField, PHYSICAL_STYLE, RingField, SPECIAL_DELIVERY, STATUS_TINTS, typeColorHex } from './effects';
@@ -478,5 +479,65 @@ describe('luz dos golpes', () => {
       expect(n).toBeLessThanOrEqual(1);
     }
     expect(acting).toBe(1);
+  });
+});
+
+describe('sons da batalha', () => {
+  function playWithSink(n = 3): { cues: SoundCue[]; team: Fighter[]; result: ReturnType<BoxScene['startBattle']> } {
+    const scene = ready(n);
+    const cues: SoundCue[] = [];
+    scene.setSound({ play: (c) => cues.push(c) });
+    const team = fighters(n);
+    const result = scene.startBattle(team, seededRng(5));
+    const total = INTRO_MAX_MS + result.turns.reduce((sum, t) => sum + turnDuration(t, team[t.attacker]!.personality), 0) * 1.3 + 3000;
+    run(scene, total);
+    return { cues, team, result };
+  }
+
+  it('toca abertura, "Já!" e uma fanfarra só, no fim', () => {
+    const { cues, team, result } = playWithSink();
+    expect(cues[0]!.kind).toBe('intro');
+    expect(cues.filter((c) => c.kind === 'go')).toHaveLength(1);
+    const victories = cues.filter((c) => c.kind === 'victory');
+    expect(victories).toHaveLength(1);
+    expect(cues.at(-1)!.kind).toBe('victory');
+    expect((victories[0] as Extract<SoundCue, { kind: 'victory' }>).personality).toBe(team[result.winner]!.personality);
+  });
+
+  it('cada golpe toca carga, lançamento e impacto (ou erro), nessa ordem', () => {
+    const { cues, result } = playWithSink();
+    const attacks = result.turns.filter((t) => t.kind === 'attack');
+    expect(attacks.length).toBeGreaterThan(0);
+    expect(cues.filter((c) => c.kind === 'charge')).toHaveLength(attacks.length);
+    expect(cues.filter((c) => c.kind === 'launch')).toHaveLength(attacks.length);
+    const outcomes = cues.filter((c) => c.kind === 'impact' || c.kind === 'miss' || c.kind === 'immune');
+    expect(outcomes).toHaveLength(attacks.length);
+    // Ordem dentro do turno: carga antes do lançamento antes do resultado.
+    const order = cues.filter((c) => ['charge', 'launch', 'impact', 'miss', 'immune'].includes(c.kind)).map((c) => (c.kind === 'charge' ? 0 : c.kind === 'launch' ? 1 : 2));
+    for (let i = 0; i < order.length; i += 3) expect(order.slice(i, i + 3)).toEqual([0, 1, 2]);
+  });
+
+  it('o som do impacto leva o tipo, o crítico e a efetividade do golpe', () => {
+    const { cues, result } = playWithSink();
+    const hits = cues.filter((c): c is Extract<SoundCue, { kind: 'impact' }> => c.kind === 'impact');
+    const turns = result.turns.filter((t) => t.kind === 'attack' && t.hit && t.damage > 0);
+    expect(hits).toHaveLength(turns.length);
+    hits.forEach((h, i) => {
+      expect(h.type).toBe(turns[i]!.move.type);
+      expect(h.critical).toBe(turns[i]!.critical);
+      expect(h.effectiveness).toBe(turns[i]!.effectiveness);
+    });
+  });
+
+  it('desmaios e condições também têm som', () => {
+    const { cues, result } = playWithSink(4);
+    expect(cues.filter((c) => c.kind === 'faint')).toHaveLength(result.turns.filter((t) => t.fainted).length);
+    expect(cues.filter((c) => c.kind === 'status')).toHaveLength(result.turns.filter((t) => t.kind === 'attack' && t.hit && t.damage > 0 && t.inflicted).length);
+  });
+
+  it('sem som configurado a batalha roda muda', () => {
+    const scene = ready(2);
+    scene.startBattle(fighters(2), seededRng(5));
+    expect(() => run(scene, 8000)).not.toThrow();
   });
 });
