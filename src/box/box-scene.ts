@@ -12,6 +12,8 @@ import { arenaFrame, arenaRadii } from './arena';
 import { BattleDirector } from './battle-director';
 import { FxLights } from './fx-lights';
 import { Ground } from './ground';
+import { disposeBubbleTextures } from './emoji-bubble';
+import { SocialDirector } from './social';
 import type { SoundSink } from './sound-recipes';
 import type { BattleHud } from './battle-director';
 import { simulateBattle } from '../core/battle';
@@ -24,6 +26,11 @@ export const MAX_CREATURES = 40;
 export const DEFAULT_HALF_SIZE_M = 1.2;
 
 export type BoxMode = 'passeio' | 'formacao';
+
+/** Altura típica dos morrinhos da caixa (m) para o meio-lado `half`: dá relevo visível sem esconder os Pokémon. */
+export function reliefAmplitude(half: number): number {
+  return Math.min(0.3, 0.1 + 0.08 * half);
+}
 
 export interface CreatureEntry {
   info: CreatureInfo;
@@ -61,6 +68,9 @@ export class BoxScene {
   /** Chão em pixel art e terreno que muda com os golpes. */
   private terrain = true;
   private boxGround: Ground | null = null;
+  /** Encontros entre Pokémon e balões de emoji (só no passeio, nunca na batalha nem na formação). */
+  private readonly social: SocialDirector;
+  private socialOn = true;
   /** Quem toca os sons das próximas batalhas (null = mudo). */
   private sound: SoundSink | null = null;
   private readonly envTarget = new Vector3(1, 1, 1);
@@ -68,6 +78,7 @@ export class BoxScene {
 
   constructor(rng: Rng = Math.random) {
     this.rng = rng;
+    this.social = new SocialDirector(rng);
     this.camera.position.set(0, 0, 0);
     this.floor.visible = false;
     this.scene.add(this.floor, this.battleRoot);
@@ -163,7 +174,8 @@ export class BoxScene {
     plane.position.y = y;
     if (this.terrain) {
       // Chão em pixel art do tamanho da caixa; os enfeites ficam só na borda, para não tapar quem passeia.
-      this.boxGround = new Ground({ halfW: h, halfD: h, shape: 'square', seed: 11, cols: Math.min(30, Math.max(10, Math.round((h * 2) / 0.2))), decor: Math.round(10 + h * 6), decorUnit: 0.2, opacity: 0.92 });
+      // Com relevo: morrinhos e baixadas suaves que somem na borda (a caixa fica rente ao chão de verdade).
+      this.boxGround = new Ground({ halfW: h, halfD: h, shape: 'square', seed: 11, cols: Math.min(30, Math.max(10, Math.round((h * 2) / 0.2))), decor: Math.round(10 + h * 6), decorUnit: 0.2, opacity: 0.92, relief: reliefAmplitude(h) });
       this.floor.add(this.boxGround.group);
     }
     const outline = new LineLoop(
@@ -218,6 +230,17 @@ export class BoxScene {
     return this.boxGround;
   }
 
+  /** Liga ou desliga os encontros e os balões de emoji. */
+  setSocial(on: boolean): void {
+    this.socialOn = on;
+    if (!on) this.stopSocial();
+  }
+
+  private stopSocial(): void {
+    this.social.reset(this.creatures);
+    for (const creature of this.creatures) creature.clearBubble();
+  }
+
   /** Define quem toca os sons da batalha (vale a partir da próxima batalha). */
   setSound(sink: SoundSink | null): void {
     this.sound = sink;
@@ -225,6 +248,7 @@ export class BoxScene {
 
   setMode(mode: BoxMode): void {
     this.mode = mode;
+    if (mode === 'formacao') this.stopSocial();
   }
 
   /** Há uma batalha em cena (rodando ou com o resultado na tela). */
@@ -248,6 +272,8 @@ export class BoxScene {
     const fighting = picks.map((i) => this.creatures[i]).filter((c): c is BoxCreature => c !== undefined);
     if (fighters.length < 2 || fighters.length !== fighting.length) throw new Error('A batalha precisa de um lutador para cada Pokémon que luta (mínimo 2).');
     this.stopBattle();
+    this.stopSocial();
+    for (const creature of this.creatures) creature.groundY = 0; // a arena da batalha é lisa
     const result = simulateBattle(fighters, rng, { teams: plan?.teams, relay: plan?.relay });
     // O 3x3 usa uma arena mais larga para caberem os reservas nas pontas.
     const { rx, rz } = arenaRadii(plan?.relay ? 4 : fighters.length);
@@ -291,6 +317,7 @@ export class BoxScene {
     if (director) {
       // Os Pokémon voltam para a cena e para o passeio dentro da caixa.
       this.benched = new Set();
+      this.social.reset(this.creatures);
       for (const creature of this.creatures) {
         this.scene.add(creature.group);
         Object.assign(creature.state, createWander(this.half, this.rng));
@@ -302,6 +329,7 @@ export class BoxScene {
   /** Troca a população da caixa (até `MAX_CREATURES`). */
   setCreatures(entries: CreatureEntry[]): void {
     this.stopBattle();
+    this.social.reset(this.creatures);
     for (const creature of this.creatures) creature.dispose();
     this.creatures = [];
     const chosen = entries.slice(0, MAX_CREATURES);
@@ -334,7 +362,12 @@ export class BoxScene {
         if (slot) stepToward(creature.state, slot.x, slot.z, dt, 0.9);
       });
     } else {
-      for (const creature of this.creatures) stepWander(creature.state, dt, this.half, this.rng);
+      if (this.socialOn) {
+        this.social.update(dt, this.creatures, this.half, { bubble: (i, emoji, ms) => this.creatures[i]?.say(emoji, ms), hop: (i) => this.creatures[i]?.poke() });
+      }
+      this.creatures.forEach((creature, i) => {
+        if (!this.socialOn || !this.social.isBusy(i)) stepWander(creature.state, dt, this.half, this.rng);
+      });
       separate(this.creatures.map((c) => c.state), 0.28, this.half);
     }
     // Luz: ambiente real (suave) escurecido no foco do golpe, mais as luzes dos golpes em curso.
@@ -359,7 +392,11 @@ export class BoxScene {
     right.y = 0;
     if (right.lengthSq() > 1e-6) right.normalize();
     const camera = this.director ? this.battleRoot.worldToLocal(this.battleCamera.copy(this.camera.position)) : this.camera.position;
-    for (const creature of this.creatures) creature.update(nowMs, dt, base, camera, right);
+    // O relevo só existe na caixa (a arena da batalha é lisa): cada Pokémon pisa na altura do terreno sob ele.
+    for (const creature of this.creatures) {
+      creature.groundY = this.director ? 0 : (this.boxGround?.heightAt(creature.state.x, creature.state.z) ?? 0);
+      creature.update(nowMs, dt, base, camera, right);
+    }
   }
 
   /** O Pokémon mais próximo sob um ponto da tela, ou null. */
@@ -384,5 +421,6 @@ export class BoxScene {
     }
     this.floor.clear();
     this.scene.clear();
+    disposeBubbleTextures();
   }
 }

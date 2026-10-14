@@ -1,6 +1,8 @@
-import { DataTexture, Group, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, Sprite, SpriteMaterial, UnsignedByteType } from 'three';
+import { DataTexture, Float32BufferAttribute, Group, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, Sprite, SpriteMaterial, UnsignedByteType } from 'three';
 import { seededRng } from '../core/battle';
 import type { PokemonType } from '../core/pokemon-data';
+import { planRelief, reliefShade } from '../core/relief';
+import type { Relief } from '../core/relief';
 import { applyTerrain, buildGrid, planDecor, TERRAIN_FOR_TYPE } from '../core/terrain';
 import type { DecorKind, GroundShape, TerrainGrid, TerrainKind, TerrainReaction } from '../core/terrain';
 import { createBuf, paintDecor, paintTerrainCell, TILE, touchedCells } from './ground-art';
@@ -19,6 +21,8 @@ export interface GroundOptions {
   /** Altura base de um enfeite. */
   decorUnit: number;
   opacity: number;
+  /** Altura típica dos morrinhos (m). Omitido ou 0 = chão liso (a arena da batalha é lisa). */
+  relief?: number;
 }
 
 export interface GroundHit {
@@ -50,6 +54,7 @@ export class Ground {
   private readonly decorSprites: Sprite[] = [];
   private readonly decorTextures = new Map<DecorKind, DataTexture>();
   private readonly rng;
+  private readonly relief: Relief;
 
   constructor(private readonly o: GroundOptions) {
     const rows = Math.max(6, Math.round(o.cols * (o.halfD / o.halfW)));
@@ -58,8 +63,9 @@ export class Ground {
     this.buf = createBuf(o.cols * TILE, rows * TILE);
     for (let i = 0; i < o.cols * rows; i++) this.paintCell(i);
     this.tex = texture(this.buf);
-    this.material = new MeshBasicMaterial({ map: this.tex, transparent: true, opacity: o.opacity, depthWrite: false });
-    this.mesh = new Mesh(new PlaneGeometry(o.halfW * 2, o.halfD * 2), this.material);
+    this.material = new MeshBasicMaterial({ map: this.tex, transparent: true, opacity: o.opacity, depthWrite: false, vertexColors: (o.relief ?? 0) > 0 });
+    this.relief = planRelief(o.halfW, o.halfD, o.seed, o.relief ?? 0);
+    this.mesh = new Mesh(this.reliefGeometry(rows), this.material);
     this.mesh.rotation.x = -Math.PI / 2;
     this.mesh.position.y = 0.002;
     this.mesh.renderOrder = -2;
@@ -68,10 +74,39 @@ export class Ground {
       const sprite = new Sprite(new SpriteMaterial({ map: this.decorTexture(item.kind), transparent: true, depthWrite: false }));
       sprite.center.set(0.5, 0.06);
       sprite.scale.set(item.flip ? -item.size : item.size, item.size, 1);
-      sprite.position.set(item.x, 0, item.z);
+      sprite.position.set(item.x, this.relief.heightAt(item.x, item.z), item.z);
       this.group.add(sprite);
       this.decorSprites.push(sprite);
     }
+  }
+
+  /**
+   * A malha do chão. Com relevo ela é subdividida (2 vértices por bloco), cada vértice sobe até a altura do terreno e leva um
+   * brilho de sol fixo (encostas viradas para a luz clareiam, as outras escurecem), que multiplica a textura em pixel art.
+   */
+  private reliefGeometry(rows: number): PlaneGeometry {
+    const { halfW, halfD } = this.o;
+    if (!(this.o.relief && this.o.relief > 0)) return new PlaneGeometry(halfW * 2, halfD * 2);
+    const geometry = new PlaneGeometry(halfW * 2, halfD * 2, this.o.cols * 2, rows * 2);
+    const position = geometry.getAttribute('position');
+    const colors: number[] = [];
+    for (let i = 0; i < position.count; i++) {
+      // Plano local (x, y) → chão (x, z = −y); a altura vira a coordenada local z (a malha é girada −90° em x).
+      const x = position.getX(i);
+      const z = -position.getY(i);
+      position.setZ(i, this.relief.heightAt(x, z));
+      const shade = reliefShade(this.relief.normalAt(x, z));
+      colors.push(shade, shade, shade);
+    }
+    geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
+    position.needsUpdate = true;
+    geometry.computeBoundingSphere();
+    return geometry;
+  }
+
+  /** Altura do chão em (x, z), relativa ao centro (0 se o chão é liso). */
+  heightAt(x: number, z: number): number {
+    return this.relief.heightAt(x, z);
   }
 
   private decorTexture(kind: DecorKind): DataTexture {

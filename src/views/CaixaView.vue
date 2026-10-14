@@ -142,6 +142,7 @@ async function open(): Promise<void> {
   box.setSmoothing(visual.smoothing);
   box.setLighting(visual.lighting);
   box.setTerrain(visual.terrain);
+  box.setSocial(visual.social);
   box.setSound(visual.sound);
   box.setMode(boxMode.value);
   phase.value = 'placing';
@@ -192,7 +193,8 @@ function moveBox(): void {
 }
 
 function showPicked(creature: BoxCreature): void {
-  creature.poke();
+  if (visual.social) creature.react();
+  else creature.poke();
   picked.value = { name: creature.info.name, detail: creature.info.detail, dexId: creature.info.dexId };
   if (pickedTimer) clearTimeout(pickedTimer);
   pickedTimer = setTimeout(() => (picked.value = null), 5000);
@@ -228,6 +230,7 @@ function onPointerUp(event: PointerEvent): void {
 watch(() => visual.smoothing, (smoothing) => box?.setSmoothing(smoothing));
 watch(() => visual.lighting, (on) => box?.setLighting(on));
 watch(() => visual.terrain, (on) => box?.setTerrain(on));
+watch(() => visual.social, (on) => box?.setSocial(on));
 watch(() => visual.sound, (on) => box?.setSound(on));
 
 const canBattle = computed(() => phase.value === 'running' && population.value.shown >= 2 && !loadingCreatures.value && !preparing.value);
