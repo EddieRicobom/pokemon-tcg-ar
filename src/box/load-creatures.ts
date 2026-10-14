@@ -2,6 +2,7 @@ import { decodeGif } from '../core/gif';
 import type { CachedCard } from '../cache/types';
 import { MAX_CREATURES } from './box-scene';
 import type { CreatureEntry } from './box-scene';
+import { spriteIdOf } from '../core/dex-form';
 
 export interface CreatureCacheLike {
   list(): Promise<CachedCard[]>;
@@ -62,7 +63,7 @@ export async function loadCreatureEntries(
     try {
       const blob = await cache.getAssetBlob(card, 'sprite');
       if (!blob) throw new Error('arquivo do sprite não encontrado no cache');
-      const info = { id: card.id, name: card.name, dexId: card.dexIds[0], detail: `${card.setName} ${card.localId}/${card.setOfficial}` };
+      const info = { id: card.id, name: card.name, dexId: spriteIdOf(card), detail: `${card.setName} ${card.localId}/${card.setOfficial}` };
       if (card.sprite.kind === 'gif') entries.push({ info, source: { kind: 'gif', gif: await decoders.gif(blob) } });
       else entries.push({ info, source: { kind: 'image', image: await decoders.image(blob) } });
     } catch (error) {

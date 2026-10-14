@@ -95,6 +95,36 @@ describe('gravação depois do reconhecimento', () => {
   });
 });
 
+const ponytaGalar: CardRecordLike = { ...pikachu, id: 'swsh1-081', name: 'Galarian Ponyta', localId: '081', dexIds: [77], imageBase: 'https://assets.example/swsh1/81' };
+
+describe('formas regionais no preparo', () => {
+  it('a carta de Galar baixa o sprite da forma de Galar, não o da espécie comum', async () => {
+    const cache = make();
+    await cache.recordRecognition({ card: ponytaGalar });
+    const result = await cache.prepareCard('swsh1-081');
+    expect(spriteCalls).toEqual([10162]);
+    expect(result.card.sprite).toMatchObject({ state: 'ok', key: 'https://sprites/10162.gif' });
+    // A carta continua com o número da espécie para mostrar na tela.
+    expect(result.card.dexIds).toEqual([77]);
+  });
+
+  it('um sprite guardado com o número errado é baixado de novo, uma vez só', async () => {
+    const cache = make();
+    await cache.recordRecognition({ card: { ...ponytaGalar, name: 'Ponyta' } });
+    await cache.prepareCard('swsh1-081');
+    expect(spriteCalls).toEqual([77]);
+    // O nome passa a ser reconhecido como forma regional (por exemplo, depois de uma atualização do app).
+    await cache.recordRecognition({ card: ponytaGalar });
+    spriteCalls.length = 0;
+    const fixed = await cache.prepareCard('swsh1-081');
+    expect(spriteCalls).toEqual([10162]);
+    expect(fixed.card.sprite.key).toBe('https://sprites/10162.gif');
+    spriteCalls.length = 0;
+    await cache.prepareCard('swsh1-081');
+    expect(spriteCalls).toEqual([]);
+  });
+});
+
 describe('preparo (Carregar)', () => {
   it('baixa referência e sprite e marca como completo', async () => {
     const cache = make();

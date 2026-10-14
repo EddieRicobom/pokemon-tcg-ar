@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arStatusText, arStepList } from './ar-stages';
+import { arLoadHint, arLoadingMode, arStageTitle, arStatusText, arStepList, elapsedSeconds } from './ar-stages';
 
 const states = (stage: Parameters<typeof arStepList>[0], sprite?: Parameters<typeof arStepList>[1], failedAt?: Parameters<typeof arStepList>[3]) =>
   arStepList(stage, sprite, true, failedAt).map((s) => `${s.key}:${s.state}`);
@@ -41,5 +41,28 @@ describe('etapas do AR', () => {
     expect(arStatusText('tracking', '', 'loading')).not.toMatch(/em pé/);
     expect(arStatusText('tracking', '', 'animated')).toMatch(/em pé/);
     expect(arStatusText('lost', '', undefined)).toMatch(/Perdi/);
+  });
+});
+
+describe('feedback de carregamento', () => {
+  it('a animação só aparece enquanto prepara ou procura', () => {
+    expect(arLoadingMode('preparing')).toBe('loading');
+    expect(arLoadingMode('compiling')).toBe('loading');
+    expect(arLoadingMode('engine')).toBe('loading');
+    expect(arLoadingMode('searching')).toBe('searching');
+    for (const stage of ['idle', 'selected', 'tracking', 'lost', 'error'] as const) expect(arLoadingMode(stage)).toBeNull();
+  });
+  it('toda etapa animada tem título e dica; a dica muda quando a etapa demora', () => {
+    for (const stage of ['preparing', 'compiling', 'engine', 'searching'] as const) {
+      expect(arStageTitle(stage)).not.toBe('');
+      expect(arLoadHint(stage, 0)).not.toBe('');
+      expect(arLoadHint(stage, 60)).not.toBe(arLoadHint(stage, 0));
+    }
+    expect(arLoadHint('compiling', 0)).toMatch(/uma vez por carta/);
+    expect(arLoadHint('tracking', 5)).toBe('');
+  });
+  it('tempo decorrido em segundos inteiros', () => {
+    expect(elapsedSeconds(1000, 4999)).toBe(3);
+    expect(elapsedSeconds(5000, 1000)).toBe(0);
   });
 });

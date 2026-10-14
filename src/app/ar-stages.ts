@@ -62,3 +62,59 @@ export function arStatusText(stage: ArStage, detail: string, sprite: SpriteLoadS
       return '';
   }
 }
+
+/** Etapas em que a tela mostra a animação de carregamento (o rastreador ainda não achou a carta). */
+export type LoadingMode = 'loading' | 'searching';
+
+export function arLoadingMode(stage: ArStage): LoadingMode | null {
+  if (stage === 'preparing' || stage === 'compiling' || stage === 'engine') return 'loading';
+  if (stage === 'searching') return 'searching';
+  return null;
+}
+
+/** Título curto da etapa que está rodando (para a animação de carregamento). */
+export function arStageTitle(stage: ArStage): string {
+  switch (stage) {
+    case 'preparing':
+      return 'Baixando a carta e o Pokémon';
+    case 'compiling':
+      return 'Ensinando a câmera a reconhecer a carta';
+    case 'engine':
+      return 'Ligando o rastreador';
+    case 'searching':
+      return 'Procurando a carta';
+    default:
+      return '';
+  }
+}
+
+/**
+ * O que está acontecendo e quanto falta, em uma frase. `seconds` é o tempo desde que a etapa atual começou: passado um
+ * tempo a frase passa a explicar a demora (sem prometer prazo que não dá para garantir).
+ */
+export function arLoadHint(stage: ArStage, seconds: number): string {
+  switch (stage) {
+    case 'preparing':
+      if (seconds >= 25) return 'Está demorando mais que o normal. Confira a internet; se não der, vai aparecer um aviso com o que fazer.';
+      if (seconds >= 10) return 'A rede está lenta. Continuo tentando em outros endereços.';
+      return 'Buscando a imagem da carta, os dados e o GIF do Pokémon. Na próxima vez isso já estará guardado no aparelho.';
+    case 'compiling':
+      if (seconds >= 30) return 'Ainda compilando. Em celulares mais lentos pode passar de meio minuto; não feche esta tela.';
+      if (seconds >= 12) return 'Quase lá. Esta etapa só acontece uma vez por carta: depois o alvo fica guardado.';
+      return 'Transformando a imagem da carta em um alvo que a câmera reconhece. Só acontece uma vez por carta.';
+    case 'engine':
+      if (seconds >= 15) return 'O motor é pesado na primeira vez. Se travar, feche e abra a câmera de novo.';
+      return 'Carregando o rastreador e ligando a câmera nele.';
+    case 'searching':
+      if (seconds >= 25) return 'Nada ainda. Confira se é a mesma impressão da carta escolhida e tente outro ângulo, sem reflexo.';
+      if (seconds >= 10) return 'Chegue mais perto ou afaste um pouco até a carta ocupar boa parte da tela, bem iluminada.';
+      return 'Aponte para a carta, inteira e de frente. Assim que eu achar, o Pokémon aparece.';
+    default:
+      return '';
+  }
+}
+
+/** Segundos inteiros decorridos entre dois instantes (nunca negativo). */
+export function elapsedSeconds(startedAt: number, now: number): number {
+  return Math.max(0, Math.floor((now - startedAt) / 1000));
+}

@@ -1,5 +1,6 @@
 import { TARGET_VERSION } from '../ar/target';
 import { fetchSprite as defaultFetchSprite } from '../ar/sprite-source';
+import { formDexId, spriteKeyIsFor } from '../core/dex-form';
 import type { SpriteSource } from '../ar/sprite-source';
 import { computeFeatures, featuresFromJson, featuresToJson, FEATURE_VERSION } from '../recognition/hash';
 import type { CardFeatures } from '../recognition/hash';
@@ -338,8 +339,15 @@ export class CardCache {
 
     // 2) Sprite (GIF animado; PNG estático se o GIF não existir; "indisponível" se nada existir)
     report('sprite');
+    const species = card.dexIds[0];
+    const dexId = species === undefined ? undefined : formDexId(species, card.name);
+    // Sprite baixado antes de a forma regional ser reconhecida (Ponyta de Galar com o sprite da Ponyta comum): refaz.
+    const wrongForm = card.sprite.state === 'ok' && dexId !== undefined && dexId !== species && !spriteKeyIsFor(card.sprite.key, dexId);
+    if (wrongForm && card.sprite.key) {
+      await this.release(id, card.sprite.key);
+      card = { ...card, sprite: { state: 'missing' } };
+    }
     if (card.sprite.state !== 'ok') {
-      const dexId = card.dexIds[0];
       if (dexId === undefined) {
         card = { ...card, sprite: { state: 'unavailable', error: 'Esta carta não tem um Pokémon (Treinador/Energia)' } };
       } else {
