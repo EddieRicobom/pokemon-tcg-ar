@@ -1229,18 +1229,53 @@ button.link {
   pointer-events: none;
 }
 
-.battle-banner {
+.battle-top {
   position: absolute;
-  top: max(10px, env(safe-area-inset-top));
-  left: 50%;
-  transform: translateX(-50%);
+  top: max(8px, env(safe-area-inset-top));
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.battle-turn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(10, 14, 26, 0.6);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.battle-turn i {
+  display: block;
+  width: 54px;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+
+.battle-turn b {
+  display: block;
+  height: 100%;
+  background: var(--gold, #ffcb05);
+  transition: width 300ms ease-out;
+}
+
+.battle-banner {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1px;
   width: max-content;
   max-width: 92%;
-  padding: 6px 14px;
+  padding: 5px 12px;
   border-radius: 16px;
   border: 2px solid var(--fx, #ffcb05);
   background: rgba(10, 14, 26, 0.74);
@@ -1251,19 +1286,29 @@ button.link {
 }
 
 .battle-banner strong {
-  font-size: 1.02rem;
+  font-size: 0.92rem;
 }
 
 .battle-banner span {
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   opacity: 0.85;
 }
 
 @keyframes banner-pop {
   from {
-    transform: translateX(-50%) scale(0.85);
+    transform: scale(0.85);
     opacity: 0;
   }
+}
+
+.battle-summary p {
+  margin: 4px 0;
+  font-size: 0.85rem;
+}
+
+.battle-summary p.hint {
+  font-size: 0.72rem;
+  color: var(--muted);
 }
 
 .hp-bar {
@@ -1293,6 +1338,11 @@ button.link {
 
 .hp-bar.down {
   opacity: 0.5;
+}
+
+.hp-bar.acting {
+  background: rgba(30, 38, 66, 0.88);
+  box-shadow: 0 0 0 1.5px var(--gold, #ffcb05), 0 0 12px rgba(255, 203, 5, 0.55);
 }
 
 .hp-name {
@@ -1359,10 +1409,24 @@ button.link {
   font-size: 0.95rem;
 }
 
-.battle-dim {
+/* Fica entre o vídeo e os sprites: escurece e ilumina o ambiente sem apagar os Pokémon. */
+.battle-env {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 50% 55%, rgba(0, 0, 8, 0.25) 0%, rgba(0, 0, 8, 0.85) 100%);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.battle-env .vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 55%, rgba(0, 0, 8, 0.05) 0%, rgba(0, 0, 8, 0.6) 100%);
+}
+
+.battle-env .lights {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: screen;
 }
 
 .battle-callout {

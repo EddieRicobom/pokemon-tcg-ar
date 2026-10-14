@@ -9,6 +9,7 @@ import type { BattleHud } from './battle-director';
 import type { BattleResult, Fighter } from '../core/battle';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES } from './floor';
 import { createWebglBackend } from '../ar/webgl-backend';
+import { ambientFromSample } from './fx-lights';
 import { sensorSettings } from '../app/sensor-settings';
 
 /** Campo de visão vertical típico da câmera traseira de um celular em pé (ajustável na tela). */
@@ -34,6 +35,8 @@ export interface RunningBox {
   setCreatures(entries: CreatureEntry[]): void;
   setMode(mode: BoxMode): void;
   setSmoothing(mode: SmoothingMode): void;
+  /** Luz dos golpes e do ambiente. */
+  setLighting(on: boolean): void;
   startBattle(fighters: readonly Fighter[]): BattleResult;
   stopBattle(): void;
   /** Traz a arena da batalha de volta para a frente do olhar. */
@@ -73,9 +76,28 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   options.video.addEventListener('loadedmetadata', resize);
   resize();
 
+  // Luz do ambiente real: uma amostra minúscula do vídeo a cada meio segundo (barato) ajusta o brilho e o tom dos sprites.
+  const sampler = document.createElement('canvas');
+  sampler.width = 8;
+  sampler.height = 6;
+  const samplerCtx = sampler.getContext('2d', { willReadFrequently: true });
+  let lastSample = 0;
+  const sampleAmbient = (now: number) => {
+    if (!samplerCtx || now - lastSample < 500 || options.video.videoWidth === 0) return;
+    lastSample = now;
+    try {
+      samplerCtx.drawImage(options.video, 0, 0, 8, 6);
+      const a = ambientFromSample(samplerCtx.getImageData(0, 0, 8, 6).data);
+      scene.setEnvironment(a.r, a.g, a.b);
+    } catch {
+      // Sem leitura do vídeo (permissão, navegador antigo): fica com a luz neutra.
+    }
+  };
+
   const tick = (now: number) => {
     if (!running) return;
     handle = requestAnimationFrame(tick);
+    sampleAmbient(now);
     orientation.latencyMs = sensorSettings.latencyMs;
     scene.setCameraQuaternion(orientation.read(performance.now()));
     scene.update(now);
@@ -107,6 +129,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setCreatures: (entries) => scene.setCreatures(entries),
     setMode: (mode) => scene.setMode(mode),
     setSmoothing: (mode) => scene.setSmoothing(mode),
+    setLighting: (on) => scene.setLighting(on),
     startBattle: (fighters) => scene.startBattle(fighters),
     stopBattle: () => scene.stopBattle(),
     recenterBattle: () => scene.recenterBattle(),

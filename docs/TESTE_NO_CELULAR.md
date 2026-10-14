@@ -55,6 +55,13 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 2. Anote o "leituras/s" do rastreador com boa luz: se cair muito em relação à versão anterior (cerca de 10–15 em aparelhos médios), me avise, porque a correção de contraste pesa na GPU.
 3. Cartas já guardadas serão recompiladas na primeira vez (o alvo agora usa cinza de luminância): espere a etapa "alvo compilado" uma vez por carta.
 
+### Luz dos golpes (Caixa)
+1. Toque em Batalhar: a tela deve ir para tela cheia sozinha. Pare (Parar) e ela volta ao normal.
+2. Em cada golpe, o Pokémon que ataca deve brilhar com a cor do tipo, o projétil deve iluminar o chão e os vizinhos, e o alvo deve acender no impacto (mais forte em crítico). O vídeo escurece e recebe um clarão colorido, mas os Pokémon **não** escurecem junto.
+3. Em "Suavizar" há "Luz dos golpes": Desligada deve tirar esses brilhos. Se a batalha engasgar com a luz ligada, me diga o modelo do celular.
+4. Em uma sala escura e depois perto de uma janela, os Pokémon devem parecer um pouco mais escuros/claros, sem mudar de cor demais.
+5. Ao fim, o botão "Resumo" mostra quem mais causou dano, críticos e defesas.
+
 ### Giroscópio (Escanear e Caixa)
 1. Com o AR ativo, abaixo da câmera aparece "Rastreador: N leituras/s · giroscópio: corrigindo a pose". Se aparecer "sem dados do sensor", o aparelho/navegador não entregou o sensor.
 2. Mova o celular em arco, devagar e depressa, com a carta parada: o Pokémon deve acompanhar sem ficar para trás nem se adiantar à carta. Se ele se adianta, aumente "Atraso da câmera para o sensor" em Ajustes; se fica para trás, diminua. Compare com "Usar o giroscópio" desligado.

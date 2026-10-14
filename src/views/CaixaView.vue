@@ -33,6 +33,9 @@ const stageEl = ref<HTMLElement | null>(null);
 const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl);
 const showFilters = ref(false);
 const showTeam = ref(false);
+const showSummary = ref(false);
+/** Entramos em tela cheia só para a batalha (e saímos dela ao parar). */
+let fullscreenForBattle = false;
 const boxMode = ref<BoxMode>('passeio');
 
 const phase = ref<Phase>('idle');
@@ -116,6 +119,7 @@ async function open(): Promise<void> {
   box.setHalfSize(boxSize.value / 2);
   box.setVideoFov(videoFov.value);
   box.setSmoothing(visual.smoothing);
+  box.setLighting(visual.lighting);
   box.setMode(boxMode.value);
   phase.value = 'placing';
   hint.value = 'Aponte o celular para o chão onde a caixa vai ficar e toque em "Colocar a caixa aqui".';
@@ -129,6 +133,8 @@ function close(): void {
   void exitFullscreen();
   showFilters.value = false;
   showTeam.value = false;
+  showSummary.value = false;
+  fullscreenForBattle = false;
   box?.stop();
   box = null;
   stopCamera(videoEl.value, stream);
@@ -196,6 +202,7 @@ function onPointerUp(event: PointerEvent): void {
 }
 
 watch(() => visual.smoothing, (smoothing) => box?.setSmoothing(smoothing));
+watch(() => visual.lighting, (on) => box?.setLighting(on));
 
 const canBattle = computed(() => phase.value === 'running' && population.value.shown >= 2 && !loadingCreatures.value && !preparing.value);
 const battling = computed(() => battleHud.value !== null);
@@ -213,6 +220,12 @@ async function startBattle(): Promise<void> {
   const creatures = current.scene.creatureList;
   if (creatures.length < 2) return;
   preparing.value = true;
+  showSummary.value = false;
+  // A arena é pequena: a tela cheia (pedida já no toque, antes de esperar a rede) dá mais espaço para ver o que acontece.
+  if (!fullscreen.value) {
+    fullscreenForBattle = true;
+    void toggleFullscreen();
+  }
   error.value = '';
   hint.value = 'Preparando a batalha: buscando atributos e golpes…';
   showFilters.value = false;
@@ -230,6 +243,10 @@ async function startBattle(): Promise<void> {
     };
   } catch (e) {
     error.value = `Não consegui começar a batalha: ${e instanceof Error ? e.message : String(e)}`;
+    if (fullscreenForBattle) {
+      fullscreenForBattle = false;
+      void exitFullscreen();
+    }
   } finally {
     preparing.value = false;
     hint.value = '';
@@ -240,6 +257,11 @@ function stopBattle(): void {
   box?.stopBattle();
   battleHud.value = null;
   battleSummary.value = null;
+  showSummary.value = false;
+  if (fullscreenForBattle) {
+    fullscreenForBattle = false;
+    void exitFullscreen();
+  }
 }
 
 const mvp = computed(() => {
@@ -249,6 +271,28 @@ const mvp = computed(() => {
 const crits = computed(() => battleSummary.value?.stats.fighters.reduce((n, f) => n + f.criticals, 0) ?? 0);
 const inflicted = computed(() => battleSummary.value?.stats.fighters.reduce((n, f) => n + f.inflicted, 0) ?? 0);
 const guards = computed(() => battleSummary.value?.stats.fighters.reduce((n, f) => n + f.guards, 0) ?? 0);
+
+/** Vídeo da câmera durante o foco do golpe: mais escuro e menos saturado, para o golpe e os sprites se destacarem. */
+const videoStyle = computed(() => {
+  const dim = battleHud.value?.dim ?? 0;
+  if (dim < 0.01) return undefined;
+  return { filter: `brightness(${(1 - dim * 1.5).toFixed(3)}) saturate(${(1 - dim * 0.9).toFixed(3)})` };
+});
+/** Clarão dos golpes sobre o vídeo (atrás dos sprites): cada luz vira uma mancha colorida no ponto onde está. */
+const envLights = computed(() => {
+  const hud = battleHud.value;
+  if (!hud || hud.lights.length === 0) return undefined;
+  const layers = hud.lights.map((l) => {
+    const alpha = Math.min(0.8, l.intensity * 0.55).toFixed(3);
+    return `radial-gradient(ellipse ${l.radius.toFixed(1)}% ${(l.radius * 0.8).toFixed(1)}% at ${l.x.toFixed(1)}% ${l.y.toFixed(1)}%, ${rgba(l.color, alpha)} 0%, transparent 100%)`;
+  });
+  return { background: layers.join(',') };
+});
+
+function rgba(hex: string, alpha: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
 
 const incompleteFighters = computed(() => (battleHud.value ? battleFighters.value.filter((f) => f.notes.length > 0) : []));
 
@@ -292,15 +336,24 @@ onBeforeUnmount(() => {
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
     >
-      <video ref="videoEl" class="feed" playsinline muted></video>
+      <video ref="videoEl" class="feed" playsinline muted :style="videoStyle"></video>
+      <div v-if="battleHud" class="battle-env" aria-hidden="true" :style="shakeStyle">
+        <div class="vignette" :style="{ opacity: Math.min(1, battleHud.dim * 3) }"></div>
+        <div v-if="envLights" class="lights" :style="envLights"></div>
+      </div>
       <canvas ref="canvasEl" class="overlay" :style="shakeStyle" aria-label="Caixa com os Pokémon escaneados"></canvas>
       <p v-if="phase === 'idle'" class="placeholder">Câmera desligada</p>
       <div v-if="phase === 'placing'" class="crosshair" aria-hidden="true"></div>
       <div v-if="battleHud" class="battle-hud" :class="{ compact: battleHud.bars.length > 4 }" aria-live="polite">
-        <div class="battle-dim" :style="{ opacity: battleHud.dim }"></div>
-        <div v-if="battleHud.banner" class="battle-banner" :style="{ '--fx': battleHud.banner.color }">
-          <strong>{{ battleHud.banner.text }}</strong>
-          <span>{{ battleHud.banner.sub }}</span>
+        <div class="battle-top">
+          <div v-if="battleHud.banner" class="battle-banner" :style="{ '--fx': battleHud.banner.color }">
+            <strong>{{ battleHud.banner.text }}</strong>
+            <span>{{ battleHud.banner.sub }}</span>
+          </div>
+          <div v-if="battleHud.phase === 'fight'" class="battle-turn" :aria-label="`Rodada ${battleHud.round}, turno ${battleHud.turn} de ${battleHud.totalTurns}`">
+            <span>Rodada {{ battleHud.round }}</span>
+            <i><b :style="{ width: (battleHud.turn / Math.max(1, battleHud.totalTurns)) * 100 + '%' }"></b></i>
+          </div>
         </div>
         <div v-if="battleHud.callout" :key="battleHud.callout.key" class="battle-callout" :style="{ color: battleHud.callout.color, opacity: Math.min(1, (1 - battleHud.callout.age) * 2.2) }">{{ battleHud.callout.text }}</div>
         <div v-if="battleHud.flash" class="battle-flash" :style="{ background: battleHud.flash.color, opacity: battleHud.flash.strength }"></div>
@@ -309,7 +362,7 @@ onBeforeUnmount(() => {
           v-show="bar.visible"
           :key="bar.id"
           class="hp-bar"
-          :class="[{ down: bar.fainted, guarding: bar.guard }, bar.status ? 'st-' + bar.status : '', 'pers-' + bar.personality]"
+          :class="[{ down: bar.fainted, guarding: bar.guard, acting: bar.acting }, bar.status ? 'st-' + bar.status : '', 'pers-' + bar.personality]"
           :style="{ left: bar.x + '%', top: bar.y + '%' }"
         >
           <span class="hp-name">
@@ -338,7 +391,20 @@ onBeforeUnmount(() => {
         <template v-if="picked.dexId"> · Nº {{ picked.dexId }}</template>
         <br />{{ picked.detail }}
       </p>
-      <SmoothingSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
+      <SmoothingSheet v-if="showFilters && cameraOn" lighting @close="showFilters = false" />
+      <div v-if="showSummary && battleSummary && battleHud?.phase === 'finished'" class="stage-sheet battle-summary" @pointerdown.stop @pointerup.stop @click.stop>
+        <header>
+          <strong>{{ battleSummary.winner }} venceu</strong>
+          <button type="button" class="link" @click="showSummary = false">Fechar</button>
+        </header>
+        <p>{{ battleSummary.turns }} turnos em {{ battleSummary.rounds }} rodadas.</p>
+        <p v-if="mvp">Mais dano: <strong>{{ mvp.name }}</strong> ({{ mvp.damageDealt }} PS, maior golpe {{ mvp.biggestHit }}, {{ mvp.knockouts }} nocaute{{ mvp.knockouts === 1 ? '' : 's' }}).</p>
+        <p>{{ crits }} crítico{{ crits === 1 ? '' : 's' }} · {{ inflicted }} condição(ões) causada(s) · {{ guards }} defesa{{ guards === 1 ? '' : 's' }}.</p>
+        <template v-if="incompleteFighters.length > 0">
+          <p class="hint">Dados incompletos (usei valores neutros):</p>
+          <p v-for="f in incompleteFighters" :key="f.id" class="hint">{{ f.name }}: {{ f.notes.join('; ') }}</p>
+        </template>
+      </div>
       <div v-if="showTeam && cameraOn" class="stage-sheet" @pointerdown.stop @pointerup.stop @click.stop>
         <header>
           <strong>Equipe da caixa</strong>
@@ -354,6 +420,7 @@ onBeforeUnmount(() => {
         <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
         <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : 'Batalhar'" :disabled="!canBattle" @click="startBattle" />
         <StageButton v-if="battling && battleHud?.phase === 'finished'" icon="battle" label="De novo" @click="startBattle" />
+        <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />
         <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
         <StageButton v-if="battling" icon="stop" label="Parar" @click="stopBattle" />
         <StageButton v-if="phase === 'running' && !battling" icon="move" label="Mover" @click="moveBox" />
@@ -379,17 +446,6 @@ onBeforeUnmount(() => {
     <p v-if="cameraOn && phase === 'running' && population.shown === 1" class="message" role="status">
       Para batalhar, ponha pelo menos 2 Pokémon na equipe da caixa.
     </p>
-    <div v-if="battleSummary && battleHud?.phase === 'finished'" class="message" role="status">
-      <strong>{{ battleSummary.winner }} venceu</strong> em {{ battleSummary.turns }} turnos ({{ battleSummary.rounds }} rodadas).
-      <template v-if="mvp">
-        <br />Mais dano: {{ mvp.name }} ({{ mvp.damageDealt }} PS, maior golpe {{ mvp.biggestHit }}, {{ mvp.knockouts }} nocaute{{ mvp.knockouts === 1 ? '' : 's' }}).
-      </template>
-      <br />{{ crits }} crítico{{ crits === 1 ? '' : 's' }} · {{ inflicted }} condição(ões) causada(s) · {{ guards }} defesa{{ guards === 1 ? '' : 's' }}.
-      <template v-if="incompleteFighters.length > 0">
-        <br />Dados incompletos (usei valores neutros):
-        <span v-for="f in incompleteFighters" :key="f.id" class="meta"><br />· {{ f.name }}: {{ f.notes.join('; ') }}</span>
-      </template>
-    </div>
     <p v-if="cameraOn && mode === 'manual'" class="message" role="status">
       Este aparelho não enviou dados dos sensores de movimento. Arraste na imagem para olhar em volta.
     </p>

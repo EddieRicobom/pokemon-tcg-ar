@@ -13,6 +13,8 @@ import {
   STATUS_TINTS, typeColorHex,
 } from './effects';
 import type { PhysicalStyle, SpecialDelivery } from './effects';
+import { FloorPools } from './fx-lights';
+import type { FxLight } from './fx-lights';
 import { stepToward } from './wander';
 
 export type LabelTone = 'damage' | 'crit' | 'good' | 'bad' | 'miss' | 'info' | 'status';
@@ -33,6 +35,8 @@ export interface HudBar {
   y: number;
   visible: boolean;
   fainted: boolean;
+  /** É a vez dele (quem está agindo agora). */
+  acting: boolean;
   quality: Fighter['quality'];
 }
 
@@ -59,6 +63,17 @@ export interface HudCallout {
   age: number;
 }
 
+/** Luz de golpe projetada na tela (%): o ambiente real (o vídeo) é clareado em volta dela. */
+export interface HudLight {
+  x: number;
+  y: number;
+  color: string;
+  /** 0–1,5. */
+  intensity: number;
+  /** Raio na tela, em % da largura. */
+  radius: number;
+}
+
 export interface BattleHud {
   phase: 'intro' | 'fight' | 'finished';
   banner: { text: string; sub: string; color: string } | null;
@@ -70,6 +85,8 @@ export interface BattleHud {
   shake: { x: number; y: number; zoom: number };
   /** Escurecimento da câmera (0–1) para dar foco ao golpe. */
   dim: number;
+  /** Luzes dos golpes (carga, projétil, impacto) para clarear o vídeo em volta. */
+  lights: HudLight[];
   callout: HudCallout | null;
   winner: { id: string; name: string; hpLeft: number; maxHp: number } | null;
   turn: number;
@@ -225,6 +242,12 @@ const newFrame = (): Frame => ({ dx: 0, dy: 0, dz: 0, scale: 1, squash: 1, tint:
 export class BattleDirector {
   readonly particles = new ParticleField();
   readonly rings = new RingField();
+  /** Luzes ativas neste quadro, em coordenadas da arena (o BoxScene as passa para os sprites). */
+  readonly lights: FxLight[] = [];
+  private readonly pools = new FloorPools();
+  /** Luz dos golpes ligada (desligar poupa a GPU). */
+  lighting = true;
+  private impactLight: { x: number; y: number; z: number; color: number; strength: number; radius: number; at: number } | null = null;
   private readonly bolt = new BoltLine();
   private readonly projectile: Sprite;
   private readonly shields: Sprite[];
@@ -298,7 +321,7 @@ export class BattleDirector {
     this.stage = new ArenaStage(o.rx, o.rz);
     this.spotlight = new Sprite(new SpriteMaterial({ map: glowMap(), color: 0xffe27a, transparent: true, blending: AdditiveBlending, depthWrite: false, opacity: 0.7 }));
     this.spotlight.visible = false;
-    o.root.add(this.stage.group, this.spotlight, this.particles.group, this.rings.group, this.bolt.group);
+    o.root.add(this.stage.group, this.pools.group, this.spotlight, this.particles.group, this.rings.group, this.bolt.group);
     this.projectile = new Sprite(new SpriteMaterial({ map: glowMap(), color: 0xffffff, transparent: true, blending: AdditiveBlending, depthWrite: false }));
     this.projectile.visible = false;
     o.root.add(this.projectile);
@@ -416,6 +439,7 @@ export class BattleDirector {
 
     this.applyPersistent();
     this.updateDirecting(real);
+    this.updateLights();
     this.commit();
     this.cachedHud = null;
   }
@@ -441,6 +465,53 @@ export class BattleDirector {
     this.dimNow += (dimTarget - this.dimNow) * Math.min(1, real / 160);
     this.stage.setGlow(glow);
     if (this.phase === 'finished') this.updateSpotlight();
+  }
+
+  /** Quanto o ambiente escureceu para dar foco (0–0,34): os sprites escurecem junto e só a luz do golpe os clareia. */
+  get ambientDim(): number {
+    return this.dimNow;
+  }
+
+  /**
+   * Luzes do momento: a carga no atacante, o projétil em viagem, o clarão do impacto no alvo, a defesa e o
+   * refletor do vencedor. Vão para os sprites (relight), para o chão (poças) e para o vídeo (HUD).
+   */
+  private updateLights(): void {
+    const out = this.lights;
+    out.length = 0;
+    if (!this.lighting) {
+      this.pools.update(out);
+      return;
+    }
+    const push = (at: Vector3, color: number, intensity: number, radius: number): void => {
+      out.push({ x: at.x, y: at.y, z: at.z, color, intensity, radius });
+    };
+    const turn = this.phase === 'fight' ? this.currentTurnData() : null;
+    if (turn && turn.kind === 'attack') {
+      const plan = turnPlan(turn, this.personality(turn.attacker));
+      const t = this.turnClock;
+      const color = typeColorHex(turn.move.type);
+      if (t < plan.impactAt) {
+        const from = this.chest(turn.attacker);
+        const charge = clamp01(t / Math.max(1, plan.windup));
+        push(from, color, 0.3 + 0.7 * charge, 0.9);
+        if (plan.style?.family === 'ranged' && t >= plan.windup) {
+          const u = clamp01((t - plan.windup) / Math.max(1, plan.travel));
+          push(from.clone().lerp(this.chest(turn.target), u), color, 1.1, 0.8);
+        }
+      }
+    }
+    for (let i = 0; i < this.guard.length; i++) {
+      if (this.guard[i] && this.faintAt[i]! < 0) push(this.chest(i), 0x7fd4ff, 0.35, 0.7);
+    }
+    const hit = this.impactLight;
+    if (hit) {
+      const k = Math.exp(-(this.clock - hit.at) / 240);
+      if (k < 0.03) this.impactLight = null;
+      else push(new Vector3(hit.x, hit.y, hit.z), hit.color, hit.strength * k, hit.radius);
+    }
+    if (this.phase === 'finished') push(this.world(this.o.result.winner, 0.5), 0xffe27a, 0.7, 1.3);
+    this.pools.update(out);
   }
 
   private updateSpotlight(): void {
@@ -839,6 +910,8 @@ export class BattleDirector {
     emitImpact(this.particles, this.rings, at, type, strength, this.o.rng);
     this.flashUntil[target] = this.clock + 320;
     this.flashColor[target] = hitTint(type);
+    const bigHit = Math.min(1.6, 0.7 + (turn.damage / this.o.fighters[target]!.maxHp) * 1.6 + (turn.critical ? 0.4 : 0) + (turn.effectiveness >= 2 ? 0.2 : 0));
+    this.impactLight = { x: at.x, y: at.y, z: at.z, color: turn.critical ? 0xffffff : typeColorHex(type), strength: bigHit * (guarded ? 0.6 : 1), radius: 0.9 + bigHit * 0.5, at: this.clock };
     this.shakeUntil[target] = this.clock + 420;
     // Empurrão: para longe de quem atacou, proporcional ao tamanho do golpe.
     const a = this.home[turn.attacker]!;
@@ -1019,19 +1092,24 @@ export class BattleDirector {
   get hud(): BattleHud {
     if (this.cachedHud) return this.cachedHud;
     const { fighters, creatures, result } = this.o;
+    const actor = this.phase === 'fight' ? (this.currentTurnData()?.attacker ?? -1) : this.phase === 'finished' ? this.o.result.winner : -1;
     const bars: HudBar[] = fighters.map((f, i) => {
       const c = creatures[i]!;
       const pos = this.project(this.world(i, c.height * c.fx.scale + 0.14));
       const hp = Math.max(0, Math.round(this.shownHp[i]!));
       return {
         id: f.id, name: f.name, types: f.types, personality: f.personality, status: this.status[i] ?? null, guard: this.guard[i] ?? false,
-        hp, maxHp: f.maxHp, frac: clamp01(this.shownHp[i]! / f.maxHp), ...pos, x: Math.min(BAR_X.max, Math.max(BAR_X.min, pos.x)), fainted: c.fx.faint >= 0.5, quality: f.quality,
+        hp, maxHp: f.maxHp, frac: clamp01(this.shownHp[i]! / f.maxHp), ...pos, x: Math.min(BAR_X.max, Math.max(BAR_X.min, pos.x)), fainted: c.fx.faint >= 0.5, acting: actor === i, quality: f.quality,
       };
     });
     const labels: HudLabel[] = this.labels.map((l) => {
       const age = clamp01((this.clock - l.born) / LABEL_TTL_MS);
       const pos = this.project(l.at.clone().add(new Vector3(0, age * 0.3, 0)));
       return { key: l.key, text: l.text, tone: l.tone, color: l.color, ...pos, x: Math.min(LABEL_X.max, Math.max(LABEL_X.min, pos.x)), age, size: l.size };
+    });
+    const lights: HudLight[] = this.lights.map((l) => {
+      const pos = this.project(new Vector3(l.x, l.y, l.z));
+      return { x: pos.x, y: pos.y, color: '#' + l.color.toString(16).padStart(6, '0'), intensity: l.intensity, radius: 14 + 22 * Math.min(1, l.radius / 1.6) };
     });
     const flashAge = this.screenFlash ? (this.clock - this.screenFlash.at) / FLASH_MS : 1;
     const w = result.winner;
@@ -1045,6 +1123,7 @@ export class BattleDirector {
       flash: this.screenFlash && flashAge < 1 ? { color: this.screenFlash.color, strength: this.screenFlash.strength * (1 - flashAge) } : null,
       shake: { x: Math.sin(this.realClock * 0.13) * 11 * power, y: Math.cos(this.realClock * 0.17) * 8 * power, zoom: 1 + 0.035 * power },
       dim: this.dimNow,
+      lights,
       callout: this.callout && calloutAge < 1 ? { key: this.callout.key, text: this.callout.text, color: this.callout.color, age: calloutAge } : null,
       winner: this.phase === 'finished' ? { id: fighters[w]!.id, name: fighters[w]!.name, hpLeft: result.hpLeft[w] ?? 0, maxHp: fighters[w]!.maxHp } : null,
       turn: Math.min(this.turnIndex + 1, result.turns.length),
@@ -1063,6 +1142,7 @@ export class BattleDirector {
     this.projectile.material.dispose();
     this.projectile.removeFromParent();
     this.stage.dispose();
+    this.pools.dispose();
     this.spotlight.material.dispose();
     this.spotlight.removeFromParent();
     for (const s of this.shields) {
