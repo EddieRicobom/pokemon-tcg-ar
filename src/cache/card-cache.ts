@@ -15,6 +15,8 @@ import type { AssetKind, AssetRecord, CachedCard, CacheStatus, SlotInfo, Storage
 
 export const DEFAULT_MAX_CARDS = 300;
 export const DEFAULT_MAX_BYTES = 200 * 1024 * 1024;
+/** Um escaneamento que ficou assim há mais tempo foi interrompido (aba fechada, app morto): a sobra é apagada. */
+export const PENDING_MAX_AGE_MS = 10 * 60 * 1000;
 
 export interface StorageApi {
   estimate?: () => Promise<{ usage?: number; quota?: number }>;
@@ -71,6 +73,11 @@ export interface PrepareProgress {
   total: number;
 }
 
+export type ScanOutcome =
+  | { saved: true; result: PrepareResult }
+  /** Nada novo foi guardado. `reason` diz, em português, o que faltou. */
+  | { saved: false; result: PrepareResult; reason: string };
+
 export interface PrepareResult {
   id: string;
   status: CacheStatus;
@@ -90,6 +97,13 @@ export function cacheStatusOf(card: CachedCard): CacheStatus {
   if (slots.some((slot) => slot.state === 'error')) return 'falhou';
   if (slots.some((slot) => slot.state === 'missing')) return 'parcial';
   return 'completo';
+}
+
+/** O que impediu o escaneamento de terminar, em português: cada parte que falta ou falhou, com o motivo quando há. */
+export function describeIncomplete(card: CachedCard): string {
+  const parts: [string, SlotInfo][] = [['a imagem da carta', card.reference], ['o Pokémon animado', card.sprite], ['o alvo de AR', card.target]];
+  const problems = parts.filter(([, slot]) => slot.state === 'missing' || slot.state === 'error' || (slot === card.reference && slot.state === 'unavailable')).map(([label, slot]) => (slot.error ? `${label} (${slot.error})` : label));
+  return problems.length > 0 ? `Não consegui preparar ${problems.join(', ')}. Nada foi guardado; tente de novo.` : 'Não consegui preparar a carta. Nada foi guardado; tente de novo.';
 }
 
 class HttpStatusError extends Error {
@@ -135,6 +149,8 @@ export class CardCache {
     if (!this.index) {
       const all = await this.db.getAll('cards');
       this.index = new Map(all.map((card) => [card.id, this.migrate(card)]));
+      const stale = all.filter((card) => card.pending !== undefined && this.now() - card.pending > PENDING_MAX_AGE_MS);
+      for (const card of stale) await this.remove(card.id);
     }
     return this.index;
   }
@@ -146,7 +162,7 @@ export class CardCache {
   }
 
   async list(): Promise<(CachedCard & { status: CacheStatus })[]> {
-    const cards = [...(await this.load()).values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+    const cards = [...(await this.load()).values()].filter((card) => card.pending === undefined).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
     return cards.map((card) => ({ ...card, status: cacheStatusOf(card) }));
   }
 
@@ -155,14 +171,14 @@ export class CardCache {
   }
 
   async count(): Promise<number> {
-    return (await this.load()).size;
+    return [...(await this.load()).values()].filter((card) => card.pending === undefined).length;
   }
 
   /** Referências para reconhecer sem rede: cartas com características válidas guardadas. */
   async localReferences(): Promise<LocalReference[]> {
     const result: LocalReference[] = [];
     for (const card of (await this.load()).values()) {
-      if (!card.features) continue;
+      if (!card.features || card.pending !== undefined) continue;
       result.push({ card: this.toRecord(card), features: featuresFromJson(card.features) });
     }
     return result;
@@ -192,7 +208,7 @@ export class CardCache {
    * Chamado depois de cada identificação confiável: guarda os metadados, a referência e as
    * características reutilizáveis. Nunca recebe nem guarda o quadro da câmera.
    */
-  async recordRecognition(input: RecordInput): Promise<CachedCard> {
+  async recordRecognition(input: RecordInput, options: { pending?: boolean } = {}): Promise<CachedCard> {
     const existing = await this.get(input.card.id);
     const timestamp = this.now();
     const card: CachedCard = existing
@@ -200,11 +216,63 @@ export class CardCache {
       : {
           ...this.toRecord(input.card), schema: CACHE_SCHEMA_VERSION, reference: emptySlot(), sprite: emptySlot(), target: emptySlot(),
           firstSeenAt: timestamp, lastSeenAt: timestamp, scanCount: 1,
+          ...(options.pending ? { pending: timestamp } : {}),
         };
     if (input.reference && !card.features) card.features = featuresToJson(computeFeatures(input.reference));
     if (input.referenceBlob && input.referenceUrl && card.reference.state !== 'ok') {
       card.reference = await this.storeAsset(card.id, 'reference', input.referenceUrl, input.referenceBlob, card.reference);
     }
+    await this.save(card);
+    if (options.pending) return card;
+    await this.enforceLimits(card.id);
+    try {
+      this.deps.onRecorded?.(card);
+    } catch {
+      // O aviso é só um extra.
+    }
+    return card;
+  }
+
+  /**
+   * O escaneamento completo, tudo ou nada. A carta nova nasce "pendente" (invisível na lista e no reconhecimento local) e só
+   * fica no cache quando referência, sprite e alvo de AR terminam. Se algo faltar ou falhar, o escaneamento for cancelado
+   * (`isCurrent` devolve false) ou der erro, a carta nova e os arquivos que só ela usava são apagados. Uma carta que já
+   * estava guardada nunca é apagada por um escaneamento que não terminou. O aviso `onRecorded` (XP do Treinador) só sai
+   * quando o escaneamento termina.
+   */
+  async scanCard(input: RecordInput, onProgress?: (progress: PrepareProgress) => void, isCurrent: () => boolean = () => true): Promise<ScanOutcome> {
+    const id = input.card.id;
+    const existing = await this.get(id);
+    const isNew = !existing;
+    if (isNew) await this.recordRecognition(input, { pending: true });
+    let result: PrepareResult;
+    try {
+      result = await this.prepareCard(id, onProgress);
+    } catch (error) {
+      if (isNew) await this.remove(id);
+      throw error;
+    }
+    if (!isCurrent()) {
+      if (isNew) await this.remove(id);
+      return { saved: false, result, reason: 'O escaneamento foi cancelado antes de terminar.' };
+    }
+    if (result.status !== 'completo') {
+      if (isNew) await this.remove(id);
+      return { saved: false, result, reason: describeIncomplete(result.card) };
+    }
+    const card = await this.finishScan(result.card, isNew, input);
+    return { saved: true, result: { ...result, card } };
+  }
+
+  /** Torna definitiva a carta de um escaneamento completo. */
+  private async finishScan(prepared: CachedCard, isNew: boolean, input: RecordInput): Promise<CachedCard> {
+    const timestamp = this.now();
+    const base = (await this.get(prepared.id)) ?? prepared;
+    const { pending: _pending, ...rest } = base;
+    void _pending;
+    const card: CachedCard = isNew
+      ? { ...rest, firstSeenAt: timestamp, lastSeenAt: timestamp, scanCount: 1 }
+      : { ...rest, ...this.toRecord(input.card), lastSeenAt: timestamp, scanCount: base.scanCount + 1, schema: CACHE_SCHEMA_VERSION };
     await this.save(card);
     await this.enforceLimits(card.id);
     try {
@@ -512,7 +580,7 @@ export class CardCache {
   async storageInfo(): Promise<StorageInfo> {
     const records = await this.db.getAll('assets');
     const info: StorageInfo = {
-      cards: (await this.load()).size,
+      cards: await this.count(),
       assets: records.length,
       assetBytes: records.reduce((sum, record) => sum + record.bytes, 0),
     };

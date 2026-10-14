@@ -51,6 +51,12 @@ export interface CachedCard {
   firstSeenAt: number;
   lastSeenAt: number;
   scanCount: number;
+  /**
+   * Carta de um escaneamento em andamento (momento em que começou). Enquanto existir, a carta não aparece na lista nem no
+   * reconhecimento local: só vira definitiva quando referência, sprite e alvo de AR ficam prontos (`CardCache.scanCard`).
+   * Sobras de um escaneamento interrompido são apagadas ao abrir o app.
+   */
+  pending?: number;
 }
 
 export interface AssetRecord {

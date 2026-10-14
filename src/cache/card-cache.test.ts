@@ -459,3 +459,136 @@ describe('aviso de leitura gravada', () => {
     expect(seen).toEqual([['base1-58', 1], ['base1-58', 2]]);
   });
 });
+
+describe('escaneamento completo, tudo ou nada (scanCard)', () => {
+  const withTarget = (extra: Partial<CardCacheDeps> = {}) => make({ buildTarget: async () => new Blob([new Uint8Array(50)]), fetchTargetImage: async () => new Blob([new Uint8Array(80)]), ...extra });
+
+  it('carta nova só aparece depois de completa, e o XP (onRecorded) sai uma vez, no fim', async () => {
+    const recorded: string[] = [];
+    const cache = withTarget({ onRecorded: (c) => recorded.push(c.id) });
+    const outcome = await cache.scanCard({ card: pikachu, reference: syntheticCard(1) });
+    expect(outcome.saved).toBe(true);
+    expect(recorded).toEqual(['base1-58']);
+    const [row] = await cache.list();
+    expect(row).toMatchObject({ id: 'base1-58', status: 'completo', scanCount: 1 });
+    expect(row?.pending).toBeUndefined();
+    expect((await cache.localReferences()).map((r) => r.card.id)).toEqual(['base1-58']);
+  });
+
+  it('durante o preparo a carta pendente é invisível na lista, na contagem e no reconhecimento local', async () => {
+    const cache = withTarget();
+    let during: { list: number; count: number; refs: number; pending: boolean } | null = null;
+    const probes: Promise<void>[] = [];
+    await cache.scanCard({ card: pikachu, reference: syntheticCard(1) }, (p) => {
+      if (p.step === 'sprite' && !probes.length) {
+        probes.push(
+          (async () => {
+            during = { list: (await cache.list()).length, count: await cache.count(), refs: (await cache.localReferences()).length, pending: (await cache.get('base1-58'))?.pending !== undefined };
+          })(),
+        );
+      }
+    });
+    await Promise.all(probes);
+    expect(during).toEqual({ list: 0, count: 0, refs: 0, pending: true });
+  });
+
+  it('falha no sprite: nada é guardado (nem registro, nem arquivos) e nenhum XP sai', async () => {
+    const recorded: string[] = [];
+    const cache = withTarget({ onRecorded: (c) => recorded.push(c.id) });
+    failing.add('sprite:25');
+    const outcome = await cache.scanCard({ card: pikachu, reference: syntheticCard(1) });
+    expect(outcome.saved).toBe(false);
+    if (!outcome.saved) expect(outcome.reason).toMatch(/Pokémon animado.*Nada foi guardado/);
+    expect(await cache.list()).toEqual([]);
+    expect(await cache.get('base1-58')).toBeUndefined();
+    expect(await db.getAll('assets')).toEqual([]);
+    expect((await storageBytes()) === 0).toBe(true);
+    expect(recorded).toEqual([]);
+  });
+
+  it('falha na referência ou no alvo de AR também desfaz', async () => {
+    for (const setup of [
+      () => withTarget({ fetchImpl: (async () => { throw new TypeError('offline'); }) as typeof fetch }),
+      () => withTarget({ buildTarget: async () => { throw new Error('compilador quebrou'); } }),
+    ]) {
+      const cache = setup();
+      const outcome = await cache.scanCard({ card: pikachu });
+      expect(outcome.saved).toBe(false);
+      expect(await cache.list()).toEqual([]);
+      expect(await db.getAll('assets')).toEqual([]);
+    }
+  });
+
+  it('carta sem imagem no TCGdex não fica guardada pela metade, e o motivo aparece', async () => {
+    const cache = withTarget();
+    const outcome = await cache.scanCard({ card: { ...pikachu, imageBase: undefined } });
+    expect(outcome.saved).toBe(false);
+    if (!outcome.saved) expect(outcome.reason).toContain('Sem imagem no TCGdex');
+    expect(await cache.list()).toEqual([]);
+  });
+
+  it('escaneamento cancelado no meio desfaz a carta nova', async () => {
+    const cache = withTarget();
+    const outcome = await cache.scanCard({ card: pikachu }, undefined, () => false);
+    expect(outcome).toMatchObject({ saved: false, reason: expect.stringContaining('cancelado') });
+    expect(await cache.list()).toEqual([]);
+    expect(await db.getAll('assets')).toEqual([]);
+  });
+
+  it('erro inesperado no preparo (ex.: sem espaço) desfaz e repassa o erro', async () => {
+    const cache = withTarget();
+    const boom = (p: { step: string }) => {
+      if (p.step === 'sprite') throw new Error('estouro');
+    };
+    await expect(cache.scanCard({ card: pikachu, reference: syntheticCard(1) }, boom)).rejects.toThrow('estouro');
+    expect(await cache.list()).toEqual([]);
+    expect(await db.getAll('assets')).toEqual([]);
+  });
+
+  it('uma carta que já estava completa nunca é apagada por um novo escaneamento que falha; o sucesso só atualiza data e contagem', async () => {
+    const cache = withTarget();
+    await cache.scanCard({ card: pikachu });
+    const before = (await cache.list())[0]!;
+    // Arquivo expulso pelo navegador + sem rede: o preparo não consegue refazer o sprite.
+    await backend.delete(before.sprite.key!);
+    await cache.verifyIntegrity();
+    failing.add('sprite:25');
+    const failed = await cache.scanCard({ card: pikachu });
+    expect(failed.saved).toBe(false);
+    const kept = (await cache.list())[0]!;
+    expect(kept.id).toBe('base1-58');
+    expect(kept.scanCount).toBe(1);
+    failing.delete('sprite:25');
+    const ok = await cache.scanCard({ card: pikachu });
+    expect(ok.saved).toBe(true);
+    expect((await cache.list())[0]).toMatchObject({ status: 'completo', scanCount: 2 });
+  });
+
+  it('sobra de um escaneamento interrompido (pendente antigo) é apagada ao abrir o app; a recente fica', async () => {
+    const first = withTarget();
+    await first.recordRecognition({ card: pikachu, reference: syntheticCard(1) }, { pending: true }); // criado no relógio 1000+
+    const old = await first.get('base1-58');
+    expect(old?.pending).toBeDefined();
+    clock += 11 * 60 * 1000;
+    const reopened = withTarget();
+    expect(await reopened.get('base1-58')).toBeUndefined();
+    expect(await db.getAll('assets')).toEqual([]);
+
+    await reopened.recordRecognition({ card: trainer }, { pending: true });
+    const again = withTarget();
+    expect((await again.get('base1-91'))?.pending).toBeDefined();
+  });
+
+  it('Treinador (sem Pokémon) completa normalmente: sprite "indisponível" não é falha', async () => {
+    const cache = withTarget();
+    const outcome = await cache.scanCard({ card: trainer });
+    expect(outcome.saved).toBe(true);
+    expect((await cache.list())[0]).toMatchObject({ id: 'base1-91', status: 'completo' });
+  });
+});
+
+async function storageBytes(): Promise<number> {
+  let total = 0;
+  for (const record of await db.getAll('assets')) total += record.bytes;
+  return total;
+}
