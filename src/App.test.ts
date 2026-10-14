@@ -69,9 +69,9 @@ describe('App', () => {
     const text = await mount('#/pins');
     expect(text).toContain('Pin Mode');
     expect(text).toContain('sem câmera');
-    expect(text).toContain('de energia');
+    expect(text).toContain('energia');
     expect(text).toContain('Escolha os pins');
-    expect(text).toContain('O chão da arena');
+    expect(text).toContain('Como funciona o chão');
   });
 
   it('a tela Cartas mostra a ação de limpar o cache', async () => {

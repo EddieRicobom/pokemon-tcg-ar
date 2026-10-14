@@ -867,8 +867,9 @@ onBeforeUnmount(() => {
 });
 
 const phaseHint = computed(() => {
-  if (phase.value === 'aim') return selectedId.value ? 'Sua vez: arraste para trás em qualquer ponto da arena e solte para disparar.' : 'Escolha um pin abaixo.';
+  if (phase.value === 'aim') return selectedId.value ? 'Sua vez: arraste para trás em qualquer ponto da arena e solte.' : 'Escolha um pin abaixo.';
   if (phase.value === 'rolling') return rollOwner === 'me' ? 'Seu pin está rolando…' : 'O adversário disparou…';
+  if (phase.value === 'over' && result.value) return result.value.won ? 'Partida encerrada: você venceu.' : 'Partida encerrada.';
   return message.value;
 });
 
@@ -878,7 +879,52 @@ const legend = [
 ];
 const floorLegend = computed(() => floorMarks.value.map((k) => ({ key: k, name: TERRAIN_LABELS_PT[k], hint: MARK_HINT_PT[k] })));
 
-function setFlag(key: 'shrink' | 'sound' | 'haptics', on: boolean): void {
+const MAX_MINE = MAX_PER_SIDE[0];
+const MAX_ENEMY = MAX_PER_SIDE[1];
+const sideRows = computed(() => {
+  const byId = new Map(cards.value.map((c) => [c.id, c]));
+  const slots = (ids: string[], max: number): (CachedCard | null)[] => Array.from({ length: max }, (_, i) => byId.get(ids[i] ?? '') ?? null);
+  return [
+    { role: 'mine', label: 'Você', slots: slots(setup.value.mine, MAX_MINE) },
+    { role: 'enemy', label: 'Adversários', slots: slots(setup.value.enemy, MAX_ENEMY) },
+  ];
+});
+
+type OptionKey = 'shrink' | 'sound' | 'haptics' | 'marks';
+const optionRows: { key: OptionKey; title: string; hint: string }[] = [
+  { key: 'shrink', title: 'Borda que encolhe', hint: 'Depois da 1ª rodada a arena diminui: uma linha tracejada avisa onde a borda vai parar.' },
+  { key: 'marks', title: 'Marcas no chão', hint: 'Golpes elementais e Pancada mudam o chão (gelo, lama, poças…) e o chão reage.' },
+  { key: 'sound', title: 'Sons', hint: 'Disparo, choques, chão que reage, quedas e fim da partida.' },
+  { key: 'haptics', title: 'Vibração', hint: 'Só em celulares que deixam o navegador vibrar (iPhone não).' },
+];
+const optionsSummary = computed(() => {
+  const on = optionRows.filter((o) => setup.value[o.key]).length;
+  return on === optionRows.length ? 'tudo ligado' : on === 0 ? 'tudo desligado' : `${on} de ${optionRows.length} ligadas`;
+});
+
+/** A frase ao lado do botão Começar: o que falta ou o que vai acontecer. */
+const startNote = computed(() => {
+  if (blocker.value && usable.value.length > 0) return blocker.value;
+  if (usable.value.length === 0) return 'Escaneie cartas para ter pins.';
+  return `${setup.value.mine.length} seus contra ${setup.value.enemy.length} adversários · ${DIFFICULTY_LABELS_PT[setup.value.difficulty]}`;
+});
+
+/** De quem é a vez, para colorir a faixa de aviso. */
+const turnTone = computed(() => {
+  if (phase.value === 'aim') return 'mine';
+  if (phase.value === 'rolling') return rollOwner === 'me' ? 'mine' : 'enemy';
+  if (phase.value === 'enemy') return 'enemy';
+  return '';
+});
+
+const moveNote = computed(() => {
+  const pin = selectedPin.value;
+  if (!pin) return '';
+  const base = selectedMove.value === null ? 'Disparo normal: empurra pelo peso e pela velocidade.' : (pin.moves.find((m) => m.index === selectedMove.value)?.hint ?? '');
+  return pin.estimated ? `${base} (sem todos os dados: valores neutros)` : base;
+});
+
+function setFlag(key: OptionKey, on: boolean): void {
   setup.value = { ...setup.value, [key]: on };
   saveSetup(setup.value);
 }
@@ -894,47 +940,41 @@ function setMarks(on: boolean): void {
     <h2 id="pins-title" class="sr-only">Pin Mode</h2>
 
     <template v-if="phase === 'setup' || phase === 'loading'">
-      <div class="card pins-intro">
-        <h2>Pin Mode</h2>
-        <p class="note">
-          Vista de cima, sem câmera. Seus Pokémon viram pinos: puxe para trás, solte e empurre todos os adversários para fora da arena.
-          Peso, atributos, velocidade e tipos mudam como cada um se move e empurra.
+      <header class="pn-hero">
+        <div>
+          <h2>Pin Mode</h2>
+          <p>Vista de cima, sem câmera: puxe para trás, solte e empurre os adversários para fora da arena.</p>
+        </div>
+        <p class="pn-energy" :title="'Cada disparo gasta a energia do pin escolhido (de 5 a 40). Ela sobe com o seu XP.'">
+          <span class="bolt" aria-hidden="true"></span><strong>{{ energy }}</strong><small>energia</small>
         </p>
-        <p class="energy-line"><span class="bolt" aria-hidden="true"></span><strong>{{ energy }}</strong> de energia</p>
-        <p class="note">
-          A energia sobe junto com o seu XP (na mesma quantia) e cada disparo gasta a energia do pin escolhido: de 5 (fraco) a 40 (forte).
-          Sem energia? Escaneie cartas ou jogue os <a :href="routeHref('treinador')">minigames</a>.
-        </p>
+      </header>
+
+      <section class="pn-card pn-teams" aria-label="Equipes">
+        <div v-for="side in sideRows" :key="side.role" class="pn-side" :class="side.role">
+          <p class="pn-side-name">{{ side.label }} <b>{{ side.slots.filter(Boolean).length }}/{{ side.slots.length }}</b></p>
+          <ul class="pn-slots">
+            <li v-for="(slot, i) in side.slots" :key="i">
+              <button v-if="slot" type="button" class="pn-slot filled" :title="`Tirar ${slot.name}`" :aria-label="`Tirar ${slot.name} de ${side.label}`" @click="choose(slot, null)">
+                <img v-if="thumbs[slot.id]" :src="thumbs[slot.id]" alt="" />
+              </button>
+              <span v-else class="pn-slot empty" aria-hidden="true"></span>
+            </li>
+          </ul>
+        </div>
         <div class="diff" role="group" aria-label="Dificuldade do adversário">
           <button v-for="d in DIFFICULTIES" :key="d" type="button" :class="{ on: setup.difficulty === d }" :aria-pressed="setup.difficulty === d" @click="setDifficulty(d)">{{ DIFFICULTY_LABELS_PT[d] }}</button>
         </div>
-        <label class="check-line">
-          <input type="checkbox" :checked="setup.shrink" @change="setFlag('shrink', ($event.target as HTMLInputElement).checked)" />
-          <span>Borda que encolhe <small>Depois da 1ª rodada a arena diminui: uma linha tracejada avisa onde a borda vai parar, e quem estiver fora cai.</small></span>
-        </label>
-        <label class="check-line">
-          <input type="checkbox" :checked="setup.sound" @change="setFlag('sound', ($event.target as HTMLInputElement).checked)" />
-          <span>Sons <small>Disparo, choques, chão que reage, quedas e fim da partida.</small></span>
-        </label>
-        <label class="check-line">
-          <input type="checkbox" :checked="setup.haptics" @change="setFlag('haptics', ($event.target as HTMLInputElement).checked)" />
-          <span>Vibração <small>Só em celulares que deixam o navegador vibrar (iPhone não).</small></span>
-        </label>
-        <label class="check-line">
-          <input type="checkbox" :checked="setup.marks" @change="setMarks(($event.target as HTMLInputElement).checked)" />
-          <span>Marcas no chão <small>Golpes elementais e Pancada mudam o chão (gelo, lama, poças…) e o chão reage.</small></span>
-        </label>
-      </div>
+      </section>
 
-      <div class="card">
-        <h2>Escolha os pins</h2>
-        <p class="meta" role="status">Seus pins {{ setup.mine.length }}/{{ MAX_PER_SIDE[0] }} · Adversários {{ setup.enemy.length }}/{{ MAX_PER_SIDE[1] }}</p>
+      <section class="pn-card pn-pick">
+        <h3>Escolha os pins</h3>
         <p v-if="loadingCards" class="message">Lendo as cartas guardadas…</p>
         <p v-else-if="usable.length === 0" class="message">Nenhuma carta guardada com Pokémon ainda. <a :href="routeHref('escanear')">Escaneie uma carta</a> para ter pins.</p>
         <template v-else>
-          <div class="team-tools">
+          <div class="pn-tools">
             <input v-model="search" type="text" placeholder="Buscar por nome ou coleção" aria-label="Buscar carta" autocomplete="off" />
-            <button type="button" class="link" @click="useRecent">Usar as mais recentes</button>
+            <button type="button" class="pn-link" @click="useRecent">Mais recentes</button>
           </div>
           <ul class="pin-rows">
             <li v-for="card in shown" :key="card.id" :class="roleOf(setup, card.id) ?? ''">
@@ -950,41 +990,57 @@ function setMarks(on: boolean): void {
                 </small>
               </span>
               <span class="row-roles" role="group" :aria-label="`Papel de ${card.name}`">
-                <button type="button" :class="{ on: roleOf(setup, card.id) === 'mine' }" :aria-pressed="roleOf(setup, card.id) === 'mine'" title="Seu pin" @click="choose(card, roleOf(setup, card.id) === 'mine' ? null : 'mine')">Meu</button>
-                <button type="button" :class="{ on: roleOf(setup, card.id) === 'enemy' }" :aria-pressed="roleOf(setup, card.id) === 'enemy'" title="Adversário" @click="choose(card, roleOf(setup, card.id) === 'enemy' ? null : 'enemy')">Inimigo</button>
+                <button type="button" class="r-mine" :class="{ on: roleOf(setup, card.id) === 'mine' }" :aria-pressed="roleOf(setup, card.id) === 'mine'" title="Seu pin" @click="choose(card, roleOf(setup, card.id) === 'mine' ? null : 'mine')">Meu</button>
+                <button type="button" class="r-enemy" :class="{ on: roleOf(setup, card.id) === 'enemy' }" :aria-pressed="roleOf(setup, card.id) === 'enemy'" title="Adversário" @click="choose(card, roleOf(setup, card.id) === 'enemy' ? null : 'enemy')">Inimigo</button>
               </span>
             </li>
           </ul>
         </template>
         <p v-if="notice" class="message" role="alert">{{ notice }}</p>
-        <p v-else-if="blocker && usable.length > 0" class="note">{{ blocker }}</p>
-        <button type="button" class="primary" :disabled="phase === 'loading' || blocker !== null || loadingCards" @click="start">{{ phase === 'loading' ? 'Preparando a arena…' : 'Começar' }}</button>
-      </div>
+      </section>
 
-      <div class="card">
-        <h2>O chão da arena</h2>
+      <details class="pn-card pn-opts">
+        <summary>Opções da partida <small>{{ optionsSummary }}</small></summary>
+        <label v-for="o in optionRows" :key="o.key" class="pn-switch">
+          <span class="pn-switch-text"><strong>{{ o.title }}</strong><small>{{ o.hint }}</small></span>
+          <input type="checkbox" role="switch" :checked="setup[o.key]" @change="o.key === 'marks' ? setMarks(($event.target as HTMLInputElement).checked) : setFlag(o.key, ($event.target as HTMLInputElement).checked)" />
+          <i class="pn-knob" aria-hidden="true"></i>
+        </label>
+      </details>
+
+      <details class="pn-card pn-how">
+        <summary>Como funciona o chão</summary>
         <ul class="legend">
           <li v-for="l in legend" :key="l.key"><strong>{{ l.name }}</strong> <small>{{ l.hint }}</small></li>
         </ul>
         <p class="note">
-          Quem passa da borda cai. Um golpe elemental deixa um rastro do tipo dele pelo chão e um borrão grande onde acerta; a Pancada racha o chão.
+          Quem passa da borda cai. Um golpe elemental deixa um rastro do tipo dele e um borrão grande onde acerta; a Pancada racha o chão.
           Cada tipo sente a marca de um jeito (Voador paira, Água não é freada pela poça, Gelo patina no gelo) e, quando um golpe cai sobre outra marca,
-          o chão reage: fogo na poça, água no fogo, gelo no mato… e quem está perto leva um empurrão. Os golpes da carta recarregam conforme a energia do ataque.
+          o chão reage: fogo na poça, água no fogo, gelo no mato… Os golpes da carta recarregam conforme a energia do ataque. Sem energia?
+          Escaneie cartas ou jogue os <a :href="routeHref('treinador')">minigames</a>.
         </p>
+      </details>
+
+      <div class="pn-start">
+        <p class="pn-start-note" :class="{ warn: blocker !== null && usable.length > 0 }">{{ startNote }}</p>
+        <button type="button" class="primary" :disabled="phase === 'loading' || blocker !== null || loadingCards" @click="start">{{ phase === 'loading' ? 'Preparando a arena…' : 'Começar' }}</button>
       </div>
     </template>
 
     <template v-else>
-      <div class="card pins-hud">
+      <div class="pins-hud">
         <p class="hud-line">
-          <span class="bolt" aria-hidden="true"></span><strong>{{ energy }}</strong>
-          <span class="sides"><i style="background: #4da3ff"></i> Você {{ counts.mine }}</span>
-          <span class="sides"><i style="background: #ff5d5d"></i> Adversários {{ counts.enemy }}</span>
-          <span class="sides">Disparos {{ shotCount }}</span>
-          <span v-if="setup.shrink" class="sides" :class="{ warn: borderWarn }">Rodada {{ roundNo }}</span>
+          <span class="pn-chip gold"><span class="bolt" aria-hidden="true"></span><strong>{{ energy }}</strong></span>
+          <span class="pn-score" :aria-label="`Você ${counts.mine}, adversários ${counts.enemy}`">
+            <span class="sides mine"><i></i>{{ counts.mine }}</span>
+            <span class="sides enemy"><i></i>{{ counts.enemy }}</span>
+          </span>
+          <span class="pn-meta sides" :class="{ warn: borderWarn }">{{ setup.shrink ? `Rodada ${roundNo} · ` : '' }}{{ shotCount }} disparo{{ shotCount === 1 ? '' : 's' }}</span>
         </p>
-        <p v-if="borderNote && phase !== 'over'" class="hud-note" :class="{ warn: borderWarn }" role="status">{{ borderWarn ? '⚠ ' : '' }}{{ borderNote }}</p>
-        <p class="hud-hint" role="status">{{ message || phaseHint }}</p>
+        <p class="hud-hint pn-banner" :class="turnTone" role="status">
+          <span>{{ message || phaseHint }}</span>
+          <small v-if="borderNote && phase !== 'over'" class="hud-note" :class="{ warn: borderWarn }">{{ borderWarn ? '⚠ ' : '' }}{{ borderNote }}</small>
+        </p>
       </div>
 
       <div
@@ -999,9 +1055,14 @@ function setMarks(on: boolean): void {
         <canvas ref="canvasEl" role="img" aria-label="Arena vista de cima com os pins"></canvas>
         <div ref="spriteLayer" class="pin-sprites" aria-hidden="true"></div>
         <button v-if="replaying" type="button" class="pin-skip" @click.stop="stopReplay">Pular repetição</button>
-        <div v-if="phase === 'over' && result && !replaying" class="pin-over" role="dialog" aria-label="Fim da partida">
+        <div v-if="phase === 'over' && result && !replaying" class="pin-over" :class="result.won ? 'won' : 'lost'" role="dialog" aria-label="Fim da partida">
+          <span class="pn-over-mark" aria-hidden="true">{{ result.won ? '★' : result.reason === 'energia' ? '⚡' : '✕' }}</span>
           <strong>{{ result.won ? 'Você venceu!' : result.reason === 'energia' ? 'Acabou a energia' : 'Você perdeu' }}</strong>
-          <p v-if="result.won">Todos os adversários caíram em {{ result.shots }} disparo{{ result.shots === 1 ? '' : 's' }}. Nota {{ result.score }}.</p>
+          <p class="pn-over-stats">
+            <span>{{ result.shots }} disparo{{ result.shots === 1 ? '' : 's' }}</span>
+            <span v-if="result.won">nota {{ result.score }}</span>
+          </p>
+          <p v-if="result.won">Todos os adversários caíram.</p>
           <p v-else-if="result.reason === 'energia'">Nenhum pin seu cabe na energia que sobrou. Ganhe XP escaneando cartas ou jogando <a :href="routeHref('treinador')">minigames</a>.</p>
           <p v-else>Seus pins caíram todos da arena.</p>
           <div class="game-actions">
@@ -1016,9 +1077,8 @@ function setMarks(on: boolean): void {
         <span v-for="l in floorLegend" :key="l.key" :title="l.hint">{{ l.name }}</span>
       </p>
 
-      <div class="card pins-tray">
-        <h2>Seus pins <small class="count">custa energia a cada disparo</small></h2>
-        <ul class="tray">
+      <div class="pins-tray">
+        <ul class="tray" aria-label="Seus pins">
           <li v-for="p in tray" :key="p.id" :class="{ on: p.selected, dim: !p.affordable }">
             <button type="button" class="tray-pin" :disabled="phase !== 'aim' || !p.affordable" :aria-pressed="p.selected" @click="selectPin(p.id)">
               <span class="chip-token" aria-hidden="true"><img v-if="p.thumb" :src="p.thumb" alt="" /></span>
@@ -1028,8 +1088,7 @@ function setMarks(on: boolean): void {
           </li>
         </ul>
         <div v-if="selectedPin" class="moves">
-          <p class="meta">Disparo de {{ selectedPin.name }}<template v-if="selectedPin.estimated"> (sem todos os dados: valores neutros)</template></p>
-          <div class="move-list" role="group" aria-label="Golpe do disparo">
+          <div class="move-list" role="group" :aria-label="`Golpe do disparo de ${selectedPin.name}`">
             <button type="button" :class="{ on: selectedMove === null }" :aria-pressed="selectedMove === null" :disabled="phase !== 'aim'" @click="selectMove(null)">
               <strong>Normal</strong><small>Sem golpe</small>
             </button>
@@ -1037,7 +1096,7 @@ function setMarks(on: boolean): void {
               v-for="m in selectedPin.moves"
               :key="m.index"
               type="button"
-              :class="{ on: selectedMove === m.index }"
+              :class="{ on: selectedMove === m.index, cooling: m.remaining > 0 }"
               :aria-pressed="selectedMove === m.index"
               :disabled="phase !== 'aim' || m.remaining > 0"
               :title="m.hint"
@@ -1045,11 +1104,11 @@ function setMarks(on: boolean): void {
             >
               <strong>{{ m.name }}</strong>
               <small>{{ m.label }}</small>
-              <small v-if="m.remaining > 0" class="cd">recarrega em {{ m.remaining }} disparo{{ m.remaining === 1 ? '' : 's' }}</small>
-              <small v-else class="cd">recarga {{ m.energy.length }} · {{ m.energy.join(', ') || 'sem energia' }}</small>
+              <small v-if="m.remaining > 0" class="cd">recarrega em {{ m.remaining }}</small>
+              <small v-else class="cd">recarga {{ m.energy.length }}</small>
             </button>
           </div>
-          <p v-if="selectedPin.moves.length === 0" class="note">Esta carta não trouxe ataques (sem dados do TCGdex): só o disparo normal.</p>
+          <p class="pn-move-note">{{ moveNote }}</p>
         </div>
       </div>
     </template>
