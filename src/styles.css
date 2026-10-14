@@ -2461,6 +2461,8 @@ body.no-scroll .reward-toasts {
 /* ---------------------------------------------------------------- Pin Mode */
 
 .pins {
+  --mine: #4da3ff;
+  --enemy: #ff5d5d;
   display: grid;
   gap: 12px;
 }
@@ -2475,62 +2477,219 @@ body.no-scroll .reward-toasts {
   clip-path: polygon(55% 0, 12% 56%, 44% 56%, 36% 100%, 88% 38%, 54% 38%);
 }
 
-.energy-line {
+.cost {
+  color: var(--gold, #ffd23f);
+  font-weight: 800;
+}
+
+.type-dot {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin: 0 3px 0 4px;
+  border-radius: 50%;
+}
+
+/* ---- Montagem da partida */
+
+.pn-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 4px 0;
+}
+
+.pn-hero h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  line-height: 1.1;
+}
+
+.pn-hero p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.pn-hero .pn-energy {
+  flex: none;
+  display: grid;
+  justify-items: end;
+  margin: 0;
+  color: var(--text);
+}
+
+.pn-energy strong {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.pn-energy small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.pn-card {
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.pn-card h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+/* Equipes: as fichas já escolhidas ficam à vista; toque numa ficha para tirá-la. */
+.pn-teams {
+  display: grid;
+  gap: 12px;
+}
+
+.pn-side-name {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.pn-side.mine .pn-side-name {
+  color: var(--mine);
+}
+
+.pn-side.enemy .pn-side-name {
+  color: var(--enemy);
+}
+
+.pn-side-name b {
+  margin-left: 4px;
+  color: var(--text);
+}
+
+.pn-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pn-side.mine {
+  --team: var(--mine);
+}
+
+.pn-side.enemy {
+  --team: var(--enemy);
+}
+
+.pn-slot {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 50%;
+  border: 3px solid var(--team);
+}
+
+.pn-slot.filled {
+  background: radial-gradient(circle at 50% 40%, #f4f8ff, #b8c6e0);
+  cursor: pointer;
+}
+
+.pn-slot.filled img {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.pn-slot.empty {
+  border: 2px dashed color-mix(in srgb, var(--team) 45%, transparent);
+  background: transparent;
 }
 
 .diff {
   display: flex;
-  gap: 6px;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface-2);
 }
 
 .diff button {
   flex: 1;
-  min-height: 40px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid var(--line);
-  background: var(--surface-2);
-  color: var(--text);
+  min-height: 36px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
   font: inherit;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .diff button.on {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.pn-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pn-tools input {
+  flex: 1;
+  min-width: 0;
+}
+
+.pn-link {
+  flex: none;
+  padding: 8px 4px;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.85rem;
 }
 
 .pin-rows {
   list-style: none;
-  margin: 8px 0;
+  margin: 8px 0 0;
   padding: 0;
   display: grid;
   gap: 6px;
-  max-height: 52vh;
-  overflow-y: auto;
 }
 
 .pin-rows li {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
+  gap: 10px;
+  padding: 6px 8px;
   border-radius: var(--radius-sm);
   border: 1.5px solid transparent;
+  background: var(--surface-2);
 }
 
 .pin-rows li.mine {
-  --team: #4da3ff;
+  --team: var(--mine);
   border-color: var(--team);
-  background: color-mix(in srgb, var(--team) 12%, transparent);
+  background: color-mix(in srgb, var(--team) 14%, var(--surface-2));
 }
 
 .pin-rows li.enemy {
-  --team: #ff5d5d;
+  --team: var(--enemy);
   border-color: var(--team);
-  background: color-mix(in srgb, var(--team) 12%, transparent);
+  background: color-mix(in srgb, var(--team) 14%, var(--surface-2));
 }
 
 /* A mesma ficha redonda do jogo: borda da equipe (azul = você, vermelha = adversário) e o GIF no centro. */
@@ -2542,7 +2701,6 @@ body.no-scroll .reward-toasts {
   height: 44px;
   overflow: hidden;
   border-radius: 50%;
-  box-sizing: border-box;
   border: 3px solid var(--team, var(--line));
   background: radial-gradient(circle at 50% 40%, #f4f8ff, #b8c6e0);
 }
@@ -2564,79 +2722,323 @@ body.no-scroll .reward-toasts {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
 }
 
 .row-text small {
   color: var(--muted);
   font-size: 0.74rem;
-}
-
-.cost {
-  color: var(--gold, #ffd23f);
-  font-weight: 800;
-}
-
-.type-dot {
-  display: inline-block;
-  width: 0.6em;
-  height: 0.6em;
-  margin: 0 3px 0 4px;
-  border-radius: 50%;
+  line-height: 1.3;
 }
 
 .row-roles {
   display: inline-flex;
-  gap: 4px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .row-roles button {
-  min-height: 36px;
-  padding: 0 9px;
-  border-radius: 8px;
-  border: 1.5px solid var(--line);
-  background: var(--surface-2);
-  color: var(--text);
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 700;
 }
 
-.row-roles button.on {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 25%, var(--surface-2));
+.row-roles button.on.r-mine {
+  background: var(--mine);
+  color: #07142b;
 }
 
-.check-line {
+.row-roles button.on.r-enemy {
+  background: var(--enemy);
+  color: #2b0707;
+}
+
+.pn-opts,
+.pn-how {
+  padding: 0;
+}
+
+.pn-opts summary,
+.pn-how summary {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 10px;
-  margin: 10px 0 0;
-  font-size: 0.9rem;
+  padding: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
 }
 
-.check-line input {
-  margin-top: 3px;
-  width: 20px;
-  height: 20px;
-  flex: none;
-  accent-color: var(--accent);
+.pn-opts summary::-webkit-details-marker,
+.pn-how summary::-webkit-details-marker {
+  display: none;
 }
 
-.check-line small {
-  display: block;
+.pn-opts summary::after,
+.pn-how summary::after {
+  content: '▾';
+  margin-left: auto;
   color: var(--muted);
-  font-size: 0.78rem;
+  transition: transform 0.15s;
 }
 
-.hud-note {
-  margin: 4px 0 0;
+.pn-opts[open] summary::after,
+.pn-how[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.pn-opts summary small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.pn-opts[open] summary,
+.pn-how[open] summary {
+  padding-bottom: 6px;
+}
+
+.pn-how > :not(summary) {
+  margin-left: 14px;
+  margin-right: 14px;
+}
+
+.pn-how > :last-child {
+  margin-bottom: 14px;
+}
+
+.pn-switch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 14px;
+}
+
+.pn-switch-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.pn-switch-text small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+
+.pn-switch input {
+  position: absolute;
+  right: 14px;
+  width: 46px;
+  height: 28px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.pn-knob {
+  flex: none;
+  position: relative;
+  width: 46px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1.5px solid var(--line);
+  transition: background 0.15s;
+}
+
+.pn-knob::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.pn-switch input:checked ~ .pn-knob {
+  background: color-mix(in srgb, var(--ok) 30%, var(--surface-2));
+  border-color: var(--ok);
+}
+
+.pn-switch input:checked ~ .pn-knob::after {
+  transform: translateX(18px);
+  background: var(--ok);
+}
+
+.pn-switch input:focus-visible ~ .pn-knob {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.legend {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.legend small {
+  color: var(--muted);
+}
+
+/* O botão Começar fica sempre à mão, logo acima da barra de abas. */
+.pn-start {
+  position: sticky;
+  bottom: calc(var(--nav-height) + 10px + env(safe-area-inset-bottom));
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.pn-start-note {
+  flex: 1;
+  margin: 0;
   font-size: 0.82rem;
   color: var(--muted);
 }
 
-.hud-note.warn,
+.pn-start-note.warn {
+  color: #ffb35c;
+}
+
+.pn-start .primary {
+  flex: none;
+  min-width: 118px;
+}
+
+/* ---- Partida */
+
+.pins-hud {
+  display: grid;
+  gap: 8px;
+}
+
+.hud-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0;
+}
+
+.pn-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.pn-chip.gold {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.pn-chip .bolt {
+  margin-right: 4px;
+}
+
+.pn-chip.warn,
 .sides.warn {
+  color: #ffb35c;
+  border-color: #ffb35c;
+}
+
+.pn-score {
+  display: inline-flex;
+  gap: 10px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.pn-meta {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.sides {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.pn-score .sides.mine {
+  color: var(--mine);
+}
+
+.pn-score .sides.enemy {
+  color: var(--enemy);
+}
+
+.pn-score .sides i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.pn-banner {
+  margin: 0;
+  min-height: 3.2em;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border-left: 4px solid var(--line);
+  background: var(--surface);
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.pn-banner.mine {
+  border-left-color: var(--mine);
+  background: color-mix(in srgb, var(--mine) 12%, var(--surface));
+}
+
+.pn-banner.enemy {
+  border-left-color: var(--enemy);
+  background: color-mix(in srgb, var(--enemy) 12%, var(--surface));
+}
+
+.hud-note {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.hud-note.warn {
   color: #ffb35c;
 }
 
@@ -2655,68 +3057,10 @@ body.no-scroll .reward-toasts {
   font-size: 0.8rem;
 }
 
-.floor-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-  margin: 8px 2px;
-  font-size: 0.72rem;
-}
-
-.floor-legend span {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--muted);
-}
-
-.legend {
-  list-style: none;
-  margin: 0 0 8px;
-  padding: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.legend small {
-  color: var(--muted);
-}
-
-.pins-hud {
-  padding: 10px 14px;
-}
-
-.hud-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 14px;
-  margin: 0;
-}
-
-.hud-line .sides {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-.hud-line .sides i {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-.hud-hint {
-  margin: 4px 0 0;
-  min-height: 1.3em;
-  font-size: 0.88rem;
-}
-
+/* A arena é quadrada e nunca passa da altura que sobra na tela, para o dock caber junto. */
 .pin-stage {
   position: relative;
-  width: min(100%, 560px);
+  width: min(100%, 560px, max(260px, calc(100dvh - 470px)));
   aspect-ratio: 1;
   margin: 0 auto;
   border-radius: var(--radius);
@@ -2725,6 +3069,7 @@ body.no-scroll .reward-toasts {
   user-select: none;
   -webkit-user-select: none;
   background: #0d162e;
+  box-shadow: 0 0 0 2px var(--line);
 }
 
 .pin-stage.aiming {
@@ -2777,81 +3122,203 @@ body.no-scroll .reward-toasts {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 8px;
-  padding: 20px;
+  gap: 6px;
+  padding: 18px;
   text-align: center;
-  background: rgba(8, 12, 26, 0.82);
+  background: rgba(8, 12, 26, 0.86);
+}
+
+.pn-over-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  font-weight: 800;
+  background: var(--tone);
+  color: #10131f;
+}
+
+.pin-over.won {
+  --tone: var(--gold);
+}
+
+.pin-over.lost {
+  --tone: var(--enemy);
 }
 
 .pin-over strong {
   font-family: var(--font-display);
   font-size: 1.5rem;
+  line-height: 1.1;
+  color: var(--tone);
 }
 
 .pin-over p {
   margin: 0;
+  font-size: 0.9rem;
+}
+
+.pn-over-stats {
+  display: flex;
+  gap: 8px;
+}
+
+.pn-over-stats span {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.pin-over .game-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: min(100%, 300px);
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.pin-over .game-actions .primary {
+  grid-column: 1 / -1;
+}
+
+.pin-over .game-actions button {
+  min-height: 42px;
+  padding: 0 8px;
+  font-size: 0.85rem;
+}
+
+.floor-legend {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  font-size: 0.72rem;
+}
+
+.floor-legend::-webkit-scrollbar {
+  display: none;
+}
+
+.floor-legend span {
+  flex: none;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+/* O dock: os seus pins numa fileira e, abaixo, os golpes do pin escolhido. Rolam para o lado. */
+.pins-tray {
+  display: grid;
+  gap: 8px;
 }
 
 .tray {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 2px 2px 4px;
   list-style: none;
-  margin: 8px 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 6px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.tray::-webkit-scrollbar {
+  display: none;
+}
+
+.tray li {
+  flex: none;
+  scroll-snap-align: start;
 }
 
 .tray-pin {
   display: grid;
-  justify-items: center;
-  gap: 1px;
-  width: 100%;
-  padding: 6px 4px;
+  grid-template-columns: 34px auto;
+  grid-template-areas: 'token name' 'token cost';
+  align-items: center;
+  justify-items: start;
+  column-gap: 8px;
+  min-width: 118px;
+  padding: 6px 10px 6px 7px;
   border-radius: var(--radius-sm);
   border: 1.5px solid var(--line);
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
   font: inherit;
 }
 
 .tray li.on .tray-pin {
-  border-color: #ffec78;
-  background: color-mix(in srgb, #ffec78 16%, var(--surface-2));
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 14%, var(--surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 35%, transparent);
 }
 
 .tray li.dim .tray-pin {
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
 .tray li .chip-token {
-  --team: #4da3ff;
+  --team: var(--mine);
+  grid-area: token;
+  width: 34px;
+  height: 34px;
+  border-width: 2.5px;
+}
+
+.tray-pin .cost {
+  grid-area: cost;
+  font-size: 0.8rem;
+  line-height: 1.1;
 }
 
 .tray-name {
-  max-width: 100%;
+  grid-area: name;
+  max-width: 84px;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
+}
+
+.moves {
+  display: grid;
+  gap: 4px;
 }
 
 .move-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
   gap: 6px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.move-list::-webkit-scrollbar {
+  display: none;
 }
 
 .move-list button {
+  flex: none;
   display: grid;
   gap: 1px;
+  min-width: 108px;
+  max-width: 150px;
   text-align: left;
-  min-height: 52px;
-  padding: 6px 8px;
+  padding: 7px 10px;
   border-radius: var(--radius-sm);
   border: 1.5px solid var(--line);
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
   font: inherit;
+  font-size: 0.85rem;
 }
 
 .move-list button small {
@@ -2861,13 +3328,37 @@ body.no-scroll .reward-toasts {
 
 .move-list button.on {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
 }
 
 .move-list button:disabled:not(.on) {
   opacity: 0.55;
 }
 
+.move-list button.cooling {
+  border-style: dashed;
+}
+
 .move-list .cd {
   color: var(--gold, #ffd23f);
+}
+
+.pn-move-note {
+  margin: 0;
+  min-height: 1.3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pn-knob,
+  .pn-knob::after,
+  .pn-opts summary::after,
+  .pn-how summary::after {
+    transition: none;
+  }
 }

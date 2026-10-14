@@ -38,8 +38,9 @@ describe('caixa longe da câmera', () => {
   it('a distância mínima cresce com o tamanho da caixa e deixa uma folga até a borda', () => {
     expect(minBoxDistance(1.2)).toBeCloseTo(1.2 * Math.SQRT2 + BOX_NEAR_GAP_M, 9);
     expect(minBoxDistance(2)).toBeGreaterThan(minBoxDistance(1));
-    // A caixa padrão (2,4 m de lado) fica a mais de 3 m do celular.
-    expect(minBoxDistance(1.2)).toBeGreaterThan(3);
+    // A caixa padrão (2,4 m de lado) fica a mais de 2,4 m do celular, com 0,8 m de folga até a borda mais próxima.
+    expect(minBoxDistance(1.2)).toBeGreaterThan(2.4);
+    expect(BOX_NEAR_GAP_M).toBeLessThan(1);
   });
 
   it('afasta, na mesma direção, um ponto que ficou perto demais', () => {

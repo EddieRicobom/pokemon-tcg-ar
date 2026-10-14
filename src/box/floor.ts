@@ -24,7 +24,7 @@ export function intersectFloor(direction: Vector3, phoneHeight: number = DEFAULT
 }
 
 /** Folga mínima (m) entre a câmera e a borda mais próxima da caixa: ela nunca nasce colada em quem segura o celular. */
-export const BOX_NEAR_GAP_M = 1.5;
+export const BOX_NEAR_GAP_M = 0.8;
 
 /** Distância horizontal mínima do centro da caixa até a câmera, para uma caixa de meio-lado `half` (o quadrado pode estar girado: usa a diagonal). */
 export function minBoxDistance(half: number): number {
