@@ -1,6 +1,6 @@
 # Testes
 
-Estado em 2026-10-14: 84 arquivos de teste, 866 testes unitários, todos passando. **Nenhum teste automatizado substitui um celular de verdade** (câmera, GPU, sensores e desempenho reais).
+Estado em 2026-10-14: 87 arquivos de teste, 887 testes unitários, todos passando. **Nenhum teste automatizado substitui um celular de verdade** (câmera, GPU, sensores e desempenho reais).
 
 ## O que roda a cada pull request e a cada deploy
 
@@ -49,3 +49,7 @@ O WebGL real não roda no happy-dom: a lógica é mantida pura e testada; a cola
 ## Roteiro manual
 
 O passo a passo em aparelho real está em [TESTE_NO_CELULAR.md](TESTE_NO_CELULAR.md). Registre aparelho, navegador, o que passou e o que falhou (no pull request ou numa issue).
+
+## PvP: sala por código de 5 dígitos
+
+Os testes unitários usam um broker em memória (`src/pvp/test-helpers.ts`) e ligações falsas. Para testar com dois navegadores de verdade sem depender dos brokers públicos (inalcançáveis do sandbox), suba um broker MQTT por WebSocket local (por exemplo `aedes` + `websocket-stream` numa pasta fora do projeto, porta 18830) e, em cada contexto do Playwright, grave antes de abrir a página `localStorage['pins-pvp-brokers'] = '["ws://127.0.0.1:18830"]'`. Os brokers públicos (EMQX, HiveMQ, Mosquitto) só se validam em aparelho real, com internet.
