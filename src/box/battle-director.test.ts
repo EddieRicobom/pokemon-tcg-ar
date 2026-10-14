@@ -541,3 +541,89 @@ describe('sons da batalha', () => {
     expect(() => run(scene, 8000)).not.toThrow();
   });
 });
+
+describe('modos de batalha na cena', () => {
+  function play(n: number, plan: { picks: number[]; teams?: number[]; relay?: boolean }, seed = 5) {
+    const scene = ready(n);
+    const cues: SoundCue[] = [];
+    scene.setSound({ play: (c) => cues.push(c) });
+    const team = fighters(plan.picks.length);
+    const result = scene.startBattle(team, seededRng(seed), plan);
+    const total = INTRO_MAX_MS + result.turns.reduce((sum, t) => sum + turnDuration(t, team[t.attacker]!.personality), 0) * 1.3 + 3000;
+    return { scene, cues, team, result, total };
+  }
+
+  it('equipes: cada uma de um lado, placar e faixa de vitória pela equipe', () => {
+    const { scene, result, total, team } = play(4, { picks: [0, 1, 2, 3], teams: [0, 1, 0, 1] });
+    const hud0 = scene.battleHud!;
+    expect(hud0.banner?.text).toBe('Batalha de equipes!');
+    expect(hud0.scoreboard?.map((s) => [s.alive, s.total])).toEqual([[2, 2], [2, 2]]);
+    expect(hud0.bars.map((b) => b.team)).toEqual([0, 1, 0, 1]);
+    expect(hud0.bars.every((b) => b.teamColor !== null && !b.reserve)).toBe(true);
+    run(scene, total);
+    const hud = scene.battleHud!;
+    expect(hud.phase).toBe('finished');
+    expect(hud.banner?.text).toBe(`${hud.winner?.teamName} venceu!`);
+    expect(hud.winner?.team).toBe(result.winningTeam);
+    expect(hud.winner?.id).toBe(team[result.winner]!.id);
+    const winners = hud.scoreboard!.find((s) => s.team === result.winningTeam)!;
+    expect(winners.alive).toBeGreaterThan(0);
+    expect(hud.scoreboard!.find((s) => s.team !== result.winningTeam)!.alive).toBe(0);
+    // Posições: equipe 0 à esquerda, equipe 1 à direita.
+    const homeX = [0, 1, 2, 3].map((i) => scene.creatureList[i] && (scene as unknown as { director: { homePosition(i: number): { x: number } } }).director.homePosition(i).x);
+    expect(homeX[0]!).toBeLessThan(0);
+    expect(homeX[2]!).toBeLessThan(0);
+    expect(homeX[1]!).toBeGreaterThan(0);
+    expect(homeX[3]!).toBeGreaterThan(0);
+  });
+
+  it('3x3: reservas esperam no banco, entram quando o da frente cai e tocam o som de entrada', () => {
+    const { scene, cues, result, total } = play(6, { picks: [0, 1, 2, 3, 4, 5], teams: [0, 1, 0, 1, 0, 1], relay: true });
+    const hud0 = scene.battleHud!;
+    expect(hud0.banner?.text).toBe('3 contra 3!');
+    expect(hud0.bars.filter((b) => b.reserve)).toHaveLength(4);
+    expect(hud0.bars.filter((b) => !b.reserve).map((b) => b.team).sort()).toEqual([0, 1]);
+    const enters = result.turns.filter((t) => t.kind === 'enter');
+    run(scene, total);
+    expect(cues.filter((c) => c.kind === 'enter')).toHaveLength(enters.length);
+    const hud = scene.battleHud!;
+    expect(hud.phase).toBe('finished');
+    expect(hud.bars.some((b) => b.reserve)).toBe(false);
+    expect(hud.banner?.text).toContain('venceu');
+    hud.bars.forEach((bar, i) => expect(bar.hp).toBe(result.hpLeft[i]));
+  });
+
+  it('3x3: quem entra vai para o centro da equipe e só dois agem por vez', () => {
+    const { scene, result, total } = play(6, { picks: [0, 1, 2, 3, 4, 5], teams: [0, 0, 0, 1, 1, 1], relay: true }, 8);
+    const enter = result.turns.find((t) => t.kind === 'enter');
+    expect(enter).toBeDefined();
+    run(scene, total);
+    const director = (scene as unknown as { director: { homePosition(i: number): { x: number; z: number } } }).director;
+    const spot = director.homePosition(enter!.attacker);
+    expect(Math.abs(spot.x)).toBeLessThan(0.5);
+    expect(spot.z).toBe(0);
+  });
+
+  it('com mais Pokémon na caixa que no plano, os de fora ficam escondidos e voltam depois', () => {
+    const scene = ready(8);
+    const team = fighters(6);
+    const plan = { picks: [1, 2, 3, 4, 5, 6], teams: [0, 1, 0, 1, 0, 1], relay: true };
+    scene.startBattle(team, seededRng(4), plan);
+    run(scene, 200);
+    const list = scene.creatureList;
+    expect(list[0]!.group.visible).toBe(false);
+    expect(list[7]!.group.visible).toBe(false);
+    expect(list[3]!.group.visible).toBe(true);
+    scene.stopBattle();
+    run(scene, 100);
+    expect(list.every((c) => c.group.visible)).toBe(true);
+  });
+
+  it('sem plano a batalha continua sendo de todos contra todos, sem placar', () => {
+    const scene = ready(3);
+    scene.startBattle(fighters(3), seededRng(5));
+    const hud = scene.battleHud!;
+    expect(hud.scoreboard).toBeNull();
+    expect(hud.bars.every((b) => b.team === null && !b.reserve)).toBe(true);
+  });
+});

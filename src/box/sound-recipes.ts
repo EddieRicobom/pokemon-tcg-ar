@@ -11,6 +11,7 @@ import type { PhysicalStyle, SpecialDelivery } from './effects';
 export type SoundCue =
   | { kind: 'intro' }
   | { kind: 'go' }
+  | { kind: 'enter' }
   | { kind: 'charge'; type: PokemonType; ranged: boolean; ms: number }
   | { kind: 'launch'; type: PokemonType; melee?: PhysicalStyle; delivery?: SpecialDelivery; ms: number }
   | { kind: 'impact'; type: PokemonType; strength: number; critical: boolean; effectiveness: number; guarded: boolean }
@@ -175,6 +176,9 @@ export function layersFor(cue: SoundCue): Layer[] {
       break;
     case 'go':
       layers = [tone('sine', 220, 110, 0, 0.3, 0.4), noise({ type: 'bandpass', f0: 1200, q: 1 }, 0, 0.15, 0.18)];
+      break;
+    case 'enter':
+      layers = [tone('triangle', 330, 660, 0, 0.22, 0.2), tone('square', 660, 880, 0.14, 0.2, 0.09), noise({ type: 'bandpass', f0: 900, q: 1 }, 0, 0.12, 0.12)];
       break;
     case 'charge':
       layers = chargeOf(cue.type, cue.ranged, cue.ms);

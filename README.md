@@ -12,7 +12,7 @@ Projeto de fã, não oficial. Pokémon e os nomes, imagens e sprites relacionado
 | --- | --- |
 | **Escanear** | Lê a carta pela câmera (detecção do contorno, OCR do número e do nome, busca pela ilustração como reserva), identifica a impressão, guarda no aparelho e mostra o Pokémon em pé sobre ela, com um painel de status no chão (tipo, atributos, ataques da carta, golpes do jogo). Há busca manual por nome e ajuste do Pokémon com os dedos. |
 | **Várias** | Rastreia até 4 cartas da equipe ao mesmo tempo, cada uma com o seu Pokémon. |
-| **Caixa** | Solta a equipe (até 6) num quadrado do chão visto pela câmera, usando o giroscópio. **Batalhar** faz os Pokémon lutarem sozinhos numa arena pequena à frente do olhar, com personalidades, defesa, condições, golpes encenados por tipo, luz e sons dos golpes e câmera de cinema. |
+| **Caixa** | Solta a equipe (até 6) num quadrado do chão visto pela câmera, usando o giroscópio. **Batalhar** faz os Pokémon lutarem sozinhos (todos contra todos, em equipes ou 3 contra 3) numa arena pequena à frente do olhar, com personalidades, defesa, condições, golpes encenados por tipo, luz e sons dos golpes e câmera de cinema. |
 | **Cartas** | As cartas guardadas no aparelho: busca, filtros, ordem, equipe, ver em AR, remover. |
 | **Diagnóstico** | Capacidades do aparelho (HTTPS, câmera, WebGL2, Service Worker), estado do índice do catálogo, cartas guardadas e a última leitura (resultado, confiança, tempos, texto do OCR). Em Escanear, "Mostrar o que o app está vendo" desenha o contorno e as miniaturas. |
 

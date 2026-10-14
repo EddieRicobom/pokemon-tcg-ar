@@ -293,14 +293,14 @@ export const RESIDUAL_FRACTION: Record<'burn' | 'poison', number> = { burn: 1 / 
 
 // --- sequência de eventos
 
-export type TurnKind = 'attack' | 'guard' | 'skip' | 'residual';
+export type TurnKind = 'attack' | 'guard' | 'skip' | 'residual' | 'enter';
 
 export interface BattleTurn extends DamageRoll {
   kind: TurnKind;
   index: number;
   round: number;
   attacker: number;
-  /** Em 'guard', 'skip' e 'residual' é o próprio Pokémon. */
+  /** Em 'guard', 'skip', 'residual' e 'enter' (entrou no lugar do derrubado, no 3x3) é o próprio Pokémon. */
   target: number;
   move: BattleMove;
   targetHpBefore: number;
@@ -318,12 +318,39 @@ export interface BattleTurn extends DamageRoll {
   thawed?: boolean;
 }
 
+/** Modos de batalha: todos contra todos (padrão), duas equipes ao mesmo tempo, ou 3x3 em revezamento. */
+export type BattleMode = 'royale' | 'equipes' | 'tres';
+export const BATTLE_MODES: readonly BattleMode[] = ['royale', 'equipes', 'tres'];
+export const BATTLE_MODE_LABELS_PT: Record<BattleMode, string> = {
+  royale: 'Todos contra todos',
+  equipes: 'Equipes',
+  tres: '3 contra 3',
+};
+export const BATTLE_MODE_HINTS_PT: Record<BattleMode, string> = {
+  royale: 'Todos os Pokémon da caixa lutam ao mesmo tempo e só um fica de pé.',
+  equipes: 'A caixa se divide em duas equipes que lutam juntas: aliados não se atacam e vence a equipe que sobrar.',
+  tres: 'Duas equipes de 3 em revezamento: um duelo por vez, e quando um cai o próximo da equipe entra. Precisa de 6 Pokémon.',
+};
+export const TEAM_NAMES_PT = ['Equipe Vermelha', 'Equipe Azul'] as const;
+export const TEAM_COLORS = ['#ff5d5d', '#4da3ff'] as const;
+
+export interface BattleOptions {
+  /** `teams[i]` = equipe (0 ou 1) do lutador i. Sem isso, cada um é uma equipe (todos contra todos). */
+  teams?: readonly number[];
+  /** Revezamento: só o primeiro de pé de cada equipe luta; quando cai, o próximo entra. */
+  relay?: boolean;
+}
+
 export interface BattleResult {
   turns: BattleTurn[];
-  /** Índice do vencedor em `fighters`. */
+  /** Índice do vencedor em `fighters` (com equipes, o melhor sobrevivente da equipe vencedora). */
   winner: number;
   hpLeft: number[];
   reason: 'ko' | 'limite';
+  /** Equipe de cada lutador e a vencedora, quando a batalha teve equipes. */
+  teams?: number[];
+  winningTeam?: number;
+  relay?: boolean;
 }
 
 /** Sorteio ponderado (pesos ≤ 0 contam como um mínimo para ninguém ficar com chance zero). */
@@ -353,10 +380,17 @@ interface Live {
 }
 
 /** Escolhe o alvo: personalidades agressivas miram quem dá para derrubar; defensivas retribuem a quem as acertou. */
-export function chooseTarget(attackerIndex: number, fighters: readonly Fighter[], live: readonly Live[], rng: Rng): { target: number; revenge: boolean } {
+export function chooseTarget(
+  attackerIndex: number,
+  fighters: readonly Fighter[],
+  live: readonly Live[],
+  rng: Rng,
+  /** Quem pode ser alvo além de estar de pé (outra equipe, em campo). Padrão: qualquer outro. */
+  eligible: (i: number) => boolean = () => true,
+): { target: number; revenge: boolean } {
   const attacker = fighters[attackerIndex]!;
   const me = live[attackerIndex]!;
-  const candidates = fighters.map((_, i) => i).filter((i) => i !== attackerIndex && live[i]!.hp > 0);
+  const candidates = fighters.map((_, i) => i).filter((i) => i !== attackerIndex && live[i]!.hp > 0 && eligible(i));
   if (me.lastHitBy !== null && candidates.includes(me.lastHitBy) && rng() < REVENGE_CHANCE[attacker.personality]) {
     return { target: me.lastHitBy, revenge: true };
   }
@@ -377,6 +411,9 @@ export function chooseMove(attacker: Fighter, defender: Fighter, rng: Rng, ctx: 
   return pickWeighted(attacker.moves, weights, rng);
 }
 
+/** Limite de rodadas: o revezamento tem até 5 duelos em sequência. */
+const RELAY_MAX_ROUNDS = MAX_ROUNDS * 2;
+
 const GUARD_MOVE: BattleMove = { name: 'Defender', type: 'normal', power: 0, accuracy: 100, special: false, source: 'padrao' };
 
 /**
@@ -384,28 +421,46 @@ const GUARD_MOVE: BattleMove = { name: 'Defender', type: 'normal', power: 0, acc
  * Cada Pokémon age conforme a personalidade: escolhe alvo e golpe de modo diferente, pode se defender com poucos
  * PS, e condições (queimadura, veneno, paralisia, congelamento) mudam o que ele consegue fazer.
  */
-export function simulateBattle(fighters: readonly Fighter[], rng: Rng): BattleResult {
+export function simulateBattle(fighters: readonly Fighter[], rng: Rng, options: BattleOptions = {}): BattleResult {
   if (fighters.length < 2) throw new Error('A batalha precisa de pelo menos 2 Pokémon.');
+  const { teams, relay = false } = options;
+  if (teams && teams.length !== fighters.length) throw new Error('É preciso informar a equipe de cada lutador.');
+  if (teams && new Set(teams).size < 2) throw new Error('A batalha por equipes precisa de pelo menos 2 equipes.');
+  const teamOf = (i: number): number => teams?.[i] ?? i;
   const live: Live[] = fighters.map((f) => ({ hp: f.maxHp, status: null, guard: false, guardedLast: false, lastHitBy: null }));
   const turns: BattleTurn[] = [];
   let round = 0;
   const alive = () => fighters.map((_, i) => i).filter((i) => live[i]!.hp > 0);
+  /** Quem está em campo: todos os de pé, ou (revezamento) o primeiro de pé de cada equipe. */
+  const inField = (): number[] => {
+    const up = alive();
+    if (!relay) return up;
+    const seen = new Set<number>();
+    return up.filter((i) => {
+      const t = teamOf(i);
+      if (seen.has(t)) return false;
+      seen.add(t);
+      return true;
+    });
+  };
+  const teamsStanding = (): number => new Set(alive().map(teamOf)).size;
   const blank = (kind: TurnKind, attacker: number, target: number, move: BattleMove): BattleTurn => ({
     kind, index: turns.length, round, attacker, target, move, hit: false, damage: 0, critical: false, effectiveness: 1, stab: false,
     targetHpBefore: live[target]!.hp, targetHpAfter: live[target]!.hp, fainted: false,
   });
 
-  while (alive().length > 1 && round < MAX_ROUNDS) {
+  const maxRounds = relay ? RELAY_MAX_ROUNDS : MAX_ROUNDS;
+  while (teamsStanding() > 1 && round < maxRounds) {
     round++;
     // Quem tem mais Velocidade age primeiro (paralisia corta pela metade); empate decidido por sorteio.
-    const order = alive()
+    const order = inField()
       .map((i) => ({ i, key: fighters[i]!.speed * (live[i]!.status === 'paralysis' ? 0.5 : 1) + rng() * 0.5 }))
       .sort((a, b) => b.key - a.key)
       .map((entry) => entry.i);
     for (const attackerIndex of order) {
       const me = live[attackerIndex]!;
       if (me.hp <= 0) continue;
-      if (alive().length <= 1) break;
+      if (teamsStanding() <= 1) break;
       const attacker = fighters[attackerIndex]!;
       me.guard = false; // a guarda dura só até a vez dele de agir de novo
 
@@ -435,7 +490,8 @@ export function simulateBattle(fighters: readonly Fighter[], rng: Rng): BattleRe
       }
       me.guardedLast = false;
 
-      const { target, revenge } = chooseTarget(attackerIndex, fighters, live, rng);
+      const field = relay ? inField() : null;
+      const { target, revenge } = chooseTarget(attackerIndex, fighters, live, rng, (i) => teamOf(i) !== teamOf(attackerIndex) && (field === null || field.includes(i)));
       const foe = live[target]!;
       const defender = fighters[target]!;
       const ctx: DamageContext = { burned: me.status === 'burn', guarded: foe.guard };
@@ -458,10 +514,15 @@ export function simulateBattle(fighters: readonly Fighter[], rng: Rng): BattleRe
         turn.inflicted = effect.status;
       }
       turns.push(turn);
+      // Revezamento: quando o alvo cai, o próximo da equipe dele entra em campo.
+      if (relay && turn.fainted) {
+        const next = alive().find((i) => teamOf(i) === teamOf(target));
+        if (next !== undefined) turns.push({ ...blank('enter', next, next, GUARD_MOVE), hit: true });
+      }
     }
 
     // Fim da rodada: queimadura e veneno tiram PS (sempre sobra 1, para não encerrar a luta fora de um golpe).
-    for (const i of alive()) {
+    for (const i of inField()) {
       const status = live[i]!.status;
       if (status !== 'burn' && status !== 'poison') continue;
       const f = fighters[i]!;
@@ -475,14 +536,68 @@ export function simulateBattle(fighters: readonly Fighter[], rng: Rng): BattleRe
   }
 
   const survivors = alive();
-  let winner = survivors[0] ?? 0;
+  const frac = (i: number) => live[i]!.hp / fighters[i]!.maxHp;
+  const bestOf = (list: number[]) => list.reduce((best, i) => (frac(i) > frac(best) ? i : best), list[0] ?? 0);
   let reason: BattleResult['reason'] = 'ko';
-  if (survivors.length !== 1) {
-    // Estourou o limite de rodadas: vence quem tem mais PS restante (proporcional).
+  let winningTeam: number;
+  if (teamsStanding() === 1) {
+    winningTeam = teamOf(survivors[0] ?? 0);
+  } else {
+    // Estourou o limite de rodadas: vence a equipe com mais PS restante (soma das frações de PS).
     reason = 'limite';
-    winner = survivors.reduce((best, i) => (live[i]!.hp / fighters[i]!.maxHp > live[best]!.hp / fighters[best]!.maxHp ? i : best), survivors[0] ?? 0);
+    const score = new Map<number, number>();
+    for (const i of survivors) score.set(teamOf(i), (score.get(teamOf(i)) ?? 0) + frac(i));
+    winningTeam = [...score.entries()].reduce((best, entry) => (entry[1] > best[1] ? entry : best), [teamOf(survivors[0] ?? 0), -1] as [number, number])[0];
   }
-  return { turns, winner, hpLeft: live.map((l) => l.hp), reason };
+  const winner = bestOf(survivors.filter((i) => teamOf(i) === winningTeam));
+  const result: BattleResult = { turns, winner, hpLeft: live.map((l) => l.hp), reason };
+  if (teams) {
+    result.teams = [...teams];
+    result.winningTeam = winningTeam;
+  }
+  if (relay) result.relay = true;
+  return result;
+}
+
+// ----------------------------------------------------------------------------- modos
+
+export interface BattlePlan {
+  mode: BattleMode;
+  /** Índices (da lista original) de quem luta, na ordem em que entram. */
+  picks: number[];
+  /** Equipe de cada escolhido; ausente em "todos contra todos". */
+  teams?: number[];
+  relay: boolean;
+}
+
+/** Quantos Pokémon cada modo exige, no mínimo. */
+export const BATTLE_MODE_MIN: Record<BattleMode, number> = { royale: 2, equipes: 2, tres: 6 };
+
+/** Por que o modo não pode ser usado com essa quantidade (ou null se pode). */
+export function battleModeBlocker(mode: BattleMode, count: number): string | null {
+  if (count >= BATTLE_MODE_MIN[mode]) return null;
+  return `${BATTLE_MODE_LABELS_PT[mode]} precisa de ${BATTLE_MODE_MIN[mode]} Pokémon na caixa (hoje há ${count}).`;
+}
+
+/**
+ * Monta quem luta e em que equipe. Royale: todos. Equipes: todos, embaralhados e repartidos de forma equilibrada
+ * (a diferença entre as equipes é de no máximo 1). 3x3: 6 sorteados, 3 de cada lado. Só consome o sorteio nos
+ * modos com equipes, então o Royale continua idêntico ao de antes.
+ */
+export function planBattle(mode: BattleMode, count: number, rng: Rng): BattlePlan {
+  const blocker = battleModeBlocker(mode, count);
+  if (blocker) throw new Error(blocker);
+  const all = Array.from({ length: count }, (_, i) => i);
+  if (mode === 'royale') return { mode, picks: all, relay: false };
+  const shuffled = [...all];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+  }
+  const picks = mode === 'tres' ? shuffled.slice(0, 6) : shuffled;
+  // Alternar as equipes na ordem embaralhada deixa as duas com o mesmo tamanho (ou 1 de diferença).
+  const teams = picks.map((_, i) => i % 2);
+  return { mode, picks, teams, relay: mode === 'tres' };
 }
 
 // ----------------------------------------------------------------------------- resumo

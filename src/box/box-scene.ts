@@ -40,6 +40,8 @@ export class BoxScene {
   private readonly floor = new Group();
   private readonly raycaster = new Raycaster();
   private creatures: BoxCreature[] = [];
+  /** Fora da luta (por exemplo, os que sobram no 3x3): ficam escondidos até a batalha acabar. */
+  private benched = new Set<BoxCreature>();
   private anchor: Vector3 | null = null;
   private half = DEFAULT_HALF_SIZE_M;
   private lastNow = 0;
@@ -198,17 +200,22 @@ export class BoxScene {
    * Começa uma batalha automática entre os Pokémon da caixa. `fighters` vem na mesma ordem das criaturas
    * (um por Pokémon, mesmo `id`); precisa de pelo menos 2. Devolve o resultado simulado.
    */
-  startBattle(fighters: readonly Fighter[], rng: Rng = this.rng): BattleResult {
+  startBattle(fighters: readonly Fighter[], rng: Rng = this.rng, plan?: { picks: readonly number[]; teams?: readonly number[]; relay?: boolean }): BattleResult {
     if (!this.anchor) throw new Error('Coloque a caixa no chão antes de batalhar.');
-    if (fighters.length < 2 || fighters.length !== this.creatures.length) throw new Error('A batalha precisa de um lutador para cada Pokémon da caixa (mínimo 2).');
+    // Sem plano, todos da caixa lutam; com plano (equipes, 3x3) `fighters` segue a ordem de `picks`.
+    const picks = plan?.picks ?? this.creatures.map((_, i) => i);
+    const fighting = picks.map((i) => this.creatures[i]).filter((c): c is BoxCreature => c !== undefined);
+    if (fighters.length < 2 || fighters.length !== fighting.length) throw new Error('A batalha precisa de um lutador para cada Pokémon que luta (mínimo 2).');
     this.stopBattle();
-    const result = simulateBattle(fighters, rng);
-    const { rx, rz } = arenaRadii(fighters.length);
+    const result = simulateBattle(fighters, rng, { teams: plan?.teams, relay: plan?.relay });
+    // O 3x3 usa uma arena mais larga para caberem os reservas nas pontas.
+    const { rx, rz } = arenaRadii(plan?.relay ? 4 : fighters.length);
     this.frameArena(rx);
-    for (const creature of this.creatures) this.battleRoot.add(creature.group);
+    for (const creature of fighting) this.battleRoot.add(creature.group);
+    this.benched = new Set(this.creatures.filter((c) => !fighting.includes(c)));
     this.floor.visible = false;
     this.director = new BattleDirector({
-      fighters, creatures: this.creatures, result, root: this.battleRoot, camera: this.camera, rx, rz, rng, sound: this.sound ?? undefined,
+      fighters, creatures: fighting, result, root: this.battleRoot, camera: this.camera, rx, rz, rng, sound: this.sound ?? undefined,
     });
     this.director.lighting = this.lighting;
     return result;
@@ -242,6 +249,7 @@ export class BoxScene {
     this.director = null;
     if (director) {
       // Os Pokémon voltam para a cena e para o passeio dentro da caixa.
+      this.benched = new Set();
       for (const creature of this.creatures) {
         this.scene.add(creature.group);
         Object.assign(creature.state, createWander(this.half, this.rng));
@@ -269,7 +277,7 @@ export class BoxScene {
     const dt = this.lastNow === 0 ? 0 : nowMs - this.lastNow;
     this.lastNow = nowMs;
     const placed = this.anchor;
-    for (const creature of this.creatures) creature.group.visible = placed !== null;
+    for (const creature of this.creatures) creature.group.visible = placed !== null && !this.benched.has(creature);
     if (!placed) return;
     // Na batalha tudo é medido dentro da arena (a origem dela é o centro).
     const base = this.director ? this.battleZero : placed;

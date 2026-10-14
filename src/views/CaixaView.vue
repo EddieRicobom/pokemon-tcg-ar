@@ -6,6 +6,7 @@ import { prepareFighters } from '../app/battle-setup';
 import { useFullscreen } from '../app/fullscreen';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
+import { battleMode, setBattleMode } from '../app/battle-mode-store';
 import { visual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
 import { requestOrientationPermission } from '../sensors/orientation-feed';
@@ -21,8 +22,8 @@ import type { OrientationMode } from '../box/orientation-source';
 import type { BoxCreature } from '../box/creature';
 import type { BattleHud } from '../box/battle-director';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
-import { STATUS_LABELS_PT, summarizeBattle } from '../core/battle';
-import type { BattleSummary, Fighter } from '../core/battle';
+import { TEAM_NAMES_PT, BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, battleModeBlocker, planBattle, seededRng, STATUS_LABELS_PT, summarizeBattle } from '../core/battle';
+import type { BattleMode, BattleSummary, Fighter } from '../core/battle';
 
 type Phase = 'idle' | 'starting' | 'placing' | 'running';
 
@@ -33,6 +34,7 @@ const showFilters = ref(false);
 const showTeam = ref(false);
 const showAdjust = ref(false);
 const showSummary = ref(false);
+const showModes = ref(false);
 /** Entramos em tela cheia só para a batalha (e saímos dela ao parar). */
 let fullscreenForBattle = false;
 const boxMode = ref<BoxMode>('passeio');
@@ -53,7 +55,7 @@ const videoFov = ref(63);
 const battleHud = ref<BattleHud | null>(null);
 const preparing = ref(false);
 const battleFighters = ref<Fighter[]>([]);
-const battleSummary = ref<{ winner: string; turns: number; rounds: number; stats: BattleSummary } | null>(null);
+const battleSummary = ref<{ winner: string; turns: number; rounds: number; stats: BattleSummary; mode: BattleMode } | null>(null);
 
 let stream: MediaStream | null = null;
 let box: RunningBox | null = null;
@@ -224,6 +226,12 @@ async function startBattle(): Promise<void> {
   if (!current || preparing.value) return;
   const creatures = current.scene.creatureList;
   if (creatures.length < 2) return;
+  const blocker = battleModeBlocker(battleMode.value, creatures.length);
+  if (blocker) {
+    error.value = blocker;
+    showModes.value = true;
+    return;
+  }
   // O navegador só libera o áudio dentro de um toque: isso vem antes de qualquer espera.
   current.unlockAudio();
   preparing.value = true;
@@ -238,13 +246,18 @@ async function startBattle(): Promise<void> {
   showFilters.value = false;
   showTeam.value = false;
   showAdjust.value = false;
+  showModes.value = false;
   try {
-    const fighters = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), loadBattle);
+    // Todos da caixa lutam por padrão; equipes e 3x3 sorteiam os lados (e, no 3x3, quem entra) a cada batalha.
+    const plan = planBattle(battleMode.value, creatures.length, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0));
+    const fighting = plan.picks.map((i) => creatures[i]!);
+    const fighters = await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), loadBattle);
     if (disposed || box !== current) return;
-    const result = current.startBattle(fighters);
+    const result = current.startBattle(fighters, plan.mode === 'royale' ? undefined : plan);
     battleFighters.value = fighters;
     battleSummary.value = {
-      winner: fighters[result.winner]?.name ?? '',
+      mode: plan.mode,
+      winner: result.winningTeam === undefined ? (fighters[result.winner]?.name ?? '') : `${TEAM_NAMES_PT[result.winningTeam] ?? 'A equipe'} (${fighters[result.winner]?.name ?? ''})`,
       turns: result.turns.length,
       rounds: result.turns.at(-1)?.round ?? 0,
       stats: summarizeBattle(fighters, result),
@@ -397,6 +410,9 @@ onBeforeUnmount(() => {
             <strong>{{ battleHud.banner.text }}</strong>
             <span>{{ battleHud.banner.sub }}</span>
           </div>
+          <div v-if="battleHud.scoreboard" class="battle-score" aria-label="Placar das equipes">
+            <span v-for="s in battleHud.scoreboard" :key="s.team" :style="{ '--team': s.color }"><i></i>{{ s.name.replace('Equipe ', '') }} {{ s.alive }}/{{ s.total }}</span>
+          </div>
           <div v-if="battleHud.phase === 'fight'" class="battle-turn" :aria-label="`Rodada ${battleHud.round}, turno ${battleHud.turn} de ${battleHud.totalTurns}`">
             <span>Rodada {{ battleHud.round }}</span>
             <i><b :style="{ width: (battleHud.turn / Math.max(1, battleHud.totalTurns)) * 100 + '%' }"></b></i>
@@ -409,8 +425,8 @@ onBeforeUnmount(() => {
           v-show="bar.visible"
           :key="bar.id"
           class="hp-bar"
-          :class="[{ down: bar.fainted, guarding: bar.guard, acting: bar.acting }, bar.status ? 'st-' + bar.status : '', 'pers-' + bar.personality]"
-          :style="{ left: bar.x + '%', top: bar.y + '%' }"
+          :class="[{ down: bar.fainted, guarding: bar.guard, acting: bar.acting, reserve: bar.reserve, teamed: bar.teamColor !== null }, bar.status ? 'st-' + bar.status : '', 'pers-' + bar.personality]"
+          :style="{ left: bar.x + '%', top: bar.y + '%', '--team': bar.teamColor ?? undefined }"
         >
           <span class="hp-name">
             <i v-for="t in bar.types" :key="t" class="type-dot" :style="{ background: TYPE_COLORS[t] }" :title="TYPE_LABELS_PT[t]"></i>
@@ -456,6 +472,29 @@ onBeforeUnmount(() => {
             <p v-for="f in incompleteFighters" :key="f.id" class="hint">{{ f.name }}: {{ f.notes.join('; ') }}</p>
           </template>
         </div>
+        <div v-if="showModes && cameraOn && !battling" class="stage-sheet" role="dialog" aria-label="Modo de batalha" @pointerdown.stop @pointerup.stop @click.stop>
+          <header>
+            <strong>Modo de batalha</strong>
+            <button type="button" class="link" @click="showModes = false">Fechar</button>
+          </header>
+          <div class="mode-list">
+            <button
+              v-for="m in BATTLE_MODES"
+              :key="m"
+              type="button"
+              class="mode-option"
+              :class="{ on: battleMode === m }"
+              :aria-pressed="battleMode === m"
+              :disabled="battleModeBlocker(m, population.shown) !== null"
+              @click="setBattleMode(m); error = ''"
+            >
+              <strong>{{ BATTLE_MODE_LABELS_PT[m] }}</strong>
+              <span>{{ BATTLE_MODE_HINTS_PT[m] }}</span>
+              <small v-if="battleModeBlocker(m, population.shown)">{{ battleModeBlocker(m, population.shown) }}</small>
+            </button>
+          </div>
+          <p class="hint">Todos os Pokémon da caixa entram na luta. Para mudar quem está na caixa, use Equipe.</p>
+        </div>
         <div v-if="showTeam && cameraOn" class="stage-sheet" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
             <strong>Equipe da caixa</strong>
@@ -489,10 +528,11 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="cameraOn" class="stage-bar">
           <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
-          <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters; showTeam = false; showAdjust = false" />
-          <StageButton v-if="!battling" icon="team" label="Equipe" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false" />
-          <StageButton v-if="!battling" icon="sliders" label="Ajustes" :active="showAdjust" @click="showAdjust = !showAdjust; showFilters = false; showTeam = false" />
+          <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters; showTeam = false; showAdjust = false; showModes = false" />
+          <StageButton v-if="!battling" icon="team" label="Equipe" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false; showModes = false" />
+          <StageButton v-if="!battling" icon="sliders" label="Ajustes" :active="showAdjust" @click="showAdjust = !showAdjust; showFilters = false; showTeam = false; showModes = false" />
           <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
+          <StageButton v-if="!battling" icon="modes" :label="BATTLE_MODE_LABELS_PT[battleMode]" :active="showModes" @click="showModes = !showModes; showFilters = false; showTeam = false; showAdjust = false" />
           <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : 'Batalhar'" :disabled="!canBattle" @click="startBattle" />
           <StageButton v-if="battling && battleHud?.phase === 'finished'" icon="battle" label="De novo" @click="startBattle" />
           <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />

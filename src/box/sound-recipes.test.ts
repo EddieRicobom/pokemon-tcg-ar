@@ -9,7 +9,7 @@ const STATUSES: StatusKind[] = ['burn', 'poison', 'paralysis', 'freeze'];
 const PERSONALITIES: Personality[] = ['agressivo', 'defensivo', 'veloz', 'equilibrado'];
 
 function allCues(): SoundCue[] {
-  const cues: SoundCue[] = [{ kind: 'intro' }, { kind: 'go' }, { kind: 'miss' }, { kind: 'immune' }, { kind: 'guard' }, { kind: 'faint' }];
+  const cues: SoundCue[] = [{ kind: 'intro' }, { kind: 'go' }, { kind: 'enter' }, { kind: 'miss' }, { kind: 'immune' }, { kind: 'guard' }, { kind: 'faint' }];
   for (const type of POKEMON_TYPES) {
     cues.push({ kind: 'charge', type, ranged: true, ms: 500 }, { kind: 'charge', type, ranged: false, ms: 300 });
     for (const delivery of ['orb', 'bolt', 'stream', 'swarm', 'beam', 'quake'] as const) cues.push({ kind: 'launch', type, delivery, ms: 700 });

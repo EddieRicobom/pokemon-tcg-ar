@@ -1483,6 +1483,75 @@ button.link {
   opacity: 0.5;
 }
 
+.hp-bar.teamed {
+  border-bottom: 3px solid var(--team);
+}
+
+.hp-bar.reserve {
+  opacity: 0.8;
+  transform: translate(-50%, -100%) scale(0.82);
+}
+
+.battle-score {
+  display: flex;
+  gap: 6px;
+}
+
+.battle-score span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(10, 14, 26, 0.7);
+  border: 1.5px solid var(--team);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.battle-score i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--team);
+}
+
+.mode-list {
+  display: grid;
+  gap: 6px;
+}
+
+.mode-option {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+
+.mode-option span {
+  font-size: 0.76rem;
+  opacity: 0.85;
+}
+
+.mode-option small {
+  font-size: 0.7rem;
+  color: #ffb4a8;
+}
+
+.mode-option.on {
+  border-color: var(--gold, #ffcb05);
+  background: rgba(255, 203, 5, 0.14);
+}
+
+.mode-option:disabled {
+  opacity: 0.55;
+}
+
 .hp-bar.acting {
   background: rgba(30, 38, 66, 0.88);
   box-shadow: 0 0 0 1.5px var(--gold, #ffcb05), 0 0 12px rgba(255, 203, 5, 0.55);
