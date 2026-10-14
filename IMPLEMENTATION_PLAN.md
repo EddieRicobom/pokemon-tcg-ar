@@ -32,6 +32,7 @@ Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado �
 - ✅ Batalha automática de exibição: motor puro e seeded (nível 50, tipos, STAB, críticos, defesa, condições, personalidades), arena pequena à frente do olhar, golpes encenados por tipo, câmera de cinema, **luz dos golpes** (sprites, chão e vídeo) com opção de desligar, **sons sintetizados** (golpes por tipo e fanfarra do vencedor, com opção de desligar), resumo no visor. O áudio em celular real ainda não foi ouvido (🔶).
 - ✅ **Modos de batalha**: todos contra todos (padrão, com todos da caixa), equipes e 3 contra 3 em revezamento, com placar, cores das equipes e faixa de vitória por equipe. Validado só no Chromium com câmera falsa.
 - ✅ **Chão em pixel art e terreno**: arena e caixa com chão de blocos (grama, flores, mato, trilha) e enfeites de pé; golpes elementais marcam o chão e certas combinações reagem; opção para desligar. Validado só no Chromium com câmera falsa.
+- ✅ **Minigames**: Quem é esse Pokémon? (das cartas, por geração ou aleatório), Duelo de tipos e Memória, com XP.
 - ✅ **Treinador**: nível e XP, sequência diária, missões do dia, coleção por set e conquistas, com avisos de recompensa; só no aparelho.
 - ⬜ O **RPG de ação** planejado (escanear cartas para montar equipe e jogar): a batalha é só exibição, sem escolha de golpes pelo jogador, itens, trocas nem progressão.
 

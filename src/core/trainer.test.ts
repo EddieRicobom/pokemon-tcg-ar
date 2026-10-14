@@ -117,6 +117,7 @@ describe('missões', () => {
     // Faz o suficiente de tudo para cumprir qualquer sorteio.
     for (let i = 1; i <= 6; i++) events.push([scan(i), day]);
     for (let i = 0; i < 3; i++) events.push([{ type: 'battle', team: true }, day]);
+    for (let i = 0; i < 3; i++) events.push([{ type: 'minigame', game: 'quem', won: true, score: 80 }, day]);
     const { state, rewards } = play(events);
     expect(state.today.done.sort()).toEqual(missions.map((m) => m.id).sort());
     expect(rewards.filter((r) => r.text === 'Missão cumprida!')).toHaveLength(3);
@@ -169,6 +170,47 @@ describe('batalhas e conquistas', () => {
   });
 });
 
+describe('minigames', () => {
+  const day = '2026-10-14';
+
+  it('guardam partidas e melhor pontuação e destravam conquistas', () => {
+    const a = applyEvent(emptyTrainer(), { type: 'minigame', game: 'quem', won: true, score: 60 }, day);
+    const b = applyEvent(a.state, { type: 'minigame', game: 'quem', won: false, score: 20 }, day);
+    const c = applyEvent(b.state, { type: 'minigame', game: 'tipos', won: true, score: 100 }, day);
+    expect(c.state.games.quem).toEqual({ played: 2, best: 60 });
+    expect(c.state.games.tipos).toEqual({ played: 1, best: 100 });
+    expect(c.state.minigames).toBe(3);
+    expect(c.state.minigameWins).toBe(2);
+    expect(c.state.achievements['minigame-1']).toBe(day);
+    expect(c.state.achievements['minigame-perfeito']).toBe(day);
+  });
+
+  it('só vitória rende XP e só nas primeiras do dia', () => {
+    const lost = applyEvent(emptyTrainer(), { type: 'minigame', game: 'quem', won: false, score: 20 }, day);
+    expect(lost.rewards.some((r) => r.text === 'Minigame vencido!')).toBe(false);
+    let state = emptyTrainer();
+    const xpAfter: number[] = [];
+    for (let i = 0; i < XP.minigamesPerDay + 3; i++) {
+      state = applyEvent(state, { type: 'minigame', game: 'memoria', won: true, score: 70 }, day).state;
+      xpAfter.push(state.xp);
+    }
+    expect(xpAfter[0]).toBeGreaterThanOrEqual(XP.minigameWin);
+    // Depois do limite diário nada soma (as missões do dia já foram cumpridas antes).
+    expect(xpAfter.at(-1)).toBe(xpAfter[XP.minigamesPerDay - 1]);
+  });
+
+  it('a pontuação é limitada de 0 a 100', () => {
+    const s = applyEvent(emptyTrainer(), { type: 'minigame', game: 'x', won: true, score: 900 }, day).state;
+    expect(s.games.x!.best).toBe(100);
+  });
+
+  it('missões de minigame podem aparecer no sorteio do dia', () => {
+    const kinds = new Set<string>();
+    for (let d = 1; d <= 28; d++) for (const m of missionsFor(`2026-11-${String(d).padStart(2, '0')}`)) kinds.add(m.kind);
+    expect(kinds.has('play')).toBe(true);
+  });
+});
+
 describe('histórico e armazenamento', () => {
   it('importa cartas já guardadas sem dar XP e sem repetir', () => {
     const cards = [
@@ -194,6 +236,7 @@ describe('histórico e armazenamento', () => {
     expect(dirty.sets).toEqual({ x: { name: 'X', total: 0, ids: ['a'] } });
     expect(dirty.streak.current).toBe(0);
     expect(dirty.achievements).toEqual({ a: 'd' });
+    expect(normalizeTrainer({ v: 1, games: { q: { played: 3, best: 500 }, z: 4 } }).games).toEqual({ q: { played: 3, best: 100 } });
     const live = play([[scan(1), '2026-10-14']]).state;
     expect(normalizeTrainer(JSON.parse(JSON.stringify(live)))).toEqual(live);
   });
