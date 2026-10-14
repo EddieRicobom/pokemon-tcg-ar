@@ -5,6 +5,8 @@ import { BoxScene, DEFAULT_HALF_SIZE_M } from './box-scene';
 import type { BoxMode, CreatureEntry } from './box-scene';
 import type { SpriteLook } from '../core/sprite-look';
 import type { BoxCreature } from './creature';
+import type { BattleHud } from './battle-director';
+import type { BattleResult, Fighter } from '../core/battle';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES } from './floor';
 import { createWebglBackend } from '../ar/webgl-backend';
 import { sensorSettings } from '../app/sensor-settings';
@@ -17,6 +19,8 @@ export interface StartBoxOptions {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
   onModeChange?: (mode: OrientationMode) => void;
+  /** Chamado a cada quadro durante uma batalha (e uma vez com null quando acaba). */
+  onBattleHud?: (hud: BattleHud | null) => void;
 }
 
 export type PlaceResult = { ok: true } | { ok: false; message: string };
@@ -30,6 +34,8 @@ export interface RunningBox {
   setCreatures(entries: CreatureEntry[]): void;
   setMode(mode: BoxMode): void;
   setLook(look: SpriteLook): void;
+  startBattle(fighters: readonly Fighter[]): BattleResult;
+  stopBattle(): void;
   setPhoneHeight(meters: number): void;
   setHalfSize(meters: number): void;
   setVideoFov(deg: number): void;
@@ -49,6 +55,8 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   let videoFov = DEFAULT_VIDEO_VFOV_DEG;
   let running = true;
   let handle = 0;
+  let lastHudAt = 0;
+  let hudShown = false;
 
   const resize = () => {
     const width = options.container.clientWidth;
@@ -69,6 +77,16 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     orientation.latencyMs = sensorSettings.latencyMs;
     scene.setCameraQuaternion(orientation.read(performance.now()));
     scene.update(now);
+    if (scene.battling) {
+      // A interface redesenha ~30 vezes por segundo: o suficiente para barras e números sem pesar.
+      if (now - lastHudAt >= 33) {
+        lastHudAt = now;
+        options.onBattleHud?.(scene.battleHud);
+      }
+    } else if (hudShown) {
+      options.onBattleHud?.(null);
+    }
+    hudShown = scene.battling;
     renderer.render(scene.scene, scene.camera);
   };
   handle = requestAnimationFrame(tick);
@@ -87,6 +105,8 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setCreatures: (entries) => scene.setCreatures(entries),
     setMode: (mode) => scene.setMode(mode),
     setLook: (look) => scene.setLook(look),
+    startBattle: (fighters) => scene.startBattle(fighters),
+    stopBattle: () => scene.stopBattle(),
     setPhoneHeight(meters) {
       phoneHeight = meters;
     },

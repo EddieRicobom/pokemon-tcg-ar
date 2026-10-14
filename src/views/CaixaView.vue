@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { isTap } from '../ar/gestures';
 import { routeHref } from '../app/route';
-import { getCache } from '../app/services';
+import { getCache, loadBattle } from '../app/services';
+import { prepareFighters } from '../app/battle-setup';
 import { useFullscreen } from '../app/fullscreen';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
@@ -19,6 +20,9 @@ import { loadCreatureEntries } from '../box/load-creatures';
 import type { RunningBox } from '../box/start-box';
 import type { OrientationMode } from '../box/orientation-source';
 import type { BoxCreature } from '../box/creature';
+import type { BattleHud } from '../box/battle-director';
+import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
+import type { Fighter } from '../core/battle';
 
 type Phase = 'idle' | 'starting' | 'placing' | 'running';
 
@@ -40,6 +44,10 @@ const picked = ref<{ name: string; detail: string; dexId?: number } | null>(null
 const phoneHeight = ref(DEFAULT_PHONE_HEIGHT_M);
 const boxSize = ref(2.4);
 const videoFov = ref(63);
+const battleHud = ref<BattleHud | null>(null);
+const preparing = ref(false);
+const battleFighters = ref<Fighter[]>([]);
+const battleSummary = ref<{ winner: string; turns: number; rounds: number } | null>(null);
 
 let stream: MediaStream | null = null;
 let box: RunningBox | null = null;
@@ -91,7 +99,9 @@ async function open(): Promise<void> {
   }
   try {
     const { startBox } = await import('../box/start-box');
-    box = await startBox({ video, canvas, container: stage, onModeChange: (m) => (mode.value = m) });
+    box = await startBox({
+      video, canvas, container: stage, onModeChange: (m) => (mode.value = m), onBattleHud: (hud) => (battleHud.value = hud),
+    });
   } catch (e) {
     close();
     error.value = `Não consegui iniciar a Caixa: ${e instanceof Error ? e.message : String(e)}`;
@@ -112,6 +122,9 @@ async function open(): Promise<void> {
 }
 
 function close(): void {
+  battleHud.value = null;
+  battleSummary.value = null;
+  preparing.value = false;
   void exitFullscreen();
   showFilters.value = false;
   showTeam.value = false;
@@ -140,6 +153,7 @@ function placeHere(): void {
 }
 
 function moveBox(): void {
+  stopBattle();
   box?.clearPlacement();
   picked.value = null;
   phase.value = 'placing';
@@ -182,6 +196,50 @@ function onPointerUp(event: PointerEvent): void {
 
 watch(() => [visual.tone, visual.outline] as const, ([tone, outline]) => box?.setLook({ tone, outline }));
 
+const canBattle = computed(() => phase.value === 'running' && population.value.shown >= 2 && !loadingCreatures.value && !preparing.value);
+const battling = computed(() => battleHud.value !== null);
+
+/** Carrega os dados de cada Pokémon da caixa (jogo + carta) e começa a luta automática. */
+async function startBattle(): Promise<void> {
+  const current = box;
+  if (!current || preparing.value) return;
+  const creatures = current.scene.creatureList;
+  if (creatures.length < 2) return;
+  preparing.value = true;
+  error.value = '';
+  hint.value = 'Preparando a batalha: buscando atributos e golpes…';
+  showFilters.value = false;
+  showTeam.value = false;
+  try {
+    const fighters = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), loadBattle);
+    if (disposed || box !== current) return;
+    const result = current.startBattle(fighters);
+    battleFighters.value = fighters;
+    battleSummary.value = {
+      winner: fighters[result.winner]?.name ?? '',
+      turns: result.turns.length,
+      rounds: result.turns.at(-1)?.round ?? 0,
+    };
+  } catch (e) {
+    error.value = `Não consegui começar a batalha: ${e instanceof Error ? e.message : String(e)}`;
+  } finally {
+    preparing.value = false;
+    hint.value = '';
+  }
+}
+
+function stopBattle(): void {
+  box?.stopBattle();
+  battleHud.value = null;
+  battleSummary.value = null;
+}
+
+const incompleteFighters = computed(() => (battleHud.value ? battleFighters.value.filter((f) => f.notes.length > 0) : []));
+
+function hpTone(frac: number): string {
+  return frac > 0.5 ? 'ok' : frac > 0.2 ? 'warn' : 'low';
+}
+
 function toggleMode(): void {
   boxMode.value = boxMode.value === 'passeio' ? 'formacao' : 'passeio';
   box?.setMode(boxMode.value);
@@ -222,6 +280,35 @@ onBeforeUnmount(() => {
       <canvas ref="canvasEl" class="overlay" aria-label="Caixa com os Pokémon escaneados"></canvas>
       <p v-if="phase === 'idle'" class="placeholder">Câmera desligada</p>
       <div v-if="phase === 'placing'" class="crosshair" aria-hidden="true"></div>
+      <div v-if="battleHud" class="battle-hud" aria-live="polite">
+        <div v-if="battleHud.banner" class="battle-banner" :style="{ '--fx': battleHud.banner.color }">
+          <strong>{{ battleHud.banner.text }}</strong>
+          <span>{{ battleHud.banner.sub }}</span>
+        </div>
+        <div
+          v-for="bar in battleHud.bars"
+          v-show="bar.visible"
+          :key="bar.id"
+          class="hp-bar"
+          :class="{ down: bar.fainted }"
+          :style="{ left: bar.x + '%', top: bar.y + '%' }"
+        >
+          <span class="hp-name">
+            <i v-for="t in bar.types" :key="t" class="type-dot" :style="{ background: TYPE_COLORS[t] }" :title="TYPE_LABELS_PT[t]"></i>
+            {{ bar.name }}
+          </span>
+          <span class="hp-track"><i :class="hpTone(bar.frac)" :style="{ width: bar.frac * 100 + '%' }"></i></span>
+          <span class="hp-num">{{ bar.hp }}/{{ bar.maxHp }}</span>
+        </div>
+        <span
+          v-for="label in battleHud.labels"
+          v-show="label.visible"
+          :key="label.key"
+          class="float-label"
+          :class="label.tone"
+          :style="{ left: label.x + '%', top: label.y + '%', color: label.color, opacity: 1 - label.age * label.age }"
+        >{{ label.text }}</span>
+      </div>
       <p v-if="hint" class="hud" role="status">{{ hint }}</p>
       <p v-else-if="picked" class="hud" role="status">
         <strong>{{ picked.name }}</strong>
@@ -240,8 +327,11 @@ onBeforeUnmount(() => {
       <div v-if="cameraOn" class="stage-bar" @pointerdown.stop @pointerup.stop>
         <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
         <StageButton icon="filters" label="Filtros" :active="showFilters" @click="showFilters = !showFilters; showTeam = false" />
-        <StageButton icon="team" label="Equipe" :active="showTeam" @click="showTeam = !showTeam; showFilters = false" />
-        <StageButton :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
+        <StageButton v-if="!battling" icon="team" label="Equipe" :active="showTeam" @click="showTeam = !showTeam; showFilters = false" />
+        <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
+        <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : 'Batalhar'" :disabled="!canBattle" @click="startBattle" />
+        <StageButton v-if="battling && battleHud?.phase === 'finished'" icon="battle" label="De novo" @click="startBattle" />
+        <StageButton v-if="battling" icon="stop" label="Parar" @click="stopBattle" />
         <StageButton v-if="phase === 'running'" icon="move" label="Mover" @click="moveBox" />
         <StageButton icon="close" label="Fechar" @click="close" />
       </div>
@@ -262,6 +352,16 @@ onBeforeUnmount(() => {
     </div>
 
     <p v-if="error" class="message error" role="alert">{{ error }}</p>
+    <p v-if="cameraOn && phase === 'running' && population.shown === 1" class="message" role="status">
+      Para batalhar, ponha pelo menos 2 Pokémon na equipe da caixa.
+    </p>
+    <div v-if="battleSummary && battleHud?.phase === 'finished'" class="message" role="status">
+      <strong>{{ battleSummary.winner }} venceu</strong> em {{ battleSummary.turns }} golpes ({{ battleSummary.rounds }} rodadas).
+      <template v-if="incompleteFighters.length > 0">
+        <br />Dados incompletos (usei valores neutros):
+        <span v-for="f in incompleteFighters" :key="f.id" class="meta"><br />· {{ f.name }}: {{ f.notes.join('; ') }}</span>
+      </template>
+    </div>
     <p v-if="cameraOn && mode === 'manual'" class="message" role="status">
       Este aparelho não enviou dados dos sensores de movimento. Arraste na imagem para olhar em volta.
     </p>
@@ -273,6 +373,7 @@ onBeforeUnmount(() => {
       {{ population.shown }} Pokémon na caixa<template v-if="population.available > population.shown"> (de {{ population.available }} guardados; cabem até 30)</template>.
       <template v-if="population.failed > 0"> {{ population.failed }} sprite(s) não puderam ser lidos.</template>
       Toque num Pokémon para ver quem é.
+      <template v-if="population.shown >= 2"> Use Batalhar para eles lutarem sozinhos: tipos, atributos e golpes decidem.</template>
     </p>
 
     <details class="layout">
