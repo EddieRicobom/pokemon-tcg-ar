@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { ScanOutcome } from '../cache/card-cache';
 import type { CachedCard } from '../cache/types';
 import type { IdentifiedCard, RecognitionMetrics, RecognitionResult } from '../recognition/pipeline';
 import type { RgbaImage } from '../recognition/types';
@@ -34,7 +35,10 @@ function setup(results: RecognitionResult[]) {
   const states: ScanState[] = [];
   const queue = [...results];
   const cache = {
-    recordRecognition: vi.fn(async (input: { card: { id: string } }) => cachedCard(input.card.id)),
+    scanCard: vi.fn(async (input: { card: { id: string } }, onProgress?: (p: never) => void, _isCurrent?: () => boolean): Promise<ScanOutcome> => {
+      onProgress?.({ cardId: input.card.id, step: 'sprite', index: 1, total: 3 } as never);
+      return { saved: true, result: { id: input.card.id, status: 'completo', card: cachedCard(input.card.id) } };
+    }),
     prepareCard: vi.fn(async (id: string, onProgress?: (p: never) => void) => {
       onProgress?.({ cardId: id, step: 'sprite', index: 1, total: 3 } as never);
       return { id, status: 'completo' as const, card: cachedCard(id) };
@@ -56,14 +60,14 @@ describe('ScanController (busca manual)', () => {
   it('chooseManual guarda a carta e chega a "ready" com origem manual', async () => {
     const { controller, cache, states } = setup([]);
     await controller.chooseManual('base1-58');
-    expect(cache.recordRecognition).toHaveBeenCalledTimes(1);
+    expect(cache.scanCard).toHaveBeenCalledTimes(1);
     expect(states.at(-1)).toMatchObject({ phase: 'ready', origin: 'manual' });
   });
 
   it('id que o TCGdex não conhece: erro claro, nada é gravado', async () => {
     const { controller, cache, states } = setup([]);
     await controller.chooseManual('missing');
-    expect(cache.recordRecognition).not.toHaveBeenCalled();
+    expect(cache.scanCard).not.toHaveBeenCalled();
     expect(states.at(-1)?.phase).toBe('error');
   });
 });
@@ -74,8 +78,7 @@ describe('ScanController', () => {
     const { controller, cache, states } = setup([medium, medium]);
     controller.start();
     await controller.whenSettled();
-    expect(cache.recordRecognition).toHaveBeenCalledTimes(1);
-    expect(cache.prepareCard).toHaveBeenCalledWith('base1-58', expect.any(Function));
+    expect(cache.scanCard).toHaveBeenCalledTimes(1);
     expect(controller.current.phase).toBe('ready');
     expect(controller.current.origin).toBe('automatico');
     expect(states.some((s) => s.message.includes('confirmando'))).toBe(true);
@@ -85,7 +88,7 @@ describe('ScanController', () => {
     const { controller, cache } = setup([identified()]);
     controller.start();
     await controller.whenSettled();
-    expect(cache.recordRecognition).toHaveBeenCalledTimes(1);
+    expect(cache.scanCard).toHaveBeenCalledTimes(1);
     expect(controller.current.phase).toBe('ready');
   });
 
@@ -95,7 +98,7 @@ describe('ScanController', () => {
     controller.start();
     await new Promise((r) => setTimeout(r, 20));
     controller.stop();
-    expect(cache.recordRecognition).not.toHaveBeenCalled();
+    expect(cache.scanCard).not.toHaveBeenCalled();
     expect(controller.current.phase).toBe('scanning');
   });
 
@@ -107,7 +110,7 @@ describe('ScanController', () => {
     await new Promise((r) => setTimeout(r, 20));
     controller.stop();
     // b aparece duas vezes → é a confirmada, a não.
-    expect(cache.recordRecognition.mock.calls.map((c) => c[0].card.id)).toEqual(['hgss4-58']);
+    expect(cache.scanCard.mock.calls.map((c) => c[0].card.id)).toEqual(['hgss4-58']);
   });
 
   it('ambígua duas vezes: oferece opções e só segue depois da escolha do usuário', async () => {
@@ -120,11 +123,11 @@ describe('ScanController', () => {
     await controller.whenSettled();
     expect(controller.current.phase).toBe('choosing');
     expect(controller.current.choices?.map((c) => c.card.id)).toEqual(['base1-58', 'base1-59']);
-    expect(cache.recordRecognition).not.toHaveBeenCalled();
+    expect(cache.scanCard).not.toHaveBeenCalled();
 
     await controller.choose('base1-59');
-    expect(cache.recordRecognition).toHaveBeenCalledTimes(1);
-    expect(cache.recordRecognition.mock.calls[0]![0].card.id).toBe('base1-59');
+    expect(cache.scanCard).toHaveBeenCalledTimes(1);
+    expect(cache.scanCard.mock.calls[0]![0].card.id).toBe('base1-59');
     expect(controller.current.phase).toBe('ready');
     expect(controller.current.origin).toBe('escolha');
   });
@@ -134,7 +137,7 @@ describe('ScanController', () => {
     await controller.loadCached('base1-58');
     expect(controller.current.phase).toBe('ready');
     expect(controller.current.origin).toBe('cache');
-    expect(cache.recordRecognition).not.toHaveBeenCalled();
+    expect(cache.scanCard).not.toHaveBeenCalled();
   });
 
   it('carta que sumiu do cache vira erro claro em português', async () => {
@@ -146,11 +149,43 @@ describe('ScanController', () => {
 
   it('falha ao gravar no cache vira erro, não carta "pronta"', async () => {
     const { controller, cache } = setup([identified(), identified()]);
-    cache.recordRecognition.mockRejectedValueOnce(new Error('quota'));
+    cache.scanCard.mockRejectedValueOnce(new Error('quota'));
     controller.start();
     await controller.whenSettled();
     expect(controller.current.phase).toBe('error');
     expect(controller.current.card).toBeUndefined();
+  });
+
+  it('escaneamento que não completou vira erro com o motivo e nunca "ready"', async () => {
+    const { controller, cache } = setup([identified(), identified()]);
+    const incomplete = { id: 'base1-58', status: 'falhou' as const, card: { ...cachedCard('base1-58'), sprite: { state: 'error' as const, error: 'sem resposta' } } };
+    cache.scanCard.mockResolvedValueOnce({ saved: false, result: incomplete, reason: 'Não consegui preparar o Pokémon animado (sem resposta). Nada foi guardado; tente de novo.' });
+    controller.start();
+    await controller.whenSettled();
+    expect(controller.current.phase).toBe('error');
+    expect(controller.current.card).toBeUndefined();
+    expect(controller.current.message).toContain('Nada foi guardado');
+  });
+
+  it('a busca manual também só chega a "ready" se o escaneamento completou', async () => {
+    const { controller, cache } = setup([]);
+    cache.scanCard.mockResolvedValueOnce({ saved: false, result: { id: 'base1-58', status: 'parcial', card: cachedCard('base1-58') }, reason: 'faltou o alvo' });
+    await controller.chooseManual('base1-58');
+    expect(controller.current).toMatchObject({ phase: 'error', message: 'faltou o alvo' });
+  });
+
+  it('avisa o cache quando o escaneamento foi superado (parar ou recomeçar), para desfazer a carta nova', async () => {
+    const { controller, cache } = setup([identified(), identified()]);
+    let isCurrent: (() => boolean) | undefined;
+    cache.scanCard.mockImplementationOnce(async (input, _p, current) => {
+      isCurrent = current;
+      controller.stop();
+      return { saved: false, result: { id: input.card.id, status: 'completo' as const, card: cachedCard(input.card.id) }, reason: 'cancelado' };
+    });
+    controller.start();
+    await controller.whenSettled();
+    expect(isCurrent?.()).toBe(false);
+    expect(controller.current.phase).not.toBe('ready');
   });
 
   it('parar interrompe o laço e não grava nada', async () => {
@@ -158,6 +193,6 @@ describe('ScanController', () => {
     controller.start();
     controller.stop();
     await controller.whenSettled();
-    expect(cache.recordRecognition).not.toHaveBeenCalled();
+    expect(cache.scanCard).not.toHaveBeenCalled();
   });
 });

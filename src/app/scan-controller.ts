@@ -1,5 +1,5 @@
 import { inputFromResult } from '../cache/card-cache';
-import type { PrepareProgress, PrepareResult } from '../cache/card-cache';
+import type { PrepareProgress, PrepareResult, ScanOutcome } from '../cache/card-cache';
 import type { CachedCard } from '../cache/types';
 import type { CardRecordLike, IdentifiedCard, RecognitionMetrics, RecognitionResult } from '../recognition/pipeline';
 import { TemporalAggregator } from '../recognition/temporal';
@@ -47,7 +47,8 @@ export interface ScanDeps {
   grabFrame(): RgbaImage | null;
   recognize(frame: RgbaImage): Promise<RecognitionResult>;
   cache: {
-    recordRecognition: (input: NonNullable<ReturnType<typeof inputFromResult>>) => Promise<CachedCard>;
+    /** Escaneamento completo, tudo ou nada: só guarda a carta nova se referência, sprite e alvo ficarem prontos. */
+    scanCard: (input: NonNullable<ReturnType<typeof inputFromResult>>, onProgress?: (progress: PrepareProgress) => void, isCurrent?: () => boolean) => Promise<ScanOutcome>;
     prepareCard: (id: string, onProgress?: (progress: PrepareProgress) => void) => Promise<PrepareResult>;
     get: (id: string) => Promise<CachedCard | undefined>;
   };
@@ -218,13 +219,18 @@ export class ScanController {
   private async finish(id: number, result: RecognitionResult, chosen: IdentifiedCard, origin: 'automatico' | 'escolha'): Promise<void> {
     const input = inputFromResult(result, chosen);
     if (!input) return;
-    this.set({ phase: 'preparing', message: `${chosen.name} (${chosen.setName} ${chosen.localId}): guardando no aparelho…`, choices: undefined, origin });
+    this.set({ phase: 'preparing', message: `${chosen.name} (${chosen.setName} ${chosen.localId}): preparando para guardar no aparelho…`, choices: undefined, origin });
     try {
-      const recorded = await this.deps.cache.recordRecognition(input);
-      const prepared = await this.deps.cache.prepareCard(recorded.id, (progress) => {
-        if (id === this.runId) this.set({ progress, message: `Preparando ${progress.step}…` });
-      });
+      const outcome = await this.deps.cache.scanCard(
+        input,
+        (progress) => {
+          if (id === this.runId) this.set({ progress, message: `Preparando ${progress.step}…` });
+        },
+        () => id === this.runId,
+      );
       if (id !== this.runId) return;
+      if (!outcome.saved) return this.set({ phase: 'error', progress: undefined, message: outcome.reason });
+      const prepared = outcome.result;
       this.set({ phase: 'ready', card: prepared.card, progress: undefined, message: `${prepared.card.name} · ${prepared.card.setName} ${prepared.card.localId}`, origin });
     } catch (error) {
       if (id !== this.runId) return;
@@ -243,11 +249,16 @@ export class ScanController {
         this.set({ phase: 'error', message: 'Não consegui obter essa carta no TCGdex. Verifique a conexão e tente de novo.' });
         return;
       }
-      const recorded = await this.deps.cache.recordRecognition({ card: record });
-      const prepared = await this.deps.cache.prepareCard(recorded.id, (progress) => {
-        if (id === this.runId) this.set({ progress, message: `Preparando ${progress.step}…` });
-      });
+      const outcome = await this.deps.cache.scanCard(
+        { card: record },
+        (progress) => {
+          if (id === this.runId) this.set({ progress, message: `Preparando ${progress.step}…` });
+        },
+        () => id === this.runId,
+      );
       if (id !== this.runId) return;
+      if (!outcome.saved) return this.set({ phase: 'error', progress: undefined, message: outcome.reason });
+      const prepared = outcome.result;
       this.set({ phase: 'ready', card: prepared.card, progress: undefined, origin: 'manual', message: `${prepared.card.name} · ${prepared.card.setName} ${prepared.card.localId}` });
     } catch (error) {
       if (id !== this.runId) return;
