@@ -31,10 +31,10 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 3. Em "Ajustes da caixa" mude a altura do celular, o tamanho da caixa e o ângulo de visão. Se a caixa "escorrega" ao girar, ajuste a altura e o ângulo; ao **andar**, ela vai deslizar mesmo (limite conhecido: sem rastreamento de posição).
 4. Anote: se o celular enviou os sensores (senão aparece o aviso de arrastar), se o ponto no chão fica onde você tocou e se 10+ Pokémon ainda rodam fluido.
 
-### Equipe, tela cheia e filtros (Caixa e Escanear)
+### Equipe, tela cheia e suavização (Caixa, Várias e Escanear)
 1. Em Cartas, toque em "Pôr na equipe" nas cartas desejadas (até 6; a ordem aparece como número na grade). Na Caixa a equipe também pode ser trocada pelo botão "Equipe" sobre a câmera.
-2. Com a câmera aberta, use os botões sobre a imagem: "Tela cheia" (os botões continuam visíveis), "Filtros" (câmera, cor e contorno do Pokémon), "Formação" (equipe em fila) e "Passeio".
-3. Anote: se a tela cheia entra e sai sem a imagem esticar, se os botões cabem numa linha no seu aparelho e se os filtros mudam o Pokémon sem travar.
+2. Com a câmera aberta, use os botões sobre a imagem: "Tela cheia" (os botões continuam visíveis), "Suavizar" (Nítido, Bordas suaves, Suave, Macio: qualidade dos pixels do GIF), "Formação" (equipe em fila) e "Passeio".
+3. Anote: se a tela cheia entra e sai sem a imagem esticar, se os botões cabem numa linha no seu aparelho e qual modo de suavização deixa o Pokémon mais bonito no seu aparelho e se o Suave/Macio travam ao trocar.
 
 ### Várias cartas (aba "Várias")
 1. Em Cartas, ponha na equipe as cartas que quer usar (as que já foram escaneadas neste aparelho). Na aba "Várias", toque em "Abrir câmera e rastrear a equipe": o app prepara uma carta de cada vez (a primeira vez compila o alvo, alguns segundos por carta).

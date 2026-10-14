@@ -1415,3 +1415,10 @@ button.link {
   font-size: 0.8rem;
   font-weight: 700;
 }
+
+.stage-sheet .hint {
+  margin: 6px 0 0;
+  font-size: 0.74rem;
+  opacity: 0.8;
+  line-height: 1.35;
+}

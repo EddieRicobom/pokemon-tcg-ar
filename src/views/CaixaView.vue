@@ -7,10 +7,10 @@ import { prepareFighters } from '../app/battle-setup';
 import { useFullscreen } from '../app/fullscreen';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
-import { cameraFilterCss, visual } from '../app/visual-settings';
+import { visual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
 import { requestOrientationPermission } from '../sensors/orientation-feed';
-import FilterSheet from '../components/FilterSheet.vue';
+import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import TeamPicker from '../components/TeamPicker.vue';
 import type { BoxMode } from '../box/box-scene';
@@ -115,7 +115,7 @@ async function open(): Promise<void> {
   box.setPhoneHeight(phoneHeight.value);
   box.setHalfSize(boxSize.value / 2);
   box.setVideoFov(videoFov.value);
-  box.setLook({ tone: visual.tone, outline: visual.outline });
+  box.setSmoothing(visual.smoothing);
   box.setMode(boxMode.value);
   phase.value = 'placing';
   hint.value = 'Aponte o celular para o chão onde a caixa vai ficar e toque em "Colocar a caixa aqui".';
@@ -195,7 +195,7 @@ function onPointerUp(event: PointerEvent): void {
   }
 }
 
-watch(() => [visual.tone, visual.outline] as const, ([tone, outline]) => box?.setLook({ tone, outline }));
+watch(() => visual.smoothing, (smoothing) => box?.setSmoothing(smoothing));
 
 const canBattle = computed(() => phase.value === 'running' && population.value.shown >= 2 && !loadingCreatures.value && !preparing.value);
 const battling = computed(() => battleHud.value !== null);
@@ -286,7 +286,7 @@ onBeforeUnmount(() => {
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
     >
-      <video ref="videoEl" class="feed" playsinline muted :style="{ filter: cameraFilterCss(visual.camera) }"></video>
+      <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas ref="canvasEl" class="overlay" aria-label="Caixa com os Pokémon escaneados"></canvas>
       <p v-if="phase === 'idle'" class="placeholder">Câmera desligada</p>
       <div v-if="phase === 'placing'" class="crosshair" aria-hidden="true"></div>
@@ -330,7 +330,7 @@ onBeforeUnmount(() => {
         <template v-if="picked.dexId"> · Nº {{ picked.dexId }}</template>
         <br />{{ picked.detail }}
       </p>
-      <FilterSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
+      <SmoothingSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
       <div v-if="showTeam && cameraOn" class="stage-sheet" @pointerdown.stop @pointerup.stop @click.stop>
         <header>
           <strong>Equipe da caixa</strong>
@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
       <button v-if="phase === 'placing'" type="button" class="primary stage-cta" @pointerdown.stop @pointerup.stop @click="placeHere">Colocar a caixa aqui</button>
       <div v-if="cameraOn" class="stage-bar" @pointerdown.stop @pointerup.stop>
         <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
-        <StageButton icon="filters" label="Filtros" :active="showFilters" @click="showFilters = !showFilters; showTeam = false" />
+        <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters; showTeam = false" />
         <StageButton v-if="!battling" icon="team" label="Equipe" :active="showTeam" @click="showTeam = !showTeam; showFilters = false" />
         <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
         <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : 'Batalhar'" :disabled="!canBattle" @click="startBattle" />

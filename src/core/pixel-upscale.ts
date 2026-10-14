@@ -5,7 +5,46 @@
  * bilinear puro vira uma mancha. O meio-termo usado aqui é o Scale2x (EPX): cada pixel vira 2×2 e as
  * diagonais são suavizadas só onde há uma borda de verdade, mantendo os traços nítidos. Aplicado duas vezes
  * (×4) e seguido do filtro bilinear da GPU, a silhueta fica lisa sem borrar o desenho.
+ *
+ * Os modos de suavização (`SmoothingMode`) vão de "Nítido" (pixels originais) a "Macio" (Scale2x + desfoque que
+ * preserva bordas + silhueta arredondada). Tudo roda na CPU, uma vez por quadro do GIF, e o resultado é guardado.
  */
+
+export type SmoothingMode = 'nitido' | 'bordas' | 'suave' | 'macio';
+
+export const SMOOTHING_MODES: SmoothingMode[] = ['nitido', 'bordas', 'suave', 'macio'];
+export const DEFAULT_SMOOTHING: SmoothingMode = 'bordas';
+
+export const SMOOTHING_LABELS_PT: Record<SmoothingMode, string> = {
+  nitido: 'Nítido',
+  bordas: 'Bordas suaves',
+  suave: 'Suave',
+  macio: 'Macio',
+};
+
+export const SMOOTHING_HINTS_PT: Record<SmoothingMode, string> = {
+  nitido: 'Pixels originais do GIF, sem ampliar nem suavizar (visual de pixel art).',
+  bordas: 'Amplia o GIF e arredonda só as diagonais do desenho (Scale2x). É o padrão.',
+  suave: 'Bordas suaves, mais um desfoque leve que alisa degraus e arredonda a silhueta.',
+  macio: 'O mais liso: desfoque mais forte e silhueta bem arredondada. Perde um pouco de detalhe fino.',
+};
+
+/** Aceita o valor novo ou, para configurações antigas, o antigo liga/desliga (`smooth`). */
+export function normalizeSmoothing(value: unknown, legacySmooth?: boolean): SmoothingMode {
+  if (SMOOTHING_MODES.includes(value as SmoothingMode)) return value as SmoothingMode;
+  return legacySmooth === false ? 'nitido' : DEFAULT_SMOOTHING;
+}
+
+/** Só o "Nítido" usa o filtro de vizinho mais próximo na GPU. */
+export const isLinearSmoothing = (mode: SmoothingMode): boolean => mode !== 'nitido';
+
+/** Força do desfoque que preserva bordas (sigma de cor, passos) e do arredondamento da silhueta (passos no alfa). */
+const SMOOTHING_PARAMS: Record<SmoothingMode, { sigma: number; passes: number; alphaPasses: number }> = {
+  nitido: { sigma: 0, passes: 0, alphaPasses: 0 },
+  bordas: { sigma: 0, passes: 0, alphaPasses: 0 },
+  suave: { sigma: 48, passes: 1, alphaPasses: 1 },
+  macio: { sigma: 110, passes: 2, alphaPasses: 2 },
+};
 
 export interface UpscaledImage {
   data: Uint8ClampedArray;
@@ -117,8 +156,93 @@ export function bleedTransparent(data: Uint8ClampedArray, width: number, height:
   }
 }
 
-/** Amplia o quadro (Scale2x repetido) e prepara as bordas para o filtro bilinear. */
-export function upscaleSprite(rgba: Uint8ClampedArray, width: number, height: number, maxFactor: 1 | 2 | 4 = 4): UpscaledImage {
+const RANGE_STEP = 64;
+const RANGE_LUT_CACHE = new Map<number, Float32Array>();
+
+/** Peso por diferença de cor (distância² em RGB, em passos de 64): quanto mais diferente, menos entra na média. */
+function rangeLut(sigma: number): Float32Array {
+  let lut = RANGE_LUT_CACHE.get(sigma);
+  if (!lut) {
+    const size = Math.ceil((3 * 255 * 255) / RANGE_STEP) + 1;
+    lut = new Float32Array(size);
+    for (let i = 0; i < size; i++) lut[i] = Math.exp(-(i * RANGE_STEP) / (2 * sigma * sigma));
+    RANGE_LUT_CACHE.set(sigma, lut);
+  }
+  return lut;
+}
+
+/**
+ * Desfoque 3×3 que preserva bordas (filtro bilateral): cada pixel vira a média dos vizinhos, com peso menor
+ * para quem tem cor muito diferente. Alisa degraus e ruído sem apagar os contornos do desenho. Só mexe na cor.
+ */
+export function edgePreservingBlur(src: Uint8ClampedArray, width: number, height: number, sigma: number): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(src);
+  const lut = rangeLut(sigma);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      if (src[i + 3] === 0) continue;
+      const r0 = src[i]!;
+      const g0 = src[i + 1]!;
+      const b0 = src[i + 2]!;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let total = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= width) continue;
+          const j = (ny * width + nx) * 4;
+          const dr = src[j]! - r0;
+          const dg = src[j + 1]! - g0;
+          const db = src[j + 2]! - b0;
+          const spatial = dx === 0 && dy === 0 ? 4 : dx === 0 || dy === 0 ? 2 : 1;
+          const w = spatial * lut[Math.min(lut.length - 1, ((dr * dr + dg * dg + db * db) / RANGE_STEP) | 0)]!;
+          r += src[j]! * w;
+          g += src[j + 1]! * w;
+          b += src[j + 2]! * w;
+          total += w;
+        }
+      }
+      out[i] = Math.round(r / total);
+      out[i + 1] = Math.round(g / total);
+      out[i + 2] = Math.round(b / total);
+    }
+  }
+  return out;
+}
+
+/**
+ * Desfoca o canal alfa (média 3×3). Como a GPU corta a transparência em 50 % (`alphaTest`), os cantos viram
+ * curvas e a silhueta perde os degraus. A cor dos pixels que ganham alfa precisa ter sido espalhada antes.
+ */
+export function smoothAlpha(data: Uint8ClampedArray, width: number, height: number): void {
+  const alpha = new Uint8Array(width * height);
+  for (let i = 0; i < alpha.length; i++) alpha[i] = data[i * 4 + 3]!;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = Math.min(height - 1, Math.max(0, y + dy));
+        for (let dx = -1; dx <= 1; dx++) sum += alpha[ny * width + Math.min(width - 1, Math.max(0, x + dx))]!;
+      }
+      data[(y * width + x) * 4 + 3] = Math.round(sum / 9);
+    }
+  }
+}
+
+/** Amplia o quadro (Scale2x repetido) e aplica o modo de suavização. `nitido` devolve o quadro como está. */
+export function upscaleSprite(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  maxFactor: 1 | 2 | 4 = 4,
+  mode: SmoothingMode = DEFAULT_SMOOTHING,
+): UpscaledImage {
+  if (mode === 'nitido') return { data: new Uint8ClampedArray(rgba), width, height, factor: 1 };
   const factor = Math.min(upscaleFactor(width, height), maxFactor) as 1 | 2 | 4;
   let data = rgba;
   let w = width;
@@ -130,5 +254,8 @@ export function upscaleSprite(rgba: Uint8ClampedArray, width: number, height: nu
   }
   if (factor === 1) data = new Uint8ClampedArray(data);
   bleedTransparent(data, w, h, 2);
+  const params = SMOOTHING_PARAMS[mode];
+  for (let pass = 0; pass < params.passes; pass++) data = edgePreservingBlur(data, w, h, params.sigma);
+  for (let pass = 0; pass < params.alphaPasses; pass++) smoothAlpha(data, w, h);
   return { data, width: w, height: h, factor };
 }

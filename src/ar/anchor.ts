@@ -10,8 +10,8 @@
  * A carta fica no plano XY. Um sprite "em pé" fica no plano XZ, com a base encostada na carta.
  */
 
-import { normalizeLook } from '../core/sprite-look';
-import type { SpriteOutline, SpriteTone } from '../core/sprite-look';
+import { DEFAULT_SMOOTHING, normalizeSmoothing } from '../core/pixel-upscale';
+import type { SmoothingMode } from '../core/pixel-upscale';
 
 export interface SpriteLayout {
   /** Altura do sprite, em larguras de carta (0,6 = 60% da largura da carta). */
@@ -31,14 +31,8 @@ export interface SpriteLayout {
    * Omitido = ligado.
    */
   faceCamera?: boolean;
-  /**
-   * Suaviza o sprite: amplia o GIF (Scale2x) e usa filtro bilinear, em vez de pixels grandes e serrilhados.
-   * Omitido = ligado.
-   */
-  smooth?: boolean;
-  /** Tom de cor e contorno do sprite (filtros de aparência). Omitidos = normal e sem contorno. */
-  tone?: SpriteTone;
-  outline?: SpriteOutline;
+  /** Suavização de pixels do GIF (ver `SmoothingMode`). Omitido = bordas suaves. */
+  smoothing?: SmoothingMode;
   /** Mostra o painel de status no chão, abaixo da carta. Omitido = ligado. */
   showStats?: boolean;
 }
@@ -51,9 +45,7 @@ export const DEFAULT_LAYOUT: SpriteLayout = {
   yawDeg: 0,
   anchor: 'base',
   faceCamera: true,
-  smooth: true,
-  tone: 'normal',
-  outline: 'none',
+  smoothing: DEFAULT_SMOOTHING,
   showStats: true,
 };
 
@@ -74,8 +66,8 @@ export function clampLayout(layout: SpriteLayout): SpriteLayout {
     yawDeg: clamp(layout.yawDeg, LAYOUT_LIMITS.yawDeg.min, LAYOUT_LIMITS.yawDeg.max),
     anchor: layout.anchor === 'center' ? 'center' : 'base',
     faceCamera: layout.faceCamera !== false,
-    smooth: layout.smooth !== false,
-    ...normalizeLook(layout),
+    // `smooth` (liga/desliga) é o formato antigo, ainda presente em layouts salvos.
+    smoothing: normalizeSmoothing(layout.smoothing, (layout as { smooth?: boolean }).smooth),
     showStats: layout.showStats !== false,
   };
 }

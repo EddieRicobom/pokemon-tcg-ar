@@ -11,8 +11,8 @@ import { getCache } from '../app/services';
 import { useFullscreen } from '../app/fullscreen';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
-import { cameraFilterCss, visual } from '../app/visual-settings';
-import FilterSheet from '../components/FilterSheet.vue';
+import { visual } from '../app/visual-settings';
+import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 
@@ -110,7 +110,7 @@ async function open(): Promise<void> {
       return;
     }
     running = started;
-    running.setLayout(clampLayout({ ...DEFAULT_LAYOUT, tone: visual.tone, outline: visual.outline }));
+    running.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing: visual.smoothing }));
     phase.value = 'running';
     progress.value = '';
   } catch (e) {
@@ -132,8 +132,8 @@ function close(): void {
   state.value = { phase: 'idle', visible: [] };
 }
 
-watch(() => [visual.tone, visual.outline] as const, ([tone, outline]) => {
-  running?.setLayout(clampLayout({ ...DEFAULT_LAYOUT, tone, outline }));
+watch(() => visual.smoothing, (smoothing) => {
+  running?.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing }));
 });
 
 onBeforeUnmount(() => {
@@ -150,7 +150,7 @@ onBeforeUnmount(() => {
     </p>
 
     <div ref="stageEl" class="viewport box-viewport" :class="{ 'pseudo-full': pseudo, 'has-bar': cameraOn }">
-      <video ref="videoEl" class="feed" playsinline muted :style="{ filter: cameraFilterCss(visual.camera) }"></video>
+      <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas :key="canvasKey" ref="canvasEl" class="overlay" aria-label="Pokémon sobre as cartas"></canvas>
       <p v-if="phase === 'idle'" class="placeholder">Câmera desligada</p>
       <div v-if="cameraOn && visibleNames.length > 0" class="multi-chips" aria-live="polite">
@@ -158,10 +158,10 @@ onBeforeUnmount(() => {
       </div>
       <p v-if="phase === 'starting' && progress" class="hud" role="status">{{ progress }}</p>
       <p v-else-if="cameraOn && visibleNames.length === 0" class="hud" role="status">Aponte a câmera para as cartas da equipe.</p>
-      <FilterSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
+      <SmoothingSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
       <div v-if="cameraOn" class="stage-bar" @pointerdown.stop @pointerup.stop>
         <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
-        <StageButton icon="filters" label="Filtros" :active="showFilters" @click="showFilters = !showFilters" />
+        <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters" />
         <StageButton icon="close" label="Fechar" @click="close" />
       </div>
     </div>

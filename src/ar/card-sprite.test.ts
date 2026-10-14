@@ -168,7 +168,7 @@ describe('CardSprite: animação do GIF', () => {
   it('preserva a transparência (alpha 0 no GIF vira alpha 0 na textura) e usa alphaTest', () => {
     const data = encodeGif(2, 1, PALETTE, [{ left: 0, top: 0, width: 2, height: 1, indices: [0, 1], delayCs: 10, disposal: 1, transparentIndex: 0 }]);
     const sprite = new CardSprite();
-    sprite.setLayout({ ...DEFAULT_LAYOUT, smooth: false });
+    sprite.setLayout({ ...DEFAULT_LAYOUT, smoothing: 'nitido' });
     sprite.setAnimation(decodeGif(data));
     const pixels = pixelsOf(sprite);
     expect(pixels[3]).toBe(0);
@@ -195,12 +195,12 @@ describe('CardSprite: animação do GIF', () => {
     sprite.setAnimation(threeFrameGif(), 0);
     sprite.update(150);
     expect((sprite.mesh.material.map!.image as { width: number }).width).toBe(8);
-    sprite.setLayout({ ...DEFAULT_LAYOUT, smooth: false });
+    sprite.setLayout({ ...DEFAULT_LAYOUT, smoothing: 'nitido' });
     expect((sprite.mesh.material.map!.image as { width: number }).width).toBe(2);
     expect(sprite.mesh.material.map!.magFilter).toBe(NearestFilter);
     sprite.update(150);
     expect(sprite.currentFrame).toBe(1);
-    sprite.setLayout({ ...DEFAULT_LAYOUT, smooth: true });
+    sprite.setLayout({ ...DEFAULT_LAYOUT, smoothing: 'bordas' });
     expect((sprite.mesh.material.map!.image as { width: number }).width).toBe(8);
   });
 
@@ -263,39 +263,34 @@ describe('CardSprite: estados e limpeza', () => {
   });
 });
 
-describe('CardSprite: filtros de aparência', () => {
+describe('CardSprite: suavização dos pixels', () => {
   const dims = (sprite: CardSprite) => sprite.mesh.material.map!.image as { width: number; height: number; data: Uint8Array };
 
-  it('tom P&B deixa os pixels cinza sem mudar o tamanho', () => {
+  it('os quatro modos escolhem o tamanho e o filtro da textura', () => {
     const sprite = new CardSprite();
     sprite.setAnimation(threeFrameGif());
-    sprite.setLayout({ ...DEFAULT_LAYOUT, tone: 'mono' });
-    const { data, width } = dims(sprite);
-    expect(width).toBe(8); // 2 px × 4
-    expect(data[0]).toBe(data[1]);
-    expect(data[1]).toBe(data[2]);
+    for (const [mode, width, filter] of [['nitido', 2, NearestFilter], ['bordas', 8, LinearFilter], ['suave', 8, LinearFilter], ['macio', 8, LinearFilter]] as const) {
+      sprite.setLayout({ ...DEFAULT_LAYOUT, smoothing: mode });
+      expect(dims(sprite).width).toBe(width);
+      expect(sprite.mesh.material.map!.magFilter).toBe(filter);
+    }
   });
 
-  it('contorno aumenta a textura e a animação continua trocando quadros no mesmo tamanho', () => {
+  it('layout antigo (smooth: false) vira "Nítido"', () => {
+    const sprite = new CardSprite();
+    sprite.setAnimation(threeFrameGif());
+    sprite.setLayout({ ...DEFAULT_LAYOUT, smoothing: undefined, smooth: false } as never);
+    expect(dims(sprite).width).toBe(2);
+  });
+
+  it('trocar o modo no meio da animação não reinicia os quadros', () => {
     const sprite = new CardSprite();
     sprite.setAnimation(threeFrameGif(), 0);
-    const before = dims(sprite).width;
-    sprite.setLayout({ ...DEFAULT_LAYOUT, outline: 'gold' });
-    const first = dims(sprite);
-    expect(first.width).toBeGreaterThan(before);
-    sprite.update(150); // 2º quadro (azul)
-    const second = dims(sprite);
-    expect(second.width).toBe(first.width);
-    expect(second.data.length).toBe(first.data.length);
-  });
-
-  it('voltar ao normal restaura o tamanho original', () => {
-    const sprite = new CardSprite();
-    sprite.setAnimation(threeFrameGif());
-    const original = dims(sprite).width;
-    sprite.setLayout({ ...DEFAULT_LAYOUT, outline: 'white' });
-    sprite.setLayout({ ...DEFAULT_LAYOUT });
-    expect(dims(sprite).width).toBe(original);
+    sprite.update(150);
+    sprite.setLayout({ ...DEFAULT_LAYOUT, smoothing: 'macio' });
+    sprite.update(150);
+    expect(sprite.currentFrame).toBe(1);
+    expect(dims(sprite).width).toBe(8);
   });
 });
 

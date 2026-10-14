@@ -337,7 +337,7 @@ export class BattleDirector {
     else if (this.phase === 'fight') this.updateTurn(dt);
     else this.updateFinished();
 
-    this.applyPersistent(dt);
+    this.applyPersistent();
     this.commit();
     this.cachedHud = null;
   }
@@ -358,8 +358,7 @@ export class BattleDirector {
   }
 
   /** Efeitos que valem o tempo todo: condições, escudos, empurrões, desmaio. */
-  private applyPersistent(dt: number): void {
-    void dt;
+  private applyPersistent(): void {
     this.o.creatures.forEach((c, i) => {
       const f = this.frames[i]!;
       const fainted = this.faintAt[i]! >= 0;
@@ -453,7 +452,6 @@ export class BattleDirector {
     const personality = PERSONALITY_LABELS_PT[fighter.personality];
     // A guarda dura até ele agir de novo.
     if (turn.kind !== 'guard') this.guard[turn.attacker] = false;
-    const base = this.world(turn.attacker);
     if (turn.kind === 'attack') {
       const source = turn.move.source === 'carta' ? 'ataque da carta' : turn.move.source === 'jogo' ? 'golpe do jogo' : 'golpe padrão';
       this.banner = {
@@ -482,7 +480,6 @@ export class BattleDirector {
         color: STATUS_COLORS_CSS[turn.cause ?? 'burn'],
       };
     }
-    void base;
   }
 
   private face(i: number, toward: number): void {
@@ -501,7 +498,7 @@ export class BattleDirector {
 
     if (turn.kind === 'attack') this.runAttack(turn, plan, t, dt);
     else if (turn.kind === 'guard') this.runGuard(turn, t, dt);
-    else if (turn.kind === 'skip') this.runSkip(turn, t, dt);
+    else if (turn.kind === 'skip') this.runSkip(turn, t);
     else this.runResidual(turn, t);
 
     if (t >= plan.total) this.endTurn(turn);
@@ -783,7 +780,6 @@ export class BattleDirector {
   private runGuard(turn: BattleTurn, t: number, dt: number): void {
     const i = turn.attacker;
     const f = this.frames[i]!;
-    const c = this.o.creatures[i]!;
     const u = clamp01(t / 450);
     f.squash *= 1 - 0.18 * Math.sin(u * Math.PI * 0.5);
     f.scale *= 1 + 0.06 * u;
@@ -794,10 +790,9 @@ export class BattleDirector {
       this.addLabel('Defendeu!', 'info', '#7fd4ff', this.top(i, 0.12));
     }
     if (this.every(t, dt, 60)) emitCharge(this.particles, this.chest(i), 'steel', this.o.rng);
-    void c;
   }
 
-  private runSkip(turn: BattleTurn, t: number, dt: number): void {
+  private runSkip(turn: BattleTurn, t: number): void {
     const i = turn.attacker;
     const f = this.frames[i]!;
     const cause = turn.cause ?? 'paralysis';
@@ -810,7 +805,6 @@ export class BattleDirector {
     if (cause === 'paralysis') f.dx += Math.sin(t * 0.12) * 0.03;
     else f.dx += Math.sin(t * 0.04) * 0.008;
     f.squash *= 1 - 0.06 * Math.sin((t / 400) * Math.PI);
-    void dt;
   }
 
   private runResidual(turn: BattleTurn, t: number): void {

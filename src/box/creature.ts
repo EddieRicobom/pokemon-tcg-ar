@@ -1,12 +1,11 @@
 import {
-  DataTexture, DoubleSide, Group, LinearFilter, Mesh, MeshBasicMaterial, PlaneGeometry, RGBAFormat, SRGBColorSpace, UnsignedByteType, Vector3,
+  DataTexture, DoubleSide, Group, LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, SRGBColorSpace, UnsignedByteType, Vector3,
   CircleGeometry,
 } from 'three';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
-import { upscaleSprite } from '../core/pixel-upscale';
-import { applyLook, DEFAULT_LOOK, isDefaultLook, lookKey } from '../core/sprite-look';
-import type { SpriteLook } from '../core/sprite-look';
+import { DEFAULT_SMOOTHING, isLinearSmoothing, upscaleSprite } from '../core/pixel-upscale';
+import type { SmoothingMode } from '../core/pixel-upscale';
 import type { RgbaImage } from '../recognition/types';
 import type { WanderState } from './wander';
 
@@ -49,6 +48,14 @@ const MAX_HEIGHT_M = 0.9;
 const SPRITE_FACES_LEFT = true;
 /** Ampliação dentro da caixa (×2): a tela mostra o Pokémon pequeno e há muitos ao mesmo tempo. */
 const BOX_MAX_UPSCALE = 2;
+/** Memória máxima de quadros suavizados por Pokémon (a caixa tem até 6). */
+const FRAME_CACHE_BYTES = 6 * 1024 * 1024;
+
+interface PreparedFrame {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+}
 /** Inclinação do sprite para a câmera quando ela está acima: fração do ângulo de elevação, até este máximo. */
 const LEAN_FRACTION = 0.6;
 const MAX_LEAN_RAD = 0.75;
@@ -72,7 +79,10 @@ export class BoxCreature {
   readonly width: number;
   readonly height: number;
   private texture: DataTexture;
-  private look: SpriteLook = DEFAULT_LOOK;
+  private smoothing: SmoothingMode = DEFAULT_SMOOTHING;
+  /** Quadros já suavizados (a conta é cara e o GIF repete os mesmos quadros o tempo todo). */
+  private readonly frameCache = new Map<number, PreparedFrame>();
+  private frameCacheBytes = 0;
   private lastRgba: Uint8ClampedArray;
   private readonly gif: DecodedGif | null;
   private readonly spriteWidth: number;
@@ -93,7 +103,7 @@ export class BoxCreature {
     this.spriteWidth = width;
     this.spriteHeight = height;
     this.lastRgba = first;
-    this.texture = this.makeTexture(this.prepare(first));
+    this.texture = this.makeTexture(this.prepare(0, first));
 
     this.height = creatureHeightMeters(height);
     this.width = this.height * (width / height);
@@ -112,18 +122,25 @@ export class BoxCreature {
     this.mesh.userData.creature = this;
   }
 
-  /** Quadro ampliado (×2) com o tom e o contorno escolhidos. */
-  private prepare(rgba: Uint8ClampedArray): { data: Uint8ClampedArray; width: number; height: number } {
-    const up = upscaleSprite(rgba, this.spriteWidth, this.spriteHeight, BOX_MAX_UPSCALE);
-    if (isDefaultLook(this.look)) return up;
-    return applyLook(up.data, up.width, up.height, this.look, Math.max(1, Math.round(up.factor / 2)));
+  /** Quadro ampliado (×2) e suavizado no modo escolhido; o resultado fica guardado até a memória acabar. */
+  private prepare(index: number, rgba: Uint8ClampedArray): PreparedFrame {
+    const cached = this.frameCache.get(index);
+    if (cached) return cached;
+    const up = upscaleSprite(rgba, this.spriteWidth, this.spriteHeight, BOX_MAX_UPSCALE, this.smoothing);
+    const prepared: PreparedFrame = { data: up.data, width: up.width, height: up.height };
+    if (this.frameCacheBytes + prepared.data.byteLength <= FRAME_CACHE_BYTES) {
+      this.frameCache.set(index, prepared);
+      this.frameCacheBytes += prepared.data.byteLength;
+    }
+    return prepared;
   }
 
-  private makeTexture(frame: { data: Uint8ClampedArray; width: number; height: number }): DataTexture {
+  private makeTexture(frame: PreparedFrame): DataTexture {
     const texture = new DataTexture(asBytes(frame.data), frame.width, frame.height, RGBAFormat, UnsignedByteType);
     texture.colorSpace = SRGBColorSpace;
-    texture.magFilter = LinearFilter;
-    texture.minFilter = LinearFilter;
+    const filter = isLinearSmoothing(this.smoothing) ? LinearFilter : NearestFilter;
+    texture.magFilter = filter;
+    texture.minFilter = filter;
     texture.generateMipmaps = false;
     texture.repeat.set(1, -1);
     texture.offset.set(0, 1);
@@ -131,12 +148,14 @@ export class BoxCreature {
     return texture;
   }
 
-  /** Troca o tom de cor e o contorno (refaz a textura com o quadro atual). */
-  setLook(look: SpriteLook): void {
-    if (lookKey(look) === lookKey(this.look)) return;
-    this.look = look;
+  /** Troca o modo de suavização dos pixels (refaz a textura com o quadro atual). */
+  setSmoothing(mode: SmoothingMode): void {
+    if (mode === this.smoothing) return;
+    this.smoothing = mode;
+    this.frameCache.clear();
+    this.frameCacheBytes = 0;
     const old = this.texture;
-    this.texture = this.makeTexture(this.prepare(this.lastRgba));
+    this.texture = this.makeTexture(this.prepare(Math.max(0, this.shownFrame), this.lastRgba));
     this.mesh.material.map = this.texture;
     this.mesh.material.needsUpdate = true;
     old.dispose();
@@ -192,7 +211,7 @@ export class BoxCreature {
         if (frame) {
           this.shownFrame = index;
           this.lastRgba = frame.rgba;
-          this.texture.image.data = asBytes(this.prepare(frame.rgba).data);
+          this.texture.image.data = asBytes(this.prepare(index, frame.rgba).data);
           this.texture.needsUpdate = true;
         }
       }
