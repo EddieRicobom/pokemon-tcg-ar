@@ -47,7 +47,8 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 2. Confira: o anúncio do golpe (nome, tipo e se veio da carta ou do jogo), as barras de PS descendo, os números de dano, "Super efetivo!"/"Pouco efetivo…" (ex.: Água contra Fogo), o desmaio e a comemoração do vencedor. "De novo" refaz com novos sorteios; "Parar" volta ao passeio.
 3. Veja o jeito de cada um: o rótulo de personalidade no anúncio (agressivo, defensivo, veloz, equilibrado), golpes diferentes por tipo (corpo a corpo: investida, socos, mergulho, pisão, cortes; à distância: bola, raio, jato, enxame, feixe, tremor), defesa com escudo azul abaixo de 45 % de PS, e as condições (Queimado, Envenenado, Paralisado, Congelado) com selo na barra e efeito contínuo. "Vingança!" aparece quando alguém revida quem acabou de bater nele.
 4. Abaixo da câmera aparece o vencedor, o destaque de dano e o resumo (críticos, condições, defesas) e, se algum Pokémon ficou sem dados (PokéAPI ou TCGdex fora do ar), o que foi substituído por valores neutros.
-5. Anote: se os efeitos pesam no seu aparelho (queda de fluidez), se os textos ficam legíveis e se a batalha fica longa ou curta demais.
+5. A arena nasce pequena na frente de onde o celular aponta: confira se todos os lutadores cabem na tela sem você virar o celular, se o botão "Centrar" traz a arena de volta depois de você olhar para outro lado, e se a câmera lenta no nocaute, o tremor da imagem e os avisos grandes ajudam ou atrapalham.
+6. Anote: se os efeitos pesam no seu aparelho (queda de fluidez), se os textos ficam legíveis e se a batalha fica longa ou curta demais.
 
 ### Giroscópio (Escanear e Caixa)
 1. Com o AR ativo, abaixo da câmera aparece "Rastreador: N leituras/s · giroscópio: corrigindo a pose". Se aparecer "sem dados do sensor", o aparelho/navegador não entregou o sensor.

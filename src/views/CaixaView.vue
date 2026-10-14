@@ -199,6 +199,12 @@ watch(() => visual.smoothing, (smoothing) => box?.setSmoothing(smoothing));
 
 const canBattle = computed(() => phase.value === 'running' && population.value.shown >= 2 && !loadingCreatures.value && !preparing.value);
 const battling = computed(() => battleHud.value !== null);
+/** Tremor e "soco" de zoom da imagem desenhada nos golpes fortes (o vídeo da câmera não treme). */
+const shakeStyle = computed(() => {
+  const s = battleHud.value?.shake;
+  if (!s || (Math.abs(s.x) < 0.2 && Math.abs(s.y) < 0.2 && s.zoom < 1.002)) return undefined;
+  return { transform: `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) scale(${s.zoom.toFixed(3)})` };
+});
 
 /** Carrega os dados de cada Pokémon da caixa (jogo + carta) e começa a luta automática. */
 async function startBattle(): Promise<void> {
@@ -287,14 +293,16 @@ onBeforeUnmount(() => {
       @pointercancel="onPointerUp"
     >
       <video ref="videoEl" class="feed" playsinline muted></video>
-      <canvas ref="canvasEl" class="overlay" aria-label="Caixa com os Pokémon escaneados"></canvas>
+      <canvas ref="canvasEl" class="overlay" :style="shakeStyle" aria-label="Caixa com os Pokémon escaneados"></canvas>
       <p v-if="phase === 'idle'" class="placeholder">Câmera desligada</p>
       <div v-if="phase === 'placing'" class="crosshair" aria-hidden="true"></div>
-      <div v-if="battleHud" class="battle-hud" aria-live="polite">
+      <div v-if="battleHud" class="battle-hud" :class="{ compact: battleHud.bars.length > 4 }" aria-live="polite">
+        <div class="battle-dim" :style="{ opacity: battleHud.dim }"></div>
         <div v-if="battleHud.banner" class="battle-banner" :style="{ '--fx': battleHud.banner.color }">
           <strong>{{ battleHud.banner.text }}</strong>
           <span>{{ battleHud.banner.sub }}</span>
         </div>
+        <div v-if="battleHud.callout" :key="battleHud.callout.key" class="battle-callout" :style="{ color: battleHud.callout.color, opacity: Math.min(1, (1 - battleHud.callout.age) * 2.2) }">{{ battleHud.callout.text }}</div>
         <div v-if="battleHud.flash" class="battle-flash" :style="{ background: battleHud.flash.color, opacity: battleHud.flash.strength }"></div>
         <div
           v-for="bar in battleHud.bars"
@@ -321,7 +329,7 @@ onBeforeUnmount(() => {
           :key="label.key"
           class="float-label"
           :class="label.tone"
-          :style="{ left: label.x + '%', top: label.y + '%', color: label.color, opacity: 1 - label.age * label.age }"
+          :style="{ left: label.x + '%', top: label.y + '%', color: label.color, opacity: 1 - label.age * label.age, '--size': label.size }"
         >{{ label.text }}</span>
       </div>
       <p v-if="hint" class="hud" role="status">{{ hint }}</p>
@@ -346,8 +354,9 @@ onBeforeUnmount(() => {
         <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
         <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : 'Batalhar'" :disabled="!canBattle" @click="startBattle" />
         <StageButton v-if="battling && battleHud?.phase === 'finished'" icon="battle" label="De novo" @click="startBattle" />
+        <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
         <StageButton v-if="battling" icon="stop" label="Parar" @click="stopBattle" />
-        <StageButton v-if="phase === 'running'" icon="move" label="Mover" @click="moveBox" />
+        <StageButton v-if="phase === 'running' && !battling" icon="move" label="Mover" @click="moveBox" />
         <StageButton icon="close" label="Fechar" @click="close" />
       </div>
     </div>
