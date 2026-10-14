@@ -62,6 +62,13 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 4. Em uma sala escura e depois perto de uma janela, os Pokémon devem parecer um pouco mais escuros/claros, sem mudar de cor demais.
 5. Ao fim, o botão "Resumo" mostra quem mais causou dano, críticos e defesas.
 
+### Som da batalha (Caixa)
+1. Com o volume de mídia alto e (no iPhone) o modo silencioso desligado, toque em Batalhar: deve soar uma abertura curta e, em "Já!", um sinal de início.
+2. Em cada golpe: um som de carga subindo, o lançamento (corpo a corpo ou à distância) e o impacto. Compare tipos diferentes (fogo, água, elétrico, planta, lutador...): cada um deve soar diferente. Crítico e super efetivo têm um brilho a mais; defesa e erro soam diferentes de um acerto.
+3. No nocaute o som desce; ao fim, uma fanfarra para o vencedor (mais rápida se for veloz, mais lenta se for defensivo, com baixo grave se for agressivo).
+4. Em "Suavizar" há "Som da batalha": Desligado deve silenciar tudo, sem travar a batalha.
+5. Se nada tocar, anote o aparelho e o navegador. Sons picotados ou estalos também importam.
+
 ### Giroscópio (Escanear e Caixa)
 1. Com o AR ativo, abaixo da câmera aparece "Rastreador: N leituras/s · giroscópio: corrigindo a pose". Se aparecer "sem dados do sensor", o aparelho/navegador não entregou o sensor.
 2. Mova o celular em arco, devagar e depressa, com a carta parada: o Pokémon deve acompanhar sem ficar para trás nem se adiantar à carta. Se ele se adianta, aumente "Atraso da câmera para o sensor" em Ajustes; se fica para trás, diminua. Compare com "Usar o giroscópio" desligado.

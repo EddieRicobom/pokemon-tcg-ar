@@ -14,6 +14,7 @@ import {
 } from './effects';
 import type { PhysicalStyle, SpecialDelivery } from './effects';
 import { FloorPools } from './fx-lights';
+import type { SoundCue, SoundSink } from './sound-recipes';
 import type { FxLight } from './fx-lights';
 import { stepToward } from './wander';
 
@@ -105,6 +106,8 @@ export interface DirectorOptions {
   rx: number;
   rz: number;
   rng: Rng;
+  /** Quem toca os sons da batalha (opcional: sem ele a batalha é muda). */
+  sound?: SoundSink;
 }
 
 // ----------------------------------------------------------------------------- tempos de cada golpe (ms)
@@ -257,6 +260,7 @@ export class BattleDirector {
   private turnClock = 0;
   private impactDone = false;
   private miniDone = new Set<number>();
+  private launchDone = false;
   private labelSeq = 0;
   private labels: FloatLabel[] = [];
   private banner: BattleHud['banner'] = null;
@@ -332,6 +336,7 @@ export class BattleDirector {
       return shield;
     });
     this.banner = { text: 'Batalha!', sub: `${n} Pokémon, todos contra todos`, color: '#ffcb05' };
+    this.cue({ kind: 'intro' });
   }
 
   /** Meio-eixo x da arena (para recentralizar sem refazer o cálculo). */
@@ -386,6 +391,10 @@ export class BattleDirector {
   private addLabel(text: string, tone: LabelTone, color: string, at: Vector3, size = 1): void {
     this.labels.push({ key: ++this.labelSeq, text, tone, color, at: at.clone(), born: this.clock, size });
     if (this.labels.length > 14) this.labels.shift();
+  }
+
+  private cue(c: SoundCue): void {
+    this.o.sound?.play(c);
   }
 
   private flash(color: string, strength: number): void {
@@ -620,6 +629,7 @@ export class BattleDirector {
       this.phase = 'fight';
       this.turnClock = 0;
       this.shout('Já!', '#ffcb05');
+      this.cue({ kind: 'go' });
       this.rings.emit(new Vector3(0, 0, 0), 0xffcb05, Math.max(this.o.rx, 0.5) * 1.3, 800);
       this.startTurn();
     }
@@ -635,6 +645,7 @@ export class BattleDirector {
     const turn = this.currentTurnData();
     if (!turn) return this.finish();
     this.impactDone = false;
+    this.launchDone = false;
     this.miniDone.clear();
     const fighter = this.o.fighters[turn.attacker]!;
     const personality = PERSONALITY_LABELS_PT[fighter.personality];
@@ -650,6 +661,8 @@ export class BattleDirector {
       // A borda da arena acende na cor do golpe e um anel de carga abre sob quem ataca.
       this.stage.setColor(typeColorHex(turn.move.type));
       this.rings.emit(this.world(turn.attacker), typeColorHex(turn.move.type), 0.45, 600);
+      const startPlan = turnPlan(turn, fighter.personality);
+      this.cue({ kind: 'charge', type: turn.move.type, ranged: startPlan.style?.family === 'ranged', ms: startPlan.windup });
       if (turn.thawed) {
         this.status[turn.attacker] = null;
         this.addLabel('Descongelou!', 'status', STATUS_COLORS_CSS.freeze, this.top(turn.attacker, 0.15));
@@ -657,6 +670,7 @@ export class BattleDirector {
       }
       if (turn.revenge) this.addLabel('Vingança!', 'info', '#fda4af', this.top(turn.attacker, 0.22));
     } else if (turn.kind === 'guard') {
+      this.cue({ kind: 'guard' });
       this.banner = { text: `${fighter.name} se defendeu!`, sub: `${personality} · o próximo golpe causa metade do dano`, color: '#7fd4ff' };
     } else if (turn.kind === 'skip') {
       this.banner = {
@@ -687,6 +701,12 @@ export class BattleDirector {
     const plan = turnPlan(turn, this.personality(turn.attacker));
     this.o.creatures.forEach((_, i) => this.face(i, i === turn.target ? turn.attacker : turn.target));
 
+    if (turn.kind === 'attack' && !this.launchDone && t >= plan.windup && plan.style) {
+      this.launchDone = true;
+      this.cue(plan.style.family === 'melee'
+        ? { kind: 'launch', type: turn.move.type, melee: plan.style.variant, ms: plan.travel + plan.strike }
+        : { kind: 'launch', type: turn.move.type, delivery: plan.style.delivery, ms: plan.travel });
+    }
     if (turn.kind === 'attack') this.runAttack(turn, plan, t, dt);
     else if (turn.kind === 'guard') this.runGuard(turn, t, dt);
     else if (turn.kind === 'skip') this.runSkip(turn, t);
@@ -895,12 +915,14 @@ export class BattleDirector {
     const type = turn.move.type;
     if (!turn.hit) {
       this.dodgeUntil[target] = this.clock + 420;
+      this.cue({ kind: 'miss' });
       this.addLabel('Errou!', 'miss', '#cbd5e1', top);
       // Vento da esquiva.
       for (let i = 0; i < 6; i++) emitBurst(this.particles, at, 'flying', 0.15, this.o.rng);
       return;
     }
     if (turn.damage === 0) {
+      this.cue({ kind: 'immune' });
       emitBurst(this.particles, at, type, 0.4, this.o.rng);
       this.addLabel(effectivenessLabel(0) ?? 'Não afeta…', 'info', '#cbd5e1', top);
       return;
@@ -908,6 +930,7 @@ export class BattleDirector {
     const guarded = turn.guardedHit === true;
     const strength = (guarded ? 0.5 : 0.8) * Math.sqrt(turn.effectiveness) * (turn.critical ? 1.4 : 1);
     emitImpact(this.particles, this.rings, at, type, strength, this.o.rng);
+    this.cue({ kind: 'impact', type, strength, critical: turn.critical, effectiveness: turn.effectiveness, guarded });
     this.flashUntil[target] = this.clock + 320;
     this.flashColor[target] = hitTint(type);
     const bigHit = Math.min(1.6, 0.7 + (turn.damage / this.o.fighters[target]!.maxHp) * 1.6 + (turn.critical ? 0.4 : 0) + (turn.effectiveness >= 2 ? 0.2 : 0));
@@ -937,11 +960,13 @@ export class BattleDirector {
     }
     if (turn.inflicted) {
       this.status[target] = turn.inflicted;
+      this.cue({ kind: 'status', status: turn.inflicted });
       this.addLabel(STATUS_LABELS_PT[turn.inflicted] + '!', 'status', STATUS_COLORS_CSS[turn.inflicted], top.clone().add(new Vector3(0, lift, 0)));
       lift += 0.12;
     }
     if (turn.fainted) {
       this.faintAt[target] = this.clock;
+      this.cue({ kind: 'faint' });
       this.status[target] = null;
       this.guard[target] = false;
       this.addLabel(`${this.o.fighters[target]!.name} desmaiou!`, 'info', '#f8fafc', top.clone().add(new Vector3(0, lift, 0)));
@@ -1009,6 +1034,7 @@ export class BattleDirector {
     const cause = turn.cause ?? 'paralysis';
     if (!this.impactDone && t > 150) {
       this.impactDone = true;
+      this.cue({ kind: 'skip', cause });
       this.addLabel(cause === 'freeze' ? 'Congelado!' : 'Paralisado!', 'status', STATUS_COLORS_CSS[cause], this.top(i, 0.12));
       emitBurst(this.particles, this.chest(i), cause === 'freeze' ? 'ice' : 'electric', 0.5, this.o.rng);
     }
@@ -1025,6 +1051,7 @@ export class BattleDirector {
     if (!this.impactDone && t > 200) {
       this.impactDone = true;
       this.hpAnim[i] = { from: this.shownHp[i]!, to: turn.targetHpAfter, at: this.clock };
+      this.cue({ kind: 'tick', cause });
       this.addLabel(`-${turn.damage}`, 'status', STATUS_COLORS_CSS[cause], this.top(i));
       this.flashUntil[i] = this.clock + 260;
       this.flashColor[i] = cause === 'burn' ? 0xff8a5c : 0xc58bff;
@@ -1061,6 +1088,7 @@ export class BattleDirector {
       this.hpAnim[i] = { from: this.shownHp[i]!, to: this.shownHp[i]!, at: this.clock };
     }
     this.shout('Vitória!', '#ffcb05');
+    this.cue({ kind: 'victory', personality: this.personality(w) });
     this.slowMo(600, 0.4);
     this.banner = {
       text: `${fighter.name} venceu!`,

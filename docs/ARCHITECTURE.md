@@ -146,6 +146,14 @@ Tela "Caixa": todos os Pokémon das cartas já guardadas no aparelho (até 30, a
 - "Suavizar" → "Luz dos golpes: Ligada/Desligada" (`visual.lighting`, padrão ligada) para celulares fracos. Desligada: sem luzes nos sprites, no chão e no vídeo (o escurecimento de cinema fica).
 - Batalhar entra em tela cheia (e sai ao parar, se foi a batalha que entrou); o resumo da luta virou o botão "Resumo" (folha dentro do visor, para aparecer também em tela cheia); a barra de quem está agindo tem destaque e há um indicador de rodada.
 
+### Sons da batalha (`src/box/sound-recipes.ts`, `src/box/sound.ts`)
+- **Tudo sintetizado na hora** com WebAudio (osciladores e ruído filtrado): nenhum arquivo de áudio, então não há direitos autorais nem download. Master com `DynamicsCompressor`, no máximo 28 vozes ao mesmo tempo.
+- **Receitas puras** (`layersFor(cue)` → lista de `Layer`: tom ou ruído, frequência inicial/final, início, duração, ganho, filtro, vibrato), testáveis sem áudio. `SoundEngine` só toca as camadas. Duração limitada a 1,6 s por camada e ganho a 0,8.
+- **Sinais** (`SoundCue`) emitidos pelo `BattleDirector` junto dos eventos visuais, por um `SoundSink` injetado (`BoxScene.setSound`): `intro`, `go`, `charge` (varredura ascendente, forma de onda por tipo), `launch` (corpo a corpo: tackle/jab/mergulho/pisada/corte; à distância: orbe, raio, jato, enxame, feixe, tremor), `impact` (um timbre para cada um dos 18 tipos; força, crítico, super efetivo, pouco efetivo e defendido mudam volume e camadas extras), `miss`, `immune`, `guard`, `status`, `tick`, `skip`, `faint` (descida de tom) e `victory`.
+- **Vencedor**: arpejo ascendente fechado por acorde; o ritmo vem da personalidade (veloz rápido, defensivo lento) e o agressivo ganha um baixo grave.
+- O som não acompanha a câmera lenta (usa o relógio real). O navegador só libera o áudio dentro de um toque: `CaixaView.startBattle` chama `unlockAudio()` antes de qualquer `await`.
+- "Suavizar" → "Som da batalha: Ligado/Desligado" (`visual.sound`, padrão ligado).
+
 ### Giroscópio e suavização (tracking mais fluido)
 
 - **Fonte de sensores** (`src/sensors/orientation-feed.ts`): uma só para o AR da carta e a Caixa. Prefere o `RelativeOrientationSensor` (Generic Sensor API, Chrome/Android, 60 Hz, sem bússola e sem os saltos magnéticos) e cai no evento `deviceorientation`. A conversão do quaternion do sensor para a câmera do Three.js é testada contra a conta do evento W3C. Guarda 1,5 s de histórico com a hora de cada amostra (`at(t)` interpola), para consultar a orientação **no instante** do quadro.

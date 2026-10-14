@@ -11,6 +11,7 @@ import { createWander, separate, stepToward, stepWander } from './wander';
 import { arenaFrame, arenaRadii } from './arena';
 import { BattleDirector } from './battle-director';
 import { FxLights } from './fx-lights';
+import type { SoundSink } from './sound-recipes';
 import type { BattleHud } from './battle-director';
 import { simulateBattle } from '../core/battle';
 import type { BattleResult, Fighter } from '../core/battle';
@@ -54,6 +55,8 @@ export class BoxScene {
   /** Luzes dos golpes e do ambiente, compartilhadas por todos os sprites. */
   readonly fx = new FxLights();
   private lighting = true;
+  /** Quem toca os sons das próximas batalhas (null = mudo). */
+  private sound: SoundSink | null = null;
   private readonly envTarget = new Vector3(1, 1, 1);
   private readonly env = new Vector3(1, 1, 1);
 
@@ -172,6 +175,11 @@ export class BoxScene {
     if (this.director) this.director.lighting = on;
   }
 
+  /** Define quem toca os sons da batalha (vale a partir da próxima batalha). */
+  setSound(sink: SoundSink | null): void {
+    this.sound = sink;
+  }
+
   setMode(mode: BoxMode): void {
     this.mode = mode;
   }
@@ -200,7 +208,7 @@ export class BoxScene {
     for (const creature of this.creatures) this.battleRoot.add(creature.group);
     this.floor.visible = false;
     this.director = new BattleDirector({
-      fighters, creatures: this.creatures, result, root: this.battleRoot, camera: this.camera, rx, rz, rng,
+      fighters, creatures: this.creatures, result, root: this.battleRoot, camera: this.camera, rx, rz, rng, sound: this.sound ?? undefined,
     });
     this.director.lighting = this.lighting;
     return result;

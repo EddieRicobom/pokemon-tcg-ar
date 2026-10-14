@@ -120,6 +120,7 @@ async function open(): Promise<void> {
   box.setVideoFov(videoFov.value);
   box.setSmoothing(visual.smoothing);
   box.setLighting(visual.lighting);
+  box.setSound(visual.sound);
   box.setMode(boxMode.value);
   phase.value = 'placing';
   hint.value = 'Aponte o celular para o chão onde a caixa vai ficar e toque em "Colocar a caixa aqui".';
@@ -203,6 +204,7 @@ function onPointerUp(event: PointerEvent): void {
 
 watch(() => visual.smoothing, (smoothing) => box?.setSmoothing(smoothing));
 watch(() => visual.lighting, (on) => box?.setLighting(on));
+watch(() => visual.sound, (on) => box?.setSound(on));
 
 const canBattle = computed(() => phase.value === 'running' && population.value.shown >= 2 && !loadingCreatures.value && !preparing.value);
 const battling = computed(() => battleHud.value !== null);
@@ -219,6 +221,8 @@ async function startBattle(): Promise<void> {
   if (!current || preparing.value) return;
   const creatures = current.scene.creatureList;
   if (creatures.length < 2) return;
+  // O navegador só libera o áudio dentro de um toque: isso vem antes de qualquer espera.
+  current.unlockAudio();
   preparing.value = true;
   showSummary.value = false;
   // A arena é pequena: a tela cheia (pedida já no toque, antes de esperar a rede) dá mais espaço para ver o que acontece.
@@ -391,7 +395,7 @@ onBeforeUnmount(() => {
         <template v-if="picked.dexId"> · Nº {{ picked.dexId }}</template>
         <br />{{ picked.detail }}
       </p>
-      <SmoothingSheet v-if="showFilters && cameraOn" lighting @close="showFilters = false" />
+      <SmoothingSheet v-if="showFilters && cameraOn" battle @close="showFilters = false" />
       <div v-if="showSummary && battleSummary && battleHud?.phase === 'finished'" class="stage-sheet battle-summary" @pointerdown.stop @pointerup.stop @click.stop>
         <header>
           <strong>{{ battleSummary.winner }} venceu</strong>

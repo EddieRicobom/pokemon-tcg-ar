@@ -10,6 +10,7 @@ import type { BattleResult, Fighter } from '../core/battle';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES } from './floor';
 import { createWebglBackend } from '../ar/webgl-backend';
 import { ambientFromSample } from './fx-lights';
+import { SoundEngine } from './sound';
 import { sensorSettings } from '../app/sensor-settings';
 
 /** Campo de visão vertical típico da câmera traseira de um celular em pé (ajustável na tela). */
@@ -37,6 +38,10 @@ export interface RunningBox {
   setSmoothing(mode: SmoothingMode): void;
   /** Luz dos golpes e do ambiente. */
   setLighting(on: boolean): void;
+  /** Liga ou desliga os sons da batalha. */
+  setSound(on: boolean): void;
+  /** Libera o áudio do navegador: chame direto de um toque do usuário (ex.: no clique de Batalhar). */
+  unlockAudio(): void;
   startBattle(fighters: readonly Fighter[]): BattleResult;
   stopBattle(): void;
   /** Traz a arena da batalha de volta para a frente do olhar. */
@@ -51,6 +56,8 @@ export interface RunningBox {
 /** Ponto de entrada da Caixa: tudo que usa Three.js passa por aqui (import dinâmico). */
 export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   const scene = new BoxScene();
+  const sound = new SoundEngine();
+  scene.setSound(sound);
   const renderer = createWebglBackend(options.canvas);
   const orientation = new OrientationSource();
   await orientation.requestPermission();
@@ -130,6 +137,8 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setMode: (mode) => scene.setMode(mode),
     setSmoothing: (mode) => scene.setSmoothing(mode),
     setLighting: (on) => scene.setLighting(on),
+    setSound: (on) => sound.setEnabled(on),
+    unlockAudio: () => sound.unlock(),
     startBattle: (fighters) => scene.startBattle(fighters),
     stopBattle: () => scene.stopBattle(),
     recenterBattle: () => scene.recenterBattle(),
@@ -148,6 +157,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
       observer.disconnect();
       options.video.removeEventListener('loadedmetadata', resize);
       orientation.stop();
+      sound.dispose();
       scene.dispose();
       renderer.dispose();
     },
