@@ -50,6 +50,11 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 5. A arena nasce pequena na frente de onde o celular aponta: confira se todos os lutadores cabem na tela sem você virar o celular, se o botão "Centrar" traz a arena de volta depois de você olhar para outro lado, e se a câmera lenta no nocaute, o tremor da imagem e os avisos grandes ajudam ou atrapalham.
 6. Anote: se os efeitos pesam no seu aparelho (queda de fluidez), se os textos ficam legíveis e se a batalha fica longa ou curta demais.
 
+### Luz difícil (Escanear)
+1. Aponte para uma carta em ambiente de pouca luz, depois com a sombra da mão cobrindo metade da carta e com uma janela atrás dela. Compare quanto demora até o Pokémon aparecer com o que acontecia antes (o app agora alterna quadros com contraste corrigido).
+2. Anote o "leituras/s" do rastreador com boa luz: se cair muito em relação à versão anterior (cerca de 10–15 em aparelhos médios), me avise, porque a correção de contraste pesa na GPU.
+3. Cartas já guardadas serão recompiladas na primeira vez (o alvo agora usa cinza de luminância): espere a etapa "alvo compilado" uma vez por carta.
+
 ### Giroscópio (Escanear e Caixa)
 1. Com o AR ativo, abaixo da câmera aparece "Rastreador: N leituras/s · giroscópio: corrigindo a pose". Se aparecer "sem dados do sensor", o aparelho/navegador não entregou o sensor.
 2. Mova o celular em arco, devagar e depressa, com a carta parada: o Pokémon deve acompanhar sem ficar para trás nem se adiantar à carta. Se ele se adianta, aumente "Atraso da câmera para o sensor" em Ajustes; se fica para trás, diminua. Compare com "Usar o giroscópio" desligado.

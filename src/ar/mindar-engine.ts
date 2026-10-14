@@ -1,6 +1,8 @@
 import type { TrackingEngine, TrackingInfo, TrackingOptions, TrackingUpdate } from './engine';
 import { mergeTargets } from './target';
 import { FrameRelay } from './frame-relay';
+import { FrameAlternator, normalizeLocalContrast } from './frame-normalize';
+import type * as TF from '@tensorflow/tfjs';
 
 interface CropDetectorLike {
   cropSize: number;
@@ -79,9 +81,23 @@ export class MindArEngine implements TrackingEngine {
     let iterationFrameTime = relay.frameTime;
     const loader = controller.inputLoader;
     const loadInput = loader.loadInput.bind(loader);
+    // Luz difícil (sombra, contra-luz): quadros alternados com contraste local normalizado (ver frame-normalize.ts).
+    // Se a normalização falhar (memória da GPU, por exemplo), segue com o quadro cru como o MindAR original.
+    const tf = options.normalizeFrames === false ? null : await import('@tensorflow/tfjs');
+    const alternator = new FrameAlternator();
+    let normalizeBroken = false;
     loader.loadInput = (input: unknown) => {
       iterationFrameTime = relay.frameTime;
-      return loadInput(input);
+      const raw = loadInput(input);
+      if (!tf || normalizeBroken || !alternator.next()) return raw;
+      try {
+        const normalized = normalizeLocalContrast(tf, raw as TF.Tensor2D);
+        (raw as TF.Tensor2D).dispose();
+        return normalized;
+      } catch {
+        normalizeBroken = true;
+        return raw;
+      }
     };
 
     // Janela de busca maior: o padrão olha recortes de 128 px num quadro de 360 px de largura, e depois de uma

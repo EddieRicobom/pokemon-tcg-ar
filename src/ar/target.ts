@@ -1,3 +1,5 @@
+import { prepareReference } from './target-prep';
+
 interface MindArCompiler {
   compileImageTargets(images: ImageBitmap[], progress: (percent: number) => void): Promise<unknown>;
   exportData(): Uint8Array;
@@ -9,8 +11,9 @@ interface MindArCompiler {
  * Versão do processo de compilação do alvo. Aumente quando mudar a imagem usada ou o compilador:
  * alvos guardados com versão diferente são descartados e recompilados (ver CardCache.prepareCard).
  * v1: imagem `low` (245 px de largura). v2: imagem `high` (600 px), com limite de tempo.
+ * v3: referência em cinza de luminância, o mesmo critério do quadro da câmera (ver target-prep.ts).
  */
-export const TARGET_VERSION = 2;
+export const TARGET_VERSION = 3;
 
 /** O compilador roda num worker do MindAR que não avisa erros: sem limite de tempo, a tela ficaria esperando para sempre. */
 export const COMPILE_TIMEOUT_MS = 120_000;
@@ -21,7 +24,7 @@ export const COMPILE_TIMEOUT_MS = 120_000;
  */
 export async function compileTarget(reference: Blob, onProgress?: (percent: number) => void): Promise<Blob> {
   const { Compiler } = await import('mind-ar/src/image-target/compiler.js');
-  const bitmap = await createImageBitmap(reference);
+  const bitmap = await prepareReference(reference);
   try {
     const compiler = new Compiler() as MindArCompiler;
     let timer: ReturnType<typeof setTimeout> | undefined;

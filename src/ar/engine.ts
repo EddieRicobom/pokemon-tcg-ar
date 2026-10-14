@@ -22,6 +22,8 @@ export interface TrackingInfo {
 export interface TrackingOptions {
   /** Quantas cartas podem ser rastreadas ao mesmo tempo (padrão 1). */
   maxTrack?: number;
+  /** Normaliza o contraste local em quadros alternados (luz difícil). Padrão: ligado. */
+  normalizeFrames?: boolean;
 }
 
 export interface TrackingEngine {
