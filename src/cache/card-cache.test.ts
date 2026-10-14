@@ -10,6 +10,7 @@ import { openCacheDb } from './db';
 import type { CacheDb } from './db';
 import { TARGET_VERSION } from '../ar/target';
 import { SpriteNetworkError } from '../ar/sprite-source';
+import { referenceCandidates } from '../recognition/tcgdex';
 
 const pikachu: CardRecordLike = {
   id: 'base1-58', name: 'Pikachu', setId: 'base1', setName: 'Base Set', localId: '58', setOfficial: 102, setTotal: 102,
@@ -218,6 +219,70 @@ describe('preparo (Carregar)', () => {
     expect((await cache.prepareCard('base1-58')).card.target).toMatchObject({ state: 'error', error: 'compilação falhou' });
     fail = false;
     expect((await cache.reload('base1-58')).card.target.state).toBe('ok');
+  });
+
+  describe('baixar a referência com alternativas', () => {
+    const enCard: CardRecordLike = { ...pikachu, id: 'swsh1-081', name: 'Galarian Ponyta', localId: '081', dexIds: [77], imageBase: 'https://assets.tcgdex.net/en/swsh/swsh1/081' };
+
+    it('se a baixa resolução WebP não responde, usa outro formato do mesmo endereço', async () => {
+      failing.add('https://assets.tcgdex.net/en/swsh/swsh1/081/low.webp');
+      const cache = make();
+      await cache.recordRecognition({ card: enCard });
+      const { card } = await cache.prepareCard('swsh1-081');
+      expect(card.reference.state).toBe('ok');
+      expect(card.reference.key).toBe('https://assets.tcgdex.net/en/swsh/swsh1/081/high.webp');
+    });
+
+    it('se o idioma original não tem a imagem, tenta o mesmo cartão em outros idiomas', async () => {
+      for (const file of ['low.webp', 'high.webp', 'low.png']) failing.add(`https://assets.tcgdex.net/en/swsh/swsh1/081/${file}`);
+      const cache = make();
+      await cache.recordRecognition({ card: enCard });
+      const { card } = await cache.prepareCard('swsh1-081');
+      expect(card.reference.state).toBe('ok');
+      expect(card.reference.key).toBe('https://assets.tcgdex.net/pt/swsh/swsh1/081/low.webp');
+    });
+
+    it('só a primeira tentativa usa novas tentativas com espera; as outras são uma vez cada', async () => {
+      const cache = make();
+      for (const url of referenceCandidates('https://assets.tcgdex.net/en/swsh/swsh1/081')) failing.add(url);
+      await cache.recordRecognition({ card: enCard });
+      await cache.prepareCard('swsh1-081');
+      const attempts = fetchLog.filter((u) => u.endsWith('/low.webp') && u.includes('/en/'));
+      expect(attempts).toHaveLength(2); // retries: 1 → duas tentativas
+      expect(fetchLog.filter((u) => u.includes('/high.webp'))).toHaveLength(1);
+    });
+
+    it('se nada responde, o erro diz o endereço que falhou e quantas outras tentativas falharam', async () => {
+      const cache = make();
+      for (const url of referenceCandidates('https://assets.tcgdex.net/en/swsh/swsh1/081')) failing.add(url);
+      await cache.recordRecognition({ card: enCard });
+      const { card } = await cache.prepareCard('swsh1-081');
+      expect(card.reference.state).toBe('error');
+      expect(card.reference.error).toContain('sem resposta de assets.tcgdex.net/en/swsh/swsh1/081/low.webp');
+      expect(card.reference.error).toContain('mais 4 tentativas também falharam');
+    });
+
+    it('um código HTTP aparece na mensagem em vez de "sem resposta"', async () => {
+      const cache = make({ fetchImpl: (async () => new Response('', { status: 404 })) as typeof fetch });
+      await cache.recordRecognition({ card: enCard });
+      const { card } = await cache.prepareCard('swsh1-081');
+      expect(card.reference.error).toContain('HTTP 404 em assets.tcgdex.net/en/swsh/swsh1/081/low.webp');
+    });
+
+    it('sem internet no aparelho, diz isso', async () => {
+      const original = Object.getOwnPropertyDescriptor(navigator, 'onLine');
+      Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+      try {
+        const cache = make();
+        for (const url of referenceCandidates('https://assets.tcgdex.net/en/swsh/swsh1/081')) failing.add(url);
+        await cache.recordRecognition({ card: enCard });
+        const { card } = await cache.prepareCard('swsh1-081');
+        expect(card.reference.error).toMatch(/^o aparelho está sem internet/);
+      } finally {
+        if (original) Object.defineProperty(navigator, 'onLine', original);
+        else delete (navigator as unknown as Record<string, unknown>).onLine;
+      }
+    });
   });
 
   it('carta sem imagem de referência no TCGdex não trava o preparo', async () => {

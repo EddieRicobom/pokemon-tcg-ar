@@ -56,6 +56,32 @@ export function cardImageUrl(imageBase: string, quality: ImageQuality = 'low', e
   return `${imageBase}/${quality}.${extension}`;
 }
 
+/** Idiomas do CDN de imagens do TCGdex tentados quando a imagem do idioma original não responde (a arte é a mesma). */
+const FALLBACK_IMAGE_LANGUAGES = ['pt', 'fr', 'en'];
+
+/**
+ * Endereços para baixar a imagem de referência, do mais provável ao menos: a base como veio (baixa resolução WebP,
+ * depois alta e PNG) e, se o arquivo não existir naquele idioma, a mesma carta em outros idiomas do CDN.
+ * Sem repetições; `imageBase` fora do formato `.../{idioma}/...` só gera as tentativas de formato.
+ */
+export function referenceCandidates(imageBase: string): string[] {
+  const urls = [cardImageUrl(imageBase, 'low', 'webp'), cardImageUrl(imageBase, 'high', 'webp'), cardImageUrl(imageBase, 'low', 'png')];
+  const match = /^(https?:\/\/[^/]+\/)([a-z]{2}(?:-[a-z]{2})?)(\/.+)$/i.exec(imageBase);
+  if (match) {
+    const [, origin, language, rest] = match;
+    for (const other of FALLBACK_IMAGE_LANGUAGES) {
+      if (other.toLowerCase() === language!.toLowerCase()) continue;
+      urls.push(cardImageUrl(`${origin}${other}${rest}`, 'low', 'webp'));
+    }
+  }
+  return [...new Set(urls)];
+}
+
+/** Trecho curto do endereço para a mensagem de erro (sem o protocolo), por exemplo `assets.tcgdex.net/en/swsh/swsh1/081/low.webp`. */
+export function shortUrl(url: string): string {
+  return url.replace(/^https?:\/\//i, '');
+}
+
 export class TcgdexClient {
   readonly stats: RequestStats = { requests: 0, bytes: 0, failures: 0 };
   private readonly fetchImpl: typeof fetch;
