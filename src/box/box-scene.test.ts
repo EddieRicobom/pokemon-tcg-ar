@@ -145,15 +145,16 @@ describe('BoxScene', () => {
     expect(scene.mode).toBe('passeio');
   });
 
-  it('setLook vale para os Pokémon atuais e os que entram depois', () => {
+  it('setSmoothing vale para os Pokémon atuais e os que entram depois', () => {
     const scene = sceneLookingDown();
     scene.setCreatures([entry(0)]);
-    scene.setLook({ tone: 'mono', outline: 'gold' });
     const dims = (i: number) => (scene.creatureList[i]!.mesh.material.map!.image as { width: number }).width;
-    const withOutline = dims(0);
+    const smooth = dims(0);
+    scene.setSmoothing('nitido');
+    expect(dims(0)).toBeLessThan(smooth);
     scene.setCreatures([entry(1)]);
-    expect(dims(0)).toBe(withOutline);
-    scene.setLook({ tone: 'normal', outline: 'none' });
-    expect(dims(0)).toBeLessThan(withOutline);
-  });
+    expect(dims(0)).toBeLessThan(smooth);
+    scene.setSmoothing('suave');
+    expect(dims(0)).toBe(smooth);
+});
 });

@@ -3,7 +3,7 @@ import { OrientationSource } from './orientation-source';
 import type { OrientationMode } from './orientation-source';
 import { BoxScene, DEFAULT_HALF_SIZE_M } from './box-scene';
 import type { BoxMode, CreatureEntry } from './box-scene';
-import type { SpriteLook } from '../core/sprite-look';
+import type { SmoothingMode } from '../core/pixel-upscale';
 import type { BoxCreature } from './creature';
 import type { BattleHud } from './battle-director';
 import type { BattleResult, Fighter } from '../core/battle';
@@ -33,7 +33,7 @@ export interface RunningBox {
   pick(ndcX: number, ndcY: number): BoxCreature | null;
   setCreatures(entries: CreatureEntry[]): void;
   setMode(mode: BoxMode): void;
-  setLook(look: SpriteLook): void;
+  setSmoothing(mode: SmoothingMode): void;
   startBattle(fighters: readonly Fighter[]): BattleResult;
   stopBattle(): void;
   setPhoneHeight(meters: number): void;
@@ -104,7 +104,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     pick: (x, y) => scene.pick(x, y),
     setCreatures: (entries) => scene.setCreatures(entries),
     setMode: (mode) => scene.setMode(mode),
-    setLook: (look) => scene.setLook(look),
+    setSmoothing: (mode) => scene.setSmoothing(mode),
     startBattle: (fighters) => scene.startBattle(fighters),
     stopBattle: () => scene.stopBattle(),
     setPhoneHeight(meters) {

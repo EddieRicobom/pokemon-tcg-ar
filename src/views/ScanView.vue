@@ -19,10 +19,10 @@ import { recordFromTcgdex } from '../recognition/pipeline';
 import { lastAttempt } from '../app/diagnostics';
 import { routeHref } from '../app/route';
 import { useFullscreen } from '../app/fullscreen';
-import { cameraFilterCss, visual } from '../app/visual-settings';
+import { visual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
 import { requestOrientationPermission } from '../sensors/orientation-feed';
-import FilterSheet from '../components/FilterSheet.vue';
+import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { frameFromVideo } from '../recognition/browser-image';
@@ -244,11 +244,10 @@ function readLayout(): SpriteLayout {
   }
   return { ...DEFAULT_LAYOUT };
 }
-const layout = reactive<SpriteLayout>({ ...readLayout(), tone: visual.tone, outline: visual.outline });
-// Cor e contorno do Pokémon vêm dos filtros compartilhados (também usados na Caixa).
-watch(() => [visual.tone, visual.outline] as const, ([tone, outline]) => {
-  layout.tone = tone;
-  layout.outline = outline;
+const layout = reactive<SpriteLayout>({ ...readLayout(), smoothing: visual.smoothing });
+// A suavização dos pixels vem da escolha compartilhada (também usada em Várias e na Caixa).
+watch(() => visual.smoothing, (smoothing) => {
+  layout.smoothing = smoothing;
 });
 
 let stream: MediaStream | null = null;
@@ -613,7 +612,7 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       @pointerdown="onStageDown"
       @pointerup="onStageUp"
     >
-      <video ref="videoEl" class="feed" playsinline muted :style="{ filter: cameraFilterCss(visual.camera) }"></video>
+      <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas :key="arCanvasKey" ref="canvasEl" class="overlay" aria-label="Camada de realidade aumentada"></canvas>
       <canvas ref="debugCanvasEl" class="overlay debug-quad" aria-hidden="true"></canvas>
       <p v-if="!cameraOn" class="placeholder">{{ cameraBusy ? 'Abrindo a câmera…' : 'Câmera desligada' }}</p>
@@ -628,10 +627,10 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       ></div>
       <p v-if="showScanInfo" class="hud" role="status">{{ scan.message }}</p>
       <p v-else-if="arHudText" class="hud" role="status">{{ arHudText }}</p>
-      <FilterSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
+      <SmoothingSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
       <div v-if="cameraOn" class="stage-bar" @pointerdown.stop @pointerup.stop>
         <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
-        <StageButton icon="filters" label="Filtros" :active="showFilters" @click="showFilters = !showFilters" />
+        <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters" />
         <StageButton icon="rescan" :label="cardId ? 'Outra carta' : 'Escanear'" @click="scanAnother" />
         <StageButton v-if="arActive" icon="adjust" :label="adjusting ? 'Concluir' : 'Ajustar'" :active="adjusting" @click="toggleAdjusting" />
         <StageButton v-if="arActive" icon="panel" label="Status" :active="layout.showStats !== false" @click="layout.showStats = layout.showStats === false" />
@@ -819,10 +818,6 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       </label>
       <label>Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)
         <input v-model.number="sensorSettings.latencyMs" type="range" :min="LATENCY_RANGE.min" :max="LATENCY_RANGE.max" step="5" />
-      </label>
-      <label class="art-option">
-        <input v-model="layout.smooth" type="checkbox" />
-        <span>Suavizar o Pokémon (menos pixelado)</span>
       </label>
       <button type="button" @click="resetLayout">Restaurar padrão</button>
     </details>

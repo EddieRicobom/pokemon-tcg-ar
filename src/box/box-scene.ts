@@ -12,8 +12,8 @@ import { BattleDirector } from './battle-director';
 import type { BattleHud } from './battle-director';
 import { simulateBattle } from '../core/battle';
 import type { BattleResult, Fighter } from '../core/battle';
-import { DEFAULT_LOOK } from '../core/sprite-look';
-import type { SpriteLook } from '../core/sprite-look';
+import { DEFAULT_SMOOTHING } from '../core/pixel-upscale';
+import type { SmoothingMode } from '../core/pixel-upscale';
 import type { Rng } from './wander';
 
 export const MAX_CREATURES = 30;
@@ -40,7 +40,7 @@ export class BoxScene {
   private anchor: Vector3 | null = null;
   private half = DEFAULT_HALF_SIZE_M;
   private lastNow = 0;
-  private look: SpriteLook = DEFAULT_LOOK;
+  private smoothing: SmoothingMode = DEFAULT_SMOOTHING;
   mode: BoxMode = 'passeio';
   private director: BattleDirector | null = null;
   private readonly rng: Rng;
@@ -143,10 +143,10 @@ export class BoxScene {
     }
   }
 
-  /** Tom de cor e contorno de todos os Pokémon da caixa. */
-  setLook(look: SpriteLook): void {
-    this.look = look;
-    for (const creature of this.creatures) creature.setLook(look);
+  /** Suavização de pixels de todos os Pokémon da caixa. */
+  setSmoothing(mode: SmoothingMode): void {
+    this.smoothing = mode;
+    for (const creature of this.creatures) creature.setSmoothing(mode);
   }
 
   setMode(mode: BoxMode): void {
@@ -192,7 +192,7 @@ export class BoxScene {
     for (const entry of entries.slice(0, MAX_CREATURES)) {
       const state = createWander(this.half, this.rng);
       const creature = new BoxCreature(entry.info, entry.source, state);
-      creature.setLook(this.look);
+      creature.setSmoothing(this.smoothing);
       this.scene.add(creature.group);
       this.creatures.push(creature);
     }
