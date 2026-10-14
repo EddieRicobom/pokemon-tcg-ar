@@ -1,7 +1,8 @@
 import {
-  DataTexture, DoubleSide, Group, LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, SRGBColorSpace, UnsignedByteType, Vector3,
-  CircleGeometry,
+  DataTexture, DoubleSide, Group, LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, SRGBColorSpace, Sprite, SpriteMaterial,
+  UnsignedByteType, Vector3, CircleGeometry,
 } from 'three';
+import { BUBBLE_ASPECT, bubbleTexture } from './emoji-bubble';
 import { enableRelight } from './fx-lights';
 import type { FxLights } from './fx-lights';
 import { frameIndexAt } from '../core/gif';
@@ -38,6 +39,26 @@ export interface CreatureFx {
 
 export function neutralFx(): CreatureFx {
   return { dx: 0, dy: 0, dz: 0, scale: 1, squash: 1, tint: 0xffffff, faint: 0, facing: null };
+}
+
+/** Reações ao toque do usuário. */
+export const TOUCH_EMOJIS = ['😆', '😊', '❗', '🥰', '😄'] as const;
+
+/** Balão de emoji sobre a cabeça: aparece com um pulinho, balança de leve e some no fim. */
+interface BubbleState {
+  emoji: string;
+  total: number;
+  left: number;
+  sprite: Sprite | null;
+}
+
+const BUBBLE_POP_MS = 200;
+const BUBBLE_FADE_MS = 300;
+
+function easeOutBack(t: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
 export type CreatureSource = { kind: 'gif'; gif: DecodedGif } | { kind: 'image'; image: RgbaImage };
@@ -103,6 +124,9 @@ export class BoxCreature {
   /** Brilho de "foi tocado" (ms restantes). */
   private pulseMs = 0;
   readonly fx: CreatureFx = neutralFx();
+  /** Altura do relevo sob o Pokémon (m), escrita pela cena a cada quadro. */
+  groundY = 0;
+  private bubble: BubbleState | null = null;
 
   constructor(readonly info: CreatureInfo, source: CreatureSource, readonly state: WanderState, private readonly frameCacheLimit = FRAME_CACHE_BYTES) {
     const first = source.kind === 'gif' ? source.gif.frames[0]?.rgba : source.image.data;
@@ -181,6 +205,54 @@ export class BoxCreature {
     this.pulseMs = 500;
   }
 
+  /** Mostra um balão de emoji sobre a cabeça por `ms` milissegundos (um novo substitui o anterior). */
+  say(emoji: string, ms: number): void {
+    this.clearBubble();
+    this.bubble = { emoji, total: Math.max(300, ms), left: Math.max(300, ms), sprite: null };
+  }
+
+  /** Reação a um toque do usuário: pulinho e um emoji. */
+  react(rand: () => number = Math.random): void {
+    this.poke();
+    this.say(TOUCH_EMOJIS[Math.floor(rand() * TOUCH_EMOJIS.length)] ?? '😊', 1800);
+  }
+
+  clearBubble(): void {
+    const sprite = this.bubble?.sprite;
+    if (sprite) {
+      sprite.removeFromParent();
+      sprite.material.dispose();
+    }
+    this.bubble = null;
+  }
+
+  /** Emoji do balão no ar agora (null se não há). */
+  get bubbleEmoji(): string | null {
+    return this.bubble?.emoji ?? null;
+  }
+
+  private updateBubble(dtMs: number, nowMs: number): void {
+    const b = this.bubble;
+    if (!b) return;
+    b.left -= dtMs;
+    if (b.left <= 0) return this.clearBubble();
+    if (!b.sprite) {
+      const map = bubbleTexture(b.emoji);
+      if (!map) return;
+      b.sprite = new Sprite(new SpriteMaterial({ map, transparent: true, depthTest: false, depthWrite: false }));
+      b.sprite.center.set(0.5, 0);
+      b.sprite.renderOrder = 20;
+      this.group.add(b.sprite);
+    }
+    const age = b.total - b.left;
+    const width = Math.min(0.3, Math.max(0.17, this.height * 0.6));
+    const pop = age < BUBBLE_POP_MS ? Math.max(0, easeOutBack(age / BUBBLE_POP_MS)) : 1;
+    b.sprite.scale.set(width * pop, width * BUBBLE_ASPECT * pop, 1);
+    const bob = Math.sin(nowMs * 0.004) * 0.012;
+    b.sprite.position.set(0, this.mesh.position.y + this.height * this.fx.scale * this.fx.squash + 0.03 + bob, 0);
+    b.sprite.material.opacity = Math.min(1, b.left / BUBBLE_FADE_MS);
+  }
+
   /**
    * `base` = ponto do chão no centro da caixa; `camera` = posição da câmera; `right` = eixo "direita da tela"
    * (para decidir para que lado espelhar).
@@ -188,7 +260,7 @@ export class BoxCreature {
   update(nowMs: number, dtMs: number, base: Vector3, camera: Vector3, right: Vector3): void {
     const s = this.state;
     const fx = this.fx;
-    this.group.position.set(base.x + s.x + fx.dx, base.y, base.z + s.z + fx.dz);
+    this.group.position.set(base.x + s.x + fx.dx, base.y + this.groundY, base.z + s.z + fx.dz);
     const toCameraX = camera.x - this.group.position.x;
     const toCameraZ = camera.z - this.group.position.z;
     this.mesh.rotation.order = 'YXZ';
@@ -215,6 +287,7 @@ export class BoxCreature {
     }
     hop += fx.dy;
     this.mesh.position.y = hop;
+    this.updateBubble(dtMs, nowMs);
     const shadowScale = 1 - Math.min(0.3, Math.max(0, hop) * 2);
     this.shadow.scale.set(this.width * 0.8 * shadowScale, this.width * 0.45 * shadowScale, 1);
 
@@ -238,6 +311,7 @@ export class BoxCreature {
   }
 
   dispose(): void {
+    this.clearBubble();
     this.texture.dispose();
     this.mesh.geometry.dispose();
     this.mesh.material.dispose();

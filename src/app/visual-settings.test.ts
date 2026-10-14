@@ -3,9 +3,15 @@ import { normalizeVisual } from './visual-settings';
 
 describe('configurações visuais', () => {
   it('aceita só modos de suavização conhecidos', () => {
-    expect(normalizeVisual({ smoothing: 'macio' })).toEqual({ smoothing: 'macio', lighting: true, terrain: true, sound: true, shadow: true });
-    expect(normalizeVisual({ smoothing: 'xyz' as never })).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, sound: true, shadow: true });
-    expect(normalizeVisual(null)).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, sound: true, shadow: true });
+    expect(normalizeVisual({ smoothing: 'macio' })).toEqual({ smoothing: 'macio', lighting: true, terrain: true, social: true, sound: true, shadow: true });
+    expect(normalizeVisual({ smoothing: 'xyz' as never })).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, sound: true, shadow: true });
+    expect(normalizeVisual(null)).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, sound: true, shadow: true });
+  });
+
+  it('os encontros e emoções vêm ligados e só desligam com false explícito', () => {
+    expect(normalizeVisual({ social: false }).social).toBe(false);
+    expect(normalizeVisual({ social: undefined }).social).toBe(true);
+    expect(normalizeVisual({ social: 'x' as never }).social).toBe(true);
   });
 
   it('o som vem ligado e só desliga com false explícito', () => {

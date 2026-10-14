@@ -106,7 +106,7 @@ describe('BoxScene', () => {
     for (const c of scene.creatureList) {
       expect(Math.abs(c.state.x)).toBeLessThanOrEqual(0.9 + 1e-6);
       expect(Math.abs(c.state.z)).toBeLessThanOrEqual(0.9 + 1e-6);
-      expect(c.group.position.y).toBeCloseTo(-1.3, 1);
+      expect(c.group.position.y).toBeCloseTo(-1.3 + c.groundY, 6);
     }
   });
 
@@ -179,4 +179,103 @@ describe('BoxScene', () => {
     scene.setSmoothing('suave');
     expect(dims(0)).toBe(smooth);
 });
+});
+
+describe('BoxScene: relevo e vida social', () => {
+  function placed(n = 2, seed = 1): BoxScene {
+    const rng = (() => {
+      let s = seed;
+      return () => {
+        s = (s * 1664525 + 1013904223) % 4294967296;
+        return s / 4294967296;
+      };
+    })();
+    const scene = new BoxScene(rng);
+    scene.setView(400, 800, 60);
+    scene.setCameraQuaternion(lookQuaternion(0, -Math.PI / 4));
+    scene.place(new Vector3(0, -1.3, -3), 1.2);
+    scene.setCreatures(Array.from({ length: n }, (_, i) => entry(i)));
+    return scene;
+  }
+
+  it('a caixa tem relevo e cada Pokémon pisa na altura do terreno sob ele', () => {
+    const scene = placed(6);
+    const ground = scene.groundOfBox!;
+    let max = 0;
+    for (let x = -1.1; x <= 1.1; x += 0.1) for (let z = -1.1; z <= 1.1; z += 0.1) max = Math.max(max, Math.abs(ground.heightAt(x, z)));
+    expect(max).toBeGreaterThan(0.04);
+    for (let t = 1; t < 300; t++) scene.update(t * 16);
+    for (const c of scene.creatureList) {
+      expect(c.groundY).toBeCloseTo(ground.heightAt(c.state.x, c.state.z), 6);
+      expect(c.group.position.y).toBeCloseTo(-1.3 + c.groundY, 6);
+    }
+  });
+
+  it('terreno desligado: chão liso (sem relevo)', () => {
+    const scene = placed(2);
+    scene.setTerrain(false);
+    scene.update(16);
+    scene.update(32);
+    for (const c of scene.creatureList) expect(c.groundY).toBe(0);
+  });
+
+  it('os Pokémon interagem de vez em quando e mostram balões de emoji', () => {
+    const scene = placed(5, 3);
+    const seen = new Set<string>();
+    let t = 0;
+    for (; t < 90_000; t += 50) {
+      scene.update(t + 50);
+      for (const c of scene.creatureList) if (c.bubbleEmoji) seen.add(c.bubbleEmoji);
+    }
+    expect(seen.size).toBeGreaterThanOrEqual(4);
+    // Continuam dentro da caixa e com valores válidos.
+    for (const c of scene.creatureList) {
+      expect(Math.abs(c.state.x)).toBeLessThanOrEqual(1.08 + 1e-6);
+      expect(Number.isFinite(c.group.position.y)).toBe(true);
+    }
+  });
+
+  it('desligar a vida social apaga os balões e nunca mais mostra um', () => {
+    const scene = placed(5, 3);
+    let t = 0;
+    while (t < 60_000 && !scene.creatureList.some((c) => c.bubbleEmoji)) scene.update((t += 50));
+    expect(scene.creatureList.some((c) => c.bubbleEmoji)).toBe(true);
+    scene.setSocial(false);
+    expect(scene.creatureList.some((c) => c.bubbleEmoji)).toBe(false);
+    for (let i = 0; i < 2000; i++) scene.update((t += 50));
+    expect(scene.creatureList.some((c) => c.bubbleEmoji)).toBe(false);
+  });
+
+  it('na formação e na batalha não há balões', () => {
+    const scene = placed(5, 3);
+    let t = 0;
+    while (t < 60_000 && !scene.creatureList.some((c) => c.bubbleEmoji)) scene.update((t += 50));
+    scene.setMode('formacao');
+    expect(scene.creatureList.some((c) => c.bubbleEmoji)).toBe(false);
+    for (let i = 0; i < 1000; i++) scene.update((t += 50));
+    expect(scene.creatureList.some((c) => c.bubbleEmoji)).toBe(false);
+  });
+
+  it('tocar num Pokémon faz ele reagir com pulinho e um emoji', () => {
+    const scene = placed(1);
+    const c = scene.creatureList[0]!;
+    c.react(() => 0);
+    expect(c.bubbleEmoji).toBe('😆');
+    scene.update(16);
+    scene.update(32);
+    for (let t = 48; t < 3000; t += 50) scene.update(t);
+    expect(c.bubbleEmoji).toBeNull(); // o balão some sozinho
+  });
+
+  it('o balão acompanha a cabeça do Pokémon (filho do grupo, acima do corpo)', () => {
+    const scene = placed(1);
+    const c = scene.creatureList[0]!;
+    c.say('❓', 2000);
+    scene.update(16);
+    scene.update(100);
+    // Sem canvas (testes) não há desenho, mas o estado do balão existe e some no fim.
+    expect(c.bubbleEmoji).toBe('❓');
+    c.clearBubble();
+    expect(c.bubbleEmoji).toBeNull();
+  });
 });
