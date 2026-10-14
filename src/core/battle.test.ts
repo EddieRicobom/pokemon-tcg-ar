@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildFighter, calculateDamage, cardDamageToPower, effectivenessLabel, effectivenessTone, FALLBACK_MOVE, parseCardDamage, seededRng,
-  simulateBattle, TYPE_CHART, typeEffectiveness,
+  buildFighter, calculateDamage, canGetStatus, cardDamageToPower, chooseMove, chooseTarget, effectivenessLabel, effectivenessTone, expectedDamage,
+  FALLBACK_MOVE, parseCardDamage, personalityOf, seededRng, simulateBattle, STATUS_CHANCE, summarizeBattle, TYPE_CHART, typeEffectiveness,
 } from './battle';
 import type { Fighter } from './battle';
 import { POKEMON_TYPES } from './pokemon-data';
@@ -12,7 +12,7 @@ const stats = (over: Partial<BaseStats> = {}): BaseStats => ({ hp: 80, attack: 8
 function fighter(over: Partial<Fighter> = {}): Fighter {
   return {
     id: 'a', name: 'A', types: ['normal'], maxHp: 150, attack: 100, defense: 100, spAttack: 100, spDefense: 100, speed: 100,
-    moves: [{ name: 'Golpe', type: 'normal', power: 60, accuracy: 100, special: false, source: 'jogo' }], quality: 'completo', notes: [], ...over,
+    moves: [{ name: 'Golpe', type: 'normal', power: 60, accuracy: 100, special: false, source: 'jogo' }], personality: 'equilibrado', quality: 'completo', notes: [], ...over,
   };
 }
 
@@ -196,19 +196,21 @@ describe('simulateBattle', () => {
   });
 
   it('mantém a contabilidade de PS e nunca ataca a si mesmo nem quem já caiu', () => {
-    for (let seed = 1; seed <= 25; seed++) {
+    for (let seed = 1; seed <= 40; seed++) {
       const result = simulateBattle(team(), seededRng(seed));
       const hp = team().map((f) => f.maxHp);
       const down = new Set<number>();
       for (const turn of result.turns) {
-        expect(turn.attacker).not.toBe(turn.target);
         expect(down.has(turn.attacker)).toBe(false);
         expect(down.has(turn.target)).toBe(false);
+        if (turn.kind === 'attack') expect(turn.attacker).not.toBe(turn.target);
+        else expect(turn.attacker).toBe(turn.target);
         expect(turn.targetHpBefore).toBe(hp[turn.target]);
         expect(turn.targetHpAfter).toBe(Math.max(0, turn.targetHpBefore - turn.damage));
         hp[turn.target] = turn.targetHpAfter;
         if (turn.fainted) down.add(turn.target);
         expect(turn.fainted).toBe(turn.targetHpAfter === 0);
+        if (turn.kind === 'residual') expect(turn.targetHpAfter).toBeGreaterThanOrEqual(1);
       }
       expect(hp).toEqual(result.hpLeft);
     }
@@ -216,7 +218,7 @@ describe('simulateBattle', () => {
 
   it('quem tem mais Velocidade abre a primeira rodada', () => {
     const result = simulateBattle(team(), seededRng(7));
-    expect(result.turns[0]?.attacker).toBe(0);
+    expect(result.turns.find((t) => t.round === 1)?.attacker).toBe(0);
   });
 
   it('atributos e tipos decidem: o muito mais forte vence quase sempre', () => {
@@ -248,5 +250,146 @@ describe('seededRng', () => {
       expect(v).toBeLessThan(1);
       expect(v).toBe(b());
     }
+  });
+});
+
+const move = (over: Partial<Fighter['moves'][number]> = {}) => ({ name: 'M', type: 'normal' as const, power: 60, accuracy: 100, special: false, source: 'jogo' as const, ...over });
+
+describe('personalidade', () => {
+  const base = { maxHp: 150, attack: 100, defense: 100, spAttack: 100, spDefense: 100, speed: 100 };
+  it('deriva dos atributos', () => {
+    expect(personalityOf({ ...base, attack: 180 })).toBe('agressivo');
+    expect(personalityOf({ ...base, spAttack: 180 })).toBe('agressivo');
+    expect(personalityOf({ ...base, defense: 200, spDefense: 200, maxHp: 250 })).toBe('defensivo');
+    expect(personalityOf({ ...base, speed: 200 })).toBe('veloz');
+    expect(personalityOf(base)).toBe('equilibrado');
+  });
+
+  it('buildFighter preenche a personalidade (Onix é defensivo, Gastly é agressivo)', () => {
+    const onix = buildFighter({ id: 'o', name: 'Onix', profile: { dexId: 95, types: ['rock', 'ground'], stats: { hp: 35, attack: 45, defense: 160, spAttack: 30, spDefense: 45, speed: 70 } }, card: null, gameMoves: [] });
+    const gastly = buildFighter({ id: 'g', name: 'Gastly', profile: { dexId: 92, types: ['ghost', 'poison'], stats: { hp: 30, attack: 35, defense: 30, spAttack: 100, spDefense: 35, speed: 80 } }, card: null, gameMoves: [] });
+    expect(onix.personality).toBe('defensivo');
+    expect(gastly.personality).toBe('agressivo');
+  });
+
+  it('o golpe é escolhido pelo dano esperado: o agressivo quase sempre usa o melhor', () => {
+    const strong = move({ name: 'Forte', power: 120 });
+    const weak = move({ name: 'Fraco', power: 30 });
+    const a = fighter({ personality: 'agressivo', moves: [weak, strong] });
+    const rng = seededRng(3);
+    let best = 0;
+    for (let i = 0; i < 200; i++) if (chooseMove(a, fighter(), rng).name === 'Forte') best++;
+    expect(best).toBeGreaterThan(180);
+    // Contra imune, o golpe do tipo certo vence mesmo sendo mais fraco.
+    const ghost = fighter({ types: ['ghost'] });
+    const fire = move({ name: 'Brasa', type: 'fire', power: 40 });
+    const norm = move({ name: 'Investida', type: 'normal', power: 120 });
+    const picks = new Set<string>();
+    for (let i = 0; i < 50; i++) picks.add(chooseMove(fighter({ personality: 'agressivo', moves: [norm, fire] }), ghost, rng).name);
+    expect(picks.has('Brasa')).toBe(true);
+    expect(expectedDamage(fighter(), ghost, norm)).toBe(0);
+  });
+
+  it('o agressivo mira quem dá para derrubar; o defensivo revida quem o acertou', () => {
+    const fighters = [fighter({ id: 'a', personality: 'agressivo' }), fighter({ id: 'b', maxHp: 400 }), fighter({ id: 'c', maxHp: 20 })];
+    const live = [
+      { hp: 150, status: null, guard: false, guardedLast: false, lastHitBy: null },
+      { hp: 400, status: null, guard: false, guardedLast: false, lastHitBy: null },
+      { hp: 20, status: null, guard: false, guardedLast: false, lastHitBy: null },
+    ];
+    const rng = seededRng(8);
+    let weakest = 0;
+    for (let i = 0; i < 200; i++) if (chooseTarget(0, fighters, live, rng).target === 2) weakest++;
+    expect(weakest).toBeGreaterThan(130);
+
+    const d = [fighter({ id: 'd', personality: 'defensivo' }), fighter({ id: 'e' }), fighter({ id: 'g' })];
+    const dl = d.map((_f, i) => ({ hp: 150, status: null, guard: false, guardedLast: false, lastHitBy: i === 0 ? 2 : null }));
+    let revenge = 0;
+    for (let i = 0; i < 200; i++) {
+      const r = chooseTarget(0, d, dl, rng);
+      if (r.target === 2 && r.revenge) revenge++;
+    }
+    expect(revenge).toBeGreaterThan(100);
+  });
+});
+
+describe('guarda e condições', () => {
+  it('em guarda o golpe recebido causa metade do dano', () => {
+    const rng = () => 0.5;
+    const m = move();
+    const normal = calculateDamage(fighter(), fighter(), m, rng).damage;
+    const guarded = calculateDamage(fighter(), fighter(), m, rng, { guarded: true }).damage;
+    expect(guarded).toBeLessThan(normal * 0.6);
+    expect(guarded).toBeGreaterThan(0);
+  });
+
+  it('queimado enfraquece golpes físicos, não os especiais', () => {
+    const rng = () => 0.5;
+    const phys = move();
+    const spec = move({ special: true });
+    expect(calculateDamage(fighter(), fighter(), phys, rng, { burned: true }).damage).toBeLessThan(calculateDamage(fighter(), fighter(), phys, rng).damage * 0.6);
+    expect(calculateDamage(fighter(), fighter(), spec, rng, { burned: true }).damage).toBe(calculateDamage(fighter(), fighter(), spec, rng).damage);
+  });
+
+  it('imunidades a condições seguem os tipos', () => {
+    expect(canGetStatus('burn', ['fire'])).toBe(false);
+    expect(canGetStatus('burn', ['water'])).toBe(true);
+    expect(canGetStatus('poison', ['steel'])).toBe(false);
+    expect(canGetStatus('poison', ['poison', 'ground'])).toBe(false);
+    expect(canGetStatus('paralysis', ['electric'])).toBe(false);
+    expect(canGetStatus('freeze', ['ice'])).toBe(false);
+    expect(STATUS_CHANCE.water).toBeUndefined();
+  });
+
+  it('numa batalha longa aparecem defesas, condições e perdas de PS no fim da rodada', () => {
+    const fire = move({ name: 'Brasa', type: 'fire', power: 50, special: true });
+    const bolt = move({ name: 'Choque', type: 'electric', power: 50, special: true });
+    const tank = (id: string, extra: Partial<Fighter> = {}) => fighter({ id, maxHp: 260, defense: 150, spDefense: 150, personality: 'defensivo', moves: [fire, bolt], types: ['water'], ...extra });
+    const kinds = new Set<string>();
+    const statuses = new Set<string>();
+    for (let seed = 1; seed <= 60; seed++) {
+      const result = simulateBattle([tank('a'), tank('b'), tank('c')], seededRng(seed));
+      for (const t of result.turns) {
+        kinds.add(t.kind);
+        if (t.inflicted) statuses.add(t.inflicted);
+        if (t.kind === 'skip') expect(['paralysis', 'freeze']).toContain(t.cause);
+        if (t.kind === 'residual') expect(['burn', 'poison']).toContain(t.cause);
+      }
+    }
+    expect([...kinds].sort()).toEqual(['attack', 'guard', 'residual', 'skip']);
+    expect(statuses.has('burn')).toBe(true);
+    expect(statuses.has('paralysis')).toBe(true);
+  });
+
+  it('um golpe em guarda marca guardedHit e a guarda vale por um golpe só', () => {
+    let seen = 0;
+    for (let seed = 1; seed <= 80 && seen < 3; seed++) {
+      const tank = (id: string) => fighter({ id, maxHp: 200, personality: 'defensivo' });
+      const result = simulateBattle([tank('a'), tank('b')], seededRng(seed));
+      let guardedNow: number | null = null;
+      for (const t of result.turns) {
+        if (t.kind === 'guard') guardedNow = t.attacker;
+        else if (t.kind === 'attack' && t.target === guardedNow && t.hit && t.damage > 0) {
+          expect(t.guardedHit).toBe(true);
+          guardedNow = null;
+          seen++;
+        } else if (t.kind === 'attack' && t.attacker === guardedNow) guardedNow = null;
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
+  });
+});
+
+describe('summarizeBattle', () => {
+  it('soma dano, nocautes e golpes por lutador', () => {
+    const fighters = [fighter({ id: 'a', speed: 120 }), fighter({ id: 'b', speed: 80 })];
+    const result = simulateBattle(fighters, seededRng(4));
+    const summary = summarizeBattle(fighters, result);
+    const totalDealt = summary.fighters.reduce((n, f) => n + f.damageDealt, 0);
+    const totalLost = result.turns.filter((t) => t.kind === 'attack').reduce((n, t) => n + t.damage, 0);
+    expect(totalDealt).toBe(totalLost);
+    expect(summary.fighters.reduce((n, f) => n + f.knockouts, 0)).toBe(1);
+    expect(summary.rounds).toBe(result.turns.at(-1)?.round);
+    expect(summary.fighters[summary.mvp]!.damageDealt).toBe(Math.max(...summary.fighters.map((f) => f.damageDealt)));
   });
 });

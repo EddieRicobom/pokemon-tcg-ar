@@ -1345,6 +1345,40 @@ button.link {
   font-size: 1.2rem;
 }
 
+.float-label.status {
+  font-size: 0.95rem;
+}
+
+.battle-flash {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: screen;
+}
+
+.hp-badges {
+  display: inline-flex;
+  gap: 3px;
+  justify-content: center;
+}
+
+.badge {
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 0.6rem;
+  font-weight: 800;
+  color: #0b1020;
+}
+
+.badge-burn { background: #fb923c; }
+.badge-poison { background: #c084fc; }
+.badge-paralysis { background: #fde047; }
+.badge-freeze { background: #7dd3fc; }
+.badge-guard { background: #7fd4ff; }
+
+.hp-bar.guarding {
+  box-shadow: 0 0 0 1px #7fd4ff, 0 0 10px rgba(127, 212, 255, 0.6);
+}
+
 .float-label.good,
 .float-label.bad,
 .float-label.info,
