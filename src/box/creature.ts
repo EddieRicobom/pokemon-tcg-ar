@@ -5,6 +5,8 @@ import {
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import { upscaleSprite } from '../core/pixel-upscale';
+import { applyLook, DEFAULT_LOOK, isDefaultLook, lookKey } from '../core/sprite-look';
+import type { SpriteLook } from '../core/sprite-look';
 import type { RgbaImage } from '../recognition/types';
 import type { WanderState } from './wander';
 
@@ -48,7 +50,9 @@ export class BoxCreature {
   readonly shadow: Mesh<CircleGeometry, MeshBasicMaterial>;
   readonly width: number;
   readonly height: number;
-  private readonly texture: DataTexture;
+  private texture: DataTexture;
+  private look: SpriteLook = DEFAULT_LOOK;
+  private lastRgba: Uint8ClampedArray;
   private readonly gif: DecodedGif | null;
   private readonly spriteWidth: number;
   private readonly spriteHeight: number;
@@ -66,15 +70,8 @@ export class BoxCreature {
     this.gif = source.kind === 'gif' && source.gif.frames.length > 1 ? source.gif : null;
     this.spriteWidth = width;
     this.spriteHeight = height;
-    const up = upscaleSprite(first, width, height, BOX_MAX_UPSCALE);
-    this.texture = new DataTexture(asBytes(up.data), up.width, up.height, RGBAFormat, UnsignedByteType);
-    this.texture.colorSpace = SRGBColorSpace;
-    this.texture.magFilter = LinearFilter;
-    this.texture.minFilter = LinearFilter;
-    this.texture.generateMipmaps = false;
-    this.texture.repeat.set(1, -1);
-    this.texture.offset.set(0, 1);
-    this.texture.needsUpdate = true;
+    this.lastRgba = first;
+    this.texture = this.makeTexture(this.prepare(first));
 
     this.height = creatureHeightMeters(height);
     this.width = this.height * (width / height);
@@ -91,6 +88,36 @@ export class BoxCreature {
     this.shadow.scale.set(this.width * 0.8, this.width * 0.45, 1);
     this.group.add(this.shadow, this.mesh);
     this.mesh.userData.creature = this;
+  }
+
+  /** Quadro ampliado (×2) com o tom e o contorno escolhidos. */
+  private prepare(rgba: Uint8ClampedArray): { data: Uint8ClampedArray; width: number; height: number } {
+    const up = upscaleSprite(rgba, this.spriteWidth, this.spriteHeight, BOX_MAX_UPSCALE);
+    if (isDefaultLook(this.look)) return up;
+    return applyLook(up.data, up.width, up.height, this.look, Math.max(1, Math.round(up.factor / 2)));
+  }
+
+  private makeTexture(frame: { data: Uint8ClampedArray; width: number; height: number }): DataTexture {
+    const texture = new DataTexture(asBytes(frame.data), frame.width, frame.height, RGBAFormat, UnsignedByteType);
+    texture.colorSpace = SRGBColorSpace;
+    texture.magFilter = LinearFilter;
+    texture.minFilter = LinearFilter;
+    texture.generateMipmaps = false;
+    texture.repeat.set(1, -1);
+    texture.offset.set(0, 1);
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  /** Troca o tom de cor e o contorno (refaz a textura com o quadro atual). */
+  setLook(look: SpriteLook): void {
+    if (lookKey(look) === lookKey(this.look)) return;
+    this.look = look;
+    const old = this.texture;
+    this.texture = this.makeTexture(this.prepare(this.lastRgba));
+    this.mesh.material.map = this.texture;
+    this.mesh.material.needsUpdate = true;
+    old.dispose();
   }
 
   /** Toque: o Pokémon dá um pulinho de confirmação. */
@@ -134,8 +161,8 @@ export class BoxCreature {
         const frame = this.gif.frames[index];
         if (frame) {
           this.shownFrame = index;
-          const up = upscaleSprite(frame.rgba, this.spriteWidth, this.spriteHeight, BOX_MAX_UPSCALE);
-          this.texture.image.data = asBytes(up.data);
+          this.lastRgba = frame.rgba;
+          this.texture.image.data = asBytes(this.prepare(frame.rgba).data);
           this.texture.needsUpdate = true;
         }
       }

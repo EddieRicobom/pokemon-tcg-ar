@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { formatBytes, formatDate } from '../app/format';
 import { routeHref } from '../app/route';
 import { getCache } from '../app/services';
+import { resolveTeam, TEAM_SIZE } from '../app/team';
+import { savedTeam, setSavedTeam, toggleSaved } from '../app/team-store';
 import type { CachedCard, CacheStatus, SlotInfo, StorageInfo } from '../cache/types';
 
 type Row = CachedCard & { status: CacheStatus; thumb?: string };
@@ -16,6 +18,51 @@ const progressText = ref<Record<string, string>>({});
 const message = ref('');
 const confirmingClear = ref(false);
 const thumbUrls: string[] = [];
+
+// Filtros, ordem e modo de exibição da lista.
+type StatusFilter = 'todas' | CacheStatus | 'sem-pokemon';
+type SortKey = 'recentes' | 'nome' | 'leituras';
+const search = ref('');
+const statusFilter = ref<StatusFilter>('todas');
+const onlyTeam = ref(false);
+const sortKey = ref<SortKey>('recentes');
+const viewMode = ref<'lista' | 'grade'>('lista');
+const teamNotice = ref('');
+
+const team = computed(() => resolveTeam(savedTeam.value, rows.value));
+const teamRows = computed(() => team.value.ids.map((id) => rows.value.find((row) => row.id === id)).filter((row): row is Row => row !== undefined));
+const visibleRows = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  const filtered = rows.value.filter((row) => {
+    if (q && !`${row.name} ${row.setName} ${row.localId}`.toLowerCase().includes(q)) return false;
+    if (statusFilter.value === 'sem-pokemon') return row.sprite.state !== 'ok';
+    if (statusFilter.value !== 'todas' && row.status !== statusFilter.value) return false;
+    if (onlyTeam.value && !team.value.ids.includes(row.id)) return false;
+    return true;
+  });
+  const sorted = [...filtered];
+  if (sortKey.value === 'nome') sorted.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  else if (sortKey.value === 'leituras') sorted.sort((a, b) => b.scanCount - a.scanCount);
+  return sorted;
+});
+const filtersActive = computed(() => search.value !== '' || statusFilter.value !== 'todas' || onlyTeam.value);
+
+function clearFilters(): void {
+  search.value = '';
+  statusFilter.value = 'todas';
+  onlyTeam.value = false;
+}
+
+function toggleTeam(row: Row): void {
+  if (row.sprite.state !== 'ok') {
+    teamNotice.value = `«${row.name}» ainda não tem o Pokémon carregado. Use "Carregar" antes de colocar na equipe.`;
+    return;
+  }
+  // Primeira escolha manual: parte da equipe automática atual.
+  if (savedTeam.value.length === 0 && team.value.auto) setSavedTeam(team.value.ids);
+  const full = toggleSaved(row.id);
+  teamNotice.value = full ? `A equipe já tem ${TEAM_SIZE} Pokémon. Tire um para colocar outro.` : '';
+}
 /** Cartas que acabaram de ficar completas: recebem o efeito de "carregou" por um instante. */
 const justLoaded = ref<Set<string>>(new Set());
 
@@ -170,13 +217,63 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <p v-if="bulk" class="message" role="status">Carregando {{ bulk.done }}/{{ bulk.count }} — {{ bulk.text }}</p>
     <p v-if="message" class="message" role="status">{{ message }}</p>
 
+    <div v-if="teamRows.length > 0" class="team-strip" role="group" aria-label="Equipe da caixa">
+      <strong>Equipe da caixa ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
+      <ul>
+        <li v-for="row in teamRows" :key="row.id">
+          <img v-if="row.thumb" :src="row.thumb" :alt="row.name" width="40" height="56" />
+          <span>{{ row.name }}</span>
+        </li>
+      </ul>
+    </div>
+    <p v-if="teamNotice" class="message error" role="alert">{{ teamNotice }}</p>
+
+    <div v-if="rows.length > 0" class="filter-bar" role="search">
+      <input v-model="search" type="text" placeholder="Buscar por nome, coleção ou número" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
+      <div class="chips" role="group" aria-label="Filtrar por situação">
+        <button v-for="option in ([['todas', 'Todas'], ['completo', 'Completas'], ['parcial', 'Parciais'], ['falhou', 'Com falha'], ['sem-pokemon', 'Sem Pokémon']] as const)" :key="option[0]" type="button" :class="{ active: statusFilter === option[0] }" :aria-pressed="statusFilter === option[0]" @click="statusFilter = option[0]">
+          {{ option[1] }}
+        </button>
+        <button type="button" :class="{ active: onlyTeam }" :aria-pressed="onlyTeam" @click="onlyTeam = !onlyTeam">Só a equipe</button>
+      </div>
+      <div class="filter-row">
+        <label>Ordem
+          <select v-model="sortKey">
+            <option value="recentes">Mais recentes</option>
+            <option value="nome">Nome (A–Z)</option>
+            <option value="leituras">Mais lidas</option>
+          </select>
+        </label>
+        <div class="chips" role="group" aria-label="Modo de exibição">
+          <button type="button" :class="{ active: viewMode === 'lista' }" :aria-pressed="viewMode === 'lista'" @click="viewMode = 'lista'">Lista</button>
+          <button type="button" :class="{ active: viewMode === 'grade' }" :aria-pressed="viewMode === 'grade'" @click="viewMode = 'grade'">Grade</button>
+        </div>
+      </div>
+      <p class="meta" role="status">
+        Mostrando {{ visibleRows.length }} de {{ rows.length }}.
+        <button v-if="filtersActive" type="button" class="link" @click="clearFilters">Limpar filtros</button>
+      </p>
+    </div>
+
     <p v-if="loading" class="message">Carregando a lista…</p>
     <p v-else-if="rows.length === 0" class="message">
       Nenhuma carta reconhecida ainda. Vá em <a :href="routeHref('escanear')">Escanear</a> e aponte a câmera para uma carta.
     </p>
 
-    <ul class="card-list">
-      <li v-for="row in rows" :key="row.id" class="card-row" :class="{ loading: busyId === row.id, 'just-loaded': justLoaded.has(row.id) }">
+    <ul v-if="viewMode === 'grade'" class="card-grid">
+      <li v-for="row in visibleRows" :key="row.id">
+        <button type="button" class="grid-card" :class="{ picked: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" :aria-label="`${row.name}: ${team.ids.includes(row.id) ? 'tirar da' : 'colocar na'} equipe`" @click="toggleTeam(row)">
+          <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="90" height="126" />
+          <div v-else class="thumb-missing" aria-hidden="true">sem imagem</div>
+          <strong>{{ row.name }}</strong>
+          <span class="badge" :class="row.status">{{ STATUS_TEXT[row.status] }}</span>
+          <span v-if="team.ids.includes(row.id)" class="team-slot" aria-hidden="true">{{ team.ids.indexOf(row.id) + 1 }}</span>
+        </button>
+      </li>
+    </ul>
+
+    <ul v-else class="card-list">
+      <li v-for="row in visibleRows" :key="row.id" class="card-row" :class="{ loading: busyId === row.id, 'just-loaded': justLoaded.has(row.id) }">
         <div class="thumb-wrap">
           <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="60" height="84" />
           <div v-else class="thumb-missing" aria-hidden="true">sem imagem</div>
@@ -196,6 +293,9 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
             <button type="button" :disabled="busyId === row.id" @click="run(row.id, 'prepare')">Carregar</button>
             <button v-if="row.status !== 'completo'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'reload')">Recarregar</button>
             <a class="button" :href="routeHref('escanear', row.id)">Ver em AR</a>
+            <button type="button" :class="{ active: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" @click="toggleTeam(row)">
+              {{ team.ids.includes(row.id) ? 'Na equipe ✓' : 'Pôr na equipe' }}
+            </button>
             <button type="button" :disabled="busyId === row.id" @click="removeCard(row.id)">Remover do cache</button>
           </div>
         </div>

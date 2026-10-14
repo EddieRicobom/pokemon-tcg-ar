@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { isTap } from '../ar/gestures';
 import { routeHref } from '../app/route';
 import { getCache } from '../app/services';
+import { useFullscreen } from '../app/fullscreen';
+import { resolveTeam } from '../app/team';
+import { savedTeam } from '../app/team-store';
+import { cameraFilterCss, visual } from '../app/visual-settings';
+import FilterSheet from '../components/FilterSheet.vue';
+import StageButton from '../components/StageButton.vue';
+import TeamPicker from '../components/TeamPicker.vue';
+import type { BoxMode } from '../box/box-scene';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { DEFAULT_PHONE_HEIGHT_M, PHONE_HEIGHT_RANGE } from '../box/floor';
 import { loadCreatureEntries } from '../box/load-creatures';
@@ -15,6 +23,10 @@ type Phase = 'idle' | 'starting' | 'placing' | 'running';
 const videoEl = ref<HTMLVideoElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
+const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl);
+const showFilters = ref(false);
+const showTeam = ref(false);
+const boxMode = ref<BoxMode>('passeio');
 
 const phase = ref<Phase>('idle');
 const error = ref('');
@@ -46,7 +58,9 @@ async function populate(): Promise<void> {
   loadingCreatures.value = true;
   try {
     const cache = await getCache();
-    const loaded = await loadCreatureEntries(cache);
+    // A equipe escolhida (ou, sem escolha, as 6 mais recentes) é quem vai para a caixa.
+    const team = resolveTeam(savedTeam.value, await cache.list());
+    const loaded = await loadCreatureEntries(cache, undefined, team.ids);
     if (disposed || !box) return;
     box.setCreatures(loaded.entries);
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
@@ -86,12 +100,17 @@ async function open(): Promise<void> {
   box.setPhoneHeight(phoneHeight.value);
   box.setHalfSize(boxSize.value / 2);
   box.setVideoFov(videoFov.value);
+  box.setLook({ tone: visual.tone, outline: visual.outline });
+  box.setMode(boxMode.value);
   phase.value = 'placing';
   hint.value = 'Aponte o celular para o chão onde a caixa vai ficar e toque em "Colocar a caixa aqui".';
   void populate();
 }
 
 function close(): void {
+  void exitFullscreen();
+  showFilters.value = false;
+  showTeam.value = false;
   box?.stop();
   box = null;
   stopCamera(videoEl.value, stream);
@@ -157,6 +176,13 @@ function onPointerUp(event: PointerEvent): void {
   }
 }
 
+watch(() => [visual.tone, visual.outline] as const, ([tone, outline]) => box?.setLook({ tone, outline }));
+
+function toggleMode(): void {
+  boxMode.value = boxMode.value === 'passeio' ? 'formacao' : 'passeio';
+  box?.setMode(boxMode.value);
+}
+
 function onPhoneHeight(): void {
   box?.setPhoneHeight(phoneHeight.value);
 }
@@ -177,18 +203,18 @@ onBeforeUnmount(() => {
 <template>
   <section class="card" aria-labelledby="box-title">
     <h2 id="box-title">Caixa</h2>
-    <p class="note">Os Pokémon que você já escaneou passeiam soltos num quadrado do chão. Gire o celular para olhar em volta.</p>
+    <p class="note">Sua equipe de até 6 Pokémon passeia solta num quadrado do chão. Gire o celular para olhar em volta.</p>
 
     <div
       ref="stageEl"
       class="viewport box-viewport"
-      :class="{ placing: phase === 'placing' }"
+      :class="{ placing: phase === 'placing', 'pseudo-full': pseudo, 'has-bar': cameraOn }"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
     >
-      <video ref="videoEl" class="feed" playsinline muted></video>
+      <video ref="videoEl" class="feed" playsinline muted :style="{ filter: cameraFilterCss(visual.camera) }"></video>
       <canvas ref="canvasEl" class="overlay" aria-label="Caixa com os Pokémon escaneados"></canvas>
       <p v-if="phase === 'idle'" class="placeholder">Câmera desligada</p>
       <div v-if="phase === 'placing'" class="crosshair" aria-hidden="true"></div>
@@ -198,6 +224,23 @@ onBeforeUnmount(() => {
         <template v-if="picked.dexId"> · Nº {{ picked.dexId }}</template>
         <br />{{ picked.detail }}
       </p>
+      <FilterSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
+      <div v-if="showTeam && cameraOn" class="stage-sheet" @pointerdown.stop @pointerup.stop @click.stop>
+        <header>
+          <strong>Equipe da caixa</strong>
+          <button type="button" class="link" @click="showTeam = false">Fechar</button>
+        </header>
+        <TeamPicker @change="populate" />
+      </div>
+      <button v-if="phase === 'placing'" type="button" class="primary stage-cta" @pointerdown.stop @pointerup.stop @click="placeHere">Colocar a caixa aqui</button>
+      <div v-if="cameraOn" class="stage-bar" @pointerdown.stop @pointerup.stop>
+        <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
+        <StageButton icon="filters" label="Filtros" :active="showFilters" @click="showFilters = !showFilters; showTeam = false" />
+        <StageButton icon="team" label="Equipe" :active="showTeam" @click="showTeam = !showTeam; showFilters = false" />
+        <StageButton :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
+        <StageButton v-if="phase === 'running'" icon="move" label="Mover" @click="moveBox" />
+        <StageButton icon="close" label="Fechar" @click="close" />
+      </div>
     </div>
 
     <div class="actions">
@@ -227,6 +270,11 @@ onBeforeUnmount(() => {
       <template v-if="population.failed > 0"> {{ population.failed }} sprite(s) não puderam ser lidos.</template>
       Toque num Pokémon para ver quem é.
     </p>
+
+    <details class="layout">
+      <summary>Escolher a equipe da caixa (até 6)</summary>
+      <TeamPicker @change="cameraOn ? populate() : undefined" />
+    </details>
 
     <details v-if="cameraOn" class="layout">
       <summary>Ajustes da caixa</summary>

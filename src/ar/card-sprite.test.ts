@@ -262,3 +262,39 @@ describe('CardSprite: estados e limpeza', () => {
     expect(sprite.mesh.visible).toBe(false);
   });
 });
+
+describe('CardSprite: filtros de aparência', () => {
+  const dims = (sprite: CardSprite) => sprite.mesh.material.map!.image as { width: number; height: number; data: Uint8Array };
+
+  it('tom P&B deixa os pixels cinza sem mudar o tamanho', () => {
+    const sprite = new CardSprite();
+    sprite.setAnimation(threeFrameGif());
+    sprite.setLayout({ ...DEFAULT_LAYOUT, tone: 'mono' });
+    const { data, width } = dims(sprite);
+    expect(width).toBe(8); // 2 px × 4
+    expect(data[0]).toBe(data[1]);
+    expect(data[1]).toBe(data[2]);
+  });
+
+  it('contorno aumenta a textura e a animação continua trocando quadros no mesmo tamanho', () => {
+    const sprite = new CardSprite();
+    sprite.setAnimation(threeFrameGif(), 0);
+    const before = dims(sprite).width;
+    sprite.setLayout({ ...DEFAULT_LAYOUT, outline: 'gold' });
+    const first = dims(sprite);
+    expect(first.width).toBeGreaterThan(before);
+    sprite.update(150); // 2º quadro (azul)
+    const second = dims(sprite);
+    expect(second.width).toBe(first.width);
+    expect(second.data.length).toBe(first.data.length);
+  });
+
+  it('voltar ao normal restaura o tamanho original', () => {
+    const sprite = new CardSprite();
+    sprite.setAnimation(threeFrameGif());
+    const original = dims(sprite).width;
+    sprite.setLayout({ ...DEFAULT_LAYOUT, outline: 'white' });
+    sprite.setLayout({ ...DEFAULT_LAYOUT });
+    expect(dims(sprite).width).toBe(original);
+  });
+});

@@ -4,7 +4,9 @@ import {
 } from 'three';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
-import { upscaleFactor, upscaleSprite } from '../core/pixel-upscale';
+import { upscaleSprite } from '../core/pixel-upscale';
+import { applyLook, DEFAULT_LOOK, isDefaultLook, lookKey, normalizeLook } from '../core/sprite-look';
+import type { SpriteLook } from '../core/sprite-look';
 import type { RgbaImage } from '../recognition/types';
 import { clampLayout, DEFAULT_LAYOUT, spriteMatrix, yawTowardCamera } from './anchor';
 import type { SpriteLayout, SpritePlacement } from './anchor';
@@ -17,6 +19,13 @@ export const POSE_SMOOTHING_MS = 60;
 const FRAME_CACHE_BYTES = 32 * 1024 * 1024;
 
 export type SpriteMode = 'empty' | 'animated' | 'static' | 'placeholder';
+
+/** Quadro como vai para a GPU (ampliado, com o visual aplicado). */
+interface PreparedFrame {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+}
 
 function asBytes(rgba: Uint8ClampedArray): Uint8Array {
   return new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength);
@@ -53,7 +62,8 @@ export class CardSprite {
   /** Suavização ligada (padrão): ver `SpriteLayout.smooth`. */
   private smooth = true;
   private staticImage: RgbaImage | null = null;
-  private readonly frameCache = new Map<number, Uint8ClampedArray>();
+  private look: SpriteLook = DEFAULT_LOOK;
+  private readonly frameCache = new Map<number, PreparedFrame>();
   private frameCacheBytes = 0;
 
   constructor() {
@@ -68,10 +78,11 @@ export class CardSprite {
   }
 
   setLayout(layout: SpriteLayout): void {
-    const before = this.smooth;
+    const before = `${this.smooth}/${lookKey(this.look)}`;
     this.layout = clampLayout(layout);
     this.smooth = this.layout.smooth !== false;
-    if (before !== this.smooth) this.rebuildTexture();
+    this.look = normalizeLook(this.layout);
+    if (before !== `${this.smooth}/${lookKey(this.look)}`) this.rebuildTexture();
     this.applyLayout();
   }
 
@@ -86,17 +97,19 @@ export class CardSprite {
     }
   }
 
-  /** Pixels do quadro como vão para a GPU: ampliados e com bordas preparadas (suavização) ou os originais. */
-  private frameData(index: number, rgba: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
-    if (!this.smooth) return rgba;
+  /** Quadro como vai para a GPU: ampliado e com bordas preparadas (suavização), com tom e contorno, ou o original. */
+  private frameData(index: number, rgba: Uint8ClampedArray, width: number, height: number): PreparedFrame {
+    if (!this.smooth && isDefaultLook(this.look)) return { data: rgba, width, height };
     const cached = this.frameCache.get(index);
     if (cached) return cached;
-    const up = upscaleSprite(rgba, width, height);
-    if (this.frameCacheBytes + up.data.byteLength <= FRAME_CACHE_BYTES) {
-      this.frameCache.set(index, up.data);
-      this.frameCacheBytes += up.data.byteLength;
+    const base = this.smooth ? upscaleSprite(rgba, width, height) : { data: rgba, width, height, factor: 1 };
+    let prepared: PreparedFrame = { data: base.data, width: base.width, height: base.height };
+    if (!isDefaultLook(this.look)) prepared = applyLook(base.data, base.width, base.height, this.look, Math.max(1, Math.round(base.factor / 2)));
+    if (this.frameCacheBytes + prepared.data.byteLength <= FRAME_CACHE_BYTES) {
+      this.frameCache.set(index, prepared);
+      this.frameCacheBytes += prepared.data.byteLength;
     }
-    return up.data;
+    return prepared;
   }
 
   private clearFrameCache(): void {
@@ -152,9 +165,8 @@ export class CardSprite {
     this.clearFrameCache();
     this.shownFrame = 0;
     this.startedAt = nowMs;
-    const data = this.frameData(0, first.rgba, gif.width, gif.height);
-    const factor = this.smooth ? upscaleFactor(gif.width, gif.height) : 1;
-    this.show(this.makeTexture(gif.width * factor, gif.height * factor, data, this.smooth), gif.width, gif.height, 'animated');
+    const frame = this.frameData(0, first.rgba, gif.width, gif.height);
+    this.show(this.makeTexture(frame.width, frame.height, frame.data, this.smooth), frame.width, frame.height, 'animated');
   }
 
   /** Imagem parada (PNG de reserva). Só use quando o GIF não existe. */
@@ -162,12 +174,9 @@ export class CardSprite {
     this.gif = null;
     this.staticImage = image;
     this.clearFrameCache();
-    if (this.smooth) {
-      const up = upscaleSprite(image.data, image.width, image.height);
-      this.show(this.makeTexture(up.width, up.height, up.data, true), image.width, image.height, 'static');
-      return;
-    }
-    this.show(this.makeTexture(image.width, image.height, image.data, Math.max(image.width, image.height) > 128), image.width, image.height, 'static');
+    const frame = this.frameData(0, image.data, image.width, image.height);
+    const linear = this.smooth || Math.max(image.width, image.height) > 128;
+    this.show(this.makeTexture(frame.width, frame.height, frame.data, linear), frame.width, frame.height, 'static');
   }
 
   /** Marcador neutro, para quando não há nenhum sprite. */
@@ -227,7 +236,7 @@ export class CardSprite {
     const frame = this.gif.frames[index];
     if (!frame) return false;
     this.shownFrame = index;
-    this.texture.image.data = asBytes(this.frameData(index, frame.rgba, this.gif.width, this.gif.height));
+    this.texture.image.data = asBytes(this.frameData(index, frame.rgba, this.gif.width, this.gif.height).data);
     this.texture.needsUpdate = true;
     this.uploads++;
     return true;

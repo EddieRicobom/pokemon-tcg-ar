@@ -18,6 +18,10 @@ import type { ManualMatch } from '../recognition/catalog-index';
 import { recordFromTcgdex } from '../recognition/pipeline';
 import { lastAttempt } from '../app/diagnostics';
 import { routeHref } from '../app/route';
+import { useFullscreen } from '../app/fullscreen';
+import { cameraFilterCss, visual } from '../app/visual-settings';
+import FilterSheet from '../components/FilterSheet.vue';
+import StageButton from '../components/StageButton.vue';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { frameFromVideo } from '../recognition/browser-image';
 import type { RgbaImage } from '../recognition/types';
@@ -28,6 +32,8 @@ const videoEl = ref<HTMLVideoElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
 const arCanvasKey = ref(0);
+const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl);
+const showFilters = ref(false);
 
 const cameraOn = ref(false);
 const cameraBusy = ref(false);
@@ -236,7 +242,12 @@ function readLayout(): SpriteLayout {
   }
   return { ...DEFAULT_LAYOUT };
 }
-const layout = reactive<SpriteLayout>(readLayout());
+const layout = reactive<SpriteLayout>({ ...readLayout(), tone: visual.tone, outline: visual.outline });
+// Cor e contorno do Pokémon vêm dos filtros compartilhados (também usados na Caixa).
+watch(() => [visual.tone, visual.outline] as const, ([tone, outline]) => {
+  layout.tone = tone;
+  layout.outline = outline;
+});
 
 let stream: MediaStream | null = null;
 let controller: ScanController | null = null;
@@ -455,6 +466,8 @@ async function retrySprite(): Promise<void> {
 }
 
 function closeCamera(): void {
+  void exitFullscreen();
+  showFilters.value = false;
   controller?.stop();
   arRun++;
   stopAr();
@@ -589,8 +602,14 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
     </p>
     <p v-else class="note">Abra a câmera e aponte para a mesma carta física para ver o Pokémon sobre ela.</p>
 
-    <div ref="stageEl" class="viewport" :class="{ adjusting, tracking: arState?.phase === 'tracking' }" @pointerdown="onStageDown" @pointerup="onStageUp">
-      <video ref="videoEl" class="feed" playsinline muted></video>
+    <div
+      ref="stageEl"
+      class="viewport"
+      :class="{ adjusting, tracking: arState?.phase === 'tracking', 'pseudo-full': pseudo, 'has-bar': cameraOn }"
+      @pointerdown="onStageDown"
+      @pointerup="onStageUp"
+    >
+      <video ref="videoEl" class="feed" playsinline muted :style="{ filter: cameraFilterCss(visual.camera) }"></video>
       <canvas :key="arCanvasKey" ref="canvasEl" class="overlay" aria-label="Camada de realidade aumentada"></canvas>
       <canvas ref="debugCanvasEl" class="overlay debug-quad" aria-hidden="true"></canvas>
       <p v-if="!cameraOn" class="placeholder">{{ cameraBusy ? 'Abrindo a câmera…' : 'Câmera desligada' }}</p>
@@ -605,6 +624,15 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       ></div>
       <p v-if="showScanInfo" class="hud" role="status">{{ scan.message }}</p>
       <p v-else-if="arHudText" class="hud" role="status">{{ arHudText }}</p>
+      <FilterSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
+      <div v-if="cameraOn" class="stage-bar" @pointerdown.stop @pointerup.stop>
+        <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
+        <StageButton icon="filters" label="Filtros" :active="showFilters" @click="showFilters = !showFilters" />
+        <StageButton icon="rescan" :label="cardId ? 'Outra carta' : 'Escanear'" @click="scanAnother" />
+        <StageButton v-if="arActive" icon="adjust" :label="adjusting ? 'Concluir' : 'Ajustar'" :active="adjusting" @click="toggleAdjusting" />
+        <StageButton v-if="arActive" icon="panel" label="Status" :active="layout.showStats !== false" @click="layout.showStats = layout.showStats === false" />
+        <StageButton icon="close" label="Fechar" @click="closeCamera" />
+      </div>
     </div>
 
     <div class="actions">

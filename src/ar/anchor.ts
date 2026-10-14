@@ -10,6 +10,9 @@
  * A carta fica no plano XY. Um sprite "em pé" fica no plano XZ, com a base encostada na carta.
  */
 
+import { normalizeLook } from '../core/sprite-look';
+import type { SpriteOutline, SpriteTone } from '../core/sprite-look';
+
 export interface SpriteLayout {
   /** Altura do sprite, em larguras de carta (0,6 = 60% da largura da carta). */
   heightRatio: number;
@@ -33,6 +36,9 @@ export interface SpriteLayout {
    * Omitido = ligado.
    */
   smooth?: boolean;
+  /** Tom de cor e contorno do sprite (filtros de aparência). Omitidos = normal e sem contorno. */
+  tone?: SpriteTone;
+  outline?: SpriteOutline;
   /** Mostra o painel de status no chão, abaixo da carta. Omitido = ligado. */
   showStats?: boolean;
 }
@@ -46,6 +52,8 @@ export const DEFAULT_LAYOUT: SpriteLayout = {
   anchor: 'base',
   faceCamera: true,
   smooth: true,
+  tone: 'normal',
+  outline: 'none',
   showStats: true,
 };
 
@@ -67,6 +75,7 @@ export function clampLayout(layout: SpriteLayout): SpriteLayout {
     anchor: layout.anchor === 'center' ? 'center' : 'base',
     faceCamera: layout.faceCamera !== false,
     smooth: layout.smooth !== false,
+    ...normalizeLook(layout),
     showStats: layout.showStats !== false,
   };
 }

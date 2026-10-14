@@ -6,11 +6,16 @@ import { BoxCreature } from './creature';
 import type { CreatureInfo, CreatureSource } from './creature';
 import { intersectFloor } from './floor';
 import type { FloorResult } from './floor';
-import { createWander, separate, stepWander } from './wander';
+import { formationSlots } from './formation';
+import { createWander, separate, stepToward, stepWander } from './wander';
+import { DEFAULT_LOOK } from '../core/sprite-look';
+import type { SpriteLook } from '../core/sprite-look';
 import type { Rng } from './wander';
 
 export const MAX_CREATURES = 30;
 export const DEFAULT_HALF_SIZE_M = 1.2;
+
+export type BoxMode = 'passeio' | 'formacao';
 
 export interface CreatureEntry {
   info: CreatureInfo;
@@ -31,6 +36,8 @@ export class BoxScene {
   private anchor: Vector3 | null = null;
   private half = DEFAULT_HALF_SIZE_M;
   private lastNow = 0;
+  private look: SpriteLook = DEFAULT_LOOK;
+  mode: BoxMode = 'passeio';
   private readonly rng: Rng;
 
   constructor(rng: Rng = Math.random) {
@@ -131,6 +138,16 @@ export class BoxScene {
     }
   }
 
+  /** Tom de cor e contorno de todos os Pokémon da caixa. */
+  setLook(look: SpriteLook): void {
+    this.look = look;
+    for (const creature of this.creatures) creature.setLook(look);
+  }
+
+  setMode(mode: BoxMode): void {
+    this.mode = mode;
+  }
+
   /** Troca a população da caixa (até `MAX_CREATURES`). */
   setCreatures(entries: CreatureEntry[]): void {
     for (const creature of this.creatures) creature.dispose();
@@ -138,6 +155,7 @@ export class BoxScene {
     for (const entry of entries.slice(0, MAX_CREATURES)) {
       const state = createWander(this.half, this.rng);
       const creature = new BoxCreature(entry.info, entry.source, state);
+      creature.setLook(this.look);
       this.scene.add(creature.group);
       this.creatures.push(creature);
     }
@@ -149,8 +167,17 @@ export class BoxScene {
     const base = this.anchor;
     for (const creature of this.creatures) creature.group.visible = base !== null;
     if (!base) return;
-    for (const creature of this.creatures) stepWander(creature.state, dt, this.half, this.rng);
-    separate(this.creatures.map((c) => c.state), 0.28, this.half);
+    if (this.mode === 'formacao') {
+      // Em fila de frente para a câmera: cada um anda até a sua vaga.
+      const slots = formationSlots(this.creatures.length, this.half, -base.x, -base.z);
+      this.creatures.forEach((creature, i) => {
+        const slot = slots[i];
+        if (slot) stepToward(creature.state, slot.x, slot.z, dt, 0.9);
+      });
+    } else {
+      for (const creature of this.creatures) stepWander(creature.state, dt, this.half, this.rng);
+      separate(this.creatures.map((c) => c.state), 0.28, this.half);
+    }
     this.camera.updateMatrixWorld(true);
     const right = new Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
     right.y = 0;

@@ -106,3 +106,25 @@ export function separate(states: WanderState[], minDistance: number, half: numbe
     }
   }
 }
+
+/** Anda em linha reta até (tx, tz) a `speed` m/s, sem passar do ponto. Devolve true ao chegar. */
+export function stepToward(state: WanderState, tx: number, tz: number, dtMs: number, speed: number): boolean {
+  const dt = Math.min(Math.max(dtMs, 0), 200) / 1000;
+  const dx = tx - state.x;
+  const dz = tz - state.z;
+  const distance = Math.hypot(dx, dz);
+  const step = speed * dt;
+  if (distance <= Math.max(step, 0.01)) {
+    state.x = tx;
+    state.z = tz;
+    state.vx = 0;
+    state.vz = 0;
+    return true;
+  }
+  state.vx = (dx / distance) * speed;
+  state.vz = (dz / distance) * speed;
+  state.x += (dx / distance) * step;
+  state.z += (dz / distance) * step;
+  state.hopPhase += dt * 9;
+  return false;
+}
