@@ -39,16 +39,16 @@ describe('escolha dos pins', () => {
 
   it('limpa o que veio do armazenamento', () => {
     const s = normalizeSetup({ mine: ['c1', 'c1', 'gone', 7, 'c2'], enemy: ['c2', 'c3'], difficulty: 'dificil' }, ids);
-    expect(s).toEqual({ mine: ['c1', 'c2'], enemy: ['c3'], difficulty: 'dificil', marks: true });
-    expect(normalizeSetup({ marks: false }, ids).marks).toBe(false);
+    expect(s).toEqual({ mine: ['c1', 'c2'], enemy: ['c3'], difficulty: 'dificil', marks: true, shrink: true, sound: true, haptics: true });
+    expect(normalizeSetup({ marks: false, shrink: false, sound: false, haptics: false }, ids)).toMatchObject({ marks: false, shrink: false, sound: false, haptics: false });
     expect(normalizeSetup({ marks: 'x' }, ids).marks).toBe(true);
     expect(normalizeSetup('lixo', ids)).toEqual(emptySetup());
     expect(normalizeSetup({ difficulty: 'x' }, ids).difficulty).toBe('normal');
   });
 
   it('lembra a escolha e volta ao padrão se as cartas sumiram', () => {
-    saveSetup({ mine: ['c1'], enemy: ['c2', 'c3'], difficulty: 'facil', marks: false });
-    expect(loadSetup(ids, cards)).toEqual({ mine: ['c1'], enemy: ['c2', 'c3'], difficulty: 'facil', marks: false });
+    saveSetup({ mine: ['c1'], enemy: ['c2', 'c3'], difficulty: 'facil', marks: false, shrink: false, sound: false, haptics: true });
+    expect(loadSetup(ids, cards)).toEqual({ mine: ['c1'], enemy: ['c2', 'c3'], difficulty: 'facil', marks: false, shrink: false, sound: false, haptics: true });
     expect(loadSetup(new Set(['c5', 'c6']), cards.slice(5, 7)).mine).toEqual(['c6', 'c5']);
     localStorage.setItem('tcg-ar-pins-setup-v1', '{quebrado');
     expect(loadSetup(ids, cards)).toEqual(defaultSetup(cards));

@@ -104,6 +104,21 @@ export function frictionAt(grid: TerrainGrid, radius: number, x: number, y: numb
 
 // ----------------------------------------------------------------------------- marcas
 
+/** Um tipo que deixa cada marca (para o som da marca ter o timbre do tipo). */
+export const TYPE_FOR_TERRAIN: Record<TerrainKind, PokemonType> = {
+  scorch: 'fire',
+  puddle: 'water',
+  thicket: 'grass',
+  frost: 'ice',
+  static: 'electric',
+  crack: 'ground',
+  rubble: 'rock',
+  toxic: 'poison',
+  psy: 'psychic',
+  shade: 'ghost',
+  bloom: 'fairy',
+};
+
 export interface MarkResult {
   kind: TerrainKind;
   /** Índices dos blocos que mudaram. */
