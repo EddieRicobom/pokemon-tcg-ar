@@ -4,6 +4,7 @@ import {
   classifyCameraError,
   startRearCamera,
   stopCamera,
+  tuneCameraForTracking,
   type CameraDeps,
   type VideoLike,
 } from './camera';
@@ -118,5 +119,38 @@ describe('stopCamera', () => {
 
   it('aceita nulos sem lançar erro', () => {
     expect(() => stopCamera(null, null)).not.toThrow();
+  });
+});
+
+describe('tuneCameraForTracking', () => {
+  function streamWith(capabilities: Record<string, unknown>, applyConstraints = vi.fn().mockResolvedValue(undefined)) {
+    const track = { getCapabilities: () => capabilities, applyConstraints };
+    return { stream: { getVideoTracks: () => [track] } as unknown as MediaStream, applyConstraints };
+  }
+
+  it('pede foco, exposição e balanço de branco contínuos quando o aparelho oferece', async () => {
+    const { stream, applyConstraints } = streamWith({
+      focusMode: ['manual', 'continuous'],
+      exposureMode: ['continuous', 'manual'],
+      whiteBalanceMode: ['manual'],
+    });
+    expect(await tuneCameraForTracking(stream)).toEqual(['focusMode', 'exposureMode']);
+    expect(applyConstraints).toHaveBeenCalledWith({ advanced: [{ focusMode: 'continuous', exposureMode: 'continuous' }] });
+  });
+
+  it('não muda nada onde o navegador não informa os modos (iPhone)', async () => {
+    const { stream, applyConstraints } = streamWith({});
+    expect(await tuneCameraForTracking(stream)).toEqual([]);
+    expect(applyConstraints).not.toHaveBeenCalled();
+  });
+
+  it('engole a recusa do navegador: a câmera segue como estava', async () => {
+    const { stream } = streamWith({ focusMode: ['continuous'] }, vi.fn().mockRejectedValue(new Error('recusou')));
+    expect(await tuneCameraForTracking(stream)).toEqual([]);
+  });
+
+  it('aceita stream sem trilha de vídeo', async () => {
+    expect(await tuneCameraForTracking({ getVideoTracks: () => [] } as unknown as MediaStream)).toEqual([]);
+    expect(await tuneCameraForTracking({} as MediaStream)).toEqual([]);
   });
 });

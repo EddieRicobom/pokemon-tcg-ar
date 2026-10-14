@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { searchWindowSize, TRACKING_TUNING } from './mindar-engine';
+import { isFreshPose, searchWindowSize, TRACKING_TUNING } from './mindar-engine';
 
 describe('janela de busca do rastreador', () => {
   it('é uma potência de 2 que cabe no quadro (metade do lado menor, no máximo)', () => {
@@ -13,5 +13,17 @@ describe('janela de busca do rastreador', () => {
   });
   it('tolera ~1,5 s sem ver a carta antes de desistir', () => {
     expect(TRACKING_TUNING.missTolerance).toBeGreaterThanOrEqual(60);
+  });
+});
+
+describe('pose fresca ou repetida', () => {
+  it('só vale como fresca enquanto o MindAR está rastreando aquele alvo', () => {
+    const states = [{ isTracking: true }, { isTracking: false }];
+    expect(isFreshPose(states, 0)).toBe(true);
+    expect(isFreshPose(states, 1)).toBe(false);
+  });
+  it('sem informação do estado, não descarta a pose', () => {
+    expect(isFreshPose(undefined, 0)).toBe(true);
+    expect(isFreshPose([], 3)).toBe(true);
   });
 });

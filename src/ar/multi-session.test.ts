@@ -116,6 +116,25 @@ describe('MultiArSession', () => {
     expect(slots[1]!.sprite.group.visible).toBe(true);
   });
 
+  it('pose repetida de uma carta que o rastreador já perdeu a esconde depois do tempo de segurar', async () => {
+    let t = 1000;
+    const { session, engine, slots, pose, tick, targets } = setup(2, { holdMs: 600, now: () => t });
+    await session.start(targets);
+    engine.onUpdate!({ worldMatrix: pose(), targetIndex: 0, fresh: true });
+    engine.onUpdate!({ worldMatrix: pose(), targetIndex: 1, fresh: true });
+    t += 300;
+    engine.onUpdate!({ worldMatrix: pose(), targetIndex: 0, fresh: false }); // carta 0 perdida, pose velha repetida
+    engine.onUpdate!({ worldMatrix: pose(), targetIndex: 1, fresh: true });
+    expect(slots[0]!.sprite.group.visible).toBe(true);
+    t += 500;
+    engine.onUpdate!({ worldMatrix: pose(), targetIndex: 0, fresh: false });
+    engine.onUpdate!({ worldMatrix: pose(), targetIndex: 1, fresh: true });
+    tick(t);
+    expect(slots[0]!.sprite.group.visible).toBe(false);
+    expect(slots[1]!.sprite.group.visible).toBe(true);
+    expect(session.currentState.visible).toEqual(['c1']);
+  });
+
   it('só avisa a interface quando muda o conjunto de cartas visíveis', async () => {
     const { session, engine, states, pose, targets } = setup(2);
     await session.start(targets);

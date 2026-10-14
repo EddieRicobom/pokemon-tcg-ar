@@ -4,6 +4,12 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 
 ## [Não lançado]
 
+### Câmera em tela cheia e rastreio que larga a carta perdida (2026-10-14)
+
+- Escanear, Várias, Caixa e o teste do renderizador (Diagnóstico): com a câmera ligada a imagem cobre a tela e tudo que ficava embaixo (etapas, estado do rastreio, resultado, erros, busca à mão, ajustes, equipe, resumo da batalha) passou para avisos no topo e folhas sobre a imagem. Não é mais preciso rolar a página.
+- Rastreio: poses repetidas pelo MindAR depois de perder a carta (até 90 leituras) deixam de manter o Pokémon na tela; ele some em poucos segundos e volta na hora ao achar a carta. No teste com câmera falsa: ~3,5 s contra ~16 s.
+- Câmera em 1280×720 com foco, exposição e balanço de branco contínuos onde o aparelho permite; renderizador limitado a 1,5× de densidade de pixels.
+
 ### Sons da batalha (2026-10-14)
 
 - Sons sintetizados na hora (WebAudio, sem arquivos) para a batalha: carga, lançamento, impacto com timbre próprio para cada um dos 18 tipos, crítico, super efetivo, defesa, erro, imunidade, condições, nocaute e uma fanfarra do Pokémon vencedor que muda com a personalidade. Opção "Som da batalha" ligado/desligado em "Suavizar".

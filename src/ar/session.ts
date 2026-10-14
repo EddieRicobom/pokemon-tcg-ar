@@ -161,7 +161,8 @@ export class ArSession {
     const nowMs = this.clock();
     const gyro = this.gyroOn(nowMs);
     this.recordUpdate(nowMs, gyro);
-    if (update.worldMatrix) {
+    // Pose velha repetida pelo rastreador depois de perder a carta: conta como perda (não move nem renova o Pokémon).
+    if (update.worldMatrix && update.fresh !== false) {
       // Com giroscópio, a pose é guardada no mundo (orientação da câmera no instante do quadro).
       const poseOrientation = gyro ? this.deps.orientation!.at(update.capturedAt ?? nowMs - DEFAULT_TRACKER_LAG_MS) : null;
       sprite.setCardMatrix(cardSpaceMatrix(update.worldMatrix, this.info.markerWidth, this.info.markerHeight), poseOrientation);

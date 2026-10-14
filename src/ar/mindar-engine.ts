@@ -16,6 +16,8 @@ interface MindArController {
   dummyRun(input: HTMLVideoElement | HTMLCanvasElement): void;
   processVideo(input: HTMLVideoElement | HTMLCanvasElement): void;
   getProjectionMatrix(): number[];
+  /** Estado por alvo; `isTracking` é falso quando a carta foi perdida e a pose repetida é a velha. */
+  trackingStates?: { isTracking: boolean }[];
   dispose(): void;
 }
 
@@ -33,6 +35,14 @@ export const TRACKING_TUNING = {
   filterMinCF: 0.0005,
   filterBeta: 800,
 } as const;
+
+/**
+ * A pose que o MindAR acabou de entregar é de uma leitura de verdade (a carta está sendo rastreada) ou a repetição
+ * da última pose enquanto ele tenta reencontrar a carta? Sem informação do estado, vale como fresca.
+ */
+export function isFreshPose(states: { isTracking: boolean }[] | undefined, targetIndex: number): boolean {
+  return states?.[targetIndex]?.isTracking ?? true;
+}
 
 /**
  * Rastreamento com o `Controller` do MindAR (MIT). Não usamos o `MindARThree` porque ele importa
@@ -72,7 +82,11 @@ export class MindArEngine implements TrackingEngine {
       maxTrack: Math.max(1, Math.floor(options.maxTrack ?? 1)),
       ...TRACKING_TUNING,
       onUpdate: (data: { type: string; targetIndex?: number; worldMatrix?: ArrayLike<number> | null }) => {
-        if (data.type === 'updateMatrix') onUpdate({ worldMatrix: data.worldMatrix ?? null, targetIndex: data.targetIndex ?? 0, capturedAt: iterationFrameTime });
+        if (data.type !== 'updateMatrix') return;
+        const targetIndex = data.targetIndex ?? 0;
+        // Enquanto o MindAR "segura" a carta (missTolerance) ele repete a última pose mesmo sem estar rastreando.
+        const fresh = isFreshPose(this.controller?.trackingStates, targetIndex);
+        onUpdate({ worldMatrix: data.worldMatrix ?? null, targetIndex, capturedAt: iterationFrameTime, fresh });
       },
     }) as MindArController;
     this.controller = controller;

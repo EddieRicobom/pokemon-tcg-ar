@@ -146,7 +146,8 @@ export class MultiArSession {
     const nowMs = this.clock();
     const gyro = this.gyroOn(nowMs);
     this.recordUpdate(nowMs, gyro);
-    if (update.worldMatrix) {
+    // Pose velha repetida pelo rastreador depois de perder a carta: conta como perda (não move nem renova o Pokémon).
+    if (update.worldMatrix && update.fresh !== false) {
       const poseOrientation = gyro ? this.deps.orientation!.at(update.capturedAt ?? nowMs - DEFAULT_TRACKER_LAG_MS) : null;
       slot.sprite.setCardMatrix(cardSpaceMatrix(update.worldMatrix, marker.width, marker.height), poseOrientation);
       slot.sprite.setTracked(true);

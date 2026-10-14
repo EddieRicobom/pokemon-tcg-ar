@@ -4,6 +4,12 @@ export interface TrackingUpdate {
   worldMatrix: ArrayLike<number> | null;
   /** Qual alvo (carta) esta pose é, quando o rastreador tem vários; 0 com um só. */
   targetIndex?: number;
+  /**
+   * false quando o rastreador JÁ perdeu a carta e só repete a última pose enquanto tenta reencontrá-la (o MindAR
+   * faz isso por dezenas de quadros antes de desistir). Essa pose velha não deve mover o Pokémon nem manter ele
+   * "vivo": só a pose fresca vale. Ausente = fresca.
+   */
+  fresh?: boolean;
   /** Hora (performance.now) em que a câmera capturou o quadro de onde saiu esta pose, quando se sabe. */
   capturedAt?: number;
 }

@@ -24,6 +24,7 @@ import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
 import { requestOrientationPermission } from '../sensors/orientation-feed';
 import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
+import StageSheet from '../components/StageSheet.vue';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { frameFromVideo } from '../recognition/browser-image';
 import type { RgbaImage } from '../recognition/types';
@@ -34,11 +35,20 @@ const videoEl = ref<HTMLVideoElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
 const arCanvasKey = ref(0);
-const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl);
-const showFilters = ref(false);
+const dockEl = ref<HTMLElement | null>(null);
+/** Folha aberta sobre a câmera (uma por vez). */
+type SheetName = 'smooth' | 'adjust' | 'tools' | 'manual';
+const sheet = ref<SheetName | null>(null);
+function toggleSheet(name: SheetName): void {
+  sheet.value = sheet.value === name ? null : name;
+  if (sheet.value === 'manual') manualHint.value = false;
+}
 
 const cameraOn = ref(false);
 const cameraBusy = ref(false);
+/** Com a câmera ligada o visor cobre a janela inteira e tudo que importa aparece sobre a imagem: sem rolar a página. */
+const immersive = computed(() => cameraOn.value || cameraBusy.value);
+const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl, immersive);
 const cameraMessage = ref('');
 const loadingEngine = ref('');
 const scan = ref<ScanState>({ phase: 'idle', message: '', frames: 0 });
@@ -51,7 +61,6 @@ const arFailedAt = ref<ArStage>('preparing');
 const pendingArCardId = ref<string | null>(null);
 let arRun = 0;
 let lastReadyCard: unknown = null;
-const showLayout = ref(false);
 const panelMode = ref<PanelMode>('auto');
 /** Modo "ajustar com os dedos": arrastar move o Pokémon (e o painel); pinça muda o tamanho. */
 const adjusting = ref(false);
@@ -180,6 +189,7 @@ async function refreshIndexStatus(): Promise<void> {
 
 // Busca manual: plano B quando a leitura automática não acha a carta.
 const manualOpen = ref(false);
+const manualHint = ref(false);
 const manualName = ref('');
 const manualNumber = ref('');
 const manualResults = ref<ManualMatch[]>([]);
@@ -288,7 +298,10 @@ async function ensureController(): Promise<ScanController> {
       scan.value = state;
       if (state.last) lastAttempt.value = state.last;
       // Depois de várias leituras sem sucesso, abre a busca manual: o caminho seguro não deve ficar escondido.
-      if (state.phase === 'scanning' && state.frames >= 4 && state.last && state.last.status !== 'identified') manualOpen.value = true;
+      if (state.phase === 'scanning' && state.frames >= 4 && state.last && state.last.status !== 'identified') {
+        manualOpen.value = true;
+        manualHint.value = true;
+      }
       if (state.phase === 'ready' && state.card && state.card !== lastReadyCard) {
         lastReadyCard = state.card;
         void startArFor(state.card.id);
@@ -470,7 +483,7 @@ async function retrySprite(): Promise<void> {
 
 function closeCamera(): void {
   void exitFullscreen();
-  showFilters.value = false;
+  sheet.value = null;
   controller?.stop();
   arRun++;
   stopAr();
@@ -589,11 +602,72 @@ onBeforeUnmount(() => {
   stopCamera(videoEl.value, stream);
 });
 
-function onLayoutToggle(event: Event): void {
-  showLayout.value = (event.target as HTMLDetailsElement).open;
+type Tone = 'busy' | 'ok' | 'warn' | 'error';
+interface Notice {
+  text: string;
+  sub?: string;
+  tone: Tone;
 }
 
-const showScanInfo = computed(() => scan.value.phase === 'scanning' && cameraOn.value);
+/** O aviso principal sobre a câmera: o que o app está fazendo agora. */
+const mainNotice = computed<Notice | null>(() => {
+  if (!cameraOn.value) return null;
+  const s = scan.value;
+  if (loadingEngine.value) return { text: loadingEngine.value, tone: 'busy' };
+  if (arStage.value === 'error') return { text: arError.value || 'O rastreamento falhou.', tone: 'error' };
+  if (arStage.value === 'tracking') {
+    const tone: Tone = spriteState.value?.kind === 'error' || spriteState.value?.kind === 'placeholder' ? 'warn' : 'ok';
+    return { text: arHudText.value, tone };
+  }
+  if (arStage.value === 'lost') return { text: arHudText.value, tone: 'warn' };
+  if (arStage.value !== 'idle' && arStage.value !== 'selected' && arHudText.value) return { text: arHudText.value, tone: 'busy' };
+  if (s.phase === 'error') return { text: s.message, tone: 'error' };
+  if (s.phase === 'choosing') return { text: s.message, tone: 'warn' };
+  if (s.phase === 'scanning' || s.phase === 'preparing') {
+    const sub = s.last && s.phase === 'scanning' ? `${s.frames} quadros analisados · última leitura ${s.last.metrics.totalMs} ms` : undefined;
+    return { text: s.message, sub, tone: 'busy' };
+  }
+  return null;
+});
+
+/** Etapas do AR enquanto o app prepara tudo (depois disso o aviso principal basta). */
+const stepsNotice = computed(() => {
+  if (!cameraOn.value || !['preparing', 'compiling', 'engine'].includes(arStage.value)) return null;
+  const steps = arSteps.value;
+  const index = Math.max(0, steps.findIndex((step) => step.state === 'active'));
+  return { label: steps[index]?.label ?? '', position: index + 1, total: steps.length, steps };
+});
+
+const ORIGIN_TEXT: Record<string, string> = {
+  escolha: 'escolhida por você entre as candidatas',
+  manual: 'escolhida por você na busca manual',
+  cache: 'aberta do cache do aparelho',
+};
+const resultNotice = computed(() => {
+  const card = scan.value.card;
+  if (!cameraOn.value || !card || scan.value.phase !== 'ready') return null;
+  return {
+    name: card.name,
+    line: `${card.setName} · nº ${card.localId}/${card.setOfficial}${card.dexIds[0] ? ` · Pokédex ${card.dexIds[0]}` : ''}`,
+    origin: ORIGIN_TEXT[scan.value.origin ?? ''] ?? 'reconhecida automaticamente',
+  };
+});
+
+const spriteNotice = computed(() => {
+  const kind = spriteState.value?.kind;
+  return cameraOn.value && (kind === 'static' || kind === 'placeholder' || kind === 'error') ? spriteText.value : '';
+});
+
+const trackerText = computed(() => {
+  if (!arActive.value) return '';
+  const rate = arState.value.trackerHz ? `${arState.value.trackerHz} leituras/s` : 'medindo…';
+  const gyro = !sensorSettings.gyro ? 'giroscópio desligado' : arState.value.gyro ? 'giroscópio ativo' : 'sem giroscópio';
+  return `${rate} · ${gyro}`;
+});
+
+const adjustNotice = computed(() => (adjusting.value ? 'Arraste para mover o Pokémon e use a pinça para mudar o tamanho. Toque em Concluir para salvar.' : ''));
+/** Depois de várias leituras sem sucesso, o botão "Buscar" chama a atenção: o caminho manual não fica escondido. */
+const manualAttention = computed(() => manualHint.value && sheet.value !== 'manual' && scan.value.phase === 'scanning' && !props.cardId);
 const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
 </script>
 
@@ -608,14 +682,14 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
     <div
       ref="stageEl"
       class="viewport"
-      :class="{ adjusting, tracking: arState?.phase === 'tracking', 'pseudo-full': pseudo, 'has-bar': cameraOn }"
+      :class="{ adjusting, tracking: arState?.phase === 'tracking', 'pseudo-full': pseudo, immersive }"
       @pointerdown="onStageDown"
       @pointerup="onStageUp"
     >
       <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas :key="arCanvasKey" ref="canvasEl" class="overlay" aria-label="Camada de realidade aumentada"></canvas>
       <canvas ref="debugCanvasEl" class="overlay debug-quad" aria-hidden="true"></canvas>
-      <p v-if="!cameraOn" class="placeholder">{{ cameraBusy ? 'Abrindo a câmera…' : 'Câmera desligada' }}</p>
+      <p v-if="!cameraOn && !cameraBusy" class="placeholder">Câmera desligada</p>
       <div
         v-if="adjusting"
         class="gesture-layer"
@@ -625,104 +699,188 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
         @pointerup="onGestureUp"
         @pointercancel="onGestureUp"
       ></div>
-      <p v-if="showScanInfo" class="hud" role="status">{{ scan.message }}</p>
-      <p v-else-if="arHudText" class="hud" role="status">{{ arHudText }}</p>
-      <SmoothingSheet v-if="showFilters && cameraOn" @close="showFilters = false" />
-      <div v-if="cameraOn" class="stage-bar" @pointerdown.stop @pointerup.stop>
-        <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
-        <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters" />
-        <StageButton icon="rescan" :label="cardId ? 'Outra carta' : 'Escanear'" @click="scanAnother" />
-        <StageButton v-if="arActive" icon="adjust" :label="adjusting ? 'Concluir' : 'Ajustar'" :active="adjusting" @click="toggleAdjusting" />
-        <StageButton v-if="arActive" icon="panel" label="Status" :active="layout.showStats !== false" @click="layout.showStats = layout.showStats === false" />
-        <StageButton icon="close" label="Fechar" @click="closeCamera" />
+
+      <div v-if="immersive" class="stage-head" role="status" aria-live="polite">
+        <p v-if="cameraBusy" class="pill busy"><i class="dot"></i><span class="pill-text">Abrindo a câmera…</span></p>
+        <div v-if="stepsNotice" class="pill steps">
+          <span class="pill-text">Etapa {{ stepsNotice.position }} de {{ stepsNotice.total }}: {{ stepsNotice.label }}</span>
+          <span class="steps-bar" aria-hidden="true"><i v-for="step in stepsNotice.steps" :key="step.key" :class="step.state"></i></span>
+        </div>
+        <p v-if="mainNotice" class="pill" :class="mainNotice.tone">
+          <i class="dot"></i>
+          <span class="pill-text">{{ mainNotice.text }}<small v-if="mainNotice.sub" class="pill-sub">{{ mainNotice.sub }}</small></span>
+        </p>
+        <p v-if="resultNotice" class="pill gold">
+          <span class="pill-text">{{ resultNotice.name }}<small class="pill-sub">{{ resultNotice.line }} · {{ resultNotice.origin }}</small></span>
+        </p>
+        <p v-if="spriteNotice" class="pill warn"><i class="dot"></i><span class="pill-text">{{ spriteNotice }}</span></p>
+        <p v-if="adjustNotice" class="pill ok"><i class="dot"></i><span class="pill-text">{{ adjustNotice }}</span></p>
+        <p v-if="moveNotice" class="pill warn"><i class="dot"></i><span class="pill-text">{{ moveNotice }}</span></p>
+        <p v-if="manualAttention" class="pill warn"><i class="dot"></i><span class="pill-text">Não está lendo? Toque em «Buscar» para procurar a carta pelo nome.</span></p>
+        <p v-if="trackerText" class="pill small">{{ trackerText }}</p>
+      </div>
+
+      <div v-if="immersive" class="stage-foot" @pointerdown.stop @pointerup.stop>
+        <div ref="dockEl" class="stage-dock"></div>
+
+        <div v-if="scan.phase === 'choosing' && scan.choices" class="stage-sheet" role="group" aria-label="Qual impressão é esta?">
+          <header><strong>Qual impressão é esta?</strong></header>
+          <div class="choices">
+            <button v-for="choice in scan.choices" :key="choice.card.id" type="button" @click="controller?.choose(choice.card.id)">
+              {{ choice.card.name }} · {{ choice.card.setName }} {{ choice.card.localId }}/{{ choice.card.setOfficial }}
+              <small>({{ confidencePct(choice.confidence) }})</small>
+            </button>
+            <button type="button" class="primary" @click="controller?.start()">Tentar de novo</button>
+          </div>
+        </div>
+
+        <div v-if="arStage === 'error'" class="stage-sheet" role="alert">
+          <header><strong>O Pokémon não apareceu</strong></header>
+          <p class="meta">{{ arError }}</p>
+          <button type="button" class="primary" @click="startArFor(pendingArCardId as string)">Tentar de novo</button>
+          <button type="button" @click="recompileAr">Recompilar o alvo da carta</button>
+          <button type="button" @click="dismissAr">Escolher outra carta</button>
+        </div>
+
+        <SmoothingSheet v-if="sheet === 'smooth' && cameraOn" @close="sheet = null" />
+
+        <div v-if="sheet === 'adjust' && arActive" class="stage-sheet" role="dialog" aria-label="Ajustes do Pokémon" @pointerdown.stop @pointerup.stop @click.stop>
+          <header>
+            <strong>Ajustes do Pokémon</strong>
+            <button type="button" class="link" @click="resetLayout">Restaurar</button>
+            <button type="button" class="link" @click="sheet = null">Fechar</button>
+          </header>
+          <div v-if="layout.showStats" class="panel-modes" role="group" aria-label="Página do painel de status">
+            <button type="button" :class="{ active: panelMode === 'auto' }" :aria-pressed="panelMode === 'auto'" @click="setPanelMode('auto')">Auto</button>
+            <button v-for="page in PANEL_PAGES" :key="page" type="button" :class="{ active: panelMode === page }" :aria-pressed="panelMode === page" @click="setPanelMode(page)">
+              {{ PANEL_PAGE_LABELS_PT[page] }}
+            </button>
+          </div>
+          <div class="layout">
+            <label>Altura ({{ layout.heightRatio.toFixed(2) }} larguras da carta)
+              <input v-model.number="layout.heightRatio" type="range" :min="LAYOUT_LIMITS.heightRatio.min" :max="LAYOUT_LIMITS.heightRatio.max" step="0.05" />
+            </label>
+            <label>Deslocamento lateral ({{ layout.offsetX.toFixed(2) }})
+              <input v-model.number="layout.offsetX" type="range" :min="LAYOUT_LIMITS.offset.min" :max="LAYOUT_LIMITS.offset.max" step="0.05" />
+            </label>
+            <label>Deslocamento vertical ({{ layout.offsetY.toFixed(2) }})
+              <input v-model.number="layout.offsetY" type="range" :min="LAYOUT_LIMITS.offset.min" :max="LAYOUT_LIMITS.offset.max" step="0.05" />
+            </label>
+            <label>Altura acima da carta ({{ layout.lift.toFixed(2) }})
+              <input v-model.number="layout.lift" type="range" :min="LAYOUT_LIMITS.lift.min" :max="LAYOUT_LIMITS.lift.max" step="0.05" />
+            </label>
+            <label>Giro ({{ Math.round(layout.yawDeg) }}°)
+              <input v-model.number="layout.yawDeg" type="range" :min="LAYOUT_LIMITS.yawDeg.min" :max="LAYOUT_LIMITS.yawDeg.max" step="5" />
+            </label>
+            <label>Ponto de apoio
+              <select v-model="layout.anchor">
+                <option value="base">Pés (em pé sobre a carta)</option>
+                <option value="center">Centro</option>
+              </select>
+            </label>
+            <label class="art-option">
+              <input v-model="layout.showStats" type="checkbox" />
+              <span>Mostrar o painel de status no chão</span>
+            </label>
+            <label class="art-option">
+              <input v-model="sensorSettings.gyro" type="checkbox" />
+              <span>Usar o giroscópio (acompanha o giro do celular entre as leituras)</span>
+            </label>
+            <label>Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)
+              <input v-model.number="sensorSettings.latencyMs" type="range" :min="LATENCY_RANGE.min" :max="LATENCY_RANGE.max" step="5" />
+            </label>
+          </div>
+        </div>
+
+        <div class="stage-bar">
+          <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
+          <StageButton icon="filters" label="Suavizar" :active="sheet === 'smooth'" @click="toggleSheet('smooth')" />
+          <StageButton icon="rescan" :label="cardId ? 'Outra carta' : 'Escanear'" @click="scanAnother" />
+          <StageButton v-if="!cardId" icon="search" label="Buscar" :active="sheet === 'manual'" :attention="manualAttention" @click="toggleSheet('manual')" />
+          <StageButton v-if="!cardId" icon="tools" label="Teste" :active="sheet === 'tools'" @click="toggleSheet('tools')" />
+          <StageButton v-if="arActive" icon="adjust" :label="adjusting ? 'Concluir' : 'Ajustar'" :active="adjusting" @click="toggleAdjusting" />
+          <StageButton v-if="arActive" icon="panel" label="Status" :active="layout.showStats !== false" @click="layout.showStats = layout.showStats === false" />
+          <StageButton v-if="arActive" icon="sliders" label="Ajustes" :active="sheet === 'adjust'" @click="toggleSheet('adjust')" />
+          <StageButton icon="close" label="Fechar" @click="closeCamera" />
+        </div>
       </div>
     </div>
 
     <div class="actions">
       <button v-if="!cameraOn" type="button" class="primary" :disabled="cameraBusy" @click="openCamera">Abrir câmera</button>
-      <template v-else>
-        <button type="button" @click="scanAnother">{{ cardId ? 'Escanear outra carta' : 'Escanear de novo' }}</button>
-        <button type="button" @click="closeCamera">Fechar câmera</button>
-      </template>
     </div>
 
-    <label v-if="!cardId" class="art-option">
-      <input v-model="artOn" type="checkbox" @change="applyArtOption" />
-      Usar a busca pela ilustração quando o número não for lido
-    </label>
-    <p v-if="artStatus" class="meta" role="status">{{ artStatus }}</p>
+    <p v-if="cameraMessage && !cameraOn" class="message error" role="alert">{{ cameraMessage }}</p>
 
-    <label v-if="!cardId" class="art-option">
-      <input v-model="debugOn" type="checkbox" @change="applyDebugOption" />
-      Mostrar o que o app está vendo (diagnóstico)
-    </label>
-    <div v-if="(debugOn || photoAttempt) && !cardId" class="debug-panel" role="status">
-      <template v-if="shownAttempt">
-        <p><strong>{{ shownAttempt.status }}</strong>{{ shownAttempt.reused ? ' (repetindo a leitura anterior)' : '' }} — {{ shownAttempt.message }}</p>
-        <p class="meta">
-          Tempos: detecção {{ shownAttempt.metrics.detectMs }} ms · OCR {{ shownAttempt.metrics.ocrMs }} ms · candidatas
-          {{ shownAttempt.metrics.candidatesMs }} ms · total {{ shownAttempt.metrics.totalMs }} ms
-        </p>
-        <p class="meta">
-          Candidatas: {{ shownAttempt.metrics.candidates }}{{ shownAttempt.metrics.artCandidates ? ` (${shownAttempt.metrics.artCandidates} pela ilustração)` : '' }}
-          · origem: {{ shownAttempt.metrics.source }} · carta girada 180°: {{ shownAttempt.metrics.rotated180 ? 'sim' : 'não' }}
-          · requisições: {{ shownAttempt.metrics.requests }}
-        </p>
-        <p v-if="shownAttempt.view?.detect" class="meta">
-          Carta achada: {{ Math.round(shownAttempt.view.detect.areaFraction * 100) }}% do quadro · proporção
-          {{ shownAttempt.view.detect.aspect.toFixed(2) }} · preenchimento {{ Math.round(shownAttempt.view.detect.fillRatio * 100) }}%
-          · quadro {{ shownAttempt.view.frame.width }}×{{ shownAttempt.view.frame.height }}
-        </p>
-        <ul v-if="shownAttempt.view?.detectReasons.length" class="meta">
-          <li v-for="reason in shownAttempt.view.detectReasons" :key="reason">{{ reason }}</li>
-        </ul>
-        <div class="debug-images">
-          <figure v-if="debugRectUrl">
-            <img :src="debugRectUrl" alt="Carta endireitada" />
-            <figcaption>Carta endireitada</figcaption>
-          </figure>
-          <figure v-if="debugStripUrl">
-            <img :src="debugStripUrl" alt="Faixa de baixo como o OCR a recebe" />
-            <figcaption>Faixa de baixo (entrada do OCR)</figcaption>
-          </figure>
-        </div>
-        <p v-if="shownAttempt.ocrBottom !== undefined" class="meta">
-          OCR da faixa de baixo: <code class="mono">{{ shownAttempt.ocrBottom.replace(/\s+/g, ' ').slice(0, 120) || '(vazio)' }}</code>
-        </p>
-        <p v-if="shownAttempt.ocrName" class="meta">OCR do nome: <code class="mono">{{ shownAttempt.ocrName.replace(/\s+/g, ' ').slice(0, 80) }}</code></p>
-      </template>
-      <p v-else class="meta">Abra a câmera e aponte para a carta: aqui aparece o que o app enxerga a cada quadro.</p>
-      <p v-if="indexStatus" class="meta">{{ indexStatus }}</p>
-      <button v-if="photoAttempt" type="button" @click="clearPhoto">Voltar à câmera</button>
-    </div>
-
-    <div v-if="!cardId" class="photo-test">
-      <label class="meta">Testar com uma foto do aparelho (processada só aqui, nada é enviado):
-        <input type="file" accept="image/*" :disabled="photoBusy" @change="testPhoto" />
+    <!-- Com a câmera desligada, esta ferramenta fica aqui; com ela ligada, vira uma folha sobre a imagem (botão «Teste»). -->
+    <StageSheet v-if="!cardId" :docked="immersive" :host="dockEl" :open="sheet === 'tools'" title="Teste e diagnóstico" @close="sheet = null">
+      <label class="art-option">
+        <input v-model="artOn" type="checkbox" @change="applyArtOption" />
+        Usar a busca pela ilustração quando o número não for lido
       </label>
-      <p v-if="photoMessage" class="message" role="status">{{ photoMessage }}</p>
-    </div>
+      <p v-if="artStatus" class="meta" role="status">{{ artStatus }}</p>
 
-    <p v-if="cameraMessage" class="message error" role="alert">{{ cameraMessage }}</p>
-    <p v-if="loadingEngine" class="message" role="status">{{ loadingEngine }}</p>
+      <label class="art-option">
+        <input v-model="debugOn" type="checkbox" @change="applyDebugOption" />
+        Mostrar o que o app está vendo (diagnóstico)
+      </label>
+      <div v-if="debugOn || photoAttempt" class="debug-panel" role="status">
+        <template v-if="shownAttempt">
+          <p><strong>{{ shownAttempt.status }}</strong>{{ shownAttempt.reused ? ' (repetindo a leitura anterior)' : '' }} — {{ shownAttempt.message }}</p>
+          <p class="meta">
+            Tempos: detecção {{ shownAttempt.metrics.detectMs }} ms · OCR {{ shownAttempt.metrics.ocrMs }} ms · candidatas
+            {{ shownAttempt.metrics.candidatesMs }} ms · total {{ shownAttempt.metrics.totalMs }} ms
+          </p>
+          <p class="meta">
+            Candidatas: {{ shownAttempt.metrics.candidates }}{{ shownAttempt.metrics.artCandidates ? ` (${shownAttempt.metrics.artCandidates} pela ilustração)` : '' }}
+            · origem: {{ shownAttempt.metrics.source }} · carta girada 180°: {{ shownAttempt.metrics.rotated180 ? 'sim' : 'não' }}
+            · requisições: {{ shownAttempt.metrics.requests }}
+          </p>
+          <p v-if="shownAttempt.view?.detect" class="meta">
+            Carta achada: {{ Math.round(shownAttempt.view.detect.areaFraction * 100) }}% do quadro · proporção
+            {{ shownAttempt.view.detect.aspect.toFixed(2) }} · preenchimento {{ Math.round(shownAttempt.view.detect.fillRatio * 100) }}%
+            · quadro {{ shownAttempt.view.frame.width }}×{{ shownAttempt.view.frame.height }}
+          </p>
+          <ul v-if="shownAttempt.view?.detectReasons.length" class="meta">
+            <li v-for="reason in shownAttempt.view.detectReasons" :key="reason">{{ reason }}</li>
+          </ul>
+          <div class="debug-images">
+            <figure v-if="debugRectUrl">
+              <img :src="debugRectUrl" alt="Carta endireitada" />
+              <figcaption>Carta endireitada</figcaption>
+            </figure>
+            <figure v-if="debugStripUrl">
+              <img :src="debugStripUrl" alt="Faixa de baixo como o OCR a recebe" />
+              <figcaption>Faixa de baixo (entrada do OCR)</figcaption>
+            </figure>
+          </div>
+          <p v-if="shownAttempt.ocrBottom !== undefined" class="meta">
+            OCR da faixa de baixo: <code class="mono">{{ shownAttempt.ocrBottom.replace(/\s+/g, ' ').slice(0, 120) || '(vazio)' }}</code>
+          </p>
+          <p v-if="shownAttempt.ocrName" class="meta">OCR do nome: <code class="mono">{{ shownAttempt.ocrName.replace(/\s+/g, ' ').slice(0, 80) }}</code></p>
+        </template>
+        <p v-else class="meta">Abra a câmera e aponte para a carta: aqui aparece o que o app enxerga a cada quadro.</p>
+        <p v-if="indexStatus" class="meta">{{ indexStatus }}</p>
+        <button v-if="photoAttempt" type="button" @click="clearPhoto">Voltar à câmera</button>
+      </div>
 
-    <div v-if="scan.phase === 'choosing' && scan.choices" class="choices" role="group" aria-label="Qual impressão é esta?">
-      <p class="message">{{ scan.message }}</p>
-      <button v-for="choice in scan.choices" :key="choice.card.id" type="button" @click="controller?.choose(choice.card.id)">
-        {{ choice.card.name }} · {{ choice.card.setName }} {{ choice.card.localId }}/{{ choice.card.setOfficial }}
-        <small>({{ confidencePct(choice.confidence) }})</small>
-      </button>
-      <button type="button" class="primary" @click="controller?.start()">Tentar de novo</button>
-    </div>
+      <div class="photo-test">
+        <label class="meta">Testar com uma foto do aparelho (processada só aqui, nada é enviado):
+          <input type="file" accept="image/*" :disabled="photoBusy" @change="testPhoto" />
+        </label>
+        <p v-if="photoMessage" class="message" role="status">{{ photoMessage }}</p>
+      </div>
+    </StageSheet>
 
-    <p v-if="scan.phase === 'preparing'" class="message" role="status">{{ scan.message }}</p>
-    <p v-if="scan.phase === 'error'" class="message error" role="alert">{{ scan.message }}</p>
-    <div v-if="arStage !== 'idle'" class="ar-panel" role="status" aria-live="polite">
+    <p v-if="loadingEngine && !cameraOn" class="message" role="status">{{ loadingEngine }}</p>
+    <p v-if="scan.phase === 'preparing' && !cameraOn" class="message" role="status">{{ scan.message }}</p>
+    <p v-if="scan.phase === 'error' && !cameraOn" class="message error" role="alert">{{ scan.message }}</p>
+
+    <div v-if="arStage !== 'idle' && !cameraOn" class="ar-panel" role="status" aria-live="polite">
       <ol class="ar-steps">
         <li v-for="step in arSteps" :key="step.key" :class="step.state">{{ step.label }}</li>
       </ol>
       <p v-if="arStage === 'selected'" class="message">Carta escolhida. Abra a câmera para ver o Pokémon sobre ela.</p>
-      <p v-if="arDetail && (arStage === 'preparing' || arStage === 'compiling' || arStage === 'engine')" class="message">{{ arDetail }}</p>
       <template v-if="arStage === 'error'">
         <p class="message error" role="alert">{{ arError }}</p>
         <div class="actions">
@@ -733,7 +891,7 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       </template>
     </div>
 
-    <div v-if="scan.card && scan.phase === 'ready'" class="result" role="status">
+    <div v-if="scan.card && scan.phase === 'ready' && !cameraOn" class="result" role="status">
       <h3>{{ scan.card.name }}</h3>
       <p>
         {{ scan.card.setName }} · nº {{ scan.card.localId }}/{{ scan.card.setOfficial }} ·
@@ -747,79 +905,26 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       <button v-if="spriteState?.kind === 'error'" type="button" @click="retrySprite">Tentar baixar o GIF de novo</button>
     </div>
 
-    <p v-if="scan.last && scan.phase === 'scanning'" class="meta">
-      Quadros analisados: {{ scan.frames }} · última leitura: {{ scan.last.metrics.totalMs }} ms
-    </p>
-
-    <details v-if="!cardId" class="layout manual" :open="manualOpen" @toggle="manualOpen = ($event.target as HTMLDetailsElement).open">
-      <summary>Não está lendo? Buscar a carta à mão</summary>
-      <label>Nome da carta (em inglês, ex.: Pikachu)
-        <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual" />
-      </label>
-      <label>Número da carta (opcional, ex.: 58)
-        <input v-model="manualNumber" type="text" inputmode="numeric" autocomplete="off" @keyup.enter="searchManual" />
-      </label>
-      <button type="button" class="primary" @click="searchManual">Buscar</button>
-      <p v-if="manualMessage" class="message">{{ manualMessage }}</p>
-      <button v-for="match in manualResults" :key="match.id" type="button" @click="pickManual(match.id)">
-        {{ match.name }} · {{ match.setName }} {{ match.localId }}/{{ match.setOfficial }}
-      </button>
-    </details>
-
-    <p v-if="arActive" class="meta" role="status">
-      Rastreador: {{ arState.trackerHz ? `${arState.trackerHz} leituras/s` : 'medindo…' }} ·
-      giroscópio: {{ !sensorSettings.gyro ? 'desligado' : arState.gyro ? 'corrigindo a pose' : 'sem dados do sensor' }}
-    </p>
-
-    <div v-if="arActive" class="adjust-bar">
-      <button type="button" :class="{ active: adjusting }" :aria-pressed="adjusting" @click="toggleAdjusting">
-        {{ adjusting ? 'Concluir ajuste' : 'Ajustar com os dedos' }}
-      </button>
-      <p v-if="adjusting" class="meta">Arraste para mover o Pokémon e o painel. Use pinça com dois dedos para mudar o tamanho. O ajuste fica salvo.</p>
-      <p v-else-if="layout.showStats" class="meta">Toque num ataque ou golpe do painel para usá-lo (ainda não implementado).</p>
-    </div>
-    <p v-if="moveNotice" class="message" role="status">{{ moveNotice }}</p>
-    <div v-if="arActive && layout.showStats" class="panel-modes" role="group" aria-label="Página do painel de status">
-      <button type="button" :class="{ active: panelMode === 'auto' }" :aria-pressed="panelMode === 'auto'" @click="setPanelMode('auto')">Auto</button>
-      <button v-for="page in PANEL_PAGES" :key="page" type="button" :class="{ active: panelMode === page }" :aria-pressed="panelMode === page" @click="setPanelMode(page)">
-        {{ PANEL_PAGE_LABELS_PT[page] }}
-      </button>
-    </div>
-    <details v-if="arActive" class="layout" :open="showLayout" @toggle="onLayoutToggle">
-      <summary>Ajustar posição e tamanho do Pokémon</summary>
-      <label>Altura ({{ layout.heightRatio.toFixed(2) }} larguras da carta)
-        <input v-model.number="layout.heightRatio" type="range" :min="LAYOUT_LIMITS.heightRatio.min" :max="LAYOUT_LIMITS.heightRatio.max" step="0.05" />
-      </label>
-      <label>Deslocamento lateral ({{ layout.offsetX.toFixed(2) }})
-        <input v-model.number="layout.offsetX" type="range" :min="LAYOUT_LIMITS.offset.min" :max="LAYOUT_LIMITS.offset.max" step="0.05" />
-      </label>
-      <label>Deslocamento vertical ({{ layout.offsetY.toFixed(2) }})
-        <input v-model.number="layout.offsetY" type="range" :min="LAYOUT_LIMITS.offset.min" :max="LAYOUT_LIMITS.offset.max" step="0.05" />
-      </label>
-      <label>Altura acima da carta ({{ layout.lift.toFixed(2) }})
-        <input v-model.number="layout.lift" type="range" :min="LAYOUT_LIMITS.lift.min" :max="LAYOUT_LIMITS.lift.max" step="0.05" />
-      </label>
-      <label>Giro ({{ Math.round(layout.yawDeg) }}°)
-        <input v-model.number="layout.yawDeg" type="range" :min="LAYOUT_LIMITS.yawDeg.min" :max="LAYOUT_LIMITS.yawDeg.max" step="5" />
-      </label>
-      <label>Ponto de apoio
-        <select v-model="layout.anchor">
-          <option value="base">Pés (em pé sobre a carta)</option>
-          <option value="center">Centro</option>
-        </select>
-      </label>
-      <label class="art-option">
-        <input v-model="layout.showStats" type="checkbox" />
-        <span>Mostrar o painel de status no chão</span>
-      </label>
-      <label class="art-option">
-        <input v-model="sensorSettings.gyro" type="checkbox" />
-        <span>Usar o giroscópio (acompanha o giro do celular entre as leituras)</span>
-      </label>
-      <label>Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)
-        <input v-model.number="sensorSettings.latencyMs" type="range" :min="LATENCY_RANGE.min" :max="LATENCY_RANGE.max" step="5" />
-      </label>
-      <button type="button" @click="resetLayout">Restaurar padrão</button>
-    </details>
+    <!-- Busca à mão: plano B quando a leitura automática não acha a carta. Com a câmera ligada vira uma folha («Buscar»). -->
+    <StageSheet v-if="!cardId" :docked="immersive" :host="dockEl" :open="sheet === 'manual'" title="Buscar a carta à mão" @close="sheet = null">
+      <component
+        :is="immersive ? 'div' : 'details'"
+        class="layout manual"
+        v-bind="immersive ? {} : { open: manualOpen, onToggle: (e: Event) => (manualOpen = (e.target as HTMLDetailsElement).open) }"
+      >
+        <summary v-if="!immersive">Não está lendo? Buscar a carta à mão</summary>
+        <label>Nome da carta (em inglês, ex.: Pikachu)
+          <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual" />
+        </label>
+        <label>Número da carta (opcional, ex.: 58)
+          <input v-model="manualNumber" type="text" inputmode="numeric" autocomplete="off" @keyup.enter="searchManual" />
+        </label>
+        <button type="button" class="primary" @click="searchManual">Buscar</button>
+        <p v-if="manualMessage" class="message">{{ manualMessage }}</p>
+        <button v-for="match in manualResults" :key="match.id" type="button" @click="pickManual(match.id)">
+          {{ match.name }} · {{ match.setName }} {{ match.localId }}/{{ match.setOfficial }}
+        </button>
+      </component>
+    </StageSheet>
   </section>
 </template>

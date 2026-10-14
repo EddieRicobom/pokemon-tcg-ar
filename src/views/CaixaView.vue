@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { isTap } from '../ar/gestures';
-import { routeHref } from '../app/route';
 import { getCache, loadBattle } from '../app/services';
 import { prepareFighters } from '../app/battle-setup';
 import { useFullscreen } from '../app/fullscreen';
@@ -30,15 +29,18 @@ type Phase = 'idle' | 'starting' | 'placing' | 'running';
 const videoEl = ref<HTMLVideoElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
-const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl);
 const showFilters = ref(false);
 const showTeam = ref(false);
+const showAdjust = ref(false);
 const showSummary = ref(false);
 /** Entramos em tela cheia só para a batalha (e saímos dela ao parar). */
 let fullscreenForBattle = false;
 const boxMode = ref<BoxMode>('passeio');
 
 const phase = ref<Phase>('idle');
+/** Com a câmera ligada (ou abrindo) o visor cobre a janela e tudo aparece sobre a imagem: sem rolar a página. */
+const immersive = computed(() => phase.value !== 'idle');
+const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl, immersive);
 const error = ref('');
 const hint = ref('');
 const mode = ref<OrientationMode>('sensor');
@@ -134,6 +136,7 @@ function close(): void {
   void exitFullscreen();
   showFilters.value = false;
   showTeam.value = false;
+  showAdjust.value = false;
   showSummary.value = false;
   fullscreenForBattle = false;
   box?.stop();
@@ -234,6 +237,7 @@ async function startBattle(): Promise<void> {
   hint.value = 'Preparando a batalha: buscando atributos e golpes…';
   showFilters.value = false;
   showTeam.value = false;
+  showAdjust.value = false;
   try {
     const fighters = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), loadBattle);
     if (disposed || box !== current) return;
@@ -298,6 +302,45 @@ function rgba(hex: string, alpha: string): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
+type Tone = 'busy' | 'ok' | 'warn' | 'error';
+interface Notice {
+  text: string;
+  sub?: string;
+  tone: Tone;
+  gold?: boolean;
+}
+
+/** Avisos sobre a câmera (topo): tudo que antes ficava abaixo do visor. Na batalha só erros, para não cobrir a arena. */
+const notices = computed<Notice[]>(() => {
+  const list: Notice[] = [];
+  if (!immersive.value) return list;
+  if (error.value) list.push({ text: error.value, tone: 'error' });
+  if (phase.value === 'starting') list.push({ text: 'Abrindo a câmera e os sensores…', tone: 'busy' });
+  if (battleHud.value) return list;
+  if (hint.value) list.push({ text: hint.value, tone: phase.value === 'placing' ? 'ok' : 'busy' });
+  if (picked.value) {
+    list.push({ text: `${picked.value.name}${picked.value.dexId ? ` · Nº ${picked.value.dexId}` : ''}`, sub: picked.value.detail, tone: 'ok', gold: true });
+  }
+  if (cameraOn.value && mode.value === 'manual') {
+    list.push({ text: 'Este aparelho não enviou dados dos sensores de movimento. Arraste na imagem para olhar em volta.', tone: 'warn' });
+  }
+  if (cameraOn.value && loadingCreatures.value) list.push({ text: 'Chamando os Pokémon…', tone: 'busy' });
+  else if (cameraOn.value && population.value.available === 0) {
+    list.push({ text: 'A caixa está vazia. Escaneie uma carta (aba Escanear) ou carregue suas cartas (aba Cartas) para os Pokémon aparecerem aqui.', tone: 'warn' });
+  } else if (phase.value === 'running' && population.value.shown === 1) {
+    list.push({ text: 'Para batalhar, ponha pelo menos 2 Pokémon na equipe da caixa.', tone: 'warn' });
+  }
+  return list;
+});
+/** Linha de resumo fixa (pequena) enquanto a caixa está montada e nada mais pede atenção. */
+const populationNote = computed(() => {
+  if (phase.value !== 'running' || battleHud.value || loadingCreatures.value || population.value.available === 0) return '';
+  const { shown, available, failed } = population.value;
+  const more = available > shown ? ` (de ${available} guardados)` : '';
+  const broken = failed > 0 ? ` · ${failed} sprite(s) sem leitura` : '';
+  return `${shown} Pokémon na caixa${more}${broken} · toque num Pokémon para ver quem é`;
+});
+
 const incompleteFighters = computed(() => (battleHud.value ? battleFighters.value.filter((f) => f.notes.length > 0) : []));
 
 function hpTone(frac: number): string {
@@ -334,7 +377,7 @@ onBeforeUnmount(() => {
     <div
       ref="stageEl"
       class="viewport box-viewport"
-      :class="{ placing: phase === 'placing', 'pseudo-full': pseudo, 'has-bar': cameraOn }"
+      :class="{ placing: phase === 'placing', 'pseudo-full': pseudo, immersive }"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
@@ -389,104 +432,89 @@ onBeforeUnmount(() => {
           :style="{ left: label.x + '%', top: label.y + '%', color: label.color, opacity: 1 - label.age * label.age, '--size': label.size }"
         >{{ label.text }}</span>
       </div>
-      <p v-if="hint" class="hud" role="status">{{ hint }}</p>
-      <p v-else-if="picked" class="hud" role="status">
-        <strong>{{ picked.name }}</strong>
-        <template v-if="picked.dexId"> · Nº {{ picked.dexId }}</template>
-        <br />{{ picked.detail }}
-      </p>
-      <SmoothingSheet v-if="showFilters && cameraOn" battle @close="showFilters = false" />
-      <div v-if="showSummary && battleSummary && battleHud?.phase === 'finished'" class="stage-sheet battle-summary" @pointerdown.stop @pointerup.stop @click.stop>
-        <header>
-          <strong>{{ battleSummary.winner }} venceu</strong>
-          <button type="button" class="link" @click="showSummary = false">Fechar</button>
-        </header>
-        <p>{{ battleSummary.turns }} turnos em {{ battleSummary.rounds }} rodadas.</p>
-        <p v-if="mvp">Mais dano: <strong>{{ mvp.name }}</strong> ({{ mvp.damageDealt }} PS, maior golpe {{ mvp.biggestHit }}, {{ mvp.knockouts }} nocaute{{ mvp.knockouts === 1 ? '' : 's' }}).</p>
-        <p>{{ crits }} crítico{{ crits === 1 ? '' : 's' }} · {{ inflicted }} condição(ões) causada(s) · {{ guards }} defesa{{ guards === 1 ? '' : 's' }}.</p>
-        <template v-if="incompleteFighters.length > 0">
-          <p class="hint">Dados incompletos (usei valores neutros):</p>
-          <p v-for="f in incompleteFighters" :key="f.id" class="hint">{{ f.name }}: {{ f.notes.join('; ') }}</p>
-        </template>
+      <div v-if="immersive" class="stage-head" role="status" aria-live="polite">
+        <p v-for="(n, i) in notices" :key="i + n.text" class="pill" :class="[n.tone, { gold: n.gold }]">
+          <i class="dot"></i>
+          <span class="pill-text">{{ n.text }}<small v-if="n.sub" class="pill-sub">{{ n.sub }}</small></span>
+        </p>
+        <p v-if="populationNote && notices.length === 0" class="pill small">{{ populationNote }}</p>
       </div>
-      <div v-if="showTeam && cameraOn" class="stage-sheet" @pointerdown.stop @pointerup.stop @click.stop>
-        <header>
-          <strong>Equipe da caixa</strong>
-          <button type="button" class="link" @click="showTeam = false">Fechar</button>
-        </header>
-        <TeamPicker @change="populate" />
-      </div>
-      <button v-if="phase === 'placing'" type="button" class="primary stage-cta" @pointerdown.stop @pointerup.stop @click="placeHere">Colocar a caixa aqui</button>
-      <div v-if="cameraOn" class="stage-bar" @pointerdown.stop @pointerup.stop>
-        <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
-        <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters; showTeam = false" />
-        <StageButton v-if="!battling" icon="team" label="Equipe" :active="showTeam" @click="showTeam = !showTeam; showFilters = false" />
-        <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
-        <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : 'Batalhar'" :disabled="!canBattle" @click="startBattle" />
-        <StageButton v-if="battling && battleHud?.phase === 'finished'" icon="battle" label="De novo" @click="startBattle" />
-        <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />
-        <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
-        <StageButton v-if="battling" icon="stop" label="Parar" @click="stopBattle" />
-        <StageButton v-if="phase === 'running' && !battling" icon="move" label="Mover" @click="moveBox" />
-        <StageButton icon="close" label="Fechar" @click="close" />
+
+      <div v-if="immersive" class="stage-foot" @pointerdown.stop @pointerup.stop>
+        <button v-if="phase === 'placing'" type="button" class="primary stage-cta" @click="placeHere">Colocar a caixa aqui</button>
+        <SmoothingSheet v-if="showFilters && cameraOn" battle @close="showFilters = false" />
+        <div v-if="showSummary && battleSummary && battleHud?.phase === 'finished'" class="stage-sheet battle-summary" @pointerdown.stop @pointerup.stop @click.stop>
+          <header>
+            <strong>{{ battleSummary.winner }} venceu</strong>
+            <button type="button" class="link" @click="showSummary = false">Fechar</button>
+          </header>
+          <p>{{ battleSummary.turns }} turnos em {{ battleSummary.rounds }} rodadas.</p>
+          <p v-if="mvp">Mais dano: <strong>{{ mvp.name }}</strong> ({{ mvp.damageDealt }} PS, maior golpe {{ mvp.biggestHit }}, {{ mvp.knockouts }} nocaute{{ mvp.knockouts === 1 ? '' : 's' }}).</p>
+          <p>{{ crits }} crítico{{ crits === 1 ? '' : 's' }} · {{ inflicted }} condição(ões) causada(s) · {{ guards }} defesa{{ guards === 1 ? '' : 's' }}.</p>
+          <template v-if="incompleteFighters.length > 0">
+            <p class="hint">Dados incompletos (usei valores neutros):</p>
+            <p v-for="f in incompleteFighters" :key="f.id" class="hint">{{ f.name }}: {{ f.notes.join('; ') }}</p>
+          </template>
+        </div>
+        <div v-if="showTeam && cameraOn" class="stage-sheet" @pointerdown.stop @pointerup.stop @click.stop>
+          <header>
+            <strong>Equipe da caixa</strong>
+            <button type="button" class="link" @click="showTeam = false">Fechar</button>
+          </header>
+          <TeamPicker @change="populate" />
+        </div>
+        <div v-if="showAdjust && cameraOn && !battling" class="stage-sheet" role="dialog" aria-label="Ajustes da caixa" @pointerdown.stop @pointerup.stop @click.stop>
+          <header>
+            <strong>Ajustes da caixa</strong>
+            <button type="button" class="link" @click="showAdjust = false">Fechar</button>
+          </header>
+          <div class="layout">
+            <label>Altura do celular ({{ phoneHeight.toFixed(2) }} m)
+              <input v-model.number="phoneHeight" type="range" :min="PHONE_HEIGHT_RANGE.min" :max="PHONE_HEIGHT_RANGE.max" step="0.05" @input="onPhoneHeight" />
+            </label>
+            <label>Tamanho da caixa ({{ boxSize.toFixed(1) }} m de lado)
+              <input v-model.number="boxSize" type="range" min="1" max="6" step="0.2" @input="onBoxSize" />
+            </label>
+            <label>Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)
+              <input v-model.number="sensorSettings.latencyMs" type="range" :min="LATENCY_RANGE.min" :max="LATENCY_RANGE.max" step="5" />
+            </label>
+            <label>Ângulo de visão da câmera ({{ videoFov }}°)
+              <input v-model.number="videoFov" type="range" min="45" max="85" step="1" @input="onFov" />
+            </label>
+            <p class="meta">
+              A caixa fica presa ao chão pelos sensores de movimento: ela acompanha o giro do celular, mas não acompanha você andando.
+              Se o chão parecer deslizar, ajuste a altura do celular e o ângulo de visão.
+            </p>
+          </div>
+        </div>
+        <div v-if="cameraOn" class="stage-bar">
+          <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
+          <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters; showTeam = false; showAdjust = false" />
+          <StageButton v-if="!battling" icon="team" label="Equipe" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false" />
+          <StageButton v-if="!battling" icon="sliders" label="Ajustes" :active="showAdjust" @click="showAdjust = !showAdjust; showFilters = false; showTeam = false" />
+          <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
+          <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : 'Batalhar'" :disabled="!canBattle" @click="startBattle" />
+          <StageButton v-if="battling && battleHud?.phase === 'finished'" icon="battle" label="De novo" @click="startBattle" />
+          <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />
+          <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
+          <StageButton v-if="battling" icon="stop" label="Parar" @click="stopBattle" />
+          <StageButton v-if="phase === 'running' && !battling" icon="move" label="Mover" @click="moveBox" />
+          <StageButton icon="close" label="Fechar" @click="close" />
+        </div>
       </div>
     </div>
 
     <div class="actions">
-      <button v-if="phase === 'idle' || phase === 'starting'" type="button" class="primary" :disabled="phase === 'starting'" @click="open">
+      <button type="button" class="primary" :disabled="phase !== 'idle'" @click="open">
         {{ phase === 'starting' ? 'Abrindo…' : 'Abrir câmera e sensores' }}
       </button>
-      <template v-else-if="phase === 'placing'">
-        <button type="button" class="primary" @click="placeHere">Colocar a caixa aqui</button>
-        <button type="button" @click="close">Fechar câmera</button>
-      </template>
-      <template v-else>
-        <button type="button" @click="moveBox">Mover a caixa</button>
-        <button type="button" @click="close">Fechar câmera</button>
-      </template>
     </div>
 
-    <p v-if="error" class="message error" role="alert">{{ error }}</p>
-    <p v-if="cameraOn && phase === 'running' && population.shown === 1" class="message" role="status">
-      Para batalhar, ponha pelo menos 2 Pokémon na equipe da caixa.
-    </p>
-    <p v-if="cameraOn && mode === 'manual'" class="message" role="status">
-      Este aparelho não enviou dados dos sensores de movimento. Arraste na imagem para olhar em volta.
-    </p>
-    <p v-if="loadingCreatures" class="message" role="status">Chamando os Pokémon…</p>
-    <p v-else-if="cameraOn && population.available === 0" class="message" role="status">
-      A caixa está vazia. Escaneie uma carta ou carregue suas cartas em <a :href="routeHref('carregar')">Cartas</a> para os Pokémon aparecerem aqui.
-    </p>
-    <p v-else-if="cameraOn" class="meta" role="status">
-      {{ population.shown }} Pokémon na caixa<template v-if="population.available > population.shown"> (de {{ population.available }} guardados; cabem até 30)</template>.
-      <template v-if="population.failed > 0"> {{ population.failed }} sprite(s) não puderam ser lidos.</template>
-      Toque num Pokémon para ver quem é.
-      <template v-if="population.shown >= 2"> Use Batalhar para eles lutarem sozinhos: tipos, atributos e golpes decidem.</template>
-    </p>
+    <p v-if="error && !immersive" class="message error" role="alert">{{ error }}</p>
 
-    <details class="layout">
+    <details v-if="!immersive" class="layout">
       <summary>Escolher a equipe da caixa (até 6)</summary>
-      <TeamPicker @change="cameraOn ? populate() : undefined" />
-    </details>
-
-    <details v-if="cameraOn" class="layout">
-      <summary>Ajustes da caixa</summary>
-      <label>Altura do celular ({{ phoneHeight.toFixed(2) }} m)
-        <input v-model.number="phoneHeight" type="range" :min="PHONE_HEIGHT_RANGE.min" :max="PHONE_HEIGHT_RANGE.max" step="0.05" @input="onPhoneHeight" />
-      </label>
-      <label>Tamanho da caixa ({{ boxSize.toFixed(1) }} m de lado)
-        <input v-model.number="boxSize" type="range" min="1" max="6" step="0.2" @input="onBoxSize" />
-      </label>
-      <label>Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)
-        <input v-model.number="sensorSettings.latencyMs" type="range" :min="LATENCY_RANGE.min" :max="LATENCY_RANGE.max" step="5" />
-      </label>
-      <label>Ângulo de visão da câmera ({{ videoFov }}°)
-        <input v-model.number="videoFov" type="range" min="45" max="85" step="1" @input="onFov" />
-      </label>
-      <p class="meta">
-        A caixa fica presa ao chão pelos sensores de movimento: ela acompanha o giro do celular, mas não acompanha você andando.
-        Se o chão parecer deslizar, ajuste a altura do celular e o ângulo de visão.
-      </p>
+      <TeamPicker />
     </details>
   </section>
 </template>
