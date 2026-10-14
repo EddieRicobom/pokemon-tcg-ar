@@ -92,8 +92,13 @@ describe('normalizeLocalContrast', () => {
 });
 
 describe('FrameAlternator', () => {
-  it('alterna começando por normalizar', () => {
+  it('normaliza 1 a cada 3, começando pelo primeiro', () => {
     const a = new FrameAlternator();
+    expect([a.next(), a.next(), a.next(), a.next(), a.next(), a.next(), a.next()]).toEqual([true, false, false, true, false, false, true]);
+  });
+
+  it('aceita outro intervalo', () => {
+    const a = new FrameAlternator(2);
     expect([a.next(), a.next(), a.next(), a.next()]).toEqual([true, false, true, false]);
   });
 });
