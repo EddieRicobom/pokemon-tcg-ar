@@ -4,7 +4,7 @@ import {
 } from 'three';
 import { BoxCreature, frameCacheFor } from './creature';
 import type { CreatureInfo, CreatureSource } from './creature';
-import { intersectFloor } from './floor';
+import { intersectFloor, keepBoxAway } from './floor';
 import type { FloorResult } from './floor';
 import { formationSlots } from './formation';
 import { createWander, separate, stepToward, stepWander } from './wander';
@@ -109,11 +109,16 @@ export class BoxScene {
   }
 
   /** Coloca (ou move) a caixa com o centro em `point`, um ponto do chão. */
-  place(point: Vector3, half: number = this.half): void {
-    this.anchor = point.clone();
-    this.floor.position.copy(point);
-    this.setHalfSize(half);
+  place(point: Vector3, half: number = this.half): { moved: boolean } {
+    this.half = Math.min(3, Math.max(0.5, half));
+    // Nunca nasce colada na câmera: afasta ao longo da mesma direção até sobrar a folga mínima.
+    const forward = new Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    const kept = keepBoxAway(point, this.half, { x: forward.x, z: forward.z });
+    this.anchor = kept.point.clone();
+    this.floor.position.copy(kept.point);
+    this.setHalfSize(this.half);
     this.floor.visible = true;
+    return { moved: kept.moved };
   }
 
   clearPlacement(): void {
@@ -123,6 +128,15 @@ export class BoxScene {
 
   setHalfSize(half: number): void {
     this.half = Math.min(3, Math.max(0.5, half));
+    // Caixa maior pede mais folga: se já está no chão e ficou perto demais, afasta de novo.
+    if (this.anchor) {
+      const forward = new Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+      const kept = keepBoxAway(this.anchor, this.half, { x: forward.x, z: forward.z });
+      if (kept.moved) {
+        this.anchor = kept.point.clone();
+        this.floor.position.copy(kept.point);
+      }
+    }
     this.rebuildFloor();
     for (const creature of this.creatures) {
       creature.state.x = Math.min(this.half * 0.9, Math.max(-this.half * 0.9, creature.state.x));

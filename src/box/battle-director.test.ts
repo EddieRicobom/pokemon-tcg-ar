@@ -11,6 +11,7 @@ import type { Fighter } from '../core/battle';
 import { lookQuaternion } from './orientation';
 import { BoltLine, FX_STYLES, IMPACT_STYLES, ParticleField, PHYSICAL_STYLE, RingField, SPECIAL_DELIVERY, STATUS_TINTS, typeColorHex } from './effects';
 import { POKEMON_TYPES } from '../core/pokemon-data';
+import { ARENA_MAX_DISTANCE, ARENA_MIN_DISTANCE } from './arena';
 
 function entry(i: number): CreatureEntry {
   const data = new Uint8ClampedArray(8 * 8 * 4);
@@ -305,8 +306,8 @@ describe('arena da batalha', () => {
     expect(root.position.y).toBeCloseTo(-1.3, 5);
     // Dentro de uma distância confortável do celular.
     const dist = Math.hypot(root.position.x, root.position.z);
-    expect(dist).toBeGreaterThanOrEqual(0.89);
-    expect(dist).toBeLessThanOrEqual(1.71);
+    expect(dist).toBeGreaterThanOrEqual(ARENA_MIN_DISTANCE - 0.01);
+    expect(dist).toBeLessThanOrEqual(ARENA_MAX_DISTANCE + 0.01);
     // E menor que a caixa: encolhida.
     expect(root.scale.x).toBeLessThan(1);
   });

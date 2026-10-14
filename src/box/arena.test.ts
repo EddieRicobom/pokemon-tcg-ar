@@ -19,12 +19,14 @@ describe('arenaRadii', () => {
 
 describe('arenaFrame', () => {
   it('cai no chão onde o olhar encontra, limitado a uma distância confortável', () => {
-    // Celular a 1,3 m, apontando 45° para baixo: o chão está a 1,3 m na horizontal.
-    const f = arenaFrame(dir(0, -45), -1.3, 63, 0.5, 0.7);
-    expect(f.distance).toBeCloseTo(1.3, 1);
+    // Celular a 1,3 m, apontando 30° para baixo: o chão está a 1,3/tan 30° ≈ 2,25 m na horizontal.
+    const f = arenaFrame(dir(0, -30), -1.3, 63, 0.5, 0.7);
+    expect(f.distance).toBeCloseTo(2.25, 1);
     expect(f.center.y).toBe(-1.3);
     expect(f.center.x).toBeCloseTo(0, 5);
-    expect(f.center.z).toBeCloseTo(-1.3, 1);
+    expect(f.center.z).toBeCloseTo(-2.25, 1);
+    // Apontando 45° para baixo (1,3 m) já fica perto demais: a arena é afastada para a distância mínima.
+    expect(arenaFrame(dir(0, -45), -1.3, 63, 0.5, 0.7).distance).toBe(ARENA_MIN_DISTANCE);
     // Olhando quase na horizontal o chão fica longe: limita.
     expect(arenaFrame(dir(0, -10), -1.3, 63, 0.5, 0.7).distance).toBe(ARENA_MAX_DISTANCE);
     // Olhando muito para baixo fica perto demais: limita.

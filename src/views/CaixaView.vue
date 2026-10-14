@@ -173,7 +173,7 @@ function placeAt(ndc: { x: number; y: number } | null): void {
   const result = box.placeAt(ndc.x, ndc.y);
   if (result.ok) {
     phase.value = 'running';
-    hint.value = '';
+    hint.value = result.moved ? 'Afastei a caixa para ela não ficar colada em você. Use "Mover" para escolher outro ponto.' : '';
   } else {
     hint.value = result.message;
   }

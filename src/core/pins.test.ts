@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng } from './battle';
 import {
-  afterShot, affinityOf, affordable, ARENA_RADIUS, aliveOf, buildPatches, canUse, chooseEnemyShot, clearEffects, cooldownFor, createWorld, effectForAttack, frictionOn, isSettled, launch,
+  afterShot, affordable, ARENA_RADIUS, aliveOf, buildPatches, canUse, chooseEnemyShot, clearEffects, cooldownFor, createWorld, effectForAttack, isSettled, launch,
   launchSpeed, layoutPins, massOf, MAX_MOVES, MAX_PER_SIDE, MAX_PULL, MIN_PULL, outcomeOf, pinFromSpec, previewPath, scoreMatch, shotFromDrag, stepWorld, STOP_SPEED, typeKnockback,
   typesOf, weightMass,
 } from './pins';
+import { cellOfWorld, createArenaGrid, frictionOfCell, stampType, terrainAffinity } from './pin-terrain';
 import type { Patch, Pin, PinEvent, PinSpec, PinWorld } from './pins';
+import { TERRAIN_KINDS } from './terrain';
+import type { TerrainGrid, TerrainKind } from './terrain';
 import type { BaseStats, PokemonType } from './pokemon-data';
 
 const stats = (over: Partial<BaseStats> = {}): BaseStats => ({ hp: 70, attack: 70, defense: 70, spAttack: 70, spDefense: 70, speed: 70, ...over });
@@ -13,6 +16,16 @@ const spec = (id: string, over: Partial<PinSpec> = {}): PinSpec => ({ id, name: 
 
 function world(pins: Pin[], patches: Patch[] = []): PinWorld {
   return { radius: ARENA_RADIUS, patches, pins, time: 0 };
+}
+/** Chão liso de grama, todo coberto por `kind` (ou sem marca). */
+function flatGrid(kind: TerrainKind | null = null): TerrainGrid {
+  const grid = createArenaGrid(1);
+  grid.base.fill(0);
+  grid.over.fill(kind ? TERRAIN_KINDS.indexOf(kind) + 1 : 0);
+  return grid;
+}
+function worldOn(pins: Pin[], terrain: TerrainGrid | null, markRng = seededRng(1)): PinWorld {
+  return { radius: ARENA_RADIUS, patches: [], pins, time: 0, terrain, markRng };
 }
 function pinAt(id: string, side: 0 | 1, x: number, y: number, over: Partial<PinSpec> = {}): Pin {
   const pin = pinFromSpec(spec(id, over), side);
@@ -61,14 +74,37 @@ describe('pin a partir do Pokémon', () => {
 });
 
 describe('chão e tipos', () => {
-  it('gelo escorrega, lama prende e o tipo certo ignora o chão', () => {
-    expect(frictionOn(['normal'], 'ice')).toBeLessThan(0.2);
-    expect(frictionOn(['normal'], 'mud')).toBeGreaterThan(3);
-    expect(frictionOn(['ice'], 'ice')).toBe(1);
-    expect(frictionOn(['ground'], 'mud')).toBeLessThan(frictionOn(['normal'], 'mud'));
-    expect(frictionOn(['water'], 'water')).toBe(1);
-    expect(affinityOf(['fire', 'flying'], 'mud')).toBe(0.2);
-    expect(affinityOf(['electric'], 'boost')).toBeGreaterThan(1);
+  it('gelo escorrega, lama prende e o tipo certo ignora a marca', () => {
+    const frost = flatGrid('frost');
+    const toxic = flatGrid('toxic');
+    const puddle = flatGrid('puddle');
+    const i = frost.index(11, 11);
+    expect(frictionOfCell(frost, i, ['normal'])).toBeLessThan(0.2);
+    expect(frictionOfCell(toxic, i, ['normal'])).toBeGreaterThan(3);
+    expect(frictionOfCell(frost, i, ['ice'])).toBe(1);
+    expect(frictionOfCell(toxic, i, ['poison'])).toBe(1);
+    expect(frictionOfCell(puddle, i, ['water'])).toBe(1);
+    expect(frictionOfCell(puddle, i, ['fire'])).toBeGreaterThan(frictionOfCell(puddle, i, ['normal']));
+  });
+
+  it('voador e fantasma pairam sobre qualquer marca; um tipo imune basta', () => {
+    expect(terrainAffinity(['flying'], 'toxic')).toBe(0.3);
+    expect(terrainAffinity(['normal', 'ghost'], 'thicket')).toBe(0.4);
+    expect(terrainAffinity(['fire', 'flying'], 'puddle')).toBe(0.3);
+    expect(terrainAffinity(['grass', 'poison'], 'thicket')).toBe(0.2);
+    expect(terrainAffinity([], 'frost')).toBe(1);
+  });
+
+  it('o chão base também mexe no atrito: mato alto segura e a trilha solta', () => {
+    const grid = createArenaGrid(1);
+    grid.over.fill(0);
+    grid.base.fill(0);
+    const i = grid.index(11, 11);
+    const grass = frictionOfCell(grid, i, ['normal']);
+    grid.base[i] = 3; // mato alto
+    expect(frictionOfCell(grid, i, ['normal'])).toBeGreaterThan(grass);
+    grid.base[i] = 4; // trilha
+    expect(frictionOfCell(grid, i, ['normal'])).toBeLessThan(grass);
   });
 
   it('vantagem de tipos aumenta o empurrão e imunidade diminui', () => {
@@ -82,24 +118,19 @@ describe('chão e tipos', () => {
 });
 
 describe('física', () => {
-  it('o atrito para um pin parado no chão comum e mais devagar no gelo', () => {
-    const grass = world([pinAt('a', 0, 0, 0)]);
-    const ice = world([pinAt('a', 0, 0, 0)], [{ kind: 'ice', x: 0, y: 0, r: 200, angle: 0 }]);
-    for (const w of [grass, ice]) {
+  it('o pin desliza mais no gelo e para antes na lama', () => {
+    const run400 = (grid: TerrainGrid | null) => {
+      const w = worldOn([pinAt('a', 0, -150, 0)], grid);
+      w.markRng = null;
       w.pins[0]!.vx = 400;
-      run(w, 0.6);
-    }
-    expect(ice.pins[0]!.x).toBeGreaterThan(grass.pins[0]!.x * 1.3);
-  });
-
-  it('lama freia mais que o chão comum', () => {
-    const grass = world([pinAt('a', 0, 0, 0)]);
-    const mud = world([pinAt('a', 0, 0, 0)], [{ kind: 'mud', x: 0, y: 0, r: 300, angle: 0 }]);
-    for (const w of [grass, mud]) {
-      w.pins[0]!.vx = 400;
-      run(w, 1);
-    }
-    expect(mud.pins[0]!.x).toBeLessThan(grass.pins[0]!.x * 0.5);
+      run(w, 0.8);
+      return w.pins[0]!.x;
+    };
+    const grass = run400(flatGrid());
+    expect(run400(flatGrid('frost'))).toBeGreaterThan(grass + 40);
+    expect(run400(flatGrid('toxic'))).toBeLessThan(grass - 40);
+    // Sem grade o chão é o comum.
+    expect(run400(null)).toBeCloseTo(grass, 0);
   });
 
   it('o pin chega ao repouso e a arena é dada como assentada', () => {
@@ -161,26 +192,12 @@ describe('física', () => {
     expect(outcomeOf(w)).toBe('won');
   });
 
-  it('o turbo acelera na direção da seta e o pino de mola rebate mais forte', () => {
-    const boosted = world([pinAt('a', 0, 0, 0)], [{ kind: 'boost', x: 0, y: 0, r: 60, angle: 0 }]);
-    boosted.pins[0]!.vx = 50;
-    run(boosted, 0.3);
-    expect(boosted.pins[0]!.vx).toBeGreaterThan(200);
-
+  it('o pino de mola rebate mais forte', () => {
     const bump = world([pinAt('a', 0, -120, 0)], [{ kind: 'bumper', x: 0, y: 0, r: 30, angle: 0 }]);
     bump.pins[0]!.vx = 300;
     const events = run(bump, 0.6);
     expect(events.some((e) => e.type === 'bumper')).toBe(true);
     expect(bump.pins[0]!.vx).toBeLessThan(0);
-  });
-
-  it('a correnteza da água empurra o pin', () => {
-    const w = world([pinAt('a', 0, 0, 0)], [{ kind: 'water', x: 0, y: 0, r: 100, angle: Math.PI / 2 }]);
-    run(w, 0.5);
-    expect(w.pins[0]!.y).toBeGreaterThan(20);
-    const flier = world([pinAt('a', 0, 0, 0, { types: ['water'] })], [{ kind: 'water', x: 0, y: 0, r: 100, angle: Math.PI / 2 }]);
-    run(flier, 0.5);
-    expect(flier.pins[0]!.y).toBe(0);
   });
 
   it('é repetível: o mesmo disparo dá o mesmo resultado', () => {
@@ -242,7 +259,7 @@ describe('arena e adversário', () => {
   it('os elementos do chão ficam dentro da arena e sem se sobrepor', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const patches = buildPatches(seededRng(seed));
-      expect(patches.length).toBeGreaterThanOrEqual(6);
+      expect(patches.length).toBeGreaterThanOrEqual(1);
       for (const p of patches) expect(Math.hypot(p.x, p.y)).toBeLessThan(ARENA_RADIUS * 0.82);
       for (let i = 0; i < patches.length; i++) {
         for (let j = i + 1; j < patches.length; j++) {
@@ -310,6 +327,7 @@ describe('arena e adversário', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const w = createWorld({ mine: [spec('m1')], enemy: [spec('e1')] }, seededRng(100));
       w.patches = [];
+      w.terrain = null;
       const choice = chooseEnemyShot(w, seededRng(seed), 'dificil')!;
       launch(w.pins.find((p) => p.id === choice.pinId)!, choice.shot);
       const ev = run(w, 3);
@@ -495,5 +513,160 @@ describe('golpes da carta no disparo', () => {
     expect(used).toBeLessThan(80);
     w.pins.find((p) => p.id === 'e')!.cooldowns = [2];
     for (let i = 1; i <= 30; i++) expect(chooseEnemyShot(w, seededRng(i), 'dificil')!.moveIndex).toBeNull();
+  });
+});
+
+describe('marcas no chão (como na batalha da Caixa)', () => {
+  const atk = (name: string, cost: string[], damage?: string) => ({ name, cost, damage });
+  const movePin = (id: string, side: 0 | 1, x: number, y: number, attacks: ReturnType<typeof atk>[], types: PokemonType[] = ['fire']) => {
+    const pin = pinFromSpec(spec(id, { attacks, types }), side);
+    pin.x = x;
+    pin.y = y;
+    return pin;
+  };
+  const marksOf = (events: PinEvent[]) => events.filter((e): e is Extract<PinEvent, { type: 'mark' }> => e.type === 'mark');
+
+  it('o ponto do mundo cai no bloco certo (y negativo = alto da tela = linha 0)', () => {
+    const grid = flatGrid();
+    stampType(grid, ARENA_RADIUS, 'fire', 0, -250, 0.6, seededRng(1));
+    const top = cellOfWorld(grid, ARENA_RADIUS, 0, -250)!;
+    const bottom = cellOfWorld(grid, ARENA_RADIUS, 0, 250)!;
+    expect(grid.overlayAt(top)).toBe('scorch');
+    expect(grid.overlayAt(bottom)).toBeNull();
+    expect(Math.floor(top / grid.cols)).toBeLessThan(grid.rows / 2);
+    expect(cellOfWorld(grid, ARENA_RADIUS, 0, ARENA_RADIUS + 50)).toBeNull();
+  });
+
+  it('o pin elemental deixa um rastro do tipo do golpe e avisa a tela', () => {
+    const grid = flatGrid();
+    const pin = movePin('a', 0, -200, 0, [atk('Brasa', ['Fire', 'Colorless'], '30')]);
+    const w = worldOn([pin], grid);
+    expect(launch(pin, { dirX: 1, dirY: 0, power: 1 }, 0)).toBe(true);
+    const events = run(w, 1);
+    const marks = marksOf(events);
+    expect(marks.length).toBeGreaterThanOrEqual(3);
+    expect(marks.every((m) => m.kind === 'scorch')).toBe(true);
+    expect(grid.counts().scorch ?? 0).toBeGreaterThan(10);
+    // O rastro vai da saída até onde o pin parou.
+    expect(grid.overlayAt(cellOfWorld(grid, ARENA_RADIUS, -190, 0)!)).toBe('scorch');
+  });
+
+  it('disparo normal, Rápido e tipos sem marca não mexem no chão', () => {
+    for (const [attacks, types, move] of [
+      [[atk('Brasa', ['Fire', 'Colorless'], '30')], ['fire'], null],
+      [[atk('Leve', ['Colorless'], '20')], ['fire'], 0],
+      [[atk('Tapa', ['Colorless', 'Colorless'], '30')], ['normal'], 0],
+    ] as const) {
+      const grid = flatGrid();
+      const pin = movePin('a', 0, -200, 0, [...attacks], [...types]);
+      launch(pin, { dirX: 1, dirY: 0, power: 1 }, move);
+      run(worldOn([pin], grid), 1);
+      expect(grid.counts()).toEqual({});
+    }
+  });
+
+  it('sem sorteio de marcas (opção desligada ou mira) o chão não muda', () => {
+    const grid = flatGrid();
+    const pin = movePin('a', 0, -200, 0, [atk('Brasa', ['Fire', 'Colorless'], '30')]);
+    launch(pin, { dirX: 1, dirY: 0, power: 1 }, 0);
+    const w = worldOn([pin], grid);
+    w.markRng = null;
+    expect(marksOf(run(w, 1))).toHaveLength(0);
+    expect(grid.counts()).toEqual({});
+  });
+
+  it('a mira só lê o chão', () => {
+    const grid = flatGrid('frost');
+    const before = Buffer.from(grid.over);
+    const pin = movePin('a', 0, 0, 200, [atk('Brasa', ['Fire', 'Colorless'], '30')]);
+    const w = worldOn([pin], grid);
+    const path = previewPath(w, pin, { dirX: 0, dirY: -1, power: 0.8 }, 0);
+    expect(path.points.length).toBeGreaterThan(2);
+    expect(Buffer.from(grid.over).equals(before)).toBe(true);
+    expect(pin.lastMark).toBeNull();
+  });
+
+  it('no gelo a mira prevê um caminho mais longo', () => {
+    const reach = (grid: TerrainGrid) => {
+      const pin = pinAt('a', 0, 0, 250);
+      const w = worldOn([pin], grid);
+      const p = previewPath(w, pin, { dirX: 0, dirY: -1, power: 0.5 });
+      return -p.points[p.points.length - 1]!.y;
+    };
+    expect(reach(flatGrid('frost'))).toBeGreaterThan(reach(flatGrid()) + 60);
+  });
+
+  it('o primeiro choque do elemental faz um borrão grande no contato, uma vez só', () => {
+    const grid = flatGrid();
+    const a = movePin('a', 0, -80, 0, [atk('Pulso', ['Psychic', 'Colorless'], '40')], ['psychic']);
+    const b = pinAt('b', 1, 80, 0);
+    const w = worldOn([a, b], grid);
+    launch(a, { dirX: 1, dirY: 0, power: 1 }, 0);
+    const events = run(w, 0.5);
+    const splashes = marksOf(events).filter((m) => m.cells.length > 12);
+    expect(splashes).toHaveLength(1);
+    expect(a.active?.used).toBe(true);
+    expect(events.some((e) => e.type === 'hit')).toBe(true);
+  });
+
+  it('a Pancada racha o chão onde bate', () => {
+    const grid = flatGrid();
+    const a = movePin('a', 0, -80, 0, [atk('Soco', ['Colorless', 'Colorless'], '70')], ['fighting']);
+    const b = pinAt('b', 1, 80, 0);
+    launch(a, { dirX: 1, dirY: 0, power: 1 }, 0);
+    expect(a.active?.kind).toBe('impacto');
+    const events = run(worldOn([a, b], grid), 0.5);
+    expect(marksOf(events).map((m) => m.kind)).toEqual(['crack']);
+    expect(grid.counts().crack ?? 0).toBeGreaterThan(5);
+  });
+
+  it('fogo sobre poça faz o chão reagir e empurra quem está perto', () => {
+    const grid = flatGrid();
+    stampType(grid, ARENA_RADIUS, 'water', 0, 0, 1.6, seededRng(2));
+    const a = movePin('a', 0, -90, 0, [atk('Brasa', ['Fire', 'Colorless'], '30')]);
+    const b = pinAt('b', 1, 60, 0);
+    const bystander = pinAt('c', 1, 20, 90);
+    const w = worldOn([a, b, bystander], grid);
+    launch(a, { dirX: 1, dirY: 0, power: 0.8 }, 0);
+    const events = run(w, 0.4);
+    const reaction = marksOf(events).find((m) => m.reaction);
+    expect(reaction?.reaction?.text).toBe('A poça evaporou!');
+    expect(Math.hypot(bystander.vx, bystander.vy) + Math.abs(bystander.y - 90)).toBeGreaterThan(5);
+  });
+
+  it('o adversário também marca o chão com os golpes dele', () => {
+    const grid = flatGrid();
+    const e = movePin('e', 1, 0, -200, [atk('Jato', ['Water', 'Colorless'], '30')], ['water']);
+    launch(e, { dirX: 0, dirY: 1, power: 1 }, 0);
+    run(worldOn([e, pinAt('m', 0, 0, 250)], grid), 1);
+    expect(grid.counts().puddle ?? 0).toBeGreaterThan(10);
+  });
+
+  it('é repetível: o mesmo disparo marca o mesmo chão', () => {
+    const make = () => {
+      const grid = flatGrid();
+      const a = movePin('a', 0, -150, 0, [atk('Brasa', ['Fire', 'Colorless'], '30')]);
+      launch(a, { dirX: 1, dirY: 0.1, power: 0.9 }, 0);
+      run(worldOn([a, pinAt('b', 1, 100, 20)], grid, seededRng(9)), 2);
+      return Buffer.from(grid.over).toString('hex');
+    };
+    expect(make()).toBe(make());
+  });
+
+  it('a arena já começa com algumas marcas longe de quem começa; desligar deixa só o chão base', () => {
+    const specs = { mine: [spec('m1'), spec('m2')], enemy: [spec('e1'), spec('e2')] };
+    for (let seed = 1; seed <= 10; seed++) {
+      const w = createWorld(specs, seededRng(seed));
+      expect(w.terrain).toBeTruthy();
+      expect(w.markRng).toBeTruthy();
+      expect(Object.keys(w.terrain!.counts()).length).toBeGreaterThanOrEqual(3);
+      for (const p of w.pins) {
+        const i = cellOfWorld(w.terrain!, w.radius, p.x, p.y)!;
+        expect(w.terrain!.overlayAt(i)).toBeNull();
+      }
+      const off = createWorld(specs, seededRng(seed), { marks: false });
+      expect(off.terrain!.counts()).toEqual({});
+      expect(off.markRng).toBeNull();
+    }
   });
 });
