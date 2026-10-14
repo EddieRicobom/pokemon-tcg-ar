@@ -12,6 +12,7 @@ const rows = ref<Row[]>([]);
 const loading = ref(true);
 const search = ref('');
 const notice = ref('');
+const loadError = ref('');
 const urls: string[] = [];
 
 const usable = computed(() => rows.value.filter((row) => row.sprite.state === 'ok'));
@@ -53,6 +54,8 @@ onMounted(async () => {
       out.push(row);
     }
     rows.value = out;
+  } catch (error) {
+    loadError.value = `Não consegui abrir as cartas guardadas: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
     loading.value = false;
   }
@@ -67,6 +70,7 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
       <template v-if="team.auto && team.ids.length > 0"> (automática: as mais recentes)</template>
     </p>
     <p v-if="loading" class="message">Lendo as cartas guardadas…</p>
+    <p v-else-if="loadError" class="message error" role="alert">{{ loadError }}</p>
     <p v-else-if="usable.length === 0" class="message">Nenhuma carta guardada com Pokémon ainda. Escaneie uma carta primeiro.</p>
     <template v-else>
       <div class="team-tools">
