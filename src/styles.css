@@ -845,3 +845,369 @@ small {
 .box-viewport .hud {
   bottom: 12px;
 }
+
+/* ---------- Botões sobre a câmera e tela cheia ---------- */
+body.no-scroll {
+  overflow: hidden;
+}
+
+.viewport:fullscreen,
+.viewport.pseudo-full {
+  aspect-ratio: auto;
+  width: 100vw;
+  height: 100dvh;
+  border-radius: 0;
+  border: 0;
+}
+
+.viewport.pseudo-full {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.viewport .stage-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  z-index: 8;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.viewport .stage-bar > * {
+  pointer-events: auto;
+}
+
+.stage-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 50px;
+  min-height: 52px;
+  padding: 6px 5px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 14, 26, 0.68);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.stage-btn svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.stage-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.stage-btn:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.viewport .stage-top {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  right: 8px;
+  z-index: 8;
+  display: flex;
+  gap: 6px;
+}
+
+/* Quando há barra de botões, o aviso (hud) sobe para não ficar embaixo dela. */
+.viewport.has-bar .hud {
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 66px);
+}
+
+.stage-sheet {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 66px);
+  z-index: 9;
+  max-height: 55%;
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 14, 26, 0.88);
+  backdrop-filter: blur(14px);
+  color: #fff;
+}
+
+.stage-sheet header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.stage-sheet header strong {
+  flex: 1;
+}
+
+.stage-sheet h4 {
+  margin: 10px 0 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.stage-sheet .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stage-sheet .chips button,
+button.link {
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 0.85rem;
+  border-radius: 999px;
+}
+
+.stage-sheet .chips button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+button.link {
+  background: transparent;
+  border: 0;
+  color: var(--gold);
+  min-height: 36px;
+  padding: 0 4px;
+}
+
+/* ---------- Escolha da equipe ---------- */
+.team-picker .team-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0 10px;
+}
+
+.team-picker .team-tools input {
+  flex: 1;
+  min-width: 0;
+}
+
+.team-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(98px, 1fr));
+  gap: 8px;
+}
+
+.team-card {
+  position: relative;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  border-radius: var(--radius-sm);
+}
+
+.team-card small {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.team-card img {
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.team-card.picked {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold) inset;
+}
+
+.team-slot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--gold);
+  color: #1b1b1b;
+  font-weight: 800;
+  font-size: 0.75rem;
+}
+
+.team-noimg {
+  width: 48px;
+  height: 67px;
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.viewport .stage-cta {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 140px);
+  z-index: 8;
+  white-space: nowrap;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- Cartas: equipe, filtros e grade ---------- */
+.team-strip {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.team-strip ul {
+  list-style: none;
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow-x: auto;
+}
+
+.team-strip li {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  font-size: 0.7rem;
+  flex: 0 0 auto;
+  max-width: 64px;
+  text-align: center;
+}
+
+.team-strip img {
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.filter-bar {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.filter-bar .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-bar .chips button {
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 0.85rem;
+  border-radius: 999px;
+}
+
+.filter-bar .chips button.active,
+.card-row button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.filter-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-row label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.filter-row select {
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 0 10px;
+  font: inherit;
+}
+
+.card-grid {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px;
+}
+
+.grid-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 8px 6px;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 4px;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.grid-card img {
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.grid-card.picked {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold) inset;
+}
+
+.filter-bar input[type='text'],
+.team-picker input[type='text'] {
+  width: 100%;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.filter-bar input::placeholder,
+.team-picker input::placeholder {
+  color: var(--muted);
+}

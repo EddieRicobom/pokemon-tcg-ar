@@ -2,7 +2,8 @@ import { visibleVerticalFov } from './orientation';
 import { OrientationSource } from './orientation-source';
 import type { OrientationMode } from './orientation-source';
 import { BoxScene, DEFAULT_HALF_SIZE_M } from './box-scene';
-import type { CreatureEntry } from './box-scene';
+import type { BoxMode, CreatureEntry } from './box-scene';
+import type { SpriteLook } from '../core/sprite-look';
 import type { BoxCreature } from './creature';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES } from './floor';
 import { createWebglBackend } from '../ar/webgl-backend';
@@ -26,6 +27,8 @@ export interface RunningBox {
   clearPlacement(): void;
   pick(ndcX: number, ndcY: number): BoxCreature | null;
   setCreatures(entries: CreatureEntry[]): void;
+  setMode(mode: BoxMode): void;
+  setLook(look: SpriteLook): void;
   setPhoneHeight(meters: number): void;
   setHalfSize(meters: number): void;
   setVideoFov(deg: number): void;
@@ -80,6 +83,8 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     clearPlacement: () => scene.clearPlacement(),
     pick: (x, y) => scene.pick(x, y),
     setCreatures: (entries) => scene.setCreatures(entries),
+    setMode: (mode) => scene.setMode(mode),
+    setLook: (look) => scene.setLook(look),
     setPhoneHeight(meters) {
       phoneHeight = meters;
     },

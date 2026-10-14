@@ -41,11 +41,20 @@ export const browserDecoders: CreatureDecoders = {
 
 /**
  * Monta a população da Caixa a partir das cartas guardadas neste aparelho: um Pokémon por carta que tem
- * sprite guardado (GIF animado ou PNG parado), as mais recentes primeiro. Uma carta com problema não impede
+ * sprite guardado (GIF animado ou PNG parado), as mais recentes primeiro (ou só as de `only`, na ordem dada). Uma carta com problema não impede
  * as outras: entra na lista de falhas.
  */
-export async function loadCreatureEntries(cache: CreatureCacheLike, decoders: CreatureDecoders = browserDecoders): Promise<LoadedCreatures> {
-  const cards = (await cache.list()).filter((card) => card.sprite.state === 'ok');
+export async function loadCreatureEntries(
+  cache: CreatureCacheLike,
+  decoders: CreatureDecoders = browserDecoders,
+  only?: readonly string[],
+): Promise<LoadedCreatures> {
+  let cards = (await cache.list()).filter((card) => card.sprite.state === 'ok');
+  // Equipe escolhida: só estas cartas, na ordem da equipe.
+  if (only) {
+    const byId = new Map(cards.map((card) => [card.id, card]));
+    cards = only.map((id) => byId.get(id)).filter((card): card is NonNullable<typeof card> => card !== undefined);
+  }
   const entries: CreatureEntry[] = [];
   const failed: LoadedCreatures['failed'] = [];
   for (const card of cards) {

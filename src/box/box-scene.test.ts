@@ -128,4 +128,32 @@ describe('BoxScene', () => {
     scene.dispose();
     expect(scene.creatureList).toHaveLength(0);
   });
+
+  it('modo formação leva os Pokémon a uma fila de frente para a câmera', () => {
+    const scene = sceneLookingDown();
+    scene.place(new Vector3(0, -1.3, -1.5), 1.2);
+    scene.setCreatures([entry(0), entry(1), entry(2)]);
+    scene.setMode('formacao');
+    for (let t = 1; t < 400; t++) scene.update(t * 16);
+    const states = scene.creatureList.map((c) => c.state);
+    // câmera em +z em relação ao centro: a fila corre ao longo de x e todos estão parados
+    expect(Math.max(...states.map((s) => s.vx * s.vx + s.vz * s.vz))).toBe(0);
+    const xs = states.map((s) => s.x).sort((a, b) => a - b);
+    expect(xs[2]! - xs[0]!).toBeGreaterThan(0.5);
+    expect(Math.abs(xs[0]! + xs[2]!)).toBeLessThan(0.05);
+    scene.setMode('passeio');
+    expect(scene.mode).toBe('passeio');
+  });
+
+  it('setLook vale para os Pokémon atuais e os que entram depois', () => {
+    const scene = sceneLookingDown();
+    scene.setCreatures([entry(0)]);
+    scene.setLook({ tone: 'mono', outline: 'gold' });
+    const dims = (i: number) => (scene.creatureList[i]!.mesh.material.map!.image as { width: number }).width;
+    const withOutline = dims(0);
+    scene.setCreatures([entry(1)]);
+    expect(dims(0)).toBe(withOutline);
+    scene.setLook({ tone: 'normal', outline: 'none' });
+    expect(dims(0)).toBeLessThan(withOutline);
+  });
 });

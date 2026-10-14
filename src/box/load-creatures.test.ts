@@ -57,4 +57,12 @@ describe('população da caixa', () => {
     expect(r.entries).toHaveLength(MAX_CREATURES);
     expect(r.available).toBe(MAX_CREATURES + 6);
   });
+
+  it('com equipe escolhida, carrega só essas cartas, na ordem da equipe', async () => {
+    const cards = [card(1), card(2), card(3), card(4)];
+    const cache = { list: async () => cards, getAssetBlob: async () => new Blob(['x']) };
+    const r = await loadCreatureEntries(cache, decoders, ['c3', 'c1', 'gone']);
+    expect(r.entries.map((e) => e.info.id)).toEqual(['c3', 'c1']);
+    expect(r.available).toBe(2);
+  });
 });
