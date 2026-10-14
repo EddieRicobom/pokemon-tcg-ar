@@ -4,7 +4,7 @@ import type { SpriteSource } from '../ar/sprite-source';
 import { computeFeatures, featuresFromJson, featuresToJson, FEATURE_VERSION } from '../recognition/hash';
 import type { CardFeatures } from '../recognition/hash';
 import type { CardRecordLike, LocalReference, RecognitionResult } from '../recognition/pipeline';
-import { cardImageUrl } from '../recognition/tcgdex';
+import { cardImageUrl, referenceCandidates, shortUrl } from '../recognition/tcgdex';
 import type { RgbaImage } from '../recognition/types';
 import { QuotaError } from './assets';
 import type { AssetBackend } from './assets';
@@ -89,6 +89,19 @@ export function cacheStatusOf(card: CachedCard): CacheStatus {
   if (slots.some((slot) => slot.state === 'error')) return 'falhou';
   if (slots.some((slot) => slot.state === 'missing')) return 'parcial';
   return 'completo';
+}
+
+class HttpStatusError extends Error {
+  constructor(readonly status: number) {
+    super(`HTTP ${status}`);
+  }
+}
+
+/** Texto curto para a falha de um endereço: código HTTP ou "sem resposta" (rede, bloqueio ou arquivo inexistente sem CORS). */
+function describeFailure(url: string, error: unknown): string {
+  const where = shortUrl(url);
+  if (error instanceof HttpStatusError) return `HTTP ${error.status} em ${where}`;
+  return `sem resposta de ${where}`;
 }
 
 export class CardCache {
@@ -256,6 +269,33 @@ export class CardCache {
     throw lastError;
   }
 
+  /**
+   * Baixa a imagem de referência. A primeira tentativa (baixa resolução WebP) usa as novas tentativas com espera; se não
+   * der, experimenta os outros formatos e idiomas do mesmo CDN (`referenceCandidates`), uma vez cada. Se nada responder,
+   * o erro diz o endereço que falhou e se foi falta de resposta (rede ou bloqueio) ou um código HTTP.
+   */
+  private async downloadReference(imageBase: string): Promise<{ url: string; blob: Blob }> {
+    const candidates = referenceCandidates(imageBase);
+    const failures: string[] = [];
+    for (const [index, url] of candidates.entries()) {
+      const attempt = async () => {
+        const response = await this.fetchImpl(url);
+        if (!response.ok) throw new HttpStatusError(response.status);
+        return response.blob();
+      };
+      try {
+        const blob = index === 0 ? await this.withRetry(attempt) : await attempt();
+        return { url, blob };
+      } catch (error) {
+        if (error instanceof QuotaError || error instanceof RangeError) throw error;
+        failures.push(describeFailure(url, error));
+      }
+    }
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const first = failures[0] ?? 'sem endereço';
+    throw new Error(offline ? `o aparelho está sem internet (${first})` : failures.length > 1 ? `${first}; mais ${failures.length - 1} tentativas também falharam` : first);
+  }
+
   private errorSlot(previous: SlotInfo, error: unknown): SlotInfo {
     const message = error instanceof QuotaError ? 'Sem espaço no aparelho' : error instanceof Error ? error.message : String(error);
     return { state: 'error', error: message, kind: previous.kind };
@@ -277,13 +317,8 @@ export class CardCache {
       if (!card.imageBase) {
         card = { ...card, reference: { state: 'unavailable', error: 'Sem imagem no TCGdex' } };
       } else {
-        const url = cardImageUrl(card.imageBase, 'low', 'webp');
         try {
-          const blob = await this.withRetry(async () => {
-            const response = await this.fetchImpl(url);
-            if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar a referência`);
-            return response.blob();
-          });
+          const { url, blob } = await this.downloadReference(card.imageBase);
           card = { ...card, reference: await this.storeAsset(id, 'reference', url, blob, card.reference) };
         } catch (error) {
           card = { ...card, reference: this.errorSlot(card.reference, error) };
