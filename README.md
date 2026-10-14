@@ -1,25 +1,28 @@
 # Pokémon TCG AR
 
-PWA para celular que vai reconhecer uma carta física de Pokémon TCG pela câmera e mostrar, em realidade aumentada, o GIF animado do Pokémon Showdown como uma figura 2D transparente, em pé sobre a carta.
+PWA para celular que reconhece uma carta física de Pokémon TCG pela câmera e mostra o Pokémon como um **GIF animado e transparente, em pé sobre a carta**, em realidade aumentada. Também guarda as cartas lidas, solta a sua equipe num quadrado do chão (a "Caixa") e faz os Pokémon batalharem sozinhos.
 
-Projeto de fã, não oficial. Pokémon e os nomes, imagens e sprites relacionados pertencem aos seus respectivos donos.
+Projeto de fã, não oficial. Pokémon e os nomes, imagens e sprites relacionados pertencem aos seus respectivos donos (ver [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). Licença do código: [MIT](LICENSE).
 
-## Estado atual: Fase 0 (fundação)
+> **O que ainda não foi comprovado:** tudo foi verificado por testes automatizados e em Chromium com câmera falsa (GL por software). **Nada foi validado num celular de verdade**: fluidez, calor, precisão do reconhecimento com a câmera real e a aparência dos efeitos. O roteiro para isso está em [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
 
-O que **funciona** hoje:
+## O que o app faz
 
-- App instalável (PWA) em português do Brasil, com cache offline e base path do GitHub Pages.
-- Diagnóstico do aparelho: HTTPS, câmera, WebGL2, Service Worker e se está instalado.
-- Abrir e fechar a câmera traseira, com mensagens de erro em português.
-- Teste do renderizador: decodifica um GIF animado (do Showdown ou de um arquivo do aparelho) e o desenha com fundo transparente em Three.js sobre a câmera.
-- Testes automatizados, build e deploy por GitHub Actions.
+| Aba | O que faz |
+| --- | --- |
+| **Escanear** | Lê a carta pela câmera (detecção do contorno, OCR do número e do nome, busca pela ilustração como reserva), identifica a impressão, guarda no aparelho e mostra o Pokémon em pé sobre ela, com um painel de status no chão (tipo, atributos, ataques da carta, golpes do jogo). Há busca manual por nome e ajuste do Pokémon com os dedos. |
+| **Várias** | Rastreia até 4 cartas da equipe ao mesmo tempo, cada uma com o seu Pokémon. |
+| **Caixa** | Solta a equipe (até 6) num quadrado do chão visto pela câmera, usando o giroscópio. **Batalhar** faz os Pokémon lutarem sozinhos numa arena pequena à frente do olhar, com personalidades, defesa, condições, golpes encenados por tipo, luz dos golpes e câmera de cinema. |
+| **Cartas** | As cartas guardadas no aparelho: busca, filtros, ordem, equipe, ver em AR, remover. |
+| **Diagnóstico** | Capacidades do aparelho (HTTPS, câmera, WebGL2, Service Worker), estado do índice do catálogo, cartas guardadas e a última leitura (resultado, confiança, tempos, texto do OCR). Em Escanear, "Mostrar o que o app está vendo" desenha o contorno e as miniaturas. |
 
-O que **ainda não existe** (e a tela do app diz isso claramente):
+Detalhes e limites de cada parte: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-- Reconhecimento de cartas.
-- Rastreamento da carta e o Pokémon em pé sobre ela.
+### Como funciona, em poucas linhas
 
-No teste do renderizador o Pokémon aparece **fixo na tela**. Isso não é AR sobre a carta; é só a validação do desenho do GIF. O roteiro do que falta está em [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+- **Reconhecer**: o contorno da carta é achado e endireitado (630×880); o OCR lê o número e o nome; um índice estático do catálogo (gerado no deploy) transforma "número/total" em candidatas; a imagem de referência real confirma. Se o texto não bastar, um índice de ilustrações sugere candidatas. Só confirma uma carta que se repete em vários quadros.
+- **Rastrear**: o alvo da carta é compilado **no aparelho** (MindAR) a partir da imagem do TCGdex e guardado. O rastreador tem ajustes para luz difícil (contraste local normalizado em quadros alternados, alvo em cinza de luminância), e o giroscópio mantém a pose firme entre as leituras.
+- **Desenhar**: Three.js desenha o GIF do Pokémon (sprites do PokeAPI/sprites, com espelho no jsDelivr) com suavização de pixels à escolha.
 
 ## Publicar no GitHub Pages (uma vez só)
 
@@ -27,25 +30,18 @@ Você não precisa instalar nada nem usar terminal. O GitHub Actions faz o build
 
 1. No repositório, abra **Settings → Pages**.
 2. Em **Build and deployment → Source**, escolha **GitHub Actions**.
-3. Faça o merge do pull request na `main`. O workflow **Deploy no GitHub Pages** roda sozinho.
+3. Faça o merge na `main`. O workflow **Deploy no GitHub Pages** roda sozinho (e toda semana, para o índice de cartas acompanhar coleções novas).
 4. O app fica em `https://eddiericobom.github.io/pokemon-tcg-ar/`.
 
-Sem o passo 2, o workflow de deploy falha na etapa de configuração do Pages.
-
-A câmera exige HTTPS; o GitHub Pages já serve por HTTPS.
+A câmera exige HTTPS; o GitHub Pages já serve por HTTPS. O PWA só atualiza na **segunda** abertura depois de um deploy: feche e abra de novo.
 
 ## Infraestrutura
 
-Apenas GitHub gratuito com repositório público:
-
-- Hospedagem: GitHub Pages (site estático).
-- Automação: GitHub Actions (build, testes, processamento estático do catálogo e deploy).
-- Sem backend hospedado, VPS, hospedagem paga, servidor de banco de dados ou serviço Python permanente.
-- Python entra só como ferramenta de build/CI (preparação de dados), quando necessário.
+Apenas GitHub gratuito com repositório público: hospedagem no GitHub Pages (site estático) e automação no GitHub Actions (tipos, testes, build, índices estáticos, deploy, verificações externas). Sem backend, VPS, hospedagem paga nem servidor de banco de dados.
 
 ## Stack
 
-Vue 3, TypeScript, Vite, `vite-plugin-pwa`, Three.js e `gifuct-js` (decodificação de GIF). A escolha da biblioteca de AR/visão está documentada em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) e fica para a Fase 3.
+Vue 3, TypeScript (estrito), Vite 8, `vite-plugin-pwa`, Three.js, MindAR (rastreamento de imagem, sobre TensorFlow.js), `tesseract.js` (OCR), `gifuct-js` (GIF) e `idb` (IndexedDB). Testes com Vitest + happy-dom e Playwright.
 
 ## Desenvolvimento
 
@@ -53,31 +49,39 @@ Só é necessário para quem quiser rodar localmente. Requer Node 22 ou superior
 
 ```bash
 npm ci
-npm run dev        # servidor de desenvolvimento
-npm run typecheck  # vue-tsc + tsc
-npm test           # vitest
-npm run build      # build de produção em dist/
+npm run dev          # servidor de desenvolvimento
+npm run typecheck    # vue-tsc + tsc
+npm test             # vitest (happy-dom)
+npm run build        # build de produção em dist/
+npm run build:index  # índice estático do catálogo (precisa de rede; roda no deploy)
 ```
 
-O caminho base vem da variável `BASE_PATH` (padrão `/pokemon-tcg-ar/`). No CI ela é definida como `/<nome-do-repositório>/`.
+O caminho base vem de `BASE_PATH` (padrão `/pokemon-tcg-ar/`); no CI vira `/<nome-do-repositório>/`. Outros fluxos (teste de ponta a ponta com câmera falsa, avaliações com rede, verificação do `dist/`) estão em [docs/TESTING.md](docs/TESTING.md).
 
 ## Estrutura
 
 ```
-config/            caminho base do site (e seu teste)
-public/icons/      ícones do PWA (favicon.svg é a fonte)
-src/core/          lógica sem interface: câmera, capacidades, GIF, URLs do Showdown
-src/ar/            renderizador Three.js (carregado sob demanda)
-src/components/    componentes Vue
-src/composables/   utilitários reativos do Vue
-.github/workflows/ ci.yml e deploy.yml
-docs/              arquitetura e testes
+config/            caminho base do site
+public/            ícones do PWA e OCR (copiado no build); data/ é gerado no deploy
+scripts/           índices do catálogo e das ilustrações, verificações, avaliações
+e2e/               teste de ponta a ponta (Playwright) e harness do AR com câmera falsa
+src/app/           orquestração: scan, preparo do AR, equipe, dados de Pokémon, rotas, ajustes
+src/ar/            AR: rastreador MindAR, sessão, sprite, painel de status, gestos
+src/box/           Caixa: cena, criaturas, arena, batalha (diretor, efeitos, luzes)
+src/cache/         cartas e arquivos guardados no aparelho (IndexedDB + Cache API)
+src/core/          lógica sem interface: câmera, GIF, suavização, tipos, motor de batalha
+src/recognition/   detecção da carta, OCR, índices, fusão de evidências
+src/sensors/       giroscópio
+src/views/         telas (abas); src/components/ componentes
+.github/workflows/ ci, deploy, e2e, verificação externa
+docs/              arquitetura, testes e roteiro de teste no celular
 ```
 
 ## Documentação
 
-- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md): fases, critérios de pronto, riscos e decisões em aberto
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): arquitetura, decisões e análise do projeto de referência pokeum
-- [docs/TESTING.md](docs/TESTING.md): o que é testado automaticamente e o que precisa de teste manual no celular
-- [CLAUDE.md](CLAUDE.md): regras para sessões do Claude Code neste repositório
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): arquitetura, decisões, limites conhecidos
+- [docs/TESTING.md](docs/TESTING.md): o que é testado e como; o que só um celular valida
+- [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md): roteiro de teste em aparelho real
+- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md): estado por fase, riscos e próximos passos
 - [CHANGELOG.md](CHANGELOG.md): histórico de mudanças
+- [CLAUDE.md](CLAUDE.md): regras para sessões do Claude Code neste repositório

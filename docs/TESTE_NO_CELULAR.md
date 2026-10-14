@@ -1,9 +1,9 @@
 # Roteiro de teste no celular
 
-O que o CI e o sandbox **não** conseguem validar: câmera real, GPU do celular e o GIF do Showdown. Faça nesta ordem e anote em qual etapa para.
+O que o CI e o sandbox **não** conseguem validar: câmera real, GPU e sensores do celular, desempenho e a aparência dos efeitos. Faça nesta ordem e anote em qual etapa para.
 
 ## 0. Preparação
-1. Abra o app, feche e abra de novo (o PWA só atualiza na segunda abertura).
+1. Abra o app, feche e abra de novo (o PWA só atualiza na segunda abertura depois de um deploy).
 2. Em **Escanear**, ligue "Mostrar o que o app está vendo (diagnóstico)".
 
 ## 1. AR pela busca manual (independe do reconhecimento)
@@ -46,13 +46,13 @@ Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Carta
 1. Com a caixa colocada e 2 ou mais Pokémon na equipe, toque em "Batalhar" (sobre a câmera). Eles se reúnem em roda e lutam sozinhos até sobrar um.
 2. Confira: o anúncio do golpe (nome, tipo e se veio da carta ou do jogo), as barras de PS descendo, os números de dano, "Super efetivo!"/"Pouco efetivo…" (ex.: Água contra Fogo), o desmaio e a comemoração do vencedor. "De novo" refaz com novos sorteios; "Parar" volta ao passeio.
 3. Veja o jeito de cada um: o rótulo de personalidade no anúncio (agressivo, defensivo, veloz, equilibrado), golpes diferentes por tipo (corpo a corpo: investida, socos, mergulho, pisão, cortes; à distância: bola, raio, jato, enxame, feixe, tremor), defesa com escudo azul abaixo de 45 % de PS, e as condições (Queimado, Envenenado, Paralisado, Congelado) com selo na barra e efeito contínuo. "Vingança!" aparece quando alguém revida quem acabou de bater nele.
-4. Abaixo da câmera aparece o vencedor, o destaque de dano e o resumo (críticos, condições, defesas) e, se algum Pokémon ficou sem dados (PokéAPI ou TCGdex fora do ar), o que foi substituído por valores neutros.
+4. Ao fim, o botão "Resumo" (na barra sobre a câmera) abre o vencedor, o destaque de dano, os críticos, condições e defesas e, se algum Pokémon ficou sem dados (PokéAPI ou TCGdex fora do ar), o que foi substituído por valores neutros.
 5. A arena nasce pequena na frente de onde o celular aponta: confira se todos os lutadores cabem na tela sem você virar o celular, se o botão "Centrar" traz a arena de volta depois de você olhar para outro lado, e se a câmera lenta no nocaute, o tremor da imagem e os avisos grandes ajudam ou atrapalham.
 6. Anote: se os efeitos pesam no seu aparelho (queda de fluidez), se os textos ficam legíveis e se a batalha fica longa ou curta demais.
 
 ### Luz difícil (Escanear)
-1. Aponte para uma carta em ambiente de pouca luz, depois com a sombra da mão cobrindo metade da carta e com uma janela atrás dela. Compare quanto demora até o Pokémon aparecer com o que acontecia antes (o app agora alterna quadros com contraste corrigido).
-2. Anote o "leituras/s" do rastreador com boa luz: se cair muito em relação à versão anterior (cerca de 10–15 em aparelhos médios), me avise, porque a correção de contraste pesa na GPU.
+1. Aponte para uma carta em ambiente de pouca luz, depois com a sombra da mão cobrindo metade da carta e com uma janela atrás dela. Compare quanto demora até o Pokémon aparecer com o que acontecia antes (o app agora entrega 1 quadro com contraste corrigido a cada 3).
+2. Anote o "leituras/s" do rastreador com boa luz. Meta: pelo menos ~6 leituras/s (no Chromium de teste, sem GPU, deu 6–8 com a correção de contraste e 7–11 sem ela). Se ficar abaixo disso, me avise: a correção de contraste (1 quadro a cada 3) pesa na GPU.
 3. Cartas já guardadas serão recompiladas na primeira vez (o alvo agora usa cinza de luminância): espere a etapa "alvo compilado" uma vez por carta.
 
 ### Luz dos golpes (Caixa)

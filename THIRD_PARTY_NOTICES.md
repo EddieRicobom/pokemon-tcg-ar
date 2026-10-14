@@ -16,19 +16,31 @@ trecho do servidor foi copiado.
 
 O texto completo da licença está no repositório de origem.
 
+## Momentoos
+
+Ideias de rastreamento em luz difícil (normalização de contraste local do quadro e preparo do alvo) vêm do
+Momentoos, outro repositório do dono deste projeto; o código foi reescrito aqui.
+
 ## Bibliotecas
 
 | Pacote | Licença | Uso |
 | --- | --- | --- |
-| tesseract.js, tesseract.js-core, @tesseract.js-data/eng | Apache-2.0 | OCR no navegador |
-| mind-ar | MIT | Rastreamento de imagem (AR) |
+| vue | MIT | Interface |
 | three | MIT | Renderização |
+| mind-ar | MIT | Rastreamento de imagem (AR) |
+| @tensorflow/tfjs (dependência do mind-ar) | Apache-2.0 | Contas do rastreador e normalização de contraste |
+| tesseract.js, tesseract.js-core, @tesseract.js-data/eng | Apache-2.0 | OCR no navegador |
 | gifuct-js | MIT | Decodificação de GIF |
 | idb | ISC | IndexedDB |
+| @fontsource-variable/bricolage-grotesque | OFL-1.1 | Fonte da interface |
+
+As licenças exatas de cada versão estão nos pacotes (`node_modules/<pacote>/LICENSE`) e no `package-lock.json`.
 
 ## Dados e imagens
 
 - Dados de cartas e imagens de referência: TCGdex (<https://tcgdex.dev/>). As imagens das cartas
   pertencem aos seus titulares (The Pokémon Company, Nintendo, Creatures, Game Freak). O app baixa
   somente as cartas que o usuário escaneia e as guarda no aparelho dele.
-- Sprites: repositório PokeAPI/sprites. Os desenhos dos Pokémon pertencem aos seus titulares.
+- Dados de espécies, atributos e golpes: PokéAPI (<https://pokeapi.co/>).
+- Sprites: repositório PokeAPI/sprites (GIFs `other/showdown`), com espelho no jsDelivr. Os desenhos dos
+  Pokémon pertencem aos seus titulares; o app não os redistribui, o celular os baixa na hora.
