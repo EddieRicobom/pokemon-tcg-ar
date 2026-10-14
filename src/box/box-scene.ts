@@ -10,6 +10,7 @@ import { formationSlots } from './formation';
 import { createWander, separate, stepToward, stepWander } from './wander';
 import { arenaFrame, arenaRadii } from './arena';
 import { BattleDirector } from './battle-director';
+import { FxLights } from './fx-lights';
 import type { BattleHud } from './battle-director';
 import { simulateBattle } from '../core/battle';
 import type { BattleResult, Fighter } from '../core/battle';
@@ -50,6 +51,11 @@ export class BoxScene {
   private readonly battleZero = new Vector3();
   private readonly battleRight = new Vector3(1, 0, 0);
   private readonly rng: Rng;
+  /** Luzes dos golpes e do ambiente, compartilhadas por todos os sprites. */
+  readonly fx = new FxLights();
+  private lighting = true;
+  private readonly envTarget = new Vector3(1, 1, 1);
+  private readonly env = new Vector3(1, 1, 1);
 
   constructor(rng: Rng = Math.random) {
     this.rng = rng;
@@ -155,6 +161,17 @@ export class BoxScene {
     for (const creature of this.creatures) creature.setSmoothing(mode);
   }
 
+  /** Luz do ambiente real (da câmera): multiplica a cor dos sprites. Mudanças são suavizadas. */
+  setEnvironment(r: number, g: number, b: number): void {
+    this.envTarget.set(r, g, b);
+  }
+
+  /** Liga ou desliga a luz dos golpes e do ambiente nos sprites, no chão e no vídeo. */
+  setLighting(on: boolean): void {
+    this.lighting = on;
+    if (this.director) this.director.lighting = on;
+  }
+
   setMode(mode: BoxMode): void {
     this.mode = mode;
   }
@@ -185,6 +202,7 @@ export class BoxScene {
     this.director = new BattleDirector({
       fighters, creatures: this.creatures, result, root: this.battleRoot, camera: this.camera, rx, rz, rng,
     });
+    this.director.lighting = this.lighting;
     return result;
   }
 
@@ -233,6 +251,7 @@ export class BoxScene {
       const state = createWander(this.half, this.rng);
       const creature = new BoxCreature(entry.info, entry.source, state);
       creature.setSmoothing(this.smoothing);
+      creature.attachLights(this.fx);
       this.scene.add(creature.group);
       this.creatures.push(creature);
     }
@@ -258,6 +277,16 @@ export class BoxScene {
     } else {
       for (const creature of this.creatures) stepWander(creature.state, dt, this.half, this.rng);
       separate(this.creatures.map((c) => c.state), 0.28, this.half);
+    }
+    // Luz: ambiente real (suave) escurecido no foco do golpe, mais as luzes dos golpes em curso.
+    this.env.lerp(this.envTarget, Math.min(1, dt / 600));
+    if (this.lighting) {
+      const dim = 1 - Math.min(0.55, (this.director?.ambientDim ?? 0) * 1.6);
+      this.fx.setAmbient(this.env.x * dim, this.env.y * dim, this.env.z * dim);
+      this.fx.setLights(this.director?.lights ?? [], this.director ? this.battleRoot : null);
+    } else {
+      this.fx.setAmbient(1, 1, 1);
+      this.fx.setLights([], null);
     }
     this.camera.updateMatrixWorld(true);
     const right = this.director ? this.battleRight : new Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);

@@ -390,3 +390,93 @@ describe('arena da batalha', () => {
     expect(scene.battleHud!.phase).toBe('finished');
   });
 });
+
+describe('luz dos golpes', () => {
+  function startedScene(n = 2): { scene: BoxScene; team: Fighter[]; result: ReturnType<BoxScene['startBattle']> } {
+    const scene = ready(n);
+    const team = fighters(n);
+    const result = scene.startBattle(team, seededRng(5));
+    return { scene, team, result };
+  }
+
+  it('acende luzes durante os golpes (carga, trajeto, impacto) e apaga ao fim', () => {
+    const { scene, team, result } = startedScene();
+    const seen = new Set<string>();
+    let now = 1000;
+    scene.update(now);
+    const total = INTRO_MAX_MS + result.turns.reduce((sum, t) => sum + turnDuration(t, team[t.attacker]!.personality), 0) * 1.3 + 3000;
+    let maxLights = 0;
+    for (let t = 0; t < total; t += 33) {
+      now += 33;
+      scene.update(now);
+      const lights = scene.battleHud!.lights;
+      maxLights = Math.max(maxLights, lights.length);
+      for (const l of lights) seen.add(l.color);
+    }
+    expect(maxLights).toBeGreaterThan(0);
+    expect(maxLights).toBeLessThanOrEqual(8);
+    expect(seen.size).toBeGreaterThan(0);
+    // No fim há o refletor do vencedor.
+    expect(scene.battleHud!.phase).toBe('finished');
+    expect(scene.battleHud!.lights.some((l) => l.color === '#ffe27a')).toBe(true);
+  });
+
+  it('as luzes da arena chegam aos sprites (uniformes) durante a luta', () => {
+    const { scene } = startedScene();
+    let lit = 0;
+    let now = 1000;
+    scene.update(now);
+    for (let t = 0; t < 12000; t += 33) {
+      now += 33;
+      scene.update(now);
+      lit = Math.max(lit, scene.fx.count);
+    }
+    expect(lit).toBeGreaterThan(0);
+  });
+
+  it('com a luz desligada não há luzes, nem no HUD nem nos sprites', () => {
+    const { scene } = startedScene();
+    scene.setLighting(false);
+    let now = 1000;
+    scene.update(now);
+    for (let t = 0; t < 10000; t += 33) {
+      now += 33;
+      scene.update(now);
+      expect(scene.battleHud!.lights).toHaveLength(0);
+      expect(scene.fx.count).toBe(0);
+      expect(scene.fx.uniforms.uAmbient.value.x).toBe(1);
+    }
+  });
+
+  it('o ambiente escurece os sprites no foco do golpe e volta ao normal depois', () => {
+    const { scene } = startedScene();
+    let now = 1000;
+    scene.update(now);
+    let min = 1;
+    for (let t = 0; t < 12000; t += 33) {
+      now += 33;
+      scene.update(now);
+      min = Math.min(min, scene.fx.uniforms.uAmbient.value.x);
+    }
+    expect(min).toBeLessThan(0.8);
+    expect(min).toBeGreaterThan(0.4);
+    scene.stopBattle();
+    run(scene, 800);
+    expect(scene.fx.uniforms.uAmbient.value.x).toBeCloseTo(1, 1);
+  });
+
+  it('marca quem está agindo na barra', () => {
+    const { scene } = startedScene();
+    let now = 1000;
+    scene.update(now);
+    let acting = 0;
+    for (let t = 0; t < 6000; t += 33) {
+      now += 33;
+      scene.update(now);
+      const n = scene.battleHud!.bars.filter((b) => b.acting).length;
+      acting = Math.max(acting, n);
+      expect(n).toBeLessThanOrEqual(1);
+    }
+    expect(acting).toBe(1);
+  });
+});

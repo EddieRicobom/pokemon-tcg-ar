@@ -2,6 +2,8 @@ import {
   DataTexture, DoubleSide, Group, LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, SRGBColorSpace, UnsignedByteType, Vector3,
   CircleGeometry,
 } from 'three';
+import { enableRelight } from './fx-lights';
+import type { FxLights } from './fx-lights';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import { DEFAULT_SMOOTHING, isLinearSmoothing, upscaleSprite } from '../core/pixel-upscale';
@@ -159,6 +161,11 @@ export class BoxCreature {
     this.mesh.material.map = this.texture;
     this.mesh.material.needsUpdate = true;
     old.dispose();
+  }
+
+  /** Liga a iluminação dos golpes e do ambiente neste sprite (ver fx-lights.ts). */
+  attachLights(lights: FxLights): void {
+    enableRelight(this.mesh.material, lights);
   }
 
   /** Toque: o Pokémon dá um pulinho de confirmação. */
