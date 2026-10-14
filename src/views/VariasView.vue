@@ -112,7 +112,7 @@ async function open(): Promise<void> {
       return;
     }
     running = started;
-    running.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing: visual.smoothing }));
+    running.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing: visual.smoothing, showShadow: visual.shadow }));
     phase.value = 'running';
     progress.value = '';
   } catch (e) {
@@ -134,8 +134,8 @@ function close(): void {
   state.value = { phase: 'idle', visible: [] };
 }
 
-watch(() => visual.smoothing, (smoothing) => {
-  running?.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing }));
+watch(() => [visual.smoothing, visual.shadow] as const, ([smoothing, shadow]) => {
+  running?.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing, showShadow: shadow }));
 });
 
 onBeforeUnmount(() => {

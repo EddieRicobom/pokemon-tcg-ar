@@ -2,7 +2,7 @@ import {
   BufferGeometry, Float32BufferAttribute, Group, Line, LineBasicMaterial, LineLoop, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry,
   Quaternion, Raycaster, Scene, Vector2, Vector3,
 } from 'three';
-import { BoxCreature } from './creature';
+import { BoxCreature, frameCacheFor } from './creature';
 import type { CreatureInfo, CreatureSource } from './creature';
 import { intersectFloor } from './floor';
 import type { FloorResult } from './floor';
@@ -20,7 +20,7 @@ import { DEFAULT_SMOOTHING } from '../core/pixel-upscale';
 import type { SmoothingMode } from '../core/pixel-upscale';
 import type { Rng } from './wander';
 
-export const MAX_CREATURES = 30;
+export const MAX_CREATURES = 40;
 export const DEFAULT_HALF_SIZE_M = 1.2;
 
 export type BoxMode = 'passeio' | 'formacao';
@@ -290,9 +290,11 @@ export class BoxScene {
     this.stopBattle();
     for (const creature of this.creatures) creature.dispose();
     this.creatures = [];
-    for (const entry of entries.slice(0, MAX_CREATURES)) {
+    const chosen = entries.slice(0, MAX_CREATURES);
+    const cacheLimit = frameCacheFor(chosen.length);
+    for (const entry of chosen) {
       const state = createWander(this.half, this.rng);
-      const creature = new BoxCreature(entry.info, entry.source, state);
+      const creature = new BoxCreature(entry.info, entry.source, state, cacheLimit);
       creature.setSmoothing(this.smoothing);
       creature.attachLights(this.fx);
       this.scene.add(creature.group);

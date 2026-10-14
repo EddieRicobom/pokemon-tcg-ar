@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   battleModeBlocker, buildFighter, calculateDamage, canGetStatus, cardDamageToPower, chooseMove, chooseTarget, effectivenessLabel, effectivenessTone, expectedDamage,
-  FALLBACK_MOVE, parseCardDamage, personalityOf, planBattle, seededRng, simulateBattle, STATUS_CHANCE, summarizeBattle, TYPE_CHART, typeEffectiveness,
+  FALLBACK_MOVE, isRosterSlot, parseCardDamage, personalityOf, planBattle, ROSTER_SLOTS, rosterBlocker, seededRng, simulateBattle, STATUS_CHANCE, summarizeBattle, TYPE_CHART, typeEffectiveness,
 } from './battle';
-import type { Fighter } from './battle';
+import type { Fighter, RosterSlot } from './battle';
 import { POKEMON_TYPES } from './pokemon-data';
 import type { BaseStats } from './pokemon-data';
 
@@ -492,5 +492,58 @@ describe('planBattle', () => {
     expect(battleModeBlocker('tres', 6)).toBeNull();
     expect(battleModeBlocker('royale', 1)).not.toBeNull();
     expect(() => planBattle('tres', 5, seededRng(1))).toThrow();
+  });
+});
+
+describe('escalação manual', () => {
+  const rng = () => seededRng(11);
+
+  it('sem escalação (ou tudo em sorteio) o plano é o de sempre', () => {
+    expect(planBattle('equipes', 7, rng(), ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'])).toEqual(planBattle('equipes', 7, rng()));
+    expect(planBattle('tres', 9, rng(), undefined)).toEqual(planBattle('tres', 9, rng()));
+  });
+
+  it('quem está fora não luta (Royale)', () => {
+    const plan = planBattle('royale', 5, rng(), [0, 'out', 'auto', 'out', 1]);
+    expect(plan.picks).toEqual([0, 2, 4]);
+    expect(plan.teams).toBeUndefined();
+  });
+
+  it('Equipes respeita as equipes fixas e reparte o sorteio equilibrando', () => {
+    const roster: RosterSlot[] = [0, 0, 0, 1, 'auto', 'auto', 'out', 'auto'];
+    const plan = planBattle('equipes', roster.length, rng(), roster);
+    const red = plan.picks.filter((_, i) => plan.teams![i] === 0);
+    const blue = plan.picks.filter((_, i) => plan.teams![i] === 1);
+    expect(red).toEqual(expect.arrayContaining([0, 1, 2]));
+    expect(blue).toContain(3);
+    expect(plan.picks).not.toContain(6);
+    expect(plan.picks).toHaveLength(7);
+    expect(Math.abs(red.length - blue.length)).toBeLessThanOrEqual(1);
+  });
+
+  it('3x3 usa 3 por lado, com as fixas primeiro e o sorteio completando', () => {
+    const roster: RosterSlot[] = [0, 'auto', 'auto', 'auto', 'auto', 1, 'auto', 'out'];
+    const plan = planBattle('tres', roster.length, rng(), roster);
+    expect(plan.relay).toBe(true);
+    expect(plan.picks).toHaveLength(6);
+    expect(plan.teams!.filter((t) => t === 0)).toHaveLength(3);
+    expect(plan.teams!.filter((t) => t === 1)).toHaveLength(3);
+    expect(plan.picks[plan.teams!.indexOf(0)]).toBe(0);
+    expect(plan.picks[plan.teams!.indexOf(1)]).toBe(5);
+  });
+
+  it('explica o que impede a luta', () => {
+    expect(rosterBlocker('royale', 3, ['out', 'out', 0])).toContain('2');
+    expect(rosterBlocker('equipes', 3, [0, 0, 0])).toContain('equipe');
+    expect(rosterBlocker('equipes', 3, [0, 0, 'auto'])).toBeNull();
+    expect(rosterBlocker('tres', 8, [0, 0, 0, 0, 'auto', 'auto', 'auto', 'auto'])).toContain('3 por lado');
+    expect(rosterBlocker('tres', 5, [0, 1, 'auto', 'auto', 'out'])).toContain('6');
+    expect(() => planBattle('tres', 5, rng(), [0, 1, 'auto', 'auto', 'out'])).toThrow();
+  });
+
+  it('valida as marcas da escalação', () => {
+    expect([...ROSTER_SLOTS].every(isRosterSlot)).toBe(true);
+    expect(isRosterSlot('x')).toBe(false);
+    expect(isRosterSlot(2)).toBe(false);
   });
 });

@@ -50,8 +50,16 @@ const MAX_HEIGHT_M = 0.9;
 const SPRITE_FACES_LEFT = true;
 /** Ampliação dentro da caixa (×2): a tela mostra o Pokémon pequeno e há muitos ao mesmo tempo. */
 const BOX_MAX_UPSCALE = 2;
-/** Memória máxima de quadros suavizados por Pokémon (a caixa tem até 6). */
+/** Memória máxima de quadros suavizados por Pokémon quando a caixa tem poucos. */
 const FRAME_CACHE_BYTES = 6 * 1024 * 1024;
+/** Memória total (todos os Pokémon da caixa) para os quadros suavizados: com 40 na caixa, cada um fica com menos. */
+export const BOX_FRAME_BUDGET_BYTES = 64 * 1024 * 1024;
+
+/** Memória de quadros de cada Pokémon para uma caixa com `count` deles (dividida, com teto e um piso útil). */
+export function frameCacheFor(count: number): number {
+  const share = BOX_FRAME_BUDGET_BYTES / (Number.isFinite(count) ? Math.max(1, count) : 1);
+  return Math.floor(Math.min(FRAME_CACHE_BYTES, Math.max(512 * 1024, share)));
+}
 
 interface PreparedFrame {
   data: Uint8ClampedArray;
@@ -96,7 +104,7 @@ export class BoxCreature {
   private pulseMs = 0;
   readonly fx: CreatureFx = neutralFx();
 
-  constructor(readonly info: CreatureInfo, source: CreatureSource, readonly state: WanderState) {
+  constructor(readonly info: CreatureInfo, source: CreatureSource, readonly state: WanderState, private readonly frameCacheLimit = FRAME_CACHE_BYTES) {
     const first = source.kind === 'gif' ? source.gif.frames[0]?.rgba : source.image.data;
     const width = source.kind === 'gif' ? source.gif.width : source.image.width;
     const height = source.kind === 'gif' ? source.gif.height : source.image.height;
@@ -130,7 +138,7 @@ export class BoxCreature {
     if (cached) return cached;
     const up = upscaleSprite(rgba, this.spriteWidth, this.spriteHeight, BOX_MAX_UPSCALE, this.smoothing);
     const prepared: PreparedFrame = { data: up.data, width: up.width, height: up.height };
-    if (this.frameCacheBytes + prepared.data.byteLength <= FRAME_CACHE_BYTES) {
+    if (this.frameCacheBytes + prepared.data.byteLength <= this.frameCacheLimit) {
       this.frameCache.set(index, prepared);
       this.frameCacheBytes += prepared.data.byteLength;
     }

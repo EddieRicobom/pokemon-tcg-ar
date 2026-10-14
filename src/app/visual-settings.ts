@@ -11,14 +11,16 @@ export interface VisualSettings {
   terrain: boolean;
   /** Sons dos golpes e da vitória na batalha (Caixa). */
   sound: boolean;
+  /** Sombra suave e brilho no chão sob o Pokémon sobre a carta (Escanear e Várias). */
+  shadow: boolean;
 }
 
 const KEY = 'tcg-ar-visual-v2';
 const LEGACY_KEY = 'tcg-ar-visual-v1';
-const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, terrain: true, sound: true };
+const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, terrain: true, sound: true, shadow: true };
 
 export function normalizeVisual(raw: Partial<VisualSettings> | null | undefined): VisualSettings {
-  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, terrain: raw?.terrain !== false, sound: raw?.sound !== false };
+  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, terrain: raw?.terrain !== false, sound: raw?.sound !== false, shadow: raw?.shadow !== false };
 }
 
 function read(): VisualSettings {
@@ -37,7 +39,7 @@ export const visual = reactive<VisualSettings>(read());
 
 watch(visual, () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, terrain: visual.terrain, sound: visual.sound }));
+    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, terrain: visual.terrain, sound: visual.sound, shadow: visual.shadow }));
   } catch {
     // Só não lembra da escolha na próxima vez.
   }

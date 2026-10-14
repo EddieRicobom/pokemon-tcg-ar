@@ -1,6 +1,6 @@
 # Testes
 
-Estado em 2026-10-14: 72 arquivos de teste, 681 testes unitários, todos passando. **Nenhum teste automatizado substitui um celular de verdade** (câmera, GPU, sensores e desempenho reais).
+Estado em 2026-10-14: 78 arquivos de teste, 778 testes unitários, todos passando. **Nenhum teste automatizado substitui um celular de verdade** (câmera, GPU, sensores e desempenho reais).
 
 ## O que roda a cada pull request e a cada deploy
 
@@ -40,6 +40,7 @@ O WebGL real não roda no happy-dom: a lógica é mantida pura e testada; a cola
 
 - **Câmera real, GPU e sensores.** Nenhuma medida de fluidez, calor, bateria ou leituras/s num aparelho.
 - **Precisão do reconhecimento** com fotos de celular: só há fotos de exemplo. Falta um conjunto de teste medido (ver o plano).
+- **Pin Mode, Caixa com 40 e posição do Pokémon sobre a carta** foram vistos só no Chromium (390×780, PokeAPI/TCGdex simulados, câmera falsa e GL por software): a física, o equilíbrio (simulação IA × IA: ~5–7 disparos por partida, 3×3 perto de 50 %) e a aparência/inclinação/sombra no AR **não** foram medidos em celular.
 - **Aparência dos efeitos** (luz dos golpes, suavização de pixels, câmera de cinema) em tela e GPU de celular. Foram vistos em capturas do Chromium com GL por software.
 - **Instalação do PWA e uso offline.**
 - **Disponibilidade e CORS dos serviços externos** a partir do navegador do celular (foram medidos no GitHub Actions).

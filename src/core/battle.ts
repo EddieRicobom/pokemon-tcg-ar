@@ -579,22 +579,99 @@ export function battleModeBlocker(mode: BattleMode, count: number): string | nul
   return `${BATTLE_MODE_LABELS_PT[mode]} precisa de ${BATTLE_MODE_MIN[mode]} Pokémon na caixa (hoje há ${count}).`;
 }
 
+/** Escalação de cada Pokémon da caixa: sorteio (padrão), equipe 0 (Vermelha), equipe 1 (Azul) ou fora da luta. */
+export type RosterSlot = 'auto' | 0 | 1 | 'out';
+export const ROSTER_SLOTS: readonly RosterSlot[] = ['auto', 0, 1, 'out'];
+
+export function isRosterSlot(value: unknown): value is RosterSlot {
+  return value === 'auto' || value === 0 || value === 1 || value === 'out';
+}
+
+/** Lado do 3x3: 3 de cada equipe. */
+export const RELAY_SIDE = 3;
+
+function manualRoster(roster: readonly RosterSlot[] | undefined, count: number): RosterSlot[] | null {
+  if (!roster || roster.length !== count || roster.every((slot) => slot === 'auto')) return null;
+  return [...roster];
+}
+
+/**
+ * Por que a luta não pode acontecer com essa escalação (ou null). Sem escalação (ou tudo em sorteio) vale a regra
+ * de antes: só a quantidade de Pokémon na caixa.
+ */
+export function rosterBlocker(mode: BattleMode, count: number, roster?: readonly RosterSlot[]): string | null {
+  const manual = manualRoster(roster, count);
+  if (!manual) return battleModeBlocker(mode, count);
+  const eligible = manual.filter((slot) => slot !== 'out').length;
+  const red = manual.filter((slot) => slot === 0).length;
+  const blue = manual.filter((slot) => slot === 1).length;
+  if (mode === 'royale') return eligible >= 2 ? null : `${BATTLE_MODE_LABELS_PT[mode]} precisa de 2 Pokémon escalados (hoje há ${eligible}).`;
+  if (mode === 'equipes') {
+    if (eligible < 2) return `${BATTLE_MODE_LABELS_PT[mode]} precisa de 2 Pokémon escalados (hoje há ${eligible}).`;
+    // As duas equipes precisam existir: quem está em sorteio completa o lado que estiver vazio.
+    const autos = eligible - red - blue;
+    return (red > 0 || autos >= 1) && (blue > 0 || autos >= 1) ? null : 'Cada equipe precisa de pelo menos 1 Pokémon.';
+  }
+  if (red > RELAY_SIDE) return `A ${TEAM_NAMES_PT[0]} tem ${red} escalados e o 3x3 usa ${RELAY_SIDE} por lado. Tire alguns.`;
+  if (blue > RELAY_SIDE) return `A ${TEAM_NAMES_PT[1]} tem ${blue} escalados e o 3x3 usa ${RELAY_SIDE} por lado. Tire alguns.`;
+  const autos = eligible - red - blue;
+  if (red + blue + autos < RELAY_SIDE * 2) return `3x3 precisa de ${RELAY_SIDE * 2} Pokémon escalados (hoje há ${eligible}).`;
+  return null;
+}
+
+function shuffled<T>(list: readonly T[], rng: Rng): T[] {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+/** Entra um de cada equipe por vez (vermelho, azul, vermelho, ...), para as duas entrarem juntas na arena. */
+function interleave(red: readonly number[], blue: readonly number[]): { picks: number[]; teams: number[] } {
+  const picks: number[] = [];
+  const teams: number[] = [];
+  for (let i = 0; i < Math.max(red.length, blue.length); i++) {
+    if (i < red.length) { picks.push(red[i]!); teams.push(0); }
+    if (i < blue.length) { picks.push(blue[i]!); teams.push(1); }
+  }
+  return { picks, teams };
+}
+
 /**
  * Monta quem luta e em que equipe. Royale: todos. Equipes: todos, embaralhados e repartidos de forma equilibrada
  * (a diferença entre as equipes é de no máximo 1). 3x3: 6 sorteados, 3 de cada lado. Só consome o sorteio nos
  * modos com equipes, então o Royale continua idêntico ao de antes.
+ *
+ * Com `roster`, o jogador decide: quem está "fora" não luta, quem tem equipe fixa fica nela e quem está em "sorteio"
+ * completa o que faltar (no Equipes, equilibrando os lados; no 3x3, até 3 por lado).
  */
-export function planBattle(mode: BattleMode, count: number, rng: Rng): BattlePlan {
-  const blocker = battleModeBlocker(mode, count);
+export function planBattle(mode: BattleMode, count: number, rng: Rng, roster?: readonly RosterSlot[]): BattlePlan {
+  const blocker = rosterBlocker(mode, count, roster);
   if (blocker) throw new Error(blocker);
+  const manual = manualRoster(roster, count);
+  if (manual) {
+    const indices = manual.map((_, i) => i);
+    const pool = indices.filter((i) => manual[i] !== 'out');
+    if (mode === 'royale') return { mode, picks: pool, relay: false };
+    const red = pool.filter((i) => manual[i] === 0);
+    const blue = pool.filter((i) => manual[i] === 1);
+    const autos = shuffled(pool.filter((i) => manual[i] === 'auto'), rng);
+    const cap = mode === 'tres' ? RELAY_SIDE : Infinity;
+    for (const i of autos) {
+      // Vai para a equipe com menos gente (empate: vermelha) enquanto couber.
+      const side = red.length <= blue.length ? red : blue;
+      const other = side === red ? blue : red;
+      if (side.length < cap) side.push(i);
+      else if (other.length < cap) other.push(i);
+    }
+    return { mode, ...interleave(red, blue), relay: mode === 'tres' };
+  }
   const all = Array.from({ length: count }, (_, i) => i);
   if (mode === 'royale') return { mode, picks: all, relay: false };
-  const shuffled = [...all];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
-  }
-  const picks = mode === 'tres' ? shuffled.slice(0, 6) : shuffled;
+  const order = shuffled(all, rng);
+  const picks = mode === 'tres' ? order.slice(0, 6) : order;
   // Alternar as equipes na ordem embaralhada deixa as duas com o mesmo tamanho (ou 1 de diferença).
   const teams = picks.map((_, i) => i % 2);
   return { mode, picks, teams, relay: mode === 'tres' };

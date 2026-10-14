@@ -53,6 +53,8 @@ export interface PokemonProfile {
   dexId: number;
   types: PokemonType[];
   stats: BaseStats;
+  /** Peso em kg (PokéAPI traz em hectogramas). Ausente em perfis guardados antes de o Pin Mode existir. */
+  weightKg?: number;
 }
 
 type Json = Record<string, unknown>;
@@ -78,7 +80,8 @@ export function parsePokeApiProfile(json: unknown, dexId: number): PokemonProfil
       if (isPokemonType(name)) types.push(name);
     }
   }
-  return { dexId, types, stats: stats as BaseStats };
+  const weight = asNumber(json.weight);
+  return { dexId, types, stats: stats as BaseStats, ...(weight !== null && weight > 0 ? { weightKg: weight / 10 } : {}) };
 }
 
 // ----------------------------------------------------------------------------- golpes do jogo

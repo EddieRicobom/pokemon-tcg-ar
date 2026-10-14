@@ -1,6 +1,7 @@
 import { fetchSprite } from '../ar/sprite-source';
 import { createDefaultBackend } from '../cache/assets';
-import { loadBattleData } from './pokemon-data-service';
+import { loadBattleData, loadCardInfo, loadProfile } from './pokemon-data-service';
+import type { CardBattleInfo, PokemonProfile } from '../core/pokemon-data';
 import { recordEvent, syncTrainerHistory } from './trainer-store';
 import { CardCache } from '../cache/card-cache';
 import { openCacheDb } from '../cache/db';
@@ -120,6 +121,18 @@ export function loadBattle(cardId: string, dexId: number | undefined, onPart: Pa
     storage = null;
   }
   return loadBattleData({ cardId, dexId }, { storage, getCard: (id) => getTcgdex().getCard(id) }, onPart);
+}
+
+/** O que o Pin Mode precisa de um Pokémon: atributos e peso (PokéAPI) e ataques da carta (TCGdex). Cada parte pode faltar. */
+export async function loadPinData(cardId: string, dexId: number | undefined): Promise<{ profile: PokemonProfile | null; card: CardBattleInfo | null }> {
+  let storage: Storage | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    storage = null;
+  }
+  const [profile, card] = await Promise.all([loadProfile(dexId, { storage }), loadCardInfo(cardId, { storage, getCard: (id) => getTcgdex().getCard(id) })]);
+  return { profile, card };
 }
 
 export { fetchSprite };

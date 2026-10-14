@@ -23,7 +23,7 @@ function planeCorners(sprite: CardSprite): Vector3[] {
 }
 
 describe('CardSprite: orientação', () => {
-  const layout = { ...DEFAULT_LAYOUT, offsetX: 0, offsetY: 0, heightRatio: 0.8 };
+  const layout = { ...DEFAULT_LAYOUT, offsetX: 0, offsetY: 0, heightRatio: 0.8, anchor: 'base' as const, tiltDeg: 0 };
 
   it('plano vertical com a base na carta, sem deitar sobre ela', () => {
     const sprite = new CardSprite();
@@ -366,5 +366,78 @@ describe('CardSprite: giroscópio', () => {
       return (sprite.group.matrix.elements[12]! - 0.5) / dx; // fração do caminho andada em um quadro
     };
     expect(run(1)).toBeGreaterThan(run(0.01) * 1.5);
+  });
+});
+
+describe('CardSprite: inclinação e sombra no chão', () => {
+  it('o padrão inclina o plano 30° para trás, com a borda de baixo encostada na carta no centro da ilustração', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setLayout({ ...DEFAULT_LAYOUT, heightRatio: 1 });
+    const [bl, br, tr] = planeCorners(sprite);
+    expect(bl!.z).toBeCloseTo(0, 6);
+    expect(br!.z).toBeCloseTo(0, 6);
+    // Ângulo do "alto" com o plano da carta: 60°, com o topo para +Y.
+    expect((Math.atan2(tr!.z - bl!.z, tr!.y - bl!.y) * 180) / Math.PI).toBeCloseTo(60, 5);
+    // Centro do plano sobre o centro da ilustração.
+    const m = sprite.worldMatrixOfPlane();
+    const center = new Vector3(0, 0, 0).applyMatrix4(m);
+    expect(center.x).toBeCloseTo(DEFAULT_LAYOUT.offsetX, 6);
+    expect(center.y).toBeCloseTo(DEFAULT_LAYOUT.offsetY, 6);
+  });
+
+  it('a sombra e o brilho ficam no chão da carta, sob o centro do sprite, só com sprite e layout ligado', () => {
+    const sprite = new CardSprite();
+    expect(sprite.shadow.visible).toBe(false); // sem sprite não há sombra
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setLayout({ ...DEFAULT_LAYOUT, offsetX: 0.1, offsetY: 0.3, heightRatio: 0.8 });
+    expect(sprite.shadow.visible).toBe(true);
+    expect(sprite.glow.visible).toBe(true);
+    expect(sprite.shadow.position.x).toBeCloseTo(0.1, 6);
+    expect(sprite.shadow.position.y).toBeCloseTo(0.3, 6);
+    expect(sprite.shadow.position.z).toBeGreaterThan(0);
+    expect(sprite.shadow.position.z).toBeLessThan(0.01);
+    expect(sprite.shadow.material.transparent).toBe(true);
+    expect(sprite.shadow.material.depthWrite).toBe(false);
+    expect(sprite.shadow.scale.x).toBeGreaterThan(0);
+    expect(sprite.shadow.scale.y).toBeGreaterThan(0);
+  });
+
+  it('showShadow = false esconde a sombra e o brilho; ligar de novo mostra', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setLayout({ ...DEFAULT_LAYOUT, showShadow: false });
+    expect(sprite.shadow.visible).toBe(false);
+    expect(sprite.glow.visible).toBe(false);
+    sprite.setLayout({ ...DEFAULT_LAYOUT, showShadow: true });
+    expect(sprite.shadow.visible).toBe(true);
+  });
+
+  it('clear() esconde a sombra junto com o sprite', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setLayout(DEFAULT_LAYOUT);
+    sprite.clear();
+    expect(sprite.shadow.visible).toBe(false);
+    expect(sprite.glow.visible).toBe(false);
+  });
+
+  it('o brilho pulsa devagar com o tempo, sem passar da opacidade base', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setLayout(DEFAULT_LAYOUT);
+    const seen = new Set<number>();
+    for (let t = 0; t < 4000; t += 250) {
+      sprite.update(t);
+      seen.add(Math.round(sprite.glow.material.opacity * 1000));
+    }
+    expect(seen.size).toBeGreaterThan(3);
+    expect(Math.max(...seen) / 1000).toBeLessThanOrEqual(sprite.shadow.material.opacity * 0.4 + 1e-6);
+  });
+
+  it('a placement informa o quanto o sprite inclinado avança no chão (o painel começa depois)', () => {
+    const sprite = new CardSprite();
+    sprite.setLayout({ ...DEFAULT_LAYOUT, heightRatio: 0.7 });
+    expect(sprite.placement.frontReach).toBeCloseTo(0.175, 9);
   });
 });

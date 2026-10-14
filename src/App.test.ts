@@ -28,7 +28,7 @@ describe('App', () => {
     const text = await mount();
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
-    expect(host?.querySelectorAll('nav a')).toHaveLength(6);
+    expect(host?.querySelectorAll('nav a')).toHaveLength(7);
     expect(host?.querySelector('video')).not.toBeNull();
     expect(host?.querySelector('canvas')).not.toBeNull();
     expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera');
@@ -62,6 +62,16 @@ describe('App', () => {
     expect(text).toContain('Novato');
     expect(text).toContain('Sem sequência');
     expect(text).toContain('0 XP');
+  });
+
+  it('a tela Pins explica o jogo, a energia e pede cartas guardadas', async () => {
+    localStorage.removeItem('tcg-ar-trainer-v1');
+    const text = await mount('#/pins');
+    expect(text).toContain('Pin Mode');
+    expect(text).toContain('sem câmera');
+    expect(text).toContain('de energia');
+    expect(text).toContain('Escolha os pins');
+    expect(text).toContain('O chão da arena');
   });
 
   it('a tela Cartas mostra a ação de limpar o cache', async () => {

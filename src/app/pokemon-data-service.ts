@@ -60,6 +60,8 @@ function writeCache(storage: BattleDataDeps['storage'], key: string, value: unkn
 
 const isProfile = (v: unknown): v is PokemonProfile =>
   typeof v === 'object' && v !== null && 'stats' in v && 'types' in v && Array.isArray((v as PokemonProfile).types);
+/** Perfil guardado: sem peso na resposta vira 0 ("já consultado, sem peso"), para não consultar de novo a cada vez. */
+const withWeightChecked = (profile: PokemonProfile): PokemonProfile => ({ ...profile, weightKg: profile.weightKg ?? 0 });
 const isMoves = (v: unknown): v is GameMove[] => Array.isArray(v);
 const isCardInfo = (v: unknown): v is CardBattleInfo =>
   typeof v === 'object' && v !== null && Array.isArray((v as CardBattleInfo).attacks);
@@ -98,7 +100,9 @@ async function loadGame(dexId: number | undefined, deps: BattleDataDeps, notify:
   const cachedMoves = readCache(deps.storage, KEYS.moves(dexId), isMoves);
   if (cachedProfile) notify('profile', { state: 'ok', value: cachedProfile });
   if (cachedMoves) notify('moves', { state: 'ok', value: cachedMoves });
-  if (cachedProfile && cachedMoves) return;
+  // Perfil guardado antes de existir o peso (Pin Mode): serve para a batalha, mas é buscado de novo para ganhar o peso.
+  const profileComplete = cachedProfile !== null && typeof cachedProfile.weightKg === 'number';
+  if (profileComplete && cachedMoves) return;
 
   let pokemonJson: unknown;
   try {
@@ -110,11 +114,13 @@ async function loadGame(dexId: number | undefined, deps: BattleDataDeps, notify:
     return;
   }
 
-  if (!cachedProfile) {
+  if (!profileComplete) {
     const profile = parsePokeApiProfile(pokemonJson, dexId);
     if (profile) {
-      writeCache(deps.storage, KEYS.profile(dexId), profile);
+      writeCache(deps.storage, KEYS.profile(dexId), withWeightChecked(profile));
       notify('profile', { state: 'ok', value: profile });
+    } else if (cachedProfile) {
+      // Sem o peso na resposta, fica com o perfil guardado.
     } else {
       notify('profile', { state: 'error', message: 'A PokéAPI respondeu sem os atributos deste Pokémon.' });
     }
@@ -164,4 +170,41 @@ async function loadCard(cardId: string, deps: BattleDataDeps, notify: Notify): P
  */
 export async function loadBattleData(request: BattleRequest, deps: BattleDataDeps, onPart: Notify): Promise<void> {
   await Promise.all([loadGame(request.dexId, deps, onPart), loadCard(request.cardId, deps, onPart)]);
+}
+
+/**
+ * Só o perfil (tipos, atributos e peso) de um Pokémon, do aparelho ou da PokéAPI: é o que o Pin Mode usa.
+ * Devolve null se não der (sem número da Pokédex, sem rede e sem cópia guardada): quem chama diz que falta dado.
+ */
+export async function loadProfile(dexId: number | undefined, deps: Pick<BattleDataDeps, 'fetchImpl' | 'storage' | 'timeoutMs'>): Promise<PokemonProfile | null> {
+  if (dexId === undefined) return null;
+  const full = deps as BattleDataDeps;
+  const cached = readCache(deps.storage, KEYS.profile(dexId), isProfile);
+  if (cached && typeof cached.weightKg === 'number') return cached;
+  try {
+    const profile = parsePokeApiProfile(await getJson(`${POKEAPI}/pokemon/${dexId}`, full), dexId);
+    if (profile) {
+      writeCache(deps.storage, KEYS.profile(dexId), withWeightChecked(profile));
+      return profile;
+    }
+  } catch {
+    // Cai no perfil guardado, se houver.
+  }
+  return cached;
+}
+
+/**
+ * Só os ataques impressos na carta (TCGdex), do aparelho ou da rede. É o que dá os golpes do Pin Mode.
+ * Devolve null se não der (sem rede e sem cópia guardada): o pin fica só com o disparo normal.
+ */
+export async function loadCardInfo(cardId: string, deps: Pick<BattleDataDeps, 'storage' | 'getCard'>): Promise<CardBattleInfo | null> {
+  const cached = readCache(deps.storage, KEYS.card(cardId), isCardInfo);
+  if (cached) return cached;
+  try {
+    const info = parseCardBattleInfo(await deps.getCard(cardId));
+    if (info) writeCache(deps.storage, KEYS.card(cardId), info);
+    return info;
+  } catch {
+    return null;
+  }
 }

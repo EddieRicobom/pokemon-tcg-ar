@@ -6,12 +6,13 @@ const card = (id: string, lastSeenAt: number, state = 'ok') => ({ id, lastSeenAt
 describe('equipe', () => {
   it('toggleMember adiciona, remove e respeita o limite', () => {
     let team: string[] = [];
-    for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) team = toggleMember(team, id).team;
-    expect(team).toHaveLength(TEAM_SIZE);
-    const blocked = toggleMember(team, 'g');
+    for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) team = toggleMember(team, id, 6).team;
+    expect(team).toHaveLength(6);
+    const blocked = toggleMember(team, 'g', 6);
     expect(blocked.full).toBe(true);
     expect(blocked.team).toEqual(team);
-    expect(toggleMember(team, 'c').team).toEqual(['a', 'b', 'd', 'e', 'f']);
+    expect(toggleMember(team, 'c', 6).team).toEqual(['a', 'b', 'd', 'e', 'f']);
+    expect(TEAM_SIZE).toBe(40);
   });
 
   it('sanitizeTeam tira cartas removidas, sem sprite e repetidas', () => {
