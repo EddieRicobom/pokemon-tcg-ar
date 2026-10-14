@@ -28,6 +28,7 @@ import StageSheet from '../components/StageSheet.vue';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { frameFromVideo } from '../recognition/browser-image';
 import type { RgbaImage } from '../recognition/types';
+import { loadChunk } from '../app/stale-build';
 
 const props = defineProps<{ cardId?: string }>();
 
@@ -393,7 +394,7 @@ async function startArFor(cardId: string): Promise<void> {
   arStage.value = 'engine';
   arDetail.value = 'Iniciando o motor de rastreamento…';
   try {
-    const { startAr } = await import('../ar/start-ar');
+    const { startAr } = await loadChunk(() => import('../ar/start-ar'));
     const started = await startAr({
       video: videoEl.value,
       canvas: canvasEl.value,

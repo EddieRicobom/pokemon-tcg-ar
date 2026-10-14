@@ -15,6 +15,7 @@ import { visual } from '../app/visual-settings';
 import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
+import { loadChunk } from '../app/stale-build';
 
 type Phase = 'idle' | 'starting' | 'running';
 
@@ -95,7 +96,7 @@ async function open(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 150));
     if (mine !== run || disposed || !canvasEl.value || !videoEl.value || !stageEl.value) return;
     progress.value = 'Iniciando o motor de rastreamento…';
-    const { startMulti } = await import('../ar/start-multi');
+    const { startMulti } = await loadChunk(() => import('../ar/start-multi'));
     const started = await startMulti({
       video: videoEl.value,
       canvas: canvasEl.value,

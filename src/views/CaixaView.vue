@@ -26,6 +26,7 @@ import type { BattleHud } from '../box/battle-director';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import { TEAM_NAMES_PT, TEAM_COLORS, BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, planBattle, rosterBlocker, seededRng, STATUS_LABELS_PT, summarizeBattle } from '../core/battle';
 import type { BattleMode, BattleSummary, Fighter, RosterSlot } from '../core/battle';
+import { loadChunk } from '../app/stale-build';
 
 type Phase = 'idle' | 'starting' | 'placing' | 'running';
 
@@ -122,7 +123,7 @@ async function open(): Promise<void> {
     return;
   }
   try {
-    const { startBox } = await import('../box/start-box');
+    const { startBox } = await loadChunk(() => import('../box/start-box'));
     box = await startBox({
       video, canvas, container: stage, onModeChange: (m) => (mode.value = m), onBattleHud: (hud) => (battleHud.value = hud),
     });
