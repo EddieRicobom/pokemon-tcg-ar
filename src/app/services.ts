@@ -1,5 +1,7 @@
 import { fetchSprite } from '../ar/sprite-source';
 import { createDefaultBackend } from '../cache/assets';
+import { prepareMegaForm, resolveMegaForm } from './mega-data';
+import type { MegaPrepared } from './mega-data';
 import { loadBattleData, loadCardInfo, loadProfile } from './pokemon-data-service';
 import type { CardBattleInfo, PokemonProfile } from '../core/pokemon-data';
 import { recordEvent, syncTrainerHistory } from './trainer-store';
@@ -134,6 +136,21 @@ export async function loadPinData(cardId: string, dexId: number | undefined): Pr
   }
   const [profile, card] = await Promise.all([loadProfile(dexId, { storage }), loadCardInfo(cardId, { storage, getCard: (id) => getTcgdex().getCard(id) })]);
   return { profile, card };
+}
+
+/** Deixa pronta a forma Mega de uma carta (espécie, atributos e sprite) sem cobrar nada: ver `prepareMegaForm`. */
+export function prepareMegaFor(card: { id: string; name: string; baseDexId: number | undefined }): Promise<MegaPrepared> {
+  let storage: Storage | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    storage = null;
+  }
+  return prepareMegaForm(card, {
+    resolve: (dexId, variant) => resolveMegaForm(dexId, variant, { storage }),
+    loadProfile: (formId) => loadProfile(formId, { storage }),
+    fetchSprite: (formId) => fetchSprite(formId),
+  });
 }
 
 export { fetchSprite };

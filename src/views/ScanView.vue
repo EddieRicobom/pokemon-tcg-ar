@@ -10,6 +10,7 @@ import type { ArState } from '../ar/session';
 import type { SpriteLoadState } from '../ar/sprite-loader';
 import { prepareArAssets } from '../app/ar-prepare';
 import { arLoadHint, arLoadingMode, arStageTitle, arStepList, arStatusText, elapsedSeconds } from '../app/ar-stages';
+import CardMarks from '../components/CardMarks.vue';
 import ArLoading from '../components/ArLoading.vue';
 import type { ArStage } from '../app/ar-stages';
 import { ScanController } from '../app/scan-controller';
@@ -31,6 +32,7 @@ import { frameFromVideo } from '../recognition/browser-image';
 import type { RgbaImage } from '../recognition/types';
 import { loadChunk } from '../app/stale-build';
 import { spriteIdOf } from '../core/dex-form';
+import { isShiny } from '../core/shiny';
 
 const props = defineProps<{ cardId?: string }>();
 
@@ -403,6 +405,7 @@ async function startArFor(cardId: string): Promise<void> {
       container: stageEl.value,
       target: assets.target,
       dexId: spriteIdOf(assets.card),
+      shiny: isShiny(assets.card),
       cachedSprite: assets.cachedSprite,
       fetchSprite: (dexId) => fetchSprite(dexId),
       battle: {
@@ -946,7 +949,8 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
     </div>
 
     <div v-if="scan.card && scan.phase === 'ready' && !cameraOn" class="result" role="status">
-      <h3>{{ scan.card.name }}</h3>
+      <h3>{{ scan.card.name }} <CardMarks :card="scan.card" /></h3>
+      <p v-if="scan.card.scanCount === 1 && isShiny(scan.card) && scan.origin !== 'cache'" class="message shiny-news">Esta carta saiu shiny! O brilho dourado fica com ela para sempre.</p>
       <p>
         {{ scan.card.setName }} · nº {{ scan.card.localId }}/{{ scan.card.setOfficial }} ·
         <code>{{ scan.card.id }}</code>

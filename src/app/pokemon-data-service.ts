@@ -66,7 +66,7 @@ const isMoves = (v: unknown): v is GameMove[] => Array.isArray(v);
 const isCardInfo = (v: unknown): v is CardBattleInfo =>
   typeof v === 'object' && v !== null && Array.isArray((v as CardBattleInfo).attacks);
 
-async function getJson(url: string, deps: BattleDataDeps): Promise<unknown> {
+export async function getJson(url: string, deps: Pick<BattleDataDeps, 'fetchImpl' | 'timeoutMs'>): Promise<unknown> {
   const fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init));
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {

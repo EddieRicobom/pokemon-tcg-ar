@@ -41,6 +41,18 @@ describe('população da caixa', () => {
     expect(r.entries[0]?.info).toMatchObject({ id: 'c1', name: 'Mon 1', dexId: 2, detail: 'Coleção 1/100' });
   });
 
+  it('shiny e Mega seguem para a Caixa (inclusive a Gallade 244/236, que é sempre shiny)', async () => {
+    const cards = [
+      card(1),
+      card(2, { shiny: true }),
+      card(3, { name: 'Mega Gallade ex', localId: '244', setOfficial: 236, mega: true }),
+      card(4, { name: 'M Absol-EX' }),
+    ];
+    const cache = { list: async () => cards, getAssetBlob: async () => new Blob(['x']) };
+    const r = await loadCreatureEntries(cache, decoders);
+    expect(r.entries.map((e) => [e.info.shiny, e.info.mega])).toEqual([[false, false], [true, false], [true, true], [false, true]]);
+  });
+
   it('uma carta com problema vai para as falhas e não impede as outras', async () => {
     const cards = [card(1), card(2), card(3)];
     const cache = { list: async () => cards, getAssetBlob: async (c: CachedCard) => (c.id === 'c2' ? null : new Blob(['x'])) };

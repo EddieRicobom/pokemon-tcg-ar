@@ -2423,16 +2423,58 @@ body.no-scroll .reward-toasts {
   gap: 8px;
 }
 
+.mega-toggle {
+  min-height: 30px;
+  max-width: 100%;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.mega-toggle.on {
+  border-color: #a78bfa;
+  background: linear-gradient(120deg, color-mix(in srgb, #5eead4 35%, var(--surface-2)), color-mix(in srgb, #a78bfa 40%, var(--surface-2)));
+}
+
+.mega-hint {
+  margin: 4px 0 0;
+}
+
 .roster-list li.out .roster-name {
   opacity: 0.5;
   text-decoration: line-through;
 }
 
+.roster-who {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  justify-items: start;
+}
+
 .roster-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  font-size: 0.85rem;
+}
+
+.roster-name .card-marks {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.roster-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.85rem;
 }
 
 .roster-slots {
@@ -3404,4 +3446,55 @@ body.no-scroll .reward-toasts {
   .pn-how summary::after {
     transition: none;
   }
+}
+
+/* Selos das cartas: Shiny (dourado) e Mega (violeta e verde-água). */
+.card-marks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  vertical-align: middle;
+}
+
+.card-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.5rem 0.1rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.card-mark svg {
+  width: 0.95em;
+  height: 0.95em;
+  fill: currentColor;
+}
+
+.card-mark.shiny {
+  color: #3a2a00;
+  background: linear-gradient(120deg, #ffe38a, #ffcb05 55%, #ffb300);
+  box-shadow: 0 0 0.6rem rgb(255 203 5 / 0.45);
+}
+
+.card-mark.mega {
+  color: #0e1322;
+  background: linear-gradient(120deg, #5eead4, #a78bfa);
+}
+
+/* Carta shiny nas listas: contorno dourado. */
+.grid-card.is-shiny,
+.card-row.is-shiny,
+.team-card.is-shiny {
+  border-color: var(--gold);
+  box-shadow: 0 0 0.8rem rgb(255 203 5 / 0.35);
+}
+
+.shiny-news {
+  color: var(--gold);
+  font-weight: 600;
 }
