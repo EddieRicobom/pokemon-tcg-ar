@@ -6,7 +6,9 @@ import { hash, personalityOf } from './personality';
 import { MAX_SAVED, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
 import type { Moment, MomentKind, MomentLine, Relation } from './social-state';
 import { L, calm, is, night, other } from './moments/kit';
+import { spreadWords, withWords } from './quiz';
 import { DUO_MOMENTS } from './moments/duo';
+import { EXTRA_MOMENTS } from './moments/extra';
 import { SEASON_MOMENTS } from './moments/season';
 import { SOLO_MOMENTS } from './moments/solo';
 import { TRIO_MOMENTS } from './moments/trio';
@@ -574,7 +576,7 @@ const CORE: readonly Template[] = [
 ];
 
 /** Todos os momentos: os do começo (`CORE`) e as levas novas, por tipo de elenco e por ocasião. */
-export const TEMPLATES: readonly Template[] = [...CORE, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS];
+export const TEMPLATES: readonly Template[] = [...CORE, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS, ...EXTRA_MOMENTS];
 export const TEMPLATE_COUNT = TEMPLATES.length;
 export const TEMPLATE_BY_ID = new Map(TEMPLATES.map((t) => [t.id, t]));
 
@@ -602,7 +604,7 @@ export function makeEnv(state: VillageState, day: string, hour: number, weather:
     const g = itemDef(c.seed)?.grows;
     return !!g && c.stage >= g.stages;
   }).length;
-  return { player, hour, day, weather, placed: new Set(state.placed.map((p) => p.item)), crops: state.crops.length, ripeCrops: ripe };
+  return { player, hour, day, weather, placed: new Set(state.placed.map((p) => p.item)), crops: state.crops.length, ripeCrops: ripe, town: state.town.level, lingo: state.lingo.slice(-8).map((x) => x.text) };
 }
 
 function makeCtx(state: VillageState, cast: Actor[], env: SocialEnv, rng: Rng): Ctx {
@@ -653,7 +655,7 @@ export function pickMoment(actors: readonly Actor[], state: VillageState, env: S
     const cast = pickCast(tpl.cast, actors, state, rng);
     const ctx = makeCtx(state, cast, env, rng);
     if (tpl.when && !tpl.when(ctx)) continue;
-    const lines = tpl.lines(ctx);
+    const lines = withWords(tpl.lines(ctx), cast.map((a) => a.id), state, rng);
     return { tpl, ctx, cast, lines };
   }
   // Nenhum sorteio combinou com as condições: cai num modelo sem condição (sempre existe um para cada tamanho de elenco).
@@ -662,7 +664,7 @@ export function pickMoment(actors: readonly Actor[], state: VillageState, env: S
   if (!tpl) return null;
   const cast = pickCast(tpl.cast, actors, state, rng);
   const ctx = makeCtx(state, cast, env, rng);
-  return { tpl, ctx, cast, lines: tpl.lines(ctx) };
+  return { tpl, ctx, cast, lines: withWords(tpl.lines(ctx), cast.map((a) => a.id), state, rng) };
 }
 
 /** Monta a cena de um modelo específico (sorteando o elenco até as condições combinarem). Serve para testar modelos de datas raras. */
@@ -798,6 +800,8 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
   const result = applyOutcome(state, cast, outcome, day, now);
   const autoKeep = tpl.keep === true && state.diary.filter((x) => x.fav).length < MAX_SAVED;
   if (autoKeep) result.push('📌 Guardado no Álbum para sempre');
+  const spread = spreadWords(state, cast, ctx.rng);
+  if (spread) result.push(spread);
   const firstTime = !state.seen.includes(tpl.id);
   if (firstTime) {
     state.seen.push(tpl.id);

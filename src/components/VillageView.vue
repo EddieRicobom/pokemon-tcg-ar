@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { getCache, loadPinData } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
@@ -7,7 +7,8 @@ import { profile } from '../app/profile-store';
 import { visual } from '../app/visual-settings';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
-import { dayKey } from '../core/trainer';
+import { trainer } from '../app/trainer-store';
+import { dayKey, levelOf } from '../core/trainer';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
 import {
@@ -16,7 +17,14 @@ import {
 } from '../core/village/life';
 import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
 import type { Resolved, Scene } from '../core/village/social';
-import { MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS } from '../core/village/social-state';
+import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS } from '../core/village/social-state';
+import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, recordAnswer, wordOf } from '../core/village/quiz';
+import type { Follow, Question } from '../core/village/quiz';
+import {
+  assignHomes, CAFE_PRICE, cafeVisit, collectMail, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, LOTS, nextUnlock, paintRoof, PAINT_COST, residentsOf, ROOFS, roofIndex,
+  toggleDecor, townStage, unlockedBetween, upgradeHome,
+} from '../core/village/town';
+import type { Building } from '../core/village/town';
 import type { Moment, MomentKind } from '../core/village/social-state';
 import type { ItemId } from '../core/village/life';
 import type { Dir } from '../core/village/actors';
@@ -26,6 +34,7 @@ import { VillageGame } from '../village/village-game';
 import type { VillageMon } from '../village/village-game';
 import MomentCard from './MomentCard.vue';
 import PokeBook from './PokeBook.vue';
+import QuizDialog from './QuizDialog.vue';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
 const emit = defineEmits<{ close: [] }>();
@@ -52,6 +61,10 @@ const albumView = ref<'guardados' | 'colecao'>('guardados');
 const portraitOk = ref(true);
 const giftPick = ref(false);
 const welcome = ref(true);
+// O aviso de que a cidade cresceu espera você fechar as boas-vindas (para um não cobrir o outro).
+watch(welcome, (open) => {
+  if (!open) announceGrowth();
+});
 
 let game: VillageGame | null = null;
 let observer: ResizeObserver | null = null;
@@ -86,11 +99,11 @@ function changed(): void {
   dirty = true;
 }
 
-function say(text: string): void {
+function say(text: string, ms = 2800): void {
   if (!text) return;
   toast.value = text;
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (toast.value = ''), 2800);
+  toastTimer = setTimeout(() => (toast.value = ''), ms);
 }
 
 function nameOf(id: string): string {
@@ -121,6 +134,13 @@ const diaryList = computed(() => {
   const list = [...state.diary].reverse();
   return kindFilter.value === 'todos' ? list : kindFilter.value === 'guardados' ? list.filter((m) => m.fav) : list.filter((m) => m.kind === kindFilter.value);
 });
+const bookWords = computed(() => Object.fromEntries(mons.value.map((m) => [m.id, wordOf(state, m.id)])));
+const bookTold = computed(() => {
+  const out: Record<string, { q: string; a: string }[]> = {};
+  for (const a of state.answers) (out[a.mon] ??= []).push({ q: QUESTION_BY_ID.get(a.q)?.ask(profile.name) ?? '', a: a.a });
+  for (const k of Object.keys(out)) out[k] = out[k]!.slice(-3);
+  return out;
+});
 const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name, types: types.get(m.id) ?? [], thumb: m.thumb, accessory: state.wear.mons[m.id] ?? null })));
 const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state, id) > 0));
 
@@ -149,11 +169,296 @@ function onKey(e: KeyboardEvent): void {
   }
 }
 
+
+// ---- perguntas dos Pokémon (você responde digitando; eles lembram e repetem)
+type QuizStage = 'ask' | 'follow' | 'reply';
+interface QuizState {
+  monId: string;
+  name: string;
+  q: Question;
+  stage: QuizStage;
+  text: string;
+  follow?: Follow;
+  answer?: string;
+}
+const quiz = ref<QuizState | null>(null);
+/** Um Pokémon que quer te perguntar algo (o ❗ sobre ele); some sozinho depois de um tempo. */
+let askingMon: { id: string; until: number } | null = null;
+let nextAskAt = Date.now() + 60000 + Math.random() * 60000;
+let nextEchoAt = Date.now() + 40000 + Math.random() * 40000;
+
+function tickQuestions(): void {
+  const now = Date.now();
+  if (askingMon && now > askingMon.until) {
+    askingMon = null;
+    game?.setWaiting(null);
+  }
+  if (!game || document.hidden || dialog.value || quiz.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!askingMon && now >= nextAskAt) {
+    nextAskAt = now + 4 * 60000 + Math.random() * 4 * 60000;
+    const today = refreshDay();
+    const near = actorList().filter((a) => game!.playerNear([a.id], 10) && !game!.sceneBusy(a.id) && canAsk(state, a.id, today));
+    const who = near[Math.floor(Math.random() * near.length)];
+    if (who) {
+      askingMon = { id: who.id, until: now + 40000 };
+      game.setWaiting(who.id);
+      game.pop(who.id, '❗');
+      game.faceMe(who.id);
+      game.bubble(who.id, '❗', 40000);
+    }
+    return;
+  }
+  if (!askingMon && now >= nextEchoAt) {
+    nextEchoAt = now + 45000 + Math.random() * 65000;
+    const names: Record<string, string> = {};
+    for (const m of mons.value) names[m.id] = m.name;
+    const near = actorList().filter((a) => game!.playerNear([a.id], 16) && !game!.sceneBusy(a.id)).map((a) => a.id);
+    const e = pickEcho(state, near, names, Math.random);
+    if (e) game.sayLines([e.id], [{ who: 0, text: e.text, fx: e.fx }], () => undefined);
+  }
+}
+
+function openQuiz(id: string): void {
+  const today = refreshDay();
+  const q = pickQuestion(state, Math.random);
+  askingMon = null;
+  game?.setWaiting(null);
+  markAsked(state, id, today);
+  changed();
+  game?.bubble(id, '💬', 600);
+  quiz.value = { monId: id, name: nameOf(id), q, stage: 'ask', text: q.ask(profile.name) };
+}
+
+function quizAnswer(raw: string): void {
+  const z = quiz.value;
+  if (!z || z.stage !== 'ask') return;
+  const r = recordAnswer(state, { id: z.monId, name: z.name }, z.q, raw, Date.now(), refreshDay(), profile.name);
+  if (!r) return;
+  changed();
+  if (r.bordao) {
+    game?.pop(z.monId, '🗣️');
+    quiz.value = { ...z, stage: 'reply', answer: r.answer.a, text: `"${r.answer.a}"! Gostei tanto que vou falar isso a toda hora. Espera só os outros ouvirem!` };
+    return;
+  }
+  const follow = pickFollow(z.q.kind, Math.random);
+  quiz.value = { ...z, stage: 'follow', answer: r.answer.a, follow, text: `${r.odd ? `${r.odd} ` : ''}${follow.ask(r.answer.a)}` };
+  game?.pop(z.monId, r.odd ? '😲' : '🤔');
+}
+
+function quizChoose(i: number): void {
+  const z = quiz.value;
+  const opt = z?.follow?.options[i];
+  if (!z || z.stage !== 'follow' || !opt) return;
+  applyFollow(state, z.monId, opt);
+  changed();
+  game?.pop(z.monId, FX_EMOJI[opt.fx]);
+  quiz.value = { ...z, stage: 'reply', text: opt.reply(z.answer ?? '') };
+}
+
+function quizClose(): void {
+  quiz.value = null;
+}
+
+
+// ---- a cidade: casas dos Pokémon, Café, Correio, Museu e a fonte
+const level = computed(() => levelOf(trainer.value.xp));
+const stage = computed(() => townStage(level.value));
+let homes = new Map<string, number>();
+
+function refreshTown(): void {
+  homes = assignHomes(mons.value.map((m) => m.id), level.value);
+  game?.setTown(level.value, homes);
+}
+
+/** Entrou na Vila com o nível mais alto que da última vez: a cidade cresceu. */
+function announceGrowth(): void {
+  const from = state.town.level;
+  const to = level.value;
+  if (to > from) {
+    const u = unlockedBetween(from, to);
+    const parts: string[] = [];
+    if (u.stage) parts.push(`Nova fase da cidade: ${u.stage}!`);
+    if (u.houses > 0) parts.push(u.houses === 1 ? 'Mais um terreno para casa.' : `Mais ${u.houses} terrenos para casas.`);
+    if (u.buildings.length > 0) parts.push(`Abriu: ${u.buildings.join(', ')}.`);
+    say(`🏘️ A Vila cresceu com o seu nível ${to}! ${parts.join(' ')}`, 6500);
+  }
+  if (to !== from) {
+    state.town.level = to;
+    changed();
+  }
+}
+
+const namesById = (): Record<string, string> => Object.fromEntries(mons.value.map((m) => [m.id, m.name]));
+
+function closeDialog(): void {
+  dialog.value = null;
+}
+
+function openBuilding(b: Building): void {
+  if (b.kind === 'fountain') return openFountain(b);
+  if (level.value < b.unlock) {
+    const text = b.kind === 'home'
+      ? `Um terreno vazio, com uma placa: "Em breve, uma casa". Ele é liberado no nível ${b.unlock} de Treinador (você está no ${level.value}). Escaneie cartas, batalhe e jogue para ganhar XP.`
+      : `Em obras: o ${b.name} abre no nível ${b.unlock} de Treinador (você está no ${level.value}).`;
+    dialog.value = { name: b.kind === 'home' ? `Terreno ${b.lot! + 1}` : b.name, text, actions: [{ label: 'Ok', run: closeDialog }] };
+    return;
+  }
+  if (b.kind === 'home') return openHome(b);
+  if (b.kind === 'mail') {
+    const r = collectMail(state, refreshDay(), Math.random, namesById());
+    if (r.ok) changed();
+    dialog.value = { name: b.name, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] };
+    return;
+  }
+  if (b.kind === 'cafe') {
+    const text = `Cheiro de bolo no ar! Um lanche aqui custa ${CAFE_PRICE} moedas e rende amizade com os Pokémon que estão por perto (uma vez por dia). Você tem ${state.coins}.`;
+    dialog.value = {
+      name: b.name,
+      text,
+      actions: [
+        {
+          label: `Lanchar (${CAFE_PRICE})`,
+          disabled: state.coins < CAFE_PRICE || state.town.cafeDay === day.value,
+          run: () => {
+            const near = actorList().filter((a) => game!.playerNear([a.id], 8) && !game!.sceneBusy(a.id)).map((a) => a.id);
+            const r = cafeVisit(state, refreshDay(), near, namesById());
+            if (r.ok) {
+              changed();
+              for (const id of near.slice(0, 4)) game?.pop(id, '☕');
+            }
+            dialog.value = { name: b.name, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] };
+          },
+        },
+        { label: 'Sair', run: closeDialog },
+      ],
+    };
+    return;
+  }
+  const done = state.collected.length;
+  dialog.value = {
+    name: b.name,
+    text: `Vitrines de tudo o que você já juntou. Móveis na coleção: ${done} de ${FURNITURE_IDS.length}. Momentos no Álbum: ${album.value.seen} de ${album.value.total}.`,
+    actions: [
+      { label: 'Ver a coleção', run: () => { closeDialog(); tab.value = 'colecao'; sheet.value = 'menu'; } },
+      { label: 'Ver o Álbum', run: () => { closeDialog(); tab.value = 'album'; sheet.value = 'menu'; } },
+      { label: 'Sair', run: closeDialog },
+    ],
+  };
+}
+
+function openFountain(b: Building): void {
+  const next = nextUnlock(level.value);
+  const open = LOTS.filter((l) => level.value >= l.unlock).length;
+  dialog.value = {
+    name: `${b.name} · ${stage.value.name}`,
+    text: `Nível ${level.value} de Treinador: ${open} de ${LOTS.length} terrenos liberados. ${next ? `No nível ${next.level}: ${next.text}.` : 'A cidade já está completa!'} Jogue uma moeda para fazer um pedido.`,
+    actions: [
+      {
+        label: 'Jogar uma moeda',
+        disabled: state.coins < 1,
+        run: () => {
+          state.coins--;
+          changed();
+          closeDialog();
+          if (Math.random() < 0.06) {
+            state.coins += 5;
+            say('✨ A fonte brilhou e devolveu 5 moedas!');
+          } else say('✨ Você fez um pedido…');
+        },
+      },
+      { label: 'Sair', run: closeDialog },
+    ],
+  };
+}
+
+function openHome(b: Building, view: 'main' | 'decor' | 'roof' = 'main'): void {
+  const lot = b.lot ?? 0;
+  const ids = residentsOf(homes, lot);
+  const names = ids.map((id) => nameOf(id));
+  const v = homeOf(state, lot);
+  const lvl = homeLevel(v);
+  const sleeping = ids.length > 0 && ids.every((id) => game?.isAsleep(id));
+  const title = ids.length === 0 ? `Terreno ${lot + 1} · livre` : `${HOME_STAGES[lvl]!.name} · ${names.join(' e ')}`;
+  const again = (to: 'main' | 'decor' | 'roof' = view) => openHome(b, to);
+  if (view === 'decor') {
+    dialog.value = {
+      name: title,
+      text: 'Enfeites da casa (colocar custa moedas; tirar é de graça). Quem mora lá gosta.',
+      actions: [
+        ...HOME_DECORS.map((d) => {
+          const on = (homeDecor(v) & d.bit) !== 0;
+          return {
+            label: on ? `Tirar: ${d.name}` : `${d.name} (${d.cost})`,
+            disabled: !on && state.coins < d.cost,
+            run: () => {
+              const r = toggleDecor(state, lot, d, ids);
+              say(r.message);
+              if (r.ok) {
+                changed();
+                if (ids[0]) game?.pop(ids[0], '😍');
+              }
+              again();
+            },
+          };
+        }),
+        { label: 'Voltar', run: () => again('main') },
+      ],
+    };
+    return;
+  }
+  if (view === 'roof') {
+    dialog.value = {
+      name: title,
+      text: `Tinta para o telhado: ${PAINT_COST} moedas por mão. Cor de agora: ${ROOFS[roofIndex(v, lot)]!.name.toLowerCase()}.`,
+      actions: [
+        ...ROOFS.map((r, i) => ({
+          label: r.name,
+          disabled: state.coins < PAINT_COST || roofIndex(v, lot) === i,
+          run: () => {
+            const res = paintRoof(state, lot, i, ids);
+            say(res.message);
+            if (res.ok) changed();
+            again();
+          },
+        })),
+        { label: 'Voltar', run: () => again('main') },
+      ],
+    };
+    return;
+  }
+  const next = HOME_STAGES[lvl + 1];
+  const comment = homeComment(state, lot, names, sleeping, Math.random);
+  const actions: { label: string; run: () => void; disabled?: boolean }[] = [];
+  if (ids.length > 0) {
+    if (next) {
+      actions.push({
+        label: `Reformar: ${next.name}`,
+        run: () => {
+          const r = upgradeHome(state, lot, ids);
+          say(r.message);
+          if (r.ok) {
+            changed();
+            for (const id of ids) game?.pop(id, '🎉');
+          }
+          again();
+        },
+      });
+    }
+    actions.push({ label: 'Decorar', run: () => again('decor') });
+    actions.push({ label: 'Pintar o telhado', run: () => again('roof') });
+  }
+  actions.push({ label: 'Sair', run: closeDialog });
+  dialog.value = { name: title, text: next && ids.length > 0 ? `${comment}\n\nReforma (${next.name}): ${describeCost(state, next.cost)}.` : comment, actions };
+}
+
 // ---- momentos entre os Pokémon (a vida social da Vila)
 let pendingChoice: { scene: Scene; ids: string[] } | null = null;
 /** O momento que está sendo encenado agora e ainda não foi gravado (se você sair no meio, ele é gravado do mesmo jeito). */
 let activeScene: { scene: Scene; ids: string[] } | null = null;
-let nextSceneAt = Date.now() + 9000;
+/** Intervalo entre momentos: de 80 a 170 s (era de 25 a 60 s), para a Vila respirar entre um e outro. */
+const SCENE_GAP_MIN = 80000;
+const SCENE_GAP_VAR = 90000;
+let nextSceneAt = Date.now() + 20000;
 let sceneTimer: ReturnType<typeof setInterval> | null = null;
 
 function announce(r: Resolved): void {
@@ -197,9 +502,9 @@ function finishScene(scene: Scene, ids: string[]): void {
 }
 
 function tickScenes(): void {
-  if (!game || document.hidden || dialog.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (Date.now() < nextSceneAt) return;
-  nextSceneAt = Date.now() + 25000 + Math.random() * 35000;
+  nextSceneAt = Date.now() + SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR;
   // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
   const near = actorList().filter((a) => game!.playerNear([a.id], 14) && !game!.sceneBusy(a.id));
   const env = makeEnv(state, refreshDay(), new Date().getHours(), game.weatherKind, profile.name);
@@ -298,6 +603,7 @@ function refreshDay(): string {
 
 function pressA(): void {
   welcome.value = false;
+  if (quiz.value) return;
   if (dialog.value) {
     if (dialog.value.actions.length === 0) dialog.value = null;
     return;
@@ -305,7 +611,10 @@ function pressA(): void {
   if (sheet.value || !game) return;
   const today = refreshDay();
   const t = game.target();
-  if (t.kind === 'mon') {
+  if (t.kind === 'mon' && askingMon?.id === t.id) {
+    game.faceMe(t.id);
+    openQuiz(t.id);
+  } else if (t.kind === 'mon') {
     game.faceMe(t.id);
     const name = nameOf(t.id);
     const result = talk(state, t.id, name, types.get(t.id) ?? [], today, new Date().getHours(), Math.random, recentGossip(state, t.id, Date.now()), game.weatherKind);
@@ -342,6 +651,8 @@ function pressA(): void {
     };
   } else if (t.kind === 'plot') {
     sheet.value = 'build';
+  } else if (t.kind === 'building') {
+    openBuilding(t.building);
   } else if (t.kind === 'shop') {
     shopTab.value = 'comprar';
     sheet.value = 'shop';
@@ -391,6 +702,7 @@ function give(item: ItemId): void {
 function pressB(): void {
   welcome.value = false;
   if (giftPick.value) giftPick.value = false;
+  else if (quiz.value) quizClose();
   else if (pendingChoice) decide(null);
   else if (dialog.value) dialog.value = null;
   else sheet.value = sheet.value ? null : 'menu';
@@ -491,6 +803,7 @@ onMounted(async () => {
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = changed;
   game.weatherMode = () => visual.weather;
+  refreshTown();
   const resize = () => game?.resize(wrapEl.value!.clientWidth, wrapEl.value!.clientHeight);
   observer = new ResizeObserver(resize);
   observer.observe(wrapEl.value);
@@ -498,7 +811,10 @@ onMounted(async () => {
   game.start();
   loading.value = '';
   awayCatchUp();
-  sceneTimer = setInterval(tickScenes, 1000);
+  sceneTimer = setInterval(() => {
+    tickScenes();
+    tickQuestions();
+  }, 1000);
   if (tickCrops(state, Date.now()) > 0) changed();
   cropTimer = setInterval(() => {
     if (tickCrops(state, Date.now()) > 0) changed();
@@ -545,7 +861,7 @@ onBeforeUnmount(() => {
         <strong>Vila</strong>
         <span>{{ clock }}</span>
         <span class="village-coins" aria-label="Moedas"><i aria-hidden="true">●</i>{{ state.coins }}</span>
-        <span class="village-house">{{ HOUSE_LEVELS[state.house]?.name }}</span>
+        <span class="village-house" :title="`Cidade: ${stage.name}`">Nv {{ level }}</span>
         <button type="button" class="village-diary" aria-label="Abrir o Diário de momentos" @click="openDiary">📖<b v-if="unread > 0">{{ unread }}</b></button>
         <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
       </header>
@@ -556,7 +872,8 @@ onBeforeUnmount(() => {
       </div>
       <p v-if="toast" class="village-toast" role="status">{{ toast }}</p>
 
-      <div v-if="dialog" class="speech in-stage village-dialog" role="dialog" :aria-label="dialog.name">
+      <QuizDialog v-if="quiz" :name="quiz.name" :text="quiz.text" :stage="quiz.stage" :placeholder="quiz.q.placeholder" :chips="quiz.q.chips" :options="quiz.follow?.options.map((x) => x.label)" @answer="quizAnswer" @choose="quizChoose" @close="quizClose" />
+      <div v-else-if="dialog" class="speech in-stage village-dialog" role="dialog" :aria-label="dialog.name">
         <div class="speech-box">
           <strong>{{ dialog.name }}</strong>
           <p>{{ dialog.text }}</p>
@@ -713,7 +1030,7 @@ onBeforeUnmount(() => {
           </ul>
         </div>
 
-        <PokeBook v-else-if="tab === 'livro'" :mons="bookMons" :friends="state.friends" :relations="bookRels" can-dress @accessory="openDress" />
+        <PokeBook v-else-if="tab === 'livro'" :mons="bookMons" :friends="state.friends" :relations="bookRels" :words="bookWords" :told="bookTold" can-dress @accessory="openDress" />
 
         <div v-else>
           <p>Seu acessório: <strong>{{ state.wear.player ? itemName(state.wear.player) : 'nenhum' }}</strong></p>

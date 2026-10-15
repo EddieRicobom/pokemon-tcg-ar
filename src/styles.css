@@ -380,12 +380,9 @@ a:focus-visible {
   min-width: 0;
 }
 
-/* Sete abas: em telas estreitas o rótulo encolhe um pouco para "Treinador" e "Diagnóstico" não se tocarem. */
-@media (max-width: 420px) {
-  .tabs a {
-    font-size: 0.6rem;
-    letter-spacing: -0.02em;
-  }
+/* Quatro abas: cabe com folga; os rótulos ficam um pouco maiores. */
+.tabs a {
+  font-size: 0.74rem;
 }
 
 .tabs a svg {
@@ -3905,6 +3902,7 @@ body.no-scroll .reward-toasts {
 }
 
 .village-top .village-house {
+  white-space: nowrap;
   color: var(--muted);
   margin-right: auto;
 }
@@ -4560,4 +4558,116 @@ body.no-scroll .reward-toasts {
 .village-sheet.tall .chips button {
   padding: 5px 10px;
   font-size: 0.8rem;
+}
+
+/* Engrenagem do topo (Diagnóstico e ajustes) e modos do Escanear (Uma carta, Várias, Minhas cartas) */
+.header-gear {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.header-gear[aria-current='page'] {
+  color: var(--text);
+  border-color: var(--gold);
+}
+
+.header-gear svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.modes {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.modes a {
+  padding: 8px 6px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.modes a.active {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1.5px var(--gold);
+}
+
+/* Perguntas dos Pokémon (Vila): campo para digitar a resposta e sugestões */
+.quiz-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.quiz-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 2px solid #1d2238;
+  border-radius: 10px;
+  background: #fff;
+  color: #1d2238;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.quiz-input:focus-visible {
+  outline: 3px solid #5b8cff;
+  outline-offset: 1px;
+}
+
+.quiz-count {
+  align-self: flex-end;
+  color: #4a5068;
+  font-size: 0.72rem;
+}
+
+.quiz-chips {
+  margin-top: 0;
+}
+
+.quiz-chips button {
+  font-weight: 500;
+  background: #eef2ff;
+}
+
+.village-choices button.primary {
+  background: #ffd84a;
+}
+
+.village-choices button:disabled {
+  opacity: 0.5;
+}
+
+.speech.quiz-dialog {
+  max-height: 70%;
+  overflow-y: auto;
+}
+
+.village-dialog .speech-box p {
+  white-space: pre-line;
 }

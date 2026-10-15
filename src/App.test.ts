@@ -28,7 +28,9 @@ describe('App', () => {
     const text = await mount();
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
-    expect(host?.querySelectorAll('nav a')).toHaveLength(7);
+    expect(host?.querySelectorAll('nav.tabs a')).toHaveLength(4);
+    expect(host?.querySelectorAll('nav.modes a')).toHaveLength(3);
+    expect(host?.querySelector('a.header-gear')?.getAttribute('href')).toBe('#/diagnostico');
     expect(host?.querySelector('video')).not.toBeNull();
     expect(host?.querySelector('canvas')).not.toBeNull();
     expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera');
@@ -72,6 +74,23 @@ describe('App', () => {
     expect(text).toContain('energia');
     expect(text).toContain('Escolha os pins');
     expect(text).toContain('Como funciona o chão');
+  });
+
+  it('Várias e Minhas cartas são modos do Escanear: a aba "Escanear" fica ativa e o Diagnóstico vai para a engrenagem', async () => {
+    await mount('#/varias');
+    expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Escanear');
+    expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Várias');
+    app?.unmount();
+    host?.remove();
+    await mount('#/carregar');
+    expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Escanear');
+    expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Minhas cartas');
+    app?.unmount();
+    host?.remove();
+    await mount('#/diagnostico');
+    expect(host?.querySelector('nav.modes')).toBeNull();
+    expect(host?.querySelector('nav.tabs a.active')).toBeNull();
+    expect(host?.querySelector('a.header-gear')?.getAttribute('aria-current')).toBe('page');
   });
 
   it('a tela Cartas mostra a ação de limpar o cache', async () => {

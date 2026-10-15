@@ -197,11 +197,11 @@ onBeforeUnmount(() => {
       <span v-for="f in failed" :key="f.name" class="meta"><br />· {{ f.name }}: {{ f.reason }}</span>
     </p>
     <p v-if="teamNames.length === 0" class="message" role="status">
-      Nenhuma carta com Pokémon guardada ainda. Escaneie cartas ou carregue-as em <a :href="routeHref('carregar')">Cartas</a>.
+      Nenhuma carta com Pokémon guardada ainda. Escaneie cartas ou carregue-as em <a :href="routeHref('carregar')">Minhas cartas</a>.
     </p>
     <p v-else class="meta">
       Equipe{{ teamAuto ? ' (automática: as mais recentes)' : '' }}: {{ teamNames.map((t) => t.name).join(', ') }}.
-      Troque em <a :href="routeHref('carregar')">Cartas</a>.
+      Troque em <a :href="routeHref('carregar')">Minhas cartas</a>.
       <template v-if="teamNames.length > MULTI_MAX_TRACK"> O rastreador acompanha até {{ MULTI_MAX_TRACK }} cartas por vez.</template>
     </p>
   </section>

@@ -21,6 +21,9 @@ export interface SocialEnv {
   placed: ReadonlySet<string>;
   crops: number;
   ripeCrops: number;
+  /** Nível da cidade da Vila (nível de Treinador visto por último) e o que você respondeu às perguntas dos Pokémon (as 8 últimas). */
+  town: number;
+  lingo: readonly string[];
 }
 
 export interface Outcome {
@@ -112,6 +115,9 @@ export const between = (c: Ctx, m1: number, d1: number, m2: number, d2: number):
 export const onDay = (c: Ctx, m: number, d: number): boolean => c.date.m === m && c.date.d === d;
 /** Escolhe um item de uma lista com o `rng` do momento. */
 export const pick = <T,>(c: Ctx, list: readonly T[]): T => list[Math.floor(c.rng() * list.length)]!;
+/** Existe alguma resposta sua guardada (para os Pokémon comentarem)? */
+export const heard = (c: Ctx): boolean => c.env.lingo.length > 0;
+export const said = (c: Ctx): string => pick(c, c.env.lingo);
 export const day = (c: Ctx): boolean => c.env.hour >= 7 && c.env.hour < 19;
 export const evening = (c: Ctx): boolean => c.env.hour >= 17 && c.env.hour < 24;
 export const rainy = (c: Ctx): boolean => c.env.weather === 'chuva';

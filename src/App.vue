@@ -22,15 +22,20 @@ const route = useRoute();
 const showIosHint =
   isIosDevice(navigator.userAgent, navigator.maxTouchPoints) && !capabilities.standalone;
 
+/** A barra de baixo tem só o essencial; "Várias" e "Cartas" são modos do Escanear, e o Diagnóstico fica na engrenagem do topo. */
 const tabs: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Escanear' },
-  { name: 'varias', label: 'Várias' },
   { name: 'caixa', label: 'Caixa' },
   { name: 'pins', label: 'Pins' },
-  { name: 'carregar', label: 'Cartas' },
   { name: 'treinador', label: 'Treinador' },
-  { name: 'diagnostico', label: 'Diagnóstico' },
 ];
+const scanModes: { name: RouteName; label: string }[] = [
+  { name: 'escanear', label: 'Uma carta' },
+  { name: 'varias', label: 'Várias' },
+  { name: 'carregar', label: 'Minhas cartas' },
+];
+const inScanGroup = computed(() => scanModes.some((m) => m.name === route.value.name));
+const tabActive = (name: RouteName): boolean => (name === 'escanear' ? inScanGroup.value : route.value.name === name);
 const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
 </script>
 
@@ -39,6 +44,15 @@ const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
     <header class="app-header">
       <span class="brand-mark" aria-hidden="true"></span>
       <h1>Pokémon TCG AR</h1>
+      <a
+        class="header-gear"
+        :href="routeHref('diagnostico')"
+        :aria-current="route.name === 'diagnostico' ? 'page' : undefined"
+        aria-label="Diagnóstico e ajustes"
+        title="Diagnóstico e ajustes"
+      >
+        <NavIcon name="diagnostico" />
+      </a>
     </header>
 
     <nav class="tabs" aria-label="Seções do app">
@@ -46,8 +60,8 @@ const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
         v-for="tab in tabs"
         :key="tab.name"
         :href="routeHref(tab.name)"
-        :aria-current="route.name === tab.name ? 'page' : undefined"
-        :class="{ active: route.name === tab.name }"
+        :aria-current="tabActive(tab.name) ? 'page' : undefined"
+        :class="{ active: tabActive(tab.name) }"
       >
         <NavIcon :name="tab.name" />
         <span>{{ tab.label }}</span>
@@ -65,6 +79,10 @@ const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
       </p>
     </section>
 
+    <nav v-if="inScanGroup" class="modes" aria-label="Modos de escaneamento">
+      <a v-for="m in scanModes" :key="m.name" :href="routeHref(m.name)" :aria-current="route.name === m.name ? 'page' : undefined" :class="{ active: route.name === m.name }">{{ m.label }}</a>
+    </nav>
+
     <ScanView v-if="route.name === 'escanear'" :key="scanKey" :card-id="route.cardId" />
     <VariasView v-else-if="route.name === 'varias'" />
     <CaixaView v-else-if="route.name === 'caixa'" />
@@ -77,6 +95,7 @@ const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
     <PokemonSpeech />
 
     <footer class="app-footer">
+      <a :href="routeHref('diagnostico')">Diagnóstico e ajustes</a> ·
       <a href="https://github.com/EddieRicobom/pokemon-tcg-ar">Código-fonte no GitHub</a>
     </footer>
   </main>

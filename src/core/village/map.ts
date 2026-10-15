@@ -1,5 +1,7 @@
 import { seededRng } from '../battle';
 import type { Rng } from '../battle';
+import { buildingsFor, lampSpots, lowerStreetRow } from './town-layout';
+import type { Building } from './town-layout';
 
 /**
  * O mapa da Vila (modo vida da Caixa, sem câmera): uma grade de blocos gerada por semente. Borda de floresta, praça
@@ -7,11 +9,11 @@ import type { Rng } from '../battle';
  * perto de onde você começa. Tudo puro: o desenho fica em `village/render.ts`.
  */
 
-export type Tile = 'grass' | 'tall' | 'flower' | 'path' | 'sand' | 'water' | 'tree' | 'rock' | 'bush' | 'plot' | 'shop';
-export const TILES: readonly Tile[] = ['grass', 'tall', 'flower', 'path', 'sand', 'water', 'tree', 'rock', 'bush', 'plot', 'shop'];
+export type Tile = 'grass' | 'tall' | 'flower' | 'path' | 'sand' | 'water' | 'tree' | 'rock' | 'bush' | 'plot' | 'shop' | 'building' | 'lamp';
+export const TILES: readonly Tile[] = ['grass', 'tall', 'flower', 'path', 'sand', 'water', 'tree', 'rock', 'bush', 'plot', 'shop', 'building', 'lamp'];
 
 /** Blocos que não dá para atravessar. */
-const SOLID = new Set<Tile>(['water', 'tree', 'rock', 'bush', 'shop']);
+const SOLID = new Set<Tile>(['water', 'tree', 'rock', 'bush', 'shop', 'building', 'lamp']);
 
 export interface VillageMap {
   w: number;
@@ -23,6 +25,13 @@ export interface VillageMap {
   plot: { x: number; y: number; w: number; h: number };
   /** A loja da praça (3×2 blocos, sólida). */
   shop: { x: number; y: number; w: number; h: number };
+  /** As casas dos Pokémon e os prédios da cidade (ver `town-layout.ts`); o chão deles é o bloco `building`. */
+  buildings: Building[];
+}
+
+/** O prédio que ocupa o bloco (x, y), se houver. */
+export function buildingAt(map: VillageMap, x: number, y: number): Building | null {
+  return map.buildings.find((b) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) ?? null;
 }
 
 export const MAP_W = 48;
@@ -53,7 +62,7 @@ function blob(map: VillageMap, rng: Rng, cx: number, cy: number, r: number, tile
 
 export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap {
   const rng = seededRng(seed);
-  const map: VillageMap = { w, h, tiles: new Array<Tile>(w * h).fill('grass'), spawn: { x: Math.floor(w / 2), y: Math.floor(h / 2) + 3 }, plot: { x: Math.floor(w / 2) - 8, y: Math.floor(h / 2) + 1, w: 4, h: 3 }, shop: { x: Math.floor(w / 2) + 4, y: Math.floor(h / 2) - 4, w: 3, h: 2 } };
+  const map: VillageMap = { w, h, tiles: new Array<Tile>(w * h).fill('grass'), spawn: { x: Math.floor(w / 2), y: Math.floor(h / 2) + 3 }, plot: { x: Math.floor(w / 2) - 8, y: Math.floor(h / 2) + 1, w: 4, h: 3 }, shop: { x: Math.floor(w / 2) + 4, y: Math.floor(h / 2) - 4, w: 3, h: 2 }, buildings: buildingsFor(w, h) };
   // Borda de floresta (2 a 3 blocos, irregular).
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -62,7 +71,7 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
     }
   }
   // Lago com praia no canto de cima à direita.
-  const lake = { x: Math.floor(w * 0.74), y: Math.floor(h * 0.27) };
+  const lake = { x: Math.floor(w * 0.74), y: Math.floor(h * 0.2) };
   blob(map, rng, lake.x, lake.y, 6.2, 'sand', ['grass']);
   blob(map, rng, lake.x, lake.y, 4.4, 'water');
   // Bosques nos outros cantos, com clareiras de mato alto.
@@ -99,6 +108,15 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
   for (let y = shop.y - 1; y <= shop.y + shop.h; y++) for (let x = shop.x - 1; x <= shop.x + shop.w; x++) if (tileAt(map, x, y) !== 'path') setTile(map, x, y, 'grass');
   for (let y = shop.y; y < shop.y + shop.h; y++) for (let x = shop.x; x < shop.x + shop.w; x++) setTile(map, x, y, 'shop');
   for (let x = shop.x; x < shop.x + shop.w; x++) setTile(map, x, shop.y + shop.h, 'path');
+  // A rua de baixo, de ponta a ponta, e as casas e os prédios da cidade (a calçada na frente de cada um).
+  const lower = lowerStreetRow(h);
+  if (lower + 1 < h - 3) for (let x = 2; x < w - 2; x++) for (const y of [lower, lower + 1]) setTile(map, x, y, 'path');
+  for (const b of map.buildings) {
+    for (let y = b.y - 1; y <= b.y + b.h; y++) for (let x = b.x - 1; x <= b.x + b.w; x++) if (tileAt(map, x, y) !== 'path') setTile(map, x, y, 'grass');
+    for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) setTile(map, x, y, 'building');
+    if (b.kind !== 'fountain') for (let x = b.x; x < b.x + b.w; x++) setTile(map, x, b.y + b.h, 'path');
+  }
+  for (const l of lampSpots(w, h)) if (['grass', 'flower', 'tall', 'path'].includes(tileAt(map, l.x, l.y))) setTile(map, l.x, l.y, 'lamp');
   // Onde você aparece: na trilha, livre.
   setTile(map, map.spawn.x, map.spawn.y, 'path');
   return map;

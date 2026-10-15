@@ -3,7 +3,7 @@ import type { PokemonType } from '../pokemon-data';
 import { ACCESSORY_IDS, FURNITURE_IDS, isItem, itemDef, ITEMS, MATERIAL_IDS, shopToday } from './catalog';
 import { personalityOf } from './personality';
 import { emptySocial, normalizeSocial } from './social-state';
-import type { Moment, Relation } from './social-state';
+import type { Answer, Lingo, Moment, Relation } from './social-state';
 import { tileAt } from './map';
 import type { Tile, VillageMap } from './map';
 
@@ -83,8 +83,16 @@ export interface VillageState {
   seen: string[];
   lastSeen: number;
   diaryRead: number;
+  /** Perguntas dos Pokémon, suas respostas, bordões e "gírias" da Vila (ver `quiz.ts`). */
+  answers: Answer[];
+  words: Record<string, string>;
+  lingo: Lingo[];
+  asked: Record<string, { day: string; n: number }>;
   /** Pescaria de hoje: quantas vezes já lançou a linha. */
   fishing: { day: string; casts: number };
+  /** A mini cidade (ver `town.ts`): nível de cada casa de Pokémon e o que já foi feito hoje nos prédios. */
+  homes: Record<string, number>;
+  town: { level: number; mailDay: string; cafeDay: string };
 }
 
 export interface Crop {
@@ -101,7 +109,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
   return {
     v: 1, seed, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
-    ...emptySocial(), fishing: { day: '', casts: 0 },
+    ...emptySocial(), fishing: { day: '', casts: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' },
   };
 }
 
@@ -133,6 +141,8 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     helped: r.helped && typeof r.helped === 'object' ? r.helped : {},
     rareGift: r.rareGift && typeof r.rareGift === 'object' ? r.rareGift : {},
     ...normalizeSocial(r),
+    homes: r.homes && typeof r.homes === 'object' ? Object.fromEntries(Object.entries(r.homes).filter(([k, v]) => k.length <= 80 && Number.isInteger(v)).slice(0, 80).map(([k, v]) => [k, Math.max(0, Math.min(511, v as number))])) : {},
+    town: { level: Number.isInteger(r.town?.level) ? Math.max(1, Math.min(99, r.town!.level)) : 1, mailDay: typeof r.town?.mailDay === 'string' ? r.town.mailDay.slice(0, 12) : '', cafeDay: typeof r.town?.cafeDay === 'string' ? r.town.cafeDay.slice(0, 12) : '' },
     fishing: r.fishing && typeof r.fishing.day === 'string' && Number.isInteger(r.fishing.casts) ? { day: r.fishing.day, casts: Math.max(0, Math.min(99, r.fishing.casts)) } : { day: '', casts: 0 },
   };
 }
@@ -143,7 +153,7 @@ export function canAfford(s: VillageState, cost: Partial<Record<ItemId, number>>
   return Object.entries(cost).every(([k, n]) => count(s, k as ItemId) >= (n ?? 0));
 }
 
-function pay(s: VillageState, cost: Partial<Record<ItemId, number>>): void {
+export function pay(s: VillageState, cost: Partial<Record<ItemId, number>>): void {
   for (const [k, n] of Object.entries(cost)) s.inventory[k as ItemId] = count(s, k as ItemId) - (n ?? 0);
 }
 
