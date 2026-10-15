@@ -4116,3 +4116,247 @@ body.no-scroll .reward-toasts {
   font: inherit;
   font-weight: 700;
 }
+
+/* Vila: loja, mochila em grade, coleção, livro e boas-vindas. */
+.village-coins {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+  color: #ffd84a;
+}
+
+.village-coins i {
+  font-style: normal;
+  color: #ffcb05;
+  text-shadow: 0 0 6px rgb(255 203 5 / 0.6);
+}
+
+.village-welcome {
+  position: absolute;
+  inset: 60px 16px auto 16px;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 3px solid #4aa84a;
+  background: #fbfaf5;
+  color: #1d2238;
+  font-size: 0.9rem;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+
+.village-sheet.tall {
+  max-height: 78%;
+}
+
+.village-sheet header {
+  flex-wrap: wrap;
+}
+
+.village-sheet .chips {
+  flex-wrap: wrap;
+}
+
+.item-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.item-grid li {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.item-grid img,
+.collection-grid img,
+.village-choices img {
+  image-rendering: pixelated;
+}
+
+.item-grid span {
+  display: grid;
+  font-size: 0.88rem;
+}
+
+.item-grid small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.item-grid button {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.item-grid button:disabled {
+  opacity: 0.45;
+}
+
+.collection-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 6px;
+}
+
+.collection-grid li {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 6px 2px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  text-align: center;
+}
+
+.collection-grid li small {
+  font-size: 0.64rem;
+  line-height: 1.2;
+}
+
+.collection-grid li:not(.have) img {
+  filter: brightness(0) opacity(0.35);
+}
+
+.village-choices.icons button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+/* Livro dos Pokémon */
+.poke-book {
+  display: grid;
+  gap: 8px;
+}
+
+.book-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.book-nav button {
+  width: 40px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.book-page {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #fbf6e8;
+  color: #2a2438;
+  box-shadow: inset 0 0 0 2px #e2d6b8;
+}
+
+.book-page h3 {
+  margin: 0;
+}
+
+.book-page h4 {
+  margin: 0 0 2px;
+  font-size: 0.78rem;
+  color: #8a6a3a;
+}
+
+.book-page p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.book-head {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.book-head img {
+  image-rendering: pixelated;
+  object-fit: contain;
+  background: #efe4c8;
+  border-radius: 12px;
+}
+
+.book-hearts span {
+  color: #d8c8b0;
+  font-size: 1.1rem;
+}
+
+.book-hearts span.on {
+  color: #e8456a;
+}
+
+.book-hearts small {
+  margin-left: 6px;
+  color: #6a5a48;
+}
+
+.book-emoji {
+  font-size: 1.2rem;
+}
+
+.locked {
+  color: #8a7a68;
+}
+
+.book-opinions,
+.book-unlocks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 0.86rem;
+}
+
+.book-unlocks li {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 6px;
+  color: #8a7a68;
+}
+
+.book-unlocks li.open {
+  color: #2a2438;
+}
+
+.book-unlocks small {
+  font-weight: 700;
+  color: #8a6a3a;
+}
+
+.book-acc {
+  justify-self: start;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 2px solid #2a2438;
+  background: #fff;
+  color: #2a2438;
+  font: inherit;
+  font-weight: 600;
+}

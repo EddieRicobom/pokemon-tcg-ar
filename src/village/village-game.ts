@@ -3,13 +3,15 @@ import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import { drawPos, facing, makeWalker, moving, stepVillager, tryStep, advance } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
-import { daylight, isPlaced } from '../core/village/life';
+import { cropAt, daylight, isPlaced, needsWater } from '../core/village/life';
 import type { FurnitureId, VillageState } from '../core/village/life';
 import { findFree, tileAt, TILES } from '../core/village/map';
 import type { Tile, VillageMap } from '../core/village/map';
 import { EDGE } from '../box/ground-art';
 import type { PixelBuf } from '../box/ground-art';
-import { outfitFor, paintBush, paintFurniture, paintHouse, paintPlayer, paintRock, paintTile, paintTree, TILE } from './village-art';
+import { outfitFor, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree, TILE } from './village-art';
+import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
+import { itemDef } from '../core/village/catalog';
 
 /**
  * O jogo da Vila no navegador: canvas 2D em escala inteira (pixels nítidos), câmera que segue você, profundidade por
@@ -29,6 +31,8 @@ export type Target =
   | { kind: 'mon'; id: string }
   | { kind: 'furniture'; x: number; y: number; item: FurnitureId }
   | { kind: 'plot' }
+  | { kind: 'crop'; x: number; y: number }
+  | { kind: 'shop' }
   | { kind: 'tile'; x: number; y: number; tile: Tile }
   | { kind: 'nothing' };
 
@@ -48,6 +52,39 @@ interface MonSprite {
   gif: DecodedGif;
   /** Altura desenhada, em blocos. */
   heightTiles: number;
+  /** Topo da cabeça no 1º quadro (0 a 1 da altura) e o centro dela (0 a 1 da largura): onde vai o acessório. */
+  headTop: number;
+  headX: number;
+}
+
+/** Luzes que acendem à noite (e iluminam em volta). */
+const LIGHTS = new Set(['luminaria', 'abajur', 'poste', 'lanterna', 'abobora-lanterna', 'lareira']);
+/** Acessórios que vão na cabeça (os outros: óculos no rosto, cachecol no pescoço, mochila nas costas). */
+const HATS = new Set(['chapeu-palha', 'bone', 'cartola', 'gorro', 'tiara', 'coroa-flores', 'laco']);
+
+interface Mote {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  phase: number;
+}
+
+function headOf(gif: DecodedGif): { top: number; x: number } {
+  const f = gif.frames[0];
+  if (!f) return { top: 0, x: 0.5 };
+  for (let y = 0; y < gif.height; y++) {
+    let sum = 0;
+    let n = 0;
+    for (let x = 0; x < gif.width; x++) {
+      if ((f.rgba[(y * gif.width + x) * 4 + 3] ?? 0) > 0) {
+        sum += x;
+        n++;
+      }
+    }
+    if (n > 0) return { top: y / gif.height, x: sum / n / gif.width };
+  }
+  return { top: 0, x: 0.5 };
 }
 
 export class VillageGame {
@@ -63,6 +100,9 @@ export class VillageGame {
   private held: Dir | null = null;
   private scale = 3;
   private bubbles = new Map<string, { emoji: string; until: number }>();
+  /** Borboletas (dia) e vagalumes (noite), em blocos. */
+  private readonly motes: Mote[] = [];
+  private lastGreet = 0;
   private nextEmote = 0;
   /** Bloco que foi coletado hoje (o arbusto perde as frutas). */
   harvestedToday: (x: number, y: number) => boolean = () => false;
@@ -92,7 +132,8 @@ export class VillageGame {
       w.idle = this.rng() * 2;
       this.villagers.set(mon.id, w);
       const frames = mon.gif.frames.map((f) => toCanvas({ w: mon.gif.width, h: mon.gif.height, data: new Uint8Array(f.rgba.buffer, f.rgba.byteOffset, f.rgba.byteLength) }));
-      this.monSprites.set(mon.id, { frames, gif: mon.gif, heightTiles: Math.min(2.4, Math.max(1.1, mon.gif.height / 40)) });
+      const head = headOf(mon.gif);
+      this.monSprites.set(mon.id, { frames, gif: mon.gif, heightTiles: Math.min(2.4, Math.max(1.1, mon.gif.height / 40)), headTop: head.top, headX: head.x });
     }
   }
 
@@ -152,7 +193,7 @@ export class VillageGame {
 
   /** Tem alguém ou alguma coisa ocupando o bloco? (Pokémon, você, móveis) */
   occupied(x: number, y: number, except?: string): boolean {
-    if (isPlaced(this.state, x, y)) return true;
+    if (isPlaced(this.state, x, y) || cropAt(this.state, x, y)) return true;
     if (this.player && except !== 'eu' && ((this.player.x === x && this.player.y === y) || (this.player.tx === x && this.player.ty === y))) return true;
     for (const [id, w] of this.villagers) {
       if (id === except) continue;
@@ -171,10 +212,13 @@ export class VillageGame {
   target(): Target {
     const f = facing(this.player);
     for (const [id, w] of this.villagers) if ((w.x === f.x && w.y === f.y) || (w.tx === f.x && w.ty === f.y)) return { kind: 'mon', id };
+    const crop = cropAt(this.state, f.x, f.y);
+    if (crop) return { kind: 'crop', x: f.x, y: f.y };
     const placed = this.state.placed.find((p) => p.x === f.x && p.y === f.y);
     if (placed) return { kind: 'furniture', x: f.x, y: f.y, item: placed.item };
     const tile = tileAt(this.map, f.x, f.y);
     if (tile === 'plot') return { kind: 'plot' };
+    if (tile === 'shop') return { kind: 'shop' };
     if (tile !== 'grass' && tile !== 'path') return { kind: 'tile', x: f.x, y: f.y, tile };
     return { kind: 'nothing' };
   }
@@ -233,6 +277,39 @@ export class VillageGame {
     for (const [id, w] of this.villagers) {
       const follow = this.state.follower === id ? behind : null;
       stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, follow);
+    }
+    // Borboletas e vagalumes voando perto de você.
+    if (this.motes.length < 9) {
+      this.motes.push({ x: p.x + (this.rng() - 0.5) * 14, y: p.y + (this.rng() - 0.5) * 12, vx: (this.rng() - 0.5) * 0.8, vy: (this.rng() - 0.5) * 0.8, phase: this.rng() * 6 });
+    }
+    for (const m of this.motes) {
+      m.phase += dt * 6;
+      m.vx += (this.rng() - 0.5) * dt * 2;
+      m.vy += (this.rng() - 0.5) * dt * 2;
+      m.vx = Math.max(-0.9, Math.min(0.9, m.vx));
+      m.vy = Math.max(-0.9, Math.min(0.9, m.vy));
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+    }
+    for (let i = this.motes.length - 1; i >= 0; i--) {
+      const m = this.motes[i]!;
+      if (Math.abs(m.x - p.x) > 10 || Math.abs(m.y - p.y) > 9) this.motes.splice(i, 1);
+    }
+    // Dois Pokémon que se encontram se cumprimentam.
+    if (now - this.lastGreet > 2500) {
+      const list = [...this.villagers.entries()];
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const [ia, a] = list[i]!;
+          const [ib, b] = list[j]!;
+          if (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1 && !this.bubbles.has(ia) && !this.bubbles.has(ib) && this.rng() < 0.5) {
+            const pair = [['👋', '😊'], ['🎵', '🎶'], ['😆', '😄'], ['❤️', '🥰'], ['❓', '💡']][Math.floor(this.rng() * 5)]!;
+            this.bubble(ia, pair[0]!);
+            this.bubble(ib, pair[1]!, 2200);
+            this.lastGreet = now;
+          }
+        }
+      }
     }
     // De vez em quando alguém mostra uma emoção.
     if (now > this.nextEmote && this.villagers.size > 0) {
@@ -302,14 +379,32 @@ export class VillageGame {
       const img = this.sprite(`house${this.state.house}`, () => paintHouse(this.state.house));
       list.push({ y: plot.y + plot.h, draw: () => ctx.drawImage(img, sx(plot.x), sy(plot.y + plot.h - 4), 4 * TILE * scale, 4 * TILE * scale) });
     }
+    const shop = this.map.shop;
+    const shopImg = this.sprite('shop', paintShop);
+    list.push({ y: shop.y + shop.h, draw: () => ctx.drawImage(shopImg, sx(shop.x), sy(shop.y + shop.h - 3), 3 * TILE * scale, 3 * TILE * scale) });
     const lamps: { x: number; y: number }[] = [];
     for (const f of this.state.placed) {
       if (f.x < x0 || f.x > x1 || f.y < y0 || f.y > y1) continue;
       const frame = f.item === 'fonte' ? Math.floor(now / 300) % 2 : 0;
-      const lit = f.item === 'luminaria' && night;
+      const lit = LIGHTS.has(f.item) && night;
       if (lit) lamps.push(f);
-      const img = this.sprite(`f:${f.item}:${lit}:${frame}`, () => paintFurniture(f.item, lit, frame));
+      const img = this.sprite(`f:${f.item}:${lit}:${frame}`, () => paintFurnitureItem(f.item, lit, frame));
       list.push({ y: f.y + 1, draw: () => ctx.drawImage(img, sx(f.x), sy(f.y), TILE * scale, TILE * scale) });
+    }
+    for (const c of this.state.crops) {
+      if (c.x < x0 || c.x > x1 || c.y < y0 || c.y > y1) continue;
+      const g = itemDef(c.seed)?.grows;
+      if (!g) continue;
+      const img = this.sprite(`crop:${g.crop}:${c.stage}`, () => paintCrop(g.crop, c.stage, g.stages));
+      const thirsty = needsWater(c);
+      list.push({
+        y: c.y + 0.9,
+        draw: () => {
+          ctx.drawImage(img, sx(c.x), sy(c.y), TILE * scale, TILE * scale);
+          if (thirsty) this.drawTag(sx(c.x + 0.5), sy(c.y) - 2 * scale, '💧');
+          else if (c.stage >= g.stages) this.drawTag(sx(c.x + 0.5), sy(c.y) - 2 * scale, '✨');
+        },
+      });
     }
     for (const [id, w] of this.villagers) {
       const sprite = this.monSprites.get(id);
@@ -336,6 +431,14 @@ export class VillageGame {
             ctx.translate(-cx, 0);
           }
           ctx.drawImage(frame, Math.round(cx - wpx / 2), Math.round(base - h), Math.round(wpx), Math.round(h));
+          const acc = this.state.wear.mons[id];
+          if (acc) {
+            const size = Math.max(8 * scale, Math.min(14 * scale, wpx * 0.45));
+            const hx = cx - wpx / 2 + sprite.headX * wpx;
+            const hy = base - h + sprite.headTop * h;
+            const img = this.sprite(`acc:${acc}`, () => paintAccessory(acc));
+            ctx.drawImage(img, Math.round(hx - size / 2), Math.round(hy - size * 0.7), Math.round(size), Math.round(size));
+          }
           ctx.restore();
           this.drawBubble(id, cx, base - h, now);
         },
@@ -351,12 +454,33 @@ export class VillageGame {
         ctx.beginPath();
         ctx.ellipse(sx(pp.x + 0.5), sy(pp.y + 1) - 1 * scale, 5 * scale, 2 * scale, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.drawImage(pimg, sx(pp.x), sy(pp.y + 1) - 20 * scale - 1 * scale, TILE * scale, 20 * scale);
+        const px0 = sx(pp.x);
+        const py0 = sy(pp.y + 1) - 21 * scale;
+        const acc = this.state.wear.player;
+        const dir = this.player.dir;
+        if (acc === 'mochila' && dir !== 'up') this.drawAcc(acc, px0 + 3 * scale, py0 + 8 * scale, 10 * scale);
+        ctx.drawImage(pimg, px0, py0, TILE * scale, 20 * scale);
+        if (acc && HATS.has(acc)) this.drawAcc(acc, px0 + 1 * scale, py0 - 6 * scale, 14 * scale);
+        else if (acc === 'oculos' && dir === 'down') this.drawAcc(acc, px0 + 3 * scale, py0 + 2 * scale, 10 * scale);
+        else if (acc === 'cachecol') this.drawAcc(acc, px0 + 3 * scale, py0 + 5 * scale, 10 * scale);
+        else if (acc === 'mochila' && dir === 'up') this.drawAcc(acc, px0 + 3 * scale, py0 + 8 * scale, 10 * scale);
       },
     });
     list.sort((a, b) => a.y - b.y);
     for (const d of list) d.draw();
 
+    // Borboletas de dia (por baixo da noite).
+    if (!night) {
+      for (const m of this.motes) {
+        const wing = Math.sin(m.phase) > 0 ? 2 : 1;
+        const color = ['#ffffff', '#ffd84a', '#f8a8c8', '#9ad0ff'][Math.floor(m.phase) % 4]!;
+        ctx.fillStyle = color;
+        const bx = sx(m.x);
+        const by = sy(m.y) - 10 * scale;
+        ctx.fillRect(bx - wing * scale, by, wing * scale, 2 * scale);
+        ctx.fillRect(bx + scale, by, wing * scale, 2 * scale);
+      }
+    }
     // Dia e noite.
     if (light.warm > 0) {
       ctx.fillStyle = `rgba(255,140,60,${(light.warm * 0.16).toFixed(3)})`;
@@ -376,8 +500,35 @@ export class VillageGame {
         ctx.fillStyle = g;
         ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
       }
+      // Vagalumes.
+      if (night) {
+        for (const m of this.motes) {
+          const a = 0.35 + 0.65 * Math.max(0, Math.sin(m.phase * 0.7));
+          const fx = sx(m.x);
+          const fy = sy(m.y) - 8 * scale;
+          const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, 4 * scale);
+          g.addColorStop(0, `rgba(220,255,140,${a.toFixed(2)})`);
+          g.addColorStop(1, 'rgba(220,255,140,0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(fx - 4 * scale, fy - 4 * scale, 8 * scale, 8 * scale);
+        }
+      }
       ctx.globalCompositeOperation = 'source-over';
     }
+  }
+
+  private drawAcc(id: string, x: number, y: number, size: number): void {
+    const img = this.sprite(`acc:${id}`, () => paintAccessory(id));
+    this.ctx.drawImage(img, Math.round(x), Math.round(y), Math.round(size), Math.round(size));
+  }
+
+  /** Emoji pequeno sem balão (gota da horta, brilho de pronto). */
+  private drawTag(cx: number, y: number, emoji: string): void {
+    const { ctx, scale } = this;
+    ctx.font = `${7 * scale}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(emoji, cx, y);
   }
 
   private drawBubble(id: string, cx: number, top: number, now: number): void {

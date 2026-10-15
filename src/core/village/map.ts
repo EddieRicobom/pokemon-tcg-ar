@@ -7,11 +7,11 @@ import type { Rng } from '../battle';
  * perto de onde você começa. Tudo puro: o desenho fica em `village/render.ts`.
  */
 
-export type Tile = 'grass' | 'tall' | 'flower' | 'path' | 'sand' | 'water' | 'tree' | 'rock' | 'bush' | 'plot';
-export const TILES: readonly Tile[] = ['grass', 'tall', 'flower', 'path', 'sand', 'water', 'tree', 'rock', 'bush', 'plot'];
+export type Tile = 'grass' | 'tall' | 'flower' | 'path' | 'sand' | 'water' | 'tree' | 'rock' | 'bush' | 'plot' | 'shop';
+export const TILES: readonly Tile[] = ['grass', 'tall', 'flower', 'path', 'sand', 'water', 'tree', 'rock', 'bush', 'plot', 'shop'];
 
 /** Blocos que não dá para atravessar. */
-const SOLID = new Set<Tile>(['water', 'tree', 'rock', 'bush']);
+const SOLID = new Set<Tile>(['water', 'tree', 'rock', 'bush', 'shop']);
 
 export interface VillageMap {
   w: number;
@@ -21,6 +21,8 @@ export interface VillageMap {
   spawn: { x: number; y: number };
   /** Canto superior esquerdo do terreno da casa (4×3 blocos). */
   plot: { x: number; y: number; w: number; h: number };
+  /** A loja da praça (3×2 blocos, sólida). */
+  shop: { x: number; y: number; w: number; h: number };
 }
 
 export const MAP_W = 48;
@@ -51,7 +53,7 @@ function blob(map: VillageMap, rng: Rng, cx: number, cy: number, r: number, tile
 
 export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap {
   const rng = seededRng(seed);
-  const map: VillageMap = { w, h, tiles: new Array<Tile>(w * h).fill('grass'), spawn: { x: Math.floor(w / 2), y: Math.floor(h / 2) + 3 }, plot: { x: Math.floor(w / 2) - 8, y: Math.floor(h / 2) + 1, w: 4, h: 3 } };
+  const map: VillageMap = { w, h, tiles: new Array<Tile>(w * h).fill('grass'), spawn: { x: Math.floor(w / 2), y: Math.floor(h / 2) + 3 }, plot: { x: Math.floor(w / 2) - 8, y: Math.floor(h / 2) + 1, w: 4, h: 3 }, shop: { x: Math.floor(w / 2) + 4, y: Math.floor(h / 2) - 4, w: 3, h: 2 } };
   // Borda de floresta (2 a 3 blocos, irregular).
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -92,6 +94,11 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
   for (let y = p.y - 1; y <= p.y + p.h; y++) for (let x = p.x - 1; x <= p.x + p.w; x++) setTile(map, x, y, 'grass');
   for (let y = p.y; y < p.y + p.h; y++) for (let x = p.x; x < p.x + p.w; x++) setTile(map, x, y, 'plot');
   for (let x = p.x + p.w; x < cx; x++) setTile(map, x, p.y + p.h - 1, 'path');
+  // Loja na praça, com a frente para a trilha.
+  const shop = map.shop;
+  for (let y = shop.y - 1; y <= shop.y + shop.h; y++) for (let x = shop.x - 1; x <= shop.x + shop.w; x++) if (tileAt(map, x, y) !== 'path') setTile(map, x, y, 'grass');
+  for (let y = shop.y; y < shop.y + shop.h; y++) for (let x = shop.x; x < shop.x + shop.w; x++) setTile(map, x, y, 'shop');
+  for (let x = shop.x; x < shop.x + shop.w; x++) setTile(map, x, shop.y + shop.h, 'path');
   // Onde você aparece: na trilha, livre.
   setTile(map, map.spawn.x, map.spawn.y, 'path');
   return map;

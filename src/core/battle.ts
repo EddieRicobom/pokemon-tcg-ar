@@ -113,6 +113,11 @@ export interface Fighter {
   quality: DataQuality;
   /** O que faltou e foi substituído por valores neutros (para a interface avisar). */
   notes: string[];
+  /**
+   * Intimidade com você (0 a 4, da Vila): 3 ou mais dobra a chance de golpe crítico; 4 aguenta, uma vez por batalha, um
+   * golpe que o derrubaria, ficando com 1 PS ("aguentou firme por você!").
+   */
+  bond?: number;
 }
 
 export interface FighterInput {
@@ -255,7 +260,7 @@ export function calculateDamage(attacker: Fighter, defender: Fighter, move: Batt
   const effectiveness = typeEffectiveness(move.type, defender.types);
   const stab = attacker.types.includes(move.type);
   const hit = rng() * 100 < move.accuracy;
-  const critical = rng() < CRIT_CHANCE;
+  const critical = rng() < CRIT_CHANCE * ((attacker.bond ?? 0) >= 3 ? 2 : 1);
   const roll = 0.85 + rng() * 0.15;
   if (!hit) return { hit: false, damage: 0, critical: false, effectiveness, stab };
   if (effectiveness === 0) return { hit: true, damage: 0, critical: false, effectiveness, stab };
@@ -310,6 +315,8 @@ export interface BattleTurn extends DamageRoll {
   inflicted?: StatusKind;
   /** Por que o Pokémon não agiu ('skip') ou perdeu PS no fim da rodada ('residual'). */
   cause?: StatusKind;
+  /** O alvo aguentou firme (melhor amigo) e ficou com 1 PS. */
+  endured?: boolean;
   /** O alvo estava em guarda e levou metade do dano. */
   guardedHit?: boolean;
   /** O alvo foi escolhido por vingança (era quem o atacou por último). */
@@ -377,6 +384,8 @@ interface Live {
   guard: boolean;
   guardedLast: boolean;
   lastHitBy: number | null;
+  /** Já usou o "aguentou firme" desta batalha. */
+  endured?: boolean;
 }
 
 /** Escolhe o alvo: personalidades agressivas miram quem dá para derrubar; defensivas retribuem a quem as acertou. */
@@ -498,9 +507,16 @@ export function simulateBattle(fighters: readonly Fighter[], rng: Rng, options: 
       const move = chooseMove(attacker, defender, rng, ctx);
       const roll = calculateDamage(attacker, defender, move, rng, ctx);
       const before = foe.hp;
-      const after = Math.max(0, before - roll.damage);
+      let after = Math.max(0, before - roll.damage);
+      // Melhor amigo: aguenta firme uma vez por batalha, com 1 PS.
+      const endured = after === 0 && before > 1 && (defender.bond ?? 0) >= 4 && !foe.endured;
+      if (endured) {
+        after = 1;
+        foe.endured = true;
+      }
       foe.hp = after;
       const turn: BattleTurn = { ...blank('attack', attackerIndex, target, move), ...roll, targetHpBefore: before, targetHpAfter: after, fainted: after === 0 };
+      if (endured) turn.endured = true;
       if (revenge) turn.revenge = true;
       if (thawed) turn.thawed = true;
       if (foe.guard && roll.hit && roll.damage > 0) {
