@@ -2,6 +2,7 @@ import { generateVillage } from '../core/village/map';
 import type { VillageMap } from '../core/village/map';
 import { emptyVillage, normalizeVillage } from '../core/village/life';
 import type { VillageState } from '../core/village/life';
+import { sanitizeTown } from '../core/village/town';
 
 /** A Vila é a mesma para todo mundo (semente fixa); o progresso de cada um fica no aparelho. */
 export const VILLAGE_SEED = 20261014;
@@ -19,7 +20,11 @@ function parse(raw: string | null): VillageState | null {
   if (!raw) return null;
   try {
     const value: unknown = JSON.parse(raw);
-    return value && typeof value === 'object' ? normalizeVillage(value, VILLAGE_SEED, villageMap().spawn) : null;
+    if (!value || typeof value !== 'object') return null;
+    const state = normalizeVillage(value, VILLAGE_SEED, villageMap().spawn);
+    // A cidade nasceu depois de muitos saves: o que estava onde hoje há casa ou poste volta para a mochila.
+    sanitizeTown(state, villageMap());
+    return state;
   } catch {
     return null;
   }

@@ -13,9 +13,12 @@ import MinigameTipos from '../components/MinigameTipos.vue';
 import { GAME_LABELS_PT, gameBlocker } from '../core/minigames';
 import type { GameId, Grade } from '../core/minigames';
 import { ACHIEVEMENTS, dayKey, levelProgress, missionsFor, previousDay, XP } from '../core/trainer';
+import { nextUnlock, townStage } from '../core/village/town';
+import { LOTS } from '../core/village/town-layout';
 
 const today = computed(() => dayKey(new Date()));
 const progress = computed(() => levelProgress(trainer.value.xp));
+const town = computed(() => ({ stage: townStage(progress.value.level), next: nextUnlock(progress.value.level), lots: LOTS.filter((l) => progress.value.level >= l.unlock).length }));
 const RING = 2 * Math.PI * 46;
 
 const missions = computed(() => {
@@ -107,6 +110,10 @@ function onFinished(game: GameId, grade: Grade): void {
         <p class="trainer-title">{{ progress.title }}</p>
         <p class="trainer-xp">{{ trainer.xp }} XP · faltam {{ progress.span - progress.into }} para o nível {{ progress.level + 1 }}</p>
         <p class="trainer-xp"><span class="bolt" aria-hidden="true"></span>{{ trainer.energy }} de energia · <a :href="routeHref('pins')">gaste no Pin Mode</a></p>
+        <p class="trainer-xp trainer-town">
+          Cidade da Vila: {{ town.stage.name }} ({{ town.lots }} de {{ LOTS.length }} terrenos liberados)<template v-if="town.next">; no nível {{ town.next.level }} chega {{ town.next.text }}</template>.
+          <a :href="routeHref('caixa')">Visitar a Vila</a>
+        </p>
         <p class="streak" :class="streak.state">
           <span class="flame" aria-hidden="true"></span>
           <template v-if="streak.state === 'ativa'">Sequência de {{ streak.days }} dia{{ streak.days === 1 ? '' : 's' }}</template>

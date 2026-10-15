@@ -38,7 +38,7 @@ describe('mapa da Vila', () => {
     expect(tileAt(map, 0, 0)).toBe('tree');
     expect(tileAt(map, -5, 3)).toBe('tree');
     expect(isSolidTile(tileAt(map, map.spawn.x, map.spawn.y))).toBe(false);
-    expect(reachable(map.spawn, { x: map.w / 2, y: map.h / 2 })).toBe(true);
+    expect(reachable(map.spawn, { x: map.w / 2 - 1, y: map.h / 2 })).toBe(true);
     expect(reachable(map.spawn, { x: map.plot.x + map.plot.w, y: map.plot.y + map.plot.h - 1 })).toBe(true);
     const sand = map.tiles.findIndex((t, i) => t === 'sand' && reachable(map.spawn, { x: i % map.w, y: Math.floor(i / map.w) }));
     expect(sand).toBeGreaterThan(-1);

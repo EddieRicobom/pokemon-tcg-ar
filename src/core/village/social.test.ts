@@ -45,6 +45,9 @@ const WORLDS = REL_VARIANTS.map((_, vi) => {
     friendOf(s, `m${i}`).points = i % 3 === 0 ? 90 : 10;
   }
   if (vi >= 3) s.seen.push('rom-fim');
+  // Cidade crescida e algumas respostas dadas às perguntas dos Pokémon (para os modelos que dependem disso).
+  s.town.level = 9;
+  s.lingo = [{ text: 'brigadeiro', kind: 'comida', from: 'm0', t: 1 }, { text: 'sorvete de pecha', kind: 'comida', from: 'm1', t: 2 }];
   return s;
 });
 
@@ -76,14 +79,16 @@ function sceneFor(id: string): Scene | null {
     }
     return null;
   }
-  // Monta o modelo direto, em vários mundos (relações, horas e clima); o sorteio de verdade é testado à parte.
-  for (let vi = 0; vi < WORLDS.length; vi++) {
-    for (const hour of [14, 23, 8]) {
-      for (const weather of [null, 'chuva', 'neve']) {
-        const s = WORLDS[vi]!;
-        const env = { ...makeEnv(s, '2026-10-14', hour, weather), crops: 3, ripeCrops: 2 };
-        const sc = sceneOfTemplate(tpl, cast12, s, env, seededRng(vi * 17 + hour), 40);
-        if (sc) return sc;
+  // Monta o modelo direto, em vários mundos (relações, horas, clima e dias da semana); o sorteio de verdade é testado à parte.
+  for (const date of ['2026-10-14', '2026-10-12', '2026-10-16', '2026-10-18', '2026-10-17', '2026-10-15']) {
+    for (let vi = 0; vi < WORLDS.length; vi++) {
+      for (const hour of [14, 23, 8, 19, 6, 21]) {
+        for (const weather of [null, 'chuva', 'neve']) {
+          const s = WORLDS[vi]!;
+          const env = { ...makeEnv(s, date, hour, weather), crops: 3, ripeCrops: 2 };
+          const sc = sceneOfTemplate(tpl, cast12, s, env, seededRng(vi * 17 + hour), 40);
+          if (sc) return sc;
+        }
       }
     }
   }
@@ -107,7 +112,7 @@ describe('momentos: catálogo de modelos', () => {
         for (const weather of [null, 'chuva', 'neve']) {
           const s = WORLDS[vi]!;
           const env = { ...makeEnv(s, '2026-10-14', hour, weather), crops: 3, ripeCrops: 2 };
-          for (let seed = 1; seed <= 40; seed++) {
+          for (let seed = 1; seed <= 120; seed++) {
             const sc = pickMoment(cast12, s, env, seededRng(seed * 13 + vi + hour));
             if (sc) got.add(sc.tpl.id);
             n++;
@@ -312,8 +317,10 @@ describe('momentos: resultado', () => {
     }
     const loaded = normalizeSocial({ diary: big, seen: [] });
     expect(loaded.diary.filter((m) => !m.fav).length).toBe(MAX_DIARY);
-    expect(loaded.diary.filter((m) => m.fav).length).toBe(4);
-    expect(loaded.diary.filter((m) => m.fav).map((m) => m.t)).toEqual([100, 150, 200, 250].map((n) => n));
+    // Os guardados (os 4 marcados aqui e os marcos que já nascem guardados) ficam todos, na ordem em que aconteceram.
+    const kept = (big as { fav?: boolean; t: number }[]).filter((m) => m.fav).map((m) => m.t);
+    expect(kept.length).toBeGreaterThanOrEqual(4);
+    expect(loaded.diary.filter((m) => m.fav).map((m) => m.t)).toEqual(kept);
   });
 
   it('o Álbum lista todos os modelos, marcando os já vistos, e os guardados vêm do mais novo ao mais antigo', () => {

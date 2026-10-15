@@ -10,7 +10,7 @@ import type { PixelBuf } from '../box/ground-art';
 
 export { TILE };
 
-function put(buf: PixelBuf, x: number, y: number, rgb: number, a = 255): void {
+export function put(buf: PixelBuf, x: number, y: number, rgb: number, a = 255): void {
   if (x < 0 || y < 0 || x >= buf.w || y >= buf.h) return;
   const i = (y * buf.w + x) * 4;
   buf.data[i] = (rgb >> 16) & 255;
@@ -19,18 +19,18 @@ function put(buf: PixelBuf, x: number, y: number, rgb: number, a = 255): void {
   buf.data[i + 3] = a;
 }
 
-function rect(buf: PixelBuf, x: number, y: number, w: number, h: number, rgb: number): void {
+export function rect(buf: PixelBuf, x: number, y: number, w: number, h: number, rgb: number): void {
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) put(buf, x + i, y + j, rgb);
 }
 
-function disc(buf: PixelBuf, cx: number, cy: number, rx: number, ry: number, rgb: number): void {
+export function disc(buf: PixelBuf, cx: number, cy: number, rx: number, ry: number, rgb: number): void {
   for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
     for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) if (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1) put(buf, x, y, rgb);
   }
 }
 
 /** Contorno de 1 pixel em volta do que já foi desenhado (fundo transparente). */
-function outline(buf: PixelBuf, rgb: number): void {
+export function outline(buf: PixelBuf, rgb: number): void {
   const solid = (x: number, y: number) => x >= 0 && y >= 0 && x < buf.w && y < buf.h && (buf.data[(y * buf.w + x) * 4 + 3] ?? 0) > 0;
   const marks: [number, number][] = [];
   for (let y = 0; y < buf.h; y++) {
@@ -59,6 +59,8 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
       paintGround(buf, 0, 0, 'path', rng, 0, { c, r });
       break;
     case 'grass':
+    case 'building':
+    case 'lamp':
     case 'tree':
     case 'rock':
     case 'bush':

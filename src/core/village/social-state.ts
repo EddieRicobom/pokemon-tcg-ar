@@ -59,12 +59,51 @@ export interface Moment {
   away?: boolean;
 }
 
+/** O que você respondeu a uma pergunta de um Pokémon (digitado por você ou escolhido nas sugestões). */
+export interface Answer {
+  /** Id da pergunta (`quiz.ts`). */
+  q: string;
+  a: string;
+  /** Quem perguntou. */
+  mon: string;
+  t: number;
+  day: string;
+}
+
+/** Uma palavra que "pegou" na Vila: vem de uma resposta sua e os Pokémon repetem por aí ("Hmmm, que fome de…"). */
+export interface Lingo {
+  text: string;
+  /** Tipo da pergunta de onde veio (comida, lugar, palavra…): decide como os Pokémon falam dela. */
+  kind: string;
+  from: string;
+  t: number;
+}
+
 export interface SocialState {
   rel: Record<string, Relation>;
   diary: Moment[];
   seen: string[];
   lastSeen: number;
   diaryRead: number;
+  /** Perguntas que os Pokémon fizeram a você e as suas respostas (as mais novas). */
+  answers: Answer[];
+  /** O bordão de cada Pokémon (o que ele repete no fim das falas). */
+  words: Record<string, string>;
+  lingo: Lingo[];
+  /** Quantas perguntas cada Pokémon já fez hoje. */
+  asked: Record<string, { day: string; n: number }>;
+}
+
+export const MAX_ANSWERS = 80;
+export const MAX_LINGO = 16;
+export const MAX_WORDS = 80;
+export const MAX_ANSWER_LEN = 28;
+
+/** Limpa o que foi digitado: sem caracteres de controle, espaços repetidos nem sobras, com tamanho limitado. */
+export function cleanAnswer(raw: unknown, max = MAX_ANSWER_LEN): string {
+  if (typeof raw !== 'string') return '';
+  // eslint-disable-next-line no-control-regex
+  return raw.normalize('NFC').replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max).trim();
 }
 
 /** O Diário guarda só os últimos momentos; o que você guarda no Álbum fica para sempre (até este limite, por causa do espaço no aparelho). */
@@ -75,7 +114,7 @@ const MAX_SEEN = 600;
 export const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 export function emptySocial(): SocialState {
-  return { rel: {}, diary: [], seen: [], lastSeen: 0, diaryRead: 0 };
+  return { rel: {}, diary: [], seen: [], lastSeen: 0, diaryRead: 0, answers: [], words: {}, lingo: [], asked: {} };
 }
 
 const num = (v: unknown, lo: number, hi: number, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : fallback);
@@ -119,7 +158,7 @@ export function trimMoments(all: readonly Moment[]): Moment[] {
   return all.filter((m) => keepSaved.has(m) || recent.has(m));
 }
 
-export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown }): SocialState {
+export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown; answers?: unknown; words?: unknown; lingo?: unknown; asked?: unknown }): SocialState {
   const rel: Record<string, Relation> = {};
   if (raw.rel && typeof raw.rel === 'object') {
     for (const [k, v] of Object.entries(raw.rel as Record<string, Partial<Relation>>)) {
@@ -134,6 +173,20 @@ export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: un
     seen: Array.isArray(raw.seen) ? [...new Set(raw.seen.filter((x): x is string => typeof x === 'string').map((x) => x.slice(0, 60)))].slice(0, MAX_SEEN) : [],
     lastSeen: num(raw.lastSeen, 0, 9e15, 0),
     diaryRead: num(raw.diaryRead, 0, 9e15, 0),
+    answers: Array.isArray(raw.answers)
+      ? raw.answers
+          .filter((x): x is Answer => !!x && typeof x === 'object' && typeof (x as Answer).q === 'string' && cleanAnswer((x as Answer).a) !== '' && typeof (x as Answer).mon === 'string')
+          .map((x) => ({ q: x.q.slice(0, 40), a: cleanAnswer(x.a), mon: x.mon.slice(0, 80), t: num(x.t, 0, 9e15, 0), day: str(x.day, 12) }))
+          .slice(-MAX_ANSWERS)
+      : [],
+    words: raw.words && typeof raw.words === 'object' ? Object.fromEntries(Object.entries(raw.words as Record<string, unknown>).filter(([k, v]) => k.length <= 80 && cleanAnswer(v, 24) !== '').slice(0, MAX_WORDS).map(([k, v]) => [k, cleanAnswer(v, 24)])) : {},
+    lingo: Array.isArray(raw.lingo)
+      ? raw.lingo
+          .filter((x): x is Lingo => !!x && typeof x === 'object' && cleanAnswer((x as Lingo).text) !== '')
+          .map((x) => ({ text: cleanAnswer(x.text), kind: str(x.kind, 16), from: str(x.from, 80), t: num(x.t, 0, 9e15, 0) }))
+          .slice(-MAX_LINGO)
+      : [],
+    asked: raw.asked && typeof raw.asked === 'object' ? Object.fromEntries(Object.entries(raw.asked as Record<string, Partial<{ day: string; n: number }>>).filter(([, v]) => v && typeof v.day === 'string').slice(0, 80).map(([k, v]) => [k, { day: str(v.day, 12), n: num(v.n, 0, 99, 0) }])) : {},
   };
 }
 

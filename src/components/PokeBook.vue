@@ -13,6 +13,10 @@ const props = defineProps<{
   canDress?: boolean;
   /** O que cada Pokémon é dos colegas (casal, rivais, amigos…), pela vida social da Vila. */
   relations?: Readonly<Record<string, readonly { name: string; label: string; emoji: string; met: number }[]>>;
+  /** O bordão de cada Pokémon (o que ele repete no fim das falas). */
+  words?: Readonly<Record<string, string>>;
+  /** O que você respondeu às perguntas de cada Pokémon (as mais recentes). */
+  told?: Readonly<Record<string, readonly { q: string; a: string }[]>>;
 }>();
 const emit = defineEmits<{ accessory: [id: string] }>();
 
@@ -74,6 +78,14 @@ function go(step: number): void {
           </ul>
           <p v-else-if="current.page.opinions" class="hint">Ainda não há colegas na caixa.</p>
           <p v-else class="locked">🔒 Fique Amigo dele para ele contar.</p>
+        </section>
+        <section v-if="words">
+          <h4>Bordão e conversas</h4>
+          <p v-if="words[current.mon.id]">Sempre diz: <strong>“{{ words[current.mon.id] }}”</strong></p>
+          <ul v-if="(told?.[current.mon.id] ?? []).length" class="book-opinions">
+            <li v-for="(t, k) in told?.[current.mon.id]" :key="k">💬 {{ t.q }} <strong>{{ t.a }}</strong></li>
+          </ul>
+          <p v-else class="hint">Ele ainda não te perguntou nada. Quando aparecer um ❗ sobre ele, converse!</p>
         </section>
         <section v-if="relations">
           <h4>Vida social</h4>
