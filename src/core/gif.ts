@@ -1,4 +1,5 @@
 import { decompressFrames, parseGIF, type ParsedFrame } from 'gifuct-js';
+import { fetchWithMirror } from './mirror';
 
 /** Quadro já composto: imagem RGBA completa (largura × altura × 4). */
 export interface GifFrame {
@@ -152,7 +153,7 @@ export function describeGifError(error: unknown): string {
 
 /** Baixa e decodifica um GIF. Em falha de rede/CORS o `fetch` lança TypeError. */
 export async function fetchGif(url: string, signal?: AbortSignal): Promise<DecodedGif> {
-  const response = await fetch(url, { mode: 'cors', signal });
+  const response = await fetchWithMirror(url, { mode: 'cors', signal });
   if (!response.ok) throw new GifDownloadError(response.status);
   return decodeGif(await response.arrayBuffer());
 }

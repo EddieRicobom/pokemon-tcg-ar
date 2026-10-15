@@ -43,7 +43,14 @@ describe('fetchSprite', () => {
   });
 
   it('falha de rede NÃO é tratada como "GIF inexistente"', async () => {
-    await expect(fetchSprite(25, fakeFetch({ [`${GIF}/25.gif`]: 0 }))).rejects.toBeInstanceOf(SpriteNetworkError);
+    const mirror = 'https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/showdown/25.gif';
+    await expect(fetchSprite(25, fakeFetch({ [`${GIF}/25.gif`]: 0, [mirror]: 0 }))).rejects.toBeInstanceOf(SpriteNetworkError);
+  });
+
+  it('raw fora do ar: baixa o mesmo GIF pelo espelho do jsDelivr', async () => {
+    const mirror = 'https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/showdown/255.gif';
+    const sprite = await fetchSprite(255, fakeFetch({ [`${GIF}/255.gif`]: 0, [mirror]: 200 }));
+    expect(sprite).toMatchObject({ kind: 'gif', url: `${GIF}/255.gif` });
   });
 
   it('erro 500 também lança, para tentar de novo depois', async () => {
@@ -56,3 +63,36 @@ describe('fetchSprite', () => {
     expect(log).toEqual([]);
   });
 });
+
+describe('fetchSprite: variante shiny', () => {
+  it('pede o GIF shiny de showdown/shiny (Ditto, 132)', async () => {
+    const log: string[] = [];
+    const sprite = await fetchSprite(132, fakeFetch({ [`${GIF}/shiny/132.gif`]: 200 }, log), { shiny: true });
+    expect(sprite).toMatchObject({ kind: 'gif', url: `${GIF}/shiny/132.gif`, shiny: true });
+    expect(log).toEqual([`${GIF}/shiny/132.gif`]);
+  });
+
+  it('sem GIF shiny, tenta o PNG shiny antes de desistir da variante', async () => {
+    const log: string[] = [];
+    const sprite = await fetchSprite(1008, fakeFetch({ [`${STATIC}/shiny/1008.png`]: 200 }, log), { shiny: true });
+    expect(sprite).toMatchObject({ kind: 'static', url: `${STATIC}/shiny/1008.png`, shiny: true });
+    expect(log).toEqual([`${GIF}/shiny/1008.gif`, `${STATIC}/shiny/1008.png`]);
+  });
+
+  it('sem nenhum sprite shiny, devolve o normal e NÃO marca como shiny', async () => {
+    const sprite = await fetchSprite(25, fakeFetch({ [`${GIF}/25.gif`]: 200 }), { shiny: true });
+    expect(sprite?.url).toBe(`${GIF}/25.gif`);
+    expect(sprite?.shiny).toBeUndefined();
+  });
+
+  it('falha de rede no shiny lança (não vira "não existe")', async () => {
+    await expect(fetchSprite(25, fakeFetch({ [`${GIF}/shiny/25.gif`]: 0, ['https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/showdown/shiny/25.gif']: 0 }), { shiny: true })).rejects.toBeInstanceOf(SpriteNetworkError);
+  });
+
+  it('sem pedir shiny nunca toca na pasta shiny', async () => {
+    const log: string[] = [];
+    await fetchSprite(25, fakeFetch({ [`${GIF}/25.gif`]: 200 }, log));
+    expect(log.some((u) => u.includes('/shiny/'))).toBe(false);
+  });
+});
+

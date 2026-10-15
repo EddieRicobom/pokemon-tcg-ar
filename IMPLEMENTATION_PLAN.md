@@ -1,87 +1,63 @@
-# Plano de implementação
+# Plano e estado do projeto
 
-Legenda: ✅ feito e verificado · 🔶 feito, mas falta validar em aparelho real · ⬜ a fazer
+Legenda: ✅ feito e coberto por testes automatizados / CI · 🔶 feito, **falta validar em celular real** · ⬜ a fazer
 
-Regra do plano: nenhuma fase é marcada como concluída sem um critério de pronto verificável. Reconhecimento e AR só entram quando forem reais.
+Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado 🔶 passou nos testes e no Chromium com câmera falsa (GL por software), mas **nenhuma etapa foi vista num celular de verdade**. O roteiro está em [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
 
-## Fase 0: Fundação ✅ (esta entrega)
+## Estado atual
 
-- ✅ Vue 3 + TypeScript + Vite 8 + `vite-plugin-pwa` + Three.js, em português do Brasil
-- ✅ Base path do GitHub Pages (`/pokemon-tcg-ar/`) em `base`, manifest, `start_url` e `scope`
-- ✅ Workflows `ci.yml` (tipos, testes, build, conferência do base path) e `deploy.yml` (Pages)
-- ✅ Núcleo testado: capacidades do navegador, câmera, URLs do Showdown, decodificação de GIF
-- ✅ Documentação e análise do pokeum
-- 🔶 Câmera, WebGL e instalação do PWA em aparelho real (checklist em `docs/TESTING.md`)
-- 🔶 Deploy no GitHub Pages: depende de ativar **Settings → Pages → Source: GitHub Actions** e do merge na `main`
+### Base e infraestrutura ✅
+- Vue 3 + TypeScript estrito + Vite 8 + PWA em pt-BR, instalável, com cache offline e base path do GitHub Pages.
+- CI (`ci.yml`) com tipos, testes, build e conferência do `dist/`; deploy (`deploy.yml`) na `main` e toda semana; verificação externa (TCGdex e sprites) e e2e em branches `claude/**`.
+- Licença MIT (`LICENSE`) e avisos de terceiros (`THIRD_PARTY_NOTICES.md`).
 
-**Pronto quando:** CI verde no pull request; após o merge, o app abre em `https://eddiericobom.github.io/pokemon-tcg-ar/` e instala no celular.
+### Catálogo e reconhecimento 🔶
+- ✅ Índice estático do catálogo gerado no deploy (220 coleções, 23.736 cartas, medido em 2026-10-11); índice de ilustrações opcional (112 bytes por carta, incremental).
+- ✅ Detecção do contorno (bordas, máscara de primeiro plano e retas por Hough), endireitamento 630×880, OCR da faixa inferior e do nome, fusão de evidências com limiares do pokeum, confirmação em vários quadros.
+- ✅ Testes com fotos reais (`src/recognition/__fixtures__/photos`) e com imagens sintéticas.
+- 🔶 **Taxa de acerto com a câmera de um celular: não medida.** Os testes cobrem fotos de exemplo, não uma amostra estatística.
+- 🔶 CORS do TCGdex e dos sprites: medidos no GitHub Actions (2026-10-11), mas não no navegador de um celular.
 
-## Fase 1: Viabilidade dos sprites do Showdown ⬜
+### AR sobre a carta 🔶
+- ✅ Alvo MindAR compilado no aparelho e guardado no cache; rastreador com janela de busca maior, pose suavizada e giroscópio (pose presa ao mundo entre as leituras).
+- ✅ Luz difícil: contraste local normalizado (1 quadro a cada 3) e alvo em cinza de luminância (`TARGET_VERSION` 3).
+- ✅ Sprite GIF em pé sobre a carta, com 4 modos de suavização dos pixels; painel de status no chão; ajuste com os dedos; busca manual da carta.
+- ✅ **Várias** cartas ao mesmo tempo (até 4).
+- 🔶 Fluidez, calor e leituras/s em celular real: não medidos. No Chromium sem GPU: ~6–8 leituras/s com a normalização de luz; ~7–11 sem ela.
 
-Risco: não sabemos se o servidor do Showdown libera CORS nem se os nomes de arquivo seguem a convenção assumida em `src/core/showdown.ts`. O sandbox de desenvolvimento não alcança o servidor.
+### Caixa e batalha 🔶
+- ✅ Caixa de Pokémon soltos no chão pelo giroscópio, equipe de até 40 com escalação por lado, formação, tela cheia.
+- ✅ Telas com câmera em modo imersivo (a imagem cobre a janela; avisos no topo e folhas sobre a imagem, sem rolar). 🔶 Falta ver em celular real.
+- ✅ Rastreio: pose repetida pelo MindAR não segura mais o Pokémon (some em poucos segundos); foco/exposição contínuos e 720p. 🔶 Efeito do foco e do 720p só em celular real.
+- ✅ Batalha automática de exibição: motor puro e seeded (nível 50, tipos, STAB, críticos, defesa, condições, personalidades), arena pequena à frente do olhar, golpes encenados por tipo, câmera de cinema, **luz dos golpes** (sprites, chão e vídeo) com opção de desligar, **sons sintetizados** (golpes por tipo e fanfarra do vencedor, com opção de desligar), resumo no visor. O áudio em celular real ainda não foi ouvido (🔶).
+- ✅ **Modos de batalha**: todos contra todos (padrão, com todos da caixa), equipes e 3 contra 3 em revezamento, com placar, cores das equipes e faixa de vitória por equipe. Validado só no Chromium com câmera falsa.
+- ✅ **Chão em pixel art e terreno**: arena e caixa com chão de blocos (grama, flores, mato, trilha) e enfeites de pé; golpes elementais marcam o chão e certas combinações reagem; opção para desligar. Validado só no Chromium com câmera falsa.
+- ✅ **Minigames**: Quem é esse Pokémon? (das cartas, por geração ou aleatório), Duelo de tipos e Memória, com XP.
+- ✅ **Pin Mode** (aba Pins, sem câmera): pins redondos numa arena vista de cima, física com peso/atributos/velocidade/tipos, chão em blocos igual ao da Caixa (marcas dos golpes elementais, reações e atrito por tipo, com opção de desligar), resposta do adversário a cada disparo, golpes da carta como efeitos com recarga e energia igual ao XP. Validado só no Chromium com dados simulados.
+- ✅ **Pokémon sobre a carta**: GIF no centro da ilustração, inclinado 30° para trás, com sombra suave e brilho no chão (desligáveis). Validado só no Chromium com câmera falsa.
+- ✅ **Treinador**: nível e XP, sequência diária, missões do dia, coleção por set e conquistas, com avisos de recompensa; só no aparelho.
+- ⬜ O **RPG de ação** planejado (escanear cartas para montar equipe e jogar): a batalha é só exibição, sem escolha de golpes pelo jogador, itens, trocas nem progressão.
 
-- ⬜ Pelo botão "Carregar GIF do Showdown" em um celular, testar espécies comuns, formas (Mega, Alola, Galar) e nomes com símbolos (Mr. Mime, Nidoran, Farfetch'd, Ho-Oh).
-- ⬜ Se houver CORS: avaliar cache em runtime pelo Service Worker (`CacheFirst`, só respostas 200).
-- ⬜ Se não houver CORS: baixar os GIFs necessários no GitHub Actions e publicá-los junto do site.
-- ⬜ Decidir a questão de direitos de uso antes de redistribuir qualquer sprite (ver "Decisões em aberto").
+## Próximos passos (em ordem sugerida)
 
-**Pronto quando:** existe uma decisão registrada (runtime x build) com evidência de um aparelho real.
-
-## Fase 2: Pipeline de catálogo no CI ⬜
-
-Python só como ferramenta de build, rodando no GitHub Actions.
-
-- ⬜ Baixar metadados do catálogo (fonte candidata: TCGdex, a mesma do pokeum) começando por **um único set**, para validar o formato antes de escalar.
-- ⬜ Tabela carta → espécie do Pokémon → arquivo de GIF do Showdown. Cartas de Treinador e Energia não têm Pokémon e ficam de fora. Verificar nos dados da fonte se há número da Pokédex por carta.
-- ⬜ Gerar o índice estático (hashes perceptuais primeiro; embeddings na Fase 4) como arquivos binários publicados no artefato do Pages, não commitados.
-- ⬜ Workflow agendado/manual que regera o índice quando sair set novo.
-
-**Pronto quando:** o CI gera o índice de um set, o app o baixa e há teste que confere o formato.
-
-## Fase 3: Detecção e retificação da carta no navegador ⬜
-
-- ⬜ Decidir a biblioteca de visão (ver `docs/ARCHITECTURE.md`, decisão sobre a biblioteca de AR): OpenCV.js x implementação própria enxuta.
-- ⬜ Detectar o contorno quadrilátero da carta em cada quadro (em Web Worker, para não travar a interface).
-- ⬜ Corrigir a perspectiva para uma imagem plana de 630×880, a proporção da carta.
-- ⬜ Mostrar o contorno detectado sobre a câmera (visualização honesta do que o detector vê).
-
-**Pronto quando:** em aparelho real, o contorno acompanha uma carta real sobre a mesa com iluminação normal, com taxa de quadros medida e registrada.
-
-## Fase 4: Reconhecimento ⬜
-
-- ⬜ Hash perceptual da carta retificada contra o índice (busca pelo vizinho mais próximo).
-- ⬜ Avaliar embeddings por rede neural no navegador (onnxruntime-web) para tolerar reflexo e ângulo; medir tamanho do modelo e latência antes de adotar.
-- ⬜ Opcional: OCR do número da carta como reforço de pontuação, nunca como filtro rígido.
-- ⬜ Fusão dos sinais, com nível de confiança. Se for dúvida, mostrar o melhor palpite e as alternativas, nunca um palpite disfarçado de certeza.
-- ⬜ Conjunto de fotos reais de teste, com taxa de acerto medida e registrada.
-
-**Pronto quando:** acerto medido em fotos reais, publicado em `docs/TESTING.md`, e a interface mostra a confiança.
-
-## Fase 5: AR sobre a carta ⬜
-
-- ⬜ Pose a partir dos 4 cantos (homografia → pose, com suposição de lente), câmera em perspectiva no Three.js.
-- ⬜ GIF em pé sobre o plano da carta (cartaz que gira só em torno do eixo vertical), com suavização para reduzir tremor.
-- ⬜ Comportamento ao perder a carta: some com transição, nunca congela na tela.
-
-**Pronto quando:** em aparelho real, o Pokémon acompanha a carta ao movê-la e some ao tirá-la do quadro.
-
-## Fase 6: Robustez do PWA ⬜
-
-- ⬜ Cache offline do índice e dos GIFs já vistos.
-- ⬜ Orçamento de desempenho e consumo de bateria; limite de taxa de processamento.
-- ⬜ Testes de ponta a ponta em navegador (Playwright no GitHub Actions) para o que der para automatizar.
-- ⬜ Matriz de aparelhos: Chrome no Android e Safari no iOS.
+1. ⬜ **Validar tudo num celular real** seguindo o roteiro; anotar aparelho, navegador, leituras/s e o que falhar. É o maior risco aberto.
+2. ⬜ **Medir o reconhecimento** com fotos reais de cartas (conjunto, taxa de acerto, tempo) e publicar em `docs/TESTING.md`.
+3. ⬜ **Consertar o e2e** (`e2e.yml`): hoje falha por erros de CORS ao buscar imagens do TCGdex de `localhost` e por falha ao carregar o worker do OCR no runner. Não é obrigatório no CI, mas precisa voltar a ser um sinal confiável antes de virar requisito.
+4. ⬜ **Avaliar mais ideias do Momentoos** para rastreio difícil: variantes deformadas do alvo (ângulos fortes), pose flexível (carta torta) e resolução de rastreio adaptativa. Custo: alvos maiores e compilação mais lenta; só vale se a medição no celular mostrar perdas em ângulo.
+5. ⬜ **Desempenho**: o chunk do TensorFlow.js (~1,1 MB sem compactar) e o do Three.js (~0,5 MB) só carregam ao usar AR/Caixa, mas o custo no celular não foi medido. `ScanView.vue` (~830 linhas) e `battle-director.ts` (~1150) merecem ser divididos antes de crescerem mais.
+6. ⬜ **Direção do RPG**: definir com o dono o que vem primeiro (exploração, escolha de golpes, progressão) e reaproveitar o motor de `src/core/battle.ts`.
+7. ⬜ **PWA**: matriz de aparelhos (Chrome/Android e Safari/iOS), orçamento de bateria, comportamento offline completo.
 
 ## Decisões em aberto
 
-1. **Biblioteca de AR/visão.** Não adotamos AR.js nem MindAR agora: eles rastreiam marcadores ou imagens pré-compiladas e não escalam para um catálogo de cerca de 20 mil cartas. A escolha é na Fase 3. Isso foi um desvio consciente de "usar uma biblioteca de AR" na Fase 0 e precisa da sua concordância.
-2. **Origem dos GIFs:** runtime ou publicados pelo CI (Fase 1).
-3. **Licença do repositório.** O `package.json` declara MIT, mas não existe arquivo `LICENSE`. Definir antes de aceitar contribuições.
-4. **Direitos sobre imagens e sprites.** Cartas e sprites são material protegido. O plano é o índice guardar apenas dados derivados (hashes e embeddings), não as imagens das cartas. Para os sprites, a decisão está na Fase 1.
+1. **Sprites**: hoje vêm do repositório PokeAPI/sprites (GIF `other/showdown`) em tempo de execução, com espelho no jsDelivr. Direitos sobre os desenhos pertencem aos titulares; o app não redistribui nada: o celular baixa o arquivo na hora.
+2. **Imagens e dados de cartas**: vêm do TCGdex, só das cartas que o usuário escaneia, e ficam no aparelho dele.
+3. **Direitos e marca**: projeto de fã, não oficial. Não publicar como produto sem revisar o uso de marcas e imagens.
 
 ## Riscos conhecidos
 
-- CORS e nomes de arquivo do Showdown não verificados.
-- Desempenho de detecção e reconhecimento em celulares modestos: só se sabe medindo.
-- Limites do iOS Safari para câmera, WebGL e instalação do PWA.
-- Tamanho do índice e do modelo no tráfego do usuário (estimativas na arquitetura, ainda sem medição).
+- Tudo que depende de câmera, GPU, sensores e desempenho de celular real continua sem medição.
+- O reconhecimento por OCR sofre com foco macro, reflexo e carta torta; a busca pela ilustração é só reserva e impressões com a mesma arte continuam ambíguas.
+- O giroscópio acompanha o giro, não a caminhada (sem SLAM no navegador).
+- Limites do iOS Safari para câmera, WebGL, sensores e instalação do PWA.
+- Dependência de serviços externos de terceiros (TCGdex, PokeAPI, jsDelivr) sem garantia de disponibilidade.

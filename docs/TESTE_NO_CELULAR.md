@@ -1,0 +1,98 @@
+# Roteiro de teste no celular
+
+O que o CI e o sandbox **não** conseguem validar: câmera real, GPU e sensores do celular, desempenho e a aparência dos efeitos. Faça nesta ordem e anote em qual etapa para.
+
+## 0. Preparação
+1. Abra o app, feche e abra de novo (o PWA só atualiza na segunda abertura depois de um deploy).
+2. Em **Escanear**, ligue "Mostrar o que o app está vendo (diagnóstico)".
+
+## 1. AR pela busca manual (independe do reconhecimento)
+1. Abra a câmera. Em "Buscar a carta à mão", digite o nome (em inglês) e, se quiser, o número. Escolha a carta.
+2. A lista de etapas deve avançar: dados → alvo compilado (alguns segundos na primeira vez) → motor → procurando.
+3. Aponte para **a mesma impressão** da carta, inteira e bem iluminada. Esperado: "Carta rastreada" e, depois, "Pokémon exibido".
+4. Anote: em qual etapa parou, quanto tempo levou o alvo, se o GIF apareceu em pé sobre a carta.
+
+### Painel de status no chão
+Com a carta rastreada, abaixo da carta aparece um painel deitado no plano dela, que alterna sozinho (6 s) entre três páginas; os botões "Auto / Status / Ataques da carta / Golpes do jogo" escolhem uma fixa.
+- **Status** (PokéAPI): tipo e os seis atributos-base em barras que enchem ao aparecer.
+- **Ataques da carta** (TCGdex): PS, fraqueza, recuo e os ataques impressos com custo de energia e dano.
+- **Golpes do jogo** (PokéAPI): até 4 golpes por nível mais recentes, com tipo, classe, precisão, PP e poder.
+Se uma fonte falhar (sem internet, por exemplo) a página mostra a mensagem de erro; as outras continuam. Anote: se as três páginas carregaram, se o texto é legível a uma distância normal e se o painel acompanha a carta sem tremer. "Mostrar o painel de status no chão" nos ajustes liga/desliga.
+
+### Ajuste com os dedos e toque no painel
+1. Com o AR ativo, toque em "Ajustar com os dedos". Arraste com um dedo: o Pokémon e o painel seguem o dedo sobre o chão da carta. Faça pinça com dois dedos: o tamanho muda. "Concluir ajuste" sai do modo; o ajuste fica salvo.
+2. Fora do modo de ajuste, toque num ataque ou golpe do painel: a linha brilha e aparece a mensagem de que usar golpes ainda não está implementado. Toque nos pontinhos do rodapé do painel para trocar de página.
+3. Anote: se o arrasto acompanha o dedo sem "escorregar", se a pinça é suave e se o toque acerta a linha certa com o painel inclinado.
+
+## 1b. Caixa (Pokémon soltos no chão)
+Pré-requisito: ao menos uma carta com Pokémon guardada (escaneie ou use "Cartas").
+1. Aba "Caixa" → "Abrir câmera e sensores". Aponte o celular para o chão, a uns 1–2 m à frente, e toque na imagem (ou em "Colocar a caixa aqui", que usa a mira do centro).
+2. Os Pokémon devem passear dentro do quadrado branco, com sombra. Gire o celular: a caixa deve ficar parada no chão. Toque num Pokémon: ele dá um pulinho e aparecem nome, número e carta.
+3. Em "Ajustes da caixa" mude a altura do celular, o tamanho da caixa e o ângulo de visão. Se a caixa "escorrega" ao girar, ajuste a altura e o ângulo; ao **andar**, ela vai deslizar mesmo (limite conhecido: sem rastreamento de posição).
+4. Anote: se o celular enviou os sensores (senão aparece o aviso de arrastar), se o ponto no chão fica onde você tocou e se 10+ Pokémon ainda rodam fluido.
+
+### Câmera em tela cheia, sem rolar a página (Escanear, Várias, Caixa e Diagnóstico)
+1. Em cada aba, toque em abrir a câmera: a imagem deve cobrir a tela inteira e a página de trás não deve rolar. Nada de importante fica "lá embaixo".
+2. No topo aparecem os avisos (etapas, "procurando a carta", carta rastreada ou perdida, nome da carta lida, "N leituras/s · giroscópio"). Na base ficam os botões; «Buscar», «Teste», «Ajustes», «Suavizar» e «Equipe» abrem folhas **sobre** a imagem e fecham em «Fechar» ou tocando de novo no botão.
+3. Confira se os avisos cabem sem cobrir o Pokémon, se os botões cabem (podem ocupar duas linhas) e se «Fechar» devolve a página como estava. Anote o aparelho e o navegador.
+
+### Equipe, tela cheia e suavização (Caixa, Várias e Escanear)
+1. Em Cartas, toque em "Pôr na equipe" nas cartas desejadas (até 6; a ordem aparece como número na grade). Na Caixa a equipe também pode ser trocada pelo botão "Equipe" sobre a câmera.
+2. Com a câmera aberta, use os botões sobre a imagem: "Tela cheia" (os botões continuam visíveis), "Suavizar" (Nítido, Bordas suaves, Suave, Macio: qualidade dos pixels do GIF), "Formação" (equipe em fila) e "Passeio".
+3. Anote: se a tela cheia entra e sai sem a imagem esticar, se os botões cabem numa linha no seu aparelho e qual modo de suavização deixa o Pokémon mais bonito no seu aparelho e se o Suave/Macio travam ao trocar.
+
+### Várias cartas (aba "Várias")
+1. Em Cartas, ponha na equipe as cartas que quer usar (as que já foram escaneadas neste aparelho). Na aba "Várias", toque em "Abrir câmera e rastrear a equipe": o app prepara uma carta de cada vez (a primeira vez compila o alvo, alguns segundos por carta).
+2. Ponha 2 a 4 cartas da equipe na mesa, separadas e bem iluminadas. Cada uma deve ganhar o seu Pokémon, e o nome das cartas vistas aparece em etiquetas no alto.
+3. Tire uma carta da mesa: o Pokémon dela deve sumir em poucos segundos sem afetar as outras. Anote o "leituras/s" mostrado no topo da câmera com 1, 2, 3 e 4 cartas.
+4. Anote: se alguma carta demora a ser achada, se o Pokémon "pula" de uma carta para outra e se o celular esquenta ou perde fluidez.
+
+### Batalha automática (Caixa)
+1. Com a caixa colocada e 2 ou mais Pokémon na equipe, toque em "Batalhar" (sobre a câmera). Eles se reúnem em roda e lutam sozinhos até sobrar um.
+2. Confira: o anúncio do golpe (nome, tipo e se veio da carta ou do jogo), as barras de PS descendo, os números de dano, "Super efetivo!"/"Pouco efetivo…" (ex.: Água contra Fogo), o desmaio e a comemoração do vencedor. "De novo" refaz com novos sorteios; "Parar" volta ao passeio.
+3. Veja o jeito de cada um: o rótulo de personalidade no anúncio (agressivo, defensivo, veloz, equilibrado), golpes diferentes por tipo (corpo a corpo: investida, socos, mergulho, pisão, cortes; à distância: bola, raio, jato, enxame, feixe, tremor), defesa com escudo azul abaixo de 45 % de PS, e as condições (Queimado, Envenenado, Paralisado, Congelado) com selo na barra e efeito contínuo. "Vingança!" aparece quando alguém revida quem acabou de bater nele.
+4. Ao fim, o botão "Resumo" (na barra sobre a câmera) abre o vencedor, o destaque de dano, os críticos, condições e defesas e, se algum Pokémon ficou sem dados (PokéAPI ou TCGdex fora do ar), o que foi substituído por valores neutros.
+5. A arena nasce pequena na frente de onde o celular aponta: confira se todos os lutadores cabem na tela sem você virar o celular, se o botão "Centrar" traz a arena de volta depois de você olhar para outro lado, e se a câmera lenta no nocaute, o tremor da imagem e os avisos grandes ajudam ou atrapalham.
+6. Anote: se os efeitos pesam no seu aparelho (queda de fluidez), se os textos ficam legíveis e se a batalha fica longa ou curta demais.
+
+### Luz difícil (Escanear)
+1. Aponte para uma carta em ambiente de pouca luz, depois com a sombra da mão cobrindo metade da carta e com uma janela atrás dela. Compare quanto demora até o Pokémon aparecer com o que acontecia antes (o app agora entrega 1 quadro com contraste corrigido a cada 3).
+2. Anote o "leituras/s" do rastreador com boa luz. Meta: pelo menos ~6 leituras/s (no Chromium de teste, sem GPU, deu 6–8 com a correção de contraste e 7–11 sem ela). Se ficar abaixo disso, me avise: a correção de contraste (1 quadro a cada 3) pesa na GPU.
+3. Cartas já guardadas serão recompiladas na primeira vez (o alvo agora usa cinza de luminância): espere a etapa "alvo compilado" uma vez por carta.
+
+### Luz dos golpes (Caixa)
+1. Toque em Batalhar: a tela deve ir para tela cheia sozinha. Pare (Parar) e ela volta ao normal.
+2. Em cada golpe, o Pokémon que ataca deve brilhar com a cor do tipo, o projétil deve iluminar o chão e os vizinhos, e o alvo deve acender no impacto (mais forte em crítico). O vídeo escurece e recebe um clarão colorido, mas os Pokémon **não** escurecem junto.
+3. Em "Suavizar" há "Luz dos golpes": Desligada deve tirar esses brilhos. Se a batalha engasgar com a luz ligada, me diga o modelo do celular.
+4. Em uma sala escura e depois perto de uma janela, os Pokémon devem parecer um pouco mais escuros/claros, sem mudar de cor demais.
+5. Ao fim, o botão "Resumo" mostra quem mais causou dano, críticos e defesas.
+
+### Som da batalha (Caixa)
+1. Com o volume de mídia alto e (no iPhone) o modo silencioso desligado, toque em Batalhar: deve soar uma abertura curta e, em "Já!", um sinal de início.
+2. Em cada golpe: um som de carga subindo, o lançamento (corpo a corpo ou à distância) e o impacto. Compare tipos diferentes (fogo, água, elétrico, planta, lutador...): cada um deve soar diferente. Crítico e super efetivo têm um brilho a mais; defesa e erro soam diferentes de um acerto.
+3. No nocaute o som desce; ao fim, uma fanfarra para o vencedor (mais rápida se for veloz, mais lenta se for defensivo, com baixo grave se for agressivo).
+4. Em "Suavizar" há "Som da batalha": Desligado deve silenciar tudo, sem travar a batalha.
+5. Se nada tocar, anote o aparelho e o navegador. Sons picotados ou estalos também importam.
+
+### Perder a carta (Escanear e Várias)
+1. Com o Pokémon sobre a carta, tire a carta da vista (ou cubra com a mão). Esperado: em **1 a 3 segundos** o aviso vira «Perdi a carta» e o Pokémon some (com giroscópio ele fica preso ao mundo por até 2,5 s). Antes dessa correção ele ficava parado no lugar por muito mais tempo.
+2. Mostre a carta de novo: o Pokémon deve voltar rápido.
+3. Em Várias, tire uma carta e deixe as outras: só o Pokémon da carta retirada some.
+4. Foco: aproxime e afaste a carta devagar; ela deve continuar nítida (foco contínuo) e o rastreio não deve se perder só por isso. Anote o aparelho; o iPhone não permite pedir foco contínuo.
+
+### Giroscópio (Escanear e Caixa)
+1. Com o AR ativo, no topo da câmera aparece "N leituras/s · giroscópio ativo". Se aparecer "sem giroscópio", o aparelho/navegador não entregou o sensor.
+2. Mova o celular em arco, devagar e depressa, com a carta parada: o Pokémon deve acompanhar sem ficar para trás nem se adiantar à carta. Se ele se adianta, aumente "Atraso da câmera para o sensor" em Ajustes; se fica para trás, diminua. Compare com "Usar o giroscópio" desligado.
+3. Cubra a carta por um instante com a mão: o Pokémon deve ficar preso ao lugar (acompanhando o giro) por até ~2,5 s.
+4. Anote o valor de "leituras/s" e o atraso que ficou melhor.
+
+## 2. Reconhecimento automático
+1. Escanear de novo, carta sobre qualquer fundo, sem reflexo na faixa de baixo.
+2. No painel de diagnóstico confira: quadrilátero verde sobre a carta, "Carta endireitada" em pé, "Faixa de baixo" com o número legível, tempos por etapa.
+3. Anote: tempo total da leitura, texto lido pelo OCR, se identificou a impressão certa.
+
+## 3. Teste com foto
+Em "Testar com uma foto do aparelho", escolha uma foto da carta. Nada é enviado: tudo roda no aparelho.
+
+## Se falhar
+Envie prints do painel de diagnóstico e da lista de etapas do AR.

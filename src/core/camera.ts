@@ -74,8 +74,10 @@ export const REAR_CAMERA_CONSTRAINTS: MediaStreamConstraints = {
   audio: false,
   video: {
     facingMode: { ideal: 'environment' },
-    width: { ideal: 1920 },
-    height: { ideal: 1080 },
+    // 1280×720: o rastreador trabalha com quadros de até 640 px, e reduzir 1280→640 (2:1) dá um quadro mais limpo que
+    // 1920→640 (3:1, que serrilha). Também pesa menos para decodificar e atrasa menos a imagem.
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
   },
 };
 
@@ -113,7 +115,35 @@ export async function startRearCamera(
     video.srcObject = null;
     throw new CameraError(classifyCameraError(error));
   }
+  await tuneCameraForTracking(stream);
   return stream;
+}
+
+/** Modos de captura que ajudam o rastreador: a carta fica sempre nítida e bem exposta enquanto a mão se mexe. */
+const CONTINUOUS_MODES = ['focusMode', 'exposureMode', 'whiteBalanceMode'] as const;
+
+/**
+ * Pede foco, exposição e balanço de branco CONTÍNUOS à câmera, nos aparelhos que informam suportar (Chrome/Android).
+ * Uma carta borrada ou estourada derruba o rastreio mais do que qualquer ajuste do algoritmo. Melhor esforço:
+ * onde o navegador não oferece (iPhone, por exemplo) ou recusa, não muda nada. Devolve os modos aplicados.
+ */
+export async function tuneCameraForTracking(stream: MediaStream): Promise<string[]> {
+  const track = stream.getVideoTracks?.()[0];
+  if (!track || typeof track.getCapabilities !== 'function' || typeof track.applyConstraints !== 'function') return [];
+  try {
+    const capabilities = track.getCapabilities() as Record<string, unknown>;
+    const wanted: Record<string, string> = {};
+    for (const key of CONTINUOUS_MODES) {
+      const modes = capabilities[key];
+      if (Array.isArray(modes) && modes.includes('continuous')) wanted[key] = 'continuous';
+    }
+    const applied = Object.keys(wanted);
+    if (applied.length === 0) return [];
+    await track.applyConstraints({ advanced: [wanted] } as MediaTrackConstraints);
+    return applied;
+  } catch {
+    return [];
+  }
 }
 
 export function stopCamera(video: VideoLike | null, stream: MediaStream | null): void {

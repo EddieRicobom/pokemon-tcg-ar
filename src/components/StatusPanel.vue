@@ -65,7 +65,7 @@ const rows = computed<Row[]>(() => [
         <strong class="pending">Implementado; precisa de teste com a câmera do aparelho</strong>
       </li>
       <li>
-        <span>Cache de cartas e tela Carregar</span>
+        <span>Cache de cartas e tela Cartas</span>
         <strong class="pending">Implementado; validado só por testes automáticos</strong>
       </li>
       <li>

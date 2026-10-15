@@ -1,0 +1,34 @@
+<!doctype html><meta charset="utf-8"><title>AR harness (várias cartas)</title>
+<style>body{margin:0}#stage{position:relative;width:480px;height:360px}video,canvas{position:absolute;inset:0;width:100%;height:100%}video{object-fit:cover}</style>
+<div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="c"></canvas></div>
+<script type="module">
+// Ferramenta de desenvolvimento (não roda no CI): rastreia DUAS cartas ao mesmo tempo com o MindAR real e câmera falsa.
+import { compileTarget } from '../src/ar/target.ts';
+import { startMulti } from '../src/ar/start-multi.ts';
+window.log = [];
+const log = (m) => window.log.push(m);
+window.run = async () => {
+  try {
+    const v = document.getElementById('v');
+    v.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+    await v.play();
+    log('camera ' + v.videoWidth + 'x' + v.videoHeight);
+    const gif = await (await fetch('./sprite.gif')).blob();
+    const cards = [];
+    for (const [i, file] of ['card.png', 'rect.png'].entries()) {
+      const t0 = performance.now();
+      const target = await compileTarget(await (await fetch('./' + file)).blob());
+      log('compiled ' + file + ' ' + Math.round(performance.now() - t0) + 'ms');
+      cards.push({ cardId: 'c' + i, name: 'Carta ' + (i + 1), dexId: 25, target: await target.arrayBuffer(), cachedSprite: { kind: 'gif', url: 'local.gif', blob: gif } });
+    }
+    const multi = await startMulti({
+      video: v, canvas: document.getElementById('c'), container: document.getElementById('stage'), cards,
+      fetchSprite: async () => null,
+      onState: (s) => log('state ' + s.phase + ' visible=' + s.visible.join(',')),
+      onSprite: (id, s) => log('sprite ' + id + ' ' + s.kind),
+    });
+    window.multi = multi;
+    log('started');
+  } catch (e) { log('ERROR ' + (e && e.stack || e)); }
+};
+</script>

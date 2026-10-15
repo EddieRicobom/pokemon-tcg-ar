@@ -40,6 +40,16 @@ for (const file of ['ocr/worker.min.js', 'ocr/lang/eng.traineddata.gz', 'ocr/cor
   need(existsSync(`dist/${file}`), `arquivo do OCR ausente: ${file}`);
 }
 
+// Índice de ilustrações é opcional: só informa o que foi publicado (e confere que o par de arquivos combina).
+if (existsSync('dist/data/art-index.json') && existsSync('dist/data/art-index.bin')) {
+  const meta = JSON.parse(readFileSync('dist/data/art-index.json', 'utf8'));
+  const binSize = statSync('dist/data/art-index.bin').size;
+  need(binSize === meta.ids.length * 112, `índice de ilustrações inconsistente (${binSize} bytes para ${meta.ids.length} cartas)`);
+  notes.push(`índice de ilustrações: ${meta.ids.length} cartas, ${(binSize / 1024).toFixed(0)} kB, gerado em ${meta.generatedAt}`);
+} else {
+  notes.push('índice de ilustrações: não publicado (opção "busca pela ilustração" sem efeito)');
+}
+
 const indexPath = 'dist/data/catalog-index.json';
 if (existsSync(indexPath)) {
   const raw = readFileSync(indexPath);

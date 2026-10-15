@@ -11,3 +11,15 @@ declare module 'mind-ar/src/image-target/compiler.js' {
     constructor();
   }
 }
+
+declare module 'mind-ar/src/image-target/compiler-base.js' {
+  export class CompilerBase {
+    constructor();
+  }
+}
+
+declare module 'mind-ar/src/image-target/detector/detector.js' {
+  export class Detector {
+    constructor(width: number, height: number, debugMode?: boolean);
+  }
+}

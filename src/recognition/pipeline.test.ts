@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderScene, syntheticCard, uniformImage } from './__fixtures__/synthetic';
+import { ART_RECORD_BYTES, ArtIndex, encodeRecord, packArtIndex } from './art-index';
 import { CatalogLookup } from './catalog-index';
 import type { CatalogIndexData } from './catalog-index';
 import { computeFeatures } from './hash';
@@ -78,7 +79,45 @@ function makeDeps(overrides: { ocr?: OcrEngine; offline?: boolean; catalog?: boo
 const quad: Quad = [{ x: 200, y: 70 }, { x: 410, y: 40 }, { x: 440, y: 350 }, { x: 230, y: 330 }];
 const photoOf = (seed: number, q: Quad = quad) => renderScene(scans.get(seed)!, q, 640, 480, { noise: 10 });
 
+function artIndexOf(ids: Record<string, number>): ArtIndex {
+  const entries = Object.entries(ids).map(([id, seed]) => {
+    const record = new Uint8Array(ART_RECORD_BYTES);
+    encodeRecord(computeFeatures(scans.get(seed)!), record);
+    return { id, record };
+  });
+  const { meta, bin } = packArtIndex(entries, 'teste');
+  return ArtIndex.from(meta, bin)!;
+}
+
 describe('RecognitionPipeline', () => {
+  it('busca pela ilustração (opção): acha a carta mesmo com o OCR sem número, e ainda confirma pela imagem', async () => {
+    const { deps } = makeDeps({ ocr: { async recognize() { return 'ruído ilegível'; }, async dispose() {} } });
+    const art = artIndexOf({ 'base1-58': 1, 'hgss4-58': 2, 'base2-60': 3 });
+    const result = await new RecognitionPipeline({ ...deps, artSearch: async () => art }).recognize(photoOf(2));
+    expect(result.metrics.artCandidates).toBeGreaterThan(0);
+    expect(result.card?.id).toBe('hgss4-58');
+    expect(result.metrics.visualVerified).toBe(true);
+  });
+
+  it('com a opção desligada (ou sem índice), nada muda: sem número, não acha', async () => {
+    const { deps } = makeDeps({ ocr: { async recognize() { return 'ruído ilegível'; }, async dispose() {} } });
+    for (const artSearch of [undefined, async () => null]) {
+      const result = await new RecognitionPipeline({ ...deps, artSearch }).recognize(photoOf(2));
+      expect(result.status).toBe('not-found');
+      expect(result.metrics.artCandidates).toBeUndefined();
+    }
+  });
+
+  it('número com total lido: a busca pela ilustração nem é consultada (só entra quando o texto não bastou)', async () => {
+    const { deps } = makeDeps();
+    let consulted = 0;
+    const art = artIndexOf({ 'base1-58': 1, 'hgss4-58': 2, 'base2-60': 3 });
+    const result = await new RecognitionPipeline({ ...deps, artSearch: async () => { consulted++; return art; } }).recognize(photoOf(1));
+    expect(result.status).toBe('identified');
+    expect(consulted).toBe(0);
+    expect(result.metrics.artCandidates).toBeUndefined();
+  });
+
   it('escolhe a impressão exata entre cartas com o mesmo número/total e devolve o dexId', async () => {
     const { deps, calls } = makeDeps();
     const result = await new RecognitionPipeline(deps).recognize(photoOf(1));
@@ -138,7 +177,8 @@ describe('RecognitionPipeline', () => {
       },
     });
     const result = await new RecognitionPipeline(deps).recognize(photoOf(3));
-    expect(calls2.slice(0, 3)).toEqual(['bottom', 'bottom-side', 'bottom-side']);
+    // Primeiro a faixa inteira nas duas orientações (rápido); só depois as metades (mais lentas).
+    expect(calls2.slice(0, 4)).toEqual(['bottom', 'bottom', 'bottom-side', 'bottom-side']);
     expect(result.card?.id).toBe('base2-60');
   });
 

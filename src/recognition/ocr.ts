@@ -1,5 +1,6 @@
 import { resizeAverage, toGray } from './image';
 import type { RgbaImage } from './types';
+import { loadChunk } from '../app/stale-build';
 
 /**
  * Tipo de região lida: a faixa inferior inteira (número, código do set), as metades esquerda/direita dessa
@@ -101,7 +102,7 @@ export interface TesseractEngineOptions {
  * sob demanda (import dinâmico): sem OCR, o app inicial não paga o custo.
  */
 export async function createTesseractEngine(options: TesseractEngineOptions): Promise<OcrEngine> {
-  const Tesseract = await import('tesseract.js');
+  const Tesseract = await loadChunk(() => import('tesseract.js'));
   const base = options.assetsBaseUrl.replace(/\/$/, '');
   const worker = await Tesseract.createWorker('eng', Tesseract.OEM.LSTM_ONLY, {
     workerPath: `${base}/worker.min.js`,

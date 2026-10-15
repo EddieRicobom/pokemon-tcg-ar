@@ -1,4 +1,6 @@
 import { boxBlur, limitSide, toGray } from './image';
+import { colorGradient, houghLines, quadsFromLines, sideSupport } from './quad-lines';
+import type { Gradient } from './quad-lines';
 import type { Point, Quad, RgbaImage } from './types';
 
 /**
@@ -11,9 +13,22 @@ import type { Point, Quad, RgbaImage } from './types';
  */
 export const DETECT_MAX_SIDE = 320;
 export const MIN_AREA_FRACTION = 0.05;
-export const CARD_ASPECT_MIN = 0.45;
-export const CARD_ASPECT_MAX = 0.95;
+export const CARD_ASPECT = 0.716;
+export const CARD_ASPECT_MIN = 0.5;
+export const CARD_ASPECT_MAX = 0.88;
 const MIN_FILL_RATIO = 0.70;
+/** Todo lado do quadrilátero precisa ter pelo menos esta fração apoiada por borda. */
+const MIN_SIDE_SUPPORT = 0.4;
+
+/**
+ * Pontuação única para qualquer candidata (contorno ou retas). O tamanho pesa linearmente: testes com a foto
+ * real mostraram que dar mais peso à borda/proporção faz um recorte parcial (só a arte, ~0,75 de proporção)
+ * ganhar da carta inteira.
+ */
+export function candidateScore(areaFraction: number, aspect: number, support: number, fillRatio: number): number {
+  const aspectPrior = Math.max(0, 1 - Math.abs(aspect - CARD_ASPECT) / 0.25);
+  return areaFraction * fillRatio * (0.4 + 0.6 * support) * (0.25 + 0.75 * aspectPrior);
+}
 
 export interface CardDetection {
   quad: Quad;
@@ -239,35 +254,13 @@ function components(mask: Uint8Array, width: number, height: number): Point[][] 
   return result;
 }
 
-/** Fração dos pontos ao longo do contorno do quadrilátero que repousam sobre uma borda forte. */
-function edgeSupport(quad: Quad, mag: Float32Array, width: number, height: number, threshold: number): number {
-  let hits = 0;
-  let total = 0;
-  for (let i = 0; i < 4; i++) {
-    const a = quad[i]!;
-    const b = quad[(i + 1) % 4]!;
-    for (let step = 1; step < 24; step++) {
-      const t = step / 24;
-      const x = Math.round(a.x + (b.x - a.x) * t);
-      const y = Math.round(a.y + (b.y - a.y) * t);
-      let best = 0;
-      for (let dy = -2; dy <= 2; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
-          const xx = x + dx;
-          const yy = y + dy;
-          if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue;
-          best = Math.max(best, mag[yy * width + xx] ?? 0);
-        }
-      }
-      total++;
-      if (best > threshold * 0.6) hits++;
-    }
-  }
-  return total === 0 ? 0 : hits / total;
-}
-
-/** Fundo = mediana das cores do contorno do quadro; primeiro plano = o que se afasta dele (Otsu). */
-function foregroundMask(image: RgbaImage): Uint8Array | null {
+/**
+ * Fundo = mediana das cores do contorno do quadro; primeiro plano = o que se afasta dele.
+ * Devolve máscaras em VÁRIOS limiares (Otsu e frações dele): a moldura amarela de uma carta destoa
+ * pouco de uma parede cinza, então o limiar de Otsu (guiado pela arte escura) pega só a ilustração.
+ * Em limiares mais baixos a carta inteira aparece como um bloco só (depois de fechar buracos).
+ */
+function foregroundMasks(image: RgbaImage): Uint8Array[] {
   const { width, height, data } = image;
   const ring = 3;
   const samples: [number[], number[], number[]] = [[], [], []];
@@ -285,10 +278,18 @@ function foregroundMask(image: RgbaImage): Uint8Array | null {
   }
   const median = (values: number[]) => [...values].sort((p, q) => p - q)[Math.floor(values.length / 2)] ?? 0;
   const bg = [median(samples[0]), median(samples[1]), median(samples[2])];
+  const bgLuma = (bg[0]! + bg[1]! + bg[2]!) / 3;
   const dist = new Float32Array(width * height);
   const histogram = new Float64Array(256);
   for (let i = 0; i < dist.length; i++) {
-    const d = Math.hypot((data[i * 4] ?? 0) - bg[0]!, (data[i * 4 + 1] ?? 0) - bg[1]!, (data[i * 4 + 2] ?? 0) - bg[2]!) / 1.732;
+    const r = data[i * 4] ?? 0;
+    const g = data[i * 4 + 1] ?? 0;
+    const b = data[i * 4 + 2] ?? 0;
+    // Distância de cor ao fundo + diferença de croma (cor "viva" contra parede neutra), sem depender só do brilho.
+    const rgb = Math.hypot(r - bg[0]!, g - bg[1]!, b - bg[2]!) / 1.732;
+    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+    const bgChroma = Math.max(bg[0]!, bg[1]!, bg[2]!) - Math.min(bg[0]!, bg[1]!, bg[2]!);
+    const d = Math.max(rgb, Math.abs(chroma - bgChroma) * 0.8, Math.abs((r + g + b) / 3 - bgLuma) * 0.5);
     dist[i] = d;
     histogram[Math.min(255, Math.round(d))]!++;
   }
@@ -300,7 +301,7 @@ function foregroundMask(image: RgbaImage): Uint8Array | null {
   let sumB = 0;
   let weightB = 0;
   let bestVariance = -1;
-  let threshold = 0;
+  let otsu = 0;
   for (let t = 0; t < 256; t++) {
     weightB += histogram[t]!;
     if (weightB === 0) continue;
@@ -312,22 +313,106 @@ function foregroundMask(image: RgbaImage): Uint8Array | null {
     const variance = weightB * weightF * (meanB - meanF) ** 2;
     if (variance > bestVariance) {
       bestVariance = variance;
-      threshold = t;
+      otsu = t;
     }
   }
-  if (threshold < 10) return null;
-  const mask = new Uint8Array(width * height);
-  for (let i = 0; i < mask.length; i++) mask[i] = (smooth[i] ?? 0) > threshold ? 1 : 0;
-  return mask;
+  const levels = new Set<number>();
+  for (const fraction of [1, 0.6, 0.4, 0.25]) {
+    const level = Math.max(10, Math.round(otsu * fraction));
+    levels.add(level);
+  }
+  if (otsu < 10 && levels.size === 1) return [];
+  return [...levels].map((level) => {
+    const mask = new Uint8Array(width * height);
+    for (let i = 0; i < mask.length; i++) mask[i] = (smooth[i] ?? 0) > level ? 1 : 0;
+    return fillHoles(closeMask(mask, width, height, 2), width, height);
+  });
 }
 
-export function detectCard(source: RgbaImage): CardDetection | null {
+function dilateMask(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  // Separável: horizontal e depois vertical.
+  const tmp = new Uint8Array(mask.length);
+  const out = new Uint8Array(mask.length);
+  for (let y = 0; y < height; y++) {
+    let last = -Infinity;
+    for (let x = 0; x < width; x++) if (mask[y * width + x]) last = x, tmp[y * width + x] = 1; else tmp[y * width + x] = x - last <= radius ? 1 : 0;
+    last = Infinity;
+    for (let x = width - 1; x >= 0; x--) {
+      if (mask[y * width + x]) last = x;
+      if (last - x <= radius) tmp[y * width + x] = 1;
+    }
+  }
+  for (let x = 0; x < width; x++) {
+    let last = -Infinity;
+    for (let y = 0; y < height; y++) if (tmp[y * width + x]) last = y, out[y * width + x] = 1; else out[y * width + x] = y - last <= radius ? 1 : 0;
+    last = Infinity;
+    for (let y = height - 1; y >= 0; y--) {
+      if (tmp[y * width + x]) last = y;
+      if (last - y <= radius) out[y * width + x] = 1;
+    }
+  }
+  return out;
+}
+
+/** Fechamento morfológico (dilata e erode): junta pedaços separados por finas falhas (reflexos, texto claro). */
+function closeMask(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  const dilated = dilateMask(mask, width, height, radius);
+  const inverted = dilated.map((v) => 1 - v);
+  const eroded = dilateMask(new Uint8Array(inverted), width, height, radius).map((v) => 1 - v);
+  return new Uint8Array(eroded);
+}
+
+/** Preenche buracos (regiões de fundo que não tocam a borda do quadro). */
+function fillHoles(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const outside = new Uint8Array(mask.length);
+  const stack: number[] = [];
+  const push = (i: number) => {
+    if (!mask[i] && !outside[i]) {
+      outside[i] = 1;
+      stack.push(i);
+    }
+  };
+  for (let x = 0; x < width; x++) {
+    push(x);
+    push((height - 1) * width + x);
+  }
+  for (let y = 0; y < height; y++) {
+    push(y * width);
+    push(y * width + width - 1);
+  }
+  while (stack.length > 0) {
+    const i = stack.pop()!;
+    const x = i % width;
+    if (x > 0) push(i - 1);
+    if (x < width - 1) push(i + 1);
+    if (i >= width) push(i - width);
+    if (i < mask.length - width) push(i + width);
+  }
+  const out = new Uint8Array(mask.length);
+  for (let i = 0; i < out.length; i++) out[i] = outside[i] ? 0 : 1;
+  return out;
+}
+
+/** Motivos pelos quais candidatas foram descartadas (só preenchido quando o chamador pede). */
+export interface DetectDiag {
+  reasons: string[];
+}
+
+export function detectCard(source: RgbaImage, diag?: DetectDiag): CardDetection | null {
   const { image, scale } = limitSide(source, DETECT_MAX_SIDE);
   const { width, height } = image;
   if (width < 16 || height < 16) return null;
   const gray = boxBlur(toGray(image), width, height);
   const edges = edgeMask(gray, width, height);
-  if (!edges) return null;
+  if (!edges) {
+    diag?.reasons.push('Quadro sem bordas suficientes (muito liso, escuro ou desfocado).');
+    return null;
+  }
+  const grad: Gradient = colorGradient(image);
+  const rejected: { area: number; reason: string }[] = [];
+  const reject = (area: number, reason: string) => {
+    if (diag) rejected.push({ area, reason: `${Math.round(area * 100)}% do quadro: ${reason}` });
+  };
 
   const frameArea = width * height;
   let best: CardDetection | null = null;
@@ -336,6 +421,7 @@ export function detectCard(source: RgbaImage): CardDetection | null {
     if (hull.length < 4) return;
     const hullArea = polygonArea(hull);
     if (hullArea < frameArea * MIN_AREA_FRACTION) return;
+    // (a partir daqui o objeto já é grande o bastante para valer um motivo de descarte)
     const perimeter = hull.reduce((s, p, i) => {
       const q = hull[(i + 1) % hull.length]!;
       return s + Math.hypot(p.x - q.x, p.y - q.y);
@@ -348,11 +434,14 @@ export function detectCard(source: RgbaImage): CardDetection | null {
     const areaFraction = quadArea / frameArea;
     const aspect = quadAspect(quad);
     const fillRatio = Math.min(1, quadArea / hullArea);
-    if (areaFraction < MIN_AREA_FRACTION) return;
-    if (aspect < CARD_ASPECT_MIN || aspect > CARD_ASPECT_MAX) return;
-    if (fillRatio < MIN_FILL_RATIO) return;
-    const support = edgeSupport(quad, edges.mag, width, height, edges.threshold);
-    const score = areaFraction * fillRatio * (0.4 + 0.6 * support);
+    if (areaFraction < MIN_AREA_FRACTION) return reject(areaFraction, 'pequeno demais');
+    if (aspect < CARD_ASPECT_MIN || aspect > CARD_ASPECT_MAX) return reject(areaFraction, `proporção ${aspect.toFixed(2)} fora de ${CARD_ASPECT_MIN}–${CARD_ASPECT_MAX}`);
+    if (fillRatio < MIN_FILL_RATIO) return reject(areaFraction, `formato irregular (preenchimento ${Math.round(fillRatio * 100)}% < ${Math.round(MIN_FILL_RATIO * 100)}%)`);
+    const sides = sideSupport(quad, grad);
+    const support = 0.5 * sides.mean + 0.5 * sides.min;
+    if (sides.min < MIN_SIDE_SUPPORT) return reject(areaFraction, `lados sem borda (pior lado ${Math.round(sides.min * 100)}%)`);
+    // Uma carta real tem proporção ≈ 0,716: formas parecidas com a carta ganham de recortes parciais (só a arte, só o título).
+    const score = candidateScore(areaFraction, aspect, support, fillRatio);
     if (!best || score > best.score) {
       best = {
         quad: quad.map((p) => ({ x: p.x / scale, y: p.y / scale })) as Quad,
@@ -366,7 +455,28 @@ export function detectCard(source: RgbaImage): CardDetection | null {
 
   // Estratégia A: bordas fortes conectadas. Estratégia B: o que difere da cor do fundo.
   for (const pixels of components(edges.mask, width, height)) consider(pixels);
-  const foreground = foregroundMask(image);
-  if (foreground) for (const pixels of components(foreground, width, height)) consider(pixels);
+  for (const foreground of foregroundMasks(image)) for (const pixels of components(foreground, width, height)) consider(pixels);
+  // Estratégia C: retas (Hough). Resiste a fundo texturizado, degradê e bagunça.
+  const lineCandidates = quadsFromLines(houghLines(grad), grad, (quad) => {
+    const area = polygonArea(quad) / frameArea;
+    const aspect = quadAspect(quad);
+    return area >= MIN_AREA_FRACTION && aspect >= CARD_ASPECT_MIN && aspect <= CARD_ASPECT_MAX;
+  });
+  for (const candidate of lineCandidates) {
+    if (candidate.support.min < MIN_SIDE_SUPPORT) continue;
+    const quad = orderQuad(candidate.quad);
+    const areaFraction = polygonArea(quad) / frameArea;
+    const aspect = quadAspect(quad);
+    const support = 0.5 * candidate.support.mean + 0.5 * candidate.support.min;
+    const score = candidateScore(areaFraction, aspect, support, 1);
+    if (!best || score > best.score) {
+      best = { quad: quad.map((p) => ({ x: p.x / scale, y: p.y / scale })) as Quad, areaFraction, aspect, fillRatio: 1, score };
+    }
+  }
+  if (diag && !best) {
+    if (rejected.length === 0) diag.reasons.push('Nenhum objeto grande o bastante (≥ 5% do quadro) foi achado.');
+    rejected.sort((a, b) => b.area - a.area);
+    for (const item of rejected.slice(0, 3)) diag.reasons.push(`Descartado — ${item.reason}.`);
+  }
   return best;
 }

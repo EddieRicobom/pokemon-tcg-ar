@@ -1,8 +1,14 @@
 import { fetchSprite } from '../ar/sprite-source';
 import { createDefaultBackend } from '../cache/assets';
+import { prepareMegaForm, resolveMegaForm } from './mega-data';
+import type { MegaPrepared } from './mega-data';
+import { loadBattleData, loadCardInfo, loadProfile } from './pokemon-data-service';
+import type { CardBattleInfo, PokemonProfile } from '../core/pokemon-data';
+import { recordEvent, syncTrainerHistory } from './trainer-store';
 import { CardCache } from '../cache/card-cache';
 import { openCacheDb } from '../cache/db';
 import { blobToRgba, loadImageRgba, rgbaToCanvas } from '../recognition/browser-image';
+import { ArtIndex } from '../recognition/art-index';
 import { loadCatalogIndex } from '../recognition/catalog-index';
 import type { CatalogLookup } from '../recognition/catalog-index';
 import { createTesseractEngine } from '../recognition/ocr';
@@ -10,6 +16,7 @@ import type { OcrEngine } from '../recognition/ocr';
 import { RecognitionPipeline } from '../recognition/pipeline';
 import { TcgdexClient } from '../recognition/tcgdex';
 import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from '../recognition/types';
+import { loadChunk } from './stale-build';
 
 /**
  * Serviços do app, criados sob demanda e uma vez só (nada pesado é carregado antes de o usuário
@@ -24,10 +31,29 @@ let tcgdex: TcgdexClient | null = null;
 let catalogPromise: Promise<CatalogLookup | null> | null = null;
 let ocrPromise: Promise<OcrEngine> | null = null;
 let pipeline: RecognitionPipeline | null = null;
+let artPromise: Promise<ArtIndex | null> | null = null;
+let artSearchOn = true;
+let captureDebugOn = false;
 let ocrListener: ((status: string, progress: number) => void) | null = null;
 
 export function onOcrProgress(listener: ((status: string, progress: number) => void) | null): void {
   ocrListener = listener;
+}
+
+/** Diagnóstico do scan: o pipeline passa a guardar miniaturas e motivos de cada quadro. */
+export function setCaptureDebug(on: boolean): void {
+  captureDebugOn = on;
+}
+
+/** Opção "busca pela ilustração": liga/desliga sem recriar o pipeline. */
+export function setArtSearch(on: boolean): void {
+  artSearchOn = on;
+}
+
+/** Índice de ilustrações (carregado só quando a opção é usada). null se ainda não foi publicado. */
+export function getArtIndex(): Promise<ArtIndex | null> {
+  artPromise ??= ArtIndex.load(assetUrl('data/art-index.json'), assetUrl('data/art-index.bin'));
+  return artPromise;
 }
 
 export function getCache(): Promise<CardCache> {
@@ -37,12 +63,18 @@ export function getCache(): Promise<CardCache> {
       db: await openCacheDb(),
       assets: backend,
       // O alvo de AR é compilado aqui, no aparelho, a partir da imagem de referência (MindAR carregado sob demanda).
-      buildTarget: async (reference) => (await import('../ar/target')).compileTarget(reference),
+      buildTarget: async (reference) => (await loadChunk(() => import('../ar/target'))).compileTarget(reference),
       decodeReference: (blob) => blobToRgba(blob, CARD_WIDTH_PX, CARD_HEIGHT_PX),
+      // Cada leitura gravada rende XP no Treinador.
+      onRecorded: (card) => recordEvent({ type: 'scan', cardId: card.id, setId: card.setId, setName: card.setName, setTotal: card.setOfficial, shiny: card.shiny === true }),
     });
     // Se o navegador apagou arquivos por falta de espaço, as cartas voltam a "parcial" em vez de fingirem estar prontas.
     await cache.verifyIntegrity().catch(() => 0);
     void cache.requestPersistence();
+    // Cartas shiny guardadas com o sprite normal (só o brilho) trocam pelo sprite shiny de verdade, em segundo plano.
+    void cache.refreshShinySprites().catch(() => 0);
+    // As cartas que já estavam guardadas entram no Treinador sem XP.
+    void cache.list().then((cards) => syncTrainerHistory(cards)).catch(() => undefined);
     return cache;
   })();
   return cachePromise;
@@ -79,8 +111,48 @@ export async function getPipeline(): Promise<RecognitionPipeline> {
     catalog,
     loadReference: (url) => loadImageRgba(url, CARD_WIDTH_PX, CARD_HEIGHT_PX),
     localReferences: () => cache.localReferences(),
+    captureDebug: () => captureDebugOn,
+    artSearch: () => (artSearchOn ? getArtIndex() : Promise.resolve(null)),
   });
   return pipeline;
+}
+
+/** Carrega, em paralelo, atributos/golpes (PokéAPI) e ataques da carta (TCGdex) para o painel de AR. */
+export function loadBattle(cardId: string, dexId: number | undefined, onPart: Parameters<typeof loadBattleData>[2]): Promise<void> {
+  let storage: Storage | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    storage = null;
+  }
+  return loadBattleData({ cardId, dexId }, { storage, getCard: (id) => getTcgdex().getCard(id) }, onPart);
+}
+
+/** O que o Pin Mode precisa de um Pokémon: atributos e peso (PokéAPI) e ataques da carta (TCGdex). Cada parte pode faltar. */
+export async function loadPinData(cardId: string, dexId: number | undefined): Promise<{ profile: PokemonProfile | null; card: CardBattleInfo | null }> {
+  let storage: Storage | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    storage = null;
+  }
+  const [profile, card] = await Promise.all([loadProfile(dexId, { storage }), loadCardInfo(cardId, { storage, getCard: (id) => getTcgdex().getCard(id) })]);
+  return { profile, card };
+}
+
+/** Deixa pronta a forma Mega de uma carta (espécie, atributos e sprite) sem cobrar nada: ver `prepareMegaForm`. */
+export function prepareMegaFor(card: { id: string; name: string; baseDexId: number | undefined; shiny?: boolean }): Promise<MegaPrepared> {
+  let storage: Storage | null = null;
+  try {
+    storage = window.localStorage;
+  } catch {
+    storage = null;
+  }
+  return prepareMegaForm(card, {
+    resolve: (dexId, variant) => resolveMegaForm(dexId, variant, { storage }),
+    loadProfile: (formId) => loadProfile(formId, { storage }),
+    fetchSprite: (formId, shiny) => fetchSprite(formId, undefined, { shiny }),
+  });
 }
 
 export { fetchSprite };

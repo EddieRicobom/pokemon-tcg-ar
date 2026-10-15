@@ -1,51 +1,53 @@
 # Testes
 
-## O que é automatizado
+Estado em 2026-10-15: 114 arquivos de teste, 1222 testes unitários, todos passando. **Nenhum teste automatizado substitui um celular de verdade** (câmera, GPU, sensores e desempenho reais).
 
-Roda no GitHub Actions a cada pull request e na `main` (`ci.yml`), e antes de cada deploy (`deploy.yml`).
+## O que roda a cada pull request e a cada deploy
+
+`ci.yml` (pull requests e `main`) e `deploy.yml` (antes de publicar):
 
 | Verificação | Comando | O que cobre |
 | --- | --- | --- |
-| Tipos | `npm run typecheck` | `vue-tsc` no app e `tsc` nas configurações |
-| Testes unitários | `npm test` | Vitest com happy-dom (lista abaixo) |
-| Build | `npm run build` | Compilação de produção e geração do Service Worker |
-| Base path | passo no `ci.yml` | `start_url` e `scope` do manifest iguais a `/<repositório>/` |
+| Tipos | `npm run typecheck` | `vue-tsc` no app e `tsc` nas configurações (TypeScript estrito, `noUncheckedIndexedAccess`) |
+| Testes unitários | `npm test` | Vitest com happy-dom (`src/**/*.test.ts` e `config/**/*.test.ts`) |
+| Build | `npm run build` | Compilação de produção e Service Worker |
+| Conferência do `dist/` | `node scripts/verify-dist.mjs` | `start_url`, `scope` e `index.html` com o base path certo, Service Worker, arquivos do OCR e (no deploy, `REQUIRE_INDEX=1`) o índice do catálogo com tamanho plausível |
 
-### Testes unitários
+O job **"Tipos, testes e build"** é o que vale como porta de entrada para o merge.
 
-| Arquivo | Cobre |
+## Testes unitários por área
+
+| Área | O que é testado |
 | --- | --- |
-| `config/base-path.test.ts` | Normalização do caminho base |
-| `src/core/capabilities.test.ts` | Avaliação das capacidades e detecção de iOS |
-| `src/core/camera.test.ts` | Pedido da câmera traseira, mapeamento de erros, limpeza ao falhar |
-| `src/core/showdown.test.ts` | Identificadores no estilo do Showdown e montagem das URLs |
-| `src/core/gif.test.ts` | Decodificação de **GIFs reais gerados no teste** (quadros parciais, transparência), métodos de descarte 2 e 3, atrasos e escolha do quadro |
-| `src/App.test.ts` | Montagem da interface; confere que ela diz que reconhecimento e AR ainda não existem |
+| `src/core/` | Câmera (permissões, erros em pt-BR), capacidades, GIF (**GIFs reais gerados no teste** por `__fixtures__/encode-gif.ts`: quadros parciais, transparência, descarte), suavização de pixels, espelho do jsDelivr, dados da PokéAPI/TCGdex e o **motor de batalha** (determinístico por `seededRng`: dano, tipos, críticos, condições, defesa, personalidades, resumo) |
+| `src/recognition/` | Detecção do contorno (imagens sintéticas e **fotos reais** em `__fixtures__/photos`), OCR e interpretação do texto, índices do catálogo e das ilustrações, fusão e decisão, agregação temporal, cliente do TCGdex |
+| `src/app/` | Controlador do escaneamento (sem navegador, por dependências injetadas), etapas do AR, preparo de uma e de várias cartas, equipe, rotas, ajustes visuais e de sensores, modo imersivo da tela cheia (`fullscreen.test.ts`), salvamento da Vila (`village-store.test.ts`: ida e volta de tudo, cópia de segurança, falha de gravação, diário antigo cortado) |
+| `src/ar/` | Pose e âncora do sprite, suavização, sessões (uma e várias cartas), motor do rastreador (janela de busca), relé de quadros, **normalização de contraste** (tensores no backend `cpu`), pose fresca × repetida (sessões de uma e de várias cartas), preparo do alvo, painel de status, gestos, fontes do sprite |
+| `src/box/` | Cena da Caixa, orientação do giroscópio, chão, formação, passeio, **arena** (posição e escala), **diretor da batalha** (tempos, personalidades, estilos por tipo, luzes, ambiente, HUD), efeitos, **luzes dos golpes** (queda, uniformes, shader, poças, luz do ambiente) |
+| `src/core/village/`, `src/village/` | Vila: mapa, coleta, horta, loja, pesca, cozinha e comida de presente, catálogo (toda peça tem arte; altos com 16×32; luzes e animações), **vida social** (`social.test.ts`: 401 modelos todos possíveis, falas válidas, sorteio determinístico, datas especiais e aniversários só no dia certo, nome do treinador nas falas, resultados e escolhas, casal e briga, Diário de 60 com Álbum permanente de 500, intervalo de 80–170 s, marcos guardados sozinhos, ausência, comentários, mapa de relações, arquivos antigos e lixo no disco) as **perguntas e bordões** (`quiz.test.ts`: limites por Pokémon e por dia, respostas limpas, reação, seguimento, ecos, bordões espalhados), os **apelidos** (`nickname.test.ts`: só a partir de Grande amigo, sem repetir, limpar, ideias sem repetir) e os **prêmios** (`rewards.test.ts`: toda conquista tem prêmio e todo acessório existe, entrega única, conquistas antigas, prêmio que não se vende), a **cidade** (`town.test.ts`: terrenos e prédios por nível, moradores por casa, sono, enfeites e telhado, correio e café, bater na porta com sono pesado e recusa, o bairro dos jogos por nível, arquivos antigos; `town-art.test.ts`: toda peça da cidade desenha, inclusive Fliperama, Pista de Pins e Arena) os **caminhos** (`layout.test.ts`: sem ilhas nem gargalos em 10 sementes, ruas inteiras, calçadas, terreno da casa, o seguidor contorna fonte e prédios, troca de lugar, móveis e plantas que fechariam o caminho são recusados) e a arte (`player-art.test.ts`: os 40 treinadores têm visual próprio e distinto, desenhável em 4 direções e todos os passos) |
+| `src/components/QuizDialog.test.ts` | A conversa de perguntas: responder só com texto, sugestões, opções do seguimento e fala final |
+| `src/cache/` | Cache de cartas (IndexedDB falso) e arquivos |
+| `src/App.test.ts` | Montagem da interface |
 
-Os GIFs dos testes são produzidos por um codificador mínimo (`src/core/__fixtures__/encode-gif.ts`), então não há binários no repositório nem dependência de rede.
+O WebGL real não roda no happy-dom: a lógica é mantida pura e testada; a cola com o navegador (desenho, câmera, sensores) fica fora dos testes unitários. Trechos de shader são conferidos como texto (que o patch injeta o que deve), não compilados.
+
+## Outras verificações (não fazem parte de `npm test`)
+
+- **Teste de ponta a ponta** (`e2e/`, `e2e.yml`, branches `claude/**`): Playwright com Chromium e câmera falsa (vídeo gerado de um escaneamento oficial da carta), reconhece, guarda e mostra em AR. **Não é obrigatório e hoje falha em parte dos casos** (CORS ao buscar imagens do TCGdex de `localhost` e falha ao carregar o worker do OCR no runner). Está no plano para ser consertado.
+- **Avaliações com rede** (`scripts/*.eval.ts`, `vitest.eval.config.ts`): reconhecimento com cartas reais e OCR real, só no GitHub Actions.
+- **Verificação externa** (`external-verification.yml`): API e CDN do TCGdex (status, CORS, formato) e sprites do PokeAPI. Medido em 2026-10-11: o índice do catálogo tem 220 coleções e 23.736 cartas.
+- **Harness do AR** (`e2e/ar-harness.html` e `.mjs`, `ar-harness-multi.*`): ferramenta de desenvolvimento, **não roda no CI**. Compila o alvo, inicia o rastreador com câmera falsa e imprime estado e leituras/s. Uso: `npx vite build -c e2e/vite.harness.config.mjs`, copiar `card.png` e `sprite.gif` para a pasta gerada, servir estaticamente e rodar `node e2e/ar-harness.mjs` com um vídeo `e2e/.tmp/cam.y4m` (feito com `ffmpeg`). Serve para comparar antes e depois de uma mudança (por exemplo, as leituras/s com e sem a normalização de contraste); roda com GL por software, então **os números não valem para celular**.
 
 ## O que NÃO é coberto automaticamente
 
-- **Câmera real e permissões.** O happy-dom não tem câmera. A lógica é testada com objetos simulados; a integração com o navegador não.
-- **Desenho em WebGL** (`src/ar/overlay.ts`). Não há WebGL no happy-dom. O módulo é verificado apenas por tipos e build.
+- **Câmera real, GPU e sensores.** Nenhuma medida de fluidez, calor, bateria ou leituras/s num aparelho.
+- **Precisão do reconhecimento** com fotos de celular: só há fotos de exemplo. Falta um conjunto de teste medido (ver o plano).
+- **Pin Mode, Caixa com 40 e posição do Pokémon sobre a carta** foram vistos só no Chromium (390×780, PokeAPI/TCGdex simulados, câmera falsa e GL por software): a física, o equilíbrio (simulação IA × IA: ~5–7 disparos por partida, 3×3 perto de 50 %) e a aparência/inclinação/sombra no AR **não** foram medidos em celular.
+- **Aparência dos efeitos** (luz dos golpes, suavização de pixels, câmera de cinema) em tela e GPU de celular. Foram vistos em capturas do Chromium com GL por software.
 - **Instalação do PWA e uso offline.**
-- **Rede do Showdown.** O ambiente de desenvolvimento não alcança o servidor; nomes de arquivo e CORS dos GIFs estão **não verificados**.
+- **Disponibilidade e CORS dos serviços externos** a partir do navegador do celular (foram medidos no GitHub Actions).
+- **Se a normalização de contraste melhora o reconhecimento em luz difícil:** o teste sintético passava com e sem ela.
 
-## Checklist manual em aparelho real
+## Roteiro manual
 
-Fazer no Chrome do Android e no Safari do iPhone, abrindo o endereço do GitHub Pages.
-
-1. A página abre e o painel "Este aparelho" mostra HTTPS e WebGL2 como disponíveis.
-2. **Abrir câmera** pede permissão e mostra a câmera **traseira**. Negar a permissão mostra a mensagem em português.
-3. **Fechar câmera** apaga o indicador de câmera ativa do aparelho.
-4. **Carregar GIF do aparelho** com um GIF animado com fundo transparente: o Pokémon anima, sem retângulo de fundo e sem borda serrilhada de cor errada.
-5. **Carregar GIF do Showdown** com `pikachu`, `charizard`, `mrmime`, `nidoranf`: anotar quais funcionam. Se falhar, anotar a mensagem exibida (404 ou CORS). Esta é a validação da Fase 1.
-6. Instalar na tela inicial (botão **Instalar app** no Android; Compartilhar → Adicionar à Tela de Início no iOS). O app abre em tela cheia.
-7. Com o app instalado e o aparelho em modo avião, abrir de novo: a interface carrega pelo cache.
-8. Girar a tela e redimensionar: o desenho do Pokémon acompanha o tamanho da área da câmera.
-
-Registrar o resultado (aparelho, navegador, passou ou falhou) no pull request ou em uma issue.
-
-## Quando reconhecimento e AR existirem
-
-Cada fase do plano tem um critério de pronto medido. Na Fase 4, a taxa de acerto em fotos reais de cartas deve ser publicada aqui, com o conjunto de teste e a data. Sem medição, não há afirmação de que o reconhecimento funciona.
+O passo a passo em aparelho real está em [TESTE_NO_CELULAR.md](TESTE_NO_CELULAR.md). Registre aparelho, navegador, o que passou e o que falhou (no pull request ou numa issue).

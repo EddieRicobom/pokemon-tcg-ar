@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardImageUrl, TcgdexClient, TcgdexError } from './tcgdex';
+import { cardImageUrl, referenceCandidates, shortUrl, TcgdexClient, TcgdexError } from './tcgdex';
 
 const card = { id: 'base1-58', localId: '58', name: 'Pikachu', dexId: [25], set: { id: 'base1', name: 'Base Set' } };
 
@@ -63,5 +63,28 @@ describe('cardImageUrl', () => {
   it('monta o endereço da imagem a partir da base do TCGdex', () => {
     expect(cardImageUrl('https://assets.tcgdex.net/en/base/base1/58')).toBe('https://assets.tcgdex.net/en/base/base1/58/low.webp');
     expect(cardImageUrl('https://a/b', 'high', 'png')).toBe('https://a/b/high.png');
+  });
+});
+
+describe('referenceCandidates', () => {
+  it('formatos do mesmo endereço primeiro, depois os outros idiomas do CDN, sem repetição', () => {
+    expect(referenceCandidates('https://assets.tcgdex.net/en/swsh/swsh1/081')).toEqual([
+      'https://assets.tcgdex.net/en/swsh/swsh1/081/low.webp',
+      'https://assets.tcgdex.net/en/swsh/swsh1/081/high.webp',
+      'https://assets.tcgdex.net/en/swsh/swsh1/081/low.png',
+      'https://assets.tcgdex.net/pt/swsh/swsh1/081/low.webp',
+      'https://assets.tcgdex.net/fr/swsh/swsh1/081/low.webp',
+    ]);
+  });
+  it('não repete o idioma original e aceita idioma que já é pt', () => {
+    const urls = referenceCandidates('https://assets.tcgdex.net/pt/base/base1/58');
+    expect(urls).toContain('https://assets.tcgdex.net/en/base/base1/58/low.webp');
+    expect(urls.filter((u) => u.includes('/pt/') && u.endsWith('low.webp'))).toHaveLength(1);
+  });
+  it('endereço fora do formato esperado só gera as tentativas de formato', () => {
+    expect(referenceCandidates('https://assets.example/base1/58')).toHaveLength(3);
+  });
+  it('shortUrl tira o protocolo', () => {
+    expect(shortUrl('https://assets.tcgdex.net/en/x/low.webp')).toBe('assets.tcgdex.net/en/x/low.webp');
   });
 });

@@ -1,0 +1,112 @@
+<!doctype html><meta charset="utf-8"><title>AR harness</title>
+<style>body{margin:0}#stage{position:relative;width:480px;height:360px}video,canvas{position:absolute;inset:0;width:100%;height:100%}video{object-fit:cover}</style>
+<div id="stage"><video id="v" playsinline muted autoplay></video><canvas id="c"></canvas></div>
+<script type="module">
+import { compileTarget } from '../src/ar/target.ts';
+import { startAr } from '../src/ar/start-ar.ts';
+import { Controller } from 'mind-ar/src/image-target/controller.js';
+const orig = Controller.prototype._detectAndMatch;
+let n = 0;
+Controller.prototype._detectAndMatch = async function (...args) {
+  const t = performance.now();
+  const r = await orig.apply(this, args);
+  n++;
+  if (n <= 8 || n % 20 === 0) window.log.push('detectAndMatch#' + n + ' idx=' + r.targetIndex + ' ' + Math.round(performance.now() - t) + 'ms' + (r.debugExtra ? ' keys=' + Object.keys(r.debugExtra).join(',') : ''));
+  return r;
+};
+import { CropDetector } from 'mind-ar/src/image-target/detector/crop-detector.js';
+const origMove = CropDetector.prototype.detectMoving;
+let dm = 0;
+CropDetector.prototype.detectMoving = function (...a) {
+  const r = origMove.apply(this, a);
+  dm++;
+  if (dm <= 12 || r.featurePoints.length > 0) window.log.push('detectMoving#' + dm + ' featurePoints=' + (r.featurePoints ? r.featurePoints.length : 'n/a') + ' crop=' + (this.lastRandomIndex ?? '?'));
+  return r;
+};
+window.log = [];
+const backend = new URLSearchParams(location.search).get('backend');
+if (backend) { const tf = await import('@tensorflow/tfjs'); await tf.setBackend(backend); await tf.ready(); window.log.push('tf backend ' + tf.getBackend()); }
+const log = (m) => { window.log.push(m); };
+window.detectTest = async () => {
+  const tf = await import('@tensorflow/tfjs');
+  const { Detector } = await import('mind-ar/src/image-target/detector/detector.js');
+  await tf.ready();
+  const img = await createImageBitmap(await (await fetch('./card.png')).blob());
+  const w = 300, h = 413;
+  const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+  const out = { backend: tf.getBackend() };
+  const gray = tf.tidy(() => tf.browser.fromPixels(c).mean(2));
+  const sum = (await gray.sum().data())[0];
+  out.graySum = Math.round(sum);
+  const det = new Detector(w, h);
+  const r = det.detect(gray);
+  out.featurePoints = r.featurePoints.length;
+  return out;
+};
+window.videoTest = async () => {
+  const tf = await import('@tensorflow/tfjs');
+  const { InputLoader } = await import('mind-ar/src/image-target/input-loader.js');
+  await tf.ready();
+  const v = document.getElementById('v');
+  v.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+  await v.play();
+  await new Promise((r) => setTimeout(r, 800));
+  const out = { video: v.videoWidth + 'x' + v.videoHeight, readyState: v.readyState };
+  const loader = new InputLoader(v.videoWidth, v.videoHeight);
+  const t = loader.loadInput(v);
+  out.shape = t.shape;
+  const d = await t.data();
+  let min = 1e9, max = -1e9, sum = 0;
+  for (const x of d) { min = Math.min(min, x); max = Math.max(max, x); sum += x; }
+  out.min = min; out.max = max; out.mean = sum / d.length;
+  // Mesmo vídeo desenhado num canvas 2D, para comparar.
+  const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+  const g = c.getContext('2d'); g.drawImage(v, 0, 0);
+  const px = g.getImageData(0, 0, c.width, c.height).data;
+  let s2 = 0; for (let i = 0; i < px.length; i += 4) s2 += px[i];
+  out.canvasMeanR = s2 / (px.length / 4);
+  const t2 = loader.loadInput(c);
+  const d2 = await t2.data();
+  let s3 = 0; for (const x of d2) s3 += x;
+  out.canvasInputMean = s3 / d2.length;
+  return out;
+};
+window.run = async () => {
+  try {
+    const v = document.getElementById('v');
+    v.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+    await v.play();
+    log('camera ' + v.videoWidth + 'x' + v.videoHeight);
+    const card = await (await fetch('./card.png')).blob();
+    const t0 = performance.now();
+    const target = await compileTarget(card, (p) => {});
+    log('compiled ' + Math.round(performance.now() - t0) + 'ms ' + target.size + 'B');
+    const gif = await (await fetch('./sprite.gif')).blob();
+    const ar = await startAr({
+      video: v, canvas: document.getElementById('c'), container: document.getElementById('stage'),
+      target: await target.arrayBuffer(), dexId: 25,
+      cachedSprite: { kind: 'gif', url: 'local.gif', blob: gif },
+      fetchSprite: async () => null,
+      battle: {
+        name: 'Pikachu',
+        // Dados de exemplo só para ver o painel no navegador de teste (a rede real não é alcançável daqui).
+        load: async (onPart) => {
+          onPart('profile', { state: 'ok', value: { dexId: 25, types: ['electric'], stats: { hp: 35, attack: 55, defense: 40, spAttack: 50, spDefense: 50, speed: 90 } } });
+          onPart('card', { state: 'ok', value: { hp: 60, types: ['Lightning'], retreat: 1, weaknesses: [{ type: 'Fighting', value: '×2' }], attacks: [
+            { name: 'Gnaw', cost: ['Colorless'], damage: '10' },
+            { name: 'Thunder Jolt', cost: ['Lightning', 'Colorless'], damage: '30', effect: 'Flip a coin. If tails, Pikachu does 10 damage to itself.' } ] } });
+          onPart('moves', { state: 'ok', value: [
+            { name: 'Thunderbolt', type: 'electric', power: 90, accuracy: 100, pp: 15, damageClass: 'special' },
+            { name: 'Quick Attack', type: 'normal', power: 40, accuracy: 100, pp: 30, damageClass: 'physical' },
+            { name: 'Thunder Wave', type: 'electric', power: null, accuracy: 90, pp: 20, damageClass: 'status' },
+            { name: 'Iron Tail', type: 'steel', power: 100, accuracy: 75, pp: 15, damageClass: 'physical' } ] });
+        },
+      },
+      onState: (s) => log('state ' + s.phase),
+      onSprite: (s) => log('sprite ' + s.kind),
+    });
+    window.ar = ar;
+    log('started');
+  } catch (e) { log('ERROR ' + (e && e.stack || e)); }
+};
+</script>

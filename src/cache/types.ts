@@ -24,6 +24,14 @@ export interface SlotInfo {
   error?: string;
   /** Só para o sprite: GIF animado ou PNG estático de reserva. */
   kind?: SpriteKind;
+  /** Só para o sprite: foi baixado para uma carta shiny (pedindo a variante shiny). */
+  shinyRequested?: boolean;
+  /** Só para o sprite: o arquivo guardado é a variante shiny de verdade (ausente = sprite normal). */
+  shiny?: boolean;
+  /** Só para o alvo de AR: versão do processo de compilação (alvos de outra versão são recompilados). */
+  version?: number;
+  /** Só para o alvo de AR: qualidade da imagem usada na compilação. */
+  source?: 'alta' | 'baixa';
 }
 
 /** Cartas já reconhecidas, com tudo que é reutilizável sem rede. Nunca guarda quadros da câmera. */
@@ -47,6 +55,16 @@ export interface CachedCard {
   firstSeenAt: number;
   lastSeenAt: number;
   scanCount: number;
+  /**
+   * Carta de um escaneamento em andamento (momento em que começou). Enquanto existir, a carta não aparece na lista nem no
+   * reconhecimento local: só vira definitiva quando referência, sprite e alvo de AR ficam prontos (`CardCache.scanCard`).
+   * Sobras de um escaneamento interrompido são apagadas ao abrir o app.
+   */
+  pending?: number;
+  /** Shiny: sorteado (1 em 50) no primeiro escaneamento completo e guardado. Ausente em cartas antigas. */
+  shiny?: boolean;
+  /** Escaneada como carta Mega (marcado no primeiro escaneamento completo). */
+  mega?: boolean;
 }
 
 export interface AssetRecord {

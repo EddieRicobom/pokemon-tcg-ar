@@ -1,10 +1,13 @@
+import type { ArtIndex } from './art-index';
 import { CatalogLookup } from './catalog-index';
 import { detectCard } from './detect-card';
+import type { CardDetection } from './detect-card';
 import { computeFeatures } from './hash';
 import type { CardFeatures } from './hash';
 import { rectify, rectifyRegion } from './homography';
-import { cropFraction } from './image';
+import { cropFraction, resizeAverage } from './image';
 import { BOTTOM_LEFT_BOX, BOTTOM_OCR_FULL_WIDTH, BOTTOM_RIGHT_BOX, BOTTOM_STRIP_BOX, NAME_BOX, NAME_OCR_FULL_WIDTH } from './layout';
+import { prepareForOcr } from './ocr';
 import type { OcrEngine } from './ocr';
 import { parseBottomText, parseNameText } from './parse-ocr';
 import type { ParsedBottom } from './parse-ocr';
@@ -46,6 +49,13 @@ export interface PipelineDeps {
   loadReference: ReferenceLoader;
   /** Referências do cache local (M3). Consultadas antes de qualquer requisição. */
   localReferences?: () => Promise<LocalReference[]>;
+  /**
+   * Busca pela ilustração (opcional): devolve o índice de ilustrações, ou null se a opção está desligada ou o índice
+   * não existe. Quando devolve, as cartas mais parecidas entram como candidatas ao lado das do OCR.
+   */
+  artSearch?: () => Promise<ArtIndex | null>;
+  /** Liga o diagnóstico do scan (guarda miniaturas e motivos). Consultado a cada quadro. */
+  captureDebug?: () => boolean;
   /** Endereço da imagem de referência a partir da base do TCGdex (padrão: low.webp). */
   referenceUrl?: (imageBase: string) => string;
   /** Candidatos baixados para comparar (padrão 6). */
@@ -72,6 +82,8 @@ export interface RecognitionMetrics {
   rotated180: boolean;
   /** Houve segunda rodada com números parecidos (dígitos confundidos pelo OCR). */
   variantRound?: boolean;
+  /** Quantas candidatas vieram da busca pela ilustração (opção ligada e índice disponível). */
+  artCandidates?: number;
 }
 
 export type RecognitionStatus = 'identified' | 'ambiguous' | 'not-found' | 'no-card';
@@ -95,9 +107,21 @@ export interface RecognitionResult {
   /** Endereço da imagem de referência (chave no cache de arquivos). */
   referenceUrl?: string;
   metrics: RecognitionMetrics;
+  /** O que o scan "viu" neste quadro (só quando o diagnóstico está ligado): para achar a raiz de falhas de leitura. */
+  view?: ScanView;
   /** Diagnóstico da melhor candidata (calibração dos limiares com dados reais). */
   debug?: { bestId?: string; bestSimilarity?: number; bestMeta?: number | null; secondId?: string; secondSimilarity?: number };
   message: string;
+}
+
+export interface ScanView {
+  frame: { width: number; height: number };
+  /** Por que nenhuma carta foi achada (ou vazio se foi). */
+  detectReasons: string[];
+  detect?: Pick<CardDetection, 'areaFraction' | 'aspect' | 'fillRatio' | 'score'>;
+  /** Carta retificada (miniatura) e a faixa inferior exatamente como o OCR a recebe (já em cinza/contraste). */
+  rectified?: RgbaImage;
+  strip?: RgbaImage;
 }
 
 interface LoadedCandidate {
@@ -114,13 +138,15 @@ interface ReadResult {
   names: string[];
   bottomText?: string;
   nameText?: string;
+  /** Faixa inferior enviada ao OCR (diagnóstico). */
+  strip?: RgbaImage;
 }
 
 function toIdentified(card: CardRecordLike): IdentifiedCard {
   return { ...card, dexId: card.dexIds[0] };
 }
 
-function recordFromTcgdex(card: TcgdexCard, fallback?: CandidateInfo): CardRecordLike {
+export function recordFromTcgdex(card: TcgdexCard, fallback?: CandidateInfo): CardRecordLike {
   return {
     id: card.id,
     name: card.name,
@@ -153,6 +179,8 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return results;
 }
 
+const ART_CANDIDATES = 5;
+
 export class RecognitionPipeline {
   constructor(private readonly deps: PipelineDeps) {}
 
@@ -167,17 +195,21 @@ export class RecognitionPipeline {
     };
     let ocrTextOut: RecognitionResult['ocrText'];
     let debugOut: RecognitionResult['debug'];
+    const capture = this.deps.captureDebug?.() ?? false;
+    const diag = { reasons: [] as string[] };
+    let viewOut: ScanView | undefined = capture ? { frame: { width: frame.width, height: frame.height }, detectReasons: [] } : undefined;
     const finish = (result: Omit<RecognitionResult, 'metrics'>): RecognitionResult => {
       metrics.totalMs = Math.round(now() - started);
       metrics.requests = this.deps.tcgdex.stats.requests - statsBefore.requests + metrics.requests;
       metrics.downloadedBytes = this.deps.tcgdex.stats.bytes - statsBefore.bytes + downloadedBytes;
-      return { ...result, ocrText: ocrTextOut, debug: debugOut, metrics };
+      return { ...result, ocrText: ocrTextOut, debug: debugOut, view: viewOut, metrics };
     };
     const empty = { alternatives: [], confidence: 0, margin: 0, parsed: { bottom: {}, names: [] } };
 
     const t0 = now();
-    const detection = detectCard(frame);
+    const detection = detectCard(frame, capture ? diag : undefined);
     metrics.detectMs = Math.round(now() - t0);
+    if (viewOut) viewOut.detectReasons = diag.reasons;
     if (!detection) {
       return finish({ ...empty, status: 'no-card', message: 'Não encontrei uma carta no quadro. Enquadre a carta inteira sobre um fundo liso.' });
     }
@@ -188,19 +220,33 @@ export class RecognitionPipeline {
     if (!rectified) return finish({ ...empty, status: 'no-card', quad, message: 'A carta detectada está deformada demais para corrigir a perspectiva.' });
 
     const t1 = now();
-    let read = await this.readText(frame, quad, rectified, false);
-    if (!read.bottom.number && read.names.length === 0) {
+    // Ordem pensada para o celular (cada passada do Tesseract custa segundos): primeiro só a faixa de baixo nas
+    // duas orientações; as metades esquerda/direita (mais lentas) só se nenhuma das duas achou número e total.
+    let read = await this.readText(frame, quad, rectified, false, false);
+    if (!read.bottom.number?.total) {
       const flippedQuad = rotate180(quad);
       const flipped = rectify(frame, flippedQuad, CARD_WIDTH_PX, CARD_HEIGHT_PX);
       if (flipped) {
-        const flippedRead = await this.readText(frame, flippedQuad, flipped, false);
-        if (flippedRead.bottom.number || flippedRead.names.length > 0) {
+        const flippedRead = await this.readText(frame, flippedQuad, flipped, false, false);
+        if (flippedRead.bottom.number?.total || (!read.bottom.number && flippedRead.bottom.number)) {
           quad = flippedQuad;
           rectified = flipped;
           read = flippedRead;
           metrics.rotated180 = true;
         }
       }
+    }
+    if (!read.bottom.number?.total) {
+      const withSides = await this.readText(frame, quad, rectified, false, true, read);
+      if (withSides.bottom.number) read = withSides;
+    }
+    if (viewOut) {
+      viewOut = {
+        ...viewOut,
+        detect: { areaFraction: detection.areaFraction, aspect: detection.aspect, fillRatio: detection.fillRatio, score: detection.score },
+        rectified: resizeAverage(rectified, 210, 293),
+        strip: read.strip ? prepareForOcr(read.strip) : undefined,
+      };
     }
     // O nome só é lido quando ajuda: sem número, ou quando o número deixa mais de um candidato.
     const t2Candidates = this.deps.catalog?.candidates(read.bottom, [], this.maxCandidates()) ?? [];
@@ -246,6 +292,22 @@ export class RecognitionPipeline {
     let indexCandidates = this.deps.catalog?.candidates(read.bottom, read.names, this.maxCandidates()) ?? [];
     if (!this.deps.catalog && read.bottom.number?.total && read.bottom.number.total.prefix === '') {
       indexCandidates = await this.searchWithoutIndex(read.bottom);
+    }
+    // 2b) Busca pela ilustração (opção): as cartas de aparência mais parecida viram candidatas extras. Elas ainda
+    // passam pela comparação com a imagem de referência real; impressões com a mesma arte seguem ambíguas.
+    // Só entra quando o texto não bastou (sem número com total, ou nenhuma candidata): quando o número já
+    // identifica a carta, não vale carregar o índice nem misturar candidatas.
+    const textWeak = indexCandidates.length === 0 || !read.bottom.number?.total;
+    const artIndex = this.deps.artSearch && textWeak ? await this.deps.artSearch().catch(() => null) : null;
+    if (artIndex && this.deps.catalog) {
+      const known = new Set(indexCandidates.map((c) => c.id));
+      const extra = artIndex
+        .search(features, ART_CANDIDATES)
+        .filter((match) => !known.has(match.id))
+        .map((match) => this.deps.catalog?.byId(match.id))
+        .filter((c): c is NonNullable<typeof c> => !!c);
+      metrics.artCandidates = extra.length;
+      indexCandidates = [...indexCandidates, ...extra];
     }
     metrics.candidates = indexCandidates.length;
     const hasVariants = (this.deps.catalog?.variantCandidates(read.bottom, read.names, new Set(), 1).length ?? 0) > 0;
@@ -361,17 +423,18 @@ export class RecognitionPipeline {
    * carta retificada inteira). Segunda tentativa nas metades esquerda/direita, com lista de caracteres,
    * só quando a primeira não achou número com total: o laboratório de OCR do CI mediu as duas.
    */
-  private async readText(frame: RgbaImage, quad: Quad, rectified: RgbaImage, nameOnly: boolean): Promise<ReadResult> {
+  private async readText(frame: RgbaImage, quad: Quad, rectified: RgbaImage, nameOnly: boolean, withSides = true, previous?: ReadResult): Promise<ReadResult> {
     if (nameOnly) {
       const region = rectifyRegion(frame, quad, NAME_BOX, NAME_OCR_FULL_WIDTH) ?? cropFraction(rectified, NAME_BOX);
       const text = await this.deps.ocr.recognize(region, 'name');
       return { bottom: {}, names: parseNameText(text), nameText: text };
     }
+    // `previous`: a faixa inteira já foi lida nesta orientação; não repete a passada (cada uma custa segundos no celular).
     const strip =
-      rectifyRegion(frame, quad, BOTTOM_STRIP_BOX, BOTTOM_OCR_FULL_WIDTH) ?? cropFraction(rectified, BOTTOM_STRIP_BOX);
-    let text = await this.deps.ocr.recognize(strip, 'bottom');
-    let bottom = parseBottomText(text);
-    if (!bottom.number?.total) {
+      previous?.strip ?? rectifyRegion(frame, quad, BOTTOM_STRIP_BOX, BOTTOM_OCR_FULL_WIDTH) ?? cropFraction(rectified, BOTTOM_STRIP_BOX);
+    let text = previous?.bottomText ?? (await this.deps.ocr.recognize(strip, 'bottom'));
+    let bottom = previous?.bottom ?? parseBottomText(text);
+    if (withSides && !bottom.number?.total) {
       const sides: string[] = [];
       for (const box of [BOTTOM_LEFT_BOX, BOTTOM_RIGHT_BOX]) {
         const region = rectifyRegion(frame, quad, box, Math.round(BOTTOM_OCR_FULL_WIDTH * (box[2] - box[0])));
@@ -387,7 +450,7 @@ export class RecognitionPipeline {
         }
       }
     }
-    return { bottom, names: [], bottomText: text };
+    return { bottom, names: [], bottomText: text, strip };
   }
 
   /** Sem índice estático: pergunta ao TCGdex pelas cartas com esse número e esse total. */

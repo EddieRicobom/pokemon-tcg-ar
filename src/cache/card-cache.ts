@@ -1,9 +1,13 @@
+import { TARGET_VERSION } from '../ar/target';
 import { fetchSprite as defaultFetchSprite } from '../ar/sprite-source';
+import { formDexId, spriteKeyIsFor } from '../core/dex-form';
+import { isMegaName } from '../core/mega';
+import { isShiny, shinyForNewCard } from '../core/shiny';
 import type { SpriteSource } from '../ar/sprite-source';
 import { computeFeatures, featuresFromJson, featuresToJson, FEATURE_VERSION } from '../recognition/hash';
 import type { CardFeatures } from '../recognition/hash';
 import type { CardRecordLike, LocalReference, RecognitionResult } from '../recognition/pipeline';
-import { cardImageUrl } from '../recognition/tcgdex';
+import { cardImageUrl, referenceCandidates, shortUrl } from '../recognition/tcgdex';
 import type { RgbaImage } from '../recognition/types';
 import { QuotaError } from './assets';
 import type { AssetBackend } from './assets';
@@ -13,6 +17,8 @@ import type { AssetKind, AssetRecord, CachedCard, CacheStatus, SlotInfo, Storage
 
 export const DEFAULT_MAX_CARDS = 300;
 export const DEFAULT_MAX_BYTES = 200 * 1024 * 1024;
+/** Um escaneamento que ficou assim há mais tempo foi interrompido (aba fechada, app morto): a sobra é apagada. */
+export const PENDING_MAX_AGE_MS = 10 * 60 * 1000;
 
 export interface StorageApi {
   estimate?: () => Promise<{ usage?: number; quota?: number }>;
@@ -24,18 +30,25 @@ export interface CardCacheDeps {
   db: CacheDb;
   assets: AssetBackend;
   fetchImpl?: typeof fetch;
-  fetchSprite?: (dexId: number) => Promise<SpriteSource | null>;
+  /** `options.shiny`: a carta é shiny, então tenta o sprite shiny (se não existir, devolve o normal). */
+  fetchSprite?: (dexId: number, options?: { shiny?: boolean }) => Promise<SpriteSource | null>;
   /** Compila o alvo de AR (arquivo .mind) a partir da imagem de referência. Opcional (Marco 4). */
   buildTarget?: (reference: Blob) => Promise<Blob>;
+  /** Baixa a imagem em alta resolução só para compilar o alvo (não é guardada). Se falhar, usa a referência guardada. */
+  fetchTargetImage?: (url: string) => Promise<Blob>;
   /** Decodifica a referência em pixels (para recalcular características). */
   decodeReference?: (blob: Blob) => Promise<RgbaImage>;
   now?: () => number;
+  /** Fonte de sorteio do shiny (1 em 50 no primeiro escaneamento). Testes passam uma fixa. */
+  random?: () => number;
   maxCards?: number;
   maxBytes?: number;
   /** Espera base entre tentativas (testes usam 0). */
   backoffMs?: number;
   retries?: number;
   storage?: StorageApi;
+  /** Chamado depois de cada leitura gravada (para o Treinador dar XP). Erros aqui nunca derrubam a leitura. */
+  onRecorded?: (card: CachedCard) => void;
 }
 
 export interface RecordInput {
@@ -65,6 +78,11 @@ export interface PrepareProgress {
   total: number;
 }
 
+export type ScanOutcome =
+  | { saved: true; result: PrepareResult }
+  /** Nada novo foi guardado. `reason` diz, em português, o que faltou. */
+  | { saved: false; result: PrepareResult; reason: string };
+
 export interface PrepareResult {
   id: string;
   status: CacheStatus;
@@ -72,8 +90,9 @@ export interface PrepareResult {
 }
 
 const TARGET_PREFIX = '/__tcg-ar__/target/';
+/** A versão entra na chave: um alvo novo nunca é confundido com um antigo já guardado. */
 export function targetKey(cardId: string): string {
-  return `${TARGET_PREFIX}${encodeURIComponent(cardId)}.mind`;
+  return `${TARGET_PREFIX}v${TARGET_VERSION}/${encodeURIComponent(cardId)}.mind`;
 }
 
 const emptySlot = (): SlotInfo => ({ state: 'missing' });
@@ -85,11 +104,31 @@ export function cacheStatusOf(card: CachedCard): CacheStatus {
   return 'completo';
 }
 
+/** O que impediu o escaneamento de terminar, em português: cada parte que falta ou falhou, com o motivo quando há. */
+export function describeIncomplete(card: CachedCard): string {
+  const parts: [string, SlotInfo][] = [['a imagem da carta', card.reference], ['o Pokémon animado', card.sprite], ['o alvo de AR', card.target]];
+  const problems = parts.filter(([, slot]) => slot.state === 'missing' || slot.state === 'error' || (slot === card.reference && slot.state === 'unavailable')).map(([label, slot]) => (slot.error ? `${label} (${slot.error})` : label));
+  return problems.length > 0 ? `Não consegui preparar ${problems.join(', ')}. Nada foi guardado; tente de novo.` : 'Não consegui preparar a carta. Nada foi guardado; tente de novo.';
+}
+
+class HttpStatusError extends Error {
+  constructor(readonly status: number) {
+    super(`HTTP ${status}`);
+  }
+}
+
+/** Texto curto para a falha de um endereço: código HTTP ou "sem resposta" (rede, bloqueio ou arquivo inexistente sem CORS). */
+function describeFailure(url: string, error: unknown): string {
+  const where = shortUrl(url);
+  if (error instanceof HttpStatusError) return `HTTP ${error.status} em ${where}`;
+  return `sem resposta de ${where}`;
+}
+
 export class CardCache {
   private readonly db: CacheDb;
   private readonly assets: AssetBackend;
   private readonly fetchImpl: typeof fetch;
-  private readonly fetchSpriteImpl: (dexId: number) => Promise<SpriteSource | null>;
+  private readonly fetchSpriteImpl: (dexId: number, options?: { shiny?: boolean }) => Promise<SpriteSource | null>;
   private readonly now: () => number;
   private readonly maxCards: number;
   private readonly maxBytes: number;
@@ -101,7 +140,7 @@ export class CardCache {
     this.db = deps.db;
     this.assets = deps.assets;
     this.fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init));
-    this.fetchSpriteImpl = deps.fetchSprite ?? ((dexId) => defaultFetchSprite(dexId, this.fetchImpl));
+    this.fetchSpriteImpl = deps.fetchSprite ?? ((dexId, options) => defaultFetchSprite(dexId, this.fetchImpl, options));
     this.now = deps.now ?? (() => Date.now());
     this.maxCards = deps.maxCards ?? DEFAULT_MAX_CARDS;
     this.maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -115,6 +154,8 @@ export class CardCache {
     if (!this.index) {
       const all = await this.db.getAll('cards');
       this.index = new Map(all.map((card) => [card.id, this.migrate(card)]));
+      const stale = all.filter((card) => card.pending !== undefined && this.now() - card.pending > PENDING_MAX_AGE_MS);
+      for (const card of stale) await this.remove(card.id);
     }
     return this.index;
   }
@@ -126,7 +167,7 @@ export class CardCache {
   }
 
   async list(): Promise<(CachedCard & { status: CacheStatus })[]> {
-    const cards = [...(await this.load()).values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+    const cards = [...(await this.load()).values()].filter((card) => card.pending === undefined).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
     return cards.map((card) => ({ ...card, status: cacheStatusOf(card) }));
   }
 
@@ -135,14 +176,14 @@ export class CardCache {
   }
 
   async count(): Promise<number> {
-    return (await this.load()).size;
+    return [...(await this.load()).values()].filter((card) => card.pending === undefined).length;
   }
 
   /** Referências para reconhecer sem rede: cartas com características válidas guardadas. */
   async localReferences(): Promise<LocalReference[]> {
     const result: LocalReference[] = [];
     for (const card of (await this.load()).values()) {
-      if (!card.features) continue;
+      if (!card.features || card.pending !== undefined) continue;
       result.push({ card: this.toRecord(card), features: featuresFromJson(card.features) });
     }
     return result;
@@ -172,7 +213,7 @@ export class CardCache {
    * Chamado depois de cada identificação confiável: guarda os metadados, a referência e as
    * características reutilizáveis. Nunca recebe nem guarda o quadro da câmera.
    */
-  async recordRecognition(input: RecordInput): Promise<CachedCard> {
+  async recordRecognition(input: RecordInput, options: { pending?: boolean } = {}): Promise<CachedCard> {
     const existing = await this.get(input.card.id);
     const timestamp = this.now();
     const card: CachedCard = existing
@@ -180,14 +221,118 @@ export class CardCache {
       : {
           ...this.toRecord(input.card), schema: CACHE_SCHEMA_VERSION, reference: emptySlot(), sprite: emptySlot(), target: emptySlot(),
           firstSeenAt: timestamp, lastSeenAt: timestamp, scanCount: 1,
+          // O sorteio do shiny acontece aqui, no primeiro escaneamento da carta, para o sprite já ser baixado na variante certa.
+          // Se o escaneamento não terminar a carta é apagada, e o escaneamento seguinte sorteia de novo.
+          shiny: shinyForNewCard(input.card, this.deps.random),
+          ...(isMegaName(input.card.name) ? { mega: true } : {}),
+          ...(options.pending ? { pending: timestamp } : {}),
         };
     if (input.reference && !card.features) card.features = featuresToJson(computeFeatures(input.reference));
     if (input.referenceBlob && input.referenceUrl && card.reference.state !== 'ok') {
       card.reference = await this.storeAsset(card.id, 'reference', input.referenceUrl, input.referenceBlob, card.reference);
     }
     await this.save(card);
+    if (options.pending) return card;
     await this.enforceLimits(card.id);
+    try {
+      this.deps.onRecorded?.(card);
+    } catch {
+      // O aviso é só um extra.
+    }
     return card;
+  }
+
+  /**
+   * O escaneamento completo, tudo ou nada. A carta nova nasce "pendente" (invisível na lista e no reconhecimento local) e só
+   * fica no cache quando referência, sprite e alvo de AR terminam. Se algo faltar ou falhar, o escaneamento for cancelado
+   * (`isCurrent` devolve false) ou der erro, a carta nova e os arquivos que só ela usava são apagados. Uma carta que já
+   * estava guardada nunca é apagada por um escaneamento que não terminou. O aviso `onRecorded` (XP do Treinador) só sai
+   * quando o escaneamento termina.
+   */
+  async scanCard(input: RecordInput, onProgress?: (progress: PrepareProgress) => void, isCurrent: () => boolean = () => true): Promise<ScanOutcome> {
+    const id = input.card.id;
+    const existing = await this.get(id);
+    const isNew = !existing;
+    if (isNew) await this.recordRecognition(input, { pending: true });
+    let result: PrepareResult;
+    try {
+      result = await this.prepareCard(id, onProgress);
+    } catch (error) {
+      if (isNew) await this.remove(id);
+      throw error;
+    }
+    if (!isCurrent()) {
+      if (isNew) await this.remove(id);
+      return { saved: false, result, reason: 'O escaneamento foi cancelado antes de terminar.' };
+    }
+    if (result.status !== 'completo') {
+      if (isNew) await this.remove(id);
+      return { saved: false, result, reason: describeIncomplete(result.card) };
+    }
+    const card = await this.finishScan(result.card, isNew, input);
+    return { saved: true, result: { ...result, card } };
+  }
+
+  /** Torna definitiva a carta de um escaneamento completo. */
+  private async finishScan(prepared: CachedCard, isNew: boolean, input: RecordInput): Promise<CachedCard> {
+    const timestamp = this.now();
+    const base = (await this.get(prepared.id)) ?? prepared;
+    const { pending: _pending, ...rest } = base;
+    void _pending;
+    // O shiny e a marca Mega já foram decididos no primeiro registro da carta (`recordRecognition`); reescanear nunca muda isso.
+    const card: CachedCard = isNew
+      ? { ...rest, firstSeenAt: timestamp, lastSeenAt: timestamp, scanCount: 1 }
+      : { ...rest, ...this.toRecord(input.card), lastSeenAt: timestamp, scanCount: base.scanCount + 1, schema: CACHE_SCHEMA_VERSION };
+    await this.save(card);
+    await this.enforceLimits(card.id);
+    try {
+      this.deps.onRecorded?.(card);
+    } catch {
+      // O aviso é só um extra.
+    }
+    return card;
+  }
+
+  /**
+   * Carta shiny com o sprite normal guardado (a Gallade 244/236 de antes de o shiny existir, ou a primeira versão do shiny,
+   * que só tinha o brilho): troca pelo sprite shiny de verdade. O sprite antigo só sai depois de o novo estar guardado; sem
+   * rede (ou sem o arquivo) fica o que já funciona e tenta de novo na próxima vez. Devolve a mesma carta se nada mudou.
+   */
+  private async upgradeShinySprite(card: CachedCard): Promise<CachedCard> {
+    const species = card.dexIds[0];
+    if (species === undefined || card.sprite.state !== 'ok' || card.sprite.shinyRequested === true || !isShiny(card)) return card;
+    const dexId = formDexId(species, card.name);
+    try {
+      const sprite = await this.withRetry(() => this.fetchSpriteImpl(dexId, { shiny: true }));
+      if (!sprite) return card;
+      const oldKey = card.sprite.key;
+      const slot = this.spriteSlot(await this.storeAsset(card.id, 'sprite', sprite.url, sprite.blob, emptySlot()), sprite, true);
+      const next = { ...card, sprite: slot };
+      await this.save(next);
+      if (oldKey && oldKey !== slot.key) await this.release(card.id, oldKey);
+      return next;
+    } catch {
+      return card;
+    }
+  }
+
+  /**
+   * Passa pelas cartas shiny guardadas e troca o sprite normal pelo shiny (ver `upgradeShinySprite`). Roda em segundo plano
+   * ao abrir o app. Devolve quantas cartas mudaram.
+   */
+  async refreshShinySprites(): Promise<number> {
+    let changed = 0;
+    for (const card of [...(await this.load()).values()]) {
+      if (card.pending !== undefined) continue;
+      const next = await this.upgradeShinySprite(card);
+      if (next !== card) changed++;
+    }
+    return changed;
+  }
+
+  /** A ficha do sprite guardado, com o que se sabe sobre a variante shiny. */
+  private spriteSlot(stored: SlotInfo, sprite: SpriteSource, requestedShiny: boolean): SlotInfo {
+    return { ...stored, kind: sprite.kind, ...(requestedShiny ? { shinyRequested: true } : {}), ...(sprite.shiny ? { shiny: true } : {}) };
   }
 
   /** Guarda um arquivo, com contagem de referências para deduplicar (um GIF por Pokémon, não por carta). */
@@ -245,6 +390,33 @@ export class CardCache {
     throw lastError;
   }
 
+  /**
+   * Baixa a imagem de referência. A primeira tentativa (baixa resolução WebP) usa as novas tentativas com espera; se não
+   * der, experimenta os outros formatos e idiomas do mesmo CDN (`referenceCandidates`), uma vez cada. Se nada responder,
+   * o erro diz o endereço que falhou e se foi falta de resposta (rede ou bloqueio) ou um código HTTP.
+   */
+  private async downloadReference(imageBase: string): Promise<{ url: string; blob: Blob }> {
+    const candidates = referenceCandidates(imageBase);
+    const failures: string[] = [];
+    for (const [index, url] of candidates.entries()) {
+      const attempt = async () => {
+        const response = await this.fetchImpl(url);
+        if (!response.ok) throw new HttpStatusError(response.status);
+        return response.blob();
+      };
+      try {
+        const blob = index === 0 ? await this.withRetry(attempt) : await attempt();
+        return { url, blob };
+      } catch (error) {
+        if (error instanceof QuotaError || error instanceof RangeError) throw error;
+        failures.push(describeFailure(url, error));
+      }
+    }
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const first = failures[0] ?? 'sem endereço';
+    throw new Error(offline ? `o aparelho está sem internet (${first})` : failures.length > 1 ? `${first}; mais ${failures.length - 1} tentativas também falharam` : first);
+  }
+
   private errorSlot(previous: SlotInfo, error: unknown): SlotInfo {
     const message = error instanceof QuotaError ? 'Sem espaço no aparelho' : error instanceof Error ? error.message : String(error);
     return { state: 'error', error: message, kind: previous.kind };
@@ -266,13 +438,8 @@ export class CardCache {
       if (!card.imageBase) {
         card = { ...card, reference: { state: 'unavailable', error: 'Sem imagem no TCGdex' } };
       } else {
-        const url = cardImageUrl(card.imageBase, 'low', 'webp');
         try {
-          const blob = await this.withRetry(async () => {
-            const response = await this.fetchImpl(url);
-            if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar a referência`);
-            return response.blob();
-          });
+          const { url, blob } = await this.downloadReference(card.imageBase);
           card = { ...card, reference: await this.storeAsset(id, 'reference', url, blob, card.reference) };
         } catch (error) {
           card = { ...card, reference: this.errorSlot(card.reference, error) };
@@ -292,33 +459,66 @@ export class CardCache {
 
     // 2) Sprite (GIF animado; PNG estático se o GIF não existir; "indisponível" se nada existir)
     report('sprite');
+    const species = card.dexIds[0];
+    const dexId = species === undefined ? undefined : formDexId(species, card.name);
+    // Sprite baixado antes de a forma regional ser reconhecida (Ponyta de Galar com o sprite da Ponyta comum): refaz.
+    const wrongForm = card.sprite.state === 'ok' && dexId !== undefined && dexId !== species && !spriteKeyIsFor(card.sprite.key, dexId);
+    if (wrongForm && card.sprite.key) {
+      await this.release(id, card.sprite.key);
+      card = { ...card, sprite: { state: 'missing' } };
+    }
+    const wantShiny = dexId !== undefined && isShiny(card);
     if (card.sprite.state !== 'ok') {
-      const dexId = card.dexIds[0];
       if (dexId === undefined) {
         card = { ...card, sprite: { state: 'unavailable', error: 'Esta carta não tem um Pokémon (Treinador/Energia)' } };
       } else {
         try {
-          const sprite = await this.withRetry(() => this.fetchSpriteImpl(dexId));
+          const sprite = await this.withRetry(() => this.fetchSpriteImpl(dexId, wantShiny ? { shiny: true } : undefined));
           card = sprite
-            ? { ...card, sprite: { ...(await this.storeAsset(id, 'sprite', sprite.url, sprite.blob, card.sprite)), kind: sprite.kind } }
+            ? { ...card, sprite: this.spriteSlot(await this.storeAsset(id, 'sprite', sprite.url, sprite.blob, card.sprite), sprite, wantShiny) }
             : { ...card, sprite: { state: 'unavailable', error: 'Nenhum sprite encontrado para este Pokémon' } };
         } catch (error) {
           card = { ...card, sprite: this.errorSlot(card.sprite, error) };
         }
       }
       await this.save(card);
+    } else if (wantShiny) {
+      card = await this.upgradeShinySprite(card);
     }
 
-    // 3) Alvo de AR (compilado a partir da referência, só se o compilador estiver disponível)
+    // 3) Alvo de AR (compilado a partir da imagem em alta resolução; a de baixa só serve de reserva)
     report('alvo de AR');
+    if (card.target.state === 'ok' && card.target.version !== TARGET_VERSION) {
+      // Alvo de uma versão antiga (imagem ruim): descarta para ser recompilado, nunca reutiliza.
+      if (card.target.key) await this.release(id, card.target.key);
+      card = { ...card, target: { state: 'missing' } };
+      await this.save(card);
+    }
     if (card.target.state !== 'ok' && this.deps.buildTarget) {
-      const reference = await this.getAssetBlob(card, 'reference');
-      if (!reference) {
+      const lowReference = await this.getAssetBlob(card, 'reference');
+      let source: Blob | null = null;
+      let quality: 'alta' | 'baixa' = 'baixa';
+      if (card.imageBase) {
+        const highUrl = cardImageUrl(card.imageBase, 'high', 'webp');
+        try {
+          source = await this.withRetry(async () => {
+            if (this.deps.fetchTargetImage) return this.deps.fetchTargetImage(highUrl);
+            const response = await this.fetchImpl(highUrl);
+            if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar a imagem em alta resolução`);
+            return response.blob();
+          });
+          quality = 'alta';
+        } catch {
+          source = null; // cai para a referência de baixa resolução
+        }
+      }
+      source ??= lowReference;
+      if (!source) {
         card = { ...card, target: { state: 'missing' } };
       } else {
         try {
-          const target = await this.deps.buildTarget(reference);
-          card = { ...card, target: await this.storeAsset(id, 'target', targetKey(id), target, card.target) };
+          const target = await this.deps.buildTarget(source);
+          card = { ...card, target: { ...(await this.storeAsset(id, 'target', targetKey(id), target, card.target)), version: TARGET_VERSION, source: quality } };
         } catch (error) {
           card = { ...card, target: this.errorSlot(card.target, error) };
         }
@@ -435,7 +635,7 @@ export class CardCache {
   async storageInfo(): Promise<StorageInfo> {
     const records = await this.db.getAll('assets');
     const info: StorageInfo = {
-      cards: (await this.load()).size,
+      cards: await this.count(),
       assets: records.length,
       assetBytes: records.reduce((sum, record) => sum + record.bytes, 0),
     };

@@ -28,7 +28,9 @@ describe('App', () => {
     const text = await mount();
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
-    expect(host?.querySelectorAll('nav a')).toHaveLength(3);
+    expect(host?.querySelectorAll('nav.tabs a')).toHaveLength(4);
+    expect(host?.querySelectorAll('nav.modes a')).toHaveLength(3);
+    expect(host?.querySelector('a.header-gear')?.getAttribute('href')).toBe('#/diagnostico');
     expect(host?.querySelector('video')).not.toBeNull();
     expect(host?.querySelector('canvas')).not.toBeNull();
     expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera');
@@ -40,7 +42,58 @@ describe('App', () => {
     expect(text).not.toContain('Escolhida por você');
   });
 
-  it('a tela Carregar mostra a ação de limpar o cache', async () => {
+  it('a tela Caixa abre com a câmera desligada e explica como usar', async () => {
+    const text = await mount('#/caixa');
+    expect(text).toContain('Caixa');
+    expect(text).toContain('Câmera desligada');
+    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera e sensores');
+  });
+
+  it('a tela Várias cartas abre com a câmera desligada e explica o limite de cartas', async () => {
+    const text = await mount('#/varias');
+    expect(text).toContain('Várias cartas');
+    expect(text).toContain('Câmera desligada');
+    expect(text).toContain('nada é lido do texto');
+  });
+
+  it('a tela Treinador mostra nível, missões e conquistas, sem inventar progresso', async () => {
+    localStorage.removeItem('tcg-ar-trainer-v1');
+    const text = await mount('#/treinador');
+    expect(text).toContain('Missões de hoje');
+    expect(text).toContain('Conquistas');
+    expect(text).toContain('Novato');
+    expect(text).toContain('Sem sequência');
+    expect(text).toContain('0 XP');
+  });
+
+  it('a tela Pins explica o jogo, a energia e pede cartas guardadas', async () => {
+    localStorage.removeItem('tcg-ar-trainer-v1');
+    const text = await mount('#/pins');
+    expect(text).toContain('Pin Mode');
+    expect(text).toContain('sem câmera');
+    expect(text).toContain('energia');
+    expect(text).toContain('Escolha os pins');
+    expect(text).toContain('Como funciona o chão');
+  });
+
+  it('Várias e Minhas cartas são modos do Escanear: a aba "Escanear" fica ativa e o Diagnóstico vai para a engrenagem', async () => {
+    await mount('#/varias');
+    expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Escanear');
+    expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Várias');
+    app?.unmount();
+    host?.remove();
+    await mount('#/carregar');
+    expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Escanear');
+    expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Minhas cartas');
+    app?.unmount();
+    host?.remove();
+    await mount('#/diagnostico');
+    expect(host?.querySelector('nav.modes')).toBeNull();
+    expect(host?.querySelector('nav.tabs a.active')).toBeNull();
+    expect(host?.querySelector('a.header-gear')?.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('a tela Cartas mostra a ação de limpar o cache', async () => {
     const text = await mount('#/carregar');
     expect(text).toContain('Cartas guardadas');
     expect(text).toContain('Carregar todas as vistas');

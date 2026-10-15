@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { parseRoute, routeHref } from './route';
+import { parseRoute, routeFlags, routeHref } from './route';
 
 describe('rotas por hash', () => {
-  it('interpreta as três telas e o padrão', () => {
+  it('conhece a rota do Treinador', () => {
+    expect(parseRoute('#/treinador')).toEqual({ name: 'treinador' });
+    expect(parseRoute('#/pins')).toEqual({ name: 'pins' });
+    expect(routeHref('pins')).toBe('#/pins');
+    expect(routeHref('treinador')).toBe('#/treinador');
+  });
+
+  it('interpreta as cinco telas e o padrão', () => {
     expect(parseRoute('')).toEqual({ name: 'escanear' });
     expect(parseRoute('#/')).toEqual({ name: 'escanear' });
+    expect(parseRoute('#/varias')).toEqual({ name: 'varias' });
+    expect(parseRoute('#/caixa')).toEqual({ name: 'caixa' });
     expect(parseRoute('#/carregar')).toEqual({ name: 'carregar' });
     expect(parseRoute('#/diagnostico')).toEqual({ name: 'diagnostico' });
     expect(parseRoute('#/qualquer-coisa')).toEqual({ name: 'escanear' });
@@ -21,7 +30,20 @@ describe('rotas por hash', () => {
 
   it('monta os endereços', () => {
     expect(routeHref('escanear')).toBe('#/');
+    expect(routeHref('varias')).toBe('#/varias');
+    expect(routeHref('caixa')).toBe('#/caixa');
     expect(routeHref('carregar')).toBe('#/carregar');
     expect(routeHref('diagnostico')).toBe('#/diagnostico');
+  });
+
+  it('sinalizadores da Vila vão depois do ? e não mudam a rota', () => {
+    expect(routeHref('pins', undefined, ['vila'])).toBe('#/pins?vila=1');
+    expect(routeHref('caixa', undefined, ['vila', 'pvp'])).toBe('#/caixa?vila=1&pvp=1');
+    expect(parseRoute('#/caixa?vila=1&pvp=1')).toEqual({ name: 'caixa' });
+    expect([...routeFlags('#/caixa?vila=1&pvp=1')].sort()).toEqual(['pvp', 'vila']);
+    expect([...routeFlags('#/pins?vila=1')]).toEqual(['vila']);
+    expect(routeFlags('#/pins').size).toBe(0);
+    expect(routeFlags('#/pins?outra=1&vila').has('vila')).toBe(true);
+    expect(routeFlags('#/pins?outra=1').size).toBe(0);
   });
 });
