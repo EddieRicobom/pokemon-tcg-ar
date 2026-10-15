@@ -7,7 +7,7 @@ import { itemDef } from '../core/village/catalog';
 import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/village/life';
 import type { FurnitureId, VillageState } from '../core/village/life';
 import { homeDecor, homeLevel, homeOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
-import type { Building } from '../core/village/town-layout';
+import type { Building, BuildingKind } from '../core/village/town-layout';
 import { buildingAt, findFree, tileAt } from '../core/village/map';
 import type { Tile, VillageMap } from '../core/village/map';
 import { FX_EMOJI } from '../core/village/social-state';
@@ -18,7 +18,7 @@ import { EDGE } from '../box/ground-art';
 import type { PixelBuf } from '../box/ground-art';
 import { outfitFor, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree, TILE } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
-import { HOME_LANTERN, HOME_WINDOWS, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum } from './town-art';
+import { HOME_LANTERN, HOME_WINDOWS, paintArcade, paintArena, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum, paintPins } from './town-art';
 
 /**
  * O jogo da Vila no navegador: canvas 2D em escala inteira (pixels nítidos), câmera que segue você, profundidade por
@@ -133,6 +133,10 @@ const hashN = (n: number): number => {
 
 const EMOJI_FONT = 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
+/** O desenho e o emoji sobre a porta de cada prédio da praça. */
+const CIVIC_ART: Partial<Record<BuildingKind, () => PixelBuf>> = { cafe: paintCafe, mail: paintMail, museum: paintMuseum, arcade: paintArcade, pins: paintPins, arena: paintArena };
+const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️' };
+
 export class VillageGame {
   readonly player: Walker;
   readonly villagers = new Map<string, Walker>();
@@ -164,6 +168,10 @@ export class VillageGame {
   private homes: ReadonlyMap<string, number> = new Map();
   /** Quem está dormindo em casa agora: some do mapa até acordar. */
   private readonly asleep = new Set<string>();
+  /** Quem foi acordado batendo na porta fica de pé até este instante (relógio de `Date.now()`), mesmo em hora de dormir. */
+  private readonly stayUp = new Map<string, number>();
+  /** Avisos sobre o telhado de uma casa (por terreno), como o 😴 de quem não quer abrir a porta. */
+  private readonly houseTags = new Map<number, { emoji: string; until: number }>();
   private nextSleepCheck = 0;
   /** Quem está esperando você para conversar (o ❗): fica parado onde está. */
   private waiting: string | null = null;
@@ -232,6 +240,34 @@ export class VillageGame {
     return this.villagers.has(id) && !this.asleep.has(id);
   }
 
+  /**
+   * Alguém bateu na porta e `id` abriu: sai de casa já (num "puf", de mau humor se `grumpy`) e fica de pé por `ms`, sem
+   * voltar a dormir. Se já estava fora, só renova o tempo. Devolve `false` se não é morador de nenhuma casa.
+   */
+  wake(id: string, ms: number, grumpy: boolean): boolean {
+    const w = this.villagers.get(id);
+    const door = this.homeDoor(id);
+    if (!w || !door) return false;
+    this.stayUp.set(id, Date.now() + ms);
+    if (this.asleep.has(id)) {
+      this.asleep.delete(id);
+      const spot = findFree(this.map, door.x, door.y, (x, y) => this.occupied(x, y, id), this.rng);
+      w.x = w.tx = spot.x;
+      w.y = w.ty = spot.y;
+      w.t = 1;
+      w.dir = 'down';
+      this.particles.push({ kind: 'poof', x: spot.x + 0.5, y: spot.y + 0.6, vx: 0, vy: 0, born: performance.now(), life: 500 });
+      this.bubble(id, grumpy ? '😠' : '🥱', 2600);
+    }
+    return true;
+  }
+
+  /** O morador recusou abrir ("me deixa dormir!"): um 😴 pula sobre o telhado da casa por uns segundos, e ele continua lá dentro. */
+  grumble(id: string): void {
+    const lot = this.homes.get(id);
+    if (lot !== undefined) this.houseTags.set(lot, { emoji: '😴', until: performance.now() + 2400 });
+  }
+
   private homeDoor(id: string): { x: number; y: number } | null {
     const lot = this.homes.get(id);
     const b = lot === undefined ? undefined : this.map.buildings.find((x) => x.lot === lot);
@@ -249,7 +285,9 @@ export class VillageGame {
         this.asleep.delete(id);
         continue;
       }
-      const want = isAsleep(id, hour) && this.state.follower !== id && !this.sceneBusy(id);
+      const up = (this.stayUp.get(id) ?? 0) > Date.now();
+      if (!up) this.stayUp.delete(id);
+      const want = isAsleep(id, hour) && !up && this.state.follower !== id && !this.sceneBusy(id);
       if (want && !this.asleep.has(id)) {
         this.particles.push({ kind: 'poof', x: w.x + 0.5, y: w.y + 0.6, vx: 0, vy: 0, born: now, life: 500 });
         this.asleep.add(id);
@@ -812,6 +850,9 @@ export class VillageGame {
             shadow(mid, bottom - 2 * scale, 22 * scale, 3.5 * scale, 0.2);
             ctx.drawImage(img, left, bottom - 48 * scale, 3 * T, 3 * T);
             if (sleeping) this.drawTag(mid, bottom - 38 * scale + Math.sin(now / 600) * scale, '💤');
+            const tag = this.houseTags.get(lot);
+            if (tag && now > tag.until) this.houseTags.delete(lot);
+            else if (tag) this.drawTag(mid, bottom - 52 * scale - Math.abs(Math.sin(now / 140)) * 3 * scale, tag.emoji);
           },
         });
         if (night && who.length > 0) {
@@ -824,8 +865,8 @@ export class VillageGame {
         }
         continue;
       }
-      const img = this.sprite(b.kind, b.kind === 'cafe' ? paintCafe : b.kind === 'mail' ? paintMail : paintMuseum);
-      const emoji = b.kind === 'cafe' ? '☕' : b.kind === 'mail' ? '📬' : '🏛️';
+      const img = this.sprite(b.kind, CIVIC_ART[b.kind] ?? paintMuseum);
+      const emoji = CIVIC_EMOJI[b.kind] ?? '🏛️';
       list.push({
         y: b.y + b.h,
         draw: () => {

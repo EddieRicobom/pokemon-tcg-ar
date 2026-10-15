@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRoute, routeHref } from './route';
+import { parseRoute, routeFlags, routeHref } from './route';
 
 describe('rotas por hash', () => {
   it('conhece a rota do Treinador', () => {
@@ -34,5 +34,16 @@ describe('rotas por hash', () => {
     expect(routeHref('caixa')).toBe('#/caixa');
     expect(routeHref('carregar')).toBe('#/carregar');
     expect(routeHref('diagnostico')).toBe('#/diagnostico');
+  });
+
+  it('sinalizadores da Vila vão depois do ? e não mudam a rota', () => {
+    expect(routeHref('pins', undefined, ['vila'])).toBe('#/pins?vila=1');
+    expect(routeHref('caixa', undefined, ['vila', 'pvp'])).toBe('#/caixa?vila=1&pvp=1');
+    expect(parseRoute('#/caixa?vila=1&pvp=1')).toEqual({ name: 'caixa' });
+    expect([...routeFlags('#/caixa?vila=1&pvp=1')].sort()).toEqual(['pvp', 'vila']);
+    expect([...routeFlags('#/pins?vila=1')]).toEqual(['vila']);
+    expect(routeFlags('#/pins').size).toBe(0);
+    expect(routeFlags('#/pins?outra=1&vila').has('vila')).toBe(true);
+    expect(routeFlags('#/pins?outra=1').size).toBe(0);
   });
 });

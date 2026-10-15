@@ -24,9 +24,26 @@ export function parseRoute(hash: string): Route {
   return id ? { name: 'escanear', cardId: decodeURIComponent(id) } : { name: 'escanear' };
 }
 
-export function routeHref(name: RouteName, cardId?: string): string {
-  if (name === 'escanear' && cardId) return `#/escanear/${encodeURIComponent(cardId)}`;
-  return name === 'escanear' ? '#/' : `#/${name}`;
+/**
+ * Sinalizadores que a Vila põe no endereço (`#/pins?vila=1`) para as outras telas saberem de onde você veio:
+ * `vila` = «veio da Vila» (a tela mostra «Voltar à Vila»; na Caixa, abre a Vila direto) e `pvp` = abrir o PvP da Caixa.
+ */
+export type RouteFlag = 'vila' | 'pvp';
+const FLAGS: readonly RouteFlag[] = ['vila', 'pvp'];
+
+export function routeFlags(hash: string): Set<RouteFlag> {
+  const query = hash.split('?')[1] ?? '';
+  const out = new Set<RouteFlag>();
+  for (const part of query.split('&')) {
+    const key = part.split('=')[0] as RouteFlag;
+    if (FLAGS.includes(key)) out.add(key);
+  }
+  return out;
+}
+
+export function routeHref(name: RouteName, cardId?: string, flags: readonly RouteFlag[] = []): string {
+  const base = name === 'escanear' && cardId ? `#/escanear/${encodeURIComponent(cardId)}` : name === 'escanear' ? '#/' : `#/${name}`;
+  return flags.length > 0 ? `${base}?${flags.map((f) => `${f}=1`).join('&')}` : base;
 }
 
 export function useRoute() {

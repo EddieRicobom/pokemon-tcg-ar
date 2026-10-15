@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { isTap } from '../ar/gestures';
 import { fetchSprite, getCache, loadBattle, prepareMegaFor } from '../app/services';
 import { challengePlan, isLeaderCreature, leaderFighter, leaderLoader, loadLeaderEntries, MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
 import { league, pendingChallenge, recordLeagueResult } from '../app/league-store';
 import { profile } from '../app/profile-store';
+import { routeFlags, routeHref } from '../app/route';
 import { challengeById, statusOf } from '../core/league';
 import type { Challenge } from '../core/league';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
@@ -112,6 +113,25 @@ const SLOT_CHOICES: { slot: RosterSlot; label: string; title: string }[] = [
 const loadingCreatures = ref(false);
 /** Modo vida (a Vila, sem câmera). */
 const showVillage = ref(false);
+/** Vindo da Vila (`#/caixa?vila=1`) a Vila abre direto; vindo da Arena (`?pvp=1`) o PvP já aparece aberto. */
+const arrival = routeFlags(window.location.hash);
+const pvpOpen = ref(arrival.has('pvp'));
+const pvpEl = ref<HTMLDetailsElement | null>(null);
+if (arrival.has('vila')) showVillage.value = true;
+if (arrival.size > 0) window.history.replaceState(null, '', routeHref('caixa'));
+function openPvp(): void {
+  pvpOpen.value = true;
+  void nextTick(() => pvpEl.value?.scrollIntoView({ block: 'start' }));
+}
+
+function closeVillage(then?: 'pvp'): void {
+  showVillage.value = false;
+  if (then === 'pvp') openPvp();
+}
+
+onMounted(() => {
+  if (arrival.has('pvp') && !arrival.has('vila')) openPvp();
+});
 const picked = ref<{ name: string; detail: string; dexId?: number; shiny?: boolean; mega?: boolean } | null>(null);
 const phoneHeight = ref(DEFAULT_PHONE_HEIGHT_M);
 const boxSize = ref(2.4);
@@ -1094,7 +1114,7 @@ onBeforeUnmount(() => {
       <PokeBook v-else :mons="bookMons" :friends="village.friends" />
     </details>
 
-    <details v-if="!immersive" class="layout" :open="pvpOn">
+    <details v-if="!immersive" ref="pvpEl" class="layout" :open="pvpOn || pvpOpen" @toggle="(e: Event) => (pvpOpen = (e.target as HTMLDetailsElement).open)">
       <summary>Batalhar com um amigo (PvP)</summary>
       <BoxPvpPanel />
     </details>
@@ -1103,6 +1123,6 @@ onBeforeUnmount(() => {
       <summary>Escolher a equipe da caixa (até 40)</summary>
       <TeamPicker />
     </details>
-    <VillageView v-if="showVillage" @close="showVillage = false" />
+    <VillageView v-if="showVillage" @close="closeVillage" />
   </section>
 </template>

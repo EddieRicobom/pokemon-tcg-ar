@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowR
 import { loadPinData, getCache } from '../app/services';
 import { defaultSetup, loadSetup, roleOf, saveSetup, setRole, setupBlocker } from '../app/pins-setup';
 import type { PinsSetup, Role } from '../app/pins-setup';
-import { routeHref } from '../app/route';
+import { routeFlags, routeHref } from '../app/route';
 import { recordEvent, spendTrainerEnergy, trainer } from '../app/trainer-store';
 import { seededRng } from '../core/battle';
 import {
@@ -169,6 +169,9 @@ async function loadInfos(list: CachedCard[]): Promise<void> {
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
 }
+
+/** Veio da Pista de Pins da Vila: a tela oferece o caminho de volta. */
+const fromVillage = routeFlags(window.location.hash).has('vila');
 
 onMounted(async () => {
   try {
@@ -1285,6 +1288,7 @@ function setMarks(on: boolean): void {
         <div>
           <h2>Pin Mode</h2>
           <p>Vista de cima, sem câmera: puxe para trás, solte e empurre os adversários para fora da arena.</p>
+          <p v-if="fromVillage"><a :href="routeHref('caixa', undefined, ['vila'])">← Voltar à Vila</a></p>
         </div>
         <p class="pn-energy" :title="'Cada disparo gasta a energia do pin escolhido (de 5 a 40). Ela sobe com o seu XP.'">
           <span class="bolt" aria-hidden="true"></span><strong>{{ energy }}</strong><small>energia</small>

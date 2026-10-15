@@ -7,7 +7,10 @@ import { profile } from '../app/profile-store';
 import { visual } from '../app/visual-settings';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
+import { routeHref } from '../app/route';
 import { trainer } from '../app/trainer-store';
+import LeagueCard from './LeagueCard.vue';
+import MinigameHub from './MinigameHub.vue';
 import { dayKey, levelOf } from '../core/trainer';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
@@ -21,7 +24,7 @@ import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABE
 import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, recordAnswer, wordOf } from '../core/village/quiz';
 import type { Follow, Question } from '../core/village/quiz';
 import {
-  assignHomes, CAFE_PRICE, cafeVisit, collectMail, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, LOTS, nextUnlock, paintRoof, PAINT_COST, residentsOf, ROOFS, roofIndex,
+  assignHomes, CAFE_PRICE, cafeVisit, collectMail, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, knockDoor, LOTS, nextUnlock, paintRoof, PAINT_COST, residentsOf, ROOFS, roofIndex,
   toggleDecor, townStage, unlockedBetween, upgradeHome,
 } from '../core/village/town';
 import type { Building } from '../core/village/town';
@@ -37,7 +40,8 @@ import PokeBook from './PokeBook.vue';
 import QuizDialog from './QuizDialog.vue';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
-const emit = defineEmits<{ close: [] }>();
+/** `close` sai da Vila; com `'pvp'` a Caixa abre o PvP em seguida (a Vila mora dentro da Caixa, então não há troca de tela). */
+const emit = defineEmits<{ close: [then?: 'pvp'] }>();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const wrapEl = ref<HTMLElement | null>(null);
@@ -49,7 +53,7 @@ const state = reactive(loadVillage());
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'shop' | 'dress';
+type Sheet = null | 'menu' | 'build' | 'shop' | 'dress' | 'arcade' | 'arena';
 const sheet = ref<Sheet>(null);
 type Tab = 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
 const tab = ref<Tab>('mochila');
@@ -153,6 +157,8 @@ const KEYS: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft:
 let keyDir: Dir | null = null;
 function onKey(e: KeyboardEvent): void {
   if ((e.target as HTMLElement | null)?.tagName === 'INPUT') return;
+  // Dentro de uma folha (jogos do Fliperama, Arena…) Enter, espaço e setas são da folha, não do personagem.
+  if (sheet.value && (e.target as HTMLElement | null)?.closest?.('.village-sheet') && (KEYS[e.key] || e.key === ' ' || e.key === 'Enter')) return;
   if (e.type === 'keydown') {
     const dir = KEYS[e.key];
     if (dir) {
@@ -304,6 +310,7 @@ function openBuilding(b: Building): void {
     return;
   }
   if (b.kind === 'home') return openHome(b);
+  if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena') return openGameBuilding(b);
   if (b.kind === 'mail') {
     const r = collectMail(state, refreshDay(), Math.random, namesById());
     if (r.ok) changed();
@@ -346,6 +353,45 @@ function openBuilding(b: Building): void {
   };
 }
 
+/** Os prédios do bairro dos jogos: cada um abre um modo de verdade do app (nada aqui é uma imitação). */
+function goToPins(): void {
+  closeDialog();
+  window.location.hash = routeHref('pins', undefined, ['vila']);
+}
+
+function goToPvp(): void {
+  closeDialog();
+  sheet.value = null;
+  emit('close', 'pvp');
+}
+
+function openGameBuilding(b: Building): void {
+  const exit = { label: 'Sair', run: closeDialog };
+  if (b.kind === 'arcade') {
+    dialog.value = {
+      name: b.name,
+      text: 'Luzes piscando e o barulhinho das máquinas! Aqui você joga os minigames (Quem é esse Pokémon?, Tipos e Memória) com as cartas que já escaneou. Vencer rende XP, igual no Treinador.',
+      actions: [{ label: 'Jogar', run: () => { closeDialog(); sheet.value = 'arcade'; } }, exit],
+    };
+  } else if (b.kind === 'pins') {
+    dialog.value = {
+      name: b.name,
+      text: 'A pista de Pins: derrube os pinos do adversário com os golpes dos seus Pokémon, sozinho ou contra um amigo (PvP). Ela abre numa tela própria; um botão leva de volta à Vila.',
+      actions: [{ label: 'Jogar Pins', run: goToPins }, exit],
+    };
+  } else {
+    dialog.value = {
+      name: b.name,
+      text: 'A Arena da Vila: desafie os líderes de Ginásio, a Elite 4 e a Campeã, ou batalhe com um amigo (PvP). As lutas acontecem na Caixa, com a câmera e a sua equipe.',
+      actions: [
+        { label: 'Ginásios e Liga', run: () => { closeDialog(); sheet.value = 'arena'; } },
+        { label: 'Batalhar com um amigo (PvP)', run: goToPvp },
+        exit,
+      ],
+    };
+  }
+}
+
 function openFountain(b: Building): void {
   const next = nextUnlock(level.value);
   const open = LOTS.filter((l) => level.value >= l.unlock).length;
@@ -369,6 +415,31 @@ function openFountain(b: Building): void {
       { label: 'Sair', run: closeDialog },
     ],
   };
+}
+
+/** Quantas vezes você bateu seguidas na porta de cada casa (zera depois de 3 minutos sem bater): cada batida a mais convence mais. */
+const knocks = new Map<number, { n: number; at: number }>();
+const KNOCK_MEMORY_MS = 3 * 60000;
+
+function knockAt(b: Building, ids: string[]): void {
+  const lot = b.lot ?? 0;
+  const now = Date.now();
+  const prev = knocks.get(lot);
+  const before = prev && now - prev.at < KNOCK_MEMORY_MS ? prev.n : 0;
+  const r = knockDoor(
+    ids.map((id) => ({ id, name: nameOf(id), asleep: !!game?.isAsleep(id) })),
+    new Date().getHours(),
+    Math.random,
+    before,
+  );
+  if (r.wake.length > 0 || r.refused.length > 0) knocks.set(lot, { n: before + 1, at: now });
+  if (r.wake.length > 0) knocks.delete(lot);
+  for (const id of r.wake) game?.wake(id, r.stayUpMs, r.grumpy.includes(id));
+  if (r.refused.length > 0) game?.grumble(r.refused[0]!);
+  const actions: { label: string; run: () => void }[] = [];
+  if (r.refused.length > 0) actions.push({ label: 'Bater de novo', run: () => knockAt(b, ids) });
+  actions.push({ label: r.wake.length > 0 ? 'Ok' : 'Deixar dormir', run: closeDialog });
+  dialog.value = { name: ids.length === 1 ? nameOf(ids[0]!) : `Casa ${lot + 1}`, text: r.text, actions };
 }
 
 function openHome(b: Building, view: 'main' | 'decor' | 'roof' = 'main'): void {
@@ -430,6 +501,7 @@ function openHome(b: Building, view: 'main' | 'decor' | 'roof' = 'main'): void {
   const comment = homeComment(state, lot, names, sleeping, Math.random);
   const actions: { label: string; run: () => void; disabled?: boolean }[] = [];
   if (ids.length > 0) {
+    actions.push({ label: 'Bater na porta', run: () => knockAt(b, ids) });
     if (next) {
       actions.push({
         label: `Reformar: ${next.name}`,
@@ -937,6 +1009,21 @@ onBeforeUnmount(() => {
           <li v-if="accessoriesOwned.filter(fitsWho).length === 0" class="hint">Nenhum acessório para {{ dressFor === 'player' ? 'você' : 'Pokémon' }} ainda. A loja vende alguns todo dia; a coroa de flores se fabrica com 6 flores.</li>
         </ul>
         <button type="button" @click="dress(null)">Tirar o acessório</button>
+      </div>
+
+      <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-label="Fliperama">
+        <header><strong>Fliperama</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <MinigameHub closable @leave="sheet = null" />
+      </div>
+
+      <div v-if="sheet === 'arena'" class="village-sheet tall game-sheet" role="dialog" aria-label="Arena">
+        <header><strong>Arena</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <div class="card">
+          <h2>Batalha com um amigo</h2>
+          <p class="note">PvP na Caixa: os dois conectam por código, escolhem o modo e a luta aparece na caixa de cada um.</p>
+          <button type="button" class="primary" @click="goToPvp">Ir para o PvP</button>
+        </div>
+        <LeagueCard @challenge="sheet = null; emit('close')" />
       </div>
 
       <div v-if="sheet === 'menu'" class="village-sheet tall" role="dialog" aria-label="Menu da Vila">
