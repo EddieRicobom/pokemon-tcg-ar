@@ -40,6 +40,15 @@ export interface CreatureEntry {
 import { WeatherFx } from './weather-fx';
 import { createWeather, stepWeather, weatherTint } from '../core/weather';
 import type { WeatherKind, WeatherMode, WeatherState } from '../core/weather';
+/** Quem luta e como: índices dos Pokémon da caixa, equipes, revezamento e (Ginásio/PvP) nomes e faixa de abertura. */
+export interface BattlePlanLike {
+  picks: readonly number[];
+  teams?: readonly number[];
+  relay?: boolean;
+  teamNames?: readonly string[];
+  banner?: { text: string; sub: string };
+}
+
 /**
  * Cena da Caixa: a câmera fica na origem (só gira, seguindo os sensores); o chão é um plano horizontal abaixo
  * dela; a caixa é um quadrado desse chão onde os Pokémon passeiam. Sem WebGL aqui: o desenho é injetado
@@ -286,7 +295,7 @@ export class BoxScene {
    * Começa uma batalha automática entre os Pokémon da caixa. `fighters` vem na mesma ordem das criaturas
    * (um por Pokémon, mesmo `id`); precisa de pelo menos 2. Devolve o resultado simulado.
    */
-  startBattle(fighters: readonly Fighter[], rng: Rng = this.rng, plan?: { picks: readonly number[]; teams?: readonly number[]; relay?: boolean }): BattleResult {
+  startBattle(fighters: readonly Fighter[], rng: Rng = this.rng, plan?: BattlePlanLike): BattleResult {
     if (!this.anchor) throw new Error('Coloque a caixa no chão antes de batalhar.');
     // Sem plano, todos da caixa lutam; com plano (equipes, 3x3) `fighters` segue a ordem de `picks`.
     const picks = plan?.picks ?? this.creatures.map((_, i) => i);
@@ -304,6 +313,7 @@ export class BoxScene {
     this.floor.visible = false;
     this.director = new BattleDirector({
       fighters, creatures: fighting, result, root: this.battleRoot, camera: this.camera, rx, rz, rng, sound: this.sound ?? undefined, terrain: this.terrain,
+      teamNames: plan?.teamNames, banner: plan?.banner,
     });
     this.director.lighting = this.lighting;
     return result;

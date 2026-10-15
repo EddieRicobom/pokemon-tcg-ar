@@ -127,6 +127,10 @@ export interface DirectorOptions {
   sound?: SoundSink;
   /** Chão em pixel art que os golpes elementais marcam (padrão: desligado). */
   terrain?: boolean;
+  /** Nomes das equipes (Ginásio: você e o líder; PvP: os dois treinadores). Padrão: Vermelha e Azul. */
+  teamNames?: readonly string[];
+  /** Faixa de abertura no lugar da padrão (ex.: "Roark desafia você!"). */
+  banner?: { text: string; sub: string };
 }
 
 // ----------------------------------------------------------------------------- tempos de cada golpe (ms)
@@ -368,9 +372,18 @@ export class BattleDirector {
       o.root.add(shield);
       return shield;
     });
-    const intro = !teams ? `${n} Pokémon, todos contra todos` : o.result.relay ? `${TEAM_NAMES_PT[0]} contra ${TEAM_NAMES_PT[1]}, um duelo por vez` : `${n} Pokémon em duas equipes`;
-    this.banner = { text: o.result.relay ? '3 contra 3!' : teams ? 'Batalha de equipes!' : 'Batalha!', sub: intro, color: '#ffcb05' };
+    const intro = !teams ? `${n} Pokémon, todos contra todos` : o.result.relay ? `${this.teamName(0)} contra ${this.teamName(1)}, um duelo por vez` : `${n} Pokémon em duas equipes`;
+    const relayTitle = (() => {
+      const sizes = [0, 1].map((t) => o.fighters.filter((_, i) => this.teamOf[i] === t).length);
+      return `${sizes[0]} contra ${sizes[1]}!`;
+    })();
+    this.banner = o.banner ? { ...o.banner, color: '#ffcb05' } : { text: o.result.relay ? relayTitle : teams ? 'Batalha de equipes!' : 'Batalha!', sub: intro, color: '#ffcb05' };
     this.cue({ kind: 'intro' });
+  }
+
+  /** Nome da equipe `team` (os personalizados, se houver). */
+  teamName(team: number): string {
+    return this.o.teamNames?.[team] ?? TEAM_NAMES_PT[team] ?? `Equipe ${team + 1}`;
   }
 
   /** Meio-eixo x da arena (para recentralizar sem refazer o cálculo). */
@@ -745,7 +758,7 @@ export class BattleDirector {
       const waiting = this.teamMembers(team).filter((j) => !this.onField[j] && this.faintAt[j]! < 0).length;
       this.banner = {
         text: `${fighter.name} entra na luta!`,
-        sub: `${TEAM_NAMES_PT[team]} · ${waiting === 0 ? 'último da equipe' : waiting === 1 ? 'resta 1 no banco' : `restam ${waiting} no banco`}`,
+        sub: `${this.teamName(team)} · ${waiting === 0 ? 'último da equipe' : waiting === 1 ? 'resta 1 no banco' : `restam ${waiting} no banco`}`,
         color: TEAM_COLORS[team] ?? '#ffcb05',
       };
       this.cue({ kind: 'enter' });
@@ -1210,7 +1223,7 @@ export class BattleDirector {
     this.banner = winTeam === undefined
       ? { text: `${fighter.name} venceu!`, sub: left, color: '#ffcb05' }
       : {
-          text: `${TEAM_NAMES_PT[winTeam] ?? 'A equipe'} venceu!`,
+          text: `${this.teamName(winTeam)} venceu!`,
           sub: this.o.result.reason === 'ko' ? `${fighter.name} terminou de pé com ${this.o.result.hpLeft[w]} de ${fighter.maxHp} PS` : left,
           color: TEAM_COLORS[winTeam] ?? '#ffcb05',
         };
@@ -1281,13 +1294,13 @@ export class BattleDirector {
       lights,
       callout: this.callout && calloutAge < 1 ? { key: this.callout.key, text: this.callout.text, color: this.callout.color, age: calloutAge } : null,
       winner: this.phase === 'finished'
-        ? { id: fighters[w]!.id, name: fighters[w]!.name, hpLeft: result.hpLeft[w] ?? 0, maxHp: fighters[w]!.maxHp, team: result.winningTeam ?? null, teamName: result.winningTeam === undefined ? null : (TEAM_NAMES_PT[result.winningTeam] ?? null) }
+        ? { id: fighters[w]!.id, name: fighters[w]!.name, hpLeft: result.hpLeft[w] ?? 0, maxHp: fighters[w]!.maxHp, team: result.winningTeam ?? null, teamName: result.winningTeam === undefined ? null : this.teamName(result.winningTeam) }
         : null,
       scoreboard: result.teams
         ? [0, 1].map((team) => {
             const members = this.teamMembers(team);
             return {
-              team, name: TEAM_NAMES_PT[team] ?? `Equipe ${team + 1}`, color: TEAM_COLORS[team] ?? '#ffffff', total: members.length,
+              team, name: this.teamName(team), color: TEAM_COLORS[team] ?? '#ffffff', total: members.length,
               alive: members.filter((j) => bars[j]!.hp > 0 && !bars[j]!.fainted).length,
             };
           })

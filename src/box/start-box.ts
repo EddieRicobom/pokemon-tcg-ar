@@ -2,7 +2,7 @@ import { visibleVerticalFov } from './orientation';
 import { OrientationSource } from './orientation-source';
 import type { OrientationMode } from './orientation-source';
 import { BoxScene, DEFAULT_HALF_SIZE_M } from './box-scene';
-import type { BoxMode, CreatureEntry } from './box-scene';
+import type { BattlePlanLike, BoxMode, CreatureEntry } from './box-scene';
 import type { SmoothingMode } from '../core/pixel-upscale';
 import type { WeatherMode } from '../core/weather';
 import type { BoxCreature } from './creature';
@@ -49,7 +49,7 @@ export interface RunningBox {
   /** Libera o áudio do navegador: chame direto de um toque do usuário (ex.: no clique de Batalhar). */
   unlockAudio(): void;
   /** `plan` escolhe quem luta e as equipes (modos Equipes e 3x3); sem ele, todos da caixa lutam entre si. */
-  startBattle(fighters: readonly Fighter[], plan?: { picks: readonly number[]; teams?: readonly number[]; relay?: boolean }): BattleResult;
+  startBattle(fighters: readonly Fighter[], plan?: BattlePlanLike, rng?: () => number): BattleResult;
   stopBattle(): void;
   /** Traz a arena da batalha de volta para a frente do olhar. */
   recenterBattle(): void;
@@ -149,7 +149,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setWeather: (mode) => scene.setWeather(mode),
     setSound: (on) => sound.setEnabled(on),
     unlockAudio: () => sound.unlock(),
-    startBattle: (fighters, plan) => scene.startBattle(fighters, undefined, plan),
+    startBattle: (fighters, plan, rng) => scene.startBattle(fighters, rng, plan),
     stopBattle: () => scene.stopBattle(),
     recenterBattle: () => scene.recenterBattle(),
     setPhoneHeight(meters) {

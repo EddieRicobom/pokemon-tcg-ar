@@ -276,3 +276,15 @@ describe('energia do Pin Mode', () => {
     expect(normalizeTrainer({ ...emptyTrainer(), energy: 12 }).energy).toBe(12);
   });
 });
+
+describe('Liga no Treinador', () => {
+  it('primeira vitória dá o XP do desafio (e a mesma energia); revanche dá pouco', () => {
+    const first = applyEvent(emptyTrainer(), { type: 'league', title: 'Insígnia Carvão', xp: 120, first: true }, '2026-10-14');
+    expect(first.state.xp).toBeGreaterThanOrEqual(120);
+    expect(first.state.energy - emptyTrainer().energy).toBe(first.state.xp);
+    expect(first.rewards.some((r) => r.text === 'Insígnia Carvão' && r.tone === 'achievement')).toBe(true);
+    const again = applyEvent(first.state, { type: 'league', title: 'Revanche', xp: 120, first: false }, '2026-10-14');
+    expect(again.state.xp - first.state.xp).toBeLessThan(120);
+    expect(again.state.battles).toBe(2);
+  });
+});

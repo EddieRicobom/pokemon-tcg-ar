@@ -3554,3 +3554,565 @@ body.no-scroll .reward-toasts {
   font-size: 0.7rem;
   color: #b8860b;
 }
+
+/* ---------------------------------------------------------------- Treinador: avatar e Liga */
+
+.tr-avatar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.tr-avatar-pic {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+}
+
+.tr-avatar-pic img,
+.tr-picker img,
+.league-list img,
+.vs-trainer img {
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.tr-avatar-name {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tr-avatar-name input {
+  width: 100%;
+  min-width: 0;
+}
+
+.tr-avatar-name small {
+  color: var(--muted);
+}
+
+.tr-picker {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.tr-picker button {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 6px 2px;
+  border-radius: 10px;
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.tr-picker button small {
+  font-size: 0.66rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.tr-picker button.on {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 18%, var(--surface-2));
+}
+
+.badge-case {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, #2a2140, #1b1530);
+  border: 1.5px solid #4a3a6a;
+}
+
+.badge-case li svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.badge-case li path:first-child {
+  stroke: #6a5a8a;
+  stroke-width: 1.5;
+}
+
+.badge-case li.won path:first-child {
+  stroke: #ffffff;
+  filter: drop-shadow(0 0 3px rgb(255 255 255 / 0.5));
+}
+
+.badge-gem {
+  fill: rgb(255 255 255 / 0.12);
+}
+
+.badge-case li.won .badge-gem {
+  fill: rgb(255 255 255 / 0.45);
+}
+
+.league-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.league-list li {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.league-list li.locked {
+  opacity: 0.5;
+}
+
+.league-list li.locked img {
+  filter: brightness(0) opacity(0.5);
+}
+
+.league-list li.beaten {
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+
+.l-text {
+  display: grid;
+  min-width: 0;
+}
+
+.l-text small {
+  color: var(--muted);
+}
+
+.l-status {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.type-dot {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  margin-right: 0.25em;
+  vertical-align: 0.05em;
+}
+
+.champion-note {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+/* Caixa: treinadores da batalha (desafio/PvP) e fala dentro do visor. */
+.vs-trainers {
+  position: absolute;
+  inset: auto 8px 132px 8px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.vs-trainer {
+  display: grid;
+  justify-items: center;
+  gap: 0;
+  padding: 4px 8px 6px;
+  border-radius: 12px;
+  background: rgb(14 19 34 / 0.62);
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
+.vs-trainer.me {
+  box-shadow: inset 0 -3px 0 #e05252;
+}
+
+.vs-trainer.them {
+  box-shadow: inset 0 -3px 0 #4d8dff;
+}
+
+.vs-trainer small {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.speech.in-stage {
+  position: absolute;
+  inset: auto 10px 128px 10px;
+  z-index: 8;
+}
+
+.speech-sprite.trainer {
+  width: 80px;
+  height: 80px;
+  filter: none;
+}
+
+.challenge-card {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 12px;
+  align-items: center;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--gold);
+  background: color-mix(in srgb, var(--gold) 10%, var(--surface));
+}
+
+.challenge-card img {
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.challenge-card span {
+  display: grid;
+  gap: 2px;
+}
+
+.challenge-card small {
+  color: var(--muted);
+}
+
+.challenge-card .link {
+  justify-self: start;
+  padding: 0;
+}
+
+/* Caixa: PvP */
+.box-pvp {
+  display: grid;
+  gap: 8px;
+}
+
+.box-pvp .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.box-pvp .chips button {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.box-pvp .chips button.active {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 20%, var(--surface-2));
+}
+
+.box-pvp-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.box-pvp-team {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  text-align: center;
+}
+
+.box-pvp-team:first-child {
+  box-shadow: inset 0 -3px 0 #e05252;
+}
+
+.box-pvp-team:last-child {
+  box-shadow: inset 0 -3px 0 #4d8dff;
+}
+
+.box-pvp-team img {
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.box-pvp-team small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+/* ---------------------------------------------------------------- Vila (modo vida da Caixa) */
+
+.village {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: #10141f;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.village-stage {
+  position: relative;
+  overflow: hidden;
+}
+
+.village-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.village-top {
+  position: absolute;
+  inset: 8px 8px auto 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 14px;
+  border-radius: 999px;
+  background: rgb(14 19 34 / 0.72);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.village-top .village-house {
+  color: var(--muted);
+  margin-right: auto;
+}
+
+.village-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  background: rgb(255 255 255 / 0.12);
+  color: var(--text);
+  font: inherit;
+}
+
+.village-loading,
+.village-toast {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgb(14 19 34 / 0.85);
+  color: var(--text);
+  font-size: 0.86rem;
+  text-align: center;
+}
+
+.village-loading {
+  top: 45%;
+}
+
+.village-toast {
+  top: 60px;
+}
+
+.speech.village-dialog {
+  inset: auto 10px 10px 10px;
+}
+
+.village-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.village-choices button {
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 2px solid #1d2238;
+  background: #fff;
+  color: #1d2238;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.86rem;
+}
+
+.village-choices span {
+  color: #4a5068;
+  font-size: 0.85rem;
+}
+
+.village-sheet {
+  position: absolute;
+  inset: auto 8px 8px 8px;
+  max-height: 70%;
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.village-sheet header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.village-sheet .chips {
+  display: flex;
+  gap: 6px;
+}
+
+.village-sheet .chips button {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.village-sheet .chips button.active {
+  border-color: var(--gold);
+}
+
+.village-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.village-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.village-list li span {
+  display: grid;
+}
+
+.village-list li small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.village-list button {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.village-pad {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 22px calc(14px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #1b2036, #12162a);
+}
+
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows: repeat(3, 52px);
+}
+
+.dpad button,
+.ab button {
+  border: 0;
+  font: inherit;
+  color: #e8ecf8;
+  touch-action: none;
+}
+
+.dpad button {
+  background: #2c3354;
+  font-size: 1.1rem;
+}
+
+.dpad button:active,
+.ab button:active {
+  filter: brightness(1.4);
+}
+
+.dpad .d-up { grid-column: 2; grid-row: 1; border-radius: 10px 10px 0 0; }
+.dpad .d-left { grid-column: 1; grid-row: 2; border-radius: 10px 0 0 10px; }
+.dpad .d-right { grid-column: 3; grid-row: 2; border-radius: 0 10px 10px 0; }
+.dpad .d-down { grid-column: 2; grid-row: 3; border-radius: 0 0 10px 10px; }
+
+.ab {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  transform: rotate(-18deg);
+}
+
+.ab button {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: 1.25rem;
+  box-shadow: 0 4px 0 rgb(0 0 0 / 0.35);
+}
+
+.ab .a-btn {
+  background: #d8463c;
+  margin-top: -26px;
+}
+
+.ab .b-btn {
+  background: #6a4ab8;
+  margin-top: 22px;
+}
+
+.village-cta {
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid #4aa84a;
+  background: linear-gradient(120deg, color-mix(in srgb, #4aa84a 28%, var(--surface-2)), var(--surface-2));
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+}

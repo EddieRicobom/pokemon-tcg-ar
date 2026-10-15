@@ -5,7 +5,9 @@ import type { LoadedPieces } from '../app/game-pieces';
 import { routeHref } from '../app/route';
 import { getCache } from '../app/services';
 import { recordEvent, trainer } from '../app/trainer-store';
+import LeagueCard from '../components/LeagueCard.vue';
 import MinigameMemoria from '../components/MinigameMemoria.vue';
+import TrainerAvatar from '../components/TrainerAvatar.vue';
 import MinigameQuem from '../components/MinigameQuem.vue';
 import MinigameTipos from '../components/MinigameTipos.vue';
 import { GAME_LABELS_PT, gameBlocker } from '../core/minigames';
@@ -114,6 +116,13 @@ function onFinished(game: GameId, grade: Grade): void {
         </p>
       </div>
     </div>
+
+    <div class="card">
+      <h2>Seu treinador</h2>
+      <TrainerAvatar />
+    </div>
+
+    <LeagueCard />
 
     <div class="card">
       <h2>Missões de hoje</h2>
