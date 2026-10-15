@@ -136,7 +136,8 @@ describe('MultiArSession', () => {
   });
 
   it('só avisa a interface quando muda o conjunto de cartas visíveis', async () => {
-    const { session, engine, states, pose, targets } = setup(2);
+    // Relógio fixo: com o `performance.now()` real, a estatística de leituras/s (que também avisa a interface) caía no meio do teste conforme a velocidade da máquina.
+    const { session, engine, states, pose, targets } = setup(2, { now: () => 1000 });
     await session.start(targets);
     const before = states.length;
     engine.onUpdate!({ worldMatrix: pose(), targetIndex: 0 });
