@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { isTap } from '../ar/gestures';
-import { getCache, loadBattle, prepareMegaFor } from '../app/services';
+import { fetchSprite, getCache, loadBattle, prepareMegaFor } from '../app/services';
+import { challengePlan, isLeaderCreature, leaderFighter, leaderLoader, loadLeaderEntries, MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
+import { league, pendingChallenge, recordLeagueResult } from '../app/league-store';
+import { profile } from '../app/profile-store';
+import { challengeById, statusOf } from '../core/league';
+import type { Challenge } from '../core/league';
+import { trainerSpriteUrl } from '../core/trainer-sprites';
+import type { CreatureEntry } from '../box/box-scene';
+import type { BattleResult } from '../core/battle';
 import { prepareFighters } from '../app/battle-setup';
 import { megaAwareLoader, planMegaBattle } from '../app/mega-battle';
 import { useFullscreen } from '../app/fullscreen';
@@ -72,6 +80,7 @@ function showMegaNotes(notes: { text: string; tone: 'ok' | 'warn' }[]): void {
   megaNotes.value = notes;
   if (megaNotesTimer) clearTimeout(megaNotesTimer);
   clearInterval(weatherTimer);
+  if (stageSpeechTimer) clearTimeout(stageSpeechTimer);
   megaNotesTimer = notes.length > 0 ? setTimeout(() => (megaNotes.value = []), 9000) : null;
 }
 const currentRoster = computed(() => rosterFor(rosterRows.value.map((r) => r.id)));
@@ -110,6 +119,37 @@ function ndcOf(clientX: number, clientY: number): { x: number; y: number } | nul
   return { x: ((clientX - rect.left) / rect.width) * 2 - 1, y: -(((clientY - rect.top) / rect.height) * 2 - 1) };
 }
 
+/** O que foi carregado da sua equipe por último (a equipe do desafio sai daqui, sem os Pokémon do líder). */
+let lastEntries: CreatureEntry[] = [];
+
+// ---- Liga: desafio de Ginásio, Elite 4 ou Campeã (escolhido no Treinador)
+const challenge = computed<Challenge | null>(() => (pendingChallenge.value ? challengeById(pendingChallenge.value) : null));
+/** Os dois treinadores da batalha em cena (desafio ou PvP): aparecem nos cantos do visor. */
+const versus = ref<{ me: { name: string; sprite: string }; them: { name: string; sprite: string; role: string } } | null>(null);
+/** Fala dentro do visor (funciona também em tela cheia, onde o resto do app não aparece). */
+const stageSpeech = ref<{ name: string; text: string; sprite: string } | null>(null);
+let stageSpeechTimer: ReturnType<typeof setTimeout> | null = null;
+let activeChallenge: Challenge | null = null;
+let lastResult: BattleResult | null = null;
+
+function say(name: string, text: string, sprite: string, ms = 7000): void {
+  stageSpeech.value = { name, text, sprite };
+  if (stageSpeechTimer) clearTimeout(stageSpeechTimer);
+  stageSpeechTimer = setTimeout(() => (stageSpeech.value = null), ms);
+}
+
+function cancelChallenge(): void {
+  pendingChallenge.value = null;
+}
+
+/** Tira os Pokémon do adversário da caixa e volta a sua equipe. */
+async function endVersus(): Promise<void> {
+  if (!versus.value && !(box?.scene.creatureList.some((c) => isLeaderCreature(c.info.id)) ?? false)) return;
+  versus.value = null;
+  activeChallenge = null;
+  await populate();
+}
+
 async function populate(): Promise<void> {
   loadingCreatures.value = true;
   try {
@@ -119,6 +159,7 @@ async function populate(): Promise<void> {
     const loaded = await loadCreatureEntries(cache, undefined, team.ids);
     if (disposed || !box) return;
     box.setCreatures(loaded.entries);
+    lastEntries = loaded.entries;
     for (const entry of loaded.entries) if (maybeGalladeSpeaks(entry.info)) break;
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
     rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: e.info.name, shiny: e.info.shiny === true, mega: e.info.mega === true }));
@@ -259,7 +300,7 @@ watch(() => visual.social, (on) => box?.setSocial(on));
 watch(() => visual.weather, (mode) => box?.setWeather(mode));
 watch(() => visual.sound, (on) => box?.setSound(on));
 
-const canBattle = computed(() => phase.value === 'running' && population.value.shown >= 2 && !loadingCreatures.value && !preparing.value);
+const canBattle = computed(() => phase.value === 'running' && population.value.shown >= (challenge.value ? 1 : 2) && !loadingCreatures.value && !preparing.value);
 const battling = computed(() => battleHud.value !== null);
 /** Tremor e "soco" de zoom da imagem desenhada nos golpes fortes (o vídeo da câmera não treme). */
 const shakeStyle = computed(() => {
@@ -276,13 +317,100 @@ watch(
   (phase) => {
     if (phase !== 'finished' || battleCounted) return;
     battleCounted = true;
+    const ch = activeChallenge;
+    if (ch && lastResult) {
+      const won = lastResult.winningTeam === 0;
+      const outcome = recordLeagueResult(ch, won);
+      say(`${ch.role} ${ch.leader}`, won ? ch.defeat : 'Boa luta! Treine sua equipe e volte quando quiser a revanche.', trainerSpriteUrl(ch.sprite), 9000);
+      showMegaNotes([{ text: outcome.message, tone: won ? 'ok' : 'warn' }]);
+      if (won) pendingChallenge.value = null;
+      return;
+    }
     recordEvent({ type: 'battle', team: battleSummary.value ? battleSummary.value.mode !== 'royale' : false });
   },
 );
 
-async function startBattle(): Promise<void> {
+async function decodeSprite(sprite: { kind: 'gif' | 'static'; blob: Blob }) {
+  return sprite.kind === 'gif'
+    ? ({ kind: 'gif', gif: await browserDecoders.gif(sprite.blob) } as const)
+    : ({ kind: 'image', image: await browserDecoders.image(sprite.blob) } as const);
+}
+
+/** Desafio da Liga: até 6 da sua caixa contra a equipe do líder, em revezamento. */
+async function startChallenge(ch: Challenge): Promise<void> {
   const current = box;
   if (!current || preparing.value) return;
+  if (statusOf(league.value, ch) === 'locked') {
+    error.value = 'Esse desafio ainda está bloqueado: vença os anteriores primeiro.';
+    return;
+  }
+  current.unlockAudio();
+  if (versus.value) {
+    current.stopBattle();
+    await endVersus();
+  }
+  const mine = lastEntries.slice(0, MAX_CHALLENGE_TEAM);
+  if (mine.length === 0) {
+    error.value = 'Sua caixa está vazia: escaneie cartas ou escolha a equipe antes do desafio.';
+    return;
+  }
+  preparing.value = true;
+  showSummary.value = false;
+  showFilters.value = showTeam.value = showAdjust.value = showModes.value = false;
+  if (!fullscreen.value) {
+    fullscreenForBattle = true;
+    void toggleFullscreen();
+  }
+  error.value = '';
+  hint.value = `Chamando a equipe de ${ch.leader}…`;
+  try {
+    const leader = await loadLeaderEntries(ch, { fetchSprite: (dex) => fetchSprite(dex), decode: decodeSprite });
+    if (leader.entries.length === 0) throw new Error('não consegui baixar a equipe do líder (sem conexão?)');
+    if (disposed || box !== current) return;
+    current.setCreatures([...mine, ...leader.entries]);
+    hint.value = 'Preparando a batalha: buscando atributos e golpes…';
+    const creatures = current.scene.creatureList;
+    const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), leaderLoader(loadBattle));
+    if (disposed || box !== current) return;
+    const fighters = raw.map((f, i) => (i >= mine.length ? leaderFighter(f, ch.power) : f));
+    const plan = challengePlan(mine.length, leader.entries.length, ch, profile.name);
+    battleCounted = false;
+    activeChallenge = ch;
+    const result = current.startBattle(fighters, plan);
+    lastResult = result;
+    battleFighters.value = fighters;
+    battleSummary.value = {
+      mode: 'tres',
+      winner: result.winningTeam === 0 ? profile.name : ch.leader,
+      turns: result.turns.length,
+      rounds: result.turns.at(-1)?.round ?? 0,
+      stats: summarizeBattle(fighters, result),
+    };
+    versus.value = { me: { name: profile.name, sprite: trainerSpriteUrl(profile.sprite) }, them: { name: ch.leader, sprite: trainerSpriteUrl(ch.sprite), role: ch.role } };
+    say(`${ch.role} ${ch.leader}`, ch.intro, trainerSpriteUrl(ch.sprite));
+    if (leader.failed.length > 0) showMegaNotes([{ text: `Não carregaram da equipe do líder: ${leader.failed.join(', ')}.`, tone: 'warn' }]);
+  } catch (e) {
+    error.value = `Não consegui começar o desafio: ${e instanceof Error ? e.message : String(e)}`;
+    activeChallenge = null;
+    await populate();
+    if (fullscreenForBattle) {
+      fullscreenForBattle = false;
+      void exitFullscreen();
+    }
+  } finally {
+    preparing.value = false;
+    hint.value = '';
+  }
+}
+
+async function startBattle(): Promise<void> {
+  if (challenge.value) return startChallenge(challenge.value);
+  const current = box;
+  if (!current || preparing.value) return;
+  if (versus.value) {
+    current.stopBattle();
+    await endVersus();
+  }
   const creatures = current.scene.creatureList;
   if (creatures.length < 2) return;
   const slots = rosterFor(creatures.map((c) => c.info.id));
@@ -378,6 +506,8 @@ async function decodeMegaSprite(ready: { sprite: { kind: 'gif' | 'static'; blob:
 function stopBattle(): void {
   box?.stopBattle();
   restoreForms(box);
+  stageSpeech.value = null;
+  void endVersus();
   battleHud.value = null;
   battleSummary.value = null;
   showSummary.value = false;
@@ -434,6 +564,9 @@ const notices = computed<Notice[]>(() => {
   for (const note of megaNotes.value) list.push({ text: note.text, tone: note.tone });
   if (battleHud.value) return list;
   if (hint.value) list.push({ text: hint.value, tone: phase.value === 'placing' ? 'ok' : 'busy' });
+  if (challenge.value && !preparing.value) {
+    list.push({ text: `Desafio: ${challenge.value.role} ${challenge.value.leader}`, sub: 'Toque em Batalhar: até 6 da sua caixa contra a equipe do líder, um duelo por vez.', tone: 'ok', gold: true });
+  }
   if (picked.value) {
     list.push({ text: `${picked.value.name}${picked.value.dexId ? ` · Nº ${picked.value.dexId}` : ''}${picked.value.shiny ? ' · Shiny' : ''}${picked.value.mega ? ' · Mega' : ''}`, sub: picked.value.detail, tone: 'ok', gold: true });
   }
@@ -558,6 +691,17 @@ onBeforeUnmount(() => {
           :class="label.tone"
           :style="{ left: label.x + '%', top: label.y + '%', color: label.color, opacity: 1 - label.age * label.age, '--size': label.size }"
         >{{ label.text }}</span>
+      </div>
+      <div v-if="versus && battleHud" class="vs-trainers" aria-hidden="true">
+        <span class="vs-trainer me"><img :src="versus.me.sprite" alt="" width="64" height="64" /><b>{{ versus.me.name }}</b></span>
+        <span class="vs-trainer them"><img :src="versus.them.sprite" alt="" width="64" height="64" /><b>{{ versus.them.name }}</b><small>{{ versus.them.role }}</small></span>
+      </div>
+      <div v-if="stageSpeech" class="speech in-stage" role="dialog" :aria-label="`${stageSpeech.name} diz`" @pointerdown.stop @pointerup.stop @click.stop="stageSpeech = null">
+        <img :src="stageSpeech.sprite" alt="" class="speech-sprite trainer" />
+        <div class="speech-box">
+          <strong>{{ stageSpeech.name }}</strong>
+          <p>{{ stageSpeech.text }}</p>
+        </div>
       </div>
       <div v-if="immersive" class="stage-head" role="status" aria-live="polite">
         <p v-for="(n, i) in notices" :key="i + n.text" class="pill" :class="[n.tone, { gold: n.gold }]">
@@ -693,9 +837,19 @@ onBeforeUnmount(() => {
           <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
           <StageButton v-if="battling" icon="stop" label="Parar" @click="stopBattle" />
           <StageButton v-if="phase === 'running' && !battling" icon="move" label="Mover" @click="moveBox" />
+          <StageButton v-if="challenge && !battling" icon="close" label="Sem desafio" @click="cancelChallenge" />
           <StageButton icon="close" label="Fechar" @click="close" />
         </div>
       </div>
+    </div>
+
+    <div v-if="challenge && !immersive" class="challenge-card">
+      <img :src="trainerSpriteUrl(challenge.sprite)" alt="" width="72" height="72" />
+      <span>
+        <strong>Desafio: {{ challenge.role }} {{ challenge.leader }}</strong>
+        <small>Abra a câmera, coloque a caixa e toque em Batalhar. Até 6 da sua caixa lutam contra a equipe do líder, um duelo por vez.</small>
+        <button type="button" class="link" @click="cancelChallenge">Cancelar desafio</button>
+      </span>
     </div>
 
     <div class="actions">

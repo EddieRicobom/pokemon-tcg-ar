@@ -3554,3 +3554,251 @@ body.no-scroll .reward-toasts {
   font-size: 0.7rem;
   color: #b8860b;
 }
+
+/* ---------------------------------------------------------------- Treinador: avatar e Liga */
+
+.tr-avatar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.tr-avatar-pic {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+}
+
+.tr-avatar-pic img,
+.tr-picker img,
+.league-list img,
+.vs-trainer img {
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.tr-avatar-name {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tr-avatar-name input {
+  width: 100%;
+  min-width: 0;
+}
+
+.tr-avatar-name small {
+  color: var(--muted);
+}
+
+.tr-picker {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.tr-picker button {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 6px 2px;
+  border-radius: 10px;
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.tr-picker button small {
+  font-size: 0.66rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.tr-picker button.on {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 18%, var(--surface-2));
+}
+
+.badge-case {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, #2a2140, #1b1530);
+  border: 1.5px solid #4a3a6a;
+}
+
+.badge-case li svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.badge-case li path:first-child {
+  stroke: #6a5a8a;
+  stroke-width: 1.5;
+}
+
+.badge-case li.won path:first-child {
+  stroke: #ffffff;
+  filter: drop-shadow(0 0 3px rgb(255 255 255 / 0.5));
+}
+
+.badge-gem {
+  fill: rgb(255 255 255 / 0.12);
+}
+
+.badge-case li.won .badge-gem {
+  fill: rgb(255 255 255 / 0.45);
+}
+
+.league-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.league-list li {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.league-list li.locked {
+  opacity: 0.5;
+}
+
+.league-list li.locked img {
+  filter: brightness(0) opacity(0.5);
+}
+
+.league-list li.beaten {
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+
+.l-text {
+  display: grid;
+  min-width: 0;
+}
+
+.l-text small {
+  color: var(--muted);
+}
+
+.l-status {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.type-dot {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  margin-right: 0.25em;
+  vertical-align: 0.05em;
+}
+
+.champion-note {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+/* Caixa: treinadores da batalha (desafio/PvP) e fala dentro do visor. */
+.vs-trainers {
+  position: absolute;
+  inset: auto 8px 132px 8px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.vs-trainer {
+  display: grid;
+  justify-items: center;
+  gap: 0;
+  padding: 4px 8px 6px;
+  border-radius: 12px;
+  background: rgb(14 19 34 / 0.62);
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
+.vs-trainer.me {
+  box-shadow: inset 0 -3px 0 #e05252;
+}
+
+.vs-trainer.them {
+  box-shadow: inset 0 -3px 0 #4d8dff;
+}
+
+.vs-trainer small {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.speech.in-stage {
+  position: absolute;
+  inset: auto 10px 128px 10px;
+  z-index: 8;
+}
+
+.speech-sprite.trainer {
+  width: 80px;
+  height: 80px;
+  filter: none;
+}
+
+.challenge-card {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 12px;
+  align-items: center;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--gold);
+  background: color-mix(in srgb, var(--gold) 10%, var(--surface));
+}
+
+.challenge-card img {
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.challenge-card span {
+  display: grid;
+  gap: 2px;
+}
+
+.challenge-card small {
+  color: var(--muted);
+}
+
+.challenge-card .link {
+  justify-self: start;
+  padding: 0;
+}

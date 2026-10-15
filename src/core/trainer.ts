@@ -22,6 +22,8 @@ export const XP = {
   minigameWin: 20,
   /** Só os primeiros minigames vencidos do dia rendem XP. */
   minigamesPerDay: 5,
+  /** Revencer um Ginásio ou a Liga já vencida. */
+  leagueRematch: 25,
 } as const;
 
 /** XP total para chegar ao nível `level` (nível 1 = 0). */
@@ -123,7 +125,9 @@ export function emptyTrainer(): TrainerState {
 export type TrainerEvent =
   | { type: 'scan'; cardId: string; setId: string; setName: string; setTotal: number }
   | { type: 'battle'; team: boolean }
-  | { type: 'minigame'; game: string; won: boolean; score: number };
+  | { type: 'minigame'; game: string; won: boolean; score: number }
+  /** Vitória num Ginásio, na Elite 4 ou contra o Campeão. `first` = primeira vitória contra esse desafio (vale o XP cheio). */
+  | { type: 'league'; title: string; xp: number; first: boolean };
 
 export type RewardTone = 'xp' | 'new' | 'mission' | 'level' | 'achievement' | 'streak';
 
@@ -304,6 +308,13 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
     }
     gain += bump(s, 'battle', rewards);
     if (event.team) gain += bump(s, 'team', rewards);
+  } else if (event.type === 'league') {
+    s.battles++;
+    s.today.battles++;
+    const xp = event.first ? Math.max(0, Math.round(event.xp)) : XP.leagueRematch;
+    gain += xp;
+    rewards.push({ text: event.title, sub: `+${xp} XP e energia`, tone: event.first ? 'achievement' : 'xp' });
+    gain += bump(s, 'battle', rewards);
   } else {
     s.minigames++;
     s.today.minigames++;
