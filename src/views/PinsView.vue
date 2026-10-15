@@ -7,9 +7,10 @@ import { routeHref } from '../app/route';
 import { recordEvent, spendTrainerEnergy, trainer } from '../app/trainer-store';
 import { seededRng } from '../core/battle';
 import {
-  advanceRound, afterShot, affordable, aliveOf, arenaLimit, ARENA_RADIUS, canUse, chooseEnemyShot, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE,
+  advanceRound, afterShot, affordable, aliveOf, arenaLimit, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE,
   nextLimit, outcomeOf, pinFromSpec, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
 } from '../core/pins';
+import { planEnemyShot } from '../core/pin-ai';
 import { MARK_HINT_PT, TYPE_FOR_TERRAIN } from '../core/pin-terrain';
 import { REPLAY_SPEED, ReplayRecorder } from '../core/pin-replay';
 import { vibrate } from '../app/haptics';
@@ -541,7 +542,8 @@ function finishRoll(): void {
   if (rollOwner === 'me') {
     // O Escudo segue valendo durante a resposta; os outros efeitos acabam com o seu disparo.
     clearEffects(world, true);
-    const plan = chooseEnemyShot(world, rng, setup.value.difficulty);
+    // No Normal e no Difícil o adversário simula as jogadas antes de escolher (core/pin-ai.ts).
+    const plan = planEnemyShot(world, rng, setup.value.difficulty);
     if (!plan) return endGame('won');
     enemyPlan = plan;
     enemyTimer = 0.9;

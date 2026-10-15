@@ -1,6 +1,6 @@
 # Testes
 
-Estado em 2026-10-14: 93 arquivos de teste, 989 testes unitários, todos passando. **Nenhum teste automatizado substitui um celular de verdade** (câmera, GPU, sensores e desempenho reais).
+Estado em 2026-10-14: 94 arquivos de teste, 997 testes unitários, todos passando. **Nenhum teste automatizado substitui um celular de verdade** (câmera, GPU, sensores e desempenho reais).
 
 ## O que roda a cada pull request e a cada deploy
 
