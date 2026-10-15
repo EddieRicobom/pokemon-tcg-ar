@@ -183,7 +183,7 @@ export class BoxScene {
     if (this.terrain) {
       // Chão em pixel art do tamanho da caixa; os enfeites ficam só na borda, para não tapar quem passeia.
       // Com relevo: morrinhos e baixadas suaves que somem na borda (a caixa fica rente ao chão de verdade).
-      this.boxGround = new Ground({ halfW: h, halfD: h, shape: 'square', seed: 11, cols: Math.min(30, Math.max(10, Math.round((h * 2) / 0.2))), decor: Math.round(10 + h * 6), decorUnit: 0.2, opacity: 0.92, relief: reliefAmplitude(h) });
+      this.boxGround = new Ground({ halfW: h, halfD: h, shape: 'square', seed: 11, cols: Math.min(48, Math.max(12, Math.round((h * 2) / 0.12))), decor: Math.round(10 + h * 6), decorUnit: 0.16, opacity: 0.97, relief: reliefAmplitude(h) });
       this.floor.add(this.boxGround.group);
     }
     const outline = new LineLoop(
