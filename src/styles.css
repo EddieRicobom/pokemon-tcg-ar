@@ -4360,3 +4360,146 @@ body.no-scroll .reward-toasts {
   font: inherit;
   font-weight: 600;
 }
+
+/* Vila: Diário de momentos, relações e cozinha */
+.village-diary {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  background: rgb(255 255 255 / 0.12);
+  color: var(--text);
+  font: inherit;
+}
+
+.village-diary b {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--gold);
+  color: #1d2238;
+  font-size: 0.7rem;
+  line-height: 18px;
+}
+
+.village-choices button:disabled {
+  opacity: 0.4;
+}
+
+.item-grid img,
+.collection-grid img {
+  object-fit: contain;
+}
+
+.item-grid li.hint {
+  display: block;
+  background: none;
+  padding: 2px 4px;
+}
+
+.diary {
+  display: grid;
+  gap: 8px;
+}
+
+.diary .rel-map h4 {
+  margin: 0 0 4px;
+}
+
+.diary .rel-map ul,
+.moment .result {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.diary .rel-map li,
+.moment .result li {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.78rem;
+}
+
+.diary .rel-map li small {
+  color: var(--muted);
+}
+
+.rel-casal {
+  outline: 1.5px solid #ff7aa8;
+}
+
+.rel-brigados,
+.rel-rivais {
+  outline: 1.5px solid #e8604c;
+}
+
+.diary-filter button {
+  font-size: 0.78rem;
+}
+
+.moment {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border-left: 4px solid var(--line);
+}
+
+.moment.k-romance { border-left-color: #ff7aa8; }
+.moment.k-drama { border-left-color: #b070e8; }
+.moment.k-comedia { border-left-color: #f2c230; }
+.moment.k-rivalidade { border-left-color: #e8604c; }
+.moment.k-festa { border-left-color: #4cc4e8; }
+.moment.k-amizade { border-left-color: #5cc86c; }
+
+.moment header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.moment small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.moment .fav {
+  border: 0;
+  background: none;
+  font-size: 1.2rem;
+  color: var(--gold);
+  padding: 2px 6px;
+}
+
+.moment .chat {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  font-size: 0.85rem;
+}
+
+.moment .chat .who-0 b { color: #ff8d7a; }
+.moment .chat .who-1 b { color: #7aa8ff; }
+.moment .chat .who-2 b { color: #7ad98a; }
+
+.moment .choice {
+  margin: 0;
+  font-size: 0.8rem;
+}

@@ -11,6 +11,8 @@ const props = defineProps<{
   friends: Readonly<Record<string, Friendship>>;
   /** Mostra o botão de dar acessório (na Vila). */
   canDress?: boolean;
+  /** O que cada Pokémon é dos colegas (casal, rivais, amigos…), pela vida social da Vila. */
+  relations?: Readonly<Record<string, readonly { name: string; label: string; emoji: string; met: number }[]>>;
 }>();
 const emit = defineEmits<{ accessory: [id: string] }>();
 
@@ -72,6 +74,13 @@ function go(step: number): void {
           </ul>
           <p v-else-if="current.page.opinions" class="hint">Ainda não há colegas na caixa.</p>
           <p v-else class="locked">🔒 Fique Amigo dele para ele contar.</p>
+        </section>
+        <section v-if="relations">
+          <h4>Vida social</h4>
+          <ul v-if="(relations[current.mon.id] ?? []).length" class="book-opinions">
+            <li v-for="r in relations[current.mon.id]" :key="r.name">{{ r.emoji }} {{ r.label }} de {{ r.name }} <small>({{ r.met }} {{ r.met === 1 ? 'momento' : 'momentos' }})</small></li>
+          </ul>
+          <p v-else class="hint">Ainda não viveu nada com os colegas. Dê tempo à Vila!</p>
         </section>
         <section>
           <h4>Intimidade</h4>

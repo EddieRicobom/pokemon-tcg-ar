@@ -4,14 +4,19 @@ import { getCache, loadPinData } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
+import { visual } from '../app/visual-settings';
 import { loadVillage, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { dayKey } from '../core/trainer';
-import { ACCESSORY_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
+import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
 import {
-  buy, canFollow, count, craft, dailyHelp, describeCost, friendLevel, friendOf, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
+  buy, canFollow, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
   plant, pruneHarvest, RECIPES, sell, talk, tickCrops, upgradeHouse, water, wear,
 } from '../core/village/life';
+import { albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
+import type { Resolved, Scene } from '../core/village/social';
+import { MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS } from '../core/village/social-state';
+import type { Moment, MomentKind } from '../core/village/social-state';
 import type { ItemId } from '../core/village/life';
 import type { Dir } from '../core/village/actors';
 import type { PokemonType } from '../core/pokemon-data';
@@ -35,11 +40,12 @@ pruneHarvest(state, day.value);
 
 type Sheet = null | 'menu' | 'build' | 'shop' | 'dress';
 const sheet = ref<Sheet>(null);
-type Tab = 'mochila' | 'fabricar' | 'colecao' | 'livro' | 'visual';
+type Tab = 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'colecao' | 'livro' | 'visual';
 const tab = ref<Tab>('mochila');
 const shopTab = ref<'comprar' | 'vender'>('comprar');
 const dressFor = ref<string>('player');
-const dialog = ref<{ id?: string; name: string; text: string; actions: { label: string; run: () => void }[] } | null>(null);
+const dialog = ref<{ id?: string; name: string; text: string; actions: { label: string; run: () => void; disabled?: boolean }[] } | null>(null);
+const kindFilter = ref<MomentKind | 'todos' | 'favoritos'>('todos');
 const giftPick = ref(false);
 const welcome = ref(true);
 
@@ -49,6 +55,7 @@ let saveTimer: ReturnType<typeof setInterval> | null = null;
 let cropTimer: ReturnType<typeof setInterval> | null = null;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 let dirty = false;
+let fishing = false;
 const mons = ref<{ id: string; name: string; shiny: boolean; dexId?: number; thumb?: string }[]>([]);
 const types = reactive(new Map<string, PokemonType[]>());
 
@@ -91,7 +98,17 @@ const giftable = computed(() => inventory.value.filter((i) => i.kind !== 'access
 const nextHouse = computed(() => HOUSE_LEVELS[state.house + 1] ?? null);
 const shopItems = computed(() => shopToday(day.value));
 const collection = computed(() => FURNITURE_IDS.map((id) => ({ id, name: itemName(id), have: state.collected.includes(id), group: itemDef(id)?.group ?? '' })));
-const craftable = computed(() => Object.keys(RECIPES));
+const craftable = CRAFT_IDS;
+const cookable = COOK_IDS;
+const actorList = (): { id: string; name: string; types: PokemonType[] }[] => mons.value.map((m) => ({ id: m.id, name: m.name, types: types.get(m.id) ?? [] }));
+const unread = computed(() => unreadCount(state));
+const album = computed(() => albumProgress(state));
+const pairs = computed(() => relationMap(state, mons.value));
+const bookRels = computed(() => Object.fromEntries(mons.value.map((m) => [m.id, relationsOf(state, m.id, mons.value).map((r) => ({ name: r.name, label: r.status.label, emoji: r.status.emoji, met: r.met }))])));
+const diaryList = computed(() => {
+  const list = [...state.diary].reverse();
+  return kindFilter.value === 'todos' ? list : kindFilter.value === 'favoritos' ? list.filter((m) => m.fav) : list.filter((m) => m.kind === kindFilter.value);
+});
 const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name, types: types.get(m.id) ?? [], thumb: m.thumb, accessory: state.wear.mons[m.id] ?? null })));
 const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state, id) > 0));
 
@@ -120,6 +137,114 @@ function onKey(e: KeyboardEvent): void {
   }
 }
 
+// ---- momentos entre os Pokémon (a vida social da Vila)
+let pendingChoice: { scene: Scene; ids: string[] } | null = null;
+let nextSceneAt = Date.now() + 9000;
+let sceneTimer: ReturnType<typeof setInterval> | null = null;
+
+function announce(r: Resolved): void {
+  changed();
+  say(`📖 ${r.moment.emoji} ${r.moment.title}${r.firstTime ? ' · momento novo no Álbum! +10 moedas' : ' · salvo no Diário'}`);
+}
+
+function afterResolve(r: Resolved, ids: string[]): void {
+  announce(r);
+  if (r.followUp.length > 0 && game) game.sayLines(ids, r.followUp, () => undefined);
+}
+
+/** Sua decisão num momento (`null` = deixar pra lá). */
+function decide(i: number | null): void {
+  const p = pendingChoice;
+  if (!p) return;
+  pendingChoice = null;
+  dialog.value = null;
+  afterResolve(resolveScene(state, p.scene, i, Date.now()), p.ids);
+}
+
+function finishScene(scene: Scene, ids: string[]): void {
+  const choice = sceneChoice(scene);
+  if (!choice || !game?.playerNear(ids, 12)) {
+    afterResolve(resolveScene(state, scene, null, Date.now()), ids);
+    return;
+  }
+  pendingChoice = { scene, ids };
+  dialog.value = {
+    name: `${scene.tpl.emoji} ${scene.tpl.title}`,
+    text: choice.prompt,
+    actions: [
+      ...choice.options.map((o, i) => {
+        const lacks = !!o.needs && count(state, o.needs.item) < o.needs.qty;
+        return { label: o.needs ? `${o.label} (${o.needs.qty} ${itemName(o.needs.item)})` : o.label, disabled: lacks, run: () => decide(i) };
+      }),
+      { label: 'Deixa pra lá', run: () => decide(null) },
+    ],
+  };
+}
+
+function tickScenes(): void {
+  if (!game || document.hidden || dialog.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (Date.now() < nextSceneAt) return;
+  nextSceneAt = Date.now() + 25000 + Math.random() * 35000;
+  // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
+  const near = actorList().filter((a) => game!.playerNear([a.id], 14) && !game!.sceneBusy(a.id));
+  const env = makeEnv(state, refreshDay(), new Date().getHours(), game.weatherKind);
+  const scene = pickMoment(near, state, env, Math.random);
+  if (!scene) return;
+  const ids = scene.cast.map((a) => a.id);
+  game.playScene(ids, scene.lines, () => finishScene(scene, ids));
+}
+
+/** Enquanto você esteve fora, a vida seguiu: o Diário ganha os momentos que aconteceram. */
+function awayCatchUp(): void {
+  const now = Date.now();
+  const list = actorList();
+  if (list.length > 0 && state.lastSeen > 0) {
+    const moments = catchUp(state, list, now, null, Math.random);
+    if (moments.length > 0) {
+      changed();
+      say(`📖 Enquanto você estava fora: ${moments.length} momento${moments.length > 1 ? 's' : ''} novo${moments.length > 1 ? 's' : ''} no Diário!`);
+    }
+  }
+  state.lastSeen = now;
+  changed();
+}
+
+function onVisibility(): void {
+  if (document.hidden) {
+    state.lastSeen = Date.now();
+    saveVillage(state);
+  } else awayCatchUp();
+}
+
+function openDiary(): void {
+  tab.value = 'diario';
+  sheet.value = 'menu';
+  state.diaryRead = Date.now();
+  changed();
+}
+
+function pickTab(t: Tab): void {
+  tab.value = t;
+  if (t === 'diario') {
+    state.diaryRead = Date.now();
+    changed();
+  }
+}
+
+function toggleFav(m: Moment): void {
+  if (!setFavorite(state, m.id, !m.fav)) say('Você já tem 40 favoritos.');
+  else changed();
+}
+
+function whenLabel(m: Moment): string {
+  const [, mo, d] = m.day.split('-');
+  return `${d}/${mo} · ${String(m.hour).padStart(2, '0')}h`;
+}
+
+function nameFor(m: Moment, who: number): string {
+  return m.cast[who]?.name ?? '';
+}
+
 function refreshDay(): string {
   const today = dayKey(new Date());
   if (today !== day.value) {
@@ -141,7 +266,7 @@ function pressA(): void {
   if (t.kind === 'mon') {
     game.faceMe(t.id);
     const name = nameOf(t.id);
-    const result = talk(state, t.id, name, types.get(t.id) ?? [], today, new Date().getHours(), Math.random);
+    const result = talk(state, t.id, name, types.get(t.id) ?? [], today, new Date().getHours(), Math.random, recentGossip(state, t.id, Date.now()), game.weatherKind);
     if (result.gained > 0) game.bubble(t.id, '❤️');
     let text = result.text;
     const help = dailyHelp(state, t.id, today, Math.random);
@@ -178,6 +303,18 @@ function pressA(): void {
   } else if (t.kind === 'shop') {
     shopTab.value = 'comprar';
     sheet.value = 'shop';
+  } else if (t.kind === 'tile' && t.tile === 'water') {
+    if (fishing) return;
+    if (state.fishing.day === today && state.fishing.casts >= FISH_PER_DAY) return say('Os peixes cansaram por hoje. Volte amanhã!');
+    fishing = true;
+    game.castLine(t.x, t.y, 1600);
+    say('🎣 Lançou a linha…');
+    setTimeout(() => {
+      fishing = false;
+      const r = fish(state, map, t.x, t.y, today, Math.random);
+      say(r.message);
+      if (r.ok) changed();
+    }, 1500);
   } else if (t.kind === 'tile') {
     const r = harvest(state, map, t.x, t.y, today, Math.random);
     say(r.message);
@@ -212,6 +349,7 @@ function give(item: ItemId): void {
 function pressB(): void {
   welcome.value = false;
   if (giftPick.value) giftPick.value = false;
+  else if (pendingChoice) decide(null);
   else if (dialog.value) dialog.value = null;
   else sheet.value = sheet.value ? null : 'menu';
 }
@@ -287,6 +425,7 @@ onMounted(async () => {
   onBeforeUnmount(() => clearInterval(clockTimer));
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
+  document.addEventListener('visibilitychange', onVisibility);
   let villagers: VillageMon[] = [];
   try {
     const cache = await getCache();
@@ -306,17 +445,26 @@ onMounted(async () => {
   game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite);
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = changed;
+  game.weatherMode = () => visual.weather;
   const resize = () => game?.resize(wrapEl.value!.clientWidth, wrapEl.value!.clientHeight);
   observer = new ResizeObserver(resize);
   observer.observe(wrapEl.value);
   resize();
   game.start();
   loading.value = '';
+  awayCatchUp();
+  sceneTimer = setInterval(tickScenes, 1000);
   if (tickCrops(state, Date.now()) > 0) changed();
   cropTimer = setInterval(() => {
     if (tickCrops(state, Date.now()) > 0) changed();
   }, 5000);
+  let beat = 0;
   saveTimer = setInterval(() => {
+    // A cada ~30 s marca "você estava aqui", para saber o que aconteceu quando você sair.
+    if (++beat % 20 === 0 && !document.hidden) {
+      state.lastSeen = Date.now();
+      dirty = true;
+    }
     if (dirty) dirty = !saveVillage(state);
   }, 1500);
   // Tipos (presente favorito, opiniões do Livro) chegam em segundo plano; sem rede, ficam neutros.
@@ -328,6 +476,9 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
+  document.removeEventListener('visibilitychange', onVisibility);
+  if (sceneTimer) clearInterval(sceneTimer);
+  state.lastSeen = Date.now();
   game?.stop();
   observer?.disconnect();
   if (saveTimer) clearInterval(saveTimer);
@@ -346,6 +497,7 @@ onBeforeUnmount(() => {
         <span>{{ clock }}</span>
         <span class="village-coins" aria-label="Moedas"><i aria-hidden="true">●</i>{{ state.coins }}</span>
         <span class="village-house">{{ HOUSE_LEVELS[state.house]?.name }}</span>
+        <button type="button" class="village-diary" aria-label="Abrir o Diário de momentos" @click="openDiary">📖<b v-if="unread > 0">{{ unread }}</b></button>
         <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
       </header>
       <p v-if="loading" class="village-loading">{{ loading }}</p>
@@ -365,7 +517,7 @@ onBeforeUnmount(() => {
             <button type="button" @click="giftPick = false">Voltar</button>
           </div>
           <div v-else class="village-choices">
-            <button v-for="a in dialog.actions" :key="a.label" type="button" @click="a.run()">{{ a.label }}</button>
+            <button v-for="a in dialog.actions" :key="a.label" type="button" :disabled="a.disabled" @click="a.run()">{{ a.label }}</button>
             <button v-if="dialog.actions.length === 0" type="button" @click="dialog = null">OK</button>
           </div>
         </div>
@@ -424,8 +576,8 @@ onBeforeUnmount(() => {
       <div v-if="sheet === 'menu'" class="village-sheet tall" role="dialog" aria-label="Menu da Vila">
         <header>
           <div class="chips" role="tablist">
-            <button v-for="t in (['mochila', 'fabricar', 'colecao', 'livro', 'visual'] as const)" :key="t" type="button" role="tab" :class="{ active: tab === t }" :aria-selected="tab === t" @click="tab = t">
-              {{ { mochila: 'Mochila', fabricar: 'Fabricar', colecao: 'Coleção', livro: 'Livro', visual: 'Visual' }[t] }}
+            <button v-for="t in (['mochila', 'fabricar', 'cozinha', 'diario', 'colecao', 'livro', 'visual'] as const)" :key="t" type="button" role="tab" :class="{ active: tab === t }" :aria-selected="tab === t" @click="pickTab(t)">
+              {{ { mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário', colecao: 'Coleção', livro: 'Livro', visual: 'Visual' }[t] }}
             </button>
           </div>
           <button type="button" class="link" @click="sheet = null">Fechar</button>
@@ -434,7 +586,7 @@ onBeforeUnmount(() => {
         <ul v-if="tab === 'mochila'" class="item-grid">
           <li v-for="i in inventory" :key="i.id">
             <img :src="icon(i.id)" alt="" width="40" height="40" />
-            <span>{{ i.name }} ×{{ count(state, i.id) }}<small>{{ { material: 'Material', crop: 'Colheita', seed: 'Semente', furniture: i.group ?? 'Móvel', accessory: 'Acessório' }[i.kind] }}</small></span>
+            <span>{{ i.name }} ×{{ count(state, i.id) }}<small>{{ { material: 'Material', crop: 'Colheita', seed: 'Semente', furniture: i.group ?? 'Móvel', accessory: 'Acessório', food: 'Comida' }[i.kind] }}</small></span>
             <button v-if="i.kind === 'furniture'" type="button" @click="doPlace(i.id)">Colocar à frente</button>
             <button v-else-if="i.kind === 'seed'" type="button" @click="doPlant(i.id)">Plantar à frente</button>
             <button v-else-if="i.kind === 'accessory'" type="button" @click="openDress('player')">Usar</button>
@@ -450,6 +602,45 @@ onBeforeUnmount(() => {
           </li>
         </ul>
 
+        <ul v-else-if="tab === 'cozinha'" class="item-grid">
+          <li class="hint">Comida cozida deixa o Pokémon mais feliz (uma refeição por dia cada). Os preferidos de cada um rendem mais.</li>
+          <li v-for="id in cookable" :key="id">
+            <img :src="icon(id)" alt="" width="40" height="40" />
+            <span>{{ itemName(id) }} <small v-if="count(state, id) > 0">(você tem {{ count(state, id) }})</small><small>{{ describeCost(state, RECIPES[id]!) }}</small></span>
+            <button type="button" @click="act(cook(state, id))">Cozinhar</button>
+          </li>
+        </ul>
+
+        <div v-else-if="tab === 'diario'" class="diary">
+          <p class="hint">Álbum de momentos: <strong>{{ album.seen }} de {{ album.total }}</strong>. Cada momento novo rende 10 moedas. Fique de olho nos Pokémon: eles vivem a vida mesmo quando você sai!</p>
+          <div v-if="pairs.length > 0" class="rel-map">
+            <h4>Mapa de relações</h4>
+            <ul>
+              <li v-for="p in pairs.slice(0, 8)" :key="p.a.id + p.b.id" :class="'rel-' + p.status.key">
+                <span>{{ p.a.name }} {{ p.status.emoji }} {{ p.b.name }}</span><small>{{ p.status.label }}</small>
+              </li>
+            </ul>
+          </div>
+          <div class="chips diary-filter" role="group" aria-label="Filtrar momentos">
+            <button type="button" :class="{ active: kindFilter === 'todos' }" @click="kindFilter = 'todos'">Todos</button>
+            <button type="button" :class="{ active: kindFilter === 'favoritos' }" @click="kindFilter = 'favoritos'">⭐</button>
+            <button v-for="k in MOMENT_KINDS" :key="k" type="button" :class="{ active: kindFilter === k }" @click="kindFilter = k">{{ MOMENT_EMOJI[k] }} {{ MOMENT_LABELS[k] }}</button>
+          </div>
+          <article v-for="m in diaryList" :key="m.id" class="moment" :class="'k-' + m.kind">
+            <header>
+              <strong>{{ m.emoji }} {{ m.title }}</strong>
+              <button type="button" class="fav" :aria-pressed="!!m.fav" :aria-label="m.fav ? 'Tirar dos favoritos' : 'Favoritar'" @click="toggleFav(m)">{{ m.fav ? '⭐' : '☆' }}</button>
+            </header>
+            <small>{{ m.cast.map((c) => c.name).join(' · ') }} · {{ whenLabel(m) }}{{ m.away ? ' · enquanto você estava fora' : '' }}</small>
+            <ol class="chat">
+              <li v-for="(l, i) in m.lines" :key="i" :class="'who-' + (l.who % 3)"><b>{{ nameFor(m, l.who) }}:</b> {{ l.text }}</li>
+            </ol>
+            <p v-if="m.choice" class="choice">Você decidiu: <em>{{ m.choice }}</em></p>
+            <ul v-if="m.result.length" class="result"><li v-for="r in m.result" :key="r">{{ r }}</li></ul>
+          </article>
+          <p v-if="diaryList.length === 0" class="hint">{{ kindFilter === 'todos' ? 'Nada registrado ainda. Fique na Vila e veja o que os Pokémon aprontam!' : 'Nenhum momento assim por enquanto.' }}</p>
+        </div>
+
         <div v-else-if="tab === 'colecao'">
           <p class="hint">{{ collection.filter((c) => c.have).length }} de {{ collection.length }} móveis. Alguns só vêm de presente dos melhores amigos.</p>
           <ul class="collection-grid">
@@ -460,7 +651,7 @@ onBeforeUnmount(() => {
           </ul>
         </div>
 
-        <PokeBook v-else-if="tab === 'livro'" :mons="bookMons" :friends="state.friends" can-dress @accessory="openDress" />
+        <PokeBook v-else-if="tab === 'livro'" :mons="bookMons" :friends="state.friends" :relations="bookRels" can-dress @accessory="openDress" />
 
         <div v-else>
           <p>Seu acessório: <strong>{{ state.wear.player ? itemName(state.wear.player) : 'nenhum' }}</strong></p>

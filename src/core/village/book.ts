@@ -3,6 +3,9 @@ import type { PokemonType } from '../pokemon-data';
 import { itemDef } from './catalog';
 import { favoriteOf, friendLevel } from './life';
 import type { Friendship } from './life';
+import { hash, personalityOf, PERSONALITIES } from './personality';
+
+export { PERSONALITIES, personalityOf };
 
 /**
  * O Livro dos Pokémon: o que cada Pokémon da sua caixa pensa e sente. Personalidade e gostos são fixos (vêm do id da
@@ -16,17 +19,6 @@ export interface BookMon {
   types: readonly PokemonType[];
 }
 
-export const PERSONALITIES = [
-  { name: 'Brincalhão', about: 'Vive inventando brincadeiras e adora correr pela Vila.' },
-  { name: 'Calmo', about: 'Gosta de sombra, silêncio e de ficar perto de você.' },
-  { name: 'Tímido', about: 'Demora a se abrir, mas nunca esquece quem foi gentil.' },
-  { name: 'Corajoso', about: 'Sempre o primeiro a querer batalhar.' },
-  { name: 'Guloso', about: 'Pensa em frutas o dia inteiro.' },
-  { name: 'Sonhador', about: 'Passa horas olhando as nuvens e as estrelas.' },
-  { name: 'Curioso', about: 'Mexe em tudo e conhece cada canto da Vila.' },
-  { name: 'Mandão', about: 'Acha que manda na Caixa (e às vezes manda mesmo).' },
-] as const;
-
 const MOODS = [
   { name: 'Feliz', emoji: '😊' },
   { name: 'Animado', emoji: '🤩' },
@@ -35,16 +27,6 @@ const MOODS = [
   { name: 'Carente', emoji: '🥺' },
   { name: 'Brincalhão', emoji: '😜' },
 ] as const;
-
-function hash(text: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619) >>> 0;
-  return h >>> 0;
-}
-
-export function personalityOf(id: string): (typeof PERSONALITIES)[number] {
-  return PERSONALITIES[hash(`p:${id}`) % PERSONALITIES.length]!;
-}
 
 const DISLIKE_POOL = ['pedra', 'madeira', 'concha', 'flor', 'tomate', 'abobora'] as const;
 
