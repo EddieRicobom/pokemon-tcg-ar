@@ -24,6 +24,10 @@ export interface SlotInfo {
   error?: string;
   /** Só para o sprite: GIF animado ou PNG estático de reserva. */
   kind?: SpriteKind;
+  /** Só para o sprite: foi baixado para uma carta shiny (pedindo a variante shiny). */
+  shinyRequested?: boolean;
+  /** Só para o sprite: o arquivo guardado é a variante shiny de verdade (ausente = sprite normal). */
+  shiny?: boolean;
   /** Só para o alvo de AR: versão do processo de compilação (alvos de outra versão são recompilados). */
   version?: number;
   /** Só para o alvo de AR: qualidade da imagem usada na compilação. */

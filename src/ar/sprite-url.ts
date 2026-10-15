@@ -20,17 +20,26 @@ function assertDexId(dexId: number): void {
   }
 }
 
-/** GIF animado com fundo transparente. */
-export function pokemonSpriteUrl(dexId: number): string {
+/**
+ * GIF animado com fundo transparente. `shiny` pede a variante shiny (cores diferentes), que o mesmo repositório guarda
+ * em `showdown/shiny/` (verificado em 2026-10-14 para 25, 475, 1009 e formas como 10034 e 10068; o 1008 não tem GIF).
+ */
+export function pokemonSpriteUrl(dexId: number, shiny = false): string {
   assertDexId(dexId);
-  return `${POKEAPI_SHOWDOWN_BASE_URL}/${dexId}.gif`;
+  return `${POKEAPI_SHOWDOWN_BASE_URL}/${shiny ? 'shiny/' : ''}${dexId}.gif`;
 }
 
 /**
  * Sprites estáticos transparentes, do mais leve ao mais pesado. Todos existiam
  * para 25, 1008 e 1009 na verificação de 2026-10-11.
  */
-export function pokemonStaticSpriteUrls(dexId: number): string[] {
+export function pokemonStaticSpriteUrls(dexId: number, shiny = false): string[] {
   assertDexId(dexId);
-  return [`${SPRITES_BASE_URL}/${dexId}.png`, `${SPRITES_BASE_URL}/other/home/${dexId}.png`];
+  const dir = shiny ? 'shiny/' : '';
+  return [`${SPRITES_BASE_URL}/${dir}${dexId}.png`, `${SPRITES_BASE_URL}/other/home/${dir}${dexId}.png`];
+}
+
+/** O endereço guardado é de um sprite shiny? */
+export function isShinySpriteUrl(url: string | undefined): boolean {
+  return url !== undefined && /\/shiny\/\d+\.(gif|png)$/.test(url.split('?')[0] ?? '');
 }

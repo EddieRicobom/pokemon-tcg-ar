@@ -80,6 +80,14 @@ describe('prepareMegaForm', () => {
     expect(out).toMatchObject({ ok: true, ready: { cardId: 'me03-244', form: { formId: 10068 }, profile: { types: ['psychic', 'fighting'] } } });
   });
 
+  it('carta shiny pede o sprite shiny da forma Mega; carta normal, o normal', async () => {
+    const asked: boolean[] = [];
+    const d = deps({ fetchSprite: async (_id, shiny) => { asked.push(shiny); return sprite; } });
+    await prepareMegaForm({ ...card, shiny: true }, d);
+    await prepareMegaForm(card, d);
+    expect(asked).toEqual([true, false]);
+  });
+
   it('passa a variante X/Y do nome da carta', async () => {
     let seen: unknown = 'nada';
     await prepareMegaForm({ id: 'c', name: 'Mega Charizard X ex', baseDexId: 6 }, deps({ resolve: async (_dex, variant) => { seen = variant; return null; } }));

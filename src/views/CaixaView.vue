@@ -311,7 +311,7 @@ async function startBattle(): Promise<void> {
     const wanted = fighting.filter((c) => c.info.mega === true && megaPicks.value.includes(c.info.id));
     if (wanted.length > 0) hint.value = 'Preparando a forma Mega…';
     const megaPlan = await planMegaBattle(
-      wanted.map((c) => ({ id: c.info.id, name: c.info.name, baseDexId: c.info.dexId })),
+      wanted.map((c) => ({ id: c.info.id, name: c.info.name, baseDexId: c.info.dexId, shiny: c.info.shiny })),
       energy.value,
       { prepare: prepareMegaFor, decode: decodeMegaSprite },
     );

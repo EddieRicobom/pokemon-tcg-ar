@@ -7,6 +7,13 @@ export interface SpriteSource {
   kind: SpriteKind;
   url: string;
   blob: Blob;
+  /** É a variante shiny de verdade (cores diferentes). Falso/ausente = sprite normal, mesmo que a carta seja shiny. */
+  shiny?: boolean;
+}
+
+export interface FetchSpriteOptions {
+  /** A carta é shiny: tenta a variante shiny (GIF e depois PNG). Se ela não existir, cai para o sprite normal. */
+  shiny?: boolean;
 }
 
 export class SpriteNetworkError extends Error {
@@ -34,13 +41,26 @@ async function tryFetch(url: string, fetchImpl: typeof fetch): Promise<Blob | nu
  * se ele não existir (ex.: Miraidon, 1008), o PNG estático; se nada existir, devolve null (a interface
  * mostra o marcador). Falha de rede NÃO vira "não existe": lança, para tentar de novo depois.
  */
-export async function fetchSprite(dexId: number, fetchImpl: typeof fetch = (input, init) => fetch(input, init)): Promise<SpriteSource | null> {
-  const gifUrl = pokemonSpriteUrl(dexId);
+export async function fetchSprite(
+  dexId: number,
+  fetchImpl: typeof fetch = (input, init) => fetch(input, init),
+  options: FetchSpriteOptions = {},
+): Promise<SpriteSource | null> {
+  if (options.shiny) {
+    const found = await fetchVariant(dexId, true, fetchImpl);
+    if (found) return found;
+    // Sem sprite shiny para este Pokémon: mostra o normal (e o `shiny` falso avisa que não é a variante de cores).
+  }
+  return fetchVariant(dexId, false, fetchImpl);
+}
+
+async function fetchVariant(dexId: number, shiny: boolean, fetchImpl: typeof fetch): Promise<SpriteSource | null> {
+  const gifUrl = pokemonSpriteUrl(dexId, shiny);
   const gif = await tryFetch(gifUrl, fetchImpl);
-  if (gif) return { kind: 'gif', url: gifUrl, blob: gif };
-  for (const url of pokemonStaticSpriteUrls(dexId)) {
+  if (gif) return { kind: 'gif', url: gifUrl, blob: gif, ...(shiny ? { shiny: true } : {}) };
+  for (const url of pokemonStaticSpriteUrls(dexId, shiny)) {
     const blob = await tryFetch(url, fetchImpl);
-    if (blob) return { kind: 'static', url, blob };
+    if (blob) return { kind: 'static', url, blob, ...(shiny ? { shiny: true } : {}) };
   }
   return null;
 }

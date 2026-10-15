@@ -104,7 +104,7 @@ async function open(): Promise<void> {
       canvas: canvasEl.value,
       container: stageEl.value,
       cards: prepared.ready.map((r) => ({ cardId: r.card.id, name: r.card.name, dexId: spriteIdOf(r.card), shiny: isShiny(r.card), target: r.target, cachedSprite: r.cachedSprite })),
-      fetchSprite: (dexId) => fetchSprite(dexId),
+      fetchSprite: (dexId, shiny) => fetchSprite(dexId, undefined, { shiny }),
       onState: (s) => {
         if (mine === run) state.value = s;
       },

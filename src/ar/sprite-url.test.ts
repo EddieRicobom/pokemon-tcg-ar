@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isShinySpriteUrl,
   isValidDexId,
   pokemonSpriteUrl,
   pokemonStaticSpriteUrls,
@@ -44,5 +45,24 @@ describe('isValidDexId', () => {
     expect(isValidDexId('25')).toBe(false);
     expect(isValidDexId(undefined)).toBe(false);
     expect(isValidDexId(0)).toBe(false);
+  });
+});
+
+describe('endereços shiny', () => {
+  it('GIF e PNG shiny ficam nas pastas shiny do mesmo repositório', () => {
+    expect(pokemonSpriteUrl(132, true)).toBe('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/shiny/132.gif');
+    expect(pokemonSpriteUrl(132)).toBe('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/132.gif');
+    expect(pokemonStaticSpriteUrls(1008, true)).toEqual([
+      'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/1008.png',
+      'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/home/shiny/1008.png',
+    ]);
+    expect(pokemonSpriteUrl(10068, true)).toContain('/showdown/shiny/10068.gif');
+  });
+
+  it('isShinySpriteUrl reconhece só os de variante shiny', () => {
+    expect(isShinySpriteUrl(pokemonSpriteUrl(132, true))).toBe(true);
+    expect(isShinySpriteUrl(pokemonStaticSpriteUrls(25, true)[1])).toBe(true);
+    expect(isShinySpriteUrl(pokemonSpriteUrl(132))).toBe(false);
+    expect(isShinySpriteUrl(undefined)).toBe(false);
   });
 });

@@ -66,7 +66,7 @@ export type MegaPrepared = { ok: true; ready: MegaReady } | { ok: false; reason:
 export interface MegaPrepareDeps {
   resolve: (baseDexId: number, variant: 'x' | 'y' | null) => Promise<MegaForm | null>;
   loadProfile: (formId: number) => Promise<PokemonProfile | null>;
-  fetchSprite: (formId: number) => Promise<SpriteSource | null>;
+  fetchSprite: (formId: number, shiny: boolean) => Promise<SpriteSource | null>;
 }
 
 /** Motivo curto de uma falha, em português (os erros do navegador vêm em inglês: "Failed to fetch"). */
@@ -83,7 +83,7 @@ const reason = (name: string, why: string) => `${name}: ${why} Luta na forma nor
  * Se qualquer coisa faltar, devolve o motivo e a carta luta na forma normal (nada é inventado nem cobrado).
  */
 export async function prepareMegaForm(
-  card: { id: string; name: string; baseDexId: number | undefined },
+  card: { id: string; name: string; baseDexId: number | undefined; shiny?: boolean },
   deps: MegaPrepareDeps,
 ): Promise<MegaPrepared> {
   const parsed = parseMegaName(card.name);
@@ -98,7 +98,7 @@ export async function prepareMegaForm(
   let profile: PokemonProfile | null = null;
   let sprite: SpriteSource | null = null;
   try {
-    [profile, sprite] = await Promise.all([deps.loadProfile(form.formId), deps.fetchSprite(form.formId)]);
+    [profile, sprite] = await Promise.all([deps.loadProfile(form.formId), deps.fetchSprite(form.formId, card.shiny === true)]);
   } catch (error) {
     return { ok: false, reason: reason(card.name, `não consegui baixar a forma Mega (${failure(error)}).`) };
   }

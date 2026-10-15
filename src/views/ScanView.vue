@@ -407,7 +407,7 @@ async function startArFor(cardId: string): Promise<void> {
       dexId: spriteIdOf(assets.card),
       shiny: isShiny(assets.card),
       cachedSprite: assets.cachedSprite,
-      fetchSprite: (dexId) => fetchSprite(dexId),
+      fetchSprite: (dexId, shiny) => fetchSprite(dexId, undefined, { shiny }),
       battle: {
         name: assets.card.name,
         load: (onPart) => loadBattle(assets.card.id, spriteIdOf(assets.card), onPart),
