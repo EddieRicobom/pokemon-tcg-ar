@@ -8,7 +8,9 @@ import { visual } from '../app/visual-settings';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { routeHref } from '../app/route';
-import { trainer } from '../app/trainer-store';
+import { canNickname, displayName, MAX_NICK_LEN, nickIdeas, nicknameOf, setNickname } from '../core/village/nickname';
+import { recordEvent, trainer } from '../app/trainer-store';
+import { claimPrizes } from '../core/village/rewards';
 import LeagueCard from './LeagueCard.vue';
 import MinigameHub from './MinigameHub.vue';
 import { dayKey, levelOf } from '../core/trainer';
@@ -77,7 +79,8 @@ let cropTimer: ReturnType<typeof setInterval> | null = null;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 let dirty = false;
 let fishing = false;
-const mons = ref<{ id: string; name: string; shiny: boolean; dexId?: number; thumb?: string }[]>([]);
+/** `name` é o nome na tela (o apelido, se tem); `real` é o nome da carta. */
+const mons = ref<{ id: string; name: string; real: string; shiny: boolean; dexId?: number; thumb?: string }[]>([]);
 const types = reactive(new Map<string, PokemonType[]>());
 
 // ---- ícones em pixel art (PixelBuf → imagem), uma vez por item
@@ -110,11 +113,27 @@ function say(text: string, ms = 2800): void {
   toastTimer = setTimeout(() => (toast.value = ''), ms);
 }
 
+// ---- Treinador: o que acontece na Vila conta lá, e as conquistas voltam como acessórios e moedas
+function trainerEvent(action: 'talk' | 'answer' | 'moment' | 'nickname', id?: string): void {
+  recordEvent({ type: 'village', action, level: id ? friendLevel(friendOf(state, id).points).level : undefined });
+}
+
+/** Entrega os prêmios de conquistas novas e avisa o Treinador se a amizade com alguém subiu. */
+function syncTrainer(): void {
+  const best = Math.max(0, ...Object.values(state.friends).map((f) => friendLevel(f.points).level));
+  if (best > trainer.value.bestFriend) recordEvent({ type: 'village', action: 'friend', level: best });
+  const got = claimPrizes(state, trainer.value.achievements);
+  if (!got) return;
+  changed();
+  say(`🏅 ${got.note}`, 5200);
+}
+
 function nameOf(id: string): string {
   return mons.value.find((m) => m.id === id)?.name ?? 'Pokémon';
 }
 
 const inventory = computed(() => ITEMS.filter((i) => count(state, i.id) > 0));
+const sellable = computed(() => inventory.value.filter((i) => i.sell > 0));
 const giftable = computed(() => inventory.value.filter((i) => i.kind !== 'accessory'));
 const nextHouse = computed(() => HOUSE_LEVELS[state.house + 1] ?? null);
 const shopItems = computed(() => shopToday(day.value));
@@ -145,7 +164,7 @@ const bookTold = computed(() => {
   for (const k of Object.keys(out)) out[k] = out[k]!.slice(-3);
   return out;
 });
-const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name, types: types.get(m.id) ?? [], thumb: m.thumb, accessory: state.wear.mons[m.id] ?? null })));
+const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name, real: m.real, types: types.get(m.id) ?? [], thumb: m.thumb, accessory: state.wear.mons[m.id] ?? null })));
 const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state, id) > 0));
 
 // ---- controle
@@ -186,6 +205,8 @@ interface QuizState {
   text: string;
   follow?: Follow;
   answer?: string;
+  /** É a conversa do apelido (não uma pergunta): o texto digitado vira o apelido. */
+  nick?: boolean;
 }
 const quiz = ref<QuizState | null>(null);
 /** Um Pokémon que quer te perguntar algo (o ❗ sobre ele); some sozinho depois de um tempo. */
@@ -238,9 +259,11 @@ function openQuiz(id: string): void {
 function quizAnswer(raw: string): void {
   const z = quiz.value;
   if (!z || z.stage !== 'ask') return;
+  if (z.nick) return nickAnswer(z, raw);
   const r = recordAnswer(state, { id: z.monId, name: z.name }, z.q, raw, Date.now(), refreshDay(), profile.name);
   if (!r) return;
   changed();
+  trainerEvent('answer', z.monId);
   if (r.bordao) {
     game?.pop(z.monId, '🗣️');
     quiz.value = { ...z, stage: 'reply', answer: r.answer.a, text: `"${r.answer.a}"! Gostei tanto que vou falar isso a toda hora. Espera só os outros ouvirem!` };
@@ -264,6 +287,52 @@ function quizChoose(i: number): void {
 function quizClose(): void {
   quiz.value = null;
 }
+
+// ---- apelidos (a partir de «Grande amigo»)
+const NICK_CLEAR = 'Tirar o apelido';
+
+/** Põe o apelido na tela: nos nomes dos Pokémon, nas falas, no mapa e no Livro. */
+function applyNicks(): void {
+  for (const m of mons.value) m.name = displayName(state, m.id, m.real);
+  game?.setNames(Object.fromEntries(mons.value.map((m) => [m.id, m.name])));
+}
+
+function openNickname(id: string): void {
+  const real = mons.value.find((m) => m.id === id)?.real ?? 'Pokémon';
+  if (!canNickname(state, id)) {
+    say(`${real} ainda não tem intimidade para um apelido. Ele aceita a partir de «Grande amigo».`);
+    return;
+  }
+  const has = nicknameOf(state, id) !== '';
+  const q: Question = { id: 'apelido', kind: 'palavra', ask: () => '', placeholder: `Apelido para ${real} (até ${MAX_NICK_LEN} letras)`, chips: [...nickIdeas(state, id), ...(has ? [NICK_CLEAR] : [])] };
+  dialog.value = null;
+  quiz.value = { monId: id, name: nameOf(id), q, stage: 'ask', text: has ? `${real} atende por «${nicknameOf(state, id)}». Como você quer chamar ${real} agora?` : `Como você quer chamar ${real}? Vai ser o apelido dele em todo lugar.`, nick: true };
+}
+
+function nickAnswer(z: QuizState, raw: string): void {
+  const real = mons.value.find((m) => m.id === z.monId)?.real ?? 'Pokémon';
+  const r = setNickname(state, z.monId, raw === NICK_CLEAR ? '' : raw, real);
+  if (r.ok) {
+    changed();
+    applyNicks();
+    if (nicknameOf(state, z.monId)) trainerEvent('nickname', z.monId);
+    game?.pop(z.monId, nicknameOf(state, z.monId) ? '😍' : '🙂');
+  }
+  quiz.value = { ...z, name: nameOf(z.monId), stage: 'reply', text: r.message };
+}
+
+/** O Livro dos Pokémon (aba Livro) também deixa dar o apelido. */
+function bookNickname(id: string, text: string): void {
+  const real = mons.value.find((m) => m.id === id)?.real ?? 'Pokémon';
+  const r = setNickname(state, id, text, real);
+  bookNote.value = r.message;
+  if (r.ok) {
+    changed();
+    applyNicks();
+    if (nicknameOf(state, id)) trainerEvent('nickname', id);
+  }
+}
+const bookNote = ref('');
 
 
 // ---- a cidade: casas dos Pokémon, Café, Correio, Museu e a fonte
@@ -535,6 +604,7 @@ let sceneTimer: ReturnType<typeof setInterval> | null = null;
 
 function announce(r: Resolved): void {
   changed();
+  if (r.firstTime) trainerEvent('moment');
   say(`📖 ${r.moment.emoji} ${r.moment.title}${r.firstTime ? ' · momento novo no Álbum! +10 moedas' : r.moment.fav ? ' · guardado no Álbum 📌' : ' · salvo no Diário'}`);
 }
 
@@ -690,7 +760,10 @@ function pressA(): void {
     game.faceMe(t.id);
     const name = nameOf(t.id);
     const result = talk(state, t.id, name, types.get(t.id) ?? [], today, new Date().getHours(), Math.random, recentGossip(state, t.id, Date.now()), game.weatherKind);
-    if (result.gained > 0) game.bubble(t.id, '❤️');
+    if (result.gained > 0) {
+      game.bubble(t.id, '❤️');
+      trainerEvent('talk', t.id);
+    }
     let text = result.text;
     const help = dailyHelp(state, t.id, today, Math.random);
     if (help.items.length > 0) text += ` Ah! Achei isto pela Vila para você: ${help.items.map((h) => `${h.qty} ${itemName(h.item)}`).join(' e ')}.`;
@@ -751,8 +824,9 @@ function openFriendDialog(id: string, text: string): void {
   const f = friendOf(state, id);
   const lvl = friendLevel(f.points);
   const following = state.follower === id;
-  const actions: { label: string; run: () => void }[] = [{ label: 'Presentear', run: () => { giftPick.value = true; } }];
+  const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: 'Presentear', run: () => { giftPick.value = true; } }];
   actions.push({ label: 'Acessório', run: () => { dialog.value = null; openDress(id); } });
+  actions.push({ label: nicknameOf(state, id) ? 'Mudar o apelido' : 'Dar apelido', disabled: !canNickname(state, id), run: () => openNickname(id) });
   if (following) actions.push({ label: 'Pode passear', run: () => { state.follower = null; changed(); dialog.value = null; } });
   else if (canFollow(state, id)) actions.push({ label: 'Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
   actions.push({ label: 'Tchau', run: () => { dialog.value = null; } });
@@ -849,6 +923,9 @@ onMounted(async () => {
   tickClock();
   const clockTimer = setInterval(tickClock, 15000);
   onBeforeUnmount(() => clearInterval(clockTimer));
+  syncTrainer();
+  const prizeTimer = setInterval(syncTrainer, 2000);
+  onBeforeUnmount(() => clearInterval(prizeTimer));
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   document.addEventListener('visibilitychange', onVisibility);
@@ -862,11 +939,11 @@ onMounted(async () => {
     const loaded = await loadCreatureEntries(cache, browserDecoders, team.ids);
     villagers = loaded.entries.map((e) => ({
       id: e.info.id,
-      name: e.info.name,
+      name: displayName(state, e.info.id, e.info.name),
       shiny: e.info.shiny === true,
       gif: e.source.kind === 'gif' ? e.source.gif : { width: e.source.image.width, height: e.source.image.height, frames: [{ rgba: e.source.image.data, delayMs: 1000 }], durationMs: 1000 },
     }));
-    mons.value = loaded.entries.map((e, i) => ({ id: e.info.id, name: e.info.name, shiny: e.info.shiny === true, dexId: e.info.dexId, thumb: thumbOf(villagers[i]!.gif) }));
+    mons.value = loaded.entries.map((e, i) => ({ id: e.info.id, name: displayName(state, e.info.id, e.info.name), real: e.info.name, shiny: e.info.shiny === true, dexId: e.info.dexId, thumb: thumbOf(villagers[i]!.gif) }));
   } catch {
     say('Não consegui ler as cartas guardadas; a Vila abre só com você.');
   }
@@ -944,7 +1021,7 @@ onBeforeUnmount(() => {
       </div>
       <p v-if="toast" class="village-toast" role="status">{{ toast }}</p>
 
-      <QuizDialog v-if="quiz" :name="quiz.name" :text="quiz.text" :stage="quiz.stage" :placeholder="quiz.q.placeholder" :chips="quiz.q.chips" :options="quiz.follow?.options.map((x) => x.label)" @answer="quizAnswer" @choose="quizChoose" @close="quizClose" />
+      <QuizDialog v-if="quiz" :name="quiz.name" :text="quiz.text" :stage="quiz.stage" :placeholder="quiz.q.placeholder" :chips="quiz.q.chips" :options="quiz.follow?.options.map((x) => x.label)" :submit-label="quiz.nick ? 'Salvar' : undefined" :cancel-label="quiz.nick ? 'Cancelar' : undefined" @answer="quizAnswer" @choose="quizChoose" @close="quizClose" />
       <div v-else-if="dialog" class="speech in-stage village-dialog" role="dialog" :aria-label="dialog.name">
         <div class="speech-box">
           <strong>{{ dialog.name }}</strong>
@@ -989,12 +1066,12 @@ onBeforeUnmount(() => {
           </li>
         </ul>
         <ul v-else class="item-grid">
-          <li v-for="i in inventory" :key="i.id">
+          <li v-for="i in sellable" :key="i.id">
             <img :src="icon(i.id)" alt="" width="40" height="40" />
             <span>{{ i.name }} ×{{ count(state, i.id) }}<small>{{ i.sell }} cada</small></span>
             <button type="button" @click="act(sell(state, i.id))">Vender 1</button>
           </li>
-          <li v-if="inventory.length === 0" class="hint">Nada para vender ainda.</li>
+          <li v-if="sellable.length === 0" class="hint">Nada para vender ainda.</li>
         </ul>
       </div>
 
@@ -1117,7 +1194,7 @@ onBeforeUnmount(() => {
           </ul>
         </div>
 
-        <PokeBook v-else-if="tab === 'livro'" :mons="bookMons" :friends="state.friends" :relations="bookRels" :words="bookWords" :told="bookTold" can-dress @accessory="openDress" />
+        <PokeBook v-else-if="tab === 'livro'" :mons="bookMons" :friends="state.friends" :relations="bookRels" :words="bookWords" :told="bookTold" :nicks="state.nicks" :nick-note="bookNote" can-dress @accessory="openDress" @nickname="bookNickname" />
 
         <div v-else>
           <p>Seu acessório: <strong>{{ state.wear.player ? itemName(state.wear.player) : 'nenhum' }}</strong></p>

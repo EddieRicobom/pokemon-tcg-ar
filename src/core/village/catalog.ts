@@ -290,6 +290,20 @@ export const ITEMS: readonly ItemDef[] = [
   a('mochila', 'Mochila de aventura', 'player', 'back', 160),
   a('capa', 'Capa de herói', 'both', 'back', 240),
   a('asinhas', 'Asinhas de anjo', 'both', 'back', 280),
+  // Prêmios de conquistas: não vendem em lugar nenhum, só vêm do Treinador (ver `rewards.ts`).
+  a('bone-treinador', 'Boné de Treinador', 'both', 'hat', 0, { sell: 0 }),
+  a('fita-chama', 'Fita de chama', 'both', 'hat', 0, { sell: 0 }),
+  a('louros', 'Coroa de louros', 'both', 'hat', 0, { sell: 0 }),
+  a('tiara-brilho', 'Tiara brilhante', 'both', 'hat', 0, { sell: 0 }),
+  a('tiara-coracoes', 'Tiara de corações', 'both', 'hat', 0, { sell: 0 }),
+  a('monoculo', 'Monóculo', 'player', 'face', 0, { sell: 0 }),
+  a('oculos-estrela', 'Óculos de estrela', 'both', 'face', 0, { sell: 0 }),
+  a('colar-estrela', 'Colar de estrela', 'both', 'neck', 0, { sell: 0 }),
+  a('laco-amizade', 'Laço da amizade', 'both', 'neck', 0, { sell: 0 }),
+  a('insignia', 'Insígnia dourada', 'both', 'neck', 0, { sell: 0 }),
+  a('faixa-vencedor', 'Faixa de vencedor', 'both', 'neck', 0, { sell: 0 }),
+  a('capa-estelar', 'Capa estelar', 'both', 'back', 0, { sell: 0 }),
+  a('capa-liga', 'Capa da Liga', 'both', 'back', 0, { sell: 0 }),
 ];
 
 export const ITEM_BY_ID = new Map(ITEMS.map((i) => [i.id, i]));

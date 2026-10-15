@@ -92,12 +92,16 @@ export interface SocialState {
   lingo: Lingo[];
   /** Quantas perguntas cada Pokémon já fez hoje. */
   asked: Record<string, { day: string; n: number }>;
+  /** Apelidos que você deu (só quem chegou a «Grande amigo» pode ganhar um; ver `nickname.ts`). */
+  nicks: Record<string, string>;
 }
 
 export const MAX_ANSWERS = 80;
 export const MAX_LINGO = 16;
 export const MAX_WORDS = 80;
 export const MAX_ANSWER_LEN = 28;
+export const MAX_NICKS = 200;
+export const MAX_NICK_LEN = 14;
 
 /** Limpa o que foi digitado: sem caracteres de controle, espaços repetidos nem sobras, com tamanho limitado. */
 export function cleanAnswer(raw: unknown, max = MAX_ANSWER_LEN): string {
@@ -114,7 +118,7 @@ const MAX_SEEN = 600;
 export const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 export function emptySocial(): SocialState {
-  return { rel: {}, diary: [], seen: [], lastSeen: 0, diaryRead: 0, answers: [], words: {}, lingo: [], asked: {} };
+  return { rel: {}, diary: [], seen: [], lastSeen: 0, diaryRead: 0, answers: [], words: {}, lingo: [], asked: {}, nicks: {} };
 }
 
 const num = (v: unknown, lo: number, hi: number, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : fallback);
@@ -158,7 +162,7 @@ export function trimMoments(all: readonly Moment[]): Moment[] {
   return all.filter((m) => keepSaved.has(m) || recent.has(m));
 }
 
-export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown; answers?: unknown; words?: unknown; lingo?: unknown; asked?: unknown }): SocialState {
+export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown; answers?: unknown; words?: unknown; lingo?: unknown; asked?: unknown; nicks?: unknown }): SocialState {
   const rel: Record<string, Relation> = {};
   if (raw.rel && typeof raw.rel === 'object') {
     for (const [k, v] of Object.entries(raw.rel as Record<string, Partial<Relation>>)) {
@@ -180,6 +184,7 @@ export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: un
           .slice(-MAX_ANSWERS)
       : [],
     words: raw.words && typeof raw.words === 'object' ? Object.fromEntries(Object.entries(raw.words as Record<string, unknown>).filter(([k, v]) => k.length <= 80 && cleanAnswer(v, 24) !== '').slice(0, MAX_WORDS).map(([k, v]) => [k, cleanAnswer(v, 24)])) : {},
+    nicks: raw.nicks && typeof raw.nicks === 'object' ? Object.fromEntries(Object.entries(raw.nicks as Record<string, unknown>).filter(([k, v]) => k.length <= 80 && cleanAnswer(v, MAX_NICK_LEN) !== '').slice(0, MAX_NICKS).map(([k, v]) => [k, cleanAnswer(v, MAX_NICK_LEN)])) : {},
     lingo: Array.isArray(raw.lingo)
       ? raw.lingo
           .filter((x): x is Lingo => !!x && typeof x === 'object' && cleanAnswer((x as Lingo).text) !== '')

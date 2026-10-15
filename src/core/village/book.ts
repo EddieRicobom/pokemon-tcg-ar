@@ -15,7 +15,10 @@ export { PERSONALITIES, personalityOf };
 
 export interface BookMon {
   id: string;
+  /** O nome na tela (o apelido, se tem). */
   name: string;
+  /** O nome da carta, quando é diferente do que aparece. */
+  real?: string;
   types: readonly PokemonType[];
 }
 

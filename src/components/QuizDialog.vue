@@ -14,6 +14,9 @@ const props = defineProps<{
   placeholder?: string;
   chips?: readonly string[];
   options?: readonly string[];
+  /** Rótulos dos botões do campo de texto (o padrão serve às perguntas; o apelido usa «Salvar» e «Cancelar»). */
+  submitLabel?: string;
+  cancelLabel?: string;
 }>();
 const emit = defineEmits<{ answer: [text: string]; choose: [index: number]; close: [] }>();
 
@@ -42,8 +45,8 @@ onMounted(() => {
           <button v-for="c in chips" :key="c" type="button" @click="emit('answer', c)">{{ c }}</button>
         </div>
         <div class="village-choices">
-          <button type="submit" class="primary" :disabled="draft.trim() === ''">Responder</button>
-          <button type="button" @click="emit('close')">Deixa pra lá</button>
+          <button type="submit" class="primary" :disabled="draft.trim() === ''">{{ submitLabel ?? 'Responder' }}</button>
+          <button type="button" @click="emit('close')">{{ cancelLabel ?? 'Deixa pra lá' }}</button>
         </div>
       </form>
       <div v-else-if="stage === 'follow'" class="village-choices">

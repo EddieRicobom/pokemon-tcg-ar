@@ -24,6 +24,12 @@ export const XP = {
   minigamesPerDay: 5,
   /** Revencer um Ginásio ou a Liga já vencida. */
   leagueRematch: 25,
+  /** Vida na Vila: a primeira conversa do dia com cada Pokémon e cada pergunta respondida; só as primeiras do dia rendem XP. */
+  villageTalk: 5,
+  villageAnswer: 10,
+  villagePerDay: 8,
+  /** Uma batalha PvP (com um amigo) vale como uma batalha comum e conta para a missão. */
+  pvpWin: 20,
 } as const;
 
 /** XP total para chegar ao nível `level` (nível 1 = 0). */
@@ -73,7 +79,7 @@ export function levelProgress(xp: number): LevelProgress {
 
 // ----------------------------------------------------------------------------- estado
 
-export type MissionKind = 'scan' | 'new' | 'battle' | 'team' | 'play';
+export type MissionKind = 'scan' | 'new' | 'battle' | 'team' | 'play' | 'talk' | 'answer';
 
 export interface MissionDef {
   id: string;
@@ -108,8 +114,18 @@ export interface TrainerState {
   /** Por minigame: partidas jogadas e melhor pontuação (0–100, quanto maior melhor). */
   games: Record<string, { played: number; best: number }>;
   streak: { current: number; best: number; lastDay: string };
+  /** Vida na Vila (contadores de vida inteira): conversas do dia, perguntas respondidas, momentos novos no Álbum, apelidos dados. */
+  life: { talks: number; answers: number; moments: number; nicknames: number };
+  /** O maior nível de amizade que algum Pokémon já teve com você (0 a 4). */
+  bestFriend: number;
+  /** Liga: insígnias conquistadas e vezes que venceu a Campeã. */
+  league: { badges: number; champion: number };
+  /** Batalhas com um amigo (PvP): jogadas e vencidas. */
+  pvp: { played: number; wins: number };
+  /** Cartas shiny que já saíram. */
+  shinies: number;
   /** Hoje: cartas que já valeram XP e progresso das missões. */
-  today: { day: string; cards: string[]; battles: number; minigames: number; progress: Partial<Record<MissionKind, number>>; done: string[]; bonus: boolean };
+  today: { day: string; cards: string[]; battles: number; minigames: number; life: number; progress: Partial<Record<MissionKind, number>>; done: string[]; bonus: boolean };
   achievements: Record<string, string>;
 }
 
@@ -117,17 +133,22 @@ export function emptyTrainer(): TrainerState {
   return {
     v: TRAINER_VERSION, xp: 0, energy: STARTER_ENERGY, cardIds: [], sets: {}, scans: 0, battles: 0, teamBattles: 0, minigames: 0, minigameWins: 0, games: {},
     streak: { current: 0, best: 0, lastDay: '' },
-    today: { day: '', cards: [], battles: 0, minigames: 0, progress: {}, done: [], bonus: false },
+    life: { talks: 0, answers: 0, moments: 0, nicknames: 0 }, bestFriend: 0, league: { badges: 0, champion: 0 }, pvp: { played: 0, wins: 0 }, shinies: 0,
+    today: { day: '', cards: [], battles: 0, minigames: 0, life: 0, progress: {}, done: [], bonus: false },
     achievements: {},
   };
 }
 
 export type TrainerEvent =
-  | { type: 'scan'; cardId: string; setId: string; setName: string; setTotal: number }
+  | { type: 'scan'; cardId: string; setId: string; setName: string; setTotal: number; shiny?: boolean }
   | { type: 'battle'; team: boolean }
   | { type: 'minigame'; game: string; won: boolean; score: number }
   /** Vitória num Ginásio, na Elite 4 ou contra o Campeão. `first` = primeira vitória contra esse desafio (vale o XP cheio). */
-  | { type: 'league'; title: string; xp: number; first: boolean };
+  | { type: 'league'; title: string; xp: number; first: boolean; /** Insígnias e vitórias sobre a Campeã depois desta luta. */ badges?: number; championWins?: number }
+  /** Uma batalha com um amigo (PvP, na Caixa ou no Pin Mode). */
+  | { type: 'pvp'; won: boolean }
+  /** Vida na Vila: `talk` = primeira conversa do dia com um Pokémon (`level` = amizade dele, 0 a 4); `answer` = respondeu a uma pergunta; `moment` = momento novo no Álbum; `nickname` = deu um apelido. */
+  | { type: 'village'; /** `friend` só atualiza o melhor nível de amizade (subiu por presente, por exemplo). */ action: 'talk' | 'answer' | 'moment' | 'nickname' | 'friend'; level?: number };
 
 export type RewardTone = 'xp' | 'new' | 'mission' | 'level' | 'achievement' | 'streak';
 
@@ -171,6 +192,10 @@ const MISSION_POOL: MissionDef[][] = [
     { id: 'play-2', kind: 'play', target: 2, label: 'Jogue 2 minigames' },
     { id: 'play-1', kind: 'play', target: 1, label: 'Jogue 1 minigame' },
   ],
+  [
+    { id: 'talk-3', kind: 'talk', target: 3, label: 'Converse com 3 Pokémon na Vila' },
+    { id: 'answer-1', kind: 'answer', target: 1, label: 'Responda a uma pergunta de um Pokémon' },
+  ],
 ];
 
 function hash(text: string): number {
@@ -186,7 +211,7 @@ function hash(text: string): number {
 export function missionsFor(day: string): MissionDef[] {
   const h = hash(day);
   const pick = (group: MissionDef[], salt: number) => group[(h >>> salt) % group.length]!;
-  const others = (MINIGAMES_ENABLED ? [1, 2, 3] : [1, 2]).sort((a, b) => hash(`${day}:${a}`) - hash(`${day}:${b}`)).slice(0, 2);
+  const others = (MINIGAMES_ENABLED ? [1, 2, 3, 4] : [1, 2, 4]).sort((a, b) => hash(`${day}:${a}`) - hash(`${day}:${b}`)).slice(0, 2);
   return [pick(MISSION_POOL[0]!, 1), ...others.map((g) => pick(MISSION_POOL[g]!, g + 3))];
 }
 
@@ -220,6 +245,21 @@ const ALL_ACHIEVEMENTS: AchievementDef[] = [
   { id: 'minigame-perfeito', title: 'Gabaritou', hint: 'Faça 100 pontos num minigame.', test: (s) => Object.values(s.games).some((g) => g.best >= 100) },
   { id: 'nivel-5', title: 'Nível 5', hint: 'Chegue ao nível 5.', test: (s) => levelOf(s.xp) >= 5 },
   { id: 'nivel-10', title: 'Nível 10', hint: 'Chegue ao nível 10.', test: (s) => levelOf(s.xp) >= 10 },
+  { id: 'nivel-20', title: 'Nível 20', hint: 'Chegue ao nível 20.', test: (s) => levelOf(s.xp) >= 20 },
+  // Vila.
+  { id: 'vila-conversa', title: 'Bom vizinho', hint: 'Converse com os Pokémon da Vila em 30 ocasiões.', test: (s) => s.life.talks >= 30 },
+  { id: 'vila-grande-amigo', title: 'Grande amigo', hint: 'Chegue ao nível 3 de amizade com um Pokémon (e dê um apelido a ele).', test: (s) => s.bestFriend >= 3 },
+  { id: 'vila-melhor-amigo', title: 'Melhor amigo', hint: 'Chegue ao nível 4 de amizade com um Pokémon.', test: (s) => s.bestFriend >= 4 },
+  { id: 'vila-apelido', title: 'Apelido carinhoso', hint: 'Dê um apelido a um Pokémon.', test: (s) => s.life.nicknames >= 1 },
+  { id: 'vila-perguntas', title: 'Papo reto', hint: 'Responda a 10 perguntas dos Pokémon.', test: (s) => s.life.answers >= 10 },
+  { id: 'vila-album', title: 'Memória de elefante', hint: 'Veja 25 momentos diferentes no Álbum da Vila.', test: (s) => s.life.moments >= 25 },
+  // Liga e PvP.
+  { id: 'liga-insignia', title: 'Primeira insígnia', hint: 'Vença um líder de Ginásio.', test: (s) => s.league.badges >= 1 },
+  { id: 'liga-oito', title: 'Oito insígnias', hint: 'Conquiste as 8 insígnias da Liga.', test: (s) => s.league.badges >= 8 },
+  { id: 'liga-campea', title: 'Campeão da Liga', hint: 'Vença a Campeã da Liga.', test: (s) => s.league.champion >= 1 },
+  { id: 'pvp-1', title: 'Cara a cara', hint: 'Faça uma batalha com um amigo (PvP).', test: (s) => s.pvp.played >= 1 },
+  { id: 'pvp-vitoria', title: 'Vitória em dupla', hint: 'Vença uma batalha PvP.', test: (s) => s.pvp.wins >= 1 },
+  { id: 'shiny-1', title: 'Brilho raro', hint: 'Escaneie uma carta shiny.', test: (s) => s.shinies >= 1 },
 ];
 
 export const ACHIEVEMENTS: AchievementDef[] = ALL_ACHIEVEMENTS.filter((a) => MINIGAMES_ENABLED || !a.id.startsWith('minigame'));
@@ -234,12 +274,14 @@ function clone(state: TrainerState): TrainerState {
 export interface Applied {
   state: TrainerState;
   rewards: Reward[];
+  /** Conquistas que este evento acabou de destravar. */
+  unlocked: string[];
 }
 
 /** Começa o dia: zera o que é diário e mexe na sequência. Devolve o bônus de sequência da primeira atividade do dia. */
 function startDay(s: TrainerState, day: string, rewards: Reward[]): number {
   if (s.today.day === day) return 0;
-  s.today = { day, cards: [], battles: 0, minigames: 0, progress: {}, done: [], bonus: false };
+  s.today = { day, cards: [], battles: 0, minigames: 0, life: 0, progress: {}, done: [], bonus: false };
   const last = s.streak.lastDay;
   s.streak.current = last === previousDay(day) ? s.streak.current + 1 : 1;
   s.streak.best = Math.max(s.streak.best, s.streak.current);
@@ -278,6 +320,7 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
   if (event.type === 'scan') {
     const isNew = !s.cardIds.includes(event.cardId);
     if (isNew) {
+      if (event.shiny) s.shinies++;
       s.cardIds.push(event.cardId);
       const set = (s.sets[event.setId] ??= { name: event.setName, total: event.setTotal, ids: [] });
       set.name = event.setName;
@@ -311,10 +354,42 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
   } else if (event.type === 'league') {
     s.battles++;
     s.today.battles++;
+    if (typeof event.badges === 'number') s.league.badges = Math.max(s.league.badges, Math.max(0, Math.min(8, Math.floor(event.badges))));
+    if (typeof event.championWins === 'number') s.league.champion = Math.max(s.league.champion, Math.max(0, Math.floor(event.championWins)));
     const xp = event.first ? Math.max(0, Math.round(event.xp)) : XP.leagueRematch;
     gain += xp;
     rewards.push({ text: event.title, sub: `+${xp} XP e energia`, tone: event.first ? 'achievement' : 'xp' });
     gain += bump(s, 'battle', rewards);
+  } else if (event.type === 'pvp') {
+    s.pvp.played++;
+    if (event.won) s.pvp.wins++;
+    s.battles++;
+    s.today.battles++;
+    if (s.today.battles <= XP.battlesPerDay) {
+      const xp = event.won ? XP.pvpWin : XP.battle;
+      gain += xp;
+      rewards.push({ text: event.won ? 'Vitória contra um amigo!' : 'Batalha com um amigo', sub: `+${xp} XP`, tone: 'xp' });
+    }
+    gain += bump(s, 'battle', rewards);
+  } else if (event.type === 'village') {
+    const level = Math.max(0, Math.min(4, Math.floor(event.level ?? 0)));
+    s.bestFriend = Math.max(s.bestFriend, level);
+    let xp = 0;
+    if (event.action === 'talk') {
+      s.life.talks++;
+      xp = XP.villageTalk;
+      gain += bump(s, 'talk', rewards);
+    } else if (event.action === 'answer') {
+      s.life.answers++;
+      xp = XP.villageAnswer;
+      gain += bump(s, 'answer', rewards);
+    } else if (event.action === 'moment') s.life.moments++;
+    else if (event.action === 'nickname') s.life.nicknames++;
+    if (xp > 0 && s.today.life < XP.villagePerDay) {
+      gain += xp;
+      rewards.push({ text: `+${xp} XP`, sub: event.action === 'talk' ? 'Primeira conversa de hoje com um Pokémon' : 'Pergunta respondida', tone: 'xp' });
+    }
+    if (xp > 0) s.today.life++;
   } else {
     s.minigames++;
     s.today.minigames++;
@@ -336,12 +411,14 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
   const level = levelOf(s.xp);
   if (level > levelBefore) rewards.push({ text: `Nível ${level}!`, sub: titleOf(level), tone: 'level' });
 
+  const unlocked: string[] = [];
   for (const a of ACHIEVEMENTS) {
     if (s.achievements[a.id] || !a.test(s)) continue;
     s.achievements[a.id] = day;
+    unlocked.push(a.id);
     rewards.push({ text: 'Conquista!', sub: a.title, tone: 'achievement' });
   }
-  return { state: s, rewards };
+  return { state: s, rewards, unlocked };
 }
 
 /** Gasta energia (ao escolher um pin). Devolve o novo estado, ou null se não houver energia suficiente. */
@@ -388,7 +465,7 @@ export function normalizeTrainer(raw: unknown): TrainerState {
     for (const [id, day] of Object.entries(r.achievements)) if (typeof day === 'string') achievements[id] = day;
   }
   const progress: Partial<Record<MissionKind, number>> = {};
-  for (const kind of ['scan', 'new', 'battle', 'team', 'play'] as const) {
+  for (const kind of ['scan', 'new', 'battle', 'team', 'play', 'talk', 'answer'] as const) {
     const value = r.today?.progress?.[kind];
     if (value) progress[kind] = num(value);
   }
@@ -398,7 +475,12 @@ export function normalizeTrainer(raw: unknown): TrainerState {
     energy: typeof r.energy === 'number' ? num(r.energy) : Math.max(STARTER_ENERGY, num(r.xp)),
     cardIds: strs(r.cardIds), sets, scans: num(r.scans), battles: num(r.battles), teamBattles: num(r.teamBattles), minigames: num(r.minigames), minigameWins: num(r.minigameWins), games,
     streak: { current: num(r.streak?.current), best: num(r.streak?.best), lastDay: typeof r.streak?.lastDay === 'string' ? r.streak.lastDay : '' },
-    today: { day: typeof r.today?.day === 'string' ? r.today.day : '', cards: strs(r.today?.cards), battles: num(r.today?.battles), minigames: num(r.today?.minigames), progress, done: strs(r.today?.done), bonus: r.today?.bonus === true },
+    life: { talks: num(r.life?.talks), answers: num(r.life?.answers), moments: num(r.life?.moments), nicknames: num(r.life?.nicknames) },
+    bestFriend: Math.min(4, num(r.bestFriend)),
+    league: { badges: Math.min(8, num(r.league?.badges)), champion: num(r.league?.champion) },
+    pvp: { played: num(r.pvp?.played), wins: Math.min(num(r.pvp?.played), num(r.pvp?.wins)) },
+    shinies: num(r.shinies),
+    today: { day: typeof r.today?.day === 'string' ? r.today.day : '', cards: strs(r.today?.cards), battles: num(r.today?.battles), minigames: num(r.today?.minigames), life: num(r.today?.life), progress, done: strs(r.today?.done), bonus: r.today?.bonus === true },
     achievements,
   };
 }

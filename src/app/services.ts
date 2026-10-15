@@ -66,7 +66,7 @@ export function getCache(): Promise<CardCache> {
       buildTarget: async (reference) => (await loadChunk(() => import('../ar/target'))).compileTarget(reference),
       decodeReference: (blob) => blobToRgba(blob, CARD_WIDTH_PX, CARD_HEIGHT_PX),
       // Cada leitura gravada rende XP no Treinador.
-      onRecorded: (card) => recordEvent({ type: 'scan', cardId: card.id, setId: card.setId, setName: card.setName, setTotal: card.setOfficial }),
+      onRecorded: (card) => recordEvent({ type: 'scan', cardId: card.id, setId: card.setId, setName: card.setName, setTotal: card.setOfficial, shiny: card.shiny === true }),
     });
     // Se o navegador apagou arquivos por falta de espaço, as cartas voltam a "parcial" em vez de fingirem estar prontas.
     await cache.verifyIntegrity().catch(() => 0);

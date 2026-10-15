@@ -118,6 +118,8 @@ describe('missões', () => {
     for (let i = 1; i <= 6; i++) events.push([scan(i), day]);
     for (let i = 0; i < 3; i++) events.push([{ type: 'battle', team: true }, day]);
     for (let i = 0; i < 3; i++) events.push([{ type: 'minigame', game: 'quem', won: true, score: 80 }, day]);
+    for (let i = 0; i < 3; i++) events.push([{ type: 'village', action: 'talk', level: 1 }, day]);
+    events.push([{ type: 'village', action: 'answer' }, day]);
     const { state, rewards } = play(events);
     expect(state.today.done.sort()).toEqual(missions.map((m) => m.id).sort());
     expect(rewards.filter((r) => r.text === 'Missão cumprida!')).toHaveLength(3);
@@ -286,5 +288,128 @@ describe('Liga no Treinador', () => {
     const again = applyEvent(first.state, { type: 'league', title: 'Revanche', xp: 120, first: false }, '2026-10-14');
     expect(again.state.xp - first.state.xp).toBeLessThan(120);
     expect(again.state.battles).toBe(2);
+  });
+});
+
+describe('Vila, Liga e PvP no Treinador', () => {
+  const day = '2026-10-14';
+  const talk = (level = 1): TrainerEvent => ({ type: 'village', action: 'talk', level });
+
+  it('a primeira conversa do dia com um Pokémon dá XP, mas só as primeiras do dia', () => {
+    let s = emptyTrainer();
+    const gains: number[] = [];
+    for (let i = 0; i < XP.villagePerDay + 3; i++) {
+      const before = s.xp;
+      s = applyEvent(s, talk(), day).state;
+      gains.push(s.xp - before);
+    }
+    expect(s.life.talks).toBe(XP.villagePerDay + 3);
+    expect(gains.slice(0, XP.villagePerDay).every((g) => g >= XP.villageTalk)).toBe(true);
+    expect(gains.slice(XP.villagePerDay).every((g) => g === 0 || g >= 40)).toBe(true);
+    expect(s.today.life).toBe(XP.villagePerDay + 3);
+    // Num dia novo o limite volta.
+    expect(applyEvent(s, talk(), '2026-10-15').state.today.life).toBe(1);
+  });
+
+  it('perguntas respondidas valem mais XP, momentos novos e apelidos só contam', () => {
+    const a = applyEvent(emptyTrainer(), { type: 'village', action: 'answer' }, day);
+    expect(a.state.life.answers).toBe(1);
+    expect(a.state.xp).toBeGreaterThanOrEqual(XP.villageAnswer);
+    const m = applyEvent(emptyTrainer(), { type: 'village', action: 'moment' }, day);
+    expect(m.state.life.moments).toBe(1);
+    expect(m.state.xp).toBe(0);
+    const n = applyEvent(emptyTrainer(), { type: 'village', action: 'nickname', level: 3 }, day);
+    expect(n.state.life.nicknames).toBe(1);
+    expect(n.state.achievements['vila-apelido']).toBeDefined();
+  });
+
+  it('a amizade mais alta fica guardada e destrava as conquistas de amizade', () => {
+    let s = applyEvent(emptyTrainer(), talk(2), day).state;
+    expect(s.bestFriend).toBe(2);
+    expect(s.achievements['vila-grande-amigo']).toBeUndefined();
+    s = applyEvent(s, talk(3), day).state;
+    expect(s.achievements['vila-grande-amigo']).toBeDefined();
+    expect(s.achievements['vila-melhor-amigo']).toBeUndefined();
+    s = applyEvent(s, talk(1), day).state;
+    expect(s.bestFriend).toBe(3);
+    s = applyEvent(s, talk(4), day).state;
+    expect(s.achievements['vila-melhor-amigo']).toBeDefined();
+    expect(applyEvent(s, talk(99), day).state.bestFriend).toBe(4);
+  });
+
+  it('as missões da Vila contam conversas e perguntas', () => {
+    const d = Array.from({ length: 400 }, (_, i) => `2026-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`);
+    const withTalk = d.find((x) => missionsFor(x).some((m) => m.id === 'talk-3'))!;
+    const withAnswer = d.find((x) => missionsFor(x).some((m) => m.id === 'answer-1'))!;
+    expect(withTalk).toBeDefined();
+    expect(withAnswer).toBeDefined();
+    let s = emptyTrainer();
+    for (let i = 0; i < 3; i++) s = applyEvent(s, talk(), withTalk).state;
+    expect(s.today.done).toContain('talk-3');
+    const r = applyEvent(emptyTrainer(), { type: 'village', action: 'answer' }, withAnswer);
+    expect(r.state.today.done).toContain('answer-1');
+    for (const x of d) expect(missionsFor(x)).toHaveLength(3);
+  });
+
+  it('Liga: insígnias e Campeã (só sobem) e as conquistas delas', () => {
+    let s = applyEvent(emptyTrainer(), { type: 'league', title: 'Insígnia', xp: 100, first: true, badges: 1 }, day).state;
+    expect(s.league.badges).toBe(1);
+    expect(s.achievements['liga-insignia']).toBeDefined();
+    expect(s.achievements['liga-oito']).toBeUndefined();
+    s = applyEvent(s, { type: 'league', title: 'Revanche', xp: 100, first: false, badges: 0 }, day).state;
+    expect(s.league.badges).toBe(1);
+    s = applyEvent(s, { type: 'league', title: 'Oitava', xp: 100, first: true, badges: 8 }, day).state;
+    expect(s.achievements['liga-oito']).toBeDefined();
+    expect(s.achievements['liga-campea']).toBeUndefined();
+    s = applyEvent(s, { type: 'league', title: 'Campeã', xp: 300, first: true, badges: 8, championWins: 1 }, day).state;
+    expect(s.achievements['liga-campea']).toBeDefined();
+    expect(applyEvent(s, { type: 'league', title: 'x', xp: 1, first: false, badges: 99 }, day).state.league.badges).toBe(8);
+  });
+
+  it('PvP conta como batalha, rende XP e destrava as conquistas', () => {
+    const lost = applyEvent(emptyTrainer(), { type: 'pvp', won: false }, day);
+    expect(lost.state.pvp).toEqual({ played: 1, wins: 0 });
+    expect(lost.state.battles).toBe(1);
+    expect(lost.state.xp).toBeGreaterThanOrEqual(XP.battle);
+    expect(lost.state.achievements['pvp-1']).toBeDefined();
+    expect(lost.state.achievements['pvp-vitoria']).toBeUndefined();
+    const won = applyEvent(lost.state, { type: 'pvp', won: true }, day);
+    expect(won.state.pvp).toEqual({ played: 2, wins: 1 });
+    expect(won.state.achievements['pvp-vitoria']).toBeDefined();
+    expect(won.unlocked).toContain('pvp-vitoria');
+  });
+
+  it('carta nova shiny conta; a mesma carta de novo não', () => {
+    const ev: TrainerEvent = { type: 'scan', cardId: 'base1-1', setId: 'base1', setName: 'Coleção Base', setTotal: 102, shiny: true };
+    const a = applyEvent(emptyTrainer(), ev, day);
+    expect(a.state.shinies).toBe(1);
+    expect(a.state.achievements['shiny-1']).toBeDefined();
+    expect(applyEvent(a.state, ev, day).state.shinies).toBe(1);
+    expect(applyEvent(emptyTrainer(), scan(1), day).state.shinies).toBe(0);
+  });
+
+  it('applyEvent devolve só as conquistas que acabaram de abrir', () => {
+    const first = applyEvent(emptyTrainer(), scan(1), day);
+    expect(first.unlocked).toEqual(['primeira-carta']);
+    expect(applyEvent(first.state, scan(1), day).unlocked).toEqual([]);
+  });
+
+  it('arquivos antigos (sem Vila, Liga, PvP nem shiny) abrem com zeros', () => {
+    const old = JSON.parse(JSON.stringify(emptyTrainer())) as Record<string, unknown>;
+    for (const k of ['life', 'bestFriend', 'league', 'pvp', 'shinies']) delete old[k];
+    delete (old.today as Record<string, unknown>).life;
+    const n = normalizeTrainer(old);
+    expect(n.life).toEqual({ talks: 0, answers: 0, moments: 0, nicknames: 0 });
+    expect(n.league).toEqual({ badges: 0, champion: 0 });
+    expect(n.pvp).toEqual({ played: 0, wins: 0 });
+    expect([n.bestFriend, n.shinies, n.today.life]).toEqual([0, 0, 0]);
+    const wild = normalizeTrainer({ ...emptyTrainer(), bestFriend: 9, league: { badges: 50, champion: -3 }, pvp: { played: 1, wins: 5 } });
+    expect([wild.bestFriend, wild.league.badges, wild.league.champion, wild.pvp.wins]).toEqual([4, 8, 0, 1]);
+  });
+
+  it('toda conquista tem título, dica e id único', () => {
+    const ids = ACHIEVEMENTS.map((a) => a.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const a of ACHIEVEMENTS) expect(a.title.length > 2 && a.hint.length > 5).toBe(true);
   });
 });

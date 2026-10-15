@@ -2133,6 +2133,15 @@ button.link {
   color: var(--muted);
 }
 
+.badges .prize {
+  margin-top: 2px;
+  color: var(--gold);
+}
+
+.badges li:not(.on) .prize {
+  color: var(--muted);
+}
+
 .reward-toasts {
   position: fixed;
   top: max(8px, env(safe-area-inset-top));
@@ -4298,6 +4307,38 @@ body.no-scroll .reward-toasts {
   object-fit: contain;
   background: #efe4c8;
   border-radius: 12px;
+}
+
+.book-nick-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.book-nick-form input {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #c8b48a;
+  background: #fffaf0;
+  color: #2a2418;
+  font: inherit;
+}
+
+.book-nick-form button {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 0;
+  background: #3a4a8a;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+}
+
+.book-nick-form button:disabled {
+  opacity: 0.5;
 }
 
 .book-hearts span {
