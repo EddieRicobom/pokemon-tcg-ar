@@ -1,3 +1,5 @@
+import { parseBoxMessage } from './box-wire';
+import type { BoxWireMessage } from './box-wire';
 import type { Rng } from '../core/battle';
 import { ARENA_RADIUS, EFFECT_KINDS, MAX_MOVES, MAX_PER_SIDE, pinFromSpec } from '../core/pins';
 import type { Patch, PinSpec, PinWorld, Shot, ShotEffect } from '../core/pins';
@@ -55,6 +57,7 @@ export interface WireInit extends WireWorld {
 }
 
 export type WireMessage =
+  | BoxWireMessage
   | { t: 'hello'; v: number }
   | { t: 'team'; ready: boolean; specs: WireSpec[] }
   | { t: 'options'; shrink: boolean; marks: boolean }
@@ -300,6 +303,9 @@ export function parseMessage(raw: unknown): WireMessage | null {
       const world = parseWorld(v.world);
       return world ? { t: 'settled', world } : null;
     }
+    case 'cx-team':
+    case 'cx-start':
+      return parseBoxMessage(v);
     case 'bye':
     case 'ping':
     case 'pong':

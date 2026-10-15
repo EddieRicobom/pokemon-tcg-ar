@@ -26,6 +26,11 @@ import CardMarks from '../components/CardMarks.vue';
 import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import TeamPicker from '../components/TeamPicker.vue';
+import BoxPvpPanel from '../components/BoxPvpPanel.vue';
+import { boxPvp, sendTeam, startBoxPvp } from '../app/box-pvp-store';
+import type { BoxPvpStart } from '../app/box-pvp-store';
+import { boxPvpBattle, BOX_PVP_LABELS_PT, BOX_PVP_MAX } from '../pvp/box-wire';
+import type { BoxPvpMon, BoxPvpTeam } from '../pvp/box-wire';
 import type { BoxMode } from '../box/box-scene';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { DEFAULT_PHONE_HEIGHT_M, PHONE_HEIGHT_RANGE } from '../box/floor';
@@ -147,8 +152,108 @@ async function endVersus(): Promise<void> {
   if (!versus.value && !(box?.scene.creatureList.some((c) => isLeaderCreature(c.info.id)) ?? false)) return;
   versus.value = null;
   activeChallenge = null;
+  activePvp = null;
   await populate();
 }
+
+// ---- PvP da Caixa (dois celulares)
+const pvpOn = computed(() => boxPvp.peer !== null);
+let activePvp: { myTeam: number; friend: string } | null = null;
+let pvpTeamKey = '';
+let pvpFighters: Fighter[] = [];
+
+/** Monta (uma vez por equipe) os lutadores da sua equipe e manda ao amigo, com o aviso de caixa no chão. */
+async function syncPvpTeam(): Promise<void> {
+  if (!boxPvp.peer) return;
+  const mine = lastEntries.slice(0, BOX_PVP_MAX);
+  if (mine.length === 0) return;
+  const key = mine.map((e) => e.info.id).join('|');
+  if (key !== pvpTeamKey) {
+    pvpTeamKey = key;
+    pvpFighters = await prepareFighters(mine.map((e) => ({ id: e.info.id, name: e.info.name, dexId: e.info.dexId })), loadBattle);
+    if (key !== pvpTeamKey) return;
+  }
+  const mons: BoxPvpMon[] = mine.map((e, i) => ({ id: e.info.id, name: e.info.name, sprite: e.info.dexId ?? 1, shiny: e.info.shiny === true, fighter: pvpFighters[i]! }));
+  const team: BoxPvpTeam = { name: profile.name, trainer: profile.sprite, mons };
+  sendTeam(team, phase.value === 'running');
+}
+
+watch(() => [boxPvp.peer, phase.value] as const, () => void syncPvpTeam());
+
+/** Encena a luta combinada: as duas equipes na caixa, na ordem anfitrião → convidado, com a semente combinada. */
+async function runPvp(start: BoxPvpStart): Promise<void> {
+  const current = box;
+  const mine = boxPvp.mine;
+  const friend = boxPvp.friend;
+  if (!current || !mine || !friend || !boxPvp.role || preparing.value) return;
+  boxPvp.pending = null;
+  const host = boxPvp.role === 'host' ? mine : friend;
+  const guest = boxPvp.role === 'host' ? friend : mine;
+  const battle = boxPvpBattle(host, guest, { host: start.host, guest: start.guest });
+  preparing.value = true;
+  error.value = '';
+  hint.value = `Chamando a equipe de ${friend.name}…`;
+  if (!fullscreen.value) {
+    fullscreenForBattle = true;
+    void toggleFullscreen();
+  }
+  try {
+    if (versus.value) {
+      current.stopBattle();
+      await endVersus();
+    }
+    const myIds = new Set(mine.mons.map((m) => m.id));
+    const isMine = (k: number) => (boxPvp.role === 'host' ? k < start.host : k >= start.host);
+    const entries: CreatureEntry[] = [];
+    for (let k = 0; k < battle.mons.length; k++) {
+      const m = battle.mons[k]!;
+      const own = isMine(k) && myIds.has(m.id) ? lastEntries.find((e) => e.info.id === m.id) : undefined;
+      const info = { id: m.fighter.id, name: m.name, dexId: m.sprite, detail: isMine(k) ? mine.name : friend.name, shiny: m.shiny };
+      if (own) {
+        entries.push({ info, source: own.source });
+        continue;
+      }
+      const sprite = await fetchSprite(m.sprite, undefined, { shiny: m.shiny });
+      if (!sprite) throw new Error(`sem sprite para ${m.name}`);
+      entries.push({ info, source: await decodeSprite(sprite) });
+    }
+    if (disposed || box !== current) return;
+    current.setCreatures(entries);
+    current.unlockAudio();
+    battleCounted = false;
+    activePvp = { myTeam: boxPvp.role === 'host' ? 0 : 1, friend: friend.name };
+    const result = current.startBattle(battle.fighters, battle.plan, seededRng(start.seed));
+    lastResult = result;
+    battleFighters.value = battle.fighters;
+    battleSummary.value = {
+      mode: 'tres',
+      winner: battle.plan.teamNames[result.winningTeam ?? 0] ?? '',
+      turns: result.turns.length,
+      rounds: result.turns.at(-1)?.round ?? 0,
+      stats: summarizeBattle(battle.fighters, result),
+    };
+    // Os cantos seguem as cores das equipes: anfitrião à esquerda (vermelha), convidado à direita (azul).
+    versus.value = {
+      me: { name: host.name, sprite: trainerSpriteUrl(host.trainer) },
+      them: { name: guest.name, sprite: trainerSpriteUrl(guest.trainer), role: `PvP · ${BOX_PVP_LABELS_PT[start.mode].title}` },
+    };
+  } catch (e) {
+    error.value = `Não consegui montar a luta do PvP: ${e instanceof Error ? e.message : String(e)}`;
+    activePvp = null;
+    await populate();
+  } finally {
+    preparing.value = false;
+    hint.value = '';
+  }
+}
+
+// O convidado encena quando a luta chega e a caixa dele está no chão.
+watch(
+  () => [boxPvp.pending, phase.value] as const,
+  ([pending, ph]) => {
+    if (pending && boxPvp.role === 'guest' && ph === 'running') void runPvp(pending);
+  },
+);
 
 async function populate(): Promise<void> {
   loadingCreatures.value = true;
@@ -160,6 +265,7 @@ async function populate(): Promise<void> {
     if (disposed || !box) return;
     box.setCreatures(loaded.entries);
     lastEntries = loaded.entries;
+    void syncPvpTeam();
     for (const entry of loaded.entries) if (maybeGalladeSpeaks(entry.info)) break;
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
     rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: e.info.name, shiny: e.info.shiny === true, mega: e.info.mega === true }));
@@ -300,7 +406,7 @@ watch(() => visual.social, (on) => box?.setSocial(on));
 watch(() => visual.weather, (mode) => box?.setWeather(mode));
 watch(() => visual.sound, (on) => box?.setSound(on));
 
-const canBattle = computed(() => phase.value === 'running' && population.value.shown >= (challenge.value ? 1 : 2) && !loadingCreatures.value && !preparing.value);
+const canBattle = computed(() => phase.value === 'running' && population.value.shown >= (challenge.value || pvpOn.value ? 1 : 2) && !loadingCreatures.value && !preparing.value);
 const battling = computed(() => battleHud.value !== null);
 /** Tremor e "soco" de zoom da imagem desenhada nos golpes fortes (o vídeo da câmera não treme). */
 const shakeStyle = computed(() => {
@@ -317,6 +423,12 @@ watch(
   (phase) => {
     if (phase !== 'finished' || battleCounted) return;
     battleCounted = true;
+    if (activePvp && lastResult) {
+      const won = lastResult.winningTeam === activePvp.myTeam;
+      recordEvent({ type: 'battle', team: true });
+      showMegaNotes([{ text: won ? `Você venceu ${activePvp.friend}!` : `${activePvp.friend} venceu desta vez.`, tone: won ? 'ok' : 'warn' }]);
+      return;
+    }
     const ch = activeChallenge;
     if (ch && lastResult) {
       const won = lastResult.winningTeam === 0;
@@ -404,6 +516,18 @@ async function startChallenge(ch: Challenge): Promise<void> {
 }
 
 async function startBattle(): Promise<void> {
+  if (pvpOn.value) {
+    if (boxPvp.role !== 'host') {
+      error.value = 'No PvP quem começa a luta é o anfitrião.';
+      return;
+    }
+    const start = startBoxPvp();
+    if (!start) {
+      error.value = 'Esperando a equipe do amigo chegar.';
+      return;
+    }
+    return runPvp(start);
+  }
   if (challenge.value) return startChallenge(challenge.value);
   const current = box;
   if (!current || preparing.value) return;
@@ -564,7 +688,13 @@ const notices = computed<Notice[]>(() => {
   for (const note of megaNotes.value) list.push({ text: note.text, tone: note.tone });
   if (battleHud.value) return list;
   if (hint.value) list.push({ text: hint.value, tone: phase.value === 'placing' ? 'ok' : 'busy' });
-  if (challenge.value && !preparing.value) {
+  if (pvpOn.value && !preparing.value) {
+    const friend = boxPvp.friend?.name ?? 'o amigo';
+    const sub = boxPvp.role === 'host'
+      ? boxPvp.friend ? `${BOX_PVP_LABELS_PT[boxPvp.mode].title} · toque em Batalhar${boxPvp.friendPlaced ? '' : ` (${friend} ainda não colocou a caixa)`}` : 'Esperando a equipe do amigo…'
+      : boxPvp.pending ? 'Coloque a caixa no chão para ver a luta.' : 'Esperando o anfitrião começar.';
+    list.push({ text: `PvP com ${friend}`, sub, tone: 'ok', gold: true });
+  } else if (challenge.value && !preparing.value) {
     list.push({ text: `Desafio: ${challenge.value.role} ${challenge.value.leader}`, sub: 'Toque em Batalhar: até 6 da sua caixa contra a equipe do líder, um duelo por vez.', tone: 'ok', gold: true });
   }
   if (picked.value) {
@@ -859,6 +989,11 @@ onBeforeUnmount(() => {
     </div>
 
     <p v-if="error && !immersive" class="message error" role="alert">{{ error }}</p>
+
+    <details v-if="!immersive" class="layout" :open="pvpOn">
+      <summary>Batalhar com um amigo (PvP)</summary>
+      <BoxPvpPanel />
+    </details>
 
     <details v-if="!immersive" class="layout">
       <summary>Escolher a equipe da caixa (até 40)</summary>
