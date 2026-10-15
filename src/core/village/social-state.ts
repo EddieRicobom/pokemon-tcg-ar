@@ -67,8 +67,10 @@ export interface SocialState {
   diaryRead: number;
 }
 
-export const MAX_DIARY = 160;
-export const MAX_FAVS = 40;
+/** O Diário guarda só os últimos momentos; o que você guarda no Álbum fica para sempre (até este limite, por causa do espaço no aparelho). */
+export const MAX_DIARY = 60;
+export const MAX_SAVED = 500;
+const MAX_SEEN = 600;
 
 export const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
@@ -110,6 +112,13 @@ function normalizeMoment(raw: unknown): Moment | null {
   };
 }
 
+/** Os guardados no Álbum ficam (os mais novos, até o limite); dos demais, só os últimos `MAX_DIARY`. A ordem se mantém. */
+export function trimMoments(all: readonly Moment[]): Moment[] {
+  const keepSaved = new Set(all.filter((m) => m.fav).slice(-MAX_SAVED));
+  const recent = new Set(all.filter((m) => !m.fav).slice(-MAX_DIARY));
+  return all.filter((m) => keepSaved.has(m) || recent.has(m));
+}
+
 export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown }): SocialState {
   const rel: Record<string, Relation> = {};
   if (raw.rel && typeof raw.rel === 'object') {
@@ -118,11 +127,11 @@ export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: un
       rel[k] = { bond: num(v.bond, -100, 100, 0), spark: num(v.spark, 0, 100, 0), flag: v.flag === 'casal' || v.flag === 'brigados' ? v.flag : null, since: str(v.since, 12), met: num(v.met, 0, 9999, 0) };
     }
   }
-  const diary = Array.isArray(raw.diary) ? raw.diary.map(normalizeMoment).filter((m): m is Moment => m !== null) : [];
+  const all = Array.isArray(raw.diary) ? raw.diary.map(normalizeMoment).filter((m): m is Moment => m !== null) : [];
   return {
     rel,
-    diary: diary.slice(-MAX_DIARY),
-    seen: Array.isArray(raw.seen) ? [...new Set(raw.seen.filter((x): x is string => typeof x === 'string').map((x) => x.slice(0, 60)))].slice(0, 400) : [],
+    diary: trimMoments(all),
+    seen: Array.isArray(raw.seen) ? [...new Set(raw.seen.filter((x): x is string => typeof x === 'string').map((x) => x.slice(0, 60)))].slice(0, MAX_SEEN) : [],
     lastSeen: num(raw.lastSeen, 0, 9e15, 0),
     diaryRead: num(raw.diaryRead, 0, 9e15, 0),
   };

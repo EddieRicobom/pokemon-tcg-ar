@@ -5,17 +5,18 @@ import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
 import { visual } from '../app/visual-settings';
-import { loadVillage, saveVillage, villageMap } from '../app/village-store';
+import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { dayKey } from '../core/trainer';
+import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
 import {
   buy, canFollow, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
   plant, pruneHarvest, RECIPES, sell, talk, tickCrops, upgradeHouse, water, wear,
 } from '../core/village/life';
-import { albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
+import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
 import type { Resolved, Scene } from '../core/village/social';
-import { MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS } from '../core/village/social-state';
+import { MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS } from '../core/village/social-state';
 import type { Moment, MomentKind } from '../core/village/social-state';
 import type { ItemId } from '../core/village/life';
 import type { Dir } from '../core/village/actors';
@@ -23,6 +24,7 @@ import type { PokemonType } from '../core/pokemon-data';
 import { paintItemIcon } from '../village/item-art';
 import { VillageGame } from '../village/village-game';
 import type { VillageMon } from '../village/village-game';
+import MomentCard from './MomentCard.vue';
 import PokeBook from './PokeBook.vue';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
@@ -40,12 +42,14 @@ pruneHarvest(state, day.value);
 
 type Sheet = null | 'menu' | 'build' | 'shop' | 'dress';
 const sheet = ref<Sheet>(null);
-type Tab = 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'colecao' | 'livro' | 'visual';
+type Tab = 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
 const tab = ref<Tab>('mochila');
 const shopTab = ref<'comprar' | 'vender'>('comprar');
 const dressFor = ref<string>('player');
 const dialog = ref<{ id?: string; name: string; text: string; actions: { label: string; run: () => void; disabled?: boolean }[] } | null>(null);
-const kindFilter = ref<MomentKind | 'todos' | 'favoritos'>('todos');
+const kindFilter = ref<MomentKind | 'todos' | 'guardados'>('todos');
+const albumView = ref<'guardados' | 'colecao'>('guardados');
+const portraitOk = ref(true);
 const giftPick = ref(false);
 const welcome = ref(true);
 
@@ -103,11 +107,19 @@ const cookable = COOK_IDS;
 const actorList = (): { id: string; name: string; types: PokemonType[] }[] => mons.value.map((m) => ({ id: m.id, name: m.name, types: types.get(m.id) ?? [] }));
 const unread = computed(() => unreadCount(state));
 const album = computed(() => albumProgress(state));
+const saved = computed(() => savedMoments(state));
+const albumGroups = computed(() => {
+  const all = albumEntries(state);
+  return MOMENT_KINDS.map((k) => {
+    const entries = all.filter((e) => e.kind === k);
+    return { kind: k, entries, seen: entries.filter((e) => e.seen).length };
+  }).filter((g) => g.entries.length > 0);
+});
 const pairs = computed(() => relationMap(state, mons.value));
 const bookRels = computed(() => Object.fromEntries(mons.value.map((m) => [m.id, relationsOf(state, m.id, mons.value).map((r) => ({ name: r.name, label: r.status.label, emoji: r.status.emoji, met: r.met }))])));
 const diaryList = computed(() => {
   const list = [...state.diary].reverse();
-  return kindFilter.value === 'todos' ? list : kindFilter.value === 'favoritos' ? list.filter((m) => m.fav) : list.filter((m) => m.kind === kindFilter.value);
+  return kindFilter.value === 'todos' ? list : kindFilter.value === 'guardados' ? list.filter((m) => m.fav) : list.filter((m) => m.kind === kindFilter.value);
 });
 const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name, types: types.get(m.id) ?? [], thumb: m.thumb, accessory: state.wear.mons[m.id] ?? null })));
 const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state, id) > 0));
@@ -139,12 +151,14 @@ function onKey(e: KeyboardEvent): void {
 
 // ---- momentos entre os Pokémon (a vida social da Vila)
 let pendingChoice: { scene: Scene; ids: string[] } | null = null;
+/** O momento que está sendo encenado agora e ainda não foi gravado (se você sair no meio, ele é gravado do mesmo jeito). */
+let activeScene: { scene: Scene; ids: string[] } | null = null;
 let nextSceneAt = Date.now() + 9000;
 let sceneTimer: ReturnType<typeof setInterval> | null = null;
 
 function announce(r: Resolved): void {
   changed();
-  say(`📖 ${r.moment.emoji} ${r.moment.title}${r.firstTime ? ' · momento novo no Álbum! +10 moedas' : ' · salvo no Diário'}`);
+  say(`📖 ${r.moment.emoji} ${r.moment.title}${r.firstTime ? ' · momento novo no Álbum! +10 moedas' : r.moment.fav ? ' · guardado no Álbum 📌' : ' · salvo no Diário'}`);
 }
 
 function afterResolve(r: Resolved, ids: string[]): void {
@@ -162,6 +176,7 @@ function decide(i: number | null): void {
 }
 
 function finishScene(scene: Scene, ids: string[]): void {
+  activeScene = null;
   const choice = sceneChoice(scene);
   if (!choice || !game?.playerNear(ids, 12)) {
     afterResolve(resolveScene(state, scene, null, Date.now()), ids);
@@ -187,11 +202,12 @@ function tickScenes(): void {
   nextSceneAt = Date.now() + 25000 + Math.random() * 35000;
   // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
   const near = actorList().filter((a) => game!.playerNear([a.id], 14) && !game!.sceneBusy(a.id));
-  const env = makeEnv(state, refreshDay(), new Date().getHours(), game.weatherKind);
+  const env = makeEnv(state, refreshDay(), new Date().getHours(), game.weatherKind, profile.name);
   const scene = pickMoment(near, state, env, Math.random);
   if (!scene) return;
   const ids = scene.cast.map((a) => a.id);
-  game.playScene(ids, scene.lines, () => finishScene(scene, ids));
+  activeScene = { scene, ids };
+  if (!game.playScene(ids, scene.lines, () => finishScene(scene, ids))) activeScene = null;
 }
 
 /** Enquanto você esteve fora, a vida seguiu: o Diário ganha os momentos que aconteceram. */
@@ -199,7 +215,7 @@ function awayCatchUp(): void {
   const now = Date.now();
   const list = actorList();
   if (list.length > 0 && state.lastSeen > 0) {
-    const moments = catchUp(state, list, now, null, Math.random);
+    const moments = catchUp(state, list, now, null, Math.random, profile.name);
     if (moments.length > 0) {
       changed();
       say(`📖 Enquanto você estava fora: ${moments.length} momento${moments.length > 1 ? 's' : ''} novo${moments.length > 1 ? 's' : ''} no Diário!`);
@@ -209,11 +225,41 @@ function awayCatchUp(): void {
   changed();
 }
 
+/**
+ * Nada se perde: se você sair (ou o aparelho fechar o app) no meio de um momento ou de uma decisão, o momento é gravado
+ * agora, como "deixa pra lá", em vez de sumir.
+ */
+function settleScenes(): void {
+  const choice = pendingChoice;
+  const playing = activeScene;
+  pendingChoice = null;
+  activeScene = null;
+  if (choice) {
+    dialog.value = null;
+    resolveScene(state, choice.scene, null, Date.now());
+  } else if (playing) resolveScene(state, playing.scene, null, Date.now());
+  if (choice || playing) game?.abortScene();
+}
+
+let warnedSave = false;
+function persist(): boolean {
+  const ok = saveVillage(state);
+  if (!ok && !warnedSave) {
+    warnedSave = true;
+    say('⚠️ Não consegui salvar a Vila neste aparelho (sem espaço ou modo privado). Libere espaço do navegador para não perder o progresso.');
+  } else if (ok) warnedSave = false;
+  return ok;
+}
+
+function onLeave(): void {
+  settleScenes();
+  state.lastSeen = Date.now();
+  persist();
+}
+
 function onVisibility(): void {
-  if (document.hidden) {
-    state.lastSeen = Date.now();
-    saveVillage(state);
-  } else awayCatchUp();
+  if (document.hidden) onLeave();
+  else awayCatchUp();
 }
 
 function openDiary(): void {
@@ -232,17 +278,13 @@ function pickTab(t: Tab): void {
 }
 
 function toggleFav(m: Moment): void {
-  if (!setFavorite(state, m.id, !m.fav)) say('Você já tem 40 favoritos.');
-  else changed();
-}
-
-function whenLabel(m: Moment): string {
-  const [, mo, d] = m.day.split('-');
-  return `${d}/${mo} · ${String(m.hour).padStart(2, '0')}h`;
-}
-
-function nameFor(m: Moment, who: number): string {
-  return m.cast[who]?.name ?? '';
+  const pin = !m.fav;
+  if (!setFavorite(state, m.id, pin)) {
+    say(`O Álbum está cheio (${MAX_SAVED} momentos). Solte algum para guardar outro.`);
+    return;
+  }
+  changed();
+  say(pin ? '📌 Guardado no Álbum para sempre!' : 'Solto do Álbum: sai do Diário quando ele encher.');
 }
 
 function refreshDay(): string {
@@ -426,6 +468,9 @@ onMounted(async () => {
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', onLeave);
+  window.addEventListener('beforeunload', onLeave);
+  void requestPersistence();
   let villagers: VillageMon[] = [];
   try {
     const cache = await getCache();
@@ -465,7 +510,7 @@ onMounted(async () => {
       state.lastSeen = Date.now();
       dirty = true;
     }
-    if (dirty) dirty = !saveVillage(state);
+    if (dirty) dirty = !persist();
   }, 1500);
   // Tipos (presente favorito, opiniões do Livro) chegam em segundo plano; sem rede, ficam neutros.
   for (const m of mons.value) {
@@ -477,6 +522,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
   document.removeEventListener('visibilitychange', onVisibility);
+  window.removeEventListener('pagehide', onLeave);
+  window.removeEventListener('beforeunload', onLeave);
+  settleScenes();
   if (sceneTimer) clearInterval(sceneTimer);
   state.lastSeen = Date.now();
   game?.stop();
@@ -493,6 +541,7 @@ onBeforeUnmount(() => {
     <div ref="wrapEl" class="village-stage">
       <canvas ref="canvasEl" class="village-canvas"></canvas>
       <header class="village-top">
+        <img v-if="portraitOk" class="village-trainer" :src="trainerSpriteUrl(profile.sprite)" :alt="profile.name" width="28" height="28" @error="portraitOk = false" />
         <strong>Vila</strong>
         <span>{{ clock }}</span>
         <span class="village-coins" aria-label="Moedas"><i aria-hidden="true">●</i>{{ state.coins }}</span>
@@ -576,8 +625,8 @@ onBeforeUnmount(() => {
       <div v-if="sheet === 'menu'" class="village-sheet tall" role="dialog" aria-label="Menu da Vila">
         <header>
           <div class="chips" role="tablist">
-            <button v-for="t in (['mochila', 'fabricar', 'cozinha', 'diario', 'colecao', 'livro', 'visual'] as const)" :key="t" type="button" role="tab" :class="{ active: tab === t }" :aria-selected="tab === t" @click="pickTab(t)">
-              {{ { mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário', colecao: 'Coleção', livro: 'Livro', visual: 'Visual' }[t] }}
+            <button v-for="t in (['mochila', 'fabricar', 'cozinha', 'diario', 'album', 'colecao', 'livro', 'visual'] as const)" :key="t" type="button" role="tab" :class="{ active: tab === t }" :aria-selected="tab === t" @click="pickTab(t)">
+              {{ { mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário', album: 'Álbum', colecao: 'Coleção', livro: 'Livro', visual: 'Visual' }[t] }}
             </button>
           </div>
           <button type="button" class="link" @click="sheet = null">Fechar</button>
@@ -612,7 +661,7 @@ onBeforeUnmount(() => {
         </ul>
 
         <div v-else-if="tab === 'diario'" class="diary">
-          <p class="hint">Álbum de momentos: <strong>{{ album.seen }} de {{ album.total }}</strong>. Cada momento novo rende 10 moedas. Fique de olho nos Pokémon: eles vivem a vida mesmo quando você sai!</p>
+          <p class="hint">O Diário guarda só os <strong>últimos {{ MAX_DIARY }} momentos</strong>; os mais antigos vão sumindo. Toque em 📍 para <strong>guardar no Álbum</strong>: lá fica para sempre. Os Pokémon vivem a vida mesmo quando você sai!</p>
           <div v-if="pairs.length > 0" class="rel-map">
             <h4>Mapa de relações</h4>
             <ul>
@@ -623,22 +672,35 @@ onBeforeUnmount(() => {
           </div>
           <div class="chips diary-filter" role="group" aria-label="Filtrar momentos">
             <button type="button" :class="{ active: kindFilter === 'todos' }" @click="kindFilter = 'todos'">Todos</button>
-            <button type="button" :class="{ active: kindFilter === 'favoritos' }" @click="kindFilter = 'favoritos'">⭐</button>
+            <button type="button" :class="{ active: kindFilter === 'guardados' }" @click="kindFilter = 'guardados'">📌</button>
             <button v-for="k in MOMENT_KINDS" :key="k" type="button" :class="{ active: kindFilter === k }" @click="kindFilter = k">{{ MOMENT_EMOJI[k] }} {{ MOMENT_LABELS[k] }}</button>
           </div>
-          <article v-for="m in diaryList" :key="m.id" class="moment" :class="'k-' + m.kind">
-            <header>
-              <strong>{{ m.emoji }} {{ m.title }}</strong>
-              <button type="button" class="fav" :aria-pressed="!!m.fav" :aria-label="m.fav ? 'Tirar dos favoritos' : 'Favoritar'" @click="toggleFav(m)">{{ m.fav ? '⭐' : '☆' }}</button>
-            </header>
-            <small>{{ m.cast.map((c) => c.name).join(' · ') }} · {{ whenLabel(m) }}{{ m.away ? ' · enquanto você estava fora' : '' }}</small>
-            <ol class="chat">
-              <li v-for="(l, i) in m.lines" :key="i" :class="'who-' + (l.who % 3)"><b>{{ nameFor(m, l.who) }}:</b> {{ l.text }}</li>
-            </ol>
-            <p v-if="m.choice" class="choice">Você decidiu: <em>{{ m.choice }}</em></p>
-            <ul v-if="m.result.length" class="result"><li v-for="r in m.result" :key="r">{{ r }}</li></ul>
-          </article>
+          <MomentCard v-for="m in diaryList" :key="m.id" :moment="m" @toggle="toggleFav(m)" />
           <p v-if="diaryList.length === 0" class="hint">{{ kindFilter === 'todos' ? 'Nada registrado ainda. Fique na Vila e veja o que os Pokémon aprontam!' : 'Nenhum momento assim por enquanto.' }}</p>
+        </div>
+
+        <div v-else-if="tab === 'album'" class="diary album">
+          <div class="chips" role="group" aria-label="Partes do Álbum">
+            <button type="button" :class="{ active: albumView === 'guardados' }" @click="albumView = 'guardados'">📌 Guardados {{ saved.length }}/{{ MAX_SAVED }}</button>
+            <button type="button" :class="{ active: albumView === 'colecao' }" @click="albumView = 'colecao'">🗂️ Vistos {{ album.seen }}/{{ album.total }}</button>
+          </div>
+          <template v-if="albumView === 'guardados'">
+            <p class="hint">O que você guarda aqui fica para sempre (até {{ MAX_SAVED }}), mesmo depois que o Diário apaga os mais antigos. Pedidos de namoro, casamentos, términos e festas de aniversário entram sozinhos.</p>
+            <MomentCard v-for="m in saved" :key="m.id" :moment="m" @toggle="toggleFav(m)" />
+            <p v-if="saved.length === 0" class="hint">Nada guardado ainda. No Diário, toque em 📍 num momento de que você gostou.</p>
+          </template>
+          <template v-else>
+            <p class="hint">Cada momento novo rende 10 moedas. Alguns só acontecem em datas especiais, como Natal, Halloween e o aniversário de cada Pokémon.</p>
+            <section v-for="g in albumGroups" :key="g.kind" class="album-group">
+              <h4>{{ MOMENT_EMOJI[g.kind] }} {{ MOMENT_LABELS[g.kind] }} <small>{{ g.seen }}/{{ g.entries.length }}</small></h4>
+              <ul class="collection-grid album-grid">
+                <li v-for="e in g.entries" :key="e.id" :class="{ have: e.seen }" :title="e.seen ? e.title : '???'">
+                  <span class="album-emoji" aria-hidden="true">{{ e.seen ? e.emoji : '❔' }}</span>
+                  <small>{{ e.seen ? e.title : '???' }}</small>
+                </li>
+              </ul>
+            </section>
+          </template>
         </div>
 
         <div v-else-if="tab === 'colecao'">

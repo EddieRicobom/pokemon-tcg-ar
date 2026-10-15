@@ -1,12 +1,18 @@
 import type { Rng } from '../battle';
-import type { PokemonType } from '../pokemon-data';
 import { itemDef } from './catalog';
 import { add, count, friendOf, itemName } from './life';
 import type { ItemId, VillageState } from './life';
 import { hash, personalityOf } from './personality';
-import type { PersonalityName } from './personality';
-import { MAX_DIARY, MAX_FAVS, MOMENT_EMOJI, pairKey, relationStatus } from './social-state';
-import type { Fx, Moment, MomentKind, MomentLine, RelFlag, Relation } from './social-state';
+import { MAX_SAVED, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
+import type { Moment, MomentKind, MomentLine, Relation } from './social-state';
+import { L, calm, is, night, other } from './moments/kit';
+import { DUO_MOMENTS } from './moments/duo';
+import { SEASON_MOMENTS } from './moments/season';
+import { SOLO_MOMENTS } from './moments/solo';
+import { TRIO_MOMENTS } from './moments/trio';
+import type { Actor, Ctx, Outcome, SocialEnv, Template } from './moments/kit';
+
+export type { Actor, Ctx, Outcome, SocialEnv, Template } from './moments/kit';
 
 /**
  * A vida social dos Pokémon da Vila, no espírito de Tomodachi Life: de tempos em tempos dois ou três deles se encontram e
@@ -17,93 +23,7 @@ import type { Fx, Moment, MomentKind, MomentLine, RelFlag, Relation } from './so
  * Tudo aqui é puro e determinístico com o `rng`: a tela sorteia o momento, toca as falas e depois chama `resolveScene`.
  */
 
-export interface Actor {
-  id: string;
-  name: string;
-  types: readonly PokemonType[];
-}
-
-/** O mundo no instante do momento (o que está colocado na Vila, a hora, o tempo). */
-export interface SocialEnv {
-  hour: number;
-  day: string;
-  weather: string | null;
-  placed: ReadonlySet<string>;
-  crops: number;
-  ripeCrops: number;
-}
-
-export interface Outcome {
-  /** Entre o elenco 0 e o 1. */
-  bond?: number;
-  spark?: number;
-  /** Entre 0 e 2, e entre 1 e 2 (momentos de três). */
-  bond02?: number;
-  bond12?: number;
-  spark02?: number;
-  flag?: RelFlag | 'clear';
-  coins?: number;
-  items?: [ItemId, number][];
-  /** Amizade com você, para todos do elenco ou por posição. */
-  friend?: number;
-  friendBy?: number[];
-  /** Um Pokémon comeu uma colheita pronta. */
-  eatCrop?: boolean;
-  /** Rega de graça todas as plantas com sede. */
-  water?: boolean;
-}
-
-export interface Ctx {
-  n: string[];
-  p: PersonalityName[];
-  types: (readonly PokemonType[])[];
-  rel: Relation | undefined;
-  rel02: Relation | undefined;
-  rel12: Relation | undefined;
-  env: SocialEnv;
-  seen: ReadonlySet<string>;
-  rng: Rng;
-  /** Para as falas e o resultado combinarem (quem ganhou, se aceitou…). */
-  memo: Record<string, number | string | boolean>;
-  pts: (i: number) => number;
-  has: (...ids: string[]) => boolean;
-  rolling: boolean;
-}
-
-type Lines = (c: Ctx) => MomentLine[];
-
-interface ChoiceOption {
-  label: (c: Ctx) => string;
-  /** Falas depois da sua decisão. */
-  lines?: Lines;
-  outcome: Outcome | ((c: Ctx) => Outcome);
-  /** Custo em itens da mochila (não gasta se faltar). */
-  needs?: { item: ItemId; qty: number };
-}
-
-export interface Template {
-  id: string;
-  kind: MomentKind;
-  title: string;
-  emoji: string;
-  cast: 1 | 2 | 3;
-  weight: number;
-  when?: (c: Ctx) => boolean;
-  lines: Lines;
-  /** O que acontece se você não decidir (ou se o momento não pede decisão). */
-  outcome: Outcome | ((c: Ctx) => Outcome);
-  choice?: { prompt: string; options: ChoiceOption[] };
-  /** O que cada um comenta depois, quando você conversa com ele (`who` = posição no elenco). */
-  after?: (n: string[], who: number) => string | null;
-}
-
-const L = (who: number, text: string, fx?: Fx): MomentLine => ({ who, text, ...(fx ? { fx } : {}) });
-const is = (c: Ctx, i: number, ...names: PersonalityName[]): boolean => names.includes(c.p[i]!);
-const night = (c: Ctx): boolean => c.env.hour >= 21 || c.env.hour < 5;
-const calm = (c: Ctx): boolean => c.env.weather !== 'chuva' && c.env.weather !== 'neve';
-const other = (n: string[], who: number): string => n[who === 0 ? 1 : 0] ?? 'o colega';
-
-export const TEMPLATES: readonly Template[] = [
+const CORE: readonly Template[] = [
   // ---------------------------------------------------------------------------- sozinho
   {
     id: 'solo-espelho', kind: 'solo', title: 'Ensaio no espelho d\'água', emoji: '🪞', cast: 1, weight: 3,
@@ -503,7 +423,7 @@ export const TEMPLATES: readonly Template[] = [
     after: (n, who) => (who === 1 ? `${n[0]} me deu uma flor. Eu estou... bem. Muito bem. Ok, estou apaixonado.` : `Dei uma flor para ${n[1]}. Não foi nada. Foi tudo.`),
   },
   {
-    id: 'rom-confissao', kind: 'romance', title: 'A confissão', emoji: '💌', cast: 2, weight: 8, when: (c) => !!c.rel && c.rel.spark >= 35 && c.rel.bond >= 15 && c.rel.flag === null,
+    id: 'rom-confissao', kind: 'romance', title: 'A confissão', emoji: '💌', cast: 2, weight: 8, keep: true, when: (c) => !!c.rel && c.rel.spark >= 35 && c.rel.bond >= 15 && c.rel.flag === null,
     lines: (c) => {
       const yes = c.rng() < 0.7;
       c.memo.yes = yes;
@@ -568,7 +488,7 @@ export const TEMPLATES: readonly Template[] = [
     },
   },
   {
-    id: 'rom-fim', kind: 'drama', title: 'Fim de namoro', emoji: '💔', cast: 2, weight: 8, when: (c) => c.rel?.flag === 'casal' && c.rel.bond < 15,
+    id: 'rom-fim', kind: 'drama', title: 'Fim de namoro', emoji: '💔', cast: 2, weight: 8, keep: true, when: (c) => c.rel?.flag === 'casal' && c.rel.bond < 15,
     lines: (c) => [
       L(0, `${c.n[1]}, a gente precisa conversar.`, 'sad'),
       L(1, 'Eu sei. Eu também sinto.', 'sad'),
@@ -578,7 +498,7 @@ export const TEMPLATES: readonly Template[] = [
     outcome: { bond: 4, spark: -25, flag: 'clear' },
   },
   {
-    id: 'rom-casamento', kind: 'festa', title: 'O casamento da Vila', emoji: '💒', cast: 3, weight: 14,
+    id: 'rom-casamento', kind: 'festa', title: 'O casamento da Vila', emoji: '💒', cast: 3, weight: 14, keep: true,
     when: (c) => c.rel?.flag === 'casal' && c.rel.bond >= 70 && c.rel.spark >= 70 && !c.seen.has('rom-casamento') && c.env.hour >= 10 && c.env.hour < 20,
     lines: (c) => [
       L(2, `Estamos aqui reunidos para unir ${c.n[0]} e ${c.n[1]} em uma amizade chamada amor.`, 'note'),
@@ -653,6 +573,8 @@ export const TEMPLATES: readonly Template[] = [
   },
 ];
 
+/** Todos os momentos: os do começo (`CORE`) e as levas novas, por tipo de elenco e por ocasião. */
+export const TEMPLATES: readonly Template[] = [...CORE, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS];
 export const TEMPLATE_COUNT = TEMPLATES.length;
 export const TEMPLATE_BY_ID = new Map(TEMPLATES.map((t) => [t.id, t]));
 
@@ -675,12 +597,12 @@ function bump(state: VillageState, a: string, b: string, dBond: number, dSpark: 
 
 // -------------------------------------------------------------------------------- escolha do momento
 
-export function makeEnv(state: VillageState, day: string, hour: number, weather: string | null): SocialEnv {
+export function makeEnv(state: VillageState, day: string, hour: number, weather: string | null, player = 'Treinador'): SocialEnv {
   const ripe = state.crops.filter((c) => {
     const g = itemDef(c.seed)?.grows;
     return !!g && c.stage >= g.stages;
   }).length;
-  return { hour, day, weather, placed: new Set(state.placed.map((p) => p.item)), crops: state.crops.length, ripeCrops: ripe };
+  return { player, hour, day, weather, placed: new Set(state.placed.map((p) => p.item)), crops: state.crops.length, ripeCrops: ripe };
 }
 
 function makeCtx(state: VillageState, cast: Actor[], env: SocialEnv, rng: Rng): Ctx {
@@ -699,7 +621,15 @@ function makeCtx(state: VillageState, cast: Actor[], env: SocialEnv, rng: Rng): 
     pts: (i) => (cast[i] ? friendOf(state, cast[i]!.id).points : 0),
     has: (...ids) => ids.some((id) => env.placed.has(id)),
     rolling: false,
+    ids: cast.map((a) => a.id),
+    date: parseDay(env.day),
   };
+}
+
+function parseDay(day: string): { y: number; m: number; d: number; dow: number } {
+  const [y, m, d] = day.split('-').map(Number);
+  const date = new Date(Date.UTC(y || 2026, (m || 1) - 1, d || 1));
+  return { y: y || 2026, m: m || 1, d: d || 1, dow: date.getUTCDay() };
 }
 
 export interface Scene {
@@ -733,6 +663,18 @@ export function pickMoment(actors: readonly Actor[], state: VillageState, env: S
   const cast = pickCast(tpl.cast, actors, state, rng);
   const ctx = makeCtx(state, cast, env, rng);
   return { tpl, ctx, cast, lines: tpl.lines(ctx) };
+}
+
+/** Monta a cena de um modelo específico (sorteando o elenco até as condições combinarem). Serve para testar modelos de datas raras. */
+export function sceneOfTemplate(tpl: Template, actors: readonly Actor[], state: VillageState, env: SocialEnv, rng: Rng, tries = 40): Scene | null {
+  if (actors.length < tpl.cast) return null;
+  for (let k = 0; k < tries; k++) {
+    const cast = pickCast(tpl.cast, actors, state, rng);
+    const ctx = makeCtx(state, cast, env, rng);
+    if (tpl.when && !tpl.when(ctx)) continue;
+    return { tpl, ctx, cast, lines: tpl.lines(ctx) };
+  }
+  return null;
 }
 
 function pickCast(size: 1 | 2 | 3, actors: readonly Actor[], state: VillageState, rng: Rng): Actor[] {
@@ -854,6 +796,8 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
   const outcome = typeof spec === 'function' ? spec(ctx) : spec;
   const followUp = used?.lines ? used.lines(ctx) : [];
   const result = applyOutcome(state, cast, outcome, day, now);
+  const autoKeep = tpl.keep === true && state.diary.filter((x) => x.fav).length < MAX_SAVED;
+  if (autoKeep) result.push('📌 Guardado no Álbum para sempre');
   const firstTime = !state.seen.includes(tpl.id);
   if (firstTime) {
     state.seen.push(tpl.id);
@@ -873,6 +817,7 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
     lines: [...scene.lines, ...followUp],
     result,
     ...(used ? { choice: used.label(ctx) } : {}),
+    ...(autoKeep ? { fav: true } : {}),
     ...(away ? { away: true } : {}),
   };
   state.diary.push(moment);
@@ -881,18 +826,14 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
 }
 
 function trimDiary(state: VillageState): void {
-  while (state.diary.length > MAX_DIARY) {
-    const i = state.diary.findIndex((m) => !m.fav);
-    if (i < 0) break;
-    state.diary.splice(i, 1);
-  }
+  state.diary = trimMoments(state.diary);
 }
 
-/** Marca (ou desmarca) um momento como favorito: os favoritos nunca saem do Diário. */
+/** Guarda (ou solta) um momento no Álbum: o que está guardado nunca sai, mesmo quando o Diário enche. */
 export function setFavorite(state: VillageState, id: string, fav: boolean): boolean {
   const m = state.diary.find((x) => x.id === id);
   if (!m) return false;
-  if (fav && !m.fav && state.diary.filter((x) => x.fav).length >= MAX_FAVS) return false;
+  if (fav && !m.fav && state.diary.filter((x) => x.fav).length >= MAX_SAVED) return false;
   if (fav) m.fav = true;
   else delete m.fav;
   return true;
@@ -911,7 +852,7 @@ const AWAY_STEP_MS = 15 * 60_000;
 export const MAX_AWAY_MOMENTS = 6;
 
 /** Enquanto você esteve fora, os Pokémon continuaram vivendo: um momento a cada 15 minutos (até 6), sem decisões. */
-export function catchUp(state: VillageState, actors: readonly Actor[], now: number, weather: string | null, rng: Rng): Moment[] {
+export function catchUp(state: VillageState, actors: readonly Actor[], now: number, weather: string | null, rng: Rng, player = 'Treinador'): Moment[] {
   const out: Moment[] = [];
   if (state.lastSeen <= 0 || actors.length === 0) return out;
   const gone = now - state.lastSeen;
@@ -920,7 +861,7 @@ export function catchUp(state: VillageState, actors: readonly Actor[], now: numb
     const t = state.lastSeen + (k + 1) * Math.min(AWAY_STEP_MS, gone / (n + 1)) + Math.floor(rng() * 60_000);
     const when = new Date(t);
     const day = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`;
-    const scene = pickMoment(actors, state, makeEnv(state, day, when.getHours(), weather), rng);
+    const scene = pickMoment(actors, state, makeEnv(state, day, when.getHours(), weather, player), rng);
     if (!scene) continue;
     out.push(resolveScene(state, scene, null, t, true).moment);
   }
@@ -976,3 +917,20 @@ export function relationsOf(state: VillageState, id: string, others: readonly { 
     .map((o) => ({ name: o.name, status: relationStatus(state.rel[pairKey(id, o.id)]), met: state.rel[pairKey(id, o.id)]?.met ?? 0 }))
     .filter((r) => r.met > 0 || r.status.key !== 'conhecidos');
 }
+
+export interface AlbumEntry {
+  id: string;
+  kind: MomentKind;
+  title: string;
+  emoji: string;
+  seen: boolean;
+}
+
+/** O Álbum de modelos: todos os momentos que existem, com o que você já viu (o resto fica escondido na tela). */
+export function albumEntries(state: VillageState): AlbumEntry[] {
+  const seen = new Set(state.seen);
+  return TEMPLATES.map((t) => ({ id: t.id, kind: t.kind, title: t.title, emoji: t.emoji || MOMENT_EMOJI[t.kind], seen: seen.has(t.id) }));
+}
+
+/** Os momentos guardados no Álbum, do mais novo para o mais antigo. */
+export const savedMoments = (state: VillageState): Moment[] => state.diary.filter((m) => m.fav).reverse();
