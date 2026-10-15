@@ -3498,3 +3498,59 @@ body.no-scroll .reward-toasts {
   color: var(--gold);
   font-weight: 600;
 }
+
+/* Fala de Pokémon: caixa de texto no estilo dos jogos, por cima de tudo. */
+.speech {
+  position: fixed;
+  inset: auto 12px calc(var(--nav-height) + 16px) 12px;
+  z-index: 60;
+  display: grid;
+  justify-items: center;
+  gap: 0;
+  cursor: pointer;
+}
+
+.speech-sprite {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  margin-bottom: -10px;
+  filter: drop-shadow(0 0 10px rgb(255 203 5 / 0.6));
+}
+
+.speech-box {
+  position: relative;
+  width: min(560px, 100%);
+  padding: 14px 18px 18px;
+  border-radius: 14px;
+  border: 3px solid var(--gold);
+  background: #fbfaf5;
+  color: #1d2238;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+}
+
+.speech-box strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #b8860b;
+  font-size: 0.85rem;
+}
+
+.speech-box p {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+.speech-rest {
+  visibility: hidden;
+}
+
+.speech-next {
+  position: absolute;
+  right: 12px;
+  bottom: 6px;
+  font-size: 0.7rem;
+  color: #b8860b;
+}

@@ -33,6 +33,7 @@ import type { RgbaImage } from '../recognition/types';
 import { loadChunk } from '../app/stale-build';
 import { spriteIdOf } from '../core/dex-form';
 import { isShiny } from '../core/shiny';
+import { maybeGalladeSpeaks } from '../app/speech-store';
 
 const props = defineProps<{ cardId?: string }>();
 
@@ -416,6 +417,7 @@ async function startArFor(cardId: string): Promise<void> {
         if (run !== arRun) return;
         arState.value = state;
         if (state.phase === 'searching' || state.phase === 'tracking' || state.phase === 'lost') arStage.value = state.phase;
+        if (state.phase === 'tracking') maybeGalladeSpeaks({ name: assets.card.name, shiny: isShiny(assets.card) });
         else if (state.phase === 'error') failAr(state.message ?? 'O rastreamento falhou.');
       },
       onSprite: (state) => {

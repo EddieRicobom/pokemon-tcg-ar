@@ -10,6 +10,7 @@ import { savedTeam } from '../app/team-store';
 import { resetRoster, roster, rosterFor, setSlot, slotOf } from '../app/roster-store';
 import { battleMode, setBattleMode } from '../app/battle-mode-store';
 import { recordEvent, spendTrainerEnergy, trainer } from '../app/trainer-store';
+import { maybeGalladeSpeaks } from '../app/speech-store';
 import { visual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
 import { requestOrientationPermission } from '../sensors/orientation-feed';
@@ -116,6 +117,7 @@ async function populate(): Promise<void> {
     const loaded = await loadCreatureEntries(cache, undefined, team.ids);
     if (disposed || !box) return;
     box.setCreatures(loaded.entries);
+    for (const entry of loaded.entries) if (maybeGalladeSpeaks(entry.info)) break;
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
     rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: e.info.name, shiny: e.info.shiny === true, mega: e.info.mega === true }));
     megaPicks.value = megaPicks.value.filter((id) => rosterRows.value.some((r) => r.id === id && r.mega));
