@@ -4,6 +4,7 @@ import { routeHref, useRoute } from './app/route';
 import type { RouteName } from './app/route';
 import NavIcon from './components/NavIcon.vue';
 import RewardToasts from './components/RewardToasts.vue';
+import PokemonSpeech from './components/PokemonSpeech.vue';
 import { useInstallPrompt } from './composables/useInstallPrompt';
 import { detectCapabilities, isIosDevice } from './core/capabilities';
 import CarregarView from './views/CarregarView.vue';
@@ -73,6 +74,7 @@ const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
     <DiagnosticoView v-else />
 
     <RewardToasts />
+    <PokemonSpeech />
 
     <footer class="app-footer">
       <a href="https://github.com/EddieRicobom/pokemon-tcg-ar">Código-fonte no GitHub</a>
