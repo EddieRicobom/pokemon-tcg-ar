@@ -1,6 +1,9 @@
 import type { Rng } from '../battle';
 import type { PokemonType } from '../pokemon-data';
 import { ACCESSORY_IDS, FURNITURE_IDS, isItem, itemDef, ITEMS, MATERIAL_IDS, shopToday } from './catalog';
+import { personalityOf } from './personality';
+import { emptySocial, normalizeSocial } from './social-state';
+import type { Moment, Relation } from './social-state';
 import { tileAt } from './map';
 import type { Tile, VillageMap } from './map';
 
@@ -45,6 +48,8 @@ export interface Friendship {
   points: number;
   lastTalk: string;
   lastGift: string;
+  /** Dia em que já comeu uma comida sua (uma refeição por dia). */
+  lastMeal?: string;
   /** Pedido do dia (o Pokémon quer este item). */
   request: { day: string; item: ItemId; qty: number; done: boolean } | null;
 }
@@ -72,6 +77,14 @@ export interface VillageState {
   /** Dia em que cada amigo já ajudou (coleta diária) e já deu presente raro. */
   helped: Record<string, string>;
   rareGift: Record<string, string>;
+  /** Vida social: relações entre os Pokémon, Diário de momentos, Álbum e quando você saiu. */
+  rel: Record<string, Relation>;
+  diary: Moment[];
+  seen: string[];
+  lastSeen: number;
+  diaryRead: number;
+  /** Pescaria de hoje: quantas vezes já lançou a linha. */
+  fishing: { day: string; casts: number };
 }
 
 export interface Crop {
@@ -88,6 +101,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
   return {
     v: 1, seed, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
+    ...emptySocial(), fishing: { day: '', casts: 0 },
   };
 }
 
@@ -118,6 +132,8 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     collected: Array.isArray(r.collected) ? r.collected.filter((id): id is string => typeof id === 'string' && FURNITURE_IDS.includes(id)) : [],
     helped: r.helped && typeof r.helped === 'object' ? r.helped : {},
     rareGift: r.rareGift && typeof r.rareGift === 'object' ? r.rareGift : {},
+    ...normalizeSocial(r),
+    fishing: r.fishing && typeof r.fishing.day === 'string' && Number.isInteger(r.fishing.casts) ? { day: r.fishing.day, casts: Math.max(0, Math.min(99, r.fishing.casts)) } : { day: '', casts: 0 },
   };
 }
 
@@ -144,13 +160,23 @@ export interface Interaction {
   got?: { item: ItemId; qty: number };
 }
 
-const HARVEST: Partial<Record<Tile, { item: ItemId | ((rng: Rng) => ItemId); qty: [number, number]; verb: string }>> = {
-  tree: { item: 'madeira', qty: [1, 3], verb: 'Você cortou galhos da árvore' },
-  rock: { item: 'pedra', qty: [1, 2], verb: 'Você quebrou um pedaço da pedra' },
-  bush: { item: (rng) => (rng() < 0.6 ? 'oran' : 'pecha'), qty: [1, 2], verb: 'Você colheu frutas do arbusto' },
-  flower: { item: 'flor', qty: [1, 2], verb: 'Você colheu flores' },
+interface HarvestRule {
+  item: ItemId | ((rng: Rng) => ItemId);
+  qty: [number, number];
+  verb: string;
+  /** Achados raros que vêm junto (cada um com a sua chance). */
+  extra?: { item: ItemId; chance: number; verb: string }[];
+}
+
+const SEEDS_WILD = ['sem-oran', 'sem-pecha', 'sem-girassol', 'sem-tomate', 'sem-cenoura', 'sem-milho', 'sem-batata', 'sem-lavanda'] as const;
+
+const HARVEST: Partial<Record<Tile, HarvestRule>> = {
+  tree: { item: 'madeira', qty: [1, 3], verb: 'Você cortou galhos da árvore', extra: [{ item: 'pena', chance: 0.12, verb: 'caiu uma pena do ninho' }, { item: 'mel', chance: 0.05, verb: 'achou um favo de mel' }] },
+  rock: { item: 'pedra', qty: [1, 2], verb: 'Você quebrou um pedaço da pedra', extra: [{ item: 'cristal', chance: 0.12, verb: 'brilhou um cristal lá dentro' }, { item: 'ouro', chance: 0.04, verb: 'tinha uma pepita de ouro' }] },
+  bush: { item: (rng) => (rng() < 0.6 ? 'oran' : 'pecha'), qty: [1, 2], verb: 'Você colheu frutas do arbusto', extra: [{ item: 'sem-morango', chance: 0.06, verb: 'achou uma semente de morango' }] },
+  flower: { item: 'flor', qty: [1, 2], verb: 'Você colheu flores', extra: [{ item: 'mel', chance: 0.18, verb: 'as abelhas deixaram mel' }] },
   sand: { item: 'concha', qty: [1, 1], verb: 'Você achou uma concha na areia' },
-  tall: { item: (rng) => (['sem-oran', 'sem-pecha', 'sem-girassol', 'sem-tomate'] as const)[Math.floor(rng() * 4)]!, qty: [1, 1], verb: 'Você achou no mato alto' },
+  tall: { item: (rng) => SEEDS_WILD[Math.floor(rng() * SEEDS_WILD.length)]!, qty: [1, 1], verb: 'Você achou no mato alto', extra: [{ item: 'champignon', chance: 0.3, verb: 'e um cogumelo' }] },
 };
 
 /** Coleta no bloco (x, y): cada bloco dá uma vez por dia (a natureza volta no dia seguinte). */
@@ -158,16 +184,58 @@ export function harvest(s: VillageState, map: VillageMap, x: number, y: number, 
   const tile = tileAt(map, x, y);
   const rule = HARVEST[tile];
   if (!rule) return { ok: false, message: '' };
-  // Areia: só às vezes tem concha.
-  if (tile === 'sand' && rng() < 0.55) return { ok: false, message: 'Só areia por aqui.' };
-  if (tile === 'tall' && rng() < 0.6) return { ok: false, message: 'Nada no mato desta vez.' };
+  // Areia: só às vezes tem concha, e o resto é areia ou argila.
+  let sandItem: ItemId | null = null;
+  if (tile === 'sand') {
+    const roll = rng();
+    if (roll < 0.2) return { ok: false, message: 'Só areia por aqui.' };
+    sandItem = roll < 0.55 ? 'concha' : roll < 0.85 ? 'areia' : 'argila';
+  }
+  if (tile === 'tall' && rng() < 0.5) return { ok: false, message: 'Nada no mato desta vez.' };
   const key = `${x},${y}`;
   if (s.harvested[key] === day) return { ok: false, message: tile === 'tree' ? 'Esta árvore já deu madeira hoje. Volte amanhã!' : 'Já coletou aqui hoje. Volte amanhã!' };
   s.harvested[key] = day;
-  const item = typeof rule.item === 'function' ? rule.item(rng) : rule.item;
-  const qty = rule.qty[0] + Math.floor(rng() * (rule.qty[1] - rule.qty[0] + 1));
+  const item = sandItem ?? (typeof rule.item === 'function' ? rule.item(rng) : rule.item);
+  const qty = sandItem ? 1 + Math.floor(rng() * 2) : rule.qty[0] + Math.floor(rng() * (rule.qty[1] - rule.qty[0] + 1));
   add(s, item, qty);
-  return { ok: true, message: `${rule.verb}: +${qty} ${itemName(item)}`, got: { item, qty } };
+  let message = sandItem ? `Você cavou na areia: +${qty} ${itemName(item)}` : `${rule.verb}: +${qty} ${itemName(item)}`;
+  for (const e of rule.extra ?? []) {
+    if (rng() < e.chance) {
+      add(s, e.item);
+      message += ` (${e.verb}: +1 ${itemName(e.item)})`;
+    }
+  }
+  return { ok: true, message, got: { item, qty } };
+}
+
+// ----------------------------------------------------------------------------- pesca
+
+export const FISH_PER_DAY = 10;
+
+const FISH_TABLE: readonly { item: ItemId | null; w: number; msg: string }[] = [
+  { item: null, w: 14, msg: 'Nada mordeu a isca desta vez.' },
+  { item: 'alga', w: 16, msg: 'Fisgou uma alga' },
+  { item: 'bota', w: 8, msg: 'Era só uma bota velha…' },
+  { item: 'peixe', w: 34, msg: 'Pegou um peixe' },
+  { item: 'estrela', w: 11, msg: 'Pescou uma estrela-do-mar' },
+  { item: 'dourado', w: 8, msg: 'Um peixe-dourado reluzente' },
+  { item: 'perola', w: 3, msg: 'Uma pérola dentro de uma concha' },
+  { item: 'cristal', w: 2, msg: 'Um cristal brilhando no fundo' },
+];
+
+/** Joga a linha num bloco de água (10 lançamentos por dia). */
+export function fish(s: VillageState, map: VillageMap, x: number, y: number, day: string, rng: Rng): Interaction {
+  if (tileAt(map, x, y) !== 'water') return { ok: false, message: '' };
+  if (s.fishing.day !== day) s.fishing = { day, casts: 0 };
+  if (s.fishing.casts >= FISH_PER_DAY) return { ok: false, message: 'Os peixes cansaram por hoje. Volte amanhã!' };
+  s.fishing.casts++;
+  const total = FISH_TABLE.reduce((n, e) => n + e.w, 0);
+  let roll = rng() * total;
+  const hit = FISH_TABLE.find((e) => (roll -= e.w) < 0) ?? FISH_TABLE[0]!;
+  const left = FISH_PER_DAY - s.fishing.casts;
+  if (!hit.item) return { ok: true, message: `${hit.msg} (${left} lançamentos restantes)` };
+  add(s, hit.item);
+  return { ok: true, message: `${hit.msg}: +1 ${itemName(hit.item)} (${left} lançamentos restantes)`, got: { item: hit.item, qty: 1 } };
 }
 
 /** Limpa as marcas de coleta de dias anteriores (o arquivo não cresce para sempre). */
@@ -194,11 +262,21 @@ export function describeCost(s: VillageState, cost: Partial<Record<ItemId, numbe
 
 export function craft(s: VillageState, item: ItemId): Interaction {
   const cost = RECIPES[item];
-  if (!cost) return { ok: false, message: 'Isso não dá para fabricar.' };
+  if (!cost || itemDef(item)?.kind === 'food') return { ok: false, message: 'Isso não dá para fabricar.' };
   if (!canAfford(s, cost)) return { ok: false, message: `Faltam materiais: ${describeCost(s, cost)}.` };
   pay(s, cost);
   add(s, item);
   return { ok: true, message: `Você fez: ${itemName(item)}!` };
+}
+
+/** Cozinha uma comida (receitas de `catalog`, só as de kind "food"). */
+export function cook(s: VillageState, item: ItemId): Interaction {
+  const cost = RECIPES[item];
+  if (!cost || itemDef(item)?.kind !== 'food') return { ok: false, message: 'Isso não dá para cozinhar.' };
+  if (!canAfford(s, cost)) return { ok: false, message: `Faltam ingredientes: ${describeCost(s, cost)}.` };
+  pay(s, cost);
+  add(s, item);
+  return { ok: true, message: `Você cozinhou: ${itemName(item)}!` };
 }
 
 export const isPlaced = (s: VillageState, x: number, y: number) => s.placed.some((f) => f.x === x && f.y === y);
@@ -263,6 +341,39 @@ export function favoriteOf(types: readonly PokemonType[]): ItemId {
   return 'oran';
 }
 
+/** A comida preferida de cada tipo. */
+export const FAVORITE_FOOD: Partial<Record<PokemonType, ItemId>> = {
+  fire: 'espetinho', water: 'peixe-grelhado', grass: 'salada', electric: 'pipoca', psychic: 'geleia', fairy: 'bolo-morango',
+  normal: 'pao-mel', ice: 'melancia-gelada', rock: 'ensopado', ground: 'sopa-abobora', fighting: 'lanche-pokebola', dragon: 'torta-pecha',
+  ghost: 'suco-pecha', poison: 'espetinho', dark: 'ensopado', bug: 'suco-oran', flying: 'pipoca', steel: 'ensopado',
+};
+
+export function favoriteFoodOf(types: readonly PokemonType[]): ItemId {
+  for (const t of types) {
+    const fav = FAVORITE_FOOD[t];
+    if (fav) return fav;
+  }
+  return 'pao-mel';
+}
+
+/** Conversa por jeito: cada personalidade fala do seu jeito (entra a partir do nível Colega). */
+const PERSONALITY_LINES: Record<string, readonly string[]> = {
+  Brincalhão: ['Quer ver meu truque novo? ...Esqueci qual era.', 'Corre atrás de mim! Ah, você é lento. Brincadeira!', 'Escondi uma coisa na Vila. Não vou dizer onde!'],
+  Calmo: ['Respira fundo. Sente a grama? Pois é.', 'Hoje não tem pressa para nada, e está ótimo.', 'Uma soneca na sombra resolve quase tudo.'],
+  Tímido: ['E-eu estava pensando em falar com você... ufa, falei.', 'Você não acha que estão me olhando? Ah, é só um arbusto.', 'Obrigado por ser paciente comigo.'],
+  Corajoso: ['Se aparecer qualquer coisa, eu protejo você!', 'Amanhã eu encaro o próximo ginásio sozinho. Quer dizer, com você.', 'Medo? Nunca ouvi falar. (Só do escuro.)'],
+  Guloso: ['Você tem alguma coisa para comer? Qualquer coisa. Serve uma pedra? Brincadeira... acho.', 'Sonhei com uma torta do tamanho da casa.', 'Meu estômago acabou de falar sozinho.'],
+  Sonhador: ['Já reparou que aquela nuvem parece um Magikarp?', 'Imagina se a gente pudesse voar até a lua e voltar antes do jantar.', 'Tive um sonho esquisito: eu era uma Pokébola.'],
+  Curioso: ['O que será que tem dentro daquele baú? Não, eu não abri. Ainda.', 'Descobri um formigueiro novo! Quer ver?', 'Por que o céu é azul? Estou pesquisando há dois dias.'],
+  Mandão: ['Escute bem: hoje o plano é o seguinte.', 'Eu não estou mandando, estou sugerindo com firmeza.', 'Aqui, quem organiza as coisas sou eu. Você ajuda, claro.'],
+};
+
+const WEATHER_LINES: Record<string, string> = {
+  chuva: 'Que chuva! Eu adoro, só não quero ficar molhado.',
+  neve: 'Olha a neve! Posso fazer um boneco com você?',
+  nublado: 'O céu está cinzento hoje, mas eu estou de bom humor.',
+};
+
 const LINES: Record<number, readonly string[]> = {
   0: ['Oi! Ainda estou me acostumando com a vila.', 'Você é quem me escaneou, né? Prazer!', 'Que lugar bonito... posso explorar?'],
   1: ['Bom te ver de novo!', 'Hoje achei um cantinho ótimo perto do lago.', 'Vamos treinar depois?'],
@@ -282,7 +393,7 @@ export interface Talk {
  * Conversa: a primeira do dia vale amizade (+6). Às vezes (1 em 3 dias) o Pokémon pede um item; entregar vale bem mais.
  * O texto muda com o nível de amizade e com a hora (bom dia / boa noite).
  */
-export function talk(s: VillageState, id: string, name: string, types: readonly PokemonType[], day: string, hour: number, rng: Rng): Talk {
+export function talk(s: VillageState, id: string, name: string, types: readonly PokemonType[], day: string, hour: number, rng: Rng, gossip: string | null = null, weather: string | null = null): Talk {
   const f = friendOf(s, id);
   let gained = 0;
   const first = f.lastTalk !== day;
@@ -297,7 +408,12 @@ export function talk(s: VillageState, id: string, name: string, types: readonly 
   const { level } = friendLevel(f.points);
   const greet = hour < 5 || hour >= 19 ? 'Boa noite! ' : hour < 12 ? 'Bom dia! ' : '';
   const lines = LINES[level]!;
-  let text = `${first ? greet : ''}${lines[Math.floor(rng() * lines.length)]}`;
+  // Do nível Colega em diante, o jeito do Pokémon aparece; o tempo e as fofocas também.
+  const flavor = level >= 1 ? PERSONALITY_LINES[personalityOf(id).name] : undefined;
+  let pool: readonly string[] = flavor && rng() < 0.5 ? flavor : lines;
+  if (weather && WEATHER_LINES[weather] && rng() < 0.25) pool = [WEATHER_LINES[weather]!];
+  if (gossip && level >= 1 && rng() < 0.6) pool = [gossip];
+  let text = `${first ? greet : ''}${pool[Math.floor(rng() * pool.length)]}`;
   const req = f.request && f.request.day === day && !f.request.done ? f.request : null;
   if (req) text += ` Ah... você teria ${req.qty} ${itemName(req.item)}? Eu ia adorar!`;
   else if (!first) text = `${name} está feliz em te ver.`;
@@ -313,6 +429,19 @@ export interface Gift {
 /** Presente: entrega o pedido do dia (muito), o favorito (bastante) ou qualquer coisa (um pouco). Um presente por dia. */
 export function giveGift(s: VillageState, id: string, types: readonly PokemonType[], item: ItemId, day: string): Gift {
   const f = friendOf(s, id);
+  const def = itemDef(item);
+  if (def?.kind === 'food') {
+    if (f.lastMeal === day) return { ok: false, text: 'Já comi hoje. Estou satisfeito, obrigado!', gained: 0 };
+    if (count(s, item) <= 0) return { ok: false, text: `Você não tem ${itemName(item)}.`, gained: 0 };
+    s.inventory[item] = count(s, item) - 1;
+    f.lastMeal = day;
+    const fav = favoriteFoodOf(types) === item;
+    const greedy = personalityOf(id).name === 'Guloso';
+    const gained = (def.feeds ?? 8) + (fav ? 10 : 0) + (greedy ? 4 : 0);
+    f.points = Math.min(100, f.points + gained);
+    const text = fav ? `${itemName(item)}! Meu prato favorito! Que delícia!` : greedy ? `Nhac! ${itemName(item)}! Tem mais?` : `${itemName(item)}... uma delícia, obrigado!`;
+    return { ok: true, text, gained };
+  }
   const req = f.request && f.request.day === day && !f.request.done ? f.request : null;
   if (req && req.item === item) {
     if (count(s, item) < req.qty) return { ok: false, text: `Precisa de ${req.qty} ${itemName(item)} (você tem ${count(s, item)}).`, gained: 0 };
@@ -455,7 +584,7 @@ export function wear(s: VillageState, who: string, accessory: string | null): In
 
 // ----------------------------------------------------------------------------- ajuda dos amigos
 
-const HELP_ITEMS = ['madeira', 'pedra', 'oran', 'pecha', 'flor', 'concha', 'tecido', 'ferro'] as const;
+const HELP_ITEMS = ['madeira', 'pedra', 'oran', 'pecha', 'flor', 'concha', 'tecido', 'ferro', 'la', 'mel', 'champignon', 'argila', 'pena', 'areia'] as const;
 
 /**
  * Amigo (nível 2) ou mais traz, uma vez por dia, alguns materiais que achou pela vila; Melhor amigo, uma vez por semana,

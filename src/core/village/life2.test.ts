@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng } from '../battle';
 import { bookPage, dislikeOf, moodOf, opinionOf, personalityOf, UNLOCKS } from './book';
-import { ACCESSORY_IDS, FURNITURE_IDS, itemDef, ITEMS, SEED_IDS, shopToday } from './catalog';
-import { add, buy, count, craft, cropAt, dailyHelp, emptyVillage, favoriteOf, friendOf, harvestCrop, needsWater, place, plant, sell, tickCrops, water, wear } from './life';
+import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FOOD_IDS, FURNITURE_IDS, itemDef, ITEMS, LIGHT_IDS, SEED_IDS, shopToday } from './catalog';
+import { add, buy, cook, count, craft, cropAt, dailyHelp, emptyVillage, favoriteFoodOf, favoriteOf, fish, FISH_PER_DAY, friendOf, giveGift, harvestCrop, needsWater, place, plant, sell, tickCrops, water, wear } from './life';
 import { generateVillage, isSolidTile, tileAt } from './map';
-import { ACCESSORY_ART_IDS, FURNITURE_ART_IDS, MATERIAL_ART_IDS, paintCrop, paintItemIcon } from '../../village/item-art';
+import { ACCESSORY_ART_IDS, FOOD_ART_IDS, FURNITURE_ART_IDS, MATERIAL_ART_IDS, paintCrop, paintFurnitureItem, paintItemIcon, TALL_ART_IDS } from '../../village/item-art';
 
 const map = generateVillage(20261014);
 const spot = (() => {
@@ -14,10 +14,11 @@ const spot = (() => {
 
 describe('catálogo', () => {
   it('dezenas de móveis, todos com arte; todo material, colheita e acessório tem ícone', () => {
-    expect(FURNITURE_IDS.length).toBeGreaterThanOrEqual(40);
+    expect(FURNITURE_IDS.length).toBeGreaterThanOrEqual(110);
     for (const id of FURNITURE_IDS) expect(FURNITURE_ART_IDS).toContain(id);
     for (const i of ITEMS.filter((i) => i.kind === 'material' || i.kind === 'crop')) expect(MATERIAL_ART_IDS).toContain(i.id);
     for (const id of ACCESSORY_IDS) expect(ACCESSORY_ART_IDS).toContain(id);
+    for (const id of FOOD_IDS) expect(FOOD_ART_IDS).toContain(id);
     for (const i of ITEMS) {
       let n = 0;
       const b = paintItemIcon(i.id);
@@ -196,5 +197,113 @@ describe('Livro dos Pokémon', () => {
     expect(friend.opinions).toHaveLength(1);
     expect(friend.unlocks.filter((u) => u.open)).toHaveLength(3);
     expect(UNLOCKS.at(-1)!.text).toContain('aguenta firme');
+  });
+});
+
+
+describe('catálogo ampliado', () => {
+  it('móveis altos têm arte de 2 blocos e as luzes e animações existem no catálogo', () => {
+    const tall = FURNITURE_IDS.filter((id) => itemDef(id)?.tall);
+    expect(tall.length).toBeGreaterThanOrEqual(6);
+    for (const id of tall) {
+      expect(TALL_ART_IDS).toContain(id);
+      expect(paintFurnitureItem(id, false, 0).h, id).toBe(32);
+    }
+    for (const id of FURNITURE_IDS.filter((i) => !itemDef(i)?.tall)) expect(paintFurnitureItem(id, false, 0).h, id).toBe(16);
+    expect(LIGHT_IDS.size).toBeGreaterThanOrEqual(6);
+    // A maioria acende de noite (a lareira e a fogueira já têm fogo o tempo todo, só ganham brilho no mundo).
+    const lights = [...LIGHT_IDS].filter((id) => paintFurnitureItem(id, true, 0).data.join() !== paintFurnitureItem(id, false, 0).data.join());
+    expect(lights.length).toBeGreaterThanOrEqual(Math.floor(LIGHT_IDS.size / 2));
+    for (const id of FURNITURE_IDS.filter((i) => (itemDef(i)?.frames ?? 1) > 1)) {
+      {
+      const lit = LIGHT_IDS.has(id);
+      expect(paintFurnitureItem(id, lit, 0).data.join(), id).not.toBe(paintFurnitureItem(id, lit, 1).data.join());
+    }
+    }
+  });
+
+  it('as variantes de cor existem em mais de um tom e cada uma tem desenho próprio', () => {
+    const sofas = FURNITURE_IDS.filter((id) => id.startsWith('sofa-'));
+    expect(sofas.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(sofas.map((id) => paintFurnitureItem(id, false, 0).data.join())).size).toBe(sofas.length);
+  });
+
+  it('móveis que só vêm de presente não estão à venda nem têm receita', () => {
+    const gifts = FURNITURE_IDS.filter((id) => itemDef(id)?.gift);
+    expect(gifts.length).toBeGreaterThanOrEqual(5);
+    for (const id of gifts) {
+      expect(itemDef(id)!.price, id).toBe(0);
+      expect(itemDef(id)!.recipe, id).toBeUndefined();
+    }
+  });
+
+  it('há muitas comidas, todas com receita feita de itens que existem; fabricar e cozinhar não se misturam', () => {
+    expect(FOOD_IDS.length).toBeGreaterThanOrEqual(12);
+    expect(COOK_IDS.sort()).toEqual([...FOOD_IDS].sort());
+    for (const id of CRAFT_IDS) expect(itemDef(id)?.kind).not.toBe('food');
+    const s = emptyVillage(1, map.spawn);
+    const food = COOK_IDS[0]!;
+    for (const [k, n] of Object.entries(itemDef(food)!.recipe!)) add(s, k, n);
+    expect(craft(s, food).ok).toBe(false);
+    expect(cook(s, food).ok).toBe(true);
+    expect(count(s, food)).toBe(1);
+    expect(cook(s, food).ok).toBe(false);
+    expect(cook(s, 'madeira').ok).toBe(false);
+  });
+});
+
+describe('pesca', () => {
+  const water = (() => {
+    for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (tileAt(map, x, y) === 'water') return { x, y };
+    return null;
+  })();
+
+  it('só funciona na água, rende itens e cansa depois de 10 lançamentos por dia', () => {
+    expect(water).not.toBeNull();
+    const s = emptyVillage(1, map.spawn);
+    expect(fish(s, map, spot.x, spot.y, '2026-10-14', seededRng(1)).ok).toBe(false);
+    expect(s.fishing.casts).toBe(0);
+    const rng = seededRng(5);
+    let got = 0;
+    for (let i = 0; i < FISH_PER_DAY; i++) {
+      const r = fish(s, map, water!.x, water!.y, '2026-10-14', rng);
+      expect(r.ok).toBe(true);
+      if (r.got) got++;
+    }
+    expect(got).toBeGreaterThan(0);
+    expect(fish(s, map, water!.x, water!.y, '2026-10-14', rng).ok).toBe(false);
+    // No dia seguinte os peixes voltam.
+    expect(fish(s, map, water!.x, water!.y, '2026-10-15', rng).ok).toBe(true);
+    expect(s.fishing).toEqual({ day: '2026-10-15', casts: 1 });
+  });
+
+  it('a pesca rende itens raros ao longo de muitos dias', () => {
+    const s = emptyVillage(1, map.spawn);
+    const rng = seededRng(9);
+    for (let d = 1; d <= 60; d++) for (let i = 0; i < FISH_PER_DAY; i++) fish(s, map, water!.x, water!.y, `d${d}`, rng);
+    expect(count(s, 'peixe')).toBeGreaterThan(50);
+    expect(count(s, 'perola') + count(s, 'cristal') + count(s, 'dourado')).toBeGreaterThan(0);
+  });
+});
+
+describe('comida como presente', () => {
+  it('uma refeição por dia por Pokémon; o prato favorito e o guloso rendem mais', () => {
+    const s = emptyVillage(1, map.spawn);
+    const types = ['fire'] as const;
+    const fav = favoriteFoodOf(types);
+    expect(itemDef(fav)?.kind).toBe('food');
+    add(s, fav, 2);
+    const other = FOOD_IDS.find((f) => f !== fav)!;
+    add(s, other, 2);
+    const r1 = giveGift(s, 'mon', types, other, '2026-10-14');
+    expect(r1.ok).toBe(true);
+    expect(r1.gained).toBeGreaterThanOrEqual(itemDef(other)!.feeds!);
+    const again = giveGift(s, 'mon', types, fav, '2026-10-14');
+    expect(again.ok).toBe(false);
+    expect(count(s, fav)).toBe(2);
+    const next = giveGift(s, 'mon', types, fav, '2026-10-15');
+    expect(next.gained).toBeGreaterThanOrEqual(r1.gained - 4);
+    expect(next.gained).toBeGreaterThanOrEqual(itemDef(fav)!.feeds! + 10);
+    expect(giveGift(s, 'mon2', types, 'madeira', '2026-10-14').ok).toBe(false);
   });
 });

@@ -45,4 +45,20 @@ describe('arte da Vila', () => {
     expect(paintPlayer('down', 1, o).data.join()).not.toBe(paintPlayer('down', 2, o).data.join());
     expect(outfitFor('dawn')).toEqual(o);
   });
+
+  it('o personagem tem 16×24, rosto e sem buracos; cada treinador veste um visual e o gorro some com o chapéu', () => {
+    const o = outfitFor('dawn');
+    const b = paintPlayer('down', -1, o);
+    expect([b.w, b.h]).toEqual([16, 24]);
+    const solid = (buf: typeof b) => {
+      let n = 0;
+      for (let k = 3; k < buf.data.length; k += 4) if (buf.data[k]! > 0) n++;
+      return n;
+    };
+    expect(solid(b)).toBeGreaterThan(110);
+    const looks = new Set(['dawn', 'dusk', 'night', 'ash', 'misty', 'brock', 'may', 'red', 'blue', 'leaf', 'gold', 'silver'].map((id) => JSON.stringify(outfitFor(id))));
+    expect(looks.size).toBeGreaterThanOrEqual(8);
+    expect(paintPlayer('down', -1, { ...o, gear: 'none' }).data.join()).not.toBe(paintPlayer('down', -1, { ...o, gear: 'cap' }).data.join());
+    for (const d of ['down', 'up', 'left', 'right'] as const) for (const step of [-1, 0, 1, 2, 3]) expect(solid(paintPlayer(d, step, o)), `${d}${step}`).toBeGreaterThan(100);
+  });
 });
