@@ -54,22 +54,38 @@ function covered(x: number, y: number, edges: number, rng: Rng): boolean {
 
 const pick = <T>(rng: Rng, list: readonly T[]): T => list[Math.floor(rng() * list.length)]!;
 
-// ----------------------------------------------------------------------------- chão base
+// ----------------------------------------------------------------------------- chão base (estilo portátil 16 bits)
 
-const GRASS = { a: 0x5fb04c, b: 0x58a847, dark: 0x3f8a3a, light: 0x82d065 };
-const PATH = { base: 0xd8b26a, dark: 0xc29a55, light: 0xebcf94, stone: 0xa8884c };
-const TALL = { base: 0x2f8a3c, dark: 0x1f6a2c, light: 0x66c24a };
-const PETALS = [0xffffff, 0xff7aa8, 0xffd84a, 0x8fb4ff];
+/**
+ * Paleta curta e chapada, como nos jogos de portátil: grama de uma cor só com tufinhos em padrão regular, trilha de
+ * areia com borda de grama ondulada e contorno, mato alto em touceiras contornadas, flores de quatro pétalas.
+ */
+const GRASS = { base: 0x84cc64, tuft: 0x4a9838, light: 0xb4ec8c };
+const PATH = { base: 0xecd8a0, dot: 0xd6ba7e, rim: 0xb8924e, lip: 0x4f9a3a };
+const TALL = { base: 0x5aac46, out: 0x2a6a2a, mid: 0x66bc4c, light: 0xa4e474 };
+const PETALS = [0xf06048, 0xf8f8f8, 0xf8a8c8, 0x88a8f8];
+const FLOWER = { center: 0xf8d030, shadow: 0x58a844 };
 
-function blades(buf: PixelBuf, ox: number, oy: number, rng: Rng, count: number, dark: number, light: number): void {
-  for (let n = 0; n < count; n++) {
-    const x = 1 + Math.floor(rng() * 14);
-    const y = 2 + Math.floor(rng() * 12);
-    put(buf, ox + x - 1, oy + y - 1, dark);
-    put(buf, ox + x + 1, oy + y - 1, dark);
-    put(buf, ox + x, oy + y, dark);
-    if (rng() < 0.45) put(buf, ox + x, oy + y - 2, light);
-  }
+/** Touceira do mato alto, 8×8 ('.' = fundo, o = contorno, M = verde médio, L = verde claro). */
+const TALL_STAMP = [
+  '........',
+  '.o...o..',
+  'oMo.oMo.',
+  'oLMooLMo',
+  'oLMMoLMo',
+  'oLLMMLLo',
+  '.oLLLLo.',
+  '..oooo..',
+];
+
+function tuft(buf: PixelBuf, x: number, y: number): void {
+  // "ʌʌ" pequeno: dois tufos escuros com uma ponta clara em cima.
+  put(buf, x, y + 1, GRASS.tuft);
+  put(buf, x + 1, y, GRASS.tuft);
+  put(buf, x + 2, y + 1, GRASS.tuft);
+  put(buf, x + 3, y, GRASS.tuft);
+  put(buf, x + 4, y + 1, GRASS.tuft);
+  put(buf, x + 1, y - 1, GRASS.light);
 }
 
 function flower(buf: PixelBuf, cx: number, cy: number, petal: number): void {
@@ -77,43 +93,77 @@ function flower(buf: PixelBuf, cx: number, cy: number, petal: number): void {
   put(buf, cx - 1, cy, petal);
   put(buf, cx + 1, cy, petal);
   put(buf, cx, cy + 1, petal);
-  put(buf, cx, cy, petal === 0xffd84a ? 0xff9a2e : 0xffd84a);
+  put(buf, cx, cy, FLOWER.center);
+  put(buf, cx - 1, cy + 2, FLOWER.shadow);
+  put(buf, cx, cy + 2, FLOWER.shadow);
+  put(buf, cx + 1, cy + 2, FLOWER.shadow);
 }
 
-export function paintGround(buf: PixelBuf, ox: number, oy: number, kind: GroundKind, rng: Rng): void {
+/** Onde o bloco fica dentro do chão: muda os tufinhos de lugar em xadrez, para a grama não parecer carimbada. */
+export interface CellPos {
+  c: number;
+  r: number;
+}
+
+/**
+ * Pinta o chão base de um bloco. `edges` = lados (bits de `EDGE`) cujo vizinho é de outro tipo de chão: a trilha ganha
+ * ali a borda de grama ondulada com contorno; o mato alto, uma beirada de grama.
+ */
+export function paintGround(buf: PixelBuf, ox: number, oy: number, kind: GroundKind, rng: Rng, edges = 0, cell: CellPos = { c: 0, r: 0 }): void {
+  const odd = (cell.c + cell.r) % 2 === 1;
   if (kind === 'path') {
     fill(buf, ox, oy, PATH.base);
-    for (let n = 0; n < 14; n++) put(buf, ox + Math.floor(rng() * 16), oy + Math.floor(rng() * 16), rng() < 0.5 ? PATH.dark : PATH.light);
-    if (rng() < 0.5) {
-      const x = 2 + Math.floor(rng() * 11);
-      const y = 2 + Math.floor(rng() * 11);
-      put(buf, ox + x, oy + y, PATH.stone);
-      put(buf, ox + x + 1, oy + y, PATH.stone);
-      put(buf, ox + x, oy + y - 1, PATH.light);
+    for (let y = 0; y < TILE; y++) {
+      for (let x = 0; x < TILE; x++) if ((x * 3 + y * 5 + cell.c * 7 + cell.r * 11) % 23 === 0) put(buf, ox + x, oy + y, PATH.dot);
     }
+    pathBorder(buf, ox, oy, edges);
     return;
   }
+  fill(buf, ox, oy, kind === 'tall' ? TALL.base : GRASS.base);
   if (kind === 'tall') {
-    fill(buf, ox, oy, TALL.base);
-    for (let t = 0; t < 3; t++) {
-      const x = 2 + t * 5 + Math.floor(rng() * 2);
-      const y = 5 + Math.floor(rng() * 6);
-      for (let k = 0; k < 6; k++) {
-        put(buf, ox + x - 1 + (k % 2), oy + y + 1 + (k >> 1), TALL.dark);
-        put(buf, ox + x, oy + y - (k > 3 ? 0 : 2 - (k >> 1)), TALL.light);
-      }
-      put(buf, ox + x - 2, oy + y, TALL.light);
-      put(buf, ox + x + 2, oy + y, TALL.light);
-      put(buf, ox + x, oy + y - 3, TALL.light);
+    for (const [qx, qy] of [[0, 0], [8, 0], [0, 8], [8, 8]] as const) {
+      TALL_STAMP.forEach((row, y) => {
+        for (let x = 0; x < 8; x++) {
+          const ch = row[x];
+          if (ch === 'o') put(buf, ox + qx + x, oy + qy + y, TALL.out);
+          else if (ch === 'M') put(buf, ox + qx + x, oy + qy + y, TALL.mid);
+          else if (ch === 'L') put(buf, ox + qx + x, oy + qy + y, TALL.light);
+        }
+      });
     }
     return;
   }
-  fill(buf, ox, oy, kind === 'grass2' ? GRASS.b : GRASS.a);
-  blades(buf, ox, oy, rng, kind === 'grass2' ? 6 : 4, GRASS.dark, GRASS.light);
+  // Grama: dois tufinhos em posições fixas (em xadrez); "grass2" ganha um terceiro, mais apagado.
+  if (odd) {
+    tuft(buf, ox + 9, oy + 3);
+    tuft(buf, ox + 2, oy + 10);
+  } else {
+    tuft(buf, ox + 2, oy + 3);
+    tuft(buf, ox + 9, oy + 10);
+  }
+  if (kind === 'grass2') put(buf, ox + (odd ? 6 : 13), oy + 7, GRASS.tuft);
   if (kind === 'flowers') {
-    const petal = pick(rng, PETALS);
-    flower(buf, ox + 3 + Math.floor(rng() * 4), oy + 3 + Math.floor(rng() * 4), petal);
-    flower(buf, ox + 9 + Math.floor(rng() * 4), oy + 9 + Math.floor(rng() * 4), pick(rng, PETALS));
+    flower(buf, ox + (odd ? 4 : 11), oy + 5, pick(rng, PETALS));
+    if (rng() < 0.7) flower(buf, ox + (odd ? 12 : 4), oy + 12, pick(rng, PETALS));
+  }
+}
+
+/** Borda da trilha: a grama invade 2 a 3 pixels em onda, com contorno verde-escuro e uma linha de areia mais escura. */
+function pathBorder(buf: PixelBuf, ox: number, oy: number, edges: number): void {
+  if (edges === 0) return;
+  const wave = (t: number) => (t % 4 < 2 ? 2 : 3);
+  for (let t = 0; t < TILE; t++) {
+    const depth = wave(t);
+    const sides: [number, number, number, number][] = [];
+    if (edges & EDGE.north) sides.push([t, 0, 0, 1]);
+    if (edges & EDGE.south) sides.push([t, TILE - 1, 0, -1]);
+    if (edges & EDGE.west) sides.push([0, t, 1, 0]);
+    if (edges & EDGE.east) sides.push([TILE - 1, t, -1, 0]);
+    for (const [x0, y0, dx, dy] of sides) {
+      for (let k = 0; k < depth; k++) put(buf, ox + x0 + dx * k, oy + y0 + dy * k, GRASS.base);
+      put(buf, ox + x0 + dx * depth, oy + y0 + dy * depth, PATH.lip);
+      put(buf, ox + x0 + dx * (depth + 1), oy + y0 + dy * (depth + 1), PATH.rim);
+    }
   }
 }
 
@@ -367,7 +417,10 @@ export function paintTerrainCell(buf: PixelBuf, grid: TerrainGrid, i: number, se
     [EDGE.south, neighbor(0, 1)],
     [EDGE.west, neighbor(-1, 0)],
   ] as const;
-  paintGround(buf, ox, oy, grid.groundAt(i), seededRng(salt));
+  const ground = grid.groundAt(i);
+  let groundEdges = 0;
+  for (const [bit, n] of around) if (n !== null && grid.inside[n] && (grid.groundAt(n) === 'path') !== (ground === 'path')) groundEdges |= bit;
+  paintGround(buf, ox, oy, ground, seededRng(salt), groundEdges, { c, r });
   let shape = 0;
   for (const [bit, n] of around) if (n === null || !grid.inside[n]) shape |= bit;
   if (grid.shape === 'ellipse') fadeEdges(buf, ox, oy, shape, seededRng(salt ^ 0xabcdef));
