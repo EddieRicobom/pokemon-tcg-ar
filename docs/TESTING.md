@@ -1,6 +1,6 @@
 # Testes
 
-Estado em 2026-10-14: 105 arquivos de teste, 1105 testes unitários, todos passando. **Nenhum teste automatizado substitui um celular de verdade** (câmera, GPU, sensores e desempenho reais).
+Estado em 2026-10-15: 107 arquivos de teste, 1127 testes unitários, todos passando. **Nenhum teste automatizado substitui um celular de verdade** (câmera, GPU, sensores e desempenho reais).
 
 ## O que roda a cada pull request e a cada deploy
 
@@ -21,10 +21,10 @@ O job **"Tipos, testes e build"** é o que vale como porta de entrada para o mer
 | --- | --- |
 | `src/core/` | Câmera (permissões, erros em pt-BR), capacidades, GIF (**GIFs reais gerados no teste** por `__fixtures__/encode-gif.ts`: quadros parciais, transparência, descarte), suavização de pixels, espelho do jsDelivr, dados da PokéAPI/TCGdex e o **motor de batalha** (determinístico por `seededRng`: dano, tipos, críticos, condições, defesa, personalidades, resumo) |
 | `src/recognition/` | Detecção do contorno (imagens sintéticas e **fotos reais** em `__fixtures__/photos`), OCR e interpretação do texto, índices do catálogo e das ilustrações, fusão e decisão, agregação temporal, cliente do TCGdex |
-| `src/app/` | Controlador do escaneamento (sem navegador, por dependências injetadas), etapas do AR, preparo de uma e de várias cartas, equipe, rotas, ajustes visuais e de sensores, modo imersivo da tela cheia (`fullscreen.test.ts`) |
+| `src/app/` | Controlador do escaneamento (sem navegador, por dependências injetadas), etapas do AR, preparo de uma e de várias cartas, equipe, rotas, ajustes visuais e de sensores, modo imersivo da tela cheia (`fullscreen.test.ts`), salvamento da Vila (`village-store.test.ts`: ida e volta de tudo, cópia de segurança, falha de gravação, diário antigo cortado) |
 | `src/ar/` | Pose e âncora do sprite, suavização, sessões (uma e várias cartas), motor do rastreador (janela de busca), relé de quadros, **normalização de contraste** (tensores no backend `cpu`), pose fresca × repetida (sessões de uma e de várias cartas), preparo do alvo, painel de status, gestos, fontes do sprite |
 | `src/box/` | Cena da Caixa, orientação do giroscópio, chão, formação, passeio, **arena** (posição e escala), **diretor da batalha** (tempos, personalidades, estilos por tipo, luzes, ambiente, HUD), efeitos, **luzes dos golpes** (queda, uniformes, shader, poças, luz do ambiente) |
-| `src/core/village/`, `src/village/` | Vila: mapa, coleta, horta, loja, pesca, cozinha e comida de presente, catálogo (toda peça tem arte; altos com 16×32; luzes e animações), **vida social** (`social.test.ts`: 47 modelos todos alcançáveis, falas válidas, sorteio determinístico, resultados e escolhas, casal e briga, Diário limitado com favoritos, ausência, comentários, mapa de relações, arquivos antigos e lixo no disco) e a arte (personagem 16×24 em 4 direções) |
+| `src/core/village/`, `src/village/` | Vila: mapa, coleta, horta, loja, pesca, cozinha e comida de presente, catálogo (toda peça tem arte; altos com 16×32; luzes e animações), **vida social** (`social.test.ts`: 202 modelos todos possíveis, falas válidas, sorteio determinístico, datas especiais e aniversários só no dia certo, nome do treinador nas falas, resultados e escolhas, casal e briga, Diário de 60 com Álbum permanente de 500, marcos guardados sozinhos, ausência, comentários, mapa de relações, arquivos antigos e lixo no disco) e a arte (`player-art.test.ts`: os 40 treinadores têm visual próprio e distinto, desenhável em 4 direções e todos os passos) |
 | `src/cache/` | Cache de cartas (IndexedDB falso) e arquivos |
 | `src/App.test.ts` | Montagem da interface |
 

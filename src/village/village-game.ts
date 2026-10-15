@@ -348,6 +348,14 @@ export class VillageGame {
     return true;
   }
 
+  /** Interrompe o momento em andamento (sem chamar o `done`): quem chama decide o que fazer com ele. */
+  abortScene(): void {
+    const sc = this.scene;
+    if (!sc) return;
+    this.scene = null;
+    for (const id of sc.cast) this.speech.delete(id);
+  }
+
   /** Mostra falas soltas (as que vêm depois da sua decisão), sem juntar ninguém. */
   sayLines(cast: string[], lines: SceneLine[], done: () => void): void {
     if (this.scene) {

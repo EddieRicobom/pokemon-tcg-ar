@@ -5,28 +5,72 @@ import type { VillageState } from '../core/village/life';
 
 /** A Vila é a mesma para todo mundo (semente fixa); o progresso de cada um fica no aparelho. */
 export const VILLAGE_SEED = 20261014;
-const KEY = 'tcg-ar-vila-v1';
+export const VILLAGE_KEY = 'tcg-ar-vila-v1';
+/** Cópia do salvamento anterior, de tempos em tempos: se o principal vier corrompido, a Vila volta dela. */
+export const VILLAGE_BACKUP_KEY = 'tcg-ar-vila-v1-bak';
+const BACKUP_EVERY_MS = 5 * 60_000;
 
 let cachedMap: VillageMap | null = null;
 export function villageMap(): VillageMap {
   return (cachedMap ??= generateVillage(VILLAGE_SEED));
 }
 
+function parse(raw: string | null): VillageState | null {
+  if (!raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    return value && typeof value === 'object' ? normalizeVillage(value, VILLAGE_SEED, villageMap().spawn) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Lê o progresso: o salvamento principal, ou a cópia se ele estiver ilegível; sem nada, uma Vila nova. */
 export function loadVillage(): VillageState {
   const map = villageMap();
   try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? normalizeVillage(JSON.parse(raw), VILLAGE_SEED, map.spawn) : emptyVillage(VILLAGE_SEED, map.spawn);
+    return parse(localStorage.getItem(VILLAGE_KEY)) ?? parse(localStorage.getItem(VILLAGE_BACKUP_KEY)) ?? emptyVillage(VILLAGE_SEED, map.spawn);
   } catch {
     return emptyVillage(VILLAGE_SEED, map.spawn);
   }
 }
 
-export function saveVillage(state: VillageState): boolean {
+let lastBackup = 0;
+
+/** Grava o progresso. Devolve `false` se o aparelho recusar (espaço cheio, modo privado): quem chama avisa o jogador. */
+export function saveVillage(state: VillageState, now = Date.now()): boolean {
   try {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    const next = JSON.stringify(state);
+    // Antes de sobrescrever, guarda o que estava salvo (no máximo a cada 5 minutos), só se ainda for legível.
+    if (now - lastBackup > BACKUP_EVERY_MS) {
+      const prev = localStorage.getItem(VILLAGE_KEY);
+      if (prev && parse(prev)) {
+        try {
+          localStorage.setItem(VILLAGE_BACKUP_KEY, prev);
+          lastBackup = now;
+        } catch {
+          /* sem espaço para a cópia: o salvamento principal vale mais */
+        }
+      }
+    }
+    localStorage.setItem(VILLAGE_KEY, next);
     return true;
   } catch {
     return false;
   }
+}
+
+/** Pede ao navegador para não apagar os dados da Vila quando faltar espaço (melhor esforço; pode ser recusado). */
+export async function requestPersistence(): Promise<boolean> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.storage?.persist) return false;
+    return (await navigator.storage.persisted?.()) || (await navigator.storage.persist());
+  } catch {
+    return false;
+  }
+}
+
+/** Só para os testes. */
+export function resetBackupClock(): void {
+  lastBackup = 0;
 }

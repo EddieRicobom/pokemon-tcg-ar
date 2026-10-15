@@ -4503,3 +4503,61 @@ body.no-scroll .reward-toasts {
   margin: 0;
   font-size: 0.8rem;
 }
+
+/* Vila: Álbum de momentos guardados e retrato do treinador */
+.village-trainer {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.14);
+}
+
+.moment.pinned {
+  background: color-mix(in srgb, var(--surface-2) 88%, var(--gold));
+}
+
+.moment .pin-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.album .chips {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 0;
+  background: var(--surface);
+}
+
+.album-group h4 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+
+.album-group h4 small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.album-grid {
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+}
+
+.album-grid .album-emoji {
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.album-grid li:not(.have) {
+  opacity: 0.55;
+}
+
+.village-sheet.tall .chips button {
+  padding: 5px 10px;
+  font-size: 0.8rem;
+}

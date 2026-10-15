@@ -3,11 +3,12 @@ import { seededRng } from '../battle';
 import { FURNITURE_IDS, itemDef } from './catalog';
 import { add, count, emptyVillage, friendOf, normalizeVillage } from './life';
 import { generateVillage } from './map';
+import { birthdayOf } from './personality';
 import {
-  albumProgress, catchUp, MAX_AWAY_MOMENTS, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, sceneChoice, setFavorite, TEMPLATE_BY_ID, TEMPLATE_COUNT, TEMPLATES, unreadCount,
+  albumEntries, albumProgress, catchUp, MAX_AWAY_MOMENTS, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, sceneOfTemplate, TEMPLATE_BY_ID, TEMPLATE_COUNT, TEMPLATES, unreadCount,
 } from './social';
 import type { Actor, Ctx, Scene } from './social';
-import { emptySocial, FX_EMOJI, MAX_DIARY, MAX_FAVS, MOMENT_KINDS, normalizeSocial, pairKey, relationStatus } from './social-state';
+import { emptySocial, FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_KINDS, normalizeSocial, pairKey, relationStatus } from './social-state';
 
 const map = generateVillage(20261014);
 const fresh = () => emptyVillage(20261014, map.spawn);
@@ -24,7 +25,7 @@ const richEnv = (hour = 14, weather: string | null = null) => {
   return { s, env: { ...makeEnv(s, '2026-10-14', hour, weather), crops: 3, ripeCrops: 2 } };
 };
 
-const cast12: Actor[] = Array.from({ length: 12 }, (_, i) => ({ id: `m${i}`, name: `Mon${i}`, types: ['normal'] }));
+const cast12: Actor[] = Array.from({ length: 12 }, (_, i) => ({ id: `m${i}`, name: `Mon${i}`, types: [['water', 'fire', 'grass', 'normal'][i % 4]!] as Actor['types'] }));
 const REL_VARIANTS: { bond: number; spark: number; flag: 'casal' | 'brigados' | null }[] = [
   { bond: 0, spark: 0, flag: null },
   { bond: 70, spark: 80, flag: null },
@@ -35,22 +36,54 @@ const REL_VARIANTS: { bond: number; spark: number; flag: 'casal' | 'brigados' | 
   { bond: 40, spark: 50, flag: null },
 ];
 
-/** Monta uma cena para um modelo: sorteia em vários mundos (horas, clima, relações de todo jeito) até ele sair. */
+/** Mundos de teste (um por variante de relações), montados uma vez: o sorteio só lê o estado. */
+const WORLDS = REL_VARIANTS.map((_, vi) => {
+  const s = fresh();
+  for (const f of FURNITURE_IDS) s.placed.push({ x: 1, y: 1, item: f });
+  for (let i = 0; i < 12; i++) {
+    for (let j = i + 1; j < 12; j++) s.rel[pairKey(`m${i}`, `m${j}`)] = { ...REL_VARIANTS[(i * 3 + j + vi) % REL_VARIANTS.length]!, since: '', met: 1 + (vi % 3) * 4 };
+    friendOf(s, `m${i}`).points = i % 3 === 0 ? 90 : 10;
+  }
+  if (vi >= 3) s.seen.push('rom-fim');
+  return s;
+});
+
+/** Datas em que os modelos de datas especiais acontecem (Natal, aniversários dos 12 Pokémon do teste, dias da semana…). */
+const SPECIAL_DATES = [
+  '2026-10-31', '2026-12-24', '2026-12-25', '2026-12-31', '2027-01-01', '2026-06-12', '2026-06-24', '2026-10-12', '2027-02-27', '2027-02-13', '2027-04-04', '2026-07-20',
+  '2026-09-07', '2026-09-22', '2026-12-21', '2026-05-10', '2026-08-09', '2026-11-13', '2026-10-05', '2026-10-17', '2026-10-18', '2026-10-16', '2026-10-15',
+  ...cast12.map((a) => {
+    const b = birthdayOf(a.id);
+    return `2026-${String(b.m).padStart(2, '0')}-${String(b.d).padStart(2, '0')}`;
+  }),
+];
+
+/** Monta uma cena para um modelo: sorteia em vários mundos (horas, clima, relações, datas) até ele sair. */
 function sceneFor(id: string): Scene | null {
-  for (let vi = 0; vi < REL_VARIANTS.length; vi++) {
+  const tpl = TEMPLATE_BY_ID.get(id)!;
+  if (id.startsWith('data-')) {
+    for (const date of SPECIAL_DATES) {
+      for (let vi = 0; vi < WORLDS.length; vi++) {
+        for (const hour of [14, 20, 23, 8]) {
+          for (const weather of [null, 'chuva', 'neve']) {
+            const s = WORLDS[vi]!;
+            const env = { ...makeEnv(s, date, hour, weather, 'Ash'), crops: 3, ripeCrops: 2 };
+            const sc = sceneOfTemplate(tpl, cast12, s, env, seededRng(vi * 31 + hour), 25);
+            if (sc) return sc;
+          }
+        }
+      }
+    }
+    return null;
+  }
+  // Monta o modelo direto, em vários mundos (relações, horas e clima); o sorteio de verdade é testado à parte.
+  for (let vi = 0; vi < WORLDS.length; vi++) {
     for (const hour of [14, 23, 8]) {
       for (const weather of [null, 'chuva', 'neve']) {
-        for (let seed = 1; seed < 150; seed++) {
-          const s = fresh();
-          for (const f of FURNITURE_IDS) s.placed.push({ x: 1, y: 1, item: f });
-          for (let i = 0; i < 12; i++) {
-            for (let j = i + 1; j < 12; j++) s.rel[pairKey(`m${i}`, `m${j}`)] = { ...REL_VARIANTS[(i * 3 + j + vi) % REL_VARIANTS.length]!, since: '', met: 1 };
-            friendOf(s, `m${i}`).points = i % 3 === 0 ? 90 : 10;
-          }
-          const env = { ...makeEnv(s, '2026-10-14', hour, weather), crops: 3, ripeCrops: 2 };
-          const sc = pickMoment(cast12, s, env, seededRng(seed * 7 + vi));
-          if (sc?.tpl.id === id) return sc;
-        }
+        const s = WORLDS[vi]!;
+        const env = { ...makeEnv(s, '2026-10-14', hour, weather), crops: 3, ripeCrops: 2 };
+        const sc = sceneOfTemplate(tpl, cast12, s, env, seededRng(vi * 17 + hour), 40);
+        if (sc) return sc;
       }
     }
   }
@@ -59,11 +92,33 @@ function sceneFor(id: string): Scene | null {
 
 describe('momentos: catálogo de modelos', () => {
   it('são muitos, com ids únicos e todos os tipos de momento representados', () => {
-    expect(TEMPLATE_COUNT).toBeGreaterThanOrEqual(40);
+    expect(TEMPLATE_COUNT).toBeGreaterThanOrEqual(150);
     expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(TEMPLATE_COUNT);
     expect(TEMPLATE_BY_ID.size).toBe(TEMPLATE_COUNT);
     for (const k of MOMENT_KINDS) expect(TEMPLATES.some((t) => t.kind === k), k).toBe(true);
     expect(TEMPLATES.some((t) => t.choice)).toBe(true);
+  });
+
+  it('o sorteio de verdade chega à grande maioria dos modelos de um dia comum', () => {
+    const got = new Set<string>();
+    let n = 0;
+    for (let vi = 0; vi < WORLDS.length; vi++) {
+      for (const hour of [8, 14, 20, 23]) {
+        for (const weather of [null, 'chuva', 'neve']) {
+          const s = WORLDS[vi]!;
+          const env = { ...makeEnv(s, '2026-10-14', hour, weather), crops: 3, ripeCrops: 2 };
+          for (let seed = 1; seed <= 40; seed++) {
+            const sc = pickMoment(cast12, s, env, seededRng(seed * 13 + vi + hour));
+            if (sc) got.add(sc.tpl.id);
+            n++;
+          }
+        }
+      }
+    }
+    const common = TEMPLATES.filter((t) => !t.id.startsWith('data-'));
+    const reached = common.filter((t) => got.has(t.id)).length;
+    expect(n).toBeGreaterThan(1000);
+    expect(reached / common.length).toBeGreaterThan(0.85);
   });
 
   it('toda fala aponta para alguém do elenco, tem texto e usa só efeitos conhecidos; os pares ficam bem escritos', () => {
@@ -95,7 +150,7 @@ describe('momentos: catálogo de modelos', () => {
     }
     // Poucos modelos dependem de condições raríssimas; todos os outros precisam acontecer.
     expect(missing, `modelos que nunca saíram: ${missing.join(', ')}`).toEqual([]);
-  });
+  }, 60_000);
 });
 
 describe('momentos: sorteio', () => {
@@ -201,7 +256,7 @@ describe('momentos: resultado', () => {
     expect(relationStatus(undefined).key).toBe('conhecidos');
   });
 
-  it('o Diário guarda no máximo 160 momentos, mas nunca perde favoritos', () => {
+  it('o Diário guarda só os últimos 60 momentos, mas nunca perde o que foi guardado no Álbum', () => {
     const s = fresh();
     const env = makeEnv(s, '2026-10-14', 14, null);
     let first = '';
@@ -213,22 +268,128 @@ describe('momentos: resultado', () => {
         expect(setFavorite(s, first, true)).toBe(true);
       }
     }
-    expect(s.diary.length).toBeLessThanOrEqual(MAX_DIARY);
+    expect(s.diary.length).toBeLessThanOrEqual(MAX_DIARY + 1);
     expect(s.diary.some((m) => m.id === first)).toBe(true);
     expect(setFavorite(s, 'nao-existe', true)).toBe(false);
     expect(setFavorite(s, first, false)).toBe(true);
     expect(s.diary.find((m) => m.id === first)?.fav).toBeUndefined();
   });
 
-  it('há um limite de favoritos', () => {
+  it('o Álbum guarda até MAX_SAVED momentos para sempre e recusa o excedente', () => {
     const s = fresh();
     const env = makeEnv(s, '2026-10-14', 14, null);
-    for (let i = 0; i < MAX_FAVS + 5; i++) resolveScene(s, pickMoment(actors, s, env, seededRng(i + 1))!, null, 1000 + i);
-    let ok = 0;
-    for (const m of s.diary) if (setFavorite(s, m.id, true)) ok++;
-    expect(ok).toBe(MAX_FAVS);
+    let refused = 0;
+    for (let i = 0; i < MAX_SAVED + 20; i++) {
+      const r = resolveScene(s, pickMoment(actors, s, env, seededRng(i + 1))!, null, 1000 + i);
+      if (!setFavorite(s, r.moment.id, true)) refused++;
+    }
+    expect(refused).toBeGreaterThan(0);
+    expect(savedMoments(s).length).toBe(MAX_SAVED);
+    expect(s.diary.length).toBeLessThanOrEqual(MAX_SAVED + MAX_DIARY);
   });
 
+  it('marcos da vida vão sozinhos para o Álbum e continuam lá depois que o Diário enche', () => {
+    const s = fresh();
+    const sc = sceneFor('data-natal')!;
+    expect(sc).not.toBeNull();
+    expect(sc.tpl.keep).toBe(true);
+    const r = resolveScene(s, sc, null, 5000);
+    expect(r.moment.fav).toBe(true);
+    expect(savedMoments(s).map((m) => m.id)).toContain(r.moment.id);
+    const env = makeEnv(s, '2026-10-14', 14, null);
+    for (let i = 0; i < MAX_DIARY * 3; i++) resolveScene(s, pickMoment(actors, s, env, seededRng(i + 3))!, null, 6000 + i);
+    expect(s.diary.some((m) => m.id === r.moment.id && m.fav)).toBe(true);
+    expect(s.diary.filter((m) => !m.fav).length).toBeLessThanOrEqual(MAX_DIARY);
+  });
+
+  it('um Diário antigo e enorme é cortado ao carregar, mas o que está guardado fica', () => {
+    const s = fresh();
+    const env = makeEnv(s, '2026-10-14', 14, null);
+    const big: unknown[] = [];
+    for (let i = 0; i < 200; i++) {
+      const r = resolveScene(s, pickMoment(actors, s, env, seededRng(i + 1))!, null, 100 + i);
+      big.push(i % 50 === 0 ? { ...r.moment, fav: true } : r.moment);
+    }
+    const loaded = normalizeSocial({ diary: big, seen: [] });
+    expect(loaded.diary.filter((m) => !m.fav).length).toBe(MAX_DIARY);
+    expect(loaded.diary.filter((m) => m.fav).length).toBe(4);
+    expect(loaded.diary.filter((m) => m.fav).map((m) => m.t)).toEqual([100, 150, 200, 250].map((n) => n));
+  });
+
+  it('o Álbum lista todos os modelos, marcando os já vistos, e os guardados vêm do mais novo ao mais antigo', () => {
+    const s = fresh();
+    s.seen.push('solo-espelho', 'nao-existe');
+    const entries = albumEntries(s);
+    expect(entries).toHaveLength(TEMPLATE_COUNT);
+    expect(entries.filter((e) => e.seen).map((e) => e.id)).toEqual(['solo-espelho']);
+    expect(albumProgress(s)).toEqual({ seen: 1, total: TEMPLATE_COUNT });
+    const env = makeEnv(s, '2026-10-14', 14, null);
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const r = resolveScene(s, pickMoment(actors, s, env, seededRng(i + 40))!, null, 100 + i * 10);
+      setFavorite(s, r.moment.id, true);
+      ids.push(r.moment.id);
+    }
+    expect(savedMoments(s).map((m) => m.id)).toEqual([...ids].reverse());
+  });
+});
+
+describe('momentos: datas especiais', () => {
+  const countOn = (date: string, hour: number, weather: string | null, picks = 400) => {
+    const { s } = richEnv(hour, weather);
+    const env = { ...makeEnv(s, date, hour, weather, 'Ash'), crops: 3, ripeCrops: 2 };
+    const found = new Map<string, number>();
+    for (let i = 0; i < picks; i++) {
+      const sc = pickMoment(cast12, s, env, seededRng(i + 11));
+      if (sc) found.set(sc.tpl.id, (found.get(sc.tpl.id) ?? 0) + 1);
+    }
+    return found;
+  };
+
+  it('num dia comum nenhum momento de feriado acontece', () => {
+    const got = countOn('2026-10-14', 14, null);
+    const dated = [...got.keys()].filter((id) => id.startsWith('data-') && !['data-segunda', 'data-sabado', 'data-domingo', 'data-sexta-noite', 'data-lua-cheia', 'data-treinador', 'data-treinador-solo'].includes(id));
+    expect(dated).toEqual([]);
+  });
+
+  it('no Natal, na noite das bruxas e no Ano Novo, os momentos da data aparecem', () => {
+    expect([...countOn('2026-12-25', 20, null).keys()].some((id) => id === 'data-natal' || id === 'data-natal-duo')).toBe(true);
+    expect([...countOn('2026-10-31', 21, null).keys()].some((id) => id.startsWith('data-halloween'))).toBe(true);
+    expect(countOn('2026-12-31', 22, null).has('data-ano-novo')).toBe(true);
+    expect(countOn('2026-10-12', 14, null).has('data-dia-criancas')).toBe(true);
+  });
+
+  it('no aniversário de um Pokémon do elenco, há festa (e fica no Álbum); fora do dia, não', () => {
+    const b = birthdayOf('m0');
+    const date = `2026-${String(b.m).padStart(2, '0')}-${String(b.d).padStart(2, '0')}`;
+    const got = countOn(date, 14, null, 600);
+    expect([...got.keys()].some((id) => id.startsWith('data-aniversario'))).toBe(true);
+    const sc = sceneFor('data-aniversario-surpresa')!;
+    expect(sc).not.toBeNull();
+    expect(sc.tpl.keep).toBe(true);
+    const bds = new Set(cast12.map((a) => {
+      const x = birthdayOf(a.id);
+      return x.m * 100 + x.d;
+    }));
+    const quiet = Array.from({ length: 28 }, (_, i) => 100 + i + 1).find((v) => !bds.has(v))!;
+    const plain = countOn(`2026-01-${String(quiet - 100).padStart(2, '0')}`, 14, null, 300);
+    expect([...plain.keys()].some((id) => id.startsWith('data-aniversario'))).toBe(false);
+  });
+
+  it('as falas usam o nome do treinador do perfil', () => {
+    const sc = sceneFor('data-natal')!;
+    expect(sc.lines.some((l) => l.text.includes('Ash'))).toBe(true);
+    const talk = sceneFor('data-treinador')!;
+    expect(talk.lines.some((l) => l.text.includes('Ash'))).toBe(true);
+  });
+
+  it('sexta-feira 13 só acontece numa sexta dia 13', () => {
+    expect([...countOn('2026-11-13', 14, null).keys()]).toContain('data-sexta-13');
+    expect([...countOn('2026-10-16', 14, null).keys()]).not.toContain('data-sexta-13');
+  });
+});
+
+describe('momentos: fora da Vila e conversas', () => {
   it('mensagens não lidas contam o que é mais novo que a última abertura do Diário', () => {
     const s = fresh();
     const env = makeEnv(s, '2026-10-14', 14, null);

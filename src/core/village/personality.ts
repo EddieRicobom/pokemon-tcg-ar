@@ -25,3 +25,15 @@ export function hash(text: string): number {
 export function personalityOf(id: string): (typeof PERSONALITIES)[number] {
   return PERSONALITIES[hash(`p:${id}`) % PERSONALITIES.length]!;
 }
+
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
+
+/** O aniversário do Pokémon (mês 1–12 e dia), fixo pelo id da carta. */
+export function birthdayOf(id: string): { m: number; d: number } {
+  let n = (hash(`aniv:${id}`) >>> 3) % 365;
+  for (let m = 0; m < 12; m++) {
+    if (n < MONTH_DAYS[m]!) return { m: m + 1, d: n + 1 };
+    n -= MONTH_DAYS[m]!;
+  }
+  return { m: 12, d: 31 };
+}
