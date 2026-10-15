@@ -1,7 +1,7 @@
 import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
-import { drawPos, facing, makeWalker, moving, stepVillager, tryStep, advance } from '../core/village/actors';
+import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
 import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/village/life';
@@ -26,6 +26,11 @@ import { HOME_LANTERN, HOME_WINDOWS, paintArcade, paintArena, paintCafe, paintFo
  * acesas à noite, sombras, árvores ao vento, fumaça da chaminé, partículas, balões de emoji e os balões de fala dos
  * momentos entre os Pokémon. A lógica (andar, coletar, amizade, momentos) é a de `core/village`; aqui é só cola com o navegador.
  */
+
+/** Quanto tempo segurando contra um Pokémon parado até trocar de lugar com ele. */
+const SWAP_AFTER_MS = 450;
+/** Quanto tempo um seguidor trava até aparecer ao seu lado. */
+const LAG_LIMIT_S = 4;
 
 export interface VillageMon {
   id: string;
@@ -170,6 +175,10 @@ export class VillageGame {
   private readonly asleep = new Set<string>();
   /** Quem foi acordado batendo na porta fica de pé até este instante (relógio de `Date.now()`), mesmo em hora de dormir. */
   private readonly stayUp = new Map<string, number>();
+  /** Há quanto tempo (s) quem te segue está longe ou sem conseguir andar; passou do limite, ele aparece ao seu lado. */
+  private readonly lag = new Map<string, number>();
+  /** Há quanto tempo (ms) você empurra o botão contra um Pokémon parado; passou do limite, vocês trocam de lugar. */
+  private pushMs = 0;
   /** Avisos sobre o telhado de uma casa (por terreno), como o 😴 de quem não quer abrir a porta. */
   private readonly houseTags = new Map<number, { emoji: string; until: number }>();
   private nextSleepCheck = 0;
@@ -514,6 +523,36 @@ export class VillageGame {
     if (line.fx) this.pop(id, FX_EMOJI[line.fx]);
   }
 
+  /** Troca de lugar com o Pokémon à sua frente, se ele estiver só passeando (e não em cena, esperando você ou falando). */
+  private swapWithFront(): boolean {
+    const p = this.player;
+    const f = facing(p);
+    for (const [id, w] of this.villagers) {
+      if (this.asleep.has(id) || moving(w) || w.x !== f.x || w.y !== f.y) continue;
+      if (this.waiting === id || this.speech.has(id) || this.scene?.cast.includes(id)) return false;
+      return swapPlaces(p, w);
+    }
+    return false;
+  }
+
+  /** Quem te segue e ficou para trás (longe demais ou sem caminho por alguns segundos) reaparece ao seu lado. */
+  private catchUp(w: Walker, to: { x: number; y: number }, dt: number, now: number): void {
+    const far = Math.abs(to.x - w.x) + Math.abs(to.y - w.y);
+    const stuck = far > 10 || (far > 1 && !moving(w));
+    const lag = stuck ? (this.lag.get(w.id) ?? 0) + dt : 0;
+    if (lag < LAG_LIMIT_S) {
+      this.lag.set(w.id, lag);
+      return;
+    }
+    this.lag.delete(w.id);
+    const spot = findFree(this.map, to.x, to.y, (x, y) => this.occupied(x, y, w.id) || (x === to.x && y === to.y), this.rng);
+    this.particles.push({ kind: 'poof', x: w.x + 0.5, y: w.y + 0.6, vx: 0, vy: 0, born: now, life: 500 });
+    w.x = w.tx = spot.x;
+    w.y = w.ty = spot.y;
+    w.t = 1;
+    this.particles.push({ kind: 'poof', x: spot.x + 0.5, y: spot.y + 0.6, vx: 0, vy: 0, born: now, life: 500 });
+  }
+
   private updateScene(now: number): void {
     const s = this.scene;
     if (!s) return;
@@ -583,7 +622,14 @@ export class VillageGame {
       this.onStep?.();
       for (let k = 0; k < 2; k++) this.particles.push({ kind: 'dust', x: p.x + 0.5 + (this.rng() - 0.5) * 0.4, y: p.y + 0.95, vx: (this.rng() - 0.5) * 0.8, vy: -0.25 - this.rng() * 0.3, born: now, life: 420 });
     }
-    if (!moving(p) && this.held) tryStep(p, this.held, this.map, (x, y) => this.occupied(x, y, 'eu'));
+    if (!moving(p) && this.held) {
+      if (tryStep(p, this.held, this.map, (x, y) => this.occupied(x, y, 'eu'))) this.pushMs = 0;
+      else {
+        // Só virar para o Pokémon (para conversar) é um toque; segurar contra ele troca de lugar, para ninguém trancar a rua.
+        this.pushMs += dt * 1000;
+        if (this.pushMs >= SWAP_AFTER_MS && this.swapWithFront()) this.pushMs = 0;
+      }
+    } else if (!this.held) this.pushMs = 0;
     const behind = { x: p.x, y: p.y };
     this.updateSleep(now);
     for (const [id, w] of this.villagers) {
@@ -598,6 +644,7 @@ export class VillageGame {
       }
       const follow = this.state.follower === id ? behind : null;
       stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, follow);
+      if (follow) this.catchUp(w, follow, dt, now);
     }
     this.updateScene(now);
     // Clima.

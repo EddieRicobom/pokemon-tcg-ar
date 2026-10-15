@@ -98,7 +98,7 @@ describe('coleta, casa e móveis', () => {
     add(s, 'madeira', 3);
     expect(craft(s, 'cadeira').ok).toBe(true);
     expect(count(s, 'cadeira')).toBe(1);
-    const spot = { x: map.spawn.x, y: map.spawn.y };
+    const spot = find('grass'); // onde você nasce e a frente das portas ficam livres (ver layout.test.ts)
     expect(place(s, map, 'cadeira', spot.x, spot.y, () => false).ok).toBe(true);
     expect(place(s, map, 'cadeira', spot.x, spot.y, () => false).ok).toBe(false);
     const water = find('water');
