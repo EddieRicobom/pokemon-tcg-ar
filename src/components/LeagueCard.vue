@@ -12,9 +12,13 @@ const next = computed(() => nextChallenge(league.value));
 const rows = computed(() => [...GYMS, ...ELITE, CHAMPION].map((c) => ({ c, status: statusOf(league.value, c) })));
 const badgeCount = computed(() => league.value.badges.length);
 
+/** `challenge` avisa que o desafio foi marcado (a Arena da Vila fecha a Vila, que mora dentro da Caixa, para a luta aparecer). */
+const emit = defineEmits<{ challenge: [] }>();
+
 function challenge(c: Challenge): void {
   pendingChallenge.value = c.id;
   window.location.hash = routeHref('caixa');
+  emit('challenge');
 }
 
 const STATUS_PT = { locked: 'Bloqueado', open: 'Aberto', beaten: 'Vencido' } as const;

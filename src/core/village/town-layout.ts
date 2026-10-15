@@ -4,7 +4,7 @@
  * liberados (os outros aparecem cercados, com uma placa). Só dados e geometria, para o mapa poder usar sem ciclos.
  */
 
-export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'fountain';
+export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'fountain';
 
 export interface Building {
   id: string;
@@ -45,6 +45,10 @@ export const CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>;
   { kind: 'cafe', name: 'Café da Vila', x: 32, y: 17, w: 4, h: 2, unlock: 3 },
   { kind: 'mail', name: 'Correio', x: 37, y: 17, w: 3, h: 2, unlock: 5 },
   { kind: 'museum', name: 'Museu', x: 41, y: 17, w: 3, h: 2, unlock: 8 },
+  // O bairro dos jogos, ao norte da praça: cada prédio abre um modo do app (minigames, Pin Mode, Ginásios e PvP).
+  { kind: 'arcade', name: 'Fliperama', x: 19, y: 12, w: 4, h: 2, unlock: 2 },
+  { kind: 'pins', name: 'Pista de Pins', x: 14, y: 12, w: 4, h: 2, unlock: 4 },
+  { kind: 'arena', name: 'Arena', x: 9, y: 12, w: 4, h: 2, unlock: 6 },
 ];
 
 /** Os níveis da cidade (pelo nível de Treinador), com o que cada um traz. */

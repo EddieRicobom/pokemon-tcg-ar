@@ -4,7 +4,7 @@ import type { Interaction, ItemId, VillageState } from './life';
 import { isSolidTile, tileAt } from './map';
 import type { VillageMap } from './map';
 import { hash } from './personality';
-import { LOTS, TOWN_STAGES, townStage } from './town-layout';
+import { CIVIC, LOTS, TOWN_STAGES, townStage } from './town-layout';
 import type { Building } from './town-layout';
 
 export { buildingAt } from './map';
@@ -162,6 +162,97 @@ export function homeComment(s: VillageState, lot: number, names: readonly string
   return lines[Math.floor(rng() * lines.length)]!;
 }
 
+// ----------------------------------------------------------------------------- bater na porta
+
+export interface KnockResident {
+  id: string;
+  name: string;
+  /** Está dentro de casa (dormindo) agora? Quem já está na Vila não precisa sair. */
+  asleep: boolean;
+}
+
+export interface KnockResult {
+  /** Quem sai de casa por causa da batida (vazio se ninguém estava dentro ou se todos recusaram). */
+  wake: string[];
+  /** Quem saiu de mau humor (sono pesado de madrugada): a Vila mostra 😠 em vez de 🥱. */
+  grumpy: string[];
+  /** Quem estava dormindo e mandou você embora ("me deixa dormir!"). Bater de novo aumenta a chance de abrirem. */
+  refused: string[];
+  text: string;
+  /** Quanto tempo quem foi acordado fica de pé antes de poder voltar a dormir. */
+  stayUpMs: number;
+}
+
+/** Por quanto tempo (tempo real) quem foi acordado pela batida fica de pé: 20 minutos. */
+export const KNOCK_STAY_UP_MS = 20 * 60 * 1000;
+
+const listNames = (names: readonly string[]): string => (names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`);
+
+/** Madrugada: o sono mais pesado (23 h às 5 h). Nas pontas da noite o sono é leve. */
+export const isDeepSleep = (hour: number): boolean => hour >= 23 || hour < 5;
+
+/**
+ * Chance de quem dorme abrir a porta: 45 % no sono pesado e 75 % no leve, mais 25 pontos a cada batida anterior na mesma
+ * casa (na terceira seguida, ninguém aguenta mais e abre).
+ */
+export function knockOpenChance(hour: number, previousKnocks: number): number {
+  return Math.min(1, (isDeepSleep(hour) ? 0.45 : 0.75) + 0.25 * Math.max(0, previousKnocks));
+}
+
+/**
+ * O que acontece quando você bate na porta. Quem já está lá fora continua por lá. Quem está dentro dormindo pode sair
+ * (de mau humor, se for de madrugada) ou mandar você embora: "me deixa dormir!". `previousKnocks` conta as batidas
+ * anteriores nesta casa, e cada uma torna mais provável que abram.
+ */
+export function knockDoor(residents: readonly KnockResident[], hour: number, rng: Rng, previousKnocks = 0): KnockResult {
+  const none = { wake: [], grumpy: [], refused: [], stayUpMs: 0 };
+  if (residents.length === 0) return { ...none, text: 'Você bate... e nada. Ninguém mora aqui ainda.' };
+  const inside = residents.filter((r) => r.asleep);
+  if (inside.length === 0) {
+    const who = listNames(residents.map((r) => r.name));
+    return { ...none, text: `Toc, toc! Ninguém atende: ${who} ${residents.length > 1 ? 'já estão' : 'já está'} lá fora, passeando pela Vila. Procure por aí!` };
+  }
+  const deep = isDeepSleep(hour);
+  const chance = knockOpenChance(hour, previousKnocks);
+  const wake: string[] = [];
+  const grumpy: string[] = [];
+  const refused: string[] = [];
+  const lines: string[] = [];
+  const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)]!;
+  for (const r of inside) {
+    if (rng() < chance) {
+      wake.push(r.id);
+      if (deep) grumpy.push(r.id);
+      lines.push(
+        deep
+          ? pick([
+              `${r.name}: "Hmm? Que horas são?... Ah, é você. Tá bom, já saí. Mas é bom ser importante!"`,
+              `${r.name} abre a porta de touca de dormir, com cara de poucos amigos: "Aconteceu alguma coisa?"`,
+              `${r.name}: "Eu estava sonhando com bolo! Tudo bem, estou de pé... bocejando."`,
+            ])
+          : pick([
+              `${r.name} abre a porta bocejando: "Eu só estava cochilando, juro!"`,
+              `${r.name} aparece ajeitando o cabelo: "Já estava saindo!"`,
+              `${r.name} espia pela janela e sai logo em seguida: "Ah, visita! Vamos passear?"`,
+            ]),
+      );
+    } else {
+      refused.push(r.id);
+      lines.push(
+        pick([
+          `${r.name}, de dentro de casa: "Zzz... me deixa dormir!"`,
+          `${r.name}, abafado pela porta: "Volta amanhã... estou cansado demais."`,
+          `${r.name}: "Shhh! Estou dormindo!"`,
+          `${r.name}: "Só mais cinco minutinhos... vai embora!"`,
+        ]),
+      );
+    }
+  }
+  let text = `Toc, toc! ${lines.join(' ')}`;
+  if (refused.length > 0 && wake.length === 0) text += ' (Se insistir, quem sabe abrem.)';
+  return { wake, grumpy, refused, text, stayUpMs: wake.length > 0 ? KNOCK_STAY_UP_MS : 0 };
+}
+
 // ----------------------------------------------------------------------------- dormir
 
 /** O Pokémon está dormindo agora? Cada um tem sua hora de deitar (21 a 23 h) e de acordar (5 a 7 h); alguns são notívagos. */
@@ -180,27 +271,21 @@ export function unlockedBetween(from: number, to: number): { houses: number; bui
   let houses = 0;
   const buildings: string[] = [];
   for (const l of LOTS) if (l.unlock > from && l.unlock <= to) houses++;
-  for (const b of CIVIC_NAMES) if (b.unlock > from && b.unlock <= to) buildings.push(b.name);
+  for (const b of [...CIVIC].sort((x, y) => x.unlock - y.unlock)) if (b.unlock > from && b.unlock <= to) buildings.push(b.name);
   const a = townStage(from);
   const b = townStage(to);
   return { houses, buildings, stage: b.index > a.index ? b.name : null };
 }
 
-const CIVIC_NAMES = [
-  { name: 'Café da Vila', unlock: 3 },
-  { name: 'Correio', unlock: 5 },
-  { name: 'Museu', unlock: 8 },
-];
-
 /** O que vem no próximo nível que libera algo (para a dica da placa). */
 export function nextUnlock(level: number): { level: number; text: string } | null {
-  const levels = new Set<number>([...LOTS.map((l) => l.unlock), ...CIVIC_NAMES.map((b) => b.unlock)]);
+  const levels = new Set<number>([...LOTS.map((l) => l.unlock), ...CIVIC.map((b) => b.unlock)]);
   const next = [...levels].filter((l) => l > level).sort((a, b) => a - b)[0];
   if (next === undefined) return null;
   const parts: string[] = [];
   const houses = LOTS.filter((l) => l.unlock === next).length;
   if (houses > 0) parts.push(houses === 1 ? 'um terreno novo' : `${houses} terrenos novos`);
-  for (const b of CIVIC_NAMES) if (b.unlock === next) parts.push(b.name);
+  for (const b of CIVIC) if (b.unlock === next) parts.push(b.name);
   return { level: next, text: parts.join(' e ') };
 }
 

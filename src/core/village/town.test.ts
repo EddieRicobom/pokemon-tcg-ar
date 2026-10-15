@@ -3,7 +3,7 @@ import { seededRng } from '../battle';
 import { add, emptyVillage, friendOf, normalizeVillage, place } from './life';
 import { buildingAt, generateVillage, isSolidTile, tileAt } from './map';
 import {
-  assignHomes, cafeVisit, CAFE_PRICE, collectMail, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, homeRoof, homeValue, isAsleep, nextUnlock, paintRoof, ROOFS, roofIndex,
+  assignHomes, cafeVisit, CAFE_PRICE, collectMail, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, homeRoof, homeValue, isAsleep, isDeepSleep, knockDoor, KNOCK_STAY_UP_MS, knockOpenChance, nextUnlock, paintRoof, ROOFS, roofIndex,
   sanitizeTown, toggleDecor, townStage, unlockedBetween, unlockedLots, upgradeHome,
 } from './town';
 import { CIVIC, LOTS, TOWN_STAGES } from './town-layout';
@@ -28,10 +28,10 @@ function reach(from: { x: number; y: number }): Set<string> {
 }
 
 describe('a cidade no mapa', () => {
-  it('tem 14 terrenos de casa, Café, Correio, Museu e a fonte, sem se sobrepor', () => {
+  it('tem 14 terrenos de casa, os prédios da praça, o bairro dos jogos e a fonte, sem se sobrepor', () => {
     expect(map.buildings.filter((b) => b.kind === 'home')).toHaveLength(LOTS.length);
-    expect(map.buildings.map((b) => b.kind).filter((k) => k !== 'home').sort()).toEqual(['cafe', 'fountain', 'mail', 'museum']);
-    expect(CIVIC).toHaveLength(3);
+    expect(map.buildings.map((b) => b.kind).filter((k) => k !== 'home').sort()).toEqual(['arcade', 'arena', 'cafe', 'fountain', 'mail', 'museum', 'pins']);
+    expect(CIVIC).toHaveLength(6);
     const cells = new Set<string>();
     for (const b of map.buildings) {
       for (let y = b.y; y < b.y + b.h; y++) {
@@ -92,12 +92,24 @@ describe('níveis da cidade', () => {
 
   it('avisa o que abriu entre dois níveis e qual é o próximo marco', () => {
     const u = unlockedBetween(2, 5);
-    expect(u.buildings).toEqual(['Café da Vila', 'Correio']);
+    expect(u.buildings).toEqual(['Café da Vila', 'Pista de Pins', 'Correio']);
     expect(u.houses).toBe(unlockedLots(5).length - unlockedLots(2).length);
     expect(u.stage).toBe('Vila');
     expect(unlockedBetween(5, 5)).toEqual({ houses: 0, buildings: [], stage: null });
     expect(nextUnlock(1)?.level).toBe(2);
+    expect(nextUnlock(1)?.text).toContain('Fliperama');
     expect(nextUnlock(50)).toBeNull();
+  });
+
+  it('o bairro dos jogos abre por nível: Fliperama, Pista de Pins e Arena, nessa ordem', () => {
+    const games = CIVIC.filter((c) => ['arcade', 'pins', 'arena'].includes(c.kind));
+    expect(games.map((c) => c.kind)).toEqual(['arcade', 'pins', 'arena']);
+    expect(games.map((c) => c.name)).toEqual(['Fliperama', 'Pista de Pins', 'Arena']);
+    expect(games[0]!.unlock).toBeLessThan(games[1]!.unlock);
+    expect(games[1]!.unlock).toBeLessThan(games[2]!.unlock);
+    expect(unlockedBetween(1, 2).buildings).toEqual(['Fliperama']);
+    expect(unlockedBetween(5, 6).buildings).toEqual(['Arena']);
+    for (const c of games) expect(map.buildings.some((b) => b.id === c.kind && b.unlock === c.unlock)).toBe(true);
   });
 
   it('cada Pokémon mora num terreno liberado (e dividem a casa se faltar)', () => {
@@ -263,5 +275,78 @@ describe('Correio, Café e saves antigos', () => {
     expect(s.player).toMatchObject({ x: map.spawn.x, y: map.spawn.y });
     expect(place(s, map, 'cadeira', map.spawn.x + 1, map.spawn.y, () => false).ok).toBe(true);
     expect(sanitizeTown(s, map)).toBe(0);
+  });
+});
+
+describe('bater na porta', () => {
+  const squirtle = { id: 'a', name: 'Squirtle', asleep: true };
+  const bulba = { id: 'b', name: 'Bulbasaur', asleep: false };
+
+  it('casa vazia: ninguém atende e ninguém sai', () => {
+    const r = knockDoor([], 14, seededRng(1));
+    expect(r.wake).toEqual([]);
+    expect(r.text).toMatch(/Ninguém mora/);
+  });
+
+  it('quem já está lá fora continua por lá, sem ser "acordado" nem recusar', () => {
+    const r = knockDoor([{ ...bulba }], 14, seededRng(1));
+    expect(r.wake).toEqual([]);
+    expect(r.refused).toEqual([]);
+    expect(r.stayUpMs).toBe(0);
+    expect(r.text).toContain('Bulbasaur já está lá fora');
+    expect(knockDoor([bulba, { id: 'c', name: 'Charmander', asleep: false }], 14, seededRng(1)).text).toContain('Bulbasaur e Charmander já estão lá fora');
+  });
+
+  it('o sono pesado da madrugada recusa mais que o leve, e cada batida a mais aumenta a chance de abrirem', () => {
+    expect(isDeepSleep(2)).toBe(true);
+    expect(isDeepSleep(23)).toBe(true);
+    expect(isDeepSleep(22)).toBe(false);
+    expect(isDeepSleep(6)).toBe(false);
+    expect(knockOpenChance(2, 0)).toBeLessThan(knockOpenChance(22, 0));
+    expect(knockOpenChance(2, 1)).toBeGreaterThan(knockOpenChance(2, 0));
+    expect(knockOpenChance(2, 2)).toBe(0.95);
+    expect(knockOpenChance(2, 3)).toBe(1);
+    expect(knockOpenChance(22, 2)).toBe(1);
+  });
+
+  it('numa batida só pode abrir ou recusar, nunca os dois, e o texto cita quem dorme', () => {
+    let opened = 0;
+    let refusedN = 0;
+    for (let seed = 1; seed <= 200; seed++) {
+      const r = knockDoor([squirtle], 2, seededRng(seed));
+      expect(r.wake.length + r.refused.length).toBe(1);
+      expect(r.text).toContain('Squirtle');
+      if (r.wake.length) {
+        opened++;
+        expect(r.stayUpMs).toBe(KNOCK_STAY_UP_MS);
+        expect(r.grumpy).toEqual(['a']);
+      } else {
+        refusedN++;
+        expect(r.stayUpMs).toBe(0);
+        expect(r.text).toMatch(/dormir|Volta amanhã|Shhh|minutinhos/);
+        expect(r.text).toContain('insistir');
+      }
+    }
+    expect(opened).toBeGreaterThan(40);
+    expect(refusedN).toBeGreaterThan(40);
+  });
+
+  it('de manhã cedo ou de noitinha ninguém sai de mau humor', () => {
+    for (let seed = 1; seed <= 60; seed++) expect(knockDoor([squirtle], 22, seededRng(seed)).grumpy).toEqual([]);
+  });
+
+  it('insistindo, a porta abre: na terceira batida seguida todos saem', () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const r = knockDoor([squirtle, { id: 'd', name: 'Wartortle', asleep: true }], 3, seededRng(seed), 3);
+      expect(r.wake.sort()).toEqual(['a', 'd']);
+      expect(r.refused).toEqual([]);
+    }
+  });
+
+  it('numa casa com dois, só mexe com quem estava dentro; o sorteio é determinístico', () => {
+    const r = knockDoor([squirtle, bulba], 22, seededRng(2), 3);
+    expect(r.wake).toEqual(['a']);
+    expect(r.text).not.toContain('Bulbasaur');
+    expect(knockDoor([squirtle], 2, seededRng(7)).text).toBe(knockDoor([squirtle], 2, seededRng(7)).text);
   });
 });

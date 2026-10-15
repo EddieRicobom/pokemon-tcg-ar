@@ -212,6 +212,103 @@ export function paintMuseum(): PixelBuf {
   return b;
 }
 
+/** O Fliperama: 64×48, fachada roxa com letreiro de lâmpadas, joystick e duas telas acesas. */
+export function paintArcade(): PixelBuf {
+  const b = createBuf(64, 48);
+  rect(b, 2, 18, 60, 29, 0x4a2f86);
+  for (let y = 22; y < 47; y += 4) rect(b, 2, y, 60, 1, 0x3c2570);
+  // Letreiro com lâmpadas coloridas e um joystick.
+  rect(b, 6, 2, 52, 15, 0x1f1640);
+  rect(b, 8, 4, 48, 11, 0x2d2060);
+  const bulbs = [0xff5a5a, 0xffd84a, 0x5ad8ff, 0x7aff7a];
+  for (let x = 8; x < 56; x += 4) {
+    put(b, x, 4, bulbs[(x / 4) % 4]!);
+    put(b, x + 1, 14, bulbs[(x / 4 + 2) % 4]!);
+  }
+  rect(b, 18, 11, 12, 3, 0x9a9aa8);
+  rect(b, 23, 7, 2, 4, 0xc8c8d4);
+  disc(b, 24, 6, 3, 3, 0xe8453c);
+  rect(b, 36, 7, 4, 4, 0xffd84a);
+  rect(b, 42, 7, 4, 4, 0x5ad8ff);
+  rect(b, 48, 9, 4, 4, 0xff7aa8);
+  // Duas telas acesas com bichinhos de pixel.
+  for (const x of [6, 40]) {
+    rect(b, x - 1, 25, 18, 14, 0x1a1a22);
+    rect(b, x, 26, 16, 12, 0x0e2a3a);
+    for (let k = 0; k < 4; k++) rect(b, x + 2 + k * 3, 28 + (k % 2) * 3, 2, 2, k % 2 ? 0x7aff7a : 0xff7a7a);
+    rect(b, x + 6, 35, 4, 1, 0xffd84a);
+  }
+  // Porta.
+  rect(b, 25, 27, 12, 20, 0x2a1a50);
+  rect(b, 26, 28, 10, 18, 0x6a4ac8);
+  rect(b, 26, 28, 10, 2, 0x9a7aff);
+  put(b, 34, 38, 0xffd84a);
+  outline(b, 0x120a28);
+  return b;
+}
+
+/** A Pista de Pins: 64×48, telhado de madeira, três pinos grandes no letreiro e a boca da pista aberta. */
+export function paintPins(): PixelBuf {
+  const b = createBuf(64, 48);
+  gable(b, 32, 6, 22, 31, 0xb8453a);
+  rect(b, 3, 22, 58, 25, 0xe8d4a8);
+  for (let y = 26; y < 47; y += 4) rect(b, 3, y, 58, 1, 0xd0b888);
+  // Letreiro com três pinos e uma bola.
+  rect(b, 17, 9, 30, 13, 0x5a3a1c);
+  rect(b, 18, 10, 28, 11, 0xfff0d0);
+  for (const x of [22, 27, 32]) {
+    disc(b, x, 12, 2, 2, 0xffffff);
+    rect(b, x - 1, 14, 3, 5, 0xffffff);
+    rect(b, x - 1, 14, 3, 1, 0xe8453c);
+    rect(b, x - 2, 18, 5, 1, 0xdcdcdc);
+  }
+  disc(b, 40, 17, 3, 3, 0x2a3a8a);
+  put(b, 39, 16, 0x9ab8ff);
+  // A boca da pista: madeira clara em perspectiva e pinos ao fundo.
+  rect(b, 18, 30, 28, 17, 0x3a2410);
+  rect(b, 19, 31, 26, 16, 0xe8b868);
+  for (let k = 0; k < 6; k++) rect(b, 19 + k * 4 + 1, 31, 1, 16, 0xd0a050);
+  for (const [x, y] of [[29, 33], [32, 33], [35, 33], [30, 36], [34, 36], [32, 39]] as const) {
+    rect(b, x, y, 2, 3, 0xffffff);
+    put(b, x, y, 0xe8453c);
+  }
+  disc(b, 32, 45, 2, 1.5, 0x2a3a8a);
+  // Janelas dos lados.
+  window(b, 6, 30, 8, 8, 0x5a3a1c);
+  window(b, 50, 30, 8, 8, 0x5a3a1c);
+  outline(b, 0x2a1408);
+  return b;
+}
+
+/** A Arena: 64×48, muralha de pedra com arcada, faixas vermelha e azul e uma bola de captura no topo. */
+export function paintArena(): PixelBuf {
+  const b = createBuf(64, 48);
+  rect(b, 2, 16, 60, 31, 0xa8a49a);
+  for (let y = 18; y < 47; y += 5) for (let x = 2 + ((y / 5) % 2) * 5; x < 62; x += 10) rect(b, x, y, 9, 4, (x + y) % 3 === 0 ? 0xb8b4aa : 0x9a968c);
+  // Ameias.
+  for (let x = 2; x < 62; x += 8) rect(b, x, 12, 5, 5, 0xa8a49a);
+  // Bola de captura grande no centro, sobre a arcada.
+  disc(b, 32, 9, 7, 7, 0xffffff);
+  for (let y = 2; y <= 9; y++) for (let x = 25; x <= 39; x++) if ((x - 32) ** 2 + (y - 9) ** 2 <= 49) put(b, x, y, 0xe8453c);
+  rect(b, 25, 9, 15, 1, 0x1a1a22);
+  disc(b, 32, 9, 2, 2, 0xffffff);
+  put(b, 32, 9, 0x1a1a22);
+  // Faixas dos lados: uma vermelha, uma azul.
+  rect(b, 8, 20, 9, 18, 0xd8463c);
+  rect(b, 8, 36, 9, 2, 0xa02a24);
+  rect(b, 47, 20, 9, 18, 0x3f6fd0);
+  rect(b, 47, 36, 9, 2, 0x2a4a98);
+  rect(b, 10, 24, 5, 5, 0xffd84a);
+  rect(b, 49, 24, 5, 5, 0xffd84a);
+  // Arcada de entrada.
+  rect(b, 23, 26, 18, 21, 0x2a2a34);
+  for (let y = 26; y < 34; y++) { const k = 34 - y; for (let x = 23; x < 23 + k; x++) put(b, x, y, 0xa8a49a); for (let x = 41 - k; x < 41; x++) put(b, x, y, 0xa8a49a); }
+  rect(b, 26, 34, 12, 13, 0x1a1a22);
+  rect(b, 24, 44, 16, 3, 0x7a766c);
+  outline(b, 0x24221e);
+  return b;
+}
+
 /** A fonte da praça: 32×40 (2×2 blocos; o jato sobe acima do chão). Dois quadros para a água brilhar. */
 export function paintFountain(frame = 0): PixelBuf {
   const b = createBuf(32, 40);

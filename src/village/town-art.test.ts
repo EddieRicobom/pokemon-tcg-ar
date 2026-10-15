@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HOME_DECORS, ROOFS } from '../core/village/town';
-import { HOME_LANTERN, HOME_WINDOWS, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum } from './town-art';
+import { HOME_LANTERN, HOME_WINDOWS, paintArcade, paintArena, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum, paintPins } from './town-art';
 import type { PixelBuf } from '../box/ground-art';
 
 const opaque = (b: PixelBuf) => {
@@ -43,12 +43,14 @@ describe('arte da cidade', () => {
   });
 
   it('prédios, terreno, fonte e poste têm tamanho certo e desenho', () => {
-    const sized: [PixelBuf, number, number][] = [[paintCafe(), 64, 48], [paintMail(), 48, 48], [paintMuseum(), 48, 48], [paintLot(), 48, 48], [paintFountain(0), 32, 40], [paintLamp(false), 16, 32]];
+    const sized: [PixelBuf, number, number][] = [[paintCafe(), 64, 48], [paintMail(), 48, 48], [paintMuseum(), 48, 48], [paintArcade(), 64, 48], [paintPins(), 64, 48], [paintArena(), 64, 48], [paintLot(), 48, 48], [paintFountain(0), 32, 40], [paintLamp(false), 16, 32]];
     for (const [b, w, h] of sized) {
       expect([b.w, b.h]).toEqual([w, h]);
       expect(opaque(b)).toBeGreaterThan(150);
       expect(opaque(b)).toBeLessThan(w * h);
     }
+    expect(same(paintArcade(), paintPins())).toBe(false);
+    expect(same(paintPins(), paintArena())).toBe(false);
     expect(same(paintFountain(0), paintFountain(1))).toBe(false);
     expect(same(paintLamp(false), paintLamp(true))).toBe(false);
   });
