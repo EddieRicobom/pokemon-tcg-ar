@@ -71,6 +71,8 @@ export function getCache(): Promise<CardCache> {
     // Se o navegador apagou arquivos por falta de espaço, as cartas voltam a "parcial" em vez de fingirem estar prontas.
     await cache.verifyIntegrity().catch(() => 0);
     void cache.requestPersistence();
+    // Cartas shiny guardadas com o sprite normal (só o brilho) trocam pelo sprite shiny de verdade, em segundo plano.
+    void cache.refreshShinySprites().catch(() => 0);
     // As cartas que já estavam guardadas entram no Treinador sem XP.
     void cache.list().then((cards) => syncTrainerHistory(cards)).catch(() => undefined);
     return cache;
@@ -139,7 +141,7 @@ export async function loadPinData(cardId: string, dexId: number | undefined): Pr
 }
 
 /** Deixa pronta a forma Mega de uma carta (espécie, atributos e sprite) sem cobrar nada: ver `prepareMegaForm`. */
-export function prepareMegaFor(card: { id: string; name: string; baseDexId: number | undefined }): Promise<MegaPrepared> {
+export function prepareMegaFor(card: { id: string; name: string; baseDexId: number | undefined; shiny?: boolean }): Promise<MegaPrepared> {
   let storage: Storage | null = null;
   try {
     storage = window.localStorage;
@@ -149,7 +151,7 @@ export function prepareMegaFor(card: { id: string; name: string; baseDexId: numb
   return prepareMegaForm(card, {
     resolve: (dexId, variant) => resolveMegaForm(dexId, variant, { storage }),
     loadProfile: (formId) => loadProfile(formId, { storage }),
-    fetchSprite: (formId) => fetchSprite(formId),
+    fetchSprite: (formId, shiny) => fetchSprite(formId, undefined, { shiny }),
   });
 }
 

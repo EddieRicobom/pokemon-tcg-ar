@@ -2,7 +2,7 @@ import { TARGET_VERSION } from '../ar/target';
 import { fetchSprite as defaultFetchSprite } from '../ar/sprite-source';
 import { formDexId, spriteKeyIsFor } from '../core/dex-form';
 import { isMegaName } from '../core/mega';
-import { shinyForNewCard } from '../core/shiny';
+import { isShiny, shinyForNewCard } from '../core/shiny';
 import type { SpriteSource } from '../ar/sprite-source';
 import { computeFeatures, featuresFromJson, featuresToJson, FEATURE_VERSION } from '../recognition/hash';
 import type { CardFeatures } from '../recognition/hash';
@@ -30,7 +30,8 @@ export interface CardCacheDeps {
   db: CacheDb;
   assets: AssetBackend;
   fetchImpl?: typeof fetch;
-  fetchSprite?: (dexId: number) => Promise<SpriteSource | null>;
+  /** `options.shiny`: a carta é shiny, então tenta o sprite shiny (se não existir, devolve o normal). */
+  fetchSprite?: (dexId: number, options?: { shiny?: boolean }) => Promise<SpriteSource | null>;
   /** Compila o alvo de AR (arquivo .mind) a partir da imagem de referência. Opcional (Marco 4). */
   buildTarget?: (reference: Blob) => Promise<Blob>;
   /** Baixa a imagem em alta resolução só para compilar o alvo (não é guardada). Se falhar, usa a referência guardada. */
@@ -127,7 +128,7 @@ export class CardCache {
   private readonly db: CacheDb;
   private readonly assets: AssetBackend;
   private readonly fetchImpl: typeof fetch;
-  private readonly fetchSpriteImpl: (dexId: number) => Promise<SpriteSource | null>;
+  private readonly fetchSpriteImpl: (dexId: number, options?: { shiny?: boolean }) => Promise<SpriteSource | null>;
   private readonly now: () => number;
   private readonly maxCards: number;
   private readonly maxBytes: number;
@@ -139,7 +140,7 @@ export class CardCache {
     this.db = deps.db;
     this.assets = deps.assets;
     this.fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init));
-    this.fetchSpriteImpl = deps.fetchSprite ?? ((dexId) => defaultFetchSprite(dexId, this.fetchImpl));
+    this.fetchSpriteImpl = deps.fetchSprite ?? ((dexId, options) => defaultFetchSprite(dexId, this.fetchImpl, options));
     this.now = deps.now ?? (() => Date.now());
     this.maxCards = deps.maxCards ?? DEFAULT_MAX_CARDS;
     this.maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -220,6 +221,10 @@ export class CardCache {
       : {
           ...this.toRecord(input.card), schema: CACHE_SCHEMA_VERSION, reference: emptySlot(), sprite: emptySlot(), target: emptySlot(),
           firstSeenAt: timestamp, lastSeenAt: timestamp, scanCount: 1,
+          // O sorteio do shiny acontece aqui, no primeiro escaneamento da carta, para o sprite já ser baixado na variante certa.
+          // Se o escaneamento não terminar a carta é apagada, e o escaneamento seguinte sorteia de novo.
+          shiny: shinyForNewCard(input.card, this.deps.random),
+          ...(isMegaName(input.card.name) ? { mega: true } : {}),
           ...(options.pending ? { pending: timestamp } : {}),
         };
     if (input.reference && !card.features) card.features = featuresToJson(computeFeatures(input.reference));
@@ -274,13 +279,9 @@ export class CardCache {
     const base = (await this.get(prepared.id)) ?? prepared;
     const { pending: _pending, ...rest } = base;
     void _pending;
-    // Só o primeiro escaneamento completo sorteia o shiny e marca a carta Mega; reescanear nunca muda isso.
+    // O shiny e a marca Mega já foram decididos no primeiro registro da carta (`recordRecognition`); reescanear nunca muda isso.
     const card: CachedCard = isNew
-      ? {
-          ...rest, firstSeenAt: timestamp, lastSeenAt: timestamp, scanCount: 1,
-          shiny: shinyForNewCard(rest, this.deps.random),
-          ...(isMegaName(rest.name) ? { mega: true } : {}),
-        }
+      ? { ...rest, firstSeenAt: timestamp, lastSeenAt: timestamp, scanCount: 1 }
       : { ...rest, ...this.toRecord(input.card), lastSeenAt: timestamp, scanCount: base.scanCount + 1, schema: CACHE_SCHEMA_VERSION };
     await this.save(card);
     await this.enforceLimits(card.id);
@@ -290,6 +291,48 @@ export class CardCache {
       // O aviso é só um extra.
     }
     return card;
+  }
+
+  /**
+   * Carta shiny com o sprite normal guardado (a Gallade 244/236 de antes de o shiny existir, ou a primeira versão do shiny,
+   * que só tinha o brilho): troca pelo sprite shiny de verdade. O sprite antigo só sai depois de o novo estar guardado; sem
+   * rede (ou sem o arquivo) fica o que já funciona e tenta de novo na próxima vez. Devolve a mesma carta se nada mudou.
+   */
+  private async upgradeShinySprite(card: CachedCard): Promise<CachedCard> {
+    const species = card.dexIds[0];
+    if (species === undefined || card.sprite.state !== 'ok' || card.sprite.shinyRequested === true || !isShiny(card)) return card;
+    const dexId = formDexId(species, card.name);
+    try {
+      const sprite = await this.withRetry(() => this.fetchSpriteImpl(dexId, { shiny: true }));
+      if (!sprite) return card;
+      const oldKey = card.sprite.key;
+      const slot = this.spriteSlot(await this.storeAsset(card.id, 'sprite', sprite.url, sprite.blob, emptySlot()), sprite, true);
+      const next = { ...card, sprite: slot };
+      await this.save(next);
+      if (oldKey && oldKey !== slot.key) await this.release(card.id, oldKey);
+      return next;
+    } catch {
+      return card;
+    }
+  }
+
+  /**
+   * Passa pelas cartas shiny guardadas e troca o sprite normal pelo shiny (ver `upgradeShinySprite`). Roda em segundo plano
+   * ao abrir o app. Devolve quantas cartas mudaram.
+   */
+  async refreshShinySprites(): Promise<number> {
+    let changed = 0;
+    for (const card of [...(await this.load()).values()]) {
+      if (card.pending !== undefined) continue;
+      const next = await this.upgradeShinySprite(card);
+      if (next !== card) changed++;
+    }
+    return changed;
+  }
+
+  /** A ficha do sprite guardado, com o que se sabe sobre a variante shiny. */
+  private spriteSlot(stored: SlotInfo, sprite: SpriteSource, requestedShiny: boolean): SlotInfo {
+    return { ...stored, kind: sprite.kind, ...(requestedShiny ? { shinyRequested: true } : {}), ...(sprite.shiny ? { shiny: true } : {}) };
   }
 
   /** Guarda um arquivo, com contagem de referências para deduplicar (um GIF por Pokémon, não por carta). */
@@ -424,20 +467,23 @@ export class CardCache {
       await this.release(id, card.sprite.key);
       card = { ...card, sprite: { state: 'missing' } };
     }
+    const wantShiny = dexId !== undefined && isShiny(card);
     if (card.sprite.state !== 'ok') {
       if (dexId === undefined) {
         card = { ...card, sprite: { state: 'unavailable', error: 'Esta carta não tem um Pokémon (Treinador/Energia)' } };
       } else {
         try {
-          const sprite = await this.withRetry(() => this.fetchSpriteImpl(dexId));
+          const sprite = await this.withRetry(() => this.fetchSpriteImpl(dexId, wantShiny ? { shiny: true } : undefined));
           card = sprite
-            ? { ...card, sprite: { ...(await this.storeAsset(id, 'sprite', sprite.url, sprite.blob, card.sprite)), kind: sprite.kind } }
+            ? { ...card, sprite: this.spriteSlot(await this.storeAsset(id, 'sprite', sprite.url, sprite.blob, card.sprite), sprite, wantShiny) }
             : { ...card, sprite: { state: 'unavailable', error: 'Nenhum sprite encontrado para este Pokémon' } };
         } catch (error) {
           card = { ...card, sprite: this.errorSlot(card.sprite, error) };
         }
       }
       await this.save(card);
+    } else if (wantShiny) {
+      card = await this.upgradeShinySprite(card);
     }
 
     // 3) Alvo de AR (compilado a partir da imagem em alta resolução; a de baixa só serve de reserva)

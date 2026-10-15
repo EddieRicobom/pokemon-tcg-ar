@@ -22,7 +22,8 @@ export interface StartArOptions {
   shiny?: boolean;
   /** Sprite já guardado no cache (se houver); senão busca na rede. */
   cachedSprite?: SpriteSource | null;
-  fetchSprite: (dexId: number) => Promise<SpriteSource | null>;
+  /** `shiny`: a carta é shiny; tenta o sprite shiny (se não existir, o normal). */
+  fetchSprite: (dexId: number, shiny?: boolean) => Promise<SpriteSource | null>;
   /** Painel de status no chão: nome da carta e carregador dos dados (PokéAPI + TCGdex). Sem isso, não há painel. */
   battle?: {
     name: string;
@@ -64,7 +65,7 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
       sprite,
       options.dexId,
       {
-        getSprite: async (dexId) => options.cachedSprite ?? options.fetchSprite(dexId),
+        getSprite: async (dexId) => options.cachedSprite ?? options.fetchSprite(dexId, options.shiny === true),
         decodeStatic: decodeAtNativeSize,
       },
       options.onSprite,

@@ -31,7 +31,7 @@ export interface StartMultiOptions {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
   cards: MultiCard[];
-  fetchSprite: (dexId: number) => Promise<SpriteSource | null>;
+  fetchSprite: (dexId: number, shiny?: boolean) => Promise<SpriteSource | null>;
   onState: (state: MultiArState) => void;
   onSprite: (cardId: string, state: SpriteLoadState) => void;
 }
@@ -68,7 +68,7 @@ export async function startMulti(options: StartMultiOptions): Promise<RunningMul
       loadSpriteInto(
         slots[i]!.sprite,
         card.dexId,
-        { getSprite: async (dexId) => card.cachedSprite ?? options.fetchSprite(dexId), decodeStatic: decodeAtNativeSize },
+        { getSprite: async (dexId) => card.cachedSprite ?? options.fetchSprite(dexId, card.shiny === true), decodeStatic: decodeAtNativeSize },
         (state) => options.onSprite(card.cardId, state),
       ),
     ),

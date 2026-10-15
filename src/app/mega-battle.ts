@@ -8,6 +8,8 @@ export interface MegaCandidate {
   name: string;
   /** Número da Pokédex da espécie base (da carta). */
   baseDexId: number | undefined;
+  /** A carta é shiny: a forma Mega também usa o sprite shiny, se existir. */
+  shiny?: boolean;
 }
 
 /** Uma troca de forma pronta: dados da PokéAPI e o sprite já decodificado (`S` é o que a Caixa usa para desenhar). */

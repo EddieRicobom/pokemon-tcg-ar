@@ -616,15 +616,18 @@ describe('shiny e Mega no primeiro escaneamento', () => {
     expect((await cache.get('swsh1-65'))?.shiny).toBe(true);
   });
 
-  it('escaneamento que falha não sorteia nem deixa carta: o sorteio é só do primeiro escaneamento completo', async () => {
-    const draws: number[] = [];
-    const cache = withTarget({ random: () => { draws.push(1); return 0.5; } });
+  it('escaneamento que falha não deixa carta nem marca; o seguinte sorteia de novo', async () => {
+    let draws = 0;
+    let value = 0.5;
+    const cache = withTarget({ random: () => { draws++; return value; } });
     failing.add('sprite:25');
     expect((await cache.scanCard({ card: pikachu })).saved).toBe(false);
-    expect(draws).toEqual([]);
+    expect(await cache.get('base1-58')).toBeUndefined();
     failing.delete('sprite:25');
+    value = 0.0;
     expect((await cache.scanCard({ card: pikachu })).saved).toBe(true);
-    expect(draws).toHaveLength(1);
+    expect(draws).toBe(2);
+    expect((await cache.get('base1-58'))?.shiny).toBe(true);
   });
 
   it('Gallade 244/236 sai shiny mesmo com o pior sorteio, e é marcada como Mega', async () => {
@@ -637,6 +640,98 @@ describe('shiny e Mega no primeiro escaneamento', () => {
     const cache = withTarget({ random: () => 0.5 });
     await cache.scanCard({ card: pikachu });
     expect((await cache.get('base1-58'))?.mega).toBeUndefined();
+  });
+
+  it('carta shiny nova baixa o sprite shiny; carta normal baixa o normal', async () => {
+    const asked: { dexId: number; shiny?: boolean }[] = [];
+    const fetchSprite: NonNullable<CardCacheDeps['fetchSprite']> = async (dexId, options) => {
+      asked.push({ dexId, shiny: options?.shiny });
+      const shiny = options?.shiny === true;
+      return { kind: 'gif', url: `https://sprites/${shiny ? 'shiny/' : ''}${dexId}.gif`, blob: gif(), ...(shiny ? { shiny: true } : {}) };
+    };
+    const lucky = withTarget({ random: () => 0.01, fetchSprite });
+    await lucky.scanCard({ card: pikachu });
+    const normal = withTarget({ random: () => 0.5, fetchSprite });
+    await normal.scanCard({ card: pikachu2 });
+    expect(asked).toEqual([{ dexId: 25, shiny: true }, { dexId: 25, shiny: undefined }]);
+    expect((await lucky.get('base1-58'))?.sprite).toMatchObject({ key: 'https://sprites/shiny/25.gif', shiny: true, shinyRequested: true });
+    expect((await normal.get('swsh1-65'))?.sprite).toMatchObject({ key: 'https://sprites/25.gif' });
+    expect((await normal.get('swsh1-65'))?.sprite.shiny).toBeUndefined();
+  });
+
+  it('sem sprite shiny para o Pokémon, guarda o normal e não finge que é shiny', async () => {
+    const fetchSprite: NonNullable<CardCacheDeps['fetchSprite']> = async (dexId) => ({ kind: 'gif', url: `https://sprites/${dexId}.gif`, blob: gif() });
+    const cache = withTarget({ random: () => 0.01, fetchSprite });
+    await cache.scanCard({ card: pikachu });
+    const card = await cache.get('base1-58');
+    expect(card?.shiny).toBe(true);
+    expect(card?.sprite).toMatchObject({ key: 'https://sprites/25.gif', shinyRequested: true });
+    expect(card?.sprite.shiny).toBeUndefined();
+  });
+
+  it('Gallade 244/236 guardada antes com o sprite normal troca pelo shiny ao reescanear; o antigo é liberado', async () => {
+    const normalOnly: NonNullable<CardCacheDeps['fetchSprite']> = async (dexId) => ({ kind: 'gif', url: `https://sprites/${dexId}.gif`, blob: gif() });
+    const before = withTarget({ fetchSprite: normalOnly });
+    await before.scanCard({ card: gallade });
+    // Como era antes do shiny existir: sem a marca e sem o pedido de sprite shiny.
+    const stored = (await before.get('me03-244'))!;
+    const { shinyRequested: _requested, ...plainSprite } = stored.sprite;
+    void _requested;
+    const { shiny: _shiny, ...plainCard } = stored;
+    void _shiny;
+    await db.put('cards', { ...plainCard, sprite: plainSprite });
+    expect((await before.get('me03-244'))?.sprite.key).toBe('https://sprites/475.gif');
+
+    const calls: boolean[] = [];
+    const shinyAware: NonNullable<CardCacheDeps['fetchSprite']> = async (dexId, options) => {
+      calls.push(options?.shiny === true);
+      return { kind: 'gif', url: `https://sprites/shiny/${dexId}.gif`, blob: gif(), shiny: true };
+    };
+    const after = withTarget({ fetchSprite: shinyAware });
+    await after.scanCard({ card: gallade });
+    expect(calls).toEqual([true]);
+    const card = await after.get('me03-244');
+    expect(card?.sprite).toMatchObject({ key: 'https://sprites/shiny/475.gif', shiny: true, shinyRequested: true });
+    // O arquivo normal não fica órfão.
+    expect((await db.getAll('assets')).map((r) => r.url)).not.toContain('https://sprites/475.gif');
+  });
+
+  it('refreshShinySprites troca em segundo plano o sprite das cartas shiny guardadas só com o brilho (e só elas)', async () => {
+    const normalOnly: NonNullable<CardCacheDeps['fetchSprite']> = async (dexId) => ({ kind: 'gif', url: `https://sprites/${dexId}.gif`, blob: gif() });
+    const before = withTarget({ fetchSprite: normalOnly, random: () => 0.5 });
+    await before.scanCard({ card: gallade });
+    await before.scanCard({ card: pikachu });
+    for (const id of ['me03-244', 'base1-58']) {
+      const c = (await before.get(id))!;
+      const { shinyRequested: _r, ...sprite } = c.sprite;
+      void _r;
+      await db.put('cards', { ...c, sprite });
+    }
+    const calls: number[] = [];
+    const shinyAware: NonNullable<CardCacheDeps['fetchSprite']> = async (dexId, options) => {
+      calls.push(dexId);
+      return { kind: 'gif', url: `https://sprites/${options?.shiny ? 'shiny/' : ''}${dexId}.gif`, blob: gif(), ...(options?.shiny ? { shiny: true } : {}) };
+    };
+    const after = withTarget({ fetchSprite: shinyAware });
+    expect(await after.refreshShinySprites()).toBe(1);
+    expect(calls).toEqual([475]);
+    expect((await after.get('me03-244'))?.sprite).toMatchObject({ key: 'https://sprites/shiny/475.gif', shiny: true });
+    expect((await after.get('base1-58'))?.sprite.key).toBe('https://sprites/25.gif');
+    expect(await after.refreshShinySprites()).toBe(0);
+    expect(calls).toEqual([475]);
+  });
+
+  it('se a troca para o sprite shiny falha (sem rede), o sprite normal continua e a carta não perde nada', async () => {
+    const normalOnly: NonNullable<CardCacheDeps['fetchSprite']> = async (dexId) => ({ kind: 'gif', url: `https://sprites/${dexId}.gif`, blob: gif() });
+    const cache = withTarget({ fetchSprite: normalOnly, random: () => 0.5 });
+    await cache.scanCard({ card: gallade }); // sempre shiny, mas o fetch só devolve o normal
+    const stored = (await cache.get('me03-244'))!;
+    await db.put('cards', { ...stored, sprite: { ...stored.sprite, shinyRequested: undefined } });
+    const offline: NonNullable<CardCacheDeps['fetchSprite']> = async () => { throw new SpriteNetworkError('offline', 'x'); };
+    const again = withTarget({ fetchSprite: offline });
+    const outcome = await again.scanCard({ card: gallade });
+    expect(outcome.saved).toBe(true);
+    expect((await again.get('me03-244'))?.sprite).toMatchObject({ state: 'ok', key: 'https://sprites/475.gif' });
   });
 
   it('a lista devolve shiny e mega junto da carta', async () => {
