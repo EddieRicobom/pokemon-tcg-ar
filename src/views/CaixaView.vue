@@ -27,6 +27,7 @@ import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import TeamPicker from '../components/TeamPicker.vue';
 import BoxPvpPanel from '../components/BoxPvpPanel.vue';
+import VillageView from '../components/VillageView.vue';
 import { boxPvp, sendTeam, startBoxPvp } from '../app/box-pvp-store';
 import type { BoxPvpStart } from '../app/box-pvp-store';
 import { boxPvpBattle, BOX_PVP_LABELS_PT, BOX_PVP_MAX } from '../pvp/box-wire';
@@ -100,6 +101,8 @@ const SLOT_CHOICES: { slot: RosterSlot; label: string; title: string }[] = [
   { slot: 'out', label: 'Fora', title: 'Fica de fora da luta' },
 ];
 const loadingCreatures = ref(false);
+/** Modo vida (a Vila, sem câmera). */
+const showVillage = ref(false);
 const picked = ref<{ name: string; detail: string; dexId?: number; shiny?: boolean; mega?: boolean } | null>(null);
 const phoneHeight = ref(DEFAULT_PHONE_HEIGHT_M);
 const boxSize = ref(2.4);
@@ -983,6 +986,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="actions">
+      <button type="button" class="village-cta" :disabled="phase !== 'idle'" @click="showVillage = true">Modo vida: entrar na Vila (sem câmera)</button>
       <button type="button" class="primary" :disabled="phase !== 'idle'" @click="open">
         {{ phase === 'starting' ? 'Abrindo…' : 'Abrir câmera e sensores' }}
       </button>
@@ -999,5 +1003,6 @@ onBeforeUnmount(() => {
       <summary>Escolher a equipe da caixa (até 40)</summary>
       <TeamPicker />
     </details>
+    <VillageView v-if="showVillage" @close="showVillage = false" />
   </section>
 </template>
