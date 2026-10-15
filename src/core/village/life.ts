@@ -4,7 +4,7 @@ import { ACCESSORY_IDS, FURNITURE_IDS, isItem, itemDef, ITEMS, MATERIAL_IDS, sho
 import { personalityOf } from './personality';
 import { emptySocial, normalizeSocial } from './social-state';
 import type { Answer, Lingo, Moment, Relation } from './social-state';
-import { tileAt } from './map';
+import { cutsOff, isFront, tileAt } from './map';
 import type { Tile, VillageMap } from './map';
 
 /**
@@ -296,12 +296,24 @@ export function cook(s: VillageState, item: ItemId): Interaction {
 
 export const isPlaced = (s: VillageState, x: number, y: number) => s.placed.some((f) => f.x === x && f.y === y);
 
+/**
+ * Um móvel ou uma planta em (x, y) atrapalharia a cidade? Devolve o motivo (para a tela) ou `null` se pode. Portas, a
+ * frente da loja e o ponto onde você nasce ficam livres, e nada pode fechar o caminho de uma casa, de um prédio ou da loja.
+ */
+export function blocksRoute(s: VillageState, map: VillageMap, x: number, y: number): string | null {
+  if (isFront(map, x, y)) return 'Deixe livre a frente das portas e da loja, para todo mundo passar.';
+  if (cutsOff(map, (px, py) => (px === x && py === y) || isPlaced(s, px, py) || cropAt(s, px, py) !== undefined)) return 'Isso fecharia o caminho da cidade. Escolha outro lugar.';
+  return null;
+}
+
 /** Põe um móvel no chão (grama, flores ou trilha, sem nada em cima). */
 export function place(s: VillageState, map: VillageMap, item: FurnitureId, x: number, y: number, occupied: (x: number, y: number) => boolean): Interaction {
   if (itemDef(item)?.kind !== 'furniture') return { ok: false, message: 'Só móveis podem ser colocados no chão.' };
   if (count(s, item) <= 0) return { ok: false, message: `Você não tem ${itemName(item)}.` };
   const t = tileAt(map, x, y);
   if (!['grass', 'path', 'flower', 'tall', 'sand'].includes(t) || isPlaced(s, x, y) || cropAt(s, x, y) || occupied(x, y)) return { ok: false, message: 'Não dá para colocar aí. Fique de frente para um lugar livre.' };
+  const closed = blocksRoute(s, map, x, y);
+  if (closed) return { ok: false, message: closed };
   s.inventory[item] = count(s, item) - 1;
   s.placed.push({ x, y, item });
   return { ok: true, message: `${itemName(item)} colocado!` };
@@ -531,6 +543,8 @@ export function plant(s: VillageState, map: VillageMap, seed: ItemId, x: number,
   if (count(s, seed) <= 0) return { ok: false, message: `Você não tem ${def.name}.` };
   const t = tileAt(map, x, y);
   if (!['grass', 'flower', 'tall'].includes(t) || cropAt(s, x, y) || isPlaced(s, x, y) || occupied(x, y)) return { ok: false, message: 'Plante na grama livre à sua frente.' };
+  const closed = blocksRoute(s, map, x, y);
+  if (closed) return { ok: false, message: closed };
   s.inventory[seed] = count(s, seed) - 1;
   s.crops.push({ x, y, seed, stage: 0, wateredAt: now });
   return { ok: true, message: `Você plantou ${def.name}. Regue para crescer!` };

@@ -1,7 +1,7 @@
 import type { Rng } from '../battle';
 import { add, canAfford, friendOf, itemName, pay } from './life';
 import type { Interaction, ItemId, VillageState } from './life';
-import { isSolidTile, tileAt } from './map';
+import { cutsOff, isFront, isSolidTile, tileAt } from './map';
 import type { VillageMap } from './map';
 import { hash } from './personality';
 import { CIVIC, LOTS, TOWN_STAGES, townStage } from './town-layout';
@@ -361,6 +361,30 @@ export function sanitizeTown(s: VillageState, map: VillageMap): number {
   const before = s.crops.length;
   s.crops = s.crops.filter((c) => !bad(c.x, c.y));
   fixed += before - s.crops.length;
+  // Móveis de antes que ficaram na frente de uma porta ou fecham um caminho voltam para a mochila (a horta fica).
+  const taken = (x: number, y: number) => s.placed.some((f) => f.x === x && f.y === y) || s.crops.some((c) => c.x === x && c.y === y);
+  for (let i = s.placed.length - 1; i >= 0; i--) {
+    const f = s.placed[i]!;
+    if (isFront(map, f.x, f.y)) {
+      add(s, f.item, 1);
+      s.placed.splice(i, 1);
+      fixed++;
+    }
+  }
+  while (s.placed.length > 0 && cutsOff(map, taken)) {
+    // Tira primeiro o móvel que, sozinho, resolve; se nenhum resolve sozinho, o mais recente.
+    let pick = s.placed.length - 1;
+    for (let i = s.placed.length - 1; i >= 0; i--) {
+      const f = s.placed[i]!;
+      if (!cutsOff(map, (x, y) => taken(x, y) && !(x === f.x && y === f.y))) {
+        pick = i;
+        break;
+      }
+    }
+    add(s, s.placed[pick]!.item, 1);
+    s.placed.splice(pick, 1);
+    fixed++;
+  }
   if (bad(s.player.x, s.player.y)) {
     s.player.x = map.spawn.x;
     s.player.y = map.spawn.y;

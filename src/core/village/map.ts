@@ -62,7 +62,7 @@ function blob(map: VillageMap, rng: Rng, cx: number, cy: number, r: number, tile
 
 export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap {
   const rng = seededRng(seed);
-  const map: VillageMap = { w, h, tiles: new Array<Tile>(w * h).fill('grass'), spawn: { x: Math.floor(w / 2), y: Math.floor(h / 2) + 3 }, plot: { x: Math.floor(w / 2) - 8, y: Math.floor(h / 2) + 1, w: 4, h: 3 }, shop: { x: Math.floor(w / 2) + 4, y: Math.floor(h / 2) - 4, w: 3, h: 2 }, buildings: buildingsFor(w, h) };
+  const map: VillageMap = { w, h, tiles: new Array<Tile>(w * h).fill('grass'), spawn: { x: Math.floor(w / 2), y: Math.floor(h / 2) + 3 }, plot: { x: Math.floor(w / 2) - 8, y: Math.floor(h / 2) + 2, w: 4, h: 3 }, shop: { x: Math.floor(w / 2) + 4, y: Math.floor(h / 2) - 4, w: 3, h: 2 }, buildings: buildingsFor(w, h) };
   // Borda de floresta (2 a 3 blocos, irregular).
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -100,7 +100,8 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
   for (let x = cx; x <= lake.x - 4; x++) setTile(map, x, lake.y, tileAt(map, x, lake.y) === 'water' ? 'water' : 'path');
   // Terreno da casa, limpo, com uma trilha até a praça.
   const p = map.plot;
-  for (let y = p.y - 1; y <= p.y + p.h; y++) for (let x = p.x - 1; x <= p.x + p.w; x++) setTile(map, x, y, 'grass');
+  // (a rua principal passa rente ao terreno: o que já é trilha continua trilha)
+  for (let y = p.y - 1; y <= p.y + p.h; y++) for (let x = p.x - 1; x <= p.x + p.w; x++) if (tileAt(map, x, y) !== 'path') setTile(map, x, y, 'grass');
   for (let y = p.y; y < p.y + p.h; y++) for (let x = p.x; x < p.x + p.w; x++) setTile(map, x, y, 'plot');
   for (let x = p.x + p.w; x < cx; x++) setTile(map, x, p.y + p.h - 1, 'path');
   // Loja na praça, com a frente para a trilha.
@@ -112,14 +113,157 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
   const lower = lowerStreetRow(h);
   if (lower + 1 < h - 3) for (let x = 2; x < w - 2; x++) for (const y of [lower, lower + 1]) setTile(map, x, y, 'path');
   for (const b of map.buildings) {
-    for (let y = b.y - 1; y <= b.y + b.h; y++) for (let x = b.x - 1; x <= b.x + b.w; x++) if (tileAt(map, x, y) !== 'path') setTile(map, x, y, 'grass');
+    for (let y = b.y - 1; y <= b.y + b.h; y++) for (let x = b.x - 1; x <= b.x + b.w; x++) if (!['path', 'plot', 'shop'].includes(tileAt(map, x, y))) setTile(map, x, y, 'grass');
     for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) setTile(map, x, y, 'building');
     if (b.kind !== 'fountain') for (let x = b.x; x < b.x + b.w; x++) setTile(map, x, b.y + b.h, 'path');
   }
   for (const l of lampSpots(w, h)) if (['grass', 'flower', 'tall', 'path'].includes(tileAt(map, l.x, l.y))) setTile(map, l.x, l.y, 'lamp');
   // Onde você aparece: na trilha, livre.
   setTile(map, map.spawn.x, map.spawn.y, 'path');
+  repairLayout(map);
   return map;
+}
+
+// ----------------------------------------------------------------------------- caminhos
+
+const STEPS: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+/** Dá para pisar no bloco? (o terreno da casa não conta: ele é só a planta da sua casa) */
+export function isWalkable(map: VillageMap, x: number, y: number): boolean {
+  const t = tileAt(map, x, y);
+  return !isSolidTile(t) && t !== 'plot';
+}
+
+/**
+ * Os blocos que dá para alcançar andando a partir de (x, y), como uma grade de 0/1. `taken` marca blocos ocupados à
+ * parte do mapa (móveis, hortas, ou um Pokémon parado no caminho).
+ */
+export function reachableFrom(map: VillageMap, x: number, y: number, taken?: (x: number, y: number) => boolean): Uint8Array {
+  const seen = new Uint8Array(map.w * map.h);
+  if (!isWalkable(map, x, y) || taken?.(x, y)) return seen;
+  const stack = [y * map.w + x];
+  seen[y * map.w + x] = 1;
+  while (stack.length > 0) {
+    const i = stack.pop()!;
+    const cx = i % map.w;
+    const cy = (i - cx) / map.w;
+    for (const [dx, dy] of STEPS) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= map.w || ny >= map.h) continue;
+      const j = ny * map.w + nx;
+      if (seen[j] || !isWalkable(map, nx, ny) || taken?.(nx, ny)) continue;
+      seen[j] = 1;
+      stack.push(j);
+    }
+  }
+  return seen;
+}
+
+/**
+ * Os lugares aonde você sempre precisa conseguir chegar: onde você nasce, a porta de cada casa e prédio, a frente da
+ * loja, a ponta da trilha do terreno da sua casa e a beira do lago.
+ */
+export function keyPoints(map: VillageMap): { x: number; y: number }[] {
+  const out = [{ ...map.spawn }];
+  for (const b of map.buildings) out.push({ ...b.door });
+  out.push({ x: map.shop.x + 1, y: map.shop.y + map.shop.h });
+  out.push({ x: map.plot.x + map.plot.w, y: map.plot.y + map.plot.h - 1 });
+  return out;
+}
+
+/** Os blocos que precisam ficar livres: onde você nasce e a calçada na frente de cada prédio e da loja. */
+export function isFront(map: VillageMap, x: number, y: number): boolean {
+  if (x === map.spawn.x && y === map.spawn.y) return true;
+  if (y === map.shop.y + map.shop.h && x >= map.shop.x && x < map.shop.x + map.shop.w) return true;
+  return map.buildings.some((b) => b.kind !== 'fountain' && y === b.y + b.h && x >= b.x && x < b.x + b.w);
+}
+
+/** Algum lugar importante ficou isolado de onde você nasce? (`taken` = o que está atrapalhando o caminho) */
+export function cutsOff(map: VillageMap, taken: (x: number, y: number) => boolean): boolean {
+  const seen = reachableFrom(map, map.spawn.x, map.spawn.y, taken);
+  return keyPoints(map).some((k) => !taken(k.x, k.y) && !seen[k.y * map.w + k.x]);
+}
+
+/**
+ * Blocos que, se alguém (ou alguma coisa) parar ali, isolam um lugar importante: os gargalos de 1 bloco de largura.
+ * Um bom mapa não tem nenhum. Uma busca só (pontos de articulação do grafo de blocos livres, a partir de onde você nasce):
+ * um bloco isola quando alguma parte da árvore de busca só se liga ao resto por ele e leva um lugar importante junto.
+ */
+export function chokepoints(map: VillageMap): { x: number; y: number }[] {
+  const n = map.w * map.h;
+  const key = new Uint8Array(n);
+  for (const k of keyPoints(map)) key[k.y * map.w + k.x] = 1;
+  const disc = new Int32Array(n).fill(-1);
+  const low = new Int32Array(n);
+  const holds = new Int32Array(n); // lugares importantes na subárvore de cada bloco
+  const parent = new Int32Array(n).fill(-1);
+  const next = new Uint8Array(n); // próximo vizinho a olhar
+  const choke = new Uint8Array(n);
+  const root = map.spawn.y * map.w + map.spawn.x;
+  if (!isWalkable(map, map.spawn.x, map.spawn.y)) return [];
+  let time = 0;
+  const stack = [root];
+  disc[root] = low[root] = time++;
+  holds[root] = key[root]!;
+  while (stack.length > 0) {
+    const v = stack[stack.length - 1]!;
+    const vx = v % map.w;
+    const vy = (v - vx) / map.w;
+    if (next[v]! < 4) {
+      const [dx, dy] = STEPS[next[v]!++]!;
+      const nx = vx + dx;
+      const ny = vy + dy;
+      if (nx < 0 || ny < 0 || nx >= map.w || ny >= map.h || !isWalkable(map, nx, ny)) continue;
+      const u = ny * map.w + nx;
+      if (disc[u]! < 0) {
+        parent[u] = v;
+        disc[u] = low[u] = time++;
+        holds[u] = key[u]!;
+        stack.push(u);
+      } else if (u !== parent[v]) low[v] = Math.min(low[v]!, disc[u]!);
+      continue;
+    }
+    stack.pop();
+    const p = parent[v]!;
+    if (p < 0) continue;
+    low[p] = Math.min(low[p]!, low[v]!);
+    holds[p] = holds[p]! + holds[v]!;
+    if (p !== root && low[v]! >= disc[p]! && holds[v]! > 0) choke[p] = 1;
+  }
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i < n; i++) if (choke[i] && !key[i]) out.push({ x: i % map.w, y: Math.floor(i / map.w) });
+  return out;
+}
+
+/** O que o sorteio espalha pela grama e que dá para tirar do caminho sem estragar o desenho da cidade. */
+const CLEARABLE = new Set<Tile>(['rock', 'bush', 'tree', 'lamp']);
+
+/**
+ * Garante que o mapa não tem ilhas nem gargalos: todo bloco livre se alcança a partir de onde você nasce (o que sobrar
+ * isolado vira mata) e, onde um bloco fecharia o caminho, uma pedra, arbusto, árvore ou poste vizinho sai dali.
+ */
+export function repairLayout(map: VillageMap): void {
+  const seen = reachableFrom(map, map.spawn.x, map.spawn.y);
+  for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (isWalkable(map, x, y) && !seen[y * map.w + x]) setTile(map, x, y, 'tree');
+  for (let round = 0; round < 40; round++) {
+    const chokes = chokepoints(map);
+    if (chokes.length === 0) return;
+    let cleared = false;
+    for (const c of chokes) {
+      for (const [dx, dy] of STEPS) {
+        const nx = c.x + dx;
+        const ny = c.y + dy;
+        const inner = nx >= 3 && ny >= 3 && nx < map.w - 3 && ny < map.h - 3;
+        if (inner && CLEARABLE.has(tileAt(map, nx, ny))) {
+          setTile(map, nx, ny, 'grass');
+          cleared = true;
+          break;
+        }
+      }
+    }
+    if (!cleared) return;
+  }
 }
 
 /** Vizinhos livres (para Pokémon passearem e para colocar móveis). */

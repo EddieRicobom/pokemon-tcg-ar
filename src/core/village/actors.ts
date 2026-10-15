@@ -1,6 +1,7 @@
 import type { Rng } from '../battle';
 import { isSolidTile, tileAt } from './map';
 import type { VillageMap } from './map';
+import { pathStep } from './pathing';
 
 /**
  * Quem anda pela Vila: você e os Pokémon. O movimento é de bloco em bloco (como nos jogos de portátil), com a posição
@@ -58,6 +59,21 @@ export function tryStep(w: Walker, dir: Dir, map: VillageMap, blocked: Blocked):
   return true;
 }
 
+/** Dois que estão lado a lado trocam de lugar (quem anda para cima de um Pokémon parado passa por ele, sem trancar a rua). */
+export function swapPlaces(a: Walker, b: Walker): boolean {
+  if (moving(a) || moving(b) || Math.abs(a.x - b.x) + Math.abs(a.y - b.y) !== 1) return false;
+  const [ax, ay, bx, by] = [a.x, a.y, b.x, b.y];
+  a.tx = bx;
+  a.ty = by;
+  a.t = 0;
+  a.dir = bx > ax ? 'right' : bx < ax ? 'left' : by > ay ? 'down' : 'up';
+  b.tx = ax;
+  b.ty = ay;
+  b.t = 0;
+  b.dir = ax > bx ? 'right' : ax < bx ? 'left' : ay > by ? 'down' : 'up';
+  return true;
+}
+
 /** Avança o passo em curso. Devolve true quando chegou ao bloco de destino neste quadro. */
 export function advance(w: Walker, dt: number): boolean {
   if (!moving(w)) return false;
@@ -86,6 +102,9 @@ export function stepVillager(w: Walker, dt: number, map: VillageMap, blocked: Bl
     const dx = follow.x - w.x;
     const dy = follow.y - w.y;
     if (Math.abs(dx) + Math.abs(dy) <= 1) return;
+    // O caminho mais curto contornando prédios e a fonte; se não houver, tenta o passo em linha reta (mesmo que encoste).
+    const along = pathStep(map, w, follow, blocked);
+    if (along && tryStep(w, along, map, blocked)) return;
     const options: Dir[] = Math.abs(dx) >= Math.abs(dy) ? [dx > 0 ? 'right' : 'left', dy > 0 ? 'down' : 'up'] : [dy > 0 ? 'down' : 'up', dx > 0 ? 'right' : 'left'];
     for (const d of options) if (tryStep(w, d, map, blocked)) return;
     return;
