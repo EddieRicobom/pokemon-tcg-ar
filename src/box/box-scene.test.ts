@@ -279,3 +279,79 @@ describe('BoxScene: relevo e vida social', () => {
     expect(c.bubbleEmoji).toBeNull();
   });
 });
+
+describe('BoxScene: clima', () => {
+  function placed(n = 6): BoxScene {
+    let s = 3;
+    const scene = new BoxScene(() => {
+      s = (s * 1664525 + 1013904223) % 4294967296;
+      return s / 4294967296;
+    });
+    scene.setView(400, 800, 60);
+    scene.setCameraQuaternion(lookQuaternion(0, -Math.PI / 4));
+    scene.place(new Vector3(0, -1.3, -3), 1.2);
+    scene.setCreatures(Array.from({ length: n }, (_, i) => entry(i)));
+    return scene;
+  }
+  const fx = (scene: BoxScene) => (scene as unknown as { weatherFx: { counts: { rain: number; snow: number }; puddleStrengthAt(x: number, z: number): number } }).weatherFx;
+
+  it('chuva: gotas caem, o chão molha e as poças aparecem nas baixadas', () => {
+    const scene = placed();
+    scene.setWeather('chuva');
+    for (let t = 1; t < 4000; t++) scene.update(t * 50);
+    expect(scene.weatherNow?.kind).toBe('chuva');
+    expect(fx(scene).counts.rain).toBeGreaterThan(300);
+    expect(scene.weatherNow!.state.wet).toBeGreaterThan(0.6);
+    let puddles = 0;
+    for (let x = -1.1; x <= 1.1; x += 0.1) for (let z = -1.1; z <= 1.1; z += 0.1) if (fx(scene).puddleStrengthAt(x, z) > 0.5) puddles++;
+    expect(puddles).toBeGreaterThan(5);
+  });
+
+  it('quem pisa numa poça aparece refletido', () => {
+    const scene = placed(1);
+    scene.setWeather('chuva');
+    for (let t = 1; t < 4000; t++) scene.update(t * 50);
+    const c = scene.creatureList[0]!;
+    // Leva o Pokémon para o ponto mais molhado.
+    let best = { x: 0, z: 0, s: 0 };
+    for (let x = -1; x <= 1; x += 0.05) for (let z = -1; z <= 1; z += 0.05) {
+      const s = fx(scene).puddleStrengthAt(x, z);
+      if (s > best.s) best = { x, z, s };
+    }
+    c.state.x = best.x;
+    c.state.z = best.z;
+    c.state.vx = 0;
+    c.state.vz = 0;
+    scene.update(4000 * 50 + 16);
+    expect(c.reflecting).toBe(true);
+  });
+
+  it('neve: flocos caem e o chão fica branco; desligado some tudo', () => {
+    const scene = placed();
+    scene.setWeather('neve');
+    for (let t = 1; t < 3000; t++) scene.update(t * 50);
+    expect(fx(scene).counts.snow).toBeGreaterThan(250);
+    expect(scene.weatherNow!.state.snowCover).toBeGreaterThan(0.8);
+    scene.setWeather('off');
+    scene.update(3000 * 50 + 16);
+    expect(scene.weatherNow).toBeNull();
+    for (const c of scene.creatureList) {
+      scene.update(3000 * 50 + 32);
+      expect(c.reflecting).toBe(false);
+    }
+  });
+
+  it('o clima escurece a luz dos Pokémon na chuva', () => {
+    const sunny = placed();
+    sunny.setWeather('sol');
+    const rainy = placed();
+    rainy.setWeather('chuva');
+    for (let t = 1; t < 2000; t++) {
+      sunny.update(t * 50);
+      rainy.update(t * 50);
+    }
+    const amb = (s: BoxScene) => (s.fx as unknown as { ambient: { x: number } }).ambient?.x;
+    if (amb(sunny) !== undefined) expect(amb(rainy)!).toBeLessThan(amb(sunny)!);
+    expect(rainy.groundOfBox!.tint.r).toBeLessThan(sunny.groundOfBox!.tint.r);
+  });
+});

@@ -27,6 +27,7 @@ import type { OrientationMode } from '../box/orientation-source';
 import type { BoxCreature } from '../box/creature';
 import type { BattleHud } from '../box/battle-director';
 import { MEGA_ENERGY_COST } from '../core/mega';
+import { WEATHER_EMOJI, WEATHER_LABELS_PT } from '../core/weather';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import { TEAM_NAMES_PT, TEAM_COLORS, BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, planBattle, rosterBlocker, seededRng, STATUS_LABELS_PT, summarizeBattle } from '../core/battle';
 import type { BattleMode, BattleSummary, Fighter, RosterSlot } from '../core/battle';
@@ -70,6 +71,7 @@ function toggleMega(id: string): void {
 function showMegaNotes(notes: { text: string; tone: 'ok' | 'warn' }[]): void {
   megaNotes.value = notes;
   if (megaNotesTimer) clearTimeout(megaNotesTimer);
+  clearInterval(weatherTimer);
   megaNotesTimer = notes.length > 0 ? setTimeout(() => (megaNotes.value = []), 9000) : null;
 }
 const currentRoster = computed(() => rosterFor(rosterRows.value.map((r) => r.id)));
@@ -165,6 +167,7 @@ async function open(): Promise<void> {
   box.setLighting(visual.lighting);
   box.setTerrain(visual.terrain);
   box.setSocial(visual.social);
+  box.setWeather(visual.weather);
   box.setSound(visual.sound);
   box.setMode(boxMode.value);
   phase.value = 'placing';
@@ -253,6 +256,7 @@ watch(() => visual.smoothing, (smoothing) => box?.setSmoothing(smoothing));
 watch(() => visual.lighting, (on) => box?.setLighting(on));
 watch(() => visual.terrain, (on) => box?.setTerrain(on));
 watch(() => visual.social, (on) => box?.setSocial(on));
+watch(() => visual.weather, (mode) => box?.setWeather(mode));
 watch(() => visual.sound, (on) => box?.setSound(on));
 
 const canBattle = computed(() => phase.value === 'running' && population.value.shown >= 2 && !loadingCreatures.value && !preparing.value);
@@ -444,13 +448,20 @@ const notices = computed<Notice[]>(() => {
   }
   return list;
 });
+/** Clima atual (o ciclo muda sozinho): lido da cena a cada poucos segundos para a linha de resumo. */
+const weatherLabel = ref('');
+const weatherTimer = setInterval(() => {
+  const now = box?.scene.weatherNow;
+  weatherLabel.value = now ? `${WEATHER_EMOJI[now.kind]} ${WEATHER_LABELS_PT[now.kind]}` : '';
+}, 2000);
 /** Linha de resumo fixa (pequena) enquanto a caixa está montada e nada mais pede atenção. */
 const populationNote = computed(() => {
   if (phase.value !== 'running' || battleHud.value || loadingCreatures.value || population.value.available === 0) return '';
   const { shown, available, failed } = population.value;
   const more = available > shown ? ` (de ${available} guardados)` : '';
   const broken = failed > 0 ? ` · ${failed} sprite(s) sem leitura` : '';
-  return `${shown} Pokémon na caixa${more}${broken} · toque num Pokémon para ver quem é`;
+  const sky = weatherLabel.value ? ` · ${weatherLabel.value}` : '';
+  return `${shown} Pokémon na caixa${more}${broken}${sky} · toque num Pokémon para ver quem é`;
 });
 
 const incompleteFighters = computed(() => (battleHud.value ? battleFighters.value.filter((f) => f.notes.length > 0) : []));

@@ -104,6 +104,43 @@ export class Ground {
     return geometry;
   }
 
+  /**
+   * Uma camada por cima do chão com a mesma malha (acompanha o relevo): sombras de nuvem, poças, neve. Quem chama é dono
+   * do material; a malha é a do chão (não descarte). `lift` sobe a camada uns milímetros para não brigar com o chão.
+   */
+  overlay(material: MeshBasicMaterial, lift: number): Mesh<PlaneGeometry, MeshBasicMaterial> {
+    const mesh = new Mesh(this.mesh.geometry, material);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = this.mesh.position.y + lift;
+    mesh.renderOrder = -1;
+    this.group.add(mesh);
+    return mesh;
+  }
+
+  /** Profundidade relativa em (x, z): 0 no ponto mais alto da caixa, 1 no mais baixo (chão liso = 0,5 em todo lugar). */
+  depthAt(x: number, z: number): number {
+    const range = this.heightRange;
+    if (range.max - range.min < 1e-4) return 0.5;
+    return (range.max - this.relief.heightAt(x, z)) / (range.max - range.min);
+  }
+
+  private cachedRange: { min: number; max: number } | null = null;
+  private get heightRange(): { min: number; max: number } {
+    if (this.cachedRange) return this.cachedRange;
+    let min = Infinity;
+    let max = -Infinity;
+    const n = 24;
+    for (let i = 0; i <= n; i++) {
+      for (let j = 0; j <= n; j++) {
+        const h = this.relief.heightAt(-this.o.halfW + (2 * this.o.halfW * i) / n, -this.o.halfD + (2 * this.o.halfD * j) / n);
+        min = Math.min(min, h);
+        max = Math.max(max, h);
+      }
+    }
+    this.cachedRange = { min, max };
+    return this.cachedRange;
+  }
+
   /** Altura do chão em (x, z), relativa ao centro (0 se o chão é liso). */
   heightAt(x: number, z: number): number {
     return this.relief.heightAt(x, z);
