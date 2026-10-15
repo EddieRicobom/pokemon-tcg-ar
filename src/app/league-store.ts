@@ -31,7 +31,7 @@ export function recordLeagueResult(challenge: Challenge, won: boolean): LeagueOu
   }
   if (won) {
     const title = challenge.kind === 'gym' && outcome.first ? (challenge.badge?.name ?? 'Insígnia') : challenge.kind === 'champion' ? 'Campeão da Liga!' : `Vitória contra ${challenge.leader}`;
-    recordEvent({ type: 'league', title, xp: challenge.xp, first: outcome.first });
+    recordEvent({ type: 'league', title, xp: challenge.xp, first: outcome.first, badges: outcome.progress.badges.length, championWins: outcome.progress.championWins });
   } else {
     recordEvent({ type: 'battle', team: true });
   }

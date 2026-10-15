@@ -88,6 +88,10 @@ export interface VillageState {
   words: Record<string, string>;
   lingo: Lingo[];
   asked: Record<string, { day: string; n: number }>;
+  /** Apelidos dados aos Pokémon (ver `nickname.ts`). */
+  nicks: Record<string, string>;
+  /** Conquistas do Treinador cujo prêmio já foi entregue (ver `rewards.ts`). */
+  claimed: string[];
   /** Pescaria de hoje: quantas vezes já lançou a linha. */
   fishing: { day: string; casts: number };
   /** A mini cidade (ver `town.ts`): nível de cada casa de Pokémon e o que já foi feito hoje nos prédios. */
@@ -109,7 +113,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
   return {
     v: 1, seed, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
-    ...emptySocial(), fishing: { day: '', casts: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' },
+    claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' },
   };
 }
 
@@ -141,6 +145,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     helped: r.helped && typeof r.helped === 'object' ? r.helped : {},
     rareGift: r.rareGift && typeof r.rareGift === 'object' ? r.rareGift : {},
     ...normalizeSocial(r),
+    claimed: Array.isArray(r.claimed) ? [...new Set(r.claimed.filter((id): id is string => typeof id === 'string' && id.length <= 40))].slice(0, 200) : [],
     homes: r.homes && typeof r.homes === 'object' ? Object.fromEntries(Object.entries(r.homes).filter(([k, v]) => k.length <= 80 && Number.isInteger(v)).slice(0, 80).map(([k, v]) => [k, Math.max(0, Math.min(511, v as number))])) : {},
     town: { level: Number.isInteger(r.town?.level) ? Math.max(1, Math.min(99, r.town!.level)) : 1, mailDay: typeof r.town?.mailDay === 'string' ? r.town.mailDay.slice(0, 12) : '', cafeDay: typeof r.town?.cafeDay === 'string' ? r.town.cafeDay.slice(0, 12) : '' },
     fishing: r.fishing && typeof r.fishing.day === 'string' && Number.isInteger(r.fishing.casts) ? { day: r.fishing.day, casts: Math.max(0, Math.min(99, r.fishing.casts)) } : { day: '', casts: 0 },
@@ -506,6 +511,7 @@ export function sell(s: VillageState, id: ItemId, qty = 1): Interaction {
   const have = count(s, id);
   const n = Math.min(have, Math.max(1, qty));
   if (!def || n <= 0) return { ok: false, message: 'Você não tem isso.' };
+  if (def.sell <= 0) return { ok: false, message: `${def.name} é um prêmio de conquista: não dá para vender.` };
   if (def.kind === 'accessory' && Object.values(s.wear.mons).filter((w) => w === id).length + (s.wear.player === id ? 1 : 0) >= have) {
     return { ok: false, message: 'Esse acessório está sendo usado. Tire antes de vender.' };
   }

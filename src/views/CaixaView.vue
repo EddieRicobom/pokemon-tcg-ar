@@ -6,6 +6,7 @@ import { challengePlan, isLeaderCreature, leaderFighter, leaderLoader, loadLeade
 import { league, pendingChallenge, recordLeagueResult } from '../app/league-store';
 import { profile } from '../app/profile-store';
 import { routeFlags, routeHref } from '../app/route';
+import { displayName, setNickname } from '../core/village/nickname';
 import { challengeById, statusOf } from '../core/league';
 import type { Challenge } from '../core/league';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
@@ -119,6 +120,23 @@ const pvpOpen = ref(arrival.has('pvp'));
 const pvpEl = ref<HTMLDetailsElement | null>(null);
 if (arrival.has('vila')) showVillage.value = true;
 if (arrival.size > 0) window.history.replaceState(null, '', routeHref('caixa'));
+const bookNote = ref('');
+/** O Livro da Caixa também deixa dar o apelido (a Vila e a Caixa guardam no mesmo arquivo). */
+function onBookNickname(id: string, text: string): void {
+  village = loadVillage();
+  const row = bookList.value.find((r) => r.id === id);
+  const r = setNickname(village, id, text, row?.real ?? 'Pokémon');
+  bookNote.value = r.message;
+  if (!r.ok) return;
+  saveVillage(village);
+  bookList.value = bookList.value.map((x) => ({ ...x, name: shown(x.id, x.real) }));
+  rosterRows.value = rosterRows.value.map((x) => (x.id === id ? { ...x, name: shown(id, row?.real ?? x.name) } : x));
+  nickTick.value++;
+}
+/** Faz o Livro reler os apelidos (o `village` desta tela não é reativo). */
+const nickTick = ref(0);
+const bookNicks = computed(() => (nickTick.value >= 0 ? { ...village.nicks } : {}));
+
 function openPvp(): void {
   pvpOpen.value = true;
   void nextTick(() => pvpEl.value?.scrollIntoView({ block: 'start' }));
@@ -126,6 +144,7 @@ function openPvp(): void {
 
 function closeVillage(then?: 'pvp'): void {
   showVillage.value = false;
+  village = loadVillage();
   if (then === 'pvp') openPvp();
 }
 
@@ -158,11 +177,13 @@ function ndcOf(clientX: number, clientY: number): { x: number; y: number } | nul
 
 // ---- Intimidade (da Vila): vale na batalha, traz ajudas e corações na Caixa
 let village: VillageState = loadVillage();
+/** O nome do Pokémon na tela: o apelido que você deu na Vila, se tem, ou o da carta. */
+const shown = (id: string, real: string): string => displayName(village, id, real);
 const bookOpen = ref(false);
 const bookTypes = reactive(new Map<string, PokemonType[]>());
 const bookThumbs = reactive(new Map<string, string>());
-const bookList = ref<{ id: string; name: string }[]>([]);
-const bookMons = computed(() => bookList.value.map((r) => ({ id: r.id, name: r.name, types: bookTypes.get(r.id) ?? [], thumb: bookThumbs.get(r.id) })));
+const bookList = ref<{ id: string; name: string; real: string }[]>([]);
+const bookMons = computed(() => bookList.value.map((r) => ({ id: r.id, name: r.name, real: r.real, types: bookTypes.get(r.id) ?? [], thumb: bookThumbs.get(r.id) })));
 const bondOf = (id: string): number => friendLevel(village.friends[id]?.points ?? 0).level;
 /** Põe a intimidade nos lutadores da sua equipe (crítico e "aguentou firme"). */
 function withBond(fighters: Fighter[]): Fighter[] {
@@ -219,7 +240,7 @@ async function openBook(): Promise<void> {
       entries = [];
     }
   }
-  bookList.value = entries.map((e) => ({ id: e.info.id, name: e.info.name }));
+  bookList.value = entries.map((e) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), real: e.info.name }));
   for (const e of entries) {
     if (!bookThumbs.has(e.info.id)) {
       const frame = e.source.kind === 'gif' ? { w: e.source.gif.width, h: e.source.gif.height, rgba: e.source.gif.frames[0]?.rgba } : { w: e.source.image.width, h: e.source.image.height, rgba: e.source.image.data };
@@ -286,10 +307,10 @@ async function syncPvpTeam(): Promise<void> {
   const key = mine.map((e) => e.info.id).join('|');
   if (key !== pvpTeamKey) {
     pvpTeamKey = key;
-    pvpFighters = withBond(await prepareFighters(mine.map((e) => ({ id: e.info.id, name: e.info.name, dexId: e.info.dexId })), loadBattle));
+    pvpFighters = withBond(await prepareFighters(mine.map((e) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), dexId: e.info.dexId })), loadBattle));
     if (key !== pvpTeamKey) return;
   }
-  const mons: BoxPvpMon[] = mine.map((e, i) => ({ id: e.info.id, name: e.info.name, sprite: e.info.dexId ?? 1, shiny: e.info.shiny === true, fighter: pvpFighters[i]! }));
+  const mons: BoxPvpMon[] = mine.map((e, i) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), sprite: e.info.dexId ?? 1, shiny: e.info.shiny === true, fighter: pvpFighters[i]! }));
   const team: BoxPvpTeam = { name: profile.name, trainer: profile.sprite, mons };
   sendTeam(team, phase.value === 'running');
 }
@@ -385,7 +406,7 @@ async function populate(): Promise<void> {
     void syncPvpTeam();
     for (const entry of loaded.entries) if (maybeGalladeSpeaks(entry.info)) break;
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
-    rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: e.info.name, shiny: e.info.shiny === true, mega: e.info.mega === true }));
+    rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), shiny: e.info.shiny === true, mega: e.info.mega === true }));
     megaPicks.value = megaPicks.value.filter((id) => rosterRows.value.some((r) => r.id === id && r.mega));
   } catch (e) {
     error.value = `Não consegui ler as cartas guardadas: ${e instanceof Error ? e.message : String(e)}`;
@@ -484,7 +505,7 @@ function moveBox(): void {
 function showPicked(creature: BoxCreature): void {
   if (visual.social) creature.react();
   else creature.poke();
-  picked.value = { name: creature.info.name, detail: creature.info.detail, dexId: creature.info.dexId, shiny: creature.info.shiny, mega: creature.info.mega };
+  picked.value = { name: shown(creature.info.id, creature.info.name), detail: creature.info.detail, dexId: creature.info.dexId, shiny: creature.info.shiny, mega: creature.info.mega };
   if (pickedTimer) clearTimeout(pickedTimer);
   pickedTimer = setTimeout(() => (picked.value = null), 5000);
 }
@@ -542,7 +563,7 @@ watch(
     battleCounted = true;
     if (activePvp && lastResult) {
       const won = lastResult.winningTeam === activePvp.myTeam;
-      recordEvent({ type: 'battle', team: true });
+      recordEvent({ type: 'pvp', won });
       showMegaNotes([{ text: won ? `Você venceu ${activePvp.friend}!` : `${activePvp.friend} venceu desta vez.`, tone: won ? 'ok' : 'warn' }]);
       return;
     }
@@ -599,7 +620,7 @@ async function startChallenge(ch: Challenge): Promise<void> {
     current.setCreatures([...mine, ...leader.entries]);
     hint.value = 'Preparando a batalha: buscando atributos e golpes…';
     const creatures = current.scene.creatureList;
-    const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), leaderLoader(loadBattle));
+    const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: shown(c.info.id, c.info.name), dexId: c.info.dexId })), leaderLoader(loadBattle));
     if (disposed || box !== current) return;
     const fighters = raw.map((f, i) => (i >= mine.length ? leaderFighter(f, ch.power) : withBond([f])[0]!));
     const plan = challengePlan(mine.length, leader.entries.length, ch, profile.name);
@@ -690,7 +711,7 @@ async function startBattle(): Promise<void> {
       energy.value,
       { prepare: prepareMegaFor, decode: decodeMegaSprite },
     );
-    const fighters = withBond(await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), megaAwareLoader(loadBattle, megaPlan.entries)));
+    const fighters = withBond(await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: shown(c.info.id, c.info.name), dexId: c.info.dexId })), megaAwareLoader(loadBattle, megaPlan.entries)));
     if (disposed || box !== current) return;
     battleCounted = false;
     for (const entry of megaPlan.entries) fighting.find((c) => c.info.id === entry.cardId)?.setForm(entry.source);
@@ -1111,7 +1132,7 @@ onBeforeUnmount(() => {
     <details v-if="!immersive" class="layout" :open="bookOpen" @toggle="(e: Event) => (e.target as HTMLDetailsElement).open !== bookOpen && void openBook()">
       <summary>Livro dos Pokémon (opiniões, humor e intimidade)</summary>
       <p v-if="bookList.length === 0" class="hint">Nenhum Pokémon na equipe da caixa ainda. Escaneie cartas para começar o livro.</p>
-      <PokeBook v-else :mons="bookMons" :friends="village.friends" />
+      <PokeBook v-else :mons="bookMons" :friends="village.friends" :nicks="bookNicks" :nick-note="bookNote" @nickname="onBookNickname" />
     </details>
 
     <details v-if="!immersive" ref="pvpEl" class="layout" :open="pvpOn || pvpOpen" @toggle="(e: Event) => (pvpOpen = (e.target as HTMLDetailsElement).open)">

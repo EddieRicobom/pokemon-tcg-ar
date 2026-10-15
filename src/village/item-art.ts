@@ -302,6 +302,20 @@ const FOOD_ICONS: Record<string, Draw> = {
 };
 
 const ACCESSORY_ICONS: Record<string, Draw> = {
+  // Prêmios de conquistas (ver `rewards.ts`).
+  'bone-treinador': (p) => { p.disc(8, 8, 5.5, 4.5, BLUE); p.rect(8, 9, 7, 2, 0x2f5fb8); p.rect(2, 9, 10, 1, 0x2f5fb8); p.disc(7, 6.5, 1.8, 1.8, WHITE); p.px(7, 6, RED); p.px(7, 7, RED); p.rect(5, 8, 1, 1, 0x7aa8f0); },
+  'fita-chama': (p) => { p.rect(1, 8, 14, 3, RED); p.rect(1, 8, 14, 1, 0xf0705f); p.rect(13, 10, 2, 5, RED); p.rect(0, 11, 2, 3, 0xa83228); p.tri(8, 2, 5, 11, 8, ORANGE); p.tri(8, 4, 7, 9, 8, GOLD); },
+  louros: (p) => { for (let i = 0; i < 5; i++) { const y = 4 + i * 2; p.disc(2 + i * 0.6, y, 1.8, 1.1, GREEN); p.disc(14 - i * 0.6, y, 1.8, 1.1, GREEN); } p.rect(3, 12, 10, 1, GREEN_D); p.px(1, 6, GREEN_L); p.px(14, 6, GREEN_L); p.disc(8, 11, 1.6, 1.6, GOLD); },
+  'tiara-brilho': (p) => { p.rect(2, 10, 12, 2, 0xe6ecf4); p.rect(2, 10, 12, 1, WHITE); for (const [x, h, c] of [[4, 3, 0x6ac8e8], [8, 6, GOLD], [12, 3, 0xe86aa0]] as const) { p.rect(x - 1, 10 - h, 2, h, 0xe6ecf4); p.px(x - 1, 10 - h, c); p.px(x, 9 - h, WHITE); } p.px(8, 7, WHITE); },
+  'tiara-coracoes': (p) => { p.rect(2, 11, 12, 2, 0xe86aa0); for (const x of [4, 8, 12]) { p.disc(x - 1, 8, 1.6, 1.6, RED); p.disc(x + 1, 8, 1.6, 1.6, RED); p.tri(x, 12, x - 3, x + 3, 9, RED); } p.px(3, 7, 0xff9a8a); p.px(7, 7, 0xff9a8a); p.px(11, 7, 0xff9a8a); },
+  monoculo: (p) => { p.ring(10, 7, 3.4, 3.4, GOLD); p.ring(10, 7, 2.6, 2.6, 0xc89a2a); p.disc(10, 7, 2.4, 2.4, GLASS); p.px(9, 6, WHITE); p.px(10, 5, WHITE); p.line(10, 10, 6, 15, GOLD); p.px(5, 15, GOLD); },
+  'oculos-estrela': (p) => { for (const cx of [4.5, 11.5]) { p.disc(cx, 8, 3.2, 3.2, GOLD); p.tri(cx, 4, cx - 1, cx + 1, 8, GOLD); p.tri(cx, 12, cx - 1, cx + 1, 8, GOLD); p.disc(cx, 8, 1.8, 1.8, 0xe86aa0); } p.rect(7, 7, 2, 1, GOLD); p.px(3, 7, WHITE); p.px(10, 7, WHITE); },
+  'colar-estrela': (p) => { p.line(2, 2, 8, 9, GOLD); p.line(14, 2, 8, 9, GOLD); p.tri(8, 6, 4, 12, 11, GOLD); p.tri(8, 15, 4, 12, 10, GOLD); p.disc(8, 10, 2, 2, 0xfff0a0); p.px(8, 10, 0xc89a2a); },
+  'laco-amizade': (p) => { p.tri(7, 8, 3, 8, 15, 0xa83228); p.tri(9, 8, 8, 13, 15, RED); p.disc(4.5, 6, 3.6, 3, RED); p.disc(11.5, 6, 3.6, 3, RED); p.disc(4.5, 5.5, 1.8, 1.2, 0xf0705f); p.disc(11.5, 5.5, 1.8, 1.2, 0xf0705f); p.disc(8, 6, 2, 2, 0xa83228); p.px(8, 5, 0xf0705f); },
+  insignia: (p) => { p.rect(7, 0, 2, 4, IRON); p.disc(8, 9, 5.5, 5.5, GOLD); p.disc(8, 9, 4, 4, 0xfff0a0); p.tri(8, 5, 6, 10, 9, RED); p.tri(8, 13, 6, 10, 9, BLUE); p.px(8, 9, WHITE); p.ring(8, 9, 5.5, 5.5, 0xc89a2a); },
+  'faixa-vencedor': (p) => { p.tri(2, 1, 1, 7, 6, RED); p.tri(14, 1, 9, 15, 6, RED); p.line(3, 4, 13, 14, RED, 3); p.line(3, 4, 13, 14, 0xf0705f, 1); p.disc(7, 9, 2, 2, GOLD); p.px(7, 9, 0xc89a2a); },
+  'capa-estelar': (p) => { p.tri(8, 14, 1, 15, 3, 0x4a3a9a); p.rect(3, 2, 10, 2, 0x2f2370); p.rect(2, 4, 12, 3, 0x4a3a9a); p.rect(7, 4, 2, 10, 0x2f2370); p.rect(6, 1, 4, 2, GOLD); for (const [x, y] of [[4, 5], [11, 6], [5, 10], [10, 11], [8, 13]] as const) p.px(x, y, 0xfff0a0); },
+  'capa-liga': (p) => { p.tri(8, 14, 1, 15, 3, GOLD); p.rect(3, 2, 10, 2, 0xc89a2a); p.rect(2, 4, 12, 3, GOLD); p.rect(7, 4, 2, 10, 0xc89a2a); p.rect(6, 1, 4, 2, RED); p.disc(8, 8, 2.2, 2.2, RED); p.disc(8, 8, 1, 1, WHITE); p.px(4, 5, 0xfff0a0); p.px(11, 6, 0xfff0a0); },
   'chapeu-palha': (p) => { p.disc(8, 10, 7, 2.5, 0xe8c870); p.disc(8, 7, 4, 3, 0xe8c870); p.rect(4, 8, 8, 1, RED); p.disc(8, 5.5, 2, 1.2, 0xf6e098); },
   bone: (p) => { p.disc(8, 8, 5, 4, RED); p.rect(8, 9, 7, 2, 0xa82828); p.rect(3, 9, 10, 1, 0xa82828); p.px(7, 6, WHITE); p.px(8, 6, WHITE); },
   laco: (p) => { p.disc(4, 8, 3.5, 3, PINK); p.disc(12, 8, 3.5, 3, PINK); p.disc(8, 8, 2, 2, 0xe86aa0); p.px(4, 7, 0xffe0ec); p.px(12, 7, 0xffe0ec); },

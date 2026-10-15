@@ -231,6 +231,11 @@ export class VillageGame {
     this.waiting = id;
   }
 
+  /** Troca os nomes mostrados (apelidos dados ou tirados) sem recarregar nada. */
+  setNames(names: Readonly<Record<string, string>>): void {
+    for (const [id, name] of Object.entries(names)) if (this.names.has(id)) this.names.set(id, name);
+  }
+
   isAsleep(id: string): boolean {
     return this.asleep.has(id);
   }

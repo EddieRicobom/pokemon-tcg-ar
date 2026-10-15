@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { bookPage } from '../core/village/book';
 import type { BookMon } from '../core/village/book';
+import { friendLevel } from '../core/village/life';
 import type { Friendship } from '../core/village/life';
+import { MAX_NICK_LEN, NICK_MIN_LEVEL } from '../core/village/nickname';
 import { dayKey } from '../core/trainer';
 
 /** O Livro dos Pokémon: uma página por Pokémon da caixa, com humor, jeito, gostos, opiniões e o que a intimidade abre. */
@@ -17,8 +19,12 @@ const props = defineProps<{
   words?: Readonly<Record<string, string>>;
   /** O que você respondeu às perguntas de cada Pokémon (as mais recentes). */
   told?: Readonly<Record<string, readonly { q: string; a: string }[]>>;
+  /** Os apelidos dados (quando vem, a página mostra o campo de apelido; ele só abre a partir de «Grande amigo»). */
+  nicks?: Readonly<Record<string, string>>;
+  /** O recado da última tentativa de dar apelido (deu certo, já existe, falta amizade…). */
+  nickNote?: string;
 }>();
-const emit = defineEmits<{ accessory: [id: string] }>();
+const emit = defineEmits<{ accessory: [id: string]; nickname: [id: string, text: string] }>();
 
 const index = ref(0);
 const day = dayKey(new Date());
@@ -27,6 +33,15 @@ const current = computed(() => {
   const mon = props.mons[Math.min(index.value, props.mons.length - 1)];
   return mon ? { mon, page: bookPage(mon, props.mons, props.friends[mon.id], day, hour) } : null;
 });
+
+const nickDraft = ref('');
+const canNick = computed(() => (current.value ? friendLevel(props.friends[current.value.mon.id]?.points ?? 0).level >= NICK_MIN_LEVEL : false));
+const nickNow = computed(() => (current.value ? (props.nicks?.[current.value.mon.id] ?? '') : ''));
+watch(() => [current.value?.mon.id, nickNow.value] as const, () => (nickDraft.value = nickNow.value), { immediate: true });
+
+function saveNick(clear = false): void {
+  if (current.value) emit('nickname', current.value.mon.id, clear ? '' : nickDraft.value);
+}
 
 function go(step: number): void {
   const n = props.mons.length;
@@ -48,12 +63,23 @@ function go(step: number): void {
           <img v-if="current.mon.thumb" :src="current.mon.thumb" alt="" width="72" height="72" />
           <div>
             <h3>{{ current.page.name }}</h3>
+            <p v-if="current.mon.real && current.mon.real !== current.page.name" class="hint">Na carta: {{ current.mon.real }}</p>
             <p class="book-hearts" :aria-label="`${current.page.levelName}, ${current.page.hearts} de 5 corações`">
               <span v-for="k in 5" :key="k" :class="{ on: k <= current.page.hearts }">♥</span>
               <small>{{ current.page.levelName }} · {{ current.page.points }}/100</small>
             </p>
           </div>
         </header>
+        <section v-if="nicks" class="book-nick">
+          <h4>Apelido</h4>
+          <form v-if="canNick" class="book-nick-form" @submit.prevent="saveNick()">
+            <input v-model="nickDraft" type="text" :maxlength="MAX_NICK_LEN" placeholder="Como você quer chamar?" autocomplete="off" aria-label="Apelido" />
+            <button type="submit" :disabled="nickDraft.trim() === '' || nickDraft.trim() === nickNow">Salvar</button>
+            <button v-if="nickNow" type="button" @click="saveNick(true)">Tirar</button>
+          </form>
+          <p v-else class="hint">Aceita apelido a partir de «Grande amigo» ({{ friends[current.mon.id]?.points ?? 0 }} de 70 pontos de amizade).</p>
+          <p v-if="nickNote" class="hint" role="status">{{ nickNote }}</p>
+        </section>
         <section>
           <h4>Hoje</h4>
           <p><span class="book-emoji">{{ current.page.mood.emoji }}</span> <strong>{{ current.page.mood.name }}</strong> — {{ current.page.mood.why }}</p>
