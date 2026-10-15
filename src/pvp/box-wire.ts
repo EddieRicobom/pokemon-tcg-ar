@@ -75,6 +75,7 @@ export function parseFighter(v: unknown): Fighter | null {
     id: v.id, name: v.name, types: v.types as PokemonType[],
     maxHp: v.maxHp as number, attack: v.attack as number, defense: v.defense as number, spAttack: v.spAttack as number, spDefense: v.spDefense as number, speed: v.speed as number,
     moves, personality: v.personality as Personality, quality: v.quality as DataQuality, notes,
+    ...(isNum(v.bond, 0, 4) && Number.isInteger(v.bond) ? { bond: v.bond } : {}),
   };
 }
 

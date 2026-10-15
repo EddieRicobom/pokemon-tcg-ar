@@ -1,5 +1,6 @@
 import type { Rng } from '../battle';
 import type { PokemonType } from '../pokemon-data';
+import { ACCESSORY_IDS, FURNITURE_IDS, isItem, itemDef, ITEMS, MATERIAL_IDS, shopToday } from './catalog';
 import { tileAt } from './map';
 import type { Tile, VillageMap } from './map';
 
@@ -9,37 +10,21 @@ import type { Tile, VillageMap } from './map';
  * Tudo puro e determinístico com a semente/dia: a tela só chama estas funções e desenha.
  */
 
-export type ItemId = 'madeira' | 'pedra' | 'oran' | 'pecha' | 'flor' | 'concha' | FurnitureId;
-export type FurnitureId = 'cadeira' | 'mesa' | 'luminaria' | 'vaso' | 'fonte' | 'cerca' | 'placa';
+export type ItemId = string;
+export type FurnitureId = string;
 
-export const ITEM_INFO: Record<ItemId, { name: string; emoji: string }> = {
-  madeira: { name: 'Madeira', emoji: '🪵' },
-  pedra: { name: 'Pedra', emoji: '🪨' },
-  oran: { name: 'Fruta Oran', emoji: '🫐' },
-  pecha: { name: 'Fruta Pecha', emoji: '🍑' },
-  flor: { name: 'Flor', emoji: '🌼' },
-  concha: { name: 'Concha', emoji: '🐚' },
-  cadeira: { name: 'Cadeira', emoji: '🪑' },
-  mesa: { name: 'Mesa', emoji: '🟫' },
-  luminaria: { name: 'Lampião', emoji: '🏮' },
-  vaso: { name: 'Vaso de flores', emoji: '🪴' },
-  fonte: { name: 'Fonte', emoji: '⛲' },
-  cerca: { name: 'Cerca', emoji: '🚧' },
-  placa: { name: 'Placa', emoji: '🪧' },
-};
+/** Nome de qualquer item do catálogo. */
+export function itemName(id: ItemId): string {
+  return itemDef(id)?.name ?? id;
+}
 
-export const MATERIALS: readonly ItemId[] = ['madeira', 'pedra', 'oran', 'pecha', 'flor', 'concha'];
-export const FURNITURE: readonly FurnitureId[] = ['cadeira', 'mesa', 'luminaria', 'vaso', 'fonte', 'cerca', 'placa'];
+/** Compatibilidade: nome de cada item (o desenho é o ícone em pixel art, não emoji). */
+export const ITEM_INFO: Record<string, { name: string }> = Object.fromEntries(ITEMS.map((i) => [i.id, { name: i.name }]));
 
-export const RECIPES: Record<FurnitureId, Partial<Record<ItemId, number>>> = {
-  cadeira: { madeira: 3 },
-  mesa: { madeira: 5 },
-  luminaria: { madeira: 2, pedra: 2 },
-  vaso: { flor: 3, pedra: 1 },
-  fonte: { pedra: 6, concha: 2 },
-  cerca: { madeira: 2 },
-  placa: { madeira: 2, pedra: 1 },
-};
+export const MATERIALS: readonly ItemId[] = MATERIAL_IDS;
+export const FURNITURE: readonly FurnitureId[] = FURNITURE_IDS;
+/** Tudo que dá para fabricar, com a receita. */
+export const RECIPES: Record<string, Partial<Record<ItemId, number>>> = Object.fromEntries(ITEMS.filter((i) => i.recipe).map((i) => [i.id, i.recipe!]));
 
 export interface HouseLevel {
   name: string;
@@ -76,13 +61,36 @@ export interface VillageState {
   harvested: Record<string, string>;
   /** Quem segue você pela vila (melhor amigo). */
   follower: string | null;
+  /** Moedas (vendendo na loja; ganhas também com pedidos e colheitas). */
+  coins: number;
+  /** Horta: o que está plantado em cada bloco. */
+  crops: Crop[];
+  /** Acessório que você usa e o de cada Pokémon (id da carta → acessório). */
+  wear: { player: string | null; mons: Record<string, string | null> };
+  /** Móveis que você já teve alguma vez (o catálogo da coleção). */
+  collected: string[];
+  /** Dia em que cada amigo já ajudou (coleta diária) e já deu presente raro. */
+  helped: Record<string, string>;
+  rareGift: Record<string, string>;
+}
+
+export interface Crop {
+  x: number;
+  y: number;
+  seed: string;
+  /** 0 = semente; `stages` = pronto para colher. */
+  stage: number;
+  /** Quando foi regado pela última vez (ms); null = precisa de água. */
+  wateredAt: number | null;
 }
 
 export function emptyVillage(seed: number, spawn: { x: number; y: number }): VillageState {
-  return { v: 1, seed, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null };
+  return {
+    v: 1, seed, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
+    coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
+  };
 }
 
-const ITEM_IDS = new Set<string>(Object.keys(ITEM_INFO));
 
 export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number; y: number }): VillageState {
   const base = emptyVillage(seed, spawn);
@@ -90,17 +98,26 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
   const r = raw as Partial<VillageState>;
   if (r.v !== 1 || r.seed !== seed) return base;
   const inv: Partial<Record<ItemId, number>> = {};
-  for (const [k, n] of Object.entries(r.inventory ?? {})) if (ITEM_IDS.has(k) && Number.isInteger(n) && (n as number) > 0) inv[k as ItemId] = Math.min(999, n as number);
+  for (const [k, n] of Object.entries(r.inventory ?? {})) if (isItem(k) && Number.isInteger(n) && (n as number) > 0) inv[k as ItemId] = Math.min(999, n as number);
   const p = r.player;
   return {
     ...base,
     player: p && Number.isInteger(p.x) && Number.isInteger(p.y) ? { x: p.x, y: p.y, dir: ['up', 'down', 'left', 'right'].includes(p.dir) ? p.dir : 'down' } : base.player,
     inventory: inv,
     house: Number.isInteger(r.house) ? Math.max(0, Math.min(HOUSE_LEVELS.length - 1, r.house!)) : 0,
-    placed: Array.isArray(r.placed) ? r.placed.filter((f) => f && Number.isInteger(f.x) && Number.isInteger(f.y) && (FURNITURE as readonly string[]).includes(f.item)).slice(0, 200) : [],
+    placed: Array.isArray(r.placed) ? r.placed.filter((f) => f && Number.isInteger(f.x) && Number.isInteger(f.y) && FURNITURE_IDS.includes(f.item)).slice(0, 300) : [],
     friends: r.friends && typeof r.friends === 'object' ? r.friends : {},
     harvested: r.harvested && typeof r.harvested === 'object' ? r.harvested : {},
     follower: typeof r.follower === 'string' ? r.follower : null,
+    coins: Number.isInteger(r.coins) ? Math.max(0, Math.min(999999, r.coins!)) : base.coins,
+    crops: Array.isArray(r.crops) ? r.crops.filter((c) => c && Number.isInteger(c.x) && Number.isInteger(c.y) && itemDef(c.seed)?.kind === 'seed' && Number.isInteger(c.stage)).slice(0, 200) : [],
+    wear: {
+      player: typeof r.wear?.player === 'string' && ACCESSORY_IDS.includes(r.wear.player) ? r.wear.player : null,
+      mons: r.wear?.mons && typeof r.wear.mons === 'object' ? Object.fromEntries(Object.entries(r.wear.mons).filter(([, v]) => v === null || (typeof v === 'string' && ACCESSORY_IDS.includes(v)))) : {},
+    },
+    collected: Array.isArray(r.collected) ? r.collected.filter((id): id is string => typeof id === 'string' && FURNITURE_IDS.includes(id)) : [],
+    helped: r.helped && typeof r.helped === 'object' ? r.helped : {},
+    rareGift: r.rareGift && typeof r.rareGift === 'object' ? r.rareGift : {},
   };
 }
 
@@ -116,6 +133,7 @@ function pay(s: VillageState, cost: Partial<Record<ItemId, number>>): void {
 
 export function add(s: VillageState, item: ItemId, n = 1): void {
   s.inventory[item] = Math.min(999, count(s, item) + n);
+  if (itemDef(item)?.kind === 'furniture' && !s.collected.includes(item)) s.collected.push(item);
 }
 
 // ----------------------------------------------------------------------------- coleta
@@ -132,6 +150,7 @@ const HARVEST: Partial<Record<Tile, { item: ItemId | ((rng: Rng) => ItemId); qty
   bush: { item: (rng) => (rng() < 0.6 ? 'oran' : 'pecha'), qty: [1, 2], verb: 'Você colheu frutas do arbusto' },
   flower: { item: 'flor', qty: [1, 2], verb: 'Você colheu flores' },
   sand: { item: 'concha', qty: [1, 1], verb: 'Você achou uma concha na areia' },
+  tall: { item: (rng) => (['sem-oran', 'sem-pecha', 'sem-girassol', 'sem-tomate'] as const)[Math.floor(rng() * 4)]!, qty: [1, 1], verb: 'Você achou no mato alto' },
 };
 
 /** Coleta no bloco (x, y): cada bloco dá uma vez por dia (a natureza volta no dia seguinte). */
@@ -141,13 +160,14 @@ export function harvest(s: VillageState, map: VillageMap, x: number, y: number, 
   if (!rule) return { ok: false, message: '' };
   // Areia: só às vezes tem concha.
   if (tile === 'sand' && rng() < 0.55) return { ok: false, message: 'Só areia por aqui.' };
+  if (tile === 'tall' && rng() < 0.6) return { ok: false, message: 'Nada no mato desta vez.' };
   const key = `${x},${y}`;
   if (s.harvested[key] === day) return { ok: false, message: tile === 'tree' ? 'Esta árvore já deu madeira hoje. Volte amanhã!' : 'Já coletou aqui hoje. Volte amanhã!' };
   s.harvested[key] = day;
   const item = typeof rule.item === 'function' ? rule.item(rng) : rule.item;
   const qty = rule.qty[0] + Math.floor(rng() * (rule.qty[1] - rule.qty[0] + 1));
   add(s, item, qty);
-  return { ok: true, message: `${rule.verb}: +${qty} ${ITEM_INFO[item].name}`, got: { item, qty } };
+  return { ok: true, message: `${rule.verb}: +${qty} ${itemName(item)}`, got: { item, qty } };
 }
 
 /** Limpa as marcas de coleta de dias anteriores (o arquivo não cresce para sempre). */
@@ -168,28 +188,30 @@ export function upgradeHouse(s: VillageState): Interaction {
 
 export function describeCost(s: VillageState, cost: Partial<Record<ItemId, number>>): string {
   return Object.entries(cost)
-    .map(([k, n]) => `${ITEM_INFO[k as ItemId].name} ${Math.min(count(s, k as ItemId), n ?? 0)}/${n}`)
+    .map(([k, n]) => `${itemName(k)} ${Math.min(count(s, k as ItemId), n ?? 0)}/${n}`)
     .join(', ');
 }
 
-export function craft(s: VillageState, item: FurnitureId): Interaction {
+export function craft(s: VillageState, item: ItemId): Interaction {
   const cost = RECIPES[item];
+  if (!cost) return { ok: false, message: 'Isso não dá para fabricar.' };
   if (!canAfford(s, cost)) return { ok: false, message: `Faltam materiais: ${describeCost(s, cost)}.` };
   pay(s, cost);
   add(s, item);
-  return { ok: true, message: `Você fez: ${ITEM_INFO[item].name}!` };
+  return { ok: true, message: `Você fez: ${itemName(item)}!` };
 }
 
 export const isPlaced = (s: VillageState, x: number, y: number) => s.placed.some((f) => f.x === x && f.y === y);
 
 /** Põe um móvel no chão (grama, flores ou trilha, sem nada em cima). */
 export function place(s: VillageState, map: VillageMap, item: FurnitureId, x: number, y: number, occupied: (x: number, y: number) => boolean): Interaction {
-  if (count(s, item) <= 0) return { ok: false, message: `Você não tem ${ITEM_INFO[item].name}.` };
+  if (itemDef(item)?.kind !== 'furniture') return { ok: false, message: 'Só móveis podem ser colocados no chão.' };
+  if (count(s, item) <= 0) return { ok: false, message: `Você não tem ${itemName(item)}.` };
   const t = tileAt(map, x, y);
-  if (!['grass', 'path', 'flower', 'tall', 'sand'].includes(t) || isPlaced(s, x, y) || occupied(x, y)) return { ok: false, message: 'Não dá para colocar aí. Fique de frente para um lugar livre.' };
+  if (!['grass', 'path', 'flower', 'tall', 'sand'].includes(t) || isPlaced(s, x, y) || cropAt(s, x, y) || occupied(x, y)) return { ok: false, message: 'Não dá para colocar aí. Fique de frente para um lugar livre.' };
   s.inventory[item] = count(s, item) - 1;
   s.placed.push({ x, y, item });
-  return { ok: true, message: `${ITEM_INFO[item].name} colocado!` };
+  return { ok: true, message: `${itemName(item)} colocado!` };
 }
 
 /** Recolhe o móvel em (x, y) de volta para o inventário. */
@@ -198,7 +220,7 @@ export function pickUp(s: VillageState, x: number, y: number): Interaction {
   if (i < 0) return { ok: false, message: '' };
   const [f] = s.placed.splice(i, 1);
   add(s, f!.item);
-  return { ok: true, message: `${ITEM_INFO[f!.item].name} guardado.` };
+  return { ok: true, message: `${itemName(f!.item)} guardado.` };
 }
 
 // ----------------------------------------------------------------------------- amizade
@@ -277,7 +299,7 @@ export function talk(s: VillageState, id: string, name: string, types: readonly 
   const lines = LINES[level]!;
   let text = `${first ? greet : ''}${lines[Math.floor(rng() * lines.length)]}`;
   const req = f.request && f.request.day === day && !f.request.done ? f.request : null;
-  if (req) text += ` Ah... você teria ${req.qty} ${ITEM_INFO[req.item].name}? Eu ia adorar!`;
+  if (req) text += ` Ah... você teria ${req.qty} ${itemName(req.item)}? Eu ia adorar!`;
   else if (!first) text = `${name} está feliz em te ver.`;
   return { text, gained, request: req };
 }
@@ -293,7 +315,7 @@ export function giveGift(s: VillageState, id: string, types: readonly PokemonTyp
   const f = friendOf(s, id);
   const req = f.request && f.request.day === day && !f.request.done ? f.request : null;
   if (req && req.item === item) {
-    if (count(s, item) < req.qty) return { ok: false, text: `Precisa de ${req.qty} ${ITEM_INFO[item].name} (você tem ${count(s, item)}).`, gained: 0 };
+    if (count(s, item) < req.qty) return { ok: false, text: `Precisa de ${req.qty} ${itemName(item)} (você tem ${count(s, item)}).`, gained: 0 };
     s.inventory[item] = count(s, item) - req.qty;
     req.done = true;
     f.points = Math.min(100, f.points + 15);
@@ -301,13 +323,13 @@ export function giveGift(s: VillageState, id: string, types: readonly PokemonTyp
     return { ok: true, text: 'Era isso que eu queria! Obrigado! Tome, um presentinho meu.', gained: 15 };
   }
   if (f.lastGift === day) return { ok: false, text: 'Já ganhei presente hoje. Obrigado mesmo assim!', gained: 0 };
-  if (count(s, item) <= 0) return { ok: false, text: `Você não tem ${ITEM_INFO[item].name}.`, gained: 0 };
+  if (count(s, item) <= 0) return { ok: false, text: `Você não tem ${itemName(item)}.`, gained: 0 };
   s.inventory[item] = count(s, item) - 1;
   f.lastGift = day;
   const fav = favoriteOf(types) === item;
   const gained = fav ? 10 : 4;
   f.points = Math.min(100, f.points + gained);
-  return { ok: true, text: fav ? `${ITEM_INFO[item].name}! É o meu favorito!` : 'Que gentil, obrigado!', gained };
+  return { ok: true, text: fav ? `${itemName(item)}! É o meu favorito!` : 'Que gentil, obrigado!', gained };
 }
 
 /** Só um Grande amigo (ou mais) aceita seguir você pela vila. */
@@ -325,4 +347,143 @@ export function daylight(hour: number, minute = 0): { dark: number; warm: number
   else night = 1;
   const warm = t > 16.5 && t < 19.5 ? Math.max(0, 1 - Math.abs(t - 18) / 1.5) : t >= 5 && t < 7.5 ? Math.max(0, 1 - Math.abs(t - 6.2) / 1.3) * 0.6 : 0;
   return { dark: Math.round(night * 0.55 * 1000) / 1000, warm: Math.round(warm * 1000) / 1000 };
+}
+
+// ----------------------------------------------------------------------------- loja
+
+/** Compra na loja (só o que está à venda hoje). */
+export function buy(s: VillageState, id: ItemId, day: string): Interaction {
+  const def = shopToday(day).find((i) => i.id === id);
+  if (!def) return { ok: false, message: 'Isso não está à venda hoje.' };
+  if (s.coins < def.price) return { ok: false, message: `Faltam ${def.price - s.coins} moedas para ${def.name}.` };
+  s.coins -= def.price;
+  add(s, id);
+  return { ok: true, message: `Você comprou: ${def.name}!` };
+}
+
+/** Vende `qty` (padrão 1) para a loja. */
+export function sell(s: VillageState, id: ItemId, qty = 1): Interaction {
+  const def = itemDef(id);
+  const have = count(s, id);
+  const n = Math.min(have, Math.max(1, qty));
+  if (!def || n <= 0) return { ok: false, message: 'Você não tem isso.' };
+  if (def.kind === 'accessory' && Object.values(s.wear.mons).filter((w) => w === id).length + (s.wear.player === id ? 1 : 0) >= have) {
+    return { ok: false, message: 'Esse acessório está sendo usado. Tire antes de vender.' };
+  }
+  s.inventory[id] = have - n;
+  s.coins += def.sell * n;
+  return { ok: true, message: `Vendeu ${n} ${def.name}: +${def.sell * n} moedas.` };
+}
+
+// ----------------------------------------------------------------------------- horta
+
+export const cropAt = (s: VillageState, x: number, y: number): Crop | undefined => s.crops.find((c) => c.x === x && c.y === y);
+
+/** Planta uma semente na grama (ou flores) à sua frente. */
+export function plant(s: VillageState, map: VillageMap, seed: ItemId, x: number, y: number, now: number, occupied: (x: number, y: number) => boolean): Interaction {
+  const def = itemDef(seed);
+  if (def?.kind !== 'seed') return { ok: false, message: 'Isso não é semente.' };
+  if (count(s, seed) <= 0) return { ok: false, message: `Você não tem ${def.name}.` };
+  const t = tileAt(map, x, y);
+  if (!['grass', 'flower', 'tall'].includes(t) || cropAt(s, x, y) || isPlaced(s, x, y) || occupied(x, y)) return { ok: false, message: 'Plante na grama livre à sua frente.' };
+  s.inventory[seed] = count(s, seed) - 1;
+  s.crops.push({ x, y, seed, stage: 0, wateredAt: now });
+  return { ok: true, message: `Você plantou ${def.name}. Regue para crescer!` };
+}
+
+/** Avança a horta: cada estágio precisa de rega e dos minutos da planta desde a rega. */
+export function tickCrops(s: VillageState, now: number): number {
+  let grew = 0;
+  for (const c of s.crops) {
+    const g = itemDef(c.seed)?.grows;
+    if (!g || c.stage >= g.stages || c.wateredAt === null) continue;
+    if (now - c.wateredAt >= g.minutes * 60_000) {
+      c.stage++;
+      c.wateredAt = null;
+      grew++;
+    }
+  }
+  return grew;
+}
+
+export function water(s: VillageState, x: number, y: number, now: number): Interaction {
+  const c = cropAt(s, x, y);
+  const g = c && itemDef(c.seed)?.grows;
+  if (!c || !g) return { ok: false, message: '' };
+  if (c.stage >= g.stages) return { ok: false, message: 'Já está pronta para colher!' };
+  if (c.wateredAt !== null) return { ok: false, message: `Já regada. Volte em uns ${Math.max(1, Math.ceil((g.minutes * 60_000 - (now - c.wateredAt)) / 60_000))} minutos.` };
+  c.wateredAt = now;
+  return { ok: true, message: 'Você regou a planta.' };
+}
+
+export function harvestCrop(s: VillageState, x: number, y: number, rng: Rng): Interaction {
+  const i = s.crops.findIndex((c) => c.x === x && c.y === y);
+  const c = s.crops[i];
+  const g = c && itemDef(c.seed)?.grows;
+  if (!c || !g || c.stage < g.stages) return { ok: false, message: '' };
+  s.crops.splice(i, 1);
+  const qty = g.yield[0] + Math.floor(rng() * (g.yield[1] - g.yield[0] + 1));
+  add(s, g.crop, qty);
+  if (rng() < 0.5) add(s, c.seed);
+  return { ok: true, message: `Colheu ${qty} ${itemName(g.crop)}!`, got: { item: g.crop, qty } };
+}
+
+/** A planta precisa de água agora? (para o balãozinho de gota) */
+export function needsWater(c: Crop): boolean {
+  const g = itemDef(c.seed)?.grows;
+  return !!g && c.stage < g.stages && c.wateredAt === null;
+}
+
+// ----------------------------------------------------------------------------- acessórios
+
+/** Põe (ou tira, com `null`) um acessório em você (`'player'`) ou num Pokémon (id da carta). */
+export function wear(s: VillageState, who: string, accessory: string | null): Interaction {
+  if (accessory === null) {
+    if (who === 'player') s.wear.player = null;
+    else s.wear.mons[who] = null;
+    return { ok: true, message: 'Acessório guardado.' };
+  }
+  const def = itemDef(accessory);
+  if (def?.kind !== 'accessory') return { ok: false, message: 'Isso não é acessório.' };
+  if (who === 'player' ? def.slot === 'pokemon' : def.slot === 'player') return { ok: false, message: who === 'player' ? 'Esse é para Pokémon.' : 'Esse é para você.' };
+  const inUse = Object.entries(s.wear.mons).filter(([id, w]) => w === accessory && id !== who).length + (s.wear.player === accessory && who !== 'player' ? 1 : 0);
+  if (count(s, accessory) <= inUse) return { ok: false, message: `Você precisa de mais um ${def.name} (todos estão em uso).` };
+  if (who === 'player') s.wear.player = accessory;
+  else s.wear.mons[who] = accessory;
+  return { ok: true, message: `${def.name} posto!` };
+}
+
+// ----------------------------------------------------------------------------- ajuda dos amigos
+
+const HELP_ITEMS = ['madeira', 'pedra', 'oran', 'pecha', 'flor', 'concha', 'tecido', 'ferro'] as const;
+
+/**
+ * Amigo (nível 2) ou mais traz, uma vez por dia, alguns materiais que achou pela vila; Melhor amigo, uma vez por semana,
+ * um móvel raro (que só se ganha assim).
+ */
+export function dailyHelp(s: VillageState, id: string, day: string, rng: Rng): { items: { item: ItemId; qty: number }[]; rare: ItemId | null } {
+  const level = friendLevel(friendOf(s, id).points).level;
+  const items: { item: ItemId; qty: number }[] = [];
+  let rare: ItemId | null = null;
+  if (level >= 2 && s.helped[id] !== day) {
+    s.helped[id] = day;
+    const n = level >= 3 ? 2 : 1;
+    for (let k = 0; k < n; k++) {
+      const item = HELP_ITEMS[Math.floor(rng() * HELP_ITEMS.length)]!;
+      const qty = 1 + Math.floor(rng() * 3);
+      add(s, item, qty);
+      items.push({ item, qty });
+    }
+  }
+  if (level >= 4) {
+    const week = Math.floor(Date.parse(`${day}T12:00:00Z`) / (7 * 86_400_000));
+    if (Number.isFinite(week) && s.rareGift[id] !== String(week)) {
+      s.rareGift[id] = String(week);
+      const gifts = ITEMS.filter((i) => i.gift).map((i) => i.id);
+      const missing = gifts.filter((g) => !s.collected.includes(g));
+      rare = (missing.length > 0 ? missing : gifts)[Math.floor(rng() * (missing.length > 0 ? missing.length : gifts.length))]!;
+      add(s, rare);
+    }
+  }
+  return { items, rare };
 }

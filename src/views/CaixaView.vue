@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { isTap } from '../ar/gestures';
 import { fetchSprite, getCache, loadBattle, prepareMegaFor } from '../app/services';
 import { challengePlan, isLeaderCreature, leaderFighter, leaderLoader, loadLeaderEntries, MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
@@ -28,6 +28,14 @@ import StageButton from '../components/StageButton.vue';
 import TeamPicker from '../components/TeamPicker.vue';
 import BoxPvpPanel from '../components/BoxPvpPanel.vue';
 import VillageView from '../components/VillageView.vue';
+import PokeBook from '../components/PokeBook.vue';
+import { loadVillage, saveVillage } from '../app/village-store';
+import { dailyHelp, friendLevel, itemName } from '../core/village/life';
+import type { VillageState } from '../core/village/life';
+import { paintAccessory } from '../village/item-art';
+import { dayKey } from '../core/trainer';
+import type { PokemonType } from '../core/pokemon-data';
+import { loadPinData } from '../app/services';
 import { boxPvp, sendTeam, startBoxPvp } from '../app/box-pvp-store';
 import type { BoxPvpStart } from '../app/box-pvp-store';
 import { boxPvpBattle, BOX_PVP_LABELS_PT, BOX_PVP_MAX } from '../pvp/box-wire';
@@ -86,6 +94,7 @@ function showMegaNotes(notes: { text: string; tone: 'ok' | 'warn' }[]): void {
   megaNotes.value = notes;
   if (megaNotesTimer) clearTimeout(megaNotesTimer);
   clearInterval(weatherTimer);
+  clearInterval(heartTimer);
   if (stageSpeechTimer) clearTimeout(stageSpeechTimer);
   megaNotesTimer = notes.length > 0 ? setTimeout(() => (megaNotes.value = []), 9000) : null;
 }
@@ -125,6 +134,90 @@ function ndcOf(clientX: number, clientY: number): { x: number; y: number } | nul
   const rect = stageEl.value?.getBoundingClientRect();
   if (!rect || rect.width === 0 || rect.height === 0) return null;
   return { x: ((clientX - rect.left) / rect.width) * 2 - 1, y: -(((clientY - rect.top) / rect.height) * 2 - 1) };
+}
+
+// ---- Intimidade (da Vila): vale na batalha, traz ajudas e corações na Caixa
+let village: VillageState = loadVillage();
+const bookOpen = ref(false);
+const bookTypes = reactive(new Map<string, PokemonType[]>());
+const bookThumbs = reactive(new Map<string, string>());
+const bookList = ref<{ id: string; name: string }[]>([]);
+const bookMons = computed(() => bookList.value.map((r) => ({ id: r.id, name: r.name, types: bookTypes.get(r.id) ?? [], thumb: bookThumbs.get(r.id) })));
+const bondOf = (id: string): number => friendLevel(village.friends[id]?.points ?? 0).level;
+/** Põe a intimidade nos lutadores da sua equipe (crítico e "aguentou firme"). */
+function withBond(fighters: Fighter[]): Fighter[] {
+  return fighters.map((f) => {
+    const bond = bondOf(f.id);
+    return bond > 0 ? { ...f, bond } : f;
+  });
+}
+
+/** Ao montar a caixa: acessórios da Vila, corações dos mais próximos e a ajuda diária dos amigos. */
+function applyVillage(): void {
+  village = loadVillage();
+  const current = box;
+  if (!current) return;
+  const today = dayKey(new Date());
+  const notes: { text: string; tone: 'ok' | 'warn' }[] = [];
+  for (const c of current.scene.creatureList) {
+    const acc = village.wear.mons[c.info.id];
+    c.setAccessory(acc ? paintAccessory(acc) : null);
+    const help = dailyHelp(village, c.info.id, today, Math.random);
+    if (help.items.length > 0 || help.rare) {
+      c.say('🎁', 2600);
+      const what = [...help.items.map((h) => `${h.qty} ${itemName(h.item)}`), ...(help.rare ? [itemName(help.rare)] : [])].join(' e ');
+      notes.push({ text: `${c.info.name} trouxe ${what} para a sua mochila da Vila!`, tone: 'ok' });
+    }
+  }
+  if (notes.length > 0) {
+    saveVillage(village);
+    showMegaNotes(notes.slice(0, 3));
+  }
+}
+
+const heartTimer = setInterval(() => {
+  const current = box;
+  if (!current || battleHud.value || phase.value !== 'running') return;
+  const close = current.scene.creatureList.filter((c) => bondOf(c.info.id) >= 3 && !c.bubbleEmoji);
+  const pick = close[Math.floor(Math.random() * close.length)];
+  if (pick && Math.random() < 0.6) {
+    pick.poke();
+    pick.say(['❤️', '🥰', '😊', '💕'][Math.floor(Math.random() * 4)]!, 2000);
+  }
+}, 7000);
+
+async function openBook(): Promise<void> {
+  bookOpen.value = !bookOpen.value;
+  if (!bookOpen.value) return;
+  village = loadVillage();
+  let entries = lastEntries;
+  if (entries.length === 0) {
+    try {
+      const cache = await getCache();
+      entries = (await loadCreatureEntries(cache, undefined, resolveTeam(savedTeam.value, await cache.list()).ids)).entries;
+    } catch {
+      entries = [];
+    }
+  }
+  bookList.value = entries.map((e) => ({ id: e.info.id, name: e.info.name }));
+  for (const e of entries) {
+    if (!bookThumbs.has(e.info.id)) {
+      const frame = e.source.kind === 'gif' ? { w: e.source.gif.width, h: e.source.gif.height, rgba: e.source.gif.frames[0]?.rgba } : { w: e.source.image.width, h: e.source.image.height, rgba: e.source.image.data };
+      if (frame.rgba) {
+        const c = document.createElement('canvas');
+        c.width = frame.w;
+        c.height = frame.h;
+        const ctx = c.getContext('2d');
+        if (ctx) {
+          const img = ctx.createImageData(frame.w, frame.h);
+          img.data.set(frame.rgba);
+          ctx.putImageData(img, 0, 0);
+          bookThumbs.set(e.info.id, c.toDataURL());
+        }
+      }
+    }
+    if (!bookTypes.has(e.info.id)) void loadPinData(e.info.id, e.info.dexId).then((d) => d.profile && bookTypes.set(e.info.id, d.profile.types)).catch(() => undefined);
+  }
 }
 
 /** O que foi carregado da sua equipe por último (a equipe do desafio sai daqui, sem os Pokémon do líder). */
@@ -173,7 +266,7 @@ async function syncPvpTeam(): Promise<void> {
   const key = mine.map((e) => e.info.id).join('|');
   if (key !== pvpTeamKey) {
     pvpTeamKey = key;
-    pvpFighters = await prepareFighters(mine.map((e) => ({ id: e.info.id, name: e.info.name, dexId: e.info.dexId })), loadBattle);
+    pvpFighters = withBond(await prepareFighters(mine.map((e) => ({ id: e.info.id, name: e.info.name, dexId: e.info.dexId })), loadBattle));
     if (key !== pvpTeamKey) return;
   }
   const mons: BoxPvpMon[] = mine.map((e, i) => ({ id: e.info.id, name: e.info.name, sprite: e.info.dexId ?? 1, shiny: e.info.shiny === true, fighter: pvpFighters[i]! }));
@@ -268,6 +361,7 @@ async function populate(): Promise<void> {
     if (disposed || !box) return;
     box.setCreatures(loaded.entries);
     lastEntries = loaded.entries;
+    applyVillage();
     void syncPvpTeam();
     for (const entry of loaded.entries) if (maybeGalladeSpeaks(entry.info)) break;
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
@@ -487,7 +581,7 @@ async function startChallenge(ch: Challenge): Promise<void> {
     const creatures = current.scene.creatureList;
     const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), leaderLoader(loadBattle));
     if (disposed || box !== current) return;
-    const fighters = raw.map((f, i) => (i >= mine.length ? leaderFighter(f, ch.power) : f));
+    const fighters = raw.map((f, i) => (i >= mine.length ? leaderFighter(f, ch.power) : withBond([f])[0]!));
     const plan = challengePlan(mine.length, leader.entries.length, ch, profile.name);
     battleCounted = false;
     activeChallenge = ch;
@@ -576,7 +670,7 @@ async function startBattle(): Promise<void> {
       energy.value,
       { prepare: prepareMegaFor, decode: decodeMegaSprite },
     );
-    const fighters = await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), megaAwareLoader(loadBattle, megaPlan.entries));
+    const fighters = withBond(await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: c.info.name, dexId: c.info.dexId })), megaAwareLoader(loadBattle, megaPlan.entries)));
     if (disposed || box !== current) return;
     battleCounted = false;
     for (const entry of megaPlan.entries) fighting.find((c) => c.info.id === entry.cardId)?.setForm(entry.source);
@@ -993,6 +1087,12 @@ onBeforeUnmount(() => {
     </div>
 
     <p v-if="error && !immersive" class="message error" role="alert">{{ error }}</p>
+
+    <details v-if="!immersive" class="layout" :open="bookOpen" @toggle="(e: Event) => (e.target as HTMLDetailsElement).open !== bookOpen && void openBook()">
+      <summary>Livro dos Pokémon (opiniões, humor e intimidade)</summary>
+      <p v-if="bookList.length === 0" class="hint">Nenhum Pokémon na equipe da caixa ainda. Escaneie cartas para começar o livro.</p>
+      <PokeBook v-else :mons="bookMons" :friends="village.friends" />
+    </details>
 
     <details v-if="!immersive" class="layout" :open="pvpOn">
       <summary>Batalhar com um amigo (PvP)</summary>

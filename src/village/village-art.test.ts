@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FURNITURE } from '../core/village/life';
 import { TILES } from '../core/village/map';
-import { outfitFor, paintBush, paintFurniture, paintHouse, paintPlayer, paintRock, paintTile, paintTree } from './village-art';
+import { outfitFor, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree } from './village-art';
+import { paintFurnitureItem } from './item-art';
 import type { PixelBuf } from '../box/ground-art';
 
 const opaque = (b: PixelBuf) => {
@@ -21,14 +22,14 @@ describe('arte da Vila', () => {
   });
 
   it('objetos têm fundo transparente e desenho de verdade', () => {
-    for (const b of [paintTree(0), paintTree(2), paintRock(), paintBush(true), ...FURNITURE.map((f) => paintFurniture(f))]) {
+    for (const b of [paintTree(0), paintTree(2), paintRock(), paintBush(true), ...FURNITURE.map((f) => paintFurnitureItem(f)), paintShop()]) {
       const n = opaque(b);
       expect(n).toBeGreaterThan(30);
       expect(n).toBeLessThan(b.w * b.h);
     }
     expect(opaque(paintBush(true))).toBeGreaterThan(0);
     expect([...paintBush(true).data]).not.toEqual([...paintBush(false).data]);
-    expect([...paintFurniture('luminaria', true).data]).not.toEqual([...paintFurniture('luminaria', false).data]);
+    expect([...paintFurnitureItem('luminaria', true).data]).not.toEqual([...paintFurnitureItem('luminaria', false).data]);
   });
 
   it('a casa muda a cada nível (0 = terreno vazio)', () => {

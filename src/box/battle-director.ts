@@ -1075,6 +1075,11 @@ export class BattleDirector {
       this.addLabel(STATUS_LABELS_PT[turn.inflicted] + '!', 'status', STATUS_COLORS_CSS[turn.inflicted], top.clone().add(new Vector3(0, lift, 0)));
       lift += 0.12;
     }
+    if (turn.endured) {
+      this.addLabel('Aguentou firme por você!', 'good', '#ffcb05', top.clone().add(new Vector3(0, lift, 0)));
+      this.shout(`${this.o.fighters[target]!.name} aguentou firme por você!`, '#ffcb05');
+      lift += 0.12;
+    }
     if (turn.fainted) {
       this.faintAt[target] = this.clock;
       this.cue({ kind: 'faint' });

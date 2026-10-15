@@ -1,6 +1,5 @@
 import { seededRng } from '../core/battle';
 import type { Tile } from '../core/village/map';
-import type { FurnitureId } from '../core/village/life';
 import type { Dir } from '../core/village/actors';
 import { createBuf, EDGE, paintGround, TILE } from '../box/ground-art';
 import type { PixelBuf } from '../box/ground-art';
@@ -68,6 +67,9 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
   const buf = createBuf(TILE, TILE);
   const rng = seededRng((c * 73856093) ^ (r * 19349663) ^ 0x5bd1e995);
   switch (tile) {
+    case 'shop':
+      paintGround(buf, 0, 0, 'path', rng, 0, { c, r });
+      break;
     case 'grass':
     case 'tree':
     case 'rock':
@@ -203,57 +205,6 @@ export function paintHouse(level: number): PixelBuf {
   return buf;
 }
 
-/** Móvel de 16×16. `lit`: o lampião acende à noite; `frame` anima a fonte. */
-export function paintFurniture(item: FurnitureId, lit = false, frame = 0): PixelBuf {
-  const buf = createBuf(16, 16);
-  switch (item) {
-    case 'cadeira':
-      rect(buf, 4, 2, 8, 7, 0x9a6a3a);
-      rect(buf, 5, 3, 6, 5, 0xb8844a);
-      rect(buf, 3, 9, 10, 2, 0x8a5a2e);
-      rect(buf, 4, 11, 2, 4, 0x6a4a28);
-      rect(buf, 10, 11, 2, 4, 0x6a4a28);
-      break;
-    case 'mesa':
-      rect(buf, 1, 5, 14, 4, 0xb8844a);
-      rect(buf, 1, 5, 14, 1, 0xd2a66c);
-      rect(buf, 2, 9, 2, 6, 0x6a4a28);
-      rect(buf, 12, 9, 2, 6, 0x6a4a28);
-      break;
-    case 'luminaria':
-      rect(buf, 7, 6, 2, 9, 0x4a4a52);
-      rect(buf, 5, 13, 6, 2, 0x4a4a52);
-      rect(buf, 5, 1, 6, 6, lit ? 0xffe27a : 0xc8b070);
-      rect(buf, 6, 2, 4, 4, lit ? 0xfff6c0 : 0xe0d098);
-      break;
-    case 'vaso':
-      rect(buf, 4, 9, 8, 6, 0xc8643c);
-      rect(buf, 3, 8, 10, 2, 0xe07a4c);
-      for (const [x, y, c] of [[5, 4, 0xf06048], [8, 3, 0xffd84a], [10, 5, 0xf8a8c8], [7, 6, 0x4aa84a], [6, 7, 0x4aa84a], [9, 7, 0x4aa84a]] as const) rect(buf, x, y, 2, 2, c);
-      break;
-    case 'fonte':
-      disc(buf, 8, 11, 7, 4, 0x9a968e);
-      disc(buf, 8, 10.5, 5.5, 2.6, WATER.base);
-      rect(buf, 7, 3, 2, 8, 0x9a968e);
-      for (const [x, y] of (frame % 2 ? [[5, 4], [11, 5], [8, 1]] : [[6, 5], [10, 4], [8, 2]]) as [number, number][]) put(buf, x, y, WATER.light);
-      break;
-    case 'cerca':
-      rect(buf, 2, 4, 2, 11, 0xd2a66c);
-      rect(buf, 12, 4, 2, 11, 0xd2a66c);
-      rect(buf, 0, 6, 16, 2, 0xb8844a);
-      rect(buf, 0, 11, 16, 2, 0xb8844a);
-      break;
-    case 'placa':
-      rect(buf, 7, 9, 2, 6, 0x6a4a28);
-      rect(buf, 2, 2, 12, 8, 0xb8844a);
-      rect(buf, 4, 4, 8, 1, 0x6a4a28);
-      rect(buf, 4, 6, 6, 1, 0x6a4a28);
-      break;
-  }
-  outline(buf, 0x2a1a10);
-  return buf;
-}
-
 // ----------------------------------------------------------------------------- você
 
 export interface Outfit {
@@ -360,5 +311,26 @@ export function paintPlayer(dir: Dir, step: number, outfit: Outfit): PixelBuf {
     stamp(buf, 0, 0, SIDE, pal, flip);
     stamp(buf, 0, 16, SIDE_LEGS[legs], pal, flip);
   }
+  return buf;
+}
+
+/** A loja da praça: barraca de 48×48 com toldo listrado, balcão e caixotes de frutas. */
+export function paintShop(): PixelBuf {
+  const buf = createBuf(48, 48);
+  rect(buf, 4, 22, 40, 24, 0xd2a66c);
+  for (let y = 25; y < 46; y += 4) rect(buf, 4, y, 40, 1, 0xb8844a);
+  rect(buf, 4, 30, 40, 6, 0x8a5a2e);
+  rect(buf, 4, 30, 40, 1, 0xa8743e);
+  for (const [x, c] of [[8, 0x4a6ae8], [17, 0xf8a8c8], [26, 0xffd84a], [35, 0xe84a3a]] as const) {
+    rect(buf, x, 27, 6, 3, 0x6a4a28);
+    for (let i = 0; i < 3; i++) rect(buf, x + i * 2, 26, 2, 2, c);
+  }
+  rect(buf, 4, 8, 2, 22, 0x6a4a28);
+  rect(buf, 42, 8, 2, 22, 0x6a4a28);
+  for (let y = 4; y < 16; y++) for (let x = 1; x < 47; x++) put(buf, x, y, Math.floor(x / 6) % 2 ? 0xd8463c : 0xf6f6f6);
+  for (let x = 1; x < 47; x += 6) for (let k = 0; k < 3; k++) rect(buf, x + k, 16 + k, 6 - 2 * k, 1, Math.floor(x / 6) % 2 ? 0xd8463c : 0xf6f6f6);
+  rect(buf, 18, 0, 12, 5, 0x3a6ad8);
+  rect(buf, 20, 1, 8, 3, 0xffcb05);
+  outline(buf, 0x2a1a10);
   return buf;
 }

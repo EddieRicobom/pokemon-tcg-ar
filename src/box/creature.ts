@@ -137,6 +137,8 @@ export class BoxCreature {
   groundY = 0;
   private bubble: BubbleState | null = null;
   private aura: ShinyAura | null = null;
+  /** Acessório da Vila (laço, chapéu…) em cima da cabeça. */
+  private accessory: Sprite | null = null;
   /** Reflexo na poça (de ponta-cabeça sob os pés); null até a primeira poça. */
   private reflection: Mesh<PlaneGeometry, MeshBasicMaterial> | null = null;
   private reflectionStrength = 0;
@@ -211,6 +213,31 @@ export class BoxCreature {
   /** Está na forma Mega agora. */
   get isMegaForm(): boolean {
     return this.megaActive;
+  }
+
+  /** Põe (ou tira, com `null`) um acessório em pixel art (RGBA 16×16) em cima da cabeça. */
+  setAccessory(rgba: { w: number; h: number; data: Uint8Array } | null): void {
+    if (this.accessory) {
+      this.accessory.material.map?.dispose();
+      this.accessory.material.dispose();
+      this.accessory.removeFromParent();
+      this.accessory = null;
+    }
+    if (!rgba) return;
+    const tex = new DataTexture(rgba.data, rgba.w, rgba.h, RGBAFormat, UnsignedByteType);
+    tex.colorSpace = SRGBColorSpace;
+    tex.magFilter = NearestFilter;
+    tex.minFilter = NearestFilter;
+    tex.repeat.set(1, -1);
+    tex.offset.set(0, 1);
+    tex.needsUpdate = true;
+    this.accessory = new Sprite(new SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5 }));
+    this.accessory.center.set(0.5, 0.25);
+    this.group.add(this.accessory);
+  }
+
+  get hasAccessory(): boolean {
+    return this.accessory !== null;
   }
 
   /** Força do reflexo na poça sob o Pokémon (0 = sem poça). A cena escreve a cada quadro. */
@@ -397,6 +424,12 @@ export class BoxCreature {
     this.mesh.position.y = hop;
     this.updateBubble(dtMs, nowMs);
     this.updateReflection();
+    if (this.accessory) {
+      const size = Math.min(0.16, Math.max(0.08, this.width * 0.45));
+      this.accessory.scale.set(size, size, 1);
+      this.accessory.position.set(0, this.mesh.position.y + this.height * fx.scale * fx.squash * 0.92, 0);
+      this.accessory.visible = fx.faint < 0.5;
+    }
     if (this.aura) {
       this.aura.update(nowMs);
       this.aura.group.visible = fx.faint < 0.5;
@@ -426,6 +459,7 @@ export class BoxCreature {
   dispose(): void {
     this.clearBubble();
     this.setShiny(false);
+    this.setAccessory(null);
     this.reflection?.material.dispose();
     this.reflection?.removeFromParent();
     this.texture.dispose();

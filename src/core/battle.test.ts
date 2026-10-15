@@ -547,3 +547,38 @@ describe('escalação manual', () => {
     expect(isRosterSlot(2)).toBe(false);
   });
 });
+
+describe('intimidade na batalha', () => {
+  const st = { hp: 50, attack: 60, defense: 50, spAttack: 60, spDefense: 50, speed: 50 };
+  const make = (id: string, bond: number, atk = 60) => ({
+    ...buildFighter({ id, name: id, profile: { dexId: 1, types: ['normal'], stats: { ...st, attack: atk } }, card: null, gameMoves: [{ name: 'golpe', type: 'normal', power: 120, accuracy: 100, pp: 10, damageClass: 'physical' }] }),
+    bond,
+  });
+
+  it('melhor amigo aguenta firme uma vez com 1 PS; sem intimidade, não', () => {
+    let endured = 0;
+    let plain = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const r = simulateBattle([make('forte', 0, 200), make('amigo', 4)], seededRng(seed));
+      endured += r.turns.filter((t) => t.endured).length;
+      expect(r.turns.filter((t) => t.endured && t.target !== 1)).toHaveLength(0);
+      expect(r.turns.filter((t) => t.endured).length).toBeLessThanOrEqual(1);
+      for (const t of r.turns.filter((t) => t.endured)) expect(t.targetHpAfter).toBe(1);
+      const p = simulateBattle([make('forte', 0, 200), make('comum', 0)], seededRng(seed));
+      plain += p.turns.filter((t) => t.endured).length;
+    }
+    expect(endured).toBeGreaterThan(10);
+    expect(plain).toBe(0);
+  });
+
+  it('grande amigo acerta mais críticos', () => {
+    let crits = [0, 0];
+    for (let seed = 1; seed <= 200; seed++) {
+      for (const [k, bond] of [[0, 0], [1, 3]] as const) {
+        const r = simulateBattle([make('a', bond), make('b', 0)], seededRng(seed));
+        crits[k]! += r.turns.filter((t) => t.attacker === 0 && t.critical).length;
+      }
+    }
+    expect(crits[1]!).toBeGreaterThan(crits[0]! * 1.4);
+  });
+});
