@@ -1,6 +1,8 @@
 import { reactive, watch } from 'vue';
 import { DEFAULT_SMOOTHING, normalizeSmoothing } from '../core/pixel-upscale';
 import type { SmoothingMode } from '../core/pixel-upscale';
+import { normalizeWeatherMode } from '../core/weather';
+import type { WeatherMode } from '../core/weather';
 
 export interface VisualSettings {
   /** Suavização de pixels dos GIFs (compartilhada entre Escanear, Várias e Caixa). */
@@ -11,6 +13,8 @@ export interface VisualSettings {
   terrain: boolean;
   /** Encontros entre os Pokémon e balões de emoji na caixa (Caixa). */
   social: boolean;
+  /** Clima da Caixa: ciclo, um clima fixo ou desligado. Pesa na GPU (camadas e partículas). */
+  weather: WeatherMode;
   /** Sons dos golpes e da vitória na batalha (Caixa). */
   sound: boolean;
   /** Sombra suave e brilho no chão sob o Pokémon sobre a carta (Escanear e Várias). */
@@ -19,10 +23,10 @@ export interface VisualSettings {
 
 const KEY = 'tcg-ar-visual-v2';
 const LEGACY_KEY = 'tcg-ar-visual-v1';
-const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, terrain: true, social: true, sound: true, shadow: true };
+const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true };
 
 export function normalizeVisual(raw: Partial<VisualSettings> | null | undefined): VisualSettings {
-  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, sound: raw?.sound !== false, shadow: raw?.shadow !== false };
+  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), sound: raw?.sound !== false, shadow: raw?.shadow !== false };
 }
 
 function read(): VisualSettings {
@@ -41,7 +45,7 @@ export const visual = reactive<VisualSettings>(read());
 
 watch(visual, () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, terrain: visual.terrain, social: visual.social, sound: visual.sound, shadow: visual.shadow }));
+    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, terrain: visual.terrain, social: visual.social, weather: visual.weather, sound: visual.sound, shadow: visual.shadow }));
   } catch {
     // Só não lembra da escolha na próxima vez.
   }

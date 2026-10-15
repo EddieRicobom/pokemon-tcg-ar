@@ -4,6 +4,7 @@ import type { OrientationMode } from './orientation-source';
 import { BoxScene, DEFAULT_HALF_SIZE_M } from './box-scene';
 import type { BoxMode, CreatureEntry } from './box-scene';
 import type { SmoothingMode } from '../core/pixel-upscale';
+import type { WeatherMode } from '../core/weather';
 import type { BoxCreature } from './creature';
 import type { BattleHud } from './battle-director';
 import type { BattleResult, Fighter } from '../core/battle';
@@ -41,6 +42,8 @@ export interface RunningBox {
   /** Chão em pixel art e golpes que mudam o terreno. */
   setTerrain(on: boolean): void;
   setSocial(on: boolean): void;
+  /** Clima da caixa (ciclo, fixo ou desligado). */
+  setWeather(mode: WeatherMode): void;
   /** Liga ou desliga os sons da batalha. */
   setSound(on: boolean): void;
   /** Libera o áudio do navegador: chame direto de um toque do usuário (ex.: no clique de Batalhar). */
@@ -143,6 +146,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setLighting: (on) => scene.setLighting(on),
     setTerrain: (on) => scene.setTerrain(on),
     setSocial: (on) => scene.setSocial(on),
+    setWeather: (mode) => scene.setWeather(mode),
     setSound: (on) => sound.setEnabled(on),
     unlockAudio: () => sound.unlock(),
     startBattle: (fighters, plan) => scene.startBattle(fighters, undefined, plan),

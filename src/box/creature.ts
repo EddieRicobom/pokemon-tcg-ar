@@ -137,6 +137,9 @@ export class BoxCreature {
   groundY = 0;
   private bubble: BubbleState | null = null;
   private aura: ShinyAura | null = null;
+  /** Reflexo na poça (de ponta-cabeça sob os pés); null até a primeira poça. */
+  private reflection: Mesh<PlaneGeometry, MeshBasicMaterial> | null = null;
+  private reflectionStrength = 0;
 
   constructor(readonly info: CreatureInfo, source: CreatureSource, readonly state: WanderState, private readonly frameCacheLimit = FRAME_CACHE_BYTES) {
     this.baseSource = source;
@@ -208,6 +211,40 @@ export class BoxCreature {
   /** Está na forma Mega agora. */
   get isMegaForm(): boolean {
     return this.megaActive;
+  }
+
+  /** Força do reflexo na poça sob o Pokémon (0 = sem poça). A cena escreve a cada quadro. */
+  setReflection(strength: number): void {
+    this.reflectionStrength = Math.max(0, Math.min(1, strength));
+    if (this.reflectionStrength > 0.02 && !this.reflection) {
+      this.reflection = new Mesh(this.mesh.geometry, new MeshBasicMaterial({ map: this.texture, transparent: true, depthWrite: false, alphaTest: 0.5, side: DoubleSide, color: 0xa8c4e6 }));
+      this.reflection.renderOrder = 0;
+      this.group.add(this.reflection);
+    }
+  }
+
+  private updateReflection(): void {
+    const r = this.reflection;
+    if (!r) return;
+    const on = this.reflectionStrength > 0.02 && this.fx.faint < 0.5;
+    r.visible = on;
+    if (!on) return;
+    if (r.material.map !== this.mesh.material.map) {
+      r.material.map = this.mesh.material.map;
+      r.material.needsUpdate = true;
+    }
+    // De ponta-cabeça a partir dos pés, com o mesmo giro e o pulinho invertido.
+    r.rotation.order = 'YXZ';
+    r.rotation.y = this.mesh.rotation.y;
+    r.rotation.x = -this.mesh.rotation.x;
+    r.position.y = -this.mesh.position.y;
+    r.scale.set(this.mesh.scale.x, -this.mesh.scale.y, 1);
+    r.material.opacity = 0.42 * this.reflectionStrength;
+  }
+
+  /** Para testes: o reflexo está aparecendo? */
+  get reflecting(): boolean {
+    return this.reflection?.visible === true;
   }
 
   /** Liga ou desliga o brilho do shiny (halo dourado e estrelinhas) em volta do Pokémon. */
@@ -359,6 +396,7 @@ export class BoxCreature {
     hop += fx.dy;
     this.mesh.position.y = hop;
     this.updateBubble(dtMs, nowMs);
+    this.updateReflection();
     if (this.aura) {
       this.aura.update(nowMs);
       this.aura.group.visible = fx.faint < 0.5;
@@ -388,6 +426,8 @@ export class BoxCreature {
   dispose(): void {
     this.clearBubble();
     this.setShiny(false);
+    this.reflection?.material.dispose();
+    this.reflection?.removeFromParent();
     this.texture.dispose();
     this.mesh.geometry.dispose();
     this.mesh.material.dispose();

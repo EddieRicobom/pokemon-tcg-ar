@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { resetVisual, visual } from '../app/visual-settings';
 import { SMOOTHING_HINTS_PT, SMOOTHING_LABELS_PT, SMOOTHING_MODES } from '../core/pixel-upscale';
+import { WEATHER_MODE_LABELS_PT, WEATHER_MODES } from '../core/weather';
 
 defineProps<{ battle?: boolean }>();
 defineEmits<{ close: [] }>();
@@ -60,6 +61,15 @@ defineEmits<{ close: [] }>();
       </div>
       <p class="hint">
         {{ visual.social ? 'De vez em quando os Pokémon se cumprimentam, dançam, brincam de pega-pega ou se desafiam, e mostram emoções em balões de emoji. Toque num Pokémon para ele reagir.' : 'Os Pokémon só passeiam, sem encontros nem balões.' }}
+      </p>
+    </section>
+    <section v-if="battle">
+      <h4>Clima</h4>
+      <div class="chips" role="group" aria-label="Clima">
+        <button v-for="m in WEATHER_MODES" :key="m" type="button" :class="{ active: visual.weather === m }" :aria-pressed="visual.weather === m" @click="visual.weather = m">{{ WEATHER_MODE_LABELS_PT[m] }}</button>
+      </div>
+      <p class="hint">
+        {{ visual.weather === 'off' ? 'Sem clima: céu do jeito que a câmera mostra, mais leve para celulares fracos.' : visual.weather === 'ciclo' ? 'O tempo muda sozinho: sol, nuvens com sombra no chão, chuva com poças que refletem os Pokémon e neve que cai e cobre o chão.' : 'O clima fica fixo enquanto esta opção estiver escolhida.' }}
       </p>
     </section>
     <section v-if="battle">

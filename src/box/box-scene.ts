@@ -37,6 +37,9 @@ export interface CreatureEntry {
   source: CreatureSource;
 }
 
+import { WeatherFx } from './weather-fx';
+import { createWeather, stepWeather, weatherTint } from '../core/weather';
+import type { WeatherKind, WeatherMode, WeatherState } from '../core/weather';
 /**
  * Cena da Caixa: a câmera fica na origem (só gira, seguindo os sensores); o chão é um plano horizontal abaixo
  * dela; a caixa é um quadrado desse chão onde os Pokémon passeiam. Sem WebGL aqui: o desenho é injetado
@@ -75,10 +78,15 @@ export class BoxScene {
   private sound: SoundSink | null = null;
   private readonly envTarget = new Vector3(1, 1, 1);
   private readonly env = new Vector3(1, 1, 1);
+  /** Clima: ciclo automático, fixo ou desligado (opção "Clima"). */
+  private weatherMode: WeatherMode = 'ciclo';
+  private readonly weather: WeatherState;
+  private readonly weatherFx = new WeatherFx();
 
   constructor(rng: Rng = Math.random) {
     this.rng = rng;
     this.social = new SocialDirector(rng);
+    this.weather = createWeather(rng);
     this.camera.position.set(0, 0, 0);
     this.floor.visible = false;
     this.scene.add(this.floor, this.battleRoot);
@@ -183,6 +191,9 @@ export class BoxScene {
       new LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
     );
     this.floor.add(plane, outline);
+    // O clima mora no chão da caixa: camadas sobre o chão em pixel art e as gotas e flocos no volume da caixa.
+    this.weatherFx.setGround(this.boxGround, h);
+    this.floor.add(this.weatherFx.group);
     // Cantos em "L" para a caixa parecer uma caixa.
     const tick = Math.min(0.25, h * 0.3);
     for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
@@ -228,6 +239,16 @@ export class BoxScene {
   /** O chão em pixel art da caixa (null com o terreno desligado). */
   get groundOfBox(): Ground | null {
     return this.boxGround;
+  }
+
+  /** Clima da caixa: `ciclo` muda sozinho, um clima fixo fica, `off` some com tudo. */
+  setWeather(mode: WeatherMode): void {
+    this.weatherMode = mode;
+  }
+
+  /** O clima de agora (null com o clima desligado). */
+  get weatherNow(): { kind: WeatherKind; mode: WeatherMode; state: Readonly<WeatherState> } | null {
+    return this.weatherMode === 'off' ? null : { kind: this.weather.kind, mode: this.weatherMode, state: this.weather };
   }
 
   /** Liga ou desliga os encontros e os balões de emoji. */
@@ -370,11 +391,17 @@ export class BoxScene {
       });
       separate(this.creatures.map((c) => c.state), 0.28, this.half);
     }
-    // Luz: ambiente real (suave) escurecido no foco do golpe, mais as luzes dos golpes em curso.
+    // Clima: segue andando (também na batalha); as camadas e partículas só aparecem na caixa.
+    const weatherOn = this.weatherMode !== 'off';
+    const mode = this.weatherMode;
+    if (mode !== 'off') stepWeather(this.weather, dt / 1000, this.rng, mode === 'ciclo' ? null : mode);
+    this.weatherFx.update(dt, weatherOn && !this.director ? this.weather : null, nowMs);
+    // Luz: ambiente real (suave) escurecido no foco do golpe, mais as luzes dos golpes em curso; o clima tinge por cima.
     this.env.lerp(this.envTarget, Math.min(1, dt / 600));
+    const [wr, wg, wb] = weatherOn ? weatherTint(this.weather) : [1, 1, 1];
     if (this.lighting) {
       const dim = 1 - Math.min(0.55, (this.director?.ambientDim ?? 0) * 1.6);
-      this.fx.setAmbient(this.env.x * dim, this.env.y * dim, this.env.z * dim);
+      this.fx.setAmbient(this.env.x * dim * wr, this.env.y * dim * wg, this.env.z * dim * wb);
       this.fx.setLights(this.director?.lights ?? [], this.director ? this.battleRoot : null);
     } else {
       this.fx.setAmbient(1, 1, 1);
@@ -382,9 +409,9 @@ export class BoxScene {
     }
     // O chão e os enfeites seguem a luz do ambiente e escurecem no foco dos golpes, como os Pokémon.
     const groundDim = this.lighting ? 1 - Math.min(0.55, (this.director?.ambientDim ?? 0) * 1.6) : 1;
-    const gx = this.lighting ? Math.min(1.1, this.env.x * groundDim) : 1;
-    const gy = this.lighting ? Math.min(1.1, this.env.y * groundDim) : 1;
-    const gz = this.lighting ? Math.min(1.1, this.env.z * groundDim) : 1;
+    const gx = this.lighting ? Math.min(1.1, this.env.x * groundDim * wr) : 1;
+    const gy = this.lighting ? Math.min(1.1, this.env.y * groundDim * wg) : 1;
+    const gz = this.lighting ? Math.min(1.1, this.env.z * groundDim * wb) : 1;
     this.boxGround?.setTint(gx, gy, gz);
     this.director?.ground?.setTint(gx, gy, gz);
     this.camera.updateMatrixWorld(true);
@@ -395,6 +422,8 @@ export class BoxScene {
     // O relevo só existe na caixa (a arena da batalha é lisa): cada Pokémon pisa na altura do terreno sob ele.
     for (const creature of this.creatures) {
       creature.groundY = this.director ? 0 : (this.boxGround?.heightAt(creature.state.x, creature.state.z) ?? 0);
+      // Pisando numa poça: o Pokémon aparece refletido nela.
+      creature.setReflection(this.director || !weatherOn ? 0 : this.weatherFx.puddleStrengthAt(creature.state.x, creature.state.z));
       creature.update(nowMs, dt, base, camera, right);
     }
   }
@@ -412,6 +441,7 @@ export class BoxScene {
 
   dispose(): void {
     this.stopBattle();
+    this.weatherFx.dispose();
     for (const creature of this.creatures) creature.dispose();
     this.creatures = [];
     for (const child of [...this.floor.children]) {
