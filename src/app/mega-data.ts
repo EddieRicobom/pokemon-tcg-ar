@@ -76,10 +76,10 @@ function failure(error: unknown): string {
   return message;
 }
 
-const reason = (name: string, why: string) => `${name}: ${why} Luta na forma normal e não gasta energia.`;
+const reason = (name: string, why: string) => `${name}: ${why} Luta na forma normal e não gasta moedas.`;
 
 /**
- * Deixa tudo pronto para a forma Mega de uma carta ANTES de cobrar a energia: espécie e forma, tipos/atributos e o sprite.
+ * Deixa tudo pronto para a forma Mega de uma carta ANTES de cobrar as moedas: espécie e forma, tipos/atributos e o sprite.
  * Se qualquer coisa faltar, devolve o motivo e a carta luta na forma normal (nada é inventado nem cobrado).
  */
 export async function prepareMegaForm(
@@ -107,7 +107,7 @@ export async function prepareMegaForm(
   return { ok: true, ready: { cardId: card.id, form, profile, sprite } };
 }
 
-/** Quantas trocas de forma a energia paga, e quantas ficam sem. `wanted` = quantos Mega o jogador marcou. */
+/** Quantas trocas de forma as moedas pagam, e quantas ficam sem. `wanted` = quantos Mega o jogador marcou. */
 export function planMegaEvolutions(wanted: number, energy: number, cost = MEGA_ENERGY_COST): { afford: number; skipped: number; total: number } {
   const want = Math.max(0, Math.floor(wanted));
   const afford = Math.min(want, cost > 0 ? Math.max(0, Math.floor(energy / cost)) : want);

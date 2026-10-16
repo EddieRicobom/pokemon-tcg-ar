@@ -103,7 +103,7 @@ export interface VillageState {
   /** A mini cidade (ver `town.ts`): nível de cada casa de Pokémon e o que já foi feito hoje nos prédios. */
   homes: Record<string, number>;
   town: { level: number; mailDay: string; cafeDay: string };
-  /** Digital Pokémon (presente inicial, Fonte, evolução) e a economia de energia (ver `digital.ts`). */
+  /** Digital Pokémon (presente inicial, Fonte, evolução) — pagos em moedas, o saldo único (`app/wallet.ts`). */
   digital: DigitalState;
   /** Encontros lendários raríssimos na Vila (ver `legendary.ts`). */
   legendary: LegendaryState;

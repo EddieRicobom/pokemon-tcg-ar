@@ -94,14 +94,9 @@ export interface SetProgress {
   ids: string[];
 }
 
-/** Energia de quem começa agora: dá para jogar o Pin Mode antes de ganhar o primeiro XP. */
-export const STARTER_ENERGY = 120;
-
 export interface TrainerState {
   v: number;
   xp: number;
-  /** Energia do Pin Mode: sobe junto com o XP (na mesma quantia) e é gasta ao escolher um pin. O XP em si nunca é gasto. */
-  energy: number;
   /** Cartas distintas já escaneadas (para saber se é nova) e coleções delas. */
   cardIds: string[];
   sets: Record<string, SetProgress>;
@@ -131,7 +126,7 @@ export interface TrainerState {
 
 export function emptyTrainer(): TrainerState {
   return {
-    v: TRAINER_VERSION, xp: 0, energy: STARTER_ENERGY, cardIds: [], sets: {}, scans: 0, battles: 0, teamBattles: 0, minigames: 0, minigameWins: 0, games: {},
+    v: TRAINER_VERSION, xp: 0, cardIds: [], sets: {}, scans: 0, battles: 0, teamBattles: 0, minigames: 0, minigameWins: 0, games: {},
     streak: { current: 0, best: 0, lastDay: '' },
     life: { talks: 0, answers: 0, moments: 0, nicknames: 0 }, bestFriend: 0, league: { badges: 0, champion: 0 }, pvp: { played: 0, wins: 0 }, shinies: 0,
     today: { day: '', cards: [], battles: 0, minigames: 0, life: 0, progress: {}, done: [], bonus: false },
@@ -360,7 +355,7 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
     if (typeof event.championWins === 'number') s.league.champion = Math.max(s.league.champion, Math.max(0, Math.floor(event.championWins)));
     const xp = event.first ? Math.max(0, Math.round(event.xp)) : XP.leagueRematch;
     gain += xp;
-    rewards.push({ text: event.title, sub: `+${xp} XP e energia`, tone: event.first ? 'achievement' : 'xp' });
+    rewards.push({ text: event.title, sub: `+${xp} XP e moedas`, tone: event.first ? 'achievement' : 'xp' });
     gain += bump(s, 'battle', rewards);
   } else if (event.type === 'pvp') {
     s.pvp.played++;
@@ -412,8 +407,8 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
     gain += bump(s, 'play', rewards);
   }
 
+  // O XP ganho também vira moedas (saldo único, `app/wallet.ts`): quem credita é o `recordEvent`, fora do núcleo puro.
   s.xp += gain;
-  s.energy += gain;
   const level = levelOf(s.xp);
   if (level > levelBefore) rewards.push({ text: `Nível ${level}!`, sub: titleOf(level), tone: 'level' });
 
@@ -425,13 +420,6 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
     rewards.push({ text: 'Conquista!', sub: a.title, tone: 'achievement' });
   }
   return { state: s, rewards, unlocked };
-}
-
-/** Gasta energia (ao escolher um pin). Devolve o novo estado, ou null se não houver energia suficiente. */
-export function spendEnergy(prev: TrainerState, amount: number): TrainerState | null {
-  const cost = Math.max(0, Math.floor(amount));
-  if (cost > prev.energy) return null;
-  return { ...clone(prev), energy: prev.energy - cost };
 }
 
 /** Importa o histórico já guardado no aparelho (cartas e leituras) sem dar XP, uma vez só. */
@@ -477,8 +465,6 @@ export function normalizeTrainer(raw: unknown): TrainerState {
   }
   return {
     v: TRAINER_VERSION, xp: num(r.xp),
-    // Progresso salvo antes da energia existir: parte do XP já ganho (nunca menos que a energia inicial).
-    energy: typeof r.energy === 'number' ? num(r.energy) : Math.max(STARTER_ENERGY, num(r.xp)),
     cardIds: strs(r.cardIds), sets, scans: num(r.scans), battles: num(r.battles), teamBattles: num(r.teamBattles), minigames: num(r.minigames), minigameWins: num(r.minigameWins), games,
     streak: { current: num(r.streak?.current), best: num(r.streak?.best), lastDay: typeof r.streak?.lastDay === 'string' ? r.streak.lastDay : '' },
     life: { talks: num(r.life?.talks), answers: num(r.life?.answers), moments: num(r.life?.moments), nicknames: num(r.life?.nicknames) },

@@ -19,7 +19,8 @@ import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { resetRoster, roster, rosterFor, setSlot, slotOf } from '../app/roster-store';
 import { battleMode, setBattleMode } from '../app/battle-mode-store';
-import { recordEvent, spendTrainerEnergy, trainer } from '../app/trainer-store';
+import { recordEvent } from '../app/trainer-store';
+import { coins, spendCoins, withVillage } from '../app/wallet';
 import { maybeGalladeSpeaks } from '../app/speech-store';
 import { visual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
@@ -81,12 +82,13 @@ const mode = ref<OrientationMode>('sensor');
 const population = ref({ shown: 0, available: 0, failed: 0 });
 /** Quem está na caixa agora (para a escalação das batalhas). */
 const rosterRows = ref<{ id: string; name: string; shiny: boolean; mega: boolean }[]>([]);
-/** Cartas Mega marcadas para mudar de forma na próxima batalha (cada uma custa MEGA_ENERGY_COST de energia). */
+/** Cartas Mega marcadas para mudar de forma na próxima batalha (cada uma custa MEGA_ENERGY_COST moedas). */
 const megaPicks = ref<string[]>([]);
 /** O que aconteceu com a forma Mega na última batalha montada (quem trocou, quem ficou normal e por quê). */
 const megaNotes = ref<{ text: string; tone: 'ok' | 'warn' }[]>([]);
 let megaNotesTimer: ReturnType<typeof setTimeout> | null = null;
-const energy = computed(() => trainer.value.energy);
+/** Saldo único de moedas (`app/wallet.ts`): paga a forma Mega (antes era a energia do Treinador). */
+const energy = computed(() => coins.value);
 const megaWanted = computed(() => megaPicks.value.length);
 const megaAffordable = computed(() => Math.floor(energy.value / MEGA_ENERGY_COST));
 function toggleMega(id: string): void {
@@ -586,13 +588,18 @@ watch(
     }
     recordEvent({ type: 'battle', team: battleSummary.value ? battleSummary.value.mode !== 'royale' : false });
     // Moedas da Vila: cada batalha terminada rende moedas, até BATTLE_REWARDS_PER_DAY vezes por dia.
-    village = loadVillage();
+    // Pela carteira (saldo único): grava na Vila viva ou na guardada, e o saldo mostrado acompanha.
     const today = dayKey(new Date());
-    const coins = claimBattleReward(village, today);
-    if (coins > 0) {
-      saveVillage(village);
-      const left = battleRewardsLeft(village, today);
-      showMegaNotes([{ text: `+${coins} moedas na Vila! (${BATTLE_REWARDS_PER_DAY - left} de ${BATTLE_REWARDS_PER_DAY} hoje)`, tone: 'ok' }]);
+    let gained = 0;
+    let left = 0;
+    withVillage((v) => {
+      gained = claimBattleReward(v, today);
+      left = battleRewardsLeft(v, today);
+      return gained > 0;
+    });
+    village = loadVillage();
+    if (gained > 0) {
+      showMegaNotes([{ text: `+${gained} moedas! (${BATTLE_REWARDS_PER_DAY - left} de ${BATTLE_REWARDS_PER_DAY} hoje)`, tone: 'ok' }]);
     } else {
       showMegaNotes([{ text: `As batalhas de hoje já renderam as moedas (${BATTLE_REWARDS_PER_DAY} de ${BATTLE_REWARDS_PER_DAY}). Amanhã tem mais.`, tone: 'warn' }]);
     }
@@ -722,7 +729,7 @@ async function startBattle(): Promise<void> {
     // a menos que o jogador tenha montado a escalação (equipe fixa ou fora da luta).
     const plan = planBattle(battleMode.value, creatures.length, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0), slots);
     const fighting = plan.picks.map((i) => creatures[i]!);
-    // Forma Mega (só desta batalha): deixa tudo pronto antes; a energia só é cobrada depois que a batalha começa.
+    // Forma Mega (só desta batalha): deixa tudo pronto antes; as moedas só são cobradas depois que a batalha começa.
     restoreForms(current);
     const wanted = fighting.filter((c) => c.info.mega === true && megaPicks.value.includes(c.info.id));
     if (wanted.length > 0) hint.value = 'Preparando a forma Mega…';
@@ -744,12 +751,12 @@ async function startBattle(): Promise<void> {
     }
     const notes: { text: string; tone: 'ok' | 'warn' }[] = megaPlan.notes.map((text) => ({ text, tone: 'warn' }));
     if (megaPlan.cost > 0) {
-      if (spendTrainerEnergy(megaPlan.cost)) {
+      if (spendCoins(megaPlan.cost)) {
         const names = megaPlan.entries.map((e) => fighting.find((c) => c.info.id === e.cardId)?.info.name ?? 'Pokémon').join(', ');
-        notes.unshift({ text: `${names}: forma Mega só nesta batalha (−${megaPlan.cost} de energia).`, tone: 'ok' });
+        notes.unshift({ text: `${names}: forma Mega só nesta batalha (−${megaPlan.cost} moedas).`, tone: 'ok' });
         megaPicks.value = megaPicks.value.filter((id) => !megaPlan.entries.some((e) => e.cardId === id));
       } else {
-        notes.unshift({ text: 'A energia acabou antes de a batalha começar; nada foi cobrado.', tone: 'warn' });
+        notes.unshift({ text: 'As moedas acabaram antes de a batalha começar; nada foi cobrado.', tone: 'warn' });
       }
     }
     showMegaNotes(notes);
@@ -1046,7 +1053,7 @@ onBeforeUnmount(() => {
           </div>
           <p class="hint">Por padrão todos os Pokémon da caixa entram na luta. Para mudar quem está na caixa (até 40), use Equipe.</p>
           <p v-if="rosterRows.some((r) => r.mega)" class="hint mega-hint">
-            Cartas Mega podem mudar de forma por uma batalha: marque «Forma Mega» embaixo do nome delas. Energia: {{ energy }}<template v-if="megaWanted > megaAffordable"> (só dá para {{ megaAffordable }} {{ megaAffordable === 1 ? 'troca' : 'trocas' }}; as outras lutam na forma normal)</template>.
+            Cartas Mega podem mudar de forma por uma batalha: marque «Forma Mega» embaixo do nome delas. Moedas: {{ energy }}<template v-if="megaWanted > megaAffordable"> (só dá para {{ megaAffordable }} {{ megaAffordable === 1 ? 'troca' : 'trocas' }}; as outras lutam na forma normal)</template>.
           </p>
           <div v-if="rosterRows.length > 0" class="roster">
             <div class="roster-head">
@@ -1067,10 +1074,10 @@ onBeforeUnmount(() => {
                     class="mega-toggle"
                     :class="{ on: megaPicks.includes(row.id) }"
                     :aria-pressed="megaPicks.includes(row.id)"
-                    :title="`Muda para a forma Mega só nesta batalha (custa ${MEGA_ENERGY_COST} de energia)`"
-                    :aria-label="`${row.name}: forma Mega só nesta batalha, custa ${MEGA_ENERGY_COST} de energia`"
+                    :title="`Muda para a forma Mega só nesta batalha (custa ${MEGA_ENERGY_COST} moedas)`"
+                    :aria-label="`${row.name}: forma Mega só nesta batalha, custa ${MEGA_ENERGY_COST} moedas`"
                     @click="toggleMega(row.id)"
-                  >Mega −{{ MEGA_ENERGY_COST }} energia</button>
+                  >Mega −{{ MEGA_ENERGY_COST }} moedas</button>
                 </span>
                 <span class="roster-slots" role="group" :aria-label="`Escalação de ${row.name}`">
                   <button

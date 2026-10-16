@@ -4,6 +4,7 @@ import { loadPieces } from '../app/game-pieces';
 import type { LoadedPieces } from '../app/game-pieces';
 import { getCache } from '../app/services';
 import { recordEvent, trainer } from '../app/trainer-store';
+import { addCoins } from '../app/wallet';
 import { GAME_LABELS_PT, gameBlocker } from '../core/minigames';
 import type { GameId, Grade } from '../core/minigames';
 import { XP } from '../core/trainer';
@@ -16,7 +17,7 @@ import MinigameTipos from './MinigameTipos.vue';
  * Aparece no Treinador e no Fliperama da Vila; as partidas contam do mesmo jeito (`recordEvent`), onde quer que se jogue.
  */
 defineProps<{ /** Mostra «Sair» no fim (no Fliperama da Vila, onde não há outra saída). */ closable?: boolean }>();
-const emit = defineEmits<{ leave: []; energy: [amount: number] }>();
+const emit = defineEmits<{ leave: [] }>();
 
 const GAMES: GameId[] = ['quem', 'tipos', 'memoria'];
 const loaded = ref<LoadedPieces | null>(null);
@@ -44,12 +45,12 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => loaded.value?.release());
 
-/** Vitória nos minigames do Fliperama rende energia pra Fonte (ver `core/village/digital.ts`), além do XP de sempre. */
-const MINIGAME_ENERGY = 10;
+/** Vitória nos minigames rende um bônus de moedas (saldo único, `app/wallet.ts`), além das moedas do XP de sempre. */
+const MINIGAME_WIN_COINS = 10;
 
 function onFinished(game: GameId, grade: Grade): void {
   recordEvent({ type: 'minigame', game, won: grade.won, score: grade.score });
-  if (grade.won) emit('energy', MINIGAME_ENERGY);
+  if (grade.won) addCoins(MINIGAME_WIN_COINS);
 }
 </script>
 

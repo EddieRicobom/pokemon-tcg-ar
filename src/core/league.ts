@@ -104,7 +104,7 @@ export interface Challenge {
   /** Os atributos da equipe do líder são multiplicados por isto (os desafios ficam mais difíceis). */
   power: number;
   badge?: { name: string; color: string };
-  /** XP (e energia) da primeira vitória. */
+  /** XP (e as mesmas moedas) da primeira vitória. */
   xp: number;
   intro: string;
   defeat: string;

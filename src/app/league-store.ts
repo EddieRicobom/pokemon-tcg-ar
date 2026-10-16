@@ -20,7 +20,7 @@ export const league = ref<LeagueProgress>(read());
 /** Desafio escolhido no Treinador, à espera da Caixa (a batalha acontece lá). */
 export const pendingChallenge = ref<string | null>(null);
 
-/** Guarda o resultado de uma batalha da Liga e dá o XP/energia ao Treinador quando vence. */
+/** Guarda o resultado de uma batalha da Liga e dá o XP (e as moedas) ao Treinador quando vence. */
 export function recordLeagueResult(challenge: Challenge, won: boolean): LeagueOutcome {
   const outcome = applyLeagueResult(league.value, challenge, won);
   league.value = outcome.progress;

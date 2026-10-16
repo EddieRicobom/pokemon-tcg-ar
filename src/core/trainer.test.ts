@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ACHIEVEMENTS, applyEvent, dayKey, emptyTrainer, importHistory, levelOf, levelProgress, missionsFor, normalizeTrainer, previousDay, spendEnergy, STARTER_ENERGY, titleOf, XP, xpForLevel,
+  ACHIEVEMENTS, applyEvent, dayKey, emptyTrainer, importHistory, levelOf, levelProgress, missionsFor, normalizeTrainer, previousDay, titleOf, XP, xpForLevel,
 } from './trainer';
 import type { TrainerEvent, TrainerState } from './trainer';
 
@@ -244,46 +244,19 @@ describe('histórico e armazenamento', () => {
   });
 });
 
-describe('energia do Pin Mode', () => {
-  const scan = (id: string): TrainerEvent => ({ type: 'scan', cardId: id, setId: 's', setName: 'S', setTotal: 100 });
-
-  it('quem começa agora tem a energia inicial', () => {
-    expect(emptyTrainer().energy).toBe(STARTER_ENERGY);
-  });
-
-  it('sobe na mesma quantia do XP ganho', () => {
-    const before = emptyTrainer();
-    const { state } = applyEvent(before, scan('a'), '2026-10-14');
-    expect(state.xp).toBeGreaterThan(0);
-    expect(state.energy - before.energy).toBe(state.xp - before.xp);
-  });
-
-  it('gastar não mexe no XP e não passa do que há', () => {
-    const s = { ...emptyTrainer(), xp: 200, energy: 30 };
-    const spent = spendEnergy(s, 12)!;
-    expect(spent.energy).toBe(18);
-    expect(spent.xp).toBe(200);
-    expect(s.energy).toBe(30);
-    expect(spendEnergy(s, 31)).toBeNull();
-    expect(spendEnergy(s, 30)!.energy).toBe(0);
-  });
-
-  it('progresso antigo sem energia parte do XP já ganho', () => {
-    const old = JSON.parse(JSON.stringify({ ...emptyTrainer(), xp: 350 })) as Record<string, unknown>;
-    delete old.energy;
-    expect(normalizeTrainer(old).energy).toBe(350);
-    const fresh = JSON.parse(JSON.stringify({ ...emptyTrainer(), xp: 0 })) as Record<string, unknown>;
-    delete fresh.energy;
-    expect(normalizeTrainer(fresh).energy).toBe(STARTER_ENERGY);
-    expect(normalizeTrainer({ ...emptyTrainer(), energy: 12 }).energy).toBe(12);
+describe('energia antiga do Treinador (agora tudo é moeda)', () => {
+  it('o Treinador não guarda mais energia: progresso antigo com energia é lido sem ela', () => {
+    expect('energy' in emptyTrainer()).toBe(false);
+    const old = { ...JSON.parse(JSON.stringify(emptyTrainer())), xp: 350, energy: 900 } as Record<string, unknown>;
+    expect('energy' in normalizeTrainer(old)).toBe(false);
+    expect(normalizeTrainer(old).xp).toBe(350);
   });
 });
 
 describe('Liga no Treinador', () => {
-  it('primeira vitória dá o XP do desafio (e a mesma energia); revanche dá pouco', () => {
+  it('primeira vitória dá o XP do desafio; revanche dá pouco', () => {
     const first = applyEvent(emptyTrainer(), { type: 'league', title: 'Insígnia Carvão', xp: 120, first: true }, '2026-10-14');
     expect(first.state.xp).toBeGreaterThanOrEqual(120);
-    expect(first.state.energy - emptyTrainer().energy).toBe(first.state.xp);
     expect(first.rewards.some((r) => r.text === 'Insígnia Carvão' && r.tone === 'achievement')).toBe(true);
     const again = applyEvent(first.state, { type: 'league', title: 'Revanche', xp: 120, first: false }, '2026-10-14');
     expect(again.state.xp - first.state.xp).toBeLessThan(120);

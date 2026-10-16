@@ -5,6 +5,7 @@ import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
 import { visual } from '../app/visual-settings';
+import { attachLiveVillage, detachLiveVillage, syncCoins } from '../app/wallet';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { routeHref } from '../app/route';
@@ -24,7 +25,7 @@ import {
 } from '../core/village/life';
 import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
 import {
-  canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, earnEnergy, evolve, EVOLVE_COST, grantStarter, instanceOf, pickAnySpecies,
+  canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, evolve, EVOLVE_COST, grantStarter, instanceOf, pickAnySpecies,
   pickFonteSpecies, summon, SUMMON_COST, summonWithCoins,
 } from '../core/village/digital';
 import type { DigitalPokemonInstance } from '../core/village/digital';
@@ -90,8 +91,8 @@ watch(welcome, (open) => {
 // ---- Fase 4: cutscene da primeira entrada (antes do aviso de controles, só na primeira vez de verdade).
 const INTRO_LINES: readonly string[] = [
   'Bem-vindo à Vila! Aqui os Pokémon que você escaneia moram, crescem e criam laços de amizade com você.',
-  'Mas tem mais: perto da praça existe uma Fonte antiga. Jogando de verdade — conversando, cuidando da Vila, jogando — ela guarda uma energia só sua.',
-  'Essa energia pode trazer à vida um Digital Pokémon: um companheiro que não vem de nenhuma carta física, mas mora aqui com todo o resto.',
+  'Mas tem mais: perto da praça existe uma Fonte antiga. Jogando de verdade — conversando, cuidando da Vila, jogando — você junta moedas.',
+  'Com moedas, a Fonte pode trazer à vida um Digital Pokémon: um companheiro que não vem de nenhuma carta física, mas mora aqui com todo o resto.',
   'Antes de começar, me conta um pouco sobre você…',
 ];
 const cutsceneOpen = ref(false);
@@ -155,11 +156,14 @@ function syncTrainer(): void {
   say(`🏅 ${got.note}`, 5200);
 }
 
-// ---- Digital Pokémon: presente inicial, Fonte (invocação por energia), evolução — ver `core/village/digital.ts`.
+// ---- Digital Pokémon: presente inicial, Fonte (invocação por moedas), evolução — ver `core/village/digital.ts`.
 // A origem é sempre uma carta real confirmada por `resolveSpeciesByDexId`; sem rede pra confirmar, a ação falha
 // com um aviso, nunca inventa uma espécie ou uma carta.
-function onEnergyEarned(amount: number): void {
-  state.digital = earnEnergy(state.digital, amount, 'minigame', new Date().toISOString());
+/** Atividade da Vila que rendia energia da Fonte: desde a unificação, rende moedas (saldo único, `app/wallet.ts`). */
+function earnCoins(amount: number): void {
+  const n = Math.max(0, Math.floor(amount));
+  if (n === 0) return;
+  state.coins = Math.min(999999, state.coins + n);
   changed();
 }
 
@@ -199,8 +203,8 @@ function advanceCutscene(): void {
 // -- Mini tutorial dos Digital Pokémon (Fase 4): uma vez, logo depois do presente inicial.
 const TUTORIAL_LINES: readonly string[] = [
   'Ele mora na Vila como qualquer outro: conversa, cria amizade, tem casa — só não pode ser alvo de scan ou AR, porque não vem de nenhuma carta física.',
-  'Jogando de verdade — conversar, responder perguntas, lanchar no Café, o Correio, vencer um minigame ou uma corrida na Torre — você ganha energia pra Fonte.',
-  'Na Fonte: 500 de energia invocam outro Digital Pokémon; 1000 + amizade bem alta evoluem o que você já tem, pra uma forma real.',
+  'Jogando de verdade — conversar, responder perguntas, lanchar no Café, o Correio, vencer um minigame, uma corrida na Torre ou uma batalha — você ganha moedas.',
+  'Na Fonte: 500 moedas invocam outro Digital Pokémon; 1000 + amizade bem alta evoluem o que você já tem, pra uma forma real.',
 ];
 let tutorialLine = 0;
 function showDigitalTutorial(): void {
@@ -269,7 +273,7 @@ async function pickQuizOption(optionId: string): Promise<void> {
   showDigitalTutorial();
 }
 
-// -- A Fonte: invocar por energia (500) e evoluir um Digital Pokémon (1000 + amizade + próxima forma real).
+// -- A Fonte: invocar por moedas (500) e evoluir um Digital Pokémon (1000 + amizade + próxima forma real).
 async function doSummon(): Promise<void> {
   closeDialog();
   loading.value = 'A Fonte brilha…';
@@ -277,17 +281,18 @@ async function doSummon(): Promise<void> {
   const species = picked ? await resolveSpeciesByDexId(picked.dexId).catch(() => null) : null;
   loading.value = '';
   if (!species) {
-    say('A Fonte não respondeu agora (sem conexão?). Suas energias continuam guardadas.');
+    say('A Fonte não respondeu agora (sem conexão?). Suas moedas continuam guardadas.');
     return;
   }
-  const next = summon(state.digital, species, new Date().toISOString());
+  const next = summon(state.digital, state.coins, species, new Date().toISOString());
   if (!next) {
-    say('Energia insuficiente para invocar.');
+    say(`Moedas insuficientes: invocar custa ${SUMMON_COST}.`);
     return;
   }
-  state.digital = next;
+  state.digital = next.state;
+  state.coins = next.coins;
   changed();
-  const made = next.instances[next.instances.length - 1]!;
+  const made = next.state.instances[next.state.instances.length - 1]!;
   say(`✨ A Fonte trouxe ${species.name}!`, 5200);
   await syncDigitalVillager(made);
 }
@@ -320,7 +325,7 @@ function openEvolveList(b: Building): void {
   const actions = state.digital.instances.map((inst) => {
     const next = nextForm(inst.dexId);
     const lvl = friendLevel(friendOf(state, inst.instanceId).points).level;
-    const able = next !== null && canEvolve(state.digital, inst.instanceId, lvl, true);
+    const able = next !== null && canEvolve(state.digital, state.coins, inst.instanceId, lvl, true);
     return {
       label: `Evoluir ${inst.name}${able ? '' : ' (ainda não)'}`,
       disabled: !able,
@@ -329,7 +334,7 @@ function openEvolveList(b: Building): void {
   });
   dialog.value = {
     name: 'Fonte da praça · evoluir',
-    text: state.digital.instances.length === 0 ? 'Nenhum Digital Pokémon pra evoluir ainda.' : `Evoluir exige ${EVOLVE_COST} de energia, amizade alta (Grande amigo+) e uma próxima forma real.`,
+    text: state.digital.instances.length === 0 ? 'Nenhum Digital Pokémon pra evoluir ainda.' : `Evoluir exige ${EVOLVE_COST} moedas (você tem ${state.coins}), amizade alta (Grande amigo+) e uma próxima forma real.`,
     actions: [...actions, { label: 'Voltar', run: () => openFountain(b) }],
   };
 }
@@ -344,14 +349,15 @@ async function doEvolve(instanceId: string, nextDexId: number): Promise<void> {
     return;
   }
   const lvl = friendLevel(friendOf(state, instanceId).points).level;
-  const next = evolve(state.digital, instanceId, lvl, species, new Date().toISOString());
+  const next = evolve(state.digital, state.coins, instanceId, lvl, species, new Date().toISOString());
   if (!next) {
     say('Ainda faltam condições para essa evolução.');
     return;
   }
-  state.digital = next;
+  state.digital = next.state;
+  state.coins = next.coins;
   changed();
-  const evolved = instanceOf(next, instanceId)!;
+  const evolved = instanceOf(next.state, instanceId)!;
   say(`🌟 ${evolved.name} evoluiu!`, 5200);
   await syncDigitalVillager(evolved);
 }
@@ -555,7 +561,7 @@ function quizAnswer(raw: string): void {
   if (!r) return;
   changed();
   trainerEvent('answer', z.monId);
-  state.digital = earnEnergy(state.digital, 10, 'quiz', new Date().toISOString());
+  earnCoins(10);
   if (r.bordao) {
     game?.pop(z.monId, '🗣️');
     quiz.value = { ...z, stage: 'reply', answer: r.answer.a, text: `"${r.answer.a}"! Gostei tanto que vou falar isso a toda hora. Espera só os outros ouvirem!` };
@@ -676,7 +682,7 @@ function openBuilding(b: Building): void {
     const r = collectMail(state, refreshDay(), Math.random, namesById());
     if (r.ok) {
       changed();
-      state.digital = earnEnergy(state.digital, 10, 'correio', new Date().toISOString());
+      earnCoins(10);
     }
     dialog.value = { name: b.name, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] };
     return;
@@ -695,7 +701,7 @@ function openBuilding(b: Building): void {
             const r = cafeVisit(state, refreshDay(), near, namesById());
             if (r.ok) {
               changed();
-              state.digital = earnEnergy(state.digital, 15, 'cafe', new Date().toISOString());
+              earnCoins(15);
               for (const id of near.slice(0, 4)) game?.pop(id, '☕');
             }
             dialog.value = { name: b.name, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] };
@@ -783,7 +789,7 @@ function openFountain(b: Building): void {
   const open = LOTS.filter((l) => level.value >= l.unlock).length;
   dialog.value = {
     name: `${b.name} · ${stage.value.name}`,
-    text: `Nível ${level.value} de Treinador: ${open} de ${LOTS.length} terrenos liberados. ${next ? `No nível ${next.level}: ${next.text}.` : 'A cidade já está completa!'} Jogue uma moeda para fazer um pedido, ou use a energia que você já juntou (${state.digital.energy}) pra invocar ou evoluir um Digital Pokémon.`,
+    text: `Nível ${level.value} de Treinador: ${open} de ${LOTS.length} terrenos liberados. ${next ? `No nível ${next.level}: ${next.text}.` : 'A cidade já está completa!'} Jogue uma moeda para fazer um pedido, ou use as suas moedas (${state.coins}) pra invocar ou evoluir um Digital Pokémon.`,
     actions: [
       {
         label: 'Jogar uma moeda',
@@ -799,11 +805,11 @@ function openFountain(b: Building): void {
         },
       },
       {
-        // Sem energia suficiente o botão diz quanto falta (antes só ficava cinza, parecendo que a Fonte travou).
-        label: canAffordSummon(state.digital)
-          ? `Invocar Digital Pokémon (${SUMMON_COST} de energia)`
-          : `Invocar Digital Pokémon: faltam ${SUMMON_COST - state.digital.energy} de energia`,
-        disabled: !canAffordSummon(state.digital),
+        // Sem moedas suficientes o botão diz quanto falta (antes só ficava cinza, parecendo que a Fonte travou).
+        label: canAffordSummon(state.coins)
+          ? `Invocar Digital Pokémon (${SUMMON_COST} moedas)`
+          : `Invocar Digital Pokémon: faltam ${SUMMON_COST - state.coins} moedas`,
+        disabled: !canAffordSummon(state.coins),
         run: () => void doSummon(),
       },
       ...(COIN_SUMMON_ENABLED
@@ -935,7 +941,7 @@ function announce(r: Resolved): void {
   changed();
   if (r.firstTime) {
     trainerEvent('moment');
-    state.digital = earnEnergy(state.digital, 8, 'momento', new Date().toISOString());
+    earnCoins(8);
   }
   say(`📖 ${r.moment.emoji} ${r.moment.title}${r.firstTime ? ' · momento novo no Álbum! +10 moedas' : r.moment.fav ? ' · guardado no Álbum 📌' : ' · salvo no Diário'}`);
 }
@@ -1101,7 +1107,7 @@ function pressA(): void {
     if (result.gained > 0) {
       game.bubble(t.id, '❤️');
       trainerEvent('talk', t.id);
-      state.digital = earnEnergy(state.digital, 5, 'conversa', new Date().toISOString());
+      earnCoins(5);
     }
     let text = result.text;
     const help = dailyHelp(state, t.id, today, Math.random);
@@ -1257,6 +1263,11 @@ function thumbOf(gif: VillageMon['gif']): string {
   ctx.putImageData(img, 0, 0);
   return c.toDataURL();
 }
+
+// Saldo único: com a Vila aberta, a carteira mexe no estado vivo dela (ver `app/wallet.ts`).
+attachLiveVillage(state, () => changed());
+watch(() => state.coins, (value) => syncCoins(value));
+onBeforeUnmount(() => detachLiveVillage(state));
 
 onMounted(async () => {
   // Cutscene da primeira entrada (Fase 4): só na primeira vez de verdade, antes do aviso de controles.
@@ -1480,7 +1491,7 @@ onBeforeUnmount(() => {
           <p class="note">Abre a câmera e os sensores da Caixa direto no modo de batalha: coloque a caixa no chão e toque em Batalhar. {{ battleRewardText }}.</p>
           <button type="button" class="primary" @click="goToBattle">Abrir câmera e batalhar</button>
         </div>
-        <MinigameHub closable @leave="sheet = null" @energy="onEnergyEarned" />
+        <MinigameHub closable @leave="sheet = null" />
       </div>
 
       <div v-if="sheet === 'arena'" class="village-sheet tall game-sheet" role="dialog" aria-label="Arena">
@@ -1495,7 +1506,7 @@ onBeforeUnmount(() => {
 
       <div v-if="sheet === 'torre'" class="village-sheet tall game-sheet" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
-        <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ dexId: i.dexId, name: i.name }))" @leave="sheet = null" @energy="onEnergyEarned" />
+        <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ dexId: i.dexId, name: i.name }))" @leave="sheet = null" />
       </div>
 
       <div v-if="sheet === 'menu'" class="village-sheet tall" role="dialog" aria-label="Menu da Vila">

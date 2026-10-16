@@ -15,7 +15,8 @@ export const EVOLVE_FRIEND_LEVEL = 3;
 /** Quantas transações o histórico guarda (as mais antigas somem; o saldo nunca depende do histórico). */
 const LEDGER_MAX = 40;
 
-export interface EnergyTx {
+/** Um gasto (ou ganho) de moedas na Fonte, para o histórico. O saldo em si mora na carteira (`app/wallet.ts`). */
+export interface CoinTx {
   type: 'ganho' | 'gasto';
   amount: number;
   reason: string;
@@ -40,8 +41,8 @@ export interface DigitalPokemonInstance {
 }
 
 export interface DigitalState {
-  energy: number;
-  ledger: EnergyTx[];
+  /** Histórico das moedas gastas na Fonte (invocar, evoluir). Desde a unificação o saldo é só de moedas. */
+  ledger: CoinTx[];
   instances: DigitalPokemonInstance[];
   /** O presente inicial já foi dado (só um por perfil, mesmo recarregando ou reabrindo o questionário). */
   starterGiven: boolean;
@@ -52,21 +53,20 @@ export interface DigitalState {
 }
 
 export function emptyDigital(): DigitalState {
-  return { energy: 0, ledger: [], instances: [], starterGiven: false, introSeen: false, tutorialSeen: false };
+  return { ledger: [], instances: [], starterGiven: false, introSeen: false, tutorialSeen: false };
 }
 
 /** Converte dados salvos (possivelmente de uma versão antiga ou corrompidos) num `DigitalState` válido. */
 export function normalizeDigital(raw: unknown): DigitalState {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<DigitalState>;
-  const energy = typeof r.energy === 'number' && Number.isFinite(r.energy) && r.energy >= 0 ? Math.floor(r.energy) : 0;
+  // A energia antiga da Fonte (antes da unificação) é descartada, por escolha do dono: vale só o saldo de moedas.
   const ledger = Array.isArray(r.ledger)
-    ? r.ledger.filter((t): t is EnergyTx => !!t && typeof t === 'object' && (t.type === 'ganho' || t.type === 'gasto') && typeof t.amount === 'number').slice(-LEDGER_MAX)
+    ? r.ledger.filter((t): t is CoinTx => !!t && typeof t === 'object' && (t.type === 'ganho' || t.type === 'gasto') && typeof t.amount === 'number').slice(-LEDGER_MAX)
     : [];
   const instances = Array.isArray(r.instances)
     ? r.instances.filter((i): i is DigitalPokemonInstance => !!i && typeof i === 'object' && typeof i.instanceId === 'string' && typeof i.dexId === 'number' && i.isDigitalPokemon === true)
     : [];
   return {
-    energy,
     ledger,
     instances,
     starterGiven: r.starterGiven === true,
@@ -83,23 +83,16 @@ function makeInstanceId(s: DigitalState, dexId: number, now: string): string {
   return `dp_${now.replace(/[^0-9]/g, '')}_${dexId}_${s.instances.length}`;
 }
 
-/** Ganha energia por uma atividade real do app (Survivor, minigame, Vila...); `amount` precisa ser positivo. */
-export function earnEnergy(s: DigitalState, amount: number, reason: string, now: string): DigitalState {
-  if (!(amount > 0)) return s;
-  const energy = s.energy + Math.floor(amount);
-  const tx: EnergyTx = { type: 'ganho', amount: Math.floor(amount), reason, at: now, balanceAfter: energy };
-  return { ...s, energy, ledger: [...s.ledger, tx].slice(-LEDGER_MAX) };
+/** Gasta moedas na Fonte e registra no histórico; null (nada muda) se faltar. Devolve o estado e as moedas que sobram. */
+function trySpend(s: DigitalState, coins: number, amount: number, reason: string, now: string, instanceId?: string): { state: DigitalState; coins: number } | null {
+  if (amount > coins) return null;
+  const left = coins - amount;
+  const tx: CoinTx = { type: 'gasto', amount, reason, at: now, instanceId, balanceAfter: left };
+  return { state: { ...s, ledger: [...s.ledger, tx].slice(-LEDGER_MAX) }, coins: left };
 }
 
-function trySpend(s: DigitalState, amount: number, reason: string, now: string, instanceId?: string): DigitalState | null {
-  if (amount > s.energy) return null;
-  const energy = s.energy - amount;
-  const tx: EnergyTx = { type: 'gasto', amount, reason, at: now, instanceId, balanceAfter: energy };
-  return { ...s, energy, ledger: [...s.ledger, tx].slice(-LEDGER_MAX) };
-}
-
-export function canAffordSummon(s: DigitalState): boolean {
-  return s.energy >= SUMMON_COST;
+export function canAffordSummon(coins: number): boolean {
+  return coins >= SUMMON_COST;
 }
 
 /** Uma espécie real do catálogo (carta de origem já encontrada por quem chamou — nunca inventada aqui). */
@@ -149,26 +142,10 @@ export function pickAnySpecies(s: DigitalState, rng: Rng): number {
  * sobram, ou null se faltar moeda — nesse caso nada muda. As moedas são da Vila, por isso entram e saem por aqui.
  */
 export function summonWithCoins(s: DigitalState, coins: number, species: SpeciesRef, now: string): { state: DigitalState; coins: number } | null {
-  if (coins < COIN_SUMMON_COST) return null;
-  const instance: DigitalPokemonInstance = {
-    instanceId: makeInstanceId(s, species.dexId, now),
-    originCardId: species.cardId,
-    dexId: species.dexId,
-    name: species.name,
-    isDigitalPokemon: true,
-    source: 'fonte',
-    grantedAt: now,
-    stage: 0,
-  };
-  return { state: { ...s, instances: [...s.instances, instance] }, coins: coins - COIN_SUMMON_COST };
-}
-
-/** Invoca na Fonte por 500 energias; null se não tiver saldo. A operação é atômica: ou gasta e recebe, ou nada muda. */
-export function summon(s: DigitalState, species: SpeciesRef, now: string): DigitalState | null {
-  const spent = trySpend(s, SUMMON_COST, 'fonte', now);
+  const spent = trySpend(s, coins, COIN_SUMMON_COST, 'fonte-sorte', now);
   if (!spent) return null;
   const instance: DigitalPokemonInstance = {
-    instanceId: makeInstanceId(spent, species.dexId, now),
+    instanceId: makeInstanceId(spent.state, species.dexId, now),
     originCardId: species.cardId,
     dexId: species.dexId,
     name: species.name,
@@ -177,23 +154,42 @@ export function summon(s: DigitalState, species: SpeciesRef, now: string): Digit
     grantedAt: now,
     stage: 0,
   };
-  return { ...spent, instances: [...spent.instances, instance] };
+  return { state: { ...spent.state, instances: [...spent.state.instances, instance] }, coins: spent.coins };
 }
 
-/** As 3 condições da evolução (todas obrigatórias): 1000 energias, amizade nível 3+, e uma próxima forma real. */
-export function canEvolve(s: DigitalState, instanceId: string, friendshipLevel: number, hasNextForm: boolean): boolean {
-  return hasNextForm && friendshipLevel >= EVOLVE_FRIEND_LEVEL && s.energy >= EVOLVE_COST && s.instances.some((i) => i.instanceId === instanceId);
+/** Invoca na Fonte por 500 moedas; null se não tiver saldo. A operação é atômica: ou gasta e recebe, ou nada muda. */
+export function summon(s: DigitalState, coins: number, species: SpeciesRef, now: string): { state: DigitalState; coins: number } | null {
+  const spent = trySpend(s, coins, SUMMON_COST, 'fonte', now);
+  if (!spent) return null;
+  const instance: DigitalPokemonInstance = {
+    instanceId: makeInstanceId(spent.state, species.dexId, now),
+    originCardId: species.cardId,
+    dexId: species.dexId,
+    name: species.name,
+    isDigitalPokemon: true,
+    source: 'fonte',
+    grantedAt: now,
+    stage: 0,
+  };
+  return { state: { ...spent.state, instances: [...spent.state.instances, instance] }, coins: spent.coins };
+}
+
+/** As 3 condições da evolução (todas obrigatórias): 1000 moedas, amizade nível 3+, e uma próxima forma real. */
+export function canEvolve(s: DigitalState, coins: number, instanceId: string, friendshipLevel: number, hasNextForm: boolean): boolean {
+  return hasNextForm && friendshipLevel >= EVOLVE_FRIEND_LEVEL && coins >= EVOLVE_COST && s.instances.some((i) => i.instanceId === instanceId);
 }
 
 /** Evolui a instância para `next` (forma real, já resolvida por quem chamou); null se alguma condição falhar. */
-export function evolve(s: DigitalState, instanceId: string, friendshipLevel: number, next: SpeciesRef, now: string): DigitalState | null {
-  if (!canEvolve(s, instanceId, friendshipLevel, true)) return null;
-  const spent = trySpend(s, EVOLVE_COST, 'evolucao', now, instanceId);
+export function evolve(
+  s: DigitalState, coins: number, instanceId: string, friendshipLevel: number, next: SpeciesRef, now: string,
+): { state: DigitalState; coins: number } | null {
+  if (!canEvolve(s, coins, instanceId, friendshipLevel, true)) return null;
+  const spent = trySpend(s, coins, EVOLVE_COST, 'evolucao', now, instanceId);
   if (!spent) return null;
-  const instances = spent.instances.map((i) =>
+  const instances = spent.state.instances.map((i) =>
     i.instanceId === instanceId ? { ...i, dexId: next.dexId, name: next.name, originCardId: next.cardId, stage: i.stage + 1, source: 'evolucao' as const } : i,
   );
-  return { ...spent, instances };
+  return { state: { ...spent.state, instances }, coins: spent.coins };
 }
 
 export function instanceOf(s: DigitalState, instanceId: string): DigitalPokemonInstance | undefined {

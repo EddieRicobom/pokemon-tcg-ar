@@ -4,7 +4,8 @@ import { loadPinData, getCache } from '../app/services';
 import { defaultSetup, loadSetup, roleOf, saveSetup, setRole, setupBlocker } from '../app/pins-setup';
 import type { PinsSetup, Role } from '../app/pins-setup';
 import { routeFlags, routeHref } from '../app/route';
-import { recordEvent, spendTrainerEnergy, trainer } from '../app/trainer-store';
+import { recordEvent } from '../app/trainer-store';
+import { coins, spendCoins } from '../app/wallet';
 import { seededRng } from '../core/battle';
 import {
   advanceRound, afterShot, affordable, aliveOf, arenaLimit, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE,
@@ -112,9 +113,10 @@ const rng = seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0);
 
 // ---------------------------------------------------------------- preparação
 
-const energy = computed(() => trainer.value.energy);
-/** Energia que vale na partida: no PvP não há custo (os dois jogam com os mesmos pins e sem gastar a energia do treinador). */
-const budget = computed(() => (pvpMatch.value ? Number.POSITIVE_INFINITY : trainer.value.energy));
+/** Saldo único de moedas (`app/wallet.ts`): cada disparo custa moedas (antes era a energia do Treinador). */
+const energy = computed(() => coins.value);
+/** O que vale na partida: no PvP não há custo (os dois jogam com os mesmos pins e sem gastar moedas). */
+const budget = computed(() => (pvpMatch.value ? Number.POSITIVE_INFINITY : coins.value));
 const usable = computed(() => cards.value.filter((c) => c.sprite.state === 'ok' && c.dexIds.length > 0));
 const shown = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -391,7 +393,7 @@ function selectPin(id: string): void {
   const pin = world.pins.find((p) => p.id === id);
   if (!pin || pin.side !== 0 || !pin.alive || pin.fall > 0) return;
   if (pin.cost > budget.value) {
-    message.value = `Sem energia para ${pin.name} (custa ${pin.cost}). Ganhe XP escaneando cartas ou jogando minigames.`;
+    message.value = `Sem moedas para ${pin.name} (custa ${pin.cost}). Ganhe moedas escaneando cartas, batalhando ou jogando minigames.`;
     return;
   }
   message.value = '';
@@ -628,8 +630,8 @@ function fireMine(shot: Shot): void {
     message.value = 'Esse golpe ainda está recarregando. Escolha outro ou o disparo normal.';
     return;
   }
-  if (!pvpMatch.value && !spendTrainerEnergy(pin.cost)) {
-    message.value = `Sem energia para ${pin.name} (custa ${pin.cost}).`;
+  if (!pvpMatch.value && !spendCoins(pin.cost)) {
+    message.value = `Sem moedas para ${pin.name} (custa ${pin.cost}).`;
     pickDefaultPin();
     refreshTray();
     return;
@@ -1290,8 +1292,8 @@ function setMarks(on: boolean): void {
           <p>Vista de cima, sem câmera: puxe para trás, solte e empurre os adversários para fora da arena.</p>
           <p v-if="fromVillage"><a :href="routeHref('caixa', undefined, ['vila'])">← Voltar à Vila</a></p>
         </div>
-        <p class="pn-energy" :title="'Cada disparo gasta a energia do pin escolhido (de 5 a 40). Ela sobe com o seu XP.'">
-          <span class="bolt" aria-hidden="true"></span><strong>{{ energy }}</strong><small>energia</small>
+        <p class="pn-energy" :title="'Cada disparo gasta moedas (de 5 a 40, conforme o pin). Moedas vêm do XP, das batalhas e da Vila.'">
+          <span class="bolt" aria-hidden="true"></span><strong>{{ energy }}</strong><small>moedas</small>
         </p>
       </header>
 
@@ -1425,7 +1427,7 @@ function setMarks(on: boolean): void {
         <button v-if="replaying" type="button" class="pin-skip" @click.stop="stopReplay">Pular repetição</button>
         <div v-if="phase === 'over' && result && !replaying" class="pin-over" :class="result.won ? 'won' : 'lost'" role="dialog" aria-label="Fim da partida">
           <span class="pn-over-mark" aria-hidden="true">{{ result.won ? '★' : result.reason === 'energia' ? '⚡' : result.reason === 'empate' ? '＝' : result.reason === 'saiu' ? '…' : '✕' }}</span>
-          <strong>{{ result.won ? 'Você venceu!' : result.reason === 'energia' ? 'Acabou a energia' : result.reason === 'empate' ? 'Empate!' : result.reason === 'saiu' ? 'O amigo saiu' : 'Você perdeu' }}</strong>
+          <strong>{{ result.won ? 'Você venceu!' : result.reason === 'energia' ? 'Acabaram as moedas' : result.reason === 'empate' ? 'Empate!' : result.reason === 'saiu' ? 'O amigo saiu' : 'Você perdeu' }}</strong>
           <p class="pn-over-stats">
             <span>{{ result.shots }} disparo{{ result.shots === 1 ? '' : 's' }}</span>
             <span v-if="result.won && !pvpMatch">nota {{ result.score }}</span>
@@ -1434,7 +1436,7 @@ function setMarks(on: boolean): void {
           <p v-else-if="result.reason === 'empate'">Os dois lados perderam o último pin na mesma jogada.</p>
           <p v-else-if="result.won && pvpMatch">Todos os pins do seu amigo caíram.</p>
           <p v-else-if="result.won">Todos os adversários caíram.</p>
-          <p v-else-if="result.reason === 'energia'">Nenhum pin seu cabe na energia que sobrou. Ganhe XP escaneando cartas ou jogando <a :href="routeHref('treinador')">minigames</a>.</p>
+          <p v-else-if="result.reason === 'energia'">Nenhum pin seu cabe nas moedas que sobraram. Ganhe moedas escaneando cartas, batalhando ou jogando <a :href="routeHref('treinador')">minigames</a>.</p>
           <p v-else-if="pvpMatch">Todos os seus pins caíram.</p>
           <p v-else>Seus pins caíram todos da arena.</p>
           <div class="game-actions">

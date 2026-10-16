@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { assetUrl, getCache, getLocalVillageSprite } from '../app/services';
 import { recordEvent } from '../app/trainer-store';
+import { addCoins } from '../app/wallet';
 import { seededRng } from '../core/battle';
 import { shuffle } from '../core/minigames';
 import {
@@ -33,7 +34,7 @@ const UPGRADE_ICON: Record<string, string> = {
  * mesmo jeito que a Pista de Pins (`recordEvent({ type: 'minigame', game: 'sobrevivencia', ... })`), sem entrar
  * no catálogo de minigames do Fliperama (`core/minigames.ts`).
  */
-const emit = defineEmits<{ leave: []; energy: [amount: number] }>();
+const emit = defineEmits<{ leave: [] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
 const props = defineProps<{ digital?: { dexId: number; name: string }[] }>();
 
@@ -103,8 +104,8 @@ async function loadSpriteOrNull(dexId: number): Promise<Sprite | null> {
 function recordRun(s: SurvivorSummary): void {
   const score = clamp(Math.round(s.survivedMs / 1000 + s.kills * 2 + s.level * 5), 0, 100);
   recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score });
-  // Energia pra Fonte (ver `core/village/digital.ts`), proporcional à pontuação da corrida.
-  if (s.kills > 0) emit('energy', Math.max(5, Math.round(score / 2)));
+  // Bônus de moedas (saldo único, `app/wallet.ts`) proporcional à pontuação da corrida, além das moedas do XP.
+  if (s.kills > 0) addCoins(Math.max(5, Math.round(score / 2)));
 }
 
 function formatTime(ms: number): string {

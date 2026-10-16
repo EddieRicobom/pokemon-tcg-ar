@@ -1,7 +1,7 @@
 /**
  * Cartas Mega. O nome da carta diz se ela é Mega ("Mega Gallade ex", "M Charizard-EX", "Mega Charizard X ex"); o
  * escaneamento guarda esse fato (`mega`) e a interface mostra o selo MEGA. Na Caixa, uma carta Mega pode mudar de
- * forma por uma batalha, gastando `MEGA_ENERGY_COST` de energia.
+ * forma por uma batalha, gastando `MEGA_ENERGY_COST` moedas (saldo único).
  */
 
 /** Energia do Treinador gasta para uma batalha na forma Mega. */

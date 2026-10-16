@@ -53,7 +53,7 @@ export const LEGENDARIES: readonly LegendaryDef[] = [
       'Um raio corta o ar e, no clarão, uma ave elétrica gigante sobrevoa a praça.',
       'Zapdos solta um grito que ecoa — e desaparece entre relâmpagos.',
     ],
-    boon: 'A energia da Vila fica "carregada": a Fonte rende um pouco mais pelas próximas horas.',
+    boon: 'O ar da Vila fica "carregado": as moedas rendem um pouco mais pelas próximas horas.',
     consequence: 'As luzes da cidade piscam a noite toda — nada grave, só um susto a cada tanto.',
   },
   {

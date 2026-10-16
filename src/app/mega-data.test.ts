@@ -107,7 +107,7 @@ describe('prepareMegaForm', () => {
       expect(out.ok).toBe(false);
       if (!out.ok) {
         expect(out.reason).toMatch(pattern);
-        expect(out.reason).toContain('não gasta energia');
+        expect(out.reason).toContain('não gasta moedas');
       }
     }
   });

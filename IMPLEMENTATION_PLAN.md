@@ -132,7 +132,7 @@ Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, cic
 
 Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já estavam na lista.
 
-1. ⬜ **Unificar energia e moedas** (pedido do dono): hoje são três saldos — moedas da Vila (loja, Fonte, batalhas), energia do Treinador (Pins, forma Mega) e energia da Fonte (Digital Pokémon). Depende de decidir nome, conversão dos saldos atuais e preços.
+1. ✅ **Energia e moedas unificadas** (pedido do dono, decisões dele): um saldo só, **Moedas** (`app/wallet.ts`, guardado em `VillageState.coins`, entra no backup). Pins (5–40 por disparo), forma Mega (50), Fonte (500 invocar, 1.000 evoluir, 700 "na sorte" ainda desligado) e loja usam o mesmo saldo. O XP ganho vira a mesma quantia de moedas; atividades da Vila (conversa 5, momento 8, quiz/correio 10, Café 15), minigames (+10 na vitória), Torre e batalhas (100, 3/dia) também. As energias antigas (Treinador e Fonte) foram **descartadas** — vale só o saldo de moedas, como o dono escolheu. Conferido no Chromium: com 650 moedas a Fonte invocou (sobrou o resto, sem energia no save) e Pins e Treinador mostram o mesmo saldo. 🔶 Balanceamento (quanto se ganha por dia × preços) precisa do dono jogando.
 2. ⬜ **Scan com foto temporária** (ideia do dono): assim que o número e o nome forem lidos com a carta parada, congelar aquele quadro (foto temporária, só na memória) e fazer o resto da identificação sobre ela, em vez de continuar lendo a câmera "de graça". Medir antes/depois com a bancada (`scripts/scan-bench.eval.ts`).
 3. ⬜ **Fase C — Survivor**: balanceamento de dificuldade, chefes e sinergias com dados reais de jogo; limpeza de timers/listeners ao sair no meio. Fora do escopo: Duck Hunt comprável, missões/conquistas/fenda de lendário.
 4. ⬜ **Menu do modo Vila** melhor (pedido do dono): hoje o B abre uma folha com 8 abas (mochila, fabricar, cozinha, diário, álbum, coleção, livro, visual).
@@ -147,7 +147,8 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
 13. ⬜ **Desempenho**: custo no celular dos chunks de TensorFlow.js (~1,1 MB) e Three.js (~0,5 MB); dividir `ScanView.vue` e `battle-director.ts`.
 14. ⬜ **Direção do RPG**: definir com o dono o que vem primeiro e reaproveitar `src/core/battle.ts`.
 15. ⬜ **PWA**: matriz de aparelhos (Chrome/Android e Safari/iOS), bateria, offline completo.
-16. ⬜ Em espera, por pedido do dono: vídeo game comprável na Vila (Duck Hunt) e Torre mais parecida com o poke-survivor original (missões, conquistas, fenda de lendário).
+16. ⬜ **Bônus dos lendários são só texto**: as cutscenes de Suicune ("a horta cresce mais rápido"), Zapdos ("as moedas rendem um pouco mais") e Celebi ("o Diário ganha uma página especial") prometem efeitos que nenhum código aplica (achado em 2026-10-16). Ou implementar, ou trocar o texto por algo que não prometa mecânica.
+17. ⬜ Em espera, por pedido do dono: vídeo game comprável na Vila (Duck Hunt) e Torre mais parecida com o poke-survivor original (missões, conquistas, fenda de lendário).
 
 ## Decisões em aberto
 

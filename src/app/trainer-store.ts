@@ -1,5 +1,6 @@
 import { ref } from 'vue';
-import { applyEvent, dayKey, emptyTrainer, importHistory, normalizeTrainer, spendEnergy } from '../core/trainer';
+import { applyEvent, dayKey, emptyTrainer, importHistory, normalizeTrainer } from '../core/trainer';
+import { addCoins } from './wallet';
 import type { Reward, TrainerEvent, TrainerState } from '../core/trainer';
 
 const KEY = 'tcg-ar-trainer-v1';
@@ -39,23 +40,17 @@ export function dismissReward(key: number): void {
 
 /** Registra um feito (carta lida, batalha, minigame) e devolve o que foi ganho. */
 export function recordEvent(event: TrainerEvent, now: Date = new Date()): Reward[] {
+  const before = trainer.value.xp;
   const { state, rewards } = applyEvent(trainer.value, event, dayKey(now));
   trainer.value = state;
   write(state);
+  // Saldo único: o que antes virava energia do Treinador (o XP ganho) agora vira moedas.
+  addCoins(state.xp - before);
   // Mais de 4 avisos de uma vez viram bagunça: os mais importantes (nível, conquista, missão) vêm primeiro.
   const rank: Record<Reward['tone'], number> = { level: 0, achievement: 1, mission: 2, streak: 3, new: 4, xp: 5 };
   const shown = [...rewards].sort((a, b) => rank[a.tone] - rank[b.tone]).slice(0, 4);
   rewardFeed.value = [...rewardFeed.value, ...shown.map((reward) => ({ key: ++seq, reward }))].slice(-6);
   return rewards;
-}
-
-/** Gasta energia do Pin Mode. Devolve false (e não muda nada) se não houver energia suficiente. */
-export function spendTrainerEnergy(amount: number): boolean {
-  const next = spendEnergy(trainer.value, amount);
-  if (!next) return false;
-  trainer.value = next;
-  write(next);
-  return true;
 }
 
 /** Traz as cartas que já estavam guardadas (sem dar XP por elas). Seguro de chamar mais de uma vez. */

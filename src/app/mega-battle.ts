@@ -31,8 +31,8 @@ export interface MegaBattleDeps<S> {
 
 /**
  * Monta as trocas para a Mega da próxima batalha. Primeiro tenta deixar tudo pronto para cada marcado (forma, atributos,
- * sprite e imagem); só depois escolhe quantos a energia paga, na ordem marcada. Nada é cobrado aqui: quem chama cobra
- * `cost` uma vez, depois que a batalha foi montada. Quem não ficou pronto, ou não coube na energia, luta na forma normal.
+ * sprite e imagem); só depois escolhe quantos as moedas pagam, na ordem marcada. Nada é cobrado aqui: quem chama cobra
+ * `cost` uma vez, depois que a batalha foi montada. Quem não ficou pronto, ou não coube nas moedas, luta na forma normal.
  */
 export async function planMegaBattle<S>(
   candidates: readonly MegaCandidate[],
@@ -52,7 +52,7 @@ export async function planMegaBattle<S>(
         }
         return { ...prepared.ready, source: await deps.decode(prepared.ready) };
       } catch (error) {
-        notes.push(`${candidate.name}: não consegui preparar a forma Mega (${error instanceof Error ? error.message : String(error)}). Luta na forma normal e não gasta energia.`);
+        notes.push(`${candidate.name}: não consegui preparar a forma Mega (${error instanceof Error ? error.message : String(error)}). Luta na forma normal e não gasta moedas.`);
         return null;
       }
     }),
@@ -62,7 +62,7 @@ export async function planMegaBattle<S>(
   const entries = ready.slice(0, afford);
   for (const left of ready.slice(afford)) {
     const name = candidates.find((c) => c.id === left.cardId)?.name ?? 'Pokémon';
-    notes.push(`${name}: sem energia para a forma Mega (cada troca custa ${cost}). Luta na forma normal.`);
+    notes.push(`${name}: sem moedas para a forma Mega (cada troca custa ${cost}). Luta na forma normal.`);
   }
   return { entries, cost: entries.length * cost, notes };
 }

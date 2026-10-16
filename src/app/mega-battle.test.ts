@@ -38,13 +38,13 @@ describe('planMegaBattle', () => {
     expect(plan.cost).toBe(50);
     expect(plan.notes).toHaveLength(1);
     expect(plan.notes[0]).toContain('Mega B');
-    expect(plan.notes[0]).toContain('sem energia');
+    expect(plan.notes[0]).toContain('sem moedas');
   });
 
   it('sem energia nenhuma, ninguém troca e nada é cobrado', async () => {
     const plan = await planMegaBattle([cand('a')], 49, { prepare: okPrepare, decode });
     expect(plan).toMatchObject({ entries: [], cost: 0 });
-    expect(plan.notes[0]).toContain('sem energia');
+    expect(plan.notes[0]).toContain('sem moedas');
   });
 
   it('forma que não ficou pronta não é cobrada, e a energia vai para quem ficou', async () => {
