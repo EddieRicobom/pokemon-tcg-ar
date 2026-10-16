@@ -36,8 +36,14 @@ export interface VillageMon {
   id: string;
   name: string;
   shiny: boolean;
-  /** GIF decodificado (ou imagem parada como GIF de 1 quadro). */
+  /** GIF decodificado (ou imagem parada como GIF de 1 quadro). Pose "de frente" (down), usada quando `dirGifs` falta uma direção. */
   gif: DecodedGif;
+  /**
+   * As 4 poses cardeais do pacote de sprites locais (quando a espécie está nele), pra virar de verdade conforme o
+   * último passo em vez do espelhamento falso que os GIFs de rede usam (ver `getLocalVillageSpriteDirs`). Mesmas
+   * dimensões e tempos de quadro que `gif` em todas as direções (a folha de origem garante isso).
+   */
+  dirGifs?: Partial<Record<Dir, DecodedGif>>;
 }
 
 export type Target =
@@ -71,6 +77,8 @@ function toCanvas(buf: PixelBuf): HTMLCanvasElement {
 interface MonSprite {
   frames: HTMLCanvasElement[];
   gif: DecodedGif;
+  /** Quadros por direção (pacote de sprites locais); mesmos índices/tempos de `gif`, só troca a imagem. */
+  dirFrames?: Partial<Record<Dir, HTMLCanvasElement[]>>;
   /** Altura desenhada, em blocos. */
   heightTiles: number;
   /** Topo da cabeça no 1º quadro (0 a 1 da altura) e o centro dela (0 a 1 da largura): onde vai o acessório. */
@@ -221,9 +229,24 @@ export class VillageGame {
       w.idle = this.rng() * 2;
       this.villagers.set(mon.id, w);
       this.names.set(mon.id, mon.name);
-      const frames = mon.gif.frames.map((f) => toCanvas({ w: mon.gif.width, h: mon.gif.height, data: new Uint8Array(f.rgba.buffer, f.rgba.byteOffset, f.rgba.byteLength) }));
+      const toFrames = (gif: DecodedGif) => gif.frames.map((f) => toCanvas({ w: gif.width, h: gif.height, data: new Uint8Array(f.rgba.buffer, f.rgba.byteOffset, f.rgba.byteLength) }));
+      const frames = toFrames(mon.gif);
+      let dirFrames: Partial<Record<Dir, HTMLCanvasElement[]>> | undefined;
+      if (mon.dirGifs) {
+        dirFrames = {};
+        for (const dir of ['up', 'down', 'left', 'right'] as const) {
+          const g = mon.dirGifs[dir];
+          if (g) dirFrames[dir] = toFrames(g);
+        }
+      }
       const head = headOf(mon.gif);
-      this.monSprites.set(mon.id, { frames, gif: mon.gif, heightTiles: Math.min(2.4, Math.max(1.1, mon.gif.height / 40)), headTop: head.top, headX: head.x });
+      // O pacote de sprites locais (PMD SpriteCollab) desenha a espécie num tamanho de tela menor do que o GIF do
+      // Showdown costuma ter pro mesmo Pokémon; sem compensar, quem usa sprite local fica visivelmente menor do
+      // que quem ainda usa o GIF baixado. Ajuste por olho, sem Pokémon real pra comparar lado a lado ainda.
+      const usingLocal = dirFrames !== undefined;
+      const rawScale = (mon.gif.height / 40) * (usingLocal ? 1.4 : 1);
+      const heightTiles = Math.min(usingLocal ? 2.6 : 2.4, Math.max(usingLocal ? 1.2 : 1.1, rawScale));
+      this.monSprites.set(mon.id, { frames, gif: mon.gif, dirFrames, heightTiles, headTop: head.top, headX: head.x });
     }
   }
 
@@ -971,7 +994,11 @@ export class VillageGame {
       list.push({
         y: pos.y + 1,
         draw: () => {
-          const frame = sprite.frames[frameIndexAt(sprite.gif, now)] ?? sprite.frames[0]!;
+          // Quem tem sprite local usa a pose de verdade da direção (vira pra frente de quem andou de verdade);
+          // sem ela, cai no espelhamento de sempre (o GIF do Showdown só olha pra um lado).
+          const dirSet = sprite.dirFrames?.[w.dir];
+          const activeFrames = dirSet ?? sprite.frames;
+          const frame = activeFrames[frameIndexAt(sprite.gif, now)] ?? activeFrames[0]!;
           const h = sprite.heightTiles * TILE * scale;
           const wpx = h * (sprite.gif.width / sprite.gif.height);
           const born = this.bounce.get(id);
@@ -981,8 +1008,9 @@ export class VillageGame {
           const base = sy(pos.y + 1) - 2 * scale - hop;
           shadow(cx, sy(pos.y + 1) - 2 * scale, (5 - hop / (2 * scale) * 0.3) * scale, 2 * scale, 0.22);
           ctx.save();
-          // Os sprites do Showdown olham para a esquerda: andando para a direita, espelha.
-          if (w.dir === 'right') {
+          // Os sprites do Showdown olham para a esquerda: andando para a direita, espelha. Quem já tem a pose
+          // direita de verdade (sprite local) não precisa desse truque.
+          if (!dirSet && w.dir === 'right') {
             ctx.translate(cx, 0);
             ctx.scale(-1, 1);
             ctx.translate(-cx, 0);

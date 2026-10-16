@@ -17,8 +17,9 @@ import { RecognitionPipeline } from '../recognition/pipeline';
 import { TcgdexClient } from '../recognition/tcgdex';
 import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from '../recognition/types';
 import { loadChunk } from './stale-build';
-import { loadLocalVillageSprite } from '../village/local-sprite-loader';
+import { loadLocalVillageSprite, loadLocalVillageSpriteDirs } from '../village/local-sprite-loader';
 import type { DecodedGif } from '../core/gif';
+import type { Dir } from '../core/village/actors';
 
 /**
  * Serviços do app, criados sob demanda e uma vez só (nada pesado é carregado antes de o usuário
@@ -99,6 +100,23 @@ export function getCatalog(): Promise<CatalogLookup | null> {
  */
 export function getLocalVillageSprite(dexId: number, shiny: boolean, animName = 'Idle'): Promise<DecodedGif | null> {
   return loadLocalVillageSprite(
+    dexId,
+    shiny,
+    {
+      metaUrl: assetUrl('data/village-sprite-meta.json'),
+      spriteUrl: (id, anim, wantShiny) => assetUrl(`sprites/pokemon/${id}/${wantShiny ? 's/' : ''}${anim}.png`),
+    },
+    animName,
+  );
+}
+
+/**
+ * As 4 poses cardeais (`up`/`down`/`left`/`right`) do pacote de sprites locais, para o Pokémon virar de verdade
+ * conforme o último passo em vez de só espelhar a pose de frente. Mesmo custo de rede que `getLocalVillageSprite`
+ * (baixa a folha uma vez e recorta as 4 direções dela). Null nos mesmos casos (ver `loadLocalVillageSpriteDirs`).
+ */
+export function getLocalVillageSpriteDirs(dexId: number, shiny: boolean, animName = 'Idle'): Promise<Partial<Record<Dir, DecodedGif>> | null> {
+  return loadLocalVillageSpriteDirs(
     dexId,
     shiny,
     {

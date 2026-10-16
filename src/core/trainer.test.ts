@@ -323,6 +323,18 @@ describe('Vila, Liga e PvP no Treinador', () => {
     expect(n.state.achievements['vila-apelido']).toBeDefined();
   });
 
+  it('o evento de depuração dá exatamente o XP pedido, sem contar como escaneamento, batalha ou minigame', () => {
+    const before = emptyTrainer();
+    const { state, rewards } = applyEvent(before, { type: 'debug', xp: 1000, label: 'Depuração: sprite do dex 666' }, day);
+    expect(state.xp).toBe(1000);
+    expect(state.scans).toBe(before.scans);
+    expect(state.battles).toBe(before.battles);
+    expect(state.minigames).toBe(before.minigames);
+    expect(rewards.some((r) => r.text === 'Depuração: sprite do dex 666' && r.sub?.includes('1000'))).toBe(true);
+    // Não aceita XP negativo por engano.
+    expect(applyEvent(before, { type: 'debug', xp: -50, label: 'x' }, day).state.xp).toBe(0);
+  });
+
   it('a amizade mais alta fica guardada e destrava as conquistas de amizade', () => {
     let s = applyEvent(emptyTrainer(), talk(2), day).state;
     expect(s.bestFriend).toBe(2);
