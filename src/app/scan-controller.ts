@@ -312,6 +312,7 @@ export class ScanController {
           // Outra carta (ou outro ângulo demais): a foto não vale mais, volta a ler.
           last.message = `A carta mudou (${Math.round(score * 100)}% parecida com a foto): lendo de novo.`;
           this.deps.onAttempt?.(last);
+          this.set({ last, message: last.message });
           this.dropPhoto();
         }
       }
