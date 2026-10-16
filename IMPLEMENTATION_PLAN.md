@@ -51,6 +51,21 @@ Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado �
 - ⬜ Vídeo game comprável na Vila, desbloqueando minigames extras (ex.: um "atirar nas pokébolas" estilo Duck Hunt): pedido, em espera por enquanto.
 - ⬜ **Torre mais parecida com o poke-survivor original** (missões, conquistas e um evento especial tipo "fenda de lendário", com números e arte originais, nunca um port literal) **e** fazer coisas de fora da Torre influenciarem a corrida (ex.: nível de amizade do Pokémon escolhido dando algum bônus): pedido, explicitamente para depois — não entra nesta rodada de melhorias.
 
+## Fases do prompt mestre
+
+O dono do projeto enviou um prompt mestre completo (guardado na íntegra em [docs/PROMPT_MESTRE.md](docs/PROMPT_MESTRE.md), pra não se perder de novo numa compactação de conversa) com 8 fases. Status de cada uma:
+
+- ✅ **Fase 1 — Auditoria**: feita nas sessões anteriores.
+- ✅ **Fase 2 — Scanner**: instrumentação (tempos por etapa, candidatos, origem) e o painel "Mostrar o que o app está vendo" (contorno, carta endireitada, faixa do OCR, texto lido) já existem em `ScanView.vue`/`DiagnosticoView.vue`.
+- ✅ **Fase 3 — AR**: GIF ancorado à carta, tratamento de sprite ausente e de falha de rede, liberação de recursos — ver seção "AR sobre a carta" acima.
+- ⬜ **Fase 4 — Introdução e presente**: cutscene da primeira entrada, questionário narrativo e presente de um inicial Digital Pokémon (Geração I a IX), mini tutorial. **Nada disso existe ainda.**
+- ⬜ **Fase 5 — Digital Pokémon e energia**: instâncias digitais (etiqueta, não elegíveis a scan físico), economia de energia, a Fonte, invocação por 500 energias, amizade e evolução por 1.000 energias + amizade nível 3. **Nada disso existe ainda** — a "fonte" que já existe na Vila hoje é só um enfeite decorativo da praça (água animada), sem nenhuma mecânica.
+- 🔶 **Fase 6 — Vila e Survivor**: Vila e Torre de Sobrevivência já existem e funcionam (ver seção "Vila" acima); falta só a parte que depende da Fase 5 (Digital Pokémon elegíveis pro Survivor).
+- ⬜ **Fase 7 — Encontros lendários**: sorteio raro, eventos por lendário, cutscenes, consequências na Vila, histórico. **Nada disso existe ainda.**
+- 🔶 **Fase 8 — Integração e acabamento**: contínua; cada PR já atualiza este documento e roda os testes, mas falta a revisão final depois das Fases 4, 5 e 7.
+
+As Fases 4, 5 e 7 são sistemas novos e grandes (modelo de dados, telas, narrativa, testes) — cada uma dá pra sair em vários PRs pequenos, não um só.
+
 ## Próximos passos (em ordem sugerida)
 
 1. ⬜ **Validar tudo num celular real** seguindo o roteiro; anotar aparelho, navegador, leituras/s e o que falhar. É o maior risco aberto.
