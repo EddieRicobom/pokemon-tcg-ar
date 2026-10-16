@@ -101,11 +101,22 @@ Bancada `scripts/scan-bench.eval.ts` (Node num PC, Tesseract de verdade, foto re
 | Carta mexendo 3 quadros, depois parada | 2,36–2,59 s até confirmar · **14** passadas de OCR | 1,34–1,40 s · **2** passadas de OCR |
 | Carta parada desde o 1º quadro | 0,53 s · 1 quadro · 2 passadas | 0,69–0,70 s · 2 quadros · 2 passadas (**~0,17 s mais lento**: espera o par de quadros parados) |
 
-No Chromium (câmera falsa com a mesma foto, GPU do PC), a tabela da sessão mediu: até as primeiras candidatas ~1,9 s; **guardar a carta (referência + sprite + compilar o alvo do MindAR) 19,9 s**; início do AR 1,5 s. O maior gargalo medido do fluxo Escanear → AR **não é o reconhecimento, é a compilação do alvo ao guardar** — próximo alvo de otimização (ver passo 8 abaixo).
+No Chromium (câmera falsa com a mesma foto), a tabela da sessão mostrou: até as primeiras candidatas ~1,9 s; guardar a carta (referência + sprite + compilar o alvo do MindAR) 19,9 s; início do AR 1,5 s. ⚠️ **Correção (Fase B):** esses tempos foram tirados com o painel do navegador **oculto**, quando o Chromium trata a página como aba em segundo plano e desacelera timers e GPU — não valem como medida. A indicação (guardar a carta pesa mais que reconhecer) continua plausível, mas precisa ser medida em celular: a tabela do Diagnóstico agora mostra cada parte de "guardar a carta" (ver Fase B).
 
 Numa das tentativas no Chromium as 3 imagens de referência falharam (a decisão caiu para "em dúvida" só pelo número); a causa não ficou registrada porque o erro era engolido. Agora o motivo aparece no veredito de cada candidata; na tentativa seguinte elas carregaram e a carta foi aceita com 91%.
 
 🔶 Nada disso foi visto num celular real.
+
+## AR: Fase B (2026-10-16)
+
+Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, ciclo de vida):
+
+- ✅ **Contexto WebGL vazando a cada carta**: o Escanear recria o `<canvas>` do AR a cada carta (para ter um contexto limpo), mas `renderer.dispose()` não devolve o contexto ao navegador — ele ficava vivo até o coletor de lixo. Depois de umas 16 leituras, o Chrome começa a derrubar o contexto mais antigo, às vezes o do TensorFlow.js do rastreador. Agora o contexto é liberado quando o canvas sai da página (`ar/context-release.ts`) e, explicitamente, antes de recriá-lo (inclusive depois de fechar e abrir a câmera). Canvas reaproveitado (Várias, Caixa) não perde o contexto. Conferido no Chromium: ao pedir outra carta, o canvas antigo disparou `webglcontextlost` e o AR novo rastreou normalmente.
+- ✅ **"Guardar a carta" medido por partes** (`PrepareResult.timings`): referência, características, sprite, imagem em alta e compilação do alvo aparecem no Diagnóstico como subetapas — é a medida que faltava para atacar o tempo no celular.
+- ✅ **Imagem em alta baixa em paralelo**: era o último download da fila (referência → sprite → imagem em alta → compilar). Agora começa junto com a referência e o sprite (teste que travaria com a fila antiga).
+- ✅ Relógio da etapa "Confirmando identificação" congelava enquanto guardava a carta; agora anda.
+- Revisado, sem mudança: falha ao iniciar libera motor, WebGL, sensores e observador; uma execução superada (outra carta, câmera fechada, sair da tela) é parada; sprite ausente e falha de rede aparecem na tela com "Tentar baixar o GIF de novo"; perda de rastreamento vira "lost" e volta a "tracking" sozinha; alvo de versão antiga é recompilado; "Recompilar o alvo da carta" e "Escolher outra carta" no erro.
+- 🔶 Não medido: tempos de câmera/alvo/rastreio em celular (o painel do navegador desta sessão estava oculto, o que invalida tempos). Nada visto em celular real.
 
 ## Próximos passos (em ordem sugerida)
 
@@ -116,7 +127,7 @@ Numa das tentativas no Chromium as 3 imagens de referência falharam (a decisão
 5. ⬜ **Desempenho**: o chunk do TensorFlow.js (~1,1 MB sem compactar) e o do Three.js (~0,5 MB) só carregam ao usar AR/Caixa, mas o custo no celular não foi medido. `ScanView.vue` (~830 linhas) e `battle-director.ts` (~1150) merecem ser divididos antes de crescerem mais.
 6. ⬜ **Direção do RPG**: definir com o dono o que vem primeiro (exploração, escolha de golpes, progressão) e reaproveitar o motor de `src/core/battle.ts`.
 7. ⬜ **PWA**: matriz de aparelhos (Chrome/Android e Safari/iOS), orçamento de bateria, comportamento offline completo.
-8. ⬜ **Guardar a carta mais rápido**: 19,9 s medidos no Chromium entre a carta reconhecida e pronta (compilar o alvo do MindAR domina). Medir as partes (referência, sprite, alvo) e avaliar compilar em Web Worker, alvo menor ou mostrar o Pokémon antes do alvo ficar pronto.
+8. ⬜ **Guardar a carta mais rápido**: medir no celular (Diagnóstico → "Tempo de cada etapa" já separa referência, sprite, imagem em alta e compilação do alvo) e, se a compilação dominar, avaliar alvo menor ou mostrar o Pokémon antes do alvo ficar pronto. A imagem em alta já baixa em paralelo (Fase B).
 9. ⬜ **Escala pela altura real também na Caixa e no AR** (a Vila e a Torre já usam; ver "Vila" acima). Na Caixa os sprites vêm do Showdown e do 3D; avaliar se a mesma curva cabe lá sem atrapalhar a leitura da batalha.
 
 ## Decisões em aberto

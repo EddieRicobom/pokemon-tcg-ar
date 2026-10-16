@@ -107,7 +107,8 @@ describe('ScanController', () => {
     const b = result({ status: 'identified', card: card('hgss4-58', 'Gengar'), confidence: 0.85, margin: 0.12 });
     const { controller, cache } = setup([a, b, a.status === 'identified' ? b : a]);
     controller.start();
-    await new Promise((r) => setTimeout(r, 20));
+    // Espera a confirmação acontecer (ou 2 s), em vez de um tempo fixo que falhava com a máquina carregada.
+    for (let waited = 0; cache.scanCard.mock.calls.length === 0 && waited < 2000; waited += 5) await new Promise((r) => setTimeout(r, 5));
     controller.stop();
     // b aparece duas vezes → é a confirmada, a não.
     expect(cache.scanCard.mock.calls.map((c) => c[0].card.id)).toEqual(['hgss4-58']);

@@ -87,6 +87,17 @@ export interface PrepareResult {
   id: string;
   status: CacheStatus;
   card: CachedCard;
+  /** Quanto cada parte levou nesta preparação (ms). Só as partes que rodaram; o que já estava pronto não aparece. */
+  timings?: PrepareTimings;
+}
+
+/** Partes de "guardar a carta", medidas (Diagnóstico): é aqui que mora o maior tempo do fluxo Escanear → AR. */
+export interface PrepareTimings {
+  reference?: number;
+  features?: number;
+  sprite?: number;
+  targetImage?: number;
+  targetCompile?: number;
 }
 
 const TARGET_PREFIX = '/__tcg-ar__/target/';
@@ -449,6 +460,23 @@ export class CardCache {
     if (!card) throw new Error(`Carta ${id} não está no cache.`);
     const steps: PrepareStep[] = ['referência', 'sprite', 'alvo de AR'];
     const report = (step: PrepareStep) => onProgress?.({ cardId: id, step, index: steps.indexOf(step), total: steps.length });
+    const timings: PrepareTimings = {};
+    const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const timed = async <T>(part: keyof PrepareTimings, fn: () => Promise<T>): Promise<T> => {
+      const t0 = clock();
+      try {
+        return await fn();
+      } finally {
+        timings[part] = Math.round((timings[part] ?? 0) + clock() - t0);
+      }
+    };
+    // A imagem em alta (o maior download, só para compilar o alvo) começa JÁ, em paralelo com a referência e o
+    // sprite, em vez de esperar os dois na fila. Se falhar, vira null e o alvo usa a referência de baixa.
+    const needsTarget = !!this.deps.buildTarget && (card.target.state !== 'ok' || card.target.version !== TARGET_VERSION);
+    const highBase = needsTarget ? card.imageBase : undefined;
+    const highImage: Promise<Blob | null> | null = highBase
+      ? timed('targetImage', () => this.fetchHighImage(highBase)).catch(() => null)
+      : null;
 
     // 1) Referência
     report('referência');
@@ -457,7 +485,8 @@ export class CardCache {
         card = { ...card, reference: { state: 'unavailable', error: 'Sem imagem no TCGdex' } };
       } else {
         try {
-          const { url, blob } = await this.downloadReference(card.imageBase);
+          const imageBase = card.imageBase;
+          const { url, blob } = await timed('reference', () => this.downloadReference(imageBase));
           card = { ...card, reference: await this.storeAsset(id, 'reference', url, blob, card.reference) };
         } catch (error) {
           card = { ...card, reference: this.errorSlot(card.reference, error) };
@@ -468,7 +497,8 @@ export class CardCache {
     if (card.reference.state === 'ok' && !card.features && this.deps.decodeReference) {
       try {
         const blob = await this.getAssetBlob(card, 'reference');
-        if (blob) card = { ...card, features: featuresToJson(computeFeatures(await this.deps.decodeReference(blob))) };
+        const decode = this.deps.decodeReference;
+        if (blob) card = { ...card, features: featuresToJson(await timed('features', async () => computeFeatures(await decode(blob)))) };
         await this.save(card);
       } catch {
         // Características serão recalculadas na próxima oportunidade; não é uma falha da carta.
@@ -491,7 +521,7 @@ export class CardCache {
         card = { ...card, sprite: { state: 'unavailable', error: 'Esta carta não tem um Pokémon (Treinador/Energia)' } };
       } else {
         try {
-          const sprite = await this.withRetry(() => this.fetchSpriteImpl(dexId, wantShiny ? { shiny: true } : undefined));
+          const sprite = await timed('sprite', () => this.withRetry(() => this.fetchSpriteImpl(dexId, wantShiny ? { shiny: true } : undefined)));
           card = sprite
             ? { ...card, sprite: this.spriteSlot(await this.storeAsset(id, 'sprite', sprite.url, sprite.blob, card.sprite), sprite, wantShiny) }
             : { ...card, sprite: { state: 'unavailable', error: 'Nenhum sprite encontrado para este Pokémon' } };
@@ -516,26 +546,16 @@ export class CardCache {
       const lowReference = await this.getAssetBlob(card, 'reference');
       let source: Blob | null = null;
       let quality: 'alta' | 'baixa' = 'baixa';
-      if (card.imageBase) {
-        const highUrl = cardImageUrl(card.imageBase, 'high', 'webp');
-        try {
-          source = await this.withRetry(async () => {
-            if (this.deps.fetchTargetImage) return this.deps.fetchTargetImage(highUrl);
-            const response = await this.fetchImpl(highUrl);
-            if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar a imagem em alta resolução`);
-            return response.blob();
-          });
-          quality = 'alta';
-        } catch {
-          source = null; // cai para a referência de baixa resolução
-        }
-      }
-      source ??= lowReference;
+      source = highImage ? await highImage : null;
+      if (source) quality = 'alta';
+      source ??= lowReference; // cai para a referência de baixa resolução
       if (!source) {
         card = { ...card, target: { state: 'missing' } };
       } else {
         try {
-          const target = await this.deps.buildTarget(source);
+          const build = this.deps.buildTarget;
+          const from = source;
+          const target = await timed('targetCompile', () => build(from));
           card = { ...card, target: { ...(await this.storeAsset(id, 'target', targetKey(id), target, card.target)), version: TARGET_VERSION, source: quality } };
         } catch (error) {
           card = { ...card, target: this.errorSlot(card.target, error) };
@@ -547,7 +567,18 @@ export class CardCache {
       await this.save(card);
     }
 
-    return { id, status: cacheStatusOf(card), card };
+    return { id, status: cacheStatusOf(card), card, timings };
+  }
+
+  /** Imagem em alta resolução só para compilar o alvo (não é guardada). */
+  private fetchHighImage(imageBase: string): Promise<Blob> {
+    const highUrl = cardImageUrl(imageBase, 'high', 'webp');
+    return this.withRetry(async () => {
+      if (this.deps.fetchTargetImage) return this.deps.fetchTargetImage(highUrl);
+      const response = await this.fetchImpl(highUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status} ao baixar a imagem em alta resolução`);
+      return response.blob();
+    });
   }
 
   /** "Carregar todas as vistas": prepara só as cartas já reconhecidas neste aparelho, uma de cada vez. */

@@ -4,7 +4,8 @@
  */
 export const SCAN_STAGES = [
   'capture', 'detect', 'stability', 'perspective', 'cropNumber', 'cropName', 'ocrNumber', 'ocrName',
-  'catalog', 'visual', 'ranking', 'temporal', 'display', 'confirm', 'arInit',
+  'catalog', 'visual', 'ranking', 'temporal', 'display', 'confirm',
+  'prepReference', 'prepFeatures', 'prepSprite', 'prepTargetImage', 'prepTargetCompile', 'arInit',
 ] as const;
 export type ScanStage = (typeof SCAN_STAGES)[number];
 
@@ -23,6 +24,11 @@ export const SCAN_STAGE_LABELS_PT: Record<ScanStage, string> = {
   temporal: 'Confirmação temporal',
   display: 'Até as primeiras candidatas',
   confirm: 'Confirmação (guardar a carta)',
+  prepReference: '  · baixar a referência',
+  prepFeatures: '  · características da referência',
+  prepSprite: '  · baixar o sprite',
+  prepTargetImage: '  · baixar a imagem em alta',
+  prepTargetCompile: '  · compilar o alvo do AR',
   arInit: 'Início do AR',
 };
 

@@ -219,6 +219,43 @@ describe('preparo (Carregar)', () => {
     expect(result.card.target).toMatchObject({ state: 'ok', version: TARGET_VERSION, source: 'alta' });
   });
 
+  it('a imagem em alta (para o alvo) baixa em paralelo com o sprite, não depois dele', async () => {
+    let highStarted: () => void = () => {};
+    const started = new Promise<void>((resolve) => (highStarted = resolve));
+    const cache = make({
+      // O sprite só responde depois que o download da imagem em alta começou: em fila, isto travaria.
+      fetchSprite: async () => {
+        await started;
+        return { kind: 'gif', url: 'https://sprites/25.gif', blob: gif() };
+      },
+      fetchTargetImage: async () => {
+        highStarted();
+        return new Blob([new Uint8Array(5000)], { type: 'image/webp' });
+      },
+      buildTarget: async () => new Blob([new Uint8Array(2000)]),
+    });
+    await cache.recordRecognition({ card: pikachu });
+    const result = await Promise.race([
+      cache.prepareCard('base1-58'),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+    ]);
+    expect(result?.card.target).toMatchObject({ state: 'ok', source: 'alta' });
+    expect(result?.card.sprite.state).toBe('ok');
+  });
+
+  it('mede cada parte de guardar a carta; o que já estava pronto não aparece', async () => {
+    const cache = make({ buildTarget: async () => { await new Promise((r) => setTimeout(r, 15)); return new Blob([new Uint8Array(2000)]); } });
+    await cache.recordRecognition({ card: pikachu });
+    const first = await cache.prepareCard('base1-58');
+    expect(first.timings?.reference).toBeGreaterThanOrEqual(0);
+    expect(first.timings?.sprite).toBeGreaterThanOrEqual(0);
+    expect(first.timings?.targetImage).toBeGreaterThanOrEqual(0);
+    expect(first.timings?.targetCompile).toBeGreaterThanOrEqual(10);
+    // Tudo pronto: nada é baixado nem compilado de novo, e nada é medido.
+    const again = await cache.prepareCard('base1-58');
+    expect(again.timings).toEqual({});
+  });
+
   it('se a imagem em alta falhar, compila com a de baixa e marca como "baixa"', async () => {
     failing.add('https://assets.example/base1/58/high.webp');
     const cache = make({ buildTarget: async () => new Blob([new Uint8Array(2000)]) });

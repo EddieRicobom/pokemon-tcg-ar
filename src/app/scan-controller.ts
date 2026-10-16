@@ -1,5 +1,5 @@
 import { inputFromResult } from '../cache/card-cache';
-import type { PrepareProgress, PrepareResult, ScanOutcome } from '../cache/card-cache';
+import type { PrepareProgress, PrepareResult, PrepareTimings, ScanOutcome } from '../cache/card-cache';
 import type { CachedCard } from '../cache/types';
 import type { CardDetection } from '../recognition/detect-card';
 import type { CardRecordLike, IdentifiedCard, RecognitionMetrics, RecognitionResult, RecognizeOptions } from '../recognition/pipeline';
@@ -58,6 +58,8 @@ export interface ScanState {
   qualityHint?: string | null;
   /** Relógio desta leitura (ms desde o início): primeiras candidatas na tela, carta confirmada e tempo para guardá-la. */
   timeline?: { startedAt: number; firstCandidateMs?: number; confirmedMs?: number; confirmMs?: number };
+  /** Partes de "guardar a carta" medidas na última preparação (referência, sprite, alvo…). */
+  prepareTimings?: PrepareTimings;
 }
 
 /** Resultado da detecção leve (contorno da carta), feita em todo quadro antes de decidir se vale rodar o OCR. */
@@ -364,7 +366,7 @@ export class ScanController {
       const timeline = this.state.timeline ? { ...this.state.timeline, confirmMs: Math.round(this.now() - tConfirm) } : undefined;
       if (!outcome.saved) return this.set({ phase: 'error', progress: undefined, message: outcome.reason, stage: undefined, timeline });
       const prepared = outcome.result;
-      this.set({ phase: 'ready', card: prepared.card, progress: undefined, message: `${prepared.card.name} · ${prepared.card.setName} ${prepared.card.localId}`, origin, stage: undefined, timeline });
+      this.set({ phase: 'ready', card: prepared.card, progress: undefined, message: `${prepared.card.name} · ${prepared.card.setName} ${prepared.card.localId}`, origin, stage: undefined, timeline, prepareTimings: prepared.timings });
     } catch (error) {
       if (id !== this.runId) return;
       this.set({ phase: 'error', message: `Não consegui guardar a carta: ${error instanceof Error ? error.message : String(error)}` });

@@ -37,6 +37,7 @@ import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { frameFromVideo } from '../recognition/browser-image';
 import type { RgbaImage } from '../recognition/types';
 import { loadChunk } from '../app/stale-build';
+import { loseCanvasContext } from '../ar/context-release';
 import { spriteIdOf } from '../core/dex-form';
 import { isShiny } from '../core/shiny';
 import { maybeGalladeSpeaks } from '../app/speech-store';
@@ -394,7 +395,13 @@ async function ensureController(): Promise<ScanController> {
       }
       if (state.phase === 'ready' && state.card && state.card !== lastReadyCard) {
         lastReadyCard = state.card;
-        if (state.timeline?.confirmMs !== undefined) recordScanMetrics({ confirm: state.timeline.confirmMs }, 'event');
+        if (state.timeline?.confirmMs !== undefined) {
+          const t = state.prepareTimings ?? {};
+          recordScanMetrics({
+            confirm: state.timeline.confirmMs, prepReference: t.reference, prepFeatures: t.features, prepSprite: t.sprite,
+            prepTargetImage: t.targetImage, prepTargetCompile: t.targetCompile,
+          }, 'event');
+        }
         void startArFor(state.card.id);
       }
     },
@@ -458,7 +465,9 @@ async function startArFor(cardId: string): Promise<void> {
   const run = ++arRun;
   const arStartedAt = performance.now();
   stopAr();
-  // Recria o elemento <canvas> para garantir contexto WebGL novo sem contaminação anterior
+  // Recria o elemento <canvas> para garantir contexto WebGL novo sem contaminação anterior — e devolve o contexto do
+  // canvas velho ao navegador na hora (senão cada carta deixava um contexto vivo; ver ar/context-release.ts).
+  loseCanvasContext(canvasEl.value);
   arCanvasKey.value++;
   await nextTick();
   spriteState.value = null;
@@ -824,7 +833,8 @@ const scanStepsNotice = computed(() => {
 const scanClock = ref(performance.now());
 let scanClockTimer: ReturnType<typeof setInterval> | null = null;
 watch(
-  () => scan.value.phase === 'scanning' && cameraOn.value,
+  // Anda enquanto lê E enquanto guarda a carta (etapa 7): parado ali, o tempo mostrado mentiria.
+  () => (scan.value.phase === 'scanning' || scan.value.phase === 'preparing') && cameraOn.value,
   (on) => {
     if (on && !scanClockTimer) scanClockTimer = setInterval(() => (scanClock.value = performance.now()), 500);
     else if (!on && scanClockTimer) {
