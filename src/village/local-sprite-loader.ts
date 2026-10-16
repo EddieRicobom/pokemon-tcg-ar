@@ -28,21 +28,22 @@ export function resetLocalSpriteMetaCache(): void {
 }
 
 /**
- * Pose "Idle" (parado), virada para baixo, de um Pokémon a partir do pacote de sprites locais da Vila.
- * Devolve null (sem lançar) quando a espécie não está no pacote, a imagem não existe, ou a folha baixada
- * não bate com os metadados — nesses casos a Vila cai para o GIF já baixado pela Caixa, sem travar nada.
+ * Uma pose (`animName`: "Idle", "Walk", ...), virada para baixo, de um Pokémon a partir do pacote de sprites
+ * locais da Vila. Devolve null (sem lançar) quando a espécie não está no pacote, não tem essa animação, a
+ * imagem não existe, ou a folha baixada não bate com os metadados — nesses casos quem chamou cai para outra
+ * fonte (o GIF já baixado pela Caixa, na Vila; uma forma neutra, na Sobrevivência) sem travar nada.
  */
-export async function loadLocalVillageSprite(dexId: number, shiny: boolean, deps: LocalSpriteDeps): Promise<DecodedGif | null> {
+export async function loadLocalVillageSprite(dexId: number, shiny: boolean, deps: LocalSpriteDeps, animName = 'Idle'): Promise<DecodedGif | null> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const meta = await loadLocalSpriteMeta(deps.metaUrl, fetchImpl);
-  if (!meta || !hasLocalAnim(meta, dexId, 'Idle')) return null;
+  if (!meta || !hasLocalAnim(meta, dexId, animName)) return null;
   const entry = meta[String(dexId)]!;
-  const anim = entry.a.Idle!;
+  const anim = entry.a[animName]!;
   const wantShiny = shiny && hasLocalShiny(meta, dexId);
   const { width, height } = sheetSize(anim);
   try {
-    const { image } = await loadImageRgba(deps.spriteUrl(dexId, 'Idle', wantShiny), width, height, fetchImpl);
-    return sliceDirectionFrames(image, anim, 0 /* down: de frente para quem olha a Vila de cima */);
+    const { image } = await loadImageRgba(deps.spriteUrl(dexId, animName, wantShiny), width, height, fetchImpl);
+    return sliceDirectionFrames(image, anim, 0 /* down: de frente para quem olha de cima */);
   } catch {
     return null;
   }

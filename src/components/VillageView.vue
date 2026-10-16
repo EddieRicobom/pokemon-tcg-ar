@@ -13,6 +13,7 @@ import { recordEvent, trainer } from '../app/trainer-store';
 import { claimPrizes } from '../core/village/rewards';
 import LeagueCard from './LeagueCard.vue';
 import MinigameHub from './MinigameHub.vue';
+import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import { dayKey, levelOf } from '../core/trainer';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
@@ -55,7 +56,7 @@ const state = reactive(loadVillage());
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'shop' | 'dress' | 'arcade' | 'arena';
+type Sheet = null | 'menu' | 'build' | 'shop' | 'dress' | 'arcade' | 'arena' | 'torre';
 const sheet = ref<Sheet>(null);
 type Tab = 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
 const tab = ref<Tab>('mochila');
@@ -379,7 +380,7 @@ function openBuilding(b: Building): void {
     return;
   }
   if (b.kind === 'home') return openHome(b);
-  if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena') return openGameBuilding(b);
+  if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena' || b.kind === 'torre') return openGameBuilding(b);
   if (b.kind === 'mail') {
     const r = collectMail(state, refreshDay(), Math.random, namesById());
     if (r.ok) changed();
@@ -448,7 +449,7 @@ function openGameBuilding(b: Building): void {
       text: 'A pista de Pins: derrube os pinos do adversário com os golpes dos seus Pokémon, sozinho ou contra um amigo (PvP). Ela abre numa tela própria; um botão leva de volta à Vila.',
       actions: [{ label: 'Jogar Pins', run: goToPins }, exit],
     };
-  } else {
+  } else if (b.kind === 'arena') {
     dialog.value = {
       name: b.name,
       text: 'A Arena da Vila: desafie os líderes de Ginásio, a Elite 4 e a Campeã, ou batalhe com um amigo (PvP). As lutas acontecem na Caixa, com a câmera e a sua equipe.',
@@ -457,6 +458,12 @@ function openGameBuilding(b: Building): void {
         { label: 'Batalhar com um amigo (PvP)', run: goToPvp },
         exit,
       ],
+    };
+  } else {
+    dialog.value = {
+      name: b.name,
+      text: 'A Torre de Sobrevivência: suba com o seu Pokémon enquanto ondas de inimigos selvagens ficam mais difíceis com o tempo. Ataque sozinho em quem chegar perto, suba de nível, escolha upgrades e veja até onde aguenta.',
+      actions: [{ label: 'Entrar na Torre', run: () => { closeDialog(); sheet.value = 'torre'; } }, exit],
     };
   }
 }
@@ -1106,6 +1113,11 @@ onBeforeUnmount(() => {
           <button type="button" class="primary" @click="goToPvp">Ir para o PvP</button>
         </div>
         <LeagueCard @challenge="sheet = null; emit('close')" />
+      </div>
+
+      <div v-if="sheet === 'torre'" class="village-sheet tall game-sheet" role="dialog" aria-label="Torre de Sobrevivência">
+        <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <MinigameSobrevivencia @leave="sheet = null" />
       </div>
 
       <div v-if="sheet === 'menu'" class="village-sheet tall" role="dialog" aria-label="Menu da Vila">
