@@ -48,8 +48,8 @@ As licenças exatas de cada versão estão nos pacotes (`node_modules/<pacote>/L
 ## Sprites locais da Vila e da Sobrevivência (`public/sprites/`) — PMD SpriteCollab, CC BY-NC 4.0
 
 A Vila usa, quando disponível para a espécie, um sprite de ação ("Idle") guardado no próprio repositório em
-vez de baixar o GIF do PokeAPI/sprites; a Zona de Sobrevivência (dentro do Fliperama da Vila) usa a animação
-"Walk" do mesmo pacote para o Pokémon do jogador e para os inimigos. Esses arquivos (e o corte em
+vez de baixar o GIF do PokeAPI/sprites; a Zona de Sobrevivência (modo próprio da Vila, aberto pela Torre de
+Sobrevivência) usa a animação "Walk" do mesmo pacote para o Pokémon do jogador e para os inimigos. Esses arquivos (e o corte em
 quadros/direções, `public/data/village-sprite-meta.json`) vêm do port Android (Godot) do **PokéSurvivor**:
 <https://github.com/JayElDragon/poke-survivor> (jogo original de JPTER78:
 <https://github.com/JPTER78/pokesurvivor>). A arte em si é do **PMD SpriteCollab**

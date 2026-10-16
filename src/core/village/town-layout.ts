@@ -4,7 +4,7 @@
  * liberados (os outros aparecem cercados, com uma placa). Só dados e geometria, para o mapa poder usar sem ciclos.
  */
 
-export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'fountain';
+export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'fountain';
 
 export interface Building {
   id: string;
@@ -49,6 +49,8 @@ export const CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>;
   { kind: 'arcade', name: 'Fliperama', x: 19, y: 12, w: 4, h: 2, unlock: 2 },
   { kind: 'pins', name: 'Pista de Pins', x: 14, y: 12, w: 4, h: 2, unlock: 4 },
   { kind: 'arena', name: 'Arena', x: 9, y: 12, w: 4, h: 2, unlock: 6 },
+  // Modo próprio (como a Arena e a Pista de Pins), não um minigame do Fliperama: ver `core/survivor.ts`.
+  { kind: 'torre', name: 'Torre de Sobrevivência', x: 5, y: 12, w: 3, h: 2, unlock: 7 },
 ];
 
 /** Os níveis da cidade (pelo nível de Treinador), com o que cada um traz. */

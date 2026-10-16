@@ -309,6 +309,25 @@ export function paintArena(): PixelBuf {
   return b;
 }
 
+/** A Torre de Sobrevivência: 48×48, torre de pedra estreita com telhado cônico vermelho e uma janela por andar. */
+export function paintTorre(): PixelBuf {
+  const b = createBuf(48, 48);
+  // Corpo de pedra, mais estreito que os outros prédios (sobra terreno dos dois lados, só mato).
+  rect(b, 10, 18, 28, 29, 0x8a8678);
+  for (let y = 20; y < 47; y += 5) for (let x = 10 + ((y / 5) % 2) * 4; x < 38; x += 8) rect(b, x, y, 7, 4, (x + y) % 3 === 0 ? 0x989486 : 0x7c7868);
+  // Telhado cônico vermelho, no topo.
+  gable(b, 24, 2, 18, 15, 0xc24a3a);
+  rect(b, 22, 2, 4, 3, 0x5a4a3a); // pião do telhado
+  // Três janelas empilhadas (andares da torre).
+  window(b, 20, 23, 8, 7, 0x3a2a1c);
+  window(b, 20, 32, 8, 7, 0x3a2a1c);
+  // Porta em arco na base.
+  rect(b, 19, 38, 10, 9, 0x241a12);
+  for (let y = 38; y < 41; y++) { const k = 41 - y; for (let x = 19; x < 19 + k; x++) put(b, x, y, 0x8a8678); for (let x = 29 - k; x < 29; x++) put(b, x, y, 0x8a8678); }
+  outline(b, 0x241e16);
+  return b;
+}
+
 /** A fonte da praça: 32×40 (2×2 blocos; o jato sobe acima do chão). Dois quadros para a água brilhar. */
 export function paintFountain(frame = 0): PixelBuf {
   const b = createBuf(32, 40);

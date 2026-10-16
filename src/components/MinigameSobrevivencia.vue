@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { assetUrl, getCache, getLocalVillageSprite } from '../app/services';
 import { loadSavedTeam, resolveTeam } from '../app/team';
-import type { Grade } from '../core/minigames';
+import { recordEvent } from '../app/trainer-store';
 import {
   applyUpgrade,
   ARENA_H,
@@ -14,14 +14,17 @@ import type { SurvivorEnemy, SurvivorState, SurvivorSummary, SurvivorUpgradeOpti
 import type { DecodedGif } from '../core/gif';
 
 /**
- * Zona de Sobrevivência: você anda com o analógico (ou WASD/setas), seu Pokémon ataca sozinho quem chegar perto,
+ * Zona de Sobrevivência: um modo próprio da Vila (como a Arena e a Pista de Pins), aberto pela Torre — não é um
+ * minigame do Fliperama. Você anda com o analógico (ou WASD/setas), seu Pokémon ataca sozinho quem chegar perto,
  * orbes de XP sobem de nível e abrem a escolha de um upgrade, e as ondas ficam mais difíceis com o tempo. A lógica
  * fica inteira em `core/survivor.ts` (pura, testada); aqui é só o laço de desenho e os controles — como a Vila faz
  * com o próprio jogo dela. O chão usa um recorte real de um dos tilesets enviados (`public/tilesets/`, créditos em
  * THIRD_PARTY_NOTICES.md); os inimigos e o seu Pokémon usam o mesmo pacote de sprites locais da Vila ("Walk").
- * Se algum sprite não carregar, desenha uma forma neutra no lugar — nunca finge ser outro Pokémon.
+ * Se algum sprite não carregar, desenha uma forma neutra no lugar — nunca finge ser outro Pokémon. XP conta do
+ * mesmo jeito que a Pista de Pins (`recordEvent({ type: 'minigame', game: 'sobrevivencia', ... })`), sem entrar
+ * no catálogo de minigames do Fliperama (`core/minigames.ts`).
  */
-const emit = defineEmits<{ finished: [grade: Grade]; leave: [] }>();
+const emit = defineEmits<{ leave: [] }>();
 
 /** Espécies "selvagens" comuns para o elenco de inimigos desta corrida (todas têm sprite no pacote local). */
 const WILD_DEX_IDS = [16, 19, 21, 23, 41, 74, 129, 161, 165, 261, 265, 27] as const;
@@ -75,9 +78,9 @@ async function loadSpriteOrNull(dexId: number): Promise<Sprite | null> {
   }
 }
 
-function gradeOf(s: SurvivorSummary): Grade {
+function recordRun(s: SurvivorSummary): void {
   const score = clamp(Math.round(s.survivedMs / 1000 + s.kills * 2 + s.level * 5), 0, 100);
-  return { score, won: s.kills > 0 };
+  recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score });
 }
 
 function formatTime(ms: number): string {
@@ -241,7 +244,7 @@ function loop(ts: number): void {
     for (const ev of events) {
       if (ev.type === 'gameover') {
         summary.value = ev.summary;
-        emit('finished', gradeOf(ev.summary));
+        recordRun(ev.summary);
       }
     }
   }
