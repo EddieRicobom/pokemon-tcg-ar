@@ -19,6 +19,7 @@ import type { PixelBuf } from '../box/ground-art';
 import { contentBounds } from './local-sprite';
 import type { ContentBounds } from './local-sprite';
 import { outfitFor, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree, TILE } from './village-art';
+import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintArcade, paintArena, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum, paintPins, paintTorre } from './town-art';
 
@@ -210,6 +211,8 @@ export class VillageGame {
     readonly state: VillageState,
     mons: readonly VillageMon[],
     private readonly trainerId: string,
+    /** Recorte real de tileset pra grama (ver `village-art.ts`); null/undefined cai no ladrilho desenhado por código. */
+    private readonly groundTile?: GroundTileImage | null,
     private readonly rng: Rng = Math.random,
   ) {
     this.ctx = canvas.getContext('2d')!;
@@ -388,7 +391,7 @@ export class VillageGame {
           const key = `${tile}:${edges}:${tile === 'water' || tile === 'path' || tile === 'sand' ? `${x % 12},${y % 12}` : `${(x + y) % 6},${x % 2}`}:${frame}`;
           let img = cache.get(key);
           if (!img) {
-            img = toCanvas(paintTile(tile, edges, x, y, frame));
+            img = toCanvas(paintTile(tile, edges, x, y, frame, this.groundTile ?? undefined));
             cache.set(key, img);
           }
           ctx.drawImage(img, x * TILE, y * TILE);

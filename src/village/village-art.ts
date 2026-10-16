@@ -49,9 +49,33 @@ const WATER = { base: 0x4f8fe0, deep: 0x3a74c8, light: 0x9cd0ff, foam: 0xe8f6ff 
 const DIRT = { base: 0xb88a52, dark: 0x8e6638, light: 0xd2a66c, stake: 0x6a4a28 };
 
 /**
- * Bloco do chão. `edges` = lados com vizinho de outro tipo (a água ganha espuma e a areia, borda); `frame` anima a água.
+ * Um recorte real de tileset (ver THIRD_PARTY_NOTICES.md) pra usar como grama da Vila em vez do ladrilho
+ * desenhado por código: 32×32 (2×2 variações de 16×16, pra não repetir sempre o mesmo pixel a pixel).
  */
-export function paintTile(tile: Tile, edges: number, c: number, r: number, frame = 0): PixelBuf {
+export interface GroundTileImage {
+  w: number;
+  h: number;
+  data: Uint8ClampedArray;
+}
+
+/** Copia uma das 4 variações de 16×16 do recorte (conforme a posição do bloco, pra variar) para o bloco do chão. */
+function paintGroundTileImage(buf: PixelBuf, img: GroundTileImage, c: number, r: number): void {
+  const qx = (c % 2) * TILE;
+  const qy = (r % 2) * TILE;
+  for (let y = 0; y < TILE; y++) {
+    const srcRow = ((qy + y) * img.w + qx) * 4;
+    const dstRow = (y * TILE) * 4;
+    buf.data.set(img.data.subarray(srcRow, srcRow + TILE * 4), dstRow);
+  }
+}
+
+/**
+ * Bloco do chão. `edges` = lados com vizinho de outro tipo (a água ganha espuma e a areia, borda); `frame` anima a
+ * água. `groundTile` (opcional): recorte real de tileset pra grama — sem ele, cai no ladrilho desenhado por código
+ * de sempre (a trilha, a água, a areia e os canteiros ainda são desenhados por código; o resto do tileset da
+ * cidade é um próximo passo, ver IMPLEMENTATION_PLAN.md).
+ */
+export function paintTile(tile: Tile, edges: number, c: number, r: number, frame = 0, groundTile?: GroundTileImage): PixelBuf {
   const buf = createBuf(TILE, TILE);
   const rng = seededRng((c * 73856093) ^ (r * 19349663) ^ 0x5bd1e995);
   switch (tile) {
@@ -64,7 +88,8 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
     case 'tree':
     case 'rock':
     case 'bush':
-      paintGround(buf, 0, 0, (c + r) % 3 === 0 ? 'grass2' : 'grass', rng, 0, { c, r });
+      if (groundTile) paintGroundTileImage(buf, groundTile, c, r);
+      else paintGround(buf, 0, 0, (c + r) % 3 === 0 ? 'grass2' : 'grass', rng, 0, { c, r });
       break;
     case 'flower':
       paintGround(buf, 0, 0, 'flowers', rng, 0, { c, r });

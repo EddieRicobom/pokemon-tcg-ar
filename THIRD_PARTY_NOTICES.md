@@ -77,7 +77,7 @@ dessa comunidade (RPG Maker/Pokémon Essentials) é uso livre em fangames não c
 autores. Como este projeto é gratuito, público e sem fins lucrativos, mantemos essa mesma condição: uso não
 comercial, com crédito. A maior parte do conjunto (`tilesets/`, na raiz do repositório) ainda não está em uso
 no app — fica guardada para o visual completo da Vila (planejado, ver `IMPLEMENTATION_PLAN.md`). A Zona de
-Sobrevivência já usa um recorte: um ladrilho de grama de `Daisy Route.png` (32×32, emendável, salvo em
-`public/tilesets/survivor-grass.png`), repetido como chão da arena. Créditos de `Daisy Route`: Idilio,
-Heroalistar, Ekat, Zeo, Zein, J-Treecko252, 874521, The Red-Ex, Kyledove, Magiscarf, Wesley FG (lista completa
-em `tilesets/Credits.txt`).
+Sobrevivência e, agora, a grama da Vila (`village/village-art.ts`) usam o mesmo recorte: um ladrilho de grama de
+`Daisy Route.png` (32×32, emendável, salvo em `public/tilesets/survivor-grass.png`), repetido como chão.
+Créditos de `Daisy Route`: Idilio, Heroalistar, Ekat, Zeo, Zein, J-Treecko252, 874521, The Red-Ex, Kyledove,
+Magiscarf, Wesley FG (lista completa em `tilesets/Credits.txt`).

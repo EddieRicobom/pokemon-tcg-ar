@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { getCache, getLocalVillageSpriteDirs, loadPinData } from '../app/services';
+import { getCache, getLocalVillageSpriteDirs, getVillageGroundTile, loadPinData } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
@@ -959,8 +959,11 @@ onMounted(async () => {
   } catch {
     say('Não consegui ler as cartas guardadas; a Vila abre só com você.');
   }
+  // Recorte real de tileset pra grama (ver `village-art.ts`); null se não der pra baixar, cai no ladrilho
+  // desenhado por código de sempre — a Vila nunca trava nem finge por causa disso.
+  const groundTile = await getVillageGroundTile().catch(() => null);
   if (!canvasEl.value || !wrapEl.value) return;
-  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite);
+  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile);
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = changed;
   game.weatherMode = () => visual.weather;
