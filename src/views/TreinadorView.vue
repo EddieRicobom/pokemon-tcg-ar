@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { applyBackup, backupFileName, buildBackup, parseBackup, serializeBackup } from '../app/backup';
+import type { BackupFile } from '../app/backup';
 import { routeHref } from '../app/route';
 import { trainer } from '../app/trainer-store';
 import LeagueCard from '../components/LeagueCard.vue';
@@ -51,6 +53,64 @@ const achievements = computed(() =>
 );
 const unlockedCount = computed(() => achievements.value.filter((a) => a.unlocked).length);
 const cardCount = computed(() => trainer.value.cardIds.length);
+
+// ---- Seus dados: backup completo do progresso e dos ajustes (ver `app/backup.ts`), sem servidor nenhum.
+const backupStatus = ref<{ kind: 'erro' | 'ok'; text: string } | null>(null);
+const pendingImport = ref<BackupFile | null>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
+
+function exportBackup(): void {
+  const file = buildBackup(localStorage);
+  const blob = new Blob([serializeBackup(file)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = backupFileName();
+  a.click();
+  URL.revokeObjectURL(url);
+  backupStatus.value = { kind: 'ok', text: 'Backup baixado.' };
+}
+
+function pickImportFile(): void {
+  backupStatus.value = null;
+  fileInput.value?.click();
+}
+
+async function onImportFileChosen(e: Event): Promise<void> {
+  const input = e.target as HTMLInputElement;
+  const picked = input.files?.[0] ?? null;
+  input.value = '';
+  if (!picked) return;
+  const text = await picked.text();
+  const parsed = parseBackup(text);
+  if (parsed === 'json-invalido') {
+    backupStatus.value = { kind: 'erro', text: 'Esse arquivo não é um JSON válido.' };
+    return;
+  }
+  if (parsed === 'formato-desconhecido') {
+    backupStatus.value = { kind: 'erro', text: 'Esse arquivo não parece ser um backup deste app.' };
+    return;
+  }
+  pendingImport.value = parsed;
+}
+
+function backupDateLabel(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? 'data desconhecida' : d.toLocaleString('pt-BR');
+}
+
+function confirmImport(): void {
+  if (!pendingImport.value) return;
+  applyBackup(pendingImport.value, localStorage);
+  pendingImport.value = null;
+  // Vários dados (Treinador, perfil…) ficam em memória desde que o app abriu; a forma simples e segura de
+  // garantir que tudo reflita o backup importado é recarregar a página — ela lê tudo de novo do zero.
+  window.location.reload();
+}
+
+function cancelImport(): void {
+  pendingImport.value = null;
+}
 </script>
 
 <template>
@@ -146,6 +206,28 @@ const cardCount = computed(() => trainer.value.cardIds.length);
           <small v-if="a.prize" class="prize">🎁 {{ a.prize }}</small>
         </li>
       </ul>
+    </div>
+
+    <div class="card">
+      <h2>Seus dados</h2>
+      <p class="note">
+        Baixe um arquivo com todo o seu progresso e ajustes (Treinador, Vila — com Digital Pokémon e Encontros lendários —, perfil, equipe, Liga, Pin Mode, sensores e ajustes visuais) para guardar fora do navegador ou levar para outro aparelho.
+        Não inclui as imagens das cartas escaneadas: elas ficam só neste aparelho, e você escaneia de novo depois de importar num aparelho novo.
+      </p>
+      <div class="backup-actions">
+        <button type="button" @click="exportBackup">Baixar backup</button>
+        <button type="button" @click="pickImportFile">Importar backup</button>
+        <input ref="fileInput" type="file" accept="application/json" class="sr-only" @change="onImportFileChosen" />
+      </div>
+      <p v-if="backupStatus" class="note" :class="backupStatus.kind">{{ backupStatus.text }}</p>
+      <div v-if="pendingImport" class="card backup-confirm">
+        <p><strong>Importar este backup vai substituir todo o progresso e os ajustes deste aparelho.</strong></p>
+        <p class="note">Backup de {{ backupDateLabel(pendingImport.exportedAt) }}.</p>
+        <div class="backup-actions">
+          <button type="button" class="primary" @click="confirmImport">Confirmar e substituir</button>
+          <button type="button" @click="cancelImport">Cancelar</button>
+        </div>
+      </div>
     </div>
   </section>
 </template>

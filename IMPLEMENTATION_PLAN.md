@@ -56,6 +56,12 @@ Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado �
 - ⬜ Vídeo game comprável na Vila, desbloqueando minigames extras (ex.: um "atirar nas pokébolas" estilo Duck Hunt): pedido, em espera por enquanto.
 - ⬜ **Torre mais parecida com o poke-survivor original** (missões, conquistas e um evento especial tipo "fenda de lendário", com números e arte originais, nunca um port literal) **e** fazer coisas de fora da Torre influenciarem a corrida (ex.: nível de amizade do Pokémon escolhido dando algum bônus): pedido, explicitamente para depois — não entra nesta rodada de melhorias.
 
+### Backup (exportar/importar os dados) ✅
+- Tela do Treinador, card "Seus dados": baixa um arquivo JSON com tudo que é progresso ou ajuste do jogador — Treinador, Vila (incluindo Digital Pokémon e Encontros lendários), perfil, equipe, roster, Liga, Pin Mode, modo de batalha, sensores, ajustes visuais e os pequenos ajustes do Scanner (`src/app/backup.ts`, lista explícita em `BACKUP_KEYS`). Tudo roda no aparelho, sem servidor: um `Blob`/link de download pra exportar, um `<input type="file">` pra importar.
+- **De propósito, fora do backup**: as imagens de referência e os alvos de AR das cartas escaneadas (ficam no IndexedDB, não no `localStorage`) e qualquer cache de PokeAPI/TCGdex (nomes, atributos, golpes) — tudo isso se refaz sozinho. Depois de importar num aparelho novo, as cartas físicas precisam ser escaneadas de novo para aparecerem na Vila/Caixa.
+- Importar mostra a data do backup e pede confirmação explícita antes de substituir (é uma restauração completa: uma chave que não estava no backup é removida, não só as que estavam são sobrescritas); ao confirmar, a página recarrega para todo o estado em memória refletir o que foi importado. Arquivo inválido (JSON quebrado ou de outro app) dá um aviso claro, nunca trava nem inventa dados.
+- Testado (`src/app/backup.test.ts`): ida e volta preserva os dados, nunca inclui uma chave de cache, nunca toca numa chave fora da lista conhecida, e tolera um arquivo malformado ou com chaves desconhecidas dentro dele.
+
 ## Fases do prompt mestre
 
 O dono do projeto enviou um prompt mestre completo (guardado na íntegra em [docs/PROMPT_MESTRE.md](docs/PROMPT_MESTRE.md), pra não se perder de novo numa compactação de conversa) com 8 fases. Status de cada uma:
