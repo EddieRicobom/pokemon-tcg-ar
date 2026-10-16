@@ -45,12 +45,14 @@ As licenças exatas de cada versão estão nos pacotes (`node_modules/<pacote>/L
 - Sprites: repositório PokeAPI/sprites (GIFs `other/showdown`), com espelho no jsDelivr. Os desenhos dos
   Pokémon pertencem aos seus titulares; o app não os redistribui, o celular os baixa na hora.
 
-## Sprites locais da Vila (`public/sprites/`) — PMD SpriteCollab, CC BY-NC 4.0
+## Sprites locais da Vila e da Sobrevivência (`public/sprites/`) — PMD SpriteCollab, CC BY-NC 4.0
 
 A Vila usa, quando disponível para a espécie, um sprite de ação ("Idle") guardado no próprio repositório em
-vez de baixar o GIF do PokeAPI/sprites. Esses arquivos (e o corte em quadros/direções, `public/data/village-sprite-meta.json`)
-vêm do port Android (Godot) do **PokéSurvivor**: <https://github.com/JayElDragon/poke-survivor> (jogo original
-de JPTER78: <https://github.com/JPTER78/pokesurvivor>). A arte em si é do **PMD SpriteCollab**
+vez de baixar o GIF do PokeAPI/sprites; a Zona de Sobrevivência (dentro do Fliperama da Vila) usa a animação
+"Walk" do mesmo pacote para o Pokémon do jogador e para os inimigos. Esses arquivos (e o corte em
+quadros/direções, `public/data/village-sprite-meta.json`) vêm do port Android (Godot) do **PokéSurvivor**:
+<https://github.com/JayElDragon/poke-survivor> (jogo original de JPTER78:
+<https://github.com/JPTER78/pokesurvivor>). A arte em si é do **PMD SpriteCollab**
 (<https://github.com/PMDCollab/SpriteCollab>), sob **CC BY-NC 4.0** (<https://creativecommons.org/licenses/by-nc/4.0/>):
 **uso não comercial e com atribuição**. Este projeto é gratuito e sem fins lucrativos (não vende nada, não
 tem anúncios), compatível com essa licença.
@@ -59,10 +61,23 @@ A lista completa dos artistas por número de Pokédex está no `CREDITS.md` do p
 (<https://github.com/JayElDragon/poke-survivor/blob/main/CREDITS.md>), copiada de lá do CREDITS.md original do
 PokéSurvivor — são centenas de nomes, por isso apontamos para a fonte em vez de duplicar aqui. Diferente do
 sprite do PokeAPI/sprites (baixado na hora), este pacote **é redistribuído** junto com o app: cobre 966 das
-espécies existentes; quando a espécie não está no pacote, a Vila volta a baixar o GIF normalmente.
+espécies existentes; quando a espécie não está no pacote, a Vila volta a baixar o GIF normalmente (a
+Sobrevivência cai para uma forma neutra, sem fingir ser outro Pokémon).
+
+A **jogabilidade** da Zona de Sobrevivência (andar, autoataque no inimigo mais perto, orbes de XP, upgrade a
+cada nível, ondas e chefe periódico) espelha o **laço** do poke-survivor/PokéSurvivor — não é um port do
+código: motor próprio em TypeScript (`src/core/survivor.ts`), números e upgrades originais, e nenhum dos
+sistemas de gacha, missões, conquistas ou fendas de lendário de lá foi trazido.
 
 ## Tilesets (`tilesets/`)
 
-Conjunto de tilesets de cenário (prédios, interiores, natureza) de artistas da comunidade de fãs de Pokémon,
-com créditos por conjunto em `tilesets/Credits.txt`. Ainda não estão em uso no app (planejado para o visual da
-Vila); este aviso será detalhado quando entrarem em uso.
+Conjunto de tilesets de cenário (prédios, interiores, natureza) de artistas da comunidade de fãs de Pokémon
+(cada um listado por conjunto em `tilesets/Credits.txt`), sem licença formal publicada junto — a prática usual
+dessa comunidade (RPG Maker/Pokémon Essentials) é uso livre em fangames não comerciais, com crédito aos
+autores. Como este projeto é gratuito, público e sem fins lucrativos, mantemos essa mesma condição: uso não
+comercial, com crédito. A maior parte do conjunto (`tilesets/`, na raiz do repositório) ainda não está em uso
+no app — fica guardada para o visual completo da Vila (planejado, ver `IMPLEMENTATION_PLAN.md`). A Zona de
+Sobrevivência já usa um recorte: um ladrilho de grama de `Daisy Route.png` (32×32, emendável, salvo em
+`public/tilesets/survivor-grass.png`), repetido como chão da arena. Créditos de `Daisy Route`: Idilio,
+Heroalistar, Ekat, Zeo, Zein, J-Treecko252, 874521, The Red-Ex, Kyledove, Magiscarf, Wesley FG (lista completa
+em `tilesets/Credits.txt`).
