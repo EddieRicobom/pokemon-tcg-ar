@@ -42,6 +42,9 @@ As licenças exatas de cada versão estão nos pacotes (`node_modules/<pacote>/L
   pertencem aos seus titulares (The Pokémon Company, Nintendo, Creatures, Game Freak). O app baixa
   somente as cartas que o usuário escaneia e as guarda no aparelho dele.
 - Dados de espécies, atributos e golpes: PokéAPI (<https://pokeapi.co/>).
+- Altura das espécies e das formas alternativas (`src/core/data/pokemon-heights.json`): gerada por
+  `scripts/build-heights.mjs` a partir do `data/v2/csv/pokemon.csv` do repositório PokeAPI/pokeapi
+  (<https://github.com/PokeAPI/pokeapi>, licença BSD-3-Clause). Só a coluna de altura é guardada.
 - Sprites: repositório PokeAPI/sprites (GIFs `other/showdown`), com espelho no jsDelivr. Os desenhos dos
   Pokémon pertencem aos seus titulares; o app não os redistribui, o celular os baixa na hora.
 

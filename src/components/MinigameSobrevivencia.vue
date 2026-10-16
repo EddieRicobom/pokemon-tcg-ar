@@ -13,6 +13,9 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorState, SurvivorSummary, SurvivorUpgradeOption } from '../core/survivor';
 import type { DecodedGif } from '../core/gif';
+import { speciesTiles } from '../core/size-scale';
+import { contentBounds } from '../village/local-sprite';
+import type { ContentBounds } from '../village/local-sprite';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -49,9 +52,16 @@ interface Sprite {
   durationMs: number;
   w: number;
   h: number;
+  /** Caixa dos pixels opacos (frações do quadro): os pés ficam no ponto do chão, sem a margem da folha. */
+  bounds: ContentBounds;
+  /** Fator que leva o desenho ao tamanho pela altura real da espécie (1 = tamanho da folha, sem dado de altura). */
+  fit: number;
 }
 
-function toSprite(gif: DecodedGif): Sprite {
+/** Pixels de altura na Torre para 1 bloco de altura real (`core/size-scale.ts`); Pikachu ≈ 19 px, Snorlax ≈ 37 px. */
+const SURVIVOR_TILE_PX = 22;
+
+function toSprite(gif: DecodedGif, dexId?: number): Sprite {
   const frames = gif.frames.map((f) => {
     const c = document.createElement('canvas');
     c.width = gif.width;
@@ -62,7 +72,11 @@ function toSprite(gif: DecodedGif): Sprite {
     fctx.putImageData(img, 0, 0);
     return c;
   });
-  return { frames, delays: gif.frames.map((f) => f.delayMs), durationMs: gif.durationMs, w: gif.width, h: gif.height };
+  const bounds = contentBounds(gif);
+  const contentPx = Math.max(1, (bounds.bottom - bounds.top) * gif.height);
+  const tiles = speciesTiles(dexId);
+  const fit = tiles === undefined ? 1 : (tiles * SURVIVOR_TILE_PX) / contentPx;
+  return { frames, delays: gif.frames.map((f) => f.delayMs), durationMs: gif.durationMs, w: gif.width, h: gif.height, bounds, fit };
 }
 
 function frameIndex(sprite: Sprite, timeMs: number): number {
@@ -80,7 +94,7 @@ const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.m
 async function loadSpriteOrNull(dexId: number): Promise<Sprite | null> {
   try {
     const gif = await getLocalVillageSprite(dexId, false, 'Walk');
-    return gif ? toSprite(gif) : null;
+    return gif ? toSprite(gif, dexId) : null;
   } catch {
     return null;
   }
@@ -181,19 +195,23 @@ function drawSprite(sprite: Sprite | null, x: number, y: number, flip: boolean, 
     return;
   }
   const frame = sprite.frames[frameIndex(sprite, animMs)] ?? sprite.frames[0]!;
-  const w = sprite.w * scale;
-  const h = sprite.h * scale;
+  const w = sprite.w * sprite.fit * scale;
+  const h = sprite.h * sprite.fit * scale;
+  // Pés (base dos pixels opacos) no ponto (x, y) e corpo centrado: a margem transparente da folha não conta.
+  const left = -((sprite.bounds.left + sprite.bounds.right) / 2) * w;
+  const top = -sprite.bounds.bottom * h;
   ctx.save();
   ctx.translate(x, y);
   if (flip) ctx.scale(-1, 1);
-  ctx.drawImage(frame, -w / 2, -h, w, h);
+  ctx.drawImage(frame, left, top, w, h);
   ctx.restore();
 }
 
 function drawEnemy(e: SurvivorEnemy): void {
   if (!ctx) return;
   const sprite = e.boss ? bossSprite : (kindSprites[e.kind] ?? null);
-  drawSprite(sprite, e.x, e.y, false, e.boss ? 1.6 : 1);
+  // O chefe (Onix, 8,8 m) já sai no tamanho máximo pela altura real; o extra só destaca quem é o chefe.
+  drawSprite(sprite, e.x, e.y, false, e.boss ? 1.2 : 1);
   if (e.hitFlashMs > 0) {
     ctx.fillStyle = `rgba(255,255,255,${0.35 * (e.hitFlashMs / 90)})`;
     ctx.beginPath();

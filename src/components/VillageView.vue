@@ -170,7 +170,7 @@ function onEnergyEarned(amount: number): void {
 async function syncDigitalVillager(inst: DigitalPokemonInstance): Promise<boolean> {
   const sprite = await getDigitalSprite(inst.dexId, false).catch(() => null);
   if (!sprite) return false;
-  const entry: VillageMon = { id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs, digital: true };
+  const entry: VillageMon = { id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs, digital: true, dexId: inst.dexId };
   villagerList = [...villagerList.filter((v) => v.id !== inst.instanceId), entry];
   mons.value = [...mons.value.filter((m) => m.id !== inst.instanceId), { id: inst.instanceId, name: entry.name, real: inst.name, shiny: false, dexId: inst.dexId, thumb: thumbOf(entry.gif) }];
   if (!game) {
@@ -1235,7 +1235,7 @@ onMounted(async () => {
           ? e.source.gif
           : { width: e.source.image.width, height: e.source.image.height, frames: [{ rgba: e.source.image.data, delayMs: 1000 }], durationMs: 1000 };
         const localDirs = e.info.dexId !== undefined ? await getLocalVillageSpriteDirs(e.info.dexId, e.info.shiny === true).catch(() => null) : null;
-        return { id: e.info.id, name: displayName(state, e.info.id, e.info.name), shiny: e.info.shiny === true, gif: localDirs?.down ?? fallback, dirGifs: localDirs ?? undefined };
+        return { id: e.info.id, name: displayName(state, e.info.id, e.info.name), shiny: e.info.shiny === true, gif: localDirs?.down ?? fallback, dirGifs: localDirs ?? undefined, dexId: e.info.dexId };
       }),
     );
     mons.value = loaded.entries.map((e, i) => ({ id: e.info.id, name: displayName(state, e.info.id, e.info.name), real: e.info.name, shiny: e.info.shiny === true, dexId: e.info.dexId, thumb: thumbOf(villagers[i]!.gif) }));
@@ -1248,7 +1248,7 @@ onMounted(async () => {
   for (const inst of state.digital.instances) {
     const sprite = await getDigitalSprite(inst.dexId, false).catch(() => null);
     if (!sprite) continue;
-    villagers.push({ id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs, digital: true });
+    villagers.push({ id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs, digital: true, dexId: inst.dexId });
     mons.value = [...mons.value, { id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), real: inst.name, shiny: false, dexId: inst.dexId, thumb: thumbOf(sprite.gif) }];
   }
   villagerList = villagers;

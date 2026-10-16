@@ -13,6 +13,7 @@ import type { Tile, VillageMap } from '../core/village/map';
 import { FX_EMOJI } from '../core/village/social-state';
 import type { Fx } from '../core/village/social-state';
 import { metallicTint, sheenAt, sheenOffset } from '../core/metallic';
+import { speciesTiles } from '../core/size-scale';
 import { villageScale } from '../core/village/camera';
 import { stepOrder } from '../core/village/joystick';
 import type { StickDirs } from '../core/village/joystick';
@@ -53,6 +54,8 @@ export interface VillageMon {
   dirGifs?: Partial<Record<Dir, DecodedGif>>;
   /** Digital Pokémon (não vem de carta física): ganha o acabamento metálico leve (ver `core/metallic.ts`). */
   digital?: boolean;
+  /** Número da Pokédex: dá o tamanho pela altura real da espécie (`core/size-scale.ts`). */
+  dexId?: number;
 }
 
 export type Target =
@@ -303,9 +306,11 @@ export class VillageGame {
     // em cima pro balanço da pose "parado") quanto pro GIF baixado do Showdown. Mesma fórmula pros dois, sem
     // fator de ajuste por olho: a diferença de tamanho que sobrar vem da arte em si, não de margem.
     const bounds = contentBounds(mon.gif);
+    // Tamanho pela altura REAL da espécie (PokéAPI), comparável entre todos; sem esse dado, cai no tamanho do
+    // desenho (pixels opacos), como antes. A âncora dos pés continua sendo a caixa de pixels reais.
     const contentHeightFrac = Math.max(0.05, bounds.bottom - bounds.top);
     const rawScale = (contentHeightFrac * mon.gif.height) / 40;
-    const heightTiles = Math.min(2.4, Math.max(1.1, rawScale));
+    const heightTiles = speciesTiles(mon.dexId) ?? Math.min(2.4, Math.max(1.1, rawScale));
     this.monSprites.set(mon.id, {
       frames, gif: mon.gif, dirGifs: mon.dirGifs, dirFrames, heightTiles, bounds, headTop: head.top, headX: head.x, digital: mon.digital === true,
     });
