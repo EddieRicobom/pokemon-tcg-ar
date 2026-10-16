@@ -39,9 +39,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,woff2}'],
-        // O OCR (≈ 6,7 MB no primeiro uso) e o índice do catálogo não entram no pré-cache da instalação:
-        // são guardados só quando o usuário usa o reconhecimento (cache em tempo de execução).
-        globIgnores: ['ocr/**', 'data/**'],
+        // O OCR (≈ 6,7 MB no primeiro uso), o índice do catálogo e os sprites locais da Vila (≈ 100 MB, 966
+        // espécies) não entram no pré-cache da instalação: são guardados só quando usados (cache em tempo de
+        // execução), senão a instalação do PWA baixaria tudo isso de uma vez.
+        globIgnores: ['ocr/**', 'data/**', 'sprites/**'],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
         runtimeCaching: [
@@ -59,6 +60,11 @@ export default defineConfig({
             urlPattern: ({ url }) => url.pathname === `${base}data/catalog-index.json`,
             handler: 'StaleWhileRevalidate',
             options: { cacheName: 'catalog-index-v1', expiration: { maxEntries: 1 } },
+          },
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith(`${base}sprites/`),
+            handler: 'CacheFirst',
+            options: { cacheName: 'village-sprites-v1', expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 90 } },
           },
         ],
       },
