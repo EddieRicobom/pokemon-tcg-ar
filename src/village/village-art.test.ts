@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FURNITURE } from '../core/village/life';
 import { TILES } from '../core/village/map';
 import { outfitFor, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree } from './village-art';
+import type { GroundTileImage } from './village-art';
 import { paintFurnitureItem } from './item-art';
 import type { PixelBuf } from '../box/ground-art';
 
@@ -11,9 +12,41 @@ const opaque = (b: PixelBuf) => {
   return n;
 };
 
+/** Imagem sintética 32×32 com 4 quadrantes de cor diferente (pra testar `paintGroundTileImage`). */
+function syntheticGroundTile(): GroundTileImage {
+  const data = new Uint8ClampedArray(32 * 32 * 4);
+  for (let y = 0; y < 32; y++) {
+    for (let x = 0; x < 32; x++) {
+      const quad = (x < 16 ? 0 : 1) + (y < 16 ? 0 : 2);
+      const i = (y * 32 + x) * 4;
+      data[i] = quad * 60;
+      data[i + 1] = 100;
+      data[i + 2] = 50;
+      data[i + 3] = 255;
+    }
+  }
+  return { w: 32, h: 32, data };
+}
+
 describe('arte da Vila', () => {
   it('todo bloco do chão é cheio (sem buracos)', () => {
     for (const t of TILES) expect(opaque(paintTile(t, 0, 3, 4))).toBe(256);
+  });
+
+  it('com um recorte de tileset, a grama usa o pixel real da imagem (e continua sem buracos)', () => {
+    const img = syntheticGroundTile();
+    // (c=0,r=0) pega o quadrante (0,0) da imagem; (c=1,r=1) pega o quadrante (1,1) — e eles diferem.
+    const a = paintTile('grass', 0, 0, 0, 0, img);
+    const b = paintTile('grass', 0, 1, 1, 0, img);
+    expect(opaque(a)).toBe(256);
+    expect(opaque(b)).toBe(256);
+    expect(a.data[0]).toBe(0); // quadrante (0,0): R = 0*60
+    expect(b.data[0]).toBe(180); // quadrante (1,1): R = 3*60
+    expect([...a.data]).not.toEqual([...b.data]);
+  });
+
+  it('sem recorte de tileset, a grama continua o ladrilho desenhado por código de sempre', () => {
+    expect(opaque(paintTile('grass', 0, 2, 5))).toBe(256);
   });
 
   it('a água muda entre quadros e ganha espuma na beira', () => {
