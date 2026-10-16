@@ -128,6 +128,17 @@ export class TcgdexClient {
     return lists.flatMap((list) => list ?? []).filter((card) => (seen.has(card.id) ? false : (seen.add(card.id), true)));
   }
 
+  /**
+   * Cartas de uma espécie pelo número da Pokédex nacional (`?dexId=`), para achar uma carta real de origem pro
+   * Digital Pokémon (presente inicial, Fonte) sem depender de uma carta já escaneada. Sintaxe ainda não medida
+   * no GitHub Actions (como `searchByNumber`) — se o filtro não bater com o formato real da API, a lista vem
+   * vazia e quem chamou trata como "nenhuma carta encontrada", nunca inventa uma substituta.
+   */
+  async searchByDexId(dexId: number): Promise<TcgdexBrief[]> {
+    const list = await this.fetchJson<TcgdexBrief[]>(`${this.baseUrl}/${this.language}/cards?dexId=${encodeURIComponent(String(dexId))}`);
+    return list ?? [];
+  }
+
   private async fetchJson<T>(url: string): Promise<T | null> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.retries; attempt++) {

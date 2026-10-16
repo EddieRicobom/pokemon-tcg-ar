@@ -30,7 +30,7 @@ const UPGRADE_ICON: Record<string, string> = {
  * mesmo jeito que a Pista de Pins (`recordEvent({ type: 'minigame', game: 'sobrevivencia', ... })`), sem entrar
  * no catálogo de minigames do Fliperama (`core/minigames.ts`).
  */
-const emit = defineEmits<{ leave: [] }>();
+const emit = defineEmits<{ leave: []; energy: [amount: number] }>();
 
 /** Espécies "selvagens" comuns para o elenco de inimigos desta corrida (todas têm sprite no pacote local). */
 const WILD_DEX_IDS = [16, 19, 21, 23, 41, 74, 129, 161, 165, 261, 265, 27] as const;
@@ -87,6 +87,8 @@ async function loadSpriteOrNull(dexId: number): Promise<Sprite | null> {
 function recordRun(s: SurvivorSummary): void {
   const score = clamp(Math.round(s.survivedMs / 1000 + s.kills * 2 + s.level * 5), 0, 100);
   recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score });
+  // Energia pra Fonte (ver `core/village/digital.ts`), proporcional à pontuação da corrida.
+  if (s.kills > 0) emit('energy', Math.max(5, Math.round(score / 2)));
 }
 
 function formatTime(ms: number): string {

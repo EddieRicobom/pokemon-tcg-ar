@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { getCache, getLocalVillageSpriteDirs, getVillageGroundTile, loadPinData } from '../app/services';
+import { getCache, getDigitalSprite, getLocalVillageSpriteDirs, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
@@ -22,6 +22,13 @@ import {
   plant, pruneHarvest, RECIPES, sell, talk, tickCrops, upgradeHouse, water, wear,
 } from '../core/village/life';
 import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
+import {
+  canAffordSummon, canEvolve, earnEnergy, evolve, EVOLVE_COST, grantStarter, instanceOf, pickFonteSpecies, summon, SUMMON_COST,
+} from '../core/village/digital';
+import type { DigitalPokemonInstance } from '../core/village/digital';
+import { dismissActive, legendaryOf, rollLegendary } from '../core/village/legendary';
+import { ALL_QUESTIONS, FONTE_POOL, isComplete as quizComplete, nextForm, resolveStarter } from '../core/village/starter-quiz';
+import type { QuizAnswers } from '../core/village/starter-quiz';
 import type { Resolved, Scene } from '../core/village/social';
 import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS } from '../core/village/social-state';
 import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, recordAnswer, wordOf } from '../core/village/quiz';
@@ -70,7 +77,11 @@ const giftPick = ref(false);
 const welcome = ref(true);
 // O aviso de que a cidade cresceu espera você fechar as boas-vindas (para um não cobrir o outro).
 watch(welcome, (open) => {
-  if (!open) announceGrowth();
+  if (open) return;
+  announceGrowth();
+  // O presente inicial (questionário) tem prioridade; o sorteio de lendário (no máximo 1/dia) espera a próxima vez.
+  if (!state.digital.starterGiven) maybeOfferStarter();
+  else rollLegendaryToday();
 });
 
 let game: VillageGame | null = null;
@@ -80,6 +91,8 @@ let cropTimer: ReturnType<typeof setInterval> | null = null;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 let dirty = false;
 let fishing = false;
+/** Cópia da lista de moradores usada em `game.setMons`, pra poder acrescentar um Digital Pokémon sem reler a Caixa. */
+let villagerList: VillageMon[] = [];
 /** `name` é o nome na tela (o apelido, se tem); `real` é o nome da carta. */
 const mons = ref<{ id: string; name: string; real: string; shiny: boolean; dexId?: number; thumb?: string }[]>([]);
 const types = reactive(new Map<string, PokemonType[]>());
@@ -127,6 +140,161 @@ function syncTrainer(): void {
   if (!got) return;
   changed();
   say(`🏅 ${got.note}`, 5200);
+}
+
+// ---- Digital Pokémon: presente inicial, Fonte (invocação por energia), evolução — ver `core/village/digital.ts`.
+// A origem é sempre uma carta real confirmada por `resolveSpeciesByDexId`; sem rede pra confirmar, a ação falha
+// com um aviso, nunca inventa uma espécie ou uma carta.
+function onEnergyEarned(amount: number): void {
+  state.digital = earnEnergy(state.digital, amount, 'minigame', new Date().toISOString());
+  changed();
+}
+
+/** Injeta (ou substitui, numa evolução) um Digital Pokémon na cena, sem reler a Caixa inteira. */
+async function syncDigitalVillager(inst: DigitalPokemonInstance): Promise<void> {
+  const sprite = await getDigitalSprite(inst.dexId, false).catch(() => null);
+  if (!sprite || !game) return;
+  const entry: VillageMon = { id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs };
+  villagerList = [...villagerList.filter((v) => v.id !== inst.instanceId), entry];
+  game.setMons(villagerList);
+  mons.value = [...mons.value.filter((m) => m.id !== inst.instanceId), { id: inst.instanceId, name: entry.name, real: inst.name, shiny: false, dexId: inst.dexId, thumb: thumbOf(entry.gif) }];
+  refreshTown();
+}
+
+// -- Presente inicial: questionário de 6 perguntas (ver `core/village/starter-quiz.ts`), uma vez por perfil.
+const quizOpen = ref(false);
+const quizStep = ref(0);
+const quizAnswers = ref<QuizAnswers>({});
+const quizQuestion = computed(() => ALL_QUESTIONS[quizStep.value] ?? null);
+
+function maybeOfferStarter(): void {
+  if (!state.digital.starterGiven) {
+    quizOpen.value = true;
+    quizStep.value = 0;
+    quizAnswers.value = {};
+  }
+}
+
+async function pickQuizOption(optionId: string): Promise<void> {
+  const q = quizQuestion.value;
+  if (!q) return;
+  const answers = { ...quizAnswers.value, [q.id]: optionId };
+  quizAnswers.value = answers;
+  if (quizStep.value + 1 < ALL_QUESTIONS.length) {
+    quizStep.value++;
+    return;
+  }
+  if (!quizComplete(answers)) return;
+  quizOpen.value = false;
+  const { dexId } = resolveStarter(answers);
+  loading.value = 'Preparando o seu Digital Pokémon inicial…';
+  const species = await resolveSpeciesByDexId(dexId).catch(() => null);
+  loading.value = '';
+  if (!species) {
+    say('Não consegui confirmar essa espécie agora (sem conexão?). Você pode tentar de novo mais tarde, pela Fonte.');
+    return;
+  }
+  const next = grantStarter(state.digital, species, new Date().toISOString());
+  if (!next) return;
+  state.digital = next;
+  changed();
+  const given = next.instances[next.instances.length - 1]!;
+  say(`🎁 ${species.name} chegou como o seu Digital Pokémon! Ele mora na Vila com você.`, 5200);
+  await syncDigitalVillager(given);
+}
+
+// -- A Fonte: invocar por energia (500) e evoluir um Digital Pokémon (1000 + amizade + próxima forma real).
+async function doSummon(): Promise<void> {
+  closeDialog();
+  loading.value = 'A Fonte brilha…';
+  const picked = pickFonteSpecies(state.digital, FONTE_POOL.map((dexId) => ({ dexId })), Math.random);
+  const species = picked ? await resolveSpeciesByDexId(picked.dexId).catch(() => null) : null;
+  loading.value = '';
+  if (!species) {
+    say('A Fonte não respondeu agora (sem conexão?). Suas energias continuam guardadas.');
+    return;
+  }
+  const next = summon(state.digital, species, new Date().toISOString());
+  if (!next) {
+    say('Energia insuficiente para invocar.');
+    return;
+  }
+  state.digital = next;
+  changed();
+  const made = next.instances[next.instances.length - 1]!;
+  say(`✨ A Fonte trouxe ${species.name}!`, 5200);
+  await syncDigitalVillager(made);
+}
+
+function openEvolveList(b: Building): void {
+  const actions = state.digital.instances.map((inst) => {
+    const next = nextForm(inst.dexId);
+    const lvl = friendLevel(friendOf(state, inst.instanceId).points).level;
+    const able = next !== null && canEvolve(state.digital, inst.instanceId, lvl, true);
+    return {
+      label: `Evoluir ${inst.name}${able ? '' : ' (ainda não)'}`,
+      disabled: !able,
+      run: () => void doEvolve(inst.instanceId, next!),
+    };
+  });
+  dialog.value = {
+    name: 'Fonte da praça · evoluir',
+    text: state.digital.instances.length === 0 ? 'Nenhum Digital Pokémon pra evoluir ainda.' : `Evoluir exige ${EVOLVE_COST} de energia, amizade alta (Grande amigo+) e uma próxima forma real.`,
+    actions: [...actions, { label: 'Voltar', run: () => openFountain(b) }],
+  };
+}
+
+async function doEvolve(instanceId: string, nextDexId: number): Promise<void> {
+  closeDialog();
+  loading.value = 'Evoluindo…';
+  const species = await resolveSpeciesByDexId(nextDexId).catch(() => null);
+  loading.value = '';
+  if (!species) {
+    say('Não consegui confirmar a próxima forma agora (sem conexão?). Tente de novo mais tarde.');
+    return;
+  }
+  const lvl = friendLevel(friendOf(state, instanceId).points).level;
+  const next = evolve(state.digital, instanceId, lvl, species, new Date().toISOString());
+  if (!next) {
+    say('Ainda faltam condições para essa evolução.');
+    return;
+  }
+  state.digital = next;
+  changed();
+  const evolved = instanceOf(next, instanceId)!;
+  say(`🌟 ${evolved.name} evoluiu!`, 5200);
+  await syncDigitalVillager(evolved);
+}
+
+// -- Encontros lendários: uma oportunidade de sorteio por dia do calendário (ver `core/village/legendary.ts`).
+function rollLegendaryToday(): void {
+  const r = rollLegendary(state.legendary, Math.random, day.value, new Date().toISOString());
+  state.legendary = r.state;
+  if (r.legendary) changed();
+  if (state.legendary.active) showLegendaryCutscene();
+}
+
+let legendaryLine = 0;
+function showLegendaryCutscene(): void {
+  const active = state.legendary.active;
+  const def = active ? legendaryOf(active.id) : undefined;
+  if (!def) {
+    state.legendary = dismissActive(state.legendary);
+    return;
+  }
+  legendaryLine = 0;
+  const step = () => {
+    if (legendaryLine < def.lines.length) {
+      dialog.value = { name: def.name, text: def.lines[legendaryLine]!, actions: [{ label: legendaryLine + 1 < def.lines.length ? 'Continuar' : 'Ok', run: () => { legendaryLine++; step(); } }] };
+      return;
+    }
+    dialog.value = {
+      name: def.name,
+      text: `${def.boon}\n\n${def.consequence}`,
+      actions: [{ label: 'Ok', run: () => { state.legendary = dismissActive(state.legendary); changed(); closeDialog(); } }],
+    };
+  };
+  step();
 }
 
 function nameOf(id: string): string {
@@ -221,7 +389,7 @@ function tickQuestions(): void {
     askingMon = null;
     game?.setWaiting(null);
   }
-  if (!game || document.hidden || dialog.value || quiz.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (!askingMon && now >= nextAskAt) {
     nextAskAt = now + 4 * 60000 + Math.random() * 4 * 60000;
     const today = refreshDay();
@@ -265,6 +433,7 @@ function quizAnswer(raw: string): void {
   if (!r) return;
   changed();
   trainerEvent('answer', z.monId);
+  state.digital = earnEnergy(state.digital, 10, 'quiz', new Date().toISOString());
   if (r.bordao) {
     game?.pop(z.monId, '🗣️');
     quiz.value = { ...z, stage: 'reply', answer: r.answer.a, text: `"${r.answer.a}"! Gostei tanto que vou falar isso a toda hora. Espera só os outros ouvirem!` };
@@ -383,7 +552,10 @@ function openBuilding(b: Building): void {
   if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena' || b.kind === 'torre') return openGameBuilding(b);
   if (b.kind === 'mail') {
     const r = collectMail(state, refreshDay(), Math.random, namesById());
-    if (r.ok) changed();
+    if (r.ok) {
+      changed();
+      state.digital = earnEnergy(state.digital, 10, 'correio', new Date().toISOString());
+    }
     dialog.value = { name: b.name, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] };
     return;
   }
@@ -401,6 +573,7 @@ function openBuilding(b: Building): void {
             const r = cafeVisit(state, refreshDay(), near, namesById());
             if (r.ok) {
               changed();
+              state.digital = earnEnergy(state.digital, 15, 'cafe', new Date().toISOString());
               for (const id of near.slice(0, 4)) game?.pop(id, '☕');
             }
             dialog.value = { name: b.name, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] };
@@ -473,7 +646,7 @@ function openFountain(b: Building): void {
   const open = LOTS.filter((l) => level.value >= l.unlock).length;
   dialog.value = {
     name: `${b.name} · ${stage.value.name}`,
-    text: `Nível ${level.value} de Treinador: ${open} de ${LOTS.length} terrenos liberados. ${next ? `No nível ${next.level}: ${next.text}.` : 'A cidade já está completa!'} Jogue uma moeda para fazer um pedido.`,
+    text: `Nível ${level.value} de Treinador: ${open} de ${LOTS.length} terrenos liberados. ${next ? `No nível ${next.level}: ${next.text}.` : 'A cidade já está completa!'} Jogue uma moeda para fazer um pedido, ou use a energia que você já juntou (${state.digital.energy}) pra invocar ou evoluir um Digital Pokémon.`,
     actions: [
       {
         label: 'Jogar uma moeda',
@@ -488,6 +661,8 @@ function openFountain(b: Building): void {
           } else say('✨ Você fez um pedido…');
         },
       },
+      { label: `Invocar Digital Pokémon (${SUMMON_COST})`, disabled: !canAffordSummon(state.digital), run: () => void doSummon() },
+      { label: 'Evoluir um Digital Pokémon', disabled: state.digital.instances.length === 0, run: () => openEvolveList(b) },
       { label: 'Sair', run: closeDialog },
     ],
   };
@@ -611,7 +786,10 @@ let sceneTimer: ReturnType<typeof setInterval> | null = null;
 
 function announce(r: Resolved): void {
   changed();
-  if (r.firstTime) trainerEvent('moment');
+  if (r.firstTime) {
+    trainerEvent('moment');
+    state.digital = earnEnergy(state.digital, 8, 'momento', new Date().toISOString());
+  }
   say(`📖 ${r.moment.emoji} ${r.moment.title}${r.firstTime ? ' · momento novo no Álbum! +10 moedas' : r.moment.fav ? ' · guardado no Álbum 📌' : ' · salvo no Diário'}`);
 }
 
@@ -651,7 +829,7 @@ function finishScene(scene: Scene, ids: string[]): void {
 }
 
 function tickScenes(): void {
-  if (!game || document.hidden || dialog.value || quiz.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (Date.now() < nextSceneAt) return;
   nextSceneAt = Date.now() + SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR;
   // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
@@ -770,6 +948,7 @@ function pressA(): void {
     if (result.gained > 0) {
       game.bubble(t.id, '❤️');
       trainerEvent('talk', t.id);
+      state.digital = earnEnergy(state.digital, 5, 'conversa', new Date().toISOString());
     }
     let text = result.text;
     const help = dailyHelp(state, t.id, today, Math.random);
@@ -959,6 +1138,16 @@ onMounted(async () => {
   } catch {
     say('Não consegui ler as cartas guardadas; a Vila abre só com você.');
   }
+  // Digital Pokémon (presente inicial, Fonte) moram na Vila como qualquer residente, só que nunca passam pelo
+  // cache de cartas/scan — ver `core/village/digital.ts`. Se o sprite não carregar agora (sem rede e fora do
+  // pacote local), esse morador fica de fora da cena nesta sessão, sem inventar nenhum sprite para ele.
+  for (const inst of state.digital.instances) {
+    const sprite = await getDigitalSprite(inst.dexId, false).catch(() => null);
+    if (!sprite) continue;
+    villagers.push({ id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs });
+    mons.value = [...mons.value, { id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), real: inst.name, shiny: false, dexId: inst.dexId, thumb: thumbOf(sprite.gif) }];
+  }
+  villagerList = villagers;
   // Recorte real de tileset pra grama (ver `village-art.ts`); null se não der pra baixar, cai no ladrilho
   // desenhado por código de sempre — a Vila nunca trava nem finge por causa disso.
   const groundTile = await getVillageGroundTile().catch(() => null);
@@ -1037,6 +1226,15 @@ onBeforeUnmount(() => {
       <p v-if="toast" class="village-toast" role="status">{{ toast }}</p>
 
       <QuizDialog v-if="quiz" :name="quiz.name" :text="quiz.text" :stage="quiz.stage" :placeholder="quiz.q.placeholder" :chips="quiz.q.chips" :options="quiz.follow?.options.map((x) => x.label)" :submit-label="quiz.nick ? 'Salvar' : undefined" :cancel-label="quiz.nick ? 'Cancelar' : undefined" @answer="quizAnswer" @choose="quizChoose" @close="quizClose" />
+      <div v-else-if="quizOpen && quizQuestion" class="speech in-stage village-dialog" role="dialog" aria-label="Presente inicial">
+        <div class="speech-box">
+          <strong>Presente inicial · {{ quizStep + 1 }}/{{ ALL_QUESTIONS.length }}</strong>
+          <p>{{ quizQuestion.prompt }}</p>
+          <div class="village-choices">
+            <button v-for="o in quizQuestion.options" :key="o.id" type="button" @click="pickQuizOption(o.id)">{{ o.text }}</button>
+          </div>
+        </div>
+      </div>
       <div v-else-if="dialog" class="speech in-stage village-dialog" role="dialog" :aria-label="dialog.name">
         <div class="speech-box">
           <strong>{{ dialog.name }}</strong>
@@ -1105,7 +1303,7 @@ onBeforeUnmount(() => {
 
       <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-label="Fliperama">
         <header><strong>Fliperama</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
-        <MinigameHub closable @leave="sheet = null" />
+        <MinigameHub closable @leave="sheet = null" @energy="onEnergyEarned" />
       </div>
 
       <div v-if="sheet === 'arena'" class="village-sheet tall game-sheet" role="dialog" aria-label="Arena">
@@ -1120,7 +1318,7 @@ onBeforeUnmount(() => {
 
       <div v-if="sheet === 'torre'" class="village-sheet tall game-sheet" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
-        <MinigameSobrevivencia @leave="sheet = null" />
+        <MinigameSobrevivencia @leave="sheet = null" @energy="onEnergyEarned" />
       </div>
 
       <div v-if="sheet === 'menu'" class="village-sheet tall" role="dialog" aria-label="Menu da Vila">

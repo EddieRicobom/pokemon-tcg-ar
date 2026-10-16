@@ -6,6 +6,10 @@ import { emptySocial, normalizeSocial } from './social-state';
 import type { Answer, Lingo, Moment, Relation } from './social-state';
 import { cutsOff, isFront, tileAt } from './map';
 import type { Tile, VillageMap } from './map';
+import { emptyDigital, normalizeDigital } from './digital';
+import type { DigitalState } from './digital';
+import { emptyLegendary, normalizeLegendary } from './legendary';
+import type { LegendaryState } from './legendary';
 
 /**
  * A vida na Vila: inventário, coleta (madeira, pedra, frutas, flores, conchas), a casa em níveis, móveis que você
@@ -97,6 +101,10 @@ export interface VillageState {
   /** A mini cidade (ver `town.ts`): nível de cada casa de Pokémon e o que já foi feito hoje nos prédios. */
   homes: Record<string, number>;
   town: { level: number; mailDay: string; cafeDay: string };
+  /** Digital Pokémon (presente inicial, Fonte, evolução) e a economia de energia (ver `digital.ts`). */
+  digital: DigitalState;
+  /** Encontros lendários raríssimos na Vila (ver `legendary.ts`). */
+  legendary: LegendaryState;
 }
 
 export interface Crop {
@@ -114,6 +122,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
     v: 1, seed, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' },
+    digital: emptyDigital(), legendary: emptyLegendary(),
   };
 }
 
@@ -149,6 +158,8 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     homes: r.homes && typeof r.homes === 'object' ? Object.fromEntries(Object.entries(r.homes).filter(([k, v]) => k.length <= 80 && Number.isInteger(v)).slice(0, 80).map(([k, v]) => [k, Math.max(0, Math.min(511, v as number))])) : {},
     town: { level: Number.isInteger(r.town?.level) ? Math.max(1, Math.min(99, r.town!.level)) : 1, mailDay: typeof r.town?.mailDay === 'string' ? r.town.mailDay.slice(0, 12) : '', cafeDay: typeof r.town?.cafeDay === 'string' ? r.town.cafeDay.slice(0, 12) : '' },
     fishing: r.fishing && typeof r.fishing.day === 'string' && Number.isInteger(r.fishing.casts) ? { day: r.fishing.day, casts: Math.max(0, Math.min(99, r.fishing.casts)) } : { day: '', casts: 0 },
+    digital: normalizeDigital(r.digital),
+    legendary: normalizeLegendary(r.legendary),
   };
 }
 

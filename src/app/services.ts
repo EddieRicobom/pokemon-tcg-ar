@@ -18,8 +18,12 @@ import { TcgdexClient } from '../recognition/tcgdex';
 import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from '../recognition/types';
 import { loadChunk } from './stale-build';
 import { loadLocalVillageSprite, loadLocalVillageSpriteDirs } from '../village/local-sprite-loader';
+import { fetchGif } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import type { Dir } from '../core/village/actors';
+import { loadDexNames } from './dex-names';
+import { pokemonSpriteUrl } from '../ar/sprite-url';
+import type { SpeciesRef } from '../core/village/digital';
 
 /**
  * Serviços do app, criados sob demanda e uma vez só (nada pesado é carregado antes de o usuário
@@ -136,6 +140,43 @@ export function getVillageGroundTile(): Promise<{ w: number; h: number; data: Ui
   return loadImageRgba(assetUrl('tilesets/survivor-grass.png'), 32, 32)
     .then(({ image }) => ({ w: image.width, h: image.height, data: image.data }))
     .catch(() => null);
+}
+
+let dexNamesPromise: Promise<Map<number, string>> | null = null;
+
+/**
+ * Uma carta real (TCGdex) e o nome (PokéAPI) de uma espécie pelo número da Pokédex nacional, pra dar origem a um
+ * Digital Pokémon (presente inicial, Fonte) sem nunca inventar uma carta: se não achar nenhuma carta com esse
+ * `dexId` nem o nome, devolve null e quem chamou trata como "não deu pra confirmar essa espécie agora".
+ */
+export async function resolveSpeciesByDexId(dexId: number): Promise<SpeciesRef | null> {
+  dexNamesPromise ??= loadDexNames().catch((error) => {
+    dexNamesPromise = null;
+    throw error;
+  });
+  const [cards, names] = await Promise.all([getTcgdex().searchByDexId(dexId).catch(() => []), dexNamesPromise.catch(() => null)]);
+  const card = cards[0];
+  // Precisa de uma carta real pra virar `originCardId` — sem carta, não dá pra confirmar a espécie (nunca inventa).
+  if (!card) return null;
+  const name = names?.get(dexId);
+  return { dexId, name: name ?? card.name, cardId: card.id };
+}
+
+/**
+ * O(s) sprite(s) de um Digital Pokémon por `dexId`, pra morar na Vila como residente: as 4 direções do pacote
+ * local primeiro (`dirs`, pra virar de verdade — ver `getLocalVillageSpriteDirs`); se a espécie não estiver no
+ * pacote, cai para o GIF animado da Showdown (mesma fonte que a Caixa usa pra cartas raras), só de frente. Null
+ * se nada disso der (sem rede e fora do pacote) — quem chamou não injeta esse residente na cena, nunca inventa
+ * um sprite. Nunca passa pelo cache de cartas escaneadas: Digital Pokémon não são alvo de reconhecimento nem AR.
+ */
+export async function getDigitalSprite(dexId: number, shiny: boolean): Promise<{ gif: DecodedGif; dirs?: Partial<Record<Dir, DecodedGif>> } | null> {
+  const dirs = await getLocalVillageSpriteDirs(dexId, shiny).catch(() => null);
+  if (dirs?.down) return { gif: dirs.down, dirs };
+  try {
+    return { gif: await fetchGif(pokemonSpriteUrl(dexId, shiny)) };
+  } catch {
+    return null;
+  }
 }
 
 export function getOcr(): Promise<OcrEngine> {
