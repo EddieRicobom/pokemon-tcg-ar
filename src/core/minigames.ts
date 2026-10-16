@@ -83,6 +83,14 @@ export interface WhoQuestion {
   correct: number;
 }
 
+/**
+ * Dificuldade do "Quem é esse Pokémon?": só muda como a silhueta é mostrada (ver `MinigameQuem.vue`), nunca as
+ * respostas nem o sorteio — ninguém fica sabendo menos sobre o Pokémon de verdade, só vê a imagem mais distorcida.
+ */
+export type WhoDifficulty = 'normal' | 'dificil';
+export const WHO_DIFFICULTIES: readonly WhoDifficulty[] = ['normal', 'dificil'];
+export const WHO_DIFFICULTY_LABELS_PT: Record<WhoDifficulty, string> = { normal: 'Normal', dificil: 'Difícil' };
+
 export function makeWhoQuestions(pieces: readonly Piece[], rng: Rng, rounds = QUIZ_ROUNDS): WhoQuestion[] {
   const pool = distinctPieces(pieces);
   if (pool.length < MIN_PIECES.quem) return [];

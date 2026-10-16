@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { assetUrl, getCache, getLocalVillageSprite } from '../app/services';
-import { loadSavedTeam, resolveTeam } from '../app/team';
 import { recordEvent } from '../app/trainer-store';
+import { seededRng } from '../core/battle';
+import { shuffle } from '../core/minigames';
 import {
   applyUpgrade,
   ARENA_H,
@@ -12,6 +13,11 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorState, SurvivorSummary, SurvivorUpgradeOption } from '../core/survivor';
 import type { DecodedGif } from '../core/gif';
+
+/** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
+const UPGRADE_ICON: Record<string, string> = {
+  power: '💥', haste: '⏳', legs: '👟', vigor: '❤️', range: '📏', multishot: '🎯', pierce: '🏹', magnet: '🧲',
+};
 
 /**
  * Zona de Sobrevivência: um modo próprio da Vila (como a Arena e a Pista de Pins), aberto pela Torre — não é um
@@ -90,6 +96,13 @@ function formatTime(ms: number): string {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
+interface PickOption {
+  dexId: number;
+  name: string;
+  /** Retrato (data URL) pro cartão de escolha; null quando o pacote local não tem sprite pra essa espécie. */
+  thumb: string | null;
+}
+
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const ready = ref(false);
 const failed = ref(false);
@@ -97,6 +110,11 @@ const avatarName = ref('');
 const state = ref<SurvivorState | null>(null);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
 const summary = ref<SurvivorSummary | null>(null);
+/** Tela de escolha antes de cada corrida: 3 Pokémon aleatórios da caixa do jogador, pra ele dizer quem joga
+ * dessa vez. Null enquanto ainda está sorteando/carregando os retratos; [] se a caixa estiver vazia (cai pro
+ * Pikachu de reserva sem tela de escolha, igual ao comportamento antigo). */
+const pickOptions = ref<PickOption[] | null>(null);
+const pickBusy = ref(false);
 
 let ctx: CanvasRenderingContext2D | null = null;
 let groundPattern: CanvasPattern | null = null;
@@ -258,59 +276,102 @@ function chooseUpgrade(id: string): void {
   pendingUpgrade.value = null;
 }
 
-function playAgain(): void {
-  summary.value = null;
-  pendingUpgrade.value = null;
-  state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount });
-}
-
 function leaveNow(): void {
   emit('leave');
 }
 
-async function setup(): Promise<void> {
-  try {
-    const cache = await getCache();
-    const cards = await cache.list();
-    const { ids } = resolveTeam(loadSavedTeam(), cards);
-    const leader = ids.length > 0 ? cards.find((c) => c.id === ids[0]) : undefined;
-    const avatarDexId = leader?.dexIds[0] ?? 25; // Pikachu: sempre presente no pacote local, sem time escolhido.
-    avatarName.value = leader?.name ?? 'Pikachu';
+/** Sorteia 3 Pokémon distintos da caixa do jogador (cartas já guardadas) pra ele escolher quem joga dessa vez.
+ * Caixa vazia (nenhuma carta ainda) não trava nada: cai pro Pikachu de reserva sem tela de escolha, como antes. */
+async function rollPickOptions(): Promise<PickOption[]> {
+  const cache = await getCache();
+  const cards = await cache.list();
+  const byDex = new Map<number, string>();
+  for (const c of cards) {
+    const dexId = c.dexIds[0];
+    if (dexId !== undefined && !byDex.has(dexId)) byDex.set(dexId, c.name);
+  }
+  const pool = [...byDex.entries()];
+  if (pool.length === 0) return [];
+  const chosen = shuffle(pool, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0)).slice(0, 3);
+  const thumbs = await Promise.all(
+    chosen.map(([dexId]) =>
+      getLocalVillageSprite(dexId, false, 'Idle')
+        .then((g) => (g ? toSprite(g).frames[0]?.toDataURL() ?? null : null))
+        .catch(() => null),
+    ),
+  );
+  return chosen.map(([dexId, name], i) => ({ dexId, name, thumb: thumbs[i] ?? null }));
+}
 
+async function beginRun(dexId: number, name: string): Promise<void> {
+  pickBusy.value = true;
+  try {
+    avatarName.value = name;
     const [player, boss, ...kinds] = await Promise.all([
-      loadSpriteOrNull(avatarDexId),
-      loadSpriteOrNull(BOSS_DEX_ID),
-      ...WILD_DEX_IDS.map((id) => loadSpriteOrNull(id)),
+      loadSpriteOrNull(dexId),
+      bossSprite ? Promise.resolve(bossSprite) : loadSpriteOrNull(BOSS_DEX_ID),
+      ...(kindSprites.length > 0 ? kindSprites.map((s) => Promise.resolve(s)) : WILD_DEX_IDS.map((id) => loadSpriteOrNull(id))),
     ]);
     playerSprite = player;
     bossSprite = boss;
     kindSprites = kinds;
     kindCount = WILD_DEX_IDS.length;
 
-    const groundImg = new Image();
-    groundImg.src = assetUrl('tilesets/survivor-grass.png');
-    await new Promise<void>((resolve) => {
-      groundImg.onload = () => resolve();
-      groundImg.onerror = () => resolve();
-    });
-    if (ctx && groundImg.naturalWidth > 0) {
-      groundPattern = ctx.createPattern(groundImg, 'repeat');
+    if (!groundPattern) {
+      const groundImg = new Image();
+      groundImg.src = assetUrl('tilesets/survivor-grass.png');
+      await new Promise<void>((resolve) => {
+        groundImg.onload = () => resolve();
+        groundImg.onerror = () => resolve();
+      });
+      if (ctx && groundImg.naturalWidth > 0) groundPattern = ctx.createPattern(groundImg, 'repeat');
     }
 
+    pickOptions.value = null;
+    summary.value = null;
+    pendingUpgrade.value = null;
     state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount });
     ready.value = true;
     lastTs = performance.now();
-    rafId = requestAnimationFrame(loop);
+    if (!rafId) rafId = requestAnimationFrame(loop);
+  } catch {
+    failed.value = true;
+  } finally {
+    pickBusy.value = false;
+  }
+}
+
+function choosePlayer(opt: PickOption): void {
+  void beginRun(opt.dexId, opt.name);
+}
+
+/** Abre a tela de escolha de novo (3 novos sorteados) antes de cada corrida, inclusive ao "Jogar de novo". */
+async function openPicker(): Promise<void> {
+  ready.value = false;
+  try {
+    const options = await rollPickOptions();
+    if (options.length === 0) {
+      // Caixa vazia: sem tela de escolha, igual ao comportamento de antes.
+      await beginRun(25, 'Pikachu');
+      return;
+    }
+    pickOptions.value = options;
   } catch {
     failed.value = true;
   }
+}
+
+function playAgain(): void {
+  cancelAnimationFrame(rafId);
+  rafId = 0;
+  void openPicker();
 }
 
 onMounted(() => {
   ctx = canvasEl.value?.getContext('2d') ?? null;
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
-  void setup();
+  void openPicker();
 });
 onBeforeUnmount(() => {
   cancelAnimationFrame(rafId);
@@ -326,21 +387,24 @@ onBeforeUnmount(() => {
       <div class="survivor-stage" :style="{ width: VIEW_W + 'px', height: VIEW_H + 'px' }">
         <canvas ref="canvasEl" :width="VIEW_W" :height="VIEW_H" class="survivor-canvas"></canvas>
 
+        <div class="survivor-vignette" aria-hidden="true"></div>
+
         <div v-if="ready && state" class="survivor-hud">
-          <div class="survivor-hp">
+          <div class="survivor-hp" :class="{ low: state.player.hp / state.player.maxHp < 0.3 }">
             <div class="survivor-hp-fill" :style="{ width: Math.max(0, (state.player.hp / state.player.maxHp) * 100) + '%' }"></div>
-            <span>{{ avatarName }} · Nível {{ state.player.level }}</span>
+            <span>{{ avatarName }} · Nv {{ state.player.level }}</span>
           </div>
           <div class="survivor-stats">
-            <span>⏱ {{ formatTime(state.elapsedMs) }}</span>
-            <span>☠ {{ state.kills }}</span>
-            <span>Onda {{ state.wave }}</span>
+            <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
+            <span class="chip">☠ {{ state.kills }}</span>
+            <span class="chip">🌊 Onda {{ state.wave }}</span>
           </div>
         </div>
 
         <div
           v-if="ready && !summary"
           class="survivor-joy-base"
+          :class="{ active: joystick.active }"
           @pointerdown.prevent="joyDown"
           @pointermove.prevent="joyMove"
           @pointerup.prevent="joyUp"
@@ -349,12 +413,34 @@ onBeforeUnmount(() => {
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
 
+        <div v-if="pickOptions" class="survivor-overlay" role="dialog" aria-label="Escolha quem joga">
+          <div class="card survivor-pick">
+            <h2>Quem vai pra Torre dessa vez?</h2>
+            <p class="note">3 Pokémon sorteados da sua caixa.</p>
+            <div class="survivor-pick-grid">
+              <button
+                v-for="opt in pickOptions"
+                :key="opt.dexId"
+                type="button"
+                class="survivor-pick-btn"
+                :disabled="pickBusy"
+                @click="choosePlayer(opt)"
+              >
+                <img v-if="opt.thumb" :src="opt.thumb" :alt="opt.name" class="survivor-pick-thumb" />
+                <span v-else class="survivor-pick-thumb placeholder" aria-hidden="true">?</span>
+                <strong>{{ opt.name }}</strong>
+              </button>
+            </div>
+            <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
+          </div>
+        </div>
+
         <div v-if="pendingUpgrade" class="survivor-overlay" role="dialog" aria-label="Escolha um upgrade">
           <div class="card survivor-upgrades">
             <h2>Subiu de nível!</h2>
             <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" @click="chooseUpgrade(u.id)">
-              <strong>{{ u.name }}</strong>
-              <small>{{ u.description }}</small>
+              <span class="survivor-upgrade-icon" aria-hidden="true">{{ UPGRADE_ICON[u.id] ?? '✨' }}</span>
+              <span class="survivor-upgrade-text"><strong>{{ u.name }}</strong><small>{{ u.description }}</small></span>
             </button>
           </div>
         </div>
@@ -362,13 +448,18 @@ onBeforeUnmount(() => {
         <div v-if="summary" class="survivor-overlay" role="dialog" aria-label="Fim da corrida">
           <div class="card survivor-summary">
             <h2>Fim de jogo</h2>
-            <p>Sobreviveu {{ formatTime(summary.survivedMs) }}, chegou ao nível {{ summary.level }}, derrotou {{ summary.kills }} na onda {{ summary.wave }}.</p>
+            <div class="survivor-summary-grid">
+              <div><strong>{{ formatTime(summary.survivedMs) }}</strong><small>Tempo</small></div>
+              <div><strong>Nv {{ summary.level }}</strong><small>Nível</small></div>
+              <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
+              <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
+            </div>
             <button type="button" class="primary" @click="playAgain">Jogar de novo</button>
             <button type="button" class="link" @click="leaveNow">Voltar aos jogos</button>
           </div>
         </div>
 
-        <p v-if="!ready" class="hint survivor-loading">Carregando a Zona de Sobrevivência…</p>
+        <p v-if="!ready && !pickOptions" class="hint survivor-loading">Carregando a Zona de Sobrevivência…</p>
       </div>
       <p class="note">Ande com o analógico (ou WASD/setas); seu Pokémon ataca sozinho quem chegar perto. Ondas cada vez maiores e um chefe de tempos em tempos. Chão e inimigos: créditos no rodapé do app.</p>
     </template>
