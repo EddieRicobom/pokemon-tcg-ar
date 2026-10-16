@@ -32,7 +32,7 @@ import BoxPvpPanel from '../components/BoxPvpPanel.vue';
 import VillageView from '../components/VillageView.vue';
 import PokeBook from '../components/PokeBook.vue';
 import { loadVillage, saveVillage } from '../app/village-store';
-import { dailyHelp, friendLevel, itemName } from '../core/village/life';
+import { BATTLE_REWARDS_PER_DAY, battleRewardsLeft, claimBattleReward, dailyHelp, friendLevel, itemName } from '../core/village/life';
 import type { VillageState } from '../core/village/life';
 import { paintAccessory } from '../village/item-art';
 import { dayKey } from '../core/trainer';
@@ -142,10 +142,18 @@ function openPvp(): void {
   void nextTick(() => pvpEl.value?.scrollIntoView({ block: 'start' }));
 }
 
-function closeVillage(then?: 'pvp'): void {
+/** Veio do Fliperama ("Batalha na câmera"): a câmera abre sozinha e o botão Batalhar fica em destaque. */
+const battleShortcut = ref(false);
+
+function closeVillage(then?: 'pvp' | 'batalha'): void {
   showVillage.value = false;
   village = loadVillage();
   if (then === 'pvp') openPvp();
+  if (then === 'batalha') {
+    battleShortcut.value = true;
+    // Ainda dentro do toque do botão (o iOS só pede a permissão dos sensores a partir de um toque).
+    if (phase.value === 'idle') void open();
+  }
 }
 
 onMounted(() => {
@@ -577,6 +585,18 @@ watch(
       return;
     }
     recordEvent({ type: 'battle', team: battleSummary.value ? battleSummary.value.mode !== 'royale' : false });
+    // Moedas da Vila: cada batalha terminada rende moedas, até BATTLE_REWARDS_PER_DAY vezes por dia.
+    village = loadVillage();
+    const today = dayKey(new Date());
+    const coins = claimBattleReward(village, today);
+    if (coins > 0) {
+      saveVillage(village);
+      const left = battleRewardsLeft(village, today);
+      showMegaNotes([{ text: `+${coins} moedas na Vila! (${BATTLE_REWARDS_PER_DAY - left} de ${BATTLE_REWARDS_PER_DAY} hoje)`, tone: 'ok' }]);
+    } else {
+      showMegaNotes([{ text: `As batalhas de hoje já renderam as moedas (${BATTLE_REWARDS_PER_DAY} de ${BATTLE_REWARDS_PER_DAY}). Amanhã tem mais.`, tone: 'warn' }]);
+    }
+    battleShortcut.value = false;
   },
 );
 
@@ -834,6 +854,14 @@ const notices = computed<Notice[]>(() => {
     list.push({ text: `PvP com ${friend}`, sub, tone: 'ok', gold: true });
   } else if (challenge.value && !preparing.value) {
     list.push({ text: `Desafio: ${challenge.value.role} ${challenge.value.leader}`, sub: 'Toque em Batalhar: até 6 da sua caixa contra a equipe do líder, um duelo por vez.', tone: 'ok', gold: true });
+  } else if (battleShortcut.value && !preparing.value) {
+    const left = battleRewardsLeft(village, dayKey(new Date()));
+    list.push({
+      text: 'Fliperama: batalha na câmera',
+      sub: `${phase.value === 'running' ? 'Toque em Batalhar' : 'Coloque a caixa no chão e toque em Batalhar'} · ${left > 0 ? `+100 moedas (${left} de ${BATTLE_REWARDS_PER_DAY} hoje)` : 'as moedas de hoje já saíram'}`,
+      tone: 'ok',
+      gold: true,
+    });
   }
   if (picked.value) {
     list.push({ text: `${picked.value.name}${picked.value.dexId ? ` · Nº ${picked.value.dexId}` : ''}${picked.value.shiny ? ' · Shiny' : ''}${picked.value.mega ? ' · Mega' : ''}`, sub: picked.value.detail, tone: 'ok', gold: true });
@@ -1099,7 +1127,7 @@ onBeforeUnmount(() => {
           <StageButton v-if="!battling" icon="sliders" label="Ajustes" :active="showAdjust" @click="showAdjust = !showAdjust; showFilters = false; showTeam = false; showModes = false" />
           <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
           <StageButton v-if="!battling" icon="modes" :label="BATTLE_MODE_LABELS_PT[battleMode]" :active="showModes" @click="showModes = !showModes; showFilters = false; showTeam = false; showAdjust = false" />
-          <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : 'Batalhar'" :disabled="!canBattle" @click="startBattle" />
+          <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : 'Batalhar'" :disabled="!canBattle" :attention="battleShortcut && canBattle && !preparing" @click="startBattle" />
           <StageButton v-if="battling && battleHud?.phase === 'finished'" icon="battle" label="De novo" @click="startBattle" />
           <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />
           <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />

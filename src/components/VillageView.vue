@@ -20,6 +20,7 @@ import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shop
 import {
   buy, canFollow, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
   plant, pruneHarvest, RECIPES, sell, talk, tickCrops, upgradeHouse, water, wear,
+  BATTLE_REWARD_COINS, BATTLE_REWARDS_PER_DAY, battleRewardsLeft,
 } from '../core/village/life';
 import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
 import {
@@ -52,7 +53,7 @@ import QuizDialog from './QuizDialog.vue';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
 /** `close` sai da Vila; com `'pvp'` a Caixa abre o PvP em seguida (a Vila mora dentro da Caixa, então não há troca de tela). */
-const emit = defineEmits<{ close: [then?: 'pvp'] }>();
+const emit = defineEmits<{ close: [then?: 'pvp' | 'batalha'] }>();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const wrapEl = ref<HTMLElement | null>(null);
@@ -704,13 +705,28 @@ function goToPvp(): void {
   emit('close', 'pvp');
 }
 
+/** Fliperama → batalha na câmera: fecha a Vila e já abre a câmera e os sensores da Caixa (no mesmo toque). */
+function goToBattle(): void {
+  closeDialog();
+  sheet.value = null;
+  emit('close', 'batalha');
+}
+const battleRewardText = computed(() => {
+  const left = battleRewardsLeft(state, day.value);
+  return left > 0 ? `+${BATTLE_REWARD_COINS} moedas por batalha · ${left} de ${BATTLE_REWARDS_PER_DAY} hoje` : `as moedas de hoje já saíram (${BATTLE_REWARDS_PER_DAY} de ${BATTLE_REWARDS_PER_DAY}); amanhã tem mais`;
+});
+
 function openGameBuilding(b: Building): void {
   const exit = { label: 'Sair', run: closeDialog };
   if (b.kind === 'arcade') {
     dialog.value = {
       name: b.name,
-      text: 'Luzes piscando e o barulhinho das máquinas! Aqui você joga os minigames (Quem é esse Pokémon?, Tipos e Memória) com as cartas que já escaneou. Vencer rende XP, igual no Treinador.',
-      actions: [{ label: 'Jogar', run: () => { closeDialog(); sheet.value = 'arcade'; } }, exit],
+      text: `Luzes piscando e o barulhinho das máquinas! Aqui você joga os minigames (Quem é esse Pokémon?, Tipos e Memória) com as cartas que já escaneou — ou vai direto para uma batalha da sua caixa na câmera (${battleRewardText.value}).`,
+      actions: [
+        { label: '⚔️ Batalha na câmera', run: goToBattle },
+        { label: 'Jogar minigames', run: () => { closeDialog(); sheet.value = 'arcade'; } },
+        exit,
+      ],
     };
   } else if (b.kind === 'pins') {
     dialog.value = {
@@ -1424,6 +1440,11 @@ onBeforeUnmount(() => {
 
       <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-label="Fliperama">
         <header><strong>Fliperama</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <div class="card arcade-battle">
+          <h2>⚔️ Batalha na câmera</h2>
+          <p class="note">Abre a câmera e os sensores da Caixa direto no modo de batalha: coloque a caixa no chão e toque em Batalhar. {{ battleRewardText }}.</p>
+          <button type="button" class="primary" @click="goToBattle">Abrir câmera e batalhar</button>
+        </div>
         <MinigameHub closable @leave="sheet = null" @energy="onEnergyEarned" />
       </div>
 

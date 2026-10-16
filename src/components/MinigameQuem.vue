@@ -138,9 +138,13 @@ function changeSource(): void {
         <!-- Filtro SVG do modo Difícil: distorce o contorno da silhueta (ver .silhouette.hard no CSS). Sem
              tamanho na tela (width/height 0): só define o efeito, não é desenhado por si. -->
         <svg width="0" height="0" style="position: absolute" aria-hidden="true">
-          <filter id="who-quiz-swirl">
-            <feTurbulence type="fractalNoise" baseFrequency="0.012 0.03" numOctaves="2" seed="7" result="noise" />
-            <feDisplacementMap in="SourceGraphic" in2="noise" scale="22" xChannelSelector="R" yChannelSelector="G" />
+          <!-- Duas passadas: um redemoinho largo (torce o corpo inteiro) e uma ondulação média por cima (desfaz o
+               contorno). A região do filtro é maior que a imagem para as partes deslocadas não serem cortadas. -->
+          <filter id="who-quiz-swirl" x="-30%" y="-30%" width="160%" height="160%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="2" seed="7" result="wide" />
+            <feDisplacementMap in="SourceGraphic" in2="wide" scale="70" xChannelSelector="R" yChannelSelector="G" result="twisted" />
+            <feTurbulence type="turbulence" baseFrequency="0.035" numOctaves="2" seed="13" result="ripple" />
+            <feDisplacementMap in="twisted" in2="ripple" scale="26" xChannelSelector="G" yChannelSelector="B" />
           </filter>
         </svg>
         <img :src="images.get(q.piece.id)" alt="Silhueta de um Pokémon" class="silhouette" :class="{ shown: revealed, hard: difficulty === 'dificil' }" />

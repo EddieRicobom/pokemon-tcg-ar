@@ -58,7 +58,6 @@ async function debugSearchSprite(): Promise<void> {
     // precisar escanear ou batalhar de verdade. +1000 XP não é escaneamento, batalha nem minigame de verdade.
     if (id === 666) {
       recordEvent({ type: 'debug', xp: 1000, label: 'Depuração: sprite do dex 666' });
-      debugStatus.value += ' Cheat: +1000 XP no Treinador.';
     }
   } catch {
     debugStatus.value = 'Falha ao buscar o sprite.';
@@ -133,7 +132,7 @@ onMounted(async () => {
 
   <section class="card" aria-labelledby="diag-debug-title">
     <h2 id="diag-debug-title">Depuração</h2>
-    <p class="note">Busca de verdade o sprite (GIF ou PNG) de um número de Pokédex na fonte usada pela AR e pela Vila — útil pra testar sem esperar o reconhecimento. Buscar o número <strong>666</strong> também dá +1000 XP ao Treinador (cheat de depuração, pra testar coisas que pedem nível alto, como a Torre de Sobrevivência, sem escanear ou batalhar de verdade).</p>
+    <p class="note">Busca de verdade o sprite (GIF ou PNG) de um número de Pokédex na fonte usada pela AR e pela Vila — útil pra testar sem esperar o reconhecimento.</p>
     <div class="debug-sprite-row">
       <input v-model="debugDex" type="number" min="1" inputmode="numeric" placeholder="Número da Pokédex" :disabled="debugBusy" @keyup.enter="debugSearchSprite" />
       <button type="button" class="primary" :disabled="debugBusy" @click="debugSearchSprite">Buscar sprite</button>

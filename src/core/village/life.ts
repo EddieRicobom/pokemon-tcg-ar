@@ -98,6 +98,8 @@ export interface VillageState {
   claimed: string[];
   /** Pescaria de hoje: quantas vezes já lançou a linha. */
   fishing: { day: string; casts: number };
+  /** Batalhas da Caixa que já renderam moedas hoje (máx. `BATTLE_REWARDS_PER_DAY` por dia do calendário). */
+  battleCoins: { day: string; count: number };
   /** A mini cidade (ver `town.ts`): nível de cada casa de Pokémon e o que já foi feito hoje nos prédios. */
   homes: Record<string, number>;
   town: { level: number; mailDay: string; cafeDay: string };
@@ -121,7 +123,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
   return {
     v: 1, seed, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
-    claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' },
+    claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' },
     digital: emptyDigital(), legendary: emptyLegendary(),
   };
 }
@@ -158,6 +160,9 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     homes: r.homes && typeof r.homes === 'object' ? Object.fromEntries(Object.entries(r.homes).filter(([k, v]) => k.length <= 80 && Number.isInteger(v)).slice(0, 80).map(([k, v]) => [k, Math.max(0, Math.min(511, v as number))])) : {},
     town: { level: Number.isInteger(r.town?.level) ? Math.max(1, Math.min(99, r.town!.level)) : 1, mailDay: typeof r.town?.mailDay === 'string' ? r.town.mailDay.slice(0, 12) : '', cafeDay: typeof r.town?.cafeDay === 'string' ? r.town.cafeDay.slice(0, 12) : '' },
     fishing: r.fishing && typeof r.fishing.day === 'string' && Number.isInteger(r.fishing.casts) ? { day: r.fishing.day, casts: Math.max(0, Math.min(99, r.fishing.casts)) } : { day: '', casts: 0 },
+    battleCoins: r.battleCoins && typeof r.battleCoins.day === 'string' && Number.isInteger(r.battleCoins.count)
+      ? { day: r.battleCoins.day.slice(0, 12), count: Math.max(0, Math.min(BATTLE_REWARDS_PER_DAY, r.battleCoins.count)) }
+      : { day: '', count: 0 },
     digital: normalizeDigital(r.digital),
     legendary: normalizeLegendary(r.legendary),
   };
@@ -237,6 +242,27 @@ export function harvest(s: VillageState, map: VillageMap, x: number, y: number, 
 // ----------------------------------------------------------------------------- pesca
 
 export const FISH_PER_DAY = 10;
+
+/** Batalha da Caixa (atalho do Fliperama ou não): moedas por batalha terminada, até tantas vezes por dia. */
+export const BATTLE_REWARD_COINS = 100;
+export const BATTLE_REWARDS_PER_DAY = 3;
+
+/** Quantas batalhas ainda rendem moedas hoje. */
+export function battleRewardsLeft(s: VillageState, day: string): number {
+  return s.battleCoins.day === day ? Math.max(0, BATTLE_REWARDS_PER_DAY - s.battleCoins.count) : BATTLE_REWARDS_PER_DAY;
+}
+
+/**
+ * Uma batalha da Caixa terminou: rende `BATTLE_REWARD_COINS` moedas se ainda houver recompensa hoje (dia do
+ * calendário do aparelho, como a pesca). Devolve quantas moedas entraram (0 quando o limite do dia já foi).
+ */
+export function claimBattleReward(s: VillageState, day: string): number {
+  if (s.battleCoins.day !== day) s.battleCoins = { day, count: 0 };
+  if (s.battleCoins.count >= BATTLE_REWARDS_PER_DAY) return 0;
+  s.battleCoins.count++;
+  s.coins = Math.min(999999, s.coins + BATTLE_REWARD_COINS);
+  return BATTLE_REWARD_COINS;
+}
 
 const FISH_TABLE: readonly { item: ItemId | null; w: number; msg: string }[] = [
   { item: null, w: 14, msg: 'Nada mordeu a isca desta vez.' },
