@@ -1,4 +1,5 @@
 import { WebGLRenderer } from 'three';
+import { releaseWhenDetached } from './context-release';
 import type { RenderBackend } from './session';
 
 /** Desenho em WebGL sobre um canvas transparente (por cima do vídeo da câmera). */
@@ -33,10 +34,13 @@ export function createWebglBackend(canvas: HTMLCanvasElement): RenderBackend {
     render: (scene, camera) => renderer.render(scene, camera),
     setSize: (width, height) => renderer.setSize(width, height, false),
     dispose() {
-      // Importante: NÃO chamar renderer.forceContextLoss() aqui.
+      // Importante: NÃO chamar renderer.forceContextLoss() direto aqui.
       // O forceContextLoss() invalida permanentemente o contexto do HTMLCanvasElement no DOM,
       // quebrando qualquer sessão subsequente no mesmo elemento.
       renderer.dispose();
+      // Mas se o canvas sair da página (o Escanear recria o canvas a cada carta), o contexto é devolvido ao
+      // navegador em vez de esperar o coletor de lixo (ver context-release.ts).
+      releaseWhenDetached(canvas, () => renderer.forceContextLoss());
     },
   };
 }
