@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { sliceDirectionFrames } from './local-sprite';
+import { contentBounds, sliceDirectionFrames } from './local-sprite';
 import type { DirectionRow, LocalSpriteAnim } from './local-sprite-meta';
 import type { RgbaImage } from '../recognition/types';
+import type { DecodedGif, GifFrame } from '../core/gif';
+
+/** Um quadro `w`×`h` todo transparente, exceto o retângulo opaco dado (pra testar `contentBounds`). */
+function frameWithOpaqueBox(w: number, h: number, box: { x0: number; y0: number; x1: number; y1: number }): GifFrame {
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let y = box.y0; y < box.y1; y++) {
+    for (let x = box.x0; x < box.x1; x++) {
+      rgba[(y * w + x) * 4 + 3] = 255;
+    }
+  }
+  return { rgba, delayMs: 100 };
+}
 
 /** Folha sintética: cada quadro (coluna × linha) é pintado com uma cor única, só com (quadro, direção) nos canais R/G. */
 function syntheticSheet(anim: LocalSpriteAnim): RgbaImage {
@@ -64,5 +76,41 @@ describe('sliceDirectionFrames', () => {
     const sheet = syntheticSheet(anim);
     // Fora do tipo DirectionRow de propósito: a validação em runtime é o que protege um chamador descuidado.
     expect(() => sliceDirectionFrames(sheet, anim, 8 as unknown as DirectionRow)).toThrow(/fora do intervalo/);
+  });
+});
+
+describe('contentBounds', () => {
+  it('acha a caixa dos pixels opacos, ignorando a margem transparente', () => {
+    const gif: DecodedGif = {
+      width: 20,
+      height: 20,
+      durationMs: 100,
+      frames: [frameWithOpaqueBox(20, 20, { x0: 5, y0: 8, x1: 15, y1: 18 })],
+    };
+    const bounds = contentBounds(gif);
+    expect(bounds.top).toBeCloseTo(8 / 20);
+    expect(bounds.bottom).toBeCloseTo(18 / 20);
+    expect(bounds.left).toBeCloseTo(5 / 20);
+    expect(bounds.right).toBeCloseTo(15 / 20);
+  });
+
+  it('junta a caixa de todos os quadros (a animação não muda o tamanho medido)', () => {
+    const gif: DecodedGif = {
+      width: 20,
+      height: 20,
+      durationMs: 100,
+      frames: [
+        frameWithOpaqueBox(20, 20, { x0: 5, y0: 10, x1: 15, y1: 18 }), // quadro "no alto do pulo"
+        frameWithOpaqueBox(20, 20, { x0: 5, y0: 2, x1: 15, y1: 10 }), // quadro "no fundo do pulo"
+      ],
+    };
+    const bounds = contentBounds(gif);
+    expect(bounds.top).toBeCloseTo(2 / 20);
+    expect(bounds.bottom).toBeCloseTo(18 / 20);
+  });
+
+  it('sem nenhum pixel opaco, devolve o quadro inteiro (não finge que mediu algo)', () => {
+    const gif: DecodedGif = { width: 10, height: 10, durationMs: 100, frames: [{ rgba: new Uint8ClampedArray(10 * 10 * 4), delayMs: 100 }] };
+    expect(contentBounds(gif)).toEqual({ top: 0, bottom: 1, left: 0, right: 1 });
   });
 });
