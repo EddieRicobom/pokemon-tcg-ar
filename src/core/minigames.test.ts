@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { seededRng, typeEffectiveness } from './battle';
 import {
   cardsBlocker, distinctPieces, gameBlocker, gradeMemory, gradeQuiz, makeMemoryBoard, makeTypeQuestions, makeWhoQuestions, MEMORY_PAIRS, multiplierLabel, QUIZ_ROUNDS, shuffle, TYPE_ROUNDS,
+  WHO_DIFFICULTIES, WHO_DIFFICULTY_LABELS_PT,
 } from './minigames';
 import type { Piece } from './minigames';
 
@@ -46,6 +47,11 @@ describe('Quem é esse Pokémon?', () => {
   it('com poucas cartas não monta nada, e com 4 faz 4 perguntas', () => {
     expect(makeWhoQuestions(pool(3), seededRng(1))).toEqual([]);
     expect(makeWhoQuestions(pool(4), seededRng(1))).toHaveLength(4);
+  });
+
+  it('a dificuldade só muda como a silhueta aparece, nunca as perguntas (ver MinigameQuem.vue)', () => {
+    expect(WHO_DIFFICULTIES).toEqual(['normal', 'dificil']);
+    for (const d of WHO_DIFFICULTIES) expect(WHO_DIFFICULTY_LABELS_PT[d]).toBeTruthy();
   });
 });
 

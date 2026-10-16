@@ -2260,11 +2260,26 @@ body.no-scroll .reward-toasts {
   max-height: 170px;
   image-rendering: pixelated;
   filter: brightness(0);
-  transition: filter 300ms ease-out;
+  /* Sem transição aqui: ao trocar de pergunta a silhueta tem que ficar preta na hora, nunca
+     passar um instante visível. A transição só entra na regra .shown (ver abaixo), que é a
+     única hora em que queremos ver a revelação em movimento. */
+  transition: none;
+}
+
+.silhouette.hard {
+  filter: brightness(0) url(#who-quiz-swirl);
 }
 
 .silhouette.shown {
   filter: none;
+  transition: filter 300ms ease-out;
+}
+
+.silhouette-hint {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
 }
 
 .game-options {
@@ -4725,6 +4740,16 @@ body.no-scroll .reward-toasts {
   user-select: none;
   -webkit-user-select: none;
   background: #1b2436;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+
+/* Sombra sutil nas bordas: separa o HUD/joystick do jogo em movimento por baixo, sem precisar de um
+   painel sólido cobrindo a cena (era um dos motivos de parecer caótico: HUD e cena disputando o olho). */
+.survivor-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 36px 28px -28px rgba(0, 0, 0, 0.55), inset 0 -24px 20px -20px rgba(0, 0, 0, 0.45);
 }
 
 .survivor-canvas {
@@ -4736,18 +4761,19 @@ body.no-scroll .reward-toasts {
 
 .survivor-hud {
   position: absolute;
-  inset: 6px 6px auto 6px;
+  inset: 8px 8px auto 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   pointer-events: none;
 }
 
 .survivor-hp {
   position: relative;
-  height: 20px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.45);
+  height: 22px;
+  border-radius: 11px;
+  background: rgba(10, 14, 24, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -4758,6 +4784,17 @@ body.no-scroll .reward-toasts {
   inset: 0 auto 0 0;
   background: linear-gradient(90deg, #ff6a6a, #ffb36a);
   transition: width 120ms linear;
+}
+
+/* HP baixo: a barra pulsa pra chamar atenção sem precisar de texto extra. */
+.survivor-hp.low .survivor-hp-fill {
+  background: linear-gradient(90deg, #ff3b3b, #ff6a6a);
+  animation: survivor-pulse 650ms ease-in-out infinite;
+}
+
+@keyframes survivor-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 .survivor-hp span {
@@ -4772,11 +4809,18 @@ body.no-scroll .reward-toasts {
 
 .survivor-stats {
   display: flex;
-  gap: 10px;
-  font-size: 0.72rem;
+  gap: 6px;
+}
+
+.survivor-stats .chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(10, 14, 24, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: 0.7rem;
   font-weight: 600;
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
 }
 
 .survivor-joy-base {
@@ -4786,9 +4830,15 @@ body.no-scroll .reward-toasts {
   width: 84px;
   height: 84px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(10, 14, 24, 0.35);
   border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
   touch-action: none;
+  transition: border-color 120ms ease-out;
+}
+
+.survivor-joy-base.active {
+  border-color: rgba(255, 255, 255, 0.65);
 }
 
 .survivor-joy-stick {
@@ -4800,6 +4850,11 @@ body.no-scroll .reward-toasts {
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.55);
   pointer-events: none;
+  transition: background 120ms ease-out;
+}
+
+.survivor-joy-base.active .survivor-joy-stick {
+  background: rgba(255, 255, 255, 0.85);
 }
 
 .survivor-overlay {
@@ -4809,8 +4864,10 @@ body.no-scroll .reward-toasts {
   place-items: center;
   background: rgba(10, 14, 24, 0.72);
   padding: 12px;
+  z-index: 2;
 }
 
+.survivor-pick,
 .survivor-upgrades,
 .survivor-summary {
   width: 100%;
@@ -4818,10 +4875,51 @@ body.no-scroll .reward-toasts {
   text-align: center;
 }
 
-.survivor-upgrade-btn {
+.survivor-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.survivor-pick-btn {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border-radius: 10px;
+  border: 1.5px solid #d8dcf0;
+  background: #f4f6ff;
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+
+.survivor-pick-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.survivor-pick-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.survivor-pick-thumb.placeholder {
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.08);
+  color: #888;
+  font-weight: 700;
+}
+
+.survivor-upgrade-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   width: 100%;
   margin-top: 8px;
   padding: 10px 12px;
@@ -4832,8 +4930,40 @@ body.no-scroll .reward-toasts {
   cursor: pointer;
 }
 
+.survivor-upgrade-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.survivor-upgrade-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .survivor-upgrade-btn small {
   color: #555;
+}
+
+.survivor-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0 14px;
+}
+
+.survivor-summary-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 2px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.survivor-summary-grid small {
+  color: #777;
+  font-size: 0.68rem;
 }
 
 .survivor-loading {

@@ -5,8 +5,8 @@ import { prepareDexRound } from '../app/dex-quiz';
 import { seededRng } from '../core/battle';
 import { dexIdsFor, dexPieces, GENERATIONS, sourceLabel } from '../core/dex';
 import type { WhoSource } from '../core/dex';
-import { cardsBlocker, gradeQuiz, makeWhoQuestions } from '../core/minigames';
-import type { Grade, Piece, WhoQuestion } from '../core/minigames';
+import { cardsBlocker, gradeQuiz, makeWhoQuestions, WHO_DIFFICULTIES, WHO_DIFFICULTY_LABELS_PT } from '../core/minigames';
+import type { Grade, Piece, WhoDifficulty, WhoQuestion } from '../core/minigames';
 
 const props = defineProps<{ pieces: Piece[]; urls: Map<string, string> }>();
 const emit = defineEmits<{ finished: [grade: Grade]; leave: [] }>();
@@ -16,6 +16,7 @@ type Phase = 'setup' | 'loading' | 'playing' | 'done';
 const freshRng = () => seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0);
 const blocker = computed(() => cardsBlocker(props.pieces));
 const source = ref<WhoSource>({ kind: 'random' });
+const difficulty = ref<WhoDifficulty>('normal');
 const phase = ref<Phase>('setup');
 const error = ref('');
 const questions = ref<WhoQuestion[]>([]);
@@ -113,6 +114,18 @@ function changeSource(): void {
         ><strong>{{ c.label }}</strong><small>{{ c.hint }}</small></button>
       </div>
       <p v-if="blocker" class="note">{{ blocker }}</p>
+      <p class="game-step">Dificuldade</p>
+      <div class="source-grid" role="group" aria-label="Dificuldade da silhueta">
+        <button
+          v-for="d in WHO_DIFFICULTIES"
+          :key="d"
+          type="button"
+          class="source"
+          :class="{ on: difficulty === d }"
+          :aria-pressed="difficulty === d"
+          @click="difficulty = d"
+        ><strong>{{ WHO_DIFFICULTY_LABELS_PT[d] }}</strong><small>{{ d === 'dificil' ? 'Silhueta distorcida' : 'Silhueta preta normal' }}</small></button>
+      </div>
       <p v-if="error" class="game-error" role="alert">{{ error }}</p>
       <button type="button" class="primary" @click="start">{{ error ? 'Tentar de novo' : 'Sortear 5 Pokémon' }}</button>
     </template>
@@ -122,8 +135,17 @@ function changeSource(): void {
     <template v-else-if="phase === 'playing' && q">
       <p class="game-step">{{ sourceLabel(source) }} · Pergunta {{ index + 1 }} de {{ questions.length }} · {{ correct }} certa{{ correct === 1 ? '' : 's' }}</p>
       <div class="silhouette-stage">
-        <img :src="images.get(q.piece.id)" alt="Silhueta de um Pokémon" class="silhouette" :class="{ shown: revealed }" />
+        <!-- Filtro SVG do modo Difícil: distorce o contorno da silhueta (ver .silhouette.hard no CSS). Sem
+             tamanho na tela (width/height 0): só define o efeito, não é desenhado por si. -->
+        <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+          <filter id="who-quiz-swirl">
+            <feTurbulence type="fractalNoise" baseFrequency="0.012 0.03" numOctaves="2" seed="7" result="noise" />
+            <feDisplacementMap in="SourceGraphic" in2="noise" scale="22" xChannelSelector="R" yChannelSelector="G" />
+          </filter>
+        </svg>
+        <img :src="images.get(q.piece.id)" alt="Silhueta de um Pokémon" class="silhouette" :class="{ shown: revealed, hard: difficulty === 'dificil' }" />
       </div>
+      <p v-if="difficulty === 'dificil' && !revealed" class="silhouette-hint">🌀 Difícil: contorno distorcido de propósito</p>
       <div class="game-options">
         <button
           v-for="(name, i) in q.options"
