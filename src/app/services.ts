@@ -93,14 +93,20 @@ export function getCatalog(): Promise<CatalogLookup | null> {
 }
 
 /**
- * Pose "Idle" de um Pokémon a partir do pacote de sprites locais da Vila (`public/sprites/pokemon/`), null se a
- * espécie não estiver no pacote ou algo falhar — a Vila cai para o GIF já baixado pela Caixa nesse caso.
+ * Uma pose (`animName`: "Idle" por padrão, ou "Walk" etc. na Sobrevivência) de um Pokémon a partir do pacote de
+ * sprites locais da Vila (`public/sprites/pokemon/`), null se a espécie não tiver essa animação no pacote ou
+ * algo falhar — quem chamou cai para outra fonte nesse caso (ver `loadLocalVillageSprite`).
  */
-export function getLocalVillageSprite(dexId: number, shiny: boolean): Promise<DecodedGif | null> {
-  return loadLocalVillageSprite(dexId, shiny, {
-    metaUrl: assetUrl('data/village-sprite-meta.json'),
-    spriteUrl: (id, anim, wantShiny) => assetUrl(`sprites/pokemon/${id}/${wantShiny ? 's/' : ''}${anim}.png`),
-  });
+export function getLocalVillageSprite(dexId: number, shiny: boolean, animName = 'Idle'): Promise<DecodedGif | null> {
+  return loadLocalVillageSprite(
+    dexId,
+    shiny,
+    {
+      metaUrl: assetUrl('data/village-sprite-meta.json'),
+      spriteUrl: (id, anim, wantShiny) => assetUrl(`sprites/pokemon/${id}/${wantShiny ? 's/' : ''}${anim}.png`),
+    },
+    animName,
+  );
 }
 
 export function getOcr(): Promise<OcrEngine> {
