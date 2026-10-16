@@ -44,3 +44,25 @@ As licenças exatas de cada versão estão nos pacotes (`node_modules/<pacote>/L
 - Dados de espécies, atributos e golpes: PokéAPI (<https://pokeapi.co/>).
 - Sprites: repositório PokeAPI/sprites (GIFs `other/showdown`), com espelho no jsDelivr. Os desenhos dos
   Pokémon pertencem aos seus titulares; o app não os redistribui, o celular os baixa na hora.
+
+## Sprites locais da Vila (`public/sprites/`) — PMD SpriteCollab, CC BY-NC 4.0
+
+A Vila usa, quando disponível para a espécie, um sprite de ação ("Idle") guardado no próprio repositório em
+vez de baixar o GIF do PokeAPI/sprites. Esses arquivos (e o corte em quadros/direções, `public/data/village-sprite-meta.json`)
+vêm do port Android (Godot) do **PokéSurvivor**: <https://github.com/JayElDragon/poke-survivor> (jogo original
+de JPTER78: <https://github.com/JPTER78/pokesurvivor>). A arte em si é do **PMD SpriteCollab**
+(<https://github.com/PMDCollab/SpriteCollab>), sob **CC BY-NC 4.0** (<https://creativecommons.org/licenses/by-nc/4.0/>):
+**uso não comercial e com atribuição**. Este projeto é gratuito e sem fins lucrativos (não vende nada, não
+tem anúncios), compatível com essa licença.
+
+A lista completa dos artistas por número de Pokédex está no `CREDITS.md` do poke-survivor
+(<https://github.com/JayElDragon/poke-survivor/blob/main/CREDITS.md>), copiada de lá do CREDITS.md original do
+PokéSurvivor — são centenas de nomes, por isso apontamos para a fonte em vez de duplicar aqui. Diferente do
+sprite do PokeAPI/sprites (baixado na hora), este pacote **é redistribuído** junto com o app: cobre 966 das
+espécies existentes; quando a espécie não está no pacote, a Vila volta a baixar o GIF normalmente.
+
+## Tilesets (`tilesets/`)
+
+Conjunto de tilesets de cenário (prédios, interiores, natureza) de artistas da comunidade de fãs de Pokémon,
+com créditos por conjunto em `tilesets/Credits.txt`. Ainda não estão em uso no app (planejado para o visual da
+Vila); este aviso será detalhado quando entrarem em uso.

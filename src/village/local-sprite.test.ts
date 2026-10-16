@@ -1,0 +1,68 @@
+import { describe, expect, it } from 'vitest';
+import { sliceDirectionFrames } from './local-sprite';
+import type { DirectionRow, LocalSpriteAnim } from './local-sprite-meta';
+import type { RgbaImage } from '../recognition/types';
+
+/** Folha sintética: cada quadro (coluna × linha) é pintado com uma cor única, só com (quadro, direção) nos canais R/G. */
+function syntheticSheet(anim: LocalSpriteAnim): RgbaImage {
+  const width = anim.w * anim.n;
+  const height = anim.h * anim.r;
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let dir = 0; dir < anim.r; dir++) {
+    for (let frame = 0; frame < anim.n; frame++) {
+      for (let y = 0; y < anim.h; y++) {
+        for (let x = 0; x < anim.w; x++) {
+          const px = ((dir * anim.h + y) * width + frame * anim.w + x) * 4;
+          data[px] = frame * 10;
+          data[px + 1] = dir * 10;
+          data[px + 2] = 200;
+          data[px + 3] = 255;
+        }
+      }
+    }
+  }
+  return { width, height, data };
+}
+
+const anim: LocalSpriteAnim = { w: 4, h: 3, n: 3, r: 8, d: [40, 6, 6] };
+
+describe('sliceDirectionFrames', () => {
+  it('recorta os quadros certos da direção pedida (pixel de cada quadro bate com (quadro, direção))', () => {
+    const sheet = syntheticSheet(anim);
+    const gif = sliceDirectionFrames(sheet, anim, 2);
+    expect(gif.width).toBe(4);
+    expect(gif.height).toBe(3);
+    expect(gif.frames).toHaveLength(3);
+    gif.frames.forEach((frame, i) => {
+      expect(frame.rgba[0]).toBe(i * 10); // R = índice do quadro
+      expect(frame.rgba[1]).toBe(2 * 10); // G = direção pedida (2)
+      expect(frame.rgba.length).toBe(4 * 3 * 4);
+    });
+  });
+
+  it('direções diferentes devolvem quadros diferentes da mesma folha', () => {
+    const sheet = syntheticSheet(anim);
+    const down = sliceDirectionFrames(sheet, anim, 0);
+    const left = sliceDirectionFrames(sheet, anim, 6);
+    expect(down.frames[0]!.rgba[1]).toBe(0);
+    expect(left.frames[0]!.rgba[1]).toBe(60);
+  });
+
+  it('converte a duração de ticks (60 fps) para milissegundos', () => {
+    const sheet = syntheticSheet(anim);
+    const gif = sliceDirectionFrames(sheet, anim, 0);
+    expect(gif.frames.map((f) => f.delayMs)).toEqual([667, 100, 100]);
+    expect(gif.durationMs).toBe(867);
+  });
+
+  it('rejeita folha com tamanho diferente do esperado pelos metadados (não finge que cortou certo)', () => {
+    const wrong: RgbaImage = { width: 10, height: 10, data: new Uint8ClampedArray(10 * 10 * 4) };
+    expect(() => sliceDirectionFrames(wrong, anim, 0)).toThrow(/tamanho inesperado/);
+  });
+
+  it('rejeita direção fora do intervalo de linhas da folha', () => {
+    const sheet = syntheticSheet(anim);
+    // Fora do tipo DirectionRow de propósito: a validação em runtime é o que protege um chamador descuidado.
+    expect(() => sliceDirectionFrames(sheet, anim, 8 as unknown as DirectionRow)).toThrow(/fora do intervalo/);
+  });
+});

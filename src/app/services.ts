@@ -17,6 +17,8 @@ import { RecognitionPipeline } from '../recognition/pipeline';
 import { TcgdexClient } from '../recognition/tcgdex';
 import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from '../recognition/types';
 import { loadChunk } from './stale-build';
+import { loadLocalVillageSprite } from '../village/local-sprite-loader';
+import type { DecodedGif } from '../core/gif';
 
 /**
  * Serviços do app, criados sob demanda e uma vez só (nada pesado é carregado antes de o usuário
@@ -88,6 +90,17 @@ export function getTcgdex(): TcgdexClient {
 export function getCatalog(): Promise<CatalogLookup | null> {
   catalogPromise ??= loadCatalogIndex(assetUrl('data/catalog-index.json'));
   return catalogPromise;
+}
+
+/**
+ * Pose "Idle" de um Pokémon a partir do pacote de sprites locais da Vila (`public/sprites/pokemon/`), null se a
+ * espécie não estiver no pacote ou algo falhar — a Vila cai para o GIF já baixado pela Caixa nesse caso.
+ */
+export function getLocalVillageSprite(dexId: number, shiny: boolean): Promise<DecodedGif | null> {
+  return loadLocalVillageSprite(dexId, shiny, {
+    metaUrl: assetUrl('data/village-sprite-meta.json'),
+    spriteUrl: (id, anim, wantShiny) => assetUrl(`sprites/pokemon/${id}/${wantShiny ? 's/' : ''}${anim}.png`),
+  });
 }
 
 export function getOcr(): Promise<OcrEngine> {
