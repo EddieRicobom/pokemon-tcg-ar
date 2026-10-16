@@ -12,6 +12,10 @@ import { buildingAt, findFree, tileAt } from '../core/village/map';
 import type { Tile, VillageMap } from '../core/village/map';
 import { FX_EMOJI } from '../core/village/social-state';
 import type { Fx } from '../core/village/social-state';
+import { metallicTint, sheenAt, sheenOffset } from '../core/metallic';
+import { villageScale } from '../core/village/camera';
+import { stepOrder } from '../core/village/joystick';
+import type { StickDirs } from '../core/village/joystick';
 import { createWeather, stepWeather, WEATHER_KINDS } from '../core/weather';
 import type { WeatherKind, WeatherMode, WeatherState } from '../core/weather';
 import { EDGE } from '../box/ground-art';
@@ -47,6 +51,8 @@ export interface VillageMon {
    * dimensões e tempos de quadro que `gif` em todas as direções (a folha de origem garante isso).
    */
   dirGifs?: Partial<Record<Dir, DecodedGif>>;
+  /** Digital Pokémon (não vem de carta física): ganha o acabamento metálico leve (ver `core/metallic.ts`). */
+  digital?: boolean;
 }
 
 export type Target =
@@ -77,11 +83,30 @@ function toCanvas(buf: PixelBuf): HTMLCanvasElement {
   return c;
 }
 
+/** Quadros do GIF como canvases; `tint` (opcional) transforma os pixels antes, ex.: a tinta metálica. */
+function framesOf(gif: DecodedGif, tint?: (rgba: Uint8ClampedArray) => ArrayLike<number>): HTMLCanvasElement[] {
+  return gif.frames.map((f) => {
+    const data = tint ? Uint8Array.from(tint(f.rgba)) : new Uint8Array(f.rgba.buffer, f.rgba.byteOffset, f.rgba.byteLength);
+    return toCanvas({ w: gif.width, h: gif.height, data });
+  });
+}
+
+function dirFramesOf(dirGifs: Partial<Record<Dir, DecodedGif>> | undefined, tint?: (rgba: Uint8ClampedArray) => ArrayLike<number>): Partial<Record<Dir, HTMLCanvasElement[]>> | undefined {
+  if (!dirGifs) return undefined;
+  const out: Partial<Record<Dir, HTMLCanvasElement[]>> = {};
+  for (const dir of ['up', 'down', 'left', 'right'] as const) {
+    const g = dirGifs[dir];
+    if (g) out[dir] = framesOf(g, tint);
+  }
+  return out;
+}
+
 interface MonSprite {
   frames: HTMLCanvasElement[];
   gif: DecodedGif;
   /** Quadros por direção (pacote de sprites locais); mesmos índices/tempos de `gif`, só troca a imagem. */
   dirFrames?: Partial<Record<Dir, HTMLCanvasElement[]>>;
+  dirGifs?: Partial<Record<Dir, DecodedGif>>;
   /** Altura desenhada do bicho em si (sem a margem transparente da folha), em blocos. */
   heightTiles: number;
   /** Caixa dos pixels opacos do quadro (ver `contentBounds`): ancora os pés no chão e mede o tamanho real,
@@ -90,6 +115,9 @@ interface MonSprite {
   bounds: ContentBounds;
   /** Topo da cabeça no 1º quadro (0 a 1 da altura) e o centro dela (0 a 1 da largura): onde vai o acessório. */
   headTop: number;
+  /** Digital Pokémon: desenhado com a tinta metálica (quadros feitos só na 1ª vez que aparecem com a opção ligada). */
+  digital: boolean;
+  metal?: { frames: HTMLCanvasElement[]; dirFrames?: Partial<Record<Dir, HTMLCanvasElement[]>> };
   headX: number;
 }
 
@@ -169,6 +197,8 @@ export class VillageGame {
   private handle = 0;
   private last = 0;
   private held: Dir | null = null;
+  private stick: Pick<StickDirs, 'primary' | 'secondary'> | null = null;
+  private stepParity = 0;
   private scale = 3;
   private bubbles = new Map<string, { emoji: string; until: number }>();
   private speech = new Map<string, { text: string; name: string; start: number; until: number; tint: string }>();
@@ -204,6 +234,10 @@ export class VillageGame {
   onStep: (() => void) | null = null;
   /** Modo do clima (vem das opções visuais): 'off' desliga, 'ciclo' alterna, ou um clima fixo. */
   weatherMode: () => WeatherMode = () => 'ciclo';
+  /** Acabamento metálico dos Digital Pokémon (vem das opções visuais; desligado = sprite normal). */
+  metallic: () => boolean = () => true;
+  /** Canvas de trabalho do brilho (um só, reaproveitado: o brilho é desenhado na hora, quadro a quadro). */
+  private sheenCanvas: HTMLCanvasElement | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -234,31 +268,53 @@ export class VillageGame {
     this.names.clear();
     for (const mon of mons) {
       const spot = findFree(this.map, this.map.spawn.x + Math.floor(this.rng() * 9) - 4, this.map.spawn.y - 2 - Math.floor(this.rng() * 5), (x, y) => this.occupied(x, y), this.rng);
-      const w = makeWalker(mon.id, spot.x, spot.y, 2.6);
-      w.idle = this.rng() * 2;
-      this.villagers.set(mon.id, w);
-      this.names.set(mon.id, mon.name);
-      const toFrames = (gif: DecodedGif) => gif.frames.map((f) => toCanvas({ w: gif.width, h: gif.height, data: new Uint8Array(f.rgba.buffer, f.rgba.byteOffset, f.rgba.byteLength) }));
-      const frames = toFrames(mon.gif);
-      let dirFrames: Partial<Record<Dir, HTMLCanvasElement[]>> | undefined;
-      if (mon.dirGifs) {
-        dirFrames = {};
-        for (const dir of ['up', 'down', 'left', 'right'] as const) {
-          const g = mon.dirGifs[dir];
-          if (g) dirFrames[dir] = toFrames(g);
-        }
-      }
-      const head = headOf(mon.gif);
-      // Mede a caixa real do bicho (sem a margem transparente da folha) em todos os quadros, pra achar o tamanho
-      // e o ponto de chão de verdade — tanto pro pacote de sprites locais (PMD SpriteCollab, que guarda folga
-      // em cima pro balanço da pose "parado") quanto pro GIF baixado do Showdown. Mesma fórmula pros dois, sem
-      // fator de ajuste por olho: a diferença de tamanho que sobrar vem da arte em si, não de margem.
-      const bounds = contentBounds(mon.gif);
-      const contentHeightFrac = Math.max(0.05, bounds.bottom - bounds.top);
-      const rawScale = (contentHeightFrac * mon.gif.height) / 40;
-      const heightTiles = Math.min(2.4, Math.max(1.1, rawScale));
-      this.monSprites.set(mon.id, { frames, gif: mon.gif, dirFrames, heightTiles, bounds, headTop: head.top, headX: head.x });
+      this.placeMon(mon, spot.x, spot.y);
     }
+  }
+
+  /**
+   * Põe um morador novo na cena agora, num bloco livre ao lado do jogador (ex.: o presente inicial, que precisa
+   * aparecer na hora), sem sortear de novo a posição dos que já estão lá como `setMons` faz. Se já existir, troca.
+   */
+  addMon(mon: VillageMon): void {
+    this.villagers.delete(mon.id);
+    const p = this.player;
+    const spot = findFree(this.map, p.x + 1, p.y, (x, y) => this.occupied(x, y), this.rng);
+    this.placeMon(mon, spot.x, spot.y);
+    const w = this.villagers.get(mon.id);
+    if (w) {
+      // Vira pro jogador e dá um pulinho de chegada.
+      w.dir = spot.x < p.x ? 'right' : spot.x > p.x ? 'left' : spot.y < p.y ? 'down' : 'up';
+      w.idle = 2.5;
+    }
+    this.bounce.set(mon.id, performance.now());
+  }
+
+  private placeMon(mon: VillageMon, x: number, y: number): void {
+    const w = makeWalker(mon.id, x, y, 2.6);
+    w.idle = this.rng() * 2;
+    this.villagers.set(mon.id, w);
+    this.names.set(mon.id, mon.name);
+    const frames = framesOf(mon.gif);
+    const dirFrames = dirFramesOf(mon.dirGifs);
+    const head = headOf(mon.gif);
+    // Mede a caixa real do bicho (sem a margem transparente da folha) em todos os quadros, pra achar o tamanho
+    // e o ponto de chão de verdade — tanto pro pacote de sprites locais (PMD SpriteCollab, que guarda folga
+    // em cima pro balanço da pose "parado") quanto pro GIF baixado do Showdown. Mesma fórmula pros dois, sem
+    // fator de ajuste por olho: a diferença de tamanho que sobrar vem da arte em si, não de margem.
+    const bounds = contentBounds(mon.gif);
+    const contentHeightFrac = Math.max(0.05, bounds.bottom - bounds.top);
+    const rawScale = (contentHeightFrac * mon.gif.height) / 40;
+    const heightTiles = Math.min(2.4, Math.max(1.1, rawScale));
+    this.monSprites.set(mon.id, {
+      frames, gif: mon.gif, dirGifs: mon.dirGifs, dirFrames, heightTiles, bounds, headTop: head.top, headX: head.x, digital: mon.digital === true,
+    });
+  }
+
+  /** Quadros com a tinta metálica (feitos uma vez, na 1ª vez que o Digital Pokémon aparece com a opção ligada). */
+  private metalOf(sprite: MonSprite): NonNullable<MonSprite['metal']> {
+    sprite.metal ??= { frames: framesOf(sprite.gif, metallicTint), dirFrames: dirFramesOf(sprite.dirGifs, metallicTint) };
+    return sprite.metal;
   }
 
   // ----------------------------------------------------------------------------- cidade
@@ -425,6 +481,11 @@ export class VillageGame {
 
   hold(dir: Dir | null): void {
     this.held = dir;
+  }
+
+  /** Joystick virtual: direção principal e, na diagonal, a secundária (ver `core/village/joystick.ts`). null solta. */
+  holdStick(dirs: Pick<StickDirs, 'primary' | 'secondary'> | null): void {
+    this.stick = dirs?.primary ? dirs : null;
   }
 
   /** O que está à sua frente. */
@@ -656,14 +717,21 @@ export class VillageGame {
       this.onStep?.();
       for (let k = 0; k < 2; k++) this.particles.push({ kind: 'dust', x: p.x + 0.5 + (this.rng() - 0.5) * 0.4, y: p.y + 0.95, vx: (this.rng() - 0.5) * 0.8, vy: -0.25 - this.rng() * 0.3, born: now, life: 420 });
     }
-    if (!moving(p) && this.held) {
-      if (tryStep(p, this.held, this.map, (x, y) => this.occupied(x, y, 'eu'))) this.pushMs = 0;
-      else {
+    // Teclado (uma direção) ou joystick (na diagonal alterna os eixos; bloqueado num, tenta o outro e desliza).
+    const order = this.stick ? stepOrder(this.stick, this.stepParity) : this.held ? [this.held] : [];
+    if (!moving(p) && order.length > 0) {
+      const blocked = (x: number, y: number) => this.occupied(x, y, 'eu');
+      if (order.some((dir) => tryStep(p, dir, this.map, blocked))) {
+        this.pushMs = 0;
+        this.stepParity++;
+      } else {
+        // Ninguém andou: fica virado pra direção principal (é pra ela que se conversa e se empurra).
+        p.dir = order[0]!;
         // Só virar para o Pokémon (para conversar) é um toque; segurar contra ele troca de lugar, para ninguém trancar a rua.
         this.pushMs += dt * 1000;
         if (this.pushMs >= SWAP_AFTER_MS && this.swapWithFront()) this.pushMs = 0;
       }
-    } else if (!this.held) this.pushMs = 0;
+    } else if (order.length === 0) this.pushMs = 0;
     const behind = { x: p.x, y: p.y };
     this.updateSleep(now);
     for (const [id, w] of this.villagers) {
@@ -759,8 +827,7 @@ export class VillageGame {
     const dpr = Math.min(3, window.devicePixelRatio || 1);
     this.canvas.width = Math.round(width * dpr);
     this.canvas.height = Math.round(height * dpr);
-    // Escala inteira: uns 11 blocos na largura do celular.
-    this.scale = Math.max(2, Math.round((width * dpr) / (TILE * 11)));
+    this.scale = villageScale(width, height, dpr);
   }
 
   private draw(now: number): void {
@@ -1007,8 +1074,9 @@ export class VillageGame {
         draw: () => {
           // Quem tem sprite local usa a pose de verdade da direção (vira pra frente de quem andou de verdade);
           // sem ela, cai no espelhamento de sempre (o GIF do Showdown só olha pra um lado).
-          const dirSet = sprite.dirFrames?.[w.dir];
-          const activeFrames = dirSet ?? sprite.frames;
+          const metal = sprite.digital && this.metallic() ? this.metalOf(sprite) : null;
+          const dirSet = (metal ? metal.dirFrames : sprite.dirFrames)?.[w.dir];
+          const activeFrames = dirSet ?? (metal ? metal.frames : sprite.frames);
           const frame = activeFrames[frameIndexAt(sprite.gif, now)] ?? activeFrames[0]!;
           // `h`/`wpx` são o tamanho do BICHO (sem a margem transparente); o quadro inteiro (`fullH`/`fullW`) é
           // desenhado maior na mesma proporção, pra caber a margem — e posicionado (`frameLeft`/`frameTop`) de
@@ -1044,6 +1112,7 @@ export class VillageGame {
             ctx.drawImage(this.sprite(`acc:${acc}`, () => paintAccessory(acc)), Math.round(cx - size / 2), Math.round(base - h * 0.62), Math.round(size), Math.round(size));
           }
           ctx.drawImage(frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH));
+          if (metal) this.drawSheen(id, frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH), now);
           if (acc && def && def.pos !== 'back') {
             const size = Math.max(8 * scale, Math.min(14 * scale, wpx * 0.45));
             const img = this.sprite(`acc:${acc}`, () => paintAccessory(acc));
@@ -1267,6 +1336,33 @@ export class VillageGame {
     ctx.fillRect(0, 0, W, H);
 
     for (const o of overlays) o();
+  }
+
+  /**
+   * Brilho metálico que atravessa o Digital Pokémon de tempos em tempos: uma faixa clara na diagonal, recortada
+   * pelos pixels opacos do próprio quadro (fora deles não aparece nada). Só desenha durante a passada.
+   */
+  private drawSheen(id: string, frame: HTMLCanvasElement, x: number, y: number, w: number, h: number, now: number): void {
+    const t = sheenAt(now, sheenOffset(id));
+    if (t === null || w <= 0 || h <= 0) return;
+    const c = (this.sheenCanvas ??= document.createElement('canvas'));
+    if (c.width !== frame.width) c.width = frame.width;
+    if (c.height !== frame.height) c.height = frame.height;
+    const g = c.getContext('2d');
+    if (!g) return;
+    g.globalCompositeOperation = 'source-over';
+    g.clearRect(0, 0, c.width, c.height);
+    g.drawImage(frame, 0, 0);
+    g.globalCompositeOperation = 'source-atop';
+    const span = c.width + c.height;
+    const center = -c.height + t * (span + c.height);
+    const band = g.createLinearGradient(center - c.height * 0.35, 0, center + c.height * 0.35, c.height * 0.5);
+    band.addColorStop(0, 'rgba(255,255,255,0)');
+    band.addColorStop(0.5, 'rgba(235,245,255,0.55)');
+    band.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = band;
+    g.fillRect(0, 0, c.width, c.height);
+    this.ctx.drawImage(c, x, y, w, h);
   }
 
   private drawAcc(id: string, x: number, y: number, size: number): void {

@@ -4074,13 +4074,37 @@ body.no-scroll .reward-toasts {
   background: linear-gradient(180deg, #1b2036, #12162a);
 }
 
-.dpad {
-  display: grid;
-  grid-template-columns: repeat(3, 52px);
-  grid-template-rows: repeat(3, 52px);
+/* Joystick da Vila (substitui o direcional): arrastar a partir do centro; na diagonal anda nos dois eixos. */
+.village-joy {
+  position: relative;
+  width: 124px;
+  height: 124px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #2c3354 0 58%, #232a47 59%);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
+  touch-action: none;
+  cursor: grab;
+  transition: border-color 120ms ease-out;
 }
 
-.dpad button,
+.village-joy.active {
+  border-color: rgba(255, 255, 255, 0.5);
+  cursor: grabbing;
+}
+
+.village-joy-stick {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #e8ecf8, #9aa3c4);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
 .ab button {
   border: 0;
   font: inherit;
@@ -4088,20 +4112,10 @@ body.no-scroll .reward-toasts {
   touch-action: none;
 }
 
-.dpad button {
-  background: #2c3354;
-  font-size: 1.1rem;
-}
-
-.dpad button:active,
 .ab button:active {
   filter: brightness(1.4);
 }
 
-.dpad .d-up { grid-column: 2; grid-row: 1; border-radius: 10px 10px 0 0; }
-.dpad .d-left { grid-column: 1; grid-row: 2; border-radius: 10px 0 0 10px; }
-.dpad .d-right { grid-column: 3; grid-row: 2; border-radius: 0 10px 10px 0; }
-.dpad .d-down { grid-column: 2; grid-row: 3; border-radius: 0 0 10px 10px; }
 
 .ab {
   display: flex;

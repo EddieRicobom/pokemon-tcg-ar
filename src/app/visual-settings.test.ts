@@ -3,9 +3,9 @@ import { normalizeVisual } from './visual-settings';
 
 describe('configurações visuais', () => {
   it('aceita só modos de suavização conhecidos', () => {
-    expect(normalizeVisual({ smoothing: 'macio' })).toEqual({ smoothing: 'macio', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true });
-    expect(normalizeVisual({ smoothing: 'xyz' as never })).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true });
-    expect(normalizeVisual(null)).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true });
+    expect(normalizeVisual({ smoothing: 'macio' })).toEqual({ smoothing: 'macio', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true });
+    expect(normalizeVisual({ smoothing: 'xyz' as never })).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true });
+    expect(normalizeVisual(null)).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true });
   });
 
   it('os encontros e emoções vêm ligados e só desligam com false explícito', () => {
@@ -38,5 +38,13 @@ describe('opção de clima', () => {
     expect(normalizeVisual({ weather: 'neve' }).weather).toBe('neve');
     expect(normalizeVisual({ weather: 'off' }).weather).toBe('off');
     expect(normalizeVisual({ weather: 'granizo' as never }).weather).toBe('ciclo');
+  });
+});
+
+describe('acabamento metálico dos Digital Pokémon', () => {
+  it('vem ligado e só desliga com false explícito', () => {
+    expect(normalizeVisual({ metallic: false }).metallic).toBe(false);
+    expect(normalizeVisual({ metallic: undefined }).metallic).toBe(true);
+    expect(normalizeVisual({ metallic: 'x' as never }).metallic).toBe(true);
   });
 });
