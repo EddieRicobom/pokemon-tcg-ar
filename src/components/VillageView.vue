@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { getCache, getLocalVillageSprite, loadPinData } from '../app/services';
+import { getCache, getLocalVillageSpriteDirs, loadPinData } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
@@ -951,8 +951,8 @@ onMounted(async () => {
         const fallback = e.source.kind === 'gif'
           ? e.source.gif
           : { width: e.source.image.width, height: e.source.image.height, frames: [{ rgba: e.source.image.data, delayMs: 1000 }], durationMs: 1000 };
-        const local = e.info.dexId !== undefined ? await getLocalVillageSprite(e.info.dexId, e.info.shiny === true).catch(() => null) : null;
-        return { id: e.info.id, name: displayName(state, e.info.id, e.info.name), shiny: e.info.shiny === true, gif: local ?? fallback };
+        const localDirs = e.info.dexId !== undefined ? await getLocalVillageSpriteDirs(e.info.dexId, e.info.shiny === true).catch(() => null) : null;
+        return { id: e.info.id, name: displayName(state, e.info.id, e.info.name), shiny: e.info.shiny === true, gif: localDirs?.down ?? fallback, dirGifs: localDirs ?? undefined };
       }),
     );
     mons.value = loaded.entries.map((e, i) => ({ id: e.info.id, name: displayName(state, e.info.id, e.info.name), real: e.info.name, shiny: e.info.shiny === true, dexId: e.info.dexId, thumb: thumbOf(villagers[i]!.gif) }));
