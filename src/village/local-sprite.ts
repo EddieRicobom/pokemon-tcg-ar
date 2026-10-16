@@ -35,3 +35,39 @@ export function sliceDirectionFrames(sheet: RgbaImage, anim: LocalSpriteAnim, di
   const durationMs = durations.reduce((sum, ms) => sum + ms, 0);
   return { width: w, height: h, frames, durationMs: Math.max(1, durationMs) };
 }
+
+/** Caixa (0 a 1 da largura/altura) dos pixels não transparentes de um GIF. */
+export interface ContentBounds {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+/**
+ * Onde está o bicho de verdade dentro do quadro, ignorando a margem transparente da folha (comum nos pacotes
+ * de sprite: o quadro tem espaço de sobra em cima para o salto da animação de "parado", por exemplo). Varre
+ * todos os quadros (não só o primeiro) para a caixa não mudar enquanto a animação toca — sem isso, os pés
+ * "flutuariam" sobre o chão (margem embaixo não contada) e o tamanho pareceria inconsistente entre espécies
+ * (cada folha com uma margem diferente). Função pura: só olha o alfa dos pixels, não inventa nada.
+ */
+export function contentBounds(gif: Pick<DecodedGif, 'width' | 'height' | 'frames'>): ContentBounds {
+  let top = gif.height;
+  let bottom = -1;
+  let left = gif.width;
+  let right = -1;
+  for (const f of gif.frames) {
+    for (let y = 0; y < gif.height; y++) {
+      for (let x = 0; x < gif.width; x++) {
+        if ((f.rgba[(y * gif.width + x) * 4 + 3] ?? 0) > 0) {
+          if (y < top) top = y;
+          if (y > bottom) bottom = y;
+          if (x < left) left = x;
+          if (x > right) right = x;
+        }
+      }
+    }
+  }
+  if (bottom < 0 || gif.width === 0 || gif.height === 0) return { top: 0, bottom: 1, left: 0, right: 1 };
+  return { top: top / gif.height, bottom: (bottom + 1) / gif.height, left: left / gif.width, right: (right + 1) / gif.width };
+}

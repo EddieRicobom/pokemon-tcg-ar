@@ -16,6 +16,8 @@ import { createWeather, stepWeather, WEATHER_KINDS } from '../core/weather';
 import type { WeatherKind, WeatherMode, WeatherState } from '../core/weather';
 import { EDGE } from '../box/ground-art';
 import type { PixelBuf } from '../box/ground-art';
+import { contentBounds } from './local-sprite';
+import type { ContentBounds } from './local-sprite';
 import { outfitFor, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree, TILE } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintArcade, paintArena, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum, paintPins, paintTorre } from './town-art';
@@ -79,8 +81,12 @@ interface MonSprite {
   gif: DecodedGif;
   /** Quadros por direção (pacote de sprites locais); mesmos índices/tempos de `gif`, só troca a imagem. */
   dirFrames?: Partial<Record<Dir, HTMLCanvasElement[]>>;
-  /** Altura desenhada, em blocos. */
+  /** Altura desenhada do bicho em si (sem a margem transparente da folha), em blocos. */
   heightTiles: number;
+  /** Caixa dos pixels opacos do quadro (ver `contentBounds`): ancora os pés no chão e mede o tamanho real,
+   * ignorando a margem transparente — sem isso, espécies com folhas de margem diferente (comum entre o pacote
+   * de sprite local e o GIF do Showdown) pareciam ter tamanhos inconsistentes e os pés flutuavam sobre o chão. */
+  bounds: ContentBounds;
   /** Topo da cabeça no 1º quadro (0 a 1 da altura) e o centro dela (0 a 1 da largura): onde vai o acessório. */
   headTop: number;
   headX: number;
@@ -240,13 +246,15 @@ export class VillageGame {
         }
       }
       const head = headOf(mon.gif);
-      // O pacote de sprites locais (PMD SpriteCollab) desenha a espécie num tamanho de tela menor do que o GIF do
-      // Showdown costuma ter pro mesmo Pokémon; sem compensar, quem usa sprite local fica visivelmente menor do
-      // que quem ainda usa o GIF baixado. Ajuste por olho, sem Pokémon real pra comparar lado a lado ainda.
-      const usingLocal = dirFrames !== undefined;
-      const rawScale = (mon.gif.height / 40) * (usingLocal ? 1.4 : 1);
-      const heightTiles = Math.min(usingLocal ? 2.6 : 2.4, Math.max(usingLocal ? 1.2 : 1.1, rawScale));
-      this.monSprites.set(mon.id, { frames, gif: mon.gif, dirFrames, heightTiles, headTop: head.top, headX: head.x });
+      // Mede a caixa real do bicho (sem a margem transparente da folha) em todos os quadros, pra achar o tamanho
+      // e o ponto de chão de verdade — tanto pro pacote de sprites locais (PMD SpriteCollab, que guarda folga
+      // em cima pro balanço da pose "parado") quanto pro GIF baixado do Showdown. Mesma fórmula pros dois, sem
+      // fator de ajuste por olho: a diferença de tamanho que sobrar vem da arte em si, não de margem.
+      const bounds = contentBounds(mon.gif);
+      const contentHeightFrac = Math.max(0.05, bounds.bottom - bounds.top);
+      const rawScale = (contentHeightFrac * mon.gif.height) / 40;
+      const heightTiles = Math.min(2.4, Math.max(1.1, rawScale));
+      this.monSprites.set(mon.id, { frames, gif: mon.gif, dirFrames, heightTiles, bounds, headTop: head.top, headX: head.x });
     }
   }
 
@@ -999,13 +1007,22 @@ export class VillageGame {
           const dirSet = sprite.dirFrames?.[w.dir];
           const activeFrames = dirSet ?? sprite.frames;
           const frame = activeFrames[frameIndexAt(sprite.gif, now)] ?? activeFrames[0]!;
+          // `h`/`wpx` são o tamanho do BICHO (sem a margem transparente); o quadro inteiro (`fullH`/`fullW`) é
+          // desenhado maior na mesma proporção, pra caber a margem — e posicionado (`frameLeft`/`frameTop`) de
+          // forma que os pixels opacos (não o quadro inteiro) fiquem centrados no bloco e com o pé no chão.
           const h = sprite.heightTiles * TILE * scale;
           const wpx = h * (sprite.gif.width / sprite.gif.height);
+          const contentHeightFrac = Math.max(0.001, sprite.bounds.bottom - sprite.bounds.top);
+          const fullH = h / contentHeightFrac;
+          const fullW = fullH * (sprite.gif.width / sprite.gif.height);
           const born = this.bounce.get(id);
           const bounceAge = born ? now - born : 9999;
           const hop = (moving(w) ? Math.abs(Math.sin(w.t * Math.PI)) * 2 * scale : 0) + (bounceAge < 500 ? Math.abs(Math.sin(bounceAge * 0.012)) * 4 * scale : 0);
           const cx = sx(pos.x + 0.5);
           const base = sy(pos.y + 1) - 2 * scale - hop;
+          const contentCx = (sprite.bounds.left + sprite.bounds.right) / 2;
+          const frameLeft = cx - contentCx * fullW;
+          const frameTop = base - sprite.bounds.bottom * fullH;
           shadow(cx, sy(pos.y + 1) - 2 * scale, (5 - hop / (2 * scale) * 0.3) * scale, 2 * scale, 0.22);
           ctx.save();
           // Os sprites do Showdown olham para a esquerda: andando para a direita, espelha. Quem já tem a pose
@@ -1017,13 +1034,13 @@ export class VillageGame {
           }
           const acc = this.state.wear.mons[id];
           const def = acc ? itemDef(acc) : undefined;
-          const hx = cx - wpx / 2 + sprite.headX * wpx;
-          const hy = base - h + sprite.headTop * h;
+          const hx = frameLeft + sprite.headX * fullW;
+          const hy = frameTop + sprite.headTop * fullH;
           if (acc && def?.pos === 'back') {
             const size = Math.max(9 * scale, Math.min(16 * scale, wpx * 0.6));
             ctx.drawImage(this.sprite(`acc:${acc}`, () => paintAccessory(acc)), Math.round(cx - size / 2), Math.round(base - h * 0.62), Math.round(size), Math.round(size));
           }
-          ctx.drawImage(frame, Math.round(cx - wpx / 2), Math.round(base - h), Math.round(wpx), Math.round(h));
+          ctx.drawImage(frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH));
           if (acc && def && def.pos !== 'back') {
             const size = Math.max(8 * scale, Math.min(14 * scale, wpx * 0.45));
             const img = this.sprite(`acc:${acc}`, () => paintAccessory(acc));
