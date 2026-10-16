@@ -41,6 +41,7 @@ import type { Building } from '../core/village/town';
 import type { Moment, MomentKind } from '../core/village/social-state';
 import type { ItemId } from '../core/village/life';
 import type { Dir } from '../core/village/actors';
+import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
 import { paintItemIcon } from '../village/item-art';
 import { VillageGame } from '../village/village-game';
@@ -161,15 +162,27 @@ function onEnergyEarned(amount: number): void {
 }
 
 /** Injeta (ou substitui, numa evolução) um Digital Pokémon na cena, sem reler a Caixa inteira. */
-async function syncDigitalVillager(inst: DigitalPokemonInstance): Promise<void> {
+/**
+ * Põe (ou atualiza) um Digital Pokémon na cena na hora — ao lado do jogador, sem reembaralhar os outros moradores.
+ * Devolve false se o sprite não carregou (sem rede e fora do pacote local): aí ele não aparece nesta sessão, sem
+ * nenhum sprite inventado no lugar. Se a cena ainda não existe (a Vila ainda está abrindo), entra quando ela subir.
+ */
+async function syncDigitalVillager(inst: DigitalPokemonInstance): Promise<boolean> {
   const sprite = await getDigitalSprite(inst.dexId, false).catch(() => null);
-  if (!sprite || !game) return;
-  const entry: VillageMon = { id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs };
+  if (!sprite) return false;
+  const entry: VillageMon = { id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs, digital: true };
   villagerList = [...villagerList.filter((v) => v.id !== inst.instanceId), entry];
-  game.setMons(villagerList);
   mons.value = [...mons.value.filter((m) => m.id !== inst.instanceId), { id: inst.instanceId, name: entry.name, real: inst.name, shiny: false, dexId: inst.dexId, thumb: thumbOf(entry.gif) }];
+  if (!game) {
+    pendingDigital.set(inst.instanceId, entry);
+    return true;
+  }
+  game.addMon(entry);
   refreshTown();
+  return true;
 }
+/** Digital Pokémon recebidos antes da cena terminar de abrir: entram assim que ela existir. */
+const pendingDigital = new Map<string, VillageMon>();
 
 function advanceCutscene(): void {
   if (cutsceneLine.value + 1 < INTRO_LINES.length) {
@@ -241,8 +254,16 @@ async function pickQuizOption(optionId: string): Promise<void> {
   state.digital = next;
   changed();
   const given = next.instances[next.instances.length - 1]!;
-  say(`🎁 ${species.name} chegou como o seu Digital Pokémon! Ele mora na Vila com você.`, 5200);
-  await syncDigitalVillager(given);
+  // Entra na cena antes do aviso: quando a mensagem diz que ele mora na Vila, ele já está do seu lado.
+  loading.value = `${species.name} está chegando…`;
+  const placed = await syncDigitalVillager(given);
+  loading.value = '';
+  say(
+    placed
+      ? `🎁 ${species.name} chegou como o seu Digital Pokémon e já está aqui do seu lado, na Vila!`
+      : `🎁 ${species.name} é o seu Digital Pokémon! Não consegui baixar a imagem dele agora (sem conexão?); ele aparece na Vila quando você voltar com internet.`,
+    5200,
+  );
   showDigitalTutorial();
 }
 
@@ -380,32 +401,64 @@ const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name,
 const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state, id) > 0));
 
 // ---- controle
-function hold(dir: Dir | null): void {
-  game?.hold(dir);
+// ---- Movimento: joystick na tela (toque/mouse) e teclado (setas/WASD, com diagonais segurando duas teclas).
+// Os dois viram o mesmo vetor e as mesmas direções (`core/village/joystick.ts`); a Vila anda em blocos.
+const JOY_MAX = 44;
+const joy = reactive({ active: false, pointerId: -1, cx: 0, cy: 0, x: 0, y: 0 });
+function applyStick(x: number, y: number): void {
+  const dirs = stickDirs(x, y);
+  game?.holdStick(dirs.primary ? dirs : null);
+}
+function joyDown(e: PointerEvent): void {
+  const el = e.currentTarget as HTMLElement;
+  const rect = el.getBoundingClientRect();
+  Object.assign(joy, { active: true, pointerId: e.pointerId, cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 });
+  el.setPointerCapture?.(e.pointerId);
+  joyMove(e);
+}
+function joyMove(e: PointerEvent): void {
+  if (!joy.active || e.pointerId !== joy.pointerId) return;
+  const v = stickVector(e.clientX - joy.cx, e.clientY - joy.cy, JOY_MAX);
+  joy.x = v.x;
+  joy.y = v.y;
+  applyStick(v.x, v.y);
+}
+function joyUp(e: PointerEvent): void {
+  if (e.pointerId !== joy.pointerId) return;
+  Object.assign(joy, { active: false, pointerId: -1, x: 0, y: 0 });
+  applyKeys();
 }
 
-const KEYS: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' };
-let keyDir: Dir | null = null;
+const KEYS: Record<string, Dir> = {
+  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
+};
+const heldKeys = new Set<Dir>();
+/** Teclas seguradas viram um vetor (duas teclas = diagonal), igual ao joystick. */
+function applyKeys(): void {
+  if (joy.active) return;
+  const x = (heldKeys.has('right') ? 1 : 0) - (heldKeys.has('left') ? 1 : 0);
+  const y = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
+  applyStick(x, y);
+}
 function onKey(e: KeyboardEvent): void {
   if ((e.target as HTMLElement | null)?.tagName === 'INPUT') return;
   // Dentro de uma folha (jogos do Fliperama, Arena…) Enter, espaço e setas são da folha, não do personagem.
   if (sheet.value && (e.target as HTMLElement | null)?.closest?.('.village-sheet') && (KEYS[e.key] || e.key === ' ' || e.key === 'Enter')) return;
+  const dir = KEYS[e.key];
   if (e.type === 'keydown') {
-    const dir = KEYS[e.key];
     if (dir) {
-      keyDir = dir;
-      hold(dir);
+      heldKeys.add(dir);
+      applyKeys();
       e.preventDefault();
     } else if (e.key === ' ' || e.key === 'Enter' || e.key === 'z') {
       pressA();
       e.preventDefault();
     } else if (e.key === 'x' || e.key === 'Escape') pressB();
-  } else if (KEYS[e.key] && KEYS[e.key] === keyDir) {
-    keyDir = null;
-    hold(null);
+  } else if (dir) {
+    heldKeys.delete(dir);
+    applyKeys();
   }
 }
-
 
 // ---- perguntas dos Pokémon (você responde digitando; eles lembram e repetem)
 type QuizStage = 'ask' | 'follow' | 'reply';
@@ -933,7 +986,13 @@ function onLeave(): void {
 }
 
 function onVisibility(): void {
-  if (document.hidden) onLeave();
+  if (document.hidden) {
+    // Saiu do app com uma tecla ou o dedo no joystick: ninguém fica andando sozinho ao voltar.
+    heldKeys.clear();
+    Object.assign(joy, { active: false, pointerId: -1, x: 0, y: 0 });
+    game?.holdStick(null);
+    onLeave();
+  }
   else awayCatchUp();
 }
 
@@ -1189,7 +1248,7 @@ onMounted(async () => {
   for (const inst of state.digital.instances) {
     const sprite = await getDigitalSprite(inst.dexId, false).catch(() => null);
     if (!sprite) continue;
-    villagers.push({ id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs });
+    villagers.push({ id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs, digital: true });
     mons.value = [...mons.value, { id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), real: inst.name, shiny: false, dexId: inst.dexId, thumb: thumbOf(sprite.gif) }];
   }
   villagerList = villagers;
@@ -1201,6 +1260,14 @@ onMounted(async () => {
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = changed;
   game.weatherMode = () => visual.weather;
+  game.metallic = () => visual.metallic;
+  // Presente recebido enquanto a cena abria: entra agora, ao lado do jogador.
+  for (const entry of pendingDigital.values()) {
+    if (villagers.some((v) => v.id === entry.id)) continue;
+    game.addMon(entry);
+    villagerList = [...villagerList, entry];
+  }
+  pendingDigital.clear();
   refreshTown();
   const resize = () => game?.resize(wrapEl.value!.clientWidth, wrapEl.value!.clientHeight);
   observer = new ResizeObserver(resize);
@@ -1275,7 +1342,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-else-if="welcome" class="village-welcome" @click="welcome = false">
         <strong>Bem-vindo à Vila, {{ profile.name }}!</strong>
-        <span>Ande com as setas. <b>A</b> conversa, coleta, rega, colhe e abre a loja e a casa. <b>B</b> abre a mochila, o Livro dos Pokémon e mais.</span>
+        <span>Ande com o joystick (no teclado: setas ou WASD; duas juntas andam na diagonal). <b>A</b> conversa, coleta, rega, colhe e abre a loja e a casa. <b>B</b> abre a mochila, o Livro dos Pokémon e mais.</span>
       </div>
       <p v-if="toast" class="village-toast" role="status">{{ toast }}</p>
 
@@ -1470,6 +1537,10 @@ onBeforeUnmount(() => {
 
         <div v-else>
           <p>Seu acessório: <strong>{{ state.wear.player ? itemName(state.wear.player) : 'nenhum' }}</strong></p>
+          <label class="art-option">
+            <input v-model="visual.metallic" type="checkbox" />
+            <span>Brilho metálico nos Digital Pokémon (desligue em celular fraco)</span>
+          </label>
           <button type="button" @click="openDress('player')">Escolher acessório</button>
           <h4>Amigos e pedidos de hoje</h4>
           <ul class="village-list">
@@ -1483,18 +1554,17 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="village-pad" @contextmenu.prevent>
-      <div class="dpad" aria-label="Direcional">
-        <button
-          v-for="d in (['up', 'left', 'right', 'down'] as const)"
-          :key="d"
-          type="button"
-          :class="'d-' + d"
-          :aria-label="{ up: 'Cima', down: 'Baixo', left: 'Esquerda', right: 'Direita' }[d]"
-          @pointerdown.prevent="hold(d)"
-          @pointerup="hold(null)"
-          @pointerleave="hold(null)"
-          @pointercancel="hold(null)"
-        >{{ { up: '▲', down: '▼', left: '◀', right: '▶' }[d] }}</button>
+      <div
+        class="village-joy"
+        :class="{ active: joy.active }"
+        role="application"
+        aria-label="Joystick: arraste para andar (setas ou WASD no teclado)"
+        @pointerdown.prevent="joyDown"
+        @pointermove.prevent="joyMove"
+        @pointerup.prevent="joyUp"
+        @pointercancel.prevent="joyUp"
+      >
+        <div class="village-joy-stick" :style="{ transform: `translate(${joy.x * JOY_MAX}px, ${joy.y * JOY_MAX}px)` }"></div>
       </div>
       <div class="ab">
         <button type="button" class="b-btn" aria-label="B: menu e voltar" @click="pressB">B</button>
