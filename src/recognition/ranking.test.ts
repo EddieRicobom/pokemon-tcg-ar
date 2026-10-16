@@ -95,3 +95,11 @@ describe('características visuais', () => {
     expect(result.best?.visual).toBeGreaterThan(0.9);
   });
 });
+
+describe('ranking sem corte', () => {
+  it('devolve TODAS as candidatas (antes cortava em 5 e a última sumia)', () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({ id: `s-${i + 1}`, setId: 's', localId: String(i + 1), name: 'X', setOfficial: 100, setTotal: 100 }));
+    const r = rankCandidates(many, { bottom: { number: { value: 9, prefix: '', raw: '9', total: { value: 100, prefix: '' } } }, nameGuesses: [] });
+    expect(r.ranked).toHaveLength(9);
+  });
+});

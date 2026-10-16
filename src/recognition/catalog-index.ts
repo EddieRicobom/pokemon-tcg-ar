@@ -85,6 +85,15 @@ export class CatalogLookup {
    * Sem número: só por nome (candidatos fracos, limitados).
    */
   candidates(bottom: ParsedBottom, nameGuesses: string[], limit = 8): IndexCandidate[] {
+    return this.candidatesWithTotal(bottom, nameGuesses, limit).list;
+  }
+
+  /**
+   * Como `candidates`, mas também diz quantas cartas do índice combinaram ANTES do corte em `limit` — para a
+   * interface avisar que há mais (ex.: número sem total bate em dezenas de coleções) e oferecer a busca manual,
+   * em vez de esconder em silêncio as que não foram baixadas.
+   */
+  candidatesWithTotal(bottom: ParsedBottom, nameGuesses: string[], limit = 8): { list: IndexCandidate[]; total: number } {
     const result: IndexCandidate[] = [];
     const number = bottom.number;
     const nameKeys = nameGuesses.map(normalizeName).filter(Boolean);
@@ -153,7 +162,7 @@ export class CatalogLookup {
     }
     // Mais evidência primeiro; em empate, a coleção mais recente.
     result.sort((a, b) => b.prior - a.prior || (b.release ?? '').localeCompare(a.release ?? ''));
-    return result.slice(0, limit);
+    return { list: result.slice(0, limit), total: result.length };
   }
 
   /**
@@ -208,8 +217,13 @@ export class CatalogLookup {
    * só lista cartas do índice para a pessoa escolher. Mais recentes primeiro, nome exato antes de parcial.
    */
   search(query: string, number?: number, limit = 30): ManualMatch[] {
+    return this.searchPage(query, number, limit).matches;
+  }
+
+  /** Busca manual com o total de resultados: a lista mostra os primeiros `limit` e diz quantos existem ("mostrar mais"). */
+  searchPage(query: string, number?: number, limit = 30): { matches: ManualMatch[]; total: number } {
     const q = normalizeName(query);
-    if (!q && number === undefined) return [];
+    if (!q && number === undefined) return { matches: [], total: 0 };
     const out: (ManualMatch & { exact: boolean })[] = [];
     for (const set of this.data.sets) {
       for (const [localId, name, ptName] of set.cards) {
@@ -224,7 +238,7 @@ export class CatalogLookup {
       }
     }
     out.sort((a, b) => Number(b.exact) - Number(a.exact) || (b.release ?? '').localeCompare(a.release ?? ''));
-    return out.slice(0, limit).map(({ exact: _exact, ...match }) => match);
+    return { matches: out.slice(0, limit).map(({ exact: _exact, ...match }) => match), total: out.length };
   }
 
   private byIdMap: Map<string, IndexCandidate> | null = null;

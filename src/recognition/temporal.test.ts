@@ -6,7 +6,7 @@ function frame(id: string | null, confidence = 0.85, margin = 0.15): Recognition
   const card = id ? ({ id } as IdentifiedCard) : undefined;
   return {
     status: id ? 'identified' : 'not-found', card, alternatives: [], confidence, margin, parsed: { bottom: {}, names: [] },
-    metrics: { detectMs: 0, ocrMs: 0, candidatesMs: 0, totalMs: 0, requests: 0, downloadedBytes: 0, candidates: 0, source: 'none', visualVerified: true, rotated180: false },
+    metrics: { detectMs: 0, ocrMs: 0, candidatesMs: 0, totalMs: 0, requests: 0, downloadedBytes: 0, candidates: 0, source: 'none', visualVerified: true, rotated180: false, stages: {}, skipped: {} },
     message: '',
   };
 }

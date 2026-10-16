@@ -4,19 +4,23 @@ import { detectCard } from './detect-card';
 import type { CardDetection } from './detect-card';
 import { computeFeatures } from './hash';
 import type { CardFeatures } from './hash';
-import { rectify, rectifyRegion } from './homography';
+import { applyHomography, homographyFromPoints, rectify, rectifyRegion } from './homography';
 import { cropFraction, resizeAverage } from './image';
 import { BOTTOM_LEFT_BOX, BOTTOM_OCR_FULL_WIDTH, BOTTOM_RIGHT_BOX, BOTTOM_STRIP_BOX, NAME_BOX, NAME_OCR_FULL_WIDTH } from './layout';
 import { prepareForOcr } from './ocr';
 import type { OcrEngine } from './ocr';
 import { parseBottomText, parseNameText } from './parse-ocr';
 import type { ParsedBottom } from './parse-ocr';
-import { rankCandidates } from './ranking';
-import type { CandidateInfo, ScoredCandidate } from './ranking';
+import { CONFIDENT_MARGIN, CONFIDENT_THRESHOLD, rankCandidates, UNCERTAIN_THRESHOLD } from './ranking';
+import type { CandidateInfo, RankingResult, ScoredCandidate } from './ranking';
+import { frameQuality } from './stability';
+import type { FrameQuality } from './stability';
+import { StageClock } from './stage-clock';
+import type { ScanStage, StageTimes } from './stage-clock';
 import { cardImageUrl } from './tcgdex';
 import type { TcgdexCard, TcgdexClient } from './tcgdex';
 import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from './types';
-import type { Quad, RgbaImage } from './types';
+import type { FractionBox, Quad, RgbaImage } from './types';
 
 export interface ReferenceLoader {
   /** `blob` (opcional) é o arquivo original baixado, para o cache guardar sem baixar de novo. */
@@ -84,6 +88,23 @@ export interface RecognitionMetrics {
   variantRound?: boolean;
   /** Quantas candidatas vieram da busca pela ilustração (opção ligada e índice disponível). */
   artCandidates?: number;
+  /** Tempo (ms) de cada etapa que de fato rodou nesta leitura (ver `stage-clock.ts`). */
+  stages: StageTimes;
+  /** Etapas puladas nesta leitura, com o motivo (nada de tempo inventado para elas). */
+  skipped: Partial<Record<ScanStage, string>>;
+  /** Cartas do índice que combinaram com o que foi lido, ANTES do corte em `maxCandidates` (as baixadas são `candidates`). */
+  catalogMatches?: number;
+  /** Imagens de referência reaproveitadas de quadros anteriores (não baixadas nem decodificadas de novo). */
+  referenceCacheHits?: number;
+}
+
+export interface RecognizeOptions {
+  /** Detecção já feita pelo controlador (etapa leve, em todo quadro): o pipeline não detecta de novo. */
+  detection?: CardDetection;
+  /** Avisado quando cada etapa começa (progresso honesto na interface). */
+  onStage?: (stage: ScanStage) => void;
+  /** false = leitura obsoleta (cancelou/recomeçou): para entre as etapas com `ScanCancelled`. */
+  isCurrent?: () => boolean;
 }
 
 export type RecognitionStatus = 'identified' | 'ambiguous' | 'not-found' | 'no-card';
@@ -114,6 +135,22 @@ export interface RecognitionResult {
   message: string;
 }
 
+/** Por que cada candidata foi aceita, deixada em dúvida ou rejeitada (diagnóstico). */
+export interface CandidateVerdict {
+  id: string;
+  name: string;
+  setName: string;
+  localId: string;
+  setOfficial: number;
+  confidence: number;
+  meta: number | null;
+  visual: number | null;
+  reasons: string[];
+  verdict: 'aceita' | 'duvida' | 'rejeitada';
+  why: string;
+  viaVariant?: boolean;
+}
+
 export interface ScanView {
   frame: { width: number; height: number };
   /** Por que nenhuma carta foi achada (ou vazio se foi). */
@@ -122,6 +159,77 @@ export interface ScanView {
   /** Carta retificada (miniatura) e a faixa inferior exatamente como o OCR a recebe (já em cinza/contraste). */
   rectified?: RgbaImage;
   strip?: RgbaImage;
+  /** Metades da faixa inferior lidas na segunda tentativa (só quando ela rodou), como o OCR as recebe. */
+  sides?: RgbaImage[];
+  /** Faixa do nome como o OCR a recebe (só quando o nome foi lido). */
+  nameCrop?: RgbaImage;
+  /** Áreas exatas lidas, em coordenadas do quadro: faixa do número (e metades, se lidas) e faixa do nome. */
+  regions?: { number: Quad[]; name?: Quad };
+  quality?: FrameQuality;
+  /** Todas as candidatas comparadas, com o veredito e o motivo de cada uma. */
+  candidates?: CandidateVerdict[];
+}
+
+/** Projeta uma caixa fracionária da carta retificada de volta no quadro da câmera (o que foi recortado de verdade). */
+export function regionInFrame(quad: Quad, box: FractionBox): Quad | null {
+  const W = CARD_WIDTH_PX - 1;
+  const H = CARD_HEIGHT_PX - 1;
+  const h = homographyFromPoints([{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }], quad);
+  if (!h) return null;
+  const [l, t, r, b] = box;
+  return [
+    applyHomography(h, { x: l * W, y: t * H }),
+    applyHomography(h, { x: r * W, y: t * H }),
+    applyHomography(h, { x: r * W, y: b * H }),
+    applyHomography(h, { x: l * W, y: b * H }),
+  ];
+}
+
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+/** Veredito de cada candidata a partir do ranking real (os mesmos limiares que decidem a identificação). */
+export function verdictsOf(
+  ranking: RankingResult, records: ReadonlyMap<string, CardRecordLike>, referenceErrors: ReadonlyMap<string, string> = new Map(),
+): CandidateVerdict[] {
+  const best = ranking.best;
+  return ranking.ranked.map((scored, index) => {
+    const record = records.get(scored.candidate.id);
+    let verdict: CandidateVerdict['verdict'];
+    let why: string;
+    if (scored.confidence < UNCERTAIN_THRESHOLD) {
+      verdict = 'rejeitada';
+      why = `confiança ${pct(scored.confidence)} abaixo de ${pct(UNCERTAIN_THRESHOLD)}`;
+    } else if (index === 0 && ranking.decision === 'confident') {
+      verdict = 'aceita';
+      why = `confiança ${pct(scored.confidence)} ≥ ${pct(CONFIDENT_THRESHOLD)} e margem ${pct(ranking.margin)} ≥ ${pct(CONFIDENT_MARGIN)}`;
+    } else if (index === 0) {
+      verdict = 'duvida';
+      why = scored.confidence < CONFIDENT_THRESHOLD
+        ? `melhor palpite, mas confiança ${pct(scored.confidence)} abaixo de ${pct(CONFIDENT_THRESHOLD)}`
+        : `empate: margem ${pct(ranking.margin)} sobre a 2ª abaixo de ${pct(CONFIDENT_MARGIN)}`;
+    } else {
+      verdict = 'duvida';
+      why = `${pct((best?.confidence ?? 0) - scored.confidence)} atrás da melhor`;
+    }
+    if (scored.visual === null) {
+      const error = referenceErrors.get(scored.candidate.id);
+      why += error ? ` · sem imagem de referência (${error}); só o texto` : ' · sem imagem de referência (só o texto)';
+    }
+    return {
+      id: scored.candidate.id,
+      name: record?.name ?? scored.candidate.name,
+      setName: record?.setName ?? scored.candidate.setId,
+      localId: scored.candidate.localId,
+      setOfficial: scored.candidate.setOfficial,
+      confidence: scored.confidence,
+      meta: scored.meta,
+      visual: scored.visual,
+      reasons: scored.reasons,
+      verdict,
+      why,
+      viaVariant: scored.candidate.viaVariant,
+    };
+  });
 }
 
 interface LoadedCandidate {
@@ -131,6 +239,8 @@ interface LoadedCandidate {
   referenceUrl?: string;
   features?: CardFeatures;
   prior: CandidateInfo & { prior: number; viaVariant?: boolean };
+  /** Por que a imagem de referência não pôde ser usada (sem imagem no TCGdex, rede, CORS, decodificação…). */
+  referenceError?: string;
 }
 
 interface ReadResult {
@@ -140,7 +250,20 @@ interface ReadResult {
   nameText?: string;
   /** Faixa inferior enviada ao OCR (diagnóstico). */
   strip?: RgbaImage;
+  /** Metades lidas na segunda tentativa (diagnóstico). */
+  sides?: RgbaImage[];
+  /** Faixa do nome enviada ao OCR (diagnóstico). */
+  nameCrop?: RgbaImage;
 }
+
+interface CachedReference {
+  image: RgbaImage;
+  blob?: Blob;
+  features: CardFeatures;
+}
+
+/** Referências guardadas na memória entre quadros (a mesma carta aparece em vários quadros seguidos). */
+const REFERENCE_MEMORY = 24;
 
 function toIdentified(card: CardRecordLike): IdentifiedCard {
   return { ...card, dexId: card.dexIds[0] };
@@ -181,17 +304,25 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 
 const ART_CANDIDATES = 5;
 
+type IndexedCandidate = CandidateInfo & { prior: number; viaVariant?: boolean };
+
 export class RecognitionPipeline {
+  /** Imagens de referência já baixadas e decodificadas (LRU por endereço). */
+  private readonly references = new Map<string, CachedReference>();
+  /** A última leitura achou a carta de cabeça para baixo: no próximo quadro tenta essa orientação primeiro. */
+  private lastRotated = false;
+
   constructor(private readonly deps: PipelineDeps) {}
 
-  async recognize(frame: RgbaImage): Promise<RecognitionResult> {
+  async recognize(frame: RgbaImage, options: RecognizeOptions = {}): Promise<RecognitionResult> {
     const now = this.deps.now ?? (() => performance.now());
     const started = now();
     const statsBefore = { ...this.deps.tcgdex.stats };
+    const clock = new StageClock({ now, onStage: options.onStage, isCurrent: options.isCurrent });
     let downloadedBytes = 0;
     const metrics: RecognitionMetrics = {
       detectMs: 0, ocrMs: 0, candidatesMs: 0, totalMs: 0, requests: 0, downloadedBytes: 0,
-      candidates: 0, source: 'none', visualVerified: false, rotated180: false,
+      candidates: 0, source: 'none', visualVerified: false, rotated180: false, stages: clock.times, skipped: clock.skipped,
     };
     let ocrTextOut: RecognitionResult['ocrText'];
     let debugOut: RecognitionResult['debug'];
@@ -206,58 +337,82 @@ export class RecognitionPipeline {
     };
     const empty = { alternatives: [], confidence: 0, margin: 0, parsed: { bottom: {}, names: [] } };
 
-    const t0 = now();
-    const detection = detectCard(frame, capture ? diag : undefined);
-    metrics.detectMs = Math.round(now() - t0);
-    if (viewOut) viewOut.detectReasons = diag.reasons;
+    let detection: CardDetection | null;
+    if (options.detection) {
+      detection = options.detection;
+    } else {
+      const t0 = now();
+      detection = clock.time('detect', () => detectCard(frame, capture ? diag : undefined));
+      metrics.detectMs = Math.round(now() - t0);
+      if (viewOut) viewOut.detectReasons = diag.reasons;
+    }
     if (!detection) {
       return finish({ ...empty, status: 'no-card', message: 'Não encontrei uma carta no quadro. Enquadre a carta inteira sobre um fundo liso.' });
     }
 
-    // Leitura: tenta a orientação normal; se o OCR não achar nada útil, a carta pode estar de cabeça para baixo.
-    let quad = detection.quad;
-    let rectified = rectify(frame, quad, CARD_WIDTH_PX, CARD_HEIGHT_PX);
+    // Leitura: tenta a orientação normal (ou a da última leitura, se ela achou a carta virada); se o OCR não achar
+    // nada útil, a carta pode estar de cabeça para baixo.
+    let rotated = this.lastRotated;
+    let quad = rotated ? rotate180(detection.quad) : detection.quad;
+    const firstQuad = quad;
+    let rectified = clock.time('perspective', () => rectify(frame, firstQuad, CARD_WIDTH_PX, CARD_HEIGHT_PX));
     if (!rectified) return finish({ ...empty, status: 'no-card', quad, message: 'A carta detectada está deformada demais para corrigir a perspectiva.' });
 
     const t1 = now();
     // Ordem pensada para o celular (cada passada do Tesseract custa segundos): primeiro só a faixa de baixo nas
     // duas orientações; as metades esquerda/direita (mais lentas) só se nenhuma das duas achou número e total.
-    let read = await this.readText(frame, quad, rectified, false, false);
+    let read = await this.readText(clock, frame, quad, rectified, false, false);
     if (!read.bottom.number?.total) {
       const flippedQuad = rotate180(quad);
-      const flipped = rectify(frame, flippedQuad, CARD_WIDTH_PX, CARD_HEIGHT_PX);
+      const flipped = clock.time('perspective', () => rectify(frame, flippedQuad, CARD_WIDTH_PX, CARD_HEIGHT_PX));
       if (flipped) {
-        const flippedRead = await this.readText(frame, flippedQuad, flipped, false, false);
+        const flippedRead = await this.readText(clock, frame, flippedQuad, flipped, false, false);
         if (flippedRead.bottom.number?.total || (!read.bottom.number && flippedRead.bottom.number)) {
           quad = flippedQuad;
           rectified = flipped;
           read = flippedRead;
-          metrics.rotated180 = true;
+          rotated = !rotated;
         }
       }
     }
     if (!read.bottom.number?.total) {
-      const withSides = await this.readText(frame, quad, rectified, false, true, read);
+      const withSides = await this.readText(clock, frame, quad, rectified, false, true, read);
       if (withSides.bottom.number) read = withSides;
     }
-    if (viewOut) {
-      viewOut = {
-        ...viewOut,
-        detect: { areaFraction: detection.areaFraction, aspect: detection.aspect, fillRatio: detection.fillRatio, score: detection.score },
-        rectified: resizeAverage(rectified, 210, 293),
-        strip: read.strip ? prepareForOcr(read.strip) : undefined,
-      };
-    }
+    metrics.rotated180 = rotated;
+    if (read.bottom.number) this.lastRotated = rotated;
     // O nome só é lido quando ajuda: sem número, ou quando o número deixa mais de um candidato.
     const t2Candidates = this.deps.catalog?.candidates(read.bottom, [], this.maxCandidates()) ?? [];
     if (!read.bottom.number || t2Candidates.length !== 1) {
-      const nameRead = await this.readText(frame, quad, rectified, true);
+      const nameRead = await this.readText(clock, frame, quad, rectified, true);
       read.names = nameRead.names;
       read.nameText = nameRead.nameText;
+      read.nameCrop = nameRead.nameCrop;
+    } else {
+      clock.skip('cropName', 'o número já aponta uma única carta no catálogo');
+      clock.skip('ocrName', 'o número já aponta uma única carta no catálogo');
     }
     metrics.ocrMs = Math.round(now() - t1);
+    const readQuad = quad;
+    const readRectified = rectified;
+    if (viewOut) {
+      const numberBoxes = read.sides ? [BOTTOM_STRIP_BOX, BOTTOM_LEFT_BOX, BOTTOM_RIGHT_BOX] : [BOTTOM_STRIP_BOX];
+      viewOut = {
+        ...viewOut,
+        detect: { areaFraction: detection.areaFraction, aspect: detection.aspect, fillRatio: detection.fillRatio, score: detection.score },
+        rectified: resizeAverage(readRectified, 210, 293),
+        strip: read.strip ? prepareForOcr(read.strip) : undefined,
+        sides: read.sides?.map((side) => prepareForOcr(side)),
+        nameCrop: read.nameCrop ? prepareForOcr(read.nameCrop) : undefined,
+        regions: {
+          number: numberBoxes.map((box) => regionInFrame(readQuad, box)).filter((q): q is Quad => q !== null),
+          name: read.nameCrop ? regionInFrame(readQuad, NAME_BOX) ?? undefined : undefined,
+        },
+        quality: frameQuality(frame, readQuad),
+      };
+    }
 
-    const features = computeFeatures(rectified);
+    const features = clock.time('visual', () => computeFeatures(readRectified));
     const parsed = { bottom: read.bottom, names: read.names };
     ocrTextOut = { bottom: read.bottomText, name: read.nameText };
 
@@ -265,13 +420,14 @@ export class RecognitionPipeline {
     const evidence = { bottom: read.bottom, nameGuesses: read.names, features };
 
     // 1) Cache local: nenhuma requisição se a carta já foi vista.
-    const local = this.deps.localReferences ? await this.deps.localReferences() : [];
+    const localReferences = this.deps.localReferences;
+    const local = localReferences ? await clock.timeAsync('catalog', () => localReferences()) : [];
     if (local.length > 0) {
       const infos: CandidateInfo[] = local.map(({ card, features: stored }) => ({
         id: card.id, setId: card.setId, localId: card.localId, name: card.name,
         setOfficial: card.setOfficial, setTotal: card.setTotal, setCode: card.setCode, features: stored,
       }));
-      const ranking = rankCandidates(infos, evidence);
+      const ranking = clock.time('ranking', () => rankCandidates(infos, evidence));
       if (ranking.decision === 'confident' && ranking.best) {
         const hit = local.find((entry) => entry.card.id === ranking.best?.candidate.id);
         if (hit) {
@@ -279,6 +435,7 @@ export class RecognitionPipeline {
           metrics.source = 'cache';
           metrics.candidates = infos.length;
           metrics.visualVerified = ranking.best.visual !== null;
+          if (viewOut) viewOut.candidates = verdictsOf(ranking, new Map(local.map((entry) => [entry.card.id, entry.card])));
           return finish({
             status: 'identified', card: toIdentified(hit.card), confidence: ranking.best.confidence, margin: ranking.margin,
             alternatives: [], parsed, quad, features,
@@ -289,30 +446,38 @@ export class RecognitionPipeline {
     }
 
     // 2) Candidatos pelo índice estático (ou pela busca do TCGdex, se o índice não existir).
-    let indexCandidates = this.deps.catalog?.candidates(read.bottom, read.names, this.maxCandidates()) ?? [];
-    if (!this.deps.catalog && read.bottom.number?.total && read.bottom.number.total.prefix === '') {
-      indexCandidates = await this.searchWithoutIndex(read.bottom);
+    const catalog = this.deps.catalog;
+    let indexCandidates: IndexedCandidate[] = [];
+    if (catalog) {
+      const found = clock.time('catalog', () => catalog.candidatesWithTotal(read.bottom, read.names, this.maxCandidates()));
+      indexCandidates = found.list;
+      metrics.catalogMatches = found.total;
+    } else if (read.bottom.number?.total && read.bottom.number.total.prefix === '') {
+      indexCandidates = await clock.timeAsync('catalog', () => this.searchWithoutIndex(read.bottom));
+      metrics.catalogMatches = indexCandidates.length;
     }
     // 2b) Busca pela ilustração (opção): as cartas de aparência mais parecida viram candidatas extras. Elas ainda
     // passam pela comparação com a imagem de referência real; impressões com a mesma arte seguem ambíguas.
     // Só entra quando o texto não bastou (sem número com total, ou nenhuma candidata): quando o número já
     // identifica a carta, não vale carregar o índice nem misturar candidatas.
     const textWeak = indexCandidates.length === 0 || !read.bottom.number?.total;
-    const artIndex = this.deps.artSearch && textWeak ? await this.deps.artSearch().catch(() => null) : null;
-    if (artIndex && this.deps.catalog) {
+    const artSearch = this.deps.artSearch;
+    const artIndex = artSearch && textWeak ? await clock.timeAsync('catalog', () => artSearch().catch(() => null)) : null;
+    if (artIndex && catalog) {
       const known = new Set(indexCandidates.map((c) => c.id));
-      const extra = artIndex
+      const extra = clock.time('visual', () => artIndex
         .search(features, ART_CANDIDATES)
         .filter((match) => !known.has(match.id))
-        .map((match) => this.deps.catalog?.byId(match.id))
-        .filter((c): c is NonNullable<typeof c> => !!c);
+        .map((match) => catalog.byId(match.id))
+        .filter((c): c is NonNullable<typeof c> => !!c));
       metrics.artCandidates = extra.length;
       indexCandidates = [...indexCandidates, ...extra];
     }
     metrics.candidates = indexCandidates.length;
-    const hasVariants = (this.deps.catalog?.variantCandidates(read.bottom, read.names, new Set(), 1).length ?? 0) > 0;
+    const hasVariants = (catalog?.variantCandidates(read.bottom, read.names, new Set(), 1).length ?? 0) > 0;
     if (indexCandidates.length === 0 && !hasVariants) {
       metrics.candidatesMs = Math.round(now() - t3);
+      clock.skip('ranking', 'nenhuma candidata no catálogo');
       return finish({
         status: 'not-found', alternatives: [], confidence: 0, margin: 0, parsed, quad, features,
         message: read.bottom.number
@@ -322,26 +487,27 @@ export class RecognitionPipeline {
     }
 
     // 3) Detalhes (dexId, imagem) e imagem de referência só dos candidatos.
-    const bytes = { value: 0 };
-    let usable = await this.loadCandidates(indexCandidates, bytes);
+    const bytes = { value: 0, hits: 0 };
+    let usable = await this.loadCandidates(clock, indexCandidates, bytes);
     const toInfos = (entries: LoadedCandidate[]): CandidateInfo[] => entries.map((entry) => ({
       id: entry.record.id, setId: entry.record.setId, localId: entry.record.localId, name: entry.record.name,
       altNames: entry.prior.altNames, setOfficial: entry.record.setOfficial, setTotal: entry.record.setTotal,
       setCode: entry.record.setCode, features: entry.features, viaVariant: entry.prior.viaVariant,
     }));
-    let ranking = usable.length > 0 ? rankCandidates(toInfos(usable), evidence) : null;
+    let ranking = usable.length > 0 ? clock.time('ranking', () => rankCandidates(toInfos(usable), evidence)) : null;
 
     // 3b) Segunda rodada: se nada se confirmou, tenta números parecidos (dígitos que o OCR confunde).
-    if ((!ranking || ranking.decision !== 'confident') && this.deps.catalog) {
+    if ((!ranking || ranking.decision !== 'confident') && catalog) {
       const tried = new Set(indexCandidates.map((c) => c.id));
-      const variants = this.deps.catalog.variantCandidates(read.bottom, read.names, tried, this.maxCandidates());
+      const variants = clock.time('catalog', () => catalog.variantCandidates(read.bottom, read.names, tried, this.maxCandidates()));
       if (variants.length > 0) {
         metrics.variantRound = true;
-        usable = [...usable, ...(await this.loadCandidates(variants, bytes))];
-        ranking = rankCandidates(toInfos(usable), evidence);
+        usable = [...usable, ...(await this.loadCandidates(clock, variants, bytes))];
+        ranking = clock.time('ranking', () => rankCandidates(toInfos(usable), evidence));
       }
     }
     downloadedBytes += bytes.value;
+    metrics.referenceCacheHits = bytes.hits;
     metrics.candidates = usable.length;
     metrics.candidatesMs = Math.round(now() - t3);
     if (usable.length === 0 || !ranking) {
@@ -358,6 +524,10 @@ export class RecognitionPipeline {
       secondId: runnerUp?.candidate.id, secondSimilarity: runnerUp?.similarity?.combined,
     };
     const byId = new Map(usable.map((entry) => [entry.record.id, entry]));
+    if (viewOut) {
+      const errors = new Map(usable.filter((entry) => entry.referenceError).map((entry) => [entry.record.id, entry.referenceError!]));
+      viewOut.candidates = verdictsOf(ranking, new Map(usable.map((entry) => [entry.record.id, entry.record])), errors);
+    }
     const alternatives = ranking.ranked.slice(best ? 1 : 0).map((scored: ScoredCandidate) => ({
       card: toIdentified(byId.get(scored.candidate.id)!.record), confidence: scored.confidence, reasons: scored.reasons,
     }));
@@ -384,29 +554,55 @@ export class RecognitionPipeline {
     });
   }
 
-  private async loadCandidates(list: (CandidateInfo & { prior: number; viaVariant?: boolean })[], bytes: { value: number }): Promise<LoadedCandidate[]> {
+  /** Referência pela memória (quadros anteriores) ou baixada agora; a memória guarda as `REFERENCE_MEMORY` mais recentes. */
+  private async reference(url: string, bytes: { value: number; hits: number }): Promise<CachedReference> {
+    const hit = this.references.get(url);
+    if (hit) {
+      this.references.delete(url);
+      this.references.set(url, hit);
+      bytes.hits++;
+      return hit;
+    }
+    const loaded = await this.deps.loadReference(url);
+    bytes.value += loaded.bytes;
+    const entry: CachedReference = { image: loaded.image, blob: loaded.blob, features: computeFeatures(loaded.image) };
+    this.references.set(url, entry);
+    while (this.references.size > REFERENCE_MEMORY) {
+      const oldest = this.references.keys().next().value;
+      if (oldest === undefined) break;
+      this.references.delete(oldest);
+    }
+    return entry;
+  }
+
+  private async loadCandidates(clock: StageClock, list: IndexedCandidate[], bytes: { value: number; hits: number }): Promise<LoadedCandidate[]> {
+    clock.check();
+    // Metadados (TCGdex) e imagem de referência (comparação visual) de até 3 candidatas ao mesmo tempo: a soma dos
+    // tempos vai para cada etapa, então essas duas etapas podem somar mais que o relógio de parede.
     const loaded = await mapLimit(list, 3, async (candidate): Promise<LoadedCandidate | null> => {
       try {
-        const card = await this.deps.tcgdex.getCard(candidate.id);
+        const card = await clock.timeAsync('catalog', () => this.deps.tcgdex.getCard(candidate.id));
         if (!card) return null;
         const record = recordFromTcgdex(card, candidate);
         let reference: RgbaImage | undefined;
         let referenceBlob: Blob | undefined;
         let referenceUrl: string | undefined;
         let referenceFeatures: CardFeatures | undefined;
+        let referenceError: string | undefined = card.image ? undefined : 'o TCGdex não tem imagem desta carta';
         if (card.image) {
           try {
-            referenceUrl = (this.deps.referenceUrl ?? ((base) => cardImageUrl(base, 'low', 'webp')))(card.image);
-            const loadedImage = await this.deps.loadReference(referenceUrl);
-            bytes.value += loadedImage.bytes;
-            reference = loadedImage.image;
-            referenceBlob = loadedImage.blob;
-            referenceFeatures = computeFeatures(loadedImage.image);
-          } catch {
-            // Sem imagem (rede/CORS): essa candidata segue só pelos metadados.
+            const url = (this.deps.referenceUrl ?? ((base) => cardImageUrl(base, 'low', 'webp')))(card.image);
+            referenceUrl = url;
+            const ref = await clock.timeAsync('visual', () => this.reference(url, bytes));
+            reference = ref.image;
+            referenceBlob = ref.blob;
+            referenceFeatures = ref.features;
+          } catch (error) {
+            // Sem imagem (rede/CORS/decodificação): essa candidata segue só pelos metadados — e o motivo fica visível.
+            referenceError = error instanceof Error ? error.message : String(error);
           }
         }
-        return { record, reference, referenceBlob, referenceUrl, features: referenceFeatures, prior: candidate };
+        return { record, reference, referenceBlob, referenceUrl, features: referenceFeatures, prior: candidate, referenceError };
       } catch {
         return null;
       }
@@ -423,24 +619,32 @@ export class RecognitionPipeline {
    * carta retificada inteira). Segunda tentativa nas metades esquerda/direita, com lista de caracteres,
    * só quando a primeira não achou número com total: o laboratório de OCR do CI mediu as duas.
    */
-  private async readText(frame: RgbaImage, quad: Quad, rectified: RgbaImage, nameOnly: boolean, withSides = true, previous?: ReadResult): Promise<ReadResult> {
+  private async readText(
+    clock: StageClock, frame: RgbaImage, quad: Quad, rectified: RgbaImage, nameOnly: boolean, withSides = true, previous?: ReadResult,
+  ): Promise<ReadResult> {
     if (nameOnly) {
-      const region = rectifyRegion(frame, quad, NAME_BOX, NAME_OCR_FULL_WIDTH) ?? cropFraction(rectified, NAME_BOX);
-      const text = await this.deps.ocr.recognize(region, 'name');
-      return { bottom: {}, names: parseNameText(text), nameText: text };
+      const region = clock.time('cropName', () => rectifyRegion(frame, quad, NAME_BOX, NAME_OCR_FULL_WIDTH) ?? cropFraction(rectified, NAME_BOX));
+      const text = await clock.timeAsync('ocrName', () => this.deps.ocr.recognize(region, 'name'));
+      return { bottom: {}, names: parseNameText(text), nameText: text, nameCrop: region };
     }
     // `previous`: a faixa inteira já foi lida nesta orientação; não repete a passada (cada uma custa segundos no celular).
     const strip =
-      previous?.strip ?? rectifyRegion(frame, quad, BOTTOM_STRIP_BOX, BOTTOM_OCR_FULL_WIDTH) ?? cropFraction(rectified, BOTTOM_STRIP_BOX);
-    let text = previous?.bottomText ?? (await this.deps.ocr.recognize(strip, 'bottom'));
+      previous?.strip ?? clock.time('cropNumber', () => rectifyRegion(frame, quad, BOTTOM_STRIP_BOX, BOTTOM_OCR_FULL_WIDTH) ?? cropFraction(rectified, BOTTOM_STRIP_BOX));
+    let text = previous?.bottomText ?? (await clock.timeAsync('ocrNumber', () => this.deps.ocr.recognize(strip, 'bottom')));
     let bottom = previous?.bottom ?? parseBottomText(text);
+    let sidesOut: RgbaImage[] | undefined;
     if (withSides && !bottom.number?.total) {
       const sides: string[] = [];
+      const crops: RgbaImage[] = [];
       for (const box of [BOTTOM_LEFT_BOX, BOTTOM_RIGHT_BOX]) {
-        const region = rectifyRegion(frame, quad, box, Math.round(BOTTOM_OCR_FULL_WIDTH * (box[2] - box[0])));
-        if (region) sides.push(await this.deps.ocr.recognize(region, 'bottom-side'));
+        const region = clock.time('cropNumber', () => rectifyRegion(frame, quad, box, Math.round(BOTTOM_OCR_FULL_WIDTH * (box[2] - box[0]))));
+        if (region) {
+          crops.push(region);
+          sides.push(await clock.timeAsync('ocrNumber', () => this.deps.ocr.recognize(region, 'bottom-side')));
+        }
       }
       if (sides.length > 0) {
+        sidesOut = crops;
         const merged = [text, ...sides].join(' \n ');
         const mergedParsed = parseBottomText(merged);
         // Só adota a segunda leitura se ela melhorou (o ruído das metades pode atrapalhar o que já estava bom).
@@ -450,11 +654,11 @@ export class RecognitionPipeline {
         }
       }
     }
-    return { bottom, names: [], bottomText: text, strip };
+    return { bottom, names: [], bottomText: text, strip, sides: sidesOut };
   }
 
   /** Sem índice estático: pergunta ao TCGdex pelas cartas com esse número e esse total. */
-  private async searchWithoutIndex(bottom: ParsedBottom): Promise<(CandidateInfo & { prior: number })[]> {
+  private async searchWithoutIndex(bottom: ParsedBottom): Promise<IndexedCandidate[]> {
     const number = bottom.number;
     if (!number?.total) return [];
     const results = await this.deps.tcgdex.searchByNumber(number.value, number.total.value);

@@ -298,3 +298,91 @@ describe('RecognitionPipeline', () => {
     expect(result.metrics.requests).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe('RecognitionPipeline: instrumentação e diagnóstico (Fase A)', () => {
+  it('mede cada etapa que rodou e diz o motivo das que pulou', async () => {
+    const { deps } = makeDeps();
+    const stages: string[] = [];
+    const result = await new RecognitionPipeline(deps).recognize(photoOf(1), { onStage: (s) => stages.push(s) });
+    const t = result.metrics.stages;
+    for (const stage of ['detect', 'perspective', 'cropNumber', 'ocrNumber', 'catalog', 'visual', 'ranking'] as const) {
+      expect(t[stage], stage).toBeGreaterThanOrEqual(0);
+    }
+    // A ordem em que as etapas começaram é a do pipeline real.
+    expect(stages.indexOf('detect')).toBeLessThan(stages.indexOf('perspective'));
+    expect(stages.indexOf('perspective')).toBeLessThan(stages.indexOf('ocrNumber'));
+    expect(stages.indexOf('ocrNumber')).toBeLessThan(stages.indexOf('ranking'));
+    // 58/102 bate em duas cartas: o nome foi lido, então não aparece como pulado.
+    expect(t.ocrName).toBeDefined();
+    expect(result.metrics.skipped.ocrName).toBeUndefined();
+  });
+
+  it('quando o número já aponta uma carta só, o nome é pulado — com o motivo, sem tempo inventado', async () => {
+    const { deps, calls } = makeDeps({
+      ocr: { async recognize(_i, region) { calls.ocr.push(region); return region === 'bottom' ? '60/64' : 'Pikachu'; }, async dispose() {} },
+    });
+    const result = await new RecognitionPipeline(deps).recognize(photoOf(3));
+    expect(result.card?.id).toBe('base2-60');
+    expect(calls.ocr).not.toContain('name');
+    expect(result.metrics.stages.ocrName).toBeUndefined();
+    expect(result.metrics.skipped.ocrName).toMatch(/única carta/);
+  });
+
+  it('a imagem de referência é reaproveitada no quadro seguinte (não baixa nem decodifica de novo)', async () => {
+    const { deps, calls } = makeDeps();
+    const pipeline = new RecognitionPipeline(deps);
+    const first = await pipeline.recognize(photoOf(1));
+    expect(calls.references).toBe(2);
+    expect(first.metrics.referenceCacheHits).toBe(0);
+    const second = await pipeline.recognize(photoOf(1));
+    expect(calls.references).toBe(2);
+    expect(second.metrics.referenceCacheHits).toBe(2);
+    expect(second.card?.id).toBe('base1-58');
+    expect(second.metrics.downloadedBytes).toBe(0);
+  });
+
+  it('usa a detecção feita pelo controlador (não detecta de novo)', async () => {
+    const { deps } = makeDeps();
+    const pipeline = new RecognitionPipeline(deps);
+    const located = await pipeline.recognize(photoOf(1));
+    const detection = { quad: located.quad!, areaFraction: 0.3, aspect: 0.7, fillRatio: 0.9, score: 1 };
+    const result = await pipeline.recognize(photoOf(1), { detection });
+    expect(result.metrics.stages.detect).toBeUndefined();
+    expect(result.card?.id).toBe('base1-58');
+  });
+
+  it('leitura obsoleta para entre as etapas (cancelar/recomeçar)', async () => {
+    const { deps, calls } = makeDeps();
+    let current = true;
+    const pending = new RecognitionPipeline(deps).recognize(photoOf(1), {
+      isCurrent: () => current,
+      onStage: (s) => { if (s === 'ocrNumber') current = false; },
+    });
+    await expect(pending).rejects.toMatchObject({ name: 'ScanCancelled' });
+    expect(calls.references).toBe(0);
+  });
+
+  it('diagnóstico: áreas exatas lidas no quadro, recortes do OCR e veredito de TODAS as candidatas', async () => {
+    const { deps } = makeDeps();
+    const result = await new RecognitionPipeline({ ...deps, captureDebug: () => true }).recognize(photoOf(1));
+    const view = result.view!;
+    expect(view.regions?.number).toHaveLength(1);
+    expect(view.regions?.name).toBeDefined();
+    expect(view.strip).toBeDefined();
+    expect(view.nameCrop).toBeDefined();
+    expect(view.quality?.brightness).toBeGreaterThan(0);
+    // A faixa do número fica na parte de baixo da carta achada.
+    const numberYs = view.regions!.number[0]!.map((p) => p.y);
+    const cardYs = result.quad!.map((p) => p.y);
+    expect(Math.min(...numberYs)).toBeGreaterThan((Math.min(...cardYs) + Math.max(...cardYs)) / 2);
+    expect(view.candidates?.map((c) => c.id)).toEqual(['base1-58', 'hgss4-58']);
+    expect(view.candidates?.[0]).toMatchObject({ verdict: 'aceita' });
+    expect(view.candidates?.[1]?.why).toMatch(/atrás da melhor|abaixo de/);
+  });
+
+  it('diz quantas cartas do índice combinaram, mesmo além do limite baixado', async () => {
+    const { deps } = makeDeps({ ocr: { async recognize(_i, region) { return region === 'bottom' ? '58/102' : ''; }, async dispose() {} } });
+    const result = await new RecognitionPipeline({ ...deps, maxCandidates: 1 }).recognize(photoOf(1));
+    expect(result.metrics.catalogMatches).toBe(2);
+  });
+});
