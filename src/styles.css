@@ -4994,3 +4994,25 @@ body.no-scroll .reward-toasts {
   image-rendering: pixelated;
   margin-top: 6px;
 }
+
+/* ---------------------------------------------------------------- Backup (exportar/importar dados) */
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+
+.note.ok {
+  color: var(--ok);
+}
+
+.note.erro {
+  color: #f06a6a;
+}
+
+.backup-confirm {
+  margin-top: 10px;
+  border: 1px solid #f06a6a;
+}
