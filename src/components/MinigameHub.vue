@@ -9,16 +9,18 @@ import type { GameId, Grade } from '../core/minigames';
 import { XP } from '../core/trainer';
 import MinigameMemoria from './MinigameMemoria.vue';
 import MinigameQuem from './MinigameQuem.vue';
+import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import MinigameTipos from './MinigameTipos.vue';
 
 /**
- * Os minigames (Quem é esse Pokémon?, Tipos, Memória) em um só lugar: a lista com o melhor resultado e o jogo ativo.
- * Aparece no Treinador e no Fliperama da Vila; as partidas contam do mesmo jeito (`recordEvent`), onde quer que se jogue.
+ * Os minigames (Quem é esse Pokémon?, Tipos, Memória, Zona de Sobrevivência) em um só lugar: a lista com o
+ * melhor resultado e o jogo ativo. Aparece no Treinador e no Fliperama da Vila; as partidas contam do mesmo
+ * jeito (`recordEvent`), onde quer que se jogue.
  */
 defineProps<{ /** Mostra «Sair» no fim (no Fliperama da Vila, onde não há outra saída). */ closable?: boolean }>();
 const emit = defineEmits<{ leave: [] }>();
 
-const GAMES: GameId[] = ['quem', 'tipos', 'memoria'];
+const GAMES: GameId[] = ['quem', 'tipos', 'memoria', 'sobrevivencia'];
 const loaded = ref<LoadedPieces | null>(null);
 const active = ref<GameId | null>(null);
 const loadingPieces = ref(true);
@@ -54,7 +56,8 @@ function onFinished(game: GameId, grade: Grade): void {
     <h2>{{ GAME_LABELS_PT[active].title }}</h2>
     <MinigameQuem v-if="active === 'quem'" :pieces="loaded?.pieces ?? []" :urls="loaded?.urls ?? new Map()" @finished="(g) => onFinished('quem', g)" @leave="active = null" />
     <MinigameTipos v-else-if="active === 'tipos'" @finished="(g) => onFinished('tipos', g)" @leave="active = null" />
-    <MinigameMemoria v-else :pieces="loaded?.pieces ?? []" :urls="loaded?.urls ?? new Map()" @finished="(g) => onFinished('memoria', g)" @leave="active = null" />
+    <MinigameMemoria v-else-if="active === 'memoria'" :pieces="loaded?.pieces ?? []" :urls="loaded?.urls ?? new Map()" @finished="(g) => onFinished('memoria', g)" @leave="active = null" />
+    <MinigameSobrevivencia v-else @finished="(g) => onFinished('sobrevivencia', g)" @leave="active = null" />
     <button type="button" class="link game-back" @click="active = null">Voltar aos jogos</button>
   </div>
   <div v-else class="card">

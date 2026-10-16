@@ -17,6 +17,7 @@ describe('peças', () => {
   it('explica o que falta para jogar', () => {
     expect(gameBlocker('tipos', [])).toBeNull();
     expect(gameBlocker('quem', [])).toBeNull();
+    expect(gameBlocker('sobrevivencia', [])).toBeNull(); // não depende de cartas: usa o pacote de sprites local
     expect(cardsBlocker(pool(3))).toContain('4');
     expect(cardsBlocker(pool(4))).toBeNull();
     expect(gameBlocker('memoria', pool(2))).toContain('3');

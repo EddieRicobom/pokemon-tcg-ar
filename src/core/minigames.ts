@@ -9,12 +9,13 @@ import type { Rng } from './battle';
  * tipos usa a mesma tabela de tipos da batalha.
  */
 
-export type GameId = 'quem' | 'tipos' | 'memoria';
+export type GameId = 'quem' | 'tipos' | 'memoria' | 'sobrevivencia';
 
 export const GAME_LABELS_PT: Record<GameId, { title: string; blurb: string }> = {
   quem: { title: 'Quem é esse Pokémon?', blurb: 'Adivinhe 5 Pokémon pela silhueta: das suas cartas, de uma geração ou sorteados de todas.' },
   tipos: { title: 'Duelo de tipos', blurb: 'Quanto dano um tipo causa em outro? A mesma tabela da batalha.' },
   memoria: { title: 'Memória', blurb: 'Encontre os pares de Pokémon das suas cartas.' },
+  sobrevivencia: { title: 'Zona de Sobrevivência', blurb: 'Ande, ataque sozinho quem chegar perto e sobreviva a ondas cada vez maiores. Suba de nível e escolha upgrades.' },
 };
 
 /** Uma carta guardada que serve de peça de jogo (com Pokémon carregado). */
@@ -56,7 +57,7 @@ export const MIN_PIECES: Record<'quem' | 'memoria', number> = { quem: 4, memoria
  * sorteia da Pokédex (a opção "Minhas cartas" é que fica bloqueada, veja `cardsBlocker`).
  */
 export function gameBlocker(game: GameId, pieces: readonly Piece[]): string | null {
-  if (game === 'tipos' || game === 'quem') return null;
+  if (game === 'tipos' || game === 'quem' || game === 'sobrevivencia') return null;
   return piecesBlocker('memoria', pieces);
 }
 
