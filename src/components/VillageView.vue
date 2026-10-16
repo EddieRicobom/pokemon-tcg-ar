@@ -84,6 +84,16 @@ watch(welcome, (open) => {
   else rollLegendaryToday();
 });
 
+// ---- Fase 4: cutscene da primeira entrada (antes do aviso de controles, só na primeira vez de verdade).
+const INTRO_LINES: readonly string[] = [
+  'Bem-vindo à Vila! Aqui os Pokémon que você escaneia moram, crescem e criam laços de amizade com você.',
+  'Mas tem mais: perto da praça existe uma Fonte antiga. Jogando de verdade — conversando, cuidando da Vila, jogando — ela guarda uma energia só sua.',
+  'Essa energia pode trazer à vida um Digital Pokémon: um companheiro que não vem de nenhuma carta física, mas mora aqui com todo o resto.',
+  'Antes de começar, me conta um pouco sobre você…',
+];
+const cutsceneOpen = ref(false);
+const cutsceneLine = ref(0);
+
 let game: VillageGame | null = null;
 let observer: ResizeObserver | null = null;
 let saveTimer: ReturnType<typeof setInterval> | null = null;
@@ -161,6 +171,38 @@ async function syncDigitalVillager(inst: DigitalPokemonInstance): Promise<void> 
   refreshTown();
 }
 
+function advanceCutscene(): void {
+  if (cutsceneLine.value + 1 < INTRO_LINES.length) {
+    cutsceneLine.value++;
+    return;
+  }
+  cutsceneOpen.value = false;
+  state.digital = { ...state.digital, introSeen: true };
+  changed();
+}
+
+// -- Mini tutorial dos Digital Pokémon (Fase 4): uma vez, logo depois do presente inicial.
+const TUTORIAL_LINES: readonly string[] = [
+  'Ele mora na Vila como qualquer outro: conversa, cria amizade, tem casa — só não pode ser alvo de scan ou AR, porque não vem de nenhuma carta física.',
+  'Jogando de verdade — conversar, responder perguntas, lanchar no Café, o Correio, vencer um minigame ou uma corrida na Torre — você ganha energia pra Fonte.',
+  'Na Fonte: 500 de energia invocam outro Digital Pokémon; 1000 + amizade bem alta evoluem o que você já tem, pra uma forma real.',
+];
+let tutorialLine = 0;
+function showDigitalTutorial(): void {
+  if (state.digital.tutorialSeen) return;
+  tutorialLine = 0;
+  const step = () => {
+    if (tutorialLine < TUTORIAL_LINES.length) {
+      dialog.value = { name: 'Como funciona', text: TUTORIAL_LINES[tutorialLine]!, actions: [{ label: tutorialLine + 1 < TUTORIAL_LINES.length ? 'Continuar' : 'Entendi', run: () => { tutorialLine++; step(); } }] };
+      return;
+    }
+    dialog.value = null;
+    state.digital = { ...state.digital, tutorialSeen: true };
+    changed();
+  };
+  step();
+}
+
 // -- Presente inicial: questionário de 6 perguntas (ver `core/village/starter-quiz.ts`), uma vez por perfil.
 const quizOpen = ref(false);
 const quizStep = ref(0);
@@ -201,6 +243,7 @@ async function pickQuizOption(optionId: string): Promise<void> {
   const given = next.instances[next.instances.length - 1]!;
   say(`🎁 ${species.name} chegou como o seu Digital Pokémon! Ele mora na Vila com você.`, 5200);
   await syncDigitalVillager(given);
+  showDigitalTutorial();
 }
 
 // -- A Fonte: invocar por energia (500) e evoluir um Digital Pokémon (1000 + amizade + próxima forma real).
@@ -389,7 +432,7 @@ function tickQuestions(): void {
     askingMon = null;
     game?.setWaiting(null);
   }
-  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (!askingMon && now >= nextAskAt) {
     nextAskAt = now + 4 * 60000 + Math.random() * 4 * 60000;
     const today = refreshDay();
@@ -829,7 +872,7 @@ function finishScene(scene: Scene, ids: string[]): void {
 }
 
 function tickScenes(): void {
-  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (Date.now() < nextSceneAt) return;
   nextSceneAt = Date.now() + SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR;
   // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
@@ -1106,6 +1149,8 @@ function thumbOf(gif: VillageMon['gif']): string {
 }
 
 onMounted(async () => {
+  // Cutscene da primeira entrada (Fase 4): só na primeira vez de verdade, antes do aviso de controles.
+  if (!state.digital.introSeen) cutsceneOpen.value = true;
   tickClock();
   const clockTimer = setInterval(tickClock, 15000);
   onBeforeUnmount(() => clearInterval(clockTimer));
@@ -1219,6 +1264,15 @@ onBeforeUnmount(() => {
         <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
       </header>
       <p v-if="loading" class="village-loading">{{ loading }}</p>
+      <div v-else-if="cutsceneOpen" class="speech in-stage village-dialog" role="dialog" aria-label="Bem-vindo">
+        <div class="speech-box">
+          <strong>Vila</strong>
+          <p>{{ INTRO_LINES[cutsceneLine] }}</p>
+          <div class="village-choices">
+            <button type="button" @click="advanceCutscene">{{ cutsceneLine + 1 < INTRO_LINES.length ? 'Continuar' : 'Começar' }}</button>
+          </div>
+        </div>
+      </div>
       <div v-else-if="welcome" class="village-welcome" @click="welcome = false">
         <strong>Bem-vindo à Vila, {{ profile.name }}!</strong>
         <span>Ande com as setas. <b>A</b> conversa, coleta, rega, colhe e abre a loja e a casa. <b>B</b> abre a mochila, o Livro dos Pokémon e mais.</span>
@@ -1318,7 +1372,7 @@ onBeforeUnmount(() => {
 
       <div v-if="sheet === 'torre'" class="village-sheet tall game-sheet" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
-        <MinigameSobrevivencia @leave="sheet = null" @energy="onEnergyEarned" />
+        <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ dexId: i.dexId, name: i.name }))" @leave="sheet = null" @energy="onEnergyEarned" />
       </div>
 
       <div v-if="sheet === 'menu'" class="village-sheet tall" role="dialog" aria-label="Menu da Vila">

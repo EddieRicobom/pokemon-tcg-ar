@@ -31,6 +31,8 @@ const UPGRADE_ICON: Record<string, string> = {
  * no catálogo de minigames do Fliperama (`core/minigames.ts`).
  */
 const emit = defineEmits<{ leave: []; energy: [amount: number] }>();
+/** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
+const props = defineProps<{ digital?: { dexId: number; name: string }[] }>();
 
 /** Espécies "selvagens" comuns para o elenco de inimigos desta corrida (todas têm sprite no pacote local). */
 const WILD_DEX_IDS = [16, 19, 21, 23, 41, 74, 129, 161, 165, 261, 265, 27] as const;
@@ -292,6 +294,8 @@ async function rollPickOptions(): Promise<PickOption[]> {
     const dexId = c.dexIds[0];
     if (dexId !== undefined && !byDex.has(dexId)) byDex.set(dexId, c.name);
   }
+  // Digital Pokémon entram no mesmo sorteio (Fase 6): não vêm de carta nenhuma, mas jogam igual a qualquer outro.
+  for (const d of props.digital ?? []) if (!byDex.has(d.dexId)) byDex.set(d.dexId, d.name);
   const pool = [...byDex.entries()];
   if (pool.length === 0) return [];
   const chosen = shuffle(pool, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0)).slice(0, 3);

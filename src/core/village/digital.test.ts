@@ -151,6 +151,14 @@ describe('digital pokémon — normalização (nunca trava com dado salvo estran
     expect(out.starterGiven).toBe(false);
     expect(out.instances).toHaveLength(1);
     expect(out.ledger).toEqual([]);
+    expect(out.introSeen).toBe(false);
+    expect(out.tutorialSeen).toBe(false);
+  });
+
+  it('introSeen e tutorialSeen (Fase 4) só viram true com o valor exato `true`', () => {
+    expect(normalizeDigital({ introSeen: true, tutorialSeen: true }).introSeen).toBe(true);
+    expect(normalizeDigital({ introSeen: true, tutorialSeen: true }).tutorialSeen).toBe(true);
+    expect(normalizeDigital({ introSeen: 'sim' }).introSeen).toBe(false);
   });
 
   it('ida e volta preserva um estado válido', () => {

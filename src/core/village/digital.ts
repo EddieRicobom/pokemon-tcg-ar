@@ -45,10 +45,14 @@ export interface DigitalState {
   instances: DigitalPokemonInstance[];
   /** O presente inicial já foi dado (só um por perfil, mesmo recarregando ou reabrindo o questionário). */
   starterGiven: boolean;
+  /** A cutscene da primeira entrada (Fase 4) já foi vista — não aparece de novo. */
+  introSeen: boolean;
+  /** O mini tutorial dos Digital Pokémon (mostrado uma vez, ao receber o presente inicial) já foi visto. */
+  tutorialSeen: boolean;
 }
 
 export function emptyDigital(): DigitalState {
-  return { energy: 0, ledger: [], instances: [], starterGiven: false };
+  return { energy: 0, ledger: [], instances: [], starterGiven: false, introSeen: false, tutorialSeen: false };
 }
 
 /** Converte dados salvos (possivelmente de uma versão antiga ou corrompidos) num `DigitalState` válido. */
@@ -61,7 +65,14 @@ export function normalizeDigital(raw: unknown): DigitalState {
   const instances = Array.isArray(r.instances)
     ? r.instances.filter((i): i is DigitalPokemonInstance => !!i && typeof i === 'object' && typeof i.instanceId === 'string' && typeof i.dexId === 'number' && i.isDigitalPokemon === true)
     : [];
-  return { energy, ledger, instances, starterGiven: r.starterGiven === true };
+  return {
+    energy,
+    ledger,
+    instances,
+    starterGiven: r.starterGiven === true,
+    introSeen: r.introSeen === true,
+    tutorialSeen: r.tutorialSeen === true,
+  };
 }
 
 export function isDigitalInstanceId(id: string): boolean {
