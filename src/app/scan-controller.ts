@@ -1,7 +1,12 @@
 import { inputFromResult } from '../cache/card-cache';
 import type { PrepareProgress, PrepareResult, ScanOutcome } from '../cache/card-cache';
 import type { CachedCard } from '../cache/types';
-import type { CardRecordLike, IdentifiedCard, RecognitionMetrics, RecognitionResult } from '../recognition/pipeline';
+import type { CardDetection } from '../recognition/detect-card';
+import type { CardRecordLike, IdentifiedCard, RecognitionMetrics, RecognitionResult, RecognizeOptions } from '../recognition/pipeline';
+import { qualityWarning, StabilityTracker } from '../recognition/stability';
+import type { FrameQuality, StabilityState } from '../recognition/stability';
+import { ScanCancelled } from '../recognition/stage-clock';
+import type { ScanStage } from '../recognition/stage-clock';
 import { TemporalAggregator } from '../recognition/temporal';
 import type { RgbaImage } from '../recognition/types';
 
@@ -21,6 +26,10 @@ export interface LastAttempt {
   view?: RecognitionResult['view'];
   /** Esta leitura repete a anterior (a carta sumiu por poucos quadros). */
   reused?: boolean;
+  /** Tamanho do quadro analisado (para desenhar o contorno sobre o vídeo). */
+  frameSize?: { width: number; height: number };
+  /** Só a detecção rodou neste quadro (carta ausente ou ainda mexendo): OCR e catálogo não rodaram de propósito. */
+  gated?: boolean;
 }
 
 export interface ScanChoice {
@@ -41,11 +50,33 @@ export interface ScanState {
   card?: CachedCard;
   /** Como a carta foi definida: reconhecimento automático, escolha entre candidatas, ou carregada do cache. */
   origin?: 'automatico' | 'escolha' | 'cache' | 'manual';
+  /** Etapa do pipeline rodando AGORA (avisada pelo próprio pipeline; nada simulado). */
+  stage?: ScanStage;
+  /** Estado de estabilidade da carta no último quadro (só com a detecção leve ligada). */
+  stability?: StabilityState;
+  /** Aviso de luz/foco do último quadro com carta (heurística; não bloqueia a leitura). */
+  qualityHint?: string | null;
+  /** Relógio desta leitura (ms desde o início): primeiras candidatas na tela, carta confirmada e tempo para guardá-la. */
+  timeline?: { startedAt: number; firstCandidateMs?: number; confirmedMs?: number; confirmMs?: number };
+}
+
+/** Resultado da detecção leve (contorno da carta), feita em todo quadro antes de decidir se vale rodar o OCR. */
+export interface LocateResult {
+  detection: CardDetection | null;
+  quality?: FrameQuality;
 }
 
 export interface ScanDeps {
   grabFrame(): RgbaImage | null;
-  recognize(frame: RgbaImage): Promise<RecognitionResult>;
+  recognize(frame: RgbaImage, options?: RecognizeOptions): Promise<RecognitionResult>;
+  /**
+   * Detecção leve (opcional). Com ela, o OCR (caro) só roda quando a carta está parada há pelo menos um par de
+   * quadros; sem ela, cada quadro passa pelo pipeline inteiro (comportamento antigo, usado em testes).
+   */
+  locate?: (frame: RgbaImage) => LocateResult;
+  /** Cada tentativa (inclusive as só de detecção), para o registro de métricas do Diagnóstico. */
+  onAttempt?: (attempt: LastAttempt) => void;
+  now?: () => number;
   cache: {
     /** Escaneamento completo, tudo ou nada: só guarda a carta nova se referência, sprite e alvo ficarem prontos. */
     scanCard: (input: NonNullable<ReturnType<typeof inputFromResult>>, onProgress?: (progress: PrepareProgress) => void, isCurrent?: () => boolean) => Promise<ScanOutcome>;
@@ -66,6 +97,18 @@ export interface ScanDeps {
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Opções de escolha de uma leitura ambígua: TODAS as candidatas comparadas, na ordem do ranking, cada uma com a
+ * própria confiança. Antes a lista era cortada em 4 (a 5ª candidata nunca aparecia) e as confianças eram casadas
+ * por posição depois de um filtro, o que podia trocar a porcentagem de lugar.
+ */
+export function choicesOf(result: Pick<RecognitionResult, 'card' | 'confidence' | 'alternatives'>): ScanChoice[] {
+  const out: ScanChoice[] = [];
+  if (result.card) out.push({ card: result.card, confidence: result.confidence });
+  for (const alt of result.alternatives) if (!out.some((c) => c.card.id === alt.card.id)) out.push({ card: alt.card, confidence: alt.confidence });
+  return out;
+}
+
+/**
  * Orquestra o escaneamento: um quadro por vez, agregação temporal (só confirma carta que se repete),
  * opções de recuperação quando ambígua, gravação no cache depois de cada identificação e preparo dos
  * arquivos (referência, sprite, alvo de AR). Não toca em câmera, canvas nem rede diretamente: isso vem
@@ -80,6 +123,7 @@ export class ScanController {
   private ambiguousStreak = 0;
   private lastAmbiguous: RecognitionResult | null = null;
   private readonly temporal: TemporalAggregator;
+  private readonly stability = new StabilityTracker();
 
   constructor(private readonly deps: ScanDeps) {
     this.temporal = deps.temporal ?? new TemporalAggregator();
@@ -102,9 +146,10 @@ export class ScanController {
     this.lastAmbiguous = null;
     this.lastValidResult = undefined;
     this.noCardStreak = 0;
+    this.stability.reset();
     this.running = true;
     const id = ++this.runId;
-    this.state = { phase: 'scanning', message: 'Procurando a carta…', frames: 0 };
+    this.state = { phase: 'scanning', message: 'Procurando a carta…', frames: 0, timeline: { startedAt: this.now() } };
     this.deps.onState(this.state);
     void this.loop(id);
   }
@@ -112,6 +157,42 @@ export class ScanController {
   stop(): void {
     this.running = false;
     this.runId++;
+  }
+
+  /** O usuário cancelou a leitura: para tudo (o que estava rodando é descartado entre as etapas) e diz isso. */
+  cancel(): void {
+    if (this.state.phase !== 'scanning' && this.state.phase !== 'choosing') return;
+    this.stop();
+    this.set({ phase: 'idle', message: 'Leitura cancelada. Toque em «Escanear» para ler de novo.', stage: undefined, choices: undefined });
+  }
+
+  private now(): number {
+    return (this.deps.now ?? (() => performance.now()))();
+  }
+
+  private elapsed(): number {
+    return Math.round(this.now() - (this.state.timeline?.startedAt ?? this.now()));
+  }
+
+  /** Quadro em que só a detecção rodou: estado honesto (procurando / segure parado) sem fingir leitura. */
+  private gatedAttempt(frame: RgbaImage, frames: number, located: LocateResult, stability: StabilityState, times: { capture: number; detect: number; stability: number }): void {
+    const found = located.detection !== null;
+    const hint = found && located.quality ? qualityWarning(located.quality) : null;
+    const metrics: RecognitionMetrics = {
+      detectMs: Math.round(times.detect), ocrMs: 0, candidatesMs: 0, totalMs: Math.round(times.capture + times.detect + times.stability),
+      requests: 0, downloadedBytes: 0, candidates: 0, source: 'none', visualVerified: false, rotated180: false,
+      stages: { capture: times.capture, detect: times.detect, stability: times.stability },
+      skipped: found
+        ? { ocrNumber: 'a carta ainda está mexendo: o OCR espera ela parar' }
+        : { stability: 'nenhuma carta no quadro', ocrNumber: 'nenhuma carta no quadro' },
+    };
+    const last: LastAttempt = {
+      status: 'no-card',
+      message: found ? 'Carta encontrada: segure parado um instante…' : 'Procurando a carta…',
+      confidence: 0, metrics, quad: located.detection?.quad, gated: true, frameSize: { width: frame.width, height: frame.height },
+    };
+    this.deps.onAttempt?.(last);
+    this.set({ frames, last, message: last.message, stage: undefined, stability, qualityHint: hint });
   }
 
   /** Aguarda o laço atual terminar (testes). */
@@ -130,21 +211,58 @@ export class ScanController {
     const interval = this.deps.minIntervalMs ?? 200;
     while (this.running && id === this.runId) {
       const started = Date.now();
+      const tCapture = this.now();
       const frame = this.deps.grabFrame();
+      const captureMs = this.now() - tCapture;
       if (!frame) {
         await sleep(200);
         continue;
       }
+      // Detecção leve em todo quadro; o OCR (caro) só com a carta parada.
+      let detection: CardDetection | undefined;
+      let gateTimes: { capture: number; detect: number; stability: number } | undefined;
+      if (this.deps.locate) {
+        const tDetect = this.now();
+        const located = this.deps.locate(frame);
+        const detectMs = this.now() - tDetect;
+        const tStable = this.now();
+        const stability = this.stability.push(located.detection?.quad ?? null);
+        const stabilityMs = this.now() - tStable;
+        gateTimes = { capture: captureMs, detect: detectMs, stability: stabilityMs };
+        if (!located.detection || stability.kind !== 'stable') {
+          this.gatedAttempt(frame, this.state.frames + 1, located, stability, gateTimes);
+          const spent = Date.now() - started;
+          if (spent < interval) await sleep(interval - spent);
+          continue;
+        }
+        detection = located.detection;
+        this.set({ stability, qualityHint: located.quality ? qualityWarning(located.quality) : null });
+      }
       let result: RecognitionResult;
       try {
-        result = await this.deps.recognize(frame);
+        result = await this.deps.recognize(frame, {
+          detection,
+          isCurrent: () => this.running && id === this.runId,
+          onStage: (stage) => {
+            if (id === this.runId) this.set({ stage });
+          },
+        });
       } catch (error) {
-        if (id !== this.runId) return;
-        this.set({ message: `Erro ao analisar o quadro: ${error instanceof Error ? error.message : String(error)}` });
+        if (id !== this.runId || error instanceof ScanCancelled) return;
+        this.set({ message: `Erro ao analisar o quadro: ${error instanceof Error ? error.message : String(error)}`, stage: undefined });
         await sleep(1000);
         continue;
       }
       if (!this.running || id !== this.runId) return;
+      const stages = result.metrics.stages;
+      if (stages) {
+        stages.capture = Math.round(captureMs * 10) / 10;
+        if (gateTimes) {
+          stages.detect = Math.round(gateTimes.detect * 10) / 10;
+          stages.stability = Math.round(gateTimes.stability * 10) / 10;
+          result.metrics.detectMs = Math.round(gateTimes.detect);
+        }
+      }
       // Suavização temporal: se não detectou carta mas tínhamos uma leitura recente,
       // reusa o resultado anterior por até 5 quadros seguidos para evitar "piscar".
       let reused = false;
@@ -159,6 +277,15 @@ export class ScanController {
         if (this.noCardStreak >= 5) this.lastValidResult = undefined;
       }
       const frames = this.state.frames + 1;
+      const tTemporal = this.now();
+      const temporal = reused ? null : this.temporal.push(result);
+      if (stages && !reused) stages.temporal = Math.round((this.now() - tTemporal) * 10) / 10;
+      // Primeiras candidatas na tela: o relógio desde o começo da leitura até aqui.
+      const timeline = this.state.timeline ? { ...this.state.timeline } : undefined;
+      if (timeline && timeline.firstCandidateMs === undefined && !reused && result.card) {
+        timeline.firstCandidateMs = this.elapsed();
+        if (stages) stages.display = timeline.firstCandidateMs;
+      }
       const last: LastAttempt = {
         status: result.status,
         message: result.message,
@@ -170,37 +297,41 @@ export class ScanController {
         quad: result.quad,
         view: result.view,
         reused,
+        frameSize: { width: frame.width, height: frame.height },
       };
+      if (!reused) this.deps.onAttempt?.(last);
 
-      const temporal = this.temporal.push(result);
-      if (result.status === 'identified' && result.card && temporal.confirmedId === result.card.id) {
+      if (result.status === 'identified' && result.card && temporal?.confirmedId === result.card.id) {
         this.running = false;
+        if (timeline) timeline.confirmedMs = this.elapsed();
+        this.set({ frames, last, timeline, stage: 'temporal' });
         await this.finish(id, result, result.card, 'automatico');
         return;
       }
       if (result.status === 'identified') {
         this.ambiguousStreak = 0;
-        this.set({ frames, last, message: `Vi ${result.card?.name ?? 'uma carta'}; confirmando…` });
+        const votes = temporal ? ` (${temporal.votes} de 2 leituras iguais)` : '';
+        this.set({ frames, last, timeline, stage: 'temporal', message: `Vi ${result.card?.name ?? 'uma carta'}; confirmando…${votes}` });
       } else if (result.status === 'ambiguous') {
         this.ambiguousStreak++;
         this.lastAmbiguous = result;
         if (this.ambiguousStreak >= (this.deps.ambiguousAfter ?? 2)) {
           this.running = false;
-          const options = [result.card, ...result.alternatives.map((a) => a.card)].filter((c): c is IdentifiedCard => !!c).slice(0, 4);
-          const confidences = [result.confidence, ...result.alternatives.map((a) => a.confidence)];
           this.set({
             phase: 'choosing',
             frames,
             last,
+            timeline,
+            stage: undefined,
             message: 'Não tenho certeza de qual impressão é. Escolha a que está na sua mão ou tente de novo.',
-            choices: options.map((card, i) => ({ card, confidence: confidences[i] ?? 0 })),
+            choices: choicesOf(result),
           });
           return;
         }
-        this.set({ frames, last, message: result.message });
+        this.set({ frames, last, timeline, stage: undefined, message: result.message });
       } else {
         this.ambiguousStreak = 0;
-        this.set({ frames, last, message: result.message });
+        this.set({ frames, last, timeline, stage: undefined, message: result.message });
       }
       const spent = Date.now() - started;
       if (spent < interval) await sleep(interval - spent);
@@ -219,7 +350,8 @@ export class ScanController {
   private async finish(id: number, result: RecognitionResult, chosen: IdentifiedCard, origin: 'automatico' | 'escolha'): Promise<void> {
     const input = inputFromResult(result, chosen);
     if (!input) return;
-    this.set({ phase: 'preparing', message: `${chosen.name} (${chosen.setName} ${chosen.localId}): preparando para guardar no aparelho…`, choices: undefined, origin });
+    this.set({ phase: 'preparing', message: `${chosen.name} (${chosen.setName} ${chosen.localId}): preparando para guardar no aparelho…`, choices: undefined, origin, stage: 'confirm' });
+    const tConfirm = this.now();
     try {
       const outcome = await this.deps.cache.scanCard(
         input,
@@ -229,9 +361,10 @@ export class ScanController {
         () => id === this.runId,
       );
       if (id !== this.runId) return;
-      if (!outcome.saved) return this.set({ phase: 'error', progress: undefined, message: outcome.reason });
+      const timeline = this.state.timeline ? { ...this.state.timeline, confirmMs: Math.round(this.now() - tConfirm) } : undefined;
+      if (!outcome.saved) return this.set({ phase: 'error', progress: undefined, message: outcome.reason, stage: undefined, timeline });
       const prepared = outcome.result;
-      this.set({ phase: 'ready', card: prepared.card, progress: undefined, message: `${prepared.card.name} · ${prepared.card.setName} ${prepared.card.localId}`, origin });
+      this.set({ phase: 'ready', card: prepared.card, progress: undefined, message: `${prepared.card.name} · ${prepared.card.setName} ${prepared.card.localId}`, origin, stage: undefined, timeline });
     } catch (error) {
       if (id !== this.runId) return;
       this.set({ phase: 'error', message: `Não consegui guardar a carta: ${error instanceof Error ? error.message : String(error)}` });
