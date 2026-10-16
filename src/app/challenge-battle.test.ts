@@ -12,7 +12,7 @@ describe('desafio de Ginásio na Caixa', () => {
       fetchSprite: async (dex) => (dex === 95 ? null : { kind: 'gif', url: `u/${dex}`, blob: new Blob([]) }),
       decode: async (s) => `src:${s.url}`,
     });
-    expect(out.entries.map((e) => e.info.name)).toEqual(['Geodude', 'Cranidos']);
+    expect(out.entries.map((e) => e.info.name)).toEqual(['Geodude', 'Graveler', 'Golem', 'Cranidos', 'Rampardos']);
     expect(out.failed).toEqual(['Onix']);
     expect(out.entries.every((e) => isLeaderCreature(e.info.id))).toBe(true);
     expect(leaderCreatureId(roark, 2)).toBe('lider:gym-0:2');

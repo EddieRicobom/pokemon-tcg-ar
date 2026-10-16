@@ -585,6 +585,15 @@ describe('escaneamento completo, tudo ou nada (scanCard)', () => {
     expect(outcome.saved).toBe(true);
     expect((await cache.list())[0]).toMatchObject({ id: 'base1-91', status: 'completo' });
   });
+
+  it('Pokémon sem sprite na fonte não é guardado e avisa o jogador', async () => {
+    const noSprite: CardRecordLike = { ...pikachu, id: 'x-1', name: 'Pokémon sem sprite', localId: '1', dexIds: [999999], imageBase: 'https://assets.example/x/1' };
+    const cache = withTarget();
+    const outcome = await cache.scanCard({ card: noSprite, reference: syntheticCard(1) });
+    expect(outcome.saved).toBe(false);
+    if (!outcome.saved) expect(outcome.reason).toMatch(/sprite disponível.*Nada foi guardado/);
+    expect(await cache.list()).toHaveLength(0);
+  });
 });
 
 describe('shiny e Mega no primeiro escaneamento', () => {

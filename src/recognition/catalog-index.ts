@@ -88,6 +88,11 @@ export class CatalogLookup {
     const result: IndexCandidate[] = [];
     const number = bottom.number;
     const nameKeys = nameGuesses.map(normalizeName).filter(Boolean);
+    // Número com total lido fecha o set: exige correspondência exata de número (o nome só reforça). O nome só
+    // amplia a busca ("busca combinada") quando o número veio isolado (sem total) ou não foi lido — aí entram
+    // também cartas achadas só pelo nome. Com total, um dígito mal lido é tratado pela rodada de variantes
+    // (números parecidos), não aqui.
+    const strictNumber = !!(number && number.total);
 
     for (const set of this.data.sets) {
       let setPrior = 0;
@@ -110,17 +115,27 @@ export class CatalogLookup {
             prior += 0.3;
           }
         }
-        if (!numberMatched && nameKeys.length === 0) {
-          continue;
-        }
-        if (nameGuesses.length > 0) {
-          const similarity = Math.max(
-            ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
-          );
-          if (!numberMatched && similarity < 0.75) continue;
-          prior += similarity * 0.4;
-        } else if (!numberMatched) {
-          continue;
+        if (strictNumber) {
+          // Set certo, número certo: segue. Qualquer outra coisa (número não bateu) não é candidata — o nome
+          // não resgata um número que já fechou errado; isso é papel da rodada de variantes, depois.
+          if (!numberMatched) continue;
+          if (nameGuesses.length > 0) {
+            const similarity = Math.max(
+              ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
+            );
+            prior += similarity * 0.4;
+          }
+        } else {
+          if (!numberMatched && nameKeys.length === 0) continue;
+          if (nameGuesses.length > 0) {
+            const similarity = Math.max(
+              ...nameGuesses.map((guess) => Math.max(nameSimilarity(guess, name), ptName ? nameSimilarity(guess, ptName) : 0)),
+            );
+            if (!numberMatched && similarity < 0.75) continue;
+            prior += similarity * 0.4;
+          } else if (!numberMatched) {
+            continue;
+          }
         }
         result.push({
           id: `${set.id}-${localId}`,

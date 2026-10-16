@@ -111,6 +111,16 @@ export function describeIncomplete(card: CachedCard): string {
   return problems.length > 0 ? `Não consegui preparar ${problems.join(', ')}. Nada foi guardado; tente de novo.` : 'Não consegui preparar a carta. Nada foi guardado; tente de novo.';
 }
 
+/**
+ * A carta é de um Pokémon (tem número de Pokédex), mas a fonte de sprites (PokeAPI/sprites) não tem sprite para ele:
+ * `prepareCard` deixa o slot do sprite em `unavailable`. O app mostra o Pokémon animado em pé sobre a carta e nunca
+ * inventa um Pokémon sem sprite, então uma carta assim não pode ser guardada. Cartas de Treinador/Energia (sem número
+ * de Pokédex) NÃO caem aqui: elas seguem sendo guardadas com o marcador, porque não prometem um Pokémon animado.
+ */
+export function pokemonSpriteUnavailable(card: CachedCard): boolean {
+  return card.dexIds[0] !== undefined && card.sprite.state === 'unavailable';
+}
+
 class HttpStatusError extends Error {
   constructor(readonly status: number) {
     super(`HTTP ${status}`);
@@ -268,6 +278,14 @@ export class CardCache {
     if (result.status !== 'completo') {
       if (isNew) await this.remove(id);
       return { saved: false, result, reason: describeIncomplete(result.card) };
+    }
+    if (pokemonSpriteUnavailable(result.card)) {
+      if (isNew) await this.remove(id);
+      return {
+        saved: false,
+        result,
+        reason: `${result.card.name} não tem sprite disponível na fonte (PokeAPI/sprites), então não dá para adicionar este Pokémon ao aparelho. Nada foi guardado.`,
+      };
     }
     const card = await this.finishScan(result.card, isNew, input);
     return { saved: true, result: { ...result, card } };

@@ -59,6 +59,29 @@ export const SPECIES_NAMES: Readonly<Record<number, string>> = {
   468: 'Togekiss',
   350: 'Milotic',
   445: 'Garchomp',
+  // Espécies extras das equipes cheias dos Ginásios (6 Pokémon cada).
+  75: 'Graveler',
+  409: 'Rampardos',
+  388: 'Grotle',
+  389: 'Torterra',
+  421: 'Cherrim',
+  66: 'Machop',
+  68: 'Machamp',
+  308: 'Medicham',
+  418: 'Buizel',
+  423: 'Gastrodon',
+  457: 'Lumineon',
+  94: 'Gengar',
+  426: 'Drifblim',
+  477: 'Dusknoir',
+  462: 'Magnezone',
+  476: 'Probopass',
+  461: 'Weavile',
+  473: 'Mamoswine',
+  403: 'Shinx',
+  404: 'Luxio',
+  135: 'Jolteon',
+  466: 'Electivire',
 };
 
 export const speciesName = (dex: number): string => SPECIES_NAMES[dex] ?? `Pokémon nº ${dex}`;
@@ -90,14 +113,14 @@ export interface Challenge {
 const DP = 'gen4/diamond-pearl/';
 
 export const GYMS: readonly Challenge[] = [
-  { id: 'gym-0', kind: 'gym', order: 0, leader: 'Roark', role: 'Líder de Ginásio', sprite: `${DP}Roark`, type: 'rock', team: [74, 95, 408], power: 0.82, badge: { name: 'Insígnia Carvão', color: '#8a8070' }, xp: 120, intro: 'Meus Pokémon de pedra são duros como a mina onde trabalho. Vamos ver do que você é feito!', defeat: 'Você rachou a minha defesa! Leve a Insígnia Carvão, você mereceu.' },
-  { id: 'gym-1', kind: 'gym', order: 1, leader: 'Gardenia', role: 'Líder de Ginásio', sprite: `${DP}Gardenia`, type: 'grass', team: [420, 387, 407], power: 0.88, badge: { name: 'Insígnia Floresta', color: '#4caf50' }, xp: 130, intro: 'Meus Pokémon de grama crescem fortes ao sol. Preparado para ser enraizado?', defeat: 'Que florada de batalha! A Insígnia Floresta é sua.' },
-  { id: 'gym-2', kind: 'gym', order: 2, leader: 'Maylene', role: 'Líder de Ginásio', sprite: `${DP}Maylene`, type: 'fighting', team: [307, 67, 448], power: 0.94, badge: { name: 'Insígnia Punho', color: '#c0504d' }, xp: 140, intro: 'Treino descalça na neve todos os dias. Mostre a força do seu coração!', defeat: 'Seus Pokémon lutaram com tudo. A Insígnia Punho é sua!' },
-  { id: 'gym-3', kind: 'gym', order: 3, leader: 'Crasher Wake', role: 'Líder de Ginásio', sprite: `${DP}Crasher_Wake`, type: 'water', team: [130, 195, 419], power: 1.0, badge: { name: 'Insígnia Pântano', color: '#3a8fe0' }, xp: 150, intro: 'Uma onda gigante está chegando! Segure firme ou vai ser levado!', defeat: 'Que tsunami de talento! Tome a Insígnia Pântano!' },
-  { id: 'gym-4', kind: 'gym', order: 4, leader: 'Fantina', role: 'Líder de Ginásio', sprite: `${DP}Fantina`, type: 'ghost', team: [355, 93, 429], power: 1.06, badge: { name: 'Insígnia Relíquia', color: '#7e57c2' }, xp: 160, intro: 'Meus Pokémon fantasmas dançam no escuro. Você consegue acompanhar?', defeat: 'Magnífique! Você dança muito bem. A Insígnia Relíquia é sua.' },
-  { id: 'gym-5', kind: 'gym', order: 5, leader: 'Byron', role: 'Líder de Ginásio', sprite: `${DP}Byron`, type: 'steel', team: [436, 208, 411], power: 1.12, badge: { name: 'Insígnia Mina', color: '#90a4ae' }, xp: 170, intro: 'Aço forjado na mina! Nenhum golpe vai amassar meus Pokémon!', defeat: 'Amassou o aço! Você é de ferro. Leve a Insígnia Mina.' },
-  { id: 'gym-6', kind: 'gym', order: 6, leader: 'Candice', role: 'Líder de Ginásio', sprite: `${DP}Candice`, type: 'ice', team: [215, 221, 460, 478], power: 1.18, badge: { name: 'Insígnia Pingente', color: '#80deea' }, xp: 180, intro: 'Foco total! Meus Pokémon de gelo vão congelar sua equipe inteira!', defeat: 'Você derreteu meu gelo com a sua garra. A Insígnia Pingente é sua!' },
-  { id: 'gym-7', kind: 'gym', order: 7, leader: 'Volkner', role: 'Líder de Ginásio', sprite: `${DP}Volkner`, type: 'electric', team: [26, 424, 224, 405], power: 1.24, badge: { name: 'Insígnia Farol', color: '#ffcb05' }, xp: 200, intro: 'Faz tempo que ninguém me dá um choque de verdade. Mostre essa faísca!', defeat: 'Finalmente uma batalha elétrica! A Insígnia Farol é sua. A Liga espera por você.' },
+  { id: 'gym-0', kind: 'gym', order: 0, leader: 'Roark', role: 'Líder de Ginásio', sprite: `${DP}Roark`, type: 'rock', team: [74, 75, 76, 95, 408, 409], power: 0.9, badge: { name: 'Insígnia Carvão', color: '#8a8070' }, xp: 120, intro: 'Meus Pokémon de pedra são duros como a mina onde trabalho. Vamos ver do que você é feito!', defeat: 'Você rachou a minha defesa! Leve a Insígnia Carvão, você mereceu.' },
+  { id: 'gym-1', kind: 'gym', order: 1, leader: 'Gardenia', role: 'Líder de Ginásio', sprite: `${DP}Gardenia`, type: 'grass', team: [387, 388, 389, 420, 421, 407], power: 0.95, badge: { name: 'Insígnia Floresta', color: '#4caf50' }, xp: 130, intro: 'Meus Pokémon de grama crescem fortes ao sol. Preparado para ser enraizado?', defeat: 'Que florada de batalha! A Insígnia Floresta é sua.' },
+  { id: 'gym-2', kind: 'gym', order: 2, leader: 'Maylene', role: 'Líder de Ginásio', sprite: `${DP}Maylene`, type: 'fighting', team: [66, 67, 68, 307, 308, 448], power: 1.0, badge: { name: 'Insígnia Punho', color: '#c0504d' }, xp: 140, intro: 'Treino descalça na neve todos os dias. Mostre a força do seu coração!', defeat: 'Seus Pokémon lutaram com tudo. A Insígnia Punho é sua!' },
+  { id: 'gym-3', kind: 'gym', order: 3, leader: 'Crasher Wake', role: 'Líder de Ginásio', sprite: `${DP}Crasher_Wake`, type: 'water', team: [130, 195, 418, 419, 423, 457], power: 1.05, badge: { name: 'Insígnia Pântano', color: '#3a8fe0' }, xp: 150, intro: 'Uma onda gigante está chegando! Segure firme ou vai ser levado!', defeat: 'Que tsunami de talento! Tome a Insígnia Pântano!' },
+  { id: 'gym-4', kind: 'gym', order: 4, leader: 'Fantina', role: 'Líder de Ginásio', sprite: `${DP}Fantina`, type: 'ghost', team: [93, 94, 355, 429, 426, 477], power: 1.1, badge: { name: 'Insígnia Relíquia', color: '#7e57c2' }, xp: 160, intro: 'Meus Pokémon fantasmas dançam no escuro. Você consegue acompanhar?', defeat: 'Magnífique! Você dança muito bem. A Insígnia Relíquia é sua.' },
+  { id: 'gym-5', kind: 'gym', order: 5, leader: 'Byron', role: 'Líder de Ginásio', sprite: `${DP}Byron`, type: 'steel', team: [208, 411, 436, 437, 462, 476], power: 1.15, badge: { name: 'Insígnia Mina', color: '#90a4ae' }, xp: 170, intro: 'Aço forjado na mina! Nenhum golpe vai amassar meus Pokémon!', defeat: 'Amassou o aço! Você é de ferro. Leve a Insígnia Mina.' },
+  { id: 'gym-6', kind: 'gym', order: 6, leader: 'Candice', role: 'Líder de Ginásio', sprite: `${DP}Candice`, type: 'ice', team: [215, 461, 221, 473, 460, 478], power: 1.2, badge: { name: 'Insígnia Pingente', color: '#80deea' }, xp: 180, intro: 'Foco total! Meus Pokémon de gelo vão congelar sua equipe inteira!', defeat: 'Você derreteu meu gelo com a sua garra. A Insígnia Pingente é sua!' },
+  { id: 'gym-7', kind: 'gym', order: 7, leader: 'Volkner', role: 'Líder de Ginásio', sprite: `${DP}Volkner`, type: 'electric', team: [403, 404, 405, 26, 135, 466], power: 1.25, badge: { name: 'Insígnia Farol', color: '#ffcb05' }, xp: 200, intro: 'Faz tempo que ninguém me dá um choque de verdade. Mostre essa faísca!', defeat: 'Finalmente uma batalha elétrica! A Insígnia Farol é sua. A Liga espera por você.' },
 ];
 
 export const ELITE: readonly Challenge[] = [
