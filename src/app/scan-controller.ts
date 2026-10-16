@@ -2,13 +2,15 @@ import { inputFromResult } from '../cache/card-cache';
 import type { PrepareProgress, PrepareResult, PrepareTimings, ScanOutcome } from '../cache/card-cache';
 import type { CachedCard } from '../cache/types';
 import type { CardDetection } from '../recognition/detect-card';
+import type { CardFeatures } from '../recognition/hash';
+import { SAME_CARD_SIMILARITY } from '../recognition/snapshot';
 import type { CardRecordLike, IdentifiedCard, RecognitionMetrics, RecognitionResult, RecognizeOptions } from '../recognition/pipeline';
 import { qualityWarning, StabilityTracker } from '../recognition/stability';
 import type { FrameQuality, StabilityState } from '../recognition/stability';
 import { ScanCancelled } from '../recognition/stage-clock';
 import type { ScanStage } from '../recognition/stage-clock';
 import { TemporalAggregator } from '../recognition/temporal';
-import type { RgbaImage } from '../recognition/types';
+import type { Quad, RgbaImage } from '../recognition/types';
 
 export type ScanPhase = 'idle' | 'scanning' | 'choosing' | 'preparing' | 'ready' | 'error';
 
@@ -60,6 +62,11 @@ export interface ScanState {
   timeline?: { startedAt: number; firstCandidateMs?: number; confirmedMs?: number; confirmMs?: number };
   /** Partes de "guardar a carta" medidas na última preparação (referência, sprite, alvo…). */
   prepareTimings?: PrepareTimings;
+  /**
+   * Foto temporária (só na memória): o quadro da primeira leitura boa. Enquanto ela existe, o app não roda o OCR de
+   * novo — só confere que a câmera continua mostrando a mesma carta. Some ao confirmar, cancelar ou trocar de carta.
+   */
+  photo?: { frame: RgbaImage; cardName?: string; matches: number; need: number };
 }
 
 /** Resultado da detecção leve (contorno da carta), feita em todo quadro antes de decidir se vale rodar o OCR. */
@@ -78,6 +85,13 @@ export interface ScanDeps {
   locate?: (frame: RgbaImage) => LocateResult;
   /** Cada tentativa (inclusive as só de detecção), para o registro de métricas do Diagnóstico. */
   onAttempt?: (attempt: LastAttempt) => void;
+  /**
+   * Foto temporária (opcional; precisa de `locate`): semelhança visual (0–1) entre a carta da foto e a deste quadro.
+   * Com ela, depois da primeira leitura boa a confirmação compara quadros em vez de rodar o OCR de novo.
+   */
+  sameCard?: (photo: CardFeatures, frame: RgbaImage, quad: Quad) => number;
+  /** Quadros seguidos da mesma carta para confirmar pela foto (padrão 1). */
+  photoMatches?: number;
   now?: () => number;
   cache: {
     /** Escaneamento completo, tudo ou nada: só guarda a carta nova se referência, sprite e alvo ficarem prontos. */
@@ -126,6 +140,8 @@ export class ScanController {
   private lastAmbiguous: RecognitionResult | null = null;
   private readonly temporal: TemporalAggregator;
   private readonly stability = new StabilityTracker();
+  /** Leitura guardada junto com a foto temporária (a que vai ser confirmada ou oferecida para escolha). */
+  private photoResult: RecognitionResult | null = null;
 
   constructor(private readonly deps: ScanDeps) {
     this.temporal = deps.temporal ?? new TemporalAggregator();
@@ -149,9 +165,10 @@ export class ScanController {
     this.lastValidResult = undefined;
     this.noCardStreak = 0;
     this.stability.reset();
+    this.photoResult = null;
     this.running = true;
     const id = ++this.runId;
-    this.state = { phase: 'scanning', message: 'Procurando a carta…', frames: 0, timeline: { startedAt: this.now() } };
+    this.state = { phase: 'scanning', message: 'Procurando a carta…', frames: 0, timeline: { startedAt: this.now() }, photo: undefined };
     this.deps.onState(this.state);
     void this.loop(id);
   }
@@ -159,13 +176,22 @@ export class ScanController {
   stop(): void {
     this.running = false;
     this.runId++;
+    this.photoResult = null;
+  }
+
+  /** Descarta a foto temporária (a carta mudou): a próxima leitura volta a usar o OCR. */
+  private dropPhoto(): void {
+    this.photoResult = null;
+    this.temporal.reset();
+    this.ambiguousStreak = 0;
+    this.set({ photo: undefined });
   }
 
   /** O usuário cancelou a leitura: para tudo (o que estava rodando é descartado entre as etapas) e diz isso. */
   cancel(): void {
     if (this.state.phase !== 'scanning' && this.state.phase !== 'choosing') return;
     this.stop();
-    this.set({ phase: 'idle', message: 'Leitura cancelada. Toque em «Escanear» para ler de novo.', stage: undefined, choices: undefined });
+    this.set({ phase: 'idle', message: 'Leitura cancelada. Toque em «Escanear» para ler de novo.', stage: undefined, choices: undefined, photo: undefined });
   }
 
   private now(): number {
@@ -239,6 +265,55 @@ export class ScanController {
         }
         detection = located.detection;
         this.set({ stability, qualityHint: located.quality ? qualityWarning(located.quality) : null });
+        // Foto temporária: em vez de ler de novo, confere se é a mesma carta da foto (barato) e confirma.
+        const photo = this.photoResult;
+        if (photo?.features && this.deps.sameCard && this.state.photo) {
+          const tCompare = this.now();
+          const score = this.deps.sameCard(photo.features, frame, detection.quad);
+          const compareMs = Math.round((this.now() - tCompare) * 10) / 10;
+          const frames = this.state.frames + 1;
+          const last: LastAttempt = {
+            status: photo.status, message: '', confidence: photo.confidence, quad: detection.quad, frameSize: { width: frame.width, height: frame.height },
+            metrics: {
+              ...photo.metrics, totalMs: Math.round(captureMs + gateTimes.detect + gateTimes.stability + compareMs),
+              stages: { capture: captureMs, detect: gateTimes.detect, stability: gateTimes.stability, temporal: compareMs },
+              skipped: { ocrNumber: 'foto temporária: a leitura já foi feita, só confere se a carta é a mesma', ocrName: 'foto temporária' },
+            },
+            gated: true,
+          };
+          if (score >= SAME_CARD_SIMILARITY) {
+            const matches = this.state.photo.matches + 1;
+            last.message = `Mesma carta da foto (${Math.round(score * 100)}% parecida).`;
+            this.deps.onAttempt?.(last);
+            if (matches >= this.state.photo.need) {
+              const timeline = this.state.timeline ? { ...this.state.timeline, confirmedMs: this.elapsed() } : undefined;
+              if (photo.status === 'identified' && photo.card) {
+                this.running = false;
+                this.set({ frames, last, timeline, stage: 'temporal', photo: { ...this.state.photo, matches } });
+                await this.finish(id, photo, photo.card, 'automatico');
+                return;
+              }
+              if (photo.status === 'ambiguous') {
+                this.running = false;
+                this.lastAmbiguous = photo;
+                this.set({
+                  phase: 'choosing', frames, last, timeline, stage: undefined, photo: { ...this.state.photo, matches },
+                  message: 'Não tenho certeza de qual impressão é. Escolha a que está na sua mão ou tente de novo.',
+                  choices: choicesOf(photo),
+                });
+                return;
+              }
+            }
+            this.set({ frames, last, stage: 'temporal', photo: { ...this.state.photo, matches }, message: `📸 Foto tirada: ${photo.card?.name ?? 'carta'}. Confirmando que é a mesma carta…` });
+            const spent = Date.now() - started;
+            if (spent < interval) await sleep(interval - spent);
+            continue;
+          }
+          // Outra carta (ou outro ângulo demais): a foto não vale mais, volta a ler.
+          last.message = `A carta mudou (${Math.round(score * 100)}% parecida com a foto): lendo de novo.`;
+          this.deps.onAttempt?.(last);
+          this.dropPhoto();
+        }
       }
       let result: RecognitionResult;
       try {
@@ -310,7 +385,17 @@ export class ScanController {
         await this.finish(id, result, result.card, 'automatico');
         return;
       }
-      if (result.status === 'identified') {
+      // Foto temporária: a primeira leitura boa (identificada ou entre impressões parecidas) fica guardada e a
+      // confirmação segue comparando quadros com ela, sem rodar o OCR de novo.
+      if (!reused && detection && this.deps.sameCard && result.features && (result.status === 'identified' || result.status === 'ambiguous') && result.card) {
+        this.photoResult = result;
+        this.lastAmbiguous = result.status === 'ambiguous' ? result : this.lastAmbiguous;
+        this.set({
+          frames, last, timeline, stage: 'temporal',
+          photo: { frame, cardName: result.card.name, matches: 0, need: this.deps.photoMatches ?? 1 },
+          message: `📸 Foto tirada: ${result.card.name}. Segure a carta mais um instante para confirmar…`,
+        });
+      } else if (result.status === 'identified') {
         this.ambiguousStreak = 0;
         const votes = temporal ? ` (${temporal.votes} de 2 leituras iguais)` : '';
         this.set({ frames, last, timeline, stage: 'temporal', message: `Vi ${result.card?.name ?? 'uma carta'}; confirmando…${votes}` });
