@@ -8,6 +8,12 @@ import { resolveTeam, TEAM_SIZE } from '../app/team';
 import { savedTeam, setSavedTeam, toggleSaved } from '../app/team-store';
 import type { CachedCard, CacheStatus, SlotInfo, StorageInfo } from '../cache/types';
 import { isShiny } from '../core/shiny';
+import { loadVillage } from '../app/village-store';
+import { digitalRows } from '../core/village/digital';
+import { pokemonSpriteUrl } from '../ar/sprite-url';
+
+/** Digital Pokémon da Vila: aparecem aqui marcados como digitais e bloqueados (não vêm de carta física: sem scan nem AR). */
+const digital = ref(digitalRows(loadVillage().digital));
 
 type Row = CachedCard & { status: CacheStatus; thumb?: string };
 
@@ -305,5 +311,26 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         </div>
       </li>
     </ul>
+
+    <section v-if="digital.length > 0" class="digital-list" aria-labelledby="digital-title">
+      <h3 id="digital-title">Digital Pokémon <small>· moram na Vila</small></h3>
+      <p class="note">
+        Vêm do presente inicial e da Fonte, não de uma carta física: moram na Vila e jogam na Torre, mas não podem ser
+        escaneados nem vistos em AR.
+      </p>
+      <ul class="card-list">
+        <li v-for="d in digital" :key="d.instanceId" class="card-row digital-row">
+          <div class="thumb-wrap">
+            <img :src="pokemonSpriteUrl(d.dexId)" :alt="d.name" width="60" height="60" loading="lazy" @error="($event.target as HTMLImageElement).style.visibility = 'hidden'" />
+          </div>
+          <div class="card-info">
+            <strong>{{ d.name }} <span class="badge digital" title="Digital: sem scan e sem AR">🔒 Digital</span></strong>
+            <span>Pokédex nº {{ d.dexId }} · {{ d.origin }}{{ d.stage > 0 ? ` · evoluiu ${d.stage}×` : '' }}</span>
+            <small>Desde {{ d.since }} · carta de origem {{ d.originCardId }}</small>
+            <small>Bloqueado para scan e AR (não é uma carta física).</small>
+          </div>
+        </li>
+      </ul>
+    </section>
   </section>
 </template>

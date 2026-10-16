@@ -24,7 +24,8 @@ import {
 } from '../core/village/life';
 import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
 import {
-  canAffordSummon, canEvolve, earnEnergy, evolve, EVOLVE_COST, grantStarter, instanceOf, pickFonteSpecies, summon, SUMMON_COST,
+  canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, earnEnergy, evolve, EVOLVE_COST, grantStarter, instanceOf, pickAnySpecies,
+  pickFonteSpecies, summon, SUMMON_COST, summonWithCoins,
 } from '../core/village/digital';
 import type { DigitalPokemonInstance } from '../core/village/digital';
 import { dismissActive, legendaryOf, rollLegendary } from '../core/village/legendary';
@@ -288,6 +289,30 @@ async function doSummon(): Promise<void> {
   changed();
   const made = next.instances[next.instances.length - 1]!;
   say(`✨ A Fonte trouxe ${species.name}!`, 5200);
+  await syncDigitalVillager(made);
+}
+
+/** Invocação na sorte por moedas (qualquer espécie). Pronta, mas só aparece com `COIN_SUMMON_ENABLED`. */
+async function doCoinSummon(): Promise<void> {
+  closeDialog();
+  loading.value = 'A Fonte gira…';
+  const dexId = pickAnySpecies(state.digital, Math.random);
+  const species = await resolveSpeciesByDexId(dexId).catch(() => null);
+  loading.value = '';
+  if (!species) {
+    say('A Fonte não respondeu agora (sem conexão?). Suas moedas continuam guardadas.');
+    return;
+  }
+  const r = summonWithCoins(state.digital, state.coins, species, new Date().toISOString());
+  if (!r) {
+    say(`Faltam moedas: a invocação na sorte custa ${COIN_SUMMON_COST}.`);
+    return;
+  }
+  state.digital = r.state;
+  state.coins = r.coins;
+  changed();
+  const made = r.state.instances[r.state.instances.length - 1]!;
+  say(`🎲 A Fonte trouxe ${species.name}!`, 5200);
   await syncDigitalVillager(made);
 }
 
@@ -773,7 +798,17 @@ function openFountain(b: Building): void {
           } else say('✨ Você fez um pedido…');
         },
       },
-      { label: `Invocar Digital Pokémon (${SUMMON_COST})`, disabled: !canAffordSummon(state.digital), run: () => void doSummon() },
+      {
+        // Sem energia suficiente o botão diz quanto falta (antes só ficava cinza, parecendo que a Fonte travou).
+        label: canAffordSummon(state.digital)
+          ? `Invocar Digital Pokémon (${SUMMON_COST} de energia)`
+          : `Invocar Digital Pokémon: faltam ${SUMMON_COST - state.digital.energy} de energia`,
+        disabled: !canAffordSummon(state.digital),
+        run: () => void doSummon(),
+      },
+      ...(COIN_SUMMON_ENABLED
+        ? [{ label: `Invocar qualquer um na sorte (${COIN_SUMMON_COST} moedas)`, disabled: state.coins < COIN_SUMMON_COST, run: () => void doCoinSummon() }]
+        : []),
       { label: 'Evoluir um Digital Pokémon', disabled: state.digital.instances.length === 0, run: () => openEvolveList(b) },
       { label: 'Sair', run: closeDialog },
     ],

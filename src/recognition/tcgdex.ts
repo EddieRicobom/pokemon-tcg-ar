@@ -129,13 +129,12 @@ export class TcgdexClient {
   }
 
   /**
-   * Cartas de uma espécie pelo número da Pokédex nacional (`?dexId=`), para achar uma carta real de origem pro
-   * Digital Pokémon (presente inicial, Fonte) sem depender de uma carta já escaneada. Sintaxe ainda não medida
-   * no GitHub Actions (como `searchByNumber`) — se o filtro não bater com o formato real da API, a lista vem
-   * vazia e quem chamou trata como "nenhuma carta encontrada", nunca inventa uma substituta.
+   * Cartas de uma espécie pelo número da Pokédex nacional, para achar uma carta real de origem pro Digital Pokémon
+   * (presente inicial, Fonte) sem depender de uma carta já escaneada. Precisa de `eq:` (igualdade): medido em
+   * 2026-10-16, `?dexId=1` casa por TRECHO do número e devolvia Unown (201) e Bellossom antes do Bulbasaur.
    */
   async searchByDexId(dexId: number): Promise<TcgdexBrief[]> {
-    const list = await this.fetchJson<TcgdexBrief[]>(`${this.baseUrl}/${this.language}/cards?dexId=${encodeURIComponent(String(dexId))}`);
+    const list = await this.fetchJson<TcgdexBrief[]>(`${this.baseUrl}/${this.language}/cards?dexId=eq:${encodeURIComponent(String(dexId))}`);
     return list ?? [];
   }
 

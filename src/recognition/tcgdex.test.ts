@@ -22,6 +22,16 @@ describe('TcgdexClient', () => {
     expect(c.stats.bytes).toBeGreaterThan(10);
   });
 
+  it('busca a espécie pelo número EXATO da Pokédex (eq:), não por trecho do número', async () => {
+    const urls: string[] = [];
+    const c = client((url) => {
+      urls.push(url);
+      return new Response(JSON.stringify([{ id: 'det1-1', localId: '1', name: 'Bulbasaur' }]));
+    });
+    await c.searchByDexId(1);
+    expect(urls).toEqual(['https://api.tcgdex.net/v2/en/cards?dexId=eq:1']);
+  });
+
   it('não repete a requisição da mesma carta na sessão', async () => {
     const c = client(() => new Response(JSON.stringify(card)));
     await Promise.all([c.getCard('base1-58'), c.getCard('base1-58')]);

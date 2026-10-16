@@ -155,7 +155,8 @@ export async function resolveSpeciesByDexId(dexId: number): Promise<SpeciesRef |
     throw error;
   });
   const [cards, names] = await Promise.all([getTcgdex().searchByDexId(dexId).catch(() => []), dexNamesPromise.catch(() => null)]);
-  const card = cards[0];
+  // Uma carta com imagem, se houver (a origem aparece no Livro); senão a primeira da espécie.
+  const card = cards.find((c) => typeof (c as { image?: unknown }).image === 'string') ?? cards[0];
   // Precisa de uma carta real pra virar `originCardId` — sem carta, não dá pra confirmar a espécie (nunca inventa).
   if (!card) return null;
   const name = names?.get(dexId);

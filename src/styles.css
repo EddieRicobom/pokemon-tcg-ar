@@ -555,6 +555,20 @@ small {
   background: var(--pending);
 }
 
+.badge.digital {
+  background: linear-gradient(135deg, #c9d6e8, #8fa3bf);
+  color: #14213a;
+}
+
+.digital-list {
+  margin-top: 18px;
+}
+
+.digital-row img {
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
 .badge.falhou {
   background: var(--warn);
 }

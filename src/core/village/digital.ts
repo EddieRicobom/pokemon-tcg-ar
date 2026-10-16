@@ -125,6 +125,44 @@ export function grantStarter(s: DigitalState, species: SpeciesRef, now: string):
   return { ...s, starterGiven: true, instances: [...s.instances, instance] };
 }
 
+/**
+ * Invocação "na sorte" por moedas (pedido do dono, para o futuro): qualquer espécie da Pokédex, não só os iniciais.
+ * O código está pronto e testado, mas a opção fica DESLIGADA na Fonte até o dono pedir (`COIN_SUMMON_ENABLED`).
+ */
+export const COIN_SUMMON_COST = 700;
+export const COIN_SUMMON_ENABLED = false;
+/** Última espécie da Pokédex Nacional (Ger. IX) — o sorteio "qualquer um" vai de 1 até aqui. */
+export const LAST_DEX_ID = 1025;
+
+/** Sorteia o número de qualquer espécie (1..LAST_DEX_ID), evitando repetir uma já na coleção quando dá. */
+export function pickAnySpecies(s: DigitalState, rng: Rng): number {
+  const owned = new Set(s.instances.map((i) => i.dexId));
+  for (let tries = 0; tries < 20; tries++) {
+    const dexId = 1 + Math.floor(rng() * LAST_DEX_ID);
+    if (!owned.has(dexId)) return dexId;
+  }
+  return 1 + Math.floor(rng() * LAST_DEX_ID);
+}
+
+/**
+ * Invoca por moedas (espécie real já resolvida por quem chamou). Atômica: devolve o novo estado e as moedas que
+ * sobram, ou null se faltar moeda — nesse caso nada muda. As moedas são da Vila, por isso entram e saem por aqui.
+ */
+export function summonWithCoins(s: DigitalState, coins: number, species: SpeciesRef, now: string): { state: DigitalState; coins: number } | null {
+  if (coins < COIN_SUMMON_COST) return null;
+  const instance: DigitalPokemonInstance = {
+    instanceId: makeInstanceId(s, species.dexId, now),
+    originCardId: species.cardId,
+    dexId: species.dexId,
+    name: species.name,
+    isDigitalPokemon: true,
+    source: 'fonte',
+    grantedAt: now,
+    stage: 0,
+  };
+  return { state: { ...s, instances: [...s.instances, instance] }, coins: coins - COIN_SUMMON_COST };
+}
+
 /** Invoca na Fonte por 500 energias; null se não tiver saldo. A operação é atômica: ou gasta e recebe, ou nada muda. */
 export function summon(s: DigitalState, species: SpeciesRef, now: string): DigitalState | null {
   const spent = trySpend(s, SUMMON_COST, 'fonte', now);
@@ -169,4 +207,35 @@ export function pickFonteSpecies<T extends { dexId: number }>(s: DigitalState, p
   const fresh = pool.filter((p) => !owned.has(p.dexId));
   const from = fresh.length > 0 ? fresh : pool;
   return from[Math.floor(rng() * from.length)] ?? null;
+}
+
+/** Uma linha da lista de cartas para um Digital Pokémon: aparece junto das cartas, mas marcado e sem scan/AR. */
+export interface DigitalRow {
+  instanceId: string;
+  name: string;
+  dexId: number;
+  /** De onde veio, em português (presente inicial, Fonte, evolução). */
+  origin: string;
+  /** Data de chegada (AAAA-MM-DD). */
+  since: string;
+  originCardId: string;
+  stage: number;
+}
+
+const SOURCE_PT: Record<DigitalPokemonInstance['source'], string> = {
+  presente: 'Presente inicial',
+  fonte: 'Invocado na Fonte',
+  evolucao: 'Evoluiu na Fonte',
+};
+
+export function digitalRows(s: DigitalState): DigitalRow[] {
+  return s.instances.map((i) => ({
+    instanceId: i.instanceId,
+    name: i.name,
+    dexId: i.dexId,
+    origin: SOURCE_PT[i.source] ?? 'Digital',
+    since: typeof i.grantedAt === 'string' ? i.grantedAt.slice(0, 10) : '',
+    originCardId: i.originCardId,
+    stage: i.stage,
+  }));
 }

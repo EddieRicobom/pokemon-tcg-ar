@@ -118,17 +118,36 @@ Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, cic
 - Revisado, sem mudança: falha ao iniciar libera motor, WebGL, sensores e observador; uma execução superada (outra carta, câmera fechada, sair da tela) é parada; sprite ausente e falha de rede aparecem na tela com "Tentar baixar o GIF de novo"; perda de rastreamento vira "lost" e volta a "tracking" sozinha; alvo de versão antiga é recompilado; "Recompilar o alvo da carta" e "Escolher outra carta" no erro.
 - 🔶 Não medido: tempos de câmera/alvo/rastreio em celular (o painel do navegador desta sessão estava oculto, o que invalida tempos). Nada visto em celular real.
 
-## Próximos passos (em ordem sugerida)
+## Feito desde a Fase B (2026-10-16)
 
-1. ⬜ **Validar tudo num celular real** seguindo o roteiro; anotar aparelho, navegador, leituras/s e o que falhar. É o maior risco aberto.
-2. ⬜ **Medir o reconhecimento** com fotos reais de cartas (conjunto, taxa de acerto, tempo) e publicar em `docs/TESTING.md`.
-3. ⬜ **Consertar o e2e** (`e2e.yml`): hoje falha por erros de CORS ao buscar imagens do TCGdex de `localhost` e por falha ao carregar o worker do OCR no runner. Não é obrigatório no CI, mas precisa voltar a ser um sinal confiável antes de virar requisito.
-4. ⬜ **Avaliar mais ideias do Momentoos** para rastreio difícil: variantes deformadas do alvo (ângulos fortes), pose flexível (carta torta) e resolução de rastreio adaptativa. Custo: alvos maiores e compilação mais lenta; só vale se a medição no celular mostrar perdas em ângulo.
-5. ⬜ **Desempenho**: o chunk do TensorFlow.js (~1,1 MB sem compactar) e o do Three.js (~0,5 MB) só carregam ao usar AR/Caixa, mas o custo no celular não foi medido. `ScanView.vue` (~830 linhas) e `battle-director.ts` (~1150) merecem ser divididos antes de crescerem mais.
-6. ⬜ **Direção do RPG**: definir com o dono o que vem primeiro (exploração, escolha de golpes, progressão) e reaproveitar o motor de `src/core/battle.ts`.
-7. ⬜ **PWA**: matriz de aparelhos (Chrome/Android e Safari/iOS), orçamento de bateria, comportamento offline completo.
-8. ⬜ **Guardar a carta mais rápido**: medir no celular (Diagnóstico → "Tempo de cada etapa" já separa referência, sprite, imagem em alta e compilação do alvo) e, se a compilação dominar, avaliar alvo menor ou mostrar o Pokémon antes do alvo ficar pronto. A imagem em alta já baixa em paralelo (Fase B).
-9. ⬜ **Escala pela altura real também na Caixa e no AR** (a Vila e a Torre já usam; ver "Vila" acima). Na Caixa os sprites vêm do Showdown e do 3D; avaliar se a mesma curva cabe lá sem atrapalhar a leitura da batalha.
+- ✅ **Fliperama → batalha na câmera**: botão que fecha a Vila e abre câmera e sensores da Caixa no mesmo toque, com "Batalhar" em destaque; cada batalha comum da Caixa terminada rende **100 moedas** na Vila, até **3 por dia** (`claimBattleReward`, com teste). PvP e Liga têm recompensa própria. 🔶 Não visto na tela.
+- ✅ **Quem é esse Pokémon? (difícil)**: distorção bem mais forte (redemoinho largo + ondulação, deslocamento 70 + 26). 🔶 Não visto na tela.
+- ✅ Diagnóstico não anuncia mais o atalho do 666 (o atalho de depuração continua funcionando).
+- ✅ **Digital Pokémon em "Minhas cartas"**: seção própria com o selo 🔒 Digital (origem, data, carta de origem), sem botões de scan/AR. Conferido no Chromium.
+- ✅ **Carta de origem da espécie certa**: a busca `?dexId=1` da TCGdex casa por TRECHO do número (devolvia Unown 201 antes do Bulbasaur); agora usa `dexId=eq:` e prefere uma carta com imagem.
+- ✅ **Fonte diz quanto de energia falta** ("faltam 392 de energia") em vez de só ficar cinza — a invocação depois do primeiro funcionava (conferido: duas invocações seguidas com 1.100 de energia), mas parecia travada sem saldo.
+- ✅ **Invocação "qualquer um na sorte" por 700 moedas**: código pronto e testado (`summonWithCoins`, `pickAnySpecies`, 1–1025), **desligado** (`COIN_SUMMON_ENABLED = false`) até o dono pedir.
+
+## Pendências (em ordem de trabalho)
+
+Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já estavam na lista.
+
+1. ⬜ **Unificar energia e moedas** (pedido do dono): hoje são três saldos — moedas da Vila (loja, Fonte, batalhas), energia do Treinador (Pins, forma Mega) e energia da Fonte (Digital Pokémon). Depende de decidir nome, conversão dos saldos atuais e preços.
+2. ⬜ **Scan com foto temporária** (ideia do dono): assim que o número e o nome forem lidos com a carta parada, congelar aquele quadro (foto temporária, só na memória) e fazer o resto da identificação sobre ela, em vez de continuar lendo a câmera "de graça". Medir antes/depois com a bancada (`scripts/scan-bench.eval.ts`).
+3. ⬜ **Fase C — Survivor**: balanceamento de dificuldade, chefes e sinergias com dados reais de jogo; limpeza de timers/listeners ao sair no meio. Fora do escopo: Duck Hunt comprável, missões/conquistas/fenda de lendário.
+4. ⬜ **Menu do modo Vila** melhor (pedido do dono): hoje o B abre uma folha com 8 abas (mochila, fabricar, cozinha, diário, álbum, coleção, livro, visual).
+5. ⬜ **Separar as funções por onde fazem sentido** (pedido do dono): a Vila mora dentro da aba Caixa (segunda aba), o que é estranho. Reorganizar a navegação (ex.: Vila como aba própria, Caixa e batalhas juntas).
+6. ⬜ **Melhorar a UI do app inteiro** (pedido do dono): depois da reorganização da navegação, um passe de interface tela a tela.
+7. ⬜ **Validar tudo num celular real** seguindo o roteiro; anotar aparelho, navegador, leituras/s e o que falhar. É o maior risco aberto.
+8. ⬜ **Guardar a carta mais rápido**: medir no celular (Diagnóstico → "Tempo de cada etapa" já separa referência, sprite, imagem em alta e compilação do alvo) e, se a compilação dominar, avaliar alvo menor ou mostrar o Pokémon antes do alvo ficar pronto.
+9. ⬜ **Medir o reconhecimento** com fotos reais de cartas (conjunto, taxa de acerto, tempo) e publicar em `docs/TESTING.md`.
+10. ⬜ **Consertar o e2e** (`e2e.yml`): falha por CORS ao buscar imagens do TCGdex de `localhost` e ao carregar o worker do OCR no runner.
+11. ⬜ **Escala pela altura real também na Caixa e no AR** (a Vila e a Torre já usam).
+12. ⬜ **Avaliar mais ideias do Momentoos** para rastreio difícil (variantes deformadas do alvo, pose flexível, resolução adaptativa) — só se a medição no celular mostrar perdas em ângulo.
+13. ⬜ **Desempenho**: custo no celular dos chunks de TensorFlow.js (~1,1 MB) e Three.js (~0,5 MB); dividir `ScanView.vue` e `battle-director.ts`.
+14. ⬜ **Direção do RPG**: definir com o dono o que vem primeiro e reaproveitar `src/core/battle.ts`.
+15. ⬜ **PWA**: matriz de aparelhos (Chrome/Android e Safari/iOS), bateria, offline completo.
+16. ⬜ Em espera, por pedido do dono: vídeo game comprável na Vila (Duck Hunt) e Torre mais parecida com o poke-survivor original (missões, conquistas, fenda de lendário).
 
 ## Decisões em aberto
 

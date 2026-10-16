@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   canAffordSummon,
   canEvolve,
+  COIN_SUMMON_COST,
+  COIN_SUMMON_ENABLED,
+  digitalRows,
+  LAST_DEX_ID,
+  pickAnySpecies,
+  summonWithCoins,
   earnEnergy,
   emptyDigital,
   evolve,
@@ -165,5 +171,49 @@ describe('digital pokémon — normalização (nunca trava com dado salvo estran
     let s = grantStarter(emptyDigital(), BULBASAUR, NOW)!;
     s = earnEnergy(s, 200, 'x', NOW);
     expect(normalizeDigital(JSON.parse(JSON.stringify(s)))).toEqual(s);
+  });
+});
+
+describe('invocação na sorte por moedas (pronta, desligada)', () => {
+  it('fica desligada até o dono pedir', () => {
+    expect(COIN_SUMMON_ENABLED).toBe(false);
+  });
+
+  it('custa 700 moedas, é atômica e pode trazer qualquer espécie', () => {
+    const s = emptyDigital();
+    expect(summonWithCoins(s, 699, { dexId: 448, name: 'Lucario', cardId: 'x' }, '2026-10-16T00:00:00Z')).toBeNull();
+    const r = summonWithCoins(s, 1000, { dexId: 448, name: 'Lucario', cardId: 'x' }, '2026-10-16T00:00:00Z')!;
+    expect(r.coins).toBe(1000 - COIN_SUMMON_COST);
+    expect(r.state.instances[0]).toMatchObject({ dexId: 448, isDigitalPokemon: true, source: 'fonte' });
+    expect(r.state.energy).toBe(s.energy); // moedas, não energia
+  });
+
+  it('sorteia de 1 até a última espécie, evitando repetidas', () => {
+    let s = emptyDigital();
+    s = grantStarter(s, { dexId: 1, name: 'Bulbasaur', cardId: 'x' }, '2026-10-16T00:00:00Z')!;
+    const seq = [0, 0.5]; // 0 → nº 1 (já tem) → tenta de novo
+    let i = 0;
+    const id = pickAnySpecies(s, () => seq[Math.min(i++, seq.length - 1)]!);
+    expect(id).toBe(1 + Math.floor(0.5 * LAST_DEX_ID));
+    for (let k = 0; k < 50; k++) {
+      const any = pickAnySpecies(emptyDigital(), Math.random);
+      expect(any).toBeGreaterThanOrEqual(1);
+      expect(any).toBeLessThanOrEqual(LAST_DEX_ID);
+    }
+  });
+});
+
+describe('Digital Pokémon na lista de cartas', () => {
+  it('cada instância vira uma linha marcada com a origem, sem virar carta escaneável', () => {
+    let s = emptyDigital();
+    s = grantStarter(s, { dexId: 1, name: 'Bulbasaur', cardId: 'det1-1' }, '2026-10-16T10:00:00.000Z')!;
+    s = earnEnergy(s, 600, 'teste', '2026-10-16T11:00:00.000Z');
+    s = summon(s, { dexId: 4, name: 'Charmander', cardId: 'sm7.5-1' }, '2026-10-16T12:00:00.000Z')!;
+    const rows = digitalRows(s);
+    expect(rows.map((r) => [r.name, r.origin, r.since])).toEqual([
+      ['Bulbasaur', 'Presente inicial', '2026-10-16'],
+      ['Charmander', 'Invocado na Fonte', '2026-10-16'],
+    ]);
+    expect(rows.every((r) => isDigitalInstanceId(r.instanceId))).toBe(true);
   });
 });
