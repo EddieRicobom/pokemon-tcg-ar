@@ -67,13 +67,44 @@ Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado �
 O dono do projeto enviou um prompt mestre completo (guardado na íntegra em [docs/PROMPT_MESTRE.md](docs/PROMPT_MESTRE.md), pra não se perder de novo numa compactação de conversa) com 8 fases. Status de cada uma:
 
 - ✅ **Fase 1 — Auditoria**: feita nas sessões anteriores.
-- ✅ **Fase 2 — Scanner**: instrumentação (tempos por etapa, candidatos, origem) e o painel "Mostrar o que o app está vendo" (contorno, carta endireitada, faixa do OCR, texto lido) já existem em `ScanView.vue`/`DiagnosticoView.vue`.
+- ✅ **Fase 2 — Scanner** (refeita na "Fase A" da continuação, 2026-10-16 — a primeira passada só tinha 4 tempos e não tratava as causas). Ver a seção **Scanner: Fase A** abaixo.
 - ✅ **Fase 3 — AR**: GIF ancorado à carta, tratamento de sprite ausente e de falha de rede, liberação de recursos — ver seção "AR sobre a carta" acima.
 - ✅ **Fase 4 — Introdução e presente**: cutscene da primeira entrada (4 falas, uma vez por perfil, `state.digital.introSeen`), seguida do questionário de 6 perguntas (5 de personalidade + 1 de "era" — escolhe, de forma determinística e testada, um dos 27 iniciais reais; ver `core/village/starter-quiz.ts`) e o presente. Depois de recebido, um mini tutorial de 3 falas explica a Fonte, a energia e a evolução (`state.digital.tutorialSeen`), também uma vez só.
 - ✅ **Fase 5 — Digital Pokémon e energia**: instâncias digitais existem (`core/village/digital.ts`), com a etiqueta `isDigitalPokemon: true` e nunca passam pelo cache de cartas/alvo de AR. Economia de energia (`DigitalState.energy`, histórico de transações) é um pool próprio, separado da energia do Pin Mode (evita colisão de saldo/semântica entre os dois sistemas). A Fonte da praça (prédio que já existia como enfeite decorativo) ganhou a mecânica de verdade: invoca por 500 energias (`summon`, espécie real sorteada entre os 27 iniciais via TCGdex) e evolui por 1.000 energias + amizade nível 3+ ("Grande amigo", reaproveitando o sistema de amizade que já existia) + uma próxima forma real (`nextForm`, cadeia de evolução real dos 3 estágios de cada inicial). A amizade com um Digital Pokémon reaproveita `friendOf`/`friendLevel` de sempre, chaveada pelo `instanceId` — nenhum sistema de amizade novo. Energia é ganha jogando de verdade: conversar, responder quiz, momento novo no Álbum, lanchar no Café, correio e vencer um minigame ou uma corrida na Torre.
 - ✅ **Fase 6 — Vila e Survivor**: Vila e Torre de Sobrevivência já existem e funcionam (ver seção "Vila" acima); Digital Pokémon moram na Vila como qualquer residente (mesmo pacote de sprites locais, com fallback pro GIF da Showdown) e agora entram no mesmo sorteio de "quem joga" da Torre de Sobrevivência, junto com as cartas já escaneadas (`MinigameSobrevivencia.vue`, prop `digital`) — sem precisar de carta nenhuma pra isso.
 - ✅ **Fase 7 — Encontros lendários**: sorteio raro (`core/village/legendary.ts`), chance-base de 0,1% numa "oportunidade de sorteio" por dia do calendário do aparelho (nunca mais de uma, nunca re-sorteia abrindo/fechando a Vila nem com uma cutscene ainda pendente). Arquitetura extensível por dados: cada lendário (hoje Suicune, Zapdos, Celebi) é uma entrada em `LEGENDARIES` com falas, bônus e consequência próprios — adicionar um novo é só mais uma entrada, sem mexer no motor. Histórico guardado, cutscene com falas em sequência na Vila.
 - 🔶 **Fase 8 — Integração e acabamento**: contínua; cada PR já atualiza este documento e roda os testes. Falta um pente-fino de balanceamento (custos, chance do lendário, quanto cada atividade rende de energia) com o dono jogando de verdade — e otimizar a Torre pra celular mais fraco não foi medido ainda (só testado no software renderer do CI).
+
+## Scanner: Fase A (2026-10-16)
+
+O que mudou e por quê (causas reais, não só interface):
+
+- ✅ **Candidatas escondidas** (o "a lista parece parar antes do último resultado"): três cortes reais, corrigidos e cobertos por testes.
+  1. `rankCandidates` cortava o ranking em 5: com 6 candidatas do índice + até 6 da rodada de números parecidos + até 5 da ilustração, as de baixo sumiam mesmo depois de baixadas e comparadas. Agora devolve todas.
+  2. A escolha "Qual impressão é esta?" cortava em 4 (`slice(0, 4)`) e casava as porcentagens por posição depois de um filtro — podia mostrar a porcentagem de uma carta na outra. Agora `choicesOf` lista todas, cada uma com a própria confiança.
+  3. O índice e a busca manual cortavam em silêncio (6 candidatas baixadas; 30 resultados na busca). Agora dizem o total: a busca manual mostra "N de M" e "Mostrar mais" até a última; quando o número lido bate em mais cartas do que as comparadas, o diagnóstico diz quantas e abre a busca manual já com o número.
+- ✅ **Confirmação temporal com voto falso**: quando a carta sumia por um quadro, o controlador repetia a leitura anterior **e contava de novo como voto** — dava pra "confirmar" com uma única leitura real. Agora a repetição só segura a mensagem na tela; só leitura de verdade vota.
+- ✅ **OCR só com a carta parada**: antes, todo quadro com carta rodava o OCR inteiro (duas orientações, metades, nome — segundos no celular), inclusive com a carta mexendo. Agora a detecção (leve) roda em todo quadro e o OCR só depois de um par de quadros com a carta parada (movimento ≤ 2% da diagonal; `recognition/stability.ts`). A confirmação temporal continua exigindo leituras de OCR repetidas.
+- ✅ **Reaproveitamento entre quadros**: imagens de referência ficam na memória (24, LRU) — o quadro seguinte não baixa nem decodifica de novo; a orientação (carta de cabeça para baixo) achada num quadro é tentada primeiro no seguinte.
+- ✅ **Cancelamento de verdade**: cancelar/recomeçar descarta a leitura em andamento entre as etapas (`ScanCancelled`); antes o resultado de uma leitura velha ainda chegava depois.
+- ✅ **Instrumentação** (`recognition/stage-clock.ts`): tempo de captura, detecção, estabilização, perspectiva, recorte do número, recorte do nome, OCR do número, OCR do nome, catálogo, comparação visual, ordenação, confirmação temporal, até as primeiras candidatas, confirmação (guardar a carta) e início do AR. Etapa pulada guarda o motivo, nunca um tempo inventado. Na tela: tabela da última leitura (Escanear → Teste) e mediana/p90 da sessão (Diagnóstico).
+- ✅ **"Mostrar o que o app está vendo" ampliado**: contorno e os 4 cantos numerados, a faixa exata do número (e das metades, se lidas) e a do nome desenhadas sobre a câmera pela mesma homografia dos recortes (opção para desligar as sobreposições), os recortes reais enviados ao OCR (faixa, metades, nome), texto lido, estabilidade (movimento medido), luz e nitidez, e **todas** as candidatas com veredito (aceita / em dúvida / rejeitada) e o motivo — inclusive por que uma candidata ficou sem imagem de referência.
+- ✅ **Etapas honestas** (`app/scan-steps.ts`): "Etapa n de 8" (Localizando carta → … → Carta identificada) seguindo a etapa que o pipeline avisou que começou; pulada aparece tracejada com o motivo; tempo decorrido; **Cancelar** e **Reiniciar**. Avisos de carta mexendo, pouca luz e possível desfoque (os dois últimos são heurísticos e não bloqueiam a leitura).
+
+### Medição antes/depois
+
+Bancada `scripts/scan-bench.eval.ts` (Node num PC, Tesseract de verdade, foto real de câmera, mesmo roteiro nas duas versões, 3 amostras cada). **Não é celular**: no celular cada passada de OCR custa bem mais, mas isso não foi medido.
+
+| Roteiro | `main` (antes) | Fase A (depois) |
+|---|---|---|
+| Carta mexendo 3 quadros, depois parada | 2,36–2,59 s até confirmar · **14** passadas de OCR | 1,34–1,40 s · **2** passadas de OCR |
+| Carta parada desde o 1º quadro | 0,53 s · 1 quadro · 2 passadas | 0,69–0,70 s · 2 quadros · 2 passadas (**~0,17 s mais lento**: espera o par de quadros parados) |
+
+No Chromium (câmera falsa com a mesma foto, GPU do PC), a tabela da sessão mediu: até as primeiras candidatas ~1,9 s; **guardar a carta (referência + sprite + compilar o alvo do MindAR) 19,9 s**; início do AR 1,5 s. O maior gargalo medido do fluxo Escanear → AR **não é o reconhecimento, é a compilação do alvo ao guardar** — próximo alvo de otimização (ver passo 8 abaixo).
+
+Numa das tentativas no Chromium as 3 imagens de referência falharam (a decisão caiu para "em dúvida" só pelo número); a causa não ficou registrada porque o erro era engolido. Agora o motivo aparece no veredito de cada candidata; na tentativa seguinte elas carregaram e a carta foi aceita com 91%.
+
+🔶 Nada disso foi visto num celular real.
 
 ## Próximos passos (em ordem sugerida)
 
@@ -84,6 +115,8 @@ O dono do projeto enviou um prompt mestre completo (guardado na íntegra em [doc
 5. ⬜ **Desempenho**: o chunk do TensorFlow.js (~1,1 MB sem compactar) e o do Three.js (~0,5 MB) só carregam ao usar AR/Caixa, mas o custo no celular não foi medido. `ScanView.vue` (~830 linhas) e `battle-director.ts` (~1150) merecem ser divididos antes de crescerem mais.
 6. ⬜ **Direção do RPG**: definir com o dono o que vem primeiro (exploração, escolha de golpes, progressão) e reaproveitar o motor de `src/core/battle.ts`.
 7. ⬜ **PWA**: matriz de aparelhos (Chrome/Android e Safari/iOS), orçamento de bateria, comportamento offline completo.
+8. ⬜ **Guardar a carta mais rápido**: 19,9 s medidos no Chromium entre a carta reconhecida e pronta (compilar o alvo do MindAR domina). Medir as partes (referência, sprite, alvo) e avaliar compilar em Web Worker, alvo menor ou mostrar o Pokémon antes do alvo ficar pronto.
+9. ⬜ **Escala dos sprites pela altura real** (pedido do dono): hoje a Vila (e o pacote local de sprites) escala pelo tamanho dos pixels opacos do sprite, então um Snorlax e um Pikachu podem sair parecidos. Guardar a altura de cada espécie pela PokéAPI (`height`, em decímetros; cache local, com o mesmo cuidado de nunca inventar quando a API falhar) e usar a comparação entre alturas (com limites mínimo/máximo e talvez escala logarítmica, para Wailord não cobrir a tela) para decidir o tamanho na Vila, na Torre e na Caixa. Depois do PR da Vila (mexe no mesmo `heightTiles`).
 
 ## Decisões em aberto
 

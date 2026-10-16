@@ -124,7 +124,11 @@ export interface RankingResult {
   margin: number;
 }
 
-export function rankCandidates(candidates: CandidateInfo[], evidence: Evidence, topK = 5): RankingResult {
+/**
+ * Ordena TODAS as candidatas (sem corte): as que foram baixadas e comparadas precisam poder aparecer, inclusive a
+ * última — um corte aqui (antes era 5) escondia candidatas válidas da lista de escolha. `topK` só para quem pedir.
+ */
+export function rankCandidates(candidates: CandidateInfo[], evidence: Evidence, topK = Number.POSITIVE_INFINITY): RankingResult {
   const ranked = candidates
     .map((candidate) => scoreCandidate(candidate, evidence))
     .sort((a, b) => b.confidence - a.confidence)

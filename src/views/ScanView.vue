@@ -18,6 +18,12 @@ import type { LastAttempt, ScanState } from '../app/scan-controller';
 import { fetchSprite, getArtIndex, loadBattle, getCache, getCatalog, getPipeline, getTcgdex, onOcrProgress, setArtSearch, setCaptureDebug } from '../app/services';
 import type { ManualMatch } from '../recognition/catalog-index';
 import { recordFromTcgdex } from '../recognition/pipeline';
+import { detectCard } from '../recognition/detect-card';
+import { frameQuality } from '../recognition/stability';
+import { SCAN_STAGE_LABELS_PT, SCAN_STAGES } from '../recognition/stage-clock';
+import type { Quad } from '../recognition/types';
+import { recordScanMetrics } from '../app/scan-metrics';
+import { scanSteps, stabilityText } from '../app/scan-steps';
 import { lastAttempt } from '../app/diagnostics';
 import { routeHref } from '../app/route';
 import { useFullscreen } from '../app/fullscreen';
@@ -91,6 +97,26 @@ const shownAttempt = computed(() => photoAttempt.value ?? scan.value.last ?? nul
 const debugCanvasEl = ref<HTMLCanvasElement | null>(null);
 const debugRectUrl = ref('');
 const debugStripUrl = ref('');
+const debugSideUrls = ref<string[]>([]);
+const debugNameUrl = ref('');
+// Desenhar contorno, cantos e áreas lidas sobre a câmera (pode desligar e manter só o painel).
+const OVERLAY_KEY = 'tcg-ar-scan-overlay-v1';
+function readOverlayOption(): boolean {
+  try {
+    return localStorage.getItem(OVERLAY_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+const overlayOn = ref(readOverlayOption());
+function applyOverlayOption(): void {
+  try {
+    localStorage.setItem(OVERLAY_KEY, overlayOn.value ? '1' : '0');
+  } catch {
+    // Só não lembra da escolha na próxima vez.
+  }
+  refreshDebug();
+}
 setCaptureDebug(debugOn.value);
 
 function applyDebugOption(): void {
@@ -113,11 +139,18 @@ function imageUrl(image?: RgbaImage): string {
   return canvas.toDataURL('image/png');
 }
 
-/** Desenha o quadrilátero achado sobre o vídeo (que está em "cover" dentro do visor). */
+/**
+ * Desenha sobre o vídeo (que está em "cover" dentro do visor) o que o pipeline usou de verdade: contorno da carta,
+ * os 4 cantos (1 = canto de cima à esquerda da carta lida), a faixa do número (azul; metades, se lidas) e a do nome
+ * (roxo). As áreas vêm do próprio pipeline (mesma homografia dos recortes enviados ao OCR), não de um desenho à parte.
+ */
 function refreshDebug(): void {
   const last = shownAttempt.value ?? undefined;
-  debugRectUrl.value = debugOn.value ? imageUrl(last?.view?.rectified) : '';
-  debugStripUrl.value = debugOn.value ? imageUrl(last?.view?.strip) : '';
+  const view = last?.view;
+  debugRectUrl.value = debugOn.value ? imageUrl(view?.rectified) : '';
+  debugStripUrl.value = debugOn.value ? imageUrl(view?.strip) : '';
+  debugSideUrls.value = debugOn.value ? (view?.sides ?? []).map((side) => imageUrl(side)) : [];
+  debugNameUrl.value = debugOn.value ? imageUrl(view?.nameCrop) : '';
   const canvas = debugCanvasEl.value;
   const stage = stageEl.value;
   if (!canvas || !stage) return;
@@ -128,22 +161,39 @@ function refreshDebug(): void {
   const context = canvas.getContext('2d');
   if (!context) return;
   context.clearRect(0, 0, w, h);
-  const view = last?.view;
-  if (!debugOn.value || !last?.quad || !view) return;
-  const scale = Math.max(w / view.frame.width, h / view.frame.height);
-  const ox = (w - view.frame.width * scale) / 2;
-  const oy = (h - view.frame.height * scale) / 2;
-  context.lineWidth = 3;
-  context.strokeStyle = last.reused ? '#ffd166' : '#5fd38d';
-  context.beginPath();
+  const size = view?.frame ?? last?.frameSize;
+  if (!debugOn.value || !overlayOn.value || !last?.quad || !size) return;
+  const scale = Math.max(w / size.width, h / size.height);
+  const ox = (w - size.width * scale) / 2;
+  const oy = (h - size.height * scale) / 2;
+  const toScreen = (p: { x: number; y: number }) => ({ x: ox + p.x * scale, y: oy + p.y * scale });
+  const poly = (quad: Quad, color: string, width: number, dash: number[] = []) => {
+    context.setLineDash(dash);
+    context.lineWidth = width;
+    context.strokeStyle = color;
+    context.beginPath();
+    quad.forEach((p, i) => {
+      const s2 = toScreen(p);
+      if (i === 0) context.moveTo(s2.x, s2.y);
+      else context.lineTo(s2.x, s2.y);
+    });
+    context.closePath();
+    context.stroke();
+    context.setLineDash([]);
+  };
+  poly(last.quad, last.reused ? '#ffd166' : last.gated ? '#9fb3c8' : '#5fd38d', 3, last.gated ? [8, 6] : []);
+  context.font = 'bold 13px system-ui, sans-serif';
   last.quad.forEach((p, i) => {
-    const x = ox + p.x * scale;
-    const y = oy + p.y * scale;
-    if (i === 0) context.moveTo(x, y);
-    else context.lineTo(x, y);
+    const s2 = toScreen(p);
+    context.fillStyle = '#5fd38d';
+    context.beginPath();
+    context.arc(s2.x, s2.y, 9, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = '#0b1220';
+    context.fillText(String(i + 1), s2.x - 4, s2.y + 5);
   });
-  context.closePath();
-  context.stroke();
+  for (const region of view?.regions?.number ?? []) poly(region, '#4cc9f0', 2);
+  if (view?.regions?.name) poly(view.regions.name, '#c77dff', 2);
 }
 watch(shownAttempt, refreshDebug);
 
@@ -172,6 +222,7 @@ async function testPhoto(event: Event): Promise<void> {
     photoAttempt.value = {
       status: result.status, message: result.message, confidence: result.confidence, metrics: result.metrics,
       ocrBottom: result.ocrText?.bottom, ocrName: result.ocrText?.name, cardName: result.card?.name, quad: result.quad, view: result.view,
+      frameSize: { width, height },
     };
     photoMessage.value = result.card ? `Resultado: ${result.card.name} (${result.card.setName} ${result.card.localId}).` : '';
   } catch (error) {
@@ -199,18 +250,34 @@ const manualHint = ref(false);
 const manualName = ref('');
 const manualNumber = ref('');
 const manualResults = ref<ManualMatch[]>([]);
+const manualTotal = ref(0);
+const MANUAL_PAGE = 30;
+const manualLimit = ref(MANUAL_PAGE);
 const manualMessage = ref('');
-async function searchManual(): Promise<void> {
+/** Busca à mão. `more` mostra a próxima página: todos os resultados podem ser vistos, inclusive o último. */
+async function searchManual(more = false): Promise<void> {
   manualMessage.value = '';
+  manualLimit.value = more ? manualLimit.value + MANUAL_PAGE : MANUAL_PAGE;
   const catalog = await getCatalog();
   if (!catalog) {
     manualResults.value = [];
+    manualTotal.value = 0;
     manualMessage.value = 'O índice de cartas não está disponível agora. Tente de novo com conexão.';
     return;
   }
   const digits = manualNumber.value.replace(/\D/g, '');
-  manualResults.value = catalog.search(manualName.value, digits ? Number.parseInt(digits, 10) : undefined);
-  if (manualResults.value.length === 0) manualMessage.value = 'Nenhuma carta encontrada. Confira o nome (em inglês) ou o número.';
+  const page = catalog.searchPage(manualName.value, digits ? Number.parseInt(digits, 10) : undefined, manualLimit.value);
+  manualResults.value = page.matches;
+  manualTotal.value = page.total;
+  if (page.total === 0) manualMessage.value = 'Nenhuma carta encontrada. Confira o nome (em inglês) ou o número.';
+}
+/** Leu um número que bate em mais cartas do que as baixadas: abre a busca à mão já com esse número. */
+function searchReadNumber(value: number): void {
+  manualName.value = '';
+  manualNumber.value = String(value);
+  sheet.value = 'manual';
+  manualOpen.value = true;
+  void searchManual();
 }
 async function pickManual(id: string): Promise<void> {
   manualResults.value = [];
@@ -292,12 +359,20 @@ const spriteText = computed(() => {
   return '';
 });
 
+let lastCountedRead: LastAttempt | null = null;
+let failedReads = 0;
 async function ensureController(): Promise<ScanController> {
   if (controller) return controller;
   const cache = await getCache();
   controller = new ScanController({
     grabFrame: () => (videoEl.value ? frameFromVideo(videoEl.value) : null),
-    recognize: async (frame) => (await getPipeline()).recognize(frame),
+    recognize: async (frame, options) => (await getPipeline()).recognize(frame, options),
+    // Detecção leve em todo quadro; o pipeline (OCR) só roda com a carta parada (ver ScanController).
+    locate: (frame) => {
+      const detection = detectCard(frame);
+      return { detection, quality: detection ? frameQuality(frame, detection.quad) : undefined };
+    },
+    onAttempt: (attempt) => recordScanMetrics(attempt.metrics.stages, attempt.gated ? 'gated' : 'read'),
     cache,
     loadCardRecord: async (id) => {
       const card = await getTcgdex().getCard(id);
@@ -305,14 +380,21 @@ async function ensureController(): Promise<ScanController> {
     },
     onState: (state) => {
       scan.value = state;
-      if (state.last) lastAttempt.value = state.last;
-      // Depois de várias leituras sem sucesso, abre a busca manual: o caminho seguro não deve ficar escondido.
-      if (state.phase === 'scanning' && state.frames >= 4 && state.last && state.last.status !== 'identified') {
+      // Quadros só de detecção (carta ausente/mexendo) não contam como leitura.
+      if (state.last && !state.last.gated && state.last !== lastCountedRead) {
+        lastCountedRead = state.last;
+        lastAttempt.value = state.last;
+        failedReads = state.last.status === 'identified' ? 0 : failedReads + 1;
+      }
+      if (state.phase !== 'scanning') failedReads = 0;
+      // Depois de várias leituras de verdade sem sucesso, abre a busca manual: o caminho seguro não fica escondido.
+      if (state.phase === 'scanning' && failedReads >= 3) {
         manualOpen.value = true;
         manualHint.value = true;
       }
       if (state.phase === 'ready' && state.card && state.card !== lastReadyCard) {
         lastReadyCard = state.card;
+        if (state.timeline?.confirmMs !== undefined) recordScanMetrics({ confirm: state.timeline.confirmMs }, 'event');
         void startArFor(state.card.id);
       }
     },
@@ -374,6 +456,7 @@ async function startArFor(cardId: string): Promise<void> {
     return;
   }
   const run = ++arRun;
+  const arStartedAt = performance.now();
   stopAr();
   // Recria o elemento <canvas> para garantir contexto WebGL novo sem contaminação anterior
   arCanvasKey.value++;
@@ -429,6 +512,8 @@ async function startArFor(cardId: string): Promise<void> {
       return;
     }
     ar = started;
+    // Do pedido do AR até o motor rodando (dados, alvo, motor): entra nas métricas do Diagnóstico.
+    recordScanMetrics({ arInit: Math.round(performance.now() - arStartedAt) }, 'event');
     panelMode.value = 'auto';
     ar.session.setLayout(clampLayout(layout));
     arActive.value = true;
@@ -722,6 +807,62 @@ const adjustNotice = computed(() => (adjusting.value ? 'Arraste para mover o Pok
 /** Depois de várias leituras sem sucesso, o botão "Buscar" chama a atenção: o caminho manual não fica escondido. */
 const manualAttention = computed(() => manualHint.value && sheet.value !== 'manual' && scan.value.phase === 'scanning' && !props.cardId);
 const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
+
+// -- Progresso da leitura: as 8 etapas reais (ver `app/scan-steps.ts`), tempo decorrido, cancelar e reiniciar.
+const scanStepList = computed(() => scanSteps(scan.value));
+const scanStepsNotice = computed(() => {
+  if (!cameraOn.value || props.cardId || (scan.value.phase !== 'scanning' && scan.value.phase !== 'preparing')) return null;
+  if (arStage.value !== 'idle' && arStage.value !== 'selected') return null;
+  const steps = scanStepList.value;
+  const index = steps.findIndex((step) => step.state === 'active' || step.state === 'failed');
+  const current = steps[Math.max(0, index)]!;
+  const startedAt = scan.value.timeline?.startedAt;
+  const seconds = startedAt !== undefined ? Math.max(0, Math.round((scanClock.value - startedAt) / 1000)) : null;
+  return { steps, current, position: Math.max(0, index) + 1, seconds, stability: stabilityText(scan.value), quality: scan.value.qualityHint ?? null };
+});
+// Relógio do tempo decorrido (só anda enquanto lê).
+const scanClock = ref(performance.now());
+let scanClockTimer: ReturnType<typeof setInterval> | null = null;
+watch(
+  () => scan.value.phase === 'scanning' && cameraOn.value,
+  (on) => {
+    if (on && !scanClockTimer) scanClockTimer = setInterval(() => (scanClock.value = performance.now()), 500);
+    else if (!on && scanClockTimer) {
+      clearInterval(scanClockTimer);
+      scanClockTimer = null;
+    }
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  if (scanClockTimer) clearInterval(scanClockTimer);
+});
+function cancelScan(): void {
+  controller?.cancel();
+}
+async function restartScan(): Promise<void> {
+  (await ensureController()).start();
+}
+
+/** O número lido bate em mais cartas do que as comparadas (ex.: número sem total). */
+const moreMatches = computed(() => {
+  const last = shownAttempt.value;
+  const total = last?.metrics.catalogMatches ?? 0;
+  const value = Number.parseInt((last?.ocrBottom ?? '').match(/\d+/)?.[0] ?? '', 10);
+  if (!last || total <= last.metrics.candidates || !Number.isFinite(value)) return null;
+  return { total, compared: last.metrics.candidates, value };
+});
+const stageRows = computed(() => {
+  const m = shownAttempt.value?.metrics;
+  if (!m) return [];
+  return SCAN_STAGES.filter((stage) => m.stages[stage] !== undefined || m.skipped[stage]).map((stage) => ({
+    stage,
+    label: SCAN_STAGE_LABELS_PT[stage],
+    ms: m.stages[stage],
+    skipped: m.skipped[stage],
+  }));
+});
+const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeitada' } as const;
 </script>
 
 <template>
@@ -760,6 +901,17 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
         <div v-if="stepsNotice" class="pill steps">
           <span class="pill-text">Etapa {{ stepsNotice.position }} de {{ stepsNotice.total }}: {{ stepsNotice.label }}</span>
           <span class="steps-bar" aria-hidden="true"><i v-for="step in stepsNotice.steps" :key="step.key" :class="step.state"></i></span>
+        </div>
+        <div v-if="scanStepsNotice" class="pill steps scan-steps">
+          <span class="pill-text">
+            Etapa {{ scanStepsNotice.position }} de {{ scanStepsNotice.steps.length }}: {{ scanStepsNotice.current.label }}{{ scanStepsNotice.seconds !== null ? ` · ${scanStepsNotice.seconds} s` : '' }}
+            <small v-if="scanStepsNotice.stability || scanStepsNotice.quality" class="pill-sub">{{ [scanStepsNotice.stability, scanStepsNotice.quality].filter(Boolean).join(' · ') }}</small>
+          </span>
+          <span class="steps-bar" aria-hidden="true"><i v-for="step in scanStepsNotice.steps" :key="step.key" :class="step.state" :title="step.label + (step.note ? ` — ${step.note}` : '')"></i></span>
+          <span class="scan-actions">
+            <button v-if="scan.phase === 'scanning'" type="button" class="link" @click="cancelScan">Cancelar</button>
+            <button type="button" class="link" @click="restartScan">Reiniciar</button>
+          </span>
         </div>
         <p v-if="mainNotice" class="pill" :class="mainNotice.tone">
           <i class="dot"></i>
@@ -883,17 +1035,38 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
         <input v-model="debugOn" type="checkbox" @change="applyDebugOption" />
         Mostrar o que o app está vendo (diagnóstico)
       </label>
+      <label v-if="debugOn" class="art-option">
+        <input v-model="overlayOn" type="checkbox" @change="applyOverlayOption" />
+        Desenhar contorno, cantos e áreas lidas sobre a câmera
+      </label>
       <div v-if="debugOn || photoAttempt" class="debug-panel" role="status">
         <template v-if="shownAttempt">
           <p><strong>{{ shownAttempt.status }}</strong>{{ shownAttempt.reused ? ' (repetindo a leitura anterior)' : '' }} — {{ shownAttempt.message }}</p>
-          <p class="meta">
-            Tempos: detecção {{ shownAttempt.metrics.detectMs }} ms · OCR {{ shownAttempt.metrics.ocrMs }} ms · candidatas
-            {{ shownAttempt.metrics.candidatesMs }} ms · total {{ shownAttempt.metrics.totalMs }} ms
+          <p class="meta">Total desta leitura: {{ shownAttempt.metrics.totalMs }} ms{{ shownAttempt.gated ? ' (só detecção: a carta ainda não estava parada)' : '' }}</p>
+          <table v-if="stageRows.length" class="stage-table">
+            <tbody>
+              <tr v-for="row in stageRows" :key="row.stage" :class="{ skipped: row.ms === undefined }">
+                <th scope="row">{{ row.label }}</th>
+                <td>{{ row.ms !== undefined ? `${row.ms} ms` : `pulada: ${row.skipped}` }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-if="scan.stability && !photoAttempt" class="meta">
+            Estabilidade: {{ scan.stability.kind === 'stable' ? 'parada' : scan.stability.kind === 'moving' ? 'mexendo' : 'sem carta' }}
+            {{ scan.stability.motion !== null ? `· movimento ${(scan.stability.motion * 100).toFixed(1)}% da diagonal (limite 2%)` : '' }}
+          </p>
+          <p v-if="shownAttempt.view?.quality" class="meta">
+            Luz {{ Math.round(shownAttempt.view.quality.brightness) }}/255 · nitidez {{ shownAttempt.view.quality.sharpness.toFixed(1) }} (heurística; aviso abaixo de 2,5)
           </p>
           <p class="meta">
             Candidatas: {{ shownAttempt.metrics.candidates }}{{ shownAttempt.metrics.artCandidates ? ` (${shownAttempt.metrics.artCandidates} pela ilustração)` : '' }}
             · origem: {{ shownAttempt.metrics.source }} · carta girada 180°: {{ shownAttempt.metrics.rotated180 ? 'sim' : 'não' }}
             · requisições: {{ shownAttempt.metrics.requests }}
+            {{ shownAttempt.metrics.referenceCacheHits ? `· ${shownAttempt.metrics.referenceCacheHits} referência(s) reaproveitada(s)` : '' }}
+          </p>
+          <p v-if="moreMatches" class="meta">
+            O número lido bate em {{ moreMatches.total }} cartas do catálogo; comparei as {{ moreMatches.compared }} mais prováveis.
+            <button type="button" class="link" @click="searchReadNumber(moreMatches.value)">Ver todas na busca à mão</button>
           </p>
           <p v-if="shownAttempt.view?.detect" class="meta">
             Carta achada: {{ Math.round(shownAttempt.view.detect.areaFraction * 100) }}% do quadro · proporção
@@ -910,13 +1083,28 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
             </figure>
             <figure v-if="debugStripUrl">
               <img :src="debugStripUrl" alt="Faixa de baixo como o OCR a recebe" />
-              <figcaption>Faixa de baixo (entrada do OCR)</figcaption>
+              <figcaption>Faixa do número (entrada do OCR)</figcaption>
+            </figure>
+            <figure v-for="(url, i) in debugSideUrls" :key="url.slice(-24) + i">
+              <img :src="url" :alt="`Metade ${i === 0 ? 'esquerda' : 'direita'} da faixa, como o OCR a recebe`" />
+              <figcaption>Metade {{ i === 0 ? 'esquerda' : 'direita' }} (2ª tentativa)</figcaption>
+            </figure>
+            <figure v-if="debugNameUrl">
+              <img :src="debugNameUrl" alt="Faixa do nome como o OCR a recebe" />
+              <figcaption>Faixa do nome (entrada do OCR)</figcaption>
             </figure>
           </div>
           <p v-if="shownAttempt.ocrBottom !== undefined" class="meta">
             OCR da faixa de baixo: <code class="mono">{{ shownAttempt.ocrBottom.replace(/\s+/g, ' ').slice(0, 120) || '(vazio)' }}</code>
           </p>
           <p v-if="shownAttempt.ocrName" class="meta">OCR do nome: <code class="mono">{{ shownAttempt.ocrName.replace(/\s+/g, ' ').slice(0, 80) }}</code></p>
+          <ol v-if="shownAttempt.view?.candidates?.length" class="verdicts">
+            <li v-for="c in shownAttempt.view.candidates" :key="c.id" :class="c.verdict">
+              <strong>{{ c.name }}</strong> · {{ c.setName }} {{ c.localId }}/{{ c.setOfficial }} — {{ confidencePct(c.confidence) }}
+              <em>{{ VERDICT_PT[c.verdict] }}</em>
+              <small>{{ c.why }}{{ c.reasons.length ? ` · ${c.reasons.join(', ')}` : '' }}{{ c.viaVariant ? ' · número parecido' : '' }}</small>
+            </li>
+          </ol>
         </template>
         <p v-else class="meta">Abra a câmera e aponte para a carta: aqui aparece o que o app enxerga a cada quadro.</p>
         <p v-if="indexStatus" class="meta">{{ indexStatus }}</p>
@@ -974,15 +1162,19 @@ const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
       >
         <summary v-if="!immersive">Não está lendo? Buscar a carta à mão</summary>
         <label>Nome da carta (em inglês, ex.: Pikachu)
-          <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual" />
+          <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual()" />
         </label>
         <label>Número da carta (opcional, ex.: 58)
-          <input v-model="manualNumber" type="text" inputmode="numeric" autocomplete="off" @keyup.enter="searchManual" />
+          <input v-model="manualNumber" type="text" inputmode="numeric" autocomplete="off" @keyup.enter="searchManual()" />
         </label>
-        <button type="button" class="primary" @click="searchManual">Buscar</button>
+        <button type="button" class="primary" @click="searchManual()">Buscar</button>
         <p v-if="manualMessage" class="message">{{ manualMessage }}</p>
+        <p v-if="manualTotal > 0" class="meta">Mostrando {{ manualResults.length }} de {{ manualTotal }} cartas.</p>
         <button v-for="match in manualResults" :key="match.id" type="button" @click="pickManual(match.id)">
           {{ match.name }} · {{ match.setName }} {{ match.localId }}/{{ match.setOfficial }}
+        </button>
+        <button v-if="manualResults.length < manualTotal" type="button" class="link" @click="searchManual(true)">
+          Mostrar mais ({{ manualTotal - manualResults.length }} restantes)
         </button>
       </component>
     </StageSheet>

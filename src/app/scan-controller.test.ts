@@ -3,13 +3,13 @@ import type { ScanOutcome } from '../cache/card-cache';
 import type { CachedCard } from '../cache/types';
 import type { IdentifiedCard, RecognitionMetrics, RecognitionResult } from '../recognition/pipeline';
 import type { RgbaImage } from '../recognition/types';
-import { ScanController } from './scan-controller';
+import { choicesOf, ScanController } from './scan-controller';
 import type { ScanState } from './scan-controller';
 
 const frame: RgbaImage = { width: 2, height: 2, data: new Uint8ClampedArray(16) };
 const metrics: RecognitionMetrics = {
   detectMs: 1, ocrMs: 1, candidatesMs: 1, totalMs: 3, requests: 0, downloadedBytes: 0, candidates: 1,
-  source: 'network', visualVerified: true, rotated180: false,
+  source: 'network', visualVerified: true, rotated180: false, stages: {}, skipped: {},
 };
 
 function card(id: string, name = 'Pikachu'): IdentifiedCard {
@@ -194,5 +194,96 @@ describe('ScanController', () => {
     controller.stop();
     await controller.whenSettled();
     expect(cache.scanCard).not.toHaveBeenCalled();
+  });
+});
+
+describe('ScanController (Fase A: estabilidade, cancelar, candidatas)', () => {
+  const quadAt = (dx: number) => [{ x: 10 + dx, y: 10 }, { x: 110 + dx, y: 10 }, { x: 110 + dx, y: 150 }, { x: 10 + dx, y: 150 }] as [
+    { x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number },
+  ];
+  const det = (dx: number) => ({ quad: quadAt(dx), areaFraction: 0.4, aspect: 0.7, fillRatio: 0.9, score: 1 });
+
+  function gated(locations: (number | null)[], results: RecognitionResult[]) {
+    const queue = [...results];
+    const places = [...locations];
+    const recognize = vi.fn(async (_f: RgbaImage, options?: { detection?: unknown }) => {
+      expect(options?.detection).toBeDefined();
+      return queue.shift() ?? result({ status: 'not-found' });
+    });
+    const base = setup([]);
+    const controller = new ScanController({
+      grabFrame: () => frame,
+      recognize,
+      locate: () => {
+        const dx = places.length > 0 ? places.shift()! : 0;
+        return { detection: dx === null ? null : det(dx) };
+      },
+      cache: base.cache,
+      onState: (s) => base.states.push(s),
+      sleep: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    });
+    return { controller, recognize, states: base.states, cache: base.cache };
+  }
+
+  it('o OCR só roda com a carta parada: sem carta e carta mexendo não chamam o pipeline', async () => {
+    const { controller, recognize, states, cache } = gated([null, 0, 40, 41, 41], [identified()]);
+    controller.start();
+    await controller.whenSettled();
+    // Quadros: sem carta, 1º com carta (sem par), mexeu 40 px, parada (41) → só agora reconhece.
+    expect(recognize).toHaveBeenCalledTimes(1);
+    expect(cache.scanCard).toHaveBeenCalledTimes(1);
+    expect(states.some((s) => s.message.includes('segure parado'))).toBe(true);
+    expect(states.some((s) => s.last?.gated && s.last.metrics.skipped.ocrNumber)).toBe(true);
+  });
+
+  it('cancelar para a leitura e diz isso (nada é gravado)', async () => {
+    const medium = result({ status: 'identified', card: card('base1-58'), confidence: 0.85, margin: 0.12 });
+    const { controller, cache } = setup([medium]);
+    controller.start();
+    controller.cancel();
+    await controller.whenSettled();
+    expect(controller.current.phase).toBe('idle');
+    expect(controller.current.message).toMatch(/cancelada/);
+    expect(cache.scanCard).not.toHaveBeenCalled();
+  });
+
+  it('a leitura repetida (carta sumiu um quadro) não conta como segundo voto da confirmação', async () => {
+    const medium = result({ status: 'identified', card: card('base1-58'), confidence: 0.85, margin: 0.12 });
+    const { controller, cache } = setup([medium, result({ status: 'no-card' }), result({ status: 'not-found' })]);
+    controller.start();
+    await new Promise((r) => setTimeout(r, 20));
+    controller.stop();
+    expect(cache.scanCard).not.toHaveBeenCalled();
+  });
+
+  it('anota quando as primeiras candidatas apareceram e quanto levou para guardar a carta', async () => {
+    let t = 0;
+    const base = setup([]);
+    const controller = new ScanController({
+      grabFrame: () => frame,
+      recognize: async () => { t += 900; return identified(); },
+      cache: base.cache,
+      onState: () => {},
+      now: () => t,
+      sleep: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    });
+    controller.start();
+    await controller.whenSettled();
+    expect(controller.current.timeline).toMatchObject({ firstCandidateMs: 900, confirmedMs: 900 });
+    expect(controller.current.timeline?.confirmMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('opções de uma leitura ambígua', () => {
+  it('mostra TODAS as candidatas (antes cortava em 4), cada uma com a própria confiança', () => {
+    const alts = [2, 3, 4, 5, 6].map((n) => ({ card: card(`s-${n}`), confidence: 0.6 - n / 100, reasons: [] }));
+    const out = choicesOf({ card: card('s-1'), confidence: 0.61, alternatives: alts });
+    expect(out.map((c) => c.card.id)).toEqual(['s-1', 's-2', 's-3', 's-4', 's-5', 's-6']);
+    expect(out.at(-1)?.confidence).toBeCloseTo(0.54);
+  });
+
+  it('sem carta principal, as confianças não trocam de lugar', () => {
+    const out = choicesOf({ card: undefined, confidence: 0.4, alternatives: [{ card: card('s-2'), confidence: 0.3, reasons: [] }] });
+    expect(out).toEqual([{ card: card('s-2'), confidence: 0.3 }]);
   });
 });
