@@ -16,7 +16,7 @@ import MinigameTipos from './MinigameTipos.vue';
  * Aparece no Treinador e no Fliperama da Vila; as partidas contam do mesmo jeito (`recordEvent`), onde quer que se jogue.
  */
 defineProps<{ /** Mostra «Sair» no fim (no Fliperama da Vila, onde não há outra saída). */ closable?: boolean }>();
-const emit = defineEmits<{ leave: [] }>();
+const emit = defineEmits<{ leave: []; energy: [amount: number] }>();
 
 const GAMES: GameId[] = ['quem', 'tipos', 'memoria'];
 const loaded = ref<LoadedPieces | null>(null);
@@ -44,8 +44,12 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => loaded.value?.release());
 
+/** Vitória nos minigames do Fliperama rende energia pra Fonte (ver `core/village/digital.ts`), além do XP de sempre. */
+const MINIGAME_ENERGY = 10;
+
 function onFinished(game: GameId, grade: Grade): void {
   recordEvent({ type: 'minigame', game, won: grade.won, score: grade.score });
+  if (grade.won) emit('energy', MINIGAME_ENERGY);
 }
 </script>
 
