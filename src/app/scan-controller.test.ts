@@ -288,3 +288,82 @@ describe('opções de uma leitura ambígua', () => {
     expect(out).toEqual([{ card: card('s-2'), confidence: 0.3 }]);
   });
 });
+
+describe('ScanController (foto temporária)', () => {
+  const quad = [{ x: 10, y: 10 }, { x: 110, y: 10 }, { x: 110, y: 150 }, { x: 10, y: 150 }] as [
+    { x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number },
+  ];
+  const det = { quad, areaFraction: 0.4, aspect: 0.7, fillRatio: 0.9, score: 1 };
+  const features = { version: 1, fullHash: new Uint8Array(8), artHash: new Uint8Array(8), color: new Uint8Array(48) };
+
+  function photoSetup(results: RecognitionResult[], similarity: number[], photoMatches?: number) {
+    const queue = [...results];
+    const scores = [...similarity];
+    const recognize = vi.fn(async () => queue.shift() ?? result({ status: 'not-found' }));
+    const sameCard = vi.fn(() => scores.shift() ?? 0.95);
+    const base = setup([]);
+    const controller = new ScanController({
+      grabFrame: () => frame,
+      recognize,
+      locate: () => ({ detection: det }),
+      sameCard,
+      photoMatches,
+      cache: base.cache,
+      onState: (s) => base.states.push(s),
+      sleep: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    });
+    return { controller, recognize, sameCard, states: base.states, cache: base.cache };
+  }
+  const waitFor = async (cond: () => boolean) => {
+    for (let t = 0; !cond() && t < 2000; t += 5) await new Promise((r) => setTimeout(r, 5));
+  };
+
+  it('leitura boa vira foto; o quadro seguinte da mesma carta confirma SEM rodar o OCR de novo', async () => {
+    const medium = result({ status: 'identified', card: card('base1-58'), confidence: 0.85, margin: 0.12, features, quad });
+    const { controller, recognize, states, cache } = photoSetup([medium], [0.93]);
+    controller.start();
+    await waitFor(() => cache.scanCard.mock.calls.length > 0);
+    controller.stop();
+    expect(recognize).toHaveBeenCalledTimes(1);
+    expect(cache.scanCard.mock.calls[0]![0].card.id).toBe('base1-58');
+    expect(states.some((s) => s.photo && s.message.includes('Foto tirada'))).toBe(true);
+  });
+
+  it('se a carta muda, a foto é descartada e o app lê de novo', async () => {
+    const a = result({ status: 'identified', card: card('base1-58'), confidence: 0.85, margin: 0.12, features, quad });
+    const b = result({ status: 'identified', card: card('hgss4-58', 'Gengar'), confidence: 0.85, margin: 0.12, features, quad });
+    const { controller, recognize, states, cache } = photoSetup([a, b], [0.3, 0.95]);
+    controller.start();
+    await waitFor(() => cache.scanCard.mock.calls.length > 0);
+    controller.stop();
+    expect(recognize).toHaveBeenCalledTimes(2);
+    expect(cache.scanCard.mock.calls[0]![0].card.id).toBe('hgss4-58');
+    expect(states.some((s) => s.last?.message.includes('A carta mudou'))).toBe(true);
+  });
+
+  it('ambígua: a foto confirmada abre a escolha com todas as candidatas, com um OCR só', async () => {
+    const ambiguous = result({
+      status: 'ambiguous', card: card('base1-58'), confidence: 0.6, margin: 0.02, features, quad,
+      alternatives: [{ card: card('base1-59', 'Raichu'), confidence: 0.58, reasons: [] }],
+    });
+    const { controller, recognize } = photoSetup([ambiguous], [0.9]);
+    controller.start();
+    await waitFor(() => controller.current.phase === 'choosing');
+    expect(recognize).toHaveBeenCalledTimes(1);
+    expect(controller.current.choices?.map((c) => c.card.id)).toEqual(['base1-58', 'base1-59']);
+    await controller.choose('base1-59');
+    expect(controller.current.phase).toBe('ready');
+  });
+
+  it('cancelar descarta a foto', async () => {
+    const medium = result({ status: 'identified', card: card('base1-58'), confidence: 0.85, margin: 0.12, features, quad });
+    // A foto continua valendo (mesma carta) e precisa de muitas confirmações: fica na tela até o cancelamento.
+    const { controller } = photoSetup([medium], [], 1_000_000);
+    controller.start();
+    await waitFor(() => controller.current.photo !== undefined);
+    expect(controller.current.photo).toBeDefined();
+    controller.cancel();
+    expect(controller.current.photo).toBeUndefined();
+    expect(controller.current.phase).toBe('idle');
+  });
+});

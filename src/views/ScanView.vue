@@ -20,6 +20,7 @@ import type { ManualMatch } from '../recognition/catalog-index';
 import { recordFromTcgdex } from '../recognition/pipeline';
 import { detectCard } from '../recognition/detect-card';
 import { frameQuality } from '../recognition/stability';
+import { sameCardScore } from '../recognition/snapshot';
 import { SCAN_STAGE_LABELS_PT, SCAN_STAGES } from '../recognition/stage-clock';
 import type { Quad } from '../recognition/types';
 import { recordScanMetrics } from '../app/scan-metrics';
@@ -374,6 +375,8 @@ async function ensureController(): Promise<ScanController> {
       return { detection, quality: detection ? frameQuality(frame, detection.quad) : undefined };
     },
     onAttempt: (attempt) => recordScanMetrics(attempt.metrics.stages, attempt.gated ? 'gated' : 'read'),
+    // Foto temporária: depois da primeira leitura boa, confirma comparando quadros (sem repetir o OCR).
+    sameCard: sameCardScore,
     cache,
     loadCardRecord: async (id) => {
       const card = await getTcgdex().getCard(id);
@@ -817,6 +820,25 @@ const adjustNotice = computed(() => (adjusting.value ? 'Arraste para mover o Pok
 const manualAttention = computed(() => manualHint.value && sheet.value !== 'manual' && scan.value.phase === 'scanning' && !props.cardId);
 const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
 
+/** Miniatura da foto temporária (o quadro da leitura boa): desenhada só na memória do navegador, nada é enviado. */
+const photoCanvasEl = ref<HTMLCanvasElement | null>(null);
+watch(
+  () => scan.value.photo?.frame,
+  async (frame) => {
+    await nextTick();
+    const canvas = photoCanvasEl.value;
+    if (!frame || !canvas) return;
+    const scale = 120 / Math.max(frame.width, frame.height);
+    canvas.width = Math.max(1, Math.round(frame.width * scale));
+    canvas.height = Math.max(1, Math.round(frame.height * scale));
+    const full = document.createElement('canvas');
+    full.width = frame.width;
+    full.height = frame.height;
+    full.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(frame.data), frame.width, frame.height), 0, 0);
+    canvas.getContext('2d')?.drawImage(full, 0, 0, canvas.width, canvas.height);
+  },
+);
+
 // -- Progresso da leitura: as 8 etapas reais (ver `app/scan-steps.ts`), tempo decorrido, cancelar e reiniciar.
 const scanStepList = computed(() => scanSteps(scan.value));
 const scanStepsNotice = computed(() => {
@@ -923,6 +945,13 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
             <button type="button" class="link" @click="restartScan">Reiniciar</button>
           </span>
         </div>
+        <figure v-if="scan.photo && (scan.phase === 'scanning' || scan.phase === 'choosing')" class="pill scan-photo">
+          <canvas ref="photoCanvasEl" aria-label="Foto temporária da carta"></canvas>
+          <figcaption>
+            📸 Foto temporária<template v-if="scan.photo.cardName">: {{ scan.photo.cardName }}</template>
+            <small>só na memória · confirmando sem ler de novo</small>
+          </figcaption>
+        </figure>
         <p v-if="mainNotice" class="pill" :class="mainNotice.tone">
           <i class="dot"></i>
           <span class="pill-text">{{ mainNotice.text }}<small v-if="mainNotice.sub" class="pill-sub">{{ mainNotice.sub }}</small></span>
