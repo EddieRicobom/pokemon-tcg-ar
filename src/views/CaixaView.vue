@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { isTap } from '../ar/gestures';
-import { fetchSprite, getCache, loadBattle, prepareMegaFor } from '../app/services';
+import { fetchSprite, getCache, getDigitalSprite, loadBattle, prepareMegaFor } from '../app/services';
+import { digitalCandidates } from '../app/digital-members';
 import { challengePlan, isLeaderCreature, leaderFighter, leaderLoader, loadLeaderEntries, MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
 import { league, pendingChallenge, recordLeagueResult } from '../app/league-store';
 import { profile } from '../app/profile-store';
@@ -226,6 +227,16 @@ const heartTimer = setInterval(() => {
   }
 }, 7000);
 
+/** A equipe da caixa (cartas e Digital Pokémon) já com os sprites prontos para a cena. */
+async function loadTeamCreatures(cache: Awaited<ReturnType<typeof getCache>>) {
+  const digital = loadVillage().digital;
+  const team = resolveTeam(savedTeam.value, [...(await cache.list()), ...digitalCandidates(digital)]);
+  return loadCreatureEntries(cache, undefined, team.ids, {
+    instances: digital.instances,
+    sprite: async (dexId) => (await getDigitalSprite(dexId, false).catch(() => null))?.gif ?? null,
+  });
+}
+
 async function openBook(): Promise<void> {
   bookOpen.value = !bookOpen.value;
   if (!bookOpen.value) return;
@@ -234,7 +245,7 @@ async function openBook(): Promise<void> {
   if (entries.length === 0) {
     try {
       const cache = await getCache();
-      entries = (await loadCreatureEntries(cache, undefined, resolveTeam(savedTeam.value, await cache.list()).ids)).entries;
+      entries = (await loadTeamCreatures(cache)).entries;
     } catch {
       entries = [];
     }
@@ -395,9 +406,8 @@ async function populate(): Promise<void> {
   loadingCreatures.value = true;
   try {
     const cache = await getCache();
-    // A equipe escolhida (ou, sem escolha, as 6 mais recentes) é quem vai para a caixa.
-    const team = resolveTeam(savedTeam.value, await cache.list());
-    const loaded = await loadCreatureEntries(cache, undefined, team.ids);
+    // A equipe escolhida (ou, sem escolha, as 6 mais recentes) é quem vai para a caixa — Digital Pokémon inclusive.
+    const loaded = await loadTeamCreatures(cache);
     if (disposed || !box) return;
     box.setCreatures(loaded.entries);
     lastEntries = loaded.entries;

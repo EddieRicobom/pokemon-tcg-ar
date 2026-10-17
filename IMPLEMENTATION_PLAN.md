@@ -130,7 +130,6 @@ Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, cic
 
 ## Em andamento e próximo (atualizado em 2026-10-16)
 
-- ▶️ **Agora**: Digital Pokémon nas batalhas da Caixa e na Box de "Minhas cartas", com um símbolo especial (pedido do dono). Hoje eles moram só na Vila e jogam só na Torre; a Box e a equipe da Caixa leem só o cache de cartas físicas. Precisam continuar bloqueados para scan/AR.
 - ⏭️ Depois, na ordem: os itens ⬜ abaixo, de cima para baixo (os que dependem de celular real ficam para quando o dono testar).
 - 🔽 **Prioridade mínima** (pedido do dono): centenas de momentos novos na Vila (`core/village/social.ts`, modelos de momento entre os Pokémon: amizade, drama, comédia, romance, festa, rivalidade, sozinho), sem repetir os existentes e respeitando o tom atual.
 
@@ -166,6 +165,7 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
 15. ⬜ **Direção do RPG**: definir com o dono o que vem primeiro e reaproveitar `src/core/battle.ts`.
 16. ⬜ **PWA**: matriz de aparelhos (Chrome/Android e Safari/iOS), bateria, offline completo.
 17. ✅ **Lendários com efeitos de verdade** (antes as cutscenes só prometiam): Suicune — chuva fixa na Vila pelo resto do dia, horta precisando de 60% do tempo depois da rega e momentos entre os Pokémon com metade da frequência; Zapdos — moedas ganhas +25% por 3 horas (na carteira e na Vila) e postes piscando a noite toda; Celebi — página especial no Diário (guardada no Álbum) e animações dos Pokémon 30% mais rápidas no dia. Regras puras em `legendaryEffects`/`celebiDiaryPage` (`core/village/legendary.ts`), com testes; os textos das cutscenes passaram a dizer exatamente o que acontece. 🔶 Visto só por testes: um encontro tem 0,1% de chance por dia, então não foi visto na tela.
+18. ✅ **Digital Pokémon nas batalhas e na Box** (pedido do dono): entram na equipe da Caixa (escolhida ou automática pelos mais recentes) e batalham com os ataques da carta real de origem (`originCardId`); o sprite vem do pacote local ou do GIF na hora, e se faltar aparece como falha, nunca inventado. Na Box de "Minhas cartas" ficam com o símbolo ✨ e borda prateada; o painel diz "sem scan e sem AR" e só oferece pôr/tirar da equipe. Continuam fora do scan e do AR (o modo Várias filtra a equipe só por cartas). Lógica em `app/digital-members.ts` e `box/load-creatures.ts`, com testes. Visto no Chromium a 375 px: Box com 4 digitais, liga/desliga da equipe e o Livro da Caixa com os 4 carregados. 🔶 A batalha em si precisa de câmera; não foi vista com digitais na tela.
 18. ⬜ Em espera, por pedido do dono: vídeo game comprável na Vila (Duck Hunt) e Torre mais parecida com o poke-survivor original (missões, conquistas, fenda de lendário).
 
 ## Decisões em aberto
