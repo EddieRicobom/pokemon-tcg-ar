@@ -343,6 +343,52 @@ function refreshFloorMarks(): void {
   floorMarks.value = TERRAIN_KINDS.filter((k) => (counts[k] ?? 0) > 0);
 }
 
+/** Pequena animação persistente no centro dos blocos marcados, sem repintar a textura pixelada. */
+function drawTerrainMotion(ctx: CanvasRenderingContext2D, cx: number, k: number, now: number): void {
+  const grid = terrainArt?.grid;
+  if (!grid || !terrainArt) return;
+  const half = terrainArt.half;
+  for (let r = 0; r < grid.rows; r++) {
+    for (let c = 0; c < grid.cols; c++) {
+      const mark = grid.overlayAt(grid.index(c, r));
+      if (!mark) continue;
+      const x = -half + ((c + 0.5) / grid.cols) * half * 2;
+      const y = -half + ((r + 0.5) / grid.rows) * half * 2;
+      const px = cx + x * k;
+      const py = cx + y * k;
+      const color = TYPE_COLORS[TYPE_FOR_TERRAIN[mark]] ?? '#ffffff';
+      const pulse = 0.42 + 0.28 * Math.sin(now / 420 + c * 0.7 + r * 0.4);
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = color;
+      if (mark === 'puddle' || mark === 'frost' || mark === 'bloom') {
+        ctx.fillRect(px - 1.5 * dpr, py - 1 * dpr, 3 * dpr, 2 * dpr);
+      } else if (mark === 'static') {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, dpr);
+        ctx.beginPath();
+        ctx.moveTo(px - 2 * dpr, py - 2 * dpr);
+        ctx.lineTo(px, py);
+        ctx.lineTo(px - 1 * dpr, py + 2 * dpr);
+        ctx.stroke();
+      } else if (mark === 'toxic') {
+        ctx.beginPath();
+        ctx.arc(px + Math.sin(now / 500 + c) * 2 * dpr, py - 2 * dpr, 1.5 * dpr, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (mark === 'psy') {
+        ctx.beginPath();
+        ctx.moveTo(px, py - 2 * dpr);
+        ctx.lineTo(px + 2 * dpr, py);
+        ctx.lineTo(px, py + 2 * dpr);
+        ctx.lineTo(px - 2 * dpr, py);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+}
+
 function mountSprites(): void {
   const layer = spriteLayer.value;
   if (!layer || !world) return;
@@ -1051,6 +1097,7 @@ function draw(now: number): void {
     }
     ctx.restore();
   }
+  drawTerrainMotion(ctx, cx, k, now);
 
   // Na repetição os pins vêm do quadro gravado; fora dela, do mundo.
   const frame = replaying.value ? recorder.frameAt(replayAt) : null;
