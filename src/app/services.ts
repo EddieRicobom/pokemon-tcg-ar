@@ -144,6 +144,17 @@ export function getVillageGroundTile(): Promise<{ w: number; h: number; data: Ui
     .catch(() => null);
 }
 
+/**
+ * O atlas de tilesets da Vila (`public/tilesets/vila-atlas.png`, recortes listados em `village/atlas-spec.ts`): chão,
+ * natureza, casas e prédios. Null se não der pra baixar (a Vila cai no desenho por código de sempre).
+ */
+export async function getVillageAtlas(): Promise<{ w: number; h: number; data: Uint8ClampedArray } | null> {
+  const { ATLAS_W, packAtlas } = await import('../village/atlas-spec');
+  return loadImageRgba(assetUrl('tilesets/vila-atlas.png'), ATLAS_W, packAtlas().h)
+    .then(({ image }) => ({ w: image.width, h: image.height, data: image.data }))
+    .catch(() => null);
+}
+
 let dexNamesPromise: Promise<Map<number, string>> | null = null;
 
 /**

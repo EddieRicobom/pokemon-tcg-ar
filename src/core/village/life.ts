@@ -58,9 +58,14 @@ export interface Friendship {
   request: { day: string; item: ItemId; qty: number; done: boolean } | null;
 }
 
+/** Versão do desenho do mapa: saves de antes do mapa grande (sem este número) passam por `migrateLayout`. */
+export const MAP_LAYOUT = 2;
+
 export interface VillageState {
   v: 1;
   seed: number;
+  /** Para qual desenho de mapa as posições (você, móveis, horta) foram salvas (ver `MAP_LAYOUT`). */
+  layout: number;
   player: { x: number; y: number; dir: 'up' | 'down' | 'left' | 'right' };
   inventory: Partial<Record<ItemId, number>>;
   house: number;
@@ -121,7 +126,7 @@ export interface Crop {
 
 export function emptyVillage(seed: number, spawn: { x: number; y: number }): VillageState {
   return {
-    v: 1, seed, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
+    v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' },
     digital: emptyDigital(), legendary: emptyLegendary(),
@@ -139,6 +144,8 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
   const p = r.player;
   return {
     ...base,
+    // Sem o número (save de antes do mapa grande) = mapa antigo; quem carrega passa por `migrateLayout`.
+    layout: r.layout === MAP_LAYOUT ? MAP_LAYOUT : 1,
     player: p && Number.isInteger(p.x) && Number.isInteger(p.y) ? { x: p.x, y: p.y, dir: ['up', 'down', 'left', 'right'].includes(p.dir) ? p.dir : 'down' } : base.player,
     inventory: inv,
     house: Number.isInteger(r.house) ? Math.max(0, Math.min(HOUSE_LEVELS.length - 1, r.house!)) : 0,
@@ -348,7 +355,7 @@ export function place(s: VillageState, map: VillageMap, item: FurnitureId, x: nu
   if (itemDef(item)?.kind !== 'furniture') return { ok: false, message: 'Só móveis podem ser colocados no chão.' };
   if (count(s, item) <= 0) return { ok: false, message: `Você não tem ${itemName(item)}.` };
   const t = tileAt(map, x, y);
-  if (!['grass', 'path', 'flower', 'tall', 'sand'].includes(t) || isPlaced(s, x, y) || cropAt(s, x, y) || occupied(x, y)) return { ok: false, message: 'Não dá para colocar aí. Fique de frente para um lugar livre.' };
+  if (!['grass', 'path', 'flower', 'tall', 'sand', 'trail', 'plaza'].includes(t) || isPlaced(s, x, y) || cropAt(s, x, y) || occupied(x, y)) return { ok: false, message: 'Não dá para colocar aí. Fique de frente para um lugar livre.' };
   const closed = blocksRoute(s, map, x, y);
   if (closed) return { ok: false, message: closed };
   s.inventory[item] = count(s, item) - 1;
@@ -573,13 +580,13 @@ export function sell(s: VillageState, id: ItemId, qty = 1): Interaction {
 
 export const cropAt = (s: VillageState, x: number, y: number): Crop | undefined => s.crops.find((c) => c.x === x && c.y === y);
 
-/** Planta uma semente na grama (ou flores) à sua frente. */
+/** Planta uma semente na grama (ou flores) à sua frente, ou num canteiro arado da fazenda. */
 export function plant(s: VillageState, map: VillageMap, seed: ItemId, x: number, y: number, now: number, occupied: (x: number, y: number) => boolean): Interaction {
   const def = itemDef(seed);
   if (def?.kind !== 'seed') return { ok: false, message: 'Isso não é semente.' };
   if (count(s, seed) <= 0) return { ok: false, message: `Você não tem ${def.name}.` };
   const t = tileAt(map, x, y);
-  if (!['grass', 'flower', 'tall'].includes(t) || cropAt(s, x, y) || isPlaced(s, x, y) || occupied(x, y)) return { ok: false, message: 'Plante na grama livre à sua frente.' };
+  if (!['grass', 'flower', 'tall', 'field'].includes(t) || cropAt(s, x, y) || isPlaced(s, x, y) || occupied(x, y)) return { ok: false, message: 'Plante na grama livre à sua frente.' };
   const closed = blocksRoute(s, map, x, y);
   if (closed) return { ok: false, message: closed };
   s.inventory[seed] = count(s, seed) - 1;

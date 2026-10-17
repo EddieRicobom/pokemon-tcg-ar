@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { getCache, getDigitalSprite, getLocalVillageSpriteDirs, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
+import { getCache, getDigitalSprite, getLocalVillageSpriteDirs, getVillageAtlas, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
@@ -488,20 +488,28 @@ const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state
 // ---- Movimento: joystick na tela (toque/mouse) e teclado (setas/WASD, com diagonais segurando duas teclas).
 // Os dois viram o mesmo vetor e as mesmas direções (`core/village/joystick.ts`); a Vila anda em blocos.
 const JOY_MAX = 44;
-const joy = reactive({ active: false, pointerId: -1, cx: 0, cy: 0, x: 0, y: 0 });
+/**
+ * Joystick flutuante: encostar em qualquer lugar da tela da Vila e arrastar (ele aparece onde o dedo encostou).
+ * Um toque rápido, sem arrastar, leva você andando até aquele lugar (`game.walkTo`).
+ */
+const joy = reactive({ active: false, pointerId: -1, cx: 0, cy: 0, x: 0, y: 0, lx: 0, ly: 0, downAt: 0, moved: false });
+const TAP_MS = 320;
+const TAP_PX = 10;
 function applyStick(x: number, y: number): void {
   const dirs = stickDirs(x, y);
   game?.holdStick(dirs.primary ? dirs : null);
 }
 function joyDown(e: PointerEvent): void {
+  if (joy.active) return;
   const el = e.currentTarget as HTMLElement;
-  const rect = el.getBoundingClientRect();
-  Object.assign(joy, { active: true, pointerId: e.pointerId, cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 });
+  const stage = wrapEl.value?.getBoundingClientRect();
+  Object.assign(joy, { active: true, pointerId: e.pointerId, cx: e.clientX, cy: e.clientY, x: 0, y: 0, lx: e.clientX - (stage?.left ?? 0), ly: e.clientY - (stage?.top ?? 0), downAt: performance.now(), moved: false });
   el.setPointerCapture?.(e.pointerId);
-  joyMove(e);
 }
 function joyMove(e: PointerEvent): void {
   if (!joy.active || e.pointerId !== joy.pointerId) return;
+  if (Math.hypot(e.clientX - joy.cx, e.clientY - joy.cy) > TAP_PX) joy.moved = true;
+  if (!joy.moved) return;
   const v = stickVector(e.clientX - joy.cx, e.clientY - joy.cy, JOY_MAX);
   joy.x = v.x;
   joy.y = v.y;
@@ -509,8 +517,13 @@ function joyMove(e: PointerEvent): void {
 }
 function joyUp(e: PointerEvent): void {
   if (e.pointerId !== joy.pointerId) return;
-  Object.assign(joy, { active: false, pointerId: -1, x: 0, y: 0 });
+  const tap = !joy.moved && performance.now() - joy.downAt < TAP_MS && e.type === 'pointerup';
+  Object.assign(joy, { active: false, pointerId: -1, x: 0, y: 0, moved: false });
   applyKeys();
+  if (tap && game) {
+    const t = game.tileAtScreen(e.clientX, e.clientY);
+    if (t) game.walkTo(t.x, t.y);
+  }
 }
 
 const KEYS: Record<string, Dir> = {
@@ -1373,9 +1386,10 @@ onMounted(async () => {
   villagerList = villagers;
   // Recorte real de tileset pra grama (ver `village-art.ts`); null se não der pra baixar, cai no ladrilho
   // desenhado por código de sempre — a Vila nunca trava nem finge por causa disso.
-  const groundTile = await getVillageGroundTile().catch(() => null);
+  // O atlas de tilesets (chão, natureza, casas, prédios): mesma regra, sem ele a Vila usa o desenho por código.
+  const [groundTile, atlas] = await Promise.all([getVillageGroundTile().catch(() => null), getVillageAtlas().catch(() => null)]);
   if (!canvasEl.value || !wrapEl.value) return;
-  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile);
+  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas);
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = changed;
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).
@@ -1442,7 +1456,19 @@ onBeforeUnmount(() => {
 <template>
   <div class="village" role="application" aria-label="Vila: modo vida da Caixa">
     <div ref="wrapEl" class="village-stage">
-      <canvas ref="canvasEl" class="village-canvas"></canvas>
+      <canvas
+        ref="canvasEl"
+        class="village-canvas"
+        aria-label="Vila: arraste em qualquer lugar para andar; toque num lugar para ir até ele"
+        @pointerdown.prevent="joyDown"
+        @pointermove.prevent="joyMove"
+        @pointerup.prevent="joyUp"
+        @pointercancel.prevent="joyUp"
+        @contextmenu.prevent
+      ></canvas>
+      <div v-if="joy.active && joy.moved" class="village-joy floating" :style="{ left: `${joy.lx}px`, top: `${joy.ly}px` }" aria-hidden="true">
+        <div class="village-joy-stick" :style="{ transform: `translate(${joy.x * JOY_MAX}px, ${joy.y * JOY_MAX}px)` }"></div>
+      </div>
       <header class="village-top">
         <img v-if="portraitOk" class="village-trainer" :src="trainerSpriteUrl(profile.sprite)" :alt="profile.name" width="28" height="28" @error="portraitOk = false" />
         <strong>Vila</strong>
@@ -1464,7 +1490,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-else-if="welcome" class="village-welcome" @click="welcome = false">
         <strong>Bem-vindo à Vila, {{ profile.name }}!</strong>
-        <span>Ande com o joystick (no teclado: setas ou WASD; duas juntas andam na diagonal). <b>A</b> conversa, coleta, rega, colhe e abre a loja e a casa. <b>B</b> abre a mochila, o Livro dos Pokémon e mais.</span>
+        <span>Arraste em qualquer lugar da tela para andar (o joystick aparece embaixo do dedo) ou toque num lugar para ir até ele; no teclado, setas ou WASD (duas juntas andam na diagonal). <b>A</b> conversa, coleta, rega, colhe e abre a loja e a casa. <b>B</b> abre a mochila, o Livro dos Pokémon e mais.</span>
       </div>
       <p v-if="toast" class="village-toast" role="status">{{ toast }}</p>
 
@@ -1701,18 +1727,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="village-pad" @contextmenu.prevent>
-      <div
-        class="village-joy"
-        :class="{ active: joy.active }"
-        role="application"
-        aria-label="Joystick: arraste para andar (setas ou WASD no teclado)"
-        @pointerdown.prevent="joyDown"
-        @pointermove.prevent="joyMove"
-        @pointerup.prevent="joyUp"
-        @pointercancel.prevent="joyUp"
-      >
-        <div class="village-joy-stick" :style="{ transform: `translate(${joy.x * JOY_MAX}px, ${joy.y * JOY_MAX}px)` }"></div>
-      </div>
+      <p class="village-move-hint">Arraste na tela para andar · toque para ir até lá<span> · setas/WASD</span></p>
       <div class="ab">
         <button type="button" class="b-btn" aria-label="B: menu e voltar" @click="pressB">B</button>
         <button type="button" class="a-btn" aria-label="A: interagir e falar" @click="pressA">A</button>

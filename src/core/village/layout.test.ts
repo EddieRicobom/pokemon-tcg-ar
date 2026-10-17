@@ -7,6 +7,10 @@ import { FURNITURE_IDS, SEED_IDS } from './catalog';
 import { add, emptyVillage, place, plant } from './life';
 import { sanitizeTown } from './town';
 import { VILLAGE_SEED } from '../../app/village-store';
+import { TOWN } from './town-layout';
+
+/** Um bloco de grama aberta no gramado a oeste da praça (mapa de `VILLAGE_SEED`). */
+const OPEN = { x: 24, y: 29 };
 
 const SEEDS = [VILLAGE_SEED, 1, 2, 3, 7, 42, 99, 1234, 20240101, 777777];
 
@@ -28,13 +32,14 @@ describe('layout da Vila: sem ilhas nem gargalos', () => {
 
   it('as ruas principais ficam inteiras, com duas faixas, de ponta a ponta', () => {
     const map = generateVillage(VILLAGE_SEED);
-    const cy = Math.floor(map.h / 2);
-    for (const y of [cy, cy + 1]) for (let x = 2; x < map.w - 2; x++) expect(['path', 'building'].includes(tileAt(map, x, y)), `${x},${y}`).toBe(true);
-    const cx = Math.floor(map.w / 2);
-    for (const x of [cx, cx + 1]) for (let y = 2; y < map.h - 2; y++) expect(isWalkable(map, x, y) || tileAt(map, x, y) === 'building', `${x},${y}`).toBe(true);
+    const cy = TOWN.mainStreetY;
+    for (const y of [cy, cy + 1]) for (let x = 4; x < map.w - 4; x++) expect(['path', 'plaza'].includes(tileAt(map, x, y)), `${x},${y}`).toBe(true);
+    const cx = TOWN.avenueX;
+    for (const x of [cx, cx + 1]) for (let y = 4; y < map.h - 4; y++) expect(isWalkable(map, x, y) || tileAt(map, x, y) === 'building', `${x},${y}`).toBe(true);
+    for (const y of [TOWN.gamesStreetY, TOWN.homesStreetY, TOWN.southStreetY]) expect(tileAt(map, cx - 3, y)).toBe('path');
   });
 
-  it('o terreno da sua casa fica inteiro (4×3) e dá acesso por fora', () => {
+  it('o terreno da sua casa fica inteiro (5×3) e dá acesso por fora', () => {
     const map = generateVillage(VILLAGE_SEED);
     const p = map.plot;
     for (let y = p.y; y < p.y + p.h; y++) for (let x = p.x; x < p.x + p.w; x++) expect(tileAt(map, x, y)).toBe('plot');
@@ -122,12 +127,13 @@ describe('móveis e plantas não fecham a cidade', () => {
 
   it('um móvel no meio da grama aberta pode', () => {
     const { map, s, item } = setup();
-    expect(place(s, map, item, 30, 23, none).ok).toBe(true);
+    expect(place(s, map, item, OPEN.x, OPEN.y, none).ok).toBe(true);
+    expect(place(s, map, item, map.spawn.x + 1, map.spawn.y - 1, none).ok).toBe(true); // na praça também
   });
 
   /** Um corredor de 1 bloco de largura: de onde você nasce até a loja e o terreno da casa. */
   const corridor = (tile: 'path' | 'grass') => {
-    const map: VillageMap = { w: 10, h: 5, tiles: new Array<Tile>(50).fill('tree'), spawn: { x: 1, y: 2 }, plot: { x: 7, y: 0, w: 1, h: 3 }, shop: { x: 6, y: 0, w: 1, h: 2 }, buildings: [] };
+    const map: VillageMap = { w: 10, h: 5, tiles: new Array<Tile>(50).fill('tree'), spawn: { x: 1, y: 2 }, plot: { x: 7, y: 0, w: 1, h: 3 }, shop: { x: 6, y: 0, w: 1, h: 2 }, buildings: [], decor: [] };
     for (let x = 1; x <= 8; x++) setTile(map, x, 2, tile);
     return map;
   };
@@ -159,10 +165,10 @@ describe('móveis e plantas não fecham a cidade', () => {
     const { map, s, item } = setup();
     const casa = map.buildings.find((b) => b.id === 'casa1')!;
     s.placed.push({ x: casa.x + 1, y: casa.y + casa.h, item });
-    s.placed.push({ x: 30, y: 23, item });
+    s.placed.push({ x: OPEN.x, y: OPEN.y, item });
     const have = s.inventory[item]!;
     expect(sanitizeTown(s, map)).toBe(1);
-    expect(s.placed).toEqual([{ x: 30, y: 23, item }]);
+    expect(s.placed).toEqual([{ x: OPEN.x, y: OPEN.y, item }]);
     expect(s.inventory[item]).toBe(have + 1);
   });
 });
