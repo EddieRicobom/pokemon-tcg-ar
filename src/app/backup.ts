@@ -4,7 +4,7 @@
  * inteiramente no aparelho.
  *
  * O que entra: tudo que representa progresso ou escolha do jogador (Treinador, Vila — incluindo Digital Pokémon
- * e Encontros lendários —, perfil, equipe, roster, Liga, Pin Mode, modo de batalha, sensores, ajustes visuais e
+ * e Encontros lendários —, perfil, equipe, roster, Liga e o polimento das insígnias, Pin Mode, modo de batalha, sensores, ajustes visuais e
  * alguns ajustes pequenos do Scanner).
  *
  * O que fica de fora, de propósito: as imagens de referência e os alvos de AR das cartas escaneadas (guardados
@@ -25,6 +25,7 @@ export const BACKUP_KEYS: readonly string[] = [
   'tcg-ar-team-v1',
   'tcg-ar-roster-v1',
   'tcg-ar-liga-v1',
+  'tcg-ar-insignias-v1',
   'tcg-ar-pins-setup-v1',
   'tcg-ar-battle-mode-v1',
   'tcg-ar-sensor-v1',

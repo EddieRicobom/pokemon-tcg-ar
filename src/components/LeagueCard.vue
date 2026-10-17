@@ -1,11 +1,24 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, defineAsyncComponent, ref } from 'vue';
+import { badgePolish, polishOf } from '../app/badge-polish-store';
 import { league, pendingChallenge } from '../app/league-store';
 import { routeHref } from '../app/route';
 import { CHAMPION, ELITE, GYMS, nextChallenge, statusOf } from '../core/league';
 import type { Challenge } from '../core/league';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
+import { BADGE_DESIGNS } from '../core/badges';
+import BadgeIcon from './BadgeIcon.vue';
+
+// A maleta 3D (e o Three.js) só carrega quando o jogador abre.
+const BadgeCaseView = defineAsyncComponent(() => import('./BadgeCaseView.vue'));
+const caseOpen = ref(false);
+
+const shortName = (name: string): string => name.replace(/^Insígnia /, '');
+const polishFor = (order: number): number => {
+  void badgePolish.value;
+  return polishOf(order);
+};
 
 /** Liga: estojo de insígnias, os Ginásios em ordem, a Elite 4 e a Campeã. O desafio acontece na Caixa. */
 const next = computed(() => nextChallenge(league.value));
@@ -28,14 +41,14 @@ const STATUS_PT = { locked: 'Bloqueado', open: 'Aberto', beaten: 'Vencido' } as 
   <div class="card league">
     <h2>Liga Pokémon <small class="count">{{ badgeCount }} de 8 insígnias</small></h2>
     <ul class="badge-case" aria-label="Estojo de insígnias">
-      <li v-for="g in GYMS" :key="g.id" :class="{ won: league.badges.includes(g.order) }" :title="g.badge?.name">
-        <svg viewBox="0 0 32 32" aria-hidden="true">
-          <path d="M16 2 27 8v16l-11 6-11-6V8z" :fill="league.badges.includes(g.order) ? g.badge?.color : 'none'" />
-          <path d="M16 7 22 10.5v11L16 25l-6-3.5v-11z" class="badge-gem" />
-        </svg>
-        <span class="sr-only">{{ g.badge?.name }}: {{ league.badges.includes(g.order) ? 'conquistada' : 'ainda não' }}</span>
+      <li v-for="d in BADGE_DESIGNS" :key="d.order" :class="{ won: league.badges.includes(d.order) }" :title="d.name">
+        <BadgeIcon :order="d.order" :won="league.badges.includes(d.order)" :polish="polishFor(d.order)" />
+        <small aria-hidden="true">{{ shortName(d.name) }}</small>
+        <span class="sr-only">{{ d.name }} ({{ d.leader }}, {{ d.motif }}): {{ league.badges.includes(d.order) ? 'conquistada' : 'ainda não' }}</span>
       </li>
     </ul>
+    <button type="button" class="case-open" @click="caseOpen = true">Abrir a maleta 3D</button>
+    <BadgeCaseView v-if="caseOpen" @close="caseOpen = false" />
     <p v-if="league.championWins > 0" class="note champion-note">Campeão da Liga {{ league.championWins }} {{ league.championWins === 1 ? 'vez' : 'vezes' }}! Seu nome está no Hall da Fama.</p>
     <p v-else-if="next" class="note">Próximo desafio: <strong>{{ next.leader }}</strong> ({{ next.role }}). A batalha é na Caixa, em revezamento, com a sua equipe contra a do líder.</p>
     <ul class="league-list">

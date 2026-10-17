@@ -21,14 +21,16 @@ export interface VisualSettings {
   shadow: boolean;
   /** Acabamento metálico leve (tinta de aço e um brilho que passa) nos Digital Pokémon da Vila. */
   metallic: boolean;
+  /** Reflexos do metal, sombras e faíscas na maleta de insígnias (Treinador › Liga). Desligar poupa a GPU. */
+  caseFx: boolean;
 }
 
 const KEY = 'tcg-ar-visual-v2';
 const LEGACY_KEY = 'tcg-ar-visual-v1';
-const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true };
+const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true };
 
 export function normalizeVisual(raw: Partial<VisualSettings> | null | undefined): VisualSettings {
-  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false };
+  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false };
 }
 
 function read(): VisualSettings {
@@ -47,7 +49,7 @@ export const visual = reactive<VisualSettings>(read());
 
 watch(visual, () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, terrain: visual.terrain, social: visual.social, weather: visual.weather, sound: visual.sound, shadow: visual.shadow, metallic: visual.metallic }));
+    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, terrain: visual.terrain, social: visual.social, weather: visual.weather, sound: visual.sound, shadow: visual.shadow, metallic: visual.metallic, caseFx: visual.caseFx }));
   } catch {
     // Só não lembra da escolha na próxima vez.
   }
