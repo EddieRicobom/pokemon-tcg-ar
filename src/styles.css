@@ -4299,13 +4299,14 @@ body.no-scroll .reward-toasts {
 
 /* Menu da Vila: página inicial com blocos (B abre; dentro de uma seção, B volta para cá). */
 .village-menu .menu-head {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
 }
 
 .village-menu .menu-head strong {
+  flex: 1;
   font-size: 1.05rem;
 }
 
