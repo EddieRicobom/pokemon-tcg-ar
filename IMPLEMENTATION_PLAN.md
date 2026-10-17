@@ -194,3 +194,9 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
 - O giroscópio acompanha o giro, não a caminhada (sem SLAM no navegador).
 - Limites do iOS Safari para câmera, WebGL, sensores e instalação do PWA.
 - Dependência de serviços externos de terceiros (TCGdex, PokeAPI, jsDelivr) sem garantia de disponibilidade.
+31. ⬜ **Quadro de Pedidos da Vila** (nova prioridade): 3 objetivos diários determinísticos, apontando para lugares reais da cidade e recompensando moedas, itens e amizade. O quadro existente na praça será interativo; sino, minimapa, clima, horário, nível da cidade e moradores influenciam os pedidos. Tudo fica em `tcg-ar-vila-v1`, sem backend.
+32. ⬜ **Passeios guiados**: um Pokémon convida o treinador para caminhar até o lago, parque, Café, fonte ou outro morador. O destino usa o pathfinding existente e a conclusão registra um momento e altera a relação.
+33. ⬜ **Eventos semanais na praça**: feira, festa, campeonato e encontros sazonais com regras e recompensas próprias, reaproveitando Fliperama, Pins, Arena e Diário.
+34. ⬜ **Expedições**: enviar um Pokémon para buscar recursos por um período, com resultado condicionado ao tipo, personalidade, amizade, clima e local escolhido.
+35. ⬜ **Pontos secretos**: áreas especiais do mapa que aparecem por exploração e desbloqueiam cenas, móveis, itens e páginas do Diário.
+36. 🔶 **Pins — IA e chão reativos, primeira etapa**: a IA deixou de escolher candidatas por sorteio, mantém variedade entre atiradores, alvos, ângulos, forças e golpes, e passou a simular cópias isoladas do terreno com marcas e reações. O placar também considera o risco de gelo, flores, mato, pedras e lodo perto da borda (`core/pin-ai.ts`). A arena ganhou pulsos, anéis, ondulações e partículas temporárias nas marcas (`PinsView.vue`). Typecheck, build com `BASE_PATH=/pokemon-tcg-ar/` e `verify-dist` passaram; os testes não foram executados nesta etapa.
