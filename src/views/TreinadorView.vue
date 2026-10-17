@@ -143,7 +143,7 @@ function cancelImport(): void {
       <div class="trainer-who">
         <p class="trainer-title">{{ progress.title }}</p>
         <p class="trainer-xp">{{ trainer.xp }} XP · faltam {{ progress.span - progress.into }} para o nível {{ progress.level + 1 }}</p>
-        <p class="trainer-xp"><span class="bolt" aria-hidden="true"></span>{{ coins }} moedas · <a :href="routeHref('pins')">use nos Pins</a>, na Fonte da Vila e na loja</p>
+        <p class="trainer-xp"><span class="coin-mark" aria-hidden="true"></span>{{ coins }} moedas · <a :href="routeHref('pins')">use nos Pins</a>, na Fonte da Vila e na loja</p>
         <p class="trainer-xp trainer-town">
           Cidade da Vila: {{ town.stage.name }} ({{ town.lots }} de {{ LOTS.length }} terrenos liberados)<template v-if="town.next">; no nível {{ town.next.level }} chega {{ town.next.text }}</template>.
           <a :href="routeHref('vila')">Visitar a Vila</a>

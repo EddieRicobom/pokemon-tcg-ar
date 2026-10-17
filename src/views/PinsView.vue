@@ -1293,7 +1293,7 @@ function setMarks(on: boolean): void {
           <p v-if="fromVillage"><a :href="routeHref('vila')">← Voltar à Vila</a></p>
         </div>
         <p class="pn-energy" :title="'Cada disparo gasta moedas (de 5 a 40, conforme o pin). Moedas vêm do XP, das batalhas e da Vila.'">
-          <span class="bolt" aria-hidden="true"></span><strong>{{ energy }}</strong><small>moedas</small>
+          <span class="coin-mark" aria-hidden="true"></span><strong>{{ energy }}</strong><small>moedas</small>
         </p>
       </header>
 
@@ -1347,7 +1347,7 @@ function setMarks(on: boolean): void {
                 <strong>{{ card.name }}</strong>
                 <small v-if="rowInfo(card).cost === null">{{ rowInfo(card).note }}</small>
                 <small v-else>
-                  <b class="cost">⚡ {{ rowInfo(card).cost }}</b>
+                  <b class="cost"><span class="coin-mark" aria-hidden="true"></span>{{ rowInfo(card).cost }}</b>
                   <template v-for="t in rowInfo(card).types" :key="t"> <i class="type-dot" :style="{ background: TYPE_COLORS[t] }"></i>{{ TYPE_LABELS_PT[t] }}</template>
                   <template v-if="rowInfo(card).moves > 0"> · {{ rowInfo(card).moves }} golpe{{ rowInfo(card).moves === 1 ? '' : 's' }}</template>
                   <template v-if="rowInfo(card).note"> · {{ rowInfo(card).note }}</template>
@@ -1400,7 +1400,7 @@ function setMarks(on: boolean): void {
     <template v-else>
       <div class="pins-hud">
         <p class="hud-line">
-          <span class="pn-chip gold"><span class="bolt" aria-hidden="true"></span><strong>{{ pvpMatch ? '∞' : energy }}</strong></span>
+          <span class="pn-chip gold"><span class="coin-mark" aria-hidden="true"></span><strong>{{ pvpMatch ? '∞' : energy }}</strong></span>
           <span class="pn-score" :aria-label="`Você ${counts.mine}, adversários ${counts.enemy}`">
             <span class="sides mine"><i></i>{{ counts.mine }}</span>
             <span class="sides enemy"><i></i>{{ counts.enemy }}</span>
@@ -1426,7 +1426,7 @@ function setMarks(on: boolean): void {
         <div ref="spriteLayer" class="pin-sprites" aria-hidden="true"></div>
         <button v-if="replaying" type="button" class="pin-skip" @click.stop="stopReplay">Pular repetição</button>
         <div v-if="phase === 'over' && result && !replaying" class="pin-over" :class="result.won ? 'won' : 'lost'" role="dialog" aria-label="Fim da partida">
-          <span class="pn-over-mark" aria-hidden="true">{{ result.won ? '★' : result.reason === 'energia' ? '⚡' : result.reason === 'empate' ? '＝' : result.reason === 'saiu' ? '…' : '✕' }}</span>
+          <span class="pn-over-mark" aria-hidden="true">{{ result.won ? '★' : result.reason === 'energia' ? '○' : result.reason === 'empate' ? '＝' : result.reason === 'saiu' ? '…' : '✕' }}</span>
           <strong>{{ result.won ? 'Você venceu!' : result.reason === 'energia' ? 'Acabaram as moedas' : result.reason === 'empate' ? 'Empate!' : result.reason === 'saiu' ? 'O amigo saiu' : 'Você perdeu' }}</strong>
           <p class="pn-over-stats">
             <span>{{ result.shots }} disparo{{ result.shots === 1 ? '' : 's' }}</span>
@@ -1458,7 +1458,7 @@ function setMarks(on: boolean): void {
             <button type="button" class="tray-pin" :disabled="phase !== 'aim' || !p.affordable" :aria-pressed="p.selected" @click="selectPin(p.id)">
               <span class="chip-token" aria-hidden="true"><img v-if="p.thumb" :src="p.thumb" alt="" /></span>
               <span class="tray-name">{{ p.name }}</span>
-              <b class="cost">⚡ {{ p.cost }}</b>
+              <b class="cost"><span class="coin-mark" aria-hidden="true"></span>{{ p.cost }}</b>
             </button>
           </li>
         </ul>

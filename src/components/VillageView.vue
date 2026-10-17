@@ -104,7 +104,8 @@ const menuGroups = computed<{ title: string; tiles: MenuTile[] }[]>(() => [
   {
     title: 'Ir para',
     tiles: [
-      { href: routeHref('caixa'), icon: '📦', label: 'Caixa', hint: 'batalhas na câmera' },
+      { href: routeHref('cartas'), icon: '🃏', label: 'Minhas cartas' },
+      { href: routeHref('caixa'), icon: '📦', label: 'Caixa em AR', hint: 'turma e batalhas' },
       { href: routeHref('pins'), icon: '🎯', label: 'Pins' },
       { href: routeHref('treinador'), icon: '🏅', label: 'Treinador' },
       { href: routeHref('escanear'), icon: '📷', label: 'Escanear' },
@@ -1473,7 +1474,7 @@ onBeforeUnmount(() => {
         <img v-if="portraitOk" class="village-trainer" :src="trainerSpriteUrl(profile.sprite)" :alt="profile.name" width="28" height="28" @error="portraitOk = false" />
         <strong>Vila</strong>
         <span>{{ clock }}</span>
-        <span class="village-coins" aria-label="Moedas"><i aria-hidden="true">●</i>{{ state.coins }}</span>
+        <span class="village-coins" aria-label="Moedas"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
         <span class="village-house" :title="`Cidade: ${stage.name}`">Nv {{ level }}</span>
         <button type="button" class="village-diary" aria-label="Abrir o Diário de momentos" @click="openDiary">📖<b v-if="unread > 0">{{ unread }}</b></button>
         <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
@@ -1536,7 +1537,7 @@ onBeforeUnmount(() => {
             <button type="button" role="tab" :class="{ active: shopTab === 'comprar' }" :aria-selected="shopTab === 'comprar'" @click="shopTab = 'comprar'">Comprar</button>
             <button type="button" role="tab" :class="{ active: shopTab === 'vender' }" :aria-selected="shopTab === 'vender'" @click="shopTab = 'vender'">Vender</button>
           </div>
-          <span class="village-coins"><i aria-hidden="true">●</i>{{ state.coins }}</span>
+          <span class="village-coins"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
           <button type="button" class="link" @click="sheet = null">Fechar</button>
         </header>
         <p class="hint">{{ shopTab === 'comprar' ? 'Sementes sempre; os móveis e acessórios mudam todo dia.' : 'A loja compra tudo o que você coleta e colhe.' }}</p>
@@ -1605,7 +1606,7 @@ onBeforeUnmount(() => {
 
         <div v-if="tab === 'inicio'" class="menu-home">
           <p class="menu-status">
-            <span>🪙 <b>{{ state.coins }}</b> moedas</span>
+            <span><span class="coin-mark" aria-hidden="true"></span><b>{{ state.coins }}</b> moedas</span>
             <span>⭐ Nível <b>{{ level }}</b></span>
             <span>✨ <b>{{ state.digital.instances.length }}</b> Digital Pokémon</span>
           </p>

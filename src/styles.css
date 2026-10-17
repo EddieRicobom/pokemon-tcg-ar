@@ -167,6 +167,10 @@ body {
   color: var(--pending);
 }
 
+.status-list .muted {
+  color: var(--muted);
+}
+
 .viewport {
   position: relative;
   aspect-ratio: 3 / 4;
@@ -2710,14 +2714,17 @@ body.no-scroll .reward-toasts {
   gap: 12px;
 }
 
-.bolt {
+/* Moeda (o saldo único do app): o mesmo desenho na Vila, nos Pins e no Treinador. */
+.coin-mark {
   display: inline-block;
-  width: 0.7em;
-  height: 1em;
-  margin-right: 6px;
-  vertical-align: -0.12em;
-  background: var(--gold, #ffd23f);
-  clip-path: polygon(55% 0, 12% 56%, 44% 56%, 36% 100%, 88% 38%, 54% 38%);
+  flex: none;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 5px;
+  vertical-align: -0.1em;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff3b0 0 18%, #ffd23f 20% 62%, #e0a400 64%);
+  box-shadow: inset 0 0 0 1.5px #c98a00;
 }
 
 .cost {
@@ -3244,7 +3251,7 @@ body.no-scroll .reward-toasts {
   font-size: 0.95rem;
 }
 
-.pn-chip .bolt {
+.pn-chip .coin-mark {
   margin-right: 4px;
 }
 
@@ -4368,10 +4375,8 @@ body.no-scroll .reward-toasts {
   color: #ffd84a;
 }
 
-.village-coins i {
-  font-style: normal;
-  color: #ffcb05;
-  text-shadow: 0 0 6px rgb(255 203 5 / 0.6);
+.village-coins .coin-mark {
+  margin-right: 0;
 }
 
 .village-welcome {
