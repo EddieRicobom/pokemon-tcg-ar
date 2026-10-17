@@ -49,6 +49,7 @@ import {
 import type { Building } from '../core/village/town';
 import type { Moment, MomentKind } from '../core/village/social-state';
 import type { ItemId } from '../core/village/life';
+import { villageSummary } from '../core/village/summary';
 import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
@@ -79,7 +80,7 @@ pruneHarvest(state, day.value);
 type Sheet = null | 'menu' | 'build' | 'shop' | 'dress' | 'arcade' | 'arena' | 'torre';
 const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
-type Tab = 'inicio' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
+type Tab = 'inicio' | 'resumo' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
 const tab = ref<Tab>('inicio');
 
 /**
@@ -89,7 +90,7 @@ const tab = ref<Tab>('inicio');
  */
 interface MenuTile { tab?: Tab; href?: string; run?: () => void; disabled?: boolean; icon: string; label: string; hint?: string; badge?: number }
 const MENU_TITLES: Record<Tab, string> = {
-  inicio: 'Menu da Vila', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos',
+  inicio: 'Menu da Vila', resumo: 'Resumo da Vila', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos',
   album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios',
 };
 /** Um lugar da Vila aberto direto pelo menu (ou trancado, com o nível que falta). */
@@ -126,6 +127,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   {
     title: 'Pokémon e memórias',
     tiles: [
+      { tab: 'resumo', icon: '🗞️', label: 'Resumo da Vila', hint: 'o que aconteceu e mudou' },
       { tab: 'livro', icon: '📖', label: 'Livro dos Pokémon', hint: 'amizade e apelidos' },
       { tab: 'diario', icon: '📔', label: 'Diário', hint: unread.value > 0 ? `${unread.value} novo(s)` : undefined },
       { tab: 'album', icon: '📸', label: 'Álbum' },
@@ -515,6 +517,7 @@ const craftable = CRAFT_IDS;
 const cookable = COOK_IDS;
 const actorList = (): { id: string; name: string; types: PokemonType[] }[] => mons.value.map((m) => ({ id: m.id, name: m.name, types: types.get(m.id) ?? [] }));
 const unread = computed(() => unreadCount(state));
+const summary = computed(() => villageSummary(state, mons.value, Date.now()));
 const album = computed(() => albumProgress(state));
 const saved = computed(() => savedMoments(state));
 const albumGroups = computed(() => {
@@ -1934,6 +1937,23 @@ onBeforeUnmount(() => {
                 </button>
               </template>
             </div>
+          </section>
+        </div>
+
+        <div v-else-if="tab === 'resumo'" class="diary village-summary">
+          <p class="hint">Uma visão rápida baseada no Diário, nas relações e nos pedidos reais da Vila.</p>
+          <section>
+            <h4>O que aconteceu</h4>
+            <ul v-if="summary.happened.length" class="book-opinions"><li v-for="line in summary.happened" :key="line">{{ line }}</li></ul>
+            <p v-else class="hint">Ainda não há momentos registrados.</p>
+          </section>
+          <section>
+            <h4>O que mudou</h4>
+            <ul class="book-opinions"><li v-for="line in summary.changed" :key="line">{{ line }}</li></ul>
+          </section>
+          <section>
+            <h4>O que pode acontecer</h4>
+            <ul class="book-opinions"><li v-for="line in summary.possible" :key="line">{{ line }}</li></ul>
           </section>
         </div>
 

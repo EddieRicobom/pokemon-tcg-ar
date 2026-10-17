@@ -66,6 +66,16 @@ Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado �
 
 ## Fases do prompt mestre
 
+## Auditoria da evolução da Vila (2026-10-17)
+
+- ✅ **Reaproveitável:** `social-state.ts` já persiste relações por par, Diário, Álbum, respostas, bordões e catch-up; `social.ts` já seleciona momentos por personalidade, contexto, local, clima, horário e relações. `book.ts` e `PokeBook.vue` já exibem amizade, humor, personalidade, gostos, opiniões, relações, falas e desbloqueios, inclusive por id interno.
+- ✅ **Primeiro lote implementado:** o menu da Vila agora tem um **Resumo da Vila** baseado somente em momentos, consequências e pedidos que existem no estado salvo. A função pura está em `src/core/village/summary.ts`, sem nova persistência ou fonte paralela de fatos.
+- 🔶 **Lacuna confirmada:** não existe ainda uma memória individual estruturada por Pokémon. Hoje `recentGossip()` deriva uma fala do Diário recente, e o Livro mostra relações e falas, mas não há uma coleção de memórias importantes por personagem para influenciar decisões futuras.
+- 🔶 **Lacuna confirmada:** a iniciativa já existe como momentos espontâneos e perguntas com `❗`, mas convites, pedidos de ajuda e visitas ainda são principalmente templates escolhidos pelo motor; faltam consequências persistentes que escolham o próximo comportamento de um personagem.
+- 🔶 **Lacuna confirmada:** exploração já tem mapa, recursos, lago, fazenda, trilhas e prédios, mas não há pistas persistentes encadeadas que desbloqueiem uma descoberta futura.
+- ⚠️ **Risco:** ampliar `VillageState` exige normalização retrocompatível, limite de tamanho e testes de migração. A próxima etapa social deve adicionar memórias com uma estrutura versionável e limite pequeno, sem duplicar o Diário.
+- ➡️ **Próxima implementação recomendada:** memória contextual compacta derivada de resultados de momentos (ajuda, rivalidade, revanche, evolução e reconciliação), usada por `recentGossip()`, seleção de templates e Livro; depois, resumo com navegação para o Pokémon ou momento relacionado.
+
 O dono do projeto enviou um prompt mestre completo (guardado na íntegra em [docs/PROMPT_MESTRE.md](docs/PROMPT_MESTRE.md), pra não se perder de novo numa compactação de conversa) com 8 fases. Status de cada uma:
 
 - ✅ **Fase 1 — Auditoria**: feita nas sessões anteriores.
