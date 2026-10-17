@@ -37,7 +37,6 @@ export const ATLAS_SOURCES: readonly AtlasSource[] = [
   AT('at-trail', 'dust grass.png'),
   AT('at-plot', 'Default_2.png'),
   AT('at-plaza', 'Default_6.png'),
-  AT('at-dirt', 'Default_3.png'),
   // ---- chão: blocos 3×3 de 16 px (Route 224): areia com margem de grama, areia com margem de água e o mar
   { id: 'sand-grass', sheet: 'Route 224.png', x: 80, y: 48, w: 48, h: 48 },
   { id: 'sand-water', sheet: 'Route 224.png', x: 0, y: 96, w: 48, h: 48 },

@@ -81,9 +81,31 @@ Conjunto de tilesets de cenário (prédios, interiores, natureza) de artistas da
 (cada um listado por conjunto em `tilesets/Credits.txt`), sem licença formal publicada junto — a prática usual
 dessa comunidade (RPG Maker/Pokémon Essentials) é uso livre em fangames não comerciais, com crédito aos
 autores. Como este projeto é gratuito, público e sem fins lucrativos, mantemos essa mesma condição: uso não
-comercial, com crédito. A maior parte do conjunto (`tilesets/`, na raiz do repositório) ainda não está em uso
-no app — fica guardada para o visual completo da Vila (planejado, ver `IMPLEMENTATION_PLAN.md`). A Zona de
-Sobrevivência e, agora, a grama da Vila (`village/village-art.ts`) usam o mesmo recorte: um ladrilho de grama de
-`Daisy Route.png` (32×32, emendável, salvo em `public/tilesets/survivor-grass.png`), repetido como chão.
-Créditos de `Daisy Route`: Idilio, Heroalistar, Ekat, Zeo, Zein, J-Treecko252, 874521, The Red-Ex, Kyledove,
-Magiscarf, Wesley FG (lista completa em `tilesets/Credits.txt`).
+comercial, com crédito. A Zona de Sobrevivência usa um recorte de grama de `Daisy Route.png` (32×32, emendável,
+salvo em `public/tilesets/survivor-grass.png`), que também é a grama da Vila.
+
+Desde o rework da Vila (mapa grande), quase todo o resto da Vila também sai desse conjunto: os recortes listados em
+`src/village/atlas-spec.ts` são juntados em `public/tilesets/vila-atlas.png` (por `scripts/build-vila-atlas.mjs`,
+sem alterar os desenhos; os autotiles entram reduzidos pela metade porque estão em 2×, sem perder pixel). As cores
+das casas da Vila são tingidas por código a partir desses desenhos. Ficam desenhados por código, ainda: os postes de
+luz, a fonte da praça, os móveis, as plantas da horta e o seu personagem. Folhas usadas e créditos (de
+`tilesets/Credits.txt`):
+
+- `Daisy Route.png` (mato alto, flores): Idilio, Heroalistar, Ekat, Zeo, Zein, J-Treecko252, 874521, The Red-Ex,
+  Kyledove, Magiscarf, Wesley FG.
+- `Route 224.png` (praia, mar, pinheiros, árvore grande, pedras): Ekat, Vurtax, Heartlessdragoon, Zein.
+- `Thistle Town.png` (arbusto): Ekat, Anonalpaca, Idilio, Heartlessdragoon, Vurtax, Skidmarc25, Thewilddeadhero, Zein.
+- `Jonquil Town.png` (barracas de guarda-sol do mercado, a Torre): Ekat, Heartlessdragoon, Vurtax.
+- `Apathy Houses.png` (o sobrado): Ekat, Heartlessdragoon.
+- `Brick House Tiles.png` (a casa de tijolos): Ekat, Heartlessdragoon.
+- `Fall Harvest.png` (o celeiro): Ekat, Heartlessdragoon, Vurtax.
+- `Garden House Sheet.png` (o casarão do Museu, jardineira, vaso): Ekat, Heartlessdragoon, Vurtax.
+- `General Store.png` (a cabana do Café): Ekat, Heartlessdragoon.
+- `Park Tileset.png` (o gazebo da Cabana): Ekat, Heartlessdragoon, Vurtax.
+- `Pokémon Center and Mart Buildings.png` (Arena, Fliperama, Pista de Pins, Correio): Ekat, Vurtax.
+- `Autotiles/Default_2.png`, `Default_4.png`, `Default_6.png` e `dust grass.png` (canteiro, rua, praça e trilha):
+  fazem parte do mesmo conjunto, mas `Credits.txt` não traz um crédito próprio para a pasta
+  de autotiles; ficam creditados ao conjunto como um todo.
+
+O parquinho (balanço, escorregador, carrossel, gangorra, trepa-trepa), a cerca, o muro de pedra e o mural de recados
+vêm de `Daisy Route.png`.
