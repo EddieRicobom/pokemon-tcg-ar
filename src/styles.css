@@ -5201,6 +5201,12 @@ body.no-scroll .reward-toasts {
   border-radius: 0;
 }
 
+.survivor-coins {
+  margin: 8px 0 0;
+  font-weight: 700;
+  color: #b8860b;
+}
+
 .survivor-move-hint {
   position: absolute;
   left: 50%;

@@ -19,7 +19,7 @@ const props = defineProps<{
   words?: Readonly<Record<string, string>>;
   /** O que você respondeu às perguntas de cada Pokémon (as mais recentes). */
   told?: Readonly<Record<string, readonly { q: string; a: string }[]>>;
-  /** Os apelidos dados (quando vem, a página mostra o campo de apelido; ele só abre a partir de «Grande amigo»). */
+  /** Os apelidos dados (quando vem, a página mostra o campo de apelido). */
   nicks?: Readonly<Record<string, string>>;
   /** O recado da última tentativa de dar apelido (deu certo, já existe, falta amizade…). */
   nickNote?: string;
@@ -77,7 +77,7 @@ function go(step: number): void {
             <button type="submit" :disabled="nickDraft.trim() === '' || nickDraft.trim() === nickNow">Salvar</button>
             <button v-if="nickNow" type="button" @click="saveNick(true)">Tirar</button>
           </form>
-          <p v-else class="hint">Aceita apelido a partir de «Grande amigo» ({{ friends[current.mon.id]?.points ?? 0 }} de 70 pontos de amizade).</p>
+          <p v-else class="hint">Ainda não aceita apelido.</p>
           <p v-if="nickNote" class="hint" role="status">{{ nickNote }}</p>
         </section>
         <section>

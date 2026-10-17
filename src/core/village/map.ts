@@ -122,8 +122,8 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
   fill(map, av, 4, 2, h - 8, 'path');
   fill(map, 4, TOWN.mainStreetY, w - 8, 2, 'path');
   fill(map, 10, TOWN.gamesStreetY, 68, 2, 'path');
-  fill(map, 22, TOWN.homesStreetY, 54, 2, 'path');
-  fill(map, 22, TOWN.southStreetY, 54, 2, 'path');
+  fill(map, 20, TOWN.homesStreetY, 58, 2, 'path');
+  fill(map, 20, TOWN.southStreetY, 58, 2, 'path');
   const pz = TOWN.plaza;
   fill(map, pz.x, pz.y, pz.w, pz.h, 'plaza');
   // Trilhas de terra para fora da cidade: até o lago, o parque, a fazenda, a pedreira e o bosque.

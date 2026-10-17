@@ -652,7 +652,7 @@ function quizClose(): void {
   quiz.value = null;
 }
 
-// ---- apelidos (a partir de «Grande amigo»)
+// ---- apelidos (qualquer Pokémon, desde o primeiro dia)
 const NICK_CLEAR = 'Tirar o apelido';
 
 /** Põe o apelido na tela: nos nomes dos Pokémon, nas falas, no mapa e no Livro. */
@@ -664,7 +664,7 @@ function applyNicks(): void {
 function openNickname(id: string): void {
   const real = mons.value.find((m) => m.id === id)?.real ?? 'Pokémon';
   if (!canNickname(state, id)) {
-    say(`${real} ainda não tem intimidade para um apelido. Ele aceita a partir de «Grande amigo».`);
+    say(`${real} ainda não aceita apelido.`);
     return;
   }
   const has = nicknameOf(state, id) !== '';

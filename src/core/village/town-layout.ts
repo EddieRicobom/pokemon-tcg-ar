@@ -30,20 +30,21 @@ export interface Building {
  * perto da avenida primeiro).
  */
 export const LOTS: readonly { x: number; y: number; unlock: number }[] = [
+  // 2 blocos livres entre uma casa e outra (o desenho do tileset é largo): dá para passar sempre entre elas.
   { x: 36, y: 48, unlock: 1 },
   { x: 51, y: 48, unlock: 1 },
-  { x: 30, y: 48, unlock: 1 },
-  { x: 57, y: 48, unlock: 2 },
-  { x: 24, y: 48, unlock: 3 },
-  { x: 63, y: 48, unlock: 3 },
-  { x: 69, y: 48, unlock: 4 },
+  { x: 29, y: 48, unlock: 1 },
+  { x: 58, y: 48, unlock: 2 },
+  { x: 22, y: 48, unlock: 3 },
+  { x: 65, y: 48, unlock: 3 },
+  { x: 72, y: 48, unlock: 4 },
   { x: 36, y: 60, unlock: 5 },
   { x: 51, y: 60, unlock: 6 },
-  { x: 30, y: 60, unlock: 7 },
-  { x: 57, y: 60, unlock: 8 },
-  { x: 24, y: 60, unlock: 9 },
-  { x: 63, y: 60, unlock: 10 },
-  { x: 69, y: 60, unlock: 12 },
+  { x: 29, y: 60, unlock: 7 },
+  { x: 58, y: 60, unlock: 8 },
+  { x: 22, y: 60, unlock: 9 },
+  { x: 65, y: 60, unlock: 10 },
+  { x: 72, y: 60, unlock: 12 },
 ];
 export const HOME_W = 5;
 export const HOME_H = 2;
@@ -159,14 +160,15 @@ export function buildingsFor(w: number, h: number): Building[] {
   return out;
 }
 
-/** Onde ficam os postes de luz: na beira das ruas e nas frestas entre as casas. */
+/**
+ * Onde ficam os postes de luz: só na beira das ruas (nunca no vão entre duas casas nem colado numa porta), para nenhum
+ * poste fechar passagem.
+ */
 export function lampSpots(w: number, h: number): { x: number; y: number }[] {
   const spots: { x: number; y: number }[] = [];
   for (let x = 8; x < 88; x += 12) spots.push({ x, y: TOWN.mainStreetY - 1 }, { x: x + 6, y: TOWN.mainStreetY + 2 });
   for (let x = 11; x < 78; x += 11) spots.push({ x, y: TOWN.gamesStreetY + 2 });
-  LOTS.forEach((l, i) => {
-    if (i % 2 === 0) spots.push({ x: l.x + HOME_W, y: l.y + 1 });
-  });
+  for (const l of LOTS) spots.push({ x: l.x + HOME_W + 1, y: l.y + HOME_H + 2 });
   for (let y = 8; y < 66; y += 12) spots.push({ x: TOWN.avenueX - 1, y }, { x: TOWN.avenueX + 2, y: y + 6 });
   return spots.filter((s) => s.x >= 3 && s.y >= 3 && s.x < w - 3 && s.y < h - 3);
 }

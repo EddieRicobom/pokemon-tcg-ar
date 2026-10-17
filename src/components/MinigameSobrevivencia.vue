@@ -11,6 +11,8 @@ import {
   ARENA_W,
   createSurvivorState,
   stepSurvivor,
+  survivorCoins,
+  survivorScore,
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorUpgradeOption } from '../core/survivor';
 import { attackProfile, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
@@ -133,11 +135,14 @@ async function loadSpriteOrNull(dexId: number): Promise<Sprite | null> {
   }
 }
 
+/** Moedas que a última corrida rendeu (mostradas no resumo). */
+const runCoins = ref(0);
+
 function recordRun(s: SurvivorSummary): void {
-  const score = clamp(Math.round(s.survivedMs / 1000 + s.kills * 2 + s.level * 5), 0, 100);
-  recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score });
+  recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score: survivorScore(s) });
   // Bônus de moedas (saldo único, `app/wallet.ts`) proporcional à pontuação da corrida, além das moedas do XP.
-  if (s.kills > 0) addCoins(Math.max(5, Math.round(score / 2)));
+  const coins = survivorCoins(s);
+  runCoins.value = coins > 0 ? addCoins(coins) : 0;
 }
 
 function formatTime(ms: number): string {
@@ -681,6 +686,7 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
+            <p class="survivor-coins" role="status">{{ runCoins > 0 ? `🪙 +${runCoins} moedas` : 'Sem moedas desta vez: dure 20 segundos ou derrote alguém.' }}</p>
             <p v-if="summary.stage > 0" class="note">Evoluiu {{ summary.stage === 1 ? 'uma vez' : `${summary.stage} vezes` }} nesta corrida (como {{ avatarName }}).</p>
             <button type="button" class="primary" @click="playAgain">Jogar de novo</button>
             <button type="button" class="link" @click="leaveNow">Voltar aos jogos</button>
