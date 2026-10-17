@@ -178,4 +178,32 @@ describe('stepSurvivor', () => {
     expect(a.kills).toBe(b.kills);
     expect(a.enemies.length).toBe(b.enemies.length);
   });
+
+  it('golpe perfurante atravessa o inimigo sem acertar o MESMO de novo a cada quadro', () => {
+    const s = createSurvivorState(1, { kindCount: 1 });
+    s.nextBossAtMs = Number.POSITIVE_INFINITY;
+    s.spawnAccumMs = -1e9; // sem inimigos novos
+    s.player.pierce = 3;
+    s.player.attackDamage = 5;
+    // Um inimigo parado, grande e bem resistente, no caminho do disparo.
+    s.enemies.push({ id: 999, kind: 0, boss: false, x: s.player.x + 60, y: s.player.y, hp: 1000, maxHp: 1000, speed: 0, damage: 0, radius: 40, hitFlashMs: 0 });
+    s.player.attackCooldownMs = 1e9; // um disparo só
+    for (let i = 0; i < 40; i++) stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    // Um projétil, um acerto: 5 de dano (antes acertava em vários quadros seguidos enquanto passava por dentro).
+    expect(s.enemies.find((e) => e.id === 999)!.hp).toBe(995);
+  });
+
+  it('subir dois níveis de uma vez dá duas escolhas de upgrade, uma depois da outra', () => {
+    const s = createSurvivorState(1, { kindCount: 1 });
+    s.player.xp = xpForLevel(1) + xpForLevel(2); // XP de dois níveis (ex.: orbe de chefe)
+    s.spawnAccumMs = -1e9;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.level).toBe(3);
+    expect(s.pendingUpgrade).not.toBeNull();
+    applyUpgrade(s, s.pendingUpgrade![0]!.id);
+    expect(s.pendingUpgrade).not.toBeNull(); // a segunda escolha
+    applyUpgrade(s, s.pendingUpgrade![0]!.id);
+    expect(s.pendingUpgrade).toBeNull();
+    expect(s.upgradesOwed).toBe(0);
+  });
 });

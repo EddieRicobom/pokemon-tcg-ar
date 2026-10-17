@@ -70,6 +70,8 @@ export interface SurvivorProjectile {
   damage: number;
   pierce: number;
   lifeMs: number;
+  /** Inimigos já atingidos por este projétil: atravessar não pode acertar o mesmo de novo a cada quadro. */
+  hit: number[];
 }
 
 export interface SurvivorOrb {
@@ -101,6 +103,8 @@ export interface SurvivorState {
   over: boolean;
   /** Não-nulo pausa o avanço (ver `stepSurvivor`): espera `applyUpgrade`. */
   pendingUpgrade: SurvivorUpgradeOption[] | null;
+  /** Níveis ganhos que ainda vão virar escolha de upgrade (subir 2 níveis de uma vez dá 2 escolhas, uma depois da outra). */
+  upgradesOwed: number;
   nextId: number;
 }
 
@@ -188,6 +192,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     kindCount: Math.max(1, Math.floor(options.kindCount)),
     over: false,
     pendingUpgrade: null,
+    upgradesOwed: 0,
     nextId: 1,
   };
 }
@@ -257,18 +262,28 @@ function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
     state.player.xp -= state.player.xpToNext;
     state.player.level += 1;
     state.player.xpToNext = xpForLevel(state.player.level);
+    state.upgradesOwed += 1;
     events.push({ type: 'levelup', level: state.player.level });
   }
-  if (events.some((e) => e.type === 'levelup')) {
-    state.pendingUpgrade = rollUpgrades(state.rng);
-  }
+  offerOwedUpgrade(state);
 }
 
-/** Aplica o upgrade escolhido e libera o jogo (ver `pendingUpgrade`). `id` fora do catálogo não faz nada. */
+/** Abre a próxima escolha de upgrade devida, se não houver uma aberta. */
+function offerOwedUpgrade(state: SurvivorState): void {
+  if (state.pendingUpgrade || state.upgradesOwed <= 0) return;
+  state.upgradesOwed -= 1;
+  state.pendingUpgrade = rollUpgrades(state.rng);
+}
+
+/**
+ * Aplica o upgrade escolhido e libera o jogo (ver `pendingUpgrade`). `id` fora do catálogo não faz nada. Se ainda
+ * houver níveis devidos (subiu mais de um de uma vez), a próxima escolha abre em seguida.
+ */
 export function applyUpgrade(state: SurvivorState, id: string): void {
   const upgrade = SURVIVOR_UPGRADES.find((u) => u.id === id);
   if (upgrade) upgrade.apply(state.player);
   state.pendingUpgrade = null;
+  offerOwedUpgrade(state);
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -352,6 +367,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           damage: p.attackDamage,
           pierce: p.pierce,
           lifeMs: 1600,
+          hit: [],
         });
       }
       p.attackTimerMs = p.attackCooldownMs;
@@ -366,9 +382,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (proj.lifeMs <= 0) return false;
     if (proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     for (const e of state.enemies) {
+      if (proj.hit.includes(e.id)) continue;
       if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + 5) {
         e.hp -= proj.damage;
         e.hitFlashMs = 90;
+        proj.hit.push(e.id);
         if (proj.pierce <= 0) return false;
         proj.pierce -= 1;
         break;
