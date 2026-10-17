@@ -1436,7 +1436,7 @@ function setMarks(on: boolean): void {
           <p v-else-if="result.reason === 'empate'">Os dois lados perderam o último pin na mesma jogada.</p>
           <p v-else-if="result.won && pvpMatch">Todos os pins do seu amigo caíram.</p>
           <p v-else-if="result.won">Todos os adversários caíram.</p>
-          <p v-else-if="result.reason === 'energia'">Nenhum pin seu cabe nas moedas que sobraram. Ganhe moedas escaneando cartas, batalhando ou jogando <a :href="routeHref('treinador')">minigames</a>.</p>
+          <p v-else-if="result.reason === 'energia'">Nenhum pin seu cabe nas moedas que sobraram. Ganhe moedas escaneando cartas, batalhando ou jogando <a :href="routeHref('treinador', undefined, ['jogos'])">minigames</a>.</p>
           <p v-else-if="pvpMatch">Todos os seus pins caíram.</p>
           <p v-else>Seus pins caíram todos da arena.</p>
           <div class="game-actions">

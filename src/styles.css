@@ -2218,6 +2218,83 @@ button.link {
   border-color: var(--gold);
 }
 
+/* Treinador: uma seção por vez (barra de abas internas, fica no topo ao rolar). */
+.trainer-sections {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.trainer-sections button {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 38px;
+  padding: 0 8px;
+  font-size: 0.9rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+}
+
+.trainer-sections button.active {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--gold);
+}
+
+.trainer-sections .dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Ferramentas de teste do Escanear, recolhidas com a câmera desligada. */
+details.tools-panel {
+  margin-top: 12px;
+}
+
+details.tools-panel > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* Botão do campo de arquivo no visual do app (o padrão do navegador destoava). */
+input[type='file'] {
+  max-width: 100%;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+input[type='file']::file-selector-button {
+  margin-right: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .badges .medal {
   font-size: 1.1rem;
   color: var(--muted);

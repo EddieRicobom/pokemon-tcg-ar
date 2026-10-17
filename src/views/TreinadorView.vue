@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { applyBackup, backupFileName, buildBackup, parseBackup, serializeBackup } from '../app/backup';
 import type { BackupFile } from '../app/backup';
-import { routeHref } from '../app/route';
+import { routeFlags, routeHref } from '../app/route';
 import { coins } from '../app/wallet';
 import { trainer } from '../app/trainer-store';
 import LeagueCard from '../components/LeagueCard.vue';
@@ -13,6 +13,20 @@ import { prizeOf } from '../core/village/rewards';
 import { ACHIEVEMENTS, dayKey, levelProgress, missionsFor, previousDay, XP } from '../core/trainer';
 import { nextUnlock, townStage } from '../core/village/town';
 import { LOTS } from '../core/village/town-layout';
+
+/**
+ * O Treinador mostra uma seção por vez (antes era tudo empilhado: ~6.000 px de rolagem no celular). O topo (nível,
+ * moedas, sequência) fica sempre à vista; `#/treinador?jogos=1` abre direto nos minigames.
+ */
+type Section = 'resumo' | 'liga' | 'jogos' | 'colecao' | 'dados';
+const SECTIONS: { id: Section; label: string }[] = [
+  { id: 'resumo', label: 'Resumo' },
+  { id: 'liga', label: 'Liga' },
+  { id: 'jogos', label: 'Jogos' },
+  { id: 'colecao', label: 'Coleção' },
+  { id: 'dados', label: 'Dados' },
+];
+const section = ref<Section>(routeFlags(window.location.hash).has('jogos') ? 'jogos' : 'resumo');
 
 const today = computed(() => dayKey(new Date()));
 const progress = computed(() => levelProgress(trainer.value.xp));
@@ -144,13 +158,20 @@ function cancelImport(): void {
       </div>
     </div>
 
-    <div class="card">
-      <h2>Seu treinador</h2>
-      <TrainerAvatar />
-    </div>
+    <nav class="trainer-sections" aria-label="Seções do Treinador">
+      <button
+        v-for="s in SECTIONS"
+        :key="s.id"
+        type="button"
+        :class="{ active: section === s.id }"
+        :aria-current="section === s.id ? 'true' : undefined"
+        @click="section = s.id"
+      >
+        {{ s.label }}<b v-if="s.id === 'resumo' && !allDone" class="dot" aria-label="missões em aberto"></b>
+      </button>
+    </nav>
 
-    <LeagueCard />
-
+    <template v-if="section === 'resumo'">
     <div class="card">
       <h2>Missões de hoje</h2>
       <ul class="missions">
@@ -169,6 +190,15 @@ function cancelImport(): void {
       </p>
     </div>
 
+    <div class="card">
+      <h2>Seu treinador</h2>
+      <TrainerAvatar />
+    </div>
+    </template>
+
+    <LeagueCard v-else-if="section === 'liga'" />
+
+    <template v-else-if="section === 'jogos'">
     <MinigameHub />
 
     <div class="card">
@@ -183,7 +213,9 @@ function cancelImport(): void {
       <p class="note">Todo XP ganho também vira a mesma quantia de moedas (o saldo único do app: Pin Mode, forma Mega, Fonte e loja da Vila). O XP em si não é gasto: o nível continua subindo.</p>
       <a class="primary link-button" :href="routeHref('escanear')">Escanear uma carta</a>
     </div>
+    </template>
 
+    <template v-else-if="section === 'colecao'">
     <div class="card">
       <h2>Coleção <small class="count">{{ cardCount }} carta{{ cardCount === 1 ? '' : 's' }} diferente{{ cardCount === 1 ? '' : 's' }}</small></h2>
       <p v-if="sets.length === 0" class="note">Nada por aqui ainda. Escaneie uma carta para abrir a primeira coleção.</p>
@@ -201,15 +233,16 @@ function cancelImport(): void {
       <p class="note">Cada conquista rende moedas e, nas marcantes, um acessório exclusivo para o seu personagem. Os prêmios chegam quando você abre a Vila.</p>
       <ul class="badges">
         <li v-for="a in achievements" :key="a.id" :class="{ on: a.unlocked }">
-          <span class="medal" aria-hidden="true">{{ a.unlocked ? '★' : '·' }}</span>
+          <span class="medal" aria-hidden="true">{{ a.unlocked ? '★' : '☆' }}</span>
           <strong>{{ a.title }}</strong>
           <small>{{ a.hint }}</small>
           <small v-if="a.prize" class="prize">🎁 {{ a.prize }}</small>
         </li>
       </ul>
     </div>
+    </template>
 
-    <div class="card">
+    <div v-else class="card">
       <h2>Seus dados</h2>
       <p class="note">
         Baixe um arquivo com todo o seu progresso e ajustes (Treinador, Vila — com Digital Pokémon e Encontros lendários —, perfil, equipe, Liga, Pin Mode, sensores e ajustes visuais) para guardar fora do navegador ou levar para outro aparelho.
