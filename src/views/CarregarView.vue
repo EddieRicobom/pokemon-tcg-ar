@@ -20,7 +20,7 @@ import { pokemonSpriteUrl } from '../ar/sprite-url';
 /** Digital Pokémon da Vila: aparecem aqui marcados como digitais e bloqueados (não vêm de carta física: sem scan nem AR). */
 const villageDigital = loadVillage().digital;
 const digital = ref(digitalRows(villageDigital));
-/** Na Box (e na equipe), os Digital Pokémon entram junto das cartas, com o símbolo ✨ (ver `app/digital-members.ts`). */
+/** Na Box (e na turma), os Digital Pokémon entram junto das cartas, com o símbolo ✨ (ver `app/digital-members.ts`). */
 const digitalBox = digitalBoxRows(villageDigital).map((row) => ({ ...row, icon: pokemonSpriteUrl(row.dexIds[0]!) }));
 const boxCards = computed(() => [...rows.value, ...digitalBox] as Row[]);
 
@@ -88,13 +88,13 @@ function clearFilters(): void {
   genFilter.value = 0;
 }
 
-// ---- Atalhos (pedido do dono): batalhar com a equipe e ver a equipe em AR, direto daqui.
+// ---- Atalhos (pedido do dono): batalhar com a turma e ver a turma em AR, direto daqui.
 const shortcutBusy = ref('');
-/** Prepara o que falta das cartas da equipe (a batalha precisa do Pokémon carregado) e leva à batalha da Caixa. */
+/** Prepara o que falta das cartas da turma (a batalha precisa do Pokémon carregado) e leva à batalha da Caixa. */
 async function battleWithTeam(): Promise<void> {
   const ids = team.value.ids;
   if (ids.length < 2) {
-    message.value = 'Para batalhar, a equipe precisa de pelo menos 2 Pokémon (toque numa carta e em «Pôr na equipe»).';
+    message.value = 'Para batalhar, a turma precisa de pelo menos 2 Pokémon (toque numa carta e em «Pôr na turma»).';
     return;
   }
   // Só cartas físicas precisam ser carregadas; Digital Pokémon pegam o sprite na hora.
@@ -103,7 +103,7 @@ async function battleWithTeam(): Promise<void> {
     const cache = await getCache();
     for (let i = 0; i < missing.length; i++) {
       const id = missing[i]!;
-      shortcutBusy.value = `Carregando a equipe: ${i + 1} de ${missing.length} (${rows.value.find((r) => r.id === id)?.name ?? id})…`;
+      shortcutBusy.value = `Carregando a turma: ${i + 1} de ${missing.length} (${rows.value.find((r) => r.id === id)?.name ?? id})…`;
       await cache.prepareCard(id).catch(() => null);
     }
   } finally {
@@ -121,13 +121,13 @@ const clearReady = computed(() => clearTyped.value.trim().toUpperCase() === CLEA
 
 function toggleTeam(row: Row): void {
   if (row.sprite.state !== 'ok') {
-    teamNotice.value = `«${row.name}» ainda não tem o Pokémon carregado. Use "Carregar" antes de colocar na equipe.`;
+    teamNotice.value = `«${row.name}» ainda não tem o Pokémon carregado. Use "Carregar" antes de colocar na turma.`;
     return;
   }
-  // Primeira escolha manual: parte da equipe automática atual.
+  // Primeira escolha manual: parte da turma automática atual.
   if (savedTeam.value.length === 0 && team.value.auto) setSavedTeam(team.value.ids);
   const full = toggleSaved(row.id);
-  teamNotice.value = full ? `A equipe já tem ${TEAM_SIZE} Pokémon. Tire um para colocar outro.` : '';
+  teamNotice.value = full ? `A turma já tem ${TEAM_SIZE} Pokémon. Tire um para colocar outro.` : '';
 }
 /** Cartas que acabaram de ficar completas: recebem o efeito de "carregou" por um instante. */
 const justLoaded = ref<Set<string>>(new Set());
@@ -286,11 +286,11 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <div v-if="rows.length > 0" class="card-shortcuts" role="group" aria-label="Atalhos">
       <button type="button" class="shortcut" :disabled="!!shortcutBusy" @click="battleWithTeam">
         <span aria-hidden="true">⚔️</span>
-        <span>Batalhar com a equipe<small>carrega o que falta e abre a batalha da Caixa</small></span>
+        <span>Batalhar com a turma<small>carrega o que falta e abre a Caixa em AR</small></span>
       </button>
       <a class="shortcut" :href="routeHref('varias')">
         <span aria-hidden="true">🃏</span>
-        <span>Equipe em AR (Várias)<small>até 4 cartas na câmera ao mesmo tempo</small></span>
+        <span>Turma em AR (Várias)<small>até 4 cartas na câmera ao mesmo tempo</small></span>
       </a>
     </div>
     <p v-if="shortcutBusy" class="message" role="status">{{ shortcutBusy }}</p>
@@ -298,8 +298,8 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <p v-if="bulk" class="message" role="status">Carregando {{ bulk.done }}/{{ bulk.count }} — {{ bulk.text }}</p>
     <p v-if="message" class="message" role="status">{{ message }}</p>
 
-    <div v-if="teamRows.length > 0" class="team-strip" role="group" aria-label="Equipe da caixa">
-      <strong>Equipe da caixa ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
+    <div v-if="teamRows.length > 0" class="team-strip" role="group" aria-label="Turma da Caixa">
+      <strong>Turma da Caixa ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
       <ul>
         <li v-for="row in teamRows" :key="row.id">
           <img v-if="row.thumb" :src="row.thumb" :alt="row.name" width="40" height="56" />
@@ -337,7 +337,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         <button v-for="option in ([['todas', 'Todas'], ['completo', 'Completas'], ['parcial', 'Parciais'], ['falhou', 'Com falha'], ['sem-pokemon', 'Sem Pokémon']] as const)" :key="option[0]" type="button" :class="{ active: statusFilter === option[0] }" :aria-pressed="statusFilter === option[0]" @click="statusFilter = option[0]">
           {{ option[1] }}
         </button>
-        <button type="button" :class="{ active: onlyTeam }" :aria-pressed="onlyTeam" @click="onlyTeam = !onlyTeam">Só a equipe</button>
+        <button type="button" :class="{ active: onlyTeam }" :aria-pressed="onlyTeam" @click="onlyTeam = !onlyTeam">Só a turma</button>
       </div>
       <div v-if="viewMode !== 'box'" class="filter-row">
         <label>Ordem
@@ -373,7 +373,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
 
     <ul v-else-if="viewMode === 'grade'" class="card-grid">
       <li v-for="row in visibleRows" :key="row.id">
-        <button type="button" class="grid-card" :class="{ picked: team.ids.includes(row.id), 'is-shiny': isShiny(row) }" :aria-pressed="team.ids.includes(row.id)" :aria-label="`${row.name}: ${team.ids.includes(row.id) ? 'tirar da' : 'colocar na'} equipe`" @click="toggleTeam(row)">
+        <button type="button" class="grid-card" :class="{ picked: team.ids.includes(row.id), 'is-shiny': isShiny(row) }" :aria-pressed="team.ids.includes(row.id)" :aria-label="`${row.name}: ${team.ids.includes(row.id) ? 'tirar da' : 'colocar na'} turma`" @click="toggleTeam(row)">
           <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="90" height="126" />
           <div v-else class="thumb-missing" aria-hidden="true">sem imagem</div>
           <strong>{{ row.name }}</strong>
@@ -406,7 +406,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
             <button v-if="row.status !== 'completo'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'reload')">Recarregar</button>
             <a class="button" :href="routeHref('escanear', row.id)">Ver em AR</a>
             <button type="button" :class="{ active: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" @click="toggleTeam(row)">
-              {{ team.ids.includes(row.id) ? 'Na equipe ✓' : 'Pôr na equipe' }}
+              {{ team.ids.includes(row.id) ? 'Na turma ✓' : 'Pôr na turma' }}
             </button>
             <button v-if="confirmRemoveId !== row.id" type="button" :disabled="busyId === row.id" @click="confirmRemoveId = row.id">Remover do cache…</button>
             <template v-else>

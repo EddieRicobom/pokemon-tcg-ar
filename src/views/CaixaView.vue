@@ -227,7 +227,7 @@ const heartTimer = setInterval(() => {
   }
 }, 7000);
 
-/** A equipe da caixa (cartas e Digital Pokémon) já com os sprites prontos para a cena. */
+/** A turma da Caixa (cartas e Digital Pokémon) já com os sprites prontos para a cena. */
 async function loadTeamCreatures(cache: Awaited<ReturnType<typeof getCache>>) {
   const digital = loadVillage().digital;
   const team = resolveTeam(savedTeam.value, [...(await cache.list()), ...digitalCandidates(digital)]);
@@ -406,7 +406,7 @@ async function populate(): Promise<void> {
   loadingCreatures.value = true;
   try {
     const cache = await getCache();
-    // A equipe escolhida (ou, sem escolha, as 6 mais recentes) é quem vai para a caixa — Digital Pokémon inclusive.
+    // A turma escolhida (ou, sem escolha, as 6 mais recentes) é quem vai para a caixa — Digital Pokémon inclusive.
     const loaded = await loadTeamCreatures(cache);
     if (disposed || !box) return;
     box.setCreatures(loaded.entries);
@@ -627,7 +627,7 @@ async function startChallenge(ch: Challenge): Promise<void> {
   }
   const mine = lastEntries.slice(0, MAX_CHALLENGE_TEAM);
   if (mine.length === 0) {
-    error.value = 'Sua caixa está vazia: escaneie cartas ou escolha a equipe antes do desafio.';
+    error.value = 'Sua caixa está vazia: escaneie cartas ou escolha a turma antes do desafio.';
     return;
   }
   preparing.value = true;
@@ -879,7 +879,7 @@ const notices = computed<Notice[]>(() => {
   else if (cameraOn.value && population.value.available === 0) {
     list.push({ text: 'A caixa está vazia. Escaneie uma carta (aba Escanear) ou carregue suas cartas (aba Cartas) para os Pokémon aparecerem aqui.', tone: 'warn' });
   } else if (phase.value === 'running' && population.value.shown === 1) {
-    list.push({ text: 'Para batalhar, ponha pelo menos 2 Pokémon na equipe da caixa.', tone: 'warn' });
+    list.push({ text: 'Para batalhar, ponha pelo menos 2 Pokémon na turma da Caixa.', tone: 'warn' });
   }
   return list;
 });
@@ -930,8 +930,12 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="card" aria-labelledby="box-title">
-    <h2 id="box-title">Caixa</h2>
-    <p class="note">Sua equipe de até 40 Pokémon passeia solta num quadrado do chão. Gire o celular para olhar em volta.</p>
+    <h2 id="box-title">Caixa em AR</h2>
+    <p class="note">
+      Sua turma de até 40 Pokémon passeia solta num quadrado do chão. Gire o celular para olhar em volta. Quem entra na
+      turma você escolhe em <a :href="routeHref('cartas')">Minhas cartas</a>; quem luta em cada batalha (a equipe) é
+      escolhido na escalação.
+    </p>
 
     <div
       ref="stageEl"
@@ -1050,7 +1054,7 @@ onBeforeUnmount(() => {
               <small v-if="modeBlocker(m)">{{ modeBlocker(m) }}</small>
             </button>
           </div>
-          <p class="hint">Por padrão todos os Pokémon da caixa entram na luta. Para mudar quem está na caixa (até 40), use Equipe.</p>
+          <p class="hint">Por padrão todos os Pokémon da caixa entram na luta. Para mudar quem está na caixa (a turma, até 40), use Turma.</p>
           <p v-if="rosterRows.some((r) => r.mega)" class="hint mega-hint">
             Cartas Mega podem mudar de forma por uma batalha: marque «Forma Mega» embaixo do nome delas. Moedas: {{ energy }}<template v-if="megaWanted > megaAffordable"> (só dá para {{ megaAffordable }} {{ megaAffordable === 1 ? 'troca' : 'trocas' }}; as outras lutam na forma normal)</template>.
           </p>
@@ -1097,7 +1101,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="showTeam && cameraOn" class="stage-sheet" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
-            <strong>Equipe da caixa</strong>
+            <strong>Turma da Caixa</strong>
             <button type="button" class="link" @click="showTeam = false">Fechar</button>
           </header>
           <TeamPicker @change="populate" />
@@ -1129,7 +1133,7 @@ onBeforeUnmount(() => {
         <div v-if="cameraOn" class="stage-bar">
           <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
           <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters; showTeam = false; showAdjust = false; showModes = false" />
-          <StageButton v-if="!battling" icon="team" label="Equipe" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false; showModes = false" />
+          <StageButton v-if="!battling" icon="team" label="Turma" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false; showModes = false" />
           <StageButton v-if="!battling" icon="sliders" label="Ajustes" :active="showAdjust" @click="showAdjust = !showAdjust; showFilters = false; showTeam = false; showModes = false" />
           <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
           <StageButton v-if="!battling" icon="modes" :label="BATTLE_MODE_LABELS_PT[battleMode]" :active="showModes" @click="showModes = !showModes; showFilters = false; showTeam = false; showAdjust = false" />
@@ -1165,18 +1169,13 @@ onBeforeUnmount(() => {
 
     <details v-if="!immersive" class="layout" :open="bookOpen" @toggle="(e: Event) => (e.target as HTMLDetailsElement).open !== bookOpen && void openBook()">
       <summary>Livro dos Pokémon (opiniões, humor e intimidade)</summary>
-      <p v-if="bookList.length === 0" class="hint">Nenhum Pokémon na equipe da caixa ainda. Escaneie cartas para começar o livro.</p>
+      <p v-if="bookList.length === 0" class="hint">Nenhum Pokémon na turma da Caixa ainda. Escaneie cartas para começar o livro.</p>
       <PokeBook v-else :mons="bookMons" :friends="village.friends" :nicks="bookNicks" :nick-note="bookNote" @nickname="onBookNickname" />
     </details>
 
     <details v-if="!immersive" ref="pvpEl" class="layout" :open="pvpOn || pvpOpen" @toggle="(e: Event) => (pvpOpen = (e.target as HTMLDetailsElement).open)">
       <summary>Batalhar com um amigo (PvP)</summary>
       <BoxPvpPanel />
-    </details>
-
-    <details v-if="!immersive" class="layout">
-      <summary>Escolher a equipe da caixa (até 40)</summary>
-      <TeamPicker />
     </details>
   </section>
 </template>

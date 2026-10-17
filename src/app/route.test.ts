@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRoute, routeFlags, routeHref } from './route';
+import { parseRoute, redirectFor, routeFlags, routeHref } from './route';
 
 describe('rotas por hash', () => {
   it('conhece a rota do Treinador', () => {
@@ -14,7 +14,7 @@ describe('rotas por hash', () => {
     expect(parseRoute('#/')).toEqual({ name: 'escanear' });
     expect(parseRoute('#/varias')).toEqual({ name: 'varias' });
     expect(parseRoute('#/caixa')).toEqual({ name: 'caixa' });
-    expect(parseRoute('#/carregar')).toEqual({ name: 'carregar' });
+    expect(parseRoute('#/cartas')).toEqual({ name: 'cartas' });
     expect(parseRoute('#/diagnostico')).toEqual({ name: 'diagnostico' });
     expect(parseRoute('#/qualquer-coisa')).toEqual({ name: 'escanear' });
   });
@@ -31,15 +31,24 @@ describe('rotas por hash', () => {
   });
 
   it('ignora parâmetros depois de ?', () => {
-    expect(parseRoute('#/carregar?x=1')).toEqual({ name: 'carregar' });
+    expect(parseRoute('#/cartas?x=1')).toEqual({ name: 'cartas' });
   });
 
   it('monta os endereços', () => {
     expect(routeHref('escanear')).toBe('#/');
     expect(routeHref('varias')).toBe('#/varias');
     expect(routeHref('caixa')).toBe('#/caixa');
-    expect(routeHref('carregar')).toBe('#/carregar');
+    expect(routeHref('cartas')).toBe('#/cartas');
     expect(routeHref('diagnostico')).toBe('#/diagnostico');
+  });
+
+  it('a rota antiga de Minhas cartas (#/carregar) leva às Cartas, mantendo o que vem depois do ?', () => {
+    expect(parseRoute('#/carregar')).toEqual({ name: 'cartas' });
+    expect(redirectFor('#/carregar')).toBe('#/cartas');
+    expect(redirectFor('#/carregar?vila=1')).toBe('#/cartas?vila=1');
+    expect(redirectFor('#/cartas')).toBeNull();
+    expect(redirectFor('#/caixa?batalha=1')).toBeNull();
+    expect(redirectFor('')).toBeNull();
   });
 
   it('sinalizadores da Vila vão depois do ? e não mudam a rota', () => {
