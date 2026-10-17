@@ -4453,6 +4453,58 @@ body.no-scroll .reward-toasts {
   touch-action: none;
 }
 
+.ab button small {
+  display: block;
+  margin-top: -2px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+}
+
+/* O botão de menu do topo da Vila (a mesma entrada do B). */
+.sell-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sell-btns button {
+  white-space: nowrap;
+}
+
+.village-menu-btn {
+  position: relative;
+  margin-left: auto;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.village-menu-btn b {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #e8453c;
+  font-size: 0.7rem;
+  line-height: 18px;
+  text-align: center;
+}
+
+.menu-tile:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .ab button:active {
   filter: brightness(1.4);
 }
@@ -4848,31 +4900,6 @@ body.no-scroll .reward-toasts {
 }
 
 /* Vila: Diário de momentos, relações e cozinha */
-.village-diary {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 0;
-  background: rgb(255 255 255 / 0.12);
-  color: var(--text);
-  font: inherit;
-}
-
-.village-diary b {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 9px;
-  background: var(--gold);
-  color: #1d2238;
-  font-size: 0.7rem;
-  line-height: 18px;
-}
-
 .village-choices button:disabled {
   opacity: 0.4;
 }

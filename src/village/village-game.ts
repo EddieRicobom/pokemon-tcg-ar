@@ -1240,7 +1240,8 @@ export class VillageGame {
                 ctx.drawImage(fenceArt, 0, 0, 16, 16, left - 8 * scale, bottom - 14 * scale, 16 * scale, 16 * scale);
                 ctx.drawImage(fenceArt, 16, 0, 16, 16, left + b.w * T - 8 * scale, bottom - 14 * scale, 16 * scale, 16 * scale);
               }
-              if (lantern) ctx.drawImage(lantern, left + (b.w - 1) * T, bottom - 2 * T, T, 2 * T);
+              // No vão ao lado da casa (o desenho do tileset ocupa a frente inteira): não tapa janela nem porta.
+              if (lantern) ctx.drawImage(lantern, left + b.w * T, bottom - 2 * T, T, 2 * T);
               if (decor & 8) {
                 ctx.fillStyle = '#6a4a28';
                 ctx.fillRect(left + 2 * scale, bottom - 10 * scale, 2 * scale, 10 * scale);

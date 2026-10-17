@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng, typeEffectiveness } from './battle';
 import {
-  cardsBlocker, distinctPieces, gameBlocker, gradeMemory, gradeQuiz, makeMemoryBoard, makeTypeQuestions, makeWhoQuestions, MEMORY_PAIRS, multiplierLabel, QUIZ_ROUNDS, shuffle, TYPE_ROUNDS,
+  cardsBlocker, distinctPieces, gameBlocker, gradeMemory, memoryUsesCards, gradeQuiz, makeMemoryBoard, makeTypeQuestions, makeWhoQuestions, MEMORY_PAIRS, multiplierLabel, QUIZ_ROUNDS, shuffle, TYPE_ROUNDS,
   WHO_DIFFICULTIES, WHO_DIFFICULTY_LABELS_PT,
 } from './minigames';
 import type { Piece } from './minigames';
@@ -20,8 +20,10 @@ describe('peças', () => {
     expect(gameBlocker('quem', [])).toBeNull();
     expect(cardsBlocker(pool(3))).toContain('4');
     expect(cardsBlocker(pool(4))).toBeNull();
-    expect(gameBlocker('memoria', pool(2))).toContain('3');
-    expect(gameBlocker('memoria', pool(3))).toBeNull();
+    // Sem cartas que bastem, a Memória sorteia da Pokédex: nunca fica bloqueada.
+    expect(gameBlocker('memoria', pool(2))).toBeNull();
+    expect(memoryUsesCards(pool(2))).toBe(false);
+    expect(memoryUsesCards(pool(3))).toBe(true);
     expect(cardsBlocker([piece(1, 'A'), piece(2, 'A'), piece(3, 'A'), piece(4, 'A')])).toContain('1');
   });
 

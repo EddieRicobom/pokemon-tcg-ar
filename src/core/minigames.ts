@@ -14,7 +14,7 @@ export type GameId = 'quem' | 'tipos' | 'memoria';
 export const GAME_LABELS_PT: Record<GameId, { title: string; blurb: string }> = {
   quem: { title: 'Quem é esse Pokémon?', blurb: 'Adivinhe 5 Pokémon pela silhueta: das suas cartas, de uma geração ou sorteados de todas.' },
   tipos: { title: 'Duelo de tipos', blurb: 'Quanto dano um tipo causa em outro? A mesma tabela da batalha.' },
-  memoria: { title: 'Memória', blurb: 'Encontre os pares de Pokémon das suas cartas.' },
+  memoria: { title: 'Memória', blurb: 'Encontre os pares de Pokémon: das suas cartas ou sorteados da Pokédex.' },
 };
 
 /** Uma carta guardada que serve de peça de jogo (com Pokémon carregado). */
@@ -52,12 +52,17 @@ export function distinctPieces(pieces: readonly Piece[]): Piece[] {
 export const MIN_PIECES: Record<'quem' | 'memoria', number> = { quem: 4, memoria: 3 };
 
 /**
- * Por que o jogo ainda não dá para jogar (ou null). O "Quem é esse Pokémon?" sempre dá: sem cartas suficientes ele
- * sorteia da Pokédex (a opção "Minhas cartas" é que fica bloqueada, veja `cardsBlocker`).
+ * Por que o jogo ainda não dá para jogar (ou null). Todos dão sem cartas: o "Quem é esse Pokémon?" e a Memória sorteiam
+ * da Pokédex quando as cartas guardadas não bastam (a opção "Minhas cartas" do "Quem é" é que fica bloqueada, veja
+ * `cardsBlocker`; a Memória usa as cartas quando há `MIN_PIECES.memoria` Pokémon diferentes, veja `memoryUsesCards`).
  */
-export function gameBlocker(game: GameId, pieces: readonly Piece[]): string | null {
-  if (game === 'tipos' || game === 'quem') return null;
-  return piecesBlocker('memoria', pieces);
+export function gameBlocker(_game: GameId, _pieces: readonly Piece[]): string | null {
+  return null;
+}
+
+/** A Memória usa as cartas guardadas (há Pokémon diferentes que bastem) ou sorteia da Pokédex? */
+export function memoryUsesCards(pieces: readonly Piece[]): boolean {
+  return piecesBlocker('memoria', pieces) === null;
 }
 
 /** Por que "Minhas cartas" ainda não serve ao "Quem é esse Pokémon?" (ou null). */
