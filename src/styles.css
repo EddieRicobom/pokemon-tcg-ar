@@ -4113,28 +4113,125 @@ body.no-scroll .reward-toasts {
   inset: 8px 8px auto 8px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px 6px 14px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
   border-radius: 999px;
-  background: rgb(14 19 34 / 0.72);
+  background: rgba(14, 19, 34, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   color: var(--text);
   font-size: 0.85rem;
+  z-index: 5;
+}
+
+.village-top-left,
+.village-top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.village-top-title {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.village-top-title strong {
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .village-top .village-house {
   white-space: nowrap;
+  color: var(--gold);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.village-time-badge {
+  font-size: 0.78rem;
   color: var(--muted);
-  margin-right: auto;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.village-menu-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 216, 74, 0.35);
+  background: linear-gradient(135deg, rgba(106, 74, 184, 0.4), rgba(44, 51, 84, 0.7));
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 120ms ease-out;
+}
+
+.village-menu-btn:hover {
+  background: linear-gradient(135deg, rgba(106, 74, 184, 0.65), rgba(58, 67, 108, 0.85));
+  border-color: rgba(255, 216, 74, 0.7);
+  transform: translateY(-1px);
+}
+
+.village-menu-btn.active {
+  background: var(--gold);
+  color: #12162a;
+  border-color: var(--gold);
+}
+
+.village-menu-btn .menu-btn-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.village-menu-btn .badge-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #ff4757;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #0e1322;
 }
 
 .village-close {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  border: 0;
-  background: rgb(255 255 255 / 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text);
   font: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease;
+}
+
+.village-close:hover {
+  background: rgba(255, 71, 87, 0.25);
+  color: #ff6b81;
 }
 
 .village-loading,

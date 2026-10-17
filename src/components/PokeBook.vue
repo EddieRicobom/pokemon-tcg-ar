@@ -23,6 +23,8 @@ const props = defineProps<{
   nicks?: Readonly<Record<string, string>>;
   /** O recado da última tentativa de dar apelido (deu certo, já existe, falta amizade…). */
   nickNote?: string;
+  /** Id interno da página que deve ser aberta ao entrar no Livro. */
+  initialId?: string;
 }>();
 const emit = defineEmits<{ accessory: [id: string]; nickname: [id: string, text: string] }>();
 
@@ -33,6 +35,14 @@ const current = computed(() => {
   const mon = props.mons[Math.min(index.value, props.mons.length - 1)];
   return mon ? { mon, page: bookPage(mon, props.mons, props.friends[mon.id], day, hour) } : null;
 });
+
+function selectById(id: string | undefined): void {
+  if (!id) return;
+  const found = props.mons.findIndex((mon) => mon.id === id);
+  if (found >= 0) index.value = found;
+}
+
+watch(() => props.initialId, (id) => selectById(id), { immediate: true });
 
 const nickDraft = ref('');
 const canNick = computed(() => (current.value ? friendLevel(props.friends[current.value.mon.id]?.points ?? 0).level >= NICK_MIN_LEVEL : false));

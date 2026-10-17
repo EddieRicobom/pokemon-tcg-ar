@@ -853,7 +853,7 @@ export function albumProgress(state: VillageState): { seen: number; total: numbe
 // -------------------------------------------------------------------------------- fora da Vila
 
 const AWAY_STEP_MS = 15 * 60_000;
-export const MAX_AWAY_MOMENTS = 6;
+export const MAX_AWAY_MOMENTS = 2;
 
 /** Enquanto você esteve fora, os Pokémon continuaram vivendo: um momento a cada 15 minutos (até 6), sem decisões. */
 export function catchUp(state: VillageState, actors: readonly Actor[], now: number, weather: string | null, rng: Rng, player = 'Treinador'): Moment[] {

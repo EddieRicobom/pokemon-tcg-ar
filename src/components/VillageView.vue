@@ -78,44 +78,55 @@ const tab = ref<Tab>('inicio');
  * Menu da Vila (o B): uma página inicial com blocos grandes, em grupos, em vez de 8 abas apertadas — e com os
  * caminhos para o resto do app (a Vila é o centro). Cada bloco abre a seção de sempre, com "← Menu" para voltar.
  */
-interface MenuTile { tab?: Tab; href?: string; icon: string; label: string; hint?: string }
+interface MenuTile { tab?: Tab; href?: string; icon: string; label: string; hint?: string; badge?: number; color?: string }
 const MENU_TITLES: Record<Tab, string> = {
-  inicio: 'Menu da Vila', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário',
-  album: 'Álbum', colecao: 'Coleção', livro: 'Livro dos Pokémon', visual: 'Visual',
+  inicio: 'Menu da Vila', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos',
+  album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios',
 };
-const menuGroups = computed<{ title: string; tiles: MenuTile[] }[]>(() => [
+const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[]>(() => [
   {
-    title: 'Itens',
+    title: 'Itens & Criação',
+    desc: 'Recursos, artesanato e pratos',
     tiles: [
       { tab: 'mochila', icon: '🎒', label: 'Mochila', hint: inventory.value.length > 0 ? `${inventory.value.length} tipo(s)` : 'vazia' },
-      { tab: 'fabricar', icon: '🔨', label: 'Fabricar' },
-      { tab: 'cozinha', icon: '🍳', label: 'Cozinha' },
+      { tab: 'fabricar', icon: '🔨', label: 'Fabricar', hint: `${craftable.length} receita(s)` },
+      { tab: 'cozinha', icon: '🍳', label: 'Cozinha', hint: `${cookable.length} prato(s)` },
     ],
   },
   {
-    title: 'Memórias',
+    title: 'Social & Memórias',
+    desc: 'Diário da vila, fotos e moradores',
     tiles: [
-      { tab: 'diario', icon: '📔', label: 'Diário', hint: unread.value > 0 ? `${unread.value} novo(s)` : undefined },
-      { tab: 'album', icon: '📸', label: 'Álbum' },
-      { tab: 'colecao', icon: '🏆', label: 'Coleção' },
-      { tab: 'livro', icon: '📖', label: 'Livro' },
+      { tab: 'diario', icon: '📔', label: 'Diário', hint: unread.value > 0 ? `${unread.value} novo(s)` : 'histórico', badge: unread.value },
+      { tab: 'album', icon: '📸', label: 'Álbum', hint: `${saved.value.length}/${MAX_SAVED} guardados` },
+      { tab: 'livro', icon: '📖', label: 'Livro Pokémon', hint: `${mons.value.length} habitante(s)` },
+      { tab: 'colecao', icon: '🏆', label: 'Coleção', hint: `${collection.value.filter((c) => c.have).length} móvel(is)` },
     ],
   },
   {
-    title: 'Ir para',
+    title: 'Treinador & Opções',
+    desc: 'Customização e dados do jogador',
     tiles: [
-      { href: routeHref('cartas'), icon: '🃏', label: 'Minhas cartas' },
-      { href: routeHref('caixa'), icon: '📦', label: 'Caixa em AR', hint: 'turma e batalhas' },
-      { href: routeHref('pins'), icon: '🎯', label: 'Pins' },
-      { href: routeHref('treinador'), icon: '🏅', label: 'Treinador' },
-      { href: routeHref('escanear'), icon: '📷', label: 'Escanear' },
+      { tab: 'visual', icon: '🎨', label: 'Visual & Estilo', hint: 'acessórios e opções' },
+      { href: routeHref('treinador'), icon: '🏅', label: 'Passaporte', hint: `Nv. ${level.value}` },
     ],
   },
-  { title: 'Ajustes', tiles: [{ tab: 'visual', icon: '🎨', label: 'Visual e acessórios' }] },
+  {
+    title: 'Atividades Externas',
+    desc: 'Outros modos e conexões do app',
+    tiles: [
+      { href: routeHref('caixa'), icon: '📦', label: 'Caixa AR', hint: 'turma e batalhas' },
+      { href: routeHref('cartas'), icon: '🃏', label: 'Minhas Cartas' },
+      { href: routeHref('pins'), icon: '🎯', label: 'Mini Pins' },
+      { href: routeHref('escanear'), icon: '📷', label: 'Escanear Carta' },
+    ],
+  },
 ]);
 const shopTab = ref<'comprar' | 'vender'>('comprar');
 const dressFor = ref<string>('player');
 const dialog = ref<{ id?: string; name: string; text: string; actions: { label: string; run: () => void; disabled?: boolean }[] } | null>(null);
+/** Mantém a conversa montada enquanto o Livro aberto a partir dela ocupa a tela. */
+const bookDialogId = ref<string | null>(null);
 const kindFilter = ref<MomentKind | 'todos' | 'guardados'>('todos');
 const albumView = ref<'guardados' | 'colecao'>('guardados');
 const portraitOk = ref(true);
@@ -733,6 +744,17 @@ function closeDialog(): void {
   dialog.value = null;
 }
 
+function closeVillageSheet(): void {
+  sheet.value = null;
+  bookDialogId.value = null;
+}
+
+function openBookFromDialog(id: string): void {
+  bookDialogId.value = id;
+  tab.value = 'livro';
+  sheet.value = 'menu';
+}
+
 function openBuilding(b: Building): void {
   if (b.kind === 'fountain') return openFountain(b);
   if (level.value < b.unlock) {
@@ -1119,13 +1141,6 @@ function onVisibility(): void {
   else awayCatchUp();
 }
 
-function openDiary(): void {
-  tab.value = 'diario';
-  sheet.value = 'menu';
-  state.diaryRead = Date.now();
-  changed();
-}
-
 function pickTab(t: Tab): void {
   tab.value = t;
   if (t === 'diario') {
@@ -1238,6 +1253,7 @@ function openFriendDialog(id: string, text: string): void {
   const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: 'Presentear', run: () => { giftPick.value = true; } }];
   actions.push({ label: 'Acessório', run: () => { dialog.value = null; openDress(id); } });
   actions.push({ label: nicknameOf(state, id) ? 'Mudar o apelido' : 'Dar apelido', disabled: !canNickname(state, id), run: () => openNickname(id) });
+  actions.push({ label: '📖 Ver no Livro', run: () => openBookFromDialog(id) });
   if (following) actions.push({ label: 'Pode passear', run: () => { state.follower = null; changed(); dialog.value = null; } });
   else if (canFollow(state, id)) actions.push({ label: 'Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
   actions.push({ label: 'Tchau', run: () => { dialog.value = null; } });
@@ -1471,13 +1487,30 @@ onBeforeUnmount(() => {
         <div class="village-joy-stick" :style="{ transform: `translate(${joy.x * JOY_MAX}px, ${joy.y * JOY_MAX}px)` }"></div>
       </div>
       <header class="village-top">
-        <img v-if="portraitOk" class="village-trainer" :src="trainerSpriteUrl(profile.sprite)" :alt="profile.name" width="28" height="28" @error="portraitOk = false" />
-        <strong>Vila</strong>
-        <span>{{ clock }}</span>
-        <span class="village-coins" aria-label="Moedas"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
-        <span class="village-house" :title="`Cidade: ${stage.name}`">Nv {{ level }}</span>
-        <button type="button" class="village-diary" aria-label="Abrir o Diário de momentos" @click="openDiary">📖<b v-if="unread > 0">{{ unread }}</b></button>
-        <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
+        <div class="village-top-left">
+          <img v-if="portraitOk" class="village-trainer" :src="trainerSpriteUrl(profile.sprite)" :alt="profile.name" width="28" height="28" @error="portraitOk = false" />
+          <div class="village-top-title">
+            <strong>Vila</strong>
+            <span class="village-house" :title="`Cidade: ${stage.name}`">Nv. {{ level }}</span>
+          </div>
+          <span class="village-time-badge">{{ clock }}</span>
+        </div>
+        <div class="village-top-right">
+          <span class="village-coins" aria-label="Moedas"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
+          <button
+            type="button"
+            class="village-menu-btn"
+            :class="{ active: sheet === 'menu' }"
+            aria-label="Abrir Menu da Vila (ou aperte B)"
+            title="Menu da Vila (Tecla B)"
+            @click="pressB"
+          >
+            <span class="menu-btn-icon">☰</span>
+            <span class="menu-btn-label">Menu</span>
+            <b v-if="unread > 0" class="badge-dot" :title="`${unread} momento(s) novos no Diário`">{{ unread }}</b>
+          </button>
+          <button type="button" class="village-close" aria-label="Sair da Vila" title="Sair da Vila" @click="emit('close')">✕</button>
+        </div>
       </header>
       <p v-if="loading" class="village-loading">{{ loading }}</p>
       <div v-else-if="cutsceneOpen" class="speech in-stage village-dialog" role="dialog" aria-label="Bem-vindo">
@@ -1491,7 +1524,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-else-if="welcome" class="village-welcome" @click="welcome = false">
         <strong>Bem-vindo à Vila, {{ profile.name }}!</strong>
-        <span>Arraste em qualquer lugar da tela para andar (o joystick aparece embaixo do dedo) ou toque num lugar para ir até ele; no teclado, setas ou WASD (duas juntas andam na diagonal). <b>A</b> conversa, coleta, rega, colhe e abre a loja e a casa. <b>B</b> abre a mochila, o Livro dos Pokémon e mais.</span>
+        <span>Arraste na tela para andar ou toque no chão para ir até o local. Toque no botão <b>Menu</b> no topo (ou aperte <b>B</b> no controle/teclado) para acessar Mochila, Diário, Criação e Opções. Botão <b>A</b> conversa, colhe e interage.</span>
       </div>
       <p v-if="toast" class="village-toast" role="status">{{ toast }}</p>
 
@@ -1505,7 +1538,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
-      <div v-else-if="dialog" class="speech in-stage village-dialog" role="dialog" :aria-label="dialog.name">
+      <div v-else-if="dialog && !bookDialogId" class="speech in-stage village-dialog" role="dialog" :aria-label="dialog.name">
         <div class="speech-box">
           <strong>{{ dialog.name }}</strong>
           <p>{{ dialog.text }}</p>
@@ -1601,7 +1634,7 @@ onBeforeUnmount(() => {
         <header class="menu-head">
           <button v-if="tab !== 'inicio'" type="button" class="link menu-back" @click="tab = 'inicio'">← Menu</button>
           <strong>{{ MENU_TITLES[tab] }}</strong>
-          <button type="button" class="menu-close" aria-label="Fechar o menu" @click="sheet = null">✕</button>
+          <button type="button" class="menu-close" aria-label="Fechar o menu" @click="closeVillageSheet">✕</button>
         </header>
 
         <div v-if="tab === 'inicio'" class="menu-home">
@@ -1611,16 +1644,27 @@ onBeforeUnmount(() => {
             <span>✨ <b>{{ state.digital.instances.length }}</b> Digital Pokémon</span>
           </p>
           <section v-for="g in menuGroups" :key="g.title" class="menu-group">
-            <h4>{{ g.title }}</h4>
+            <div class="menu-group-header">
+              <h4>{{ g.title }}</h4>
+              <span v-if="g.desc" class="menu-group-desc">{{ g.desc }}</span>
+            </div>
             <div class="menu-tiles">
               <template v-for="t in g.tiles" :key="t.label">
                 <a v-if="t.href" class="menu-tile" :href="t.href">
                   <span class="menu-icon" aria-hidden="true">{{ t.icon }}</span>
-                  <span>{{ t.label }}<small v-if="t.hint">{{ t.hint }}</small></span>
+                  <span class="menu-label-wrap">
+                    <span class="menu-label">{{ t.label }}</span>
+                    <small v-if="t.hint">{{ t.hint }}</small>
+                  </span>
+                  <b v-if="t.badge" class="tile-badge">{{ t.badge }}</b>
                 </a>
                 <button v-else type="button" class="menu-tile" @click="pickTab(t.tab!)">
                   <span class="menu-icon" aria-hidden="true">{{ t.icon }}</span>
-                  <span>{{ t.label }}<small v-if="t.hint">{{ t.hint }}</small></span>
+                  <span class="menu-label-wrap">
+                    <span class="menu-label">{{ t.label }}</span>
+                    <small v-if="t.hint">{{ t.hint }}</small>
+                  </span>
+                  <b v-if="t.badge" class="tile-badge">{{ t.badge }}</b>
                 </button>
               </template>
             </div>
@@ -1708,7 +1752,7 @@ onBeforeUnmount(() => {
           </ul>
         </div>
 
-        <PokeBook v-else-if="tab === 'livro'" :mons="bookMons" :friends="state.friends" :relations="bookRels" :words="bookWords" :told="bookTold" :nicks="state.nicks" :nick-note="bookNote" can-dress @accessory="openDress" @nickname="bookNickname" />
+        <PokeBook v-else-if="tab === 'livro'" :mons="bookMons" :friends="state.friends" :relations="bookRels" :words="bookWords" :told="bookTold" :nicks="state.nicks" :nick-note="bookNote" :initial-id="bookDialogId ?? undefined" can-dress @accessory="openDress" @nickname="bookNickname" />
 
         <div v-else>
           <p>Seu acessório: <strong>{{ state.wear.player ? itemName(state.wear.player) : 'nenhum' }}</strong></p>
@@ -1729,10 +1773,16 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="village-pad" @contextmenu.prevent>
-      <p class="village-move-hint">Arraste na tela para andar · toque para ir até lá<span> · setas/WASD</span></p>
+      <p class="village-move-hint">Arraste para andar · toque para ir<span> · setas/WASD</span></p>
       <div class="ab">
-        <button type="button" class="b-btn" aria-label="B: menu e voltar" @click="pressB">B</button>
-        <button type="button" class="a-btn" aria-label="A: interagir e falar" @click="pressA">A</button>
+        <button type="button" class="b-btn" aria-label="B: Menu e voltar" title="B: Menu e voltar" @click="pressB">
+          <span class="btn-letter">B</span>
+          <span class="btn-subtext">Menu</span>
+        </button>
+        <button type="button" class="a-btn" aria-label="A: Interagir e falar" title="A: Interagir e falar" @click="pressA">
+          <span class="btn-letter">A</span>
+          <span class="btn-subtext">Ação</span>
+        </button>
       </div>
     </div>
   </div>
