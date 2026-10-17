@@ -1290,7 +1290,7 @@ function setMarks(on: boolean): void {
         <div>
           <h2>Pin Mode</h2>
           <p>Vista de cima, sem câmera: puxe para trás, solte e empurre os adversários para fora da arena.</p>
-          <p v-if="fromVillage"><a :href="routeHref('caixa', undefined, ['vila'])">← Voltar à Vila</a></p>
+          <p v-if="fromVillage"><a :href="routeHref('vila')">← Voltar à Vila</a></p>
         </div>
         <p class="pn-energy" :title="'Cada disparo gasta moedas (de 5 a 40, conforme o pin). Moedas vêm do XP, das batalhas e da Vila.'">
           <span class="bolt" aria-hidden="true"></span><strong>{{ energy }}</strong><small>moedas</small>

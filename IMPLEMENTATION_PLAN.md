@@ -141,18 +141,19 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
    - Fora do escopo, como pedido: Duck Hunt comprável, missões/conquistas/fenda de lendário.
 4. ⬜ **Menu do modo Vila** melhor (pedido do dono): hoje o B abre uma folha com 8 abas (mochila, fabricar, cozinha, diário, álbum, coleção, livro, visual).
 5. ⬜ **Separar as funções por onde fazem sentido** (pedido do dono): a Vila mora dentro da aba Caixa (segunda aba), o que é estranho. Reorganizar a navegação (ex.: Vila como aba própria, Caixa e batalhas juntas).
-6. ⬜ **Melhorar a UI do app inteiro** (pedido do dono): depois da reorganização da navegação, um passe de interface tela a tela.
-7. ⬜ **Validar tudo num celular real** seguindo o roteiro; anotar aparelho, navegador, leituras/s e o que falhar. É o maior risco aberto.
-8. ⬜ **Guardar a carta mais rápido**: medir no celular (Diagnóstico → "Tempo de cada etapa" já separa referência, sprite, imagem em alta e compilação do alvo) e, se a compilação dominar, avaliar alvo menor ou mostrar o Pokémon antes do alvo ficar pronto.
-9. ⬜ **Medir o reconhecimento** com fotos reais de cartas (conjunto, taxa de acerto, tempo) e publicar em `docs/TESTING.md`.
-10. ⬜ **Consertar o e2e** (`e2e.yml`): falha por CORS ao buscar imagens do TCGdex de `localhost` e ao carregar o worker do OCR no runner.
-11. ⬜ **Escala pela altura real também na Caixa e no AR** (a Vila e a Torre já usam).
-12. ⬜ **Avaliar mais ideias do Momentoos** para rastreio difícil (variantes deformadas do alvo, pose flexível, resolução adaptativa) — só se a medição no celular mostrar perdas em ângulo.
-13. ⬜ **Desempenho**: custo no celular dos chunks de TensorFlow.js (~1,1 MB) e Three.js (~0,5 MB); dividir `ScanView.vue` e `battle-director.ts`.
-14. ⬜ **Direção do RPG**: definir com o dono o que vem primeiro e reaproveitar `src/core/battle.ts`.
-15. ⬜ **PWA**: matriz de aparelhos (Chrome/Android e Safari/iOS), bateria, offline completo.
-16. ⬜ **Bônus dos lendários são só texto**: as cutscenes de Suicune ("a horta cresce mais rápido"), Zapdos ("as moedas rendem um pouco mais") e Celebi ("o Diário ganha uma página especial") prometem efeitos que nenhum código aplica (achado em 2026-10-16). Ou implementar, ou trocar o texto por algo que não prometa mecânica.
-17. ⬜ Em espera, por pedido do dono: vídeo game comprável na Vila (Duck Hunt) e Torre mais parecida com o poke-survivor original (missões, conquistas, fenda de lendário).
+6. ⬜ **Rework da Caixa / "Minhas cartas" como uma Box Pokémon** (pedido do dono): as cartas organizadas numa matriz visível (grade de caixas, como nos jogos), com organização e troca de lugar à vista, em vez da lista atual.
+7. ⬜ **Melhorar a UI do app inteiro** (pedido do dono): depois da reorganização da navegação, um passe de interface tela a tela.
+8. ⬜ **Validar tudo num celular real** seguindo o roteiro; anotar aparelho, navegador, leituras/s e o que falhar. É o maior risco aberto.
+9. ⬜ **Guardar a carta mais rápido**: medir no celular (Diagnóstico → "Tempo de cada etapa" já separa referência, sprite, imagem em alta e compilação do alvo) e, se a compilação dominar, avaliar alvo menor ou mostrar o Pokémon antes do alvo ficar pronto.
+10. ⬜ **Medir o reconhecimento** com fotos reais de cartas (conjunto, taxa de acerto, tempo) e publicar em `docs/TESTING.md`.
+11. ⬜ **Consertar o e2e** (`e2e.yml`): falha por CORS ao buscar imagens do TCGdex de `localhost` e ao carregar o worker do OCR no runner.
+12. ⬜ **Escala pela altura real também na Caixa e no AR** (a Vila e a Torre já usam).
+13. ⬜ **Avaliar mais ideias do Momentoos** para rastreio difícil (variantes deformadas do alvo, pose flexível, resolução adaptativa) — só se a medição no celular mostrar perdas em ângulo.
+14. ⬜ **Desempenho**: custo no celular dos chunks de TensorFlow.js (~1,1 MB) e Three.js (~0,5 MB); dividir `ScanView.vue` e `battle-director.ts`.
+15. ⬜ **Direção do RPG**: definir com o dono o que vem primeiro e reaproveitar `src/core/battle.ts`.
+16. ⬜ **PWA**: matriz de aparelhos (Chrome/Android e Safari/iOS), bateria, offline completo.
+17. ⬜ **Bônus dos lendários são só texto**: as cutscenes de Suicune ("a horta cresce mais rápido"), Zapdos ("as moedas rendem um pouco mais") e Celebi ("o Diário ganha uma página especial") prometem efeitos que nenhum código aplica (achado em 2026-10-16). Ou implementar, ou trocar o texto por algo que não prometa mecânica.
+18. ⬜ Em espera, por pedido do dono: vídeo game comprável na Vila (Duck Hunt) e Torre mais parecida com o poke-survivor original (missões, conquistas, fenda de lendário).
 
 ## Decisões em aberto
 

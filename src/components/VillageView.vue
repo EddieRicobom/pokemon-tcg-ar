@@ -55,7 +55,8 @@ import QuizDialog from './QuizDialog.vue';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
 /** `close` sai da Vila; com `'pvp'` a Caixa abre o PvP em seguida (a Vila mora dentro da Caixa, então não há troca de tela). */
-const emit = defineEmits<{ close: [then?: 'pvp' | 'batalha'] }>();
+/** `then`: para onde ir ao sair (Caixa com PvP, batalha na câmera ou desafio da Liga); sem nada, volta à tela anterior. */
+const emit = defineEmits<{ close: [then?: 'pvp' | 'batalha' | 'caixa'] }>();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const wrapEl = ref<HTMLElement | null>(null);
@@ -1501,7 +1502,7 @@ onBeforeUnmount(() => {
           <p class="note">PvP na Caixa: os dois conectam por código, escolhem o modo e a luta aparece na caixa de cada um.</p>
           <button type="button" class="primary" @click="goToPvp">Ir para o PvP</button>
         </div>
-        <LeagueCard @challenge="sheet = null; emit('close')" />
+        <LeagueCard @challenge="sheet = null; emit('close', 'caixa')" />
       </div>
 
       <div v-if="sheet === 'torre'" class="village-sheet tall game-sheet" role="dialog" aria-label="Torre de Sobrevivência">
