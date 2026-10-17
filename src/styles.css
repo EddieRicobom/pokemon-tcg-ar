@@ -5218,6 +5218,67 @@ body.no-scroll .reward-toasts {
   margin-top: 12px;
 }
 
+/* Atalhos de Minhas cartas: batalhar com a equipe e ver a equipe em AR. */
+.card-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.card-shortcuts .shortcut {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  text-decoration: none;
+}
+
+.card-shortcuts .shortcut > span:first-child {
+  font-size: 1.5rem;
+}
+
+.card-shortcuts .shortcut small {
+  display: block;
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.species-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+/* Zona de perigo: apagar tudo só com a palavra digitada. */
+.danger-zone {
+  margin-top: 22px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 138, 128, 0.5);
+}
+
+.danger-zone summary {
+  cursor: pointer;
+  color: #ff8a80;
+  font-weight: 700;
+}
+
+.danger-zone label {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+}
+
 .pbox-head {
   display: grid;
   grid-template-columns: 44px 1fr 44px;

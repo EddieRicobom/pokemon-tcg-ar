@@ -55,6 +55,8 @@ const moving = ref(false);
 const moveFrom = ref<SlotRef | null>(null);
 const notice = ref('');
 const selectedCard = computed(() => (selected.value ? byId.value.get(selected.value) ?? null : null));
+/** Remover uma carta pede um segundo toque (o backup não guarda cartas: só escaneando de novo). */
+const confirmRemove = ref<string | null>(null);
 
 function tapSlot(slot: number): void {
   const id = box.value.slots[slot] ?? null;
@@ -187,7 +189,11 @@ const teamIndex = (id: string) => props.team.indexOf(id);
           <button type="button" :class="{ active: teamIndex(selectedCard.id) >= 0 }" @click="emit('toggleTeam', selectedCard.id)">
             {{ teamIndex(selectedCard.id) >= 0 ? 'Na equipe ✓' : 'Pôr na equipe' }}
           </button>
-          <button type="button" :disabled="busyId === selectedCard.id" @click="emit('remove', selectedCard.id); selected = null">Remover</button>
+          <button v-if="confirmRemove !== selectedCard.id" type="button" :disabled="busyId === selectedCard.id" @click="confirmRemove = selectedCard.id">Remover…</button>
+          <template v-else>
+            <button type="button" class="danger" @click="emit('remove', selectedCard.id); selected = null; confirmRemove = null">Remover {{ selectedCard.name }}</button>
+            <button type="button" @click="confirmRemove = null">Não</button>
+          </template>
         </div>
       </div>
     </div>
