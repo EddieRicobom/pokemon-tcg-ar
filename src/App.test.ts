@@ -93,7 +93,7 @@ describe('App', () => {
   it('a tela Pins explica o jogo, a energia e pede cartas guardadas', async () => {
     localStorage.removeItem('tcg-ar-trainer-v1');
     const text = await mount('#/pins');
-    expect(text).toContain('Pin Mode');
+    expect(text).toContain('Pins');
     expect(text).toContain('sem câmera');
     expect(text).toContain('energia');
     expect(text).toContain('Escolha os pins');

@@ -1283,12 +1283,12 @@ function setMarks(on: boolean): void {
 
 <template>
   <section class="pins" aria-labelledby="pins-title">
-    <h2 id="pins-title" class="sr-only">Pin Mode</h2>
+    <h2 id="pins-title" class="sr-only">Pins</h2>
 
     <template v-if="phase === 'setup' || phase === 'loading'">
       <header class="pn-hero">
         <div>
-          <h2>Pin Mode</h2>
+          <h2>Pins</h2>
           <p>Vista de cima, sem câmera: puxe para trás, solte e empurre os adversários para fora da arena.</p>
           <p v-if="fromVillage"><a :href="routeHref('vila')">← Voltar à Vila</a></p>
         </div>
