@@ -437,7 +437,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <details v-if="rows.length > 0" class="danger-zone" :open="confirmingClear" @toggle="(e: Event) => (confirmingClear = (e.target as HTMLDetailsElement).open)">
       <summary>Zona de perigo: apagar todas as cartas do aparelho</summary>
       <p>
-        Isto apaga <strong>todas as {{ rows.length }} cartas guardadas</strong> (imagens, sprites, alvos de AR e a organização da
+        Isto apaga <strong>{{ rows.length === 1 ? 'a carta guardada' : `todas as ${rows.length} cartas guardadas` }}</strong> (imagens, sprites, alvos de AR e a organização da
         Box). <strong>O backup não guarda as cartas</strong>: para tê-las de novo, será preciso escanear cada carta física outra vez.
         O progresso (Treinador, Vila, moedas) não é apagado.
       </p>
@@ -445,7 +445,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         <input v-model="clearTyped" type="text" autocomplete="off" autocapitalize="characters" :placeholder="CLEAR_WORD" />
       </label>
       <div class="actions row">
-        <button type="button" class="danger" :disabled="!clearReady" @click="clearAll">Apagar as {{ rows.length }} cartas</button>
+        <button type="button" class="danger" :disabled="!clearReady" @click="clearAll">{{ rows.length === 1 ? 'Apagar a carta' : `Apagar as ${rows.length} cartas` }}</button>
         <button type="button" @click="confirmingClear = false; clearTyped = ''">Cancelar</button>
       </div>
     </details>

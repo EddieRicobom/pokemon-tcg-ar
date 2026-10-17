@@ -5221,7 +5221,7 @@ body.no-scroll .reward-toasts {
 /* Atalhos de Minhas cartas: batalhar com a equipe e ver a equipe em AR. */
 .card-shortcuts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 8px;
   margin: 10px 0;
 }
