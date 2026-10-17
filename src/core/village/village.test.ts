@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng } from '../battle';
 import { findFree, generateVillage, isSolidTile, tileAt } from './map';
+import { FIELDS, TOWN } from './town-layout';
 import {
   add, canFollow, count, craft, daylight, emptyVillage, favoriteOf, friendLevel, friendOf, giveGift, harvest, HOUSE_LEVELS, normalizeVillage, pickUp, place,
   pruneHarvest, talk, upgradeHouse,
@@ -31,14 +32,16 @@ describe('mapa da Vila', () => {
     expect(generateVillage(42).tiles).toEqual(map.tiles);
     const kinds = new Set(map.tiles);
     for (const k of ['water', 'sand', 'tree', 'rock', 'bush', 'flower', 'path', 'plot'] as const) expect(kinds.has(k)).toBe(true);
-    expect(map.tiles.filter((t) => t === 'plot')).toHaveLength(12);
+    expect(map.tiles.filter((t) => t === 'plot')).toHaveLength(15);
+    for (const k of ['trail', 'plaza', 'field', 'deco'] as const) expect(kinds.has(k)).toBe(true);
   });
 
   it('a borda é floresta e dá para chegar a pé do começo à praça, ao lago e à casa', () => {
     expect(tileAt(map, 0, 0)).toBe('tree');
     expect(tileAt(map, -5, 3)).toBe('tree');
     expect(isSolidTile(tileAt(map, map.spawn.x, map.spawn.y))).toBe(false);
-    expect(reachable(map.spawn, { x: map.w / 2 - 1, y: map.h / 2 })).toBe(true);
+    expect(reachable(map.spawn, { x: TOWN.avenueX - 2, y: TOWN.mainStreetY })).toBe(true);
+    for (const f of FIELDS) expect(reachable(map.spawn, { x: f.x - 1, y: f.y })).toBe(true);
     expect(reachable(map.spawn, { x: map.plot.x + map.plot.w, y: map.plot.y + map.plot.h - 1 })).toBe(true);
     const sand = map.tiles.findIndex((t, i) => t === 'sand' && reachable(map.spawn, { x: i % map.w, y: Math.floor(i / map.w) }));
     expect(sand).toBeGreaterThan(-1);

@@ -74,7 +74,6 @@ export function recolor(img: Rgba, rgb: number, minSat = 0.35, keep: readonly [n
  */
 export function windowGlow(img: Rgba): Rgba {
   const out = new Uint8ClampedArray(img.data.length);
-
   for (let i = 0; i < img.data.length; i += 4) {
     const r = img.data[i]!;
     const g = img.data[i + 1]!;
@@ -84,7 +83,6 @@ export function windowGlow(img: Rgba): Rgba {
       out[i + 1] = 214;
       out[i + 2] = 110;
       out[i + 3] = 255;
-
     }
   }
   return { w: img.w, h: img.h, data: out };

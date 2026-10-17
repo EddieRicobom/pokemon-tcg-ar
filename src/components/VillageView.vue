@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { getCache, getDigitalSprite, getLocalVillageSpriteDirs, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
+import { getCache, getDigitalSprite, getLocalVillageSpriteDirs, getVillageAtlas, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
@@ -1373,9 +1373,10 @@ onMounted(async () => {
   villagerList = villagers;
   // Recorte real de tileset pra grama (ver `village-art.ts`); null se não der pra baixar, cai no ladrilho
   // desenhado por código de sempre — a Vila nunca trava nem finge por causa disso.
-  const groundTile = await getVillageGroundTile().catch(() => null);
+  // O atlas de tilesets (chão, natureza, casas, prédios): mesma regra, sem ele a Vila usa o desenho por código.
+  const [groundTile, atlas] = await Promise.all([getVillageGroundTile().catch(() => null), getVillageAtlas().catch(() => null)]);
   if (!canvasEl.value || !wrapEl.value) return;
-  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile);
+  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas);
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = changed;
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).

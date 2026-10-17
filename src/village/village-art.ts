@@ -84,6 +84,7 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
       break;
     case 'grass':
     case 'building':
+    case 'deco':
     case 'lamp':
     case 'tree':
     case 'rock':
@@ -98,6 +99,8 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
       paintGround(buf, 0, 0, 'tall', rng, 0, { c, r });
       break;
     case 'path':
+    case 'trail':
+    case 'plaza':
       paintGround(buf, 0, 0, 'path', rng, edges, { c, r });
       break;
     case 'sand':
@@ -123,6 +126,7 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
       break;
     }
     case 'plot':
+    case 'field':
       rect(buf, 0, 0, TILE, TILE, DIRT.base);
       for (let y = 1; y < TILE; y += 4) for (let x = 0; x < TILE; x++) put(buf, x, y, (x + r) % 6 === 0 ? DIRT.light : DIRT.dark);
       if (edges & EDGE.north) for (let x = 1; x < TILE; x += 5) rect(buf, x, 0, 2, 3, DIRT.stake);

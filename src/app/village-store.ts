@@ -1,4 +1,5 @@
 import { generateVillage } from '../core/village/map';
+import { migrateLayout } from '../core/village/migrate';
 import type { VillageMap } from '../core/village/map';
 import { emptyVillage, normalizeVillage } from '../core/village/life';
 import type { VillageState } from '../core/village/life';
@@ -22,6 +23,8 @@ function parse(raw: string | null): VillageState | null {
     const value: unknown = JSON.parse(raw);
     if (!value || typeof value !== 'object') return null;
     const state = normalizeVillage(value, VILLAGE_SEED, villageMap().spawn);
+    // Save do mapa antigo (48×40): móveis para a mochila, horta para a fazenda, você no começo (ver `migrate.ts`).
+    migrateLayout(state, villageMap());
     // A cidade nasceu depois de muitos saves: o que estava onde hoje há casa ou poste volta para a mochila.
     sanitizeTown(state, villageMap());
     return state;

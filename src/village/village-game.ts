@@ -26,6 +26,9 @@ import type { ContentBounds } from './local-sprite';
 import { outfitFor, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree, TILE } from './village-art';
 import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
+import { groundPieces } from './ground-tiles';
+import { recolor, VillaAtlas, windowGlow } from './tileset-art';
+import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintArcade, paintArena, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum, paintPins, paintTorre } from './town-art';
 
 /**
@@ -75,7 +78,7 @@ export interface SceneLine {
   fx?: Fx;
 }
 
-function toCanvas(buf: PixelBuf): HTMLCanvasElement {
+function toCanvas(buf: { w: number; h: number; data: Uint8Array | Uint8ClampedArray }): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = buf.w;
   c.height = buf.h;
@@ -186,6 +189,12 @@ const EMOJI_FONT = 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Colo
 
 /** O desenho e o emoji sobre a porta de cada prédio da praça. */
 const CIVIC_ART: Partial<Record<BuildingKind, () => PixelBuf>> = { cafe: paintCafe, mail: paintMail, museum: paintMuseum, arcade: paintArcade, pins: paintPins, arena: paintArena, torre: paintTorre };
+/** Com o atlas: o desenho de cada prédio (recortes de tileset, ver `atlas-spec.ts`). */
+const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'kiosk-red', museum: 'manor', arcade: 'center-blue', pins: 'kiosk-blue', arena: 'center-red', torre: 'tower' };
+/** Com o atlas: a casa de cada estágio (Cabana, Casa de madeira, Casa de tijolos, Sobrado — `HOME_STAGES`). */
+const HOME_TILESET = ['gazebo', 'barn', 'house-brick', 'home-yellow'] as const;
+/** As que pegam a cor escolhida (o desenho tem partes coloridas para tingir). */
+const HOME_TINTED = new Set<string>(['barn', 'home-yellow']);
 const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼' };
 
 export class VillageGame {
@@ -195,6 +204,8 @@ export class VillageGame {
   private readonly names = new Map<string, string>();
   private readonly ctx: CanvasRenderingContext2D;
   private groundFrames: HTMLCanvasElement[] = [];
+  /** Recortes de tileset (null: sem a imagem, cai no desenho por código de sempre). */
+  private readonly atlas: VillaAtlas | null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
   private running = false;
   private handle = 0;
@@ -254,9 +265,18 @@ export class VillageGame {
     private readonly trainerId: string,
     /** Recorte real de tileset pra grama (ver `village-art.ts`); null/undefined cai no ladrilho desenhado por código. */
     private readonly groundTile?: GroundTileImage | null,
+    /** O atlas de tilesets da Vila (`public/tilesets/vila-atlas.png`); null cai no desenho por código. */
+    atlasImage?: Rgba | null,
     private readonly rng: Rng = Math.random,
   ) {
     this.ctx = canvas.getContext('2d')!;
+    let atlas: VillaAtlas | null = null;
+    try {
+      atlas = atlasImage ? new VillaAtlas(atlasImage) : null;
+    } catch {
+      atlas = null;
+    }
+    this.atlas = atlas;
     this.player = makeWalker('eu', state.player.x, state.player.y, 5.5);
     this.player.dir = state.player.dir;
     this.weather = createWeather(this.rng, 'sol');
@@ -440,8 +460,48 @@ export class VillageGame {
     return e;
   }
 
+  /** O chão inteiro pré-desenhado com os recortes do tileset (um quadro só; os brilhos da água são desenhados por cima). */
+  private buildTilesetGround(atlas: VillaAtlas, grass: GroundTileImage): HTMLCanvasElement {
+    const c = document.createElement('canvas');
+    c.width = this.map.w * TILE;
+    c.height = this.map.h * TILE;
+    const ctx = c.getContext('2d')!;
+    const sheet = toCanvas(atlas.image);
+    const grassCanvas = toCanvas(grass);
+    for (let y = 0; y < this.map.h; y++) {
+      for (let x = 0; x < this.map.w; x++) {
+        for (const p of groundPieces(this.map, x, y)) {
+          const dx = x * TILE + p.dx;
+          const dy = y * TILE + p.dy;
+          if (p.src === 'grass') {
+            ctx.drawImage(grassCanvas, p.sx, p.sy, p.w, p.h, dx, dy, p.w, p.h);
+            continue;
+          }
+          const r = atlas.rect(p.src);
+          if (r) ctx.drawImage(sheet, r.x + p.sx, r.y + p.sy, p.w, p.h, dx, dy, p.w, p.h);
+        }
+      }
+    }
+    return c;
+  }
+
+  /** Um recorte do atlas como canvas (guardado); `transform` muda os pixels antes (ex.: a cor da casa). */
+  private art(id: string, key = id, transform?: (img: Rgba) => Rgba): HTMLCanvasElement | null {
+    const cached = this.sprites.get(`art:${key}`);
+    if (cached) return cached;
+    const piece = this.atlas?.piece(id);
+    if (!piece) return null;
+    const c = toCanvas(transform ? transform(piece) : piece);
+    this.sprites.set(`art:${key}`, c);
+    return c;
+  }
+
   /** O chão inteiro pré-desenhado (3 quadros, por causa da água). */
   private buildGround(): void {
+    if (this.atlas && this.groundTile) {
+      this.groundFrames = [this.buildTilesetGround(this.atlas, this.groundTile)];
+      return;
+    }
     this.groundFrames = [0, 1, 2].map((frame) => {
       const c = document.createElement('canvas');
       c.width = this.map.w * TILE;
@@ -850,7 +910,7 @@ export class VillageGame {
     const camY = Math.round(Math.min(Math.max(0, (pp.y + 0.5) * TILE * scale - H / 2), this.map.h * TILE * scale - H));
     ctx.fillStyle = '#1d4a22';
     ctx.fillRect(0, 0, W, H);
-    const ground = this.groundFrames[Math.floor(now / 450) % 3]!;
+    const ground = this.groundFrames[Math.floor(now / 450) % this.groundFrames.length]!;
     ctx.drawImage(ground, camX / scale, camY / scale, W / scale, H / scale, 0, 0, W, H);
 
     const clock = new Date();
@@ -905,6 +965,22 @@ export class VillageGame {
     };
     const streetLamps: { x: number; y: number }[] = [];
     const homeGlows: { x: number; y: number; w: number; h: number; lantern?: boolean }[] = [];
+    /** Janelas do tileset acesas à noite (o vidro do desenho vira luz). */
+    const glassGlows: { img: HTMLCanvasElement; x: number; y: number; w: number; h: number }[] = [];
+    const atlas = this.atlas;
+    /** Desenha um recorte em pé: o meio da base em (cx, base). Devolve o retângulo na tela. */
+    const stand = (img: HTMLCanvasElement, cx: number, base: number) => {
+      const w = img.width * scale;
+      const h = img.height * scale;
+      const x = Math.round(cx - w / 2);
+      const y = base - h;
+      ctx.drawImage(img, x, y, w, h);
+      return { x, y, w, h };
+    };
+    const lightUp = (id: string, key: string, at: { x: number; y: number; w: number; h: number }, transform?: (img: Rgba) => Rgba) => {
+      const glass = this.art(id, `glass:${key}`, (img) => windowGlow(transform ? transform(img) : img));
+      if (glass) glassGlows.push({ img: glass, ...at });
+    };
     const wind = wx.windX * 0.5;
     const sway = (x: number, y: number, amp: number) => Math.sin(now / 900 + x * 0.7 + y * 0.3) * amp + Math.sin(now / 2300 + x) * amp * 0.6 + wind * amp * (0.6 + wx.rain);
     const drawSwayed = (img: HTMLCanvasElement, dx: number, dy: number, w: number, h: number, k: number) => {
@@ -917,6 +993,39 @@ export class VillageGame {
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const t = tileAt(this.map, x, y);
+        if (atlas && (t === 'tree' || t === 'rock' || t === 'bush' || t === 'lamp')) {
+          const hv = hashN(x * 31 + y * 17);
+          const id = t === 'tree' ? (hv < 0.62 ? 'pine-s1' : 'pine-s2') : t === 'rock' ? `rock-${1 + Math.floor(hv * 3)}` : t;
+          const img = this.art(id);
+          if (img) {
+            const h = img.height * scale;
+            if (t === 'tree') {
+              list.push({ y: y + 1, draw: () => drawSwayed(img, sx(x), sy(y + 1) - h, T, h, sway(x, y, 0.028)) });
+            } else if (t === 'bush') {
+              const fruit = !this.harvestedToday(x, y);
+              list.push({
+                y: y + 1,
+                draw: () => {
+                  shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2);
+                  drawSwayed(img, sx(x), sy(y), T, T, sway(x, y, 0.04));
+                  // Frutinhas (Oran e Pecha) enquanto dá para colher hoje.
+                  if (fruit) {
+                    for (const [fx, fy, c] of [[4, 6, '#4a6ae8'], [9, 4, '#f28ab0'], [11, 9, '#4a6ae8'], [6, 11, '#f28ab0']] as const) {
+                      ctx.fillStyle = c;
+                      ctx.fillRect(sx(x) + fx * scale, sy(y) + fy * scale, 2 * scale, 2 * scale);
+                    }
+                  }
+                },
+              });
+            } else if (t === 'lamp') {
+              list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1 * scale, 4 * scale, 1.5 * scale, 0.18); ctx.drawImage(img, sx(x), sy(y + 1) - h, T, h); } });
+              if (night) streetLamps.push({ x, y });
+            } else {
+              list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2); ctx.drawImage(img, sx(x), sy(y + 1) - h, T, h); } });
+            }
+            continue;
+          }
+        }
         if (t === 'tree') {
           const variant = (x * 7 + y * 3) % 3;
           const img = this.sprite(`tree${variant}`, () => paintTree(variant));
@@ -948,8 +1057,35 @@ export class VillageGame {
         }
       }
     }
+    // Enfeites fixos do mapa (parquinho, celeiro, jardineiras, árvores grandes).
+    if (atlas) {
+      for (const d of this.map.decor) {
+        if (d.x + d.w < x0 || d.x > x1 || d.y + d.h < y0 || d.y > y1 + 4) continue;
+        const img = this.art(d.kind);
+        if (!img) continue;
+        const tree = d.kind === 'tree-big' || d.kind === 'pine-m';
+        list.push({
+          y: d.y + d.h,
+          draw: () => {
+            if (tree) drawSwayed(img, sx(d.x + d.w / 2) - (img.width * scale) / 2, sy(d.y + d.h) - img.height * scale, img.width * scale, img.height * scale, sway(d.x, d.y, 0.02));
+            else stand(img, sx(d.x + d.w / 2), sy(d.y + d.h));
+          },
+        });
+      }
+    }
     const plot = this.map.plot;
-    if (this.state.house > 0) {
+    const houseId = this.state.house >= 3 ? 'house-brick' : this.state.house === 2 ? 'barn' : 'gazebo';
+    const houseArt = atlas && this.state.house > 0 ? this.art(houseId) : null;
+    if (houseArt) {
+      list.push({
+        y: plot.y + plot.h,
+        draw: () => {
+          shadow(sx(plot.x + plot.w / 2), sy(plot.y + plot.h) - 2 * scale, 34 * scale, 4 * scale, 0.2);
+          const at = stand(houseArt, sx(plot.x + plot.w / 2), sy(plot.y + plot.h));
+          if (night) lightUp(houseId, houseId, at);
+        },
+      });
+    } else if (this.state.house > 0) {
       const img = this.sprite(`house${this.state.house}`, () => paintHouse(this.state.house));
       list.push({
         y: plot.y + plot.h,
@@ -960,6 +1096,17 @@ export class VillageGame {
       });
     }
     const shop = this.map.shop;
+    const umbrellas = atlas ? (['umbrella-b', 'umbrella-r', 'umbrella-g'] as const).map((id) => this.art(id)) : [];
+    if (umbrellas.length > 0 && umbrellas.every((u) => u !== null)) {
+      list.push({
+        y: shop.y + shop.h,
+        draw: () => {
+          shadow(sx(shop.x + shop.w / 2), sy(shop.y + shop.h) - 2 * scale, shop.w * 7 * scale, 3.5 * scale, 0.2);
+          umbrellas.forEach((u, i) => stand(u!, sx(shop.x + (i + 0.5) * (shop.w / umbrellas.length)), sy(shop.y + shop.h)));
+          this.drawTag(sx(shop.x + shop.w / 2), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
+        },
+      });
+    } else {
     const shopImg = this.sprite('shop', paintShop);
     list.push({
       y: shop.y + shop.h,
@@ -969,8 +1116,10 @@ export class VillageGame {
         this.drawTag(sx(shop.x + 1.5), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
       },
     });
+    }
     for (const b of this.map.buildings) {
-      if (b.x + b.w < x0 || b.x > x1 || b.y + b.h < y0 || b.y > y1 + 3) continue;
+      // Os prédios do tileset são altos (a Torre sobe ~10 blocos): entram na lista mesmo com a base fora da tela.
+      if (b.x + b.w < x0 || b.x > x1 || b.y + b.h < y0 || b.y > y1 + 10) continue;
       const open = this.townLevel >= b.unlock;
       const bottom = sy(b.y + b.h);
       const left = sx(b.x);
@@ -984,6 +1133,20 @@ export class VillageGame {
         continue;
       }
       const wpx = b.w * T;
+      const fence = atlas ? this.art('fence-h') : null;
+      const drawLot = () => {
+        if (!fence) return false;
+        list.push({ y: b.y + b.h, draw: () => { for (let i = 0; i + 2 <= b.w + 1; i += 2) ctx.drawImage(fence, sx(b.x + Math.min(i, b.w - 2)), bottom - 16 * scale, 32 * scale, 16 * scale); } });
+        return true;
+      };
+      if (!open && drawLot()) {
+        if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, `🔒 Nível ${b.unlock} de Treinador`));
+        continue;
+      }
+      if (b.kind === 'home' && [...this.homes.values()].every((l) => l !== b.lot) && drawLot()) {
+        if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, 'Terreno livre'));
+        continue;
+      }
       if (!open) {
         const img = this.sprite('lot', paintLot);
         list.push({ y: b.y + b.h, draw: () => ctx.drawImage(img, left, bottom - 48 * scale, wpx, 3 * T) });
@@ -996,6 +1159,54 @@ export class VillageGame {
         list.push({ y: b.y + b.h, draw: () => ctx.drawImage(img, left, bottom - 48 * scale, wpx, 3 * T) });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, 'Terreno livre'));
         continue;
+      }
+      if (b.kind === 'home' && atlas) {
+        const lot = b.lot ?? 0;
+        const v = homeOf(this.state, lot);
+        const lvl = homeLevel(v);
+        const decor = homeDecor(v);
+        const roof = ROOFS[roofIndex(v, lot)]!.rgb;
+        const id = HOME_TILESET[lvl] ?? 'gazebo';
+        const tint = HOME_TINTED.has(id) ? (img: Rgba) => recolor(img, roof) : undefined;
+        const key = `${id}:${tint ? roof : 0}`;
+        const img = this.art(id, key, tint);
+        const fenceArt = decor & 2 ? this.art('fence-h') : null;
+        const planter = decor & 1 ? this.art('planter') : null;
+        const lantern = decor & 4 ? this.art('lamp') : null;
+        const who = [...this.homes].filter(([, l]) => l === lot).map(([id2]) => id2);
+        const sleeping = who.length > 0 && who.every((id2) => this.asleep.has(id2));
+        if (img) {
+          list.push({
+            y: b.y + b.h,
+            draw: () => {
+              shadow(mid, bottom - 2 * scale, 30 * scale, 3.5 * scale, 0.2);
+              const at = stand(img, mid, bottom);
+              if (night && who.length > 0) lightUp(id, key, at, tint);
+              // Enfeites da casa (comprados na Vila): jardineira, cerquinha, lampião e caixa de correio.
+              if (planter) ctx.drawImage(planter, left, bottom - 10 * scale, 24 * scale, 13 * scale);
+              if (fenceArt) {
+                ctx.drawImage(fenceArt, 0, 0, 16, 16, left - 8 * scale, bottom - 14 * scale, 16 * scale, 16 * scale);
+                ctx.drawImage(fenceArt, 16, 0, 16, 16, left + b.w * T - 8 * scale, bottom - 14 * scale, 16 * scale, 16 * scale);
+              }
+              if (lantern) ctx.drawImage(lantern, left + (b.w - 1) * T, bottom - 28 * scale, T, 28 * scale);
+              if (decor & 8) {
+                ctx.fillStyle = '#6a4a28';
+                ctx.fillRect(left + 2 * scale, bottom - 10 * scale, 2 * scale, 10 * scale);
+                ctx.fillStyle = '#3f6fd0';
+                ctx.fillRect(left, bottom - 14 * scale, 6 * scale, 5 * scale);
+              }
+              if (sleeping) this.drawTag(mid, at.y + 10 * scale + Math.sin(now / 600) * scale, '💤');
+              const tag = this.houseTags.get(lot);
+              if (tag && now > tag.until) this.houseTags.delete(lot);
+              else if (tag) this.drawTag(mid, at.y - 4 * scale - Math.abs(Math.sin(now / 140)) * 3 * scale, tag.emoji);
+            },
+          });
+          if (nearDoor) {
+            const text = who.length === 0 ? 'Casa vazia' : `Casa de ${who.map((id2) => this.names.get(id2) ?? '').join(' e ')}`;
+            overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, text));
+          }
+          continue;
+        }
       }
       if (b.kind === 'home') {
         const lot = b.lot ?? 0;
@@ -1027,8 +1238,23 @@ export class VillageGame {
         }
         continue;
       }
-      const img = this.sprite(b.kind, CIVIC_ART[b.kind] ?? paintMuseum);
       const emoji = CIVIC_EMOJI[b.kind] ?? '🏛️';
+      const civicId = CIVIC_TILESET[b.kind];
+      const civicArt = atlas && civicId ? this.art(civicId) : null;
+      if (civicArt && civicId) {
+        list.push({
+          y: b.y + b.h,
+          draw: () => {
+            shadow(mid, bottom - 2 * scale, wpx / 2 - 2 * scale, 3.5 * scale, 0.2);
+            const at = stand(civicArt, mid, bottom);
+            if (night) lightUp(civicId, civicId, at);
+            this.drawTag(mid, at.y - 2 * scale + Math.sin(now / 350) * scale, emoji);
+          },
+        });
+        if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
+        continue;
+      }
+      const img = this.sprite(b.kind, CIVIC_ART[b.kind] ?? paintMuseum);
       list.push({
         y: b.y + b.h,
         draw: () => {
@@ -1315,7 +1541,12 @@ export class VillageGame {
         glow(sx(l.x + 0.5), sy(l.y + 0.2), (l.big ? 3.4 : 2.5) * T, '255,214,120', light.dark * 0.7 * flicker);
       }
       // Janelas acesas da casa e a luz da loja.
-      if (this.state.house >= 2) {
+      for (const g of glassGlows) {
+        ctx.globalAlpha = Math.min(1, light.dark * 1.3);
+        ctx.drawImage(g.img, g.x, g.y, g.w, g.h);
+        ctx.globalAlpha = 1;
+      }
+      if (!houseArt && this.state.house >= 2) {
         const ox = sx(plot.x);
         const oy = sy(plot.y + plot.h - 4);
         const win = this.state.house >= 3 ? [[11, 38, 10, 9], [43, 38, 10, 9]] : [[12, 40, 8, 7]];
