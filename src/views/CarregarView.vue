@@ -38,7 +38,11 @@ const onlyTeam = ref(false);
 const sortKey = ref<SortKey>('recentes');
 // "Box" (caixas 6 × 5, como nos jogos) é o modo padrão; "Lista" mostra os detalhes técnicos de cada carta.
 const viewMode = ref<'box' | 'lista' | 'grade'>('box');
-const visibleIdSet = computed(() => new Set(visibleRows.value.map((row) => row.id)));
+/** Na Box só a busca apaga cartas (os filtros de situação da Lista não aparecem lá, então não valem). */
+const visibleIdSet = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  return new Set(rows.value.filter((row) => !q || `${row.name} ${row.setName} ${row.localId}`.toLowerCase().includes(q)).map((row) => row.id));
+});
 const teamNotice = ref('');
 
 const team = computed(() => resolveTeam(savedTeam.value, rows.value));
@@ -249,14 +253,20 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <p v-if="teamNotice" class="message error" role="alert">{{ teamNotice }}</p>
 
     <div v-if="rows.length > 0" class="filter-bar" role="search">
-      <input v-model="search" type="text" placeholder="Buscar por nome, coleção ou número" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
-      <div class="chips" role="group" aria-label="Filtrar por situação">
+      <div class="chips view-switch" role="group" aria-label="Modo de exibição">
+        <button type="button" :class="{ active: viewMode === 'box' }" :aria-pressed="viewMode === 'box'" @click="viewMode = 'box'">Box</button>
+        <button type="button" :class="{ active: viewMode === 'lista' }" :aria-pressed="viewMode === 'lista'" @click="viewMode = 'lista'">Lista</button>
+        <button type="button" :class="{ active: viewMode === 'grade' }" :aria-pressed="viewMode === 'grade'" @click="viewMode = 'grade'">Grade</button>
+      </div>
+      <input v-model="search" type="text" :placeholder="viewMode === 'box' ? 'Buscar (apaga as outras na caixa)' : 'Buscar por nome, coleção ou número'" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
+      <!-- Na Box a ordem é a que você arrumou: filtros de situação e ordem ficam para a Lista e a Grade. -->
+      <div v-if="viewMode !== 'box'" class="chips" role="group" aria-label="Filtrar por situação">
         <button v-for="option in ([['todas', 'Todas'], ['completo', 'Completas'], ['parcial', 'Parciais'], ['falhou', 'Com falha'], ['sem-pokemon', 'Sem Pokémon']] as const)" :key="option[0]" type="button" :class="{ active: statusFilter === option[0] }" :aria-pressed="statusFilter === option[0]" @click="statusFilter = option[0]">
           {{ option[1] }}
         </button>
         <button type="button" :class="{ active: onlyTeam }" :aria-pressed="onlyTeam" @click="onlyTeam = !onlyTeam">Só a equipe</button>
       </div>
-      <div class="filter-row">
+      <div v-if="viewMode !== 'box'" class="filter-row">
         <label>Ordem
           <select v-model="sortKey">
             <option value="recentes">Mais recentes</option>
@@ -264,13 +274,8 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
             <option value="leituras">Mais lidas</option>
           </select>
         </label>
-        <div class="chips" role="group" aria-label="Modo de exibição">
-          <button type="button" :class="{ active: viewMode === 'box' }" :aria-pressed="viewMode === 'box'" @click="viewMode = 'box'">Box</button>
-          <button type="button" :class="{ active: viewMode === 'lista' }" :aria-pressed="viewMode === 'lista'" @click="viewMode = 'lista'">Lista</button>
-          <button type="button" :class="{ active: viewMode === 'grade' }" :aria-pressed="viewMode === 'grade'" @click="viewMode = 'grade'">Grade</button>
-        </div>
       </div>
-      <p class="meta" role="status">
+      <p v-if="viewMode !== 'box'" class="meta" role="status">
         Mostrando {{ visibleRows.length }} de {{ rows.length }}.
         <button v-if="filtersActive" type="button" class="link" @click="clearFilters">Limpar filtros</button>
       </p>
