@@ -16,6 +16,12 @@ export interface CreatureDecoders {
   image: (blob: Blob) => Promise<{ width: number; height: number; data: Uint8ClampedArray }>;
 }
 
+/** Digital Pokémon que podem entrar na Caixa (pedido do dono): o sprite vem do pacote local ou do GIF, não do cache. */
+export interface DigitalCreatures {
+  instances: readonly { instanceId: string; name: string; dexId: number }[];
+  sprite: (dexId: number) => Promise<ReturnType<typeof decodeGif> | null>;
+}
+
 export interface LoadedCreatures {
   entries: CreatureEntry[];
   /** Cartas guardadas que têm sprite (mesmo as que ficaram de fora do limite). */
@@ -51,17 +57,38 @@ export async function loadCreatureEntries(
   cache: CreatureCacheLike,
   decoders: CreatureDecoders = browserDecoders,
   only?: readonly string[],
+  digital?: DigitalCreatures,
 ): Promise<LoadedCreatures> {
   let cards = (await cache.list()).filter((card) => card.sprite.state === 'ok');
-  // Equipe escolhida: só estas cartas, na ordem da equipe.
+  const digitalById = new Map((digital?.instances ?? []).map((i) => [i.instanceId, i]));
+  // Equipe escolhida: só estas cartas (e Digital Pokémon), na ordem da equipe.
+  let order: ({ kind: 'card'; card: CachedCard } | { kind: 'digital'; id: string })[] = cards.map((card) => ({ kind: 'card' as const, card }));
   if (only) {
     const byId = new Map(cards.map((card) => [card.id, card]));
-    cards = only.map((id) => byId.get(id)).filter((card): card is NonNullable<typeof card> => card !== undefined);
+    order = [];
+    for (const id of only) {
+      const card = byId.get(id);
+      if (card) order.push({ kind: 'card', card });
+      else if (digitalById.has(id)) order.push({ kind: 'digital', id });
+    }
+    cards = order.flatMap((o) => (o.kind === 'card' ? [o.card] : []));
   }
   const entries: CreatureEntry[] = [];
   const failed: LoadedCreatures['failed'] = [];
-  for (const card of cards) {
+  for (const item of order) {
     if (entries.length >= MAX_CREATURES) break;
+    if (item.kind === 'digital') {
+      const inst = digitalById.get(item.id)!;
+      try {
+        const gif = await digital!.sprite(inst.dexId);
+        if (!gif) throw new Error('sprite indisponível agora (sem rede e fora do pacote local)');
+        entries.push({ info: { id: inst.instanceId, name: inst.name, dexId: inst.dexId, detail: 'Digital Pokémon', digital: true }, source: { kind: 'gif', gif } });
+      } catch (error) {
+        failed.push({ name: inst.name, reason: error instanceof Error ? error.message : String(error) });
+      }
+      continue;
+    }
+    const card = item.card;
     try {
       const blob = await cache.getAssetBlob(card, 'sprite');
       if (!blob) throw new Error('arquivo do sprite não encontrado no cache');
@@ -72,5 +99,5 @@ export async function loadCreatureEntries(
       failed.push({ name: card.name, reason: error instanceof Error ? error.message : String(error) });
     }
   }
-  return { entries, available: cards.length, failed };
+  return { entries, available: order.length, failed };
 }

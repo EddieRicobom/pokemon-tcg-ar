@@ -77,4 +77,21 @@ describe('população da caixa', () => {
     expect(r.entries.map((e) => e.info.id)).toEqual(['c3', 'c1']);
     expect(r.available).toBe(2);
   });
+
+  it('Digital Pokémon da equipe entram na Caixa na ordem da equipe; sem sprite, viram falha (nada inventado)', async () => {
+    const cards = [card(1), card(2)];
+    const cache = { list: async () => cards, getAssetBlob: async () => new Blob(['x']) };
+    const gif = { width: 1, height: 1, frames: [frame], durationMs: 100 } as never;
+    const digital = {
+      instances: [
+        { instanceId: 'dp_1_4_0', name: 'Charmander', dexId: 4 },
+        { instanceId: 'dp_2_7_1', name: 'Squirtle', dexId: 7 },
+      ],
+      sprite: async (dexId: number) => (dexId === 7 ? null : gif),
+    };
+    const r = await loadCreatureEntries(cache, decoders, ['c2', 'dp_1_4_0', 'c1', 'dp_2_7_1'], digital);
+    expect(r.entries.map((e) => e.info.id)).toEqual(['c2', 'dp_1_4_0', 'c1']);
+    expect(r.entries[1]?.info).toMatchObject({ name: 'Charmander', dexId: 4, digital: true, detail: 'Digital Pokémon' });
+    expect(r.failed).toEqual([{ name: 'Squirtle', reason: expect.stringContaining('sprite indisponível') }]);
+  });
 });

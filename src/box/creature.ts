@@ -23,6 +23,8 @@ export interface CreatureInfo {
   shiny?: boolean;
   /** Carta escaneada como Mega. */
   mega?: boolean;
+  /** Digital Pokémon (não vem de carta física): batalha na Caixa, mas nunca vira alvo de scan/AR. */
+  digital?: boolean;
 }
 
 /** Efeitos de batalha aplicados por cima da animação normal (a direção da batalha escreve aqui). */

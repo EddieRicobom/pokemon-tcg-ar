@@ -22,6 +22,8 @@ import { fetchGif } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import type { Dir } from '../core/village/actors';
 import { loadDexNames } from './dex-names';
+import { dataCardIdFor } from './digital-members';
+import { loadVillage } from './village-store';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import type { SpeciesRef } from '../core/village/digital';
 
@@ -208,6 +210,15 @@ export async function getPipeline(): Promise<RecognitionPipeline> {
 }
 
 /** Carrega, em paralelo, atributos/golpes (PokéAPI) e ataques da carta (TCGdex) para o painel de AR. */
+/** Digital Pokémon batalham com os ataques da carta real de origem (ver `app/digital-members.ts`). */
+function dataCardId(cardId: string): string {
+  try {
+    return dataCardIdFor(cardId, loadVillage().digital);
+  } catch {
+    return cardId;
+  }
+}
+
 export function loadBattle(cardId: string, dexId: number | undefined, onPart: Parameters<typeof loadBattleData>[2]): Promise<void> {
   let storage: Storage | null = null;
   try {
@@ -215,7 +226,7 @@ export function loadBattle(cardId: string, dexId: number | undefined, onPart: Pa
   } catch {
     storage = null;
   }
-  return loadBattleData({ cardId, dexId }, { storage, getCard: (id) => getTcgdex().getCard(id) }, onPart);
+  return loadBattleData({ cardId: dataCardId(cardId), dexId }, { storage, getCard: (id) => getTcgdex().getCard(id) }, onPart);
 }
 
 /** O que o Pin Mode precisa de um Pokémon: atributos e peso (PokéAPI) e ataques da carta (TCGdex). Cada parte pode faltar. */
@@ -226,7 +237,7 @@ export async function loadPinData(cardId: string, dexId: number | undefined): Pr
   } catch {
     storage = null;
   }
-  const [profile, card] = await Promise.all([loadProfile(dexId, { storage }), loadCardInfo(cardId, { storage, getCard: (id) => getTcgdex().getCard(id) })]);
+  const [profile, card] = await Promise.all([loadProfile(dexId, { storage }), loadCardInfo(dataCardId(cardId), { storage, getCard: (id) => getTcgdex().getCard(id) })]);
   return { profile, card };
 }
 
