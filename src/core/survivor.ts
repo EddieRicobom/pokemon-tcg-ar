@@ -311,11 +311,11 @@ export const BALANCE = {
   bossSpeed: 62,
   bossDamageBase: 10,
   bossDamagePerWave: 2,
-  enemyHpBase: 10,
-  /** Vida extra a cada `enemyHpEverySec` segundos de corrida. */
-  enemyHpStep: 3,
+  enemyHpBase: 20,
+  /** Vida extra a cada `enemyHpEverySec` segundos de corrida (dobrou, para a Torre não ficar fácil). */
+  enemyHpStep: 6,
   enemyHpEverySec: 30,
-  enemyHpPerWave: 2,
+  enemyHpPerWave: 4,
   /** Intervalo entre nascimentos (ms) = início − porSegundo·t − porOnda·onda, nunca abaixo do piso. */
   spawnStartMs: 1700,
   spawnPerSecMs: 7,
@@ -453,8 +453,9 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   }
   const baseHp = BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave;
   const baseDmg = 6 + Math.floor(t / 40) * 2;
-  const hpMul = grade === 'chefao' ? 3.4 : grade === 'elite' ? 2.1 : 1;
-  const dmgMul = grade === 'chefao' ? 2 : grade === 'elite' ? 1.6 : 1;
+  // Treinadores (elite) têm +5× HP e +2× dano; o chefão (do time dos 6) ainda mais pesado.
+  const hpMul = grade === 'chefao' ? 7 : grade === 'elite' ? 5 : 1;
+  const dmgMul = grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1;
   const speed = (grade === 'comum' ? 55 + state.rng() * 25 : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
   const hp = Math.round(baseHp * hpMul * state.infiniteScale);
   state.enemies.push({
@@ -835,8 +836,16 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       const final = sample?.grade === 'chefao';
       state.trainersBeaten += 1;
       if (final) state.bossesBeaten += 1;
-      if (final && !state.finalBossBeaten && !state.infinite) state.finalBossBeaten = true;
+      if (final && !state.infinite) state.finalBossBeaten = true;
       events.push({ type: 'trainerDown', final });
+      // Chefão final caído no modo normal: a corrida termina com vitória (fecha o resumo e destrava o infinito).
+      if (final && !state.infinite && !state.over) {
+        state.over = true;
+        events.push({
+          type: 'gameover',
+          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: true, infinite: false },
+        });
+      }
     }
   }
 
