@@ -29,8 +29,8 @@ describe('App', () => {
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
     const tabs = [...(host?.querySelectorAll('nav.tabs a') ?? [])].map((a) => [a.textContent?.trim(), a.getAttribute('href')]);
-    expect(tabs).toEqual([['Escanear', '#/'], ['Vila', '#/vila'], ['Caixa', '#/caixa'], ['Pins', '#/pins'], ['Treinador', '#/treinador']]);
-    expect(host?.querySelectorAll('nav.modes a')).toHaveLength(3);
+    expect(tabs).toEqual([['Escanear', '#/'], ['Vila', '#/vila'], ['Cartas', '#/cartas'], ['Pins', '#/pins'], ['Treinador', '#/treinador']]);
+    expect(host?.querySelectorAll('nav.modes a')).toHaveLength(2);
     expect(host?.querySelector('a.header-gear')?.getAttribute('href')).toBe('#/diagnostico');
     expect(host?.querySelector('video')).not.toBeNull();
     expect(host?.querySelector('canvas')).not.toBeNull();
@@ -45,11 +45,14 @@ describe('App', () => {
 
   it('a tela Caixa abre com a câmera desligada e explica como usar', async () => {
     const text = await mount('#/caixa');
-    expect(text).toContain('Caixa');
+    expect(text).toContain('Caixa em AR');
     expect(text).toContain('Câmera desligada');
     expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera e sensores');
     // A Vila tem aba própria: a Caixa não esconde mais um "Modo vida" dentro dela.
     expect(text).not.toContain('Modo vida');
+    // A escolha da turma mora em Minhas cartas; a Caixa só aponta para lá.
+    expect(text).not.toContain('Escolher a equipe');
+    expect([...(host?.querySelectorAll('a') ?? [])].some((a) => a.getAttribute('href') === '#/cartas')).toBe(true);
   });
 
   it('vindo da batalha do Fliperama, a Caixa oferece um toque para abrir a câmera e batalhar', async () => {
@@ -97,15 +100,25 @@ describe('App', () => {
     expect(text).toContain('Como funciona o chão');
   });
 
-  it('Várias e Minhas cartas são modos do Escanear: a aba "Escanear" fica ativa e o Diagnóstico vai para a engrenagem', async () => {
+  it('Várias é modo do Escanear; Minhas cartas e Caixa em AR são sub-abas de Cartas; o Diagnóstico vai para a engrenagem', async () => {
     await mount('#/varias');
     expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Escanear');
     expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Várias');
+    expect([...(host?.querySelectorAll('nav.modes a') ?? [])].map((a) => a.textContent?.trim())).toEqual(['Uma carta', 'Várias']);
     app?.unmount();
     host?.remove();
-    await mount('#/carregar');
-    expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Escanear');
+    await mount('#/cartas');
+    expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Cartas');
+    expect([...(host?.querySelectorAll('nav.modes a') ?? [])].map((a) => [a.textContent?.trim(), a.getAttribute('href')])).toEqual([
+      ['Minhas cartas', '#/cartas'],
+      ['Caixa em AR', '#/caixa'],
+    ]);
     expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Minhas cartas');
+    app?.unmount();
+    host?.remove();
+    await mount('#/caixa');
+    expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Cartas');
+    expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Caixa em AR');
     app?.unmount();
     host?.remove();
     await mount('#/diagnostico');
@@ -114,8 +127,15 @@ describe('App', () => {
     expect(host?.querySelector('a.header-gear')?.getAttribute('aria-current')).toBe('page');
   });
 
-  it('a tela Cartas não deixa "apagar tudo" entre os botões do dia a dia', async () => {
+  it('o endereço antigo #/carregar abre Minhas cartas e troca o endereço para #/cartas', async () => {
     const text = await mount('#/carregar');
+    expect(window.location.hash).toBe('#/cartas');
+    expect(text).toContain('Cartas guardadas');
+    expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Minhas cartas');
+  });
+
+  it('a tela Cartas não deixa "apagar tudo" entre os botões do dia a dia', async () => {
+    const text = await mount('#/cartas');
     expect(text).toContain('Cartas guardadas');
     expect(text).toContain('Carregar todas as vistas');
     // Apagar todas as cartas mora numa zona de perigo (só aparece com cartas, e só apaga com APAGAR digitado).

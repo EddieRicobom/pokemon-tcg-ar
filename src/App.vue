@@ -24,23 +24,30 @@ const showIosHint =
   isIosDevice(navigator.userAgent, navigator.maxTouchPoints) && !capabilities.standalone;
 
 /**
- * A barra de baixo tem só o essencial; "Várias" e "Cartas" são modos do Escanear, e o Diagnóstico fica na engrenagem do
- * topo. A Vila tem aba própria (antes morava dentro da Caixa, atrás de um botão "Modo vida").
+ * A barra de baixo tem só o essencial; "Várias" é modo do Escanear, e o Diagnóstico fica na engrenagem do topo. A Vila
+ * tem aba própria (antes morava dentro da Caixa, atrás de um botão "Modo vida"). "Cartas" junta «Minhas cartas» (a Box,
+ * que antes era modo do Escanear) e a «Caixa em AR» (que antes era aba própria) em duas sub-abas.
  */
 const tabs: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Escanear' },
   { name: 'vila', label: 'Vila' },
-  { name: 'caixa', label: 'Caixa' },
+  { name: 'cartas', label: 'Cartas' },
   { name: 'pins', label: 'Pins' },
   { name: 'treinador', label: 'Treinador' },
 ];
 const scanModes: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Uma carta' },
   { name: 'varias', label: 'Várias' },
-  { name: 'carregar', label: 'Minhas cartas' },
+];
+const cardModes: { name: RouteName; label: string }[] = [
+  { name: 'cartas', label: 'Minhas cartas' },
+  { name: 'caixa', label: 'Caixa em AR' },
 ];
 const inScanGroup = computed(() => scanModes.some((m) => m.name === route.value.name));
-const tabActive = (name: RouteName): boolean => (name === 'escanear' ? inScanGroup.value : route.value.name === name);
+const inCardGroup = computed(() => cardModes.some((m) => m.name === route.value.name));
+const subModes = computed(() => (inScanGroup.value ? scanModes : inCardGroup.value ? cardModes : null));
+const tabActive = (name: RouteName): boolean =>
+  name === 'escanear' ? inScanGroup.value : name === 'cartas' ? inCardGroup.value : route.value.name === name;
 const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
 /** Para onde o ✕ da Vila volta: a última tela fora dela (ou o Escanear, se a Vila foi a primeira). */
 const beforeVila = ref<string>(route.value.name === 'vila' ? '#/' : window.location.hash || '#/');
@@ -93,8 +100,8 @@ watch(
       </p>
     </section>
 
-    <nav v-if="inScanGroup" class="modes" aria-label="Modos de escaneamento">
-      <a v-for="m in scanModes" :key="m.name" :href="routeHref(m.name)" :aria-current="route.name === m.name ? 'page' : undefined" :class="{ active: route.name === m.name }">{{ m.label }}</a>
+    <nav v-if="subModes" class="modes" :aria-label="inScanGroup ? 'Modos de escaneamento' : 'Cartas e Caixa'">
+      <a v-for="m in subModes" :key="m.name" :href="routeHref(m.name)" :aria-current="route.name === m.name ? 'page' : undefined" :class="{ active: route.name === m.name }">{{ m.label }}</a>
     </nav>
 
     <ScanView v-if="route.name === 'escanear'" :key="scanKey" :card-id="route.cardId" />
@@ -102,7 +109,7 @@ watch(
     <VilaView v-else-if="route.name === 'vila'" :back="beforeVila" />
     <CaixaView v-else-if="route.name === 'caixa'" />
     <PinsView v-else-if="route.name === 'pins'" />
-    <CarregarView v-else-if="route.name === 'carregar'" />
+    <CarregarView v-else-if="route.name === 'cartas'" />
     <TreinadorView v-else-if="route.name === 'treinador'" />
     <DiagnosticoView v-else />
 

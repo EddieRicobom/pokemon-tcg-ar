@@ -245,7 +245,7 @@ function cancelImport(): void {
     <div v-else class="card">
       <h2>Seus dados</h2>
       <p class="note">
-        Baixe um arquivo com todo o seu progresso e ajustes (Treinador, Vila — com Digital Pokémon e Encontros lendários —, perfil, equipe, Liga, Pin Mode, sensores e ajustes visuais) para guardar fora do navegador ou levar para outro aparelho.
+        Baixe um arquivo com todo o seu progresso e ajustes (Treinador, Vila — com Digital Pokémon e Encontros lendários —, perfil, turma da Caixa, Liga, Pin Mode, sensores e ajustes visuais) para guardar fora do navegador ou levar para outro aparelho.
         Não inclui as imagens das cartas escaneadas: elas ficam só neste aparelho, e você escaneia de novo depois de importar num aparelho novo.
       </p>
       <div class="backup-actions">

@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref } from 'vue';
 
-export type RouteName = 'escanear' | 'varias' | 'vila' | 'caixa' | 'pins' | 'carregar' | 'treinador' | 'diagnostico';
+export type RouteName = 'escanear' | 'varias' | 'vila' | 'cartas' | 'caixa' | 'pins' | 'treinador' | 'diagnostico';
 
 export interface Route {
   name: RouteName;
@@ -9,16 +9,32 @@ export interface Route {
 }
 
 /**
- * Rotas por hash (`#/carregar`): funcionam no GitHub Pages sem reescrita de URL e sem página 404.
+ * Rotas antigas que viraram outras (o endereço é trocado ao abrir, para links e atalhos guardados continuarem valendo):
+ * `#/carregar` era «Minhas cartas» como modo do Escanear; hoje é a primeira sub-aba de Cartas (`#/cartas`).
+ */
+const OLD_ROUTES: Record<string, RouteName> = { carregar: 'cartas' };
+
+/** Endereço novo de um endereço antigo (mantém os sinalizadores depois do `?`), ou null se o endereço já é atual. */
+export function redirectFor(hash: string): string | null {
+  const [path = '', query] = hash.replace(/^#\/?/, '').split('?');
+  const target = OLD_ROUTES[path.split('/')[0] ?? ''];
+  if (!target) return null;
+  return query ? `${routeHref(target)}?${query}` : routeHref(target);
+}
+
+/**
+ * Rotas por hash (`#/cartas`): funcionam no GitHub Pages sem reescrita de URL e sem página 404.
  */
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, '').split('?')[0] ?? '';
   const [first, ...rest] = path.split('/');
   if (first === 'varias') return { name: 'varias' };
   if (first === 'vila') return { name: 'vila' };
+  if (first === 'cartas') return { name: 'cartas' };
   if (first === 'caixa') return { name: 'caixa' };
   if (first === 'pins') return { name: 'pins' };
-  if (first === 'carregar') return { name: 'carregar' };
+  const old = OLD_ROUTES[first ?? ''];
+  if (old) return { name: old };
   if (first === 'treinador') return { name: 'treinador' };
   if (first === 'diagnostico') return { name: 'diagnostico' };
   const id = rest.join('/');
@@ -51,8 +67,11 @@ export function routeHref(name: RouteName, cardId?: string, flags: readonly Rout
 export function useRoute() {
   const route = ref<Route>(parseRoute(window.location.hash));
   const onChange = () => {
+    const next = redirectFor(window.location.hash);
+    if (next) window.history.replaceState(null, '', next);
     route.value = parseRoute(window.location.hash);
   };
+  onChange();
   window.addEventListener('hashchange', onChange);
   onBeforeUnmount(() => window.removeEventListener('hashchange', onChange));
   return route;

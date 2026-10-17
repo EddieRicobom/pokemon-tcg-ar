@@ -26,10 +26,10 @@ const shown = computed(() => {
 const missingSprite = computed(() => rows.value.length - usable.value.length);
 
 function toggle(id: string): void {
-  // Primeira escolha manual: parte da equipe automática atual para não "sumir" com os outros.
+  // Primeira escolha manual: parte da turma automática atual para não "sumir" com os outros.
   if (savedTeam.value.length === 0 && team.value.auto) setSavedTeam(team.value.ids);
   const full = toggleSaved(id);
-  notice.value = full ? `A equipe já tem ${TEAM_SIZE} Pokémon. Tire um para colocar outro.` : '';
+  notice.value = full ? `A turma já tem ${TEAM_SIZE} Pokémon. Tire um para colocar outro.` : '';
   emit('change', resolveTeam(savedTeam.value, rows.value).ids);
 }
 
@@ -68,7 +68,7 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
 <template>
   <div class="team-picker">
     <p class="meta" role="status">
-      Equipe: {{ team.ids.length }}/{{ TEAM_SIZE }}
+      Turma: {{ team.ids.length }}/{{ TEAM_SIZE }}
       <template v-if="team.auto && team.ids.length > 0"> (automática: as mais recentes)</template>
     </p>
     <p v-if="loading" class="message">Lendo as cartas guardadas…</p>
