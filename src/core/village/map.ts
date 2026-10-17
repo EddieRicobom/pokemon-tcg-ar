@@ -128,9 +128,11 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
   fill(map, pz.x, pz.y, pz.w, pz.h, 'plaza');
   // Trilhas de terra para fora da cidade: até o lago, o parque, a fazenda, a pedreira e o bosque.
   trail(map, av + 2, 15, lake.x - 7, lake.y + 7);
-  trail(map, 12, TOWN.mainStreetY + 2, 12, 46);
+  // A trilha do parque liga a Rua Principal às duas ruas de casas (sem beco no meio do gramado).
+  trail(map, 12, TOWN.mainStreetY + 2, 12, TOWN.southStreetY - 1);
+  trail(map, 12, TOWN.homesStreetY, 19, TOWN.homesStreetY);
+  trail(map, 12, TOWN.southStreetY, 19, TOWN.southStreetY);
   trail(map, 78, TOWN.mainStreetY + 2, 83, 46);
-  trail(map, 12, TOWN.southStreetY, 12, 58);
   trail(map, 18, 15, av - 14, 8);
   trail(map, 76, TOWN.southStreetY, 86, 64);
   // Canteiros da fazenda.

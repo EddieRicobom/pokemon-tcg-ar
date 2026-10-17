@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ATLAS_SOURCES, ATLAS_W, packAtlas } from './atlas-spec';
-import { cropRgba, recolor, VillaAtlas, windowGlow } from './tileset-art';
+import { cropRgba, double, recolor, VillaAtlas, windowGlow } from './tileset-art';
 
 const px = (...rgba: number[][]) => ({ w: rgba.length, h: 1, data: new Uint8ClampedArray(rgba.flat()) });
 
@@ -35,6 +35,14 @@ describe('atlas da Vila', () => {
   it('recorta o pedaço certo', () => {
     const img = { w: 2, h: 2, data: new Uint8ClampedArray([1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4]) };
     expect([...cropRgba(img, { x: 1, y: 1, w: 1, h: 1 }).data]).toEqual([4, 4, 4, 4]);
+  });
+});
+
+describe('desenho em 2×', () => {
+  it('cada pixel vira um bloco 2×2 igual', () => {
+    const out = double({ w: 2, h: 1, data: new Uint8ClampedArray([1, 2, 3, 4, 5, 6, 7, 8]) });
+    expect([out.w, out.h]).toEqual([4, 2]);
+    expect([...out.data]).toEqual([1, 2, 3, 4, 1, 2, 3, 4, 5, 6, 7, 8, 5, 6, 7, 8, 1, 2, 3, 4, 1, 2, 3, 4, 5, 6, 7, 8, 5, 6, 7, 8]);
   });
 });
 

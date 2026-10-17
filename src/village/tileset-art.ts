@@ -88,6 +88,19 @@ export function windowGlow(img: Rgba): Rgba {
   return { w: img.w, h: img.h, data: out };
 }
 
+/** O desenho em 2× (cada pixel vira um bloco 2×2): aumenta sem borrar a pixel art. */
+export function double(img: Rgba): Rgba {
+  const w = img.w * 2;
+  const out = new Uint8ClampedArray(w * img.h * 2 * 4);
+  for (let y = 0; y < img.h * 2; y++) {
+    for (let x = 0; x < w; x++) {
+      const from = ((y >> 1) * img.w + (x >> 1)) * 4;
+      out.set(img.data.subarray(from, from + 4), (y * w + x) * 4);
+    }
+  }
+  return { w, h: img.h * 2, data: out };
+}
+
 /** O atlas carregado: acha cada recorte pelo id (mesmas posições do script que gerou a imagem). */
 export class VillaAtlas {
   private readonly rects: Map<string, AtlasRect>;

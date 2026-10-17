@@ -28,7 +28,7 @@ import { outfitFor, paintBell, paintBush, paintHouse, paintPlayer, paintRock, pa
 import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
 import { groundPieces } from './ground-tiles';
-import { recolor, VillaAtlas, windowGlow } from './tileset-art';
+import { double, recolor, VillaAtlas, windowGlow } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintArcade, paintArena, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum, paintPins, paintTorre } from './town-art';
 
@@ -201,6 +201,8 @@ const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', ma
 const HOME_TILESET = ['gazebo', 'barn', 'house-brick', 'home-yellow'] as const;
 /** As que pegam a cor escolhida (o desenho tem partes coloridas para tingir). */
 const HOME_TINTED = new Set<string>(['barn', 'home-yellow']);
+/** Prédios cujo desenho do tileset é pequeno demais para a escala da Vila: desenhados em 2× (pixel inteiro, sem borrar). */
+const CIVIC_DOUBLE = new Set<string>(['kiosk-red', 'kiosk-blue']);
 const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼' };
 
 export class VillageGame {
@@ -1339,7 +1341,7 @@ export class VillageGame {
       }
       const emoji = CIVIC_EMOJI[b.kind] ?? '🏛️';
       const civicId = CIVIC_TILESET[b.kind];
-      const civicArt = atlas && civicId ? this.art(civicId) : null;
+      const civicArt = atlas && civicId ? (CIVIC_DOUBLE.has(civicId) ? this.art(civicId, `${civicId}:2x`, double) : this.art(civicId)) : null;
       if (civicArt && civicId) {
         list.push({
           y: b.y + b.h,
@@ -1714,13 +1716,23 @@ export class VillageGame {
   }
 
   /** Emoji pequeno sem balão (gota da horta, brilho de pronto). */
+  /** Uma plaquinha redonda com o emoji (sobre prédios, a loja, quem dorme): fundo claro para não parecer objeto solto. */
   private drawTag(cx: number, y: number, emoji: string): void {
     const { ctx, scale } = this;
-    ctx.font = `${7 * scale}px ${EMOJI_FONT}`;
+    const r = 5 * scale;
+    const cy = y - r;
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.strokeStyle = 'rgba(20,24,40,0.85)';
+    ctx.lineWidth = Math.max(1, scale * 0.6);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = `${6 * scale}px ${EMOJI_FONT}`;
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
+    ctx.textBaseline = 'middle';
     ctx.fillStyle = '#000';
-    ctx.fillText(emoji, cx, y);
+    ctx.fillText(emoji, cx, cy + scale * 0.4);
   }
 
   /** Nome e corações de quem está perto de você. */
