@@ -1,8 +1,11 @@
+import { seededRng } from './battle';
 import type { Rng } from './battle';
 import {
-  aliveOf, arenaLimit, chooseEnemyShot, GROUND_DECEL, isSettled, launch, launchSpeed, stepWorld,
+  aliveOf, arenaLimit, chooseEnemyShot, GROUND_DECEL, isSettled, launch, launchSpeed, stepWorld, typesOf,
 } from './pins';
 import type { Difficulty, Pin, PinWorld, Shot, Side } from './pins';
+import { frictionAt } from './pin-terrain';
+import { TerrainGrid } from './terrain';
 
 /**
  * Adversário do Pin Mode que **pensa antes de jogar**: monta jogadas candidatas (qual pin, em quem, por qual lado do alvo,
@@ -34,15 +37,38 @@ function clonePin(p: Pin): Pin {
 }
 
 /** Cópia do mundo para simular: mesmos pins, obstáculos e chão, sem marcar o chão nem encolher a borda. */
-export function cloneWorld(world: PinWorld): PinWorld {
-  return { radius: world.radius, patches: world.patches, pins: world.pins.map(clonePin), time: 0, terrain: world.terrain ?? null, markRng: null, limit: world.limit };
+function cloneTerrain(source: TerrainGrid | null | undefined): TerrainGrid | null {
+  if (!source) return null;
+  const copy = new TerrainGrid(source.cols, source.rows, source.shape);
+  copy.base.set(source.base);
+  copy.over.set(source.over);
+  copy.inside.set(source.inside);
+  return copy;
+}
+
+export function cloneWorld(world: PinWorld, seed = 0x51a7e): PinWorld {
+  const terrain = cloneTerrain(world.terrain);
+  return {
+    radius: world.radius,
+    patches: world.patches.map((p) => ({ ...p })),
+    pins: world.pins.map(clonePin),
+    time: world.time,
+    terrain,
+    markRng: terrain ? seededRng(seed) : null,
+    limit: world.limit,
+    round: world.round,
+    shrinking: world.shrinking,
+  };
 }
 
 const standing = (p: Pin) => p.alive && p.fall === 0;
 
 /** Simula uma jogada até a mesa parar e devolve o mundo final. */
 export function simulate(world: PinWorld, plan: EnemyPlan): PinWorld {
-  const sim = cloneWorld(world);
+  let seed = 0x811c9dc5;
+  for (const ch of plan.pinId) seed = Math.imul(seed ^ ch.charCodeAt(0), 16777619);
+  seed = Math.imul(seed ^ ((plan.moveIndex ?? -1) + 2), 16777619);
+  const sim = cloneWorld(world, seed);
   const pin = sim.pins.find((p) => p.id === plan.pinId);
   if (!pin || !launch(pin, plan.shot, plan.moveIndex)) return sim;
   for (let t = 0; t < SIM_SECONDS; t += SIM_DT) {
@@ -71,6 +97,13 @@ export function evaluate(before: PinWorld, after: PinWorld, me: Side = 1): numbe
     if (!standing(p)) continue;
     const risk = clamp((Math.hypot(p.x, p.y) + p.r) / limit, 0, 1.2);
     score += (p.side === other ? 22 : -28) * risk * risk;
+    if (after.terrain) {
+      // Gelo e flores deixam o pin escorregar; mato, pedras e lodo dão segurança perto da borda.
+      // A IA passa a considerar isso depois de simular as próprias marcas e reações.
+      const friction = frictionAt(after.terrain, after.radius, p.x, p.y, typesOf(p));
+      const slippery = clamp(1.1 - friction, -0.8, 0.8);
+      score += (p.side === other ? 16 : -20) * slippery * risk;
+    }
   }
   return score;
 }
@@ -123,14 +156,14 @@ export function candidatePlans(world: PinWorld, me: Side = 1): EnemyPlan[] {
 }
 
 /** Fica com até `budget` candidatas, espalhadas (sorteio estável) quando há mais do que dá para simular. */
-function pickBudget(plans: EnemyPlan[], budget: number, rng: Rng): EnemyPlan[] {
+function pickBudget(plans: EnemyPlan[], budget: number, _rng: Rng): EnemyPlan[] {
   if (plans.length <= budget) return plans;
-  const copy = [...plans];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [copy[i], copy[j]] = [copy[j]!, copy[i]!];
-  }
-  return copy.slice(0, budget);
+  // O sorteio antigo podia remover todas as jogadas de um alvo ou de um golpe. A amostra
+  // espaçada mantém variedade entre atiradores, alvos, ângulos e forças em toda partida.
+  const selected: EnemyPlan[] = [];
+  const step = plans.length / budget;
+  for (let i = 0; i < budget; i++) selected.push(plans[Math.min(plans.length - 1, Math.floor(i * step))]!);
+  return selected;
 }
 
 /** A melhor jogada pela simulação (sem o erro de mira), ou null se não há o que jogar. */

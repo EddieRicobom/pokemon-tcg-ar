@@ -38,6 +38,7 @@ interface Info { state: 'loading' | 'ok'; profile: PokemonProfile | null; card: 
 interface TrayMove { index: number; name: string; label: string; hint: string; remaining: number; energy: string[] }
 interface TrayPin { id: string; name: string; cost: number; thumb: string; selected: boolean; affordable: boolean; moves: TrayMove[]; estimated: boolean }
 interface Popup { text: string; x: number; y: number; age: number; color: string }
+interface TerrainFx { kind: TerrainKind; x: number; y: number; age: number; life: number; reaction: boolean }
 
 const STEP = 1 / 120;
 /** Borda do pin: azul para o seu lado (ou a sua equipe), vermelha para os adversários. */
@@ -106,6 +107,7 @@ let enemyTimer = 0;
 let shots = 0;
 let drag: { fromX: number; fromY: number; toX: number; toY: number } | null = null;
 let popups: Popup[] = [];
+let terrainFx: TerrainFx[] = [];
 let disposed = false;
 let cssSize = 0;
 let dpr = 1;
@@ -267,6 +269,7 @@ async function beginMatch(first: 'aim' | 'enemy'): Promise<void> {
   shots = 0;
   shotCount.value = 0;
   popups = [];
+  terrainFx = [];
   result.value = null;
   message.value = '';
   selectedMove.value = null;
@@ -431,6 +434,7 @@ function startLoop(): void {
 function update(dt: number): void {
   if (!world) return;
   popups = popups.filter((p) => (p.age += dt) < 1.1);
+  terrainFx = terrainFx.filter((fx) => (fx.age += dt) < fx.life);
   if (phase.value === 'rolling') {
     acc += dt;
     const events: PinEvent[] = [];
@@ -502,6 +506,8 @@ function handleEvents(events: PinEvent[]): void {
     } else if (e.type === 'mark') {
       terrainArt?.repaint(e.cells);
       marksChanged = true;
+      terrainFx.push({ kind: e.kind, x: e.x, y: e.y, age: 0, life: e.reaction ? 1.25 : 0.72, reaction: Boolean(e.reaction) });
+      if (terrainFx.length > 24) terrainFx.splice(0, terrainFx.length - 24);
       if (e.reaction && reactions < 2) {
         popups.push({ text: e.reaction.text, x: e.x * 0.9, y: e.y * 0.9 - 24, age: 0, color: e.reaction.color });
         reactions++;
@@ -1007,6 +1013,37 @@ function draw(now: number): void {
     syncTerrain();
     const half = terrainArt.half * k;
     ctx.drawImage(terrainCanvas, cx - half, cx - half, half * 2, half * 2);
+  }
+
+  // O chão reage por alguns instantes ao golpe. A textura continua pixelada, mas o pulso
+  // deixa claro onde nasceu a marca e torna as combinações elementais legíveis.
+  for (const fx of terrainFx) {
+    const t = fx.age / fx.life;
+    const px = cx + fx.x * k;
+    const py = cx + fx.y * k;
+    const color = TYPE_COLORS[TYPE_FOR_TERRAIN[fx.kind]] ?? '#ffffff';
+    const radius = (fx.reaction ? 24 + t * 54 : 16 + t * 30) * k;
+    ctx.save();
+    ctx.globalAlpha = (1 - t) * (fx.reaction ? 0.72 : 0.46);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, (fx.reaction ? 5 : 3) * dpr);
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    if (fx.kind === 'puddle' || fx.kind === 'frost' || fx.kind === 'bloom') {
+      ctx.globalAlpha *= 0.8;
+      ctx.beginPath();
+      ctx.arc(px, py, radius * 0.55, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (fx.kind === 'static' || fx.kind === 'scorch' || fx.kind === 'toxic') {
+      ctx.fillStyle = color;
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI * 0.5 + fx.age * 5;
+        const d = radius * (0.6 + 0.18 * Math.sin(i + fx.age * 8));
+        ctx.fillRect(px + Math.cos(a) * d - 1.5 * dpr, py + Math.sin(a) * d - 1.5 * dpr, 3 * dpr, 3 * dpr);
+      }
+    }
+    ctx.restore();
   }
 
   // Na repetição os pins vêm do quadro gravado; fora dela, do mundo.
