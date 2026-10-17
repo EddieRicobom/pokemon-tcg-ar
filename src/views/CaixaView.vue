@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { isTap } from '../ar/gestures';
-import { fetchSprite, getCache, getDigitalSprite, loadBattle, prepareMegaFor } from '../app/services';
+import { fetchSprite, getCache, loadBattle, prepareMegaFor } from '../app/services';
 import { digitalCandidates } from '../app/digital-members';
 import { challengePlan, isLeaderCreature, leaderFighter, leaderLoader, loadLeaderEntries, MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
 import { league, pendingChallenge, recordLeagueResult } from '../app/league-store';
@@ -233,7 +233,11 @@ async function loadTeamCreatures(cache: Awaited<ReturnType<typeof getCache>>) {
   const team = resolveTeam(savedTeam.value, [...(await cache.list()), ...digitalCandidates(digital)]);
   return loadCreatureEntries(cache, undefined, team.ids, {
     instances: digital.instances,
-    sprite: async (dexId) => (await getDigitalSprite(dexId, false).catch(() => null))?.gif ?? null,
+    // O mesmo GIF da Showdown das cartas (não o pacote da Vila), para o digital ficar em pé no chão como os outros.
+    sprite: async (dexId) => {
+      const sprite = await fetchSprite(dexId).catch(() => null);
+      return sprite ? decodeSprite(sprite) : null;
+    },
   });
 }
 
