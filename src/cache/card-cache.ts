@@ -12,7 +12,7 @@ import type { RgbaImage } from '../recognition/types';
 import { QuotaError } from './assets';
 import type { AssetBackend } from './assets';
 import type { CacheDb } from './db';
-import { CACHE_SCHEMA_VERSION } from './types';
+import { CACHE_SCHEMA_VERSION, NO_DEX_ERROR } from './types';
 import type { AssetKind, AssetRecord, CachedCard, CacheStatus, SlotInfo, StorageInfo } from './types';
 
 export const DEFAULT_MAX_CARDS = 300;
@@ -518,7 +518,7 @@ export class CardCache {
     const wantShiny = dexId !== undefined && isShiny(card);
     if (card.sprite.state !== 'ok') {
       if (dexId === undefined) {
-        card = { ...card, sprite: { state: 'unavailable', error: 'Esta carta não tem um Pokémon (Treinador/Energia)' } };
+        card = { ...card, sprite: { state: 'unavailable', error: NO_DEX_ERROR } };
       } else {
         try {
           const sprite = await timed('sprite', () => this.withRetry(() => this.fetchSpriteImpl(dexId, wantShiny ? { shiny: true } : undefined)));

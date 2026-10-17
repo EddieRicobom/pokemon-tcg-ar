@@ -7,6 +7,7 @@ import { routeHref } from '../app/route';
 import { getCache } from '../app/services';
 import { resolveTeam, TEAM_SIZE } from '../app/team';
 import { savedTeam, setSavedTeam, toggleSaved } from '../app/team-store';
+import { LEGACY_NO_DEX_ERROR, NO_DEX_ERROR } from '../cache/types';
 import type { CachedCard, CacheStatus, SlotInfo, StorageInfo } from '../cache/types';
 import { isShiny } from '../core/shiny';
 import { cardMatchesSpecies, GENERATION_LABELS_PT } from '../core/species-filter';
@@ -160,7 +161,8 @@ const SLOT_STATE_TEXT: Record<SlotInfo['state'], string> = {
 function slotText(label: string, slot: SlotInfo): string {
   const size = slot.state === 'ok' && slot.bytes ? ` (${formatBytes(slot.bytes)})` : '';
   const kind = label === 'Sprite' && slot.state === 'ok' ? (slot.kind === 'gif' ? ' GIF' : ' PNG estático') : '';
-  const why = slot.state !== 'ok' && slot.error ? ` — ${slot.error}` : '';
+  const error = slot.error === LEGACY_NO_DEX_ERROR ? NO_DEX_ERROR : slot.error;
+  const why = slot.state !== 'ok' && error ? ` — ${error}` : '';
   return `${label}: ${SLOT_STATE_TEXT[slot.state]}${kind}${size}${why}`;
 }
 
