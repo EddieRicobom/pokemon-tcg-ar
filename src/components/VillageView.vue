@@ -10,6 +10,7 @@ import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { routeHref } from '../app/route';
 import { canNickname, displayName, MAX_NICK_LEN, nickIdeas, nicknameOf, setNickname } from '../core/village/nickname';
+import { minimapPixels, minimapTileAt } from '../village/minimap';
 import { recordEvent, trainer } from '../app/trainer-store';
 import { claimPrizes } from '../core/village/rewards';
 import LeagueCard from './LeagueCard.vue';
@@ -1238,6 +1239,8 @@ function pressA(): void {
   } else if (t.kind === 'shop') {
     shopTab.value = 'comprar';
     sheet.value = 'shop';
+  } else if (t.kind === 'bell') {
+    ringBell();
   } else if (t.kind === 'tile' && t.tile === 'water') {
     if (fishing) return;
     if (state.fishing.day === today && state.fishing.casts >= FISH_PER_DAY) return say('Os peixes cansaram por hoje. Volte amanhã!');
@@ -1255,6 +1258,83 @@ function pressA(): void {
     say(r.message);
     if (r.ok) changed();
   }
+}
+
+/** O sino da praça: chama todo Pokémon acordado para perto dele. */
+function ringBell(): void {
+  if (!game) return;
+  const r = game.ringBell();
+  const names = (ids: string[]) => ids.map((id) => nameOf(id)).join(', ');
+  if (r.coming.length === 0 && r.sleeping.length === 0) return say('🔔 Dlim-dlom! Ainda não mora nenhum Pokémon na Vila.');
+  const sleep = r.sleeping.length > 0 ? ` Dormindo em casa (não vêm): ${names(r.sleeping)}.` : '';
+  say(r.coming.length > 0 ? `🔔 Dlim-dlom! Vindo para a praça: ${names(r.coming)}.${sleep}` : `🔔 Dlim-dlom!${sleep}`, 4200);
+}
+
+// ---- Minimapa: a Vila inteira num canto (você, os Pokémon e o sino); tocar aumenta, e no grande um toque leva até lá.
+const miniEl = ref<HTMLCanvasElement | null>(null);
+const miniBig = ref(false);
+let miniBase: HTMLCanvasElement | null = null;
+let miniTimer: ReturnType<typeof setInterval> | null = null;
+/** Pixels por bloco no minimapa (o grande é o mesmo desenho, só que maior na tela). */
+const MINI_K = 3;
+
+function buildMiniBase(): void {
+  const c = document.createElement('canvas');
+  c.width = map.w;
+  c.height = map.h;
+  const ctx = c.getContext('2d')!;
+  const img = ctx.createImageData(map.w, map.h);
+  img.data.set(minimapPixels(map));
+  ctx.putImageData(img, 0, 0);
+  miniBase = c;
+}
+
+function drawMini(): void {
+  const el = miniEl.value;
+  if (!el || !game) return;
+  if (!miniBase) buildMiniBase();
+  const ctx = el.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(miniBase!, 0, 0, map.w * MINI_K, map.h * MINI_K);
+  const dot = (x: number, y: number, color: string, r: number) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc((x + 0.5) * MINI_K, (y + 0.5) * MINI_K, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  };
+  const bell = map.decor.find((d) => d.kind === 'bell');
+  if (bell) {
+    ctx.font = `${MINI_K * 4}px ${'system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif'}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🔔', (bell.x + 0.5) * MINI_K, (bell.y - 1) * MINI_K);
+  }
+  for (const [id, w] of game.villagers) if (!game.isAsleep(id)) dot(w.x, w.y, '#ffd84a', MINI_K * 0.9);
+  dot(game.player.x, game.player.y, '#ff4a4a', MINI_K * 1.3);
+}
+
+function startMini(): void {
+  drawMini();
+  miniTimer = setInterval(drawMini, 300);
+}
+
+/** No minimapa grande, um toque leva você andando até o lugar tocado. */
+function miniTap(e: MouseEvent): void {
+  if (!miniBig.value) {
+    miniBig.value = true;
+    return;
+  }
+  const el = miniEl.value;
+  if (!el || !game) return;
+  const rect = el.getBoundingClientRect();
+  const t = minimapTileAt(map, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
+  if (!t) return;
+  game.walkTo(t.x, t.y);
+  miniBig.value = false;
+  say('🧭 Indo até lá…', 1500);
 }
 
 function openFriendDialog(id: string, text: string): void {
@@ -1441,6 +1521,7 @@ onMounted(async () => {
   observer.observe(wrapEl.value);
   resize();
   game.start();
+  startMini();
   loading.value = '';
   awayCatchUp();
   sceneTimer = setInterval(() => {
@@ -1476,6 +1557,7 @@ onBeforeUnmount(() => {
   if (sceneTimer) clearInterval(sceneTimer);
   state.lastSeen = Date.now();
   game?.stop();
+  if (miniTimer) clearInterval(miniTimer);
   observer?.disconnect();
   if (saveTimer) clearInterval(saveTimer);
   if (cropTimer) clearInterval(cropTimer);
@@ -1497,6 +1579,20 @@ onBeforeUnmount(() => {
         @pointercancel.prevent="joyUp"
         @contextmenu.prevent
       ></canvas>
+      <div v-show="!loading && !welcome && sheet !== 'torre'" class="village-minimap" :class="{ big: miniBig }">
+        <canvas
+          ref="miniEl"
+          :width="map.w * MINI_K"
+          :height="map.h * MINI_K"
+          :aria-label="miniBig ? 'Mapa da Vila: toque num lugar para ir até lá' : 'Minimapa da Vila: toque para aumentar'"
+          role="button"
+          @click="miniTap"
+        ></canvas>
+        <p v-if="miniBig" class="village-minimap-legend">
+          <span><i class="mm-you"></i> você</span><span><i class="mm-mon"></i> Pokémon</span><span>🔔 sino (chama todos)</span>
+          <button type="button" class="link" @click.stop="miniBig = false">Fechar</button>
+        </p>
+      </div>
       <div v-if="joy.active && joy.moved" class="village-joy floating" :style="{ left: `${joy.lx}px`, top: `${joy.ly}px` }" aria-hidden="true">
         <div class="village-joy-stick" :style="{ transform: `translate(${joy.x * JOY_MAX}px, ${joy.y * JOY_MAX}px)` }"></div>
       </div>

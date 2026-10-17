@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { assetUrl, getCache, getLocalVillageSprite } from '../app/services';
+import { assetUrl, getCache, getDigitalSprite, getLocalVillageSprite } from '../app/services';
+import { fetchSprite } from '../ar/sprite-source';
+import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { recordEvent } from '../app/trainer-store';
 import { addCoins } from '../app/wallet';
 import { seededRng } from '../core/battle';
@@ -126,13 +128,47 @@ function frameIndex(sprite: Sprite, timeMs: number): number {
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
 
+/** Imagem parada (PNG) como um GIF de um quadro só: a última alternativa de sprite. */
+async function staticAsGif(blob: Blob): Promise<DecodedGif> {
+  const bmp = await createImageBitmap(blob);
+  try {
+    const c = document.createElement('canvas');
+    c.width = bmp.width;
+    c.height = bmp.height;
+    const cx = c.getContext('2d')!;
+    cx.drawImage(bmp, 0, 0);
+    const rgba = cx.getImageData(0, 0, c.width, c.height).data;
+    return { width: c.width, height: c.height, frames: [{ rgba, delayMs: 1000 }], durationMs: 1000 } as DecodedGif;
+  } finally {
+    bmp.close();
+  }
+}
+
+/**
+ * O sprite de um Pokémon na Torre, na ordem: a pose de andar do pacote local; senão o GIF baixado (o mesmo da Vila,
+ * `getDigitalSprite`); senão a imagem parada do PokéAPI. Sem nenhum dos três, null (vira a forma neutra, sem fingir
+ * ser outro Pokémon).
+ */
 async function loadSpriteOrNull(dexId: number): Promise<Sprite | null> {
   try {
     const gif = await getLocalVillageSprite(dexId, false, 'Walk');
-    return gif ? toSprite(gif, dexId) : null;
+    if (gif) return toSprite(gif, dexId);
   } catch {
-    return null;
+    // segue para a próxima alternativa
   }
+  try {
+    const any = await getDigitalSprite(dexId, false);
+    if (any) return toSprite(any.gif, dexId);
+  } catch {
+    // segue para a próxima alternativa
+  }
+  try {
+    const src = await fetchSprite(dexId);
+    if (src && src.kind !== 'gif') return toSprite(await staticAsGif(src.blob), dexId);
+  } catch {
+    // sem rede: fica a forma neutra
+  }
+  return null;
 }
 
 /** Moedas que a última corrida rendeu (mostradas no resumo). */
@@ -488,7 +524,9 @@ async function rollPickOptions(): Promise<PickOption[]> {
     chosen.map(([dexId]) =>
       getLocalVillageSprite(dexId, false, 'Idle')
         .then((g) => (g ? toSprite(g).frames[0]?.toDataURL() ?? null : null))
-        .catch(() => null),
+        .catch(() => null)
+        // Fora do pacote local: o sprite público da espécie (o mesmo que a Torre baixa para jogar).
+        .then((url) => url ?? pokemonSpriteUrl(dexId)),
     ),
   );
   return chosen.map(([dexId, name], i) => {

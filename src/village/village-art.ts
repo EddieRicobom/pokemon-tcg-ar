@@ -228,6 +228,22 @@ export function paintHouse(level: number): PixelBuf {
 export { outfitFor, paintPlayer } from './player-art';
 export type { Outfit } from './player-art';
 
+/** O sino da praça: poste de madeira com um sino de bronze (16×32; o sino sobe um bloco acima da base). */
+export function paintBell(): PixelBuf {
+  const buf = createBuf(16, 32);
+  rect(buf, 7, 10, 2, 22, 0x6a4a28);
+  rect(buf, 7, 10, 1, 22, 0x8a5a2e);
+  rect(buf, 3, 8, 10, 2, 0x6a4a28);
+  disc(buf, 8, 15, 4.5, 4, 0xd8a83c);
+  rect(buf, 4, 15, 9, 4, 0xd8a83c);
+  rect(buf, 3, 18, 11, 2, 0xb8862a);
+  disc(buf, 6.5, 13.5, 1.4, 1.6, 0xffe08a);
+  rect(buf, 7, 20, 2, 2, 0x6a4a28);
+  rect(buf, 5, 30, 6, 2, 0x4e361e);
+  outline(buf, 0x2a1a10);
+  return buf;
+}
+
 /** A loja da praça: barraca de 48×48 com toldo listrado, balcão e caixotes de frutas. */
 export function paintShop(): PixelBuf {
   const buf = createBuf(48, 48);
