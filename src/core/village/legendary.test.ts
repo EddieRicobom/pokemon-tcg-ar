@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BASE_CHANCE, dismissActive, emptyLegendary, LEGENDARIES, legendaryOf, normalizeLegendary, rollLegendary } from './legendary';
+import { BASE_CHANCE, CELEBI_ANIM_SPEED, celebiDiaryPage, dismissActive, emptyLegendary, LEGENDARIES, legendaryEffects, legendaryOf, NO_EFFECTS, normalizeLegendary, rollLegendary, SUICUNE_GROWTH_FACTOR, SUICUNE_QUIET_FACTOR, ZAPDOS_COIN_MULTIPLIER } from './legendary';
 
 const DAY = '2026-10-16';
 const NOW = '2026-10-16T12:00:00.000Z';
@@ -79,5 +79,40 @@ describe('encontros lendários — normalização', () => {
   it('ida e volta preserva um estado válido', () => {
     const s = rollLegendary(emptyLegendary(), fixedRng(0), DAY, NOW).state;
     expect(normalizeLegendary(JSON.parse(JSON.stringify(s)))).toEqual(s);
+  });
+});
+
+describe('encontros lendários — efeitos de verdade', () => {
+  const H = 3_600_000;
+  const T0 = Date.parse('2026-10-16T10:00:00.000Z');
+  const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const withEncounter = (id: string, atMs = T0) => ({ ...emptyLegendary(), history: [{ id, at: new Date(atMs).toISOString() }] });
+
+  it('sem encontro, nada muda', () => {
+    expect(legendaryEffects(emptyLegendary(), T0, '2026-10-16', dayOf)).toEqual(NO_EFFECTS);
+  });
+
+  it('Suicune: chuva, horta mais rápida e Pokémon mais quietos — só naquele dia', () => {
+    const e = legendaryEffects(withEncounter('suicune'), T0 + 2 * H, '2026-10-16', dayOf);
+    expect(e).toMatchObject({ rain: true, growthFactor: SUICUNE_GROWTH_FACTOR, quietFactor: SUICUNE_QUIET_FACTOR });
+    expect(legendaryEffects(withEncounter('suicune'), T0 + 24 * H, '2026-10-17', dayOf).rain).toBe(false);
+  });
+
+  it('Zapdos: +25% de moedas por 3 horas; postes piscando no dia', () => {
+    const s = withEncounter('zapdos');
+    expect(legendaryEffects(s, T0 + 2 * H, '2026-10-16', dayOf)).toMatchObject({ coinMultiplier: ZAPDOS_COIN_MULTIPLIER, lampStorm: true });
+    expect(legendaryEffects(s, T0 + 4 * H, '2026-10-16', dayOf)).toMatchObject({ coinMultiplier: 1, lampStorm: true });
+  });
+
+  it('Celebi: animações mais rápidas no dia, e a página do Diário é um momento válido', () => {
+    expect(legendaryEffects(withEncounter('celebi'), T0 + H, '2026-10-16', dayOf).animSpeed).toBe(CELEBI_ANIM_SPEED);
+    const page = celebiDiaryPage(T0, '2026-10-16', 10);
+    expect(page.cast[0]?.name).toBe('Celebi');
+    expect(page.lines.every((l) => l.who === 0)).toBe(true);
+    expect(page.fav).toBe(true);
+  });
+
+  it('um encontro "do futuro" (relógio do aparelho voltou) não liga nada', () => {
+    expect(legendaryEffects(withEncounter('zapdos', T0 + H), T0, '2026-10-16', dayOf)).toEqual(NO_EFFECTS);
   });
 });
