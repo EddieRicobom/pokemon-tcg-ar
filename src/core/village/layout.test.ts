@@ -127,7 +127,7 @@ describe('móveis e plantas não fecham a cidade', () => {
 
   /** Um corredor de 1 bloco de largura: de onde você nasce até a loja e o terreno da casa. */
   const corridor = (tile: 'path' | 'grass') => {
-    const map: VillageMap = { w: 10, h: 5, tiles: new Array<Tile>(50).fill('tree'), spawn: { x: 1, y: 2 }, plot: { x: 7, y: 0, w: 1, h: 3 }, shop: { x: 6, y: 0, w: 1, h: 2 }, buildings: [] };
+    const map: VillageMap = { w: 10, h: 5, tiles: new Array<Tile>(50).fill('tree'), spawn: { x: 1, y: 2 }, plot: { x: 7, y: 0, w: 1, h: 3 }, shop: { x: 6, y: 0, w: 1, h: 2 }, buildings: [], decor: [] };
     for (let x = 1; x <= 8; x++) setTile(map, x, 2, tile);
     return map;
   };
