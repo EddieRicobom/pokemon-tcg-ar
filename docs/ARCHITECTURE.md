@@ -26,7 +26,7 @@ Quem faz o quê, em linhas gerais: `src/recognition/` reconhece; `src/app/` orqu
 | `src/box/` | `box-scene.ts`, `creature.ts`, `wander.ts`, `formation.ts`, `floor.ts`, `orientation*.ts`, `arena.ts`, `ground.ts`, `ground-art.ts`, `battle-director.ts`, `effects.ts`, `fx-lights.ts`, `load-creatures.ts`, `start-box.ts`. |
 | `src/cache/` | Cartas e arquivos no aparelho: IndexedDB (`card-cache.ts`, `db.ts`) e Cache API (`assets.ts`). |
 | `src/sensors/orientation-feed.ts` | Fonte única de giroscópio (AR da carta e Caixa). |
-| `src/views/`, `src/components/` | Telas e componentes. A barra de baixo tem **Escanear, Caixa, Pins e Treinador**; «Várias» e «Minhas cartas» (a antiga aba Cartas) são **modos do Escanear** (seletor logo abaixo do topo, mesmas rotas `#/varias` e `#/carregar`) e o **Diagnóstico** abre pela engrenagem no cabeçalho (rota `#/diagnostico`). |
+| `src/views/`, `src/components/` | Telas e componentes. A barra de baixo tem **Escanear, Vila, Cartas, Pins e Treinador**. «Várias» é **modo do Escanear** (seletor logo abaixo do topo, rota `#/varias`). **Cartas** tem duas sub-abas no mesmo seletor: «Minhas cartas» (`#/cartas`, a Box; antes era modo do Escanear em `#/carregar`, que hoje é trocado por `#/cartas` ao abrir, ver `redirectFor` em `app/route.ts`) e «Caixa em AR» (`#/caixa`, antes aba própria). O **Diagnóstico** abre pela engrenagem no cabeçalho (rota `#/diagnostico`). |
 | `scripts/` | Índices estáticos, verificações externas e avaliações com rede (`*.eval.ts`, só no Actions). |
 
 ## Decisões que valem lembrar
@@ -137,7 +137,8 @@ Tela "Caixa": os Pokémon da equipe (até 40; sem escolha, as 6 cartas mais rece
 - **Folhas e botões na base** (`.stage-foot`): uma coluna com as folhas abertas (suavização, ajustes, equipe, resumo da batalha, escolha da impressão, erro do AR com ações) e, embaixo, a barra de botões (`.stage-bar`). A folha fica sempre acima da barra, sem posição calculada à mão, e tem no máximo ~46 % da altura.
 - **Conteúdo que serve com e sem câmera** (`components/StageSheet.vue`): a busca à mão, as ferramentas de teste e o formulário do GIF ficam na página com a câmera desligada e viram uma folha sobre a imagem (por `Teleport` para `.stage-dock`) quando ela liga, abertos pelos botões «Buscar», «Teste» e «Pokémon». O mesmo conteúdo, uma só marcação.
 - Depois de 4 leituras sem sucesso o botão «Buscar» pulsa e um aviso aponta para ele (antes, a busca abria sozinha embaixo da câmera).
-- «Minhas cartas» (rota `carregar`) não tem câmera e é um modo do Escanear, não uma aba.
+- «Minhas cartas» (rota `cartas`) não tem câmera e divide a aba Cartas com a «Caixa em AR». A escolha de quem entra na Caixa mora só em «Minhas cartas» (a Caixa aponta para lá; com a câmera ligada o botão «Turma» abre a mesma escolha numa folha).
+- **Turma × equipe**: **turma** é o grupo de até 40 Pokémon que entra na Caixa (`savedTeam`/`TEAM_SIZE` no código); **equipe** é só quem luta de cada lado numa batalha (Vermelha/Azul pela escalação, até 6 no desafio da Liga, a do amigo no PvP, a do líder).
 
 ### Equipe, tela cheia e suavização
 
