@@ -24,7 +24,7 @@ import { EDGE } from '../box/ground-art';
 import type { PixelBuf } from '../box/ground-art';
 import { contentBounds } from './local-sprite';
 import type { ContentBounds } from './local-sprite';
-import { outfitFor, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree, TILE } from './village-art';
+import { outfitFor, paintBell, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree, TILE } from './village-art';
 import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
 import { groundPieces } from './ground-tiles';
@@ -68,6 +68,7 @@ export type Target =
   | { kind: 'plot' }
   | { kind: 'crop'; x: number; y: number }
   | { kind: 'shop' }
+  | { kind: 'bell' }
   | { kind: 'building'; building: Building }
   | { kind: 'tile'; x: number; y: number; tile: Tile }
   | { kind: 'nothing' };
@@ -186,6 +187,10 @@ const hashN = (n: number): number => {
   return ((h ^ (h >>> 13)) >>> 0) / 4294967296;
 };
 
+/** Sino da praça: quanto tempo o chamado vale e a partir de que distância o Pokémon "chega correndo" (puf no caminho). */
+const BELL_MS = 40_000;
+const BELL_FAR = 18;
+
 const EMOJI_FONT = 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
 /** O desenho e o emoji sobre a porta de cada prédio da praça. */
@@ -212,6 +217,9 @@ export class VillageGame {
   private handle = 0;
   private last = 0;
   private held: Dir | null = null;
+  /** Sino da praça: para onde cada Pokémon chamado está indo, e até quando o chamado vale. */
+  private readonly called = new Map<string, { x: number; y: number }>();
+  private calledUntil = 0;
   /** Toque na tela: o bloco aonde você está indo a pé (o caminho contorna o que estiver no meio). */
   private goal: { x: number; y: number } | null = null;
   /** A câmera do último quadro, para converter um toque na tela em bloco do mapa. */
@@ -586,6 +594,42 @@ export class VillageGame {
     return this.goal !== null;
   }
 
+  /**
+   * O sino da praça: todo Pokémon acordado vem para perto do sino (cada um num lugar livre em volta). Quem está longe
+   * demais (mais de `BELL_FAR` blocos) aparece num "puf" no meio do caminho e chega correndo, para ninguém levar um
+   * minuto atravessando o mapa. Devolve quem vem e quem está dormindo. O chamado dura `BELL_MS`.
+   */
+  ringBell(now = performance.now()): { coming: string[]; sleeping: string[] } {
+    const bell = this.map.decor.find((d) => d.kind === 'bell');
+    const at = bell ? { x: bell.x, y: bell.y + bell.h } : { x: this.player.x, y: this.player.y };
+    const coming: string[] = [];
+    const sleeping: string[] = [];
+    this.called.clear();
+    const taken = new Set<string>();
+    for (const [id, w] of this.villagers) {
+      if (this.asleep.has(id)) {
+        sleeping.push(id);
+        continue;
+      }
+      const spot = findFree(this.map, at.x, at.y + 1, (x, y) => taken.has(`${x},${y}`) || (x === this.player.x && y === this.player.y) || this.occupied(x, y, id), this.rng);
+      taken.add(`${spot.x},${spot.y}`);
+      this.called.set(id, spot);
+      coming.push(id);
+      const far = Math.abs(w.x - spot.x) + Math.abs(w.y - spot.y);
+      if (far > BELL_FAR && !moving(w)) {
+        const mid = findFree(this.map, spot.x + Math.sign(w.x - spot.x) * Math.min(8, Math.abs(w.x - spot.x)), spot.y + Math.sign(w.y - spot.y) * Math.min(6, Math.abs(w.y - spot.y)), (x, y) => this.occupied(x, y, id), this.rng);
+        this.particles.push({ kind: 'poof', x: w.x + 0.5, y: w.y + 0.6, vx: 0, vy: 0, born: now, life: 500 });
+        w.x = w.tx = mid.x;
+        w.y = w.ty = mid.y;
+        w.t = 1;
+        this.particles.push({ kind: 'poof', x: mid.x + 0.5, y: mid.y + 0.6, vx: 0, vy: 0, born: now, life: 500 });
+      }
+      this.bubble(id, '🔔', 1800);
+    }
+    this.calledUntil = now + BELL_MS;
+    return { coming, sleeping };
+  }
+
   /** Um passo rumo ao `goal` (chamado quando você está parado e sem joystick/teclado). */
   private stepTowardGoal(): void {
     const p = this.player;
@@ -623,6 +667,7 @@ export class VillageGame {
       const b = buildingAt(this.map, f.x, f.y);
       return b ? { kind: 'building', building: b } : { kind: 'nothing' };
     }
+    if (tile === 'deco' && this.map.decor.some((d) => d.kind === 'bell' && f.x >= d.x && f.x < d.x + d.w && f.y >= d.y && f.y < d.y + d.h)) return { kind: 'bell' };
     if (tile === 'lamp' || tile === 'deco') return { kind: 'nothing' };
     if (tile !== 'grass' && tile !== 'path' && tile !== 'trail' && tile !== 'plaza' && tile !== 'field') return { kind: 'tile', x: f.x, y: f.y, tile };
     return { kind: 'nothing' };
@@ -867,9 +912,10 @@ export class VillageGame {
         stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, target);
         continue;
       }
-      const follow = this.state.follower === id ? behind : null;
+      const called = now < this.calledUntil ? this.called.get(id) : undefined;
+      const follow = called ?? (this.state.follower === id ? behind : null);
       stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, follow);
-      if (follow) this.catchUp(w, follow, dt, now);
+      if (follow && !called) this.catchUp(w, follow, dt, now);
     }
     this.updateScene(now);
     // Clima.
@@ -1113,7 +1159,7 @@ export class VillageGame {
     if (atlas) {
       for (const d of this.map.decor) {
         if (d.x + d.w < x0 || d.x > x1 || d.y + d.h < y0 || d.y > y1 + 4) continue;
-        const img = this.art(d.kind);
+        const img = d.kind === 'bell' ? this.sprite('bell', paintBell) : this.art(d.kind);
         if (!img) continue;
         const tree = d.kind === 'tree-big' || d.kind === 'pine-m';
         list.push({

@@ -86,7 +86,7 @@ export const TOWN = {
   lake: { x: 81, y: 11, sand: 8.6, water: 6.2 },
 } as const;
 
-export type DecorKind = 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall';
+export type DecorKind = 'bell' | 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall';
 
 /** Enfeites fixos do mapa (sólidos; o desenho sai do atlas com o mesmo nome e fica em pé sobre a base). */
 export interface Decor {
@@ -107,6 +107,8 @@ export const DECOR: readonly Decor[] = [
   { kind: 'tree-big', x: 18, y: 46, w: 1, h: 1 },
   { kind: 'tree-big', x: 17, y: 54, w: 1, h: 1 },
   { kind: 'pine-m', x: 6, y: 57, w: 1, h: 1 },
+  // O sino da praça, ao lado da fonte: tocar chama todos os Pokémon acordados (ver `VillageGame.ringBell`).
+  { kind: 'bell', x: 50, y: 36, w: 1, h: 1 },
   // Praça: mural de recados e jardineiras.
   { kind: 'board', x: 41, y: 32, w: 3, h: 1 },
   { kind: 'planter', x: 51, y: 32, w: 3, h: 1 },
