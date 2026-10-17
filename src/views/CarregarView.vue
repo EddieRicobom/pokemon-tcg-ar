@@ -17,7 +17,7 @@ import { digitalRows } from '../core/village/digital';
 import { digitalBoxRows, digitalCandidates } from '../app/digital-members';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 
-/** Digital Pokémon da Vila: aparecem aqui marcados como digitais e bloqueados (não vêm de carta física: sem scan nem AR). */
+/** Digital Pokémon da Vila: aparecem aqui marcados como digitais (não vêm de carta física: não são escaneados, mas entram na turma da Caixa em AR). */
 const villageDigital = loadVillage().digital;
 const digital = ref(digitalRows(villageDigital));
 /** Na Box (e na turma), os Digital Pokémon entram junto das cartas, com o símbolo ✨ (ver `app/digital-members.ts`). */
@@ -421,8 +421,8 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <section v-if="digital.length > 0" class="digital-list" aria-labelledby="digital-title">
       <h3 id="digital-title">Digital Pokémon <small>· moram na Vila</small></h3>
       <p class="note">
-        Vêm do presente inicial e da Fonte, não de uma carta física: moram na Vila e jogam na Torre, mas não podem ser
-        escaneados nem vistos em AR.
+        Vêm do presente inicial e da Fonte, não de uma carta física: moram na Vila, jogam na Torre e andam na Caixa em AR
+        com a turma. Como não têm carta, não são escaneados nem aparecem em Várias.
       </p>
       <ul class="card-list">
         <li v-for="d in digital" :key="d.instanceId" class="card-row digital-row">
@@ -430,10 +430,9 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
             <img :src="pokemonSpriteUrl(d.dexId)" :alt="d.name" width="60" height="60" loading="lazy" @error="($event.target as HTMLImageElement).style.visibility = 'hidden'" />
           </div>
           <div class="card-info">
-            <strong>{{ d.name }} <span class="badge digital" title="Digital: sem scan e sem AR">🔒 Digital</span></strong>
+            <strong>{{ d.name }} <span class="badge digital" title="Digital: não vem de uma carta física">✨ Digital</span></strong>
             <span>Pokédex nº {{ d.dexId }} · {{ d.origin }}{{ d.stage > 0 ? ` · evoluiu ${d.stage}×` : '' }}</span>
-            <small>Desde {{ d.since }} · carta de origem {{ d.originCardId }}</small>
-            <small>Bloqueado para scan e AR (não é uma carta física).</small>
+            <small>Chegou em {{ d.since }}</small>
           </div>
         </li>
       </ul>
