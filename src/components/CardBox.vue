@@ -196,16 +196,16 @@ const teamIndex = (id: string) => props.team.indexOf(id);
         <strong>{{ selectedCard.name }} <CardMarks :card="selectedCard" /></strong>
         <span>{{ selectedCard.setName }} · {{ selectedCard.localId }}/{{ selectedCard.setOfficial }}{{ selectedCard.dexIds[0] ? ` · Pokédex nº ${selectedCard.dexIds[0]}` : '' }}</span>
         <span class="badge" :class="selectedCard.status">{{ statusText[selectedCard.status] }}</span>
-        <div class="actions row">
-          <button type="button" :disabled="busyId === selectedCard.id" @click="emit('run', selectedCard.id, 'prepare')">Carregar</button>
+        <div class="actions card-actions">
+          <button v-if="selectedCard.status !== 'completo'" type="button" :disabled="busyId === selectedCard.id" @click="emit('run', selectedCard.id, 'prepare')">Carregar</button>
           <button v-if="selectedCard.status !== 'completo'" type="button" :disabled="busyId === selectedCard.id" @click="emit('run', selectedCard.id, 'reload')">Recarregar</button>
           <a class="button" :href="routeHref('escanear', selectedCard.id)">Ver em AR</a>
           <button type="button" :class="{ active: teamIndex(selectedCard.id) >= 0 }" @click="emit('toggleTeam', selectedCard.id)">
             {{ teamIndex(selectedCard.id) >= 0 ? 'Na turma ✓' : 'Pôr na turma' }}
           </button>
-          <button v-if="confirmRemove !== selectedCard.id" type="button" :disabled="busyId === selectedCard.id" @click="confirmRemove = selectedCard.id">Remover…</button>
+          <button v-if="confirmRemove !== selectedCard.id" type="button" :disabled="busyId === selectedCard.id" @click="confirmRemove = selectedCard.id">Apagar…</button>
           <template v-else>
-            <button type="button" class="danger" @click="emit('remove', selectedCard.id); selected = null; confirmRemove = null">Remover {{ selectedCard.name }}</button>
+            <button type="button" class="danger" @click="emit('remove', selectedCard.id); selected = null; confirmRemove = null">Apagar {{ selectedCard.name }}</button>
             <button type="button" @click="confirmRemove = null">Não</button>
           </template>
         </div>

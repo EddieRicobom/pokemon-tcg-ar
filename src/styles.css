@@ -1372,6 +1372,12 @@ button.link {
   object-fit: cover;
 }
 
+/* Digital Pokémon não têm imagem de carta: o sprite aparece inteiro, em pixel art. */
+.team-strip img.sprite {
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
 .filter-bar {
   display: grid;
   gap: 8px;
@@ -5387,36 +5393,40 @@ body.no-scroll .reward-toasts {
 }
 
 /* Atalhos de Minhas cartas: batalhar com a equipe e ver a equipe em AR. */
-.card-shortcuts {
+/* Ações de uma carta (Lista e Box): grade de duas colunas em vez de uma pilha de botões. */
+.card-actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin: 10px 0;
 }
 
-.card-shortcuts .shortcut {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
-  color: var(--text);
-  font: inherit;
-  font-weight: 700;
-  text-align: left;
-  text-decoration: none;
+/* Na Lista, as ações ocupam a largura toda da carta, abaixo da imagem e dos dados. */
+.card-row {
+  flex-wrap: wrap;
 }
 
-.card-shortcuts .shortcut > span:first-child {
-  font-size: 1.5rem;
+.card-row > .card-info {
+  flex: 1 1 0;
 }
 
-.card-shortcuts .shortcut small {
-  display: block;
-  font-weight: 400;
-  font-size: 0.75rem;
+.card-row > .card-actions {
+  flex-basis: 100%;
+  margin-top: 0;
+}
+
+.card-actions > button,
+.card-actions > a.button {
+  min-width: 0;
+  padding: 0 8px;
+  font-size: 0.9rem;
+}
+
+.storage-details {
+  margin-top: 16px;
+}
+
+.storage-details summary {
+  cursor: pointer;
   color: var(--muted);
 }
 

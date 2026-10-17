@@ -31,6 +31,8 @@ type Row = CachedCard & { status: CacheStatus; thumb?: string; icon?: string };
 const rows = ref<Row[]>([]);
 const loading = ref(true);
 const storage = ref<StorageInfo | null>(null);
+/** «Completar as cartas que faltam» só aparece quando alguma carta guardada não está completa. */
+const needsLoading = computed(() => rows.value.some((r) => r.status !== 'completo'));
 const busyId = ref<string | null>(null);
 const bulk = ref<{ done: number; count: number; text: string } | null>(null);
 const progressText = ref<Record<string, string>>({});
@@ -87,30 +89,6 @@ function clearFilters(): void {
   onlyTeam.value = false;
   typeFilter.value = '';
   genFilter.value = 0;
-}
-
-// ---- Atalhos (pedido do dono): batalhar com a turma e ver a turma em AR, direto daqui.
-const shortcutBusy = ref('');
-/** Prepara o que falta das cartas da turma (a batalha precisa do Pokémon carregado) e leva à batalha da Caixa. */
-async function battleWithTeam(): Promise<void> {
-  const ids = team.value.ids;
-  if (ids.length < 2) {
-    message.value = 'Para batalhar, a turma precisa de pelo menos 2 Pokémon (toque numa carta e em «Pôr na turma»).';
-    return;
-  }
-  // Só cartas físicas precisam ser carregadas; Digital Pokémon pegam o sprite na hora.
-  const missing = ids.filter((id) => rows.value.some((r) => r.id === id && r.sprite.state !== 'ok'));
-  try {
-    const cache = await getCache();
-    for (let i = 0; i < missing.length; i++) {
-      const id = missing[i]!;
-      shortcutBusy.value = `Carregando a turma: ${i + 1} de ${missing.length} (${rows.value.find((r) => r.id === id)?.name ?? id})…`;
-      await cache.prepareCard(id).catch(() => null);
-    }
-  } finally {
-    shortcutBusy.value = '';
-  }
-  window.location.hash = routeHref('caixa', undefined, ['batalha']);
 }
 
 // ---- Limpar o cache: apaga TODAS as cartas do aparelho (e o backup não as guarda). Só com a palavra digitada.
@@ -248,7 +226,7 @@ async function clearAll(): Promise<void> {
   await cache.clear();
   confirmingClear.value = false;
   clearTyped.value = '';
-  message.value = 'Cache limpo.';
+  message.value = 'Todas as cartas foram apagadas deste aparelho.';
   await refresh();
 }
 
@@ -263,39 +241,16 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
 
 <template>
   <section class="card" aria-labelledby="load-title">
-    <h2 id="load-title">Cartas guardadas</h2>
+    <h2 id="load-title">Minhas cartas</h2>
     <p class="note">
-      Aqui ficam as cartas que o app já reconheceu neste aparelho (as mais recentes primeiro). Elas são guardadas no
-      navegador; o app nunca baixa o catálogo inteiro. Câmeras e quadros não são guardados.
+      As cartas que o app já reconheceu neste aparelho, guardadas no navegador. Fotos da câmera não são guardadas.
     </p>
 
-    <p class="meta" role="status">
-      <template v-if="storage">
-        {{ storage.cards }} carta(s) · {{ storage.assets }} arquivo(s) · {{ formatBytes(storage.assetBytes) }} guardados
-        <template v-if="storage.usage !== undefined"> · navegador usa {{ formatBytes(storage.usage) }} de {{ formatBytes(storage.quota) }}</template>
-        · armazenamento persistente:
-        {{ storage.persisted === undefined ? 'não informado' : storage.persisted ? 'sim' : 'não (o navegador pode apagar se faltar espaço)' }}
-      </template>
-      <template v-else>Lendo o armazenamento…</template>
-    </p>
-
-    <div class="actions row">
-      <button type="button" class="primary" :disabled="bulk !== null || rows.length === 0" @click="prepareAll">
-        Carregar todas as vistas
+    <div v-if="needsLoading" class="actions">
+      <button type="button" class="primary" :disabled="bulk !== null" @click="prepareAll">
+        Completar as cartas que faltam ({{ rows.filter((r) => r.status !== 'completo').length }})
       </button>
     </div>
-
-    <div v-if="rows.length > 0" class="card-shortcuts" role="group" aria-label="Atalhos">
-      <button type="button" class="shortcut" :disabled="!!shortcutBusy" @click="battleWithTeam">
-        <span aria-hidden="true">⚔️</span>
-        <span>Batalhar com a turma<small>carrega o que falta e abre a Caixa em AR</small></span>
-      </button>
-      <a class="shortcut" :href="routeHref('varias')">
-        <span aria-hidden="true">🃏</span>
-        <span>Turma em AR (Várias)<small>até 4 cartas na câmera ao mesmo tempo</small></span>
-      </a>
-    </div>
-    <p v-if="shortcutBusy" class="message" role="status">{{ shortcutBusy }}</p>
 
     <p v-if="bulk" class="message" role="status">Carregando {{ bulk.done }}/{{ bulk.count }} — {{ bulk.text }}</p>
     <p v-if="message" class="message" role="status">{{ message }}</p>
@@ -304,7 +259,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
       <strong>Turma da Caixa ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
       <ul>
         <li v-for="row in teamRows" :key="row.id">
-          <img v-if="row.thumb" :src="row.thumb" :alt="row.name" width="40" height="56" />
+          <img v-if="row.thumb || row.icon" :src="row.thumb ?? row.icon" :alt="row.name" width="40" height="56" :class="{ sprite: !row.thumb }" />
           <span>{{ row.name }}</span>
           <CardMarks :card="row" compact />
         </li>
@@ -403,19 +358,19 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
           <small>{{ slotText('Sprite', row.sprite) }}</small>
           <small>{{ slotText('Alvo de AR', row.target) }}</small>
           <small v-if="progressText[row.id]" role="status">Preparando {{ progressText[row.id] }}…</small>
-          <div class="actions row">
-            <button type="button" :disabled="busyId === row.id" @click="run(row.id, 'prepare')">Carregar</button>
-            <button v-if="row.status !== 'completo'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'reload')">Recarregar</button>
-            <a class="button" :href="routeHref('escanear', row.id)">Ver em AR</a>
-            <button type="button" :class="{ active: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" @click="toggleTeam(row)">
-              {{ team.ids.includes(row.id) ? 'Na turma ✓' : 'Pôr na turma' }}
-            </button>
-            <button v-if="confirmRemoveId !== row.id" type="button" :disabled="busyId === row.id" @click="confirmRemoveId = row.id">Remover do cache…</button>
-            <template v-else>
-              <button type="button" class="danger" @click="removeCard(row.id); confirmRemoveId = null">Remover {{ row.name }}</button>
-              <button type="button" @click="confirmRemoveId = null">Não</button>
-            </template>
-          </div>
+        </div>
+        <div class="actions card-actions">
+          <button v-if="row.status !== 'completo'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'prepare')">Carregar</button>
+          <button v-if="row.status !== 'completo'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'reload')">Recarregar</button>
+          <a class="button" :href="routeHref('escanear', row.id)">Ver em AR</a>
+          <button type="button" :class="{ active: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" @click="toggleTeam(row)">
+            {{ team.ids.includes(row.id) ? 'Na turma ✓' : 'Pôr na turma' }}
+          </button>
+          <button v-if="confirmRemoveId !== row.id" type="button" :disabled="busyId === row.id" @click="confirmRemoveId = row.id">Apagar…</button>
+          <template v-else>
+            <button type="button" class="danger" @click="removeCard(row.id); confirmRemoveId = null">Apagar {{ row.name }}</button>
+            <button type="button" @click="confirmRemoveId = null">Não</button>
+          </template>
         </div>
       </li>
     </ul>
@@ -439,6 +394,20 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         </li>
       </ul>
     </section>
+
+    <!-- Detalhes técnicos do armazenamento: recolhidos, para não pesar o topo da tela. -->
+    <details class="storage-details">
+      <summary>Armazenamento neste aparelho</summary>
+      <p class="meta" role="status">
+        <template v-if="storage">
+          {{ storage.cards }} carta(s) · {{ storage.assets }} arquivo(s) · {{ formatBytes(storage.assetBytes) }} guardados
+          <template v-if="storage.usage !== undefined"> · navegador usa {{ formatBytes(storage.usage) }} de {{ formatBytes(storage.quota) }}</template>
+          · armazenamento persistente:
+          {{ storage.persisted === undefined ? 'não informado' : storage.persisted ? 'sim' : 'não (o navegador pode apagar se faltar espaço)' }}
+        </template>
+        <template v-else>Lendo o armazenamento…</template>
+      </p>
+    </details>
 
     <!-- Zona de perigo: fechada por padrão, longe dos botões do dia a dia. -->
     <details v-if="rows.length > 0" class="danger-zone" :open="confirmingClear" @toggle="(e: Event) => (confirmingClear = (e.target as HTMLDetailsElement).open)">
