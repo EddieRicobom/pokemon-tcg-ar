@@ -195,7 +195,7 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
 - Limites do iOS Safari para câmera, WebGL, sensores e instalação do PWA.
 - Dependência de serviços externos de terceiros (TCGdex, PokeAPI, jsDelivr) sem garantia de disponibilidade.
 31. 🔶 **Quadro de Pedidos da Vila** (em andamento): o quadro existente na praça já é interativo e cria 3 objetivos diários determinísticos, apontando para lugares reais da cidade e recompensando moedas, itens e amizade. A entrega e a conversa usam o inventário e as amizades reais, e o estado fica em `tcg-ar-vila-v1`, sem backend. Falta ligar os próximos pedidos ao sino, minimapa, clima, horário e nível da cidade.
-32. ⬜ **Passeios guiados**: um Pokémon convida o treinador para caminhar até o lago, parque, Café, fonte ou outro morador. O destino usa o pathfinding existente e a conclusão registra um momento e altera a relação.
+32. 🔶 **Passeios guiados** (primeira etapa): a conversa com um Pokémon oferece um passeio até a Fonte Central, Lago Azul, Parquinho ou Mercado da Praça. O destino usa o pathfinding existente; ao chegar, o passeio dá +6 de amizade e registra um momento no Diário. Falta expandir os destinos e escolhas do passeio.
 33. ⬜ **Eventos semanais na praça**: feira, festa, campeonato e encontros sazonais com regras e recompensas próprias, reaproveitando Fliperama, Pins, Arena e Diário.
 34. ⬜ **Expedições**: enviar um Pokémon para buscar recursos por um período, com resultado condicionado ao tipo, personalidade, amizade, clima e local escolhido.
 35. ⬜ **Pontos secretos**: áreas especiais do mapa que aparecem por exploração e desbloqueiam cenas, móveis, itens e páginas do Diário.
