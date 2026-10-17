@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import CardMarks from '../components/CardMarks.vue';
+import CardBox from '../components/CardBox.vue';
 import { formatBytes, formatDate } from '../app/format';
 import { routeHref } from '../app/route';
 import { getCache } from '../app/services';
@@ -15,7 +16,8 @@ import { pokemonSpriteUrl } from '../ar/sprite-url';
 /** Digital Pokémon da Vila: aparecem aqui marcados como digitais e bloqueados (não vêm de carta física: sem scan nem AR). */
 const digital = ref(digitalRows(loadVillage().digital));
 
-type Row = CachedCard & { status: CacheStatus; thumb?: string };
+/** `icon`: o sprite guardado do Pokémon (o ícone do espaço na Box); `thumb`: a imagem da carta. */
+type Row = CachedCard & { status: CacheStatus; thumb?: string; icon?: string };
 
 const rows = ref<Row[]>([]);
 const loading = ref(true);
@@ -34,7 +36,13 @@ const search = ref('');
 const statusFilter = ref<StatusFilter>('todas');
 const onlyTeam = ref(false);
 const sortKey = ref<SortKey>('recentes');
-const viewMode = ref<'lista' | 'grade'>('lista');
+// "Box" (caixas 6 × 5, como nos jogos) é o modo padrão; "Lista" mostra os detalhes técnicos de cada carta.
+const viewMode = ref<'box' | 'lista' | 'grade'>('box');
+/** Na Box só a busca apaga cartas (os filtros de situação da Lista não aparecem lá, então não valem). */
+const visibleIdSet = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  return new Set(rows.value.filter((row) => !q || `${row.name} ${row.setName} ${row.localId}`.toLowerCase().includes(q)).map((row) => row.id));
+});
 const teamNotice = ref('');
 
 const team = computed(() => resolveTeam(savedTeam.value, rows.value));
@@ -118,6 +126,13 @@ async function refresh(): Promise<void> {
       if (blob) {
         row.thumb = URL.createObjectURL(blob);
         thumbUrls.push(row.thumb);
+      }
+    }
+    if (card.sprite.state === 'ok') {
+      const blob = await cache.getAssetBlob(card, 'sprite').catch(() => null);
+      if (blob) {
+        row.icon = URL.createObjectURL(blob);
+        thumbUrls.push(row.icon);
       }
     }
     withThumbs.push(row);
@@ -238,14 +253,20 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <p v-if="teamNotice" class="message error" role="alert">{{ teamNotice }}</p>
 
     <div v-if="rows.length > 0" class="filter-bar" role="search">
-      <input v-model="search" type="text" placeholder="Buscar por nome, coleção ou número" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
-      <div class="chips" role="group" aria-label="Filtrar por situação">
+      <div class="chips view-switch" role="group" aria-label="Modo de exibição">
+        <button type="button" :class="{ active: viewMode === 'box' }" :aria-pressed="viewMode === 'box'" @click="viewMode = 'box'">Box</button>
+        <button type="button" :class="{ active: viewMode === 'lista' }" :aria-pressed="viewMode === 'lista'" @click="viewMode = 'lista'">Lista</button>
+        <button type="button" :class="{ active: viewMode === 'grade' }" :aria-pressed="viewMode === 'grade'" @click="viewMode = 'grade'">Grade</button>
+      </div>
+      <input v-model="search" type="text" :placeholder="viewMode === 'box' ? 'Buscar (apaga as outras na caixa)' : 'Buscar por nome, coleção ou número'" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
+      <!-- Na Box a ordem é a que você arrumou: filtros de situação e ordem ficam para a Lista e a Grade. -->
+      <div v-if="viewMode !== 'box'" class="chips" role="group" aria-label="Filtrar por situação">
         <button v-for="option in ([['todas', 'Todas'], ['completo', 'Completas'], ['parcial', 'Parciais'], ['falhou', 'Com falha'], ['sem-pokemon', 'Sem Pokémon']] as const)" :key="option[0]" type="button" :class="{ active: statusFilter === option[0] }" :aria-pressed="statusFilter === option[0]" @click="statusFilter = option[0]">
           {{ option[1] }}
         </button>
         <button type="button" :class="{ active: onlyTeam }" :aria-pressed="onlyTeam" @click="onlyTeam = !onlyTeam">Só a equipe</button>
       </div>
-      <div class="filter-row">
+      <div v-if="viewMode !== 'box'" class="filter-row">
         <label>Ordem
           <select v-model="sortKey">
             <option value="recentes">Mais recentes</option>
@@ -253,12 +274,8 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
             <option value="leituras">Mais lidas</option>
           </select>
         </label>
-        <div class="chips" role="group" aria-label="Modo de exibição">
-          <button type="button" :class="{ active: viewMode === 'lista' }" :aria-pressed="viewMode === 'lista'" @click="viewMode = 'lista'">Lista</button>
-          <button type="button" :class="{ active: viewMode === 'grade' }" :aria-pressed="viewMode === 'grade'" @click="viewMode = 'grade'">Grade</button>
-        </div>
       </div>
-      <p class="meta" role="status">
+      <p v-if="viewMode !== 'box'" class="meta" role="status">
         Mostrando {{ visibleRows.length }} de {{ rows.length }}.
         <button v-if="filtersActive" type="button" class="link" @click="clearFilters">Limpar filtros</button>
       </p>
@@ -269,7 +286,19 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
       Nenhuma carta reconhecida ainda. Vá em <a :href="routeHref('escanear')">Escanear</a> e aponte a câmera para uma carta.
     </p>
 
-    <ul v-if="viewMode === 'grade'" class="card-grid">
+    <CardBox
+      v-if="viewMode === 'box' && rows.length > 0"
+      :cards="rows"
+      :team="team.ids"
+      :busy-id="busyId"
+      :visible-ids="visibleIdSet"
+      :status-text="STATUS_TEXT"
+      @toggle-team="(id: string) => { const row = rows.find((r) => r.id === id); if (row) toggleTeam(row); }"
+      @run="(id: string, action: 'prepare' | 'reload') => run(id, action)"
+      @remove="(id: string) => removeCard(id)"
+    />
+
+    <ul v-else-if="viewMode === 'grade'" class="card-grid">
       <li v-for="row in visibleRows" :key="row.id">
         <button type="button" class="grid-card" :class="{ picked: team.ids.includes(row.id), 'is-shiny': isShiny(row) }" :aria-pressed="team.ids.includes(row.id)" :aria-label="`${row.name}: ${team.ids.includes(row.id) ? 'tirar da' : 'colocar na'} equipe`" @click="toggleTeam(row)">
           <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="90" height="126" />

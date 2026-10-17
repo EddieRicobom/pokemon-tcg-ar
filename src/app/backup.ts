@@ -32,6 +32,7 @@ export const BACKUP_KEYS: readonly string[] = [
   'tcg-ar-scan-debug-v1',
   'tcg-ar-art-search-v1',
   'tcg-ar-layout-v3',
+  'tcg-ar-box-v1',
 ];
 
 export interface BackupFile {
