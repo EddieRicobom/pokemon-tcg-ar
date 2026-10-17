@@ -87,7 +87,7 @@ describe('população da caixa', () => {
         { instanceId: 'dp_1_4_0', name: 'Charmander', dexId: 4 },
         { instanceId: 'dp_2_7_1', name: 'Squirtle', dexId: 7 },
       ],
-      sprite: async (dexId: number) => (dexId === 7 ? null : gif),
+      sprite: async (dexId: number) => (dexId === 7 ? null : ({ kind: 'gif', gif } as const)),
     };
     const r = await loadCreatureEntries(cache, decoders, ['c2', 'dp_1_4_0', 'c1', 'dp_2_7_1'], digital);
     expect(r.entries.map((e) => e.info.id)).toEqual(['c2', 'dp_1_4_0', 'c1']);

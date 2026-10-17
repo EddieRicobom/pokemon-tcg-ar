@@ -16,10 +16,14 @@ export interface CreatureDecoders {
   image: (blob: Blob) => Promise<{ width: number; height: number; data: Uint8ClampedArray }>;
 }
 
-/** Digital Pokémon que podem entrar na Caixa (pedido do dono): o sprite vem do pacote local ou do GIF, não do cache. */
+/**
+ * Digital Pokémon que podem entrar na Caixa (pedido do dono): o sprite não vem do cache de cartas, mas é o mesmo tipo
+ * de sprite das cartas (o GIF da Showdown, ou o PNG de reserva), para ficarem em pé no chão como as outras. O pacote
+ * pixelado da Vila tem margem embaixo do quadro e fazia os digitais flutuarem.
+ */
 export interface DigitalCreatures {
   instances: readonly { instanceId: string; name: string; dexId: number }[];
-  sprite: (dexId: number) => Promise<ReturnType<typeof decodeGif> | null>;
+  sprite: (dexId: number) => Promise<CreatureEntry['source'] | null>;
 }
 
 export interface LoadedCreatures {
@@ -80,9 +84,9 @@ export async function loadCreatureEntries(
     if (item.kind === 'digital') {
       const inst = digitalById.get(item.id)!;
       try {
-        const gif = await digital!.sprite(inst.dexId);
-        if (!gif) throw new Error('sprite indisponível agora (sem rede e fora do pacote local)');
-        entries.push({ info: { id: inst.instanceId, name: inst.name, dexId: inst.dexId, detail: 'Digital Pokémon', digital: true }, source: { kind: 'gif', gif } });
+        const source = await digital!.sprite(inst.dexId);
+        if (!source) throw new Error('sprite indisponível agora (sem rede?)');
+        entries.push({ info: { id: inst.instanceId, name: inst.name, dexId: inst.dexId, detail: 'Digital Pokémon', digital: true }, source });
       } catch (error) {
         failed.push({ name: inst.name, reason: error instanceof Error ? error.message : String(error) });
       }
