@@ -193,6 +193,23 @@ describe('momentos: sorteio', () => {
     expect(counts.size).toBeGreaterThan(20);
   });
 
+  it('memórias recentes de rivalidade puxam revanche e permitem uma reconciliação', () => {
+    const s = fresh();
+    s.rel[pairKey('a', 'b')] = { bond: -8, spark: 0, flag: null, since: '2026-10-10', met: 2 };
+    s.memories.push({
+      id: 'rivalidade:a', mon: 'a', with: ['b'], kind: 'rivalidade',
+      text: 'Duelo: a revanche ficou marcada', day: '2026-10-12', t: Date.parse('2026-10-12T12:00:00Z'), momentId: 'rivalidade',
+    });
+    const env = makeEnv(s, '2026-10-14', 14, null);
+    const found = new Set<string>();
+    for (let seed = 1; seed <= 300; seed++) {
+      const scene = pickMoment(actors.slice(0, 2), s, env, seededRng(seed));
+      if (scene) found.add(scene.tpl.id);
+    }
+    expect(found.has('duo-revanche')).toBe(true);
+    expect(found.has('par-pazes')).toBe(true);
+  });
+
   it('modelos de noite só saem de noite e os de chuva só na chuva', () => {
     const { s } = richEnv();
     for (let seed = 1; seed < 200; seed++) {

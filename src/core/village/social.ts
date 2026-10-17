@@ -390,7 +390,7 @@ const CORE: readonly Template[] = [
     },
   },
   {
-    id: 'par-pazes', kind: 'amizade', title: 'Fazendo as pazes', emoji: '🕊️', cast: 2, weight: 12, when: (c) => c.rel?.flag === 'brigados' && c.rel.since !== c.env.day,
+    id: 'par-pazes', kind: 'amizade', title: 'Fazendo as pazes', emoji: '🕊️', cast: 2, weight: 12, when: (c) => (c.rel?.flag === 'brigados' || (c.memo.recentRivalry === true && !!c.rel && c.rel.bond <= -5)) && c.rel?.since !== c.env.day,
     lines: (c) => [
       L(0, `${c.n[1]}... eu estava pensando. Eu fui um bobo.`, 'sad'),
       L(1, 'Eu também. A culpa não foi só sua. Foi mais sua, mas não só.', 'sweat'),
@@ -609,6 +609,14 @@ export function makeEnv(state: VillageState, day: string, hour: number, weather:
 
 function makeCtx(state: VillageState, cast: Actor[], env: SocialEnv, rng: Rng): Ctx {
   const rel = (i: number, j: number): Relation | undefined => (cast[i] && cast[j] ? state.rel[pairKey(cast[i]!.id, cast[j]!.id)] ?? undefined : undefined);
+  const today = Date.parse(`${env.day}T00:00:00Z`);
+  const recentRivalry = cast.length > 1 ? state.memories.slice().reverse().find((memory) =>
+    memory.kind === 'rivalidade'
+    && ((memory.mon === cast[0]?.id && memory.with.includes(cast[1]?.id ?? ''))
+      || (memory.mon === cast[1]?.id && memory.with.includes(cast[0]?.id ?? '')))
+    && today - memory.t <= 45 * 24 * 60 * 60 * 1000
+    && today - memory.t >= 0,
+  ) : undefined;
   return {
     n: cast.map((a) => a.name),
     p: cast.map((a) => personalityOf(a.id).name),
@@ -619,7 +627,7 @@ function makeCtx(state: VillageState, cast: Actor[], env: SocialEnv, rng: Rng): 
     env,
     seen: new Set(state.seen),
     rng,
-    memo: {},
+    memo: recentRivalry ? { recentRivalry: true, recentRivalryText: recentRivalry.text } : {},
     pts: (i) => (cast[i] ? friendOf(state, cast[i]!.id).points : 0),
     has: (...ids) => ids.some((id) => env.placed.has(id)),
     rolling: false,
@@ -647,7 +655,12 @@ export function pickMoment(actors: readonly Actor[], state: VillageState, env: S
   const recent = state.diary.slice(-8).map((m) => m.tpl);
   const seen = new Set(state.seen);
   const pool = TEMPLATES.filter((t) => t.cast <= actors.length);
-  const weight = (t: Template): number => t.weight * (seen.has(t.id) ? 1 : 1.8) * (recent.includes(t.id) ? 0.1 : 1);
+  const weight = (t: Template): number => {
+    const base = t.weight * (seen.has(t.id) ? 1 : 1.8) * (recent.includes(t.id) ? 0.1 : 1);
+    if (t.id === 'duo-revanche') return base * 2.5;
+    if (t.id === 'par-pazes') return base * 2;
+    return base;
+  };
   for (let attempt = 0; attempt < 60; attempt++) {
     const total = pool.reduce((n, t) => n + weight(t), 0);
     let roll = rng() * total;

@@ -332,7 +332,7 @@ const FRIENDS: readonly Template[] = [
     outcome: { bond: 3, spark: 1 },
   },
   {
-    id: 'duo-revanche', kind: 'rivalidade', title: 'A revanche', emoji: '🔁', cast: 2, weight: 6, when: (c) => rivals(c),
+    id: 'duo-revanche', kind: 'rivalidade', title: 'A revanche', emoji: '🔁', cast: 2, weight: 6, when: (c) => rivals(c) || c.memo.recentRivalry === true,
     lines: (c) => [
       L(0, `${c.n[1]}! Ontem você ganhou de mim e ainda dançou no final!`, 'anger'),
       L(1, 'A dança foi parte do show. Eu sou um artista completo.', 'star'),
