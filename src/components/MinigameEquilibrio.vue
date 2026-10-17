@@ -18,10 +18,13 @@ let last = 0;
 let startedAt = 0;
 let base: Quaternion | null = null;
 let velocity = { x: 0, y: 0 };
+let sensorWaitTimer = 0;
 
 function stopLoop(): void {
   if (frame) cancelAnimationFrame(frame);
   frame = 0;
+  if (sensorWaitTimer) window.clearTimeout(sensorWaitTimer);
+  sensorWaitTimer = 0;
   feed.release();
 }
 
@@ -42,6 +45,10 @@ function tick(now: number): void {
   elapsed.value = (now - startedAt) / 1000;
   const sample = feed.latest();
   if (sample) {
+    if (sensorWaitTimer) {
+      window.clearTimeout(sensorWaitTimer);
+      sensorWaitTimer = 0;
+    }
     if (!base) base = sample.q.clone();
     const relative = base.clone().invert().multiply(sample.q);
     const up = new Vector3(0, 1, 0).applyQuaternion(relative);
@@ -63,6 +70,11 @@ async function start(): Promise<void> {
   phase.value = 'starting';
   message.value = 'Pedindo acesso aos sensores…';
   const permission = await requestOrientationPermission();
+  if (permission === 'unsupported') {
+    phase.value = 'idle';
+    message.value = 'Este navegador não oferece orientação do aparelho. Abra a Vila em um celular compatível para jogar.';
+    return;
+  }
   if (permission === 'denied') {
     phase.value = 'idle';
     message.value = 'O acesso aos sensores foi recusado. Permita Movimento e Orientação para jogar.';
@@ -78,6 +90,13 @@ async function start(): Promise<void> {
   last = startedAt;
   phase.value = 'playing';
   message.value = 'Equilibre a Pokébola. Inclinações rápidas fazem a espada perder o equilíbrio.';
+  sensorWaitTimer = window.setTimeout(() => {
+    if (phase.value === 'playing' && !feed.hasSamples) {
+      phase.value = 'idle';
+      message.value = 'O aparelho não enviou dados de orientação. Confira a permissão de movimento e tente novamente.';
+      stopLoop();
+    }
+  }, 2500);
   frame = requestAnimationFrame(tick);
 }
 
