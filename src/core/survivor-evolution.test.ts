@@ -22,3 +22,12 @@ describe('cadeia de evolução real (PokéAPI)', () => {
     expect(speciesName(99999)).toBe('');
   });
 });
+
+describe('stats reais (PokéAPI)', () => {
+  it('lê os 6 stats na ordem certa e não inventa quando falta', async () => {
+    const { statsOfDex } = await import('./survivor-stats');
+    expect(statsOfDex(25)).toEqual({ hp: 35, attack: 55, defense: 40, spAttack: 50, spDefense: 50, speed: 90 });
+    expect(statsOfDex(0)).toBeNull();
+    expect(statsOfDex(99999)).toBeNull();
+  });
+});

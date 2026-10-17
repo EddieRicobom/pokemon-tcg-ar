@@ -10,9 +10,17 @@ import {
   SURVIVOR_UPGRADES,
   xpForLevel,
 } from './survivor';
-import type { SurvivorState } from './survivor';
+import type { SurvivorEnemy, SurvivorState } from './survivor';
 import { seededRng } from './battle';
-import { moveForTypes } from './survivor-moves';
+import { attackProfile, moveFor } from './survivor-moves';
+import type { MoveCategory } from './survivor-moves';
+import type { PokemonType } from './pokemon-data';
+
+/** Golpe de um elemento numa forma escolhida (com os números de stats médios). */
+function as(type: PokemonType, category: MoveCategory) {
+  const move = { ...moveFor([type], null), category, estimated: false };
+  return { move, profile: attackProfile(move, null) };
+}
 
 /** Uma corrida sem nascimentos nem chefe, para testar o golpe num inimigo posto à mão. */
 function quiet(state: SurvivorState): SurvivorState {
@@ -20,7 +28,7 @@ function quiet(state: SurvivorState): SurvivorState {
   state.spawnAccumMs = -1e9;
   return state;
 }
-function dummy(id: number, x: number, y: number, hp = 1000) {
+function dummy(id: number, x: number, y: number, hp = 1000): SurvivorEnemy {
   return { id, kind: 0, boss: false, x, y, hp, maxHp: hp, speed: 0, damage: 0, radius: 13, hitFlashMs: 0 };
 }
 
@@ -222,7 +230,7 @@ describe('stepSurvivor', () => {
 
 describe('golpes por tipo', () => {
   it('aura (Veneno) acerta todos em volta, mesmo sem mirar, e queima', () => {
-    const s = quiet(createSurvivorState(1, { kindCount: 1, move: moveForTypes(['poison']) }));
+    const s = quiet(createSurvivorState(1, { kindCount: 1, ...as('poison', 'aura') }));
     s.enemies.push(dummy(1, s.player.x + 30, s.player.y), dummy(2, s.player.x - 30, s.player.y), dummy(3, s.player.x + 300, s.player.y));
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.enemies[0]!.hp).toBeLessThan(1000);
@@ -237,7 +245,7 @@ describe('golpes por tipo', () => {
   });
 
   it('área (Terra) explode no inimigo mais próximo, acerta quem está colado nele e atordoa', () => {
-    const s = quiet(createSurvivorState(1, { kindCount: 1, move: moveForTypes(['ground']) }));
+    const s = quiet(createSurvivorState(1, { kindCount: 1, ...as('ground', 'area') }));
     const near = dummy(1, s.player.x + 100, s.player.y);
     const glued = dummy(2, s.player.x + 120, s.player.y);
     const far = dummy(3, s.player.x - 160, s.player.y);
@@ -251,13 +259,13 @@ describe('golpes por tipo', () => {
   });
 
   it('área sem ninguém no alcance não gasta a recarga', () => {
-    const s = quiet(createSurvivorState(1, { kindCount: 1, move: moveForTypes(['normal']) }));
+    const s = quiet(createSurvivorState(1, { kindCount: 1, ...as('normal', 'area') }));
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.player.attackTimerMs).toBe(0);
   });
 
   it('projétil Elétrico salta para mais um inimigo com menos dano', () => {
-    const s = quiet(createSurvivorState(1, { kindCount: 1, move: moveForTypes(['electric']) }));
+    const s = quiet(createSurvivorState(1, { kindCount: 1, ...as('electric', 'projetil') }));
     s.player.attackCooldownMs = 1e9;
     const first = dummy(1, s.player.x + 60, s.player.y);
     const second = dummy(2, s.player.x + 60, s.player.y + 70);
@@ -268,13 +276,13 @@ describe('golpes por tipo', () => {
   });
 
   it('Gelo deixa lento e Água empurra', () => {
-    const ice = quiet(createSurvivorState(1, { kindCount: 1, move: moveForTypes(['ice']) }));
+    const ice = quiet(createSurvivorState(1, { kindCount: 1, ...as('ice', 'projetil') }));
     const slowed = dummy(1, ice.player.x + 50, ice.player.y);
     ice.enemies.push(slowed);
     for (let i = 0; i < 20; i++) stepSurvivor(ice, { dx: 0, dy: 0 }, 16);
     expect(slowed.slowMs).toBeGreaterThan(0);
 
-    const water = quiet(createSurvivorState(1, { kindCount: 1, move: moveForTypes(['water']) }));
+    const water = quiet(createSurvivorState(1, { kindCount: 1, ...as('water', 'projetil') }));
     const pushed = dummy(1, water.player.x + 50, water.player.y);
     water.enemies.push(pushed);
     for (let i = 0; i < 20; i++) stepSurvivor(water, { dx: 0, dy: 0 }, 16);
@@ -282,13 +290,13 @@ describe('golpes por tipo', () => {
   });
 
   it('os upgrades sorteados combinam com o golpe e falam dele', () => {
-    const aura = moveForTypes(['grass']);
+    const aura = as('grass', 'aura').move;
     for (let seed = 1; seed < 30; seed++) {
       const picks = rollUpgrades(seededRng(seed), 3, aura);
       for (const p of picks) expect(['multishot', 'pierce', 'range']).not.toContain(p.id);
     }
     const all = rollUpgrades(seededRng(3), 6, aura);
-    expect(all.find((p) => p.id === 'power')?.name).toBe('Folhas em círculo mais forte');
+    expect(all.find((p) => p.id === 'power')?.name).toBe('Folhas cortantes mais forte');
   });
 });
 
@@ -302,7 +310,7 @@ describe('evolução na corrida', () => {
   }
 
   it('a carta "Evoluir" aparece a partir do nível 8 e troca a espécie, com mais vida e golpe mais forte', () => {
-    const s = quiet(createSurvivorState(1, { kindCount: 1, move: moveForTypes(['fire']), dexId: 4, evolutions: chain }));
+    const s = quiet(createSurvivorState(1, { kindCount: 1, ...as('fire', 'projetil'), dexId: 4, evolutions: chain }));
     levelTo(s, 7);
     expect(s.pendingUpgrade!.some((o) => o.id.startsWith('evolve:'))).toBe(false);
     applyUpgrade(s, s.pendingUpgrade![0]!.id);

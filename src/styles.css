@@ -5164,7 +5164,14 @@ body.no-scroll .reward-toasts {
 
 .survivor-stats {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+}
+
+/* O golpe de quem joga, com a cor do elemento. */
+.survivor-stats .survivor-move-chip {
+  border-color: var(--move, rgba(255, 255, 255, 0.18));
+  box-shadow: inset 3px 0 0 var(--move, transparent);
 }
 
 .survivor-stats .chip {
@@ -5302,6 +5309,71 @@ body.no-scroll .reward-toasts {
 
 .survivor-upgrade-btn small {
   color: #555;
+}
+
+/* A carta de evolução se destaca das outras. */
+.survivor-upgrade-btn.evolve {
+  border: 1.5px solid #e8b923;
+  background: linear-gradient(135deg, #fff8d6, #f4f6ff);
+}
+
+.survivor-pick-move {
+  font-weight: 700;
+  border-bottom: 2px solid var(--move, transparent);
+}
+
+.survivor-pick-kind {
+  color: #4a5068;
+  font-size: 0.62rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.survivor-pick-bars {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 0 2px;
+}
+
+.survivor-pick-bar {
+  display: grid;
+  grid-template-columns: 3.6em 1fr;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.58rem;
+  color: #4a5068;
+}
+
+.survivor-pick-bar i {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(27, 32, 54, 0.12);
+  overflow: hidden;
+}
+
+.survivor-pick-bar b {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--move, #6c7bd9);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.survivor-evolving {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(10, 14, 24, 0.78);
+  border: 1px solid #e8b923;
+  color: #fff;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .survivor-summary-grid {

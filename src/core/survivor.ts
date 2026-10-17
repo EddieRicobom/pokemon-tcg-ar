@@ -1,7 +1,6 @@
 import { seededRng } from './battle';
 import type { Rng } from './battle';
-import { CATEGORY_BASE } from './survivor-moves';
-import type { MoveCategory, SurvivorMove } from './survivor-moves';
+import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
 
 /**
  * Motor puro do modo Sobrevivência (Zona de Sobrevivência, dentro da Vila): você anda pela arena, seu Pokémon ataca
@@ -11,8 +10,8 @@ import type { MoveCategory, SurvivorMove } from './survivor-moves';
  * ondas, chefes — com números e upgrades próprios, não um port do GDScript; nada do sistema de gacha, missões,
  * 130 conquistas ou fendas de lendários de lá está aqui. Só a lógica; desenho e sprites ficam em `village/`.
  *
- * Cada Pokémon ataca com o golpe do seu 1º tipo (`core/survivor-moves.ts`: projétil, aura ou área, com um efeito por
- * tipo), e a partir dos níveis `EVOLVE_LEVELS` a escolha de upgrade traz a carta "Evoluir" para a próxima forma real
+ * Cada Pokémon ataca com um golpe próprio (`core/survivor-moves.ts`): o elemento vem do 1º tipo e a forma (projétil,
+ * aura ou área) e os números vêm dos stats reais da espécie (`AttackProfile`), e a partir dos níveis `EVOLVE_LEVELS` a escolha de upgrade traz a carta "Evoluir" para a próxima forma real
  * (`core/survivor-evolution.ts`, resolvida por quem chama). A evolução só vale na corrida.
  *
  * Sem DOM: funciona em `happy-dom`/`vitest` (ver docs/TESTING.md) e é determinístico com `seededRng`.
@@ -34,6 +33,8 @@ export interface SurvivorPlayer {
   move: SurvivorMove;
   /** Aura: raio em volta do Pokémon. Área: raio da explosão. Projétil: não usa. */
   attackRadius: number;
+  /** Raio do disparo no desenho (a Defesa deixa maior). */
+  projectileSize: number;
   x: number;
   y: number;
   hp: number;
@@ -143,11 +144,15 @@ export interface SurvivorState {
   nextId: number;
   /** Próximas formas reais de uma espécie (ver `CreateSurvivorOptions.evolutions`). */
   evolutions: (dexId: number) => readonly SurvivorEvolutionOption[];
+  /** Números dos stats da espécie de agora (para a evolução recalcular pelos stats da próxima forma). */
+  profile: AttackProfile | null;
 }
 
 export interface SurvivorEvolutionOption {
   dexId: number;
   name: string;
+  /** Números pelos stats da próxima forma (mesma forma de golpe); sem isto, a evolução dá bônus fixos. */
+  profile?: AttackProfile;
 }
 
 export interface SurvivorInput {
@@ -264,8 +269,10 @@ export function xpForLevel(level: number): number {
 export interface CreateSurvivorOptions {
   /** Quantas espécies "comuns" o elenco desta corrida tem (o chefe usa o índice seguinte). Mínimo 1. */
   kindCount: number;
-  /** Golpe de quem joga (ver `moveForTypes`); padrão `BASIC_MOVE`. Os números base vêm da categoria. */
+  /** Golpe de quem joga (ver `moveFor`); padrão `BASIC_MOVE`. */
   move?: SurvivorMove;
+  /** Números pelos stats da espécie (ver `attackProfile`); sem isto, os números padrão do motor. */
+  profile?: AttackProfile;
   /** Espécie de quem joga (para a evolução). */
   dexId?: number;
   /**
@@ -278,25 +285,26 @@ export interface CreateSurvivorOptions {
 
 export function createSurvivorState(seed: number, options: CreateSurvivorOptions): SurvivorState {
   const move = options.move ?? BASIC_MOVE;
-  const base = CATEGORY_BASE[move.category];
+  const prof = options.profile;
   const player: SurvivorPlayer = {
     dexId: options.dexId ?? 0,
     stage: 0,
     move,
-    attackRadius: base.radius,
+    attackRadius: prof?.radius ?? 0,
+    projectileSize: prof?.projectileSize ?? 4,
     x: ARENA_W / 2,
     y: ARENA_H / 2,
-    hp: 100,
-    maxHp: 100,
-    speed: 150,
+    hp: prof?.maxHp ?? 100,
+    maxHp: prof?.maxHp ?? 100,
+    speed: prof?.walkSpeed ?? 150,
     level: 1,
     xp: 0,
     xpToNext: xpForLevel(1),
-    attackDamage: move.category === 'projetil' ? BALANCE.playerDamage : base.damage,
-    attackRange: move.category === 'projetil' ? 170 : base.range,
-    attackCooldownMs: move.category === 'projetil' ? BALANCE.playerCooldownMs : base.cooldownMs,
+    attackDamage: prof?.damage ?? BALANCE.playerDamage,
+    attackRange: prof?.range ?? 170,
+    attackCooldownMs: prof?.cooldownMs ?? BALANCE.playerCooldownMs,
     attackTimerMs: 0,
-    projectileSpeed: 360,
+    projectileSpeed: prof?.projectileSpeed ?? 360,
     pierce: 0,
     shots: 1,
     invulnMs: 0,
@@ -322,6 +330,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     upgradesOwed: 0,
     nextId: 1,
     evolutions: options.evolutions ?? (() => []),
+    profile: prof ?? null,
   };
 }
 
@@ -395,7 +404,7 @@ function evolutionOffer(state: SurvivorState): SurvivorUpgradeOption | null {
   const options = state.evolutions(p.dexId);
   if (options.length === 0) return null;
   const next = options[Math.floor(state.rng() * options.length)]!;
-  return { id: `${EVOLVE_PREFIX}${next.dexId}`, name: `Evoluir para ${next.name}`, description: '+30 de HP máximo (cura tudo), golpe 35% mais forte e maior. Só nesta corrida.' };
+  return { id: `${EVOLVE_PREFIX}${next.dexId}`, name: `Evoluir para ${next.name}`, description: 'Os números passam a ser os dos stats da nova forma, com +30 de HP (cura tudo) e golpe mais forte. Só nesta corrida.' };
 }
 
 function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
@@ -443,15 +452,34 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
   return events;
 }
 
+/**
+ * Evolui: com os stats das duas formas, cada número muda na proporção dos stats novos (os upgrades já pegos continuam
+ * valendo) e ainda ganha o bônus da evolução; sem stats, só os bônus fixos.
+ */
 function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void {
   const p = state.player;
+  const old = state.profile;
+  const now = next.profile;
+  const ratio = (a: number, b: number): number => (a > 0 && b > 0 ? b / a : 1);
   p.dexId = next.dexId;
   p.stage += 1;
-  p.maxHp += 30;
+  if (old && now) {
+    p.maxHp = Math.round(p.maxHp * ratio(old.maxHp, now.maxHp)) + 30;
+    p.attackDamage = round1(p.attackDamage * ratio(old.damage, now.damage) * 1.15);
+    p.attackCooldownMs = Math.max(120, Math.round(p.attackCooldownMs * ratio(old.cooldownMs, now.cooldownMs)));
+    p.attackRadius = round1(p.attackRadius * ratio(old.radius, now.radius) * 1.1);
+    p.attackRange = round1(p.attackRange * 1.1);
+    p.speed = round1(p.speed * ratio(old.walkSpeed, now.walkSpeed));
+    p.projectileSpeed = round1(p.projectileSpeed * ratio(old.projectileSpeed, now.projectileSpeed));
+    p.projectileSize = now.projectileSize;
+    state.profile = now;
+  } else {
+    p.maxHp += 30;
+    p.attackDamage = round1(p.attackDamage * 1.35);
+    p.attackRadius = round1(p.attackRadius * 1.15);
+    p.attackRange = round1(p.attackRange * 1.1);
+  }
   p.hp = p.maxHp;
-  p.attackDamage = round1(p.attackDamage * 1.35);
-  p.attackRadius = round1(p.attackRadius * 1.15);
-  p.attackRange = round1(p.attackRange * 1.1);
   state.fx.push({ kind: 'evolve', x: p.x, y: p.y, r: 60, color: '#ffffff', ageMs: 0, lifeMs: 900 });
 }
 
@@ -524,7 +552,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       lifeMs: 1600,
       hit: [],
       canChain: move.effect === 'saltar',
-      size: move.type === 'rock' ? 6 : 4,
+      size: p.projectileSize,
     });
   }
 }

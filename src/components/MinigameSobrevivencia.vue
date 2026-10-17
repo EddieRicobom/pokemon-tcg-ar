@@ -12,7 +12,12 @@ import {
   createSurvivorState,
   stepSurvivor,
 } from '../core/survivor';
-import type { SurvivorEnemy, SurvivorState, SurvivorSummary, SurvivorUpgradeOption } from '../core/survivor';
+import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorUpgradeOption } from '../core/survivor';
+import { attackProfile, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
+import type { AttackProfile, SurvivorMove } from '../core/survivor-moves';
+import { statsOfDex } from '../core/survivor-stats';
+import { nextEvolutions, speciesName } from '../core/survivor-evolution';
+import { typesOfDex } from '../core/species-filter';
 import type { DecodedGif } from '../core/gif';
 import { speciesTiles } from '../core/size-scale';
 import { contentBounds } from '../village/local-sprite';
@@ -20,8 +25,17 @@ import type { ContentBounds } from '../village/local-sprite';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
-  power: '💥', haste: '⏳', legs: '👟', vigor: '❤️', range: '📏', multishot: '🎯', pierce: '🏹', magnet: '🧲',
+  power: '💥', haste: '⏳', legs: '👟', vigor: '❤️', range: '📏', multishot: '🎯', pierce: '🏹', magnet: '🧲', radius: '⭕',
 };
+const upgradeIcon = (id: string): string => (id.startsWith('evolve:') ? '✨' : (UPGRADE_ICON[id] ?? '✨'));
+
+/** O golpe de uma espécie na Torre: elemento pelo 1º tipo, forma e números pelos stats reais (`core/survivor-moves.ts`). */
+function attackOf(dexId: number): { move: SurvivorMove; profile: AttackProfile } {
+  const stats = statsOfDex(dexId);
+  const move = moveFor(typesOfDex(dexId), stats);
+  return { move, profile: attackProfile(move, stats) };
+}
+const moveLine = (m: SurvivorMove): string => `${m.icon} ${m.name} · ${MOVE_CATEGORY_LABELS_PT[m.category]}`;
 
 /**
  * Zona de Sobrevivência: um modo próprio da Vila (como a Arena e a Pista de Pins), aberto pela Torre — não é um
@@ -136,6 +150,9 @@ function formatTime(ms: number): string {
 interface PickOption {
   dexId: number;
   name: string;
+  move: SurvivorMove;
+  /** Barras do golpe (dano, rapidez, alcance ou raio, vida) pelos stats. */
+  bars: { label: string; value: number }[];
   /** Retrato (data URL) pro cartão de escolha; null quando o pacote local não tem sprite pra essa espécie. */
   thumb: string | null;
 }
@@ -152,6 +169,29 @@ const summary = ref<SurvivorSummary | null>(null);
  * Pikachu de reserva sem tela de escolha, igual ao comportamento antigo). */
 const pickOptions = ref<PickOption[] | null>(null);
 const pickBusy = ref(false);
+/** Evoluindo: o jogo espera o sprite da nova forma carregar (com o brilho na tela) antes de continuar. */
+const evolving = ref<string | null>(null);
+/** Espécies que têm sprite no pacote local (`village-sprite-meta.json`): a carta "Evoluir" só oferece estas. */
+let spriteSpecies: Set<number> | null = null;
+async function loadSpriteSpecies(): Promise<Set<number>> {
+  if (spriteSpecies) return spriteSpecies;
+  const meta = (await fetch(assetUrl('data/village-sprite-meta.json')).then((r) => (r.ok ? r.json() : null)).catch(() => null)) as Record<string, { a?: Record<string, unknown> }> | null;
+  spriteSpecies = new Set(Object.entries(meta ?? {}).filter(([, v]) => !!v.a?.Walk).map(([k]) => Number(k)));
+  return spriteSpecies;
+}
+/**
+ * Próximas formas reais que a Torre consegue desenhar (sem sprite no pacote, a forma não é oferecida), com os números
+ * pelos stats da nova forma — a forma do golpe continua a mesma da corrida.
+ */
+function evolutionsFor(dexId: number): SurvivorEvolutionOption[] {
+  const move = state.value?.player.move;
+  return nextEvolutions(dexId)
+    .filter((id) => spriteSpecies?.has(id))
+    .map((id) => {
+      const stats = statsOfDex(id);
+      return { dexId: id, name: speciesName(id) || `Pokémon nº ${id}`, ...(move && stats ? { profile: attackProfile(move, stats) } : {}) };
+    });
+}
 
 let ctx: CanvasRenderingContext2D | null = null;
 let groundPattern: CanvasPattern | null = null;
@@ -242,6 +282,17 @@ function drawEnemy(e: SurvivorEnemy): void {
   const sprite = e.boss ? bossSprite : (kindSprites[e.kind] ?? null);
   // O chefe (Onix, 8,8 m) já sai no tamanho máximo pela altura real; o extra só destaca quem é o chefe.
   drawSprite(sprite, e.x, e.y, false, e.boss ? 1.2 : 1);
+  // Efeitos do golpe no inimigo: um pontinho colorido em cima (queimando, lento, atordoado).
+  const marks: string[] = [];
+  if (e.burnMs) marks.push(state.value?.player.move.color ?? '#ff7a2f');
+  if (e.slowMs) marks.push('#9fe8ff');
+  if (e.stunMs) marks.push('#ffe23d');
+  marks.forEach((color, i) => {
+    ctx!.fillStyle = color;
+    ctx!.beginPath();
+    ctx!.arc(e.x - (marks.length - 1) * 4 + i * 8, e.y - (e.boss ? 54 : 32), 3, 0, Math.PI * 2);
+    ctx!.fill();
+  });
   if (e.hitFlashMs > 0) {
     ctx.fillStyle = `rgba(255,255,255,${0.35 * (e.hitFlashMs / 90)})`;
     ctx.beginPath();
@@ -286,16 +337,74 @@ function draw(): void {
     ctx.fill();
   }
 
+  const move = s.player.move;
+  // Aura: o raio fica sempre marcado de leve em volta do Pokémon, para dar para ver até onde o golpe chega.
+  if (move.category === 'aura') {
+    ctx.save();
+    ctx.globalAlpha = 0.1;
+    ctx.fillStyle = move.color;
+    ctx.beginPath();
+    ctx.arc(s.player.x, s.player.y - 8, s.player.attackRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   for (const e of s.enemies) drawEnemy(e);
 
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
   if (!blink) drawSprite(playerSprite, s.player.x, s.player.y, s.player.facing < 0, 1);
 
-  ctx.fillStyle = '#fffbe0';
   for (const proj of s.projectiles) {
+    const r = proj.size ?? 4;
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = move.color;
     ctx.beginPath();
-    ctx.arc(proj.x, proj.y, 4, 0, Math.PI * 2);
+    ctx.arc(proj.x, proj.y, r * 2, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(proj.x, proj.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath();
+    ctx.arc(proj.x, proj.y, r * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Pulsos da aura, explosões da área e o brilho da evolução.
+  for (const f of s.fx) {
+    const t = clamp(f.ageMs / f.lifeMs, 0, 1);
+    ctx.save();
+    if (f.kind === 'pulse') {
+      ctx.globalAlpha = 0.55 * (1 - t);
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y - 8, f.r * (0.55 + 0.45 * t), 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (f.kind === 'blast') {
+      ctx.globalAlpha = 0.5 * (1 - t);
+      ctx.fillStyle = f.color;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r * (0.35 + 0.65 * t), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.8 * (1 - t);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else {
+      for (let k = 0; k < 3; k++) {
+        ctx.globalAlpha = 0.7 * (1 - t);
+        ctx.strokeStyle = k === 1 ? '#ffe066' : '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(s.player.x, s.player.y - 12, f.r * (0.2 + t) * (1 + k * 0.35), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -311,7 +420,7 @@ function loop(ts: number): void {
   if (document.hidden || !state.value) return;
   animMs += dt;
   const s = state.value;
-  if (!s.over && !s.pendingUpgrade) {
+  if (!s.over && !s.pendingUpgrade && !evolving.value) {
     const kx = (heldKeys.has('right') ? 1 : 0) - (heldKeys.has('left') ? 1 : 0);
     const ky = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
     const dx = kx + (joystick.active ? joystick.dx : 0);
@@ -330,8 +439,20 @@ function loop(ts: number): void {
 
 function chooseUpgrade(id: string): void {
   if (!state.value) return;
-  applyUpgrade(state.value, id);
+  const events = applyUpgrade(state.value, id);
   pendingUpgrade.value = null;
+  for (const ev of events) if (ev.type === 'evolve') void evolveTo(ev.dexId, ev.name);
+}
+
+/** Troca o sprite pela nova forma; o jogo espera (com o brilho) até carregar. Sem sprite, a forma neutra no lugar. */
+async function evolveTo(dexId: number, name: string): Promise<void> {
+  evolving.value = `${avatarName.value} evoluiu para ${name}!`;
+  const [sprite] = await Promise.all([loadSpriteOrNull(dexId), new Promise((r) => setTimeout(r, 900))]);
+  if (disposed) return;
+  playerSprite = sprite;
+  avatarName.value = name;
+  evolving.value = null;
+  lastTs = performance.now();
 }
 
 function leaveNow(): void {
@@ -360,13 +481,18 @@ async function rollPickOptions(): Promise<PickOption[]> {
         .catch(() => null),
     ),
   );
-  return chosen.map(([dexId, name], i) => ({ dexId, name, thumb: thumbs[i] ?? null }));
+  return chosen.map(([dexId, name], i) => {
+    const { move, profile } = attackOf(dexId);
+    return { dexId, name, move, bars: profileBars(move, profile), thumb: thumbs[i] ?? null };
+  });
 }
 
 async function beginRun(dexId: number, name: string): Promise<void> {
   pickBusy.value = true;
   try {
     avatarName.value = name;
+    evolving.value = null;
+    await loadSpriteSpecies();
     const [player, boss, ...kinds] = await Promise.all([
       loadSpriteOrNull(dexId),
       bossSprite ? Promise.resolve(bossSprite) : loadSpriteOrNull(BOSS_DEX_ID),
@@ -392,7 +518,8 @@ async function beginRun(dexId: number, name: string): Promise<void> {
     pickOptions.value = null;
     summary.value = null;
     pendingUpgrade.value = null;
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount });
+    const { move, profile } = attackOf(dexId);
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount, move, profile, dexId, evolutions: evolutionsFor });
     ready.value = true;
     lastTs = performance.now();
     if (!rafId) rafId = requestAnimationFrame(loop);
@@ -488,6 +615,7 @@ onBeforeUnmount(() => {
             <span>{{ avatarName }} · Nv {{ state.player.level }}</span>
           </div>
           <div class="survivor-stats">
+            <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
             <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
             <span class="chip">☠ {{ state.kills }}</span>
             <span class="chip">🌊 Onda {{ state.wave }}</span>
@@ -515,6 +643,12 @@ onBeforeUnmount(() => {
                 <img v-if="opt.thumb" :src="opt.thumb" :alt="opt.name" class="survivor-pick-thumb" />
                 <span v-else class="survivor-pick-thumb placeholder" aria-hidden="true">?</span>
                 <strong>{{ opt.name }}</strong>
+                <small class="survivor-pick-move" :style="{ '--move': opt.move.color }">{{ opt.move.icon }} {{ opt.move.name }}</small>
+                <small class="survivor-pick-kind">{{ MOVE_CATEGORY_LABELS_PT[opt.move.category] }} · {{ MOVE_EFFECT_LABELS_PT[opt.move.effect] }}</small>
+                <span class="survivor-pick-bars" :style="{ '--move': opt.move.color }">
+                  <span v-for="b in opt.bars" :key="b.label" class="survivor-pick-bar"><small>{{ b.label }}</small><i><b :style="{ width: Math.round(b.value * 100) + '%' }"></b></i></span>
+                </span>
+                <small v-if="opt.move.estimated" class="survivor-pick-kind">Sem stats desta espécie: números médios.</small>
               </button>
             </div>
             <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
@@ -524,12 +658,14 @@ onBeforeUnmount(() => {
         <div v-if="pendingUpgrade" class="survivor-overlay" role="dialog" aria-label="Escolha um upgrade">
           <div class="card survivor-upgrades">
             <h2>Subiu de nível!</h2>
-            <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" @click="chooseUpgrade(u.id)">
-              <span class="survivor-upgrade-icon" aria-hidden="true">{{ UPGRADE_ICON[u.id] ?? '✨' }}</span>
+            <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="{ evolve: u.id.startsWith('evolve:') }" @click="chooseUpgrade(u.id)">
+              <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u.id) }}</span>
               <span class="survivor-upgrade-text"><strong>{{ u.name }}</strong><small>{{ u.description }}</small></span>
             </button>
           </div>
         </div>
+
+        <p v-if="evolving" class="survivor-evolving" role="status">✨ {{ evolving }}</p>
 
         <div v-if="summary" class="survivor-overlay" role="dialog" aria-label="Fim da corrida">
           <div class="card survivor-summary">
@@ -540,6 +676,7 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
+            <p v-if="summary.stage > 0" class="note">Evoluiu {{ summary.stage === 1 ? 'uma vez' : `${summary.stage} vezes` }} nesta corrida (como {{ avatarName }}).</p>
             <button type="button" class="primary" @click="playAgain">Jogar de novo</button>
             <button type="button" class="link" @click="leaveNow">Voltar aos jogos</button>
           </div>
@@ -547,7 +684,7 @@ onBeforeUnmount(() => {
 
         <p v-if="!ready && !pickOptions" class="hint survivor-loading">Carregando a Zona de Sobrevivência…</p>
       </div>
-      <p class="note">Arraste em qualquer lugar da tela para andar (ou WASD/setas); seu Pokémon ataca sozinho quem chegar perto. Ondas cada vez maiores e um chefe de tempos em tempos. Chão e inimigos: créditos no rodapé do app.</p>
+      <p class="note">Arraste em qualquer lugar da tela para andar (ou WASD/setas); seu Pokémon ataca sozinho com o golpe do tipo dele (projétil, aura ou área) e, a partir do nível 8, pode evoluir na escolha de upgrade (só nesta corrida). Ondas cada vez maiores e um chefe de tempos em tempos. Chão e inimigos: créditos no rodapé do app.</p>
     </template>
   </div>
 </template>
