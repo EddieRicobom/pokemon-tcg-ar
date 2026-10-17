@@ -104,6 +104,11 @@ export function evaluate(before: PinWorld, after: PinWorld, me: Side = 1): numbe
       const slippery = clamp(1.1 - friction, -0.8, 0.8);
       score += (p.side === other ? 16 : -20) * slippery * risk;
     }
+    if (p.side === me && p.active?.kind === 'escudo') {
+      // O Escudo dura durante a resposta do jogador. A simulação não executa uma segunda
+      // jogada, então damos ao comportamento defensivo um valor proporcional ao perigo atual.
+      score += 24 + 36 * risk;
+    }
   }
   return score;
 }
@@ -126,8 +131,8 @@ export function candidatePlans(world: PinWorld, me: Side = 1): EnemyPlan[] {
   const plans: EnemyPlan[] = [];
   for (const pin of shooters) {
     const moveOptions: (number | null)[] = [null];
-    pin.moves.forEach((m, i) => {
-      if ((pin.cooldowns[i] ?? 0) === 0 && m.effect.kind !== 'escudo') moveOptions.push(i);
+    pin.moves.forEach((_m, i) => {
+      if ((pin.cooldowns[i] ?? 0) === 0) moveOptions.push(i);
     });
     for (const target of targets) {
       const cd = Math.hypot(target.x, target.y) || 1e-6;
