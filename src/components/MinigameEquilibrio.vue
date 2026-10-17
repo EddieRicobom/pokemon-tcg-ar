@@ -52,16 +52,17 @@ function tick(now: number): void {
     if (!base) base = sample.q.clone();
     const relative = base.clone().invert().multiply(sample.q);
     const up = new Vector3(0, 1, 0).applyQuaternion(relative);
-    const tx = Math.max(-1.5, Math.min(1.5, up.x * 2.2));
-    const ty = Math.max(-1.5, Math.min(1.5, up.z * 2.2));
+    // Aumenta a resposta: movimentos pequenos precisam ser corrigidos pelo jogador, como numa espada de verdade.
+    const tx = Math.max(-2.2, Math.min(2.2, up.x * 3.8));
+    const ty = Math.max(-2.2, Math.min(2.2, up.z * 3.8));
     tilt.value = { x: tx, y: ty };
-    velocity.x = (velocity.x + tx * 5 * dt) * Math.pow(0.18, dt);
-    velocity.y = (velocity.y + ty * 5 * dt) * Math.pow(0.18, dt);
+    velocity.x = (velocity.x + tx * 8.2 * dt) * Math.pow(0.32, dt);
+    velocity.y = (velocity.y + ty * 8.2 * dt) * Math.pow(0.32, dt);
     ball.value.x += velocity.x * dt;
     ball.value.y += velocity.y * dt;
   }
   const distance = Math.hypot(ball.value.x, ball.value.y);
-  if (distance > 2.05) finish('A Pokébola caiu da ponta!');
+  if (distance > 1.38) finish('A Pokébola caiu da ponta!');
   else frame = requestAnimationFrame(tick);
 }
 
