@@ -69,10 +69,22 @@ describe('App', () => {
     localStorage.removeItem('tcg-ar-trainer-v1');
     const text = await mount('#/treinador');
     expect(text).toContain('Missões de hoje');
-    expect(text).toContain('Conquistas');
     expect(text).toContain('Novato');
     expect(text).toContain('Sem sequência');
     expect(text).toContain('0 XP');
+    // Uma seção por vez: as conquistas ficam em "Coleção".
+    const sections = [...(host?.querySelectorAll('.trainer-sections button') ?? [])].map((b) => b.textContent?.trim());
+    expect(sections).toEqual(['Resumo', 'Liga', 'Jogos', 'Coleção', 'Dados']);
+    expect(host?.textContent).not.toContain('Conquistas');
+    [...host!.querySelectorAll<HTMLButtonElement>('.trainer-sections button')].find((b) => b.textContent?.includes('Coleção'))!.click();
+    await nextTick();
+    expect(host?.textContent).toContain('Conquistas');
+  });
+
+  it('o Treinador abre direto nos minigames com ?jogos=1', async () => {
+    const text = await mount('#/treinador?jogos=1');
+    expect(text).toContain('Como ganhar XP');
+    expect(text).not.toContain('Missões de hoje');
   });
 
   it('a tela Pins explica o jogo, a energia e pede cartas guardadas', async () => {
