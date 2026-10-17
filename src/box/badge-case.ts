@@ -14,7 +14,7 @@ import {
   NoToneMapping,
   Mesh,
   MeshStandardMaterial,
-  PCFSoftShadowMap,
+  PCFShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
   PMREMGenerator,
@@ -38,7 +38,7 @@ import { BADGE_DESIGNS, counterClockwise, polishLook, slotPosition } from '../co
 import type { BadgeDesign, Point } from '../core/badges';
 import { isResting, restingWobble, secondDerivative, shakeOffset, stepWobble } from '../core/badge-wobble';
 import type { Wobble } from '../core/badge-wobble';
-import { drawBadgeFace } from './badge-art';
+import { drawBadgeFace, drawBadgeMask } from './badge-art';
 
 /**
  * Maleta de insígnias em 3D: couro vermelho, cantos e fecho dourados, forro de veludo azul-marinho com 8 encaixes.
@@ -85,7 +85,8 @@ const LID_H = 0.14;
 const BADGE_R = 0.21;
 const CLEARANCE = 0.04;
 const OPEN_ANGLE = -1.9;
-const LINING_Y = BASE_H - 0.05;
+/** Altura do forro: um pouco acima do topo da base, para as superfícies não brigarem na profundidade. */
+const LINING_Y = BASE_H + 0.006;
 
 /** Aceleração (unidades/s²) para aceleração no encaixe (folgas/s²): ajustado a olho para o balanço parecer de metal leve. */
 const ACCEL_GAIN = 2.2;
@@ -212,7 +213,7 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
   const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'default' });
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = SRGBColorSpace;
-  renderer.shadowMap.type = PCFSoftShadowMap;
+  renderer.shadowMap.type = PCFShadowMap;
 
   const scene = new Scene();
   const camera = new PerspectiveCamera(34, 1, 0.1, 50);
@@ -257,7 +258,7 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
   shakeGroup.add(base);
   const lining = new Mesh(keep(new PlaneGeometry(W - 0.16, D - 0.16)), velvet);
   lining.rotation.x = -Math.PI / 2;
-  lining.position.y = LINING_Y + 0.05;
+  lining.position.y = LINING_Y;
   lining.receiveShadow = true;
   shakeGroup.add(lining);
 
@@ -284,12 +285,12 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
     const { x, z } = slotWorld(design.order);
     const rim = new Mesh(keep(new ShapeGeometry(shapeOf(design.outline, BADGE_R * 1.2))), rimMat);
     rim.rotation.x = -Math.PI / 2;
-    rim.position.set(x, LINING_Y + 0.054, z);
+    rim.position.set(x, LINING_Y + 0.005, z);
     rim.receiveShadow = true;
     shakeGroup.add(rim);
     const socket = new Mesh(keep(new ShapeGeometry(shapeOf(design.outline, BADGE_R * 1.1))), socketMat);
     socket.rotation.x = -Math.PI / 2;
-    socket.position.set(x, LINING_Y + 0.058, z);
+    socket.position.set(x, LINING_Y + 0.01, z);
     socket.receiveShadow = true;
     shakeGroup.add(socket);
   }
@@ -329,7 +330,14 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
     // As UVs da face são as coordenadas do desenho (-1 a 1): leva para 0 a 1.
     texture.repeat.set(0.5, 0.5);
     texture.offset.set(0.5, 0.5);
-    const face = keep(new MeshStandardMaterial({ map: texture, metalness: design.metal.metalness, roughness: design.metal.roughness }));
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = maskCanvas.height = 128;
+    drawBadgeMask(maskCanvas, design);
+    const mask = keep(new CanvasTexture(maskCanvas));
+    mask.wrapS = mask.wrapT = ClampToEdgeWrapping;
+    mask.repeat.set(0.5, 0.5);
+    mask.offset.set(0.5, 0.5);
+    const face = keep(new MeshStandardMaterial({ map: texture, metalnessMap: mask, roughnessMap: mask, metalness: design.metal.metalness, roughness: design.metal.roughness }));
     const side = keep(new MeshStandardMaterial({ color: new Color(design.metal.base), metalness: design.metal.metalness, roughness: design.metal.roughness }));
     if (design.translucent) {
       face.transparent = side.transparent = true;
@@ -343,7 +351,7 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
     mesh.userData.order = design.order;
     const group = new Group();
     const { x, z } = slotWorld(design.order);
-    group.position.set(x, LINING_Y + 0.07, z);
+    group.position.set(x, LINING_Y + 0.02, z);
     group.add(mesh);
     shakeGroup.add(group);
     const polish = options.polish(design.order);
@@ -380,8 +388,10 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
     renderer.toneMapping = fx ? ACESFilmicToneMapping : NoToneMapping;
     renderer.shadowMap.enabled = fx;
     key.castShadow = fx;
-    hemi.intensity = fx ? 0.5 : 1.3;
-    key.intensity = fx ? 2 : 2.4;
+    hemi.intensity = fx ? 0.45 : 1.3;
+    key.intensity = fx ? 1.7 : 2.4;
+    scene.environmentIntensity = 0.75;
+    renderer.toneMappingExposure = 0.9;
     sparks.visible = fx;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, fx ? 2 : 1.25));
     // Sem o reflexo do ambiente, metal puro fica preto: abaixa o metal para a cor aparecer.
@@ -408,7 +418,9 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
   nodes.forEach(refreshBadge);
 
   // Estado da maleta.
-  let yaw = -0.35;
+  const HOME_YAW = -0.12;
+  let yaw = HOME_YAW;
+  let homing = false;
   let pitch = 0;
   let yawVel = 0;
   let lidAngle = 0;
@@ -429,9 +441,9 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     // Em pé (celular), afasta a câmera para a maleta caber na largura.
-    const fit = Math.max(1, 1.15 / camera.aspect);
+    const fit = Math.max(1, 1.32 / camera.aspect);
     camera.position.set(0, 3.1 * fit, 2.9 * fit);
-    camera.lookAt(0, 0.1, 0.05);
+    camera.lookAt(0, 0.3, 0.05);
     camera.updateProjectionMatrix();
     dirty = true;
   }
@@ -464,8 +476,13 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
 
   function onDown(e: PointerEvent): void {
     if (drag) return;
-    canvas.setPointerCapture?.(e.pointerId);
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // Ponteiro que o navegador já soltou: segue sem captura.
+    }
     const hit = hitAt(e.clientX, e.clientY);
+    homing = false;
     drag = { id: e.pointerId, mode: hit ? 'polish' : 'turn', x: e.clientX, y: e.clientY, t: performance.now(), node: hit?.node ?? null, moved: 0 };
     if (hit) options.onFocus?.(hit.node.order);
     yawVel = 0;
@@ -527,6 +544,15 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
     last = now;
     time += dt;
 
+    if (homing && !drag) {
+      // O caminho mais curto até a frente.
+      const target = HOME_YAW + Math.round((yaw - HOME_YAW) / (Math.PI * 2)) * Math.PI * 2;
+      const k = Math.min(1, dt * 6);
+      yaw += (target - yaw) * k;
+      pitch += (0 - pitch) * k;
+      if (Math.abs(target - yaw) < 0.002 && Math.abs(pitch) < 0.002) homing = false;
+      dirty = true;
+    }
     // Inércia do giro depois de soltar.
     if (!drag && Math.abs(yawVel) > 0.01) {
       yaw += yawVel * dt;
@@ -633,8 +659,8 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
       dirty = true;
     },
     recenter() {
-      yaw = -0.35;
-      pitch = 0;
+      // Volta girando (um salto faria as insígnias baterem com força).
+      homing = true;
       yawVel = 0;
       dirty = true;
     },

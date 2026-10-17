@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { badgePolish, polishOf } from '../app/badge-polish-store';
 import { league, pendingChallenge } from '../app/league-store';
 import { routeHref } from '../app/route';
@@ -8,10 +8,10 @@ import type { Challenge } from '../core/league';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { BADGE_DESIGNS } from '../core/badges';
+import BadgeCaseView from './BadgeCaseView.vue';
 import BadgeIcon from './BadgeIcon.vue';
 
-// A maleta 3D (e o Three.js) só carrega quando o jogador abre.
-const BadgeCaseView = defineAsyncComponent(() => import('./BadgeCaseView.vue'));
+// A maleta 3D só carrega o Three.js quando o jogador abre (import dinâmico dentro de BadgeCaseView).
 const caseOpen = ref(false);
 
 const shortName = (name: string): string => name.replace(/^Insígnia /, '');

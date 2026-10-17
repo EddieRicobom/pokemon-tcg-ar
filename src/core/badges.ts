@@ -96,18 +96,33 @@ function clover(): Pick<BadgeDesign, 'outline' | 'layers'> {
   return { outline, layers: [{ points: leaves, fill: 'enamel' }, ...side, ...veins, { points: arc(0.13, 0, 0, 20), fill: 'metal' }, { points: arc(0.07, -0.18, 0.5, 12), fill: 'shine' }] };
 }
 
-// 2 · Maylene (lutador): punho fechado em cobre, dedos de esmalte vermelho.
+// 2 · Maylene (lutador): punho fechado em cobre, dedos de esmalte vermelho, polegar por cima e munhequeira.
 function fist(): Pick<BadgeDesign, 'outline' | 'layers'> {
-  const knuckles = (r: number, y: number, x0: number, w: number): Point[] =>
-    Array.from({ length: 4 }, (_, k) => arc(r, x0 - w * k - w / 2, y, 9, 0, Math.PI)).flat();
-  const outline: Point[] = [pt(-0.72, -0.72), pt(0.72, -0.72), pt(0.86, -0.3), pt(0.82, 0.24), ...knuckles(0.205, 0.26, 0.82, 0.41), pt(-0.86, -0.1)];
+  const R = 0.16;
+  const knuckles = (r: number): Point[] => Array.from({ length: 4 }, (_, k) => arc(r, 0.48 - 0.32 * k, 0.5, 9, 0, Math.PI)).flat();
+  const outline: Point[] = [
+    pt(0.42, -0.95), pt(0.42, -0.64), pt(0.62, -0.5), pt(0.72, -0.2), pt(0.7, 0.24), pt(0.64, 0.5),
+    ...knuckles(R),
+    pt(-0.7, 0.36), pt(-0.8, 0.02), pt(-0.76, -0.3), pt(-0.58, -0.54), pt(-0.42, -0.64), pt(-0.42, -0.95),
+  ];
   const fingers: BadgeLayer[] = Array.from({ length: 4 }, (_, k) => {
-    const cx = 0.82 - 0.41 * k - 0.205;
-    return { points: [pt(cx - 0.15, -0.02), pt(cx + 0.15, -0.02), ...arc(0.15, cx, 0.26, 9, 0, Math.PI)], fill: k % 2 ? 'enamel3' : 'enamel' };
+    const cx = 0.48 - 0.32 * k;
+    return { points: [pt(cx - 0.12, 0.04), pt(cx + 0.12, 0.04), ...arc(0.12, cx, 0.5, 9, 0, Math.PI)], fill: k % 2 ? 'enamel3' : 'enamel' };
   });
-  const thumb: Point[] = [pt(-0.66, -0.08), pt(0.3, -0.12), pt(0.44, -0.26), pt(0.3, -0.38), pt(-0.5, -0.36)];
-  const palm: Point[] = [pt(-0.6, -0.6), pt(0.62, -0.6), pt(0.7, -0.3), pt(-0.62, -0.26)];
-  return { outline, layers: [{ points: palm, fill: 'enamel2' }, ...fingers, { points: thumb, fill: 'enamel' }, { points: [pt(-0.6, -0.22), pt(0.32, -0.25)], fill: 'shine', line: 0.04 }] };
+  const back: Point[] = [pt(-0.6, -0.48), pt(0.56, -0.46), pt(0.62, -0.1), pt(-0.66, -0.12)];
+  const thumb: Point[] = [pt(-0.7, 0.06), pt(-0.5, 0.2), pt(0.18, 0.12), pt(0.34, 0.0), pt(0.22, -0.16), pt(-0.58, -0.22)];
+  const cuff: Point[] = [pt(-0.36, -0.62), pt(0.36, -0.62), pt(0.36, -0.9), pt(-0.36, -0.9)];
+  return {
+    outline,
+    layers: [
+      { points: back, fill: 'enamel2' },
+      ...fingers,
+      { points: thumb, fill: 'enamel' },
+      { points: [pt(-0.56, 0.08), pt(0.2, 0.04)], fill: 'shine', line: 0.035 },
+      { points: cuff, fill: 'dark' },
+      { points: [pt(-0.36, -0.76), pt(0.36, -0.76)], fill: 'metal', line: 0.06 },
+    ],
+  };
 }
 
 // 3 · Crasher Wake (água): gota de prata com esmalte azul e uma onda.

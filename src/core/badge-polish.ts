@@ -20,7 +20,7 @@ export const POLISH_FLOOR = 0.2;
 /** Quanto o brilho perde por dia sem polir. */
 export const POLISH_DECAY_PER_DAY = 0.02;
 /** Quanto uma esfregada do tamanho da insígnia inteira adiciona quando ela está fosca (rende menos perto do máximo). */
-export const POLISH_PER_SWIPE = 0.08;
+export const POLISH_PER_SWIPE = 0.04;
 
 const DAY = 86_400_000;
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));

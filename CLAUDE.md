@@ -36,7 +36,7 @@ O app roda em `https://<usuário>.github.io/pokemon-tcg-ar/`. O `vite.config.ts`
 ## Convenções de código
 
 - TypeScript estrito (`noUncheckedIndexedAccess` ligado). Lógica sem interface fica em `src/core/` e precisa de teste em `*.test.ts` ao lado.
-- Three.js, MindAR e TensorFlow.js só entram por `src/ar/` e `src/box/` (esta última por `start-box.ts`), sempre com `import()` dinâmico, para não pesar o carregamento inicial.
+- Three.js, MindAR e TensorFlow.js só entram por `src/ar/` e `src/box/` (esta última por `start-box.ts`, ou `badge-case.ts` na maleta de insígnias), sempre com `import()` dinâmico, para não pesar o carregamento inicial.
 - Mudou o formato do alvo de rastreamento ou a imagem usada para compilá-lo? Aumente `TARGET_VERSION` (`src/ar/target.ts`): alvos guardados com outra versão são recompilados.
 - Textos da interface e mensagens de erro em português do Brasil; identificadores de código em inglês.
 - WebGL e câmera não rodam no happy-dom: mantenha a lógica pura testável e deixe só a cola com o navegador fora dos testes unitários (veja `docs/TESTING.md`).

@@ -107,3 +107,30 @@ export function drawBadgeFace(canvas: HTMLCanvasElement, design: BadgeDesign, po
   }
   ctx.restore();
 }
+
+/**
+ * Máscara do material da face: verde = aspereza relativa, azul = metal. Metal (e traço escuro) fica metálico; esmalte
+ * é vidrado e não metálico, então a cor dele aparece mesmo com o reflexo do ambiente.
+ */
+export function drawBadgeMask(canvas: HTMLCanvasElement, design: BadgeDesign): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const size = canvas.width;
+  const metal = 'rgb(0,255,255)';
+  const enamel = design.translucent ? 'rgb(0,60,40)' : 'rgb(0,110,0)';
+  ctx.fillStyle = metal;
+  ctx.fillRect(0, 0, size, size);
+  for (const layer of design.layers) {
+    const style = layer.fill === 'metal' || layer.fill === 'dark' ? metal : enamel;
+    trace(ctx, layer.points, size, layer.line === undefined);
+    if (layer.line === undefined) {
+      ctx.fillStyle = style;
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = style;
+      ctx.lineWidth = (layer.line * size) / 2;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+  }
+}
