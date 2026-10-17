@@ -363,7 +363,6 @@ describe('moedas da Torre', () => {
 });
 
 describe('treinadores e chefão final', () => {
-  const quickKill = (state: ReturnType<typeof createSurvivorState>) => { for (const e of state.enemies) e.hp = 0; stepSurvivor(state, { dx: 0, dy: 0 }, 1); };
   it('aos 5 min aparece um treinador com 3 Pokémon elite, e aos 20 min o chefão com 6', () => {
     const s = createSurvivorState(42, { kindCount: 4 });
     const timeline: string[] = [];
@@ -379,9 +378,24 @@ describe('treinadores e chefão final', () => {
     for (const e of ev2) if (e.type === 'trainerSpawn') timeline.push(`t:${e.count}:${e.final}`);
     expect(timeline).toContain('t:6:true');
     expect(s.enemies.filter((e) => e.grade === 'chefao').length).toBe(6);
-    quickKill(s);
+    const after = (() => { for (const e of s.enemies) e.hp = 0; return stepSurvivor(s, { dx: 0, dy: 0 }, 1); })();
     expect(s.finalBossBeaten).toBe(true);
     expect(s.trainersBeaten).toBeGreaterThanOrEqual(1);
+    expect(s.bossesBeaten).toBeGreaterThanOrEqual(1);
+    // Modo normal: a corrida termina em vitória assim que o chefão final cai (abre o resumo, destrava o infinito).
+    expect(s.over).toBe(true);
+    const over = after.find((e) => e.type === 'gameover');
+    expect(over?.summary.finalBossBeaten).toBe(true);
+    expect(over?.summary.infinite).toBe(false);
+  });
+
+  it('modo infinito: derrotar o chefão não termina a corrida (segue até morrer)', () => {
+    const s = createSurvivorState(42, { kindCount: 4, infinite: true });
+    s.elapsedMs = 1_200_000 - 200;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 400);
+    for (const e of s.enemies) e.hp = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 1);
+    expect(s.over).toBe(false);
     expect(s.bossesBeaten).toBeGreaterThanOrEqual(1);
   });
 
