@@ -39,6 +39,25 @@ describe('layout da Vila: sem ilhas nem gargalos', () => {
     for (const y of [TOWN.gamesStreetY, TOWN.homesStreetY, TOWN.southStreetY]) expect(tileAt(map, cx - 3, y)).toBe('path');
   });
 
+  it('postes nunca encostam numa casa ou prédio, e entre duas casas vizinhas sempre dá para passar', () => {
+    for (const seed of SEEDS) {
+      const map = generateVillage(seed);
+      for (let y = 0; y < map.h; y++) {
+        for (let x = 0; x < map.w; x++) {
+          if (tileAt(map, x, y) !== 'lamp') continue;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) expect(tileAt(map, x + dx, y + dy), `poste ${x},${y}`).not.toBe('building');
+        }
+      }
+      const homes = map.buildings.filter((b) => b.kind === 'home');
+      for (const a of homes) {
+        const right = homes.find((b) => b.y === a.y && b.x > a.x + a.w && b.x - (a.x + a.w) <= 3);
+        if (!right) continue;
+        for (let x = a.x + a.w; x < right.x; x++) for (let y = a.y; y < a.y + a.h; y++) expect(isWalkable(map, x, y), `vão ${x},${y}`).toBe(true);
+        expect(right.x - (a.x + a.w)).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
   it('o terreno da sua casa fica inteiro (5×3) e dá acesso por fora', () => {
     const map = generateVillage(VILLAGE_SEED);
     const p = map.plot;

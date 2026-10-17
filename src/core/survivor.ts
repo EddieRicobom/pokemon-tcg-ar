@@ -170,6 +170,23 @@ export interface SurvivorSummary {
   wave: number;
 }
 
+/** Pontuação da corrida (0–100): tempo vivo, derrotas e nível. */
+export function survivorScore(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 'level'>): number {
+  return Math.max(0, Math.min(100, Math.round(s.survivedMs / 1000 + s.kills * 2 + s.level * 5)));
+}
+
+/** Uma corrida que só conta se você durou um pouco ou derrotou alguém (sair logo não vira fazenda de moedas). */
+export const SURVIVOR_MIN_MS = 20_000;
+
+/**
+ * Moedas da corrida (além das moedas do XP): metade da pontuação, de 5 a 50. Zero se você não derrotou ninguém e
+ * não durou `SURVIVOR_MIN_MS`.
+ */
+export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 'level'>): number {
+  if (s.kills === 0 && s.survivedMs < SURVIVOR_MIN_MS) return 0;
+  return Math.max(5, Math.round(survivorScore(s) / 2));
+}
+
 export type SurvivorEvent =
   | { type: 'levelup'; level: number }
   | { type: 'bossSpawn' }

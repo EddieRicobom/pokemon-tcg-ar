@@ -7,6 +7,8 @@ import {
   PLAYER_RADIUS,
   rollUpgrades,
   stepSurvivor,
+  survivorCoins,
+  survivorScore,
   SURVIVOR_UPGRADES,
   xpForLevel,
 } from './survivor';
@@ -347,5 +349,15 @@ describe('evolução na corrida', () => {
     levelTo(s, 3);
     applyUpgrade(s, 'evolve:5');
     expect(s.player.dexId).toBe(4);
+  });
+});
+
+describe('moedas da Torre', () => {
+  it('metade da pontuação, de 5 a 50; nada se saiu logo sem derrotar ninguém', () => {
+    expect(survivorCoins({ survivedMs: 5000, kills: 0, level: 1 })).toBe(0);
+    expect(survivorCoins({ survivedMs: 25_000, kills: 0, level: 1 })).toBe(15);
+    expect(survivorCoins({ survivedMs: 3000, kills: 1, level: 1 })).toBe(5);
+    expect(survivorCoins({ survivedMs: 600_000, kills: 400, level: 30 })).toBe(50);
+    expect(survivorScore({ survivedMs: 60_000, kills: 10, level: 4 })).toBe(100);
   });
 });

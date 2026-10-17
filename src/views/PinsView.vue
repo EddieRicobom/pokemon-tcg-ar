@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import { loadPinData, getCache } from '../app/services';
+import { digitalBoxRows } from '../app/digital-members';
+import { loadVillage } from '../app/village-store';
 import { defaultSetup, loadSetup, roleOf, saveSetup, setRole, setupBlocker } from '../app/pins-setup';
 import type { PinsSetup, Role } from '../app/pins-setup';
 import { routeFlags, routeHref } from '../app/route';
@@ -178,13 +180,17 @@ const fromVillage = routeFlags(window.location.hash).has('vila');
 onMounted(async () => {
   try {
     const cache = await getCache();
-    const list = (await cache.list()).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+    // Digital Pokémon também viram pins (dá para jogar sem nenhuma carta): os dados vêm da carta de origem
+    // (`loadPinData`) e a miniatura é o sprite público da espécie.
+    const digital = digitalBoxRows(loadVillage().digital) as unknown as CachedCard[];
+    const list = [...(await cache.list()), ...digital].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
     cards.value = list;
     const ok = list.filter((c) => c.sprite.state === 'ok' && c.dexIds.length > 0);
     setup.value = loadSetup(new Set(ok.map((c) => c.id)), ok);
     loadingCards.value = false;
     // Miniaturas dos primeiros da lista (o resto aparece só com o nome).
     const next: Record<string, string> = {};
+    for (const d of digital) next[d.id] = pokemonSpriteUrl(spriteIdOf(d) ?? d.dexIds[0]!);
     for (const card of ok.slice(0, 80)) {
       const blob = await cache.getAssetBlob(card, 'sprite').catch(() => null);
       if (blob) next[card.id] = URL.createObjectURL(blob);
@@ -1334,7 +1340,7 @@ function setMarks(on: boolean): void {
       <section v-if="mode === 'cpu' || peer" class="pn-card pn-pick">
         <h3>Escolha os pins</h3>
         <p v-if="loadingCards" class="message">Lendo as cartas guardadas…</p>
-        <p v-else-if="usable.length === 0" class="message">Nenhuma carta guardada com Pokémon ainda. <a :href="routeHref('escanear')">Escaneie uma carta</a> para ter pins.</p>
+        <p v-else-if="usable.length === 0" class="message">Nenhum Pokémon ainda. <a :href="routeHref('escanear')">Escaneie uma carta</a> ou ganhe um Digital Pokémon na Vila para ter pins.</p>
         <template v-else>
           <div class="pn-tools">
             <input v-model="search" type="text" placeholder="Buscar por nome ou coleção" aria-label="Buscar carta" autocomplete="off" />

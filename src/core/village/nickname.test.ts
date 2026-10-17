@@ -9,21 +9,15 @@ const withPoints = (s: ReturnType<typeof fresh>, id: string, points: number) => 
 };
 
 describe('apelidos', () => {
-  it('só quem chegou a Grande amigo (nível 3, 70 pontos) aceita apelido', () => {
-    expect(NICK_MIN_LEVEL).toBe(3);
+  it('qualquer Pokémon aceita apelido desde o primeiro dia, sem precisar de amizade', () => {
+    expect(NICK_MIN_LEVEL).toBe(0);
     const s = fresh();
-    for (const p of [0, 20, 45, 69]) {
-      withPoints(s, 'a', p);
-      expect(canNickname(s, 'a'), `${p} pontos`).toBe(false);
-      const r = setNickname(s, 'a', 'Chefe', 'Squirtle');
-      expect(r.ok).toBe(false);
-      expect(r.message).toContain('Grande amigo');
-      expect(s.nicks).toEqual({});
-    }
-    withPoints(s, 'a', 70);
+    withPoints(s, 'a', 0);
     expect(canNickname(s, 'a')).toBe(true);
     expect(setNickname(s, 'a', 'Chefe', 'Squirtle').ok).toBe(true);
     expect(nicknameOf(s, 'a')).toBe('Chefe');
+    // Um Pokémon que você nunca encontrou também (Digital Pokémon recém-invocado, por exemplo).
+    expect(setNickname(s, 'novo', 'Faísca', 'Pikachu').ok).toBe(true);
   });
 
   it('o nome na tela é o apelido, e sem apelido é o nome de verdade', () => {
