@@ -536,6 +536,14 @@ const bookTold = computed(() => {
 const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name, real: m.real, types: types.get(m.id) ?? [], thumb: m.thumb, accessory: state.wear.mons[m.id] ?? null })));
 const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state, id) > 0));
 
+const GUIDED_DESTINATIONS = [
+  { x: 47, y: 36, place: 'Fonte Central' },
+  { x: 81, y: 16, place: 'Lago Azul' },
+  { x: 10, y: 48, place: 'Parquinho' },
+  { x: 58, y: 38, place: 'Mercado da Praça' },
+] as const;
+let guidedTrip: { id: string; destination: typeof GUIDED_DESTINATIONS[number] } | null = null;
+
 // ---- controle
 // ---- Movimento: joystick na tela (toque/mouse) e teclado (setas/WASD, com diagonais segurando duas teclas).
 // Os dois viram o mesmo vetor e as mesmas direções (`core/village/joystick.ts`); a Vila anda em blocos.
@@ -819,6 +827,42 @@ function openRequestBoard(): void {
       { label: 'Sair', run: closeDialog },
     ],
   };
+}
+
+function finishGuidedTrip(): void {
+  const trip = guidedTrip;
+  guidedTrip = null;
+  if (!trip) return;
+  const f = friendOf(state, trip.id);
+  f.points = Math.min(100, f.points + 6);
+  const mon = mons.value.find((m) => m.id === trip.id);
+  const now = new Date();
+  state.diary = trimMoments([...state.diary, {
+    id: `passeio:${trip.id}:${now.getTime()}`,
+    t: now.getTime(), day: refreshDay(), hour: now.getHours(), tpl: 'passeio-guiado', kind: 'amizade', title: `Passeio até ${trip.destination.place}`, emoji: '🚶',
+    cast: [{ id: trip.id, name: mon?.name ?? nameOf(trip.id) }],
+    lines: [{ who: 0, text: `${mon?.name ?? nameOf(trip.id)} adorou conhecer ${trip.destination.place} com você.`, fx: 'heart' }],
+    result: ['+6 amizade'],
+  }]);
+  changed();
+  game?.bubble(trip.id, '💖');
+  say(`🚶 Passeio concluído! ${mon?.name ?? nameOf(trip.id)} ganhou +6 de amizade e o momento foi para o Diário.`);
+}
+
+function checkGuidedTrip(): void {
+  const trip = guidedTrip;
+  if (!trip || !game || game.walking) return;
+  const distance = Math.abs(game.player.x - trip.destination.x) + Math.abs(game.player.y - trip.destination.y);
+  if (distance <= 2) finishGuidedTrip();
+}
+
+function startGuidedTrip(id: string): void {
+  if (!game) return;
+  const destination = GUIDED_DESTINATIONS[(state.seed + id.length + refreshDay().length) % GUIDED_DESTINATIONS.length]!;
+  guidedTrip = { id, destination };
+  dialog.value = null;
+  game.walkTo(destination.x, destination.y);
+  say(`🚶 ${nameOf(id)} quer passear com você até ${destination.place}.`);
 }
 
 function closeVillageSheet(): void {
@@ -1203,6 +1247,7 @@ function persist(): boolean {
 }
 
 function onLeave(): void {
+  guidedTrip = null;
   settleScenes();
   state.lastSeen = Date.now();
   persist();
@@ -1430,6 +1475,7 @@ function openFriendDialog(id: string, text: string): void {
   const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: 'Presentear', run: () => { giftPick.value = true; } }];
   actions.push({ label: 'Acessório', run: () => { dialog.value = null; openDress(id); } });
   actions.push({ label: nicknameOf(state, id) ? 'Mudar o apelido' : 'Dar apelido', disabled: !canNickname(state, id), run: () => openNickname(id) });
+  actions.push({ label: '🚶 Passeio guiado', run: () => startGuidedTrip(id) });
   actions.push({ label: '📖 Ver no Livro', run: () => openBookFromDialog(id) });
   if (following) actions.push({ label: 'Pode passear', run: () => { state.follower = null; changed(); dialog.value = null; } });
   else if (canFollow(state, id)) actions.push({ label: 'Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
@@ -1596,7 +1642,7 @@ onMounted(async () => {
   if (!canvasEl.value || !wrapEl.value) return;
   game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas);
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
-  game.onStep = changed;
+  game.onStep = () => { changed(); checkGuidedTrip(); };
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).
   game.weatherMode = () => (visual.weather !== 'off' && effects().rain ? 'chuva' : visual.weather);
   game.lampStorm = () => effects().lampStorm;
