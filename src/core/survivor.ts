@@ -70,6 +70,8 @@ export interface SurvivorProjectile {
   damage: number;
   pierce: number;
   lifeMs: number;
+  /** Inimigos já atingidos por este projétil: atravessar não pode acertar o mesmo de novo a cada quadro. */
+  hit: number[];
 }
 
 export interface SurvivorOrb {
@@ -101,6 +103,8 @@ export interface SurvivorState {
   over: boolean;
   /** Não-nulo pausa o avanço (ver `stepSurvivor`): espera `applyUpgrade`. */
   pendingUpgrade: SurvivorUpgradeOption[] | null;
+  /** Níveis ganhos que ainda vão virar escolha de upgrade (subir 2 níveis de uma vez dá 2 escolhas, uma depois da outra). */
+  upgradesOwed: number;
   nextId: number;
 }
 
@@ -142,8 +146,38 @@ export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'magnet', name: 'Ímã de XP', description: '+30% no alcance para coletar orbes de XP.', apply: (p) => { p.pickupRadius = round1(p.pickupRadius * 1.3); } },
 ] as const;
 
+/**
+ * Números de dificuldade, ajustados com o robô de `scripts/survivor-sim.eval.ts` (200 corridas, upgrades ao acaso).
+ * Antes (2026-10-16): mediana de 74 s e 0% de chefes derrotados — o 1º chefe (60 s, 440 de HP) era uma parede.
+ * Ver o plano (Fase C) para os números depois do ajuste.
+ */
+export const BALANCE = {
+  xpBase: 14,
+  xpPerLevel: 9,
+  bossHpBase: 150,
+  bossHpPerWave: 45,
+  bossSpeed: 62,
+  bossDamageBase: 10,
+  bossDamagePerWave: 2,
+  enemyHpBase: 10,
+  /** Vida extra a cada `enemyHpEverySec` segundos de corrida. */
+  enemyHpStep: 3,
+  enemyHpEverySec: 30,
+  enemyHpPerWave: 2,
+  /** Intervalo entre nascimentos (ms) = início − porSegundo·t − porOnda·onda, nunca abaixo do piso. */
+  spawnStartMs: 1700,
+  spawnPerSecMs: 6,
+  spawnPerWaveMs: 20,
+  spawnFloorMs: 300,
+  playerDamage: 10,
+  playerCooldownMs: 600,
+  /** Primeiro chefe e intervalo entre os seguintes (ms). */
+  firstBossMs: 60_000,
+  bossEveryMs: 90_000,
+} as const;
+
 export function xpForLevel(level: number): number {
-  return Math.round(18 + level * 12);
+  return Math.round(BALANCE.xpBase + level * BALANCE.xpPerLevel);
 }
 
 export interface CreateSurvivorOptions {
@@ -162,9 +196,9 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     level: 1,
     xp: 0,
     xpToNext: xpForLevel(1),
-    attackDamage: 9,
+    attackDamage: BALANCE.playerDamage,
     attackRange: 170,
-    attackCooldownMs: 650,
+    attackCooldownMs: BALANCE.playerCooldownMs,
     attackTimerMs: 0,
     projectileSpeed: 360,
     pierce: 0,
@@ -184,10 +218,11 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     kills: 0,
     wave: 1,
     spawnAccumMs: 0,
-    nextBossAtMs: 60_000,
+    nextBossAtMs: BALANCE.firstBossMs,
     kindCount: Math.max(1, Math.floor(options.kindCount)),
     over: false,
     pendingUpgrade: null,
+    upgradesOwed: 0,
     nextId: 1,
   };
 }
@@ -195,7 +230,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
 /** Intervalo entre nascimentos (ms): começa folgado e aperta com o tempo e a onda, nunca abaixo do piso. */
 function spawnIntervalMs(state: SurvivorState): number {
   const t = state.elapsedMs / 1000;
-  return Math.max(220, 1400 - t * 9 - state.wave * 25);
+  return Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
 }
 
 function spawnPoint(rng: Rng): { x: number; y: number } {
@@ -216,16 +251,16 @@ function spawnEnemy(state: SurvivorState, boss: boolean): void {
       boss: true,
       x,
       y,
-      hp: 260 + state.wave * 60,
-      maxHp: 260 + state.wave * 60,
-      speed: 70,
-      damage: 16 + state.wave * 2,
+      hp: BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave,
+      maxHp: BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave,
+      speed: BALANCE.bossSpeed,
+      damage: BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave,
       radius: 28,
       hitFlashMs: 0,
     });
     return;
   }
-  const hp = 14 + Math.floor(t / 20) * 4 + state.wave * 2;
+  const hp = BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave;
   state.enemies.push({
     id: state.nextId++,
     kind: Math.floor(state.rng() * state.kindCount),
@@ -257,18 +292,28 @@ function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
     state.player.xp -= state.player.xpToNext;
     state.player.level += 1;
     state.player.xpToNext = xpForLevel(state.player.level);
+    state.upgradesOwed += 1;
     events.push({ type: 'levelup', level: state.player.level });
   }
-  if (events.some((e) => e.type === 'levelup')) {
-    state.pendingUpgrade = rollUpgrades(state.rng);
-  }
+  offerOwedUpgrade(state);
 }
 
-/** Aplica o upgrade escolhido e libera o jogo (ver `pendingUpgrade`). `id` fora do catálogo não faz nada. */
+/** Abre a próxima escolha de upgrade devida, se não houver uma aberta. */
+function offerOwedUpgrade(state: SurvivorState): void {
+  if (state.pendingUpgrade || state.upgradesOwed <= 0) return;
+  state.upgradesOwed -= 1;
+  state.pendingUpgrade = rollUpgrades(state.rng);
+}
+
+/**
+ * Aplica o upgrade escolhido e libera o jogo (ver `pendingUpgrade`). `id` fora do catálogo não faz nada. Se ainda
+ * houver níveis devidos (subiu mais de um de uma vez), a próxima escolha abre em seguida.
+ */
 export function applyUpgrade(state: SurvivorState, id: string): void {
   const upgrade = SURVIVOR_UPGRADES.find((u) => u.id === id);
   if (upgrade) upgrade.apply(state.player);
   state.pendingUpgrade = null;
+  offerOwedUpgrade(state);
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -306,7 +351,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     spawnEnemy(state, false);
   }
   if (state.elapsedMs >= state.nextBossAtMs) {
-    state.nextBossAtMs += 75_000;
+    state.nextBossAtMs += BALANCE.bossEveryMs;
     spawnEnemy(state, true);
     events.push({ type: 'bossSpawn' });
   }
@@ -352,6 +397,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           damage: p.attackDamage,
           pierce: p.pierce,
           lifeMs: 1600,
+          hit: [],
         });
       }
       p.attackTimerMs = p.attackCooldownMs;
@@ -366,9 +412,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (proj.lifeMs <= 0) return false;
     if (proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     for (const e of state.enemies) {
+      if (proj.hit.includes(e.id)) continue;
       if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + 5) {
         e.hp -= proj.damage;
         e.hitFlashMs = 90;
+        proj.hit.push(e.id);
         if (proj.pierce <= 0) return false;
         proj.pierce -= 1;
         break;

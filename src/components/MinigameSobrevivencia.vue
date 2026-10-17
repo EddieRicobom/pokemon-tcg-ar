@@ -142,6 +142,11 @@ let bossSprite: Sprite | null = null;
 let kindSprites: (Sprite | null)[] = [];
 let kindCount = WILD_DEX_IDS.length;
 let rafId = 0;
+/**
+ * A tela saiu (fechou a Torre). O carregamento da corrida espera sprites e o chão; se a pessoa sai no meio dele, nada
+ * pode recomeçar o laço depois (antes o `beginRun` terminava e ligava um requestAnimationFrame que nunca parava).
+ */
+let disposed = false;
 let lastTs = 0;
 let animMs = 0;
 const heldKeys = new Set<string>();
@@ -270,6 +275,10 @@ function draw(): void {
 }
 
 function loop(ts: number): void {
+  if (disposed) {
+    rafId = 0;
+    return;
+  }
   rafId = requestAnimationFrame(loop);
   const dt = Math.min(48, ts - lastTs || 16);
   lastTs = ts;
@@ -342,6 +351,7 @@ async function beginRun(dexId: number, name: string): Promise<void> {
     kindSprites = kinds;
     kindCount = WILD_DEX_IDS.length;
 
+    if (disposed) return;
     if (!groundPattern) {
       const groundImg = new Image();
       groundImg.src = assetUrl('tilesets/survivor-grass.png');
@@ -352,6 +362,7 @@ async function beginRun(dexId: number, name: string): Promise<void> {
       if (ctx && groundImg.naturalWidth > 0) groundPattern = ctx.createPattern(groundImg, 'repeat');
     }
 
+    if (disposed) return;
     pickOptions.value = null;
     summary.value = null;
     pendingUpgrade.value = null;
@@ -375,6 +386,7 @@ async function openPicker(): Promise<void> {
   ready.value = false;
   try {
     const options = await rollPickOptions();
+    if (disposed) return;
     if (options.length === 0) {
       // Caixa vazia: sem tela de escolha, igual ao comportamento de antes.
       await beginRun(25, 'Pikachu');
@@ -398,10 +410,26 @@ onMounted(() => {
   window.addEventListener('keyup', onKey);
   void openPicker();
 });
+/** Saiu do app (outra aba, tela apagada): ninguém fica andando sozinho com uma tecla "presa" ao voltar. */
+function onVisibility(): void {
+  if (document.hidden) {
+    heldKeys.clear();
+    joystick.active = false;
+    joystick.pointerId = null;
+    joystick.dx = 0;
+    joystick.dy = 0;
+  }
+}
+document.addEventListener('visibilitychange', onVisibility);
+
 onBeforeUnmount(() => {
+  disposed = true;
   cancelAnimationFrame(rafId);
+  rafId = 0;
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
+  document.removeEventListener('visibilitychange', onVisibility);
+  heldKeys.clear();
 });
 </script>
 
