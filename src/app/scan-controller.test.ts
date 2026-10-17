@@ -296,7 +296,7 @@ describe('ScanController (foto temporária)', () => {
   const det = { quad, areaFraction: 0.4, aspect: 0.7, fillRatio: 0.9, score: 1 };
   const features = { version: 1, fullHash: new Uint8Array(8), artHash: new Uint8Array(8), color: new Uint8Array(48) };
 
-  function photoSetup(results: RecognitionResult[], similarity: number[]) {
+  function photoSetup(results: RecognitionResult[], similarity: number[], photoMatches?: number) {
     const queue = [...results];
     const scores = [...similarity];
     const recognize = vi.fn(async () => queue.shift() ?? result({ status: 'not-found' }));
@@ -307,6 +307,7 @@ describe('ScanController (foto temporária)', () => {
       recognize,
       locate: () => ({ detection: det }),
       sameCard,
+      photoMatches,
       cache: base.cache,
       onState: (s) => base.states.push(s),
       sleep: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
@@ -356,10 +357,13 @@ describe('ScanController (foto temporária)', () => {
 
   it('cancelar descarta a foto', async () => {
     const medium = result({ status: 'identified', card: card('base1-58'), confidence: 0.85, margin: 0.12, features, quad });
-    const { controller } = photoSetup([medium], [0.3, 0.3, 0.3]);
+    // A foto continua valendo (mesma carta) e precisa de muitas confirmações: fica na tela até o cancelamento.
+    const { controller } = photoSetup([medium], [], 1_000_000);
     controller.start();
     await waitFor(() => controller.current.photo !== undefined);
+    expect(controller.current.photo).toBeDefined();
     controller.cancel();
     expect(controller.current.photo).toBeUndefined();
+    expect(controller.current.phase).toBe('idle');
   });
 });
