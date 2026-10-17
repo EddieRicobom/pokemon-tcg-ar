@@ -55,10 +55,10 @@ export const HOME_H = 2;
  */
 export const CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>; name: string; x: number; y: number; w: number; h: number; unlock: number }[] = [
   { kind: 'cafe', name: 'Café da Vila', x: 63, y: 22, w: 8, h: 2, unlock: 3 },
-  { kind: 'mail', name: 'Correio', x: 73, y: 22, w: 3, h: 2, unlock: 5 },
+  { kind: 'mail', name: 'Correio', x: 72, y: 22, w: 5, h: 2, unlock: 5 },
   { kind: 'museum', name: 'Museu', x: 51, y: 22, w: 10, h: 2, unlock: 8 },
   { kind: 'arcade', name: 'Fliperama', x: 26, y: 22, w: 5, h: 2, unlock: 2 },
-  { kind: 'pins', name: 'Pista de Pins', x: 33, y: 22, w: 3, h: 2, unlock: 4 },
+  { kind: 'pins', name: 'Pista de Pins', x: 32, y: 22, w: 5, h: 2, unlock: 4 },
   { kind: 'arena', name: 'Arena', x: 19, y: 22, w: 5, h: 2, unlock: 6 },
   // Modo próprio (como a Arena e a Pista de Pins), não um minigame do Fliperama: ver `core/survivor.ts`.
   { kind: 'torre', name: 'Torre de Sobrevivência', x: 12, y: 22, w: 5, h: 2, unlock: 7 },
@@ -102,7 +102,7 @@ export const DECOR: readonly Decor[] = [
   { kind: 'swing', x: 8, y: 44, w: 4, h: 1 },
   { kind: 'slide', x: 14, y: 44, w: 1, h: 1 },
   { kind: 'carousel', x: 8, y: 48, w: 3, h: 2 },
-  { kind: 'seesaw', x: 13, y: 49, w: 4, h: 1 },
+  { kind: 'seesaw', x: 15, y: 49, w: 4, h: 1 },
   { kind: 'gym', x: 9, y: 53, w: 3, h: 1 },
   { kind: 'tree-big', x: 18, y: 46, w: 1, h: 1 },
   { kind: 'tree-big', x: 17, y: 54, w: 1, h: 1 },
@@ -172,5 +172,8 @@ export function lampSpots(w: number, h: number): { x: number; y: number }[] {
   for (let x = 11; x < 78; x += 11) spots.push({ x, y: TOWN.gamesStreetY + 2 });
   for (const l of LOTS) spots.push({ x: l.x + HOME_W + 1, y: l.y + HOME_H + 2 });
   for (let y = 8; y < 66; y += 12) spots.push({ x: TOWN.avenueX - 1, y }, { x: TOWN.avenueX + 2, y: y + 6 });
-  return spots.filter((s) => s.x >= 3 && s.y >= 3 && s.x < w - 3 && s.y < h - 3);
+  // Nada de poste dentro do desenho de uma construção (o desenho sobe uns 9 blocos acima da base) nem colado nela.
+  const under = (s: { x: number; y: number }, b: { x: number; y: number; w: number; h: number }) => s.x >= b.x - 1 && s.x <= b.x + b.w && s.y >= b.y - 9 && s.y <= b.y + b.h;
+  const blocks = [...buildingsFor(w, h), TOWN.plot, TOWN.shop];
+  return spots.filter((s) => s.x >= 3 && s.y >= 3 && s.x < w - 3 && s.y < h - 3 && !blocks.some((b) => under(s, b)));
 }

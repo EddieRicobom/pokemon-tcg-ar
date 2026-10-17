@@ -57,7 +57,7 @@ export const ATLAS_SOURCES: readonly AtlasSource[] = [
   { id: 'wall', sheet: 'Daisy Route.png', x: 64, y: 432, w: 64, h: 16 },
   { id: 'board', sheet: 'Daisy Route.png', x: 0, y: 480, w: 48, h: 48 },
   // ---- praça e parque (os postes de luz continuam desenhados por código: nenhuma folha tem um poste de rua)
-  { id: 'swing', sheet: 'Daisy Route.png', x: 0, y: 626, w: 64, h: 46 },
+  { id: 'swing', sheet: 'Daisy Route.png', x: 0, y: 626, w: 64, h: 40, erase: [[12, 656, 40, 10]] },
   { id: 'gym', sheet: 'Daisy Route.png', x: 64, y: 626, w: 48, h: 34 },
   { id: 'slide', sheet: 'Daisy Route.png', x: 112, y: 626, w: 16, h: 30 },
   { id: 'carousel', sheet: 'Daisy Route.png', x: 0, y: 666, w: 48, h: 42 },
