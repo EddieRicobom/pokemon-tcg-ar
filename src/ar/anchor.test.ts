@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   cameraParamsFromProjection, cardHeightUnits, panelPlacement, cardSpaceMatrix, clampLayout, DEFAULT_LAYOUT, mindArPostMatrix, multiply,
-  frontReach, ILLUSTRATION_CENTER_Y, spriteCorners, spriteMatrix, transformPoint, cameraPositionInCardSpace, yawTowardCamera,
+  frontReach, ILLUSTRATION_CENTER_Y, speciesLayout, spriteCorners, spriteMatrix, transformPoint, cameraPositionInCardSpace, yawTowardCamera,
 } from './anchor';
 import type { SpriteLayout } from './anchor';
 
@@ -288,5 +288,25 @@ describe('inclinação para trás e ponto sobre a ilustração', () => {
     const turned = panelPlacement({ x: 0, y: 0, yawDeg: 90, heightRatio: 0.7, frontReach: 0.2 }, 0.75);
     const turnedBase = panelPlacement({ x: 0, y: 0, yawDeg: 90, heightRatio: 0.7 }, 0.75);
     expect(turned.x - turnedBase.x).toBeCloseTo(0.2, 9);
+  });
+});
+
+describe('tamanho pela altura real no AR da carta', () => {
+  it('escala pela espécie e desconta a margem do quadro', () => {
+    const l = { ...DEFAULT_LAYOUT, heightRatio: 0.7 };
+    expect(speciesLayout(l, 0.5, 1).heightRatio).toBeCloseTo(0.35, 6);
+    expect(speciesLayout(l, 1, 0.5).heightRatio).toBeCloseTo(1.4, 6);
+    expect(speciesLayout(l, 1, 0.01).heightRatio).toBeCloseTo(0.7 / 0.2, 6);
+  });
+
+  it('sem dado de altura ou com a opção desligada, fica como está', () => {
+    const l = { ...DEFAULT_LAYOUT, heightRatio: 0.7 };
+    expect(speciesLayout(l, undefined, 0.5)).toBe(l);
+    expect(speciesLayout({ ...l, realSize: false }, 2, 0.5).heightRatio).toBe(0.7);
+  });
+
+  it('clampLayout mantém a opção (ligada quando omitida)', () => {
+    expect(clampLayout(DEFAULT_LAYOUT).realSize).toBe(true);
+    expect(clampLayout({ ...DEFAULT_LAYOUT, realSize: false }).realSize).toBe(false);
   });
 });

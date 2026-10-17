@@ -38,3 +38,16 @@ export function speciesTiles(dexId: number | undefined): number | undefined {
   const h = speciesHeightM(dexId);
   return h === undefined ? undefined : tilesForHeight(h);
 }
+
+/** Altura real de referência para o tamanho relativo: um Pokémon de 1 m sai do tamanho base (o ajuste do jogador). */
+export const REFERENCE_HEIGHT_M = 1;
+
+/**
+ * Tamanho relativo da espécie, para cenas que não usam blocos da Vila (a Caixa em AR e o AR da carta): 1 para um
+ * Pokémon de 1 m, ~0,7 para um Pikachu, ~1,35 para um Snorlax. Mesma curva e mesmos limites de `tilesForHeight`.
+ * Undefined sem dado de altura (quem chama mantém o tamanho pelo desenho, como antes).
+ */
+export function speciesRelativeSize(dexId: number | undefined): number | undefined {
+  const tiles = speciesTiles(dexId);
+  return tiles === undefined ? undefined : tiles / tilesForHeight(REFERENCE_HEIGHT_M);
+}

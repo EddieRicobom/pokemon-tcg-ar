@@ -8,7 +8,9 @@ import type { DecodedGif } from '../core/gif';
 import { DEFAULT_SMOOTHING, isLinearSmoothing, normalizeSmoothing, upscaleSprite } from '../core/pixel-upscale';
 import type { SmoothingMode } from '../core/pixel-upscale';
 import type { RgbaImage } from '../recognition/types';
-import { clampLayout, DEFAULT_LAYOUT, frontReach, spriteMatrix, yawTowardCamera } from './anchor';
+import { clampLayout, DEFAULT_LAYOUT, frontReach, speciesLayout, spriteMatrix, yawTowardCamera } from './anchor';
+import { speciesRelativeSize } from '../core/size-scale';
+import { contentBounds } from '../village/local-sprite';
 import type { SpriteLayout, SpritePlacement } from './anchor';
 import { makePlaceholder } from './placeholder';
 import { ShinyAura } from './shiny-aura';
@@ -93,6 +95,10 @@ export class CardSprite {
   private texture: DataTexture | null = null;
   private aspect = 1;
   private layout: SpriteLayout = DEFAULT_LAYOUT;
+  /** Tamanho relativo da espécie (1 = Pokémon de 1 m); undefined sem dado de altura. */
+  private relativeSize: number | undefined;
+  /** Fração da altura do quadro ocupada pelo desenho (sem a margem transparente). */
+  private contentFrac = 1;
   private startedAt = 0;
   private shownFrame = -1;
   private glowBase = 0;
@@ -192,15 +198,27 @@ export class CardSprite {
     return this.layout;
   }
 
+  /** Espécie do Pokémon na carta: dá o tamanho pela altura real (ver `SpriteLayout.realSize`). */
+  setSpecies(dexId: number | undefined): void {
+    this.relativeSize = speciesRelativeSize(dexId);
+    this.applyLayout();
+  }
+
+  /** O layout com a altura que o sprite terá de fato (o marcador neutro não tem espécie: fica no tamanho base). */
+  private sized(): SpriteLayout {
+    return this.mode === 'placeholder' ? this.layout : speciesLayout(this.layout, this.relativeSize, this.contentFrac);
+  }
+
   /** Ponto do chão sob o centro da ilustração, giro total e tamanho (o painel de status se posiciona por aqui). */
   get placement(): SpritePlacement {
-    const yaw = this.layout.yawDeg + (this.layout.faceCamera === false ? 0 : this.autoYaw);
-    return { x: this.layout.offsetX, y: this.layout.offsetY, yawDeg: yaw, heightRatio: this.layout.heightRatio, frontReach: frontReach(this.layout) };
+    const layout = clampLayout(this.sized());
+    const yaw = layout.yawDeg + (layout.faceCamera === false ? 0 : this.autoYaw);
+    return { x: layout.offsetX, y: layout.offsetY, yawDeg: yaw, heightRatio: layout.heightRatio, frontReach: frontReach(layout) };
   }
 
   private applyLayout(): void {
     const extraYaw = this.layout.faceCamera === false ? 0 : this.autoYaw;
-    const m = spriteMatrix(this.layout, this.aspect, extraYaw);
+    const m = spriteMatrix(this.sized(), this.aspect, extraYaw);
     this.mesh.matrix.fromArray(m);
     this.mesh.matrixWorldNeedsUpdate = true;
     this.applyGround(m, extraYaw);
@@ -212,7 +230,7 @@ export class CardSprite {
     this.shadow.visible = on;
     this.glow.visible = on;
     if (!on) return;
-    const size = groundShadowSize(this.layout, this.aspect);
+    const size = groundShadowSize(clampLayout(this.sized()), this.aspect);
     const yaw = ((this.layout.yawDeg + extraYaw) * Math.PI) / 180;
     for (const quad of [this.shadow, this.glow]) {
       quad.position.set(spriteMat[12]!, spriteMat[13]!, quad === this.shadow ? GROUND_LIFT : GROUND_LIFT * 2);
@@ -258,6 +276,8 @@ export class CardSprite {
     this.clearFrameCache();
     this.shownFrame = 0;
     this.startedAt = nowMs;
+    const b = contentBounds(gif);
+    this.contentFrac = b.bottom - b.top;
     const frame = this.frameData(0, first.rgba, gif.width, gif.height);
     this.show(this.makeTexture(frame.width, frame.height, frame.data, isLinearSmoothing(this.smoothing)), frame.width, frame.height, 'animated');
   }
@@ -267,6 +287,8 @@ export class CardSprite {
     this.gif = null;
     this.staticImage = image;
     this.clearFrameCache();
+    const b = contentBounds({ width: image.width, height: image.height, frames: [{ rgba: image.data, delayMs: 0 }] });
+    this.contentFrac = b.bottom - b.top;
     const frame = this.frameData(0, image.data, image.width, image.height);
     const linear = isLinearSmoothing(this.smoothing) || Math.max(image.width, image.height) > 128;
     this.show(this.makeTexture(frame.width, frame.height, frame.data, linear), frame.width, frame.height, 'static');

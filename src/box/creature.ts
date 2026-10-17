@@ -11,6 +11,8 @@ import type { DecodedGif } from '../core/gif';
 import { DEFAULT_SMOOTHING, isLinearSmoothing, upscaleSprite } from '../core/pixel-upscale';
 import type { SmoothingMode } from '../core/pixel-upscale';
 import type { RgbaImage } from '../recognition/types';
+import { speciesRelativeSize } from '../core/size-scale';
+import { contentBounds } from '../village/local-sprite';
 import type { WanderState } from './wander';
 
 export interface CreatureInfo {
@@ -107,6 +109,32 @@ export function creatureHeightMeters(pixelHeight: number): number {
 }
 
 /**
+ * Na Caixa em AR, o desenho (sem a margem transparente) de um Pokémon de 1 m tem esta altura: Pikachu ≈ 0,18 m,
+ * Snorlax ≈ 0,35 m — próximos do tamanho antigo pelo desenho, mas agora comparáveis entre espécies.
+ */
+export const BOX_METERS_PER_RELATIVE = 0.26;
+/** A forma Mega cresce pela arte (desenho maior que o da forma base), até este fator. */
+export const MEGA_MAX_GROWTH = 1.5;
+
+/** Fração da altura do quadro ocupada pelo desenho, e a altura do desenho em pixels. */
+function measure(source: CreatureSource): { frac: number; px: number } {
+  const gif = source.kind === 'gif' ? source.gif : { width: source.image.width, height: source.image.height, frames: [{ rgba: source.image.data, delayMs: 0 }] };
+  const b = contentBounds(gif);
+  const frac = Math.max(0.2, b.bottom - b.top);
+  return { frac, px: frac * gif.height };
+}
+
+/**
+ * Altura do plano do Pokémon na Caixa: pela ALTURA REAL da espécie (`core/size-scale.ts`), com o desenho (sem a
+ * margem) do tamanho certo; sem dado de altura, pelo tamanho do desenho, como antes.
+ */
+export function creatureSizeFor(dexId: number | undefined, source: CreatureSource): number {
+  const rel = speciesRelativeSize(dexId);
+  if (rel === undefined) return creatureHeightMeters(source.kind === 'gif' ? source.gif.height : source.image.height);
+  return (BOX_METERS_PER_RELATIVE * rel) / measure(source).frac;
+}
+
+/**
  * Um Pokémon solto na caixa: plano em pé (sempre virado para a câmera, só girando em torno do eixo vertical),
  * sombra redonda no chão, GIF animado quadro a quadro e pulinho enquanto anda.
  */
@@ -129,6 +157,8 @@ export class BoxCreature {
   private readonly baseSource: CreatureSource;
   private megaActive = false;
   private swapped = false;
+  /** Altura do plano da forma base (a troca de forma volta para ela). */
+  private readonly baseHeight: number;
   private startedAt = 0;
   private shownFrame = -1;
   private flip = 1;
@@ -157,7 +187,8 @@ export class BoxCreature {
     this.lastRgba = first;
     this.texture = this.makeTexture(this.prepare(0, first));
 
-    this.height = creatureHeightMeters(height);
+    this.height = creatureSizeFor(info.dexId, source);
+    this.baseHeight = this.height;
     this.width = this.height * (width / height);
     const geometry = new PlaneGeometry(1, 1);
     geometry.translate(0, 0.5, 0); // origem nos pés
@@ -195,7 +226,7 @@ export class BoxCreature {
     this.mesh.material.map = this.texture;
     this.mesh.material.needsUpdate = true;
     old.dispose();
-    this.height = creatureHeightMeters(height);
+    this.height = this.formHeight(source);
     this.width = this.height * (width / height);
     this.startedAt = 0;
     this.shownFrame = -1;
@@ -203,6 +234,16 @@ export class BoxCreature {
     this.megaActive = mega && this.swapped;
     this.poke();
     if (this.megaActive) this.say('⚡', 1600);
+  }
+
+  /** Altura de outra forma: com dado de altura, a da base vezes o quanto o desenho cresceu (Mega maior, até 1,5×). */
+  private formHeight(source: CreatureSource): number {
+    if (source === this.baseSource) return this.baseHeight;
+    if (speciesRelativeSize(this.info.dexId) === undefined) return creatureHeightMeters(source.kind === 'gif' ? source.gif.height : source.image.height);
+    const base = measure(this.baseSource);
+    const next = measure(source);
+    const growth = Math.min(MEGA_MAX_GROWTH, Math.max(1, next.px / base.px));
+    return (this.baseHeight * base.frac * growth) / next.frac;
   }
 
   /** Volta ao sprite com que a carta nasceu (fim da batalha na forma Mega). */

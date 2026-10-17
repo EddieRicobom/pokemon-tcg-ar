@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { BoxCreature, creatureHeightMeters } from './creature';
+import { BoxCreature, creatureHeightMeters, creatureSizeFor, MEGA_MAX_GROWTH } from './creature';
 import type { CreatureSource } from './creature';
 import { createWander } from './wander';
 
@@ -67,7 +67,8 @@ describe('forma Mega na Caixa', () => {
     expect(c.isMegaForm).toBe(false);
     c.setForm(image(40, 90, [20, 200, 20, 255]));
     expect(c.isMegaForm).toBe(true);
-    expect(c.height).toBeCloseTo(creatureHeightMeters(90), 6);
+    // Gallade tem altura real: a Mega cresce pela arte (90 px contra 40 px), até 1,5×.
+    expect(c.height).toBeCloseTo(before.h * MEGA_MAX_GROWTH, 6);
     expect(c.width).toBeCloseTo(c.height * (40 / 90), 6);
     expect(c.height).toBeGreaterThan(before.h);
     tick(c);
@@ -105,6 +106,26 @@ describe('forma Mega na Caixa', () => {
     const c = make(image(32, 32));
     expect(() => c.setForm({ kind: 'gif', gif: { width: 8, height: 8, frames: [], totalMs: 0 } as never })).toThrow('Sprite sem quadros');
     expect(c.isMegaForm).toBe(false);
-    expect(c.height).toBeCloseTo(creatureHeightMeters(32), 6);
+    expect(c.height).toBeCloseTo(creatureSizeFor(475, image(32, 32)), 6);
+  });
+});
+
+describe('tamanho pela altura real na Caixa', () => {
+  it('Pokémon maior na vida real fica maior, mesmo com sprites do mesmo tamanho', () => {
+    const pikachu = make(image(40, 40), { dexId: 25 });
+    const snorlax = make(image(40, 40), { dexId: 143 });
+    expect(snorlax.height).toBeGreaterThan(pikachu.height * 1.6);
+  });
+
+  it('a margem transparente do quadro não muda o tamanho do desenho', () => {
+    const full = image(40, 40);
+    const padded = image(40, 80);
+    if (padded.kind === 'image') padded.image.data.fill(0, 0, 40 * 40 * 4); // metade de cima vazia
+    expect(creatureSizeFor(25, padded) * 0.5).toBeCloseTo(creatureSizeFor(25, full), 6);
+  });
+
+  it('sem dado de altura, segue pelo tamanho do desenho, como antes', () => {
+    expect(creatureSizeFor(undefined, image(40, 90))).toBeCloseTo(creatureHeightMeters(90), 6);
+    expect(creatureSizeFor(99999, image(40, 90))).toBeCloseTo(creatureHeightMeters(90), 6);
   });
 });
