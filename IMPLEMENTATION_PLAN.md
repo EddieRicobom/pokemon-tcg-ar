@@ -128,6 +128,12 @@ Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, cic
 - ✅ **Fonte diz quanto de energia falta** ("faltam 392 de energia") em vez de só ficar cinza — a invocação depois do primeiro funcionava (conferido: duas invocações seguidas com 1.100 de energia), mas parecia travada sem saldo.
 - ✅ **Invocação "qualquer um na sorte" por 700 moedas**: código pronto e testado (`summonWithCoins`, `pickAnySpecies`, 1–1025), **desligado** (`COIN_SUMMON_ENABLED = false`) até o dono pedir.
 
+## Em andamento e próximo (atualizado em 2026-10-16)
+
+- ▶️ **Agora**: Digital Pokémon nas batalhas da Caixa e na Box de "Minhas cartas", com um símbolo especial (pedido do dono). Hoje eles moram só na Vila e jogam só na Torre; a Box e a equipe da Caixa leem só o cache de cartas físicas. Precisam continuar bloqueados para scan/AR.
+- ⏭️ Depois, na ordem: os itens ⬜ abaixo, de cima para baixo (os que dependem de celular real ficam para quando o dono testar).
+- 🔽 **Prioridade mínima** (pedido do dono): centenas de momentos novos na Vila (`core/village/social.ts`, modelos de momento entre os Pokémon: amizade, drama, comédia, romance, festa, rivalidade, sozinho), sem repetir os existentes e respeitando o tom atual.
+
 ## Pendências (em ordem de trabalho)
 
 Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já estavam na lista.
@@ -159,7 +165,7 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
 14. ⬜ **Desempenho**: custo no celular dos chunks de TensorFlow.js (~1,1 MB) e Three.js (~0,5 MB); dividir `ScanView.vue` e `battle-director.ts`.
 15. ⬜ **Direção do RPG**: definir com o dono o que vem primeiro e reaproveitar `src/core/battle.ts`.
 16. ⬜ **PWA**: matriz de aparelhos (Chrome/Android e Safari/iOS), bateria, offline completo.
-17. ⬜ **Bônus dos lendários são só texto**: as cutscenes de Suicune ("a horta cresce mais rápido"), Zapdos ("as moedas rendem um pouco mais") e Celebi ("o Diário ganha uma página especial") prometem efeitos que nenhum código aplica (achado em 2026-10-16). Ou implementar, ou trocar o texto por algo que não prometa mecânica.
+17. ✅ **Lendários com efeitos de verdade** (antes as cutscenes só prometiam): Suicune — chuva fixa na Vila pelo resto do dia, horta precisando de 60% do tempo depois da rega e momentos entre os Pokémon com metade da frequência; Zapdos — moedas ganhas +25% por 3 horas (na carteira e na Vila) e postes piscando a noite toda; Celebi — página especial no Diário (guardada no Álbum) e animações dos Pokémon 30% mais rápidas no dia. Regras puras em `legendaryEffects`/`celebiDiaryPage` (`core/village/legendary.ts`), com testes; os textos das cutscenes passaram a dizer exatamente o que acontece. 🔶 Visto só por testes: um encontro tem 0,1% de chance por dia, então não foi visto na tela.
 18. ⬜ Em espera, por pedido do dono: vídeo game comprável na Vila (Duck Hunt) e Torre mais parecida com o poke-survivor original (missões, conquistas, fenda de lendário).
 
 ## Decisões em aberto

@@ -1,4 +1,5 @@
 import type { Rng } from '../battle';
+import type { Moment } from './social-state';
 
 /**
  * Encontros lendários raríssimos na Vila. Uma "oportunidade de sorteio" é a primeira vez que você abre a Vila em
@@ -39,8 +40,8 @@ export const LEGENDARIES: readonly LegendaryDef[] = [
       'Da direção do lago, uma silhueta azul atravessa a água sem fazer uma onda.',
       'Suicune te encara por um instante — e some na chuva que começa a cair.',
     ],
-    boon: 'Chuva calma cai sobre a Vila pelo resto do dia: a horta cresce mais rápido.',
-    consequence: 'Os Pokémon ficam mais quietos hoje, meio encantados — conversam menos que o normal.',
+    boon: 'Chuva calma cai sobre a Vila pelo resto do dia: a horta cresce mais rápido (cada estágio pede menos tempo depois da rega).',
+    consequence: 'Os Pokémon ficam mais quietos hoje, meio encantados — os momentos entre eles acontecem com metade da frequência.',
   },
   {
     id: 'zapdos',
@@ -53,8 +54,8 @@ export const LEGENDARIES: readonly LegendaryDef[] = [
       'Um raio corta o ar e, no clarão, uma ave elétrica gigante sobrevoa a praça.',
       'Zapdos solta um grito que ecoa — e desaparece entre relâmpagos.',
     ],
-    boon: 'O ar da Vila fica "carregado": as moedas rendem um pouco mais pelas próximas horas.',
-    consequence: 'As luzes da cidade piscam a noite toda — nada grave, só um susto a cada tanto.',
+    boon: 'O ar da Vila fica "carregado": por 3 horas, as moedas ganhas (conversas, jogos, XP) rendem 25% a mais.',
+    consequence: 'Os postes da cidade piscam a noite toda — nada grave, só um susto a cada tanto.',
   },
   {
     id: 'celebi',
@@ -68,7 +69,7 @@ export const LEGENDARIES: readonly LegendaryDef[] = [
       'Celebi aparece, observa a Vila crescer com curiosidade — e volta a sumir no tempo.',
     ],
     boon: 'Um lampejo do futuro: o Diário ganha uma página especial, só desse dia.',
-    consequence: 'Pelo resto do dia, o tempo na Vila parece "pular" — animações ficam um pouco mais rápidas.',
+    consequence: 'Pelo resto do dia, o tempo na Vila parece "pular" — as animações dos Pokémon ficam mais rápidas.',
   },
 ];
 
@@ -143,4 +144,74 @@ export function rollLegendary(s: LegendaryState, rng: Rng, day: string, now: str
 /** Fecha a cutscene ativa (o jogador já viu); o encontro já ficou registrado no histórico ao sortear. */
 export function dismissActive(s: LegendaryState): LegendaryState {
   return s.active ? { ...s, active: null } : s;
+}
+
+/**
+ * O que os encontros de verdade mudam na Vila (antes as cutscenes só PROMETIAM — nenhum código aplicava). Vale a
+ * partir do encontro registrado no histórico: Suicune e Celebi pelo resto daquele dia (do calendário do aparelho),
+ * o bônus de moedas de Zapdos por `ZAPDOS_BOOST_HOURS` horas e as luzes dele também naquele dia.
+ */
+export const SUICUNE_GROWTH_FACTOR = 0.6;
+export const SUICUNE_QUIET_FACTOR = 2;
+export const ZAPDOS_COIN_MULTIPLIER = 1.25;
+export const ZAPDOS_BOOST_HOURS = 3;
+export const CELEBI_ANIM_SPEED = 1.3;
+
+export interface LegendaryEffects {
+  /** Suicune: chuva fixa na Vila. */
+  rain: boolean;
+  /** Fração do tempo de rega que cada estágio da horta precisa (1 = normal). */
+  growthFactor: number;
+  /** Multiplicador do intervalo entre momentos dos Pokémon (1 = normal). */
+  quietFactor: number;
+  /** Multiplicador das moedas ganhas (1 = normal). */
+  coinMultiplier: number;
+  /** Zapdos: postes piscando à noite. */
+  lampStorm: boolean;
+  /** Velocidade das animações dos Pokémon (1 = normal). */
+  animSpeed: number;
+}
+
+export const NO_EFFECTS: LegendaryEffects = { rain: false, growthFactor: 1, quietFactor: 1, coinMultiplier: 1, lampStorm: false, animSpeed: 1 };
+
+/** `dayOf` diz o dia (AAAA-MM-DD, calendário do aparelho) de um instante — injetado para os testes não dependerem do fuso. */
+export function legendaryEffects(s: LegendaryState, nowMs: number, today: string, dayOf: (ms: number) => string): LegendaryEffects {
+  const out: LegendaryEffects = { ...NO_EFFECTS };
+  for (const e of s.history) {
+    const at = Date.parse(e.at);
+    if (!Number.isFinite(at) || at > nowMs) continue;
+    const sameDay = dayOf(at) === today;
+    if (e.id === 'suicune' && sameDay) {
+      out.rain = true;
+      out.growthFactor = SUICUNE_GROWTH_FACTOR;
+      out.quietFactor = SUICUNE_QUIET_FACTOR;
+    } else if (e.id === 'zapdos') {
+      if (nowMs - at < ZAPDOS_BOOST_HOURS * 3_600_000) out.coinMultiplier = ZAPDOS_COIN_MULTIPLIER;
+      if (sameDay) out.lampStorm = true;
+    } else if (e.id === 'celebi' && sameDay) {
+      out.animSpeed = CELEBI_ANIM_SPEED;
+    }
+  }
+  return out;
+}
+
+/** A página especial que Celebi deixa no Diário (um momento só daquele dia, guardado no Álbum). */
+export function celebiDiaryPage(atMs: number, day: string, hour: number): Moment {
+  return {
+    id: `celebi-${atMs.toString(36)}`,
+    t: atMs,
+    day,
+    hour,
+    tpl: 'lendario-celebi',
+    kind: 'solo',
+    title: 'Uma página do futuro',
+    emoji: '🍃',
+    cast: [{ id: 'lendario-celebi', name: 'Celebi' }],
+    lines: [
+      { who: 0, text: 'Uma folha verde caiu no Diário e, por um segundo, a página mostrou a Vila maior, cheia de luzes.' },
+      { who: 0, text: 'Quando você piscou, o desenho já tinha virado só uma folha seca, marcando esta data.' },
+    ],
+    result: ['página especial de Celebi'],
+    fav: true,
+  };
 }

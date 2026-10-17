@@ -1,6 +1,8 @@
 import { ref } from 'vue';
 import { loadVillage, saveVillage } from './village-store';
 import type { VillageState } from '../core/village/life';
+import { dayKey } from '../core/trainer';
+import { legendaryEffects } from '../core/village/legendary';
 
 /**
  * Moedas: o saldo ÚNICO do app (pedido do dono, 2026-10-16). Antes eram três — moedas da Vila, energia do Treinador
@@ -66,12 +68,18 @@ export function withVillage(fn: (state: VillageState) => boolean): boolean {
 
 const MAX_COINS = 999999;
 
-/** Ganha moedas (valor inteiro positivo). Devolve quantas entraram. */
+/** Multiplicador de moedas agora (Zapdos: +25% por 3 horas depois do encontro). */
+export function coinMultiplierNow(state: VillageState, nowMs = Date.now()): number {
+  return legendaryEffects(state.legendary, nowMs, dayKey(new Date(nowMs)), (ms) => dayKey(new Date(ms))).coinMultiplier;
+}
+
+/** Ganha moedas (valor inteiro positivo; o bônus de Zapdos, se ativo, entra aqui). Devolve quantas entraram. */
 export function addCoins(amount: number): number {
-  const n = Math.max(0, Math.floor(amount));
-  if (n === 0) return 0;
+  const base = Math.max(0, Math.floor(amount));
+  if (base === 0) return 0;
   let added = 0;
   withVillage((state) => {
+    const n = Math.round(base * coinMultiplierNow(state));
     const next = Math.min(MAX_COINS, state.coins + n);
     added = next - state.coins;
     state.coins = next;

@@ -55,4 +55,15 @@ describe('carteira (saldo único de moedas)', () => {
     expect(addCoins(0.4)).toBe(0);
     expect(loadVillage().coins).toBe(100);
   });
+
+  it('Zapdos: logo depois do encontro as moedas rendem 25% a mais; 3 horas depois, normal', () => {
+    const v = loadVillage();
+    v.legendary = { ...v.legendary, history: [{ id: 'zapdos', at: new Date(Date.now() - 60_000).toISOString() }] };
+    saveVillage(v);
+    expect(addCoins(100)).toBe(125);
+    const later = loadVillage();
+    later.legendary = { ...later.legendary, history: [{ id: 'zapdos', at: new Date(Date.now() - 4 * 3_600_000).toISOString() }] };
+    saveVillage(later);
+    expect(addCoins(100)).toBe(100);
+  });
 });

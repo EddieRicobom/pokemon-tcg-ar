@@ -237,6 +237,10 @@ export class VillageGame {
   onStep: (() => void) | null = null;
   /** Modo do clima (vem das opções visuais): 'off' desliga, 'ciclo' alterna, ou um clima fixo. */
   weatherMode: () => WeatherMode = () => 'ciclo';
+  /** Zapdos: postes piscando forte à noite (ver `legendaryEffects`). */
+  lampStorm: () => boolean = () => false;
+  /** Celebi: velocidade das animações dos Pokémon (1 = normal). */
+  animSpeed: () => number = () => 1;
   /** Acabamento metálico dos Digital Pokémon (vem das opções visuais; desligado = sprite normal). */
   metallic: () => boolean = () => true;
   /** Canvas de trabalho do brilho (um só, reaproveitado: o brilho é desenhado na hora, quadro a quadro). */
@@ -1082,7 +1086,7 @@ export class VillageGame {
           const metal = sprite.digital && this.metallic() ? this.metalOf(sprite) : null;
           const dirSet = (metal ? metal.dirFrames : sprite.dirFrames)?.[w.dir];
           const activeFrames = dirSet ?? (metal ? metal.frames : sprite.frames);
-          const frame = activeFrames[frameIndexAt(sprite.gif, now)] ?? activeFrames[0]!;
+          const frame = activeFrames[frameIndexAt(sprite.gif, now * this.animSpeed())] ?? activeFrames[0]!;
           // `h`/`wpx` são o tamanho do BICHO (sem a margem transparente); o quadro inteiro (`fullH`/`fullW`) é
           // desenhado maior na mesma proporção, pra caber a margem — e posicionado (`frameLeft`/`frameTop`) de
           // forma que os pixels opacos (não o quadro inteiro) fiquem centrados no bloco e com o pé no chão.
@@ -1303,7 +1307,11 @@ export class VillageGame {
         ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
       };
       for (const l of lamps) {
-        const flicker = l.big ? 0.85 + Math.sin(now / 120 + l.x) * 0.15 : 1;
+        const storm = this.lampStorm();
+        // Zapdos: todos os postes piscam de verdade (quedas curtas e irregulares), não só o balanço suave dos grandes.
+        const flicker = storm
+          ? (Math.sin(now / 37 + l.x * 7) > 0.82 || Math.sin(now / 173 + l.y * 3) > 0.9 ? 0.15 : 1)
+          : l.big ? 0.85 + Math.sin(now / 120 + l.x) * 0.15 : 1;
         glow(sx(l.x + 0.5), sy(l.y + 0.2), (l.big ? 3.4 : 2.5) * T, '255,214,120', light.dark * 0.7 * flicker);
       }
       // Janelas acesas da casa e a luz da loja.
