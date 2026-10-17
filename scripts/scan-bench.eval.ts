@@ -19,6 +19,8 @@ import { rectify } from '../src/recognition/homography';
 import { ocrParams, prepareForOcr } from '../src/recognition/ocr';
 import type { OcrEngine, OcrRegion } from '../src/recognition/ocr';
 import { RecognitionPipeline } from '../src/recognition/pipeline';
+import { sameCardScore } from '../src/recognition/snapshot';
+import { TemporalAggregator } from '../src/recognition/temporal';
 import { TcgdexClient } from '../src/recognition/tcgdex';
 import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from '../src/recognition/types';
 import type { Quad, RgbaImage } from '../src/recognition/types';
@@ -64,7 +66,7 @@ async function realOcr(): Promise<{ engine: OcrEngine; passes: Record<OcrRegion,
   return { engine, passes, ms, stop: async () => void (await worker.terminate()) };
 }
 
-async function bench(label: string, movingShifts: number[]): Promise<void> {
+async function bench(label: string, movingShifts: number[], twoReads = false): Promise<void> {
   {
     const stable = await load(0);
     const moving = await Promise.all(movingShifts.map((dx) => load(dx)));
@@ -110,6 +112,10 @@ async function bench(label: string, movingShifts: number[]): Promise<void> {
       recognize: (frame: RgbaImage, options?: object) => (pipeline.recognize as (f: RgbaImage, o?: object) => ReturnType<RecognitionPipeline['recognize']>)(frame, options),
       // Só a versão nova usa isto (a antiga ignora): detecção leve em todo quadro.
       locate: (frame: RgbaImage) => ({ detection: detectCard(frame) }),
+      // Só a versão com foto temporária usa isto (as anteriores ignoram).
+      sameCard: sameCardScore,
+      // "Exige 2 leituras": desliga a confirmação instantânea (caso comum de confiança média).
+      ...(twoReads ? { temporal: new TemporalAggregator({ instantConfidence: 1.01 }) } : {}),
       cache: {
         scanCard: async (input: { card: { id: string } }) => ({ saved: true as const, result: { id: input.card.id, status: 'completo' as const, card: { id: input.card.id, name: 'x' } as never } }),
         prepareCard: async () => { throw new Error('não usado'); },
@@ -144,4 +150,5 @@ async function bench(label: string, movingShifts: number[]): Promise<void> {
 describe('bancada do scanner', () => {
   it('foto real: carta mexendo 3 quadros e depois parada', () => bench('mexendo', [60, 30, 12]), 180_000);
   it('foto real: carta já parada desde o 1º quadro', () => bench('parada', []), 180_000);
+  it('foto real: parada, confiança média (exige confirmação em 2 quadros)', () => bench('duas-leituras', [], true), 180_000);
 });
