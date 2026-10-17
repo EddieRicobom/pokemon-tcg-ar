@@ -132,7 +132,7 @@ function cancelImport(): void {
         <p class="trainer-xp"><span class="bolt" aria-hidden="true"></span>{{ coins }} moedas · <a :href="routeHref('pins')">use no Pin Mode</a>, na Fonte da Vila e na loja</p>
         <p class="trainer-xp trainer-town">
           Cidade da Vila: {{ town.stage.name }} ({{ town.lots }} de {{ LOTS.length }} terrenos liberados)<template v-if="town.next">; no nível {{ town.next.level }} chega {{ town.next.text }}</template>.
-          <a :href="routeHref('caixa', undefined, ['vila'])">Visitar a Vila</a>
+          <a :href="routeHref('vila')">Visitar a Vila</a>
         </p>
         <p class="streak" :class="streak.state">
           <span class="flame" aria-hidden="true"></span>

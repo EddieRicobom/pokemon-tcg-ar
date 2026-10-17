@@ -24,6 +24,12 @@ describe('rotas por hash', () => {
     expect(parseRoute(routeHref('escanear', 'swsh12tg-TG05'))).toEqual({ name: 'escanear', cardId: 'swsh12tg-TG05' });
   });
 
+  it('a Vila tem rota própria', () => {
+    expect(parseRoute('#/vila')).toEqual({ name: 'vila' });
+    expect(routeHref('vila')).toBe('#/vila');
+    expect(routeFlags('#/caixa?batalha=1').has('batalha')).toBe(true);
+  });
+
   it('ignora parâmetros depois de ?', () => {
     expect(parseRoute('#/carregar?x=1')).toEqual({ name: 'carregar' });
   });

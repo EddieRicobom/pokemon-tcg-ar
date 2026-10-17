@@ -55,7 +55,8 @@ import QuizDialog from './QuizDialog.vue';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
 /** `close` sai da Vila; com `'pvp'` a Caixa abre o PvP em seguida (a Vila mora dentro da Caixa, então não há troca de tela). */
-const emit = defineEmits<{ close: [then?: 'pvp' | 'batalha'] }>();
+/** `then`: para onde ir ao sair (Caixa com PvP, batalha na câmera ou desafio da Liga); sem nada, volta à tela anterior. */
+const emit = defineEmits<{ close: [then?: 'pvp' | 'batalha' | 'caixa'] }>();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const wrapEl = ref<HTMLElement | null>(null);
@@ -69,8 +70,47 @@ pruneHarvest(state, day.value);
 
 type Sheet = null | 'menu' | 'build' | 'shop' | 'dress' | 'arcade' | 'arena' | 'torre';
 const sheet = ref<Sheet>(null);
-type Tab = 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
-const tab = ref<Tab>('mochila');
+type Tab = 'inicio' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
+const tab = ref<Tab>('inicio');
+
+/**
+ * Menu da Vila (o B): uma página inicial com blocos grandes, em grupos, em vez de 8 abas apertadas — e com os
+ * caminhos para o resto do app (a Vila é o centro). Cada bloco abre a seção de sempre, com "← Menu" para voltar.
+ */
+interface MenuTile { tab?: Tab; href?: string; icon: string; label: string; hint?: string }
+const MENU_TITLES: Record<Tab, string> = {
+  inicio: 'Menu da Vila', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário',
+  album: 'Álbum', colecao: 'Coleção', livro: 'Livro dos Pokémon', visual: 'Visual',
+};
+const menuGroups = computed<{ title: string; tiles: MenuTile[] }[]>(() => [
+  {
+    title: 'Itens',
+    tiles: [
+      { tab: 'mochila', icon: '🎒', label: 'Mochila', hint: inventory.value.length > 0 ? `${inventory.value.length} tipo(s)` : 'vazia' },
+      { tab: 'fabricar', icon: '🔨', label: 'Fabricar' },
+      { tab: 'cozinha', icon: '🍳', label: 'Cozinha' },
+    ],
+  },
+  {
+    title: 'Memórias',
+    tiles: [
+      { tab: 'diario', icon: '📔', label: 'Diário', hint: unread.value > 0 ? `${unread.value} novo(s)` : undefined },
+      { tab: 'album', icon: '📸', label: 'Álbum' },
+      { tab: 'colecao', icon: '🏆', label: 'Coleção' },
+      { tab: 'livro', icon: '📖', label: 'Livro' },
+    ],
+  },
+  {
+    title: 'Ir para',
+    tiles: [
+      { href: routeHref('caixa'), icon: '📦', label: 'Caixa', hint: 'batalhas na câmera' },
+      { href: routeHref('pins'), icon: '🎯', label: 'Pins' },
+      { href: routeHref('treinador'), icon: '🏅', label: 'Treinador' },
+      { href: routeHref('escanear'), icon: '📷', label: 'Escanear' },
+    ],
+  },
+  { title: 'Ajustes', tiles: [{ tab: 'visual', icon: '🎨', label: 'Visual e acessórios' }] },
+]);
 const shopTab = ref<'comprar' | 'vender'>('comprar');
 const dressFor = ref<string>('player');
 const dialog = ref<{ id?: string; name: string; text: string; actions: { label: string; run: () => void; disabled?: boolean }[] } | null>(null);
@@ -1196,7 +1236,12 @@ function pressB(): void {
   else if (quiz.value) quizClose();
   else if (pendingChoice) decide(null);
   else if (dialog.value) dialog.value = null;
-  else sheet.value = sheet.value ? null : 'menu';
+  else if (sheet.value === 'menu' && tab.value !== 'inicio') tab.value = 'inicio'; // B dentro de uma seção volta ao menu
+  else if (sheet.value) sheet.value = null;
+  else {
+    tab.value = 'inicio';
+    sheet.value = 'menu';
+  }
 }
 
 function act(result: { ok: boolean; message: string }, close = false): void {
@@ -1501,7 +1546,7 @@ onBeforeUnmount(() => {
           <p class="note">PvP na Caixa: os dois conectam por código, escolhem o modo e a luta aparece na caixa de cada um.</p>
           <button type="button" class="primary" @click="goToPvp">Ir para o PvP</button>
         </div>
-        <LeagueCard @challenge="sheet = null; emit('close')" />
+        <LeagueCard @challenge="sheet = null; emit('close', 'caixa')" />
       </div>
 
       <div v-if="sheet === 'torre'" class="village-sheet tall game-sheet" role="dialog" aria-label="Torre de Sobrevivência">
@@ -1509,17 +1554,37 @@ onBeforeUnmount(() => {
         <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ dexId: i.dexId, name: i.name }))" @leave="sheet = null" />
       </div>
 
-      <div v-if="sheet === 'menu'" class="village-sheet tall" role="dialog" aria-label="Menu da Vila">
-        <header>
-          <div class="chips" role="tablist">
-            <button v-for="t in (['mochila', 'fabricar', 'cozinha', 'diario', 'album', 'colecao', 'livro', 'visual'] as const)" :key="t" type="button" role="tab" :class="{ active: tab === t }" :aria-selected="tab === t" @click="pickTab(t)">
-              {{ { mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário', album: 'Álbum', colecao: 'Coleção', livro: 'Livro', visual: 'Visual' }[t] }}
-            </button>
-          </div>
-          <button type="button" class="link" @click="sheet = null">Fechar</button>
+      <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" :aria-label="MENU_TITLES[tab]">
+        <header class="menu-head">
+          <button v-if="tab !== 'inicio'" type="button" class="link menu-back" @click="tab = 'inicio'">← Menu</button>
+          <strong>{{ MENU_TITLES[tab] }}</strong>
+          <button type="button" class="menu-close" aria-label="Fechar o menu" @click="sheet = null">✕</button>
         </header>
 
-        <ul v-if="tab === 'mochila'" class="item-grid">
+        <div v-if="tab === 'inicio'" class="menu-home">
+          <p class="menu-status">
+            <span>🪙 <b>{{ state.coins }}</b> moedas</span>
+            <span>⭐ Nível <b>{{ level }}</b></span>
+            <span>✨ <b>{{ state.digital.instances.length }}</b> Digital Pokémon</span>
+          </p>
+          <section v-for="g in menuGroups" :key="g.title" class="menu-group">
+            <h4>{{ g.title }}</h4>
+            <div class="menu-tiles">
+              <template v-for="t in g.tiles" :key="t.label">
+                <a v-if="t.href" class="menu-tile" :href="t.href">
+                  <span class="menu-icon" aria-hidden="true">{{ t.icon }}</span>
+                  <span>{{ t.label }}<small v-if="t.hint">{{ t.hint }}</small></span>
+                </a>
+                <button v-else type="button" class="menu-tile" @click="pickTab(t.tab!)">
+                  <span class="menu-icon" aria-hidden="true">{{ t.icon }}</span>
+                  <span>{{ t.label }}<small v-if="t.hint">{{ t.hint }}</small></span>
+                </button>
+              </template>
+            </div>
+          </section>
+        </div>
+
+        <ul v-else-if="tab === 'mochila'" class="item-grid">
           <li v-for="i in inventory" :key="i.id">
             <img :src="icon(i.id)" alt="" width="40" height="40" />
             <span>{{ i.name }} ×{{ count(state, i.id) }}<small>{{ { material: 'Material', crop: 'Colheita', seed: 'Semente', furniture: i.group ?? 'Móvel', accessory: 'Acessório', food: 'Comida' }[i.kind] }}</small></span>

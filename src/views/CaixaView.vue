@@ -30,7 +30,6 @@ import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import TeamPicker from '../components/TeamPicker.vue';
 import BoxPvpPanel from '../components/BoxPvpPanel.vue';
-import VillageView from '../components/VillageView.vue';
 import PokeBook from '../components/PokeBook.vue';
 import { loadVillage, saveVillage } from '../app/village-store';
 import { BATTLE_REWARDS_PER_DAY, battleRewardsLeft, claimBattleReward, dailyHelp, friendLevel, itemName } from '../core/village/life';
@@ -115,12 +114,10 @@ const SLOT_CHOICES: { slot: RosterSlot; label: string; title: string }[] = [
 ];
 const loadingCreatures = ref(false);
 /** Modo vida (a Vila, sem câmera). */
-const showVillage = ref(false);
 /** Vindo da Vila (`#/caixa?vila=1`) a Vila abre direto; vindo da Arena (`?pvp=1`) o PvP já aparece aberto. */
 const arrival = routeFlags(window.location.hash);
 const pvpOpen = ref(arrival.has('pvp'));
 const pvpEl = ref<HTMLDetailsElement | null>(null);
-if (arrival.has('vila')) showVillage.value = true;
 if (arrival.size > 0) window.history.replaceState(null, '', routeHref('caixa'));
 const bookNote = ref('');
 /** O Livro da Caixa também deixa dar o apelido (a Vila e a Caixa guardam no mesmo arquivo). */
@@ -144,22 +141,14 @@ function openPvp(): void {
   void nextTick(() => pvpEl.value?.scrollIntoView({ block: 'start' }));
 }
 
-/** Veio do Fliperama ("Batalha na câmera"): a câmera abre sozinha e o botão Batalhar fica em destaque. */
-const battleShortcut = ref(false);
-
-function closeVillage(then?: 'pvp' | 'batalha'): void {
-  showVillage.value = false;
-  village = loadVillage();
-  if (then === 'pvp') openPvp();
-  if (then === 'batalha') {
-    battleShortcut.value = true;
-    // Ainda dentro do toque do botão (o iOS só pede a permissão dos sensores a partir de um toque).
-    if (phase.value === 'idle') void open();
-  }
-}
+/**
+ * Veio do Fliperama ("Batalha na câmera", `?batalha=1`): um botão grande abre a câmera e o Batalhar fica em destaque.
+ * A câmera não abre sozinha porque trocar de tela quebra o "toque" e o iOS só pede os sensores a partir de um toque.
+ */
+const battleShortcut = ref(arrival.has('batalha'));
 
 onMounted(() => {
-  if (arrival.has('pvp') && !arrival.has('vila')) openPvp();
+  if (arrival.has('pvp')) openPvp();
 });
 const picked = ref<{ name: string; detail: string; dexId?: number; shiny?: boolean; mega?: boolean } | null>(null);
 const phoneHeight = ref(DEFAULT_PHONE_HEIGHT_M);
@@ -1156,10 +1145,10 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="actions">
-      <button type="button" class="village-cta" :disabled="phase !== 'idle'" @click="showVillage = true">Modo vida: entrar na Vila (sem câmera)</button>
-      <button type="button" class="primary" :disabled="phase !== 'idle'" @click="open">
-        {{ phase === 'starting' ? 'Abrindo…' : 'Abrir câmera e sensores' }}
+      <button type="button" class="primary" :class="{ 'battle-cta': battleShortcut }" :disabled="phase !== 'idle'" @click="open">
+        {{ phase === 'starting' ? 'Abrindo…' : battleShortcut ? '⚔️ Abrir câmera e batalhar' : 'Abrir câmera e sensores' }}
       </button>
+      <a v-if="battleShortcut" class="button" :href="routeHref('vila')">Voltar à Vila</a>
     </div>
 
     <p v-if="error && !immersive" class="message error" role="alert">{{ error }}</p>
@@ -1179,6 +1168,5 @@ onBeforeUnmount(() => {
       <summary>Escolher a equipe da caixa (até 40)</summary>
       <TeamPicker />
     </details>
-    <VillageView v-if="showVillage" @close="closeVillage" />
   </section>
 </template>

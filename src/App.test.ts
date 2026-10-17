@@ -28,7 +28,8 @@ describe('App', () => {
     const text = await mount();
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
-    expect(host?.querySelectorAll('nav.tabs a')).toHaveLength(4);
+    const tabs = [...(host?.querySelectorAll('nav.tabs a') ?? [])].map((a) => [a.textContent?.trim(), a.getAttribute('href')]);
+    expect(tabs).toEqual([['Escanear', '#/'], ['Vila', '#/vila'], ['Caixa', '#/caixa'], ['Pins', '#/pins'], ['Treinador', '#/treinador']]);
     expect(host?.querySelectorAll('nav.modes a')).toHaveLength(3);
     expect(host?.querySelector('a.header-gear')?.getAttribute('href')).toBe('#/diagnostico');
     expect(host?.querySelector('video')).not.toBeNull();
@@ -47,6 +48,14 @@ describe('App', () => {
     expect(text).toContain('Caixa');
     expect(text).toContain('Câmera desligada');
     expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera e sensores');
+    // A Vila tem aba própria: a Caixa não esconde mais um "Modo vida" dentro dela.
+    expect(text).not.toContain('Modo vida');
+  });
+
+  it('vindo da batalha do Fliperama, a Caixa oferece um toque para abrir a câmera e batalhar', async () => {
+    await mount('#/caixa?batalha=1');
+    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('⚔️ Abrir câmera e batalhar');
+    expect([...(host?.querySelectorAll('a') ?? [])].some((a) => a.getAttribute('href') === '#/vila')).toBe(true);
   });
 
   it('a tela Várias cartas abre com a câmera desligada e explica o limite de cartas', async () => {

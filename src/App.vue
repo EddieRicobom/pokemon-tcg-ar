@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { routeHref, useRoute } from './app/route';
 import type { RouteName } from './app/route';
 import NavIcon from './components/NavIcon.vue';
@@ -9,6 +9,7 @@ import { useInstallPrompt } from './composables/useInstallPrompt';
 import { detectCapabilities, isIosDevice } from './core/capabilities';
 import CarregarView from './views/CarregarView.vue';
 import CaixaView from './views/CaixaView.vue';
+import VilaView from './views/VilaView.vue';
 import DiagnosticoView from './views/DiagnosticoView.vue';
 import PinsView from './views/PinsView.vue';
 import ScanView from './views/ScanView.vue';
@@ -22,9 +23,13 @@ const route = useRoute();
 const showIosHint =
   isIosDevice(navigator.userAgent, navigator.maxTouchPoints) && !capabilities.standalone;
 
-/** A barra de baixo tem só o essencial; "Várias" e "Cartas" são modos do Escanear, e o Diagnóstico fica na engrenagem do topo. */
+/**
+ * A barra de baixo tem só o essencial; "Várias" e "Cartas" são modos do Escanear, e o Diagnóstico fica na engrenagem do
+ * topo. A Vila tem aba própria (antes morava dentro da Caixa, atrás de um botão "Modo vida").
+ */
 const tabs: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Escanear' },
+  { name: 'vila', label: 'Vila' },
   { name: 'caixa', label: 'Caixa' },
   { name: 'pins', label: 'Pins' },
   { name: 'treinador', label: 'Treinador' },
@@ -37,6 +42,15 @@ const scanModes: { name: RouteName; label: string }[] = [
 const inScanGroup = computed(() => scanModes.some((m) => m.name === route.value.name));
 const tabActive = (name: RouteName): boolean => (name === 'escanear' ? inScanGroup.value : route.value.name === name);
 const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
+/** Para onde o ✕ da Vila volta: a última tela fora dela (ou o Escanear, se a Vila foi a primeira). */
+const beforeVila = ref<string>(route.value.name === 'vila' ? '#/' : window.location.hash || '#/');
+watch(
+  () => route.value.name,
+  (name, previous) => {
+    if (previous && previous !== 'vila' && name === 'vila') return;
+    if (name !== 'vila') beforeVila.value = window.location.hash || '#/';
+  },
+);
 </script>
 
 <template>
@@ -85,6 +99,7 @@ const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
 
     <ScanView v-if="route.name === 'escanear'" :key="scanKey" :card-id="route.cardId" />
     <VariasView v-else-if="route.name === 'varias'" />
+    <VilaView v-else-if="route.name === 'vila'" :back="beforeVila" />
     <CaixaView v-else-if="route.name === 'caixa'" />
     <PinsView v-else-if="route.name === 'pins'" />
     <CarregarView v-else-if="route.name === 'carregar'" />
