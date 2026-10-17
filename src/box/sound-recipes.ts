@@ -33,7 +33,8 @@ export type SoundCue =
   | { kind: 'pin-out'; mine: boolean }
   | { kind: 'pin-shrink' }
   | { kind: 'pin-win' }
-  | { kind: 'pin-lose' };
+  | { kind: 'pin-lose' }
+  | { kind: 'ui'; cue: 'menu' | 'interact' | 'talk' | 'collect' | 'gift' | 'success' | 'bell' | 'survivor-shot' | 'survivor-hit' | 'survivor-pickup' | 'survivor-hurt' | 'survivor-level' | 'survivor-boss' | 'survivor-gameover' };
 
 export interface SoundSink {
   play(cue: SoundCue): void;
@@ -217,6 +218,26 @@ function pinLayers(cue: Extract<SoundCue, { kind: `pin-${string}` }>): Layer[] {
   }
 }
 
+/** Sinais curtos da Vila e do modo Survivor, sintetizados para não depender de arquivos ou rede. */
+function uiLayers(cue: Extract<SoundCue, { kind: 'ui' }>['cue']): Layer[] {
+  switch (cue) {
+    case 'menu': return [tone('square', 360, 520, 0, 0.1, 0.1), tone('triangle', 720, 720, 0.05, 0.12, 0.08)];
+    case 'interact': return [tone('triangle', 420, 620, 0, 0.13, 0.12)];
+    case 'talk': return [tone('sine', 520, 700, 0, 0.16, 0.12), tone('triangle', 780, 780, 0.08, 0.13, 0.07)];
+    case 'collect': return [tone('sine', 620, 980, 0, 0.14, 0.13)];
+    case 'gift': return [tone('triangle', 660, 990, 0, 0.16, 0.12), tone('sine', 1320, 1320, 0.1, 0.18, 0.08)];
+    case 'success': return [tone('square', 520, 780, 0, 0.14, 0.1), tone('triangle', 1040, 1040, 0.1, 0.18, 0.08)];
+    case 'bell': return [tone('sine', 880, 620, 0, 0.7, 0.22, { vibrato: { rate: 5, depth: 8 } }), tone('triangle', 1320, 900, 0.06, 0.8, 0.14)];
+    case 'survivor-shot': return [tone('square', 680, 300, 0, 0.09, 0.08)];
+    case 'survivor-hit': return [tone('triangle', 180, 90, 0, 0.12, 0.18), noise({ type: 'lowpass', f0: 1100 }, 0, 0.08, 0.12)];
+    case 'survivor-pickup': return [tone('sine', 760, 1160, 0, 0.12, 0.1)];
+    case 'survivor-hurt': return [tone('sawtooth', 180, 80, 0, 0.2, 0.2, { filter: { type: 'lowpass', f0: 700 } })];
+    case 'survivor-level': return [tone('triangle', 440, 660, 0, 0.14, 0.13), tone('triangle', 660, 990, 0.1, 0.18, 0.13), tone('sine', 1320, 1320, 0.2, 0.28, 0.1)];
+    case 'survivor-boss': return [tone('sawtooth', 110, 55, 0, 0.65, 0.22, { filter: { type: 'lowpass', f0: 900 } }), tone('triangle', 220, 110, 0.12, 0.55, 0.18)];
+    case 'survivor-gameover': return [330, 294, 247, 196].map((f, i) => tone('triangle', f, f * 0.94, i * 0.16, 0.25, 0.16));
+  }
+}
+
 /** Camadas de um sinal. Sempre finitas, com duração limitada e um número pequeno de camadas. */
 export function layersFor(cue: SoundCue): Layer[] {
   let layers: Layer[];
@@ -269,6 +290,9 @@ export function layersFor(cue: SoundCue): Layer[] {
       break;
     case 'victory':
       layers = victoryOf(cue.personality);
+      break;
+    case 'ui':
+      layers = uiLayers(cue.cue);
       break;
     default:
       layers = pinLayers(cue);

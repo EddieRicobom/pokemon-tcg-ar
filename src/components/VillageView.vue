@@ -50,6 +50,8 @@ import type { PokemonType } from '../core/pokemon-data';
 import { paintItemIcon } from '../village/item-art';
 import { VillageGame } from '../village/village-game';
 import type { VillageMon } from '../village/village-game';
+import { SoundEngine } from '../box/sound';
+import type { SoundCue } from '../box/sound-recipes';
 import MomentCard from './MomentCard.vue';
 import PokeBook from './PokeBook.vue';
 import QuizDialog from './QuizDialog.vue';
@@ -152,6 +154,7 @@ const cutsceneOpen = ref(false);
 const cutsceneLine = ref(0);
 
 let game: VillageGame | null = null;
+const sound = new SoundEngine();
 let observer: ResizeObserver | null = null;
 let saveTimer: ReturnType<typeof setInterval> | null = null;
 let cropTimer: ReturnType<typeof setInterval> | null = null;
@@ -192,6 +195,16 @@ function say(text: string, ms = 2800): void {
   toast.value = text;
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (toast.value = ''), ms);
+}
+
+type UiSound = Extract<SoundCue, { kind: 'ui' }>['cue'];
+function unlockSound(): void {
+  sound.setEnabled(visual.sound);
+  sound.unlock();
+}
+function playSound(cue: UiSound): void {
+  sound.setEnabled(visual.sound);
+  sound.play({ kind: 'ui', cue });
 }
 
 // ---- Treinador: o que acontece na Vila conta lá, e as conquistas voltam como acessórios e moedas
@@ -884,6 +897,7 @@ function openFountain(b: Building): void {
         disabled: state.coins < 1,
         run: () => {
           state.coins--;
+          playSound('bell');
           changed();
           closeDialog();
           if (Math.random() < 0.06) {
@@ -1169,6 +1183,8 @@ function refreshDay(): string {
 }
 
 function pressA(): void {
+  unlockSound();
+  playSound('interact');
   welcome.value = false;
   if (quiz.value) return;
   if (dialog.value) {
@@ -1204,6 +1220,7 @@ function pressA(): void {
     tickCrops(state, now, effects().growthFactor);
     const ready = harvestCrop(state, t.x, t.y, Math.random);
     if (ready.ok) {
+      playSound('collect');
       say(ready.message);
       changed();
       return;
@@ -1237,16 +1254,23 @@ function pressA(): void {
       fishing = false;
       const r = fish(state, map, t.x, t.y, today, Math.random);
       say(r.message);
-      if (r.ok) changed();
+      if (r.ok) {
+        playSound('collect');
+        changed();
+      }
     }, 1500);
   } else if (t.kind === 'tile') {
     const r = harvest(state, map, t.x, t.y, today, Math.random);
     say(r.message);
-    if (r.ok) changed();
+    if (r.ok) {
+      playSound('collect');
+      changed();
+    }
   }
 }
 
 function openFriendDialog(id: string, text: string): void {
+  playSound('talk');
   const f = friendOf(state, id);
   const lvl = friendLevel(f.points);
   const following = state.follower === id;
@@ -1266,6 +1290,7 @@ function give(item: ItemId): void {
   if (!id) return;
   const r = giveGift(state, id, types.get(id) ?? [], item, refreshDay());
   if (r.ok) {
+    playSound('gift');
     changed();
     game?.bubble(id, r.gained >= 10 ? '😍' : '😊');
   }
@@ -1273,6 +1298,8 @@ function give(item: ItemId): void {
 }
 
 function pressB(): void {
+  unlockSound();
+  playSound('menu');
   welcome.value = false;
   if (giftPick.value) giftPick.value = false;
   else if (quiz.value) quizClose();
@@ -1289,6 +1316,7 @@ function pressB(): void {
 function act(result: { ok: boolean; message: string }, close = false): void {
   say(result.message);
   if (result.ok) {
+    playSound('success');
     changed();
     if (close) sheet.value = null;
   }
@@ -1354,7 +1382,10 @@ function thumbOf(gif: VillageMon['gif']): string {
 // Saldo único: com a Vila aberta, a carteira mexe no estado vivo dela (ver `app/wallet.ts`).
 attachLiveVillage(state, () => changed());
 watch(() => state.coins, (value) => syncCoins(value));
-onBeforeUnmount(() => detachLiveVillage(state));
+onBeforeUnmount(() => {
+  detachLiveVillage(state);
+  sound.dispose();
+});
 
 onMounted(async () => {
   // Cutscene da primeira entrada (Fase 4): só na primeira vez de verdade, antes do aviso de controles.

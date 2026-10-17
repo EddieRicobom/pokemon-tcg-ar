@@ -96,4 +96,12 @@ describe('receitas de som', () => {
     const mark = (big: boolean) => totalGain(layersFor({ kind: 'pin-mark', type: 'water', big }));
     expect(mark(true)).toBeGreaterThan(mark(false));
   });
+
+  it('gera sinais curtos para a Vila e o modo Survivor', () => {
+    for (const cue of ['menu', 'talk', 'collect', 'bell', 'survivor-shot', 'survivor-hit', 'survivor-level', 'survivor-boss', 'survivor-gameover'] as const) {
+      const layers = layersFor({ kind: 'ui', cue });
+      expect(layers.length).toBeGreaterThan(0);
+      expect(Math.max(...layers.map((layer) => layer.at + layer.dur))).toBeLessThanOrEqual(MAX_LAYER_SECONDS);
+    }
+  });
 });
