@@ -8,7 +8,8 @@ import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/villag
 import type { FurnitureId, VillageState } from '../core/village/life';
 import { homeDecor, homeLevel, homeOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
 import type { Building, BuildingKind } from '../core/village/town-layout';
-import { buildingAt, findFree, tileAt } from '../core/village/map';
+import { buildingAt, findFree, isWalkable, tileAt } from '../core/village/map';
+import { pathStep } from '../core/village/pathing';
 import type { Tile, VillageMap } from '../core/village/map';
 import { FX_EMOJI } from '../core/village/social-state';
 import type { Fx } from '../core/village/social-state';
@@ -211,6 +212,10 @@ export class VillageGame {
   private handle = 0;
   private last = 0;
   private held: Dir | null = null;
+  /** Toque na tela: o bloco aonde você está indo a pé (o caminho contorna o que estiver no meio). */
+  private goal: { x: number; y: number } | null = null;
+  /** A câmera do último quadro, para converter um toque na tela em bloco do mapa. */
+  private view = { camX: 0, camY: 0 };
   private stick: Pick<StickDirs, 'primary' | 'secondary'> | null = null;
   private stepParity = 0;
   private scale = 3;
@@ -555,6 +560,52 @@ export class VillageGame {
   /** Joystick virtual: direção principal e, na diagonal, a secundária (ver `core/village/joystick.ts`). null solta. */
   holdStick(dirs: Pick<StickDirs, 'primary' | 'secondary'> | null): void {
     this.stick = dirs?.primary ? dirs : null;
+    if (this.stick) this.goal = null;
+  }
+
+  /** O bloco do mapa sob um ponto da tela (coordenadas do navegador). */
+  tileAtScreen(clientX: number, clientY: number): { x: number; y: number } | null {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const px = ((clientX - rect.left) / rect.width) * this.canvas.width + this.view.camX;
+    const py = ((clientY - rect.top) / rect.height) * this.canvas.height + this.view.camY;
+    const x = Math.floor(px / (TILE * this.scale));
+    const y = Math.floor(py / (TILE * this.scale));
+    return x >= 0 && y >= 0 && x < this.map.w && y < this.map.h ? { x, y } : null;
+  }
+
+  /**
+   * Anda até o bloco (toque na tela). Se ele não dá para pisar (um Pokémon, um prédio, uma planta), para ao lado e
+   * fica virado para ele — pronto para o A. Qualquer outro comando de movimento cancela.
+   */
+  walkTo(x: number, y: number): void {
+    this.goal = { x, y };
+  }
+
+  get walking(): boolean {
+    return this.goal !== null;
+  }
+
+  /** Um passo rumo ao `goal` (chamado quando você está parado e sem joystick/teclado). */
+  private stepTowardGoal(): void {
+    const p = this.player;
+    const g = this.goal;
+    if (!g) return;
+    const blocked = (x: number, y: number) => this.occupied(x, y, 'eu');
+    const dist = Math.abs(g.x - p.x) + Math.abs(g.y - p.y);
+    if (dist === 0) {
+      this.goal = null;
+      return;
+    }
+    if (dist === 1) {
+      const dir: Dir = g.x > p.x ? 'right' : g.x < p.x ? 'left' : g.y > p.y ? 'down' : 'up';
+      // Ao lado: pisa se der; se não (alguém ou alguma coisa ali), só vira para lá.
+      if (!(isWalkable(this.map, g.x, g.y) && !blocked(g.x, g.y) && tryStep(p, dir, this.map, blocked))) p.dir = dir;
+      this.goal = null;
+      return;
+    }
+    const dir = pathStep(this.map, { x: p.x, y: p.y }, g, blocked);
+    if (!dir || !tryStep(p, dir, this.map, blocked)) this.goal = null;
   }
 
   /** O que está à sua frente. */
@@ -572,8 +623,8 @@ export class VillageGame {
       const b = buildingAt(this.map, f.x, f.y);
       return b ? { kind: 'building', building: b } : { kind: 'nothing' };
     }
-    if (tile === 'lamp') return { kind: 'nothing' };
-    if (tile !== 'grass' && tile !== 'path') return { kind: 'tile', x: f.x, y: f.y, tile };
+    if (tile === 'lamp' || tile === 'deco') return { kind: 'nothing' };
+    if (tile !== 'grass' && tile !== 'path' && tile !== 'trail' && tile !== 'plaza' && tile !== 'field') return { kind: 'tile', x: f.x, y: f.y, tile };
     return { kind: 'nothing' };
   }
 
@@ -800,7 +851,10 @@ export class VillageGame {
         this.pushMs += dt * 1000;
         if (this.pushMs >= SWAP_AFTER_MS && this.swapWithFront()) this.pushMs = 0;
       }
-    } else if (order.length === 0) this.pushMs = 0;
+    } else if (order.length === 0) {
+      this.pushMs = 0;
+      if (!moving(p) && this.goal) this.stepTowardGoal();
+    }
     const behind = { x: p.x, y: p.y };
     this.updateSleep(now);
     for (const [id, w] of this.villagers) {
@@ -908,6 +962,7 @@ export class VillageGame {
     // Câmera centrada em você, presa à borda do mapa.
     const camX = Math.round(Math.min(Math.max(0, (pp.x + 0.5) * TILE * scale - W / 2), this.map.w * TILE * scale - W));
     const camY = Math.round(Math.min(Math.max(0, (pp.y + 0.5) * TILE * scale - H / 2), this.map.h * TILE * scale - H));
+    this.view = { camX, camY };
     ctx.fillStyle = '#1d4a22';
     ctx.fillRect(0, 0, W, H);
     const ground = this.groundFrames[Math.floor(now / 450) % this.groundFrames.length]!;

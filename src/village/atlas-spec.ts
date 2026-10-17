@@ -63,9 +63,9 @@ export const ATLAS_SOURCES: readonly AtlasSource[] = [
   { id: 'slide', sheet: 'Daisy Route.png', x: 112, y: 626, w: 16, h: 30 },
   { id: 'carousel', sheet: 'Daisy Route.png', x: 0, y: 666, w: 48, h: 42 },
   { id: 'seesaw', sheet: 'Daisy Route.png', x: 48, y: 668, w: 64, h: 22 },
-  { id: 'umbrella-b', sheet: 'Jonquil Town.png', x: 0, y: 636, w: 32, h: 32 },
-  { id: 'umbrella-r', sheet: 'Jonquil Town.png', x: 32, y: 636, w: 32, h: 32 },
-  { id: 'umbrella-g', sheet: 'Jonquil Town.png', x: 64, y: 636, w: 32, h: 32 },
+  { id: 'umbrella-b', sheet: 'Jonquil Town.png', x: 0, y: 638, w: 32, h: 30 },
+  { id: 'umbrella-r', sheet: 'Jonquil Town.png', x: 32, y: 638, w: 32, h: 30 },
+  { id: 'umbrella-g', sheet: 'Jonquil Town.png', x: 64, y: 638, w: 32, h: 30 },
   // ---- construções
   { id: 'house-brick', sheet: 'Brick House Tiles.png', x: 0, y: 12, w: 80, h: 108 },
   { id: 'home-yellow', sheet: 'Apathy Houses.png', x: 0, y: 0, w: 72, h: 128 },
