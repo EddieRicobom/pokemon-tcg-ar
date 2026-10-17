@@ -3,8 +3,8 @@ import { itemDef } from './catalog';
 import { add, count, friendOf, itemName } from './life';
 import type { ItemId, VillageState } from './life';
 import { hash, personalityOf } from './personality';
-import { MAX_SAVED, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
-import type { Moment, MomentKind, MomentLine, Relation } from './social-state';
+import { MAX_MEMORIES, MAX_SAVED, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
+import type { MemoryKind, Moment, MomentKind, MomentLine, Relation, SocialMemory } from './social-state';
 import { L, calm, is, night, other } from './moments/kit';
 import { spreadWords, withWords } from './quiz';
 import { DUO_MOMENTS } from './moments/duo';
@@ -779,6 +779,32 @@ function applyOutcome(state: VillageState, cast: Actor[], o: Outcome, day: strin
   return chips;
 }
 
+function memoryKind(moment: Moment): MemoryKind | null {
+  if (moment.kind === 'romance') return 'romance';
+  if (moment.kind === 'rivalidade' || moment.result.some((line) => /rival|revan|brigad/i.test(line))) return 'rivalidade';
+  if (moment.kind === 'amizade' && moment.cast.length > 1 && moment.result.some((line) => /amizade|amig|confian|ajud/i.test(line))) return 'amizade';
+  if (moment.result.some((line) => /descobri|pista|encontr/i.test(line))) return 'descoberta';
+  return null;
+}
+
+/** Guarda só acontecimentos que podem voltar a influenciar falas e relações. */
+function rememberMoment(state: VillageState, moment: Moment): void {
+  const kind = memoryKind(moment);
+  if (!kind) return;
+  const text = moment.result[0] ? `${moment.title}: ${moment.result[0]}` : `${moment.title} aconteceu na Vila.`;
+  const memories: SocialMemory[] = moment.cast.map((mon) => ({
+    id: `${moment.id}:${mon.id}`,
+    mon: mon.id,
+    with: moment.cast.filter((other) => other.id !== mon.id).map((other) => other.id).slice(0, 2),
+    kind,
+    text,
+    day: moment.day,
+    t: moment.t,
+    momentId: moment.id,
+  }));
+  state.memories = [...state.memories.filter((old) => !memories.some((next) => next.id === old.id)), ...memories].slice(-MAX_MEMORIES);
+}
+
 export interface Resolved {
   moment: Moment;
   /** Falas depois da sua decisão (para tocar na Vila). */
@@ -826,6 +852,7 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
   };
   state.diary.push(moment);
   trimDiary(state);
+  rememberMoment(state, moment);
   return { moment, followUp, firstTime };
 }
 
@@ -876,6 +903,8 @@ export function catchUp(state: VillageState, actors: readonly Actor[], now: numb
 
 /** O que o Pokémon comenta ao conversar com você sobre o que viveu nas últimas 36 horas (ou `null`). */
 export function recentGossip(state: VillageState, id: string, now: number): string | null {
+  const memory = [...state.memories].reverse().find((item) => item.mon === id && now - item.t <= 90 * 24 * 3_600_000);
+  if (memory) return `Ainda lembro: ${memory.text}`;
   for (let i = state.diary.length - 1; i >= 0; i--) {
     const m = state.diary[i]!;
     if (now - m.t > 36 * 3_600_000) break;

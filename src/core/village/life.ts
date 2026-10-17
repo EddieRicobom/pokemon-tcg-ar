@@ -3,7 +3,7 @@ import type { PokemonType } from '../pokemon-data';
 import { ACCESSORY_IDS, FURNITURE_IDS, isItem, itemDef, ITEMS, MATERIAL_IDS, shopToday } from './catalog';
 import { personalityOf } from './personality';
 import { emptySocial, normalizeSocial } from './social-state';
-import type { Answer, Lingo, Moment, Relation } from './social-state';
+import type { Answer, Lingo, Moment, Relation, SocialMemory } from './social-state';
 import { cutsOff, isFront, tileAt } from './map';
 import type { Tile, VillageMap } from './map';
 import { emptyDigital, normalizeDigital } from './digital';
@@ -90,6 +90,8 @@ export interface VillageState {
   /** Vida social: relações entre os Pokémon, Diário de momentos, Álbum e quando você saiu. */
   rel: Record<string, Relation>;
   diary: Moment[];
+  /** Memórias importantes por Pokémon, derivadas de momentos marcantes e limitadas. */
+  memories: SocialMemory[];
   seen: string[];
   lastSeen: number;
   diaryRead: number;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyVillage } from './life';
 import { villageSummary } from './summary';
+import { recentGossip } from './social';
 import type { Moment } from './social-state';
 
 function moment(t: number, result: string[]): Moment {
@@ -22,5 +23,10 @@ describe('villageSummary', () => {
     expect(summary.happened).toEqual([]);
     expect(summary.changed[0]).toContain('Ainda não');
     expect(summary.possible[0]).toContain('Nenhum pedido');
+  });
+  it('faz uma memória persistente influenciar a fala do Pokémon', () => {
+    const state = emptyVillage(1, { x: 1, y: 1 });
+    state.memories.push({ id: 'm:a', mon: 'a', with: ['b'], kind: 'amizade', text: 'Piquenique: +5 amizade', day: '2026-10-17', t: 10, momentId: 'm' });
+    expect(recentGossip(state, 'a', 20)).toBe('Ainda lembro: Piquenique: +5 amizade');
   });
 });

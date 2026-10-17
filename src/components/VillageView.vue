@@ -540,6 +540,7 @@ const bookTold = computed(() => {
   for (const k of Object.keys(out)) out[k] = out[k]!.slice(-3);
   return out;
 });
+const bookMemories = computed(() => Object.fromEntries(mons.value.map((mon) => [mon.id, state.memories.filter((memory) => memory.mon === mon.id).slice(-5).reverse().map((memory) => ({ kind: memory.kind, text: memory.text, day: memory.day }))])));
 const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name, real: m.real, types: types.get(m.id) ?? [], thumb: m.thumb, accessory: state.wear.mons[m.id] ?? null })));
 const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state, id) > 0));
 
@@ -2042,7 +2043,7 @@ onBeforeUnmount(() => {
           </ul>
         </div>
 
-        <PokeBook v-else-if="tab === 'livro'" :mons="bookMons" :friends="state.friends" :relations="bookRels" :words="bookWords" :told="bookTold" :nicks="state.nicks" :nick-note="bookNote" :initial-id="bookDialogId ?? undefined" can-dress @accessory="openDress" @nickname="bookNickname" />
+        <PokeBook v-else-if="tab === 'livro'" :mons="bookMons" :friends="state.friends" :relations="bookRels" :words="bookWords" :told="bookTold" :memories="bookMemories" :nicks="state.nicks" :nick-note="bookNote" :initial-id="bookDialogId ?? undefined" can-dress @accessory="openDress" @nickname="bookNickname" />
 
         <div v-else>
           <p>Seu acessório: <strong>{{ state.wear.player ? itemName(state.wear.player) : 'nenhum' }}</strong></p>

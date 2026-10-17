@@ -79,6 +79,19 @@ export interface Lingo {
   t: number;
 }
 
+/** Memória curta de um acontecimento importante para um Pokémon específico. */
+export type MemoryKind = 'amizade' | 'rivalidade' | 'romance' | 'descoberta';
+export interface SocialMemory {
+  id: string;
+  mon: string;
+  with: string[];
+  kind: MemoryKind;
+  text: string;
+  day: string;
+  t: number;
+  momentId: string;
+}
+
 export interface SocialState {
   rel: Record<string, Relation>;
   diary: Moment[];
@@ -90,6 +103,7 @@ export interface SocialState {
   /** O bordão de cada Pokémon (o que ele repete no fim das falas). */
   words: Record<string, string>;
   lingo: Lingo[];
+  memories: SocialMemory[];
   /** Quantas perguntas cada Pokémon já fez hoje. */
   asked: Record<string, { day: string; n: number }>;
   /** Apelidos que você deu (só quem chegou a «Grande amigo» pode ganhar um; ver `nickname.ts`). */
@@ -102,6 +116,7 @@ export const MAX_WORDS = 80;
 export const MAX_ANSWER_LEN = 28;
 export const MAX_NICKS = 200;
 export const MAX_NICK_LEN = 14;
+export const MAX_MEMORIES = 80;
 
 /** Limpa o que foi digitado: sem caracteres de controle, espaços repetidos nem sobras, com tamanho limitado. */
 export function cleanAnswer(raw: unknown, max = MAX_ANSWER_LEN): string {
@@ -118,7 +133,7 @@ const MAX_SEEN = 600;
 export const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 export function emptySocial(): SocialState {
-  return { rel: {}, diary: [], seen: [], lastSeen: 0, diaryRead: 0, answers: [], words: {}, lingo: [], asked: {}, nicks: {} };
+  return { rel: {}, diary: [], seen: [], lastSeen: 0, diaryRead: 0, answers: [], words: {}, lingo: [], memories: [], asked: {}, nicks: {} };
 }
 
 const num = (v: unknown, lo: number, hi: number, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : fallback);
@@ -162,7 +177,7 @@ export function trimMoments(all: readonly Moment[]): Moment[] {
   return all.filter((m) => keepSaved.has(m) || recent.has(m));
 }
 
-export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown; answers?: unknown; words?: unknown; lingo?: unknown; asked?: unknown; nicks?: unknown }): SocialState {
+export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown; answers?: unknown; words?: unknown; lingo?: unknown; memories?: unknown; asked?: unknown; nicks?: unknown }): SocialState {
   const rel: Record<string, Relation> = {};
   if (raw.rel && typeof raw.rel === 'object') {
     for (const [k, v] of Object.entries(raw.rel as Record<string, Partial<Relation>>)) {
@@ -171,6 +186,17 @@ export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: un
     }
   }
   const all = Array.isArray(raw.diary) ? raw.diary.map(normalizeMoment).filter((m): m is Moment => m !== null) : [];
+  const memories: SocialMemory[] = [];
+  if (Array.isArray(raw.memories)) {
+    for (const x of raw.memories) {
+      if (!x || typeof x !== 'object') continue;
+      const m = x as Partial<SocialMemory>;
+      if (typeof m.id !== 'string' || typeof m.mon !== 'string' || typeof m.text !== 'string' || typeof m.momentId !== 'string') continue;
+      if (!['amizade', 'rivalidade', 'romance', 'descoberta'].includes(m.kind as string)) continue;
+      const withIds = Array.isArray(m.with) ? m.with.filter((id): id is string => typeof id === 'string').map((id) => id.slice(0, 80)).slice(0, 2) : [];
+      memories.push({ id: m.id.slice(0, 100), mon: m.mon.slice(0, 80), with: withIds, kind: m.kind as MemoryKind, text: m.text.slice(0, 180), day: str(m.day, 12), t: num(m.t, 0, 9e15, 0), momentId: m.momentId.slice(0, 100) });
+    }
+  }
   return {
     rel,
     diary: trimMoments(all),
@@ -191,6 +217,7 @@ export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: un
           .map((x) => ({ text: cleanAnswer(x.text), kind: str(x.kind, 16), from: str(x.from, 80), t: num(x.t, 0, 9e15, 0) }))
           .slice(-MAX_LINGO)
       : [],
+    memories: memories.slice(-MAX_MEMORIES),
     asked: raw.asked && typeof raw.asked === 'object' ? Object.fromEntries(Object.entries(raw.asked as Record<string, Partial<{ day: string; n: number }>>).filter(([, v]) => v && typeof v.day === 'string').slice(0, 80).map(([k, v]) => [k, { day: str(v.day, 12), n: num(v.n, 0, 99, 0) }])) : {},
   };
 }

@@ -19,6 +19,8 @@ const props = defineProps<{
   words?: Readonly<Record<string, string>>;
   /** O que você respondeu às perguntas de cada Pokémon (as mais recentes). */
   told?: Readonly<Record<string, readonly { q: string; a: string }[]>>;
+  /** Memórias importantes registradas para cada Pokémon. */
+  memories?: Readonly<Record<string, readonly { kind: string; text: string; day: string }[]>>;
   /** Os apelidos dados (quando vem, a página mostra o campo de apelido). */
   nicks?: Readonly<Record<string, string>>;
   /** O recado da última tentativa de dar apelido (deu certo, já existe, falta amizade…). */
@@ -129,6 +131,13 @@ function go(step: number): void {
             <li v-for="r in relations[current.mon.id]" :key="r.name">{{ r.emoji }} {{ r.label }} de {{ r.name }} <small>({{ r.met }} {{ r.met === 1 ? 'momento' : 'momentos' }})</small></li>
           </ul>
           <p v-else class="hint">Ainda não viveu nada com os colegas. Dê tempo à Vila!</p>
+        </section>
+        <section v-if="memories">
+          <h4>Memórias importantes</h4>
+          <ul v-if="(memories[current.mon.id] ?? []).length" class="book-opinions">
+            <li v-for="memory in memories[current.mon.id]" :key="`${memory.day}:${memory.text}`">🧠 {{ memory.text }} <small>({{ memory.day }})</small></li>
+          </ul>
+          <p v-else class="hint">Ainda não há uma memória marcante registrada.</p>
         </section>
         <section>
           <h4>Intimidade</h4>
