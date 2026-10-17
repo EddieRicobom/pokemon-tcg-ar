@@ -3,9 +3,14 @@ import { normalizeVisual } from './visual-settings';
 
 describe('configurações visuais', () => {
   it('aceita só modos de suavização conhecidos', () => {
-    expect(normalizeVisual({ smoothing: 'macio' })).toEqual({ smoothing: 'macio', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true });
-    expect(normalizeVisual({ smoothing: 'xyz' as never })).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true });
-    expect(normalizeVisual(null)).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true });
+    expect(normalizeVisual({ smoothing: 'macio' })).toEqual({ smoothing: 'macio', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true });
+    expect(normalizeVisual({ smoothing: 'xyz' as never })).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true });
+    expect(normalizeVisual(null)).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true });
+  });
+
+  it('os reflexos da maleta vêm ligados e só desligam com false explícito', () => {
+    expect(normalizeVisual({ caseFx: false }).caseFx).toBe(false);
+    expect(normalizeVisual({ caseFx: 'x' as never }).caseFx).toBe(true);
   });
 
   it('os encontros e emoções vêm ligados e só desligam com false explícito', () => {
