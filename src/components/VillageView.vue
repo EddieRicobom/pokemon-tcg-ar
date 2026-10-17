@@ -14,6 +14,7 @@ import { minimapPixels, minimapTileAt } from '../village/minimap';
 import { recordEvent, trainer } from '../app/trainer-store';
 import { claimPrizes } from '../core/village/rewards';
 import LeagueCard from './LeagueCard.vue';
+import BackpackView from './BackpackView.vue';
 import MinigameHub from './MinigameHub.vue';
 import MinigameEquilibrio from './MinigameEquilibrio.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
@@ -77,6 +78,7 @@ pruneHarvest(state, day.value);
 
 type Sheet = null | 'menu' | 'build' | 'shop' | 'dress' | 'arcade' | 'arena' | 'torre';
 const sheet = ref<Sheet>(null);
+const backpackOpen = ref(false);
 type Tab = 'inicio' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
 const tab = ref<Tab>('inicio');
 
@@ -503,6 +505,7 @@ function nameOf(id: string): string {
 }
 
 const inventory = computed(() => ITEMS.filter((i) => count(state, i.id) > 0));
+const backpackItems = computed(() => inventory.value.map((i) => ({ id: i.id, name: i.name, qty: count(state, i.id) })));
 const sellable = computed(() => inventory.value.filter((i) => i.sell > 0));
 const giftable = computed(() => inventory.value.filter((i) => i.kind !== 'accessory'));
 const nextHouse = computed(() => HOUSE_LEVELS[state.house + 1] ?? null);
@@ -1927,6 +1930,10 @@ onBeforeUnmount(() => {
         </div>
 
         <ul v-else-if="tab === 'mochila'" class="item-grid">
+          <li class="backpack-launch">
+            <span>🎒 <strong>Mochila 3D</strong><small>Balanceie os itens com o giroscópio e ouça os sons.</small></span>
+            <button type="button" class="primary" @click="backpackOpen = true">Abrir mochila 3D</button>
+          </li>
           <li v-for="i in inventory" :key="i.id">
             <img :src="icon(i.id)" alt="" width="40" height="40" />
             <span>{{ i.name }} ×{{ count(state, i.id) }}<small>{{ { material: 'Material', crop: 'Colheita', seed: 'Semente', furniture: i.group ?? 'Móvel', accessory: 'Acessório', food: 'Comida' }[i.kind] }}</small></span>
@@ -2034,5 +2041,6 @@ onBeforeUnmount(() => {
         <button type="button" class="a-btn" aria-label="A: interagir e falar" @click="pressA">A<small aria-hidden="true">Falar</small></button>
       </div>
     </div>
+    <BackpackView v-if="backpackOpen" :items="backpackItems" @close="backpackOpen = false" />
   </div>
 </template>
