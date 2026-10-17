@@ -58,6 +58,11 @@ watch(
     if (name !== 'vila') beforeVila.value = window.location.hash || '#/';
   },
 );
+/** Cada tela abre do topo: sem isto, a rolagem da aba anterior ficava (Várias abria no meio da página). */
+watch(
+  () => route.value.name,
+  () => window.scrollTo(0, 0),
+);
 </script>
 
 <template>
