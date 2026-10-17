@@ -34,6 +34,8 @@ import { celebiDiaryPage, dismissActive, legendaryEffects, legendaryOf, rollLege
 import type { LegendaryEffects } from '../core/village/legendary';
 import { ALL_QUESTIONS, FONTE_POOL, isComplete as quizComplete, nextForm, resolveStarter } from '../core/village/starter-quiz';
 import type { QuizAnswers } from '../core/village/starter-quiz';
+import { claimRequest, ensureRequests, requestStatus } from '../core/village/requests';
+import type { VillageRequest } from '../core/village/requests';
 import type { Resolved, Scene } from '../core/village/social';
 import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS, trimMoments } from '../core/village/social-state';
 import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, recordAnswer, wordOf } from '../core/village/quiz';
@@ -782,6 +784,43 @@ function closeDialog(): void {
   dialog.value = null;
 }
 
+function openRequestBoard(): void {
+  const today = refreshDay();
+  const previousDay = state.requests.day;
+  const requests = ensureRequests(state, today, mons.value.map((m) => ({ id: m.id, name: m.name })));
+  if (previousDay !== state.requests.day) changed();
+  const summary = requests.map((request) => {
+    const status = requestStatus(state, request, today);
+    return `${request.done ? '✅' : '📌'} ${request.title}\n   ${request.detail}\n   ${request.location} · ${status.text}`;
+  }).join('\n\n');
+  const conclude = (id: string): void => {
+    const result = claimRequest(state, id, refreshDay());
+    if (result.ok) {
+      earnCoins(result.coins);
+      if (result.targetId) game?.bubble(result.targetId, '🎁');
+      changed();
+      playSound('success');
+    }
+    say(result.message);
+    openRequestBoard();
+  };
+  dialog.value = {
+    name: 'Mural de pedidos',
+    text: summary || 'O mural está vazio por enquanto.',
+    actions: [
+      ...requests.map((request: VillageRequest) => {
+        const status = requestStatus(state, request, today);
+        return {
+          label: request.done ? `✓ ${request.title}` : status.ready ? `Concluir: ${request.title}` : `Ver: ${request.title}`,
+          disabled: request.done || !status.ready,
+          run: () => conclude(request.id),
+        };
+      }),
+      { label: 'Sair', run: closeDialog },
+    ],
+  };
+}
+
 function closeVillageSheet(): void {
   sheet.value = null;
   bookDialogId.value = null;
@@ -1293,6 +1332,9 @@ function pressA(): void {
         changed();
       }
     }, 1500);
+  } else if (t.kind === 'tile' && t.tile === 'deco') {
+    const board = map.decor.find((decor) => decor.kind === 'board' && decor.x === t.x && decor.y === t.y);
+    if (board) openRequestBoard();
   } else if (t.kind === 'tile') {
     const r = harvest(state, map, t.x, t.y, today, Math.random);
     say(r.message);
