@@ -122,6 +122,25 @@ export interface TrainerState {
   /** Hoje: cartas que já valeram XP e progresso das missões. */
   today: { day: string; cards: string[]; battles: number; minigames: number; life: number; progress: Partial<Record<MissionKind, number>>; done: string[]; bonus: boolean };
   achievements: Record<string, string>;
+  /** Marcas da Torre de Sobrevivência: para o modo infinito, os troféus e o bônus diário de zerar. */
+  torre: {
+    /** Melhor tempo de sobrevivência (ms) em qualquer corrida (modo normal ou infinito). */
+    bestMs: number;
+    /** Melhor tempo da corrida que zerou (chefão final caído), em ms (0 = nunca zerou). */
+    bestClearMs: number;
+    /** Treinadores já derrotados em todas as corridas, somados (3 Pokémon cada; chefão final conta como um). */
+    trainersBeaten: number;
+    /** Chefões (minuto 20 + os do infinito) derrotados em todas as corridas, somados. */
+    bossesBeaten: number;
+    /** Vezes que o chefão final caiu (quantas vezes zerou a Torre). */
+    cleared: number;
+    /** Modo infinito destravado (depois da 1ª vez que o chefão final caiu). */
+    infiniteUnlocked: boolean;
+    /** Último dia em que o bônus de 500 moedas por zerar foi pago (um por dia). */
+    lastClearBonusDay: string;
+    /** Última corrida foi no modo infinito (para o resumo). */
+    lastInfinite: boolean;
+  };
 }
 
 export function emptyTrainer(): TrainerState {
@@ -131,6 +150,7 @@ export function emptyTrainer(): TrainerState {
     life: { talks: 0, answers: 0, moments: 0, nicknames: 0 }, bestFriend: 0, league: { badges: 0, champion: 0 }, pvp: { played: 0, wins: 0 }, shinies: 0,
     today: { day: '', cards: [], battles: 0, minigames: 0, life: 0, progress: {}, done: [], bonus: false },
     achievements: {},
+    torre: { bestMs: 0, bestClearMs: 0, trainersBeaten: 0, bossesBeaten: 0, cleared: 0, infiniteUnlocked: false, lastClearBonusDay: '', lastInfinite: false },
   };
 }
 
@@ -138,6 +158,12 @@ export type TrainerEvent =
   | { type: 'scan'; cardId: string; setId: string; setName: string; setTotal: number; shiny?: boolean }
   | { type: 'battle'; team: boolean }
   | { type: 'minigame'; game: string; won: boolean; score: number }
+  /**
+   * Fim de uma corrida da Zona de Sobrevivência (além do `minigame`): atualiza as marcas da Torre (melhor tempo,
+   * treinadores e chefões derrotados, destrava o modo infinito ao zerar a 1ª vez) e, se zerou pela 1ª vez do dia,
+   * paga o bônus de `SURVIVOR_CLEAR_BONUS` moedas na Vila.
+   */
+  | { type: 'survivor'; survivedMs: number; trainersBeaten: number; bossesBeaten: number; clearedTorre: boolean; infinite: boolean }
   /** Vitória num Ginásio, na Elite 4 ou contra o Campeão. `first` = primeira vitória contra esse desafio (vale o XP cheio). */
   | { type: 'league'; title: string; xp: number; first: boolean; /** Insígnias e vitórias sobre a Campeã depois desta luta. */ badges?: number; championWins?: number }
   /** Uma batalha com um amigo (PvP, na Caixa ou no Pin Mode). */
@@ -257,6 +283,12 @@ const ALL_ACHIEVEMENTS: AchievementDef[] = [
   { id: 'pvp-1', title: 'Cara a cara', hint: 'Faça uma batalha com um amigo (PvP).', test: (s) => s.pvp.played >= 1 },
   { id: 'pvp-vitoria', title: 'Vitória em dupla', hint: 'Vença uma batalha PvP.', test: (s) => s.pvp.wins >= 1 },
   { id: 'shiny-1', title: 'Brilho raro', hint: 'Escaneie uma carta shiny.', test: (s) => s.shinies >= 1 },
+  // Torre de Sobrevivência: as marcas são da Torre, mas as conquistas pagam o cosmético na Vila (ver `PRIZES`).
+  { id: 'torre-primeira', title: 'Primeira corrida', hint: 'Jogue uma corrida da Torre de Sobrevivência.', test: (s) => (s.torre?.bestMs ?? 0) > 0 },
+  { id: 'torre-treinador', title: 'Enfrentou um treinador', hint: 'Derrote um treinador na Torre.', test: (s) => (s.torre?.trainersBeaten ?? 0) >= 1 },
+  { id: 'torre-chefao', title: 'Zerou a Torre', hint: 'Derrote o chefão final (20 min) na Torre.', test: (s) => (s.torre?.cleared ?? 0) >= 1 },
+  { id: 'torre-infinito', title: 'Caçador do infinito', hint: 'Derrote 3 chefões (modo infinito ou corridas repetidas).', test: (s) => (s.torre?.bossesBeaten ?? 0) >= 3 },
+  { id: 'torre-mestre', title: 'Mestre da Torre', hint: 'Derrote 10 treinadores em todas as corridas somadas.', test: (s) => (s.torre?.trainersBeaten ?? 0) >= 10 },
 ];
 
 export const ACHIEVEMENTS: AchievementDef[] = ALL_ACHIEVEMENTS.filter((a) => MINIGAMES_ENABLED || !a.id.startsWith('minigame'));
@@ -391,6 +423,19 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
     const xp = Math.max(0, Math.round(event.xp));
     gain += xp;
     rewards.push({ text: event.label, sub: `+${xp} XP (depuração)`, tone: 'xp' });
+  } else if (event.type === 'survivor') {
+    // A corrida também já veio com um `recordEvent({ type: 'minigame', game: 'sobrevivencia', ... })` acima; aqui só
+    // atualizamos as marcas da Torre, o modo infinito e o dia do bônus (quem paga as moedas é a Vila, pela carteira).
+    const torre = s.torre;
+    torre.bestMs = Math.max(torre.bestMs, event.survivedMs);
+    torre.trainersBeaten += Math.max(0, event.trainersBeaten);
+    torre.bossesBeaten += Math.max(0, event.bossesBeaten);
+    torre.lastInfinite = event.infinite === true;
+    if (event.clearedTorre) {
+      torre.cleared += 1;
+      torre.infiniteUnlocked = true;
+      torre.bestClearMs = torre.bestClearMs === 0 ? event.survivedMs : Math.min(torre.bestClearMs, event.survivedMs);
+    }
   } else {
     s.minigames++;
     s.today.minigames++;
@@ -440,7 +485,7 @@ export function importHistory(prev: TrainerState, cards: { id: string; setId: st
 export function normalizeTrainer(raw: unknown): TrainerState {
   const base = emptyTrainer();
   if (!raw || typeof raw !== 'object') return base;
-  const r = raw as Partial<TrainerState>;
+  const r = raw as Partial<TrainerState> & { torre?: Partial<TrainerState['torre']> };
   if (r.v !== TRAINER_VERSION) return base;
   const num = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0);
   const strs = (a: unknown) => (Array.isArray(a) ? a.filter((x): x is string => typeof x === 'string') : []);
@@ -473,6 +518,7 @@ export function normalizeTrainer(raw: unknown): TrainerState {
     pvp: { played: num(r.pvp?.played), wins: Math.min(num(r.pvp?.played), num(r.pvp?.wins)) },
     shinies: num(r.shinies),
     today: { day: typeof r.today?.day === 'string' ? r.today.day : '', cards: strs(r.today?.cards), battles: num(r.today?.battles), minigames: num(r.today?.minigames), life: num(r.today?.life), progress, done: strs(r.today?.done), bonus: r.today?.bonus === true },
+    torre: { bestMs: num(r.torre?.bestMs), bestClearMs: num(r.torre?.bestClearMs), trainersBeaten: num(r.torre?.trainersBeaten), bossesBeaten: num(r.torre?.bossesBeaten), cleared: num(r.torre?.cleared), infiniteUnlocked: r.torre?.infiniteUnlocked === true, lastClearBonusDay: typeof r.torre?.lastClearBonusDay === 'string' ? r.torre.lastClearBonusDay : '', lastInfinite: r.torre?.lastInfinite === true },
     achievements,
   };
 }
