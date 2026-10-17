@@ -5,6 +5,7 @@ import { fetchSprite } from '../ar/sprite-source';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { recordEvent } from '../app/trainer-store';
 import { addCoins } from '../app/wallet';
+import { visual } from '../app/visual-settings';
 import { seededRng } from '../core/battle';
 import { shuffle } from '../core/minigames';
 import {
@@ -30,6 +31,8 @@ import type { DecodedGif } from '../core/gif';
 import { speciesTiles } from '../core/size-scale';
 import { contentBounds } from '../village/local-sprite';
 import type { ContentBounds } from '../village/local-sprite';
+import { SoundEngine } from '../box/sound';
+import type { SoundCue } from '../box/sound-recipes';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -267,6 +270,18 @@ function evolutionsFor(dexId: number): SurvivorEvolutionOption[] {
       return { dexId: id, name: speciesName(id) || `Pokémon nº ${id}`, ...(move && stats ? { profile: attackProfile(move, stats) } : {}) };
     });
 }
+const sound = new SoundEngine();
+type UiSound = Extract<SoundCue, { kind: 'ui' }>['cue'];
+
+function unlockSound(): void {
+  sound.setEnabled(visual.sound);
+  sound.unlock();
+}
+
+function playSound(cue: UiSound): void {
+  sound.setEnabled(visual.sound);
+  sound.play({ kind: 'ui', cue });
+}
 
 let ctx: CanvasRenderingContext2D | null = null;
 let groundPattern: CanvasPattern | null = null;
@@ -302,6 +317,7 @@ function joyDown(e: PointerEvent): void {
   if (joystick.active || !ready.value || summary.value || pickOptions.value) return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
   if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
+  unlockSound();
   const el = e.currentTarget as HTMLElement;
   const rect = el.getBoundingClientRect();
   joystick.active = true;
@@ -509,13 +525,27 @@ function loop(ts: number): void {
   animMs += dt;
   const s = state.value;
   if (!s.over && !s.pendingUpgrade && !evolving.value) {
+    const projectilesBefore = s.projectiles.length;
+    const hpBefore = s.player.hp;
+    const xpBefore = s.player.xp;
+    const killsBefore = s.kills;
     const kx = (heldKeys.has('right') ? 1 : 0) - (heldKeys.has('left') ? 1 : 0);
     const ky = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
     const dx = kx + (joystick.active ? joystick.dx : 0);
     const dy = ky + (joystick.active ? joystick.dy : 0);
     const events = stepSurvivor(s, { dx, dy }, dt);
+    if (s.projectiles.length > projectilesBefore) playSound('survivor-shot');
+    if (s.kills > killsBefore) playSound('survivor-hit');
+    if (s.player.xp > xpBefore) playSound('survivor-pickup');
+    if (s.player.hp < hpBefore) playSound('survivor-hurt');
     for (const ev of events) {
-      if (ev.type === 'gameover') { summary.value = ev.summary; recordRun(ev.summary); }
+      if (ev.type === 'levelup') playSound('survivor-level');
+      else if (ev.type === 'bossSpawn') playSound('survivor-boss');
+      if (ev.type === 'gameover') {
+        playSound('survivor-gameover');
+        summary.value = ev.summary;
+        recordRun(ev.summary);
+      }
       else if (ev.type === 'trainerSpawn') say(ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
       else if (ev.type === 'trainerDown') say(ev.final ? 'CHEFAO DERROTADO!' : 'Treinador derrotado!');
     }
@@ -527,6 +557,7 @@ function loop(ts: number): void {
 function chooseUpgrade(id: string): void {
   if (!state.value) return;
   const events = applyUpgrade(state.value, id);
+  playSound('success');
   pendingUpgrade.value = null;
   for (const ev of events) if (ev.type === 'evolve') void evolveTo(ev.dexId, ev.name);
 }
@@ -620,6 +651,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
 }
 
 function choosePlayer(opt: PickOption, picked?: PokemonType): void {
+  unlockSound();
   void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked);
 }
 
@@ -649,6 +681,7 @@ async function openPicker(): Promise<void> {
 }
 
 function playAgain(): void {
+  unlockSound();
   cancelAnimationFrame(rafId);
   rafId = 0;
   void openPicker();
@@ -687,6 +720,7 @@ onBeforeUnmount(() => {
   resizer?.disconnect();
   resizer = null;
   heldKeys.clear();
+  sound.dispose();
 });
 </script>
 
