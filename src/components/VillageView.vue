@@ -15,6 +15,7 @@ import { recordEvent, trainer } from '../app/trainer-store';
 import { claimPrizes } from '../core/village/rewards';
 import LeagueCard from './LeagueCard.vue';
 import MinigameHub from './MinigameHub.vue';
+import MinigameEquilibrio from './MinigameEquilibrio.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import { dayKey, levelOf } from '../core/trainer';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
@@ -553,9 +554,11 @@ const JOY_MAX = 44;
  * Um toque rápido, sem arrastar, leva você andando até aquele lugar (`game.walkTo`).
  */
 const joy = reactive({ active: false, pointerId: -1, cx: 0, cy: 0, x: 0, y: 0, lx: 0, ly: 0, downAt: 0, moved: false });
+let tapInteraction: { x: number; y: number } | null = null;
 const TAP_MS = 320;
 const TAP_PX = 10;
 function applyStick(x: number, y: number): void {
+  if (x !== 0 || y !== 0) tapInteraction = null;
   const dirs = stickDirs(x, y);
   game?.holdStick(dirs.primary ? dirs : null);
 }
@@ -582,7 +585,10 @@ function joyUp(e: PointerEvent): void {
   applyKeys();
   if (tap && game) {
     const t = game.tileAtScreen(e.clientX, e.clientY);
-    if (t) game.walkTo(t.x, t.y);
+    if (t) {
+      tapInteraction = game.interactableAt(t.x, t.y) ? t : null;
+      game.walkTo(t.x, t.y);
+    }
   }
 }
 
@@ -856,10 +862,22 @@ function checkGuidedTrip(): void {
   if (distance <= 2) finishGuidedTrip();
 }
 
+function checkTapInteraction(): void {
+  const target = tapInteraction;
+  if (!target || !game || game.walking) return;
+  const distance = Math.abs(game.player.x - target.x) + Math.abs(game.player.y - target.y);
+  if (distance <= 1) {
+    tapInteraction = null;
+    game.facePoint(target.x, target.y);
+    pressA();
+  }
+}
+
 function startGuidedTrip(id: string): void {
   if (!game) return;
   const destination = GUIDED_DESTINATIONS[(state.seed + id.length + refreshDay().length) % GUIDED_DESTINATIONS.length]!;
   guidedTrip = { id, destination };
+  tapInteraction = null;
   dialog.value = null;
   game.walkTo(destination.x, destination.y);
   say(`🚶 ${nameOf(id)} quer passear com você até ${destination.place}.`);
@@ -1642,7 +1660,7 @@ onMounted(async () => {
   if (!canvasEl.value || !wrapEl.value) return;
   game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas);
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
-  game.onStep = () => { changed(); checkGuidedTrip(); };
+  game.onStep = () => { changed(); checkTapInteraction(); checkGuidedTrip(); };
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).
   game.weatherMode = () => (visual.weather !== 'off' && effects().rain ? 'chuva' : visual.weather);
   game.lampStorm = () => effects().lampStorm;
@@ -1848,6 +1866,7 @@ onBeforeUnmount(() => {
           <button type="button" class="primary" @click="goToBattle">Abrir câmera e batalhar</button>
         </div>
         <MinigameHub closable @leave="sheet = null" />
+         <MinigameEquilibrio @leave="sheet = null" />
       </div>
 
       <div v-if="sheet === 'arena'" class="village-sheet tall game-sheet" role="dialog" aria-label="Arena">

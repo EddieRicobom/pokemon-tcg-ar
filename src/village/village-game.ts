@@ -8,7 +8,7 @@ import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/villag
 import type { FurnitureId, VillageState } from '../core/village/life';
 import { homeDecor, homeLevel, homeOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
 import type { Building, BuildingKind } from '../core/village/town-layout';
-import { buildingAt, findFree, isWalkable, tileAt } from '../core/village/map';
+import { buildingAt, findFree, isSolidTile, isWalkable, tileAt } from '../core/village/map';
 import { pathStep } from '../core/village/pathing';
 import type { Tile, VillageMap } from '../core/village/map';
 import { FX_EMOJI } from '../core/village/social-state';
@@ -590,6 +590,21 @@ export class VillageGame {
    */
   walkTo(x: number, y: number): void {
     this.goal = { x, y };
+  }
+
+  /** Permite que um toque no mapa saiba se está apontando para algo que aceita A. */
+  interactableAt(x: number, y: number): boolean {
+    if (isPlaced(this.state, x, y) || cropAt(this.state, x, y)) return true;
+    for (const w of this.villagers.values()) if ((w.x === x && w.y === y) || (w.tx === x && w.ty === y)) return true;
+    return isSolidTile(tileAt(this.map, x, y)) || tileAt(this.map, x, y) === 'plot';
+  }
+
+  /** Vira o treinador para um bloco antes de disparar a interação automática. */
+  facePoint(x: number, y: number): void {
+    const dx = x - this.player.x;
+    const dy = y - this.player.y;
+    if (Math.abs(dx) > Math.abs(dy)) this.player.dir = dx > 0 ? 'right' : 'left';
+    else if (dy !== 0) this.player.dir = dy > 0 ? 'down' : 'up';
   }
 
   get walking(): boolean {
