@@ -74,8 +74,8 @@ watch(
         class="header-gear"
         :href="routeHref('diagnostico')"
         :aria-current="route.name === 'diagnostico' ? 'page' : undefined"
-        aria-label="Diagnóstico e ajustes"
-        title="Diagnóstico e ajustes"
+        aria-label="Diagnóstico"
+        title="Diagnóstico"
       >
         <NavIcon name="diagnostico" />
       </a>
@@ -122,7 +122,7 @@ watch(
     <PokemonSpeech />
 
     <footer class="app-footer">
-      <a :href="routeHref('diagnostico')">Diagnóstico e ajustes</a> ·
+      <a :href="routeHref('diagnostico')">Diagnóstico</a> ·
       <a href="https://github.com/EddieRicobom/pokemon-tcg-ar">Código-fonte no GitHub</a>
     </footer>
   </main>
