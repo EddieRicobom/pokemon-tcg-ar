@@ -993,7 +993,7 @@ export class VillageGame {
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const t = tileAt(this.map, x, y);
-        if (atlas && (t === 'tree' || t === 'rock' || t === 'bush' || t === 'lamp')) {
+        if (atlas && (t === 'tree' || t === 'rock' || t === 'bush')) {
           const hv = hashN(x * 31 + y * 17);
           const id = t === 'tree' ? (hv < 0.62 ? 'pine-s1' : 'pine-s2') : t === 'rock' ? `rock-${1 + Math.floor(hv * 3)}` : t;
           const img = this.art(id);
@@ -1017,9 +1017,6 @@ export class VillageGame {
                   }
                 },
               });
-            } else if (t === 'lamp') {
-              list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1 * scale, 4 * scale, 1.5 * scale, 0.18); ctx.drawImage(img, sx(x), sy(y + 1) - h, T, h); } });
-              if (night) streetLamps.push({ x, y });
             } else {
               list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2); ctx.drawImage(img, sx(x), sy(y + 1) - h, T, h); } });
             }
@@ -1172,7 +1169,7 @@ export class VillageGame {
         const img = this.art(id, key, tint);
         const fenceArt = decor & 2 ? this.art('fence-h') : null;
         const planter = decor & 1 ? this.art('planter') : null;
-        const lantern = decor & 4 ? this.art('lamp') : null;
+        const lantern = decor & 4 ? this.sprite(`lamp:${night}`, () => paintLamp(night)) : null;
         const who = [...this.homes].filter(([, l]) => l === lot).map(([id2]) => id2);
         const sleeping = who.length > 0 && who.every((id2) => this.asleep.has(id2));
         if (img) {
@@ -1188,7 +1185,7 @@ export class VillageGame {
                 ctx.drawImage(fenceArt, 0, 0, 16, 16, left - 8 * scale, bottom - 14 * scale, 16 * scale, 16 * scale);
                 ctx.drawImage(fenceArt, 16, 0, 16, 16, left + b.w * T - 8 * scale, bottom - 14 * scale, 16 * scale, 16 * scale);
               }
-              if (lantern) ctx.drawImage(lantern, left + (b.w - 1) * T, bottom - 28 * scale, T, 28 * scale);
+              if (lantern) ctx.drawImage(lantern, left + (b.w - 1) * T, bottom - 2 * T, T, 2 * T);
               if (decor & 8) {
                 ctx.fillStyle = '#6a4a28';
                 ctx.fillRect(left + 2 * scale, bottom - 10 * scale, 2 * scale, 10 * scale);

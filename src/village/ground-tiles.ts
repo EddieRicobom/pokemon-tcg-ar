@@ -58,7 +58,9 @@ export function quarterCell(qx: 0 | 1, qy: 0 | 1, sameV: boolean, sameH: boolean
 /** Os pedaços que formam o bloco (x, y) do chão, de baixo para cima. */
 export function groundPieces(map: VillageMap, x: number, y: number): GroundPiece[] {
   const tile = tileAt(map, x, y);
-  const grass: GroundPiece = { src: 'grass', sx: (x % 2) * T, sy: (y % 2) * T, w: T, h: T, dx: 0, dy: 0 };
+  // As 4 variações da grama sorteadas por posição (fixas): em xadrez regular, o padrão aparecia na tela.
+  const v = grassVariant(x, y);
+  const grass: GroundPiece = { src: 'grass', sx: (v & 1) * T, sy: (v >> 1) * T, w: T, h: T, dx: 0, dy: 0 };
   const at = AUTOTILE[tile];
   if (at) return autotile(map, x, y, tile, at);
   switch (tile) {
@@ -67,12 +69,20 @@ export function groundPieces(map: VillageMap, x: number, y: number): GroundPiece
     case 'flower':
       return [{ src: 'flowers-white', sx: ((x * 7 + y * 3) % 3) * T, sy: 0, w: T, h: T, dx: 0, dy: 0 }];
     case 'water':
-      return [{ src: 'sea', sx: (x % 3) * T, sy: (y % 3) * T, w: T, h: T, dx: 0, dy: 0 }];
+      // Só o miolo do bloco do mar: as células da beira têm um contorno claro que, repetido, vira grade.
+      return [{ src: 'sea', sx: T, sy: T, w: T, h: T, dx: 0, dy: 0 }];
     case 'sand':
       return sand(map, x, y);
     default:
       return [grass];
   }
+}
+
+/** Variação da grama (0–3) do bloco: um embaralhamento fixo da posição. */
+export function grassVariant(x: number, y: number): number {
+  let h = Math.imul(x * 374761393 + y * 668265263, 1274126177) >>> 0;
+  h ^= h >>> 13;
+  return Math.imul(h, 1103515245) >>> 30;
 }
 
 function autotile(map: VillageMap, x: number, y: number, tile: Tile, src: string): GroundPiece[] {

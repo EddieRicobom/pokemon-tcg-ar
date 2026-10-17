@@ -162,9 +162,11 @@ export function buildingsFor(w: number, h: number): Building[] {
 /** Onde ficam os postes de luz: na beira das ruas e nas frestas entre as casas. */
 export function lampSpots(w: number, h: number): { x: number; y: number }[] {
   const spots: { x: number; y: number }[] = [];
-  for (let x = 8; x < 88; x += 6) spots.push({ x, y: TOWN.mainStreetY - 1 }, { x: x + 3, y: TOWN.mainStreetY + 2 });
-  for (let x = 11; x < 78; x += 7) spots.push({ x, y: TOWN.gamesStreetY + 2 });
-  for (const l of LOTS) spots.push({ x: l.x + HOME_W, y: l.y + 1 });
-  for (let y = 8; y < 66; y += 7) spots.push({ x: TOWN.avenueX - 1, y }, { x: TOWN.avenueX + 2, y: y + 3 });
+  for (let x = 8; x < 88; x += 12) spots.push({ x, y: TOWN.mainStreetY - 1 }, { x: x + 6, y: TOWN.mainStreetY + 2 });
+  for (let x = 11; x < 78; x += 11) spots.push({ x, y: TOWN.gamesStreetY + 2 });
+  LOTS.forEach((l, i) => {
+    if (i % 2 === 0) spots.push({ x: l.x + HOME_W, y: l.y + 1 });
+  });
+  for (let y = 8; y < 66; y += 12) spots.push({ x: TOWN.avenueX - 1, y }, { x: TOWN.avenueX + 2, y: y + 6 });
   return spots.filter((s) => s.x >= 3 && s.y >= 3 && s.x < w - 3 && s.y < h - 3);
 }

@@ -57,16 +57,15 @@ export const ATLAS_SOURCES: readonly AtlasSource[] = [
   { id: 'fence-h', sheet: 'Daisy Route.png', x: 48, y: 448, w: 32, h: 16 },
   { id: 'wall', sheet: 'Daisy Route.png', x: 64, y: 432, w: 64, h: 16 },
   { id: 'board', sheet: 'Daisy Route.png', x: 0, y: 480, w: 48, h: 48 },
-  // ---- praça e parque
-  { id: 'lamp', sheet: 'Pond and Bridge Formatted.png', x: 32, y: 44, w: 16, h: 28 },
+  // ---- praça e parque (os postes de luz continuam desenhados por código: nenhuma folha tem um poste de rua)
   { id: 'swing', sheet: 'Daisy Route.png', x: 0, y: 626, w: 64, h: 46 },
   { id: 'gym', sheet: 'Daisy Route.png', x: 64, y: 626, w: 48, h: 34 },
   { id: 'slide', sheet: 'Daisy Route.png', x: 112, y: 626, w: 16, h: 30 },
   { id: 'carousel', sheet: 'Daisy Route.png', x: 0, y: 666, w: 48, h: 42 },
   { id: 'seesaw', sheet: 'Daisy Route.png', x: 48, y: 668, w: 64, h: 22 },
-  { id: 'umbrella-b', sheet: 'Jonquil Town.png', x: 0, y: 560, w: 32, h: 32 },
-  { id: 'umbrella-r', sheet: 'Jonquil Town.png', x: 32, y: 560, w: 32, h: 32 },
-  { id: 'umbrella-g', sheet: 'Jonquil Town.png', x: 64, y: 560, w: 32, h: 32 },
+  { id: 'umbrella-b', sheet: 'Jonquil Town.png', x: 0, y: 636, w: 32, h: 32 },
+  { id: 'umbrella-r', sheet: 'Jonquil Town.png', x: 32, y: 636, w: 32, h: 32 },
+  { id: 'umbrella-g', sheet: 'Jonquil Town.png', x: 64, y: 636, w: 32, h: 32 },
   // ---- construções
   { id: 'house-brick', sheet: 'Brick House Tiles.png', x: 0, y: 12, w: 80, h: 108 },
   { id: 'home-yellow', sheet: 'Apathy Houses.png', x: 0, y: 0, w: 72, h: 128 },
