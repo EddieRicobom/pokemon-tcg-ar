@@ -587,13 +587,16 @@ export function plant(s: VillageState, map: VillageMap, seed: ItemId, x: number,
   return { ok: true, message: `Você plantou ${def.name}. Regue para crescer!` };
 }
 
-/** Avança a horta: cada estágio precisa de rega e dos minutos da planta desde a rega. */
-export function tickCrops(s: VillageState, now: number): number {
+/**
+ * Avança a horta: cada estágio precisa de rega e dos minutos da planta desde a rega. `factor` < 1 encurta esse tempo
+ * (chuva de Suicune, ver `legendaryEffects`).
+ */
+export function tickCrops(s: VillageState, now: number, factor = 1): number {
   let grew = 0;
   for (const c of s.crops) {
     const g = itemDef(c.seed)?.grows;
     if (!g || c.stage >= g.stages || c.wateredAt === null) continue;
-    if (now - c.wateredAt >= g.minutes * 60_000) {
+    if (now - c.wateredAt >= g.minutes * 60_000 * factor) {
       c.stage++;
       c.wateredAt = null;
       grew++;

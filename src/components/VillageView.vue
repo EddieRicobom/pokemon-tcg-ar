@@ -29,11 +29,12 @@ import {
   pickFonteSpecies, summon, SUMMON_COST, summonWithCoins,
 } from '../core/village/digital';
 import type { DigitalPokemonInstance } from '../core/village/digital';
-import { dismissActive, legendaryOf, rollLegendary } from '../core/village/legendary';
+import { celebiDiaryPage, dismissActive, legendaryEffects, legendaryOf, rollLegendary } from '../core/village/legendary';
+import type { LegendaryEffects } from '../core/village/legendary';
 import { ALL_QUESTIONS, FONTE_POOL, isComplete as quizComplete, nextForm, resolveStarter } from '../core/village/starter-quiz';
 import type { QuizAnswers } from '../core/village/starter-quiz';
 import type { Resolved, Scene } from '../core/village/social';
-import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS } from '../core/village/social-state';
+import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS, trimMoments } from '../core/village/social-state';
 import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, recordAnswer, wordOf } from '../core/village/quiz';
 import type { Follow, Question } from '../core/village/quiz';
 import {
@@ -201,7 +202,7 @@ function syncTrainer(): void {
 // com um aviso, nunca inventa uma espécie ou uma carta.
 /** Atividade da Vila que rendia energia da Fonte: desde a unificação, rende moedas (saldo único, `app/wallet.ts`). */
 function earnCoins(amount: number): void {
-  const n = Math.max(0, Math.floor(amount));
+  const n = Math.round(Math.max(0, Math.floor(amount)) * effects().coinMultiplier);
   if (n === 0) return;
   state.coins = Math.min(999999, state.coins + n);
   changed();
@@ -403,10 +404,21 @@ async function doEvolve(instanceId: string, nextDexId: number): Promise<void> {
 }
 
 // -- Encontros lendários: uma oportunidade de sorteio por dia do calendário (ver `core/village/legendary.ts`).
+/** O que os encontros lendários estão mudando agora (chuva, horta, moedas, conversas, postes, animações). */
+function effects(): LegendaryEffects {
+  const now = Date.now();
+  return legendaryEffects(state.legendary, now, dayKey(new Date(now)), (ms) => dayKey(new Date(ms)));
+}
+
 function rollLegendaryToday(): void {
   const r = rollLegendary(state.legendary, Math.random, day.value, new Date().toISOString());
   state.legendary = r.state;
   if (r.legendary) changed();
+  // Celebi deixa a página especial no Diário (o bônus prometido na cutscene, de verdade).
+  if (r.legendary?.id === 'celebi') {
+    const now = new Date();
+    state.diary = trimMoments([...state.diary, celebiDiaryPage(now.getTime(), day.value, now.getHours())]);
+  }
   if (state.legendary.active) showLegendaryCutscene();
 }
 
@@ -1024,7 +1036,7 @@ function finishScene(scene: Scene, ids: string[]): void {
 function tickScenes(): void {
   if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (Date.now() < nextSceneAt) return;
-  nextSceneAt = Date.now() + SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR;
+  nextSceneAt = Date.now() + (SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR) * effects().quietFactor;
   // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
   const near = actorList().filter((a) => game!.playerNear([a.id], 14) && !game!.sceneBusy(a.id));
   const env = makeEnv(state, refreshDay(), new Date().getHours(), game.weatherKind, profile.name);
@@ -1160,7 +1172,7 @@ function pressA(): void {
     openFriendDialog(t.id, text);
   } else if (t.kind === 'crop') {
     const now = Date.now();
-    tickCrops(state, now);
+    tickCrops(state, now, effects().growthFactor);
     const ready = harvestCrop(state, t.x, t.y, Math.random);
     if (ready.ok) {
       say(ready.message);
@@ -1366,7 +1378,10 @@ onMounted(async () => {
   game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile);
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = changed;
-  game.weatherMode = () => visual.weather;
+  // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).
+  game.weatherMode = () => (visual.weather !== 'off' && effects().rain ? 'chuva' : visual.weather);
+  game.lampStorm = () => effects().lampStorm;
+  game.animSpeed = () => effects().animSpeed;
   game.metallic = () => visual.metallic;
   // Presente recebido enquanto a cena abria: entra agora, ao lado do jogador.
   for (const entry of pendingDigital.values()) {
@@ -1387,9 +1402,9 @@ onMounted(async () => {
     tickScenes();
     tickQuestions();
   }, 1000);
-  if (tickCrops(state, Date.now()) > 0) changed();
+  if (tickCrops(state, Date.now(), effects().growthFactor) > 0) changed();
   cropTimer = setInterval(() => {
-    if (tickCrops(state, Date.now()) > 0) changed();
+    if (tickCrops(state, Date.now(), effects().growthFactor) > 0) changed();
   }, 5000);
   let beat = 0;
   saveTimer = setInterval(() => {
