@@ -82,7 +82,11 @@ export function groundPieces(map: VillageMap, x: number, y: number): GroundPiece
 export function grassVariant(x: number, y: number): number {
   let h = Math.imul(x * 374761393 + y * 668265263, 1274126177) >>> 0;
   h ^= h >>> 13;
-  return Math.imul(h, 1103515245) >>> 30;
+  h = Math.imul(h, 1103515245) >>> 0;
+  // A variação deve quebrar grandes manchas de grama, sem formar um xadrez que
+  // compete com caminhos, prédios e moradores. A textura base continua sendo a
+  // maioria dos blocos; os detalhes aparecem em pontos espaçados.
+  return h % 7 === 0 ? (h >>> 3) & 3 : 0;
 }
 
 function autotile(map: VillageMap, x: number, y: number, tile: Tile, src: string): GroundPiece[] {

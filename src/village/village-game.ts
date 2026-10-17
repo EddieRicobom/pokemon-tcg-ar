@@ -245,6 +245,8 @@ export class VillageGame {
   /** Nível de Treinador (libera terrenos e prédios) e quem mora em qual terreno. */
   private townLevel = 1;
   private homes: ReadonlyMap<string, number> = new Map();
+  /** Centro de passeio de cada morador, espalhado pela cidade em vez de todos ficarem na praça. */
+  private villagerZones = new Map<string, { x: number; y: number }>();
   /** Quem está dormindo em casa agora: some do mapa até acordar. */
   private readonly asleep = new Set<string>();
   /** Quem foi acordado batendo na porta fica de pé até este instante (relógio de `Date.now()`), mesmo em hora de dormir. */
@@ -306,11 +308,22 @@ export class VillageGame {
 
   setMons(mons: readonly VillageMon[]): void {
     this.villagers.clear();
+    this.villagerZones.clear();
     this.monSprites.clear();
     this.names.clear();
-    for (const mon of mons) {
-      const spot = findFree(this.map, this.map.spawn.x + Math.floor(this.rng() * 9) - 4, this.map.spawn.y - 2 - Math.floor(this.rng() * 5), (x, y) => this.occupied(x, y), this.rng);
+    // Zonas próximas às ruas, casas, parquinho, lago e fazenda. A busca em
+    // espiral corrige automaticamente uma âncora que caiu sobre um obstáculo.
+    const zones = [
+      { x: 43, y: 34 }, { x: 52, y: 34 }, { x: 58, y: 29 }, { x: 68, y: 28 },
+      { x: 31, y: 28 }, { x: 22, y: 38 }, { x: 31, y: 45 }, { x: 43, y: 46 },
+      { x: 55, y: 46 }, { x: 67, y: 46 }, { x: 76, y: 39 }, { x: 76, y: 52 },
+      { x: 42, y: 56 }, { x: 55, y: 56 }, { x: 70, y: 57 }, { x: 78, y: 63 },
+    ];
+    for (const [i, mon] of mons.entries()) {
+      const anchor = zones[i % zones.length]!;
+      const spot = findFree(this.map, anchor.x, anchor.y, (x, y) => this.occupied(x, y), this.rng);
       this.placeMon(mon, spot.x, spot.y);
+      this.villagerZones.set(mon.id, spot);
     }
   }
 
@@ -930,7 +943,10 @@ export class VillageGame {
         continue;
       }
       const called = now < this.calledUntil ? this.called.get(id) : undefined;
-      const follow = called ?? (this.state.follower === id ? behind : null);
+      const zone = this.villagerZones.get(id);
+      const follow = this.state.follower === id
+        ? behind
+        : called ?? (zone && Math.abs(zone.x - w.x) + Math.abs(zone.y - w.y) > 7 ? zone : null);
       stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, follow);
       if (follow && !called) this.catchUp(w, follow, dt, now);
     }

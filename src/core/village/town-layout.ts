@@ -110,7 +110,8 @@ export const DECOR: readonly Decor[] = [
   // O sino da praça, ao lado da fonte: tocar chama todos os Pokémon acordados (ver `VillageGame.ringBell`).
   { kind: 'bell', x: 50, y: 36, w: 1, h: 1 },
   // Praça: mural de recados e jardineiras.
-  { kind: 'board', x: 41, y: 32, w: 3, h: 1 },
+  // O mural fica junto da fonte, no canto superior esquerdo da praça, onde é fácil encontrá-lo.
+  { kind: 'board', x: 43, y: 34, w: 3, h: 1 },
   { kind: 'planter', x: 51, y: 32, w: 3, h: 1 },
   { kind: 'planter', x: 41, y: 41, w: 3, h: 1 },
   { kind: 'pot', x: 53, y: 41, w: 1, h: 1 },

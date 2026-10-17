@@ -899,6 +899,7 @@ function openBookFromDialog(id: string): void {
 
 function openBuilding(b: Building): void {
   if (b.kind === 'fountain') return openFountain(b);
+  playSound('village-door');
   if (level.value < b.unlock) {
     const text = b.kind === 'home'
       ? `Um terreno vazio, com uma placa: "Em breve, uma casa". Ele é liberado no nível ${b.unlock} de Treinador (você está no ${level.value}). Escaneie cartas, batalhe e jogue para ganhar XP.`
@@ -1015,6 +1016,7 @@ function openGameBuilding(b: Building): void {
 }
 
 function openFountain(b: Building): void {
+  playSound('village-water');
   const next = nextUnlock(level.value);
   const open = LOTS.filter((l) => level.value >= l.unlock).length;
   dialog.value = {
@@ -1167,6 +1169,7 @@ const SCENE_GAP_MIN = 80000;
 const SCENE_GAP_VAR = 90000;
 let nextSceneAt = Date.now() + 20000;
 let sceneTimer: ReturnType<typeof setInterval> | null = null;
+let nextAmbientSoundAt = Date.now() + 18000;
 
 function announce(r: Resolved): void {
   changed();
@@ -1385,6 +1388,7 @@ function pressA(): void {
     ringBell();
   } else if (t.kind === 'tile' && t.tile === 'water') {
     if (fishing) return;
+    playSound('village-water');
     if (state.fishing.day === today && state.fishing.casts >= FISH_PER_DAY) return say('Os peixes cansaram por hoje. Volte amanhã!');
     fishing = true;
     game.castLine(t.x, t.y, 1600);
@@ -1688,6 +1692,10 @@ onMounted(async () => {
   sceneTimer = setInterval(() => {
     tickScenes();
     tickQuestions();
+    if (!document.hidden && visual.sound && !dialog.value && !sheet.value && Date.now() >= nextAmbientSoundAt) {
+      nextAmbientSoundAt = Date.now() + 18000 + Math.random() * 26000;
+      playSound(Math.random() < 0.68 ? 'village-birds' : 'village-chime');
+    }
   }, 1000);
   if (tickCrops(state, Date.now(), effects().growthFactor) > 0) changed();
   cropTimer = setInterval(() => {

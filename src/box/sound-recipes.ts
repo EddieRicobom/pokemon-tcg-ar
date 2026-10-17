@@ -34,7 +34,7 @@ export type SoundCue =
   | { kind: 'pin-shrink' }
   | { kind: 'pin-win' }
   | { kind: 'pin-lose' }
-  | { kind: 'ui'; cue: 'menu' | 'interact' | 'talk' | 'collect' | 'gift' | 'success' | 'bell' | 'survivor-shot' | 'survivor-hit' | 'survivor-pickup' | 'survivor-hurt' | 'survivor-level' | 'survivor-boss' | 'survivor-gameover' };
+  | { kind: 'ui'; cue: 'menu' | 'interact' | 'talk' | 'collect' | 'gift' | 'success' | 'bell' | 'village-water' | 'village-birds' | 'village-door' | 'village-chime' | 'survivor-shot' | 'survivor-hit' | 'survivor-pickup' | 'survivor-hurt' | 'survivor-level' | 'survivor-boss' | 'survivor-gameover' };
 
 export interface SoundSink {
   play(cue: SoundCue): void;
@@ -228,6 +228,10 @@ function uiLayers(cue: Extract<SoundCue, { kind: 'ui' }>['cue']): Layer[] {
     case 'gift': return [tone('triangle', 660, 990, 0, 0.16, 0.12), tone('sine', 1320, 1320, 0.1, 0.18, 0.08)];
     case 'success': return [tone('square', 520, 780, 0, 0.14, 0.1), tone('triangle', 1040, 1040, 0.1, 0.18, 0.08)];
     case 'bell': return [tone('sine', 880, 620, 0, 0.7, 0.22, { vibrato: { rate: 5, depth: 8 } }), tone('triangle', 1320, 900, 0.06, 0.8, 0.14)];
+    case 'village-water': return [noise({ type: 'bandpass', f0: 1200, f1: 520, q: 1.2 }, 0, 0.42, 0.12), tone('sine', 720, 560, 0.02, 0.32, 0.08)];
+    case 'village-birds': return [tone('triangle', 1480, 1900, 0, 0.13, 0.08), tone('triangle', 2100, 1760, 0.12, 0.16, 0.07), tone('sine', 1760, 2280, 0.27, 0.12, 0.06)];
+    case 'village-door': return [tone('triangle', 240, 180, 0, 0.16, 0.11), tone('sine', 620, 520, 0.05, 0.16, 0.07)];
+    case 'village-chime': return [tone('sine', 1047, 1047, 0, 0.34, 0.1), tone('sine', 1568, 1568, 0.12, 0.38, 0.07)];
     case 'survivor-shot': return [tone('square', 680, 300, 0, 0.09, 0.08)];
     case 'survivor-hit': return [tone('triangle', 180, 90, 0, 0.12, 0.18), noise({ type: 'lowpass', f0: 1100 }, 0, 0.08, 0.12)];
     case 'survivor-pickup': return [tone('sine', 760, 1160, 0, 0.12, 0.1)];

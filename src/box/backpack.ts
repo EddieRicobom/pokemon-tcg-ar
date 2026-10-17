@@ -8,12 +8,16 @@ import {
   MathUtils,
   Mesh,
   MeshStandardMaterial,
+  CanvasTexture,
+  Sprite,
+  SpriteMaterial,
   PerspectiveCamera,
   Scene,
   WebGLRenderer,
   Vector3,
 } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { paintItemIcon } from '../village/item-art';
 
 export interface BackpackItem {
   id: string;
@@ -31,6 +35,7 @@ export interface BackpackOptions {
 export interface RunningBackpack {
   shake(): void;
   recenter(): void;
+  calibrate(): Promise<void>;
   setFx(on: boolean): void;
   setSound(on: boolean): void;
   resize(): void;
@@ -38,7 +43,8 @@ export interface RunningBackpack {
 }
 
 interface LooseItem {
-  mesh: Mesh;
+  sprite: Sprite;
+  texture: CanvasTexture;
   home: Vector3;
   velocity: Vector3;
 }
@@ -79,11 +85,21 @@ class Clinker {
   }
 }
 
-const colorOf = (id: string): number => {
-  let hash = 2166136261;
-  for (const char of id) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-  return (hash >>> 0) & 0xffffff;
-};
+function spriteTexture(id: string): CanvasTexture {
+  const icon = paintItemIcon(id);
+  const canvas = document.createElement('canvas');
+  canvas.width = icon.w;
+  canvas.height = icon.h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D indisponível para o sprite da mochila.');
+  const image = ctx.createImageData(icon.w, icon.h);
+  image.data.set(icon.data);
+  ctx.putImageData(image, 0, 0);
+  const texture = new CanvasTexture(canvas);
+  texture.magFilter = texture.minFilter = 1003; // NearestFilter, preserva o pixel art.
+  texture.colorSpace = 'srgb';
+  return texture;
+}
 
 export async function startBackpack(options: BackpackOptions): Promise<RunningBackpack> {
   const canvas = options.canvas;
@@ -93,9 +109,9 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
   renderer.toneMappingExposure = 1.15;
   const scene = new Scene();
   scene.background = new Color(0x101327);
-  const camera = new PerspectiveCamera(32, 1, 0.1, 100);
-  camera.position.set(0, 2.2, 5.2);
-  camera.lookAt(0, 0.55, 0);
+  const camera = new PerspectiveCamera(30, 1, 0.1, 100);
+  camera.position.set(0, 2.65, 7.8);
+  camera.lookAt(0, 0.45, 0);
   scene.add(new AmbientLight(0x9ea9ff, 2.2));
   const key = new DirectionalLight(0xffe4bd, 3.2);
   key.position.set(-3, 5, 4);
@@ -129,13 +145,13 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
     const col = index % 6;
     const row = Math.floor(index / 6);
     const home = new Vector3(-1.23 + col * 0.49, 0.7 + (index % 3) * 0.045, -0.65 + row * 0.53);
-    const geometry = item.id.includes('cristal') ? new RoundedBoxGeometry(0.28, 0.22, 0.28, 3, 0.06) : new RoundedBoxGeometry(0.3, 0.24, 0.3, 3, 0.08);
-    const material = new MeshStandardMaterial({ color: colorOf(item.id), roughness: 0.4, metalness: item.id.includes('cristal') ? 0.55 : 0.12, emissive: item.id.includes('cristal') ? colorOf(item.id) : 0x000000, emissiveIntensity: item.id.includes('cristal') ? 0.22 : 0 });
-    const mesh = new Mesh(geometry, material);
-    mesh.position.copy(home);
-    mesh.rotation.set(0, (index % 4) * 0.4, 0);
-    bag.add(mesh);
-    loose.push({ mesh, home, velocity: new Vector3() });
+    const texture = spriteTexture(item.id);
+    const material = new SpriteMaterial({ map: texture, transparent: true, depthWrite: false, color: 0xffffff });
+    const sprite = new Sprite(material);
+    sprite.position.copy(home);
+    sprite.scale.set(0.56, 0.56, 1);
+    bag.add(sprite);
+    loose.push({ sprite, texture, home, velocity: new Vector3() });
   });
 
   let fx = options.fx;
@@ -147,6 +163,8 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
   let rotation = 0;
   let targetRotation = 0;
   let motion = { x: 0, y: 0, z: 0 };
+  let orientation: { beta: number; gamma: number } | null = null;
+  let calibration: { beta: number; gamma: number } | null = null;
   const clinker = new Clinker();
 
   const resize = () => {
@@ -162,7 +180,12 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
     if (!a) return;
     motion = { x: a.x ?? 0, y: a.y ?? 0, z: a.z ?? 0 };
   };
+  const onOrientation = (event: DeviceOrientationEvent) => {
+    if (typeof event.beta !== 'number' || typeof event.gamma !== 'number') return;
+    orientation = { beta: event.beta, gamma: event.gamma };
+  };
   window.addEventListener('devicemotion', onMotion);
+  window.addEventListener('deviceorientation', onOrientation);
 
   const frameLoop = (now: number): void => {
     if (!running) return;
@@ -170,25 +193,34 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
     const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
     last = now;
     shakePower *= Math.pow(0.025, dt);
-    rotation += (targetRotation - rotation) * Math.min(1, dt * 7);
-    bag.rotation.z = Math.sin(rotation) * 0.05;
-    bag.rotation.y = rotation * 0.2;
-    const force = new Vector3(motion.x * 0.035, 0, -motion.y * 0.035);
+    if (orientation && calibration) {
+      const tiltX = MathUtils.clamp((orientation.gamma - calibration.gamma) / 28, -1, 1);
+      const tiltY = MathUtils.clamp((orientation.beta - calibration.beta) / 28, -1, 1);
+      targetRotation = tiltX * 0.22;
+      bag.rotation.z += (targetRotation - bag.rotation.z) * Math.min(1, dt * 8);
+      bag.rotation.x += (tiltY * -0.12 - bag.rotation.x) * Math.min(1, dt * 8);
+    } else {
+      rotation += (targetRotation - rotation) * Math.min(1, dt * 7);
+      bag.rotation.z = Math.sin(rotation) * 0.05;
+      bag.rotation.y = rotation * 0.2;
+    }
+    const force = orientation && calibration
+      ? new Vector3((orientation.gamma - calibration.gamma) * 0.0018, 0, -(orientation.beta - calibration.beta) * 0.0018)
+      : new Vector3(motion.x * 0.035, 0, -motion.y * 0.035);
     motion = { x: motion.x * 0.78, y: motion.y * 0.78, z: motion.z * 0.78 };
     let collided = 0;
     for (const item of loose) {
-      const offset = item.home.clone().sub(item.mesh.position).multiplyScalar(4.8);
+      const offset = item.home.clone().sub(item.sprite.position).multiplyScalar(4.8);
       item.velocity.add(offset.multiplyScalar(dt));
       item.velocity.add(force.clone().multiplyScalar(dt * 9));
       item.velocity.multiplyScalar(Math.pow(0.12, dt));
-      item.mesh.position.addScaledVector(item.velocity, dt);
-      item.mesh.rotation.x += item.velocity.z * dt * 1.5;
-      item.mesh.rotation.z -= item.velocity.x * dt * 1.5;
-      const dx = item.mesh.position.x - item.home.x;
-      const dz = item.mesh.position.z - item.home.z;
+      item.sprite.position.addScaledVector(item.velocity, dt);
+      item.sprite.material.rotation += (item.velocity.x + item.velocity.z) * dt * 0.35;
+      const dx = item.sprite.position.x - item.home.x;
+      const dz = item.sprite.position.z - item.home.z;
       if (Math.abs(dx) > 0.21 || Math.abs(dz) > 0.21) {
-        item.mesh.position.x = MathUtils.clamp(item.mesh.position.x, item.home.x - 0.21, item.home.x + 0.21);
-        item.mesh.position.z = MathUtils.clamp(item.mesh.position.z, item.home.z - 0.21, item.home.z + 0.21);
+        item.sprite.position.x = MathUtils.clamp(item.sprite.position.x, item.home.x - 0.21, item.home.x + 0.21);
+        item.sprite.position.z = MathUtils.clamp(item.sprite.position.z, item.home.z - 0.21, item.home.z + 0.21);
         item.velocity.multiplyScalar(-0.45);
         collided += 1;
       }
@@ -206,6 +238,15 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
   return {
     shake() { shakePower = 1; targetRotation = targetRotation > 0 ? -0.35 : 0.35; },
     recenter() { targetRotation = 0; },
+    async calibrate() {
+      const ctor = DeviceOrientationEvent as typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
+      if (typeof ctor.requestPermission === 'function') {
+        try { await ctor.requestPermission(); } catch { /* o sensor continua opcional */ }
+      }
+      calibration = orientation ? { ...orientation } : null;
+      targetRotation = 0;
+      bag.rotation.set(0, 0, 0);
+    },
     setFx(on) { fx = on; },
     setSound(on) { sound = on; },
     resize,
@@ -213,7 +254,8 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
       running = false;
       cancelAnimationFrame(frame);
       window.removeEventListener('devicemotion', onMotion);
-      loose.forEach((item) => { item.mesh.geometry.dispose(); (item.mesh.material as MeshStandardMaterial).dispose(); });
+      window.removeEventListener('deviceorientation', onOrientation);
+      loose.forEach((item) => { item.texture.dispose(); item.sprite.material.dispose(); });
       base.geometry.dispose(); inner.geometry.dispose(); flap.geometry.dispose();
       leather.dispose(); darkLeather.dispose(); lining.dispose();
       renderer.dispose();
