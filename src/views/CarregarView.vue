@@ -9,6 +9,9 @@ import { resolveTeam, TEAM_SIZE } from '../app/team';
 import { savedTeam, setSavedTeam, toggleSaved } from '../app/team-store';
 import type { CachedCard, CacheStatus, SlotInfo, StorageInfo } from '../cache/types';
 import { isShiny } from '../core/shiny';
+import { cardMatchesSpecies, GENERATION_LABELS_PT } from '../core/species-filter';
+import { POKEMON_TYPES, TYPE_LABELS_PT } from '../core/pokemon-data';
+import type { PokemonType } from '../core/pokemon-data';
 import { loadVillage } from '../app/village-store';
 import { digitalRows } from '../core/village/digital';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
@@ -35,13 +38,21 @@ type SortKey = 'recentes' | 'nome' | 'leituras';
 const search = ref('');
 const statusFilter = ref<StatusFilter>('todas');
 const onlyTeam = ref(false);
+/** Tipo e geração do Pokémon (pedido do dono): valem na Box, na Lista e na Grade. */
+const typeFilter = ref<PokemonType | ''>('');
+const genFilter = ref<number | 0>(0);
+const speciesFilter = computed(() => ({ type: typeFilter.value || undefined, generation: genFilter.value || undefined }));
 const sortKey = ref<SortKey>('recentes');
 // "Box" (caixas 6 × 5, como nos jogos) é o modo padrão; "Lista" mostra os detalhes técnicos de cada carta.
 const viewMode = ref<'box' | 'lista' | 'grade'>('box');
-/** Na Box só a busca apaga cartas (os filtros de situação da Lista não aparecem lá, então não valem). */
+/** Na Box, a busca e os filtros de tipo/geração apagam cartas (os filtros de situação da Lista não aparecem lá, então não valem). */
 const visibleIdSet = computed(() => {
   const q = search.value.trim().toLowerCase();
-  return new Set(rows.value.filter((row) => !q || `${row.name} ${row.setName} ${row.localId}`.toLowerCase().includes(q)).map((row) => row.id));
+  return new Set(
+    rows.value
+      .filter((row) => (!q || `${row.name} ${row.setName} ${row.localId}`.toLowerCase().includes(q)) && cardMatchesSpecies(row, speciesFilter.value))
+      .map((row) => row.id),
+  );
 });
 const teamNotice = ref('');
 
@@ -54,6 +65,7 @@ const visibleRows = computed(() => {
     if (statusFilter.value === 'sem-pokemon') return row.sprite.state !== 'ok';
     if (statusFilter.value !== 'todas' && row.status !== statusFilter.value) return false;
     if (onlyTeam.value && !team.value.ids.includes(row.id)) return false;
+    if (!cardMatchesSpecies(row, speciesFilter.value)) return false;
     return true;
   });
   const sorted = [...filtered];
@@ -61,13 +73,45 @@ const visibleRows = computed(() => {
   else if (sortKey.value === 'leituras') sorted.sort((a, b) => b.scanCount - a.scanCount);
   return sorted;
 });
-const filtersActive = computed(() => search.value !== '' || statusFilter.value !== 'todas' || onlyTeam.value);
+const filtersActive = computed(() => search.value !== '' || statusFilter.value !== 'todas' || onlyTeam.value || !!typeFilter.value || !!genFilter.value);
 
 function clearFilters(): void {
   search.value = '';
   statusFilter.value = 'todas';
   onlyTeam.value = false;
+  typeFilter.value = '';
+  genFilter.value = 0;
 }
+
+// ---- Atalhos (pedido do dono): batalhar com a equipe e ver a equipe em AR, direto daqui.
+const shortcutBusy = ref('');
+/** Prepara o que falta das cartas da equipe (a batalha precisa do Pokémon carregado) e leva à batalha da Caixa. */
+async function battleWithTeam(): Promise<void> {
+  const ids = team.value.ids;
+  if (ids.length < 2) {
+    message.value = 'Para batalhar, a equipe precisa de pelo menos 2 Pokémon (toque numa carta e em «Pôr na equipe»).';
+    return;
+  }
+  const missing = ids.filter((id) => rows.value.find((r) => r.id === id)?.sprite.state !== 'ok');
+  try {
+    const cache = await getCache();
+    for (let i = 0; i < missing.length; i++) {
+      const id = missing[i]!;
+      shortcutBusy.value = `Carregando a equipe: ${i + 1} de ${missing.length} (${rows.value.find((r) => r.id === id)?.name ?? id})…`;
+      await cache.prepareCard(id).catch(() => null);
+    }
+  } finally {
+    shortcutBusy.value = '';
+  }
+  window.location.hash = routeHref('caixa', undefined, ['batalha']);
+}
+
+// ---- Limpar o cache: apaga TODAS as cartas do aparelho (e o backup não as guarda). Só com a palavra digitada.
+const CLEAR_WORD = 'APAGAR';
+/** Remover UMA carta (Lista) também pede um segundo toque. */
+const confirmRemoveId = ref<string | null>(null);
+const clearTyped = ref('');
+const clearReady = computed(() => clearTyped.value.trim().toUpperCase() === CLEAR_WORD);
 
 function toggleTeam(row: Row): void {
   if (row.sprite.state !== 'ok') {
@@ -191,9 +235,11 @@ async function removeCard(id: string): Promise<void> {
 }
 
 async function clearAll(): Promise<void> {
+  if (!clearReady.value) return;
   const cache = await getCache();
   await cache.clear();
   confirmingClear.value = false;
+  clearTyped.value = '';
   message.value = 'Cache limpo.';
   await refresh();
 }
@@ -229,13 +275,19 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
       <button type="button" class="primary" :disabled="bulk !== null || rows.length === 0" @click="prepareAll">
         Carregar todas as vistas
       </button>
-      <button v-if="!confirmingClear" type="button" :disabled="rows.length === 0" @click="confirmingClear = true">Limpar cache</button>
-      <template v-else>
-        <span class="message error">Apagar todas as cartas guardadas?</span>
-        <button type="button" class="danger" @click="clearAll">Sim, limpar</button>
-        <button type="button" @click="confirmingClear = false">Cancelar</button>
-      </template>
     </div>
+
+    <div v-if="rows.length > 0" class="card-shortcuts" role="group" aria-label="Atalhos">
+      <button type="button" class="shortcut" :disabled="!!shortcutBusy" @click="battleWithTeam">
+        <span aria-hidden="true">⚔️</span>
+        <span>Batalhar com a equipe<small>carrega o que falta e abre a batalha da Caixa</small></span>
+      </button>
+      <a class="shortcut" :href="routeHref('varias')">
+        <span aria-hidden="true">🃏</span>
+        <span>Equipe em AR (Várias)<small>até 4 cartas na câmera ao mesmo tempo</small></span>
+      </a>
+    </div>
+    <p v-if="shortcutBusy" class="message" role="status">{{ shortcutBusy }}</p>
 
     <p v-if="bulk" class="message" role="status">Carregando {{ bulk.done }}/{{ bulk.count }} — {{ bulk.text }}</p>
     <p v-if="message" class="message" role="status">{{ message }}</p>
@@ -259,6 +311,21 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         <button type="button" :class="{ active: viewMode === 'grade' }" :aria-pressed="viewMode === 'grade'" @click="viewMode = 'grade'">Grade</button>
       </div>
       <input v-model="search" type="text" :placeholder="viewMode === 'box' ? 'Buscar (apaga as outras na caixa)' : 'Buscar por nome, coleção ou número'" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
+      <div class="filter-row species-filters">
+        <label>Tipo
+          <select v-model="typeFilter">
+            <option value="">Todos</option>
+            <option v-for="t in POKEMON_TYPES" :key="t" :value="t">{{ TYPE_LABELS_PT[t] }}</option>
+          </select>
+        </label>
+        <label>Geração
+          <select v-model.number="genFilter">
+            <option :value="0">Todas</option>
+            <option v-for="g in 9" :key="g" :value="g">{{ GENERATION_LABELS_PT[g] }}</option>
+          </select>
+        </label>
+        <button v-if="typeFilter || genFilter" type="button" class="link" @click="typeFilter = ''; genFilter = 0">Limpar</button>
+      </div>
       <!-- Na Box a ordem é a que você arrumou: filtros de situação e ordem ficam para a Lista e a Grade. -->
       <div v-if="viewMode !== 'box'" class="chips" role="group" aria-label="Filtrar por situação">
         <button v-for="option in ([['todas', 'Todas'], ['completo', 'Completas'], ['parcial', 'Parciais'], ['falhou', 'Com falha'], ['sem-pokemon', 'Sem Pokémon']] as const)" :key="option[0]" type="button" :class="{ active: statusFilter === option[0] }" :aria-pressed="statusFilter === option[0]" @click="statusFilter = option[0]">
@@ -335,7 +402,11 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
             <button type="button" :class="{ active: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" @click="toggleTeam(row)">
               {{ team.ids.includes(row.id) ? 'Na equipe ✓' : 'Pôr na equipe' }}
             </button>
-            <button type="button" :disabled="busyId === row.id" @click="removeCard(row.id)">Remover do cache</button>
+            <button v-if="confirmRemoveId !== row.id" type="button" :disabled="busyId === row.id" @click="confirmRemoveId = row.id">Remover do cache…</button>
+            <template v-else>
+              <button type="button" class="danger" @click="removeCard(row.id); confirmRemoveId = null">Remover {{ row.name }}</button>
+              <button type="button" @click="confirmRemoveId = null">Não</button>
+            </template>
           </div>
         </div>
       </li>
@@ -361,5 +432,22 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         </li>
       </ul>
     </section>
+
+    <!-- Zona de perigo: fechada por padrão, longe dos botões do dia a dia. -->
+    <details v-if="rows.length > 0" class="danger-zone" :open="confirmingClear" @toggle="(e: Event) => (confirmingClear = (e.target as HTMLDetailsElement).open)">
+      <summary>Zona de perigo: apagar todas as cartas do aparelho</summary>
+      <p>
+        Isto apaga <strong>{{ rows.length === 1 ? 'a carta guardada' : `todas as ${rows.length} cartas guardadas` }}</strong> (imagens, sprites, alvos de AR e a organização da
+        Box). <strong>O backup não guarda as cartas</strong>: para tê-las de novo, será preciso escanear cada carta física outra vez.
+        O progresso (Treinador, Vila, moedas) não é apagado.
+      </p>
+      <label>Para confirmar, digite <strong>{{ CLEAR_WORD }}</strong>
+        <input v-model="clearTyped" type="text" autocomplete="off" autocapitalize="characters" :placeholder="CLEAR_WORD" />
+      </label>
+      <div class="actions row">
+        <button type="button" class="danger" :disabled="!clearReady" @click="clearAll">{{ rows.length === 1 ? 'Apagar a carta' : `Apagar as ${rows.length} cartas` }}</button>
+        <button type="button" @click="confirmingClear = false; clearTyped = ''">Cancelar</button>
+      </div>
+    </details>
   </section>
 </template>

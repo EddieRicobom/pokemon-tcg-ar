@@ -102,11 +102,13 @@ describe('App', () => {
     expect(host?.querySelector('a.header-gear')?.getAttribute('aria-current')).toBe('page');
   });
 
-  it('a tela Cartas mostra a ação de limpar o cache', async () => {
+  it('a tela Cartas não deixa "apagar tudo" entre os botões do dia a dia', async () => {
     const text = await mount('#/carregar');
     expect(text).toContain('Cartas guardadas');
     expect(text).toContain('Carregar todas as vistas');
-    expect(text).toContain('Limpar cache');
+    // Apagar todas as cartas mora numa zona de perigo (só aparece com cartas, e só apaga com APAGAR digitado).
+    expect(text).not.toContain('Limpar cache');
+    expect(host?.querySelector('.danger-zone')).toBeNull();
   });
 
   it('a tela Diagnóstico não esconde o que ainda falta validar', async () => {

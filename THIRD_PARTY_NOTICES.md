@@ -45,6 +45,9 @@ As licenças exatas de cada versão estão nos pacotes (`node_modules/<pacote>/L
 - Altura das espécies e das formas alternativas (`src/core/data/pokemon-heights.json`): gerada por
   `scripts/build-heights.mjs` a partir do `data/v2/csv/pokemon.csv` do repositório PokeAPI/pokeapi
   (<https://github.com/PokeAPI/pokeapi>, licença BSD-3-Clause). Só a coluna de altura é guardada.
+- Tipos das espécies e das formas alternativas (`src/core/data/pokemon-types.json`): gerados por
+  `scripts/build-types.mjs` a partir de `pokemon.csv`, `pokemon_types.csv` e `types.csv` do mesmo repositório
+  PokeAPI/pokeapi (BSD-3-Clause), para os filtros de tipo de "Minhas cartas".
 - Sprites: repositório PokeAPI/sprites (GIFs `other/showdown`), com espelho no jsDelivr. Os desenhos dos
   Pokémon pertencem aos seus titulares; o app não os redistribui, o celular os baixa na hora.
 
