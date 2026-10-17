@@ -1064,6 +1064,9 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
 
     <!-- Com a câmera desligada, esta ferramenta fica aqui; com ela ligada, vira uma folha sobre a imagem (botão «Teste»). -->
     <StageSheet v-if="!cardId" :docked="immersive" :host="dockEl" :open="sheet === 'tools'" title="Teste e diagnóstico" @close="sheet = null">
+      <!-- Com a câmera desligada, recolhido: quem só quer escanear não vê caixas de depuração embaixo do botão. -->
+      <component :is="immersive ? 'div' : 'details'" class="tools-panel" v-bind="immersive ? {} : { open: debugOn || !!photoAttempt }">
+      <summary v-if="!immersive">Ferramentas de teste e diagnóstico</summary>
       <label class="art-option">
         <input v-model="artOn" type="checkbox" @change="applyArtOption" />
         Usar a busca pela ilustração quando o número não for lido
@@ -1156,6 +1159,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
         </label>
         <p v-if="photoMessage" class="message" role="status">{{ photoMessage }}</p>
       </div>
+      </component>
     </StageSheet>
 
     <p v-if="loadingEngine && !cameraOn" class="message" role="status">{{ loadingEngine }}</p>

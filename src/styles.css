@@ -2236,9 +2236,10 @@ button.link {
 
 .trainer-sections button {
   position: relative;
-  flex: 1 0 auto;
+  flex: 1 1 auto;
   min-height: 38px;
-  padding: 0 12px;
+  padding: 0 8px;
+  font-size: 0.9rem;
   border: 0;
   border-radius: 999px;
   background: transparent;
@@ -2261,6 +2262,17 @@ button.link {
   height: 7px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+/* Ferramentas de teste do Escanear, recolhidas com a câmera desligada. */
+details.tools-panel {
+  margin-top: 12px;
+}
+
+details.tools-panel > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 /* Botão do campo de arquivo no visual do app (o padrão do navegador destoava). */
