@@ -57,6 +57,11 @@ export interface SpriteLayout {
   smoothing?: SmoothingMode;
   /** Mostra o painel de status no chão, abaixo da carta. Omitido = ligado. */
   showStats?: boolean;
+  /**
+   * Tamanho pela altura real da espécie (`core/size-scale.ts`): `heightRatio` vira a altura do desenho de um Pokémon
+   * de 1 m, e cada espécie sai proporcional (Pikachu menor, Snorlax maior). Omitido = ligado.
+   */
+  realSize?: boolean;
 }
 
 export const DEFAULT_LAYOUT: SpriteLayout = {
@@ -67,6 +72,7 @@ export const DEFAULT_LAYOUT: SpriteLayout = {
   yawDeg: 0,
   anchor: 'rest',
   tiltDeg: DEFAULT_TILT_DEG,
+  realSize: true,
   showShadow: true,
   faceCamera: true,
   smoothing: DEFAULT_SMOOTHING,
@@ -96,7 +102,19 @@ export function clampLayout(layout: SpriteLayout): SpriteLayout {
     // `smooth` (liga/desliga) é o formato antigo, ainda presente em layouts salvos.
     smoothing: normalizeSmoothing(layout.smoothing, (layout as { smooth?: boolean }).smooth),
     showStats: layout.showStats !== false,
+    realSize: layout.realSize !== false,
   };
+}
+
+/**
+ * O layout com a altura que o sprite realmente terá: pela altura real da espécie (`relativeSize`, 1 = Pokémon de 1 m)
+ * e descontando a margem transparente do quadro (`contentFrac`, fração da altura ocupada pelo desenho). Sem dado
+ * de altura ou com a opção desligada, devolve o layout como está (tamanho pelo quadro, como antes).
+ */
+export function speciesLayout(layout: SpriteLayout, relativeSize: number | undefined, contentFrac: number): SpriteLayout {
+  if (layout.realSize === false || relativeSize === undefined || !(relativeSize > 0)) return layout;
+  const frac = Number.isFinite(contentFrac) ? Math.min(1, Math.max(0.2, contentFrac)) : 1;
+  return { ...layout, heightRatio: (layout.heightRatio * relativeSize) / frac };
 }
 
 /** Matriz 4×4 em ordem de colunas (a mesma de `THREE.Matrix4.elements`). */

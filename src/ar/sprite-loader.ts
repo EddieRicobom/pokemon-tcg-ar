@@ -34,6 +34,7 @@ export async function loadSpriteInto(
     return state;
   };
   emit({ kind: 'loading' });
+  sprite.setSpecies(dexId);
   if (dexId === undefined) {
     sprite.setPlaceholder();
     return emit({ kind: 'placeholder', reason: 'Esta carta não é de um Pokémon (Treinador ou Energia).' });

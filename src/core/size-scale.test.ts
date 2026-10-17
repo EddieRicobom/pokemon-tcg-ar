@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_TILES, MIN_TILES, speciesHeightM, speciesTiles, tilesForHeight, TRAINER_HEIGHT_M, TRAINER_TILES } from './size-scale';
+import { MAX_TILES, MIN_TILES, REFERENCE_HEIGHT_M, speciesHeightM, speciesRelativeSize, speciesTiles, tilesForHeight, TRAINER_HEIGHT_M, TRAINER_TILES } from './size-scale';
 
 describe('altura real das espécies (PokéAPI)', () => {
   it('tem os valores conhecidos', () => {
@@ -47,5 +47,22 @@ describe('tamanho na tela pela altura real', () => {
     expect(speciesTiles(321)).toBe(MAX_TILES); // Wailord
     expect(speciesTiles(95)).toBe(MAX_TILES); // Onix 8,8 m
     expect(speciesTiles(595)).toBe(MIN_TILES); // Joltik 0,1 m
+  });
+});
+
+describe('tamanho relativo (Caixa em AR e AR da carta)', () => {
+  it('1 m é o tamanho base e a ordem real é preservada', () => {
+    expect(REFERENCE_HEIGHT_M).toBe(1);
+    const pikachu = speciesRelativeSize(25)!;
+    const snorlax = speciesRelativeSize(143)!;
+    expect(pikachu).toBeGreaterThan(0.6);
+    expect(pikachu).toBeLessThan(0.8);
+    expect(snorlax).toBeGreaterThan(1.2);
+    expect(snorlax).toBeLessThan(1.5);
+    expect(speciesRelativeSize(321)!).toBeLessThanOrEqual(MAX_TILES / tilesForHeight(1) + 1e-9);
+  });
+
+  it('sem dado não inventa', () => {
+    expect(speciesRelativeSize(99999)).toBeUndefined();
   });
 });

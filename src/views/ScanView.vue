@@ -1003,7 +1003,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
             </button>
           </div>
           <div class="layout">
-            <label>Altura ({{ layout.heightRatio.toFixed(2) }} larguras da carta)
+            <label>{{ layout.realSize !== false ? 'Tamanho base' : 'Altura' }} ({{ layout.heightRatio.toFixed(2) }} larguras da carta{{ layout.realSize !== false ? ' para um Pokémon de 1 m' : '' }})
               <input v-model.number="layout.heightRatio" type="range" :min="LAYOUT_LIMITS.heightRatio.min" :max="LAYOUT_LIMITS.heightRatio.max" step="0.05" />
             </label>
             <label>Deslocamento lateral ({{ layout.offsetX.toFixed(2) }})
@@ -1031,6 +1031,10 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
             <label class="art-option">
               <input v-model="layout.showStats" type="checkbox" />
               <span>Mostrar o painel de status no chão</span>
+            </label>
+            <label class="art-option">
+              <input v-model="layout.realSize" type="checkbox" />
+              <span>Tamanho pela altura real da espécie (Pikachu menor, Snorlax maior)</span>
             </label>
             <label class="art-option">
               <input v-model="sensorSettings.gyro" type="checkbox" />
