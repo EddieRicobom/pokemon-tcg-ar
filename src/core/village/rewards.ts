@@ -44,6 +44,12 @@ export const PRIZES: Record<string, Prize> = {
   'pvp-1': { coins: 60 },
   'pvp-vitoria': { coins: 120, item: 'faixa-vencedor' },
   'shiny-1': { coins: 150, item: 'tiara-brilho' },
+  // Torre de Sobrevivência.
+  'torre-primeira': { coins: 50, item: 'fita-torre' },
+  'torre-treinador': { coins: 120, item: 'pin-treinador' },
+  'torre-chefao': { coins: 400, item: 'trofeu-torre' },
+  'torre-infinito': { coins: 300, item: 'pin-chefao' },
+  'torre-mestre': { coins: 500, item: 'capa-sobrevivente' },
 };
 
 /** Acessório que uma conquista dá (para o Treinador mostrar o prêmio). */

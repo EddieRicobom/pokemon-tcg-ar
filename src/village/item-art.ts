@@ -316,6 +316,12 @@ const ACCESSORY_ICONS: Record<string, Draw> = {
   'faixa-vencedor': (p) => { p.tri(2, 1, 1, 7, 6, RED); p.tri(14, 1, 9, 15, 6, RED); p.line(3, 4, 13, 14, RED, 3); p.line(3, 4, 13, 14, 0xf0705f, 1); p.disc(7, 9, 2, 2, GOLD); p.px(7, 9, 0xc89a2a); },
   'capa-estelar': (p) => { p.tri(8, 14, 1, 15, 3, 0x4a3a9a); p.rect(3, 2, 10, 2, 0x2f2370); p.rect(2, 4, 12, 3, 0x4a3a9a); p.rect(7, 4, 2, 10, 0x2f2370); p.rect(6, 1, 4, 2, GOLD); for (const [x, y] of [[4, 5], [11, 6], [5, 10], [10, 11], [8, 13]] as const) p.px(x, y, 0xfff0a0); },
   'capa-liga': (p) => { p.tri(8, 14, 1, 15, 3, GOLD); p.rect(3, 2, 10, 2, 0xc89a2a); p.rect(2, 4, 12, 3, GOLD); p.rect(7, 4, 2, 10, 0xc89a2a); p.rect(6, 1, 4, 2, RED); p.disc(8, 8, 2.2, 2.2, RED); p.disc(8, 8, 1, 1, WHITE); p.px(4, 5, 0xfff0a0); p.px(11, 6, 0xfff0a0); },
+  // Torre de Sobrevivência (ver `rewards.ts`).
+  'fita-torre': (p) => { p.rect(2, 7, 12, 3, 0x6ac8e8); p.rect(2, 7, 12, 1, 0xcfeeff); p.tri(2, 10, 0, 6, 15, 0x3a8ad8); p.tri(14, 10, 10, 16, 15, 0x3a8ad8); p.disc(8, 8, 1.6, 1.6, WHITE); p.px(8, 8, 0x3a8ad8); },
+  'pin-treinador': (p) => { p.disc(8, 8, 5.5, 5.5, 0x4a6ae8); p.ring(8, 8, 5.5, 5.5, 0x2a3fa8); p.rect(5, 7, 6, 3, GOLD); p.px(5, 10, DARK); p.px(10, 10, DARK); p.px(8, 11, DARK); },
+  'pin-chefao': (p) => { p.disc(8, 8, 6, 6, 0x2a1a3a); p.ring(8, 8, 6, 6, GOLD); p.disc(8, 8, 3.5, 3.5, RED); p.tri(8, 4, 5, 11, 10, GOLD); p.tri(8, 12, 5, 11, 7, GOLD); p.px(8, 8, WHITE); },
+  'trofeu-torre': (p) => { p.rect(5, 1, 6, 7, GOLD); p.disc(5, 4, 1.5, 2, 0xc89a2a); p.disc(11, 4, 1.5, 2, 0xc89a2a); p.rect(6, 8, 4, 2, 0xc89a2a); p.rect(5, 10, 6, 2, 0xc89a2a); p.rect(4, 12, 8, 2, 0x8a5a2e); p.px(7, 4, 0xfff0a0); p.px(8, 3, WHITE); },
+  'capa-sobrevivente': (p) => { p.tri(8, 14, 1, 15, 3, 0x2a3fa8); p.rect(3, 2, 10, 2, 0x1a2a7a); p.rect(2, 4, 12, 3, 0x2a3fa8); p.rect(7, 4, 2, 10, 0x1a2a7a); p.rect(5, 1, 6, 2, 0x6ac8e8); p.disc(8, 8, 2.4, 2.4, GOLD); p.px(8, 8, 0xfff0a0); for (const [x, y] of [[4, 10], [11, 11]] as const) p.px(x, y, 0x8ac8f8); },
   'chapeu-palha': (p) => { p.disc(8, 10, 7, 2.5, 0xe8c870); p.disc(8, 7, 4, 3, 0xe8c870); p.rect(4, 8, 8, 1, RED); p.disc(8, 5.5, 2, 1.2, 0xf6e098); },
   bone: (p) => { p.disc(8, 8, 5, 4, RED); p.rect(8, 9, 7, 2, 0xa82828); p.rect(3, 9, 10, 1, 0xa82828); p.px(7, 6, WHITE); p.px(8, 6, WHITE); },
   laco: (p) => { p.disc(4, 8, 3.5, 3, PINK); p.disc(12, 8, 3.5, 3, PINK); p.disc(8, 8, 2, 2, 0xe86aa0); p.px(4, 7, 0xffe0ec); p.px(12, 7, 0xffe0ec); },

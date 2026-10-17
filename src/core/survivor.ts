@@ -60,11 +60,18 @@ export interface SurvivorPlayer {
   pickupRadius: number;
 }
 
+/** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */
+export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
+
 export interface SurvivorEnemy {
   id: number;
   /** Índice da espécie no elenco desta corrida (ver `kindCount` em `createSurvivorState`); chefes usam `kindCount`. */
   kind: number;
   boss: boolean;
+  /** Grau: muda o tamanho, HP, dano, cor do contorno e orbe de XP ao morrer. */
+  grade: SurvivorEnemyGrade;
+  /** Treinador a que esse Pokémon pertence (apenas elites e chefões): quando todos de um id caem, o treinador perdeu. */
+  trainerId?: number;
   x: number;
   y: number;
   hp: number;
@@ -137,6 +144,20 @@ export interface SurvivorState {
   /** Quantas espécies "comuns" existem no elenco desta corrida (chefes usam o índice `kindCount`). */
   kindCount: number;
   over: boolean;
+  /** Agenda dos treinadores (ver `TRAINER_FIRST_MS`, `TRAINER_EVERY_MS`, `FINAL_BOSS_MS`). */
+  nextTrainerAtMs: number;
+  /** Minuto em que o chefão final aparece (null depois dele ou no modo infinito). */
+  finalBossAtMs: number | null;
+  /** Treinadores já derrotados (o chefão final conta como um; no infinito segue contando). */
+  trainersBeaten: number;
+  /** Chefões (minuto 20 + os do infinito) já derrotados. */
+  bossesBeaten: number;
+  /** O chefão final foi derrotado nesta corrida (destrava o modo infinito, uma só vez). */
+  finalBossBeaten: boolean;
+  /** Modo infinito: treinadores com 6 Pokémon a cada 5 min, inimigos escalam com o tempo. */
+  infinite: boolean;
+  /** Multiplicador do HP/dano que o infinito aplica sobre `elapsedMs` (sem o infinito, sempre 1). */
+  infiniteScale: number;
   /** Não-nulo pausa o avanço (ver `stepSurvivor`): espera `applyUpgrade`. */
   pendingUpgrade: SurvivorUpgradeOption[] | null;
   /** Níveis ganhos que ainda vão virar escolha de upgrade (subir 2 níveis de uma vez dá 2 escolhas, uma depois da outra). */
@@ -168,6 +189,14 @@ export interface SurvivorSummary {
   stage: number;
   kills: number;
   wave: number;
+  /** Treinadores derrotados (3 Pokémon cada; o chefão final conta como um). */
+  trainersBeaten: number;
+  /** Chefões (chefão final + os do infinito, de 6 Pokémon). */
+  bossesBeaten: number;
+  /** O chefão final caiu nesta corrida (destrava o modo infinito no 1º ao vencer). */
+  finalBossBeaten: boolean;
+  /** Era uma corrida do modo infinito? */
+  infinite: boolean;
 }
 
 /** Pontuação da corrida (0–100): tempo vivo, derrotas e nível. */
@@ -178,18 +207,26 @@ export function survivorScore(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 
 /** Uma corrida que só conta se você durou um pouco ou derrotou alguém (sair logo não vira fazenda de moedas). */
 export const SURVIVOR_MIN_MS = 20_000;
 
+/** Prêmio por zerar a Torre (chefão final caído): só uma vez por dia (`today.clearedTorre`). */
+export const SURVIVOR_CLEAR_BONUS = 500;
+
 /**
- * Moedas da corrida (além das moedas do XP): metade da pontuação, de 5 a 50. Zero se você não derrotou ninguém e
- * não durou `SURVIVOR_MIN_MS`.
+ * Moedas da corrida (além das moedas do XP e do bônus por zerar):
+ *  - metade da pontuação, de 5 a 50, se durou/derrotou algo (como antes);
+ *  - +40 por treinador comum derrotado, +80 por chefão (6 Pokémon).
  */
-export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 'level'>): number {
-  if (s.kills === 0 && s.survivedMs < SURVIVOR_MIN_MS) return 0;
-  return Math.max(5, Math.round(survivorScore(s) / 2));
+export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 'level' | 'trainersBeaten' | 'bossesBeaten'>): number {
+  const base = (s.kills === 0 && s.survivedMs < SURVIVOR_MIN_MS) ? 0 : Math.max(5, Math.round(survivorScore(s) / 2));
+  return base + (s.trainersBeaten - s.bossesBeaten) * 40 + s.bossesBeaten * 80;
 }
 
 export type SurvivorEvent =
   | { type: 'levelup'; level: number }
   | { type: 'bossSpawn' }
+  /** Treinador apareceu: solta um grupo de `count` Pokémon elite (3 no normal, 6 no chefão final e no infinito). */
+  | { type: 'trainerSpawn'; count: number; final: boolean }
+  /** Treinador derrotado (todos os Pokémon dele caíram). */
+  | { type: 'trainerDown'; final: boolean }
   | { type: 'evolve'; dexId: number; name: string }
   | { type: 'gameover'; summary: SurvivorSummary };
 
@@ -246,6 +283,18 @@ export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
 export const EVOLVE_LEVELS = [8, 16] as const;
 const EVOLVE_PREFIX = 'evolve:';
 
+// ----------------------------------------------------------------------------- treinadores e chefão
+
+/** Quando o primeiro treinador aparece (ms); depois, de `TRAINER_EVERY_MS` em `TRAINER_EVERY_MS`. */
+export const TRAINER_FIRST_MS = 300_000;
+export const TRAINER_EVERY_MS = 300_000;
+/** Quando o chefão final aparece (ms). Vence-lo destrava o modo infinito. */
+export const FINAL_BOSS_MS = 1_200_000;
+/** Depois do chefão final (modo infinito), outro chefão (6 Pokémon) a cada tanto. */
+export const INFINITE_BOSS_EVERY_MS = 300_000;
+/** Cada minuto no infinito dá +`INFINITE_SCALE_PER_MIN` ao HP e ao dano de todos os inimigos novos. */
+export const INFINITE_SCALE_PER_MIN = 0.15;
+
 /** Golpe padrão do motor (testes e simulação): um projétil simples, sem efeito. A Torre sempre passa o golpe do tipo. */
 export const BASIC_MOVE: SurvivorMove = { type: 'normal', name: 'Golpe', category: 'projetil', effect: 'nenhum', color: '#fffbe0', icon: '✦' };
 
@@ -269,9 +318,9 @@ export const BALANCE = {
   enemyHpPerWave: 2,
   /** Intervalo entre nascimentos (ms) = início − porSegundo·t − porOnda·onda, nunca abaixo do piso. */
   spawnStartMs: 1700,
-  spawnPerSecMs: 6,
-  spawnPerWaveMs: 20,
-  spawnFloorMs: 300,
+  spawnPerSecMs: 7,
+  spawnPerWaveMs: 26,
+  spawnFloorMs: 220,
   playerDamage: 10,
   playerCooldownMs: 600,
   /** Primeiro chefe e intervalo entre os seguintes (ms). */
@@ -298,6 +347,8 @@ export interface CreateSurvivorOptions {
    */
   evolutions?: (dexId: number) => readonly SurvivorEvolutionOption[];
   player?: Partial<SurvivorPlayer>;
+  /** Começa já no modo infinito (precisa ser destravado antes: `TrainerState.torre.infiniteUnlocked`). */
+  infinite?: boolean;
 }
 
 export function createSurvivorState(seed: number, options: CreateSurvivorOptions): SurvivorState {
@@ -343,6 +394,13 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     nextBossAtMs: BALANCE.firstBossMs,
     kindCount: Math.max(1, Math.floor(options.kindCount)),
     over: false,
+    nextTrainerAtMs: TRAINER_FIRST_MS,
+    finalBossAtMs: FINAL_BOSS_MS,
+    trainersBeaten: 0,
+    bossesBeaten: 0,
+    finalBossBeaten: false,
+    infinite: options.infinite === true,
+    infiniteScale: options.infinite === true ? 1.25 : 1,
     pendingUpgrade: null,
     upgradesOwed: 0,
     nextId: 1,
@@ -365,39 +423,63 @@ function spawnPoint(rng: Rng): { x: number; y: number } {
   return { x: -SPAWN_MARGIN, y: rng() * ARENA_H };
 }
 
-function spawnEnemy(state: SurvivorState, boss: boolean): void {
+/**
+ * Nasce um inimigo. `grade` muda o tamanho, HP, dano e orbe de XP:
+ *  - `comum`: o inimigo normal, do grupo que vai aparecendo sozinho.
+ *  - `elite`: Pokémon do treinador (minuto 5+): mais HP, mais dano, mais rápido, orbe maior ao morrer.
+ *  - `chefao`: um dos 6 do chefão final (ou do infinito): maior ainda, dá bem mais XP.
+ * `trainerId` liga os Pokémon do mesmo treinador para contarmos quando todos caíram.
+ */
+function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGrade = 'comum', trainerId?: number): void {
   const { x, y } = spawnPoint(state.rng);
   const t = state.elapsedMs / 1000;
   if (boss) {
+    const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale);
     state.enemies.push({
       id: state.nextId++,
       kind: state.kindCount,
       boss: true,
+      grade: 'comum',
       x,
       y,
-      hp: BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave,
-      maxHp: BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave,
+      hp,
+      maxHp: hp,
       speed: BALANCE.bossSpeed,
-      damage: BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave,
+      damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale),
       radius: 28,
       hitFlashMs: 0,
     });
     return;
   }
-  const hp = BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave;
+  const baseHp = BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave;
+  const baseDmg = 6 + Math.floor(t / 40) * 2;
+  const hpMul = grade === 'chefao' ? 3.4 : grade === 'elite' ? 2.1 : 1;
+  const dmgMul = grade === 'chefao' ? 2 : grade === 'elite' ? 1.6 : 1;
+  const speed = (grade === 'comum' ? 55 + state.rng() * 25 : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
+  const hp = Math.round(baseHp * hpMul * state.infiniteScale);
   state.enemies.push({
     id: state.nextId++,
     kind: Math.floor(state.rng() * state.kindCount),
     boss: false,
+    grade,
+    trainerId,
     x,
     y,
     hp,
     maxHp: hp,
-    speed: 55 + state.rng() * 25,
-    damage: 6 + Math.floor(t / 40) * 2,
-    radius: 13,
+    speed,
+    damage: Math.round(baseDmg * dmgMul * state.infiniteScale),
+    radius: grade === 'chefao' ? 20 : grade === 'elite' ? 16 : 13,
     hitFlashMs: 0,
   });
+}
+
+/** Chama um treinador: `count` Pokémon elite nascem juntos, com o mesmo `trainerId` (para marcarmos a derrota). */
+function spawnTrainer(state: SurvivorState, count: number, final: boolean, events: SurvivorEvent[]): void {
+  const trainerId = state.nextId++;
+  const grade: SurvivorEnemyGrade = final ? 'chefao' : 'elite';
+  for (let i = 0; i < count; i++) spawnEnemy(state, false, grade, trainerId);
+  events.push({ type: 'trainerSpawn', count, final });
 }
 
 /** Sorteia `count` upgrades distintos que fazem sentido para o golpe (`move`), com o texto falando do golpe. */
@@ -654,6 +736,19 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     events.push({ type: 'bossSpawn' });
   }
 
+  // Treinadores (minuto 5, 10, 15, …): 3 Pokémon elite juntos. O chefão final (minuto 20) tem 6 Pokémon.
+  // No modo infinito, depois do chefão final, cai outro chefão de 6 a cada `INFINITE_BOSS_EVERY_MS`.
+  if (state.infinite) state.infiniteScale = 1.25 + (state.elapsedMs / 60_000) * INFINITE_SCALE_PER_MIN;
+  const finalDue = state.finalBossAtMs !== null && state.elapsedMs >= state.finalBossAtMs;
+  if (finalDue) {
+    state.finalBossAtMs = null;
+    spawnTrainer(state, 6, true, events);
+    if (state.infinite) state.nextTrainerAtMs = state.elapsedMs + INFINITE_BOSS_EVERY_MS;
+  } else if (state.elapsedMs >= state.nextTrainerAtMs && (state.finalBossAtMs === null || state.elapsedMs + 15_000 < state.finalBossAtMs)) {
+    state.nextTrainerAtMs += state.infinite ? INFINITE_BOSS_EVERY_MS : TRAINER_EVERY_MS;
+    spawnTrainer(state, state.infinite ? 6 : 3, false, events);
+  }
+
   // Inimigos perseguem o jogador e batem de perto (atordoado não anda; lento anda pela metade; queimado perde vida).
   for (const e of state.enemies) {
     if (e.hitFlashMs > 0) e.hitFlashMs = Math.max(0, e.hitFlashMs - dtMs);
@@ -729,7 +824,19 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.enemies = state.enemies.filter((e) => e.hp > 0);
     state.kills += dead.length;
     for (const e of dead) {
-      state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value: e.boss ? 40 : 6 });
+      const value = e.boss ? 40 : e.grade === 'chefao' ? 30 : e.grade === 'elite' ? 16 : 6;
+      state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value });
+    }
+    // Treinador derrotado: nenhum Pokémon dele continua em pé.
+    const trainerIds = new Set(dead.map((e) => e.trainerId).filter((id): id is number => id !== undefined));
+    for (const id of trainerIds) {
+      if (state.enemies.some((e) => e.trainerId === id)) continue;
+      const sample = dead.find((e) => e.trainerId === id);
+      const final = sample?.grade === 'chefao';
+      state.trainersBeaten += 1;
+      if (final) state.bossesBeaten += 1;
+      if (final && !state.finalBossBeaten && !state.infinite) state.finalBossBeaten = true;
+      events.push({ type: 'trainerDown', final });
     }
   }
 
@@ -747,7 +854,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.over = true;
     events.push({
       type: 'gameover',
-      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave },
+      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite },
     });
   }
 

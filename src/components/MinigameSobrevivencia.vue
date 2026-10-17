@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { assetUrl, getCache, getDigitalSprite, getLocalVillageSprite } from '../app/services';
 import { fetchSprite } from '../ar/sprite-source';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
@@ -18,10 +18,14 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorUpgradeOption } from '../core/survivor';
 import { attackProfile, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
+import { typesOfDex } from '../core/species-filter';
+import { TYPE_LABELS_PT } from '../core/pokemon-data';
+import type { PokemonType } from '../core/pokemon-data';
+import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
+import { trainer } from '../app/trainer-store';
 import type { AttackProfile, SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
-import { typesOfDex } from '../core/species-filter';
 import type { DecodedGif } from '../core/gif';
 import { speciesTiles } from '../core/size-scale';
 import { contentBounds } from '../village/local-sprite';
@@ -34,10 +38,12 @@ const UPGRADE_ICON: Record<string, string> = {
 const upgradeIcon = (id: string): string => (id.startsWith('evolve:') ? '✨' : (UPGRADE_ICON[id] ?? '✨'));
 
 /** O golpe de uma espécie na Torre: elemento pelo 1º tipo, forma e números pelos stats reais (`core/survivor-moves.ts`). */
-function attackOf(dexId: number): { move: SurvivorMove; profile: AttackProfile } {
+function attackOf(dexId: number, picked?: PokemonType): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[] } {
   const stats = statsOfDex(dexId);
-  const move = moveFor(typesOfDex(dexId), stats);
-  return { move, profile: attackProfile(move, stats) };
+  const types = typesOfDex(dexId);
+  const ordered = picked ? [picked, ...types.filter((t) => t !== picked)] : types;
+  const move = moveFor(ordered, stats);
+  return { move, profile: attackProfile(move, stats), types };
 }
 const moveLine = (m: SurvivorMove): string => `${m.icon} ${m.name} · ${MOVE_CATEGORY_LABELS_PT[m.category]}`;
 
@@ -57,7 +63,14 @@ const emit = defineEmits<{ leave: [] }>();
 const props = defineProps<{ digital?: { dexId: number; name: string }[] }>();
 
 /** Espécies "selvagens" comuns para o elenco de inimigos desta corrida (todas têm sprite no pacote local). */
-const WILD_DEX_IDS = [16, 19, 21, 23, 41, 74, 129, 161, 165, 261, 265, 27] as const;
+/**
+ * Elenco maior (antes eram 12, agora ~34, varias geracoes, todos com sprite no pacote local): a tela nao repete
+ * sempre os mesmos bichos.
+ */
+const WILD_DEX_IDS = [
+  10, 16, 19, 21, 23, 27, 41, 46, 48, 54, 58, 69, 74, 92, 98, 109, 118, 129, 133, 161,
+  165, 177, 190, 198, 220, 228, 261, 265, 273, 300, 304, 325, 403, 418,
+] as const;
 /** Chefe periódico: maior, mais forte, sprite fixo (todas as espécies do pacote têm as 7 animações; ver village-sprite-meta.json). */
 const BOSS_DEX_ID = 95;
 
@@ -128,7 +141,16 @@ function frameIndex(sprite: Sprite, timeMs: number): number {
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
 
-/** Imagem parada (PNG) como um GIF de um quadro só: a última alternativa de sprite. */
+/** Aviso rapido na tela da Torre (treinador chegou, chefao caiu...): some em 3 s. */
+const toast = ref('');
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+function say(text: string, ms = 3000): void {
+  toast.value = text;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (toast.value = ''), ms);
+}
+
+/** Imagem parada (PNG) como um GIF de um quadro so: a ultima alternativa de sprite. */
 async function staticAsGif(blob: Blob): Promise<DecodedGif> {
   const bmp = await createImageBitmap(blob);
   try {
@@ -174,11 +196,22 @@ async function loadSpriteOrNull(dexId: number): Promise<Sprite | null> {
 /** Moedas que a última corrida rendeu (mostradas no resumo). */
 const runCoins = ref(0);
 
+/** Premio extra deste fim de corrida (por zerar) e se destravou o infinito agora. */
+const runClearBonus = ref(0);
+const runUnlockedInfinite = ref(false);
+
 function recordRun(s: SurvivorSummary): void {
   recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score: survivorScore(s) });
-  // Bônus de moedas (saldo único, `app/wallet.ts`) proporcional à pontuação da corrida, além das moedas do XP.
-  const coins = survivorCoins(s);
-  runCoins.value = coins > 0 ? addCoins(coins) : 0;
+  const beforeInfinite = trainer.value.torre.infiniteUnlocked;
+  recordEvent({ type: 'survivor', survivedMs: s.survivedMs, trainersBeaten: s.trainersBeaten, bossesBeaten: s.bossesBeaten, clearedTorre: s.finalBossBeaten, infinite: s.infinite });
+  runUnlockedInfinite.value = s.finalBossBeaten && !beforeInfinite;
+  const today = new Date().toISOString().slice(0, 10);
+  const last = trainer.value.torre.lastClearBonusDay;
+  const canClearBonus = s.finalBossBeaten && last !== today;
+  if (canClearBonus) trainer.value.torre.lastClearBonusDay = today;
+  const total = survivorCoins(s) + (canClearBonus ? SURVIVOR_CLEAR_BONUS : 0);
+  runCoins.value = total > 0 ? addCoins(total) : 0;
+  runClearBonus.value = canClearBonus ? SURVIVOR_CLEAR_BONUS : 0;
 }
 
 function formatTime(ms: number): string {
@@ -191,6 +224,7 @@ function formatTime(ms: number): string {
 interface PickOption {
   dexId: number;
   name: string;
+  types: PokemonType[];
   move: SurvivorMove;
   /** Barras do golpe (dano, rapidez, alcance ou raio, vida) pelos stats. */
   bars: { label: string; value: number }[];
@@ -321,8 +355,16 @@ function drawSprite(sprite: Sprite | null, x: number, y: number, flip: boolean, 
 function drawEnemy(e: SurvivorEnemy): void {
   if (!ctx) return;
   const sprite = e.boss ? bossSprite : (kindSprites[e.kind] ?? null);
-  // O chefe (Onix, 8,8 m) já sai no tamanho máximo pela altura real; o extra só destaca quem é o chefe.
-  drawSprite(sprite, e.x, e.y, false, e.boss ? 1.2 : 1);
+  // Grau: elite com anel dourado, chefão (do treinador) com anel vermelho — ajuda a reconhecer na correria.
+  if (e.grade !== 'comum') {
+    ctx.strokeStyle = e.grade === 'chefao' ? '#e8453c' : '#ffd84a';
+    ctx.lineWidth = e.grade === 'chefao' ? 3 : 2;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, (e.grade === 'chefao' ? 22 : 18), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  const scale = e.boss ? 1.2 : e.grade === 'chefao' ? 1.3 : e.grade === 'elite' ? 1.1 : 1;
+  drawSprite(sprite, e.x, e.y, false, scale);
   // Efeitos do golpe no inimigo: um pontinho colorido em cima (queimando, lento, atordoado).
   const marks: string[] = [];
   if (e.burnMs) marks.push(state.value?.player.move.color ?? '#ff7a2f');
@@ -473,10 +515,9 @@ function loop(ts: number): void {
     const dy = ky + (joystick.active ? joystick.dy : 0);
     const events = stepSurvivor(s, { dx, dy }, dt);
     for (const ev of events) {
-      if (ev.type === 'gameover') {
-        summary.value = ev.summary;
-        recordRun(ev.summary);
-      }
+      if (ev.type === 'gameover') { summary.value = ev.summary; recordRun(ev.summary); }
+      else if (ev.type === 'trainerSpawn') say(ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
+      else if (ev.type === 'trainerDown') say(ev.final ? 'CHEFAO DERROTADO!' : 'Treinador derrotado!');
     }
   }
   pendingUpgrade.value = s.pendingUpgrade;
@@ -530,12 +571,12 @@ async function rollPickOptions(): Promise<PickOption[]> {
     ),
   );
   return chosen.map(([dexId, name], i) => {
-    const { move, profile } = attackOf(dexId);
-    return { dexId, name, move, bars: profileBars(move, profile), thumb: thumbs[i] ?? null };
+    const { move, profile, types } = attackOf(dexId);
+    return { dexId, name, types, move, bars: profileBars(move, profile), thumb: thumbs[i] ?? null };
   });
 }
 
-async function beginRun(dexId: number, name: string): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false): Promise<void> {
   pickBusy.value = true;
   try {
     avatarName.value = name;
@@ -566,8 +607,8 @@ async function beginRun(dexId: number, name: string): Promise<void> {
     pickOptions.value = null;
     summary.value = null;
     pendingUpgrade.value = null;
-    const { move, profile } = attackOf(dexId);
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount, move, profile, dexId, evolutions: evolutionsFor });
+    const { move, profile } = attackOf(dexId, picked);
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount, move, profile, dexId, evolutions: evolutionsFor, infinite });
     ready.value = true;
     lastTs = performance.now();
     if (!rafId) rafId = requestAnimationFrame(loop);
@@ -578,9 +619,17 @@ async function beginRun(dexId: number, name: string): Promise<void> {
   }
 }
 
-function choosePlayer(opt: PickOption): void {
-  void beginRun(opt.dexId, opt.name);
+function choosePlayer(opt: PickOption, picked?: PokemonType): void {
+  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked);
 }
+
+/** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
+const typeChoice = ref<PickOption | null>(null);
+/** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
+const infiniteWanted = ref(false);
+const torre = computed(() => trainer.value.torre);
+function openTypeChoice(opt: PickOption): void { typeChoice.value = opt; }
+watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) infiniteWanted.value = false; });
 
 /** Abre a tela de escolha de novo (3 novos sorteados) antes de cada corrida, inclusive ao "Jogar de novo". */
 async function openPicker(): Promise<void> {
@@ -657,6 +706,7 @@ onBeforeUnmount(() => {
 
         <div class="survivor-vignette" aria-hidden="true"></div>
 
+        <div v-if="toast" class="survivor-toast" role="status" aria-live="polite">{{ toast }}</div>
         <div v-if="ready && state" class="survivor-hud">
           <div class="survivor-hp" :class="{ low: state.player.hp / state.player.maxHp < 0.3 }">
             <div class="survivor-hp-fill" :style="{ width: Math.max(0, (state.player.hp / state.player.maxHp) * 100) + '%' }"></div>
@@ -676,9 +726,24 @@ onBeforeUnmount(() => {
         <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint">Arraste em qualquer lugar para andar</p>
 
         <div v-if="pickOptions" class="survivor-overlay" role="dialog" aria-label="Escolha quem joga">
-          <div class="card survivor-pick">
+          <div v-if="typeChoice" class="card survivor-pick survivor-type-choice">
+            <h2>{{ typeChoice.name }} tem dois tipos</h2>
+            <p class="note">Qual deles ataca na corrida?</p>
+            <div class="survivor-pick-grid">
+              <button v-for="t in typeChoice.types" :key="t" type="button" class="survivor-pick-btn" @click="(() => { const o = typeChoice!; typeChoice = null; choosePlayer(o, t); })()">
+                <strong>{{ TYPE_LABELS_PT[t] }}</strong>
+                <small>{{ moveFor([t], null).name }}</small>
+              </button>
+            </div>
+            <button type="button" class="link" @click="typeChoice = null">Voltar</button>
+          </div>
+          <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
             <p class="note">3 Pokémon sorteados da sua caixa.</p>
+            <div v-if="torre.infiniteUnlocked" class="survivor-mode" role="group" aria-label="Modo da Torre">
+              <button type="button" :class="{ active: !infiniteWanted }" @click="infiniteWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
+              <button type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true">♾️ Infinito<small>Mais difícil, sem fim</small></button>
+            </div>
             <div class="survivor-pick-grid">
               <button
                 v-for="opt in pickOptions"
@@ -686,7 +751,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="survivor-pick-btn"
                 :disabled="pickBusy"
-                @click="choosePlayer(opt)"
+                @click="opt.types.length > 1 ? openTypeChoice(opt) : choosePlayer(opt, opt.types[0])"
               >
                 <img v-if="opt.thumb" :src="opt.thumb" :alt="opt.name" class="survivor-pick-thumb" />
                 <span v-else class="survivor-pick-thumb placeholder" aria-hidden="true">?</span>
@@ -724,7 +789,12 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
-            <p class="survivor-coins" role="status">{{ runCoins > 0 ? `🪙 +${runCoins} moedas` : 'Sem moedas desta vez: dure 20 segundos ou derrote alguém.' }}</p>
+            <p class="survivor-coins" role="status">
+              {{ runCoins > 0 ? `🪙 +${runCoins} moedas` : 'Sem moedas desta vez: dure 20 segundos ou derrote alguém.' }}
+              <small v-if="runClearBonus > 0"> (inclui o bônus de {{ runClearBonus }} por zerar, 1× por dia)</small>
+            </p>
+            <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
+            <p v-if="summary.trainersBeaten > 0 || summary.bossesBeaten > 0" class="note">Treinadores derrotados: {{ summary.trainersBeaten }}{{ summary.bossesBeaten > 0 ? ` · chefões: ${summary.bossesBeaten}` : '' }}.</p>
             <p v-if="summary.stage > 0" class="note">Evoluiu {{ summary.stage === 1 ? 'uma vez' : `${summary.stage} vezes` }} nesta corrida (como {{ avatarName }}).</p>
             <button type="button" class="primary" @click="playAgain">Jogar de novo</button>
             <button type="button" class="link" @click="leaveNow">Voltar aos jogos</button>

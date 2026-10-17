@@ -304,6 +304,12 @@ export const ITEMS: readonly ItemDef[] = [
   a('faixa-vencedor', 'Faixa de vencedor', 'both', 'neck', 0, { sell: 0 }),
   a('capa-estelar', 'Capa estelar', 'both', 'back', 0, { sell: 0 }),
   a('capa-liga', 'Capa da Liga', 'both', 'back', 0, { sell: 0 }),
+  // Cosméticos da Torre de Sobrevivência (prêmios de conquistas, nunca vendem).
+  a('fita-torre', 'Fita de sobrevivente', 'both', 'neck', 0, { sell: 0 }),
+  a('pin-treinador', 'Pino de Treinador', 'both', 'face', 0, { sell: 0 }),
+  a('pin-chefao', 'Pino de Chefão', 'both', 'face', 0, { sell: 0 }),
+  a('trofeu-torre', 'Troféu da Torre', 'both', 'hat', 0, { sell: 0 }),
+  a('capa-sobrevivente', 'Capa de Sobrevivente', 'both', 'back', 0, { sell: 0 }),
 ];
 
 export const ITEM_BY_ID = new Map(ITEMS.map((i) => [i.id, i]));

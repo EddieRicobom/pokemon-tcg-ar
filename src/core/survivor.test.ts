@@ -31,7 +31,7 @@ function quiet(state: SurvivorState): SurvivorState {
   return state;
 }
 function dummy(id: number, x: number, y: number, hp = 1000): SurvivorEnemy {
-  return { id, kind: 0, boss: false, x, y, hp, maxHp: hp, speed: 0, damage: 0, radius: 13, hitFlashMs: 0 };
+  return { id, kind: 0, boss: false, grade: 'comum', x, y, hp, maxHp: hp, speed: 0, damage: 0, radius: 13, hitFlashMs: 0 };
 }
 
 function run(seed: number, kindCount = 4) {
@@ -80,7 +80,7 @@ describe('stepSurvivor', () => {
   it('autoataque derruba um inimigo parado ao alcance e dá XP (orbe coletado)', () => {
     const s = run(4);
     // Coloca um inimigo fraco bem perto, já dentro da arena, sem esperar nascimento.
-    s.enemies.push({ id: 999, kind: 0, boss: false, x: s.player.x + 40, y: s.player.y, hp: 5, maxHp: 5, speed: 0, damage: 0, radius: 13, hitFlashMs: 0 });
+    s.enemies.push({ id: 999, kind: 0, boss: false, grade: 'comum', x: s.player.x + 40, y: s.player.y, hp: 5, maxHp: 5, speed: 0, damage: 0, radius: 13, hitFlashMs: 0 });
     let gotKill = false;
     for (let i = 0; i < 40 && !gotKill; i++) {
       stepSurvivor(s, { dx: 0, dy: 0 }, 100);
@@ -125,7 +125,7 @@ describe('stepSurvivor', () => {
 
   it('perde HP ao encostar em inimigo e fica brevemente invencível (não toma dano em cada quadro)', () => {
     const s = run(7);
-    s.enemies.push({ id: 1, kind: 0, boss: false, x: s.player.x, y: s.player.y, hp: 999, maxHp: 999, speed: 0, damage: 10, radius: 13, hitFlashMs: 0 });
+    s.enemies.push({ id: 1, kind: 0, boss: false, grade: 'comum', x: s.player.x, y: s.player.y, hp: 999, maxHp: 999, speed: 0, damage: 10, radius: 13, hitFlashMs: 0 });
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     const hpAfterFirstHit = s.player.hp;
     expect(hpAfterFirstHit).toBe(90);
@@ -136,7 +136,7 @@ describe('stepSurvivor', () => {
   it('termina o jogo quando o HP chega a zero, com o resumo da corrida', () => {
     const s = run(8);
     s.player.hp = 1;
-    s.enemies.push({ id: 1, kind: 0, boss: false, x: s.player.x, y: s.player.y, hp: 999, maxHp: 999, speed: 0, damage: 50, radius: 13, hitFlashMs: 0 });
+    s.enemies.push({ id: 1, kind: 0, boss: false, grade: 'comum', x: s.player.x, y: s.player.y, hp: 999, maxHp: 999, speed: 0, damage: 50, radius: 13, hitFlashMs: 0 });
     const events = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.over).toBe(true);
     const over = events.find((e) => e.type === 'gameover');
@@ -208,7 +208,7 @@ describe('stepSurvivor', () => {
     s.player.pierce = 3;
     s.player.attackDamage = 5;
     // Um inimigo parado, grande e bem resistente, no caminho do disparo.
-    s.enemies.push({ id: 999, kind: 0, boss: false, x: s.player.x + 60, y: s.player.y, hp: 1000, maxHp: 1000, speed: 0, damage: 0, radius: 40, hitFlashMs: 0 });
+    s.enemies.push({ id: 999, kind: 0, boss: false, grade: 'comum', x: s.player.x + 60, y: s.player.y, hp: 1000, maxHp: 1000, speed: 0, damage: 0, radius: 40, hitFlashMs: 0 });
     s.player.attackCooldownMs = 1e9; // um disparo só
     for (let i = 0; i < 40; i++) stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     // Um projétil, um acerto: 5 de dano (antes acertava em vários quadros seguidos enquanto passava por dentro).
@@ -354,10 +354,48 @@ describe('evolução na corrida', () => {
 
 describe('moedas da Torre', () => {
   it('metade da pontuação, de 5 a 50; nada se saiu logo sem derrotar ninguém', () => {
-    expect(survivorCoins({ survivedMs: 5000, kills: 0, level: 1 })).toBe(0);
-    expect(survivorCoins({ survivedMs: 25_000, kills: 0, level: 1 })).toBe(15);
-    expect(survivorCoins({ survivedMs: 3000, kills: 1, level: 1 })).toBe(5);
-    expect(survivorCoins({ survivedMs: 600_000, kills: 400, level: 30 })).toBe(50);
+    expect(survivorCoins({ survivedMs: 5000, kills: 0, level: 1, trainersBeaten: 0, bossesBeaten: 0 })).toBe(0);
+    expect(survivorCoins({ survivedMs: 25_000, kills: 0, level: 1, trainersBeaten: 0, bossesBeaten: 0 })).toBe(15);
+    expect(survivorCoins({ survivedMs: 3000, kills: 1, level: 1, trainersBeaten: 0, bossesBeaten: 0 })).toBe(5);
+    expect(survivorCoins({ survivedMs: 600_000, kills: 400, level: 30, trainersBeaten: 0, bossesBeaten: 0 })).toBe(50);
     expect(survivorScore({ survivedMs: 60_000, kills: 10, level: 4 })).toBe(100);
+  });
+});
+
+describe('treinadores e chefão final', () => {
+  const quickKill = (state: ReturnType<typeof createSurvivorState>) => { for (const e of state.enemies) e.hp = 0; stepSurvivor(state, { dx: 0, dy: 0 }, 1); };
+  it('aos 5 min aparece um treinador com 3 Pokémon elite, e aos 20 min o chefão com 6', () => {
+    const s = createSurvivorState(42, { kindCount: 4 });
+    const timeline: string[] = [];
+    // Pula para quase os 5 min; os eventos aparecem no quadro de dentro.
+    s.elapsedMs = 300_000 - 200;
+    const ev1 = stepSurvivor(s, { dx: 0, dy: 0 }, 400);
+    for (const e of ev1) if (e.type === 'trainerSpawn') timeline.push(`t:${e.count}:${e.final}`);
+    expect(timeline).toContain('t:3:false');
+    expect(s.enemies.filter((e) => e.grade === 'elite').length).toBe(3);
+    // Pula para quase 20 min.
+    s.elapsedMs = 1_200_000 - 200;
+    const ev2 = stepSurvivor(s, { dx: 0, dy: 0 }, 400);
+    for (const e of ev2) if (e.type === 'trainerSpawn') timeline.push(`t:${e.count}:${e.final}`);
+    expect(timeline).toContain('t:6:true');
+    expect(s.enemies.filter((e) => e.grade === 'chefao').length).toBe(6);
+    quickKill(s);
+    expect(s.finalBossBeaten).toBe(true);
+    expect(s.trainersBeaten).toBeGreaterThanOrEqual(1);
+    expect(s.bossesBeaten).toBeGreaterThanOrEqual(1);
+  });
+
+  it('modo infinito começa mais difícil (escala 1,25) e cresce a cada minuto', () => {
+    const s = createSurvivorState(7, { kindCount: 2, infinite: true });
+    expect(s.infinite).toBe(true);
+    expect(s.infiniteScale).toBeCloseTo(1.25, 3);
+    s.elapsedMs = 10 * 60_000;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.infiniteScale).toBeGreaterThan(2);
+  });
+
+  it('moedas: +40 por treinador, +80 por chefão (além da pontuação)', () => {
+    expect(survivorCoins({ survivedMs: 60_000, kills: 10, level: 4, trainersBeaten: 2, bossesBeaten: 1 })).toBe(50 + 40 + 80);
+    expect(survivorCoins({ survivedMs: 60_000, kills: 10, level: 4, trainersBeaten: 0, bossesBeaten: 0 })).toBe(50);
   });
 });

@@ -5311,6 +5311,65 @@ body.no-scroll .reward-toasts {
   border-radius: 0;
 }
 
+.survivor-toast {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 14, 24, 0.85);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.survivor-mode {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+
+.survivor-mode button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1.5px solid #d8dcf0;
+  background: #f4f6ff;
+  color: #1b2036;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.survivor-mode button.active {
+  background: #ffd84a;
+  border-color: #c89a2a;
+}
+
+.survivor-type-choice .survivor-pick-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.survivor-cleared {
+  margin: 6px 0 0;
+  font-weight: 700;
+  color: #c89a2a;
+}
+
+.survivor-cleared small {
+  display: block;
+  font-weight: 400;
+  color: #4a3a1a;
+}
+
 .survivor-coins {
   margin: 8px 0 0;
   font-weight: 700;
