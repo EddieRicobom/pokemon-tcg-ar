@@ -341,11 +341,16 @@ function draw(): void {
   // Aura: o raio fica sempre marcado de leve em volta do Pokémon, para dar para ver até onde o golpe chega.
   if (move.category === 'aura') {
     ctx.save();
-    ctx.globalAlpha = 0.1;
+    ctx.globalAlpha = 0.16;
     ctx.fillStyle = move.color;
     ctx.beginPath();
     ctx.arc(s.player.x, s.player.y - 8, s.player.attackRadius, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = move.color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 5]);
+    ctx.stroke();
     ctx.restore();
   }
 

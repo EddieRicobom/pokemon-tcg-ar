@@ -192,12 +192,12 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   {
     id: 'power', name: 'Golpe mais forte', description: '+20% de dano no ataque.',
-    describe: (m) => ({ name: `${m.name} mais forte`, description: '+20% de dano no golpe.' }),
+    describe: (m) => ({ name: 'Golpe mais forte', description: `${m.name}: +20% de dano.` }),
     apply: (p) => { p.attackDamage = round1(p.attackDamage * 1.2); },
   },
   {
     id: 'haste', name: 'Recarga menor', description: '-15% no tempo entre ataques.',
-    describe: (m) => ({ name: `${m.name} mais rápido`, description: m.category === 'aura' ? '-15% no tempo entre os pulsos.' : '-15% no tempo entre ataques.' }),
+    describe: (m) => ({ name: 'Recarga menor', description: `${m.name}: ${m.category === 'aura' ? '-15% no tempo entre os pulsos.' : '-15% no tempo entre ataques.'}` }),
     apply: (p) => { p.attackCooldownMs = Math.max(120, Math.round(p.attackCooldownMs * 0.85)); },
   },
   { id: 'legs', name: 'Passo mais rápido', description: '+12% de velocidade ao andar.', apply: (p) => { p.speed = round1(p.speed * 1.12); } },
@@ -209,7 +209,7 @@ export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   {
     id: 'multishot', name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.', for: ['projetil', 'area'],
     describe: (m) => (m.category === 'area'
-      ? { name: `${m.name} duplo`, description: '+1 explosão por ataque, em outro inimigo.' }
+      ? { name: 'Explosão extra', description: `${m.name}: +1 explosão por ataque, em outro inimigo.` }
       : { name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.' }),
     apply: (p) => { p.shots += 1; },
   },
@@ -219,7 +219,7 @@ export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   },
   {
     id: 'radius', name: 'Golpe maior', description: '+20% no raio do golpe.', for: ['aura', 'area'],
-    describe: (m) => ({ name: `${m.name} maior`, description: m.category === 'aura' ? '+20% no raio da aura.' : '+20% no tamanho da explosão.' }),
+    describe: (m) => ({ name: 'Golpe maior', description: `${m.name}: ${m.category === 'aura' ? '+20% no raio da aura.' : '+20% no tamanho da explosão.'}` }),
     apply: (p) => { p.attackRadius = round1(p.attackRadius * 1.2); },
   },
   { id: 'magnet', name: 'Ímã de XP', description: '+30% no alcance para coletar orbes de XP.', apply: (p) => { p.pickupRadius = round1(p.pickupRadius * 1.3); } },

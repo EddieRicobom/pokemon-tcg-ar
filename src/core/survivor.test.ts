@@ -296,7 +296,7 @@ describe('golpes por tipo', () => {
       for (const p of picks) expect(['multishot', 'pierce', 'range']).not.toContain(p.id);
     }
     const all = rollUpgrades(seededRng(3), 6, aura);
-    expect(all.find((p) => p.id === 'power')?.name).toBe('Folhas cortantes mais forte');
+    expect(all.find((p) => p.id === 'power')?.description).toBe('Folhas cortantes: +20% de dano.');
   });
 });
 

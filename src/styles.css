@@ -5319,9 +5319,11 @@ body.no-scroll .reward-toasts {
 
 .survivor-pick-move {
   font-weight: 700;
+  color: #1b2036;
   border-bottom: 2px solid var(--move, transparent);
 }
 
+.survivor-pick-btn small,
 .survivor-pick-kind {
   color: #4a5068;
   font-size: 0.62rem;
@@ -5338,7 +5340,7 @@ body.no-scroll .reward-toasts {
 
 .survivor-pick-bar {
   display: grid;
-  grid-template-columns: 3.6em 1fr;
+  grid-template-columns: 4.4em 1fr;
   align-items: center;
   gap: 3px;
   font-size: 0.58rem;
