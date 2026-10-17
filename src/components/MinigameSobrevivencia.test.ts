@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick, type App as VueApp } from 'vue';
 
-// Carregamento dos sprites controlado pelo teste: fica pendente até `release()`.
-let release: () => void = () => {};
+// Carregamento dos sprites controlado pelo teste: todos ficam pendentes até `release()`.
+const pending: (() => void)[] = [];
+const release = () => pending.splice(0).forEach((resolve) => resolve());
 vi.mock('../app/services', () => ({
   assetUrl: (path: string) => path,
   getCache: async () => ({ list: async () => [] }),
-  getLocalVillageSprite: () => new Promise((resolve) => (release = () => resolve(null))),
+  getLocalVillageSprite: () => new Promise((resolve) => pending.push(() => resolve(null))),
 }));
 
 const { default: MinigameSobrevivencia } = await import('./MinigameSobrevivencia.vue');
@@ -20,9 +21,20 @@ describe('Torre de Sobrevivência: sair no meio', () => {
     app = null;
     host = null;
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('sair enquanto os sprites ainda carregam não deixa um laço de animação rodando depois', async () => {
+    // O chão da Torre "não baixa" (caminho real sem rede): a imagem avisa erro logo, e o carregamento segue.
+    class FailingImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 0;
+      set src(_value: string) {
+        queueMicrotask(() => this.onerror?.());
+      }
+    }
+    vi.stubGlobal('Image', FailingImage);
     const raf = vi.spyOn(window, 'requestAnimationFrame');
     host = document.createElement('div');
     document.body.append(host);
