@@ -2220,7 +2220,8 @@ button.link {
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: var(--surface-2);
-  opacity: 0.55;
+  /* Trancada fica mais apagada, mas o texto continua legível (0.55 deixava o cinza quase sumir). */
+  opacity: 0.8;
 }
 
 .badges li.on {
@@ -3901,7 +3902,7 @@ body.no-scroll .reward-toasts {
 }
 
 .league-list li.locked {
-  opacity: 0.5;
+  opacity: 0.75;
 }
 
 .league-list li.locked img {
