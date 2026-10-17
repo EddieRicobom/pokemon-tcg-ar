@@ -1590,7 +1590,8 @@ onBeforeUnmount(() => {
         <LeagueCard @challenge="sheet = null; emit('close', 'caixa')" />
       </div>
 
-      <div v-if="sheet === 'torre'" class="village-sheet tall game-sheet" role="dialog" aria-label="Torre de Sobrevivência">
+      <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
+      <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
         <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ dexId: i.dexId, name: i.name }))" @leave="sheet = null" />
       </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { assetUrl, getCache, getLocalVillageSprite } from '../app/services';
 import { recordEvent } from '../app/trainer-store';
 import { addCoins } from '../app/wallet';
@@ -25,7 +25,7 @@ const UPGRADE_ICON: Record<string, string> = {
 
 /**
  * Zona de Sobrevivência: um modo próprio da Vila (como a Arena e a Pista de Pins), aberto pela Torre — não é um
- * minigame do Fliperama. Você anda com o analógico (ou WASD/setas), seu Pokémon ataca sozinho quem chegar perto,
+ * minigame do Fliperama. Você anda arrastando o dedo em qualquer lugar da tela (ou WASD/setas), seu Pokémon ataca sozinho quem chegar perto,
  * orbes de XP sobem de nível e abrem a escolha de um upgrade, e as ondas ficam mais difíceis com o tempo. A lógica
  * fica inteira em `core/survivor.ts` (pura, testada); aqui é só o laço de desenho e os controles — como a Vila faz
  * com o próprio jogo dela. O chão usa um recorte real de um dos tilesets enviados (`public/tilesets/`, créditos em
@@ -43,8 +43,26 @@ const WILD_DEX_IDS = [16, 19, 21, 23, 41, 74, 129, 161, 165, 261, 265, 27] as co
 /** Chefe periódico: maior, mais forte, sprite fixo (todas as espécies do pacote têm as 7 animações; ver village-sprite-meta.json). */
 const BOSS_DEX_ID = 95;
 
-const VIEW_W = 340;
-const VIEW_H = 420;
+/**
+ * A Torre ocupa a tela inteira: o lado menor da tela mostra `VIEW_SHORT` unidades do jogo e o maior acompanha o formato
+ * do aparelho (celular em pé vê mais para cima e para baixo; computador, mais para os lados), sem passar da arena.
+ */
+const VIEW_SHORT = 360;
+const view = reactive({ w: 340, h: 420 });
+const stageEl = ref<HTMLElement | null>(null);
+let resizer: ResizeObserver | null = null;
+function fitView(): void {
+  const el = stageEl.value;
+  if (!el) return;
+  const W = el.clientWidth;
+  const H = el.clientHeight;
+  if (W <= 0 || H <= 0) return;
+  const k = VIEW_SHORT / Math.min(W, H);
+  view.w = Math.round(Math.min(ARENA_W, W * k));
+  view.h = Math.round(Math.min(ARENA_H, H * k));
+  // Mudar o tamanho do canvas apaga o contexto: as configurações voltam no próximo quadro (`draw` refaz tudo).
+  if (ctx) ctx.imageSmoothingEnabled = false;
+}
 const JOY_MAX = 42;
 
 interface Sprite {
@@ -150,7 +168,8 @@ let disposed = false;
 let lastTs = 0;
 let animMs = 0;
 const heldKeys = new Set<string>();
-const joystick = { active: false, pointerId: null as number | null, cx: 0, cy: 0, dx: 0, dy: 0 };
+/** Joystick flutuante: aparece onde o dedo encostou na tela da Torre (`lx`, `ly`, relativos à tela). */
+const joystick = reactive({ active: false, pointerId: null as number | null, cx: 0, cy: 0, dx: 0, dy: 0, lx: 0, ly: 0 });
 
 const KEY_DIR: Record<string, string> = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -165,13 +184,18 @@ function onKey(e: KeyboardEvent): void {
 }
 
 function joyDown(e: PointerEvent): void {
+  if (joystick.active || !ready.value || summary.value || pickOptions.value) return;
+  // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
+  if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
   const el = e.currentTarget as HTMLElement;
   const rect = el.getBoundingClientRect();
   joystick.active = true;
   joystick.pointerId = e.pointerId;
-  joystick.cx = rect.left + rect.width / 2;
-  joystick.cy = rect.top + rect.height / 2;
-  el.setPointerCapture(e.pointerId);
+  joystick.cx = e.clientX;
+  joystick.cy = e.clientY;
+  joystick.lx = e.clientX - rect.left;
+  joystick.ly = e.clientY - rect.top;
+  el.setPointerCapture?.(e.pointerId);
   joyMove(e);
 }
 function joyMove(e: PointerEvent): void {
@@ -237,6 +261,8 @@ function drawEnemy(e: SurvivorEnemy): void {
 function draw(): void {
   if (!ctx || !canvasEl.value || !state.value) return;
   const s = state.value;
+  const VIEW_W = view.w;
+  const VIEW_H = view.h;
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   const camX = clamp(s.player.x - VIEW_W / 2, 0, Math.max(0, ARENA_W - VIEW_W));
   const camY = clamp(s.player.y - VIEW_H / 2, 0, Math.max(0, ARENA_H - VIEW_H));
@@ -406,6 +432,11 @@ function playAgain(): void {
 
 onMounted(() => {
   ctx = canvasEl.value?.getContext('2d') ?? null;
+  fitView();
+  if (typeof ResizeObserver !== 'undefined' && stageEl.value) {
+    resizer = new ResizeObserver(fitView);
+    resizer.observe(stageEl.value);
+  }
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   void openPicker();
@@ -429,6 +460,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
   document.removeEventListener('visibilitychange', onVisibility);
+  resizer?.disconnect();
+  resizer = null;
   heldKeys.clear();
 });
 </script>
@@ -437,8 +470,15 @@ onBeforeUnmount(() => {
   <div class="survivor">
     <p v-if="failed" class="hint">Não deu para carregar a Zona de Sobrevivência agora. Tente de novo mais tarde.</p>
     <template v-else>
-      <div class="survivor-stage" :style="{ width: VIEW_W + 'px', height: VIEW_H + 'px' }">
-        <canvas ref="canvasEl" :width="VIEW_W" :height="VIEW_H" class="survivor-canvas"></canvas>
+      <div
+        ref="stageEl"
+        class="survivor-stage"
+        @pointerdown="joyDown"
+        @pointermove="joyMove"
+        @pointerup="joyUp"
+        @pointercancel="joyUp"
+      >
+        <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" aria-label="Torre: arraste em qualquer lugar para andar"></canvas>
 
         <div class="survivor-vignette" aria-hidden="true"></div>
 
@@ -454,17 +494,10 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div
-          v-if="ready && !summary"
-          class="survivor-joy-base"
-          :class="{ active: joystick.active }"
-          @pointerdown.prevent="joyDown"
-          @pointermove.prevent="joyMove"
-          @pointerup.prevent="joyUp"
-          @pointercancel.prevent="joyUp"
-        >
+        <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
+        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint">Arraste em qualquer lugar para andar</p>
 
         <div v-if="pickOptions" class="survivor-overlay" role="dialog" aria-label="Escolha quem joga">
           <div class="card survivor-pick">
@@ -514,7 +547,7 @@ onBeforeUnmount(() => {
 
         <p v-if="!ready && !pickOptions" class="hint survivor-loading">Carregando a Zona de Sobrevivência…</p>
       </div>
-      <p class="note">Ande com o analógico (ou WASD/setas); seu Pokémon ataca sozinho quem chegar perto. Ondas cada vez maiores e um chefe de tempos em tempos. Chão e inimigos: créditos no rodapé do app.</p>
+      <p class="note">Arraste em qualquer lugar da tela para andar (ou WASD/setas); seu Pokémon ataca sozinho quem chegar perto. Ondas cada vez maiores e um chefe de tempos em tempos. Chão e inimigos: créditos no rodapé do app.</p>
     </template>
   </div>
 </template>
