@@ -14,10 +14,15 @@ import { POKEMON_TYPES, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { loadVillage } from '../app/village-store';
 import { digitalRows } from '../core/village/digital';
+import { digitalBoxRows, digitalCandidates } from '../app/digital-members';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 
 /** Digital Pokémon da Vila: aparecem aqui marcados como digitais e bloqueados (não vêm de carta física: sem scan nem AR). */
-const digital = ref(digitalRows(loadVillage().digital));
+const villageDigital = loadVillage().digital;
+const digital = ref(digitalRows(villageDigital));
+/** Na Box (e na equipe), os Digital Pokémon entram junto das cartas, com o símbolo ✨ (ver `app/digital-members.ts`). */
+const digitalBox = digitalBoxRows(villageDigital).map((row) => ({ ...row, icon: pokemonSpriteUrl(row.dexIds[0]!) }));
+const boxCards = computed(() => [...rows.value, ...digitalBox] as Row[]);
 
 /** `icon`: o sprite guardado do Pokémon (o ícone do espaço na Box); `thumb`: a imagem da carta. */
 type Row = CachedCard & { status: CacheStatus; thumb?: string; icon?: string };
@@ -49,15 +54,15 @@ const viewMode = ref<'box' | 'lista' | 'grade'>('box');
 const visibleIdSet = computed(() => {
   const q = search.value.trim().toLowerCase();
   return new Set(
-    rows.value
+    boxCards.value
       .filter((row) => (!q || `${row.name} ${row.setName} ${row.localId}`.toLowerCase().includes(q)) && cardMatchesSpecies(row, speciesFilter.value))
       .map((row) => row.id),
   );
 });
 const teamNotice = ref('');
 
-const team = computed(() => resolveTeam(savedTeam.value, rows.value));
-const teamRows = computed(() => team.value.ids.map((id) => rows.value.find((row) => row.id === id)).filter((row): row is Row => row !== undefined));
+const team = computed(() => resolveTeam(savedTeam.value, [...rows.value, ...digitalCandidates(villageDigital)]));
+const teamRows = computed(() => team.value.ids.map((id) => boxCards.value.find((row) => row.id === id)).filter((row): row is Row => row !== undefined));
 const visibleRows = computed(() => {
   const q = search.value.trim().toLowerCase();
   const filtered = rows.value.filter((row) => {
@@ -92,7 +97,8 @@ async function battleWithTeam(): Promise<void> {
     message.value = 'Para batalhar, a equipe precisa de pelo menos 2 Pokémon (toque numa carta e em «Pôr na equipe»).';
     return;
   }
-  const missing = ids.filter((id) => rows.value.find((r) => r.id === id)?.sprite.state !== 'ok');
+  // Só cartas físicas precisam ser carregadas; Digital Pokémon pegam o sprite na hora.
+  const missing = ids.filter((id) => rows.value.some((r) => r.id === id && r.sprite.state !== 'ok'));
   try {
     const cache = await getCache();
     for (let i = 0; i < missing.length; i++) {
@@ -355,12 +361,12 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
 
     <CardBox
       v-if="viewMode === 'box' && rows.length > 0"
-      :cards="rows"
+      :cards="boxCards"
       :team="team.ids"
       :busy-id="busyId"
       :visible-ids="visibleIdSet"
       :status-text="STATUS_TEXT"
-      @toggle-team="(id: string) => { const row = rows.find((r) => r.id === id); if (row) toggleTeam(row); }"
+      @toggle-team="(id: string) => { const row = boxCards.find((r) => r.id === id); if (row) toggleTeam(row); }"
       @run="(id: string, action: 'prepare' | 'reload') => run(id, action)"
       @remove="(id: string) => removeCard(id)"
     />

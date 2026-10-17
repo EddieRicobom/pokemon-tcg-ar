@@ -13,7 +13,8 @@ import type { BoxLayout, BoxSort, SlotRef } from '../core/box-layout';
 import { isShiny } from '../core/shiny';
 import type { CachedCard, CacheStatus } from '../cache/types';
 
-type BoxCard = CachedCard & { status: CacheStatus; thumb?: string; icon?: string };
+/** `digital`: Digital Pokémon (não vem de carta física) — símbolo ✨, sem scan, sem AR e sem remover daqui. */
+type BoxCard = CachedCard & { status: CacheStatus; thumb?: string; icon?: string; digital?: boolean; originCardId?: string };
 
 const props = defineProps<{
   cards: BoxCard[];
@@ -152,14 +153,16 @@ const teamIndex = (id: string) => props.team.indexOf(id);
           dim: !!id && !visibleIds.has(id),
           shiny: !!id && !!byId.get(id) && isShiny(byId.get(id)!),
           incomplete: !!id && byId.get(id)?.status !== 'completo',
+          digital: !!id && byId.get(id)?.digital === true,
         }"
-        :aria-label="id ? `${byId.get(id)?.name ?? id}${teamIndex(id) >= 0 ? ', na equipe' : ''}` : `Espaço ${slot + 1} vazio`"
+        :aria-label="id ? `${byId.get(id)?.name ?? id}${byId.get(id)?.digital ? ', Digital Pokémon' : ''}${teamIndex(id) >= 0 ? ', na equipe' : ''}` : `Espaço ${slot + 1} vazio`"
         @click="tapSlot(slot)"
       >
         <template v-if="id && byId.get(id)">
           <img v-if="byId.get(id)!.icon || byId.get(id)!.thumb" :src="byId.get(id)!.icon ?? byId.get(id)!.thumb" :class="{ card: !byId.get(id)!.icon }" alt="" />
           <span v-else class="pbox-noimg" aria-hidden="true">?</span>
           <span v-if="teamIndex(id) >= 0" class="pbox-team" aria-hidden="true">{{ teamIndex(id) + 1 }}</span>
+          <span v-if="byId.get(id)!.digital" class="pbox-digital" aria-hidden="true">✨</span>
         </template>
       </button>
     </div>
@@ -173,12 +176,23 @@ const teamIndex = (id: string) => props.team.indexOf(id);
     </div>
     <p v-if="notice" class="pbox-notice" role="status">{{ notice }}</p>
     <p class="pbox-legend">
-      Número no canto = posição na equipe da caixa · borda tracejada = carta ainda não completa · apagadas = fora do filtro.
+      Número no canto = posição na equipe da caixa · ✨ = Digital Pokémon (batalha, sem scan nem AR) · borda tracejada = carta ainda não completa · apagadas = fora do filtro.
     </p>
 
     <div v-if="selectedCard && !moving" class="pbox-detail" role="region" :aria-label="`Detalhes de ${selectedCard.name}`">
       <img v-if="selectedCard.thumb" :src="selectedCard.thumb" :alt="`Carta ${selectedCard.name}`" width="72" height="100" />
       <div>
+        <template v-if="selectedCard.digital">
+          <strong>{{ selectedCard.name }} <span class="badge digital">✨ Digital</span></strong>
+          <span>Pokédex nº {{ selectedCard.dexIds[0] }} · carta de origem {{ selectedCard.originCardId }}</span>
+          <small>🔒 Sem scan e sem AR (não é uma carta física). Batalha na Caixa como qualquer outro.</small>
+          <div class="actions row">
+            <button type="button" :class="{ active: teamIndex(selectedCard.id) >= 0 }" @click="emit('toggleTeam', selectedCard.id)">
+              {{ teamIndex(selectedCard.id) >= 0 ? 'Na equipe ✓' : 'Pôr na equipe' }}
+            </button>
+          </div>
+        </template>
+        <template v-else>
         <strong>{{ selectedCard.name }} <CardMarks :card="selectedCard" /></strong>
         <span>{{ selectedCard.setName }} · {{ selectedCard.localId }}/{{ selectedCard.setOfficial }}{{ selectedCard.dexIds[0] ? ` · Pokédex nº ${selectedCard.dexIds[0]}` : '' }}</span>
         <span class="badge" :class="selectedCard.status">{{ statusText[selectedCard.status] }}</span>
@@ -195,6 +209,7 @@ const teamIndex = (id: string) => props.team.indexOf(id);
             <button type="button" @click="confirmRemove = null">Não</button>
           </template>
         </div>
+        </template>
       </div>
     </div>
   </section>

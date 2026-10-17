@@ -5492,6 +5492,20 @@ body.no-scroll .reward-toasts {
   line-height: 16px;
 }
 
+/* Digital Pokémon na Box: símbolo ✨ e borda prateada (o mesmo acabamento metálico da Vila). */
+.pbox-cell.digital {
+  border-color: rgba(201, 214, 232, 0.85);
+  background: linear-gradient(145deg, rgba(201, 214, 232, 0.22), rgba(143, 163, 191, 0.08));
+}
+
+.pbox-digital {
+  position: absolute;
+  left: 2px;
+  bottom: 1px;
+  font-size: 0.7rem;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
+}
+
 .pbox-noimg {
   opacity: 0.6;
   font-weight: 700;
