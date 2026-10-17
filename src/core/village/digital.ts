@@ -205,14 +205,14 @@ export function pickFonteSpecies<T extends { dexId: number }>(s: DigitalState, p
   return from[Math.floor(rng() * from.length)] ?? null;
 }
 
-/** Uma linha da lista de cartas para um Digital Pokémon: aparece junto das cartas, mas marcado e sem scan/AR. */
+/** Uma linha da lista de cartas para um Digital Pokémon: aparece junto das cartas, mas marcado e sem scan (não tem carta física). */
 export interface DigitalRow {
   instanceId: string;
   name: string;
   dexId: number;
   /** De onde veio, em português (presente inicial, Fonte, evolução). */
   origin: string;
-  /** Data de chegada (AAAA-MM-DD). */
+  /** Data de chegada (DD/MM/AAAA). */
   since: string;
   originCardId: string;
   stage: number;
@@ -230,7 +230,7 @@ export function digitalRows(s: DigitalState): DigitalRow[] {
     name: i.name,
     dexId: i.dexId,
     origin: SOURCE_PT[i.source] ?? 'Digital',
-    since: typeof i.grantedAt === 'string' ? i.grantedAt.slice(0, 10) : '',
+    since: typeof i.grantedAt === 'string' ? i.grantedAt.slice(0, 10).split('-').reverse().join('/') : '',
     originCardId: i.originCardId,
     stage: i.stage,
   }));

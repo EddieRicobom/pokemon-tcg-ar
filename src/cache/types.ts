@@ -79,6 +79,14 @@ export interface AssetRecord {
 
 export type CacheStatus = 'completo' | 'parcial' | 'falhou';
 
+/**
+ * Carta sem número da Pokédex no TCGdex. Pode ser Treinador ou Energia, mas também carta de Pokémon de coleção nova
+ * que o TCGdex ainda não completou (ex.: 30th Celebration): o texto não afirma o que não sabe.
+ */
+export const NO_DEX_ERROR = 'O TCGdex não informa qual Pokémon é esta carta (Treinador, Energia ou dado faltando)';
+/** Texto antigo do mesmo caso, ainda guardado em cartas escaneadas antes: a tela mostra o novo. */
+export const LEGACY_NO_DEX_ERROR = 'Esta carta não tem um Pokémon (Treinador/Energia)';
+
 export interface StorageInfo {
   cards: number;
   assets: number;

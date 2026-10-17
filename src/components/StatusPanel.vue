@@ -7,6 +7,8 @@ const props = defineProps<{ capabilities: Capabilities }>();
 interface Row {
   label: string;
   ok: boolean;
+  /** Opcional: quando falta, aparece neutro (não é erro). */
+  optional?: boolean;
   okText: string;
   failText: string;
 }
@@ -39,6 +41,7 @@ const rows = computed<Row[]>(() => [
   {
     label: 'Instalado na tela inicial',
     ok: props.capabilities.standalone,
+    optional: true,
     okText: 'Sim',
     failText: 'Ainda não (opcional)',
   },
@@ -47,12 +50,12 @@ const rows = computed<Row[]>(() => [
 
 <template>
   <section class="card" aria-labelledby="status-title">
-    <h2 id="status-title">Este aparelho</h2>
+    <h2 id="status-title">Diagnóstico deste aparelho</h2>
     <ul class="status-list">
       <li v-for="row in rows" :key="row.label">
         <span>{{ row.label }}</span>
-        <strong :class="row.ok ? 'ok' : 'warn'">
-          <span aria-hidden="true">{{ row.ok ? '✔' : '✖' }}</span>
+        <strong :class="row.ok ? 'ok' : row.optional ? 'muted' : 'warn'">
+          <span aria-hidden="true">{{ row.ok ? '✔' : row.optional ? '–' : '✖' }}</span>
           {{ row.ok ? row.okText : row.failText }}
         </strong>
       </li>

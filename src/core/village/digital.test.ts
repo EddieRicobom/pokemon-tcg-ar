@@ -210,8 +210,8 @@ describe('Digital Pokémon na lista de cartas', () => {
     s = summon(s, 600, { dexId: 4, name: 'Charmander', cardId: 'sm7.5-1' }, '2026-10-16T12:00:00.000Z')!.state;
     const rows = digitalRows(s);
     expect(rows.map((r) => [r.name, r.origin, r.since])).toEqual([
-      ['Bulbasaur', 'Presente inicial', '2026-10-16'],
-      ['Charmander', 'Invocado na Fonte', '2026-10-16'],
+      ['Bulbasaur', 'Presente inicial', '16/10/2026'],
+      ['Charmander', 'Invocado na Fonte', '16/10/2026'],
     ]);
     expect(rows.every((r) => isDigitalInstanceId(r.instanceId))).toBe(true);
   });

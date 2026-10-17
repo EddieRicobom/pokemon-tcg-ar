@@ -104,7 +104,8 @@ const menuGroups = computed<{ title: string; tiles: MenuTile[] }[]>(() => [
   {
     title: 'Ir para',
     tiles: [
-      { href: routeHref('caixa'), icon: '📦', label: 'Caixa', hint: 'batalhas na câmera' },
+      { href: routeHref('cartas'), icon: '🃏', label: 'Minhas cartas' },
+      { href: routeHref('caixa'), icon: '📦', label: 'Caixa em AR', hint: 'turma e batalhas' },
       { href: routeHref('pins'), icon: '🎯', label: 'Pins' },
       { href: routeHref('treinador'), icon: '🏅', label: 'Treinador' },
       { href: routeHref('escanear'), icon: '📷', label: 'Escanear' },
@@ -132,7 +133,7 @@ watch(welcome, (open) => {
 // ---- Fase 4: cutscene da primeira entrada (antes do aviso de controles, só na primeira vez de verdade).
 const INTRO_LINES: readonly string[] = [
   'Bem-vindo à Vila! Aqui os Pokémon que você escaneia moram, crescem e criam laços de amizade com você.',
-  'Mas tem mais: perto da praça existe uma Fonte antiga. Jogando de verdade — conversando, cuidando da Vila, jogando — você junta moedas.',
+  'Mas tem mais: perto da praça existe uma Fonte antiga. Conversando, cuidando da Vila e jogando, você junta moedas.',
   'Com moedas, a Fonte pode trazer à vida um Digital Pokémon: um companheiro que não vem de nenhuma carta física, mas mora aqui com todo o resto.',
   'Antes de começar, me conta um pouco sobre você…',
 ];
@@ -243,8 +244,8 @@ function advanceCutscene(): void {
 
 // -- Mini tutorial dos Digital Pokémon (Fase 4): uma vez, logo depois do presente inicial.
 const TUTORIAL_LINES: readonly string[] = [
-  'Ele mora na Vila como qualquer outro: conversa, cria amizade, tem casa — só não pode ser alvo de scan ou AR, porque não vem de nenhuma carta física.',
-  'Jogando de verdade — conversar, responder perguntas, lanchar no Café, o Correio, vencer um minigame, uma corrida na Torre ou uma batalha — você ganha moedas.',
+  'Ele mora na Vila como qualquer outro: conversa, cria amizade, tem casa e anda na Caixa em AR com a turma. Só não é escaneado, porque não vem de nenhuma carta física.',
+  'Você ganha moedas conversando, respondendo perguntas, lanchando no Café, usando o Correio e vencendo minigames, corridas na Torre e batalhas.',
   'Na Fonte: 500 moedas invocam outro Digital Pokémon; 1000 + amizade bem alta evoluem o que você já tem, pra uma forma real.',
 ];
 let tutorialLine = 0;
@@ -1473,7 +1474,7 @@ onBeforeUnmount(() => {
         <img v-if="portraitOk" class="village-trainer" :src="trainerSpriteUrl(profile.sprite)" :alt="profile.name" width="28" height="28" @error="portraitOk = false" />
         <strong>Vila</strong>
         <span>{{ clock }}</span>
-        <span class="village-coins" aria-label="Moedas"><i aria-hidden="true">●</i>{{ state.coins }}</span>
+        <span class="village-coins" aria-label="Moedas"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
         <span class="village-house" :title="`Cidade: ${stage.name}`">Nv {{ level }}</span>
         <button type="button" class="village-diary" aria-label="Abrir o Diário de momentos" @click="openDiary">📖<b v-if="unread > 0">{{ unread }}</b></button>
         <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
@@ -1536,7 +1537,7 @@ onBeforeUnmount(() => {
             <button type="button" role="tab" :class="{ active: shopTab === 'comprar' }" :aria-selected="shopTab === 'comprar'" @click="shopTab = 'comprar'">Comprar</button>
             <button type="button" role="tab" :class="{ active: shopTab === 'vender' }" :aria-selected="shopTab === 'vender'" @click="shopTab = 'vender'">Vender</button>
           </div>
-          <span class="village-coins"><i aria-hidden="true">●</i>{{ state.coins }}</span>
+          <span class="village-coins"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
           <button type="button" class="link" @click="sheet = null">Fechar</button>
         </header>
         <p class="hint">{{ shopTab === 'comprar' ? 'Sementes sempre; os móveis e acessórios mudam todo dia.' : 'A loja compra tudo o que você coleta e colhe.' }}</p>
@@ -1605,7 +1606,7 @@ onBeforeUnmount(() => {
 
         <div v-if="tab === 'inicio'" class="menu-home">
           <p class="menu-status">
-            <span>🪙 <b>{{ state.coins }}</b> moedas</span>
+            <span><span class="coin-mark" aria-hidden="true"></span><b>{{ state.coins }}</b> moedas</span>
             <span>⭐ Nível <b>{{ level }}</b></span>
             <span>✨ <b>{{ state.digital.instances.length }}</b> Digital Pokémon</span>
           </p>

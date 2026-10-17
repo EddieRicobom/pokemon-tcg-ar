@@ -65,9 +65,9 @@ export type DecodeResult = { ok: true; sdp: string } | { ok: false; message: str
 export async function decodeCode(text: string, expect: CodeKind): Promise<DecodeResult> {
   const code = text.replace(/\s+/g, '');
   if (code.length === 0) return { ok: false, message: 'Cole o código primeiro.' };
-  if (code.length > MAX_CODE_LENGTH) return { ok: false, message: 'Esse texto é grande demais para ser um código do Pin Mode.' };
+  if (code.length > MAX_CODE_LENGTH) return { ok: false, message: 'Esse texto é grande demais para ser um código de partida de Pins.' };
   const match = /^PIN([zjc])\.([A-Za-z0-9_-]+)$/.exec(code);
-  if (!match) return { ok: false, message: 'Esse texto não parece um código do Pin Mode. Copie o código inteiro, começando por PIN.' };
+  if (!match) return { ok: false, message: 'Esse texto não parece um código de partida de Pins. Copie o código inteiro, começando por PIN.' };
   const wrongKind = () => ({
     ok: false as const,
     message: expect === 'offer' ? 'Esse é um código de resposta. Aqui vai o código de convite do anfitrião.' : 'Esse é um código de convite. Aqui vai o código de resposta do amigo.',

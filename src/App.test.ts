@@ -93,7 +93,7 @@ describe('App', () => {
   it('a tela Pins explica o jogo, a energia e pede cartas guardadas', async () => {
     localStorage.removeItem('tcg-ar-trainer-v1');
     const text = await mount('#/pins');
-    expect(text).toContain('Pin Mode');
+    expect(text).toContain('Pins');
     expect(text).toContain('sem câmera');
     expect(text).toContain('energia');
     expect(text).toContain('Escolha os pins');
@@ -130,14 +130,15 @@ describe('App', () => {
   it('o endereço antigo #/carregar abre Minhas cartas e troca o endereço para #/cartas', async () => {
     const text = await mount('#/carregar');
     expect(window.location.hash).toBe('#/cartas');
-    expect(text).toContain('Cartas guardadas');
+    expect(text).toContain('As cartas que o app já reconheceu');
     expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Minhas cartas');
   });
 
   it('a tela Cartas não deixa "apagar tudo" entre os botões do dia a dia', async () => {
     const text = await mount('#/cartas');
-    expect(text).toContain('Cartas guardadas');
-    expect(text).toContain('Carregar todas as vistas');
+    expect(text).toContain('As cartas que o app já reconheceu');
+    // Sem cartas, não aparece botão de carregar.
+    expect(text).not.toContain('Completar as cartas que faltam');
     // Apagar todas as cartas mora numa zona de perigo (só aparece com cartas, e só apaga com APAGAR digitado).
     expect(text).not.toContain('Limpar cache');
     expect(host?.querySelector('.danger-zone')).toBeNull();

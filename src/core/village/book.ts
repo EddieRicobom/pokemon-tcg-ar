@@ -89,7 +89,7 @@ export interface Unlock {
 export const UNLOCKS: readonly Unlock[] = [
   { level: 1, levelName: 'Colega', text: 'Conta do que gosta e do que não gosta de ganhar.' },
   { level: 2, levelName: 'Amigo', text: 'Traz materiais para você todo dia (na Vila ou ao abrir a Caixa).' },
-  { level: 2, levelName: 'Amigo', text: 'Dá a opinião dele sobre os colegas da caixa.' },
+  { level: 2, levelName: 'Amigo', text: 'Dá a opinião dele sobre os colegas da turma.' },
   { level: 3, levelName: 'Grande amigo', text: 'Segue você pela Vila ("Vem comigo!").' },
   { level: 3, levelName: 'Grande amigo', text: 'Na Caixa, vem te ver e mostra corações; na batalha, acerta golpes críticos com o dobro da chance.' },
   { level: 4, levelName: 'Melhor amigo', text: 'Uma vez por semana traz um móvel raro, que só se ganha assim.' },

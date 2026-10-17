@@ -282,7 +282,9 @@ function searchReadNumber(value: number): void {
   void searchManual();
 }
 async function pickManual(id: string): Promise<void> {
+  // Esconde a lista e o contador ("Mostrando 0 de 243" ficava na tela depois de escolher).
   manualResults.value = [];
+  manualTotal.value = 0;
   await (await ensureController()).chooseManual(id);
 }
 
