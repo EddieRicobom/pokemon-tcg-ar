@@ -348,7 +348,7 @@ describe('Vila, Liga e PvP no Treinador', () => {
     expect(s.achievements['liga-campea']).toBeUndefined();
     s = applyEvent(s, { type: 'league', title: 'Campeã', xp: 300, first: true, badges: 8, championWins: 1 }, day).state;
     expect(s.achievements['liga-campea']).toBeDefined();
-    expect(applyEvent(s, { type: 'league', title: 'x', xp: 1, first: false, badges: 99 }, day).state.league.badges).toBe(8);
+    expect(applyEvent(s, { type: 'league', title: 'x', xp: 1, first: false, badges: 99 }, day).state.league.badges).toBe(32);
   });
 
   it('PvP conta como batalha, rende XP e destrava as conquistas', () => {
@@ -389,7 +389,7 @@ describe('Vila, Liga e PvP no Treinador', () => {
     expect(n.pvp).toEqual({ played: 0, wins: 0 });
     expect([n.bestFriend, n.shinies, n.today.life]).toEqual([0, 0, 0]);
     const wild = normalizeTrainer({ ...emptyTrainer(), bestFriend: 9, league: { badges: 50, champion: -3 }, pvp: { played: 1, wins: 5 } });
-    expect([wild.bestFriend, wild.league.badges, wild.league.champion, wild.pvp.wins]).toEqual([4, 8, 0, 1]);
+    expect([wild.bestFriend, wild.league.badges, wild.league.champion, wild.pvp.wins]).toEqual([4, 32, 0, 1]);
   });
 
   it('toda conquista tem título, dica e id único', () => {

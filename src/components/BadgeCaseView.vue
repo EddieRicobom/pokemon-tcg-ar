@@ -5,10 +5,15 @@ import { league } from '../app/league-store';
 import { loadChunk } from '../app/stale-build';
 import { visual } from '../app/visual-settings';
 import { polishLabel } from '../core/badge-polish';
-import { badgeDesign } from '../core/badges';
+import type { RegionId } from '../core/league';
+import { LEAGUE_REGIONS } from '../core/league';
+import { ALL_BADGE_DESIGNS, badgeDesign } from '../core/badges';
 import type { RunningBadgeCase } from '../box/badge-case';
 
 /** Maleta 3D de insígnias, em tela cheia por cima do Treinador. O Three.js só carrega aqui (import dinâmico). */
+const props = defineProps<{ region: RegionId }>();
+const regionInfo = computed(() => LEAGUE_REGIONS.find((r) => r.id === props.region)!);
+const designs = computed(() => ALL_BADGE_DESIGNS.filter((d) => d.order >= regionInfo.value.badgeOffset && d.order < regionInfo.value.badgeOffset + 8));
 const emit = defineEmits<{ close: [] }>();
 
 const canvas = ref<HTMLCanvasElement | null>(null);
@@ -17,7 +22,7 @@ const isOpen = ref(true);
 const focus = ref<number | null>(null);
 let running: RunningBadgeCase | null = null;
 
-const won = computed(() => league.value.badges);
+const won = computed(() => league.value.badges.filter((b) => designs.value.some((d) => d.order === b)));
 const focused = computed(() => {
   if (focus.value === null) return null;
   const d = badgeDesign(focus.value);
@@ -35,6 +40,7 @@ async function start(): Promise<void> {
     if (!canvas.value) return;
     running = await startBadgeCase({
       canvas: canvas.value,
+      designs: designs.value,
       won: won.value,
       polish: (order) => polishOf(order),
       onRub: (order, distance) => rubPolish(order, distance),
@@ -88,7 +94,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="badge-case-3d" role="dialog" aria-modal="true" aria-labelledby="case-title">
     <header class="bc-head">
-      <h2 id="case-title">Maleta de insígnias <small>{{ won.length }} de 8</small></h2>
+      <h2 id="case-title">Maleta de {{ regionInfo.name }} <small>{{ won.length }} de 8</small></h2>
       <button type="button" class="bc-close" aria-label="Fechar a maleta" @click="emit('close')">✕</button>
     </header>
     <div class="bc-stage">

@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import { applyLeagueResult, emptyLeague, normalizeLeague } from '../core/league';
+import { applyLeagueResult, emptyLeague, normalizeLeague, statusOf } from '../core/league';
 import type { Challenge, LeagueOutcome, LeagueProgress } from '../core/league';
 import { recordEvent } from './trainer-store';
 
@@ -22,6 +22,7 @@ export const pendingChallenge = ref<string | null>(null);
 
 /** Guarda o resultado de uma batalha da Liga e dá o XP (e as moedas) ao Treinador quando vence. */
 export function recordLeagueResult(challenge: Challenge, won: boolean): LeagueOutcome {
+  if (statusOf(league.value, challenge) === 'locked') return { progress: league.value, first: false, message: 'Este desafio ainda está bloqueado.' };
   const outcome = applyLeagueResult(league.value, challenge, won);
   league.value = outcome.progress;
   try {
@@ -31,7 +32,7 @@ export function recordLeagueResult(challenge: Challenge, won: boolean): LeagueOu
   }
   if (won) {
     const title = challenge.kind === 'gym' && outcome.first ? (challenge.badge?.name ?? 'Insígnia') : challenge.kind === 'champion' ? 'Campeão da Liga!' : `Vitória contra ${challenge.leader}`;
-    recordEvent({ type: 'league', title, xp: challenge.xp, first: outcome.first, badges: outcome.progress.badges.length, championWins: outcome.progress.championWins });
+    recordEvent({ type: 'league', title, xp: challenge.xp, first: outcome.first, badges: outcome.progress.badges.length, championWins: outcome.progress.championWins + Object.values(outcome.progress.regions ?? {}).reduce((sum, r) => sum + (r?.championWins ?? 0), 0) });
   } else {
     recordEvent({ type: 'battle', team: true });
   }

@@ -7,7 +7,7 @@ describe('sprites de treinador', () => {
     expect(new Set(PLAYER_SPRITES.map((s) => s.id)).size).toBe(PLAYER_SPRITES.length);
     expect(PLAYER_SPRITES.length).toBeGreaterThanOrEqual(30);
     expect(trainerSpriteUrl('dawn')).toBe('https://raw.githubusercontent.com/smogon/sprites/master/src/_uncategorized/canonical/trainers/gen4/platinum/Dawn.png');
-    for (const c of ALL_CHALLENGES) expect(trainerSpriteUrl(c.sprite)).toMatch(/\/gen4\/diamond-pearl\/[A-Za-z_]+\.png$/);
+    for (const c of ALL_CHALLENGES) expect(trainerSpriteUrl(c.sprite)).toMatch(/\/gen[34]\/[-a-z]+\/[A-Za-z_.]+\.png$/);
   });
 
   it('escolha desconhecida vira o padrão', () => {

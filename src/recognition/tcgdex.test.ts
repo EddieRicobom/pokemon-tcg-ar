@@ -91,6 +91,12 @@ describe('TcgdexClient', () => {
     expect(c.stats.requests).toBe(1);
   });
 
+  it('reutiliza buscas repetidas por número e por espécie na sessão', async () => {
+    const c = client(() => new Response(JSON.stringify([{ id: 'base1-58', localId: '58', name: 'Pikachu' }])));
+    await Promise.all([c.searchByNumber(58, 102), c.searchByNumber(58, 102), c.searchByDexId(25), c.searchByDexId(25)]);
+    expect(c.stats.requests).toBe(3);
+  });
+
   it('404 vira null', async () => {
     expect(await client(() => new Response('{}', { status: 404 })).getCard('zzz-1')).toBeNull();
   });

@@ -611,11 +611,13 @@ export class CardCache {
   async verifyIntegrity(): Promise<number> {
     let repaired = 0;
     for (const card of (await this.load()).values()) {
-      let changed = false;
       const next = { ...card };
-      for (const slotName of ['reference', 'sprite', 'target'] as const) {
-        const slot = card[slotName];
-        if (slot.state === 'ok' && slot.key && !(await this.assets.has(slot.key))) {
+      const slots = (['reference', 'sprite', 'target'] as const).map((slotName) => ({ slotName, slot: card[slotName] }));
+      const present = await Promise.all(slots.map(({ slot }) => slot.state === 'ok' && slot.key ? this.assets.has(slot.key) : true));
+      let changed = false;
+      for (let i = 0; i < slots.length; i++) {
+        const { slotName, slot } = slots[i]!;
+        if (slot.state === 'ok' && slot.key && !present[i]) {
           next[slotName] = { state: 'missing', kind: slot.kind };
           changed = true;
           repaired++;
