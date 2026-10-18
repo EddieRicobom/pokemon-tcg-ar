@@ -9,10 +9,12 @@ import { attachLiveVillage, detachLiveVillage, syncCoins } from '../app/wallet';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { routeHref } from '../app/route';
+import { isGameKeyboardControl } from '../app/game-keyboard';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { arLookFromOrientation } from '../core/village/ar-look';
 import { canNickname, displayName, MAX_NICK_LEN, nickIdeas, nicknameOf, setNickname } from '../core/village/nickname';
 import { minimapPixels, minimapTileAt } from '../village/minimap';
+import { loadTrainerAtlas } from '../village/trainer-atlas';
 import { recordEvent, trainer } from '../app/trainer-store';
 import { claimPrizes } from '../core/village/rewards';
 import LeagueCard from './LeagueCard.vue';
@@ -692,10 +694,16 @@ function applyKeys(): void {
   applyStick(x, y);
 }
 function onKey(e: KeyboardEvent): void {
-  if ((e.target as HTMLElement | null)?.tagName === 'INPUT') return;
+  const dir = KEYS[e.key];
+  // Soltar uma tecla também precisa parar a caminhada se o foco entrou numa conversa.
+  if (e.type === 'keyup' && dir) {
+    heldKeys.delete(dir);
+    applyKeys();
+    return;
+  }
+  if (isGameKeyboardControl(e.target)) return;
   // Dentro de uma folha (jogos do Fliperama, Arena…) Enter, espaço e setas são da folha, não do personagem.
   if (sheet.value && (e.target as HTMLElement | null)?.closest?.('.village-sheet') && (KEYS[e.key] || e.key === ' ' || e.key === 'Enter')) return;
-  const dir = KEYS[e.key];
   if (e.type === 'keydown') {
     if (dir) {
       heldKeys.add(dir);
@@ -705,9 +713,6 @@ function onKey(e: KeyboardEvent): void {
       pressA();
       e.preventDefault();
     } else if (e.key === 'x' || e.key === 'Escape') pressB();
-  } else if (dir) {
-    heldKeys.delete(dir);
-    applyKeys();
   }
 }
 
@@ -1836,9 +1841,9 @@ onMounted(async () => {
   // Recorte real de tileset pra grama (ver `village-art.ts`); null se não der pra baixar, cai no ladrilho
   // desenhado por código de sempre — a Vila nunca trava nem finge por causa disso.
   // O atlas de tilesets (chão, natureza, casas, prédios): mesma regra, sem ele a Vila usa o desenho por código.
-  const [groundTile, atlas] = await Promise.all([getVillageGroundTile().catch(() => null), getVillageAtlas().catch(() => null)]);
+  const [groundTile, atlas, trainerAtlas] = await Promise.all([getVillageGroundTile().catch(() => null), getVillageAtlas().catch(() => null), loadTrainerAtlas(profile.sprite)]);
   if (!canvasEl.value || !wrapEl.value) return;
-  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas);
+  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas, trainerAtlas);
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = () => { changed(); updateWorldProgress(); checkTapInteraction(); checkGuidedTrip(); };
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 import { MAX_ANSWER_LEN } from '../core/village/social-state';
 import { useDialogFocus } from '../composables/useDialogFocus';
 
@@ -31,8 +31,12 @@ function send(): void {
   if (t) emit('answer', t);
 }
 
-onMounted(() => {
-  if (props.stage === 'ask') void nextTick(() => inputEl.value?.focus({ preventScroll: true }));
+// A troca de etapa remove o controle anterior, mas conserva a folha e o botão de origem.
+watch(() => props.stage, () => {
+  void nextTick(() => {
+    const control = inputEl.value ?? dialogEl.value?.querySelector<HTMLButtonElement>('button:not([disabled])');
+    control?.focus({ preventScroll: true });
+  });
 });
 </script>
 

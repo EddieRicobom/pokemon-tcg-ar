@@ -7,14 +7,16 @@ import RewardToasts from './components/RewardToasts.vue';
 import PokemonSpeech from './components/PokemonSpeech.vue';
 import { useInstallPrompt } from './composables/useInstallPrompt';
 import { detectCapabilities, isIosDevice } from './core/capabilities';
-import CarregarView from './views/CarregarView.vue';
-import CaixaView from './views/CaixaView.vue';
-import VilaView from './views/VilaView.vue';
-import DiagnosticoView from './views/DiagnosticoView.vue';
-import PinsView from './views/PinsView.vue';
+import { lazyView } from './app/lazy-view';
 import ScanView from './views/ScanView.vue';
-import TreinadorView from './views/TreinadorView.vue';
-import VariasView from './views/VariasView.vue';
+
+const CarregarView = lazyView(() => import('./views/CarregarView.vue'));
+const CaixaView = lazyView(() => import('./views/CaixaView.vue'));
+const VilaView = lazyView(() => import('./views/VilaView.vue'));
+const DiagnosticoView = lazyView(() => import('./views/DiagnosticoView.vue'));
+const PinsView = lazyView(() => import('./views/PinsView.vue'));
+const TreinadorView = lazyView(() => import('./views/TreinadorView.vue'));
+const VariasView = lazyView(() => import('./views/VariasView.vue'));
 
 const capabilities = detectCapabilities();
 const { canInstall, installed, installError, install } = useInstallPrompt();

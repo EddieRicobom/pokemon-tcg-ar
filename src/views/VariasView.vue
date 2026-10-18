@@ -4,7 +4,7 @@ import { clampLayout, DEFAULT_LAYOUT } from '../ar/anchor';
 import { fetchSprite } from '../ar/sprite-source';
 import type { MultiArState } from '../ar/multi-session';
 import type { RunningMulti } from '../ar/start-multi';
-import { MULTI_MAX_TRACK } from '../ar/start-multi';
+import { MULTI_MAX_TRACK } from '../core/ar-limits';
 import { prepareMultiAssets } from '../app/multi-prepare';
 import { routeHref } from '../app/route';
 import { getCache } from '../app/services';

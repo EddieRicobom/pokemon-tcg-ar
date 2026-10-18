@@ -2,7 +2,7 @@ import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
-import { loadTrainerAtlas, trainerAtlasFrame, type TrainerAtlas } from './trainer-atlas';
+import { trainerAtlasFrame, type TrainerAtlas } from './trainer-atlas';
 import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
@@ -293,6 +293,7 @@ export class VillageGame {
     private readonly groundTile?: GroundTileImage | null,
     /** O atlas de tilesets da Vila (`public/tilesets/vila-atlas.png`); null cai no desenho por código. */
     atlasImage?: Rgba | null,
+    trainerAtlas?: TrainerAtlas | null,
     private readonly rng: Rng = Math.random,
   ) {
     this.ctx = canvas.getContext('2d')!;
@@ -303,8 +304,8 @@ export class VillageGame {
       atlas = null;
     }
     this.atlas = atlas;
-    this.loadTrainerAvatar();
-    void loadTrainerAtlas(this.trainerId).then((atlas) => { this.trainerAtlas = atlas; });
+    this.trainerAtlas = trainerAtlas ?? null;
+    if (!this.trainerAtlas) this.loadTrainerAvatar();
     this.player = makeWalker('eu', state.player.x, state.player.y, 5.5);
     this.player.dir = state.player.dir;
     this.weather = createWeather(this.rng, 'sol');
@@ -1601,13 +1602,13 @@ export class VillageGame {
     const accDef = accP ? itemDef(accP) : undefined;
     const hatless = accDef?.pos === 'hat';
     const step = moving(this.player) ? this.player.steps + (this.player.t > 0.5 ? 1 : 0) : -1;
-    const pimg = this.sprite(`p:${this.player.dir}:${step < 0 ? 's' : step % 2}:${this.trainerId}:${hatless}`, () => paintPlayer(this.player.dir, step, hatless ? { ...outfit, gear: 'none' } : outfit));
+    const pimg = this.trainerAtlas ? null : this.sprite(`p:${this.player.dir}:${step < 0 ? 's' : step % 2}:${this.trainerId}:${hatless}`, () => paintPlayer(this.player.dir, step, hatless ? { ...outfit, gear: 'none' } : outfit));
     const trainerAvatar = this.trainerAvatar;
     list.push({
       y: pp.y + 1.01,
       draw: () => {
         shadow(sx(pp.x + 0.5), sy(pp.y + 1) - 1 * scale, 5 * scale, 2 * scale, 0.24);
-        const hop = moving(this.player) ? Math.abs(Math.sin(this.player.t * Math.PI)) * 1.5 * scale : 0;
+        const hop = !this.trainerAtlas && moving(this.player) ? Math.abs(Math.sin(this.player.t * Math.PI)) * 1.5 * scale : 0;
         const px0 = sx(pp.x);
         const py0 = sy(pp.y + 1) - (PLAYER_H + 1) * scale - hop;
         const dir = this.player.dir;
@@ -1619,7 +1620,8 @@ export class VillageGame {
           const bounds = atlas.bounds;
           const height = PLAYER_H * scale;
           const width = height * bounds.width / bounds.height;
-          ctx.drawImage(atlas.image, frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height, px0 + (T - width) / 2, py0, width, height);
+          const left = px0 + T / 2 - (frame.width / 2 - bounds.x) * height / bounds.height;
+          ctx.drawImage(atlas.image, frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height, left, py0, width, height);
         } else if (trainerAvatar && dir !== 'up') {
           const aspect = trainerAvatar.width / trainerAvatar.height;
           const avatarH = Math.min(PLAYER_H * scale, (T * 1.4) / aspect);
@@ -1632,7 +1634,7 @@ export class VillageGame {
             ctx.drawImage(trainerAvatar, -avatarW / 2, -avatarH / 2, avatarW, avatarH);
             ctx.restore();
           } else ctx.drawImage(trainerAvatar, avatarX, py0, avatarW, avatarH);
-        } else ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
+        } else if (pimg) ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
         if (accP) {
           if (pos === 'hat') this.drawAcc(accP, px0 + 1 * scale, py0 - 5 * scale, 14 * scale);
           else if (pos === 'face' && dir !== 'up') this.drawAcc(accP, px0 + (dir === 'down' ? 3 : dir === 'right' ? 5 : 1) * scale, py0 + 3 * scale, 10 * scale);

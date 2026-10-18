@@ -9,9 +9,10 @@ import { createWebglBackend } from './webgl-backend';
 import type { SpriteLayout } from './anchor';
 import { sensorSettings } from '../app/sensor-settings';
 import { getOrientationFeed } from '../sensors/orientation-feed';
+import { MULTI_MAX_TRACK } from '../core/ar-limits';
 
 /** Quantas cartas o rastreador acompanha ao mesmo tempo: cada uma custa tempo de processamento do celular. */
-export const MULTI_MAX_TRACK = 4;
+export { MULTI_MAX_TRACK } from '../core/ar-limits';
 /** Memória dos quadros ampliados por Pokémon (várias cartas dividem a memória do aparelho). */
 const SPRITE_FRAME_CACHE_BYTES = 10 * 1024 * 1024;
 

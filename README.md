@@ -8,7 +8,9 @@ Projeto de fã, não oficial. Pokémon e os nomes, imagens e sprites relacionado
 
 ## O que o app faz
 
-| Aba | O que faz |
+O app tem cinco abas: **Escanear, Vila, Cartas, Pins e Treinador**. Várias fica em Escanear; Caixa em AR fica em Cartas; Diagnóstico abre pela engrenagem.
+
+| Tela ou modo | O que faz |
 | --- | --- |
 | **Escanear** | Lê a carta pela câmera (detecção do contorno, OCR do número e do nome, busca pela ilustração como reserva), identifica a impressão, guarda no aparelho e mostra o Pokémon em pé sobre ela, com um painel de status no chão (tipo, atributos, ataques da carta, golpes do jogo). Há busca manual por nome e ajuste do Pokémon com os dedos. |
 | **Várias** | Rastreia até 4 cartas da equipe ao mesmo tempo, cada uma com o seu Pokémon. |
@@ -50,7 +52,7 @@ Você não precisa instalar nada nem usar terminal. O GitHub Actions faz o build
 3. Faça o merge na `main`. O workflow **Deploy no GitHub Pages** roda sozinho (e toda semana, para o índice de cartas acompanhar coleções novas).
 4. O app fica em `https://eddiericobom.github.io/pokemon-tcg-ar/`.
 
-A câmera exige HTTPS; o GitHub Pages já serve por HTTPS. O PWA só atualiza na **segunda** abertura depois de um deploy: feche e abra de novo.
+A câmera exige HTTPS; o GitHub Pages já serve por HTTPS. O PWA procura atualizações e recarrega quando a versão nova assume, exceto enquanto a câmera está aberta. Se uma tela antiga não conseguir baixar seus arquivos, o app tenta recuperar a atualização sem entrar em um ciclo de recarregamentos.
 
 ## Infraestrutura
 
@@ -89,6 +91,7 @@ src/cache/         cartas e arquivos guardados no aparelho (IndexedDB + Cache AP
 src/core/          lógica sem interface: câmera, GIF, suavização, tipos, motor de batalha
 src/recognition/   detecção da carta, OCR, índices, fusão de evidências
 src/sensors/       giroscópio
+src/village/       renderizador 2D da Vila, tilesets e animações locais dos treinadores
 src/views/         telas (abas); src/components/ componentes
 .github/workflows/ ci, deploy, e2e, verificação externa
 docs/              arquitetura, testes e roteiro de teste no celular
@@ -98,6 +101,7 @@ docs/              arquitetura, testes e roteiro de teste no celular
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): arquitetura, decisões, limites conhecidos
 - [docs/TESTING.md](docs/TESTING.md): o que é testado e como; o que só um celular valida
+- [docs/TRAINER_ART.md](docs/TRAINER_ART.md): imagens novas dos treinadores, animações e preparo dos atlas
 - [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md): roteiro de teste em aparelho real
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md): estado por fase, riscos e próximos passos
 - [CHANGELOG.md](CHANGELOG.md): histórico de mudanças

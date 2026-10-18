@@ -38,6 +38,8 @@ As licenças exatas de cada versão estão nos pacotes (`node_modules/<pacote>/L
 
 ## Dados e imagens
 
+- Treinadores da Vila (`public/art/trainers/`): arte nova gerada com `image_gen.imagegen`, baseada nos personagens e nos sprites individuais do catálogo público [smogon/sprites](https://github.com/smogon/sprites). O jogo usa poses próprias de caminhada e repouso, não recortes do retrato de batalha. Os personagens e seus desenhos de referência pertencem aos respectivos titulares Pokémon. Processo e prompt em [docs/TRAINER_ART.md](docs/TRAINER_ART.md).
+
 - Dados de cartas e imagens de referência: TCGdex (<https://tcgdex.dev/>). As imagens das cartas
   pertencem aos seus titulares (The Pokémon Company, Nintendo, Creatures, Game Freak). O app baixa
   somente as cartas que o usuário escaneia e as guarda no aparelho dele.

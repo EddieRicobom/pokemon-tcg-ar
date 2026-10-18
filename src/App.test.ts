@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, nextTick, type App as VueApp } from 'vue';
 import App from './App.vue';
 
@@ -21,6 +21,7 @@ describe('App', () => {
     app = createApp(App);
     app.mount(host);
     await nextTick();
+    await vi.waitFor(() => expect(host?.querySelector('[data-route-pending]')).toBeNull(), { timeout: 5000 });
     return host.textContent ?? '';
   }
 
