@@ -4,6 +4,12 @@ Legenda: ✅ feito e coberto por testes automatizados / CI · 🔶 feito, **falt
 
 Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado 🔶 passou nos testes e no Chromium com câmera falsa (GL por software), mas **nenhuma etapa foi vista num celular de verdade**. O roteiro está em [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
 
+## Vila em AR: âncora e zoom (18/10/2026)
+
+- O diorama ganhou âncora de sessão no plano do chão estimado: tocar na câmera escolhe ou move o ponto; ela continua ali enquanto a câmera estiver aberta e o giroscópio muda a visão da cidade.
+- O controle de zoom físico permite diminuir a cidade para trazê-la mais perto ou ampliá-la para ver detalhes. A escala escolhida fica salva no aparelho; a âncora espacial não é prometida depois que a câmera fecha, pois o app não usa mapeamento espacial/SLAM.
+- Verificação local: tipos, 11 testes de preferências/posicionamento e `build` com conferência do `dist`. A câmera e os sensores ainda precisam de um aparelho real.
+
 ## Vila: loja, itens e casa (18/10/2026)
 
 - A loja deixou de desenhar três guarda-sóis como fachada quando o atlas carregava: usa o recorte completo da `General Store`, com reserva em pixel art só quando o atlas não está disponível.
