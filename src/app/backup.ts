@@ -16,6 +16,10 @@
 
 export const BACKUP_FORMAT = 'pokemon-tcg-ar-backup';
 export const BACKUP_VERSION = 1;
+import { openCacheDb } from '../cache/db';
+import { ASSET_CACHE_NAME } from '../cache/types';
+import type { AssetRecord, CachedCard } from '../cache/types';
+import { unzipSync, zipSync } from 'fflate';
 
 /** Toda chave do localStorage com progresso ou ajuste do jogador — nunca um cache de API, que se refaz sozinho. */
 export const BACKUP_KEYS: readonly string[] = [
@@ -31,9 +35,12 @@ export const BACKUP_KEYS: readonly string[] = [
   'tcg-ar-sensor-v1',
   'tcg-ar-visual-v2',
   'tcg-ar-scan-debug-v1',
+  'tcg-ar-scan-overlay-v1',
   'tcg-ar-art-search-v1',
   'tcg-ar-layout-v3',
   'tcg-ar-box-v1',
+  'tcg-ar-vila-v1-bak',
+  'tcg-ar-fala-gallade-v1',
 ];
 
 export interface BackupFile {
@@ -43,6 +50,8 @@ export interface BackupFile {
   exportedAt: string;
   /** Uma entrada por chave de `BACKUP_KEYS`; `null` quando a chave não existia no aparelho de origem. */
   data: Record<string, string | null>;
+  /** Cartas reconhecidas e arquivos locais (referências, sprites e alvos MindAR). */
+  collection?: { cards: CachedCard[]; records: AssetRecord[]; assets: { url: string; type: string; bytes: number[] }[] };
 }
 
 /** Lê cada chave conhecida do `storage` (sem tocar em nada) e monta o arquivo de backup. */
@@ -52,8 +61,62 @@ export function buildBackup(storage: Pick<Storage, 'getItem'>, now: string = new
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: now, data };
 }
 
+/** Exporta também o banco e os arquivos usados pelas cartas guardadas. */
+export async function buildFullBackup(storage: Storage = localStorage, now?: string): Promise<BackupFile> {
+  const file = buildBackup(storage, now);
+  if (typeof indexedDB === 'undefined' || typeof caches === 'undefined') return file;
+  const db = await openCacheDb();
+  try {
+    const cards = await db.getAll('cards');
+    const cache = await caches.open(ASSET_CACHE_NAME);
+    const requests = await cache.keys();
+    const assets: NonNullable<BackupFile['collection']>['assets'] = [];
+    for (const request of requests) {
+      const response = await cache.match(request);
+      if (!response) continue;
+      const bytes = [...new Uint8Array(await response.arrayBuffer())];
+      assets.push({ url: request.url, type: response.headers.get('content-type') ?? 'application/octet-stream', bytes });
+    }
+    file.collection = { cards, records: await db.getAll('assets'), assets };
+    return file;
+  } finally { db.close(); }
+}
+
+export async function applyFullBackup(file: BackupFile, storage: Storage = localStorage): Promise<void> {
+  applyBackup(file, storage);
+  if (!file.collection || typeof indexedDB === 'undefined' || typeof caches === 'undefined') return;
+  const db = await openCacheDb();
+  try {
+    const tx = db.transaction(['cards', 'assets', 'meta'], 'readwrite');
+    await Promise.all([tx.objectStore('cards').clear(), tx.objectStore('assets').clear(), tx.objectStore('meta').clear()]);
+    for (const card of file.collection.cards) await tx.objectStore('cards').put(card);
+    for (const record of file.collection.records ?? []) await tx.objectStore('assets').put(record);
+    await tx.done;
+    const cache = await caches.open(ASSET_CACHE_NAME);
+    await cache.keys().then((keys) => Promise.all(keys.map((key) => cache.delete(key))));
+    for (const asset of file.collection.assets) {
+      await cache.put(asset.url, new Response(new Uint8Array(asset.bytes), { headers: { 'content-type': asset.type } }));
+    }
+  } finally { db.close(); }
+}
+
 export function serializeBackup(file: BackupFile): string {
   return JSON.stringify(file, null, 2);
+}
+
+/** Pacote compacto compatível com ZIP comum; o JSON continua disponível para importar backups antigos. */
+export function serializeBackupZip(file: BackupFile): Uint8Array {
+  return zipSync({ 'backup.json': new TextEncoder().encode(serializeBackup(file)) }, { level: 6 });
+}
+
+export function parseBackupZip(bytes: Uint8Array): BackupFile | BackupParseError {
+  try {
+    const files = unzipSync(bytes);
+    const manifest = files['backup.json'];
+    return manifest ? parseBackup(new TextDecoder().decode(manifest)) : 'formato-desconhecido';
+  } catch {
+    return 'json-invalido';
+  }
 }
 
 export type BackupParseError = 'json-invalido' | 'formato-desconhecido';
@@ -75,7 +138,20 @@ export function parseBackup(raw: string): BackupFile | BackupParseError {
     const entry = rawData[key];
     data[key] = typeof entry === 'string' ? entry : null;
   }
-  return { format: BACKUP_FORMAT, version: v.version, exportedAt: typeof v.exportedAt === 'string' ? v.exportedAt : '', data };
+  let collection: BackupFile['collection'];
+  if (v.collection && typeof v.collection === 'object') {
+    const rawCollection = v.collection as { cards?: unknown; records?: unknown; assets?: unknown };
+    const cards = Array.isArray(rawCollection.cards) ? rawCollection.cards as CachedCard[] : [];
+    const assets = Array.isArray(rawCollection.assets) ? rawCollection.assets.flatMap((item) => {
+      if (!item || typeof item !== 'object') return [];
+      const a = item as { url?: unknown; type?: unknown; bytes?: unknown };
+      return typeof a.url === 'string' && typeof a.type === 'string' && Array.isArray(a.bytes) && a.bytes.every((b) => Number.isInteger(b) && b >= 0 && b <= 255)
+        ? [{ url: a.url, type: a.type, bytes: a.bytes as number[] }] : [];
+    }) : [];
+    const records = Array.isArray(rawCollection.records) ? rawCollection.records as AssetRecord[] : [];
+    collection = { cards, records, assets };
+  }
+  return { format: BACKUP_FORMAT, version: v.version, exportedAt: typeof v.exportedAt === 'string' ? v.exportedAt : '', data, ...(collection ? { collection } : {}) };
 }
 
 /**
@@ -94,5 +170,5 @@ export function applyBackup(file: BackupFile, storage: Pick<Storage, 'setItem' |
 /** Nome do arquivo sugerido pro download, com a data de hoje (`AAAA-MM-DD`). */
 export function backupFileName(now = new Date()): string {
   const iso = now.toISOString().slice(0, 10);
-  return `pokemon-tcg-ar-backup-${iso}.json`;
+  return `pokemon-tcg-ar-backup-${iso}.zip`;
 }

@@ -46,6 +46,30 @@ async function run(options: { fetchImpl: typeof fetch; storage?: ReturnType<type
 }
 
 describe('dados de batalha (PokéAPI + TCGdex)', () => {
+  it('descarta cache com estrutura corrompida e consulta as fontes novamente', async () => {
+    const storage = memoryStorage();
+    storage.setItem('tcg-ar-profile-v1:25', JSON.stringify({ dexId: 25, stats: null, types: ['electric'], weightKg: 6 }));
+    storage.setItem('tcg-ar-moves-v1:25', JSON.stringify([null, { name: 'Golpe incompleto' }]));
+    storage.setItem('tcg-ar-card-battle-v1:base1-58', JSON.stringify({ attacks: [null] }));
+    const fetchImpl = fakeFetch({ '/pokemon/25': pokemon, '/move/thunder-shock/': move('thunder-shock'), '/move/quick-attack/': move('quick-attack') });
+    const getCard = vi.fn(async () => card);
+    const { data } = await run({ fetchImpl, storage, getCard });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(getCard).toHaveBeenCalledOnce();
+    expect(data.profile).toMatchObject({ state: 'ok', value: { stats: { hp: 35 } } });
+    expect(data.moves.state === 'ok' && data.moves.value).toHaveLength(2);
+    expect(data.card).toMatchObject({ state: 'ok', value: { attacks: [{ name: 'Gnaw' }] } });
+  });
+
+  it('cache inválido com rede indisponível aparece como falta de dados', async () => {
+    const storage = memoryStorage();
+    storage.setItem('tcg-ar-profile-v1:25', JSON.stringify({ stats: {}, types: [], weightKg: 6 }));
+    storage.setItem('tcg-ar-moves-v1:25', JSON.stringify([42]));
+    storage.setItem('tcg-ar-card-battle-v1:base1-58', JSON.stringify({ attacks: [42] }));
+    const { data } = await run({ fetchImpl: fakeFetch({}), storage, getCard: async () => { throw new Error('offline'); } });
+    expect([data.profile.state, data.moves.state, data.card.state]).toEqual(['error', 'error', 'error']);
+  });
+
   it('carrega atributos, golpes e a carta em paralelo', async () => {
     const fetchImpl = fakeFetch({ '/pokemon/25': pokemon, '/move/thunder-shock/': move('thunder-shock'), '/move/quick-attack/': move('quick-attack') });
     const { data } = await run({ fetchImpl });

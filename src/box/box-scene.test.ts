@@ -92,7 +92,7 @@ describe('BoxScene', () => {
     scene.setCreatures([entry(0)]);
     scene.update(16);
     scene.update(32);
-    const lean = -scene.creatureList[0]!.mesh.rotation.x;
+      const lean = scene.creatureList[0]!.mesh.rotation.x;
     expect(lean).toBeGreaterThan(0.1);
     expect(lean).toBeLessThanOrEqual(0.75);
   });

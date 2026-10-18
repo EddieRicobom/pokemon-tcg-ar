@@ -9,15 +9,19 @@ interface BeforeInstallPromptEvent extends Event {
 export function useInstallPrompt() {
   const deferred = ref<BeforeInstallPromptEvent | null>(null);
   const installed = ref(false);
+  const installError = ref('');
+  const installing = ref(false);
 
   function onBeforeInstallPrompt(event: Event): void {
     event.preventDefault();
     deferred.value = event as BeforeInstallPromptEvent;
+    installError.value = '';
   }
 
   function onAppInstalled(): void {
     installed.value = true;
     deferred.value = null;
+    installError.value = '';
   }
 
   onMounted(() => {
@@ -32,11 +36,19 @@ export function useInstallPrompt() {
 
   async function install(): Promise<void> {
     const event = deferred.value;
-    if (!event) return;
+    if (!event || installing.value) return;
     deferred.value = null;
-    await event.prompt();
-    await event.userChoice;
+    installing.value = true;
+    installError.value = '';
+    try {
+      await event.prompt();
+      await event.userChoice;
+    } catch {
+      if (!installed.value) installError.value = 'Não foi possível abrir a instalação. Use a opção de instalar no menu do navegador.';
+    } finally {
+      installing.value = false;
+    }
   }
 
-  return { canInstall: computed(() => deferred.value !== null), installed, install };
+  return { canInstall: computed(() => deferred.value !== null), installed, installing, installError, install };
 }

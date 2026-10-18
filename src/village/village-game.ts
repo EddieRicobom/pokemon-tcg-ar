@@ -1,6 +1,8 @@
 import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
+import { trainerSpriteUrl } from '../core/trainer-sprites';
+import { loadTrainerAtlas, trainerAtlasFrame, type TrainerAtlas } from './trainer-atlas';
 import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
@@ -215,6 +217,9 @@ export class VillageGame {
   private groundFrames: HTMLCanvasElement[] = [];
   /** Recortes de tileset (null: sem a imagem, cai no desenho por código de sempre). */
   private readonly atlas: VillaAtlas | null;
+  /** Sprite oficial do treinador escolhido; null mantém o avatar pixel-art de fallback. */
+  private trainerAvatar: HTMLCanvasElement | null = null;
+  private trainerAtlas: TrainerAtlas | null = null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
   private running = false;
   private handle = 0;
@@ -230,6 +235,9 @@ export class VillageGame {
   private stick: Pick<StickDirs, 'primary' | 'secondary'> | null = null;
   private stepParity = 0;
   private scale = 3;
+  private arZoom = 1;
+  private arLook = { x: 0, y: 0 };
+  private arVideo: HTMLVideoElement | null = null;
   private bubbles = new Map<string, { emoji: string; until: number }>();
   private speech = new Map<string, { text: string; name: string; start: number; until: number; tint: string }>();
   private bounce = new Map<string, number>();
@@ -295,11 +303,52 @@ export class VillageGame {
       atlas = null;
     }
     this.atlas = atlas;
+    this.loadTrainerAvatar();
+    void loadTrainerAtlas(this.trainerId).then((atlas) => { this.trainerAtlas = atlas; });
     this.player = makeWalker('eu', state.player.x, state.player.y, 5.5);
     this.player.dir = state.player.dir;
     this.weather = createWeather(this.rng, 'sol');
     this.buildGround();
     this.setMons(mons);
+  }
+
+  /** Carrega e recorta a sprite selecionada, sem impedir a Vila de abrir quando a rede falha. */
+  private loadTrainerAvatar(): void {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        const source = document.createElement('canvas');
+        source.width = image.naturalWidth;
+        source.height = image.naturalHeight;
+        const sourceCtx = source.getContext('2d', { willReadFrequently: true });
+        if (!sourceCtx || source.width === 0 || source.height === 0) return;
+        sourceCtx.drawImage(image, 0, 0);
+        const pixels = sourceCtx.getImageData(0, 0, source.width, source.height).data;
+        let minX = source.width;
+        let minY = source.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < source.height; y++) {
+          for (let x = 0; x < source.width; x++) {
+            if (pixels[(y * source.width + x) * 4 + 3]! === 0) continue;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+        if (maxX < minX || maxY < minY) return;
+        const avatar = document.createElement('canvas');
+        avatar.width = maxX - minX + 1;
+        avatar.height = maxY - minY + 1;
+        avatar.getContext('2d')!.drawImage(source, minX, minY, avatar.width, avatar.height, 0, 0, avatar.width, avatar.height);
+        this.trainerAvatar = avatar;
+      } catch {
+        // Se o servidor não permitir leitura de pixels, o avatar desenhado por código continua disponível.
+      }
+    };
+    image.src = trainerSpriteUrl(this.trainerId);
   }
 
   /** O clima de agora (para as falas dos Pokémon e para os momentos). */
@@ -593,9 +642,16 @@ export class VillageGame {
     if (rect.width <= 0 || rect.height <= 0) return null;
     const px = ((clientX - rect.left) / rect.width) * this.canvas.width + this.view.camX;
     const py = ((clientY - rect.top) / rect.height) * this.canvas.height + this.view.camY;
-    const x = Math.floor(px / (TILE * this.scale));
-    const y = Math.floor(py / (TILE * this.scale));
+    const x = Math.floor(px / (TILE * this.scale * this.arZoom));
+    const y = Math.floor(py / (TILE * this.scale * this.arZoom));
     return x >= 0 && y >= 0 && x < this.map.w && y < this.map.h ? { x, y } : null;
+  }
+
+  /** Ativa a composição experimental sobre a câmera; não há rastreamento de superfície. */
+  setArView(video: HTMLVideoElement | null, lookX = 0, lookY = 0): void {
+    this.arVideo = video;
+    this.arZoom = video ? 1.8 : 1;
+    this.arLook = video ? { x: lookX, y: lookY } : { x: 0, y: 0 };
   }
 
   /**
@@ -1034,19 +1090,35 @@ export class VillageGame {
   }
 
   private draw(now: number): void {
-    const { ctx, canvas, scale } = this;
+    const { ctx, canvas } = this;
+    const scale = this.scale * this.arZoom;
     ctx.imageSmoothingEnabled = false;
     const W = canvas.width;
     const H = canvas.height;
     const pp = drawPos(this.player);
     // Câmera centrada em você, presa à borda do mapa.
-    const camX = Math.round(Math.min(Math.max(0, (pp.x + 0.5) * TILE * scale - W / 2), this.map.w * TILE * scale - W));
-    const camY = Math.round(Math.min(Math.max(0, (pp.y + 0.5) * TILE * scale - H / 2), this.map.h * TILE * scale - H));
+    const camX = Math.round(Math.min(Math.max(0, (pp.x + 0.5 + this.arLook.x) * TILE * scale - W / 2), this.map.w * TILE * scale - W));
+    const camY = Math.round(Math.min(Math.max(0, (pp.y + 0.5 + this.arLook.y) * TILE * scale - H / 2), this.map.h * TILE * scale - H));
     this.view = { camX, camY };
-    ctx.fillStyle = '#1d4a22';
-    ctx.fillRect(0, 0, W, H);
+    if (this.arVideo?.readyState && this.arVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      const video = this.arVideo;
+      const sourceAspect = video.videoWidth / video.videoHeight;
+      const targetAspect = W / H;
+      const cropW = sourceAspect > targetAspect ? video.videoHeight * targetAspect : video.videoWidth;
+      const cropH = sourceAspect > targetAspect ? video.videoHeight : video.videoWidth / targetAspect;
+      const cropX = (video.videoWidth - cropW) / 2;
+      const cropY = (video.videoHeight - cropH) / 2;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, W, H);
+      ctx.imageSmoothingEnabled = false;
+    } else {
+      ctx.fillStyle = '#1d4a22';
+      ctx.fillRect(0, 0, W, H);
+    }
     const ground = this.groundFrames[Math.floor(now / 450) % this.groundFrames.length]!;
+    if (this.arVideo) ctx.globalAlpha = 0.68;
     ctx.drawImage(ground, camX / scale, camY / scale, W / scale, H / scale, 0, 0, W, H);
+    ctx.globalAlpha = 1;
 
     const clock = new Date();
     const hour = clock.getHours();
@@ -1245,7 +1317,24 @@ export class VillageGame {
         y: shop.y + shop.h,
         draw: () => {
           shadow(sx(shop.x + shop.w / 2), sy(shop.y + shop.h) - 2 * scale, shop.w * 7 * scale, 3.5 * scale, 0.2);
-          umbrellas.forEach((u, i) => stand(u!, sx(shop.x + (i + 0.5) * (shop.w / umbrellas.length)), sy(shop.y + shop.h)));
+          umbrellas.forEach((u, i) => {
+            const cx = sx(shop.x + (i + 0.5) * (shop.w / umbrellas.length));
+            const base = sy(shop.y + shop.h);
+            stand(u!, cx, base);
+            // O recorte do tileset mostra só o guarda-sol; o balcão e as frutas deixam claro que são barracas.
+            const left = Math.round(cx - 13 * scale);
+            const top = Math.round(base - 8 * scale);
+            ctx.fillStyle = '#704728';
+            ctx.fillRect(left, top, 26 * scale, 7 * scale);
+            ctx.fillStyle = '#c18a4d';
+            ctx.fillRect(left, top, 26 * scale, 2 * scale);
+            ctx.fillStyle = '#59371f';
+            ctx.fillRect(left + 2 * scale, top + 6 * scale, 22 * scale, scale);
+            for (const [x, color] of [[4, '#f1c84b'], [10, '#e45a4b'], [16, '#72bd57'], [21, '#e89ac0']] as const) {
+              ctx.fillStyle = color;
+              ctx.fillRect(left + x * scale, top - 2 * scale, 3 * scale, 2 * scale);
+            }
+          });
           this.drawTag(sx(shop.x + shop.w / 2), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
         },
       });
@@ -1513,6 +1602,7 @@ export class VillageGame {
     const hatless = accDef?.pos === 'hat';
     const step = moving(this.player) ? this.player.steps + (this.player.t > 0.5 ? 1 : 0) : -1;
     const pimg = this.sprite(`p:${this.player.dir}:${step < 0 ? 's' : step % 2}:${this.trainerId}:${hatless}`, () => paintPlayer(this.player.dir, step, hatless ? { ...outfit, gear: 'none' } : outfit));
+    const trainerAvatar = this.trainerAvatar;
     list.push({
       y: pp.y + 1.01,
       draw: () => {
@@ -1523,7 +1613,26 @@ export class VillageGame {
         const dir = this.player.dir;
         const pos = accDef?.pos;
         if (accP && pos === 'back' && dir !== 'up') this.drawAcc(accP, px0 + 2 * scale, py0 + 11 * scale, 12 * scale);
-        ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
+        const atlas = this.trainerAtlas;
+        const frame = atlas ? trainerAtlasFrame(atlas.image.naturalWidth, atlas.image.naturalHeight, dir, moving(this.player), this.player.steps, this.player.t, now) : null;
+        if (atlas && frame) {
+          const bounds = atlas.bounds;
+          const height = PLAYER_H * scale;
+          const width = height * bounds.width / bounds.height;
+          ctx.drawImage(atlas.image, frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height, px0 + (T - width) / 2, py0, width, height);
+        } else if (trainerAvatar && dir !== 'up') {
+          const aspect = trainerAvatar.width / trainerAvatar.height;
+          const avatarH = Math.min(PLAYER_H * scale, (T * 1.4) / aspect);
+          const avatarW = avatarH * aspect;
+          const avatarX = px0 + (T - avatarW) / 2;
+          if (dir === 'left') {
+            ctx.save();
+            ctx.translate(avatarX + avatarW / 2, py0 + avatarH / 2);
+            ctx.scale(-1, 1);
+            ctx.drawImage(trainerAvatar, -avatarW / 2, -avatarH / 2, avatarW, avatarH);
+            ctx.restore();
+          } else ctx.drawImage(trainerAvatar, avatarX, py0, avatarW, avatarH);
+        } else ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
         if (accP) {
           if (pos === 'hat') this.drawAcc(accP, px0 + 1 * scale, py0 - 5 * scale, 14 * scale);
           else if (pos === 'face' && dir !== 'up') this.drawAcc(accP, px0 + (dir === 'down' ? 3 : dir === 'right' ? 5 : 1) * scale, py0 + 3 * scale, 10 * scale);

@@ -445,7 +445,9 @@ export class BoxCreature {
     this.mesh.rotation.y = Math.atan2(toCameraX, toCameraZ);
     // Visto de cima, um Pokémon em pé fica achatado: inclina o sprite para a câmera (só parte do ângulo, para ainda parecer em pé).
     const elevation = Math.atan2(camera.y - this.group.position.y, Math.hypot(toCameraX, toCameraZ));
-    this.mesh.rotation.x = -Math.min(MAX_LEAN_RAD, Math.max(0, elevation * LEAN_FRACTION));
+    // Com a câmera em +Z, um ângulo X positivo leva o topo do plano em direção à câmera.
+    // O sinal negativo inclinava a arte para longe do observador e fazia os Pokémon parecerem virados.
+    this.mesh.rotation.x = Math.min(MAX_LEAN_RAD, Math.max(0, elevation * LEAN_FRACTION));
     const moving = s.vx !== 0 || s.vz !== 0;
     const heading = fx.facing ?? (moving ? { x: s.vx, z: s.vz } : null);
     if (heading) {

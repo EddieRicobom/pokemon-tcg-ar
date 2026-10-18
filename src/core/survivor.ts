@@ -257,7 +257,7 @@ export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'legs', name: 'Passo mais rápido', description: '+12% de velocidade ao andar.', apply: (p) => { p.speed = round1(p.speed * 1.12); } },
   { id: 'vigor', name: 'Mais vida', description: '+25 no HP máximo (e cura na hora).', apply: (p) => { p.maxHp += 25; p.hp = p.maxHp; } },
   {
-    id: 'range', name: 'Alcance maior', description: '+20% no alcance do golpe.', for: ['projetil', 'area'],
+    id: 'range', name: 'Alcance maior', description: '+20% no alcance do golpe.', for: ['projetil', 'area', 'cone'],
     apply: (p) => { p.attackRange = round1(p.attackRange * 1.2); },
   },
   {
@@ -272,7 +272,7 @@ export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
     apply: (p) => { p.pierce += 1; },
   },
   {
-    id: 'radius', name: 'Golpe maior', description: '+20% no raio do golpe.', for: ['aura', 'area'],
+    id: 'radius', name: 'Golpe maior', description: '+20% no raio do golpe.', for: ['aura', 'area', 'orbit'],
     describe: (m) => ({ name: 'Golpe maior', description: `${m.name}: ${m.category === 'aura' ? '+20% no raio da aura.' : '+20% no tamanho da explosão.'}` }),
     apply: (p) => { p.attackRadius = round1(p.attackRadius * 1.2); },
   },
@@ -667,17 +667,37 @@ function attack(state: SurvivorState): boolean {
     fireProjectiles(state, target);
     return true;
   }
-  if (move.category === 'aura') {
+  if (move.category === 'aura' || move.category === 'orbit') {
     // A aura pulsa sempre (dá para ver o raio), mesmo sem ninguém dentro.
     let hits = 0;
     for (const e of state.enemies) {
-      if (Math.hypot(e.x - p.x, e.y - p.y) <= p.attackRadius + e.radius) {
+      const distance = Math.hypot(e.x - p.x, e.y - p.y);
+      const inRange = move.category === 'orbit'
+        ? distance >= p.attackRadius * 0.48 - e.radius && distance <= p.attackRadius + e.radius
+        : distance <= p.attackRadius + e.radius;
+      if (inRange) {
         hitEnemy(state, e, p.attackDamage, p);
         hits++;
       }
     }
     drain(state, hits);
     state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: p.attackRadius, color: move.color, ageMs: 0, lifeMs: 360 });
+    return true;
+  }
+  if (move.category === 'cone') {
+    let hits = 0;
+    const direction = p.facing;
+    for (const e of state.enemies) {
+      const dx = e.x - p.x;
+      const dy = e.y - p.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance <= p.attackRange + e.radius && dx * direction / (distance || 1) >= 0.35) {
+        hitEnemy(state, e, p.attackDamage, p);
+        hits++;
+      }
+    }
+    drain(state, hits);
+    state.fx.push({ kind: 'blast', x: p.x + direction * p.attackRange * 0.55, y: p.y, r: p.attackRange * 0.55, color: move.color, ageMs: 0, lifeMs: 300 });
     return true;
   }
   const targets = nearestEnemies(state, p.attackRange, p.shots);

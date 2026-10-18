@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue';
 import { MAX_ANSWER_LEN } from '../core/village/social-state';
+import { useDialogFocus } from '../composables/useDialogFocus';
 
 /**
  * A conversa em que um Pokémon pergunta uma coisa a você: você digita a resposta (ou toca numa sugestão), ele reage, faz uma
@@ -22,6 +23,8 @@ const emit = defineEmits<{ answer: [text: string]; choose: [index: number]; clos
 
 const draft = ref('');
 const inputEl = ref<HTMLInputElement | null>(null);
+const dialogEl = ref<HTMLElement | null>(null);
+useDialogFocus(dialogEl);
 
 function send(): void {
   const t = draft.value.trim();
@@ -34,7 +37,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="speech in-stage village-dialog quiz-dialog" role="dialog" :aria-label="`${name} pergunta`">
+  <div ref="dialogEl" class="speech in-stage village-dialog quiz-dialog" role="dialog" tabindex="-1" :aria-label="`${name} pergunta`" @keydown.esc.stop.prevent="emit('close')">
     <div class="speech-box">
       <strong>{{ name }}</strong>
       <p>{{ text }}</p>

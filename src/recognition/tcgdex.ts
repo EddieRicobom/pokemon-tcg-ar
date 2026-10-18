@@ -48,6 +48,8 @@ export interface TcgdexOptions {
   retries?: number;
   /** Espera base entre tentativas, em ms (testes usam 0). */
   backoffMs?: number;
+  /** Prazo por tentativa, incluindo leitura do corpo da resposta. */
+  timeoutMs?: number;
 }
 
 export type ImageQuality = 'low' | 'high';
@@ -89,6 +91,7 @@ export class TcgdexClient {
   private readonly language: string;
   private readonly retries: number;
   private readonly backoffMs: number;
+  private readonly timeoutMs: number;
   private readonly memory = new Map<string, Promise<TcgdexCard | null>>();
 
   constructor(options: TcgdexOptions = {}) {
@@ -97,6 +100,7 @@ export class TcgdexClient {
     this.language = options.language ?? 'en';
     this.retries = options.retries ?? 2;
     this.backoffMs = options.backoffMs ?? 400;
+    this.timeoutMs = options.timeoutMs ?? 15_000;
   }
 
   /** Carta completa (com `dexId`), ou null se o id não existe. Repetições na mesma sessão não refazem a requisição. */
@@ -142,26 +146,36 @@ export class TcgdexClient {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.retries; attempt++) {
       this.stats.requests++;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      let delayMs = this.backoffMs * (attempt + 1);
       try {
-        const response = await this.fetchImpl(url);
+        const response = await this.fetchImpl(url, { signal: controller.signal });
         if (response.status === 404) return null;
         if (response.status === 429 || response.status >= 500) {
-          const retryAfter = Number(response.headers.get('retry-after'));
-          lastError = new TcgdexError(`HTTP ${response.status}`, response.status);
-          this.stats.failures++;
-          await this.sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : this.backoffMs * (attempt + 1));
-          continue;
+          const header = response.headers.get('retry-after');
+          if (header !== null && header.trim() !== '') {
+            const seconds = Number(header);
+            const retryMs = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
+            if (Number.isFinite(retryMs) && retryMs >= 0) delayMs = retryMs;
+          }
+          throw new TcgdexError(`HTTP ${response.status}`, response.status);
         }
         if (!response.ok) throw new TcgdexError(`HTTP ${response.status}`, response.status);
         const text = await response.text();
         this.stats.bytes += text.length;
         return JSON.parse(text) as T;
       } catch (error) {
-        if (error instanceof TcgdexError && error.status && error.status < 500 && error.status !== 429) throw error;
-        lastError = error;
         this.stats.failures++;
-        await this.sleep(this.backoffMs * (attempt + 1));
+        if (error instanceof TcgdexError && error.status && error.status < 500 && error.status !== 429) throw error;
+        lastError = controller.signal.aborted
+          ? new TcgdexError('Tempo esgotado ao consultar o TCGdex. Tente de novo.')
+          : error;
+      } finally {
+        clearTimeout(timer);
       }
+      // Não atrasar a mensagem de erro quando já não há outra tentativa.
+      if (attempt < this.retries) await this.sleep(delayMs);
     }
     throw lastError instanceof Error ? lastError : new TcgdexError('Falha de rede ao consultar o TCGdex');
   }

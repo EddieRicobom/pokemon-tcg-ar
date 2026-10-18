@@ -438,12 +438,13 @@ function draw(): void {
 
   const move = s.player.move;
   // Aura: o raio fica sempre marcado de leve em volta do Pokémon, para dar para ver até onde o golpe chega.
-  if (move.category === 'aura') {
+  if (move.category === 'aura' || move.category === 'orbit') {
     ctx.save();
     ctx.globalAlpha = 0.16;
     ctx.fillStyle = move.color;
     ctx.beginPath();
     ctx.arc(s.player.x, s.player.y - 8, s.player.attackRadius, 0, Math.PI * 2);
+    if (move.category === 'orbit') ctx.arc(s.player.x, s.player.y - 8, s.player.attackRadius * 0.48, 0, Math.PI * 2, true);
     ctx.fill();
     ctx.globalAlpha = 0.45;
     ctx.strokeStyle = move.color;
@@ -837,7 +838,7 @@ onBeforeUnmount(() => {
 
         <p v-if="!ready && !pickOptions" class="hint survivor-loading">Carregando a Zona de Sobrevivência…</p>
       </div>
-      <p class="note">Arraste em qualquer lugar da tela para andar (ou WASD/setas); seu Pokémon ataca sozinho com o golpe do tipo dele (projétil, aura ou área) e, a partir do nível 8, pode evoluir na escolha de upgrade (só nesta corrida). Ondas cada vez maiores e um chefe de tempos em tempos. Chão e inimigos: créditos no rodapé do app.</p>
+      <p class="note">Arraste em qualquer lugar da tela para andar (ou WASD/setas); seu Pokémon ataca sozinho com o golpe do tipo dele: projétil, aura, área, cone frontal ou órbita. Evolua e escolha melhorias durante a corrida. Ondas cada vez maiores e um chefe de tempos em tempos. Chão e inimigos: créditos no rodapé do app.</p>
     </template>
   </div>
 </template>

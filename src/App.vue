@@ -17,7 +17,7 @@ import TreinadorView from './views/TreinadorView.vue';
 import VariasView from './views/VariasView.vue';
 
 const capabilities = detectCapabilities();
-const { canInstall, installed, install } = useInstallPrompt();
+const { canInstall, installed, installError, install } = useInstallPrompt();
 const route = useRoute();
 
 const showIosHint =
@@ -98,7 +98,8 @@ watch(
       <p>Instale o app na tela inicial para abrir em tela cheia.</p>
       <button type="button" class="primary" @click="install">Instalar app</button>
     </section>
-    <section v-else-if="showIosHint" class="card install" aria-label="Instalar no iPhone">
+    <p v-if="installError" role="alert">{{ installError }}</p>
+    <section v-if="showIosHint" class="card install" aria-label="Instalar no iPhone">
       <p>
         No iPhone ou iPad: toque em <strong>Compartilhar</strong> e depois em
         <strong>Adicionar à Tela de Início</strong>.

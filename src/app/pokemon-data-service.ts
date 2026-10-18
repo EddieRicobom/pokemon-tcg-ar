@@ -1,4 +1,4 @@
-import { parseCardBattleInfo, parseGameMove, parsePokeApiProfile, pickLevelUpMoves } from '../core/pokemon-data';
+import { isPokemonType, parseCardBattleInfo, parseGameMove, parsePokeApiProfile, pickLevelUpMoves, STAT_ORDER } from '../core/pokemon-data';
 import type { CardBattleInfo, GameMove, PokemonProfile } from '../core/pokemon-data';
 
 export const POKEAPI = 'https://pokeapi.co/api/v2';
@@ -58,13 +58,29 @@ function writeCache(storage: BattleDataDeps['storage'], key: string, value: unkn
   }
 }
 
-const isProfile = (v: unknown): v is PokemonProfile =>
-  typeof v === 'object' && v !== null && 'stats' in v && 'types' in v && Array.isArray((v as PokemonProfile).types);
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === 'string');
+const optionalText = (v: unknown): boolean => v === undefined || typeof v === 'string';
+const optionalNumber = (v: unknown): boolean => v === undefined || isFiniteNumber(v);
+const nullableNumber = (v: unknown): boolean => v === null || isFiniteNumber(v);
+const isProfile = (v: unknown): v is PokemonProfile => {
+  if (!isRecord(v) || !isRecord(v.stats)) return false;
+  const stats = v.stats;
+  return Number.isInteger(v.dexId) && Number(v.dexId) > 0 && Array.isArray(v.types) && v.types.every(isPokemonType)
+    && STAT_ORDER.every((key) => isFiniteNumber(stats[key])) && optionalNumber(v.weightKg);
+};
 /** Perfil guardado: sem peso na resposta vira 0 ("já consultado, sem peso"), para não consultar de novo a cada vez. */
 const withWeightChecked = (profile: PokemonProfile): PokemonProfile => ({ ...profile, weightKg: profile.weightKg ?? 0 });
-const isMoves = (v: unknown): v is GameMove[] => Array.isArray(v);
-const isCardInfo = (v: unknown): v is CardBattleInfo =>
-  typeof v === 'object' && v !== null && Array.isArray((v as CardBattleInfo).attacks);
+const isMoves = (v: unknown): v is GameMove[] => Array.isArray(v) && v.every((m: unknown) => isRecord(m)
+  && typeof m.name === 'string' && m.name.length > 0 && (m.type === null || isPokemonType(m.type))
+  && nullableNumber(m.power) && nullableNumber(m.accuracy) && nullableNumber(m.pp)
+  && (m.damageClass === null || m.damageClass === 'physical' || m.damageClass === 'special' || m.damageClass === 'status'));
+const isCardInfo = (v: unknown): v is CardBattleInfo => isRecord(v)
+  && optionalNumber(v.hp) && optionalNumber(v.retreat) && isStrings(v.types)
+  && Array.isArray(v.attacks) && v.attacks.every((a: unknown) => isRecord(a)
+    && typeof a.name === 'string' && a.name.length > 0 && isStrings(a.cost) && optionalText(a.damage) && optionalText(a.effect))
+  && Array.isArray(v.weaknesses) && v.weaknesses.every((w: unknown) => isRecord(w) && typeof w.type === 'string' && optionalText(w.value));
 
 export async function getJson(url: string, deps: Pick<BattleDataDeps, 'fetchImpl' | 'timeoutMs'>): Promise<unknown> {
   const fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init));
