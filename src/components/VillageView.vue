@@ -165,7 +165,12 @@ const kindFilter = ref<MomentKind | 'todos' | 'guardados'>('todos');
 const albumView = ref<'guardados' | 'colecao'>('guardados');
 const portraitOk = ref(true);
 const giftPick = ref(false);
-const welcome = ref(true);
+const VILLAGE_CONTROLS_HINT_KEY = 'tcg-ar-vila-controls-hint-hidden-v1';
+const welcome = ref(localStorage.getItem(VILLAGE_CONTROLS_HINT_KEY) !== 'true');
+function hideVillageControlsHint(): void {
+  localStorage.setItem(VILLAGE_CONTROLS_HINT_KEY, 'true');
+  welcome.value = false;
+}
 // O aviso de que a cidade cresceu espera você fechar as boas-vindas (para um não cobrir o outro).
 watch(welcome, (open) => {
   if (open) return;
@@ -1791,6 +1796,10 @@ onBeforeUnmount(() => {
       <div v-else-if="welcome" class="village-welcome" @click="welcome = false">
         <strong>Bem-vindo à Vila, {{ profile.name }}!</strong>
         <span>Arraste na tela para andar ou toque no chão para ir até o local. Toque no botão <b>Menu</b> no topo (ou aperte <b>B</b> no controle/teclado) para acessar Mochila, Diário, Criação e Opções. Botão <b>A</b> conversa, colhe e interage.</span>
+        <label @click.stop>
+          <input type="checkbox" @change="hideVillageControlsHint" />
+          Não exibir mais ao entrar na Vila
+        </label>
       </div>
       <p v-if="toast" class="village-toast" role="status">{{ toast }}</p>
 
