@@ -6071,6 +6071,35 @@ body.no-scroll .reward-toasts {
   cursor: default;
 }
 
+.survivor-pick-btn.disabled {
+  opacity: 0.6;
+  cursor: default;
+  pointer-events: none;
+}
+
+.survivor-favorite {
+  align-self: flex-end;
+  min-width: 28px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #e09b00;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.survivor-reroll {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.survivor-reroll small {
+  display: block;
+  opacity: 0.75;
+}
+
 .survivor-pick-thumb {
   width: 48px;
   height: 48px;

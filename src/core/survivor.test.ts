@@ -123,6 +123,15 @@ describe('stepSurvivor', () => {
     expect(s.player).toEqual(before);
   });
 
+  it('upgrade comum fora da oferta não aplica', () => {
+    const s = run(6.5);
+    s.pendingUpgrade = [{ id: 'legs', name: '', description: '' }];
+    const before = s.player.speed;
+    applyUpgrade(s, 'power');
+    expect(s.player.speed).toBe(before);
+    expect(s.pendingUpgrade).toBeNull();
+  });
+
   it('perde HP ao encostar em inimigo e fica brevemente invencível (não toma dano em cada quadro)', () => {
     const s = run(7);
     s.enemies.push({ id: 1, kind: 0, boss: false, grade: 'comum', x: s.player.x, y: s.player.y, hp: 999, maxHp: 999, speed: 0, damage: 10, radius: 13, hitFlashMs: 0 });
@@ -304,10 +313,10 @@ describe('golpes por tipo', () => {
   it('limita o acúmulo dos upgrades ofensivos sem enfraquecer stats iniciais mais altos', () => {
     const s = quiet(createSurvivorState(1, { kindCount: 1 }));
     for (let i = 0; i < 30; i++) {
-      applyUpgrade(s, 'power');
-      applyUpgrade(s, 'haste');
-      applyUpgrade(s, 'multishot');
-      applyUpgrade(s, 'pierce');
+      for (const id of ['power', 'haste', 'multishot', 'pierce']) {
+        s.pendingUpgrade = [{ id, name: '', description: '' }];
+        applyUpgrade(s, id);
+      }
     }
     expect(s.player.attackDamage).toBe(60);
     expect(s.player.attackCooldownMs).toBe(240);
@@ -316,7 +325,9 @@ describe('golpes por tipo', () => {
 
     s.player.attackDamage = 75;
     s.player.attackCooldownMs = 180;
+    s.pendingUpgrade = [{ id: 'power', name: '', description: '' }];
     applyUpgrade(s, 'power');
+    s.pendingUpgrade = [{ id: 'haste', name: '', description: '' }];
     applyUpgrade(s, 'haste');
     expect(s.player.attackDamage).toBe(75);
     expect(s.player.attackCooldownMs).toBe(180);
