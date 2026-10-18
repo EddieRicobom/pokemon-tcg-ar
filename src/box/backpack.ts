@@ -47,59 +47,99 @@ export interface RunningBackpack {
 interface LooseItem {
   sprite: Sprite;
   texture: CanvasTexture;
-  home: Vector3;
   velocity: Vector3;
 }
 
 class Clinker {
   private ctx: AudioContext | null = null;
-  private last = 0;
+  private lastImpact = 0;
+  private lastFabric = 0;
   private noise: AudioBuffer | null = null;
 
-  play(strength: number): void {
-    const now = performance.now();
-    if (now - this.last < 150 || strength < 0.14) return;
-    this.last = now;
+  unlock(): void {
     try {
       this.ctx ??= new AudioContext();
+      if (this.ctx.state === 'suspended') void this.ctx.resume();
+    } catch {
+      // O movimento continua funcionando se o navegador bloquear o áudio.
+    }
+  }
+
+  playImpact(strength: number, kind: 'item' | 'wall' = 'item'): void {
+    const now = performance.now();
+    if (now - this.lastImpact < 82 || strength < 0.2) return;
+    this.lastImpact = now;
+    try {
+      this.unlock();
+      if (!this.ctx) return;
       const ctx = this.ctx;
-      if (ctx.state === 'suspended') void ctx.resume();
       const t = ctx.currentTime;
-      // A soft fabric swish, followed by a tiny wooden/leather tap. Keep each
-      // transient short and quiet so tilting never turns into a constant rattle.
       this.noise ??= (() => {
-        const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.32, ctx.sampleRate);
+        const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.09), ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2);
+        return buffer;
+      })();
+      // Each contact has a quiet, filtered thump plus a tiny textured click.
+      const click = ctx.createBufferSource();
+      click.buffer = this.noise;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = kind === 'item' ? 1250 : 720;
+      filter.Q.value = 0.8;
+      const clickGain = ctx.createGain();
+      clickGain.gain.setValueAtTime(0.0001, t);
+      clickGain.gain.linearRampToValueAtTime(0.008 + strength * 0.026, t + 0.004);
+      clickGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.085);
+      click.connect(filter).connect(clickGain).connect(ctx.destination);
+      click.start(t);
+      click.stop(t + 0.09);
+      const tap = ctx.createOscillator();
+      const tapGain = ctx.createGain();
+      tap.type = kind === 'item' ? 'triangle' : 'sine';
+      tap.frequency.setValueAtTime((kind === 'item' ? 245 : 165) + Math.random() * 65, t);
+      tap.frequency.exponentialRampToValueAtTime(kind === 'item' ? 105 : 82, t + 0.12);
+      tapGain.gain.setValueAtTime(0.0001, t);
+      tapGain.gain.linearRampToValueAtTime(0.012 + strength * 0.028, t + 0.004);
+      tapGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+      tap.connect(tapGain).connect(ctx.destination);
+      tap.start(t);
+      tap.stop(t + 0.14);
+    } catch {
+      // O desenho continua funcionando se o navegador bloquear o áudio.
+    }
+  }
+
+  playFabric(strength: number): void {
+    const now = performance.now();
+    if (now - this.lastFabric < 320 || strength < 0.2) return;
+    this.lastFabric = now;
+    try {
+      this.unlock();
+      if (!this.ctx) return;
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+      this.noise ??= (() => {
+        const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.18), ctx.sampleRate);
         const data = buffer.getChannelData(0);
         for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
         return buffer;
       })();
-      const swish = ctx.createBufferSource();
-      swish.buffer = this.noise;
+      const rustle = ctx.createBufferSource();
+      rustle.buffer = this.noise;
       const filter = ctx.createBiquadFilter();
       filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(900 + strength * 900, t);
-      filter.frequency.exponentialRampToValueAtTime(260, t + 0.22);
-      const fabric = ctx.createGain();
-      fabric.gain.setValueAtTime(0.0001, t);
-      fabric.gain.linearRampToValueAtTime(0.012 + strength * 0.018, t + 0.035);
-      fabric.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
-      swish.connect(filter).connect(fabric).connect(ctx.destination);
-      swish.start(t);
-      swish.stop(t + 0.25);
-
-      const tap = ctx.createOscillator();
-      const tapGain = ctx.createGain();
-      tap.type = 'sine';
-      tap.frequency.setValueAtTime(230 + Math.random() * 100, t + 0.025);
-      tap.frequency.exponentialRampToValueAtTime(95, t + 0.11);
-      tapGain.gain.setValueAtTime(0.0001, t + 0.025);
-      tapGain.gain.linearRampToValueAtTime(0.012 + strength * 0.018, t + 0.03);
-      tapGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
-      tap.connect(tapGain).connect(ctx.destination);
-      tap.start(t + 0.025);
-      tap.stop(t + 0.14);
+      filter.frequency.setValueAtTime(1050, t);
+      filter.frequency.exponentialRampToValueAtTime(320, t + 0.2);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.linearRampToValueAtTime(0.006 + strength * 0.014, t + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      rustle.connect(filter).connect(gain).connect(ctx.destination);
+      rustle.start(t);
+      rustle.stop(t + 0.23);
     } catch {
-      // O desenho continua funcionando se o navegador bloquear o áudio.
+      // O movimento continua funcionando se o navegador bloquear o áudio.
     }
   }
 
@@ -162,31 +202,47 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
 
   // Two padded shoulder straps and a grab handle make the silhouette read as a backpack.
   for (const x of [-0.78, 0.78]) {
-    const strap = addMesh(new CapsuleGeometry(0.16, 1.42, 4, 8), trim, x, 1.8, -0.46);
+    const strap = addMesh(new CapsuleGeometry(0.16, 1.42, 4, 8), trim, x, 1.8, -0.62);
     strap.rotation.z = x < 0 ? -0.12 : 0.12;
-    const stitch = addMesh(new CapsuleGeometry(0.105, 1.28, 4, 8), fabric, x, 1.8, -0.34);
+    const stitch = addMesh(new CapsuleGeometry(0.105, 1.28, 4, 8), fabric, x, 1.8, -0.5);
     stitch.rotation.z = strap.rotation.z;
   }
   tube([new Vector3(-0.25, 3.35, -0.48), new Vector3(-0.25, 3.72, -0.48), new Vector3(0.25, 3.72, -0.48), new Vector3(0.25, 3.35, -0.48)], 0.085, trim);
 
-  // Main upright padded body, gently rounded at the corners.
-  addMesh(rounded(2.45, 2.95, 1.18, 0.27), fabric, 0, 1.75, 0);
-  addMesh(rounded(2.28, 0.28, 1.12, 0.12), trim, 0, 3.17, 0.02);
-  // Open mouth and dark lining visible behind the carried items.
-  addMesh(rounded(1.92, 0.16, 0.78, 0.07), lining, 0, 3.13, 0.12);
-  addMesh(rounded(1.96, 0.1, 0.16, 0.06), piping, 0, 3.25, 0.49);
+  // Build the shell as a back, gussets and bottom, leaving the front upper
+  // half open so the camera can look into the lined compartment.
+  addMesh(rounded(2.45, 2.95, 0.28, 0.22), fabric, 0, 1.75, -0.42);
+  addMesh(rounded(2.03, 2.55, 0.08, 0.06), lining, 0, 1.76, -0.245);
+  for (const side of [-1, 1]) {
+    addMesh(rounded(0.28, 2.82, 1.02, 0.12), fabric, side * 1.08, 1.75, 0.02);
+    addMesh(rounded(0.09, 2.55, 0.76, 0.04), lining, side * 0.925, 1.78, 0.04);
+  }
+  addMesh(rounded(2.12, 0.24, 1.05, 0.08), trim, 0, 0.43, 0.03);
+  addMesh(rounded(2.06, 0.12, 0.9, 0.04), lining, 0, 0.57, 0.02);
+  // Raised inner shelf and low front wall keep the contents visible in the cutaway.
+  addMesh(rounded(2.06, 0.16, 0.86, 0.05), lining, 0, 1.28, 0.02);
+  addMesh(rounded(2.28, 0.72, 0.24, 0.1), fabric, 0, 0.78, 0.47);
+  addMesh(rounded(2.36, 0.11, 0.2, 0.045), trim, 0, 1.17, 0.47);
+  // The padded top collar follows the open mouth instead of covering it.
+  for (const side of [-1, 1]) addMesh(rounded(0.12, 0.12, 0.94, 0.05), piping, side * 0.93, 3.13, 0.02);
+  addMesh(rounded(1.9, 0.12, 0.11, 0.05), piping, 0, 3.13, -0.36);
+
+  // The lid is hinged behind the mouth and folded back, clearly exposing the lining.
+  const lidHinge = new Group();
+  lidHinge.position.set(0, 3.08, -0.42);
+  lidHinge.rotation.x = -0.82;
+  bag.add(lidHinge);
+  addMesh(rounded(2.12, 0.72, 0.16, 0.18), trim, 0, 0.38, 0, lidHinge);
+  addMesh(rounded(1.84, 0.48, 0.06, 0.14), fabric, 0, 0.38, 0.105, lidHinge);
+  addMesh(rounded(1.24, 0.045, 0.035, 0.02), metal, 0, 0.12, 0.15, lidHinge);
+
   // Front pocket, raised piping, zipper and two brass pulls.
-  addMesh(rounded(1.8, 1.02, 0.28, 0.18), trim, 0, 1.13, 0.68);
-  addMesh(rounded(1.68, 0.88, 0.22, 0.15), fabric, 0, 1.13, 0.82);
-  addMesh(rounded(1.42, 0.055, 0.035, 0.025), metal, 0, 1.62, 0.95);
-  for (const x of [-0.62, 0.62]) addMesh(new CapsuleGeometry(0.035, 0.14, 3, 6), metal, x, 1.56, 0.99);
-  // Large top flap, curved piping, stitched seam and clasp.
-  const flap = addMesh(rounded(2.02, 0.8, 0.22, 0.23), trim, 0, 2.46, 0.68);
-  flap.rotation.x = -0.08;
-  const panel = addMesh(rounded(1.78, 0.61, 0.12, 0.19), fabric, 0, 2.48, 0.82);
-  panel.rotation.x = -0.08;
-  addMesh(rounded(0.34, 0.25, 0.12, 0.05), metal, 0, 2.03, 0.92);
-  addMesh(rounded(0.18, 0.1, 0.07, 0.035), trim, 0, 2.02, 1.02);
+  addMesh(rounded(1.82, 0.64, 0.2, 0.12), trim, 0, 0.75, 0.64);
+  addMesh(rounded(1.68, 0.5, 0.15, 0.1), fabric, 0, 0.75, 0.76);
+  addMesh(rounded(1.42, 0.05, 0.035, 0.02), metal, 0, 1.02, 0.86);
+  for (const x of [-0.62, 0.62]) addMesh(new CapsuleGeometry(0.035, 0.14, 3, 6), metal, x, 0.98, 0.89);
+  addMesh(rounded(0.34, 0.22, 0.1, 0.04), metal, 0, 1.13, 0.61);
+
   // Side gussets and bottle pockets.
   for (const side of [-1, 1]) {
     const pocket = addMesh(rounded(0.36, 0.92, 0.42, 0.16), trim, side * 1.16, 1.14, 0.12);
@@ -207,14 +263,14 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
   visible.forEach((item, index) => {
     const col = index % 6;
     const row = Math.floor(index / 6);
-    const home = new Vector3(-0.72 + col * 0.29, 3.34 + (index % 3) * 0.035, 0.66 + row * 0.1);
+    const home = new Vector3(-0.63 + col * 0.42, 1.62 + row * 0.28, 0.1 + (index % 3) * 0.08);
     const texture = spriteTexture(item.id);
     const material = new SpriteMaterial({ map: texture, transparent: true, depthWrite: false, color: 0xffffff });
     const sprite = new Sprite(material);
     sprite.position.copy(home);
-    sprite.scale.set(0.27, 0.27, 1);
+    sprite.scale.set(0.31, 0.31, 1);
     bag.add(sprite);
-    loose.push({ sprite, texture, home, velocity: new Vector3() });
+    loose.push({ sprite, texture, velocity: new Vector3() });
   });
 
   let fx = options.fx;
@@ -255,7 +311,7 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
     frame = requestAnimationFrame(frameLoop);
     const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
     last = now;
-    shakePower *= Math.pow(0.025, dt);
+    shakePower *= Math.pow(0.16, dt);
     if (orientation && calibration) {
       const tiltX = MathUtils.clamp((orientation.gamma - calibration.gamma) / 28, -1, 1);
       const tiltY = MathUtils.clamp((orientation.beta - calibration.beta) / 28, -1, 1);
@@ -268,29 +324,76 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
       bag.rotation.y = rotation * 0.2;
     }
     const force = orientation && calibration
-      ? new Vector3((orientation.gamma - calibration.gamma) * 0.0018, 0, -(orientation.beta - calibration.beta) * 0.0018)
-      : new Vector3(motion.x * 0.035, 0, -motion.y * 0.035);
-    force.x += Math.sin(now * 0.018) * shakePower * 0.055;
-    force.z += Math.cos(now * 0.015) * shakePower * 0.055;
+      ? new Vector3((orientation.gamma - calibration.gamma) / 28 * 2.4, 0, -(orientation.beta - calibration.beta) / 28 * 2.4)
+      : new Vector3(motion.x * 0.08, 0, -motion.y * 0.08);
+    force.x += Math.sin(now * 0.032) * shakePower * 4.2;
+    force.y += Math.max(0, Math.sin(now * 0.025)) * shakePower * 2.3;
+    force.z += Math.cos(now * 0.029) * shakePower * 3.4;
     motion = { x: motion.x * 0.78, y: motion.y * 0.78, z: motion.z * 0.78 };
-    let collided = 0;
+    const radius = 0.16;
+    const bounds = { minX: -0.94, maxX: 0.94, minY: 1.36, maxY: 3.08, minZ: -0.1, maxZ: 0.5 };
+    let itemImpact = 0;
+    let wallImpact = 0;
     for (const item of loose) {
-      const offset = item.home.clone().sub(item.sprite.position).multiplyScalar(4.8);
-      item.velocity.add(offset.multiplyScalar(dt));
-      item.velocity.add(force.clone().multiplyScalar(dt * 9));
+      item.velocity.add(force.clone().multiplyScalar(dt));
+      item.velocity.y -= 1.4 * dt;
       item.velocity.multiplyScalar(Math.pow(0.12, dt));
       item.sprite.position.addScaledVector(item.velocity, dt);
       item.sprite.material.rotation += (item.velocity.x + item.velocity.z) * dt * 0.35;
-      const dx = item.sprite.position.x - item.home.x;
-      const dy = item.sprite.position.y - item.home.y;
-      const dz = item.sprite.position.z - item.home.z;
-      if (Math.abs(dx) > 0.12 || Math.abs(dy) > 0.13 || Math.abs(dz) > 0.12) {
-        item.sprite.position.set(item.home.x + MathUtils.clamp(dx, -0.12, 0.12), item.home.y + MathUtils.clamp(dy, -0.13, 0.13), item.home.z + MathUtils.clamp(dz, -0.12, 0.12));
-        item.velocity.multiplyScalar(-0.32);
-        collided = Math.max(collided, Math.min(1, item.velocity.length() * 0.7 + 0.12));
+
+      if (item.sprite.position.x < bounds.minX + radius) {
+        item.sprite.position.x = bounds.minX + radius;
+        wallImpact = Math.max(wallImpact, Math.abs(item.velocity.x));
+        item.velocity.x = Math.abs(item.velocity.x) * 0.42;
+      } else if (item.sprite.position.x > bounds.maxX - radius) {
+        item.sprite.position.x = bounds.maxX - radius;
+        wallImpact = Math.max(wallImpact, Math.abs(item.velocity.x));
+        item.velocity.x = -Math.abs(item.velocity.x) * 0.42;
+      }
+      if (item.sprite.position.y < bounds.minY + radius) {
+        item.sprite.position.y = bounds.minY + radius;
+        wallImpact = Math.max(wallImpact, Math.abs(item.velocity.y));
+        item.velocity.y = Math.abs(item.velocity.y) * 0.32;
+      } else if (item.sprite.position.y > bounds.maxY - radius) {
+        item.sprite.position.y = bounds.maxY - radius;
+        wallImpact = Math.max(wallImpact, Math.abs(item.velocity.y));
+        item.velocity.y = -Math.abs(item.velocity.y) * 0.32;
+      }
+      if (item.sprite.position.z < bounds.minZ + radius) {
+        item.sprite.position.z = bounds.minZ + radius;
+        wallImpact = Math.max(wallImpact, Math.abs(item.velocity.z));
+        item.velocity.z = Math.abs(item.velocity.z) * 0.38;
+      } else if (item.sprite.position.z > bounds.maxZ - radius) {
+        item.sprite.position.z = bounds.maxZ - radius;
+        wallImpact = Math.max(wallImpact, Math.abs(item.velocity.z));
+        item.velocity.z = -Math.abs(item.velocity.z) * 0.38;
       }
     }
-    if (sound && (collided > 0 || shakePower > 0.25)) clinker.play(Math.min(1, shakePower * 0.55 + collided * 0.55));
+    for (let i = 0; i < loose.length; i++) {
+      const first = loose[i]!;
+      for (let j = i + 1; j < loose.length; j++) {
+        const second = loose[j]!;
+        const delta = second.sprite.position.clone().sub(first.sprite.position);
+        const distance = delta.length();
+        if (distance >= radius * 2) continue;
+        const normal = distance > 0.0001 ? delta.multiplyScalar(1 / distance) : new Vector3(1, 0, 0);
+        const overlap = radius * 2 - distance;
+        first.sprite.position.addScaledVector(normal, -overlap * 0.5);
+        second.sprite.position.addScaledVector(normal, overlap * 0.5);
+        const relativeSpeed = second.velocity.clone().sub(first.velocity).dot(normal);
+        if (relativeSpeed < 0) {
+          const impulse = -(1 + 0.38) * relativeSpeed * 0.5;
+          first.velocity.addScaledVector(normal, -impulse);
+          second.velocity.addScaledVector(normal, impulse);
+          itemImpact = Math.max(itemImpact, -relativeSpeed);
+        }
+      }
+    }
+    if (sound) {
+      if (itemImpact > 0.2) clinker.playImpact(Math.min(1, itemImpact * 0.55), 'item');
+      if (wallImpact > 0.26) clinker.playImpact(Math.min(1, wallImpact * 0.42), 'wall');
+      if (shakePower > 0.2) clinker.playFabric(shakePower);
+    }
     if (fx) {
       key.intensity = 2.6 + Math.abs(Math.sin(now * 0.0012)) * 0.7;
       bag.position.y = Math.sin(now * 0.0018) * 0.025;
@@ -304,9 +407,10 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
   resize();
   frame = requestAnimationFrame(frameLoop);
   return {
-    shake() { shakePower = 1; targetRotation = targetRotation > 0 ? -0.35 : 0.35; },
+    shake() { clinker.unlock(); shakePower = 1; targetRotation = targetRotation > 0 ? -0.35 : 0.35; },
     recenter() { targetRotation = 0; },
     async calibrate() {
+      clinker.unlock();
       const ctor = DeviceOrientationEvent as typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
       if (typeof ctor.requestPermission === 'function') {
         try { await ctor.requestPermission(); } catch { /* o sensor continua opcional */ }
