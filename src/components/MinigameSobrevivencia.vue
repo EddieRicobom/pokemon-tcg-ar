@@ -10,7 +10,6 @@ import type { CardCompanion } from '../core/card-evolution';
 import { survivalWinners } from '../core/card-evolution';
 import { visual } from '../app/visual-settings';
 import { seededRng } from '../core/battle';
-import { shuffle } from '../core/minigames';
 import {
   applyUpgrade,
   ARENA_H,
@@ -39,6 +38,8 @@ import { survivorRegionLabel } from '../core/survivor-regions';
 import { createSurvivorLandscape } from '../village/survivor-landscape';
 import { REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from '../core/survivor-encounters';
 import type { SoundCue } from '../box/sound-recipes';
+import { normalizeSurvivorFavorites, selectSurvivorCandidates } from '../core/survivor-selection';
+import { dayKey } from '../core/trainer';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -217,7 +218,7 @@ function recordRun(s: SurvivorSummary): void {
   const beforeInfinite = trainer.value.torre.infiniteUnlocked;
   recordEvent({ type: 'survivor', survivedMs: s.survivedMs, trainersBeaten: s.trainersBeaten, bossesBeaten: s.bossesBeaten, clearedTorre: s.finalBossBeaten, infinite: s.infinite });
   runUnlockedInfinite.value = s.finalBossBeaten && !beforeInfinite;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dayKey(new Date());
   const last = trainer.value.torre.lastClearBonusDay;
   const canClearBonus = s.finalBossBeaten && last !== today;
   if (canClearBonus) trainer.value.torre.lastClearBonusDay = today;
@@ -258,6 +259,10 @@ const summary = ref<SurvivorSummary | null>(null);
  * Pikachu de reserva sem tela de escolha, igual ao comportamento antigo). */
 const pickOptions = ref<PickOption[] | null>(null);
 const pickBusy = ref(false);
+const rerollUsed = ref(false);
+const previousPickIds = ref<string[]>([]);
+const favoriteIds = ref<Set<string>>(new Set());
+const FAVORITES_KEY = 'tcg-ar-survivor-favorites-v1';
 /** Evoluindo: o jogo espera o sprite da nova forma carregar (com o brilho na tela) antes de continuar. */
 const evolving = ref<string | null>(null);
 /** Espécies que têm sprite no pacote local (`village-sprite-meta.json`): a carta "Evoluir" só oferece estas. */
@@ -592,7 +597,27 @@ function leaveNow(): void {
 
 /** Sorteia 3 companheiros da caixa, identificados por carta/instância, pra escolher quem joga desta vez.
  * Caixa vazia (nenhuma carta ainda) não trava nada: cai pro Pikachu de reserva sem tela de escolha, como antes. */
-async function rollPickOptions(): Promise<PickOption[]> {
+function readFavorites(ids: readonly string[]): Set<string> {
+  try {
+    return normalizeSurvivorFavorites(JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? 'null'), new Set(ids));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeFavorites(): void {
+  try { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favoriteIds.value])); } catch { /* armazenamento indisponível */ }
+}
+
+function toggleFavorite(id: string): void {
+  const next = new Set(favoriteIds.value);
+  if (next.has(id)) next.delete(id); else next.add(id);
+  favoriteIds.value = next;
+  writeFavorites();
+  if (pickOptions.value) pickOptions.value = pickOptions.value.map((option) => ({ ...option }));
+}
+
+async function rollPickOptions(previousIds: readonly string[] = []): Promise<PickOption[]> {
   const cache = await getCache();
   const cards = await cache.list();
   const pool: (CardCompanion & { origin: string })[] = [];
@@ -603,7 +628,9 @@ async function rollPickOptions(): Promise<PickOption[]> {
   // Digital Pokémon entram no mesmo sorteio (Fase 6): não vêm de carta nenhuma, mas jogam igual a qualquer outro.
   for (const [i, d] of (props.digital ?? []).entries()) pool.push({ id: d.instanceId ?? `dp_torre_${i}`, dexId: d.dexId, name: d.name, origin: 'Digital Pokémon' });
   if (pool.length === 0) return [];
-  const chosen = shuffle(pool, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0)).slice(0, 3);
+  const ids = pool.map((item) => item.id);
+  favoriteIds.value = readFavorites(ids);
+  const chosen = selectSurvivorCandidates(pool, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0), favoriteIds.value, 3, previousIds);
   const thumbs = await Promise.all(
     chosen.map(({ dexId }) =>
       getLocalVillageSprite(dexId, false, 'Idle')
@@ -678,7 +705,11 @@ watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) infiniteWanted.valu
 /** Abre a tela de escolha de novo (3 novos sorteados) antes de cada corrida, inclusive ao "Jogar de novo". */
 async function openPicker(): Promise<void> {
   ready.value = false;
+  pickBusy.value = true;
+  pickOptions.value = null;
   try {
+    rerollUsed.value = false;
+    previousPickIds.value = [];
     const options = await rollPickOptions();
     if (disposed) return;
     if (options.length === 0) {
@@ -687,8 +718,25 @@ async function openPicker(): Promise<void> {
       return;
     }
     pickOptions.value = options;
+    previousPickIds.value = options.map((option) => option.id);
   } catch {
     failed.value = true;
+  } finally {
+    pickBusy.value = false;
+  }
+}
+
+async function rerollPicker(): Promise<void> {
+  if (rerollUsed.value || pickBusy.value || !pickOptions.value) return;
+  rerollUsed.value = true;
+  pickBusy.value = true;
+  try {
+    const options = await rollPickOptions(previousPickIds.value);
+    if (disposed) return;
+    pickOptions.value = options;
+    previousPickIds.value = options.map((option) => option.id);
+  } finally {
+    pickBusy.value = false;
   }
 }
 
@@ -788,7 +836,7 @@ onBeforeUnmount(() => {
           </div>
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
-            <p class="note">3 Pokémon sorteados da sua caixa.</p>
+             <p class="note">3 Pokémon sorteados da sua caixa. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
             <p class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
             <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
             <div v-if="torre.infiniteUnlocked" class="survivor-mode" role="group" aria-label="Modo da Torre">
@@ -796,14 +844,17 @@ onBeforeUnmount(() => {
               <button type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true">♾️ Infinito<small>Mais difícil, sem fim</small></button>
             </div>
             <div class="survivor-pick-grid">
-              <button
+               <div
                 v-for="opt in pickOptions"
                 :key="opt.id"
-                type="button"
                 class="survivor-pick-btn"
-                :disabled="pickBusy"
-                @click="opt.types.length > 1 ? openTypeChoice(opt) : choosePlayer(opt, opt.types[0])"
+                 :class="{ disabled: pickBusy }"
+                 role="button"
+                 :tabindex="pickBusy ? -1 : 0"
+                 @keydown.enter.prevent="opt.types.length > 1 ? openTypeChoice(opt) : choosePlayer(opt, opt.types[0])"
+                 @click="opt.types.length > 1 ? openTypeChoice(opt) : choosePlayer(opt, opt.types[0])"
               >
+                 <button type="button" class="survivor-favorite" :aria-label="favoriteIds.has(opt.id) ? `Remover ${opt.name} dos favoritos` : `Favoritar ${opt.name}`" :aria-pressed="favoriteIds.has(opt.id)" @click.stop="toggleFavorite(opt.id)">{{ favoriteIds.has(opt.id) ? '★' : '☆' }}</button>
                 <img v-if="opt.thumb" :src="opt.thumb" :alt="opt.name" class="survivor-pick-thumb" />
                 <span v-else class="survivor-pick-thumb placeholder" aria-hidden="true">?</span>
                 <strong>{{ opt.name }}</strong>
@@ -814,8 +865,9 @@ onBeforeUnmount(() => {
                   <span v-for="b in opt.bars" :key="b.label" class="survivor-pick-bar"><small>{{ b.label }}</small><i><b :style="{ width: Math.round(b.value * 100) + '%' }"></b></i></span>
                 </span>
                 <small v-if="opt.move.estimated" class="survivor-pick-kind">Sem stats desta espécie: números médios.</small>
-              </button>
+               </div>
             </div>
+             <button type="button" class="link survivor-reroll" :disabled="rerollUsed || pickBusy" @click="rerollPicker">🔄 Sortear novamente <small>{{ rerollUsed ? 'já usado nesta tentativa' : '1 vez grátis por tentativa' }}</small></button>
             <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
           </div>
         </div>

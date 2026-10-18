@@ -4,14 +4,15 @@
 // comparar antes/depois de mudar um parâmetro. Fora do `npm test`:
 //
 //   npx vitest run -c vitest.eval.config.ts scripts/survivor-sim.eval.ts --silent=false
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { seededRng } from '../src/core/battle';
 import type { Rng } from '../src/core/battle';
 import { applyUpgrade, ARENA_H, ARENA_W, createSurvivorState, stepSurvivor } from '../src/core/survivor';
 import type { SurvivorInput, SurvivorState } from '../src/core/survivor';
 
 const DT = 16;
-const CAP_MS = 15 * 60_000;
+// O chefe final chega aos 20 min; o teto precisa ultrapassá-lo para observar o modo infinito.
+const CAP_MS = 25 * 60_000;
 
 /** Robô "jogador mediano": foge de quem está perto (chefe pesa mais), evita parede, pega orbe quando está seguro. */
 function bot(s: SurvivorState): SurvivorInput {
@@ -103,9 +104,23 @@ function report(label: string, runs: Run[]): void {
     viuChefe: `${Math.round((sawBoss.length / runs.length) * 100)}%`,
     derrotouAlgumChefe: sawBoss.length ? `${Math.round((killedFirst / sawBoss.length) * 100)}% de quem viu` : '—',
     morreuComChefeEmCampo: `${Math.round((runs.filter((r) => r.diedWithBoss).length / runs.length) * 100)}%`,
-    chegouAos15min: `${Math.round((capped / runs.length) * 100)}%`,
+    chegouAos25min: `${Math.round((capped / runs.length) * 100)}%`,
   };
   console.log(`SIM ${label} ${JSON.stringify(out)}`);
+}
+
+function advanceWithSafety(infinite: boolean, targetMs: number): SurvivorState {
+  const s = createSurvivorState(0x5eed, { kindCount: 6, infinite });
+  // O teste mede a agenda do modo, sem transformar a sobrevivência em um teste de reflexos.
+  s.player.maxHp = 1_000_000_000;
+  s.player.hp = s.player.maxHp;
+  s.player.attackDamage = 1_000_000_000;
+  s.player.attackCooldownMs = 1;
+  while (!s.over && s.elapsedMs < targetMs) {
+    if (s.pendingUpgrade) applyUpgrade(s, s.pendingUpgrade[0]!.id);
+    else stepSurvivor(s, { dx: 0, dy: 0 }, Math.min(1000, targetMs - s.elapsedMs));
+  }
+  return s;
 }
 
 describe('balanceamento da Torre (robô)', () => {
@@ -118,4 +133,18 @@ describe('balanceamento da Torre (robô)', () => {
     const runs = Array.from({ length: 200 }, (_, i) => play(1000 + i, randomPick, true));
     report('sem-chefe', runs);
   }, 600_000);
+
+  it('cobre os marcos do relógio e o infinito depois de 20 minutos', () => {
+    for (const minutes of [1, 5, 10, 15, 20]) {
+      const state = advanceWithSafety(false, minutes * 60_000);
+      expect(state.elapsedMs).toBe(minutes * 60_000);
+      expect(state.over).toBe(false);
+    }
+    const normal = advanceWithSafety(false, 20 * 60_000);
+    expect(normal.finalBossAtMs).toBeNull();
+    const infinite = advanceWithSafety(true, 21 * 60_000);
+    expect(infinite.elapsedMs).toBe(21 * 60_000);
+    expect(infinite.finalBossAtMs).toBeNull();
+    expect(infinite.infiniteScale).toBeGreaterThan(1.25);
+  }, 120_000);
 });

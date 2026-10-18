@@ -2,6 +2,10 @@
 
 ## Implementado nesta rodada
 
+Antes de iniciar uma corrida, a Torre oferece até três instâncias sem duplicação, incluindo Digital Pokémon. O botão “Sortear novamente” pode ser usado uma vez gratuitamente por tentativa; quando há opções suficientes, a nova leva não repete o conjunto anterior. A estrela de favorito usa o `id` da instância (carta ou `dp_*`), fica em `localStorage` sob `tcg-ar-survivor-favorites-v1` e aumenta a probabilidade sem eliminar a variedade. Favoritos removidos da coleção são descartados na leitura. Coleções com zero, uma, duas ou três opções continuam tendo um caminho finito.
+
+O motor também rejeita upgrades comuns que não estejam na oferta pendente, assim como já fazia com evoluções. Isso evita aplicar bônus por chamadas atrasadas ou inválidas e mantém o contrato de que a tela é a fonte da escolha. O bônus diário por zerar a Torre usa `dayKey`, o mesmo calendário local do Treinador, em vez de comparar a data UTC.
+
 A corrida percorre Kanto, Johto, Hoenn, Sinnoh, Unova, Kalos, Alola, Galar e Paldea. Cada etapa dura 2min15s; seus últimos 40s misturam suavemente a próxima paisagem. Paldea começa aos 18 minutos, antes do chefão dos 20 minutos. No infinito, o ciclo recomeça depois de Paldea. O relógio é o do motor: escolhas de upgrade e pausas da simulação também pausam a viagem.
 
 O chão tem trilha sinuosa, caminho transversal, textura de pequenos ladrilhos e detalhes nas bordas: bosque, costa, pedras, jardins e oliveiras estilizados. É uma interpretação visual das regiões, não a reprodução dos mapas oficiais. Árvores, pedras e lagoas são decorativas, sem colisão, dano ou lentidão. A área útil, os pontos de nascimento e a visibilidade dos ataques permanecem iguais. As posições dos detalhes são estáveis entre regiões. O HUD mostra a região e o destino durante a transição.
@@ -31,4 +35,4 @@ Ideias para rodadas futuras, por ordem sugerida:
 | Evoluções de golpes | Escolhas laterais com custo claro: área maior em troca de cadência | Evitar multiplicar simultaneamente dano, alcance e número de projéteis |
 | Melhorias permanentes | Primeiro variedade de escolhas e aparência | Se houver poder permanente, limitar e medir separadamente perfis novos e veteranos |
 
-Antes de incorporar poder novo, comparar sementes iguais com `scripts/survivor-sim.eval.ts`: sobrevivência, nível, derrotas e chefes, por categoria de ataque. A avaliação atual tem teto de 15 minutos: precisa ser ampliada para avaliar o chefe dos 20 minutos e o infinito. Robô e testes não substituem sessões humanas no celular. Não há alegação de que o modo inteiro esteja balanceado por essas verificações.
+Antes de incorporar poder novo, comparar sementes iguais com `scripts/survivor-sim.eval.ts`: sobrevivência, nível, derrotas e chefes, por categoria de ataque. A avaliação de balanceamento agora tem teto de 25 minutos e um caso determinístico cobre 1, 5, 10, 15 e 20 minutos, além de 21 minutos no infinito. Robô e testes não substituem sessões humanas no celular. Não há alegação de que o modo inteiro esteja balanceado por essas verificações.

@@ -566,7 +566,9 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
     }
   } else {
     const upgrade = SURVIVOR_UPGRADES.find((u) => u.id === id);
-    if (upgrade) upgrade.apply(state.player);
+    // Upgrades comuns também precisam ser uma escolha real da rodada. Isso impede que uma
+    // chamada atrasada ou manipulada aplique um bônus que nunca foi oferecido.
+    if (upgrade && offered) upgrade.apply(state.player);
   }
   state.pendingUpgrade = null;
   offerOwedUpgrade(state);
