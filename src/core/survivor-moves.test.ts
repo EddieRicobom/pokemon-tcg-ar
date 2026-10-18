@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { POKEMON_TYPES } from './pokemon-data';
-import { attackProfile, categoryForStats, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from './survivor-moves';
+import { attackProfile, categoryForStats, CATEGORY_BASE, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
 
 describe('golpes da Torre: elemento pelo tipo, forma e números pelos stats', () => {
@@ -29,6 +29,14 @@ describe('golpes da Torre: elemento pelo tipo, forma e números pelos stats', ()
     expect(moveFor([], null).type).toBe('normal');
     expect(moveFor(['water'], null)).toMatchObject({ category: 'projetil', estimated: true });
     expect(moveFor(['water'], statsOfDex(7)!).estimated).toBeUndefined();
+  });
+
+  it('diferencia golpes de cone frontal e órbita, com forças iniciais distintas', () => {
+    expect(moveFor(['fighting'], statsOfDex(56)).category).toBe('cone');
+    expect(moveFor(['grass'], statsOfDex(1)).category).toBe('orbit');
+    expect(moveFor(['bug'], null).category).toBe('orbit');
+    expect(CATEGORY_BASE.cone.damage).toBeLessThan(CATEGORY_BASE.area.damage);
+    expect(CATEGORY_BASE.orbit.cooldownMs).toBeGreaterThan(CATEGORY_BASE.aura.cooldownMs);
   });
 
   it('os números seguem os stats: rápido recarrega antes, Atq. Esp. alto bate mais, HP alto tem mais vida', () => {
