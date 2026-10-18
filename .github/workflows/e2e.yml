@@ -4,13 +4,17 @@ name: Ponta a ponta (câmera falsa)
 # Não substitui a validação com a câmera, o GPU e o OCR de um celular de verdade.
 on:
   push:
-    branches: ['claude/**']
-    paths: ['src/**', 'e2e/**', 'scripts/**', 'playwright.config.ts', '.github/workflows/e2e.yml', 'package.json']
+    branches: ['claude/**', 'codex/**', 'Codex/**']
+    paths: ['src/**', 'e2e/**', 'scripts/**', 'config/**', 'public/**', 'vite.config.ts', 'playwright.config.ts', '.github/workflows/e2e.yml', 'package.json', 'package-lock.json']
   workflow_dispatch:
 
 permissions:
   contents: read
   checks: write
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   e2e:

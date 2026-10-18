@@ -4,7 +4,7 @@ name: Verificação externa
 # limites, formato) e sprites do PokeAPI. Os resultados ficam em anotações e num artefato.
 on:
   push:
-    branches: ['claude/**']
+    branches: ['claude/**', 'codex/**', 'Codex/**']
     paths:
       - 'scripts/verify-*.ts'
       - 'scripts/build-catalog-index.ts'
@@ -18,6 +18,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: external-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:

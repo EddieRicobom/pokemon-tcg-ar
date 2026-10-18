@@ -8,6 +8,8 @@ const base = normalizeBasePath(process.env.BASE_PATH);
 
 export default defineConfig({
   base,
+  // Os workers inline do MindAR precisam passar pelo transformador de workers do Vite.
+  optimizeDeps: { exclude: ['mind-ar'] },
   plugins: [
     vue(),
     VitePWA({
@@ -42,10 +44,15 @@ export default defineConfig({
         // O OCR (≈ 6,7 MB no primeiro uso), o índice do catálogo e os sprites locais da Vila (≈ 100 MB, 966
         // espécies) não entram no pré-cache da instalação: são guardados só quando usados (cache em tempo de
         // execução), senão a instalação do PWA baixaria tudo isso de uma vez.
-        globIgnores: ['ocr/**', 'data/**', 'sprites/**'],
+        globIgnores: ['ocr/**', 'data/**', 'sprites/**', 'art/trainers/**'],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
         runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith(`${base}art/trainers/`),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'trainer-atlases-v1', expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 90 } },
+          },
           {
             urlPattern: ({ url }) => url.pathname.startsWith(`${base}ocr/`),
             handler: 'CacheFirst',
@@ -76,6 +83,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
   },
   test: {
+    pool: 'threads',
     environment: 'happy-dom',
     include: ['src/**/*.test.ts', 'config/**/*.test.ts'],
   },

@@ -37,6 +37,9 @@ jobs:
       - name: Rodar testes
         run: npm test
 
+      - name: Conferir as animações dos treinadores
+        run: node scripts/verify-trainer-atlases.ts
+
       - name: Build de produção
         run: npm run build
 

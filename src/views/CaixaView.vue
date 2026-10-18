@@ -25,7 +25,7 @@ import { coins, spendCoins, withVillage } from '../app/wallet';
 import { maybeGalladeSpeaks } from '../app/speech-store';
 import { visual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
-import { requestOrientationPermission } from '../sensors/orientation-feed';
+import { requestOrientationPermission } from '../core/orientation-permission';
 import CardMarks from '../components/CardMarks.vue';
 import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';

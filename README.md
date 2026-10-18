@@ -4,22 +4,38 @@ PWA para celular que reconhece uma carta física de Pokémon TCG pela câmera e 
 
 Projeto de fã, não oficial. Pokémon e os nomes, imagens e sprites relacionados pertencem aos seus respectivos donos (ver [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). Licença do código: [MIT](LICENSE).
 
-> **O que ainda não foi comprovado:** tudo foi verificado por testes automatizados e em Chromium com câmera falsa (GL por software). **Nada foi validado num celular de verdade**: fluidez, calor, precisão do reconhecimento com a câmera real e a aparência dos efeitos. O roteiro para isso está em [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
+> **Como interpretar as verificações:** testes automatizados e Chromium com câmera falsa cobrem lógica e integração. GL por software não mede fluidez, calor, bateria, câmera ou sensores de um celular. Os limites de cada verificação estão em [docs/TESTING.md](docs/TESTING.md).
 
 ## O que o app faz
 
-| Aba | O que faz |
+O app tem cinco abas: **Escanear, Vila, Cartas, Pins e Treinador**. Várias fica em Escanear; Caixa em AR fica em Cartas; Diagnóstico abre pela engrenagem.
+
+| Tela ou modo | O que faz |
 | --- | --- |
 | **Escanear** | Lê a carta pela câmera (detecção do contorno, OCR do número e do nome, busca pela ilustração como reserva), identifica a impressão, guarda no aparelho e mostra o Pokémon em pé sobre ela, com um painel de status no chão (tipo, atributos, ataques da carta, golpes do jogo). Há busca manual por nome e ajuste do Pokémon com os dedos. |
 | **Várias** | Rastreia até 4 cartas da equipe ao mesmo tempo, cada uma com o seu Pokémon. |
-| **Vila** | O modo vida, em aba própria e sem câmera: andar com o joystick, conversar, coletar, plantar, cozinhar, a Fonte (Digital Pokémon), o Fliperama, a Arena e a Torre de Sobrevivência. O **B** abre o menu (Itens, Memórias, Ir para e Ajustes). |
+| **Vila** | Modo vida em aba própria: arraste para andar ou toque no destino, converse, colete, plante, cozinhe, decore casas e acompanhe amizades e memórias. Tem Fonte, Fliperama, Arena e Torre de Sobrevivência. O botão **Menu** ou **B** abre as opções. Funciona sem câmera por padrão; o **AR Beta** opcional usa câmera e orientação, sem rastreamento de chão. |
 | **Caixa** | Solta a equipe (até 40) num quadrado do chão visto pela câmera, usando o giroscópio. **Batalhar** faz os Pokémon lutarem sozinhos (todos contra todos, em equipes ou 3 contra 3) numa arena pequena com chão em pixel art que os golpes elementais marcam à frente do olhar, com personalidades, defesa, condições, golpes encenados por tipo, luz e sons dos golpes e câmera de cinema. |
-| **Pins** | Modo sem câmera: os Pokémon viram pins redondos numa arena vista de cima. Arraste para trás para mirar e solte para disparar; derrube os adversários da arena, que respondem com um disparo a cada um seu. Peso, atributos, velocidade e tipos mudam a física, o chão é o mesmo da batalha da Caixa (os golpes elementais deixam rastro de gelo, poça, mato, chamuscado… e o chão reage quando elementos se encontram), há rebatedores, e os golpes das cartas viram efeitos do disparo (com recarga). Cada pin gasta moedas — o saldo único do app, ganho com XP, batalhas, minigames e a Vila. |
+| **Pins** | Sem câmera: puxe para trás, solte e derrube os adversários da arena. Jogue contra o computador, com dificuldade à escolha, ou contra um amigo. Peso, atributos, tipos, rebatedores e marcas elementais mudam a física; os golpes das cartas têm recarga. Há repetição da partida e opções de borda que encolhe e marcas no chão. Contra o computador, cada disparo custa de 5 a 40 moedas; no PvP não há custo. |
 | **Cartas** | As cartas guardadas no aparelho, organizadas numa **Box** como nos jogos (caixas 6 × 5 com nome, mover e trocar de lugar, arrumar pela Pokédex ou nome), ou em lista com detalhes: busca, filtros, equipe, ver em AR, remover. |
-| **Treinador** | Nível e XP, sequência de dias, 3 missões por dia, progresso por coleção e conquistas, tudo ganho escaneando cartas, vendo batalhas e jogando os **minigames** com as suas cartas (Quem é esse Pokémon?, com sorteio por geração ou aleatório, Duelo de tipos e Memória). Fica só no aparelho. |
+| **Treinador** | Nível e XP, sequência de dias, 3 missões por dia, coleções, conquistas e minigames (Quem é esse Pokémon?, Duelo de tipos e Memória). A aba **Liga** reúne os Ginásios e insígnias. Em **Seus dados**, baixe ou restaure o backup. O progresso fica no aparelho. |
 | **Diagnóstico** | Capacidades do aparelho (HTTPS, câmera, WebGL2, Service Worker), estado do índice do catálogo, cartas guardadas e a última leitura (resultado, confiança, tempos, texto do OCR). Em Escanear, "Mostrar o que o app está vendo" desenha o contorno e as miniaturas. |
 
 Detalhes e limites de cada parte: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+### A vida na Vila e a Torre
+
+Os moradores ganham casas conforme o nível do Treinador libera terrenos. Você pode melhorar as casas, pintar telhados, decorar e visitar Café, Correio e Museu. Conversas, perguntas, apelidos e passeios criam amizades; os Pokémon também desenvolvem relações entre si. O Diário guarda os 60 momentos recentes, e o Álbum preserva até 500 memórias escolhidas ou marcos importantes.
+
+O questionário inicial dá um **Digital Pokémon**, identificado como companheiro sem carta física. A Fonte invoca outros por 500 moedas; evoluir exige 1000 moedas, amizade alta e uma próxima forma real. Eles participam da Vila, Caixa, Pins e Torre. Encontros raros com Suicune, Zapdos e Celebi trazem efeitos temporários e registros na Vila.
+
+Na **Torre de Sobrevivência**, escolha entre até três espécies sorteadas das suas cartas e Digital Pokémon. Mova o Pokémon enquanto ele ataca automaticamente; escolha melhorias e evoluções durante a corrida. Há treinadores a cada cinco minutos e um chefão final aos vinte. Vencer libera o modo infinito e um bônus diário de moedas. Os golpes podem ser projétil, aura, área, cone ou órbita; Pokémon de dois tipos permitem escolher qual ataca.
+
+### Liga e partidas com amigos
+
+A **Liga Pokémon**, no Treinador ou na Arena da Vila, tem oito Ginásios, Elite 4 e Campeã, com revanches, insígnias, Hall da Fama e maleta 3D. Os desafios usam as batalhas automáticas de exibição da Caixa, em revezamento.
+
+O **PvP** dos Pins e da Caixa conecta dois jogadores por WebRTC: um gera o convite, o outro devolve o código de resposta. Não há servidor do app nem sala pública; a conexão direta pode não fechar em algumas redes. Na Caixa, o anfitrião escolhe 1 contra 1, 3 contra 3 ou 6 contra 6, com um duelo por vez; cada jogador vê a batalha na própria caixa.
 
 ### Como funciona, em poucas linhas
 
@@ -36,7 +52,7 @@ Você não precisa instalar nada nem usar terminal. O GitHub Actions faz o build
 3. Faça o merge na `main`. O workflow **Deploy no GitHub Pages** roda sozinho (e toda semana, para o índice de cartas acompanhar coleções novas).
 4. O app fica em `https://eddiericobom.github.io/pokemon-tcg-ar/`.
 
-A câmera exige HTTPS; o GitHub Pages já serve por HTTPS. O PWA só atualiza na **segunda** abertura depois de um deploy: feche e abra de novo.
+A câmera exige HTTPS; o GitHub Pages já serve por HTTPS. O PWA procura atualizações e recarrega quando a versão nova assume, exceto enquanto a câmera está aberta. Se uma tela antiga não conseguir baixar seus arquivos, o app tenta recuperar a atualização sem entrar em um ciclo de recarregamentos.
 
 ## Infraestrutura
 
@@ -75,6 +91,7 @@ src/cache/         cartas e arquivos guardados no aparelho (IndexedDB + Cache AP
 src/core/          lógica sem interface: câmera, GIF, suavização, tipos, motor de batalha
 src/recognition/   detecção da carta, OCR, índices, fusão de evidências
 src/sensors/       giroscópio
+src/village/       renderizador 2D da Vila, tilesets e animações locais dos treinadores
 src/views/         telas (abas); src/components/ componentes
 .github/workflows/ ci, deploy, e2e, verificação externa
 docs/              arquitetura, testes e roteiro de teste no celular
@@ -84,6 +101,7 @@ docs/              arquitetura, testes e roteiro de teste no celular
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): arquitetura, decisões, limites conhecidos
 - [docs/TESTING.md](docs/TESTING.md): o que é testado e como; o que só um celular valida
+- [docs/TRAINER_ART.md](docs/TRAINER_ART.md): imagens novas dos treinadores, animações e preparo dos atlas
 - [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md): roteiro de teste em aparelho real
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md): estado por fase, riscos e próximos passos
 - [CHANGELOG.md](CHANGELOG.md): histórico de mudanças

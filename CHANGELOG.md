@@ -4,6 +4,14 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 
 ## [Não lançado]
 
+### Treinadores animados, carregamento e confiabilidade (2026-10-18)
+
+- Folhas PNG novas dos treinadores na Vila, com quatro direções, caminhada e repouso; preparo com pés alinhados e verificação dos arquivos no CI.
+- Telas carregadas ao abrir, com aviso de carregamento e recuperação de falha; permissão dos sensores separada do renderizador para preservar o gesto no iOS sem baixar Three.js no scanner inicial.
+- Carteira recusa valores inválidos e confirma operações persistidas; cache de batalha rejeita dados incompletos; TCGdex tem prazo por tentativa e respeita os dois formatos de Retry-After.
+- Folhas e conversa com foco por teclado, Escape e retorno do foco; falhas na instalação do PWA ganham uma mensagem de recuperação.
+- Documentação revisada pelo código atual; verificações externas e e2e também cobrem branches Codex.
+
 ### Câmera em tela cheia e rastreio que larga a carta perdida (2026-10-14)
 
 - Escanear, Várias, Caixa e o teste do renderizador (Diagnóstico): com a câmera ligada a imagem cobre a tela e tudo que ficava embaixo (etapas, estado do rastreio, resultado, erros, busca à mão, ajustes, equipe, resumo da batalha) passou para avisos no topo e folhas sobre a imagem. Não é mais preciso rolar a página.

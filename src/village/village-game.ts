@@ -2,6 +2,7 @@ import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
+import { trainerAtlasFrame, type TrainerAtlas } from './trainer-atlas';
 import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
@@ -218,6 +219,7 @@ export class VillageGame {
   private readonly atlas: VillaAtlas | null;
   /** Sprite oficial do treinador escolhido; null mantém o avatar pixel-art de fallback. */
   private trainerAvatar: HTMLCanvasElement | null = null;
+  private trainerAtlas: TrainerAtlas | null = null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
   private running = false;
   private handle = 0;
@@ -291,6 +293,7 @@ export class VillageGame {
     private readonly groundTile?: GroundTileImage | null,
     /** O atlas de tilesets da Vila (`public/tilesets/vila-atlas.png`); null cai no desenho por código. */
     atlasImage?: Rgba | null,
+    trainerAtlas?: TrainerAtlas | null,
     private readonly rng: Rng = Math.random,
   ) {
     this.ctx = canvas.getContext('2d')!;
@@ -301,7 +304,8 @@ export class VillageGame {
       atlas = null;
     }
     this.atlas = atlas;
-    this.loadTrainerAvatar();
+    this.trainerAtlas = trainerAtlas ?? null;
+    if (!this.trainerAtlas) this.loadTrainerAvatar();
     this.player = makeWalker('eu', state.player.x, state.player.y, 5.5);
     this.player.dir = state.player.dir;
     this.weather = createWeather(this.rng, 'sol');
@@ -1314,7 +1318,24 @@ export class VillageGame {
         y: shop.y + shop.h,
         draw: () => {
           shadow(sx(shop.x + shop.w / 2), sy(shop.y + shop.h) - 2 * scale, shop.w * 7 * scale, 3.5 * scale, 0.2);
-          umbrellas.forEach((u, i) => stand(u!, sx(shop.x + (i + 0.5) * (shop.w / umbrellas.length)), sy(shop.y + shop.h)));
+          umbrellas.forEach((u, i) => {
+            const cx = sx(shop.x + (i + 0.5) * (shop.w / umbrellas.length));
+            const base = sy(shop.y + shop.h);
+            stand(u!, cx, base);
+            // O recorte do tileset mostra só o guarda-sol; o balcão e as frutas deixam claro que são barracas.
+            const left = Math.round(cx - 13 * scale);
+            const top = Math.round(base - 8 * scale);
+            ctx.fillStyle = '#704728';
+            ctx.fillRect(left, top, 26 * scale, 7 * scale);
+            ctx.fillStyle = '#c18a4d';
+            ctx.fillRect(left, top, 26 * scale, 2 * scale);
+            ctx.fillStyle = '#59371f';
+            ctx.fillRect(left + 2 * scale, top + 6 * scale, 22 * scale, scale);
+            for (const [x, color] of [[4, '#f1c84b'], [10, '#e45a4b'], [16, '#72bd57'], [21, '#e89ac0']] as const) {
+              ctx.fillStyle = color;
+              ctx.fillRect(left + x * scale, top - 2 * scale, 3 * scale, 2 * scale);
+            }
+          });
           this.drawTag(sx(shop.x + shop.w / 2), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
         },
       });
@@ -1581,19 +1602,27 @@ export class VillageGame {
     const accDef = accP ? itemDef(accP) : undefined;
     const hatless = accDef?.pos === 'hat';
     const step = moving(this.player) ? this.player.steps + (this.player.t > 0.5 ? 1 : 0) : -1;
-    const pimg = this.sprite(`p:${this.player.dir}:${step < 0 ? 's' : step % 2}:${this.trainerId}:${hatless}`, () => paintPlayer(this.player.dir, step, hatless ? { ...outfit, gear: 'none' } : outfit));
+    const pimg = this.trainerAtlas ? null : this.sprite(`p:${this.player.dir}:${step < 0 ? 's' : step % 2}:${this.trainerId}:${hatless}`, () => paintPlayer(this.player.dir, step, hatless ? { ...outfit, gear: 'none' } : outfit));
     const trainerAvatar = this.trainerAvatar;
     list.push({
       y: pp.y + 1.01,
       draw: () => {
         shadow(sx(pp.x + 0.5), sy(pp.y + 1) - 1 * scale, 5 * scale, 2 * scale, 0.24);
-        const hop = moving(this.player) ? Math.abs(Math.sin(this.player.t * Math.PI)) * 1.5 * scale : 0;
+        const hop = !this.trainerAtlas && moving(this.player) ? Math.abs(Math.sin(this.player.t * Math.PI)) * 1.5 * scale : 0;
         const px0 = sx(pp.x);
         const py0 = sy(pp.y + 1) - (PLAYER_H + 1) * scale - hop;
         const dir = this.player.dir;
         const pos = accDef?.pos;
         if (accP && pos === 'back' && dir !== 'up') this.drawAcc(accP, px0 + 2 * scale, py0 + 11 * scale, 12 * scale);
-        if (trainerAvatar && dir !== 'up') {
+        const atlas = this.trainerAtlas;
+        const frame = atlas ? trainerAtlasFrame(atlas.image.naturalWidth, atlas.image.naturalHeight, dir, moving(this.player), this.player.steps, this.player.t, now) : null;
+        if (atlas && frame) {
+          const bounds = atlas.bounds;
+          const height = PLAYER_H * scale;
+          const width = height * bounds.width / bounds.height;
+          const left = px0 + T / 2 - (frame.width / 2 - bounds.x) * height / bounds.height;
+          ctx.drawImage(atlas.image, frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height, left, py0, width, height);
+        } else if (trainerAvatar && dir !== 'up') {
           const aspect = trainerAvatar.width / trainerAvatar.height;
           const avatarH = Math.min(PLAYER_H * scale, (T * 1.4) / aspect);
           const avatarW = avatarH * aspect;
@@ -1605,7 +1634,7 @@ export class VillageGame {
             ctx.drawImage(trainerAvatar, -avatarW / 2, -avatarH / 2, avatarW, avatarH);
             ctx.restore();
           } else ctx.drawImage(trainerAvatar, avatarX, py0, avatarW, avatarH);
-        } else ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
+        } else if (pimg) ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
         if (accP) {
           if (pos === 'hat') this.drawAcc(accP, px0 + 1 * scale, py0 - 5 * scale, 14 * scale);
           else if (pos === 'face' && dir !== 'up') this.drawAcc(accP, px0 + (dir === 'down' ? 3 : dir === 'right' ? 5 : 1) * scale, py0 + 3 * scale, 10 * scale);

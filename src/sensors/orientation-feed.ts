@@ -194,18 +194,4 @@ export function getOrientationFeed(): OrientationFeed {
   return shared;
 }
 
-interface PermissionEventClass {
-  requestPermission?: () => Promise<'granted' | 'denied'>;
-}
-
-/** iOS exige permissão por toque; no Android é imediato. Chamar direto do clique, sem esperar nada antes. */
-export async function requestOrientationPermission(): Promise<'granted' | 'denied' | 'unsupported'> {
-  const Ctor = (window as unknown as { DeviceOrientationEvent?: PermissionEventClass }).DeviceOrientationEvent;
-  if (!Ctor) return 'unsupported';
-  if (typeof Ctor.requestPermission !== 'function') return 'granted';
-  try {
-    return (await Ctor.requestPermission()) === 'granted' ? 'granted' : 'denied';
-  } catch {
-    return 'denied';
-  }
-}
+export { requestOrientationPermission } from '../core/orientation-permission';

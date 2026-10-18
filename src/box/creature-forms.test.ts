@@ -17,6 +17,13 @@ function make(source: CreatureSource, extra: Partial<BoxCreature['info']> = {}):
 const tick = (c: BoxCreature, now = 1000) => c.update(now, 16, new Vector3(), new Vector3(0, 2, 3), new Vector3(1, 0, 0));
 
 describe('Pokémon shiny na Caixa', () => {
+  it('inclina o topo do sprite em direção à câmera quando ela está acima do chão', () => {
+    const c = make(image(32, 32));
+    tick(c);
+    const up = new Vector3(0, 1, 0).applyQuaternion(c.mesh.quaternion);
+    expect(up.z).toBeGreaterThan(0);
+  });
+
   it('nasce sem brilho; com info.shiny o brilho já vem ligado, pendurado no plano do Pokémon', () => {
     const normal = make(image(32, 32));
     expect(normal.shiny).toBe(false);

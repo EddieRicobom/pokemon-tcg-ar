@@ -44,6 +44,9 @@ jobs:
       - name: Rodar testes
         run: npm test
 
+      - name: Conferir as animações dos treinadores
+        run: node scripts/verify-trainer-atlases.ts
+
       # Índice estático (só ids, nomes e contagens), gerado aqui e servido pelo Pages. Nenhum celular baixa o catálogo.
       - name: Gerar índice do catálogo
         run: npm run build:index

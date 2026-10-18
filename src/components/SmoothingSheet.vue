@@ -1,14 +1,18 @@
 <script setup lang="ts">
+import { ref } from 'vue';
+import { useDialogFocus } from '../composables/useDialogFocus';
 import { resetVisual, visual } from '../app/visual-settings';
 import { SMOOTHING_HINTS_PT, SMOOTHING_LABELS_PT, SMOOTHING_MODES } from '../core/pixel-upscale';
 import { WEATHER_MODE_LABELS_PT, WEATHER_MODES } from '../core/weather';
 
 defineProps<{ battle?: boolean }>();
 defineEmits<{ close: [] }>();
+const dialogEl = ref<HTMLElement | null>(null);
+useDialogFocus(dialogEl);
 </script>
 
 <template>
-  <div class="stage-sheet" role="dialog" aria-label="Suavização dos pixels" @pointerdown.stop @pointerup.stop @click.stop>
+  <div ref="dialogEl" class="stage-sheet" role="dialog" tabindex="-1" aria-label="Suavização dos pixels" @keydown.esc.stop.prevent="$emit('close')" @pointerdown.stop @pointerup.stop @click.stop>
     <header>
       <strong>Suavização dos pixels</strong>
       <button type="button" class="link" @click="resetVisual">Restaurar</button>

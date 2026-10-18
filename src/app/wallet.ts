@@ -60,7 +60,7 @@ export function withVillage(fn: (state: VillageState) => boolean): boolean {
   const state = loadVillage();
   const changed = fn(state);
   if (changed) {
-    saveVillage(state);
+    if (!saveVillage(state)) return false;
     coins.value = state.coins;
   }
   return changed;
@@ -75,21 +75,23 @@ export function coinMultiplierNow(state: VillageState, nowMs = Date.now()): numb
 
 /** Ganha moedas (valor inteiro positivo; o bônus de Zapdos, se ativo, entra aqui). Devolve quantas entraram. */
 export function addCoins(amount: number): number {
+  if (!Number.isFinite(amount)) return 0;
   const base = Math.max(0, Math.floor(amount));
   if (base === 0) return 0;
   let added = 0;
-  withVillage((state) => {
+  const changed = withVillage((state) => {
     const n = Math.round(base * coinMultiplierNow(state));
     const next = Math.min(MAX_COINS, state.coins + n);
     added = next - state.coins;
     state.coins = next;
     return added > 0;
   });
-  return added;
+  return changed ? added : 0;
 }
 
 /** Gasta moedas. Devolve false (e não muda nada) se faltar saldo. */
 export function spendCoins(amount: number): boolean {
+  if (!Number.isFinite(amount) || amount < 0) return false;
   const n = Math.max(0, Math.floor(amount));
   return withVillage((state) => {
     if (state.coins < n) return false;

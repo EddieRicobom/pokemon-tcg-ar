@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cardImageUrl, referenceCandidates, shortUrl, TcgdexClient, TcgdexError } from './tcgdex';
 
 const card = { id: 'base1-58', localId: '58', name: 'Pikachu', dexId: [25], set: { id: 'base1', name: 'Base Set' } };
@@ -10,6 +10,58 @@ function client(handler: (url: string, call: number) => Response | Promise<Respo
 }
 
 describe('TcgdexClient', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('interrompe consulta travada e permite nova consulta depois do prazo', async () => {
+    vi.useFakeTimers();
+    let stalled = true;
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      if (!stalled) return Promise.resolve(new Response(JSON.stringify(card)));
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('abort', 'AbortError')), { once: true });
+      });
+    });
+    const c = new TcgdexClient({ fetchImpl, retries: 0, timeoutMs: 100, backoffMs: 1000 });
+    const rejected = expect(c.getCard(card.id)).rejects.toThrow('Tempo esgotado');
+    await vi.advanceTimersByTimeAsync(100);
+    await rejected;
+    expect(vi.getTimerCount()).toBe(0);
+    stalled = false;
+    expect((await c.getCard(card.id))?.id).toBe(card.id);
+    expect(c.stats.failures).toBe(1);
+  });
+
+  it('mantém o prazo durante o download do corpo, não só até receber os cabeçalhos', async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => ({
+      status: 200, ok: true,
+      text: () => new Promise<string>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('abort', 'AbortError')), { once: true });
+      }),
+    } as Response));
+    const c = new TcgdexClient({ fetchImpl, retries: 0, timeoutMs: 100 });
+    const rejected = expect(c.getCard(card.id)).rejects.toThrow('Tempo esgotado');
+    await vi.advanceTimersByTimeAsync(100);
+    await rejected;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('respeita Retry-After como data HTTP e não espera depois da última falha', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-18T12:00:00Z'));
+    const fetchImpl = vi.fn(async () => new Response('', {
+      status: 429, headers: { 'Retry-After': 'Sun, 18 Oct 2026 12:00:02 GMT' },
+    }));
+    const c = new TcgdexClient({ fetchImpl, retries: 1 });
+    const rejected = expect(c.getCard(card.id)).rejects.toThrow('HTTP 429');
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await rejected;
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('busca a carta pelo endereço da API v2 e conta requisições e bytes', async () => {
     const urls: string[] = [];
     const c = client((url) => {

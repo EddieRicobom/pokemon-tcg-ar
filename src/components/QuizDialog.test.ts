@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createApp, h, nextTick, type App as VueApp } from 'vue';
+import { createApp, h, nextTick, reactive, type App as VueApp } from 'vue';
 import QuizDialog from './QuizDialog.vue';
 
 describe('QuizDialog', () => {
@@ -39,6 +39,28 @@ describe('QuizDialog', () => {
     const el = mount({ stage: 'ask', chips: ['Brigadeiro', 'Sorvete'] }, { onAnswer: (t: never) => got.push(t) });
     [...el.querySelectorAll('.quiz-chips button')].find((b) => b.textContent === 'Sorvete')!.dispatchEvent(new Event('click'));
     expect(got).toEqual(['Sorvete']);
+  });
+
+  it('mantém o foco na conversa ao trocar etapas e devolve ao controle de origem', async () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    const props = reactive<{ stage: 'ask' | 'follow' | 'reply'; options: string[] }>({ stage: 'ask', options: ['Sim', 'Não'] });
+    const el = mount(props);
+    await nextTick();
+    expect(document.activeElement).toBe(el.querySelector('input'));
+    props.stage = 'follow';
+    await nextTick();
+    await nextTick();
+    expect(document.activeElement?.textContent).toBe('Sim');
+    props.stage = 'reply';
+    await nextTick();
+    await nextTick();
+    expect(document.activeElement?.textContent).toBe('Valeu!');
+    app!.unmount();
+    app = null;
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
   });
 
   it('no seguimento, cada opção devolve o seu índice; na fala final, só fecha', () => {

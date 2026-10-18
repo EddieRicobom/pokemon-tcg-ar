@@ -2,7 +2,7 @@ import { L, calm, coupled, day, evening, friendsNow, is, night, other, rainy, ri
 import type { Template } from './kit';
 
 /**
- * A cidade grande (mapa novo): as ruas largas e a avenida, o mercado das barracas de guarda-sol, o mural de recados e
+ * A cidade grande (mapa novo): as ruas largas e a avenida, o mercado de barracas com toldos coloridos, o mural de recados e
  * as jardineiras da praça, a Rua dos Jogos (Arena, Fliperama, Pista de Pins, Torre) e os prédios novos (o casarão do
  * Museu, a cabana de toras do Café).
  */
@@ -15,7 +15,7 @@ export const RUAS_MOMENTS: readonly Template[] = [
   },
   {
     id: 'rua-mercado-barracas', kind: 'amizade', title: 'As barracas do mercado', emoji: '⛱️', cast: 2, weight: 5, when: (c) => day(c),
-    lines: (c) => [L(0, 'O mercado tem três barracas de guarda-sol: azul, vermelha e verde!', 'star'), L(1, 'Qual é a melhor?', 'question'), L(0, `A que tiver biscoito, ${c.n[1]}. Vamos visitar as três para descobrir.`, 'idea'), L(1, '(meia hora depois, os dois saem com sacolas e farelo no queixo)', 'laugh')],
+    lines: (c) => [L(0, 'O mercado tem três barracas com toldos coloridos: azul, vermelho e verde!', 'star'), L(1, 'Qual é a melhor?', 'question'), L(0, `A que tiver biscoito, ${c.n[1]}. Vamos visitar as três para descobrir.`, 'idea'), L(1, '(meia hora depois, os dois saem com sacolas e farelo no queixo)', 'laugh')],
     outcome: { bond: 5 },
   },
   {
