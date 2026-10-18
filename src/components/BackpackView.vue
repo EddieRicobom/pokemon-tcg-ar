@@ -48,11 +48,11 @@ onBeforeUnmount(() => {
       <button type="button" class="bc-close" aria-label="Fechar a mochila" @click="emit('close')">✕</button>
     </header>
     <div class="bc-stage backpack-stage">
-      <canvas ref="canvas" class="bc-canvas" aria-label="Mochila 3D com os itens coletados. Balance o celular para ouvir os itens se encostando."></canvas>
+      <canvas ref="canvas" class="bc-canvas" aria-label="Mochila aberta em 3D, com os itens dentro do compartimento. Chacoalhe para vê-los bater e ouvir os sons."></canvas>
       <p v-if="state === 'loading'" class="bc-msg">Abrindo a mochila…</p>
       <p v-else-if="state === 'error'" class="bc-msg">Não deu para mostrar a mochila 3D neste aparelho. Os itens continuam disponíveis na mochila comum.</p>
     </div>
-    <p class="bc-hint">Uma mochila de aventura aberta, com bolso frontal, alças e itens à mostra. Incline o celular ou toque em “Chacoalhar” para ouvir o tecido e os pequenos toques dos itens.</p>
+    <p class="bc-hint">Os itens ficam soltos dentro do compartimento. Incline o celular ou toque em “Chacoalhar” para vê-los quicar e bater entre si e ouvir o tecido e cada contato.</p>
     <div class="bc-actions">
       <button type="button" :disabled="state !== 'ready'" @click="running?.shake()">Chacoalhar</button>
         <button type="button" :disabled="state !== 'ready'" @click="running?.calibrate()">Calibrar giroscópio</button>
