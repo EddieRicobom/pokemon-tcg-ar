@@ -1,3 +1,4 @@
+import { drawWaterFx, drawFountainFx, drawSunRays } from './ambient-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
 import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
@@ -275,6 +276,8 @@ export class VillageGame {
   harvestedToday: (x: number, y: number) => boolean = () => false;
   onStep: (() => void) | null = null;
   /** Modo do clima (vem das opções visuais): 'off' desliga, 'ciclo' alterna, ou um clima fixo. */
+  ambientFx: () => boolean = () => true;
+  private readonly reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   weatherMode: () => WeatherMode = () => 'ciclo';
   /** Zapdos: postes piscando forte à noite (ver `legendaryEffects`). */
   lampStorm: () => boolean = () => false;
@@ -1150,6 +1153,7 @@ export class VillageGame {
     const light = daylight(hour, minute);
     const night = light.dark > 0.3;
     const wx = this.weather;
+    const ambientFx = this.ambientFx() && !this.reducedMotion?.matches;
     const sx = (x: number) => Math.round(x * TILE * scale - camX);
     const sy = (y: number) => Math.round(y * TILE * scale - camY);
     const T = TILE * scale;
@@ -1287,6 +1291,7 @@ export class VillageGame {
           list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1 * scale, 4 * scale, 1.5 * scale, 0.18); ctx.drawImage(img, sx(x), sy(y - 1), T, 2 * T); } });
           if (night) streetLamps.push({ x, y });
         } else if (t === 'water') {
+          if (ambientFx) drawWaterFx(ctx, sx(x), sy(y), T, now, hashN(x * 131 + y * 17) * 7, wx.rain, light.dark);
           // Brilhinhos na água.
           const h = hashN(x * 131 + y * 17);
           if (Math.sin(now / 500 + h * 40) > 0.93) {
@@ -1368,7 +1373,7 @@ export class VillageGame {
       if (b.kind === 'fountain') {
         const f = Math.floor(now / 450) % 2;
         const img = this.sprite(`fonte${f}`, () => paintFountain(f));
-        list.push({ y: b.y + b.h, draw: () => { shadow(mid, bottom - 3 * scale, 14 * scale, 4 * scale, 0.16); ctx.drawImage(img, left, bottom - 40 * scale, 32 * scale, 40 * scale); } });
+        list.push({ y: b.y + b.h, draw: () => { shadow(mid, bottom - 3 * scale, 14 * scale, 4 * scale, 0.16); ctx.drawImage(img, left, bottom - 40 * scale, 32 * scale, 40 * scale); if (ambientFx) drawFountainFx(ctx, left + 16 * scale, bottom, scale, now); } });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
         continue;
       }
@@ -1844,6 +1849,7 @@ export class VillageGame {
       }
       ctx.globalCompositeOperation = 'source-over';
     }
+    if (ambientFx && this.weatherMode() !== 'off') drawSunRays(ctx, W, H, now, (1 - light.dark) * (1 - wx.cloud) * (1 - wx.rain) * (1 - wx.snow));
     // Vinheta: escurece de leve as bordas.
     const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.78);
     vg.addColorStop(0, 'rgba(0,0,0,0)');

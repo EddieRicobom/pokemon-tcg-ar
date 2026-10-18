@@ -3,9 +3,9 @@ import { normalizeVisual } from './visual-settings';
 
 describe('configurações visuais', () => {
   it('aceita só modos de suavização conhecidos', () => {
-    expect(normalizeVisual({ smoothing: 'macio' })).toEqual({ smoothing: 'macio', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true });
-    expect(normalizeVisual({ smoothing: 'xyz' as never })).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true });
-    expect(normalizeVisual(null)).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true });
+    expect(normalizeVisual({ smoothing: 'macio' })).toEqual({ smoothing: 'macio', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true });
+    expect(normalizeVisual({ smoothing: 'xyz' as never })).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true });
+    expect(normalizeVisual(null)).toEqual({ smoothing: 'bordas', lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true });
   });
 
   it('os reflexos da maleta vêm ligados e só desligam com false explícito', () => {
@@ -51,5 +51,12 @@ describe('acabamento metálico dos Digital Pokémon', () => {
     expect(normalizeVisual({ metallic: false }).metallic).toBe(false);
     expect(normalizeVisual({ metallic: undefined }).metallic).toBe(true);
     expect(normalizeVisual({ metallic: 'x' as never }).metallic).toBe(true);
+  });
+});
+
+describe('efeitos da Vila', () => {
+  it('migra saves antigos e preserva a escolha de desligar', () => {
+    expect(normalizeVisual({}).villageFx).toBe(true);
+    expect(normalizeVisual({ villageFx: false }).villageFx).toBe(false);
   });
 });

@@ -1937,6 +1937,7 @@ onMounted(async () => {
   game.lampStorm = () => effects().lampStorm;
   game.animSpeed = () => effects().animSpeed;
   game.metallic = () => visual.metallic;
+  game.ambientFx = () => visual.villageFx;
   // Presente recebido enquanto a cena abria: entra agora, ao lado do jogador.
   for (const entry of pendingDigital.values()) {
     if (villagers.some((v) => v.id === entry.id)) continue;
@@ -2401,6 +2402,10 @@ onBeforeUnmount(() => {
           <label class="art-option">
             <input v-model="visual.metallic" type="checkbox" />
             <span>Brilho metálico nos Digital Pokémon (desligue em celular fraco)</span>
+          </label>
+          <label class="art-option">
+            <input v-model="visual.villageFx" type="checkbox" />
+            <span>Efeitos da Vila: ondas, respingos da fonte e raios de sol (desligue em celular fraco)</span>
           </label>
           <button type="button" @click="openDress('player')">Escolher acessório</button>
           <h4>Amigos e pedidos de hoje</h4>
