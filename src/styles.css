@@ -4529,6 +4529,73 @@ body.no-scroll .reward-toasts {
   white-space: nowrap;
 }
 
+.village-ar-controls {
+  position: absolute;
+  z-index: 6;
+  right: 12px;
+  bottom: 18px;
+  left: 12px;
+  max-width: 430px;
+  margin: auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(170, 226, 255, 0.5);
+  border-radius: 16px;
+  background: rgba(8, 28, 41, 0.9);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.36);
+  color: #e7f8ff;
+  pointer-events: auto;
+}
+
+.village-ar-controls p {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+}
+
+.village-ar-controls p span,
+.village-ar-controls small {
+  color: #b9dce9;
+}
+
+.village-ar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.village-ar-actions button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(225, 248, 255, 0.6);
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: #2b8fb5;
+  color: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.village-ar-actions label {
+  display: grid;
+  grid-template-columns: auto minmax(82px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  font-size: 0.78rem;
+}
+
+.village-ar-actions input {
+  width: 100%;
+  accent-color: #8ce5ff;
+}
+
+.village-ar-actions output {
+  min-width: 34px;
+  color: #8ce5ff;
+  font-variant-numeric: tabular-nums;
+}
+
 .village-top {
   position: absolute;
   inset: 8px 8px auto 8px;

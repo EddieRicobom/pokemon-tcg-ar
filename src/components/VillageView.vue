@@ -5,6 +5,7 @@ import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
 import { visual } from '../app/visual-settings';
+import { villageArSettings } from '../app/village-ar-settings';
 import { attachLiveVillage, detachLiveVillage, syncCoins } from '../app/wallet';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
@@ -13,6 +14,7 @@ import { handleDialogEscape, isGameKeyboardControl } from '../app/game-keyboard'
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { loadChunk } from '../app/stale-build';
 import type { RunningVillageAr } from '../ar/start-village';
+import { VILLAGE_SCALE_RANGE, normalizeVillageScale } from '../core/village/ar-diorama';
 import { canNickname, displayName, MAX_NICK_LEN, nickIdeas, nicknameOf, setNickname } from '../core/village/nickname';
 import { minimapPixels, minimapTileAt } from '../village/minimap';
 import { loadTrainerAtlas } from '../village/trainer-atlas';
@@ -97,6 +99,8 @@ const backpackOpen = ref(false);
 type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
 const tab = ref<Tab>('inicio');
 const arActive = ref(false);
+const arAnchored = ref(false);
+const arScale = ref(villageArSettings.scale);
 let arStream: MediaStream | null = null;
 let villageAr: RunningVillageAr | null = null;
 
@@ -116,6 +120,7 @@ async function toggleArBeta(): Promise<void> {
     arActive.value = true;
     const { startVillageAr } = await loadChunk(() => import('../ar/start-village'));
     villageAr = await startVillageAr({ video, canvas: arCanvas, container: wrap, villageCanvas: canvasEl.value! });
+    villageAr.setScale(arScale.value);
   } catch (error) {
     villageAr?.stop();
     villageAr = null;
@@ -127,7 +132,7 @@ async function toggleArBeta(): Promise<void> {
     say(error instanceof CameraError ? error.message : 'Não foi possível abrir a câmera.', 5000);
     return;
   }
-  say('Aponte para baixo, para uma mesa ou chão, e toque em Posicionar Vila. A posição é estimada pelos sensores.', 7000);
+  say('Aponte para baixo e toque na tela para ancorar a Vila. Gire e incline o celular para observar a cidade.', 7000);
   sheet.value = null;
 }
 
@@ -135,7 +140,33 @@ function placeVillageAr(): void {
   const result = villageAr?.recenter();
   if (!result) return;
   if (!result.ok) return say(result.message, 4500);
-  say(result.moved ? 'Vila posicionada um pouco mais longe para caber inteira.' : 'Vila posicionada. Caminhe em volta para observá-la.', 4500);
+  arAnchored.value = true;
+  say(result.moved ? 'Âncora criada na distância mínima para a Vila caber.' : 'Âncora criada. Gire e incline o celular para observar a cidade.', 4500);
+}
+
+function placeVillageArAt(event: PointerEvent): void {
+  if (!arActive.value || !villageAr || !wrapEl.value) return;
+  const bounds = wrapEl.value.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) return;
+  const result = villageAr.placeAt(((event.clientX - bounds.left) / bounds.width) * 2 - 1, -((event.clientY - bounds.top) / bounds.height) * 2 + 1);
+  if (!result.ok) return say(result.message, 4500);
+  arAnchored.value = true;
+  say(result.moved ? 'Âncora movida para uma distância segura.' : 'Âncora movida para o ponto escolhido.', 3000);
+}
+
+function bringVillageCloser(): void {
+  const result = villageAr?.bringCloser();
+  if (!result) return;
+  if (!result.ok) return say(result.message, 4500);
+  arAnchored.value = true;
+  say(result.moved ? 'Vila aproximada. Diminua o zoom para trazê-la ainda mais perto.' : 'A Vila já está na distância mais próxima para este zoom.', 3500);
+}
+
+function setVillageArScale(value: number): void {
+  const next = normalizeVillageScale(value);
+  arScale.value = next;
+  villageArSettings.scale = next;
+  villageAr?.setScale(next);
 }
 
 function stopArBeta(): void {
@@ -144,6 +175,7 @@ function stopArBeta(): void {
   stopCamera(arVideoEl.value, arStream);
   arStream = null;
   arActive.value = false;
+  arAnchored.value = false;
   game?.setDioramaView(false);
   if (wrapEl.value) game?.resize(wrapEl.value.clientWidth, wrapEl.value.clientHeight);
 }
@@ -1979,10 +2011,10 @@ onBeforeUnmount(() => {
         class="village-canvas"
         :class="{ 'diorama-source': arActive }"
         aria-label="Vila: arraste em qualquer lugar para andar; toque num lugar para ir até ele"
-        @pointerdown.prevent="joyDown"
-        @pointermove.prevent="joyMove"
-        @pointerup.prevent="joyUp"
-        @pointercancel.prevent="joyUp"
+        @pointerdown.prevent="arActive ? placeVillageArAt($event) : joyDown($event)"
+        @pointermove.prevent="arActive ? undefined : joyMove($event)"
+        @pointerup.prevent="arActive ? undefined : joyUp($event)"
+        @pointercancel.prevent="arActive ? undefined : joyUp($event)"
         @contextmenu.prevent
       ></canvas>
       <canvas ref="arCanvasEl" class="village-ar-canvas" :class="{ active: arActive }" aria-hidden="true"></canvas>
@@ -2009,11 +2041,22 @@ onBeforeUnmount(() => {
         <span>{{ clock }}</span>
         <span class="village-coins" aria-label="Moedas"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
         <span class="village-house" :title="`Cidade: ${stage.name}`">Nv {{ level }}</span>
-        <button v-if="arActive" type="button" class="village-ar-badge" @click="placeVillageAr">Posicionar Vila</button>
+        <button v-if="arActive" type="button" class="village-ar-badge" @click="placeVillageAr">{{ arAnchored ? 'Reposicionar' : 'Ancorar à frente' }}</button>
         <button v-if="arActive" type="button" class="village-ar-badge" aria-label="Sair da Vila em AR" @click="stopArBeta">AR · sair</button>
         <button type="button" class="village-menu-btn" :aria-label="unread > 0 ? `Abrir o menu da Vila (${unread} momento(s) novo(s) no Diário)` : 'Abrir o menu da Vila'" @click="openMenu">☰ Menu</button>
         <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
       </header>
+      <section v-if="arActive" class="village-ar-controls" aria-label="Controles do diorama AR">
+        <p><strong>{{ arAnchored ? 'Âncora ativa' : 'Escolha um ponto no chão' }}</strong><span>Toque no chão para mover a cidade.</span></p>
+        <div class="village-ar-actions">
+          <button type="button" @click="bringVillageCloser">Trazer perto</button>
+          <label>Zoom
+            <input :value="arScale" type="range" :min="VILLAGE_SCALE_RANGE.min" :max="VILLAGE_SCALE_RANGE.max" step="0.02" aria-label="Zoom da Vila em AR" @input="setVillageArScale(Number(($event.target as HTMLInputElement).value))" />
+            <output>{{ Math.round(arScale * 100) }}%</output>
+          </label>
+        </div>
+        <small>A âncora fica no chão enquanto esta câmera estiver aberta. O zoom é lembrado neste aparelho.</small>
+      </section>
       <p v-if="loading" class="village-loading">{{ loading }}</p>
       <div v-else-if="recapScene" class="village-recap" role="dialog" aria-modal="true" aria-label="Capítulo diário da Vila">
         <article :key="recapIndex" class="village-recap-card">
