@@ -53,7 +53,7 @@ Quem faz o quê, em linhas gerais: `src/recognition/` reconhece; `src/app/` orqu
 - `external-verification.yml`: mede o que o ambiente de desenvolvimento não alcança (TCGdex e sprites).
 - Passo manual único: **Settings → Pages → Source: GitHub Actions**.
 - Medido no CI em 2026-10-11: o índice do catálogo tem 220 coleções e 23.736 cartas (568 kB, 155 kB com gzip).
-- **Backup completo** (`src/app/backup.ts`, tela do Treinador): junta num JSON todas as chaves do `localStorage` que são progresso/ajuste do jogador (`BACKUP_KEYS`) e permite baixar/importar — sem servidor, tudo no aparelho. Fica de fora de propósito: o cache de cartas escaneadas e alvos de AR (IndexedDB, grande e refeito escaneando de novo) e qualquer cache de PokeAPI/TCGdex (se refaz sozinho). Importar é uma restauração completa (chave ausente no backup é removida) e recarrega a página no fim, porque vários stores em memória (`trainer-store.ts` e afins) só leem o `localStorage` na inicialização.
+- **Backup completo** (`src/app/backup.ts`, tela do Treinador): guarda progresso e ajustes do `localStorage`, cartas reconhecidas do IndexedDB e seus arquivos no Cache Storage (referências, sprites e alvos MindAR) num ZIP com manifesto JSON. Dados de API que podem ser refeitos continuam fora. Importar substitui o estado local coberto pelo arquivo e recarrega a página; backups JSON antigos continuam importáveis.
 
 ## Busca pela ilustração (reserva automática)
 

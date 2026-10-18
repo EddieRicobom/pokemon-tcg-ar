@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyBackup, BACKUP_FORMAT, BACKUP_KEYS, backupFileName, buildBackup, parseBackup, serializeBackup } from './backup';
+import { applyBackup, BACKUP_FORMAT, BACKUP_KEYS, backupFileName, buildBackup, parseBackup, parseBackupZip, serializeBackup, serializeBackupZip } from './backup';
 
 const NOW = '2026-10-16T12:00:00.000Z';
 
@@ -29,7 +29,13 @@ describe('backup — exportar', () => {
   it('serializa como JSON legível e com um nome de arquivo datado', () => {
     const file = buildBackup(localStorage, NOW);
     expect(() => JSON.parse(serializeBackup(file))).not.toThrow();
-    expect(backupFileName(new Date(NOW))).toBe('pokemon-tcg-ar-backup-2026-10-16.json');
+    expect(backupFileName(new Date(NOW))).toBe('pokemon-tcg-ar-backup-2026-10-16.zip');
+  });
+
+  it('empacota o manifesto e recupera o backup ZIP', () => {
+    const file = buildBackup(localStorage, NOW);
+    const parsed = parseBackupZip(serializeBackupZip(file));
+    expect(parsed).toEqual(file);
   });
 });
 
