@@ -14,15 +14,18 @@ describe('villageSummary', () => {
     state.diary = [moment(10, ['+5 amizade (Pikachu e Eevee)'])];
     state.requests = { day: '2026-10-17', items: [{ id: 'r', day: '2026-10-17', kind: 'talk', title: 'Conversa', detail: 'Fale com Pikachu', location: 'Praça', targetId: 'a', targetName: 'Pikachu', rewardCoins: 10, rewardItem: 'flor', rewardQty: 1, rewardFriend: 3, done: false }] };
     const summary = villageSummary(state, [{ id: 'a', name: 'Pikachu' }, { id: 'b', name: 'Eevee' }], 20);
-    expect(summary.happened[0]).toContain('Piquenique');
-    expect(summary.changed[0]).toContain('+5 amizade');
-    expect(summary.possible[0]).toContain('Fale com Pikachu');
+    expect(summary.happened[0]?.text).toContain('Piquenique');
+    expect(summary.happened[0]?.momentId).toBe('m-10');
+    expect(summary.changed[0]?.text).toContain('+5 amizade');
+    expect(summary.changed[0]?.pokemonId).toBe('a');
+    expect(summary.possible[0]?.text).toContain('Fale com Pikachu');
+    expect(summary.possible[0]?.requestId).toBe('r');
   });
   it('não inventa pistas quando não há fatos disponíveis', () => {
     const summary = villageSummary(emptyVillage(1, { x: 1, y: 1 }), [], 20);
     expect(summary.happened).toEqual([]);
-    expect(summary.changed[0]).toContain('Ainda não');
-    expect(summary.possible[0]).toContain('Nenhum pedido');
+    expect(summary.changed[0]?.text).toContain('Ainda não');
+    expect(summary.possible[0]?.text).toContain('Nenhum pedido');
   });
   it('faz uma memória persistente influenciar a fala do Pokémon', () => {
     const state = emptyVillage(1, { x: 1, y: 1 });

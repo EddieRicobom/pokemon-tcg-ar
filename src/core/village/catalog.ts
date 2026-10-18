@@ -255,6 +255,10 @@ export const ITEMS: readonly ItemDef[] = [
   f('casinha', 'Casinha de Pokémon', 'Pokémon', { recipe: { tabua: 5, tijolo: 2 }, price: 300, sell: 70 }),
   f('roda-giratoria', 'Roda de exercício', 'Pokémon', { recipe: { ferro: 3, tabua: 2 }, price: 230, sell: 52, frames: 2 }),
   f('pelucia-gigante', 'Pelúcia gigante', 'Pokémon', { recipe: { la: 6, tecido: 4 }, price: 0, sell: 130 }),
+  f('banco-praca', 'Banco da praça', 'Jardim', { recipe: { tabua: 4, ferro: 1 }, price: 150, sell: 36 }),
+  f('fonte-mini', 'Fonte de jardim', 'Jardim', { recipe: { pedra: 8, vidro: 2 }, price: 240, sell: 58, frames: 2 }),
+  f('espantalho', 'Espantalho colorido', 'Jardim', { recipe: { madeira: 3, tecido: 2, flor: 2 }, price: 120, sell: 28 }),
+  f('placa-bemvindo', 'Placa de boas-vindas', 'Jardim', { recipe: { tabua: 3, flor: 1 }, price: 95, sell: 22 }),
 
   // Acessórios: cabeça
   a('chapeu-palha', 'Chapéu de palha', 'both', 'hat', 120),

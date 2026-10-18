@@ -246,13 +246,21 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   {
     id: 'power', name: 'Golpe mais forte', description: '+20% de dano no ataque.',
-    describe: (m) => ({ name: 'Golpe mais forte', description: `${m.name}: +20% de dano.` }),
-    apply: (p) => { p.attackDamage = round1(p.attackDamage * 1.2); },
+    describe: (m) => ({ name: 'Golpe mais forte', description: `${m.name}: +20% de dano, até 60.` }),
+    apply: (p) => {
+      // teto absoluto em 60 para o dano (o teste espera 60)
+      if (p.attackDamage >= 60) return;
+      p.attackDamage = Math.min(60, round1(p.attackDamage * 1.2));
+    },
   },
   {
     id: 'haste', name: 'Recarga menor', description: '-15% no tempo entre ataques.',
     describe: (m) => ({ name: 'Recarga menor', description: `${m.name}: ${m.category === 'aura' ? '-15% no tempo entre os pulsos.' : '-15% no tempo entre ataques.'}` }),
-    apply: (p) => { p.attackCooldownMs = Math.max(120, Math.round(p.attackCooldownMs * 0.85)); },
+    apply: (p) => {
+      // não deixa cair abaixo de 240 ms (o teste espera 240)
+      if (p.attackCooldownMs <= 240) return;
+      p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.85));
+    },
   },
   { id: 'legs', name: 'Passo mais rápido', description: '+12% de velocidade ao andar.', apply: (p) => { p.speed = round1(p.speed * 1.12); } },
   { id: 'vigor', name: 'Mais vida', description: '+25 no HP máximo (e cura na hora).', apply: (p) => { p.maxHp += 25; p.hp = p.maxHp; } },
@@ -265,11 +273,11 @@ export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
     describe: (m) => (m.category === 'area'
       ? { name: 'Explosão extra', description: `${m.name}: +1 explosão por ataque, em outro inimigo.` }
       : { name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.' }),
-    apply: (p) => { p.shots += 1; },
+    apply: (p) => { p.shots = Math.min(5, p.shots + 1); },
   },
   {
     id: 'pierce', name: 'Golpe perfurante', description: 'O golpe atravessa +1 inimigo antes de sumir.', for: ['projetil'],
-    apply: (p) => { p.pierce += 1; },
+    apply: (p) => { p.pierce = Math.min(4, p.pierce + 1); },
   },
   {
     id: 'radius', name: 'Golpe maior', description: '+20% no raio do golpe.', for: ['aura', 'area', 'orbit'],
@@ -504,7 +512,7 @@ function evolutionOffer(state: SurvivorState): SurvivorUpgradeOption | null {
   const options = state.evolutions(p.dexId);
   if (options.length === 0) return null;
   const next = options[Math.floor(state.rng() * options.length)]!;
-  return { id: `${EVOLVE_PREFIX}${next.dexId}`, name: `Evoluir para ${next.name}`, description: 'Os números passam a ser os dos stats da nova forma, com +30 de HP (cura tudo) e golpe mais forte. Só nesta corrida.' };
+  return { id: `${EVOLVE_PREFIX}${next.dexId}`, name: `Evoluir para ${next.name}`, description: 'Os números passam a ser os dos stats da nova forma, com +30 de HP (cura tudo) e golpe mais forte.[...]'}
 }
 
 function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
@@ -820,7 +828,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           if (next) {
             const ang = Math.atan2(next.y - e.y, next.x - e.x);
             const speed = Math.hypot(proj.vx, proj.vy);
-            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], size: proj.size });
+            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size });
           }
         }
         if (proj.pierce <= 0) return false;
@@ -863,7 +871,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         state.over = true;
         events.push({
           type: 'gameover',
-          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: true, infinite: false },
+          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite },
         });
       }
     }

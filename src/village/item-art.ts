@@ -147,6 +147,9 @@ const FAMILY_DEFAULT: Record<string, Pal> = {
 
 const FURNITURE: Record<string, Furn> = {
   banquinho: (p) => { p.rect(3, 6, 10, 3, WOOD); p.rect(3, 6, 10, 1, WOOD_L); p.rect(4, 9, 2, 6, LEG); p.rect(10, 9, 2, 6, LEG); },
+  'banco-praca': (p) => { p.rect(1, 6, 14, 4, WOOD); p.rect(2, 6, 12, 1, WOOD_L); p.rect(2, 10, 2, 5, LEG); p.rect(12, 10, 2, 5, LEG); p.rect(4, 3, 2, 4, WOOD_D); p.rect(10, 3, 2, 4, WOOD_D); },
+  'fonte-mini': (p, _l, f) => { p.rect(3, 9, 10, 5, STONE); p.rect(2, 8, 12, 2, STONE_L); p.rect(6, 4, 4, 5, STONE); p.rect(5, 3, 6, 2, STONE_L); p.disc(8, 7, 2, 1, f % 2 ? BLUE : GLASS); },
+  'placa-bemvindo': (p) => { p.rect(3, 3, 10, 7, WOOD); p.rect(4, 4, 8, 5, WOOD_L); p.rect(7, 10, 2, 5, LEG); p.rect(5, 6, 6, 1, RED); p.rect(6, 5, 1, 3, RED); p.rect(9, 5, 1, 3, RED); },
   mesa: (p) => { p.rect(1, 5, 14, 4, WOOD); p.rect(1, 5, 14, 1, WOOD_L); p.rect(2, 9, 2, 6, LEG); p.rect(12, 9, 2, 6, LEG); p.rect(6, 3, 4, 2, WHITE); p.px(7, 2, RED); },
   mesinha: (p) => { p.disc(8, 8, 6, 3, WOOD); p.disc(8, 7.5, 5, 2, WOOD_L); p.rect(7, 10, 2, 5, LEG); p.rect(5, 14, 6, 1, LEG); },
   estante: (p) => { p.rect(2, 1, 12, 14, WOOD_D); for (const y of [2, 7, 12]) { p.rect(3, y, 10, 4, 0x4a2e18); for (let x = 3; x < 13; x += 2) p.rect(x, y + 1, 1, 3, [RED, BLUE, GREEN, GOLD, PINK][(x + y) % 5]!); } },
