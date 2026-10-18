@@ -109,8 +109,8 @@ const rosterCustom = computed(() => rosterRows.value.some((r) => slotOf(r.id) !=
 const DENSE_BARS = 12;
 const SLOT_CHOICES: { slot: RosterSlot; label: string; title: string }[] = [
   { slot: 'auto', label: 'Sorteio', title: 'Entra na luta e o lado é sorteado' },
-  { slot: 0, label: 'V', title: 'Equipe Vermelha' },
-  { slot: 1, label: 'A', title: 'Equipe Azul' },
+  { slot: 0, label: 'Vermelha', title: 'Equipe Vermelha' },
+  { slot: 1, label: 'Azul', title: 'Equipe Azul' },
   { slot: 'out', label: 'Fora', title: 'Fica de fora da luta' },
 ];
 const loadingCreatures = ref(false);
@@ -1039,7 +1039,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="showModes && cameraOn && !battling" class="stage-sheet" role="dialog" aria-label="Modo de batalha" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
-            <strong>Modo de batalha</strong>
+            <strong>Equipe de batalha</strong>
             <button type="button" class="link" @click="showModes = false">Fechar</button>
           </header>
           <div class="mode-list">
@@ -1064,10 +1064,10 @@ onBeforeUnmount(() => {
           </p>
           <div v-if="rosterRows.length > 0" class="roster">
             <div class="roster-head">
-              <strong>Escalação</strong>
+              <strong>Equipe desta batalha</strong>
               <button v-if="rosterCustom" type="button" class="link" @click="resetRoster">Tudo em sorteio</button>
             </div>
-            <p class="hint">Escolha a equipe de cada um (V = Vermelha, A = Azul) ou deixe de fora. Quem ficar em sorteio completa os lados. No 3x3 cada lado usa 3.</p>
+            <p class="hint">Escolha Vermelha ou Azul para cada Pokémon, ou Fora para deixá-lo só passeando na Caixa. Quem ficar em sorteio completa os lados. No 3x3 cada lado usa 3.</p>
             <ul class="roster-list">
               <li v-for="row in rosterRows" :key="row.id" :class="{ out: roster[row.id] === 'out' }">
                 <span class="roster-who">
@@ -1137,7 +1137,7 @@ onBeforeUnmount(() => {
         <div v-if="cameraOn" class="stage-bar">
           <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
           <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters; showTeam = false; showAdjust = false; showModes = false" />
-          <StageButton v-if="!battling" icon="team" label="Turma" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false; showModes = false" />
+          <StageButton v-if="!battling" icon="team" label="Quem passeia" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false; showModes = false" />
           <StageButton v-if="!battling" icon="sliders" label="Ajustes" :active="showAdjust" @click="showAdjust = !showAdjust; showFilters = false; showTeam = false; showModes = false" />
           <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
           <StageButton v-if="!battling" icon="modes" :label="BATTLE_MODE_LABELS_PT[battleMode]" :active="showModes" @click="showModes = !showModes; showFilters = false; showTeam = false; showAdjust = false" />

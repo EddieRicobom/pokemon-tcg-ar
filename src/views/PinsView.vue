@@ -13,6 +13,7 @@ import {
   advanceRound, afterShot, affordable, aliveOf, arenaLimit, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE,
   nextLimit, outcomeOf, pinFromSpec, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
 } from '../core/pins';
+import { randomOpponents } from '../core/pin-opponents';
 import { planEnemyShot } from '../core/pin-ai';
 import { MARK_HINT_PT, TYPE_FOR_TERRAIN } from '../core/pin-terrain';
 import { REPLAY_SPEED, ReplayRecorder } from '../core/pin-replay';
@@ -48,6 +49,7 @@ const TEAM_COLORS = ['#4da3ff', '#ff5d5d'] as const;
 
 const phase = ref<Phase>('setup');
 // ---- PvP (contra um amigo, cada um no seu celular)
+const randomEnemy = ref(true);
 const mode = ref<'cpu' | 'friend'>('cpu');
 const peer = shallowRef<PvpPeer | null>(null);
 const frame = ref<Frame>('host');
@@ -126,7 +128,7 @@ const shown = computed(() => {
   const q = search.value.trim().toLowerCase();
   return usable.value.filter((c) => !q || `${c.name} ${c.setName}`.toLowerCase().includes(q)).slice(0, 80);
 });
-const blocker = computed(() => setupBlocker(setup.value));
+const blocker = computed(() => setup.value.mine.length === 0 ? 'Escolha pelo menos 1 pin seu.' : randomEnemy.value ? null : setupBlocker(setup.value));
 
 function specOf(card: CachedCard): PinSpec {
   const info = infos.value[card.id];
@@ -223,7 +225,7 @@ function choose(card: CachedCard, role: Role | null): void {
 
 function roleShown(card: CachedCard): Role | null {
   const role = roleOf(setup.value, card.id);
-  return mode.value === 'friend' && role === 'enemy' ? null : role;
+  return (mode.value === 'friend' || randomEnemy.value) && role === 'enemy' ? null : role;
 }
 
 function setDifficulty(d: Difficulty): void {
@@ -249,6 +251,13 @@ async function start(): Promise<void> {
   }
   phase.value = 'loading';
   notice.value = '';
+  if (randomEnemy.value) {
+    await loadInfos(usable.value);
+    if (disposed) return;
+    const mine = setup.value.mine.map((id) => specOf(cards.value.find((c) => c.id === id)!));
+    const opponents = randomOpponents(mine, usable.value.map(specOf), setup.value.difficulty, rng);
+    setup.value = { ...setup.value, enemy: opponents.map((p) => p.id) };
+  }
   const chosen = [...setup.value.mine, ...setup.value.enemy].map((id) => cards.value.find((c) => c.id === id)).filter((c): c is CachedCard => !!c);
   await Promise.all(chosen.map((c) => loadInfo(c)));
   // Miniaturas de quem está fora da primeira leva.
@@ -260,7 +269,7 @@ async function start(): Promise<void> {
   }
   if (disposed) return;
   const byId = (id: string) => cards.value.find((c) => c.id === id)!;
-  world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => specOf(byId(id))) }, rng, { marks: setup.value.marks, shrink: setup.value.shrink });
+  world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => { const spec = specOf(byId(id)); const enemyId = `cpu:${id}`; thumbs.value[enemyId] = thumbs.value[id] ?? ''; return { ...spec, id: enemyId }; }) }, rng, { marks: setup.value.marks, shrink: setup.value.shrink });
   await beginMatch('aim');
 }
 
@@ -1402,7 +1411,7 @@ function setMarks(on: boolean): void {
       </p>
 
       <section v-if="mode === 'cpu' || peer" class="pn-card pn-teams" aria-label="Equipes">
-        <div v-for="side in sideRows" :key="side.role" class="pn-side" :class="side.role">
+        <div v-for="side in sideRows.filter((s) => !(randomEnemy && mode === 'cpu' && s.role === 'enemy'))" :key="side.role" class="pn-side" :class="side.role">
           <p class="pn-side-name">{{ side.label }} <b>{{ side.slots.filter(Boolean).length }}/{{ side.slots.length }}</b></p>
           <ul class="pn-slots">
             <li v-for="(slot, i) in side.slots" :key="i">
@@ -1415,6 +1424,10 @@ function setMarks(on: boolean): void {
               <span v-else class="pn-slot empty" aria-hidden="true"></span>
             </li>
           </ul>
+        </div>
+        <div v-if="mode === 'cpu'">
+          <label><input v-model="randomEnemy" type="checkbox" /> Sortear adversários a cada partida</label>
+          <p class="hint">O sorteio usa os Pokémon disponíveis no aparelho, inclusive espécies da sua equipe. No Difícil, tenta equilibrar quantidade e força total com a sua equipe. Dados ausentes usam os valores neutros indicados nos pins.</p>
         </div>
         <div v-if="mode === 'cpu'" class="diff" role="group" aria-label="Dificuldade do adversário">
           <button v-for="d in DIFFICULTIES" :key="d" type="button" :class="{ on: setup.difficulty === d }" :aria-pressed="setup.difficulty === d" @click="setDifficulty(d)">{{ DIFFICULTY_LABELS_PT[d] }}</button>
@@ -1445,7 +1458,7 @@ function setMarks(on: boolean): void {
               </span>
               <span class="row-roles" role="group" :aria-label="`Papel de ${card.name}`">
                 <button type="button" class="r-mine" :class="{ on: roleShown(card) === 'mine' }" :aria-pressed="roleShown(card) === 'mine'" title="Seu pin" @click="choose(card, roleShown(card) === 'mine' ? null : 'mine')">Meu</button>
-                <button v-if="mode === 'cpu'" type="button" class="r-enemy" :class="{ on: roleShown(card) === 'enemy' }" :aria-pressed="roleShown(card) === 'enemy'" title="Adversário" @click="choose(card, roleShown(card) === 'enemy' ? null : 'enemy')">Inimigo</button>
+                <button v-if="mode === 'cpu' && !randomEnemy" type="button" class="r-enemy" :class="{ on: roleShown(card) === 'enemy' }" :aria-pressed="roleShown(card) === 'enemy'" title="Adversário" @click="choose(card, roleShown(card) === 'enemy' ? null : 'enemy')">Inimigo</button>
               </span>
             </li>
           </ul>

@@ -255,12 +255,15 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <p v-if="bulk" class="message" role="status">Carregando {{ bulk.done }}/{{ bulk.count }} — {{ bulk.text }}</p>
     <p v-if="message" class="message" role="status">{{ message }}</p>
 
+    <p class="message">Caixas guardam sua coleção. A turma é o grupo de até 40 Pokémon que passeia na Caixa AR. Depois, em Equipe de batalha, você escolhe quem luta.</p>
+    <p><a :href="routeHref('caixa')">Abrir Caixa AR e montar a equipe de batalha →</a></p>
     <div v-if="teamRows.length > 0" class="team-strip" role="group" aria-label="Turma da Caixa">
       <strong>Turma da Caixa ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
       <ul>
         <li v-for="row in teamRows" :key="row.id">
           <img v-if="row.thumb || row.icon" :src="row.thumb ?? row.icon" :alt="row.name" width="40" height="56" :class="{ sprite: !row.thumb }" />
           <span>{{ row.name }}</span>
+          <button type="button" class="link" :aria-label="`Tirar ${row.name} da turma`" @click="toggleTeam(row)">Tirar da turma</button>
           <CardMarks :card="row" compact />
         </li>
       </ul>
@@ -269,7 +272,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
 
     <div v-if="rows.length > 0" class="filter-bar" role="search">
       <div class="chips view-switch" role="group" aria-label="Modo de exibição">
-        <button type="button" :class="{ active: viewMode === 'box' }" :aria-pressed="viewMode === 'box'" @click="viewMode = 'box'">Box</button>
+        <button type="button" :class="{ active: viewMode === 'box' }" :aria-pressed="viewMode === 'box'" @click="viewMode = 'box'">Caixas da coleção</button>
         <button type="button" :class="{ active: viewMode === 'lista' }" :aria-pressed="viewMode === 'lista'" @click="viewMode = 'lista'">Lista</button>
         <button type="button" :class="{ active: viewMode === 'grade' }" :aria-pressed="viewMode === 'grade'" @click="viewMode = 'grade'">Grade</button>
       </div>

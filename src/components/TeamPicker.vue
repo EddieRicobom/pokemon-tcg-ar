@@ -67,6 +67,7 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
 
 <template>
   <div class="team-picker">
+    <p class="hint">Toque para adicionar ou tirar da turma. A turma passeia na Caixa AR; em Equipe de batalha você decide quem luta. Tirar daqui mantém o Pokémon na coleção.</p>
     <p class="meta" role="status">
       Turma: {{ team.ids.length }}/{{ TEAM_SIZE }}
       <template v-if="team.auto && team.ids.length > 0"> (automática: as mais recentes)</template>
@@ -87,6 +88,7 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
             <span class="team-name">{{ row.name }}</span>
             <CardMarks :card="row" compact />
             <small>{{ row.setName }}</small>
+            <small>{{ team.ids.includes(row.id) ? '✓ Na turma · tocar para tirar' : '+ Adicionar à turma' }}</small>
             <span v-if="team.ids.includes(row.id)" class="team-slot" aria-hidden="true">{{ team.ids.indexOf(row.id) + 1 }}</span>
           </button>
         </li>
