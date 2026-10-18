@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { applyBackup, backupFileName, buildBackup, parseBackup, serializeBackup } from '../app/backup';
+import { applyFullBackup, backupFileName, buildFullBackup, parseBackup, parseBackupZip, serializeBackupZip } from '../app/backup';
 import type { BackupFile } from '../app/backup';
 import { routeFlags, routeHref } from '../app/route';
 import { coins } from '../app/wallet';
@@ -74,16 +74,22 @@ const backupStatus = ref<{ kind: 'erro' | 'ok'; text: string } | null>(null);
 const pendingImport = ref<BackupFile | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 
-function exportBackup(): void {
-  const file = buildBackup(localStorage);
-  const blob = new Blob([serializeBackup(file)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = backupFileName();
-  a.click();
-  URL.revokeObjectURL(url);
-  backupStatus.value = { kind: 'ok', text: 'Backup baixado.' };
+async function exportBackup(): Promise<void> {
+  backupStatus.value = null;
+  try {
+    const file = await buildFullBackup(localStorage);
+    const zip = serializeBackupZip(file);
+    const blob = new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = backupFileName();
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    backupStatus.value = { kind: 'ok', text: `Backup completo baixado (${file.collection?.cards.length ?? 0} cartas guardadas).` };
+  } catch {
+    backupStatus.value = { kind: 'erro', text: 'Não consegui ler todos os dados do aparelho. Confira o espaço e tente novamente.' };
+  }
 }
 
 function pickImportFile(): void {
@@ -96,8 +102,9 @@ async function onImportFileChosen(e: Event): Promise<void> {
   const picked = input.files?.[0] ?? null;
   input.value = '';
   if (!picked) return;
-  const text = await picked.text();
-  const parsed = parseBackup(text);
+  const parsed = picked.name.toLowerCase().endsWith('.zip')
+    ? parseBackupZip(new Uint8Array(await picked.arrayBuffer()))
+    : parseBackup(await picked.text());
   if (parsed === 'json-invalido') {
     backupStatus.value = { kind: 'erro', text: 'Esse arquivo não é um JSON válido.' };
     return;
@@ -114,13 +121,17 @@ function backupDateLabel(iso: string): string {
   return Number.isNaN(d.getTime()) ? 'data desconhecida' : d.toLocaleString('pt-BR');
 }
 
-function confirmImport(): void {
+async function confirmImport(): Promise<void> {
   if (!pendingImport.value) return;
-  applyBackup(pendingImport.value, localStorage);
-  pendingImport.value = null;
+  try {
+    await applyFullBackup(pendingImport.value, localStorage);
+    pendingImport.value = null;
   // Vários dados (Treinador, perfil…) ficam em memória desde que o app abriu; a forma simples e segura de
   // garantir que tudo reflita o backup importado é recarregar a página — ela lê tudo de novo do zero.
   window.location.reload();
+  } catch {
+    backupStatus.value = { kind: 'erro', text: 'Não consegui restaurar todos os dados. O aparelho pode estar sem espaço.' };
+  }
 }
 
 function cancelImport(): void {
@@ -255,8 +266,9 @@ function cancelImport(): void {
       </div>
       <p v-if="backupStatus" class="note" :class="backupStatus.kind">{{ backupStatus.text }}</p>
       <div v-if="pendingImport" class="card backup-confirm">
-        <p><strong>Importar este backup vai substituir todo o progresso e os ajustes deste aparelho.</strong></p>
+        <p><strong>Importar este backup vai substituir os dados, as cartas guardadas e os ajustes deste aparelho.</strong></p>
         <p class="note">Backup de {{ backupDateLabel(pendingImport.exportedAt) }}.</p>
+        <p v-if="!pendingImport.collection" class="note">Este backup JSON antigo não contém cartas escaneadas; as cartas que já estão neste aparelho serão mantidas.</p>
         <div class="backup-actions">
           <button type="button" class="primary" @click="confirmImport">Confirmar e substituir</button>
           <button type="button" @click="cancelImport">Cancelar</button>
