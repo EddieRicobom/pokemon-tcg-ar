@@ -52,12 +52,12 @@ onBeforeUnmount(() => {
       <p v-if="state === 'loading'" class="bc-msg">Abrindo a mochila…</p>
       <p v-else-if="state === 'error'" class="bc-msg">Não deu para mostrar a mochila 3D neste aparelho. Os itens continuam disponíveis na mochila comum.</p>
     </div>
-      <p class="bc-hint">Os itens aparecem com os sprites da mochila. Apoie o celular na posição desejada e calibre antes de incliná-lo; o contato produz um ASMR suave.</p>
+    <p class="bc-hint">Uma mochila de aventura aberta, com bolso frontal, alças e itens à mostra. Incline o celular ou toque em “Chacoalhar” para ouvir o tecido e os pequenos toques dos itens.</p>
     <div class="bc-actions">
       <button type="button" :disabled="state !== 'ready'" @click="running?.shake()">Chacoalhar</button>
         <button type="button" :disabled="state !== 'ready'" @click="running?.calibrate()">Calibrar giroscópio</button>
         <button type="button" :disabled="state !== 'ready'" @click="running?.recenter()">Centralizar</button>
-      <label class="bc-fx"><input v-model="visual.metallic" type="checkbox" /> Reflexos e animações</label>
+      <label class="bc-fx"><input v-model="visual.metallic" type="checkbox" /> Brilho e balanço suave</label>
     </div>
   </div>
 </template>
