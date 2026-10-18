@@ -4,6 +4,13 @@ Legenda: ✅ feito e coberto por testes automatizados / CI · 🔶 feito, **falt
 
 Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado 🔶 passou nos testes e no Chromium com câmera falsa (GL por software), mas **nenhuma etapa foi vista num celular de verdade**. O roteiro está em [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
 
+## Vila: loja, itens e casa (18/10/2026)
+
+- A loja deixou de desenhar três guarda-sóis como fachada quando o atlas carregava: usa o recorte completo da `General Store`, com reserva em pixel art só quando o atlas não está disponível.
+- A coleção ganhou 17 móveis de vida cotidiana com arte própria: sofá nuvem, mesa de chá, estante de bichinhos, gacha, luminária de lava, toca-discos, cabideiro, monstera, máquina de costura, biombo, cama e arranhador de Pokémon, bancos naturais, arco de flores, varal e caixa de correio rosa.
+- A casa construída abre um interior persistente de 7×5. Parede, piso e a posição de cada móvel são salvos separadamente do quintal; tocar em um móvel o devolve à mochila. Saves antigos recebem uma sala vazia e válida.
+- Verificação local: `vue-tsc`, `tsc` e 39 testes de Vila/atlas passaram; o CI do GitHub também confere o build e o `dist` antes do deploy.
+
 ## Vila: abertura e eventos (18/10/2026)
 
 - Abertura diária em capítulos, com falas e resultados reais do Diário e a última visita lendária; pode ser pulada e não se repete na mesma data local. Sem registros novos, informa isso explicitamente.

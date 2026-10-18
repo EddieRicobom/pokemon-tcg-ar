@@ -13,6 +13,8 @@ import type { LegendaryState } from './legendary';
 import { emptyWorldProgress, normalizeWorldProgress, weeklyModifiers } from './world-progress';
 import type { DiscoveryState, Expedition, WeeklyState } from './world-progress';
 import type { VillageRequest } from './requests';
+import { emptyHomeInterior, normalizeHomeInterior } from './home-interior';
+import type { HomeInterior } from './home-interior';
 
 /**
  * A vida na Vila: inventário, coleta (madeira, pedra, frutas, flores, conchas), a casa em níveis, móveis que você
@@ -73,6 +75,8 @@ export interface VillageState {
   inventory: Partial<Record<ItemId, number>>;
   house: number;
   placed: { x: number; y: number; item: FurnitureId }[];
+  /** Decoração interna da casa do jogador. Não ocupa blocos da Vila. */
+  homeInterior: HomeInterior;
   friends: Record<string, Friendship>;
   /** Último dia em que cada bloco foi coletado ("x,y" → dia). */
   harvested: Record<string, string>;
@@ -137,7 +141,7 @@ export interface Crop {
 
 export function emptyVillage(seed: number, spawn: { x: number; y: number }): VillageState {
   return {
-    v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
+    v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [] },
     digital: emptyDigital(), legendary: emptyLegendary(), recap: { day: '', at: 0 }, ...emptyWorldProgress(),
@@ -175,6 +179,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     inventory: inv,
     house: Number.isInteger(r.house) ? Math.max(0, Math.min(HOUSE_LEVELS.length - 1, r.house!)) : 0,
     placed: Array.isArray(r.placed) ? r.placed.filter((f) => f && Number.isInteger(f.x) && Number.isInteger(f.y) && FURNITURE_IDS.includes(f.item)).slice(0, 300) : [],
+    homeInterior: normalizeHomeInterior(r.homeInterior),
     friends: r.friends && typeof r.friends === 'object' ? r.friends : {},
     harvested: r.harvested && typeof r.harvested === 'object' ? r.harvested : {},
     follower: typeof r.follower === 'string' ? r.follower : null,
