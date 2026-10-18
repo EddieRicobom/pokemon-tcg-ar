@@ -23,6 +23,7 @@ import type { DecodedGif } from '../core/gif';
 import type { Dir } from '../core/village/actors';
 import { loadDexNames } from './dex-names';
 import { dataCardIdFor } from './digital-members';
+import { cardJourneys, evolvedBattleCardId } from './card-evolution-store';
 import { loadVillage } from './village-store';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import type { SpeciesRef } from '../core/village/digital';
@@ -227,6 +228,8 @@ export async function getPipeline(): Promise<RecognitionPipeline> {
 /** Carrega, em paralelo, atributos/golpes (PokéAPI) e ataques da carta (TCGdex) para o painel de AR. */
 /** Digital Pokémon batalham com os ataques da carta real de origem (ver `app/digital-members.ts`). */
 function dataCardId(cardId: string): string {
+  const evolved = evolvedBattleCardId(cardId);
+  if (evolved) return evolved;
   try {
     return dataCardIdFor(cardId, loadVillage().digital);
   } catch {
@@ -235,6 +238,7 @@ function dataCardId(cardId: string): string {
 }
 
 export function loadBattle(cardId: string, dexId: number | undefined, onPart: Parameters<typeof loadBattleData>[2]): Promise<void> {
+  dexId = cardJourneys.value[cardId]?.dexId ?? dexId;
   let storage: Storage | null = null;
   try {
     storage = window.localStorage;
@@ -246,6 +250,7 @@ export function loadBattle(cardId: string, dexId: number | undefined, onPart: Pa
 
 /** O que o Pin Mode precisa de um Pokémon: atributos e peso (PokéAPI) e ataques da carta (TCGdex). Cada parte pode faltar. */
 export async function loadPinData(cardId: string, dexId: number | undefined): Promise<{ profile: PokemonProfile | null; card: CardBattleInfo | null }> {
+  dexId = cardJourneys.value[cardId]?.dexId ?? dexId;
   let storage: Storage | null = null;
   try {
     storage = window.localStorage;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { companionCard } from '../app/card-evolution-store';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { clampLayout, DEFAULT_LAYOUT } from '../ar/anchor';
 import { fetchSprite } from '../ar/sprite-source';
@@ -90,7 +91,10 @@ async function open(): Promise<void> {
     if (mine !== run || disposed) return;
     failed.value = prepared.failed.map((f) => ({ name: f.name, reason: f.reason }));
     if (prepared.ready.length === 0) throw new Error('Nenhuma carta da turma ficou pronta para rastrear.');
-    loadedNames.value = new Map(prepared.ready.map((r) => [r.card.id, r.card.name]));
+    loadedNames.value = new Map(prepared.ready.map((r) => {
+      const companion = companionCard(r.card);
+      return [r.card.id, companion === r.card ? r.card.name : `${companion.name} (carta de ${r.card.name})`];
+    }));
     // <canvas> novo a cada sessão: contexto WebGL limpo.
     canvasKey.value++;
     await nextTick();
@@ -103,7 +107,12 @@ async function open(): Promise<void> {
       video: videoEl.value,
       canvas: canvasEl.value,
       container: stageEl.value,
-      cards: prepared.ready.map((r) => ({ cardId: r.card.id, name: r.card.name, dexId: spriteIdOf(r.card), shiny: isShiny(r.card), target: r.target, cachedSprite: r.cachedSprite })),
+      cards: prepared.ready.map((r) => {
+        const companion = companionCard(r.card);
+        const evolved = companion !== r.card;
+        return { cardId: r.card.id, name: companion.name, dexId: spriteIdOf(companion), shiny: isShiny(r.card), target: r.target, cachedSprite: evolved ? null : r.cachedSprite, evolved };
+      }),
+      evolutionFx: () => visual.evolutionFx && !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       fetchSprite: (dexId, shiny) => fetchSprite(dexId, undefined, { shiny }),
       onState: (s) => {
         if (mine === run) state.value = s;

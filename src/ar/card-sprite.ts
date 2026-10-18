@@ -14,6 +14,8 @@ import { contentBounds } from '../village/local-sprite';
 import type { SpriteLayout, SpritePlacement } from './anchor';
 import { makePlaceholder } from './placeholder';
 import { ShinyAura } from './shiny-aura';
+import { BondArrival } from './bond-arrival';
+import { bondArrivalAt } from '../core/bond-arrival';
 import { adaptiveTauMs, smoothingAlpha } from './smoothing';
 
 
@@ -91,6 +93,12 @@ export class CardSprite {
   mode: SpriteMode = 'empty';
   /** Brilho do Pokémon shiny (halo dourado e estrelinhas), pendurado no plano do sprite; null quando não é shiny. */
   private aura: ShinyAura | null = null;
+  private arrival: BondArrival | null = null;
+  private arrivalStarted: number | null = null;
+  private arrivalDone = false;
+  private arrivalEnabled: () => boolean = () => true;
+  private readonly arrivalScale = new Vector3();
+  private readonly arrivalShift = new Matrix4();
   private gif: DecodedGif | null = null;
   private texture: DataTexture | null = null;
   private aspect = 1;
@@ -154,6 +162,37 @@ export class CardSprite {
 
   get shiny(): boolean {
     return this.aura !== null;
+  }
+
+  /** Só anima quando já existem uma pose rastreada e o sprite real da forma atual. */
+  setEvolved(on: boolean, enabled: () => boolean = () => true): void {
+    this.arrival?.dispose();
+    this.arrival = on ? new BondArrival() : null;
+    this.arrivalStarted = null;
+    this.arrivalDone = false;
+    this.arrivalEnabled = enabled;
+    if (this.arrival) this.group.add(this.arrival.group);
+  }
+
+  private updateArrival(nowMs: number): void {
+    if (!this.arrival || this.arrivalDone) return;
+    if (!this.arrivalEnabled()) {
+      this.arrival.group.visible = false;
+      this.arrivalDone = true;
+      this.applyLayout();
+      return;
+    }
+    if (!this.group.visible || (this.mode !== 'animated' && this.mode !== 'static')) return;
+    this.arrivalStarted ??= nowMs;
+    const elapsed = nowMs - this.arrivalStarted;
+    const f = bondArrivalAt(elapsed);
+    this.applyLayout();
+    this.arrival.update(elapsed, this.mesh.matrix.elements[12]!, this.mesh.matrix.elements[13]!);
+    if (f.done) { this.arrivalDone = true; return; }
+    this.arrivalShift.makeTranslation(0, (f.scale - 1) / 2 + f.lift, 0);
+    this.mesh.matrix.multiply(this.arrivalShift).scale(this.arrivalScale.set(f.scale, f.scale, 1));
+    this.mesh.matrixWorldNeedsUpdate = true;
+    this.arrivalDone = f.done;
   }
 
   setLayout(layout: SpriteLayout): void {
@@ -356,6 +395,7 @@ export class CardSprite {
   /** Atualiza o quadro da animação para o instante `nowMs`. Devolve true se enviou um quadro novo à textura. */
   update(nowMs: number): boolean {
     this.smoothPose(nowMs);
+    this.updateArrival(nowMs);
     this.aura?.update(nowMs);
     if (this.glow.visible) this.glow.material.opacity = this.glowBase * (0.75 + 0.25 * Math.sin(nowMs / 650));
     if (this.mode !== 'animated' || !this.gif || !this.texture) return false;
@@ -429,6 +469,7 @@ export class CardSprite {
   }
 
   dispose(): void {
+    this.arrival?.dispose();
     this.setShiny(false);
     this.releaseTexture();
     this.mesh.geometry.dispose();
