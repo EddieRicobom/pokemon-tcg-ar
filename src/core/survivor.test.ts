@@ -298,7 +298,28 @@ describe('golpes por tipo', () => {
       for (const p of picks) expect(['multishot', 'pierce', 'range']).not.toContain(p.id);
     }
     const all = rollUpgrades(seededRng(3), 6, aura);
-    expect(all.find((p) => p.id === 'power')?.description).toBe('Folhas cortantes: +20% de dano.');
+    expect(all.find((p) => p.id === 'power')?.description).toBe('Folhas cortantes: +20% de dano, até 60.');
+  });
+
+  it('limita o acúmulo dos upgrades ofensivos sem enfraquecer stats iniciais mais altos', () => {
+    const s = quiet(createSurvivorState(1, { kindCount: 1 }));
+    for (let i = 0; i < 30; i++) {
+      applyUpgrade(s, 'power');
+      applyUpgrade(s, 'haste');
+      applyUpgrade(s, 'multishot');
+      applyUpgrade(s, 'pierce');
+    }
+    expect(s.player.attackDamage).toBe(60);
+    expect(s.player.attackCooldownMs).toBe(240);
+    expect(s.player.shots).toBe(5);
+    expect(s.player.pierce).toBe(4);
+
+    s.player.attackDamage = 75;
+    s.player.attackCooldownMs = 180;
+    applyUpgrade(s, 'power');
+    applyUpgrade(s, 'haste');
+    expect(s.player.attackDamage).toBe(75);
+    expect(s.player.attackCooldownMs).toBe(180);
   });
 });
 
