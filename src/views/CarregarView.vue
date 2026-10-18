@@ -414,7 +414,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
       <summary>Zona de perigo: apagar todas as cartas do aparelho</summary>
       <p>
         Isto apaga <strong>{{ rows.length === 1 ? 'a carta guardada' : `todas as ${rows.length} cartas guardadas` }}</strong> (imagens, sprites, alvos de AR e a organização da
-        Box). <strong>O backup não guarda as cartas</strong>: para tê-las de novo, será preciso escanear cada carta física outra vez.
+        Box). O backup completo inclui as cartas guardadas e os arquivos locais necessários para recuperá-las.
         O progresso (Treinador, Vila, moedas) não é apagado.
       </p>
       <label>Para confirmar, digite <strong>{{ CLEAR_WORD }}</strong>

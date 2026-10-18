@@ -79,6 +79,8 @@ export const ATLAS_SOURCES: readonly AtlasSource[] = [
   { id: 'tower', sheet: 'Jonquil Town.png', x: 0, y: 704, w: 80, h: 152, erase: [[0, 848, 16, 8], [64, 848, 16, 8]] },
   { id: 'gazebo', sheet: 'Park Tileset.png', x: 144, y: 60, w: 56, h: 84 },
   { id: 'cabin', sheet: 'General Store.png', x: 0, y: 0, w: 128, h: 104, erase: [[96, 96, 32, 8]] },
+  // A fachada da loja da praça é um recorte próprio; `cabin` continua reservado ao Café.
+  { id: 'market-store', sheet: 'General Store.png', x: 0, y: 0, w: 128, h: 104, erase: [[96, 96, 32, 8]] },
   { id: 'barn', sheet: 'Fall Harvest.png', x: 0, y: 520, w: 80, h: 120 },
   { id: 'manor', sheet: 'Garden House Sheet.png', x: 0, y: 20, w: 160, h: 124 },
   { id: 'planter', sheet: 'Garden House Sheet.png', x: 160, y: 30, w: 48, h: 26 },
