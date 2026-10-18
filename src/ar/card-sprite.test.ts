@@ -15,6 +15,48 @@ function threeFrameGif() {
   return decodeGif(encodeGif(2, 1, PALETTE, [frame(1, 10), frame(3, 30), frame(2, 10)]));
 }
 
+describe('CardSprite: chegada do companheiro evoluído', () => {
+  it('aguarda rastreamento e sprite real; oculta junto com a carta e encerra na escala original', () => {
+    const sprite = new CardSprite();
+    sprite.setEvolved(true);
+    const arrival = sprite.group.children.at(-1)!;
+    sprite.update(1000);
+    expect(arrival.visible).toBe(false);
+    sprite.setTracked(true);
+    sprite.setPlaceholder();
+    sprite.update(2000);
+    expect(arrival.visible).toBe(false);
+    sprite.setAnimation(threeFrameGif(), 2000);
+    sprite.setCardMatrix(new Matrix4().identity().elements);
+    const base = sprite.mesh.matrix.clone();
+    sprite.update(3000);
+    expect(arrival.visible).toBe(true);
+    expect(sprite.mesh.matrix.elements[0]!).toBeCloseTo(base.elements[0]! * 0.03);
+    sprite.setTracked(false);
+    expect(sprite.group.visible).toBe(false);
+    sprite.setTracked(true);
+    sprite.update(8000);
+    expect(arrival.visible).toBe(false);
+    expect(sprite.mesh.matrix.elements).toEqual(base.elements);
+    sprite.dispose();
+    expect(arrival.parent).toBeNull();
+  });
+  it('desligar o efeito restaura o sprite imediatamente', () => {
+    const sprite = new CardSprite();
+    let enabled = true;
+    sprite.setEvolved(true, () => enabled);
+    sprite.setAnimation(threeFrameGif(), 0);
+    sprite.setTracked(true);
+    const base = sprite.mesh.matrix.clone();
+    sprite.update(1000);
+    enabled = false;
+    sprite.update(1100);
+    expect(sprite.mesh.matrix.elements).toEqual(base.elements);
+    expect(sprite.group.children.at(-1)!.visible).toBe(false);
+    sprite.dispose();
+  });
+});
+
 const pixelsOf = (sprite: CardSprite) => (sprite.mesh.material.map!.image as { data: Uint8Array }).data;
 
 function planeCorners(sprite: CardSprite): Vector3[] {

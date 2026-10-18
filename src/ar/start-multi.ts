@@ -25,6 +25,7 @@ export interface MultiCard {
   cachedSprite: SpriteSource | null;
   /** Carta shiny: halo dourado e estrelinhas em volta do Pokémon. */
   shiny?: boolean;
+  evolved?: boolean;
 }
 
 export interface StartMultiOptions {
@@ -35,6 +36,7 @@ export interface StartMultiOptions {
   fetchSprite: (dexId: number, shiny?: boolean) => Promise<SpriteSource | null>;
   onState: (state: MultiArState) => void;
   onSprite: (cardId: string, state: SpriteLoadState) => void;
+  evolutionFx?: () => boolean;
 }
 
 export interface RunningMulti {
@@ -50,6 +52,7 @@ export async function startMulti(options: StartMultiOptions): Promise<RunningMul
   const slots = options.cards.map((card) => {
     const sprite = new CardSprite({ frameCacheBytes: SPRITE_FRAME_CACHE_BYTES });
     sprite.setShiny(card.shiny === true);
+    sprite.setEvolved(card.evolved === true, options.evolutionFx);
     return { cardId: card.cardId, name: card.name, sprite };
   });
   const session = new MultiArSession({

@@ -62,6 +62,7 @@ export async function loadCreatureEntries(
   decoders: CreatureDecoders = browserDecoders,
   only?: readonly string[],
   digital?: DigitalCreatures,
+  companion?: (card: CachedCard, decoders: CreatureDecoders) => Promise<CreatureEntry | null>,
 ): Promise<LoadedCreatures> {
   let cards = (await cache.list()).filter((card) => card.sprite.state === 'ok');
   const digitalById = new Map((digital?.instances ?? []).map((i) => [i.instanceId, i]));
@@ -94,6 +95,11 @@ export async function loadCreatureEntries(
     }
     const card = item.card;
     try {
+      const evolved = await companion?.(card, decoders);
+      if (evolved) {
+        entries.push(evolved);
+        continue;
+      }
       const blob = await cache.getAssetBlob(card, 'sprite');
       if (!blob) throw new Error('arquivo do sprite não encontrado no cache');
       const info = { id: card.id, name: card.name, dexId: spriteIdOf(card), detail: `${card.setName} ${card.localId}/${card.setOfficial}`, shiny: isShiny(card), mega: isMega(card) };

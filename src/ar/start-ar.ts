@@ -20,6 +20,8 @@ export interface StartArOptions {
   dexId: number | undefined;
   /** Carta shiny: halo dourado e estrelinhas em volta do Pokémon. */
   shiny?: boolean;
+  evolved?: boolean;
+  evolutionFx?: () => boolean;
   /** Sprite já guardado no cache (se houver); senão busca na rede. */
   cachedSprite?: SpriteSource | null;
   /** `shiny`: a carta é shiny; tenta o sprite shiny (se não existir, o normal). */
@@ -47,6 +49,7 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
   feed.acquire();
   const sprite = new CardSprite();
   sprite.setShiny(options.shiny === true);
+  sprite.setEvolved(options.evolved === true, options.evolutionFx);
   const panel = options.battle ? new StatsPanel(options.battle.name, options.dexId) : null;
   const session = new ArSession({
     engine: new MindArEngine(),

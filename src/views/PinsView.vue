@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import { loadPinData, getCache } from '../app/services';
 import { digitalBoxRows } from '../app/digital-members';
+import { cardCompanion, cardJourneys, cardJourneyError, companionCard, recordCardVictories } from '../app/card-evolution-store';
+import type { CardCompanion } from '../core/card-evolution';
 import { loadVillage } from '../app/village-store';
 import { defaultSetup, loadSetup, roleOf, saveSetup, setRole, setupBlocker } from '../app/pins-setup';
 import type { PinsSetup, Role } from '../app/pins-setup';
@@ -187,7 +189,7 @@ onMounted(async () => {
     // Digital Pokémon também viram pins (dá para jogar sem nenhuma carta): os dados vêm da carta de origem
     // (`loadPinData`) e a miniatura é o sprite público da espécie.
     const digital = digitalBoxRows(loadVillage().digital) as unknown as CachedCard[];
-    const list = [...(await cache.list()), ...digital].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+    const list = [...(await cache.list()).map(companionCard), ...digital].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
     cards.value = list;
     const ok = list.filter((c) => c.sprite.state === 'ok' && c.dexIds.length > 0);
     setup.value = loadSetup(new Set(ok.map((c) => c.id)), ok);
@@ -196,6 +198,10 @@ onMounted(async () => {
     const next: Record<string, string> = {};
     for (const d of digital) next[d.id] = pokemonSpriteUrl(spriteIdOf(d) ?? d.dexIds[0]!);
     for (const card of ok.slice(0, 80)) {
+      if (cardJourneys.value[card.id]?.history.length) {
+        next[card.id] = pokemonSpriteUrl(spriteIdOf(card)!, card.shiny === true);
+        continue;
+      }
       const blob = await cache.getAssetBlob(card, 'sprite').catch(() => null);
       if (blob) next[card.id] = URL.createObjectURL(blob);
       if (disposed) return;
@@ -241,6 +247,7 @@ function useRecent(): void {
 
 // ---------------------------------------------------------------- partida
 
+let pinCompanions: CardCompanion[] = [];
 async function start(): Promise<void> {
   engine.unlock();
   stopReplay();
@@ -264,11 +271,19 @@ async function start(): Promise<void> {
   const cache = await getCache();
   for (const card of chosen) {
     if (thumbs.value[card.id]) continue;
+    if (cardJourneys.value[card.id]?.history.length) {
+      thumbs.value = { ...thumbs.value, [card.id]: pokemonSpriteUrl(spriteIdOf(card)!, card.shiny === true) };
+      continue;
+    }
     const blob = await cache.getAssetBlob(card, 'sprite').catch(() => null);
     if (blob) thumbs.value = { ...thumbs.value, [card.id]: URL.createObjectURL(blob) };
   }
   if (disposed) return;
   const byId = (id: string) => cards.value.find((c) => c.id === id)!;
+  pinCompanions = setup.value.mine.flatMap((id) => {
+    const mon = cardCompanion(byId(id));
+    return mon && !id.startsWith('dp_') ? [mon] : [];
+  });
   world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => { const spec = specOf(byId(id)); const enemyId = `cpu:${id}`; thumbs.value[enemyId] = thumbs.value[id] ?? ''; return { ...spec, id: enemyId }; }) }, rng, { marks: setup.value.marks, shrink: setup.value.shrink });
   await beginMatch('aim');
 }
@@ -663,7 +678,7 @@ function fireEnemy(): void {
 }
 
 function endGame(kind: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'): void {
-  if (!world) return;
+  if (!world || phase.value === 'over') return;
   phase.value = 'over';
   const won = kind === 'won';
   const score = pvpMatch.value ? 0 : scoreMatch(won, shots, setup.value.enemy.length);
@@ -671,6 +686,7 @@ function endGame(kind: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'): void {
   message.value = '';
   // Contra um amigo não vale XP nem recorde (nada impede alguém de mexer no próprio aparelho).
   if (!pvpMatch.value) recordEvent({ type: 'minigame', game: 'pins', won, score });
+  if (!pvpMatch.value && won && !recordCardVictories(pinCompanions, 'pins')) message.value = cardJourneyError.value;
   refreshTray();
   cue({ kind: won ? 'pin-win' : 'pin-lose' });
   buzz({ kind: won ? 'win' : 'lose' });

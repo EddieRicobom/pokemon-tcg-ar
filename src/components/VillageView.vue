@@ -74,6 +74,10 @@ import { SoundEngine } from '../box/sound';
 import type { SoundCue } from '../box/sound-recipes';
 import MomentCard from './MomentCard.vue';
 import PokeBook from './PokeBook.vue';
+import CardEvolutionPanel from './CardEvolutionPanel.vue';
+import { loadCardCompanionEntry } from '../app/companion-creatures';
+import { companionCard } from '../app/card-evolution-store';
+import type { CachedCard } from '../cache/types';
 import QuizDialog from './QuizDialog.vue';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
@@ -93,7 +97,7 @@ const state = reactive(loadVillage());
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'arena' | 'torre';
+type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'arena' | 'torre' | 'card-evolution';
 const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
 type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
@@ -565,6 +569,23 @@ function openEvolveList(b: Building): void {
     text: state.digital.instances.length === 0 ? 'Nenhum Digital Pokémon pra evoluir ainda.' : `Evoluir exige ${EVOLVE_COST} moedas (você tem ${state.coins}), amizade alta (Grande amigo+) e uma próxima forma real.`,
     actions: [...actions, { label: 'Voltar', run: () => openFountain(b) }],
   };
+}
+
+async function syncCardEvolution(card: CachedCard): Promise<void> {
+  const evolved = companionCard(card);
+  const dexId = evolved.dexIds[0];
+  if (dexId === undefined) return;
+  const sprite = await getDigitalSprite(dexId, card.shiny === true).catch(() => null);
+  if (!sprite) {
+    say('A evolução foi guardada, mas não consegui mostrar o novo sprite agora.');
+    return;
+  }
+  const entry: VillageMon = { id: card.id, name: displayName(state, card.id, evolved.name), shiny: card.shiny === true, gif: sprite.gif, dirGifs: sprite.dirs, dexId };
+  villagerList = [...villagerList.filter((v) => v.id !== card.id), entry];
+  mons.value = [...mons.value.filter((m) => m.id !== card.id), { id: card.id, name: entry.name, real: evolved.name, shiny: card.shiny === true, dexId, thumb: thumbOf(sprite.gif) }];
+  if (game) game.addMon(entry);
+  else pendingDigital.set(card.id, entry);
+  refreshTown();
 }
 
 async function doEvolve(instanceId: string, nextDexId: number): Promise<void> {
@@ -1263,6 +1284,7 @@ function openFountain(b: Building): void {
         ? [{ label: `Invocar qualquer um na sorte (${COIN_SUMMON_COST} moedas)`, disabled: state.coins < COIN_SUMMON_COST, run: () => void doCoinSummon() }]
         : []),
       { label: 'Evoluir um Digital Pokémon', disabled: state.digital.instances.length === 0, run: () => openEvolveList(b) },
+      { label: 'Evoluir Pokémon das cartas', run: () => { closeDialog(); sheet.value = 'card-evolution'; } },
       { label: 'Sair', run: closeDialog },
     ],
   };
@@ -1898,7 +1920,8 @@ onMounted(async () => {
   try {
     const cache = await getCache();
     const team = resolveTeam(savedTeam.value, await cache.list());
-    const loaded = await loadCreatureEntries(cache, browserDecoders, team.ids);
+    const loaded = await loadCreatureEntries(cache, browserDecoders, team.ids, undefined, loadCardCompanionEntry);
+    if (loaded.failed.length) say('Não consegui mostrar alguns companheiros: ' + loaded.failed.map((f) => f.name + ' (' + f.reason + ')').join('; '), 12000);
     // Sprite local da Vila (pacote de ação, derivado do PokéSurvivor/PMD SpriteCollab — ver THIRD_PARTY_NOTICES.md):
     // usado quando a espécie está no pacote; senão cai para o GIF que a Caixa já baixou e guardou no cache.
     villagers = await Promise.all(
@@ -2219,7 +2242,12 @@ onBeforeUnmount(() => {
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
       <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
-        <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ dexId: i.dexId, name: i.name }))" @leave="sheet = null" />
+        <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name }))" @leave="sheet = null" />
+      </div>
+
+      <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-label="Evolução dos Pokémon das cartas">
+        <header><strong>Evolução · seus companheiros</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <CardEvolutionPanel :friends="state.friends" @evolved="syncCardEvolution" />
       </div>
 
       <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" :aria-label="MENU_TITLES[tab]">
@@ -2402,6 +2430,10 @@ onBeforeUnmount(() => {
           <label class="art-option">
             <input v-model="visual.metallic" type="checkbox" />
             <span>Brilho metálico nos Digital Pokémon (desligue em celular fraco)</span>
+          </label>
+          <label class="art-option">
+            <input v-model="visual.evolutionFx" type="checkbox" />
+            <span>Chegada especial dos companheiros evoluídos nas cartas (desligue em celular fraco)</span>
           </label>
           <label class="art-option">
             <input v-model="visual.villageFx" type="checkbox" />

@@ -23,6 +23,7 @@ import { unzipSync, zipSync } from 'fflate';
 
 /** Toda chave do localStorage com progresso ou ajuste do jogador — nunca um cache de API, que se refaz sozinho. */
 export const BACKUP_KEYS: readonly string[] = [
+  'tcg-ar-card-journeys-v1',
   'tcg-ar-trainer-v1',
   'tcg-ar-vila-v1',
   'tcg-ar-perfil-v1',

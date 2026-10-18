@@ -42,6 +42,7 @@ import { loseCanvasContext } from '../ar/context-release';
 import { spriteIdOf } from '../core/dex-form';
 import { isShiny } from '../core/shiny';
 import { maybeGalladeSpeaks } from '../app/speech-store';
+import { companionCard } from '../app/card-evolution-store';
 
 const props = defineProps<{ cardId?: string }>();
 
@@ -80,6 +81,7 @@ const panelMode = ref<PanelMode>('auto');
 const adjusting = ref(false);
 const moveNotice = ref('');
 const arActive = ref(false);
+const evolvedCaption = ref('');
 
 // Diagnóstico do scan: mostra o que o app está vendo (onde achou a carta, o que o OCR recebeu e leu).
 const DEBUG_KEY = 'tcg-ar-scan-debug-v1';
@@ -459,6 +461,7 @@ async function beginScan(): Promise<void> {
 }
 
 async function startArFor(cardId: string): Promise<void> {
+  evolvedCaption.value = '';
   pendingArCardId.value = cardId;
   arError.value = '';
   if (!cameraOn.value || !videoEl.value || !canvasEl.value || !stageEl.value) {
@@ -497,24 +500,29 @@ async function startArFor(cardId: string): Promise<void> {
   arDetail.value = 'Iniciando o motor de rastreamento…';
   try {
     const { startAr } = await loadChunk(() => import('../ar/start-ar'));
+    const companion = companionCard(assets.card);
+    const evolved = companion !== assets.card;
+    evolvedCaption.value = evolved ? `${companion.name} · evoluiu da sua carta de ${assets.card.name}` : '';
     const started = await startAr({
       video: videoEl.value,
       canvas: canvasEl.value,
       container: stageEl.value,
       target: assets.target,
-      dexId: spriteIdOf(assets.card),
+      dexId: spriteIdOf(companion),
       shiny: isShiny(assets.card),
-      cachedSprite: assets.cachedSprite,
+      evolved,
+      evolutionFx: () => visual.evolutionFx && !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      cachedSprite: evolved ? null : assets.cachedSprite,
       fetchSprite: (dexId, shiny) => fetchSprite(dexId, undefined, { shiny }),
       battle: {
-        name: assets.card.name,
-        load: (onPart) => loadBattle(assets.card.id, spriteIdOf(assets.card), onPart),
+        name: companion.name,
+        load: (onPart) => loadBattle(assets.card.id, spriteIdOf(companion), onPart),
       },
       onState: (state) => {
         if (run !== arRun) return;
         arState.value = state;
         if (state.phase === 'searching' || state.phase === 'tracking' || state.phase === 'lost') arStage.value = state.phase;
-        if (state.phase === 'tracking') maybeGalladeSpeaks({ name: assets.card.name, shiny: isShiny(assets.card) });
+        if (state.phase === 'tracking') maybeGalladeSpeaks({ name: companion.name, shiny: isShiny(assets.card) });
         else if (state.phase === 'error') failAr(state.message ?? 'O rastreamento falhou.');
       },
       onSprite: (state) => {
@@ -931,6 +939,9 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
       <ArLoading v-if="loadingView" v-bind="loadingView" />
 
       <div v-if="immersive" class="stage-head" role="status" aria-live="polite">
+        <p v-if="evolvedCaption && arState.phase === 'tracking' && (spriteState?.kind === 'animated' || spriteState?.kind === 'static')" class="pill ok">
+          <span class="pill-text">✦ Chamado do vínculo<small class="pill-sub">{{ evolvedCaption }}</small></span>
+        </p>
         <p v-if="cameraBusy" class="pill busy"><i class="dot"></i><span class="pill-text">Abrindo a câmera…</span></p>
         <div v-if="stepsNotice" class="pill steps">
           <span class="pill-text">Etapa {{ stepsNotice.position }} de {{ stepsNotice.total }}: {{ stepsNotice.label }}</span>

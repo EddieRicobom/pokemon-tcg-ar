@@ -5,6 +5,9 @@ import { fetchSprite } from '../ar/sprite-source';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { recordEvent } from '../app/trainer-store';
 import { addCoins } from '../app/wallet';
+import { cardCompanion, cardJourneyError, recordCardVictories } from '../app/card-evolution-store';
+import type { CardCompanion } from '../core/card-evolution';
+import { survivalWinners } from '../core/card-evolution';
 import { visual } from '../app/visual-settings';
 import { seededRng } from '../core/battle';
 import { shuffle } from '../core/minigames';
@@ -66,7 +69,7 @@ const moveLine = (m: SurvivorMove): string => `${m.icon} ${m.name} · ${MOVE_CAT
  */
 const emit = defineEmits<{ leave: [] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
-const props = defineProps<{ digital?: { dexId: number; name: string }[] }>();
+const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string }[] }>();
 
 /**
  * A Torre ocupa a tela inteira: o lado menor da tela mostra `VIEW_SHORT` unidades do jogo e o maior acompanha o formato
@@ -196,7 +199,9 @@ const runCoins = ref(0);
 const runClearBonus = ref(0);
 const runUnlockedInfinite = ref(false);
 
+let runCompanion: CardCompanion | null = null;
 function recordRun(s: SurvivorSummary): void {
+  if (!recordCardVictories(survivalWinners(runCompanion, s), 'survival')) say(cardJourneyError.value, 9000);
   recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score: survivorScore(s) });
   const beforeInfinite = trainer.value.torre.infiniteUnlocked;
   recordEvent({ type: 'survivor', survivedMs: s.survivedMs, trainersBeaten: s.trainersBeaten, bossesBeaten: s.bossesBeaten, clearedTorre: s.finalBossBeaten, infinite: s.infinite });
@@ -218,6 +223,8 @@ function formatTime(ms: number): string {
 }
 
 interface PickOption {
+  id: string;
+  origin: string;
   dexId: number;
   name: string;
   types: PokemonType[];
@@ -572,23 +579,22 @@ function leaveNow(): void {
   emit('leave');
 }
 
-/** Sorteia 3 Pokémon distintos da caixa do jogador (cartas já guardadas) pra ele escolher quem joga dessa vez.
+/** Sorteia 3 companheiros da caixa, identificados por carta/instância, pra escolher quem joga desta vez.
  * Caixa vazia (nenhuma carta ainda) não trava nada: cai pro Pikachu de reserva sem tela de escolha, como antes. */
 async function rollPickOptions(): Promise<PickOption[]> {
   const cache = await getCache();
   const cards = await cache.list();
-  const byDex = new Map<number, string>();
+  const pool: (CardCompanion & { origin: string })[] = [];
   for (const c of cards) {
-    const dexId = c.dexIds[0];
-    if (dexId !== undefined && !byDex.has(dexId)) byDex.set(dexId, c.name);
+    const mon = cardCompanion(c);
+    if (mon) pool.push({ ...mon, origin: `${c.setName} ${c.localId}` });
   }
   // Digital Pokémon entram no mesmo sorteio (Fase 6): não vêm de carta nenhuma, mas jogam igual a qualquer outro.
-  for (const d of props.digital ?? []) if (!byDex.has(d.dexId)) byDex.set(d.dexId, d.name);
-  const pool = [...byDex.entries()];
+  for (const [i, d] of (props.digital ?? []).entries()) pool.push({ id: d.instanceId ?? `dp_torre_${i}`, dexId: d.dexId, name: d.name, origin: 'Digital Pokémon' });
   if (pool.length === 0) return [];
   const chosen = shuffle(pool, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0)).slice(0, 3);
   const thumbs = await Promise.all(
-    chosen.map(([dexId]) =>
+    chosen.map(({ dexId }) =>
       getLocalVillageSprite(dexId, false, 'Idle')
         .then((g) => (g ? toSprite(g).frames[0]?.toDataURL() ?? null : null))
         .catch(() => null)
@@ -596,13 +602,14 @@ async function rollPickOptions(): Promise<PickOption[]> {
         .then((url) => url ?? pokemonSpriteUrl(dexId)),
     ),
   );
-  return chosen.map(([dexId, name], i) => {
+  return chosen.map(({ id, dexId, name, origin }, i) => {
     const { move, profile, types } = attackOf(dexId);
-    return { dexId, name, types, move, bars: profileBars(move, profile), thumb: thumbs[i] ?? null };
+    return { id, dexId, name, origin, types, move, bars: profileBars(move, profile), thumb: thumbs[i] ?? null };
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null): Promise<void> {
+  runCompanion = companion;
   pickBusy.value = true;
   try {
     avatarName.value = name;
@@ -646,7 +653,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
 
 function choosePlayer(opt: PickOption, picked?: PokemonType): void {
   unlockSound();
-  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked);
+  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name });
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
@@ -780,7 +787,7 @@ onBeforeUnmount(() => {
             <div class="survivor-pick-grid">
               <button
                 v-for="opt in pickOptions"
-                :key="opt.dexId"
+                :key="opt.id"
                 type="button"
                 class="survivor-pick-btn"
                 :disabled="pickBusy"
@@ -789,6 +796,7 @@ onBeforeUnmount(() => {
                 <img v-if="opt.thumb" :src="opt.thumb" :alt="opt.name" class="survivor-pick-thumb" />
                 <span v-else class="survivor-pick-thumb placeholder" aria-hidden="true">?</span>
                 <strong>{{ opt.name }}</strong>
+                <small>{{ opt.origin }}</small>
                 <small class="survivor-pick-move" :style="{ '--move': opt.move.color }">{{ opt.move.icon }} {{ opt.move.name }}</small>
                 <small class="survivor-pick-kind">{{ MOVE_CATEGORY_LABELS_PT[opt.move.category] }} · {{ MOVE_EFFECT_LABELS_PT[opt.move.effect] }}</small>
                 <span class="survivor-pick-bars" :style="{ '--move': opt.move.color }">
