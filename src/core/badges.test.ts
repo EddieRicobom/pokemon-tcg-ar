@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { arc, BADGE_DESIGNS, badgeDesign, counterClockwise, pathData, polishLook, signedArea, slotPosition } from './badges';
-import { GYMS } from './league';
+import { arc, ALL_BADGE_DESIGNS, BADGE_DESIGNS, badgeDesign, counterClockwise, pathData, polishLook, signedArea, slotPosition } from './badges';
+import { GYMS, LEAGUE_REGIONS } from './league';
 
 describe('desenho das insígnias', () => {
   it('uma por Ginásio, com o mesmo nome, líder e tipo', () => {
@@ -13,7 +13,7 @@ describe('desenho das insígnias', () => {
       expect(d.type).toBe(gym.type);
     });
     expect(badgeDesign(3)?.leader).toBe('Crasher Wake');
-    expect(badgeDesign(8)).toBeNull();
+    expect(badgeDesign(32)).toBeNull();
   });
 
   it('cada uma tem forma, metal e esmalte próprios', () => {
@@ -71,6 +71,28 @@ describe('desenho das insígnias', () => {
       for (let j = i + 1; j < slots.length; j++) {
         expect(Math.hypot(slots[i]!.x - slots[j]!.x, slots[i]!.y - slots[j]!.y)).toBeGreaterThanOrEqual(0.5);
       }
+    }
+  });
+});
+
+
+describe('maletas regionais', () => {
+  it('32 insígnias ligadas aos ginásios, com índices e encaixes isolados', () => {
+    expect(ALL_BADGE_DESIGNS).toHaveLength(32);
+    for (const r of LEAGUE_REGIONS) {
+      const designs = ALL_BADGE_DESIGNS.slice(r.badgeOffset, r.badgeOffset + 8);
+      expect(new Set(designs.map((d) => JSON.stringify(slotPosition(d.order)))).size).toBe(8);
+      designs.forEach((d, i) => {
+        expect(d.name).toBe(r.gyms[i]!.badge!.name);
+        expect(d.leader).toBe(r.gyms[i]!.leader);
+        expect(badgeDesign(d.order)).toBe(d);
+        expect(slotPosition(d.order)).toEqual(slotPosition(i));
+        expect(Math.abs(signedArea(d.outline))).toBeGreaterThan(0.5);
+        for (const [x, y] of [...d.outline, ...d.layers.flatMap((l) => l.points)]) {
+          expect(Math.abs(x)).toBeLessThanOrEqual(1);
+          expect(Math.abs(y)).toBeLessThanOrEqual(1);
+        }
+      });
     }
   });
 });

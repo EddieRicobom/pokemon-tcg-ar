@@ -1,4 +1,5 @@
 import { drawWaterFx, drawFountainFx, drawSunRays } from './ambient-art';
+import { BenchVisits, benchesFor } from '../core/village/benches';
 import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
@@ -264,6 +265,8 @@ export class VillageGame {
   private readonly lag = new Map<string, number>();
   /** Há quanto tempo (ms) você empurra o botão contra um Pokémon parado; passou do limite, vocês trocam de lugar. */
   private pushMs = 0;
+  private benchVisits: BenchVisits | null = null;
+  private nextBenchChat = 0;
   /** Avisos sobre o telhado de uma casa (por terreno), como o 😴 de quem não quer abrir a porta. */
   private readonly houseTags = new Map<number, { emoji: string; until: number }>();
   private nextSleepCheck = 0;
@@ -616,8 +619,16 @@ export class VillageGame {
     return c;
   }
 
+  private getBenchVisits(): BenchVisits {
+    // Não sobrepõe móveis e hortas de salvamentos existentes.
+    return this.benchVisits ??= new BenchVisits(benchesFor(this.map).filter((b) => [0, 1].every((dx) => !isPlaced(this.state, b.x + dx, b.y) && !cropAt(this.state, b.x + dx, b.y))));
+  }
+
   /** Tem alguém ou alguma coisa ocupando o bloco? (Pokémon, você, móveis) */
   occupied(x: number, y: number, except?: string): boolean {
+    const benches = this.getBenchVisits();
+    if (benches.reserved(x, y, except)) return true;
+    if ((!except || except === 'eu') && benches.benches.some((b) => y === b.y && (x === b.x || x === b.x + 1))) return true;
     if (isPlaced(this.state, x, y) || cropAt(this.state, x, y)) return true;
     if (this.player && except !== 'eu' && ((this.player.x === x && this.player.y === y) || (this.player.tx === x && this.player.ty === y))) return true;
     for (const [id, w] of this.villagers) {
@@ -885,6 +896,8 @@ export class VillageGame {
     for (const [id, w] of this.villagers) {
       if (this.asleep.has(id) || moving(w) || w.x !== f.x || w.y !== f.y) continue;
       if (this.waiting === id || this.speech.has(id) || this.scene?.cast.includes(id)) return false;
+      if (this.benchVisits?.seated(id, w)) return false;
+      this.benchVisits?.release(id, performance.now());
       return swapPlaces(p, w);
     }
     return false;
@@ -997,7 +1010,12 @@ export class VillageGame {
     }
     const behind = { x: p.x, y: p.y };
     this.updateSleep(now);
+    const benchVisits = this.getBenchVisits();
+    for (const id of benchVisits.visits.keys()) {
+      if (!this.villagers.has(id)) benchVisits.release(id, now);
+    }
     for (const [id, w] of this.villagers) {
+      if (this.asleep.has(id) || this.waiting === id || this.state.follower === id || this.sceneBusy(id) || (now < this.calledUntil && this.called.has(id))) benchVisits.release(id, now);
       if (this.asleep.has(id) || (this.waiting === id && !moving(w))) continue;
       const sc = this.scene;
       if (sc && sc.cast.includes(id)) {
@@ -1012,8 +1030,19 @@ export class VillageGame {
       const follow = this.state.follower === id
         ? behind
         : called ?? (zone && Math.abs(zone.x - w.x) + Math.abs(zone.y - w.y) > 7 ? zone : null);
+      if (follow) benchVisits.release(id, now);
+      if (!follow && benchVisits.step(w, dt, now, this.map, (x, y) => this.occupied(x, y, id), this.rng)) continue;
       stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, follow);
       if (follow && !called) this.catchUp(w, follow, dt, now);
+    }
+    if (now >= this.nextBenchChat) {
+      this.nextBenchChat = now + 8000;
+      for (const [id, w] of this.villagers) {
+        if (!benchVisits.seated(id, w)) continue;
+        const visit = benchVisits.visits.get(id)!;
+        const company = [...benchVisits.visits].some(([other, v]) => other !== id && v.bench === visit.bench && !!this.villagers.get(other) && benchVisits.seated(other, this.villagers.get(other)!));
+        this.bubble(id, company ? '💬' : '☕', 2300);
+      }
     }
     this.updateScene(now);
     // Clima.
@@ -1311,30 +1340,14 @@ export class VillageGame {
       });
     }
     const shop = this.map.shop;
-    const umbrellas = atlas ? (['umbrella-b', 'umbrella-r', 'umbrella-g'] as const).map((id) => this.art(id)) : [];
-    if (umbrellas.length > 0 && umbrellas.every((u) => u !== null)) {
+    // A loja tem fachada própria no atlas. Nunca troque o prédio por guarda-sóis: eram só peças decorativas da praça.
+    const shopArt = atlas ? this.art('market-store') : null;
+    if (shopArt) {
       list.push({
         y: shop.y + shop.h,
         draw: () => {
-          shadow(sx(shop.x + shop.w / 2), sy(shop.y + shop.h) - 2 * scale, shop.w * 7 * scale, 3.5 * scale, 0.2);
-          umbrellas.forEach((u, i) => {
-            const cx = sx(shop.x + (i + 0.5) * (shop.w / umbrellas.length));
-            const base = sy(shop.y + shop.h);
-            stand(u!, cx, base);
-            // O recorte do tileset mostra só o guarda-sol; o balcão e as frutas deixam claro que são barracas.
-            const left = Math.round(cx - 13 * scale);
-            const top = Math.round(base - 8 * scale);
-            ctx.fillStyle = '#704728';
-            ctx.fillRect(left, top, 26 * scale, 7 * scale);
-            ctx.fillStyle = '#c18a4d';
-            ctx.fillRect(left, top, 26 * scale, 2 * scale);
-            ctx.fillStyle = '#59371f';
-            ctx.fillRect(left + 2 * scale, top + 6 * scale, 22 * scale, scale);
-            for (const [x, color] of [[4, '#f1c84b'], [10, '#e45a4b'], [16, '#72bd57'], [21, '#e89ac0']] as const) {
-              ctx.fillStyle = color;
-              ctx.fillRect(left + x * scale, top - 2 * scale, 3 * scale, 2 * scale);
-            }
-          });
+          shadow(sx(shop.x + shop.w / 2), sy(shop.y + shop.h) - 2 * scale, 42 * scale, 4 * scale, 0.2);
+          stand(shopArt, sx(shop.x + shop.w / 2), sy(shop.y + shop.h));
           this.drawTag(sx(shop.x + shop.w / 2), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
         },
       });
@@ -1499,6 +1512,15 @@ export class VillageGame {
       if (night) homeGlows.push({ x: left + 4 * scale, y: bottom - 20 * scale, w: wpx - 8 * scale, h: 6 * scale });
       if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
     }
+    // O banco fica atrás dos moradores; os pés sobem até a altura do assento.
+    for (const bench of this.getBenchVisits().benches) {
+      if (bench.x + 2 < x0 || bench.x > x1 || bench.y < y0 || bench.y > y1) continue;
+      const img = this.sprite('public-bench', () => paintFurnitureItem('banco', false, 0));
+      list.push({ y: bench.y + 0.5, draw: () => {
+        shadow(sx(bench.x + 1), sy(bench.y + 1), 12 * scale, 2 * scale, 0.18);
+        ctx.drawImage(img, sx(bench.x), sy(bench.y), 2 * T, T);
+      } });
+    }
     const lamps: { x: number; y: number; big: boolean }[] = [];
     for (const f of this.state.placed) {
       if (f.x < x0 || f.x > x1 || f.y < y0 || f.y > y1) continue;
@@ -1549,7 +1571,8 @@ export class VillageGame {
           // `h`/`wpx` são o tamanho do BICHO (sem a margem transparente); o quadro inteiro (`fullH`/`fullW`) é
           // desenhado maior na mesma proporção, pra caber a margem — e posicionado (`frameLeft`/`frameTop`) de
           // forma que os pixels opacos (não o quadro inteiro) fiquem centrados no bloco e com o pé no chão.
-          const h = sprite.heightTiles * TILE * scale;
+          const seated = this.benchVisits?.seated(id, w) ?? false;
+          const h = sprite.heightTiles * TILE * scale * (seated ? 0.85 : 1);
           const wpx = h * (sprite.gif.width / sprite.gif.height);
           const contentHeightFrac = Math.max(0.001, sprite.bounds.bottom - sprite.bounds.top);
           const fullH = h / contentHeightFrac;
@@ -1558,7 +1581,7 @@ export class VillageGame {
           const bounceAge = born ? now - born : 9999;
           const hop = (moving(w) ? Math.abs(Math.sin(w.t * Math.PI)) * 2 * scale : 0) + (bounceAge < 500 ? Math.abs(Math.sin(bounceAge * 0.012)) * 4 * scale : 0);
           const cx = sx(pos.x + 0.5);
-          const base = sy(pos.y + 1) - 2 * scale - hop;
+          const base = sy(pos.y + (seated ? 0.62 : 1)) - 2 * scale - hop;
           const contentCx = (sprite.bounds.left + sprite.bounds.right) / 2;
           const frameLeft = cx - contentCx * fullW;
           const frameTop = base - sprite.bounds.bottom * fullH;
@@ -1590,7 +1613,7 @@ export class VillageGame {
           ctx.restore();
           if (near(w) && !this.scene) {
             const hearts = Math.round(friendOf(this.state, id).points / 20);
-            overlays.push(() => this.drawLabel(cx, sy(pos.y + 1) + 1 * scale, `${this.names.get(id) ?? ''} ${'♥'.repeat(hearts)}${'♡'.repeat(5 - hearts)}`));
+            overlays.push(() => this.drawLabel(cx, sy(pos.y + 1) + 1 * scale, `${this.names.get(id) ?? ''}${seated ? ' · descansando' : ''} ${'♥'.repeat(hearts)}${'♡'.repeat(5 - hearts)}`));
           }
           overlays.push(() => this.drawBubble(id, cx, base - h, now));
         },

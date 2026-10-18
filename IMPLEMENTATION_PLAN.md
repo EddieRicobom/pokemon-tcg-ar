@@ -6,6 +6,32 @@ Legenda: ✅ feito e coberto por testes automatizados / CI · 🔶 feito, **falt
 
 Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado 🔶 passou nos testes e no Chromium com câmera falsa (GL por software), mas **nenhuma etapa foi vista num celular de verdade**. O roteiro está em [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
 
+## Vila em AR: âncora e zoom (18/10/2026)
+
+- O diorama ganhou âncora de sessão no plano do chão estimado: tocar na câmera escolhe ou move o ponto; ela continua ali enquanto a câmera estiver aberta e o giroscópio muda a visão da cidade.
+- O controle de zoom físico permite diminuir a cidade para trazê-la mais perto ou ampliá-la para ver detalhes. A escala escolhida fica salva no aparelho; a âncora espacial não é prometida depois que a câmera fecha, pois o app não usa mapeamento espacial/SLAM.
+- Verificação local: tipos, 11 testes de preferências/posicionamento e `build` com conferência do `dist`. A câmera e os sensores ainda precisam de um aparelho real.
+
+## Vila: loja, itens e casa (18/10/2026)
+
+- A loja deixou de desenhar três guarda-sóis como fachada quando o atlas carregava: usa o recorte completo da `General Store`, com reserva em pixel art só quando o atlas não está disponível.
+- A coleção ganhou 17 móveis de vida cotidiana com arte própria: sofá nuvem, mesa de chá, estante de bichinhos, gacha, luminária de lava, toca-discos, cabideiro, monstera, máquina de costura, biombo, cama e arranhador de Pokémon, bancos naturais, arco de flores, varal e caixa de correio rosa.
+- A casa construída abre um interior persistente de 7×5. Parede, piso e a posição de cada móvel são salvos separadamente do quintal; tocar em um móvel o devolve à mochila. Saves antigos recebem uma sala vazia e válida.
+- Verificação local: `vue-tsc`, `tsc` e 39 testes de Vila/atlas passaram; o CI do GitHub também confere o build e o `dist` antes do deploy.
+
+## Vila: abertura e eventos (18/10/2026)
+
+- Abertura diária em capítulos, com falas e resultados reais do Diário e a última visita lendária; pode ser pulada e não se repete na mesma data local. Sem registros novos, informa isso explicitamente.
+- Momentos ambientes deixam de gerar avisos constantes; acessos rápidos para Menu, Mochila e Novidades. Avisos de ações ficam embaixo e podem ser dispensados.
+- Dez eventos novos: Articuno, Moltres, Raikou, Entei, Lugia, Ho-Oh, Regirock, Regice, Registeel e Rayquaza. Cenas próprias, bônus e consequências aplicados até o fim do dia; chance diária total preservada.
+- Verificação local: tipos, testes, build e conferência do dist; navegador com viewport móvel confirma abertura única por dia e acesso à mochila. Aparência em celular real ainda precisa ser avaliada.
+
+## Bancos públicos da Vila (18/10/2026)
+
+- Cinco bancos com dois lugares: praça, parque e ruas das casas. Moradores procuram lugares livres, chegam caminhando, descansam de 20 a 45 segundos e fazem companhia uns aos outros com balões de conversa.
+- Reservas impedem dois moradores no mesmo lugar; conversa, sono, passeio e sino têm prioridade. Bancos não sobrepõem móveis ou hortas antigos; sem alteração do salvamento.
+- Validação: seis testes de lógica, suíte completa (1.572 testes), tipos, build e teste fixo no navegador com sprites reais de Pikachu e Bulbasaur compartilhando o banco e saindo ao tocar o sino. Celular físico ainda não validado.
+
 ## Estado atual
 
 ### Base e infraestrutura ✅
@@ -200,6 +226,13 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
 30. ✅ **Defeitos de tileset vistos no celular do dono**: o balanço trazia o topo do carrossel embaixo (recorte mais baixo e o trecho apagado); postes nunca dentro da área do desenho de uma construção (o da Rua dos Jogos entrava no telhado da sua casa); ícones dos prédios e da loja numa plaquinha redonda (antes pareciam objetos soltos na grama); Pista de Pins e Correio em 2× (o quiosque do tileset era menor que o personagem) com terreno de 5 blocos; a trilha do parque liga a Rua Principal às duas ruas de casas (antes acabava num beco no gramado), e a gangorra saiu de cima dela. Visto no Edge a 390 px.
 31. ✅ **Torre: treinadores, chefão aos 20 min, modo infinito e cosméticos** (pedido do dono, com relato de "muito fácil"). Agenda: aos 5, 10 e 15 min aparece um treinador com **3 Pokémon elite** (+21× HP, +60% dano, +anel dourado); aos **20 min**, o **chefão final** com **6 Pokémon** (anel vermelho, mais HP e dano ainda). Vencer o chefão final uma vez destrava o **modo infinito**, escolhido na tela antes da corrida: começa 25% mais difícil e cresce +15%/min no HP e dano de todos os inimigos novos, com outro chefão (6 Pokémon) a cada 5 min. **Variedade**: ~34 espécies de inimigos selvagens (antes 12). **Escolha do tipo**: quando o Pokémon tem 2 tipos, abre uma tela antes da corrida para você escolher qual ataca. **Moedas**: além da pontuação (5–50), +40 por treinador e +80 por chefão derrotado; **zerar paga 500 moedas uma vez por dia** (`torre.lastClearBonusDay`). **Conquistas e cosméticos** (via `rewards.ts`, prêmios de conquista): Fita de sobrevivente (primeira corrida), Pino de Treinador (1º treinador), Troféu da Torre (zerou), Pino de Chefão (3 chefões), Capa de Sobrevivente (10 treinadores). **Dificuldade**: spawn mais apertado (`spawnPerSecMs`/`PerWaveMs` +, piso 220 ms). Testado no motor (`src/core/survivor.test.ts`): treinador aos 5 min, chefão aos 20 min, escala do infinito e moedas; e no Edge (botões Normal/Infinito e escolha Planta/Veneno do Bulbasaur).
 32. ✅ **Torre: dificuldade apertada e correção do destrave do infinito** (relato do dono: ainda fácil, infinito não destravou). HP dos inimigos comuns **dobrou** (`enemyHpBase` 10 → 20; passo e por onda também cresceram); treinadores (elite) ficaram com **+5× HP** e **+2× dano**; cada Pokémon do chefão final (6 pokés) com +7× HP e +2,5× dano. **Vitória automática no modo normal**: assim que o chefão final cai, a corrida termina em "venceu" (abre o resumo, grava a corrida e destrava o modo infinito pela 1ª vez) — antes só terminava se o jogador morresse, por isso o timer seguia e o infinito nunca destravava. No modo infinito, segue até morrer, como roguelike. Testes novos cobrem os dois casos.
+
+## Ligas regionais (18/10/2026)
+
+- Kanto (I), Johto (II) e Hoenn (III) acrescentadas à Sinnoh (IV): cada região tem oito Ginásios, quatro membros da Elite e um Campeão (Blue, Lance, Steven e Cynthia). Equipes de exibição inspiradas nos jogos, com dificuldade própria do app.
+- Treinador → Liga e Arena da Vila compartilham a seleção por região, as seções Ginásios / Elite 4 / Campeão e as quatro maletas 3D, cada uma com oito insígnias. Reflexos, polimento e balanço continuam disponíveis; Three.js permanece sob demanda.
+- O salvamento `tcg-ar-liga-v1` preserva IDs e índices de Sinnoh (0–7), reserva 8–15 para Kanto, 16–23 para Johto e 24–31 para Hoenn e guarda corridas/títulos regionais separadamente. O backup usa as mesmas chaves; o polimento aceita as 32 insígnias sem misturar encaixes.
+- Testes cobrem bloqueios, derrota/recomeço da Elite, primeira vitória/revanche, gravação e migração, títulos e seleção da interface. Conferência no Edge a 375 px: troca das quatro regiões e abertura das quatro maletas, sem erro de página nem rolagem horizontal. GPU, toque, sensores e fluidez em celular real continuam pendentes.
 
 ## Riscos conhecidos
 

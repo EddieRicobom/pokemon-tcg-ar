@@ -8,7 +8,7 @@ const KEY = 'tcg-ar-insignias-v1';
 function read(): PolishState {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? onlyWon(normalizePolish(JSON.parse(raw)), league.value.badges) : {};
+    return raw ? onlyWon(normalizePolish(JSON.parse(raw), 32), league.value.badges) : {};
   } catch {
     return {};
   }
