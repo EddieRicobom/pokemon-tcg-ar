@@ -10,6 +10,8 @@ import { emptyDigital, normalizeDigital } from './digital';
 import type { DigitalState } from './digital';
 import { emptyLegendary, normalizeLegendary } from './legendary';
 import type { LegendaryState } from './legendary';
+import { emptyWorldProgress, normalizeWorldProgress, weeklyModifiers } from './world-progress';
+import type { DiscoveryState, Expedition, WeeklyState } from './world-progress';
 import type { VillageRequest } from './requests';
 
 /**
@@ -117,6 +119,9 @@ export interface VillageState {
   digital: DigitalState;
   /** Encontros lendários raríssimos na Vila (ver `legendary.ts`). */
   legendary: LegendaryState;
+  discoveries: DiscoveryState;
+  weekly: WeeklyState;
+  expeditions: Expedition[];
 }
 
 export interface Crop {
@@ -134,7 +139,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [] },
-    digital: emptyDigital(), legendary: emptyLegendary(),
+    digital: emptyDigital(), legendary: emptyLegendary(), ...emptyWorldProgress(),
   };
 }
 
@@ -192,6 +197,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
       : { day: '', count: 0 },
     digital: normalizeDigital(r.digital),
     legendary: normalizeLegendary(r.legendary),
+    ...normalizeWorldProgress(r),
   };
 }
 
@@ -592,8 +598,9 @@ export function sell(s: VillageState, id: ItemId, qty = 1): Interaction {
     return { ok: false, message: 'Esse acessório está sendo usado. Tire antes de vender.' };
   }
   s.inventory[id] = have - n;
-  s.coins += def.sell * n;
-  return { ok: true, message: `Vendeu ${n} ${def.name}: +${def.sell * n} moedas.` };
+  const earned = Math.round(def.sell * n * weeklyModifiers(s).saleMultiplier);
+  s.coins += earned;
+  return { ok: true, message: `Vendeu ${n} ${def.name}: +${earned} moedas.` };
 }
 
 // ----------------------------------------------------------------------------- horta
@@ -619,6 +626,7 @@ export function plant(s: VillageState, map: VillageMap, seed: ItemId, x: number,
  * (chuva de Suicune, ver `legendaryEffects`).
  */
 export function tickCrops(s: VillageState, now: number, factor = 1): number {
+  factor *= weeklyModifiers(s).cropGrowthFactor;
   let grew = 0;
   for (const c of s.crops) {
     const g = itemDef(c.seed)?.grows;

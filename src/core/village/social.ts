@@ -604,7 +604,7 @@ export function makeEnv(state: VillageState, day: string, hour: number, weather:
     const g = itemDef(c.seed)?.grows;
     return !!g && c.stage >= g.stages;
   }).length;
-  return { player, hour, day, weather, placed: new Set(state.placed.map((p) => p.item)), crops: state.crops.length, ripeCrops: ripe, town: state.town.level, lingo: state.lingo.slice(-8).map((x) => x.text) };
+  return { player, hour, day, weather, placed: new Set(state.placed.map((p) => p.item)), worn: new Set(Object.values(state.wear.mons).filter((id): id is string => !!id).concat(state.wear.player ? [state.wear.player] : [])), crops: state.crops.length, ripeCrops: ripe, town: state.town.level, lingo: state.lingo.slice(-8).map((x) => x.text) };
 }
 
 function makeCtx(state: VillageState, cast: Actor[], env: SocialEnv, rng: Rng): Ctx {

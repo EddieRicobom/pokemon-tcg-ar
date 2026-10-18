@@ -19,6 +19,7 @@ export interface SocialEnv {
   day: string;
   weather: string | null;
   placed: ReadonlySet<string>;
+  worn?: ReadonlySet<string>;
   crops: number;
   ripeCrops: number;
   /** Nível da cidade da Vila (nível de Treinador visto por último) e o que você respondeu às perguntas dos Pokémon (as 8 últimas). */
@@ -127,3 +128,4 @@ export const sameType = (c: Ctx): boolean => !!c.types[0] && !!c.types[1] && c.t
 export const friendsNow = (c: Ctx): boolean => !!c.rel && c.rel.bond >= 20 && c.rel.flag !== 'brigados';
 export const rivals = (c: Ctx): boolean => !!c.rel && (c.rel.bond <= -15 || c.rel.flag === 'brigados');
 export const coupled = (c: Ctx): boolean => c.rel?.flag === 'casal';
+export const wearing = (c: Ctx, ...ids: string[]): boolean => ids.some((id) => c.env.worn?.has(id) === true);
