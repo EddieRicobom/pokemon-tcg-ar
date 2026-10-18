@@ -4484,6 +4484,25 @@ body.no-scroll .reward-toasts {
   touch-action: none;
 }
 
+.village-ar-video {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.village-ar-badge {
+  border: 1px solid rgba(170, 226, 255, 0.65);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(23, 82, 110, 0.9);
+  color: #e7f8ff;
+  font: inherit;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
 .village-top {
   position: absolute;
   inset: 8px 8px auto 8px;

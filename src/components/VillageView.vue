@@ -9,6 +9,8 @@ import { attachLiveVillage, detachLiveVillage, syncCoins } from '../app/wallet';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { routeHref } from '../app/route';
+import { CameraError, startRearCamera, stopCamera } from '../core/camera';
+import { arLookFromOrientation } from '../core/village/ar-look';
 import { canNickname, displayName, MAX_NICK_LEN, nickIdeas, nicknameOf, setNickname } from '../core/village/nickname';
 import { minimapPixels, minimapTileAt } from '../village/minimap';
 import { recordEvent, trainer } from '../app/trainer-store';
@@ -68,6 +70,7 @@ import QuizDialog from './QuizDialog.vue';
 const emit = defineEmits<{ close: [then?: 'pvp' | 'batalha' | 'caixa'] }>();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
+const arVideoEl = ref<HTMLVideoElement | null>(null);
 const wrapEl = ref<HTMLElement | null>(null);
 const loading = ref('Chamando os seus Pokémon para a Vila…');
 const toast = ref('');
@@ -82,6 +85,63 @@ const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
 type Tab = 'inicio' | 'resumo' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
 const tab = ref<Tab>('inicio');
+const arActive = ref(false);
+const arLook = reactive({ x: 0, y: 0 });
+let arStream: MediaStream | null = null;
+let arOrientationBase: { alpha: number; beta: number } | null = null;
+
+function onArOrientation(event: DeviceOrientationEvent): void {
+  if (!arActive.value || event.alpha === null || event.beta === null) return;
+  arOrientationBase ??= { alpha: event.alpha, beta: event.beta };
+  const look = arLookFromOrientation({ alpha: event.alpha, beta: event.beta }, arOrientationBase);
+  arLook.x = look.x;
+  arLook.y = look.y;
+  game?.setArView(arVideoEl.value, arLook.x, arLook.y);
+}
+
+function requestArOrientationPermission(): Promise<boolean> {
+  const DeviceOrientation = window.DeviceOrientationEvent as typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
+  return DeviceOrientation && typeof DeviceOrientation.requestPermission === 'function'
+    ? DeviceOrientation.requestPermission().then((result) => result === 'granted').catch(() => false)
+    : Promise.resolve(!!window.DeviceOrientationEvent);
+}
+
+async function toggleArBeta(): Promise<void> {
+  if (arActive.value) {
+    stopArBeta();
+    sheet.value = null;
+    return;
+  }
+  const video = arVideoEl.value;
+  if (!video) return;
+  // As duas permissões são solicitadas diretamente pelo toque no item do menu.
+  const orientationPermission = requestArOrientationPermission();
+  try {
+    arStream = await startRearCamera(video);
+  } catch (error) {
+    say(error instanceof CameraError ? error.message : 'Não foi possível abrir a câmera.', 5000);
+    return;
+  }
+  const hasOrientation = await orientationPermission;
+  arOrientationBase = null;
+  arLook.x = 0;
+  arLook.y = 0;
+  arActive.value = true;
+  game?.setArView(video);
+  if (hasOrientation) window.addEventListener('deviceorientation', onArOrientation);
+  else say('Câmera ligada; o giroscópio não está disponível. Você ainda pode tocar para caminhar e interagir.', 5000);
+  if (hasOrientation) say('AR Beta: mova o celular para explorar. Toque para caminhar e interagir; o chão não é rastreado.', 5000);
+  sheet.value = null;
+}
+
+function stopArBeta(): void {
+  window.removeEventListener('deviceorientation', onArOrientation);
+  stopCamera(arVideoEl.value, arStream);
+  arStream = null;
+  arOrientationBase = null;
+  arActive.value = false;
+  game?.setArView(null);
+}
 
 /**
  * Menu da Vila: uma entrada só (o botão "☰ Menu" do canto ou o B, que abrem o mesmo menu), com blocos grandes em grupos
@@ -110,6 +170,11 @@ function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: stri
   };
 }
 const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[]>(() => [
+  {
+    title: 'Experimentos',
+    desc: 'Visualização pela câmera, sem rastreamento de chão',
+    tiles: [{ icon: '📷', label: arActive.value ? 'Sair do AR Beta' : 'AR Beta', hint: arActive.value ? 'câmera ligada' : 'aproxime e explore', run: () => { void toggleArBeta(); } }],
+  },
   {
     title: 'Você',
     tiles: [
@@ -1721,6 +1786,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  stopArBeta();
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
   document.removeEventListener('visibilitychange', onVisibility);
@@ -1742,6 +1808,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="village" role="application" aria-label="Vila: modo vida da Caixa">
     <div ref="wrapEl" class="village-stage">
+      <video ref="arVideoEl" class="village-ar-video" muted playsinline aria-hidden="true"></video>
       <canvas
         ref="canvasEl"
         class="village-canvas"
@@ -1775,6 +1842,7 @@ onBeforeUnmount(() => {
         <span>{{ clock }}</span>
         <span class="village-coins" aria-label="Moedas"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
         <span class="village-house" :title="`Cidade: ${stage.name}`">Nv {{ level }}</span>
+        <button v-if="arActive" type="button" class="village-ar-badge" aria-label="Sair do AR Beta" @click="stopArBeta">AR Beta · sair</button>
         <button type="button" class="village-menu-btn" :aria-label="unread > 0 ? `Abrir o menu da Vila (${unread} momento(s) novo(s) no Diário)` : 'Abrir o menu da Vila'" @click="openMenu">☰ Menu<b v-if="unread > 0">{{ unread }}</b></button>
         <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
       </header>
