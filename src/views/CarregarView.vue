@@ -255,10 +255,13 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <p v-if="bulk" class="message" role="status">Carregando {{ bulk.done }}/{{ bulk.count }} — {{ bulk.text }}</p>
     <p v-if="message" class="message" role="status">{{ message }}</p>
 
-    <p class="message">Caixas guardam sua coleção. A turma é o grupo de até 40 Pokémon que passeia na Caixa AR. Depois, em Equipe de batalha, você escolhe quem luta.</p>
-    <p><a :href="routeHref('caixa')">Abrir Caixa AR e montar a equipe de batalha →</a></p>
+    <nav class="collection-flow" aria-label="Da coleção à batalha">
+      <div class="flow-step current"><span>1</span><div><strong>Coleção</strong><small>Organize nas caixas abaixo</small></div></div>
+      <div class="flow-step"><span>2</span><div><strong>Turma · {{ teamRows.length }}/{{ TEAM_SIZE }}</strong><small>Escolha quem passeia na Caixa AR</small></div></div>
+      <a class="flow-step" :href="routeHref('caixa')"><span>3</span><div><strong>Equipe de batalha →</strong><small>Escolha quem luta na Caixa AR</small></div></a>
+    </nav>
     <div v-if="teamRows.length > 0" class="team-strip" role="group" aria-label="Turma da Caixa">
-      <strong>Turma da Caixa ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
+      <strong>Quem passeia na Caixa AR ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
       <ul>
         <li v-for="row in teamRows" :key="row.id">
           <img v-if="row.thumb || row.icon" :src="row.thumb ?? row.icon" :alt="row.name" width="40" height="56" :class="{ sprite: !row.thumb }" />
@@ -276,7 +279,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         <button type="button" :class="{ active: viewMode === 'lista' }" :aria-pressed="viewMode === 'lista'" @click="viewMode = 'lista'">Lista</button>
         <button type="button" :class="{ active: viewMode === 'grade' }" :aria-pressed="viewMode === 'grade'" @click="viewMode = 'grade'">Grade</button>
       </div>
-      <input v-model="search" type="text" :placeholder="viewMode === 'box' ? 'Buscar (apaga as outras na caixa)' : 'Buscar por nome, coleção ou número'" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
+      <input v-model="search" type="text" :placeholder="viewMode === 'box' ? 'Buscar nas caixas da coleção' : 'Buscar por nome, coleção ou número'" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
       <div class="filter-row species-filters">
         <label>Tipo
           <select v-model="typeFilter">

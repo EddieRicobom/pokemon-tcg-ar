@@ -1037,11 +1037,12 @@ onBeforeUnmount(() => {
             <p v-for="f in incompleteFighters" :key="f.id" class="hint">{{ f.name }}: {{ f.notes.join('; ') }}</p>
           </template>
         </div>
-        <div v-if="showModes && cameraOn && !battling" class="stage-sheet" role="dialog" aria-label="Modo de batalha" @pointerdown.stop @pointerup.stop @click.stop>
+        <div v-if="showModes && cameraOn && !battling" class="stage-sheet battle-team-sheet" role="dialog" aria-label="Equipe de batalha" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
             <strong>Equipe de batalha</strong>
             <button type="button" class="link" @click="showModes = false">Fechar</button>
           </header>
+          <p class="selection-caption">1 · Escolha o formato da batalha</p>
           <div class="mode-list">
             <button
               v-for="m in BATTLE_MODES"
@@ -1058,13 +1059,19 @@ onBeforeUnmount(() => {
               <small v-if="modeBlocker(m)">{{ modeBlocker(m) }}</small>
             </button>
           </div>
-          <p class="hint">Por padrão todos os Pokémon da caixa entram na luta. Para mudar quem está na caixa (a turma, até 40), use Turma.</p>
+          <p class="hint">2 · Escale os Pokémon abaixo. Para mudar quem passeia na Caixa AR, abra Quem passeia.</p>
           <p v-if="rosterRows.some((r) => r.mega)" class="hint mega-hint">
             Cartas Mega podem mudar de forma por uma batalha: marque «Forma Mega» embaixo do nome delas. Moedas: {{ energy }}<template v-if="megaWanted > megaAffordable"> (só dá para {{ megaAffordable }} {{ megaAffordable === 1 ? 'troca' : 'trocas' }}; as outras lutam na forma normal)</template>.
           </p>
           <div v-if="rosterRows.length > 0" class="roster">
+            <div class="roster-summary" role="status">
+              <span>Vermelha <b>{{ rosterRows.filter((r) => slotOf(r.id) === 0).length }}</b></span>
+              <span>Azul <b>{{ rosterRows.filter((r) => slotOf(r.id) === 1).length }}</b></span>
+              <span>Sorteio <b>{{ rosterRows.filter((r) => slotOf(r.id) === 'auto').length }}</b></span>
+              <span>Fora <b>{{ rosterRows.filter((r) => slotOf(r.id) === 'out').length }}</b></span>
+            </div>
             <div class="roster-head">
-              <strong>Equipe desta batalha</strong>
+              <strong>Quem vai lutar · {{ rosterRows.filter((r) => slotOf(r.id) !== 'out').length }}/{{ rosterRows.length }}</strong>
               <button v-if="rosterCustom" type="button" class="link" @click="resetRoster">Tudo em sorteio</button>
             </div>
             <p class="hint">Escolha Vermelha ou Azul para cada Pokémon, ou Fora para deixá-lo só passeando na Caixa. Quem ficar em sorteio completa os lados. No 3x3 cada lado usa 3.</p>

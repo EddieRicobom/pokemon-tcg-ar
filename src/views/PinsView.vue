@@ -1349,6 +1349,7 @@ const startNote = computed(() => {
   }
   if (blocker.value && usable.value.length > 0) return blocker.value;
   if (usable.value.length === 0) return 'Escaneie cartas para ter pins.';
+  if (randomEnemy.value) return `${setup.value.mine.length} na sua equipe · adversários aleatórios · ${DIFFICULTY_LABELS_PT[setup.value.difficulty]}`;
   return `${setup.value.mine.length} seus contra ${setup.value.enemy.length} adversários · ${DIFFICULTY_LABELS_PT[setup.value.difficulty]}`;
 });
 
@@ -1417,6 +1418,7 @@ function setMarks(on: boolean): void {
             <li v-for="(slot, i) in side.slots" :key="i">
               <button v-if="slot?.card" type="button" class="pn-slot filled" :title="`Tirar ${slot.name}`" :aria-label="`Tirar ${slot.name} de ${side.label}`" @click="choose(slot.card, null)">
                 <img v-if="thumbs[slot.id]" :src="thumbs[slot.id]" alt="" />
+                <span v-else class="pin-initials" aria-hidden="true">{{ slot.name.slice(0, 2) }}</span>
               </button>
               <span v-else-if="slot" class="pn-slot filled" :title="slot.name" role="img" :aria-label="`${slot.name} (do amigo)`">
                 <img v-if="thumbs[slot.id]" :src="thumbs[slot.id]" alt="" />
@@ -1425,9 +1427,13 @@ function setMarks(on: boolean): void {
             </li>
           </ul>
         </div>
-        <div v-if="mode === 'cpu'">
-          <label><input v-model="randomEnemy" type="checkbox" /> Sortear adversários a cada partida</label>
-          <p class="hint">O sorteio usa os Pokémon disponíveis no aparelho, inclusive espécies da sua equipe. No Difícil, tenta equilibrar quantidade e força total com a sua equipe. Dados ausentes usam os valores neutros indicados nos pins.</p>
+        <div v-if="mode === 'cpu'" class="opponent-picker">
+          <h3>Adversários</h3>
+          <div class="opponent-options" role="group" aria-label="Como escolher os adversários">
+            <button type="button" :aria-pressed="randomEnemy" :disabled="phase === 'loading'" @click="randomEnemy = true"><strong>🎲 Aleatórios</strong><small>Uma nova equipe a cada partida</small></button>
+            <button type="button" :aria-pressed="!randomEnemy" :disabled="phase === 'loading'" @click="randomEnemy = false"><strong>Escolher manualmente</strong><small>Monte os dois lados da arena</small></button>
+          </div>
+          <p class="hint" role="status">{{ randomEnemy ? (setup.difficulty === 'dificil' ? 'Quantidade e força ajustadas à sua equipe, dentro dos Pokémon disponíveis.' : 'Sorteio entre os Pokémon disponíveis no aparelho, inclusive espécies da sua equipe.') : 'Use os botões Minha equipe e Adversário na lista abaixo.' }}</p>
         </div>
         <div v-if="mode === 'cpu'" class="diff" role="group" aria-label="Dificuldade do adversário">
           <button v-for="d in DIFFICULTIES" :key="d" type="button" :class="{ on: setup.difficulty === d }" :aria-pressed="setup.difficulty === d" @click="setDifficulty(d)">{{ DIFFICULTY_LABELS_PT[d] }}</button>
@@ -1436,6 +1442,7 @@ function setMarks(on: boolean): void {
 
       <section v-if="mode === 'cpu' || peer" class="pn-card pn-pick">
         <h3>Escolha os pins</h3>
+        <p class="selection-caption">{{ setup.mine.length }}/{{ MAX_MINE }} na sua equipe · toque novamente para tirar</p>
         <p v-if="loadingCards" class="message">Lendo as cartas guardadas…</p>
         <p v-else-if="usable.length === 0" class="message">Nenhum Pokémon ainda. <a :href="routeHref('escanear')">Escaneie uma carta</a> ou ganhe um Digital Pokémon na Vila para ter pins.</p>
         <template v-else>
@@ -1457,8 +1464,8 @@ function setMarks(on: boolean): void {
                 </small>
               </span>
               <span class="row-roles" role="group" :aria-label="`Papel de ${card.name}`">
-                <button type="button" class="r-mine" :class="{ on: roleShown(card) === 'mine' }" :aria-pressed="roleShown(card) === 'mine'" title="Seu pin" @click="choose(card, roleShown(card) === 'mine' ? null : 'mine')">Meu</button>
-                <button v-if="mode === 'cpu' && !randomEnemy" type="button" class="r-enemy" :class="{ on: roleShown(card) === 'enemy' }" :aria-pressed="roleShown(card) === 'enemy'" title="Adversário" @click="choose(card, roleShown(card) === 'enemy' ? null : 'enemy')">Inimigo</button>
+                <button type="button" class="r-mine" :class="{ on: roleShown(card) === 'mine' }" :aria-pressed="roleShown(card) === 'mine'" title="Seu pin" @click="choose(card, roleShown(card) === 'mine' ? null : 'mine')">{{ roleShown(card) === 'mine' ? '✓ Minha equipe' : '+ Minha equipe' }}</button>
+                <button v-if="mode === 'cpu' && !randomEnemy" type="button" class="r-enemy" :class="{ on: roleShown(card) === 'enemy' }" :aria-pressed="roleShown(card) === 'enemy'" title="Adversário" @click="choose(card, roleShown(card) === 'enemy' ? null : 'enemy')">{{ roleShown(card) === 'enemy' ? '✓ Adversário' : '+ Adversário' }}</button>
               </span>
             </li>
           </ul>

@@ -13,6 +13,7 @@ type Row = CachedCard & { thumb?: string };
 const rows = ref<Row[]>([]);
 const loading = ref(true);
 const search = ref('');
+const onlySelected = ref(false);
 const notice = ref('');
 const loadError = ref('');
 const urls: string[] = [];
@@ -21,7 +22,7 @@ const usable = computed(() => rows.value.filter((row) => row.sprite.state === 'o
 const team = computed(() => resolveTeam(savedTeam.value, rows.value));
 const shown = computed(() => {
   const q = search.value.trim().toLowerCase();
-  return usable.value.filter((row) => !q || `${row.name} ${row.setName}`.toLowerCase().includes(q));
+  return usable.value.filter((row) => (!onlySelected.value || team.value.ids.includes(row.id)) && (!q || `${row.name} ${row.setName}`.toLowerCase().includes(q)));
 });
 const missingSprite = computed(() => rows.value.length - usable.value.length);
 
@@ -76,6 +77,10 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
     <p v-else-if="loadError" class="message error" role="alert">{{ loadError }}</p>
     <p v-else-if="usable.length === 0" class="message">Nenhuma carta guardada com Pokémon ainda. Escaneie uma carta primeiro.</p>
     <template v-else>
+      <div class="selection-tabs" role="group" aria-label="Mostrar Pokémon">
+        <button type="button" :aria-pressed="!onlySelected" @click="onlySelected = false">Todos · {{ usable.length }}</button>
+        <button type="button" :aria-pressed="onlySelected" @click="onlySelected = true">Na turma · {{ team.ids.length }}</button>
+      </div>
       <div class="team-tools">
         <input v-model="search" type="text" placeholder="Buscar por nome ou coleção" aria-label="Buscar carta" autocomplete="off" />
         <button v-if="!team.auto" type="button" class="link" @click="useAuto">Usar as mais recentes</button>
@@ -88,7 +93,7 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
             <span class="team-name">{{ row.name }}</span>
             <CardMarks :card="row" compact />
             <small>{{ row.setName }}</small>
-            <small>{{ team.ids.includes(row.id) ? '✓ Na turma · tocar para tirar' : '+ Adicionar à turma' }}</small>
+            <small>{{ team.ids.includes(row.id) ? '✓ Na turma · tirar' : '+ Adicionar' }}</small>
             <span v-if="team.ids.includes(row.id)" class="team-slot" aria-hidden="true">{{ team.ids.indexOf(row.id) + 1 }}</span>
           </button>
         </li>
