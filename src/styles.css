@@ -4492,6 +4492,32 @@ body.no-scroll .reward-toasts {
   pointer-events: none;
 }
 
+/* A Vila em AR é um diorama 3D renderizado sobre a câmera; o canvas 2D continua vivo só como textura. */
+.village-ar-video.active {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  object-fit: cover;
+}
+
+.village-canvas.diorama-source {
+  opacity: 0;
+}
+
+.village-ar-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.village-ar-canvas.active {
+  opacity: 1;
+}
+
 .village-ar-badge {
   border: 1px solid rgba(170, 226, 255, 0.65);
   border-radius: 999px;
