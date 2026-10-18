@@ -50,6 +50,7 @@ import { drawBadgeFace, drawBadgeMask } from './badge-art';
 
 export interface BadgeCaseOptions {
   canvas: HTMLCanvasElement;
+  designs?: readonly BadgeDesign[];
   /** Ginásios vencidos (ordens). Só esses ganham insígnia no encaixe. */
   won: readonly number[];
   /** Brilho atual de cada insígnia conquistada (0 a 1). */
@@ -202,6 +203,7 @@ interface BadgeNode {
   face: MeshStandardMaterial;
   side: MeshStandardMaterial;
   canvas: HTMLCanvasElement;
+  designs?: readonly BadgeDesign[];
   texture: CanvasTexture;
   polish: number;
   drawnPolish: number;
@@ -281,7 +283,7 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
   shakeGroup.add(handle);
 
   // Encaixes: a silhueta de cada insígnia afundada no veludo (vazia ou com a insígnia).
-  for (const design of BADGE_DESIGNS) {
+  for (const design of options.designs ?? BADGE_DESIGNS) {
     const { x, z } = slotWorld(design.order);
     const rim = new Mesh(keep(new ShapeGeometry(shapeOf(design.outline, BADGE_R * 1.2))), rimMat);
     rim.rotation.x = -Math.PI / 2;
@@ -319,7 +321,7 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
   // Insígnias conquistadas.
   const nodes: BadgeNode[] = [];
   const won = new Set(options.won);
-  for (const design of BADGE_DESIGNS) {
+  for (const design of options.designs ?? BADGE_DESIGNS) {
     if (!won.has(design.order)) continue;
     const geo = keep(new ExtrudeGeometry(shapeOf(design.outline), { depth: 0.12, bevelEnabled: true, bevelThickness: 0.07, bevelSize: 0.06, bevelSegments: 3, curveSegments: 4 }));
     const c = document.createElement('canvas');

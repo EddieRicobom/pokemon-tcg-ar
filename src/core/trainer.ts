@@ -383,7 +383,7 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
   } else if (event.type === 'league') {
     s.battles++;
     s.today.battles++;
-    if (typeof event.badges === 'number') s.league.badges = Math.max(s.league.badges, Math.max(0, Math.min(8, Math.floor(event.badges))));
+    if (typeof event.badges === 'number') s.league.badges = Math.max(s.league.badges, Math.max(0, Math.min(32, Math.floor(event.badges))));
     if (typeof event.championWins === 'number') s.league.champion = Math.max(s.league.champion, Math.max(0, Math.floor(event.championWins)));
     const xp = event.first ? Math.max(0, Math.round(event.xp)) : XP.leagueRematch;
     gain += xp;
@@ -514,7 +514,7 @@ export function normalizeTrainer(raw: unknown): TrainerState {
     streak: { current: num(r.streak?.current), best: num(r.streak?.best), lastDay: typeof r.streak?.lastDay === 'string' ? r.streak.lastDay : '' },
     life: { talks: num(r.life?.talks), answers: num(r.life?.answers), moments: num(r.life?.moments), nicknames: num(r.life?.nicknames) },
     bestFriend: Math.min(4, num(r.bestFriend)),
-    league: { badges: Math.min(8, num(r.league?.badges)), champion: num(r.league?.champion) },
+    league: { badges: Math.min(32, num(r.league?.badges)), champion: num(r.league?.champion) },
     pvp: { played: num(r.pvp?.played), wins: Math.min(num(r.pvp?.played), num(r.pvp?.wins)) },
     shinies: num(r.shinies),
     today: { day: typeof r.today?.day === 'string' ? r.today.day : '', cards: strs(r.today?.cards), battles: num(r.today?.battles), minigames: num(r.today?.minigames), life: num(r.today?.life), progress, done: strs(r.today?.done), bonus: r.today?.bonus === true },

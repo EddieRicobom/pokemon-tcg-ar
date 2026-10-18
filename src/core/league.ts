@@ -1,3 +1,4 @@
+import { TYPE_COLORS } from './pokemon-data';
 import type { PokemonType } from './pokemon-data';
 
 /**
@@ -9,6 +10,102 @@ import type { PokemonType } from './pokemon-data';
 
 /** Nomes das espécies das equipes dos líderes (iguais em português). */
 export const SPECIES_NAMES: Readonly<Record<number, string>> = {
+  16: 'Pidgey',
+  17: 'Pidgeotto',
+  18: 'Pidgeot',
+  25: 'Pikachu',
+  24: 'Arbok',
+  31: 'Nidoqueen',
+  34: 'Nidoking',
+  35: 'Clefairy',
+  42: 'Golbat',
+  45: 'Vileplume',
+  49: 'Venomoth',
+  51: 'Dugtrio',
+  54: 'Psyduck',
+  57: 'Primeape',
+  58: 'Growlithe',
+  59: 'Arcanine',
+  62: 'Poliwrath',
+  64: 'Kadabra',
+  71: 'Victreebel',
+  77: 'Ponyta',
+  80: 'Slowbro',
+  81: 'Magnemite',
+  82: 'Magneton',
+  86: 'Seel',
+  87: 'Dewgong',
+  89: 'Muk',
+  92: 'Gastly',
+  100: 'Voltorb',
+  103: 'Exeggutor',
+  106: 'Hitmonlee',
+  107: 'Hitmonchan',
+  109: 'Koffing',
+  110: 'Weezing',
+  111: 'Rhyhorn',
+  112: 'Rhydon',
+  114: 'Tangela',
+  119: 'Seaking',
+  120: 'Staryu',
+  121: 'Starmie',
+  123: 'Scyther',
+  124: 'Jynx',
+  131: 'Lapras',
+  138: 'Omanyte',
+  142: 'Aerodactyl',
+  148: 'Dragonair',
+  149: 'Dragonite',
+  6: 'Charizard',
+  163: 'Hoothoot',
+  168: 'Ariados',
+  169: 'Crobat',
+  178: 'Xatu',
+  197: 'Umbreon',
+  198: 'Murkrow',
+  203: 'Girafarig',
+  205: 'Forretress',
+  227: 'Skarmory',
+  230: 'Kingdra',
+  237: 'Hitmontop',
+  241: 'Miltank',
+  262: 'Mightyena',
+  275: 'Shiftry',
+  277: 'Swellow',
+  279: 'Pelipper',
+  288: 'Vigoroth',
+  289: 'Slaking',
+  296: 'Makuhita',
+  299: 'Nosepass',
+  302: 'Sableye',
+  306: 'Aggron',
+  310: 'Manectric',
+  319: 'Sharpedo',
+  322: 'Numel',
+  324: 'Torkoal',
+  327: 'Spinda',
+  330: 'Flygon',
+  332: 'Cacturne',
+  334: 'Altaria',
+  337: 'Lunatone',
+  338: 'Solrock',
+  344: 'Claydol',
+  346: 'Cradily',
+  348: 'Armaldo',
+  354: 'Banette',
+  356: 'Dusclops',
+  359: 'Absol',
+  362: 'Glalie',
+  364: 'Sealeo',
+  365: 'Walrein',
+  370: 'Luvdisc',
+  372: 'Shelgon',
+  373: 'Salamence',
+  376: 'Metagross',
+  11: 'Metapod',
+  14: 'Kakuna',
+  218: 'Slugma',
+  91: 'Cloyster',
   74: 'Geodude',
   95: 'Onix',
   408: 'Cranidos',
@@ -90,6 +187,7 @@ export type ChallengeKind = 'gym' | 'elite' | 'champion';
 
 export interface Challenge {
   id: string;
+  region?: RegionId;
   kind: ChallengeKind;
   /** Ordem dentro do tipo (Ginásio 0..7, Elite 0..3, Campeã 0). */
   order: number;
@@ -136,18 +234,105 @@ export const CHAMPION: Challenge = {
   defeat: 'Você é o novo Campeão! Seu nome e o de seus Pokémon vão para o Hall da Fama.',
 };
 
-export const ALL_CHALLENGES: readonly Challenge[] = [...GYMS, ...ELITE, CHAMPION];
+export type RegionId = 'sinnoh' | 'kanto' | 'johto' | 'hoenn';
+export interface LeagueRegion {
+  id: RegionId;
+  name: string;
+  generation: string;
+  badgeOffset: number;
+  gyms: readonly Challenge[];
+  elite: readonly Challenge[];
+  champion: Challenge;
+}
+
+// Equipes de exibição inspiradas em FireRed/LeafGreen, Gold/Silver e Ruby/Sapphire.
+// A progressão e a dificuldade são próprias do app, como em Sinnoh.
+type LeaderData = readonly [string, PokemonType, readonly number[], string?, string?];
+function makeRegion(id: RegionId, name: string, generation: string, badgeOffset: number, spriteBase: string, gyms: readonly LeaderData[], elite: readonly LeaderData[], champion: LeaderData): LeagueRegion {
+  const make = (data: LeaderData, kind: ChallengeKind, order: number): Challenge => {
+    const [leader, type, team, badge, sprite] = data;
+    const role = kind === 'gym' ? 'Líder de Ginásio' : kind === 'elite' ? 'Elite 4' : 'Campeão';
+    return { id: `${id}-${kind}-${order}`, region: id, kind, order, leader, role,
+      sprite: `${spriteBase}${sprite ?? leader.replaceAll(' ', '_')}`, type, team,
+      power: kind === 'gym' ? 0.9 + order * 0.05 : kind === 'elite' ? 1.3 + order * 0.04 : 1.5,
+      xp: kind === 'gym' ? 120 + order * 10 : kind === 'elite' ? 220 + order * 10 : 500,
+      ...(badge ? { badge: { name: `Insígnia ${badge}`, color: TYPE_COLORS[type] } } : {}),
+      intro: `Sou ${leader}, da Liga de ${name}. Minha equipe está pronta para o seu desafio!`,
+      defeat: kind === 'gym' ? `Uma ótima batalha! A Insígnia ${badge} é sua.` : `Você venceu minha equipe! Continue sua jornada pela Liga de ${name}.`,
+    };
+  };
+  return { id, name, generation, badgeOffset, gyms: gyms.map((d, i) => make(d, 'gym', i)), elite: elite.map((d, i) => make(d, 'elite', i)), champion: make(champion, 'champion', 0) };
+}
+
+export const LEAGUE_REGIONS: readonly LeagueRegion[] = [
+  { id: 'sinnoh', name: 'Sinnoh', generation: 'IV', badgeOffset: 0, gyms: GYMS, elite: ELITE, champion: CHAMPION },
+  makeRegion('kanto', 'Kanto', 'I', 8, 'gen3/firered-leafgreen/', [
+    ['Brock', 'rock', [74, 95, 138], 'Rocha'],
+    ['Misty', 'water', [120, 121, 54], 'Cascata'],
+    ['Lt. Surge', 'electric', [100, 25, 26], 'Trovão', 'Lt._Surge'],
+    ['Erika', 'grass', [71, 114, 45], 'Arco-íris'],
+    ['Koga', 'poison', [109, 89, 110, 49], 'Alma'],
+    ['Sabrina', 'psychic', [64, 122, 49, 65], 'Pântano'],
+    ['Blaine', 'fire', [58, 77, 78, 59], 'Vulcão'],
+    ['Giovanni', 'ground', [111, 51, 31, 34, 112], 'Terra'],
+  ], [
+    ['Lorelei', 'ice', [87, 91, 80, 124, 131]],
+    ['Bruno', 'fighting', [95, 107, 106, 68]],
+    ['Agatha', 'ghost', [94, 42, 93, 24]],
+    ['Lance', 'dragon', [130, 148, 142, 149]],
+  ], ['Blue', 'normal', [18, 65, 112, 103, 130, 6]]),
+  makeRegion('johto', 'Johto', 'II', 16, 'gen4/heartgold-soulsilver/', [
+    ['Falkner', 'flying', [16, 17, 163], 'Zephyr'],
+    ['Bugsy', 'bug', [11, 14, 123], 'Colmeia'],
+    ['Whitney', 'normal', [35, 241, 203], 'Planície'],
+    ['Morty', 'ghost', [92, 93, 94], 'Névoa'],
+    ['Chuck', 'fighting', [57, 62, 237], 'Tempestade'],
+    ['Jasmine', 'steel', [81, 82, 208], 'Mineral'],
+    ['Pryce', 'ice', [86, 87, 221], 'Geleira'],
+    ['Clair', 'dragon', [148, 130, 230], 'Ascendente'],
+  ], [
+    ['Will', 'psychic', [178, 124, 103, 80]],
+    ['Koga', 'poison', [168, 205, 89, 49, 169]],
+    ['Bruno', 'fighting', [237, 106, 107, 95, 68]],
+    ['Karen', 'dark', [197, 45, 94, 198, 229]],
+  ], ['Lance', 'dragon', [130, 149, 142, 6, 148, 230]]),
+  makeRegion('hoenn', 'Hoenn', 'III', 24, 'gen3/ruby-sapphire/', [
+    ['Roxanne', 'rock', [74, 299, 75], 'Pedra'],
+    ['Brawly', 'fighting', [66, 307, 296], 'Punho'],
+    ['Wattson', 'electric', [100, 81, 82, 310], 'Dínamo'],
+    ['Flannery', 'fire', [218, 322, 324], 'Calor'],
+    ['Norman', 'normal', [327, 288, 289], 'Equilíbrio'],
+    ['Winona', 'flying', [277, 279, 227, 334], 'Pena'],
+    ['Tate e Liza', 'psychic', [344, 178, 337, 338], 'Mente', 'Tate_and_Liza'],
+    ['Wallace', 'water', [370, 340, 364, 119, 350], 'Chuva'],
+  ], [
+    ['Sidney', 'dark', [262, 275, 332, 319, 359]],
+    ['Phoebe', 'ghost', [356, 354, 302]],
+    ['Glacia', 'ice', [362, 364, 365]],
+    ['Drake', 'dragon', [372, 334, 330, 373]],
+  ], ['Steven', 'steel', [227, 344, 306, 346, 348, 376]]),
+];
+export const ALL_CHALLENGES: readonly Challenge[] = LEAGUE_REGIONS.flatMap((r) => [...r.gyms, ...r.elite, r.champion]);
+export const regionOf = (c: Challenge): LeagueRegion => LEAGUE_REGIONS.find((r) => r.id === (c.region ?? 'sinnoh'))!;
+export function regionalProgress(p: LeagueProgress, id: RegionId): LeagueProgress {
+  const region = LEAGUE_REGIONS.find((r) => r.id === id)!;
+  const counters = id === 'sinnoh' ? p : p.regions?.[id];
+  return { badges: p.badges.filter((b) => b >= region.badgeOffset && b < region.badgeOffset + 8).map((b) => b - region.badgeOffset),
+    eliteStreak: counters?.eliteStreak ?? 0, championWins: counters?.championWins ?? 0, beaten: p.beaten };
+}
 
 export function challengeById(id: string): Challenge | null {
   return ALL_CHALLENGES.find((c) => c.id === id) ?? null;
 }
 
 export interface LeagueProgress {
-  /** Ginásios vencidos (índices). */
+  /** Insígnias globais: Sinnoh 0–7, Kanto 8–15, Johto 16–23, Hoenn 24–31. */
   badges: number[];
+  /** Corridas e títulos das regiões novas; os campos antigos abaixo continuam sendo Sinnoh. */
+  regions?: Partial<Record<RegionId, { eliteStreak: number; championWins: number }>>;
   /** Quantos da Elite 4 já foram vencidos nesta corrida (0 a 4; 4 = Campeã liberada). */
   eliteStreak: number;
-  /** Quantas vezes venceu a Campeã. */
+  /** Quantas vezes venceu Cynthia em Sinnoh. */
   championWins: number;
   /** Desafios já vencidos alguma vez (para o XP cheio só na primeira). */
   beaten: string[];
@@ -159,10 +344,17 @@ export function emptyLeague(): LeagueProgress {
 
 export function normalizeLeague(raw: unknown): LeagueProgress {
   const r = (raw ?? {}) as Partial<LeagueProgress>;
-  const badges = Array.isArray(r.badges) ? [...new Set(r.badges.filter((b) => Number.isInteger(b) && b >= 0 && b < GYMS.length))].sort((a, b) => a - b) : [];
+  const badges = Array.isArray(r.badges) ? [...new Set(r.badges.filter((b) => Number.isInteger(b) && b >= 0 && b < 32))].sort((a, b) => a - b) : [];
   const ids = new Set(ALL_CHALLENGES.map((c) => c.id));
   return {
     badges,
+    ...(r.regions && typeof r.regions === 'object' ? { regions: Object.fromEntries(
+      LEAGUE_REGIONS.filter((region) => region.id !== 'sinnoh').map(({ id }) => {
+        const value = r.regions?.[id];
+        return [id, { eliteStreak: Number.isInteger(value?.eliteStreak) ? Math.min(4, Math.max(0, value!.eliteStreak)) : 0,
+          championWins: Number.isInteger(value?.championWins) ? Math.max(0, value!.championWins) : 0 }];
+      }),
+    ) } : {}),
     eliteStreak: Number.isInteger(r.eliteStreak) ? Math.min(ELITE.length, Math.max(0, r.eliteStreak!)) : 0,
     championWins: Number.isInteger(r.championWins) ? Math.max(0, r.championWins!) : 0,
     beaten: Array.isArray(r.beaten) ? r.beaten.filter((id): id is string => typeof id === 'string' && ids.has(id)) : [],
@@ -176,6 +368,9 @@ export type ChallengeStatus = 'locked' | 'open' | 'beaten';
  * vez, na ordem da corrida; a Campeã depois dos 4. Desafios já vencidos continuam jogáveis (revanche).
  */
 export function statusOf(progress: LeagueProgress, challenge: Challenge): ChallengeStatus {
+  return localStatusOf(regionalProgress(progress, regionOf(challenge).id), challenge);
+}
+function localStatusOf(progress: LeagueProgress, challenge: Challenge): ChallengeStatus {
   if (challenge.kind === 'gym') {
     if (progress.badges.includes(challenge.order)) return 'beaten';
     return challenge.order === 0 || progress.badges.includes(challenge.order - 1) ? 'open' : 'locked';
@@ -199,6 +394,16 @@ export interface LeagueOutcome {
 
 /** Aplica o resultado de uma batalha da Liga. */
 export function applyLeagueResult(prev: LeagueProgress, challenge: Challenge, won: boolean): LeagueOutcome {
+  const region = regionOf(challenge);
+  if (statusOf(prev, challenge) === 'locked') return { progress: prev, first: false, message: 'Este desafio ainda está bloqueado.' };
+  const result = applyLocalResult(regionalProgress(prev, region.id), challenge, won);
+  const local = result.progress;
+  const progress: LeagueProgress = { ...prev, badges: [...prev.badges.filter((b) => b < region.badgeOffset || b >= region.badgeOffset + 8), ...local.badges.map((b) => b + region.badgeOffset)].sort((a, b) => a - b), beaten: local.beaten };
+  if (region.id === 'sinnoh') { progress.eliteStreak = local.eliteStreak; progress.championWins = local.championWins; }
+  else progress.regions = { ...prev.regions, [region.id]: { eliteStreak: local.eliteStreak, championWins: local.championWins } };
+  return { ...result, progress };
+}
+function applyLocalResult(prev: LeagueProgress, challenge: Challenge, won: boolean): LeagueOutcome {
   const p: LeagueProgress = { ...prev, badges: [...prev.badges], beaten: [...prev.beaten] };
   if (!won) {
     if (challenge.kind !== 'gym' && p.eliteStreak > 0) {
@@ -215,7 +420,7 @@ export function applyLeagueResult(prev: LeagueProgress, challenge: Challenge, wo
   }
   if (challenge.kind === 'elite') {
     p.eliteStreak = Math.max(p.eliteStreak, challenge.order + 1);
-    return { progress: p, first, message: p.eliteStreak >= ELITE.length ? 'Os 4 da Elite foram vencidos! A Campeã espera.' : `${challenge.leader} foi vencido(a). Próximo da Elite 4!` };
+    return { progress: p, first, message: p.eliteStreak >= ELITE.length ? `Os 4 da Elite foram vencidos! ${regionOf(challenge).champion.leader} espera.` : `${challenge.leader} foi vencido(a). Próximo da Elite 4!` };
   }
   p.championWins++;
   p.eliteStreak = 0;
@@ -223,6 +428,6 @@ export function applyLeagueResult(prev: LeagueProgress, challenge: Challenge, wo
 }
 
 /** O próximo desafio aberto (o que o jogador "deveria" fazer agora), ou null se a Liga foi vencida e nada está aberto. */
-export function nextChallenge(progress: LeagueProgress): Challenge | null {
-  return ALL_CHALLENGES.find((c) => statusOf(progress, c) === 'open') ?? null;
+export function nextChallenge(progress: LeagueProgress, region: RegionId = 'sinnoh'): Challenge | null {
+  return ALL_CHALLENGES.filter((c) => regionOf(c).id === region).find((c) => statusOf(progress, c) === 'open') ?? null;
 }
