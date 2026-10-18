@@ -85,7 +85,11 @@ export function getCache(): Promise<CardCache> {
     // As cartas que já estavam guardadas entram no Treinador sem XP.
     void cache.list().then((cards) => syncTrainerHistory(cards)).catch(() => undefined);
     return cache;
-  })();
+  })().catch((error) => {
+    // Uma falha transitória do IndexedDB não deve impedir novas tentativas até recarregar o app.
+    cachePromise = null;
+    throw error;
+  });
   return cachePromise;
 }
 

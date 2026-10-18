@@ -9,7 +9,7 @@ import { attachLiveVillage, detachLiveVillage, syncCoins } from '../app/wallet';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { routeHref } from '../app/route';
-import { isGameKeyboardControl } from '../app/game-keyboard';
+import { handleDialogEscape, isGameKeyboardControl } from '../app/game-keyboard';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { arLookFromOrientation } from '../core/village/ar-look';
 import { canNickname, displayName, MAX_NICK_LEN, nickIdeas, nicknameOf, setNickname } from '../core/village/nickname';
@@ -701,6 +701,7 @@ function onKey(e: KeyboardEvent): void {
     applyKeys();
     return;
   }
+  if (handleDialogEscape(e, pressB)) return;
   if (isGameKeyboardControl(e.target)) return;
   // Dentro de uma folha (jogos do Fliperama, Arena…) Enter, espaço e setas são da folha, não do personagem.
   if (sheet.value && (e.target as HTMLElement | null)?.closest?.('.village-sheet') && (KEYS[e.key] || e.key === ' ' || e.key === 'Enter')) return;
@@ -1794,6 +1795,8 @@ onBeforeUnmount(() => {
 });
 
 onMounted(async () => {
+  // Baixa o treinador enquanto cache e moradores são preparados, sem somar até 8 s à abertura.
+  const trainerAtlasPromise = loadTrainerAtlas(profile.sprite);
   // Cutscene da primeira entrada (Fase 4): só na primeira vez de verdade, antes do aviso de controles.
   if (!state.digital.introSeen) cutsceneOpen.value = true;
   tickClock();
@@ -1841,7 +1844,7 @@ onMounted(async () => {
   // Recorte real de tileset pra grama (ver `village-art.ts`); null se não der pra baixar, cai no ladrilho
   // desenhado por código de sempre — a Vila nunca trava nem finge por causa disso.
   // O atlas de tilesets (chão, natureza, casas, prédios): mesma regra, sem ele a Vila usa o desenho por código.
-  const [groundTile, atlas, trainerAtlas] = await Promise.all([getVillageGroundTile().catch(() => null), getVillageAtlas().catch(() => null), loadTrainerAtlas(profile.sprite)]);
+  const [groundTile, atlas, trainerAtlas] = await Promise.all([getVillageGroundTile().catch(() => null), getVillageAtlas().catch(() => null), trainerAtlasPromise]);
   if (!canvasEl.value || !wrapEl.value) return;
   game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas, trainerAtlas);
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;

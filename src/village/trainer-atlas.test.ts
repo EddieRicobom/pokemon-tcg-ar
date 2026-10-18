@@ -12,17 +12,20 @@ describe('atlas local dos treinadores', () => {
     expect(AVAILABLE_TRAINER_ATLASES).toHaveLength(40);
   });
 
-  it('uma imagem sem resposta não impede a Vila de abrir indefinidamente', async () => {
+  it('inicia o download imediatamente e limita a espera mesmo quando o resultado só é consumido depois', async () => {
     vi.useFakeTimers();
+    const requested: string[] = [];
     class PendingImage {
       decoding = '';
-      src = '';
+      set src(url: string) { requested.push(url); }
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
     }
     vi.stubGlobal('Image', PendingImage);
     const loading = loadTrainerAtlas('lucas');
-    await vi.advanceTimersByTimeAsync(8000);
+    // A Vila começa a carga antes dos awaits do cache e só consome a promessa ao montar a cena.
+    expect(requested).toEqual([trainerAtlasUrl('lucas')]);
+    await vi.advanceTimersByTimeAsync(9000);
     expect(await loading).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
     expect(await loadTrainerAtlas('../inexistente')).toBeNull();

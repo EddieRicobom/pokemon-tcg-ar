@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp, h, nextTick, reactive, type App as VueApp } from 'vue';
 import QuizDialog from './QuizDialog.vue';
+import { handleDialogEscape } from '../app/game-keyboard';
 
 describe('QuizDialog', () => {
   let host: HTMLElement | null = null;
@@ -39,6 +40,23 @@ describe('QuizDialog', () => {
     const el = mount({ stage: 'ask', chips: ['Brigadeiro', 'Sorvete'] }, { onAnswer: (t: never) => got.push(t) });
     [...el.querySelectorAll('.quiz-chips button')].find((b) => b.textContent === 'Sorvete')!.dispatchEvent(new Event('click'));
     expect(got).toEqual(['Sorvete']);
+  });
+
+  it('consome Escape uma vez sem disparar o voltar global da Vila', () => {
+    let closed = 0;
+    let backed = 0;
+    const el = mount({ stage: 'reply' }, { onClose: () => closed++ });
+    const globalBack = (event: KeyboardEvent) => handleDialogEscape(event, () => backed++);
+    window.addEventListener('keydown', globalBack);
+    try {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      el.querySelector('button')!.dispatchEvent(event);
+      expect(closed).toBe(1);
+      expect(backed).toBe(0);
+      expect(event.defaultPrevented).toBe(true);
+    } finally {
+      window.removeEventListener('keydown', globalBack);
+    }
   });
 
   it('mantém o foco na conversa ao trocar etapas e devolve ao controle de origem', async () => {
