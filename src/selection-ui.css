@@ -1,0 +1,49 @@
+/* Collection → walking group → battle lineup: shared visual hierarchy. */
+.collection-flow { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:18px 0; }
+.flow-step { display:flex; align-items:center; gap:10px; padding:16px; border:1px solid var(--line); border-radius:14px; background:var(--surface); color:var(--text); text-decoration:none; min-width:0; }
+.flow-step > span { display:grid; place-items:center; flex:0 0 30px; height:30px; border-radius:50%; background:var(--surface-2); color:var(--accent); font-weight:800; }
+.flow-step.current { border-color:var(--accent); }
+.flow-step strong,.flow-step small { display:block; }
+.flow-step small { color:var(--muted); margin-top:4px; line-height:1.4; }
+.flow-step:focus-visible, .opponent-options button:focus-visible, .selection-tabs button:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+.team-strip { padding:16px; border-radius:16px; }
+.team-strip ul { gap:10px; padding-bottom:8px; scroll-snap-type:x proximity; }
+.team-strip li { flex:0 0 112px; max-width:112px; padding:12px 8px 6px; border:1px solid var(--line); border-radius:12px; background:var(--surface-2); gap:6px; scroll-snap-align:start; }
+.team-strip li > span { overflow-wrap:anywhere; font-weight:700; }
+.team-strip li > button { min-height:44px; width:100%; font-size:.75rem; }
+.selection-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+.selection-tabs button { flex:1; min-height:44px; border:1px solid var(--line); background:var(--surface-2); color:var(--text); border-radius:10px; }
+.selection-tabs button[aria-pressed='true'] { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 18%,var(--surface)); font-weight:800; }
+.team-picker .team-grid { grid-template-columns:repeat(auto-fill,minmax(125px,1fr)); gap:10px; }
+.team-picker .team-card { padding:14px 10px 10px; border-radius:14px; gap:6px; min-height:165px; }
+.team-picker .team-card small:last-of-type { display:block; width:100%; padding:8px 4px; border-radius:8px; background:var(--surface-2); color:var(--text); font-weight:700; }
+.team-picker .team-card.picked small:last-of-type { color:var(--gold); }
+.selection-caption { color:var(--muted); font-size:.85rem; margin:8px 0 12px; }
+.opponent-picker { grid-column:1/-1; border-top:1px solid var(--line); padding-top:14px; }
+.opponent-picker h3 { margin:0 0 10px; font-size:1rem; }
+.opponent-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.opponent-options button { display:grid; gap:6px; padding:14px; min-height:80px; border:1px solid var(--line); border-radius:12px; background:var(--surface-2); color:var(--text); text-align:left; }
+.opponent-options button small { color:var(--muted); font-weight:400; line-height:1.4; }
+.opponent-options button[aria-pressed='true'] { border:2px solid var(--mine); padding:13px; background:color-mix(in srgb,var(--mine) 12%,var(--surface)); }
+.pins .row-roles { display:flex; flex-wrap:wrap; gap:6px; }
+.pins .row-roles button { min-height:44px; padding:8px 12px; }
+.pin-initials { color:#132747; font-size:.85rem; font-weight:800; text-transform:uppercase; }
+.roster-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin:12px 0; }
+.roster-summary span { display:grid; gap:4px; padding:10px 4px; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; text-align:center; font-size:.75rem; }
+.roster-summary b { font-size:1.2rem; }
+.roster-summary span:first-child { border-top:3px solid #ff5d5d; }
+.roster-summary span:nth-child(2) { border-top:3px solid #4da3ff; }
+.battle-team-sheet .roster-list > li { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; padding:14px 0; }
+.battle-team-sheet .roster-slots { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; width:100%; }
+.battle-team-sheet .roster-slots button { min-height:44px; padding:6px 2px; }
+.battle-team-sheet .roster-slots button.on::before { content:'✓ '; }
+@media(max-width:540px) {
+  .collection-flow { grid-template-columns:1fr; gap:6px; }
+  .flow-step { padding:12px; }
+  .flow-step > div { display:flex; flex-wrap:wrap; align-items:baseline; column-gap:8px; }
+  .pins .pin-rows > li { grid-template-columns:44px minmax(0,1fr); }
+  .pins .row-roles { grid-column:1/-1; padding-left:0; }
+  .pins .row-roles button { flex:1; }
+  .opponent-options button { padding:12px 10px; }
+  .opponent-options button[aria-pressed='true'] { padding:11px 9px; }
+}
