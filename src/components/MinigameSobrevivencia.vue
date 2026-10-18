@@ -32,6 +32,9 @@ import { speciesTiles } from '../core/size-scale';
 import { contentBounds } from '../village/local-sprite';
 import type { ContentBounds } from '../village/local-sprite';
 import { SoundEngine } from '../box/sound';
+import { survivorRegionLabel } from '../core/survivor-regions';
+import { createSurvivorLandscape } from '../village/survivor-landscape';
+import { REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from '../core/survivor-encounters';
 import type { SoundCue } from '../box/sound-recipes';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
@@ -65,18 +68,6 @@ const emit = defineEmits<{ leave: [] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
 const props = defineProps<{ digital?: { dexId: number; name: string }[] }>();
 
-/** Espécies "selvagens" comuns para o elenco de inimigos desta corrida (todas têm sprite no pacote local). */
-/**
- * Elenco maior (antes eram 12, agora ~34, varias geracoes, todos com sprite no pacote local): a tela nao repete
- * sempre os mesmos bichos.
- */
-const WILD_DEX_IDS = [
-  10, 16, 19, 21, 23, 27, 41, 46, 48, 54, 58, 69, 74, 92, 98, 109, 118, 129, 133, 161,
-  165, 177, 190, 198, 220, 228, 261, 265, 273, 300, 304, 325, 403, 418,
-] as const;
-/** Chefe periódico: maior, mais forte, sprite fixo (todas as espécies do pacote têm as 7 animações; ver village-sprite-meta.json). */
-const BOSS_DEX_ID = 95;
-
 /**
  * A Torre ocupa a tela inteira: o lado menor da tela mostra `VIEW_SHORT` unidades do jogo e o maior acompanha o formato
  * do aparelho (celular em pé vê mais para cima e para baixo; computador, mais para os lados), sem passar da arena.
@@ -98,6 +89,8 @@ function fitView(): void {
   if (ctx) ctx.imageSmoothingEnabled = false;
 }
 const JOY_MAX = 42;
+const regionScenery = ref(true);
+const drawLandscape = createSurvivorLandscape(ARENA_W, ARENA_H);
 
 interface Sprite {
   frames: HTMLCanvasElement[];
@@ -286,9 +279,8 @@ function playSound(cue: UiSound): void {
 let ctx: CanvasRenderingContext2D | null = null;
 let groundPattern: CanvasPattern | null = null;
 let playerSprite: Sprite | null = null;
-let bossSprite: Sprite | null = null;
-let kindSprites: (Sprite | null)[] = [];
-let kindCount = WILD_DEX_IDS.length;
+const enemySprites = new Map<number, Sprite | null>();
+const missingEnemySprites = ref(0);
 let rafId = 0;
 /**
  * A tela saiu (fechou a Torre). O carregamento da corrida espera sprites e o chão; se a pessoa sai no meio dele, nada
@@ -370,7 +362,7 @@ function drawSprite(sprite: Sprite | null, x: number, y: number, flip: boolean, 
 
 function drawEnemy(e: SurvivorEnemy): void {
   if (!ctx) return;
-  const sprite = e.boss ? bossSprite : (kindSprites[e.kind] ?? null);
+  const sprite = e.dexId === undefined ? null : (enemySprites.get(e.dexId) ?? null);
   // Grau: elite com anel dourado, chefão (do treinador) com anel vermelho — ajuda a reconhecer na correria.
   if (e.grade !== 'comum') {
     ctx.strokeStyle = e.grade === 'chefao' ? '#e8453c' : '#ffd84a';
@@ -418,7 +410,9 @@ function draw(): void {
   const camY = clamp(s.player.y - VIEW_H / 2, 0, Math.max(0, ARENA_H - VIEW_H));
   ctx.save();
   ctx.translate(-camX, -camY);
-  if (groundPattern) {
+  if (regionScenery.value) {
+    drawLandscape(ctx, s.elapsedMs);
+  } else if (groundPattern) {
     ctx.fillStyle = groundPattern;
     ctx.fillRect(0, 0, ARENA_W, ARENA_H);
   } else {
@@ -614,15 +608,14 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     avatarName.value = name;
     evolving.value = null;
     await loadSpriteSpecies();
-    const [player, boss, ...kinds] = await Promise.all([
+    const [player] = await Promise.all([
       loadSpriteOrNull(dexId),
-      bossSprite ? Promise.resolve(bossSprite) : loadSpriteOrNull(BOSS_DEX_ID),
-      ...(kindSprites.length > 0 ? kindSprites.map((s) => Promise.resolve(s)) : WILD_DEX_IDS.map((id) => loadSpriteOrNull(id))),
+      ...REGIONAL_ENEMY_SPRITES.map(async (id) => {
+        if (!enemySprites.get(id)) enemySprites.set(id, await loadSpriteOrNull(id));
+      }),
     ]);
     playerSprite = player;
-    bossSprite = boss;
-    kindSprites = kinds;
-    kindCount = WILD_DEX_IDS.length;
+    missingEnemySprites.value = REGIONAL_ENEMY_SPRITES.filter((id) => !enemySprites.get(id)).length;
 
     if (disposed) return;
     if (!groundPattern) {
@@ -640,7 +633,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     summary.value = null;
     pendingUpgrade.value = null;
     const { move, profile } = attackOf(dexId, picked);
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount, move, profile, dexId, evolutions: evolutionsFor, infinite });
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, dexId, evolutions: evolutionsFor, infinite });
     ready.value = true;
     lastTs = performance.now();
     if (!rafId) rafId = requestAnimationFrame(loop);
@@ -752,6 +745,9 @@ onBeforeUnmount(() => {
             <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
             <span class="chip">☠ {{ state.kills }}</span>
             <span class="chip">🌊 Onda {{ state.wave }}</span>
+            <span class="chip">{{ survivorRegionLabel(state.elapsedMs) }}</span>
+            <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
+            <button type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário regional: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
           </div>
         </div>
 
@@ -775,6 +771,8 @@ onBeforeUnmount(() => {
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
             <p class="note">3 Pokémon sorteados da sua caixa.</p>
+            <p class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
+            <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
             <div v-if="torre.infiniteUnlocked" class="survivor-mode" role="group" aria-label="Modo da Torre">
               <button type="button" :class="{ active: !infiniteWanted }" @click="infiniteWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
               <button type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true">♾️ Infinito<small>Mais difícil, sem fim</small></button>
