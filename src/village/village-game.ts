@@ -195,6 +195,7 @@ const EMOJI_FONT = 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Colo
 
 /** O desenho e o emoji sobre a porta de cada prédio da praça. */
 const CIVIC_ART: Partial<Record<BuildingKind, () => PixelBuf>> = { cafe: paintCafe, mail: paintMail, museum: paintMuseum, arcade: paintArcade, pins: paintPins, arena: paintArena, torre: paintTorre };
+const atlasOpaqueBottoms = new WeakMap<HTMLCanvasElement, number>();
 /** Com o atlas: o desenho de cada prédio (recortes de tileset, ver `atlas-spec.ts`). */
 const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'kiosk-red', museum: 'manor', arcade: 'center-blue', pins: 'kiosk-blue', arena: 'center-red', torre: 'tower' };
 /** Com o atlas: a casa de cada estágio (Cabana, Casa de madeira, Casa de tijolos, Sobrado — `HOME_STAGES`). */
@@ -1102,12 +1103,23 @@ export class VillageGame {
     /** Janelas do tileset acesas à noite (o vidro do desenho vira luz). */
     const glassGlows: { img: HTMLCanvasElement; x: number; y: number; w: number; h: number }[] = [];
     const atlas = this.atlas;
-    /** Desenha um recorte em pé: o meio da base em (cx, base). Devolve o retângulo na tela. */
+    /** Desenha um recorte em pé: a última linha visível encosta no chão em (cx, base). */
     const stand = (img: HTMLCanvasElement, cx: number, base: number) => {
       const w = img.width * scale;
       const h = img.height * scale;
       const x = Math.round(cx - w / 2);
-      const y = base - h;
+      let opaqueBottom = atlasOpaqueBottoms.get(img);
+      if (opaqueBottom === undefined) {
+        const pixels = img.getContext('2d')!.getImageData(0, 0, img.width, img.height).data;
+        opaqueBottom = -1;
+        for (let row = img.height - 1; row >= 0 && opaqueBottom < 0; row--) {
+          for (let col = 0; col < img.width; col++) {
+            if (pixels[(row * img.width + col) * 4 + 3]! > 0) { opaqueBottom = row; break; }
+          }
+        }
+        atlasOpaqueBottoms.set(img, opaqueBottom);
+      }
+      const y = base - (opaqueBottom + 1) * scale;
       ctx.drawImage(img, x, y, w, h);
       return { x, y, w, h };
     };
