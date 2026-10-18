@@ -6458,3 +6458,15 @@ body.no-scroll .reward-toasts {
   flex: none;
   border-radius: 6px;
 }
+
+/* Abertura diária e acessos com nomes: leitura confortável também no celular. */
+.village-recap { position: absolute; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: linear-gradient(155deg, rgb(20 15 40 / .94), rgb(45 24 36 / .92)); }
+.village-recap-card { width: min(100%, 540px); max-height: 90%; overflow: auto; padding: clamp(18px, 4vw, 32px); border: 1px solid #c9aa73; border-radius: 18px; background: #201e2c; box-shadow: 0 20px 70px #0008; }
+.village-recap-card small { color: #e3c68d; letter-spacing: .12em; }
+.village-recap-card h2 { font-family: Georgia, serif; font-size: clamp(1.4rem, 5vw, 2rem); color: #fff0d6; }
+.recap-script { white-space: pre-line; line-height: 1.65; }
+.village-recap-card button, .village-shortcuts button { min-height: 44px; }
+.village-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; }
+.village-shortcuts button { padding: 8px 10px; border-radius: 12px; font: inherit; font-size: .8rem; }
+.village-toast { top: auto; bottom: 16px; z-index: 15; width: max-content; pointer-events: auto; }
+@media (max-width: 480px) { .village-top > .village-menu-btn { display: none; } .village-move-hint { display: none; } .village-shortcuts { max-width: 58%; } }

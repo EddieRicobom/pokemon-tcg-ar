@@ -57,6 +57,8 @@ import {
 import type { Building } from '../core/village/town';
 import type { Moment, MomentKind } from '../core/village/social-state';
 import type { ItemId } from '../core/village/life';
+import { dailyRecap, needsDailyRecap } from '../core/village/daily-recap';
+import type { RecapScene } from '../core/village/daily-recap';
 import { villageSummary } from '../core/village/summary';
 import type { SummaryEntry } from '../core/village/summary';
 import type { Dir } from '../core/village/actors';
@@ -173,11 +175,6 @@ function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: stri
 }
 const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[]>(() => [
   {
-    title: 'Experimentos',
-    desc: 'Diorama pela câmera; a posição é estimada pelos sensores',
-    tiles: [{ icon: '📷', label: arActive.value ? 'Sair do diorama AR' : 'Vila em AR', hint: arActive.value ? 'câmera ligada' : 'aponte e posicione a Vila', run: () => { void toggleArBeta(); } }],
-  },
-  {
     title: 'Você',
     tiles: [
       { tab: 'mochila', icon: '🎒', label: 'Mochila', hint: inventory.value.length > 0 ? `${inventory.value.length} tipo(s)` : 'vazia' },
@@ -209,7 +206,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   {
     title: 'Fora da Vila',
     tiles: [
-      { tab: 'visual', icon: '🎨', label: 'Visual & Estilo', hint: 'acessórios e opções' },
+      { icon: '📷', label: arActive.value ? 'Sair do diorama AR' : 'Diorama AR experimental', hint: 'posição estimada pelos sensores', run: () => { void toggleArBeta(); } },
       { href: routeHref('treinador'), icon: '🏅', label: 'Passaporte', hint: `Nv. ${level.value}` },
     ],
   },
@@ -242,12 +239,15 @@ function hideVillageControlsHint(): void {
 }
 // O aviso de que a cidade cresceu espera você fechar as boas-vindas (para um não cobrir o outro).
 watch(welcome, (open) => {
-  if (open) return;
+  if (open || recapScenes.value.length) return;
+  finishArrival();
+});
+function finishArrival(): void {
   announceGrowth();
   // O presente inicial (questionário) tem prioridade; o sorteio de lendário (no máximo 1/dia) espera a próxima vez.
   if (!state.digital.starterGiven) maybeOfferStarter();
   else rollLegendaryToday();
-});
+}
 
 // ---- Fase 4: cutscene da primeira entrada (antes do aviso de controles, só na primeira vez de verdade).
 const INTRO_LINES: readonly string[] = [
@@ -258,6 +258,29 @@ const INTRO_LINES: readonly string[] = [
 ];
 const cutsceneOpen = ref(false);
 const cutsceneLine = ref(0);
+const recapScenes = ref<RecapScene[]>([]);
+const recapIndex = ref(0);
+const recapScene = computed(() => recapScenes.value[recapIndex.value]);
+function finishRecap(): void {
+  recapScenes.value = [];
+  if (!cutsceneOpen.value && !welcome.value) finishArrival();
+}
+function advanceRecap(): void {
+  if (recapIndex.value + 1 < recapScenes.value.length) recapIndex.value++;
+  else finishRecap();
+}
+function prepareDailyRecap(): void {
+  const now = Date.now();
+  const today = dayKey(new Date(now));
+  if (!needsDailyRecap(state.recap.day, today)) return;
+  recapIndex.value = 0;
+  recapScenes.value = dailyRecap(state, state.recap.at, now);
+  state.recap = { day: today, at: now };
+  // Persiste ao abrir: sair ou pular a cena não repete a abertura hoje.
+  changed();
+  persist();
+}
+
 
 let game: VillageGame | null = null;
 const sound = new SoundEngine();
@@ -649,7 +672,7 @@ function applyStick(x: number, y: number): void {
   game?.holdStick(dirs.primary ? dirs : null);
 }
 function joyDown(e: PointerEvent): void {
-  if (joy.active) return;
+  if (joy.active || recapScenes.value.length) return;
   const el = e.currentTarget as HTMLElement;
   const stage = wrapEl.value?.getBoundingClientRect();
   Object.assign(joy, { active: true, pointerId: e.pointerId, cx: e.clientX, cy: e.clientY, x: 0, y: 0, lx: e.clientX - (stage?.left ?? 0), ly: e.clientY - (stage?.top ?? 0), downAt: performance.now(), moved: false });
@@ -690,6 +713,10 @@ function applyKeys(): void {
   applyStick(x, y);
 }
 function onKey(e: KeyboardEvent): void {
+  if (recapScenes.value.length) {
+    if (e.type === 'keydown' && e.key === 'Escape') { e.preventDefault(); finishRecap(); }
+    return;
+  }
   const dir = KEYS[e.key];
   // Soltar uma tecla também precisa parar a caminhada se o foco entrou numa conversa.
   if (e.type === 'keyup' && dir) {
@@ -738,7 +765,7 @@ function tickQuestions(): void {
     askingMon = null;
     game?.setWaiting(null);
   }
-  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (!askingMon && now >= nextAskAt) {
     nextAskAt = now + 4 * 60000 + Math.random() * 4 * 60000;
     const today = refreshDay();
@@ -1309,7 +1336,7 @@ function announce(r: Resolved): void {
     trainerEvent('moment');
     earnCoins(8);
   }
-  say(`📖 ${r.moment.emoji} ${r.moment.title}${r.firstTime ? ' · momento novo no Álbum! +10 moedas' : r.moment.fav ? ' · guardado no Álbum 📌' : ' · salvo no Diário'}`);
+  // Momentos ambientes ficam no Diário e na abertura diária, sem interromper o passeio.
 }
 
 function afterResolve(r: Resolved, ids: string[]): void {
@@ -1348,7 +1375,7 @@ function finishScene(scene: Scene, ids: string[]): void {
 }
 
 function tickScenes(): void {
-  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (Date.now() < nextSceneAt) return;
   nextSceneAt = Date.now() + (SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR) * effects().quietFactor;
   // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
@@ -1369,7 +1396,6 @@ function awayCatchUp(): void {
     const moments = catchUp(state, list, now, null, Math.random, profile.name);
     if (moments.length > 0) {
       changed();
-      say(`📖 Enquanto você estava fora: ${moments.length} momento${moments.length > 1 ? 's' : ''} novo${moments.length > 1 ? 's' : ''} no Diário!`);
     }
   }
   state.lastSeen = now;
@@ -1417,11 +1443,15 @@ function onVisibility(): void {
     game?.holdStick(null);
     onLeave();
   }
-  else awayCatchUp();
+  else {
+    awayCatchUp();
+    prepareDailyRecap();
+  }
 }
 
 /** O botão "☰ Menu" do canto: o mesmo menu do B (uma entrada só). */
 function openMenu(): void {
+  if (recapScenes.value.length || cutsceneOpen.value || loading.value) return;
   welcome.value = false;
   updateWorldProgress();
   askingMon = null;
@@ -1471,6 +1501,7 @@ function refreshDay(): string {
 }
 
 function pressA(): void {
+  if (recapScenes.value.length) return;
   unlockSound();
   playSound('interact');
   welcome.value = false;
@@ -1697,6 +1728,7 @@ function give(item: ItemId): void {
 }
 
 function pressB(): void {
+  if (recapScenes.value.length) { finishRecap(); return; }
   // Com o aviso de boas-vindas na tela, o B só fecha o aviso (antes ele também abria o menu junto).
   if (welcome.value) {
     welcome.value = false;
@@ -1866,6 +1898,8 @@ onMounted(async () => {
   startMini();
   loading.value = '';
   awayCatchUp();
+  prepareDailyRecap();
+  if (!recapScenes.value.length && !cutsceneOpen.value && !welcome.value) finishArrival();
   sceneTimer = setInterval(() => {
     tickScenes();
     tickQuestions();
@@ -1954,10 +1988,22 @@ onBeforeUnmount(() => {
         <span class="village-house" :title="`Cidade: ${stage.name}`">Nv {{ level }}</span>
         <button v-if="arActive" type="button" class="village-ar-badge" @click="placeVillageAr">Posicionar Vila</button>
         <button v-if="arActive" type="button" class="village-ar-badge" aria-label="Sair da Vila em AR" @click="stopArBeta">AR · sair</button>
-        <button type="button" class="village-menu-btn" :aria-label="unread > 0 ? `Abrir o menu da Vila (${unread} momento(s) novo(s) no Diário)` : 'Abrir o menu da Vila'" @click="openMenu">☰ Menu<b v-if="unread > 0">{{ unread }}</b></button>
+        <button type="button" class="village-menu-btn" :aria-label="unread > 0 ? `Abrir o menu da Vila (${unread} momento(s) novo(s) no Diário)` : 'Abrir o menu da Vila'" @click="openMenu">☰ Menu</button>
         <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
       </header>
       <p v-if="loading" class="village-loading">{{ loading }}</p>
+      <div v-else-if="recapScene" class="village-recap" role="dialog" aria-modal="true" aria-label="Capítulo diário da Vila">
+        <article :key="recapIndex" class="village-recap-card">
+          <small>HISTÓRIAS DA VILA · {{ recapIndex + 1 }}/{{ recapScenes.length }}</small>
+          <h2>{{ recapScene.title }}</h2>
+          <p v-if="recapScene.cast.length" class="hint">Em cena: {{ recapScene.cast.join(' e ') }}</p>
+          <p class="recap-script">{{ recapScene.text }}</p>
+          <div class="village-choices">
+            <button type="button" @click="finishRecap">Pular abertura</button>
+            <button type="button" class="primary" autofocus @click="advanceRecap">{{ recapIndex + 1 < recapScenes.length ? 'Próxima cena' : 'Entrar na Vila' }}</button>
+          </div>
+        </article>
+      </div>
       <div v-else-if="cutsceneOpen" class="speech in-stage village-dialog" role="dialog" aria-label="Bem-vindo">
         <div class="speech-box">
           <strong>Vila</strong>
@@ -1969,13 +2015,13 @@ onBeforeUnmount(() => {
       </div>
       <div v-else-if="welcome" class="village-welcome" @click="welcome = false">
         <strong>Bem-vindo à Vila, {{ profile.name }}!</strong>
-        <span>Arraste na tela para andar ou toque no chão para ir até o local. Toque no botão <b>Menu</b> no topo (ou aperte <b>B</b> no controle/teclado) para acessar Mochila, Diário, Criação e Opções. Botão <b>A</b> conversa, colhe e interage.</span>
+        <span>Arraste na tela para andar ou toque no chão para ir até o local. Toque no botão <b>Menu</b> na barra inferior (ou aperte <b>B</b> no controle/teclado) para acessar Mochila, Diário, Criação e Opções. Botão <b>A</b> conversa, colhe e interage.</span>
         <label @click.stop>
           <input type="checkbox" @change="hideVillageControlsHint" />
           Não exibir mais ao entrar na Vila
         </label>
       </div>
-      <p v-if="toast" class="village-toast" role="status">{{ toast }}</p>
+      <p v-if="toast && !recapScene && !cutsceneOpen && !welcome" class="village-toast" role="status">{{ toast }} <button type="button" class="link" aria-label="Dispensar aviso" @click="toast = ''">✕</button></p>
 
       <QuizDialog v-if="quiz" :name="quiz.name" :text="quiz.text" :stage="quiz.stage" :placeholder="quiz.q.placeholder" :chips="quiz.q.chips" :options="quiz.follow?.options.map((x) => x.label)" :submit-label="quiz.nick ? 'Salvar' : undefined" :cancel-label="quiz.nick ? 'Cancelar' : undefined" @answer="quizAnswer" @choose="quizChoose" @close="quizClose" />
       <div v-else-if="quizOpen && quizQuestion" class="speech in-stage village-dialog" role="dialog" aria-label="Presente inicial">
@@ -2276,11 +2322,16 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="village-pad" @contextmenu.prevent>
+    <div v-show="!loading && !recapScene && !cutsceneOpen && !welcome" class="village-pad" @contextmenu.prevent>
+      <nav class="village-shortcuts" aria-label="Acessos rápidos da Vila">
+        <button type="button" @click="openMenu">☰ Menu</button>
+        <button type="button" @click="openMenu(); tab = 'mochila'">🎒 Mochila</button>
+        <button type="button" @click="openMenu(); tab = 'resumo'">📔 Novidades</button>
+      </nav>
       <p class="village-move-hint">Arraste para andar · toque para ir<span> · setas/WASD</span></p>
       <div class="ab">
-        <button type="button" class="b-btn" aria-label="B: abre o menu, ou volta" @click="pressB">B<small aria-hidden="true">{{ sheet || dialog || quiz ? 'Voltar' : 'Menu' }}</small></button>
-        <button type="button" class="a-btn" aria-label="A: interagir e falar" @click="pressA">A<small aria-hidden="true">Falar</small></button>
+        <button v-if="sheet || dialog || quiz" type="button" class="b-btn" aria-label="B: abre o menu, ou volta" @click="pressB">↩<small aria-hidden="true">{{ sheet || dialog || quiz ? 'Voltar' : 'Menu' }}</small></button>
+        <button type="button" class="a-btn" aria-label="A: interagir e falar" @click="pressA">A<small aria-hidden="true">Interagir</small></button>
       </div>
     </div>
     <BackpackView v-if="backpackOpen" :items="backpackItems" @close="backpackOpen = false" />

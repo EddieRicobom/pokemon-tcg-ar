@@ -4,6 +4,13 @@ Legenda: ✅ feito e coberto por testes automatizados / CI · 🔶 feito, **falt
 
 Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado 🔶 passou nos testes e no Chromium com câmera falsa (GL por software), mas **nenhuma etapa foi vista num celular de verdade**. O roteiro está em [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
 
+## Vila: abertura e eventos (18/10/2026)
+
+- Abertura diária em capítulos, com falas e resultados reais do Diário e a última visita lendária; pode ser pulada e não se repete na mesma data local. Sem registros novos, informa isso explicitamente.
+- Momentos ambientes deixam de gerar avisos constantes; acessos rápidos para Menu, Mochila e Novidades. Avisos de ações ficam embaixo e podem ser dispensados.
+- Dez eventos novos: Articuno, Moltres, Raikou, Entei, Lugia, Ho-Oh, Regirock, Regice, Registeel e Rayquaza. Cenas próprias, bônus e consequências aplicados até o fim do dia; chance diária total preservada.
+- Verificação local: tipos, testes, build e conferência do dist; navegador com viewport móvel confirma abertura única por dia e acesso à mochila. Aparência em celular real ainda precisa ser avaliada.
+
 ## Estado atual
 
 ### Base e infraestrutura ✅
