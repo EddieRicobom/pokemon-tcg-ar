@@ -235,9 +235,8 @@ export class VillageGame {
   private stick: Pick<StickDirs, 'primary' | 'secondary'> | null = null;
   private stepParity = 0;
   private scale = 3;
-  private arZoom = 1;
-  private arLook = { x: 0, y: 0 };
-  private arVideo: HTMLVideoElement | null = null;
+  /** A Vila em AR usa este mesmo canvas como textura de um diorama completo. */
+  private diorama = false;
   private bubbles = new Map<string, { emoji: string; until: number }>();
   private speech = new Map<string, { text: string; name: string; start: number; until: number; tint: string }>();
   private bounce = new Map<string, number>();
@@ -643,16 +642,21 @@ export class VillageGame {
     if (rect.width <= 0 || rect.height <= 0) return null;
     const px = ((clientX - rect.left) / rect.width) * this.canvas.width + this.view.camX;
     const py = ((clientY - rect.top) / rect.height) * this.canvas.height + this.view.camY;
-    const x = Math.floor(px / (TILE * this.scale * this.arZoom));
-    const y = Math.floor(py / (TILE * this.scale * this.arZoom));
+    const x = Math.floor(px / (TILE * this.scale));
+    const y = Math.floor(py / (TILE * this.scale));
     return x >= 0 && y >= 0 && x < this.map.w && y < this.map.h ? { x, y } : null;
   }
 
-  /** Ativa a composição experimental sobre a câmera; não há rastreamento de superfície. */
-  setArView(video: HTMLVideoElement | null, lookX = 0, lookY = 0): void {
-    this.arVideo = video;
-    this.arZoom = video ? 1.8 : 1;
-    this.arLook = video ? { x: lookX, y: lookY } : { x: 0, y: 0 };
+  /** Renderiza o mapa inteiro para a textura da Vila em AR; sair volta para a câmera que segue o treinador. */
+  setDioramaView(on: boolean): void {
+    if (this.diorama === on) return;
+    this.diorama = on;
+    if (on) {
+      // A textura usa a proporção real do mapa (4:3), sem faixas vazias de uma tela de celular em pé.
+      this.canvas.width = this.map.w * TILE;
+      this.canvas.height = this.map.h * TILE;
+      this.scale = 1;
+    }
   }
 
   /**
@@ -1092,34 +1096,24 @@ export class VillageGame {
 
   private draw(now: number): void {
     const { ctx, canvas } = this;
-    const scale = this.scale * this.arZoom;
-    ctx.imageSmoothingEnabled = false;
     const W = canvas.width;
     const H = canvas.height;
+    const scale = this.scale;
+    ctx.imageSmoothingEnabled = false;
     const pp = drawPos(this.player);
-    // Câmera centrada em você, presa à borda do mapa.
-    const camX = Math.round(Math.min(Math.max(0, (pp.x + 0.5 + this.arLook.x) * TILE * scale - W / 2), this.map.w * TILE * scale - W));
-    const camY = Math.round(Math.min(Math.max(0, (pp.y + 0.5 + this.arLook.y) * TILE * scale - H / 2), this.map.h * TILE * scale - H));
+    // No diorama a textura sempre mostra a Vila inteira; no modo normal a câmera segue o treinador.
+    const camX = this.diorama
+      ? Math.round((this.map.w * TILE * scale - W) / 2)
+      : Math.round(Math.min(Math.max(0, (pp.x + 0.5) * TILE * scale - W / 2), this.map.w * TILE * scale - W));
+    const camY = this.diorama
+      ? Math.round((this.map.h * TILE * scale - H) / 2)
+      : Math.round(Math.min(Math.max(0, (pp.y + 0.5) * TILE * scale - H / 2), this.map.h * TILE * scale - H));
     this.view = { camX, camY };
-    if (this.arVideo?.readyState && this.arVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      const video = this.arVideo;
-      const sourceAspect = video.videoWidth / video.videoHeight;
-      const targetAspect = W / H;
-      const cropW = sourceAspect > targetAspect ? video.videoHeight * targetAspect : video.videoWidth;
-      const cropH = sourceAspect > targetAspect ? video.videoHeight : video.videoWidth / targetAspect;
-      const cropX = (video.videoWidth - cropW) / 2;
-      const cropY = (video.videoHeight - cropH) / 2;
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, W, H);
-      ctx.imageSmoothingEnabled = false;
-    } else {
-      ctx.fillStyle = '#1d4a22';
-      ctx.fillRect(0, 0, W, H);
-    }
+    ctx.fillStyle = '#1d4a22';
+    ctx.fillRect(0, 0, W, H);
     const ground = this.groundFrames[Math.floor(now / 450) % this.groundFrames.length]!;
-    if (this.arVideo) ctx.globalAlpha = 0.68;
-    ctx.drawImage(ground, camX / scale, camY / scale, W / scale, H / scale, 0, 0, W, H);
-    ctx.globalAlpha = 1;
+    if (this.diorama) ctx.drawImage(ground, -camX, -camY, this.map.w * TILE * scale, this.map.h * TILE * scale);
+    else ctx.drawImage(ground, camX / scale, camY / scale, W / scale, H / scale, 0, 0, W, H);
 
     const clock = new Date();
     const hour = clock.getHours();
