@@ -1,3 +1,5 @@
+import { LEAGUE_REGIONS } from './league';
+import { TYPE_COLORS } from './pokemon-data';
 import type { PokemonType } from './pokemon-data';
 
 /**
@@ -202,8 +204,71 @@ export const BADGE_DESIGNS: readonly BadgeDesign[] = [
   { order: 7, name: 'Insígnia Farol', leader: 'Volkner', type: 'electric', motif: 'sol de doze raios com um raio', metal: { name: 'ouro', base: '#dcaa38', light: '#fff0a6', dark: '#87600c', metalness: 1, roughness: 0.38 }, enamel: ['#ffcb05', '#f08c12', '#fff3b0'], ...sun() },
 ];
 
+/** Versões estilizadas em metal esmaltado das insígnias regionais. Índices 0–7 continuam sendo Sinnoh. */
+const regionalMotifs = [
+  'rocha facetada', 'gota de cascata', 'estrela do trovão', 'flor de arco-íris', 'coração da alma', 'círculos do pântano', 'chama do vulcão', 'folha da terra',
+  'asas ao vento', 'colmeia com ferrão', 'trevo da planície', 'espiral de névoa', 'punho da tempestade', 'polígono mineral', 'cristal de geleira', 'cabeça de dragão',
+  'pedra lapidada', 'luva de combate', 'dínamo elétrico', 'chama do calor', 'círculo do equilíbrio', 'pena ao vento', 'mentes gêmeas', 'gota de chuva',
+];
+type BadgeShape = Pick<BadgeDesign, 'outline' | 'layers'>;
+/** Emblema simples com borda metálica, esmalte e reflexo. */
+function emblem(outline: Point[], detail: BadgeLayer[] = []): BadgeShape {
+  return { outline, layers: [
+    { points: transform(outline, 0.8), fill: 'enamel' },
+    ...detail,
+    { points: arc(0.08, -0.2, 0.3, 12), fill: 'shine' },
+    { points: [pt(-0.3, -0.3), pt(0.2, -0.3)], fill: 'enamel3', line: 0.035 },
+  ] };
+}
+function leaf(): BadgeShape {
+  const outline: Point[] = [pt(0, 0.98), pt(-0.5, 0.55), pt(-0.7, 0.1), pt(-0.6, -0.4), pt(0, -0.98), pt(0.6, -0.4), pt(0.7, 0.1), pt(0.5, 0.55)];
+  return emblem(outline, [{ points: [pt(0, -0.7), pt(0, 0.75)], fill: 'metal', line: 0.06 }, ...[-1, 1].map((side): BadgeLayer => ({ points: [pt(0, -0.1), pt(side * 0.42, 0.3)], fill: 'enamel2', line: 0.05 }))]);
+}
+function flame(): BadgeShape {
+  return emblem([pt(0, 0.98), pt(-0.18, 0.4), pt(-0.42, 0.58), pt(-0.75, -0.1), pt(-0.65, -0.55), pt(0, -0.95), pt(0.65, -0.55), pt(0.75, -0.1), pt(0.4, 0.5), pt(0.3, -0.05)],
+    [{ points: [pt(0, 0.35), pt(-0.3, -0.4), pt(0, -0.7), pt(0.3, -0.4)], fill: 'enamel3' }]);
+}
+function wing(): BadgeShape {
+  return emblem([pt(-0.9, -0.5), pt(-0.8, 0.12), pt(0.85, 0.9), pt(0.62, 0.38), pt(0.95, 0.32), pt(0.5, -0.05), pt(0.82, -0.12), pt(0.25, -0.48), pt(-0.3, -0.75)],
+    [{ points: [pt(-0.65, -0.42), pt(0.55, 0.42)], fill: 'metal', line: 0.07 }]);
+}
+function circles(twin = false): BadgeShape {
+  return emblem(arc(0.96), twin
+    ? [-0.32, 0.32].map((x): BadgeLayer => ({ points: arc(0.27, x, 0), fill: 'enamel3' }))
+    : [{ points: arc(0.55), fill: 'metal' }, { points: arc(0.35), fill: 'enamel2' }]);
+}
+function dragon(): BadgeShape {
+  return emblem([pt(-0.6, -0.85), pt(0.45, -0.85), pt(0.8, -0.3), pt(0.5, 0.1), pt(0.7, 0.6), pt(0.1, 0.42), pt(-0.25, 0.95), pt(-0.4, 0.4), pt(-0.8, 0.6), pt(-0.65, 0)],
+    [{ points: arc(0.12, 0.2, 0), fill: 'dark' }]);
+}
+const regionalShapes: readonly (() => BadgeShape)[] = [
+  coal, drop, sun, () => emblem(radial(80, (a) => 0.78 + 0.18 * Math.cos(8*a))),
+  () => emblem(radial(64, (a) => 0.72 + 0.2 * Math.sin(a) - 0.13 * Math.cos(2*a))),
+  circles, flame, leaf,
+  wing, () => emblem(radial(6, () => 0.96, deg(30)), [{ points: arc(0.4), fill: 'enamel2' }]),
+  () => emblem(radial(4, () => 0.96, deg(90))), circles, fist, coal, snowflake, dragon,
+  coal, fist, sun, flame, circles, leaf, () => circles(true), drop,
+];
+export const ALL_BADGE_DESIGNS: readonly BadgeDesign[] = [
+  ...BADGE_DESIGNS,
+  ...LEAGUE_REGIONS.filter((r) => r.id !== 'sinnoh').flatMap((r) => r.gyms.map((g) => {
+    const order = r.badgeOffset + g.order;
+    const index = order - 8;
+    const shape = regionalShapes[index]!();
+    // Variação do contorno e do emblema por região, mantendo o desenho dentro do encaixe.
+    const rotation = deg((Math.floor(index / 8) * 8) + (index % 8) * 2);
+    const color = TYPE_COLORS[g.type!];
+    return { order, name: g.badge!.name, leader: g.leader, type: g.type!, motif: regionalMotifs[index]!,
+      metal: { name: r.id === 'kanto' ? 'prata' : r.id === 'johto' ? 'ouro' : 'aço polido', base: r.id === 'johto' ? '#dcaa38' : '#b6c4cf', light: '#fff2c7', dark: '#535b65', metalness: 0.95, roughness: 0.4 },
+      enamel: [color, '#344052', '#f4f6ff'] as const,
+      outline: transform(shape.outline, 0.94, 0, 0, rotation),
+      layers: shape.layers.map((layer) => ({ ...layer, points: transform(layer.points, 0.85, 0, 0, rotation) })),
+    };
+  })),
+];
+
 export function badgeDesign(order: number): BadgeDesign | null {
-  return BADGE_DESIGNS[order] ?? null;
+  return ALL_BADGE_DESIGNS[order] ?? null;
 }
 
 /** `d` de um `<path>` SVG (o SVG tem y para baixo, então o desenho é espelhado). */
@@ -247,6 +312,6 @@ export function polishLook(design: BadgeDesign, polish: number): PolishLook {
 /** Posição do encaixe de cada insígnia no forro da maleta: 2 fileiras de 4, em unidades do forro (-1 a 1). */
 export function slotPosition(order: number): { x: number; y: number } {
   const col = order % 4;
-  const row = Math.floor(order / 4);
+  const row = Math.floor((order % 8) / 4);
   return { x: round(-0.75 + col * 0.5), y: round(row === 0 ? 0.42 : -0.42) };
 }

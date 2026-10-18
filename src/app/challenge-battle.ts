@@ -73,7 +73,7 @@ export function leaderLoader(base: BattleLoader): BattleLoader {
 export function challengePlan(playerCount: number, leaderCount: number, challenge: Challenge, playerName: string) {
   const picks = Array.from({ length: playerCount + leaderCount }, (_, i) => i);
   const teams = picks.map((i) => (i < playerCount ? 0 : 1));
-  const title = challenge.kind === 'champion' ? 'A Campeã desafia você!' : `${challenge.leader} desafia você!`;
+  const title = `${challenge.leader} desafia você!`;
   return {
     picks,
     teams,
