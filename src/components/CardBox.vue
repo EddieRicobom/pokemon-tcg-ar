@@ -188,7 +188,7 @@ const teamIndex = (id: string) => props.team.indexOf(id);
           <small>🔒 Sem scan e sem AR (não é uma carta física). Batalha na Caixa como qualquer outro.</small>
           <div class="actions row">
             <button type="button" :class="{ active: teamIndex(selectedCard.id) >= 0 }" @click="emit('toggleTeam', selectedCard.id)">
-              {{ teamIndex(selectedCard.id) >= 0 ? 'Na turma ✓' : 'Pôr na turma' }}
+              {{ teamIndex(selectedCard.id) >= 0 ? '✓ Na turma · tirar' : '+ Adicionar à turma' }}
             </button>
           </div>
         </template>
@@ -201,7 +201,7 @@ const teamIndex = (id: string) => props.team.indexOf(id);
           <button v-if="selectedCard.status !== 'completo'" type="button" :disabled="busyId === selectedCard.id" @click="emit('run', selectedCard.id, 'reload')">Recarregar</button>
           <a class="button" :href="routeHref('escanear', selectedCard.id)">Ver em AR</a>
           <button type="button" :class="{ active: teamIndex(selectedCard.id) >= 0 }" @click="emit('toggleTeam', selectedCard.id)">
-            {{ teamIndex(selectedCard.id) >= 0 ? 'Na turma ✓' : 'Pôr na turma' }}
+            {{ teamIndex(selectedCard.id) >= 0 ? '✓ Na turma · tirar' : '+ Adicionar à turma' }}
           </button>
           <button v-if="confirmRemove !== selectedCard.id" type="button" :disabled="busyId === selectedCard.id" @click="confirmRemove = selectedCard.id">Apagar…</button>
           <template v-else>
