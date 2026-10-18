@@ -53,7 +53,7 @@ Quem faz o quê, em linhas gerais: `src/recognition/` reconhece; `src/app/` orqu
 - `external-verification.yml`: mede o que o ambiente de desenvolvimento não alcança (TCGdex e sprites).
 - Passo manual único: **Settings → Pages → Source: GitHub Actions**.
 - Medido no CI em 2026-10-11: o índice do catálogo tem 220 coleções e 23.736 cartas (568 kB, 155 kB com gzip).
-- **Backup completo** (`src/app/backup.ts`, tela do Treinador): guarda progresso e ajustes do `localStorage`, cartas reconhecidas do IndexedDB e seus arquivos no Cache Storage (referências, sprites e alvos MindAR) num ZIP com manifesto JSON. Dados de API que podem ser refeitos continuam fora. Importar substitui o estado local coberto pelo arquivo e recarrega a página; backups JSON antigos continuam importáveis.
+- **Backup completo** (`src/app/backup.ts`, tela do Treinador): guarda todas as chaves persistentes `tcg-ar-*`, cartas reconhecidas, registros/metadados do IndexedDB e arquivos do Cache Storage (referências, sprites e alvos MindAR) num ZIP v2 com manifesto, arquivos binários separados e hashes de integridade. A importação valida o pacote antes de escrever, substitui o estado coberto e tenta restaurar o snapshot anterior se uma etapa falhar; JSON/ZIP v1 antigos continuam importáveis.
 
 ## Busca pela ilustração (reserva automática)
 

@@ -113,6 +113,10 @@ async function onImportFileChosen(e: Event): Promise<void> {
     backupStatus.value = { kind: 'erro', text: 'Esse arquivo não parece ser um backup deste app.' };
     return;
   }
+  if (typeof parsed === 'string') {
+    backupStatus.value = { kind: 'erro', text: parsed === 'versao-incompativel' ? 'Este backup foi criado por uma versão incompatível do app.' : 'O backup está corrompido ou incompleto.' };
+    return;
+  }
   pendingImport.value = parsed;
 }
 
@@ -256,19 +260,19 @@ function cancelImport(): void {
     <div v-else class="card">
       <h2>Seus dados</h2>
       <p class="note">
-        Baixe um arquivo com todo o seu progresso e ajustes (Treinador, Vila — com Digital Pokémon e Encontros lendários —, perfil, turma da Caixa, Liga e o brilho das insígnias, Pins, sensores e ajustes visuais) para guardar fora do navegador ou levar para outro aparelho.
-        Não inclui as imagens das cartas escaneadas: elas ficam só neste aparelho, e você escaneia de novo depois de importar num aparelho novo.
+        Baixe um ZIP com todo o progresso, ajustes, cartas reconhecidas e arquivos locais (referências, sprites e alvos de AR) para guardar fora do navegador ou levar para outro aparelho.
+        Os dados são validados antes da restauração; caches que não pertencem ao app ficam fora.
       </p>
       <div class="backup-actions">
         <button type="button" @click="exportBackup">Baixar backup</button>
         <button type="button" @click="pickImportFile">Importar backup</button>
-        <input ref="fileInput" type="file" accept="application/json" class="sr-only" @change="onImportFileChosen" />
+        <input ref="fileInput" type="file" accept=".zip,application/zip,application/json" class="sr-only" @change="onImportFileChosen" />
       </div>
       <p v-if="backupStatus" class="note" :class="backupStatus.kind">{{ backupStatus.text }}</p>
       <div v-if="pendingImport" class="card backup-confirm">
         <p><strong>Importar este backup vai substituir os dados, as cartas guardadas e os ajustes deste aparelho.</strong></p>
         <p class="note">Backup de {{ backupDateLabel(pendingImport.exportedAt) }}.</p>
-        <p v-if="!pendingImport.collection" class="note">Este backup JSON antigo não contém cartas escaneadas; as cartas que já estão neste aparelho serão mantidas.</p>
+        <p v-if="!pendingImport.collection" class="note">Este backup antigo não contém a coleção local; as cartas deste aparelho serão mantidas por compatibilidade.</p>
         <div class="backup-actions">
           <button type="button" class="primary" @click="confirmImport">Confirmar e substituir</button>
           <button type="button" @click="cancelImport">Cancelar</button>

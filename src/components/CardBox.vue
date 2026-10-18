@@ -56,7 +56,7 @@ const moving = ref(false);
 const moveFrom = ref<SlotRef | null>(null);
 const notice = ref('');
 const selectedCard = computed(() => (selected.value ? byId.value.get(selected.value) ?? null : null));
-/** Remover uma carta pede um segundo toque (o backup não guarda cartas: só escaneando de novo). */
+/** Remover uma carta pede um segundo toque; o backup inclui a coleção local. */
 const confirmRemove = ref<string | null>(null);
 
 function tapSlot(slot: number): void {

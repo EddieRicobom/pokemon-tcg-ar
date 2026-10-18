@@ -18,12 +18,12 @@ describe('backup — exportar', () => {
     expect(Object.keys(file.data).sort()).toEqual([...BACKUP_KEYS].sort());
   });
 
-  it('nunca inclui um cache de PokeAPI/TCGdex ou as cartas escaneadas (IndexedDB)', () => {
+  it('inclui todas as chaves do app, inclusive caches locais que permitem uso offline', () => {
     localStorage.setItem('tcg-ar-dex-names-v1', '[[1,"Bulbasaur"]]');
     localStorage.setItem('tcg-ar-profile-25', '{}');
     const file = buildBackup(localStorage, NOW);
-    expect(Object.keys(file.data)).not.toContain('tcg-ar-dex-names-v1');
-    expect(Object.keys(file.data)).not.toContain('tcg-ar-profile-25');
+    expect(file.data['tcg-ar-dex-names-v1']).toBe('[[1,"Bulbasaur"]]');
+    expect(file.data['tcg-ar-profile-25']).toBe('{}');
   });
 
   it('serializa como JSON legível e com um nome de arquivo datado', () => {
@@ -36,6 +36,20 @@ describe('backup — exportar', () => {
     const file = buildBackup(localStorage, NOW);
     const parsed = parseBackupZip(serializeBackupZip(file));
     expect(parsed).toEqual(file);
+  });
+
+  it('empacota a coleção com binários separados e verifica a integridade', () => {
+    const file = {
+      ...buildBackup(localStorage, NOW),
+      collection: {
+        cards: [],
+        records: [],
+        meta: [{ key: 'last', value: { ok: true } }],
+        assets: [{ url: 'https://example.test/card.png', type: 'image/png', bytes: [0, 1, 2, 255] }],
+      },
+    };
+    const parsed = parseBackupZip(serializeBackupZip(file));
+    expect(parsed).toEqual(expect.objectContaining({ collection: expect.objectContaining({ assets: [expect.objectContaining({ url: 'https://example.test/card.png', bytes: [0, 1, 2, 255] })] }) }));
   });
 });
 
@@ -68,11 +82,19 @@ describe('backup — importar', () => {
     expect(localStorage.getItem('tcg-ar-perfil-v1')).toBeNull();
   });
 
-  it('nunca toca numa chave fora de BACKUP_KEYS', () => {
-    localStorage.setItem('tcg-ar-dex-names-v1', '[[1,"Bulbasaur"]]');
+  it('não toca numa chave que não pertence ao app', () => {
+    localStorage.setItem('other-app-key', 'preservar');
     const empty = buildBackup({ getItem: () => null }, NOW);
     applyBackup(empty, localStorage);
-    expect(localStorage.getItem('tcg-ar-dex-names-v1')).toBe('[[1,"Bulbasaur"]]');
+    expect(localStorage.getItem('other-app-key')).toBe('preservar');
+  });
+
+  it('captura e substitui chaves tcg-ar novas sem precisar alterar uma lista central', () => {
+    localStorage.setItem('tcg-ar-preferencia-nova-v1', 'sim');
+    const file = buildBackup(localStorage, NOW);
+    localStorage.setItem('tcg-ar-preferencia-nova-v1', 'outro');
+    applyBackup(file, localStorage);
+    expect(localStorage.getItem('tcg-ar-preferencia-nova-v1')).toBe('sim');
   });
 
   it('JSON inválido ou formato desconhecido vira um erro claro, nunca lança e nunca inventa dados', () => {
@@ -81,7 +103,7 @@ describe('backup — importar', () => {
     expect(parseBackup(JSON.stringify({ format: 'outra-coisa', version: 1, data: {} }))).toBe('formato-desconhecido');
   });
 
-  it('ignora chaves desconhecidas dentro do arquivo e descarta valores não-string pras conhecidas', () => {
+  it('ignora chaves externas e descarta valores não-string pras conhecidas', () => {
     const raw = JSON.stringify({
       format: BACKUP_FORMAT,
       version: 1,
