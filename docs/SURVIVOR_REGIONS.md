@@ -8,6 +8,14 @@ O chão tem trilha sinuosa, caminho transversal, textura de pequenos ladrilhos e
 
 Dois canvases estáticos no máximo ficam em cache; a mistura usa duas imagens, sem partículas ou shaders. “Cenário regional” permite voltar ao piso simples durante a corrida. O desenho não usa o RNG de combate nem modifica o estado do motor. Assim, esta alteração não exige compensações artificiais de HP, XP ou velocidade. Fluidez em celular e equilíbrio por jogadores ainda precisam de avaliação real.
 
+## Espécies acompanhando a região
+
+Os novos inimigos também acompanham a viagem. Cada região tem quatro espécies selvagens e um chefe periódico próprios, todos com animação Walk no pacote local. Os grupos de treinador usam as espécies da região com os mesmos graus elite/chefão de antes. Durante a transição, a proporção de nascimentos da próxima região segue a mesma mistura suave do cenário. Ao completar o ciclo, voltam as espécies de Kanto. Quem já nasceu mantém a espécie até ser derrotado: não se transforma nem desaparece na passagem de região.
+
+O chefe periódico muda de espécie, mas continua com os números e o raio de colisão do chefe periódico. O mesmo vale para os selvagens e Pokémon de treinadores: espécie não introduz atributos, resistência por tipo, golpes ou XP extras. A escolha visual não consome o RNG do combate. Testes com sementes iguais comparam estado, eventos, upgrades e RNG antes/depois em ondas, treinadores, chefe final e infinito. Desligar o cenário regional simplifica o piso; o elenco continua seguindo o relógio da corrida.
+
+As 45 espécies são carregadas antes da corrida. Sprites que falharem usam uma forma neutra, com aviso explícito no HUD, e são tentados novamente na próxima corrida. Não são substituídos por outro Pokémon. O teste do catálogo confere a região de origem, os metadados Walk e a existência dos 45 arquivos locais.
+
 ## Referência e próximos passos de equilíbrio
 
 Fonte consultada: [README do poke-survivor de JayElDragon](https://github.com/JayElDragon/poke-survivor/blob/main/README.md). Ele descreve autoataques, evolução de golpes, fendas de lendários, minimapa, opções de acessibilidade, melhorias permanentes, missões e conquistas. Nenhum código ou recurso visual novo foi copiado.

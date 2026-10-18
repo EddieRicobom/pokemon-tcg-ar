@@ -65,6 +65,8 @@ export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
 
 export interface SurvivorEnemy {
   id: number;
+  /** Espécie fixada no nascimento, independente dos atributos de combate. */
+  dexId?: number;
   /** Índice da espécie no elenco desta corrida (ver `kindCount` em `createSurvivorState`); chefes usam `kindCount`. */
   kind: number;
   boss: boolean;
@@ -131,6 +133,8 @@ export interface SurvivorUpgradeOption {
 
 export interface SurvivorState {
   rng: Rng;
+  /** Aparência por nascimento; não deve consumir o RNG de combate. */
+  enemyDexId: ((enemy: Readonly<SurvivorEnemy>, elapsedMs: number) => number) | null;
   elapsedMs: number;
   player: SurvivorPlayer;
   enemies: SurvivorEnemy[];
@@ -341,6 +345,8 @@ export function xpForLevel(level: number): number {
 }
 
 export interface CreateSurvivorOptions {
+  /** Resolve apenas a espécie visual, preservando os números da onda e do grau. */
+  enemyDexId?: (enemy: Readonly<SurvivorEnemy>, elapsedMs: number) => number;
   /** Quantas espécies "comuns" o elenco desta corrida tem (o chefe usa o índice seguinte). Mínimo 1. */
   kindCount: number;
   /** Golpe de quem joga (ver `moveFor`); padrão `BASIC_MOVE`. */
@@ -390,6 +396,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
   };
   return {
     rng: seededRng(seed),
+    enemyDexId: options.enemyDexId ?? null,
     elapsedMs: 0,
     player,
     enemies: [],
@@ -443,7 +450,7 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   const t = state.elapsedMs / 1000;
   if (boss) {
     const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale);
-    state.enemies.push({
+    addEnemy(state, {
       id: state.nextId++,
       kind: state.kindCount,
       boss: true,
@@ -466,7 +473,7 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   const dmgMul = grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1;
   const speed = (grade === 'comum' ? 55 + state.rng() * 25 : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
   const hp = Math.round(baseHp * hpMul * state.infiniteScale);
-  state.enemies.push({
+  addEnemy(state, {
     id: state.nextId++,
     kind: Math.floor(state.rng() * state.kindCount),
     boss: false,
@@ -489,6 +496,12 @@ function spawnTrainer(state: SurvivorState, count: number, final: boolean, event
   const grade: SurvivorEnemyGrade = final ? 'chefao' : 'elite';
   for (let i = 0; i < count; i++) spawnEnemy(state, false, grade, trainerId);
   events.push({ type: 'trainerSpawn', count, final });
+}
+
+/** Resolve a aparência uma vez, depois de sortear os números de combate. */
+function addEnemy(state: SurvivorState, enemy: SurvivorEnemy): void {
+  if (state.enemyDexId) enemy.dexId = state.enemyDexId(enemy, state.elapsedMs);
+  state.enemies.push(enemy);
 }
 
 /** Sorteia `count` upgrades distintos que fazem sentido para o golpe (`move`), com o texto falando do golpe. */
