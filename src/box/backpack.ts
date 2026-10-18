@@ -201,10 +201,10 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
     addMesh(new TubeGeometry(new CatmullRomCurve3(points), 24, radius, 8, false), material, 0, 0, 0);
 
   // Two padded shoulder straps and a grab handle make the silhouette read as a backpack.
-  for (const x of [-0.78, 0.78]) {
-    const strap = addMesh(new CapsuleGeometry(0.16, 1.42, 4, 8), trim, x, 1.8, -0.62);
+  for (const x of [-1.25, 1.25]) {
+    const strap = addMesh(new CapsuleGeometry(0.16, 1.42, 4, 8), trim, x, 1.8, -0.36);
     strap.rotation.z = x < 0 ? -0.12 : 0.12;
-    const stitch = addMesh(new CapsuleGeometry(0.105, 1.28, 4, 8), fabric, x, 1.8, -0.5);
+    const stitch = addMesh(new CapsuleGeometry(0.105, 1.28, 4, 8), fabric, x, 1.8, -0.18);
     stitch.rotation.z = strap.rotation.z;
   }
   tube([new Vector3(-0.25, 3.35, -0.48), new Vector3(-0.25, 3.72, -0.48), new Vector3(0.25, 3.72, -0.48), new Vector3(0.25, 3.35, -0.48)], 0.085, trim);
@@ -261,8 +261,8 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
   const loose: LooseItem[] = [];
   const visible = options.items.slice(0, 18);
   visible.forEach((item, index) => {
-    const col = index % 6;
-    const row = Math.floor(index / 6);
+    const col = index % 4;
+    const row = Math.floor(index / 4);
     const home = new Vector3(-0.63 + col * 0.42, 1.62 + row * 0.28, 0.1 + (index % 3) * 0.08);
     const texture = spriteTexture(item.id);
     const material = new SpriteMaterial({ map: texture, transparent: true, depthWrite: false, color: 0xffffff });
