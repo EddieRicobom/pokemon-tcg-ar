@@ -11,6 +11,12 @@ Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado �
 - Dez eventos novos: Articuno, Moltres, Raikou, Entei, Lugia, Ho-Oh, Regirock, Regice, Registeel e Rayquaza. Cenas próprias, bônus e consequências aplicados até o fim do dia; chance diária total preservada.
 - Verificação local: tipos, testes, build e conferência do dist; navegador com viewport móvel confirma abertura única por dia e acesso à mochila. Aparência em celular real ainda precisa ser avaliada.
 
+## Bancos públicos da Vila (18/10/2026)
+
+- Cinco bancos com dois lugares: praça, parque e ruas das casas. Moradores procuram lugares livres, chegam caminhando, descansam de 20 a 45 segundos e fazem companhia uns aos outros com balões de conversa.
+- Reservas impedem dois moradores no mesmo lugar; conversa, sono, passeio e sino têm prioridade. Bancos não sobrepõem móveis ou hortas antigos; sem alteração do salvamento.
+- Validação: seis testes de lógica, suíte completa (1.572 testes), tipos, build e teste fixo no navegador com sprites reais de Pikachu e Bulbasaur compartilhando o banco e saindo ao tocar o sino. Celular físico ainda não validado.
+
 ## Estado atual
 
 ### Base e infraestrutura ✅
