@@ -1,6 +1,7 @@
 import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
+import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
@@ -193,7 +194,19 @@ const BELL_FAR = 18;
 
 const EMOJI_FONT = 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
-/** Desenha um recorte em pé: a última linha visível encosta no chão em (cx, base). */
+/** O desenho e o emoji sobre a porta de cada prédio da praça. */
+const CIVIC_ART: Partial<Record<BuildingKind, () => PixelBuf>> = { cafe: paintCafe, mail: paintMail, museum: paintMuseum, arcade: paintArcade, pins: paintPins, arena: paintArena, torre: paintTorre };
+const atlasOpaqueBottoms = new WeakMap<HTMLCanvasElement, number>();
+/** Com o atlas: o desenho de cada prédio (recortes de tileset, ver `atlas-spec.ts`). */
+const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'kiosk-red', museum: 'manor', arcade: 'center-blue', pins: 'kiosk-blue', arena: 'center-red', torre: 'tower' };
+/** Com o atlas: a casa de cada estágio (Cabana, Casa de madeira, Casa de tijolos, Sobrado — `HOME_STAGES`). */
+const HOME_TILESET = ['gazebo', 'barn', 'house-brick', 'home-yellow'] as const;
+/** As que pegam a cor escolhida (o desenho tem partes coloridas para tingir). */
+const HOME_TINTED = new Set<string>(['barn', 'home-yellow']);
+/** Prédios cujo desenho do tileset é pequeno demais para a escala da Vila: desenhados em 2× (pixel inteiro, sem borrar). */
+const CIVIC_DOUBLE = new Set<string>(['kiosk-red', 'kiosk-blue']);
+const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼' };
+
 export class VillageGame {
   readonly player: Walker;
   readonly villagers = new Map<string, Walker>();
@@ -203,6 +216,8 @@ export class VillageGame {
   private groundFrames: HTMLCanvasElement[] = [];
   /** Recortes de tileset (null: sem a imagem, cai no desenho por código de sempre). */
   private readonly atlas: VillaAtlas | null;
+  /** Sprite oficial do treinador escolhido; null mantém o avatar pixel-art de fallback. */
+  private trainerAvatar: HTMLCanvasElement | null = null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
   private running = false;
   private handle = 0;
@@ -286,11 +301,51 @@ export class VillageGame {
       atlas = null;
     }
     this.atlas = atlas;
+    this.loadTrainerAvatar();
     this.player = makeWalker('eu', state.player.x, state.player.y, 5.5);
     this.player.dir = state.player.dir;
     this.weather = createWeather(this.rng, 'sol');
     this.buildGround();
     this.setMons(mons);
+  }
+
+  /** Carrega e recorta a sprite selecionada, sem impedir a Vila de abrir quando a rede falha. */
+  private loadTrainerAvatar(): void {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        const source = document.createElement('canvas');
+        source.width = image.naturalWidth;
+        source.height = image.naturalHeight;
+        const sourceCtx = source.getContext('2d', { willReadFrequently: true });
+        if (!sourceCtx || source.width === 0 || source.height === 0) return;
+        sourceCtx.drawImage(image, 0, 0);
+        const pixels = sourceCtx.getImageData(0, 0, source.width, source.height).data;
+        let minX = source.width;
+        let minY = source.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < source.height; y++) {
+          for (let x = 0; x < source.width; x++) {
+            if (pixels[(y * source.width + x) * 4 + 3]! === 0) continue;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+        if (maxX < minX || maxY < minY) return;
+        const avatar = document.createElement('canvas');
+        avatar.width = maxX - minX + 1;
+        avatar.height = maxY - minY + 1;
+        avatar.getContext('2d')!.drawImage(source, minX, minY, avatar.width, avatar.height, 0, 0, avatar.width, avatar.height);
+        this.trainerAvatar = avatar;
+      } catch {
+        // Se o servidor não permitir leitura de pixels, o avatar desenhado por código continua disponível.
+      }
+    };
+    image.src = trainerSpriteUrl(this.trainerId);
   }
 
   /** O clima de agora (para as falas dos Pokémon e para os momentos). */
@@ -320,330 +375,4 @@ export class VillageGame {
   }
 
   /**
-   * Põe um morador novo na cena agora, num bloco livre ao lado do jogador (ex.: o presente inicial, que precisa
-   * aparecer na hora), sem sortear de novo a posição dos que já estão lá como `setMons` faz. Se já existir, troca.
-   */
-  addMon(mon: VillageMon): void {
-    this.villagers.delete(mon.id);
-    const p = this.player;
-    const spot = findFree(this.map, p.x + 1, p.y, (x, y) => this.occupied(x, y), this.rng);
-    this.placeMon(mon, spot.x, spot.y);
-    const w = this.villagers.get(mon.id);
-    if (w) {
-      // Vira pro jogador e dá um pulinho de chegada.
-      w.dir = spot.x < p.x ? 'right' : spot.x > p.x ? 'left' : spot.y < p.y ? 'down' : 'up';
-      w.idle = 2.5;
-    }
-    this.bounce.set(mon.id, performance.now());
   }
-
-  private placeMon(mon: VillageMon, x: number, y: number): void {
-    const w = makeWalker(mon.id, x, y, 2.6);
-    w.idle = this.rng() * 2;
-    this.villagers.set(mon.id, w);
-    this.names.set(mon.id, mon.name);
-    const frames = framesOf(mon.gif);
-    const dirFrames = dirFramesOf(mon.dirGifs);
-    const head = headOf(mon.gif);
-    // Mede a caixa real do bicho (sem a margem transparente da folha) em todos os quadros, pra achar o tamanho
-    // e o ponto de chão de verdade — tanto pro pacote de sprites locais (PMD SpriteCollab, que guarda folga
-    // em cima pro balanço da pose "parado") quanto pro GIF baixado do Showdown. Mesma fórmula pros dois, sem
-    // fator de ajuste por olho: a diferença de tamanho que sobrar vem da arte em si, não de margem.
-    const bounds = contentBounds(mon.gif);
-    // Tamanho pela altura REAL da espécie (PokéAPI), comparável entre todos; sem esse dado, cai no tamanho do
-    // desenho (pixels opacos), como antes. A âncora dos pés continua sendo a caixa de pixels reais.
-    const contentHeightFrac = Math.max(0.05, bounds.bottom - bounds.top);
-    const rawScale = (contentHeightFrac * mon.gif.height) / 40;
-    const heightTiles = speciesTiles(mon.dexId) ?? Math.min(2.4, Math.max(1.1, rawScale));
-    this.monSprites.set(mon.id, {
-      frames, gif: mon.gif, dirGifs: mon.dirGifs, dirFrames, heightTiles, bounds, headTop: head.top, headX: head.x, digital: mon.digital === true,
-    });
-  }
-
-  /** Quadros com a tinta metálica (feitos uma vez, na 1ª vez que o Digital Pokémon aparece com a opção ligada). */
-  private metalOf(sprite: MonSprite): NonNullable<MonSprite['metal']> {
-    sprite.metal ??= { frames: framesOf(sprite.gif, metallicTint), dirFrames: dirFramesOf(sprite.dirGifs, metallicTint) };
-    return sprite.metal;
-  }
-
-  // ----------------------------------------------------------------------------- cidade
-
-  setTown(level: number, homes: ReadonlyMap<string, number>): void {
-    this.townLevel = level;
-    this.homes = homes;
-    this.nextSleepCheck = 0;
-  }
-
-  /** Faz o Pokémon esperar você parado (ou solta, com `null`). */
-  setWaiting(id: string): void {
-    this.waiting = id;
-  }
-
-  /** Troca os nomes mostrados (apelidos dados ou tirados) sem recarregar nada. */
-  setNames(names: Readonly<Record<string, string>>): void {
-    for (const [id, name] of Object.entries(names)) if (this.names.has(id)) this.names.set(id, name);
-  }
-
-  isAsleep(id: string): boolean {
-    return this.asleep.has(id);
-  }
-
-  /** Está de pé e à vista? (quem dorme em casa não conta) */
-  isOut(id: string): boolean {
-    return this.villagers.has(id) && !this.asleep.has(id);
-  }
-
-  /**
-   * Alguém bateu na porta e `id` abriu: sai de casa já (num "puf", de mau humor se `grumpy`) e fica de pé por `ms`, sem
-   * voltar a dormir. Se já estava fora, só renova o tempo. Devolve `false` se não é morador de nenhuma casa.
-   */
-  wake(id: string, ms: number, grumpy: boolean): boolean {
-    const w = this.villagers.get(id);
-    const door = this.homeDoor(id);
-    if (!w || !door) return false;
-    this.stayUp.set(id, Date.now() + ms);
-    if (this.asleep.has(id)) {
-      this.asleep.delete(id);
-      const spot = findFree(this.map, door.x, door.y, (x, y) => this.occupied(x, y, id), this.rng);
-      w.x = w.tx = spot.x;
-      w.y = w.ty = spot.y;
-      w.t = 1;
-      w.dir = 'down';
-      this.particles.push({ kind: 'poof', x: spot.x + 0.5, y: spot.y + 0.6, vx: 0, vy: 0, born: performance.now(), life: 500 });
-      this.bubble(id, grumpy ? '😠' : '🥱', 2600);
-    }
-    return true;
-  }
-
-  /** O morador recusou abrir ("me deixa dormir!"): um 😴 pula sobre o telhado da casa por uns segundos, e ele continua lá dentro. */
-  grumble(id: string): void {
-    const lot = this.homes.get(id);
-    if (lot !== undefined) this.houseTags.set(lot, { emoji: '😴', until: performance.now() + 2400 });
-  }
-
-  private homeDoor(id: string): { x: number; y: number } | null {
-    const lot = this.homes.get(id);
-    const b = lot === undefined ? undefined : this.map.buildings.find((x) => x.lot === lot);
-    return b ? b.door : null;
-  }
-
-  /** Hora de dormir e de acordar: o Pokémon vai para casa (some num "puf") e volta à porta de manhã. */
-  private updateSleep(now: number): void {
-    if (now < this.nextSleepCheck) return;
-    this.nextSleepCheck = now + 1500;
-    const hour = new Date().getHours();
-    for (const [id, w] of this.villagers) {
-      const door = this.homeDoor(id);
-      if (!door) {
-        this.asleep.delete(id);
-        continue;
-      }
-      const up = (this.stayUp.get(id) ?? 0) > Date.now();
-      if (!up) this.stayUp.delete(id);
-      const want = isAsleep(id, hour) && !up && this.state.follower !== id && !this.sceneBusy(id);
-      if (want && !this.asleep.has(id)) {
-        this.particles.push({ kind: 'poof', x: w.x + 0.5, y: w.y + 0.6, vx: 0, vy: 0, born: now, life: 500 });
-        this.asleep.add(id);
-        this.speech.delete(id);
-        this.bubbles.delete(id);
-        w.x = w.tx = door.x;
-        w.y = w.ty = door.y;
-        w.t = 1;
-      } else if (!want && this.asleep.has(id)) {
-        this.asleep.delete(id);
-        const spot = findFree(this.map, door.x, door.y, (x, y) => this.occupied(x, y, id), this.rng);
-        w.x = w.tx = spot.x;
-        w.y = w.ty = spot.y;
-        w.t = 1;
-        this.particles.push({ kind: 'poof', x: spot.x + 0.5, y: spot.y + 0.6, vx: 0, vy: 0, born: now, life: 500 });
-        this.bubble(id, '🥱', 2200);
-      }
-    }
-  }
-
-  // ----------------------------------------------------------------------------- mundo
-
-  private edgesOf(x: number, y: number): number {
-    const t = tileAt(this.map, x, y);
-    const differs = (nx: number, ny: number) => {
-      const n = tileAt(this.map, nx, ny);
-      if (t === 'path') return n !== 'path';
-      if (t === 'water') return n !== 'water';
-      if (t === 'plot') return n !== 'plot';
-      return false;
-    };
-    let e = 0;
-    if (differs(x, y - 1)) e |= EDGE.north;
-    if (differs(x + 1, y)) e |= EDGE.east;
-    if (differs(x, y + 1)) e |= EDGE.south;
-    if (differs(x - 1, y)) e |= EDGE.west;
-    return e;
-  }
-
-  /** O chão inteiro pré-desenhado com os recortes do tileset (um quadro só; os brilhos da água são desenhados por cima). */
-  private buildTilesetGround(atlas: VillaAtlas, grass: GroundTileImage): HTMLCanvasElement {
-    const c = document.createElement('canvas');
-    c.width = this.map.w * TILE;
-    c.height = this.map.h * TILE;
-    const ctx = c.getContext('2d')!;
-    const sheet = toCanvas(atlas.image);
-    const grassCanvas = toCanvas(grass);
-    for (let y = 0; y < this.map.h; y++) {
-      for (let x = 0; x < this.map.w; x++) {
-        for (const p of groundPieces(this.map, x, y)) {
-          const dx = x * TILE + p.dx;
-          const dy = y * TILE + p.dy;
-          if (p.src === 'grass') {
-            ctx.drawImage(grassCanvas, p.sx, p.sy, p.w, p.h, dx, dy, p.w, p.h);
-            continue;
-          }
-          const r = atlas.rect(p.src);
-          if (r) ctx.drawImage(sheet, r.x + p.sx, r.y + p.sy, p.w, p.h, dx, dy, p.w, p.h);
-        }
-      }
-    }
-    return c;
-  }
-
-  /** Um recorte do atlas como canvas (guardado); `transform` muda os pixels antes (ex.: a cor da casa). */
-  private art(id: string, key = id, transform?: (img: Rgba) => Rgba): HTMLCanvasElement | null {
-    const cached = this.sprites.get(`art:${key}`);
-    if (cached) return cached;
-    const piece = this.atlas?.piece(id);
-    if (!piece) return null;
-    const c = toCanvas(transform ? transform(piece) : piece);
-    this.sprites.set(`art:${key}`, c);
-    return c;
-  }
-
-  /** O chão inteiro pré-desenhado (3 quadros, por causa da água). */
-  private buildGround(): void {
-    if (this.atlas && this.groundTile) {
-      this.groundFrames = [this.buildTilesetGround(this.atlas, this.groundTile)];
-      return;
-    }
-    this.groundFrames = [0, 1, 2].map((frame) => {
-      const c = document.createElement('canvas');
-      c.width = this.map.w * TILE;
-      c.height = this.map.h * TILE;
-      const ctx = c.getContext('2d')!;
-      const cache = new Map<string, HTMLCanvasElement>();
-      for (let y = 0; y < this.map.h; y++) {
-        for (let x = 0; x < this.map.w; x++) {
-          const tile = tileAt(this.map, x, y);
-          const edges = this.edgesOf(x, y);
-          // Blocos iguais em lugares iguais do padrão reaproveitam o desenho.
-          const key = `${tile}:${edges}:${tile === 'water' || tile === 'path' || tile === 'sand' ? `${x % 12},${y % 12}` : `${(x + y) % 6},${x % 2}`}:${frame}`;
-          let img = cache.get(key);
-          if (!img) {
-            img = toCanvas(paintTile(tile, edges, x, y, frame, this.groundTile ?? undefined));
-            cache.set(key, img);
-          }
-          ctx.drawImage(img, x * TILE, y * TILE);
-        }
-      }
-      return c;
-    });
-  }
-
-  private sprite(key: string, paint: () => PixelBuf): HTMLCanvasElement {
-    let c = this.sprites.get(key);
-    if (!c) {
-      c = toCanvas(paint());
-      this.sprites.set(key, c);
-    }
-    return c;
-  }
-
-  /** Tem alguém ou alguma coisa ocupando o bloco? (Pokémon, você, móveis) */
-  occupied(x: number, y: number, except?: string): boolean {
-    if (isPlaced(this.state, x, y) || cropAt(this.state, x, y)) return true;
-    if (this.player && except !== 'eu' && ((this.player.x === x && this.player.y === y) || (this.player.tx === x && this.player.ty === y))) return true;
-    for (const [id, w] of this.villagers) {
-      if (id === except || this.asleep.has(id)) continue;
-      if ((w.x === x && w.y === y) || (w.tx === x && w.ty === y)) return true;
-    }
-    return false;
-  }
-
-  // ----------------------------------------------------------------------------- controle
-
-  hold(dir: Dir | null): void {
-    this.held = dir;
-  }
-
-  /** Joystick virtual: direção principal e, na diagonal, a secundária (ver `core/village/joystick.ts`). null solta. */
-  holdStick(dirs: Pick<StickDirs, 'primary' | 'secondary'> | null): void {
-    this.stick = dirs?.primary ? dirs : null;
-    if (this.stick) this.goal = null;
-  }
-
-  /** O bloco do mapa sob um ponto da tela (coordenadas do navegador). */
-  tileAtScreen(clientX: number, clientY: number): { x: number; y: number } | null {
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return null;
-    const px = ((clientX - rect.left) / rect.width) * this.canvas.width + this.view.camX;
-    const py = ((clientY - rect.top) / rect.height) * this.canvas.height + this.view.camY;
-    const x = Math.floor(px / (TILE * this.scale * this.arZoom));
-    const y = Math.floor(py / (TILE * this.scale * this.arZoom));
-    return x >= 0 && y >= 0 && x < this.map.w && y < this.map.h ? { x, y } : null;
-  }
-
-  /** Ativa a composição experimental sobre a câmera; não há rastreamento de superfície. */
-  setArView(video: HTMLVideoElement | null, lookX = 0, lookY = 0): void {
-    this.arVideo = video;
-    this.arZoom = video ? 1.8 : 1;
-    this.arLook = video ? { x: lookX, y: lookY } : { x: 0, y: 0 };
-  }
-
-  /**
-   * Anda até o bloco (toque na tela). Se ele não dá para pisar (um Pokémon, um prédio, uma planta), para ao lado e
-   * fica virado para ele — pronto para o A. Qualquer outro comando de movimento cancela.
-   */
-  walkTo(x: number, y: number): void {
-    this.goal = { x, y };
-  }
-
-  /** Permite que um toque no mapa saiba se está apontando para algo que aceita A. */
-  interactableAt(x: number, y: number): boolean {
-    if (isPlaced(this.state, x, y) || cropAt(this.state, x, y)) return true;
-    for (const w of this.villagers.values()) if ((w.x === x && w.y === y) || (w.tx === x && w.ty === y)) return true;
-    return isSolidTile(tileAt(this.map, x, y)) || tileAt(this.map, x, y) === 'plot';
-  }
-
-  /** Vira o treinador para um bloco antes de disparar a interação automática. */
-  facePoint(x: number, y: number): void {
-    const dx = x - this.player.x;
-    const dy = y - this.player.y;
-    if (Math.abs(dx) > Math.abs(dy)) this.player.dir = dx > 0 ? 'right' : 'left';
-    else if (dy !== 0) this.player.dir = dy > 0 ? 'down' : 'up';
-  }
-
-  get walking(): boolean {
-    return this.goal !== null;
-  }
-
-  /**
-   * O sino da praça: todo Pokémon acordado vem para perto do sino (cada um num lugar livre em volta). Quem está longe
-   * demais (mais de `BELL_FAR` blocos) aparece num "puf" no meio do caminho e chega correndo, para ninguém levar um
-   * minuto atravessando o mapa. Devolve quem vem e quem está dormindo. O chamado dura `BELL_MS`.
-   */
-  ringBell(now = performance.now(), bonus = 0): { coming: string[]; sleeping: string[] } {
-    const bell = this.map.decor.find((d) => d.kind === 'bell');
-    const at = bell ? { x: bell.x, y: bell.y + bell.h } : { x: this.player.x, y: this.player.y };
-    const coming: string[] = [];
-    const sleeping: string[] = [];
-    this.called.clear();
-    const taken = new Set<string>();
-    for (const [id, w] of this.villagers) {
-      if (this.asleep.has(id)) {
-        sleeping.push(id);
-        continue;
-      }
-      const spot = findFree(this.map, at.x, at.y + 1, (x, y) => taken.has(`${x},${y}`) || (x === this.player.x && y === this.player.y) || this.occupied(x, y, id), this.rng);
-      taken.add(`${spot.x},${spot.y}`);
-      this.called.set(id, spot);
-      coming.push(id);
-      const far = Math.abs(w.x - spot.x) + Math.abs(w.y - spot.y);
-      if (far > BELL_FAR && !moving(w)) {
-        const mid = findFree(this.map, spot.x + Math.sign(w.x - spot.x) * Math.min(8, Math.abs(w.x - spot.x)), spot.y + Math.sign(w.y - spot.y) * Math.min(6, Math.abs(w.y - spot.y)), (x, y) => th
