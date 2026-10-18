@@ -5282,6 +5282,40 @@ body.no-scroll .reward-toasts {
   font-size: 0.86rem;
 }
 
+.summary-links li {
+  display: grid;
+  gap: 5px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.summary-links li.summary-focus {
+  outline: 2px solid #e5a93d;
+  background: #fff4d9;
+}
+
+.summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.summary-actions button {
+  border: 1px solid #cbb89b;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #fff;
+  color: #2a2438;
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.moment-focus {
+  outline: 2px solid #e5a93d;
+  outline-offset: 2px;
+}
+
 .book-unlocks li {
   display: grid;
   grid-template-columns: 20px 1fr;

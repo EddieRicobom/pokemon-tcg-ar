@@ -50,6 +50,7 @@ import type { Building } from '../core/village/town';
 import type { Moment, MomentKind } from '../core/village/social-state';
 import type { ItemId } from '../core/village/life';
 import { villageSummary } from '../core/village/summary';
+import type { SummaryEntry } from '../core/village/summary';
 import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
@@ -518,6 +519,7 @@ const cookable = COOK_IDS;
 const actorList = (): { id: string; name: string; types: PokemonType[] }[] => mons.value.map((m) => ({ id: m.id, name: m.name, types: types.get(m.id) ?? [] }));
 const unread = computed(() => unreadCount(state));
 const summary = computed(() => villageSummary(state, mons.value, Date.now()));
+const summaryMomentId = ref<string | null>(null);
 const album = computed(() => albumProgress(state));
 const saved = computed(() => savedMoments(state));
 const albumGroups = computed(() => {
@@ -846,6 +848,10 @@ function finishGuidedTrip(): void {
   const trip = guidedTrip;
   guidedTrip = null;
   if (!trip) return;
+  if (state.follower === trip.id) {
+    state.follower = null;
+    changed();
+  }
   const f = friendOf(state, trip.id);
   f.points = Math.min(100, f.points + 6);
   const mon = mons.value.find((m) => m.id === trip.id);
@@ -884,15 +890,22 @@ function startGuidedTrip(id: string): void {
   if (!game) return;
   const destination = GUIDED_DESTINATIONS[(state.seed + id.length + refreshDay().length) % GUIDED_DESTINATIONS.length]!;
   guidedTrip = { id, destination };
+  state.follower = id;
+  game.setWaiting(null);
   tapInteraction = null;
   dialog.value = null;
   game.walkTo(destination.x, destination.y);
-  say(`🚶 ${nameOf(id)} quer passear com você até ${destination.place}.`);
+  changed();
+  say(`🚶 ${nameOf(id)} vai seguir você até ${destination.place}.`);
 }
 
 function closeVillageSheet(): void {
   sheet.value = null;
   bookDialogId.value = null;
+  askingMon = null;
+  tapInteraction = null;
+  game?.setWaiting(null);
+  game?.holdStick(null);
 }
 
 function openBookFromDialog(id: string): void {
@@ -1295,6 +1308,10 @@ function onVisibility(): void {
 /** O botão "☰ Menu" do canto: o mesmo menu do B (uma entrada só). */
 function openMenu(): void {
   welcome.value = false;
+  askingMon = null;
+  tapInteraction = null;
+  game?.setWaiting(null);
+  game?.holdStick(null);
   tab.value = 'inicio';
   sheet.value = 'menu';
 }
@@ -1305,6 +1322,17 @@ function pickTab(t: Tab): void {
     state.diaryRead = Date.now();
     changed();
   }
+}
+
+function openSummaryMoment(entry: SummaryEntry): void {
+  summaryMomentId.value = entry.momentId ?? null;
+  kindFilter.value = 'todos';
+  pickTab('diario');
+}
+
+function openSummaryBook(entry: SummaryEntry): void {
+  if (!entry.pokemonId) return;
+  openBookFromDialog(entry.pokemonId);
 }
 
 function toggleFav(m: Moment): void {
@@ -1945,16 +1973,16 @@ onBeforeUnmount(() => {
           <p class="hint">Uma visão rápida baseada no Diário, nas relações e nos pedidos reais da Vila.</p>
           <section>
             <h4>O que aconteceu</h4>
-            <ul v-if="summary.happened.length" class="book-opinions"><li v-for="line in summary.happened" :key="line">{{ line }}</li></ul>
+            <ul v-if="summary.happened.length" class="book-opinions summary-links"><li v-for="line in summary.happened" :key="line.momentId ?? line.text" :class="{ 'summary-focus': summaryMomentId === line.momentId }"><span>{{ line.text }}</span><span class="summary-actions"><button v-if="line.momentId" type="button" @click="openSummaryMoment(line)">📓 Diário</button><button v-if="line.pokemonId" type="button" @click="openSummaryBook(line)">📖 Livro</button></span></li></ul>
             <p v-else class="hint">Ainda não há momentos registrados.</p>
           </section>
           <section>
             <h4>O que mudou</h4>
-            <ul class="book-opinions"><li v-for="line in summary.changed" :key="line">{{ line }}</li></ul>
+            <ul class="book-opinions summary-links"><li v-for="line in summary.changed" :key="line.momentId ? line.momentId + line.text : line.text" :class="{ 'summary-focus': summaryMomentId === line.momentId }"><span>{{ line.text }}</span><span class="summary-actions"><button v-if="line.momentId" type="button" @click="openSummaryMoment(line)">📓 Diário</button><button v-if="line.pokemonId" type="button" @click="openSummaryBook(line)">📖 Livro</button></span></li></ul>
           </section>
           <section>
             <h4>O que pode acontecer</h4>
-            <ul class="book-opinions"><li v-for="line in summary.possible" :key="line">{{ line }}</li></ul>
+            <ul class="book-opinions summary-links"><li v-for="line in summary.possible" :key="line.requestId ?? line.text"><span>{{ line.text }}</span><span class="summary-actions"><button v-if="line.pokemonId" type="button" @click="openSummaryBook(line)">📖 Livro</button><button v-if="line.requestId" type="button" @click="pickTab('inicio')">📌 Mural</button></span></li></ul>
           </section>
         </div>
 
@@ -2005,7 +2033,7 @@ onBeforeUnmount(() => {
             <button type="button" :class="{ active: kindFilter === 'guardados' }" @click="kindFilter = 'guardados'">📌</button>
             <button v-for="k in MOMENT_KINDS" :key="k" type="button" :class="{ active: kindFilter === k }" @click="kindFilter = k">{{ MOMENT_EMOJI[k] }} {{ MOMENT_LABELS[k] }}</button>
           </div>
-          <MomentCard v-for="m in diaryList" :key="m.id" :moment="m" @toggle="toggleFav(m)" />
+          <MomentCard v-for="m in diaryList" :key="m.id" :moment="m" :class="{ 'moment-focus': summaryMomentId === m.id }" @toggle="toggleFav(m)" />
           <p v-if="diaryList.length === 0" class="hint">{{ kindFilter === 'todos' ? 'Nada registrado ainda. Fique na Vila e veja o que os Pokémon aprontam!' : 'Nenhum momento assim por enquanto.' }}</p>
         </div>
 
