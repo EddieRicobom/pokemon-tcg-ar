@@ -1,6 +1,7 @@
 import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
+import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
@@ -215,6 +216,8 @@ export class VillageGame {
   private groundFrames: HTMLCanvasElement[] = [];
   /** Recortes de tileset (null: sem a imagem, cai no desenho por código de sempre). */
   private readonly atlas: VillaAtlas | null;
+  /** Sprite oficial do treinador escolhido; null mantém o avatar pixel-art de fallback. */
+  private trainerAvatar: HTMLCanvasElement | null = null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
   private running = false;
   private handle = 0;
@@ -295,11 +298,51 @@ export class VillageGame {
       atlas = null;
     }
     this.atlas = atlas;
+    this.loadTrainerAvatar();
     this.player = makeWalker('eu', state.player.x, state.player.y, 5.5);
     this.player.dir = state.player.dir;
     this.weather = createWeather(this.rng, 'sol');
     this.buildGround();
     this.setMons(mons);
+  }
+
+  /** Carrega e recorta a sprite selecionada, sem impedir a Vila de abrir quando a rede falha. */
+  private loadTrainerAvatar(): void {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        const source = document.createElement('canvas');
+        source.width = image.naturalWidth;
+        source.height = image.naturalHeight;
+        const sourceCtx = source.getContext('2d', { willReadFrequently: true });
+        if (!sourceCtx || source.width === 0 || source.height === 0) return;
+        sourceCtx.drawImage(image, 0, 0);
+        const pixels = sourceCtx.getImageData(0, 0, source.width, source.height).data;
+        let minX = source.width;
+        let minY = source.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < source.height; y++) {
+          for (let x = 0; x < source.width; x++) {
+            if (pixels[(y * source.width + x) * 4 + 3]! === 0) continue;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+        if (maxX < minX || maxY < minY) return;
+        const avatar = document.createElement('canvas');
+        avatar.width = maxX - minX + 1;
+        avatar.height = maxY - minY + 1;
+        avatar.getContext('2d')!.drawImage(source, minX, minY, avatar.width, avatar.height, 0, 0, avatar.width, avatar.height);
+        this.trainerAvatar = avatar;
+      } catch {
+        // Se o servidor não permitir leitura de pixels, o avatar desenhado por código continua disponível.
+      }
+    };
+    image.src = trainerSpriteUrl(this.trainerId);
   }
 
   /** O clima de agora (para as falas dos Pokémon e para os momentos). */
@@ -1513,6 +1556,7 @@ export class VillageGame {
     const hatless = accDef?.pos === 'hat';
     const step = moving(this.player) ? this.player.steps + (this.player.t > 0.5 ? 1 : 0) : -1;
     const pimg = this.sprite(`p:${this.player.dir}:${step < 0 ? 's' : step % 2}:${this.trainerId}:${hatless}`, () => paintPlayer(this.player.dir, step, hatless ? { ...outfit, gear: 'none' } : outfit));
+    const trainerAvatar = this.trainerAvatar;
     list.push({
       y: pp.y + 1.01,
       draw: () => {
@@ -1523,7 +1567,19 @@ export class VillageGame {
         const dir = this.player.dir;
         const pos = accDef?.pos;
         if (accP && pos === 'back' && dir !== 'up') this.drawAcc(accP, px0 + 2 * scale, py0 + 11 * scale, 12 * scale);
-        ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
+        if (trainerAvatar && dir !== 'up') {
+          const aspect = trainerAvatar.width / trainerAvatar.height;
+          const avatarH = Math.min(PLAYER_H * scale, (T * 1.4) / aspect);
+          const avatarW = avatarH * aspect;
+          const avatarX = px0 + (T - avatarW) / 2;
+          if (dir === 'left') {
+            ctx.save();
+            ctx.translate(avatarX + avatarW / 2, py0 + avatarH / 2);
+            ctx.scale(-1, 1);
+            ctx.drawImage(trainerAvatar, -avatarW / 2, -avatarH / 2, avatarW, avatarH);
+            ctx.restore();
+          } else ctx.drawImage(trainerAvatar, avatarX, py0, avatarW, avatarH);
+        } else ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
         if (accP) {
           if (pos === 'hat') this.drawAcc(accP, px0 + 1 * scale, py0 - 5 * scale, 14 * scale);
           else if (pos === 'face' && dir !== 'up') this.drawAcc(accP, px0 + (dir === 'down' ? 3 : dir === 'right' ? 5 : 1) * scale, py0 + 3 * scale, 10 * scale);
