@@ -170,7 +170,18 @@ async function staticAsGif(blob: Blob): Promise<DecodedGif> {
  * `getDigitalSprite`); senão a imagem parada do PokéAPI. Sem nenhum dos três, null (vira a forma neutra, sem fingir
  * ser outro Pokémon).
  */
+const spriteMemory = new Map<number, Promise<Sprite | null>>();
+
 async function loadSpriteOrNull(dexId: number): Promise<Sprite | null> {
+  const cached = spriteMemory.get(dexId);
+  if (cached) return cached;
+  const pending = loadSpriteOrNullUncached(dexId);
+  pending.catch(() => spriteMemory.delete(dexId));
+  spriteMemory.set(dexId, pending);
+  return pending;
+}
+
+async function loadSpriteOrNullUncached(dexId: number): Promise<Sprite | null> {
   try {
     const gif = await getLocalVillageSprite(dexId, false, 'Walk');
     if (gif) return toSprite(gif, dexId);

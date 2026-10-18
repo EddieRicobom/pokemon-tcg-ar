@@ -93,6 +93,7 @@ export class TcgdexClient {
   private readonly backoffMs: number;
   private readonly timeoutMs: number;
   private readonly memory = new Map<string, Promise<TcgdexCard | null>>();
+  private readonly searchMemory = new Map<string, Promise<TcgdexBrief[]>>();
 
   constructor(options: TcgdexOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
@@ -120,6 +121,16 @@ export class TcgdexClient {
    * (sets modernos usam "025"), então perguntamos pelas duas formas.
    */
   async searchByNumber(value: number, official: number): Promise<TcgdexBrief[]> {
+    const key = `number:${official}:${value}`;
+    const cached = this.searchMemory.get(key);
+    if (cached) return cached;
+    const pending = this.searchByNumberUncached(value, official);
+    pending.catch(() => this.searchMemory.delete(key));
+    this.searchMemory.set(key, pending);
+    return pending;
+  }
+
+  private async searchByNumberUncached(value: number, official: number): Promise<TcgdexBrief[]> {
     const forms = Array.from(new Set([String(value), String(value).padStart(3, '0')]));
     const lists = await Promise.all(
       forms.map((form) =>
@@ -138,8 +149,13 @@ export class TcgdexClient {
    * 2026-10-16, `?dexId=1` casa por TRECHO do número e devolvia Unown (201) e Bellossom antes do Bulbasaur.
    */
   async searchByDexId(dexId: number): Promise<TcgdexBrief[]> {
-    const list = await this.fetchJson<TcgdexBrief[]>(`${this.baseUrl}/${this.language}/cards?dexId=eq:${encodeURIComponent(String(dexId))}`);
-    return list ?? [];
+    const key = `dex:${dexId}`;
+    const cached = this.searchMemory.get(key);
+    if (cached) return cached;
+    const pending = this.fetchJson<TcgdexBrief[]>(`${this.baseUrl}/${this.language}/cards?dexId=eq:${encodeURIComponent(String(dexId))}`).then((list) => list ?? []);
+    pending.catch(() => this.searchMemory.delete(key));
+    this.searchMemory.set(key, pending);
+    return pending;
   }
 
   private async fetchJson<T>(url: string): Promise<T | null> {
