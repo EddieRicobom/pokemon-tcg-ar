@@ -8,6 +8,12 @@ const NOW = '2026-10-16T12:00:00.000Z';
 const fixedRng = (v: number) => () => v;
 
 describe('encontros lendários — sorteio', () => {
+  it('o catálogo atual tem três espécies; só uma pode ficar ativa por vez', () => {
+    expect(LEGENDARIES.map((l) => l.id)).toEqual(['suicune', 'zapdos', 'celebi']);
+    const first = rollLegendary(emptyLegendary(), fixedRng(0), DAY, NOW);
+    expect(rollLegendary(first.state, fixedRng(0), '2026-10-17', NOW).legendary).toBeNull();
+    expect(dismissActive(first.state).active).toBeNull();
+  });
   it('nunca sorteia duas vezes no mesmo dia', () => {
     const s = emptyLegendary();
     const r1 = rollLegendary(s, fixedRng(0), DAY, NOW); // rng=0 < BASE_CHANCE, "ganharia" se rolasse

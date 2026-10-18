@@ -19,10 +19,11 @@ import MinigameHub from './MinigameHub.vue';
 import MinigameEquilibrio from './MinigameEquilibrio.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import { dayKey, levelOf } from '../core/trainer';
+import { personalityOf } from '../core/village/personality';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
 import {
-  buy, canFollow, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
+  add, buy, canFollow, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
   plant, pruneHarvest, RECIPES, sell, talk, tickCrops, upgradeHouse, water, wear,
   BATTLE_REWARD_COINS, BATTLE_REWARDS_PER_DAY, battleRewardsLeft,
 } from '../core/village/life';
@@ -38,6 +39,8 @@ import { ALL_QUESTIONS, FONTE_POOL, isComplete as quizComplete, nextForm, resolv
 import type { QuizAnswers } from '../core/village/starter-quiz';
 import { claimRequest, ensureRequests, requestStatus } from '../core/village/requests';
 import type { VillageRequest } from '../core/village/requests';
+import { discoverAt, requestInfluence, resolveExpeditions, startExpedition, weeklyEventFor, weeklyModifiers } from '../core/village/world-progress';
+import type { DiscoveryPlace, WeeklyEvent } from '../core/village/world-progress';
 import type { Resolved, Scene } from '../core/village/social';
 import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS, trimMoments } from '../core/village/social-state';
 import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, recordAnswer, wordOf } from '../core/village/quiz';
@@ -81,7 +84,7 @@ pruneHarvest(state, day.value);
 type Sheet = null | 'menu' | 'build' | 'shop' | 'dress' | 'arcade' | 'arena' | 'torre';
 const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
-type Tab = 'inicio' | 'resumo' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
+type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
 const tab = ref<Tab>('inicio');
 
 /**
@@ -91,7 +94,7 @@ const tab = ref<Tab>('inicio');
  */
 interface MenuTile { tab?: Tab; href?: string; run?: () => void; disabled?: boolean; icon: string; label: string; hint?: string; badge?: number }
 const MENU_TITLES: Record<Tab, string> = {
-  inicio: 'Menu da Vila', resumo: 'Resumo da Vila', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos',
+  inicio: 'Menu da Vila', resumo: 'Resumo da Vila', expedicoes: 'Expedições', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos',
   album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios',
 };
 /** Um lugar da Vila aberto direto pelo menu (ou trancado, com o nível que falta). */
@@ -129,6 +132,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
     title: 'Pokémon e memórias',
     tiles: [
       { tab: 'resumo', icon: '🗞️', label: 'Resumo da Vila', hint: 'o que aconteceu e mudou' },
+      { tab: 'expedicoes', icon: '🧭', label: 'Expedições', hint: 'mande um Pokémon explorar' },
       { tab: 'livro', icon: '📖', label: 'Livro dos Pokémon', hint: 'amizade e apelidos' },
       { tab: 'diario', icon: '📔', label: 'Diário', hint: unread.value > 0 ? `${unread.value} novo(s)` : undefined },
       { tab: 'album', icon: '📸', label: 'Álbum' },
@@ -166,6 +170,7 @@ const kindFilter = ref<MomentKind | 'todos' | 'guardados'>('todos');
 const albumView = ref<'guardados' | 'colecao'>('guardados');
 const portraitOk = ref(true);
 const giftPick = ref(false);
+const weeklyEvent = ref<WeeklyEvent | null>(null);
 const welcome = ref(true);
 // O aviso de que a cidade cresceu espera você fechar as boas-vindas (para um não cobrir o outro).
 watch(welcome, (open) => {
@@ -551,6 +556,10 @@ const GUIDED_DESTINATIONS = [
   { x: 81, y: 16, place: 'Lago Azul' },
   { x: 10, y: 48, place: 'Parquinho' },
   { x: 58, y: 38, place: 'Mercado da Praça' },
+  { x: 16, y: 47, place: 'Parquinho Oeste' },
+  { x: 86, y: 50, place: 'Fazenda dos Canteiros' },
+  { x: 22, y: 64, place: 'Bosque do Sul' },
+  { x: 74, y: 18, place: 'Trilha do Lago' },
 ] as const;
 let guidedTrip: { id: string; destination: typeof GUIDED_DESTINATIONS[number] } | null = null;
 
@@ -821,6 +830,10 @@ function openRequestBoard(): void {
     if (result.ok) {
       earnCoins(result.coins);
       if (result.targetId) game?.bubble(result.targetId, '🎁');
+      if (state.requests.items.every((request) => request.done)) {
+        state.town.level = Math.max(state.town.level, Math.min(99, level.value + 1));
+        say('🏘️ Todos os pedidos de hoje foram atendidos: a Vila subiu um nível.');
+      }
       changed();
       playSound('success');
     }
@@ -868,6 +881,37 @@ function finishGuidedTrip(): void {
   say(`🚶 Passeio concluído! ${mon?.name ?? nameOf(trip.id)} ganhou +6 de amizade e o momento foi para o Diário.`);
 }
 
+function updateWorldProgress(): void {
+  if (!game) return;
+  const discovery = discoverAt(state, game.player.x, game.player.y);
+  if (discovery) {
+    if (discovery.rewardCoins > 0) earnCoins(discovery.rewardCoins);
+    if (discovery.rewardItem) add(state, discovery.rewardItem, 1);
+    say(`${discovery.text}${discovery.rewardCoins ? ` +${discovery.rewardCoins} moedas` : ''}${discovery.rewardItem ? ` e ${itemName(discovery.rewardItem)}` : ''}`);
+    changed();
+  }
+  weeklyEvent.value = weeklyEventFor(state, refreshDay());
+  const completed = resolveExpeditions(state, Date.now(), (id) => personalityOf(id).name, (id) => types.get(id) ?? [], (id) => friendOf(state, id).points);
+  for (const expedition of completed) {
+    const result = expedition.result;
+    if (!result) continue;
+    earnCoins(result.coins);
+    if (result.item) add(state, result.item, result.qty);
+    say(`🧭 ${result.text} +${result.coins} moedas${result.item ? ` e ${result.qty} ${itemName(result.item)}` : ''}`);
+  }
+  if (completed.length > 0) changed();
+}
+
+function villageHour(): number {
+  return (new Date().getHours() + requestInfluence(state, refreshDay()).hourShift + weeklyModifiers(state).hourShift) % 24;
+}
+
+function beginExpedition(monId: string, place: DiscoveryPlace): void {
+  const result = startExpedition(state, monId, place, Date.now(), game?.weatherKind ?? null);
+  say(result.message);
+  if (result.ok) changed();
+}
+
 function checkGuidedTrip(): void {
   const trip = guidedTrip;
   if (!trip || !game || game.walking) return;
@@ -886,9 +930,8 @@ function checkTapInteraction(): void {
   }
 }
 
-function startGuidedTrip(id: string): void {
+function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.seed + id.length + refreshDay().length) % GUIDED_DESTINATIONS.length]!): void {
   if (!game) return;
-  const destination = GUIDED_DESTINATIONS[(state.seed + id.length + refreshDay().length) % GUIDED_DESTINATIONS.length]!;
   guidedTrip = { id, destination };
   state.follower = id;
   game.setWaiting(null);
@@ -1082,7 +1125,7 @@ function knockAt(b: Building, ids: string[]): void {
   const before = prev && now - prev.at < KNOCK_MEMORY_MS ? prev.n : 0;
   const r = knockDoor(
     ids.map((id) => ({ id, name: nameOf(id), asleep: !!game?.isAsleep(id) })),
-    new Date().getHours(),
+    villageHour(),
     Math.random,
     before,
   );
@@ -1238,7 +1281,7 @@ function tickScenes(): void {
   nextSceneAt = Date.now() + (SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR) * effects().quietFactor;
   // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
   const near = actorList().filter((a) => game!.playerNear([a.id], 14) && !game!.sceneBusy(a.id));
-  const env = makeEnv(state, refreshDay(), new Date().getHours(), game.weatherKind, profile.name);
+  const env = makeEnv(state, refreshDay(), villageHour(), game.weatherKind, profile.name);
   const scene = pickMoment(near, state, env, Math.random);
   if (!scene) return;
   const ids = scene.cast.map((a) => a.id);
@@ -1308,6 +1351,7 @@ function onVisibility(): void {
 /** O botão "☰ Menu" do canto: o mesmo menu do B (uma entrada só). */
 function openMenu(): void {
   welcome.value = false;
+  updateWorldProgress();
   askingMon = null;
   tapInteraction = null;
   game?.setWaiting(null);
@@ -1372,7 +1416,7 @@ function pressA(): void {
   } else if (t.kind === 'mon') {
     game.faceMe(t.id);
     const name = nameOf(t.id);
-    const result = talk(state, t.id, name, types.get(t.id) ?? [], today, new Date().getHours(), Math.random, recentGossip(state, t.id, Date.now()), game.weatherKind);
+    const result = talk(state, t.id, name, types.get(t.id) ?? [], today, villageHour(), Math.random, recentGossip(state, t.id, Date.now()), game.weatherKind);
     if (result.gained > 0) {
       game.bubble(t.id, '❤️');
       trainerEvent('talk', t.id);
@@ -1450,7 +1494,7 @@ function pressA(): void {
 /** O sino da praça: chama todo Pokémon acordado para perto dele. */
 function ringBell(): void {
   if (!game) return;
-  const r = game.ringBell();
+  const r = game.ringBell(performance.now(), requestInfluence(state, refreshDay()).bellBonus);
   const names = (ids: string[]) => ids.map((id) => nameOf(id)).join(', ');
   if (r.coming.length === 0 && r.sleeping.length === 0) return say('🔔 Dlim-dlom! Ainda não mora nenhum Pokémon na Vila.');
   const sleep = r.sleeping.length > 0 ? ` Dormindo em casa (não vêm): ${names(r.sleeping)}.` : '';
@@ -1499,6 +1543,24 @@ function drawMini(): void {
     ctx.textBaseline = 'middle';
     ctx.fillText('🔔', (bell.x + 0.5) * MINI_K, (bell.y - 1) * MINI_K);
   }
+  const requestPoint = (location: string): { x: number; y: number } | null => {
+    const l = location.toLowerCase();
+    if (l.includes('lago') || l.includes('praia')) return { x: 81, y: 16 };
+    if (l.includes('bosque') || l.includes('pedreira')) return { x: 15, y: 64 };
+    if (l.includes('parque')) return { x: 12, y: 48 };
+    if (l.includes('fazenda') || l.includes('canteiro')) return { x: 82, y: 56 };
+    if (l.includes('praça') || l.includes('mural')) return { x: 48, y: 37 };
+    return null;
+  };
+  for (const request of state.requests.items) {
+    if (request.done || request.day !== refreshDay()) continue;
+    const point = requestPoint(request.location);
+    if (!point) continue;
+    ctx.font = `${MINI_K * 3}px ${'system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif'}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('📌', (point.x + 0.5) * MINI_K, (point.y - 1) * MINI_K);
+  }
   for (const [id, w] of game.villagers) if (!game.isAsleep(id)) dot(w.x, w.y, '#ffd84a', MINI_K * 0.9);
   dot(game.player.x, game.player.y, '#ff4a4a', MINI_K * 1.3);
 }
@@ -1532,12 +1594,21 @@ function openFriendDialog(id: string, text: string): void {
   const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: 'Presentear', run: () => { giftPick.value = true; } }];
   actions.push({ label: 'Acessório', run: () => { dialog.value = null; openDress(id); } });
   actions.push({ label: nicknameOf(state, id) ? 'Mudar o apelido' : 'Dar apelido', disabled: !canNickname(state, id), run: () => openNickname(id) });
-  actions.push({ label: '🚶 Passeio guiado', run: () => startGuidedTrip(id) });
+  actions.push({ label: '🚶 Passeio guiado', run: () => openGuidedTrip(id) });
   actions.push({ label: '📖 Ver no Livro', run: () => openBookFromDialog(id) });
   if (following) actions.push({ label: 'Pode passear', run: () => { state.follower = null; changed(); dialog.value = null; } });
   else if (canFollow(state, id)) actions.push({ label: 'Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
   actions.push({ label: 'Tchau', run: () => { dialog.value = null; } });
   dialog.value = { id, name: `${nameOf(id)} · ${lvl.name} ${'♥'.repeat(lvl.hearts)}${'♡'.repeat(5 - lvl.hearts)}`, text, actions };
+}
+
+function openGuidedTrip(id: string): void {
+  dialog.value = {
+    id,
+    name: `Passeio com ${nameOf(id)}`,
+    text: 'Para onde vocês devem caminhar? O Pokémon seguirá você até o destino escolhido.',
+    actions: GUIDED_DESTINATIONS.map((destination) => ({ label: `🚶 ${destination.place}`, run: () => startGuidedTrip(id, destination) })).concat({ label: 'Voltar', run: () => openFriendDialog(id, 'Escolha um destino para o passeio.') }),
+  };
 }
 
 function give(item: ItemId): void {
@@ -1699,9 +1770,9 @@ onMounted(async () => {
   if (!canvasEl.value || !wrapEl.value) return;
   game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas);
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
-  game.onStep = () => { changed(); checkTapInteraction(); checkGuidedTrip(); };
+  game.onStep = () => { changed(); updateWorldProgress(); checkTapInteraction(); checkGuidedTrip(); };
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).
-  game.weatherMode = () => (visual.weather !== 'off' && effects().rain ? 'chuva' : visual.weather);
+  game.weatherMode = () => (visual.weather !== 'off' && (effects().rain || requestInfluence(state, refreshDay()).weather) ? (requestInfluence(state, refreshDay()).weather ?? 'chuva') : visual.weather);
   game.lampStorm = () => effects().lampStorm;
   game.animSpeed = () => effects().animSpeed;
   game.metallic = () => visual.metallic;
@@ -1983,6 +2054,36 @@ onBeforeUnmount(() => {
           <section>
             <h4>O que pode acontecer</h4>
             <ul class="book-opinions summary-links"><li v-for="line in summary.possible" :key="line.requestId ?? line.text"><span>{{ line.text }}</span><span class="summary-actions"><button v-if="line.pokemonId" type="button" @click="openSummaryBook(line)">📖 Livro</button><button v-if="line.requestId" type="button" @click="pickTab('inicio')">📌 Mural</button></span></li></ul>
+          </section>
+        </div>
+
+        <div v-else-if="tab === 'expedicoes'" class="diary">
+          <p class="hint">Cada expedição leva 15 minutos. O resultado combina tipo, personalidade, amizade e o clima registrado na partida.</p>
+          <section v-if="weeklyEvent" class="weekly-event">
+            <h4>📅 {{ weeklyEvent.title }}</h4>
+            <p><strong>{{ weeklyEvent.place }}</strong> · {{ weeklyEvent.detail }}</p>
+            <small>{{ weeklyEvent.bonus }}</small>
+          </section>
+          <section>
+            <h4>Enviar alguém</h4>
+            <ul class="village-list">
+              <li v-for="m in mons" :key="m.id">
+                <span>{{ m.name }}<small>{{ friendLevel(friendOf(state, m.id).points).name }} · {{ friendOf(state, m.id).points }} amizade</small></span>
+                <span class="expedition-actions">
+                  <button v-for="place in (['lago', 'bosque', 'fazenda', 'parque'] as DiscoveryPlace[])" :key="place" type="button" :disabled="state.expeditions.some((e) => !e.result && e.monId === m.id)" @click="beginExpedition(m.id, place)">{{ place }}</button>
+                </span>
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h4>Expedições em andamento</h4>
+            <ul class="village-list">
+              <li v-for="e in state.expeditions.slice().reverse()" :key="e.id">
+                <span>{{ nameOf(e.monId) }} · {{ e.place }}<small>{{ e.result ? e.result.text : `retorna em ${Math.max(0, Math.ceil((e.finishAt - Date.now()) / 60000))} min` }}</small></span>
+                <b v-if="e.result">✅ +{{ e.result.coins }}</b>
+              </li>
+              <li v-if="state.expeditions.length === 0" class="hint">Nenhuma expedição ainda.</li>
+            </ul>
           </section>
         </div>
 

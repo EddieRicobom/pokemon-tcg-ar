@@ -629,7 +629,7 @@ export class VillageGame {
    * demais (mais de `BELL_FAR` blocos) aparece num "puf" no meio do caminho e chega correndo, para ninguém levar um
    * minuto atravessando o mapa. Devolve quem vem e quem está dormindo. O chamado dura `BELL_MS`.
    */
-  ringBell(now = performance.now()): { coming: string[]; sleeping: string[] } {
+  ringBell(now = performance.now(), bonus = 0): { coming: string[]; sleeping: string[] } {
     const bell = this.map.decor.find((d) => d.kind === 'bell');
     const at = bell ? { x: bell.x, y: bell.y + bell.h } : { x: this.player.x, y: this.player.y };
     const coming: string[] = [];
@@ -656,7 +656,7 @@ export class VillageGame {
       }
       this.bubble(id, '🔔', 1800);
     }
-    this.calledUntil = now + BELL_MS;
+    this.calledUntil = now + BELL_MS + bonus * 1000;
     return { coming, sleeping };
   }
 

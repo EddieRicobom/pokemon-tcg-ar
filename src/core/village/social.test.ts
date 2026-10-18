@@ -44,6 +44,8 @@ const WORLDS = REL_VARIANTS.map((_, vi) => {
     for (let j = i + 1; j < 12; j++) s.rel[pairKey(`m${i}`, `m${j}`)] = { ...REL_VARIANTS[(i * 3 + j + vi) % REL_VARIANTS.length]!, since: '', met: 1 + (vi % 3) * 4 };
     friendOf(s, `m${i}`).points = i % 3 === 0 ? 90 : 10;
   }
+  s.wear.player = 'chapeu-palha';
+  s.wear.mons.m0 = 'oculos';
   if (vi >= 3) s.seen.push('rom-fim');
   // Cidade crescida e algumas respostas dadas às perguntas dos Pokémon (para os modelos que dependem disso).
   s.town.level = 9;
