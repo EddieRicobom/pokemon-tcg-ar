@@ -245,34 +245,34 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   {
-    id: 'power', name: 'Golpe mais forte', description: '+20% de dano (até 60).',
-    describe: (m) => ({ name: 'Golpe mais forte', description: `${m.name}: +20% de dano, até 60.` }),
-    apply: (p) => { if (p.attackDamage < 60) p.attackDamage = Math.min(60, round1(p.attackDamage * 1.2)); },
+    id: 'power', name: 'Golpe mais forte', description: '+20% de dano no ataque.',
+    describe: (m) => ({ name: 'Golpe mais forte', description: `${m.name}: +20% de dano.` }),
+    apply: (p) => { p.attackDamage = round1(p.attackDamage * 1.2); },
   },
   {
-    id: 'haste', name: 'Recarga menor', description: '-15% no tempo entre ataques (até 240 ms).',
-    describe: (m) => ({ name: 'Recarga menor', description: `${m.name}: -15% na recarga, até 240 ms.` }),
-    apply: (p) => { if (p.attackCooldownMs > 240) p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.85)); },
+    id: 'haste', name: 'Recarga menor', description: '-15% no tempo entre ataques.',
+    describe: (m) => ({ name: 'Recarga menor', description: `${m.name}: ${m.category === 'aura' ? '-15% no tempo entre os pulsos.' : '-15% no tempo entre ataques.'}` }),
+    apply: (p) => { p.attackCooldownMs = Math.max(120, Math.round(p.attackCooldownMs * 0.85)); },
   },
   { id: 'legs', name: 'Passo mais rápido', description: '+12% de velocidade ao andar.', apply: (p) => { p.speed = round1(p.speed * 1.12); } },
   { id: 'vigor', name: 'Mais vida', description: '+25 no HP máximo (e cura na hora).', apply: (p) => { p.maxHp += 25; p.hp = p.maxHp; } },
   {
-    id: 'range', name: 'Alcance maior', description: '+20% no alcance do golpe.', for: ['projetil', 'area'],
+    id: 'range', name: 'Alcance maior', description: '+20% no alcance do golpe.', for: ['projetil', 'area', 'cone'],
     apply: (p) => { p.attackRange = round1(p.attackRange * 1.2); },
   },
   {
-    id: 'multishot', name: 'Disparo múltiplo', description: '+1 projétil por disparo (até 5).', for: ['projetil', 'area'],
+    id: 'multishot', name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.', for: ['projetil', 'area'],
     describe: (m) => (m.category === 'area'
       ? { name: 'Explosão extra', description: `${m.name}: +1 explosão por ataque, em outro inimigo.` }
-      : { name: 'Disparo múltiplo', description: '+1 projétil por disparo, até 5.' }),
-    apply: (p) => { p.shots = Math.min(5, p.shots + 1); },
+      : { name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.' }),
+    apply: (p) => { p.shots += 1; },
   },
   {
-    id: 'pierce', name: 'Golpe perfurante', description: 'O golpe atravessa +1 inimigo (até 4).', for: ['projetil'],
-    apply: (p) => { p.pierce = Math.min(4, p.pierce + 1); },
+    id: 'pierce', name: 'Golpe perfurante', description: 'O golpe atravessa +1 inimigo antes de sumir.', for: ['projetil'],
+    apply: (p) => { p.pierce += 1; },
   },
   {
-    id: 'radius', name: 'Golpe maior', description: '+20% no raio do golpe.', for: ['aura', 'area'],
+    id: 'radius', name: 'Golpe maior', description: '+20% no raio do golpe.', for: ['aura', 'area', 'orbit'],
     describe: (m) => ({ name: 'Golpe maior', description: `${m.name}: ${m.category === 'aura' ? '+20% no raio da aura.' : '+20% no tamanho da explosão.'}` }),
     apply: (p) => { p.attackRadius = round1(p.attackRadius * 1.2); },
   },
@@ -321,10 +321,6 @@ export const BALANCE = {
   spawnPerSecMs: 7,
   spawnPerWaveMs: 26,
   spawnFloorMs: 220,
-  /** Aumenta a pressão conforme o poder ofensivo, com teto para proteger o desempenho no celular. */
-  spawnPowerFactorMax: 8,
-  enemyHpPerPlayerDamage: 1.5,
-  enemyHpScaleMax: 6,
   playerDamage: 10,
   playerCooldownMs: 600,
   /** Primeiro chefe e intervalo entre os seguintes (ms). */
@@ -416,13 +412,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
 /** Intervalo entre nascimentos (ms): começa folgado e aperta com o tempo e a onda, nunca abaixo do piso. */
 function spawnIntervalMs(state: SurvivorState): number {
   const t = state.elapsedMs / 1000;
-  const timed = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
-  const { attackDamage, shots, attackCooldownMs, pierce } = state.player;
-  const powerFactor = Math.min(
-    BALANCE.spawnPowerFactorMax,
-    Math.max(1, (attackDamage / BALANCE.playerDamage) * shots * (BALANCE.playerCooldownMs / attackCooldownMs) * (1 + pierce * 0.15)),
-  );
-  return Math.max(BALANCE.spawnFloorMs, timed / powerFactor);
+  return Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
 }
 
 function spawnPoint(rng: Rng): { x: number; y: number } {
@@ -444,8 +434,7 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   const { x, y } = spawnPoint(state.rng);
   const t = state.elapsedMs / 1000;
   if (boss) {
-    const timedHp = BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave;
-    const hp = Math.round(Math.max(timedHp, state.player.attackDamage * 10) * state.infiniteScale);
+    const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale);
     state.enemies.push({
       id: state.nextId++,
       kind: state.kindCount,
@@ -468,8 +457,7 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   const hpMul = grade === 'chefao' ? 7 : grade === 'elite' ? 5 : 1;
   const dmgMul = grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1;
   const speed = (grade === 'comum' ? 55 + state.rng() * 25 : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
-  const playerScaledHp = Math.max(baseHp, Math.min(baseHp * BALANCE.enemyHpScaleMax, state.player.attackDamage * BALANCE.enemyHpPerPlayerDamage));
-  const hp = Math.round(playerScaledHp * hpMul * state.infiniteScale);
+  const hp = Math.round(baseHp * hpMul * state.infiniteScale);
   state.enemies.push({
     id: state.nextId++,
     kind: Math.floor(state.rng() * state.kindCount),
@@ -679,17 +667,37 @@ function attack(state: SurvivorState): boolean {
     fireProjectiles(state, target);
     return true;
   }
-  if (move.category === 'aura') {
+  if (move.category === 'aura' || move.category === 'orbit') {
     // A aura pulsa sempre (dá para ver o raio), mesmo sem ninguém dentro.
     let hits = 0;
     for (const e of state.enemies) {
-      if (Math.hypot(e.x - p.x, e.y - p.y) <= p.attackRadius + e.radius) {
+      const distance = Math.hypot(e.x - p.x, e.y - p.y);
+      const inRange = move.category === 'orbit'
+        ? distance >= p.attackRadius * 0.48 - e.radius && distance <= p.attackRadius + e.radius
+        : distance <= p.attackRadius + e.radius;
+      if (inRange) {
         hitEnemy(state, e, p.attackDamage, p);
         hits++;
       }
     }
     drain(state, hits);
     state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: p.attackRadius, color: move.color, ageMs: 0, lifeMs: 360 });
+    return true;
+  }
+  if (move.category === 'cone') {
+    let hits = 0;
+    const direction = p.facing;
+    for (const e of state.enemies) {
+      const dx = e.x - p.x;
+      const dy = e.y - p.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance <= p.attackRange + e.radius && dx * direction / (distance || 1) >= 0.35) {
+        hitEnemy(state, e, p.attackDamage, p);
+        hits++;
+      }
+    }
+    drain(state, hits);
+    state.fx.push({ kind: 'blast', x: p.x + direction * p.attackRange * 0.55, y: p.y, r: p.attackRange * 0.55, color: move.color, ageMs: 0, lifeMs: 300 });
     return true;
   }
   const targets = nearestEnemies(state, p.attackRange, p.shots);

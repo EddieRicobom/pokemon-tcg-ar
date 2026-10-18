@@ -14,7 +14,7 @@ import type { PokemonType } from './pokemon-data';
  *
  * Sem stats (dado ausente), a forma é projétil e os números são os médios; `estimated` avisa a tela para dizer isso.
  */
-export type MoveCategory = 'projetil' | 'aura' | 'area';
+export type MoveCategory = 'projetil' | 'aura' | 'area' | 'cone' | 'orbit';
 export type MoveEffect = 'queimar' | 'lentidao' | 'empurrar' | 'saltar' | 'atordoar' | 'atravessar' | 'roubar' | 'nenhum';
 
 export interface BaseStats {
@@ -65,6 +65,8 @@ export const MOVE_CATEGORY_LABELS_PT: Record<MoveCategory, string> = {
   projetil: 'projétil',
   aura: 'aura',
   area: 'área',
+  cone: 'cone',
+  orbit: 'órbita',
 };
 
 export const MOVE_EFFECT_LABELS_PT: Record<MoveEffect, string> = {
@@ -90,7 +92,9 @@ export function categoryForStats(s: BaseStats): MoveCategory {
 /** O golpe de um Pokémon: elemento pelo 1º tipo (sem tipo, Normal) e forma pelos stats (sem stats, projétil). */
 export function moveFor(types: readonly PokemonType[], stats: BaseStats | null): SurvivorMove {
   const type = types[0] ?? 'normal';
-  const category = stats ? categoryForStats(stats) : 'projetil';
+  const category: MoveCategory = type === 'fighting' ? 'cone'
+    : type === 'grass' || type === 'bug' ? 'orbit'
+      : stats ? categoryForStats(stats) : 'projetil';
   return { type, ...ELEMENTS[type], category, ...(stats ? {} : { estimated: true }) };
 }
 
@@ -108,6 +112,8 @@ export const CATEGORY_BASE: Record<MoveCategory, CategoryBase> = {
   projetil: { damage: 10, cooldownMs: 600, range: 170, radius: 0 },
   aura: { damage: 5, cooldownMs: 420, range: 0, radius: 62 },
   area: { damage: 15, cooldownMs: 1100, range: 190, radius: 48 },
+  cone: { damage: 9, cooldownMs: 720, range: 118, radius: 0 },
+  orbit: { damage: 6, cooldownMs: 520, range: 0, radius: 72 },
 };
 
 /** Os números do golpe e do corpo de quem joga, já com os stats aplicados. */
@@ -138,7 +144,7 @@ function factor(stat: number, weight: number, lo: number, hi: number): number {
 /** O ataque que conta para o dano de cada forma. */
 function offenseOf(category: MoveCategory, s: BaseStats): number {
   if (category === 'projetil') return s.spAttack;
-  if (category === 'area') return s.attack;
+  if (category === 'area' || category === 'cone') return s.attack;
   return (s.attack + s.spAttack) / 2;
 }
 
@@ -163,7 +169,9 @@ export function profileBars(move: SurvivorMove, p: AttackProfile): { label: stri
   const base = CATEGORY_BASE[move.category];
   const reach = move.category === 'projetil'
     ? { label: 'Alcance', value: p.projectileSpeed / (360 * 1.3) }
-    : { label: 'Raio', value: p.radius / (base.radius * 1.5 * 1.15) };
+    : move.category === 'cone'
+      ? { label: 'Alcance', value: p.range / 220 }
+      : { label: move.category === 'orbit' ? 'Órbita' : 'Raio', value: p.radius / (base.radius * 1.5 * 1.15) };
   return [
     { label: 'Dano', value: clamp(p.damage / (base.damage * 1.7), 0, 1) },
     { label: 'Rapidez', value: clamp((base.cooldownMs / p.cooldownMs) / 1.35, 0, 1) },
