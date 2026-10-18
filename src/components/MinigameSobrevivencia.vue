@@ -32,6 +32,8 @@ import { speciesTiles } from '../core/size-scale';
 import { contentBounds } from '../village/local-sprite';
 import type { ContentBounds } from '../village/local-sprite';
 import { SoundEngine } from '../box/sound';
+import { survivorRegionLabel } from '../core/survivor-regions';
+import { createSurvivorLandscape } from '../village/survivor-landscape';
 import type { SoundCue } from '../box/sound-recipes';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
@@ -98,6 +100,8 @@ function fitView(): void {
   if (ctx) ctx.imageSmoothingEnabled = false;
 }
 const JOY_MAX = 42;
+const regionScenery = ref(true);
+const drawLandscape = createSurvivorLandscape(ARENA_W, ARENA_H);
 
 interface Sprite {
   frames: HTMLCanvasElement[];
@@ -418,7 +422,9 @@ function draw(): void {
   const camY = clamp(s.player.y - VIEW_H / 2, 0, Math.max(0, ARENA_H - VIEW_H));
   ctx.save();
   ctx.translate(-camX, -camY);
-  if (groundPattern) {
+  if (regionScenery.value) {
+    drawLandscape(ctx, s.elapsedMs);
+  } else if (groundPattern) {
     ctx.fillStyle = groundPattern;
     ctx.fillRect(0, 0, ARENA_W, ARENA_H);
   } else {
@@ -752,6 +758,8 @@ onBeforeUnmount(() => {
             <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
             <span class="chip">☠ {{ state.kills }}</span>
             <span class="chip">🌊 Onda {{ state.wave }}</span>
+            <span class="chip">{{ survivorRegionLabel(state.elapsedMs) }}</span>
+            <button type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário regional: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
           </div>
         </div>
 
@@ -775,6 +783,7 @@ onBeforeUnmount(() => {
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
             <p class="note">3 Pokémon sorteados da sua caixa.</p>
+            <p class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
             <div v-if="torre.infiniteUnlocked" class="survivor-mode" role="group" aria-label="Modo da Torre">
               <button type="button" :class="{ active: !infiniteWanted }" @click="infiniteWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
               <button type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true">♾️ Infinito<small>Mais difícil, sem fim</small></button>
