@@ -1335,30 +1335,14 @@ export class VillageGame {
       });
     }
     const shop = this.map.shop;
-    const umbrellas = atlas ? (['umbrella-b', 'umbrella-r', 'umbrella-g'] as const).map((id) => this.art(id)) : [];
-    if (umbrellas.length > 0 && umbrellas.every((u) => u !== null)) {
+    // A loja tem fachada própria no atlas. Nunca troque o prédio por guarda-sóis: eram só peças decorativas da praça.
+    const shopArt = atlas ? this.art('market-store') : null;
+    if (shopArt) {
       list.push({
         y: shop.y + shop.h,
         draw: () => {
-          shadow(sx(shop.x + shop.w / 2), sy(shop.y + shop.h) - 2 * scale, shop.w * 7 * scale, 3.5 * scale, 0.2);
-          umbrellas.forEach((u, i) => {
-            const cx = sx(shop.x + (i + 0.5) * (shop.w / umbrellas.length));
-            const base = sy(shop.y + shop.h);
-            stand(u!, cx, base);
-            // O recorte do tileset mostra só o guarda-sol; o balcão e as frutas deixam claro que são barracas.
-            const left = Math.round(cx - 13 * scale);
-            const top = Math.round(base - 8 * scale);
-            ctx.fillStyle = '#704728';
-            ctx.fillRect(left, top, 26 * scale, 7 * scale);
-            ctx.fillStyle = '#c18a4d';
-            ctx.fillRect(left, top, 26 * scale, 2 * scale);
-            ctx.fillStyle = '#59371f';
-            ctx.fillRect(left + 2 * scale, top + 6 * scale, 22 * scale, scale);
-            for (const [x, color] of [[4, '#f1c84b'], [10, '#e45a4b'], [16, '#72bd57'], [21, '#e89ac0']] as const) {
-              ctx.fillStyle = color;
-              ctx.fillRect(left + x * scale, top - 2 * scale, 3 * scale, 2 * scale);
-            }
-          });
+          shadow(sx(shop.x + shop.w / 2), sy(shop.y + shop.h) - 2 * scale, 42 * scale, 4 * scale, 0.2);
+          stand(shopArt, sx(shop.x + shop.w / 2), sy(shop.y + shop.h));
           this.drawTag(sx(shop.x + shop.w / 2), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
         },
       });

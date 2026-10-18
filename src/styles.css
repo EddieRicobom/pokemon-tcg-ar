@@ -6470,3 +6470,24 @@ body.no-scroll .reward-toasts {
 .village-shortcuts button { padding: 8px 10px; border-radius: 12px; font: inherit; font-size: .8rem; }
 .village-toast { top: auto; bottom: 16px; z-index: 15; width: max-content; pointer-events: auto; }
 @media (max-width: 480px) { .village-top > .village-menu-btn { display: none; } .village-move-hint { display: none; } .village-shortcuts { max-width: 58%; } }
+
+/* Casa do jogador: uma sala clicável e independente do quintal, com móveis em pixel art. */
+.home-room { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); width: min(100%, 390px); aspect-ratio: 7 / 5; margin: 12px auto; padding: 12px; border: 10px solid #704728; border-radius: 8px; background-color: var(--home-floor, #cb915c); background-image: var(--home-floor-img), var(--home-wall-img); box-shadow: inset 0 0 0 3px #d8ad70, 0 6px 16px #0004; }
+.home-slot { display: grid; place-items: center; min-width: 0; min-height: 0; padding: 1px; border: 1px solid rgb(80 55 35 / .18); border-radius: 0; background: transparent; }
+.home-slot:hover, .home-slot:focus-visible { outline: 2px solid #ffe16a; outline-offset: -2px; background: rgb(255 255 255 / .22); }
+.home-slot img { width: min(100%, 42px); max-height: 56px; image-rendering: pixelated; object-fit: contain; }
+.home-wall-creme { --home-wall-img: linear-gradient(#fff4d4 0 23%, transparent 23%); }
+.home-wall-floral { --home-wall-img: radial-gradient(#fff1a8 10%, transparent 12%), radial-gradient(#fff 9%, transparent 11%); }
+.home-wall-noite { --home-wall-img: radial-gradient(#fff5a6 1px, transparent 2px), linear-gradient(#40509a 0 23%, transparent 23%); }
+.home-wall-madeira { --home-wall-img: repeating-linear-gradient(0deg, #a96d43 0 2px, transparent 2px 18px); }
+.home-floor-carvalho { --home-floor: #cb915c; --home-floor-img: repeating-linear-gradient(90deg, rgb(100 58 33 / .28) 0 2px, transparent 2px 48px); }
+.home-floor-xadrez { --home-floor: #f0dfbc; --home-floor-img: conic-gradient(#d06d69 25%, #f0dfbc 0 50%, #d06d69 0 75%, #f0dfbc 0); }
+.home-floor-grama { --home-floor: #86c969; --home-floor-img: radial-gradient(#b8e88d 1px, transparent 2px); }
+.home-floor-ladrilho { --home-floor: #b9d3dc; --home-floor-img: linear-gradient(#80a9b6 1px, transparent 1px), linear-gradient(90deg, #80a9b6 1px, transparent 1px); }
+.home-style { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.home-style label { display: grid; gap: 3px; color: var(--ink, #332b24); font-size: .84rem; }
+.home-style select { min-height: 34px; border: 1px solid #a67a50; border-radius: 7px; background: #fff8e9; font: inherit; }
+.home-inventory li { padding: 0; }
+.home-inventory li > button { display: flex; align-items: center; width: 100%; gap: 8px; padding: 7px; border: 0; background: transparent; text-align: left; font: inherit; }
+.home-inventory li.selected { outline: 2px solid #f0c64f; background: #fff1ba; }
+.home-inventory li img { image-rendering: pixelated; object-fit: contain; }

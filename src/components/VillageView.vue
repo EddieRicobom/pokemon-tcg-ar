@@ -57,6 +57,7 @@ import {
 import type { Building } from '../core/village/town';
 import type { Moment, MomentKind } from '../core/village/social-state';
 import type { ItemId } from '../core/village/life';
+import { homePickUp, homePlace } from '../core/village/home-interior';
 import { dailyRecap, needsDailyRecap } from '../core/village/daily-recap';
 import type { RecapScene } from '../core/village/daily-recap';
 import { villageSummary } from '../core/village/summary';
@@ -90,7 +91,7 @@ const state = reactive(loadVillage());
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'shop' | 'dress' | 'arcade' | 'arena' | 'torre';
+type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'arena' | 'torre';
 const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
 type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
@@ -608,6 +609,28 @@ const backpackItems = computed(() => inventory.value.map((i) => ({ id: i.id, nam
 const sellable = computed(() => inventory.value.filter((i) => i.sell > 0));
 const giftable = computed(() => inventory.value.filter((i) => i.kind !== 'accessory'));
 const nextHouse = computed(() => HOUSE_LEVELS[state.house + 1] ?? null);
+const selectedHomeItem = ref<ItemId | null>(null);
+const homeFurniture = computed(() => FURNITURE_IDS.filter((id) => count(state, id) > 0));
+function homeItemAt(x: number, y: number): string | undefined {
+  return state.homeInterior.placed.find((entry) => entry.x === x && entry.y === y)?.item;
+}
+function homeItemNameAt(x: number, y: number): string {
+  const item = homeItemAt(x, y);
+  return item ? itemName(item) : '';
+}
+function openPlayerHome(): void {
+  if (state.house < 1) { sheet.value = 'build'; return; }
+  selectedHomeItem.value = null;
+  sheet.value = 'home';
+}
+function useHomeCell(x: number, y: number): void {
+  const existing = homeItemAt(x, y);
+  if (existing) { act(homePickUp(state, x, y)); return; }
+  if (!selectedHomeItem.value) { say('Escolha um móvel da mochila para colocar nesse espaço.'); return; }
+  const r = homePlace(state, selectedHomeItem.value, x, y);
+  act(r);
+  if (r.ok && count(state, selectedHomeItem.value) === 0) selectedHomeItem.value = null;
+}
 const shopItems = computed(() => shopToday(day.value));
 const collection = computed(() => FURNITURE_IDS.map((id) => ({ id, name: itemName(id), have: state.collected.includes(id), group: itemDef(id)?.group ?? '' })));
 const craftable = CRAFT_IDS;
@@ -1557,7 +1580,7 @@ function pressA(): void {
       ],
     };
   } else if (t.kind === 'plot') {
-    sheet.value = 'build';
+    openPlayerHome();
   } else if (t.kind === 'building') {
     openBuilding(t.building);
   } else if (t.kind === 'shop') {
@@ -2056,7 +2079,33 @@ onBeforeUnmount(() => {
           <p class="hint">Precisa de: {{ describeCost(state, nextHouse.cost) }}</p>
           <button type="button" class="primary" @click="act(upgradeHouse(state), true)">Construir</button>
         </template>
-        <p v-else>Sua casa está completa! Decore o quintal com móveis.</p>
+        <template v-else>
+          <p>Sua casa está completa! Agora ela pode ficar com a sua cara.</p>
+          <button type="button" class="primary" @click="openPlayerHome">Entrar e decorar</button>
+        </template>
+      </div>
+
+      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" aria-label="Interior da sua casa">
+        <header><strong>🏠 Sua casa</strong><button type="button" class="link" @click="sheet = null">Sair</button></header>
+        <p class="hint">Toque num móvel para guardá-lo. Escolha um da mochila e toque num espaço vazio para decorar.</p>
+        <section class="home-room" :class="[`home-wall-${state.homeInterior.wallpaper}`, `home-floor-${state.homeInterior.floor}`]" aria-label="Planta interna da casa">
+          <button v-for="n in 35" :key="n" type="button" class="home-slot" :aria-label="homeItemAt((n - 1) % 7, Math.floor((n - 1) / 7)) ? `Guardar ${homeItemNameAt((n - 1) % 7, Math.floor((n - 1) / 7))}` : 'Espaço vazio da casa'" @click="useHomeCell((n - 1) % 7, Math.floor((n - 1) / 7))">
+            <img v-if="homeItemAt((n - 1) % 7, Math.floor((n - 1) / 7))" :src="icon(homeItemAt((n - 1) % 7, Math.floor((n - 1) / 7) ) ?? '')" :alt="homeItemNameAt((n - 1) % 7, Math.floor((n - 1) / 7))" />
+          </button>
+        </section>
+        <div class="home-style">
+          <label>Parede <select v-model="state.homeInterior.wallpaper" @change="changed"><option value="creme">Creme</option><option value="floral">Floral</option><option value="noite">Noite estrelada</option><option value="madeira">Madeira</option></select></label>
+          <label>Piso <select v-model="state.homeInterior.floor" @change="changed"><option value="carvalho">Carvalho</option><option value="xadrez">Xadrez</option><option value="grama">Grama interna</option><option value="ladrilho">Ladrilho</option></select></label>
+        </div>
+        <h3>Móveis na mochila</h3>
+        <p v-if="selectedHomeItem" class="hint">Selecionado: <strong>{{ itemName(selectedHomeItem) }}</strong>. Toque num espaço livre para colocar.</p>
+        <ul class="item-grid home-inventory">
+          <li v-for="item in homeFurniture" :key="item" :class="{ selected: selectedHomeItem === item }">
+            <button type="button" @click="selectedHomeItem = selectedHomeItem === item ? null : item"><img :src="icon(item)" alt="" width="40" height="40" /><span>{{ itemName(item) }}<small>você tem {{ count(state, item) }}</small></span></button>
+          </li>
+          <li v-if="homeFurniture.length === 0" class="hint">Nenhum móvel na mochila. Visite a Loja, fabrique algo ou recolha itens do quintal.</li>
+        </ul>
+        <button v-if="nextHouse" type="button" class="link" @click="sheet = 'build'">Reformar a fachada</button>
       </div>
 
       <div v-if="sheet === 'shop'" class="village-sheet" role="dialog" aria-label="Loja da Vila">
