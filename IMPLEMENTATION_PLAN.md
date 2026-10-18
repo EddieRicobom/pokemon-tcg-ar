@@ -1,5 +1,12 @@
 # Plano e estado do projeto
 
+## Evolução dos companheiros das cartas (18/10/2026)
+
+- Evolução gratuita na Fonte: exige amizade 100/100 e uma vitória individual em cada um dos três modos (Torre normal com chefão final, batalha normal da Caixa e Pins contra o computador). As provas ficam por carta/forma; cada evolução exige novas vitórias e preserva amizade, apelido e relações.
+- A carta e seu alvo MindAR permanecem originais. Vila, Caixa, Torre, Pins e AR mostram a forma atual do companheiro. Escanear a carta original chama a evolução com selo, anéis, luz e partículas, só depois de rastrear e carregar o sprite; efeito desligável e respeita movimento reduzido.
+- Progresso incluído no backup; saves antigos não recebem vitórias presumidas. Regras e limitações: [docs/CARD_EVOLUTION.md](docs/CARD_EVOLUTION.md). 🔶 Aparência e desempenho ainda precisam de validação em celular real.
+
+
 - **Efeitos da Vila (2026-10-18):** ondas no lago e ondulações com chuva, gotas em arco e anéis na fonte e raios suaves de sol modulados por clima/horário. Opções permite desligar; movimento reduzido também desativa os novos efeitos. Tipos, build e dist conferidos; validação visual em celular pendente.
 
 Legenda: ✅ feito e coberto por testes automatizados / CI · 🔶 feito, **falta validar em celular real** · ⬜ a fazer

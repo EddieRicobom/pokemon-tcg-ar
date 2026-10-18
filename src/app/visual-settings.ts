@@ -25,14 +25,16 @@ export interface VisualSettings {
   caseFx: boolean;
   /** Ondas, respingos da fonte e raios de sol na Vila. */
   villageFx: boolean;
+  /** Portal e chegada especial ao rastrear uma carta cujo companheiro evoluiu. */
+  evolutionFx: boolean;
 }
 
 const KEY = 'tcg-ar-visual-v2';
 const LEGACY_KEY = 'tcg-ar-visual-v1';
-const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true };
+const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, evolutionFx: true };
 
 export function normalizeVisual(raw: Partial<VisualSettings> | null | undefined): VisualSettings {
-  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false, villageFx: raw?.villageFx !== false };
+  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false, villageFx: raw?.villageFx !== false, evolutionFx: raw?.evolutionFx !== false };
 }
 
 function read(): VisualSettings {
@@ -51,7 +53,7 @@ export const visual = reactive<VisualSettings>(read());
 
 watch(visual, () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, terrain: visual.terrain, social: visual.social, weather: visual.weather, sound: visual.sound, shadow: visual.shadow, metallic: visual.metallic, caseFx: visual.caseFx, villageFx: visual.villageFx }));
+    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, terrain: visual.terrain, social: visual.social, weather: visual.weather, sound: visual.sound, shadow: visual.shadow, metallic: visual.metallic, caseFx: visual.caseFx, villageFx: visual.villageFx, evolutionFx: visual.evolutionFx }));
   } catch {
     // Só não lembra da escolha na próxima vez.
   }

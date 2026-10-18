@@ -3,6 +3,10 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { isTap } from '../ar/gestures';
 import { fetchSprite, getCache, loadBattle, prepareMegaFor } from '../app/services';
 import { digitalCandidates } from '../app/digital-members';
+import { loadCardCompanionEntry } from '../app/companion-creatures';
+import { cardJourneyError, recordCardVictories } from '../app/card-evolution-store';
+import { battleWinners } from '../core/card-evolution';
+import type { CardCompanion } from '../core/card-evolution';
 import { challengePlan, isLeaderCreature, leaderFighter, leaderLoader, loadLeaderEntries, MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
 import { league, pendingChallenge, recordLeagueResult } from '../app/league-store';
 import { profile } from '../app/profile-store';
@@ -238,7 +242,7 @@ async function loadTeamCreatures(cache: Awaited<ReturnType<typeof getCache>>) {
       const sprite = await fetchSprite(dexId).catch(() => null);
       return sprite ? decodeSprite(sprite) : null;
     },
-  });
+  }, loadCardCompanionEntry);
 }
 
 async function openBook(): Promise<void> {
@@ -569,6 +573,7 @@ const shakeStyle = computed(() => {
 /** Carrega os dados de cada Pokémon da caixa (jogo + carta) e começa a luta automática. */
 /** A batalha em cena já rendeu XP ao Treinador (só conta quando termina). */
 let battleCounted = false;
+let battleCompanions: CardCompanion[] = [];
 watch(
   () => battleHud.value?.phase,
   (phase) => {
@@ -588,6 +593,12 @@ watch(
       showMegaNotes([{ text: outcome.message, tone: won ? 'ok' : 'warn' }]);
       if (won) pendingChallenge.value = null;
       return;
+    }
+    if (lastResult) {
+      const winners = new Set(battleWinners(battleFighters.value, lastResult));
+      if (!recordCardVictories(battleCompanions.filter((mon) => winners.has(mon.id)), 'battle')) {
+        error.value = cardJourneyError.value;
+      }
     }
     recordEvent({ type: 'battle', team: battleSummary.value ? battleSummary.value.mode !== 'royale' : false });
     // Moedas da Vila: cada batalha terminada rende moedas, até BATTLE_REWARDS_PER_DAY vezes por dia.
@@ -748,6 +759,8 @@ async function startBattle(): Promise<void> {
     let result;
     try {
       result = current.startBattle(fighters, plan.mode === 'royale' ? undefined : plan);
+      lastResult = result;
+      battleCompanions = fighting.flatMap((c) => c.info.dexId === undefined || c.info.digital ? [] : [{ id: c.info.id, dexId: c.info.dexId, name: c.info.name }]);
     } catch (e) {
       restoreForms(current);
       throw e;
