@@ -119,6 +119,7 @@ export interface VillageState {
   digital: DigitalState;
   /** Encontros lendários raríssimos na Vila (ver `legendary.ts`). */
   legendary: LegendaryState;
+  recap: { day: string; at: number };
   discoveries: DiscoveryState;
   weekly: WeeklyState;
   expeditions: Expedition[];
@@ -139,7 +140,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [] },
-    digital: emptyDigital(), legendary: emptyLegendary(), ...emptyWorldProgress(),
+    digital: emptyDigital(), legendary: emptyLegendary(), recap: { day: '', at: 0 }, ...emptyWorldProgress(),
   };
 }
 
@@ -197,6 +198,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
       : { day: '', count: 0 },
     digital: normalizeDigital(r.digital),
     legendary: normalizeLegendary(r.legendary),
+    recap: { day: typeof r.recap?.day === 'string' ? r.recap.day : '', at: typeof r.recap?.at === 'number' && Number.isFinite(r.recap.at) && r.recap.at >= 0 ? r.recap.at : 0 },
     ...normalizeWorldProgress(r),
   };
 }

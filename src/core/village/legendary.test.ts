@@ -8,8 +8,9 @@ const NOW = '2026-10-16T12:00:00.000Z';
 const fixedRng = (v: number) => () => v;
 
 describe('encontros lendários — sorteio', () => {
-  it('o catálogo atual tem três espécies; só uma pode ficar ativa por vez', () => {
-    expect(LEGENDARIES.map((l) => l.id)).toEqual(['suicune', 'zapdos', 'celebi']);
+  it('o catálogo tem pelo menos treze espécies; só uma pode ficar ativa por vez', () => {
+    expect(LEGENDARIES.length).toBeGreaterThanOrEqual(13);
+    expect(new Set(LEGENDARIES.map((l) => l.dexId)).size).toBe(LEGENDARIES.length);
     const first = rollLegendary(emptyLegendary(), fixedRng(0), DAY, NOW);
     expect(rollLegendary(first.state, fixedRng(0), '2026-10-17', NOW).legendary).toBeNull();
     expect(dismissActive(first.state).active).toBeNull();
@@ -121,4 +122,20 @@ describe('encontros lendários — efeitos de verdade', () => {
   it('um encontro "do futuro" (relógio do aparelho voltou) não liga nada', () => {
     expect(legendaryEffects(withEncounter('zapdos', T0 + H), T0, '2026-10-16', dayOf)).toEqual(NO_EFFECTS);
   });
+});
+
+
+describe('novos visitantes lendários', () => {
+  for (const def of LEGENDARIES.filter((l) => l.modifiers)) {
+    it(`${def.name}: sorteável, com efeito real que expira`, () => {
+      let call = 0;
+      const index = LEGENDARIES.indexOf(def);
+      const roll = rollLegendary(emptyLegendary(), () => call++ === 0 ? 0 : (index + 0.5) / LEGENDARIES.length, DAY, NOW);
+      expect(roll.legendary?.id).toBe(def.id);
+      const now = Date.parse(NOW);
+      const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+      expect(legendaryEffects(roll.state, now, DAY, dayOf)).toMatchObject(def.modifiers!);
+      expect(legendaryEffects(roll.state, now + 86400000, '2026-10-17', dayOf)).toEqual(NO_EFFECTS);
+    });
+  }
 });
