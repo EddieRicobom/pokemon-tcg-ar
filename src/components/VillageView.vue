@@ -66,6 +66,8 @@ import type { RecapScene } from '../core/village/daily-recap';
 import { villageSummary } from '../core/village/summary';
 import type { SummaryEntry } from '../core/village/summary';
 import { advanceCommunity, communityForecast, decideCommunityProject } from '../core/village/community';
+import { FarmSession } from '../core/village/farm';
+import FarmSeedBox from './FarmSeedBox.vue';
 import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
@@ -100,7 +102,7 @@ const towerGameRef = ref<{ requestLeave: () => void } | null>(null);
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'gallery' | 'card-evolution';
+type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
 type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
@@ -1585,6 +1587,7 @@ function persist(): boolean {
 }
 
 function onLeave(): void {
+  cancelFarm();
   guidedTrip = null;
   settleScenes();
   state.lastSeen = Date.now();
@@ -1645,6 +1648,26 @@ function toggleFav(m: Moment): void {
   }
   changed();
   say(pin ? '📌 Guardado no Álbum para sempre!' : 'Solto do Álbum: sai do Diário quando ele encher.');
+}
+
+const farmSession = new FarmSession();
+function cancelFarm(): void {
+  farmSession.cancel();
+  game?.setFarmTasks([]);
+}
+watch(() => !!sheet.value || !!dialog.value || !!quiz.value || quizOpen.value || cutsceneOpen.value, (blocked) => { if (blocked) cancelFarm(); });
+
+function tickFarm(): void {
+  if (!game || document.hidden || sheet.value || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || welcome.value || recapScenes.value.length || loading.value) {
+    cancelFarm();
+    return;
+  }
+  const workers = game.farmWorkers().map((worker) => ({
+    ...worker, types: types.get(worker.id) ?? [],
+    available: worker.available && !state.expeditions.some((expedition) => expedition.monId === worker.id && !expedition.result),
+  }));
+  if (farmSession.tick(state, map, workers, Date.now(), Math.random, (x, y) => game!.occupied(x, y))) changed();
+  game.setFarmTasks(farmSession.tasks);
 }
 
 function refreshDay(): string {
@@ -1734,6 +1757,8 @@ function pressA(): void {
     sheet.value = 'shop';
   } else if (t.kind === 'bell') {
     ringBell();
+  } else if (t.kind === 'seed-box') {
+    sheet.value = 'farm';
   } else if (t.kind === 'board') {
     openRequestBoard();
   } else if (t.kind === 'tile' && t.tile === 'water') {
@@ -1861,6 +1886,8 @@ function miniTap(e: MouseEvent): void {
 }
 
 function openFriendDialog(id: string, text: string): void {
+  const farmWork = [...state.farm.history].reverse().find((entry) => entry.residentId === id);
+  if (farmWork) text += ` Meu último trabalho na fazenda: ${farmWork.message}`;
   playSound('talk');
   const f = friendOf(state, id);
   const lvl = friendLevel(f.points);
@@ -2087,6 +2114,7 @@ onMounted(async () => {
   if (tickCrops(state, Date.now(), effects().growthFactor) > 0) changed();
   cropTimer = setInterval(() => {
     if (tickCrops(state, Date.now(), effects().growthFactor) > 0) changed();
+    tickFarm();
   }, 5000);
   let beat = 0;
   saveTimer = setInterval(() => {
@@ -2104,6 +2132,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  cancelFarm();
   stopArBeta();
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
@@ -2323,6 +2352,11 @@ onBeforeUnmount(() => {
         </div>
         <MinigameHub closable @leave="sheet = null" />
          <MinigameEquilibrio @leave="sheet = null" />
+      </div>
+
+      <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-label="Caixa de sementes">
+        <header><strong>🌱 Caixa de sementes</strong><button type="button" class="link" @click="closeVillageSheet">Fechar</button></header>
+        <FarmSeedBox :state="state" :name-of="nameOf" @change="changed" />
       </div>
 
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { applyBackup, applyFullBackup, BACKUP_FORMAT, BACKUP_KEYS, backupFileName, buildBackup, parseBackup, parseBackupZip, serializeBackup, serializeBackupZip } from './backup';
 import { openCacheDb } from '../cache/db';
 import { applyEvent, emptyTrainer, normalizeTrainer } from '../core/trainer';
+import { loadVillage, saveVillage } from './village-store';
 
 const NOW = '2026-10-16T12:00:00.000Z';
 
@@ -70,6 +71,21 @@ describe('backup — exportar', () => {
 
 describe('backup — importar', () => {
   beforeEach(() => localStorage.clear());
+
+  it('restaura sementes depositadas e trabalhos reais da fazenda pelo ZIP', () => {
+    const state = loadVillage();
+    state.inventory['sem-tomate'] = 3;
+    state.farm.seeds['sem-tomate'] = 7;
+    state.farm.history.push({ residentId: 'bulbasaur', at: 1000, message: 'Regou um canteiro da fazenda.' });
+    state.farm.nextDecisionAt = 31_000;
+    expect(saveVillage(state)).toBe(true);
+    const restored = parseBackupZip(serializeBackupZip(buildBackup(localStorage, NOW)));
+    if (typeof restored === 'string') throw new Error(restored);
+    localStorage.clear();
+    applyBackup(restored, localStorage);
+    expect(loadVillage().farm).toEqual(state.farm);
+    expect(loadVillage().inventory['sem-tomate']).toBe(3);
+  });
 
   it('restaura coleção, metadados e Cache Storage junto com o localStorage', async () => {
     const db = await openCacheDb();

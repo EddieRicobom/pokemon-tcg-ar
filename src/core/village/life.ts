@@ -17,6 +17,8 @@ import { emptyHomeInterior, normalizeHomeInterior } from './home-interior';
 import type { HomeInterior } from './home-interior';
 import { emptyCommunity, normalizeCommunity } from './community';
 import type { CommunityState } from './community';
+import { emptyFarm, normalizeFarm } from './farm';
+import type { FarmState } from './farm';
 
 /**
  * A vida na Vila: inventário, coleta (madeira, pedra, frutas, flores, conchas), a casa em níveis, móveis que você
@@ -88,6 +90,7 @@ export interface VillageState {
   coins: number;
   /** Horta: o que está plantado em cada bloco. */
   crops: Crop[];
+  farm: FarmState;
   /** Acessório que você usa e o de cada Pokémon (id da carta → acessório). */
   wear: { player: string | null; mons: Record<string, string | null> };
   /** Móveis que você já teve alguma vez (o catálogo da coleção). */
@@ -147,7 +150,7 @@ export interface Crop {
 export function emptyVillage(seed: number, spawn: { x: number; y: number }): VillageState {
   return {
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), friends: {}, harvested: {}, follower: null,
-    coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
+    coins: 100, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
     digital: emptyDigital(), legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), ...emptyWorldProgress(),
   };
@@ -189,6 +192,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     layout: r.layout === MAP_LAYOUT ? MAP_LAYOUT : 1,
     player: p && Number.isInteger(p.x) && Number.isInteger(p.y) ? { x: p.x, y: p.y, dir: ['up', 'down', 'left', 'right'].includes(p.dir) ? p.dir : 'down' } : base.player,
     inventory: inv,
+    farm: normalizeFarm(r.farm),
     house: Number.isInteger(r.house) ? Math.max(0, Math.min(HOUSE_LEVELS.length - 1, r.house!)) : 0,
     placed: Array.isArray(r.placed) ? r.placed.filter((f) => f && Number.isInteger(f.x) && Number.isInteger(f.y) && FURNITURE_IDS.includes(f.item)).slice(0, 300) : [],
     homeInterior: normalizeHomeInterior(r.homeInterior),

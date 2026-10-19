@@ -36,7 +36,9 @@ import { EDGE } from '../box/ground-art';
 import type { PixelBuf } from '../box/ground-art';
 import { contentBounds } from './local-sprite';
 import type { ContentBounds } from './local-sprite';
-import { outfitFor, paintBell, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree, TILE } from './village-art';
+import { outfitFor, paintSeedBox, paintBell, paintBush, paintHouse, paintPlayer, paintRock, paintShop, paintTile, paintTree, TILE } from './village-art';
+import type { FarmTask, FarmWorker } from '../core/village/farm';
+import { stepFarmWorker } from '../core/village/farm';
 import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
 import { groundPieces } from './ground-tiles';
@@ -81,6 +83,7 @@ export type Target =
   | { kind: 'crop'; x: number; y: number }
   | { kind: 'shop' }
   | { kind: 'bell' }
+  | { kind: 'seed-box' }
   | { kind: 'board' }
   | { kind: 'building'; building: Building }
   | { kind: 'tile'; x: number; y: number; tile: Tile }
@@ -280,6 +283,20 @@ export class VillageGame {
   private readonly houseTags = new Map<number, { emoji: string; until: number }>();
   /** Atividade concluída neste ciclo: caminhada curta até o local e identificação na cena. */
   private readonly communityWork = new Map<string, { activity: CommunityActivityRecord['activity']; target: { x: number; y: number }; until: number }>();
+  private farmTasks = new Map<string, FarmTask>();
+
+  farmWorkers(): Omit<FarmWorker, 'types'>[] {
+    const now = performance.now();
+    return [...this.villagers].map(([id, walker]) => ({
+      id, x: walker.x, y: walker.y,
+      available: !this.asleep.has(id) && this.waiting !== id && this.state.follower !== id && !this.sceneBusy(id)
+        && !(now < this.calledUntil && this.called.has(id)) && !(now < (this.communityWork.get(id)?.until ?? 0)),
+    }));
+  }
+
+  setFarmTasks(tasks: readonly FarmTask[]): void {
+    this.farmTasks = new Map(tasks.map((task) => [task.residentId, task]));
+  }
   private nextSleepCheck = 0;
   /** Quem está esperando você para conversar (o ❗): fica parado onde está. */
   private waiting: string | null = null;
@@ -815,6 +832,7 @@ export class VillageGame {
     if (tile === 'deco') {
       const decor = this.map.decor.find((d) => f.x >= d.x && f.x < d.x + d.w && f.y >= d.y && f.y < d.y + d.h);
       if (decor?.kind === 'bell') return { kind: 'bell' };
+      if (decor?.kind === 'seed-box') return { kind: 'seed-box' };
       if (decor?.kind === 'board') return { kind: 'board' };
     }
     if (tile === 'lamp' || tile === 'deco') return { kind: 'nothing' };
@@ -1066,6 +1084,12 @@ export class VillageGame {
         const anchor = this.villagers.get(sc.cast[0]!)!;
         const target = sc.phase === 'gather' && id !== sc.cast[0] ? { x: anchor.x, y: anchor.y } : { x: w.x, y: w.y };
         stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, target);
+        continue;
+      }
+      const farmTask = this.farmTasks.get(id);
+      if (farmTask && this.waiting !== id && this.state.follower !== id && !(now < this.calledUntil && this.called.has(id))) {
+        benchVisits.release(id, now);
+        stepFarmWorker(w, farmTask, dt, this.map, (x, y) => this.occupied(x, y, id));
         continue;
       }
       const work = this.communityWork.get(id);
@@ -1353,10 +1377,10 @@ export class VillageGame {
       }
     }
     // Enfeites fixos do mapa (parquinho, celeiro, jardineiras, árvores grandes).
-    if (atlas) {
+    {
       for (const d of this.map.decor) {
         if (d.x + d.w < x0 || d.x > x1 || d.y + d.h < y0 || d.y > y1 + 4) continue;
-        const img = d.kind === 'bell' ? this.sprite('bell', paintBell) : this.art(d.kind);
+        const img = d.kind === 'seed-box' ? this.sprite('seed-box', paintSeedBox) : d.kind === 'bell' ? this.sprite('bell', paintBell) : this.art(d.kind);
         if (!img) continue;
         const tree = d.kind === 'tree-big' || d.kind === 'pine-m';
         list.push({
@@ -1686,7 +1710,8 @@ export class VillageGame {
           if (near(w) && !this.scene) {
             const hearts = Math.round(friendOf(this.state, id).points / 20);
             const working = this.communityWork.get(id);
-            const activityLabel = working && now < working.until ? ` · ${COMMUNITY_ACTIVITY_NAMES[working.activity]}` : '';
+            const farmTask = this.farmTasks.get(id);
+            const activityLabel = farmTask ? ` · ${farmTask.workingSince === null ? 'indo ao canteiro 🌱' : farmTask.kind === 'plant' ? 'plantando 🌱' : farmTask.kind === 'water' ? 'regando 💧' : 'colhendo 🧺'}` : working && now < working.until ? ` · ${COMMUNITY_ACTIVITY_NAMES[working.activity]}` : '';
             overlays.push(() => this.drawLabel(cx, sy(pos.y + 1) + 1 * scale, `${this.names.get(id) ?? ''}${seated ? ' · descansando' : activityLabel} ${'♥'.repeat(hearts)}${'♡'.repeat(5 - hearts)}`));
           }
           overlays.push(() => this.drawBubble(id, cx, base - h, now));

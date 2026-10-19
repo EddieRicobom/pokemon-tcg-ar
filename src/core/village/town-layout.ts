@@ -86,7 +86,7 @@ export const TOWN = {
   lake: { x: 81, y: 11, sand: 8.6, water: 6.2 },
 } as const;
 
-export type DecorKind = 'bell' | 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall';
+export type DecorKind = 'seed-box' | 'bell' | 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall';
 
 /** Enfeites fixos do mapa (sólidos; o desenho sai do atlas com o mesmo nome e fica em pé sobre a base). */
 export interface Decor {
@@ -116,6 +116,7 @@ export const DECOR: readonly Decor[] = [
   { kind: 'pot', x: 53, y: 41, w: 1, h: 1 },
   // Fazenda, a leste: celeiro, cercas e muro de pedra.
   { kind: 'barn', x: 84, y: 42, w: 5, h: 2 },
+  { kind: 'seed-box', x: 83, y: 46, w: 1, h: 1 },
   { kind: 'fence-h', x: 79, y: 46, w: 2, h: 1 },
   { kind: 'fence-h', x: 79, y: 57, w: 2, h: 1 },
   { kind: 'wall', x: 85, y: 59, w: 4, h: 1 },

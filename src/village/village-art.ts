@@ -228,6 +228,22 @@ export function paintHouse(level: number): PixelBuf {
 export { outfitFor, paintPlayer } from './player-art';
 export type { Outfit } from './player-art';
 
+/** Caixa de madeira com broto para identificar o estoque compartilhado da fazenda. */
+export function paintSeedBox(): PixelBuf {
+  const buf = createBuf(16, 20);
+  rect(buf, 1, 7, 14, 12, 0x80512c);
+  rect(buf, 2, 9, 12, 8, 0xba8550);
+  rect(buf, 0, 5, 16, 4, 0xd6a66a);
+  rect(buf, 2, 13, 12, 1, 0x80512c);
+  rect(buf, 4, 8, 1, 11, 0xe1bc7d);
+  rect(buf, 11, 8, 1, 11, 0xe1bc7d);
+  rect(buf, 7, 2, 2, 5, 0x417c38);
+  rect(buf, 3, 1, 4, 3, 0x77b952);
+  rect(buf, 9, 0, 4, 3, 0x99d565);
+  outline(buf, 0x33291d);
+  return buf;
+}
+
 /** O sino da praça: poste de madeira com um sino de bronze (16×32; o sino sobe um bloco acima da base). */
 export function paintBell(): PixelBuf {
   const buf = createBuf(16, 32);

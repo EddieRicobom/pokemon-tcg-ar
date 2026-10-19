@@ -49,13 +49,17 @@ describe('salvamento da Vila (tudo precisa persistir entre sessões)', () => {
   it('se o salvamento principal estiver corrompido, volta da cópia de segurança', () => {
     const s = fresh();
     s.coins = 321;
+    s.farm.seeds['sem-tomate'] = 8;
+    s.farm.history.push({ residentId: 'a', at: 900_000, message: 'Regou um canteiro da fazenda.' });
     expect(saveVillage(s, 1_000_000)).toBe(true);
+    expect(loadVillage().farm).toEqual(s.farm);
     // O segundo salvamento (depois de 5 min) guarda o primeiro como cópia.
     s.coins = 400;
     expect(saveVillage(s, 1_000_000 + 6 * 60_000)).toBe(true);
     expect(localStorage.getItem(VILLAGE_BACKUP_KEY)).toContain('321');
     localStorage.setItem(VILLAGE_KEY, '{isso não é json');
     expect(loadVillage().coins).toBe(321);
+    expect(loadVillage().farm).toEqual(s.farm);
   });
 
   it('a cópia de segurança só é refeita a cada 5 minutos e nunca a partir de um salvamento ilegível', () => {
