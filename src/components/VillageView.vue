@@ -21,6 +21,7 @@ import { loadTrainerAtlas } from '../village/trainer-atlas';
 import { recordEvent, trainer } from '../app/trainer-store';
 import { claimPrizes } from '../core/village/rewards';
 import { ensureModeStories } from '../core/village/mode-stories';
+import { challengeGalleryUnlocked, completedChallengeExhibits } from '../core/village/challenge-gallery';
 import BackpackView from './BackpackView.vue';
 import MinigameHub from './MinigameHub.vue';
 import MinigameEquilibrio from './MinigameEquilibrio.vue';
@@ -98,7 +99,7 @@ const state = reactive(loadVillage());
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'card-evolution';
+type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'gallery' | 'card-evolution';
 const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
 type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
@@ -972,6 +973,7 @@ const bookNote = ref('');
 
 // ---- a cidade: casas dos Pokémon, Café, Correio, Museu e a fonte
 const level = computed(() => levelOf(trainer.value.xp));
+const challengeExhibits = computed(() => completedChallengeExhibits(trainer.value.achievements));
 const stage = computed(() => townStage(level.value));
 let homes = new Map<string, number>();
 
@@ -1260,6 +1262,7 @@ function openBuilding(b: Building): void {
     name: b.name,
     text: `Vitrines de tudo o que você já juntou. Móveis na coleção: ${done} de ${FURNITURE_IDS.length}. Momentos no Álbum: ${album.value.seen} de ${album.value.total}.`,
     actions: [
+      ...(challengeGalleryUnlocked(state) ? [{ label: 'Visitar a vitrine de desafios', run: () => { closeDialog(); sheet.value = 'gallery'; } }] : []),
       { label: 'Ver a coleção', run: () => { closeDialog(); tab.value = 'colecao'; sheet.value = 'menu'; } },
       { label: 'Ver o Álbum', run: () => { closeDialog(); tab.value = 'album'; sheet.value = 'menu'; } },
       { label: 'Sair', run: closeDialog },
@@ -2333,6 +2336,18 @@ onBeforeUnmount(() => {
       <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
         <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name }))" @complete="recordSurvivalAdventure" @leave="sheet = null" />
+      </div>
+
+      <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">
+        <header><strong>🏆 Vitrine de desafios</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <p class="hint">O pedestal foi montado com as lembranças da Liga e dos Pins. Cada peça abaixo corresponde a um marco registrado numa partida concluída.</p>
+        <ul class="village-list">
+          <li v-for="exhibit in challengeExhibits" :key="exhibit.achievementId">
+            <span>🏅 {{ exhibit.title }}<small>{{ exhibit.source }} · {{ exhibit.origin }}</small></span>
+          </li>
+          <li v-if="challengeExhibits.length === 0" class="hint">Ainda não há marcos registrados para expor.</li>
+        </ul>
+        <p class="hint">Novas lembranças aparecem aqui quando você conquista outros marcos.</p>
       </div>
 
       <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-label="Evolução dos Pokémon das cartas">
