@@ -603,6 +603,7 @@ function loop(ts: number): void {
       else if (ev.type === 'bossSpawn') playSound('survivor-boss');
       if (ev.type === 'gameover') {
         playSound('survivor-gameover');
+        objectives.value = survivorObjectives(s);
         summary.value = ev.summary;
         recordRun(ev.summary);
       }
@@ -959,6 +960,9 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
+            <p v-if="objectives.length" class="survivor-objectives-summary" role="status">
+              Objetivos opcionais: {{ objectives.filter((objective) => objective.complete).length }}/{{ objectives.length }} concluídos.
+            </p>
             <p class="survivor-coins" role="status">
               {{ runCoins > 0 ? `🪙 +${runCoins} moedas` : 'Sem moedas desta vez: dure 20 segundos ou derrote alguém.' }}
               <small v-if="runClearBonus > 0"> (inclui o bônus de {{ runClearBonus }} por zerar, 1× por dia)</small>
