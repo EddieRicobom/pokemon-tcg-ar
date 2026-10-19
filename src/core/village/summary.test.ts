@@ -12,7 +12,7 @@ describe('villageSummary', () => {
   it('resume momentos reais, consequências e pedidos pendentes', () => {
     const state = emptyVillage(1, { x: 1, y: 1 });
     state.diary = [moment(10, ['+5 amizade (Pikachu e Eevee)'])];
-    state.requests = { day: '2026-10-17', items: [{ id: 'r', day: '2026-10-17', kind: 'talk', title: 'Conversa', detail: 'Fale com Pikachu', location: 'Praça', targetId: 'a', targetName: 'Pikachu', rewardCoins: 10, rewardItem: 'flor', rewardQty: 1, rewardFriend: 3, done: false }] };
+    state.requests = { day: '2026-10-17', story: [], items: [{ id: 'r', day: '2026-10-17', kind: 'talk', title: 'Conversa', detail: 'Fale com Pikachu', location: 'Praça', targetId: 'a', targetName: 'Pikachu', rewardCoins: 10, rewardItem: 'flor', rewardQty: 1, rewardFriend: 3, done: false }] };
     const summary = villageSummary(state, [{ id: 'a', name: 'Pikachu' }, { id: 'b', name: 'Eevee' }], 20);
     expect(summary.happened[0]?.text).toContain('Piquenique');
     expect(summary.happened[0]?.momentId).toBe('m-10');

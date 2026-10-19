@@ -1,5 +1,6 @@
 import type { ItemId, VillageState } from './life';
 import type { PersonalityName } from './personality';
+import type { VillageRequest } from './requests';
 
 export type DiscoveryPlace = 'lago' | 'parque' | 'bosque' | 'fazenda' | 'praca';
 
@@ -7,6 +8,15 @@ export interface DiscoveryState {
   steps: Record<string, number>;
   found: string[];
   lastPlace?: DiscoveryPlace | null;
+}
+
+interface DiscoveryDefinition {
+  place: DiscoveryPlace;
+  clues: readonly string[];
+  rewardCoins: number;
+  rewardItem: ItemId;
+  requires?: string;
+  request: Omit<VillageRequest, 'id' | 'day' | 'done' | 'persistent'>;
 }
 
 export interface DiscoveryResult {
@@ -61,17 +71,50 @@ export interface WeeklyModifiers {
   sceneCoins: number;
 }
 
-const DISCOVERIES: Record<string, { place: DiscoveryPlace; clues: readonly string[]; rewardCoins: number; rewardItem: ItemId }> = {
-  'lago-caverna': { place: 'lago', clues: ['Há marcas de água perto das pedras.', 'O eco responde quando alguém canta.', 'Uma passagem aparece sob a margem.'], rewardCoins: 35, rewardItem: 'cristal' },
-  'bosque-atalho': { place: 'bosque', clues: ['As árvores formam uma seta.', 'Um Pokémon deixa sementes no caminho.', 'O atalho leva a uma clareira escondida.'], rewardCoins: 28, rewardItem: 'mel' },
-  'fazenda-nascente': { place: 'fazenda', clues: ['A terra está úmida mesmo sem chuva.', 'As raízes apontam para o muro.', 'Uma nascente alimenta os canteiros.'], rewardCoins: 30, rewardItem: 'perola' },
-  'parque-caixa': { place: 'parque', clues: ['O brinquedo faz um som oco.', 'Há riscos recentes na madeira.', 'Uma caixa antiga estava escondida sob o parquinho.'], rewardCoins: 24, rewardItem: 'tecido' },
+const DISCOVERIES: Record<string, DiscoveryDefinition> = {
+  'lago-caverna': {
+    place: 'lago', clues: ['Há marcas de água perto das pedras.', 'O eco responde quando alguém canta.', 'Uma passagem aparece sob a margem.'], rewardCoins: 35, rewardItem: 'cristal',
+    request: { kind: 'collect', title: 'Preparar a passagem do lago', detail: 'A passagem sob a margem precisa de duas conchas para não desabar.', location: 'Praia do lago', item: 'concha', qty: 2, rewardCoins: 18, rewardItem: 'cristal', rewardQty: 1, rewardFriend: 0 },
+  },
+  'bosque-atalho': {
+    place: 'bosque', clues: ['As árvores formam uma seta.', 'Um Pokémon deixa sementes no caminho.', 'O atalho leva a uma clareira escondida.'], rewardCoins: 28, rewardItem: 'mel', requires: 'lago-caverna',
+    request: { kind: 'collect', title: 'Marcar o atalho do bosque', detail: 'Leve três madeiras para fazer placas na clareira recém-encontrada.', location: 'Bosque do Sul', item: 'madeira', qty: 3, rewardCoins: 20, rewardItem: 'mel', rewardQty: 1, rewardFriend: 0 },
+  },
+  'fazenda-nascente': {
+    place: 'fazenda', clues: ['A terra está úmida mesmo sem chuva.', 'As raízes apontam para o muro.', 'Uma nascente alimenta os canteiros.'], rewardCoins: 30, rewardItem: 'perola', requires: 'bosque-atalho',
+    request: { kind: 'collect', title: 'Cuidar da nascente', detail: 'A água nova precisa de duas frutas para alimentar os primeiros canteiros.', location: 'Fazenda', item: 'oran', qty: 2, rewardCoins: 22, rewardItem: 'perola', rewardQty: 1, rewardFriend: 0 },
+  },
+  'parque-caixa': {
+    place: 'parque', clues: ['O brinquedo faz um som oco.', 'Há riscos recentes na madeira.', 'Uma caixa antiga estava escondida sob o parquinho.'], rewardCoins: 24, rewardItem: 'tecido', requires: 'fazenda-nascente',
+    request: { kind: 'collect', title: 'Abrir a caixa do parquinho', detail: 'Leve dois tecidos para forrar a caixa antiga sem estragar o que há dentro.', location: 'Parquinho', item: 'tecido', qty: 2, rewardCoins: 24, rewardItem: 'tecido', rewardQty: 1, rewardFriend: 0 },
+  },
 };
 
 export const DISCOVERY_DEFS = DISCOVERIES;
 
 export function emptyWorldProgress(): { discoveries: DiscoveryState; weekly: WeeklyState; expeditions: Expedition[] } {
   return { discoveries: { steps: {}, found: [], lastPlace: null }, weekly: { week: '', eventId: '' }, expeditions: [] };
+}
+
+function discoveryRequest(state: VillageState, id: string): VillageRequest | undefined {
+  return (state.requests.story ?? []).find((request) => request.id === `desc:${id}`);
+}
+
+function discoveryResolved(state: VillageState, id: string): boolean {
+  return state.discoveries.found.includes(id) && discoveryRequest(state, id)?.done === true;
+}
+
+function discoveryAvailable(state: VillageState, id: string): boolean {
+  const requirement = DISCOVERIES[id]?.requires;
+  return !requirement || discoveryResolved(state, requirement);
+}
+
+function createDiscoveryRequest(state: VillageState, id: string): void {
+  const def = DISCOVERIES[id];
+  if (!def || (state.requests.story ?? []).some((request) => request.id === `desc:${id}`)) return;
+  state.requests.story ??= [];
+  state.requests.story.push({ id: `desc:${id}`, day: '', persistent: true, done: false, ...def.request });
+  state.requests.story = state.requests.story.slice(-8);
 }
 
 export function normalizeWorldProgress(raw: unknown): ReturnType<typeof emptyWorldProgress> {
@@ -98,16 +141,20 @@ function placeFor(x: number, y: number): DiscoveryPlace | null {
 
 export function discoverAt(state: VillageState, x: number, y: number): DiscoveryResult | null {
   const place = placeFor(x, y);
-  if (!place) return null;
+  if (!place) {
+    state.discoveries.lastPlace = null;
+    return null;
+  }
   if (state.discoveries.lastPlace === place) return null;
   state.discoveries.lastPlace = place;
-  const entry = Object.entries(DISCOVERIES).find(([id, d]) => d.place === place && !state.discoveries.found.includes(id));
+  const entry = Object.entries(DISCOVERIES).find(([id, d]) => d.place === place && !state.discoveries.found.includes(id) && discoveryAvailable(state, id));
   if (!entry) return null;
   const [id, def] = entry;
   const step = (state.discoveries.steps[id] ?? 0) + 1;
   state.discoveries.steps[id] = Math.min(def.clues.length, step);
   if (step < def.clues.length) return { id, text: `🔎 Descoberta ${step}/${def.clues.length}: ${def.clues[step - 1]!}`, rewardCoins: 0, completed: false };
   state.discoveries.found.push(id);
+  createDiscoveryRequest(state, id);
   return { id, text: `✨ Descoberta completa: ${def.clues[def.clues.length - 1]!}`, rewardCoins: def.rewardCoins, rewardItem: def.rewardItem, completed: true };
 }
 

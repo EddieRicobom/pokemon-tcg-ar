@@ -82,3 +82,4 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 - Taxa de acerto do reconhecimento com a câmera de um celular.
 - O job `e2e.yml` está falhando em parte dos casos (CORS ao buscar imagens do TCGdex de `localhost`; worker do OCR); não é obrigatório no CI.
 - A Torre passou a dar identidade mecânica às nove regiões: ventos, pedras, jardins, areia, ruínas e olivais se juntam à folhagem, às poças e à neve, sempre em zonas visíveis e com efeito pequeno e testado.
+- As descobertas da Vila agora formam uma cadeia: cada pista concluída deixa um pedido persistente no Mural e a próxima região só libera depois da entrega. O Mural fica encostado à Fonte da praça para ser encontrado sem procurar pelo mapa.

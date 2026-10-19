@@ -24,7 +24,7 @@ export function villageSummary(state: VillageState, residents: readonly SummaryR
     pokemonId: moment.cast[0]?.id,
   }))).slice(0, 4);
   if (changed.length === 0) changed.push({ text: 'Ainda não houve uma mudança social registrada.' });
-  const possible: SummaryEntry[] = state.requests.items.filter((request) => !request.done).map((request) => ({
+  const possible: SummaryEntry[] = [...(state.requests.story ?? []), ...state.requests.items].filter((request) => !request.done).map((request) => ({
     text: `${request.title}: ${request.detail}`,
     requestId: request.id,
     pokemonId: request.targetId,
