@@ -916,6 +916,22 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
   const outcome = typeof spec === 'function' ? spec(ctx) : spec;
   const followUp = used?.lines ? used.lines(ctx) : [];
   const result = applyOutcome(state, cast, outcome, day, now);
+  const planId = typeof ctx.memo.socialPlanId === 'string' ? ctx.memo.socialPlanId : null;
+  const fulfilledPlan = planId
+    ? state.plans.find((plan) => plan.id === planId
+      && plan.kind === ctx.memo.socialPlanKind
+      && day >= plan.createdDay
+      && day <= plan.expiresDay)
+    : undefined;
+  if (fulfilledPlan) {
+    const action = fulfilledPlan.kind === 'visitar' ? 'visitou'
+      : fulfilledPlan.kind === 'ajudar' ? 'ajudou'
+        : 'aceitou o convite de';
+    const memoryLine = fulfilledPlan.kind === 'convidar'
+      ? `Promessa cumprida: ${cast[0]?.name ?? fulfilledPlan.from} convidou ${cast[1]?.name ?? fulfilledPlan.to} para passar um tempo juntos.`
+      : `Promessa cumprida: ${cast[0]?.name ?? fulfilledPlan.from} ${action} ${cast[1]?.name ?? fulfilledPlan.to}.`;
+    result.unshift(memoryLine);
+  }
   const autoKeep = tpl.keep === true && state.diary.filter((x) => x.fav).length < MAX_SAVED;
   if (autoKeep) result.push('📌 Guardado no Álbum para sempre');
   const spread = spreadWords(state, cast, ctx.rng);
@@ -943,7 +959,7 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
     ...(away ? { away: true } : {}),
   };
   schedulePlans(state, cast, outcome.plan, day, now, moment.id);
-  if (typeof ctx.memo.socialPlanId === 'string') completePlan(state, ctx.memo.socialPlanId);
+  if (planId) completePlan(state, planId);
   state.diary.push(moment);
   trimDiary(state);
   rememberMoment(state, moment);
