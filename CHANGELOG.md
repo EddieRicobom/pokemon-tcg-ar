@@ -81,3 +81,4 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 - Câmera, GPU, sensores, desempenho e a aparência dos efeitos em **celular real**.
 - Taxa de acerto do reconhecimento com a câmera de um celular.
 - O job `e2e.yml` está falhando em parte dos casos (CORS ao buscar imagens do TCGdex de `localhost`; worker do OCR); não é obrigatório no CI.
+- A Torre passou a dar identidade mecânica às nove regiões: ventos, pedras, jardins, areia, ruínas e olivais se juntam à folhagem, às poças e à neve, sempre em zonas visíveis e com efeito pequeno e testado.
