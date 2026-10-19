@@ -35,7 +35,8 @@ import { contentBounds } from '../village/local-sprite';
 import type { ContentBounds } from '../village/local-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
-import { createSurvivorLandscape } from '../village/survivor-landscape';
+import { survivorBiomeAt, survivorBiomeLabel } from '../core/survivor-biomes';
+import { createSurvivorLandscape, drawSurvivorBiomeOverlay } from '../village/survivor-landscape';
 import { REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from '../core/survivor-encounters';
 import type { SoundCue } from '../box/sound-recipes';
 import { normalizeSurvivorFavorites, selectSurvivorCandidates } from '../core/survivor-selection';
@@ -461,6 +462,7 @@ function draw(): void {
     ctx.fillStyle = '#4e9a62';
     ctx.fillRect(0, 0, ARENA_W, ARENA_H);
   }
+  drawSurvivorBiomeOverlay(ctx, s.elapsedMs);
   ctx.strokeStyle = 'rgba(0,0,0,0.3)';
   ctx.lineWidth = 4;
   ctx.strokeRect(2, 2, ARENA_W - 4, ARENA_H - 4);
@@ -857,6 +859,7 @@ onBeforeUnmount(() => {
             <span class="chip">☠ {{ state.kills }}</span>
             <span class="chip">🌊 Onda {{ state.wave }}</span>
             <span class="chip">{{ survivorRegionLabel(state.elapsedMs) }}</span>
+             <span v-if="survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
             <button type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
             <button type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário regional: {{ regionScenery ? 'ligado' : 'desligado' }}</button>

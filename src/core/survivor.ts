@@ -1,6 +1,7 @@
 import { seededRng } from './battle';
 import type { Rng } from './battle';
 import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
+import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
 
 /**
  * Motor puro do modo Sobrevivência (Zona de Sobrevivência, dentro da Vila): você anda pela arena, seu Pokémon ataca
@@ -707,12 +708,13 @@ const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
 function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move): void {
   const move = attackMove;
-  e.hp -= e.protectedMs && e.protectedMs > 0 ? damage * 0.75 : damage;
+  const environmentalDamage = damage * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
+  e.hp -= e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
   e.hitFlashMs = 90;
   switch (move.effect) {
     case 'queimar':
       e.burnMs = EFFECT_MS.burn;
-      e.burnDps = Math.max(e.burnDps ?? 0, round1(damage * 0.35));
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(environmentalDamage * 0.35));
       break;
     case 'lentidao':
       e.slowMs = EFFECT_MS.slow;
@@ -772,6 +774,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       hit: [],
       canChain: move.effect === 'saltar',
       size: p.projectileSize,
+      move,
     });
   }
 }
@@ -964,8 +967,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (len > 0.001) {
     const ux = input.dx / len;
     const uy = input.dy / len;
-    p.x = clamp(p.x + ux * p.speed * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
-    p.y = clamp(p.y + uy * p.speed * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
+    const terrainSpeed = survivorBiomeMovementMultiplier(state.elapsedMs, p.x, p.y);
+    p.x = clamp(p.x + ux * p.speed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
+    p.y = clamp(p.y + uy * p.speed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
   }
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
@@ -1049,8 +1053,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   // Projéteis: avançam, somem com o tempo/fora da arena, acertam o inimigo mais próximo no caminho.
   const chained: SurvivorProjectile[] = [];
   state.projectiles = state.projectiles.filter((proj) => {
-    proj.x += proj.vx * dt;
-    proj.y += proj.vy * dt;
+    const terrainSpeed = survivorBiomeProjectileSpeedMultiplier(state.elapsedMs, proj.x, proj.y);
+    proj.x += proj.vx * terrainSpeed * dt;
+    proj.y += proj.vy * terrainSpeed * dt;
     proj.lifeMs -= dtMs;
     if (proj.lifeMs <= 0) return false;
     if (proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
