@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { add, emptyVillage, normalizeVillage } from './life';
-import { advanceCommunity, communityForecast, COMMUNITY_RULES, normalizeCommunity } from './community';
+import { advanceCommunity, communityForecast, COMMUNITY_RULES, normalizeCommunity, socialOpportunityFromMemories } from './community';
+import { scoreActivity } from './vocations';
 
 const fresh = () => emptyVillage(9, { x: 10, y: 10 });
 
@@ -183,5 +184,45 @@ describe('economia diária da comunidade', () => {
     advanceCommunity(state, '2026-10-21', [{ id: 'bulbasaur', types: ['grass'] }]);
 
     expect(state.community.residents.bulbasaur?.completedActivities).toBe((progress?.completedActivities ?? 0) + 1);
+  });
+
+  it('registra no Diário e na memória social um encontro que ocorreu de fato', () => {
+    const state = fresh();
+    state.community.lastCycleDay = '2026-10-18';
+    state.coins = 100;
+
+    const cycle = advanceCommunity(state, '2026-10-19', [
+      { id: 'abra', types: ['psychic'] },
+      { id: 'mewtwo', types: ['psychic'] },
+    ]).cycles[0]!;
+
+    expect(cycle.activities.map((entry) => entry.activity)).toEqual(['acolhimento', 'acolhimento']);
+    expect(state.diary).toContainEqual(expect.objectContaining({ id: 'comunidade:2026-10-19:praca', kind: 'amizade', cast: [{ id: 'abra', name: 'abra' }, { id: 'mewtwo', name: 'mewtwo' }] }));
+    expect(state.memories.filter((memory) => memory.momentId === 'comunidade:2026-10-19:praca')).toHaveLength(2);
+    advanceCommunity(state, '2026-10-19', [{ id: 'abra', types: ['psychic'] }, { id: 'mewtwo', types: ['psychic'] }]);
+    expect(state.diary.filter((entry) => entry.id === 'comunidade:2026-10-19:praca')).toHaveLength(1);
+    expect(state.memories.filter((memory) => memory.momentId === 'comunidade:2026-10-19:praca')).toHaveLength(2);
+  });
+
+  it('usa memórias com moradores ativos para orientar escolhas sociais e registrar ajuda alimentar real', () => {
+    const state = fresh();
+    state.community.lastCycleDay = '2026-10-18';
+    state.coins = 100;
+    state.memories = [
+      { id: 'friend', mon: 'abra', with: ['mewtwo'], kind: 'amizade', text: 'Ajudaram na horta.', day: '2026-10-17', t: 1, momentId: 'friend' },
+      { id: 'rival', mon: 'abra', with: ['clefairy'], kind: 'rivalidade', text: 'Disputaram a feira.', day: '2026-10-17', t: 2, momentId: 'rival' },
+    ];
+    const opportunity = socialOpportunityFromMemories(state, 'abra', new Set(['abra', 'mewtwo', 'clefairy']));
+    expect(opportunity).toBe(1);
+    expect(socialOpportunityFromMemories(state, 'abra', new Set(['abra', 'mewtwo']))).toBe(2);
+    expect(socialOpportunityFromMemories(state, 'abra', new Set(['abra']))).toBe(0);
+    expect(scoreActivity({ available: [], types: [], interests: [], energy: 70, socialOpportunity: opportunity }, 'acolhimento').score).toBe(1);
+    expect(scoreActivity({ available: [], types: [], interests: [], energy: 70, socialOpportunity: 2 }, 'acolhimento').score).toBe(2);
+
+    state.community.shortageDays = 1;
+    const cycle = advanceCommunity(state, '2026-10-19', [{ id: 'vaporeon', types: ['water'] }]).cycles[0]!;
+    expect(cycle.activities[0]).toMatchObject({ activity: 'pesca', item: 'peixe', qty: 1 });
+    expect(cycle.consumed).toContainEqual({ item: 'peixe', qty: 1 });
+    expect(state.diary).toContainEqual(expect.objectContaining({ id: 'comunidade:2026-10-19:ajuda-despensa', title: 'Ajuda na despensa' }));
   });
 });
