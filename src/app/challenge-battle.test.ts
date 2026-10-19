@@ -2,11 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { buildFighter } from '../core/battle';
 import { GYMS } from '../core/league';
 import type { BattleLoader } from './battle-setup';
-import { challengePlan, isLeaderCreature, leaderCreatureId, leaderFighter, leaderLoader, loadLeaderEntries } from './challenge-battle';
+import { challengePlan, isArenaCreature, isLeaderCreature, leaderCreatureId, leaderFighter, leaderLoader, loadArenaEntries, loadLeaderEntries } from './challenge-battle';
 
 const roark = GYMS[0]!;
 
 describe('desafio de Ginásio na Caixa', () => {
+  it('carrega a onda contínua com ids próprios e informa qualquer sprite que falte', async () => {
+    const out = await loadArenaEntries(2, 'Operador Pixel', [6, 9, 3, 149, 376, 445], {
+      fetchSprite: async (dex) => (dex === 149 ? null : { kind: 'gif', url: `u/${dex}`, blob: new Blob([]) }),
+      decode: async (s) => `src:${s.url}`,
+    });
+    expect(out.entries).toHaveLength(5);
+    expect(out.entries.every((entry) => isArenaCreature(entry.info.id))).toBe(true);
+    expect(out.failed).toEqual(['Dragonite']);
+  });
+
   it('carrega a equipe do líder; quem falhar fica de fora com o nome', async () => {
     const out = await loadLeaderEntries(roark, {
       fetchSprite: async (dex) => (dex === 95 ? null : { kind: 'gif', url: `u/${dex}`, blob: new Blob([]) }),

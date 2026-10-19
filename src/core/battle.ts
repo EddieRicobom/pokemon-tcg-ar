@@ -346,6 +346,8 @@ export interface BattleOptions {
   teams?: readonly number[];
   /** Revezamento: só o primeiro de pé de cada equipe luta; quando cai, o próximo entra. */
   relay?: boolean;
+  /** PS com que cada lutador entra. Usado pela Arena contínua; valores ausentes entram cheios. */
+  initialHp?: readonly number[];
 }
 
 export interface BattleResult {
@@ -358,6 +360,8 @@ export interface BattleResult {
   teams?: number[];
   winningTeam?: number;
   relay?: boolean;
+  /** PS visíveis na abertura, para a cena não mostrar cura que não aconteceu. */
+  hpStart?: number[];
 }
 
 /** Sorteio ponderado (pesos ≤ 0 contam como um mínimo para ninguém ficar com chance zero). */
@@ -432,11 +436,13 @@ const GUARD_MOVE: BattleMove = { name: 'Defender', type: 'normal', power: 0, acc
  */
 export function simulateBattle(fighters: readonly Fighter[], rng: Rng, options: BattleOptions = {}): BattleResult {
   if (fighters.length < 2) throw new Error('A batalha precisa de pelo menos 2 Pokémon.');
-  const { teams, relay = false } = options;
+  const { teams, relay = false, initialHp } = options;
   if (teams && teams.length !== fighters.length) throw new Error('É preciso informar a equipe de cada lutador.');
   if (teams && new Set(teams).size < 2) throw new Error('A batalha por equipes precisa de pelo menos 2 equipes.');
+  if (initialHp && initialHp.length !== fighters.length) throw new Error('É preciso informar o PS inicial de cada lutador.');
   const teamOf = (i: number): number => teams?.[i] ?? i;
-  const live: Live[] = fighters.map((f) => ({ hp: f.maxHp, status: null, guard: false, guardedLast: false, lastHitBy: null }));
+  const hpStart = fighters.map((f, i) => Math.max(0, Math.min(f.maxHp, initialHp?.[i] ?? f.maxHp)));
+  const live: Live[] = fighters.map((_, i) => ({ hp: hpStart[i]!, status: null, guard: false, guardedLast: false, lastHitBy: null }));
   const turns: BattleTurn[] = [];
   let round = 0;
   const alive = () => fighters.map((_, i) => i).filter((i) => live[i]!.hp > 0);
@@ -566,7 +572,7 @@ export function simulateBattle(fighters: readonly Fighter[], rng: Rng, options: 
     winningTeam = [...score.entries()].reduce((best, entry) => (entry[1] > best[1] ? entry : best), [teamOf(survivors[0] ?? 0), -1] as [number, number])[0];
   }
   const winner = bestOf(survivors.filter((i) => teamOf(i) === winningTeam));
-  const result: BattleResult = { turns, winner, hpLeft: live.map((l) => l.hp), reason };
+  const result: BattleResult = { turns, winner, hpLeft: live.map((l) => l.hp), hpStart, reason };
   if (teams) {
     result.teams = [...teams];
     result.winningTeam = winningTeam;

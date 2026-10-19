@@ -12,6 +12,7 @@ import ScanView from './views/ScanView.vue';
 
 const CarregarView = lazyView(() => import('./views/CarregarView.vue'));
 const CaixaView = lazyView(() => import('./views/CaixaView.vue'));
+const ArenaView = lazyView(() => import('./views/ArenaView.vue'));
 const VilaView = lazyView(() => import('./views/VilaView.vue'));
 const DiagnosticoView = lazyView(() => import('./views/DiagnosticoView.vue'));
 const PinsView = lazyView(() => import('./views/PinsView.vue'));
@@ -34,6 +35,7 @@ const tabs: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Escanear' },
   { name: 'vila', label: 'Vila' },
   { name: 'cartas', label: 'Cartas' },
+  { name: 'arena', label: 'Arena' },
   { name: 'pins', label: 'Pins' },
   { name: 'treinador', label: 'Treinador' },
 ];
@@ -116,6 +118,7 @@ watch(
     <VariasView v-else-if="route.name === 'varias'" />
     <VilaView v-else-if="route.name === 'vila'" :back="beforeVila" />
     <CaixaView v-else-if="route.name === 'caixa'" />
+    <ArenaView v-else-if="route.name === 'arena'" />
     <PinsView v-else-if="route.name === 'pins'" />
     <CarregarView v-else-if="route.name === 'cartas'" />
     <TreinadorView v-else-if="route.name === 'treinador'" />

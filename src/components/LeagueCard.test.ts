@@ -44,13 +44,13 @@ describe('seções regionais da Liga', () => {
     await nextTick();
     expect(el.querySelectorAll('.badge-case li.won')).toHaveLength(1);
   });
-  it('encaminha o identificador regional para a batalha na Caixa', async () => {
+  it('encaminha o identificador regional para o atalho da Arena', async () => {
     league.value = emptyLeague();
     const el = mount();
     [...el.querySelectorAll<HTMLButtonElement>('.league-regions button')].find((b) => b.textContent?.includes('Hoenn'))!.click();
     await nextTick();
     el.querySelector<HTMLButtonElement>('.league-list button')!.click();
     expect(pendingChallenge.value).toBe('hoenn-gym-0');
-    expect(window.location.hash).toBe('#/caixa');
+    expect(window.location.hash).toBe('#/arena');
   });
 });

@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref } from 'vue';
 
-export type RouteName = 'escanear' | 'varias' | 'vila' | 'cartas' | 'caixa' | 'pins' | 'treinador' | 'diagnostico';
+export type RouteName = 'escanear' | 'varias' | 'vila' | 'cartas' | 'caixa' | 'arena' | 'pins' | 'treinador' | 'diagnostico';
 
 export interface Route {
   name: RouteName;
@@ -32,6 +32,7 @@ export function parseRoute(hash: string): Route {
   if (first === 'vila') return { name: 'vila' };
   if (first === 'cartas') return { name: 'cartas' };
   if (first === 'caixa') return { name: 'caixa' };
+  if (first === 'arena') return { name: 'arena' };
   if (first === 'pins') return { name: 'pins' };
   const old = OLD_ROUTES[first ?? ''];
   if (old) return { name: old };
@@ -44,10 +45,11 @@ export function parseRoute(hash: string): Route {
 /**
  * Sinalizadores que a Vila põe no endereço (`#/pins?vila=1`) para as outras telas saberem de onde você veio:
  * `vila` = «veio da Vila» (a tela mostra «Voltar à Vila»), `pvp` = abrir o PvP da Caixa, `batalha` = veio do
- * Fliperama para uma batalha na câmera (a Caixa destaca «Abrir câmera e batalhar») e `jogos` = o Treinador abre nos minigames.
+ * Fliperama para uma batalha na câmera, `formatacao`/`restauracao` levam o modo contínuo escolhido da Arena até a Caixa
+ * e `jogos` = o Treinador abre nos minigames.
  */
-export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'jogos';
-const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'jogos'];
+export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos';
+const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos'];
 
 export function routeFlags(hash: string): Set<RouteFlag> {
   const query = hash.split('?')[1] ?? '';

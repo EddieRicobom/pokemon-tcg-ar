@@ -47,6 +47,7 @@ export interface BattlePlanLike {
   relay?: boolean;
   teamNames?: readonly string[];
   banner?: { text: string; sub: string };
+  initialHp?: readonly number[];
 }
 
 /**
@@ -304,7 +305,7 @@ export class BoxScene {
     this.stopBattle();
     this.stopSocial();
     for (const creature of this.creatures) creature.groundY = 0; // a arena da batalha é lisa
-    const result = simulateBattle(fighters, rng, { teams: plan?.teams, relay: plan?.relay });
+    const result = simulateBattle(fighters, rng, { teams: plan?.teams, relay: plan?.relay, initialHp: plan?.initialHp });
     // O 3x3 usa uma arena mais larga para caberem os reservas nas pontas.
     const { rx, rz } = arenaRadii(plan?.relay ? 4 : fighters.length);
     this.frameArena(rx);

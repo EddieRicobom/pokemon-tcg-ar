@@ -30,7 +30,7 @@ describe('App', () => {
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
     const tabs = [...(host?.querySelectorAll('nav.tabs a') ?? [])].map((a) => [a.textContent?.trim(), a.getAttribute('href')]);
-    expect(tabs).toEqual([['Escanear', '#/'], ['Vila', '#/vila'], ['Cartas', '#/cartas'], ['Pins', '#/pins'], ['Treinador', '#/treinador']]);
+    expect(tabs).toEqual([['Escanear', '#/'], ['Vila', '#/vila'], ['Cartas', '#/cartas'], ['Arena', '#/arena'], ['Pins', '#/pins'], ['Treinador', '#/treinador']]);
     expect(host?.querySelectorAll('nav.modes a')).toHaveLength(2);
     expect(host?.querySelector('a.header-gear')?.getAttribute('href')).toBe('#/diagnostico');
     expect(host?.querySelector('video')).not.toBeNull();
@@ -67,6 +67,15 @@ describe('App', () => {
     expect(text).toContain('Várias cartas');
     expect(text).toContain('Câmera desligada');
     expect(text).toContain('nada é lido do texto');
+  });
+
+  it('a Arena separa a equipe de seis, os modos contínuos e a caixa que exibe a luta', async () => {
+    const text = await mount('#/arena');
+    expect(text).toContain('Arena Digital');
+    expect(text).toContain('Equipe da Arena · 6 Pokémon');
+    expect(text).toContain('Formatação digital');
+    expect(text).toContain('Restauração digital');
+    expect([...(host?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href'))).toContain('#/caixa');
   });
 
   it('a tela Treinador mostra nível, missões e conquistas, sem inventar progresso', async () => {

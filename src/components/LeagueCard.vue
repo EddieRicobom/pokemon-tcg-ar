@@ -24,7 +24,7 @@ const polishFor = (order: number): number => {
   return polishOf(order);
 };
 
-/** Liga: estojo de insígnias, os Ginásios em ordem, a Elite 4 e a Campeã. O desafio acontece na Caixa. */
+/** Liga: estojo de insígnias, os Ginásios em ordem, a Elite 4 e a Campeã. O desafio é preparado na Arena e exibido na Caixa. */
 const next = computed(() => nextChallenge(league.value, selected.value));
 // Ordem cronológica, sem alterar os índices persistidos de Sinnoh.
 const regionTabs = ['kanto', 'johto', 'hoenn', 'sinnoh'].map((id) => LEAGUE_REGIONS.find((r) => r.id === id)!);
@@ -35,12 +35,12 @@ const sections = computed(() => [
 ].map((section) => ({ ...section, rows: section.challenges.map((c) => ({ c, status: statusOf(league.value, c) })) })));
 const badgeCount = computed(() => progress.value.badges.length);
 
-/** `challenge` avisa que o desafio foi marcado (a Arena da Vila fecha a Vila, que mora dentro da Caixa, para a luta aparecer). */
+/** `challenge` avisa que o desafio foi marcado (a tela da Arena mostra o atalho para a Caixa). */
 const emit = defineEmits<{ challenge: [] }>();
 
 function challenge(c: Challenge): void {
   pendingChallenge.value = c.id;
-  window.location.hash = routeHref('caixa');
+  window.location.hash = routeHref('arena');
   emit('challenge');
 }
 
