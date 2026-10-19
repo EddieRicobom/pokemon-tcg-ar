@@ -1,6 +1,8 @@
 /** Medidas e limites do diorama da Vila no modo AR. Não dependem de WebGL. */
 export const VILLAGE_DIORAMA_WIDTH_M = 2.8;
 export const VILLAGE_DIORAMA_DEPTH_M = VILLAGE_DIORAMA_WIDTH_M * 0.75;
+/** Inclinação temporária do plano completo da Vila no modo AR, para dar leitura de diorama 2.5D. */
+export const VILLAGE_AR_TILT_DEG = 75;
 
 /** O zoom amplia o modelo no próprio ponto da âncora, até 3× o tamanho-base. */
 export const VILLAGE_SCALE_RANGE = { min: 0.42, max: 3 } as const;
