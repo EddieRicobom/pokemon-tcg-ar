@@ -18,7 +18,7 @@ type BoxCard = CachedCard & { status: CacheStatus; thumb?: string; icon?: string
 
 const props = defineProps<{
   cards: BoxCard[];
-  /** Ids da turma da Caixa, na ordem (o número aparece no canto do espaço). */
+  /** Ids dos moradores da Vila, na ordem (o número aparece no canto do espaço). */
   team: string[];
   busyId: string | null;
   /** Cartas que passam no filtro/busca da tela; as outras ficam apagadas na grade. */
@@ -165,7 +165,7 @@ const teamIndex = (id: string) => props.team.indexOf(id);
           incomplete: !!id && byId.get(id)?.status !== 'completo',
           digital: !!id && byId.get(id)?.digital === true,
         }"
-        :aria-label="id ? `${byId.get(id)?.name ?? id}${byId.get(id)?.digital ? ', Digital Pokémon' : ''}${teamIndex(id) >= 0 ? ', na turma' : ''}` : `Espaço ${slot + 1} vazio`"
+        :aria-label="id ? `${byId.get(id)?.name ?? id}${byId.get(id)?.digital ? ', Digital Pokémon' : ''}${teamIndex(id) >= 0 ? ', morador da Vila' : ''}` : `Espaço ${slot + 1} vazio`"
         @click="tapSlot(slot)"
       >
         <template v-if="id && byId.get(id)">
@@ -186,7 +186,7 @@ const teamIndex = (id: string) => props.team.indexOf(id);
     </div>
     <p v-if="notice" class="pbox-notice" role="status">{{ notice }}</p>
     <p class="pbox-legend">
-      Número no canto = posição na turma da Caixa · ✨ = Digital Pokémon (sem carta física) · borda tracejada = carta ainda não completa · apagadas = fora do filtro.
+      Número no canto = posição entre moradores da Vila · ✨ = Digital Pokémon (sem carta física) · borda tracejada = carta ainda não completa · apagadas = fora do filtro.
     </p>
 
     <div v-if="selectedCard && !moving" class="pbox-detail" role="region" :aria-label="`Detalhes de ${selectedCard.name}`">
@@ -198,7 +198,7 @@ const teamIndex = (id: string) => props.team.indexOf(id);
           <small>🔒 Sem scan e sem AR (não é uma carta física). Batalha na Caixa como qualquer outro.</small>
           <div class="actions row">
             <button type="button" :class="{ active: teamIndex(selectedCard.id) >= 0 }" @click="emit('toggleTeam', selectedCard.id)">
-              {{ teamIndex(selectedCard.id) >= 0 ? '✓ Na turma · tirar' : '+ Adicionar à turma' }}
+              {{ teamIndex(selectedCard.id) >= 0 ? '✓ Na Vila · tirar' : '+ Adicionar à Vila' }}
             </button>
           </div>
         </template>
@@ -211,7 +211,7 @@ const teamIndex = (id: string) => props.team.indexOf(id);
           <button v-if="selectedCard.status !== 'completo'" type="button" :disabled="busyId === selectedCard.id" @click="emit('run', selectedCard.id, 'reload')">Recarregar</button>
           <a class="button" :href="routeHref('escanear', selectedCard.id)">Ver em AR</a>
           <button type="button" :class="{ active: teamIndex(selectedCard.id) >= 0 }" @click="emit('toggleTeam', selectedCard.id)">
-            {{ teamIndex(selectedCard.id) >= 0 ? '✓ Na turma · tirar' : '+ Adicionar à turma' }}
+            {{ teamIndex(selectedCard.id) >= 0 ? '✓ Na Vila · tirar' : '+ Adicionar à Vila' }}
           </button>
           <button v-if="confirmRemove !== selectedCard.id" type="button" :disabled="busyId === selectedCard.id" @click="confirmRemove = selectedCard.id">Apagar…</button>
           <template v-else>

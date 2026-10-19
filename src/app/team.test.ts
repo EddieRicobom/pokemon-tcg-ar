@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { loadSavedTeam, resolveTeam, sanitizeTeam, saveTeam, TEAM_SIZE, toggleMember } from './team';
+import { includeMember, loadSavedTeam, resolveTeam, sanitizeTeam, saveTeam, TEAM_SIZE, toggleMember } from './team';
 
 const card = (id: string, lastSeenAt: number, state = 'ok') => ({ id, lastSeenAt, sprite: { state } });
 
@@ -33,6 +33,17 @@ describe('equipe', () => {
 
   it('escolha que sumiu do cache volta ao automático', () => {
     expect(resolveTeam(['gone'], [card('a', 1)])).toEqual({ ids: ['a'], auto: true });
+  });
+
+  it('inclui uma carta pronta na equipe automática ou escolhida sem perder os membros atuais', () => {
+    expect(includeMember([], [card('older', 1), card('new', 2)], 'older', 6)).toEqual({ kind: 'already', ids: ['new', 'older'], auto: true });
+    expect(includeMember(['older'], [card('older', 1), card('new', 2)], 'new', 6)).toEqual({ kind: 'added', ids: ['older', 'new'] });
+  });
+
+  it('explica equipe cheia e não inclui carta sem Pokémon pronto', () => {
+    const full = Array.from({ length: 2 }, (_, i) => card(`m${i}`, i));
+    expect(includeMember(['m0', 'm1'], [...full, card('new', 3)], 'new', 2).kind).toBe('full');
+    expect(includeMember([], [card('broken', 1, 'missing')], 'broken').kind).toBe('unavailable');
   });
 });
 

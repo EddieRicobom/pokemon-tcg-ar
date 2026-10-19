@@ -432,7 +432,7 @@ function advanceCutscene(): void {
 
 // -- Mini tutorial dos Digital Pokémon (Fase 4): uma vez, logo depois do presente inicial.
 const TUTORIAL_LINES: readonly string[] = [
-  'Ele mora na Vila como qualquer outro: conversa, cria amizade, tem casa e anda na Caixa em AR com a turma. Só não é escaneado, porque não vem de nenhuma carta física.',
+  'Ele mora na Vila como qualquer outro: conversa, cria amizade, tem casa e anda na Caixa em AR com sua equipe. Só não é escaneado, porque não vem de nenhuma carta física.',
   'Você ganha moedas conversando, respondendo perguntas, lanchando no Café, usando o Correio e vencendo minigames, corridas na Torre e batalhas.',
   'Na Fonte: 500 moedas invocam outro Digital Pokémon; 1000 + amizade bem alta evoluem o que você já tem, pra uma forma real.',
 ];

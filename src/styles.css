@@ -474,6 +474,18 @@ button.danger {
   margin: 4px 0;
 }
 
+.result-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.result-actions > * {
+  min-height: 44px;
+  text-align: center;
+}
+
 .origin,
 .meta,
 small {
