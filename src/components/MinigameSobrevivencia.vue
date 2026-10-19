@@ -44,16 +44,18 @@ import { dayKey } from '../core/trainer';
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
   power: '💥', haste: '⏳', legs: '👟', vigor: '❤️', range: '📏', multishot: '🎯', pierce: '🏹', magnet: '🧲', radius: '⭕',
+  'second-attack': '✦',
 };
 const upgradeIcon = (id: string): string => (id.startsWith('evolve:') ? '✨' : (UPGRADE_ICON[id] ?? '✨'));
 
 /** O golpe de uma espécie na Torre: elemento pelo 1º tipo, forma e números pelos stats reais (`core/survivor-moves.ts`). */
-function attackOf(dexId: number, picked?: PokemonType): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[] } {
+function attackOf(dexId: number, picked?: PokemonType): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove } {
   const stats = statsOfDex(dexId);
   const types = typesOfDex(dexId);
   const ordered = picked ? [picked, ...types.filter((t) => t !== picked)] : types;
   const move = moveFor(ordered, stats);
-  return { move, profile: attackProfile(move, stats), types };
+  const secondType = types.find((type) => type !== picked && type !== move.type);
+  return { move, profile: attackProfile(move, stats), types, ...(secondType ? { secondMove: moveFor([secondType], stats) } : {}) };
 }
 const moveLine = (m: SurvivorMove): string => `${m.icon} ${m.name} · ${MOVE_CATEGORY_LABELS_PT[m.category]}`;
 
@@ -491,7 +493,7 @@ function draw(): void {
     const r = proj.size ?? 4;
     ctx.save();
     ctx.globalAlpha = 0.35;
-    ctx.fillStyle = move.color;
+    ctx.fillStyle = proj.move?.color ?? move.color;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, r * 2, 0, Math.PI * 2);
     ctx.fill();
@@ -703,8 +705,8 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     pickOptions.value = null;
     summary.value = null;
     pendingUpgrade.value = null;
-    const { move, profile } = attackOf(dexId, picked);
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, dexId, evolutions: evolutionsFor, infinite });
+    const { move, profile, secondMove } = attackOf(dexId, picked);
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, dexId, evolutions: evolutionsFor, infinite });
     ready.value = true;
     lastTs = performance.now();
     if (!rafId) rafId = requestAnimationFrame(loop);
@@ -834,6 +836,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
+             <span v-if="state.player.secondMove" class="chip survivor-move-chip second" :style="{ '--move': state.player.secondMove.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.secondMove.effect]">{{ moveLine(state.player.secondMove) }}</span>
             <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
             <span class="chip">☠ {{ state.kills }}</span>
             <span class="chip">🌊 Onda {{ state.wave }}</span>

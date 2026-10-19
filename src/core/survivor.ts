@@ -58,6 +58,13 @@ export interface SurvivorPlayer {
   facing: -1 | 1;
   /** Alcance para coletar orbe de XP ao passar perto (sobe com o upgrade "Ímã de XP"). */
   pickupRadius: number;
+  /** Segundo golpe automático, desbloqueável uma vez por corrida. */
+  secondMove?: SurvivorMove;
+  secondAttackTimerMs?: number;
+  secondAttackDamage?: number;
+  secondAttackCooldownMs?: number;
+  secondAttackRange?: number;
+  secondAttackRadius?: number;
 }
 
 /** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */
@@ -125,6 +132,8 @@ export interface SurvivorProjectile {
   canChain?: boolean;
   /** Raio do desenho (a Pedrada é maior). */
   size?: number;
+  /** Identidade visual/efeito do golpe que criou o projétil. */
+  move?: SurvivorMove;
 }
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
@@ -193,6 +202,9 @@ export interface SurvivorState {
   /** Números dos stats da espécie de agora (para a evolução recalcular pelos stats da próxima forma). */
   profile: AttackProfile | null;
   enemyArchetypeFor: ((enemy: Pick<SurvivorEnemy, 'kind' | 'boss' | 'grade'>) => SurvivorEnemyArchetype) | null;
+  /** Técnica que será desbloqueada no primeiro upgrade especial. */
+  secondMoveCandidate: SurvivorMove | null;
+  secondAttackOffered: boolean;
 }
 
 export interface SurvivorEvolutionOption {
@@ -254,6 +266,7 @@ export type SurvivorEvent =
   /** Treinador derrotado (todos os Pokémon dele caíram). */
   | { type: 'trainerDown'; final: boolean }
   | { type: 'evolve'; dexId: number; name: string }
+  | { type: 'secondAttack'; name: string }
   | { type: 'gameover'; summary: SurvivorSummary };
 
 export interface SurvivorUpgrade {
@@ -386,6 +399,8 @@ export interface CreateSurvivorOptions {
   move?: SurvivorMove;
   /** Números pelos stats da espécie (ver `attackProfile`); sem isto, os números padrão do motor. */
   profile?: AttackProfile;
+  /** Golpe secundário real (por exemplo, o segundo tipo). Se omitido, o motor cria uma técnica interna compatível. */
+  secondMove?: SurvivorMove;
   /** Espécie de quem joga (para a evolução). */
   dexId?: number;
   /**
@@ -398,9 +413,17 @@ export interface CreateSurvivorOptions {
   infinite?: boolean;
 }
 
+/** Técnica interna da Torre para que até Pokémon de um tipo tenham uma segunda opção desbloqueável. */
+function secondaryMoveFor(move: SurvivorMove): SurvivorMove {
+  const categories: readonly MoveCategory[] = ['projetil', 'area', 'cone', 'aura', 'orbit'];
+  const category = categories[(categories.indexOf(move.category) + 1) % categories.length]!;
+  return { ...move, category, name: `${move.name} secundário`, icon: '✦' };
+}
+
 export function createSurvivorState(seed: number, options: CreateSurvivorOptions): SurvivorState {
   const move = options.move ?? BASIC_MOVE;
   const prof = options.profile;
+  const secondMoveCandidate = options.secondMove ?? secondaryMoveFor(move);
   const player: SurvivorPlayer = {
     dexId: options.dexId ?? 0,
     stage: 0,
@@ -456,6 +479,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     evolutions: options.evolutions ?? (() => []),
     profile: prof ?? null,
     enemyArchetypeFor: options.enemyArchetypeFor ?? null,
+    secondMoveCandidate,
+    secondAttackOffered: false,
   };
 }
 
@@ -592,6 +617,14 @@ function offerOwedUpgrade(state: SurvivorState): void {
   const options = rollUpgrades(state.rng, 3, state.player.move);
   const evolve = evolutionOffer(state);
   if (evolve) options.splice(options.length - 1, 1, evolve);
+  else if (!state.secondAttackOffered && state.player.level >= 6 && state.secondMoveCandidate) {
+    state.secondAttackOffered = true;
+    options.splice(options.length - 1, 1, {
+      id: 'second-attack',
+      name: `Segundo golpe: ${state.secondMoveCandidate.name}`,
+      description: `${state.secondMoveCandidate.icon} Desbloqueia um ataque automático com recarga própria. Limite: dois golpes.`,
+    });
+  }
   state.pendingUpgrade = options;
 }
 
@@ -609,6 +642,19 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
     if (next) {
       evolvePlayer(state, next);
       events.push({ type: 'evolve', dexId: next.dexId, name: next.name });
+    }
+  } else if (id === 'second-attack') {
+    if (offered && state.secondMoveCandidate && !state.player.secondMove) {
+      const move = state.secondMoveCandidate;
+      const p = state.player;
+      p.secondMove = move;
+      p.secondAttackTimerMs = 0;
+      p.secondAttackDamage = round1(p.attackDamage * 0.65);
+      p.secondAttackCooldownMs = Math.max(450, Math.round(p.attackCooldownMs * 1.35));
+      p.secondAttackRange = p.attackRange;
+      p.secondAttackRadius = Math.max(8, round1(p.attackRadius * 0.75));
+      state.secondMoveCandidate = null;
+      events.push({ type: 'secondAttack', name: move.name });
     }
   } else {
     const upgrade = SURVIVOR_UPGRADES.find((u) => u.id === id);
@@ -655,8 +701,8 @@ function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void
 const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
 
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
-function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }): void {
-  const move = state.player.move;
+function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move): void {
+  const move = attackMove;
   e.hp -= e.protectedMs && e.protectedMs > 0 ? damage * 0.75 : damage;
   e.hitFlashMs = 90;
   switch (move.effect) {
@@ -724,6 +770,22 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       size: p.projectileSize,
     });
   }
+}
+
+/** Segundo golpe automático: tem sua própria recarga e usa a identidade do golpe secundário. */
+function attackSecond(state: SurvivorState): boolean {
+  const p = state.player;
+  const move = p.secondMove;
+  if (!move || p.secondAttackDamage === undefined || p.secondAttackRange === undefined || p.secondAttackRadius === undefined) return false;
+  const target = nearestEnemies(state, p.secondAttackRange, 1)[0];
+  if (!target) return false;
+  const angle = Math.atan2(target.y - p.y, target.x - p.x);
+  state.projectiles.push({
+    id: state.nextId++, x: p.x, y: p.y,
+    vx: Math.cos(angle) * p.projectileSpeed * 0.85, vy: Math.sin(angle) * p.projectileSpeed * 0.85,
+    damage: p.secondAttackDamage, pierce: 0, lifeMs: 1000, hit: [], size: Math.max(3, p.projectileSize * 0.8), move,
+  });
+  return true;
 }
 
 /** Um ataque do golpe de quem joga; devolve false se não havia alvo (o tempo de recarga não começa). */
@@ -975,6 +1037,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   // Autoataque com o golpe do tipo (projétil, aura ou área).
   p.attackTimerMs = Math.max(0, p.attackTimerMs - dtMs);
   if (p.attackTimerMs <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs;
+  if (p.secondMove && p.secondAttackCooldownMs !== undefined) {
+    p.secondAttackTimerMs = Math.max(0, (p.secondAttackTimerMs ?? 0) - dtMs);
+    if (p.secondAttackTimerMs <= 0 && attackSecond(state)) p.secondAttackTimerMs = p.secondAttackCooldownMs;
+  }
 
   // Projéteis: avançam, somem com o tempo/fora da arena, acertam o inimigo mais próximo no caminho.
   const chained: SurvivorProjectile[] = [];
@@ -987,7 +1053,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     for (const e of state.enemies) {
       if (proj.hit.includes(e.id)) continue;
       if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + 5) {
-        hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 });
+        hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move);
         drain(state, 1);
         proj.hit.push(e.id);
         if (proj.canChain) {
