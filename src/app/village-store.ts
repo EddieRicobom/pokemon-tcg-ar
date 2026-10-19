@@ -10,6 +10,8 @@ export const VILLAGE_SEED = 20261014;
 export const VILLAGE_KEY = 'tcg-ar-vila-v1';
 /** Cópia do salvamento anterior, de tempos em tempos: se o principal vier corrompido, a Vila volta dela. */
 export const VILLAGE_BACKUP_KEY = 'tcg-ar-vila-v1-bak';
+/** Marco separado para que uma cópia antiga do save nunca repita a cena do desejo. */
+export const HOOH_WISH_KEY = 'tcg-ar-vila-hooh-wish-v1';
 const BACKUP_EVERY_MS = 5 * 60_000;
 
 let cachedMap: VillageMap | null = null;
@@ -37,7 +39,9 @@ function parse(raw: string | null): VillageState | null {
 export function loadVillage(): VillageState {
   const map = villageMap();
   try {
-    return parse(localStorage.getItem(VILLAGE_KEY)) ?? parse(localStorage.getItem(VILLAGE_BACKUP_KEY)) ?? emptyVillage(VILLAGE_SEED, map.spawn);
+    const state = parse(localStorage.getItem(VILLAGE_KEY)) ?? parse(localStorage.getItem(VILLAGE_BACKUP_KEY)) ?? emptyVillage(VILLAGE_SEED, map.spawn);
+    if (localStorage.getItem(HOOH_WISH_KEY) === 'true') state.hoOhWishSeen = true;
+    return state;
   } catch {
     return emptyVillage(VILLAGE_SEED, map.spawn);
   }
@@ -62,6 +66,10 @@ export function saveVillage(state: VillageState, now = Date.now()): boolean {
       }
     }
     localStorage.setItem(VILLAGE_KEY, next);
+    // A cutscene é irrepetível mesmo se o save principal se corromper e a cópia for anterior ao desejo.
+    if (state.hoOhWishSeen) {
+      try { localStorage.setItem(HOOH_WISH_KEY, 'true'); } catch { /* o save principal já foi gravado */ }
+    }
     return true;
   } catch {
     return false;

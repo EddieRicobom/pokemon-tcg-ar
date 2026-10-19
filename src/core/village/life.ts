@@ -127,6 +127,8 @@ export interface VillageState {
   requests: { day: string; items: VillageRequest[]; story: VillageRequest[] };
   /** Digital Pokémon (presente inicial, Fonte, evolução) — pagos em moedas, o saldo único (`app/wallet.ts`). */
   digital: DigitalState;
+  /** A cena única do Ho-Oh ao desejar na Fonte já começou; retrocompatível com saves anteriores. */
+  hoOhWishSeen: boolean;
   /** Encontros lendários raríssimos na Vila (ver `legendary.ts`). */
   legendary: LegendaryState;
   recap: { day: string; at: number };
@@ -152,7 +154,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
-    digital: emptyDigital(), legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), ...emptyWorldProgress(),
+    digital: emptyDigital(), hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), ...emptyWorldProgress(),
   };
 }
 
@@ -218,6 +220,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
       ? { day: r.battleCoins.day.slice(0, 12), count: Math.max(0, Math.min(BATTLE_REWARDS_PER_DAY, r.battleCoins.count)) }
       : { day: '', count: 0 },
     digital: normalizeDigital(r.digital),
+    hoOhWishSeen: r.hoOhWishSeen === true,
     legendary: normalizeLegendary(r.legendary),
     recap: { day: typeof r.recap?.day === 'string' ? r.recap.day : '', at: typeof r.recap?.at === 'number' && Number.isFinite(r.recap.at) && r.recap.at >= 0 ? r.recap.at : 0 },
     ...normalizeWorldProgress(r),
