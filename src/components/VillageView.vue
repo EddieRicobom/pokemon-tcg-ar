@@ -148,7 +148,7 @@ function placeVillageAr(): void {
   if (!result) return;
   if (!result.ok) return say(result.message, 4500);
   arAnchored.value = true;
-  say(result.moved ? 'Âncora criada na distância mínima para a Vila caber.' : 'Âncora criada. Gire e incline o celular para observar a cidade.', 4500);
+  say('Âncora criada no ponto escolhido. Gire e incline o celular para observar a cidade.', 4500);
 }
 
 function placeVillageArAt(event: PointerEvent): void {
@@ -158,15 +158,7 @@ function placeVillageArAt(event: PointerEvent): void {
   const result = villageAr.placeAt(((event.clientX - bounds.left) / bounds.width) * 2 - 1, -((event.clientY - bounds.top) / bounds.height) * 2 + 1);
   if (!result.ok) return say(result.message, 4500);
   arAnchored.value = true;
-  say(result.moved ? 'Âncora movida para uma distância segura.' : 'Âncora movida para o ponto escolhido.', 3000);
-}
-
-function bringVillageCloser(): void {
-  const result = villageAr?.bringCloser();
-  if (!result) return;
-  if (!result.ok) return say(result.message, 4500);
-  arAnchored.value = true;
-  say(result.moved ? 'Vila aproximada. Diminua o zoom para trazê-la ainda mais perto.' : 'A Vila já está na distância mais próxima para este zoom.', 3500);
+  say('Âncora movida para o ponto escolhido.', 3000);
 }
 
 function setVillageArScale(value: number): void {
@@ -1921,7 +1913,7 @@ function pressB(): void {
   else if (dialog.value) dialog.value = null;
   else if (sheet.value === 'menu' && tab.value !== 'inicio') tab.value = 'inicio'; // B dentro de uma seção volta ao menu
   else if (sheet.value === 'torre') towerGameRef.value?.requestLeave();
-  else if (sheet.value) sheet.value = null;
+  else if (sheet.value) closeVillageSheet(); // fecha pelo mesmo caminho do ✕ e libera o estado de interação da Vila
   else {
     tab.value = 'inicio';
     sheet.value = 'menu';
@@ -2176,15 +2168,14 @@ onBeforeUnmount(() => {
         <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
       </header>
       <section v-if="arActive" class="village-ar-controls" aria-label="Controles do diorama AR">
-        <p><strong>{{ arAnchored ? 'Âncora ativa' : 'Escolha um ponto no chão' }}</strong><span>Toque no chão para mover a cidade.</span></p>
+        <p><strong>{{ arAnchored ? 'Âncora ativa' : 'Escolha um ponto no chão' }}</strong><span>Toque para posicionar ou mover a cidade.</span></p>
         <div class="village-ar-actions">
-          <button type="button" @click="bringVillageCloser">Trazer perto</button>
           <label>Zoom
             <input :value="arScale" type="range" :min="VILLAGE_SCALE_RANGE.min" :max="VILLAGE_SCALE_RANGE.max" step="0.02" aria-label="Zoom da Vila em AR" @input="setVillageArScale(Number(($event.target as HTMLInputElement).value))" />
             <output>{{ Math.round(arScale * 100) }}%</output>
           </label>
         </div>
-        <small>A âncora fica no chão enquanto esta câmera estiver aberta. O zoom é lembrado neste aparelho.</small>
+        <small>O Zoom muda o tamanho sem deslocar a âncora. O ponto escolhido fica ativo enquanto esta câmera estiver aberta; a escala é lembrada neste aparelho.</small>
       </section>
       <p v-if="loading" class="village-loading">{{ loading }}</p>
       <div v-else-if="recapScene" class="village-recap" role="dialog" aria-modal="true" aria-label="Capítulo diário da Vila">

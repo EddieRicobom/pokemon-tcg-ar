@@ -912,6 +912,7 @@ onBeforeUnmount(() => {
       <div
         ref="stageEl"
         class="survivor-stage"
+        :class="{ 'survivor-stage-picker': pickOptions }"
         @pointerdown="joyDown"
         @pointermove="joyMove"
         @pointerup="joyUp"
