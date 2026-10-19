@@ -2,6 +2,7 @@ import { seededRng } from './battle';
 import type { Rng } from './battle';
 import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
+import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
 
 /**
  * Motor puro do modo Sobrevivência (Zona de Sobrevivência, dentro da Vila): você anda pela arena, seu Pokémon ataca
@@ -91,11 +92,13 @@ export interface SurvivorEnemy {
   radius: number;
   /** Ms restantes do "flash" de ter sido atingido (só para o desenho). */
   hitFlashMs: number;
-  /** Efeitos dos golpes (ms restantes): queimadura (com o dano por segundo), lentidão e atordoamento. */
+  /** Efeitos dos golpes (ms restantes): queimadura, lentidão, atordoamento e marcadores de sinergia. */
   burnMs?: number;
   burnDps?: number;
   slowMs?: number;
   stunMs?: number;
+  wetMs?: number;
+  seededMs?: number;
   /** Comportamento de gameplay; não representa atributo oficial da espécie. */
   archetype?: SurvivorEnemyArchetype;
   /** Recarga do comportamento especial, em milissegundos. */
@@ -708,9 +711,15 @@ const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
 function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move): void {
   const move = attackMove;
-  const environmentalDamage = damage * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
+  const synergy = survivorSynergyFor(move.type, e);
+  const environmentalDamage = damage
+    * (synergy?.damageMultiplier ?? 1)
+    * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
   e.hp -= e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
   e.hitFlashMs = 90;
+  if (synergy?.consume) e[synergy.consume] = 0;
+  if (synergy?.refreshSlowMs) e.slowMs = Math.max(e.slowMs ?? 0, synergy.refreshSlowMs);
+  Object.assign(e, survivorElementalStatus(move.type));
   switch (move.effect) {
     case 'queimar':
       e.burnMs = EFFECT_MS.burn;
@@ -1012,6 +1021,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       if (e.burnMs === 0) e.burnDps = 0;
     }
     if (e.slowMs && e.slowMs > 0) e.slowMs = Math.max(0, e.slowMs - dtMs);
+    if (e.wetMs && e.wetMs > 0) e.wetMs = Math.max(0, e.wetMs - dtMs);
+    if (e.seededMs && e.seededMs > 0) e.seededMs = Math.max(0, e.seededMs - dtMs);
     const stunned = !!e.stunMs && e.stunMs > 0;
     if (stunned) e.stunMs = Math.max(0, (e.stunMs ?? 0) - dtMs);
     const target = updateEnemyBehavior(state, e, dtMs);
