@@ -69,9 +69,16 @@ export default defineConfig({
             options: { cacheName: 'catalog-index-v1', expiration: { maxEntries: 1 } },
           },
           {
+            // Índice pequeno do pacote incorporado; evita consultá-lo na rede a cada nova abertura da PWA.
+            urlPattern: ({ url }) => url.pathname === `${base}data/pokeapi-sprite-manifest.json`,
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'pokeapi-sprite-manifest-v1', expiration: { maxEntries: 2, maxAgeSeconds: 60 * 60 * 24 * 30 } },
+          },
+          {
             urlPattern: ({ url }) => url.pathname.startsWith(`${base}sprites/`),
             handler: 'CacheFirst',
-            options: { cacheName: 'village-sprites-v1', expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 90 } },
+            // Não pré-baixar o catálogo de centenas de MB: cada sprite entra no aparelho apenas quando usado.
+            options: { cacheName: 'pokemon-sprites-v2', expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 90 } },
           },
         ],
       },

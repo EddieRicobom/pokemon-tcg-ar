@@ -5,8 +5,9 @@ import StageButton from './StageButton.vue';
 import StageSheet from './StageSheet.vue';
 import type { SpriteOverlay } from '../ar/overlay';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
-import { decodeGif, describeGifError, fetchGif, type DecodedGif } from '../core/gif';
-import { isValidDexId, pokemonSpriteUrl } from '../ar/sprite-url';
+import { decodeGif, describeGifError, type DecodedGif } from '../core/gif';
+import { fetchSprite } from '../ar/sprite-source';
+import { isValidDexId } from '../ar/sprite-url';
 import { loadChunk } from '../app/stale-build';
 
 type CameraState = 'idle' | 'starting' | 'on';
@@ -88,15 +89,18 @@ async function loadFromPokeApi(): Promise<void> {
     gifMessage.value = 'Digite o número da Pokédex Nacional (ex.: 25 para Pikachu).';
     return;
   }
-  const url = pokemonSpriteUrl(dexId);
-
   downloadAbort?.abort();
   const controller = new AbortController();
   downloadAbort = controller;
   loadingGif.value = true;
   try {
-    const gif = await fetchGif(url, controller.signal);
-    await showGif(gif, `Pokédex nº ${dexId} (PokeAPI/sprites)`);
+    const source = await fetchSprite(dexId);
+    if (controller.signal.aborted) return;
+    if (!source || source.kind !== 'gif') {
+      gifMessage.value = 'Este Pokémon não tem GIF animado disponível.';
+      return;
+    }
+    await showGif(decodeGif(await source.blob.arrayBuffer()), `Pokédex nº ${dexId} (${source.url.includes('sprites/pokeapi/') ? 'pacote local' : 'PokeAPI/sprites'})`);
   } catch (error) {
     if (controller.signal.aborted) return;
     gifMessage.value = describeGifError(error);

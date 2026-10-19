@@ -11,6 +11,8 @@ coverage/
 public/ocr/
 public/data/catalog-index.json
 public/data/art-index.*
+public/data/pokeapi-sprite-manifest.json
+public/sprites/pokeapi/
 .cache/
 test-results/
 playwright-report/
