@@ -365,9 +365,20 @@ describe('arquétipos de inimigos', () => {
     s.enemies.push(shooter);
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.hostileProjectiles).toHaveLength(1);
+    expect(Math.hypot(s.hostileProjectiles[0]!.vx, s.hostileProjectiles[0]!.vy)).toBeCloseTo(BALANCE.hostileProjectileSpeed);
     s.hostileProjectiles[0]!.x = ARENA_W + 100;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.hostileProjectiles).toHaveLength(0);
+  });
+
+  it('atirador se desloca com metade da velocidade normal', () => {
+    const s = quiet(createSurvivorState(1, { kindCount: 1 }));
+    const shooter = enemy(1, 'atirador', s.player.x + 300, s.player.y);
+    shooter.specialTimerMs = 1000;
+    s.enemies.push(shooter);
+    const before = shooter.x;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 100);
+    expect(Math.abs(shooter.x - before)).toBeCloseTo(shooter.speed * BALANCE.rangedEnemySpeedMultiplier * 0.1);
   });
 
   it('flanqueador usa uma aproximação lateral sem velocidade infinita', () => {
@@ -400,6 +411,35 @@ describe('arquétipos de inimigos', () => {
     }
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.hostileProjectiles.length).toBeLessThanOrEqual(ENEMY_BEHAVIOR_LIMITS.hostileProjectiles);
+  });
+});
+
+describe('efeitos defensivos de golpes próximos', () => {
+  it('a aura desacelera projéteis dentro do raio em 20%', () => {
+    const aura = as('psychic', 'aura');
+    const s = quiet(createSurvivorState(5, { kindCount: 1, move: aura.move, profile: aura.profile }));
+    const nearX = s.player.x + 35;
+    const farX = s.player.x + s.player.attackRadius + 30;
+    s.hostileProjectiles.push(
+      { id: 20, x: nearX, y: s.player.y + 20, vx: 100, vy: 0, damage: 1, lifeMs: 1000, size: 4 },
+      { id: 21, x: farX, y: s.player.y + 20, vx: 100, vy: 0, damage: 1, lifeMs: 1000, size: 4 },
+    );
+    stepSurvivor(s, { dx: 0, dy: 0 }, 100);
+    expect(s.hostileProjectiles.find((projectile) => projectile.id === 20)?.x).toBeCloseTo(nearX + 10 * BALANCE.auraProjectileSpeedMultiplier);
+    expect(s.hostileProjectiles.find((projectile) => projectile.id === 21)?.x).toBeCloseTo(farX + 10);
+  });
+
+  it('órbita e cone apararam no máximo um projétil por ataque', () => {
+    for (const category of ['orbit', 'cone'] as const) {
+      const profile = as(category === 'orbit' ? 'grass' : 'fighting', category);
+      const s = quiet(createSurvivorState(6, { kindCount: 1, move: profile.move, profile: profile.profile }));
+      s.hostileProjectiles.push(
+        { id: 30, x: s.player.x + 45, y: s.player.y, vx: 0, vy: 0, damage: 1, lifeMs: 1000, size: 4 },
+        { id: 31, x: s.player.x + 48, y: s.player.y, vx: 0, vy: 0, damage: 1, lifeMs: 1000, size: 4 },
+      );
+      stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+      expect(s.hostileProjectiles.map((projectile) => projectile.id)).toEqual([31]);
+    }
   });
 });
 
