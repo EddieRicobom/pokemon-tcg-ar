@@ -63,7 +63,7 @@ import { dailyRecap, needsDailyRecap } from '../core/village/daily-recap';
 import type { RecapScene } from '../core/village/daily-recap';
 import { villageSummary } from '../core/village/summary';
 import type { SummaryEntry } from '../core/village/summary';
-import { advanceCommunity, communityForecast } from '../core/village/community';
+import { advanceCommunity, communityForecast, decideCommunityProject } from '../core/village/community';
 import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
@@ -694,6 +694,15 @@ const unread = computed(() => unreadCount(state));
 const summary = computed(() => villageSummary(state, mons.value, Date.now()));
 const communityView = computed(() => communityForecast(state, mons.value.map((mon) => mon.id)));
 const lastCommunityCycle = computed(() => state.community.history.at(-1) ?? null);
+const latestCommunityProject = computed(() => state.community.council.at(-1) ?? null);
+const communityProjectCost = computed(() => latestCommunityProject.value?.ingredients.map((ingredient) => `${itemName(ingredient.item as ItemId)} ×${ingredient.qty}`).join(' · ') ?? '');
+function chooseCouncilDecision(decision: 'apoiar' | 'adiar' | 'recusar'): void {
+  const project = latestCommunityProject.value;
+  if (!project) return;
+  const outcome = decideCommunityProject(state, project.id, decision, day.value);
+  say(outcome.message, 5500);
+  if (outcome.ok) changed();
+}
 const summaryMomentId = ref<string | null>(null);
 const album = computed(() => albumProgress(state));
 const saved = computed(() => savedMoments(state));
@@ -2374,7 +2383,7 @@ onBeforeUnmount(() => {
             <h4 id="community-summary-title">🏡 Comunidade e reservas</h4>
             <p>{{ communityView.residents }} morador(es) ativo(s) na Vila · bem-estar {{ state.community.welfare }}/100 · confiança no cuidado {{ state.community.trust }}/100.</p>
             <p class="hint">Conta cada ID uma vez entre moradores da equipe e Digital Pokémon; cartas guardadas fora da Vila não entram no cálculo.</p>
-            <p>Despensa: {{ communityView.foodAvailable }} porções disponíveis (cerca de {{ communityView.reserveDaysAtCurrentStock }} dia(s)) para {{ communityView.foodTarget }} porções estimadas por dia; reserva recomendada de três dias: {{ communityView.reserveTarget }}. Ingredientes e colheitas valem 1 porção; comida preparada vale 2.</p>
+            <p>Despensa: {{ communityView.foodAvailable }} porções disponíveis (cerca de {{ communityView.reserveDaysAtCurrentStock }} dia(s)) para {{ communityView.foodTarget }} porções estimadas por dia; reserva recomendada de três dias: {{ communityView.reserveTarget }}. Ingredientes e colheitas valem 1 porção; comida preparada vale 2.<span v-if="communityView.foodReservedForCouncil"> {{ communityView.foodReservedForCouncil }} porção(ões) estão reservadas para uma proposta do Conselho.</span></p>
             <p>Manutenção dos serviços comuns: até {{ communityView.maintenanceDue }} moedas por ciclo diário ({{ communityView.residents }} × 4, mais 10; população zero não paga). Seu saldo atual {{ communityView.maintenanceFunded ? 'cobre' : 'não cobre' }} essa estimativa.</p>
             <p v-if="lastCommunityCycle?.notice" role="status">Último ciclo, {{ lastCommunityCycle.day }}: {{ lastCommunityCycle.notice }}</p>
             <p v-else-if="lastCommunityCycle">Último ciclo, {{ lastCommunityCycle.day }}: {{ lastCommunityCycle.foodServed }} porções nutritivas para a meta de {{ lastCommunityCycle.foodTarget }}; {{ lastCommunityCycle.preferredServings }} porção(ões) corresponderam a preferências conhecidas; {{ lastCommunityCycle.maintenancePaid }}/{{ lastCommunityCycle.maintenanceDue }} moedas de manutenção pagas.</p>
@@ -2383,6 +2392,19 @@ onBeforeUnmount(() => {
               <li v-if="lastCommunityCycle.activities.length > 5" class="hint">E mais {{ lastCommunityCycle.activities.length - 5 }} atividade(s) no ciclo.</li>
             </ul>
             <p v-else class="hint">A estimativa é atualizada no próximo ciclo. Os saves antigos começam sem cobrança retroativa.</p>
+            <section v-if="latestCommunityProject" aria-labelledby="community-council-title">
+              <h5 id="community-council-title">🏛️ Conselho da Vila</h5>
+              <p>{{ latestCommunityProject.cause }}</p>
+              <template v-if="latestCommunityProject.status === 'proposto'">
+                <p>Se apoiar, a cozinha tentará usar estes ingredientes reais para preparar duas levas: {{ communityProjectCost }}. O estoque só muda quando um morador executar a tarefa.</p>
+                <div class="summary-actions">
+                  <button type="button" @click="chooseCouncilDecision('apoiar')">Apoiar projeto</button>
+                  <button type="button" @click="chooseCouncilDecision('adiar')">Adiar</button>
+                  <button type="button" @click="chooseCouncilDecision('recusar')">Recusar</button>
+                </div>
+              </template>
+              <p v-else>{{ latestCommunityProject.result || `Proposta ${latestCommunityProject.status}.` }}<span v-if="latestCommunityProject.participants.length"> Participou: {{ latestCommunityProject.participants.map(nameOf).join(', ') }}.</span></p>
+            </section>
             <p class="hint">Estimativa baseada no estoque atual; a simulação liquida no máximo sete dias de ausência ao retornar. A Vila não processa ciclos enquanto o app está fechado.</p>
           </section>
           <section>

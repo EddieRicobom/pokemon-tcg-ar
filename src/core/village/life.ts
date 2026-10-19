@@ -223,11 +223,21 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
 
 export const count = (s: VillageState, item: ItemId): number => s.inventory[item] ?? 0;
 
+/** Quantidade que ações manuais podem gastar depois de respeitar propostas ativas do Conselho. */
+export function availableCount(s: VillageState, item: ItemId): number {
+  const reserved = s.community.council.reduce((total, project) => {
+    if (project.status !== 'proposto' && project.status !== 'apoiado') return total;
+    return total + project.ingredients.filter((ingredient) => ingredient.item === item).reduce((sum, ingredient) => sum + ingredient.qty, 0);
+  }, 0);
+  return Math.max(0, count(s, item) - reserved);
+}
+
 export function canAfford(s: VillageState, cost: Partial<Record<ItemId, number>>): boolean {
-  return Object.entries(cost).every(([k, n]) => count(s, k as ItemId) >= (n ?? 0));
+  return Object.entries(cost).every(([k, n]) => availableCount(s, k as ItemId) >= (n ?? 0));
 }
 
 export function pay(s: VillageState, cost: Partial<Record<ItemId, number>>): void {
+  if (!canAfford(s, cost)) return;
   for (const [k, n] of Object.entries(cost)) s.inventory[k as ItemId] = count(s, k as ItemId) - (n ?? 0);
 }
 
@@ -361,7 +371,11 @@ export function upgradeHouse(s: VillageState): Interaction {
 
 export function describeCost(s: VillageState, cost: Partial<Record<ItemId, number>>): string {
   return Object.entries(cost)
-    .map(([k, n]) => `${itemName(k)} ${Math.min(count(s, k as ItemId), n ?? 0)}/${n}`)
+    .map(([k, n]) => {
+      const item = k as ItemId;
+      const reserved = count(s, item) - availableCount(s, item);
+      return `${itemName(item)} ${Math.min(availableCount(s, item), n ?? 0)}/${n}${reserved > 0 ? ` (${reserved} reservado(s) pelo Conselho)` : ''}`;
+    })
     .join(', ');
 }
 
@@ -549,7 +563,7 @@ export function giveGift(s: VillageState, id: string, types: readonly PokemonTyp
   const def = itemDef(item);
   if (def?.kind === 'food') {
     if (f.lastMeal === day) return { ok: false, text: 'Já comi hoje. Estou satisfeito, obrigado!', gained: 0 };
-    if (count(s, item) <= 0) return { ok: false, text: `Você não tem ${itemName(item)}.`, gained: 0 };
+    if (availableCount(s, item) <= 0) return { ok: false, text: `Esse alimento está reservado para uma proposta ativa do Conselho.`, gained: 0 };
     s.inventory[item] = count(s, item) - 1;
     f.lastMeal = day;
     const fav = favoriteFoodOf(types) === item;
@@ -561,7 +575,7 @@ export function giveGift(s: VillageState, id: string, types: readonly PokemonTyp
   }
   const req = f.request && f.request.day === day && !f.request.done ? f.request : null;
   if (req && req.item === item) {
-    if (count(s, item) < req.qty) return { ok: false, text: `Precisa de ${req.qty} ${itemName(item)} (você tem ${count(s, item)}).`, gained: 0 };
+    if (availableCount(s, item) < req.qty) return { ok: false, text: `Precisa de ${req.qty} ${itemName(item)} disponíveis; parte do estoque pode estar reservada para o Conselho.`, gained: 0 };
     s.inventory[item] = count(s, item) - req.qty;
     req.done = true;
     f.points = Math.min(100, f.points + 15);
@@ -569,7 +583,7 @@ export function giveGift(s: VillageState, id: string, types: readonly PokemonTyp
     return { ok: true, text: 'Era isso que eu queria! Obrigado! Tome, um presentinho meu.', gained: 15 };
   }
   if (f.lastGift === day) return { ok: false, text: 'Já ganhei presente hoje. Obrigado mesmo assim!', gained: 0 };
-  if (count(s, item) <= 0) return { ok: false, text: `Você não tem ${itemName(item)}.`, gained: 0 };
+  if (availableCount(s, item) <= 0) return { ok: false, text: `Esse item está reservado para uma proposta ativa do Conselho.`, gained: 0 };
   s.inventory[item] = count(s, item) - 1;
   f.lastGift = day;
   const fav = favoriteOf(types) === item;
@@ -611,8 +625,8 @@ export function buy(s: VillageState, id: ItemId, day: string): Interaction {
 export function sell(s: VillageState, id: ItemId, qty = 1): Interaction {
   const def = itemDef(id);
   const have = count(s, id);
-  const n = Math.min(have, Math.max(1, qty));
-  if (!def || n <= 0) return { ok: false, message: 'Você não tem isso.' };
+  const n = Math.min(availableCount(s, id), Math.max(1, qty));
+  if (!def || n <= 0) return { ok: false, message: availableCount(s, id) === 0 && have > 0 ? 'Esse estoque está reservado para uma proposta ativa do Conselho.' : 'Você não tem isso.' };
   if (def.sell <= 0) return { ok: false, message: `${def.name} é um prêmio de conquista: não dá para vender.` };
   if (def.kind === 'accessory' && Object.values(s.wear.mons).filter((w) => w === id).length + (s.wear.player === id ? 1 : 0) >= have) {
     return { ok: false, message: 'Esse acessório está sendo usado. Tire antes de vender.' };

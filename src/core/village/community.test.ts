@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { add, emptyVillage, normalizeVillage } from './life';
-import { advanceCommunity, communityForecast, COMMUNITY_RULES, normalizeCommunity, socialOpportunityFromMemories } from './community';
+import { add, cook, emptyVillage, giveGift, normalizeVillage, sell } from './life';
+import { advanceCommunity, communityForecast, COMMUNITY_RULES, decideCommunityProject, normalizeCommunity, socialOpportunityFromMemories } from './community';
 import { scoreActivity } from './vocations';
 
 const fresh = () => emptyVillage(9, { x: 10, y: 10 });
@@ -170,6 +170,74 @@ describe('economia diária da comunidade', () => {
     expect(community.residents.pikachu).toMatchObject({ energy: 0, interests: ['agricultura'], experience: { agricultura: 3 }, recentActivity: 'agricultura', rememberedActivity: null, completedActivities: 5 });
     expect(community.history[0]?.activities).toMatchObject([{ residentId: 'pikachu', activity: 'agricultura', result: 'Regou um cultivo.' }]);
     expect(community.history[0]?.activities).not.toContainEqual(expect.objectContaining({ residentId: 'inventado' }));
+  });
+
+  it('migra saves antigos para Conselho vazio e descarta projetos inválidos sem tocar no progresso', () => {
+    expect(normalizeCommunity({ welfare: 62 }).council).toEqual([]);
+    const normalized = normalizeCommunity({ council: [
+      { id: 'bad', kind: 'cozinha-reforco', output: 'pikachu', createdDay: '2026-10-19', status: 'apoiado', ingredients: [], participants: [], result: '' },
+      { id: 'good', kind: 'cozinha-reforco', output: 'suco-oran', createdDay: '2026-10-19', status: 'apoiado', ingredients: [{ item: 'oran', qty: 4 }], participants: ['charmander'], result: 'Em andamento.' },
+    ] });
+    expect(normalized.council).toHaveLength(1);
+    expect(normalized.council[0]).toMatchObject({ id: 'good', status: 'apoiado', ingredients: [{ item: 'oran', qty: 4 }] });
+  });
+
+  it('propõe cozinha por escassez real, reserva insumos e só conclui depois da tarefa apoiada', () => {
+    const poor = fresh();
+    poor.community.lastCycleDay = '2026-10-18';
+    poor.community.shortageDays = 1;
+    poor.town.level = 3;
+    poor.coins = 100;
+    advanceCommunity(poor, '2026-10-19', [{ id: 'charmander', types: ['fire'] }]);
+    expect(poor.community.council).toEqual([]);
+
+    const state = fresh();
+    state.community.lastCycleDay = '2026-10-18';
+    state.community.shortageDays = 1;
+    state.town.level = 3;
+    state.coins = 100;
+    add(state, 'oran', 4);
+
+    const proposalCycle = advanceCommunity(state, '2026-10-19', [{ id: 'charmander', types: ['fire'] }]).cycles[0]!;
+    const project = state.community.council[0]!;
+    expect(project).toMatchObject({ kind: 'cozinha-reforco', status: 'proposto', output: 'suco-oran', ingredients: [{ item: 'oran', qty: 4 }], participants: [], cause: expect.stringContaining('despensa ficou curta') });
+    expect(state.inventory.oran).toBe(4);
+    expect(proposalCycle.foodShortage).toBe(2);
+    expect(communityForecast(state, ['charmander']).foodReservedForCouncil).toBe(4);
+    expect(cook(state, 'suco-oran')).toMatchObject({ ok: false, message: expect.stringContaining('Faltam ingredientes') });
+    expect(sell(state, 'oran', 4).ok).toBe(false);
+    expect(giveGift(state, 'charmander', ['fire'], 'oran', '2026-10-19').ok).toBe(false);
+    expect(state.inventory.oran).toBe(4);
+
+    const supported = decideCommunityProject(state, project.id, 'apoiar', '2026-10-19');
+    expect(supported.ok).toBe(true);
+    expect(state.inventory.oran).toBe(4);
+    state.coins = 100;
+    const execution = advanceCommunity(state, '2026-10-20', [{ id: 'charmander', types: ['fire'] }]).cycles[0]!;
+    expect(execution.activities[0]).toMatchObject({ activity: 'culinaria', item: 'suco-oran', qty: 2, projectId: project.id });
+    expect(execution.consumed).toEqual([{ item: 'suco-oran', qty: 1 }]);
+    expect(state.inventory.oran).toBeUndefined();
+    expect(state.inventory['suco-oran']).toBe(1);
+    expect(state.community.council[0]).toMatchObject({ status: 'concluido', participants: ['charmander'], ingredients: [{ item: 'oran', qty: 4 }], result: expect.stringContaining('preparou 2') });
+    expect(advanceCommunity(state, '2026-10-20', [{ id: 'charmander', types: ['fire'] }]).cycles).toEqual([]);
+    expect(state.inventory['suco-oran']).toBe(1);
+  });
+
+  it('adiar ou recusar não gasta estoque e expira a proposta sem cobrar recursos', () => {
+    const state = fresh();
+    state.community.lastCycleDay = '2026-10-18';
+    state.community.shortageDays = 1;
+    state.town.level = 3;
+    state.coins = 100;
+    add(state, 'oran', 4);
+    advanceCommunity(state, '2026-10-19', [{ id: 'charmander', types: ['fire'] }]);
+    const project = state.community.council[0]!;
+    expect(decideCommunityProject(state, project.id, 'adiar', '2026-10-19').ok).toBe(true);
+    expect(state.inventory.oran).toBe(4);
+    expect(decideCommunityProject(state, project.id, 'recusar', '2026-10-19').ok).toBe(false);
+    advanceCommunity(state, '2026-10-26', []);
+    expect(state.community.council[0]).toMatchObject({ status: 'expirado', result: expect.stringContaining('sem gastar recursos') });
+    expect(state.inventory.oran).toBe(4);
   });
 
   it('preserva o aprendizado de um morador enquanto ele fica temporariamente fora da Vila', () => {
