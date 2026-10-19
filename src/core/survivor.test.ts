@@ -4,6 +4,7 @@ import {
   ARENA_H,
   ARENA_W,
   createSurvivorState,
+  ENEMY_BEHAVIOR_LIMITS,
   PLAYER_RADIUS,
   rollUpgrades,
   stepSurvivor,
@@ -146,8 +147,10 @@ describe('stepSurvivor', () => {
     const s = run(8);
     s.player.hp = 1;
     s.enemies.push({ id: 1, kind: 0, boss: false, grade: 'comum', x: s.player.x, y: s.player.y, hp: 999, maxHp: 999, speed: 0, damage: 50, radius: 13, hitFlashMs: 0 });
+    s.hostileProjectiles.push({ id: 20, x: s.player.x + 100, y: s.player.y, vx: 0, vy: 0, damage: 1, lifeMs: 500, size: 4 });
     const events = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.over).toBe(true);
+    expect(s.hostileProjectiles).toHaveLength(0);
     const over = events.find((e) => e.type === 'gameover');
     expect(over).toBeTruthy();
     if (over?.type === 'gameover') {
@@ -331,6 +334,55 @@ describe('golpes por tipo', () => {
     applyUpgrade(s, 'haste');
     expect(s.player.attackDamage).toBe(75);
     expect(s.player.attackCooldownMs).toBe(180);
+  });
+});
+
+describe('arquétipos de inimigos', () => {
+  function enemy(id: number, archetype: 'perseguidor' | 'flanqueador' | 'atirador' | 'protetor' | 'suporte', x: number, y: number, hp = 100): SurvivorEnemy {
+    return { id, kind: 0, boss: false, grade: 'comum', archetype, specialTimerMs: 0, x, y, hp, maxHp: hp, speed: 60, damage: 10, radius: 13, hitFlashMs: 0 };
+  }
+
+  it('atirador dispara, mantém alcance e o projétil sai ao atingir ou ultrapassar a arena', () => {
+    const s = quiet(createSurvivorState(1, { kindCount: 1 }));
+    const shooter = enemy(1, 'atirador', s.player.x + 300, s.player.y);
+    s.enemies.push(shooter);
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.hostileProjectiles).toHaveLength(1);
+    s.hostileProjectiles[0]!.x = ARENA_W + 100;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.hostileProjectiles).toHaveLength(0);
+  });
+
+  it('flanqueador usa uma aproximação lateral sem velocidade infinita', () => {
+    const s = quiet(createSurvivorState(1, { kindCount: 1 }));
+    const flanker = enemy(2, 'flanqueador', s.player.x + 240, s.player.y);
+    s.enemies.push(flanker);
+    const before = { x: flanker.x, y: flanker.y };
+    stepSurvivor(s, { dx: 0, dy: 0 }, 100);
+    expect(Math.hypot(flanker.x - before.x, flanker.y - before.y)).toBeLessThanOrEqual(7);
+    expect(flanker.y).not.toBe(before.y);
+  });
+
+  it('protetor e suporte têm recarga e atuam em aliados válidos', () => {
+    const s = quiet(createSurvivorState(1, { kindCount: 1 }));
+    const protectedAlly = enemy(3, 'perseguidor', s.player.x + 90, s.player.y, 100);
+    protectedAlly.hp = 40;
+    const protector = enemy(4, 'protetor', s.player.x + 80, s.player.y + 30, 100);
+    const support = enemy(5, 'suporte', s.player.x + 70, s.player.y - 30, 100);
+    s.enemies.push(protectedAlly, protector, support);
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(protectedAlly.hp).toBeGreaterThan(40);
+    expect(protectedAlly.protectedMs).toBeGreaterThan(0);
+  });
+
+  it('limita projéteis hostis mesmo com muitos atiradores', () => {
+    const s = quiet(createSurvivorState(1, { kindCount: 1 }));
+    for (let i = 0; i < ENEMY_BEHAVIOR_LIMITS.hostileProjectiles * 2; i++) {
+      const e = enemy(i + 1, 'atirador', s.player.x + 300, s.player.y + (i % 4) * 2);
+      s.enemies.push(e);
+    }
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.hostileProjectiles.length).toBeLessThanOrEqual(ENEMY_BEHAVIOR_LIMITS.hostileProjectiles);
   });
 });
 

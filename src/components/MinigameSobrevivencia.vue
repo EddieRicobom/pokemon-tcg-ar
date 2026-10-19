@@ -395,6 +395,17 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.stroke();
   }
   const scale = e.boss ? 1.2 : e.grade === 'chefao' ? 1.3 : e.grade === 'elite' ? 1.1 : 1;
+  if (e.archetype === 'protetor' || e.archetype === 'suporte' || e.protectedMs) {
+    ctx.save();
+    ctx.globalAlpha = e.protectedMs ? 0.55 : 0.3;
+    ctx.strokeStyle = e.protectedMs ? '#8ed8ff' : e.archetype === 'suporte' ? '#8ee6a0' : '#9bb8ff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(e.x, e.y - 8, e.protectedMs ? 21 : 17, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
   drawSprite(sprite, e.x, e.y, false, scale);
   // Efeitos do golpe no inimigo: um pontinho colorido em cima (queimando, lento, atordoado).
   const marks: string[] = [];
@@ -491,6 +502,21 @@ function draw(): void {
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, r * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  for (const proj of s.hostileProjectiles) {
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#ff5b5b';
+    ctx.beginPath();
+    ctx.arc(proj.x, proj.y, proj.size * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#fff0a8';
+    ctx.beginPath();
+    ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }

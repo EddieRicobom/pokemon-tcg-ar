@@ -18,6 +18,18 @@ Os novos inimigos também acompanham a viagem. Cada região tem quatro espécies
 
 O chefe periódico muda de espécie, mas continua com os números e o raio de colisão do chefe periódico. O mesmo vale para os selvagens e Pokémon de treinadores: espécie não introduz atributos, resistência por tipo, golpes ou XP extras. A escolha visual não consome o RNG do combate. Testes com sementes iguais comparam estado, eventos, upgrades e RNG antes/depois em ondas, treinadores, chefe final e infinito. Desligar o cenário regional simplifica o piso; o elenco continua seguindo o relógio da corrida.
 
+## Arquétipos de inimigos
+
+O motor separa aparência, números e comportamento. Os quatro tipos comuns alternam entre Perseguidor, Flanqueador, Atirador e Suporte por `kind`; chefes e grupos de chefão usam Protetor. O callback `enemyArchetypeFor` permite uma composição específica por região sem duplicar a movimentação.
+
+- **Perseguidor** mantém a aproximação direta.
+- **Flanqueador** escolhe um alvo lateral estável e continua limitado pela velocidade e pela arena.
+- **Atirador** mantém uma distância preferencial e dispara projéteis visíveis com alcance, recarga e limite global.
+- **Protetor** reduz temporariamente o dano recebido por aliados próximos, com quantidade máxima de alvos.
+- **Suporte** recupera uma fração limitada do HP de poucos aliados, com recarga longa e sem curar inimigos derrotados.
+
+Os limites de projéteis, alvos de cura e proteção ficam em `ENEMY_BEHAVIOR_LIMITS`. O desenho mostra a recarga por diferença de distância, projéteis hostis e os anéis de proteção/suporte. Esses perfis são mecânicas internas e não são apresentados como atributos oficiais dos Pokémon.
+
 As 45 espécies são carregadas antes da corrida. Sprites que falharem usam uma forma neutra, com aviso explícito no HUD, e são tentados novamente na próxima corrida. Não são substituídos por outro Pokémon. O teste do catálogo confere a região de origem, os metadados Walk e a existência dos 45 arquivos locais.
 
 ## Referência e próximos passos de equilíbrio
