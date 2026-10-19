@@ -33,14 +33,16 @@ export interface ItemDef {
   light?: boolean;
   /** Comida: pontos de amizade que dá ao ser presenteada. */
   feeds?: number;
+  /** Porções que sustentam a comunidade quando o item está no inventário. Ingrediente = 1; prato pronto = 2. */
+  nutrition?: number;
 }
 
-const m = (id: string, name: string, sell: number, price = 0): ItemDef => ({ id, name, kind: 'material', price, sell });
+const m = (id: string, name: string, sell: number, price = 0, nutrition = 0): ItemDef => ({ id, name, kind: 'material', price, sell, ...(nutrition > 0 ? { nutrition } : {}) });
 const f = (id: string, name: string, group: string, opt: Partial<ItemDef>): ItemDef => ({ id, name, kind: 'furniture', group, price: 0, sell: 10, ...opt });
 const s = (id: string, name: string, crop: string, minutes: number, price: number): ItemDef => ({ id, name, kind: 'seed', price, sell: Math.floor(price / 2), grows: { crop, stages: 3, minutes, yield: [2, 4] } });
-const c = (id: string, name: string, sell: number): ItemDef => ({ id, name, kind: 'crop', price: 0, sell });
+const c = (id: string, name: string, sell: number): ItemDef => ({ id, name, kind: 'crop', price: 0, sell, nutrition: 1 });
 const a = (id: string, name: string, slot: AccessorySlot, pos: AccessoryPos, price: number, opt: Partial<ItemDef> = {}): ItemDef => ({ id, name, kind: 'accessory', slot, pos, price, sell: Math.floor(price / 3), ...opt });
-const d = (id: string, name: string, feeds: number, sell: number, recipe: Record<string, number>): ItemDef => ({ id, name, kind: 'food', price: 0, sell, recipe, feeds });
+const d = (id: string, name: string, feeds: number, sell: number, recipe: Record<string, number>): ItemDef => ({ id, name, kind: 'food', price: 0, sell, recipe, feeds, nutrition: 2 });
 
 /** Cores dos móveis em variações (a arte usa a mesma chave). */
 export const COLOR_NAMES = {
@@ -80,23 +82,23 @@ export const ITEMS: readonly ItemDef[] = [
   // Materiais (coleta)
   m('madeira', 'Madeira', 4),
   m('pedra', 'Pedra', 4),
-  m('oran', 'Fruta Oran', 8),
-  m('pecha', 'Fruta Pecha', 8),
+  m('oran', 'Fruta Oran', 8, 0, 1),
+  m('pecha', 'Fruta Pecha', 8, 0, 1),
   m('flor', 'Flor', 5),
   m('concha', 'Concha', 12),
   m('tecido', 'Tecido', 10, 30),
   m('ferro', 'Ferro', 14, 40),
   m('areia', 'Areia', 3),
   m('argila', 'Argila', 6),
-  m('mel', 'Mel', 16),
-  m('champignon', 'Cogumelo', 9),
+  m('mel', 'Mel', 16, 0, 1),
+  m('champignon', 'Cogumelo', 9, 0, 1),
   m('pena', 'Pena', 7),
   m('cristal', 'Cristal', 40),
   m('ouro', 'Pepita de ouro', 90),
   m('la', 'Lã', 12),
   // Pesca
-  m('peixe', 'Peixe', 14),
-  m('dourado', 'Peixe-dourado', 55),
+  m('peixe', 'Peixe', 14, 0, 1),
+  m('dourado', 'Peixe-dourado', 55, 0, 1),
   m('estrela', 'Estrela-do-mar', 30),
   m('perola', 'Pérola', 120),
   m('alga', 'Alga', 3),
