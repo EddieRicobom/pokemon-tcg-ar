@@ -1109,7 +1109,17 @@ function updateWorldProgress(): void {
   if (discovery) {
     if (discovery.rewardCoins > 0) earnCoins(discovery.rewardCoins);
     if (discovery.rewardItem) add(state, discovery.rewardItem, 1);
-    say(`${discovery.text}${discovery.rewardCoins ? ` +${discovery.rewardCoins} moedas` : ''}${discovery.rewardItem ? ` e ${itemName(discovery.rewardItem)}` : ''}`);
+    if (discovery.rewardFurniture) add(state, discovery.rewardFurniture, 1);
+    // A página só nasce ao encontrar o ponto no mapa. Não reconstituímos "segredos" antigos em saves já avançados.
+    if (discovery.completed && discovery.diary && !state.diary.some((moment) => moment.id === `desc:${discovery.id}`)) {
+      const now = new Date();
+      state.diary = trimMoments([...state.diary, {
+        id: `desc:${discovery.id}`, t: now.getTime(), day: refreshDay(), hour: now.getHours(), tpl: `descoberta:${discovery.id}`, kind: 'solo', title: discovery.title, emoji: '🔎',
+        cast: [{ id: 'player', name: profile.name }], lines: [{ who: 0, text: discovery.diary }],
+        result: [`+${discovery.rewardCoins} moedas`, `+1 ${itemName(discovery.rewardItem!)}`, `Nova peça: ${itemName(discovery.rewardFurniture!)}`], fav: true,
+      }]);
+    }
+    say(`${discovery.text}${discovery.rewardCoins ? ` +${discovery.rewardCoins} moedas` : ''}${discovery.rewardItem ? ` e ${itemName(discovery.rewardItem)}` : ''}${discovery.rewardFurniture ? ` · nova peça: ${itemName(discovery.rewardFurniture)}` : ''}`);
     changed();
   }
   weeklyEvent.value = weeklyEventFor(state, refreshDay());

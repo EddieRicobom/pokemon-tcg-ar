@@ -14,6 +14,8 @@ describe('progresso vivo da Vila', () => {
     discoverAt(s, 10, 45);
     const done = discoverAt(s, 81, 16);
     expect(done?.completed).toBe(true);
+    expect(done).toMatchObject({ title: 'A passagem do lago', rewardFurniture: 'lampiao-cristal' });
+    expect(done?.diary).toContain('passagem escondida');
     expect(s.discoveries.found).toContain(done?.id);
     expect(discoverAt(s, 81, 16)).toBeNull();
   });
