@@ -88,6 +88,26 @@ export interface SurvivorEnemy {
   burnDps?: number;
   slowMs?: number;
   stunMs?: number;
+  /** Comportamento de gameplay; não representa atributo oficial da espécie. */
+  archetype?: SurvivorEnemyArchetype;
+  /** Recarga do comportamento especial, em milissegundos. */
+  specialTimerMs?: number;
+  /** Proteção temporária recebida de um Protetor aliado. */
+  protectedMs?: number;
+}
+
+/** Perfis internos de comportamento reutilizáveis entre regiões e espécies. */
+export type SurvivorEnemyArchetype = 'perseguidor' | 'flanqueador' | 'atirador' | 'protetor' | 'suporte';
+
+export interface SurvivorHostileProjectile {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  damage: number;
+  lifeMs: number;
+  size: number;
 }
 
 export interface SurvivorProjectile {
@@ -139,6 +159,7 @@ export interface SurvivorState {
   player: SurvivorPlayer;
   enemies: SurvivorEnemy[];
   projectiles: SurvivorProjectile[];
+  hostileProjectiles: SurvivorHostileProjectile[];
   orbs: SurvivorOrb[];
   fx: SurvivorFx[];
   kills: number;
@@ -171,6 +192,7 @@ export interface SurvivorState {
   evolutions: (dexId: number) => readonly SurvivorEvolutionOption[];
   /** Números dos stats da espécie de agora (para a evolução recalcular pelos stats da próxima forma). */
   profile: AttackProfile | null;
+  enemyArchetypeFor: ((enemy: Pick<SurvivorEnemy, 'kind' | 'boss' | 'grade'>) => SurvivorEnemyArchetype) | null;
 }
 
 export interface SurvivorEvolutionOption {
@@ -340,6 +362,15 @@ export const BALANCE = {
   bossEveryMs: 90_000,
 } as const;
 
+/** Limites de segurança para comportamentos especiais; são limites do motor, não atributos oficiais. */
+export const ENEMY_BEHAVIOR_LIMITS = {
+  maxEnemies: 220,
+  hostileProjectiles: 48,
+  healingTargetsPerPulse: 3,
+  maxProtectionTargets: 4,
+  specialEffectsPerStep: 8,
+} as const;
+
 export function xpForLevel(level: number): number {
   return Math.round(BALANCE.xpBase + level * BALANCE.xpPerLevel);
 }
@@ -347,6 +378,8 @@ export function xpForLevel(level: number): number {
 export interface CreateSurvivorOptions {
   /** Resolve apenas a espécie visual, preservando os números da onda e do grau. */
   enemyDexId?: (enemy: Readonly<SurvivorEnemy>, elapsedMs: number) => number;
+  /** Perfil interno do inimigo. Se omitido, os quatro tipos comuns alternam por `kind`. */
+  enemyArchetypeFor?: (enemy: Pick<SurvivorEnemy, 'kind' | 'boss' | 'grade'>) => SurvivorEnemyArchetype;
   /** Quantas espécies "comuns" o elenco desta corrida tem (o chefe usa o índice seguinte). Mínimo 1. */
   kindCount: number;
   /** Golpe de quem joga (ver `moveFor`); padrão `BASIC_MOVE`. */
@@ -401,6 +434,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     player,
     enemies: [],
     projectiles: [],
+    hostileProjectiles: [],
     orbs: [],
     fx: [],
     kills: 0,
@@ -421,6 +455,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     nextId: 1,
     evolutions: options.evolutions ?? (() => []),
     profile: prof ?? null,
+    enemyArchetypeFor: options.enemyArchetypeFor ?? null,
   };
 }
 
@@ -438,6 +473,11 @@ function spawnPoint(rng: Rng): { x: number; y: number } {
   return { x: -SPAWN_MARGIN, y: rng() * ARENA_H };
 }
 
+function defaultArchetype(kind: number, boss: boolean, grade: SurvivorEnemyGrade): SurvivorEnemyArchetype {
+  if (boss || grade === 'chefao') return 'protetor';
+  return (['perseguidor', 'flanqueador', 'atirador', 'suporte'] as const)[kind % 4]!;
+}
+
 /**
  * Nasce um inimigo. `grade` muda o tamanho, HP, dano e orbe de XP:
  *  - `comum`: o inimigo normal, do grupo que vai aparecendo sozinho.
@@ -446,6 +486,7 @@ function spawnPoint(rng: Rng): { x: number; y: number } {
  * `trainerId` liga os Pokémon do mesmo treinador para contarmos quando todos caíram.
  */
 function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGrade = 'comum', trainerId?: number): void {
+  if (state.enemies.length >= ENEMY_BEHAVIOR_LIMITS.maxEnemies && !boss && grade === 'comum') return;
   const { x, y } = spawnPoint(state.rng);
   const t = state.elapsedMs / 1000;
   if (boss) {
@@ -463,6 +504,8 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
       damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale),
       radius: 28,
       hitFlashMs: 0,
+        archetype: state.enemyArchetypeFor?.({ kind: state.kindCount, boss: true, grade: 'comum' }) ?? defaultArchetype(state.kindCount, true, 'comum'),
+        specialTimerMs: 1800,
     });
     return;
   }
@@ -473,9 +516,10 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   const dmgMul = grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1;
   const speed = (grade === 'comum' ? 55 + state.rng() * 25 : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
   const hp = Math.round(baseHp * hpMul * state.infiniteScale);
+  const kind = Math.floor(state.rng() * state.kindCount);
   addEnemy(state, {
     id: state.nextId++,
-    kind: Math.floor(state.rng() * state.kindCount),
+    kind,
     boss: false,
     grade,
     trainerId,
@@ -487,6 +531,8 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
     damage: Math.round(baseDmg * dmgMul * state.infiniteScale),
     radius: grade === 'chefao' ? 20 : grade === 'elite' ? 16 : 13,
     hitFlashMs: 0,
+    archetype: state.enemyArchetypeFor?.({ kind, boss: false, grade }) ?? defaultArchetype(kind, false, grade),
+    specialTimerMs: grade === 'chefao' ? 1800 : 2400,
   });
 }
 
@@ -611,7 +657,7 @@ const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
 function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }): void {
   const move = state.player.move;
-  e.hp -= damage;
+  e.hp -= e.protectedMs && e.protectedMs > 0 ? damage * 0.75 : damage;
   e.hitFlashMs = 90;
   switch (move.effect) {
     case 'queimar':
@@ -744,6 +790,98 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
 
+function nearestAlly(state: SurvivorState, source: SurvivorEnemy, maxDistance: number): SurvivorEnemy | null {
+  let best: SurvivorEnemy | null = null;
+  let bestDistance = maxDistance;
+  for (const other of state.enemies) {
+    if (other === source || other.hp <= 0) continue;
+    const distance = Math.hypot(other.x - source.x, other.y - source.y);
+    if (distance < bestDistance) {
+      best = other;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, target: SurvivorPlayer): void {
+  if (state.hostileProjectiles.length >= ENEMY_BEHAVIOR_LIMITS.hostileProjectiles) return;
+  const dx = target.x - enemy.x;
+  const dy = target.y - enemy.y;
+  const distance = Math.hypot(dx, dy) || 1;
+  const speed = 170;
+  state.hostileProjectiles.push({
+    id: state.nextId++, x: enemy.x, y: enemy.y, vx: (dx / distance) * speed, vy: (dy / distance) * speed,
+    damage: Math.max(1, Math.round(enemy.damage * 0.7)), lifeMs: 2600, size: 6,
+  });
+}
+
+function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: number): { x: number; y: number } {
+  const p = state.player;
+  const archetype = enemy.archetype ?? 'perseguidor';
+  let targetX = p.x;
+  let targetY = p.y;
+  const dxToPlayer = p.x - enemy.x;
+  const dyToPlayer = p.y - enemy.y;
+  const distance = Math.hypot(dxToPlayer, dyToPlayer) || 1;
+  enemy.specialTimerMs = (enemy.specialTimerMs ?? 2000) - dtMs;
+  if (enemy.protectedMs && enemy.protectedMs > 0) enemy.protectedMs = Math.max(0, enemy.protectedMs - dtMs);
+
+  if (archetype === 'flanqueador') {
+    const side = enemy.id % 2 === 0 ? 1 : -1;
+    const offset = 120;
+    targetX = p.x - (dyToPlayer / distance) * side * offset;
+    targetY = p.y + (dxToPlayer / distance) * side * offset;
+  } else if (archetype === 'atirador') {
+    // Mantém distância legível: aproxima-se até 280 e recua quando fica perto de 170.
+    const desired = distance < 170 ? -1 : distance > 280 ? 1 : 0;
+    targetX = enemy.x + (dxToPlayer / distance) * desired * 180;
+    targetY = enemy.y + (dyToPlayer / distance) * desired * 180;
+    if (enemy.specialTimerMs <= 0 && distance <= 420) {
+      spawnHostileProjectile(state, enemy, p);
+      enemy.specialTimerMs = 2400;
+    }
+  } else if (archetype === 'protetor') {
+    // A busca espacial só ocorre quando a habilidade pode disparar; o deslocamento normal continua barato.
+    if (enemy.specialTimerMs <= 0) {
+      const ally = nearestAlly(state, enemy, 260);
+      if (ally) {
+        targetX = ally.x;
+        targetY = ally.y;
+        let protectedCount = 0;
+        for (const other of state.enemies) {
+          if (other === enemy || other.hp <= 0 || protectedCount >= ENEMY_BEHAVIOR_LIMITS.maxProtectionTargets) continue;
+          if (Math.hypot(other.x - enemy.x, other.y - enemy.y) <= 120) {
+            other.protectedMs = Math.max(other.protectedMs ?? 0, 1400);
+            protectedCount++;
+          }
+        }
+        enemy.specialTimerMs = 4200;
+      }
+      else enemy.specialTimerMs = 1000;
+    }
+  } else if (archetype === 'suporte') {
+    if (enemy.specialTimerMs <= 0) {
+      const ally = nearestAlly(state, enemy, 320);
+      if (ally) {
+        targetX = ally.x;
+        targetY = ally.y;
+        let healed = 0;
+        for (const other of state.enemies) {
+          if (other === enemy || other.hp <= 0 || healed >= ENEMY_BEHAVIOR_LIMITS.healingTargetsPerPulse) continue;
+          if (Math.hypot(other.x - enemy.x, other.y - enemy.y) <= 110 && other.hp < other.maxHp) {
+            other.hp = Math.min(other.maxHp, other.hp + Math.max(1, Math.round(other.maxHp * 0.08)));
+            healed++;
+          }
+        }
+        enemy.specialTimerMs = 5200;
+      }
+      else enemy.specialTimerMs = 1200;
+    }
+  }
+  return { x: targetX, y: targetY };
+}
+
 /**
  * Avança `dtMs` de jogo. Não faz nada (devolve `[]`) se `state.over` ou se há um upgrade pendente — quem chama
  * (o componente Vue) deve pausar o laço de desenho/tempo nesses casos e só retomar depois de `applyUpgrade`.
@@ -793,8 +931,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     spawnTrainer(state, state.infinite ? 6 : 3, false, events);
   }
 
-  // Inimigos perseguem o jogador e batem de perto (atordoado não anda; lento anda pela metade; queimado perde vida).
+  // IA parametrizada: todos compartilham a mesma resolução de movimento/colisão, mas cada arquétipo
+  // escolhe um alvo e uma ação especial limitada por recarga.
   for (const e of state.enemies) {
+    if (e.hp <= 0) continue;
     if (e.hitFlashMs > 0) e.hitFlashMs = Math.max(0, e.hitFlashMs - dtMs);
     if (e.burnMs && e.burnMs > 0) {
       e.hp -= (e.burnDps ?? 0) * (Math.min(dtMs, e.burnMs) / 1000);
@@ -804,17 +944,33 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (e.slowMs && e.slowMs > 0) e.slowMs = Math.max(0, e.slowMs - dtMs);
     const stunned = !!e.stunMs && e.stunMs > 0;
     if (stunned) e.stunMs = Math.max(0, (e.stunMs ?? 0) - dtMs);
-    const dx = p.x - e.x;
-    const dy = p.y - e.y;
+    const target = updateEnemyBehavior(state, e, dtMs);
+    const dx = target.x - e.x;
+    const dy = target.y - e.y;
     const d = Math.hypot(dx, dy) || 1;
     const speed = stunned ? 0 : e.slowMs && e.slowMs > 0 ? e.speed * 0.5 : e.speed;
     e.x += (dx / d) * speed * dt;
     e.y += (dy / d) * speed * dt;
-    if (d < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
+    const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
+    if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
       p.hp = Math.max(0, p.hp - e.damage);
       p.invulnMs = 500;
     }
   }
+
+  // Projéteis hostis têm alcance, dano e quantidade limitados; cada um some ao tocar o jogador.
+  state.hostileProjectiles = state.hostileProjectiles.filter((proj) => {
+    proj.x += proj.vx * dt;
+    proj.y += proj.vy * dt;
+    proj.lifeMs -= dtMs;
+    if (proj.lifeMs <= 0 || proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
+    if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size && p.invulnMs <= 0) {
+      p.hp = Math.max(0, p.hp - proj.damage);
+      p.invulnMs = 500;
+      return false;
+    }
+    return true;
+  });
 
   // Autoataque com o golpe do tipo (projétil, aura ou área).
   p.attackTimerMs = Math.max(0, p.attackTimerMs - dtMs);
@@ -884,6 +1040,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       // Chefão final caído no modo normal: a corrida termina com vitória (fecha o resumo e destrava o infinito).
       if (final && !state.infinite && !state.over) {
         state.over = true;
+        state.projectiles = [];
+        state.hostileProjectiles = [];
+        state.fx = [];
         events.push({
           type: 'gameover',
           summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite },
@@ -904,6 +1063,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   if (p.hp <= 0 && !state.over) {
     state.over = true;
+    state.projectiles = [];
+    state.hostileProjectiles = [];
+    state.fx = [];
     events.push({
       type: 'gameover',
       summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite },
