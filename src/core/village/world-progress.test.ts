@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { add, emptyVillage, normalizeVillage } from './life';
 import { claimRequest } from './requests';
-import { discoverAt, normalizeWorldProgress, requestInfluence, resolveExpeditions, startExpedition, weeklyEventFor, weeklyModifiers } from './world-progress';
+import { completeFestival, discoverAt, festivalRound, normalizeWorldProgress, requestInfluence, resolveExpeditions, startExpedition, weeklyEventFor, weeklyModifiers } from './world-progress';
 
 const fresh = () => emptyVillage(20261017, { x: 45, y: 41 });
 
@@ -55,8 +55,20 @@ describe('progresso vivo da Vila', () => {
     expect(result[0]?.result?.item).toBe('concha');
   });
 
+  it('deixa o festival semanal jogável uma vez e persiste o resultado', () => {
+    const s = fresh();
+    const round = festivalRound(s, '2026-10-17');
+    expect(round.played).toBe(false);
+    const correct = round.choices.findIndex((choice) => round.prompt.includes(choice.replace('Barraca das ', '')));
+    const result = completeFestival(s, '2026-10-17', correct);
+    expect(result.ok).toBe(true);
+    expect(s.weekly.festivalWon).toBe(true);
+    expect(festivalRound(s, '2026-10-18').played).toBe(true);
+    expect(completeFestival(s, '2026-10-18', 1).ok).toBe(false);
+  });
+
   it('normaliza saves antigos sem progresso de mundo', () => {
-    expect(normalizeWorldProgress({})).toEqual({ discoveries: { steps: {}, found: [], lastPlace: null }, weekly: { week: '', eventId: '' }, expeditions: [] });
+    expect(normalizeWorldProgress({})).toEqual({ discoveries: { steps: {}, found: [], lastPlace: null }, weekly: { week: '', eventId: '', festivalWeek: '', festivalWon: false }, expeditions: [] });
   });
 
   it('preserva pedidos de descoberta ao salvar e carregar a Vila', () => {

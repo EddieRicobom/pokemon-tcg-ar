@@ -41,6 +41,7 @@ async function start(): Promise<void> {
     running = await startBadgeCase({
       canvas: canvas.value,
       designs: designs.value,
+      regionName: regionInfo.value.name,
       won: won.value,
       polish: (order) => polishOf(order),
       onRub: (order, distance) => rubPolish(order, distance),

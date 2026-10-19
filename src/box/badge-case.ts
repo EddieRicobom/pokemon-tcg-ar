@@ -51,6 +51,8 @@ import { drawBadgeFace, drawBadgeMask } from './badge-art';
 export interface BadgeCaseOptions {
   canvas: HTMLCanvasElement;
   designs?: readonly BadgeDesign[];
+  /** Nome da região da Liga, mostrado no forro da tampa. */
+  regionName?: string;
   /** Ginásios vencidos (ordens). Só esses ganham insígnia no encaixe. */
   won: readonly number[];
   /** Brilho atual de cada insígnia conquistada (0 a 1). */
@@ -130,7 +132,7 @@ function leatherTexture(size = 256): CanvasTexture {
 }
 
 /** Veludo do forro, com o título da Liga em dourado na tampa. */
-function velvetTexture(title: string | null): CanvasTexture {
+function velvetTexture(title: string | null, subtitle = ''): CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 512;
   c.height = 320;
@@ -154,7 +156,7 @@ function velvetTexture(title: string | null): CanvasTexture {
     ctx.textBaseline = 'middle';
     ctx.fillText(title, c.width / 2, c.height / 2 - 18);
     ctx.font = 'italic 24px Georgia, serif';
-    ctx.fillText('Insígnias de Sinnoh', c.width / 2, c.height / 2 + 30);
+    ctx.fillText(subtitle, c.width / 2, c.height / 2 + 30);
   }
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
@@ -305,7 +307,7 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
   lid.position.set(0, LID_H / 2, D / 2);
   lid.castShadow = true;
   lidPivot.add(lid);
-  const lidLining = new Mesh(keep(new PlaneGeometry(W - 0.16, D - 0.16)), keep(new MeshStandardMaterial({ map: keep(velvetTexture('Liga Pokémon')), roughness: 1 })));
+  const lidLining = new Mesh(keep(new PlaneGeometry(W - 0.16, D - 0.16)), keep(new MeshStandardMaterial({ map: keep(velvetTexture('Liga Pokémon', options.regionName ? `Insígnias de ${options.regionName}` : 'Insígnias regionais')), roughness: 1 })));
   lidLining.rotation.x = Math.PI / 2;
   lidLining.position.set(0, -0.002, D / 2);
   lidPivot.add(lidLining);

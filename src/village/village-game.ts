@@ -73,6 +73,7 @@ export type Target =
   | { kind: 'crop'; x: number; y: number }
   | { kind: 'shop' }
   | { kind: 'bell' }
+  | { kind: 'board' }
   | { kind: 'building'; building: Building }
   | { kind: 'tile'; x: number; y: number; tile: Tile }
   | { kind: 'nothing' };
@@ -773,7 +774,11 @@ export class VillageGame {
       const b = buildingAt(this.map, f.x, f.y);
       return b ? { kind: 'building', building: b } : { kind: 'nothing' };
     }
-    if (tile === 'deco' && this.map.decor.some((d) => d.kind === 'bell' && f.x >= d.x && f.x < d.x + d.w && f.y >= d.y && f.y < d.y + d.h)) return { kind: 'bell' };
+    if (tile === 'deco') {
+      const decor = this.map.decor.find((d) => f.x >= d.x && f.x < d.x + d.w && f.y >= d.y && f.y < d.y + d.h);
+      if (decor?.kind === 'bell') return { kind: 'bell' };
+      if (decor?.kind === 'board') return { kind: 'board' };
+    }
     if (tile === 'lamp' || tile === 'deco') return { kind: 'nothing' };
     if (tile !== 'grass' && tile !== 'path' && tile !== 'trail' && tile !== 'plaza' && tile !== 'field') return { kind: 'tile', x: f.x, y: f.y, tile };
     return { kind: 'nothing' };
@@ -1312,7 +1317,28 @@ export class VillageGame {
           y: d.y + d.h,
           draw: () => {
             if (tree) drawSwayed(img, sx(d.x + d.w / 2) - (img.width * scale) / 2, sy(d.y + d.h) - img.height * scale, img.width * scale, img.height * scale, sway(d.x, d.y, 0.02));
-            else stand(img, sx(d.x + d.w / 2), sy(d.y + d.h));
+            else {
+              const at = stand(img, sx(d.x + d.w / 2), sy(d.y + d.h));
+              // O recorte do tileset dá a madeira; os papéis por cima deixam claro que este é o mural vivo da praça,
+              // sem trocar a arte original por uma placa genérica. Variam só quando há avisos reais para consultar.
+              if (d.kind === 'board') {
+                const pending = this.state.requests.items.some((request) => !request.done) || (this.state.requests.story ?? []).some((request) => !request.done);
+                const paper = (x: number, y: number, color: string, pin: string) => {
+                  ctx.fillStyle = 'rgba(35, 24, 15, 0.62)';
+                  ctx.fillRect(x + scale, y + scale, 9 * scale, 8 * scale);
+                  ctx.fillStyle = color;
+                  ctx.fillRect(x, y, 9 * scale, 8 * scale);
+                  ctx.fillStyle = 'rgba(93, 70, 44, 0.78)';
+                  ctx.fillRect(x + 2 * scale, y + 3 * scale, 5 * scale, scale);
+                  ctx.fillRect(x + 2 * scale, y + 5 * scale, 4 * scale, scale);
+                  ctx.fillStyle = pin;
+                  ctx.fillRect(x + 4 * scale, y, scale, 2 * scale);
+                };
+                paper(at.x + 12 * scale, at.y + 13 * scale, '#f6df9e', '#d84a43');
+                paper(at.x + 24 * scale, at.y + 11 * scale, pending ? '#d8ecff' : '#e7e2d3', pending ? '#386ec4' : '#9b815d');
+                this.drawTag(sx(d.x + d.w / 2), at.y - 2 * scale + Math.sin(now / 500) * scale, pending ? '📌' : '🎪');
+              }
+            }
           },
         });
       }

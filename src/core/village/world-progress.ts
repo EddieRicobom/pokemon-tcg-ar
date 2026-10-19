@@ -38,6 +38,9 @@ export interface WeeklyEvent {
 export interface WeeklyState {
   week: string;
   eventId: string;
+  /** Semana do festival já jogado; impede prêmio repetido sem apagar o evento da semana. */
+  festivalWeek: string;
+  festivalWon: boolean;
 }
 
 export interface Expedition {
@@ -93,7 +96,7 @@ const DISCOVERIES: Record<string, DiscoveryDefinition> = {
 export const DISCOVERY_DEFS = DISCOVERIES;
 
 export function emptyWorldProgress(): { discoveries: DiscoveryState; weekly: WeeklyState; expeditions: Expedition[] } {
-  return { discoveries: { steps: {}, found: [], lastPlace: null }, weekly: { week: '', eventId: '' }, expeditions: [] };
+  return { discoveries: { steps: {}, found: [], lastPlace: null }, weekly: { week: '', eventId: '', festivalWeek: '', festivalWon: false }, expeditions: [] };
 }
 
 function discoveryRequest(state: VillageState, id: string): VillageRequest | undefined {
@@ -127,7 +130,7 @@ export function normalizeWorldProgress(raw: unknown): ReturnType<typeof emptyWor
   const w = r.weekly && typeof r.weekly === 'object' ? r.weekly as Partial<WeeklyState> : {};
   const expeditions = Array.isArray(r.expeditions) ? r.expeditions.filter((e): e is Expedition => !!e && typeof e === 'object' && typeof e.id === 'string' && typeof e.monId === 'string' && typeof e.place === 'string' && Number.isFinite(e.startedAt) && Number.isFinite(e.finishAt)).slice(-3) : [];
   const lastPlace = d && typeof d === 'object' && 'lastPlace' in d && typeof d.lastPlace === 'string' && ['lago', 'parque', 'bosque', 'fazenda', 'praca'].includes(d.lastPlace) ? d.lastPlace as DiscoveryPlace : null;
-  return { discoveries: { steps, found, lastPlace }, weekly: { week: typeof w.week === 'string' ? w.week.slice(0, 10) : '', eventId: typeof w.eventId === 'string' ? w.eventId.slice(0, 40) : '' }, expeditions };
+  return { discoveries: { steps, found, lastPlace }, weekly: { week: typeof w.week === 'string' ? w.week.slice(0, 10) : '', eventId: typeof w.eventId === 'string' ? w.eventId.slice(0, 40) : '', festivalWeek: typeof w.festivalWeek === 'string' ? w.festivalWeek.slice(0, 10) : '', festivalWon: w.festivalWon === true }, expeditions };
 }
 
 function placeFor(x: number, y: number): DiscoveryPlace | null {
@@ -177,8 +180,45 @@ export function weeklyEventFor(state: VillageState, day: string): WeeklyEvent {
   const week = weekKey(day);
   const index = Math.abs(state.seed + Date.parse(`${week}T00:00:00Z`) / 86_400_000) % WEEKLY_EVENTS.length;
   const event = WEEKLY_EVENTS[index]!;
-  state.weekly = { week, eventId: event.id };
+  state.weekly = state.weekly.week === week
+    ? { ...state.weekly, eventId: event.id }
+    : { week, eventId: event.id, festivalWeek: '', festivalWon: false };
   return event;
+}
+
+const FESTIVAL_CHOICES = ['Barraca das fitas', 'Barraca das lanternas', 'Barraca das flores'] as const;
+
+function festivalChoiceIndex(state: VillageState): number {
+  return Math.abs(state.seed + Date.parse(`${state.weekly.week}T00:00:00Z`) / 86_400_000) % FESTIVAL_CHOICES.length;
+}
+
+export interface FestivalRound {
+  title: string;
+  prompt: string;
+  choices: readonly string[];
+  played: boolean;
+}
+
+/** Desafio curto e determinístico do festival: a barraca certa muda toda semana para cada Vila. */
+export function festivalRound(state: VillageState, day: string): FestivalRound {
+  const event = weeklyEventFor(state, day);
+  const correct = festivalChoiceIndex(state);
+  return {
+    title: event.title,
+    prompt: `A placa do festival diz: “Procure a ${FESTIVAL_CHOICES[correct]!.replace('Barraca das ', '')}”.`,
+    choices: FESTIVAL_CHOICES,
+    played: state.weekly.festivalWeek === state.weekly.week,
+  };
+}
+
+export function completeFestival(state: VillageState, day: string, choice: number): { ok: boolean; title: string; text: string; coins: number } {
+  const round = festivalRound(state, day);
+  if (round.played) return { ok: false, title: round.title, text: 'A brincadeira desta semana já terminou.', coins: 0 };
+  const correct = festivalChoiceIndex(state);
+  const won = choice === correct;
+  state.weekly.festivalWeek = state.weekly.week;
+  state.weekly.festivalWon = won;
+  return { ok: true, title: round.title, text: won ? 'Você encontrou a barraca indicada e ganhou os aplausos da praça!' : 'Você escolheu outra barraca, mas entrou na brincadeira e ajudou a animar a praça.', coins: won ? 25 : 8 };
 }
 
 export function weeklyModifiers(state: VillageState): WeeklyModifiers {

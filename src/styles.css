@@ -5991,6 +5991,10 @@ body.no-scroll .reward-toasts {
   white-space: nowrap;
 }
 
+/* O HUD não começa o joystick, mas os seus botões precisam receber o toque. */
+.survivor-hud button { pointer-events: auto; touch-action: manipulation; }
+.survivor-xp small { font: inherit; opacity: 0.78; }
+
 .survivor-minimap {
   position: absolute;
   z-index: 2;
