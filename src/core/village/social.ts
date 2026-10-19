@@ -1,6 +1,6 @@
 import type { Rng } from '../battle';
 import { itemDef } from './catalog';
-import { add, count, friendOf, itemName } from './life';
+import { add, availableCount, count, friendOf, itemName } from './life';
 import type { ItemId, VillageState } from './life';
 import { hash, personalityOf } from './personality';
 import { MAX_SAVED, MAX_SOCIAL_PLANS, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
@@ -909,7 +909,7 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
   const { tpl, ctx, cast } = scene;
   const day = ctx.env.day;
   const option = choice !== null ? tpl.choice?.options[choice] : undefined;
-  const canPay = !option?.needs || count(state, option.needs.item) >= option.needs.qty;
+  const canPay = !option?.needs || availableCount(state, option.needs.item) >= option.needs.qty;
   const used = option && canPay ? option : undefined;
   if (used?.needs) state.inventory[used.needs.item] = count(state, used.needs.item) - used.needs.qty;
   const spec = used ? used.outcome : tpl.outcome;

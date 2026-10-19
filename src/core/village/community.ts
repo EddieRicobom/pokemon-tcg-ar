@@ -15,10 +15,26 @@ export const COMMUNITY_RULES = {
   historyLimit: 30,
   reserveDays: 3,
   residentLimit: 100,
+  councilHistoryLimit: 20,
   initialEnergy: 70,
   taskEnergyCost: 12,
   restEnergyGain: 18,
 } as const;
+
+export type CouncilProjectStatus = 'proposto' | 'apoiado' | 'adiado' | 'recusado' | 'concluido' | 'expirado';
+
+export interface CommunityProject {
+  id: string;
+  kind: 'cozinha-reforco';
+  output: string;
+  createdDay: string;
+  decisionDay: string;
+  cause: string;
+  status: CouncilProjectStatus;
+  participants: string[];
+  ingredients: { item: string; qty: number }[];
+  result: string;
+}
 
 export interface CommunityResidentProgress {
   energy: number;
@@ -38,6 +54,7 @@ export interface CommunityActivityRecord {
   qty?: number;
   x?: number;
   y?: number;
+  projectId?: string;
 }
 
 export interface CommunityCycle {
@@ -68,11 +85,14 @@ export interface CommunityState {
   history: CommunityCycle[];
   /** Energia e interesses aprendidos nas atividades, associados ao ID estável do morador. */
   residents: Record<string, CommunityResidentProgress>;
+  /** Projetos do Conselho com causa e resultado; o histórico é limitado para preservar o save. */
+  council: CommunityProject[];
 }
 
 export interface CommunityForecast {
   residents: number;
   foodAvailable: number;
+  foodReservedForCouncil: number;
   foodTarget: number;
   mealsAtCurrentStock: number;
   reserveTarget: number;
@@ -90,7 +110,7 @@ export interface CommunityResident {
   socialOpportunity?: number;
 }
 
-export const emptyCommunity = (): CommunityState => ({ lastCycleDay: '', welfare: 70, trust: 70, shortageDays: 0, history: [], residents: {} });
+export const emptyCommunity = (): CommunityState => ({ lastCycleDay: '', welfare: 70, trust: 70, shortageDays: 0, history: [], residents: {}, council: [] });
 
 function integer(value: unknown, min = 0, max = 999999): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, Math.floor(value))) : 0;
@@ -127,7 +147,7 @@ export function normalizeCommunity(raw: unknown): CommunityState {
   ).slice(-COMMUNITY_RULES.historyLimit).map((entry) => ({
     day: entry.day.slice(0, 10), residents: integer(entry.residents, 0, 500), foodTarget: integer(entry.foodTarget),
     foodServed: integer(entry.foodServed), preferredServings: integer(entry.preferredServings), consumed: Array.isArray(entry.consumed) ? entry.consumed.filter((item) => item && typeof item.item === 'string').slice(0, 100).map((item) => ({ item: item.item.slice(0, 60), qty: integer(item.qty, 0, 999) })) : [],
-    activities: Array.isArray(entry.activities) ? entry.activities.filter((item) => item && typeof item.residentId === 'string' && activity(item.activity)).slice(0, COMMUNITY_RULES.residentLimit).map((item) => ({ residentId: item.residentId.slice(0, 128), activity: item.activity, icon: typeof item.icon === 'string' ? item.icon.slice(0, 8) : '💭', result: typeof item.result === 'string' ? item.result.slice(0, 240) : '', ...(typeof item.item === 'string' ? { item: item.item.slice(0, 60) } : {}), ...(Number.isInteger(item.qty) ? { qty: integer(item.qty, 0, 999) } : {}), ...(Number.isInteger(item.x) ? { x: integer(item.x, -1000, 1000) } : {}), ...(Number.isInteger(item.y) ? { y: integer(item.y, -1000, 1000) } : {}) })) : [],
+    activities: Array.isArray(entry.activities) ? entry.activities.filter((item) => item && typeof item.residentId === 'string' && activity(item.activity)).slice(0, COMMUNITY_RULES.residentLimit).map((item) => ({ residentId: item.residentId.slice(0, 128), activity: item.activity, icon: typeof item.icon === 'string' ? item.icon.slice(0, 8) : '💭', result: typeof item.result === 'string' ? item.result.slice(0, 240) : '', ...(typeof item.item === 'string' ? { item: item.item.slice(0, 60) } : {}), ...(Number.isInteger(item.qty) ? { qty: integer(item.qty, 0, 999) } : {}), ...(Number.isInteger(item.x) ? { x: integer(item.x, -1000, 1000) } : {}), ...(Number.isInteger(item.y) ? { y: integer(item.y, -1000, 1000) } : {}), ...(typeof item.projectId === 'string' ? { projectId: item.projectId.slice(0, 100) } : {}) })) : [],
     maintenanceDue: integer(entry.maintenanceDue), maintenancePaid: integer(entry.maintenancePaid), foodShortage: integer(entry.foodShortage),
     servicesUnfunded: integer(entry.servicesUnfunded), welfare: integer(entry.welfare, 0, 100), trust: integer(entry.trust, 0, 100),
     shortageDays: integer(entry.shortageDays), notice: typeof entry.notice === 'string' ? entry.notice.slice(0, 240) : '',
@@ -139,6 +159,21 @@ export function normalizeCommunity(raw: unknown): CommunityState {
       if (id.length > 0 && id.length <= 128) residents[id] = normalizeResidentProgress(progress);
     }
   }
+  const council: CommunityProject[] = Array.isArray(value.council) ? value.council
+    .filter((entry): entry is CommunityProject => !!entry && typeof entry === 'object' && typeof entry.id === 'string' && entry.kind === 'cozinha-reforco' && typeof entry.output === 'string' && !!itemDef(entry.output)?.recipe && typeof entry.createdDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.createdDay) && ['proposto', 'apoiado', 'adiado', 'recusado', 'concluido', 'expirado'].includes(entry.status) && Array.isArray(entry.ingredients) && entry.ingredients.length > 0)
+    .slice(-COMMUNITY_RULES.councilHistoryLimit)
+    .map((entry) => ({
+      id: entry.id.slice(0, 100),
+      kind: 'cozinha-reforco',
+      output: typeof entry.output === 'string' && itemDef(entry.output)?.kind === 'food' ? entry.output.slice(0, 60) : '',
+      createdDay: entry.createdDay,
+      decisionDay: typeof entry.decisionDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.decisionDay) ? entry.decisionDay : '',
+      cause: typeof entry.cause === 'string' ? entry.cause.slice(0, 180) : '',
+      status: entry.status,
+      participants: Array.isArray(entry.participants) ? [...new Set(entry.participants.filter((id): id is string => typeof id === 'string' && id.length > 0).map((id) => id.slice(0, 128)))].slice(0, 3) : [],
+      ingredients: Array.isArray(entry.ingredients) ? entry.ingredients.filter((ingredient) => ingredient && typeof ingredient.item === 'string' && itemDef(ingredient.item) && Number.isInteger(ingredient.qty) && ingredient.qty > 0).slice(0, 12).map((ingredient) => ({ item: ingredient.item.slice(0, 60), qty: integer(ingredient.qty, 1, 999) })) : [],
+      result: typeof entry.result === 'string' ? entry.result.slice(0, 240) : '',
+    })) : [];
   return {
     lastCycleDay,
     welfare: integer(value.welfare, 0, 100) || (value.welfare === 0 ? 0 : base.welfare),
@@ -146,11 +181,21 @@ export function normalizeCommunity(raw: unknown): CommunityState {
     shortageDays: integer(value.shortageDays, 0, 365),
     history,
     residents,
+    council,
   };
 }
 
-function portionsAvailable(state: Pick<VillageState, 'inventory'>): number {
-  return ITEMS.reduce((sum, item) => sum + (item.nutrition ?? 0) * (state.inventory[item.id] ?? 0), 0);
+function reservedProjectIngredients(state: Pick<VillageState, 'community'>): Map<string, number> {
+  const reserved = new Map<string, number>();
+  for (const project of state.community.council) {
+    if (project.status !== 'proposto' && project.status !== 'apoiado') continue;
+    for (const ingredient of project.ingredients) reserved.set(ingredient.item, (reserved.get(ingredient.item) ?? 0) + ingredient.qty);
+  }
+  return reserved;
+}
+
+function portionsAvailable(state: Pick<VillageState, 'inventory'>, reserved = new Map<string, number>()): number {
+  return ITEMS.reduce((sum, item) => sum + (item.nutrition ?? 0) * Math.max(0, (state.inventory[item.id] ?? 0) - (reserved.get(item.id) ?? 0)), 0);
 }
 
 function residentsOf(input: readonly (string | CommunityResident)[]): CommunityResident[] {
@@ -173,13 +218,74 @@ function activeCount(ids: readonly (string | CommunityResident)[]): number {
   return Math.min(COMMUNITY_RULES.residentLimit, residentsOf(ids).length);
 }
 
-export function communityForecast(state: Pick<VillageState, 'inventory' | 'coins'>, residentIds: readonly string[]): CommunityForecast {
+export type CouncilDecision = 'apoiar' | 'adiar' | 'recusar';
+
+export function decideCommunityProject(state: VillageState, projectId: string, decision: CouncilDecision, day: string): { ok: boolean; message: string } {
+  const project = state.community.council.find((entry) => entry.id === projectId && entry.status === 'proposto');
+  if (!project) return { ok: false, message: 'Essa proposta já foi decidida ou não está mais disponível.' };
+  project.decisionDay = day;
+  if (decision === 'apoiar') {
+    project.status = 'apoiado';
+    project.result = 'A comunidade apoiou o projeto; os ingredientes continuam compartilhados com a despensa até a tarefa ser executada.';
+    return { ok: true, message: 'Proposta apoiada. Ela só vai consumir ingredientes se um morador conseguir executar a tarefa.' };
+  }
+  project.status = decision === 'adiar' ? 'adiado' : 'recusado';
+  project.result = decision === 'adiar' ? 'A proposta ficou para uma próxima reunião.' : 'O Conselho registrou que a proposta foi recusada.';
+  return { ok: true, message: project.result };
+}
+
+function expireCouncilProposals(state: VillageState, day: string): void {
+  for (const project of state.community.council) {
+    if ((project.status !== 'proposto' && project.status !== 'adiado' && project.status !== 'apoiado') || !project.createdDay) continue;
+    const age = Date.parse(`${day}T12:00:00Z`) - Date.parse(`${project.createdDay}T12:00:00Z`);
+    if (age >= 7 * 86_400_000) {
+      project.status = 'expirado';
+      project.result = 'A necessidade mudou antes da próxima reunião; a proposta expirou sem gastar recursos.';
+    }
+  }
+}
+
+function maybeProposeKitchenProject(state: VillageState, day: string, residents: readonly CommunityResident[]): void {
+  if (state.community.shortageDays < 1 || state.town.level < 3 || state.community.council.some((entry) => entry.status === 'proposto' || entry.status === 'apoiado')) return;
+  const age = state.community.council.at(-1)
+    ? Date.parse(`${day}T12:00:00Z`) - Date.parse(`${state.community.council.at(-1)!.createdDay}T12:00:00Z`)
+    : Infinity;
+  if (age < 7 * 86_400_000) return;
+  const hasCooker = residents.some((resident) =>
+    (resident.types ?? []).some((type) => TYPE_AFFINITIES[type].includes('culinaria'))
+      || (state.community.residents[resident.id]?.interests.includes('culinaria') ?? false),
+  );
+  if (!hasCooker) return;
+  const recipe = ITEMS.filter((item) => item.kind === 'food' && item.recipe && (state.inventory[item.id as keyof typeof state.inventory] ?? 0) <= 997
+    && Object.entries(item.recipe).every(([id, qty]) => (state.inventory[id as keyof typeof state.inventory] ?? 0) >= (qty ?? 0) * 2))
+    .sort((a, b) => a.id.localeCompare(b.id))[0];
+  if (!recipe?.recipe) return;
+  const proposal: CommunityProject = {
+    id: `conselho:cozinha:${day}`,
+    kind: 'cozinha-reforco',
+    output: recipe.id,
+    createdDay: day,
+    decisionDay: '',
+    cause: `A despensa ficou curta por ${state.community.shortageDays} dias; o Café tem ingredientes reais para uma leva comunitária de ${recipe.name}.`,
+    status: 'proposto',
+    participants: [],
+    ingredients: Object.entries(recipe.recipe).map(([item, qty]) => ({ item, qty: (qty ?? 0) * 2 })),
+    result: '',
+  };
+  state.community.council = [...state.community.council, proposal].slice(-COMMUNITY_RULES.councilHistoryLimit);
+}
+
+export function communityForecast(state: Pick<VillageState, 'inventory' | 'coins' | 'community'>, residentIds: readonly string[]): CommunityForecast {
   const residents = activeCount(residentIds);
   const foodTarget = Math.ceil(residents * COMMUNITY_RULES.mealsPerResident);
   const maintenanceDue = residents > 0 ? residents * COMMUNITY_RULES.dailyMaintenancePerResident + COMMUNITY_RULES.dailyTownServiceBase : 0;
+  const reserved = reservedProjectIngredients(state);
+  const rawFoodAvailable = portionsAvailable(state);
+  const foodAvailable = portionsAvailable(state, reserved);
   return {
     residents,
-    foodAvailable: portionsAvailable(state),
+    foodAvailable,
+    foodReservedForCouncil: rawFoodAvailable - foodAvailable,
     foodTarget,
     mealsAtCurrentStock: foodTarget > 0 ? Math.floor(portionsAvailable(state) / foodTarget) : 0,
     reserveTarget: foodTarget * COMMUNITY_RULES.reserveDays,
@@ -247,8 +353,16 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
   const interests = state.community.residents[resident.id]?.interests ?? [];
   const canFish = affinityActivities.includes('pesca') || interests.includes('pesca');
   const canCook = affinityActivities.includes('culinaria') || interests.includes('culinaria');
+  const kitchenProject = state.community.council.find((project) => project.kind === 'cozinha-reforco' && project.status === 'apoiado');
+  const recipeMultiplier = kitchenProject ? 2 : 1;
+  const reserved = reservedProjectIngredients(state);
   const cookable = canCook
-    ? ITEMS.filter((item) => item.kind === 'food' && item.recipe && (state.inventory[item.id as keyof typeof state.inventory] ?? 0) < 999 && Object.entries(item.recipe).every(([id, qty]) => (state.inventory[id as keyof typeof state.inventory] ?? 0) >= (qty ?? 0)))
+    ? ITEMS.filter((item) => item.kind === 'food' && item.recipe && (!kitchenProject || item.id === kitchenProject.output)
+      && (state.inventory[item.id as keyof typeof state.inventory] ?? 0) <= 999 - recipeMultiplier
+      && Object.entries(item.recipe).every(([id, qty]) => {
+        const projectReserve = kitchenProject ? 0 : reserved.get(id) ?? 0;
+        return (state.inventory[id as keyof typeof state.inventory] ?? 0) >= (qty ?? 0) * recipeMultiplier + projectReserve;
+      }))
       .sort((a, b) => a.id.localeCompare(b.id))[0]
     : undefined;
   const fishItem = itemDef('peixe');
@@ -307,13 +421,20 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
   } else if (choice.activity === 'culinaria' && cookable?.recipe) {
     for (const [id, amount] of Object.entries(cookable.recipe)) {
       const key = id as keyof typeof state.inventory;
-      state.inventory[key] = Math.max(0, (state.inventory[key] ?? 0) - (amount ?? 0));
+      state.inventory[key] = Math.max(0, (state.inventory[key] ?? 0) - (amount ?? 0) * recipeMultiplier);
       if (state.inventory[key] === 0) delete state.inventory[key];
     }
-    qty = inventoryAdd(state, cookable.id, 1);
+    qty = inventoryAdd(state, cookable.id, recipeMultiplier);
     if (qty > 0) {
       item = cookable.id;
-      result = `Preparou ${cookable.name} com ingredientes da despensa.`;
+      result = kitchenProject && qty === recipeMultiplier
+        ? `Preparou ${qty} ${cookable.name} para o projeto do Café com ingredientes da despensa.`
+        : `Preparou ${qty} ${cookable.name} com ingredientes da despensa.`;
+      if (kitchenProject && qty === recipeMultiplier) {
+        kitchenProject.status = 'concluido';
+        kitchenProject.participants = [resident.id];
+        kitchenProject.result = `O projeto consumiu os ingredientes registrados e preparou ${qty} ${cookable.name}; o estoque produzido entrou na refeição comunitária.`;
+      }
     }
   } else if (choice.activity === 'acolhimento') result = 'Fez companhia aos outros moradores na praça.';
   else if (choice.activity === 'brincadeira') result = 'Brincou um pouco com a turma.';
@@ -331,7 +452,7 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
   progress.rememberedActivity = experience >= 2 ? choice.activity : progress.rememberedActivity;
   progress.recentActivity = choice.activity;
   if (learned) result += ' Essa atividade está virando um novo interesse.';
-  return { residentId: resident.id, activity: choice.activity, icon: ACTIVITY_ICONS[choice.activity], result, ...(item ? { item } : {}), ...(qty !== undefined ? { qty } : {}), ...(x !== undefined ? { x } : {}), ...(y !== undefined ? { y } : {}) };
+  return { residentId: resident.id, activity: choice.activity, icon: ACTIVITY_ICONS[choice.activity], result, ...(item ? { item } : {}), ...(qty !== undefined ? { qty } : {}), ...(x !== undefined ? { x } : {}), ...(y !== undefined ? { y } : {}), ...(kitchenProject?.status === 'concluido' && kitchenProject.participants.includes(resident.id) ? { projectId: kitchenProject.id } : {}) };
 }
 
 function recordSharedActivities(state: VillageState, day: string, activities: readonly CommunityActivityRecord[]): void {
@@ -396,7 +517,7 @@ function recordCrisisHelp(
   }, participants.length > 1 ? 'amizade' : null);
 }
 
-function consumeFood(state: VillageState, target: number, residents: readonly CommunityResident[]): { portions: number; shortage: number; preferredServings: number; consumed: { item: string; qty: number }[] } {
+function consumeFood(state: VillageState, target: number, residents: readonly CommunityResident[], reserved = new Map<string, number>()): { portions: number; shortage: number; preferredServings: number; consumed: { item: string; qty: number }[] } {
   let remaining = target;
   let served = 0;
   let preferredServings = 0;
@@ -406,10 +527,10 @@ function consumeFood(state: VillageState, target: number, residents: readonly Co
     if (remaining <= 0) break;
     if (!resident.favoriteFood) continue;
     const favorite = itemDef(resident.favoriteFood);
-    const available = favorite ? state.inventory[favorite.id] ?? 0 : 0;
+    const available = favorite ? Math.max(0, (state.inventory[favorite.id] ?? 0) - (reserved.get(favorite.id) ?? 0)) : 0;
     const nutrition = favorite?.nutrition ?? 0;
     if (!favorite || available <= 0 || nutrition <= 0) continue;
-    const left = available - 1;
+    const left = (state.inventory[favorite.id] ?? 0) - 1;
     if (left <= 0) delete state.inventory[favorite.id];
     else state.inventory[favorite.id] = left;
     const portions = Math.min(remaining, nutrition);
@@ -428,11 +549,11 @@ function consumeFood(state: VillageState, target: number, residents: readonly Co
     if (remaining <= 0) break;
     // Se a preferência acabou de ser servida, não escolha o mesmo item por preço antes de outros alimentos comuns.
     if (preferredItems.has(item.id)) continue;
-    const available = state.inventory[item.id] ?? 0;
+    const available = Math.max(0, (state.inventory[item.id] ?? 0) - (reserved.get(item.id) ?? 0));
     const nutrition = item.nutrition ?? 0;
     if (available <= 0 || nutrition <= 0) continue;
     const qty = Math.min(available, Math.ceil(remaining / nutrition));
-    const left = available - qty;
+    const left = (state.inventory[item.id] ?? 0) - qty;
     if (left <= 0) delete state.inventory[item.id];
     else state.inventory[item.id] = left;
     const portions = qty * nutrition;
@@ -446,6 +567,7 @@ function consumeFood(state: VillageState, target: number, residents: readonly Co
 function settleDay(state: VillageState, day: string, residents: readonly CommunityResident[]): CommunityCycle {
   const residentCount = residents.length;
   const target = Math.ceil(residentCount * COMMUNITY_RULES.mealsPerResident);
+  expireCouncilProposals(state, day);
   if (residentCount === 0) {
     return {
       day, residents: 0, foodTarget: 0, foodServed: 0, preferredServings: 0, activities: [], consumed: [], maintenanceDue: 0, maintenancePaid: 0,
@@ -453,10 +575,11 @@ function settleDay(state: VillageState, day: string, residents: readonly Communi
       shortageDays: state.community.shortageDays, notice: '',
     };
   }
+  maybeProposeKitchenProject(state, day, residents);
   const fishLimit = { remaining: 1 };
   const inventoryBefore = { ...state.inventory };
   const activities = residents.slice(0, COMMUNITY_RULES.residentLimit).map((resident) => recordActivity(state, day, resident, residentCount, fishLimit));
-  const food = consumeFood(state, target, residents);
+  const food = consumeFood(state, target, residents, reservedProjectIngredients(state));
   recordSharedActivities(state, day, activities);
   recordCrisisHelp(state, day, activities, inventoryBefore, food.consumed, state.community.shortageDays > 0 || food.shortage > 0);
   const maintenanceDue = residentCount * COMMUNITY_RULES.dailyMaintenancePerResident + COMMUNITY_RULES.dailyTownServiceBase;
@@ -474,6 +597,12 @@ function settleDay(state: VillageState, day: string, residents: readonly Communi
     state.community.shortageDays = 0;
     state.community.welfare = Math.min(100, state.community.welfare + 2);
     if (previousPhase > 0) state.community.trust = Math.min(100, state.community.trust + 1);
+    for (const project of state.community.council) {
+      if (project.kind === 'cozinha-reforco' && (project.status === 'proposto' || project.status === 'apoiado')) {
+        project.status = 'expirado';
+        project.result = 'A reserva foi recuperada antes da execução; os ingredientes continuam no inventário.';
+      }
+    }
   }
   if (servicesUnfunded === 0 && maintenanceDue > 0) state.community.trust = Math.min(100, state.community.trust + 1);
 
