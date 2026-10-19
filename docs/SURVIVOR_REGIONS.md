@@ -12,6 +12,10 @@ O chão tem trilha sinuosa, caminho transversal, textura de pequenos ladrilhos e
 
 Dois canvases estáticos no máximo ficam em cache; a mistura usa duas imagens, sem partículas ou shaders. “Cenário regional” permite voltar ao piso simples durante a corrida. O desenho não usa o RNG de combate nem modifica o estado do motor. Assim, esta alteração não exige compensações artificiais de HP, XP ou velocidade. Fluidez em celular e equilíbrio por jogadores ainda precisam de avaliação real.
 
+## Minimapa opcional
+
+O botão “Mapa” abre um radar discreto no canto da arena. O ponto azul é o jogador, pontos vermelhos são chefes, pontos amarelos são elites e os inimigos comuns mais próximos aparecem em cinza. Um retângulo branco marca a janela visível da câmera, ajudando a localizar ameaças que ficaram fora da tela sem alterar a visão principal, o campo de visão ou a lógica de combate. O mapa pode ser desligado durante a corrida; ele é atualizado em baixa frequência e não consome o RNG da simulação.
+
 ## Espécies acompanhando a região
 
 Os novos inimigos também acompanham a viagem. Cada região tem quatro espécies selvagens e um chefe periódico próprios, todos com animação Walk no pacote local. Os grupos de treinador usam as espécies da região com os mesmos graus elite/chefão de antes. Durante a transição, a proporção de nascimentos da próxima região segue a mesma mistura suave do cenário. Ao completar o ciclo, voltam as espécies de Kanto. Quem já nasceu mantém a espécie até ser derrotado: não se transforma nem desaparece na passagem de região.

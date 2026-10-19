@@ -40,6 +40,7 @@ import { REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from 
 import type { SoundCue } from '../box/sound-recipes';
 import { normalizeSurvivorFavorites, selectSurvivorCandidates } from '../core/survivor-selection';
 import { dayKey } from '../core/trainer';
+import { survivorMinimapSnapshot } from '../core/survivor-minimap';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -96,6 +97,7 @@ function fitView(): void {
 }
 const JOY_MAX = 42;
 const regionScenery = ref(true);
+const minimapEnabled = ref(true);
 const drawLandscape = createSurvivorLandscape(ARENA_W, ARENA_H);
 
 interface Sprite {
@@ -254,6 +256,7 @@ const ready = ref(false);
 const failed = ref(false);
 const avatarName = ref('');
 const state = ref<SurvivorState | null>(null);
+const minimap = ref({ markers: [] as ReturnType<typeof survivorMinimapSnapshot>['markers'], viewport: { x: 0, y: 0, width: ARENA_W, height: ARENA_H } });
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
 const summary = ref<SurvivorSummary | null>(null);
 /** Tela de escolha antes de cada corrida: 3 Pokémon aleatórios da caixa do jogador, pra ele dizer quem joga
@@ -314,6 +317,7 @@ let rafId = 0;
 let disposed = false;
 let lastTs = 0;
 let animMs = 0;
+let lastMinimapMs = -Infinity;
 const heldKeys = new Set<string>();
 /** Joystick flutuante: aparece onde o dedo encostou na tela da Torre (`lx`, `ly`, relativos à tela). */
 const joystick = reactive({ active: false, pointerId: null as number | null, cx: 0, cy: 0, dx: 0, dy: 0, lx: 0, ly: 0 });
@@ -559,6 +563,13 @@ function draw(): void {
   ctx.restore();
 }
 
+function updateMinimap(s: SurvivorState): void {
+  // O minimapa é uma fotografia leve, atualizada algumas vezes por segundo; a arena continua no canvas a cada frame.
+  if (animMs - lastMinimapMs < 120) return;
+  lastMinimapMs = animMs;
+  minimap.value = survivorMinimapSnapshot(s, { width: ARENA_W, height: ARENA_H }, { width: view.w, height: view.h });
+}
+
 function loop(ts: number): void {
   if (disposed) {
     rafId = 0;
@@ -596,6 +607,7 @@ function loop(ts: number): void {
       else if (ev.type === 'trainerDown') say(ev.final ? 'CHEFAO DERROTADO!' : 'Treinador derrotado!');
     }
   }
+  updateMinimap(s);
   pendingUpgrade.value = s.pendingUpgrade;
   draw();
 }
@@ -842,8 +854,21 @@ onBeforeUnmount(() => {
             <span class="chip">🌊 Onda {{ state.wave }}</span>
             <span class="chip">{{ survivorRegionLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
+            <button type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
             <button type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário regional: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
           </div>
+        </div>
+
+        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Minimapa da arena; o ponto azul é você, pontos vermelhos são chefes e pontos amarelos são elites">
+          <span class="survivor-minimap-title">Mapa</span>
+          <span class="survivor-minimap-viewport" :style="{ left: `${(minimap.viewport.x / ARENA_W) * 100}%`, top: `${(minimap.viewport.y / ARENA_H) * 100}%`, width: `${(minimap.viewport.width / ARENA_W) * 100}%`, height: `${(minimap.viewport.height / ARENA_H) * 100}%` }"></span>
+          <span
+            v-for="marker in minimap.markers"
+            :key="`${marker.kind}-${marker.id}`"
+            class="survivor-minimap-marker"
+            :class="`kind-${marker.kind}`"
+            :style="{ left: `${(marker.x / ARENA_W) * 100}%`, top: `${(marker.y / ARENA_H) * 100}%` }"
+          ></span>
         </div>
 
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">

@@ -498,9 +498,11 @@ function spawnPoint(rng: Rng): { x: number; y: number } {
   return { x: -SPAWN_MARGIN, y: rng() * ARENA_H };
 }
 
-function defaultArchetype(kind: number, boss: boolean, grade: SurvivorEnemyGrade): SurvivorEnemyArchetype {
+function defaultArchetype(kind: number, boss: boolean, grade: SurvivorEnemyGrade, stableId = kind): SurvivorEnemyArchetype {
   if (boss || grade === 'chefao') return 'protetor';
-  return (['perseguidor', 'flanqueador', 'atirador', 'suporte'] as const)[kind % 4]!;
+  // O id nasce da mesma sequência nos modos normal e regional; usar ele mantém o combate idêntico
+  // quando `kindCount` muda apenas a espécie visual.
+  return (['perseguidor', 'flanqueador', 'atirador', 'suporte'] as const)[stableId % 4]!;
 }
 
 /**
@@ -516,8 +518,9 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   const t = state.elapsedMs / 1000;
   if (boss) {
     const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale);
+    const id = state.nextId++;
     addEnemy(state, {
-      id: state.nextId++,
+      id,
       kind: state.kindCount,
       boss: true,
       grade: 'comum',
@@ -529,7 +532,7 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
       damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale),
       radius: 28,
       hitFlashMs: 0,
-        archetype: state.enemyArchetypeFor?.({ kind: state.kindCount, boss: true, grade: 'comum' }) ?? defaultArchetype(state.kindCount, true, 'comum'),
+        archetype: state.enemyArchetypeFor?.({ kind: state.kindCount, boss: true, grade: 'comum' }) ?? defaultArchetype(state.kindCount, true, 'comum', id),
         specialTimerMs: 1800,
     });
     return;
@@ -542,8 +545,9 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   const speed = (grade === 'comum' ? 55 + state.rng() * 25 : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
   const hp = Math.round(baseHp * hpMul * state.infiniteScale);
   const kind = Math.floor(state.rng() * state.kindCount);
+  const id = state.nextId++;
   addEnemy(state, {
-    id: state.nextId++,
+    id,
     kind,
     boss: false,
     grade,
@@ -556,7 +560,7 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
     damage: Math.round(baseDmg * dmgMul * state.infiniteScale),
     radius: grade === 'chefao' ? 20 : grade === 'elite' ? 16 : 13,
     hitFlashMs: 0,
-    archetype: state.enemyArchetypeFor?.({ kind, boss: false, grade }) ?? defaultArchetype(kind, false, grade),
+    archetype: state.enemyArchetypeFor?.({ kind, boss: false, grade }) ?? defaultArchetype(kind, false, grade, id),
     specialTimerMs: grade === 'chefao' ? 1800 : 2400,
   });
 }
