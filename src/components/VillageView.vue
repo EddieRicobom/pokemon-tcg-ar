@@ -1005,6 +1005,7 @@ function closeDialog(): void {
 }
 
 function openRequestBoard(): void {
+  if (ensureModeStories(state, trainer.value.achievements)) changed();
   const today = refreshDay();
   const previousDay = state.requests.day;
   const requests = ensureRequests(state, today, mons.value.map((m) => ({ id: m.id, name: m.name })));

@@ -20,6 +20,12 @@ const MODE_STORIES: Record<string, Omit<VillageRequest, 'id' | 'day' | 'done' | 
   },
 };
 
+const CHALLENGE_GALLERY: Omit<VillageRequest, 'id' | 'day' | 'done' | 'persistent'> = {
+  kind: 'collect', title: 'Montar o pedestal das conquistas',
+  detail: 'As lembranças da Liga e dos Pins já estão prontas. Traga três pedras ao Museu para firmar a base da vitrine que contará as duas histórias.',
+  location: 'Museu da Vila', item: 'pedra', qty: 3, rewardCoins: 75, rewardItem: 'cristal', rewardQty: 2, rewardFriend: 0,
+};
+
 /** Cria cada pedido uma vez, mesmo se a Vila abrir depois de o marco ter sido conquistado. */
 export function ensureModeStories(state: VillageState, achievements: Readonly<Record<string, unknown>>): boolean {
   let created = false;
@@ -28,6 +34,14 @@ export function ensureModeStories(state: VillageState, achievements: Readonly<Re
     const id = `modo:${achievementId}`;
     if (!achievements[achievementId] || state.requests.story.some((entry) => entry.id === id)) continue;
     state.requests.story.push({ id, day: '', persistent: true, done: false, ...request });
+    created = true;
+  }
+  const storyIds = new Set(state.requests.story.map((request) => request.id));
+  const leagueStory = state.requests.story.find((request) => request.id === 'modo:liga-insignia');
+  const pinsStory = state.requests.story.find((request) => request.id === 'modo:pins-perfeito');
+  const galleryId = 'modo:galeria-desafios';
+  if (achievements['liga-insignia'] && achievements['pins-perfeito'] && leagueStory?.done && pinsStory?.done && !storyIds.has(galleryId)) {
+    state.requests.story.push({ id: galleryId, day: '', persistent: true, done: false, ...CHALLENGE_GALLERY });
     created = true;
   }
   if (created) state.requests.story = state.requests.story.slice(-8);
