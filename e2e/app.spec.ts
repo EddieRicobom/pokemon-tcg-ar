@@ -13,6 +13,12 @@ const origin = 'http://localhost:4173';
 const dir = process.env.E2E_DIR ?? 'e2e/.tmp';
 const resultsDir = `${dir}/results`;
 const cards: string[] = existsSync(`${dir}/cards.json`) ? (JSON.parse(readFileSync(`${dir}/cards.json`, 'utf8')) as string[]) : [];
+const references: Record<string, string> = existsSync(`${dir}/references.json`)
+  ? (JSON.parse(readFileSync(`${dir}/references.json`, 'utf8')) as Record<string, string>)
+  : {};
+const RECOGNITION_TIMEOUT = 60_000;
+const TRACKING_TIMEOUT = 45_000;
+const CACHE_TIMEOUT = 15_000;
 
 interface CardResult {
   id: string;
@@ -62,6 +68,18 @@ for (const id of cards) {
         ],
       });
       const context = await browser.newContext({ permissions: ['camera'], viewport: { width: 420, height: 900 }, serviceWorkers: 'allow' });
+      // O CI usa os bytes oficiais baixados no preparo, evitando depender do CORS duplicado do CDN.
+      // Candidatas que não são a carta deste cenário falham rápido; nunca injetamos um resultado de reconhecimento.
+      await context.route('https://assets.tcgdex.net/**', async (route) => {
+        const fixture = references[route.request().url()];
+        if (!fixture) return route.abort();
+        return route.fulfill({
+          status: 200,
+          contentType: 'image/webp',
+          headers: { 'access-control-allow-origin': '*' },
+          body: readFileSync(`${dir}/${fixture}`),
+        });
+      });
       const page = await context.newPage();
       const result: CardResult = { id, identified: false, consoleErrors: [] };
       page.on('console', (msg) => {
@@ -75,7 +93,7 @@ for (const id of cards) {
         // 1) Câmera → reconhecimento
         const started = Date.now();
         await openScan(page);
-        result.identified = await waitText(page, '.result', 'Reconhecida automaticamente', 150_000);
+        result.identified = await waitText(page, '.result', 'Reconhecida automaticamente', RECOGNITION_TIMEOUT);
         result.recognizeMs = Date.now() - started;
         if (!result.identified) {
           result.hudAfterScan = ((await page.locator('.hud').first().textContent().catch(() => '')) ?? '').slice(0, 160);
@@ -85,18 +103,18 @@ for (const id of cards) {
 
         // 2) AR: alvo compilado → rastreamento da carta → sprite
         const trackStart = Date.now();
-        result.tracking = await waitText(page, '.hud', 'Carta rastreada', 90_000);
+        result.tracking = await waitText(page, '.hud', 'Carta rastreada', TRACKING_TIMEOUT);
         result.trackingMs = Date.now() - trackStart;
         result.spriteText = ((await page.locator('.result .message').first().textContent().catch(() => '')) ?? '').slice(0, 160);
         await page.screenshot({ path: `${dir}/${id}-ar.png` });
 
         // 3) Cache: aparece em "Carregar" e sobrevive a recarregar a página
         await page.evaluate(() => (window.location.hash = '#/carregar'));
-        result.cacheListed = await waitText(page, '.card-row', result.predictedId ? '/' : '', 20_000);
+        result.cacheListed = await waitText(page, '.card-row', result.predictedId ? '/' : '', CACHE_TIMEOUT);
         result.cacheBadge = ((await page.locator('.card-row .badge').first().textContent().catch(() => '')) ?? '').trim();
         await page.reload();
         await page.evaluate(() => (window.location.hash = '#/carregar'));
-        result.survivedReload = await waitText(page, '.card-row', '/', 20_000);
+        result.survivedReload = await waitText(page, '.card-row', '/', CACHE_TIMEOUT);
         await page.screenshot({ path: `${dir}/${id}-carregar.png`, fullPage: true });
 
         // 4) Offline: reconhece a mesma carta só com o que está guardado
@@ -104,9 +122,9 @@ for (const id of cards) {
         await page.reload();
         await page.evaluate(() => (window.location.hash = '#/'));
         await page.getByRole('button', { name: 'Abrir câmera' }).click();
-        result.offlineRecognized = await waitText(page, '.result', 'Reconhecida automaticamente', 150_000);
+        result.offlineRecognized = await waitText(page, '.result', 'Reconhecida automaticamente', RECOGNITION_TIMEOUT);
         if (result.offlineRecognized) {
-          result.offlineTracking = await waitText(page, '.hud', 'Carta rastreada', 90_000);
+          result.offlineTracking = await waitText(page, '.hud', 'Carta rastreada', TRACKING_TIMEOUT);
           await page.evaluate(() => (window.location.hash = '#/diagnostico'));
           const source = await page.locator('li', { hasText: 'Candidatas · origem' }).first().textContent().catch(() => '');
           result.offlineSource = (source ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
