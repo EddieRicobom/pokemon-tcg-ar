@@ -459,13 +459,20 @@ export function emitExtra(field: ParticleField, at: Vector3, kind: ImpactExtra, 
 }
 
 /** Impacto completo: explosão comum + extra do tipo + onda de choque. */
-export function emitImpact(field: ParticleField, rings: RingField, at: Vector3, type: PokemonType, strength: number, rng: Rng): void {
-  emitBurst(field, at, type, strength, rng);
+export function emitImpact(field: ParticleField, rings: RingField, at: Vector3, type: PokemonType, strength: number, rng: Rng, intensity = 1): void {
+  const dramatic = Math.max(1, Math.min(1.7, Number.isFinite(intensity) ? intensity : 1));
+  emitBurst(field, at, type, strength * dramatic, rng);
   const style = IMPACT_STYLES[type];
-  emitExtra(field, at, style.extra, type, strength, rng);
+  emitExtra(field, at, style.extra, type, strength * dramatic, rng);
   if (style.ring > 0) {
-    rings.emit(at, typeColorHex(type), style.ring * Math.min(1.5, 0.7 + strength * 0.4), 520);
+    rings.emit(at, typeColorHex(type), style.ring * Math.min(1.8, (0.7 + strength * 0.4) * dramatic), 520 + (dramatic - 1) * 200);
     if (type === 'dragon') rings.emit(at, 0xffffff, style.ring * 0.6, 420);
+  }
+  if (dramatic > 1.05) {
+    // Uma segunda onda clara dá escala ao impacto e torna o elemento legível mesmo sem luz dinâmica.
+    const radius = Math.max(0.42, style.ring * 0.82) * dramatic;
+    rings.emit(at, 0xffffff, radius, 620 + (dramatic - 1) * 220);
+    if (style.ring === 0) rings.emit(at, typeColorHex(type), radius * 0.7, 520);
   }
 }
 

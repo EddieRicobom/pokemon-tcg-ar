@@ -275,6 +275,8 @@ export class BattleDirector {
   private readonly pools = new FloorPools();
   /** Luz dos golpes ligada (desligar poupa a GPU). */
   lighting = true;
+  /** Intensifica partículas e ondas de choque nos impactos. */
+  impactFx = true;
   private impactLight: { x: number; y: number; z: number; color: number; strength: number; radius: number; at: number } | null = null;
   private readonly bolt = new BoltLine();
   private readonly projectile: Sprite;
@@ -1039,7 +1041,7 @@ export class BattleDirector {
     }
     const guarded = turn.guardedHit === true;
     const strength = (guarded ? 0.5 : 0.8) * Math.sqrt(turn.effectiveness) * (turn.critical ? 1.4 : 1);
-    emitImpact(this.particles, this.rings, at, type, strength, this.o.rng);
+    emitImpact(this.particles, this.rings, at, type, strength, this.o.rng, this.impactFx ? 1.55 : 1);
     this.markTerrain(turn, strength);
     this.cue({ kind: 'impact', type, strength, critical: turn.critical, effectiveness: turn.effectiveness, guarded });
     this.flashUntil[target] = this.clock + 320;

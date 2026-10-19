@@ -78,6 +78,7 @@ export class BoxScene {
   /** Luzes dos golpes e do ambiente, compartilhadas por todos os sprites. */
   readonly fx = new FxLights();
   private lighting = true;
+  private impactFx = true;
   /** Chão em pixel art e terreno que muda com os golpes. */
   private terrain = true;
   private boxGround: Ground | null = null;
@@ -235,6 +236,12 @@ export class BoxScene {
     if (this.director) this.director.lighting = on;
   }
 
+  /** Intensidade das partículas e ondas de choque dos golpes elementais. */
+  setImpactEffects(on: boolean): void {
+    this.impactFx = on;
+    if (this.director) this.director.impactFx = on;
+  }
+
   /** Liga ou desliga o chão em pixel art (na caixa e na arena) e as marcas dos golpes. Vale já na caixa e na próxima batalha. */
   setTerrain(on: boolean): void {
     this.terrain = on;
@@ -317,6 +324,7 @@ export class BoxScene {
       teamNames: plan?.teamNames, banner: plan?.banner,
     });
     this.director.lighting = this.lighting;
+    this.director.impactFx = this.impactFx;
     return result;
   }
 
