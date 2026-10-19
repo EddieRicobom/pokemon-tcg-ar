@@ -4,7 +4,7 @@ import { getCache, getDigitalSprite, getLocalVillageSpriteDirs, getVillageAtlas,
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
-import { visual } from '../app/visual-settings';
+import { effectiveVisual, visual } from '../app/visual-settings';
 import { villageArSettings } from '../app/village-ar-settings';
 import { attachLiveVillage, detachLiveVillage, syncCoins } from '../app/wallet';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
@@ -2079,11 +2079,12 @@ onMounted(async () => {
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = () => { changed(); updateWorldProgress(); checkTapInteraction(); checkGuidedTrip(); };
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).
-  game.weatherMode = () => (visual.weather !== 'off' && (effects().rain || requestInfluence(state, refreshDay()).weather) ? (requestInfluence(state, refreshDay()).weather ?? 'chuva') : visual.weather);
+  game.weatherMode = () => (effectiveVisual.value.weather !== 'off' && (effects().rain || requestInfluence(state, refreshDay()).weather) ? (requestInfluence(state, refreshDay()).weather ?? 'chuva') : effectiveVisual.value.weather);
   game.lampStorm = () => effects().lampStorm;
   game.animSpeed = () => effects().animSpeed;
-  game.metallic = () => visual.metallic;
-  game.ambientFx = () => visual.villageFx;
+  game.metallic = () => effectiveVisual.value.metallic;
+  game.ambientFx = () => effectiveVisual.value.villageFx;
+  game.maxFps = () => effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
   // Presente recebido enquanto a cena abria: entra agora, ao lado do jogador.
   for (const entry of pendingDigital.values()) {
     if (villagers.some((v) => v.id === entry.id)) continue;
@@ -2587,6 +2588,16 @@ onBeforeUnmount(() => {
 
         <div v-else>
           <p>Seu acessório: <strong>{{ state.wear.player ? itemName(state.wear.player) : 'nenhum' }}</strong></p>
+          <label class="art-option">
+            <input v-model="visual.rotomMode" type="checkbox" />
+            <span>Modo Rotom: 20 FPS e efeitos gráficos pesados suspensos; desligue para restaurar suas opções</span>
+          </label>
+          <label class="art-option">
+            <span>Limite global de quadros</span>
+            <select v-model="visual.frameRate" :disabled="visual.rotomMode" aria-label="Taxa de quadros dos jogos">
+              <option value="auto">Automática</option><option value="30">30 FPS</option><option value="20">20 FPS</option>
+            </select>
+          </label>
           <label class="art-option">
             <input v-model="visual.metallic" type="checkbox" />
             <span>Brilho metálico nos Digital Pokémon (desligue em celular fraco)</span>

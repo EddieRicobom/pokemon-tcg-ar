@@ -4,6 +4,8 @@ import type { SpriteLayout } from './anchor';
 import type { CardSprite } from './card-sprite';
 import type { TrackingEngine, TrackingInfo, TrackingUpdate } from './engine';
 import type { GyroSettings, OrientationLookup, RenderBackend } from './session';
+import { isFrameDue } from '../core/frame-rate';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 
 export interface MultiSlot {
   cardId: string;
@@ -31,6 +33,7 @@ export interface MultiArSessionDeps {
   getGyroSettings?: () => GyroSettings;
   video: HTMLVideoElement;
   getContainerSize: () => { width: number; height: number };
+  maxFps?: () => number;
   schedule?: (callback: (now: number) => void) => number;
   cancel?: (handle: number) => void;
   onState?: (state: MultiArState) => void;
@@ -55,6 +58,7 @@ export class MultiArSession {
   private info: TrackingInfo | null = null;
   private handle: number | null = null;
   private running = false;
+  private lastRenderAt = 0;
   private restarting = false;
   private targets: ArrayBuffer[] = [];
   private readonly lastPoseAt: number[];
@@ -202,10 +206,12 @@ export class MultiArSession {
   }
 
   private loop(): void {
-    const schedule = this.deps.schedule ?? ((cb) => requestAnimationFrame(cb));
+    const schedule = this.deps.schedule ?? ((cb) => requestGameFrame(cb, this.deps.maxFps ?? (() => 0)));
     const tick = (now: number) => {
       if (!this.running) return;
       this.handle = schedule(tick);
+      if (!isFrameDue(now, this.lastRenderAt, this.deps.maxFps?.() ?? 0)) return;
+      this.lastRenderAt = now;
       const nowMs = this.clock();
       const settings = this.deps.getGyroSettings?.() ?? { gyro: true, latencyMs: 70 };
       const view: Quaternion | null = this.gyroOn(nowMs) ? this.deps.orientation!.at(nowMs - settings.latencyMs) : null;
@@ -230,7 +236,7 @@ export class MultiArSession {
 
   stop(): void {
     this.running = false;
-    if (this.handle !== null) (this.deps.cancel ?? ((h) => cancelAnimationFrame(h)))(this.handle);
+    if (this.handle !== null) (this.deps.cancel ?? cancelGameFrame)(this.handle);
     this.handle = null;
     this.deps.engine.stop();
     for (const slot of this.deps.slots) {

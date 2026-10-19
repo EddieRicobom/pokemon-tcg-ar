@@ -12,7 +12,7 @@ import { getCache } from '../app/services';
 import { useFullscreen } from '../app/fullscreen';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
-import { visual } from '../app/visual-settings';
+import { effectiveVisual } from '../app/visual-settings';
 import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
@@ -112,7 +112,7 @@ async function open(): Promise<void> {
         const evolved = companion !== r.card;
         return { cardId: r.card.id, name: companion.name, dexId: spriteIdOf(companion), shiny: isShiny(r.card), target: r.target, cachedSprite: evolved ? null : r.cachedSprite, evolved };
       }),
-      evolutionFx: () => visual.evolutionFx && !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      evolutionFx: () => effectiveVisual.value.evolutionFx && !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       fetchSprite: (dexId, shiny) => fetchSprite(dexId, undefined, { shiny }),
       onState: (s) => {
         if (mine === run) state.value = s;
@@ -124,7 +124,7 @@ async function open(): Promise<void> {
       return;
     }
     running = started;
-    running.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing: visual.smoothing, showShadow: visual.shadow }));
+    running.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing: effectiveVisual.value.smoothing, showShadow: effectiveVisual.value.shadow }));
     phase.value = 'running';
     progress.value = '';
   } catch (e) {
@@ -146,7 +146,7 @@ function close(): void {
   state.value = { phase: 'idle', visible: [] };
 }
 
-watch(() => [visual.smoothing, visual.shadow] as const, ([smoothing, shadow]) => {
+watch(() => [effectiveVisual.value.smoothing, effectiveVisual.value.shadow] as const, ([smoothing, shadow]) => {
   running?.setLayout(clampLayout({ ...DEFAULT_LAYOUT, smoothing, showShadow: shadow }));
 });
 

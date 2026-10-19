@@ -20,6 +20,9 @@ import {
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { CatmullRomCurve3 } from 'three';
 import { paintItemIcon } from '../village/item-art';
+import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
+import { isFrameDue } from '../core/frame-rate';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 
 export interface BackpackItem {
   id: string;
@@ -308,7 +311,9 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
 
   const frameLoop = (now: number): void => {
     if (!running) return;
-    frame = requestAnimationFrame(frameLoop);
+    frame = requestGameFrame(frameLoop, maxVisualFps);
+    const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
+    if (!isFrameDue(now, last, fps)) return;
     const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
     last = now;
     shakePower *= Math.pow(0.16, dt);
@@ -405,7 +410,7 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
   };
 
   resize();
-  frame = requestAnimationFrame(frameLoop);
+  frame = requestGameFrame(frameLoop, maxVisualFps);
   return {
     shake() { clinker.unlock(); shakePower = 1; targetRotation = targetRotation > 0 ? -0.35 : 0.35; },
     recenter() { targetRotation = 0; },
@@ -424,7 +429,7 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
     resize,
     stop() {
       running = false;
-      cancelAnimationFrame(frame);
+      cancelGameFrame(frame);
       window.removeEventListener('devicemotion', onMotion);
       window.removeEventListener('deviceorientation', onOrientation);
       loose.forEach((item) => { item.texture.dispose(); item.sprite.material.dispose(); });

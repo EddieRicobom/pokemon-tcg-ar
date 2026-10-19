@@ -13,6 +13,9 @@ import { createWebglBackend } from '../ar/webgl-backend';
 import { ambientFromSample } from './fx-lights';
 import { SoundEngine } from './sound';
 import { sensorSettings } from '../app/sensor-settings';
+import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
+import { isFrameDue } from '../core/frame-rate';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 
 /** Campo de visão vertical típico da câmera traseira de um celular em pé (ajustável na tela). */
 export const DEFAULT_VIDEO_VFOV_DEG = 63;
@@ -77,6 +80,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   let running = true;
   let handle = 0;
   let lastHudAt = 0;
+  let lastFrameAt = 0;
   let hudShown = false;
 
   const resize = () => {
@@ -112,7 +116,10 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
 
   const tick = (now: number) => {
     if (!running) return;
-    handle = requestAnimationFrame(tick);
+    handle = requestGameFrame(tick, maxVisualFps);
+    const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
+    if (!isFrameDue(now, lastFrameAt, fps)) return;
+    lastFrameAt = now;
     sampleAmbient(now);
     orientation.latencyMs = sensorSettings.latencyMs;
     scene.setCameraQuaternion(orientation.read(performance.now()));
@@ -129,7 +136,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     hudShown = scene.battling;
     renderer.render(scene.scene, scene.camera);
   };
-  handle = requestAnimationFrame(tick);
+  handle = requestGameFrame(tick, maxVisualFps);
 
   return {
     orientation,
@@ -166,7 +173,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     resize,
     stop() {
       running = false;
-      cancelAnimationFrame(handle);
+      cancelGameFrame(handle);
       observer.disconnect();
       options.video.removeEventListener('loadedmetadata', resize);
       orientation.stop();

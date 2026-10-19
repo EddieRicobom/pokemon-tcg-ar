@@ -39,6 +39,9 @@ import type { BadgeDesign, Point } from '../core/badges';
 import { isResting, restingWobble, secondDerivative, shakeOffset, stepWobble } from '../core/badge-wobble';
 import type { Wobble } from '../core/badge-wobble';
 import { drawBadgeFace, drawBadgeMask } from './badge-art';
+import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
+import { isFrameDue } from '../core/frame-rate';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 
 /**
  * Maleta de insígnias em 3D: couro vermelho, cantos e fecho dourados, forro de veludo azul-marinho com 8 encaixes.
@@ -543,7 +546,9 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
 
   function frame(now: number): void {
     if (!running) return;
-    handle_ = requestAnimationFrame(frame);
+    handle_ = requestGameFrame(frame, maxVisualFps);
+    const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
+    if (!isFrameDue(now, last, fps)) return;
     const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
     last = now;
     time += dt;
@@ -678,7 +683,7 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
     resize,
     stop() {
       running = false;
-      cancelAnimationFrame(handle_);
+      cancelGameFrame(handle_);
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
@@ -695,7 +700,7 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
   applyFx();
   // Abre devagar ao entrar (a maleta começa fechada).
   lidAngle = 0;
-  handle_ = requestAnimationFrame(frame);
+  handle_ = requestGameFrame(frame, maxVisualFps);
   return api;
 }
 

@@ -19,6 +19,9 @@ import { randomOpponents } from '../core/pin-opponents';
 import { planEnemyShot } from '../core/pin-ai';
 import { MARK_HINT_PT, TYPE_FOR_TERRAIN } from '../core/pin-terrain';
 import { ELEMENTAL_BURST_PROFILES, elementalBurstFrame } from '../core/pin-visual-effects';
+import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
+import { isFrameDue } from '../core/frame-rate';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 import { REPLAY_SPEED, ReplayRecorder } from '../core/pin-replay';
 import { vibrate } from '../app/haptics';
 import type { HapticCue } from '../app/haptics';
@@ -372,7 +375,7 @@ function refreshFloorMarks(): void {
 
 /** Pequena animação persistente no centro dos blocos marcados, sem repintar a textura pixelada. */
 function drawTerrainMotion(ctx: CanvasRenderingContext2D, cx: number, k: number, now: number): void {
-  if (!setup.value.effects || reducedMotion.value) return;
+  if (!setup.value.effects || reducedMotion.value || effectiveVisual.value.rotomMode) return;
   const grid = terrainArt?.grid;
   if (!grid || !terrainArt) return;
   const half = terrainArt.half;
@@ -498,17 +501,21 @@ const selectedPin = computed(() => tray.value.find((t) => t.selected) ?? null);
 // ---------------------------------------------------------------- laço do jogo
 
 function startLoop(): void {
-  cancelAnimationFrame(raf);
+  cancelGameFrame(raf);
   last = performance.now();
   acc = 0;
+  let lastRendered = last;
   const frame = (now: number) => {
-    raf = requestAnimationFrame(frame);
+    raf = requestGameFrame(frame, maxVisualFps);
+    const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
+    if (!isFrameDue(now, lastRendered, fps)) return;
+    lastRendered = now;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     update(dt);
     draw(now);
   };
-  raf = requestAnimationFrame(frame);
+  raf = requestGameFrame(frame, maxVisualFps);
 }
 
 function update(dt: number): void {
@@ -743,7 +750,7 @@ function fireMine(shot: Shot): void {
 }
 
 function again(): void {
-  cancelAnimationFrame(raf);
+  cancelGameFrame(raf);
   if (pvpMatch.value || mode.value === 'friend') {
     if (frame.value === 'host' && peer.value) void startPvp();
     return;
@@ -752,7 +759,7 @@ function again(): void {
 }
 
 function backToSetup(): void {
-  cancelAnimationFrame(raf);
+  cancelGameFrame(raf);
   stopReplay();
   world = null;
   sprites.clear();
@@ -1079,7 +1086,7 @@ function resize(): void {
 }
 
 function drawElementalBursts(ctx: CanvasRenderingContext2D, cx: number, k: number): void {
-  if (!setup.value.effects) return;
+  if (!setup.value.effects || effectiveVisual.value.rotomMode) return;
   const scale = k;
   for (const fx of terrainFx) {
     const frame = elementalBurstFrame(fx.age, fx.life, reducedMotion.value);
@@ -1394,7 +1401,7 @@ function onMotionPreferenceChange(): void {
 }
 onBeforeUnmount(() => {
   disposed = true;
-  cancelAnimationFrame(raf);
+  cancelGameFrame(raf);
   leaveRoom();
   engine.dispose();
   window.removeEventListener('resize', onResize);

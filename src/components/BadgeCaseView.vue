@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { badgePolish, polishOf, rubPolish, savePolishNow } from '../app/badge-polish-store';
 import { league } from '../app/league-store';
 import { loadChunk } from '../app/stale-build';
-import { visual } from '../app/visual-settings';
+import { effectiveVisual, visual } from '../app/visual-settings';
 import { polishLabel } from '../core/badge-polish';
 import type { RegionId } from '../core/league';
 import { LEAGUE_REGIONS } from '../core/league';
@@ -46,7 +46,7 @@ async function start(): Promise<void> {
       polish: (order) => polishOf(order),
       onRub: (order, distance) => rubPolish(order, distance),
       onFocus: (order) => (focus.value = order),
-      fx: visual.caseFx,
+      fx: effectiveVisual.value.caseFx,
       sound: visual.sound,
     });
     state.value = 'ready';
@@ -72,7 +72,7 @@ function onKey(e: KeyboardEvent): void {
 
 const onResize = () => running?.resize();
 
-watch(() => visual.caseFx, (on) => running?.setFx(on));
+watch(() => effectiveVisual.value.caseFx, (on) => running?.setFx(on));
 watch(() => visual.sound, (on) => running?.setSound(on));
 
 onMounted(() => {

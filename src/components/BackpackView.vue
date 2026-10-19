@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { loadChunk } from '../app/stale-build';
-import { visual } from '../app/visual-settings';
+import { effectiveVisual, visual } from '../app/visual-settings';
 import type { BackpackItem, RunningBackpack } from '../box/backpack';
 
 const props = defineProps<{ items: readonly BackpackItem[] }>();
@@ -15,7 +15,7 @@ async function start(): Promise<void> {
   try {
     const { startBackpack } = await loadChunk(() => import('../box/backpack'));
     if (!canvas.value) return;
-    running = await startBackpack({ canvas: canvas.value, items: props.items, fx: visual.metallic, sound: visual.sound });
+    running = await startBackpack({ canvas: canvas.value, items: props.items, fx: effectiveVisual.value.metallic, sound: visual.sound });
     state.value = 'ready';
   } catch (error) {
     console.error('Mochila 3D', error);
@@ -24,7 +24,7 @@ async function start(): Promise<void> {
 }
 
 const onResize = () => running?.resize();
-watch(() => visual.metallic, (on) => running?.setFx(on));
+watch(() => effectiveVisual.value.metallic, (on) => running?.setFx(on));
 watch(() => visual.sound, (on) => running?.setSound(on));
 
 onMounted(() => {

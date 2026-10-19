@@ -8,16 +8,28 @@ import { WEATHER_MODE_LABELS_PT, WEATHER_MODES } from '../core/weather';
 defineProps<{ battle?: boolean }>();
 defineEmits<{ close: [] }>();
 const dialogEl = ref<HTMLElement | null>(null);
+const frameRates = ['auto', '30', '20'] as const;
 useDialogFocus(dialogEl);
 </script>
 
 <template>
-  <div ref="dialogEl" class="stage-sheet" role="dialog" tabindex="-1" aria-label="Suavização dos pixels" @keydown.esc.stop.prevent="$emit('close')" @pointerdown.stop @pointerup.stop @click.stop>
+  <div ref="dialogEl" class="stage-sheet" role="dialog" tabindex="-1" aria-label="Opções visuais e economia de bateria" @keydown.esc.stop.prevent="$emit('close')" @pointerdown.stop @pointerup.stop @click.stop>
     <header>
-      <strong>Suavização dos pixels</strong>
+      <strong>Opções visuais</strong>
       <button type="button" class="link" @click="resetVisual">Restaurar</button>
       <button type="button" class="link" @click="$emit('close')">Fechar</button>
     </header>
+    <section class="power-section">
+      <h4>Modo Rotom</h4>
+      <label><input v-model="visual.rotomMode" type="checkbox" /> Ativar economia de bateria</label>
+      <p class="hint">{{ visual.rotomMode ? 'Taxa limitada a 20 quadros por segundo e efeitos gráficos pesados suspensos. Suas escolhas individuais serão restauradas ao desligar.' : 'Reduz a taxa dos jogos e suspende temporariamente efeitos gráficos pesados, sem apagar suas opções.' }}</p>
+      <h4>Limite global de quadros</h4>
+      <div class="chips" role="group" aria-label="Taxa de quadros">
+        <button v-for="rate in frameRates" :key="rate" type="button" :class="{ active: (visual.rotomMode ? '20' : visual.frameRate) === rate }" :aria-pressed="(visual.rotomMode ? '20' : visual.frameRate) === rate" :disabled="visual.rotomMode" @click="visual.frameRate = rate">{{ rate === 'auto' ? 'Automático' : `${rate} FPS` }}</button>
+      </div>
+      <p class="hint">{{ visual.rotomMode ? 'O Modo Rotom usa 20 FPS enquanto estiver ligado.' : 'Limita os quadros das cenas animadas, incluindo jogos e visuais de AR. Automático acompanha a tela.' }}</p>
+    </section>
+    <p v-if="visual.rotomMode" class="hint">As preferências individuais abaixo continuam guardadas; seus efeitos voltam quando o Modo Rotom for desligado.</p>
     <section>
       <h4>Qualidade do GIF</h4>
       <div class="chips" role="group" aria-label="Suavização dos pixels">

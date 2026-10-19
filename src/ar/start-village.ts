@@ -5,6 +5,9 @@ import { OrientationSource } from '../box/orientation-source';
 import type { OrientationMode } from '../box/orientation-source';
 import { VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M, normalizeVillageScale } from '../core/village/ar-diorama';
 import { createWebglBackend } from './webgl-backend';
+import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
+import { isFrameDue } from '../core/frame-rate';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 
 export { VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M } from '../core/village/ar-diorama';
 
@@ -111,15 +114,19 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
   };
   setScale(scale);
 
+  let lastFrameAt = 0;
   const tick = (now: number) => {
     if (!running) return;
-    handle = requestAnimationFrame(tick);
+    handle = requestGameFrame(tick, maxVisualFps);
+    const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
+    if (!isFrameDue(now, lastFrameAt, fps)) return;
+    lastFrameAt = now;
     camera.quaternion.copy(orientation.read(now));
     camera.updateMatrixWorld(true);
     texture.needsUpdate = true;
     renderer.render(scene, camera);
   };
-  handle = requestAnimationFrame(tick);
+  handle = requestGameFrame(tick, maxVisualFps);
 
   return {
     orientation,
@@ -132,7 +139,7 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     resize,
     stop() {
       running = false;
-      cancelAnimationFrame(handle);
+      cancelGameFrame(handle);
       observer.disconnect();
       options.video.removeEventListener('loadedmetadata', resize);
       orientation.stop();
