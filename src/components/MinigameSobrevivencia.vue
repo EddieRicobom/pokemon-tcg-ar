@@ -73,7 +73,7 @@ const moveLine = (m: SurvivorMove): string => `${m.icon} ${m.name} · ${MOVE_CAT
  * mesmo jeito que a Pista de Pins (`recordEvent({ type: 'minigame', game: 'sobrevivencia', ... })`), sem entrar
  * no catálogo de minigames do Fliperama (`core/minigames.ts`).
  */
-const emit = defineEmits<{ leave: [] }>();
+const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
 const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string }[] }>();
 
@@ -218,6 +218,7 @@ const runClearBonus = ref(0);
 const runUnlockedInfinite = ref(false);
 
 let runCompanion: CardCompanion | null = null;
+let runParticipant = { id: 'survivor-pikachu', name: 'Pikachu' };
 function recordRun(s: SurvivorSummary): void {
   if (!recordCardVictories(survivalWinners(runCompanion, s), 'survival')) say(cardJourneyError.value, 9000);
   recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score: survivorScore(s) });
@@ -231,6 +232,7 @@ function recordRun(s: SurvivorSummary): void {
   const total = survivorCoins(s) + (canClearBonus ? SURVIVOR_CLEAR_BONUS : 0);
   runCoins.value = total > 0 ? addCoins(total) : 0;
   runClearBonus.value = canClearBonus ? SURVIVOR_CLEAR_BONUS : 0;
+  emit('complete', s, runParticipant);
 }
 
 function formatTime(ms: number): string {
@@ -756,6 +758,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
 
 function choosePlayer(opt: PickOption, picked?: PokemonType): void {
   unlockSound();
+  runParticipant = { id: opt.id, name: opt.name };
   void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name });
 }
 
@@ -874,6 +877,7 @@ onBeforeUnmount(() => {
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
              <span v-if="state.player.secondMove" class="chip survivor-move-chip second" :style="{ '--move': state.player.secondMove.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.secondMove.effect]">{{ moveLine(state.player.secondMove) }}</span>
+            <span class="chip survivor-xp" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">✨ {{ state.player.xp }}/{{ state.player.xpToNext }} XP <small>· faltam {{ Math.max(0, state.player.xpToNext - state.player.xp) }}</small></span>
             <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
             <span class="chip">☠ {{ state.kills }}</span>
             <span class="chip">🌊 Onda {{ state.wave }}</span>

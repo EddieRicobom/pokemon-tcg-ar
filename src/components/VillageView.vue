@@ -46,7 +46,7 @@ import { ALL_QUESTIONS, FONTE_POOL, isComplete as quizComplete, nextForm, resolv
 import type { QuizAnswers } from '../core/village/starter-quiz';
 import { claimRequest, ensureRequests, requestStatus } from '../core/village/requests';
 import type { VillageRequest } from '../core/village/requests';
-import { discoverAt, requestInfluence, resolveExpeditions, startExpedition, weeklyEventFor, weeklyModifiers } from '../core/village/world-progress';
+import { completeFestival, discoverAt, festivalRound, requestInfluence, resolveExpeditions, startExpedition, weeklyEventFor, weeklyModifiers } from '../core/village/world-progress';
 import type { DiscoveryPlace, WeeklyEvent } from '../core/village/world-progress';
 import type { Resolved, Scene } from '../core/village/social';
 import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS, trimMoments } from '../core/village/social-state';
@@ -1019,10 +1019,12 @@ function openRequestBoard(): void {
     say(result.message);
     openRequestBoard();
   };
+  const festival = weeklyEvent.value ?? weeklyEventFor(state, today);
   dialog.value = {
     name: 'Mural de pedidos',
     text: summary || 'O mural está vazio por enquanto.',
     actions: [
+      { label: `Festival: ${festival.title}`, run: openFestival },
       ...allRequests.map((request: VillageRequest) => {
         const status = requestStatus(state, request, today);
         return {
@@ -1034,6 +1036,47 @@ function openRequestBoard(): void {
       { label: 'Sair', run: closeDialog },
     ],
   };
+}
+
+/** A brincadeira semanal fica no mural: a pessoa escolhe a barraca e a participação não pode ser repetida. */
+function openFestival(): void {
+  const round = festivalRound(state, refreshDay());
+  if (round.played) {
+    dialog.value = { name: `🎪 ${round.title}`, text: 'Você já participou deste festival nesta semana. A próxima festa chega com a próxima semana da Vila.', actions: [{ label: 'Voltar ao mural', run: openRequestBoard }] };
+    return;
+  }
+  dialog.value = {
+    name: `🎪 ${round.title}`,
+    text: `${round.prompt}\n\nEscolha uma barraca para participar.`,
+    actions: [...round.choices.map((choice, index) => ({ label: choice, run: () => finishFestival(index) })), { label: 'Voltar ao mural', run: openRequestBoard }],
+  };
+}
+
+function finishFestival(choice: number): void {
+  const result = completeFestival(state, refreshDay(), choice);
+  if (!result.ok) return openFestival();
+  earnCoins(result.coins);
+  const now = new Date();
+  const host = mons.value[0];
+  if (host) {
+    state.diary = trimMoments([...state.diary, {
+      id: `festival:${state.weekly.week}`, t: now.getTime(), day: refreshDay(), hour: now.getHours(), tpl: 'festival-semanal', kind: 'festa', title: result.title, emoji: '🎪',
+      cast: [{ id: host.id, name: host.name }], lines: [{ who: 0, text: result.text }], result: [`+${result.coins} moedas`],
+    }]);
+  }
+  changed();
+  dialog.value = { name: result.title, text: `${result.text}\n\n+${result.coins} moedas.`, actions: [{ label: 'Voltar ao mural', run: openRequestBoard }] };
+}
+
+function recordSurvivalAdventure(summary: import('../core/survivor').SurvivorSummary, participant: { id: string; name: string }): void {
+  const now = new Date();
+  const time = `${Math.floor(summary.survivedMs / 60000)}:${String(Math.floor(summary.survivedMs / 1000) % 60).padStart(2, '0')}`;
+  const won = summary.finalBossBeaten ? 'A Torre foi vencida!' : `Chegou até a onda ${summary.wave}.`;
+  state.diary = trimMoments([...state.diary, {
+    id: `survival:${now.getTime()}`, t: now.getTime(), day: refreshDay(), hour: now.getHours(), tpl: 'survival-adventure', kind: 'amizade', title: `Aventura na Torre · ${participant.name}`, emoji: '🗼',
+    cast: [{ id: participant.id, name: participant.name }], lines: [{ who: 0, text: `${participant.name} enfrentou a Torre por ${time}.` }], result: [`${summary.kills} derrotas · nível ${summary.level}.`, won],
+  }]);
+  changed();
 }
 
 function finishGuidedTrip(): void {
@@ -1646,6 +1689,8 @@ function pressA(): void {
     sheet.value = 'shop';
   } else if (t.kind === 'bell') {
     ringBell();
+  } else if (t.kind === 'board') {
+    openRequestBoard();
   } else if (t.kind === 'tile' && t.tile === 'water') {
     if (fishing) return;
     playSound('village-water');
@@ -2246,7 +2291,7 @@ onBeforeUnmount(() => {
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
       <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
-        <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name }))" @leave="sheet = null" />
+        <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name }))" @complete="recordSurvivalAdventure" @leave="sheet = null" />
       </div>
 
       <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-label="Evolução dos Pokémon das cartas">
