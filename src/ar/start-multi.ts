@@ -10,6 +10,7 @@ import type { SpriteLayout } from './anchor';
 import { sensorSettings } from '../app/sensor-settings';
 import { getOrientationFeed } from '../sensors/orientation-feed';
 import { MULTI_MAX_TRACK } from '../core/ar-limits';
+import { effectiveVisual } from '../app/visual-settings';
 
 /** Quantas cartas o rastreador acompanha ao mesmo tempo: cada uma custa tempo de processamento do celular. */
 export { MULTI_MAX_TRACK } from '../core/ar-limits';
@@ -64,6 +65,7 @@ export async function startMulti(options: StartMultiOptions): Promise<RunningMul
     getGyroSettings: () => ({ gyro: sensorSettings.gyro, latencyMs: sensorSettings.latencyMs }),
     video: options.video,
     getContainerSize: () => ({ width: options.container.clientWidth, height: options.container.clientHeight }),
+    maxFps: () => effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate),
     onState: options.onState,
   });
 

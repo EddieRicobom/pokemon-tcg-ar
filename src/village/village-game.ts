@@ -33,6 +33,8 @@ import { stepOrder } from '../core/village/joystick';
 import type { StickDirs } from '../core/village/joystick';
 import { createWeather, stepWeather, WEATHER_KINDS } from '../core/weather';
 import type { WeatherKind, WeatherMode, WeatherState } from '../core/weather';
+import { isFrameDue } from '../core/frame-rate';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 import { EDGE } from '../box/ground-art';
 import type { PixelBuf } from '../box/ground-art';
 import { contentBounds } from './local-sprite';
@@ -306,6 +308,7 @@ export class VillageGame {
   onStep: (() => void) | null = null;
   /** Modo do clima (vem das opções visuais): 'off' desliga, 'ciclo' alterna, ou um clima fixo. */
   ambientFx: () => boolean = () => true;
+  maxFps: () => number = () => 0;
   private readonly reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   weatherMode: () => WeatherMode = () => 'ciclo';
   /** Zapdos: postes piscando forte à noite (ver `legendaryEffects`). */
@@ -1030,18 +1033,19 @@ export class VillageGame {
     this.last = performance.now();
     const tick = (now: number) => {
       if (!this.running) return;
-      this.handle = requestAnimationFrame(tick);
+      this.handle = requestGameFrame(tick, this.maxFps);
+      if (!isFrameDue(now, this.last, this.maxFps())) return;
       const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
       this.update(dt, now);
       this.draw(now);
     };
-    this.handle = requestAnimationFrame(tick);
+    this.handle = requestGameFrame(tick, this.maxFps);
   }
 
   stop(): void {
     this.running = false;
-    cancelAnimationFrame(this.handle);
+    cancelGameFrame(this.handle);
   }
 
   private update(dt: number, now: number): void {

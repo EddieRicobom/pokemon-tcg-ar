@@ -8,7 +8,9 @@ import { addCoins } from '../app/wallet';
 import { cardCompanion, cardJourneyError, recordCardVictories } from '../app/card-evolution-store';
 import type { CardCompanion } from '../core/card-evolution';
 import { survivalWinners } from '../core/card-evolution';
-import { visual } from '../app/visual-settings';
+import { effectiveVisual, maxVisualFps, visual } from '../app/visual-settings';
+import { isFrameDue } from '../core/frame-rate';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 import { seededRng } from '../core/battle';
 import {
   applyUpgrade,
@@ -569,7 +571,7 @@ function draw(): void {
   }
 
   // Pulsos da aura, explosões da área e o brilho da evolução.
-  for (const f of s.fx) {
+  if (!effectiveVisual.value.rotomMode) for (const f of s.fx) {
     const t = clamp(f.ageMs / f.lifeMs, 0, 1);
     ctx.save();
     if (f.kind === 'pulse') {
@@ -617,8 +619,10 @@ function loop(ts: number): void {
     rafId = 0;
     return;
   }
-  rafId = requestAnimationFrame(loop);
-  const dt = Math.min(48, ts - lastTs || 16);
+  rafId = requestGameFrame(loop, maxVisualFps);
+  const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
+  if (!isFrameDue(ts, lastTs, fps)) return;
+  const dt = Math.min(60, ts - lastTs || 16);
   lastTs = ts;
   if (document.hidden || !state.value) return;
   if (paused.value) {
@@ -805,7 +809,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, dexId, evolutions: evolutionsFor, infinite, preparation });
     ready.value = true;
     lastTs = performance.now();
-    if (!rafId) rafId = requestAnimationFrame(loop);
+    if (!rafId) rafId = requestGameFrame(loop, maxVisualFps);
   } catch {
     failed.value = true;
   } finally {
@@ -878,7 +882,7 @@ async function rerollPicker(): Promise<void> {
 
 function playAgain(): void {
   unlockSound();
-  cancelAnimationFrame(rafId);
+  cancelGameFrame(rafId);
   rafId = 0;
   void openPicker();
 }
@@ -908,7 +912,7 @@ document.addEventListener('visibilitychange', onVisibility);
 
 onBeforeUnmount(() => {
   disposed = true;
-  cancelAnimationFrame(rafId);
+  cancelGameFrame(rafId);
   rafId = 0;
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);

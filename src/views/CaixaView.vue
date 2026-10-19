@@ -27,7 +27,7 @@ import { battleMode, setBattleMode } from '../app/battle-mode-store';
 import { recordEvent } from '../app/trainer-store';
 import { coins, spendCoins, withVillage } from '../app/wallet';
 import { maybeGalladeSpeaks } from '../app/speech-store';
-import { visual } from '../app/visual-settings';
+import { effectiveVisual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
 import { requestOrientationPermission } from '../core/orientation-permission';
 import CardMarks from '../components/CardMarks.vue';
@@ -163,7 +163,7 @@ onMounted(() => {
 
 function onMotionPreferenceChange(): void {
   reducedMotion.value = motionPreference?.matches ?? false;
-  box?.setImpactEffects(visual.impactFx && !reducedMotion.value);
+  box?.setImpactEffects(effectiveVisual.value.impactFx && !reducedMotion.value);
 }
 
 onMounted(() => {
@@ -518,13 +518,13 @@ async function open(): Promise<void> {
   box.setPhoneHeight(phoneHeight.value);
   box.setHalfSize(boxSize.value / 2);
   box.setVideoFov(videoFov.value);
-  box.setSmoothing(visual.smoothing);
-  box.setLighting(visual.lighting);
-  box.setImpactEffects(visual.impactFx && !reducedMotion.value);
-  box.setTerrain(visual.terrain);
-  box.setSocial(visual.social);
-  box.setWeather(visual.weather);
-  box.setSound(visual.sound);
+  box.setSmoothing(effectiveVisual.value.smoothing);
+  box.setLighting(effectiveVisual.value.lighting);
+  box.setImpactEffects(effectiveVisual.value.impactFx && !reducedMotion.value);
+  box.setTerrain(effectiveVisual.value.terrain);
+  box.setSocial(effectiveVisual.value.social);
+  box.setWeather(effectiveVisual.value.weather);
+  box.setSound(effectiveVisual.value.sound);
   box.setMode(boxMode.value);
   phase.value = 'placing';
   hint.value = 'Aponte o celular para o chão onde a caixa vai ficar e toque em "Colocar a caixa aqui".';
@@ -578,7 +578,7 @@ function moveBox(): void {
 }
 
 function showPicked(creature: BoxCreature): void {
-  if (visual.social) creature.react();
+  if (effectiveVisual.value.social) creature.react();
   else creature.poke();
   picked.value = { name: shown(creature.info.id, creature.info.name), detail: creature.info.detail, dexId: creature.info.dexId, shiny: creature.info.shiny, mega: creature.info.mega };
   if (pickedTimer) clearTimeout(pickedTimer);
@@ -612,13 +612,13 @@ function onPointerUp(event: PointerEvent): void {
   }
 }
 
-watch(() => visual.smoothing, (smoothing) => box?.setSmoothing(smoothing));
-watch(() => visual.lighting, (on) => box?.setLighting(on));
-watch(() => visual.impactFx, (on) => box?.setImpactEffects(on && !reducedMotion.value));
-watch(() => visual.terrain, (on) => box?.setTerrain(on));
-watch(() => visual.social, (on) => box?.setSocial(on));
-watch(() => visual.weather, (mode) => box?.setWeather(mode));
-watch(() => visual.sound, (on) => box?.setSound(on));
+watch(() => effectiveVisual.value.smoothing, (smoothing) => box?.setSmoothing(smoothing));
+watch(() => effectiveVisual.value.lighting, (on) => box?.setLighting(on));
+watch(() => effectiveVisual.value.impactFx, (on) => box?.setImpactEffects(on && !reducedMotion.value));
+watch(() => effectiveVisual.value.terrain, (on) => box?.setTerrain(on));
+watch(() => effectiveVisual.value.social, (on) => box?.setSocial(on));
+watch(() => effectiveVisual.value.weather, (mode) => box?.setWeather(mode));
+watch(() => effectiveVisual.value.sound, (on) => box?.setSound(on));
 
 const canBattle = computed(() => phase.value === 'running' && population.value.shown >= (challenge.value || pvpOn.value ? 1 : 2) && !loadingCreatures.value && !preparing.value);
 /** A Arena usa deliberadamente os seis marcados como Vermelha: a escalação deixa de ser um detalhe escondido. */

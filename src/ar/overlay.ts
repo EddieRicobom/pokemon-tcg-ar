@@ -12,6 +12,8 @@ import {
   WebGLRenderer,
 } from 'three';
 import { frameIndexAt, type DecodedGif } from '../core/gif';
+import { maxVisualFps } from '../app/visual-settings';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 
 /** Altura visível da cena em unidades (de -1 a 1). */
 const VIEW_HALF_HEIGHT = 1;
@@ -107,14 +109,14 @@ export class SpriteOverlay {
   start(): void {
     if (this.animationId !== 0) return;
     const loop = (now: number) => {
-      this.animationId = requestAnimationFrame(loop);
+      this.animationId = requestGameFrame(loop, maxVisualFps);
       this.renderFrame(now);
     };
-    this.animationId = requestAnimationFrame(loop);
+    this.animationId = requestGameFrame(loop, maxVisualFps);
   }
 
   stop(): void {
-    if (this.animationId !== 0) cancelAnimationFrame(this.animationId);
+    if (this.animationId !== 0) cancelGameFrame(this.animationId);
     this.animationId = 0;
   }
 

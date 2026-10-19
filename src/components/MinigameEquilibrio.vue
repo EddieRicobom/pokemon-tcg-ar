@@ -3,6 +3,9 @@ import { onBeforeUnmount, ref } from 'vue';
 import { addCoins } from '../app/wallet';
 import { getOrientationFeed, requestOrientationPermission } from '../sensors/orientation-feed';
 import { Quaternion, Vector3 } from 'three';
+import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
+import { isFrameDue } from '../core/frame-rate';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 
 const emit = defineEmits<{ leave: [] }>();
 
@@ -21,7 +24,7 @@ let velocity = { x: 0, y: 0 };
 let sensorWaitTimer = 0;
 
 function stopLoop(): void {
-  if (frame) cancelAnimationFrame(frame);
+  if (frame) cancelGameFrame(frame);
   frame = 0;
   if (sensorWaitTimer) window.clearTimeout(sensorWaitTimer);
   sensorWaitTimer = 0;
@@ -40,6 +43,11 @@ function finish(text: string): void {
 
 function tick(now: number): void {
   if (phase.value !== 'playing') return;
+  const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
+  if (!isFrameDue(now, last, fps)) {
+    frame = requestGameFrame(tick, maxVisualFps);
+    return;
+  }
   const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
   last = now;
   elapsed.value = (now - startedAt) / 1000;
@@ -63,7 +71,7 @@ function tick(now: number): void {
   }
   const distance = Math.hypot(ball.value.x, ball.value.y);
   if (distance > 1.38) finish('A Pokébola caiu da ponta!');
-  else frame = requestAnimationFrame(tick);
+  else frame = requestGameFrame(tick, maxVisualFps);
 }
 
 async function start(): Promise<void> {
@@ -98,7 +106,7 @@ async function start(): Promise<void> {
       stopLoop();
     }
   }, 2500);
-  frame = requestAnimationFrame(tick);
+  frame = requestGameFrame(tick, maxVisualFps);
 }
 
 function leave(): void {

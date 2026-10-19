@@ -7,6 +7,8 @@ import type { StatsPanel } from './stats-panel';
 import type { PanelHit } from './stats-draw';
 import type { PanelPage } from './panel-state';
 import type { TrackingEngine, TrackingInfo, TrackingUpdate } from './engine';
+import { isFrameDue } from '../core/frame-rate';
+import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 
 export type ArPhase = 'idle' | 'starting' | 'searching' | 'tracking' | 'lost' | 'error';
 
@@ -58,6 +60,8 @@ export interface ArSessionDeps {
   video: HTMLVideoElement;
   /** Tamanho em CSS do contêiner onde o vídeo é exibido em "cover". */
   getContainerSize: () => { width: number; height: number };
+  /** Limite opcional de quadros desenhados; o rastreador continua recebendo os quadros da câmera. */
+  maxFps?: () => number;
   /** Agenda o próximo quadro de desenho (requestAnimationFrame no navegador). */
   schedule?: (callback: (now: number) => void) => number;
   cancel?: (handle: number) => void;
@@ -80,6 +84,7 @@ export class ArSession {
   private info: TrackingInfo | null = null;
   private handle: number | null = null;
   private running = false;
+  private lastRenderAt = 0;
   private missedFrames = 0;
   private lastPoseAt = 0;
   /** Quando chegou a primeira pose nula depois de uma pose boa (o MindAR desistiu da carta); null se está vendo a carta. */
@@ -263,10 +268,12 @@ export class ArSession {
   }
 
   private loop(): void {
-    const schedule = this.deps.schedule ?? ((cb) => requestAnimationFrame(cb));
+    const schedule = this.deps.schedule ?? ((cb) => requestGameFrame(cb, this.deps.maxFps ?? (() => 0)));
     const tick = (now: number) => {
       if (!this.running) return;
       this.handle = schedule(tick);
+      if (!isFrameDue(now, this.lastRenderAt, this.deps.maxFps?.() ?? 0)) return;
+      this.lastRenderAt = now;
       // Giroscópio: leva a pose (presa ao mundo) de volta para a câmera pela orientação de agora − atraso da imagem.
       const nowMs = this.clock();
       this.expireLost(nowMs);
@@ -286,7 +293,7 @@ export class ArSession {
   /** Para o rastreamento e o desenho e libera tudo (não fecha a câmera: ela é de quem a abriu). */
   stop(): void {
     this.running = false;
-    if (this.handle !== null) (this.deps.cancel ?? ((h) => cancelAnimationFrame(h)))(this.handle);
+    if (this.handle !== null) (this.deps.cancel ?? cancelGameFrame)(this.handle);
     this.handle = null;
     this.deps.engine.stop();
     this.scene.remove(this.deps.sprite.group);

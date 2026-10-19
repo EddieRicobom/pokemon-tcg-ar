@@ -28,7 +28,7 @@ import { scanSteps, stabilityText } from '../app/scan-steps';
 import { lastAttempt } from '../app/diagnostics';
 import { routeHref } from '../app/route';
 import { useFullscreen } from '../app/fullscreen';
-import { visual } from '../app/visual-settings';
+import { effectiveVisual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
 import { requestOrientationPermission } from '../core/orientation-permission';
 import SmoothingSheet from '../components/SmoothingSheet.vue';
@@ -333,12 +333,12 @@ function readLayout(): SpriteLayout {
   }
   return { ...DEFAULT_LAYOUT };
 }
-const layout = reactive<SpriteLayout>({ ...readLayout(), smoothing: visual.smoothing, showShadow: visual.shadow });
+const layout = reactive<SpriteLayout>({ ...readLayout(), smoothing: effectiveVisual.value.smoothing, showShadow: effectiveVisual.value.shadow });
 // A suavização dos pixels vem da escolha compartilhada (também usada em Várias e na Caixa).
-watch(() => visual.smoothing, (smoothing) => {
+watch(() => effectiveVisual.value.smoothing, (smoothing) => {
   layout.smoothing = smoothing;
 });
-watch(() => visual.shadow, (shadow) => {
+watch(() => effectiveVisual.value.shadow, (shadow) => {
   layout.showShadow = shadow;
 });
 
@@ -511,7 +511,7 @@ async function startArFor(cardId: string): Promise<void> {
       dexId: spriteIdOf(companion),
       shiny: isShiny(assets.card),
       evolved,
-      evolutionFx: () => visual.evolutionFx && !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      evolutionFx: () => effectiveVisual.value.evolutionFx && !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       cachedSprite: evolved ? null : assets.cachedSprite,
       fetchSprite: (dexId, shiny) => fetchSprite(dexId, undefined, { shiny }),
       battle: {
@@ -695,7 +695,7 @@ function setPanelMode(mode: PanelMode): void {
 }
 
 function resetLayout(): void {
-  Object.assign(layout, DEFAULT_LAYOUT, { smoothing: visual.smoothing, showShadow: visual.shadow });
+  Object.assign(layout, DEFAULT_LAYOUT, { smoothing: effectiveVisual.value.smoothing, showShadow: effectiveVisual.value.shadow });
   saveLayout();
 }
 

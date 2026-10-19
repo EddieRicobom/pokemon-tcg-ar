@@ -10,6 +10,7 @@ import { createWebglBackend } from './webgl-backend';
 import type { BattleData, PartName } from '../app/pokemon-data-service';
 import { sensorSettings } from '../app/sensor-settings';
 import { getOrientationFeed } from '../sensors/orientation-feed';
+import { effectiveVisual } from '../app/visual-settings';
 
 export interface StartArOptions {
   video: HTMLVideoElement;
@@ -60,6 +61,7 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
     getGyroSettings: () => ({ gyro: sensorSettings.gyro, latencyMs: sensorSettings.latencyMs }),
     video: options.video,
     getContainerSize: () => ({ width: options.container.clientWidth, height: options.container.clientHeight }),
+    maxFps: () => effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate),
     onState: options.onState,
   });
 

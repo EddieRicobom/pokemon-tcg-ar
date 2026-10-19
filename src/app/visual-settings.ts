@@ -1,4 +1,4 @@
-import { reactive, watch } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import { DEFAULT_SMOOTHING, normalizeSmoothing } from '../core/pixel-upscale';
 import type { SmoothingMode } from '../core/pixel-upscale';
 import { normalizeWeatherMode } from '../core/weather';
@@ -29,14 +29,24 @@ export interface VisualSettings {
   villageFx: boolean;
   /** Portal e chegada especial ao rastrear uma carta cujo companheiro evoluiu. */
   evolutionFx: boolean;
+  /** Limite da taxa de quadros das cenas animadas; automático segue a tela. */
+  frameRate: 'auto' | '30' | '20';
+  /** Sobreposição de economia: desliga efeitos gráficos pesados sem apagar preferências individuais. */
+  rotomMode: boolean;
 }
 
 const KEY = 'tcg-ar-visual-v2';
 const LEGACY_KEY = 'tcg-ar-visual-v1';
-const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, impactFx: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, evolutionFx: true };
+const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, impactFx: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, evolutionFx: true, frameRate: 'auto', rotomMode: false };
 
 export function normalizeVisual(raw: Partial<VisualSettings> | null | undefined): VisualSettings {
-  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, impactFx: raw?.impactFx !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false, villageFx: raw?.villageFx !== false, evolutionFx: raw?.evolutionFx !== false };
+  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, impactFx: raw?.impactFx !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false, villageFx: raw?.villageFx !== false, evolutionFx: raw?.evolutionFx !== false, frameRate: raw?.frameRate === '30' || raw?.frameRate === '20' ? raw.frameRate : 'auto', rotomMode: raw?.rotomMode === true };
+}
+
+/** Preferências efetivas sem alterar o que a pessoa escolheu para cada efeito. */
+export function effectiveVisualSettings(settings: VisualSettings): VisualSettings {
+  if (!settings.rotomMode) return { ...settings };
+  return { ...settings, smoothing: 'nitido', lighting: false, impactFx: false, terrain: false, social: false, weather: 'off', shadow: false, metallic: false, caseFx: false, villageFx: false, evolutionFx: false, frameRate: '20' };
 }
 
 function read(): VisualSettings {
@@ -52,10 +62,14 @@ function read(): VisualSettings {
 }
 
 export const visual = reactive<VisualSettings>(read());
+export const effectiveVisual = computed(() => effectiveVisualSettings(visual));
+export function maxVisualFps(): number {
+  return effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
+}
 
 watch(visual, () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, impactFx: visual.impactFx, terrain: visual.terrain, social: visual.social, weather: visual.weather, sound: visual.sound, shadow: visual.shadow, metallic: visual.metallic, caseFx: visual.caseFx, villageFx: visual.villageFx, evolutionFx: visual.evolutionFx }));
+    localStorage.setItem(KEY, JSON.stringify({ ...visual }));
   } catch {
     // Só não lembra da escolha na próxima vez.
   }
