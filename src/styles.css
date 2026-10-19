@@ -5930,6 +5930,11 @@ body.no-scroll .reward-toasts {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
 }
 
+/* O seletor da Torre precisa receber o gesto vertical para rolar em telas baixas. */
+.survivor-stage-picker {
+  touch-action: pan-y;
+}
+
 /* Sombra sutil nas bordas: separa o HUD/joystick do jogo em movimento por baixo, sem precisar de um
    painel sólido cobrindo a cena (era um dos motivos de parecer caótico: HUD e cena disputando o olho). */
 .survivor-vignette {
@@ -6151,6 +6156,14 @@ body.no-scroll .reward-toasts {
   width: 100%;
   max-width: 300px;
   text-align: center;
+}
+
+.survivor-pick {
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .survivor-pause-btn[aria-pressed="true"] {
