@@ -1,7 +1,21 @@
+import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyBackup, BACKUP_FORMAT, BACKUP_KEYS, backupFileName, buildBackup, parseBackup, parseBackupZip, serializeBackup, serializeBackupZip } from './backup';
+import { applyBackup, applyFullBackup, BACKUP_FORMAT, BACKUP_KEYS, backupFileName, buildBackup, parseBackup, parseBackupZip, serializeBackup, serializeBackupZip } from './backup';
+import { openCacheDb } from '../cache/db';
 
 const NOW = '2026-10-16T12:00:00.000Z';
+
+class MemoryCache {
+  readonly values = new Map<string, Response>();
+  async keys(): Promise<Request[]> { return [...this.values.keys()].map((url) => new Request(url)); }
+  async match(request: Request | string): Promise<Response | undefined> { return this.values.get(typeof request === 'string' ? request : request.url); }
+  async put(request: Request | string, response: Response): Promise<void> { this.values.set(typeof request === 'string' ? request : request.url, response.clone()); }
+  async delete(request: Request | string): Promise<boolean> { return this.values.delete(typeof request === 'string' ? request : request.url); }
+  clear(): void { this.values.clear(); }
+}
+
+const memoryCache = new MemoryCache();
+(globalThis as typeof globalThis & { caches?: CacheStorage }).caches = { open: async () => memoryCache } as unknown as CacheStorage;
 
 describe('backup — exportar', () => {
   beforeEach(() => localStorage.clear());
@@ -55,6 +69,29 @@ describe('backup — exportar', () => {
 
 describe('backup — importar', () => {
   beforeEach(() => localStorage.clear());
+
+  it('restaura coleção, metadados e Cache Storage junto com o localStorage', async () => {
+    const db = await openCacheDb();
+    await db.clear('cards'); await db.clear('assets'); await db.clear('meta'); db.close();
+    memoryCache.clear();
+    const file = {
+      ...buildBackup(localStorage, NOW),
+      collection: {
+        cards: [{ id: 'base1-1', schema: 1, name: 'Bulbasaur', setId: 'base1', setName: 'Base', localId: '1', setOfficial: 102, setTotal: 102, dexIds: [1], reference: { state: 'ok' as const, key: 'https://example.test/card.webp' }, sprite: { state: 'ok' as const, key: 'https://example.test/sprite.gif' }, target: { state: 'ok' as const, key: 'https://example.test/target.mind' }, firstSeenAt: 1, lastSeenAt: 1, scanCount: 1 }],
+        records: [{ url: 'https://example.test/card.webp', kind: 'reference' as const, bytes: 3, refs: ['base1-1'], storedAt: 1 }],
+        meta: [{ key: 'last', value: { ok: true } }],
+        assets: [{ url: 'https://example.test/card.webp', type: 'image/webp', bytes: [1, 2, 3] }],
+      },
+    };
+    localStorage.setItem('tcg-ar-trainer-v1', '{"xp":9}');
+    await applyFullBackup(file, localStorage);
+    const restored = await openCacheDb();
+    expect(await restored.getAll('cards')).toHaveLength(1);
+    expect(await restored.getAll('assets')).toHaveLength(1);
+    expect(await restored.get('meta', 'last')).toEqual({ ok: true });
+    restored.close();
+    expect(await memoryCache.match('https://example.test/card.webp')).toBeDefined();
+  });
 
   it('ida e volta: exporta, limpa o aparelho, importa de volta — tudo igual', () => {
     localStorage.setItem('tcg-ar-trainer-v1', '{"xp":500}');
