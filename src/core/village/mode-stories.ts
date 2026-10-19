@@ -13,6 +13,11 @@ const MODE_STORIES: Record<string, Omit<VillageRequest, 'id' | 'day' | 'done' | 
     detail: 'O troféu veio da pista depois de uma partida concluída com 100 pontos. Leve duas conchas ao Museu para preparar a vitrine do recorde.',
     location: 'Museu da Vila', item: 'concha', qty: 2, rewardCoins: 35, rewardItem: 'pecha', rewardQty: 2, rewardFriend: 0,
   },
+  'torre-chefao': {
+    kind: 'collect', title: 'Preparar a placa do Troféu da Torre',
+    detail: 'Você trouxe o troféu depois de derrotar o chefão final da Torre. Leve duas peças de ferro ao Museu para fixar a placa da conquista na vitrine.',
+    location: 'Museu da Vila', item: 'ferro', qty: 2, rewardCoins: 50, rewardItem: 'cristal', rewardQty: 1, rewardFriend: 0,
+  },
 };
 
 /** Cria cada pedido uma vez, mesmo se a Vila abrir depois de o marco ter sido conquistado. */
