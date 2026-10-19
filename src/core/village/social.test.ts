@@ -259,6 +259,21 @@ describe('momentos: resultado', () => {
     expect(r2.moment.choice).toBeTruthy();
   });
 
+  it('transforma uma promessa em comportamento futuro e a consome quando acontece', () => {
+    const s = fresh();
+    const env = makeEnv(s, '2026-10-14', 14, null);
+    const base = sceneOfTemplate(TEMPLATE_BY_ID.get('par-piquenique')!, actors.slice(0, 2), s, env, seededRng(8))!;
+    const scene = { ...base, tpl: { ...base.tpl, outcome: { plan: { kind: 'visitar' as const, from: 0 as const, to: 1 as const, days: 3 } } } };
+    resolveScene(s, scene, null, Date.parse('2026-10-14T14:00:00Z'));
+    expect(s.plans).toHaveLength(1);
+    expect(s.plans[0]).toMatchObject({ from: 'a', to: 'b', kind: 'visitar', expiresDay: '2026-10-17' });
+
+    const followUp = pickMoment(actors.slice(0, 2), s, makeEnv(s, '2026-10-15', 14, null), seededRng(2));
+    expect(followUp?.tpl.id).toBe('social-plano-visita');
+    resolveScene(s, followUp!, null, Date.parse('2026-10-15T14:00:00Z'));
+    expect(s.plans).toEqual([]);
+  });
+
   it('romance vira casal e o fim do namoro vira briga ou separação; brigados voltam às pazes', () => {
     const s = fresh();
     const rel = { bond: 80, spark: 95, flag: null as 'casal' | 'brigados' | null, since: '', met: 4 };

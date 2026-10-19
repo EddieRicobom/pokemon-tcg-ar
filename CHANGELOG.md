@@ -12,6 +12,11 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 - A Torre ganhou pausa explícita: relógio, inimigos, projéteis e efeitos ficam congelados até a pessoa tocar em “Retomar”.
 - Sinergias elementais limitadas passaram a reconhecer Água + Elétrico, Fogo + Planta, Gelo + Água e Terra + Elétrico, com marcadores temporários, multiplicadores controlados e consumo sem recursão.
 
+### Consequências sociais na Vila (2026-10-19)
+
+- Reconciliações, conselhos e promessas podem deixar um compromisso persistente de visita, ajuda ou convite entre dois moradores.
+- O próximo encontro do par prioriza o compromisso dentro de um prazo curto e o remove ao ser concluído; a lista tem limite e saves antigos continuam válidos.
+
 ### Treinadores animados, carregamento e confiabilidade (2026-10-18)
 
 - Folhas PNG novas dos treinadores na Vila, com quatro direções, caminhada e repouso; preparo com pés alinhados e verificação dos arquivos no CI.

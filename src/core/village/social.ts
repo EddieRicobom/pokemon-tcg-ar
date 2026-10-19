@@ -3,8 +3,8 @@ import { itemDef } from './catalog';
 import { add, count, friendOf, itemName } from './life';
 import type { ItemId, VillageState } from './life';
 import { hash, personalityOf } from './personality';
-import { MAX_MEMORIES, MAX_SAVED, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
-import type { MemoryKind, Moment, MomentKind, MomentLine, Relation, SocialMemory } from './social-state';
+import { MAX_MEMORIES, MAX_SAVED, MAX_SOCIAL_PLANS, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
+import type { MemoryKind, Moment, MomentKind, MomentLine, Relation, SocialMemory, SocialPlan, SocialPlanKind } from './social-state';
 import { L, calm, is, night, other } from './moments/kit';
 import { spreadWords, withWords } from './quiz';
 import { DUO_MOMENTS } from './moments/duo';
@@ -580,6 +580,40 @@ export const TEMPLATES: readonly Template[] = [...CORE, ...SOLO_MOMENTS, ...DUO_
 export const TEMPLATE_COUNT = TEMPLATES.length;
 export const TEMPLATE_BY_ID = new Map(TEMPLATES.map((t) => [t.id, t]));
 
+/** Modelos especiais: aparecem uma vez quando uma consequência social persistente vence o sorteio. */
+const FOLLOW_UP_MOMENTS: Readonly<Record<SocialPlanKind, Template>> = {
+  visitar: {
+    id: 'social-plano-visita', kind: 'amizade', title: 'Visita combinada', emoji: '🏡', cast: 2, weight: 1,
+    lines: (c) => [
+      L(0, `${c.n[0]}, eu disse que voltaria para conversar com você. Eu cumpro minhas promessas.`, 'heart'),
+      L(1, 'Eu estava esperando. Ainda bem que você veio.', 'sparkle'),
+      L(0, 'A gente pode começar de novo, com calma.', 'note'),
+    ],
+    outcome: { bond: 8, friend: 1 },
+    after: (n, who) => `Eu visitei ${other(n, who)} como tinha prometido. Foi bom conversar.`,
+  },
+  ajudar: {
+    id: 'social-plano-ajuda', kind: 'amizade', title: 'Ajuda prometida', emoji: '🛠️', cast: 2, weight: 1,
+    lines: (c) => [
+      L(0, `${c.n[1]}, eu vim ajudar. Você não precisa fazer isso sozinho.`, 'idea'),
+      L(1, 'Você lembrou mesmo! Vamos fazer juntos.', 'heart'),
+      L(0, 'Pronto. Quando um pede ajuda, o outro aparece.', 'sparkle'),
+    ],
+    outcome: { bond: 10, friend: 2 },
+    after: (n, who) => `Ajudei ${other(n, who)} como tinha combinado.`,
+  },
+  convidar: {
+    id: 'social-plano-convite', kind: 'amizade', title: 'Convite guardado', emoji: '✉️', cast: 2, weight: 1,
+    lines: (c) => [
+      L(0, `${c.n[1]}, quer fazer alguma coisa comigo hoje? Eu guardei esse convite.`, 'star'),
+      L(1, 'Quero! Obrigado por lembrar de mim.', 'heart'),
+      L(0, 'Então está combinado. A gente se encontra depois.', 'note'),
+    ],
+    outcome: { bond: 7, spark: 2, friend: 1 },
+    after: (n, who) => `Convidei ${other(n, who)} para passar um tempo comigo.`,
+  },
+};
+
 // -------------------------------------------------------------------------------- relações
 
 /** A relação do par (cria já com um começo meio aleatório: alguns pares nascem simpáticos e outros, implicantes). */
@@ -636,6 +670,50 @@ function makeCtx(state: VillageState, cast: Actor[], env: SocialEnv, rng: Rng): 
   };
 }
 
+function shiftDay(day: string, days: number): string {
+  const t = Date.parse(`${day}T00:00:00Z`);
+  if (!Number.isFinite(t)) return day;
+  const d = new Date(t + Math.max(1, Math.min(14, Math.round(days))) * 86_400_000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+function dayNumber(day: string): number {
+  const t = Date.parse(`${day}T00:00:00Z`);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function pendingPlan(state: VillageState, actors: readonly Actor[], day: string): SocialPlan | undefined {
+  if (state.plans.length === 0) return undefined;
+  const ids = new Set(actors.map((a) => a.id));
+  const today = dayNumber(day);
+  return state.plans.find((plan) => ids.has(plan.from) && ids.has(plan.to) && today >= dayNumber(plan.createdDay) && today <= dayNumber(plan.expiresDay));
+}
+
+function castForPlan(plan: SocialPlan, actors: readonly Actor[]): Actor[] | null {
+  const from = actors.find((a) => a.id === plan.from);
+  const to = actors.find((a) => a.id === plan.to);
+  return from && to ? [from, to] : null;
+}
+
+function schedulePlans(state: VillageState, cast: readonly Actor[], drafts: Outcome['plan'], day: string, now: number, sourceMomentId: string): void {
+  if (!drafts) return;
+  const list = Array.isArray(drafts) ? drafts : [drafts];
+  const added: SocialPlan[] = [];
+  for (const draft of list) {
+    if (!draft || !['visitar', 'ajudar', 'convidar'].includes(draft.kind)) continue;
+    const from = cast[draft.from ?? 0];
+    const to = cast[draft.to ?? 1];
+    if (!from || !to || from.id === to.id) continue;
+    added.push({ id: `plano-${now.toString(36)}-${from.id}-${to.id}-${draft.kind}`, from: from.id, to: to.id, kind: draft.kind, createdDay: day, expiresDay: shiftDay(day, draft.days ?? 3), sourceMomentId });
+  }
+  if (added.length === 0) return;
+  state.plans = [...state.plans.filter((old) => !added.some((next) => next.from === old.from && next.to === old.to && next.kind === old.kind)), ...added].slice(-MAX_SOCIAL_PLANS);
+}
+
+function completePlan(state: VillageState, id: string): void {
+  state.plans = state.plans.filter((plan) => plan.id !== id);
+}
+
 function parseDay(day: string): { y: number; m: number; d: number; dow: number } {
   const [y, m, d] = day.split('-').map(Number);
   const date = new Date(Date.UTC(y || 2026, (m || 1) - 1, d || 1));
@@ -652,6 +730,17 @@ export interface Scene {
 /** Sorteia o próximo momento entre os Pokémon que estão na Vila; `null` se ninguém combinou com nenhum modelo. */
 export function pickMoment(actors: readonly Actor[], state: VillageState, env: SocialEnv, rng: Rng): Scene | null {
   if (actors.length === 0) return null;
+  const plan = pendingPlan(state, actors, env.day);
+  if (plan) {
+    const cast = castForPlan(plan, actors);
+    const tpl = FOLLOW_UP_MOMENTS[plan.kind];
+    if (cast && tpl) {
+      const ctx = makeCtx(state, cast, env, rng);
+      ctx.memo.socialPlanId = plan.id;
+      ctx.memo.socialPlanKind = plan.kind;
+      return { tpl, ctx, cast, lines: withWords(tpl.lines(ctx), cast.map((a) => a.id), state, rng) };
+    }
+  }
   const recent = state.diary.slice(-8).map((m) => m.tpl);
   const seen = new Set(state.seen);
   const pool = TEMPLATES.filter((t) => t.cast <= actors.length);
@@ -863,6 +952,8 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
     ...(autoKeep ? { fav: true } : {}),
     ...(away ? { away: true } : {}),
   };
+  schedulePlans(state, cast, outcome.plan, day, now, moment.id);
+  if (typeof ctx.memo.socialPlanId === 'string') completePlan(state, ctx.memo.socialPlanId);
   state.diary.push(moment);
   trimDiary(state);
   rememberMoment(state, moment);

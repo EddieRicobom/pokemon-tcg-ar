@@ -92,6 +92,18 @@ export interface SocialMemory {
   momentId: string;
 }
 
+/** Um compromisso social que muda o próximo comportamento de um morador. */
+export type SocialPlanKind = 'visitar' | 'ajudar' | 'convidar';
+export interface SocialPlan {
+  id: string;
+  from: string;
+  to: string;
+  kind: SocialPlanKind;
+  createdDay: string;
+  expiresDay: string;
+  sourceMomentId: string;
+}
+
 export interface SocialState {
   rel: Record<string, Relation>;
   diary: Moment[];
@@ -104,6 +116,8 @@ export interface SocialState {
   words: Record<string, string>;
   lingo: Lingo[];
   memories: SocialMemory[];
+  /** Compromissos criados por momentos importantes (visitas, ajuda e convites). */
+  plans: SocialPlan[];
   /** Quantas perguntas cada Pokémon já fez hoje. */
   asked: Record<string, { day: string; n: number }>;
   /** Apelidos que você deu (só quem chegou a «Grande amigo» pode ganhar um; ver `nickname.ts`). */
@@ -117,6 +131,7 @@ export const MAX_ANSWER_LEN = 28;
 export const MAX_NICKS = 200;
 export const MAX_NICK_LEN = 14;
 export const MAX_MEMORIES = 80;
+export const MAX_SOCIAL_PLANS = 24;
 
 /** Limpa o que foi digitado: sem caracteres de controle, espaços repetidos nem sobras, com tamanho limitado. */
 export function cleanAnswer(raw: unknown, max = MAX_ANSWER_LEN): string {
@@ -133,7 +148,7 @@ const MAX_SEEN = 600;
 export const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 export function emptySocial(): SocialState {
-  return { rel: {}, diary: [], seen: [], lastSeen: 0, diaryRead: 0, answers: [], words: {}, lingo: [], memories: [], asked: {}, nicks: {} };
+  return { rel: {}, diary: [], seen: [], lastSeen: 0, diaryRead: 0, answers: [], words: {}, lingo: [], memories: [], plans: [], asked: {}, nicks: {} };
 }
 
 const num = (v: unknown, lo: number, hi: number, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : fallback);
@@ -177,7 +192,7 @@ export function trimMoments(all: readonly Moment[]): Moment[] {
   return all.filter((m) => keepSaved.has(m) || recent.has(m));
 }
 
-export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown; answers?: unknown; words?: unknown; lingo?: unknown; memories?: unknown; asked?: unknown; nicks?: unknown }): SocialState {
+export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown; answers?: unknown; words?: unknown; lingo?: unknown; memories?: unknown; plans?: unknown; asked?: unknown; nicks?: unknown }): SocialState {
   const rel: Record<string, Relation> = {};
   if (raw.rel && typeof raw.rel === 'object') {
     for (const [k, v] of Object.entries(raw.rel as Record<string, Partial<Relation>>)) {
@@ -195,6 +210,16 @@ export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: un
       if (!['amizade', 'rivalidade', 'romance', 'descoberta'].includes(m.kind as string)) continue;
       const withIds = Array.isArray(m.with) ? m.with.filter((id): id is string => typeof id === 'string').map((id) => id.slice(0, 80)).slice(0, 2) : [];
       memories.push({ id: m.id.slice(0, 100), mon: m.mon.slice(0, 80), with: withIds, kind: m.kind as MemoryKind, text: m.text.slice(0, 180), day: str(m.day, 12), t: num(m.t, 0, 9e15, 0), momentId: m.momentId.slice(0, 100) });
+    }
+  }
+  const plans: SocialPlan[] = [];
+  if (Array.isArray(raw.plans)) {
+    for (const x of raw.plans) {
+      if (!x || typeof x !== 'object') continue;
+      const p = x as Partial<SocialPlan>;
+      if (typeof p.id !== 'string' || typeof p.from !== 'string' || typeof p.to !== 'string' || typeof p.createdDay !== 'string' || typeof p.expiresDay !== 'string' || typeof p.sourceMomentId !== 'string') continue;
+      if (!['visitar', 'ajudar', 'convidar'].includes(p.kind as string) || p.from === p.to) continue;
+      plans.push({ id: p.id.slice(0, 100), from: p.from.slice(0, 80), to: p.to.slice(0, 80), kind: p.kind as SocialPlanKind, createdDay: p.createdDay.slice(0, 12), expiresDay: p.expiresDay.slice(0, 12), sourceMomentId: p.sourceMomentId.slice(0, 100) });
     }
   }
   return {
@@ -218,6 +243,7 @@ export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: un
           .slice(-MAX_LINGO)
       : [],
     memories: memories.slice(-MAX_MEMORIES),
+    plans: plans.slice(-MAX_SOCIAL_PLANS),
     asked: raw.asked && typeof raw.asked === 'object' ? Object.fromEntries(Object.entries(raw.asked as Record<string, Partial<{ day: string; n: number }>>).filter(([, v]) => v && typeof v.day === 'string').slice(0, 80).map(([k, v]) => [k, { day: str(v.day, 12), n: num(v.n, 0, 99, 0) }])) : {},
   };
 }
