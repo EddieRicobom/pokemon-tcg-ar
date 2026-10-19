@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { applyBackup, applyFullBackup, BACKUP_FORMAT, BACKUP_KEYS, backupFileName, buildBackup, parseBackup, parseBackupZip, serializeBackup, serializeBackupZip } from './backup';
 import { openCacheDb } from '../cache/db';
+import { applyEvent, emptyTrainer, normalizeTrainer } from '../core/trainer';
 
 const NOW = '2026-10-16T12:00:00.000Z';
 
@@ -105,6 +106,30 @@ describe('backup — importar', () => {
     applyBackup(parsed as Exclude<typeof parsed, string>, localStorage);
     expect(localStorage.getItem('tcg-ar-trainer-v1')).toBe('{"xp":500}');
     expect(localStorage.getItem('tcg-ar-vila-v1')).toBe('{"coins":10}');
+  });
+
+  it('preserva corridas concluídas e objetivos da Torre numa restauração JSON e ZIP', () => {
+    const run = applyEvent(emptyTrainer(), {
+      type: 'survivor', runId: 'torre-backup-1', survivedMs: 180_000, trainersBeaten: 1,
+      bossesBeaten: 0, clearedTorre: false, infinite: false, wave: 4, kills: 23, level: 6,
+      completedObjectives: ['abates-20', 'tempo-3m'],
+    }, '2026-10-16');
+    localStorage.setItem('tcg-ar-trainer-v1', JSON.stringify(run.state));
+
+    for (const encoded of [serializeBackup(buildBackup(localStorage, NOW)), serializeBackupZip(buildBackup(localStorage, NOW))]) {
+      const file = typeof encoded === 'string' ? parseBackup(encoded) : parseBackupZip(encoded);
+      expect(typeof file).not.toBe('string');
+      localStorage.clear();
+      applyBackup(file as Exclude<typeof file, string>, localStorage);
+      const restored = normalizeTrainer(JSON.parse(localStorage.getItem('tcg-ar-trainer-v1') ?? 'null'));
+      expect(restored.torre).toMatchObject({
+        runs: 1, bestWave: 4, bestLevel: 6, runIds: ['torre-backup-1'],
+        completedObjectives: ['abates-20', 'tempo-3m'],
+      });
+      expect(restored.torre.recentRuns).toMatchObject([{
+        id: 'torre-backup-1', day: '2026-10-16', survivedMs: 180_000, wave: 4, kills: 23, level: 6,
+      }]);
+    }
   });
 
   it('uma chave ausente no backup é removida do aparelho ao restaurar (restauração completa, não soma)', () => {
