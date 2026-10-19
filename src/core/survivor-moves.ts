@@ -116,6 +116,15 @@ export const CATEGORY_BASE: Record<MoveCategory, CategoryBase> = {
   orbit: { damage: 6, cooldownMs: 520, range: 0, radius: 72 },
 };
 
+/** Multiplicadores situacionais: golpes que exigem proximidade recebem mais retorno por exposição. */
+export const CATEGORY_DAMAGE_FACTOR: Record<MoveCategory, number> = {
+  projetil: 1,
+  aura: 1.22,
+  area: 1,
+  cone: 1.15,
+  orbit: 1.22,
+};
+
 /** Os números do golpe e do corpo de quem joga, já com os stats aplicados. */
 export interface AttackProfile {
   damage: number;
@@ -155,7 +164,7 @@ export function attackProfile(move: SurvivorMove, stats: BaseStats | null): Atta
   const base = CATEGORY_BASE[move.category];
   const farther = move.effect === 'atravessar' && move.category !== 'projetil' ? 1.15 : 1;
   return {
-    damage: round1(base.damage * factor(offenseOf(move.category, s), 0.6, 0.65, 1.7) * SURVIVOR_DAMAGE_FACTOR),
+    damage: round1(base.damage * factor(offenseOf(move.category, s), 0.6, 0.65, 1.7) * SURVIVOR_DAMAGE_FACTOR * CATEGORY_DAMAGE_FACTOR[move.category]),
     cooldownMs: Math.round(base.cooldownMs / factor(s.speed, 0.35, 0.75, 1.35)),
     range: round1(base.range * farther),
     radius: round1(base.radius * factor(s.defense, 0.35, 0.8, 1.5) * farther),

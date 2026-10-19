@@ -1,5 +1,11 @@
 # Plano e estado do projeto
 
+## Survival e interface compartilhada (19/10/2026)
+
+- O Survival desacelera a chegada e a escalada de inimigos, tem uma janela maior de recuperação após acertos e aumenta o dano de aura, órbita e cone para compensar o combate próximo. Ajustes centralizados em `BALANCE` e `CATEGORY_DAMAGE_FACTOR`; teste compara DPS teórico com stats idênticos, sem alegar equilíbrio comprovado.
+- Tokens compartilhados de cor, foco, espaçamento e toque; cartões da equipe usam mais colunas; a Box permite selecionar caixas diretamente e organiza seus 30 espaços em até 8/10 colunas em telas largas, mantendo 6 no celular.
+- ✅ Typecheck, testes, build com `BASE_PATH` e `verify-dist` são os critérios antes do merge. 🔶 Dificuldade, legibilidade e toque ainda precisam de partidas e avaliação em celular real.
+
 - **Efeitos da Vila (2026-10-18):** ondas no lago e ondulações com chuva, gotas em arco e anéis na fonte e raios suaves de sol modulados por clima/horário. Opções permite desligar; movimento reduzido também desativa os novos efeitos. Tipos, build e dist conferidos; validação visual em celular pendente.
 
 Legenda: ✅ feito e coberto por testes automatizados / CI · 🔶 feito, **falta validar em celular real** · ⬜ a fazer

@@ -354,9 +354,8 @@ export const INFINITE_SCALE_PER_MIN = 0.15;
 export const BASIC_MOVE: SurvivorMove = { type: 'normal', name: 'Golpe', category: 'projetil', effect: 'nenhum', color: '#fffbe0', icon: '✦' };
 
 /**
- * Números de dificuldade, comparados com 200 corridas de `scripts/survivor-sim.eval.ts`, golpes e stats reais de
- * espécies espalhadas pela Pokédex e upgrades ao acaso. A última medição está registrada no plano de implementação.
- * O robô não substitui o ajuste com o dono jogando num aparelho real.
+ * Parâmetros centrais de ritmo e dificuldade. A comparação automatizada orienta regressões, mas não comprova equilíbrio;
+ * o ajuste final ainda precisa de partidas reais em aparelho.
  */
 export const BALANCE = {
   xpBase: 14,
@@ -368,14 +367,21 @@ export const BALANCE = {
   bossDamagePerWave: 2,
   enemyHpBase: 16,
   /** Vida extra a cada `enemyHpEverySec` segundos; a simulação agora usa os golpes reais das espécies. */
-  enemyHpStep: 5,
+  enemyHpStep: 4,
   enemyHpEverySec: 30,
-  enemyHpPerWave: 4,
+  enemyHpPerWave: 3,
+  enemyDamageBase: 6,
+  enemyDamageStep: 2,
+  enemyDamageEverySec: 40,
+  enemySpeedBase: 55,
+  enemySpeedRandom: 25,
   /** Intervalo entre nascimentos (ms) = início − porSegundo·t − porOnda·onda, nunca abaixo do piso. */
-  spawnStartMs: 2100,
-  spawnPerSecMs: 6,
-  spawnPerWaveMs: 20,
-  spawnFloorMs: 300,
+  spawnStartMs: 2400,
+  spawnPerSecMs: 4,
+  spawnPerWaveMs: 15,
+  spawnFloorMs: 450,
+  /** Intervalo de invulnerabilidade após qualquer acerto; dá tempo para reposicionar sem remover o perigo. */
+  hitInvulnerabilityMs: 650,
   playerDamage: 10,
   playerCooldownMs: 600,
   /** Primeiro chefe e intervalo entre os seguintes (ms). */
@@ -550,11 +556,13 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
     return;
   }
   const baseHp = BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave;
-  const baseDmg = 6 + Math.floor(t / 40) * 2;
+  const baseDmg = BALANCE.enemyDamageBase + Math.floor(t / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep;
   // Treinadores (elite) têm +5× HP e +2× dano; o chefão (do time dos 6) ainda mais pesado.
   const hpMul = grade === 'chefao' ? 7 : grade === 'elite' ? 5 : 1;
   const dmgMul = grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1;
-  const speed = (grade === 'comum' ? 55 + state.rng() * 25 : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
+  const speed = (grade === 'comum'
+    ? BALANCE.enemySpeedBase + state.rng() * BALANCE.enemySpeedRandom
+    : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
   const hp = Math.round(baseHp * hpMul * state.infiniteScale);
   const kind = Math.floor(state.rng() * state.kindCount);
   const id = state.nextId++;
@@ -1043,7 +1051,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
     if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
       p.hp = Math.max(0, p.hp - e.damage);
-      p.invulnMs = 500;
+      p.invulnMs = BALANCE.hitInvulnerabilityMs;
     }
   }
 
@@ -1055,7 +1063,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (proj.lifeMs <= 0 || proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size && p.invulnMs <= 0) {
       p.hp = Math.max(0, p.hp - proj.damage);
-      p.invulnMs = 500;
+      p.invulnMs = BALANCE.hitInvulnerabilityMs;
       return false;
     }
     return true;
