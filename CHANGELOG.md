@@ -4,6 +4,12 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 
 ## [Não lançado]
 
+### Biomas mecânicos na Torre (2026-10-19)
+
+- Kanto, Hoenn e Sinnoh ganharam zonas ambientais visíveis e determinísticas: folhagem desacelera o passo e projéteis, poças desaceleram e amplificam golpes Elétricos, e neve reduz mais a velocidade.
+- As zonas têm marcação visual no canvas e nome no HUD; as outras seis regiões continuam decorativas até receberem regras próprias.
+- O motor calcula os efeitos fora da interface, mantém a arena sem bloqueios e ganhou testes de integração para movimento e dano ambiental.
+
 ### Treinadores animados, carregamento e confiabilidade (2026-10-18)
 
 - Folhas PNG novas dos treinadores na Vila, com quatro direções, caminhada e repouso; preparo com pés alinhados e verificação dos arquivos no CI.

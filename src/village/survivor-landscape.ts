@@ -1,3 +1,4 @@
+import { SURVIVOR_BIOMES } from '../core/survivor-biomes';
 import { SURVIVOR_REGIONS, survivorRegionAt } from '../core/survivor-regions';
 
 /** Só dois mapas em cache, sem partículas ou alocação de milhares de tiles a cada quadro. */
@@ -77,4 +78,33 @@ export function createSurvivorLandscape(width: number, height: number) {
     }
     ctx.restore();
   };
+}
+
+/** Marca as áreas com efeito mecânico para que nenhum perigo fique invisível ao jogador. */
+export function drawSurvivorBiomeOverlay(ctx: CanvasRenderingContext2D, elapsedMs: number): void {
+  const { current, next, blend } = survivorRegionAt(elapsedMs);
+  const active = SURVIVOR_BIOMES.find((biome) => biome.regionIndex === current);
+  const upcoming = blend > 0 ? SURVIVOR_BIOMES.find((biome) => biome.regionIndex === next) : undefined;
+  const draw = (biome: typeof active, alpha: number): void => {
+    if (!biome || alpha <= 0) return;
+    for (const zone of biome.zones) {
+      const color = zone.kind === 'folhagem' ? '#245d3a' : zone.kind === 'poça' ? '#2e8db8' : '#d9f3ff';
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = color;
+      ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
+      ctx.strokeStyle = zone.kind === 'neve' ? '#ffffffcc' : '#ffffff88';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(zone.x + 2, zone.y + 2, zone.width - 4, zone.height - 4);
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#ffffffdd';
+      ctx.font = '600 13px sans-serif';
+      ctx.fillText(zone.kind === 'folhagem' ? '🌿' : zone.kind === 'poça' ? '💧' : '❄️', zone.x + 9, zone.y + 21);
+      ctx.fillText(zone.label, zone.x + 31, zone.y + 20);
+      ctx.restore();
+    }
+  };
+  draw(active, 0.18);
+  draw(upcoming, blend * 0.18);
 }

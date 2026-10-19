@@ -466,6 +466,30 @@ describe('moedas da Torre', () => {
   });
 });
 
+describe('efeitos ambientais dos biomas', () => {
+  it('reduz o passo dentro de uma zona de Kanto sem bloquear a arena', () => {
+    const slow = quiet(createSurvivorState(11, { kindCount: 1, player: { x: 100, y: 120 } }));
+    const open = quiet(createSurvivorState(11, { kindCount: 1, player: { x: 480, y: 320 } }));
+    stepSurvivor(slow, { dx: 1, dy: 0 }, 1000);
+    stepSurvivor(open, { dx: 1, dy: 0 }, 1000);
+    expect(slow.player.x - 100).toBeCloseTo((open.player.x - 480) * 0.88, 3);
+    expect(slow.player.x).toBeGreaterThanOrEqual(PLAYER_RADIUS);
+  });
+
+  it('amplifica um golpe Elétrico dentro de uma poça de Hoenn', () => {
+    const electric = as('electric', 'area');
+    const s = quiet(createSurvivorState(12, { kindCount: 1, move: electric.move, profile: electric.profile, player: { x: 140, y: 450 } }));
+    s.elapsedMs = 2 * 135_000;
+    s.player.attackDamage = 100;
+    s.player.attackRadius = 50;
+    s.player.attackRange = 100;
+    const enemy = dummy(1, 160, 450, 1000);
+    s.enemies = [enemy];
+    stepSurvivor(s, { dx: 0, dy: 0 }, 1);
+    expect(enemy.hp).toBeCloseTo(880, 5);
+  });
+});
+
 describe('treinadores e chefão final', () => {
   it('aos 5 min aparece um treinador com 3 Pokémon elite, e aos 20 min o chefão com 6', () => {
     const s = createSurvivorState(42, { kindCount: 4 });
