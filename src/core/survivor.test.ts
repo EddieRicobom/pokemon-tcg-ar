@@ -386,6 +386,26 @@ describe('arquétipos de inimigos', () => {
   });
 });
 
+describe('segundo golpe', () => {
+  it('aparece como opção especial, tem identidade própria e recarga separada', () => {
+    const s = quiet(createSurvivorState(1, { kindCount: 1 }));
+    s.player.level = 5;
+    s.player.xp = s.player.xpToNext;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    const card = s.pendingUpgrade?.find((option) => option.id === 'second-attack');
+    expect(card).toBeTruthy();
+    const events = applyUpgrade(s, 'second-attack');
+    expect(events).toEqual([{ type: 'secondAttack', name: expect.stringContaining('secundário') }]);
+    expect(s.player.secondMove).toBeTruthy();
+    expect(s.player.secondAttackCooldownMs).toBeGreaterThan(0);
+    s.player.attackCooldownMs = 1e9;
+    s.player.secondAttackCooldownMs = 1;
+    s.enemies.push(dummy(10, s.player.x + 60, s.player.y, 1000));
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.projectiles.some((projectile) => projectile.move?.name === s.player.secondMove?.name)).toBe(true);
+  });
+});
+
 describe('evolução na corrida', () => {
   const chain = (dexId: number) => (dexId === 4 ? [{ dexId: 5, name: 'Charmeleon' }] : dexId === 5 ? [{ dexId: 6, name: 'Charizard' }] : []);
 

@@ -30,6 +30,10 @@ O motor separa aparência, números e comportamento. Os quatro tipos comuns alte
 
 Os limites de projéteis, alvos de cura e proteção ficam em `ENEMY_BEHAVIOR_LIMITS`. O desenho mostra a recarga por diferença de distância, projéteis hostis e os anéis de proteção/suporte. Esses perfis são mecânicas internas e não são apresentados como atributos oficiais dos Pokémon.
 
+## Dois golpes automáticos
+
+A partir do nível 6, uma escolha especial pode desbloquear um segundo golpe. Ele tem identidade visual própria, recarga e dano separados e continua automático; a pessoa só controla o movimento. Pokémon de dois tipos usam o segundo tipo real como base. Pokémon de um tipo recebem uma técnica secundária interna da Torre, explicitamente marcada como mecânica do app. O limite é de dois golpes e o estado da corrida é limpo ao terminar.
+
 As 45 espécies são carregadas antes da corrida. Sprites que falharem usam uma forma neutra, com aviso explícito no HUD, e são tentados novamente na próxima corrida. Não são substituídos por outro Pokémon. O teste do catálogo confere a região de origem, os metadados Walk e a existência dos 45 arquivos locais.
 
 ## Referência e próximos passos de equilíbrio
