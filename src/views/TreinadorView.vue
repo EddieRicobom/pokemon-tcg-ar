@@ -63,7 +63,7 @@ const achievements = computed(() =>
   ACHIEVEMENTS.map((a) => {
     const prize = prizeOf(a.id);
     const item = prize?.item ? itemDef(prize.item)?.name : undefined;
-    return { id: a.id, title: a.title, hint: a.hint, unlocked: trainer.value.achievements[a.id] !== undefined, prize: prize ? [`${prize.coins} moedas`, item].filter(Boolean).join(' + ') : '' };
+    return { id: a.id, title: a.title, hint: a.hint, unlocked: trainer.value.achievements[a.id] !== undefined, prize: prize ? [`${prize.coins} moedas`, item].filter(Boolean).join(' + ') : '', origin: prize?.origin, unlocks: prize?.unlocks };
   }),
 );
 const unlockedCount = computed(() => achievements.value.filter((a) => a.unlocked).length);
@@ -245,13 +245,15 @@ function cancelImport(): void {
 
     <div class="card">
       <h2>Conquistas <small class="count">{{ unlockedCount }} de {{ achievements.length }}</small></h2>
-      <p class="note">Cada conquista rende moedas e, nas marcantes, um acessório exclusivo para o seu personagem. Os prêmios chegam quando você abre a Vila.</p>
+      <p class="note">As conquistas vêm de partidas e atividades concluídas. Os prêmios chegam à Vila; cada item mostra sua origem e o conteúdo que libera.</p>
       <ul class="badges">
         <li v-for="a in achievements" :key="a.id" :class="{ on: a.unlocked }">
           <span class="medal" aria-hidden="true">{{ a.unlocked ? '★' : '☆' }}</span>
           <strong>{{ a.title }}</strong>
           <small>{{ a.hint }}</small>
           <small v-if="a.prize" class="prize">🎁 {{ a.prize }}</small>
+          <small v-if="a.origin">Origem: {{ a.origin }}.</small>
+          <small v-if="a.unlocks">Desbloqueia: {{ a.unlocks }}.</small>
         </li>
       </ul>
     </div>

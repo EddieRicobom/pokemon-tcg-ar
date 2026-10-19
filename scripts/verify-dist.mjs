@@ -4,11 +4,12 @@
  *
  *   BASE_PATH=/pokemon-tcg-ar/ REQUIRE_INDEX=1 node scripts/verify-dist.mjs
  */
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 
 const base = process.env.BASE_PATH ?? '/pokemon-tcg-ar/';
 const requireIndex = process.env.REQUIRE_INDEX === '1';
+const requireSpritePack = process.env.REQUIRE_SPRITE_PACK === '1';
 const problems = [];
 const notes = [];
 
@@ -64,6 +65,38 @@ if (existsSync(indexPath)) {
 } else {
   notes.push('índice do catálogo ausente (build sem rede): o app usa a busca por número do TCGdex');
 }
+
+const spriteManifestPath = 'dist/data/pokeapi-sprite-manifest.json';
+if (existsSync(spriteManifestPath)) {
+  const spriteManifest = JSON.parse(readFileSync(spriteManifestPath, 'utf8'));
+  const assets = spriteManifest?.assets;
+  need(spriteManifest?.version === 1 && assets && typeof assets === 'object', 'manifesto dos sprites PokéAPI inválido');
+  const entries = assets && typeof assets === 'object' ? Object.entries(assets) : [];
+  let listedBytes = 0;
+  for (const [key, asset] of entries) {
+    const path = typeof asset?.path === 'string' ? asset.path : '';
+    const bytes = typeof asset?.bytes === 'number' ? asset.bytes : -1;
+    const file = `dist/${path}`;
+    need(path.startsWith('sprites/pokeapi/') && existsSync(file), `sprite listado ausente do dist: ${key}`);
+    if (existsSync(file) && bytes >= 0) need(statSync(file).size === bytes, `tamanho inesperado para sprite: ${key}`);
+    listedBytes += Math.max(0, bytes);
+  }
+  notes.push(`sprites PokéAPI: ${entries.length} arquivos, ${(listedBytes / 1024 / 1024).toFixed(1)} MB, revisão ${spriteManifest?.source?.commit ?? 'desconhecida'}`);
+} else if (requireSpritePack) {
+  problems.push('manifesto dos sprites PokéAPI ausente (REQUIRE_SPRITE_PACK=1)');
+} else {
+  notes.push('sprites PokéAPI: não publicados neste build');
+}
+
+// GitHub Pages aceita no máximo 1 GB para o site publicado. Mede o conteúdo real do dist, não o zip do artifact.
+function dirBytes(path) {
+  return readdirSync(path, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .reduce((sum, entry) => sum + statSync(`${entry.parentPath}/${entry.name}`).size, 0);
+}
+const distBytes = dirBytes('dist');
+notes.push(`dist completo: ${(distBytes / 1024 / 1024).toFixed(1)} MB`);
+need(distBytes < 900 * 1024 * 1024, `dist passou do orçamento de segurança de 900 MB (${(distBytes / 1024 / 1024).toFixed(1)} MB)`);
 
 for (const note of notes) console.log(`ok: ${note}`);
 if (problems.length > 0) {

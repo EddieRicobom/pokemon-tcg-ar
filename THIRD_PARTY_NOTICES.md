@@ -50,8 +50,14 @@ As licenças exatas de cada versão estão nos pacotes (`node_modules/<pacote>/L
 - Tipos das espécies e das formas alternativas (`src/core/data/pokemon-types.json`): gerados por
   `scripts/build-types.mjs` a partir de `pokemon.csv`, `pokemon_types.csv` e `types.csv` do mesmo repositório
   PokeAPI/pokeapi (BSD-3-Clause), para os filtros de tipo de "Minhas cartas".
-- Sprites: repositório PokeAPI/sprites (GIFs `other/showdown`), com espelho no jsDelivr. Os desenhos dos
-  Pokémon pertencem aos seus titulares; o app não os redistribui, o celular os baixa na hora.
+- Sprites de batalha e fallback (`public/sprites/pokeapi/`): o projeto incorpora os GIFs `other/showdown`
+  e os PNGs padrão/Home que o app pode solicitar, a partir do repositório
+  [PokeAPI/sprites](https://github.com/PokeAPI/sprites). O manifesto
+  `public/data/pokeapi-sprite-manifest.json` registra caminho, hash, tamanho e revisão exata da fonte;
+  `npm run sync:sprites` atualiza esse conjunto. A licença da coleção declara CC0 para o repositório,
+  mas também afirma que o conteúdo das imagens é copyright da The Pokémon Company. Os sprites são usados
+  neste projeto gratuito e sem anúncios, com essa atribuição. Quando um arquivo ainda não está incorporado
+  ou falha no Pages, o app pode tentar a fonte pública PokeAPI/sprites e seu espelho jsDelivr.
 
 ## Sprites locais da Vila e da Sobrevivência (`public/sprites/`) — PMD SpriteCollab, CC BY-NC 4.0
 

@@ -332,6 +332,8 @@ export const ITEMS: readonly ItemDef[] = [
   a('pin-chefao', 'Pino de Chefão', 'both', 'face', 0, { sell: 0 }),
   a('trofeu-torre', 'Troféu da Torre', 'both', 'hat', 0, { sell: 0 }),
   a('capa-sobrevivente', 'Capa de Sobrevivente', 'both', 'back', 0, { sell: 0 }),
+  a('pin-pista', 'Pino da Pista', 'both', 'face', 0, { sell: 0 }),
+  a('trofeu-pista', 'Troféu dos Pins', 'both', 'hat', 0, { sell: 0 }),
 ];
 
 export const ITEM_BY_ID = new Map(ITEMS.map((i) => [i.id, i]));

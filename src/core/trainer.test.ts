@@ -392,6 +392,30 @@ describe('Vila, Liga e PvP no Treinador', () => {
     expect([wild.bestFriend, wild.league.badges, wild.league.champion, wild.pvp.wins]).toEqual([4, 32, 0, 1]);
   });
 
+  it('registra corridas reais da Torre uma vez e mantém um histórico limitado no save', () => {
+    const run: TrainerEvent = { type: 'survivor', runId: 'corrida-1', survivedMs: 60_000, trainersBeaten: 1, bossesBeaten: 0, clearedTorre: false, infinite: false, wave: 4, kills: 18, level: 5, completedObjectives: ['tempo-1m', 'inventado'] };
+    const first = applyEvent(emptyTrainer(), run, day);
+    expect(first.state.torre).toMatchObject({ runs: 1, bestWave: 4, bestLevel: 5, runIds: ['corrida-1'], completedObjectives: ['tempo-1m'] });
+    expect(first.state.torre.recentRuns).toEqual([{ id: 'corrida-1', day, survivedMs: 60_000, wave: 4, kills: 18, level: 5, infinite: false, cleared: false }]);
+    const repeated = applyEvent(first.state, run, '2026-10-20');
+    expect(repeated.state).toEqual(first.state);
+    expect(repeated.rewards).toEqual([]);
+    expect(repeated.state.torre.runs).toBe(1);
+  });
+
+  it('completa compatibilidade de saves antigos da Torre sem sobrescrever marcas existentes', () => {
+    const old = normalizeTrainer({ ...emptyTrainer(), torre: { bestMs: 30_000, infiniteUnlocked: true } });
+    expect(old.torre).toMatchObject({ runs: 1, bestMs: 30_000, infiniteUnlocked: true, bestWave: 0, runIds: [], recentRuns: [], completedObjectives: [] });
+  });
+
+  it('Pins concede marcos só a partir de partidas registradas e da pontuação concluída', () => {
+    const missed = applyEvent(emptyTrainer(), { type: 'minigame', game: 'pins', won: false, score: 40 }, day);
+    expect(missed.state.achievements['pins-primeiro']).toBeDefined();
+    expect(missed.state.achievements['pins-perfeito']).toBeUndefined();
+    const perfect = applyEvent(missed.state, { type: 'minigame', game: 'pins', won: true, score: 100 }, day);
+    expect(perfect.state.achievements['pins-perfeito']).toBeDefined();
+  });
+
   it('toda conquista tem título, dica e id único', () => {
     const ids = ACHIEVEMENTS.map((a) => a.id);
     expect(new Set(ids).size).toBe(ids.length);

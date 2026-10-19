@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { resetLocalPokemonSpriteManifest } from './local-sprite-manifest';
 import { fetchSprite, SpriteNetworkError } from './sprite-source';
 
 const GIF = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown';
@@ -15,6 +16,8 @@ function fakeFetch(files: Record<string, number>, log: string[] = []): typeof fe
   }) as typeof fetch;
 }
 
+beforeEach(() => resetLocalPokemonSpriteManifest());
+
 describe('fetchSprite', () => {
   it('usa o GIF do padrão exato para Pikachu, Ditto e Walking Wake', async () => {
     for (const id of [25, 132, 1009]) {
@@ -22,7 +25,7 @@ describe('fetchSprite', () => {
       const sprite = await fetchSprite(id, fakeFetch({ [`${GIF}/${id}.gif`]: 200 }, log));
       expect(sprite?.kind).toBe('gif');
       expect(sprite?.url).toBe(`${GIF}/${id}.gif`);
-      expect(log).toEqual([`${GIF}/${id}.gif`]);
+      expect(log).toContain(`${GIF}/${id}.gif`);
     }
   });
 
@@ -30,7 +33,8 @@ describe('fetchSprite', () => {
     const log: string[] = [];
     const sprite = await fetchSprite(1008, fakeFetch({ [`${STATIC}/1008.png`]: 200 }, log));
     expect(sprite).toMatchObject({ kind: 'static', url: `${STATIC}/1008.png` });
-    expect(log).toEqual([`${GIF}/1008.gif`, `${STATIC}/1008.png`]);
+    expect(log).toContain(`${GIF}/1008.gif`);
+    expect(log).toContain(`${STATIC}/1008.png`);
   });
 
   it('tenta a segunda opção estática se a primeira não existe', async () => {
@@ -69,14 +73,15 @@ describe('fetchSprite: variante shiny', () => {
     const log: string[] = [];
     const sprite = await fetchSprite(132, fakeFetch({ [`${GIF}/shiny/132.gif`]: 200 }, log), { shiny: true });
     expect(sprite).toMatchObject({ kind: 'gif', url: `${GIF}/shiny/132.gif`, shiny: true });
-    expect(log).toEqual([`${GIF}/shiny/132.gif`]);
+    expect(log).toContain(`${GIF}/shiny/132.gif`);
   });
 
   it('sem GIF shiny, tenta o PNG shiny antes de desistir da variante', async () => {
     const log: string[] = [];
     const sprite = await fetchSprite(1008, fakeFetch({ [`${STATIC}/shiny/1008.png`]: 200 }, log), { shiny: true });
     expect(sprite).toMatchObject({ kind: 'static', url: `${STATIC}/shiny/1008.png`, shiny: true });
-    expect(log).toEqual([`${GIF}/shiny/1008.gif`, `${STATIC}/shiny/1008.png`]);
+    expect(log).toContain(`${GIF}/shiny/1008.gif`);
+    expect(log).toContain(`${STATIC}/shiny/1008.png`);
   });
 
   it('sem nenhum sprite shiny, devolve o normal e NÃO marca como shiny', async () => {
@@ -93,6 +98,51 @@ describe('fetchSprite: variante shiny', () => {
     const log: string[] = [];
     await fetchSprite(25, fakeFetch({ [`${GIF}/25.gif`]: 200 }, log));
     expect(log.some((u) => u.includes('/shiny/'))).toBe(false);
+  });
+});
+
+describe('fetchSprite: pacote local', () => {
+  it('usa o GIF incorporado antes de consultar a fonte externa', async () => {
+    const log: string[] = [];
+    const manifestUrl = '/data/pokeapi-sprite-manifest.json';
+    const localUrl = '/sprites/pokeapi/showdown/25.gif';
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      log.push(url);
+      if (url === manifestUrl) {
+        return Response.json({
+          version: 1,
+          generatedAt: '2026-10-19T00:00:00.000Z',
+          source: { repository: 'PokeAPI/sprites', commit: 'abc' },
+          assets: { 'showdown/25.gif': { path: 'sprites/pokeapi/showdown/25.gif', sourcePath: 'x', sourceCommit: 'abc', bytes: 13, sha256: '' } },
+        });
+      }
+      return url === localUrl
+        ? new Response(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 0, 1, 0, 0, 0, 0x3b]), { status: 200 })
+        : new Response('404: Not Found', { status: 404 });
+    }) as typeof fetch;
+
+    const sprite = await fetchSprite(25, fetchImpl);
+    expect(sprite).toMatchObject({ kind: 'gif', url: localUrl });
+    expect(log).toEqual([manifestUrl, localUrl]);
+  });
+
+  it('sprite local corrompido cai para o GIF externo sem declarar ausência', async () => {
+    const log: string[] = [];
+    const manifestUrl = '/data/pokeapi-sprite-manifest.json';
+    const localUrl = '/sprites/pokeapi/showdown/25.gif';
+    const remoteUrl = `${GIF}/25.gif`;
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      log.push(url);
+      if (url === manifestUrl) return Response.json({ version: 1, generatedAt: 'agora', source: { repository: 'PokeAPI/sprites', commit: 'abc' }, assets: { 'showdown/25.gif': { path: 'sprites/pokeapi/showdown/25.gif', sourcePath: 'x', sourceCommit: 'abc', bytes: 13, sha256: '' } } });
+      if (url === localUrl) return new Response('HTML de erro', { status: 200 });
+      if (url === remoteUrl) return new Response('gif remoto', { status: 200 });
+      return new Response('404: Not Found', { status: 404 });
+    }) as typeof fetch;
+    const sprite = await fetchSprite(25, fetchImpl);
+    expect(sprite?.url).toBe(remoteUrl);
+    expect(log).toEqual([manifestUrl, localUrl, remoteUrl]);
   });
 });
 

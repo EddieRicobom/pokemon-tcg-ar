@@ -77,6 +77,32 @@ Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado �
 
 ## Auditoria da evolução da Vila (2026-10-17)
 
+### Prompt: autonomia da Vila e sprites incorporados (auditoria 2026-10-19)
+
+Escopo registrado a partir do prompt do usuário. Os estados abaixo refletem o código e os arquivos presentes nesta branch; nenhum item é considerado concluído só por estar planejado.
+
+| Etapa | Estado | Critérios e evidência atual |
+| --- | --- | --- |
+| 0. Sprites incorporados | 🔶 Parcial | Inventário confirmado: famílias PokéAPI Showdown GIF, PNG `default`/`home`, normal e shiny, IDs base e formas obtidos do catálogo de alturas; folhas PMD permanecem separadas para Vila/Survival. Manifesto atual: 7.913 arquivos, 587.870.847 bytes, 193 ausências confirmadas, revisão `7a7d66b1620e646f69afd48dc1273da9033ede9c`. `dist/` mediu 658,4 MB (folga de ~341,6 MB para 1 GB); geração/build levou cerca de 61 s neste PC, mas isso não mede o download externo do importador no Actions. O build com base path e `verify-dist` passou e o AR valida assinatura/tamanho/hash local com fallback externo para arquivo quebrado. Importador endurecido com timeout, retentativas, assinatura e escrita atômica; deploy chama o importador. Pendentes: medir duração real no Actions, centralizar retratos Smogon e consumidores diretos restantes. PMD: 13.468 arquivos, 76,3 MB. Créditos em `THIRD_PARTY_NOTICES.md`. |
+| 1. Economia e tempo persistente | ⬜ Pendente | Inventário e moedas existentes em `life.ts`; não há consumo comunitário, orçamento, ciclos estáveis ou recuperação offline limitada integrados. |
+| 2. Vocações e autonomia visível | ⬜ Pendente | `actors.ts` e `village-game.ts` já fazem movimento livre; falta decisão por aptidão/interesse/necessidade, atividade ocupacional persistida e consequência real exibida na cena. |
+| 3. Cooperação, escassez e memória | ⬜ Pendente | `social-state.ts` já persiste relações/memórias, mas faltam projetos cooperativos com reservas, crise gradual e influência comprovável na decisão. |
+| 4. Infraestrutura e Conselho | ⬜ Pendente | `town.ts`/mapa já têm prédios e custos de construção; faltam operação condicionada por recursos e propostas do Conselho rastreáveis. |
+| 5. Vida cotidiana, cultura e história | 🔶 Parcial | `social.ts`, Diário, Álbum, catch-up e festivais já persistem eventos. Faltam evolução gradual de interesses e novos eventos com consequências sistêmicas. |
+| 6. Interface, desempenho e migrações | 🔶 Parcial | `normalizeVillage` fornece defaults para saves v1 e há backup; falta painel comunitário/perfil com dados da simulação e validação de carga longa/50 residentes. |
+| Validação geral do prompt | ⬜ Pendente | Rodar typecheck, testes, build com `BASE_PATH=/pokemon-tcg-ar/`, `verify-dist`, regressões e harnesses disponíveis; resultados de rede, câmera/GPU reais e execução dos novos workflows ainda não medidos. |
+
+### Escopo adicional: Survival persistente e hub narrativo (2026-10-19)
+
+| Frente | Estado | Critérios e evidência atual |
+| --- | --- | --- |
+| Meta-progressão do Survival | 🔶 Parcial | `trainer.torre` registra até 30 corridas detalhadas, 100 IDs para idempotência, melhores marcas, até 40 objetivos concluídos, desbloqueio real do Infinito após o chefão final e agora uma segunda troca de sorteio após os 3 desafios. O evento vem apenas de `gameover`; a troca é limitada e não aumenta atributos. Ainda faltam desafios variados e mais escolhas entre corridas. |
+| Integração narrativa entre modos | 🔶 Parcial | Arena/Liga, Pins e Torre concedem itens com origem descrita em `rewards.ts`; prêmios únicos não duplicam e a Torre registra o resultado no Diário da Vila. O modo Infinito é o desbloqueio de conteúdo atual. Faltam histórias/áreas opcionais encadeadas para Arena/Pins. |
+| Interface e backup | 🔶 Parcial | Registros novos ficam na chave existente do Treinador, incluída no backup; saves antigos normalizam com defaults e o histórico tem limites. A Torre mostra próxima meta, melhores marcas, objetivos, recordes e origem do segundo sorteio. Falta auditar um backup real importado com esses campos. |
+| Validação de Survival | 🔶 Parcial | Testes cobrem corrida concluída/idempotente, migração, objetivos e limite do novo desbloqueio; tipo, suíte, build com base Pages e `verify-dist` passaram localmente. A distinção completa de abandono no fluxo visual, execução no Actions e CI verde desta branch ainda precisam ser observadas. |
+
+**Critério final:** nenhuma etapa acima será marcada concluída sem integração de comportamento, estado salvo e a evidência de validação correspondente. O usuário autorizou commits, publicação da branch e abertura de PR; merge só depois de CI verde, e deploy só após o merge e confirmação do resultado.
+
 - ✅ **Reaproveitável:** `social-state.ts` já persiste relações por par, Diário, Álbum, respostas, bordões e catch-up; `social.ts` já seleciona momentos por personalidade, contexto, local, clima, horário e relações. `book.ts` e `PokeBook.vue` já exibem amizade, humor, personalidade, gostos, opiniões, relações, falas e desbloqueios, inclusive por id interno.
 - ✅ **Primeiro lote implementado:** o menu da Vila agora tem um **Resumo da Vila** baseado somente em momentos, consequências e pedidos que existem no estado salvo. A função pura está em `src/core/village/summary.ts`, sem nova persistência ou fonte paralela de fatos.
 - ✅ **Memória contextual inicial:** momentos marcantes agora geram até 80 memórias curtas por Pokémon, com normalização retrocompatível. O Livro mostra as cinco mais recentes e `recentGossip()` usa a memória antes do texto genérico do Diário; abrir o Livro ou conversar não cria memória nova.

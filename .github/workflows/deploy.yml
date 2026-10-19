@@ -51,6 +51,13 @@ jobs:
       - name: Gerar índice do catálogo
         run: npm run build:index
 
+      # Incorpora, no build publicado, as variantes PokéAPI derivadas do catálogo completo de espécies e formas.
+      # A revisão e os hashes ficam no manifesto gerado; o processo é reproduzível pelo script versionado.
+      - name: Incorporar sprites PokéAPI
+        run: npm run sync:sprites
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
       # Índice de ilustrações (opcional, experimental): 112 bytes por carta, calculados aqui a partir das imagens do TCGdex.
       # Incremental (cache entre execuções) e com orçamento de tempo; se falhar, o deploy segue sem ele.
       - name: Restaurar o cache do índice de ilustrações
@@ -73,6 +80,7 @@ jobs:
         run: node scripts/verify-dist.mjs
         env:
           REQUIRE_INDEX: '1'
+          REQUIRE_SPRITE_PACK: '1'
 
       - uses: actions/upload-pages-artifact@v5
         with:

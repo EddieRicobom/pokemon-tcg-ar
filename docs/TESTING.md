@@ -26,7 +26,7 @@ O job **"Tipos, testes e build"** é o que vale como porta de entrada para o mer
 | `src/box/` | Cena da Caixa, orientação do giroscópio, chão, formação, passeio, **arena** (posição e escala), **diretor da batalha** (tempos, personalidades, estilos por tipo, luzes, ambiente, HUD), efeitos, **luzes dos golpes** (queda, uniformes, shader, poças, luz do ambiente) |
 | `src/core/village/`, `src/village/` | Vila: mapa, coleta, horta, loja, pesca, cozinha, presentes e arte; vida social, perguntas e bordões, apelidos, pedidos e prêmios; Diário e Álbum; casas, terrenos e prédios por nível, café, correio, caminhos e migração de salvamentos. A Vila em AR usa o canvas completo do mapa como textura de um diorama em `src/ar/start-village.ts`; `ar-diorama.test.ts` cobre os limites de escala e distância segura, e os cálculos de plano estimado e orientação são compartilhados com a Caixa. Consulte os arquivos `*.test.ts` dessas pastas para os casos concretos. |
 | `src/components/QuizDialog.test.ts` | A conversa de perguntas: responder só com texto, sugestões, opções do seguimento e fala final |
-| `src/core/survivor*.test.ts` | Torre: simulação das ondas, combate, upgrades, golpes por tipo e atributos, evoluções, treinadores, chefão final, resumo e modo infinito |
+| `src/core/survivor*.test.ts` | Torre: simulação das ondas, combate, upgrades, golpes por tipo e atributos, evoluções, treinadores, chefão final, resumo e modo infinito; objetivos concluídos liberam no máximo uma segunda troca de Pokémon entre corridas |
 | `src/core/pins.test.ts`, `pin-ai.test.ts`, `pin-replay.test.ts`, `src/app/pins-setup.test.ts` | Física dos Pins, decisões do computador, gravação/reprodução e normalização das opções guardadas |
 | `src/core/league.test.ts`, `src/pvp/*.test.ts` | Progressão da Liga, códigos de convite/resposta, compactação SDP e validação das mensagens dos Pins e da Caixa; não abre uma conexão WebRTC entre aparelhos |
 | `src/app/wallet.test.ts`, `pokemon-data-service.test.ts`, `backup.test.ts` | Saldo único de moedas, valores inválidos, recusa de gravação, cache de batalha corrompido, carregamento parcial e exportação/restauração do backup |
@@ -45,6 +45,8 @@ O WebGL real não roda no happy-dom: a lógica é mantida pura e testada; a cola
 - **Harness do AR** (`e2e/ar-harness.html` e `.mjs`, `ar-harness-multi.*`): ferramenta de desenvolvimento, **não roda no CI**. Compila o alvo, inicia o rastreador com câmera falsa e imprime estado e leituras/s. Uso: `npx vite build -c e2e/vite.harness.config.mjs`, copiar `card.png` e `sprite.gif` para a pasta gerada, servir estaticamente e rodar `node e2e/ar-harness.mjs` com um vídeo `e2e/.tmp/cam.y4m` (feito com `ffmpeg`). Serve para comparar antes e depois de uma mudança (por exemplo, as leituras/s com e sem a normalização de contraste); roda com GL por software, então **os números não valem para celular**.
 
 ## O que NÃO é coberto automaticamente
+
+O registro de corridas concluídas da Torre, sua idempotência/migração, marcos de Pins e origem dos cosméticos também têm cobertura unitária em `src/core/trainer.test.ts` e `src/core/village/rewards.test.ts`. Esses testes validam somente o estado e os eventos puros; não medem desempenho em celular.
 
 - **Câmera real, GPU e sensores.** Os testes automatizados não produzem medidas de fluidez, calor, bateria ou leituras/s de aparelhos físicos.
 - **Precisão do reconhecimento** com fotos de celular: só há fotos de exemplo. Falta um conjunto de teste medido (ver o plano).

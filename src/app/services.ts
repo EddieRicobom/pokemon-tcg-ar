@@ -18,14 +18,13 @@ import { TcgdexClient } from '../recognition/tcgdex';
 import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from '../recognition/types';
 import { loadChunk } from './stale-build';
 import { loadLocalVillageSprite, loadLocalVillageSpriteDirs } from '../village/local-sprite-loader';
-import { fetchGif } from '../core/gif';
+import { decodeGif } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import type { Dir } from '../core/village/actors';
 import { loadDexNames } from './dex-names';
 import { dataCardIdFor } from './digital-members';
 import { cardJourneys, evolvedBattleCardId } from './card-evolution-store';
 import { loadVillage } from './village-store';
-import { pokemonSpriteUrl } from '../ar/sprite-url';
 import type { SpeciesRef } from '../core/village/digital';
 
 /**
@@ -192,7 +191,9 @@ export async function getDigitalSprite(dexId: number, shiny: boolean): Promise<{
   const dirs = await getLocalVillageSpriteDirs(dexId, shiny).catch(() => null);
   if (dirs?.down) return { gif: dirs.down, dirs };
   try {
-    return { gif: await fetchGif(pokemonSpriteUrl(dexId, shiny)) };
+    const source = await fetchSprite(dexId, undefined, { shiny });
+    if (!source || source.kind !== 'gif') return null;
+    return { gif: decodeGif(await source.blob.arrayBuffer()) };
   } catch {
     return null;
   }

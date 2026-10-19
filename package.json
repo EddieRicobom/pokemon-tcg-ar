@@ -17,7 +17,9 @@
     "test:watch": "vitest",
     "prepare:assets": "node scripts/copy-ocr-assets.mjs",
     "build:index": "node scripts/build-catalog-index.ts public/data/catalog-index.json",
-    "build:art-index": "tsx scripts/build-art-index.ts"
+    "build:art-index": "tsx scripts/build-art-index.ts",
+    "sync:sprites": "tsx scripts/sync-pokeapi-sprites.ts",
+    "verify:sprite-pack": "tsx scripts/sync-pokeapi-sprites.ts --check"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
