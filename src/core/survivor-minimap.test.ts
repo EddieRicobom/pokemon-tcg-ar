@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ARENA_H, ARENA_W } from './survivor';
+import { ARENA_H, ARENA_W, createSurvivorState } from './survivor';
 import { minimapMarkers, minimapViewport, survivorMinimapSnapshot } from './survivor-minimap';
 
-const player = { x: ARENA_W / 2, y: ARENA_H / 2 };
+const player = createSurvivorState(1, { kindCount: 1 }).player;
 
 describe('minimapa da Torre', () => {
   it('prioriza chefes e elites e limita os comuns', () => {
