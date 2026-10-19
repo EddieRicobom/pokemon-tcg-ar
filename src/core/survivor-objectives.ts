@@ -36,7 +36,7 @@ export interface SurvivorObjective {
   complete: boolean;
 }
 
-const OBJECTIVE_DETAILS: Record<SurvivorObjectiveId, { title: string; target: number; unit: string }> = {
+export const SURVIVOR_OBJECTIVE_DETAILS: Readonly<Record<SurvivorObjectiveId, { title: string; target: number; unit: string }>> = {
   'tempo-1m': { title: 'Resista por 1 minuto', target: 60_000, unit: 's' },
   'nivel-5': { title: 'Chegue ao nível 5', target: 5, unit: 'Nv' },
   'dois-golpes': { title: 'Desbloqueie dois golpes', target: 1, unit: '' },
@@ -60,7 +60,7 @@ export function survivorObjectives(state: Pick<SurvivorState, 'runSeed' | 'elaps
     'abates-50': state.kills, 'treinador-3': state.trainersBeaten, 'sobrevive-5m': state.elapsedMs,
   };
   return survivorObjectiveSet(state.runSeed).map((id) => {
-    const detail = OBJECTIVE_DETAILS[id];
+    const detail = SURVIVOR_OBJECTIVE_DETAILS[id];
     const progress = Math.min(detail.target, Math.max(0, values[id]));
     return { id, ...detail, progress, complete: progress >= detail.target };
   });
