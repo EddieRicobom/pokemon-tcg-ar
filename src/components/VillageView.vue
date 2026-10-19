@@ -31,7 +31,7 @@ import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shop
 import {
   add, buy, canFollow, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
   plant, pruneHarvest, RECIPES, sell, talk, tickCrops, upgradeHouse, water, wear,
-  BATTLE_REWARD_COINS, BATTLE_REWARDS_PER_DAY, battleRewardsLeft,
+  BATTLE_REWARD_COINS, BATTLE_REWARDS_PER_DAY, battleRewardsLeft, favoriteFoodOf,
 } from '../core/village/life';
 import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
 import {
@@ -63,6 +63,7 @@ import { dailyRecap, needsDailyRecap } from '../core/village/daily-recap';
 import type { RecapScene } from '../core/village/daily-recap';
 import { villageSummary } from '../core/village/summary';
 import type { SummaryEntry } from '../core/village/summary';
+import { advanceCommunity, communityForecast } from '../core/village/community';
 import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
@@ -691,6 +692,8 @@ const cookable = COOK_IDS;
 const actorList = (): { id: string; name: string; types: PokemonType[] }[] => mons.value.map((m) => ({ id: m.id, name: m.name, types: types.get(m.id) ?? [] }));
 const unread = computed(() => unreadCount(state));
 const summary = computed(() => villageSummary(state, mons.value, Date.now()));
+const communityView = computed(() => communityForecast(state, mons.value.map((mon) => mon.id)));
+const lastCommunityCycle = computed(() => state.community.history.at(-1) ?? null);
 const summaryMomentId = ref<string | null>(null);
 const album = computed(() => albumProgress(state));
 const saved = computed(() => savedMoments(state));
@@ -1641,6 +1644,17 @@ function refreshDay(): string {
     day.value = today;
     pruneHarvest(state, today);
   }
+  if (game) {
+    const residents = mons.value.map((mon) => {
+      const monTypes = types.get(mon.id);
+      return monTypes?.length ? { id: mon.id, favoriteFood: favoriteFoodOf(monTypes) } : { id: mon.id };
+    });
+    const result = advanceCommunity(state, today, residents);
+    if (result.initialized || result.cycles.length > 0) changed();
+    const notice = [...result.cycles].reverse().find((cycle) => cycle.notice)?.notice;
+    if (notice) say(`🏡 ${notice}`, 6500);
+    if (result.skippedDays > 0) say(`A simulação comunitária considera até sete dias de ausência; ${result.skippedDays} dia(s) mais antigo(s) ficaram sem cobrança.`, 8000);
+  }
   return today;
 }
 
@@ -1944,6 +1958,7 @@ function tickClock(): void {
   const d = new Date();
   const h = d.getHours();
   clock.value = `${h >= 19 || h < 6 ? '🌙' : '☀️'} ${String(h).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (game) refreshDay();
 }
 
 function thumbOf(gif: VillageMon['gif']): string {
@@ -2043,6 +2058,7 @@ onMounted(async () => {
   observer.observe(wrapEl.value);
   resize();
   game.start();
+  refreshDay();
   startMini();
   loading.value = '';
   awayCatchUp();
@@ -2352,6 +2368,17 @@ onBeforeUnmount(() => {
 
         <div v-else-if="tab === 'resumo'" class="diary village-summary">
           <p class="hint">Uma visão rápida baseada no Diário, nas relações e nos pedidos reais da Vila.</p>
+          <section aria-labelledby="community-summary-title">
+            <h4 id="community-summary-title">🏡 Comunidade e reservas</h4>
+            <p>{{ communityView.residents }} morador(es) ativo(s) na Vila · bem-estar {{ state.community.welfare }}/100 · confiança no cuidado {{ state.community.trust }}/100.</p>
+            <p class="hint">Conta cada ID uma vez entre moradores da equipe e Digital Pokémon; cartas guardadas fora da Vila não entram no cálculo.</p>
+            <p>Despensa: {{ communityView.foodAvailable }} porções disponíveis para {{ communityView.foodTarget }} porções estimadas por dia. Ingredientes e colheitas valem 1 porção; comida preparada vale 2.</p>
+            <p>Manutenção dos serviços comuns: até {{ communityView.maintenanceDue }} moedas por ciclo diário ({{ communityView.residents }} × 4, mais 10; população zero não paga). Seu saldo atual {{ communityView.maintenanceFunded ? 'cobre' : 'não cobre' }} essa estimativa.</p>
+            <p v-if="lastCommunityCycle?.notice" role="status">Último ciclo, {{ lastCommunityCycle.day }}: {{ lastCommunityCycle.notice }}</p>
+            <p v-else-if="lastCommunityCycle">Último ciclo, {{ lastCommunityCycle.day }}: {{ lastCommunityCycle.foodServed }} porções nutritivas para a meta de {{ lastCommunityCycle.foodTarget }}; {{ lastCommunityCycle.preferredServings }} porção(ões) corresponderam a preferências conhecidas; {{ lastCommunityCycle.maintenancePaid }}/{{ lastCommunityCycle.maintenanceDue }} moedas de manutenção pagas.</p>
+            <p v-else class="hint">A estimativa é atualizada no próximo ciclo. Os saves antigos começam sem cobrança retroativa.</p>
+            <p class="hint">Estimativa baseada no estoque atual; a simulação liquida no máximo sete dias de ausência ao retornar. A Vila não processa ciclos enquanto o app está fechado.</p>
+          </section>
           <section>
             <h4>O que aconteceu</h4>
             <ul v-if="summary.happened.length" class="book-opinions summary-links"><li v-for="line in summary.happened" :key="line.momentId ?? line.text" :class="{ 'summary-focus': summaryMomentId === line.momentId }"><span>{{ line.text }}</span><span class="summary-actions"><button v-if="line.momentId" type="button" @click="openSummaryMoment(line)">📓 Diário</button><button v-if="line.pokemonId" type="button" @click="openSummaryBook(line)">📖 Livro</button></span></li></ul>
