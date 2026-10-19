@@ -70,4 +70,16 @@ describe('Box (tela)', () => {
     expect(detail?.textContent).toContain('Pikachu');
     expect(detail?.textContent).toContain('Ver em AR');
   });
+
+  it('permite escolher diretamente entre caixas adicionais', async () => {
+    await mount();
+    host!.querySelector<HTMLButtonElement>('.pbox-tools button:last-child')!.click();
+    await nextTick();
+    const choices = [...host!.querySelectorAll<HTMLButtonElement>('.pbox-selector button')];
+    expect(choices).toHaveLength(2);
+    expect(choices[1]!.getAttribute('aria-pressed')).toBe('true');
+    choices[0]!.click();
+    await nextTick();
+    expect(choices[0]!.getAttribute('aria-pressed')).toBe('true');
+  });
 });

@@ -39,6 +39,21 @@ describe('golpes da Torre: elemento pelo tipo, forma e números pelos stats', ()
     expect(CATEGORY_BASE.orbit.cooldownMs).toBeGreaterThan(CATEGORY_BASE.aura.cooldownMs);
   });
 
+  it('compara estilos nos mesmos stats e dá retorno compatível à exposição dos golpes próximos', () => {
+    const stats = { hp: 75, attack: 75, defense: 75, spAttack: 75, spDefense: 75, speed: 75 };
+    const dps = (category: 'projetil' | 'aura' | 'area' | 'cone' | 'orbit') => {
+      const move = { ...moveFor([], stats), category };
+      const profile = attackProfile(move, stats);
+      return profile.damage * 1000 / profile.cooldownMs;
+    };
+    // DPS em um único alvo alcançado continuamente, sem contar efeitos, área multi-alvo nem movimento.
+    // São valores de referência matemática; partidas reais ainda precisam validar se a exposição é justa.
+    expect(dps('aura')).toBeGreaterThanOrEqual(dps('projetil') * 0.84);
+    expect(dps('orbit')).toBeGreaterThanOrEqual(dps('projetil') * 0.8);
+    expect(dps('cone')).toBeGreaterThanOrEqual(dps('projetil') * 0.82);
+    expect(dps('area')).toBeLessThan(dps('projetil'));
+  });
+
   it('os números seguem os stats: rápido recarrega antes, Atq. Esp. alto bate mais, HP alto tem mais vida', () => {
     const alakazam = attackProfile(moveFor(['psychic'], statsOfDex(65)), statsOfDex(65));
     const slowbro = attackProfile({ ...moveFor(['water'], null), category: 'projetil' }, statsOfDex(80));

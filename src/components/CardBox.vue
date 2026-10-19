@@ -138,6 +138,16 @@ const teamIndex = (id: string) => props.team.indexOf(id);
       <button type="button" class="pbox-arrow" aria-label="Próxima caixa" @click="go(1)">›</button>
     </header>
 
+    <nav v-if="layout.boxes.length > 1" class="pbox-selector" aria-label="Selecionar caixa">
+      <button
+        v-for="(entry, index) in layout.boxes"
+        :key="index"
+        type="button"
+        :aria-pressed="current === index"
+        @click="current = index"
+      >{{ index + 1 }} · {{ entry.name }}</button>
+    </nav>
+
     <div class="pbox-grid" role="grid" :aria-label="`${box.name}: ${filled} de ${BOX_SIZE} espaços ocupados`">
       <button
         v-for="(id, slot) in box.slots"
