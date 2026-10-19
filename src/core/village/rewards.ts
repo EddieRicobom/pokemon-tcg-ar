@@ -53,7 +53,7 @@ export const PRIZES: Record<string, Prize> = {
   // Torre de Sobrevivência.
   'torre-primeira': { coins: 50, item: 'fita-torre', origin: 'fita da Torre, por concluir sua primeira corrida' },
   'torre-treinador': { coins: 120, item: 'pin-treinador', origin: 'pino de treinador, por vencer alguém na Torre' },
-  'torre-chefao': { coins: 400, item: 'trofeu-torre', origin: 'troféu da Torre, por derrotar o chefão final aos 20 minutos', unlocks: 'modo Infinito' },
+  'torre-chefao': { coins: 400, item: 'trofeu-torre', origin: 'troféu da Torre, por derrotar o chefão final aos 20 minutos; abre uma história opcional no Museu da Vila', unlocks: 'modo Infinito' },
   'torre-infinito': { coins: 300, item: 'pin-chefao', origin: 'pino de chefão, por derrotar três chefões' },
   'torre-mestre': { coins: 500, item: 'capa-sobrevivente', origin: 'capa da Torre, por vencer dez treinadores' },
 };

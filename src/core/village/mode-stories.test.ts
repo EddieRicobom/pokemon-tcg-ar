@@ -38,4 +38,20 @@ describe('histórias opcionais abertas por outros modos', () => {
     expect(state.requests.story[0]).toMatchObject({ done: true, rewardItem: 'pecha', rewardQty: 2 });
     expect(ensureModeStories(state, { 'pins-perfeito': '2026-10-19' })).toBe(false);
   });
+
+  it('o troféu só abre a história da Torre após o chefão final e ela exige ferro de verdade', () => {
+    const state = fresh();
+    expect(ensureModeStories(state, { 'torre-treinador': '2026-10-19' })).toBe(false);
+    expect(state.requests.story).toEqual([]);
+
+    expect(ensureModeStories(state, { 'torre-chefao': '2026-10-19' })).toBe(true);
+    expect(state.requests.story[0]).toMatchObject({
+      id: 'modo:torre-chefao', title: 'Preparar a placa do Troféu da Torre', item: 'ferro', qty: 2,
+      location: 'Museu da Vila', persistent: true, done: false,
+    });
+    expect(claimRequest(state, 'modo:torre-chefao', '2026-10-19').ok).toBe(false);
+    add(state, 'ferro', 2);
+    expect(claimRequest(state, 'modo:torre-chefao', '2026-10-19')).toMatchObject({ ok: true, coins: 50 });
+    expect(ensureModeStories(state, { 'torre-chefao': '2026-10-19' })).toBe(false);
+  });
 });
