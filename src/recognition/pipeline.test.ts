@@ -6,13 +6,22 @@ import type { CatalogIndexData } from './catalog-index';
 import { computeFeatures } from './hash';
 import { rectify } from './homography';
 import type { OcrEngine, OcrRegion } from './ocr';
-import { RecognitionPipeline } from './pipeline';
+import { RecognitionPipeline, recordFromTcgdex } from './pipeline';
 import type { PipelineDeps } from './pipeline';
 import { TcgdexClient } from './tcgdex';
 import { CARD_HEIGHT_PX, CARD_WIDTH_PX } from './types';
 import type { Quad, RgbaImage } from './types';
 
 const scans = new Map<number, RgbaImage>([[1, syntheticCard(1)], [2, syntheticCard(2)], [3, syntheticCard(3)]]);
+
+describe('metadados da carta', () => {
+  it('preserva apenas a raridade informada pelo TCGdex', () => {
+    const raw = { id: 'base1-58', name: 'Pikachu', localId: '58', rarity: 'Rara', image: 'https://assets.example/card', dexId: [25], set: { id: 'base1', name: 'Base Set', cardCount: { official: 102, total: 102 } } };
+    expect(recordFromTcgdex(raw)).toMatchObject({ rarity: 'Rara', localId: '58', setName: 'Base Set' });
+    const unknown = { ...raw, rarity: undefined };
+    expect(recordFromTcgdex(unknown)).not.toHaveProperty('rarity');
+  });
+});
 
 const index: CatalogIndexData = {
   version: 1,

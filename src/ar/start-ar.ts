@@ -99,6 +99,7 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
       });
   }
 
+  let stopped = false;
   return {
     session,
     sprite,
@@ -108,6 +109,8 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
       await loadSprite();
     },
     stop() {
+      if (stopped) return;
+      stopped = true;
       observer.disconnect();
       feed.release();
       session.stop();

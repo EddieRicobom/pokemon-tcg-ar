@@ -91,6 +91,13 @@ export const TOWN = {
   lake: { x: 81, y: 11, sand: 8.6, water: 6.2 },
 } as const;
 
+/** Zonas fixas de trabalho: a mata do noroeste, a pedreira ao sul e a margem do lago. */
+export const WORK_AREAS = {
+  lumber: { x: 5, y: 6, w: 13, h: 9 },
+  mine: { x: 5, y: 64, w: 15, h: 6 },
+  fishing: { x: 72, y: 5, w: 18, h: 15 },
+} as const;
+
 export type DecorKind = 'seed-box' | 'bell' | 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall';
 
 /** Enfeites fixos do mapa (sólidos; o desenho sai do atlas com o mesmo nome e fica em pé sobre a base). */

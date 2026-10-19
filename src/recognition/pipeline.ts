@@ -39,6 +39,7 @@ export interface CardRecordLike {
   setId: string;
   setName: string;
   localId: string;
+  rarity?: string;
   setOfficial: number;
   setTotal: number;
   setCode?: string;
@@ -276,6 +277,7 @@ export function recordFromTcgdex(card: TcgdexCard, fallback?: CandidateInfo): Ca
     setId: card.set.id,
     setName: card.set.name,
     localId: card.localId,
+    ...(card.rarity ? { rarity: card.rarity } : {}),
     setOfficial: card.set.cardCount?.official ?? fallback?.setOfficial ?? 0,
     setTotal: card.set.cardCount?.total ?? fallback?.setTotal ?? 0,
     setCode: fallback?.setCode,

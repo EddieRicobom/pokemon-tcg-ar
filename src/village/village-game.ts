@@ -11,7 +11,7 @@ import { itemDef } from '../core/village/catalog';
 import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/village/life';
 import type { FurnitureId, VillageState } from '../core/village/life';
 import { homeDecor, homeLevel, homeOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
-import { buildingGroundY } from '../core/village/town-layout';
+import { buildingGroundY, TOWN, WORK_AREAS } from '../core/village/town-layout';
 import type { Building, BuildingKind } from '../core/village/town-layout';
 import { buildingAt, findFree, isSolidTile, isWalkable, tileAt } from '../core/village/map';
 import { pathStep } from '../core/village/pathing';
@@ -24,7 +24,7 @@ import { speciesTiles } from '../core/size-scale';
 import { villageScale } from '../core/village/camera';
 
 const COMMUNITY_ACTIVITY_NAMES: Readonly<Record<CommunityActivityRecord['activity'], string>> = {
-  agricultura: 'agricultura', pesca: 'pesca', culinaria: 'culinária', manutencao: 'manutenção', construcao: 'construção',
+  agricultura: 'agricultura', pesca: 'pesca', mineracao: 'mineração', madeireira: 'madeireira', culinaria: 'culinária', manutencao: 'manutenção', construcao: 'construção',
   transporte: 'transporte', exploracao: 'exploração', pesquisa: 'pesquisa', jardinagem: 'jardinagem', vigilancia: 'vigilância',
   comercio: 'comércio', protecao: 'proteção', conservacao: 'conservação', reciclagem: 'reciclagem', acolhimento: 'acolhimento',
   brincadeira: 'brincadeira', descanso: 'descanso',
@@ -1418,6 +1418,16 @@ export class VillageGame {
         });
       }
     }
+    // Placas discretas identificam os três espaços de trabalho sem cobrir a arte do mapa.
+    const worksiteLabels = [
+      { x: WORK_AREAS.lumber.x + 6, y: WORK_AREAS.lumber.y - 1, text: '🪓 Madeireira' },
+      { x: WORK_AREAS.mine.x + 7, y: WORK_AREAS.mine.y - 1, text: '⛏️ Mina' },
+      { x: TOWN.lake.x, y: TOWN.lake.y - 7, text: '🎣 Pescaria' },
+    ];
+    for (const site of worksiteLabels) {
+      if (site.x < x0 || site.x > x1 || site.y < y0 || site.y > y1) continue;
+      list.push({ y: site.y, draw: () => this.drawLabel(sx(site.x + 0.5), sy(site.y), site.text) });
+    }
     const plot = this.map.plot;
     const homeBase = sy(plot.y + plot.h + 1);
     const houseId = this.state.house >= 3 ? 'house-brick' : this.state.house === 2 ? 'barn' : 'gazebo';
@@ -1719,7 +1729,13 @@ export class VillageGame {
             const hearts = Math.round(friendOf(this.state, id).points / 20);
             const working = this.communityWork.get(id);
             const farmTask = this.farmTasks.get(id);
-            const activityLabel = farmTask ? ` · ${farmTask.workingSince === null ? 'indo ao canteiro 🌱' : farmTask.kind === 'plant' ? 'plantando 🌱' : farmTask.kind === 'water' ? 'regando 💧' : 'colhendo 🧺'}` : working && now < working.until ? ` · ${COMMUNITY_ACTIVITY_NAMES[working.activity]}` : '';
+            const taskStatus = farmTask ? farmTask.workingSince === null ? 'a caminho' : 'trabalhando' : '';
+            const taskIcon = farmTask ? ({ plant: '🌱', water: '💧', harvest: '🧺', mine: '⛏️', lumber: '🪓', fish: '🎣' } as const)[farmTask.kind] : '';
+            const activityLabel = farmTask ? ` · ${taskStatus} ${taskIcon}` : working && now < working.until ? ` · ${COMMUNITY_ACTIVITY_NAMES[working.activity]}` : '';
+            if (farmTask?.workingSince !== null && farmTask) {
+              const workEmoji = ({ mine: '⛏️', lumber: '🪓', fish: '🎣' } as const)[farmTask.kind as 'mine' | 'lumber' | 'fish'];
+              if (workEmoji) this.drawTag(cx, base - h - 9 * scale - Math.abs(Math.sin(now / 150)) * 2 * scale, workEmoji);
+            }
             overlays.push(() => this.drawLabel(cx, sy(pos.y + 1) + 1 * scale, `${this.names.get(id) ?? ''}${seated ? ' · descansando' : activityLabel} ${'♥'.repeat(hearts)}${'♡'.repeat(5 - hearts)}`));
           }
           overlays.push(() => this.drawBubble(id, cx, base - h, now));
@@ -2075,10 +2091,10 @@ export class VillageGame {
   /** O balão de fala dos momentos: o texto aparece letra por letra, com o nome de quem fala. */
   private drawSpeech(cx: number, top: number, s: { text: string; name: string; start: number; tint: string }, now: number): void {
     const { ctx, canvas, scale } = this;
-    const fs = Math.max(11, Math.round(4.4 * scale));
+    const fs = Math.max(13, Math.round(5.4 * scale));
     ctx.font = `bold ${fs}px system-ui, sans-serif`;
     const shown = s.text.slice(0, Math.max(1, Math.floor((now - s.start) / 22)));
-    const maxW = Math.min(canvas.width - 24, 74 * scale);
+    const maxW = Math.min(canvas.width - 24, 90 * scale);
     // A caixa se dimensiona pelo texto inteiro (não pula enquanto escreve).
     const wrap = (text: string): string[] => {
       const words = text.split(' ');
@@ -2086,7 +2102,7 @@ export class VillageGame {
       let cur = '';
       for (const w of words) {
         const t = cur ? `${cur} ${w}` : w;
-        if (ctx.measureText(t).width > maxW - 10 * scale && cur) {
+        if (ctx.measureText(t).width > maxW - 14 * scale && cur) {
           lines.push(cur);
           cur = w;
         } else cur = t;
@@ -2096,9 +2112,9 @@ export class VillageGame {
     };
     const full = wrap(s.text);
     const lines = wrap(shown);
-    const boxW = Math.min(maxW, Math.max(...full.map((l) => ctx.measureText(l).width), ctx.measureText(s.name).width) + 10 * scale);
-    const lh = fs * 1.25;
-    const boxH = lh * (full.length + 1) + 6 * scale;
+    const boxW = Math.min(maxW, Math.max(...full.map((l) => ctx.measureText(l).width), ctx.measureText(s.name).width) + 14 * scale);
+    const lh = fs * 1.3;
+    const boxH = lh * (full.length + 1) + 10 * scale;
     let x = cx - boxW / 2;
     x = Math.max(8, Math.min(canvas.width - boxW - 8, x));
     // Não passa por baixo da barra do topo (≈ 56 px de tela).
@@ -2108,7 +2124,7 @@ export class VillageGame {
     ctx.strokeStyle = '#1a1a24';
     ctx.lineWidth = Math.max(2, scale * 0.7);
     ctx.beginPath();
-    ctx.roundRect(x, y, boxW, boxH, 4 * scale);
+    ctx.roundRect(x, y, boxW, boxH, 5 * scale);
     ctx.fill();
     ctx.stroke();
     // Rabinho do balão, apontando para quem fala.
@@ -2126,9 +2142,9 @@ export class VillageGame {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillStyle = s.tint;
-    ctx.fillText(s.name, x + 5 * scale, y + 3 * scale);
+    ctx.fillText(s.name, x + 7 * scale, y + 5 * scale);
     ctx.fillStyle = '#1a1a24';
-    lines.forEach((l, i) => ctx.fillText(l, x + 5 * scale, y + 3 * scale + lh * (i + 1)));
+    lines.forEach((l, i) => ctx.fillText(l, x + 7 * scale, y + 5 * scale + lh * (i + 1)));
   }
 }
 

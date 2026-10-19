@@ -2,7 +2,7 @@ import type { PokemonType } from '../pokemon-data';
 
 /** Atividades que os moradores podem escolher sem comando do treinador. */
 export const VILLAGE_ACTIVITIES = [
-  'agricultura', 'pesca', 'culinaria', 'manutencao', 'construcao', 'transporte', 'exploracao',
+  'agricultura', 'pesca', 'mineracao', 'madeireira', 'culinaria', 'manutencao', 'construcao', 'transporte', 'exploracao',
   'pesquisa', 'jardinagem', 'vigilancia', 'comercio', 'protecao', 'conservacao', 'reciclagem',
   'acolhimento', 'brincadeira', 'descanso',
 ] as const;
@@ -11,14 +11,14 @@ export type VillageActivity = (typeof VILLAGE_ACTIVITIES)[number];
 
 /** Afinidades iniciais: todas afetam a pontuação das atividades disponíveis. */
 export const TYPE_AFFINITIES: Readonly<Record<PokemonType, readonly VillageActivity[]>> = {
-  grass: ['agricultura', 'jardinagem', 'reciclagem'],
+  grass: ['agricultura', 'madeireira', 'jardinagem'],
   water: ['agricultura', 'pesca', 'conservacao'],
   fire: ['culinaria', 'manutencao', 'construcao'],
   electric: ['manutencao', 'pesquisa', 'transporte'],
-  rock: ['construcao', 'manutencao', 'conservacao'],
-  ground: ['agricultura', 'construcao', 'exploracao'],
-  steel: ['construcao', 'manutencao', 'transporte'],
-  fighting: ['transporte', 'construcao', 'protecao'],
+  rock: ['mineracao', 'construcao', 'manutencao'],
+  ground: ['mineracao', 'agricultura', 'construcao'],
+  steel: ['mineracao', 'construcao', 'manutencao'],
+  fighting: ['madeireira', 'transporte', 'construcao'],
   flying: ['transporte', 'exploracao', 'vigilancia'],
   psychic: ['pesquisa', 'acolhimento', 'exploracao'],
   fairy: ['jardinagem', 'acolhimento', 'brincadeira'],

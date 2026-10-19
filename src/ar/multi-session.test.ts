@@ -168,8 +168,9 @@ describe('MultiArSession', () => {
     tick(2);
     expect(renderer.render).toHaveBeenCalledTimes(2);
     session.stop();
+    session.stop();
     expect(engine.stopped).toBe(1);
-    expect(renderer.dispose).toHaveBeenCalled();
+    expect(renderer.dispose).toHaveBeenCalledTimes(1);
     expect(session.scene.children).toHaveLength(0);
     expect(slots.every((s) => s.sprite.mode !== undefined)).toBe(true);
     expect(session.currentState).toMatchObject({ phase: 'idle', visible: [] });

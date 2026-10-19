@@ -278,6 +278,11 @@ describe('ArSession', () => {
     expect(renderer.render).not.toHaveBeenCalled();
     expect(session.currentState.phase).toBe('idle');
     expect(session.scene.children).toHaveLength(0);
+    session.stop();
+    expect(engine.stopped).toBe(1);
+    expect(renderer.dispose).toHaveBeenCalledTimes(1);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    await expect(session.start(new ArrayBuffer(8))).rejects.toThrow('já foi encerrada');
   });
 
   it('resize recalcula a câmera para a nova proporção da tela', async () => {
