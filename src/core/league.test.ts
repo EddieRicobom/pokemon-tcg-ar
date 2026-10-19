@@ -5,7 +5,7 @@ import type { LeagueProgress } from './league';
 const winAll = (p: LeagueProgress, list = GYMS) => list.reduce((acc, c) => applyLeagueResult(acc, c, true).progress, p);
 
 describe('a Liga', () => {
-  it('8 Ginásios, 4 da Elite e a Campeã, com equipes de 3 a 6 e dificuldade crescente', () => {
+  it('8 Ginásios, 4 da Elite e a Campeã, com Ginásios de seis e dificuldade crescente', () => {
     expect(GYMS).toHaveLength(8);
     expect(ELITE).toHaveLength(4);
     expect(new Set(ALL_CHALLENGES.map((c) => c.id)).size).toBe(52);
@@ -19,6 +19,7 @@ describe('a Liga', () => {
       expect(c.defeat.length).toBeGreaterThan(10);
     }
     expect(GYMS.every((g) => g.badge)).toBe(true);
+    expect(GYMS.every((g) => g.team.length === 6)).toBe(true);
     expect(challengeById('gym-3')?.leader).toBe('Crasher Wake');
     expect(challengeById('nada')).toBeNull();
   });
@@ -99,6 +100,7 @@ describe('Ligas regionais', () => {
         expect(c.team.length).toBeGreaterThanOrEqual(3);
         expect(c.team.length).toBeLessThanOrEqual(6);
       }
+      expect(r.gyms.every((g) => g.team.length === 6)).toBe(true);
     }
   });
   it('insígnias e corrida da Elite ficam isoladas, inclusive depois de salvar', () => {
