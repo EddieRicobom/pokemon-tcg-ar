@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSurvivorState } from './survivor';
-import { survivorObjectives, survivorObjectiveSet, survivorRerollLimit, SURVIVOR_OBJECTIVE_IDS } from './survivor-objectives';
+import { survivorObjectives, survivorObjectiveSet, survivorRerollLimit, SURVIVOR_OBJECTIVE_DETAILS, SURVIVOR_OBJECTIVE_IDS } from './survivor-objectives';
 
 describe('objetivos opcionais da Torre', () => {
   it('escolhe conjuntos variados e determinísticos sem depender de estado global', () => {
@@ -8,6 +8,8 @@ describe('objetivos opcionais da Torre', () => {
     expect(survivorObjectiveSet(0)).not.toEqual(survivorObjectiveSet(1));
     expect(survivorObjectiveSet(-1)).toEqual(survivorObjectiveSet(0xffff_ffff));
     expect(SURVIVOR_OBJECTIVE_IDS).toHaveLength(12);
+    expect(Object.keys(SURVIVOR_OBJECTIVE_DETAILS)).toHaveLength(SURVIVOR_OBJECTIVE_IDS.length);
+    expect(SURVIVOR_OBJECTIVE_DETAILS['tempo-1m'].title).toBe('Resista por 1 minuto');
   });
 
   it('mede feitos reais do estado da corrida selecionada', () => {
