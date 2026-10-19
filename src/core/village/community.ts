@@ -120,7 +120,7 @@ function activity(value: unknown): value is VillageActivity {
   return typeof value === 'string' && (VILLAGE_ACTIVITIES as readonly string[]).includes(value);
 }
 
-function normalizeResidentProgress(raw: unknown): CommunityResidentProgress {
+export function normalizeResidentProgress(raw: unknown): CommunityResidentProgress {
   const base: CommunityResidentProgress = { energy: COMMUNITY_RULES.initialEnergy, interests: [], experience: {}, recentActivity: null, rememberedActivity: null, completedActivities: 0 };
   if (!raw || typeof raw !== 'object') return base;
   const value = raw as Partial<CommunityResidentProgress>;
