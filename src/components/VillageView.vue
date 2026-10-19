@@ -995,16 +995,20 @@ function openRequestBoard(): void {
   const today = refreshDay();
   const previousDay = state.requests.day;
   const requests = ensureRequests(state, today, mons.value.map((m) => ({ id: m.id, name: m.name })));
+  const storyRequests = state.requests.story ?? [];
+  const allRequests = [...storyRequests, ...requests];
   if (previousDay !== state.requests.day) changed();
-  const summary = requests.map((request) => {
+  const summary = allRequests.map((request) => {
     const status = requestStatus(state, request, today);
-    return `${request.done ? '✅' : '📌'} ${request.title}\n   ${request.detail}\n   ${request.location} · ${status.text}`;
+    return `${request.done ? '✅' : request.persistent ? '🔎' : '📌'} ${request.title}\n   ${request.detail}\n   ${request.location} · ${status.text}`;
   }).join('\n\n');
   const conclude = (id: string): void => {
     const result = claimRequest(state, id, refreshDay());
     if (result.ok) {
       earnCoins(result.coins);
       if (result.targetId) game?.bubble(result.targetId, '🎁');
+      const story = storyRequests.find((request) => request.id === id);
+      if (story) say('🔎 Pedido da descoberta concluído. Uma nova pista pode ser encontrada na Vila.');
       if (state.requests.items.every((request) => request.done)) {
         state.town.level = Math.max(state.town.level, Math.min(99, level.value + 1));
         say('🏘️ Todos os pedidos de hoje foram atendidos: a Vila subiu um nível.');
@@ -1019,7 +1023,7 @@ function openRequestBoard(): void {
     name: 'Mural de pedidos',
     text: summary || 'O mural está vazio por enquanto.',
     actions: [
-      ...requests.map((request: VillageRequest) => {
+      ...allRequests.map((request: VillageRequest) => {
         const status = requestStatus(state, request, today);
         return {
           label: request.done ? `✓ ${request.title}` : status.ready ? `Concluir: ${request.title}` : `Ver: ${request.title}`,

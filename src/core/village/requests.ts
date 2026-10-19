@@ -19,6 +19,8 @@ export interface VillageRequest {
   rewardQty: number;
   rewardFriend: number;
   done: boolean;
+  /** Pedido de história: permanece no mural até ser concluído, mesmo no dia seguinte. */
+  persistent?: boolean;
 }
 
 export interface RequestClaim { ok: boolean; message: string; coins: number; targetId?: string }
@@ -55,21 +57,24 @@ export function makeRequests(state: VillageState, day: string, residents: readon
   ];
 }
 
-export function normalizeRequests(raw: unknown): { day: string; items: VillageRequest[] } {
-  if (!raw || typeof raw !== 'object') return { day: '', items: [] };
+export function normalizeRequests(raw: unknown): { day: string; items: VillageRequest[]; story: VillageRequest[] } {
+  if (!raw || typeof raw !== 'object') return { day: '', items: [], story: [] };
   const r = raw as { day?: unknown; items?: unknown };
   const items = Array.isArray(r.items) ? r.items.filter((x): x is VillageRequest => !!x && typeof x === 'object' && typeof (x as VillageRequest).id === 'string' && typeof (x as VillageRequest).title === 'string' && typeof (x as VillageRequest).kind === 'string').slice(0, 3) : [];
-  return { day: typeof r.day === 'string' ? r.day.slice(0, 12) : '', items };
+  const story = Array.isArray((r as { story?: unknown }).story)
+    ? (r as { story: unknown[] }).story.filter((x): x is VillageRequest => !!x && typeof x === 'object' && typeof (x as VillageRequest).id === 'string' && typeof (x as VillageRequest).title === 'string' && (x as VillageRequest).persistent === true).slice(0, 8)
+    : [];
+  return { day: typeof r.day === 'string' ? r.day.slice(0, 12) : '', items, story };
 }
 
 export function ensureRequests(state: VillageState, day: string, residents: readonly { id: string; name: string }[]): VillageRequest[] {
-  if (state.requests.day !== day || state.requests.items.length !== 3) state.requests = { day, items: makeRequests(state, day, residents) };
+  if (state.requests.day !== day || state.requests.items.length !== 3) state.requests = { day, items: makeRequests(state, day, residents), story: state.requests.story ?? [] };
   return state.requests.items;
 }
 
 export function requestStatus(state: VillageState, request: VillageRequest, day: string): { ready: boolean; text: string } {
-  if (request.done) return { ready: false, text: 'Concluído hoje' };
-  if (request.day !== day) return { ready: false, text: 'Atualizando amanhã' };
+  if (request.done) return { ready: false, text: request.persistent ? 'Concluído' : 'Concluído hoje' };
+  if (!request.persistent && request.day !== day) return { ready: false, text: 'Atualizando amanhã' };
   if (request.kind === 'talk') {
     const target = request.targetId ? friendOf(state, request.targetId) : null;
     return target?.lastTalk === day ? { ready: true, text: 'Pronto para receber' } : { ready: false, text: `Converse com ${request.targetName ?? 'o Pokémon'}` };
@@ -80,7 +85,7 @@ export function requestStatus(state: VillageState, request: VillageRequest, day:
 }
 
 export function claimRequest(state: VillageState, requestId: string, day: string): RequestClaim {
-  const request = state.requests.items.find((r) => r.id === requestId);
+  const request = [...state.requests.items, ...(state.requests.story ?? [])].find((r) => r.id === requestId);
   if (!request) return { ok: false, message: 'Esse pedido já saiu do mural.', coins: 0 };
   const status = requestStatus(state, request, day);
   if (!status.ready) return { ok: false, message: status.text, coins: 0 };

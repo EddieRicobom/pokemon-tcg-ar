@@ -82,10 +82,10 @@ Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado �
 - ✅ **Memória contextual inicial:** momentos marcantes agora geram até 80 memórias curtas por Pokémon, com normalização retrocompatível. O Livro mostra as cinco mais recentes e `recentGossip()` usa a memória antes do texto genérico do Diário; abrir o Livro ou conversar não cria memória nova.
 - ✅ **Memória com consequência inicial:** rivalidades recentes agora aumentam a chance de `A revanche` e permitem `Fazendo as pazes` quando o vínculo continua abalado. A ordem dos Pokémon no elenco não altera a identificação do par, e memórias antigas saem desse gatilho depois de 45 dias.
 - 🔶 **Lacuna confirmada:** a iniciativa já existe como momentos espontâneos e perguntas com `❗`, mas convites, pedidos de ajuda e visitas ainda são principalmente templates escolhidos pelo motor; faltam consequências persistentes que escolham o próximo comportamento de um personagem.
-- 🔶 **Lacuna confirmada:** exploração já tem mapa, recursos, lago, fazenda, trilhas e prédios, mas não há pistas persistentes encadeadas que desbloqueiem uma descoberta futura.
+- ✅ **Descobertas encadeadas:** as quatro descobertas da exploração agora têm ordem persistente. Cada conclusão cria um pedido do Mural que fica salvo até a entrega; só depois dele a próxima região libera a pista. Saves antigos continuam funcionando sem pedidos de história.
 - ⚠️ **Risco:** ampliar `VillageState` exige normalização retrocompatível, limite de tamanho e testes de migração. As próximas consequências devem continuar usando a coleção limitada, sem duplicar o Diário.
 - ✅ **Resumo navegável:** cada fato do Resumo agora aponta para o momento no Diário e, quando existe um personagem relacionado, para a página dele no Livro; pedidos apontam para o Mural. A navegação reaproveita o id interno e não cria fatos novos.
-- ➡️ **Próxima implementação recomendada:** expandir consequências para descobertas encadeadas e pedidos persistentes.
+- ➡️ **Próxima implementação recomendada:** expandir as consequências sociais para escolher comportamentos futuros dos moradores.
 
 O dono do projeto enviou um prompt mestre completo (guardado na íntegra em [docs/PROMPT_MESTRE.md](docs/PROMPT_MESTRE.md), pra não se perder de novo numa compactação de conversa) com 8 fases. Status de cada uma:
 

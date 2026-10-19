@@ -6,7 +6,7 @@ import {
   assignHomes, cafeVisit, CAFE_PRICE, collectMail, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, homeRoof, homeValue, isAsleep, isDeepSleep, knockDoor, KNOCK_STAY_UP_MS, knockOpenChance, nextUnlock, paintRoof, ROOFS, roofIndex,
   sanitizeTown, toggleDecor, townStage, unlockedBetween, unlockedLots, upgradeHome,
 } from './town';
-import { CIVIC, LOTS, TOWN_STAGES } from './town-layout';
+import { CIVIC, DECOR, LOTS, TOWN, TOWN_STAGES } from './town-layout';
 
 const map = generateVillage(20261014);
 const fresh = () => emptyVillage(20261014, map.spawn);
@@ -72,6 +72,12 @@ describe('a cidade no mapa', () => {
     const lamps = map.tiles.map((t, i) => (t === 'lamp' ? { x: i % map.w, y: Math.floor(i / map.w) } : null)).filter((x) => x);
     expect(lamps.length).toBeGreaterThan(8);
     for (const b of map.buildings) expect(lamps.some((l) => l!.x === b.door.x && l!.y === b.door.y)).toBe(false);
+  });
+
+  it('coloca o mural imediatamente ao lado da fonte', () => {
+    const board = DECOR.find((decor) => decor.kind === 'board')!;
+    expect(board.x + board.w).toBe(TOWN.fountain.x);
+    expect(board.y + board.h).toBe(TOWN.fountain.y);
   });
 });
 

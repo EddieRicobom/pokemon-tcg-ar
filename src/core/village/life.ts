@@ -118,7 +118,7 @@ export interface VillageState {
   homes: Record<string, number>;
   town: { level: number; mailDay: string; cafeDay: string };
   /** Pedidos diários do mural da praça. */
-  requests: { day: string; items: VillageRequest[] };
+  requests: { day: string; items: VillageRequest[]; story: VillageRequest[] };
   /** Digital Pokémon (presente inicial, Fonte, evolução) — pagos em moedas, o saldo único (`app/wallet.ts`). */
   digital: DigitalState;
   /** Encontros lendários raríssimos na Vila (ver `legendary.ts`). */
@@ -143,13 +143,13 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
   return {
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
-    claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [] },
+    claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
     digital: emptyDigital(), legendary: emptyLegendary(), recap: { day: '', at: 0 }, ...emptyWorldProgress(),
   };
 }
 
-function normalizeRequests(raw: unknown): { day: string; items: VillageRequest[] } {
-  if (!raw || typeof raw !== 'object') return { day: '', items: [] };
+function normalizeRequests(raw: unknown): { day: string; items: VillageRequest[]; story: VillageRequest[] } {
+  if (!raw || typeof raw !== 'object') return { day: '', items: [], story: [] };
   const r = raw as { day?: unknown; items?: unknown };
   const kinds = new Set(['collect', 'talk', 'deliver']);
   const items = Array.isArray(r.items)
@@ -159,7 +159,14 @@ function normalizeRequests(raw: unknown): { day: string; items: VillageRequest[]
       return typeof item.id === 'string' && typeof item.title === 'string' && kinds.has(item.kind);
     }).slice(0, 3)
     : [];
-  return { day: typeof r.day === 'string' ? r.day.slice(0, 12) : '', items };
+  const story = Array.isArray((r as { story?: unknown }).story)
+    ? (r as { story: unknown[] }).story.filter((x): x is VillageRequest => {
+      if (!x || typeof x !== 'object') return false;
+      const item = x as VillageRequest;
+      return item.persistent === true && typeof item.id === 'string' && typeof item.title === 'string' && kinds.has(item.kind);
+    }).slice(0, 8)
+    : [];
+  return { day: typeof r.day === 'string' ? r.day.slice(0, 12) : '', items, story };
 }
 
 
