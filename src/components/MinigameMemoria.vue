@@ -3,8 +3,9 @@ import { computed, onBeforeUnmount, ref } from 'vue';
 import { seededRng } from '../core/battle';
 import { gradeMemory, makeMemoryBoard } from '../core/minigames';
 import type { Grade, Piece } from '../core/minigames';
+import MinigameReward from './MinigameReward.vue';
 
-const props = defineProps<{ pieces: Piece[]; urls: Map<string, string> }>();
+const props = defineProps<{ pieces: Piece[]; urls: Map<string, string>; rewardCoins: number }>();
 const emit = defineEmits<{ finished: [grade: Grade]; leave: [] }>();
 
 const newBoard = () => makeMemoryBoard(props.pieces, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0));
@@ -81,6 +82,7 @@ onBeforeUnmount(() => {
     <template v-if="grade">
       <p class="game-result"><strong>{{ moves }} jogadas</strong></p>
       <p class="note">{{ grade.won ? 'Boa memória!' : 'Deu trabalho, né?' }} Pontuação: {{ grade.score }} (o mínimo possível é {{ pairs }} jogadas).</p>
+      <MinigameReward :won="grade.won" :coins="props.rewardCoins" />
       <div class="game-actions">
         <button type="button" class="primary" @click="again">Jogar de novo</button>
         <button type="button" @click="emit('leave')">Voltar</button>

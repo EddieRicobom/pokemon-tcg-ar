@@ -4,7 +4,9 @@ import { seededRng } from '../core/battle';
 import { gradeQuiz, makeTypeQuestions, multiplierLabel } from '../core/minigames';
 import type { Grade } from '../core/minigames';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
+import MinigameReward from './MinigameReward.vue';
 
+const props = defineProps<{ rewardCoins: number }>();
 const emit = defineEmits<{ finished: [grade: Grade]; leave: [] }>();
 
 const newRound = () => makeTypeQuestions(seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0));
@@ -72,6 +74,7 @@ function again(): void {
     <template v-else-if="grade">
       <p class="game-result"><strong>{{ correct }} de {{ questions.length }}</strong></p>
       <p class="note">{{ grade.won ? 'Você manja de tipos!' : 'Quase lá. Tente de novo.' }} Pontuação: {{ grade.score }}. É a mesma tabela usada nas batalhas da Caixa.</p>
+      <MinigameReward :won="grade.won" :coins="props.rewardCoins" />
       <div class="game-actions">
         <button type="button" class="primary" @click="again">Jogar de novo</button>
         <button type="button" @click="emit('leave')">Voltar</button>

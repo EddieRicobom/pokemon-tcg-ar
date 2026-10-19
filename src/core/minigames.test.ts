@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng, typeEffectiveness } from './battle';
 import {
-  cardsBlocker, distinctPieces, gameBlocker, gradeMemory, memoryUsesCards, gradeQuiz, makeMemoryBoard, makeTypeQuestions, makeWhoQuestions, MEMORY_PAIRS, multiplierLabel, QUIZ_ROUNDS, shuffle, TYPE_ROUNDS,
+  cardsBlocker, distinctPieces, gameBlocker, gradeMemory, memoryUsesCards, gradeQuiz, makeMemoryBoard, makeTypeQuestions, makeWhoQuestions, MEMORY_PAIRS, MINIGAME_WIN_COINS, minigameCoinReward, multiplierLabel, QUIZ_ROUNDS, shuffle, TYPE_ROUNDS,
   WHO_DIFFICULTIES, WHO_DIFFICULTY_LABELS_PT,
 } from './minigames';
 import type { Piece } from './minigames';
 
 const piece = (n: number, name = `Mon ${n}`): Piece => ({ id: `c${n}`, name, spriteKey: `s${n}` });
 const pool = (n: number) => Array.from({ length: n }, (_, i) => piece(i));
+
+describe('recompensas', () => {
+  it('dá moedas de bônus só em vitória', () => {
+    expect(minigameCoinReward(true)).toBe(MINIGAME_WIN_COINS);
+    expect(minigameCoinReward(false)).toBe(0);
+  });
+});
 
 describe('peças', () => {
   it('ignora repetidas por nome ou por imagem', () => {
