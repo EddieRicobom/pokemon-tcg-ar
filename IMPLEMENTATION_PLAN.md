@@ -111,7 +111,7 @@ Escopo registrado a partir do prompt do usuário. Os estados abaixo refletem o c
 - ✅ **Descobertas encadeadas:** as quatro descobertas da exploração agora têm ordem persistente. Cada conclusão cria um pedido do Mural que fica salvo até a entrega; só depois dele a próxima região libera a pista. Saves antigos continuam funcionando sem pedidos de história.
 - ⚠️ **Risco:** ampliar `VillageState` exige normalização retrocompatível, limite de tamanho e testes de migração. As próximas consequências devem continuar usando a coleção limitada, sem duplicar o Diário.
 - ✅ **Resumo navegável:** cada fato do Resumo agora aponta para o momento no Diário e, quando existe um personagem relacionado, para a página dele no Livro; pedidos apontam para o Mural. A navegação reaproveita o id interno e não cria fatos novos.
-- ➡️ **Próxima implementação recomendada:** ligar compromissos concluídos a memórias individuais e às falas do Livro, sem criar fatos quando o prazo expirar.
+- ✅ **Compromissos viram memória individual:** ao concluir de verdade uma visita, ajuda ou convite combinado, cada morador recebe uma memória ligada ao momento, com a promessa específica cumprida. O Livro já apresenta essas memórias e as conversas retomam a mais recente; compromissos vencidos não geram a cena especial nem uma lembrança de cumprimento. Testes cobrem os dois moradores e a expiração.
 
 O dono do projeto enviou um prompt mestre completo (guardado na íntegra em [docs/PROMPT_MESTRE.md](docs/PROMPT_MESTRE.md), pra não se perder de novo numa compactação de conversa) com 8 fases. Status de cada uma:
 

@@ -270,8 +270,22 @@ describe('momentos: resultado', () => {
 
     const followUp = pickMoment(actors.slice(0, 2), s, makeEnv(s, '2026-10-15', 14, null), seededRng(2));
     expect(followUp?.tpl.id).toBe('social-plano-visita');
-    resolveScene(s, followUp!, null, Date.parse('2026-10-15T14:00:00Z'));
+    const completed = resolveScene(s, followUp!, null, Date.parse('2026-10-15T14:00:00Z'));
     expect(s.plans).toEqual([]);
+    const memories = s.memories.filter((memory) => memory.momentId === completed.moment.id);
+    expect(memories).toHaveLength(2);
+    expect(memories.map((memory) => memory.mon).sort()).toEqual(['a', 'b']);
+    expect(memories[0]?.text).toContain('Promessa cumprida: Ana visitou Beto.');
+    expect(recentGossip(s, 'a', completed.moment.t + 1)).toContain('Promessa cumprida: Ana visitou Beto.');
+  });
+
+  it('não trata compromisso vencido como promessa cumprida nem cria a cena especial', () => {
+    const s = fresh();
+    s.plans.push({ id: 'plano-vencido', from: 'a', to: 'b', kind: 'visitar', createdDay: '2026-10-14', expiresDay: '2026-10-15', sourceMomentId: 'momento-real' });
+    const scene = pickMoment(actors.slice(0, 2), s, makeEnv(s, '2026-10-16', 14, null), seededRng(2))!;
+    expect(scene.tpl.id).not.toBe('social-plano-visita');
+    resolveScene(s, scene, null, Date.parse('2026-10-16T14:00:00Z'));
+    expect(s.memories.some((memory) => memory.text.includes('Promessa cumprida'))).toBe(false);
   });
 
   it('romance vira casal e o fim do namoro vira briga ou separação; brigados voltam às pazes', () => {
