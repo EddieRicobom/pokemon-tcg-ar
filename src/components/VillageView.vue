@@ -1647,10 +1647,12 @@ function refreshDay(): string {
   if (game) {
     const residents = mons.value.map((mon) => {
       const monTypes = types.get(mon.id);
-      return monTypes?.length ? { id: mon.id, favoriteFood: favoriteFoodOf(monTypes) } : { id: mon.id };
+      return monTypes?.length ? { id: mon.id, favoriteFood: favoriteFoodOf(monTypes), types: monTypes } : { id: mon.id };
     });
     const result = advanceCommunity(state, today, residents);
     if (result.initialized || result.cycles.length > 0) changed();
+    const latestCycle = result.cycles.at(-1);
+    if (latestCycle) game.showCommunityActivities(latestCycle.activities, latestCycle.day);
     const notice = [...result.cycles].reverse().find((cycle) => cycle.notice)?.notice;
     if (notice) say(`🏡 ${notice}`, 6500);
     if (result.skippedDays > 0) say(`A simulação comunitária considera até sete dias de ausência; ${result.skippedDays} dia(s) mais antigo(s) ficaram sem cobrança.`, 8000);
@@ -2372,10 +2374,14 @@ onBeforeUnmount(() => {
             <h4 id="community-summary-title">🏡 Comunidade e reservas</h4>
             <p>{{ communityView.residents }} morador(es) ativo(s) na Vila · bem-estar {{ state.community.welfare }}/100 · confiança no cuidado {{ state.community.trust }}/100.</p>
             <p class="hint">Conta cada ID uma vez entre moradores da equipe e Digital Pokémon; cartas guardadas fora da Vila não entram no cálculo.</p>
-            <p>Despensa: {{ communityView.foodAvailable }} porções disponíveis para {{ communityView.foodTarget }} porções estimadas por dia. Ingredientes e colheitas valem 1 porção; comida preparada vale 2.</p>
+            <p>Despensa: {{ communityView.foodAvailable }} porções disponíveis (cerca de {{ communityView.reserveDaysAtCurrentStock }} dia(s)) para {{ communityView.foodTarget }} porções estimadas por dia; reserva recomendada de três dias: {{ communityView.reserveTarget }}. Ingredientes e colheitas valem 1 porção; comida preparada vale 2.</p>
             <p>Manutenção dos serviços comuns: até {{ communityView.maintenanceDue }} moedas por ciclo diário ({{ communityView.residents }} × 4, mais 10; população zero não paga). Seu saldo atual {{ communityView.maintenanceFunded ? 'cobre' : 'não cobre' }} essa estimativa.</p>
             <p v-if="lastCommunityCycle?.notice" role="status">Último ciclo, {{ lastCommunityCycle.day }}: {{ lastCommunityCycle.notice }}</p>
             <p v-else-if="lastCommunityCycle">Último ciclo, {{ lastCommunityCycle.day }}: {{ lastCommunityCycle.foodServed }} porções nutritivas para a meta de {{ lastCommunityCycle.foodTarget }}; {{ lastCommunityCycle.preferredServings }} porção(ões) corresponderam a preferências conhecidas; {{ lastCommunityCycle.maintenancePaid }}/{{ lastCommunityCycle.maintenanceDue }} moedas de manutenção pagas.</p>
+            <ul v-if="lastCommunityCycle?.activities.length" aria-label="Atividades do último ciclo">
+              <li v-for="activity in lastCommunityCycle.activities.slice(0, 5)" :key="activity.residentId">{{ activity.icon }} {{ nameOf(activity.residentId) }}: {{ activity.result }}</li>
+              <li v-if="lastCommunityCycle.activities.length > 5" class="hint">E mais {{ lastCommunityCycle.activities.length - 5 }} atividade(s) no ciclo.</li>
+            </ul>
             <p v-else class="hint">A estimativa é atualizada no próximo ciclo. Os saves antigos começam sem cobrança retroativa.</p>
             <p class="hint">Estimativa baseada no estoque atual; a simulação liquida no máximo sete dias de ausência ao retornar. A Vila não processa ciclos enquanto o app está fechado.</p>
           </section>
