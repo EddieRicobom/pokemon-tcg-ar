@@ -16,6 +16,8 @@ Dois canvases estáticos no máximo ficam em cache; a mistura usa duas imagens, 
 
 O botão “Mapa” abre um radar discreto no canto da arena. O ponto azul é o jogador, pontos vermelhos são chefes, pontos amarelos são elites e os inimigos comuns mais próximos aparecem em cinza. Um retângulo branco marca a janela visível da câmera, ajudando a localizar ameaças que ficaram fora da tela sem alterar a visão principal, o campo de visão ou a lógica de combate. O mapa pode ser desligado durante a corrida; ele é atualizado em baixa frequência e não consome o RNG da simulação.
 
+Ao lado dele, a Torre mostra três objetivos opcionais: resistir por um minuto, chegar ao nível 5 e desbloquear o segundo golpe. Eles são apenas um guia de ritmo e ficam completos sem prêmio ou poder permanente; a pessoa pode ignorá-los sem perder moedas, XP ou progresso.
+
 ## Espécies acompanhando a região
 
 Os novos inimigos também acompanham a viagem. Cada região tem quatro espécies selvagens e um chefe periódico próprios, todos com animação Walk no pacote local. Os grupos de treinador usam as espécies da região com os mesmos graus elite/chefão de antes. Durante a transição, a proporção de nascimentos da próxima região segue a mesma mistura suave do cenário. Ao completar o ciclo, voltam as espécies de Kanto. Quem já nasceu mantém a espécie até ser derrotado: não se transforma nem desaparece na passagem de região.

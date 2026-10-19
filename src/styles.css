@@ -6040,6 +6040,28 @@ body.no-scroll .reward-toasts {
 .survivor-minimap-marker.kind-boss { width: 8px; height: 8px; margin: -4px 0 0 -4px; background: #ff5b5b; }
 .survivor-minimap-marker.kind-elite { background: #ffd84a; }
 
+.survivor-objectives {
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  top: 96px;
+  width: 142px;
+  padding: 6px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(10, 14, 24, 0.6);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.58rem;
+  pointer-events: none;
+}
+
+.survivor-objectives-title { display: block; margin-bottom: 3px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.survivor-objective { display: grid; grid-template-columns: 12px 1fr; gap: 2px 3px; line-height: 1.15; }
+.survivor-objective b { grid-row: span 2; color: #b9c4d8; }
+.survivor-objective small { grid-column: 2; color: rgba(255, 255, 255, 0.62); }
+.survivor-objective.complete { color: #b8f4aa; }
+.survivor-objective.complete b { color: #8ee6a0; }
+
 .survivor-joy-base {
   position: absolute;
   transform: translate(-50%, -50%);
