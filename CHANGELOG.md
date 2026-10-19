@@ -9,6 +9,7 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 - Kanto, Hoenn e Sinnoh ganharam zonas ambientais visíveis e determinísticas: folhagem desacelera o passo e projéteis, poças desaceleram e amplificam golpes Elétricos, e neve reduz mais a velocidade.
 - As zonas têm marcação visual no canvas e nome no HUD; as outras seis regiões continuam decorativas até receberem regras próprias.
 - O motor calcula os efeitos fora da interface, mantém a arena sem bloqueios e ganhou testes de integração para movimento e dano ambiental.
+- A Torre ganhou pausa explícita: relógio, inimigos, projéteis e efeitos ficam congelados até a pessoa tocar em “Retomar”.
 
 ### Treinadores animados, carregamento e confiabilidade (2026-10-18)
 

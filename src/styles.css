@@ -6109,10 +6109,16 @@ body.no-scroll .reward-toasts {
 
 .survivor-pick,
 .survivor-upgrades,
-.survivor-summary {
+.survivor-summary,
+.survivor-pause {
   width: 100%;
   max-width: 300px;
   text-align: center;
+}
+
+.survivor-pause-btn[aria-pressed="true"] {
+  border-color: #ffe066;
+  color: #fff2a8;
 }
 
 .survivor-pick-grid {
