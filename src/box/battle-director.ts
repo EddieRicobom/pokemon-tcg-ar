@@ -325,8 +325,8 @@ export class BattleDirector {
 
   constructor(private readonly o: DirectorOptions) {
     const n = o.fighters.length;
-    this.shownHp = o.fighters.map((f) => f.maxHp);
-    this.hpAnim = o.fighters.map((f) => ({ from: f.maxHp, to: f.maxHp, at: 0 }));
+    this.shownHp = o.fighters.map((f, i) => o.result.hpStart?.[i] ?? f.maxHp);
+    this.hpAnim = this.shownHp.map((hp) => ({ from: hp, to: hp, at: 0 }));
     this.flashUntil = new Array<number>(n).fill(0);
     this.flashColor = new Array<number>(n).fill(0xffffff);
     this.shakeUntil = new Array<number>(n).fill(0);

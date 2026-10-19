@@ -7,7 +7,7 @@ import { loadCardCompanionEntry } from '../app/companion-creatures';
 import { cardJourneyError, recordCardVictories } from '../app/card-evolution-store';
 import { battleWinners } from '../core/card-evolution';
 import type { CardCompanion } from '../core/card-evolution';
-import { challengePlan, isLeaderCreature, leaderFighter, leaderLoader, loadLeaderEntries, MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
+import { challengePlan, isLeaderCreature, leaderFighter, leaderLoader, loadArenaEntries, loadLeaderEntries, MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
 import { league, pendingChallenge, recordLeagueResult } from '../app/league-store';
 import { profile } from '../app/profile-store';
 import { routeFlags, routeHref } from '../app/route';
@@ -61,6 +61,8 @@ import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import { TEAM_NAMES_PT, TEAM_COLORS, BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, planBattle, rosterBlocker, seededRng, STATUS_LABELS_PT, summarizeBattle } from '../core/battle';
 import type { BattleMode, BattleSummary, Fighter, RosterSlot } from '../core/battle';
 import { loadChunk } from '../app/stale-build';
+import { abandonEndlessArena, ENDLESS_ARENA_LABELS, nextEndlessOpponent, resolveEndlessBattle, startEndlessArena } from '../core/endless-arena';
+import type { EndlessArenaMode, EndlessArenaRun } from '../core/endless-arena';
 
 type Phase = 'idle' | 'starting' | 'placing' | 'running';
 
@@ -122,6 +124,7 @@ const loadingCreatures = ref(false);
 /** Vindo da Vila (`#/caixa?vila=1`) a Vila abre direto; vindo da Arena (`?pvp=1`) o PvP já aparece aberto. */
 const arrival = routeFlags(window.location.hash);
 const pvpOpen = ref(arrival.has('pvp'));
+const endlessShortcut = ref<EndlessArenaMode | null>(arrival.has('formatacao') ? 'formatacao' : arrival.has('restauracao') ? 'restauracao' : null);
 const pvpEl = ref<HTMLDetailsElement | null>(null);
 if (arrival.size > 0) window.history.replaceState(null, '', routeHref('caixa'));
 const bookNote = ref('');
@@ -291,6 +294,43 @@ const stageSpeech = ref<{ name: string; text: string; sprite: string } | null>(n
 let stageSpeechTimer: ReturnType<typeof setTimeout> | null = null;
 let activeChallenge: Challenge | null = null;
 let lastResult: BattleResult | null = null;
+const endlessRun = ref<EndlessArenaRun | null>(null);
+const endlessModes: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
+let endlessEntries: CreatureEntry[] = [];
+let endlessFighters: Fighter[] = [];
+let endlessTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearEndlessTimer(): void {
+  if (!endlessTimer) return;
+  clearTimeout(endlessTimer);
+  endlessTimer = null;
+}
+
+const endlessLabel = computed(() => endlessRun.value ? ENDLESS_ARENA_LABELS[endlessRun.value.mode] : null);
+
+/** Encerra só a corrida contínua; a Caixa continua no chão para o jogador decidir o próximo passo. */
+function finishEndlessRun(reason: string): void {
+  const run = endlessRun.value;
+  if (!run) return;
+  clearEndlessTimer();
+  const ended = abandonEndlessArena(run);
+  const label = ENDLESS_ARENA_LABELS[ended.mode].title;
+  showMegaNotes([{ text: `${label}: ${reason} Placar final ${ended.score} · ${ended.wins} vitória${ended.wins === 1 ? '' : 's'}.`, tone: ended.wins > 0 ? 'ok' : 'warn' }]);
+  endlessRun.value = null;
+  endlessEntries = [];
+  endlessFighters = [];
+}
+
+/** Uma falha de carregamento não troca silenciosamente a corrida por uma batalha comum: ela fica encerrada até Desistir. */
+function interruptEndlessRun(reason: string): void {
+  const run = endlessRun.value;
+  if (!run) return;
+  clearEndlessTimer();
+  const ended = abandonEndlessArena(run);
+  const label = ENDLESS_ARENA_LABELS[ended.mode].title;
+  endlessRun.value = ended;
+  showMegaNotes([{ text: `${label}: ${reason} Placar ${ended.score} · ${ended.wins} vitória${ended.wins === 1 ? '' : 's'}.`, tone: ended.wins > 0 ? 'ok' : 'warn' }]);
+}
 
 function say(name: string, text: string, sprite: string, ms = 7000): void {
   stageSpeech.value = { name, text, sprite };
@@ -478,6 +518,10 @@ async function open(): Promise<void> {
 }
 
 function close(): void {
+  clearEndlessTimer();
+  endlessRun.value = null;
+  endlessEntries = [];
+  endlessFighters = [];
   battleHud.value = null;
   battleSummary.value = null;
   preparing.value = false;
@@ -562,6 +606,9 @@ watch(() => visual.weather, (mode) => box?.setWeather(mode));
 watch(() => visual.sound, (on) => box?.setSound(on));
 
 const canBattle = computed(() => phase.value === 'running' && population.value.shown >= (challenge.value || pvpOn.value ? 1 : 2) && !loadingCreatures.value && !preparing.value);
+/** A Arena usa deliberadamente os seis marcados como Vermelha: a escalação deixa de ser um detalhe escondido. */
+const endlessTeamEntries = computed(() => endlessShortcut.value ? lastEntries.slice(0, MAX_CHALLENGE_TEAM) : lastEntries.filter((entry) => slotOf(entry.info.id) === 0));
+const canStartEndless = computed(() => phase.value === 'running' && endlessTeamEntries.value.length === MAX_CHALLENGE_TEAM && !loadingCreatures.value && !preparing.value && !pvpOn.value);
 const battling = computed(() => battleHud.value !== null);
 /** Tremor e "soco" de zoom da imagem desenhada nos golpes fortes (o vídeo da câmera não treme). */
 const shakeStyle = computed(() => {
@@ -579,6 +626,20 @@ watch(
   (phase) => {
     if (phase !== 'finished' || battleCounted) return;
     battleCounted = true;
+    if (endlessRun.value && lastResult) {
+      const previous = endlessRun.value;
+      const next = resolveEndlessBattle(previous, endlessFighters, lastResult);
+      endlessRun.value = next;
+      const label = ENDLESS_ARENA_LABELS[next.mode].title;
+      if (next.stopped) {
+        showMegaNotes([{ text: `${label}: a corrida terminou. Placar ${next.score} · ${next.wins} vitória${next.wins === 1 ? '' : 's'}.`, tone: next.wins > 0 ? 'ok' : 'warn' }]);
+        return;
+      }
+      showMegaNotes([{ text: `${label}: vitória ${next.wins}! Próxima batalha em instantes · ${next.score} pontos.`, tone: 'ok' }]);
+      clearEndlessTimer();
+      endlessTimer = setTimeout(() => void startEndlessWave(), 1800);
+      return;
+    }
     if (activePvp && lastResult) {
       const won = lastResult.winningTeam === activePvp.myTeam;
       recordEvent({ type: 'pvp', won });
@@ -694,6 +755,115 @@ async function startChallenge(ch: Challenge): Promise<void> {
   }
 }
 
+/** Abre uma corrida 6×6 da Arena. A equipe fica fixa, mas o oponente é materializado de verdade a cada onda. */
+async function startEndless(mode: EndlessArenaMode): Promise<void> {
+  const current = box;
+  if (!current || preparing.value || pvpOn.value) return;
+  const mine = endlessTeamEntries.value;
+  if (mine.length !== MAX_CHALLENGE_TEAM) {
+    error.value = endlessShortcut.value
+      ? 'A Arena contínua precisa de uma turma com exatamente 6 Pokémon. Volte à Arena para organizá-la.'
+      : 'A Arena contínua precisa de exatamente 6 Pokémon marcados em Vermelha na escalação.';
+    showModes.value = true;
+    return;
+  }
+  current.unlockAudio();
+  if (versus.value) {
+    current.stopBattle();
+    await endVersus();
+  }
+  pendingChallenge.value = null;
+  preparing.value = true;
+  showSummary.value = false;
+  showFilters.value = showTeam.value = showAdjust.value = showModes.value = false;
+  if (!fullscreen.value) {
+    fullscreenForBattle = true;
+    void toggleFullscreen();
+  }
+  error.value = '';
+  hint.value = 'Conferindo a sua equipe de 6 para a Arena…';
+  try {
+    const fighters = withBond(await prepareFighters(mine.map((c) => ({ id: c.info.id, name: shown(c.info.id, c.info.name), dexId: c.info.dexId })), loadBattle));
+    if (disposed || box !== current) return;
+    const run = startEndlessArena(mode, fighters);
+    if (!run) throw new Error('a sua equipe precisa ter exatamente 6 Pokémon');
+    endlessEntries = mine;
+    endlessFighters = fighters;
+    endlessRun.value = run;
+    await startEndlessWave();
+  } catch (e) {
+    finishEndlessRun('não foi possível preparar a equipe.');
+    error.value = `Não consegui começar a Arena: ${e instanceof Error ? e.message : String(e)}`;
+    if (fullscreenForBattle) {
+      fullscreenForBattle = false;
+      void exitFullscreen();
+    }
+  } finally {
+    preparing.value = false;
+    hint.value = '';
+  }
+}
+
+/** Materializa a próxima equipe adversária e começa outra batalha automática sem curar indevidamente o jogador. */
+async function startEndlessWave(): Promise<void> {
+  const current = box;
+  const run = endlessRun.value;
+  if (!current || !run || run.stopped || preparing.value && endlessFighters.length === 0) return;
+  clearEndlessTimer();
+  preparing.value = true;
+  error.value = '';
+  const label = ENDLESS_ARENA_LABELS[run.mode].title;
+  hint.value = `${label}: escolhendo o próximo treinador…`;
+  try {
+    const seed = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff) ^ (run.battles + 1) * 0x45d9f3b) >>> 0;
+    const opponent = nextEndlessOpponent(seededRng(seed));
+    const loaded = await loadArenaEntries(run.battles + 1, opponent.trainer, opponent.dexIds, { fetchSprite: (dex) => fetchSprite(dex), decode: decodeSprite });
+    if (loaded.entries.length !== MAX_CHALLENGE_TEAM) {
+      const missing = loaded.failed.length > 0 ? loaded.failed.join(', ') : 'a equipe adversária completa';
+      throw new Error(`a onda não abriu porque não carregou: ${missing}`);
+    }
+    if (disposed || box !== current || endlessRun.value !== run || run.stopped) return;
+    hint.value = 'Preparando atributos e golpes da próxima equipe…';
+    current.setCreatures([...endlessEntries, ...loaded.entries]);
+    const creatures = current.scene.creatureList;
+    const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: shown(c.info.id, c.info.name), dexId: c.info.dexId })), leaderLoader(loadBattle));
+    if (disposed || box !== current || endlessRun.value !== run || run.stopped) return;
+    if (raw.length !== MAX_CHALLENGE_TEAM * 2) throw new Error('a equipe adversária não ficou completa');
+    const power = Math.min(1.72, 1.2 + run.wins * 0.035);
+    const foes = raw.slice(MAX_CHALLENGE_TEAM).map((fighter) => leaderFighter(fighter, power));
+    const fighters = [...endlessFighters, ...foes];
+    const plan = {
+      picks: Array.from({ length: fighters.length }, (_, i) => i),
+      teams: fighters.map((_, i) => i < MAX_CHALLENGE_TEAM ? 0 : 1),
+      relay: true,
+      initialHp: [...run.hp, ...foes.map((fighter) => fighter.maxHp)],
+      teamNames: [profile.name, opponent.trainer],
+      banner: { text: label, sub: `Batalha ${run.battles + 1} · ${run.wins} vitórias · ${run.score} pontos` },
+    };
+    battleCounted = false;
+    activeChallenge = null;
+    const result = current.startBattle(fighters, plan, seededRng(seed ^ 0x9e3779b9));
+    lastResult = result;
+    battleCompanions = [];
+    battleFighters.value = fighters;
+    battleSummary.value = {
+      mode: 'tres',
+      winner: result.winningTeam === 0 ? profile.name : opponent.trainer,
+      turns: result.turns.length,
+      rounds: result.turns.at(-1)?.round ?? 0,
+      stats: summarizeBattle(fighters, result),
+    };
+    versus.value = { me: { name: profile.name, sprite: trainerSpriteUrl(profile.sprite) }, them: { name: opponent.trainer, sprite: trainerSpriteUrl('ace'), role: 'Arena digital' } };
+    say(opponent.trainer, `Seis contra seis. Vamos ver até onde sua equipe aguenta!`, trainerSpriteUrl('ace'));
+  } catch (e) {
+    if (endlessRun.value === run) interruptEndlessRun('a conexão não conseguiu montar a próxima onda.');
+    error.value = `Não consegui abrir a próxima batalha da Arena: ${e instanceof Error ? e.message : String(e)}`;
+  } finally {
+    preparing.value = false;
+    hint.value = '';
+  }
+}
+
 async function startBattle(): Promise<void> {
   if (pvpOn.value) {
     if (boxPvp.role !== 'host') {
@@ -797,6 +967,11 @@ async function startBattle(): Promise<void> {
   }
 }
 
+function startSelectedBattle(): void {
+  if (endlessShortcut.value) void startEndless(endlessShortcut.value);
+  else void startBattle();
+}
+
 /** Volta cada Pokémon à forma da carta (a Mega dura uma batalha só). */
 function restoreForms(running: RunningBox | null): void {
   for (const creature of running?.scene.creatureList ?? []) creature.restoreForm();
@@ -809,6 +984,7 @@ async function decodeMegaSprite(ready: { sprite: { kind: 'gif' | 'static'; blob:
 }
 
 function stopBattle(): void {
+  if (endlessRun.value) finishEndlessRun('você desistiu da corrida.');
   box?.stopBattle();
   restoreForms(box);
   stageSpeech.value = null;
@@ -875,6 +1051,9 @@ const notices = computed<Notice[]>(() => {
       ? boxPvp.friend ? `${BOX_PVP_LABELS_PT[boxPvp.mode].title} · toque em Batalhar${boxPvp.friendPlaced ? '' : ` (${friend} ainda não colocou a caixa)`}` : 'Esperando a equipe do amigo…'
       : boxPvp.pending ? 'Coloque a caixa no chão para ver a luta.' : 'Esperando o anfitrião começar.';
     list.push({ text: `PvP com ${friend}`, sub, tone: 'ok', gold: true });
+  } else if (endlessShortcut.value && !preparing.value) {
+    const mode = ENDLESS_ARENA_LABELS[endlessShortcut.value];
+    list.push({ text: `Arena Digital: ${mode.title}`, sub: phase.value === 'running' ? 'Toque em Começar para a primeira batalha 6×6.' : 'Coloque a Caixa no chão para iniciar a corrida 6×6.', tone: 'ok', gold: true });
   } else if (challenge.value && !preparing.value) {
     list.push({ text: `Desafio: ${challenge.value.role} ${challenge.value.leader}`, sub: 'Toque em Batalhar: até 6 da sua caixa contra a equipe do líder, um duelo por vez.', tone: 'ok', gold: true });
   } else if (battleShortcut.value && !preparing.value) {
@@ -1043,6 +1222,7 @@ onBeforeUnmount(() => {
             <button type="button" class="link" @click="showSummary = false">Fechar</button>
           </header>
           <p>{{ battleSummary.turns }} turnos em {{ battleSummary.rounds }} rodadas.</p>
+          <p v-if="endlessRun && endlessLabel"><strong>{{ endlessLabel.title }}</strong> · batalha {{ endlessRun.battles }} · {{ endlessRun.wins }} vitória{{ endlessRun.wins === 1 ? '' : 's' }} · <strong>{{ endlessRun.score }} pontos</strong>.</p>
           <p v-if="mvp">Mais dano: <strong>{{ mvp.name }}</strong> ({{ mvp.damageDealt }} PS, maior golpe {{ mvp.biggestHit }}, {{ mvp.knockouts }} nocaute{{ mvp.knockouts === 1 ? '' : 's' }}).</p>
           <p>{{ crits }} crítico{{ crits === 1 ? '' : 's' }} · {{ inflicted }} condição(ões) causada(s) · {{ guards }} defesa{{ guards === 1 ? '' : 's' }}.</p>
           <template v-if="incompleteFighters.length > 0">
@@ -1072,7 +1252,25 @@ onBeforeUnmount(() => {
               <small v-if="modeBlocker(m)">{{ modeBlocker(m) }}</small>
             </button>
           </div>
-          <p class="hint">2 · Escale os Pokémon abaixo. Para mudar quem passeia na Caixa AR, abra Quem passeia.</p>
+          <section class="arena-run-options" aria-label="Arena digital contínua">
+            <p class="selection-caption">2 · Arena digital contínua</p>
+            <p class="hint">Marque exatamente 6 Pokémon em <strong>Vermelha</strong> na escalação abaixo. Eles permanecem como a sua equipe entre as ondas.</p>
+            <div class="mode-list">
+              <button
+                v-for="m in endlessModes"
+                :key="m"
+                type="button"
+                class="mode-option"
+                :disabled="!canStartEndless"
+                @click="void startEndless(m)"
+              >
+                <strong>{{ ENDLESS_ARENA_LABELS[m].title }}</strong>
+                <span>{{ ENDLESS_ARENA_LABELS[m].tutorial }}</span>
+              </button>
+            </div>
+            <small v-if="endlessTeamEntries.length !== MAX_CHALLENGE_TEAM">Vermelha: {{ endlessTeamEntries.length }}/{{ MAX_CHALLENGE_TEAM }} · selecione exatamente 6 para liberar.</small>
+          </section>
+          <p class="hint">3 · Escale os Pokémon abaixo. Para mudar quem passeia na Caixa AR, abra Quem passeia.</p>
           <p v-if="rosterRows.some((r) => r.mega)" class="hint mega-hint">
             Cartas Mega podem mudar de forma por uma batalha: marque «Forma Mega» embaixo do nome delas. Moedas: {{ energy }}<template v-if="megaWanted > megaAffordable"> (só dá para {{ megaAffordable }} {{ megaAffordable === 1 ? 'troca' : 'trocas' }}; as outras lutam na forma normal)</template>.
           </p>
@@ -1161,11 +1359,11 @@ onBeforeUnmount(() => {
           <StageButton v-if="!battling" icon="sliders" label="Ajustes" :active="showAdjust" @click="showAdjust = !showAdjust; showFilters = false; showTeam = false; showModes = false" />
           <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
           <StageButton v-if="!battling" icon="modes" :label="BATTLE_MODE_LABELS_PT[battleMode]" :active="showModes" @click="showModes = !showModes; showFilters = false; showTeam = false; showAdjust = false" />
-          <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : 'Batalhar'" :disabled="!canBattle" :attention="battleShortcut && canBattle && !preparing" @click="startBattle" />
-          <StageButton v-if="battling && battleHud?.phase === 'finished'" icon="battle" label="De novo" @click="startBattle" />
+          <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : endlessShortcut ? `Começar ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : 'Batalhar'" :disabled="endlessShortcut ? !canStartEndless : !canBattle" :attention="endlessShortcut ? canStartEndless && !preparing : battleShortcut && canBattle && !preparing" @click="startSelectedBattle" />
+          <StageButton v-if="battling && battleHud?.phase === 'finished' && !endlessRun" icon="battle" label="De novo" @click="startBattle" />
           <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />
           <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
-          <StageButton v-if="battling" icon="stop" label="Parar" @click="stopBattle" />
+          <StageButton v-if="battling" icon="stop" :label="endlessRun ? `Desistir · ${endlessRun.score}` : 'Parar'" @click="stopBattle" />
           <StageButton v-if="phase === 'running' && !battling" icon="move" label="Mover" @click="moveBox" />
           <StageButton v-if="challenge && !battling" icon="close" label="Sem desafio" @click="cancelChallenge" />
           <StageButton icon="close" label="Fechar" @click="close" />
@@ -1184,9 +1382,9 @@ onBeforeUnmount(() => {
 
     <div class="actions">
       <button type="button" class="primary" :class="{ 'battle-cta': battleShortcut }" :disabled="phase !== 'idle'" @click="open">
-        {{ phase === 'starting' ? 'Abrindo…' : battleShortcut ? '⚔️ Abrir câmera e batalhar' : 'Abrir câmera e sensores' }}
+        {{ phase === 'starting' ? 'Abrindo…' : endlessShortcut ? `⚔️ Abrir câmera · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Abrir câmera e batalhar' : 'Abrir câmera e sensores' }}
       </button>
-      <a v-if="battleShortcut" class="button" :href="routeHref('vila')">Voltar à Vila</a>
+      <a v-if="battleShortcut || endlessShortcut" class="button" :href="routeHref(endlessShortcut ? 'arena' : 'vila')">{{ endlessShortcut ? 'Voltar à Arena' : 'Voltar à Vila' }}</a>
     </div>
 
     <p v-if="error && !immersive" class="message error" role="alert">{{ error }}</p>

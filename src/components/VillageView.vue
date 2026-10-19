@@ -20,7 +20,6 @@ import { minimapPixels, minimapTileAt } from '../village/minimap';
 import { loadTrainerAtlas } from '../village/trainer-atlas';
 import { recordEvent, trainer } from '../app/trainer-store';
 import { claimPrizes } from '../core/village/rewards';
-import LeagueCard from './LeagueCard.vue';
 import BackpackView from './BackpackView.vue';
 import MinigameHub from './MinigameHub.vue';
 import MinigameEquilibrio from './MinigameEquilibrio.vue';
@@ -97,7 +96,7 @@ const state = reactive(loadVillage());
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'arena' | 'torre' | 'card-evolution';
+type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'card-evolution';
 const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
 type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
@@ -251,7 +250,8 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
     title: 'Atividades Externas',
     desc: 'Outros modos e conexões do app',
     tiles: [
-      { href: routeHref('caixa'), icon: '📦', label: 'Caixa AR', hint: 'turma e batalhas' },
+      { href: routeHref('caixa'), icon: '📦', label: 'Caixa AR', hint: 'câmera e cenário' },
+      { href: routeHref('arena'), icon: '⚔️', label: 'Arena Digital', hint: 'Liga, PvP e corridas 6×6' },
       { href: routeHref('cartas'), icon: '🃏', label: 'Minhas Cartas' },
       { href: routeHref('pins'), icon: '🎯', label: 'Mini Pins' },
       { href: routeHref('escanear'), icon: '📷', label: 'Escanear Carta' },
@@ -1249,6 +1249,12 @@ function goToPvp(): void {
   emit('close', 'pvp');
 }
 
+function goToArena(): void {
+  closeDialog();
+  sheet.value = null;
+  window.location.hash = routeHref('arena', undefined, ['vila']);
+}
+
 /** Fliperama → batalha na câmera: fecha a Vila e já abre a câmera e os sensores da Caixa (no mesmo toque). */
 function goToBattle(): void {
   closeDialog();
@@ -1281,9 +1287,9 @@ function openGameBuilding(b: Building): void {
   } else if (b.kind === 'arena') {
     dialog.value = {
       name: b.name,
-      text: 'A Arena da Vila: desafie os líderes de Ginásio, a Elite 4 e a Campeã, ou batalhe com um amigo (PvP). As lutas acontecem na Caixa, com a câmera e a sua equipe.',
+      text: 'A Arena Digital reúne Ginásios, Elite 4, Campeã, PvP e corridas automáticas 6×6. Você prepara tudo lá; a Caixa só exibe a luta na câmera.',
       actions: [
-        { label: 'Ginásios e Liga', run: () => { closeDialog(); sheet.value = 'arena'; } },
+        { label: 'Abrir Arena', run: goToArena },
         { label: 'Batalhar com um amigo (PvP)', run: goToPvp },
         exit,
       ],
@@ -2276,16 +2282,6 @@ onBeforeUnmount(() => {
         </div>
         <MinigameHub closable @leave="sheet = null" />
          <MinigameEquilibrio @leave="sheet = null" />
-      </div>
-
-      <div v-if="sheet === 'arena'" class="village-sheet tall game-sheet" role="dialog" aria-label="Arena">
-        <header><strong>Arena</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
-        <div class="card">
-          <h2>Batalha com um amigo</h2>
-          <p class="note">PvP na Caixa: os dois conectam por código, escolhem o modo e a luta aparece na caixa de cada um.</p>
-          <button type="button" class="primary" @click="goToPvp">Ir para o PvP</button>
-        </div>
-        <LeagueCard @challenge="sheet = null; emit('close', 'caixa')" />
       </div>
 
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->

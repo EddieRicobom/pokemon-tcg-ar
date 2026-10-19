@@ -5,6 +5,7 @@ describe('rotas por hash', () => {
   it('conhece a rota do Treinador', () => {
     expect(parseRoute('#/treinador')).toEqual({ name: 'treinador' });
     expect(parseRoute('#/pins')).toEqual({ name: 'pins' });
+    expect(parseRoute('#/arena')).toEqual({ name: 'arena' });
     expect(routeHref('pins')).toBe('#/pins');
     expect(routeHref('treinador')).toBe('#/treinador');
   });
@@ -38,6 +39,7 @@ describe('rotas por hash', () => {
     expect(routeHref('escanear')).toBe('#/');
     expect(routeHref('varias')).toBe('#/varias');
     expect(routeHref('caixa')).toBe('#/caixa');
+    expect(routeHref('arena')).toBe('#/arena');
     expect(routeHref('cartas')).toBe('#/cartas');
     expect(routeHref('diagnostico')).toBe('#/diagnostico');
   });
@@ -60,5 +62,6 @@ describe('rotas por hash', () => {
     expect(routeFlags('#/pins').size).toBe(0);
     expect(routeFlags('#/pins?outra=1&vila').has('vila')).toBe(true);
     expect(routeFlags('#/pins?outra=1').size).toBe(0);
+    expect([...routeFlags('#/caixa?formatacao=1')]).toEqual(['formatacao']);
   });
 });

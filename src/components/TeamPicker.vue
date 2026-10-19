@@ -2,12 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import CardMarks from './CardMarks.vue';
 import { getCache } from '../app/services';
-import { resolveTeam, TEAM_SIZE } from '../app/team';
-import { savedTeam, setSavedTeam, toggleSaved } from '../app/team-store';
+import { resolveTeam, TEAM_SIZE, toggleMember } from '../app/team';
+import { savedTeam, setSavedTeam } from '../app/team-store';
 import type { CachedCard } from '../cache/types';
 import { isShiny } from '../core/shiny';
 
 const emit = defineEmits<{ change: [ids: string[]] }>();
+const props = withDefaults(defineProps<{ max?: number; hint?: string }>(), { max: TEAM_SIZE, hint: undefined });
 
 type Row = CachedCard & { thumb?: string };
 const rows = ref<Row[]>([]);
@@ -19,7 +20,7 @@ const loadError = ref('');
 const urls: string[] = [];
 
 const usable = computed(() => rows.value.filter((row) => row.sprite.state === 'ok'));
-const team = computed(() => resolveTeam(savedTeam.value, rows.value));
+const team = computed(() => resolveTeam(savedTeam.value, rows.value, props.max));
 const shown = computed(() => {
   const q = search.value.trim().toLowerCase();
   return usable.value.filter((row) => (!onlySelected.value || team.value.ids.includes(row.id)) && (!q || `${row.name} ${row.setName}`.toLowerCase().includes(q)));
@@ -27,17 +28,17 @@ const shown = computed(() => {
 const missingSprite = computed(() => rows.value.length - usable.value.length);
 
 function toggle(id: string): void {
-  // Primeira escolha manual: parte da turma automática atual para não "sumir" com os outros.
-  if (savedTeam.value.length === 0 && team.value.auto) setSavedTeam(team.value.ids);
-  const full = toggleSaved(id);
-  notice.value = full ? `A turma já tem ${TEAM_SIZE} Pokémon. Tire um para colocar outro.` : '';
-  emit('change', resolveTeam(savedTeam.value, rows.value).ids);
+  // Parte sempre da equipe já limitada na tela: a Arena usa isso para guardar só seis sem apagar por engano antes do toque.
+  const next = toggleMember(team.value.ids, id, props.max);
+  notice.value = next.full ? `A equipe já tem ${props.max} Pokémon. Tire um para colocar outro.` : '';
+  if (!next.full) setSavedTeam(next.team);
+  emit('change', resolveTeam(savedTeam.value, rows.value, props.max).ids);
 }
 
 function useAuto(): void {
   setSavedTeam([]);
   notice.value = '';
-  emit('change', resolveTeam([], rows.value).ids);
+  emit('change', resolveTeam([], rows.value, props.max).ids);
 }
 
 onMounted(async () => {
@@ -68,9 +69,9 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
 
 <template>
   <div class="team-picker">
-    <p class="hint">Toque para adicionar ou tirar da turma. A turma passeia na Caixa AR; em Equipe de batalha você decide quem luta. Tirar daqui mantém o Pokémon na coleção.</p>
+    <p class="hint">{{ hint ?? 'Toque para adicionar ou tirar da turma. A turma passeia na Caixa AR; em Equipe de batalha você decide quem luta. Tirar daqui mantém o Pokémon na coleção.' }}</p>
     <p class="meta" role="status">
-      Turma: {{ team.ids.length }}/{{ TEAM_SIZE }}
+      Turma: {{ team.ids.length }}/{{ max }}
       <template v-if="team.auto && team.ids.length > 0"> (automática: as mais recentes)</template>
     </p>
     <p v-if="loading" class="message">Lendo as cartas guardadas…</p>

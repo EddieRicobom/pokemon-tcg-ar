@@ -422,6 +422,14 @@ describe('equipes e revezamento', () => {
     expect(() => simulateBattle(six(), seededRng(1), { teams: [0, 1] })).toThrow();
   });
 
+  it('respeita o PS inicial informado, para uma sequência de sobrevivência', () => {
+    const fighters = six();
+    const initial = fighters.map((f, i) => i < 3 ? f.maxHp - 10 : f.maxHp);
+    const result = simulateBattle(fighters, seededRng(4), { teams: [0, 0, 0, 1, 1, 1], relay: true, initialHp: initial });
+    expect(result.hpStart).toEqual(initial);
+    expect(() => simulateBattle(fighters, seededRng(4), { initialHp: [1] })).toThrow('PS inicial');
+  });
+
   it('no revezamento só um de cada equipe luta por vez e o próximo entra quando o outro cai', () => {
     for (let seed = 1; seed <= 30; seed++) {
       const teams = [0, 0, 0, 1, 1, 1];

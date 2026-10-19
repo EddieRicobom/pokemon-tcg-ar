@@ -13,6 +13,9 @@ export interface LeaderEntry<S> {
 export const leaderCreatureId = (challenge: Challenge, i: number): string => `lider:${challenge.id}:${i}`;
 export const isLeaderCreature = (id: string): boolean => id.startsWith('lider:');
 
+/** Adversários da Arena contínua também só têm dados do jogo, nunca uma carta inventada. */
+export const isArenaCreature = (id: string): boolean => id.startsWith('arena:');
+
 /**
  * Baixa e decodifica os sprites da equipe do líder (rede: PokeAPI/sprites). Um Pokémon que não carregar fica de fora e
  * vai para `failed`; sem nenhum, quem chama avisa e não começa a batalha.
@@ -40,6 +43,24 @@ export async function loadLeaderEntries<S>(
   };
 }
 
+/** Materializa uma onda 6×6 da Arena; se um sprite faltar, a onda inteira não deve começar. */
+export async function loadArenaEntries<S>(
+  battle: number,
+  trainer: string,
+  dexIds: readonly number[],
+  deps: { fetchSprite: (dex: number) => Promise<SpriteSource | null>; decode: (sprite: SpriteSource) => Promise<S> },
+): Promise<{ entries: LeaderEntry<S>[]; failed: string[] }> {
+  const results = await Promise.all(dexIds.map(async (dex, i) => {
+    const name = speciesName(dex);
+    try {
+      const sprite = await deps.fetchSprite(dex);
+      if (!sprite) return { failed: name };
+      return { entry: { info: { id: `arena:${battle}:${i}`, name, dexId: dex, detail: trainer }, source: await deps.decode(sprite) } };
+    } catch { return { failed: name }; }
+  }));
+  return { entries: results.flatMap((r) => ('entry' in r && r.entry ? [r.entry] : [])), failed: results.flatMap((r) => ('failed' in r && r.failed ? [r.failed] : [])) };
+}
+
 /**
  * Lutador do líder: atributos multiplicados por `power` (a dificuldade do desafio). Os Pokémon do líder não vêm de
  * cartas, então o aviso "sem os ataques da carta" não vale para eles e sai da lista.
@@ -61,7 +82,7 @@ export function leaderFighter(f: Fighter, power: number): Fighter {
 /** Carregador de dados para os Pokémon do líder: só a parte dos jogos (sem carta para consultar no TCGdex). */
 export function leaderLoader(base: BattleLoader): BattleLoader {
   return (cardId, dexId, onPart) => {
-    if (!isLeaderCreature(cardId)) return base(cardId, dexId, onPart);
+    if (!isLeaderCreature(cardId) && !isArenaCreature(cardId)) return base(cardId, dexId, onPart);
     onPart('card', { state: 'error', message: '' });
     return base(cardId, dexId, (part, result) => {
       if (part !== 'card') onPart(part, result);
