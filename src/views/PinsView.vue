@@ -1385,9 +1385,9 @@ function draw(now: number): void {
 const onResize = () => resize();
 onMounted(() => window.addEventListener('resize', onResize));
 onMounted(() => {
-  motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-  reducedMotion.value = motionQuery.matches;
-  motionQuery.addEventListener('change', onMotionPreferenceChange);
+  motionQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  reducedMotion.value = motionQuery?.matches ?? false;
+  motionQuery?.addEventListener('change', onMotionPreferenceChange);
 });
 function onMotionPreferenceChange(): void {
   reducedMotion.value = motionQuery?.matches ?? false;

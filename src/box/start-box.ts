@@ -39,6 +39,8 @@ export interface RunningBox {
   setSmoothing(mode: SmoothingMode): void;
   /** Luz dos golpes e do ambiente. */
   setLighting(on: boolean): void;
+  /** Partículas e ondas de choque intensas nos impactos elementais. */
+  setImpactEffects(on: boolean): void;
   /** Chão em pixel art e golpes que mudam o terreno. */
   setTerrain(on: boolean): void;
   setSocial(on: boolean): void;
@@ -144,6 +146,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setMode: (mode) => scene.setMode(mode),
     setSmoothing: (mode) => scene.setSmoothing(mode),
     setLighting: (on) => scene.setLighting(on),
+    setImpactEffects: (on) => scene.setImpactEffects(on),
     setTerrain: (on) => scene.setTerrain(on),
     setSocial: (on) => scene.setSocial(on),
     setWeather: (mode) => scene.setWeather(mode),

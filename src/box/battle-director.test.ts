@@ -9,7 +9,7 @@ import type { BattleTurn } from '../core/battle';
 import type { SoundCue } from './sound-recipes';
 import type { Fighter } from '../core/battle';
 import { lookQuaternion } from './orientation';
-import { BoltLine, FX_STYLES, IMPACT_STYLES, ParticleField, PHYSICAL_STYLE, RingField, SPECIAL_DELIVERY, STATUS_TINTS, typeColorHex } from './effects';
+import { BoltLine, emitImpact, FX_STYLES, IMPACT_STYLES, ParticleField, PHYSICAL_STYLE, RingField, SPECIAL_DELIVERY, STATUS_TINTS, typeColorHex } from './effects';
 import { POKEMON_TYPES } from '../core/pokemon-data';
 import { ARENA_MAX_DISTANCE, ARENA_MIN_DISTANCE } from './arena';
 
@@ -272,6 +272,18 @@ describe('anéis, raios e tabelas de impacto', () => {
     for (let i = 0; i < 4; i++) rings.update(100);
     expect(rings.activeCount).toBe(0);
     rings.dispose();
+  });
+
+  it('impactos intensos criam mais partículas e uma onda de choque extra', () => {
+    const baseParticles = new ParticleField(160);
+    const baseRings = new RingField(8);
+    const intenseParticles = new ParticleField(160);
+    const intenseRings = new RingField(8);
+    emitImpact(baseParticles, baseRings, new Vector3(), 'electric', 1, seededRng(4));
+    emitImpact(intenseParticles, intenseRings, new Vector3(), 'electric', 1, seededRng(4), 1.55);
+    expect(intenseParticles.activeCount).toBeGreaterThan(baseParticles.activeCount);
+    expect(intenseRings.activeCount).toBeGreaterThan(baseRings.activeCount);
+    baseParticles.dispose(); baseRings.dispose(); intenseParticles.dispose(); intenseRings.dispose();
   });
 
   it('o raio aparece e se esconde', () => {

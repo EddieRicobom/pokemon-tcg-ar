@@ -9,6 +9,8 @@ export interface VisualSettings {
   smoothing: SmoothingMode;
   /** Luz dos golpes nos Pokémon, no chão e no vídeo (Caixa). Desligar poupa a GPU de celulares fracos. */
   lighting: boolean;
+  /** Partículas e ondas de choque intensas nos impactos elementais da Arena. */
+  impactFx: boolean;
   /** Chão em pixel art e terreno que muda com os golpes elementais (Caixa). Desligar poupa a GPU. */
   terrain: boolean;
   /** Encontros entre os Pokémon e balões de emoji na caixa (Caixa). */
@@ -31,10 +33,10 @@ export interface VisualSettings {
 
 const KEY = 'tcg-ar-visual-v2';
 const LEGACY_KEY = 'tcg-ar-visual-v1';
-const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, evolutionFx: true };
+const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, impactFx: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, evolutionFx: true };
 
 export function normalizeVisual(raw: Partial<VisualSettings> | null | undefined): VisualSettings {
-  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false, villageFx: raw?.villageFx !== false, evolutionFx: raw?.evolutionFx !== false };
+  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, impactFx: raw?.impactFx !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false, villageFx: raw?.villageFx !== false, evolutionFx: raw?.evolutionFx !== false };
 }
 
 function read(): VisualSettings {
@@ -53,7 +55,7 @@ export const visual = reactive<VisualSettings>(read());
 
 watch(visual, () => {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, terrain: visual.terrain, social: visual.social, weather: visual.weather, sound: visual.sound, shadow: visual.shadow, metallic: visual.metallic, caseFx: visual.caseFx, villageFx: visual.villageFx, evolutionFx: visual.evolutionFx }));
+    localStorage.setItem(KEY, JSON.stringify({ smoothing: visual.smoothing, lighting: visual.lighting, impactFx: visual.impactFx, terrain: visual.terrain, social: visual.social, weather: visual.weather, sound: visual.sound, shadow: visual.shadow, metallic: visual.metallic, caseFx: visual.caseFx, villageFx: visual.villageFx, evolutionFx: visual.evolutionFx }));
   } catch {
     // Só não lembra da escolha na próxima vez.
   }

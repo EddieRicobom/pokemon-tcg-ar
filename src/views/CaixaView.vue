@@ -156,9 +156,22 @@ function openPvp(): void {
 const battleShortcut = ref(arrival.has('batalha'));
 
 onMounted(() => {
+  motionPreference = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  reducedMotion.value = motionPreference?.matches ?? false;
+  motionPreference?.addEventListener('change', onMotionPreferenceChange);
+});
+
+function onMotionPreferenceChange(): void {
+  reducedMotion.value = motionPreference?.matches ?? false;
+  box?.setImpactEffects(visual.impactFx && !reducedMotion.value);
+}
+
+onMounted(() => {
   if (arrival.has('pvp')) openPvp();
 });
 const picked = ref<{ name: string; detail: string; dexId?: number; shiny?: boolean; mega?: boolean } | null>(null);
+const reducedMotion = ref(false);
+let motionPreference: MediaQueryList | null = null;
 const phoneHeight = ref(DEFAULT_PHONE_HEIGHT_M);
 const boxSize = ref(2.4);
 const videoFov = ref(63);
@@ -507,6 +520,7 @@ async function open(): Promise<void> {
   box.setVideoFov(videoFov.value);
   box.setSmoothing(visual.smoothing);
   box.setLighting(visual.lighting);
+  box.setImpactEffects(visual.impactFx && !reducedMotion.value);
   box.setTerrain(visual.terrain);
   box.setSocial(visual.social);
   box.setWeather(visual.weather);
@@ -600,6 +614,7 @@ function onPointerUp(event: PointerEvent): void {
 
 watch(() => visual.smoothing, (smoothing) => box?.setSmoothing(smoothing));
 watch(() => visual.lighting, (on) => box?.setLighting(on));
+watch(() => visual.impactFx, (on) => box?.setImpactEffects(on && !reducedMotion.value));
 watch(() => visual.terrain, (on) => box?.setTerrain(on));
 watch(() => visual.social, (on) => box?.setSocial(on));
 watch(() => visual.weather, (mode) => box?.setWeather(mode));
@@ -1120,6 +1135,7 @@ onBeforeUnmount(() => {
   disposed = true;
   if (megaNotesTimer) clearTimeout(megaNotesTimer);
   if (pickedTimer) clearTimeout(pickedTimer);
+  motionPreference?.removeEventListener('change', onMotionPreferenceChange);
   close();
 });
 </script>

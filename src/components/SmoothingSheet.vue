@@ -48,6 +48,16 @@ useDialogFocus(dialogEl);
       </p>
     </section>
     <section v-if="battle">
+      <h4>Impactos elementais intensos</h4>
+      <div class="chips" role="group" aria-label="Impactos elementais intensos">
+        <button type="button" :class="{ active: visual.impactFx }" :aria-pressed="visual.impactFx" @click="visual.impactFx = true">Ligados</button>
+        <button type="button" :class="{ active: !visual.impactFx }" :aria-pressed="!visual.impactFx" @click="visual.impactFx = false">Desligados</button>
+      </div>
+      <p class="hint">
+        {{ visual.impactFx ? 'Golpes elementais criam uma explosão maior, partículas temáticas e ondas de choque extras. Pode pesar em celulares fracos.' : 'Usa os impactos leves padrão.' }}
+      </p>
+    </section>
+    <section v-if="battle">
       <h4>Chão e terreno</h4>
       <div class="chips" role="group" aria-label="Chão e terreno">
         <button type="button" :class="{ active: visual.terrain }" :aria-pressed="visual.terrain" @click="visual.terrain = true">Ligado</button>
