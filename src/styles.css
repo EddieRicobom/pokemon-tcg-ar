@@ -5991,6 +5991,55 @@ body.no-scroll .reward-toasts {
   white-space: nowrap;
 }
 
+.survivor-minimap {
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  bottom: 10px;
+  width: 142px;
+  height: 94px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 8px;
+  background: rgba(10, 14, 24, 0.68);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.survivor-minimap-title {
+  position: absolute;
+  z-index: 2;
+  top: 3px;
+  left: 6px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.survivor-minimap-viewport {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.66);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.survivor-minimap-marker {
+  position: absolute;
+  z-index: 1;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: #d8dee9;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.42);
+}
+
+.survivor-minimap-marker.kind-player { width: 8px; height: 8px; margin: -4px 0 0 -4px; background: #5bc0ff; }
+.survivor-minimap-marker.kind-boss { width: 8px; height: 8px; margin: -4px 0 0 -4px; background: #ff5b5b; }
+.survivor-minimap-marker.kind-elite { background: #ffd84a; }
+
 .survivor-joy-base {
   position: absolute;
   transform: translate(-50%, -50%);
