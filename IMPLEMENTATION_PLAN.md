@@ -1,5 +1,11 @@
 # Plano e estado do projeto
 
+## Impactos elementais em Pins (19/10/2026)
+
+- Os golpes elementais agora espalham anéis e partículas com silhuetas por elemento; a opção persistente “Efeitos elementais intensos” permite desligá-los. Movimento reduzido congela a animação.
+- Saves antigos mantêm os efeitos ligados por padrão; perfil de efeitos e progresso da animação têm cobertura de teste.
+- A validação visual final em celular ainda precisa de confirmação.
+
 ## Alinhamento dos prédios e tilesets da Torre (19/10/2026)
 
 - Fachadas, casa, fonte e mercado da Vila agora apoiam na borda inferior da calçada; o mapa mantém livre o bloco de interação da porta. Teste verifica o ponto de apoio e o piso sob ele.

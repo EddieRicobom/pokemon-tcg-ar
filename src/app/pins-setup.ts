@@ -13,6 +13,8 @@ export interface PinsSetup {
   /** Sons do jogo e vibração do celular (cada um liga e desliga sozinho). */
   sound: boolean;
   haptics: boolean;
+  /** Efeitos elementais intensos da arena (anéis, faíscas e fragmentos). */
+  effects: boolean;
 }
 
 export type Role = 'mine' | 'enemy';
@@ -28,7 +30,7 @@ export interface Candidate {
 }
 
 export function emptySetup(): PinsSetup {
-  return { mine: [], enemy: [], difficulty: 'normal', marks: true, shrink: true, sound: true, haptics: true };
+  return { mine: [], enemy: [], difficulty: 'normal', marks: true, shrink: true, sound: true, haptics: true, effects: true };
 }
 
 /** Só ids de cartas que ainda existem, sem repetir nem estar nos dois lados, até o limite de cada lado. */
@@ -49,13 +51,13 @@ export function normalizeSetup(raw: unknown, available: ReadonlySet<string>): Pi
   const mine = clean(r.mine, MAX_PER_SIDE[0]);
   const enemy = clean(r.enemy, MAX_PER_SIDE[1]);
   const difficulty = DIFFICULTIES.find((d) => d === r.difficulty) ?? 'normal';
-  return { mine, enemy, difficulty, marks: r.marks !== false, shrink: r.shrink !== false, sound: r.sound !== false, haptics: r.haptics !== false };
+  return { mine, enemy, difficulty, marks: r.marks !== false, shrink: r.shrink !== false, sound: r.sound !== false, haptics: r.haptics !== false, effects: r.effects !== false };
 }
 
 /** Escolha inicial: as cartas mais recentes (para o seu lado primeiro, depois para o adversário). */
 export function defaultSetup(cards: readonly Candidate[]): PinsSetup {
   const recent = [...cards].sort((a, b) => b.lastSeenAt - a.lastSeenAt).map((c) => c.id);
-  return { mine: recent.slice(0, DEFAULT_MINE), enemy: recent.slice(DEFAULT_MINE, DEFAULT_MINE + DEFAULT_ENEMY), difficulty: 'normal', marks: true, shrink: true, sound: true, haptics: true };
+  return { mine: recent.slice(0, DEFAULT_MINE), enemy: recent.slice(DEFAULT_MINE, DEFAULT_MINE + DEFAULT_ENEMY), difficulty: 'normal', marks: true, shrink: true, sound: true, haptics: true, effects: true };
 }
 
 export function roleOf(setup: PinsSetup, id: string): Role | null {
@@ -80,7 +82,7 @@ export function loadSetup(available: ReadonlySet<string>, cards: readonly Candid
     if (raw) {
       const saved = normalizeSetup(JSON.parse(raw), available);
       if (saved.mine.length > 0 || saved.enemy.length > 0) return saved;
-      return { ...defaultSetup(cards), difficulty: saved.difficulty, marks: saved.marks, shrink: saved.shrink, sound: saved.sound, haptics: saved.haptics };
+      return { ...defaultSetup(cards), difficulty: saved.difficulty, marks: saved.marks, shrink: saved.shrink, sound: saved.sound, haptics: saved.haptics, effects: saved.effects };
     }
   } catch {
     // Sem armazenamento ou texto quebrado: começa do padrão.

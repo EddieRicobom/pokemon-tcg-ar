@@ -18,6 +18,7 @@ import {
 import { randomOpponents } from '../core/pin-opponents';
 import { planEnemyShot } from '../core/pin-ai';
 import { MARK_HINT_PT, TYPE_FOR_TERRAIN } from '../core/pin-terrain';
+import { ELEMENTAL_BURST_PROFILES, elementalBurstFrame } from '../core/pin-visual-effects';
 import { REPLAY_SPEED, ReplayRecorder } from '../core/pin-replay';
 import { vibrate } from '../app/haptics';
 import type { HapticCue } from '../app/haptics';
@@ -64,7 +65,7 @@ let pendingSettled: { world: WireWorld; at: number } | null = null;
 const cards = ref<CachedCard[]>([]);
 const thumbs = ref<Record<string, string>>({});
 const infos = ref<Record<string, Info>>({});
-const setup = ref<PinsSetup>({ mine: [], enemy: [], difficulty: 'normal', marks: true, shrink: true, sound: true, haptics: true });
+const setup = ref<PinsSetup>({ mine: [], enemy: [], difficulty: 'normal', marks: true, shrink: true, sound: true, haptics: true, effects: true });
 /** Rodada em andamento (1, 2, …) e o aviso de que a borda vai avançar no fim dela. */
 const roundNo = ref(1);
 const borderWarn = ref(false);
@@ -114,6 +115,8 @@ let shots = 0;
 let drag: { fromX: number; fromY: number; toX: number; toY: number } | null = null;
 let popups: Popup[] = [];
 let terrainFx: TerrainFx[] = [];
+const reducedMotion = ref(false);
+let motionQuery: MediaQueryList | null = null;
 let disposed = false;
 let cssSize = 0;
 let dpr = 1;
@@ -369,6 +372,7 @@ function refreshFloorMarks(): void {
 
 /** Pequena animação persistente no centro dos blocos marcados, sem repintar a textura pixelada. */
 function drawTerrainMotion(ctx: CanvasRenderingContext2D, cx: number, k: number, now: number): void {
+  if (!setup.value.effects || reducedMotion.value) return;
   const grid = terrainArt?.grid;
   if (!grid || !terrainArt) return;
   const half = terrainArt.half;
@@ -1074,6 +1078,95 @@ function resize(): void {
   canvas.height = Math.round(cssSize * dpr);
 }
 
+function drawElementalBursts(ctx: CanvasRenderingContext2D, cx: number, k: number): void {
+  if (!setup.value.effects) return;
+  const scale = k;
+  for (const fx of terrainFx) {
+    const frame = elementalBurstFrame(fx.age, fx.life, reducedMotion.value);
+    if (!frame) continue;
+    const profile = ELEMENTAL_BURST_PROFILES[fx.kind];
+    const x = cx + fx.x * k;
+    const y = cx + fx.y * k;
+    const reach = (fx.reaction ? 66 : 42) * scale;
+    const color = TYPE_COLORS[TYPE_FOR_TERRAIN[fx.kind]] ?? '#fff';
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = frame.opacity * (fx.reaction ? 1 : 0.78);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = (fx.reaction ? 18 : 11) * dpr;
+    for (let ring = 0; ring < profile.rings; ring++) {
+      const radius = reach * (0.2 + frame.progress * 0.85 + ring * 0.28);
+      ctx.lineWidth = Math.max(1.5 * dpr, (5 - ring * 1.3) * dpr * (1 - frame.progress * 0.55));
+      ctx.beginPath();
+      if (profile.shape === 'rune' || profile.shape === 'ice' || profile.shape === 'rock') {
+        for (let point = 0; point <= 6; point++) {
+          const a = point * Math.PI / 3 + ring * 0.2;
+          const px = x + Math.cos(a) * radius;
+          const py = y + Math.sin(a) * radius;
+          point === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+      } else {
+        ctx.ellipse(x, y, radius, radius * (profile.shape === 'splash' ? 0.62 : 0.82), 0, 0, Math.PI * 2);
+      }
+      ctx.stroke();
+    }
+    if (profile.shape === 'lightning') {
+      for (let bolt = 0; bolt < 3; bolt++) {
+        const a = bolt * Math.PI * 2 / 3 + frame.progress * 0.35;
+        const r = reach * (0.25 + frame.progress * 0.52);
+        ctx.lineWidth = 2.5 * dpr;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(a - 0.16) * r * 0.55, y + Math.sin(a - 0.16) * r * 0.55);
+        ctx.lineTo(x + Math.cos(a + 0.18) * r * 0.7, y + Math.sin(a + 0.18) * r * 0.7);
+        ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+        ctx.stroke();
+      }
+    }
+    if (!reducedMotion.value) {
+      for (let i = 0; i < profile.particles; i++) {
+        const angle = (i / profile.particles) * Math.PI * 2 + (fx.kind.length % 5) * 0.23;
+        const distance = reach * (0.2 + frame.progress * 0.82) * (0.78 + (i % 3) * 0.13);
+        const px = x + Math.cos(angle) * distance;
+        const py = y + Math.sin(angle) * distance - frame.progress * (profile.shape === 'bubble' || profile.shape === 'flame' || profile.shape === 'leaf' ? 13 : 0) * scale;
+        const size = Math.max(1.5 * dpr, (5.5 - frame.progress * 2.5) * dpr * (0.75 + (i % 2) * 0.22));
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(angle + frame.progress * (i % 2 === 0 ? 1.3 : -1.3));
+        if (profile.shape === 'bubble' || profile.shape === 'splash') {
+          ctx.beginPath();
+          ctx.ellipse(0, 0, size * 0.58, size, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (profile.shape === 'leaf' || profile.shape === 'petal' || profile.shape === 'shadow') {
+          ctx.beginPath();
+          ctx.ellipse(0, 0, size * 1.2, size * 0.46, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (profile.shape === 'flame') {
+          ctx.beginPath();
+          ctx.moveTo(0, size);
+          ctx.quadraticCurveTo(-size, 0, 0, -size * 1.4);
+          ctx.quadraticCurveTo(size * 0.7, -size * 0.1, 0, size);
+          ctx.fill();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(0, -size);
+          ctx.lineTo(size * 0.52, 0);
+          ctx.lineTo(0, size);
+          ctx.lineTo(-size * 0.52, 0);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+}
+
 function draw(now: number): void {
   const canvas = canvasEl.value;
   const ctx = canvas?.getContext('2d');
@@ -1095,13 +1188,13 @@ function draw(now: number): void {
   // O chão reage por alguns instantes ao golpe. A textura continua pixelada, mas o pulso
   // deixa claro onde nasceu a marca e torna as combinações elementais legíveis.
   for (const fx of terrainFx) {
-    const t = fx.age / fx.life;
+    const t = reducedMotion.value ? 0.55 : fx.age / fx.life;
     const px = cx + fx.x * k;
     const py = cx + fx.y * k;
     const color = TYPE_COLORS[TYPE_FOR_TERRAIN[fx.kind]] ?? '#ffffff';
     const radius = (fx.reaction ? 24 + t * 54 : 16 + t * 30) * k;
     ctx.save();
-    ctx.globalAlpha = (1 - t) * (fx.reaction ? 0.72 : 0.46);
+    ctx.globalAlpha = reducedMotion.value ? 0.24 : (1 - t) * (fx.reaction ? 0.72 : 0.46);
     ctx.strokeStyle = color;
     ctx.lineWidth = Math.max(2, (fx.reaction ? 5 : 3) * dpr);
     ctx.beginPath();
@@ -1115,13 +1208,14 @@ function draw(now: number): void {
     } else if (fx.kind === 'static' || fx.kind === 'scorch' || fx.kind === 'toxic') {
       ctx.fillStyle = color;
       for (let i = 0; i < 4; i++) {
-        const a = i * Math.PI * 0.5 + fx.age * 5;
-        const d = radius * (0.6 + 0.18 * Math.sin(i + fx.age * 8));
+        const a = i * Math.PI * 0.5 + t * 5;
+        const d = radius * (0.6 + 0.18 * Math.sin(i + t * 8));
         ctx.fillRect(px + Math.cos(a) * d - 1.5 * dpr, py + Math.sin(a) * d - 1.5 * dpr, 3 * dpr, 3 * dpr);
       }
     }
     ctx.restore();
   }
+  drawElementalBursts(ctx, cx, k);
   drawTerrainMotion(ctx, cx, k, now);
 
   // Na repetição os pins vêm do quadro gravado; fora dela, do mundo.
@@ -1290,12 +1384,21 @@ function draw(now: number): void {
 
 const onResize = () => resize();
 onMounted(() => window.addEventListener('resize', onResize));
+onMounted(() => {
+  motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  reducedMotion.value = motionQuery.matches;
+  motionQuery.addEventListener('change', onMotionPreferenceChange);
+});
+function onMotionPreferenceChange(): void {
+  reducedMotion.value = motionQuery?.matches ?? false;
+}
 onBeforeUnmount(() => {
   disposed = true;
   cancelAnimationFrame(raf);
   leaveRoom();
   engine.dispose();
   window.removeEventListener('resize', onResize);
+  motionQuery?.removeEventListener('change', onMotionPreferenceChange);
   Object.values(thumbs.value).forEach((url) => URL.revokeObjectURL(url));
 });
 
@@ -1342,15 +1445,16 @@ const sideRows = computed(() => {
   ];
 });
 
-type OptionKey = 'shrink' | 'sound' | 'haptics' | 'marks';
+type OptionKey = 'shrink' | 'sound' | 'haptics' | 'marks' | 'effects';
 const allOptionRows: { key: OptionKey; title: string; hint: string }[] = [
   { key: 'shrink', title: 'Borda que encolhe', hint: 'Depois da 1ª rodada a arena diminui: uma linha tracejada avisa onde a borda vai parar.' },
   { key: 'marks', title: 'Marcas no chão', hint: 'Golpes elementais e Pancada mudam o chão (gelo, lama, poças…) e o chão reage.' },
+  { key: 'effects', title: 'Efeitos elementais intensos', hint: 'Impactos com explosões, anéis e partículas diferentes por tipo. Desative para deixar a arena mais leve.' },
   { key: 'sound', title: 'Sons', hint: 'Disparo, choques, chão que reage, quedas e fim da partida.' },
   { key: 'haptics', title: 'Vibração', hint: 'Só em celulares que deixam o navegador vibrar (iPhone não).' },
 ];
 /** No PvP só o anfitrião decide a borda e as marcas do chão; o convidado vê o que ele escolheu. */
-const optionRows = computed(() => (mode.value === 'friend' && frame.value === 'guest' ? allOptionRows.filter((o) => o.key === 'sound' || o.key === 'haptics') : allOptionRows));
+const optionRows = computed(() => (mode.value === 'friend' && frame.value === 'guest' ? allOptionRows.filter((o) => o.key === 'sound' || o.key === 'haptics' || o.key === 'effects') : allOptionRows));
 const optionsSummary = computed(() => {
   const rows = optionRows.value;
   const on = rows.filter((o) => setup.value[o.key]).length;
