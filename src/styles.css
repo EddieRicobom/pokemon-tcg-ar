@@ -5852,6 +5852,32 @@ body.no-scroll .reward-toasts {
   border-color: #c89a2a;
 }
 
+.survivor-preparations {
+  margin: 12px 0;
+  text-align: left;
+}
+
+.survivor-preparations > strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.survivor-preparations .survivor-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.survivor-preparations .survivor-mode button {
+  min-width: 0;
+  font-size: 0.8rem;
+}
+
+.survivor-preparations .survivor-mode button small {
+  font-size: 0.65rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
 .survivor-type-choice .survivor-pick-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
