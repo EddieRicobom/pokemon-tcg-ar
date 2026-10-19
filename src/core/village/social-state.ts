@@ -1,8 +1,10 @@
 /**
  * O que a vida social da Vila guarda no arquivo de progresso: a relação entre cada par de Pokémon, o Diário de momentos,
  * quais momentos você já viu (o Álbum) e quando você saiu da Vila (para o que aconteceu enquanto estava fora).
- * Só tipos e a limpeza do que vem do disco; as regras ficam em `social.ts`.
+ * Tipos, limpeza do save e escrita limitada nos registros sociais existentes; regras de comportamento ficam em `social.ts`.
  */
+
+import type { VillageState } from './life';
 
 export type MomentKind = 'amizade' | 'drama' | 'comedia' | 'romance' | 'festa' | 'rivalidade' | 'solo';
 export const MOMENT_KINDS: readonly MomentKind[] = ['amizade', 'drama', 'comedia', 'romance', 'festa', 'rivalidade', 'solo'];
@@ -190,6 +192,30 @@ export function trimMoments(all: readonly Moment[]): Moment[] {
   const keepSaved = new Set(all.filter((m) => m.fav).slice(-MAX_SAVED));
   const recent = new Set(all.filter((m) => !m.fav).slice(-MAX_DIARY));
   return all.filter((m) => keepSaved.has(m) || recent.has(m));
+}
+
+/** Writes a real moment to the existing diary and derives bounded pair memories when applicable. */
+export function recordMomentAndMemory(
+  state: Pick<VillageState, 'diary' | 'memories'>,
+  moment: Moment,
+  memoryKind: MemoryKind | null = null,
+): boolean {
+  const isNewMoment = !state.diary.some((entry) => entry.id === moment.id);
+  if (isNewMoment) state.diary = trimMoments([...state.diary, moment]);
+  if (memoryKind && moment.cast.length > 1) {
+    const memories: SocialMemory[] = moment.cast.map((mon) => ({
+      id: `${moment.id}:${mon.id}`,
+      mon: mon.id,
+      with: moment.cast.filter((other) => other.id !== mon.id).map((other) => other.id).slice(0, 2),
+      kind: memoryKind,
+      text: moment.result[0] ? `${moment.title}: ${moment.result[0]}` : `${moment.title} aconteceu na Vila.`,
+      day: moment.day,
+      t: moment.t,
+      momentId: moment.id,
+    }));
+    state.memories = [...state.memories.filter((old) => !memories.some((next) => next.id === old.id)), ...memories].slice(-MAX_MEMORIES);
+  }
+  return isNewMoment;
 }
 
 export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown; answers?: unknown; words?: unknown; lingo?: unknown; memories?: unknown; plans?: unknown; asked?: unknown; nicks?: unknown }): SocialState {

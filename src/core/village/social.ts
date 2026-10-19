@@ -3,8 +3,9 @@ import { itemDef } from './catalog';
 import { add, count, friendOf, itemName } from './life';
 import type { ItemId, VillageState } from './life';
 import { hash, personalityOf } from './personality';
-import { MAX_MEMORIES, MAX_SAVED, MAX_SOCIAL_PLANS, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
-import type { MemoryKind, Moment, MomentKind, MomentLine, Relation, SocialMemory, SocialPlan, SocialPlanKind } from './social-state';
+import { MAX_SAVED, MAX_SOCIAL_PLANS, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
+import type { MemoryKind, Moment, MomentKind, MomentLine, Relation, SocialPlan, SocialPlanKind } from './social-state';
+import { recordMomentAndMemory } from './social-state';
 import { L, calm, is, night, other } from './moments/kit';
 import { spreadWords, withWords } from './quiz';
 import { DUO_MOMENTS } from './moments/duo';
@@ -893,18 +894,7 @@ function memoryKind(moment: Moment): MemoryKind | null {
 function rememberMoment(state: VillageState, moment: Moment): void {
   const kind = memoryKind(moment);
   if (!kind) return;
-  const text = moment.result[0] ? `${moment.title}: ${moment.result[0]}` : `${moment.title} aconteceu na Vila.`;
-  const memories: SocialMemory[] = moment.cast.map((mon) => ({
-    id: `${moment.id}:${mon.id}`,
-    mon: mon.id,
-    with: moment.cast.filter((other) => other.id !== mon.id).map((other) => other.id).slice(0, 2),
-    kind,
-    text,
-    day: moment.day,
-    t: moment.t,
-    momentId: moment.id,
-  }));
-  state.memories = [...state.memories.filter((old) => !memories.some((next) => next.id === old.id)), ...memories].slice(-MAX_MEMORIES);
+  recordMomentAndMemory(state, moment, kind);
 }
 
 export interface Resolved {

@@ -4,6 +4,7 @@ import { TYPE_AFFINITIES, VILLAGE_ACTIVITIES } from './vocations';
 import type { VillageActivity } from './vocations';
 import { chooseActivity } from './vocations';
 import type { PokemonType } from '../pokemon-data';
+import { recordMomentAndMemory } from './social-state';
 
 /** Regras centrais da comunidade: porções e manutenção são liquidadas uma vez por dia local. */
 export const COMMUNITY_RULES = {
@@ -85,6 +86,8 @@ export interface CommunityResident {
   /** Preferência alimentar já existente na Vila, quando os tipos deste morador estão disponíveis. */
   favoriteFood?: string;
   types?: readonly PokemonType[];
+  /** Derived from recent persistent memories with other residents who are active today. */
+  socialOpportunity?: number;
 }
 
 export const emptyCommunity = (): CommunityState => ({ lastCycleDay: '', welfare: 70, trust: 70, shortageDays: 0, history: [], residents: {} });
@@ -160,6 +163,7 @@ function residentsOf(input: readonly (string | CommunityResident)[]): CommunityR
       id: resident.id,
       ...(existing?.favoriteFood || resident.favoriteFood ? { favoriteFood: existing?.favoriteFood ?? resident.favoriteFood } : {}),
       ...(existing?.types?.length || resident.types?.length ? { types: existing?.types?.length ? existing.types : resident.types } : {}),
+      ...(existing?.socialOpportunity !== undefined || resident.socialOpportunity !== undefined ? { socialOpportunity: existing?.socialOpportunity ?? resident.socialOpportunity } : {}),
     });
   }
   return [...residents.values()].sort((a, b) => a.id.localeCompare(b.id));
@@ -259,7 +263,7 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
   const shortageNeed = state.community.shortageDays > 0 ? 4 : 0;
   const choice = chooseActivity({
     available, types: resident.types ?? [], interests: progress.interests, energy: progress.energy,
-    socialOpportunity: residentCount > 1 ? 1 : 0,
+    socialOpportunity: resident.socialOpportunity ?? (residentCount > 1 ? 1 : 0),
     communityNeeds: [
       ...(agricultureAvailable ? [{ activity: 'agricultura' as const, urgency: (harvestCrop ? 3 : 2) + shortageNeed }] : []),
       ...(fishAvailable ? [{ activity: 'pesca' as const, urgency: shortageNeed + 1 }] : []),
@@ -330,6 +334,68 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
   return { residentId: resident.id, activity: choice.activity, icon: ACTIVITY_ICONS[choice.activity], result, ...(item ? { item } : {}), ...(qty !== undefined ? { qty } : {}), ...(x !== undefined ? { x } : {}), ...(y !== undefined ? { y } : {}) };
 }
 
+function recordSharedActivities(state: VillageState, day: string, activities: readonly CommunityActivityRecord[]): void {
+  const participants = activities.filter((entry) => entry.activity === 'acolhimento' || entry.activity === 'brincadeira').slice(0, 3);
+  if (participants.length < 2) return;
+  const lastShared = [...state.diary].reverse().find((entry) => entry.tpl === 'comunidade-praca');
+  if (lastShared && Date.parse(`${day}T12:00:00Z`) - Date.parse(`${lastShared.day}T12:00:00Z`) < 7 * 86_400_000) return;
+  const momentId = `comunidade:${day}:praca`;
+  recordMomentAndMemory(state, {
+    id: momentId,
+    t: Date.parse(`${day}T12:00:00Z`),
+    day,
+    hour: 12,
+    tpl: 'comunidade-praca',
+    kind: 'amizade',
+    title: 'Encontro na praça',
+    emoji: '🤝',
+    cast: participants.map((entry) => ({ id: entry.residentId, name: entry.residentId })),
+    lines: participants.map((entry, who) => ({ who, text: entry.activity === 'acolhimento' ? 'Fez companhia a outros moradores na praça.' : 'Brincou com a turma na praça.' })),
+    result: ['Compartilharam a praça e fortaleceram a amizade.'],
+  }, 'amizade');
+}
+
+function recordCrisisHelp(
+  state: VillageState,
+  day: string,
+  activities: readonly CommunityActivityRecord[],
+  inventoryBefore: VillageState['inventory'],
+  consumed: readonly { item: string; qty: number }[],
+  crisisActive: boolean,
+): void {
+  if (!crisisActive) return;
+  const lastHelp = [...state.diary].reverse().find((entry) => entry.tpl === 'comunidade-ajuda-despensa');
+  if (lastHelp && Date.parse(`${day}T12:00:00Z`) - Date.parse(`${lastHelp.day}T12:00:00Z`) < 3 * 86_400_000) return;
+  const newServings = new Map(consumed.map((entry) => [
+    entry.item,
+    Math.max(0, entry.qty - (inventoryBefore[entry.item as keyof typeof inventoryBefore] ?? 0)),
+  ]));
+  const participants = activities.flatMap((entry) => {
+    if (!entry.item || !entry.qty || !itemDef(entry.item)?.nutrition) return [];
+    const remaining = newServings.get(entry.item) ?? 0;
+    const helpedQty = Math.min(entry.qty, remaining);
+    newServings.set(entry.item, remaining - helpedQty);
+    return helpedQty > 0 ? [{ ...entry, helpedQty }] : [];
+  }).slice(0, 3);
+  if (participants.length === 0) return;
+  const portions = participants.reduce((sum, entry) => sum + (itemDef(entry.item!)?.nutrition ?? 0) * entry.helpedQty, 0);
+  const momentId = `comunidade:${day}:ajuda-despensa`;
+  const names = participants.map((entry) => entry.residentId).join(', ');
+  recordMomentAndMemory(state, {
+    id: momentId,
+    t: Date.parse(`${day}T13:00:00Z`),
+    day,
+    hour: 13,
+    tpl: 'comunidade-ajuda-despensa',
+    kind: participants.length > 1 ? 'amizade' : 'solo',
+    title: 'Ajuda na despensa',
+    emoji: '🥣',
+    cast: participants.map((entry) => ({ id: entry.residentId, name: entry.residentId })),
+    lines: participants.map((entry, who) => ({ who, text: `${entry.result} Essa produção foi servida à comunidade.` })),
+    result: [`A contribuição de ${names} colocou ${portions} porção(ões) de produção de hoje na mesa durante a escassez.`],
+  }, participants.length > 1 ? 'amizade' : null);
+}
+
 function consumeFood(state: VillageState, target: number, residents: readonly CommunityResident[]): { portions: number; shortage: number; preferredServings: number; consumed: { item: string; qty: number }[] } {
   let remaining = target;
   let served = 0;
@@ -388,8 +454,11 @@ function settleDay(state: VillageState, day: string, residents: readonly Communi
     };
   }
   const fishLimit = { remaining: 1 };
+  const inventoryBefore = { ...state.inventory };
   const activities = residents.slice(0, COMMUNITY_RULES.residentLimit).map((resident) => recordActivity(state, day, resident, residentCount, fishLimit));
   const food = consumeFood(state, target, residents);
+  recordSharedActivities(state, day, activities);
+  recordCrisisHelp(state, day, activities, inventoryBefore, food.consumed, state.community.shortageDays > 0 || food.shortage > 0);
   const maintenanceDue = residentCount * COMMUNITY_RULES.dailyMaintenancePerResident + COMMUNITY_RULES.dailyTownServiceBase;
   const maintenancePaid = Math.min(state.coins, maintenanceDue);
   state.coins -= maintenancePaid;
@@ -418,6 +487,18 @@ function settleDay(state: VillageState, day: string, residents: readonly Communi
   };
 }
 
+export function socialOpportunityFromMemories(state: Pick<VillageState, 'memories'>, residentId: string, activeIds: ReadonlySet<string>): number {
+  if (activeIds.size < 2) return 0;
+  const latestByPartner = new Map<string, VillageState['memories'][number]['kind']>();
+  for (const memory of state.memories) {
+    if (memory.mon !== residentId) continue;
+    for (const partner of memory.with) if (partner !== residentId && activeIds.has(partner)) latestByPartner.set(partner, memory.kind);
+  }
+  const influence = [...latestByPartner.values()].reduce((total, kind) =>
+    total + (kind === 'amizade' || kind === 'romance' ? 1 : kind === 'rivalidade' ? -1 : 0), 0);
+  return Math.max(0, Math.min(4, 1 + influence));
+}
+
 /**
  * Liquida ciclos locais uma única vez, com ausência limitada a sete dias. Saves sem o campo novo são apenas
  * inicializados no dia atual, sem cobrança retroativa. Mudar o relógio para trás nunca reabre um ciclo liquidado.
@@ -437,8 +518,8 @@ export function advanceCommunity(state: VillageState, today: string, residentIds
     day = nextDay(day);
   }
   const skippedDays = day && day <= today ? 1 + Math.floor((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${day}T12:00:00Z`)) / 86_400_000) : 0;
-  const residents = residentsOf(residentIds).slice(0, COMMUNITY_RULES.residentLimit);
-  const activeIds = new Set(residents.map((resident) => resident.id));
+  const baseResidents = residentsOf(residentIds).slice(0, COMMUNITY_RULES.residentLimit);
+  const activeIds = new Set(baseResidents.map((resident) => resident.id));
   const inactiveCapacity = Math.max(0, COMMUNITY_RULES.residentLimit - activeIds.size);
   const inactiveProfiles = inactiveCapacity > 0
     ? Object.entries(state.community.residents).filter(([id]) => !activeIds.has(id)).slice(-inactiveCapacity)
@@ -447,7 +528,10 @@ export function advanceCommunity(state: VillageState, today: string, residentIds
     ...inactiveProfiles,
     ...Object.entries(state.community.residents).filter(([id]) => activeIds.has(id)),
   ]);
-  const cycles = days.map((cycleDay) => settleDay(state, cycleDay, residents));
+  const cycles = days.map((cycleDay) => settleDay(state, cycleDay, baseResidents.map((resident) => ({
+    ...resident,
+    socialOpportunity: resident.socialOpportunity ?? socialOpportunityFromMemories(state, resident.id, activeIds),
+  }))));
   state.community.lastCycleDay = today;
   state.community.history = [...state.community.history, ...cycles].slice(-COMMUNITY_RULES.historyLimit);
   return { cycles, initialized: false, skippedDays };
