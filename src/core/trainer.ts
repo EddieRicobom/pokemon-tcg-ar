@@ -94,6 +94,17 @@ export interface SetProgress {
   ids: string[];
 }
 
+export interface SurvivorRunRecord {
+  id: string;
+  day: string;
+  survivedMs: number;
+  wave: number;
+  kills: number;
+  level: number;
+  infinite: boolean;
+  cleared: boolean;
+}
+
 export interface TrainerState {
   v: number;
   xp: number;
@@ -140,6 +151,15 @@ export interface TrainerState {
     lastClearBonusDay: string;
     /** Última corrida foi no modo infinito (para o resumo). */
     lastInfinite: boolean;
+    /** Quantidade de resultados concluídos e melhores marcas adicionais, independentes da pontuação de uma corrida. */
+    runs: number;
+    bestWave: number;
+    bestLevel: number;
+    /** IDs recentes tornam o registro idempotente; registros detalhados têm limite para o save continuar pequeno. */
+    runIds: string[];
+    recentRuns: SurvivorRunRecord[];
+    /** Objetivos opcionais só contam após a tela de fim de uma corrida real. */
+    completedObjectives: string[];
   };
 }
 
@@ -150,7 +170,7 @@ export function emptyTrainer(): TrainerState {
     life: { talks: 0, answers: 0, moments: 0, nicknames: 0 }, bestFriend: 0, league: { badges: 0, champion: 0 }, pvp: { played: 0, wins: 0 }, shinies: 0,
     today: { day: '', cards: [], battles: 0, minigames: 0, life: 0, progress: {}, done: [], bonus: false },
     achievements: {},
-    torre: { bestMs: 0, bestClearMs: 0, trainersBeaten: 0, bossesBeaten: 0, cleared: 0, infiniteUnlocked: false, lastClearBonusDay: '', lastInfinite: false },
+    torre: { bestMs: 0, bestClearMs: 0, trainersBeaten: 0, bossesBeaten: 0, cleared: 0, infiniteUnlocked: false, lastClearBonusDay: '', lastInfinite: false, runs: 0, bestWave: 0, bestLevel: 0, runIds: [], recentRuns: [], completedObjectives: [] },
   };
 }
 
@@ -163,7 +183,7 @@ export type TrainerEvent =
    * treinadores e chefões derrotados, destrava o modo infinito ao zerar a 1ª vez) e, se zerou pela 1ª vez do dia,
    * paga o bônus de `SURVIVOR_CLEAR_BONUS` moedas na Vila.
    */
-  | { type: 'survivor'; survivedMs: number; trainersBeaten: number; bossesBeaten: number; clearedTorre: boolean; infinite: boolean }
+  | { type: 'survivor'; runId?: string; survivedMs: number; trainersBeaten: number; bossesBeaten: number; clearedTorre: boolean; infinite: boolean; wave?: number; kills?: number; level?: number; completedObjectives?: string[] }
   /** Vitória num Ginásio, na Elite 4 ou contra o Campeão. `first` = primeira vitória contra esse desafio (vale o XP cheio). */
   | { type: 'league'; title: string; xp: number; first: boolean; /** Insígnias e vitórias sobre a Campeã depois desta luta. */ badges?: number; championWins?: number }
   /** Uma batalha com um amigo (PvP, na Caixa ou no Pin Mode). */
@@ -282,6 +302,8 @@ const ALL_ACHIEVEMENTS: AchievementDef[] = [
   { id: 'liga-campea', title: 'Campeão da Liga', hint: 'Vença a Campeã da Liga.', test: (s) => s.league.champion >= 1 },
   { id: 'pvp-1', title: 'Cara a cara', hint: 'Faça uma batalha com um amigo (PvP).', test: (s) => s.pvp.played >= 1 },
   { id: 'pvp-vitoria', title: 'Vitória em dupla', hint: 'Vença uma batalha PvP.', test: (s) => s.pvp.wins >= 1 },
+  { id: 'pins-primeiro', title: 'Primeiro torneio de Pins', hint: 'Conclua uma partida na Pista de Pins.', test: (s) => (s.games.pins?.played ?? 0) >= 1 },
+  { id: 'pins-perfeito', title: 'Mira perfeita', hint: 'Alcance 100 pontos em uma partida concluída de Pins.', test: (s) => (s.games.pins?.best ?? 0) >= 100 },
   { id: 'shiny-1', title: 'Brilho raro', hint: 'Escaneie uma carta shiny.', test: (s) => s.shinies >= 1 },
   // Torre de Sobrevivência: as marcas são da Torre, mas as conquistas pagam o cosmético na Vila (ver `PRIZES`).
   { id: 'torre-primeira', title: 'Primeira corrida', hint: 'Jogue uma corrida da Torre de Sobrevivência.', test: (s) => (s.torre?.bestMs ?? 0) > 0 },
@@ -341,6 +363,9 @@ function bump(s: TrainerState, kind: MissionKind, rewards: Reward[]): number {
 
 /** Aplica um evento (leitura de carta, batalha, minigame). Não altera o estado recebido. */
 export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string): Applied {
+  if (event.type === 'survivor' && event.runId && prev.torre.runIds.includes(event.runId)) {
+    return { state: clone(prev), rewards: [], unlocked: [] };
+  }
   const s: TrainerState = clone(prev);
   const rewards: Reward[] = [];
   const levelBefore = levelOf(s.xp);
@@ -427,10 +452,22 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
     // A corrida também já veio com um `recordEvent({ type: 'minigame', game: 'sobrevivencia', ... })` acima; aqui só
     // atualizamos as marcas da Torre, o modo infinito e o dia do bônus (quem paga as moedas é a Vila, pela carteira).
     const torre = s.torre;
+    torre.runs++;
     torre.bestMs = Math.max(torre.bestMs, event.survivedMs);
     torre.trainersBeaten += Math.max(0, event.trainersBeaten);
     torre.bossesBeaten += Math.max(0, event.bossesBeaten);
     torre.lastInfinite = event.infinite === true;
+    const wave = Math.max(0, Math.floor(event.wave ?? 0));
+    const kills = Math.max(0, Math.floor(event.kills ?? 0));
+    const level = Math.max(0, Math.floor(event.level ?? 0));
+    torre.bestWave = Math.max(torre.bestWave, wave);
+    torre.bestLevel = Math.max(torre.bestLevel, level);
+    if (event.runId) {
+      torre.runIds = [...torre.runIds, event.runId].slice(-100);
+      torre.recentRuns = [...torre.recentRuns, { id: event.runId, day, survivedMs: Math.max(0, Math.floor(event.survivedMs)), wave, kills, level, infinite: event.infinite === true, cleared: event.clearedTorre }].slice(-30);
+    }
+    const objectiveIds = new Set(['tempo-1m', 'nivel-5', 'dois-golpes']);
+    torre.completedObjectives = [...new Set([...torre.completedObjectives, ...(event.completedObjectives ?? []).filter((id) => objectiveIds.has(id))])].slice(-40);
     if (event.clearedTorre) {
       torre.cleared += 1;
       torre.infiniteUnlocked = true;
@@ -518,7 +555,12 @@ export function normalizeTrainer(raw: unknown): TrainerState {
     pvp: { played: num(r.pvp?.played), wins: Math.min(num(r.pvp?.played), num(r.pvp?.wins)) },
     shinies: num(r.shinies),
     today: { day: typeof r.today?.day === 'string' ? r.today.day : '', cards: strs(r.today?.cards), battles: num(r.today?.battles), minigames: num(r.today?.minigames), life: num(r.today?.life), progress, done: strs(r.today?.done), bonus: r.today?.bonus === true },
-    torre: { bestMs: num(r.torre?.bestMs), bestClearMs: num(r.torre?.bestClearMs), trainersBeaten: num(r.torre?.trainersBeaten), bossesBeaten: num(r.torre?.bossesBeaten), cleared: num(r.torre?.cleared), infiniteUnlocked: r.torre?.infiniteUnlocked === true, lastClearBonusDay: typeof r.torre?.lastClearBonusDay === 'string' ? r.torre.lastClearBonusDay : '', lastInfinite: r.torre?.lastInfinite === true },
+    torre: {
+      bestMs: num(r.torre?.bestMs), bestClearMs: num(r.torre?.bestClearMs), trainersBeaten: num(r.torre?.trainersBeaten), bossesBeaten: num(r.torre?.bossesBeaten), cleared: num(r.torre?.cleared), infiniteUnlocked: r.torre?.infiniteUnlocked === true, lastClearBonusDay: typeof r.torre?.lastClearBonusDay === 'string' ? r.torre.lastClearBonusDay : '', lastInfinite: r.torre?.lastInfinite === true,
+      runs: num(r.torre?.runs) || (num(r.torre?.bestMs) > 0 ? 1 : 0), bestWave: num(r.torre?.bestWave), bestLevel: num(r.torre?.bestLevel), runIds: strs(r.torre?.runIds).slice(-100),
+      recentRuns: Array.isArray(r.torre?.recentRuns) ? r.torre.recentRuns.filter((run): run is SurvivorRunRecord => !!run && typeof run === 'object' && typeof run.id === 'string' && typeof run.day === 'string').slice(-30).map((run) => ({ id: run.id.slice(0, 80), day: run.day.slice(0, 12), survivedMs: num(run.survivedMs), wave: num(run.wave), kills: num(run.kills), level: num(run.level), infinite: run.infinite === true, cleared: run.cleared === true })) : [],
+      completedObjectives: strs(r.torre?.completedObjectives).filter((id) => ['tempo-1m', 'nivel-5', 'dois-golpes'].includes(id)).slice(-40),
+    },
     achievements,
   };
 }

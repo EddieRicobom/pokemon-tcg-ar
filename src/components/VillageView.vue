@@ -1068,15 +1068,19 @@ function finishFestival(choice: number): void {
   dialog.value = { name: result.title, text: `${result.text}\n\n+${result.coins} moedas.`, actions: [{ label: 'Voltar ao mural', run: openRequestBoard }] };
 }
 
-function recordSurvivalAdventure(summary: import('../core/survivor').SurvivorSummary, participant: { id: string; name: string }): void {
+function recordSurvivalAdventure(summary: import('../core/survivor').SurvivorSummary, participant: { id: string; name: string }, runId: string): void {
+  const id = `survival:${runId}`;
+  if (state.diary.some((entry) => entry.id === id)) return;
   const now = new Date();
   const time = `${Math.floor(summary.survivedMs / 60000)}:${String(Math.floor(summary.survivedMs / 1000) % 60).padStart(2, '0')}`;
   const won = summary.finalBossBeaten ? 'A Torre foi vencida!' : `Chegou até a onda ${summary.wave}.`;
   state.diary = trimMoments([...state.diary, {
-    id: `survival:${now.getTime()}`, t: now.getTime(), day: refreshDay(), hour: now.getHours(), tpl: 'survival-adventure', kind: 'amizade', title: `Aventura na Torre · ${participant.name}`, emoji: '🗼',
-    cast: [{ id: participant.id, name: participant.name }], lines: [{ who: 0, text: `${participant.name} enfrentou a Torre por ${time}.` }], result: [`${summary.kills} derrotas · nível ${summary.level}.`, won],
+    id, t: now.getTime(), day: refreshDay(), hour: now.getHours(), tpl: 'survival-adventure', kind: 'amizade', title: `Aventura na Torre · ${participant.name}`, emoji: '🗼',
+    cast: [{ id: participant.id, name: participant.name }], lines: [{ who: 0, text: `${participant.name} enfrentou a Torre por ${time}.` }],
+    result: [`${summary.kills} derrotas · nível ${summary.level} · onda ${summary.wave}.`, won, ...(summary.finalBossBeaten ? ['O troféu da Torre foi conquistado; o modo Infinito está disponível.'] : [])],
   }]);
   changed();
+  syncTrainer();
 }
 
 function finishGuidedTrip(): void {

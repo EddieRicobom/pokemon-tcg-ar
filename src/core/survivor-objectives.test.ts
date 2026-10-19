@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSurvivorState } from './survivor';
-import { survivorObjectives } from './survivor-objectives';
+import { survivorObjectives, survivorRerollLimit } from './survivor-objectives';
 
 describe('objetivos opcionais da Torre', () => {
   it('começa zerado e não muda as regras da corrida', () => {
@@ -18,5 +18,11 @@ describe('objetivos opcionais da Torre', () => {
     const objectives = survivorObjectives(state);
     expect(objectives.every((o) => o.complete)).toBe(true);
     expect(objectives[0]?.progress).toBe(60_000);
+  });
+
+  it('libera uma segunda troca só depois de registrar os três desafios concluídos', () => {
+    expect(survivorRerollLimit([])).toBe(1);
+    expect(survivorRerollLimit(['tempo-1m', 'nivel-5', 'inventado'])).toBe(1);
+    expect(survivorRerollLimit(['tempo-1m', 'nivel-5', 'dois-golpes', 'tempo-1m'])).toBe(2);
   });
 });

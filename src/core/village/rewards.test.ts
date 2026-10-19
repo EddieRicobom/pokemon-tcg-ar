@@ -38,6 +38,17 @@ describe('prêmios das conquistas', () => {
     expect(s.inventory['bone-treinador']).toBe(1);
   });
 
+  it('explica a origem narrativa dos troféus e dos itens dos outros modos', () => {
+    const state = fresh();
+    const tower = claimPrizes(state, { 'torre-chefao': '2026-10-01' });
+    expect(tower?.items).toContain('Troféu da Torre');
+    expect(tower?.note).toContain('derrotar o chefão final');
+    expect(tower?.note).toContain('abre modo Infinito');
+    const pins = claimPrizes(state, { 'pins-perfeito': '2026-10-02' });
+    expect(pins?.items).toContain('Troféu dos Pins');
+    expect(pins?.note).toContain('100 pontos em uma partida concluída');
+  });
+
   it('conquistas antigas pagam todas de uma vez, e uma nova paga depois', () => {
     const s = fresh();
     const got = claimPrizes(s, { 'primeira-carta': '2026-10-01', 'cartas-50': '2026-10-03', 'cartas-10': '2026-10-02' });

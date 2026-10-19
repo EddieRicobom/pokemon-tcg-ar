@@ -2,6 +2,14 @@ import type { SurvivorState } from './survivor';
 
 export type SurvivorObjectiveId = 'tempo-1m' | 'nivel-5' | 'dois-golpes';
 
+export const SURVIVOR_OBJECTIVE_IDS: readonly SurvivorObjectiveId[] = ['tempo-1m', 'nivel-5', 'dois-golpes'];
+
+/** Uma troca grátis de Pokémon é padrão; os três marcos reais da Torre liberam só mais uma. */
+export function survivorRerollLimit(completedObjectives: readonly string[]): number {
+  const completed = new Set(completedObjectives.filter((id): id is SurvivorObjectiveId => SURVIVOR_OBJECTIVE_IDS.includes(id as SurvivorObjectiveId)));
+  return completed.size >= SURVIVOR_OBJECTIVE_IDS.length ? 2 : 1;
+}
+
 export interface SurvivorObjective {
   id: SurvivorObjectiveId;
   title: string;

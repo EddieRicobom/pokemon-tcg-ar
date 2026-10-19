@@ -42,7 +42,7 @@ import type { SoundCue } from '../box/sound-recipes';
 import { normalizeSurvivorFavorites, selectSurvivorCandidates } from '../core/survivor-selection';
 import { dayKey } from '../core/trainer';
 import { survivorMinimapSnapshot } from '../core/survivor-minimap';
-import { survivorObjectives } from '../core/survivor-objectives';
+import { survivorObjectives, survivorRerollLimit } from '../core/survivor-objectives';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -73,7 +73,7 @@ const moveLine = (m: SurvivorMove): string => `${m.icon} ${m.name} · ${MOVE_CAT
  * mesmo jeito que a Pista de Pins (`recordEvent({ type: 'minigame', game: 'sobrevivencia', ... })`), sem entrar
  * no catálogo de minigames do Fliperama (`core/minigames.ts`).
  */
-const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }] }>();
+const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }, runId: string] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
 const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string }[] }>();
 
@@ -219,11 +219,22 @@ const runUnlockedInfinite = ref(false);
 
 let runCompanion: CardCompanion | null = null;
 let runParticipant = { id: 'survivor-pikachu', name: 'Pikachu' };
+let runCounter = 0;
+let activeRunId = '';
+const completedRunIds = new Set<string>();
 function recordRun(s: SurvivorSummary): void {
+  // A recompensa só é emitida pelo evento gameover, e o mesmo resultado não pode ser aplicado duas vezes.
+  if (!activeRunId || completedRunIds.has(activeRunId)) return;
+  completedRunIds.add(activeRunId);
   if (!recordCardVictories(survivalWinners(runCompanion, s), 'survival')) say(cardJourneyError.value, 9000);
   recordEvent({ type: 'minigame', game: 'sobrevivencia', won: s.kills > 0, score: survivorScore(s) });
   const beforeInfinite = trainer.value.torre.infiniteUnlocked;
-  recordEvent({ type: 'survivor', survivedMs: s.survivedMs, trainersBeaten: s.trainersBeaten, bossesBeaten: s.bossesBeaten, clearedTorre: s.finalBossBeaten, infinite: s.infinite });
+  const runRewards = recordEvent({
+    type: 'survivor', runId: activeRunId, survivedMs: s.survivedMs, trainersBeaten: s.trainersBeaten, bossesBeaten: s.bossesBeaten,
+    clearedTorre: s.finalBossBeaten, infinite: s.infinite, wave: s.wave, kills: s.kills, level: s.level,
+    completedObjectives: survivorObjectives(state.value!).filter((objective) => objective.complete).map((objective) => objective.id),
+  });
+  runUnlocks.value = runRewards.filter((reward) => reward.tone === 'achievement').map((reward) => reward.sub ?? reward.text);
   runUnlockedInfinite.value = s.finalBossBeaten && !beforeInfinite;
   const today = dayKey(new Date());
   const last = trainer.value.torre.lastClearBonusDay;
@@ -232,7 +243,7 @@ function recordRun(s: SurvivorSummary): void {
   const total = survivorCoins(s) + (canClearBonus ? SURVIVOR_CLEAR_BONUS : 0);
   runCoins.value = total > 0 ? addCoins(total) : 0;
   runClearBonus.value = canClearBonus ? SURVIVOR_CLEAR_BONUS : 0;
-  emit('complete', s, runParticipant);
+  emit('complete', s, runParticipant, activeRunId);
 }
 
 function formatTime(ms: number): string {
@@ -265,12 +276,13 @@ const minimap = ref({ markers: [] as ReturnType<typeof survivorMinimapSnapshot>[
 const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
 const summary = ref<SurvivorSummary | null>(null);
+const runUnlocks = ref<string[]>([]);
 /** Tela de escolha antes de cada corrida: 3 Pokémon aleatórios da caixa do jogador, pra ele dizer quem joga
  * dessa vez. Null enquanto ainda está sorteando/carregando os retratos; [] se a caixa estiver vazia (cai pro
  * Pikachu de reserva sem tela de escolha, igual ao comportamento antigo). */
 const pickOptions = ref<PickOption[] | null>(null);
 const pickBusy = ref(false);
-const rerollUsed = ref(false);
+const rerollsUsed = ref(0);
 const previousPickIds = ref<string[]>([]);
 const favoriteIds = ref<Set<string>>(new Set());
 const FAVORITES_KEY = 'tcg-ar-survivor-favorites-v1';
@@ -742,9 +754,11 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     if (disposed) return;
     pickOptions.value = null;
     summary.value = null;
+    runUnlocks.value = [];
     pendingUpgrade.value = null;
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
+    activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
     state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, dexId, evolutions: evolutionsFor, infinite });
     ready.value = true;
     lastTs = performance.now();
@@ -767,6 +781,13 @@ const typeChoice = ref<PickOption | null>(null);
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
 const infiniteWanted = ref(false);
 const torre = computed(() => trainer.value.torre);
+const rerollLimit = computed(() => survivorRerollLimit(torre.value.completedObjectives));
+const nextTowerGoal = computed(() => {
+  if (!torre.value.infiniteUnlocked) return 'Próximo marco: derrote o chefão final aos 20 min para abrir o modo infinito.';
+  if (torre.value.trainersBeaten < 10) return `Próximo marco: derrote ${10 - torre.value.trainersBeaten} treinador(es) para a conquista Mestre da Torre.`;
+  if (torre.value.bossesBeaten < 3) return `Próximo marco: derrote ${3 - torre.value.bossesBeaten} chefão(ões) para Caçador do infinito.`;
+  return `Registro: ${torre.value.runs} corridas concluídas · melhor onda ${torre.value.bestWave} · nível ${torre.value.bestLevel}.`;
+});
 function openTypeChoice(opt: PickOption): void { typeChoice.value = opt; }
 watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) infiniteWanted.value = false; });
 
@@ -776,7 +797,7 @@ async function openPicker(): Promise<void> {
   pickBusy.value = true;
   pickOptions.value = null;
   try {
-    rerollUsed.value = false;
+    rerollsUsed.value = 0;
     previousPickIds.value = [];
     const options = await rollPickOptions();
     if (disposed) return;
@@ -795,8 +816,8 @@ async function openPicker(): Promise<void> {
 }
 
 async function rerollPicker(): Promise<void> {
-  if (rerollUsed.value || pickBusy.value || !pickOptions.value) return;
-  rerollUsed.value = true;
+  if (rerollsUsed.value >= rerollLimit.value || pickBusy.value || !pickOptions.value) return;
+  rerollsUsed.value++;
   pickBusy.value = true;
   try {
     const options = await rollPickOptions(previousPickIds.value);
@@ -938,6 +959,8 @@ onBeforeUnmount(() => {
           </div>
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
+            <p class="note" role="status">{{ nextTowerGoal }}</p>
+            <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · {{ torre.completedObjectives.length }} objetivo(s) registrados.</p>
              <p class="note">3 Pokémon sorteados da sua caixa. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
             <p class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
             <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
@@ -969,7 +992,9 @@ onBeforeUnmount(() => {
                 <small v-if="opt.move.estimated" class="survivor-pick-kind">Sem stats desta espécie: números médios.</small>
                </div>
             </div>
-             <button type="button" class="link survivor-reroll" :disabled="rerollUsed || pickBusy" @click="rerollPicker">🔄 Sortear novamente <small>{{ rerollUsed ? 'já usado nesta tentativa' : '1 vez grátis por tentativa' }}</small></button>
+             <button type="button" class="link survivor-reroll" :disabled="rerollsUsed >= rerollLimit || pickBusy" @click="rerollPicker">🔄 Sortear novamente <small>{{ Math.max(0, rerollLimit - rerollsUsed) }} de {{ rerollLimit }} troca(s) grátis nesta tentativa</small></button>
+            <p v-if="rerollLimit === 1" class="note">Conclua os 3 desafios opcionais em corridas encerradas para liberar uma segunda troca de sorteio nas próximas tentativas.</p>
+            <p v-else class="note">📜 Caderno de campo completo: a segunda troca de sorteio foi liberada pelos seus três desafios concluídos.</p>
             <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
           </div>
         </div>
@@ -1003,6 +1028,7 @@ onBeforeUnmount(() => {
               <small v-if="runClearBonus > 0"> (inclui o bônus de {{ runClearBonus }} por zerar, 1× por dia)</small>
             </p>
             <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
+            <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>
             <p v-if="summary.trainersBeaten > 0 || summary.bossesBeaten > 0" class="note">Treinadores derrotados: {{ summary.trainersBeaten }}{{ summary.bossesBeaten > 0 ? ` · chefões: ${summary.bossesBeaten}` : '' }}.</p>
             <p v-if="summary.stage > 0" class="note">Evoluiu {{ summary.stage === 1 ? 'uma vez' : `${summary.stage} vezes` }} nesta corrida (como {{ avatarName }}).</p>
             <button type="button" class="primary" @click="playAgain">Jogar de novo</button>
