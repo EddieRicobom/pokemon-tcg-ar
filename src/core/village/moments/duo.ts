@@ -98,8 +98,8 @@ const FRIENDS: readonly Template[] = [
     choice: {
       prompt: 'Eles olham para você: "E o treinador, o que acha?"',
       options: [
-        { label: () => 'Dar um abraço coletivo', lines: (_c) => [L(0, 'Eu sabia que tinha que perguntar!', 'heart'), L(1, 'Rápido, antes que eu me arrependa!', 'laugh')], outcome: { bond: 6, spark: 1, friend: 2 } },
-        { label: () => 'Dar uma flor aos dois', needs: { item: 'flor', qty: 1 }, lines: () => [L(0, 'Uma flor! O universo está respondendo!', 'sparkle'), L(1, 'Hoje ninguém precisa de conselho.', 'heart')], outcome: { bond: 8, spark: 3, friend: 3 } },
+        { label: () => 'Dar um abraço coletivo', lines: (_c) => [L(0, 'Eu sabia que tinha que perguntar!', 'heart'), L(1, 'Rápido, antes que eu me arrependa!', 'laugh')], outcome: { bond: 6, spark: 1, friend: 2, plan: { kind: 'ajudar', from: 0, to: 1, days: 3 } } },
+        { label: () => 'Dar uma flor aos dois', needs: { item: 'flor', qty: 1 }, lines: () => [L(0, 'Uma flor! O universo está respondendo!', 'sparkle'), L(1, 'Hoje ninguém precisa de conselho.', 'heart')], outcome: { bond: 8, spark: 3, friend: 3, plan: { kind: 'convidar', from: 1, to: 0, days: 4 } } },
         { label: () => 'Dizer que isso é com eles', lines: () => [L(1, 'Tá bom, a gente se vira.', 'sweat'), L(0, 'O abraço do ' + 'colega ainda vale?', 'question')], outcome: { bond: 2 } },
       ],
     },
@@ -426,8 +426,8 @@ const FRIENDS: readonly Template[] = [
     choice: {
       prompt: 'Uma amizade abalada por um segredo. E agora?',
       options: [
-        { label: () => 'Ajudar nas pazes', lines: (_c) => [L(1, 'Desculpa, de verdade. Eu nunca mais vazo nada.', 'sad'), L(0, 'Tá. Mas a borboleta fica sendo minha amiga.', 'sparkle')], outcome: { bond: 12, friend: 2 } },
-        { label: () => 'Dar um doce para os dois', needs: { item: 'geleia', qty: 1 }, lines: () => [L(0, 'Geleia! Eu perdoo tudo por geleia.', 'heart'), L(1, 'Eu também! Que injustiça deliciosa!', 'laugh')], outcome: { bond: 14, friend: 3 } },
+        { label: () => 'Ajudar nas pazes', lines: (_c) => [L(1, 'Desculpa, de verdade. Eu nunca mais vazo nada.', 'sad'), L(0, 'Tá. Mas a borboleta fica sendo minha amiga.', 'sparkle')], outcome: { bond: 12, friend: 2, plan: { kind: 'visitar', from: 1, to: 0, days: 3 } } },
+        { label: () => 'Dar um doce para os dois', needs: { item: 'geleia', qty: 1 }, lines: () => [L(0, 'Geleia! Eu perdoo tudo por geleia.', 'heart'), L(1, 'Eu também! Que injustiça deliciosa!', 'laugh')], outcome: { bond: 14, friend: 3, plan: { kind: 'convidar', from: 0, to: 1, days: 4 } } },
         { label: () => 'Não se meter', lines: () => [L(0, 'Eu vou ali chorar escondido.', 'sad'), L(1, 'E eu vou ali pedir desculpa para o vento.', 'sad')], outcome: { bond: -3 } },
       ],
     },
@@ -442,7 +442,7 @@ const FRIENDS: readonly Template[] = [
       L(1, 'Eu estou muito triste de ter te deixado esperando.', 'sad'),
       L(0, 'Amanhã a gente tenta de novo. Eu levo travesseiro. Para você.', 'heart'),
     ],
-    outcome: { bond: -2, spark: 1 },
+    outcome: { bond: -2, spark: 1, plan: { kind: 'convidar', from: 1, to: 0, days: 2 } },
     after: (n, who) => `${who === 1 ? n[0] : n[1]} me esperou um tempão e eu dormi. Amanhã eu estarei lá. Eu juro.`,
   },
   {

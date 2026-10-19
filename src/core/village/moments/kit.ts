@@ -3,7 +3,7 @@ import type { PokemonType } from '../../pokemon-data';
 import type { ItemId } from '../life';
 import { birthdayOf } from '../personality';
 import type { PersonalityName } from '../personality';
-import type { Fx, MomentKind, MomentLine, RelFlag, Relation } from '../social-state';
+import type { Fx, MomentKind, MomentLine, RelFlag, Relation, SocialPlanKind } from '../social-state';
 
 export interface Actor {
   id: string;
@@ -45,6 +45,18 @@ export interface Outcome {
   eatCrop?: boolean;
   /** Rega de graça todas as plantas com sede. */
   water?: boolean;
+  /** Cria um compromisso para um encontro futuro entre os participantes. */
+  plan?: SocialPlanDraft | SocialPlanDraft[];
+}
+
+export interface SocialPlanDraft {
+  kind: SocialPlanKind;
+  /** Posição de quem toma a iniciativa (padrão: 0). */
+  from?: 0 | 1 | 2;
+  /** Posição de quem recebe o compromisso (padrão: 1). */
+  to?: 0 | 1 | 2;
+  /** Quantos dias o compromisso permanece válido. */
+  days?: number;
 }
 
 export interface Ctx {
