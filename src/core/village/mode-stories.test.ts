@@ -39,6 +39,29 @@ describe('histórias opcionais abertas por outros modos', () => {
     expect(ensureModeStories(state, { 'pins-perfeito': '2026-10-19' })).toBe(false);
   });
 
+  it('encadeia a Galeria só depois de concluir as histórias reais da Liga e dos Pins', () => {
+    const state = fresh();
+    const achievements = { 'liga-insignia': '2026-10-19', 'pins-perfeito': '2026-10-19' };
+    ensureModeStories(state, achievements);
+    add(state, 'madeira', 2);
+    expect(claimRequest(state, 'modo:liga-insignia', '2026-10-19').ok).toBe(true);
+    expect(ensureModeStories(state, achievements)).toBe(false);
+
+    add(state, 'concha', 2);
+    expect(claimRequest(state, 'modo:pins-perfeito', '2026-10-19').ok).toBe(true);
+    expect(ensureModeStories(state, achievements)).toBe(true);
+    expect(state.requests.story.at(-1)).toMatchObject({
+      id: 'modo:galeria-desafios', title: 'Montar o pedestal das conquistas', item: 'pedra', qty: 3,
+      persistent: true, done: false, location: 'Museu da Vila',
+    });
+    expect(claimRequest(state, 'modo:galeria-desafios', '2026-10-19').ok).toBe(false);
+    add(state, 'pedra', 3);
+    expect(claimRequest(state, 'modo:galeria-desafios', '2026-10-19')).toMatchObject({ ok: true, coins: 75 });
+    expect(ensureModeStories(state, achievements)).toBe(false);
+    const restored = normalizeVillage(JSON.parse(JSON.stringify(state)), state.seed, state.player);
+    expect(restored.requests.story.find((request) => request.id === 'modo:galeria-desafios')).toMatchObject({ done: true });
+  });
+
   it('o troféu só abre a história da Torre após o chefão final e ela exige ferro de verdade', () => {
     const state = fresh();
     expect(ensureModeStories(state, { 'torre-treinador': '2026-10-19' })).toBe(false);
