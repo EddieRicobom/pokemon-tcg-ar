@@ -1020,7 +1020,7 @@ onBeforeUnmount(() => {
             </section>
             <p v-if="preparations.length > 1 && nextPreparation" class="note">{{ recordedObjectiveCount }} desafio(s) distinto(s) registrado(s). Próxima preparação: {{ nextPreparation.name }} após {{ nextPreparation.unlockAtObjectives }} objetivos.</p>
             <p v-else-if="preparations.length > 1" class="note">Todas as preparações estratégicas estão liberadas pelos seus desafios concluídos.</p>
-            <p v-else class="note">Conclua desafios em corridas reais para liberar preparações: 3 objetivos distintos liberam Passo leve; 6 liberam Mira calculada; 9 liberam Ímã de campo.</p>
+            <p v-else class="note">Conclua desafios em corridas reais para liberar preparações: 3 objetivos distintos liberam Passo leve; 6, Mira calculada; 9, Ímã de campo; 12, Mira de longo alcance.</p>
             <div class="survivor-pick-grid">
                <div
                 v-for="opt in pickOptions"

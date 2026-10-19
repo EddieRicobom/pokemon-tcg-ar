@@ -132,6 +132,8 @@ export interface AttackProfile {
 /** Stat médio: um Pokémon com todos os stats neste valor joga com os números base. */
 export const AVERAGE_STAT = 75;
 const AVERAGE: BaseStats = { hp: AVERAGE_STAT, attack: AVERAGE_STAT, defense: AVERAGE_STAT, spAttack: AVERAGE_STAT, spDefense: AVERAGE_STAT, speed: AVERAGE_STAT };
+/** Ajuste de ritmo do modo: mantém as proporções dos stats reais sem deixar as ondas iniciais sufocarem os golpes mais fracos. */
+export const SURVIVOR_DAMAGE_FACTOR = 1.2;
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
 const round1 = (n: number): number => Math.round(n * 10) / 10;
@@ -153,7 +155,7 @@ export function attackProfile(move: SurvivorMove, stats: BaseStats | null): Atta
   const base = CATEGORY_BASE[move.category];
   const farther = move.effect === 'atravessar' && move.category !== 'projetil' ? 1.15 : 1;
   return {
-    damage: round1(base.damage * factor(offenseOf(move.category, s), 0.6, 0.65, 1.7)),
+    damage: round1(base.damage * factor(offenseOf(move.category, s), 0.6, 0.65, 1.7) * SURVIVOR_DAMAGE_FACTOR),
     cooldownMs: Math.round(base.cooldownMs / factor(s.speed, 0.35, 0.75, 1.35)),
     range: round1(base.range * farther),
     radius: round1(base.radius * factor(s.defense, 0.35, 0.8, 1.5) * farther),

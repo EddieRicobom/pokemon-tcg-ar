@@ -354,9 +354,9 @@ export const INFINITE_SCALE_PER_MIN = 0.15;
 export const BASIC_MOVE: SurvivorMove = { type: 'normal', name: 'Golpe', category: 'projetil', effect: 'nenhum', color: '#fffbe0', icon: '✦' };
 
 /**
- * Números de dificuldade, ajustados com o robô de `scripts/survivor-sim.eval.ts` (200 corridas, upgrades ao acaso).
- * Antes (2026-10-16): mediana de 74 s e 0% de chefes derrotados — o 1º chefe (60 s, 440 de HP) era uma parede.
- * Ver o plano (Fase C) para os números depois do ajuste.
+ * Números de dificuldade, comparados com 200 corridas de `scripts/survivor-sim.eval.ts`, golpes e stats reais de
+ * espécies espalhadas pela Pokédex e upgrades ao acaso. A última medição está registrada no plano de implementação.
+ * O robô não substitui o ajuste com o dono jogando num aparelho real.
  */
 export const BALANCE = {
   xpBase: 14,
@@ -366,16 +366,16 @@ export const BALANCE = {
   bossSpeed: 62,
   bossDamageBase: 10,
   bossDamagePerWave: 2,
-  enemyHpBase: 20,
-  /** Vida extra a cada `enemyHpEverySec` segundos de corrida (dobrou, para a Torre não ficar fácil). */
-  enemyHpStep: 6,
+  enemyHpBase: 16,
+  /** Vida extra a cada `enemyHpEverySec` segundos; a simulação agora usa os golpes reais das espécies. */
+  enemyHpStep: 5,
   enemyHpEverySec: 30,
   enemyHpPerWave: 4,
   /** Intervalo entre nascimentos (ms) = início − porSegundo·t − porOnda·onda, nunca abaixo do piso. */
-  spawnStartMs: 1700,
-  spawnPerSecMs: 7,
-  spawnPerWaveMs: 26,
-  spawnFloorMs: 220,
+  spawnStartMs: 2100,
+  spawnPerSecMs: 6,
+  spawnPerWaveMs: 20,
+  spawnFloorMs: 300,
   playerDamage: 10,
   playerCooldownMs: 600,
   /** Primeiro chefe e intervalo entre os seguintes (ms). */

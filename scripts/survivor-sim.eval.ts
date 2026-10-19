@@ -7,6 +7,9 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng } from '../src/core/battle';
 import type { Rng } from '../src/core/battle';
+import { attackProfile, moveFor } from '../src/core/survivor-moves';
+import { statsOfDex } from '../src/core/survivor-stats';
+import { LAST_DEX, typesOfDex } from '../src/core/species-filter';
 import { applyUpgrade, ARENA_H, ARENA_W, createSurvivorState, stepSurvivor } from '../src/core/survivor';
 import type { SurvivorInput, SurvivorState } from '../src/core/survivor';
 
@@ -57,10 +60,23 @@ interface Run {
   bossesSpawned: number;
   bossesKilled: number;
   diedWithBoss: boolean;
+  moveCategory: string;
 }
 
 function play(seed: number, pick: (s: SurvivorState, rng: Rng) => string, noBoss = false): Run {
-  const s = createSurvivorState(seed, { kindCount: 6 });
+  // Espalha as corridas pela Pokédex; cada uma usa os tipos e stats estáticos reais da espécie escolhida.
+  const dexId = ((seed * 73) % LAST_DEX) + 1;
+  const stats = statsOfDex(dexId);
+  const types = typesOfDex(dexId);
+  const move = moveFor(types, stats);
+  const secondMove = types[1] ? moveFor([types[1]], stats) : undefined;
+  const s = createSurvivorState(seed, {
+    kindCount: 6,
+    dexId,
+    move,
+    profile: attackProfile(move, stats),
+    ...(secondMove ? { secondMove } : {}),
+  });
   if (noBoss) s.nextBossAtMs = Number.POSITIVE_INFINITY;
   const rng = seededRng(seed ^ 0x5eed);
   let bossesSpawned = 0;
@@ -80,6 +96,7 @@ function play(seed: number, pick: (s: SurvivorState, rng: Rng) => string, noBoss
   return {
     survivedMs: s.elapsedMs, level: s.player.level, wave: s.wave, kills: s.kills, bossesSpawned, bossesKilled,
     diedWithBoss: s.over && s.enemies.some((e) => e.boss),
+    moveCategory: move.category,
   };
 }
 
@@ -105,6 +122,15 @@ function report(label: string, runs: Run[]): void {
     derrotouAlgumChefe: sawBoss.length ? `${Math.round((killedFirst / sawBoss.length) * 100)}% de quem viu` : '—',
     morreuComChefeEmCampo: `${Math.round((runs.filter((r) => r.diedWithBoss).length / runs.length) * 100)}%`,
     chegouAos25min: `${Math.round((capped / runs.length) * 100)}%`,
+    porFormaDeGolpe: Object.fromEntries([...new Set(runs.map((run) => run.moveCategory))].sort().map((category) => {
+      const group = runs.filter((run) => run.moveCategory === category);
+      const times = group.map((run) => run.survivedMs / 1000).sort((a, b) => a - b);
+      return [category, {
+        corridas: group.length,
+        medianaS: Math.round(pct(times, 0.5)),
+        morreuAntesDe1min: `${Math.round((group.filter((run) => run.survivedMs < 60_000).length / group.length) * 100)}%`,
+      }];
+    })),
   };
   console.log(`SIM ${label} ${JSON.stringify(out)}`);
 }
