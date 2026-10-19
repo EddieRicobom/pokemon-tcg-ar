@@ -275,6 +275,8 @@ const failed = ref(false);
 const avatarName = ref('');
 const state = ref<SurvivorState | null>(null);
 const paused = ref(false);
+const leaveConfirm = ref(false);
+let wasPausedBeforeLeave = false;
 const minimap = ref({ markers: [] as ReturnType<typeof survivorMinimapSnapshot>['markers'], viewport: { x: 0, y: 0, width: ARENA_W, height: ARENA_H } });
 const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
@@ -676,6 +678,29 @@ function leaveNow(): void {
   emit('leave');
 }
 
+function requestLeave(): void {
+  if (leaveConfirm.value) return;
+  if (summary.value) {
+    leaveNow();
+    return;
+  }
+  wasPausedBeforeLeave = paused.value;
+  paused.value = true;
+  leaveConfirm.value = true;
+}
+
+function cancelLeave(): void {
+  leaveConfirm.value = false;
+  paused.value = wasPausedBeforeLeave;
+}
+
+function confirmLeave(): void {
+  leaveConfirm.value = false;
+  emit('leave');
+}
+
+defineExpose({ requestLeave });
+
 /** Sorteia 3 companheiros da caixa, identificados por carta/instância, pra escolher quem joga desta vez.
  * Caixa vazia (nenhuma carta ainda) não trava nada: cai pro Pikachu de reserva sem tela de escolha, como antes. */
 function readFavorites(ids: readonly string[]): Set<string> {
@@ -1034,6 +1059,15 @@ onBeforeUnmount(() => {
               <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u.id) }}</span>
               <span class="survivor-upgrade-text"><strong>{{ u.name }}</strong><small>{{ u.description }}</small></span>
             </button>
+          </div>
+        </div>
+
+        <div v-if="leaveConfirm" class="survivor-overlay" role="alertdialog" aria-label="Abandonar corrida" aria-modal="true">
+          <div class="card survivor-pause">
+            <h2>Abandonar a Torre?</h2>
+            <p class="note">A corrida será encerrada sem registrar objetivos, marcos ou recompensas. Só corridas que chegam ao fim contam para a progressão.</p>
+            <button type="button" class="primary" @pointerdown.stop @click.stop="cancelLeave">Continuar na Torre</button>
+            <button type="button" class="link" @pointerdown.stop @click.stop="confirmLeave">Abandonar corrida</button>
           </div>
         </div>
 
