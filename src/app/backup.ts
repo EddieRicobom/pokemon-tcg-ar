@@ -130,12 +130,16 @@ async function writeCollection(collection: BackupCollection): Promise<void> {
   validateCollection(collection);
   const db = await openCacheDb();
   try {
-    const tx = db.transaction(['cards', 'assets', 'meta'], 'readwrite');
-    await Promise.all([tx.objectStore('cards').clear(), tx.objectStore('assets').clear(), tx.objectStore('meta').clear()]);
-    for (const card of collection.cards) await tx.objectStore('cards').put(card);
-    for (const record of collection.records) await tx.objectStore('assets').put(record);
-    for (const entry of collection.meta ?? []) await tx.objectStore('meta').put(entry.value, entry.key);
-    await tx.done;
+    // Cada chamada usa uma transação curta. Uma transação única com centenas de `await`s pode
+    // ficar inativa entre tarefas em alguns navegadores e abortar antes de concluir a restauração.
+    // O backup continua tudo-ou-nada no nível de `applyFullBackup`, que restaura o snapshot se
+    // qualquer uma destas operações falhar.
+    await db.clear('cards');
+    await db.clear('assets');
+    await db.clear('meta');
+    for (const card of collection.cards) await db.put('cards', card);
+    for (const record of collection.records) await db.put('assets', record);
+    for (const entry of collection.meta ?? []) await db.put('meta', entry.value, entry.key);
     const cache = await caches.open(ASSET_CACHE_NAME);
     for (const key of await cache.keys()) await cache.delete(key);
     for (const asset of collection.assets) {
