@@ -3,6 +3,8 @@ import type { Rng } from './battle';
 import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
+import { survivorPreparation } from './survivor-preparations';
+import type { SurvivorPreparationId } from './survivor-preparations';
 
 /**
  * Motor puro do modo Sobrevivência (Zona de Sobrevivência, dentro da Vila): você anda pela arena, seu Pokémon ataca
@@ -417,6 +419,8 @@ export interface CreateSurvivorOptions {
   player?: Partial<SurvivorPlayer>;
   /** Começa já no modo infinito (precisa ser destravado antes: `TrainerState.torre.infiniteUnlocked`). */
   infinite?: boolean;
+  /** Preparação estratégica opcional, liberada por objetivos de corridas concluídas. */
+  preparation?: SurvivorPreparationId;
 }
 
 /** Técnica interna da Torre para que até Pokémon de um tipo tenham uma segunda opção desbloqueável. */
@@ -429,6 +433,7 @@ function secondaryMoveFor(move: SurvivorMove): SurvivorMove {
 export function createSurvivorState(seed: number, options: CreateSurvivorOptions): SurvivorState {
   const move = options.move ?? BASIC_MOVE;
   const prof = options.profile;
+  const preparation = survivorPreparation(options.preparation);
   const secondMoveCandidate = options.secondMove ?? secondaryMoveFor(move);
   const player: SurvivorPlayer = {
     dexId: options.dexId ?? 0,
@@ -440,11 +445,11 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     y: ARENA_H / 2,
     hp: prof?.maxHp ?? 100,
     maxHp: prof?.maxHp ?? 100,
-    speed: prof?.walkSpeed ?? 150,
+    speed: (prof?.walkSpeed ?? 150) * preparation.speedMultiplier,
     level: 1,
     xp: 0,
     xpToNext: xpForLevel(1),
-    attackDamage: prof?.damage ?? BALANCE.playerDamage,
+    attackDamage: (prof?.damage ?? BALANCE.playerDamage) * preparation.damageMultiplier,
     attackRange: prof?.range ?? 170,
     attackCooldownMs: prof?.cooldownMs ?? BALANCE.playerCooldownMs,
     attackTimerMs: 0,
@@ -453,7 +458,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     shots: 1,
     invulnMs: 0,
     facing: 1,
-    pickupRadius: PICKUP_RADIUS,
+    pickupRadius: PICKUP_RADIUS * preparation.pickupRadiusMultiplier,
     ...options.player,
   };
   return {

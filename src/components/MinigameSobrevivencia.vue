@@ -43,6 +43,8 @@ import { normalizeSurvivorFavorites, selectSurvivorCandidates } from '../core/su
 import { dayKey } from '../core/trainer';
 import { survivorMinimapSnapshot } from '../core/survivor-minimap';
 import { survivorObjectives, survivorRerollLimit } from '../core/survivor-objectives';
+import { availableSurvivorPreparations, SURVIVOR_PREPARATIONS } from '../core/survivor-preparations';
+import type { SurvivorPreparationId } from '../core/survivor-preparations';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -222,6 +224,7 @@ let runParticipant = { id: 'survivor-pikachu', name: 'Pikachu' };
 let runCounter = 0;
 let activeRunId = '';
 const completedRunIds = new Set<string>();
+const selectedPreparation = ref<SurvivorPreparationId>('classica');
 function recordRun(s: SurvivorSummary): void {
   // A recompensa só é emitida pelo evento gameover, e o mesmo resultado não pode ser aplicado duas vezes.
   if (!activeRunId || completedRunIds.has(activeRunId)) return;
@@ -724,7 +727,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica'): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -759,7 +762,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, dexId, evolutions: evolutionsFor, infinite });
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, dexId, evolutions: evolutionsFor, infinite, preparation });
     ready.value = true;
     lastTs = performance.now();
     if (!rafId) rafId = requestAnimationFrame(loop);
@@ -773,7 +776,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
 function choosePlayer(opt: PickOption, picked?: PokemonType): void {
   unlockSound();
   runParticipant = { id: opt.id, name: opt.name };
-  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name });
+  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
@@ -783,6 +786,8 @@ const infiniteWanted = ref(false);
 const torre = computed(() => trainer.value.torre);
 const rerollLimit = computed(() => survivorRerollLimit(torre.value.completedObjectives));
 const recordedObjectiveCount = computed(() => new Set(torre.value.completedObjectives).size);
+const preparations = computed(() => availableSurvivorPreparations(torre.value.completedObjectives));
+const nextPreparation = computed(() => SURVIVOR_PREPARATIONS.find(({ unlockAtObjectives }) => unlockAtObjectives > recordedObjectiveCount.value));
 const nextTowerGoal = computed(() => {
   if (!torre.value.infiniteUnlocked) return 'Próximo marco: derrote o chefão final aos 20 min para abrir o modo infinito.';
   if (torre.value.trainersBeaten < 10) return `Próximo marco: derrote ${10 - torre.value.trainersBeaten} treinador(es) para a conquista Mestre da Torre.`;
@@ -971,6 +976,17 @@ onBeforeUnmount(() => {
               <button type="button" :class="{ active: !infiniteWanted }" @click="infiniteWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
               <button type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true">♾️ Infinito<small>Mais difícil, sem fim</small></button>
             </div>
+            <section v-if="preparations.length > 1" class="survivor-preparations" aria-label="Preparação para a corrida">
+              <strong>Preparação</strong>
+              <div class="survivor-mode" role="group" aria-label="Escolha uma preparação">
+                <button v-for="preparation in preparations" :key="preparation.id" type="button" :class="{ active: selectedPreparation === preparation.id }" :aria-pressed="selectedPreparation === preparation.id" @click="selectedPreparation = preparation.id">
+                  {{ preparation.name }}<small>{{ preparation.description }}</small>
+                </button>
+              </div>
+            </section>
+            <p v-if="preparations.length > 1 && nextPreparation" class="note">{{ recordedObjectiveCount }} desafio(s) distinto(s) registrado(s). Próxima preparação: {{ nextPreparation.name }} após {{ nextPreparation.unlockAtObjectives }} objetivos.</p>
+            <p v-else-if="preparations.length > 1" class="note">Todas as preparações estratégicas estão liberadas pelos seus desafios concluídos.</p>
+            <p v-else class="note">Conclua desafios em corridas reais para liberar preparações: 3 objetivos distintos liberam Passo leve; 6 liberam Mira calculada; 9 liberam Ímã de campo.</p>
             <div class="survivor-pick-grid">
                <div
                 v-for="opt in pickOptions"
