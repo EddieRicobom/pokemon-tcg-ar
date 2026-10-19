@@ -2308,7 +2308,7 @@ onBeforeUnmount(() => {
           </section>
           <section>
             <h4>O que pode acontecer</h4>
-            <ul class="book-opinions summary-links"><li v-for="line in summary.possible" :key="line.requestId ?? line.text"><span>{{ line.text }}</span><span class="summary-actions"><button v-if="line.pokemonId" type="button" @click="openSummaryBook(line)">📖 Livro</button><button v-if="line.requestId" type="button" @click="pickTab('inicio')">📌 Mural</button></span></li></ul>
+            <ul class="book-opinions summary-links"><li v-for="line in summary.possible" :key="line.planId ?? line.requestId ?? line.text"><span>{{ line.text }}</span><span class="summary-actions"><button v-if="line.pokemonId" type="button" @click="openSummaryBook(line)">📖 Livro</button><button v-if="line.requestId" type="button" @click="pickTab('inicio')">📌 Mural</button></span></li></ul>
           </section>
         </div>
 

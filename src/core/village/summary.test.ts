@@ -32,4 +32,16 @@ describe('villageSummary', () => {
     state.memories.push({ id: 'm:a', mon: 'a', with: ['b'], kind: 'amizade', text: 'Piquenique: +5 amizade', day: '2026-10-17', t: 10, momentId: 'm' });
     expect(recentGossip(state, 'a', 20)).toBe('Ainda lembro: Piquenique: +5 amizade');
   });
+
+  it('mostra compromissos sociais válidos e omite os vencidos', () => {
+    const state = emptyVillage(1, { x: 1, y: 1 });
+    state.plans = [
+      { id: 'p-vivo', from: 'a', to: 'b', kind: 'visitar', createdDay: '2026-10-17', expiresDay: '2026-10-20', sourceMomentId: 'm-10' },
+      { id: 'p-velho', from: 'b', to: 'a', kind: 'ajudar', createdDay: '2026-10-10', expiresDay: '2026-10-12', sourceMomentId: 'm-9' },
+    ];
+    const summary = villageSummary(state, [{ id: 'a', name: 'Pikachu' }, { id: 'b', name: 'Eevee' }], Date.parse('2026-10-18T12:00:00Z'));
+    expect(summary.possible[0]).toMatchObject({ planId: 'p-vivo', pokemonId: 'a' });
+    expect(summary.possible[0]?.text).toContain('Pikachu vai visitar Eevee');
+    expect(summary.possible.some((entry) => entry.planId === 'p-velho')).toBe(false);
+  });
 });

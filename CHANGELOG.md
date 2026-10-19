@@ -16,6 +16,7 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 
 - Reconciliações, conselhos e promessas podem deixar um compromisso persistente de visita, ajuda ou convite entre dois moradores.
 - O próximo encontro do par prioriza o compromisso dentro de um prazo curto e o remove ao ser concluído; a lista tem limite e saves antigos continuam válidos.
+- O Resumo da Vila passa a listar compromissos ativos com prazo e atalho para o Livro do morador que tomou a iniciativa; compromissos vencidos saem da lista.
 
 ### Treinadores animados, carregamento e confiabilidade (2026-10-18)
 
