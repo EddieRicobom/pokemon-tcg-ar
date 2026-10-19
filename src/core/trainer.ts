@@ -4,6 +4,8 @@
  * O dia é passado de fora (`YYYY-MM-DD`, no fuso do aparelho), então os testes não dependem do relógio.
  */
 
+import { SURVIVOR_OBJECTIVE_IDS } from './survivor-objectives';
+
 export const TRAINER_VERSION = 1;
 
 // ----------------------------------------------------------------------------- XP e nível
@@ -466,7 +468,7 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
       torre.runIds = [...torre.runIds, event.runId].slice(-100);
       torre.recentRuns = [...torre.recentRuns, { id: event.runId, day, survivedMs: Math.max(0, Math.floor(event.survivedMs)), wave, kills, level, infinite: event.infinite === true, cleared: event.clearedTorre }].slice(-30);
     }
-    const objectiveIds = new Set(['tempo-1m', 'nivel-5', 'dois-golpes']);
+    const objectiveIds = new Set<string>(SURVIVOR_OBJECTIVE_IDS);
     torre.completedObjectives = [...new Set([...torre.completedObjectives, ...(event.completedObjectives ?? []).filter((id) => objectiveIds.has(id))])].slice(-40);
     if (event.clearedTorre) {
       torre.cleared += 1;
@@ -559,7 +561,7 @@ export function normalizeTrainer(raw: unknown): TrainerState {
       bestMs: num(r.torre?.bestMs), bestClearMs: num(r.torre?.bestClearMs), trainersBeaten: num(r.torre?.trainersBeaten), bossesBeaten: num(r.torre?.bossesBeaten), cleared: num(r.torre?.cleared), infiniteUnlocked: r.torre?.infiniteUnlocked === true, lastClearBonusDay: typeof r.torre?.lastClearBonusDay === 'string' ? r.torre.lastClearBonusDay : '', lastInfinite: r.torre?.lastInfinite === true,
       runs: num(r.torre?.runs) || (num(r.torre?.bestMs) > 0 ? 1 : 0), bestWave: num(r.torre?.bestWave), bestLevel: num(r.torre?.bestLevel), runIds: strs(r.torre?.runIds).slice(-100),
       recentRuns: Array.isArray(r.torre?.recentRuns) ? r.torre.recentRuns.filter((run): run is SurvivorRunRecord => !!run && typeof run === 'object' && typeof run.id === 'string' && typeof run.day === 'string').slice(-30).map((run) => ({ id: run.id.slice(0, 80), day: run.day.slice(0, 12), survivedMs: num(run.survivedMs), wave: num(run.wave), kills: num(run.kills), level: num(run.level), infinite: run.infinite === true, cleared: run.cleared === true })) : [],
-      completedObjectives: strs(r.torre?.completedObjectives).filter((id) => ['tempo-1m', 'nivel-5', 'dois-golpes'].includes(id)).slice(-40),
+      completedObjectives: strs(r.torre?.completedObjectives).filter((id) => SURVIVOR_OBJECTIVE_IDS.includes(id as (typeof SURVIVOR_OBJECTIVE_IDS)[number])).slice(-40),
     },
     achievements,
   };

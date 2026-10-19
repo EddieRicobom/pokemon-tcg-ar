@@ -166,6 +166,8 @@ export interface SurvivorUpgradeOption {
 
 export interface SurvivorState {
   rng: Rng;
+  /** Semente original desta corrida, usada também para objetivos determinísticos. */
+  runSeed: number;
   /** Aparência por nascimento; não deve consumir o RNG de combate. */
   enemyDexId: ((enemy: Readonly<SurvivorEnemy>, elapsedMs: number) => number) | null;
   elapsedMs: number;
@@ -456,6 +458,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
   };
   return {
     rng: seededRng(seed),
+    runSeed: Math.floor(seed) >>> 0,
     enemyDexId: options.enemyDexId ?? null,
     elapsedMs: 0,
     player,

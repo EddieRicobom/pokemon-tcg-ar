@@ -782,10 +782,12 @@ const typeChoice = ref<PickOption | null>(null);
 const infiniteWanted = ref(false);
 const torre = computed(() => trainer.value.torre);
 const rerollLimit = computed(() => survivorRerollLimit(torre.value.completedObjectives));
+const recordedObjectiveCount = computed(() => new Set(torre.value.completedObjectives).size);
 const nextTowerGoal = computed(() => {
   if (!torre.value.infiniteUnlocked) return 'Próximo marco: derrote o chefão final aos 20 min para abrir o modo infinito.';
   if (torre.value.trainersBeaten < 10) return `Próximo marco: derrote ${10 - torre.value.trainersBeaten} treinador(es) para a conquista Mestre da Torre.`;
   if (torre.value.bossesBeaten < 3) return `Próximo marco: derrote ${3 - torre.value.bossesBeaten} chefão(ões) para Caçador do infinito.`;
+  if (recordedObjectiveCount.value < 3) return `Próximo marco: conclua ${3 - recordedObjectiveCount.value} desafio(s) opcional(is) distinto(s) em corridas encerradas para liberar outra troca de sorteio.`;
   return `Registro: ${torre.value.runs} corridas concluídas · melhor onda ${torre.value.bestWave} · nível ${torre.value.bestLevel}.`;
 });
 function openTypeChoice(opt: PickOption): void { typeChoice.value = opt; }
@@ -960,7 +962,8 @@ onBeforeUnmount(() => {
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
             <p class="note" role="status">{{ nextTowerGoal }}</p>
-            <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · {{ torre.completedObjectives.length }} objetivo(s) registrados.</p>
+            <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
+            <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
              <p class="note">3 Pokémon sorteados da sua caixa. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
             <p class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
             <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
@@ -993,7 +996,7 @@ onBeforeUnmount(() => {
                </div>
             </div>
              <button type="button" class="link survivor-reroll" :disabled="rerollsUsed >= rerollLimit || pickBusy" @click="rerollPicker">🔄 Sortear novamente <small>{{ Math.max(0, rerollLimit - rerollsUsed) }} de {{ rerollLimit }} troca(s) grátis nesta tentativa</small></button>
-            <p v-if="rerollLimit === 1" class="note">Conclua os 3 desafios opcionais em corridas encerradas para liberar uma segunda troca de sorteio nas próximas tentativas.</p>
+            <p v-if="rerollLimit === 1" class="note">Conclua 3 desafios distintos em corridas encerradas para liberar uma segunda troca de sorteio nas próximas tentativas.</p>
             <p v-else class="note">📜 Caderno de campo completo: a segunda troca de sorteio foi liberada pelos seus três desafios concluídos.</p>
             <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
           </div>
