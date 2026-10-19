@@ -303,6 +303,22 @@ describe('golpes por tipo', () => {
     expect(pushed.x).toBeGreaterThan(water.player.x + 60);
   });
 
+  it('Água marca o alvo e o próximo golpe Elétrico consome a sinergia', () => {
+    const water = quiet(createSurvivorState(1, { kindCount: 1, ...as('water', 'aura') }));
+    const electric = as('electric', 'aura');
+    const target = dummy(1, water.player.x + 30, water.player.y);
+    water.player.attackRadius = 100;
+    water.player.attackDamage = 100;
+    water.enemies.push(target);
+    stepSurvivor(water, { dx: 0, dy: 0 }, 16);
+    expect(target.wetMs).toBeGreaterThan(0);
+    water.player.move = electric.move;
+    water.player.attackTimerMs = 0;
+    stepSurvivor(water, { dx: 0, dy: 0 }, 16);
+    expect(target.hp).toBeLessThan(980);
+    expect(target.wetMs).toBe(0);
+  });
+
   it('os upgrades sorteados combinam com o golpe e falam dele', () => {
     const aura = as('grass', 'aura').move;
     for (let seed = 1; seed < 30; seed++) {

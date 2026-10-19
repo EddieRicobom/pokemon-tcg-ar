@@ -422,6 +422,8 @@ function drawEnemy(e: SurvivorEnemy): void {
   if (e.burnMs) marks.push(state.value?.player.move.color ?? '#ff7a2f');
   if (e.slowMs) marks.push('#9fe8ff');
   if (e.stunMs) marks.push('#ffe23d');
+  if (e.wetMs) marks.push('#5bc0ff');
+  if (e.seededMs) marks.push('#5ccf5c');
   marks.forEach((color, i) => {
     ctx!.fillStyle = color;
     ctx!.beginPath();

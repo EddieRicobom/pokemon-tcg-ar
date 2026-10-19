@@ -10,6 +10,7 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 - As zonas têm marcação visual no canvas e nome no HUD; as outras seis regiões continuam decorativas até receberem regras próprias.
 - O motor calcula os efeitos fora da interface, mantém a arena sem bloqueios e ganhou testes de integração para movimento e dano ambiental.
 - A Torre ganhou pausa explícita: relógio, inimigos, projéteis e efeitos ficam congelados até a pessoa tocar em “Retomar”.
+- Sinergias elementais limitadas passaram a reconhecer Água + Elétrico, Fogo + Planta, Gelo + Água e Terra + Elétrico, com marcadores temporários, multiplicadores controlados e consumo sem recursão.
 
 ### Treinadores animados, carregamento e confiabilidade (2026-10-18)
 
