@@ -17,7 +17,7 @@ jobs:
   checks:
     name: Tipos, testes e build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
     env:
       BASE_PATH: /${{ github.event.repository.name }}/
     steps:
@@ -30,6 +30,11 @@ jobs:
 
       - name: Instalar dependências
         run: npm ci
+
+      - name: Incorporar sprites PokéAPI
+        run: npm run sync:sprites
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Verificar tipos
         run: npm run typecheck
@@ -45,3 +50,5 @@ jobs:
 
       - name: Conferir o build (base path, Service Worker, OCR)
         run: node scripts/verify-dist.mjs
+        env:
+          REQUIRE_SPRITE_PACK: '1'
