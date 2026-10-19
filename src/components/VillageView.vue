@@ -20,6 +20,7 @@ import { minimapPixels, minimapTileAt } from '../village/minimap';
 import { loadTrainerAtlas } from '../village/trainer-atlas';
 import { recordEvent, trainer } from '../app/trainer-store';
 import { claimPrizes } from '../core/village/rewards';
+import { ensureModeStories } from '../core/village/mode-stories';
 import BackpackView from './BackpackView.vue';
 import MinigameHub from './MinigameHub.vue';
 import MinigameEquilibrio from './MinigameEquilibrio.vue';
@@ -384,9 +385,9 @@ function syncTrainer(): void {
   const best = Math.max(0, ...Object.values(state.friends).map((f) => friendLevel(f.points).level));
   if (best > trainer.value.bestFriend) recordEvent({ type: 'village', action: 'friend', level: best });
   const got = claimPrizes(state, trainer.value.achievements);
-  if (!got) return;
-  changed();
-  say(`🏅 ${got.note}`, 5200);
+  const storyAdded = ensureModeStories(state, trainer.value.achievements);
+  if (got || storyAdded) changed();
+  if (got) say(`🏅 ${got.note}`, 5200);
 }
 
 // ---- Digital Pokémon: presente inicial, Fonte (invocação por moedas), evolução — ver `core/village/digital.ts`.
@@ -1020,7 +1021,8 @@ function openRequestBoard(): void {
       earnCoins(result.coins);
       if (result.targetId) game?.bubble(result.targetId, '🎁');
       const story = storyRequests.find((request) => request.id === id);
-      if (story) say('🔎 Pedido da descoberta concluído. Uma nova pista pode ser encontrada na Vila.');
+      const modeStory = story?.id.startsWith('modo:') === true;
+      if (story && !modeStory) say('🔎 Pedido da descoberta concluído. Uma nova pista pode ser encontrada na Vila.');
       if (state.requests.items.every((request) => request.done)) {
         state.town.level = Math.max(state.town.level, Math.min(99, level.value + 1));
         say('🏘️ Todos os pedidos de hoje foram atendidos: a Vila subiu um nível.');
@@ -1028,7 +1030,8 @@ function openRequestBoard(): void {
       changed();
       playSound('success');
     }
-    say(result.message);
+    const completedStory = storyRequests.find((request) => request.id === id);
+    say(completedStory?.id.startsWith('modo:') ? `📚 História opcional concluída no Museu. ${result.message}` : result.message);
     openRequestBoard();
   };
   const festival = weeklyEvent.value ?? weeklyEventFor(state, today);

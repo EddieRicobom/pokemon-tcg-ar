@@ -47,6 +47,10 @@ describe('prêmios das conquistas', () => {
     const pins = claimPrizes(state, { 'pins-perfeito': '2026-10-02' });
     expect(pins?.items).toContain('Troféu dos Pins');
     expect(pins?.note).toContain('100 pontos em uma partida concluída');
+    expect(pins?.note).toContain('abre uma história opcional no Museu');
+    const arena = claimPrizes(state, { 'liga-insignia': '2026-10-03' });
+    expect(arena?.note).toContain('credencial da Arena');
+    expect(arena?.note).toContain('história opcional no Museu');
   });
 
   it('conquistas antigas pagam todas de uma vez, e uma nova paga depois', () => {
