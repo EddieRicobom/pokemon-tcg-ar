@@ -258,6 +258,7 @@ const ready = ref(false);
 const failed = ref(false);
 const avatarName = ref('');
 const state = ref<SurvivorState | null>(null);
+const paused = ref(false);
 const minimap = ref({ markers: [] as ReturnType<typeof survivorMinimapSnapshot>['markers'], viewport: { x: 0, y: 0, width: ARENA_W, height: ARENA_H } });
 const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
@@ -338,7 +339,7 @@ function onKey(e: KeyboardEvent): void {
 }
 
 function joyDown(e: PointerEvent): void {
-  if (joystick.active || !ready.value || summary.value || pickOptions.value) return;
+  if (joystick.active || paused.value || !ready.value || summary.value || pickOptions.value) return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
   if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
   unlockSound();
@@ -584,6 +585,10 @@ function loop(ts: number): void {
   const dt = Math.min(48, ts - lastTs || 16);
   lastTs = ts;
   if (document.hidden || !state.value) return;
+  if (paused.value) {
+    draw();
+    return;
+  }
   animMs += dt;
   const s = state.value;
   if (!s.over && !s.pendingUpgrade && !evolving.value) {
@@ -624,6 +629,17 @@ function chooseUpgrade(id: string): void {
   playSound('success');
   pendingUpgrade.value = null;
   for (const ev of events) if (ev.type === 'evolve') void evolveTo(ev.dexId, ev.name);
+}
+
+function togglePause(): void {
+  if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value) return;
+  paused.value = !paused.value;
+  joystick.active = false;
+  joystick.pointerId = null;
+  joystick.dx = 0;
+  joystick.dy = 0;
+  lastTs = performance.now();
+  say(paused.value ? 'Jogo pausado.' : 'Jogo retomado.', 1600);
 }
 
 /** Troca o sprite pela nova forma; o jogo espera (com o brilho) até carregar. Sem sprite, a forma neutra no lugar. */
@@ -723,6 +739,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     pickOptions.value = null;
     summary.value = null;
     pendingUpgrade.value = null;
+    paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
     state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, dexId, evolutions: evolutionsFor, infinite });
     ready.value = true;
@@ -861,6 +878,7 @@ onBeforeUnmount(() => {
             <span class="chip">{{ survivorRegionLabel(state.elapsedMs) }}</span>
              <span v-if="survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
+             <button v-if="!summary && !pendingUpgrade && !evolving" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
             <button type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
             <button type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário regional: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
           </div>
@@ -891,6 +909,14 @@ onBeforeUnmount(() => {
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
         <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint">Arraste em qualquer lugar para andar</p>
+
+        <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
+          <div class="card survivor-pause">
+            <h2>Jogo pausado</h2>
+            <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
+            <button type="button" class="primary" @pointerdown.stop @click.stop="togglePause">▶ Retomar</button>
+          </div>
+        </div>
 
         <div v-if="pickOptions" class="survivor-overlay" role="dialog" aria-label="Escolha quem joga">
           <div v-if="typeChoice" class="card survivor-pick survivor-type-choice">
