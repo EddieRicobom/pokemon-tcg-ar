@@ -41,6 +41,7 @@ import type { SoundCue } from '../box/sound-recipes';
 import { normalizeSurvivorFavorites, selectSurvivorCandidates } from '../core/survivor-selection';
 import { dayKey } from '../core/trainer';
 import { survivorMinimapSnapshot } from '../core/survivor-minimap';
+import { survivorObjectives } from '../core/survivor-objectives';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -257,6 +258,7 @@ const failed = ref(false);
 const avatarName = ref('');
 const state = ref<SurvivorState | null>(null);
 const minimap = ref({ markers: [] as ReturnType<typeof survivorMinimapSnapshot>['markers'], viewport: { x: 0, y: 0, width: ARENA_W, height: ARENA_H } });
+const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
 const summary = ref<SurvivorSummary | null>(null);
 /** Tela de escolha antes de cada corrida: 3 Pokémon aleatórios da caixa do jogador, pra ele dizer quem joga
@@ -568,6 +570,7 @@ function updateMinimap(s: SurvivorState): void {
   if (animMs - lastMinimapMs < 120) return;
   lastMinimapMs = animMs;
   minimap.value = survivorMinimapSnapshot(s, { width: ARENA_W, height: ARENA_H }, { width: view.w, height: view.h });
+  objectives.value = survivorObjectives(s);
 }
 
 function loop(ts: number): void {
@@ -869,6 +872,15 @@ onBeforeUnmount(() => {
             :class="`kind-${marker.kind}`"
             :style="{ left: `${(marker.x / ARENA_W) * 100}%`, top: `${(marker.y / ARENA_H) * 100}%` }"
           ></span>
+        </div>
+
+        <div v-if="ready && state && objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">
+          <span class="survivor-objectives-title">Objetivos</span>
+          <span v-for="objective in objectives" :key="objective.id" class="survivor-objective" :class="{ complete: objective.complete }">
+            <b>{{ objective.complete ? '✓' : '○' }}</b>
+            <span>{{ objective.title }}</span>
+            <small v-if="!objective.complete">{{ objective.unit === 's' ? Math.floor(objective.progress / 1000) : objective.progress }} / {{ objective.unit === 's' ? Math.floor(objective.target / 1000) : objective.target }}{{ objective.unit === 's' ? 's' : objective.unit }}</small>
+          </span>
         </div>
 
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
