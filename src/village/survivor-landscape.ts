@@ -88,19 +88,36 @@ export function drawSurvivorBiomeOverlay(ctx: CanvasRenderingContext2D, elapsedM
   const draw = (biome: typeof active, alpha: number): void => {
     if (!biome || alpha <= 0) return;
     for (const zone of biome.zones) {
-      const color = zone.kind === 'folhagem' ? '#245d3a' : zone.kind === 'poça' ? '#2e8db8' : '#d9f3ff';
+      const color = zone.kind === 'folhagem' ? '#245d3a'
+        : zone.kind === 'poça' ? '#2e8db8'
+          : zone.kind === 'neve' ? '#d9f3ff'
+            : zone.kind === 'vento' ? '#b5a85f'
+              : zone.kind === 'pedra' ? '#706b62'
+                : zone.kind === 'flores' ? '#9c688f'
+                  : zone.kind === 'areia' ? '#c6a85c'
+                    : zone.kind === 'ruínas' ? '#5d6670'
+                      : '#667d48';
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.fillStyle = color;
       ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
-      ctx.strokeStyle = zone.kind === 'neve' ? '#ffffffcc' : '#ffffff88';
+      ctx.strokeStyle = zone.kind === 'neve' || zone.kind === 'areia' ? '#ffffffcc' : '#ffffff88';
       ctx.lineWidth = 2;
       ctx.setLineDash([8, 6]);
       ctx.strokeRect(zone.x + 2, zone.y + 2, zone.width - 4, zone.height - 4);
       ctx.setLineDash([]);
       ctx.fillStyle = '#ffffffdd';
       ctx.font = '600 13px sans-serif';
-      ctx.fillText(zone.kind === 'folhagem' ? '🌿' : zone.kind === 'poça' ? '💧' : '❄️', zone.x + 9, zone.y + 21);
+      const icon = zone.kind === 'folhagem' ? '🌿'
+        : zone.kind === 'poça' ? '💧'
+          : zone.kind === 'neve' ? '❄️'
+            : zone.kind === 'vento' ? '🍂'
+              : zone.kind === 'pedra' ? '🪨'
+                : zone.kind === 'flores' ? '🌸'
+                  : zone.kind === 'areia' ? '🏖️'
+                    : zone.kind === 'ruínas' ? '🏛️'
+                      : '🫒';
+      ctx.fillText(icon, zone.x + 9, zone.y + 21);
       ctx.fillText(zone.label, zone.x + 31, zone.y + 20);
       ctx.restore();
     }
