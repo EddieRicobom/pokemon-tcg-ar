@@ -450,7 +450,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     xp: 0,
     xpToNext: xpForLevel(1),
     attackDamage: (prof?.damage ?? BALANCE.playerDamage) * preparation.damageMultiplier,
-    attackRange: prof?.range ?? 170,
+    attackRange: (prof?.range ?? 170) * preparation.rangeMultiplier,
     attackCooldownMs: prof?.cooldownMs ?? BALANCE.playerCooldownMs,
     attackTimerMs: 0,
     projectileSpeed: prof?.projectileSpeed ?? 360,
