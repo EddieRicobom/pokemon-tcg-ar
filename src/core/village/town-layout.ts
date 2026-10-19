@@ -23,6 +23,11 @@ export interface Building {
   lot?: number;
 }
 
+/** Borda inferior do bloco livre diante da porta: sprites precisam apoiar no chão, não no topo da calçada. */
+export function buildingGroundY(building: Pick<Building, 'y' | 'h'>): number {
+  return building.y + building.h + 1;
+}
+
 /**
  * O mapa grande (96×72, desde o rework da Vila): a cidade fica no meio, cercada de matas, lago, parque e fazenda.
  * Casas: 5 blocos de largura por 2 de fundo (o desenho do tileset sobe acima disso); a frente olha para baixo, para a

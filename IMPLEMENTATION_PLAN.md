@@ -1,5 +1,12 @@
 # Plano e estado do projeto
 
+## Alinhamento dos prédios e tilesets da Torre (19/10/2026)
+
+- Fachadas, casa, fonte e mercado da Vila agora apoiam na borda inferior da calçada; o mapa mantém livre o bloco de interação da porta. Teste verifica o ponto de apoio e o piso sob ele.
+- Câmera da Torre aproximada em 1,5× (metade da área anterior no lado curto) sem passar dos limites da arena.
+- As nove regiões do Survival usam recortes próprios de chão, trilha e detalhes do atlas; a transição visual acompanha a mesma mudança temporal da região, sem depender do RNG da corrida. Fallback desenhado permanece disponível se o atlas não carregar.
+- Typecheck, testes, build com `BASE_PATH` e `verify-dist` concluídos. A leitura visual final em celular real ainda precisa de confirmação.
+
 ## Survival e interface compartilhada (19/10/2026)
 
 - O Survival desacelera a chegada e a escalada de inimigos, tem uma janela maior de recuperação após acertos e aumenta o dano de aura, órbita e cone para compensar o combate próximo. Ajustes centralizados em `BALANCE` e `CATEGORY_DAMAGE_FACTOR`; teste compara DPS teórico com stats idênticos, sem alegar equilíbrio comprovado.

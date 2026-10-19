@@ -6,7 +6,7 @@ import {
   assignHomes, cafeVisit, CAFE_PRICE, collectMail, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, homeRoof, homeValue, isAsleep, isDeepSleep, knockDoor, KNOCK_STAY_UP_MS, knockOpenChance, nextUnlock, paintRoof, ROOFS, roofIndex,
   sanitizeTown, toggleDecor, townStage, unlockedBetween, unlockedLots, upgradeHome,
 } from './town';
-import { CIVIC, DECOR, LOTS, TOWN, TOWN_STAGES } from './town-layout';
+import { buildingGroundY, CIVIC, DECOR, LOTS, TOWN, TOWN_STAGES } from './town-layout';
 
 const map = generateVillage(20261014);
 const fresh = () => emptyVillage(20261014, map.spawn);
@@ -56,6 +56,17 @@ describe('a cidade no mapa', () => {
       expect(isSolidTile(tileAt(map, b.door.x, b.door.y)), `${b.id}: porta bloqueada`).toBe(false);
       expect(ok.has(`${b.door.x},${b.door.y}`), `${b.id}: sem caminho`).toBe(true);
     }
+  });
+
+  it('ancora cada prédio na borda inferior da calçada e deixa o bloco do pé sobre o chão', () => {
+    for (const b of map.buildings) {
+      const baseY = buildingGroundY(b);
+      expect(baseY).toBe(b.door.y + 1);
+      expect(['path', 'plaza']).toContain(tileAt(map, b.door.x, baseY));
+    }
+    const shopBaseY = map.shop.y + map.shop.h + 1;
+    expect(['path', 'plaza']).toContain(tileAt(map, map.shop.x + 1, shopBaseY));
+    expect(['path', 'plaza']).toContain(tileAt(map, map.plot.x + 2, map.plot.y + map.plot.h + 1));
   });
 
   it('a loja, a casa do jogador, o lago e a praça seguem alcançáveis', () => {
