@@ -17,9 +17,17 @@ import { pathStep } from '../core/village/pathing';
 import type { Tile, VillageMap } from '../core/village/map';
 import { FX_EMOJI } from '../core/village/social-state';
 import type { Fx } from '../core/village/social-state';
+import type { CommunityActivityRecord } from '../core/village/community';
 import { metallicTint, sheenAt, sheenOffset } from '../core/metallic';
 import { speciesTiles } from '../core/size-scale';
 import { villageScale } from '../core/village/camera';
+
+const COMMUNITY_ACTIVITY_NAMES: Readonly<Record<CommunityActivityRecord['activity'], string>> = {
+  agricultura: 'agricultura', pesca: 'pesca', culinaria: 'culinária', manutencao: 'manutenção', construcao: 'construção',
+  transporte: 'transporte', exploracao: 'exploração', pesquisa: 'pesquisa', jardinagem: 'jardinagem', vigilancia: 'vigilância',
+  comercio: 'comércio', protecao: 'proteção', conservacao: 'conservação', reciclagem: 'reciclagem', acolhimento: 'acolhimento',
+  brincadeira: 'brincadeira', descanso: 'descanso',
+};
 import { stepOrder } from '../core/village/joystick';
 import type { StickDirs } from '../core/village/joystick';
 import { createWeather, stepWeather, WEATHER_KINDS } from '../core/weather';
@@ -270,6 +278,8 @@ export class VillageGame {
   private nextBenchChat = 0;
   /** Avisos sobre o telhado de uma casa (por terreno), como o 😴 de quem não quer abrir a porta. */
   private readonly houseTags = new Map<number, { emoji: string; until: number }>();
+  /** Atividade concluída neste ciclo: caminhada curta até o local e identificação na cena. */
+  private readonly communityWork = new Map<string, { activity: CommunityActivityRecord['activity']; target: { x: number; y: number }; until: number }>();
   private nextSleepCheck = 0;
   /** Quem está esperando você para conversar (o ❗): fica parado onde está. */
   private waiting: string | null = null;
@@ -442,6 +452,34 @@ export class VillageGame {
   /** Faz o Pokémon esperar você parado (ou solta, com `null`). */
   setWaiting(id: string | null): void {
     this.waiting = id;
+  }
+
+  /** Mostra atividades concluídas no ciclo de hoje; tarefas antigas de catch-up ficam só no histórico. */
+  showCommunityActivities(activities: readonly CommunityActivityRecord[], day: string): void {
+    if (day !== this.state.community.lastCycleDay) return;
+    const until = performance.now() + 9_000;
+    const reserved = new Set<string>();
+    for (const task of activities) {
+      if (!this.villagers.has(task.residentId) || this.state.follower === task.residentId || this.waiting === task.residentId || this.sceneBusy(task.residentId)) continue;
+      const worksite = task.x !== undefined && task.y !== undefined
+        ? { x: task.x, y: task.y }
+        : task.activity === 'acolhimento' || task.activity === 'brincadeira' ? { x: 47, y: 40 }
+          : task.activity === 'culinaria' ? { x: 66, y: 24 }
+            : task.activity === 'pesca' ? { x: 76, y: 17 }
+              : task.activity === 'pesquisa' || task.activity === 'vigilancia' ? { x: 56, y: 24 }
+                : task.activity === 'exploracao' ? { x: 17, y: 63 }
+                  : task.activity === 'descanso' ? this.homeDoor(task.residentId) ?? this.villagerZones.get(task.residentId) ?? this.player
+                    : this.villagerZones.get(task.residentId) ?? this.player;
+      const candidates = task.x !== undefined && task.y !== undefined
+        ? [{ x: worksite.x, y: worksite.y - 1 }, { x: worksite.x + 1, y: worksite.y }, { x: worksite.x, y: worksite.y + 1 }, { x: worksite.x - 1, y: worksite.y }]
+        : [worksite];
+      const target = candidates.find((spot) => isWalkable(this.map, spot.x, spot.y) && !reserved.has(`${spot.x},${spot.y}`) && !this.occupied(spot.x, spot.y, task.residentId))
+        ?? findFree(this.map, worksite.x, worksite.y, (x, y) => reserved.has(`${x},${y}`) || this.occupied(x, y, task.residentId), this.rng);
+      if (!target) continue;
+      reserved.add(`${target.x},${target.y}`);
+      this.communityWork.set(task.residentId, { activity: task.activity, target, until });
+      this.bubble(task.residentId, task.icon, 5_000);
+    }
   }
 
   /** Troca os nomes mostrados (apelidos dados ou tirados) sem recarregar nada. */
@@ -1030,6 +1068,14 @@ export class VillageGame {
         stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, target);
         continue;
       }
+      const work = this.communityWork.get(id);
+      if (work && now < work.until) {
+        if (Math.abs(work.target.x - w.x) + Math.abs(work.target.y - w.y) > 1) {
+          stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, work.target);
+        }
+        continue;
+      }
+      if (work) this.communityWork.delete(id);
       const called = now < this.calledUntil ? this.called.get(id) : undefined;
       const zone = this.villagerZones.get(id);
       const follow = this.state.follower === id
@@ -1639,7 +1685,9 @@ export class VillageGame {
           ctx.restore();
           if (near(w) && !this.scene) {
             const hearts = Math.round(friendOf(this.state, id).points / 20);
-            overlays.push(() => this.drawLabel(cx, sy(pos.y + 1) + 1 * scale, `${this.names.get(id) ?? ''}${seated ? ' · descansando' : ''} ${'♥'.repeat(hearts)}${'♡'.repeat(5 - hearts)}`));
+            const working = this.communityWork.get(id);
+            const activityLabel = working && now < working.until ? ` · ${COMMUNITY_ACTIVITY_NAMES[working.activity]}` : '';
+            overlays.push(() => this.drawLabel(cx, sy(pos.y + 1) + 1 * scale, `${this.names.get(id) ?? ''}${seated ? ' · descansando' : activityLabel} ${'♥'.repeat(hearts)}${'♡'.repeat(5 - hearts)}`));
           }
           overlays.push(() => this.drawBubble(id, cx, base - h, now));
         },

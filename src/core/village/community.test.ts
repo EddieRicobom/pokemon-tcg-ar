@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { add, emptyVillage, normalizeVillage } from './life';
-import { advanceCommunity, communityForecast, COMMUNITY_RULES } from './community';
+import { advanceCommunity, communityForecast, COMMUNITY_RULES, normalizeCommunity } from './community';
 
 const fresh = () => emptyVillage(9, { x: 10, y: 10 });
 
@@ -46,6 +46,57 @@ describe('economia diária da comunidade', () => {
       consumed: [{ item: 'oran', qty: 1 }, { item: 'suco-oran', qty: 1 }],
       foodShortage: 0,
     });
+  });
+
+  it('morador com afinidade pela horta rega um cultivo real e a chuva segue o relógio do ciclo', () => {
+    const state = fresh();
+    state.community.lastCycleDay = '2026-10-18';
+    state.coins = 100;
+    state.crops.push({ x: 80, y: 49, seed: 'sem-tomate', stage: 0, wateredAt: null });
+
+    const result = advanceCommunity(state, '2026-10-19', [{ id: 'bulbasaur', types: ['grass'] }]).cycles[0]!;
+
+    expect(state.crops[0]?.wateredAt).toBe(Date.parse('2026-10-19T12:00:00'));
+    expect(result.activities).toMatchObject([{ residentId: 'bulbasaur', activity: 'agricultura', icon: '🌱', x: 80, y: 49, result: expect.stringContaining('Regou') }]);
+    expect(state.community.residents.bulbasaur?.energy).toBe(COMMUNITY_RULES.initialEnergy - COMMUNITY_RULES.taskEnergyCost);
+  });
+
+  it('colhe apenas cultivos maduros uma vez e registra produção verificável', () => {
+    const state = fresh();
+    state.community.lastCycleDay = '2026-10-18';
+    state.coins = 100;
+    state.crops.push({ x: 81, y: 49, seed: 'sem-tomate', stage: 3, wateredAt: null });
+
+    const cycle = advanceCommunity(state, '2026-10-19', [{ id: 'bulbasaur', types: ['grass'] }]).cycles[0]!;
+    const activity = cycle.activities[0]!;
+
+    expect(state.crops).toEqual([]);
+    expect(activity).toMatchObject({ activity: 'agricultura', item: 'tomate', qty: expect.any(Number), x: 81, y: 49 });
+    const consumed = cycle.consumed.find((entry) => entry.item === 'tomate')?.qty ?? 0;
+    expect(consumed).toBeGreaterThan(0);
+    expect(state.inventory.tomate ?? 0).toBe((activity.qty ?? 0) - consumed);
+    advanceCommunity(state, '2026-10-19', [{ id: 'bulbasaur', types: ['grass'] }]);
+    expect(state.inventory.tomate ?? 0).toBe((activity.qty ?? 0) - consumed);
+  });
+
+  it('transforma ingredientes em uma refeição real e limita a pesca comunitária a um peixe por dia', () => {
+    const cooked = fresh();
+    cooked.community.lastCycleDay = '2026-10-18';
+    cooked.coins = 100;
+    add(cooked, 'oran', 2);
+    const cookCycle = advanceCommunity(cooked, '2026-10-19', [{ id: 'charmander', types: ['fire'] }]).cycles[0]!;
+    expect(cookCycle.activities[0]).toMatchObject({ activity: 'culinaria', item: 'suco-oran', qty: 1 });
+    expect(cookCycle.consumed).toEqual([{ item: 'suco-oran', qty: 1 }]);
+    expect(cooked.inventory.oran).toBeUndefined();
+    expect(cooked.inventory['suco-oran']).toBeUndefined();
+
+    const fishing = fresh();
+    fishing.community.lastCycleDay = '2026-10-18';
+    fishing.coins = 300;
+    const anglers = [{ id: 'vaporeon', types: ['water'] as const }, { id: 'lapras', types: ['water'] as const }];
+    const fishingCycle = advanceCommunity(fishing, '2026-10-19', anglers).cycles[0]!;
+    expect(fishingCycle.activities.filter((entry) => entry.activity === 'pesca')).toHaveLength(1);
+    expect(fishingCycle.activities.filter((entry) => entry.item === 'peixe').reduce((sum, entry) => sum + (entry.qty ?? 0), 0)).toBe(1);
   });
 
   it('escala até 50 residentes e não cobra população zero', () => {
@@ -106,5 +157,31 @@ describe('economia diária da comunidade', () => {
     expect(migrated.inventory.oran).toBe(3);
     expect(migrated.friends.pikachu?.points).toBe(41);
     expect(migrated.coins).toBe(state.coins);
+  });
+
+  it('normaliza e limita energia, interesses e registros ocupacionais do save', () => {
+    const community = normalizeCommunity({
+      residents: {
+        pikachu: { energy: 0, interests: ['agricultura', 'inventada'], experience: { agricultura: 3, inventada: 99 }, recentActivity: 'agricultura', rememberedActivity: 'inventada', completedActivities: 5 },
+      },
+      history: [{ day: '2026-10-19', residents: 1, activities: [{ residentId: 'pikachu', activity: 'agricultura', icon: '🌱', result: 'Regou um cultivo.' }] }],
+    });
+    expect(community.residents.pikachu).toMatchObject({ energy: 0, interests: ['agricultura'], experience: { agricultura: 3 }, recentActivity: 'agricultura', rememberedActivity: null, completedActivities: 5 });
+    expect(community.history[0]?.activities).toMatchObject([{ residentId: 'pikachu', activity: 'agricultura', result: 'Regou um cultivo.' }]);
+    expect(community.history[0]?.activities).not.toContainEqual(expect.objectContaining({ residentId: 'inventado' }));
+  });
+
+  it('preserva o aprendizado de um morador enquanto ele fica temporariamente fora da Vila', () => {
+    const state = fresh();
+    state.community.lastCycleDay = '2026-10-18';
+    state.coins = 100;
+    advanceCommunity(state, '2026-10-19', [{ id: 'bulbasaur', types: ['grass'] }]);
+    const progress = structuredClone(state.community.residents.bulbasaur);
+
+    advanceCommunity(state, '2026-10-20', []);
+    expect(state.community.residents.bulbasaur).toEqual(progress);
+    advanceCommunity(state, '2026-10-21', [{ id: 'bulbasaur', types: ['grass'] }]);
+
+    expect(state.community.residents.bulbasaur?.completedActivities).toBe((progress?.completedActivities ?? 0) + 1);
   });
 });
