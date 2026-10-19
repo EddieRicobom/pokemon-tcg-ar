@@ -11,6 +11,7 @@ import { itemDef } from '../core/village/catalog';
 import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/village/life';
 import type { FurnitureId, VillageState } from '../core/village/life';
 import { homeDecor, homeLevel, homeOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
+import { buildingGroundY } from '../core/village/town-layout';
 import type { Building, BuildingKind } from '../core/village/town-layout';
 import { buildingAt, findFree, isSolidTile, isWalkable, tileAt } from '../core/village/map';
 import { pathStep } from '../core/village/pathing';
@@ -1414,46 +1415,48 @@ export class VillageGame {
       }
     }
     const plot = this.map.plot;
+    const homeBase = sy(plot.y + plot.h + 1);
     const houseId = this.state.house >= 3 ? 'house-brick' : this.state.house === 2 ? 'barn' : 'gazebo';
     const houseArt = atlas && this.state.house > 0 ? this.art(houseId) : null;
     if (houseArt) {
       list.push({
-        y: plot.y + plot.h,
+        y: plot.y + plot.h + 1,
         draw: () => {
-          shadow(sx(plot.x + plot.w / 2), sy(plot.y + plot.h) - 2 * scale, 34 * scale, 4 * scale, 0.2);
-          const at = stand(houseArt, sx(plot.x + plot.w / 2), sy(plot.y + plot.h));
+          shadow(sx(plot.x + plot.w / 2), homeBase - 2 * scale, 34 * scale, 4 * scale, 0.2);
+          const at = stand(houseArt, sx(plot.x + plot.w / 2), homeBase);
           if (night) lightUp(houseId, houseId, at);
         },
       });
     } else if (this.state.house > 0) {
       const img = this.sprite(`house${this.state.house}`, () => paintHouse(this.state.house));
       list.push({
-        y: plot.y + plot.h,
+        y: plot.y + plot.h + 1,
         draw: () => {
-          shadow(sx(plot.x + 2), sy(plot.y + plot.h) - 2 * scale, 30 * scale, 4 * scale, 0.2);
-          ctx.drawImage(img, sx(plot.x), sy(plot.y + plot.h - 4), 4 * T, 4 * T);
+          shadow(sx(plot.x + 2), homeBase - 2 * scale, 30 * scale, 4 * scale, 0.2);
+          ctx.drawImage(img, sx(plot.x), homeBase - 4 * T, 4 * T, 4 * T);
         },
       });
     }
     const shop = this.map.shop;
+    const shopBaseY = shop.y + shop.h + 1;
     // A loja tem fachada própria no atlas. Nunca troque o prédio por guarda-sóis: eram só peças decorativas da praça.
     const shopArt = atlas ? this.art('market-store') : null;
     if (shopArt) {
       list.push({
-        y: shop.y + shop.h,
+        y: shopBaseY,
         draw: () => {
-          shadow(sx(shop.x + shop.w / 2), sy(shop.y + shop.h) - 2 * scale, 42 * scale, 4 * scale, 0.2);
-          stand(shopArt, sx(shop.x + shop.w / 2), sy(shop.y + shop.h));
+          shadow(sx(shop.x + shop.w / 2), sy(shopBaseY) - 2 * scale, 42 * scale, 4 * scale, 0.2);
+          stand(shopArt, sx(shop.x + shop.w / 2), sy(shopBaseY));
           this.drawTag(sx(shop.x + shop.w / 2), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
         },
       });
     } else {
     const shopImg = this.sprite('shop', paintShop);
     list.push({
-      y: shop.y + shop.h,
+      y: shopBaseY,
       draw: () => {
-        shadow(sx(shop.x + 1.5), sy(shop.y + shop.h) - 2 * scale, 24 * scale, 3.5 * scale, 0.2);
-        ctx.drawImage(shopImg, sx(shop.x), sy(shop.y + shop.h - 3), 3 * T, 3 * T);
+        shadow(sx(shop.x + 1.5), sy(shopBaseY) - 2 * scale, 24 * scale, 3.5 * scale, 0.2);
+        ctx.drawImage(shopImg, sx(shop.x), sy(shopBaseY) - 3 * T, 3 * T, 3 * T);
         this.drawTag(sx(shop.x + 1.5), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
       },
     });
@@ -1463,13 +1466,14 @@ export class VillageGame {
       if (b.x + b.w < x0 || b.x > x1 || b.y + b.h < y0 || b.y > y1 + 10) continue;
       const open = this.townLevel >= b.unlock;
       const bottom = sy(b.y + b.h);
+      const spriteBase = sy(buildingGroundY(b));
       const left = sx(b.x);
       const mid = sx(b.x + b.w / 2);
       const nearDoor = Math.abs(this.player.x - b.door.x) + Math.abs(this.player.y - b.door.y) <= 4;
       if (b.kind === 'fountain') {
         const f = Math.floor(now / 450) % 2;
         const img = this.sprite(`fonte${f}`, () => paintFountain(f));
-        list.push({ y: b.y + b.h, draw: () => { shadow(mid, bottom - 3 * scale, 14 * scale, 4 * scale, 0.16); ctx.drawImage(img, left, bottom - 40 * scale, 32 * scale, 40 * scale); if (ambientFx) drawFountainFx(ctx, left + 16 * scale, bottom, scale, now); } });
+        list.push({ y: buildingGroundY(b), draw: () => { shadow(mid, spriteBase - 3 * scale, 14 * scale, 4 * scale, 0.16); ctx.drawImage(img, left, spriteBase - 40 * scale, 32 * scale, 40 * scale); if (ambientFx) drawFountainFx(ctx, left + 16 * scale, spriteBase, scale, now); } });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
         continue;
       }
@@ -1518,24 +1522,24 @@ export class VillageGame {
         const sleeping = who.length > 0 && who.every((id2) => this.asleep.has(id2));
         if (img) {
           list.push({
-            y: b.y + b.h,
+            y: buildingGroundY(b),
             draw: () => {
-              shadow(mid, bottom - 2 * scale, 30 * scale, 3.5 * scale, 0.2);
-              const at = stand(img, mid, bottom);
+              shadow(mid, spriteBase - 2 * scale, 30 * scale, 3.5 * scale, 0.2);
+              const at = stand(img, mid, spriteBase);
               if (night && who.length > 0) lightUp(id, key, at, tint);
               // Enfeites da casa (comprados na Vila): jardineira, cerquinha, lampião e caixa de correio.
-              if (planter) ctx.drawImage(planter, left, bottom - 10 * scale, 24 * scale, 13 * scale);
+              if (planter) ctx.drawImage(planter, left, spriteBase - 10 * scale, 24 * scale, 13 * scale);
               if (fenceArt) {
-                ctx.drawImage(fenceArt, 0, 0, 16, 16, left - 8 * scale, bottom - 14 * scale, 16 * scale, 16 * scale);
-                ctx.drawImage(fenceArt, 16, 0, 16, 16, left + b.w * T - 8 * scale, bottom - 14 * scale, 16 * scale, 16 * scale);
+                ctx.drawImage(fenceArt, 0, 0, 16, 16, left - 8 * scale, spriteBase - 14 * scale, 16 * scale, 16 * scale);
+                ctx.drawImage(fenceArt, 16, 0, 16, 16, left + b.w * T - 8 * scale, spriteBase - 14 * scale, 16 * scale, 16 * scale);
               }
               // No vão ao lado da casa (o desenho do tileset ocupa a frente inteira): não tapa janela nem porta.
-              if (lantern) ctx.drawImage(lantern, left + b.w * T, bottom - 2 * T, T, 2 * T);
+              if (lantern) ctx.drawImage(lantern, left + b.w * T, spriteBase - 2 * T, T, 2 * T);
               if (decor & 8) {
                 ctx.fillStyle = '#6a4a28';
-                ctx.fillRect(left + 2 * scale, bottom - 10 * scale, 2 * scale, 10 * scale);
+                ctx.fillRect(left + 2 * scale, spriteBase - 10 * scale, 2 * scale, 10 * scale);
                 ctx.fillStyle = '#3f6fd0';
-                ctx.fillRect(left, bottom - 14 * scale, 6 * scale, 5 * scale);
+                ctx.fillRect(left, spriteBase - 14 * scale, 6 * scale, 5 * scale);
               }
               if (sleeping) this.drawTag(mid, at.y + 10 * scale + Math.sin(now / 600) * scale, '💤');
               const tag = this.houseTags.get(lot);
@@ -1560,19 +1564,19 @@ export class VillageGame {
         const who = [...this.homes].filter(([, l]) => l === lot).map(([id]) => id);
         const sleeping = who.length > 0 && who.every((id) => this.asleep.has(id));
         list.push({
-          y: b.y + b.h,
+            y: buildingGroundY(b),
           draw: () => {
-            shadow(mid, bottom - 2 * scale, 22 * scale, 3.5 * scale, 0.2);
-            ctx.drawImage(img, left, bottom - 48 * scale, 3 * T, 3 * T);
-            if (sleeping) this.drawTag(mid, bottom - 38 * scale + Math.sin(now / 600) * scale, '💤');
+            shadow(mid, spriteBase - 2 * scale, 22 * scale, 3.5 * scale, 0.2);
+            ctx.drawImage(img, left, spriteBase - 48 * scale, 3 * T, 3 * T);
+            if (sleeping) this.drawTag(mid, spriteBase - 38 * scale + Math.sin(now / 600) * scale, '💤');
             const tag = this.houseTags.get(lot);
             if (tag && now > tag.until) this.houseTags.delete(lot);
-            else if (tag) this.drawTag(mid, bottom - 52 * scale - Math.abs(Math.sin(now / 140)) * 3 * scale, tag.emoji);
+            else if (tag) this.drawTag(mid, spriteBase - 52 * scale - Math.abs(Math.sin(now / 140)) * 3 * scale, tag.emoji);
           },
         });
         if (night && who.length > 0) {
-          for (const w of HOME_WINDOWS[lvl]!) homeGlows.push({ x: left + w[0]! * scale, y: bottom - 48 * scale + w[1]! * scale, w: w[2]! * scale, h: w[3]! * scale });
-          if (decor & 4) homeGlows.push({ x: left + HOME_LANTERN.x * scale, y: bottom - 48 * scale + HOME_LANTERN.y * scale, w: 2 * scale, h: 2 * scale, lantern: true });
+          for (const w of HOME_WINDOWS[lvl]!) homeGlows.push({ x: left + w[0]! * scale, y: spriteBase - 48 * scale + w[1]! * scale, w: w[2]! * scale, h: w[3]! * scale });
+          if (decor & 4) homeGlows.push({ x: left + HOME_LANTERN.x * scale, y: spriteBase - 48 * scale + HOME_LANTERN.y * scale, w: 2 * scale, h: 2 * scale, lantern: true });
         }
         if (nearDoor) {
           const text = who.length === 0 ? 'Casa vazia' : `Casa de ${who.map((id) => this.names.get(id) ?? '').join(' e ')}`;
@@ -1585,10 +1589,10 @@ export class VillageGame {
       const civicArt = atlas && civicId ? (CIVIC_DOUBLE.has(civicId) ? this.art(civicId, `${civicId}:2x`, double) : this.art(civicId)) : null;
       if (civicArt && civicId) {
         list.push({
-          y: b.y + b.h,
+          y: buildingGroundY(b),
           draw: () => {
-            shadow(mid, bottom - 2 * scale, wpx / 2 - 2 * scale, 3.5 * scale, 0.2);
-            const at = stand(civicArt, mid, bottom);
+            shadow(mid, spriteBase - 2 * scale, wpx / 2 - 2 * scale, 3.5 * scale, 0.2);
+            const at = stand(civicArt, mid, spriteBase);
             if (night) lightUp(civicId, civicId, at);
             this.drawTag(mid, at.y - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
@@ -1598,11 +1602,11 @@ export class VillageGame {
       }
       const img = this.sprite(b.kind, CIVIC_ART[b.kind] ?? paintMuseum);
       list.push({
-        y: b.y + b.h,
+        y: buildingGroundY(b),
         draw: () => {
-          shadow(mid, bottom - 2 * scale, (wpx / 2 - 2 * scale), 3.5 * scale, 0.2);
-          ctx.drawImage(img, left, bottom - 48 * scale, wpx, 3 * T);
-          this.drawTag(mid, bottom - 50 * scale + Math.sin(now / 350) * scale, emoji);
+          shadow(mid, spriteBase - 2 * scale, (wpx / 2 - 2 * scale), 3.5 * scale, 0.2);
+          ctx.drawImage(img, left, spriteBase - 48 * scale, wpx, 3 * T);
+          this.drawTag(mid, spriteBase - 50 * scale + Math.sin(now / 350) * scale, emoji);
         },
       });
       if (night) homeGlows.push({ x: left + 4 * scale, y: bottom - 20 * scale, w: wpx - 8 * scale, h: 6 * scale });
@@ -1930,7 +1934,7 @@ export class VillageGame {
       }
       if (!houseArt && this.state.house >= 2) {
         const ox = sx(plot.x);
-        const oy = sy(plot.y + plot.h - 4);
+        const oy = sy(plot.y + plot.h + 1 - 4);
         const win = this.state.house >= 3 ? [[11, 38, 10, 9], [43, 38, 10, 9]] : [[12, 40, 8, 7]];
         for (const [wx0, wy0, ww, wh] of win as number[][]) {
           ctx.fillStyle = `rgba(255,214,120,${(light.dark * 1.4).toFixed(3)})`;
@@ -1938,7 +1942,7 @@ export class VillageGame {
           glow(ox + (wx0! + ww! / 2) * (T / 16), oy + (wy0! + wh! / 2) * (T / 16), 2.2 * T, '255,200,110', light.dark * 0.45);
         }
       }
-      glow(sx(shop.x + 1.5), sy(shop.y + shop.h - 1.2), 3 * T, '255,190,120', light.dark * 0.5);
+      glow(sx(shop.x + 1.5), sy(shop.y + shop.h + 1 - 1.2), 3 * T, '255,190,120', light.dark * 0.5);
       for (const l of streetLamps) glow(sx(l.x + 0.5), sy(l.y - 0.3), 2.6 * T, '255,214,120', light.dark * 0.6);
       for (const g of homeGlows) {
         ctx.fillStyle = `rgba(255,214,120,${(light.dark * 1.2).toFixed(3)})`;

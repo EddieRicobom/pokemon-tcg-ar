@@ -42,6 +42,7 @@ import type { SoundCue } from '../box/sound-recipes';
 import { normalizeSurvivorFavorites, selectSurvivorCandidates } from '../core/survivor-selection';
 import { dayKey } from '../core/trainer';
 import { survivorMinimapSnapshot } from '../core/survivor-minimap';
+import { fitSurvivorViewport } from '../core/survivor-camera';
 import { survivorObjectives, survivorRerollLimit, SURVIVOR_OBJECTIVE_DETAILS, SURVIVOR_OBJECTIVE_IDS } from '../core/survivor-objectives';
 import { availableSurvivorPreparations, SURVIVOR_PREPARATIONS } from '../core/survivor-preparations';
 import type { SurvivorPreparationId } from '../core/survivor-preparations';
@@ -80,10 +81,11 @@ const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, parti
 const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string }[] }>();
 
 /**
- * A Torre ocupa a tela inteira: o lado menor da tela mostra `VIEW_SHORT` unidades do jogo e o maior acompanha o formato
- * do aparelho (celular em pé vê mais para cima e para baixo; computador, mais para os lados), sem passar da arena.
+ * A Torre ocupa a tela inteira. O lado menor parte de `VIEW_SHORT` unidades e aproxima 1,5×, mantendo o formato do
+ * aparelho sem desenhar fora da arena.
  */
 const VIEW_SHORT = 360;
+const CAMERA_ZOOM = 1.5;
 const view = reactive({ w: 340, h: 420 });
 const stageEl = ref<HTMLElement | null>(null);
 let resizer: ResizeObserver | null = null;
@@ -93,9 +95,10 @@ function fitView(): void {
   const W = el.clientWidth;
   const H = el.clientHeight;
   if (W <= 0 || H <= 0) return;
-  const k = VIEW_SHORT / Math.min(W, H);
-  view.w = Math.round(Math.min(ARENA_W, W * k));
-  view.h = Math.round(Math.min(ARENA_H, H * k));
+  const fitted = fitSurvivorViewport(W, H, ARENA_W, ARENA_H, VIEW_SHORT, CAMERA_ZOOM);
+  if (fitted.w <= 0 || fitted.h <= 0) return;
+  view.w = fitted.w;
+  view.h = fitted.h;
   // Mudar o tamanho do canvas apaga o contexto: as configurações voltam no próximo quadro (`draw` refaz tudo).
   if (ctx) ctx.imageSmoothingEnabled = false;
 }
@@ -103,6 +106,18 @@ const JOY_MAX = 42;
 const regionScenery = ref(true);
 const minimapEnabled = ref(true);
 const drawLandscape = createSurvivorLandscape(ARENA_W, ARENA_H);
+let landscapeAtlasLoaded = false;
+async function loadLandscapeAtlas(): Promise<void> {
+  if (landscapeAtlasLoaded) return;
+  landscapeAtlasLoaded = true;
+  const image = new Image();
+  image.src = assetUrl('tilesets/vila-atlas.png');
+  await new Promise<void>((resolve) => {
+    image.onload = () => resolve();
+    image.onerror = () => resolve();
+  });
+  if (image.naturalWidth > 0) drawLandscape.setAtlas(image);
+}
 
 interface Sprite {
   frames: HTMLCanvasElement[];
@@ -758,7 +773,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   try {
     avatarName.value = name;
     evolving.value = null;
-    await loadSpriteSpecies();
+    await Promise.all([loadSpriteSpecies(), loadLandscapeAtlas()]);
     const [player] = await Promise.all([
       loadSpriteOrNull(dexId),
       ...REGIONAL_ENEMY_SPRITES.map(async (id) => {
