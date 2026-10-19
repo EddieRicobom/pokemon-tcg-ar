@@ -9,7 +9,8 @@ describe('preparações da Torre', () => {
     expect(availableSurvivorPreparations(['tempo-1m', 'tempo-1m', 'inventado']).map(({ id }) => id)).toEqual(['classica']);
     expect(availableSurvivorPreparations(SURVIVOR_OBJECTIVE_IDS.slice(0, 3)).map(({ id }) => id)).toEqual(['classica', 'passo-leve']);
     expect(availableSurvivorPreparations(SURVIVOR_OBJECTIVE_IDS.slice(0, 6)).map(({ id }) => id)).toEqual(['classica', 'passo-leve', 'mira-calculada']);
-    expect(availableSurvivorPreparations(SURVIVOR_OBJECTIVE_IDS).map(({ id }) => id)).toEqual(['classica', 'passo-leve', 'mira-calculada', 'ima-de-campo']);
+    expect(availableSurvivorPreparations(SURVIVOR_OBJECTIVE_IDS.slice(0, 9)).map(({ id }) => id)).toEqual(['classica', 'passo-leve', 'mira-calculada', 'ima-de-campo']);
+    expect(availableSurvivorPreparations(SURVIVOR_OBJECTIVE_IDS).map(({ id }) => id)).toEqual(['classica', 'passo-leve', 'mira-calculada', 'ima-de-campo', 'mira-longa']);
   });
 
   it('aplica trocas moderadas aos atributos iniciais, sem somar bônus de preparações anteriores', () => {
@@ -18,6 +19,7 @@ describe('preparações da Torre', () => {
     const quick = createSurvivorState(1, { ...options, preparation: 'passo-leve' }).player;
     const aim = createSurvivorState(1, { ...options, preparation: 'mira-calculada' }).player;
     const magnet = createSurvivorState(1, { ...options, preparation: 'ima-de-campo' }).player;
+    const longAim = createSurvivorState(1, { ...options, preparation: 'mira-longa' }).player;
 
     expect(quick.speed).toBeCloseTo(216);
     expect(quick.attackDamage).toBeCloseTo(92);
@@ -26,6 +28,9 @@ describe('preparações da Torre', () => {
     expect(aim.attackDamage).toBeCloseTo(108);
     expect(magnet.pickupRadius).toBeCloseTo(normal.pickupRadius * 1.2);
     expect(magnet.attackDamage).toBeCloseTo(92);
+    expect(longAim.attackRange).toBeCloseTo(normal.attackRange * 1.12);
+    expect(longAim.speed).toBeCloseTo(normal.speed * 0.92);
+    expect(longAim.maxHp).toBe(normal.maxHp);
     expect(survivorPreparation('save-antigo').id).toBe('classica');
   });
 });
