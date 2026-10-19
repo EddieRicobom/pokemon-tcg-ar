@@ -1781,18 +1781,24 @@ export class VillageGame {
     }
     if (wx.rain > 0.05) {
       const n = Math.round(wx.rain * 150);
-      ctx.strokeStyle = 'rgba(190,215,255,0.55)';
+      // A chuva cai quase na vertical. O vento só desloca levemente cada gota,
+      // em vez de transformar toda a tela em riscos diagonais paralelos.
+      const wind = Math.max(-1, Math.min(1, wx.windX));
+      ctx.strokeStyle = 'rgba(190,215,255,0.52)';
       ctx.lineWidth = Math.max(1, scale * 0.45);
+      ctx.lineCap = 'round';
       ctx.beginPath();
-      const slant = 4 + wx.windX * 40;
       for (let i = 0; i < n; i++) {
         const sp = 0.7 + hashN(i * 3) * 0.6;
-        const rx = (hashN(i) * (W + 200) + now * 0.05 * wx.windX * 8 + now * 0.18 * 0) % (W + 200);
+        const rx = (hashN(i) * (W + 60) + now * 0.012 * wind) % (W + 60);
         const ry = (hashN(i + 500) * H + now * 0.9 * sp * (scale / 3)) % H;
-        ctx.moveTo(rx - 100, ry);
-        ctx.lineTo(rx - 100 - slant * scale * 0.8, ry + 9 * scale);
+        const length = (7 + sp * 5) * scale;
+        const drift = (wind * 2.4 + Math.sin(now / 1500 + i * 1.7) * 0.35) * scale;
+        ctx.moveTo(rx - 30, ry - length * 0.35);
+        ctx.lineTo(rx - 30 + drift, ry + length * 0.65);
       }
       ctx.stroke();
+      ctx.lineCap = 'butt';
       // Ondinhas no chão.
       ctx.strokeStyle = 'rgba(210,230,255,0.45)';
       for (let i = 0; i < 9; i++) {
