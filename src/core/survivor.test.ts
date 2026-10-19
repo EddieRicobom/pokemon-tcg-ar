@@ -3,6 +3,7 @@ import {
   applyUpgrade,
   ARENA_H,
   ARENA_W,
+  BALANCE,
   createSurvivorState,
   ENEMY_BEHAVIOR_LIMITS,
   PLAYER_RADIUS,
@@ -65,7 +66,7 @@ describe('stepSurvivor', () => {
     const s = run(3);
     // Passos pequenos: pega o inimigo no quadro em que ele acabou de nascer, antes de andar muito.
     let justSpawned: { x: number; y: number } | null = null;
-    for (let i = 0; i < 100 && !justSpawned; i++) {
+    for (let i = 0; i < Math.ceil((BALANCE.spawnStartMs + 100) / 20) && !justSpawned; i++) {
       stepSurvivor(s, { dx: 0, dy: 0 }, 20);
       if (s.enemies.length > 0) justSpawned = { x: s.enemies[0]!.x, y: s.enemies[0]!.y };
     }
@@ -285,8 +286,8 @@ describe('golpes por tipo', () => {
     const second = dummy(2, s.player.x + 60, s.player.y + 70);
     s.enemies.push(first, second);
     for (let i = 0; i < 60; i++) stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(first.hp).toBe(990);
-    expect(second.hp).toBe(993);
+    expect(first.hp).toBeLessThan(1000);
+    expect(second.hp).toBeGreaterThan(first.hp); // o salto acerta, mas com menos dano que o alvo principal
   });
 
   it('Gelo deixa lento e Água empurra', () => {

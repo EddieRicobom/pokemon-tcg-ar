@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { REGIONAL_ENCOUNTERS, REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from './survivor-encounters';
 import { REGION_DURATION_MS as D, REGION_TRANSITION_MS as T, SURVIVOR_REGIONS } from './survivor-regions';
-import { applyUpgrade, createSurvivorState, stepSurvivor } from './survivor';
+import { applyUpgrade, BALANCE, createSurvivorState, stepSurvivor } from './survivor';
 import type { SurvivorState } from './survivor';
 
 describe('espécies regionais da Torre', () => {
@@ -54,7 +54,8 @@ describe('espécies regionais da Torre', () => {
     s.nextBossAtMs = Infinity;
     s.nextTrainerAtMs = Infinity;
     s.finalBossAtMs = null;
-    s.spawnAccumMs = 1000;
+    const interval = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - (s.elapsedMs / 1000) * BALANCE.spawnPerSecMs - s.wave * BALANCE.spawnPerWaveMs);
+    s.spawnAccumMs = interval - 1;
     stepSurvivor(s, { dx: 0, dy: 0 }, 50);
     const enemy = s.enemies[0]!;
     expect(REGIONAL_ENCOUNTERS[0].wild).toContain(enemy.dexId);
