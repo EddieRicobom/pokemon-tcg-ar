@@ -11,6 +11,13 @@ import type { Rng } from './battle';
 
 export type GameId = 'quem' | 'tipos' | 'memoria';
 
+/** Bônus direto em moedas por vitória, além das moedas geradas pelo XP. */
+export const MINIGAME_WIN_COINS = 10;
+
+export function minigameCoinReward(won: boolean): number {
+  return won ? MINIGAME_WIN_COINS : 0;
+}
+
 export const GAME_LABELS_PT: Record<GameId, { title: string; blurb: string }> = {
   quem: { title: 'Quem é esse Pokémon?', blurb: 'Adivinhe 5 Pokémon pela silhueta: das suas cartas, de uma geração ou sorteados de todas.' },
   tipos: { title: 'Duelo de tipos', blurb: 'Quanto dano um tipo causa em outro? A mesma tabela da batalha.' },

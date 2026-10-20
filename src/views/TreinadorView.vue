@@ -11,6 +11,7 @@ import TrainerAvatar from '../components/TrainerAvatar.vue';
 import { itemDef } from '../core/village/catalog';
 import { prizeOf } from '../core/village/rewards';
 import { ACHIEVEMENTS, dayKey, levelProgress, missionsFor, previousDay, XP } from '../core/trainer';
+import { MINIGAME_WIN_COINS } from '../core/minigames';
 import { nextUnlock, townStage } from '../core/village/town';
 import { LOTS } from '../core/village/town-layout';
 
@@ -222,7 +223,7 @@ function cancelImport(): void {
         <li><b>+{{ XP.newCard }}</b> carta nova escaneada</li>
         <li><b>+{{ XP.repeatCardDaily }}</b> carta já conhecida (a primeira leitura de cada dia)</li>
         <li><b>+{{ XP.battle }}</b> batalha vista até o fim (as {{ XP.battlesPerDay }} primeiras do dia)</li>
-        <li><b>+{{ XP.minigameWin }}</b> minigame vencido (as {{ XP.minigamesPerDay }} primeiras do dia)</li>
+        <li><b>+{{ XP.minigameWin }} XP e +{{ MINIGAME_WIN_COINS }} moedas</b> por minigame vencido (as {{ XP.minigamesPerDay }} primeiras do dia rendem XP)</li>
         <li><b>+{{ XP.streakPerDay }}</b> por dia de sequência, até +{{ XP.streakMax }}, no primeiro feito do dia</li>
       </ul>
       <p class="note">Todo XP ganho também vira a mesma quantia de moedas (o saldo único do app: Pins, forma Mega, Fonte e loja da Vila). O XP em si não é gasto: o nível continua subindo.</p>

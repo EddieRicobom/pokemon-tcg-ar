@@ -5,7 +5,7 @@ import type { LoadedPieces } from '../app/game-pieces';
 import { getCache } from '../app/services';
 import { recordEvent, trainer } from '../app/trainer-store';
 import { addCoins } from '../app/wallet';
-import { GAME_LABELS_PT, gameBlocker, MEMORY_PAIRS, memoryUsesCards } from '../core/minigames';
+import { GAME_LABELS_PT, gameBlocker, MEMORY_PAIRS, memoryUsesCards, MINIGAME_WIN_COINS, minigameCoinReward } from '../core/minigames';
 import type { GameId, Grade, Piece } from '../core/minigames';
 import { loadDexNames } from '../app/dex-names';
 import { prepareDexRound } from '../app/dex-quiz';
@@ -27,6 +27,7 @@ const GAMES: GameId[] = ['quem', 'tipos', 'memoria'];
 const loaded = ref<LoadedPieces | null>(null);
 const active = ref<GameId | null>(null);
 const loadingPieces = ref(true);
+const coinReward = ref(0);
 
 const gameRows = computed(() =>
   GAMES.map((id) => ({
@@ -84,21 +85,19 @@ async function play(id: GameId): Promise<void> {
   }
 }
 
-/** Vitória nos minigames rende um bônus de moedas (saldo único, `app/wallet.ts`), além das moedas do XP de sempre. */
-const MINIGAME_WIN_COINS = 10;
-
 function onFinished(game: GameId, grade: Grade): void {
   recordEvent({ type: 'minigame', game, won: grade.won, score: grade.score });
-  if (grade.won) addCoins(MINIGAME_WIN_COINS);
+  const baseReward = minigameCoinReward(grade.won);
+  coinReward.value = baseReward > 0 ? addCoins(baseReward) : 0;
 }
 </script>
 
 <template>
   <div v-if="active" class="card">
     <h2>{{ GAME_LABELS_PT[active].title }}</h2>
-    <MinigameQuem v-if="active === 'quem'" :pieces="loaded?.pieces ?? []" :urls="loaded?.urls ?? new Map()" @finished="(g) => onFinished('quem', g)" @leave="active = null" />
-    <MinigameTipos v-else-if="active === 'tipos'" @finished="(g) => onFinished('tipos', g)" @leave="active = null" />
-    <MinigameMemoria v-else :pieces="dexMemory?.pieces ?? loaded?.pieces ?? []" :urls="dexMemory?.urls ?? loaded?.urls ?? new Map()" @finished="(g) => onFinished('memoria', g)" @leave="active = null" />
+    <MinigameQuem v-if="active === 'quem'" :pieces="loaded?.pieces ?? []" :urls="loaded?.urls ?? new Map()" :reward-coins="coinReward" @finished="(g) => onFinished('quem', g)" @leave="active = null" />
+    <MinigameTipos v-else-if="active === 'tipos'" :reward-coins="coinReward" @finished="(g) => onFinished('tipos', g)" @leave="active = null" />
+    <MinigameMemoria v-else :pieces="dexMemory?.pieces ?? loaded?.pieces ?? []" :urls="dexMemory?.urls ?? loaded?.urls ?? new Map()" :reward-coins="coinReward" @finished="(g) => onFinished('memoria', g)" @leave="active = null" />
     <button type="button" class="link game-back" @click="active = null">Voltar aos jogos</button>
   </div>
   <div v-else class="card">
@@ -115,7 +114,7 @@ function onFinished(game: GameId, grade: Grade): void {
       </li>
     </ul>
     <p v-if="memoryError" class="hint" role="alert">{{ memoryError }}</p>
-    <p class="note">Vencer rende {{ XP.minigameWin }} XP (nas {{ XP.minigamesPerDay }} primeiras vitórias do dia). Sem cartas, os Pokémon são sorteados da Pokédex; com cartas, "Quem é" e Memória podem usar as suas.</p>
+    <p class="note">Cada vitória rende {{ MINIGAME_WIN_COINS }} moedas de bônus. As {{ XP.minigamesPerDay }} primeiras vitórias do dia também dão {{ XP.minigameWin }} XP; todo XP ganho também credita moedas. Sem cartas, os Pokémon são sorteados da Pokédex; com cartas, "Quem é" e Memória podem usar as suas.</p>
     <button v-if="closable" type="button" class="link game-back" @click="emit('leave')">Sair do Fliperama</button>
   </div>
 </template>

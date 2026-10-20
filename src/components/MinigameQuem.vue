@@ -7,8 +7,9 @@ import { dexIdsFor, dexPieces, GENERATIONS, sourceLabel } from '../core/dex';
 import type { WhoSource } from '../core/dex';
 import { cardsBlocker, gradeQuiz, makeWhoQuestions, WHO_DIFFICULTIES, WHO_DIFFICULTY_LABELS_PT } from '../core/minigames';
 import type { Grade, Piece, WhoDifficulty, WhoQuestion } from '../core/minigames';
+import MinigameReward from './MinigameReward.vue';
 
-const props = defineProps<{ pieces: Piece[]; urls: Map<string, string> }>();
+const props = defineProps<{ pieces: Piece[]; urls: Map<string, string>; rewardCoins: number }>();
 const emit = defineEmits<{ finished: [grade: Grade]; leave: [] }>();
 
 type Phase = 'setup' | 'loading' | 'playing' | 'done';
@@ -167,6 +168,7 @@ function changeSource(): void {
     <template v-else-if="phase === 'done' && grade">
       <p class="game-result"><strong>{{ correct }} de {{ questions.length }}</strong></p>
       <p class="note">{{ grade.won ? 'Mandou bem!' : 'Quase lá. Tente de novo.' }} Pontuação: {{ grade.score }}. Origem: {{ sourceLabel(source) }}.</p>
+      <MinigameReward :won="grade.won" :coins="props.rewardCoins" />
       <div class="game-actions">
         <button type="button" class="primary" @click="start">Sortear outros 5</button>
         <button type="button" @click="changeSource">Trocar origem</button>
