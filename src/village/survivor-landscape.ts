@@ -66,6 +66,12 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     const ctx = canvas.getContext('2d')!;
     const region = SURVIVOR_REGIONS[index]!;
     const tiles = SURVIVOR_REGION_TILESETS[index]!;
+    const hash = (n: number): number => {
+      let h = n ^ 0x9e3779b9;
+      h = Math.imul(h ^ h >>> 16, 0x7feb352d);
+      h = Math.imul(h ^ h >>> 15, 0x846ca68b);
+      return ((h ^ h >>> 16) >>> 0) / 0x100000000;
+    };
     ctx.fillStyle = region.ground;
     ctx.fillRect(0, 0, width, height);
 
@@ -73,31 +79,50 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     for (let y = 0; y < height; y += 16) {
       for (let x = 0; x < width; x += 16) drawAtlasTile(ctx, tiles.ground, x, y, 16, 16, 0.2);
     }
-    // Grão residual barato nos dispositivos sem carregar ou decodificar o atlas.
-    if (!atlas) {
-      for (let y = 0; y < height; y += 16) {
-        for (let x = 0; x < width; x += 16) {
-          const hash = ((x * 73856093) ^ (y * 19349663)) >>> 0;
-          ctx.fillStyle = hash % 3 === 0 ? '#ffffff09' : '#00000008';
-          ctx.fillRect(x, y, 16, 16);
-          ctx.fillStyle = region.accent;
-          ctx.globalAlpha = 0.22;
-          ctx.fillRect(x + hash % 11, y + (hash >>> 4) % 12, 2, 3);
-        }
-      }
-      ctx.globalAlpha = 1;
+    // Manchas e tufos independentes dos tiles evitam uma grade repetitiva, inclusive sem atlas.
+    for (let i = 0; i < 150; i++) {
+      ctx.fillStyle = i % 3 ? '#1b352209' : '#fff2c00d';
+      ctx.beginPath();
+      ctx.ellipse(hash(i * 5 + 1) * width, hash(i * 5 + 2) * height, 15 + hash(i + 9) * 48, 8 + hash(i + 19) * 23, hash(i + 29) * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let i = 0; i < 2800; i++) {
+      const x = Math.floor(hash(i * 3) * width), y = Math.floor(hash(i * 3 + 1) * height);
+      ctx.fillStyle = i % 3 ? '#213d2629' : '#f0edac35';
+      ctx.fillRect(x, y, 1, 2);
+      if (i % 7 === 0) { ctx.fillRect(x - 2, y - 1, 1, 2); ctx.fillRect(x + 2, y - 2, 1, 2); }
     }
 
-    // Trilhas em tiles, mantendo o mesmo percurso e os mesmos limites em todas as regiões.
-    ctx.fillStyle = region.path;
-    for (let y = 0; y < height; y += 16) {
-      const center = width * 0.5 + Math.sin(y / 95) * 100;
-      const left = Math.round(center / 8) * 8 - 24;
-      ctx.fillRect(left, y, 48, 16);
-      drawAtlasTile(ctx, tiles.path, left, y, 48, 16, 0.82);
+    // Recorta corredores curvos e repete células de 16 px: o tileset não é esticado na trilha.
+    for (const horizontal of [false, true]) {
+      const points: { x: number; y: number }[] = [];
+      const extent = horizontal ? width : height;
+      const half = horizontal ? 16 : 24;
+      for (let coordinate = -16; coordinate <= extent + 16; coordinate += 8) {
+        const center = horizontal ? height * 0.5 + Math.sin(coordinate / 190) * 19 : width * 0.5 + Math.sin(coordinate / 95) * 100;
+        points.push({ x: horizontal ? coordinate : center, y: horizontal ? center : coordinate });
+      }
+      ctx.save();
+      ctx.beginPath();
+      for (const [i, point] of points.entries()) {
+        const x = point.x - (horizontal ? 0 : half), y = point.y - (horizontal ? half : 0);
+        if (!i) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      for (const point of points.reverse()) ctx.lineTo(point.x + (horizontal ? 0 : half), point.y + (horizontal ? half : 0));
+      ctx.closePath();
+      ctx.strokeStyle = '#293d2825'; ctx.lineWidth = 3; ctx.stroke();
+      ctx.clip();
+      ctx.fillStyle = region.path; ctx.fillRect(0, 0, width, height);
+      for (let y = 0; y < height; y += 16) for (let x = 0; x < width; x += 16) {
+        const center = horizontal ? height * 0.5 + Math.sin(x / 190) * 19 : width * 0.5 + Math.sin(y / 95) * 100;
+        if (Math.abs((horizontal ? y : x) - center) <= half + 32) drawAtlasTile(ctx, tiles.path, x, y, 16, 16, 0.82);
+      }
+      for (let i = 0; i < 900; i++) {
+        ctx.fillStyle = i % 2 ? '#6d573021' : '#fff0cc30';
+        ctx.fillRect(Math.floor(hash(i * 7) * width), Math.floor(hash(i * 7 + 1) * height), 2, 1);
+      }
+      ctx.restore();
     }
-    ctx.fillRect(0, height / 2 - 16, width, 32);
-    for (let x = 0; x < width; x += 16) drawAtlasTile(ctx, tiles.path, x, height / 2 - 16, 16, 32, 0.82);
 
     // O centro permanece livre; cada bioma usa seu recorte temático junto às bordas.
     for (let i = 0; i < 24; i++) {

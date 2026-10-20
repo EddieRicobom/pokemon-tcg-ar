@@ -48,6 +48,9 @@ import { fitSurvivorViewport } from '../core/survivor-camera';
 import { survivorObjectives, survivorRerollLimit, SURVIVOR_OBJECTIVE_DETAILS, SURVIVOR_OBJECTIVE_IDS } from '../core/survivor-objectives';
 import { availableSurvivorPreparations, SURVIVOR_PREPARATIONS } from '../core/survivor-preparations';
 import type { SurvivorPreparationId } from '../core/survivor-preparations';
+import { chooseSurvivorSpecial, SPECIAL_GUARDIANS, SURVIVOR_SPECIALS } from '../core/survivor-specials';
+import type { SurvivorSpecialId } from '../core/survivor-specials';
+import { drawSurvivorSpecial } from '../village/survivor-special-art';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -107,6 +110,10 @@ function fitView(): void {
 const JOY_MAX = 42;
 const regionScenery = ref(true);
 const minimapEnabled = ref(true);
+const specialEffects = ref(true);
+const hudExpanded = ref(false);
+const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+const detailedSpecialEffects = computed(() => specialEffects.value && !reducedMotion && !effectiveVisual.value.rotomMode);
 const drawLandscape = createSurvivorLandscape(ARENA_W, ARENA_H);
 let landscapeAtlasLoaded = false;
 async function loadLandscapeAtlas(): Promise<void> {
@@ -291,6 +298,22 @@ const ready = ref(false);
 const failed = ref(false);
 const avatarName = ref('');
 const state = ref<SurvivorState | null>(null);
+const guardian = computed(() => state.value ? SPECIAL_GUARDIANS[state.value.special.type] : null);
+const chosenSpecial = computed(() => state.value?.special.selected ? SURVIVOR_SPECIALS[state.value.special.selected] : null);
+const specialBlocked = computed(() => !state.value || state.value.over || paused.value || !!pendingUpgrade.value || !!evolving.value || state.value.special.phase !== 'ready');
+const guardianSprite = ref<string | null>(null);
+let specialQueued = false;
+function queueSpecial(): void {
+  if (specialBlocked.value || (state.value?.special.cooldownMs ?? 1) > 0) return;
+  unlockSound();
+  specialQueued = true;
+}
+function chooseSpecial(id: SurvivorSpecialId): void {
+  if (!state.value || !chooseSurvivorSpecial(state.value, id)) return;
+  heldKeys.clear(); joyUp(); specialQueued = false;
+  playSound('success');
+  say(`${SURVIVOR_SPECIALS[id].name} pronto! Toque no botão à direita ou pressione E.`, 4500);
+}
 const paused = ref(false);
 const leaveConfirm = ref(false);
 let wasPausedBeforeLeave = false;
@@ -368,6 +391,7 @@ const KEY_DIR: Record<string, string> = {
 };
 
 function onKey(e: KeyboardEvent): void {
+  if ((e.key === 'e' || e.key === 'E') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSpecial(); return; }
   const dir = KEY_DIR[e.key];
   if (!dir) return;
   if (e.type === 'keydown') heldKeys.add(dir);
@@ -378,7 +402,7 @@ function onGamepadDirection(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean; direction?: string; pressed?: boolean }>;
   const direction = custom.detail.direction;
   if (custom.detail.handled || !direction || custom.detail.pressed === undefined) return;
-  if (!ready.value || paused.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value) return;
+  if (!ready.value || paused.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || state.value?.special.phase === 'arrival' || state.value?.special.phase === 'choice') return;
   if (custom.detail.pressed) heldKeys.add(direction);
   else heldKeys.delete(direction);
   custom.detail.handled = true;
@@ -388,11 +412,12 @@ function onGamepadMenu(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
   if (custom.detail.handled || !ready.value || !state.value || paused.value || summary.value || pendingUpgrade.value || evolving.value) return;
   custom.detail.handled = true;
+  if (state.value.special.phase === 'arrival' || state.value.special.phase === 'choice') return;
   togglePause();
 }
 
 function joyDown(e: PointerEvent): void {
-  if (joystick.active || paused.value || !ready.value || summary.value || pickOptions.value) return;
+  if (joystick.active || paused.value || !ready.value || summary.value || pickOptions.value || state.value?.special.phase === 'arrival' || state.value?.special.phase === 'choice') return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
   if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
   unlockSound();
@@ -416,8 +441,8 @@ function joyMove(e: PointerEvent): void {
   joystick.dx = (dx * factor) / JOY_MAX;
   joystick.dy = (dy * factor) / JOY_MAX;
 }
-function joyUp(e: PointerEvent): void {
-  if (e.pointerId !== joystick.pointerId) return;
+function joyUp(e?: PointerEvent): void {
+  if (e && e.pointerId !== joystick.pointerId) return;
   joystick.active = false;
   joystick.pointerId = null;
   joystick.dx = 0;
@@ -552,6 +577,7 @@ function draw(): void {
 
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
   if (!blink) drawSprite(playerSprite, s.player.x, s.player.y, s.player.facing < 0, 1);
+  drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
 
   for (const proj of s.projectiles) {
     const r = proj.size ?? 4;
@@ -657,7 +683,12 @@ function loop(ts: number): void {
     const ky = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
     const dx = kx + (joystick.active ? joystick.dx : 0);
     const dy = ky + (joystick.active ? joystick.dy : 0);
-    const events = stepSurvivor(s, { dx, dy }, dt);
+    const previousSpecialPhase = s.special.phase;
+    const events = stepSurvivor(s, { dx, dy, special: specialQueued }, dt);
+    specialQueued = false;
+    if (previousSpecialPhase === 'locked' && s.special.phase === 'arrival') {
+      heldKeys.clear(); joyUp(); playSound('survivor-level');
+    }
     if (s.projectiles.length > projectilesBefore) playSound('survivor-shot');
     if (s.kills > killsBefore) playSound('survivor-hit');
     if (s.player.xp > xpBefore) playSound('survivor-pickup');
@@ -716,6 +747,7 @@ function leaveNow(): void {
 
 function requestLeave(): void {
   if (leaveConfirm.value) return;
+  heldKeys.clear(); joyUp(); specialQueued = false;
   if (summary.value) {
     leaveNow();
     return;
@@ -824,6 +856,12 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     const { move, profile, secondMove } = attackOf(dexId, picked);
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
     state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, dexId, evolutions: evolutionsFor, infinite, preparation });
+    guardianSprite.value = null;
+    specialQueued = false;
+    const runState = state.value;
+    void loadSpriteOrNull(SPECIAL_GUARDIANS[move.type].dexId).then((sprite) => {
+      if (!disposed && state.value === runState) guardianSprite.value = sprite?.frames[0]?.toDataURL() ?? null;
+    });
     ready.value = true;
     lastTs = performance.now();
     if (!rafId) rafId = requestGameFrame(loop, maxVisualFps);
@@ -971,16 +1009,18 @@ onBeforeUnmount(() => {
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
              <span v-if="state.player.secondMove" class="chip survivor-move-chip second" :style="{ '--move': state.player.secondMove.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.secondMove.effect]">{{ moveLine(state.player.secondMove) }}</span>
-            <span class="chip survivor-xp" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">✨ {{ state.player.xp }}/{{ state.player.xpToNext }} XP <small>· faltam {{ Math.max(0, state.player.xpToNext - state.player.xp) }}</small></span>
+            <span class="chip survivor-xp" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">✨ {{ state.player.xp }}/{{ state.player.xpToNext }} XP <small v-if="hudExpanded">· faltam {{ Math.max(0, state.player.xpToNext - state.player.xp) }}</small></span>
             <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
             <span class="chip">☠ {{ state.kills }}</span>
-            <span class="chip">🌊 Onda {{ state.wave }}</span>
-            <span class="chip">{{ survivorRegionLabel(state.elapsedMs) }}</span>
-             <span v-if="survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
+            <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
+            <span v-if="hudExpanded" class="chip">{{ survivorRegionLabel(state.elapsedMs) }}</span>
+             <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
-             <button v-if="!summary && !pendingUpgrade && !evolving" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
-            <button type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
-            <button type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário regional: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
+             <button v-if="!summary && !pendingUpgrade && !evolving && state.special.phase !== 'arrival' && state.special.phase !== 'choice'" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
+            <button type="button" class="chip" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">{{ hudExpanded ? 'Ocultar detalhes' : 'Detalhes e opções' }}</button>
+            <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
+            <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário regional: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
+            <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="specialEffects" @pointerdown.stop @click.stop="specialEffects = !specialEffects">Efeitos do especial: {{ specialEffects ? 'completos' : 'leves' }}</button>
           </div>
         </div>
 
@@ -996,7 +1036,7 @@ onBeforeUnmount(() => {
           ></span>
         </div>
 
-        <div v-if="ready && state && objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">
+        <div v-if="ready && state && hudExpanded && objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">
           <span class="survivor-objectives-title">Objetivos</span>
           <span v-for="objective in objectives" :key="objective.id" class="survivor-objective" :class="{ complete: objective.complete }">
             <b>{{ objective.complete ? '✓' : '○' }}</b>
@@ -1090,6 +1130,36 @@ onBeforeUnmount(() => {
             <p v-if="rerollLimit === 1" class="note">Conclua 3 desafios distintos em corridas encerradas para liberar uma segunda troca de sorteio nas próximas tentativas.</p>
             <p v-else class="note">📜 Caderno de campo completo: a segunda troca de sorteio foi liberada pelos seus três desafios concluídos.</p>
             <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
+          </div>
+        </div>
+
+        <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && state.special.phase !== 'arrival' && state.special.phase !== 'choice'"
+          type="button" class="survivor-special-button" :class="{ 'is-ready': chosenSpecial && !state.special.cooldownMs }"
+          :style="{ '--special-color': state.player.move.color, '--charge': chosenSpecial ? `${(1 - state.special.cooldownMs / chosenSpecial.cooldownMs) * 100}%` : '0%' }"
+          :disabled="specialBlocked || !chosenSpecial || state.special.cooldownMs > 0"
+          :aria-label="chosenSpecial ? `${chosenSpecial.name}: ${state.special.cooldownMs > 0 ? `recarregando, ${Math.ceil(state.special.cooldownMs / 1000)} segundos` : 'pronto; tecla E'}` : 'Especial bloqueado: sobreviva por 3 minutos'"
+          @pointerdown.stop @pointerup.stop @click.stop="queueSpecial">
+          <span class="special-icon" aria-hidden="true">{{ chosenSpecial?.icon ?? '🔒' }}</span>
+          <strong>{{ !chosenSpecial ? '3:00' : state.special.activeMs > 0 ? 'ATIVO' : state.special.cooldownMs > 0 ? `${Math.ceil(state.special.cooldownMs / 1000)}s` : 'PRONTO' }}</strong>
+          <small>{{ state.player.move.icon }} Especial</small>
+        </button>
+
+        <div v-if="ready && state && guardian && !leaveConfirm && (state.special.phase === 'arrival' || state.special.phase === 'choice')" class="survivor-overlay survivor-guardian" :class="{ 'reduced-motion': !detailedSpecialEffects }" role="dialog" aria-modal="true" aria-label="Orbe elemental: escolha um especial" :style="{ '--special-color': state.player.move.color }" @pointerdown.stop>
+          <div class="card survivor-upgrades">
+            <div class="guardian-gift" :class="{ delivered: state.special.phase === 'choice' }" aria-hidden="true">
+              <img v-if="guardianSprite" :src="guardianSprite" alt="" />
+              <span v-else class="guardian-missing">{{ guardian.name }}<small>Sprite indisponível</small></span>
+              <span class="guardian-orb">{{ state.player.move.icon }}</span>
+            </div>
+            <p class="guardian-title">{{ guardian.name }}{{ guardian.mythical ? ' · mítico' : ' · lendário' }}</p>
+            <h2>{{ state.special.phase === 'arrival' ? 'Uma presença elemental…' : `Orbe do tipo ${TYPE_LABELS_PT[state.special.type]}` }}</h2>
+            <p role="status">{{ state.special.phase === 'arrival' ? 'O guardião entrega uma orbe para o seu Pokémon.' : 'Escolha um especial para esta corrida. O combate está pausado.' }}</p>
+            <template v-if="state.special.phase === 'choice'">
+              <button v-for="(definition, id) in SURVIVOR_SPECIALS" :key="id" type="button" class="survivor-upgrade-btn" @click="chooseSpecial(id)">
+                <span class="survivor-upgrade-icon" aria-hidden="true">{{ definition.icon }}</span>
+                <span class="survivor-upgrade-text"><strong>{{ definition.name }}</strong><small>{{ definition.description }}</small></span>
+              </button>
+            </template>
           </div>
         </div>
 
