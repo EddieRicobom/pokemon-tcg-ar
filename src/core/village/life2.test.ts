@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { seededRng } from '../battle';
 import { bookPage, dislikeOf, moodOf, opinionOf, personalityOf, UNLOCKS } from './book';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FOOD_IDS, FURNITURE_IDS, itemDef, ITEMS, LIGHT_IDS, SEED_IDS, shopToday } from './catalog';
-import { add, buy, cook, count, craft, cropAt, dailyHelp, emptyVillage, favoriteFoodOf, favoriteOf, fish, FISH_PER_DAY, friendOf, giveGift, harvestCrop, needsWater, place, plant, sell, tickCrops, water, wear } from './life';
+import { add, buy, cook, count, craft, cropAt, dailyHelp, emptyVillage, favoriteFoodOf, favoriteOf, fish, FISH_PER_DAY, friendOf, giveGift, harvestCrop, needsWater, normalizeVillage, place, plant, sell, tickCrops, water, wear } from './life';
 import { generateVillage, isSolidTile, tileAt } from './map';
 import { ACCESSORY_ART_IDS, FOOD_ART_IDS, FURNITURE_ART_IDS, MATERIAL_ART_IDS, paintCrop, paintFurnitureItem, paintItemIcon, TALL_ART_IDS } from '../../village/item-art';
 
@@ -46,6 +46,17 @@ describe('catálogo', () => {
   it('a loja aparece no mapa, sólida, com trilha na frente', () => {
     expect(isSolidTile(tileAt(map, map.shop.x, map.shop.y))).toBe(true);
     expect(tileAt(map, map.shop.x, map.shop.y + map.shop.h)).toBe('path');
+  });
+});
+
+describe('desejo único da Fonte', () => {
+  it('saves antigos ficam elegíveis uma vez e o marco visto sobrevive à normalização', () => {
+    const fresh = emptyVillage(1, map.spawn);
+    expect(fresh.hoOhWishSeen).toBe(false);
+    const oldSave = { ...fresh } as Partial<typeof fresh>;
+    delete oldSave.hoOhWishSeen;
+    expect(normalizeVillage(oldSave, 1, map.spawn).hoOhWishSeen).toBe(false);
+    expect(normalizeVillage({ ...fresh, hoOhWishSeen: true }, 1, map.spawn).hoOhWishSeen).toBe(true);
   });
 });
 

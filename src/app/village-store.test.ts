@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyVillage, friendOf } from '../core/village/life';
 import { MAX_DIARY } from '../core/village/social-state';
 import type { Moment } from '../core/village/social-state';
-import { loadVillage, requestPersistence, resetBackupClock, saveVillage, VILLAGE_BACKUP_KEY, VILLAGE_KEY, VILLAGE_SEED, villageMap } from './village-store';
+import { HOOH_WISH_KEY, loadVillage, requestPersistence, resetBackupClock, saveVillage, VILLAGE_BACKUP_KEY, VILLAGE_KEY, VILLAGE_SEED, villageMap } from './village-store';
 
 const fresh = () => emptyVillage(VILLAGE_SEED, villageMap().spawn);
 const moment = (i: number, fav = false): Moment => ({
@@ -60,6 +60,17 @@ describe('salvamento da Vila (tudo precisa persistir entre sessões)', () => {
     localStorage.setItem(VILLAGE_KEY, '{isso não é json');
     expect(loadVillage().coins).toBe(321);
     expect(loadVillage().farm).toEqual(s.farm);
+  });
+
+  it('não repete a cutscene depois de recuperar um save antigo do backup', () => {
+    const s = fresh();
+    expect(saveVillage(s, 1_000_000)).toBe(true);
+    s.hoOhWishSeen = true;
+    expect(saveVillage(s, 1_000_001)).toBe(true);
+    expect(localStorage.getItem(HOOH_WISH_KEY)).toBe('true');
+    localStorage.setItem(VILLAGE_KEY, '{save corrompido');
+    const restored = loadVillage();
+    expect(restored.hoOhWishSeen).toBe(true);
   });
 
   it('a cópia de segurança só é refeita a cada 5 minutos e nunca a partir de um salvamento ilegível', () => {

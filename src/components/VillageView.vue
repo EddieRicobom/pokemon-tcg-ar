@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { getCache, getDigitalSprite, getLocalVillageSpriteDirs, getVillageAtlas, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
+import { getCache, getDigitalSprite, getLocalVillageSprite, getLocalVillageSpriteDirs, getVillageAtlas, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { profile } from '../app/profile-store';
@@ -23,6 +23,7 @@ import { claimPrizes } from '../core/village/rewards';
 import { ensureModeStories } from '../core/village/mode-stories';
 import { challengeGalleryUnlocked, completedChallengeExhibits } from '../core/village/challenge-gallery';
 import BackpackView from './BackpackView.vue';
+import HoOhWishCutscene from './HoOhWishCutscene.vue';
 import MinigameHub from './MinigameHub.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import { dayKey, levelOf } from '../core/trainer';
@@ -39,6 +40,7 @@ import {
   canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, evolve, EVOLVE_COST, grantStarter, instanceOf, pickAnySpecies,
   pickFonteSpecies, summon, SUMMON_COST, summonWithCoins,
 } from '../core/village/digital';
+import { wishAtFountain } from '../core/village/fountain';
 import type { DigitalPokemonInstance } from '../core/village/digital';
 import { celebiDiaryPage, dismissActive, legendaryEffects, legendaryOf, rollLegendary } from '../core/village/legendary';
 import type { LegendaryEffects } from '../core/village/legendary';
@@ -304,6 +306,7 @@ const INTRO_LINES: readonly string[] = [
 ];
 const cutsceneOpen = ref(false);
 const cutsceneLine = ref(0);
+const hoOhWishScene = ref<{ spriteUrl: string } | null>(null);
 const recapScenes = ref<RecapScene[]>([]);
 const recapIndex = ref(0);
 const recapScene = computed(() => recapScenes.value[recapIndex.value]);
@@ -820,6 +823,13 @@ function onKey(e: KeyboardEvent): void {
     applyKeys();
     return;
   }
+  if (hoOhWishScene.value) {
+    if (e.type === 'keydown' && (e.key === 'Escape' || e.key === 'x' || e.key === 'X')) {
+      e.preventDefault();
+      hoOhWishScene.value = null;
+    }
+    return;
+  }
   if (handleDialogEscape(e, pressB)) return;
   if (isGameKeyboardControl(e.target)) return;
   // Dentro de uma folha (jogos do Fliperama, Arena…) Enter, espaço e setas são da folha, não do personagem.
@@ -861,7 +871,7 @@ function tickQuestions(): void {
     askingMon = null;
     game?.setWaiting(null);
   }
-  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (!askingMon && now >= nextAskAt) {
     nextAskAt = now + 4 * 60000 + Math.random() * 4 * 60000;
     const today = refreshDay();
@@ -1354,10 +1364,24 @@ function openFountain(b: Building): void {
         label: 'Jogar uma moeda',
         disabled: state.coins < 1,
         run: () => {
-          state.coins--;
+          const wish = wishAtFountain(state.coins, state.hoOhWishSeen);
+          if (!wish) return;
+          state.coins = wish.coinsAfter;
           playSound('bell');
           changed();
           closeDialog();
+          if (wish.showHoOhCutscene) {
+            // O marco é gravado imediatamente após gastar a moeda: recarregar ou pular não repete a cena.
+            state.hoOhWishSeen = true;
+            changed();
+            persist();
+            hoOhWishScene.value = { spriteUrl: '' };
+            void getLocalVillageSprite(250, false, 'Walk').then(async (sprite) => {
+              const flight = sprite ?? (await getDigitalSprite(250, false))?.gif;
+              if (flight && hoOhWishScene.value) hoOhWishScene.value.spriteUrl = thumbOf(flight);
+            }).catch(() => undefined);
+            return;
+          }
           if (Math.random() < 0.06) {
             state.coins += 5;
             say('✨ A fonte brilhou e devolveu 5 moedas!');
@@ -1544,7 +1568,7 @@ function finishScene(scene: Scene, ids: string[]): void {
 }
 
 function tickScenes(): void {
-  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (Date.now() < nextSceneAt) return;
   nextSceneAt = Date.now() + (SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR) * effects().quietFactor;
   // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
@@ -1667,10 +1691,10 @@ function cancelFarm(): void {
   farmSession.cancel();
   game?.setFarmTasks([]);
 }
-watch(() => !!sheet.value || !!dialog.value || !!quiz.value || quizOpen.value || cutsceneOpen.value, (blocked) => { if (blocked) cancelFarm(); });
+watch(() => !!sheet.value || !!dialog.value || !!quiz.value || quizOpen.value || cutsceneOpen.value || !!hoOhWishScene.value, (blocked) => { if (blocked) cancelFarm(); });
 
 function tickFarm(): void {
-  if (!game || document.hidden || sheet.value || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || welcome.value || recapScenes.value.length || loading.value) {
+  if (!game || document.hidden || sheet.value || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || welcome.value || recapScenes.value.length || loading.value) {
     cancelFarm();
     return;
   }
@@ -1938,6 +1962,7 @@ function give(item: ItemId): void {
 }
 
 function pressB(): void {
+  if (hoOhWishScene.value) { hoOhWishScene.value = null; return; }
   if (recapScenes.value.length) { finishRecap(); return; }
   // Com o aviso de boas-vindas na tela, o B só fecha o aviso (antes ele também abria o menu junto).
   if (welcome.value) {
@@ -2225,6 +2250,7 @@ onBeforeUnmount(() => {
         <small>O Zoom muda o tamanho sem deslocar a âncora. O ponto escolhido fica ativo enquanto esta câmera estiver aberta; a escala é lembrada neste aparelho.</small>
       </section>
       <p v-if="loading" class="village-loading">{{ loading }}</p>
+      <HoOhWishCutscene v-else-if="hoOhWishScene" :sprite-url="hoOhWishScene.spriteUrl" @finish="hoOhWishScene = null" />
       <div v-else-if="recapScene" class="village-recap" role="dialog" aria-modal="true" aria-label="Capítulo diário da Vila">
         <article :key="recapIndex" class="village-recap-card">
           <small>HISTÓRIAS DA VILA · {{ recapIndex + 1 }}/{{ recapScenes.length }}</small>
