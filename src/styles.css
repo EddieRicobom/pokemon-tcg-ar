@@ -5890,9 +5890,10 @@ body.no-scroll .reward-toasts {
 
 .survivor-move-hint {
   position: absolute;
-  left: 50%;
+  left: 12px;
   bottom: calc(18px + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
+  max-width: calc(100% - 130px);
+  box-sizing: border-box;
   margin: 0;
   padding: 6px 12px;
   border-radius: 999px;
@@ -5900,7 +5901,7 @@ body.no-scroll .reward-toasts {
   color: #e8ecf8;
   font-size: 0.85rem;
   pointer-events: none;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .survivor-stage {

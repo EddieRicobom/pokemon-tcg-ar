@@ -402,7 +402,7 @@ function onGamepadDirection(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean; direction?: string; pressed?: boolean }>;
   const direction = custom.detail.direction;
   if (custom.detail.handled || !direction || custom.detail.pressed === undefined) return;
-  if (!ready.value || paused.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value) return;
+  if (!ready.value || paused.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || state.value?.special.phase === 'arrival' || state.value?.special.phase === 'choice') return;
   if (custom.detail.pressed) heldKeys.add(direction);
   else heldKeys.delete(direction);
   custom.detail.handled = true;
@@ -412,6 +412,7 @@ function onGamepadMenu(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
   if (custom.detail.handled || !ready.value || !state.value || paused.value || summary.value || pendingUpgrade.value || evolving.value) return;
   custom.detail.handled = true;
+  if (state.value.special.phase === 'arrival' || state.value.special.phase === 'choice') return;
   togglePause();
 }
 
@@ -1151,7 +1152,7 @@ onBeforeUnmount(() => {
               <span class="guardian-orb">{{ state.player.move.icon }}</span>
             </div>
             <p class="guardian-title">{{ guardian.name }}{{ guardian.mythical ? ' · mítico' : ' · lendário' }}</p>
-            <h2>{{ state.special.phase === 'arrival' ? 'Uma presença elemental…' : `Orbe de ${TYPE_LABELS_PT[state.special.type]}` }}</h2>
+            <h2>{{ state.special.phase === 'arrival' ? 'Uma presença elemental…' : `Orbe do tipo ${TYPE_LABELS_PT[state.special.type]}` }}</h2>
             <p role="status">{{ state.special.phase === 'arrival' ? 'O guardião entrega uma orbe para o seu Pokémon.' : 'Escolha um especial para esta corrida. O combate está pausado.' }}</p>
             <template v-if="state.special.phase === 'choice'">
               <button v-for="(definition, id) in SURVIVOR_SPECIALS" :key="id" type="button" class="survivor-upgrade-btn" @click="chooseSpecial(id)">
