@@ -45,6 +45,22 @@ export function resolveTeam(saved: unknown, cards: readonly TeamCandidate[], max
   return { ids: recent, auto: true };
 }
 
+export type IncludeMemberResult =
+  | { kind: 'added'; ids: string[] }
+  | { kind: 'already'; ids: string[]; auto: boolean }
+  | { kind: 'full'; ids: string[] }
+  | { kind: 'unavailable'; ids: string[] };
+
+/** Inclui um Pokémon pronto, preservando a equipe escolhida ou começando pela equipe automática atual. */
+export function includeMember(saved: unknown, cards: readonly TeamCandidate[], id: string, max: number = TEAM_SIZE): IncludeMemberResult {
+  const candidate = cards.find((card) => card.id === id);
+  const current = resolveTeam(saved, cards, max);
+  if (!candidate || candidate.sprite.state !== 'ok') return { kind: 'unavailable', ids: current.ids };
+  if (current.ids.includes(id)) return { kind: 'already', ids: current.ids, auto: current.auto };
+  const result = toggleMember(current.ids, id, max);
+  return result.full ? { kind: 'full', ids: result.team } : { kind: 'added', ids: result.team };
+}
+
 export function loadSavedTeam(): string[] {
   try {
     const raw = localStorage.getItem(TEAM_KEY);

@@ -33,7 +33,7 @@ function enterChallenge(): void {
 
     <section class="arena-section" aria-labelledby="arena-team-title">
       <h3 id="arena-team-title">Equipe da Arena · 6 Pokémon</h3>
-      <TeamPicker :max="6" hint="Escolha os 6 Pokémon que irão para os modos contínuos. Esta lista também é a turma que a Caixa carrega para a Arena." />
+      <TeamPicker :max="6" group-label="equipe de batalha" hint="Escolha os 6 Pokémon que lutam nos modos contínuos. Essa seleção também define quem mora na Vila e aparece na Caixa em AR." />
     </section>
 
     <section class="arena-section" aria-labelledby="arena-continuous-title">

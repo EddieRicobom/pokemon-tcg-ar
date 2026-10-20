@@ -90,7 +90,7 @@ async function open(): Promise<void> {
     });
     if (mine !== run || disposed) return;
     failed.value = prepared.failed.map((f) => ({ name: f.name, reason: f.reason }));
-    if (prepared.ready.length === 0) throw new Error('Nenhuma carta da turma ficou pronta para rastrear.');
+    if (prepared.ready.length === 0) throw new Error('Nenhuma carta da equipe ficou pronta para rastrear.');
     loadedNames.value = new Map(prepared.ready.map((r) => {
       const companion = companionCard(r.card);
       return [r.card.id, companion === r.card ? r.card.name : `${companion.name} (carta de ${r.card.name})`];
@@ -160,7 +160,7 @@ onBeforeUnmount(() => {
   <section class="card" aria-labelledby="multi-title">
     <h2 id="multi-title">Várias cartas</h2>
     <p class="note">
-      Coloque até {{ MULTI_MAX_TRACK }} cartas da sua turma na mesa: cada uma ganha o seu Pokémon ao mesmo tempo. As cartas são reconhecidas pela imagem guardada; nada é lido do texto.
+      Coloque até {{ MULTI_MAX_TRACK }} cartas dos moradores da Vila na mesa: cada uma ganha o seu Pokémon ao mesmo tempo. As cartas são reconhecidas pela imagem guardada; nada é lido do texto.
     </p>
 
     <div ref="stageEl" class="viewport box-viewport" :class="{ 'pseudo-full': pseudo, immersive }">
@@ -173,7 +173,7 @@ onBeforeUnmount(() => {
         <div v-else-if="visibleNames.length > 0" class="multi-chips">
           <span v-for="name in visibleNames" :key="name">{{ name }}</span>
         </div>
-        <p v-else class="pill busy"><i class="dot"></i><span class="pill-text">Aponte a câmera para as cartas da turma.</span></p>
+        <p v-else class="pill busy"><i class="dot"></i><span class="pill-text">Aponte a câmera para as cartas da equipe.</span></p>
         <p v-if="failed.length > 0" class="pill warn">
           <i class="dot"></i>
           <span class="pill-text">Ficaram de fora: {{ failed.map((f) => f.name).join(', ') }}<small class="pill-sub">{{ failed[0]?.reason }}</small></span>
@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
 
     <div class="actions">
       <button type="button" class="primary" :disabled="phase !== 'idle' || teamNames.length === 0" @click="open">
-        {{ phase === 'starting' ? 'Preparando…' : 'Abrir câmera e rastrear a turma' }}
+        {{ phase === 'starting' ? 'Preparando…' : 'Abrir câmera e rastrear a equipe' }}
       </button>
     </div>
 
@@ -209,7 +209,7 @@ onBeforeUnmount(() => {
       Nenhuma carta com Pokémon guardada ainda. Escaneie cartas ou carregue-as em <a :href="routeHref('cartas')">Minhas cartas</a>.
     </p>
     <p v-else class="meta">
-      Turma{{ teamAuto ? ' (automática: as mais recentes)' : '' }}: {{ teamNames.map((t) => t.name).join(', ') }}.
+      Moradores da Vila{{ teamAuto ? ' (automáticos: os mais recentes)' : '' }}: {{ teamNames.map((t) => t.name).join(', ') }}.
       Troque em <a :href="routeHref('cartas')">Minhas cartas</a>.
       <template v-if="teamNames.length > MULTI_MAX_TRACK"> O rastreador acompanha até {{ MULTI_MAX_TRACK }} cartas por vez.</template>
     </p>

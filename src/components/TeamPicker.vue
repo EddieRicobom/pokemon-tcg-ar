@@ -8,7 +8,7 @@ import type { CachedCard } from '../cache/types';
 import { isShiny } from '../core/shiny';
 
 const emit = defineEmits<{ change: [ids: string[]] }>();
-const props = withDefaults(defineProps<{ max?: number; hint?: string }>(), { max: TEAM_SIZE, hint: undefined });
+const props = withDefaults(defineProps<{ max?: number; hint?: string; groupLabel?: string }>(), { max: TEAM_SIZE, hint: undefined, groupLabel: 'Vila' });
 
 type Row = CachedCard & { thumb?: string };
 const rows = ref<Row[]>([]);
@@ -69,9 +69,9 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
 
 <template>
   <div class="team-picker">
-    <p class="hint">{{ hint ?? 'Toque para adicionar ou tirar da turma. A turma passeia na Caixa AR; em Equipe de batalha você decide quem luta. Tirar daqui mantém o Pokémon na coleção.' }}</p>
+    <p class="hint">{{ hint ?? 'Escolha quem mora na Vila. Os moradores também aparecem na Caixa em AR; tirar daqui mantém o Pokémon na coleção.' }}</p>
     <p class="meta" role="status">
-      Turma: {{ team.ids.length }}/{{ max }}
+      {{ groupLabel }}: {{ team.ids.length }}/{{ max }}
       <template v-if="team.auto && team.ids.length > 0"> (automática: as mais recentes)</template>
     </p>
     <p v-if="loading" class="message">Lendo as cartas guardadas…</p>
@@ -80,7 +80,7 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
     <template v-else>
       <div class="selection-tabs" role="group" aria-label="Mostrar Pokémon">
         <button type="button" :aria-pressed="!onlySelected" @click="onlySelected = false">Todos · {{ usable.length }}</button>
-        <button type="button" :aria-pressed="onlySelected" @click="onlySelected = true">Na turma · {{ team.ids.length }}</button>
+        <button type="button" :aria-pressed="onlySelected" @click="onlySelected = true">Selecionados · {{ team.ids.length }}</button>
       </div>
       <div class="team-tools">
         <input v-model="search" type="text" placeholder="Buscar por nome ou coleção" aria-label="Buscar carta" autocomplete="off" />
@@ -94,7 +94,7 @@ onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)))
             <span class="team-name">{{ row.name }}</span>
             <CardMarks :card="row" compact />
             <small>{{ row.setName }}</small>
-            <small>{{ team.ids.includes(row.id) ? '✓ Na turma · tirar' : '+ Adicionar' }}</small>
+            <small>{{ team.ids.includes(row.id) ? `✓ Na ${groupLabel} · tirar` : `+ Adicionar à ${groupLabel}` }}</small>
             <span v-if="team.ids.includes(row.id)" class="team-slot" aria-hidden="true">{{ team.ids.indexOf(row.id) + 1 }}</span>
           </button>
         </li>

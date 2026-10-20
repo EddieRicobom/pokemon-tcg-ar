@@ -18,10 +18,10 @@ import { digitalRows } from '../core/village/digital';
 import { digitalBoxRows, digitalCandidates } from '../app/digital-members';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 
-/** Digital Pokémon da Vila: aparecem aqui marcados como digitais (não vêm de carta física: não são escaneados, mas entram na turma da Caixa em AR). */
+/** Digital Pokémon da Vila: aparecem aqui marcados como digitais (não vêm de carta física nem são escaneados). */
 const villageDigital = loadVillage().digital;
 const digital = ref(digitalRows(villageDigital));
-/** Na Box (e na turma), os Digital Pokémon entram junto das cartas, com o símbolo ✨ (ver `app/digital-members.ts`). */
+/** Na Caixa e na Vila, os Digital Pokémon entram junto das cartas, com o símbolo ✨ (ver `app/digital-members.ts`). */
 const digitalBox = digitalBoxRows(villageDigital).map((row) => ({ ...row, icon: pokemonSpriteUrl(row.dexIds[0]!) }));
 const boxCards = computed(() => [...rows.value, ...digitalBox] as Row[]);
 
@@ -100,13 +100,13 @@ const clearReady = computed(() => clearTyped.value.trim().toUpperCase() === CLEA
 
 function toggleTeam(row: Row): void {
   if (row.sprite.state !== 'ok') {
-    teamNotice.value = `«${row.name}» ainda não tem o Pokémon carregado. Use "Carregar" antes de colocar na turma.`;
+    teamNotice.value = `«${row.name}» ainda não tem o Pokémon carregado. Use "Carregar" antes de incluir na Vila.`;
     return;
   }
-  // Primeira escolha manual: parte da turma automática atual.
+  // Primeira escolha manual: parte da equipe automática atual.
   if (savedTeam.value.length === 0 && team.value.auto) setSavedTeam(team.value.ids);
   const full = toggleSaved(row.id);
-  teamNotice.value = full ? `A turma já tem ${TEAM_SIZE} Pokémon. Tire um para colocar outro.` : '';
+  teamNotice.value = full ? `A Vila já tem ${TEAM_SIZE} moradores. Tire alguém para incluir outro.` : '';
 }
 /** Cartas que acabaram de ficar completas: recebem o efeito de "carregou" por um instante. */
 const justLoaded = ref<Set<string>>(new Set());
@@ -256,17 +256,17 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <p v-if="message" class="message" role="status">{{ message }}</p>
 
     <nav class="collection-flow" aria-label="Da coleção à batalha">
-      <div class="flow-step current"><span>1</span><div><strong>Coleção</strong><small>Organize nas caixas abaixo</small></div></div>
-      <div class="flow-step"><span>2</span><div><strong>Turma · {{ teamRows.length }}/{{ TEAM_SIZE }}</strong><small>Escolha quem passeia na Caixa AR</small></div></div>
-      <a class="flow-step" :href="routeHref('caixa')"><span>3</span><div><strong>Equipe de batalha →</strong><small>Escolha quem luta na Caixa AR</small></div></a>
+      <div class="flow-step current"><span>1</span><div><strong>Cartas escaneadas</strong><small>Elas aparecem aqui automaticamente</small></div></div>
+      <div class="flow-step"><span>2</span><div><strong>Moradores da Vila · {{ teamRows.length }}/{{ TEAM_SIZE }}</strong><small>Também aparecem na Caixa em AR</small></div></div>
+      <a class="flow-step" :href="routeHref('caixa')"><span>3</span><div><strong>Abrir Caixa em AR →</strong><small>Veja sua equipe e comece uma batalha</small></div></a>
     </nav>
-    <div v-if="teamRows.length > 0" class="team-strip" role="group" aria-label="Turma da Caixa">
-      <strong>Quem passeia na Caixa AR ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
+    <div v-if="teamRows.length > 0" class="team-strip" role="group" aria-label="Moradores da Vila">
+      <strong>Moradores da Vila ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
       <ul>
         <li v-for="row in teamRows" :key="row.id">
           <img v-if="row.thumb || row.icon" :src="row.thumb ?? row.icon" :alt="row.name" width="40" height="56" :class="{ sprite: !row.thumb }" />
           <span>{{ row.name }}</span>
-          <button type="button" class="link" :aria-label="`Tirar ${row.name} da turma`" @click="toggleTeam(row)">Tirar da turma</button>
+          <button type="button" class="link" :aria-label="`Tirar ${row.name} da Vila`" @click="toggleTeam(row)">Tirar da Vila</button>
           <CardMarks :card="row" compact />
         </li>
       </ul>
@@ -300,7 +300,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         <button v-for="option in ([['todas', 'Todas'], ['completo', 'Completas'], ['parcial', 'Parciais'], ['falhou', 'Com falha'], ['sem-pokemon', 'Sem Pokémon']] as const)" :key="option[0]" type="button" :class="{ active: statusFilter === option[0] }" :aria-pressed="statusFilter === option[0]" @click="statusFilter = option[0]">
           {{ option[1] }}
         </button>
-        <button type="button" :class="{ active: onlyTeam }" :aria-pressed="onlyTeam" @click="onlyTeam = !onlyTeam">Só a turma</button>
+        <button type="button" :class="{ active: onlyTeam }" :aria-pressed="onlyTeam" @click="onlyTeam = !onlyTeam">Só moradores da Vila</button>
       </div>
       <div v-if="viewMode !== 'box'" class="filter-row">
         <label>Ordem
@@ -336,7 +336,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
 
     <ul v-else-if="viewMode === 'grade'" class="card-grid">
       <li v-for="row in visibleRows" :key="row.id">
-        <button type="button" class="grid-card" :class="{ picked: team.ids.includes(row.id), 'is-shiny': isShiny(row) }" :aria-pressed="team.ids.includes(row.id)" :aria-label="`${row.name}: ${team.ids.includes(row.id) ? 'tirar da' : 'colocar na'} turma`" @click="toggleTeam(row)">
+        <button type="button" class="grid-card" :class="{ picked: team.ids.includes(row.id), 'is-shiny': isShiny(row) }" :aria-pressed="team.ids.includes(row.id)" :aria-label="`${row.name}: ${team.ids.includes(row.id) ? 'tirar da' : 'adicionar à'} Vila`" @click="toggleTeam(row)">
           <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="90" height="126" />
           <div v-else class="thumb-missing" aria-hidden="true">sem imagem</div>
           <strong>{{ row.name }}</strong>
@@ -370,7 +370,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
           <button v-if="row.status !== 'completo'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'reload')">Recarregar</button>
           <a class="button" :href="routeHref('escanear', row.id)">Ver em AR</a>
           <button type="button" :class="{ active: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" @click="toggleTeam(row)">
-            {{ team.ids.includes(row.id) ? 'Na turma ✓' : 'Pôr na turma' }}
+            {{ team.ids.includes(row.id) ? 'Na Vila ✓' : 'Adicionar à Vila' }}
           </button>
           <button v-if="confirmRemoveId !== row.id" type="button" :disabled="busyId === row.id" @click="confirmRemoveId = row.id">Apagar…</button>
           <template v-else>
@@ -385,7 +385,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
       <h3 id="digital-title">Digital Pokémon <small>· moram na Vila</small></h3>
       <p class="note">
         Vêm do presente inicial e da Fonte, não de uma carta física: moram na Vila, jogam na Torre e andam na Caixa em AR
-        com a turma. Como não têm carta, não são escaneados nem aparecem em Várias.
+        com a equipe. Como não têm carta, não são escaneados nem aparecem em Várias.
       </p>
       <ul class="card-list">
         <li v-for="d in digital" :key="d.instanceId" class="card-row digital-row">

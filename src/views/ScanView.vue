@@ -43,8 +43,13 @@ import { spriteIdOf } from '../core/dex-form';
 import { isShiny } from '../core/shiny';
 import { maybeGalladeSpeaks } from '../app/speech-store';
 import { companionCard } from '../app/card-evolution-store';
+import { includeMember } from '../app/team';
+import { savedTeam, setSavedTeam } from '../app/team-store';
+import { loadVillage } from '../app/village-store';
+import { digitalCandidates } from '../app/digital-members';
 
 const props = defineProps<{ cardId?: string }>();
+const teamAction = ref<'idle' | 'loading' | 'added' | 'already' | 'full' | 'unavailable' | 'error'>('idle');
 
 const videoEl = ref<HTMLVideoElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
@@ -67,6 +72,7 @@ const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = u
 const cameraMessage = ref('');
 const loadingEngine = ref('');
 const scan = ref<ScanState>({ phase: 'idle', message: '', frames: 0 });
+watch(() => scan.value.card?.id, () => { teamAction.value = 'idle'; });
 const arState = ref<ArState>({ phase: 'idle', foundCount: 0 });
 const spriteState = ref<SpriteLoadState | null>(null);
 const arStage = ref<ArStage>('idle');
@@ -587,12 +593,31 @@ function stopAr(): void {
 
 async function scanAnother(): Promise<void> {
   dismissAr();
-  scan.value = { phase: 'scanning', frames: 0, message: 'Procurando a carta…' };
   if (props.cardId) {
     window.location.hash = routeHref('escanear');
     return;
   }
+  if (!cameraOn.value) {
+    await openCamera();
+    return;
+  }
+  scan.value = { phase: 'scanning', frames: 0, message: 'Procurando a carta…' };
   (await ensureController()).start();
+}
+
+async function includeScannedCard(): Promise<void> {
+  const card = scan.value.card;
+  if (!card) return;
+  teamAction.value = 'loading';
+  try {
+    const cards = await (await getCache()).list();
+    const candidates = [...cards, ...digitalCandidates(loadVillage().digital)];
+    const result = includeMember(savedTeam.value, candidates, card.id);
+    if (result.kind === 'added') setSavedTeam(result.ids);
+    teamAction.value = result.kind;
+  } catch {
+    teamAction.value = 'error';
+  }
 }
 
 async function retrySprite(): Promise<void> {
@@ -600,6 +625,7 @@ async function retrySprite(): Promise<void> {
 }
 
 function closeCamera(): void {
+  const completedScan = scan.value.phase === 'ready' ? scan.value : null;
   void exitFullscreen();
   sheet.value = null;
   controller?.stop();
@@ -609,7 +635,7 @@ function closeCamera(): void {
   stream = null;
   cameraOn.value = false;
   arStage.value = pendingArCardId.value ? 'selected' : 'idle';
-  scan.value = { phase: 'idle', message: '', frames: 0 };
+  scan.value = completedScan ?? { phase: 'idle', message: '', frames: 0 };
 }
 
 function saveLayout(): void {
@@ -1062,7 +1088,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
         <div class="stage-bar">
           <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
           <StageButton icon="filters" label="Suavizar" :active="sheet === 'smooth'" @click="toggleSheet('smooth')" />
-          <StageButton icon="rescan" :label="cardId ? 'Outra carta' : 'Escanear'" @click="scanAnother" />
+          <StageButton icon="rescan" :label="cardId ? 'Escanear outra' : 'Escanear'" @click="scanAnother" />
           <StageButton v-if="!cardId" icon="search" label="Buscar" :active="sheet === 'manual'" :attention="manualAttention" @click="toggleSheet('manual')" />
           <StageButton v-if="!cardId" icon="tools" label="Teste" :active="sheet === 'tools'" @click="toggleSheet('tools')" />
           <StageButton v-if="arActive" icon="adjust" :label="adjusting ? 'Concluir' : 'Ajustar'" :active="adjusting" @click="toggleAdjusting" />
@@ -1183,7 +1209,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
     <p v-if="scan.phase === 'preparing' && !cameraOn" class="message" role="status">{{ scan.message }}</p>
     <p v-if="scan.phase === 'error' && !cameraOn" class="message error" role="alert">{{ scan.message }}</p>
 
-    <div v-if="arStage !== 'idle' && !cameraOn" class="ar-panel" role="status" aria-live="polite">
+    <div v-if="arStage !== 'idle' && !cameraOn && !(scan.phase === 'ready' && scan.card)" class="ar-panel" role="status" aria-live="polite">
       <ol class="ar-steps">
         <li v-for="step in arSteps" :key="step.key" :class="step.state">{{ step.label }}</li>
       </ol>
@@ -1211,6 +1237,20 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
       </p>
       <p v-if="spriteText" class="message" :class="{ error: spriteState?.kind === 'error' }">{{ spriteText }}</p>
       <button v-if="spriteState?.kind === 'error'" type="button" @click="retrySprite">Tentar baixar o GIF de novo</button>
+      <div class="actions result-actions">
+        <button type="button" class="primary" :disabled="teamAction === 'loading' || teamAction === 'added' || teamAction === 'already' || teamAction === 'full' || teamAction === 'unavailable'" @click="includeScannedCard">
+          {{ teamAction === 'loading' ? 'Adicionando…' : teamAction === 'added' ? 'Morador da Vila ✓' : teamAction === 'already' ? 'Já mora na Vila ✓' : teamAction === 'full' ? 'Vila cheia' : teamAction === 'unavailable' ? 'Pokémon não carregado' : 'Adicionar à Vila' }}
+        </button>
+        <a class="button" :href="routeHref('escanear', scan.card.id)">Ver esta carta em AR</a>
+        <a class="button" :href="routeHref('caixa')">Abrir a Caixa em AR</a>
+        <a class="button" :href="routeHref('vila')">Visitar a Vila</a>
+        <button type="button" @click="scanAnother">Escanear outra carta</button>
+      </div>
+      <p v-if="teamAction === 'added'" class="message" role="status">{{ scan.card.name }} agora mora na Vila e também aparece na Caixa em AR.</p>
+      <p v-else-if="teamAction === 'already'" class="message" role="status">{{ scan.card.name }} já mora na Vila e aparece na Caixa em AR.</p>
+      <p v-else-if="teamAction === 'full'" class="message error" role="alert">A Vila chegou ao limite. <a :href="routeHref('cartas')">Abra Minhas cartas para trocar moradores.</a></p>
+      <p v-else-if="teamAction === 'unavailable'" class="message" role="status">O Pokémon desta carta ainda não está carregado. <a :href="routeHref('cartas')">Veja o status em Minhas cartas.</a></p>
+      <p v-else-if="teamAction === 'error'" class="message error" role="alert">Não consegui atualizar os moradores da Vila. Tente novamente ou abra <a :href="routeHref('cartas')">Minhas cartas</a>.</p>
     </div>
 
     <!-- Busca à mão: plano B quando a leitura automática não acha a carta. Com a câmera ligada vira uma folha («Buscar»). -->

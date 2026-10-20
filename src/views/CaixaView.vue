@@ -247,7 +247,7 @@ const heartTimer = setInterval(() => {
   }
 }, 7000);
 
-/** A turma da Caixa (cartas e Digital Pokémon) já com os sprites prontos para a cena. */
+/** Os moradores da Vila (cartas e Digital Pokémon) já com os sprites prontos para a cena. */
 async function loadTeamCreatures(cache: Awaited<ReturnType<typeof getCache>>) {
   const digital = loadVillage().digital;
   const team = resolveTeam(savedTeam.value, [...(await cache.list()), ...digitalCandidates(digital)]);
@@ -467,7 +467,7 @@ async function populate(): Promise<void> {
   loadingCreatures.value = true;
   try {
     const cache = await getCache();
-    // A turma escolhida (ou, sem escolha, as 6 mais recentes) é quem vai para a caixa — Digital Pokémon inclusive.
+    // Os moradores escolhidos (ou, sem escolha, os 6 mais recentes) vão para a caixa — Digital Pokémon inclusive.
     const loaded = await loadTeamCreatures(cache);
     if (disposed || !box) return;
     box.setCreatures(loaded.entries);
@@ -718,7 +718,7 @@ async function startChallenge(ch: Challenge): Promise<void> {
   }
   const mine = lastEntries.slice(0, MAX_CHALLENGE_TEAM);
   if (mine.length === 0) {
-    error.value = 'Sua caixa está vazia: escaneie cartas ou escolha a turma antes do desafio.';
+    error.value = 'Sua Caixa está vazia: escaneie cartas ou escolha moradores da Vila antes do desafio.';
     return;
   }
   preparing.value = true;
@@ -777,7 +777,7 @@ async function startEndless(mode: EndlessArenaMode): Promise<void> {
   const mine = endlessTeamEntries.value;
   if (mine.length !== MAX_CHALLENGE_TEAM) {
     error.value = endlessShortcut.value
-      ? 'A Arena contínua precisa de uma turma com exatamente 6 Pokémon. Volte à Arena para organizá-la.'
+      ? 'A Arena contínua precisa de uma equipe de batalha com exatamente 6 Pokémon. Volte à Arena para organizá-la.'
       : 'A Arena contínua precisa de exatamente 6 Pokémon marcados em Vermelha na escalação.';
     showModes.value = true;
     return;
@@ -1090,7 +1090,7 @@ const notices = computed<Notice[]>(() => {
   else if (cameraOn.value && population.value.available === 0) {
     list.push({ text: 'A caixa está vazia. Escaneie uma carta (aba Escanear) ou carregue suas cartas (aba Cartas) para os Pokémon aparecerem aqui.', tone: 'warn' });
   } else if (phase.value === 'running' && population.value.shown === 1) {
-    list.push({ text: 'Para batalhar, ponha pelo menos 2 Pokémon na turma da Caixa.', tone: 'warn' });
+    list.push({ text: 'Para batalhar, inclua pelo menos 2 Pokémon na Caixa em AR.', tone: 'warn' });
   }
   return list;
 });
@@ -1144,8 +1144,8 @@ onBeforeUnmount(() => {
   <section class="card" aria-labelledby="box-title">
     <h2 id="box-title">Caixa em AR</h2>
     <p class="note">
-      Sua turma de até 40 Pokémon passeia solta num quadrado do chão. Gire o celular para olhar em volta. Quem entra na
-      turma você escolhe em <a :href="routeHref('cartas')">Minhas cartas</a>; quem luta em cada batalha (a equipe) é
+      Até 40 moradores da Vila aparecem soltos num quadrado no chão. Gire o celular para olhar em volta. Quem aparece
+      você escolhe em <a :href="routeHref('cartas')">Minhas cartas</a>; quem luta em cada batalha é
       escolhido na escalação.
     </p>
 
@@ -1339,7 +1339,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="showTeam && cameraOn" class="stage-sheet" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
-            <strong>Turma da Caixa</strong>
+            <strong>Moradores da Vila</strong>
             <button type="button" class="link" @click="showTeam = false">Fechar</button>
           </header>
           <TeamPicker @change="populate" />
@@ -1407,7 +1407,7 @@ onBeforeUnmount(() => {
 
     <details v-if="!immersive" class="layout" :open="bookOpen" @toggle="(e: Event) => (e.target as HTMLDetailsElement).open !== bookOpen && void openBook()">
       <summary>Livro dos Pokémon (opiniões, humor e intimidade)</summary>
-      <p v-if="bookList.length === 0" class="hint">Nenhum Pokémon na turma da Caixa ainda. Escaneie cartas para começar o livro.</p>
+      <p v-if="bookList.length === 0" class="hint">Nenhum morador da Vila ainda. Escaneie cartas para começar o livro.</p>
       <PokeBook v-else :mons="bookMons" :friends="village.friends" :nicks="bookNicks" :nick-note="bookNote" @nickname="onBookNickname" />
     </details>
 
