@@ -276,6 +276,12 @@ let dialogFocusReturn: HTMLElement | null = null;
 let sheetFocusReturn: HTMLElement | null = null;
 let quizOpenFocusReturn: HTMLElement | null = null;
 let focusedVillageAction: HTMLElement | null = null;
+function focusWithArrowIndicator(target: HTMLElement | undefined): void {
+  if (!target) return;
+  document.querySelector<HTMLElement>('.arrow-focus')?.classList.remove('arrow-focus');
+  target.focus({ preventScroll: true });
+  target.classList.add('arrow-focus');
+}
 function rememberVillageActionFocus(event: FocusEvent): void {
   const target = event.target;
   if (!(target instanceof HTMLElement) || target.closest('.village-pad')) return;
@@ -285,7 +291,7 @@ function focusFirstVillageAction(selector: string): void {
   const panel = document.querySelector<HTMLElement>(selector);
   const candidates = panel?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex="0"]');
   const first = [...(candidates ?? [])].find((element) => !element.matches('.menu-close, .bc-close, .village-close') && element.textContent?.trim() !== 'Fechar') ?? candidates?.item(0);
-  first?.focus({ preventScroll: true });
+  focusWithArrowIndicator(first);
 }
 watch(sheet, (next, previous) => {
   if (next && !previous) sheetFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
@@ -840,11 +846,12 @@ const KEYS: Record<string, Dir> = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
 };
 const heldKeys = new Set<Dir>();
+const gamepadKeys = new Set<Dir>();
 const dpadPointers = new Map<number, Dir>();
 /** Teclas seguradas viram um vetor (duas teclas = diagonal), igual ao joystick. */
 function applyKeys(): void {
   if (joy.active) return;
-  const active = new Set([...heldKeys, ...dpadPointers.values()]);
+  const active = new Set([...heldKeys, ...gamepadKeys, ...dpadPointers.values()]);
   const x = (active.has('right') ? 1 : 0) - (active.has('left') ? 1 : 0);
   const y = (active.has('down') ? 1 : 0) - (active.has('up') ? 1 : 0);
   applyStick(x, y);
@@ -859,6 +866,40 @@ function dpadDown(event: PointerEvent, direction: Dir): void {
   (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
   applyKeys();
 }
+function handleGamepadDirection(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean; direction?: Dir; pressed?: boolean }>;
+  const direction = custom.detail.direction;
+  if (!direction || custom.detail.pressed === undefined || custom.detail.handled) return;
+  // A Torre gerencia o direcional durante a corrida; escolhas e pausas passam ao foco dos diálogos.
+  if (sheet.value === 'torre') return;
+  if (sheet.value || dialog.value || quiz.value || quizOpen.value) {
+    if (custom.detail.pressed) moveVillageFocus(direction);
+    custom.detail.handled = true;
+    return;
+  }
+  if (custom.detail.pressed) gamepadKeys.add(direction);
+  else gamepadKeys.delete(direction);
+  applyKeys();
+  custom.detail.handled = true;
+}
+function handleGamepadAction(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean }>;
+  if (custom.detail.handled) return;
+  custom.detail.handled = true;
+  pressA();
+}
+function handleGamepadBack(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean }>;
+  if (custom.detail.handled) return;
+  custom.detail.handled = true;
+  pressB();
+}
+function handleGamepadMenu(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean }>;
+  if (custom.detail.handled || sheet.value === 'torre') return;
+  custom.detail.handled = true;
+  pressMenu();
+}
 function moveVillageFocus(direction: Dir): void {
   const panel = document.querySelector<HTMLElement>('.village-sheet, .village-dialog, .quiz-dialog');
   if (!panel) return;
@@ -869,7 +910,7 @@ function moveVillageFocus(direction: Dir): void {
   const current = candidates.find((element) => element === active)
     ?? (focusedVillageAction?.isConnected && panel.contains(focusedVillageAction) ? focusedVillageAction : undefined);
   if (!current) {
-    candidates[0]?.focus({ preventScroll: true });
+    focusWithArrowIndicator(candidates[0]);
     return;
   }
   const from = current.getBoundingClientRect();
@@ -887,7 +928,7 @@ function moveVillageFocus(direction: Dir): void {
     })
     .filter((candidate) => candidate.primary > 1)
     .sort((a, b) => a.score - b.score)[0]?.element;
-  (next ?? candidates[(candidates.indexOf(current) + 1) % candidates.length])?.focus({ preventScroll: true });
+  focusWithArrowIndicator(next ?? candidates[(candidates.indexOf(current) + 1) % candidates.length]);
 }
 function dpadUp(event: PointerEvent): void {
   if (!dpadPointers.delete(event.pointerId)) return;
@@ -2228,6 +2269,10 @@ onMounted(async () => {
   onBeforeUnmount(() => clearInterval(prizeTimer));
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
+  window.addEventListener('tcg-gamepad-direction', handleGamepadDirection);
+  window.addEventListener('tcg-gamepad-action', handleGamepadAction);
+  window.addEventListener('tcg-gamepad-back', handleGamepadBack);
+  window.addEventListener('tcg-gamepad-menu', handleGamepadMenu);
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('pagehide', onLeave);
   window.addEventListener('beforeunload', onLeave);
@@ -2331,6 +2376,11 @@ onBeforeUnmount(() => {
   stopArBeta();
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
+  window.removeEventListener('tcg-gamepad-direction', handleGamepadDirection);
+  window.removeEventListener('tcg-gamepad-action', handleGamepadAction);
+  window.removeEventListener('tcg-gamepad-back', handleGamepadBack);
+  window.removeEventListener('tcg-gamepad-menu', handleGamepadMenu);
+  gamepadKeys.clear();
   document.removeEventListener('visibilitychange', onVisibility);
   window.removeEventListener('pagehide', onLeave);
   window.removeEventListener('beforeunload', onLeave);
@@ -2828,6 +2878,7 @@ onBeforeUnmount(() => {
 
     <div v-show="!loading && !recapScene && !cutsceneOpen && !welcome" class="village-pad" @contextmenu.prevent>
       <p class="village-move-hint">Arraste para andar · toque para ir<span> · setas/WASD</span></p>
+      <p class="village-arrow-hint">Setas/controle navegam · A confirma · B volta</p>
       <div class="village-control-cluster" :class="{ blocked: !!sheet || !!dialog || !!quiz || quizOpen }" role="group" aria-label="Controles da Vila">
         <div class="village-dpad" role="group" aria-label="Direcional">
           <button type="button" class="dpad-up" aria-label="Andar para cima" @pointerdown.prevent="dpadDown($event, 'up')" @pointerup="dpadUp" @pointercancel="dpadUp" @lostpointercapture="dpadUp">▲</button>
