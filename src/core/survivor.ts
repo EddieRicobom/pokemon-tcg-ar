@@ -375,6 +375,12 @@ export const BALANCE = {
   enemyDamageEverySec: 40,
   enemySpeedBase: 55,
   enemySpeedRandom: 25,
+  /** Atiradores andam mais devagar para abrir espaço de reação. */
+  rangedEnemySpeedMultiplier: 0.5,
+  /** Velocidade dos projéteis inimigos (antes: 170). */
+  hostileProjectileSpeed: 85,
+  /** A aura reduz em 20% a velocidade de projéteis enquanto estiverem no seu raio. */
+  auraProjectileSpeedMultiplier: 0.8,
   /** Intervalo entre nascimentos (ms) = início − porSegundo·t − porOnda·onda, nunca abaixo do piso. */
   spawnStartMs: 2400,
   spawnPerSecMs: 4,
@@ -844,6 +850,13 @@ function attack(state: SurvivorState): boolean {
       }
     }
     drain(state, hits);
+    // A órbita intercepta no máximo um projétil por pulso e somente dentro do seu alcance.
+    if (move.category === 'orbit') {
+      const projectileIndex = state.hostileProjectiles.findIndex((projectile) =>
+        Math.hypot(projectile.x - p.x, projectile.y - p.y) <= p.attackRadius + projectile.size,
+      );
+      if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
+    }
     state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: p.attackRadius, color: move.color, ageMs: 0, lifeMs: 360 });
     return true;
   }
@@ -860,6 +873,14 @@ function attack(state: SurvivorState): boolean {
       }
     }
     drain(state, hits);
+    // O golpe frontal pode aparar um projétil próximo por ataque, sem limpar ondas inteiras.
+    const projectileIndex = state.hostileProjectiles.findIndex((projectile) => {
+      const dx = projectile.x - p.x;
+      const dy = projectile.y - p.y;
+      const distance = Math.hypot(dx, dy);
+      return distance <= p.attackRange + projectile.size && dx * direction / (distance || 1) >= 0.35;
+    });
+    if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
     state.fx.push({ kind: 'blast', x: p.x + direction * p.attackRange * 0.55, y: p.y, r: p.attackRange * 0.55, color: move.color, ageMs: 0, lifeMs: 300 });
     return true;
   }
@@ -903,7 +924,7 @@ function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, targ
   const dx = target.x - enemy.x;
   const dy = target.y - enemy.y;
   const distance = Math.hypot(dx, dy) || 1;
-  const speed = 170;
+  const speed = BALANCE.hostileProjectileSpeed;
   state.hostileProjectiles.push({
     id: state.nextId++, x: enemy.x, y: enemy.y, vx: (dx / distance) * speed, vy: (dy / distance) * speed,
     damage: Math.max(1, Math.round(enemy.damage * 0.7)), lifeMs: 2600, size: 6,
@@ -1045,7 +1066,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const dx = target.x - e.x;
     const dy = target.y - e.y;
     const d = Math.hypot(dx, dy) || 1;
-    const speed = stunned ? 0 : e.slowMs && e.slowMs > 0 ? e.speed * 0.5 : e.speed;
+    const rangedMultiplier = e.archetype === 'atirador' ? BALANCE.rangedEnemySpeedMultiplier : 1;
+    const statusMultiplier = e.slowMs && e.slowMs > 0 ? 0.5 : 1;
+    const speed = stunned ? 0 : e.speed * rangedMultiplier * statusMultiplier;
     e.x += (dx / d) * speed * dt;
     e.y += (dy / d) * speed * dt;
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
@@ -1057,8 +1080,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   // Projéteis hostis têm alcance, dano e quantidade limitados; cada um some ao tocar o jogador.
   state.hostileProjectiles = state.hostileProjectiles.filter((proj) => {
-    proj.x += proj.vx * dt;
-    proj.y += proj.vy * dt;
+    const nearAura = p.move.category === 'aura'
+      && Math.hypot(proj.x - p.x, proj.y - p.y) <= p.attackRadius + proj.size;
+    const speedMultiplier = nearAura ? BALANCE.auraProjectileSpeedMultiplier : 1;
+    proj.x += proj.vx * speedMultiplier * dt;
+    proj.y += proj.vy * speedMultiplier * dt;
     proj.lifeMs -= dtMs;
     if (proj.lifeMs <= 0 || proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size && p.invulnMs <= 0) {
