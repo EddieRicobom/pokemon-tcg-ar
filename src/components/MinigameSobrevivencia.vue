@@ -374,6 +374,23 @@ function onKey(e: KeyboardEvent): void {
   else heldKeys.delete(dir);
 }
 
+function onGamepadDirection(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean; direction?: string; pressed?: boolean }>;
+  const direction = custom.detail.direction;
+  if (custom.detail.handled || !direction || custom.detail.pressed === undefined) return;
+  if (!ready.value || paused.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value) return;
+  if (custom.detail.pressed) heldKeys.add(direction);
+  else heldKeys.delete(direction);
+  custom.detail.handled = true;
+}
+
+function onGamepadMenu(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean }>;
+  if (custom.detail.handled || !ready.value || !state.value || paused.value || summary.value || pendingUpgrade.value || evolving.value) return;
+  custom.detail.handled = true;
+  togglePause();
+}
+
 function joyDown(e: PointerEvent): void {
   if (joystick.active || paused.value || !ready.value || summary.value || pickOptions.value) return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
@@ -896,6 +913,8 @@ onMounted(() => {
   }
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
+  window.addEventListener('tcg-gamepad-direction', onGamepadDirection);
+  window.addEventListener('tcg-gamepad-menu', onGamepadMenu);
   void openPicker();
 });
 /** Saiu do app (outra aba, tela apagada): ninguém fica andando sozinho com uma tecla "presa" ao voltar. */
@@ -916,6 +935,8 @@ onBeforeUnmount(() => {
   rafId = 0;
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
+  window.removeEventListener('tcg-gamepad-direction', onGamepadDirection);
+  window.removeEventListener('tcg-gamepad-menu', onGamepadMenu);
   document.removeEventListener('visibilitychange', onVisibility);
   resizer?.disconnect();
   resizer = null;
@@ -987,7 +1008,7 @@ onBeforeUnmount(() => {
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
-        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint">Arraste em qualquer lugar para andar</p>
+        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint">Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa</p>
 
         <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
