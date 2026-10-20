@@ -113,7 +113,10 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       ctx.strokeStyle = '#293d2825'; ctx.lineWidth = 3; ctx.stroke();
       ctx.clip();
       ctx.fillStyle = region.path; ctx.fillRect(0, 0, width, height);
-      for (let y = 0; y < height; y += 16) for (let x = 0; x < width; x += 16) drawAtlasTile(ctx, tiles.path, x, y, 16, 16, 0.82);
+      for (let y = 0; y < height; y += 16) for (let x = 0; x < width; x += 16) {
+        const center = horizontal ? height * 0.5 + Math.sin(x / 190) * 19 : width * 0.5 + Math.sin(y / 95) * 100;
+        if (Math.abs((horizontal ? y : x) - center) <= half + 32) drawAtlasTile(ctx, tiles.path, x, y, 16, 16, 0.82);
+      }
       for (let i = 0; i < 900; i++) {
         ctx.fillStyle = i % 2 ? '#6d573021' : '#fff0cc30';
         ctx.fillRect(Math.floor(hash(i * 7) * width), Math.floor(hash(i * 7 + 1) * height), 2, 1);

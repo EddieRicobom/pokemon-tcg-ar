@@ -113,6 +113,7 @@ const minimapEnabled = ref(true);
 const specialEffects = ref(true);
 const hudExpanded = ref(false);
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+const detailedSpecialEffects = computed(() => specialEffects.value && !reducedMotion && !effectiveVisual.value.rotomMode);
 const drawLandscape = createSurvivorLandscape(ARENA_W, ARENA_H);
 let landscapeAtlasLoaded = false;
 async function loadLandscapeAtlas(): Promise<void> {
@@ -558,7 +559,7 @@ function draw(): void {
 
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
   if (!blink) drawSprite(playerSprite, s.player.x, s.player.y, s.player.facing < 0, 1);
-  drawSurvivorSpecial(ctx, s, specialEffects.value && !reducedMotion);
+  drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
 
   for (const proj of s.projectiles) {
     const r = proj.size ?? 4;
@@ -1121,7 +1122,7 @@ onBeforeUnmount(() => {
           <small>{{ state.player.move.icon }} Especial</small>
         </button>
 
-        <div v-if="ready && state && guardian && !leaveConfirm && (state.special.phase === 'arrival' || state.special.phase === 'choice')" class="survivor-overlay survivor-guardian" :class="{ 'reduced-motion': reducedMotion || !specialEffects }" role="dialog" aria-modal="true" aria-label="Orbe elemental: escolha um especial" :style="{ '--special-color': state.player.move.color }" @pointerdown.stop>
+        <div v-if="ready && state && guardian && !leaveConfirm && (state.special.phase === 'arrival' || state.special.phase === 'choice')" class="survivor-overlay survivor-guardian" :class="{ 'reduced-motion': !detailedSpecialEffects }" role="dialog" aria-modal="true" aria-label="Orbe elemental: escolha um especial" :style="{ '--special-color': state.player.move.color }" @pointerdown.stop>
           <div class="card survivor-upgrades">
             <div class="guardian-gift" :class="{ delivered: state.special.phase === 'choice' }" aria-hidden="true">
               <img v-if="guardianSprite" :src="guardianSprite" alt="" />
