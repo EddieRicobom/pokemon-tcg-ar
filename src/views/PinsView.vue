@@ -12,7 +12,7 @@ import { recordEvent } from '../app/trainer-store';
 import { coins, spendCoins } from '../app/wallet';
 import { seededRng } from '../core/battle';
 import {
-  advanceRound, afterShot, affordable, aliveOf, arenaLimit, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE,
+  advanceRound, afterShot, affordable, aliveOf, arenaLimit, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE, MAX_PULL,
   nextLimit, outcomeOf, pinFromSpec, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
 } from '../core/pins';
 import { randomOpponents } from '../core/pin-opponents';
@@ -116,6 +116,7 @@ let enemyPlan: { pinId: string; shot: Shot; moveIndex: number | null } | null = 
 let enemyTimer = 0;
 let shots = 0;
 let drag: { fromX: number; fromY: number; toX: number; toY: number } | null = null;
+let virtualAimAngle = -Math.PI / 2;
 let popups: Popup[] = [];
 let terrainFx: TerrainFx[] = [];
 const reducedMotion = ref(false);
@@ -485,7 +486,43 @@ function selectPin(id: string): void {
   message.value = '';
   selectedId.value = id;
   selectedMove.value = null;
+  drag = null;
   refreshTray();
+}
+
+function setVirtualAim(direction: 'up' | 'right' | 'down' | 'left'): void {
+  if (phase.value !== 'aim' || !world || !selectedId.value) return;
+  const angles = { up: -Math.PI / 2, right: -Math.PI / 4, down: Math.PI / 2, left: -3 * Math.PI / 4 };
+  virtualAimAngle = angles[direction];
+  const pin = world.pins.find((candidate) => candidate.id === selectedId.value);
+  if (!pin) return;
+  const pull = MAX_PULL * 0.68;
+  drag = {
+    fromX: pin.x,
+    fromY: pin.y,
+    toX: pin.x - Math.cos(virtualAimAngle) * pull,
+    toY: pin.y - Math.sin(virtualAimAngle) * pull,
+  };
+}
+
+function handleGamepadDirection(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean; direction?: 'up' | 'right' | 'down' | 'left' }>;
+  if (!custom.detail.direction || phase.value !== 'aim' || !selectedId.value) return;
+  setVirtualAim(custom.detail.direction);
+  custom.detail.handled = true;
+}
+
+function handleGamepadAction(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean }>;
+  if (phase.value !== 'aim' || !world || !selectedId.value) return;
+  if (!drag) setVirtualAim('up');
+  const currentDrag = drag;
+  drag = null;
+  const shot = currentDrag ? shotFromDrag(currentDrag.fromX, currentDrag.fromY, currentDrag.toX, currentDrag.toY) : null;
+  if (shot) {
+    custom.detail.handled = true;
+    fireMine(shot);
+  }
 }
 
 function selectMove(index: number | null): void {
@@ -1045,6 +1082,7 @@ function onDown(ev: PointerEvent): void {
   if (phase.value !== 'aim' || !world) return;
   const p = toWorld(ev.clientX, ev.clientY);
   if (!p) return;
+  drag = null;
   (ev.currentTarget as HTMLElement).setPointerCapture?.(ev.pointerId);
   drag = { fromX: p.x, fromY: p.y, toX: p.x, toY: p.y };
 }
@@ -1392,6 +1430,10 @@ function draw(now: number): void {
 const onResize = () => resize();
 onMounted(() => window.addEventListener('resize', onResize));
 onMounted(() => {
+  window.addEventListener('tcg-gamepad-direction', handleGamepadDirection);
+  window.addEventListener('tcg-gamepad-action', handleGamepadAction);
+});
+onMounted(() => {
   motionQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
   reducedMotion.value = motionQuery?.matches ?? false;
   motionQuery?.addEventListener('change', onMotionPreferenceChange);
@@ -1405,12 +1447,14 @@ onBeforeUnmount(() => {
   leaveRoom();
   engine.dispose();
   window.removeEventListener('resize', onResize);
+  window.removeEventListener('tcg-gamepad-direction', handleGamepadDirection);
+  window.removeEventListener('tcg-gamepad-action', handleGamepadAction);
   motionQuery?.removeEventListener('change', onMotionPreferenceChange);
   Object.values(thumbs.value).forEach((url) => URL.revokeObjectURL(url));
 });
 
 const phaseHint = computed(() => {
-  if (phase.value === 'aim') return selectedId.value ? 'Sua vez: arraste para trás em qualquer ponto da arena e solte.' : 'Escolha um pin abaixo.';
+  if (phase.value === 'aim') return selectedId.value ? 'Sua vez: use o direcional e A para mirar e disparar, ou arraste para trás na arena.' : 'Escolha um pin abaixo.';
   if (phase.value === 'rolling') return rollOwner === 'me' ? 'Seu pin está rolando…' : pvpMatch.value ? 'O amigo disparou…' : 'O adversário disparou…';
   if (phase.value === 'over' && result.value) return result.value.won ? 'Partida encerrada: você venceu.' : 'Partida encerrada.';
   return message.value;

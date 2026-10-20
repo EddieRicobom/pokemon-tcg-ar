@@ -5,6 +5,7 @@ import type { RouteName } from './app/route';
 import NavIcon from './components/NavIcon.vue';
 import RewardToasts from './components/RewardToasts.vue';
 import PokemonSpeech from './components/PokemonSpeech.vue';
+import UniversalControls from './components/UniversalControls.vue';
 import { useInstallPrompt } from './composables/useInstallPrompt';
 import { detectCapabilities, isIosDevice } from './core/capabilities';
 import { lazyView } from './app/lazy-view';
@@ -126,6 +127,7 @@ watch(
 
     <RewardToasts />
     <PokemonSpeech />
+    <UniversalControls />
 
     <footer class="app-footer">
       <a :href="routeHref('diagnostico')">Diagnóstico</a> ·
