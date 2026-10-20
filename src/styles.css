@@ -313,6 +313,15 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
+/* Foco explícito do direcional, inclusive quando o navegador está em modalidade de toque. */
+.arrow-focus {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid #ffe16a !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 5px rgb(255 225 106 / 24%), 0 0 18px rgb(255 225 106 / 38%) !important;
+}
+
 .gif-form {
   margin-top: 16px;
   display: grid;
@@ -6877,6 +6886,7 @@ body.no-scroll .reward-toasts {
   .village-stage { position: absolute; inset: 0; }
   .village-pad { position: absolute; z-index: 8; inset: 0; display: block; padding: 0; background: transparent; pointer-events: none; }
   .village-pad .village-move-hint { display: none; }
+  .village-pad .village-arrow-hint { position: absolute; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); display: block; transform: translateX(-50%); margin: 0; padding: 5px 10px; border: 1px solid rgb(255 225 106 / 25%); border-radius: 999px; background: rgb(16 21 35 / 88%); color: #ffe789; font-size: .72rem; font-weight: 700; white-space: nowrap; pointer-events: none; }
   .village-control-cluster { position: absolute; inset: auto max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); display: flex; align-items: flex-end; justify-content: space-between; width: auto; pointer-events: none; }
   .village-dpad { display: grid; grid-template: ' . up .' 'left center right' '. down .'; gap: 4px; width: clamp(138px, 27vh, 174px); aspect-ratio: 1; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
   .village-dpad button { min-width: 0; min-height: 0; width: 100%; height: 100%; padding: 0; border: 1px solid rgb(255 255 255 / 26%); border-radius: 13px; background: linear-gradient(180deg, #343c5c, #1c2238); color: #f4f6ff; font-size: 1rem; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -6885,7 +6895,7 @@ body.no-scroll .reward-toasts {
   .village-dpad .dpad-right { grid-area: right; }
   .village-dpad .dpad-down { grid-area: down; }
   .village-dpad .dpad-center { grid-area: center; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / 16%); border-radius: 50%; background: #181e31; color: #ffe789; }
-  .village-pad .ab { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; margin: 0; transform: none; pointer-events: auto; }
+  .village-pad .ab { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; margin: 0 -4px 0 0; transform: none; pointer-events: auto; }
   .village-pad .ab button, .menu-control-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: clamp(54px, 11vh, 68px); height: clamp(54px, 11vh, 68px); min-height: 54px; padding: 3px; border: 2px solid rgb(255 255 255 / 30%); border-radius: 18px; color: #fff; font-size: 1.08rem; }
   .village-pad .ab button small, .menu-control-btn small { margin: 0; font-size: .56rem; line-height: 1; }
   .village-pad .ab .a-btn { margin: 0; background: linear-gradient(180deg, #df5b50, #8f302e); }
@@ -6908,13 +6918,15 @@ body.no-scroll .reward-toasts {
 /* Controles universais para navegação e ações fora da Vila. */
 .universal-controls { display: none; }
 .universal-menu-panel { position: fixed; z-index: 90; display: grid; gap: 8px; padding: 14px; border: 1px solid rgb(213 225 255 / 28%); border-top-color: rgb(255 255 255 / 42%); border-radius: 18px; background: linear-gradient(180deg, #1c2338, #101523); box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%), 0 14px 34px #0009; }
+.arrow-control-hint { margin: 0 0 2px; padding: 7px 9px; border: 1px solid rgb(255 225 106 / 28%); border-radius: 9px; background: rgb(255 225 106 / 8%); color: #ffe789; font-size: .78rem; font-weight: 700; text-align: center; }
+.village-arrow-hint { display: none; }
 .universal-menu-panel header { position: sticky; top: -14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0 8px; background: #1c2338; }
 .universal-menu-panel header button { width: 42px; min-height: 42px; border: 1px solid var(--ui-border); border-radius: 12px; background: #292f45; color: var(--ui-text); font-size: 1.4rem; }
 .universal-menu-panel a { display: flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ui-border); border-radius: 12px; background: #171e31; color: var(--ui-text); text-decoration: none; font-weight: 700; }
 .universal-menu-panel a[aria-current='page'] { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 15%, #171e31); }
 
 @media (orientation: landscape) and (max-height: 900px) {
-  .universal-controls { position: fixed; z-index: 80; inset: auto max(10px, env(safe-area-inset-right)) calc(var(--nav-height) + 14px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; pointer-events: none; }
+  .universal-controls { position: fixed; z-index: 80; inset: auto max(6px, env(safe-area-inset-right)) calc(var(--nav-height) + 14px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; pointer-events: none; }
   .universal-controls button { pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
   .universal-dpad { display: grid; grid-template: '. up .' 'left center right' '. down .'; gap: 3px; width: clamp(112px, 24vw, 142px); aspect-ratio: 1; pointer-events: auto; touch-action: none; }
   .universal-dpad button { min-width: 0; min-height: 0; padding: 0; border: 1px solid rgb(255 255 255 / 30%); border-radius: 12px; background: linear-gradient(180deg, #35405e, #1a2034); color: #fff; font-size: 1rem; }
@@ -6923,7 +6935,7 @@ body.no-scroll .reward-toasts {
   .universal-dpad .pad-right { grid-area: right; }
   .universal-dpad .pad-down { grid-area: down; }
   .universal-dpad .pad-center { grid-area: center; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / 16%); border-radius: 50%; background: #131a2b; color: var(--gold); }
-  .universal-actions { display: flex; align-items: flex-end; gap: 7px; pointer-events: auto; }
+  .universal-actions { display: flex; align-items: flex-end; justify-content: flex-end; gap: 7px; margin-right: -4px; pointer-events: auto; }
   .universal-actions button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: clamp(50px, 11vw, 60px); height: clamp(50px, 11vw, 60px); min-height: 50px; padding: 3px; border: 2px solid rgb(255 255 255 / 28%); border-radius: 16px; color: #fff; font-size: 1rem; font-weight: 850; }
   .universal-actions small { font-size: .54rem; line-height: 1; }
   .universal-b { background: linear-gradient(180deg, #8268ca, #49367e); }

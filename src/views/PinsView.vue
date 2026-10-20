@@ -508,6 +508,7 @@ function setVirtualAim(direction: 'up' | 'right' | 'down' | 'left'): void {
 function handleGamepadDirection(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean; direction?: 'up' | 'right' | 'down' | 'left' }>;
   if (!custom.detail.direction || phase.value !== 'aim' || !selectedId.value) return;
+  if ('pressed' in custom.detail && custom.detail.pressed === false) return;
   setVirtualAim(custom.detail.direction);
   custom.detail.handled = true;
 }
