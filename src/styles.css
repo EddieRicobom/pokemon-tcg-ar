@@ -22,6 +22,7 @@
   --ui-muted: var(--muted);
   --ui-accent: var(--accent);
   --ui-focus: var(--gold);
+  --ui-edge: color-mix(in srgb, var(--ui-bg) 72%, #000);
   --ui-gap: 8px;
   --ui-touch: 44px;
   --bg: #0e1322;
@@ -259,13 +260,30 @@ button {
   border-color: var(--ui-border);
   color: var(--ui-text);
   font-weight: 600;
+  font-family: var(--font-display);
   cursor: pointer;
-  transition: background-color 0.15s;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%), 0 2px 0 var(--ui-edge);
+  transition: transform 100ms steps(2, end), background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, filter 120ms ease;
 }
 
 button:active:not(:disabled) {
   background: var(--ui-border);
+  transform: translateY(2px);
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 28%);
 }
+
+button:hover:not(:disabled) { filter: brightness(1.08); }
+
+button[aria-pressed='true'],
+button[aria-selected='true'],
+button.active,
+button.selected {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 16%, var(--ui-raised));
+  color: var(--ui-text);
+}
+
+button[aria-busy='true'] { cursor: progress; }
 
 button.primary {
   background: var(--accent);
@@ -281,6 +299,11 @@ button.primary:active:not(:disabled) {
 button:disabled {
   opacity: 0.6;
   cursor: default;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
 }
 
 button:focus-visible,
@@ -4154,6 +4177,14 @@ body.no-scroll .reward-toasts {
   gap: 6px;
 }
 
+.backpack-3d {
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.bc-hint { max-width: 72ch; margin-inline: auto; }
+
 .bc-actions button {
   min-height: 44px;
   padding: 6px 4px;
@@ -4671,6 +4702,11 @@ body.no-scroll .reward-toasts {
 
 .speech.village-dialog {
   inset: auto 10px 10px 10px;
+  max-height: min(58dvh, 460px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .village-choices {
@@ -4699,8 +4735,13 @@ body.no-scroll .reward-toasts {
 .village-sheet {
   position: absolute;
   inset: auto 8px 8px 8px;
-  max-height: 70%;
+  max-height: min(70dvh, 780px);
+  inset: auto max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-gutter: stable;
   padding: 12px;
   border-radius: var(--radius);
   background: var(--surface);
@@ -4779,6 +4820,19 @@ body.no-scroll .reward-toasts {
   padding: 12px 22px calc(14px + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, #1b2036, #12162a);
 }
+
+.village-control-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  width: auto;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.village-dpad,
+.menu-control-btn { display: none; }
 
 /* Joystick da Vila (substitui o direcional): arrastar a partir do centro; na diagonal anda nos dois eixos. */
 .village-joy {
@@ -4970,7 +5024,7 @@ body.no-scroll .reward-toasts {
   display: flex;
   gap: 14px;
   align-items: center;
-  transform: rotate(-18deg);
+  transform: none;
 }
 
 .ab button {
@@ -4989,8 +5043,10 @@ body.no-scroll .reward-toasts {
 
 .ab .b-btn {
   background: #6a4ab8;
-  margin-top: 22px;
+  margin-top: 0;
 }
+
+.ab button small { font-family: var(--font-display); }
 
 .village-cta {
   padding: 12px 16px;
@@ -5030,7 +5086,16 @@ body.no-scroll .reward-toasts {
 }
 
 .village-sheet.tall {
-  max-height: 78%;
+  max-height: min(78dvh, 880px);
+}
+
+.village-sheet > header {
+  position: sticky;
+  z-index: 3;
+  top: -12px;
+  margin-top: -12px;
+  padding: 10px 0 8px;
+  background: var(--surface);
 }
 
 .village-sheet header {
@@ -6748,6 +6813,48 @@ body.no-scroll .reward-toasts {
 .home-style { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .home-style label { display: grid; gap: 3px; color: var(--ink, #332b24); font-size: .84rem; }
 .home-style select { min-height: 34px; border: 1px solid #a67a50; border-radius: 7px; background: #fff8e9; font: inherit; }
+
+/* Controles e painéis da Vila em retrato e paisagem. */
+@media (max-width: 480px) {
+  .village-control-cluster { gap: 8px; }
+  .village-pad .ab { gap: 8px; }
+  .village-pad .ab button { width: 58px; height: 58px; padding: 4px; border-radius: 17px; }
+  .menu-control-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 58px; height: 58px; padding: 3px; border: 2px solid #a58b43; border-radius: 17px; background: linear-gradient(180deg, #63552e, #38311e); color: #fff0a6; font-size: 1.15rem; font-weight: 800; }
+  .menu-control-btn small { font-size: .58rem; line-height: 1; }
+}
+
+@media (orientation: landscape) {
+  .village { display: block; }
+  .village-stage { position: absolute; inset: 0; }
+  .village-pad { position: absolute; z-index: 8; inset: 0; display: block; padding: 0; background: transparent; pointer-events: none; }
+  .village-pad .village-move-hint { display: none; }
+  .village-control-cluster { position: absolute; inset: auto max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); display: flex; align-items: flex-end; justify-content: space-between; width: auto; pointer-events: none; }
+  .village-dpad { display: grid; grid-template: ' . up .' 'left center right' '. down .'; gap: 4px; width: clamp(138px, 27vh, 174px); aspect-ratio: 1; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .village-dpad button { min-width: 0; min-height: 0; width: 100%; height: 100%; padding: 0; border: 1px solid rgb(255 255 255 / 26%); border-radius: 13px; background: linear-gradient(180deg, #343c5c, #1c2238); color: #f4f6ff; font-size: 1rem; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .village-dpad .dpad-up { grid-area: up; }
+  .village-dpad .dpad-left { grid-area: left; }
+  .village-dpad .dpad-right { grid-area: right; }
+  .village-dpad .dpad-down { grid-area: down; }
+  .village-dpad .dpad-center { grid-area: center; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / 16%); border-radius: 50%; background: #181e31; color: #ffe789; }
+  .village-pad .ab { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; margin: 0; transform: none; pointer-events: auto; }
+  .village-pad .ab button, .menu-control-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: clamp(54px, 11vh, 68px); height: clamp(54px, 11vh, 68px); min-height: 54px; padding: 3px; border: 2px solid rgb(255 255 255 / 30%); border-radius: 18px; color: #fff; font-size: 1.08rem; }
+  .village-pad .ab button small, .menu-control-btn small { margin: 0; font-size: .56rem; line-height: 1; }
+  .village-pad .ab .a-btn { margin: 0; background: linear-gradient(180deg, #df5b50, #8f302e); }
+  .village-pad .ab .b-btn { margin: 0; background: linear-gradient(180deg, #8268ca, #49367e); }
+  .menu-control-btn { background: linear-gradient(180deg, #746334, #40371e); color: #fff0a6; }
+  .village-top { min-height: 46px; padding-block: 4px; }
+  .village-top .village-menu-btn { display: none; }
+  .village-sheet:not(.torre-full) { inset: max(58px, calc(env(safe-area-inset-top) + 52px)) auto max(76px, env(safe-area-inset-bottom)); left: 50%; right: auto; width: min(760px, 68vw); max-width: none; max-height: none; transform: translateX(-50%); }
+  .village-sheet.tall:not(.torre-full) { max-height: none; }
+  .village-sheet.village-menu { top: max(58px, calc(env(safe-area-inset-top) + 52px)); bottom: max(76px, env(safe-area-inset-bottom)); }
+  .village-sheet > header { top: -12px; }
+  .speech.village-dialog { inset: auto 18vw max(76px, env(safe-area-inset-bottom)); max-height: 58dvh; }
+  .village-ar-controls { max-width: min(430px, 56vw); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .village-control-cluster button { transition: none; }
+}
 .home-inventory li { padding: 0; }
 .home-inventory li > button { display: flex; align-items: center; width: 100%; gap: 8px; padding: 7px; border: 0; background: transparent; text-align: left; font: inherit; }
 .home-inventory li.selected { outline: 2px solid #f0c64f; background: #fff1ba; }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { getCache, getDigitalSprite, getLocalVillageSprite, getLocalVillageSpriteDirs, getVillageAtlas, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
@@ -272,6 +272,42 @@ const visibleMenuGroups = computed(() => {
 const shopTab = ref<'comprar' | 'vender'>('comprar');
 const dressFor = ref<string>('player');
 const dialog = ref<{ id?: string; name: string; text: string; actions: { label: string; run: () => void; disabled?: boolean }[] } | null>(null);
+let dialogFocusReturn: HTMLElement | null = null;
+let sheetFocusReturn: HTMLElement | null = null;
+let quizOpenFocusReturn: HTMLElement | null = null;
+let focusedVillageAction: HTMLElement | null = null;
+function rememberVillageActionFocus(event: FocusEvent): void {
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || target.closest('.village-pad')) return;
+  focusedVillageAction = target.closest('.village-sheet, .village-dialog, .quiz-dialog') ? target : null;
+}
+function focusFirstVillageAction(selector: string): void {
+  const panel = document.querySelector<HTMLElement>(selector);
+  const candidates = panel?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex="0"]');
+  const first = [...(candidates ?? [])].find((element) => !element.matches('.menu-close, .bc-close, .village-close') && element.textContent?.trim() !== 'Fechar') ?? candidates?.item(0);
+  first?.focus({ preventScroll: true });
+}
+watch(sheet, (next, previous) => {
+  if (next && !previous) sheetFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+  if (next && !previous) void nextTick(() => focusFirstVillageAction('.village-sheet'));
+  if (!next && previous) {
+    const target = sheetFocusReturn;
+    sheetFocusReturn = null;
+    void nextTick(() => (target?.isConnected ? target : wrapEl.value)?.focus());
+  }
+});
+watch(tab, (next, previous) => {
+  if (next !== previous && sheet.value === 'menu') void nextTick(() => focusFirstVillageAction('.village-sheet'));
+});
+watch(dialog, (next, previous) => {
+  if (next && !previous) dialogFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+  if (next && !previous) void nextTick(() => focusFirstVillageAction('.village-dialog'));
+  if (!next && previous) {
+    const target = dialogFocusReturn;
+    dialogFocusReturn = null;
+    void nextTick(() => (target?.isConnected ? target : wrapEl.value)?.focus());
+  }
+});
 /** Mantém a conversa montada enquanto o Livro aberto a partir dela ocupa a tela. */
 const bookDialogId = ref<string | null>(null);
 const kindFilter = ref<MomentKind | 'todos' | 'guardados'>('todos');
@@ -804,12 +840,58 @@ const KEYS: Record<string, Dir> = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
 };
 const heldKeys = new Set<Dir>();
+const dpadPointers = new Map<number, Dir>();
 /** Teclas seguradas viram um vetor (duas teclas = diagonal), igual ao joystick. */
 function applyKeys(): void {
   if (joy.active) return;
-  const x = (heldKeys.has('right') ? 1 : 0) - (heldKeys.has('left') ? 1 : 0);
-  const y = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
+  const active = new Set([...heldKeys, ...dpadPointers.values()]);
+  const x = (active.has('right') ? 1 : 0) - (active.has('left') ? 1 : 0);
+  const y = (active.has('down') ? 1 : 0) - (active.has('up') ? 1 : 0);
   applyStick(x, y);
+}
+function dpadDown(event: PointerEvent, direction: Dir): void {
+  if (sheet.value || dialog.value || quiz.value || quizOpen.value) {
+    moveVillageFocus(direction);
+    return;
+  }
+  if (welcome.value || cutsceneOpen.value || recapScenes.value.length) return;
+  dpadPointers.set(event.pointerId, direction);
+  (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+  applyKeys();
+}
+function moveVillageFocus(direction: Dir): void {
+  const panel = document.querySelector<HTMLElement>('.village-sheet, .village-dialog, .quiz-dialog');
+  if (!panel) return;
+  const selector = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex="0"]';
+  const candidates = [...panel.querySelectorAll<HTMLElement>(selector)].filter((element) => element.getClientRects().length > 0);
+  if (!candidates.length) return;
+  const active = document.activeElement;
+  const current = candidates.find((element) => element === active)
+    ?? (focusedVillageAction?.isConnected && panel.contains(focusedVillageAction) ? focusedVillageAction : undefined);
+  if (!current) {
+    candidates[0]?.focus({ preventScroll: true });
+    return;
+  }
+  const from = current.getBoundingClientRect();
+  const originX = from.left + from.width / 2;
+  const originY = from.top + from.height / 2;
+  const next = candidates
+    .filter((element) => element !== current)
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      const dx = rect.left + rect.width / 2 - originX;
+      const dy = rect.top + rect.height / 2 - originY;
+      const primary = direction === 'left' ? -dx : direction === 'right' ? dx : direction === 'up' ? -dy : dy;
+      const secondary = direction === 'left' || direction === 'right' ? Math.abs(dy) : Math.abs(dx);
+      return { element, primary, score: primary + secondary * 1.7 };
+    })
+    .filter((candidate) => candidate.primary > 1)
+    .sort((a, b) => a.score - b.score)[0]?.element;
+  (next ?? candidates[(candidates.indexOf(current) + 1) % candidates.length])?.focus({ preventScroll: true });
+}
+function dpadUp(event: PointerEvent): void {
+  if (!dpadPointers.delete(event.pointerId)) return;
+  applyKeys();
 }
 function onKey(e: KeyboardEvent): void {
   if (recapScenes.value.length) {
@@ -831,7 +913,17 @@ function onKey(e: KeyboardEvent): void {
     return;
   }
   if (handleDialogEscape(e, pressB)) return;
-  if (isGameKeyboardControl(e.target)) return;
+  if (e.type === 'keydown' && (e.key === 'x' || e.key === 'X') && e.target instanceof Element && e.target.closest('.village-sheet, .village-dialog, .quiz-dialog')) {
+    pressB();
+    e.preventDefault();
+    return;
+  }
+  if (e.type === 'keydown' && dir && e.target instanceof Element && e.target.closest('.village-sheet, .village-dialog, .quiz-dialog') && !e.target.closest('input, textarea, select, [contenteditable]')) {
+    moveVillageFocus(dir);
+    e.preventDefault();
+    return;
+  }
+  if (isGameKeyboardControl(e.target) && !(dir && e.target instanceof Element && e.target.closest('.village-control-cluster'))) return;
   // Dentro de uma folha (jogos do Fliperama, Arena…) Enter, espaço e setas são da folha, não do personagem.
   if (sheet.value && (e.target as HTMLElement | null)?.closest?.('.village-sheet') && (KEYS[e.key] || e.key === ' ' || e.key === 'Enter')) return;
   if (e.type === 'keydown') {
@@ -860,6 +952,31 @@ interface QuizState {
   nick?: boolean;
 }
 const quiz = ref<QuizState | null>(null);
+let quizFocusReturn: HTMLElement | null = null;
+watch(quiz, (next, previous) => {
+  if (next && !previous) quizFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+  if (next && !previous) void nextTick(() => focusFirstVillageAction('.quiz-dialog'));
+  if (!next && previous) {
+    const target = quizFocusReturn;
+    quizFocusReturn = null;
+    void nextTick(() => (target?.isConnected ? target : wrapEl.value)?.focus());
+  }
+});
+watch(() => quiz.value?.stage, (next, previous) => {
+  if (next && previous && next !== previous) void nextTick(() => focusFirstVillageAction('.quiz-dialog'));
+});
+watch(quizStep, (next, previous) => {
+  if (quizOpen.value && next !== previous) void nextTick(() => focusFirstVillageAction('.village-dialog'));
+});
+watch(quizOpen, (next, previous) => {
+  if (next && !previous) quizOpenFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+  if (next && !previous) void nextTick(() => focusFirstVillageAction('.village-dialog'));
+  if (!next && previous) {
+    const target = quizOpenFocusReturn;
+    quizOpenFocusReturn = null;
+    void nextTick(() => (target?.isConnected ? target : wrapEl.value)?.focus());
+  }
+});
 /** Um Pokémon que quer te perguntar algo (o ❗ sobre ele); some sozinho depois de um tempo. */
 let askingMon: { id: string; until: number } | null = null;
 let nextAskAt = Date.now() + 60000 + Math.random() * 60000;
@@ -1216,6 +1333,8 @@ function closeVillageSheet(): void {
   sheet.value = null;
   bookDialogId.value = null;
   askingMon = null;
+  heldKeys.clear();
+  dpadPointers.clear();
   tapInteraction = null;
   game?.setWaiting(null);
   game?.holdStick(null);
@@ -1633,6 +1752,7 @@ function onVisibility(): void {
   if (document.hidden) {
     // Saiu do app com uma tecla ou o dedo no joystick: ninguém fica andando sozinho ao voltar.
     heldKeys.clear();
+    dpadPointers.clear();
     Object.assign(joy, { active: false, pointerId: -1, x: 0, y: 0 });
     game?.holdStick(null);
     onLeave();
@@ -1649,6 +1769,7 @@ function openMenu(): void {
   welcome.value = false;
   updateWorldProgress();
   askingMon = null;
+  dpadPointers.clear();
   tapInteraction = null;
   game?.setWaiting(null);
   game?.holdStick(null);
@@ -1691,7 +1812,13 @@ function cancelFarm(): void {
   farmSession.cancel();
   game?.setFarmTasks([]);
 }
-watch(() => !!sheet.value || !!dialog.value || !!quiz.value || quizOpen.value || cutsceneOpen.value || !!hoOhWishScene.value, (blocked) => { if (blocked) cancelFarm(); });
+watch(() => !!sheet.value || !!dialog.value || !!quiz.value || quizOpen.value || cutsceneOpen.value || !!hoOhWishScene.value, (blocked) => {
+  if (!blocked) return;
+  cancelFarm();
+  heldKeys.clear();
+  dpadPointers.clear();
+  game?.holdStick(null);
+});
 
 function tickFarm(): void {
   if (!game || document.hidden || sheet.value || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || welcome.value || recapScenes.value.length || loading.value) {
@@ -1728,17 +1855,33 @@ function refreshDay(): string {
   return today;
 }
 
+function confirmFocusedAction(): boolean {
+  const active = document.activeElement;
+  const action = active instanceof HTMLButtonElement && !active.closest('.village-pad') ? active : focusedVillageAction;
+  if (!(action instanceof HTMLButtonElement) || action.disabled || !action.isConnected || !action.closest('.village')) return false;
+  action.click();
+  return true;
+}
+
 function pressA(): void {
   if (recapScenes.value.length) return;
   unlockSound();
   playSound('interact');
   welcome.value = false;
-  if (quiz.value) return;
-  if (dialog.value) {
-    if (dialog.value.actions.length === 0) dialog.value = null;
+  if (quiz.value || quizOpen.value) {
+    confirmFocusedAction();
     return;
   }
-  if (sheet.value || !game) return;
+  if (dialog.value) {
+    const confirmed = confirmFocusedAction();
+    if (!confirmed && dialog.value.actions.length === 0) dialog.value = null;
+    return;
+  }
+  if (sheet.value) {
+    confirmFocusedAction();
+    return;
+  }
+  if (!game) return;
   const today = refreshDay();
   const t = game.target();
   if (t.kind === 'mon' && askingMon?.id === t.id) {
@@ -1973,6 +2116,8 @@ function pressB(): void {
   playSound('menu');
   if (giftPick.value) giftPick.value = false;
   else if (quiz.value) quizClose();
+  else if (quizOpen.value && quizStep.value > 0) quizStep.value--;
+  else if (quizOpen.value) return;
   else if (pendingChoice) decide(null);
   else if (dialog.value) dialog.value = null;
   else if (sheet.value === 'menu' && tab.value !== 'inicio') tab.value = 'inicio'; // B dentro de uma seção volta ao menu
@@ -1982,6 +2127,16 @@ function pressB(): void {
     tab.value = 'inicio';
     sheet.value = 'menu';
   }
+}
+
+function pressMenu(): void {
+  if (dialog.value || quiz.value || (sheet.value && sheet.value !== 'menu')) return;
+  if (sheet.value === 'menu') {
+    if (tab.value !== 'inicio') tab.value = 'inicio';
+    else closeVillageSheet();
+    return;
+  }
+  openMenu();
 }
 
 function act(result: { ok: boolean; message: string }, close = false): void {
@@ -2060,6 +2215,7 @@ onBeforeUnmount(() => {
 });
 
 onMounted(async () => {
+  document.addEventListener('focusin', rememberVillageActionFocus);
   // Baixa o treinador enquanto cache e moradores são preparados, sem somar até 8 s à abertura.
   const trainerAtlasPromise = loadTrainerAtlas(profile.sprite);
   // Cutscene da primeira entrada (Fase 4): só na primeira vez de verdade, antes do aviso de controles.
@@ -2170,6 +2326,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener('focusin', rememberVillageActionFocus);
   cancelFarm();
   stopArBeta();
   window.removeEventListener('keydown', onKey);
@@ -2192,7 +2349,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="village" role="application" aria-label="Vila: modo vida da Caixa">
-    <div ref="wrapEl" class="village-stage" :class="{ 'village-diorama': arActive }">
+    <div ref="wrapEl" class="village-stage" :class="{ 'village-diorama': arActive }" role="group" tabindex="-1" aria-label="Mapa da Vila">
       <video ref="arVideoEl" class="village-ar-video" :class="{ active: arActive }" muted playsinline aria-hidden="true"></video>
       <canvas
         ref="canvasEl"
@@ -2235,7 +2392,7 @@ onBeforeUnmount(() => {
         <div class="village-top-actions">
           <button v-if="arActive" type="button" class="village-ar-badge" @click="placeVillageAr">{{ arAnchored ? 'Reposicionar' : 'Ancorar à frente' }}</button>
           <button v-if="arActive" type="button" class="village-ar-badge" aria-label="Sair da Vila em AR" @click="stopArBeta">Sair do AR</button>
-          <button type="button" class="village-menu-btn" :aria-label="unread > 0 ? `Abrir o menu da Vila (${unread} momento(s) novo(s) no Diário)` : 'Abrir o menu da Vila'" @click="openMenu"><span aria-hidden="true">☰</span> Menu <b v-if="unread > 0" class="menu-unread">{{ unread }}</b></button>
+          <button v-if="!dialog && !quiz && !quizOpen && (!sheet || sheet === 'menu')" type="button" class="village-menu-btn" :aria-label="unread > 0 ? `Abrir o menu da Vila (${unread} momento(s) novo(s) no Diário)` : 'Abrir o menu da Vila'" @click="pressMenu"><span aria-hidden="true">☰</span> Menu <b v-if="unread > 0" class="menu-unread">{{ unread }}</b></button>
           <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
         </div>
       </header>
@@ -2274,7 +2431,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-else-if="welcome" class="village-welcome" @click="welcome = false">
         <strong>Bem-vindo à Vila, {{ profile.name }}!</strong>
-        <span>Arraste na tela para andar ou toque no chão para ir até o local. Use <b>Menu</b> no topo ou aperte <b>B</b> para acessar sua mochila, histórias, lugares e outros modos. Botão <b>A</b> conversa, colhe e interage.</span>
+        <span>Arraste na tela ou use o direcional para andar; toque no chão para ir até o local. Use <b>A</b> para conversar e interagir, <b>B</b> para voltar e <b>Menu</b> para acessar mochila, histórias, lugares e outros modos.</span>
         <label @click.stop>
           <input type="checkbox" @change="hideVillageControlsHint" />
           Não exibir mais ao entrar na Vila
@@ -2671,9 +2828,19 @@ onBeforeUnmount(() => {
 
     <div v-show="!loading && !recapScene && !cutsceneOpen && !welcome" class="village-pad" @contextmenu.prevent>
       <p class="village-move-hint">Arraste para andar · toque para ir<span> · setas/WASD</span></p>
-      <div class="ab">
-        <button v-if="sheet || dialog || quiz" type="button" class="b-btn" aria-label="B: abre o menu, ou volta" @click="pressB">↩<small aria-hidden="true">{{ sheet || dialog || quiz ? 'Voltar' : 'Menu' }}</small></button>
-        <button type="button" class="a-btn" aria-label="A: interagir e falar" @click="pressA">A<small aria-hidden="true">Interagir</small></button>
+      <div class="village-control-cluster" :class="{ blocked: !!sheet || !!dialog || !!quiz || quizOpen }" role="group" aria-label="Controles da Vila">
+        <div class="village-dpad" role="group" aria-label="Direcional">
+          <button type="button" class="dpad-up" aria-label="Andar para cima" @pointerdown.prevent="dpadDown($event, 'up')" @pointerup="dpadUp" @pointercancel="dpadUp" @lostpointercapture="dpadUp">▲</button>
+          <button type="button" class="dpad-left" aria-label="Andar para a esquerda" @pointerdown.prevent="dpadDown($event, 'left')" @pointerup="dpadUp" @pointercancel="dpadUp" @lostpointercapture="dpadUp">◀</button>
+          <span class="dpad-center" aria-hidden="true">✦</span>
+          <button type="button" class="dpad-right" aria-label="Andar para a direita" @pointerdown.prevent="dpadDown($event, 'right')" @pointerup="dpadUp" @pointercancel="dpadUp" @lostpointercapture="dpadUp">▶</button>
+          <button type="button" class="dpad-down" aria-label="Andar para baixo" @pointerdown.prevent="dpadDown($event, 'down')" @pointerup="dpadUp" @pointercancel="dpadUp" @lostpointercapture="dpadUp">▼</button>
+        </div>
+        <div class="ab">
+          <button type="button" class="b-btn" :disabled="quizOpen && quizStep === 0" :aria-label="sheet || dialog || quiz || quizOpen ? 'Voltar' : 'Abrir menu'" @click="pressB">B<small aria-hidden="true">{{ sheet || dialog || quiz || quizOpen ? 'Voltar' : 'Menu' }}</small></button>
+          <button type="button" class="a-btn" aria-label="A: confirmar ou interagir" @click="pressA">A<small aria-hidden="true">{{ sheet || dialog || quiz || quizOpen ? 'Confirmar' : 'Interagir' }}</small></button>
+          <button v-if="!dialog && !quiz && !quizOpen && (!sheet || sheet === 'menu')" type="button" class="menu-control-btn" aria-label="Menu da Vila" @click="pressMenu">☰<small aria-hidden="true">Menu</small></button>
+        </div>
       </div>
     </div>
     <BackpackView v-if="backpackOpen" :items="backpackItems" @close="backpackOpen = false" />
