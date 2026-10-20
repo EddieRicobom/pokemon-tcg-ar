@@ -67,6 +67,7 @@ export class MultiArSession {
   private readonly shown: boolean[];
   private lastUpdateAt = 0;
   private intervalEmaMs = 0;
+  private disposed = false;
   private lastStatsAt = 0;
   private state: MultiArState = { phase: 'idle', visible: [] };
 
@@ -103,6 +104,7 @@ export class MultiArSession {
   }
 
   async start(targets: ArrayBuffer[]): Promise<void> {
+    if (this.disposed) throw new Error('Esta sessão de AR já foi encerrada.');
     if (this.running) return;
     if (targets.length !== this.deps.slots.length) throw new Error('É preciso um alvo de rastreamento para cada carta.');
     this.targets = targets;
@@ -235,6 +237,8 @@ export class MultiArSession {
   }
 
   stop(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.running = false;
     if (this.handle !== null) (this.deps.cancel ?? cancelGameFrame)(this.handle);
     this.handle = null;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyVillage, normalizeVillage, tickCrops } from './life';
-import { generateVillage, isWalkable } from './map';
+import { generateVillage, isWalkable, reachableFrom, tileAt } from './map';
 import { emptyFarm, FarmSession, FARM_RULES, normalizeFarm, stepFarmWorker, transferFarmSeeds } from './farm';
 import type { FarmWorker } from './farm';
 import { normalizeResidentProgress } from './community';
@@ -13,7 +13,7 @@ const rng = () => 0.4;
 function setup() {
   const state = emptyVillage(9, map.spawn);
   state.farm.seeds['sem-tomate'] = 5;
-  const worker: FarmWorker = { id: 'digital:bulbasaur', types: ['grass'], x: 45, y: 41, available: true };
+  const worker: FarmWorker = { id: 'digital:bulbasaur', types: ['normal'], x: 45, y: 41, available: true };
   return { state, worker, session: new FarmSession() };
 }
 
@@ -158,6 +158,61 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     const box = map.decor.find((entry) => entry.kind === 'seed-box')!;
     expect(box).toMatchObject({ x: 83, y: 46 });
     expect(isWalkable(map, box.x + 1, box.y)).toBe(true);
+  });
+
+  it('cria mata de trabalho, mina ao sul e margem de pesca alcançáveis', () => {
+    const reached = reachableFrom(map, map.spawn.x, map.spawn.y);
+    const mineRocks = map.tiles.flatMap((tile, index) => tile === 'rock' && index % map.w >= 5 && index % map.w < 20 && Math.floor(index / map.w) >= 64 ? [index] : []);
+    const lumberTrees = map.tiles.flatMap((tile, index) => tile === 'tree' && index % map.w >= 5 && index % map.w < 18 && Math.floor(index / map.w) >= 6 && Math.floor(index / map.w) < 15 ? [index] : []);
+    const lakeWater = map.tiles.flatMap((tile, index) => tile === 'water' && index % map.w >= 72 && index % map.w < 90 && Math.floor(index / map.w) >= 5 && Math.floor(index / map.w) < 20 ? [index] : []);
+    expect(mineRocks.length).toBeGreaterThan(0);
+    expect(lumberTrees.length).toBeGreaterThan(0);
+    expect(lakeWater.length).toBeGreaterThan(0);
+    const hasAccessibleNode = (indices: number[]) => indices.some((index) => {
+      const x = index % map.w;
+      const y = Math.floor(index / map.w);
+      return [{ x, y: y + 1 }, { x: x - 1, y }, { x: x + 1, y }, { x, y: y - 1 }].some((at) => isWalkable(map, at.x, at.y) && reached[at.y * map.w + at.x] === 1);
+    });
+    expect(hasAccessibleNode(mineRocks)).toBe(true);
+    expect(hasAccessibleNode(lumberTrees)).toBe(true);
+    expect(tileAt(map, map.spawn.x, map.spawn.y)).toBe('plaza');
+  });
+
+  it('faz moradores minerarem e derrubarem árvores com o mesmo loot diário do jogador', () => {
+    for (const job of [{ kind: 'mine' as const, types: ['rock'] as const, area: { x: 5, y: 64, w: 15, h: 6 }, item: 'pedra' }, { kind: 'lumber' as const, types: ['grass'] as const, area: { x: 5, y: 6, w: 13, h: 9 }, item: 'madeira' }]) {
+      const state = emptyVillage(9, map.spawn);
+      const worker: FarmWorker = { id: `worker:${job.kind}`, types: job.types, x: map.spawn.x, y: map.spawn.y, available: true };
+      const session = new FarmSession();
+      const now = new Date(2026, 9, 19, 12).getTime();
+      session.tick(state, map, [worker], now, rng, free);
+      const task = session.tasks[0]!;
+      expect(task.kind).toBe(job.kind);
+      expect(task.x).toBeGreaterThanOrEqual(job.area.x);
+      expect(task.x).toBeLessThan(job.area.x + job.area.w);
+      Object.assign(worker, task.stand);
+      session.tick(state, map, [worker], now + 100, rng, free);
+      session.tick(state, map, [worker], now + 10_100, rng, free);
+      expect(state.inventory[job.item as keyof typeof state.inventory]).toBeGreaterThan(0);
+      expect(state.farm.history.at(-1)?.message).toContain('Os itens foram para sua mochila');
+      expect(state.community.residents[worker.id]?.experience[job.kind === 'mine' ? 'mineracao' : 'madeireira']).toBe(1);
+    }
+  });
+
+  it('permite que moradores pesquem na margem com a tabela e o limite real da pescaria', () => {
+    const state = emptyVillage(9, map.spawn);
+    const worker: FarmWorker = { id: 'angler:vaporeon', types: ['water'], x: map.spawn.x, y: map.spawn.y, available: true };
+    const session = new FarmSession();
+    const now = new Date(2026, 9, 19, 12).getTime();
+    state.fishing = { day: '2026-10-19', casts: 9 };
+    session.tick(state, map, [worker], now, () => 0.4, free);
+    const task = session.tasks[0]!;
+    expect(task.kind).toBe('fish');
+    Object.assign(worker, task.stand);
+    session.tick(state, map, [worker], now + 100, () => 0.4, free);
+    session.tick(state, map, [worker], now + 10_100, () => 0.4, free);
+    expect(state.fishing.casts).toBe(10);
+    expect(state.inventory.peixe).toBe(1);
+    expect(session.tasks).toHaveLength(0);
   });
 
   it('caminha da praça até o posto no mapa real e só então planta', () => {

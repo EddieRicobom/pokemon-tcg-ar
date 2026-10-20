@@ -57,6 +57,28 @@ describe('CardSprite: chegada do companheiro evoluído', () => {
   });
 });
 
+describe('CardSprite: liberação de recursos', () => {
+  it('descarta texturas, geometrias e materiais uma única vez ao encerrar a instância', () => {
+    const sprite = new CardSprite();
+    sprite.setStatic(makePlaceholder(8));
+    sprite.setShiny(true);
+    sprite.setEvolved(true);
+    const cardTexture = sprite.mesh.material.map!;
+    const cardGeometry = sprite.mesh.geometry;
+    const cardMaterial = sprite.mesh.material;
+    const shadowTexture = sprite.shadow.material.map!;
+    const glowTexture = sprite.glow.material.map!;
+    const resources = [cardTexture, cardGeometry, cardMaterial, shadowTexture, glowTexture];
+    const dispose = resources.map((resource) => vi.spyOn(resource, 'dispose'));
+
+    sprite.dispose();
+    sprite.dispose();
+
+    for (const release of dispose) expect(release).toHaveBeenCalledTimes(1);
+    expect(sprite.group.children).toHaveLength(0);
+  });
+});
+
 const pixelsOf = (sprite: CardSprite) => (sprite.mesh.material.map!.image as { data: Uint8Array }).data;
 
 function planeCorners(sprite: CardSprite): Vector3[] {

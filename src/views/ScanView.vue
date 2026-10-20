@@ -34,12 +34,15 @@ import { requestOrientationPermission } from '../core/orientation-permission';
 import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import StageSheet from '../components/StageSheet.vue';
-import { CameraError, startRearCamera, stopCamera } from '../core/camera';
+import { CameraError, startCamera, stopCamera } from '../core/camera';
+import type { CameraFacingMode } from '../core/camera';
 import { frameFromVideo } from '../recognition/browser-image';
 import type { RgbaImage } from '../recognition/types';
 import { loadChunk } from '../app/stale-build';
 import { loseCanvasContext } from '../ar/context-release';
-import { spriteIdOf } from '../core/dex-form';
+import { formDexId, spriteIdOf } from '../core/dex-form';
+import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
+import { typesOfDex } from '../core/species-filter';
 import { isShiny } from '../core/shiny';
 import { maybeGalladeSpeaks } from '../app/speech-store';
 import { companionCard } from '../app/card-evolution-store';
@@ -66,6 +69,7 @@ function toggleSheet(name: SheetName): void {
 
 const cameraOn = ref(false);
 const cameraBusy = ref(false);
+const cameraFacing = ref<CameraFacingMode>('environment');
 /** Com a câmera ligada o visor cobre a janela inteira e tudo que importa aparece sobre a imagem: sem rolar a página. */
 const immersive = computed(() => cameraOn.value || cameraBusy.value);
 const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl, immersive);
@@ -88,6 +92,20 @@ const adjusting = ref(false);
 const moveNotice = ref('');
 const arActive = ref(false);
 const evolvedCaption = ref('');
+const foilIntensity = ref(65);
+const hudVisible = ref(true);
+let hudHideTimer: ReturnType<typeof setTimeout> | undefined;
+
+function scheduleHudHide(): void {
+  if (hudHideTimer) clearTimeout(hudHideTimer);
+  hudHideTimer = undefined;
+  if (!arActive.value || sheet.value || adjusting.value) return;
+  hudHideTimer = setTimeout(() => { hudVisible.value = false; }, 3000);
+}
+function wakeHud(): void {
+  hudVisible.value = true;
+  scheduleHudHide();
+}
 
 // Diagnóstico do scan: mostra o que o app está vendo (onde achou a carta, o que o OCR recebeu e leu).
 const DEBUG_KEY = 'tcg-ar-scan-debug-v1';
@@ -430,7 +448,7 @@ async function openCamera(): Promise<void> {
   cameraBusy.value = true;
   cameraMessage.value = '';
   try {
-    stream = await startRearCamera(video);
+    stream = await startCamera(video, cameraFacing.value);
     cameraOn.value = true;
   } catch (error) {
     cameraMessage.value = error instanceof CameraError ? error.message : 'Não foi possível abrir a câmera.';
@@ -464,6 +482,37 @@ async function beginScan(): Promise<void> {
   loadingEngine.value = '';
   if (disposed) return;
   (await ensureController()).start();
+}
+
+async function switchCamera(): Promise<void> {
+  const video = videoEl.value;
+  if (!video || cameraBusy.value) return;
+  const card = pendingArCardId.value;
+  const restartScan = !card && scan.value.phase === 'scanning';
+  cameraBusy.value = true;
+  controller?.stop();
+  arRun++;
+  stopAr();
+  stopCamera(video, stream);
+  stream = null;
+  cameraOn.value = false;
+  const nextFacing: CameraFacingMode = cameraFacing.value === 'environment' ? 'user' : 'environment';
+  try {
+    stream = await startCamera(video, nextFacing);
+    cameraFacing.value = nextFacing;
+    cameraOn.value = true;
+  } catch (error) {
+    cameraMessage.value = error instanceof CameraError ? error.message : 'Não foi possível trocar a câmera.';
+    scan.value = { phase: 'error', frames: 0, message: cameraMessage.value };
+    return;
+  } finally {
+    cameraBusy.value = false;
+  }
+  if (card) await startArFor(card);
+  else if (restartScan) {
+    scan.value = { phase: 'scanning', frames: 0, message: 'Procurando a carta…' };
+    (await ensureController()).start();
+  }
 }
 
 async function startArFor(cardId: string): Promise<void> {
@@ -725,6 +774,11 @@ function resetLayout(): void {
   saveLayout();
 }
 
+function resetRotation(): void {
+  layout.yawDeg = DEFAULT_LAYOUT.yawDeg;
+  saveLayout();
+}
+
 watch(layout, saveLayout);
 // Saiu do AR (outra carta, câmera fechada): o modo de ajuste não fica ligado sozinho.
 watch(arActive, (active) => {
@@ -733,12 +787,17 @@ watch(arActive, (active) => {
     gestures.reset();
   }
 });
+watch([arActive, sheet, adjusting], () => {
+  hudVisible.value = true;
+  scheduleHudHide();
+});
 
 if (props.cardId) {
   void ensureController().then((c) => c.loadCached(props.cardId as string));
 }
 
 onBeforeUnmount(() => {
+  if (hudHideTimer) clearTimeout(hudHideTimer);
   disposed = true;
   arRun++;
   controller?.stop();
@@ -834,10 +893,22 @@ const resultNotice = computed(() => {
   if (!cameraOn.value || !card || scan.value.phase !== 'ready') return null;
   return {
     name: card.name,
-    line: `${card.setName} · nº ${card.localId}/${card.setOfficial}${card.dexIds[0] ? ` · Pokédex ${card.dexIds[0]}` : ''}`,
+    setName: card.setName,
+    number: `${card.localId}/${card.setOfficial}`,
+    rarity: card.rarity?.trim() || 'Raridade não informada',
+    dex: card.dexIds[0] ? `Pokédex ${card.dexIds[0]}` : '',
     origin: ORIGIN_TEXT[scan.value.origin ?? ''] ?? 'reconhecida automaticamente',
   };
 });
+
+const focusedTypes = computed(() => {
+  const card = scan.value.card;
+  const dexId = card?.dexIds[0];
+  return card && dexId !== undefined ? typesOfDex(formDexId(dexId, card.name)) : [];
+});
+const elementAccent = computed(() => TYPE_COLORS[focusedTypes.value[0] ?? 'normal']);
+const viewportStyle = computed<Record<string, string>>(() => ({ '--element-accent': elementAccent.value, '--foil-intensity': String(foilIntensity.value / 100) }));
+const gyroStatus = computed(() => !sensorSettings.gyro ? 'Sensor desligado' : arState.value.gyro ? 'Sensor ativo' : 'Aguardando movimento');
 
 const spriteNotice = computed(() => {
   const kind = spriteState.value?.kind;
@@ -944,7 +1015,10 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
     <div
       ref="stageEl"
       class="viewport"
-      :class="{ adjusting, tracking: arState?.phase === 'tracking', 'pseudo-full': pseudo, immersive }"
+      :class="{ adjusting, tracking: arState?.phase === 'tracking', 'pseudo-full': pseudo, immersive, 'hud-hidden': arActive && !hudVisible }"
+      :style="viewportStyle"
+      @pointerdown.capture="wakeHud"
+      @pointermove.capture="wakeHud"
       @pointerdown="onStageDown"
       @pointerup="onStageUp"
     >
@@ -996,8 +1070,20 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
           <span class="pill-text">{{ mainNotice.text }}<small v-if="mainNotice.sub" class="pill-sub">{{ mainNotice.sub }}</small></span>
         </p>
         <p v-if="resultNotice" class="pill gold">
-          <span class="pill-text">{{ resultNotice.name }}<small class="pill-sub">{{ resultNotice.line }} · {{ resultNotice.origin }}</small></span>
+          <span class="pill-text scan-card-title">{{ resultNotice.name }}</span>
+          <span class="scan-card-badges">
+            <small class="scan-card-badge rarity">{{ resultNotice.rarity }}</small>
+            <small class="scan-card-badge">{{ resultNotice.setName }}</small>
+            <small class="scan-card-badge">Nº {{ resultNotice.number }}</small>
+            <small v-if="resultNotice.dex" class="scan-card-badge">{{ resultNotice.dex }}</small>
+            <small v-for="type in focusedTypes" :key="type" class="scan-card-badge element" :style="{ '--element-accent': TYPE_COLORS[type] }">{{ TYPE_LABELS_PT[type] }}</small>
+          </span>
+          <small class="pill-sub">{{ resultNotice.origin }}</small>
         </p>
+        <div v-if="arActive" class="ar-radar" :class="{ active: arState.gyro }" role="status" aria-live="polite">
+          <span class="ar-radar-glyph" aria-hidden="true">◎</span>
+          <span><b>{{ gyroStatus }}</b><small>{{ arState.trackerHz ? `${arState.trackerHz} leituras/s` : 'Rastreamento ligado' }}</small></span>
+        </div>
         <p v-if="spriteNotice" class="pill warn"><i class="dot"></i><span class="pill-text">{{ spriteNotice }}</span></p>
         <p v-if="adjustNotice" class="pill ok"><i class="dot"></i><span class="pill-text">{{ adjustNotice }}</span></p>
         <p v-if="moveNotice" class="pill warn"><i class="dot"></i><span class="pill-text">{{ moveNotice }}</span></p>
@@ -1086,12 +1172,17 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
         </div>
 
         <div class="stage-bar">
+          <label v-if="arActive" class="foil-control" title="Intensidade do brilho na borda">
+            <span>Brilho</span><input v-model.number="foilIntensity" type="range" min="0" max="100" step="5" aria-label="Intensidade do brilho foil" />
+          </label>
           <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
+          <StageButton v-if="arActive" icon="camera" :label="cameraFacing === 'environment' ? 'Câmera frontal' : 'Câmera traseira'" :disabled="cameraBusy" @click="switchCamera" />
           <StageButton icon="filters" label="Suavizar" :active="sheet === 'smooth'" @click="toggleSheet('smooth')" />
           <StageButton icon="rescan" :label="cardId ? 'Escanear outra' : 'Escanear'" @click="scanAnother" />
           <StageButton v-if="!cardId" icon="search" label="Buscar" :active="sheet === 'manual'" :attention="manualAttention" @click="toggleSheet('manual')" />
           <StageButton v-if="!cardId" icon="tools" label="Teste" :active="sheet === 'tools'" @click="toggleSheet('tools')" />
           <StageButton v-if="arActive" icon="adjust" :label="adjusting ? 'Concluir' : 'Ajustar'" :active="adjusting" @click="toggleAdjusting" />
+          <StageButton v-if="arActive" icon="rotate" label="Zerar giro" @click="resetRotation" />
           <StageButton v-if="arActive" icon="panel" label="Status" :active="layout.showStats !== false" @click="layout.showStats = layout.showStats === false" />
           <StageButton v-if="arActive" icon="sliders" label="Ajustes" :active="sheet === 'adjust'" @click="toggleSheet('adjust')" />
           <StageButton icon="close" label="Fechar" @click="closeCamera" />

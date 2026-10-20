@@ -81,6 +81,12 @@ export const REAR_CAMERA_CONSTRAINTS: MediaStreamConstraints = {
   },
 };
 
+export type CameraFacingMode = 'environment' | 'user';
+
+export function cameraConstraints(facingMode: CameraFacingMode): MediaStreamConstraints {
+  return { ...REAR_CAMERA_CONSTRAINTS, video: { ...(REAR_CAMERA_CONSTRAINTS.video as MediaTrackConstraints), facingMode: { ideal: facingMode } } };
+}
+
 function browserCameraDeps(): CameraDeps {
   return { isSecureContext: window.isSecureContext, mediaDevices: navigator.mediaDevices };
 }
@@ -94,13 +100,22 @@ export async function startRearCamera(
   video: VideoLike,
   deps: CameraDeps = browserCameraDeps(),
 ): Promise<MediaStream> {
+  return startCamera(video, 'environment', deps);
+}
+
+/** Abre uma câmera frontal ou traseira mantendo os ajustes compatíveis com o rastreador. */
+export async function startCamera(
+  video: VideoLike,
+  facingMode: CameraFacingMode,
+  deps: CameraDeps = browserCameraDeps(),
+): Promise<MediaStream> {
   if (!deps.mediaDevices?.getUserMedia) {
     throw new CameraError(deps.isSecureContext ? 'unsupported' : 'insecure-context');
   }
 
   let stream: MediaStream;
   try {
-    stream = await deps.mediaDevices.getUserMedia(REAR_CAMERA_CONSTRAINTS);
+    stream = await deps.mediaDevices.getUserMedia(cameraConstraints(facingMode));
   } catch (error) {
     throw new CameraError(classifyCameraError(error));
   }

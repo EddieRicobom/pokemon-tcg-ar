@@ -3,13 +3,13 @@ import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES, intersectFloor } from '../box/f
 import { visibleVerticalFov } from '../box/orientation';
 import { OrientationSource } from '../box/orientation-source';
 import type { OrientationMode } from '../box/orientation-source';
-import { VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M, normalizeVillageScale } from '../core/village/ar-diorama';
+import { VILLAGE_AR_TILT_DEG, VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M, normalizeVillageScale } from '../core/village/ar-diorama';
 import { createWebglBackend } from './webgl-backend';
 import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
 import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 
-export { VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M } from '../core/village/ar-diorama';
+export { VILLAGE_AR_TILT_DEG, VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M } from '../core/village/ar-diorama';
 
 export interface StartVillageArOptions {
   video: HTMLVideoElement;
@@ -101,8 +101,9 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     const forward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     // Respeita exatamente o ponto escolhido, inclusive quando fica bem perto do celular.
     root.position.copy(floor.point);
-    // Gira só no eixo vertical, mantendo a planta horizontal e a frente da Vila voltada para quem a posicionou.
-    root.rotation.y = Math.atan2(forward.x, forward.z) + Math.PI;
+    // Inclina temporariamente o diorama em direção à câmera e mantém a frente voltada para quem o posicionou.
+    root.rotation.order = 'YXZ';
+    root.rotation.set(-VILLAGE_AR_TILT_DEG * Math.PI / 180, Math.atan2(forward.x, forward.z) + Math.PI, 0);
     root.visible = true;
     return { ok: true };
   };

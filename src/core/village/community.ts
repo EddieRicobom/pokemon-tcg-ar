@@ -315,7 +315,7 @@ function shortagePhase(days: number): number {
 }
 
 const ACTIVITY_ICONS: Record<VillageActivity, string> = {
-  agricultura: '🌱', pesca: '🎣', culinaria: '🍲', manutencao: '🛠️', construcao: '🧱', transporte: '📦',
+  agricultura: '🌱', pesca: '🎣', mineracao: '⛏️', madeireira: '🪓', culinaria: '🍲', manutencao: '🛠️', construcao: '🧱', transporte: '📦',
   exploracao: '🧭', pesquisa: '📚', jardinagem: '🌼', vigilancia: '🔎', comercio: '🛒', protecao: '🛡️',
   conservacao: '🧊', reciclagem: '♻️', acolhimento: '🤝', brincadeira: '🎈', descanso: '💤',
 };

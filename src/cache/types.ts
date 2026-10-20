@@ -42,6 +42,8 @@ export interface CachedCard {
   setId: string;
   setName: string;
   localId: string;
+  /** Raridade informada pelo TCGdex; ausente nos saves antigos ou quando a fonte não a informa. */
+  rarity?: string;
   setOfficial: number;
   setTotal: number;
   setCode?: string;

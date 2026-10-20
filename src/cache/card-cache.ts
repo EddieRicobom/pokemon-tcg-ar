@@ -212,7 +212,7 @@ export class CardCache {
 
   private toRecord(card: CardRecordLike): CardRecordLike {
     return {
-      id: card.id, name: card.name, setId: card.setId, setName: card.setName, localId: card.localId,
+      id: card.id, name: card.name, setId: card.setId, setName: card.setName, localId: card.localId, rarity: card.rarity,
       setOfficial: card.setOfficial, setTotal: card.setTotal, setCode: card.setCode, dexIds: card.dexIds, imageBase: card.imageBase,
     };
   }

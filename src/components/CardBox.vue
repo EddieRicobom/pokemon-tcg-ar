@@ -6,6 +6,7 @@
  */
 import { computed, ref, watch } from 'vue';
 import CardMarks from './CardMarks.vue';
+import CardArtwork from './CardArtwork.vue';
 import { routeHref } from '../app/route';
 import { loadBoxLayout, saveBoxLayout } from '../app/box-store';
 import { addBox, BOX_SIZE, findCard, moveSlot, removeEmptyBox, renameBox, sortBox } from '../core/box-layout';
@@ -169,7 +170,7 @@ const teamIndex = (id: string) => props.team.indexOf(id);
         @click="tapSlot(slot)"
       >
         <template v-if="id && byId.get(id)">
-          <img v-if="byId.get(id)!.icon || byId.get(id)!.thumb" :src="byId.get(id)!.icon ?? byId.get(id)!.thumb" :class="{ card: !byId.get(id)!.icon }" alt="" />
+          <CardArtwork v-if="byId.get(id)!.icon || byId.get(id)!.thumb" :src="byId.get(id)!.icon ?? byId.get(id)!.thumb!" :card="!byId.get(id)!.icon" alt="" />
           <span v-else class="pbox-noimg" aria-hidden="true">?</span>
           <span v-if="teamIndex(id) >= 0" class="pbox-team" aria-hidden="true">{{ teamIndex(id) + 1 }}</span>
           <span v-if="byId.get(id)!.digital" class="pbox-digital" aria-hidden="true">✨</span>

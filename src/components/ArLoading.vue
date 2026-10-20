@@ -62,7 +62,6 @@ defineProps<{
   padding: 12px 14px;
   border-radius: 16px;
   background: rgba(10, 14, 26, 0.72);
-  backdrop-filter: blur(8px);
 }
 
 .info strong {

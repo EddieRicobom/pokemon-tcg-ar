@@ -1,6 +1,6 @@
 import { seededRng } from '../battle';
 import type { Rng } from '../battle';
-import { buildingsFor, DECOR, FIELDS, lampSpots, TOWN } from './town-layout';
+import { buildingsFor, DECOR, FIELDS, lampSpots, TOWN, WORK_AREAS } from './town-layout';
 import type { Building, Decor } from './town-layout';
 
 /**
@@ -135,6 +135,10 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
   trail(map, 78, TOWN.mainStreetY + 2, 83, 46);
   trail(map, 18, 15, av - 14, 8);
   trail(map, 76, TOWN.southStreetY, 86, 64);
+  // A madeireira do noroeste e a entrada da mina ao sul têm acessos próprios.
+  trail(map, 18, 15, 15, 15);
+  trail(map, 15, 15, 15, 12);
+  trail(map, 20, 63, 17, 66);
   // Canteiros da fazenda.
   for (const f of FIELDS) fill(map, f.x, f.y, f.w, f.h, 'field');
   // Terreno da sua casa, com caminhos até a avenida e até a rua principal.
@@ -158,6 +162,15 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
     if (d.x < 3 || d.y < 3 || d.x + d.w > w - 3 || d.y + d.h > h - 3) continue;
     fill(map, d.x, d.y, d.w, d.h, 'deco');
     map.decor.push({ ...d });
+  }
+  // Recursos visíveis e renováveis nos locais de trabalho. A coleta segue o mesmo harvest() do jogador.
+  const lumber = WORK_AREAS.lumber;
+  for (const [x, y] of [[6, 7], [8, 7], [10, 7], [12, 7], [6, 9], [8, 9], [10, 9], [12, 9], [6, 11], [8, 11], [10, 11], [12, 11]] as const) {
+    if (x >= lumber.x && y >= lumber.y && x < lumber.x + lumber.w && y < lumber.y + lumber.h) setTile(map, x, y, 'tree');
+  }
+  const mine = WORK_AREAS.mine;
+  for (const [x, y] of [[7, 67], [9, 67], [11, 67], [13, 67], [7, 69], [9, 69], [11, 69], [13, 69]] as const) {
+    if (x >= mine.x && y >= mine.y && x < mine.x + mine.w && y < mine.y + mine.h) setTile(map, x, y, 'rock');
   }
   for (const l of lampSpots(w, h)) if (['grass', 'flower', 'tall'].includes(tileAt(map, l.x, l.y))) setTile(map, l.x, l.y, 'lamp');
   // Água nunca encosta direto na grama: em volta dela, o que sobrar vira areia.

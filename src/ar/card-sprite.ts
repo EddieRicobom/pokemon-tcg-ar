@@ -128,6 +128,7 @@ export class CardSprite {
   private staticImage: RgbaImage | null = null;
   private readonly frameCache = new Map<number, PreparedFrame>();
   private frameCacheBytes = 0;
+  private disposed = false;
 
   private readonly frameCacheLimit: number;
 
@@ -469,7 +470,10 @@ export class CardSprite {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.arrival?.dispose();
+    this.arrival = null;
     this.setShiny(false);
     this.releaseTexture();
     this.mesh.geometry.dispose();

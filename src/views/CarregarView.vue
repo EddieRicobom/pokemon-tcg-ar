@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import CardMarks from '../components/CardMarks.vue';
 import CardBox from '../components/CardBox.vue';
+import CardArtwork from '../components/CardArtwork.vue';
+import ElementTypeFilter from '../components/ElementTypeFilter.vue';
 import { formatBytes, formatDate } from '../app/format';
 import { routeHref } from '../app/route';
 import { getCache } from '../app/services';
@@ -11,7 +13,6 @@ import { LEGACY_NO_DEX_ERROR, NO_DEX_ERROR } from '../cache/types';
 import type { CachedCard, CacheStatus, SlotInfo, StorageInfo } from '../cache/types';
 import { isShiny } from '../core/shiny';
 import { cardMatchesSpecies, GENERATION_LABELS_PT } from '../core/species-filter';
-import { POKEMON_TYPES, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { loadVillage } from '../app/village-store';
 import { digitalRows } from '../core/village/digital';
@@ -281,12 +282,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
       </div>
       <input v-model="search" type="text" :placeholder="viewMode === 'box' ? 'Buscar nas caixas da coleção' : 'Buscar por nome, coleção ou número'" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
       <div class="filter-row species-filters">
-        <label>Tipo
-          <select v-model="typeFilter">
-            <option value="">Todos</option>
-            <option v-for="t in POKEMON_TYPES" :key="t" :value="t">{{ TYPE_LABELS_PT[t] }}</option>
-          </select>
-        </label>
+        <ElementTypeFilter v-model="typeFilter" />
         <label>Geração
           <select v-model.number="genFilter">
             <option :value="0">Todas</option>
@@ -337,7 +333,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <ul v-else-if="viewMode === 'grade'" class="card-grid">
       <li v-for="row in visibleRows" :key="row.id">
         <button type="button" class="grid-card" :class="{ picked: team.ids.includes(row.id), 'is-shiny': isShiny(row) }" :aria-pressed="team.ids.includes(row.id)" :aria-label="`${row.name}: ${team.ids.includes(row.id) ? 'tirar da' : 'adicionar à'} Vila`" @click="toggleTeam(row)">
-          <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="90" height="126" />
+          <CardArtwork v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" />
           <div v-else class="thumb-missing" aria-hidden="true">sem imagem</div>
           <strong>{{ row.name }}</strong>
           <CardMarks :card="row" />
@@ -350,7 +346,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <ul v-else class="card-list">
       <li v-for="row in visibleRows" :key="row.id" class="card-row" :class="{ loading: busyId === row.id, 'just-loaded': justLoaded.has(row.id), 'is-shiny': isShiny(row) }">
         <div class="thumb-wrap">
-          <img v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" width="60" height="84" />
+          <CardArtwork v-if="row.thumb" :src="row.thumb" :alt="`Carta ${row.name}`" />
           <div v-else class="thumb-missing" aria-hidden="true">sem imagem</div>
           <span v-if="justLoaded.has(row.id)" class="thumb-check" aria-hidden="true">✓</span>
         </div>

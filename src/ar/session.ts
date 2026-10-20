@@ -94,6 +94,7 @@ export class ArSession {
   private lastStatsAt = 0;
   private target: ArrayBuffer | null = null;
   private restarting = false;
+  private disposed = false;
   private state: ArState = { phase: 'idle', foundCount: 0 };
 
   constructor(private readonly deps: ArSessionDeps) {
@@ -118,6 +119,7 @@ export class ArSession {
   }
 
   async start(target: ArrayBuffer): Promise<void> {
+    if (this.disposed) throw new Error('Esta sessão de AR já foi encerrada.');
     if (this.running) return;
     this.target = target;
     this.setState({ phase: 'starting', message: 'Preparando o rastreamento…' });
@@ -292,6 +294,8 @@ export class ArSession {
 
   /** Para o rastreamento e o desenho e libera tudo (não fecha a câmera: ela é de quem a abriu). */
   stop(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.running = false;
     if (this.handle !== null) (this.deps.cancel ?? cancelGameFrame)(this.handle);
     this.handle = null;

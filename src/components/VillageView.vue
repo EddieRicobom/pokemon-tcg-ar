@@ -24,7 +24,6 @@ import { ensureModeStories } from '../core/village/mode-stories';
 import { challengeGalleryUnlocked, completedChallengeExhibits } from '../core/village/challenge-gallery';
 import BackpackView from './BackpackView.vue';
 import MinigameHub from './MinigameHub.vue';
-import MinigameEquilibrio from './MinigameEquilibrio.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import { dayKey, levelOf } from '../core/trainer';
 import { personalityOf } from '../core/village/personality';
@@ -256,6 +255,18 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
     ],
   },
 ]);
+type MenuSection = 'vila' | 'historias' | 'lugares' | 'modos';
+const menuSection = ref<MenuSection>('vila');
+const menuSections: { id: MenuSection; label: string; icon: string; groups: string[] }[] = [
+  { id: 'vila', label: 'Minha Vila', icon: '🏡', groups: ['Você', 'Fazer'] },
+  { id: 'historias', label: 'Histórias', icon: '📖', groups: ['Pokémon e memórias'] },
+  { id: 'lugares', label: 'Lugares', icon: '🗺️', groups: ['Lugares da Vila'] },
+  { id: 'modos', label: 'Outros modos', icon: '🎮', groups: ['Fora da Vila', 'Atividades Externas'] },
+];
+const visibleMenuGroups = computed(() => {
+  const selected = menuSections.find((section) => section.id === menuSection.value);
+  return menuGroups.value.filter((group) => selected?.groups.includes(group.title));
+});
 const shopTab = ref<'comprar' | 'vender'>('comprar');
 const dressFor = ref<string>('player');
 const dialog = ref<{ id?: string; name: string; text: string; actions: { label: string; run: () => void; disabled?: boolean }[] } | null>(null);
@@ -1618,6 +1629,7 @@ function openMenu(): void {
   game?.setWaiting(null);
   game?.holdStick(null);
   tab.value = 'inicio';
+  menuSection.value = 'vila';
   sheet.value = 'menu';
 }
 
@@ -2187,15 +2199,20 @@ onBeforeUnmount(() => {
         <div class="village-joy-stick" :style="{ transform: `translate(${joy.x * JOY_MAX}px, ${joy.y * JOY_MAX}px)` }"></div>
       </div>
       <header class="village-top">
-        <img v-if="portraitOk" class="village-trainer" :src="trainerSpriteUrl(profile.sprite)" :alt="profile.name" width="28" height="28" @error="portraitOk = false" />
-        <strong>Vila</strong>
-        <span>{{ clock }}</span>
-        <span class="village-coins" aria-label="Moedas"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
-        <span class="village-house" :title="`Cidade: ${stage.name}`">Nv {{ level }}</span>
-        <button v-if="arActive" type="button" class="village-ar-badge" @click="placeVillageAr">{{ arAnchored ? 'Reposicionar' : 'Ancorar à frente' }}</button>
-        <button v-if="arActive" type="button" class="village-ar-badge" aria-label="Sair da Vila em AR" @click="stopArBeta">AR · sair</button>
-        <button type="button" class="village-menu-btn" :aria-label="unread > 0 ? `Abrir o menu da Vila (${unread} momento(s) novo(s) no Diário)` : 'Abrir o menu da Vila'" @click="openMenu">☰ Menu</button>
-        <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
+        <div class="village-top-identity">
+          <img v-if="portraitOk" class="village-trainer" :src="trainerSpriteUrl(profile.sprite)" :alt="profile.name" width="30" height="30" @error="portraitOk = false" />
+          <div class="village-top-title"><strong>Vila</strong><span>{{ clock }}</span></div>
+        </div>
+        <div class="village-top-status" aria-label="Progresso da Vila">
+          <span class="village-coins" aria-label="Moedas"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
+          <span class="village-house" :title="`Cidade: ${stage.name}`">Nv {{ level }}</span>
+        </div>
+        <div class="village-top-actions">
+          <button v-if="arActive" type="button" class="village-ar-badge" @click="placeVillageAr">{{ arAnchored ? 'Reposicionar' : 'Ancorar à frente' }}</button>
+          <button v-if="arActive" type="button" class="village-ar-badge" aria-label="Sair da Vila em AR" @click="stopArBeta">Sair do AR</button>
+          <button type="button" class="village-menu-btn" :aria-label="unread > 0 ? `Abrir o menu da Vila (${unread} momento(s) novo(s) no Diário)` : 'Abrir o menu da Vila'" @click="openMenu"><span aria-hidden="true">☰</span> Menu <b v-if="unread > 0" class="menu-unread">{{ unread }}</b></button>
+          <button type="button" class="village-close" aria-label="Sair da Vila" @click="emit('close')">✕</button>
+        </div>
       </header>
       <section v-if="arActive" class="village-ar-controls" aria-label="Controles do diorama AR">
         <p><strong>{{ arAnchored ? 'Âncora ativa' : 'Escolha um ponto no chão' }}</strong><span>Toque para posicionar ou mover a cidade.</span></p>
@@ -2231,7 +2248,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-else-if="welcome" class="village-welcome" @click="welcome = false">
         <strong>Bem-vindo à Vila, {{ profile.name }}!</strong>
-        <span>Arraste na tela para andar ou toque no chão para ir até o local. Toque no botão <b>Menu</b> na barra inferior (ou aperte <b>B</b> no controle/teclado) para acessar Mochila, Diário, Criação e Opções. Botão <b>A</b> conversa, colhe e interage.</span>
+        <span>Arraste na tela para andar ou toque no chão para ir até o local. Use <b>Menu</b> no topo ou aperte <b>B</b> para acessar sua mochila, histórias, lugares e outros modos. Botão <b>A</b> conversa, colhe e interage.</span>
         <label @click.stop>
           <input type="checkbox" @change="hideVillageControlsHint" />
           Não exibir mais ao entrar na Vila
@@ -2352,7 +2369,6 @@ onBeforeUnmount(() => {
           <button type="button" class="primary" @click="goToBattle">Abrir câmera e batalhar</button>
         </div>
         <MinigameHub closable @leave="sheet = null" />
-         <MinigameEquilibrio @leave="sheet = null" />
       </div>
 
       <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-label="Caixa de sementes">
@@ -2396,7 +2412,12 @@ onBeforeUnmount(() => {
             <span>⭐ Nível <b>{{ level }}</b></span>
             <span>✨ <b>{{ state.digital.instances.length }}</b> Digital Pokémon</span>
           </p>
-          <section v-for="g in menuGroups" :key="g.title" class="menu-group">
+          <nav class="menu-section-tabs" aria-label="Categorias do menu da Vila" role="tablist">
+            <button v-for="section in menuSections" :key="section.id" type="button" role="tab" :aria-selected="menuSection === section.id" :class="{ active: menuSection === section.id }" @click="menuSection = section.id">
+              <span aria-hidden="true">{{ section.icon }}</span><span>{{ section.label }}</span>
+            </button>
+          </nav>
+          <section v-for="g in visibleMenuGroups" :key="g.title" class="menu-group">
             <div class="menu-group-header">
               <h4>{{ g.title }}</h4>
               <span v-if="g.desc" class="menu-group-desc">{{ g.desc }}</span>
@@ -2501,7 +2522,7 @@ onBeforeUnmount(() => {
 
         <ul v-else-if="tab === 'mochila'" class="item-grid">
           <li class="backpack-launch">
-            <span>🎒 <strong>Mochila 3D</strong><small>Balanceie os itens com o giroscópio e ouça os sons.</small></span>
+            <span>🎒 <strong>Mochila 3D</strong><small>Gire o celular para explorar os itens e ouvir os sons.</small></span>
             <button type="button" class="primary" @click="backpackOpen = true">Abrir mochila 3D</button>
           </li>
           <li v-for="i in inventory" :key="i.id">
@@ -2623,11 +2644,6 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-show="!loading && !recapScene && !cutsceneOpen && !welcome" class="village-pad" @contextmenu.prevent>
-      <nav class="village-shortcuts" aria-label="Acessos rápidos da Vila">
-        <button type="button" @click="openMenu">☰ Menu</button>
-        <button type="button" @click="openMenu(); tab = 'mochila'">🎒 Mochila</button>
-        <button type="button" @click="openMenu(); tab = 'resumo'">📔 Novidades</button>
-      </nav>
       <p class="village-move-hint">Arraste para andar · toque para ir<span> · setas/WASD</span></p>
       <div class="ab">
         <button v-if="sheet || dialog || quiz" type="button" class="b-btn" aria-label="B: abre o menu, ou volta" @click="pressB">↩<small aria-hidden="true">{{ sheet || dialog || quiz ? 'Voltar' : 'Menu' }}</small></button>
