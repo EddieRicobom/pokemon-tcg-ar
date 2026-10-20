@@ -5785,7 +5785,7 @@ body.no-scroll .reward-toasts {
 
 .survivor-toast {
   position: absolute;
-  top: 44px;
+  top: 112px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 3;
@@ -5797,7 +5797,12 @@ body.no-scroll .reward-toasts {
   font-size: 0.9rem;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
   pointer-events: none;
-  white-space: nowrap;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  box-sizing: border-box;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .survivor-mode {
@@ -5975,6 +5980,7 @@ body.no-scroll .reward-toasts {
 
 .survivor-stats {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 6px;
 }
@@ -6004,7 +6010,7 @@ body.no-scroll .reward-toasts {
   position: absolute;
   z-index: 2;
   right: 10px;
-  bottom: 10px;
+  bottom: calc(122px + env(safe-area-inset-bottom));
   width: 142px;
   height: 94px;
   border: 1px solid rgba(255, 255, 255, 0.42);
@@ -6034,6 +6040,48 @@ body.no-scroll .reward-toasts {
   pointer-events: none;
 }
 
+.survivor-special-button {
+  position: absolute;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 4;
+  width: 88px;
+  height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 5px;
+  border: 2px solid #f8edc8;
+  border-radius: 50%;
+  color: #fff;
+  background: radial-gradient(circle, #182031 61%, transparent 63%), conic-gradient(var(--special-color) var(--charge), #414958 0);
+  box-shadow: 0 4px 0 #0a0f1b, 0 5px 18px #0008;
+  touch-action: manipulation;
+}
+.survivor-special-button:disabled { opacity: 0.85; cursor: default; }
+.survivor-special-button.is-ready { border-color: var(--special-color); }
+.survivor-special-button .special-icon { font-size: 27px; line-height: 1; }
+.survivor-special-button strong { font-size: 11px; letter-spacing: 0.05em; }
+.survivor-special-button small { font-size: 10px; }
+.survivor-special-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+.survivor-guardian { z-index: 9; background: #080d19cc; }
+.survivor-guardian .card { border: 1px solid var(--special-color); box-shadow: 0 0 36px color-mix(in srgb, var(--special-color), transparent 70%); }
+.survivor-guardian .card { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; box-sizing: border-box; }
+.survivor-guardian h2 { margin: 6px 0; }
+.guardian-gift { position: relative; height: 105px; width: 160px; margin: 0 auto; }
+.guardian-gift img { display: block; height: 85px; max-width: 130px; object-fit: contain; margin: auto; image-rendering: pixelated; animation: guardian-arrive 650ms ease-out both; }
+.guardian-orb { position: absolute; left: 64px; top: 60px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 2px solid #fff8df; background: var(--special-color); box-shadow: 0 0 18px var(--special-color); animation: guardian-deliver 1500ms ease-out both; }
+.guardian-title { font-weight: 750; color: var(--special-color); margin: 4px 0; }
+.guardian-missing { display: grid; padding-top: 16px; }
+.guardian-missing small { font-size: 11px; opacity: 0.7; }
+.reduced-motion .guardian-gift img, .reduced-motion .guardian-orb { animation: none; }
+@keyframes guardian-arrive { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes guardian-deliver { 0%, 25% { opacity: 0; transform: translateY(-48px) scale(0.3); } 65% { opacity: 1; transform: translateY(0) scale(1.15); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .guardian-gift img, .guardian-orb { animation: none; } }
+@media (max-height: 500px) { .survivor-guardian .guardian-gift { height: 60px; } .survivor-guardian .guardian-gift img { height: 48px; } .survivor-guardian .guardian-orb { top: 25px; } }
+
 .survivor-minimap-marker {
   position: absolute;
   z-index: 1;
@@ -6053,7 +6101,8 @@ body.no-scroll .reward-toasts {
   position: absolute;
   z-index: 2;
   right: 10px;
-  top: 96px;
+  top: auto;
+  bottom: calc(230px + env(safe-area-inset-bottom));
   width: 142px;
   padding: 6px 7px;
   border: 1px solid rgba(255, 255, 255, 0.2);
