@@ -201,6 +201,14 @@ export interface SurvivorFx {
 }
 
 export type SurvivorArtifactKind = 'speed' | 'heal' | 'power';
+
+/** Texto único para HUD e avisos: descreve exatamente os bônus temporários aplicados pelo motor. */
+export const SURVIVOR_ARTIFACT_DETAILS: Record<SurvivorArtifactKind, { icon: string; name: string; description: string }> = {
+  speed: { icon: '⚡', name: 'Passo relâmpago', description: '+35% de velocidade por 8 s.' },
+  power: { icon: '✦', name: 'Núcleo de poder', description: '+25% de dano por 8 s.' },
+  heal: { icon: '♥', name: 'Pulso vital', description: 'Cura 28% da vida (mín. 18) e protege por 3 s.' },
+};
+
 export interface SurvivorArtifact {
   id: number;
   x: number;
@@ -361,6 +369,8 @@ export type SurvivorEvent =
   | { type: 'trainerDown'; final: boolean }
   | { type: 'evolve'; dexId: number; name: string }
   | { type: 'secondAttack'; name: string }
+  /** Artefato do chão realmente alcançado pelo jogador; a UI explica o efeito aplicado. */
+  | { type: 'artifactCollected'; kind: SurvivorArtifactKind }
   | { type: 'gameover'; summary: SurvivorSummary };
 
 export interface SurvivorUpgrade {
@@ -1621,6 +1631,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       p.artifactShieldMs = 3_000;
     }
     state.fx.push({ kind: 'artifact', artifact: artifact.kind, x: p.x, y: p.y, r: 24, color: artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb', ageMs: 0, lifeMs: 620 });
+    events.push({ type: 'artifactCollected', kind: artifact.kind });
     return false;
   });
   levelUp(state, events);

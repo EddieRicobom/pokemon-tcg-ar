@@ -746,10 +746,11 @@ describe('artefatos temporários', () => {
     const s = createSurvivorState(8, { kindCount: 1 });
     s.player.hp = 20;
     s.artifacts.push({ id: 901, x: s.player.x, y: s.player.y, kind: 'heal' });
-    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    const events = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.artifacts).toHaveLength(0);
     expect(s.player.hp).toBeGreaterThan(20);
     expect(s.player.artifactShieldMs).toBe(3000);
     expect(s.fx.some((fx) => fx.kind === 'artifact' && fx.artifact === 'heal')).toBe(true);
+    expect(events).toContainEqual({ type: 'artifactCollected', kind: 'heal' });
   });
 });
