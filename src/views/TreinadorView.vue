@@ -190,6 +190,12 @@ function cancelImport(): void {
     </nav>
 
     <template v-if="section === 'resumo'">
+    <div v-if="cardCount === 0" class="card trainer-first-run">
+      <span>COMECE POR AQUI</span>
+      <h2>Sua primeira carta abre a coleção</h2>
+      <p class="note">Escanear uma carta registra a coleção e libera um Pokémon para a Vila, Arena e Pins. Sem carta física agora? A Vila entrega um companheiro digital no primeiro dia.</p>
+      <div class="actions row"><a class="primary link-button" :href="routeHref('escanear')">Escanear uma carta</a><a class="button" :href="routeHref('vila')">Conhecer a Vila</a></div>
+    </div>
     <div class="card">
       <h2>Missões de hoje</h2>
       <ul class="missions">
@@ -236,7 +242,7 @@ function cancelImport(): void {
     <template v-else-if="section === 'colecao'">
     <div class="card">
       <h2>Coleção <small class="count">{{ cardCount }} carta{{ cardCount === 1 ? '' : 's' }} diferente{{ cardCount === 1 ? '' : 's' }}</small></h2>
-      <p v-if="sets.length === 0" class="note">Nada por aqui ainda. Escaneie uma carta para abrir a primeira coleção.</p>
+      <p v-if="sets.length === 0" class="note">Nada por aqui ainda. <a :href="routeHref('escanear')">Escaneie uma carta</a> para abrir a primeira coleção.</p>
       <ul v-else class="sets">
         <li v-for="set in sets" :key="set.id">
           <span class="s-name">{{ set.name }}</span>

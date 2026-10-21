@@ -110,7 +110,7 @@ const canvasEl = ref<HTMLCanvasElement | null>(null);
 const arVideoEl = ref<HTMLVideoElement | null>(null);
 const arCanvasEl = ref<HTMLCanvasElement | null>(null);
 const wrapEl = ref<HTMLElement | null>(null);
-const loading = ref('Chamando os seus Pokémon para a Vila…');
+const loading = ref('Abrindo a sua Vila…');
 const toast = ref('');
 const clock = ref('');
 const map = villageMap();
@@ -2574,6 +2574,7 @@ onBeforeUnmount(() => {
           <h2>{{ recapScene.title }}</h2>
           <p v-if="recapScene.cast.length" class="hint">Em cena: {{ recapScene.cast.join(' e ') }}</p>
           <p class="recap-script">{{ recapScene.text }}</p>
+          <p v-if="!state.digital.starterGiven" class="recap-first-run">Depois desta abertura, você recebe um companheiro digital para começar a explorar a Vila, mesmo sem carta física.</p>
           <div class="village-choices">
             <button type="button" @click="finishRecap">Pular abertura</button>
             <button type="button" class="primary" autofocus @click="advanceRecap">{{ recapIndex + 1 < recapScenes.length ? 'Próxima cena' : 'Entrar na Vila' }}</button>

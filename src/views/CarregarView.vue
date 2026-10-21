@@ -256,10 +256,20 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <p v-if="bulk" class="message" role="status">Carregando {{ bulk.done }}/{{ bulk.count }} — {{ bulk.text }}</p>
     <p v-if="message" class="message" role="status">{{ message }}</p>
 
-    <nav class="collection-flow" aria-label="Da coleção à batalha">
-      <div class="flow-step current"><span>1</span><div><strong>Cartas escaneadas</strong><small>Elas aparecem aqui automaticamente</small></div></div>
-      <div class="flow-step"><span>2</span><div><strong>Moradores da Vila · {{ teamRows.length }}/{{ TEAM_SIZE }}</strong><small>Também aparecem na Caixa em AR</small></div></div>
-      <a class="flow-step" :href="routeHref('caixa')"><span>3</span><div><strong>Abrir Caixa em AR →</strong><small>Veja sua equipe e comece uma batalha</small></div></a>
+    <section v-if="!loading && rows.length === 0 && digital.length === 0" class="first-run-guide" aria-labelledby="first-card-title">
+      <span class="first-run-kicker">PRIMEIRO PASSO</span>
+      <h3 id="first-card-title">Comece com uma carta ou pela Vila</h3>
+      <p>Escaneie uma carta física para guardar a coleção e vê-la em AR. Se você não tem uma agora, a Vila apresenta um companheiro digital para explorar os modos sem carta.</p>
+      <div class="actions row">
+        <a class="button primary" :href="routeHref('escanear')">Escanear primeira carta</a>
+        <a class="button" :href="routeHref('vila')">Começar pela Vila</a>
+      </div>
+    </section>
+
+    <nav v-else class="collection-flow" aria-label="Da coleção à batalha">
+      <div class="flow-step current"><span>1</span><div><strong>Pokémon disponíveis</strong><small>Cartas escaneadas e companheiros da Vila</small></div></div>
+      <div class="flow-step"><span>2</span><div><strong>Equipe da Vila · {{ teamRows.length }}/{{ TEAM_SIZE }}</strong><small>Escolha quem mora com você e entra nas atividades</small></div></div>
+      <a class="flow-step" :href="routeHref('caixa')"><span>3</span><div><strong>Abrir Caixa em AR →</strong><small>Posicione a equipe e acompanhe uma batalha de exibição</small></div></a>
     </nav>
     <div v-if="teamRows.length > 0" class="team-strip" role="group" aria-label="Moradores da Vila">
       <strong>Moradores da Vila ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
@@ -314,9 +324,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     </div>
 
     <p v-if="loading" class="message">Carregando a lista…</p>
-    <p v-else-if="rows.length === 0" class="message">
-      Nenhuma carta reconhecida ainda. Vá em <a :href="routeHref('escanear')">Escanear</a> e aponte a câmera para uma carta.
-    </p>
+    <p v-else-if="rows.length === 0 && digital.length > 0" class="message">Ainda não há carta escaneada. <a :href="routeHref('escanear')">Escanear uma carta</a> adiciona a coleção sem tirar seus companheiros digitais da Vila.</p>
 
     <CardBox
       v-if="viewMode === 'box' && rows.length > 0"

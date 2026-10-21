@@ -1011,6 +1011,11 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
       Mostre a carta inteira, com boa luz e sem reflexo na parte de baixo, onde fica o número.
     </p>
     <p v-else class="note">Abra a câmera e aponte para a mesma carta física para ver o Pokémon sobre ela.</p>
+    <aside v-if="!cardId && !cameraOn && !cameraBusy" class="scan-first-run" aria-label="Como começar">
+      <strong>Como funciona</strong>
+      <span>1. Abra a câmera. 2. Aponte para uma carta física. 3. Se a leitura falhar, use <b>Buscar a carta à mão</b> abaixo.</span>
+      <a :href="routeHref('vila')">Sem carta agora? Comece pela Vila com um companheiro digital.</a>
+    </aside>
 
     <div
       ref="stageEl"
