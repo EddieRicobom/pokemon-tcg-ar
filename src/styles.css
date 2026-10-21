@@ -6055,6 +6055,27 @@ body.no-scroll .reward-toasts {
 
 /* O HUD não começa o joystick, mas os seus botões precisam receber o toque. */
 .survivor-hud button { pointer-events: auto; touch-action: manipulation; }
+.survivor-action-dock {
+  position: absolute;
+  right: calc(10px + env(safe-area-inset-right));
+  top: calc(10px + env(safe-area-inset-top));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  max-width: min(170px, 38vw);
+  pointer-events: auto;
+}
+.survivor-action-dock .chip {
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.86);
+  text-align: center;
+  white-space: normal;
+}
+.survivor-artifact-chip { border-color: #ffb35c !important; color: #ffe4a8 !important; }
 .survivor-xp small { font: inherit; opacity: 0.78; }
 
 .survivor-minimap {

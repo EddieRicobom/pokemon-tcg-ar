@@ -647,6 +647,27 @@ function draw(): void {
     ctx.restore();
   }
 
+  if (!effectiveVisual.value.rotomMode) for (const artifact of s.artifacts) {
+    const color = artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb';
+    const icon = artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : '♥';
+    const pulse = 1 + Math.sin(animMs / 180 + artifact.id) * 0.12;
+    ctx.save();
+    ctx.translate(artifact.x, artifact.y);
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(0, 0, 15 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(icon, 0, 0);
+    ctx.restore();
+  }
+
   // Pulsos da aura, explosões da área e o brilho da evolução.
   if (!effectiveVisual.value.rotomMode) for (const f of s.fx) {
     const t = clamp(f.ageMs / f.lifeMs, 0, 1);
@@ -724,6 +745,21 @@ function draw(): void {
           ctx.restore();
         }
       }
+    } else if (f.kind === 'artifact') {
+      const color = f.color;
+      ctx.globalAlpha = 0.8 * (1 - t);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y - 8, f.r * (0.45 + t), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1 - t;
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = color;
+      ctx.fillText(f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : '♥', f.x, f.y - 8 - t * 24);
     } else {
       for (let k = 0; k < 3; k++) {
         ctx.globalAlpha = 0.7 * (1 - t);
@@ -1125,6 +1161,9 @@ onBeforeUnmount(() => {
           </div>
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
+             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0" class="chip survivor-artifact-chip" role="status">
+               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
+             </span>
               <span v-if="state.support" class="chip survivor-move-chip second" :style="{ '--move': state.support.move.color }" :title="`${state.support.name}: ${MOVE_EFFECT_LABELS_PT[state.support.move.effect]}. Ataca da sua posição e não recebe upgrades.`">🤝 {{ state.support.name }} · {{ moveLine(state.support.move) }}</span>
             <span class="chip survivor-xp" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">✨ {{ state.player.xp }}/{{ state.player.xpToNext }} XP <small v-if="hudExpanded">· faltam {{ Math.max(0, state.player.xpToNext - state.player.xp) }}</small></span>
             <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
@@ -1132,11 +1171,13 @@ onBeforeUnmount(() => {
             <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
              <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
-             <button v-if="!summary && !pendingUpgrade && !evolving && state.special.phase !== 'arrival' && state.special.phase !== 'choice'" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
-            <button type="button" class="chip" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">{{ hudExpanded ? 'Ocultar detalhes' : 'Detalhes e opções' }}</button>
-            <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
-            <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário regional: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
-            <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="specialEffects" @pointerdown.stop @click.stop="specialEffects = !specialEffects">Efeitos do especial: {{ specialEffects ? 'completos' : 'leves' }}</button>
+             <span class="survivor-action-dock" aria-label="Ações da Torre">
+               <button v-if="!summary && !pendingUpgrade && !evolving && state.special.phase !== 'arrival' && state.special.phase !== 'choice'" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
+               <button type="button" class="chip" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">{{ hudExpanded ? 'Ocultar detalhes' : 'Detalhes e opções' }}</button>
+               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
+               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
+               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="specialEffects" @pointerdown.stop @click.stop="specialEffects = !specialEffects">Efeitos: {{ specialEffects ? 'completos' : 'leves' }}</button>
+             </span>
           </div>
         </div>
 

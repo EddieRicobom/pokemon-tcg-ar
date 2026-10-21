@@ -683,3 +683,16 @@ describe('treinadores e chefão final', () => {
     expect(survivorCoins({ survivedMs: 60_000, kills: 10, level: 4, trainersBeaten: 0, bossesBeaten: 0 })).toBe(50);
   });
 });
+
+describe('artefatos temporários', () => {
+  it('coleta artefato real e aplica cura com proteção visual registrada', () => {
+    const s = createSurvivorState(8, { kindCount: 1 });
+    s.player.hp = 20;
+    s.artifacts.push({ id: 901, x: s.player.x, y: s.player.y, kind: 'heal' });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.artifacts).toHaveLength(0);
+    expect(s.player.hp).toBeGreaterThan(20);
+    expect(s.player.artifactShieldMs).toBe(3000);
+    expect(s.fx.some((fx) => fx.kind === 'artifact' && fx.artifact === 'heal')).toBe(true);
+  });
+});
