@@ -54,6 +54,26 @@ describe('MusicPlayer', () => {
     player.dispose(); player.dispose();
     expect(env.closed).toHaveBeenCalledOnce();
   });
+  it('não recomeça a curva de ganho quando a atualização repete o mesmo volume', async () => {
+    const env = audioEnvironment(); const player = new MusicPlayer(path => path);
+    player.update([{ path: 'a.mp3', gain: 1 }], true, 0.4); player.unlock();
+    await vi.waitFor(() => expect(env.audios[0]?.src).toMatch(/^blob:/));
+    const gain = env.gains[0]?.gain.setTargetAtTime;
+    expect(gain).toBeDefined();
+    for (let n = 0; n < 100; n++) player.update([{ path: 'a.mp3', gain: 1 }], true, 0.4);
+    expect(gain).toHaveBeenCalledOnce();
+    player.dispose();
+  });
+  it('não deixa uma suspensão antiga silenciar a retomada', async () => {
+    const env = audioEnvironment(); const player = new MusicPlayer(path => path);
+    player.update([{ path: 'a.mp3', gain: 1 }], true, 1); player.unlock();
+    await vi.waitFor(() => expect(env.audios[0]?.src).toMatch(/^blob:/));
+    player.update([{ path: 'a.mp3', gain: 1 }], false, 1);
+    player.update([{ path: 'a.mp3', gain: 1 }], true, 1);
+    await Promise.resolve(); await Promise.resolve();
+    expect(env.audios[0]?.play).toHaveBeenCalled();
+    player.dispose();
+  });
   it('pausa ao esconder/silenciar e uma promessa atrasada não ressuscita o áudio', async () => {
     const env = audioEnvironment(); const player = new MusicPlayer(path => path);
     player.update([{ path: 'a.mp3', gain: 1 }], true, 1); player.unlock();
