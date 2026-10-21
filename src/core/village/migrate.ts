@@ -1,6 +1,6 @@
 import { add, MAP_LAYOUT } from './life';
 import type { Crop, VillageState } from './life';
-import { tileAt } from './map';
+import { findFree, isWalkable, tileAt } from './map';
 import type { VillageMap } from './map';
 import { FIELDS } from './town-layout';
 
@@ -11,7 +11,7 @@ import { FIELDS } from './town-layout';
  * recomeça e você aparece no ponto de partida. Devolve se mudou alguma coisa.
  */
 export function migrateLayout(s: VillageState, map: VillageMap): boolean {
-  if (s.layout === MAP_LAYOUT) return false;
+  if (s.layout === MAP_LAYOUT) return repairOccupiedTerrain(s, map);
   for (const f of s.placed) add(s, f.item, 1);
   s.placed = [];
   const spots: { x: number; y: number }[] = [];
@@ -28,4 +28,26 @@ export function migrateLayout(s: VillageState, map: VillageMap): boolean {
   s.player = { x: map.spawn.x, y: map.spawn.y, dir: 'down' };
   s.layout = MAP_LAYOUT;
   return true;
+}
+
+/** Novos postos podem ocupar terreno antes decorável; desloca os itens, sem apagar mobília nem idade dos cultivos. */
+function repairOccupiedTerrain(s: VillageState, map: VillageMap): boolean {
+  let changed = false;
+  const taken = (x: number, y: number) => s.placed.some((item) => item.x === x && item.y === y) || s.crops.some((crop) => crop.x === x && crop.y === y);
+  for (const item of s.placed) {
+    if (isWalkable(map, item.x, item.y)) continue;
+    Object.assign(item, findFree(map, item.x, item.y, taken, () => 0));
+    changed = true;
+  }
+  for (const crop of s.crops) {
+    if (['grass', 'flower', 'field'].includes(tileAt(map, crop.x, crop.y))) continue;
+    const spot = findFree(map, FIELDS[0]!.x, FIELDS[0]!.y, (x, y) => !['grass', 'flower', 'field'].includes(tileAt(map, x, y)) || taken(x, y), () => 0);
+    Object.assign(crop, spot);
+    changed = true;
+  }
+  if (!isWalkable(map, s.player.x, s.player.y)) {
+    Object.assign(s.player, findFree(map, s.player.x, s.player.y, taken, () => 0));
+    changed = true;
+  }
+  return changed;
 }

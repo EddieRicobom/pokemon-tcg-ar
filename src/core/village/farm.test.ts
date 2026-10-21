@@ -68,8 +68,9 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     state.farm.seeds['sem-tomate'] = 2;
     const workers = Array.from({ length: 50 }, (_, i) => ({ ...worker, id: `mon:${i}` }));
     session.tick(state, map, [...workers, workers[0]!], 1000, rng, free);
-    expect(session.tasks).toHaveLength(2);
-    expect(new Set(session.tasks.map((task) => `${task.x},${task.y}`)).size).toBe(2);
+    expect(session.tasks.filter((task) => task.kind === 'plant')).toHaveLength(2);
+    expect(session.tasks).toHaveLength(FARM_RULES.workers);
+    expect(new Set(session.tasks.map((task) => `${task.x},${task.y}`)).size).toBe(session.tasks.length);
     for (const task of session.tasks) Object.assign(workers.find((entry) => entry.id === task.residentId)!, task.stand);
     session.tick(state, map, workers, 2000, rng, free);
     session.tick(state, map, workers, 12_000, rng, free);
@@ -141,7 +142,9 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     state.crops.push({ x: 78, y: 48, seed: 'sem-tomate', stage: 3, wateredAt: null });
     state.inventory.tomate = 999;
     session.tick(state, map, [worker], 1000, rng, free);
-    expect(session.tasks).toHaveLength(0);
+    expect(session.tasks.some((task) => task.kind === 'harvest')).toBe(false);
+    expect(state.crops).toHaveLength(1);
+    session.cancel();
     state.inventory.tomate = 0;
     session.tick(state, map, [worker], 31_000, rng, free);
     expect(session.tasks).toHaveLength(1);
@@ -237,7 +240,8 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     state.farm.seeds = {};
     state.inventory['sem-tomate'] = 10;
     session.tick(state, map, [worker], 1000, rng, free);
-    expect(session.tasks).toHaveLength(0);
+    expect(session.tasks.some((task) => task.kind === 'plant')).toBe(false);
+    session.cancel();
     transferFarmSeeds(state, 'sem-tomate', 1, true);
     session.tick(state, map, [worker], 31_000, rng, free);
     Object.assign(worker, session.tasks[0]!.stand);

@@ -84,7 +84,7 @@ export const TOWN = {
   fountain: { x: 47, y: 36, w: 2, h: 2 },
   /** O terreno da sua casa e o mercado (barracas) da praça. */
   plot: { x: 30, y: 31, w: 5, h: 3 },
-  shop: { x: 56, y: 34, w: 6, h: 2 },
+  shop: { x: 56, y: 34, w: 8, h: 2 },
   /** Onde você aparece (na praça, livre). */
   spawn: { x: 45, y: 41 },
   /** O lago com praia, ao nordeste. */
@@ -98,7 +98,15 @@ export const WORK_AREAS = {
   fishing: { x: 72, y: 5, w: 18, h: 15 },
 } as const;
 
-export type DecorKind = 'seed-box' | 'bell' | 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall';
+export const WORK_SITES = [
+  { id: 'farm', name: 'Fazenda', icon: '🌱', location: 'Leste da Vila', visit: { x: 84, y: 46 }, description: 'Plantio com sementes da caixa, rega e colheita dos canteiros. A produção vai para sua mochila.' },
+  { id: 'mine', name: 'Mina', icon: '⛏️', location: 'Sul da Vila', visit: { x: 16, y: 66 }, description: 'Pedras rendem pedra e podem conter cristal (12%) e ouro (4%), como na coleta manual. Cada pedra rende uma vez por dia.' },
+  { id: 'lumber', name: 'Madeireira', icon: '🪓', location: 'Noroeste da Vila', visit: { x: 15, y: 13 }, description: 'As árvores rendem madeira e podem deixar pena (12%) ou mel (5%). Cada árvore rende uma vez por dia.' },
+  { id: 'fishing', name: 'Pescaria', icon: '🎣', location: 'Píer do lago, no nordeste', visit: { x: 80, y: 18 }, description: 'Usa as mesmas chances da sua pescaria: peixes, algas e achados raros; a isca também pode voltar vazia. Moradores e jogador compartilham 10 lançamentos por dia.' },
+] as const;
+export type WorksiteId = typeof WORK_SITES[number]['id'];
+
+export type DecorKind = 'seed-box' | 'bell' | 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall' | 'mine-entrance' | 'log-depot' | 'mine-board' | 'lumber-board' | 'fishing-board';
 
 /** Enfeites fixos do mapa (sólidos; o desenho sai do atlas com o mesmo nome e fica em pé sobre a base). */
 export interface Decor {
@@ -110,6 +118,11 @@ export interface Decor {
 }
 
 export const DECOR: readonly Decor[] = [
+  { kind: 'mine-entrance', x: 6, y: 64, w: 3, h: 1 },
+  { kind: 'mine-board', x: 17, y: 65, w: 2, h: 1 },
+  { kind: 'log-depot', x: 14, y: 7, w: 2, h: 1 },
+  { kind: 'lumber-board', x: 13, y: 12, w: 2, h: 1 },
+  { kind: 'fishing-board', x: 77, y: 19, w: 2, h: 1 },
   // Parquinho, a oeste da praça.
   { kind: 'swing', x: 8, y: 44, w: 4, h: 1 },
   { kind: 'slide', x: 14, y: 44, w: 1, h: 1 },

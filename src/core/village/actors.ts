@@ -42,6 +42,13 @@ export const moving = (w: Walker): boolean => w.t < 1;
 
 export type Blocked = (x: number, y: number) => boolean;
 
+export const WALK_SPEED = { player: 5.5, resident: 2.6 } as const;
+
+/** Passeio guiado acompanha a velocidade atual do treinador; encerrar restaura o passeio livre. */
+export function syncFollowerSpeed(resident: Walker, leader: Walker, following: boolean): void {
+  resident.speed = following ? leader.speed : WALK_SPEED.resident;
+}
+
 export function canEnter(map: VillageMap, x: number, y: number, blocked: Blocked): boolean {
   const tile = tileAt(map, x, y);
   return !isSolidTile(tile) && tile !== 'plot' && !blocked(x, y);

@@ -6,6 +6,19 @@ import { migrateLayout } from './migrate';
 const map = generateVillage(20261014);
 
 describe('save do mapa antigo no mapa grande', () => {
+  it('preserva mobília e estágio das plantas quando um novo posto ocupa seu terreno', () => {
+    const state = emptyVillage(20261014, map.spawn);
+    state.placed.push({ x: 6, y: 64, item: 'cadeira' });
+    state.crops.push({ x: 80, y: 17, seed: 'sem-tomate', stage: 2, wateredAt: 1234 });
+    state.player = { x: 7, y: 64, dir: 'down' };
+    expect(migrateLayout(state, map)).toBe(true);
+    expect(state.placed).toHaveLength(1);
+    expect(state.placed[0]).not.toMatchObject({ x: 6, y: 64 });
+    expect(state.crops[0]).toMatchObject({ seed: 'sem-tomate', stage: 2, wateredAt: 1234 });
+    expect(state.crops[0]).not.toMatchObject({ x: 80, y: 17 });
+    expect(state.inventory.cadeira ?? 0).toBe(0);
+    expect(migrateLayout(state, map)).toBe(false);
+  });
   it('móveis voltam para a mochila, a horta vai para a fazenda (mesmo estágio) e você volta ao começo', () => {
     const old = { ...emptyVillage(20261014, { x: 27, y: 23 }), layout: undefined } as Record<string, unknown>;
     old.placed = [{ x: 10, y: 10, item: 'cadeira' }, { x: 11, y: 10, item: 'cadeira' }];
