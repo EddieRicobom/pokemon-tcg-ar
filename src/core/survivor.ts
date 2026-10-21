@@ -1203,7 +1203,9 @@ function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, targ
   const dy = target.y - enemy.y;
   const distance = Math.hypot(dx, dy) || 1;
   const speed = BALANCE.hostileProjectileSpeed;
-  const effect = enemy.grade === 'comum' ? undefined : (enemy.kind % 3 === 0 ? 'burn' : enemy.kind % 3 === 1 ? 'slow' : 'stun');
+  // O efeito acompanha o nascimento do inimigo, não a espécie usada apenas para desenhá-lo.
+  // Assim, trocar o elenco regional não altera o combate nem o RNG da mesma corrida.
+  const effect = enemy.grade === 'comum' ? undefined : (enemy.id % 3 === 0 ? 'burn' : enemy.id % 3 === 1 ? 'slow' : 'stun');
   state.hostileProjectiles.push({
     id: state.nextId++, x: enemy.x, y: enemy.y, vx: (dx / distance) * speed, vy: (dy / distance) * speed,
     damage: Math.max(1, Math.round(enemy.damage * 0.7)), lifeMs: 2600, size: enemy.grade === 'chefao' ? 8 : enemy.grade === 'elite' ? 7 : 6,
