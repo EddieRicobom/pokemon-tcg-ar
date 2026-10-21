@@ -44,7 +44,7 @@ import type { FarmTask, FarmWorker } from '../core/village/farm';
 import { stepFarmWorker } from '../core/village/farm';
 import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
-import { harmonizePlayerSprite } from './player-filter';
+import { harmonizePlayerCanvas, harmonizePlayerSprite } from './player-filter';
 import { groundPieces } from './ground-tiles';
 import { drawCommunityWorkAction, drawWorkAction } from './work-art';
 import { recolor, VillaAtlas, windowGlow } from './tileset-art';
@@ -387,7 +387,7 @@ export class VillageGame {
         avatar.width = maxX - minX + 1;
         avatar.height = maxY - minY + 1;
         avatar.getContext('2d')!.drawImage(source, minX, minY, avatar.width, avatar.height, 0, 0, avatar.width, avatar.height);
-        this.trainerAvatar = avatar;
+         this.trainerAvatar = harmonizePlayerCanvas(avatar, avatar.width, avatar.height) ?? avatar;
       } catch {
         // Se o servidor não permitir leitura de pixels, o avatar desenhado por código continua disponível.
       }
@@ -1797,7 +1797,7 @@ export class VillageGame {
           const height = PLAYER_H * scale;
           const width = height * bounds.width / bounds.height;
           const left = px0 + T / 2 - (frame.width / 2 - bounds.x) * height / bounds.height;
-          ctx.drawImage(atlas.image, frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height, left, py0, width, height);
+           ctx.drawImage(atlas.filtered ?? atlas.image, frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height, left, py0, width, height);
         } else if (trainerAvatar && dir !== 'up') {
           const aspect = trainerAvatar.width / trainerAvatar.height;
           const avatarH = Math.min(PLAYER_H * scale, (T * 1.4) / aspect);
