@@ -5,6 +5,8 @@ import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivo
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
 import { survivorPreparation } from './survivor-preparations';
 import type { SurvivorPreparationId } from './survivor-preparations';
+import { advanceSpecialEncounter, createSurvivorSpecial, specialProtects, stepSurvivorSpecial } from './survivor-specials';
+import type { SurvivorSpecialState } from './survivor-specials';
 
 /**
  * Motor puro do modo Sobrevivência (Zona de Sobrevivência, dentro da Vila): você anda pela arena, seu Pokémon ataca
@@ -167,6 +169,7 @@ export interface SurvivorUpgradeOption {
 }
 
 export interface SurvivorState {
+  special: SurvivorSpecialState;
   rng: Rng;
   /** Semente original desta corrida, usada também para objetivos determinísticos. */
   runSeed: number;
@@ -223,6 +226,8 @@ export interface SurvivorEvolutionOption {
 }
 
 export interface SurvivorInput {
+  /** Ativação solicitada uma única vez pelo botão ou teclado. */
+  special?: boolean;
   /** Vetor de direção do analógico/arraste; não precisa estar normalizado (0,0 = parado). */
   dx: number;
   dy: number;
@@ -474,6 +479,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     ...options.player,
   };
   return {
+    special: createSurvivorSpecial(move.type),
     rng: seededRng(seed),
     runSeed: Math.floor(seed) >>> 0,
     enemyDexId: options.enemyDexId ?? null,
@@ -1004,13 +1010,17 @@ function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: n
 export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: number): SurvivorEvent[] {
   const events: SurvivorEvent[] = [];
   if (state.over || state.pendingUpgrade) return events;
+  if (!Number.isFinite(dtMs) || dtMs <= 0) return events;
+  if (advanceSpecialEncounter(state, dtMs)) return events;
   const dt = dtMs / 1000;
   state.elapsedMs += dtMs;
+  if (advanceSpecialEncounter(state, 0)) return events;
   const p = state.player;
+  stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS);
 
   // Movimento do jogador, com a arena como cerca.
   const len = Math.hypot(input.dx, input.dy);
-  if (len > 0.001) {
+  if (len > 0.001 && !(state.special.selected === 'dash' && state.special.activeMs > 0)) {
     const ux = input.dx / len;
     const uy = input.dy / len;
     const terrainSpeed = survivorBiomeMovementMultiplier(state.elapsedMs, p.x, p.y);
@@ -1072,7 +1082,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     e.x += (dx / d) * speed * dt;
     e.y += (dy / d) * speed * dt;
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
-    if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
+    if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0 && !specialProtects(state)) {
       p.hp = Math.max(0, p.hp - e.damage);
       p.invulnMs = BALANCE.hitInvulnerabilityMs;
     }
@@ -1087,9 +1097,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     proj.y += proj.vy * speedMultiplier * dt;
     proj.lifeMs -= dtMs;
     if (proj.lifeMs <= 0 || proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
-    if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size && p.invulnMs <= 0) {
-      p.hp = Math.max(0, p.hp - proj.damage);
-      p.invulnMs = BALANCE.hitInvulnerabilityMs;
+    if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size) {
+      if (p.invulnMs <= 0 && !specialProtects(state)) {
+        p.hp = Math.max(0, p.hp - proj.damage);
+        p.invulnMs = BALANCE.hitInvulnerabilityMs;
+      }
       return false;
     }
     return true;

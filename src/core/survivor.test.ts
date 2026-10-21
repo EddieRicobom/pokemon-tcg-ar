@@ -537,6 +537,7 @@ describe('efeitos ambientais dos biomas', () => {
     const electric = as('electric', 'area');
     const s = quiet(createSurvivorState(12, { kindCount: 1, move: electric.move, profile: electric.profile, player: { x: 140, y: 450 } }));
     s.elapsedMs = 2 * 135_000;
+    s.special.phase = 'ready'; // O encontro já passou neste cenário de combate.
     s.player.attackDamage = 100;
     s.player.attackRadius = 50;
     s.player.attackRange = 100;
@@ -551,6 +552,7 @@ describe('treinadores e chefão final', () => {
   it('aos 5 min aparece um treinador com 3 Pokémon elite, e aos 20 min o chefão com 6', () => {
     const s = createSurvivorState(42, { kindCount: 4 });
     const timeline: string[] = [];
+    s.special.phase = 'ready';
     // Pula para quase os 5 min; os eventos aparecem no quadro de dentro.
     s.elapsedMs = 300_000 - 200;
     const ev1 = stepSurvivor(s, { dx: 0, dy: 0 }, 400);
@@ -576,6 +578,7 @@ describe('treinadores e chefão final', () => {
 
   it('modo infinito: derrotar o chefão não termina a corrida (segue até morrer)', () => {
     const s = createSurvivorState(42, { kindCount: 4, infinite: true });
+    s.special.phase = 'ready';
     s.elapsedMs = 1_200_000 - 200;
     stepSurvivor(s, { dx: 0, dy: 0 }, 400);
     for (const e of s.enemies) e.hp = 0;
@@ -586,6 +589,7 @@ describe('treinadores e chefão final', () => {
 
   it('modo infinito começa mais difícil (escala 1,25) e cresce a cada minuto', () => {
     const s = createSurvivorState(7, { kindCount: 2, infinite: true });
+    s.special.phase = 'ready';
     expect(s.infinite).toBe(true);
     expect(s.infiniteScale).toBeCloseTo(1.25, 3);
     s.elapsedMs = 10 * 60_000;
