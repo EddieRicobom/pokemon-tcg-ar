@@ -219,7 +219,18 @@ export interface SurvivorUpgradeOption {
   id: string;
   name: string;
   description: string;
+  rarity?: SurvivorUpgradeRarity;
+  /** Valor já sorteado para esta carta; aplicar a escolha não sorteia novamente. */
+  value?: number;
 }
+
+export type SurvivorUpgradeRarity = 'normal' | 'raro' | 'lendario' | 'ancestral';
+export const SURVIVOR_UPGRADE_RARITIES: Record<SurvivorUpgradeRarity, { label: string; icon: string; weight: number; minLevel: number; impact: string }> = {
+  normal: { label: 'Normal', icon: '●', weight: 60, minLevel: 1, impact: 'Ajuste pequeno e útil' },
+  raro: { label: 'Raro', icon: '◆', weight: 30, minLevel: 3, impact: 'Muda a força ou o alcance da estratégia' },
+  lendario: { label: 'Lendário', icon: '✦', weight: 8, minLevel: 8, impact: 'Abre uma vantagem marcante' },
+  ancestral: { label: 'Ancestral', icon: '✶', weight: 2, minLevel: 12, impact: 'Transforma a corrida; uma escolha por partida' },
+};
 
 /** Afinidade rara: o segundo tipo da espécie reforça a corrida sem criar outro golpe. */
 export interface SurvivorTypeAffinity {
@@ -356,70 +367,75 @@ export interface SurvivorUpgrade {
   id: string;
   name: string;
   description: string;
+  rarity: SurvivorUpgradeRarity;
   /** Categorias de golpe em que o upgrade faz sentido (sem lista = todas). */
   for?: readonly MoveCategory[];
   /** Especializações só aparecem para o tipo de quem está jogando. */
   type?: SurvivorMove['type'];
   /** Limite por corrida; evita cartas esgotadas e escolhas sem efeito. */
   maxLevels?: number;
+  /** Pequena variação numérica, sorteada quando a carta aparece. */
+  valueRange?: readonly [number, number];
+  describeValue?: (move: SurvivorMove, value: number) => { name: string; description: string };
   /** Nome e texto falando do golpe de quem joga (ex.: "Bola de fogo mais forte"). */
   describe?: (move: SurvivorMove) => { name: string; description: string };
-  apply: (p: SurvivorPlayer) => void;
+  apply: (p: SurvivorPlayer, value?: number) => void;
 }
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   {
-    id: 'power', name: 'Golpe mais forte', description: '+20% de dano no ataque.',
-    describe: (m) => ({ name: 'Golpe mais forte', description: `${m.name}: +20% de dano, até 60.` }),
-    apply: (p) => {
+    id: 'power', rarity: 'raro', name: 'Golpe mais forte', description: '+20% de dano no ataque.', valueRange: [16, 24],
+    describeValue: (m, value) => ({ name: 'Golpe mais forte', description: `${m.name}: +${value}% de dano, até 60.` }),
+    apply: (p, value = 20) => {
       // teto absoluto em 60 para o dano (o teste espera 60)
       if (p.attackDamage >= 60) return;
-      p.attackDamage = Math.min(60, round1(p.attackDamage * 1.2));
+      p.attackDamage = Math.min(60, round1(p.attackDamage * (1 + value / 100)));
     },
   },
   {
-    id: 'haste', name: 'Recarga menor', description: '-15% no tempo entre ataques.',
-    describe: (m) => ({ name: 'Recarga menor', description: `${m.name}: ${m.category === 'aura' ? '-15% no tempo entre os pulsos.' : '-15% no tempo entre ataques.'}` }),
-    apply: (p) => {
+    id: 'haste', rarity: 'raro', name: 'Recarga menor', description: '-15% no tempo entre ataques.', valueRange: [12, 18],
+    describeValue: (m, value) => ({ name: 'Recarga menor', description: `${m.name}: -${value}% no tempo entre ${m.category === 'aura' ? 'os pulsos' : 'ataques'}.` }),
+    apply: (p, value = 15) => {
       // não deixa cair abaixo de 240 ms (o teste espera 240)
       if (p.attackCooldownMs <= 240) return;
-      p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.85));
+      p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * (1 - value / 100)));
     },
   },
-  { id: 'legs', name: 'Passo mais rápido', description: '+12% de velocidade ao andar.', apply: (p) => { p.speed = round1(p.speed * 1.12); } },
-  { id: 'vigor', name: 'Mais vida', description: '+25 no HP máximo (e cura na hora).', apply: (p) => { p.maxHp += 25; p.hp = p.maxHp; } },
+  { id: 'legs', rarity: 'normal', name: 'Passo mais rápido', description: '+12% de velocidade ao andar.', valueRange: [9, 14], describeValue: (_m, value) => ({ name: 'Passo mais rápido', description: `+${value}% de velocidade ao andar.` }), apply: (p, value = 12) => { p.speed = round1(p.speed * (1 + value / 100)); } },
+  { id: 'vigor', rarity: 'normal', name: 'Mais vida', description: '+25 no HP máximo e cura 25.', valueRange: [20, 30], describeValue: (_m, value) => ({ name: 'Mais vida', description: `+${value} no HP máximo e cura ${value}.` }), apply: (p, value = 25) => { p.maxHp += value; p.hp = Math.min(p.maxHp, p.hp + value); } },
   {
-    id: 'range', name: 'Alcance maior', description: '+20% no alcance do golpe.', for: ['projetil', 'area', 'cone'],
-    apply: (p) => { p.attackRange = round1(p.attackRange * 1.2); },
+    id: 'range', rarity: 'raro', name: 'Alcance maior', description: '+20% no alcance do golpe.', for: ['projetil', 'area', 'cone'], valueRange: [16, 24],
+    describeValue: (_m, value) => ({ name: 'Alcance maior', description: `+${value}% no alcance do golpe.` }),
+    apply: (p, value = 20) => { p.attackRange = round1(p.attackRange * (1 + value / 100)); },
   },
   {
-    id: 'multishot', name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.', for: ['projetil', 'area'],
+    id: 'multishot', rarity: 'lendario', name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.', for: ['projetil', 'area'],
     describe: (m) => (m.category === 'area'
       ? { name: 'Explosão extra', description: `${m.name}: +1 explosão por ataque, em outro inimigo.` }
       : { name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.' }),
     apply: (p) => { p.shots = Math.min(5, p.shots + 1); },
   },
   {
-    id: 'pierce', name: 'Golpe perfurante', description: 'O golpe atravessa +1 inimigo antes de sumir.', for: ['projetil'],
+    id: 'pierce', rarity: 'lendario', name: 'Golpe perfurante', description: 'O golpe atravessa +1 inimigo antes de sumir.', for: ['projetil'],
     apply: (p) => { p.pierce = Math.min(4, p.pierce + 1); },
   },
   {
-    id: 'radius', name: 'Golpe maior', description: '+20% no raio do golpe.', for: ['aura', 'area', 'orbit'],
-    describe: (m) => ({ name: 'Golpe maior', description: `${m.name}: ${m.category === 'aura' ? '+20% no raio da aura.' : '+20% no tamanho da explosão.'}` }),
-    apply: (p) => { p.attackRadius = round1(p.attackRadius * 1.2); },
+    id: 'radius', rarity: 'raro', name: 'Golpe maior', description: '+20% no raio do golpe.', for: ['aura', 'area', 'orbit'], valueRange: [16, 24],
+    describeValue: (m, value) => ({ name: 'Golpe maior', description: `${m.name}: +${value}% no ${m.category === 'aura' ? 'raio da aura' : 'raio do golpe'}.` }),
+    apply: (p, value = 20) => { p.attackRadius = round1(p.attackRadius * (1 + value / 100)); },
   },
-  { id: 'magnet', name: 'Ímã de XP', description: '+30% no alcance para coletar orbes de XP.', apply: (p) => { p.pickupRadius = round1(p.pickupRadius * 1.3); } },
-  { id: 'velocity', name: 'Velocidade de saída', description: '+18% na velocidade dos projéteis.', for: ['projetil'], maxLevels: 1, apply: (p) => { p.projectileSpeed = round1(p.projectileSpeed * 1.18); } },
-  { id: 'renewal', name: 'Renovação', description: '+15 de vida máxima e cura imediatamente.', maxLevels: 1, apply: (p) => { p.maxHp += 15; p.hp = p.maxHp; } },
-  { id: 'tempo', name: 'Passo cadenciado', description: '+8% de velocidade de movimento.', maxLevels: 1, apply: (p) => { p.speed = round1(p.speed * 1.08); } },
-  { id: 'resonance', name: 'Ressonância', description: '+10% de dano no golpe principal.', maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.1)); } },
+  { id: 'magnet', rarity: 'normal', name: 'Ímã de XP', description: '+30% no alcance para coletar orbes de XP.', valueRange: [24, 36], describeValue: (_m, value) => ({ name: 'Ímã de XP', description: `+${value}% no alcance para coletar orbes de XP.` }), apply: (p, value = 30) => { p.pickupRadius = round1(p.pickupRadius * (1 + value / 100)); } },
+  { id: 'velocity', rarity: 'normal', name: 'Velocidade de saída', description: '+18% na velocidade dos projéteis.', for: ['projetil'], maxLevels: 1, valueRange: [15, 21], describeValue: (_m, value) => ({ name: 'Velocidade de saída', description: `+${value}% na velocidade dos projéteis.` }), apply: (p, value = 18) => { p.projectileSpeed = round1(p.projectileSpeed * (1 + value / 100)); } },
+  { id: 'renewal', rarity: 'normal', name: 'Renovação', description: '+15 de vida máxima e cura 15.', maxLevels: 1, valueRange: [12, 18], describeValue: (_m, value) => ({ name: 'Renovação', description: `+${value} de vida máxima e cura ${value}.` }), apply: (p, value = 15) => { p.maxHp += value; p.hp = Math.min(p.maxHp, p.hp + value); } },
+  { id: 'tempo', rarity: 'normal', name: 'Passo cadenciado', description: '+8% de velocidade de movimento.', maxLevels: 1, valueRange: [6, 10], describeValue: (_m, value) => ({ name: 'Passo cadenciado', description: `+${value}% de velocidade de movimento.` }), apply: (p, value = 8) => { p.speed = round1(p.speed * (1 + value / 100)); } },
+  { id: 'resonance', rarity: 'normal', name: 'Ressonância', description: '+10% de dano no golpe principal.', maxLevels: 1, valueRange: [8, 12], describeValue: (_m, value) => ({ name: 'Ressonância', description: `+${value}% de dano no golpe principal, até 60.` }), apply: (p, value = 10) => { p.attackDamage = Math.min(60, round1(p.attackDamage * (1 + value / 100))); } },
 ] as const;
 
 /** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */
 function typeUpgrade(type: PokemonType, id: string, name: string, description: string, apply: (p: SurvivorPlayer) => void, forCategories?: readonly MoveCategory[]): SurvivorUpgrade {
-  return { id, type, name, description, maxLevels: 1, ...(forCategories ? { for: forCategories } : {}), apply };
+  return { id, type, name, description, rarity: 'raro', maxLevels: 1, ...(forCategories ? { for: forCategories } : {}), apply };
 }
 function improveReach(p: SurvivorPlayer, factor: number): void {
   if (p.move.category === 'aura' || p.move.category === 'orbit') p.attackRadius = round1(p.attackRadius * factor);
@@ -465,7 +481,35 @@ const TYPE_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   typeUpgrade('fairy', 'fairy-pulse', 'Pulso reconfortante', 'Roubo de vida cura até 3 por ativação.', (p) => { p.upgradeLevels['fairy-pulse'] = 0; }),
 ];
 
-export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [...GENERIC_SURVIVOR_UPGRADES, ...TYPE_SURVIVOR_UPGRADES];
+/** Especializações que mudam o comportamento do golpe exigem mais tempo de corrida. */
+const LEGENDARY_TYPE_UPGRADES = new Set([
+  'fire-brasa', 'electric-arc', 'grass-roots', 'ice-deep-cold', 'poison-dose', 'ground-aftershock',
+  'psychic-field', 'bug-formation', 'ghost-haunt', 'dragon-pressure', 'dark-thirst', 'steel-plate', 'fairy-pulse',
+]);
+
+const ANCESTRAL_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
+  {
+    id: 'ancestral-vitality', rarity: 'ancestral', name: 'Coração ancestral',
+    description: '+45 de vida máxima, cura 45 e aumenta a velocidade em 8%.', maxLevels: 1,
+    apply: (p) => { p.maxHp += 45; p.hp = Math.min(p.maxHp, p.hp + 45); p.speed = round1(p.speed * 1.08); },
+  },
+  {
+    id: 'ancestral-strike', rarity: 'ancestral', name: 'Golpe ancestral',
+    description: '+25% de dano (até 60) e +12% de alcance ou raio.', maxLevels: 1,
+    apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.25)); improveReach(p, 1.12); },
+  },
+  {
+    id: 'ancestral-flow', rarity: 'ancestral', name: 'Fluxo ancestral',
+    description: '-18% no tempo entre ataques (mínimo 240 ms) e +12% de velocidade.', maxLevels: 1,
+    apply: (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.82)); p.speed = round1(p.speed * 1.12); },
+  },
+];
+
+export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
+  ...GENERIC_SURVIVOR_UPGRADES,
+  ...TYPE_SURVIVOR_UPGRADES.map((upgrade) => LEGENDARY_TYPE_UPGRADES.has(upgrade.id) ? { ...upgrade, rarity: 'lendario' as const } : upgrade),
+  ...ANCESTRAL_SURVIVOR_UPGRADES,
+];
 
 /** Níveis a partir dos quais a carta "Evoluir" aparece: o 1º para a 1ª evolução, o 2º para a 2ª. */
 export const EVOLVE_LEVELS = [8, 16] as const;
@@ -760,19 +804,49 @@ function addEnemy(state: SurvivorState, enemy: SurvivorEnemy): void {
   state.enemies.push(enemy);
 }
 
-/** Sorteia `count` upgrades distintos que fazem sentido para o golpe (`move`), com o texto falando do golpe. */
+/** Sorteia raridade primeiro; o tamanho do catálogo não altera a chance de cada faixa. */
+function rollUpgradeRarity(rng: Rng, pool: readonly SurvivorUpgrade[]): SurvivorUpgradeRarity {
+  const rarities = (Object.keys(SURVIVOR_UPGRADE_RARITIES) as SurvivorUpgradeRarity[])
+    .filter((rarity) => pool.some((upgrade) => upgrade.rarity === rarity));
+  const total = rarities.reduce((sum, rarity) => sum + SURVIVOR_UPGRADE_RARITIES[rarity].weight, 0);
+  let draw = rng() * total;
+  for (const rarity of rarities) {
+    draw -= SURVIVOR_UPGRADE_RARITIES[rarity].weight;
+    if (draw < 0) return rarity;
+  }
+  return rarities[rarities.length - 1]!;
+}
+
+/** Sorteia cartas distintas, com potência variável nos bônus numéricos. */
 export function rollUpgrades(rng: Rng, count = 3, move: SurvivorMove = BASIC_MOVE, player?: SurvivorPlayer): SurvivorUpgradeOption[] {
+  const level = player?.level ?? 1;
+  const alreadyAncestral = ANCESTRAL_SURVIVOR_UPGRADES.some((upgrade) => (player?.upgradeLevels[upgrade.id] ?? 0) > 0);
   const pool = SURVIVOR_UPGRADES.filter((u) =>
     (!u.for || u.for.includes(move.category))
     && (!u.type || u.type === move.type)
-    && (player?.upgradeLevels[u.id] ?? 0) < (u.maxLevels ?? Number.POSITIVE_INFINITY),
+    && level >= SURVIVOR_UPGRADE_RARITIES[u.rarity].minLevel
+    && (u.rarity !== 'ancestral' || !alreadyAncestral)
+    && (player?.upgradeLevels[u.id] ?? 0) < (u.maxLevels ?? Number.POSITIVE_INFINITY)
+    && (!player || (u.id !== 'power' && u.id !== 'resonance' || player.attackDamage < 60))
+    && (!player || u.id !== 'haste' || player.attackCooldownMs > 240)
+    && (!player || u.id !== 'multishot' || player.shots < 5)
+    && (!player || u.id !== 'pierce' || player.pierce < 4),
   );
   const picked: SurvivorUpgradeOption[] = [];
   for (let i = 0; i < count && pool.length > 0; i++) {
-    const idx = Math.floor(rng() * pool.length);
-    const u = pool.splice(idx, 1)[0]!;
-    const text = u.describe?.(move) ?? { name: u.name, description: u.description };
-    picked.push({ id: u.id, ...text });
+    const rarity = rollUpgradeRarity(rng, pool);
+    const matching = pool.filter((upgrade) => upgrade.rarity === rarity);
+    const u = matching[Math.floor(rng() * matching.length)]!;
+    pool.splice(pool.indexOf(u), 1);
+    const value = u.valueRange
+      ? u.valueRange[0] + Math.floor(rng() * (u.valueRange[1] - u.valueRange[0] + 1))
+      : undefined;
+    const copy = value !== undefined ? u.describeValue?.(move, value) : undefined;
+    const description = copy ?? u.describe?.(move) ?? { name: u.name, description: u.description };
+    picked.push({ id: u.id, rarity, ...(value === undefined ? {} : { value }), ...description });
+    if (rarity === 'ancestral') {
+      for (let j = pool.length - 1; j >= 0; j--) if (pool[j]!.rarity === 'ancestral') pool.splice(j, 1);
+    }
   }
   return picked;
 }
@@ -785,7 +859,7 @@ function evolutionOffer(state: SurvivorState): SurvivorUpgradeOption | null {
   const options = state.evolutions(p.dexId);
   if (options.length === 0) return null;
   const next = options[Math.floor(state.rng() * options.length)]!;
-  return { id: `${EVOLVE_PREFIX}${next.dexId}`, name: `Evoluir para ${next.name}`, description: 'Os números passam a ser os dos stats da nova forma, com +30 de HP (cura tudo) e golpe mais forte.[...]'}
+  return { id: `${EVOLVE_PREFIX}${next.dexId}`, rarity: 'lendario', name: `Evoluir para ${next.name}`, description: 'Assume os stats da nova forma, ganha +30 de HP, cura tudo e fortalece o golpe.' };
 }
 
 function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
@@ -810,6 +884,7 @@ function offerOwedUpgrade(state: SurvivorState): void {
     state.secondAttackOffered = true;
     options.splice(options.length - 1, 1, {
       id: 'second-attack',
+      rarity: 'lendario',
       name: `Chamar apoio: ${state.supportCandidate.name}`,
       description: `${state.supportCandidate.move.icon} Ataca da sua posição com recarga própria. Não recebe upgrades nem pode ser atingido.`,
     });
@@ -823,7 +898,8 @@ function offerOwedUpgrade(state: SurvivorState): void {
  */
 export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] {
   const events: SurvivorEvent[] = [];
-  const offered = state.pendingUpgrade?.some((o) => o.id === id) ?? false;
+  const offeredOption = state.pendingUpgrade?.find((option) => option.id === id);
+  const offered = !!offeredOption;
   if (id.startsWith(EVOLVE_PREFIX)) {
     // Só evolui para a forma que foi oferecida nesta escolha (nunca para um id qualquer).
     const dexId = Number(id.slice(EVOLVE_PREFIX.length));
@@ -859,7 +935,7 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
     // Upgrades comuns também precisam ser uma escolha real da rodada. Isso impede que uma
     // chamada atrasada ou manipulada aplique um bônus que nunca foi oferecido.
     if (upgrade && offered) {
-      upgrade.apply(state.player);
+      upgrade.apply(state.player, offeredOption?.value);
       state.player.upgradeLevels[id] = (state.player.upgradeLevels[id] ?? 0) + 1;
     }
   }
