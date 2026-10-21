@@ -1,5 +1,14 @@
 # Plano e estado do projeto
 
+## Encontros e cenas lendárias (21/10/2026)
+
+- Catálogo de 94 espécies (71 lendárias e 23 míticas), conferido no `pokemon_species.csv` da PokéAPI, com quatro capítulos e pistas escritas individualmente em `legendary-stories.ts`.
+- Caderno de Lendas em Histórias: filtros por região/visitas, investigação por duas ações próximas a locais reais do mapa e replay só de encontros vividos. Não exige grind em outros modos nem dá capturas automáticas.
+- Encenação 2D com sprite real sob demanda, cenários de cidade/água/bosque/pedra e 12 temas visuais. Partículas, movimento e animação do sprite desligam pelas opções visuais/Rotom ou movimento reduzido. Falta de sprite permanece explícita.
+- Registro permanente de visitas separado do histórico recente de efeitos; normalização recupera os registros antigos disponíveis. Retomada de pista/cena, backup no formato existente e replay sem recompensa duplicada.
+- Testes percorrem as 94 investigações, ida/volta do save, proteção contra repetição, expiração e caminhos em cinco sementes. `e2e/village-legends.mjs` percorre o fluxo de UI com save isolado, sem câmera nem AR simulados.
+- A cena única do desejo ao Ho-Oh foi preservada e recebeu ajustes de paisagem/rolagem e economia visual. Aparelho físico continua exigindo validação própria.
+
 ## Arte, postos de trabalho e passeio guiado (21/10/2026)
 
 - Fachadas completas para casas, Correio e Pins; recortes corrigidos da Torre, Mercado, Café e murais. A grama usa uma base uniforme e as flores são sobrepostas sem o retângulo verde da folha de origem.
