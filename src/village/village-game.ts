@@ -2139,19 +2139,31 @@ export class VillageGame {
     const topBar = Math.round(58 * (canvas.width / Math.max(1, canvas.clientWidth || canvas.width)));
     const y = Math.max(topBar, top - boxH - 7 * scale);
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.38)';
-    ctx.shadowBlur = 4 * scale;
+    // Balão leve, inspirado em mangá: papel claro, contorno de tinta e acento só no nome.
+    // Assim continua legível sobre grama, água e áreas noturnas sem virar uma janela de dark mode.
+    ctx.shadowColor = 'rgba(22, 32, 48, 0.26)';
+    ctx.shadowBlur = 3 * scale;
     ctx.shadowOffsetY = 2 * scale;
-    ctx.fillStyle = 'rgba(10, 18, 34, 0.96)';
-    ctx.strokeStyle = s.tint;
-    ctx.lineWidth = Math.max(2, scale * 0.9);
+    ctx.fillStyle = '#fffdf5';
+    ctx.strokeStyle = '#1b2737';
+    ctx.lineWidth = Math.max(2, scale * 0.8);
     ctx.beginPath();
     ctx.roundRect(x, y, boxW, boxH, 5 * scale);
     ctx.fill();
     ctx.stroke();
     ctx.shadowColor = 'transparent';
+    const nameWidth = Math.min(boxW - 10 * scale, ctx.measureText(s.name).width + 14 * scale);
     ctx.fillStyle = s.tint;
-    ctx.fillRect(x + 2 * scale, y + 2 * scale, boxW - 4 * scale, lh + 3 * scale);
+    ctx.globalAlpha = 0.2;
+    ctx.beginPath();
+    ctx.roundRect(x + 4 * scale, y + 3 * scale, nameWidth, lh + 2 * scale, 3 * scale);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = s.tint;
+    ctx.lineWidth = Math.max(1, scale * 0.45);
+    ctx.stroke();
+    ctx.strokeStyle = '#1b2737';
+    ctx.lineWidth = Math.max(2, scale * 0.8);
     // Rabinho do balão, apontando para quem fala.
     const tx = Math.max(x + 6 * scale, Math.min(x + boxW - 6 * scale, cx));
     ctx.beginPath();
@@ -2159,16 +2171,16 @@ export class VillageGame {
     ctx.lineTo(tx, y + boxH + 4 * scale);
     ctx.lineTo(tx + 3 * scale, y + boxH - 1);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(10, 18, 34, 0.96)';
+    ctx.fillStyle = '#fffdf5';
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = 'rgba(10, 18, 34, 0.96)';
+    ctx.fillStyle = '#fffdf5';
     ctx.fillRect(tx - 3 * scale + 1, y + boxH - 2, 6 * scale - 2, 3);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#1b2737';
     ctx.fillText(s.name, x + 7 * scale, y + 5 * scale);
-    ctx.fillStyle = '#f4f7ff';
+    ctx.fillStyle = '#1f2a3a';
     lines.forEach((l, i) => ctx.fillText(l, x + 7 * scale, y + 8 * scale + lh * (i + 1)));
     ctx.restore();
   }
