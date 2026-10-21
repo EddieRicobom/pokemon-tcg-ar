@@ -6358,6 +6358,27 @@ body.no-scroll .reward-toasts {
   cursor: pointer;
 }
 
+.survivor-upgrades {
+  max-height: calc(100dvh - 36px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+.survivor-rarity-hint { margin: 4px 0 10px; font-size: 0.78rem; color: #4a5068; }
+.survivor-rarity-guide { margin: 0 0 8px; padding: 6px 8px; border: 1px solid #d8dcf0; border-radius: 8px; text-align: left; color: #35425c; font-size: 0.72rem; }
+.survivor-rarity-guide summary { cursor: pointer; font-weight: 700; }
+.survivor-rarity-guide p { margin: 6px 0 0; line-height: 1.35; }
+.survivor-rarity-label { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.02em; }
+.survivor-upgrade-btn.rarity-normal { border-left: 5px solid #8390a7; }
+.survivor-upgrade-btn.rarity-normal .survivor-rarity-label { color: #44516c; }
+.survivor-upgrade-btn.rarity-raro { border-left: 5px solid #2878bb; background: #edf6ff; }
+.survivor-upgrade-btn.rarity-raro .survivor-rarity-label { color: #125a94; }
+.survivor-upgrade-btn.rarity-lendario { border-left: 5px solid #9258ca; background: #f6f0ff; }
+.survivor-upgrade-btn.rarity-lendario .survivor-rarity-label { color: #683b9d; }
+.survivor-upgrade-btn.rarity-ancestral { border-left: 5px solid #c78a25; background: #fff5df; }
+.survivor-upgrade-btn.rarity-ancestral .survivor-rarity-label { color: #835413; }
+.survivor-upgrade-btn:focus-visible { outline: 3px solid #1b2036; outline-offset: 2px; }
+
 .survivor-upgrade-icon {
   font-size: 1.3rem;
   line-height: 1;

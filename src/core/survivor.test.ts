@@ -12,6 +12,7 @@ import {
   survivorCoins,
   survivorScore,
   SURVIVOR_UPGRADES,
+  SURVIVOR_UPGRADE_RARITIES,
   xpForLevel,
 } from './survivor';
 import type { SurvivorEnemy, SurvivorState } from './survivor';
@@ -339,17 +340,23 @@ describe('golpes por tipo', () => {
 
   it('os upgrades sorteados combinam com o golpe e falam dele', () => {
     const aura = as('grass', 'aura').move;
+    const player = createSurvivorState(1, { kindCount: 1, move: aura }).player;
+    player.level = 8;
     for (let seed = 1; seed < 30; seed++) {
-      const picks = rollUpgrades(seededRng(seed), 3, aura);
+      const picks = rollUpgrades(seededRng(seed), 3, aura, player);
       for (const p of picks) expect(['multishot', 'pierce', 'range']).not.toContain(p.id);
     }
-    const all = rollUpgrades(seededRng(3), 6, aura);
-    expect(all.find((p) => p.id === 'power')?.description).toBe('Folhas cortantes: +20% de dano, até 60.');
+    const all = Array.from({ length: 80 }, (_, seed) => rollUpgrades(seededRng(seed), 3, aura, player)).flat();
+    const power = all.find((option) => option.id === 'power');
+    expect(power?.value).toBeGreaterThanOrEqual(16);
+    expect(power?.value).toBeLessThanOrEqual(24);
+    expect(power?.description).toBe(`Folhas cortantes: +${power?.value}% de dano, até 60.`);
   });
 
   it('oferece especializações só para o tipo principal e não repete as já escolhidas', () => {
     const ghost = as('ghost', 'projetil').move;
     const state = quiet(createSurvivorState(9, { kindCount: 1, move: ghost, profile: attackProfile(ghost, null) }));
+    state.player.level = 10;
     const ids = new Set(Array.from({ length: 12 }, (_, seed) => rollUpgrades(seededRng(seed + 30), 12, ghost, state.player).map((pick) => pick.id)).flat());
     expect(ids.has('ghost-haunt')).toBe(true);
     expect(ids.has('bug-formation')).toBe(false);
@@ -357,6 +364,36 @@ describe('golpes por tipo', () => {
     applyUpgrade(state, 'ghost-haunt');
     const later = Array.from({ length: 12 }, (_, seed) => rollUpgrades(seededRng(seed + 50), 12, ghost, state.player).map((pick) => pick.id)).flat();
     expect(later).not.toContain('ghost-haunt');
+  });
+
+  it('pesa as raridades, abre faixas por nível e limita a carta ancestral a uma por corrida', () => {
+    const state = createSurvivorState(8, { kindCount: 1 });
+    expect(new Set(Array.from({ length: 50 }, (_, seed) => rollUpgrades(seededRng(seed), 3, state.player.move, state.player).map((option) => option.rarity)).flat())).toEqual(new Set(['normal']));
+    state.player.level = 15;
+    const counts = { normal: 0, raro: 0, lendario: 0, ancestral: 0 };
+    for (let seed = 0; seed < 3000; seed++) {
+      const option = rollUpgrades(seededRng(seed + 100), 1, state.player.move, state.player)[0]!;
+      counts[option.rarity!]++;
+    }
+    expect(counts.normal).toBeGreaterThan(counts.raro);
+    expect(counts.raro).toBeGreaterThan(counts.lendario);
+    expect(counts.lendario).toBeGreaterThan(counts.ancestral);
+    expect(counts.ancestral).toBeGreaterThan(0);
+    expect(Object.values(SURVIVOR_UPGRADE_RARITIES).map((rarity) => rarity.minLevel)).toEqual([1, 3, 8, 12]);
+    const ancestral = SURVIVOR_UPGRADES.find((upgrade) => upgrade.rarity === 'ancestral')!;
+    state.pendingUpgrade = [{ id: ancestral.id, name: ancestral.name, description: ancestral.description, rarity: 'ancestral' }];
+    applyUpgrade(state, ancestral.id);
+    for (let seed = 0; seed < 100; seed++) expect(rollUpgrades(seededRng(seed), 3, state.player.move, state.player).some((option) => option.rarity === 'ancestral')).toBe(false);
+  });
+
+  it('aplica o valor da carta sorteada sem mudar o resultado ao escolher', () => {
+    const state = createSurvivorState(9, { kindCount: 1 });
+    state.player.level = 4;
+    const power = Array.from({ length: 200 }, (_, seed) => rollUpgrades(seededRng(seed), 3, state.player.move, state.player).find((option) => option.id === 'power')).find(Boolean)!;
+    const before = state.player.attackDamage;
+    state.pendingUpgrade = [power];
+    applyUpgrade(state, power.id);
+    expect(state.player.attackDamage).toBeCloseTo(Math.round(before * (1 + power.value! / 100) * 10) / 10);
   });
 
   it('limita o acúmulo dos upgrades ofensivos sem enfraquecer stats iniciais mais altos', () => {
