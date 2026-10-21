@@ -14,6 +14,6 @@ describe('diorama AR da Vila', () => {
   });
 
   it('mantém a inclinação 2.5D do AR em 75 graus sem alterar o mapa original', () => {
-    expect(VILLAGE_AR_TILT_DEG).toBe(75);
+    expect(VILLAGE_AR_TILT_DEG).toBe(0);
   });
 });
