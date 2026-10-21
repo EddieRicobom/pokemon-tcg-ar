@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { getCache, getDigitalSprite, getLocalVillageSprite, getLocalVillageSpriteDirs, getVillageAtlas, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
@@ -24,6 +24,12 @@ import { ensureModeStories } from '../core/village/mode-stories';
 import { challengeGalleryUnlocked, completedChallengeExhibits } from '../core/village/challenge-gallery';
 import BackpackView from './BackpackView.vue';
 import HoOhWishCutscene from './HoOhWishCutscene.vue';
+import LegendaryCutscene from './LegendaryCutscene.vue';
+import VillageLegends from './VillageLegends.vue';
+import { legendStoryOf } from '../core/village/legendary-stories';
+import type { LegendStory } from '../core/village/legendary-stories';
+import { beginInvestigation, inspectLegendClue, investigationPlace, legendDiaryPage } from '../core/village/legendary-investigation';
+import type { DecodedGif } from '../core/gif';
 import MinigameHub from './MinigameHub.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import { dayKey, levelOf } from '../core/trainer';
@@ -110,7 +116,7 @@ pruneHarvest(state, day.value);
 type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
-type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos';
+type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos' | 'lendas';
 const tab = ref<Tab>('inicio');
 const arActive = ref(false);
 const arAnchored = ref(false);
@@ -194,7 +200,7 @@ function stopArBeta(): void {
 interface MenuTile { tab?: Tab; href?: string; run?: () => void; disabled?: boolean; icon: string; label: string; hint?: string; badge?: number }
 const MENU_TITLES: Record<Tab, string> = {
   inicio: 'Menu da Vila', resumo: 'Resumo da Vila', expedicoes: 'Expedições', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos',
-  album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila',
+  album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila', lendas: 'Caderno de Lendas',
 };
 /** Um lugar da Vila aberto direto pelo menu (ou trancado, com o nível que falta). */
 function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: string): MenuTile {
@@ -234,6 +240,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
       { tab: 'resumo', icon: '🗞️', label: 'Resumo da Vila', hint: 'o que aconteceu e mudou' },
       { tab: 'expedicoes', icon: '🧭', label: 'Expedições', hint: 'mande um Pokémon explorar' },
       { tab: 'livro', icon: '📖', label: 'Livro dos Pokémon', hint: 'amizade e apelidos' },
+      { tab: 'lendas', icon: '✨', label: 'Caderno de Lendas', hint: 'pistas, encontros e lembranças' },
       { tab: 'diario', icon: '📔', label: 'Diário', hint: unread.value > 0 ? `${unread.value} novo(s)` : undefined },
       { tab: 'album', icon: '📸', label: 'Álbum' },
       { tab: 'colecao', icon: '🏆', label: 'Coleção' },
@@ -291,7 +298,7 @@ function focusWithArrowIndicator(target: HTMLElement | undefined): void {
 function rememberVillageActionFocus(event: FocusEvent): void {
   const target = event.target;
   if (!(target instanceof HTMLElement) || target.closest('.village-pad')) return;
-  focusedVillageAction = target.closest('.village-sheet, .village-dialog, .quiz-dialog') ? target : null;
+  focusedVillageAction = target.closest('.legend-cutscene, .village-sheet, .village-dialog, .quiz-dialog') ? target : null;
 }
 function focusFirstVillageAction(selector: string): void {
   const panel = document.querySelector<HTMLElement>(selector);
@@ -359,6 +366,12 @@ const INTRO_LINES: readonly string[] = [
 const cutsceneOpen = ref(false);
 const cutsceneLine = ref(0);
 const hoOhWishScene = ref<{ spriteUrl: string } | null>(null);
+const legendaryScene = ref<{ story: LegendStory; gif: DecodedGif | null; loading: boolean; replay: boolean } | null>(null);
+const legendarySceneRef = ref<InstanceType<typeof LegendaryCutscene> | null>(null);
+const legendaryDefinition = computed(() => legendaryScene.value && legendaryOf(legendaryScene.value.story.id));
+const legendCluePlace = computed(() => state.legendary.investigation && investigationPlace(state.legendary.investigation.id, state.legendary.investigation.step));
+const legendClueName = computed(() => legendStoryOf(state.legendary.investigation?.id ?? '')?.name);
+let legendaryLoadToken = 0;
 const recapScenes = ref<RecapScene[]>([]);
 const recapIndex = ref(0);
 const recapScene = computed(() => recapScenes.value[recapIndex.value]);
@@ -685,7 +698,7 @@ function effects(): LegendaryEffects {
 function rollLegendaryToday(): void {
   const r = rollLegendary(state.legendary, Math.random, day.value, new Date().toISOString());
   state.legendary = r.state;
-  if (r.legendary) changed();
+  changed(); // Persiste inclusive a tentativa sem visita: reabrir não dá outro sorteio.
   // Celebi deixa a página especial no Diário (o bônus prometido na cutscene, de verdade).
   if (r.legendary?.id === 'celebi') {
     const now = new Date();
@@ -694,27 +707,58 @@ function rollLegendaryToday(): void {
   if (state.legendary.active) showLegendaryCutscene();
 }
 
-let legendaryLine = 0;
-function showLegendaryCutscene(): void {
-  const active = state.legendary.active;
-  const def = active ? legendaryOf(active.id) : undefined;
-  if (!def) {
-    state.legendary = dismissActive(state.legendary);
-    return;
-  }
-  legendaryLine = 0;
-  const step = () => {
-    if (legendaryLine < def.lines.length) {
-      dialog.value = { name: def.name, text: def.lines[legendaryLine]!, actions: [{ label: legendaryLine + 1 < def.lines.length ? 'Continuar' : 'Ok', run: () => { legendaryLine++; step(); } }] };
-      return;
+function showLegendaryCutscene(id = state.legendary.active?.id, replay = false): void {
+  const story = id && legendStoryOf(id);
+  if (!story || replay && !state.legendary.seen[story.id]) return;
+  closeVillageSheet();
+  closeDialog();
+  game?.stopWalk();
+  if (!replay) {
+    const at = state.legendary.seen[story.id] ?? new Date().toISOString();
+    state.legendary.seen[story.id] = at;
+    if (!state.diary.some((entry) => entry.tpl === `lendario-${story.id}`)) {
+      const now = new Date(at);
+      const page = legendDiaryPage(story.id, now.getTime(), dayKey(now), now.getHours());
+      if (page) state.diary = trimMoments([...state.diary, page]);
     }
-    dialog.value = {
-      name: def.name,
-      text: `${def.boon}\n\n${def.consequence}`,
-      actions: [{ label: 'Ok', run: () => { state.legendary = dismissActive(state.legendary); changed(); closeDialog(); } }],
-    };
-  };
-  step();
+    changed(); persist();
+  }
+  legendaryScene.value = { story, gif: null, loading: true, replay };
+  const token = ++legendaryLoadToken;
+  // Um sprite por encontro, sob demanda. A ausência é visível; não inventa um Pokémon substituto.
+  void getDigitalSprite(story.dexId, false).then((sprite) => {
+    if (token !== legendaryLoadToken || !legendaryScene.value) return;
+    legendaryScene.value.gif = sprite ? markRaw(sprite.gif) : null;
+  }).catch(() => undefined).finally(() => { if (token === legendaryLoadToken && legendaryScene.value) legendaryScene.value.loading = false; });
+}
+function finishLegendaryCutscene(): void {
+  const replay = legendaryScene.value?.replay;
+  legendaryLoadToken++;
+  legendaryScene.value = null;
+  if (!replay) { state.legendary = dismissActive(state.legendary); changed(); persist(); }
+  void nextTick(() => document.querySelector<HTMLButtonElement>('.menu-control-btn')?.focus());
+}
+function startLegendInvestigation(id: string): void {
+  state.legendary = beginInvestigation(state.legendary, id);
+  changed(); persist();
+  travelToLegendClue();
+}
+function travelToLegendClue(): void {
+  const place = legendCluePlace.value;
+  if (!place) return;
+  closeVillageSheet();
+  game?.walkTo(place.x, place.y);
+  say(`🔎 ${legendClueName.value}: siga até ${place.name} e use Investigar pista ou A.`, 6000);
+}
+function investigateLegendClue(): void {
+  if (!game || sheet.value || dialog.value || legendaryScene.value || game.player.t < 1) return;
+  const result = inspectLegendClue(state.legendary, game.player, new Date().toISOString());
+  state.legendary = result.state;
+  changed(); persist();
+  if (result.encounter) {
+    if (state.legendary.active?.id === 'celebi') state.diary = trimMoments([...state.diary, celebiDiaryPage(Date.now(), day.value, villageHour())]);
+    showLegendaryCutscene();
+  } else say(result.message, 7000);
 }
 
 function nameOf(id: string): string {
@@ -808,12 +852,13 @@ let tapInteraction: { x: number; y: number } | null = null;
 const TAP_MS = 320;
 const TAP_PX = 10;
 function applyStick(x: number, y: number): void {
+  if (legendaryScene.value) { game?.holdStick(null); return; }
   if (x !== 0 || y !== 0) tapInteraction = null;
   const dirs = stickDirs(x, y);
   game?.holdStick(dirs.primary ? dirs : null);
 }
 function joyDown(e: PointerEvent): void {
-  if (joy.active || recapScenes.value.length) return;
+  if (joy.active || recapScenes.value.length || legendaryScene.value) return;
   const el = e.currentTarget as HTMLElement;
   const stage = wrapEl.value?.getBoundingClientRect();
   Object.assign(joy, { active: true, pointerId: e.pointerId, cx: e.clientX, cy: e.clientY, x: 0, y: 0, lx: e.clientX - (stage?.left ?? 0), ly: e.clientY - (stage?.top ?? 0), downAt: performance.now(), moved: false });
@@ -872,7 +917,7 @@ function handleGamepadDirection(event: Event): void {
   if (!direction || custom.detail.pressed === undefined || custom.detail.handled) return;
   // A Torre gerencia o direcional durante a corrida; escolhas e pausas passam ao foco dos diálogos.
   if (sheet.value === 'torre') return;
-  if (sheet.value || dialog.value || quiz.value || quizOpen.value) {
+  if (sheet.value || dialog.value || quiz.value || quizOpen.value || legendaryScene.value) {
     if (custom.detail.pressed) moveVillageFocus(direction);
     custom.detail.handled = true;
     return;
@@ -901,7 +946,7 @@ function handleGamepadMenu(event: Event): void {
   pressMenu();
 }
 function moveVillageFocus(direction: Dir): void {
-  const panel = document.querySelector<HTMLElement>('.village-sheet, .village-dialog, .quiz-dialog');
+  const panel = document.querySelector<HTMLElement>('.legend-cutscene, .village-sheet, .village-dialog, .quiz-dialog');
   if (!panel) return;
   const selector = 'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex="0"]';
   const candidates = [...panel.querySelectorAll<HTMLElement>(selector)].filter((element) => element.getClientRects().length > 0);
@@ -951,6 +996,10 @@ function onKey(e: KeyboardEvent): void {
       e.preventDefault();
       hoOhWishScene.value = null;
     }
+    return;
+  }
+  if (legendaryScene.value) {
+    if (e.type === 'keydown' && (e.key === 'Escape' || e.key.toLowerCase() === 'x')) { e.preventDefault(); finishLegendaryCutscene(); }
     return;
   }
   if (handleDialogEscape(e, pressB)) return;
@@ -1029,7 +1078,7 @@ function tickQuestions(): void {
     askingMon = null;
     game?.setWaiting(null);
   }
-  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || legendaryScene.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (!askingMon && now >= nextAskAt) {
     nextAskAt = now + 4 * 60000 + Math.random() * 4 * 60000;
     const today = refreshDay();
@@ -1728,7 +1777,7 @@ function finishScene(scene: Scene, ids: string[]): void {
 }
 
 function tickScenes(): void {
-  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
+  if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || legendaryScene.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
   if (Date.now() < nextSceneAt) return;
   nextSceneAt = Date.now() + (SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR) * effects().quietFactor;
   // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
@@ -1861,16 +1910,17 @@ function cancelFarm(): void {
   farmSession.cancel();
   game?.setFarmTasks([]);
 }
-watch(() => !!sheet.value || !!dialog.value || !!quiz.value || quizOpen.value || cutsceneOpen.value || !!hoOhWishScene.value, (blocked) => {
+watch(() => !!sheet.value || !!dialog.value || !!quiz.value || quizOpen.value || cutsceneOpen.value || !!hoOhWishScene.value || !!legendaryScene.value, (blocked) => {
   if (!blocked) return;
   cancelFarm();
   heldKeys.clear();
   dpadPointers.clear();
+  gamepadKeys.clear();
   game?.holdStick(null);
 });
 
 function tickFarm(): void {
-  if (!game || document.hidden || sheet.value || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || welcome.value || recapScenes.value.length || loading.value) {
+  if (!game || document.hidden || sheet.value || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || legendaryScene.value || welcome.value || recapScenes.value.length || loading.value) {
     cancelFarm();
     return;
   }
@@ -1913,6 +1963,7 @@ function confirmFocusedAction(): boolean {
 }
 
 function pressA(): void {
+  if (legendaryScene.value) { if (!confirmFocusedAction()) legendarySceneRef.value?.advance(); return; }
   if (recapScenes.value.length) return;
   unlockSound();
   playSound('interact');
@@ -1931,6 +1982,8 @@ function pressA(): void {
     return;
   }
   if (!game) return;
+  const clue = legendCluePlace.value;
+  if (clue && Math.abs(game.player.x - clue.x) + Math.abs(game.player.y - clue.y) <= 2) { investigateLegendClue(); return; }
   const today = refreshDay();
   const t = game.target();
   if (t.kind === 'mon' && askingMon?.id === t.id) {
@@ -2157,6 +2210,7 @@ function give(item: ItemId): void {
 }
 
 function pressB(): void {
+  if (legendaryScene.value) { finishLegendaryCutscene(); return; }
   if (hoOhWishScene.value) { hoOhWishScene.value = null; return; }
   if (recapScenes.value.length) { finishRecap(); return; }
   // Com o aviso de boas-vindas na tela, o B só fecha o aviso (antes ele também abria o menu junto).
@@ -2182,6 +2236,7 @@ function pressB(): void {
 }
 
 function pressMenu(): void {
+  if (legendaryScene.value) return;
   if (dialog.value || quiz.value || (sheet.value && sheet.value !== 'menu')) return;
   if (sheet.value === 'menu') {
     if (tab.value !== 'inicio') tab.value = 'inicio';
@@ -2383,6 +2438,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('focusin', rememberVillageActionFocus);
+  legendaryLoadToken++;
   cancelFarm();
   stopArBeta();
   window.removeEventListener('keydown', onKey);
@@ -2469,6 +2525,7 @@ onBeforeUnmount(() => {
       </section>
       <p v-if="loading" class="village-loading">{{ loading }}</p>
       <HoOhWishCutscene v-else-if="hoOhWishScene" :sprite-url="hoOhWishScene.spriteUrl" @finish="hoOhWishScene = null" />
+      <LegendaryCutscene v-else-if="legendaryScene && legendaryDefinition" ref="legendarySceneRef" :key="legendaryScene.story.id" :story="legendaryScene.story" :definition="legendaryDefinition" :gif="legendaryScene.gif" :loading="legendaryScene.loading" :replay="legendaryScene.replay" :effects="effectiveVisual.villageFx" :max-fps="effectiveVisual.frameRate === 'auto' ? 0 : Number(effectiveVisual.frameRate)" @finish="finishLegendaryCutscene" />
       <div v-else-if="recapScene" class="village-recap" role="dialog" aria-modal="true" aria-label="Capítulo diário da Vila">
         <article :key="recapIndex" class="village-recap-card">
           <small>HISTÓRIAS DA VILA · {{ recapIndex + 1 }}/{{ recapScenes.length }}</small>
@@ -2690,6 +2747,7 @@ onBeforeUnmount(() => {
         </div>
 
         <VillageWorksites v-else-if="tab === 'trabalhos'" :state="state" :name-of="nameOf" @visit="visitWorksite" @seeds="sheet = 'farm'" />
+        <VillageLegends v-else-if="tab === 'lendas'" :state="state.legendary" @investigate="startLegendInvestigation" @replay="showLegendaryCutscene($event, true)" @travel="travelToLegendClue" />
 
         <div v-else-if="tab === 'resumo'" class="diary village-summary">
           <p class="hint">Uma visão rápida baseada no Diário, nas relações e nos pedidos reais da Vila.</p>
@@ -2889,7 +2947,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-show="!loading && !recapScene && !cutsceneOpen && !welcome" class="village-pad" @contextmenu.prevent>
+    <div v-if="legendCluePlace && !sheet && !dialog && !legendaryScene && !hoOhWishScene && !welcome && !loading && !recapScene && !cutsceneOpen && !quizOpen && !quiz" class="village-legend-clue" role="region" aria-label="Pista lendária"><small>🔎 {{ legendClueName }} · pista {{ (state.legendary.investigation?.step ?? 0) + 1 }}/2</small><span>{{ legendCluePlace.name }}</span><div><button type="button" @click="travelToLegendClue">Seguir pista</button><button type="button" @click="investigateLegendClue">Investigar pista</button></div></div>
+    <div v-show="!loading && !recapScene && !cutsceneOpen && !welcome && !legendaryScene" class="village-pad" @contextmenu.prevent>
       <p class="village-move-hint">Arraste para andar · toque para ir<span> · setas/WASD</span></p>
       <p class="village-arrow-hint">Setas/controle navegam · A confirma · B volta</p>
       <div class="village-control-cluster" :class="{ blocked: !!sheet || !!dialog || !!quiz || quizOpen }" role="group" aria-label="Controles da Vila">

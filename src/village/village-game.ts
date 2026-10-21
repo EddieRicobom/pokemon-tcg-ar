@@ -746,6 +746,12 @@ export class VillageGame {
     this.goal = { x, y };
   }
 
+  stopWalk(): void {
+    this.goal = null;
+    this.held = null;
+    this.stick = null;
+  }
+
   /** Permite que um toque no mapa saiba se está apontando para algo que aceita A. */
   interactableAt(x: number, y: number): boolean {
     if (isPlaced(this.state, x, y) || cropAt(this.state, x, y)) return true;

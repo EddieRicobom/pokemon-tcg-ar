@@ -6968,3 +6968,6 @@ body.no-scroll .reward-toasts {
 .home-inventory li > button { display: flex; align-items: center; width: 100%; gap: 8px; padding: 7px; border: 0; background: transparent; text-align: left; font: inherit; }
 .home-inventory li.selected { outline: 2px solid #f0c64f; background: #fff1ba; }
 .home-inventory li img { image-rendering: pixelated; object-fit: contain; }
+.village-legend-clue { position: absolute; z-index: 8; top: 76px; left: max(12px,env(safe-area-inset-left)); max-width: min(330px,calc(100% - 28px)); display: grid; gap: 5px; padding: 10px; border: 1px solid #e7d89c70; border-radius: 12px; background: #121b2fed; color: #f6efcb; font-size: .8rem; }
+.village-legend-clue div { display: flex; gap: 8px; flex-wrap: wrap; }.village-legend-clue button { min-height: 44px; font-size: .8rem; }
+@media (orientation: landscape) and (max-height: 600px) { .village-legend-clue { top: 65px; max-width: 275px; } }
