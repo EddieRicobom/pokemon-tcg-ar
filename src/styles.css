@@ -517,6 +517,18 @@ button.danger {
   margin: 4px 0;
 }
 
+.scan-saved {
+  display: grid;
+  gap: .25rem;
+  margin: .7rem 0;
+  padding: .7rem .8rem;
+  border: 1px solid color-mix(in srgb, var(--ok) 48%, var(--line));
+  border-radius: .7rem;
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface-2));
+}
+.scan-saved strong { color: var(--ok); }
+.scan-saved span { color: var(--muted); font-size: .88rem; line-height: 1.4; }
+
 .result-actions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
