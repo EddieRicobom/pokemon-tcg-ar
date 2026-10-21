@@ -35,6 +35,8 @@ O job **"Tipos, testes e build"** é o que vale como porta de entrada para o mer
 
 O WebGL real não roda no happy-dom: a lógica é mantida pura e testada; a cola com o navegador (desenho, câmera, sensores) fica fora dos testes unitários. Trechos de shader são conferidos como texto (que o patch injeta o que deve), não compilados.
 
+Os trabalhos ativos têm cobertura em `worksites.test.ts`: concorrência com a fazenda, escolha do píer, trajeto real antes da produção, coleta manual concorrente, estoque cheio e preservação do histórico. `following.test.ts` cobre velocidade do companheiro, restauração ao encerrar e chegada aos oito destinos guiados. `layout.test.ts` e os testes de postos conferem acessos em várias sementes, incluindo o mapa usado pelo app. `atlas-file.test.ts` reconstrói o atlas sem navegador e compara os pixels com o PNG versionado no build. Essas verificações fazem parte do `npm test`; capturas do canvas e navegação no navegador são validações adicionais, sem medir GPU ou toque de celular real.
+
 ## Outras verificações (não fazem parte de `npm test`)
 
 - **Teste de ponta a ponta** (`e2e/`, `e2e.yml`, branches `claude/**`, `codex/**` e `Codex/**`, ou execução manual): Playwright com Chromium e câmera falsa (vídeo gerado de um escaneamento oficial da carta), percorre reconhecimento, armazenamento e AR. É um workflow separado do CI; os artefatos `e2e-resultados` e as anotações registram o resultado de cada execução, incluindo falhas de rede, CORS ou OCR.
