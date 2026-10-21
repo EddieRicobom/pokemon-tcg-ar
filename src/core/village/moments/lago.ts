@@ -241,6 +241,16 @@ export const LAGO_MOMENTS: readonly Template[] = [
     outcome: {},
   },
   {
+    id: 'lago-isca-improvisada', kind: 'comedia', title: 'A isca perfeita', emoji: '🪱', cast: 2, weight: 4, when: (c) => (day(c) || evening(c)) && calm(c),
+    lines: (c) => [L(0, `${c.n[1]}, achei a isca perfeita.`, 'star'), L(1, 'Isso é um biscoito.', 'question'), L(0, 'Exatamente. O peixe também merece um lanche.', 'idea'), L(1, '(o anzol volta com o biscoito intacto) O peixe tem mais juízo que nós.', 'laugh')],
+    outcome: { bond: 4 },
+  },
+  {
+    id: 'lago-balde-vazio', kind: 'amizade', title: 'O balde vazio', emoji: '🪣', cast: 2, weight: 4, when: (c) => day(c) && calm(c),
+    lines: () => [L(0, 'Passei a manhã pescando. Veja o meu balde!', 'star'), L(1, '(olha dentro) Tem uma folha.', 'question'), L(0, 'Uma folha aquática. É uma espécie rara.', 'sweat'), L(1, 'Então vamos comemorar com um almoço que não veio do lago.', 'laugh')],
+    outcome: { bond: 5 },
+  },
+  {
     id: 'lago-gaivotas', kind: 'drama', title: 'Roubaram o lanche', emoji: '🥪', cast: 2, weight: 4, when: (c) => day(c),
     lines: (c) => [L(0, 'Meu sanduíche! Um pássaro levou meu sanduíche!', 'shock'), L(1, 'Ele foi para aquela árvore. Está comendo olhando para você.', 'sweat'), L(0, 'Que audácia. Que ousadia. Que fome.', 'anger'), L(1, `Toma metade do meu, ${c.n[0]}. E vamos comer de costas para a árvore.`, 'heart')],
     outcome: { bond: 5 },

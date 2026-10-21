@@ -184,4 +184,14 @@ export const BOSQUE_MOMENTS: readonly Template[] = [
     lines: () => [L(0, 'Peguei pedras lisas na pedreira para pintar carinhas.', 'idea'), L(0, '(uma feliz, uma brava, uma dormindo, uma que ficou parecendo o treinador)', 'laugh'), L(0, 'Vou espalhar pela Vila. Quem achar ganha um sorriso de pedra.', 'heart')],
     outcome: { items: [['pedra', 1]] },
   },
+  {
+    id: 'bos-turno-da-picareta', kind: 'comedia', title: 'Turno da picareta', emoji: '⛏️', cast: 2, weight: 4, when: (c) => day(c) && calm(c),
+    lines: (c) => [L(0, `${c.n[1]}, hoje eu vou extrair a maior pedra da Vila!`, 'fire'), L(1, 'Começa pela pequena. A grande está olhando para você.', 'question'), L(0, '(bate uma vez; a picareta quica e pousa na própria cabeça)', 'shock'), L(1, 'A pedra venceu por nocaute. Pelo menos o capacete funcionou.', 'laugh')],
+    outcome: { bond: 4, items: [['pedra', 1]] },
+  },
+  {
+    id: 'bos-madeira-com-medida', kind: 'amizade', title: 'A tábua perfeita', emoji: '🪵', cast: 2, weight: 4, when: (c) => day(c) && calm(c),
+    lines: (c) => [L(0, 'Cortei uma tábua para o banco novo. Tem exatamente um metro.', 'star'), L(1, '(mede) Tem um metro e três. Os três centímetros são personalidade.', 'laugh'), L(0, `Então é uma tábua especial, ${c.n[1]}.`, 'heart'), L(1, 'Boa. Vou chamar de medida artística.', 'sparkle')],
+    outcome: { bond: 5, items: [['madeira', 1]] },
+  },
 ];
