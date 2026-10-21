@@ -20,3 +20,22 @@ export function harmonizePlayerSprite(buf: PixelBuf): PixelBuf {
   }
   return { ...buf, data };
 }
+
+/** Aplica o mesmo filtro aos atlas PNG e aos fallbacks carregados como imagem. */
+export function harmonizePlayerCanvas(source: CanvasImageSource, width: number, height: number): HTMLCanvasElement | null {
+  if (width <= 0 || height <= 0) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  try {
+    ctx.drawImage(source, 0, 0, width, height);
+    const image = ctx.getImageData(0, 0, width, height);
+    const filtered = harmonizePlayerSprite({ w: width, h: height, data: new Uint8Array(image.data) });
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(filtered.data), width, height), 0, 0);
+    return canvas;
+  } catch {
+    return null;
+  }
+}
