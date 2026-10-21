@@ -221,6 +221,12 @@ export interface SurvivorUpgradeOption {
   description: string;
 }
 
+/** Afinidade rara: o segundo tipo da espécie reforça a corrida sem criar outro golpe. */
+export interface SurvivorTypeAffinity {
+  type: SurvivorMove['type'];
+  effect: SurvivorMove['effect'];
+}
+
 export interface SurvivorState {
   special: SurvivorSpecialState;
   rng: Rng;
@@ -273,6 +279,8 @@ export interface SurvivorState {
   supportCandidate: SurvivorSupportCandidate | null;
   support: SurvivorSupport | null;
   secondAttackOffered: boolean;
+  /** Efeito do segundo tipo escolhido no início; não causa dano extra nem recebe upgrades. */
+  typeAffinity: SurvivorTypeAffinity | null;
 }
 
 export interface SurvivorEvolutionOption {
@@ -568,6 +576,8 @@ export interface CreateSurvivorOptions {
   infinite?: boolean;
   /** Preparação estratégica opcional, liberada por objetivos de corridas concluídas. */
   preparation?: SurvivorPreparationId;
+  /** Segundo tipo raro escolhido no início da corrida. */
+  typeAffinity?: SurvivorTypeAffinity;
 }
 
 /** Técnica interna da Torre para que até Pokémon de um tipo tenham uma segunda opção desbloqueável. */
@@ -648,6 +658,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     supportCandidate: options.supportCandidate ?? null,
     support: null,
     secondAttackOffered: false,
+    typeAffinity: options.typeAffinity ?? null,
   };
 }
 
@@ -891,6 +902,41 @@ function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void
 const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
 const hasUpgrade = (player: SurvivorPlayer, id: string): boolean => (player.upgradeLevels[id] ?? 0) > 0;
 
+/** Aplica apenas o efeito do tipo secundário, com intensidade menor e sem upgrades do golpe principal. */
+function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }): void {
+  const affinity = state.typeAffinity;
+  if (!affinity || affinity.effect === 'nenhum') return;
+  switch (affinity.effect) {
+    case 'queimar':
+      e.burnMs = Math.max(e.burnMs ?? 0, Math.round(EFFECT_MS.burn * 0.65));
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(damage * 0.18));
+      break;
+    case 'lentidao':
+      e.slowMs = Math.max(e.slowMs ?? 0, 900);
+      break;
+    case 'atordoar':
+      e.stunMs = Math.max(e.stunMs ?? 0, e.boss ? 90 : 220);
+      break;
+    case 'empurrar': {
+      const dx = e.x - from.x;
+      const dy = e.y - from.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const push = e.boss ? 1.5 : 5;
+      e.x += (dx / d) * push;
+      e.y += (dy / d) * push;
+      break;
+    }
+    case 'roubar':
+      state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1);
+      break;
+    case 'atravessar':
+      // O tipo já foi escolhido como afinidade; atravessar não precisa de estado no inimigo.
+      break;
+    default:
+      break;
+  }
+}
+
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
 function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true): void {
   const move = attackMove;
@@ -950,6 +996,9 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     }
     default:
       break;
+  }
+  if (move === p.move && state.typeAffinity?.type !== move.type) {
+    applyTypeAffinity(state, e, environmentalDamage, from);
   }
   // Inseto e Fantasma atacam em dupla: um único eco visual e de dano por impacto, sem efeitos, cura ou recursão.
   if (allowFollowUp && (move.type === 'bug' || move.type === 'ghost') && e.hp > 0) {
@@ -1057,8 +1106,9 @@ function attackSupport(state: SurvivorState): boolean {
 function attack(state: SurvivorState): boolean {
   const p = state.player;
   const move = p.move;
+  const attackRange = state.typeAffinity?.effect === 'atravessar' ? p.attackRange * 1.12 : p.attackRange;
   if (move.category === 'projetil') {
-    const [target] = nearestEnemies(state, p.attackRange, 1);
+    const [target] = nearestEnemies(state, attackRange, 1);
     if (!target) return false;
     fireProjectiles(state, target);
     return true;
@@ -1095,7 +1145,7 @@ function attack(state: SurvivorState): boolean {
       const dx = e.x - p.x;
       const dy = e.y - p.y;
       const distance = Math.hypot(dx, dy);
-      if (distance <= p.attackRange + e.radius && dx * direction / (distance || 1) >= 0.35) {
+      if (distance <= attackRange + e.radius && dx * direction / (distance || 1) >= 0.35) {
         hitEnemy(state, e, artifactDamage(state), p);
         hits++;
       }
@@ -1106,13 +1156,13 @@ function attack(state: SurvivorState): boolean {
       const dx = projectile.x - p.x;
       const dy = projectile.y - p.y;
       const distance = Math.hypot(dx, dy);
-      return distance <= p.attackRange + projectile.size && dx * direction / (distance || 1) >= 0.35;
+      return distance <= attackRange + projectile.size && dx * direction / (distance || 1) >= 0.35;
     });
     if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
-    state.fx.push({ kind: 'blast', x: p.x + direction * p.attackRange * 0.55, y: p.y, r: p.attackRange * 0.55, color: move.color, ageMs: 0, lifeMs: 300 });
+    state.fx.push({ kind: 'blast', x: p.x + direction * attackRange * 0.55, y: p.y, r: attackRange * 0.55, color: move.color, ageMs: 0, lifeMs: 300 });
     return true;
   }
-  const targets = nearestEnemies(state, p.attackRange, p.shots);
+  const targets = nearestEnemies(state, attackRange, p.shots);
   if (targets.length === 0) return false;
   let hits = 0;
   for (const t of targets) {

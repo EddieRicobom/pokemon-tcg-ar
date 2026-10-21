@@ -304,6 +304,23 @@ describe('golpes por tipo', () => {
     expect(pushed.x).toBeGreaterThan(water.player.x + 60);
   });
 
+  it('afinidade rara aplica o efeito do tipo secundário sem trocar o golpe principal', () => {
+    const primary = as('normal', 'aura');
+    const state = quiet(createSurvivorState(1, {
+      kindCount: 1,
+      move: primary.move,
+      profile: primary.profile,
+      typeAffinity: { type: 'fire', effect: 'queimar' },
+    }));
+    const target = dummy(1, state.player.x + 30, state.player.y);
+    state.player.attackRadius = 100;
+    state.enemies.push(target);
+    stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    expect(state.player.move.type).toBe('normal');
+    expect(target.burnMs).toBeGreaterThan(0);
+    expect(target.burnDps).toBeGreaterThan(0);
+  });
+
   it('Água marca o alvo e o próximo golpe Elétrico consome a sinergia', () => {
     const water = quiet(createSurvivorState(1, { kindCount: 1, ...as('water', 'aura') }));
     const electric = as('electric', 'aura');

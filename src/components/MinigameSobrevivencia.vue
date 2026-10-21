@@ -28,8 +28,8 @@ import {
   SURVIVOR_LOVE_CANDY_MS,
   SURVIVOR_MEGA_SHARD_MS,
 } from '../core/survivor';
-import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption } from '../core/survivor';
-import { attackProfile, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
+import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorTypeAffinity, SurvivorUpgradeOption } from '../core/survivor';
+import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
 import { typesOfDex } from '../core/species-filter';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
@@ -958,7 +958,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidate: SurvivorSupportCandidate | null = null): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidate: SurvivorSupportCandidate | null = null, typeAffinity?: SurvivorTypeAffinity): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -995,7 +995,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidate: supportCandidate ?? undefined, dexId, evolutions: evolutionsFor, infinite, preparation });
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidate: supportCandidate ?? undefined, dexId, evolutions: evolutionsFor, infinite, preparation, typeAffinity });
     announcedRegion = survivorRegionLabel(0);
     guardianSprite.value = null;
     specialQueued = false;
@@ -1013,7 +1013,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   }
 }
 
-function choosePlayer(opt: PickOption, picked?: PokemonType): void {
+function choosePlayer(opt: PickOption, picked?: PokemonType, typeAffinity?: SurvivorTypeAffinity): void {
   unlockSound();
   runParticipant = { id: opt.id, name: opt.name };
   const support = pickOptions.value?.find((candidate) => candidate.id !== opt.id);
@@ -1024,11 +1024,13 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
     move: supportAttack.move,
     profile: supportAttack.profile,
   } satisfies SurvivorSupportCandidate : null;
-  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidate);
+  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidate, typeAffinity);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
 const typeChoice = ref<PickOption | null>(null);
+const secondaryBuffOffer = ref<{ opt: PickOption; picked: PokemonType; secondary: PokemonType } | null>(null);
+const RARE_TYPE_AFFINITY_CHANCE = 0.18;
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
 const infiniteWanted = ref(false);
 const torre = computed(() => trainer.value.torre);
@@ -1043,7 +1045,28 @@ const nextTowerGoal = computed(() => {
   if (recordedObjectiveCount.value < 3) return `Próximo marco: conclua ${3 - recordedObjectiveCount.value} desafio(s) opcional(is) distinto(s) em corridas encerradas para liberar outra troca de sorteio.`;
   return `Registro: ${torre.value.runs} corridas concluídas · melhor onda ${torre.value.bestWave} · nível ${torre.value.bestLevel}.`;
 });
-function openTypeChoice(opt: PickOption): void { typeChoice.value = opt; }
+function openTypeChoice(opt: PickOption): void { typeChoice.value = opt; secondaryBuffOffer.value = null; }
+function chooseType(opt: PickOption, picked: PokemonType): void {
+  typeChoice.value = null;
+  const secondary = opt.types.find((type) => type !== picked);
+  const effect = secondary ? moveEffectForType(secondary) : 'nenhum';
+  if (secondary && effect !== 'nenhum' && Math.random() < RARE_TYPE_AFFINITY_CHANCE) {
+    secondaryBuffOffer.value = { opt, picked, secondary };
+    return;
+  }
+  choosePlayer(opt, picked);
+}
+function acceptSecondaryBuff(): void {
+  const offer = secondaryBuffOffer.value;
+  if (!offer) return;
+  secondaryBuffOffer.value = null;
+  choosePlayer(offer.opt, offer.picked, { type: offer.secondary, effect: moveEffectForType(offer.secondary) });
+}
+function skipSecondaryBuff(): void {
+  const offer = secondaryBuffOffer.value;
+  secondaryBuffOffer.value = null;
+  if (offer) choosePlayer(offer.opt, offer.picked);
+}
 watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) infiniteWanted.value = false; });
 
 /** Abre a tela de escolha de novo (3 novos sorteados) antes de cada corrida, inclusive ao "Jogar de novo". */
@@ -1161,6 +1184,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
+             <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
              <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0" class="chip survivor-artifact-chip" role="status">
                {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
              </span>
@@ -1221,12 +1245,26 @@ onBeforeUnmount(() => {
             <h2>{{ typeChoice.name }} tem dois tipos</h2>
             <p class="note">Qual deles ataca na corrida?</p>
             <div class="survivor-pick-grid">
-              <button v-for="t in typeChoice.types" :key="t" type="button" class="survivor-pick-btn" @click="(() => { const o = typeChoice!; typeChoice = null; choosePlayer(o, t); })()">
+              <button v-for="t in typeChoice.types" :key="t" type="button" class="survivor-pick-btn" @click="chooseType(typeChoice, t)">
                 <strong>{{ TYPE_LABELS_PT[t] }}</strong>
                 <small>{{ moveFor([t], null).name }}</small>
               </button>
             </div>
             <button type="button" class="link" @click="typeChoice = null">Voltar</button>
+          </div>
+          <div v-else-if="secondaryBuffOffer" class="card survivor-pick survivor-type-choice">
+            <h2>Uma afinidade rara apareceu</h2>
+            <p class="note">O golpe principal será de <strong>{{ TYPE_LABELS_PT[secondaryBuffOffer.picked] }}</strong>. Seu outro tipo, <strong>{{ TYPE_LABELS_PT[secondaryBuffOffer.secondary] }}</strong>, pode aplicar seu efeito de forma leve nos acertos desta corrida.</p>
+            <div class="survivor-pick-grid">
+              <button type="button" class="survivor-pick-btn" @click="acceptSecondaryBuff">
+                <strong>✨ Ativar afinidade</strong>
+                <small>{{ MOVE_EFFECT_LABELS_PT[moveEffectForType(secondaryBuffOffer.secondary)] }}</small>
+              </button>
+              <button type="button" class="survivor-pick-btn" @click="skipSecondaryBuff">
+                <strong>Começar sem afinidade</strong>
+                <small>Usar somente o efeito do golpe escolhido</small>
+              </button>
+            </div>
           </div>
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
