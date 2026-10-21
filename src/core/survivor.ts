@@ -175,13 +175,21 @@ export interface SurvivorProjectile {
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
-  kind: 'pulse' | 'blast' | 'evolve' | 'echo';
+  kind: 'pulse' | 'blast' | 'evolve' | 'echo' | 'follow-up';
   x: number;
   y: number;
   r: number;
   color: string;
   ageMs: number;
   lifeMs: number;
+  /** Efeito secundário que parte do jogador depois do impacto principal. */
+  element?: 'bug' | 'ghost';
+  fromX?: number;
+  fromY?: number;
+  toX?: number;
+  toY?: number;
+  delayMs?: number;
+  count?: number;
 }
 
 export interface SurvivorOrb {
@@ -910,6 +918,10 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     const echoDamage = reducedDamage * (enhancedEcho ? 0.25 : 0.2);
     e.hp -= echoDamage;
     state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: Math.max(10, e.radius * 1.8), color: move.color, ageMs: 0, lifeMs: 220 });
+    state.fx.push({
+      kind: 'follow-up', x: e.x, y: e.y, r: Math.max(8, e.radius * 0.75), color: move.color, ageMs: 0, lifeMs: 480,
+      element: move.type, fromX: p.x, fromY: p.y, toX: e.x, toY: e.y, delayMs: 85, count: move.type === 'bug' ? 4 : 3,
+    });
   }
 }
 

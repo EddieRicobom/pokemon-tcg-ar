@@ -517,6 +517,15 @@ describe('segundo golpe', () => {
     stepSurvivor(swarm, { dx: 0, dy: 0 }, 16);
     expect(target.hp).toBeLessThan(1000 - swarm.player.attackDamage);
     expect(swarm.fx.some((fx) => fx.kind === 'echo')).toBe(true);
+    const swarmFollowUp = swarm.fx.find((fx) => fx.kind === 'follow-up');
+    expect(swarmFollowUp).toMatchObject({ element: 'bug', delayMs: 85, count: 4, fromX: swarm.player.x, toX: target.x });
+
+    const ghost = as('ghost', 'projetil');
+    const haunt = quiet(createSurvivorState(5, { kindCount: 1, move: ghost.move, profile: ghost.profile }));
+    const ghostTarget = dummy(3, haunt.player.x + 20, haunt.player.y, 1000);
+    haunt.enemies.push(ghostTarget);
+    stepSurvivor(haunt, { dx: 0, dy: 0 }, 16);
+    expect(haunt.fx.find((fx) => fx.kind === 'follow-up')).toMatchObject({ element: 'ghost', delayMs: 85, count: 3 });
   });
 });
 

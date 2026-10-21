@@ -665,6 +665,54 @@ function draw(): void {
       ctx.beginPath();
       ctx.arc(f.x, f.y, f.r * (0.55 + t * 0.8), 0, Math.PI * 2);
       ctx.stroke();
+    } else if (f.kind === 'follow-up') {
+      // O eco secundário entra alguns milissegundos depois do golpe principal e viaja
+      // do jogador até o alvo, deixando claro que insetos/fantasmas estão acompanhando o ataque.
+      const delay = f.delayMs ?? 85;
+      const travel = clamp((f.ageMs - delay) / Math.max(1, f.lifeMs - delay), 0, 1);
+      if (f.ageMs >= delay) {
+        const fromX = f.fromX ?? f.x;
+        const fromY = f.fromY ?? f.y;
+        const toX = f.toX ?? f.x;
+        const toY = f.toY ?? f.y;
+        const count = f.count ?? 3;
+        const spread = f.element === 'bug' ? 8 : 12;
+        ctx.globalAlpha = (f.element === 'bug' ? 0.82 : 0.68) * (1 - travel * 0.35);
+        for (let i = 0; i < count; i++) {
+          const phase = (i - (count - 1) / 2) / Math.max(1, count - 1);
+          const x = fromX + (toX - fromX) * travel - (toY - fromY) * phase * 0.08;
+          const y = fromY + (toY - fromY) * travel + (toX - fromX) * phase * 0.08;
+          ctx.save();
+          ctx.translate(x, y);
+          if (f.element === 'bug') {
+            ctx.fillStyle = f.color;
+            ctx.beginPath();
+            ctx.ellipse(-spread * 0.42, 0, spread * 0.42, spread * 0.24, -0.35, 0, Math.PI * 2);
+            ctx.ellipse(spread * 0.42, 0, spread * 0.42, spread * 0.24, 0.35, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#fff4a8';
+            ctx.beginPath();
+            ctx.arc(0, 0, Math.max(2, f.r * 0.32), 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.fillStyle = f.color;
+            ctx.beginPath();
+            ctx.arc(0, -spread * 0.2, Math.max(3, f.r * 0.45), Math.PI, 0);
+            ctx.lineTo(spread * 0.48, spread * 0.55);
+            ctx.lineTo(0, spread * 0.3);
+            ctx.lineTo(-spread * 0.48, spread * 0.55);
+            ctx.closePath();
+            ctx.fill();
+            ctx.globalAlpha *= 0.8;
+            ctx.strokeStyle = '#eadbff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(0, -spread * 0.2, Math.max(3, f.r * 0.45), Math.PI, 0);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }
     } else {
       for (let k = 0; k < 3; k++) {
         ctx.globalAlpha = 0.7 * (1 - t);
