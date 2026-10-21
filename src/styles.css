@@ -3584,6 +3584,20 @@ body.no-scroll .reward-toasts {
   -webkit-user-select: none;
   background: #0d162e;
   box-shadow: 0 0 0 2px var(--line);
+  transform-origin: center;
+  transition: transform 120ms ease-out;
+}
+
+/* Inclinação discreta de apresentação: a física continua 2D, mas o tabuleiro e
+   as fichas ganham uma leitura de profundidade sem abrir outra cena WebGL. */
+.pin-stage.pin-depth {
+  perspective: 900px;
+}
+
+.pin-stage.pin-depth canvas,
+.pin-stage.pin-depth .pin-sprites {
+  transform: perspective(900px) rotateX(6deg) translateY(-1%);
+  transform-origin: center 58%;
 }
 
 .pin-stage.aiming {
@@ -3617,8 +3631,19 @@ body.no-scroll .reward-toasts {
   border-radius: 50%;
   box-sizing: border-box;
   background: radial-gradient(circle at 50% 40%, #f4f8ff, #b8c6e0);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 0 rgba(20, 28, 48, 0.55), 0 7px 10px rgba(0, 0, 0, 0.38);
+  transform-style: preserve-3d;
   will-change: transform;
+}
+
+.pin-token::after {
+  content: '';
+  position: absolute;
+  inset: 7%;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  transform: translateZ(4px);
+  pointer-events: none;
 }
 
 .pin-token img {
