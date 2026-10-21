@@ -41,6 +41,16 @@ function enterChallenge(): void {
       <TeamPicker :max="6" group-label="equipe de batalha" hint="Escolha os 6 Pokémon que lutam nos modos contínuos. Essa seleção também define quem mora na Vila e aparece na Caixa em AR." @ready="updateTeam" @change="updateTeam" />
     </section>
 
+    <section v-if="selectedCount === 0" class="arena-first-run" aria-labelledby="arena-first-run-title">
+      <span>ANTES DA ARENA</span>
+      <h3 id="arena-first-run-title">Você precisa de Pokémon para formar uma equipe</h3>
+      <p>Escaneie cartas físicas ou entre na Vila para receber um companheiro digital. Depois, volte aqui e escolha até 6 Pokémon.</p>
+      <div class="actions row">
+        <a class="button primary" :href="routeHref('escanear')">Escanear uma carta</a>
+        <a class="button" :href="routeHref('vila')">Ir para a Vila</a>
+      </div>
+    </section>
+
     <section class="arena-section" aria-labelledby="arena-continuous-title">
       <h3 id="arena-continuous-title">Modos contínuos</h3>
       <p v-if="!teamReady" class="hint" role="status">{{ selectedCount === null ? 'Lendo a equipe…' : `Escolha 6 Pokémon acima para preparar uma corrida (atualmente ${selectedCount}/6).` }}</p>
@@ -81,6 +91,9 @@ function enterChallenge(): void {
 .arena-section { display: grid; gap: 0.7rem; }
 .arena-section > h3, .arena-mode-card h4 { margin: 0; }
 .arena-ready { display: grid; gap: 0.5rem; padding: 1rem; border: 1px solid var(--accent); border-radius: 0.85rem; background: rgba(242, 85, 75, 0.12); }
+.arena-first-run { display: grid; gap: .7rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--gold) 55%, var(--line)); border-radius: .85rem; background: linear-gradient(135deg, rgba(255, 216, 74, .12), rgba(12, 17, 34, .55)); }
+.arena-first-run > * { margin: 0; }
+.arena-first-run > span { color: var(--gold); font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
 .arena-mode-grid, .arena-shortcuts { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 .arena-mode-card, .arena-shortcuts > div { display: grid; gap: 0.55rem; align-content: start; padding: 0.9rem; border: 1px solid var(--line); border-radius: 0.85rem; background: rgba(12, 17, 34, 0.55); }
 .arena-mode-card p { margin: 0; color: var(--muted); }

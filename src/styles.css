@@ -451,6 +451,25 @@ a:focus-visible {
   background: var(--foil-line);
 }
 
+/* Orientação curta para quem abre o app sem cartas, sem competir com as ações principais. */
+.first-run-guide, .scan-first-run {
+  display: grid;
+  gap: .7rem;
+  margin: .9rem 0;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--gold) 48%, var(--line));
+  border-radius: .9rem;
+  background: linear-gradient(135deg, rgb(255 216 74 / 12%), rgb(19 27 48 / 72%));
+}
+.first-run-guide > *, .scan-first-run > * { margin: 0; }
+.first-run-guide h3 { font-size: 1.05rem; }
+.first-run-kicker, .trainer-first-run > span { color: var(--gold); font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
+.scan-first-run span { color: var(--muted); line-height: 1.45; }
+.scan-first-run a { width: fit-content; font-weight: 700; }
+.trainer-first-run { display: grid; gap: .7rem; }
+.trainer-first-run > * { margin: 0; }
+.recap-first-run { margin: 0; padding: .7rem; border-left: 3px solid var(--gold); border-radius: .35rem; background: rgb(255 216 74 / 10%); color: var(--text); font-size: .92rem; }
+
 .actions.row {
   display: flex;
   flex-wrap: wrap;

@@ -1645,7 +1645,7 @@ function setMarks(on: boolean): void {
         <h3>Escolha os pins</h3>
         <p class="selection-caption">{{ setup.mine.length }}/{{ MAX_MINE }} na sua equipe · toque novamente para tirar</p>
         <p v-if="loadingCards" class="message">Lendo as cartas guardadas…</p>
-        <p v-else-if="usable.length === 0" class="message">Nenhum Pokémon ainda. <a :href="routeHref('escanear')">Escaneie uma carta</a> ou ganhe um Digital Pokémon na Vila para ter pins.</p>
+        <p v-else-if="usable.length === 0" class="message">Nenhum Pokémon pronto para virar pin. <a :href="routeHref('escanear')">Escaneie uma carta</a> ou abra a <a :href="routeHref('vila')">Vila</a>: no primeiro dia, você recebe um companheiro digital para jogar.</p>
         <template v-else>
           <div class="pn-tools">
             <input v-model="search" type="text" placeholder="Buscar por nome ou coleção" aria-label="Buscar carta" autocomplete="off" />
