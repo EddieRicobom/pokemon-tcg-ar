@@ -1,7 +1,7 @@
 import { seededRng } from '../core/battle';
 import type { Rng } from '../core/battle';
-import { TERRAIN_KINDS } from '../core/terrain';
-import type { DecorKind, GroundKind, TerrainGrid, TerrainKind } from '../core/terrain';
+import { gardenTrailDistance, TERRAIN_KINDS } from '../core/terrain';
+import type { DecorKind, GroundKind, GroundLayout, TerrainGrid, TerrainKind } from '../core/terrain';
 
 /**
  * Pixel art do chão, desenhada por código (sem imagens e sem canvas, então roda e é testada em qualquer ambiente).
@@ -163,6 +163,58 @@ function pathBorder(buf: PixelBuf, ox: number, oy: number, edges: number): void 
       for (let k = 0; k < depth; k++) put(buf, ox + x0 + dx * k, oy + y0 + dy * k, GRASS.base);
       put(buf, ox + x0 + dx * depth, oy + y0 + dy * depth, PATH.lip);
       put(buf, ox + x0 + dx * (depth + 1), oy + y0 + dy * (depth + 1), PATH.rim);
+    }
+  }
+}
+
+/** Paleta mais terrosa e tufos variados para o diorama; o estilo dos Pins permanece separado. */
+function paintNaturalGround(buf: PixelBuf, ox: number, oy: number, kind: GroundKind, rng: Rng, layout: GroundLayout, seed: number): void {
+  const grass = 0x719653;
+  const soil = 0xc5b184;
+  const pathAt = (x: number, y: number) => {
+    const nx = (x + .5) / buf.w * 2 - 1; const nz = (y + .5) / buf.h * 2 - 1;
+    return layout === 'battle' ? Math.hypot(nx, nz) < .68 : gardenTrailDistance(nx, nz, seed) < .13;
+  };
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const px = ox + x; const py = oy + y;
+    const path = pathAt(px, py);
+    const fringe = !path && (pathAt(px - 1, py) || pathAt(px + 1, py) || pathAt(px, py - 1) || pathAt(px, py + 1));
+    put(buf, px, py, path ? soil : fringe ? 0x91a568 : grass);
+  }
+  for (let n = 0; n < 9; n++) {
+    const x = 1 + Math.floor(rng() * 14); const y = 1 + Math.floor(rng() * 14);
+    const color = pathAt(ox + x, oy + y) ? rng() < 0.5 ? 0xb5a27a : 0xd2be91 : rng() < 0.5 ? 0x789e59 : 0x6a8d4f;
+    put(buf, ox + x, oy + y, color);
+    if (rng() < 0.4) put(buf, ox + x + 1, oy + y, color);
+  }
+  if (kind === 'path') return;
+  const tufts = kind === 'tall' ? 5 : rng() < 0.6 ? 1 : 0;
+  for (let n = 0; n < tufts; n++) {
+    const x = 2 + Math.floor(rng() * 11); const y = 3 + Math.floor(rng() * 10);
+    if (pathAt(ox + x, oy + y)) continue;
+    put(buf, ox + x, oy + y, 0x507a41); put(buf, ox + x + 1, oy + y - 1, 0x83ab62);
+    put(buf, ox + x + 2, oy + y, 0x567e43); put(buf, ox + x + 2, oy + y + 1, 0x668b48);
+  }
+  if (kind === 'flowers') flower(buf, ox + 5 + Math.floor(rng() * 6), oy + 5 + Math.floor(rng() * 6), pick(rng, PETALS));
+}
+
+/** Acabamento fixo: borda de pedra no jardim e marcações discretas na arena, sem mais malhas ou draw calls. */
+function finishNaturalGround(buf: PixelBuf, ox: number, oy: number, grid: TerrainGrid, layout: GroundLayout): void {
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const px = ox + x; const py = oy + y;
+    const nx = (px + 0.5) / buf.w * 2 - 1; const nz = (py + 0.5) / buf.h * 2 - 1;
+    if (layout === 'battle' && Math.hypot(nx, nz) >= 1) { put(buf, px, py, 0, 0); continue; }
+    if (alphaAt(buf, px, py) === 0) continue;
+    if (layout === 'garden' && grid.shape === 'square') {
+      const edge = Math.min(px, py, buf.w - 1 - px, buf.h - 1 - py);
+      if (edge < 4) {
+        const along = px < 4 || px >= buf.w - 4 ? py : px;
+        put(buf, px, py, along % 13 === 0 ? 0x626b55 : edge === 0 ? 0x667456 : edge === 3 ? 0x899878 : 0xa3ad8e);
+      }
+    } else if (layout === 'battle') {
+      const radius = Math.hypot(nx, nz);
+      const circle = Math.hypot(nx / 0.18, nz / 0.18);
+      if (Math.abs(radius - 0.72) < 0.009 || Math.abs(circle - 1) < 0.045 || Math.abs(nz) < 0.008 && Math.abs(nx) < 0.71 && circle > 1) put(buf, px, py, 0xe8dfbc);
     }
   }
 }
@@ -398,13 +450,13 @@ export function paintDecor(kind: DecorKind): PixelBuf {
  * Repinta o bloco `i` da grade (chão + marca do golpe) no buffer. Sempre usa o mesmo sorteio para o mesmo bloco, então
  * repintar não "treme". Usado pelo chão da Caixa (`ground.ts`) e pela arena do Pin Mode.
  */
-export function paintTerrainCell(buf: PixelBuf, grid: TerrainGrid, i: number, seed: number): void {
+export function paintTerrainCell(buf: PixelBuf, grid: TerrainGrid, i: number, seed: number, layout: GroundLayout = 'wild'): void {
   const c = i % grid.cols;
   const r = Math.floor(i / grid.cols);
   const ox = c * TILE;
   const oy = r * TILE;
   for (let y = 0; y < TILE; y++) buf.data.fill(0, ((oy + y) * buf.w + ox) * 4, ((oy + y) * buf.w + ox + TILE) * 4);
-  if (!grid.inside[i]) return;
+  if (!grid.inside[i] && layout !== 'battle') return;
   const salt = (seed * 31 + i * 2654435761) >>> 0;
   const neighbor = (dc: number, dr: number): number | null => {
     const nc = c + dc;
@@ -420,10 +472,15 @@ export function paintTerrainCell(buf: PixelBuf, grid: TerrainGrid, i: number, se
   const ground = grid.groundAt(i);
   let groundEdges = 0;
   for (const [bit, n] of around) if (n !== null && grid.inside[n] && (grid.groundAt(n) === 'path') !== (ground === 'path')) groundEdges |= bit;
-  paintGround(buf, ox, oy, ground, seededRng(salt), groundEdges, { c, r });
+  if (layout === 'wild') paintGround(buf, ox, oy, ground, seededRng(salt), groundEdges, { c, r });
+  else paintNaturalGround(buf, ox, oy, ground, seededRng(salt), layout, seed);
   let shape = 0;
   for (const [bit, n] of around) if (n === null || !grid.inside[n]) shape |= bit;
-  if (grid.shape === 'ellipse') fadeEdges(buf, ox, oy, shape, seededRng(salt ^ 0xabcdef));
+  if (grid.shape === 'ellipse' && layout === 'wild') fadeEdges(buf, ox, oy, shape, seededRng(salt ^ 0xabcdef));
+  else if (grid.shape === 'ellipse' && layout !== 'battle') {
+    for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) if (((ox + x + .5) / buf.w * 2 - 1) ** 2 + ((oy + y + .5) / buf.h * 2 - 1) ** 2 >= 1) put(buf, ox + x, oy + y, 0, 0);
+  }
+  if (layout !== 'wild') finishNaturalGround(buf, ox, oy, grid, layout);
   const kind = grid.overlayAt(i);
   if (kind) {
     let edges = 0;

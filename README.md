@@ -79,6 +79,16 @@ A meta-progressão é persistente e só registra resultados de corridas encerrad
 
 Abandonar uma corrida não registra objetivos, marcos ou recompensas. A tela da Torre mostra o próximo marco e a trilha de desafios.
 
+## Música, sons e pisos da Caixa
+
+- **Vila:** 12 músicas tranquilas, escolhidas pelo horário local e clima, alternando pares a cada seis minutos com transição de 12 segundos. No Menu da Vila, abra **Música e sons da Vila** para ajustar música e efeitos separadamente.
+- **Survival:** um tema de batalha para cada uma das nove regiões, com troca gradual nos mesmos 40 segundos da transição do cenário. Cinco são arranjos GBA; Kalos, Alola, Galar e Paldea receberam tratamento retrô das gravações regionais. Volume e liga/desliga ficam em **Música da Torre** e na pausa.
+- As músicas só carregam ao usar o modo e liberar o áudio por um gesto; no máximo duas faixas ficam carregadas, sem decodificar a playlist inteira. Esconder a página suspende o som. Fechar o modo cancela cargas e libera as fontes. Preferências entram no backup existente.
+- Sons sintetizados acompanham coleta, rega, plantio, mineração, madeira, pesca, compras, presentes e portas. Trabalhos de moradores só emitem sons próximos ao jogador; a ambientação distingue dia, noite e chuva.
+- Caixa e Arena têm pisos próprios: jardim com trilha contínua e borda de pedra; arena com área central limpa e marcações discretas. Os objetos de cenário usam orientação vertical correta e cores sRGB. O Modo Rotom continua usando piso leve, sem terreno ou decoração pesada.
+
+Créditos, originais e condições de uso estão em [public/audio/CREDITS.md](public/audio/CREDITS.md). A licença do código não se estende às músicas Pokémon.
+
 ## Dados, privacidade e limites
 
 O projeto é estático e não tem backend, conta obrigatória ou banco remoto. Cartas, progresso, configurações e caches ficam no navegador, usando `localStorage`, IndexedDB e Cache API. O app exporta e importa backup JSON/ZIP, incluindo a Vila, companheiros, cartas e caches locais.

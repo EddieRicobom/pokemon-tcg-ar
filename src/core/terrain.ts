@@ -51,6 +51,12 @@ export const TERRAIN_FOR_TYPE: Partial<Record<PokemonType, TerrainKind>> = {
 };
 
 export type GroundShape = 'ellipse' | 'square';
+export type GroundLayout = 'wild' | 'garden' | 'battle';
+
+/** Distância à trilha contínua em coordenadas normalizadas; compartilhada pela grade e pelo desenho. */
+export function gardenTrailDistance(nx: number, nz: number, seed: number): number {
+  return Math.abs(nz - Math.sin((nx + 1) * Math.PI * 0.625 + seed * 0.73) * 0.2);
+}
 
 export class TerrainGrid {
   /** Chão base (índice em `GROUND_KINDS`) e marca do golpe (0 = nenhuma, senão 1 + índice em `TERRAIN_KINDS`). */
@@ -101,7 +107,7 @@ export class TerrainGrid {
 }
 
 /** O chão de partida: grama em dois tons, canteiros de flores, manchas de mato alto e uma trilha de terra. */
-export function buildGrid(cols: number, rows: number, shape: GroundShape, seed: number): TerrainGrid {
+export function buildGrid(cols: number, rows: number, shape: GroundShape, seed: number, layout: GroundLayout = 'wild'): TerrainGrid {
   const grid = new TerrainGrid(cols, rows, shape);
   const rng = seededRng(seed);
   const patch = (count: number, radius: number, chance: number, kind: GroundKind): void => {
@@ -125,6 +131,21 @@ export function buildGrid(cols: number, rows: number, shape: GroundShape, seed: 
     const middle = rows / 2 + Math.sin(c * 0.4 + phase) * rows * 0.1;
     for (let r = 0; r < rows; r++) {
       if (Math.abs(r + 0.5 - middle) <= width / 2) grid.base[grid.index(c, r)] = GROUND_KINDS.indexOf('path');
+    }
+  }
+  if (layout !== 'wild') {
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = grid.index(c, r);
+      const nx = ((c + 0.5) / cols) * 2 - 1;
+      const nz = ((r + 0.5) / rows) * 2 - 1;
+      if (layout === 'battle') {
+        // Área de combate limpa e contínua, com jardim somente na borda.
+        grid.base[i] = GROUND_KINDS.indexOf(nx * nx + nz * nz < 0.68 ** 2 ? 'path' : 'grass');
+      } else {
+        const edge = Math.max(Math.abs(nx), Math.abs(nz));
+        const inTrail = gardenTrailDistance(nx, nz, seed) < 0.13;
+        grid.base[i] = GROUND_KINDS.indexOf(inTrail ? 'path' : edge > 0.68 && rng() < 0.13 ? 'flowers' : rng() < 0.22 ? 'grass2' : 'grass');
+      }
     }
   }
   return grid;

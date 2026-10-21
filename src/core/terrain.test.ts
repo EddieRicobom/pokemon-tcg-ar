@@ -8,6 +8,13 @@ import {
 const HALF = { w: 1, d: 0.5 };
 
 describe('chão de partida', () => {
+  it('layouts da Caixa e da Arena preservam os Pins e deixam a zona de combate limpa', () => {
+    const battle = buildGrid(36, 18, 'ellipse', 12, 'battle');
+    for (let r = 5; r < 13; r++) for (let c = 12; c < 24; c++) expect(battle.groundAt(battle.index(c, r))).toBe('path');
+    const garden = buildGrid(20, 20, 'square', 11, 'garden');
+    expect(new Set(garden.base).has(GROUND_KINDS.indexOf('tall'))).toBe(false);
+    expect(buildGrid(20, 20, 'square', 11).base).toEqual(buildGrid(20, 20, 'square', 11, 'wild').base);
+  });
   it('é repetível, usa só blocos conhecidos e tem trilha, flores e mato', () => {
     const a = buildGrid(28, 14, 'ellipse', 7);
     const b = buildGrid(28, 14, 'ellipse', 7);
