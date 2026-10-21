@@ -3596,7 +3596,7 @@ body.no-scroll .reward-toasts {
 
 .pin-stage.pin-depth canvas,
 .pin-stage.pin-depth .pin-sprites {
-  transform: perspective(900px) rotateX(6deg) translateY(-1%);
+  transform: perspective(900px) rotateX(8deg) translateY(-1%);
   transform-origin: center 58%;
 }
 
@@ -3652,6 +3652,42 @@ body.no-scroll .reward-toasts {
   object-fit: contain;
   image-rendering: pixelated;
   pointer-events: none;
+}
+
+/* A face superior fica acima de uma lateral espessa: o disco parece uma peça física,
+   mas continua sendo só CSS e não altera a física do modo. O modo leve remove tudo isso. */
+.pin-stage.pin-depth .pin-token {
+  --pin-depth: clamp(9px, 24%, 18px);
+  overflow: visible;
+  isolation: isolate;
+  background: transparent;
+  box-shadow: 0 var(--pin-depth) 0 color-mix(in srgb, var(--pin-edge) 38%, #111a2c), 0 calc(var(--pin-depth) + 7px) 13px rgba(0, 0, 0, 0.44);
+}
+
+.pin-stage.pin-depth .pin-token::before {
+  position: absolute;
+  z-index: 0;
+  inset: 13% 5% calc(var(--pin-depth) * -1);
+  border: 1px solid color-mix(in srgb, var(--pin-edge) 58%, #111a2c);
+  border-top: 0;
+  border-radius: 0 0 50% 50% / 0 0 42% 42%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pin-edge) 42%, #101827), color-mix(in srgb, var(--pin-edge) 70%, #24334b) 48%, color-mix(in srgb, var(--pin-edge) 35%, #101827));
+  content: '';
+}
+
+.pin-stage.pin-depth .pin-token::after {
+  z-index: 1;
+  inset: 0;
+  border: 1px solid rgb(255 255 255 / 35%);
+  background: radial-gradient(circle at 42% 30%, #fff 0 5%, #f4f8ff 28%, #b8c6e0 72%, #8294b5);
+  box-shadow: inset 0 -3px 0 rgb(18 30 50 / 26%), inset 0 2px 1px rgb(255 255 255 / 70%);
+  transform: none;
+}
+
+.pin-stage.pin-depth .pin-token img {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 2px 1px rgb(12 20 36 / 35%));
 }
 
 .pin-over {
