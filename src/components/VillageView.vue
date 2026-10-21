@@ -129,6 +129,7 @@ const arAnchored = ref(false);
 const arScale = ref(villageArSettings.scale);
 let arStream: MediaStream | null = null;
 let villageAr: RunningVillageAr | null = null;
+const arLook = ref<{ pointerId: number; x: number; y: number; moved: boolean } | null>(null);
 
 async function toggleArBeta(): Promise<void> {
   if (arActive.value) {
@@ -178,6 +179,29 @@ function placeVillageArAt(event: PointerEvent): void {
   if (!result.ok) return say(result.message, 4500);
   arAnchored.value = true;
   say('Âncora movida para o ponto escolhido.', 3000);
+}
+
+/** Com sensor, o celular gira a visão. Sem sensor, arrastar oferece a mesma inspeção sem mover a âncora. */
+function arPointerDown(event: PointerEvent): void {
+  if (!arActive.value) return;
+  arLook.value = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+  (event.currentTarget as HTMLCanvasElement).setPointerCapture?.(event.pointerId);
+}
+function arPointerMove(event: PointerEvent): void {
+  const look = arLook.value;
+  if (!look || look.pointerId !== event.pointerId || !villageAr) return;
+  const dx = event.clientX - look.x;
+  const dy = event.clientY - look.y;
+  if (Math.abs(dx) + Math.abs(dy) > 4) look.moved = true;
+  if (look.moved) villageAr.lookBy(dx, dy);
+  look.x = event.clientX;
+  look.y = event.clientY;
+}
+function arPointerUp(event: PointerEvent): void {
+  const look = arLook.value;
+  if (!look || look.pointerId !== event.pointerId) return;
+  arLook.value = null;
+  if (!look.moved) placeVillageArAt(event);
 }
 
 function setVillageArScale(value: number): void {
@@ -2515,10 +2539,10 @@ onBeforeUnmount(() => {
         class="village-canvas"
         :class="{ 'diorama-source': arActive }"
         aria-label="Vila: arraste em qualquer lugar para andar; toque num lugar para ir até ele"
-        @pointerdown.prevent="arActive ? placeVillageArAt($event) : joyDown($event)"
-        @pointermove.prevent="arActive ? undefined : joyMove($event)"
-        @pointerup.prevent="arActive ? undefined : joyUp($event)"
-        @pointercancel.prevent="arActive ? undefined : joyUp($event)"
+        @pointerdown.prevent="arActive ? arPointerDown($event) : joyDown($event)"
+        @pointermove.prevent="arActive ? arPointerMove($event) : joyMove($event)"
+        @pointerup.prevent="arActive ? arPointerUp($event) : joyUp($event)"
+        @pointercancel.prevent="arActive ? (arLook = null) : joyUp($event)"
         @contextmenu.prevent
       ></canvas>
       <canvas ref="arCanvasEl" class="village-ar-canvas" :class="{ active: arActive }" aria-hidden="true"></canvas>
@@ -2556,14 +2580,14 @@ onBeforeUnmount(() => {
         </div>
       </header>
       <section v-if="arActive" class="village-ar-controls" aria-label="Controles do diorama AR">
-        <p><strong>{{ arAnchored ? 'Âncora ativa' : 'Escolha um ponto no chão' }}</strong><span>Toque para posicionar ou mover a cidade.</span></p>
+        <p><strong>{{ arAnchored ? 'Âncora ativa' : 'Escolha um ponto no chão' }}</strong><span>Toque para posicionar. Gire o celular para olhar ao redor; sem sensor, arraste a cena.</span></p>
         <div class="village-ar-actions">
           <label>Zoom
             <input :value="arScale" type="range" :min="VILLAGE_SCALE_RANGE.min" :max="VILLAGE_SCALE_RANGE.max" step="0.02" aria-label="Zoom da Vila em AR" @input="setVillageArScale(Number(($event.target as HTMLInputElement).value))" />
             <output>{{ Math.round(arScale * 100) }}%</output>
           </label>
         </div>
-        <small>O Zoom muda o tamanho sem deslocar a âncora. O ponto escolhido fica ativo enquanto esta câmera estiver aberta; a escala é lembrada neste aparelho.</small>
+        <small>O Zoom muda o tamanho sem deslocar a âncora. A Vila fica no ponto escolhido enquanto esta câmera estiver aberta; a escala é lembrada neste aparelho.</small>
       </section>
       <p v-if="loading" class="village-loading">{{ loading }}</p>
       <HoOhWishCutscene v-else-if="hoOhWishScene" :sprite-url="hoOhWishScene.spriteUrl" @finish="hoOhWishScene = null" />

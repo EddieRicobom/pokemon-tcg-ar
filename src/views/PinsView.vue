@@ -1345,10 +1345,11 @@ function draw(now: number): void {
     const scale = 1 - pin.fall;
     const r = pin.r * k * scale;
     ctx.globalAlpha = 1 - pin.fall * 0.5;
-    // Sombra no chão; a ficha (borda da equipe e GIF) é um elemento por cima do canvas.
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    // Sombra baixa e achatada: a ficha fica suspensa sobre o plano inclinado, mas a
+    // posição continua fiel à física 2D.
+    ctx.fillStyle = 'rgba(0,0,0,0.34)';
     ctx.beginPath();
-    ctx.ellipse(x + r * 0.15, y + r * 0.25, r * 1.05, r * 0.85, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + r * 0.12, y + r * 0.42, r * 1.02, r * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
     if (pin.active?.kind === 'escudo') {
       ctx.strokeStyle = '#9be7ff';
@@ -1390,7 +1391,7 @@ function draw(now: number): void {
       token.style.width = `${size}px`;
       token.style.height = `${size}px`;
       token.style.borderWidth = `${Math.max(2.5, size * 0.1)}px`;
-      token.style.transform = `translate3d(${x / dpr - size / 2}px, ${y / dpr - size / 2}px, 0) rotate(${pin.fall * 220}deg)`;
+      token.style.transform = `translate3d(${x / dpr - size / 2}px, ${y / dpr - size / 2}px, 10px) rotate(${pin.fall * 220}deg)`;
       token.style.opacity = String(1 - pin.fall * 0.6);
       token.style.zIndex = String(Math.round(pin.y + 1000));
     }
