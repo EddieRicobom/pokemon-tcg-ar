@@ -41,6 +41,7 @@ let tcgdex: TcgdexClient | null = null;
 let catalogPromise: Promise<CatalogLookup | null> | null = null;
 let ocrPromise: Promise<OcrEngine> | null = null;
 let pipeline: RecognitionPipeline | null = null;
+let pipelinePromise: Promise<RecognitionPipeline> | null = null;
 let artPromise: Promise<ArtIndex | null> | null = null;
 let artSearchOn = true;
 let captureDebugOn = false;
@@ -214,17 +215,25 @@ export function getOcr(): Promise<OcrEngine> {
 
 export async function getPipeline(): Promise<RecognitionPipeline> {
   if (pipeline) return pipeline;
-  const [cache, catalog, ocr] = await Promise.all([getCache(), getCatalog(), getOcr()]);
-  pipeline = new RecognitionPipeline({
-    ocr,
-    tcgdex: getTcgdex(),
-    catalog,
-    loadReference: (url) => loadImageRgba(url, CARD_WIDTH_PX, CARD_HEIGHT_PX),
-    localReferences: () => cache.localReferences(),
-    captureDebug: () => captureDebugOn,
-    artSearch: () => (artSearchOn ? getArtIndex() : Promise.resolve(null)),
+  pipelinePromise ??= (async () => {
+    const [cache, catalog, ocr] = await Promise.all([getCache(), getCatalog(), getOcr()]);
+    const created = new RecognitionPipeline({
+      ocr,
+      tcgdex: getTcgdex(),
+      catalog,
+      loadReference: (url) => loadImageRgba(url, CARD_WIDTH_PX, CARD_HEIGHT_PX),
+      localReferences: () => cache.localReferences(),
+      captureDebug: () => captureDebugOn,
+      artSearch: () => (artSearchOn ? getArtIndex() : Promise.resolve(null)),
+    });
+    pipeline = created;
+    return created;
+  })().catch((error) => {
+    // Falha transitória do OCR/catálogo não pode deixar a Promise rejeitada para sempre.
+    pipelinePromise = null;
+    throw error;
   });
-  return pipeline;
+  return pipelinePromise;
 }
 
 /** Carrega, em paralelo, atributos/golpes (PokéAPI) e ataques da carta (TCGdex) para o painel de AR. */

@@ -21,7 +21,7 @@ describe('TcgdexClient', () => {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('abort', 'AbortError')), { once: true });
       });
     });
-    const c = new TcgdexClient({ fetchImpl, retries: 0, timeoutMs: 100, backoffMs: 1000 });
+    const c = new TcgdexClient({ fetchImpl, retries: 0, timeoutMs: 100, backoffMs: 1000, failureCooldownMs: 0 });
     const rejected = expect(c.getCard(card.id)).rejects.toThrow('Tempo esgotado');
     await vi.advanceTimersByTimeAsync(100);
     await rejected;
@@ -114,10 +114,30 @@ describe('TcgdexClient', () => {
 
   it('desiste depois das tentativas e não guarda a falha na memória', async () => {
     let fail = true;
-    const c = client(() => (fail ? new Response('', { status: 500 }) : new Response(JSON.stringify(card))));
+    const c = new TcgdexClient({
+      fetchImpl: (async () => (fail ? new Response('', { status: 500 }) : new Response(JSON.stringify(card)))) as typeof fetch,
+      failureCooldownMs: 0,
+    });
     await expect(c.getCard('base1-58')).rejects.toThrow();
     fail = false;
     expect((await c.getCard('base1-58'))?.id).toBe('base1-58');
+  });
+
+  it('compartilha a falha por um cooldown curto e permite tentar de novo depois dele', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const c = new TcgdexClient({
+      fetchImpl: (async () => { calls++; return new Response('', { status: 503 }); }) as typeof fetch,
+      retries: 0,
+      backoffMs: 0,
+      failureCooldownMs: 2_500,
+    });
+    await expect(c.getCard('base1-58')).rejects.toThrow();
+    await expect(c.getCard('base1-58')).rejects.toThrow();
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(2_500);
+    await expect(c.getCard('base1-58')).rejects.toThrow();
+    expect(calls).toBe(2);
   });
 
   it('erro 4xx (exceto 404/429) não é repetido', async () => {

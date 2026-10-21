@@ -40,7 +40,22 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,woff2}'],
+        // Só o shell e os chunks que a tela inicial usa entram no pré-cache. Os demais chunks
+        // continuam disponíveis offline depois de visitados, pelo cache de runtime abaixo.
+        globPatterns: [
+          'index.html',
+          'registerSW.js',
+          'manifest.webmanifest',
+          'assets/index-*.js',
+          'assets/index-*.css',
+          'assets/rolldown-runtime-*.js',
+          'assets/runtime-core*.js',
+          'assets/pokemon-data-*.js',
+          'assets/sprite-source-*.js',
+          'assets/target-*.js',
+          'assets/*-*.woff2',
+          'icons/*',
+        ],
         // O OCR (≈ 6,7 MB no primeiro uso), o índice do catálogo e os sprites locais da Vila (≈ 100 MB, 966
         // espécies) não entram no pré-cache da instalação: são guardados só quando usados (cache em tempo de
         // execução), senão a instalação do PWA baixaria tudo isso de uma vez.
@@ -48,6 +63,17 @@ export default defineConfig({
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
         runtimeCaching: [
+          {
+            // Chunks com hash são imutáveis: guarda o primeiro uso sem revalidar cada navegação.
+            // Isso permite tirar Vila/Arena/Pins do pré-cache sem perder o offline depois da primeira visita.
+            urlPattern: ({ url }) => url.pathname.startsWith(`${base}assets/`),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'app-assets-v1',
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 90 },
+            },
+          },
           {
             urlPattern: ({ url }) => url.pathname.startsWith(`${base}art/trainers/`),
             handler: 'StaleWhileRevalidate',
