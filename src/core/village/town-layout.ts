@@ -23,9 +23,9 @@ export interface Building {
   lot?: number;
 }
 
-/** Borda inferior do bloco livre diante da porta: sprites precisam apoiar no chão, não no topo da calçada. */
+/** Limite sul do lote sólido, antes da calçada. Toda a largura da passagem diante da porta fica livre. */
 export function buildingGroundY(building: Pick<Building, 'y' | 'h'>): number {
-  return building.y + building.h + 1;
+  return building.y + building.h;
 }
 
 /**

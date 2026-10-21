@@ -12,6 +12,22 @@ const free = () => false;
 const rng = () => .5;
 
 describe('postos de trabalho e trajetos reais', () => {
+  it('prefere pescar junto ao píer e não inventa entrega quando a linha volta vazia', () => {
+    const map = generateVillage(20261014), state = emptyVillage(20261014, map.spawn), session = new FarmSession();
+    const worker: FarmWorker = { id: 'angler', types: ['water'], ...map.spawn, available: true };
+    session.tick(state, map, [worker], now, () => 0, free);
+    const task = session.tasks[0]!;
+    expect(task.kind).toBe('fish');
+    expect(tileAt(map, task.stand.x, task.stand.y)).toBe('pier');
+    Object.assign(worker, task.stand);
+    session.tick(state, map, [worker], now + 100, () => 0, free);
+    session.tick(state, map, [worker], now + 10_100, () => 0, free);
+    expect(state.fishing.casts).toBe(1);
+    expect(state.farm.history[0]?.message).toContain('Nada mordeu');
+    expect(state.farm.history[0]?.message).not.toContain('Os itens foram');
+    expect(state.inventory.peixe ?? 0).toBe(0);
+  });
+
   it('oferece mineração, madeira e pesca mesmo havendo sementes para plantar', () => {
     const map = generateVillage(9), state = emptyVillage(9, map.spawn), session = new FarmSession();
     state.farm.seeds['sem-tomate'] = 20;

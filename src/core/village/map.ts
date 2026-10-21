@@ -171,7 +171,7 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
   }
   // Recursos visíveis e renováveis nos locais de trabalho. A coleta segue o mesmo harvest() do jogador.
   const lumber = WORK_AREAS.lumber;
-  for (const [x, y] of [[6, 7], [9, 7], [12, 7], [6, 10], [9, 10], [12, 10], [6, 13], [9, 13], [12, 13]] as const) {
+  for (const [x, y] of [[6, 7], [9, 7], [12, 7], [16, 7], [6, 11], [9, 11], [12, 11], [16, 11]] as const) {
     if (x >= lumber.x && y >= lumber.y && x < lumber.x + lumber.w && y < lumber.y + lumber.h) setTile(map, x, y, 'tree');
   }
   const mine = WORK_AREAS.mine;

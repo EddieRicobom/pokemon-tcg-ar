@@ -1436,12 +1436,12 @@ export class VillageGame {
       }
     }
     const plot = this.map.plot;
-    const homeBase = sy(plot.y + plot.h + 1);
+    const homeBase = sy(buildingGroundY(plot));
     const houseId = this.state.house >= 3 ? 'house-brick' : this.state.house === 2 ? 'home-teal' : 'home-orange';
     const houseArt = atlas && this.state.house > 0 ? this.art(houseId) : null;
     if (houseArt) {
       list.push({
-        y: plot.y + plot.h + 1,
+        y: buildingGroundY(plot),
         draw: () => {
           shadow(sx(plot.x + plot.w / 2), homeBase - 2 * scale, 34 * scale, 4 * scale, 0.2);
           const at = stand(houseArt, sx(plot.x + plot.w / 2), homeBase);
@@ -1451,7 +1451,7 @@ export class VillageGame {
     } else if (this.state.house > 0) {
       const img = this.sprite(`house${this.state.house}`, () => paintHouse(this.state.house));
       list.push({
-        y: plot.y + plot.h + 1,
+        y: buildingGroundY(plot),
         draw: () => {
           shadow(sx(plot.x + 2), homeBase - 2 * scale, 30 * scale, 4 * scale, 0.2);
           ctx.drawImage(img, sx(plot.x), homeBase - 4 * T, 4 * T, 4 * T);
@@ -1459,7 +1459,7 @@ export class VillageGame {
       });
     }
     const shop = this.map.shop;
-    const shopBaseY = shop.y + shop.h + 1;
+    const shopBaseY = buildingGroundY(shop);
     // A loja tem fachada própria no atlas. Nunca troque o prédio por guarda-sóis: eram só peças decorativas da praça.
     const shopArt = atlas ? this.art('market-store') : null;
     if (shopArt) {
