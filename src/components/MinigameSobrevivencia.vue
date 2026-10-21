@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { assetUrl, getCache, getDigitalSprite, getLocalVillageSprite } from '../app/services';
+import villageAtlasUrl from '../village/vila-atlas.png?url';
 import { fetchSprite } from '../ar/sprite-source';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { recordEvent } from '../app/trainer-store';
@@ -113,7 +114,7 @@ async function loadLandscapeAtlas(): Promise<void> {
   if (landscapeAtlasLoaded) return;
   landscapeAtlasLoaded = true;
   const image = new Image();
-  image.src = assetUrl('tilesets/vila-atlas.png');
+  image.src = villageAtlasUrl;
   await new Promise<void>((resolve) => {
     image.onload = () => resolve();
     image.onerror = () => resolve();

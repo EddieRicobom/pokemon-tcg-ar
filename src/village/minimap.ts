@@ -14,6 +14,7 @@ export const MINI_COLORS: Readonly<Record<Tile, number>> = {
   trail: 0xc9b98e,
   sand: 0xf0dca0,
   water: 0x4f8fe0,
+  pier: 0x96724c,
   tree: 0x2f6b38,
   rock: 0x8e8a82,
   bush: 0x3f8a46,

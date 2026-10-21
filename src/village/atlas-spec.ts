@@ -1,6 +1,6 @@
 /**
  * O atlas de tilesets da Vila: cada recorte de uma das folhas de `tilesets/` (créditos em THIRD_PARTY_NOTICES.md) que
- * a Vila usa, juntos numa imagem só (`public/tilesets/vila-atlas.png`, gerada por `scripts/build-vila-atlas.mjs`).
+ * a Vila usa, juntos em `src/village/vila-atlas.png` (gerada por `scripts/build-vila-atlas.mjs`, URL com hash no build).
  * As folhas principais já estão na escala da Vila (blocos de 16 px); os autotiles (`Autotiles/`) estão em 2× e entram
  * reduzidos pela metade (`half`), sem perder nada (cada pixel da arte ocupa 2×2 lá).
  *
@@ -20,6 +20,10 @@ export interface AtlasSource {
   half?: boolean;
   /** Pedaços de peças vizinhas que caem dentro do recorte (x, y, w, h na folha): saem transparentes. */
   erase?: readonly (readonly [number, number, number, number])[];
+  /** Flores são uma camada sobre a grama local, sem o retângulo verde da folha de origem. */
+  removeGrass?: boolean;
+  /** Peças modulares da mesma folha: origem x/y/w/h e destino x/y dentro do recorte. */
+  patches?: readonly (readonly [number, number, number, number, number, number])[];
 }
 
 export interface AtlasRect {
@@ -43,7 +47,7 @@ export const ATLAS_SOURCES: readonly AtlasSource[] = [
   { id: 'sea', sheet: 'Route 224.png', x: 80, y: 96, w: 48, h: 48 },
   // ---- chão: mato alto e flores (Daisy Route); a grama continua em `survivor-grass.png`
   { id: 'tall', sheet: 'Daisy Route.png', x: 0, y: 128, w: 48, h: 64 },
-  { id: 'flowers-white', sheet: 'Daisy Route.png', x: 80, y: 32, w: 48, h: 16 },
+  { id: 'flowers-white', sheet: 'Daisy Route.png', x: 80, y: 32, w: 48, h: 16, removeGrass: true },
   // ---- natureza
   { id: 'pine-s1', sheet: 'Route 224.png', x: 80, y: 160, w: 16, h: 32 },
   { id: 'pine-s2', sheet: 'Route 224.png', x: 96, y: 144, w: 16, h: 48 },
@@ -55,7 +59,7 @@ export const ATLAS_SOURCES: readonly AtlasSource[] = [
   { id: 'bush', sheet: 'Thistle Town.png', x: 112, y: 496, w: 16, h: 16 },
   { id: 'fence-h', sheet: 'Daisy Route.png', x: 48, y: 448, w: 32, h: 16 },
   { id: 'wall', sheet: 'Daisy Route.png', x: 64, y: 432, w: 64, h: 16 },
-  { id: 'board', sheet: 'Daisy Route.png', x: 0, y: 480, w: 48, h: 48 },
+  { id: 'board', sheet: 'Daisy Route.png', x: 8, y: 464, w: 32, h: 48 },
   // ---- praça e parque (os postes de luz continuam desenhados por código: nenhuma folha tem um poste de rua)
   { id: 'swing', sheet: 'Daisy Route.png', x: 0, y: 626, w: 64, h: 40, erase: [[12, 656, 40, 10]] },
   { id: 'gym', sheet: 'Daisy Route.png', x: 64, y: 626, w: 48, h: 34 },
@@ -68,23 +72,28 @@ export const ATLAS_SOURCES: readonly AtlasSource[] = [
   // ---- construções
   { id: 'house-brick', sheet: 'Brick House Tiles.png', x: 0, y: 12, w: 80, h: 108 },
   { id: 'home-yellow', sheet: 'Apathy Houses.png', x: 0, y: 0, w: 80, h: 128 },
-  { id: 'home-orange', sheet: 'Apathy Houses.png', x: 0, y: 288, w: 80, h: 96 },
-  { id: 'home-teal', sheet: 'Apathy Houses.png', x: 0, y: 464, w: 80, h: 96 },
-  { id: 'home-blue', sheet: 'Apathy Houses.png', x: 0, y: 640, w: 80, h: 96 },
-  { id: 'home-pink', sheet: 'Apathy Houses.png', x: 0, y: 816, w: 80, h: 96 },
+  // As outras cores trazem só a fachada. O telhado completo é a peça comum do início da folha.
+  { id: 'home-orange', sheet: 'Apathy Houses.png', x: 0, y: 0, w: 80, h: 128, patches: [[0, 304, 80, 80, 0, 48]] },
+  { id: 'home-teal', sheet: 'Apathy Houses.png', x: 0, y: 0, w: 80, h: 128, patches: [[0, 480, 80, 80, 0, 48]] },
+  { id: 'home-blue', sheet: 'Apathy Houses.png', x: 0, y: 0, w: 80, h: 128, patches: [[0, 656, 80, 80, 0, 48]] },
+  { id: 'home-pink', sheet: 'Apathy Houses.png', x: 0, y: 0, w: 80, h: 128, patches: [[0, 832, 80, 80, 0, 48]] },
   { id: 'center-red', sheet: 'Pokémon Center and Mart Buildings.png', x: 0, y: 0, w: 82, h: 90 },
   { id: 'center-blue', sheet: 'Pokémon Center and Mart Buildings.png', x: 0, y: 625, w: 82, h: 90 },
   { id: 'kiosk-red', sheet: 'Pokémon Center and Mart Buildings.png', x: 86, y: 0, w: 42, h: 48 },
   { id: 'kiosk-blue', sheet: 'Pokémon Center and Mart Buildings.png', x: 86, y: 625, w: 42, h: 47 },
-  { id: 'tower', sheet: 'Jonquil Town.png', x: 0, y: 704, w: 80, h: 152, erase: [[0, 848, 16, 8], [64, 848, 16, 8]] },
+  { id: 'tower', sheet: 'Jonquil Town.png', x: 0, y: 704, w: 80, h: 144 },
   { id: 'gazebo', sheet: 'Park Tileset.png', x: 144, y: 60, w: 56, h: 84 },
-  { id: 'cabin', sheet: 'General Store.png', x: 0, y: 0, w: 128, h: 104, erase: [[96, 96, 32, 8]] },
+  { id: 'cabin', sheet: 'General Store.png', x: 0, y: 0, w: 128, h: 112 },
   // A fachada da loja da praça é um recorte próprio; `cabin` continua reservado ao Café.
-  { id: 'market-store', sheet: 'General Store.png', x: 0, y: 0, w: 128, h: 104, erase: [[96, 96, 32, 8]] },
+  { id: 'market-store', sheet: 'General Store.png', x: 0, y: 0, w: 128, h: 112 },
   { id: 'barn', sheet: 'Fall Harvest.png', x: 0, y: 520, w: 80, h: 120 },
   { id: 'manor', sheet: 'Garden House Sheet.png', x: 0, y: 20, w: 160, h: 124 },
   { id: 'planter', sheet: 'Garden House Sheet.png', x: 160, y: 30, w: 48, h: 26 },
   { id: 'pot', sheet: 'Garden House Sheet.png', x: 176, y: 62, w: 16, h: 26 },
+  { id: 'mine-entrance', sheet: 'Costal Cave.png', x: 0, y: 256, w: 48, h: 48 },
+  { id: 'log-depot', sheet: 'Ivy Woods.png', x: 0, y: 16, w: 32, h: 16 },
+  { id: 'stump', sheet: 'Ivy Woods.png', x: 0, y: 16, w: 16, h: 16 },
+  { id: 'pier-deck', sheet: 'Route 224.png', x: 80, y: 320, w: 48, h: 32 },
 ];
 
 /** Largura do atlas (px). */

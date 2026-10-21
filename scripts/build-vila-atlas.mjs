@@ -1,77 +1,67 @@
-// Gera public/tilesets/vila-atlas.png a partir dos recortes listados em src/village/atlas-spec.ts.
-// Uso: node --experimental-strip-types scripts/build-vila-atlas.mjs
-// (Chromium do Playwright; PW_CHANNEL=msedge usa o Edge instalado.) O PNG gerado vai para o repositório: o app e o CI
-// não rodam este script, ele só documenta e refaz o atlas quando a lista de recortes muda.
-import { chromium } from 'playwright';
+// Atlas reproduzível, sem navegador ou rede. Uso: node --experimental-strip-types scripts/build-vila-atlas.mjs [--check]
+import sharp from 'sharp';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ATLAS_SOURCES, ATLAS_W, packAtlas } from '../src/village/atlas-spec.ts';
 
 const root = resolve(import.meta.dirname, '..');
 const { rects, h } = packAtlas();
-const sheets = [...new Set(ATLAS_SOURCES.map((s) => s.sheet))];
-const urls = Object.fromEntries(sheets.map((s) => [s, 'data:image/png;base64,' + readFileSync(resolve(root, 'tilesets', s)).toString('base64')]));
-const jobs = ATLAS_SOURCES.map((s) => ({ ...s, to: rects.get(s.id) }));
-
-const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
-const page = await browser.newPage();
-const b64 = await page.evaluate(
-  async ({ urls, jobs, W, H }) => {
-    const imgs = {};
-    for (const [k, u] of Object.entries(urls)) {
-      const img = new Image();
-      img.src = u;
-      await img.decode();
-      imgs[k] = img;
+const sheets = new Map();
+const jobs = [];
+for (const source of ATLAS_SOURCES) {
+  let sheet = sheets.get(source.sheet);
+  if (!sheet) {
+    sheet = await sharp(resolve(root, 'tilesets', source.sheet)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    sheets.set(source.sheet, sheet);
+  }
+  if (source.x < 0 || source.y < 0 || source.x + source.w > sheet.info.width || source.y + source.h > sheet.info.height) throw new Error(`Recorte fora da folha: ${source.id}`);
+  const pixels = Buffer.alloc(source.w * source.h * 4);
+  for (let y = 0; y < source.h; y++) {
+    const start = ((source.y + y) * sheet.info.width + source.x) * 4;
+    sheet.data.copy(pixels, y * source.w * 4, start, start + source.w * 4);
+  }
+  for (const [x, y, w, height, dx, dy] of source.patches ?? []) {
+    if (x < 0 || y < 0 || x + w > sheet.info.width || y + height > sheet.info.height || dx < 0 || dy < 0 || dx + w > source.w || dy + height > source.h) throw new Error(`Peça modular fora dos limites: ${source.id}`);
+    for (let row = 0; row < height; row++) {
+      const start = ((y + row) * sheet.info.width + x) * 4;
+      sheet.data.copy(pixels, ((dy + row) * source.w + dx) * 4, start, start + w * 4);
     }
-    // As folhas marcam blocos vazios com um X vermelho em fundo branco: esses blocos (16×16, alinhados à folha) saem
-    // transparentes, para não aparecerem nos cantos das casas e prédios.
-    const clearPlaceholders = (ctx, j) => {
-      for (let cy = Math.floor(j.y / 16) * 16; cy < j.y + j.h; cy += 16) {
-        for (let cx = Math.floor(j.x / 16) * 16; cx < j.x + j.w; cx += 16) {
-          const x0 = Math.max(cx, j.x), y0 = Math.max(cy, j.y);
-          const x1 = Math.min(cx + 16, j.x + j.w), y1 = Math.min(cy + 16, j.y + j.h);
-          if (x1 <= x0 || y1 <= y0) continue;
-          const d = ctx.getImageData(j.to.x + x0 - j.x, j.to.y + y0 - j.y, x1 - x0, y1 - y0);
-          let white = 0, red = 0;
-          for (let i = 0; i < d.data.length; i += 4) {
-            const [r, g, b, a] = [d.data[i], d.data[i + 1], d.data[i + 2], d.data[i + 3]];
-            if (a > 0 && r > 240 && g > 240 && b > 240) white++;
-            else if (a > 0 && r > 200 && g < 60 && b < 60) red++;
-          }
-          const n = d.data.length / 4;
-          if (white / n > 0.35 && red / n > 0.12) ctx.clearRect(j.to.x + x0 - j.x, j.to.y + y0 - j.y, x1 - x0, y1 - y0);
-        }
+  }
+  // X vermelhos sobre branco marcam peças vazias, não partes da construção.
+  for (let cy = Math.floor(source.y / 16) * 16; cy < source.y + source.h; cy += 16) {
+    for (let cx = Math.floor(source.x / 16) * 16; cx < source.x + source.w; cx += 16) {
+      const x0 = Math.max(cx, source.x) - source.x, y0 = Math.max(cy, source.y) - source.y;
+      const x1 = Math.min(cx + 16, source.x + source.w) - source.x, y1 = Math.min(cy + 16, source.y + source.h) - source.y;
+      let white = 0, red = 0;
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+        const i = (y * source.w + x) * 4;
+        const [r, g, b, a] = pixels.subarray(i, i + 4);
+        if (a && r > 240 && g > 240 && b > 240) white++;
+        else if (a && r > 200 && g < 60 && b < 60) red++;
       }
-    };
-    const c = document.createElement('canvas');
-    c.width = W;
-    c.height = H;
-    const ctx = c.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
-    for (const j of jobs) {
-      if (!j.half) {
-        ctx.drawImage(imgs[j.sheet], j.x, j.y, j.w, j.h, j.to.x, j.to.y, j.w, j.h);
-        clearPlaceholders(ctx, j);
-        for (const [ex, ey, ew, eh] of j.erase ?? []) ctx.clearRect(j.to.x + ex - j.x, j.to.y + ey - j.y, ew, eh);
-        continue;
-      }
-      // 2× → 1×: o pixel de cima à esquerda de cada bloco 2×2 (todos iguais nos autotiles).
-      const src = document.createElement('canvas');
-      src.width = j.w;
-      src.height = j.h;
-      const sctx = src.getContext('2d');
-      sctx.drawImage(imgs[j.sheet], j.x, j.y, j.w, j.h, 0, 0, j.w, j.h);
-      const from = sctx.getImageData(0, 0, j.w, j.h);
-      const out = ctx.createImageData(j.w / 2, j.h / 2);
-      for (let y = 0; y < j.h / 2; y++) for (let x = 0; x < j.w / 2; x++) for (let k = 0; k < 4; k++) out.data[(y * (j.w / 2) + x) * 4 + k] = from.data[(y * 2 * j.w + x * 2) * 4 + k];
-      ctx.putImageData(out, j.to.x, j.to.y);
+      const n = (x1 - x0) * (y1 - y0);
+      if (white / n > .35 && red / n > .12) for (let y = y0; y < y1; y++) pixels.fill(0, (y * source.w + x0) * 4, (y * source.w + x1) * 4);
     }
-    return c.toDataURL('image/png').split(',')[1];
-  },
-  { urls, jobs, W: ATLAS_W, H: h },
-);
-await browser.close();
-const out = resolve(root, 'public/tilesets/vila-atlas.png');
-writeFileSync(out, Buffer.from(b64, 'base64'));
-console.log(`atlas ${ATLAS_W}×${h}, ${ATLAS_SOURCES.length} recortes → ${out}`);
+  }
+  for (const [x, y, w, height] of source.erase ?? []) {
+    for (let row = y - source.y; row < y - source.y + height; row++) pixels.fill(0, (row * source.w + x - source.x) * 4, (row * source.w + x - source.x + w) * 4);
+  }
+  if (source.removeGrass) for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 1] > pixels[i] * 1.1 && pixels[i + 1] > pixels[i + 2] * 1.1) pixels.fill(0, i, i + 4);
+  }
+  const target = rects.get(source.id);
+  const image = sharp(pixels, { raw: { width: source.w, height: source.h, channels: 4 } });
+  if (source.half) image.resize(target.w, target.h, { kernel: 'nearest' });
+  jobs.push({ input: await image.png().toBuffer(), left: target.x, top: target.y });
+}
+const output = await sharp({ create: { width: ATLAS_W, height: h, channels: 4, background: '#0000' } }).composite(jobs).png().toBuffer();
+const path = resolve(root, 'src/village/vila-atlas.png');
+if (process.argv.includes('--check')) {
+  const stored = await sharp(readFileSync(path)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const expected = await sharp(output).raw().toBuffer();
+  if (stored.info.width !== ATLAS_W || stored.info.height !== h || !stored.data.equals(expected)) throw new Error('Atlas publicado difere dos recortes. Execute scripts/build-vila-atlas.mjs e inclua o PNG no commit.');
+  console.log('ok: atlas publicado corresponde a todos os recortes');
+} else {
+  writeFileSync(path, output);
+  console.log(`atlas ${ATLAS_W}×${h}, ${ATLAS_SOURCES.length} recortes → ${path}`);
+}

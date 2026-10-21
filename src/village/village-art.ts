@@ -79,6 +79,10 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
   const buf = createBuf(TILE, TILE);
   const rng = seededRng((c * 73856093) ^ (r * 19349663) ^ 0x5bd1e995);
   switch (tile) {
+    case 'pier':
+      rect(buf, 0, 0, TILE, TILE, 0x825942);
+      for (let y = 0; y < TILE; y += 4) { rect(buf, 0, y, TILE, 1, 0x4b3432); rect(buf, 1, y + 1, TILE - 2, 1, 0xb09066); }
+      break;
     case 'shop':
       paintGround(buf, 0, 0, 'path', rng, 0, { c, r });
       break;
