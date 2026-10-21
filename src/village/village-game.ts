@@ -1413,6 +1413,16 @@ export class VillageGame {
             if (tree) drawSwayed(img, sx(d.x + d.w / 2) - (img.width * scale) / 2, sy(d.y + d.h) - img.height * scale, img.width * scale, img.height * scale, sway(d.x, d.y, 0.02));
             else {
               const at = stand(img, sx(d.x + d.w / 2), sy(d.y + d.h), d.w * T);
+              if (d.kind === 'swing') {
+                // O recorte do tileset traz a armação, mas o assento vermelho fica em uma peça vizinha da folha.
+                // Desenhá-lo aqui mantém a parte interativa visível mesmo quando o atlas é recompilado.
+                ctx.fillStyle = '#6f292a';
+                ctx.fillRect(at.x + 15 * scale, at.y + 21 * scale, 34 * scale, 5 * scale);
+                ctx.fillStyle = '#d8463c';
+                ctx.fillRect(at.x + 17 * scale, at.y + 18 * scale, 30 * scale, 4 * scale);
+                ctx.fillStyle = '#f0705f';
+                ctx.fillRect(at.x + 18 * scale, at.y + 18 * scale, 28 * scale, scale);
+              }
               if (worksite) {
                 this.drawTag(sx(d.x + d.w / 2), at.y - 2 * scale, worksite.icon);
                 if (Math.abs(this.player.x - d.x) + Math.abs(this.player.y - d.y) < 6) overlays.push(() => this.drawLabel(sx(d.x + d.w / 2), sy(d.y + d.h) + 2 * scale, worksite.name));
