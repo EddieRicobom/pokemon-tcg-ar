@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, shallowRef } from 'vue';
 import { applyFullBackup, backupFileName, buildFullBackup, parseBackup, parseBackupZip, serializeBackupZip } from '../app/backup';
 import type { BackupFile } from '../app/backup';
 import { routeFlags, routeHref } from '../app/route';
@@ -72,7 +72,8 @@ const cardCount = computed(() => trainer.value.cardIds.length);
 
 // ---- Seus dados: backup completo do progresso e dos ajustes (ver `app/backup.ts`), sem servidor nenhum.
 const backupStatus = ref<{ kind: 'erro' | 'ok'; text: string } | null>(null);
-const pendingImport = ref<BackupFile | null>(null);
+// IndexedDB não aceita proxies Vue: o arquivo validado precisa manter seus objetos originais.
+const pendingImport = shallowRef<BackupFile | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 
 async function exportBackup(): Promise<void> {
