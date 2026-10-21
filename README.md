@@ -50,6 +50,16 @@ As ferramentas e o progresso aparecem durante o trabalho. A produção só entra
 
 No **passeio guiado**, o Pokémon acompanha a velocidade do treinador. O passeio só é registrado quando os dois chegam; os acessos aos destinos e aos postos têm testes de caminho no mapa real.
 
+### Caderno de Lendas
+
+Em **Vila → Menu → Histórias → Caderno de Lendas**, há 94 encontros de espécies lendárias e míticas, de Kanto a Paldea (incluindo Hisui). Cada visitante tem um roteiro de quatro capítulos, pistas e cenário próprios. Formas regionais, fusões e Megas não contam como espécies adicionais.
+
+Escolha **Investigar**, siga a primeira pista e use **Investigar pista** ou A quando estiver perto. A segunda pista leva ao local da aparição: lago, bosque, mina, praça, fazenda ou Torre. A investigação não exige moedas, cartas específicas ou partidas em outros modos. As visitas raras diárias também continuam possíveis.
+
+Os encontros ficam no Caderno e podem ser revistos sem repetir bônus. O Diário recebe uma lembrança; os efeitos dos visitantes antigos mantêm seus prazos, e os demais encontros oferecem o registro narrativo. Nenhuma visita captura ou adiciona automaticamente um Pokémon à coleção. A cena especial do primeiro desejo ao Ho-Oh continua única.
+
+Saves antigos preservam as visitas ainda presentes no histórico. Investigações e cenas pendentes são retomadas; o registro permanente das novas visitas não é apagado quando o histórico recente enche. Só o sprite do encontro aberto é solicitado. Ausência de sprite é informada na tela; animações respeitam o Modo Rotom, opções visuais e movimento reduzido.
+
 ### Diorama AR da Vila
 
 O modo experimental da Vila usa a câmera, orientação do aparelho e uma altura estimada. O jogador escolhe o ponto na imagem e pode aproximar ou afastar o diorama; o controle de escala aumenta o tamanho real do modelo no mesmo ponto, até 3×. Ele não declara detectar mesa, chão ou distância física e a âncora precisa ser refeita em uma nova sessão.

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { effectiveVisual } from '../app/visual-settings';
 
 const props = defineProps<{ spriteUrl: string }>();
 const emit = defineEmits<{ finish: [] }>();
@@ -21,7 +22,7 @@ function advance(): void {
 </script>
 
 <template>
-  <section class="hooh-cutscene" role="dialog" aria-modal="true" aria-labelledby="hooh-title" aria-describedby="hooh-text">
+  <section class="hooh-cutscene" :class="{ still: !effectiveVisual.villageFx }" role="dialog" aria-modal="true" aria-labelledby="hooh-title" aria-describedby="hooh-text">
     <div class="hooh-sky" aria-hidden="true">
       <div class="hooh-sun"></div>
       <div class="hooh-rainbow"></div>
@@ -78,6 +79,8 @@ function advance(): void {
 .hooh-next { border-color: #ffe495 !important; background: #ffd875; color: #302447 !important; }
 @keyframes hooh-glide { from { transform: translate(-14vw, 4%) scale(.9) rotate(-3deg); } to { transform: translate(14vw, -4%) scale(1.12) rotate(2deg); } }
 @keyframes feathers-drift { from { transform: translate3d(0, -2%, 0) rotate(-16deg); } to { transform: translate3d(-8%, 8%, 0) rotate(-13deg); } }
-@media (prefers-reduced-motion: reduce) { .hooh-flight, .hooh-feathers { animation: none; } }
-@media (max-height: 600px) { .hooh-sky { min-height: 55vh; } .hooh-story { padding-top: 10px; } .hooh-story p { line-height: 1.3; } .hooh-progress { margin-top: 8px; } .hooh-actions { margin-top: 8px; } }
+.hooh-story { max-height: 53vh; overflow-y: auto; }.hooh-actions { position: sticky; bottom: 0; background: #10142d; padding-block: 6px; }
+.still * { animation: none !important; filter: none !important; }
+@media (prefers-reduced-motion: reduce) { .hooh-flight img, .hooh-feathers { animation: none; } }
+@media (orientation: landscape) and (max-height: 600px) { .hooh-cutscene { grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0,1fr); }.hooh-story { max-height: none; padding-top: 10px; }.hooh-story p { line-height: 1.3; }.hooh-progress { margin-top: 8px; }.hooh-actions { margin-top: 8px; } }
 </style>
