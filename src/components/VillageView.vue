@@ -69,6 +69,10 @@ import type { SummaryEntry } from '../core/village/summary';
 import { advanceCommunity, communityForecast, decideCommunityProject } from '../core/village/community';
 import { FarmSession } from '../core/village/farm';
 import FarmSeedBox from './FarmSeedBox.vue';
+import VillageWorksites from './VillageWorksites.vue';
+import { WORK_SITES } from '../core/village/town-layout';
+import type { WorksiteId } from '../core/village/town-layout';
+import { GUIDED_DESTINATIONS, guidedWalkArrived } from '../core/village/guided-walk';
 import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
@@ -106,7 +110,7 @@ pruneHarvest(state, day.value);
 type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
-type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual';
+type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos';
 const tab = ref<Tab>('inicio');
 const arActive = ref(false);
 const arAnchored = ref(false);
@@ -190,7 +194,7 @@ function stopArBeta(): void {
 interface MenuTile { tab?: Tab; href?: string; run?: () => void; disabled?: boolean; icon: string; label: string; hint?: string; badge?: number }
 const MENU_TITLES: Record<Tab, string> = {
   inicio: 'Menu da Vila', resumo: 'Resumo da Vila', expedicoes: 'Expedições', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos',
-  album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios',
+  album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila',
 };
 /** Um lugar da Vila aberto direto pelo menu (ou trancado, com o nível que falta). */
 function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: string): MenuTile {
@@ -219,6 +223,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   {
     title: 'Fazer',
     tiles: [
+      { tab: 'trabalhos', icon: '🛠️', label: 'Trabalhos da Vila', hint: 'fazenda, mina, madeira e pesca' },
       { tab: 'fabricar', icon: '🔨', label: 'Fabricar' },
       { tab: 'cozinha', icon: '🍳', label: 'Cozinha' },
     ],
@@ -280,6 +285,7 @@ function focusWithArrowIndicator(target: HTMLElement | undefined): void {
   if (!target) return;
   document.querySelector<HTMLElement>('.arrow-focus')?.classList.remove('arrow-focus');
   target.focus({ preventScroll: true });
+  target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   target.classList.add('arrow-focus');
 }
 function rememberVillageActionFocus(event: FocusEvent): void {
@@ -303,7 +309,11 @@ watch(sheet, (next, previous) => {
   }
 });
 watch(tab, (next, previous) => {
-  if (next !== previous && sheet.value === 'menu') void nextTick(() => focusFirstVillageAction('.village-sheet'));
+  if (next !== previous && sheet.value === 'menu') void nextTick(() => {
+    focusFirstVillageAction('.village-sheet');
+    const panel = document.querySelector<HTMLElement>('.village-sheet');
+    if (panel) panel.scrollTop = 0;
+  });
 });
 watch(dialog, (next, previous) => {
   if (next && !previous) dialogFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
@@ -783,16 +793,6 @@ const bookMemories = computed(() => Object.fromEntries(mons.value.map((mon) => [
 const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name, real: m.real, types: types.get(m.id) ?? [], thumb: m.thumb, accessory: state.wear.mons[m.id] ?? null })));
 const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state, id) > 0));
 
-const GUIDED_DESTINATIONS = [
-  { x: 47, y: 36, place: 'Fonte Central' },
-  { x: 81, y: 16, place: 'Lago Azul' },
-  { x: 10, y: 48, place: 'Parquinho' },
-  { x: 58, y: 38, place: 'Mercado da Praça' },
-  { x: 16, y: 47, place: 'Parquinho Oeste' },
-  { x: 86, y: 50, place: 'Fazenda dos Canteiros' },
-  { x: 22, y: 64, place: 'Bosque do Sul' },
-  { x: 74, y: 18, place: 'Trilha do Lago' },
-] as const;
 let guidedTrip: { id: string; destination: typeof GUIDED_DESTINATIONS[number] } | null = null;
 
 // ---- controle
@@ -1343,8 +1343,8 @@ function beginExpedition(monId: string, place: DiscoveryPlace): void {
 function checkGuidedTrip(): void {
   const trip = guidedTrip;
   if (!trip || !game || game.walking) return;
-  const distance = Math.abs(game.player.x - trip.destination.x) + Math.abs(game.player.y - trip.destination.y);
-  if (distance <= 2) finishGuidedTrip();
+  if (state.follower !== trip.id) { guidedTrip = null; return; }
+  if (guidedWalkArrived(game.player, game.villagers.get(trip.id), trip.destination)) finishGuidedTrip();
 }
 
 function checkTapInteraction(): void {
@@ -1827,6 +1827,14 @@ function pickTab(t: Tab): void {
   }
 }
 
+function visitWorksite(id: WorksiteId): void {
+  const site = WORK_SITES.find((entry) => entry.id === id);
+  if (!site) return;
+  closeVillageSheet();
+  game?.walkTo(site.visit.x, site.visit.y);
+  say(`${site.icon} A caminho: ${site.name} · ${site.location}.`);
+}
+
 function openSummaryMoment(entry: SummaryEntry): void {
   summaryMomentId.value = entry.momentId ?? null;
   kindFilter.value = 'todos';
@@ -1979,6 +1987,9 @@ function pressA(): void {
     ringBell();
   } else if (t.kind === 'seed-box') {
     sheet.value = 'farm';
+  } else if (t.kind === 'worksite') {
+    tab.value = 'trabalhos';
+    sheet.value = 'menu';
   } else if (t.kind === 'board') {
     openRequestBoard();
   } else if (t.kind === 'tile' && t.tile === 'water') {
@@ -2107,7 +2118,7 @@ function miniTap(e: MouseEvent): void {
 
 function openFriendDialog(id: string, text: string): void {
   const farmWork = [...state.farm.history].reverse().find((entry) => entry.residentId === id);
-  if (farmWork) text += ` Meu último trabalho na fazenda: ${farmWork.message}`;
+  if (farmWork) text += ` Meu último trabalho na Vila: ${farmWork.message}`;
   playSound('talk');
   const f = friendOf(state, id);
   const lvl = friendLevel(f.points);
@@ -2677,6 +2688,8 @@ onBeforeUnmount(() => {
             </div>
           </section>
         </div>
+
+        <VillageWorksites v-else-if="tab === 'trabalhos'" :state="state" :name-of="nameOf" @visit="visitWorksite" @seeds="sheet = 'farm'" />
 
         <div v-else-if="tab === 'resumo'" class="diary village-summary">
           <p class="hint">Uma visão rápida baseada no Diário, nas relações e nos pedidos reais da Vila.</p>

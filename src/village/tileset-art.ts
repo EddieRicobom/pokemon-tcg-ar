@@ -108,7 +108,7 @@ export class VillaAtlas {
 
   constructor(readonly image: Rgba) {
     const { rects, h } = packAtlas();
-    if (image.w < 256 || image.h < h) throw new Error('atlas da Vila com tamanho inesperado');
+    if (image.w !== 256 || image.h !== h || image.data.length !== image.w * image.h * 4) throw new Error('atlas da Vila com tamanho inesperado');
     this.rects = rects;
   }
 

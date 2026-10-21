@@ -5,14 +5,14 @@ import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { trainerAtlasFrame, type TrainerAtlas } from './trainer-atlas';
-import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance } from '../core/village/actors';
+import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance, syncFollowerSpeed, WALK_SPEED } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
 import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/village/life';
 import type { FurnitureId, VillageState } from '../core/village/life';
 import { homeDecor, homeLevel, homeOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
-import { buildingGroundY, TOWN, WORK_AREAS } from '../core/village/town-layout';
-import type { Building, BuildingKind } from '../core/village/town-layout';
+import { buildingGroundY, WORK_AREAS, WORK_SITES } from '../core/village/town-layout';
+import type { Building, BuildingKind, WorksiteId } from '../core/village/town-layout';
 import { buildingAt, findFree, isSolidTile, isWalkable, tileAt } from '../core/village/map';
 import { pathStep } from '../core/village/pathing';
 import type { Tile, VillageMap } from '../core/village/map';
@@ -45,7 +45,8 @@ import { stepFarmWorker } from '../core/village/farm';
 import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
 import { groundPieces } from './ground-tiles';
-import { double, recolor, VillaAtlas, windowGlow } from './tileset-art';
+import { drawWorkAction } from './work-art';
+import { recolor, VillaAtlas, windowGlow } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintArcade, paintArena, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum, paintPins, paintTorre } from './town-art';
 
@@ -87,6 +88,7 @@ export type Target =
   | { kind: 'shop' }
   | { kind: 'bell' }
   | { kind: 'seed-box' }
+  | { kind: 'worksite'; site: WorksiteId }
   | { kind: 'board' }
   | { kind: 'building'; building: Building }
   | { kind: 'tile'; x: number; y: number; tile: Tile }
@@ -216,13 +218,11 @@ const EMOJI_FONT = 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Colo
 const CIVIC_ART: Partial<Record<BuildingKind, () => PixelBuf>> = { cafe: paintCafe, mail: paintMail, museum: paintMuseum, arcade: paintArcade, pins: paintPins, arena: paintArena, torre: paintTorre };
 const atlasOpaqueBottoms = new WeakMap<HTMLCanvasElement, number>();
 /** Com o atlas: o desenho de cada prédio (recortes de tileset, ver `atlas-spec.ts`). */
-const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'kiosk-red', museum: 'manor', arcade: 'center-blue', pins: 'kiosk-blue', arena: 'center-red', torre: 'tower' };
+const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'home-orange', museum: 'manor', arcade: 'center-blue', pins: 'home-teal', arena: 'center-red', torre: 'tower' };
 /** Com o atlas: a casa de cada estágio (Cabana, Casa de madeira, Casa de tijolos, Sobrado — `HOME_STAGES`). */
-const HOME_TILESET = ['gazebo', 'barn', 'house-brick', 'home-yellow'] as const;
+const HOME_TILESET = ['home-orange', 'home-teal', 'house-brick', 'home-yellow'] as const;
 /** As que pegam a cor escolhida (o desenho tem partes coloridas para tingir). */
-const HOME_TINTED = new Set<string>(['barn', 'home-yellow']);
-/** Prédios cujo desenho do tileset é pequeno demais para a escala da Vila: desenhados em 2× (pixel inteiro, sem borrar). */
-const CIVIC_DOUBLE = new Set<string>(['kiosk-red', 'kiosk-blue']);
+const HOME_TINTED = new Set<string>(['home-orange', 'home-teal', 'home-yellow']);
 const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼' };
 
 export class VillageGame {
@@ -298,6 +298,11 @@ export class VillageGame {
   }
 
   setFarmTasks(tasks: readonly FarmTask[]): void {
+    for (const [id, task] of this.farmTasks) {
+      const started = task.workingSince;
+      if (started !== null && !tasks.some((next) => next.residentId === id)
+        && this.state.farm.history.some((entry) => entry.residentId === id && entry.kind === task.kind && entry.at >= started)) this.bubble(id, '📦', 2400);
+    }
     this.farmTasks = new Map(tasks.map((task) => [task.residentId, task]));
   }
   private nextSleepCheck = 0;
@@ -328,7 +333,7 @@ export class VillageGame {
     private readonly trainerId: string,
     /** Recorte real de tileset pra grama (ver `village-art.ts`); null/undefined cai no ladrilho desenhado por código. */
     private readonly groundTile?: GroundTileImage | null,
-    /** O atlas de tilesets da Vila (`public/tilesets/vila-atlas.png`); null cai no desenho por código. */
+    /** O atlas de tilesets da Vila (asset com hash no build); null cai no desenho por código. */
     atlasImage?: Rgba | null,
     trainerAtlas?: TrainerAtlas | null,
     private readonly rng: Rng = Math.random,
@@ -343,7 +348,7 @@ export class VillageGame {
     this.atlas = atlas;
     this.trainerAtlas = trainerAtlas ?? null;
     if (!this.trainerAtlas) this.loadTrainerAvatar();
-    this.player = makeWalker('eu', state.player.x, state.player.y, 5.5);
+    this.player = makeWalker('eu', state.player.x, state.player.y, WALK_SPEED.player);
     this.player.dir = state.player.dir;
     this.weather = createWeather(this.rng, 'sol');
     this.buildGround();
@@ -434,7 +439,7 @@ export class VillageGame {
   }
 
   private placeMon(mon: VillageMon, x: number, y: number): void {
-    const w = makeWalker(mon.id, x, y, 2.6);
+    const w = makeWalker(mon.id, x, y, WALK_SPEED.resident);
     w.idle = this.rng() * 2;
     this.villagers.set(mon.id, w);
     this.names.set(mon.id, mon.name);
@@ -838,9 +843,12 @@ export class VillageGame {
       if (decor?.kind === 'bell') return { kind: 'bell' };
       if (decor?.kind === 'seed-box') return { kind: 'seed-box' };
       if (decor?.kind === 'board') return { kind: 'board' };
+      if (decor?.kind === 'mine-board') return { kind: 'worksite', site: 'mine' };
+      if (decor?.kind === 'lumber-board') return { kind: 'worksite', site: 'lumber' };
+      if (decor?.kind === 'fishing-board') return { kind: 'worksite', site: 'fishing' };
     }
     if (tile === 'lamp' || tile === 'deco') return { kind: 'nothing' };
-    if (tile !== 'grass' && tile !== 'path' && tile !== 'trail' && tile !== 'plaza' && tile !== 'field') return { kind: 'tile', x: f.x, y: f.y, tile };
+    if (tile !== 'grass' && tile !== 'path' && tile !== 'trail' && tile !== 'plaza' && tile !== 'field' && tile !== 'pier') return { kind: 'tile', x: f.x, y: f.y, tile };
     return { kind: 'nothing' };
   }
 
@@ -1081,6 +1089,7 @@ export class VillageGame {
       if (!this.villagers.has(id)) benchVisits.release(id, now);
     }
     for (const [id, w] of this.villagers) {
+      syncFollowerSpeed(w, p, this.state.follower === id);
       if (this.asleep.has(id) || this.waiting === id || this.state.follower === id || this.sceneBusy(id) || (now < this.calledUntil && this.called.has(id))) benchVisits.release(id, now);
       if (this.asleep.has(id) || (this.waiting === id && !moving(w))) continue;
       const sc = this.scene;
@@ -1284,9 +1293,10 @@ export class VillageGame {
     const glassGlows: { img: HTMLCanvasElement; x: number; y: number; w: number; h: number }[] = [];
     const atlas = this.atlas;
     /** Desenha um recorte em pé: a última linha visível encosta no chão em (cx, base). */
-    const stand = (img: HTMLCanvasElement, cx: number, base: number) => {
-      const w = img.width * scale;
-      const h = img.height * scale;
+    const stand = (img: HTMLCanvasElement, cx: number, base: number, maxWidth = Infinity) => {
+      const pixelScale = Math.min(scale, maxWidth / img.width);
+      const w = img.width * pixelScale;
+      const h = img.height * pixelScale;
       const x = Math.round(cx - w / 2);
       let opaqueBottom = atlasOpaqueBottoms.get(img);
       if (opaqueBottom === undefined) {
@@ -1299,7 +1309,7 @@ export class VillageGame {
         }
         atlasOpaqueBottoms.set(img, opaqueBottom);
       }
-      const y = base - (opaqueBottom + 1) * scale;
+      const y = Math.round(base - (opaqueBottom + 1) * pixelScale);
       ctx.drawImage(img, x, y, w, h);
       return { x, y, w, h };
     };
@@ -1321,12 +1331,14 @@ export class VillageGame {
         const t = tileAt(this.map, x, y);
         if (atlas && (t === 'tree' || t === 'rock' || t === 'bush')) {
           const hv = hashN(x * 31 + y * 17);
-          const id = t === 'tree' ? (hv < 0.62 ? 'pine-s1' : 'pine-s2') : t === 'rock' ? `rock-${1 + Math.floor(hv * 3)}` : t;
+          const depleted = this.harvestedToday(x, y);
+          const lumberTree = x >= WORK_AREAS.lumber.x && x < WORK_AREAS.lumber.x + WORK_AREAS.lumber.w && y >= WORK_AREAS.lumber.y && y < WORK_AREAS.lumber.y + WORK_AREAS.lumber.h;
+          const id = t === 'tree' ? (depleted ? 'stump' : lumberTree || hv < 0.62 ? 'pine-s1' : 'pine-s2') : t === 'rock' ? `rock-${1 + Math.floor(hv * 3)}` : t;
           const img = this.art(id);
           if (img) {
             const h = img.height * scale;
             if (t === 'tree') {
-              list.push({ y: y + 1, draw: () => drawSwayed(img, sx(x), sy(y + 1) - h, T, h, sway(x, y, 0.028)) });
+              list.push({ y: y + 1, draw: () => drawSwayed(img, sx(x), sy(y + 1) - h, T, h, depleted ? 0 : sway(x, y, 0.028)) });
             } else if (t === 'bush') {
               const fruit = !this.harvestedToday(x, y);
               list.push({
@@ -1344,7 +1356,7 @@ export class VillageGame {
                 },
               });
             } else {
-              list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2); ctx.drawImage(img, sx(x), sy(y + 1) - h, T, h); } });
+              list.push({ y: y + 1, draw: () => { shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2); ctx.save(); if (depleted) ctx.globalAlpha = .5; ctx.drawImage(img, sx(x), sy(y + 1) - h, T, h); ctx.restore(); } });
             }
             continue;
           }
@@ -1384,16 +1396,21 @@ export class VillageGame {
     // Enfeites fixos do mapa (parquinho, celeiro, jardineiras, árvores grandes).
     {
       for (const d of this.map.decor) {
-        if (d.x + d.w < x0 || d.x > x1 || d.y + d.h < y0 || d.y > y1 + 4) continue;
-        const img = d.kind === 'seed-box' ? this.sprite('seed-box', paintSeedBox) : d.kind === 'bell' ? this.sprite('bell', paintBell) : this.art(d.kind);
+        const worksite = d.kind === 'mine-board' ? WORK_SITES[1] : d.kind === 'lumber-board' ? WORK_SITES[2] : d.kind === 'fishing-board' ? WORK_SITES[3] : null;
+        const img = d.kind === 'seed-box' ? this.sprite('seed-box', paintSeedBox) : d.kind === 'bell' ? this.sprite('bell', paintBell) : this.art(worksite ? 'board' : d.kind);
         if (!img) continue;
+        if (d.x + d.w < x0 || d.x > x1 || d.y + d.h < y0 || d.y + d.h - img.height / TILE > y1) continue;
         const tree = d.kind === 'tree-big' || d.kind === 'pine-m';
         list.push({
           y: d.y + d.h,
           draw: () => {
             if (tree) drawSwayed(img, sx(d.x + d.w / 2) - (img.width * scale) / 2, sy(d.y + d.h) - img.height * scale, img.width * scale, img.height * scale, sway(d.x, d.y, 0.02));
             else {
-              const at = stand(img, sx(d.x + d.w / 2), sy(d.y + d.h));
+              const at = stand(img, sx(d.x + d.w / 2), sy(d.y + d.h), d.w * T);
+              if (worksite) {
+                this.drawTag(sx(d.x + d.w / 2), at.y - 2 * scale, worksite.icon);
+                if (Math.abs(this.player.x - d.x) + Math.abs(this.player.y - d.y) < 6) overlays.push(() => this.drawLabel(sx(d.x + d.w / 2), sy(d.y + d.h) + 2 * scale, worksite.name));
+              }
               // O recorte do tileset dá a madeira; os papéis por cima deixam claro que este é o mural vivo da praça,
               // sem trocar a arte original por uma placa genérica. Variam só quando há avisos reais para consultar.
               if (d.kind === 'board') {
@@ -1409,8 +1426,8 @@ export class VillageGame {
                   ctx.fillStyle = pin;
                   ctx.fillRect(x + 4 * scale, y, scale, 2 * scale);
                 };
-                paper(at.x + 12 * scale, at.y + 13 * scale, '#f6df9e', '#d84a43');
-                paper(at.x + 24 * scale, at.y + 11 * scale, pending ? '#d8ecff' : '#e7e2d3', pending ? '#386ec4' : '#9b815d');
+                paper(at.x + 11 * scale, at.y + 20 * scale, '#f6df9e', '#d84a43');
+                paper(at.x + 11 * scale, at.y + 36 * scale, pending ? '#d8ecff' : '#e7e2d3', pending ? '#386ec4' : '#9b815d');
                 this.drawTag(sx(d.x + d.w / 2), at.y - 2 * scale + Math.sin(now / 500) * scale, pending ? '📌' : '🎪');
               }
             }
@@ -1418,19 +1435,9 @@ export class VillageGame {
         });
       }
     }
-    // Placas discretas identificam os três espaços de trabalho sem cobrir a arte do mapa.
-    const worksiteLabels = [
-      { x: WORK_AREAS.lumber.x + 6, y: WORK_AREAS.lumber.y - 1, text: '🪓 Madeireira' },
-      { x: WORK_AREAS.mine.x + 7, y: WORK_AREAS.mine.y - 1, text: '⛏️ Mina' },
-      { x: TOWN.lake.x, y: TOWN.lake.y - 7, text: '🎣 Pescaria' },
-    ];
-    for (const site of worksiteLabels) {
-      if (site.x < x0 || site.x > x1 || site.y < y0 || site.y > y1) continue;
-      list.push({ y: site.y, draw: () => this.drawLabel(sx(site.x + 0.5), sy(site.y), site.text) });
-    }
     const plot = this.map.plot;
     const homeBase = sy(plot.y + plot.h + 1);
-    const houseId = this.state.house >= 3 ? 'house-brick' : this.state.house === 2 ? 'barn' : 'gazebo';
+    const houseId = this.state.house >= 3 ? 'house-brick' : this.state.house === 2 ? 'home-teal' : 'home-orange';
     const houseArt = atlas && this.state.house > 0 ? this.art(houseId) : null;
     if (houseArt) {
       list.push({
@@ -1460,7 +1467,8 @@ export class VillageGame {
         y: shopBaseY,
         draw: () => {
           shadow(sx(shop.x + shop.w / 2), sy(shopBaseY) - 2 * scale, 42 * scale, 4 * scale, 0.2);
-          stand(shopArt, sx(shop.x + shop.w / 2), sy(shopBaseY));
+          const at = stand(shopArt, sx(shop.x + shop.w / 2), sy(shopBaseY), shop.w * T);
+          if (night) lightUp('market-store', 'market-store', at);
           this.drawTag(sx(shop.x + shop.w / 2), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
         },
       });
@@ -1600,13 +1608,13 @@ export class VillageGame {
       }
       const emoji = CIVIC_EMOJI[b.kind] ?? '🏛️';
       const civicId = CIVIC_TILESET[b.kind];
-      const civicArt = atlas && civicId ? (CIVIC_DOUBLE.has(civicId) ? this.art(civicId, `${civicId}:2x`, double) : this.art(civicId)) : null;
+      const civicArt = atlas && civicId ? this.art(civicId) : null;
       if (civicArt && civicId) {
         list.push({
           y: buildingGroundY(b),
           draw: () => {
             shadow(mid, spriteBase - 2 * scale, wpx / 2 - 2 * scale, 3.5 * scale, 0.2);
-            const at = stand(civicArt, mid, spriteBase);
+            const at = stand(civicArt, mid, spriteBase, wpx);
             if (night) lightUp(civicId, civicId, at);
             this.drawTag(mid, at.y - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
@@ -1725,6 +1733,8 @@ export class VillageGame {
             ctx.drawImage(img, Math.round(hx - size / 2), Math.round(y), Math.round(size), Math.round(size));
           }
           ctx.restore();
+          const activeTask = this.farmTasks.get(id);
+          if (activeTask?.workingSince != null && w.x === activeTask.stand.x && w.y === activeTask.stand.y && !moving(w)) drawWorkAction(ctx, activeTask, cx, base, sx(activeTask.x + .5), sy(activeTask.y + .65), scale, now, ambientFx);
           if (near(w) && !this.scene) {
             const hearts = Math.round(friendOf(this.state, id).points / 20);
             const working = this.communityWork.get(id);

@@ -36,7 +36,19 @@ Enquanto a Vila está aberta, até três moradores livres podem escolher agricul
 - sair da Vila, abrir um menu ou fechar o app interrompe a tarefa sem consumo nem recompensa;
 - não existe produção agrícola offline inventada.
 
-O histórico mostra quem concluiu cada trabalho. O sistema é uma etapa da autonomia: outras profissões e operação contínua dos demais prédios ainda estão em evolução.
+O histórico mostra quem concluiu cada trabalho. A escolha também considera os outros postos, para a fazenda não ocupar automaticamente todos os moradores.
+
+### Mina, madeireira e pescaria
+
+O menu **Minha Vila → Trabalhos da Vila** mostra os quatro postos, os resultados reais e um botão para caminhar até cada local. Também há placas interativas no mapa.
+
+- **Mina ao sul:** moradores mineram pedras, com as mesmas quantidades e chances de cristal e ouro da coleta manual.
+- **Madeireira no noroeste:** moradores coletam madeira em árvores acessíveis; árvores já trabalhadas aparecem como tocos até o dia seguinte.
+- **Pescaria no lago:** os moradores preferem o píer, lançam a linha e usam a mesma tabela de pesca do jogador. Os dez lançamentos diários são compartilhados.
+
+As ferramentas e o progresso aparecem durante o trabalho. A produção só entra na mochila depois da caminhada e da conclusão; abrir menus ou sair interrompe tarefas em andamento. Aptidões e interesses favorecem profissões, e moradores livres também podem experimentar outros trabalhos. Os efeitos de movimento respeitam as opções visuais e movimento reduzido.
+
+No **passeio guiado**, o Pokémon acompanha a velocidade do treinador. O passeio só é registrado quando os dois chegam; os acessos aos destinos e aos postos têm testes de caminho no mapa real.
 
 ### Diorama AR da Vila
 

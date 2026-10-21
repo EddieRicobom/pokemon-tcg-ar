@@ -25,6 +25,7 @@ import { loadDexNames } from './dex-names';
 import { dataCardIdFor } from './digital-members';
 import { cardJourneys, evolvedBattleCardId } from './card-evolution-store';
 import { loadVillage } from './village-store';
+import villageAtlasUrl from '../village/vila-atlas.png?url';
 import type { SpeciesRef } from '../core/village/digital';
 
 /**
@@ -149,12 +150,12 @@ export function getVillageGroundTile(): Promise<{ w: number; h: number; data: Ui
 }
 
 /**
- * O atlas de tilesets da Vila (`public/tilesets/vila-atlas.png`, recortes listados em `village/atlas-spec.ts`): chão,
+ * O atlas da Vila, com URL versionado pelo build, para atualizar a imagem junto dos recortes: chão,
  * natureza, casas e prédios. Null se não der pra baixar (a Vila cai no desenho por código de sempre).
  */
 export async function getVillageAtlas(): Promise<{ w: number; h: number; data: Uint8ClampedArray } | null> {
   const { ATLAS_W, packAtlas } = await import('../village/atlas-spec');
-  return loadImageRgba(assetUrl('tilesets/vila-atlas.png'), ATLAS_W, packAtlas().h)
+  return loadImageRgba(villageAtlasUrl, ATLAS_W, packAtlas().h)
     .then(({ image }) => ({ w: image.width, h: image.height, data: image.data }))
     .catch(() => null);
 }

@@ -1,6 +1,6 @@
 import { seededRng } from '../battle';
 import type { Rng } from '../battle';
-import { buildingsFor, DECOR, FIELDS, lampSpots, TOWN, WORK_AREAS } from './town-layout';
+import { buildingsFor, DECOR, FIELDS, lampSpots, TOWN, WORK_AREAS, WORK_SITES } from './town-layout';
 import type { Building, Decor } from './town-layout';
 
 /**
@@ -12,8 +12,8 @@ import type { Building, Decor } from './town-layout';
 export type Tile =
   | 'grass' | 'tall' | 'flower' | 'path' | 'sand' | 'water' | 'tree' | 'rock' | 'bush' | 'plot' | 'shop' | 'building' | 'lamp'
   /** Trilha de terra (fora da cidade), piso de pedra da praça, canteiro arado da fazenda e enfeite fixo (`DECOR`). */
-  | 'trail' | 'plaza' | 'field' | 'deco';
-export const TILES: readonly Tile[] = ['grass', 'tall', 'flower', 'path', 'sand', 'water', 'tree', 'rock', 'bush', 'plot', 'shop', 'building', 'lamp', 'trail', 'plaza', 'field', 'deco'];
+  | 'trail' | 'plaza' | 'field' | 'deco' | 'pier';
+export const TILES: readonly Tile[] = ['grass', 'tall', 'flower', 'path', 'sand', 'water', 'tree', 'rock', 'bush', 'plot', 'shop', 'building', 'lamp', 'trail', 'plaza', 'field', 'deco', 'pier'];
 
 /** Blocos que não dá para atravessar. */
 const SOLID = new Set<Tile>(['water', 'tree', 'rock', 'bush', 'shop', 'building', 'lamp', 'deco']);
@@ -139,6 +139,12 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
   trail(map, 18, 15, 15, 15);
   trail(map, 15, 15, 15, 12);
   trail(map, 20, 63, 17, 66);
+  // Clareiras com corredores livres: os trabalhadores precisam alcançar cada recurso a pé.
+  fill(map, WORK_AREAS.lumber.x, WORK_AREAS.lumber.y, WORK_AREAS.lumber.w, WORK_AREAS.lumber.h, 'grass');
+  fill(map, WORK_AREAS.mine.x, WORK_AREAS.mine.y, WORK_AREAS.mine.w, WORK_AREAS.mine.h, 'trail');
+  trail(map, 15, 15, 15, 6);
+  trail(map, 74, 19, 80, 19);
+  fill(map, 79, 15, 3, 5, 'pier');
   // Canteiros da fazenda.
   for (const f of FIELDS) fill(map, f.x, f.y, f.w, f.h, 'field');
   // Terreno da sua casa, com caminhos até a avenida e até a rua principal.
@@ -165,7 +171,7 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
   }
   // Recursos visíveis e renováveis nos locais de trabalho. A coleta segue o mesmo harvest() do jogador.
   const lumber = WORK_AREAS.lumber;
-  for (const [x, y] of [[6, 7], [8, 7], [10, 7], [12, 7], [6, 9], [8, 9], [10, 9], [12, 9], [6, 11], [8, 11], [10, 11], [12, 11]] as const) {
+  for (const [x, y] of [[6, 7], [9, 7], [12, 7], [6, 10], [9, 10], [12, 10], [6, 13], [9, 13], [12, 13]] as const) {
     if (x >= lumber.x && y >= lumber.y && x < lumber.x + lumber.w && y < lumber.y + lumber.h) setTile(map, x, y, 'tree');
   }
   const mine = WORK_AREAS.mine;
@@ -231,6 +237,7 @@ export function keyPoints(map: VillageMap): { x: number; y: number }[] {
   for (const b of map.buildings) out.push({ ...b.door });
   out.push({ x: map.shop.x + 1, y: map.shop.y + map.shop.h });
   out.push({ x: map.plot.x + map.plot.w, y: map.plot.y + map.plot.h - 1 });
+  for (const site of WORK_SITES) if (site.visit.x < map.w && site.visit.y < map.h) out.push({ ...site.visit });
   return out;
 }
 
@@ -342,7 +349,7 @@ export function findFree(map: VillageMap, x: number, y: number, blocked: (x: num
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r) ring.push({ x: x + dx, y: y + dy });
     const ok = ring.filter((c) => {
       const t = tileAt(map, c.x, c.y);
-      return (t === 'grass' || t === 'path' || t === 'flower' || t === 'tall' || t === 'trail' || t === 'plaza') && !blocked(c.x, c.y);
+      return (t === 'grass' || t === 'path' || t === 'flower' || t === 'tall' || t === 'trail' || t === 'plaza' || t === 'field' || t === 'pier') && !blocked(c.x, c.y);
     });
     if (ok.length > 0) return ok[Math.floor(rng() * ok.length)]!;
   }

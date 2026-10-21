@@ -1,10 +1,11 @@
 import { itemDef, ITEMS } from './catalog';
-import { fish, harvest, harvestCrop, plant, water } from './life';
+import { fish, FISH_PER_DAY, harvest, harvestCrop, plant, water } from './life';
 import type { Crop, VillageState } from './life';
 import { isWalkable, reachableFrom, tileAt } from './map';
 import type { VillageMap } from './map';
 import { FIELDS, WORK_AREAS } from './town-layout';
-import { chooseActivity, scoreActivity, TYPE_AFFINITIES } from './vocations';
+import { chooseActivity } from './vocations';
+import type { VillageActivity } from './vocations';
 import { COMMUNITY_RULES, normalizeResidentProgress } from './community';
 import type { PokemonType } from '../pokemon-data';
 import { advance, moving, tryStep } from './actors';
@@ -12,7 +13,16 @@ import type { Blocked, Dir, Walker } from './actors';
 import { pathStep } from './pathing';
 
 export const FARM_RULES = { decisionMs: 30_000, workMs: 10_000, travelMs: 120_000, workers: 3, history: 30 } as const;
-export interface FarmRecord { residentId: string; at: number; message: string }
+export const WORK_NAMES = { plant: 'Plantio', water: 'Rega', harvest: 'Colheita', mine: 'Mineração', lumber: 'Madeireira', fish: 'Pescaria' } as const;
+export type WorkKind = keyof typeof WORK_NAMES;
+const activityOf = (kind: WorkKind): VillageActivity => kind === 'mine' ? 'mineracao' : kind === 'lumber' ? 'madeireira' : kind === 'fish' ? 'pesca' : 'agricultura';
+const workCapacity: Partial<Record<WorkKind, readonly (readonly [string, number])[]>> = {
+  mine: [['pedra', 2], ['cristal', 1], ['ouro', 1]],
+  lumber: [['madeira', 3], ['pena', 1], ['mel', 1]],
+  fish: ['alga', 'bota', 'peixe', 'estrela', 'dourado', 'perola', 'cristal'].map((item) => [item, 1] as const),
+};
+const hasWorkCapacity = (state: VillageState, kind: WorkKind): boolean => (workCapacity[kind] ?? []).every(([item, qty]) => (state.inventory[item] ?? 0) <= 999 - qty);
+export interface FarmRecord { residentId: string; at: number; message: string; kind?: WorkKind }
 export interface FarmState {
   seeds: Record<string, number>;
   nextDecisionAt: number;
@@ -28,7 +38,7 @@ export function normalizeFarm(raw: unknown): FarmState {
     if (typeof qty === 'number' && Number.isInteger(qty) && qty > 0) result.seeds[seed.id] = Math.min(999, qty);
   }
   if (typeof value.nextDecisionAt === 'number' && Number.isFinite(value.nextDecisionAt) && value.nextDecisionAt >= 0) result.nextDecisionAt = value.nextDecisionAt;
-  result.history = Array.isArray(value.history) ? value.history.filter((entry) => entry && typeof entry.residentId === 'string' && typeof entry.message === 'string' && Number.isFinite(entry.at) && entry.at >= 0).slice(-FARM_RULES.history).map((entry) => ({ residentId: entry.residentId.slice(0, 128), at: entry.at, message: entry.message.slice(0, 240) })) : [];
+  result.history = Array.isArray(value.history) ? value.history.filter((entry) => entry && typeof entry.residentId === 'string' && typeof entry.message === 'string' && Number.isFinite(entry.at) && entry.at >= 0).slice(-FARM_RULES.history).map((entry) => ({ residentId: entry.residentId.slice(0, 128), at: entry.at, message: entry.message.slice(0, 240), ...(entry.kind && Object.hasOwn(WORK_NAMES, entry.kind) ? { kind: entry.kind } : {}) })) : [];
   return result;
 }
 
@@ -47,7 +57,7 @@ export function transferFarmSeeds(state: VillageState, seed: string, amount: num
 
 export interface FarmWorker { id: string; types: readonly PokemonType[]; x: number; y: number; available: boolean }
 export interface FarmTask {
-  residentId: string; kind: 'plant' | 'water' | 'harvest' | 'mine' | 'lumber' | 'fish'; x: number; y: number; seed: string;
+  residentId: string; kind: WorkKind; x: number; y: number; seed: string;
   stand: { x: number; y: number }; createdAt: number; workingSince: number | null;
   crop?: Pick<Crop, 'seed' | 'stage' | 'wateredAt'>;
 }
@@ -81,7 +91,7 @@ export class FarmSession {
       const valid = task.crop ? crop?.seed === task.crop.seed && crop.stage === task.crop.stage && crop.wateredAt === task.crop.wateredAt
         : task.kind === 'mine' ? tile === 'rock' && state.harvested[`${task.x},${task.y}`] !== localDay(now)
           : task.kind === 'lumber' ? tile === 'tree' && state.harvested[`${task.x},${task.y}`] !== localDay(now)
-            : task.kind === 'fish' ? tile === 'water' && (state.fishing.day !== localDay(now) || state.fishing.casts < 10) : !crop;
+            : task.kind === 'fish' ? tile === 'water' && (state.fishing.day !== localDay(now) || state.fishing.casts < FISH_PER_DAY) : !crop;
       if (!worker?.available || !valid || now - task.createdAt > FARM_RULES.travelMs || now < task.createdAt) {
         this.tasks.splice(i, 1);
         continue;
@@ -93,6 +103,7 @@ export class FarmSession {
       // A capacidade é verificada antes da colheita: não apaga cultivo quando a mochila está cheia.
       const growth = itemDef(task.seed)?.grows;
       if (task.kind === 'harvest' && (!growth || (state.inventory[growth.crop] ?? 0) > 999 - growth.yield[1] || (state.inventory[task.seed] ?? 0) >= 999)) continue;
+      if (!hasWorkCapacity(state, task.kind)) continue;
       const today = localDay(now);
       const result = task.kind === 'plant'
         ? plant({ ...state, inventory: state.farm.seeds }, map, task.seed, task.x, task.y, now, occupied)
@@ -101,15 +112,16 @@ export class FarmSession {
             : task.kind === 'mine' || task.kind === 'lumber' ? harvest(state, map, task.x, task.y, today, rng)
               : fish(state, map, task.x, task.y, today, rng);
       if (!result.ok) continue;
-      const activity = task.kind === 'mine' ? 'mineracao' : task.kind === 'lumber' ? 'madeireira' : task.kind === 'fish' ? 'pesca' : 'agricultura';
+      const activity = activityOf(task.kind);
       const progress = state.community.residents[worker.id] ??= normalizeResidentProgress(null);
       progress.energy = Math.max(0, progress.energy - COMMUNITY_RULES.taskEnergyCost);
       progress.completedActivities = Math.min(1_000_000, progress.completedActivities + 1);
       progress.experience[activity] = Math.min(1_000_000, (progress.experience[activity] ?? 0) + 1);
       progress.recentActivity = activity;
       if ((progress.experience[activity] ?? 0) >= 3 && !progress.interests.includes(activity) && progress.interests.length < 3) progress.interests.push(activity);
-      const message = task.kind === 'plant' ? `Plantou ${itemDef(task.seed)?.name ?? task.seed} usando a caixa da fazenda.` : task.kind === 'water' ? 'Regou um canteiro da fazenda.' : task.kind === 'mine' ? `Minerou na pedreira: ${result.message} Os itens foram para sua mochila.` : task.kind === 'lumber' ? `Trabalhou na madeireira: ${result.message} Os itens foram para sua mochila.` : task.kind === 'fish' ? `Pescou no lago: ${result.message} Os itens foram para sua mochila.` : `${result.message} A produção foi para sua mochila.`;
-      state.farm.history = [...state.farm.history, { residentId: worker.id, at: now, message }].slice(-FARM_RULES.history);
+      const delivery = result.got ? ' Os itens foram para sua mochila.' : '';
+      const message = task.kind === 'plant' ? `Plantou ${itemDef(task.seed)?.name ?? task.seed} usando a caixa da fazenda.` : task.kind === 'water' ? 'Regou um canteiro da fazenda.' : task.kind === 'mine' ? `Minerou na pedreira: ${result.message}${delivery}` : task.kind === 'lumber' ? `Trabalhou na madeireira: ${result.message}${delivery}` : task.kind === 'fish' ? `Pescou no lago: ${result.message}${delivery}` : `${result.message} A produção foi para sua mochila.`;
+      state.farm.history = [...state.farm.history, { residentId: worker.id, at: now, message, kind: task.kind }].slice(-FARM_RULES.history);
       changed = true;
     }
     // Voltar o relógio não bloqueia o trabalho indefinidamente. Nenhum catch-up concede trabalho instantâneo.
@@ -120,56 +132,57 @@ export class FarmSession {
     const lastWorked = new Map(state.farm.history.map((entry) => [entry.residentId, entry.at]));
     const ordered = unique.filter((worker) => worker.available && !this.tasks.some((task) => task.residentId === worker.id))
       .sort((a, b) => (lastWorked.get(a.id) ?? 0) - (lastWorked.get(b.id) ?? 0) || a.id.localeCompare(b.id));
-    const reachable = reachableFrom(map, map.spawn.x, map.spawn.y);
+    const staticObstacle = (x: number, y: number) => state.placed.some((item) => item.x === x && item.y === y) || state.crops.some((crop) => crop.x === x && crop.y === y);
+    const reachable = reachableFrom(map, map.spawn.x, map.spawn.y, staticObstacle);
     for (const worker of ordered) {
       if (this.tasks.length >= FARM_RULES.workers) break;
-      const task = this.findTask(state, map, worker, now, occupied, reachable);
-      if (!task) break;
+      const options = this.findTasks(state, map, worker, now, occupied, reachable);
+      if (!options.length) continue;
       const progress = state.community.residents[worker.id] ??= normalizeResidentProgress(null);
-      const activity = task.kind === 'mine' ? 'mineracao' : task.kind === 'lumber' ? 'madeireira' : task.kind === 'fish' ? 'pesca' : 'agricultura';
-      const choice = chooseActivity({ available: [activity, 'descanso', 'brincadeira'], types: worker.types, interests: progress.interests, energy: progress.energy, socialOpportunity: 1, communityNeeds: [{ activity, urgency: 2 }], recentActivity: progress.recentActivity ?? undefined }, rng);
-      if (choice.activity === activity) this.tasks.push(task);
+      const choice = chooseActivity({ available: [...options.map((task) => activityOf(task.kind)), 'descanso', 'brincadeira'], types: worker.types, interests: progress.interests, energy: progress.energy, socialOpportunity: 1, communityNeeds: options.map((task) => ({ activity: activityOf(task.kind), urgency: task.kind === 'harvest' ? 5 : task.kind === 'water' ? 4 : 2 })), recentActivity: progress.recentActivity ?? undefined }, rng);
+      const task = options.find((option) => activityOf(option.kind) === choice.activity);
+      if (task) this.tasks.push(task);
       else if (choice.activity === 'descanso') progress.energy = Math.min(100, progress.energy + COMMUNITY_RULES.restEnergyGain);
     }
     return changed;
   }
 
-  private findTask(state: VillageState, map: VillageMap, worker: FarmWorker, now: number, occupied: (x: number, y: number) => boolean, reachable: Uint8Array): FarmTask | null {
+  private findTasks(state: VillageState, map: VillageMap, worker: FarmWorker, now: number, occupied: (x: number, y: number) => boolean, reachable: Uint8Array): FarmTask[] {
     const residentId = worker.id;
+    const options: FarmTask[] = [];
+    const standFor = (x: number, y: number) => [{ x, y: y + 1 }, { x: x - 1, y }, { x: x + 1, y }, { x, y: y - 1 }].find((at) => isWalkable(map, at.x, at.y) && reachable[at.y * map.w + at.x] === 1 && (!occupied(at.x, at.y) || at.x === worker.x && at.y === worker.y) && !state.placed.some((item) => item.x === at.x && item.y === at.y) && !state.crops.some((crop) => crop.x === at.x && crop.y === at.y) && !this.tasks.some((task) => task.stand.x === at.x && task.stand.y === at.y || task.x === at.x && task.y === at.y));
     const seeds = ITEMS.filter((item) => item.kind === 'seed' && (state.farm.seeds[item.id] ?? 0) > this.tasks.filter((task) => task.kind === 'plant' && task.seed === item.id).length);
     // Colher e regar têm prioridade sobre ocupar novos canteiros.
-    for (const kind of ['harvest', 'water', 'plant'] as const) for (const spot of fieldSpots) {
+    farm: for (const kind of ['harvest', 'water', 'plant'] as const) for (const spot of fieldSpots) {
       if (tileAt(map, spot.x, spot.y) !== 'field' || state.placed.some((item) => item.x === spot.x && item.y === spot.y) || this.tasks.some((task) => task.x === spot.x && task.y === spot.y)) continue;
       const crop = state.crops.find((entry) => entry.x === spot.x && entry.y === spot.y);
       const growth = crop && itemDef(crop.seed)?.grows;
       if (kind === 'plant' ? crop || !seeds.length || occupied(spot.x, spot.y)
         : !crop || !growth || (kind === 'water' ? crop.stage >= growth.stages || crop.wateredAt !== null : crop.stage < growth.stages || (state.inventory[growth.crop] ?? 0) > 999 - growth.yield[1] || (state.inventory[crop.seed] ?? 0) >= 999)) continue;
-      const stand = [{ x: spot.x, y: spot.y + 1 }, { x: spot.x - 1, y: spot.y }, { x: spot.x + 1, y: spot.y }, { x: spot.x, y: spot.y - 1 }].find((at) => isWalkable(map, at.x, at.y) && !occupied(at.x, at.y) && !state.placed.some((item) => item.x === at.x && item.y === at.y) && !state.crops.some((entry) => entry.x === at.x && entry.y === at.y) && !this.tasks.some((task) => task.stand.x === at.x && task.stand.y === at.y || task.x === at.x && task.y === at.y));
+      const stand = standFor(spot.x, spot.y);
       if (!stand || this.tasks.some((task) => task.stand.x === spot.x && task.stand.y === spot.y)) continue;
-      return { residentId, kind, ...spot, seed: crop?.seed ?? seeds[0]!.id, stand, createdAt: now, workingSince: null, ...(crop ? { crop: { seed: crop.seed, stage: crop.stage, wateredAt: crop.wateredAt } } : {}) };
+      options.push({ residentId, kind, ...spot, seed: crop?.seed ?? seeds[0]!.id, stand, createdAt: now, workingSince: null, ...(crop ? { crop: { seed: crop.seed, stage: crop.stage, wateredAt: crop.wateredAt } } : {}) });
+      break farm;
     }
-    const progress = state.community.residents[residentId] ??= normalizeResidentProgress(null);
     const sites = [
       { kind: 'mine' as const, area: WORK_AREAS.mine, tile: 'rock' as const },
       { kind: 'lumber' as const, area: WORK_AREAS.lumber, tile: 'tree' as const },
       { kind: 'fish' as const, area: WORK_AREAS.fishing, tile: 'water' as const },
-    ].sort((a, b) => {
-      const activity = (kind: typeof a.kind) => kind === 'mine' ? 'mineracao' : kind === 'lumber' ? 'madeireira' : 'pesca';
-      const score = (kind: typeof a.kind) => scoreActivity({ available: [activity(kind)], types: worker.types, interests: progress.interests, energy: progress.energy, socialOpportunity: 0, communityNeeds: [{ activity: activity(kind), urgency: 2 }] }, activity(kind)).score;
-      return score(b.kind) - score(a.kind) || a.kind.localeCompare(b.kind);
-    });
+    ];
     for (const site of sites) {
       const dailyCasts = state.fishing.day === localDay(now) ? state.fishing.casts : 0;
-      if (site.kind === 'fish' && dailyCasts + this.tasks.filter((task) => task.kind === 'fish').length >= 10) continue;
-      const activity = site.kind === 'mine' ? 'mineracao' : site.kind === 'lumber' ? 'madeireira' : 'pesca';
-      if (!worker.types.some((type) => TYPE_AFFINITIES[type].includes(activity)) && !progress.interests.includes(activity)) continue;
+      if (site.kind === 'fish' && dailyCasts + this.tasks.filter((task) => task.kind === 'fish').length >= FISH_PER_DAY) continue;
+      if (!hasWorkCapacity(state, site.kind)) continue;
+      const nodes: { x: number; y: number; stand: { x: number; y: number }; distance: number }[] = [];
       for (let y = site.area.y; y < site.area.y + site.area.h; y++) for (let x = site.area.x; x < site.area.x + site.area.w; x++) {
         if (tileAt(map, x, y) !== site.tile || this.tasks.some((task) => task.x === x && task.y === y) || site.kind !== 'fish' && state.harvested[`${x},${y}`] === localDay(now)) continue;
-        const stand = [{ x, y: y + 1 }, { x: x - 1, y }, { x: x + 1, y }, { x, y: y - 1 }].find((at) => isWalkable(map, at.x, at.y) && reachable[at.y * map.w + at.x] === 1 && !occupied(at.x, at.y) && !this.tasks.some((task) => task.stand.x === at.x && task.stand.y === at.y));
-        if (stand) return { residentId, kind: site.kind, x, y, seed: '', stand, createdAt: now, workingSince: null };
+        const stand = standFor(x, y);
+        if (stand) nodes.push({ x, y, stand, distance: Math.abs(stand.x - worker.x) + Math.abs(stand.y - worker.y) - (site.kind === 'fish' && tileAt(map, stand.x, stand.y) === 'pier' ? map.w + map.h : 0) });
       }
+      const node = nodes.sort((a, b) => a.distance - b.distance || a.y - b.y || a.x - b.x)[0];
+      if (node) options.push({ residentId, kind: site.kind, x: node.x, y: node.y, seed: '', stand: node.stand, createdAt: now, workingSince: null });
     }
-    return null;
+    return options;
   }
 }
 
