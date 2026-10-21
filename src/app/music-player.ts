@@ -1,6 +1,6 @@
 import type { MusicEntry } from '../core/music';
 
-interface Voice { path: string; audio: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; pending: boolean; failed: boolean; controller: AbortController; loading: boolean; objectUrl?: string }
+interface Voice { path: string; audio: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; targetGain: number | null; pending: boolean; failed: boolean; controller: AbortController; loading: boolean; objectUrl?: string }
 
 /** Duas faixas compactadas no máximo; o navegador faz a decodificação progressiva. */
 export class MusicPlayer {
@@ -12,6 +12,8 @@ export class MusicPlayer {
   private disposed = false;
   private unlocked = false;
   private failures = new Set<string>();
+  private contextTarget: 'running' | 'suspended' | null = null;
+  private contextOperation: Promise<void> | null = null;
 
   constructor(private readonly url: (path: string) => string, private readonly unavailable: () => void = () => undefined) {}
 
@@ -28,7 +30,6 @@ export class MusicPlayer {
         if (this.failures.has(voice.path)) { this.release(voice); this.voices.splice(this.voices.indexOf(voice), 1); }
       }
       this.failures.clear();
-      if (this.context) void this.context.resume().catch(() => this.unavailable());
       for (const voice of this.voices) voice.failed = false;
       this.refresh();
     } catch { this.unavailable(); }
@@ -50,10 +51,10 @@ export class MusicPlayer {
         voice.audio.pause();
         if (voice.loading) { this.release(voice); this.voices.splice(this.voices.indexOf(voice), 1); }
       }
-      if (ctx.state === 'running') void ctx.suspend().catch(() => undefined);
+      this.requestContextState('suspended');
       return;
     }
-    if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+    this.requestContextState('running');
     const wanted = new Set(this.mix.map(entry => entry.path));
     for (const voice of [...this.voices]) {
       if (!wanted.has(voice.path)) { this.release(voice); this.voices.splice(this.voices.indexOf(voice), 1); }
@@ -67,7 +68,7 @@ export class MusicPlayer {
         const source = ctx.createMediaElementSource(audio);
         const gain = ctx.createGain(); gain.gain.value = 0;
         source.connect(gain); gain.connect(ctx.destination);
-        voice = { path: entry.path, audio, source, gain, pending: false, failed: false, controller: new AbortController(), loading: true };
+        voice = { path: entry.path, audio, source, gain, targetGain: null, pending: false, failed: false, controller: new AbortController(), loading: true };
         const created = voice;
         audio.onerror = () => {
           if (this.disposed || !this.voices.includes(created)) return;
@@ -76,7 +77,13 @@ export class MusicPlayer {
         this.voices.push(voice);
         void this.load(voice);
       }
-      voice.gain.gain.setTargetAtTime(entry.gain * this.volume * 0.65, ctx.currentTime, 0.15);
+      const targetGain = entry.gain * this.volume * 0.65;
+      // syncMusic pode rodar a cada 100 ms. Reagendar o mesmo alvo a cada chamada
+      // reinicia a curva exponencial e faz a música parecer pulsar em alguns celulares.
+      if (voice.targetGain === null || Math.abs(voice.targetGain - targetGain) > 0.0005) {
+        voice.gain.gain.setTargetAtTime(targetGain, ctx.currentTime, 0.15);
+        voice.targetGain = targetGain;
+      }
       if (voice.audio.paused && !voice.loading && !voice.pending && !voice.failed) {
         const current = voice;
         current.pending = true;
@@ -86,6 +93,31 @@ export class MusicPlayer {
           .finally(() => { current.pending = false; });
       }
     }
+  }
+
+  private requestContextState(target: 'running' | 'suspended'): void {
+    const ctx = this.context;
+    if (!ctx || this.disposed) return;
+    this.contextTarget = target;
+    const matches = target === 'running' ? ctx.state === 'running' : ctx.state === 'suspended';
+    if (matches && !this.contextOperation) return;
+    if (this.contextOperation) return;
+    let operation: Promise<void>;
+    try {
+      operation = target === 'running' ? ctx.resume() : ctx.suspend();
+    } catch {
+      if (target === 'running') this.unavailable();
+      return;
+    }
+    const tracked = operation.catch(() => {
+      if (target === 'running') this.unavailable();
+    });
+    this.contextOperation = tracked;
+    void tracked.finally(() => {
+      if (this.contextOperation !== tracked) return;
+      this.contextOperation = null;
+      if (this.contextTarget !== target) this.requestContextState(this.contextTarget!);
+    });
   }
 
   private async load(voice: Voice): Promise<void> {
@@ -115,7 +147,7 @@ export class MusicPlayer {
   reset(): void {
     for (const voice of this.voices) this.release(voice);
     this.voices = []; this.mix = []; this.playing = false; this.failures.clear();
-    if (this.context?.state === 'running') void this.context.suspend().catch(() => undefined);
+    this.requestContextState('suspended');
   }
 
   dispose(): void {
