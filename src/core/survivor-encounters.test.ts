@@ -54,7 +54,9 @@ describe('espécies regionais da Torre', () => {
     s.nextBossAtMs = Infinity;
     s.nextTrainerAtMs = Infinity;
     s.finalBossAtMs = null;
-    const interval = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - (s.elapsedMs / 1000) * BALANCE.spawnPerSecMs - s.wave * BALANCE.spawnPerWaveMs);
+    const baseInterval = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - (s.elapsedMs / 1000) * BALANCE.spawnPerSecMs - s.wave * BALANCE.spawnPerWaveMs);
+    const early = Math.max(0, 1 - s.elapsedMs / BALANCE.earlyGameMs);
+    const interval = baseInterval * (1 + BALANCE.earlySpawnIntervalBonus * early);
     s.spawnAccumMs = interval - 1;
     stepSurvivor(s, { dx: 0, dy: 0 }, 50);
     const enemy = s.enemies[0]!;

@@ -54,6 +54,15 @@ describe('golpes da Torre: elemento pelo tipo, forma e números pelos stats', ()
     expect(dps('area')).toBeLessThan(dps('projetil'));
   });
 
+  it('compensa inseto, gelo e lutador sem ultrapassar o dano de área', () => {
+    const stats = { hp: 75, attack: 75, defense: 75, spAttack: 75, spDefense: 75, speed: 75 };
+    const normal = attackProfile(moveFor(['normal'], stats), stats).damage;
+    expect(attackProfile(moveFor(['bug'], stats), stats).damage).toBeGreaterThan(attackProfile(moveFor(['grass'], stats), stats).damage);
+    expect(attackProfile(moveFor(['ice'], stats), stats).damage).toBeGreaterThan(normal);
+    expect(attackProfile(moveFor(['fighting'], stats), stats).damage).toBeGreaterThan(normal);
+    expect(attackProfile(moveFor(['fighting'], stats), stats).damage).toBeLessThan(attackProfile({ ...moveFor(['normal'], stats), category: 'area' }, stats).damage);
+  });
+
   it('os números seguem os stats: rápido recarrega antes, Atq. Esp. alto bate mais, HP alto tem mais vida', () => {
     const alakazam = attackProfile(moveFor(['psychic'], statsOfDex(65)), statsOfDex(65));
     const slowbro = attackProfile({ ...moveFor(['water'], null), category: 'projetil' }, statsOfDex(80));
