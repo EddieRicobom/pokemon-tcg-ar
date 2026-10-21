@@ -67,7 +67,7 @@ describe('stepSurvivor', () => {
     const s = run(3);
     // Passos pequenos: pega o inimigo no quadro em que ele acabou de nascer, antes de andar muito.
     let justSpawned: { x: number; y: number } | null = null;
-    for (let i = 0; i < Math.ceil((BALANCE.spawnStartMs + 100) / 20) && !justSpawned; i++) {
+    for (let i = 0; i < Math.ceil((BALANCE.spawnStartMs * (1 + BALANCE.earlySpawnIntervalBonus) + 100) / 20) && !justSpawned; i++) {
       stepSurvivor(s, { dx: 0, dy: 0 }, 20);
       if (s.enemies.length > 0) justSpawned = { x: s.enemies[0]!.x, y: s.enemies[0]!.y };
     }
@@ -692,8 +692,11 @@ describe('treinadores e chefão final', () => {
     expect(timeline).toContain('t:3:false');
     expect(s.enemies.filter((e) => e.grade === 'elite').length).toBe(3);
     const elite = s.enemies.find((e) => e.grade === 'elite');
-    expect(elite?.maxHp).toBe(Math.round((BALANCE.enemyHpBase + Math.floor(300 / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + s.wave * BALANCE.enemyHpPerWave) * 5 * BALANCE.trainerStatMultiplier * s.infiniteScale));
-    expect(elite?.damage).toBe(Math.round((BALANCE.enemyDamageBase + Math.floor(300 / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep) * 2 * BALANCE.trainerStatMultiplier * s.infiniteScale));
+    const earlyAtFive = Math.max(0, Math.min(1, 300_000 / BALANCE.earlyGameMs));
+    const hpCurve = BALANCE.earlyEnemyHpMultiplier + (1 - BALANCE.earlyEnemyHpMultiplier) * earlyAtFive;
+    const damageCurve = BALANCE.earlyEnemyDamageMultiplier + (1 - BALANCE.earlyEnemyDamageMultiplier) * earlyAtFive;
+    expect(elite?.maxHp).toBe(Math.round((BALANCE.enemyHpBase + Math.floor(300 / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + s.wave * BALANCE.enemyHpPerWave) * hpCurve * 5 * BALANCE.trainerStatMultiplier * s.infiniteScale));
+    expect(elite?.damage).toBe(Math.round((BALANCE.enemyDamageBase + Math.floor(300 / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep) * damageCurve * 2 * BALANCE.trainerStatMultiplier * s.infiniteScale));
     // Pula para quase 20 min.
     s.elapsedMs = 1_200_000 - 200;
     const ev2 = stepSurvivor(s, { dx: 0, dy: 0 }, 400);

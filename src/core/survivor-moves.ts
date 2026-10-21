@@ -117,8 +117,8 @@ export const CATEGORY_BASE: Record<MoveCategory, CategoryBase> = {
   projetil: { damage: 10, cooldownMs: 600, range: 170, radius: 0 },
   aura: { damage: 5, cooldownMs: 420, range: 0, radius: 62 },
   area: { damage: 15, cooldownMs: 1100, range: 190, radius: 48 },
-  cone: { damage: 9, cooldownMs: 720, range: 118, radius: 0 },
-  orbit: { damage: 6, cooldownMs: 520, range: 0, radius: 72 },
+  cone: { damage: 11, cooldownMs: 720, range: 128, radius: 0 },
+  orbit: { damage: 7, cooldownMs: 520, range: 0, radius: 72 },
 };
 
 /** Multiplicadores situacionais: golpes que exigem proximidade recebem mais retorno por exposição. */
@@ -128,6 +128,13 @@ export const CATEGORY_DAMAGE_FACTOR: Record<MoveCategory, number> = {
   area: 1,
   cone: 1.15,
   orbit: 1.22,
+};
+
+/** Pequenas compensações para tipos que dependem de exposição ou controle para causar dano. */
+export const TYPE_DAMAGE_FACTOR: Partial<Record<PokemonType, number>> = {
+  bug: 1.1,
+  fighting: 1.12,
+  ice: 1.08,
 };
 
 /** Os números do golpe e do corpo de quem joga, já com os stats aplicados. */
@@ -169,7 +176,7 @@ export function attackProfile(move: SurvivorMove, stats: BaseStats | null): Atta
   const base = CATEGORY_BASE[move.category];
   const farther = move.effect === 'atravessar' && move.category !== 'projetil' ? 1.15 : 1;
   return {
-    damage: round1(base.damage * factor(offenseOf(move.category, s), 0.6, 0.65, 1.7) * SURVIVOR_DAMAGE_FACTOR * CATEGORY_DAMAGE_FACTOR[move.category]),
+    damage: round1(base.damage * factor(offenseOf(move.category, s), 0.6, 0.65, 1.7) * SURVIVOR_DAMAGE_FACTOR * CATEGORY_DAMAGE_FACTOR[move.category] * (TYPE_DAMAGE_FACTOR[move.type] ?? 1)),
     cooldownMs: Math.round(base.cooldownMs / factor(s.speed, 0.35, 0.75, 1.35)),
     range: round1(base.range * farther),
     radius: round1(base.radius * factor(s.defense, 0.35, 0.8, 1.5) * farther),

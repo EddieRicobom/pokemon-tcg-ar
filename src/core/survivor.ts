@@ -535,8 +535,8 @@ export const BASIC_MOVE: SurvivorMove = { type: 'normal', name: 'Golpe', categor
  * o ajuste final ainda precisa de partidas reais em aparelho.
  */
 export const BALANCE = {
-  xpBase: 14,
-  xpPerLevel: 9,
+  xpBase: 12,
+  xpPerLevel: 8,
   bossHpBase: 150,
   bossHpPerWave: 45,
   bossSpeed: 62,
@@ -552,6 +552,14 @@ export const BALANCE = {
   enemyDamageEverySec: 40,
   enemySpeedBase: 55,
   enemySpeedRandom: 25,
+  /** Curva de proteção inicial: converge para 1 aos 6 min, suavizando a chegada ao especial de 3 min. */
+  earlyGameMs: 360_000,
+  earlySpawnIntervalBonus: 0.55,
+  earlyEnemyHpMultiplier: 0.75,
+  earlyEnemyDamageMultiplier: 0.58,
+  earlyEnemySpeedMultiplier: 0.75,
+  /** Ataques de exposição recebem uma margem curta contra colisões e projéteis. */
+  closeRangeDamageMultiplier: 0.88,
   /** Atiradores andam mais devagar para abrir espaço de reação. */
   rangedEnemySpeedMultiplier: 0.5,
   /** Velocidade dos projéteis inimigos (antes: 170). */
@@ -564,7 +572,7 @@ export const BALANCE = {
   spawnPerWaveMs: 15,
   spawnFloorMs: 450,
   /** Intervalo de invulnerabilidade após qualquer acerto; dá tempo para reposicionar sem remover o perigo. */
-  hitInvulnerabilityMs: 650,
+  hitInvulnerabilityMs: 750,
   playerDamage: 10,
   playerCooldownMs: 600,
   /** Primeiro chefe e intervalo entre os seguintes (ms). */
@@ -709,7 +717,19 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
 /** Intervalo entre nascimentos (ms): começa folgado e aperta com o tempo e a onda, nunca abaixo do piso. */
 function spawnIntervalMs(state: SurvivorState): number {
   const t = state.elapsedMs / 1000;
-  return Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
+  const base = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
+  const early = Math.max(0, 1 - state.elapsedMs / BALANCE.earlyGameMs);
+  return base * (1 + BALANCE.earlySpawnIntervalBonus * early);
+}
+
+function earlyCurve(elapsedMs: number, start: number): number {
+  const progress = Math.max(0, Math.min(1, elapsedMs / BALANCE.earlyGameMs));
+  return start + (1 - start) * progress;
+}
+
+function closeRangeDamageMultiplier(state: SurvivorState): number {
+  const category = state.player.move.category;
+  return category === 'aura' || category === 'orbit' || category === 'cone' ? BALANCE.closeRangeDamageMultiplier : 1;
 }
 
 function spawnPoint(rng: Rng): { x: number; y: number } {
@@ -759,15 +779,19 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
     });
     return;
   }
-  const baseHp = BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave;
-  const baseDmg = BALANCE.enemyDamageBase + Math.floor(t / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep;
+  const baseHp = (BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave)
+    * earlyCurve(state.elapsedMs, BALANCE.earlyEnemyHpMultiplier);
+  const baseDmg = (BALANCE.enemyDamageBase + Math.floor(t / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep)
+    * earlyCurve(state.elapsedMs, BALANCE.earlyEnemyDamageMultiplier);
   // Treinadores (elite) têm +5× HP e +2× dano; o chefão (do time dos 6) ainda mais pesado.
   const trainerMul = grade === 'comum' ? 1 : BALANCE.trainerStatMultiplier;
   const hpMul = (grade === 'chefao' ? 7 : grade === 'elite' ? 5 : 1) * trainerMul;
   const dmgMul = (grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1) * trainerMul;
   const speed = (grade === 'comum'
     ? BALANCE.enemySpeedBase + state.rng() * BALANCE.enemySpeedRandom
-    : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
+    : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15)
+    * earlyCurve(state.elapsedMs, BALANCE.earlyEnemySpeedMultiplier)
+    * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
   const hp = Math.round(baseHp * hpMul * state.infiniteScale);
   const kind = Math.floor(state.rng() * state.kindCount);
   const id = state.nextId++;
@@ -1456,7 +1480,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     e.y += (dy / d) * speed * dt;
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
     if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0 && !specialProtects(state)) {
-        const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? e.damage * 0.88 : e.damage) * (p.artifactShieldMs > 0 ? 0.65 : 1));
+        const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? e.damage * 0.88 : e.damage) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
       p.hp = Math.max(0, p.hp - incoming);
       p.invulnMs = BALANCE.hitInvulnerabilityMs;
     }
@@ -1475,7 +1499,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (proj.lifeMs <= 0 || proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size) {
       if (p.invulnMs <= 0 && !specialProtects(state)) {
-         const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * (p.artifactShieldMs > 0 ? 0.65 : 1));
+         const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
         p.hp = Math.max(0, p.hp - incoming);
         p.invulnMs = BALANCE.hitInvulnerabilityMs;
       }
