@@ -28,6 +28,7 @@ import {
   SURVIVOR_UPGRADE_RARITIES,
   SURVIVOR_LOVE_CANDY_MS,
   SURVIVOR_MEGA_SHARD_MS,
+  SURVIVOR_ARTIFACT_DETAILS,
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorTypeAffinity, SurvivorUpgradeOption } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
@@ -188,6 +189,15 @@ function say(text: string, ms = 3000): void {
   toast.value = text;
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (toast.value = ''), ms);
+}
+
+/** Item do chão fica no centro e separado dos avisos de região, para o efeito não passar despercebido. */
+const artifactNotice = ref<null | { icon: string; name: string; description: string }>(null);
+let artifactNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+function showArtifactNotice(kind: keyof typeof SURVIVOR_ARTIFACT_DETAILS): void {
+  artifactNotice.value = SURVIVOR_ARTIFACT_DETAILS[kind];
+  if (artifactNoticeTimer) clearTimeout(artifactNoticeTimer);
+  artifactNoticeTimer = setTimeout(() => (artifactNotice.value = null), 2600);
 }
 
 /** Imagem parada (PNG) como um GIF de um quadro so: a ultima alternativa de sprite. */
@@ -835,6 +845,10 @@ function loop(ts: number): void {
           ? '🎁 Marco de 10 minutos! Love Candy garantido ao concluir a corrida.'
           : '💎 Marco de 20 minutos! Fragmento de Mega Stone garantido ao concluir a corrida.', 6000);
       }
+      else if (ev.type === 'artifactCollected') {
+        playSound('survivor-pickup');
+        showArtifactNotice(ev.kind);
+      }
       if (ev.type === 'gameover') {
         playSound('survivor-gameover');
         objectives.value = survivorObjectives(s);
@@ -1154,6 +1168,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibility);
   resizer?.disconnect();
   resizer = null;
+  if (toastTimer) clearTimeout(toastTimer);
+  if (artifactNoticeTimer) clearTimeout(artifactNoticeTimer);
   heldKeys.clear();
   sound.dispose();
   music.dispose();
@@ -1178,6 +1194,10 @@ onBeforeUnmount(() => {
         <div class="survivor-vignette" aria-hidden="true"></div>
 
         <div v-if="toast" class="survivor-toast" role="status" aria-live="polite">{{ toast }}</div>
+        <div v-if="artifactNotice" class="survivor-artifact-notice" role="status" aria-live="polite">
+          <span class="survivor-artifact-notice-icon" aria-hidden="true">{{ artifactNotice.icon }}</span>
+          <span><b>{{ artifactNotice.name }}</b><small>{{ artifactNotice.description }}</small></span>
+        </div>
         <div v-if="ready && state" class="survivor-hud">
           <div class="survivor-hp" :class="{ low: state.player.hp / state.player.maxHp < 0.3 }">
             <div class="survivor-hp-fill" :style="{ width: Math.max(0, (state.player.hp / state.player.maxHp) * 100) + '%' }"></div>
