@@ -6,6 +6,8 @@
 
 `camera.test.ts` cobre cancelamento durante permissão e reprodução sem afetar a câmera de uma sessão nova. `TeamPicker.test.ts` cobre Digital Pokémon e carga tardia de miniatura. `ground.test.ts` verifica UV vertical dos enfeites, sRGB, separação da orientação do piso e restauração das marcações após golpes. Os testes de terreno mantêm o layout clássico dos Pins separado dos novos layouts.
 
+As regras de cache usam expressões serializáveis (`config/runtime-cache.ts`), com testes de base path, nomes exatos e caracteres especiais. Isso corrige uma closure anterior que deixava `base` indefinido no Service Worker publicado; `verify-dist` recusa essa regressão.
+
 Na revisão local, os testes unitários completos, typecheck, build com `BASE_PATH=/pokemon-tcg-ar/` e `verify-dist` passaram. Um diagnóstico de navegador Edge/Chromium com câmera falsa e sprites sintéticos de teste conferiu seleção física/digital, equipe 6/6, Caixa efetivamente colocada, menus, Escape, restauração de foco e retrato/paisagem; as 21 faixas foram decodificadas e o player real iniciou/pausou sem erro. O diagnóstico fixo dos pisos foi comparado antes/depois em WebGL por software. Isso não verifica câmera real, sensores, compatibilidade de autoplay no iPhone, bateria ou aparência/desempenho em GPU móvel. O build inicial não pré-cacheia as músicas (22 entradas de shell); uma faixa ainda não usada exige rede.
 
 Os comandos e arquivos abaixo descrevem a cobertura disponível. O resultado de cada revisão deve ser conferido na execução correspondente do GitHub Actions; a existência de um teste não significa que ele passou na revisão atual. Testes automatizados não medem câmera, GPU, sensores, calor ou bateria de um celular.
