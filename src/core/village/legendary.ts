@@ -1,5 +1,6 @@
 import type { Rng } from '../battle';
 import type { Moment } from './social-state';
+import { LEGEND_STORIES } from './legendary-stories';
 
 /**
  * Encontros lendários raríssimos na Vila. Uma "oportunidade de sorteio" é a primeira vez que você abre a Vila em
@@ -30,7 +31,7 @@ export interface LegendaryDef {
   modifiers?: Partial<LegendaryEffects>;
 }
 
-export const LEGENDARIES: readonly LegendaryDef[] = [
+const ORIGINAL_LEGENDARIES: readonly LegendaryDef[] = [
   {
     id: 'suicune',
     dexId: 245,
@@ -135,10 +136,20 @@ export const LEGENDARIES: readonly LegendaryDef[] = [
   },
 ];
 
+export const LEGENDARIES: readonly LegendaryDef[] = [
+  ...ORIGINAL_LEGENDARIES,
+  ...LEGEND_STORIES.filter((story) => !ORIGINAL_LEGENDARIES.some((entry) => entry.id === story.id)).map((story): LegendaryDef => ({
+    id: story.id, dexId: story.dexId, name: story.name, weight: 1, effect: 'tempo',
+    lines: story.chapters.map((chapter) => chapter.text),
+    boon: `O Caderno de Lendas guarda a lembrança de ${story.name}: “${story.title}”.`,
+    consequence: `Depois da passagem de ${story.name}, a Vila retoma sua rotina. Esta visita não altera recursos nem captura o visitante.`,
+  })),
+];
+
 /** Chance-base por oportunidade de sorteio (0,1%). Ajustável depois de testes de balanceamento. */
 export const BASE_CHANCE = 0.001;
 /** Quantos encontros o histórico guarda (os mais antigos somem; não afeta o sorteio). */
-const HISTORY_MAX = 20;
+export const LEGENDARY_HISTORY_LIMIT = 128; // Comporta as 94 investigações sem remover efeitos ainda válidos do dia.
 
 export interface LegendaryEncounter {
   id: string;
@@ -154,18 +165,27 @@ export interface LegendaryState {
   lastRollDay: string;
   /** Lendário aparecendo agora, até o jogador ver a cutscene (ver `VillageView.vue`). */
   active: { id: string } | null;
+  /** Primeiras visitas testemunhadas, sem o limite do histórico temporário de efeitos. */
+  seen: Record<string, string>;
+  investigation: { id: string; step: 0 | 1 } | null;
 }
 
 export function emptyLegendary(): LegendaryState {
-  return { history: [], attempts: 0, lastRollDay: '', active: null };
+  return { history: [], attempts: 0, lastRollDay: '', active: null, seen: {}, investigation: null };
 }
 
 export function normalizeLegendary(raw: unknown): LegendaryState {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<LegendaryState>;
   const ids = new Set(LEGENDARIES.map((l) => l.id));
+  const validTime = (value: unknown): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value));
+  const seen: Record<string, string> = {};
+  if (r.seen && typeof r.seen === 'object') for (const [id, at] of Object.entries(r.seen)) if (ids.has(id) && validTime(at)) seen[id] = at;
+  const history = Array.isArray(r.history) ? r.history.filter((e): e is LegendaryEncounter => !!e && typeof e.id === 'string' && validTime(e.at)).slice(-LEGENDARY_HISTORY_LIMIT) : [];
+  for (const entry of history) if (ids.has(entry.id) && !seen[entry.id]) seen[entry.id] = entry.at;
   return {
-    history: Array.isArray(r.history) ? r.history.filter((e): e is LegendaryEncounter => !!e && typeof e.id === 'string' && typeof e.at === 'string').slice(-HISTORY_MAX) : [],
-    attempts: typeof r.attempts === 'number' && r.attempts >= 0 ? Math.floor(r.attempts) : 0,
+    history, seen,
+    investigation: r.investigation && ids.has(r.investigation.id) && !seen[r.investigation.id] ? { id: r.investigation.id, step: r.investigation.step === 1 ? 1 : 0 } : null,
+    attempts: typeof r.attempts === 'number' && Number.isFinite(r.attempts) && r.attempts >= 0 ? Math.floor(r.attempts) : 0,
     lastRollDay: typeof r.lastRollDay === 'string' ? r.lastRollDay : '',
     active: r.active && typeof r.active === 'object' && typeof r.active.id === 'string' && ids.has(r.active.id) ? { id: r.active.id } : null,
   };
@@ -199,8 +219,8 @@ export function rollLegendary(s: LegendaryState, rng: Rng, day: string, now: str
     }
     roll -= l.weight;
   }
-  const history = [...s.history, { id: chosen.id, at: now }].slice(-HISTORY_MAX);
-  return { state: { ...base, history, active: { id: chosen.id } }, legendary: chosen };
+  const history = [...s.history, { id: chosen.id, at: now }].slice(-LEGENDARY_HISTORY_LIMIT);
+  return { state: { ...base, history, seen: { ...s.seen, [chosen.id]: s.seen[chosen.id] ?? now }, investigation: s.investigation?.id === chosen.id ? null : s.investigation, active: { id: chosen.id } }, legendary: chosen };
 }
 
 /** Fecha a cutscene ativa (o jogador já viu); o encontro já ficou registrado no histórico ao sortear. */
@@ -257,7 +277,7 @@ export function legendaryEffects(s: LegendaryState, nowMs: number, today: string
       out.growthFactor = SUICUNE_GROWTH_FACTOR;
       out.quietFactor = SUICUNE_QUIET_FACTOR;
     } else if (e.id === 'zapdos') {
-      if (nowMs - at < ZAPDOS_BOOST_HOURS * 3_600_000) out.coinMultiplier = ZAPDOS_COIN_MULTIPLIER;
+      if (nowMs - at < ZAPDOS_BOOST_HOURS * 3_600_000) out.coinMultiplier = Math.max(out.coinMultiplier, ZAPDOS_COIN_MULTIPLIER);
       if (sameDay) out.lampStorm = true;
     } else if (e.id === 'celebi' && sameDay) {
       out.animSpeed = CELEBI_ANIM_SPEED;
