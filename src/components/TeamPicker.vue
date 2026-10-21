@@ -6,11 +6,14 @@ import { resolveTeam, TEAM_SIZE, toggleMember } from '../app/team';
 import { savedTeam, setSavedTeam } from '../app/team-store';
 import type { CachedCard } from '../cache/types';
 import { isShiny } from '../core/shiny';
+import { digitalBoxRows } from '../app/digital-members';
+import type { DigitalBoxRow } from '../app/digital-members';
+import { loadVillage } from '../app/village-store';
 
-const emit = defineEmits<{ change: [ids: string[]] }>();
+const emit = defineEmits<{ change: [ids: string[]]; ready: [ids: string[]] }>();
 const props = withDefaults(defineProps<{ max?: number; hint?: string; groupLabel?: string }>(), { max: TEAM_SIZE, hint: undefined, groupLabel: 'Vila' });
 
-type Row = CachedCard & { thumb?: string };
+type Row = (CachedCard | DigitalBoxRow) & { thumb?: string };
 const rows = ref<Row[]>([]);
 const loading = ref(true);
 const search = ref('');
@@ -18,6 +21,7 @@ const onlySelected = ref(false);
 const notice = ref('');
 const loadError = ref('');
 const urls: string[] = [];
+let disposed = false;
 
 const usable = computed(() => rows.value.filter((row) => row.sprite.state === 'ok'));
 const team = computed(() => resolveTeam(savedTeam.value, rows.value, props.max));
@@ -45,11 +49,13 @@ onMounted(async () => {
   try {
     const cache = await getCache();
     const list = await cache.list();
+    if (disposed) return;
     const out: Row[] = [];
-    for (const card of list) {
+    for (const card of [...list, ...digitalBoxRows(loadVillage().digital)]) {
       const row: Row = { ...card };
-      if (card.reference.state === 'ok') {
+      if (!('digital' in card) && card.reference.state === 'ok') {
         const blob = await cache.getAssetBlob(card, 'reference').catch(() => null);
+        if (disposed) return;
         if (blob) {
           row.thumb = URL.createObjectURL(blob);
           urls.push(row.thumb);
@@ -58,13 +64,16 @@ onMounted(async () => {
       out.push(row);
     }
     rows.value = out;
+    emit('ready', team.value.ids);
   } catch (error) {
+    if (disposed) return;
     loadError.value = `Não consegui abrir as cartas guardadas: ${error instanceof Error ? error.message : String(error)}`;
+    emit('ready', []);
   } finally {
     loading.value = false;
   }
 });
-onBeforeUnmount(() => urls.splice(0).forEach((url) => URL.revokeObjectURL(url)));
+onBeforeUnmount(() => { disposed = true; urls.splice(0).forEach((url) => URL.revokeObjectURL(url)); });
 </script>
 
 <template>

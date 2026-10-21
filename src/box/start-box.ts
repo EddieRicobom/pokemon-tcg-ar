@@ -70,9 +70,13 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   const scene = new BoxScene();
   const sound = new SoundEngine();
   scene.setSound(sound);
-  const renderer = createWebglBackend(options.canvas);
+  const renderer = (() => {
+    try { return createWebglBackend(options.canvas); }
+    catch (error) { scene.dispose(); sound.dispose(); throw error; }
+  })();
   const orientation = new OrientationSource();
-  await orientation.requestPermission();
+  try { await orientation.requestPermission(); }
+  catch (error) { orientation.stop(); renderer.dispose(); scene.dispose(); sound.dispose(); throw error; }
   orientation.start(options.onModeChange);
 
   let phoneHeight = DEFAULT_PHONE_HEIGHT_M;
@@ -117,6 +121,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   const tick = (now: number) => {
     if (!running) return;
     handle = requestGameFrame(tick, maxVisualFps);
+    if (document.hidden) return;
     const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
     if (!isFrameDue(now, lastFrameAt, fps)) return;
     lastFrameAt = now;
@@ -136,6 +141,12 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     hudShown = scene.battling;
     renderer.render(scene.scene, scene.camera);
   };
+  const onVisibility = () => {
+    scene.resetClock();
+    lastFrameAt = 0;
+    sound.setPaused(document.hidden);
+  };
+  document.addEventListener('visibilitychange', onVisibility);
   handle = requestGameFrame(tick, maxVisualFps);
 
   return {
@@ -172,9 +183,11 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     },
     resize,
     stop() {
+      if (!running) return;
       running = false;
       cancelGameFrame(handle);
       observer.disconnect();
+      document.removeEventListener('visibilitychange', onVisibility);
       options.video.removeEventListener('loadedmetadata', resize);
       orientation.stop();
       sound.dispose();

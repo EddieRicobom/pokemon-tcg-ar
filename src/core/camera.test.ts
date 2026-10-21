@@ -42,6 +42,26 @@ describe('classifyCameraError', () => {
 });
 
 describe('startRearCamera', () => {
+  it('cancelar durante a permissão para as trilhas atrasadas sem tocar no vídeo de outra sessão', async () => {
+    const old = fakeStream(); const newer = fakeStream(); const video = fakeVideo();
+    const controller = new AbortController();
+    let resolve: ((stream: MediaStream) => void) | undefined;
+    const pending = startRearCamera(video, { isSecureContext: true, mediaDevices: { getUserMedia: () => new Promise<MediaStream>(done => { resolve = done; }) } }, controller.signal);
+    controller.abort(); video.srcObject = newer.stream; resolve!(old.stream);
+    await expect(pending).rejects.toBeInstanceOf(CameraError);
+    expect(old.stop).toHaveBeenCalledTimes(2);
+    expect(video.srcObject).toBe(newer.stream);
+    expect(newer.stop).not.toHaveBeenCalled();
+  });
+  it('abortar durante play libera a câmera imediatamente', async () => {
+    const old = fakeStream(); const controller = new AbortController();
+    let finish: (() => void) | undefined;
+    const video = fakeVideo(() => new Promise<void>(resolve => { finish = resolve; }));
+    const pending = startRearCamera(video, { isSecureContext: true, mediaDevices: { getUserMedia: async () => old.stream } }, controller.signal);
+    await Promise.resolve(); controller.abort();
+    expect(old.stop).toHaveBeenCalled(); expect(video.srcObject).toBeNull();
+    finish!(); await expect(pending).rejects.toBeInstanceOf(CameraError);
+  });
   it('falha com "insecure-context" fora de HTTPS e sem mediaDevices', async () => {
     const deps: CameraDeps = { isSecureContext: false, mediaDevices: undefined };
     await expect(startRearCamera(fakeVideo(), deps)).rejects.toMatchObject({

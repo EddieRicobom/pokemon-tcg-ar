@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { pendingChallenge } from '../app/league-store';
 import { routeHref } from '../app/route';
 import TeamPicker from '../components/TeamPicker.vue';
@@ -9,8 +9,12 @@ import type { EndlessArenaMode } from '../core/endless-arena';
 
 const MODES: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
 const waitingChallenge = computed(() => pendingChallenge.value !== null);
+const selectedCount = ref<number | null>(null);
+const teamReady = computed(() => selectedCount.value === 6);
+function updateTeam(ids: string[]): void { selectedCount.value = ids.length; }
 
 function enterEndless(mode: EndlessArenaMode): void {
+  if (!teamReady.value) return;
   // A câmera só pode abrir no toque seguinte; a Caixa recebe o modo e põe a batalha no botão principal.
   window.location.hash = routeHref('caixa', undefined, [mode]);
 }
@@ -23,7 +27,8 @@ function enterChallenge(): void {
 <template>
   <section class="card arena-view" aria-labelledby="arena-title">
     <h2 id="arena-title">Arena Digital</h2>
-    <p class="note">Aqui você prepara uma equipe e escolhe o desafio. A batalha acontece automaticamente na Caixa AR: abra a câmera, coloque a caixa no chão e toque no botão principal.</p>
+    <p class="note">Prepare a equipe, escolha o desafio e abra a Caixa AR. A batalha é automática; você acompanha e pode encerrar quando quiser.</p>
+    <ol class="arena-steps" aria-label="Etapas para batalhar"><li :class="{ done: teamReady }">{{ teamReady ? '✓' : '1' }} Equipe · {{ selectedCount ?? '…' }}/6</li><li>2 · Escolher desafio</li><li>3 · Abrir câmera e colocar a Caixa</li></ol>
 
     <div v-if="waitingChallenge" class="arena-ready" role="status">
       <strong>Desafio da Liga marcado</strong>
@@ -33,17 +38,18 @@ function enterChallenge(): void {
 
     <section class="arena-section" aria-labelledby="arena-team-title">
       <h3 id="arena-team-title">Equipe da Arena · 6 Pokémon</h3>
-      <TeamPicker :max="6" group-label="equipe de batalha" hint="Escolha os 6 Pokémon que lutam nos modos contínuos. Essa seleção também define quem mora na Vila e aparece na Caixa em AR." />
+      <TeamPicker :max="6" group-label="equipe de batalha" hint="Escolha os 6 Pokémon que lutam nos modos contínuos. Essa seleção também define quem mora na Vila e aparece na Caixa em AR." @ready="updateTeam" @change="updateTeam" />
     </section>
 
     <section class="arena-section" aria-labelledby="arena-continuous-title">
       <h3 id="arena-continuous-title">Modos contínuos</h3>
+      <p v-if="!teamReady" class="hint" role="status">{{ selectedCount === null ? 'Lendo a equipe…' : `Escolha 6 Pokémon acima para preparar uma corrida (atualmente ${selectedCount}/6).` }}</p>
       <p class="note">Os adversários usam espécies em estágio final, equipes completas e treinadores sorteados. A qualquer momento, use <strong>Desistir</strong> na Caixa para encerrar a corrida e guardar o placar da sessão.</p>
       <div class="arena-mode-grid">
         <article v-for="mode in MODES" :key="mode" class="arena-mode-card">
           <h4>{{ ENDLESS_ARENA_LABELS[mode].title }}</h4>
           <p>{{ ENDLESS_ARENA_LABELS[mode].tutorial }}</p>
-          <button type="button" class="primary" @click="enterEndless(mode)">Preparar {{ ENDLESS_ARENA_LABELS[mode].title }}</button>
+          <button type="button" class="primary" :disabled="!teamReady" @click="enterEndless(mode)">Preparar {{ ENDLESS_ARENA_LABELS[mode].title }}</button>
         </article>
       </div>
     </section>
@@ -69,6 +75,9 @@ function enterChallenge(): void {
 
 <style scoped>
 .arena-view { display: grid; gap: 1rem; }
+.arena-steps { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.arena-steps li { padding: .5rem .7rem; border: 1px solid var(--line); border-radius: .7rem; font-size: .85rem; }
+.arena-steps .done { border-color: #68bd91; color: #a7ebc3; }
 .arena-section { display: grid; gap: 0.7rem; }
 .arena-section > h3, .arena-mode-card h4 { margin: 0; }
 .arena-ready { display: grid; gap: 0.5rem; padding: 1rem; border: 1px solid var(--accent); border-radius: 0.85rem; background: rgba(242, 85, 75, 0.12); }

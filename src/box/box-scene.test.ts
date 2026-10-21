@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Vector3 } from 'three';
 import { BoxScene, MAX_CREATURES } from './box-scene';
 import type { CreatureEntry } from './box-scene';
@@ -27,6 +27,27 @@ function sceneLookingDown(): BoxScene {
 }
 
 describe('BoxScene', () => {
+  it('descarta o terreno completo, seus recursos e a população ao fechar', () => {
+    const scene = sceneLookingDown();
+    scene.place(new Vector3(0, -1.3, -4)); scene.setCreatures([entry(0)]);
+    const ground = scene.groundOfBox!;
+    const disposeGround = vi.spyOn(ground, 'dispose');
+    const creature = scene.creatureList[0]!;
+    const disposeCreature = vi.spyOn(creature, 'dispose');
+    scene.dispose();
+    expect(disposeGround).toHaveBeenCalledOnce();
+    expect(disposeCreature).toHaveBeenCalledOnce();
+    expect(scene.groundOfBox).toBeNull(); expect(scene.creatureList).toHaveLength(0); expect(scene.placed).toBe(false);
+  });
+  it('zerar o relógio impede salto de movimento depois de voltar da aba oculta', () => {
+    const scene = sceneLookingDown(); scene.place(new Vector3(0, -1.3, -4)); scene.setCreatures([entry(0)]);
+    scene.setSocial(false); scene.update(100); scene.update(116);
+    const creature = scene.creatureList[0]!;
+    const before = { x: creature.state.x, z: creature.state.z };
+    scene.resetClock(); scene.update(300_000);
+    expect(creature.state.x).toBe(before.x); expect(creature.state.z).toBe(before.z);
+    scene.dispose();
+  });
   it('começa sem caixa e escondida', () => {
     const scene = new BoxScene(seeded());
     expect(scene.placed).toBe(false);

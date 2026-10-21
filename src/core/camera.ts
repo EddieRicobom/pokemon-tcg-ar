@@ -99,8 +99,9 @@ function stopTracks(stream: MediaStream): void {
 export async function startRearCamera(
   video: VideoLike,
   deps: CameraDeps = browserCameraDeps(),
+  signal?: AbortSignal,
 ): Promise<MediaStream> {
-  return startCamera(video, 'environment', deps);
+  return startCamera(video, 'environment', deps, signal);
 }
 
 /** Abre uma câmera frontal ou traseira mantendo os ajustes compatíveis com o rastreador. */
@@ -108,7 +109,9 @@ export async function startCamera(
   video: VideoLike,
   facingMode: CameraFacingMode,
   deps: CameraDeps = browserCameraDeps(),
+  signal?: AbortSignal,
 ): Promise<MediaStream> {
+  if (signal?.aborted) throw new CameraError('in-use');
   if (!deps.mediaDevices?.getUserMedia) {
     throw new CameraError(deps.isSecureContext ? 'unsupported' : 'insecure-context');
   }
@@ -120,17 +123,25 @@ export async function startCamera(
     throw new CameraError(classifyCameraError(error));
   }
 
+  if (signal?.aborted) { stopTracks(stream); throw new CameraError('in-use'); }
+
   video.muted = true;
   video.playsInline = true;
   video.srcObject = stream;
+  const abort = () => { stopTracks(stream); if (video.srcObject === stream) video.srcObject = null; };
+  signal?.addEventListener('abort', abort, { once: true });
   try {
     await video.play();
+    if (signal?.aborted) throw new CameraError('in-use');
+    await tuneCameraForTracking(stream);
+    if (signal?.aborted) throw new CameraError('in-use');
   } catch (error) {
     stopTracks(stream);
-    video.srcObject = null;
-    throw new CameraError(classifyCameraError(error));
+    if (video.srcObject === stream) video.srcObject = null;
+    throw error instanceof CameraError ? error : new CameraError(classifyCameraError(error));
+  } finally {
+    signal?.removeEventListener('abort', abort);
   }
-  await tuneCameraForTracking(stream);
   return stream;
 }
 
