@@ -78,6 +78,8 @@ const fieldSpots = FIELDS.flatMap((field) => Array.from({ length: field.w * fiel
 /** Sessão ativa da Vila. Tarefas em andamento são descartadas ao sair, sem consumo nem produção offline. */
 export class FarmSession {
   readonly tasks: FarmTask[] = [];
+  /** Alterna postos quando ainda não temos aptidões carregadas do catálogo. */
+  private neutralWorkerRotation = 0;
   cancel(): void { this.tasks.length = 0; }
 
   tick(state: VillageState, map: VillageMap, workers: readonly FarmWorker[], now: number, rng: () => number, occupied: (x: number, y: number) => boolean): boolean {
@@ -139,7 +141,17 @@ export class FarmSession {
       const options = this.findTasks(state, map, worker, now, occupied, reachable);
       if (!options.length) continue;
       const progress = state.community.residents[worker.id] ??= normalizeResidentProgress(null);
-      const choice = chooseActivity({ available: [...options.map((task) => activityOf(task.kind)), 'descanso', 'brincadeira'], types: worker.types, interests: progress.interests, energy: progress.energy, socialOpportunity: 1, communityNeeds: options.map((task) => ({ activity: activityOf(task.kind), urgency: task.kind === 'harvest' ? 5 : task.kind === 'water' ? 4 : 2 })), recentActivity: progress.recentActivity ?? undefined }, rng);
+      const resourceOptions = options.filter((task) => task.kind === 'mine' || task.kind === 'lumber' || task.kind === 'fish');
+      // Os tipos chegam em segundo plano. Enquanto não chegam, a urgência de
+      // colheita acabava vencendo sempre e a vila parecia ter apenas fazenda.
+      // Nesse intervalo, os moradores sem aptidão conhecida rodam pelos três
+      // postos; assim o comportamento continua vivo sem inventar uma espécie.
+      const neutralResource = worker.types.length === 0 && progress.interests.length === 0 && resourceOptions.length > 0
+        ? resourceOptions[this.neutralWorkerRotation++ % resourceOptions.length]
+        : undefined;
+      const choice = neutralResource
+        ? { activity: activityOf(neutralResource.kind), score: 0, reason: 'curiosidade' as const }
+        : chooseActivity({ available: [...options.map((task) => activityOf(task.kind)), 'descanso', 'brincadeira'], types: worker.types, interests: progress.interests, energy: progress.energy, socialOpportunity: 1, communityNeeds: options.map((task) => ({ activity: activityOf(task.kind), urgency: task.kind === 'harvest' ? 5 : task.kind === 'water' ? 4 : 2 })), recentActivity: progress.recentActivity ?? undefined }, rng);
       const task = options.find((option) => activityOf(option.kind) === choice.activity);
       if (task) this.tasks.push(task);
       else if (choice.activity === 'descanso') progress.energy = Math.min(100, progress.energy + COMMUNITY_RULES.restEnergyGain);

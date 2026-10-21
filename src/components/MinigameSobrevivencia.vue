@@ -25,6 +25,8 @@ import {
   stepSurvivor,
   survivorCoins,
   survivorScore,
+  SURVIVOR_LOVE_CANDY_MS,
+  SURVIVOR_MEGA_SHARD_MS,
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption } from '../core/survivor';
 import { attackProfile, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
@@ -623,16 +625,25 @@ function draw(): void {
 
   for (const proj of s.hostileProjectiles) {
     ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = '#ff5b5b';
+    const tint = proj.effect === 'burn' ? '#ff7b42' : proj.effect === 'slow' ? '#7bdcff' : proj.effect === 'stun' ? '#e6b6ff' : '#ff5b5b';
+    ctx.globalAlpha = proj.grade === 'chefao' ? 0.5 : 0.35;
+    ctx.fillStyle = tint;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, proj.size * 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = '#fff0a8';
+    ctx.fillStyle = proj.effect ? tint : '#fff0a8';
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
     ctx.fill();
+    if (proj.effect && !effectiveVisual.value.rotomMode) {
+      ctx.globalAlpha = 0.65;
+      ctx.strokeStyle = tint;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(proj.x, proj.y, proj.size * (2.8 + Math.sin(animMs / 120) * 0.25), 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -781,6 +792,12 @@ function loop(ts: number): void {
     for (const ev of events) {
       if (ev.type === 'levelup') playSound('survivor-level');
       else if (ev.type === 'bossSpawn') playSound('survivor-boss');
+      else if (ev.type === 'milestone') {
+        playSound('success');
+        say(ev.id === 'ten-minutes'
+          ? '🎁 Marco de 10 minutos! Love Candy garantido ao concluir a corrida.'
+          : '💎 Marco de 20 minutos! Fragmento de Mega Stone garantido ao concluir a corrida.', 6000);
+      }
       if (ev.type === 'gameover') {
         playSound('survivor-gameover');
         objectives.value = survivorObjectives(s);
@@ -1301,7 +1318,9 @@ onBeforeUnmount(() => {
               {{ runCoins > 0 ? `🪙 +${runCoins} moedas` : 'Sem moedas desta vez: dure 20 segundos ou derrote alguém.' }}
               <small v-if="runClearBonus > 0"> (inclui o bônus de {{ runClearBonus }} por zerar, 1× por dia)</small>
             </p>
-            <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
+             <p v-if="summary.survivedMs >= SURVIVOR_LOVE_CANDY_MS" class="survivor-cleared" role="status">🍬 Love Candy conquistado por alcançar 10 minutos.</p>
+             <p v-if="summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS" class="survivor-cleared" role="status">💎 Fragmento de Mega Stone conquistado por alcançar 20 minutos.</p>
+             <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
             <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>
             <p v-if="summary.trainersBeaten > 0 || summary.bossesBeaten > 0" class="note">Treinadores derrotados: {{ summary.trainersBeaten }}{{ summary.bossesBeaten > 0 ? ` · chefões: ${summary.bossesBeaten}` : '' }}.</p>
             <p v-if="summary.stage > 0" class="note">Evoluiu {{ summary.stage === 1 ? 'uma vez' : `${summary.stage} vezes` }} nesta corrida (como {{ avatarName }}).</p>

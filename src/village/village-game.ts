@@ -44,8 +44,9 @@ import type { FarmTask, FarmWorker } from '../core/village/farm';
 import { stepFarmWorker } from '../core/village/farm';
 import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
+import { harmonizePlayerSprite } from './player-filter';
 import { groundPieces } from './ground-tiles';
-import { drawWorkAction } from './work-art';
+import { drawCommunityWorkAction, drawWorkAction } from './work-art';
 import { recolor, VillaAtlas, windowGlow } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintArcade, paintArena, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum, paintPins, paintTorre } from './town-art';
@@ -1751,6 +1752,10 @@ export class VillageGame {
           ctx.restore();
           const activeTask = this.farmTasks.get(id);
           if (activeTask?.workingSince != null && w.x === activeTask.stand.x && w.y === activeTask.stand.y && !moving(w)) drawWorkAction(ctx, activeTask, cx, base, sx(activeTask.x + .5), sy(activeTask.y + .65), scale, now, ambientFx);
+           const activeCommunity = this.communityWork.get(id);
+           if (!activeTask && activeCommunity && now < activeCommunity.until && !moving(w)) {
+             drawCommunityWorkAction(ctx, activeCommunity.activity, cx, base, sx(activeCommunity.target.x), sy(activeCommunity.target.y), scale, now, ambientFx);
+           }
           if (near(w) && !this.scene) {
             const hearts = Math.round(friendOf(this.state, id).points / 20);
             const working = this.communityWork.get(id);
@@ -1773,7 +1778,7 @@ export class VillageGame {
     const accDef = accP ? itemDef(accP) : undefined;
     const hatless = accDef?.pos === 'hat';
     const step = moving(this.player) ? this.player.steps + (this.player.t > 0.5 ? 1 : 0) : -1;
-    const pimg = this.trainerAtlas ? null : this.sprite(`p:${this.player.dir}:${step < 0 ? 's' : step % 2}:${this.trainerId}:${hatless}`, () => paintPlayer(this.player.dir, step, hatless ? { ...outfit, gear: 'none' } : outfit));
+    const pimg = this.trainerAtlas ? null : this.sprite(`p:${this.player.dir}:${step < 0 ? 's' : step % 2}:${this.trainerId}:${hatless}`, () => harmonizePlayerSprite(paintPlayer(this.player.dir, step, hatless ? { ...outfit, gear: 'none' } : outfit)));
     const trainerAvatar = this.trainerAvatar;
     list.push({
       y: pp.y + 1.01,

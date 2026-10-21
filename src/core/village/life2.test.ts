@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { seededRng } from '../battle';
 import { bookPage, dislikeOf, moodOf, opinionOf, personalityOf, UNLOCKS } from './book';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FOOD_IDS, FURNITURE_IDS, itemDef, ITEMS, LIGHT_IDS, SEED_IDS, shopToday } from './catalog';
-import { add, buy, cook, count, craft, cropAt, dailyHelp, emptyVillage, favoriteFoodOf, favoriteOf, fish, FISH_PER_DAY, friendOf, giveGift, harvestCrop, needsWater, normalizeVillage, place, plant, sell, tickCrops, water, wear } from './life';
+import { add, buy, cook, count, craft, cropAt, dailyHelp, emptyVillage, favoriteFoodOf, favoriteOf, fish, FISH_PER_DAY, friendLevel, friendOf, giveGift, harvestCrop, needsWater, normalizeVillage, place, plant, sell, tickCrops, water, wear } from './life';
 import { generateVillage, isSolidTile, tileAt } from './map';
 import { ACCESSORY_ART_IDS, FOOD_ART_IDS, FURNITURE_ART_IDS, MATERIAL_ART_IDS, paintCrop, paintFurnitureItem, paintItemIcon, TALL_ART_IDS } from '../../village/item-art';
 
@@ -316,5 +316,17 @@ describe('comida como presente', () => {
     expect(next.gained).toBeGreaterThanOrEqual(r1.gained - 4);
     expect(next.gained).toBeGreaterThanOrEqual(itemDef(fav)!.feeds! + 10);
     expect(giveGift(s, 'mon2', types, 'madeira', '2026-10-14').ok).toBe(false);
+  });
+});
+
+describe('Love Candy', () => {
+  it('avança um nível de amizade imediatamente e pode ser usado mesmo após o presente do dia', () => {
+    const s = emptyVillage(1, map.spawn);
+    add(s, 'love-candy');
+    friendOf(s, 'mon').points = 22;
+    const result = giveGift(s, 'mon', ['normal'], 'love-candy', '2026-10-14');
+    expect(result.ok).toBe(true);
+    expect(friendLevel(friendOf(s, 'mon').points).name).toBe('Amigo');
+    expect(count(s, 'love-candy')).toBe(0);
   });
 });

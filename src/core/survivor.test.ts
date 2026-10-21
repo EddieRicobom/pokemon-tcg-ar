@@ -501,6 +501,18 @@ describe('segundo golpe', () => {
     expect(s.player.hp).toBeGreaterThan(s.player.maxHp - 10);
   });
 
+  it('avisa os marcos de 10 e 20 minutos uma única vez por corrida', () => {
+    const s = quiet(createSurvivorState(8, { kindCount: 1 }));
+    const ten = stepSurvivor(s, { dx: 0, dy: 0 }, 600_000);
+    expect(ten).toContainEqual({ type: 'milestone', id: 'ten-minutes', reward: 'love-candy' });
+    expect(stepSurvivor(s, { dx: 0, dy: 0 }, 1)).not.toContainEqual(expect.objectContaining({ type: 'milestone' }));
+    const long = quiet(createSurvivorState(9, { kindCount: 1 }));
+    long.player.hp = 1_000_000;
+    long.player.maxHp = 1_000_000;
+    const twenty = stepSurvivor(long, { dx: 0, dy: 0 }, 1_200_000);
+    expect(twenty).toContainEqual({ type: 'milestone', id: 'twenty-minutes', reward: 'mega-stone-shard' });
+  });
+
   it('gelo congela por pouco tempo e inseto aplica apenas um eco de dano por impacto', () => {
     const ice = as('ice', 'projetil');
     const cold = quiet(createSurvivorState(3, { kindCount: 1, move: ice.move, profile: ice.profile }));
@@ -625,6 +637,9 @@ describe('treinadores e chefão final', () => {
     for (const e of ev1) if (e.type === 'trainerSpawn') timeline.push(`t:${e.count}:${e.final}`);
     expect(timeline).toContain('t:3:false');
     expect(s.enemies.filter((e) => e.grade === 'elite').length).toBe(3);
+    const elite = s.enemies.find((e) => e.grade === 'elite');
+    expect(elite?.maxHp).toBe(Math.round((BALANCE.enemyHpBase + Math.floor(300 / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + s.wave * BALANCE.enemyHpPerWave) * 5 * BALANCE.trainerStatMultiplier * s.infiniteScale));
+    expect(elite?.damage).toBe(Math.round((BALANCE.enemyDamageBase + Math.floor(300 / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep) * 2 * BALANCE.trainerStatMultiplier * s.infiniteScale));
     // Pula para quase 20 min.
     s.elapsedMs = 1_200_000 - 200;
     const ev2 = stepSurvivor(s, { dx: 0, dy: 0 }, 400);

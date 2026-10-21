@@ -150,6 +150,9 @@ export interface SurvivorHostileProjectile {
   damage: number;
   lifeMs: number;
   size: number;
+  /** Ataques de Pokémon de treinadores têm leitura visual própria. */
+  grade?: SurvivorEnemyGrade;
+  effect?: 'burn' | 'slow' | 'stun';
 }
 
 export interface SurvivorProjectile {
@@ -298,6 +301,10 @@ export function survivorScore(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 
 /** Uma corrida que só conta se você durou um pouco ou derrotou alguém (sair logo não vira fazenda de moedas). */
 export const SURVIVOR_MIN_MS = 20_000;
 
+/** Marcos de corrida que só viram itens quando a partida termina de verdade na Vila. */
+export const SURVIVOR_LOVE_CANDY_MS = 10 * 60_000;
+export const SURVIVOR_MEGA_SHARD_MS = 20 * 60_000;
+
 /** Prêmio por zerar a Torre (chefão final caído): só uma vez por dia (`today.clearedTorre`). */
 export const SURVIVOR_CLEAR_BONUS = 500;
 
@@ -313,6 +320,7 @@ export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 
 
 export type SurvivorEvent =
   | { type: 'levelup'; level: number }
+  | { type: 'milestone'; id: 'ten-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'mega-stone-shard' }
   | { type: 'bossSpawn' }
   /** Treinador apareceu: solta um grupo de `count` Pokémon elite (3 no normal, 6 no chefão final e no infinito). */
   | { type: 'trainerSpawn'; count: number; final: boolean }
@@ -381,6 +389,10 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
     apply: (p) => { p.attackRadius = round1(p.attackRadius * 1.2); },
   },
   { id: 'magnet', name: 'Ímã de XP', description: '+30% no alcance para coletar orbes de XP.', apply: (p) => { p.pickupRadius = round1(p.pickupRadius * 1.3); } },
+  { id: 'velocity', name: 'Velocidade de saída', description: '+18% na velocidade dos projéteis.', for: ['projetil'], maxLevels: 1, apply: (p) => { p.projectileSpeed = round1(p.projectileSpeed * 1.18); } },
+  { id: 'renewal', name: 'Renovação', description: '+15 de vida máxima e cura imediatamente.', maxLevels: 1, apply: (p) => { p.maxHp += 15; p.hp = p.maxHp; } },
+  { id: 'tempo', name: 'Passo cadenciado', description: '+8% de velocidade de movimento.', maxLevels: 1, apply: (p) => { p.speed = round1(p.speed * 1.08); } },
+  { id: 'resonance', name: 'Ressonância', description: '+10% de dano no golpe principal.', maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.1)); } },
 ] as const;
 
 /** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */
@@ -492,6 +504,8 @@ export const BALANCE = {
   /** Primeiro chefe e intervalo entre os seguintes (ms). */
   firstBossMs: 60_000,
   bossEveryMs: 90_000,
+  /** Treinadores entram mais fortes sem alterar a curva dos inimigos comuns. */
+  trainerStatMultiplier: 1.3,
 } as const;
 
 /** Limites de segurança para comportamentos especiais; são limites do motor, não atributos oficiais. */
@@ -669,8 +683,9 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   const baseHp = BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave;
   const baseDmg = BALANCE.enemyDamageBase + Math.floor(t / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep;
   // Treinadores (elite) têm +5× HP e +2× dano; o chefão (do time dos 6) ainda mais pesado.
-  const hpMul = grade === 'chefao' ? 7 : grade === 'elite' ? 5 : 1;
-  const dmgMul = grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1;
+  const trainerMul = grade === 'comum' ? 1 : BALANCE.trainerStatMultiplier;
+  const hpMul = (grade === 'chefao' ? 7 : grade === 'elite' ? 5 : 1) * trainerMul;
+  const dmgMul = (grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1) * trainerMul;
   const speed = (grade === 'comum'
     ? BALANCE.enemySpeedBase + state.rng() * BALANCE.enemySpeedRandom
     : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
@@ -1113,9 +1128,11 @@ function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, targ
   const dy = target.y - enemy.y;
   const distance = Math.hypot(dx, dy) || 1;
   const speed = BALANCE.hostileProjectileSpeed;
+  const effect = enemy.grade === 'comum' ? undefined : (enemy.kind % 3 === 0 ? 'burn' : enemy.kind % 3 === 1 ? 'slow' : 'stun');
   state.hostileProjectiles.push({
     id: state.nextId++, x: enemy.x, y: enemy.y, vx: (dx / distance) * speed, vy: (dy / distance) * speed,
-    damage: Math.max(1, Math.round(enemy.damage * 0.7)), lifeMs: 2600, size: 6,
+    damage: Math.max(1, Math.round(enemy.damage * 0.7)), lifeMs: 2600, size: enemy.grade === 'chefao' ? 8 : enemy.grade === 'elite' ? 7 : 6,
+    grade: enemy.grade, ...(effect ? { effect } : {}),
   });
 }
 
@@ -1195,7 +1212,14 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (!Number.isFinite(dtMs) || dtMs <= 0) return events;
   if (advanceSpecialEncounter(state, dtMs)) return events;
   const dt = dtMs / 1000;
+  const previousElapsedMs = state.elapsedMs;
   state.elapsedMs += dtMs;
+  if (previousElapsedMs < SURVIVOR_LOVE_CANDY_MS && state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS) {
+    events.push({ type: 'milestone', id: 'ten-minutes', reward: 'love-candy' });
+  }
+  if (previousElapsedMs < SURVIVOR_MEGA_SHARD_MS && state.elapsedMs >= SURVIVOR_MEGA_SHARD_MS) {
+    events.push({ type: 'milestone', id: 'twenty-minutes', reward: 'mega-stone-shard' });
+  }
   if (advanceSpecialEncounter(state, 0)) return events;
   const p = state.player;
   stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS);
