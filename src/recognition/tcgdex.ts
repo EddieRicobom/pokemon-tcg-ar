@@ -50,6 +50,8 @@ export interface TcgdexOptions {
   backoffMs?: number;
   /** Prazo por tentativa, incluindo leitura do corpo da resposta. */
   timeoutMs?: number;
+  /** Evita repetir imediatamente uma consulta que acabou de falhar (0 desliga o cooldown). */
+  failureCooldownMs?: number;
 }
 
 export type ImageQuality = 'low' | 'high';
@@ -92,8 +94,10 @@ export class TcgdexClient {
   private readonly retries: number;
   private readonly backoffMs: number;
   private readonly timeoutMs: number;
+  private readonly failureCooldownMs: number;
   private readonly memory = new Map<string, Promise<TcgdexCard | null>>();
   private readonly searchMemory = new Map<string, Promise<TcgdexBrief[]>>();
+  private readonly failedCards = new Map<string, { error: Error; until: number }>();
 
   constructor(options: TcgdexOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
@@ -102,14 +106,25 @@ export class TcgdexClient {
     this.retries = options.retries ?? 2;
     this.backoffMs = options.backoffMs ?? 400;
     this.timeoutMs = options.timeoutMs ?? 15_000;
+    this.failureCooldownMs = Math.max(0, options.failureCooldownMs ?? 2_500);
   }
 
   /** Carta completa (com `dexId`), ou null se o id não existe. Repetições na mesma sessão não refazem a requisição. */
   getCard(id: string): Promise<TcgdexCard | null> {
+    const failed = this.failedCards.get(id);
+    if (failed) {
+      if (failed.until > Date.now()) return Promise.reject(failed.error);
+      this.failedCards.delete(id);
+    }
     let pending = this.memory.get(id);
     if (!pending) {
       pending = this.fetchJson<TcgdexCard>(`${this.baseUrl}/${this.language}/cards/${encodeURIComponent(id)}`);
-      pending.catch(() => this.memory.delete(id));
+      pending.then(() => this.failedCards.delete(id), (error: unknown) => {
+        this.memory.delete(id);
+        if (this.failureCooldownMs > 0 && error instanceof Error) {
+          this.failedCards.set(id, { error, until: Date.now() + this.failureCooldownMs });
+        }
+      });
       this.memory.set(id, pending);
     }
     return pending;

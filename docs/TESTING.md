@@ -35,6 +35,12 @@ O job **"Tipos, testes e build"** é o que vale como porta de entrada para o mer
 
 O WebGL real não roda no happy-dom: a lógica é mantida pura e testada; a cola com o navegador (desenho, câmera, sensores) fica fora dos testes unitários. Trechos de shader são conferidos como texto (que o patch injeta o que deve), não compilados.
 
+### Carregamento inicial do scan
+
+O Service Worker pré-cacheia somente o shell e os chunks usados pela tela inicial. Os chunks de Vila, Arena, Pins, Caixa e demais telas entram no cache `app-assets-v1` com CacheFirst quando são visitados. Em um build com `BASE_PATH=/pokemon-tcg-ar/`, a lista gerada tinha 22 entradas (incluindo duplicatas de ícones/manifests geridas pelo Workbox), contra mais de 70 requisições observadas na primeira abertura da versão anterior. A comparação foi feita em navegador limpo; bytes e tempo variam conforme o cache, compressão e rede.
+
+O OCR e o catálogo continuam sob demanda. O OCR do primeiro uso medido na versão publicada baixou aproximadamente 4,5 MB; a otimização evita que esse download concorra com chunks de modos que ainda não foram abertos. `getPipeline()` compartilha a inicialização em andamento, e falhas finais do TCGdex têm cooldown curto antes de nova tentativa; a confirmação visual e a quantidade de candidatas não foram reduzidas.
+
 Os trabalhos ativos têm cobertura em `worksites.test.ts`: concorrência com a fazenda, escolha do píer, trajeto real antes da produção, coleta manual concorrente, estoque cheio e preservação do histórico. `following.test.ts` cobre velocidade do companheiro, restauração ao encerrar e chegada aos oito destinos guiados. `layout.test.ts` e os testes de postos conferem acessos em várias sementes, incluindo o mapa usado pelo app. `atlas-file.test.ts` reconstrói o atlas sem navegador e compara os pixels com o PNG versionado no build. Essas verificações fazem parte do `npm test`; capturas do canvas e navegação no navegador são validações adicionais, sem medir GPU ou toque de celular real.
 
 ## Outras verificações (não fazem parte de `npm test`)
