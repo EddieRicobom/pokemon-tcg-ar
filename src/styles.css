@@ -6064,7 +6064,8 @@ body.no-scroll .reward-toasts {
 
 .survivor-hud {
   position: absolute;
-  inset: calc(8px + env(safe-area-inset-top)) 8px auto 8px;
+  /* Reserva a coluna direita para mapa e ações, sem cobrir os indicadores de combate. */
+  inset: calc(8px + env(safe-area-inset-top)) 144px auto 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -6139,7 +6140,7 @@ body.no-scroll .reward-toasts {
 .survivor-action-dock {
   position: absolute;
   right: calc(10px + env(safe-area-inset-right));
-  top: calc(10px + env(safe-area-inset-top));
+  top: calc(98px + env(safe-area-inset-top));
   z-index: 5;
   display: flex;
   flex-direction: column;
@@ -6163,7 +6164,7 @@ body.no-scroll .reward-toasts {
   position: absolute;
   z-index: 2;
   right: 10px;
-  top: calc(66px + env(safe-area-inset-top));
+  top: calc(8px + env(safe-area-inset-top));
   width: 126px;
   height: 82px;
   border: 1px solid rgba(255, 255, 255, 0.42);
@@ -6195,8 +6196,8 @@ body.no-scroll .reward-toasts {
 
 .survivor-special-button {
   position: absolute;
-  right: 18px;
-  bottom: calc(100px + env(safe-area-inset-bottom));
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(16px + env(safe-area-inset-bottom));
   z-index: 4;
   width: 88px;
   height: 88px;
@@ -6221,7 +6222,8 @@ body.no-scroll .reward-toasts {
 .survivor-special-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
 @media (orientation: landscape) and (max-height: 540px) {
   .survivor-minimap { top: calc(8px + env(safe-area-inset-top)); right: 10px; width: 112px; height: 72px; }
-  .survivor-special-button { right: calc(18px + env(safe-area-inset-right)); bottom: calc(72px + env(safe-area-inset-bottom)); width: 78px; height: 78px; }
+  .survivor-action-dock { top: calc(88px + env(safe-area-inset-top)); }
+  .survivor-special-button { right: calc(14px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); width: 78px; height: 78px; }
   .survivor-hud { right: 136px; }
 }
 .survivor-guardian { z-index: 9; background: #080d19cc; }
@@ -7044,8 +7046,10 @@ body.no-scroll .reward-toasts {
 
 /* Controles e painéis da Vila em retrato e paisagem. */
 @media (max-width: 480px) {
-  .village-control-cluster { gap: 8px; }
-  .village-pad .ab { gap: 8px; }
+  /* O lado esquerdo fica livre para andar; as três ações ficam sob o polegar direito. */
+  .village-pad { position: absolute; z-index: 8; inset: 0; display: block; padding: 0; background: transparent; pointer-events: none; }
+  .village-control-cluster { position: absolute; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); left: auto; width: auto; gap: 8px; pointer-events: none; }
+  .village-pad .ab { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; margin: 0; pointer-events: auto; }
   .village-pad .ab button { width: 58px; height: 58px; padding: 4px; border-radius: 17px; }
   .menu-control-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 58px; height: 58px; padding: 3px; border: 2px solid #a58b43; border-radius: 17px; background: linear-gradient(180deg, #63552e, #38311e); color: #fff0a6; font-size: 1.15rem; font-weight: 800; }
   .menu-control-btn small { font-size: .58rem; line-height: 1; }
