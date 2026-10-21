@@ -158,3 +158,7 @@ Trabalhe em uma branch `Codex/...`, faça commits pequenos em português e abra 
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md): estado por etapa e pendências;
 - [CHANGELOG.md](CHANGELOG.md): histórico de versões;
 - [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): créditos e licenças de assets.
+
+### Backup em nuvem (Google Drive)
+
+Em **Treinador → Seus dados**, o backup local continua disponível. A integração opcional com Google Drive envia cópias completas por data e permite baixar, validar e confirmar a restauração em outro aparelho. Não sincroniza nem substitui saves automaticamente. Requer configurar o Client ID do Google no deploy; sem isso, a interface informa a indisponibilidade. Veja [configuração e limites](docs/BACKUP_NUVEM.md).

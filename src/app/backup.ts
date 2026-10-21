@@ -205,7 +205,12 @@ export function serializeBackupZip(file: BackupFile): Uint8Array {
 export function parseBackupZip(bytes: Uint8Array): BackupFile | BackupParseError {
   try {
     if (bytes.byteLength > MAX_BACKUP_BYTES) return 'backup-invalido';
-    const files = unzipSync(bytes);
+    let declaredBytes = 0;
+    const files = unzipSync(bytes, { filter: (entry) => {
+      declaredBytes += entry.originalSize;
+      if (declaredBytes > MAX_BACKUP_BYTES) throw new Error('backup grande demais');
+      return true;
+    } });
     const unpackedBytes = Object.values(files).reduce((sum, file) => sum + file.byteLength, 0);
     if (unpackedBytes > MAX_BACKUP_BYTES || Object.keys(files).length > 10000) return 'backup-invalido';
     const manifest = files['backup.json'];
@@ -213,6 +218,17 @@ export function parseBackupZip(bytes: Uint8Array): BackupFile | BackupParseError
     const parsed = parseBackup(new TextDecoder().decode(manifest));
     if (typeof parsed === 'string') return parsed;
     if (!parsed.archive) return parsed;
+    if (!Array.isArray(parsed.archive.files)) return 'backup-invalido';
+    const declared = new Map<string, BackupArchive['files'][number]>();
+    const required = new Map([['collection/cards.json', 'cards'], ['collection/records.json', 'records'], ['collection/meta.json', 'meta']]);
+    for (const entry of parsed.archive.files) {
+      if (!entry || typeof entry.path !== 'string' || declared.has(entry.path) || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || typeof entry.hash !== 'string') return 'backup-invalido';
+      if (entry.kind === 'asset' ? !/^collection\/assets\/\d+\.bin$/.test(entry.path) : required.get(entry.path) !== entry.kind) return 'backup-invalido';
+      declared.set(entry.path, entry);
+    }
+    // Todos os JSONs lidos precisam estar cobertos pela verificação de integridade.
+    for (const path of required.keys()) if (!declared.has(path)) return 'backup-invalido';
+    for (const path of Object.keys(files)) if (path !== 'backup.json' && !declared.has(path)) return 'backup-invalido';
     const readJson = (path: string): unknown => { const f = files[path]; if (!f) throw new Error('arquivo ausente'); return JSON.parse(new TextDecoder().decode(f)); };
     const cards = readJson('collection/cards.json') as CachedCard[];
     const records = readJson('collection/records.json') as AssetRecord[];

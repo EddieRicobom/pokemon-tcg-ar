@@ -70,3 +70,9 @@ O registro de corridas concluídas da Torre, sua idempotência/migração, marco
 ## Roteiro manual
 
 O procedimento de referência está em [TESTE_NO_CELULAR.md](TESTE_NO_CELULAR.md). Relatos em aparelho físico e resultados automatizados são evidências complementares; nenhum deles deve ser apresentado como medição do outro.
+
+## Backup e nuvem
+
+`backup-safety.test.ts` verifica exportação completa com IndexedDB e Cache Storage, exportação repetida, ZIP truncado, conteúdo alterado/ausente/omitido do manifesto e recuperação após falhas de cache ou localStorage. `drive-backup.test.ts`, `drive-login.test.ts` e `CloudBackup.test.ts` usam respostas simuladas para verificar escopo privado, autorização/cancelamento, erros de rede, cópias independentes, tamanho confirmado, token fora do armazenamento e confirmação antes de restaurar. Não validam uma conta Google real. Configuração e limites em [BACKUP_NUVEM.md](BACKUP_NUVEM.md).
+
+A regressão da interface é coberta por `TreinadorBackup.test.ts`: o arquivo validado usa `shallowRef`, pois proxies reativos não podem ser clonados pelo IndexedDB. `e2e/backup-roundtrip.mjs` faz exportação e importação pela interface em um perfil descartável, em retrato e paisagem, preservando um arquivo de 1 MB e exigindo confirmação. Rode com Vite dev server em `http://127.0.0.1:4192/pokemon-tcg-ar/` e `node e2e/backup-roundtrip.mjs`; `BACKUP_TEST_URL` e `BROWSER_EXECUTABLE` permitem ajustar o ambiente. O script não usa contas Google reais.
