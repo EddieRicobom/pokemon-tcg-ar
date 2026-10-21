@@ -106,6 +106,18 @@ describe('momentos: catálogo de modelos', () => {
     expect(TEMPLATES.some((t) => t.choice)).toBe(true);
   });
 
+  it('tem cenas engraçadas para os novos trabalhos da Vila', () => {
+    for (const id of ['bos-turno-da-picareta', 'bos-madeira-com-medida', 'lago-isca-improvisada', 'lago-balde-vazio']) {
+      const tpl = TEMPLATE_BY_ID.get(id);
+      expect(tpl, id).toBeDefined();
+      expect(tpl!.lines({
+        n: ['Ana', 'Beto'], p: ['Brincalhão', 'Curioso'], types: [['normal'], ['water']], rel: undefined, rel02: undefined, rel12: undefined,
+        env: { player: 'Treinador', hour: 14, day: '2026-10-21', weather: null, placed: new Set(), crops: 0, ripeCrops: 0, town: 5, lingo: [] },
+        seen: new Set(), rng: seededRng(7), memo: {}, pts: () => 0, has: () => false, rolling: false, ids: ['a', 'b'], date: { y: 2026, m: 10, d: 21, dow: 3 },
+      }).length).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it('o sorteio de verdade chega à grande maioria dos modelos de um dia comum', () => {
     const got = new Set<string>();
     let n = 0;
