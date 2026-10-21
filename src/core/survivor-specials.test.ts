@@ -52,13 +52,13 @@ describe('orbe e especiais da Torre', () => {
     expect(state.player.hp).toBe(90);
   });
 
-  it('dash usa a última direção, não sai da arena e respeita a recarga de 7 segundos', () => {
+  it('dash usa a última direção, não sai da arena e respeita a recarga de 6,5 segundos', () => {
     const state = armed('dash');
     stepSurvivor(state, { dx: 0, dy: -1 }, 1);
     const fromY = state.player.y;
     stepSurvivor(state, { ...idle, special: true }, 16);
-    for (let i = 0; i < 14; i++) stepSurvivor(state, idle, 16);
-    expect(fromY - state.player.y).toBeCloseTo(820 * 0.24);
+    for (let i = 0; i < 18; i++) stepSurvivor(state, idle, 16);
+    expect(fromY - state.player.y).toBeCloseTo(800 * 0.3);
     expect(state.special.activeMs).toBe(0);
     const from = { x: state.player.x, y: state.player.y };
     stepSurvivor(state, { ...idle, special: true }, 1);

@@ -330,6 +330,18 @@ describe('golpes por tipo', () => {
     expect(all.find((p) => p.id === 'power')?.description).toBe('Folhas cortantes: +20% de dano, até 60.');
   });
 
+  it('oferece especializações só para o tipo principal e não repete as já escolhidas', () => {
+    const ghost = as('ghost', 'projetil').move;
+    const state = quiet(createSurvivorState(9, { kindCount: 1, move: ghost, profile: attackProfile(ghost, null) }));
+    const ids = new Set(Array.from({ length: 12 }, (_, seed) => rollUpgrades(seededRng(seed + 30), 12, ghost, state.player).map((pick) => pick.id)).flat());
+    expect(ids.has('ghost-haunt')).toBe(true);
+    expect(ids.has('bug-formation')).toBe(false);
+    state.pendingUpgrade = [{ id: 'ghost-haunt', name: '', description: '' }];
+    applyUpgrade(state, 'ghost-haunt');
+    const later = Array.from({ length: 12 }, (_, seed) => rollUpgrades(seededRng(seed + 50), 12, ghost, state.player).map((pick) => pick.id)).flat();
+    expect(later).not.toContain('ghost-haunt');
+  });
+
   it('limita o acúmulo dos upgrades ofensivos sem enfraquecer stats iniciais mais altos', () => {
     const s = quiet(createSurvivorState(1, { kindCount: 1 }));
     for (let i = 0; i < 30; i++) {
@@ -444,22 +456,67 @@ describe('efeitos defensivos de golpes próximos', () => {
 });
 
 describe('segundo golpe', () => {
-  it('aparece como opção especial, tem identidade própria e recarga separada', () => {
-    const s = quiet(createSurvivorState(1, { kindCount: 1 }));
+  it('chama um apoio real, que mantém o próprio perfil e ataca a partir do jogador', () => {
+    const supportMove = as('dark', 'projetil').move;
+    const supportProfile = attackProfile(supportMove, null);
+    const s = quiet(createSurvivorState(1, { kindCount: 1, supportCandidate: { dexId: 197, name: 'Umbreon', move: supportMove, profile: supportProfile } }));
     s.player.level = 5;
     s.player.xp = s.player.xpToNext;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     const card = s.pendingUpgrade?.find((option) => option.id === 'second-attack');
     expect(card).toBeTruthy();
     const events = applyUpgrade(s, 'second-attack');
-    expect(events).toEqual([{ type: 'secondAttack', name: expect.stringContaining('secundário') }]);
+    expect(events).toEqual([{ type: 'secondAttack', name: 'Umbreon' }]);
     expect(s.player.secondMove).toBeTruthy();
-    expect(s.player.secondAttackCooldownMs).toBeGreaterThan(0);
+    expect(s.support?.name).toBe('Umbreon');
+    const frozenDamage = s.support!.profile.damage;
+    s.pendingUpgrade = [{ id: 'power', name: '', description: '' }];
+    applyUpgrade(s, 'power');
+    expect(s.support!.profile.damage).toBe(frozenDamage);
     s.player.attackCooldownMs = 1e9;
-    s.player.secondAttackCooldownMs = 1;
+    s.support!.attackTimerMs = 0;
+    s.support!.x = 1;
+    s.support!.y = 1;
     s.enemies.push(dummy(10, s.player.x + 60, s.player.y, 1000));
+    const origin = { x: s.player.x, y: s.player.y };
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.projectiles.some((projectile) => projectile.move?.name === s.player.secondMove?.name)).toBe(true);
+    const projectile = s.projectiles.find((item) => item.source === 'support');
+    expect(projectile?.x).toBeGreaterThan(origin.x - 1);
+    expect(projectile?.x).toBeLessThan(origin.x + 10);
+    expect(projectile?.y).toBeCloseTo(origin.y, 0);
+  });
+
+  it('atribui o roubo de vida ao golpe do apoio, não ao golpe principal', () => {
+    const supportMove = as('dark', 'aura').move;
+    const s = quiet(createSurvivorState(2, { kindCount: 1, supportCandidate: { dexId: 197, name: 'Umbreon', move: supportMove, profile: attackProfile(supportMove, null) } }));
+    s.player.level = 6;
+    s.pendingUpgrade = [{ id: 'second-attack', name: '', description: '' }];
+    applyUpgrade(s, 'second-attack');
+    s.player.hp = s.player.maxHp - 10;
+    s.player.attackTimerMs = 1e9;
+    s.support!.attackTimerMs = 0;
+    s.enemies.push(dummy(10, s.player.x + 20, s.player.y, 1000));
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.hp).toBeGreaterThan(s.player.maxHp - 10);
+  });
+
+  it('gelo congela por pouco tempo e inseto aplica apenas um eco de dano por impacto', () => {
+    const ice = as('ice', 'projetil');
+    const cold = quiet(createSurvivorState(3, { kindCount: 1, move: ice.move, profile: ice.profile }));
+    const frozen = dummy(1, cold.player.x + 20, cold.player.y, 1000);
+    cold.enemies.push(frozen);
+    for (let i = 0; i < 3; i++) { cold.player.attackTimerMs = 0; stepSurvivor(cold, { dx: 0, dy: 0 }, 16); }
+    expect(frozen.frostImmuneMs).toBeGreaterThan(0);
+    expect(frozen.stunMs).toBeGreaterThan(0);
+
+    const bug = as('bug', 'projetil');
+    const swarm = quiet(createSurvivorState(4, { kindCount: 1, move: bug.move, profile: bug.profile }));
+    const target = dummy(2, swarm.player.x + 20, swarm.player.y, 1000);
+    swarm.enemies.push(target);
+    stepSurvivor(swarm, { dx: 0, dy: 0 }, 16);
+    expect(target.hp).toBeLessThan(1000 - swarm.player.attackDamage);
+    expect(swarm.fx.some((fx) => fx.kind === 'echo')).toBe(true);
   });
 });
 

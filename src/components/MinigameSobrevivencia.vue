@@ -22,7 +22,7 @@ import {
   survivorCoins,
   survivorScore,
 } from '../core/survivor';
-import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorUpgradeOption } from '../core/survivor';
+import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption } from '../core/survivor';
 import { attackProfile, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
 import { typesOfDex } from '../core/species-filter';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
@@ -371,6 +371,7 @@ function playSound(cue: UiSound): void {
 let ctx: CanvasRenderingContext2D | null = null;
 let groundPattern: CanvasPattern | null = null;
 let playerSprite: Sprite | null = null;
+let supportSprite: Sprite | null = null;
 const enemySprites = new Map<number, Sprite | null>();
 const missingEnemySprites = ref(0);
 let rafId = 0;
@@ -382,6 +383,7 @@ let disposed = false;
 let lastTs = 0;
 let animMs = 0;
 let lastMinimapMs = -Infinity;
+let announcedRegion = '';
 const heldKeys = new Set<string>();
 /** Joystick flutuante: aparece onde o dedo encostou na tela da Torre (`lx`, `ly`, relativos à tela). */
 const joystick = reactive({ active: false, pointerId: null as number | null, cx: 0, cy: 0, dx: 0, dy: 0, lx: 0, ly: 0 });
@@ -564,7 +566,6 @@ function draw(): void {
     ctx.fillStyle = move.color;
     ctx.beginPath();
     ctx.arc(s.player.x, s.player.y - 8, s.player.attackRadius, 0, Math.PI * 2);
-    if (move.category === 'orbit') ctx.arc(s.player.x, s.player.y - 8, s.player.attackRadius * 0.48, 0, Math.PI * 2, true);
     ctx.fill();
     ctx.globalAlpha = 0.45;
     ctx.strokeStyle = move.color;
@@ -576,6 +577,13 @@ function draw(): void {
 
   for (const e of s.enemies) drawEnemy(e);
 
+  // O apoio é puramente visual: o motor mantém sua posição separada e seus golpes continuam surgindo no jogador.
+  if (s.support) {
+    ctx.save();
+    ctx.globalAlpha = effectiveVisual.value.rotomMode ? 0.72 : 0.84;
+    drawSprite(supportSprite, s.support.x, s.support.y, s.player.facing < 0, 0.82);
+    ctx.restore();
+  }
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
   if (!blink) drawSprite(playerSprite, s.player.x, s.player.y, s.player.facing < 0, 1);
   drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
@@ -583,12 +591,12 @@ function draw(): void {
   for (const proj of s.projectiles) {
     const r = proj.size ?? 4;
     ctx.save();
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = proj.source === 'support' ? 0.22 : 0.35;
     ctx.fillStyle = proj.move?.color ?? move.color;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, r * 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = proj.source === 'support' ? 0.72 : 1;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, r, 0, Math.PI * 2);
     ctx.fill();
@@ -634,6 +642,14 @@ function draw(): void {
       ctx.globalAlpha = 0.8 * (1 - t);
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
+      ctx.stroke();
+    } else if (f.kind === 'echo') {
+      ctx.globalAlpha = 0.35 * (1 - t);
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r * (0.55 + t * 0.8), 0, Math.PI * 2);
       ctx.stroke();
     } else {
       for (let k = 0; k < 3; k++) {
@@ -687,6 +703,11 @@ function loop(ts: number): void {
     const previousSpecialPhase = s.special.phase;
     const events = stepSurvivor(s, { dx, dy, special: specialQueued }, dt);
     specialQueued = false;
+    const region = survivorRegionLabel(s.elapsedMs);
+    if (region !== announcedRegion) {
+      announcedRegion = region;
+      if (s.elapsedMs > 0) say(`Região: ${region}`, 2200);
+    }
     if (previousSpecialPhase === 'locked' && s.special.phase === 'arrival') {
       heldKeys.clear(); joyUp(); playSound('survivor-level');
     }
@@ -821,20 +842,22 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica'): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidate: SurvivorSupportCandidate | null = null): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
     avatarName.value = name;
     evolving.value = null;
     await Promise.all([loadSpriteSpecies(), loadLandscapeAtlas()]);
-    const [player] = await Promise.all([
+    const [player, support] = await Promise.all([
       loadSpriteOrNull(dexId),
+      supportCandidate ? loadSpriteOrNull(supportCandidate.dexId) : Promise.resolve(null),
       ...REGIONAL_ENEMY_SPRITES.map(async (id) => {
         if (!enemySprites.get(id)) enemySprites.set(id, await loadSpriteOrNull(id));
       }),
     ]);
     playerSprite = player;
+    supportSprite = support;
     missingEnemySprites.value = REGIONAL_ENEMY_SPRITES.filter((id) => !enemySprites.get(id)).length;
 
     if (disposed) return;
@@ -856,7 +879,8 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, dexId, evolutions: evolutionsFor, infinite, preparation });
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidate: supportCandidate ?? undefined, dexId, evolutions: evolutionsFor, infinite, preparation });
+    announcedRegion = survivorRegionLabel(0);
     guardianSprite.value = null;
     specialQueued = false;
     const runState = state.value;
@@ -876,7 +900,15 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
 function choosePlayer(opt: PickOption, picked?: PokemonType): void {
   unlockSound();
   runParticipant = { id: opt.id, name: opt.name };
-  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value);
+  const support = pickOptions.value?.find((candidate) => candidate.id !== opt.id);
+  const supportAttack = support ? attackOf(support.dexId) : null;
+  const supportCandidate = support && supportAttack ? {
+    dexId: support.dexId,
+    name: support.name,
+    move: supportAttack.move,
+    profile: supportAttack.profile,
+  } satisfies SurvivorSupportCandidate : null;
+  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidate);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
@@ -1009,12 +1041,11 @@ onBeforeUnmount(() => {
           </div>
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
-             <span v-if="state.player.secondMove" class="chip survivor-move-chip second" :style="{ '--move': state.player.secondMove.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.secondMove.effect]">{{ moveLine(state.player.secondMove) }}</span>
+              <span v-if="state.support" class="chip survivor-move-chip second" :style="{ '--move': state.support.move.color }" :title="`${state.support.name}: ${MOVE_EFFECT_LABELS_PT[state.support.move.effect]}. Ataca da sua posição e não recebe upgrades.`">🤝 {{ state.support.name }} · {{ moveLine(state.support.move) }}</span>
             <span class="chip survivor-xp" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">✨ {{ state.player.xp }}/{{ state.player.xpToNext }} XP <small v-if="hudExpanded">· faltam {{ Math.max(0, state.player.xpToNext - state.player.xp) }}</small></span>
             <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
             <span class="chip">☠ {{ state.kills }}</span>
             <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
-            <span v-if="hudExpanded" class="chip">{{ survivorRegionLabel(state.elapsedMs) }}</span>
              <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
              <button v-if="!summary && !pendingUpgrade && !evolving && state.special.phase !== 'arrival' && state.special.phase !== 'choice'" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
@@ -1139,7 +1170,7 @@ onBeforeUnmount(() => {
           :style="{ '--special-color': state.player.move.color, '--charge': chosenSpecial ? `${(1 - state.special.cooldownMs / chosenSpecial.cooldownMs) * 100}%` : '0%' }"
           :disabled="specialBlocked || !chosenSpecial || state.special.cooldownMs > 0"
           :aria-label="chosenSpecial ? `${chosenSpecial.name}: ${state.special.cooldownMs > 0 ? `recarregando, ${Math.ceil(state.special.cooldownMs / 1000)} segundos` : 'pronto; tecla E'}` : 'Especial bloqueado: sobreviva por 3 minutos'"
-          @pointerdown.stop @pointerup.stop @click.stop="queueSpecial">
+          @pointerdown.stop.prevent="queueSpecial">
           <span class="special-icon" aria-hidden="true">{{ chosenSpecial?.icon ?? '🔒' }}</span>
           <strong>{{ !chosenSpecial ? '3:00' : state.special.activeMs > 0 ? 'ATIVO' : state.special.cooldownMs > 0 ? `${Math.ceil(state.special.cooldownMs / 1000)}s` : 'PRONTO' }}</strong>
           <small>{{ state.player.move.icon }} Especial</small>
