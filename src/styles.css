@@ -4839,6 +4839,15 @@ body.no-scroll .reward-toasts {
   touch-action: pan-y;
 }
 
+.village-dialog-kicker {
+  display: block;
+  margin-bottom: 3px;
+  color: #6b7594;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .16em;
+}
+
 .village-choices {
   display: flex;
   flex-wrap: wrap;
@@ -5052,11 +5061,43 @@ body.no-scroll .reward-toasts {
   top: calc(58px + env(safe-area-inset-top));
   right: 8px;
   z-index: 2;
-  padding: 3px;
+  width: max-content;
+  padding: 6px;
   border-radius: 8px;
   background: rgba(10, 14, 24, 0.7);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
+
+.village-minimap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 2px 4px;
+  color: #fff;
+  font-size: .72rem;
+  line-height: 1;
+}
+
+.village-minimap-head .link {
+  padding: 0;
+  color: #bfe5ff;
+  font-size: .7rem;
+}
+
+.village-minimap-callout,
+.village-minimap-route {
+  overflow: hidden;
+  margin: 0 2px 4px;
+  color: #fff;
+  font-size: .68rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.village-minimap-callout { color: #ffd4eb; }
+.village-minimap-route { color: #bfeeff; }
 
 .village-minimap canvas {
   display: block;
@@ -5073,7 +5114,9 @@ body.no-scroll .reward-toasts {
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 5;
+  width: auto;
   padding: 8px;
+  box-shadow: 0 0 0 100vmax rgba(7, 10, 18, .72), 0 16px 44px rgba(0, 0, 0, .5);
 }
 
 .village-minimap.big canvas {
@@ -5106,6 +5149,16 @@ body.no-scroll .reward-toasts {
 
 .village-minimap-legend .mm-mon {
   background: #ffd84a;
+}
+
+.village-minimap-legend .mm-speaker {
+  background: #ff6fbe;
+}
+
+.village-minimap-legend .mm-place {
+  border-radius: 2px;
+  background: transparent;
+  border-color: #bfe5ff;
 }
 
 .village-minimap-legend .link {
@@ -6972,6 +7025,7 @@ body.no-scroll .reward-toasts {
 .village-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; }
 .village-shortcuts button { padding: 8px 10px; border-radius: 12px; font: inherit; font-size: .8rem; }
 .village-toast { top: auto; bottom: 16px; z-index: 15; width: max-content; pointer-events: auto; }
+.recap-next { margin: 16px 0 0; padding: 10px 12px; border-left: 3px solid #e3c68d; border-radius: 8px; background: rgb(255 240 214 / .08); color: #ffe9c5; }
 @media (max-width: 480px) { .village-top > .village-menu-btn { display: none; } .village-move-hint { display: none; } .village-shortcuts { max-width: 58%; } }
 
 /* Barra da Vila: estado e navegação compartilham o mesmo painel; o Menu segue visível no celular. */

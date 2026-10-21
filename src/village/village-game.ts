@@ -908,6 +908,14 @@ export class VillageGame {
     return this.scene !== null;
   }
 
+  /** Morador cuja fala está visível agora, para HUDs auxiliares como o minimapa. */
+  get sceneSpeakerId(): string | null {
+    const scene = this.scene;
+    if (!scene || scene.cast.length === 0) return null;
+    const line = scene.idx >= 0 ? scene.lines[scene.idx] : undefined;
+    return scene.cast[line?.who ?? 0] ?? scene.cast[0] ?? null;
+  }
+
   sceneBusy(id: string): boolean {
     return !!this.scene && this.scene.cast.includes(id);
   }

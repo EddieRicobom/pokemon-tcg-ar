@@ -314,6 +314,10 @@ const visibleMenuGroups = computed(() => {
 const shopTab = ref<'comprar' | 'vender'>('comprar');
 const dressFor = ref<string>('player');
 const dialog = ref<{ id?: string; name: string; text: string; actions: { label: string; run: () => void; disabled?: boolean }[] } | null>(null);
+/** O morador em destaque no minimapa enquanto uma conversa ou momento está acontecendo. */
+const minimapSpeakerId = ref<string | null>(null);
+/** Texto curto para a rota atual, sem transformar o minimapa em outro menu. */
+const minimapRoute = ref('');
 let dialogFocusReturn: HTMLElement | null = null;
 let sheetFocusReturn: HTMLElement | null = null;
 let quizOpenFocusReturn: HTMLElement | null = null;
@@ -353,6 +357,8 @@ watch(tab, (next, previous) => {
   });
 });
 watch(dialog, (next, previous) => {
+  if (next?.id && mons.value.some((mon) => mon.id === next.id)) minimapSpeakerId.value = next.id;
+  else if (!next) minimapSpeakerId.value = null;
   if (next && !previous) dialogFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
   if (next && !previous) void nextTick(() => focusFirstVillageAction('.village-dialog'));
   if (!next && previous) {
@@ -797,10 +803,12 @@ function travelToLegendClue(): void {
   if (!place) return;
   closeVillageSheet();
   game?.walkTo(place.x, place.y);
+  minimapRoute.value = `Pista: ${place.name}`;
   say(`🔎 ${legendClueName.value}: siga até ${place.name} e use Investigar pista ou A.`, 6000);
 }
 function investigateLegendClue(): void {
   if (!game || sheet.value || dialog.value || legendaryScene.value || game.player.t < 1) return;
+  minimapRoute.value = '';
   const result = inspectLegendClue(state.legendary, game.player, new Date().toISOString());
   state.legendary = result.state;
   changed(); persist();
@@ -1386,6 +1394,7 @@ function recordSurvivalAdventure(summary: import('../core/survivor').SurvivorSum
 function finishGuidedTrip(): void {
   const trip = guidedTrip;
   guidedTrip = null;
+  minimapRoute.value = '';
   if (!trip) return;
   if (state.follower === trip.id) {
     state.follower = null;
@@ -1451,7 +1460,7 @@ function beginExpedition(monId: string, place: DiscoveryPlace): void {
 function checkGuidedTrip(): void {
   const trip = guidedTrip;
   if (!trip || !game || game.walking) return;
-  if (state.follower !== trip.id) { guidedTrip = null; return; }
+  if (state.follower !== trip.id) { guidedTrip = null; minimapRoute.value = ''; return; }
   if (guidedWalkArrived(game.player, game.villagers.get(trip.id), trip.destination)) finishGuidedTrip();
 }
 
@@ -1469,6 +1478,7 @@ function checkTapInteraction(): void {
 function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.seed + id.length + refreshDay().length) % GUIDED_DESTINATIONS.length]!): void {
   if (!game) return;
   guidedTrip = { id, destination };
+  minimapRoute.value = `Passeio: ${destination.place}`;
   state.follower = id;
   game.setWaiting(null);
   tapInteraction = null;
@@ -1801,7 +1811,15 @@ function announce(r: Resolved): void {
 
 function afterResolve(r: Resolved, ids: string[]): void {
   announce(r);
-  if (r.followUp.length > 0 && game) game.sayLines(ids, r.followUp, () => undefined);
+  if (r.followUp.length > 0 && game) {
+    const firstSpeaker = ids[r.followUp[0]?.who ?? 0];
+    minimapSpeakerId.value = firstSpeaker ?? null;
+    game.sayLines(ids, r.followUp, () => {
+      if (minimapSpeakerId.value === firstSpeaker) minimapSpeakerId.value = null;
+    });
+  } else {
+    minimapSpeakerId.value = null;
+  }
 }
 
 /** Sua decisão num momento (`null` = deixar pra lá). */
@@ -1822,6 +1840,7 @@ function finishScene(scene: Scene, ids: string[]): void {
   }
   pendingChoice = { scene, ids };
   dialog.value = {
+    id: ids[0],
     name: `${scene.tpl.emoji} ${scene.tpl.title}`,
     text: choice.prompt,
     actions: [
@@ -1845,7 +1864,11 @@ function tickScenes(): void {
   if (!scene) return;
   const ids = scene.cast.map((a) => a.id);
   activeScene = { scene, ids };
-  if (!game.playScene(ids, scene.lines, () => finishScene(scene, ids))) activeScene = null;
+  minimapSpeakerId.value = ids[0] ?? null;
+  if (!game.playScene(ids, scene.lines, () => finishScene(scene, ids))) {
+    activeScene = null;
+    minimapSpeakerId.value = null;
+  }
 }
 
 /** Enquanto você esteve fora, a vida seguiu: o Diário ganha os momentos que aconteceram. */
@@ -1875,6 +1898,7 @@ function settleScenes(): void {
     dialog.value = null;
     resolveScene(state, choice.scene, null, Date.now());
   } else if (playing) resolveScene(state, playing.scene, null, Date.now());
+  minimapSpeakerId.value = null;
   if (choice || playing) game?.abortScene();
 }
 
@@ -1891,6 +1915,7 @@ function persist(): boolean {
 function onLeave(): void {
   cancelFarm();
   guidedTrip = null;
+  minimapRoute.value = '';
   settleScenes();
   state.lastSeen = Date.now();
   persist();
@@ -2147,13 +2172,15 @@ function ringBell(): void {
   say(r.coming.length > 0 ? `🔔 Dlim-dlom! Vindo para a praça: ${names(r.coming)}.${sleep}` : `🔔 Dlim-dlom!${sleep}`, 4200);
 }
 
-// ---- Minimapa: a Vila inteira num canto (você, os Pokémon e o sino); tocar aumenta, e no grande um toque leva até lá.
+// ---- Minimapa: a Vila inteira num canto, com lugares, rota e quem está falando; tocar aumenta, e no grande um toque leva até lá.
 const miniEl = ref<HTMLCanvasElement | null>(null);
 const miniBig = ref(false);
 let miniBase: HTMLCanvasElement | null = null;
 let miniTimer: ReturnType<typeof setInterval> | null = null;
 /** Pixels por bloco no minimapa (o grande é o mesmo desenho, só que maior na tela). */
 const MINI_K = 3;
+const minimapSpeakerName = computed(() => minimapSpeakerId.value ? nameOf(minimapSpeakerId.value) : '');
+const minimapRouteLabel = computed(() => minimapRoute.value || (legendCluePlace.value ? `Pista: ${legendCluePlace.value.name}` : ''));
 
 function buildMiniBase(): void {
   const c = document.createElement('canvas');
@@ -2182,6 +2209,22 @@ function drawMini(): void {
     ctx.lineWidth = 1;
     ctx.stroke();
   };
+  const square = (x: number, y: number, w: number, h: number, color: string) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x * MINI_K + 0.5, y * MINI_K + 0.5, Math.max(1, w * MINI_K - 1), Math.max(1, h * MINI_K - 1));
+  };
+  // Contornos dos lugares principais: a base continua sendo a leitura do terreno, e estes contornos ajudam a reconhecer
+  // um prédio mesmo quando o minimapa está reduzido no celular.
+  const placeColors: Partial<Record<string, string>> = { arcade: '#ffb347', pins: '#e78cff', arena: '#ff6d7a', torre: '#bd9cff', museum: '#71d7ff', cafe: '#ffc66d', mail: '#f5f0db' };
+  for (const building of map.buildings) {
+    if (building.kind === 'home') continue;
+    square(building.x, building.y, building.w, building.h, placeColors[building.kind] ?? '#ffffff');
+  }
+  for (const site of WORK_SITES) {
+    const color = site.id === 'farm' ? '#93d35b' : site.id === 'mine' ? '#b6b7c7' : site.id === 'lumber' ? '#d8a15d' : '#66bff2';
+    square(site.visit.x - 1, site.visit.y - 1, 3, 3, color);
+  }
   const bell = map.decor.find((d) => d.kind === 'bell');
   if (bell) {
     ctx.font = `${MINI_K * 4}px ${'system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif'}`;
@@ -2208,6 +2251,39 @@ function drawMini(): void {
     ctx.fillText('📌', (point.x + 0.5) * MINI_K, (point.y - 1) * MINI_K);
   }
   for (const [id, w] of game.villagers) if (!game.isAsleep(id)) dot(w.x, w.y, '#ffd84a', MINI_K * 0.9);
+  const follower = state.follower ? game.villagers.get(state.follower) : undefined;
+  if (follower && !game.isAsleep(state.follower!)) {
+    ctx.strokeStyle = '#7de7ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc((follower.x + 0.5) * MINI_K, (follower.y + 0.5) * MINI_K, MINI_K * 1.8, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  const route = guidedTrip?.destination;
+  if (route) {
+    dot(route.x, route.y, '#7de7ff', MINI_K * 1.25);
+    ctx.strokeStyle = '#0b3344';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(route.x * MINI_K, route.y * MINI_K, MINI_K, MINI_K);
+  }
+  // Durante um momento, acompanhe a fala atual (e não só o primeiro personagem do elenco).
+  if (game.sceneSpeakerId) minimapSpeakerId.value = game.sceneSpeakerId;
+  const speaker = minimapSpeakerId.value ? game.villagers.get(minimapSpeakerId.value) : undefined;
+  if (speaker && !game.isAsleep(minimapSpeakerId.value!)) {
+    const cx = (speaker.x + 0.5) * MINI_K;
+    const cy = (speaker.y + 0.5) * MINI_K;
+    ctx.fillStyle = '#ff6fbe';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - MINI_K * 2.4);
+    ctx.lineTo(cx + MINI_K * 1.1, cy - MINI_K * 1.2);
+    ctx.lineTo(cx, cy);
+    ctx.lineTo(cx - MINI_K * 1.1, cy - MINI_K * 1.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
   dot(game.player.x, game.player.y, '#ff4a4a', MINI_K * 1.3);
 }
 
@@ -2230,6 +2306,12 @@ function miniTap(e: MouseEvent): void {
   game.walkTo(t.x, t.y);
   miniBig.value = false;
   say('🧭 Indo até lá…', 1500);
+}
+
+function miniKeydown(e: KeyboardEvent): void {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  miniBig.value = !miniBig.value;
 }
 
 function openFriendDialog(id: string, text: string): void {
@@ -2547,17 +2629,24 @@ onBeforeUnmount(() => {
       ></canvas>
       <canvas ref="arCanvasEl" class="village-ar-canvas" :class="{ active: arActive }" aria-hidden="true"></canvas>
       <div v-show="!loading && !welcome && sheet !== 'torre'" class="village-minimap" :class="{ big: miniBig }">
+        <div class="village-minimap-head">
+          <strong>Mapa da Vila</strong>
+          <button type="button" class="link" :aria-label="miniBig ? 'Fechar mapa grande' : 'Abrir mapa grande'" @click.stop="miniBig = !miniBig">{{ miniBig ? 'Fechar' : 'Abrir' }}</button>
+        </div>
+        <p v-if="minimapSpeakerName" class="village-minimap-callout"><span aria-hidden="true">💬</span> <strong>{{ minimapSpeakerName }}</strong> está falando</p>
+        <p v-if="minimapRouteLabel" class="village-minimap-route"><span aria-hidden="true">🧭</span> {{ minimapRouteLabel }}</p>
         <canvas
           ref="miniEl"
           :width="map.w * MINI_K"
           :height="map.h * MINI_K"
           :aria-label="miniBig ? 'Mapa da Vila: toque num lugar para ir até lá' : 'Minimapa da Vila: toque para aumentar'"
           role="button"
+          tabindex="0"
           @click="miniTap"
+          @keydown="miniKeydown"
         ></canvas>
         <p v-if="miniBig" class="village-minimap-legend">
-          <span><i class="mm-you"></i> você</span><span><i class="mm-mon"></i> Pokémon</span><span>🔔 sino (chama todos)</span>
-          <button type="button" class="link" @click.stop="miniBig = false">Fechar</button>
+          <span><i class="mm-you"></i> você</span><span><i class="mm-mon"></i> Pokémon</span><span><i class="mm-speaker"></i> falando</span><span><i class="mm-place"></i> lugar</span><span>🔔 sino (chama todos)</span>
         </p>
       </div>
       <div v-if="joy.active && joy.moved" class="village-joy floating" :style="{ left: `${joy.lx}px`, top: `${joy.ly}px` }" aria-hidden="true">
@@ -2598,6 +2687,7 @@ onBeforeUnmount(() => {
           <h2>{{ recapScene.title }}</h2>
           <p v-if="recapScene.cast.length" class="hint">Em cena: {{ recapScene.cast.join(' e ') }}</p>
           <p class="recap-script">{{ recapScene.text }}</p>
+          <p class="recap-next"><strong>Próximo passo:</strong> {{ recapIndex + 1 < recapScenes.length ? 'toque em “Próxima cena” para continuar esta história.' : 'toque em “Entrar na Vila” para explorar e conversar.' }}</p>
           <p v-if="!state.digital.starterGiven" class="recap-first-run">Depois desta abertura, você recebe um companheiro digital para começar a explorar a Vila, mesmo sem carta física.</p>
           <div class="village-choices">
             <button type="button" @click="finishRecap">Pular abertura</button>
@@ -2636,6 +2726,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-else-if="dialog && !bookDialogId" class="speech in-stage village-dialog" role="dialog" :aria-label="dialog.name">
         <div class="speech-box">
+          <small class="village-dialog-kicker">{{ dialog.id ? 'CONVERSA' : 'VILA' }}</small>
           <strong>{{ dialog.name }}</strong>
           <p>{{ dialog.text }}</p>
           <div v-if="giftPick" class="village-choices icons">
