@@ -1771,7 +1771,6 @@ function announce(r: Resolved): void {
   changed();
   if (r.firstTime) {
     trainerEvent('moment');
-    earnCoins(8);
   }
   // Momentos ambientes ficam no Diário e na abertura diária, sem interromper o passeio.
 }

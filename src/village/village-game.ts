@@ -45,6 +45,7 @@ import { stepFarmWorker } from '../core/village/farm';
 import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
 import { harmonizePlayerCanvas, harmonizePlayerSprite } from './player-filter';
+import { wrapSpeech } from './speech-layout';
 import { groundPieces } from './ground-tiles';
 import { drawCommunityWorkAction, drawWorkAction } from './work-art';
 import { recolor, VillaAtlas, windowGlow } from './tileset-art';
@@ -2127,22 +2128,8 @@ export class VillageGame {
     const shown = s.text.slice(0, Math.max(1, Math.floor((now - s.start) / 22)));
     const maxW = Math.min(canvas.width - 24, 90 * scale);
     // A caixa se dimensiona pelo texto inteiro (não pula enquanto escreve).
-    const wrap = (text: string): string[] => {
-      const words = text.split(' ');
-      const lines: string[] = [];
-      let cur = '';
-      for (const w of words) {
-        const t = cur ? `${cur} ${w}` : w;
-        if (ctx.measureText(t).width > maxW - 14 * scale && cur) {
-          lines.push(cur);
-          cur = w;
-        } else cur = t;
-      }
-      if (cur) lines.push(cur);
-      return lines;
-    };
-    const full = wrap(s.text);
-    const lines = wrap(shown);
+    const full = wrapSpeech(s.text, maxW - 14 * scale, (text) => ctx.measureText(text).width);
+    const lines = wrapSpeech(shown, maxW - 14 * scale, (text) => ctx.measureText(text).width);
     const boxW = Math.min(maxW, Math.max(...full.map((l) => ctx.measureText(l).width), ctx.measureText(s.name).width) + 14 * scale);
     const lh = fs * 1.3;
     const boxH = lh * (full.length + 1) + 10 * scale;
@@ -2151,13 +2138,20 @@ export class VillageGame {
     // Não passa por baixo da barra do topo (≈ 56 px de tela).
     const topBar = Math.round(58 * (canvas.width / Math.max(1, canvas.clientWidth || canvas.width)));
     const y = Math.max(topBar, top - boxH - 7 * scale);
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#1a1a24';
-    ctx.lineWidth = Math.max(2, scale * 0.7);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.38)';
+    ctx.shadowBlur = 4 * scale;
+    ctx.shadowOffsetY = 2 * scale;
+    ctx.fillStyle = 'rgba(10, 18, 34, 0.96)';
+    ctx.strokeStyle = s.tint;
+    ctx.lineWidth = Math.max(2, scale * 0.9);
     ctx.beginPath();
     ctx.roundRect(x, y, boxW, boxH, 5 * scale);
     ctx.fill();
     ctx.stroke();
+    ctx.shadowColor = 'transparent';
+    ctx.fillStyle = s.tint;
+    ctx.fillRect(x + 2 * scale, y + 2 * scale, boxW - 4 * scale, lh + 3 * scale);
     // Rabinho do balão, apontando para quem fala.
     const tx = Math.max(x + 6 * scale, Math.min(x + boxW - 6 * scale, cx));
     ctx.beginPath();
@@ -2165,17 +2159,18 @@ export class VillageGame {
     ctx.lineTo(tx, y + boxH + 4 * scale);
     ctx.lineTo(tx + 3 * scale, y + boxH - 1);
     ctx.closePath();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = 'rgba(10, 18, 34, 0.96)';
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = 'rgba(10, 18, 34, 0.96)';
     ctx.fillRect(tx - 3 * scale + 1, y + boxH - 2, 6 * scale - 2, 3);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = s.tint;
+    ctx.fillStyle = '#ffffff';
     ctx.fillText(s.name, x + 7 * scale, y + 5 * scale);
-    ctx.fillStyle = '#1a1a24';
-    lines.forEach((l, i) => ctx.fillText(l, x + 7 * scale, y + 5 * scale + lh * (i + 1)));
+    ctx.fillStyle = '#f4f7ff';
+    lines.forEach((l, i) => ctx.fillText(l, x + 7 * scale, y + 8 * scale + lh * (i + 1)));
+    ctx.restore();
   }
 }
 
