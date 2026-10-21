@@ -434,6 +434,7 @@ function mountSprites(): void {
     const token = document.createElement('div');
     token.className = 'pin-token';
     token.style.borderColor = TEAM_COLORS[pin.side];
+    token.style.setProperty('--pin-edge', TEAM_COLORS[pin.side]);
     const img = document.createElement('img');
     img.src = thumbs.value[pin.id] ?? '';
     img.alt = '';
