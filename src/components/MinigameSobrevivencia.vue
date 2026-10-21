@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import MusicControls from './MusicControls.vue';
+import { MusicPlayer } from '../app/music-player';
+import { survivorAudio } from '../app/survivor-audio-settings';
+import { survivorMusicMix, survivorMusicTitle } from '../core/survivor-music';
 import { assetUrl, getCache, getDigitalSprite, getLocalVillageSprite } from '../app/services';
 import villageAtlasUrl from '../village/vila-atlas.png?url';
 import { fetchSprite } from '../ar/sprite-source';
@@ -356,9 +360,18 @@ function evolutionsFor(dexId: number): SurvivorEvolutionOption[] {
     });
 }
 const sound = new SoundEngine();
+const musicUnavailable = ref(false);
+const music = new MusicPlayer(path => `${import.meta.env.BASE_URL}${path}`, () => { musicUnavailable.value = true; });
+function syncMusic(): void {
+  const s = state.value;
+  music.update(survivorMusicMix(s?.elapsedMs ?? 0), !!s && ready.value && !s.over && !paused.value && !leaveConfirm.value && !pendingUpgrade.value && !evolving.value && !document.hidden, survivorAudio.enabled ? survivorAudio.volume / 100 : 0);
+}
+watch([() => survivorAudio.enabled, () => survivorAudio.volume, ready, paused, leaveConfirm, pendingUpgrade, evolving, summary], syncMusic);
+function unlockMusic(): void { musicUnavailable.value = false; syncMusic(); music.unlock(); }
 type UiSound = Extract<SoundCue, { kind: 'ui' }>['cue'];
 
 function unlockSound(): void {
+  unlockMusic();
   sound.setEnabled(visual.sound);
   sound.unlock();
 }
@@ -381,6 +394,7 @@ let rafId = 0;
  */
 let disposed = false;
 let lastTs = 0;
+let lastMusicSync = -Infinity;
 let animMs = 0;
 let lastMinimapMs = -Infinity;
 let announcedRegion = '';
@@ -682,6 +696,7 @@ function loop(ts: number): void {
   rafId = requestGameFrame(loop, maxVisualFps);
   const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
   if (!isFrameDue(ts, lastTs, fps)) return;
+  if (ts - lastMusicSync > 100) { lastMusicSync = ts; syncMusic(); }
   const dt = Math.min(60, ts - lastTs || 16);
   lastTs = ts;
   if (document.hidden || !state.value) return;
@@ -932,6 +947,7 @@ watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) infiniteWanted.valu
 
 /** Abre a tela de escolha de novo (3 novos sorteados) antes de cada corrida, inclusive ao "Jogar de novo". */
 async function openPicker(): Promise<void> {
+  music.reset();
   ready.value = false;
   pickBusy.value = true;
   pickOptions.value = null;
@@ -990,6 +1006,8 @@ onMounted(() => {
 });
 /** Saiu do app (outra aba, tela apagada): ninguém fica andando sozinho com uma tecla "presa" ao voltar. */
 function onVisibility(): void {
+  sound.setPaused(document.hidden);
+  syncMusic();
   if (document.hidden) {
     heldKeys.clear();
     joystick.active = false;
@@ -1013,6 +1031,7 @@ onBeforeUnmount(() => {
   resizer = null;
   heldKeys.clear();
   sound.dispose();
+  music.dispose();
 });
 </script>
 
@@ -1085,6 +1104,7 @@ onBeforeUnmount(() => {
         <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
             <h2>Jogo pausado</h2>
+            <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :track="survivorMusicTitle(state?.elapsedMs ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
             <button type="button" class="primary" @pointerdown.stop @click.stop="togglePause">▶ Retomar</button>
           </div>
@@ -1104,6 +1124,7 @@ onBeforeUnmount(() => {
           </div>
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
+            <details><summary>Música da Torre</summary><MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :unavailable="musicUnavailable" regional @unlock="unlockMusic" /><p class="hint">As nove regiões têm temas próprios: cinco arranjos GBA e quatro temas com tratamento sonoro retrô. A troca acompanha a transição do cenário.</p></details>
             <p class="note" role="status">{{ nextTowerGoal }}</p>
             <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
             <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>

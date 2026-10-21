@@ -59,10 +59,15 @@ export default defineConfig({
         // O OCR (≈ 6,7 MB no primeiro uso), o índice do catálogo e os sprites locais da Vila (≈ 100 MB, 966
         // espécies) não entram no pré-cache da instalação: são guardados só quando usados (cache em tempo de
         // execução), senão a instalação do PWA baixaria tudo isso de uma vez.
-        globIgnores: ['ocr/**', 'data/**', 'sprites/**', 'art/trainers/**'],
+        globIgnores: ['ocr/**', 'data/**', 'sprites/**', 'art/trainers/**', 'audio/**'],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
         runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith(`${base}audio/`),
+            handler: 'CacheFirst',
+            options: { cacheName: 'music-v1', rangeRequests: true, cacheableResponse: { statuses: [200] }, expiration: { maxEntries: 24, maxAgeSeconds: 60 * 60 * 24 * 90 } },
+          },
           {
             // Chunks com hash são imutáveis: guarda o primeiro uso sem revalidar cada navegação.
             // Isso permite tirar Vila/Arena/Pins do pré-cache sem perder o offline depois da primeira visita.

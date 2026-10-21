@@ -4,7 +4,7 @@ import { SoundEngine } from './sound';
 /** WebAudio de mentira: só conta o que foi criado e iniciado. */
 function installFakeAudio(state: 'running' | 'suspended' = 'running') {
   const log = { oscillators: 0, noises: 0, started: 0, resumed: 0, closed: 0 };
-  const param = () => ({ value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
+  const param = () => ({ value: 0, setValueAtTime: vi.fn(), setTargetAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
   const node = () => ({ connect: vi.fn(), disconnect: vi.fn() });
   class FakeContext {
     state = state;
