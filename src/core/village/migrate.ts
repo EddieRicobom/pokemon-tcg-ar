@@ -41,7 +41,8 @@ function repairOccupiedTerrain(s: VillageState, map: VillageMap): boolean {
   }
   for (const crop of s.crops) {
     if (['grass', 'flower', 'field'].includes(tileAt(map, crop.x, crop.y))) continue;
-    const spot = findFree(map, FIELDS[0]!.x, FIELDS[0]!.y, (x, y) => !['grass', 'flower', 'field'].includes(tileAt(map, x, y)) || taken(x, y), () => 0);
+    const field = FIELDS.flatMap((area) => Array.from({ length: area.w * area.h }, (_, i) => ({ x: area.x + i % area.w, y: area.y + Math.floor(i / area.w) }))).find((point) => tileAt(map, point.x, point.y) === 'field' && !taken(point.x, point.y));
+    const spot = field ?? findFree(map, FIELDS[0]!.x, FIELDS[0]!.y, (x, y) => !['grass', 'flower', 'field'].includes(tileAt(map, x, y)) || taken(x, y), () => 0);
     Object.assign(crop, spot);
     changed = true;
   }

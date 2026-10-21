@@ -58,15 +58,16 @@ describe('a cidade no mapa', () => {
     }
   });
 
-  it('ancora cada prédio na borda inferior da calçada e deixa o bloco do pé sobre o chão', () => {
+  it('ancora todos os prédios ao norte da calçada e preserva o bloco inteiro diante da porta', () => {
     for (const b of map.buildings) {
       const baseY = buildingGroundY(b);
-      expect(baseY).toBe(b.door.y + 1);
+      expect(baseY).toBe(b.door.y);
+      expect(baseY).toBe(b.y + b.h);
       expect(['path', 'plaza']).toContain(tileAt(map, b.door.x, baseY));
     }
-    const shopBaseY = map.shop.y + map.shop.h + 1;
+    const shopBaseY = buildingGroundY(map.shop);
     expect(['path', 'plaza']).toContain(tileAt(map, map.shop.x + 1, shopBaseY));
-    expect(['path', 'plaza']).toContain(tileAt(map, map.plot.x + 2, map.plot.y + map.plot.h + 1));
+    expect(['path', 'plaza']).toContain(tileAt(map, map.plot.x + 2, buildingGroundY(map.plot)));
   });
 
   it('a loja, a casa do jogador, o lago e a praça seguem alcançáveis', () => {
