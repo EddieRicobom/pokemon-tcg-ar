@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useDialogFocus } from '../composables/useDialogFocus';
 import { isTap } from '../ar/gestures';
 import { fetchSprite, getCache, loadBattle, prepareMegaFor } from '../app/services';
 import { digitalCandidates } from '../app/digital-members';
@@ -67,6 +68,7 @@ import type { EndlessArenaMode, EndlessArenaRun } from '../core/endless-arena';
 type Phase = 'idle' | 'starting' | 'placing' | 'running';
 
 const videoEl = ref<HTMLVideoElement | null>(null);
+const openButton = ref<HTMLButtonElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
 const showFilters = ref(false);
@@ -74,6 +76,11 @@ const showTeam = ref(false);
 const showAdjust = ref(false);
 const showSummary = ref(false);
 const showModes = ref(false);
+const modesDialog = ref<HTMLElement | null>(null);
+const teamDialog = ref<HTMLElement | null>(null);
+const adjustDialog = ref<HTMLElement | null>(null);
+const summaryDialog = ref<HTMLElement | null>(null);
+useDialogFocus(modesDialog); useDialogFocus(teamDialog); useDialogFocus(adjustDialog); useDialogFocus(summaryDialog);
 /** Entramos em tela cheia só para a batalha (e saímos dela ao parar). */
 let fullscreenForBattle = false;
 const boxMode = ref<BoxMode>('passeio');
@@ -103,9 +110,6 @@ function toggleMega(id: string): void {
 function showMegaNotes(notes: { text: string; tone: 'ok' | 'warn' }[]): void {
   megaNotes.value = notes;
   if (megaNotesTimer) clearTimeout(megaNotesTimer);
-  clearInterval(weatherTimer);
-  clearInterval(heartTimer);
-  if (stageSpeechTimer) clearTimeout(stageSpeechTimer);
   megaNotesTimer = notes.length > 0 ? setTimeout(() => (megaNotes.value = []), 9000) : null;
 }
 const currentRoster = computed(() => rosterFor(rosterRows.value.map((r) => r.id)));
@@ -183,6 +187,9 @@ const battleSummary = ref<{ winner: string; turns: number; rounds: number; stats
 let stream: MediaStream | null = null;
 let box: RunningBox | null = null;
 let disposed = false;
+let sessionVersion = 0;
+let populationVersion = 0;
+let cameraOpening: AbortController | null = null;
 let tapDown: { x: number; y: number; at: number } | null = null;
 let lastDrag: { x: number; y: number } | null = null;
 let pickedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -237,6 +244,7 @@ function applyVillage(): void {
 }
 
 const heartTimer = setInterval(() => {
+  if (document.hidden) return;
   const current = box;
   if (!current || battleHud.value || phase.value !== 'running') return;
   const close = current.scene.creatureList.filter((c) => bondOf(c.info.id) >= 3 && !c.bubbleEmoji);
@@ -274,6 +282,7 @@ async function openBook(): Promise<void> {
       entries = [];
     }
   }
+  if (disposed || !bookOpen.value) return;
   bookList.value = entries.map((e) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), real: e.info.name }));
   for (const e of entries) {
     if (!bookThumbs.has(e.info.id)) {
@@ -291,7 +300,7 @@ async function openBook(): Promise<void> {
         }
       }
     }
-    if (!bookTypes.has(e.info.id)) void loadPinData(e.info.id, e.info.dexId).then((d) => d.profile && bookTypes.set(e.info.id, d.profile.types)).catch(() => undefined);
+    if (!bookTypes.has(e.info.id)) void loadPinData(e.info.id, e.info.dexId).then((d) => !disposed && d.profile && bookTypes.set(e.info.id, d.profile.types)).catch(() => undefined);
   }
 }
 
@@ -464,13 +473,16 @@ watch(
 );
 
 async function populate(): Promise<void> {
+  const current = box;
+  if (!current) return;
+  const version = ++populationVersion;
   loadingCreatures.value = true;
   try {
     const cache = await getCache();
     // Os moradores escolhidos (ou, sem escolha, os 6 mais recentes) vão para a caixa — Digital Pokémon inclusive.
     const loaded = await loadTeamCreatures(cache);
-    if (disposed || !box) return;
-    box.setCreatures(loaded.entries);
+    if (disposed || box !== current || version !== populationVersion) return;
+    current.setCreatures(loaded.entries);
     lastEntries = loaded.entries;
     applyVillage();
     void syncPvpTeam();
@@ -479,13 +491,18 @@ async function populate(): Promise<void> {
     rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), shiny: e.info.shiny === true, mega: e.info.mega === true }));
     megaPicks.value = megaPicks.value.filter((id) => rosterRows.value.some((r) => r.id === id && r.mega));
   } catch (e) {
+    if (disposed || box !== current || version !== populationVersion) return;
     error.value = `Não consegui ler as cartas guardadas: ${e instanceof Error ? e.message : String(e)}`;
   } finally {
-    loadingCreatures.value = false;
+    if (box === current && version === populationVersion) loadingCreatures.value = false;
   }
 }
 
 async function open(): Promise<void> {
+  if (disposed || phase.value !== 'idle') return;
+  const version = ++sessionVersion;
+  const opening = new AbortController();
+  cameraOpening = opening;
   // iOS: a permissão dos sensores precisa ser pedida direto do toque, antes de qualquer espera.
   void requestOrientationPermission();
   const video = videoEl.value;
@@ -495,18 +512,28 @@ async function open(): Promise<void> {
   phase.value = 'starting';
   error.value = '';
   try {
-    stream = await startRearCamera(video);
+    const openedStream = await startRearCamera(video, undefined, opening.signal);
+    if (disposed || version !== sessionVersion) {
+      stopCamera(video.srcObject === openedStream ? video : null, openedStream);
+      return;
+    }
+    stream = openedStream;
   } catch (e) {
+    if (disposed || version !== sessionVersion) return;
     phase.value = 'idle';
     error.value = e instanceof CameraError ? e.message : 'Não foi possível abrir a câmera.';
     return;
   }
   try {
     const { startBox } = await loadChunk(() => import('../box/start-box'));
-    box = await startBox({
+    if (disposed || version !== sessionVersion) return;
+    const openedBox = await startBox({
       video, canvas, container: stage, onModeChange: (m) => (mode.value = m), onBattleHud: (hud) => (battleHud.value = hud),
     });
+    if (disposed || version !== sessionVersion) { openedBox.stop(); return; }
+    box = openedBox;
   } catch (e) {
+    if (disposed || version !== sessionVersion) return;
     close();
     error.value = `Não consegui iniciar a Caixa: ${e instanceof Error ? e.message : String(e)}`;
     return;
@@ -532,10 +559,18 @@ async function open(): Promise<void> {
 }
 
 function close(): void {
+  cameraOpening?.abort(); cameraOpening = null;
+  sessionVersion++;
+  populationVersion++;
+  loadingCreatures.value = false;
   clearEndlessTimer();
   endlessRun.value = null;
   endlessEntries = [];
   endlessFighters = [];
+  lastEntries = [];
+  battleFighters.value = [];
+  rosterRows.value = [];
+  population.value = { shown: 0, available: 0, failed: 0 };
   battleHud.value = null;
   battleSummary.value = null;
   preparing.value = false;
@@ -544,6 +579,7 @@ function close(): void {
   showTeam.value = false;
   showAdjust.value = false;
   showSummary.value = false;
+  showModes.value = false;
   fullscreenForBattle = false;
   box?.stop();
   box = null;
@@ -552,6 +588,7 @@ function close(): void {
   phase.value = 'idle';
   picked.value = null;
   hint.value = '';
+  if (!disposed) void nextTick(() => openButton.value?.focus());
 }
 
 function placeAt(ndc: { x: number; y: number } | null): void {
@@ -1097,6 +1134,7 @@ const notices = computed<Notice[]>(() => {
 /** Clima atual (o ciclo muda sozinho): lido da cena a cada poucos segundos para a linha de resumo. */
 const weatherLabel = ref('');
 const weatherTimer = setInterval(() => {
+  if (document.hidden) return;
   const now = box?.scene.weatherNow;
   weatherLabel.value = now ? `${WEATHER_EMOJI[now.kind]} ${WEATHER_LABELS_PT[now.kind]}` : '';
 }, 2000);
@@ -1133,6 +1171,9 @@ function onFov(): void {
 
 onBeforeUnmount(() => {
   disposed = true;
+  clearInterval(weatherTimer);
+  clearInterval(heartTimer);
+  if (stageSpeechTimer) clearTimeout(stageSpeechTimer);
   if (megaNotesTimer) clearTimeout(megaNotesTimer);
   if (pickedTimer) clearTimeout(pickedTimer);
   motionPreference?.removeEventListener('change', onMotionPreferenceChange);
@@ -1165,8 +1206,9 @@ onBeforeUnmount(() => {
       </div>
       <canvas ref="canvasEl" class="overlay" :style="shakeStyle" aria-label="Caixa com os Pokémon escaneados"></canvas>
       <p v-if="phase === 'idle'" class="placeholder">Câmera desligada</p>
+      <div v-if="phase === 'starting'" class="box-opening" role="status"><p>Abrindo câmera e sensores…</p><button type="button" @click.stop="close">Cancelar abertura</button></div>
       <div v-if="phase === 'placing'" class="crosshair" aria-hidden="true"></div>
-      <div v-if="battleHud" class="battle-hud" :class="{ compact: battleHud.bars.length > 4, dense: battleHud.bars.length > DENSE_BARS }" aria-live="polite">
+      <div v-if="battleHud" class="battle-hud" :class="{ compact: battleHud.bars.length > 4, dense: battleHud.bars.length > DENSE_BARS }">
         <div class="battle-top">
           <div v-if="battleHud.banner" class="battle-banner" :style="{ '--fx': battleHud.banner.color }">
             <strong>{{ battleHud.banner.text }}</strong>
@@ -1232,10 +1274,10 @@ onBeforeUnmount(() => {
       <div v-if="immersive" class="stage-foot" @pointerdown.stop @pointerup.stop>
         <button v-if="phase === 'placing'" type="button" class="primary stage-cta" @click="placeHere">Colocar a caixa aqui</button>
         <SmoothingSheet v-if="showFilters && cameraOn" battle @close="showFilters = false" />
-        <div v-if="showSummary && battleSummary && battleHud?.phase === 'finished'" class="stage-sheet battle-summary" @pointerdown.stop @pointerup.stop @click.stop>
+        <div v-if="showSummary && battleSummary && battleHud?.phase === 'finished'" ref="summaryDialog" class="stage-sheet battle-summary" role="dialog" aria-label="Resumo da batalha" @keydown.esc.stop.prevent="showSummary = false" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
             <strong>{{ battleSummary.winner }} venceu</strong>
-            <button type="button" class="link" @click="showSummary = false">Fechar</button>
+            <button type="button" class="link" aria-label="Fechar resumo da batalha" @click="showSummary = false">Fechar</button>
           </header>
           <p>{{ battleSummary.turns }} turnos em {{ battleSummary.rounds }} rodadas.</p>
           <p v-if="endlessRun && endlessLabel"><strong>{{ endlessLabel.title }}</strong> · batalha {{ endlessRun.battles }} · {{ endlessRun.wins }} vitória{{ endlessRun.wins === 1 ? '' : 's' }} · <strong>{{ endlessRun.score }} pontos</strong>.</p>
@@ -1246,10 +1288,10 @@ onBeforeUnmount(() => {
             <p v-for="f in incompleteFighters" :key="f.id" class="hint">{{ f.name }}: {{ f.notes.join('; ') }}</p>
           </template>
         </div>
-        <div v-if="showModes && cameraOn && !battling" class="stage-sheet battle-team-sheet" role="dialog" aria-label="Equipe de batalha" @pointerdown.stop @pointerup.stop @click.stop>
+        <div v-if="showModes && cameraOn && !battling" ref="modesDialog" class="stage-sheet battle-team-sheet" role="dialog" aria-label="Equipe de batalha" @keydown.esc.stop.prevent="showModes = false" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
             <strong>Equipe de batalha</strong>
-            <button type="button" class="link" @click="showModes = false">Fechar</button>
+            <button type="button" class="link" aria-label="Fechar equipe de batalha" @click="showModes = false">Fechar</button>
           </header>
           <p class="selection-caption">1 · Escolha o formato da batalha</p>
           <div class="mode-list">
@@ -1337,17 +1379,17 @@ onBeforeUnmount(() => {
             </ul>
           </div>
         </div>
-        <div v-if="showTeam && cameraOn" class="stage-sheet" @pointerdown.stop @pointerup.stop @click.stop>
+        <div v-if="showTeam && cameraOn" ref="teamDialog" class="stage-sheet" role="dialog" aria-label="Moradores na Caixa" @keydown.esc.stop.prevent="showTeam = false" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
             <strong>Moradores da Vila</strong>
-            <button type="button" class="link" @click="showTeam = false">Fechar</button>
+            <button type="button" class="link" aria-label="Fechar moradores na Caixa" @click="showTeam = false">Fechar</button>
           </header>
           <TeamPicker @change="populate" />
         </div>
-        <div v-if="showAdjust && cameraOn && !battling" class="stage-sheet" role="dialog" aria-label="Ajustes da caixa" @pointerdown.stop @pointerup.stop @click.stop>
+        <div v-if="showAdjust && cameraOn && !battling" ref="adjustDialog" class="stage-sheet" role="dialog" aria-label="Ajustes da caixa" @keydown.esc.stop.prevent="showAdjust = false" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
             <strong>Ajustes da caixa</strong>
-            <button type="button" class="link" @click="showAdjust = false">Fechar</button>
+            <button type="button" class="link" aria-label="Fechar ajustes da Caixa" @click="showAdjust = false">Fechar</button>
           </header>
           <div class="layout">
             <label>Altura do celular ({{ phoneHeight.toFixed(2) }} m)
@@ -1368,7 +1410,7 @@ onBeforeUnmount(() => {
             </p>
           </div>
         </div>
-        <div v-if="cameraOn" class="stage-bar">
+        <div v-if="cameraOn" class="stage-bar" role="toolbar" aria-label="Controles da Caixa AR">
           <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
           <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters; showTeam = false; showAdjust = false; showModes = false" />
           <StageButton v-if="!battling" icon="team" label="Quem passeia" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false; showModes = false" />
@@ -1397,7 +1439,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="actions">
-      <button type="button" class="primary" :class="{ 'battle-cta': battleShortcut }" :disabled="phase !== 'idle'" @click="open">
+      <button ref="openButton" type="button" class="primary" :class="{ 'battle-cta': battleShortcut }" :disabled="phase !== 'idle'" @click="open">
         {{ phase === 'starting' ? 'Abrindo…' : endlessShortcut ? `⚔️ Abrir câmera · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Abrir câmera e batalhar' : 'Abrir câmera e sensores' }}
       </button>
       <a v-if="battleShortcut || endlessShortcut" class="button" :href="routeHref(endlessShortcut ? 'arena' : 'vila')">{{ endlessShortcut ? 'Voltar à Arena' : 'Voltar à Vila' }}</a>

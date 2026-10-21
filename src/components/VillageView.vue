@@ -86,6 +86,11 @@ import { paintItemIcon } from '../village/item-art';
 import { VillageGame } from '../village/village-game';
 import type { VillageMon } from '../village/village-game';
 import { SoundEngine } from '../box/sound';
+import MusicControls from './MusicControls.vue';
+import { MusicPlayer } from '../app/music-player';
+import { villageAudio } from '../app/village-audio-settings';
+import { advanceMusicTransition, transitionMusicMix, villageMusicTrack } from '../core/music';
+import type { MusicTransition } from '../core/music';
 import type { SoundCue } from '../box/sound-recipes';
 import MomentCard from './MomentCard.vue';
 import PokeBook from './PokeBook.vue';
@@ -398,6 +403,21 @@ function prepareDailyRecap(): void {
 
 let game: VillageGame | null = null;
 const sound = new SoundEngine();
+const musicUnavailable = ref(false);
+const musicTitle = ref('');
+const music = new MusicPlayer(path => `${import.meta.env.BASE_URL}${path}`, () => { musicUnavailable.value = true; });
+let musicTransition: MusicTransition | null = null;
+function syncMusic(): void {
+  const date = new Date();
+  const [id, title] = villageMusicTrack(date.getHours(), game?.weatherKind ?? null, Math.floor(date.getTime() / 360_000));
+  musicTransition = advanceMusicTransition(musicTransition, `audio/village/${id}.mp3`, performance.now());
+  musicTitle.value = title;
+  const blocked = document.hidden || !!loading.value || sheet.value === 'torre' || sheet.value === 'arcade' || !!legendaryScene.value || !!hoOhWishScene.value || cutsceneOpen.value;
+  music.update(transitionMusicMix(musicTransition, performance.now()), !blocked, villageAudio.enabled ? villageAudio.volume / 100 : 0);
+}
+watch([() => villageAudio.enabled, () => villageAudio.volume, sheet, () => !!legendaryScene.value, () => !!hoOhWishScene.value, cutsceneOpen, loading], syncMusic);
+watch(() => villageAudio.effectsVolume, value => sound.setVolume(value / 100));
+function unlockMusic(): void { musicUnavailable.value = false; syncMusic(); music.unlock(); }
 let observer: ResizeObserver | null = null;
 let saveTimer: ReturnType<typeof setInterval> | null = null;
 let cropTimer: ReturnType<typeof setInterval> | null = null;
@@ -442,10 +462,14 @@ function say(text: string, ms = 2800): void {
 
 type UiSound = Extract<SoundCue, { kind: 'ui' }>['cue'];
 function unlockSound(): void {
+  unlockMusic();
+  sound.setVolume(villageAudio.effectsVolume / 100);
   sound.setEnabled(visual.sound);
   sound.unlock();
 }
 function playSound(cue: UiSound): void {
+  if (document.hidden) return;
+  sound.setVolume(villageAudio.effectsVolume / 100);
   sound.setEnabled(visual.sound);
   sound.play({ kind: 'ui', cue });
 }
@@ -1839,6 +1863,8 @@ function onLeave(): void {
 }
 
 function onVisibility(): void {
+  sound.setPaused(document.hidden);
+  syncMusic();
   if (document.hidden) {
     // Saiu do app com uma tecla ou o dedo no joystick: ninguém fica andando sozinho ao voltar.
     heldKeys.clear();
@@ -1928,7 +1954,10 @@ function tickFarm(): void {
     ...worker, types: types.get(worker.id) ?? [],
     available: worker.available && !state.expeditions.some((expedition) => expedition.monId === worker.id && !expedition.result),
   }));
+  const previousRecords = new Set(state.farm.history);
   if (farmSession.tick(state, map, workers, Date.now(), Math.random, (x, y) => game!.occupied(x, y))) changed();
+  const nearby = state.farm.history.find(record => !previousRecords.has(record) && workers.some(worker => worker.id === record.residentId && Math.abs(worker.x - game!.player.x) + Math.abs(worker.y - game!.player.y) <= 8));
+  if (nearby) playSound(nearby.kind === 'mine' ? 'village-mine' : nearby.kind === 'lumber' ? 'village-chop' : nearby.kind === 'fish' || nearby.kind === 'water' ? 'village-water' : nearby.kind === 'plant' ? 'village-plant' : 'collect');
   game.setFarmTasks(farmSession.tasks);
 }
 
@@ -2019,7 +2048,7 @@ function pressA(): void {
     }
     const r = water(state, t.x, t.y, now);
     say(r.message);
-    if (r.ok) changed();
+    if (r.ok) { playSound('village-water'); changed(); }
   } else if (t.kind === 'furniture') {
     dialog.value = {
       name: itemName(t.item),
@@ -2068,7 +2097,7 @@ function pressA(): void {
     const r = harvest(state, map, t.x, t.y, today, Math.random);
     say(r.message);
     if (r.ok) {
-      playSound('collect');
+      playSound(t.tile === 'tree' ? 'village-chop' : t.tile === 'rock' ? 'village-mine' : 'collect');
       changed();
     }
   }
@@ -2246,10 +2275,10 @@ function pressMenu(): void {
   openMenu();
 }
 
-function act(result: { ok: boolean; message: string }, close = false): void {
+function act(result: { ok: boolean; message: string }, close = false, cue: UiSound = 'success'): void {
   say(result.message);
   if (result.ok) {
-    playSound('success');
+    playSound(cue);
     changed();
     if (close) sheet.value = null;
   }
@@ -2264,7 +2293,7 @@ function doPlace(item: ItemId): void {
 function doPlant(seed: ItemId): void {
   const spot = game?.frontSpot();
   if (!spot) return say('Fique de frente para a grama livre.');
-  act(plant(state, map, seed, spot.x, spot.y, Date.now(), (x, y) => game?.occupied(x, y) ?? false), true);
+  act(plant(state, map, seed, spot.x, spot.y, Date.now(), (x, y) => game?.occupied(x, y) ?? false), true, 'village-plant');
 }
 
 function openDress(who: string): void {
@@ -2319,6 +2348,7 @@ watch(() => state.coins, (value) => syncCoins(value));
 onBeforeUnmount(() => {
   detachLiveVillage(state);
   sound.dispose();
+  music.dispose();
 });
 
 onMounted(async () => {
@@ -2409,11 +2439,13 @@ onMounted(async () => {
   prepareDailyRecap();
   if (!recapScenes.value.length && !cutsceneOpen.value && !welcome.value) finishArrival();
   sceneTimer = setInterval(() => {
+    syncMusic();
     tickScenes();
     tickQuestions();
-    if (!document.hidden && visual.sound && !dialog.value && !sheet.value && Date.now() >= nextAmbientSoundAt) {
+    if (!document.hidden && visual.sound && !dialog.value && !sheet.value && !legendaryScene.value && !hoOhWishScene.value && !cutsceneOpen.value && Date.now() >= nextAmbientSoundAt) {
       nextAmbientSoundAt = Date.now() + 18000 + Math.random() * 26000;
-      playSound(Math.random() < 0.68 ? 'village-birds' : 'village-chime');
+      const hour = new Date().getHours();
+      playSound(game?.weatherKind === 'chuva' ? 'village-water' : hour >= 20 || hour < 5 ? 'village-night' : Math.random() < 0.68 ? 'village-birds' : 'village-chime');
     }
   }, 1000);
   if (tickCrops(state, Date.now(), effects().growthFactor) > 0) changed();
@@ -2633,7 +2665,7 @@ onBeforeUnmount(() => {
           <li v-for="i in shopItems" :key="i.id">
             <img :src="icon(i.id)" alt="" width="40" height="40" />
             <span>{{ i.name }}<small>{{ i.price }} moedas</small></span>
-            <button type="button" :disabled="state.coins < i.price" @click="act(buy(state, i.id, day))">Comprar</button>
+            <button type="button" :disabled="state.coins < i.price" @click="act(buy(state, i.id, day), false, 'village-coins')">Comprar</button>
           </li>
         </ul>
         <ul v-else class="item-grid">
@@ -2641,8 +2673,8 @@ onBeforeUnmount(() => {
             <img :src="icon(i.id)" alt="" width="40" height="40" />
             <span>{{ i.name }} ×{{ count(state, i.id) }}<small>{{ i.sell }} cada</small></span>
             <span class="sell-btns">
-              <button type="button" @click="act(sell(state, i.id))">Vender 1</button>
-              <button v-if="count(state, i.id) > 1" type="button" @click="act(sell(state, i.id, count(state, i.id)))">Todos ({{ count(state, i.id) }})</button>
+              <button type="button" @click="act(sell(state, i.id), false, 'village-coins')">Vender 1</button>
+              <button v-if="count(state, i.id) > 1" type="button" @click="act(sell(state, i.id, count(state, i.id)), false, 'village-coins')">Todos ({{ count(state, i.id) }})</button>
             </span>
           </li>
           <li v-if="sellable.length === 0" class="hint">Nada para vender ainda.</li>
@@ -2708,6 +2740,7 @@ onBeforeUnmount(() => {
         </header>
 
         <div v-if="tab === 'inicio'" class="menu-home">
+          <details><summary>Música e sons da Vila</summary><MusicControls v-model:enabled="villageAudio.enabled" v-model:volume="villageAudio.volume" v-model:effects-volume="villageAudio.effectsVolume" :track="musicTitle" :unavailable="musicUnavailable" @unlock="unlockMusic" /><p v-if="!visual.sound" class="hint">Os efeitos estão desligados nas opções gerais. A música tem seu próprio controle.</p></details>
           <p class="menu-status">
             <span><span class="coin-mark" aria-hidden="true"></span><b>{{ state.coins }}</b> moedas</span>
             <span>⭐ Nível <b>{{ level }}</b></span>

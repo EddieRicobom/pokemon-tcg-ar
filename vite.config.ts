@@ -2,6 +2,7 @@ import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vitest/config';
 import { normalizeBasePath } from './config/base-path.ts';
+import { runtimeAssetPattern } from './config/runtime-cache.ts';
 
 // No CI o valor vem de BASE_PATH=/<nome-do-repositório>/ (GitHub Pages de projeto).
 const base = normalizeBasePath(process.env.BASE_PATH);
@@ -59,14 +60,19 @@ export default defineConfig({
         // O OCR (≈ 6,7 MB no primeiro uso), o índice do catálogo e os sprites locais da Vila (≈ 100 MB, 966
         // espécies) não entram no pré-cache da instalação: são guardados só quando usados (cache em tempo de
         // execução), senão a instalação do PWA baixaria tudo isso de uma vez.
-        globIgnores: ['ocr/**', 'data/**', 'sprites/**', 'art/trainers/**'],
+        globIgnores: ['ocr/**', 'data/**', 'sprites/**', 'art/trainers/**', 'audio/**'],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
+            urlPattern: runtimeAssetPattern(base, 'audio/'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'music-v1', rangeRequests: true, cacheableResponse: { statuses: [200] }, expiration: { maxEntries: 24, maxAgeSeconds: 60 * 60 * 24 * 90 } },
+          },
+          {
             // Chunks com hash são imutáveis: guarda o primeiro uso sem revalidar cada navegação.
             // Isso permite tirar Vila/Arena/Pins do pré-cache sem perder o offline depois da primeira visita.
-            urlPattern: ({ url }) => url.pathname.startsWith(`${base}assets/`),
+            urlPattern: runtimeAssetPattern(base, 'assets/'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'app-assets-v1',
@@ -75,33 +81,33 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: ({ url }) => url.pathname.startsWith(`${base}art/trainers/`),
+            urlPattern: runtimeAssetPattern(base, 'art/trainers/'),
             handler: 'StaleWhileRevalidate',
             options: { cacheName: 'trainer-atlases-v1', expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 90 } },
           },
           {
-            urlPattern: ({ url }) => url.pathname.startsWith(`${base}ocr/`),
+            urlPattern: runtimeAssetPattern(base, 'ocr/'),
             handler: 'CacheFirst',
             options: { cacheName: 'ocr-assets-v1', expiration: { maxEntries: 8 } },
           },
           {
-            urlPattern: ({ url }) => url.pathname.startsWith(`${base}data/art-index.`),
+            urlPattern: runtimeAssetPattern(base, 'data/art-index.'),
             handler: 'StaleWhileRevalidate',
             options: { cacheName: 'art-index-v1', expiration: { maxEntries: 4 } },
           },
           {
-            urlPattern: ({ url }) => url.pathname === `${base}data/catalog-index.json`,
+            urlPattern: runtimeAssetPattern(base, 'data/catalog-index.json', true),
             handler: 'StaleWhileRevalidate',
             options: { cacheName: 'catalog-index-v1', expiration: { maxEntries: 1 } },
           },
           {
             // Índice pequeno do pacote incorporado; evita consultá-lo na rede a cada nova abertura da PWA.
-            urlPattern: ({ url }) => url.pathname === `${base}data/pokeapi-sprite-manifest.json`,
+            urlPattern: runtimeAssetPattern(base, 'data/pokeapi-sprite-manifest.json', true),
             handler: 'StaleWhileRevalidate',
             options: { cacheName: 'pokeapi-sprite-manifest-v1', expiration: { maxEntries: 2, maxAgeSeconds: 60 * 60 * 24 * 30 } },
           },
           {
-            urlPattern: ({ url }) => url.pathname.startsWith(`${base}sprites/`),
+            urlPattern: runtimeAssetPattern(base, 'sprites/'),
             handler: 'CacheFirst',
             // Não pré-baixar o catálogo de centenas de MB: cada sprite entra no aparelho apenas quando usado.
             options: { cacheName: 'pokemon-sprites-v2', expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 90 } },

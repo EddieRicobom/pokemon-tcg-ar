@@ -33,9 +33,21 @@ notes.push(`index.html: ${refs.length} referências, todas sob ${base}`);
 need(existsSync('dist/sw.js'), 'dist/sw.js não foi gerado');
 if (existsSync('dist/sw.js')) {
   const sw = readFileSync('dist/sw.js', 'utf8');
+  need(!sw.includes('${base}'), 'Service Worker usa base sem definição (callback capturou variável da configuração)');
   need(sw.includes('index.html'), 'Service Worker não pré-cacheia index.html');
+  need(!/\{url:["'][^"']*audio\/[^"']*\.mp3/.test(sw.split('precacheAndRoute')[1]?.split('],')[0] ?? ''), 'Músicas não deveriam estar no pré-cache da instalação');
   need(!/ocr\/worker\.min\.js/.test(sw.split('precacheAndRoute')[1] ?? ''), 'OCR não deveria estar no pré-cache da instalação');
 }
+
+const villageTracks = ['new-bark', 'cherrygrove', 'goldenrod', 'viridian', 'cianwood', 'hearthome', 'heahea-night', 'oreburgh-night', 'canalave', 'hearthome-night', 'azalea-winter', 'humilau-night'];
+const survivalTracks = ['kanto', 'johto', 'hoenn', 'sinnoh', 'unova', 'kalos', 'alola', 'galar', 'paldea'];
+const audioPaths = [...villageTracks.map(name => `village/${name}`), ...survivalTracks.map(name => `survival/${name}`)];
+for (const path of audioPaths) {
+  const file = `dist/audio/${path}.mp3`;
+  need(existsSync(file) && statSync(file).size > 10000, `música ausente ou vazia: ${path}`);
+}
+need(existsSync('dist/audio/CREDITS.md'), 'créditos das músicas ausentes');
+notes.push(`músicas: ${audioPaths.length} faixas sob demanda (12 Vila, 9 Survival)`);
 
 for (const file of ['ocr/worker.min.js', 'ocr/lang/eng.traineddata.gz', 'ocr/core/tesseract-core-simd-lstm.wasm.js']) {
   need(existsSync(`dist/${file}`), `arquivo do OCR ausente: ${file}`);

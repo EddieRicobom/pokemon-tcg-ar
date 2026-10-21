@@ -3,6 +3,7 @@ import { seededRng } from '../core/battle';
 import { DECOR_KINDS, GROUND_KINDS, TERRAIN_KINDS } from '../core/terrain';
 import { createBuf, EDGE, paintDecor, paintGround, paintOverlay, TILE } from './ground-art';
 import { Ground } from './ground';
+import { Mesh, MeshBasicMaterial, Sprite, SRGBColorSpace } from 'three';
 
 const opts = { halfW: 1, halfD: 0.5, shape: 'ellipse' as const, seed: 5, cols: 24, decor: 16, decorUnit: 0.15, opacity: 0.95 };
 
@@ -69,6 +70,30 @@ describe('pixel art', () => {
 });
 
 describe('Ground', () => {
+  it('enfeites usam orientação vertical correta e cores sRGB, sem inverter o piso', () => {
+    const ground = new Ground(opts);
+    const decorations = ground.group.children.filter((child): child is Sprite => child instanceof Sprite);
+    expect(decorations.length).toBe(16);
+    for (const sprite of decorations) {
+      const map = sprite.material.map!;
+      expect(map.repeat.y).toBe(-1); expect(map.offset.y).toBe(1);
+      expect(map.colorSpace).toBe(SRGBColorSpace);
+    }
+    const floor = ground.group.children.find((child): child is Mesh => child instanceof Mesh)!;
+    const material = floor.material as MeshBasicMaterial;
+    expect(material.map!.repeat.y).toBe(1);
+    expect(material.map!.colorSpace).toBe(SRGBColorSpace);
+    ground.dispose();
+  });
+  it('arena tem um miolo de terra contínuo e marcações que voltam após reset', () => {
+    const ground = new Ground({ ...opts, layout: 'battle' });
+    const before = new Uint8Array(ground.pixels.data);
+    ground.hit('fire', 0, 0, 1); ground.reset();
+    expect(ground.pixels.data).toEqual(before);
+    const middle = ground.grid.index(Math.floor(ground.grid.cols / 2), Math.floor(ground.grid.rows / 2));
+    expect(ground.grid.groundAt(middle)).toBe('path');
+    ground.dispose();
+  });
   it('monta o chão em elipse com a trilha, os enfeites e cantos transparentes', () => {
     const ground = new Ground(opts);
     const { w, h, data } = ground.pixels;

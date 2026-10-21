@@ -199,7 +199,7 @@ export class BoxScene {
     }
     const outline = new LineLoop(
       new BufferGeometry().setAttribute('position', new Float32BufferAttribute([-h, y, -h, h, y, -h, h, y, h, -h, y, h], 3)),
-      new LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
+      new LineBasicMaterial({ color: 0xc4d3b5, transparent: true, opacity: this.terrain ? 0 : 0.85 }),
     );
     this.floor.add(plane, outline);
     // O clima mora no chão da caixa: camadas sobre o chão em pixel art e as gotas e flocos no volume da caixa.
@@ -213,7 +213,7 @@ export class BoxScene {
           'position',
           new Float32BufferAttribute([sx * (h - tick), y + 0.001, sz * h, sx * h, y + 0.001, sz * h, sx * h, y + 0.001, sz * (h - tick)], 3),
         ),
-        new LineBasicMaterial({ color: 0xffcb05 }),
+        new LineBasicMaterial({ color: 0xffcb05, transparent: true, opacity: this.terrain ? 0 : 1 }),
       );
       this.floor.add(corner);
     }
@@ -244,6 +244,7 @@ export class BoxScene {
 
   /** Liga ou desliga o chão em pixel art (na caixa e na arena) e as marcas dos golpes. Vale já na caixa e na próxima batalha. */
   setTerrain(on: boolean): void {
+    if (this.terrain === on) return;
     this.terrain = on;
     this.rebuildFloor();
   }
@@ -384,6 +385,9 @@ export class BoxScene {
     }
   }
 
+  /** Retoma sem avançar uma batalha pelos minutos passados com a página escondida. */
+  resetClock(): void { this.lastNow = 0; }
+
   update(nowMs: number): void {
     const dt = this.lastNow === 0 ? 0 : nowMs - this.lastNow;
     this.lastNow = nowMs;
@@ -461,8 +465,11 @@ export class BoxScene {
   dispose(): void {
     this.stopBattle();
     this.weatherFx.dispose();
+    this.boxGround?.dispose();
+    this.boxGround = null;
     for (const creature of this.creatures) creature.dispose();
     this.creatures = [];
+    this.anchor = null;
     for (const child of [...this.floor.children]) {
       const d = child as Mesh | Line;
       d.geometry?.dispose();

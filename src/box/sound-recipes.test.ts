@@ -21,6 +21,7 @@ function allCues(): SoundCue[] {
   }
   for (const status of STATUSES) cues.push({ kind: 'status', status }, { kind: 'tick', cause: status }, { kind: 'skip', cause: status });
   for (const personality of PERSONALITIES) cues.push({ kind: 'victory', personality });
+  for (const cue of ['menu', 'interact', 'talk', 'collect', 'gift', 'success', 'bell', 'village-water', 'village-birds', 'village-door', 'village-chime', 'village-night', 'village-mine', 'village-chop', 'village-plant', 'village-coins'] as const) cues.push({ kind: 'ui', cue });
   for (const power of [0.1, 1]) cues.push({ kind: 'pin-launch', power, type: null }, { kind: 'pin-launch', power, type: 'fire' });
   for (const edge of ['super', 'weak', 'none', null] as const) cues.push({ kind: 'pin-hit', strength: 0.15, edge }, { kind: 'pin-hit', strength: 1, edge });
   for (const type of [null, ...POKEMON_TYPES]) cues.push({ kind: 'pin-mark', type, big: true }, { kind: 'pin-mark', type, big: false });

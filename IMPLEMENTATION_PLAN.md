@@ -1,5 +1,15 @@
 # Plano e estado do projeto
 
+## Música regional, ambientação e revisão da Caixa (21/10/2026)
+
+- 12 faixas pacíficas da Vila por hora/clima; crossfade de 12 s e pares alternados a cada seis minutos. Sons de ações e trabalhos próximos, com ambientação noturna/chuva e volumes independentes.
+- 9 temas regionais do Survival; cinco arranjos GBA da Meeow’s Music e quatro gravações regionais com tratamento retrô reproduzível. Créditos e fontes fixadas em `public/audio/CREDITS.md`; troca usa a curva de 40 s do cenário.
+- Player compartilhado com até duas faixas comprimidas, carga sob demanda, cancelamento, pausa de página, URLs revogadas e contexto fechado. Músicas fora do pré-cache; respostas completas podem entrar no cache de execução. Preferências preservadas pelo backup existente.
+- Corrigida a serialização das regras de cache de músicas, chunks, OCR, catálogos e sprites: os callbacks anteriores capturavam `base`, ausente no worker gerado. Regras agora são expressões com o caminho incorporado; teste de configuração e `verify-dist` cobrem a regressão.
+- Caixa: cancelamento durante permissão/abertura, proteção contra população e cenas atrasadas, limpeza de temporizadores, terreno e áudio, pausa do relógio ao esconder a página. Painéis com Escape, foco restaurado, cabeçalhos acessíveis e melhor espaço em paisagem.
+- Arena: preparação em três passos, indicação de 6/6 e Digital Pokémon no seletor compartilhado. Pisos distintos de jardim/campo, curvas contínuas, paleta sRGB e correção da orientação vertical dos enfeites. O layout clássico dos Pins permanece separado.
+- Câmera real, sensores, desempenho e consumo em aparelho físico continuam exigindo validação no celular. O tratamento retrô das quatro gravações não é uma troca de instrumentação por arranjo GBA.
+
 ## Encontros e cenas lendárias (21/10/2026)
 
 - Catálogo de 94 espécies (71 lendárias e 23 míticas), conferido no `pokemon_species.csv` da PokéAPI, com quatro capítulos e pistas escritas individualmente em `legendary-stories.ts`.

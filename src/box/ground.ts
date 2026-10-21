@@ -1,10 +1,10 @@
-import { DataTexture, Float32BufferAttribute, Group, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, Sprite, SpriteMaterial, UnsignedByteType } from 'three';
+import { DataTexture, Float32BufferAttribute, Group, LinearFilter, Mesh, MeshBasicMaterial, NearestFilter, PlaneGeometry, RGBAFormat, Sprite, SpriteMaterial, SRGBColorSpace, UnsignedByteType } from 'three';
 import { seededRng } from '../core/battle';
 import type { PokemonType } from '../core/pokemon-data';
 import { planRelief, reliefShade } from '../core/relief';
 import type { Relief } from '../core/relief';
 import { applyTerrain, buildGrid, planDecor, TERRAIN_FOR_TYPE } from '../core/terrain';
-import type { DecorKind, GroundShape, TerrainGrid, TerrainKind, TerrainReaction } from '../core/terrain';
+import type { DecorKind, GroundLayout, GroundShape, TerrainGrid, TerrainKind, TerrainReaction } from '../core/terrain';
 import { createBuf, paintDecor, paintTerrainCell, TILE, touchedCells } from './ground-art';
 import type { PixelBuf } from './ground-art';
 
@@ -23,6 +23,7 @@ export interface GroundOptions {
   opacity: number;
   /** Altura típica dos morrinhos (m). Omitido ou 0 = chão liso (a arena da batalha é lisa). */
   relief?: number;
+  layout?: GroundLayout;
 }
 
 export interface GroundHit {
@@ -31,10 +32,13 @@ export interface GroundHit {
   reaction: TerrainReaction | null;
 }
 
-function texture(buf: PixelBuf): DataTexture {
+function texture(buf: PixelBuf, upright = false): DataTexture {
   const t = new DataTexture(buf.data, buf.w, buf.h, RGBAFormat, UnsignedByteType);
   t.magFilter = NearestFilter;
-  t.minFilter = NearestFilter;
+  t.minFilter = upright ? NearestFilter : LinearFilter;
+  t.colorSpace = SRGBColorSpace;
+  // Os buffers RGBA começam no topo; o Sprite tem UV com origem embaixo (igual aos Pokémon).
+  if (upright) { t.repeat.set(1, -1); t.offset.set(0, 1); }
   t.generateMipmaps = false;
   t.needsUpdate = true;
   return t;
@@ -58,7 +62,7 @@ export class Ground {
 
   constructor(private readonly o: GroundOptions) {
     const rows = Math.max(6, Math.round(o.cols * (o.halfD / o.halfW)));
-    this.grid = buildGrid(o.cols, rows, o.shape, o.seed);
+    this.grid = buildGrid(o.cols, rows, o.shape, o.seed, o.layout ?? 'garden');
     this.rng = seededRng(o.seed ^ 0x51ed);
     this.buf = createBuf(o.cols * TILE, rows * TILE);
     for (let i = 0; i < o.cols * rows; i++) this.paintCell(i);
@@ -71,7 +75,7 @@ export class Ground {
     this.mesh.renderOrder = -2;
     this.group.add(this.mesh);
     for (const item of planDecor(o.halfW, o.halfD, o.shape, o.seed, o.decor, o.decorUnit)) {
-      const sprite = new Sprite(new SpriteMaterial({ map: this.decorTexture(item.kind), transparent: true, depthWrite: false }));
+      const sprite = new Sprite(new SpriteMaterial({ map: this.decorTexture(item.kind), transparent: true, alphaTest: 0.1, depthWrite: false }));
       sprite.center.set(0.5, 0.06);
       sprite.scale.set(item.flip ? -item.size : item.size, item.size, 1);
       sprite.position.set(item.x, this.relief.heightAt(item.x, item.z), item.z);
@@ -149,7 +153,7 @@ export class Ground {
   private decorTexture(kind: DecorKind): DataTexture {
     let t = this.decorTextures.get(kind);
     if (!t) {
-      t = texture(paintDecor(kind));
+      t = texture(paintDecor(kind), true);
       this.decorTextures.set(kind, t);
     }
     return t;
@@ -157,7 +161,7 @@ export class Ground {
 
   /** Repinta um bloco (chão + marca do golpe), sempre com o mesmo sorteio para não "tremer" ao repintar. */
   private paintCell(i: number): void {
-    paintTerrainCell(this.buf, this.grid, i, this.o.seed);
+    paintTerrainCell(this.buf, this.grid, i, this.o.seed, this.o.layout ?? 'garden');
   }
 
   /** Um golpe de `type` cai em (x, z): marca o chão e devolve o que mudou (ou null se o tipo não deixa marca). */

@@ -41,6 +41,13 @@ describe('backup — exportar', () => {
     expect(file.data['tcg-ar-dex-names-v1']).toBe('[[1,"Bulbasaur"]]');
     expect(file.data['tcg-ar-profile-25']).toBe('{}');
   });
+  it('inclui as preferências de música sem alterar os saves da Vila e da Torre', () => {
+    localStorage.setItem('tcg-ar-village-music-v1', '{"enabled":false,"volume":20,"effectsVolume":60}');
+    localStorage.setItem('tcg-ar-survivor-music-v1', '{"enabled":true,"volume":40}');
+    const file = buildBackup(localStorage, NOW);
+    expect(file.data['tcg-ar-village-music-v1']).toBe(localStorage.getItem('tcg-ar-village-music-v1'));
+    expect(file.data['tcg-ar-survivor-music-v1']).toBe(localStorage.getItem('tcg-ar-survivor-music-v1'));
+  });
 
   it('serializa como JSON legível e com um nome de arquivo datado', () => {
     const file = buildBackup(localStorage, NOW);

@@ -89,11 +89,12 @@ export class ArenaStage {
       mesh.rotation.x = -Math.PI / 2;
       mesh.scale.set(ringX, ringZ, 1);
     };
-    this.ground = terrain ? new Ground({ halfW: rx * 1.3, halfD: rz * 1.55, shape: 'ellipse', seed, cols: 30, decor: 24, decorUnit: Math.max(0.14, rx * 0.2), opacity: 0.96 }) : null;
+    this.ground = terrain ? new Ground({ halfW: rx * 1.3, halfD: rz * 1.55, shape: 'ellipse', seed, cols: 36, decor: 14, decorUnit: Math.max(0.12, rx * 0.16), opacity: 0.98, layout: 'battle' }) : null;
     if (this.ground) this.group.add(this.ground.group);
     this.disc = new Mesh(new CircleGeometry(1, 48), new MeshBasicMaterial({ color: 0x0a0f1e, transparent: true, opacity: 0.45, depthWrite: false, side: DoubleSide }));
     this.rim = new Mesh(new RingGeometry(0.965, 1, 64), new MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0.8, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));
     this.inner = new Mesh(new RingGeometry(0.55, 0.565, 64), new MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0.25, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));
+    this.inner.visible = !terrain;
     for (const mesh of [this.disc, this.rim, this.inner]) {
       flat(mesh);
       mesh.position.y = 0.003;
@@ -124,7 +125,7 @@ export class ArenaStage {
     const ease = 1 - Math.pow(1 - this.appear, 3);
     this.group.scale.setScalar(Math.max(0.01, ease));
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 0.004);
-    this.rim.material.opacity = (0.45 + 0.25 * pulse + 0.45 * this.glow) * ease;
+    this.rim.material.opacity = (this.ground ? 0.12 + 0.5 * this.glow : 0.45 + 0.25 * pulse + 0.45 * this.glow) * ease;
     this.inner.material.opacity = (0.12 + 0.12 * pulse + 0.3 * this.glow) * ease;
     this.disc.material.opacity = (this.ground ? 0 : 0.4) * ease;
   }

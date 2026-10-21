@@ -15,6 +15,8 @@ export class SoundEngine implements SoundSink {
   private noiseBuffer: AudioBuffer | null = null;
   private voices = 0;
   enabled = true;
+  private volume = 1;
+  private paused = false;
 
   /** Cria e acorda o contexto de áudio (precisa vir de um gesto do usuário). */
   unlock(): void {
@@ -25,14 +27,14 @@ export class SoundEngine implements SoundSink {
         const ctx = new Ctor();
         const compressor = ctx.createDynamicsCompressor();
         const master = ctx.createGain();
-        master.gain.value = MASTER_GAIN;
+        master.gain.value = this.enabled && !this.paused ? MASTER_GAIN * this.volume : 0;
         master.connect(compressor);
         compressor.connect(ctx.destination);
         this.ctx = ctx;
         this.master = master;
         this.noiseBuffer = this.makeNoise(ctx);
       }
-      if (this.ctx.state === 'suspended') void this.ctx.resume();
+      if (!this.paused && this.ctx.state === 'suspended') void this.ctx.resume().catch(() => undefined);
     } catch {
       this.ctx = null;
     }
@@ -40,6 +42,20 @@ export class SoundEngine implements SoundSink {
 
   setEnabled(on: boolean): void {
     this.enabled = on;
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(on && !this.paused ? MASTER_GAIN * this.volume : 0, this.ctx.currentTime, 0.02);
+  }
+
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    this.setEnabled(this.enabled);
+    if (!this.ctx) return;
+    if (paused && this.ctx.state === 'running') void this.ctx.suspend().catch(() => undefined);
+    else if (!paused && this.ctx.state === 'suspended') void this.ctx.resume().catch(() => undefined);
+  }
+
+  setVolume(volume: number): void {
+    this.volume = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 0;
+    this.setEnabled(this.enabled);
   }
 
   private makeNoise(ctx: AudioContext): AudioBuffer {
@@ -51,7 +67,7 @@ export class SoundEngine implements SoundSink {
 
   play(cue: SoundCue): void {
     const ctx = this.ctx;
-    if (!this.enabled || !ctx || !this.master || ctx.state !== 'running') return;
+    if (!this.enabled || this.paused || this.volume === 0 || !ctx || !this.master || ctx.state !== 'running') return;
     for (const layer of layersFor(cue)) {
       if (this.voices >= MAX_VOICES) return;
       this.render(ctx, layer);
@@ -70,6 +86,7 @@ export class SoundEngine implements SoundSink {
 
     let source: AudioScheduledSourceNode;
     let tail: AudioNode;
+    const nodes: AudioNode[] = [gain];
     if (layer.src === 'noise') {
       const s = ctx.createBufferSource();
       s.buffer = this.noiseBuffer;
@@ -87,6 +104,7 @@ export class SoundEngine implements SoundSink {
         lfo.frequency.value = layer.vibrato.rate;
         depth.gain.value = layer.vibrato.depth;
         lfo.connect(depth);
+        nodes.push(lfo, depth);
         depth.connect(osc.frequency);
         lfo.start(start);
         lfo.stop(end + 0.05);
@@ -96,6 +114,7 @@ export class SoundEngine implements SoundSink {
     }
     if (layer.filter) {
       const filter = ctx.createBiquadFilter();
+      nodes.push(filter);
       filter.type = layer.filter.type;
       filter.frequency.setValueAtTime(layer.filter.f0, start);
       if (layer.filter.f1 !== undefined) filter.frequency.exponentialRampToValueAtTime(Math.max(layer.filter.f1, 20), end);
@@ -108,7 +127,9 @@ export class SoundEngine implements SoundSink {
     this.voices++;
     source.onended = () => {
       this.voices = Math.max(0, this.voices - 1);
-      gain.disconnect();
+      source.onended = null;
+      source.disconnect();
+      for (const node of nodes) node.disconnect();
     };
     source.start(start);
     source.stop(end + 0.05);
@@ -118,6 +139,7 @@ export class SoundEngine implements SoundSink {
     const ctx = this.ctx;
     this.ctx = null;
     this.master = null;
+    this.noiseBuffer = null;
     if (ctx) void ctx.close().catch(() => undefined);
   }
 }
