@@ -5,7 +5,7 @@ export type SurvivorSpecialId = 'dash' | 'shield' | 'teleport';
 export const SPECIAL_UNLOCK_MS = 180_000;
 export const SPECIAL_ARRIVAL_MS = 1800;
 export const SURVIVOR_SPECIALS = {
-  dash: { name: 'Investida elemental', icon: '➤', cooldownMs: 7000, durationMs: 240, description: 'Avance na direção do movimento, protegido durante a investida. Recarga: 7 s.' },
+  dash: { name: 'Investida elemental', icon: '➤', cooldownMs: 6500, durationMs: 300, description: 'Avance na última direção válida, protegido durante a investida. Recarga: 6,5 s.' },
   shield: { name: 'Bastião elemental', icon: '⬡', cooldownMs: 12_000, durationMs: 3000, description: 'Bloqueie todo dano durante 3 s. Recarga: 12 s.' },
   teleport: { name: 'Salto de execução', icon: '✧', cooldownMs: 25_000, durationMs: 0, description: 'Teleporte na direção do movimento e elimine até 4 selvagens próximos ao destino. Não afeta chefes ou equipes de treinadores. Recarga: 25 s.' },
 } as const;
@@ -88,7 +88,7 @@ export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, 
     special.to = { x: state.player.x, y: state.player.y };
   }
   if (special.selected === 'dash' && activeStepMs > 0) {
-    Object.assign(state.player, destination(820 * activeStepMs / 1000));
+    Object.assign(state.player, destination(800 * activeStepMs / 1000));
     special.to = { x: state.player.x, y: state.player.y };
   }
 }

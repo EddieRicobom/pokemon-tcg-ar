@@ -7,6 +7,7 @@ import { survivorPreparation } from './survivor-preparations';
 import type { SurvivorPreparationId } from './survivor-preparations';
 import { advanceSpecialEncounter, createSurvivorSpecial, specialProtects, stepSurvivorSpecial } from './survivor-specials';
 import type { SurvivorSpecialState } from './survivor-specials';
+import type { PokemonType } from './pokemon-data';
 
 /**
  * Motor puro do modo Sobrevivência (Zona de Sobrevivência, dentro da Vila): você anda pela arena, seu Pokémon ataca
@@ -71,6 +72,29 @@ export interface SurvivorPlayer {
   secondAttackCooldownMs?: number;
   secondAttackRange?: number;
   secondAttackRadius?: number;
+  /** Especializações escolhidas na corrida, indexadas pelo id para limitar ofertas repetidas. */
+  upgradeLevels: Record<string, number>;
+}
+
+/** Dados congelados do Pokémon de apoio. Ele acompanha apenas no desenho: não é um segundo alvo de combate. */
+export interface SurvivorSupport {
+  dexId: number;
+  name: string;
+  move: SurvivorMove;
+  /** Perfil capturado quando foi escolhido. Upgrades do protagonista não o alteram. */
+  profile: AttackProfile;
+  x: number;
+  y: number;
+  attackTimerMs: number;
+  /** Fator deliberadamente abaixo do protagonista: apoio complementa, não duplica uma build. */
+  damageFactor: number;
+}
+
+export interface SurvivorSupportCandidate {
+  dexId: number;
+  name: string;
+  move: SurvivorMove;
+  profile: AttackProfile;
 }
 
 /** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */
@@ -103,6 +127,9 @@ export interface SurvivorEnemy {
   stunMs?: number;
   wetMs?: number;
   seededMs?: number;
+  /** Acúmulos de frio. O congelamento é curto e tem intervalo por alvo. */
+  frostStacks?: number;
+  frostImmuneMs?: number;
   /** Comportamento de gameplay; não representa atributo oficial da espécie. */
   archetype?: SurvivorEnemyArchetype;
   /** Recarga do comportamento especial, em milissegundos. */
@@ -142,11 +169,13 @@ export interface SurvivorProjectile {
   size?: number;
   /** Identidade visual/efeito do golpe que criou o projétil. */
   move?: SurvivorMove;
+  /** O apoio só muda a apresentação e a atribuição; continua saindo da posição do jogador. */
+  source?: 'player' | 'support';
 }
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
-  kind: 'pulse' | 'blast' | 'evolve';
+  kind: 'pulse' | 'blast' | 'evolve' | 'echo';
   x: number;
   y: number;
   r: number;
@@ -215,6 +244,9 @@ export interface SurvivorState {
   enemyArchetypeFor: ((enemy: Pick<SurvivorEnemy, 'kind' | 'boss' | 'grade'>) => SurvivorEnemyArchetype) | null;
   /** Técnica que será desbloqueada no primeiro upgrade especial. */
   secondMoveCandidate: SurvivorMove | null;
+  /** Candidato real fornecido pela Caixa. Sem candidato, a corrida não inventa um segundo Pokémon. */
+  supportCandidate: SurvivorSupportCandidate | null;
+  support: SurvivorSupport | null;
   secondAttackOffered: boolean;
 }
 
@@ -288,6 +320,10 @@ export interface SurvivorUpgrade {
   description: string;
   /** Categorias de golpe em que o upgrade faz sentido (sem lista = todas). */
   for?: readonly MoveCategory[];
+  /** Especializações só aparecem para o tipo de quem está jogando. */
+  type?: SurvivorMove['type'];
+  /** Limite por corrida; evita cartas esgotadas e escolhas sem efeito. */
+  maxLevels?: number;
   /** Nome e texto falando do golpe de quem joga (ex.: "Bola de fogo mais forte"). */
   describe?: (move: SurvivorMove) => { name: string; description: string };
   apply: (p: SurvivorPlayer) => void;
@@ -295,7 +331,7 @@ export interface SurvivorUpgrade {
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
-export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
+const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   {
     id: 'power', name: 'Golpe mais forte', description: '+20% de dano no ataque.',
     describe: (m) => ({ name: 'Golpe mais forte', description: `${m.name}: +20% de dano, até 60.` }),
@@ -338,6 +374,56 @@ export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   },
   { id: 'magnet', name: 'Ímã de XP', description: '+30% no alcance para coletar orbes de XP.', apply: (p) => { p.pickupRadius = round1(p.pickupRadius * 1.3); } },
 ] as const;
+
+/** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */
+function typeUpgrade(type: PokemonType, id: string, name: string, description: string, apply: (p: SurvivorPlayer) => void, forCategories?: readonly MoveCategory[]): SurvivorUpgrade {
+  return { id, type, name, description, maxLevels: 1, ...(forCategories ? { for: forCategories } : {}), apply };
+}
+function improveReach(p: SurvivorPlayer, factor: number): void {
+  if (p.move.category === 'aura' || p.move.category === 'orbit') p.attackRadius = round1(p.attackRadius * factor);
+  else p.attackRange = round1(p.attackRange * factor);
+}
+
+const TYPE_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
+  typeUpgrade('normal', 'normal-rhythm', 'Ritmo constante', '-10% na recarga do golpe principal.', (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.9)); }),
+  typeUpgrade('normal', 'normal-adapt', 'Ataque adaptável', '+12% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.12); }),
+  typeUpgrade('fire', 'fire-brasa', 'Brasa viajante', 'Queimaduras do golpe principal causam +25% de dano.', (p) => { p.upgradeLevels['fire-brasa'] = 0; }),
+  typeUpgrade('fire', 'fire-combustion', 'Combustão controlada', '+12% de dano contra inimigos já queimando.', (p) => { p.upgradeLevels['fire-combustion'] = 0; }),
+  typeUpgrade('water', 'water-tide', 'Maré de retorno', 'Empurrões do golpe principal ficam 50% mais fortes.', (p) => { p.upgradeLevels['water-tide'] = 0; }),
+  typeUpgrade('water', 'water-current', 'Corrente favorável', '+10% de velocidade de movimento.', (p) => { p.speed = round1(p.speed * 1.1); }),
+  typeUpgrade('electric', 'electric-arc', 'Arco residual', '+10% de dano contra inimigos molhados ou atordoados.', (p) => { p.upgradeLevels['electric-arc'] = 0; }),
+  typeUpgrade('electric', 'electric-capacitor', 'Capacitor', '+12% de dano do golpe principal.', (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.12)); }),
+  typeUpgrade('grass', 'grass-roots', 'Raízes oportunistas', 'Acertos em inimigos semeados os atordoam por um instante.', (p) => { p.upgradeLevels['grass-roots'] = 0; }),
+  typeUpgrade('grass', 'grass-harvest', 'Folhas amplas', '+18% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.18); }),
+  typeUpgrade('ice', 'ice-deep-cold', 'Frio profundo', 'Congela com 2 acúmulos de frio, mantendo o intervalo por alvo.', (p) => { p.upgradeLevels['ice-deep-cold'] = 0; }),
+  typeUpgrade('ice', 'ice-shatter', 'Estilhaçar', '+15% de dano contra inimigos congelados.', (p) => { p.upgradeLevels['ice-shatter'] = 0; }),
+  typeUpgrade('fighting', 'fighting-impact', 'Impacto firme', 'Empurrões do golpe principal ficam 50% mais fortes.', (p) => { p.upgradeLevels['fighting-impact'] = 0; }),
+  typeUpgrade('fighting', 'fighting-stride', 'Passo de luta', '+12% de velocidade de movimento.', (p) => { p.speed = round1(p.speed * 1.12); }),
+  typeUpgrade('poison', 'poison-dose', 'Dose concentrada', 'Dano por veneno do golpe principal aumenta 25%.', (p) => { p.upgradeLevels['poison-dose'] = 0; }),
+  typeUpgrade('poison', 'poison-cloud', 'Nuvem persistente', '+18% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.18); }),
+  typeUpgrade('ground', 'ground-aftershock', 'Abalo secundário', '+15% de dano contra inimigos atordoados.', (p) => { p.upgradeLevels['ground-aftershock'] = 0; }),
+  typeUpgrade('ground', 'ground-firm', 'Solo firme', '+20 de vida máxima e cura imediatamente.', (p) => { p.maxHp += 20; p.hp = Math.min(p.maxHp, p.hp + 20); }),
+  typeUpgrade('flying', 'flying-tailwind', 'Vento de cauda', '+12% de velocidade de movimento.', (p) => { p.speed = round1(p.speed * 1.12); }),
+  typeUpgrade('flying', 'flying-gust', 'Rajada de abertura', '+15% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.15); }),
+  typeUpgrade('psychic', 'psychic-focus', 'Foco mental', '+12% de dano do golpe principal.', (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.12)); }),
+  typeUpgrade('psychic', 'psychic-field', 'Campo de distorção', 'Projéteis inimigos próximos ficam 10% mais lentos.', (p) => { p.upgradeLevels['psychic-field'] = 0; }),
+  typeUpgrade('bug', 'bug-formation', 'Formação de enxame', 'Ecos de enxame passam de 20% para 25% do dano.', (p) => { p.upgradeLevels['bug-formation'] = 0; }),
+  typeUpgrade('bug', 'bug-web', 'Teia de contenção', 'Inimigos atingidos ficam lentos por mais tempo.', (p) => { p.upgradeLevels['bug-web'] = 0; }),
+  typeUpgrade('rock', 'rock-fragment', 'Fragmentação', '+15% de dano do golpe principal.', (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.15)); }),
+  typeUpgrade('rock', 'rock-armor', 'Pele rochosa', '+20 de vida máxima e cura imediatamente.', (p) => { p.maxHp += 20; p.hp = Math.min(p.maxHp, p.hp + 20); }),
+  typeUpgrade('ghost', 'ghost-haunt', 'Assombração', 'Ecos espectrais passam de 20% para 25% do dano.', (p) => { p.upgradeLevels['ghost-haunt'] = 0; }),
+  typeUpgrade('ghost', 'ghost-phase', 'Travessia espectral', '+15% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.15); }),
+  typeUpgrade('dragon', 'dragon-pressure', 'Pressão dracônica', '+15% de dano contra chefes.', (p) => { p.upgradeLevels['dragon-pressure'] = 0; }),
+  typeUpgrade('dragon', 'dragon-cadence', 'Cadência ancestral', '-10% na recarga do golpe principal.', (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.9)); }),
+  typeUpgrade('dark', 'dark-predation', 'Predação', '+12% de dano contra inimigos abaixo de metade da vida.', (p) => { p.upgradeLevels['dark-predation'] = 0; }),
+  typeUpgrade('dark', 'dark-thirst', 'Sede disciplinada', 'Roubo de vida cura até 3 por ativação.', (p) => { p.upgradeLevels['dark-thirst'] = 0; }),
+  typeUpgrade('steel', 'steel-plate', 'Placa reativa', 'Reduz 12% do dano recebido.', (p) => { p.upgradeLevels['steel-plate'] = 0; }),
+  typeUpgrade('steel', 'steel-precision', 'Precisão de aço', '+12% de dano do golpe principal.', (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.12)); }),
+  typeUpgrade('fairy', 'fairy-charm', 'Encanto protetor', '+15 de vida máxima e cura imediatamente.', (p) => { p.maxHp += 15; p.hp = Math.min(p.maxHp, p.hp + 15); }),
+  typeUpgrade('fairy', 'fairy-pulse', 'Pulso reconfortante', 'Roubo de vida cura até 3 por ativação.', (p) => { p.upgradeLevels['fairy-pulse'] = 0; }),
+];
+
+export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [...GENERIC_SURVIVOR_UPGRADES, ...TYPE_SURVIVOR_UPGRADES];
 
 /** Níveis a partir dos quais a carta "Evoluir" aparece: o 1º para a 1ª evolução, o 2º para a 2ª. */
 export const EVOLVE_LEVELS = [8, 16] as const;
@@ -426,6 +512,8 @@ export interface CreateSurvivorOptions {
   profile?: AttackProfile;
   /** Golpe secundário real (por exemplo, o segundo tipo). Se omitido, o motor cria uma técnica interna compatível. */
   secondMove?: SurvivorMove;
+  /** Segundo Pokémon real elegível como apoio nesta corrida. */
+  supportCandidate?: SurvivorSupportCandidate;
   /** Espécie de quem joga (para a evolução). */
   dexId?: number;
   /**
@@ -476,6 +564,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     invulnMs: 0,
     facing: 1,
     pickupRadius: PICKUP_RADIUS * preparation.pickupRadiusMultiplier,
+    upgradeLevels: {},
     ...options.player,
   };
   return {
@@ -510,6 +599,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     profile: prof ?? null,
     enemyArchetypeFor: options.enemyArchetypeFor ?? null,
     secondMoveCandidate,
+    supportCandidate: options.supportCandidate ?? null,
+    support: null,
     secondAttackOffered: false,
   };
 }
@@ -612,8 +703,12 @@ function addEnemy(state: SurvivorState, enemy: SurvivorEnemy): void {
 }
 
 /** Sorteia `count` upgrades distintos que fazem sentido para o golpe (`move`), com o texto falando do golpe. */
-export function rollUpgrades(rng: Rng, count = 3, move: SurvivorMove = BASIC_MOVE): SurvivorUpgradeOption[] {
-  const pool = SURVIVOR_UPGRADES.filter((u) => !u.for || u.for.includes(move.category));
+export function rollUpgrades(rng: Rng, count = 3, move: SurvivorMove = BASIC_MOVE, player?: SurvivorPlayer): SurvivorUpgradeOption[] {
+  const pool = SURVIVOR_UPGRADES.filter((u) =>
+    (!u.for || u.for.includes(move.category))
+    && (!u.type || u.type === move.type)
+    && (player?.upgradeLevels[u.id] ?? 0) < (u.maxLevels ?? Number.POSITIVE_INFINITY),
+  );
   const picked: SurvivorUpgradeOption[] = [];
   for (let i = 0; i < count && pool.length > 0; i++) {
     const idx = Math.floor(rng() * pool.length);
@@ -650,15 +745,15 @@ function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
 function offerOwedUpgrade(state: SurvivorState): void {
   if (state.pendingUpgrade || state.upgradesOwed <= 0) return;
   state.upgradesOwed -= 1;
-  const options = rollUpgrades(state.rng, 3, state.player.move);
+  const options = rollUpgrades(state.rng, 3, state.player.move, state.player);
   const evolve = evolutionOffer(state);
   if (evolve) options.splice(options.length - 1, 1, evolve);
-  else if (!state.secondAttackOffered && state.player.level >= 6 && state.secondMoveCandidate) {
+  else if (!state.secondAttackOffered && state.player.level >= 6 && state.supportCandidate) {
     state.secondAttackOffered = true;
     options.splice(options.length - 1, 1, {
       id: 'second-attack',
-      name: `Segundo golpe: ${state.secondMoveCandidate.name}`,
-      description: `${state.secondMoveCandidate.icon} Desbloqueia um ataque automático com recarga própria. Limite: dois golpes.`,
+      name: `Chamar apoio: ${state.supportCandidate.name}`,
+      description: `${state.supportCandidate.move.icon} Ataca da sua posição com recarga própria. Não recebe upgrades nem pode ser atingido.`,
     });
   }
   state.pendingUpgrade = options;
@@ -680,23 +775,35 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
       events.push({ type: 'evolve', dexId: next.dexId, name: next.name });
     }
   } else if (id === 'second-attack') {
-    if (offered && state.secondMoveCandidate && !state.player.secondMove) {
-      const move = state.secondMoveCandidate;
+    if (offered && state.supportCandidate && !state.support) {
+      const candidate = state.supportCandidate;
+      const move = candidate.move;
       const p = state.player;
       p.secondMove = move;
       p.secondAttackTimerMs = 0;
-      p.secondAttackDamage = round1(p.attackDamage * 0.65);
-      p.secondAttackCooldownMs = Math.max(450, Math.round(p.attackCooldownMs * 1.35));
-      p.secondAttackRange = p.attackRange;
-      p.secondAttackRadius = Math.max(8, round1(p.attackRadius * 0.75));
+      p.secondAttackDamage = round1(candidate.profile.damage * 0.45);
+      p.secondAttackCooldownMs = Math.max(500, Math.round(candidate.profile.cooldownMs * 1.45));
+      p.secondAttackRange = candidate.profile.range;
+      p.secondAttackRadius = candidate.profile.radius;
+      state.support = {
+        ...candidate,
+        x: p.x - 24,
+        y: p.y + 18,
+        attackTimerMs: 0,
+        damageFactor: 0.45,
+      };
       state.secondMoveCandidate = null;
-      events.push({ type: 'secondAttack', name: move.name });
+      state.supportCandidate = null;
+      events.push({ type: 'secondAttack', name: candidate.name });
     }
   } else {
     const upgrade = SURVIVOR_UPGRADES.find((u) => u.id === id);
     // Upgrades comuns também precisam ser uma escolha real da rodada. Isso impede que uma
     // chamada atrasada ou manipulada aplique um bônus que nunca foi oferecido.
-    if (upgrade && offered) upgrade.apply(state.player);
+    if (upgrade && offered) {
+      upgrade.apply(state.player);
+      state.player.upgradeLevels[id] = (state.player.upgradeLevels[id] ?? 0) + 1;
+    }
   }
   state.pendingUpgrade = null;
   offerOwedUpgrade(state);
@@ -735,26 +842,51 @@ function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void
 }
 
 const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
+const hasUpgrade = (player: SurvivorPlayer, id: string): boolean => (player.upgradeLevels[id] ?? 0) > 0;
 
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
-function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move): void {
+function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true): void {
   const move = attackMove;
+  const p = state.player;
+  const wasSeeded = (e.seededMs ?? 0) > 0;
   const synergy = survivorSynergyFor(move.type, e);
-  const environmentalDamage = damage
+  let upgradeMultiplier = 1;
+  if (move === p.move) {
+    if (move.type === 'fire' && hasUpgrade(p, 'fire-combustion') && (e.burnMs ?? 0) > 0) upgradeMultiplier *= 1.12;
+    if (move.type === 'electric' && hasUpgrade(p, 'electric-arc') && ((e.wetMs ?? 0) > 0 || (e.stunMs ?? 0) > 0)) upgradeMultiplier *= 1.1;
+    if (move.type === 'ice' && hasUpgrade(p, 'ice-shatter') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.15;
+    if (move.type === 'ground' && hasUpgrade(p, 'ground-aftershock') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.15;
+    if (move.type === 'dragon' && hasUpgrade(p, 'dragon-pressure') && e.boss) upgradeMultiplier *= 1.15;
+    if (move.type === 'dark' && hasUpgrade(p, 'dark-predation') && e.hp <= e.maxHp * 0.5) upgradeMultiplier *= 1.12;
+  }
+  const environmentalDamage = damage * upgradeMultiplier
     * (synergy?.damageMultiplier ?? 1)
     * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
-  e.hp -= e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
+  const reducedDamage = e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
+  e.hp -= reducedDamage;
   e.hitFlashMs = 90;
   if (synergy?.consume) e[synergy.consume] = 0;
   if (synergy?.refreshSlowMs) e.slowMs = Math.max(e.slowMs ?? 0, synergy.refreshSlowMs);
   Object.assign(e, survivorElementalStatus(move.type));
+  if (move === p.move && move.type === 'grass' && hasUpgrade(p, 'grass-roots') && wasSeeded) {
+    e.stunMs = Math.max(e.stunMs ?? 0, e.boss ? 100 : 250);
+  }
   switch (move.effect) {
     case 'queimar':
       e.burnMs = EFFECT_MS.burn;
-      e.burnDps = Math.max(e.burnDps ?? 0, round1(environmentalDamage * 0.35));
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(environmentalDamage * (move === p.move && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.44 : 0.35)));
       break;
     case 'lentidao':
-      e.slowMs = EFFECT_MS.slow;
+      e.slowMs = move === p.move && move.type === 'bug' && hasUpgrade(p, 'bug-web') ? EFFECT_MS.slow + 700 : EFFECT_MS.slow;
+      if (move.type === 'ice' && (e.frostImmuneMs ?? 0) <= 0) {
+        const frostThreshold = move === p.move && hasUpgrade(p, 'ice-deep-cold') ? 2 : 3;
+        e.frostStacks = Math.min(frostThreshold, (e.frostStacks ?? 0) + 1);
+        if (e.frostStacks >= frostThreshold) {
+          e.frostStacks = 0;
+          e.frostImmuneMs = e.boss ? 2200 : 1500;
+          e.stunMs = e.boss ? Math.max(e.stunMs ?? 0, 150) : Math.max(e.stunMs ?? 0, 550);
+        }
+      }
       break;
     case 'atordoar':
       e.stunMs = e.boss ? EFFECT_MS.bossStun : EFFECT_MS.stun;
@@ -763,7 +895,8 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
       const dx = e.x - from.x;
       const dy = e.y - from.y;
       const d = Math.hypot(dx, dy) || 1;
-      const push = e.boss ? 6 : 22;
+       const strongerPush = move === p.move && ((move.type === 'water' && hasUpgrade(p, 'water-tide')) || (move.type === 'fighting' && hasUpgrade(p, 'fighting-impact')));
+       const push = (e.boss ? 6 : 22) * (strongerPush ? 1.5 : 1);
       e.x += (dx / d) * push;
       e.y += (dy / d) * push;
       break;
@@ -771,13 +904,21 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     default:
       break;
   }
+  // Inseto e Fantasma atacam em dupla: um único eco visual e de dano por impacto, sem efeitos, cura ou recursão.
+  if (allowFollowUp && (move.type === 'bug' || move.type === 'ghost') && e.hp > 0) {
+    const enhancedEcho = move === p.move && ((move.type === 'bug' && hasUpgrade(p, 'bug-formation')) || (move.type === 'ghost' && hasUpgrade(p, 'ghost-haunt')));
+    const echoDamage = reducedDamage * (enhancedEcho ? 0.25 : 0.2);
+    e.hp -= echoDamage;
+    state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: Math.max(10, e.radius * 1.8), color: move.color, ageMs: 0, lifeMs: 220 });
+  }
 }
 
 /** Roubar vida: cura um pouco por ataque que acertou alguém (no máximo 2 por ataque, para a aura não curar demais). */
-function drain(state: SurvivorState, hits: number): void {
-  if (state.player.move.effect !== 'roubar' || hits <= 0) return;
+function drain(state: SurvivorState, hits: number, move: SurvivorMove): void {
+  if (move.effect !== 'roubar' || hits <= 0) return;
   const p = state.player;
-  p.hp = Math.min(p.maxHp, p.hp + Math.min(2, hits));
+  const strongerDrain = move === p.move && ((move.type === 'dark' && hasUpgrade(p, 'dark-thirst')) || (move.type === 'fairy' && hasUpgrade(p, 'fairy-pulse')));
+  p.hp = Math.min(p.maxHp, p.hp + Math.min(strongerDrain ? 3 : 2, hits));
 }
 
 /** Os `count` inimigos mais próximos dentro de `range`, do mais perto ao mais longe. */
@@ -816,19 +957,48 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
   }
 }
 
-/** Segundo golpe automático: tem sua própria recarga e usa a identidade do golpe secundário. */
-function attackSecond(state: SurvivorState): boolean {
+/** Ataque do apoio: nasce sempre no jogador e usa o perfil congelado do Pokémon escolhido. */
+function attackSupport(state: SurvivorState): boolean {
   const p = state.player;
-  const move = p.secondMove;
-  if (!move || p.secondAttackDamage === undefined || p.secondAttackRange === undefined || p.secondAttackRadius === undefined) return false;
-  const target = nearestEnemies(state, p.secondAttackRange, 1)[0];
+  const support = state.support;
+  if (!support) return false;
+  const { move, profile } = support;
+  const damage = round1(profile.damage * support.damageFactor);
+  const range = profile.range;
+  const radius = profile.radius;
+  if (move.category === 'projetil') {
+    const target = nearestEnemies(state, range, 1)[0];
+    if (!target) return false;
+    const angle = Math.atan2(target.y - p.y, target.x - p.x);
+    state.projectiles.push({ id: state.nextId++, x: p.x, y: p.y, vx: Math.cos(angle) * profile.projectileSpeed, vy: Math.sin(angle) * profile.projectileSpeed, damage, pierce: move.effect === 'atravessar' ? 1 : 0, lifeMs: 1500, hit: [], canChain: move.effect === 'saltar', size: Math.max(3, profile.projectileSize * 0.8), move, source: 'support' });
+    return true;
+  }
+  if (move.category === 'aura' || move.category === 'orbit') {
+    let hits = 0;
+    for (const enemy of state.enemies) {
+      if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= radius + enemy.radius) { hitEnemy(state, enemy, damage, p, move); hits++; }
+    }
+    drain(state, hits, move);
+    state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: radius, color: move.color, ageMs: 0, lifeMs: 260 });
+    return true;
+  }
+  if (move.category === 'cone') {
+    let hits = 0;
+    for (const enemy of state.enemies) {
+      const dx = enemy.x - p.x; const dy = enemy.y - p.y; const distance = Math.hypot(dx, dy);
+      if (distance <= range + enemy.radius && dx * p.facing / (distance || 1) >= 0.35) { hitEnemy(state, enemy, damage, p, move); hits++; }
+    }
+    drain(state, hits, move);
+    return hits > 0;
+  }
+  const target = nearestEnemies(state, range, 1)[0];
   if (!target) return false;
-  const angle = Math.atan2(target.y - p.y, target.x - p.x);
-  state.projectiles.push({
-    id: state.nextId++, x: p.x, y: p.y,
-    vx: Math.cos(angle) * p.projectileSpeed * 0.85, vy: Math.sin(angle) * p.projectileSpeed * 0.85,
-    damage: p.secondAttackDamage, pierce: 0, lifeMs: 1000, hit: [], size: Math.max(3, p.projectileSize * 0.8), move,
-  });
+  let hits = 0;
+  for (const enemy of state.enemies) {
+    if (Math.hypot(enemy.x - target.x, enemy.y - target.y) <= radius + enemy.radius) { hitEnemy(state, enemy, damage, p, move); hits++; }
+  }
+  drain(state, hits, move);
+  state.fx.push({ kind: 'blast', x: target.x, y: target.y, r: radius, color: move.color, ageMs: 0, lifeMs: 320 });
   return true;
 }
 
@@ -847,15 +1017,15 @@ function attack(state: SurvivorState): boolean {
     let hits = 0;
     for (const e of state.enemies) {
       const distance = Math.hypot(e.x - p.x, e.y - p.y);
-      const inRange = move.category === 'orbit'
-        ? distance >= p.attackRadius * 0.48 - e.radius && distance <= p.attackRadius + e.radius
-        : distance <= p.attackRadius + e.radius;
+      // A órbita também alcança quem encosta no jogador. Antes havia uma faixa interna sem dano,
+      // que punia Inseto/Planta justamente quando precisavam de cobertura próxima.
+      const inRange = distance <= p.attackRadius + e.radius;
       if (inRange) {
         hitEnemy(state, e, p.attackDamage, p);
         hits++;
       }
     }
-    drain(state, hits);
+    drain(state, hits, move);
     // A órbita intercepta no máximo um projétil por pulso e somente dentro do seu alcance.
     if (move.category === 'orbit') {
       const projectileIndex = state.hostileProjectiles.findIndex((projectile) =>
@@ -878,7 +1048,7 @@ function attack(state: SurvivorState): boolean {
         hits++;
       }
     }
-    drain(state, hits);
+    drain(state, hits, move);
     // O golpe frontal pode aparar um projétil próximo por ataque, sem limpar ondas inteiras.
     const projectileIndex = state.hostileProjectiles.findIndex((projectile) => {
       const dx = projectile.x - p.x;
@@ -903,7 +1073,7 @@ function attack(state: SurvivorState): boolean {
     }
     state.fx.push({ kind: 'blast', x: center.x, y: center.y, r: p.attackRadius, color: move.color, ageMs: 0, lifeMs: 420 });
   }
-  drain(state, hits);
+  drain(state, hits, move);
   return true;
 }
 
@@ -1068,6 +1238,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       if (e.burnMs === 0) e.burnDps = 0;
     }
     if (e.slowMs && e.slowMs > 0) e.slowMs = Math.max(0, e.slowMs - dtMs);
+    if (e.frostImmuneMs && e.frostImmuneMs > 0) e.frostImmuneMs = Math.max(0, e.frostImmuneMs - dtMs);
     if (e.wetMs && e.wetMs > 0) e.wetMs = Math.max(0, e.wetMs - dtMs);
     if (e.seededMs && e.seededMs > 0) e.seededMs = Math.max(0, e.seededMs - dtMs);
     const stunned = !!e.stunMs && e.stunMs > 0;
@@ -1083,7 +1254,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     e.y += (dy / d) * speed * dt;
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
     if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0 && !specialProtects(state)) {
-      p.hp = Math.max(0, p.hp - e.damage);
+      const incoming = hasUpgrade(p, 'steel-plate') ? Math.ceil(e.damage * 0.88) : e.damage;
+      p.hp = Math.max(0, p.hp - incoming);
       p.invulnMs = BALANCE.hitInvulnerabilityMs;
     }
   }
@@ -1092,14 +1264,17 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   state.hostileProjectiles = state.hostileProjectiles.filter((proj) => {
     const nearAura = p.move.category === 'aura'
       && Math.hypot(proj.x - p.x, proj.y - p.y) <= p.attackRadius + proj.size;
-    const speedMultiplier = nearAura ? BALANCE.auraProjectileSpeedMultiplier : 1;
+    const psychicField = p.move.type === 'psychic' && hasUpgrade(p, 'psychic-field')
+      && Math.hypot(proj.x - p.x, proj.y - p.y) <= Math.max(90, p.attackRadius || 90);
+    const speedMultiplier = (nearAura ? BALANCE.auraProjectileSpeedMultiplier : 1) * (psychicField ? 0.9 : 1);
     proj.x += proj.vx * speedMultiplier * dt;
     proj.y += proj.vy * speedMultiplier * dt;
     proj.lifeMs -= dtMs;
     if (proj.lifeMs <= 0 || proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size) {
       if (p.invulnMs <= 0 && !specialProtects(state)) {
-        p.hp = Math.max(0, p.hp - proj.damage);
+        const incoming = hasUpgrade(p, 'steel-plate') ? Math.ceil(proj.damage * 0.88) : proj.damage;
+        p.hp = Math.max(0, p.hp - incoming);
         p.invulnMs = BALANCE.hitInvulnerabilityMs;
       }
       return false;
@@ -1110,9 +1285,19 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   // Autoataque com o golpe do tipo (projétil, aura ou área).
   p.attackTimerMs = Math.max(0, p.attackTimerMs - dtMs);
   if (p.attackTimerMs <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs;
-  if (p.secondMove && p.secondAttackCooldownMs !== undefined) {
-    p.secondAttackTimerMs = Math.max(0, (p.secondAttackTimerMs ?? 0) - dtMs);
-    if (p.secondAttackTimerMs <= 0 && attackSecond(state)) p.secondAttackTimerMs = p.secondAttackCooldownMs;
+  if (state.support) {
+    const support = state.support;
+    // Posição visual apenas: o apoio alcança o jogador com a mesma velocidade normal, sem criar uma hitbox.
+    const desiredX = p.x - p.facing * 26;
+    const desiredY = p.y + 18;
+    const dxSupport = desiredX - support.x;
+    const dySupport = desiredY - support.y;
+    const distance = Math.hypot(dxSupport, dySupport);
+    const follow = Math.min(distance, p.speed * dt);
+    if (distance > 0.01) { support.x += dxSupport / distance * follow; support.y += dySupport / distance * follow; }
+    support.attackTimerMs = Math.max(0, support.attackTimerMs - dtMs);
+    if (support.attackTimerMs <= 0 && attackSupport(state)) support.attackTimerMs = Math.max(500, Math.round(support.profile.cooldownMs * 1.45));
+    p.secondAttackTimerMs = support.attackTimerMs;
   }
 
   // Projéteis: avançam, somem com o tempo/fora da arena, acertam o inimigo mais próximo no caminho.
@@ -1128,7 +1313,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       if (proj.hit.includes(e.id)) continue;
       if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + 5) {
         hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move);
-        drain(state, 1);
+        drain(state, 1, proj.move ?? state.player.move);
         proj.hit.push(e.id);
         if (proj.canChain) {
           // Salta uma vez para o inimigo mais próximo deste (que ainda não foi atingido), com 70% do dano.
@@ -1139,7 +1324,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           if (next) {
             const ang = Math.atan2(next.y - e.y, next.x - e.x);
             const speed = Math.hypot(proj.vx, proj.vy);
-            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size });
+            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size, move: proj.move, source: proj.source });
           }
         }
         if (proj.pierce <= 0) return false;
