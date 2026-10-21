@@ -25,6 +25,7 @@ import {
   stepSurvivor,
   survivorCoins,
   survivorScore,
+  SURVIVOR_UPGRADE_RARITIES,
   SURVIVOR_LOVE_CANDY_MS,
   SURVIVOR_MEGA_SHARD_MS,
 } from '../core/survivor';
@@ -1363,9 +1364,18 @@ onBeforeUnmount(() => {
         <div v-if="pendingUpgrade" class="survivor-overlay" role="dialog" aria-label="Escolha um upgrade">
           <div class="card survivor-upgrades">
             <h2>Subiu de nível!</h2>
-            <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="{ evolve: u.id.startsWith('evolve:') }" @click="chooseUpgrade(u.id)">
+            <p class="survivor-rarity-hint">Cada carta tem uma raridade e um efeito próprio. O Especial continua disponível após o encontro com o guardião.</p>
+            <details class="survivor-rarity-guide">
+              <summary>Como funcionam as raridades</summary>
+              <p>Pesos relativos entre cartas disponíveis: Normal 60, Raro 30, Lendário 8 e Ancestral 2. As chances mudam quando uma faixa ainda não está liberada ou acaba.</p>
+              <p>Raro: nível 3 · Lendário: nível 8 · Ancestral: nível 12. Só uma carta Ancestral pode ser escolhida por corrida.</p>
+            </details>
+            <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" @click="chooseUpgrade(u.id)">
               <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u.id) }}</span>
-              <span class="survivor-upgrade-text"><strong>{{ u.name }}</strong><small>{{ u.description }}</small></span>
+              <span class="survivor-upgrade-text">
+                <span v-if="u.rarity" class="survivor-rarity-label">{{ SURVIVOR_UPGRADE_RARITIES[u.rarity].icon }} {{ SURVIVOR_UPGRADE_RARITIES[u.rarity].label }} · {{ SURVIVOR_UPGRADE_RARITIES[u.rarity].impact }}</span>
+                <strong>{{ u.name }}</strong><small>{{ u.description }}</small>
+              </span>
             </button>
           </div>
         </div>
