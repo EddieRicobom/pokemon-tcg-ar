@@ -98,6 +98,11 @@ export function moveFor(types: readonly PokemonType[], stats: BaseStats | null):
   return { type, ...ELEMENTS[type], category, ...(stats ? {} : { estimated: true }) };
 }
 
+/** Efeito elemental usado por um tipo, sem depender dos stats da espécie. */
+export function moveEffectForType(type: PokemonType): MoveEffect {
+  return ELEMENTS[type].effect;
+}
+
 /** Números base de cada forma (dano, recarga, alcance e raio) para stats médios; os stats multiplicam a partir daqui. */
 export interface CategoryBase {
   damage: number;

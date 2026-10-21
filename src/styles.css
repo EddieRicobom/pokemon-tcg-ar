@@ -3584,6 +3584,20 @@ body.no-scroll .reward-toasts {
   -webkit-user-select: none;
   background: #0d162e;
   box-shadow: 0 0 0 2px var(--line);
+  transform-origin: center;
+  transition: transform 120ms ease-out;
+}
+
+/* Inclinação discreta de apresentação: a física continua 2D, mas o tabuleiro e
+   as fichas ganham uma leitura de profundidade sem abrir outra cena WebGL. */
+.pin-stage.pin-depth {
+  perspective: 900px;
+}
+
+.pin-stage.pin-depth canvas,
+.pin-stage.pin-depth .pin-sprites {
+  transform: perspective(900px) rotateX(6deg) translateY(-1%);
+  transform-origin: center 58%;
 }
 
 .pin-stage.aiming {
@@ -3617,8 +3631,19 @@ body.no-scroll .reward-toasts {
   border-radius: 50%;
   box-sizing: border-box;
   background: radial-gradient(circle at 50% 40%, #f4f8ff, #b8c6e0);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 0 rgba(20, 28, 48, 0.55), 0 7px 10px rgba(0, 0, 0, 0.38);
+  transform-style: preserve-3d;
   will-change: transform;
+}
+
+.pin-token::after {
+  content: '';
+  position: absolute;
+  inset: 7%;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  transform: translateZ(4px);
+  pointer-events: none;
 }
 
 .pin-token img {
@@ -6030,6 +6055,27 @@ body.no-scroll .reward-toasts {
 
 /* O HUD não começa o joystick, mas os seus botões precisam receber o toque. */
 .survivor-hud button { pointer-events: auto; touch-action: manipulation; }
+.survivor-action-dock {
+  position: absolute;
+  right: calc(10px + env(safe-area-inset-right));
+  top: calc(10px + env(safe-area-inset-top));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  max-width: min(170px, 38vw);
+  pointer-events: auto;
+}
+.survivor-action-dock .chip {
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.86);
+  text-align: center;
+  white-space: normal;
+}
+.survivor-artifact-chip { border-color: #ffb35c !important; color: #ffe4a8 !important; }
 .survivor-xp small { font: inherit; opacity: 0.78; }
 
 .survivor-minimap {

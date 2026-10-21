@@ -568,6 +568,16 @@ export interface Gift {
 export function giveGift(s: VillageState, id: string, types: readonly PokemonType[], item: ItemId, day: string): Gift {
   const f = friendOf(s, id);
   const def = itemDef(item);
+  if (def?.friendshipLevels) {
+    if (availableCount(s, item) <= 0) return { ok: false, text: `Você não tem ${itemName(item)} disponível.`, gained: 0 };
+    const current = friendLevel(f.points).level;
+    const next = FRIEND_LEVELS[current + 1];
+    if (!next) return { ok: false, text: `${id} já está no maior nível de amizade.`, gained: 0 };
+    s.inventory[item] = count(s, item) - 1;
+    const gained = next.min - f.points;
+    f.points = Math.min(100, next.min);
+    return { ok: true, text: `✨ ${itemName(item)}! A amizade subiu para ${next.name}.`, gained };
+  }
   if (def?.kind === 'food') {
     if (f.lastMeal === day) return { ok: false, text: 'Já comi hoje. Estou satisfeito, obrigado!', gained: 0 };
     if (availableCount(s, item) <= 0) return { ok: false, text: `Esse alimento está reservado para uma proposta ativa do Conselho.`, gained: 0 };

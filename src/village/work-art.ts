@@ -1,5 +1,6 @@
 import type { FarmTask } from '../core/village/farm';
 import { FARM_RULES } from '../core/village/farm';
+import type { VillageActivity } from '../core/village/vocations';
 
 /** Ferramentas 2D sobre o morador e o recurso real. Sem partículas persistentes nem nova camada WebGL. */
 export function drawWorkAction(ctx: CanvasRenderingContext2D, task: FarmTask, cx: number, base: number, tx: number, ty: number, scale: number, now: number, animate: boolean): void {
@@ -44,4 +45,11 @@ export function drawWorkAction(ctx: CanvasRenderingContext2D, task: FarmTask, cx
   const progress = Math.max(0, Math.min(1, (Date.now() - task.workingSince) / FARM_RULES.workMs));
   ctx.fillStyle = '#242a2e'; ctx.fillRect(tx - 7 * scale, ty + 4 * scale, 14 * scale, 3 * scale);
   ctx.fillStyle = '#a9d875'; ctx.fillRect(tx - 6 * scale, ty + 5 * scale, 12 * scale * progress, scale);
+}
+
+/** Ações visuais dos ciclos sociais que não passam pela FarmSession. */
+export function drawCommunityWorkAction(ctx: CanvasRenderingContext2D, activity: VillageActivity, cx: number, base: number, tx: number, ty: number, scale: number, now: number, animate: boolean): void {
+  const kind = activity === 'mineracao' ? 'mine' : activity === 'madeireira' ? 'lumber' : activity === 'pesca' ? 'fish' : null;
+  if (!kind) return;
+  drawWorkAction(ctx, { kind, x: tx, y: ty, residentId: '', seed: '', stand: { x: 0, y: 0 }, createdAt: 0, workingSince: 0 }, cx, base, tx, ty, scale, now, animate);
 }

@@ -304,6 +304,23 @@ describe('golpes por tipo', () => {
     expect(pushed.x).toBeGreaterThan(water.player.x + 60);
   });
 
+  it('afinidade rara aplica o efeito do tipo secundário sem trocar o golpe principal', () => {
+    const primary = as('normal', 'aura');
+    const state = quiet(createSurvivorState(1, {
+      kindCount: 1,
+      move: primary.move,
+      profile: primary.profile,
+      typeAffinity: { type: 'fire', effect: 'queimar' },
+    }));
+    const target = dummy(1, state.player.x + 30, state.player.y);
+    state.player.attackRadius = 100;
+    state.enemies.push(target);
+    stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    expect(state.player.move.type).toBe('normal');
+    expect(target.burnMs).toBeGreaterThan(0);
+    expect(target.burnDps).toBeGreaterThan(0);
+  });
+
   it('Água marca o alvo e o próximo golpe Elétrico consome a sinergia', () => {
     const water = quiet(createSurvivorState(1, { kindCount: 1, ...as('water', 'aura') }));
     const electric = as('electric', 'aura');
@@ -501,6 +518,18 @@ describe('segundo golpe', () => {
     expect(s.player.hp).toBeGreaterThan(s.player.maxHp - 10);
   });
 
+  it('avisa os marcos de 10 e 20 minutos uma única vez por corrida', () => {
+    const s = quiet(createSurvivorState(8, { kindCount: 1 }));
+    const ten = stepSurvivor(s, { dx: 0, dy: 0 }, 600_000);
+    expect(ten).toContainEqual({ type: 'milestone', id: 'ten-minutes', reward: 'love-candy' });
+    expect(stepSurvivor(s, { dx: 0, dy: 0 }, 1)).not.toContainEqual(expect.objectContaining({ type: 'milestone' }));
+    const long = quiet(createSurvivorState(9, { kindCount: 1 }));
+    long.player.hp = 1_000_000;
+    long.player.maxHp = 1_000_000;
+    const twenty = stepSurvivor(long, { dx: 0, dy: 0 }, 1_200_000);
+    expect(twenty).toContainEqual({ type: 'milestone', id: 'twenty-minutes', reward: 'mega-stone-shard' });
+  });
+
   it('gelo congela por pouco tempo e inseto aplica apenas um eco de dano por impacto', () => {
     const ice = as('ice', 'projetil');
     const cold = quiet(createSurvivorState(3, { kindCount: 1, move: ice.move, profile: ice.profile }));
@@ -517,6 +546,15 @@ describe('segundo golpe', () => {
     stepSurvivor(swarm, { dx: 0, dy: 0 }, 16);
     expect(target.hp).toBeLessThan(1000 - swarm.player.attackDamage);
     expect(swarm.fx.some((fx) => fx.kind === 'echo')).toBe(true);
+    const swarmFollowUp = swarm.fx.find((fx) => fx.kind === 'follow-up');
+    expect(swarmFollowUp).toMatchObject({ element: 'bug', delayMs: 85, count: 4, fromX: swarm.player.x, toX: target.x });
+
+    const ghost = as('ghost', 'projetil');
+    const haunt = quiet(createSurvivorState(5, { kindCount: 1, move: ghost.move, profile: ghost.profile }));
+    const ghostTarget = dummy(3, haunt.player.x + 20, haunt.player.y, 1000);
+    haunt.enemies.push(ghostTarget);
+    stepSurvivor(haunt, { dx: 0, dy: 0 }, 16);
+    expect(haunt.fx.find((fx) => fx.kind === 'follow-up')).toMatchObject({ element: 'ghost', delayMs: 85, count: 3 });
   });
 });
 
@@ -616,6 +654,9 @@ describe('treinadores e chefão final', () => {
     for (const e of ev1) if (e.type === 'trainerSpawn') timeline.push(`t:${e.count}:${e.final}`);
     expect(timeline).toContain('t:3:false');
     expect(s.enemies.filter((e) => e.grade === 'elite').length).toBe(3);
+    const elite = s.enemies.find((e) => e.grade === 'elite');
+    expect(elite?.maxHp).toBe(Math.round((BALANCE.enemyHpBase + Math.floor(300 / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + s.wave * BALANCE.enemyHpPerWave) * 5 * BALANCE.trainerStatMultiplier * s.infiniteScale));
+    expect(elite?.damage).toBe(Math.round((BALANCE.enemyDamageBase + Math.floor(300 / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep) * 2 * BALANCE.trainerStatMultiplier * s.infiniteScale));
     // Pula para quase 20 min.
     s.elapsedMs = 1_200_000 - 200;
     const ev2 = stepSurvivor(s, { dx: 0, dy: 0 }, 400);
@@ -657,5 +698,18 @@ describe('treinadores e chefão final', () => {
   it('moedas: +40 por treinador, +80 por chefão (além da pontuação)', () => {
     expect(survivorCoins({ survivedMs: 60_000, kills: 10, level: 4, trainersBeaten: 2, bossesBeaten: 1 })).toBe(50 + 40 + 80);
     expect(survivorCoins({ survivedMs: 60_000, kills: 10, level: 4, trainersBeaten: 0, bossesBeaten: 0 })).toBe(50);
+  });
+});
+
+describe('artefatos temporários', () => {
+  it('coleta artefato real e aplica cura com proteção visual registrada', () => {
+    const s = createSurvivorState(8, { kindCount: 1 });
+    s.player.hp = 20;
+    s.artifacts.push({ id: 901, x: s.player.x, y: s.player.y, kind: 'heal' });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.artifacts).toHaveLength(0);
+    expect(s.player.hp).toBeGreaterThan(20);
+    expect(s.player.artifactShieldMs).toBe(3000);
+    expect(s.fx.some((fx) => fx.kind === 'artifact' && fx.artifact === 'heal')).toBe(true);
   });
 });

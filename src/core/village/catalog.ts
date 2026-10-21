@@ -33,6 +33,8 @@ export interface ItemDef {
   light?: boolean;
   /** Comida: pontos de amizade que dá ao ser presenteada. */
   feeds?: number;
+  /** Consumível raro que avança a amizade para o próximo nível. */
+  friendshipLevels?: number;
   /** Porções que sustentam a comunidade quando o item está no inventário. Ingrediente = 1; prato pronto = 2. */
   nutrition?: number;
 }
@@ -103,6 +105,8 @@ export const ITEMS: readonly ItemDef[] = [
   m('perola', 'Pérola', 120),
   m('alga', 'Alga', 3),
   m('bota', 'Bota velha', 1),
+  { ...m('love-candy', 'Love Candy', 0), friendshipLevels: 1 },
+  m('mega-stone-shard', 'Fragmento de Mega Stone', 0),
   // Materiais fabricados
   { ...m('tabua', 'Tábua', 9), recipe: { madeira: 2 } },
   { ...m('tijolo', 'Tijolo', 14), recipe: { pedra: 2, argila: 1 } },

@@ -32,6 +32,7 @@ import { beginInvestigation, inspectLegendClue, investigationPlace, legendDiaryP
 import type { DecodedGif } from '../core/gif';
 import MinigameHub from './MinigameHub.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
+import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
 import { personalityOf } from '../core/village/personality';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
@@ -1339,13 +1340,23 @@ function recordSurvivalAdventure(summary: import('../core/survivor').SurvivorSum
   const now = new Date();
   const time = `${Math.floor(summary.survivedMs / 60000)}:${String(Math.floor(summary.survivedMs / 1000) % 60).padStart(2, '0')}`;
   const won = summary.finalBossBeaten ? 'A Torre foi vencida!' : `Chegou até a onda ${summary.wave}.`;
+  const milestoneRewards: string[] = [];
+  if (summary.survivedMs >= SURVIVOR_LOVE_CANDY_MS) {
+    add(state, 'love-candy');
+    milestoneRewards.push('🍬 Love Candy');
+  }
+  if (summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS) {
+    add(state, 'mega-stone-shard');
+    milestoneRewards.push('💎 Fragmento de Mega Stone');
+  }
   state.diary = trimMoments([...state.diary, {
     id, t: now.getTime(), day: refreshDay(), hour: now.getHours(), tpl: 'survival-adventure', kind: 'amizade', title: `Aventura na Torre · ${participant.name}`, emoji: '🗼',
     cast: [{ id: participant.id, name: participant.name }], lines: [{ who: 0, text: `${participant.name} enfrentou a Torre por ${time}.` }],
-    result: [`${summary.kills} derrotas · nível ${summary.level} · onda ${summary.wave}.`, won, ...(summary.finalBossBeaten ? ['O troféu da Torre foi conquistado; o modo Infinito está disponível.'] : [])],
+    result: [`${summary.kills} derrotas · nível ${summary.level} · onda ${summary.wave}.`, won, ...milestoneRewards.map((reward) => `${reward} conquistado nesta corrida.`), ...(summary.finalBossBeaten ? ['O troféu da Torre foi conquistado; o modo Infinito está disponível.'] : [])],
   }]);
   changed();
   syncTrainer();
+  if (milestoneRewards.length > 0) say(`Recompensas da Torre: ${milestoneRewards.join(' · ')}.`, 7000);
 }
 
 function finishGuidedTrip(): void {

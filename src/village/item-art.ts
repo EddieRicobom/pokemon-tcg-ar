@@ -289,6 +289,8 @@ const MATERIAL_ICONS: Record<string, Draw> = {
   perola: (p) => { p.disc(8, 11, 7, 4, 0xe8d8e8); for (let x = 2; x < 15; x += 2) p.rect(x, 8, 1, 6, 0xc8b0c8); p.disc(8, 8, 3, 3, WHITE); p.px(7, 7, 0xe8f0ff); p.px(9, 9, 0xdcc8e8); },
   alga: (p) => { for (const [x, o] of [[4, 0], [8, 2], [12, 1]] as const) for (let y = 2 + o; y < 15; y++) p.rect(x + Math.round(Math.sin(y * 0.8 + x) * 1), y, 2, 1, y % 3 ? GREEN : GREEN_D); },
   bota: (p) => { p.rect(5, 2, 5, 9, 0x8a5a2e); p.rect(5, 2, 5, 2, 0xa8743e); p.rect(4, 10, 10, 4, 0x6a4a28); p.rect(4, 13, 10, 1, DARK); p.px(6, 6, 0xc89a5a); p.px(9, 7, 0x5a3a1e); },
+  'love-candy': (p) => { p.disc(8, 8, 6, 5, PINK); p.tri(8, 14, 3, 7, 10, PINK); p.disc(6, 7, 1.8, 1.8, 0xffe0ec); p.disc(10, 7, 1.8, 1.8, 0xffe0ec); p.px(8, 5, WHITE); },
+  'mega-stone-shard': (p) => { p.tri(8, 1, 3, 13, 13, 0x8a6ae8); p.tri(8, 3, 6, 10, 10, 0xc8b8ff); p.line(8, 2, 8, 13, WHITE); p.px(5, 9, 0x6a4ac8); p.px(11, 7, 0xe8dcff); },
   tabua: (p) => { p.rect(1, 3, 14, 3, WOOD_L); p.rect(1, 7, 14, 3, WOOD); p.rect(1, 11, 14, 3, WOOD_D); for (const [x, y] of [[4, 4], [11, 8], [7, 12]] as const) p.px(x, y, LEG); },
   tijolo: (p) => { for (const [x, y, w] of [[1, 3, 7], [9, 3, 6], [1, 7, 3], [5, 7, 7], [13, 7, 2], [1, 11, 7], [9, 11, 6]] as const) { p.rect(x, y, w, 3, 0xc8503c); p.rect(x, y, w, 1, 0xe0705a); } },
   vidro: (p) => { p.rect(3, 2, 10, 12, 0xcfeeff); p.rect(3, 2, 10, 1, WHITE); p.rect(4, 3, 8, 10, 0xa8dcf8); p.line(5, 11, 9, 4, WHITE); p.line(8, 12, 11, 7, 0xe8f8ff); },

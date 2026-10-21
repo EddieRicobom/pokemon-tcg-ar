@@ -1,0 +1,10 @@
+import { describe, expect, it } from 'vitest';
+import { harmonizePlayerSprite } from './player-filter';
+
+describe('filtro de sprite do treinador', () => {
+  it('quantiza a paleta sem alterar transparência ou dimensões', () => {
+    const result = harmonizePlayerSprite({ w: 2, h: 1, data: Uint8Array.from([241, 117, 33, 255, 20, 30, 40, 0]) });
+    expect(result).toMatchObject({ w: 2, h: 1 });
+    expect([...result.data]).toEqual([240, 120, 48, 255, 20, 30, 40, 0]);
+  });
+});

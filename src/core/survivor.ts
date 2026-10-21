@@ -61,6 +61,10 @@ export interface SurvivorPlayer {
   shots: number;
   /** Janela de invencibilidade após levar dano (ms restantes). */
   invulnMs: number;
+  /** Buffs temporários concedidos pelos artefatos coletados na arena. */
+  artifactSpeedMs: number;
+  artifactPowerMs: number;
+  artifactShieldMs: number;
   /** -1 olhando para a esquerda, 1 para a direita (para virar o sprite). */
   facing: -1 | 1;
   /** Alcance para coletar orbe de XP ao passar perto (sobe com o upgrade "Ímã de XP"). */
@@ -150,6 +154,9 @@ export interface SurvivorHostileProjectile {
   damage: number;
   lifeMs: number;
   size: number;
+  /** Ataques de Pokémon de treinadores têm leitura visual própria. */
+  grade?: SurvivorEnemyGrade;
+  effect?: 'burn' | 'slow' | 'stun';
 }
 
 export interface SurvivorProjectile {
@@ -175,13 +182,30 @@ export interface SurvivorProjectile {
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
-  kind: 'pulse' | 'blast' | 'evolve' | 'echo';
+  kind: 'pulse' | 'blast' | 'evolve' | 'echo' | 'follow-up' | 'artifact';
   x: number;
   y: number;
   r: number;
   color: string;
   ageMs: number;
   lifeMs: number;
+  /** Efeito secundário que parte do jogador depois do impacto principal. */
+  element?: 'bug' | 'ghost';
+  fromX?: number;
+  fromY?: number;
+  toX?: number;
+  toY?: number;
+  delayMs?: number;
+  count?: number;
+  artifact?: SurvivorArtifactKind;
+}
+
+export type SurvivorArtifactKind = 'speed' | 'heal' | 'power';
+export interface SurvivorArtifact {
+  id: number;
+  x: number;
+  y: number;
+  kind: SurvivorArtifactKind;
 }
 
 export interface SurvivorOrb {
@@ -197,6 +221,12 @@ export interface SurvivorUpgradeOption {
   description: string;
 }
 
+/** Afinidade rara: o segundo tipo da espécie reforça a corrida sem criar outro golpe. */
+export interface SurvivorTypeAffinity {
+  type: SurvivorMove['type'];
+  effect: SurvivorMove['effect'];
+}
+
 export interface SurvivorState {
   special: SurvivorSpecialState;
   rng: Rng;
@@ -210,6 +240,7 @@ export interface SurvivorState {
   projectiles: SurvivorProjectile[];
   hostileProjectiles: SurvivorHostileProjectile[];
   orbs: SurvivorOrb[];
+  artifacts: SurvivorArtifact[];
   fx: SurvivorFx[];
   kills: number;
   wave: number;
@@ -248,6 +279,8 @@ export interface SurvivorState {
   supportCandidate: SurvivorSupportCandidate | null;
   support: SurvivorSupport | null;
   secondAttackOffered: boolean;
+  /** Efeito do segundo tipo escolhido no início; não causa dano extra nem recebe upgrades. */
+  typeAffinity: SurvivorTypeAffinity | null;
 }
 
 export interface SurvivorEvolutionOption {
@@ -290,6 +323,10 @@ export function survivorScore(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 
 /** Uma corrida que só conta se você durou um pouco ou derrotou alguém (sair logo não vira fazenda de moedas). */
 export const SURVIVOR_MIN_MS = 20_000;
 
+/** Marcos de corrida que só viram itens quando a partida termina de verdade na Vila. */
+export const SURVIVOR_LOVE_CANDY_MS = 10 * 60_000;
+export const SURVIVOR_MEGA_SHARD_MS = 20 * 60_000;
+
 /** Prêmio por zerar a Torre (chefão final caído): só uma vez por dia (`today.clearedTorre`). */
 export const SURVIVOR_CLEAR_BONUS = 500;
 
@@ -305,6 +342,7 @@ export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 
 
 export type SurvivorEvent =
   | { type: 'levelup'; level: number }
+  | { type: 'milestone'; id: 'ten-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'mega-stone-shard' }
   | { type: 'bossSpawn' }
   /** Treinador apareceu: solta um grupo de `count` Pokémon elite (3 no normal, 6 no chefão final e no infinito). */
   | { type: 'trainerSpawn'; count: number; final: boolean }
@@ -373,6 +411,10 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
     apply: (p) => { p.attackRadius = round1(p.attackRadius * 1.2); },
   },
   { id: 'magnet', name: 'Ímã de XP', description: '+30% no alcance para coletar orbes de XP.', apply: (p) => { p.pickupRadius = round1(p.pickupRadius * 1.3); } },
+  { id: 'velocity', name: 'Velocidade de saída', description: '+18% na velocidade dos projéteis.', for: ['projetil'], maxLevels: 1, apply: (p) => { p.projectileSpeed = round1(p.projectileSpeed * 1.18); } },
+  { id: 'renewal', name: 'Renovação', description: '+15 de vida máxima e cura imediatamente.', maxLevels: 1, apply: (p) => { p.maxHp += 15; p.hp = p.maxHp; } },
+  { id: 'tempo', name: 'Passo cadenciado', description: '+8% de velocidade de movimento.', maxLevels: 1, apply: (p) => { p.speed = round1(p.speed * 1.08); } },
+  { id: 'resonance', name: 'Ressonância', description: '+10% de dano no golpe principal.', maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.1)); } },
 ] as const;
 
 /** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */
@@ -484,6 +526,14 @@ export const BALANCE = {
   /** Primeiro chefe e intervalo entre os seguintes (ms). */
   firstBossMs: 60_000,
   bossEveryMs: 90_000,
+  /** Treinadores entram mais fortes sem alterar a curva dos inimigos comuns. */
+  trainerStatMultiplier: 1.3,
+  artifactDropChance: 0.08,
+  artifactEliteDropChance: 0.2,
+  artifactBossDropChance: 0.45,
+  artifactSpeedMultiplier: 1.35,
+  artifactPowerMultiplier: 1.25,
+  artifactDurationMs: 8_000,
 } as const;
 
 /** Limites de segurança para comportamentos especiais; são limites do motor, não atributos oficiais. */
@@ -526,6 +576,8 @@ export interface CreateSurvivorOptions {
   infinite?: boolean;
   /** Preparação estratégica opcional, liberada por objetivos de corridas concluídas. */
   preparation?: SurvivorPreparationId;
+  /** Segundo tipo raro escolhido no início da corrida. */
+  typeAffinity?: SurvivorTypeAffinity;
 }
 
 /** Técnica interna da Torre para que até Pokémon de um tipo tenham uma segunda opção desbloqueável. */
@@ -562,6 +614,9 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     pierce: 0,
     shots: 1,
     invulnMs: 0,
+    artifactSpeedMs: 0,
+    artifactPowerMs: 0,
+    artifactShieldMs: 0,
     facing: 1,
     pickupRadius: PICKUP_RADIUS * preparation.pickupRadiusMultiplier,
     upgradeLevels: {},
@@ -578,6 +633,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     projectiles: [],
     hostileProjectiles: [],
     orbs: [],
+    artifacts: [],
     fx: [],
     kills: 0,
     wave: 1,
@@ -602,6 +658,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     supportCandidate: options.supportCandidate ?? null,
     support: null,
     secondAttackOffered: false,
+    typeAffinity: options.typeAffinity ?? null,
   };
 }
 
@@ -661,8 +718,9 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   const baseHp = BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave;
   const baseDmg = BALANCE.enemyDamageBase + Math.floor(t / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep;
   // Treinadores (elite) têm +5× HP e +2× dano; o chefão (do time dos 6) ainda mais pesado.
-  const hpMul = grade === 'chefao' ? 7 : grade === 'elite' ? 5 : 1;
-  const dmgMul = grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1;
+  const trainerMul = grade === 'comum' ? 1 : BALANCE.trainerStatMultiplier;
+  const hpMul = (grade === 'chefao' ? 7 : grade === 'elite' ? 5 : 1) * trainerMul;
+  const dmgMul = (grade === 'chefao' ? 2.5 : grade === 'elite' ? 2 : 1) * trainerMul;
   const speed = (grade === 'comum'
     ? BALANCE.enemySpeedBase + state.rng() * BALANCE.enemySpeedRandom
     : grade === 'elite' ? 72 + state.rng() * 18 : 60 + state.rng() * 15) * (0.9 + Math.min(0.4, state.infiniteScale * 0.1));
@@ -844,6 +902,41 @@ function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void
 const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
 const hasUpgrade = (player: SurvivorPlayer, id: string): boolean => (player.upgradeLevels[id] ?? 0) > 0;
 
+/** Aplica apenas o efeito do tipo secundário, com intensidade menor e sem upgrades do golpe principal. */
+function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }): void {
+  const affinity = state.typeAffinity;
+  if (!affinity || affinity.effect === 'nenhum') return;
+  switch (affinity.effect) {
+    case 'queimar':
+      e.burnMs = Math.max(e.burnMs ?? 0, Math.round(EFFECT_MS.burn * 0.65));
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(damage * 0.18));
+      break;
+    case 'lentidao':
+      e.slowMs = Math.max(e.slowMs ?? 0, 900);
+      break;
+    case 'atordoar':
+      e.stunMs = Math.max(e.stunMs ?? 0, e.boss ? 90 : 220);
+      break;
+    case 'empurrar': {
+      const dx = e.x - from.x;
+      const dy = e.y - from.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const push = e.boss ? 1.5 : 5;
+      e.x += (dx / d) * push;
+      e.y += (dy / d) * push;
+      break;
+    }
+    case 'roubar':
+      state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1);
+      break;
+    case 'atravessar':
+      // O tipo já foi escolhido como afinidade; atravessar não precisa de estado no inimigo.
+      break;
+    default:
+      break;
+  }
+}
+
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
 function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true): void {
   const move = attackMove;
@@ -896,7 +989,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
       const dy = e.y - from.y;
       const d = Math.hypot(dx, dy) || 1;
        const strongerPush = move === p.move && ((move.type === 'water' && hasUpgrade(p, 'water-tide')) || (move.type === 'fighting' && hasUpgrade(p, 'fighting-impact')));
-       const push = (e.boss ? 6 : 22) * (strongerPush ? 1.5 : 1);
+       const push = (e.boss ? 3 : 11) * (strongerPush ? 1.5 : 1);
       e.x += (dx / d) * push;
       e.y += (dy / d) * push;
       break;
@@ -904,12 +997,19 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     default:
       break;
   }
+  if (move === p.move && state.typeAffinity?.type !== move.type) {
+    applyTypeAffinity(state, e, environmentalDamage, from);
+  }
   // Inseto e Fantasma atacam em dupla: um único eco visual e de dano por impacto, sem efeitos, cura ou recursão.
   if (allowFollowUp && (move.type === 'bug' || move.type === 'ghost') && e.hp > 0) {
     const enhancedEcho = move === p.move && ((move.type === 'bug' && hasUpgrade(p, 'bug-formation')) || (move.type === 'ghost' && hasUpgrade(p, 'ghost-haunt')));
     const echoDamage = reducedDamage * (enhancedEcho ? 0.25 : 0.2);
     e.hp -= echoDamage;
     state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: Math.max(10, e.radius * 1.8), color: move.color, ageMs: 0, lifeMs: 220 });
+    state.fx.push({
+      kind: 'follow-up', x: e.x, y: e.y, r: Math.max(8, e.radius * 0.75), color: move.color, ageMs: 0, lifeMs: 480,
+      element: move.type, fromX: p.x, fromY: p.y, toX: e.x, toY: e.y, delayMs: 85, count: move.type === 'bug' ? 4 : 3,
+    });
   }
 }
 
@@ -946,7 +1046,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       y: p.y,
       vx: Math.cos(angle) * p.projectileSpeed,
       vy: Math.sin(angle) * p.projectileSpeed,
-      damage: p.attackDamage,
+      damage: artifactDamage(state),
       pierce: p.pierce + (move.effect === 'atravessar' ? 1 : 0),
       lifeMs: 1600,
       hit: [],
@@ -1006,22 +1106,24 @@ function attackSupport(state: SurvivorState): boolean {
 function attack(state: SurvivorState): boolean {
   const p = state.player;
   const move = p.move;
+  const attackRange = state.typeAffinity?.effect === 'atravessar' ? p.attackRange * 1.12 : p.attackRange;
   if (move.category === 'projetil') {
-    const [target] = nearestEnemies(state, p.attackRange, 1);
+    const [target] = nearestEnemies(state, attackRange, 1);
     if (!target) return false;
     fireProjectiles(state, target);
     return true;
   }
   if (move.category === 'aura' || move.category === 'orbit') {
     // A aura pulsa sempre (dá para ver o raio), mesmo sem ninguém dentro.
+    const pulseRadius = p.attackRadius * 0.8;
     let hits = 0;
     for (const e of state.enemies) {
       const distance = Math.hypot(e.x - p.x, e.y - p.y);
       // A órbita também alcança quem encosta no jogador. Antes havia uma faixa interna sem dano,
       // que punia Inseto/Planta justamente quando precisavam de cobertura próxima.
-      const inRange = distance <= p.attackRadius + e.radius;
+       const inRange = distance <= pulseRadius + e.radius;
       if (inRange) {
-        hitEnemy(state, e, p.attackDamage, p);
+        hitEnemy(state, e, artifactDamage(state), p);
         hits++;
       }
     }
@@ -1029,11 +1131,11 @@ function attack(state: SurvivorState): boolean {
     // A órbita intercepta no máximo um projétil por pulso e somente dentro do seu alcance.
     if (move.category === 'orbit') {
       const projectileIndex = state.hostileProjectiles.findIndex((projectile) =>
-        Math.hypot(projectile.x - p.x, projectile.y - p.y) <= p.attackRadius + projectile.size,
+        Math.hypot(projectile.x - p.x, projectile.y - p.y) <= pulseRadius + projectile.size,
       );
       if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
     }
-    state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: p.attackRadius, color: move.color, ageMs: 0, lifeMs: 360 });
+    state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: pulseRadius, color: move.color, ageMs: 0, lifeMs: 360 });
     return true;
   }
   if (move.category === 'cone') {
@@ -1043,8 +1145,8 @@ function attack(state: SurvivorState): boolean {
       const dx = e.x - p.x;
       const dy = e.y - p.y;
       const distance = Math.hypot(dx, dy);
-      if (distance <= p.attackRange + e.radius && dx * direction / (distance || 1) >= 0.35) {
-        hitEnemy(state, e, p.attackDamage, p);
+      if (distance <= attackRange + e.radius && dx * direction / (distance || 1) >= 0.35) {
+        hitEnemy(state, e, artifactDamage(state), p);
         hits++;
       }
     }
@@ -1054,20 +1156,20 @@ function attack(state: SurvivorState): boolean {
       const dx = projectile.x - p.x;
       const dy = projectile.y - p.y;
       const distance = Math.hypot(dx, dy);
-      return distance <= p.attackRange + projectile.size && dx * direction / (distance || 1) >= 0.35;
+      return distance <= attackRange + projectile.size && dx * direction / (distance || 1) >= 0.35;
     });
     if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
-    state.fx.push({ kind: 'blast', x: p.x + direction * p.attackRange * 0.55, y: p.y, r: p.attackRange * 0.55, color: move.color, ageMs: 0, lifeMs: 300 });
+    state.fx.push({ kind: 'blast', x: p.x + direction * attackRange * 0.55, y: p.y, r: attackRange * 0.55, color: move.color, ageMs: 0, lifeMs: 300 });
     return true;
   }
-  const targets = nearestEnemies(state, p.attackRange, p.shots);
+  const targets = nearestEnemies(state, attackRange, p.shots);
   if (targets.length === 0) return false;
   let hits = 0;
   for (const t of targets) {
     const center = { x: t.x, y: t.y };
     for (const e of state.enemies) {
       if (Math.hypot(e.x - center.x, e.y - center.y) <= p.attackRadius + e.radius) {
-        hitEnemy(state, e, p.attackDamage, center);
+        hitEnemy(state, e, artifactDamage(state), center);
         hits++;
       }
     }
@@ -1101,9 +1203,11 @@ function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, targ
   const dy = target.y - enemy.y;
   const distance = Math.hypot(dx, dy) || 1;
   const speed = BALANCE.hostileProjectileSpeed;
+  const effect = enemy.grade === 'comum' ? undefined : (enemy.kind % 3 === 0 ? 'burn' : enemy.kind % 3 === 1 ? 'slow' : 'stun');
   state.hostileProjectiles.push({
     id: state.nextId++, x: enemy.x, y: enemy.y, vx: (dx / distance) * speed, vy: (dy / distance) * speed,
-    damage: Math.max(1, Math.round(enemy.damage * 0.7)), lifeMs: 2600, size: 6,
+    damage: Math.max(1, Math.round(enemy.damage * 0.7)), lifeMs: 2600, size: enemy.grade === 'chefao' ? 8 : enemy.grade === 'elite' ? 7 : 6,
+    grade: enemy.grade, ...(effect ? { effect } : {}),
   });
 }
 
@@ -1173,6 +1277,15 @@ function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: n
   return { x: targetX, y: targetY };
 }
 
+function artifactDamage(state: SurvivorState): number {
+  return state.player.artifactPowerMs > 0 ? state.player.attackDamage * BALANCE.artifactPowerMultiplier : state.player.attackDamage;
+}
+
+function artifactKind(rng: Rng): SurvivorArtifactKind {
+  const roll = rng();
+  return roll < 0.34 ? 'speed' : roll < 0.67 ? 'heal' : 'power';
+}
+
 /**
  * Avança `dtMs` de jogo. Não faz nada (devolve `[]`) se `state.over` ou se há um upgrade pendente — quem chama
  * (o componente Vue) deve pausar o laço de desenho/tempo nesses casos e só retomar depois de `applyUpgrade`.
@@ -1183,9 +1296,19 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (!Number.isFinite(dtMs) || dtMs <= 0) return events;
   if (advanceSpecialEncounter(state, dtMs)) return events;
   const dt = dtMs / 1000;
+  const previousElapsedMs = state.elapsedMs;
   state.elapsedMs += dtMs;
+  if (previousElapsedMs < SURVIVOR_LOVE_CANDY_MS && state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS) {
+    events.push({ type: 'milestone', id: 'ten-minutes', reward: 'love-candy' });
+  }
+  if (previousElapsedMs < SURVIVOR_MEGA_SHARD_MS && state.elapsedMs >= SURVIVOR_MEGA_SHARD_MS) {
+    events.push({ type: 'milestone', id: 'twenty-minutes', reward: 'mega-stone-shard' });
+  }
   if (advanceSpecialEncounter(state, 0)) return events;
   const p = state.player;
+  p.artifactSpeedMs = Math.max(0, p.artifactSpeedMs - dtMs);
+  p.artifactPowerMs = Math.max(0, p.artifactPowerMs - dtMs);
+  p.artifactShieldMs = Math.max(0, p.artifactShieldMs - dtMs);
   stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS);
 
   // Movimento do jogador, com a arena como cerca.
@@ -1194,8 +1317,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const ux = input.dx / len;
     const uy = input.dy / len;
     const terrainSpeed = survivorBiomeMovementMultiplier(state.elapsedMs, p.x, p.y);
-    p.x = clamp(p.x + ux * p.speed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
-    p.y = clamp(p.y + uy * p.speed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
+    const artifactSpeed = p.artifactSpeedMs > 0 ? BALANCE.artifactSpeedMultiplier : 1;
+    p.x = clamp(p.x + ux * p.speed * artifactSpeed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
+    p.y = clamp(p.y + uy * p.speed * artifactSpeed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
   }
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
@@ -1254,7 +1378,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     e.y += (dy / d) * speed * dt;
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
     if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0 && !specialProtects(state)) {
-      const incoming = hasUpgrade(p, 'steel-plate') ? Math.ceil(e.damage * 0.88) : e.damage;
+        const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? e.damage * 0.88 : e.damage) * (p.artifactShieldMs > 0 ? 0.65 : 1));
       p.hp = Math.max(0, p.hp - incoming);
       p.invulnMs = BALANCE.hitInvulnerabilityMs;
     }
@@ -1273,7 +1397,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (proj.lifeMs <= 0 || proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size) {
       if (p.invulnMs <= 0 && !specialProtects(state)) {
-        const incoming = hasUpgrade(p, 'steel-plate') ? Math.ceil(proj.damage * 0.88) : proj.damage;
+         const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * (p.artifactShieldMs > 0 ? 0.65 : 1));
         p.hp = Math.max(0, p.hp - incoming);
         p.invulnMs = BALANCE.hitInvulnerabilityMs;
       }
@@ -1351,6 +1475,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     for (const e of dead) {
       const value = e.boss ? 40 : e.grade === 'chefao' ? 30 : e.grade === 'elite' ? 16 : 6;
       state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value });
+      const dropChance = e.boss ? BALANCE.artifactBossDropChance : e.grade === 'chefao' || e.grade === 'elite' ? BALANCE.artifactEliteDropChance : BALANCE.artifactDropChance;
+      if (state.rng() < dropChance) state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: artifactKind(state.rng) });
     }
     // Treinador derrotado: nenhum Pokémon dele continua em pé.
     const trainerIds = new Set(dead.map((e) => e.trainerId).filter((id): id is number => id !== undefined));
@@ -1383,6 +1509,17 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       return false;
     }
     return true;
+  });
+  state.artifacts = state.artifacts.filter((artifact) => {
+    if (Math.hypot(artifact.x - p.x, artifact.y - p.y) > p.pickupRadius) return true;
+    if (artifact.kind === 'speed') p.artifactSpeedMs = Math.max(p.artifactSpeedMs, BALANCE.artifactDurationMs);
+    else if (artifact.kind === 'power') p.artifactPowerMs = Math.max(p.artifactPowerMs, BALANCE.artifactDurationMs);
+    else {
+      p.hp = Math.min(p.maxHp, p.hp + Math.max(18, Math.round(p.maxHp * 0.28)));
+      p.artifactShieldMs = 3_000;
+    }
+    state.fx.push({ kind: 'artifact', artifact: artifact.kind, x: p.x, y: p.y, r: 24, color: artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb', ageMs: 0, lifeMs: 620 });
+    return false;
   });
   levelUp(state, events);
 

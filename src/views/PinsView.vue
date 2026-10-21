@@ -120,6 +120,9 @@ let virtualAimAngle = -Math.PI / 2;
 let popups: Popup[] = [];
 let terrainFx: TerrainFx[] = [];
 const reducedMotion = ref(false);
+const cameraFxScale = ref(1);
+const cameraFxRotate = ref(0);
+let koImpactAt = 0;
 let motionQuery: MediaQueryList | null = null;
 let disposed = false;
 let cssSize = 0;
@@ -595,6 +598,29 @@ function update(dt: number): void {
   shownLimit += Math.sign(target - shownLimit) * Math.min(Math.abs(target - shownLimit), dt * 70);
 }
 
+function triggerKoImpact(): void {
+  if (!setup.value.effects || effectiveVisual.value.rotomMode || reducedMotion.value) return;
+  koImpactAt = performance.now();
+}
+
+function updateCameraFx(now: number): void {
+  if (!koImpactAt) return;
+  const t = Math.min(1, Math.max(0, (now - koImpactAt) / 900));
+  if (t >= 1) {
+    koImpactAt = 0;
+    cameraFxScale.value = 1;
+    cameraFxRotate.value = 0;
+    return;
+  }
+  const envelope = Math.sin(Math.PI * t);
+  cameraFxScale.value = 1 + envelope * 0.16;
+  cameraFxRotate.value = Math.sin(t * Math.PI * 2.2) * envelope * 3.2;
+}
+
+const stageFxStyle = computed(() => ({
+  transform: `scale(${cameraFxScale.value}) rotate(${cameraFxRotate.value}deg)`,
+}));
+
 function handleEvents(events: PinEvent[]): void {
   if (!world) return;
   let added = 0;
@@ -664,6 +690,7 @@ function handleEvents(events: PinEvent[]): void {
     buzz({ kind: 'out', mine: outMine });
     // O último a cair decide a partida: marca o momento para a repetição.
     if (outcomeOf(world) !== 'playing' && phase.value === 'rolling') recorder.markDecisive(world);
+    if (outcomeOf(world) !== 'playing') triggerKoImpact();
   }
   if (events.some((e) => e.type === 'out')) refreshTray();
 }
@@ -1217,6 +1244,7 @@ function draw(now: number): void {
   const canvas = canvasEl.value;
   const ctx = canvas?.getContext('2d');
   if (!canvas || !ctx || !world || !artCanvas) return;
+  updateCameraFx(now);
   if (cssSize === 0) resize();
   const units = artSize(world.radius) * UNITS_PER_PIXEL;
   const k = canvas.width / units;
@@ -1698,7 +1726,8 @@ function setMarks(on: boolean): void {
       <div
         ref="stageEl"
         class="pin-stage"
-        :class="{ aiming: phase === 'aim' }"
+        :class="{ aiming: phase === 'aim', 'pin-depth': setup.effects && !effectiveVisual.rotomMode }"
+        :style="stageFxStyle"
         @pointerdown.prevent="onDown"
         @pointermove="onMove"
         @pointerup="onUp"

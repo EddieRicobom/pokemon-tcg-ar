@@ -25,9 +25,11 @@ import {
   stepSurvivor,
   survivorCoins,
   survivorScore,
+  SURVIVOR_LOVE_CANDY_MS,
+  SURVIVOR_MEGA_SHARD_MS,
 } from '../core/survivor';
-import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption } from '../core/survivor';
-import { attackProfile, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
+import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorTypeAffinity, SurvivorUpgradeOption } from '../core/survivor';
+import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
 import { typesOfDex } from '../core/species-filter';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
@@ -623,16 +625,46 @@ function draw(): void {
 
   for (const proj of s.hostileProjectiles) {
     ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = '#ff5b5b';
+    const tint = proj.effect === 'burn' ? '#ff7b42' : proj.effect === 'slow' ? '#7bdcff' : proj.effect === 'stun' ? '#e6b6ff' : '#ff5b5b';
+    ctx.globalAlpha = proj.grade === 'chefao' ? 0.5 : 0.35;
+    ctx.fillStyle = tint;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, proj.size * 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = '#fff0a8';
+    ctx.fillStyle = proj.effect ? tint : '#fff0a8';
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
     ctx.fill();
+    if (proj.effect && !effectiveVisual.value.rotomMode) {
+      ctx.globalAlpha = 0.65;
+      ctx.strokeStyle = tint;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(proj.x, proj.y, proj.size * (2.8 + Math.sin(animMs / 120) * 0.25), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  if (!effectiveVisual.value.rotomMode) for (const artifact of s.artifacts) {
+    const color = artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb';
+    const icon = artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : '♥';
+    const pulse = 1 + Math.sin(animMs / 180 + artifact.id) * 0.12;
+    ctx.save();
+    ctx.translate(artifact.x, artifact.y);
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(0, 0, 15 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(icon, 0, 0);
     ctx.restore();
   }
 
@@ -665,6 +697,69 @@ function draw(): void {
       ctx.beginPath();
       ctx.arc(f.x, f.y, f.r * (0.55 + t * 0.8), 0, Math.PI * 2);
       ctx.stroke();
+    } else if (f.kind === 'follow-up') {
+      // O eco secundário entra alguns milissegundos depois do golpe principal e viaja
+      // do jogador até o alvo, deixando claro que insetos/fantasmas estão acompanhando o ataque.
+      const delay = f.delayMs ?? 85;
+      const travel = clamp((f.ageMs - delay) / Math.max(1, f.lifeMs - delay), 0, 1);
+      if (f.ageMs >= delay) {
+        const fromX = f.fromX ?? f.x;
+        const fromY = f.fromY ?? f.y;
+        const toX = f.toX ?? f.x;
+        const toY = f.toY ?? f.y;
+        const count = f.count ?? 3;
+        const spread = f.element === 'bug' ? 8 : 12;
+        ctx.globalAlpha = (f.element === 'bug' ? 0.82 : 0.68) * (1 - travel * 0.35);
+        for (let i = 0; i < count; i++) {
+          const phase = (i - (count - 1) / 2) / Math.max(1, count - 1);
+          const x = fromX + (toX - fromX) * travel - (toY - fromY) * phase * 0.08;
+          const y = fromY + (toY - fromY) * travel + (toX - fromX) * phase * 0.08;
+          ctx.save();
+          ctx.translate(x, y);
+          if (f.element === 'bug') {
+            ctx.fillStyle = f.color;
+            ctx.beginPath();
+            ctx.ellipse(-spread * 0.42, 0, spread * 0.42, spread * 0.24, -0.35, 0, Math.PI * 2);
+            ctx.ellipse(spread * 0.42, 0, spread * 0.42, spread * 0.24, 0.35, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#fff4a8';
+            ctx.beginPath();
+            ctx.arc(0, 0, Math.max(2, f.r * 0.32), 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.fillStyle = f.color;
+            ctx.beginPath();
+            ctx.arc(0, -spread * 0.2, Math.max(3, f.r * 0.45), Math.PI, 0);
+            ctx.lineTo(spread * 0.48, spread * 0.55);
+            ctx.lineTo(0, spread * 0.3);
+            ctx.lineTo(-spread * 0.48, spread * 0.55);
+            ctx.closePath();
+            ctx.fill();
+            ctx.globalAlpha *= 0.8;
+            ctx.strokeStyle = '#eadbff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(0, -spread * 0.2, Math.max(3, f.r * 0.45), Math.PI, 0);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }
+    } else if (f.kind === 'artifact') {
+      const color = f.color;
+      ctx.globalAlpha = 0.8 * (1 - t);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y - 8, f.r * (0.45 + t), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1 - t;
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = color;
+      ctx.fillText(f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : '♥', f.x, f.y - 8 - t * 24);
     } else {
       for (let k = 0; k < 3; k++) {
         ctx.globalAlpha = 0.7 * (1 - t);
@@ -733,6 +828,12 @@ function loop(ts: number): void {
     for (const ev of events) {
       if (ev.type === 'levelup') playSound('survivor-level');
       else if (ev.type === 'bossSpawn') playSound('survivor-boss');
+      else if (ev.type === 'milestone') {
+        playSound('success');
+        say(ev.id === 'ten-minutes'
+          ? '🎁 Marco de 10 minutos! Love Candy garantido ao concluir a corrida.'
+          : '💎 Marco de 20 minutos! Fragmento de Mega Stone garantido ao concluir a corrida.', 6000);
+      }
       if (ev.type === 'gameover') {
         playSound('survivor-gameover');
         objectives.value = survivorObjectives(s);
@@ -857,7 +958,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidate: SurvivorSupportCandidate | null = null): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidate: SurvivorSupportCandidate | null = null, typeAffinity?: SurvivorTypeAffinity): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -894,7 +995,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidate: supportCandidate ?? undefined, dexId, evolutions: evolutionsFor, infinite, preparation });
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidate: supportCandidate ?? undefined, dexId, evolutions: evolutionsFor, infinite, preparation, typeAffinity });
     announcedRegion = survivorRegionLabel(0);
     guardianSprite.value = null;
     specialQueued = false;
@@ -912,7 +1013,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   }
 }
 
-function choosePlayer(opt: PickOption, picked?: PokemonType): void {
+function choosePlayer(opt: PickOption, picked?: PokemonType, typeAffinity?: SurvivorTypeAffinity): void {
   unlockSound();
   runParticipant = { id: opt.id, name: opt.name };
   const support = pickOptions.value?.find((candidate) => candidate.id !== opt.id);
@@ -923,11 +1024,13 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
     move: supportAttack.move,
     profile: supportAttack.profile,
   } satisfies SurvivorSupportCandidate : null;
-  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidate);
+  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidate, typeAffinity);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
 const typeChoice = ref<PickOption | null>(null);
+const secondaryBuffOffer = ref<{ opt: PickOption; picked: PokemonType; secondary: PokemonType } | null>(null);
+const RARE_TYPE_AFFINITY_CHANCE = 0.18;
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
 const infiniteWanted = ref(false);
 const torre = computed(() => trainer.value.torre);
@@ -942,7 +1045,28 @@ const nextTowerGoal = computed(() => {
   if (recordedObjectiveCount.value < 3) return `Próximo marco: conclua ${3 - recordedObjectiveCount.value} desafio(s) opcional(is) distinto(s) em corridas encerradas para liberar outra troca de sorteio.`;
   return `Registro: ${torre.value.runs} corridas concluídas · melhor onda ${torre.value.bestWave} · nível ${torre.value.bestLevel}.`;
 });
-function openTypeChoice(opt: PickOption): void { typeChoice.value = opt; }
+function openTypeChoice(opt: PickOption): void { typeChoice.value = opt; secondaryBuffOffer.value = null; }
+function chooseType(opt: PickOption, picked: PokemonType): void {
+  typeChoice.value = null;
+  const secondary = opt.types.find((type) => type !== picked);
+  const effect = secondary ? moveEffectForType(secondary) : 'nenhum';
+  if (secondary && effect !== 'nenhum' && Math.random() < RARE_TYPE_AFFINITY_CHANCE) {
+    secondaryBuffOffer.value = { opt, picked, secondary };
+    return;
+  }
+  choosePlayer(opt, picked);
+}
+function acceptSecondaryBuff(): void {
+  const offer = secondaryBuffOffer.value;
+  if (!offer) return;
+  secondaryBuffOffer.value = null;
+  choosePlayer(offer.opt, offer.picked, { type: offer.secondary, effect: moveEffectForType(offer.secondary) });
+}
+function skipSecondaryBuff(): void {
+  const offer = secondaryBuffOffer.value;
+  secondaryBuffOffer.value = null;
+  if (offer) choosePlayer(offer.opt, offer.picked);
+}
 watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) infiniteWanted.value = false; });
 
 /** Abre a tela de escolha de novo (3 novos sorteados) antes de cada corrida, inclusive ao "Jogar de novo". */
@@ -1060,6 +1184,10 @@ onBeforeUnmount(() => {
           </div>
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
+             <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
+             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0" class="chip survivor-artifact-chip" role="status">
+               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
+             </span>
               <span v-if="state.support" class="chip survivor-move-chip second" :style="{ '--move': state.support.move.color }" :title="`${state.support.name}: ${MOVE_EFFECT_LABELS_PT[state.support.move.effect]}. Ataca da sua posição e não recebe upgrades.`">🤝 {{ state.support.name }} · {{ moveLine(state.support.move) }}</span>
             <span class="chip survivor-xp" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">✨ {{ state.player.xp }}/{{ state.player.xpToNext }} XP <small v-if="hudExpanded">· faltam {{ Math.max(0, state.player.xpToNext - state.player.xp) }}</small></span>
             <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
@@ -1067,11 +1195,13 @@ onBeforeUnmount(() => {
             <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
              <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
-             <button v-if="!summary && !pendingUpgrade && !evolving && state.special.phase !== 'arrival' && state.special.phase !== 'choice'" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
-            <button type="button" class="chip" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">{{ hudExpanded ? 'Ocultar detalhes' : 'Detalhes e opções' }}</button>
-            <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
-            <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário regional: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
-            <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="specialEffects" @pointerdown.stop @click.stop="specialEffects = !specialEffects">Efeitos do especial: {{ specialEffects ? 'completos' : 'leves' }}</button>
+             <span class="survivor-action-dock" aria-label="Ações da Torre">
+               <button v-if="!summary && !pendingUpgrade && !evolving && state.special.phase !== 'arrival' && state.special.phase !== 'choice'" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
+               <button type="button" class="chip" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">{{ hudExpanded ? 'Ocultar detalhes' : 'Detalhes e opções' }}</button>
+               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
+               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
+               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="specialEffects" @pointerdown.stop @click.stop="specialEffects = !specialEffects">Efeitos: {{ specialEffects ? 'completos' : 'leves' }}</button>
+             </span>
           </div>
         </div>
 
@@ -1115,12 +1245,26 @@ onBeforeUnmount(() => {
             <h2>{{ typeChoice.name }} tem dois tipos</h2>
             <p class="note">Qual deles ataca na corrida?</p>
             <div class="survivor-pick-grid">
-              <button v-for="t in typeChoice.types" :key="t" type="button" class="survivor-pick-btn" @click="(() => { const o = typeChoice!; typeChoice = null; choosePlayer(o, t); })()">
+              <button v-for="t in typeChoice.types" :key="t" type="button" class="survivor-pick-btn" @click="chooseType(typeChoice, t)">
                 <strong>{{ TYPE_LABELS_PT[t] }}</strong>
                 <small>{{ moveFor([t], null).name }}</small>
               </button>
             </div>
             <button type="button" class="link" @click="typeChoice = null">Voltar</button>
+          </div>
+          <div v-else-if="secondaryBuffOffer" class="card survivor-pick survivor-type-choice">
+            <h2>Uma afinidade rara apareceu</h2>
+            <p class="note">O golpe principal será de <strong>{{ TYPE_LABELS_PT[secondaryBuffOffer.picked] }}</strong>. Seu outro tipo, <strong>{{ TYPE_LABELS_PT[secondaryBuffOffer.secondary] }}</strong>, pode aplicar seu efeito de forma leve nos acertos desta corrida.</p>
+            <div class="survivor-pick-grid">
+              <button type="button" class="survivor-pick-btn" @click="acceptSecondaryBuff">
+                <strong>✨ Ativar afinidade</strong>
+                <small>{{ MOVE_EFFECT_LABELS_PT[moveEffectForType(secondaryBuffOffer.secondary)] }}</small>
+              </button>
+              <button type="button" class="survivor-pick-btn" @click="skipSecondaryBuff">
+                <strong>Começar sem afinidade</strong>
+                <small>Usar somente o efeito do golpe escolhido</small>
+              </button>
+            </div>
           </div>
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
@@ -1253,7 +1397,9 @@ onBeforeUnmount(() => {
               {{ runCoins > 0 ? `🪙 +${runCoins} moedas` : 'Sem moedas desta vez: dure 20 segundos ou derrote alguém.' }}
               <small v-if="runClearBonus > 0"> (inclui o bônus de {{ runClearBonus }} por zerar, 1× por dia)</small>
             </p>
-            <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
+             <p v-if="summary.survivedMs >= SURVIVOR_LOVE_CANDY_MS" class="survivor-cleared" role="status">🍬 Love Candy conquistado por alcançar 10 minutos.</p>
+             <p v-if="summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS" class="survivor-cleared" role="status">💎 Fragmento de Mega Stone conquistado por alcançar 20 minutos.</p>
+             <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
             <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>
             <p v-if="summary.trainersBeaten > 0 || summary.bossesBeaten > 0" class="note">Treinadores derrotados: {{ summary.trainersBeaten }}{{ summary.bossesBeaten > 0 ? ` · chefões: ${summary.bossesBeaten}` : '' }}.</p>
             <p v-if="summary.stage > 0" class="note">Evoluiu {{ summary.stage === 1 ? 'uma vez' : `${summary.stage} vezes` }} nesta corrida (como {{ avatarName }}).</p>
