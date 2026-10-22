@@ -1033,9 +1033,11 @@ function rerollMinimumRarity(player: SurvivorPlayer, currentFloor: SurvivorUpgra
 }
 
 /**
- * Gasta um desejo de Jirachi para trocar a oferta atual. Cartas normais saem todas;
- * se a oferta já é toda rara ou melhor, preservamos uma carta a menos e garantimos
- * uma nova carta de faixa superior quando essa faixa já está liberada pelo nível.
+ * Gasta um desejo de Jirachi para trocar a oferta atual. Cada vaga usa a rolagem
+ * normal de raridade; cartas raras já oferecidas continuam preservadas quando há
+ * cartas normais para trocar. Se toda a oferta já é rara ou melhor, uma vaga é
+ * trocada naturalmente e só recebe uma segunda rolagem garantida caso o conjunto
+ * final não tenha nenhuma opção acima da menor raridade anterior.
  */
 export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
   const current = state.pendingUpgrade;
@@ -1050,10 +1052,23 @@ export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
     const rarity = option.rarity ?? 'normal';
     return SURVIVOR_RARITY_ORDER.indexOf(rarity) < SURVIVOR_RARITY_ORDER.indexOf(lowest) ? rarity : lowest;
   }, 'ancestral');
-  const rerolled = rollUpgrades(state.rng, rerollCount, state.player.move, state.player, {
+  const naturalRerolled = rollUpgrades(state.rng, rerollCount, state.player.move, state.player, {
     excludeIds: current.map((option) => option.id),
-    ...(allRareOrBetter ? { minimumRarity: rerollMinimumRarity(state.player, floor) } : {}),
   });
+  let rerolled = naturalRerolled;
+  if (allRareOrBetter) {
+    const hasHigherRarity = [...preserved, ...naturalRerolled].some((option) => {
+      const rarity = option.rarity ?? 'normal';
+      return SURVIVOR_RARITY_ORDER.indexOf(rarity) > SURVIVOR_RARITY_ORDER.indexOf(floor);
+    });
+    if (!hasHigherRarity) {
+      const guaranteed = rollUpgrades(state.rng, rerollCount, state.player.move, state.player, {
+        excludeIds: current.map((option) => option.id),
+        minimumRarity: rerollMinimumRarity(state.player, floor),
+      });
+      if (guaranteed.length > 0) rerolled = guaranteed;
+    }
+  }
   state.pendingUpgrade = [...preserved, ...rerolled];
   return true;
 }
@@ -1939,3 +1954,4 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   return events;
 }
+
