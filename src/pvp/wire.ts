@@ -6,6 +6,7 @@ import type { Patch, PinSpec, PinWorld, Shot, ShotEffect } from '../core/pins';
 import { createArenaGrid, TERRAIN_COLS } from '../core/pin-terrain';
 import { POKEMON_TYPES, STAT_ORDER } from '../core/pokemon-data';
 import type { BaseStats, CardAttack, PokemonType } from '../core/pokemon-data';
+import { MAX_BACKUP_TRANSFER_BYTES, MAX_BACKUP_TRANSFER_CHUNKS } from './backup-transfer';
 
 /**
  * PvP do Pin Mode: as mensagens entre os dois celulares e a tradução entre o mundo de cada um e o que vai pelo fio.
@@ -64,6 +65,11 @@ export type WireMessage =
   | { t: 'start'; hostSpecs: WireSpec[]; guestSpecs: WireSpec[]; init: WireInit }
   | { t: 'shot'; pinId: string; moveIndex: number | null; dirX: number; dirY: number; power: number }
   | { t: 'settled'; world: WireWorld }
+  | { t: 'backup-offer'; id: string; name: string; bytes: number; chunks: number }
+  | { t: 'backup-chunk'; id: string; index: number; total: number; data: string }
+  | { t: 'backup-end'; id: string }
+  | { t: 'backup-received'; id: string }
+  | { t: 'backup-failed'; id: string; reason: string }
   | { t: 'bye' }
   | { t: 'ping' }
   | { t: 'pong' };
@@ -299,6 +305,23 @@ export function parseMessage(raw: unknown): WireMessage | null {
       if (!isStr(v.pinId, 80) || !(v.moveIndex === null || (isNum(v.moveIndex, 0, MAX_MOVES) && Number.isInteger(v.moveIndex)))) return null;
       if (!isNum(v.dirX, -1.0001, 1.0001) || !isNum(v.dirY, -1.0001, 1.0001) || !isNum(v.power, 0, 1)) return null;
       return { t: 'shot', pinId: v.pinId, moveIndex: v.moveIndex as number | null, dirX: v.dirX, dirY: v.dirY, power: v.power };
+    case 'backup-offer':
+      return isStr(v.id, 80) && v.id.length > 0 && isStr(v.name, 160) && v.name.length > 0
+        && isNum(v.bytes, 1, MAX_BACKUP_TRANSFER_BYTES) && Number.isInteger(v.bytes)
+        && isNum(v.chunks, 1, MAX_BACKUP_TRANSFER_CHUNKS) && Number.isInteger(v.chunks)
+        ? { t: 'backup-offer', id: v.id, name: v.name, bytes: v.bytes, chunks: v.chunks }
+        : null;
+    case 'backup-chunk':
+      return isStr(v.id, 80) && v.id.length > 0 && isNum(v.index, 0, MAX_BACKUP_TRANSFER_CHUNKS - 1) && Number.isInteger(v.index)
+        && isNum(v.total, 1, MAX_BACKUP_TRANSFER_CHUNKS) && Number.isInteger(v.total)
+        && v.index < v.total && isStr(v.data, 40000) && v.data.length > 0
+        ? { t: 'backup-chunk', id: v.id, index: v.index, total: v.total, data: v.data }
+        : null;
+    case 'backup-end':
+    case 'backup-received':
+      return isStr(v.id, 80) && v.id.length > 0 ? { t: v.t, id: v.id } : null;
+    case 'backup-failed':
+      return isStr(v.id, 80) && v.id.length > 0 && isStr(v.reason, 160) ? { t: 'backup-failed', id: v.id, reason: v.reason } : null;
     case 'settled': {
       const world = parseWorld(v.world);
       return world ? { t: 'settled', world } : null;
