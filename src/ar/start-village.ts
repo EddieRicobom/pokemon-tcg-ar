@@ -5,7 +5,7 @@ import { OrientationSource } from '../box/orientation-source';
 import type { OrientationMode } from '../box/orientation-source';
 import { VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M, normalizeVillageScale } from '../core/village/ar-diorama';
 import { createWebglBackend } from './webgl-backend';
-import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
+import { maxVisualFps } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
 import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 
@@ -117,10 +117,17 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
   setScale(scale);
 
   let lastFrameAt = 0;
+  // O canvas da Vila é uma textura grande atualizada junto da câmera. Em
+  // automático, 30 fps mantém o diorama fluido sem disputar 60 fps com o
+  // vídeo e sem recarregar a textura inteira a cada frame da tela.
+  const renderFps = (): number => {
+    const configured = maxVisualFps();
+    return configured > 0 ? configured : 30;
+  };
   const tick = (now: number) => {
     if (!running) return;
-    handle = requestGameFrame(tick, maxVisualFps);
-    const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
+    handle = requestGameFrame(tick, renderFps);
+    const fps = renderFps();
     if (!isFrameDue(now, lastFrameAt, fps)) return;
     lastFrameAt = now;
     camera.quaternion.copy(orientation.read(now));
@@ -128,7 +135,7 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     texture.needsUpdate = true;
     renderer.render(scene, camera);
   };
-  handle = requestGameFrame(tick, maxVisualFps);
+  handle = requestGameFrame(tick, renderFps);
 
   return {
     orientation,

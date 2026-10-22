@@ -1332,7 +1332,8 @@ export class VillageGame {
     const atlas = this.atlas;
     /**
      * Apresentação 2.5D do Diorama: sprites continuam em pé e ganham um
-     * cisalhamento discreto, sombra projetada para trás e contraste de maquete.
+     * cisalhamento discreto. As sombras de contato já são desenhadas pelo mapa;
+     * aqui não usamos blur nem filtro por sprite, pois isso pesa muito em celular.
      * Rotacionar o bitmap inteiro em 45° fazia prédios e personagens tombarem.
      */
     const drawDioramaTilted = (cx: number, base: number, width: number, paint: () => void): void => {
@@ -1346,11 +1347,6 @@ export class VillageGame {
       // e mantém a linha dos pés exatamente no ponto de contato com o chão.
       const shear = -Math.min(0.18, Math.tan(tilt) * 0.18);
       ctx.save();
-      ctx.filter = 'saturate(1.06) contrast(1.05) brightness(0.98)';
-      ctx.shadowColor = 'rgba(8, 15, 28, 0.38)';
-      ctx.shadowBlur = Math.max(1.5, width * 0.035);
-      ctx.shadowOffsetX = width * 0.11;
-      ctx.shadowOffsetY = -width * 0.06;
       ctx.translate(cx, base);
       ctx.transform(1, 0, shear, 1, 0, 0);
       ctx.translate(-cx, -base);
