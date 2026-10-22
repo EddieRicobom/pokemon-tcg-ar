@@ -63,6 +63,8 @@ import type { SurvivorPreparationId } from '../core/survivor-preparations';
 import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch, SPECIAL_GUARDIANS, SURVIVOR_SPECIAL_BRANCHES, SURVIVOR_SPECIALS } from '../core/survivor-specials';
 import type { SurvivorSpecialBranchId, SurvivorSpecialId } from '../core/survivor-specials';
 import { drawSurvivorSpecial } from '../village/survivor-special-art';
+import { emptySurvivorFeedbackAnswers, encodeSurvivorFeedback } from '../core/survivor-feedback';
+import type { FeedbackRating, FeedbackRatingKey } from '../core/survivor-feedback';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -274,6 +276,7 @@ const runUnlockedInfinite = ref(false);
 
 let runCompanion: CardCompanion | null = null;
 let runParticipant = { id: 'survivor-pikachu', name: 'Pikachu' };
+let runParticipantDexId = 25;
 let runCounter = 0;
 let activeRunId = '';
 const completedRunIds = new Set<string>();
@@ -380,6 +383,71 @@ const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
 const availableUpgradeRerolls = computed(() => state.value?.player.upgradeRerolls ?? 0);
 const summary = ref<SurvivorSummary | null>(null);
+const feedback = reactive(emptySurvivorFeedbackAnswers());
+const feedbackCode = ref('');
+const feedbackSubmitted = ref(false);
+const feedbackCopied = ref(false);
+const feedbackError = ref('');
+const feedbackQuestions: readonly { key: FeedbackRatingKey; label: string; low: string; high: string }[] = [
+  { key: 'fun', label: 'Quanto a corrida foi divertida?', low: 'Nada', high: 'Muito' },
+  { key: 'difficulty', label: 'Como você sentiu a dificuldade?', low: 'Muito fácil', high: 'Muito difícil' },
+  { key: 'clarity', label: 'As ameaças e escolhas ficaram claras?', low: 'Nada claras', high: 'Muito claras' },
+  { key: 'fairness', label: 'A derrota pareceu justa?', low: 'Nada justa', high: 'Muito justa' },
+  { key: 'replay', label: 'Você jogaria outra corrida?', low: 'De jeito nenhum', high: 'Com certeza' },
+];
+const feedbackComplete = computed(() => feedbackQuestions.every(({ key }) => feedback[key] >= 1 && feedback[key] <= 5));
+function setFeedbackRating(key: FeedbackRatingKey, value: number): void {
+  if (value >= 1 && value <= 5) feedback[key] = value as FeedbackRating;
+}
+function resetFeedback(): void {
+  Object.assign(feedback, emptySurvivorFeedbackAnswers());
+  feedbackCode.value = '';
+  feedbackSubmitted.value = false;
+  feedbackCopied.value = false;
+  feedbackError.value = '';
+}
+function submitFeedback(): void {
+  if (!summary.value || !state.value || !feedbackComplete.value) {
+    feedbackError.value = 'Escolha uma nota em cada pergunta antes de gerar o código.';
+    return;
+  }
+  feedbackCode.value = encodeSurvivorFeedback({
+    runId: activeRunId,
+    seed: state.value.runSeed,
+    participant: { ...runParticipant, dexId: runParticipantDexId },
+    summary: summary.value,
+    move: state.value.player.move,
+    preparation: selectedPreparation.value,
+    state: state.value,
+    answers: { ...feedback, fun: feedback.fun as FeedbackRating, difficulty: feedback.difficulty as FeedbackRating, clarity: feedback.clarity as FeedbackRating, fairness: feedback.fairness as FeedbackRating, replay: feedback.replay as FeedbackRating },
+  });
+  feedbackSubmitted.value = true;
+  feedbackError.value = '';
+}
+async function copyFeedbackCode(): Promise<void> {
+  if (!feedbackCode.value) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(feedbackCode.value);
+    } else {
+      const field = document.createElement('textarea');
+      field.value = feedbackCode.value;
+      field.setAttribute('readonly', '');
+      field.style.position = 'fixed';
+      field.style.opacity = '0';
+      document.body.appendChild(field);
+      try {
+        field.select();
+        if (!document.execCommand('copy')) throw new Error('copy indisponível');
+      } finally {
+        field.remove();
+      }
+    }
+    feedbackCopied.value = true;
+  } catch {
+    feedbackError.value = 'Não consegui acessar a área de transferência. Selecione o código e copie manualmente.';
+  }
+}
 const runUnlocks = ref<string[]>([]);
 /** Tela de escolha antes de cada corrida: até 6 Pokémon aleatórios da caixa do jogador, para escolher quem joga
  * dessa vez. Null enquanto ainda está sorteando/carregando os retratos; [] se a caixa estiver vazia (cai pro
@@ -1161,6 +1229,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     if (disposed) return;
     pickOptions.value = null;
     summary.value = null;
+    resetFeedback();
     runUnlocks.value = [];
     pendingUpgrade.value = null;
     clearTrainerPresentation();
@@ -1188,6 +1257,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
 function choosePlayer(opt: PickOption, picked?: PokemonType): void {
   unlockSound();
   runParticipant = { id: opt.id, name: opt.name };
+  runParticipantDexId = opt.dexId;
   const supportCandidates = (pickOptions.value ?? [])
     .filter((candidate) => candidate.id !== opt.id)
     .slice(0, 5)
@@ -1627,6 +1697,29 @@ onBeforeUnmount(() => {
             <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>
             <p v-if="summary.trainersBeaten > 0 || summary.bossesBeaten > 0" class="note">Treinadores derrotados: {{ summary.trainersBeaten }}{{ summary.bossesBeaten > 0 ? ` · chefões: ${summary.bossesBeaten}` : '' }}.</p>
             <p v-if="summary.stage > 0" class="note">Evoluiu {{ summary.stage === 1 ? 'uma vez' : `${summary.stage} vezes` }} nesta corrida (como {{ avatarName }}).</p>
+             <section v-if="!feedbackSubmitted" class="survivor-feedback" aria-labelledby="survivor-feedback-title">
+               <h3 id="survivor-feedback-title">Ajude a equilibrar a Torre</h3>
+               <p class="note">Suas respostas ficam anônimas e viram um código sobre esta corrida. Não alteram o save.</p>
+               <fieldset v-for="question in feedbackQuestions" :key="question.key" class="survivor-feedback-question">
+                 <legend>{{ question.label }}</legend>
+                 <div class="survivor-rating" role="radiogroup" :aria-label="question.label">
+                   <button v-for="value in 5" :key="value" type="button" :class="{ selected: feedback[question.key] === value }" :aria-label="`${value} de 5`" :aria-pressed="feedback[question.key] === value" @click="setFeedbackRating(question.key, value)">{{ value }}</button>
+                 </div>
+                 <small class="survivor-rating-legend"><span>{{ question.low }}</span><span>{{ question.high }}</span></small>
+               </fieldset>
+               <label class="survivor-feedback-comment">Comentário opcional
+                 <textarea v-model.trim="feedback.comment" maxlength="240" rows="3" placeholder="O que deixou a corrida boa, frustrante ou confusa?"></textarea>
+               </label>
+               <p v-if="feedbackError" class="survivor-feedback-error" role="alert">{{ feedbackError }}</p>
+               <button type="button" class="primary" :disabled="!feedbackComplete" @click="submitFeedback">Gerar código de feedback</button>
+             </section>
+             <section v-else class="survivor-feedback-result" aria-labelledby="survivor-feedback-result-title">
+               <h3 id="survivor-feedback-result-title">Feedback pronto para enviar</h3>
+               <p class="note">Envie este código junto de uma mensagem. Ele permite comparar sua opinião com os dados reais da corrida.</p>
+               <textarea class="survivor-feedback-code" readonly rows="5" :value="feedbackCode" aria-label="Código de feedback"></textarea>
+               <button type="button" class="primary" @click="copyFeedbackCode">{{ feedbackCopied ? 'Código copiado ✓' : 'Copiar código' }}</button>
+               <p v-if="feedbackError" class="survivor-feedback-error" role="alert">{{ feedbackError }}</p>
+             </section>
             <button type="button" class="primary" @click="playAgain">Jogar de novo</button>
             <button type="button" class="link" @click="leaveNow">Voltar aos jogos</button>
           </div>
@@ -1638,3 +1731,4 @@ onBeforeUnmount(() => {
     </template>
   </div>
 </template>
+
