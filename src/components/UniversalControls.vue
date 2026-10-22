@@ -308,11 +308,11 @@ onBeforeUnmount(() => {
 <template>
   <div v-if="visible" class="universal-controls" role="group" aria-label="Controles do aplicativo">
     <div class="universal-dpad" role="group" aria-label="Navegar pelos controles">
-      <button class="pad-up" type="button" aria-label="Navegar para cima" @click="dispatchGamepadEvent('tcg-gamepad-direction', 'up') || moveFocus('up')">▲</button>
-      <button class="pad-left" type="button" aria-label="Navegar para a esquerda" @click="dispatchGamepadEvent('tcg-gamepad-direction', 'left') || moveFocus('left')">◀</button>
+      <button class="pad-up" type="button" aria-label="Navegar para cima" @pointerdown.prevent @click="dispatchGamepadEvent('tcg-gamepad-direction', 'up') || moveFocus('up')">▲</button>
+      <button class="pad-left" type="button" aria-label="Navegar para a esquerda" @pointerdown.prevent @click="dispatchGamepadEvent('tcg-gamepad-direction', 'left') || moveFocus('left')">◀</button>
       <span class="pad-center" aria-hidden="true">✦</span>
-      <button class="pad-right" type="button" aria-label="Navegar para a direita" @click="dispatchGamepadEvent('tcg-gamepad-direction', 'right') || moveFocus('right')">▶</button>
-      <button class="pad-down" type="button" aria-label="Navegar para baixo" @click="dispatchGamepadEvent('tcg-gamepad-direction', 'down') || moveFocus('down')">▼</button>
+      <button class="pad-right" type="button" aria-label="Navegar para a direita" @pointerdown.prevent @click="dispatchGamepadEvent('tcg-gamepad-direction', 'right') || moveFocus('right')">▶</button>
+      <button class="pad-down" type="button" aria-label="Navegar para baixo" @pointerdown.prevent @click="dispatchGamepadEvent('tcg-gamepad-direction', 'down') || moveFocus('down')">▼</button>
     </div>
     <div class="universal-actions" role="group" aria-label="Ações universais">
       <button class="universal-b" type="button" aria-label="Voltar" @click="goBack">B<small>Voltar</small></button>
