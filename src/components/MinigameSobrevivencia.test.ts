@@ -59,7 +59,9 @@ describe('Torre de Sobrevivência: sair no meio', () => {
     app.mount(host);
     app.unmount();
     app = null;
-    expect(removedWindow.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining(['keydown', 'keyup']));
+    expect(removedWindow.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining([
+      'keydown', 'keyup', 'tcg-gamepad-action', 'tcg-gamepad-back', 'tcg-gamepad-direction', 'tcg-gamepad-menu',
+    ]));
     expect(removedDoc.mock.calls.map((c) => c[0])).toContain('visibilitychange');
   });
 });

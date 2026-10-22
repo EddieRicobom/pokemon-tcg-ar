@@ -550,6 +550,21 @@ function onGamepadDirection(event: Event): void {
   custom.detail.handled = true;
 }
 
+function onGamepadAction(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean }>;
+  if (custom.detail.handled || !ready.value || !state.value || paused.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
+  if (!chosenSpecial.value || state.value.special.cooldownMs > 0) return;
+  custom.detail.handled = true;
+  queueSpecial();
+}
+
+function onGamepadBack(event: Event): void {
+  const custom = event as CustomEvent<{ handled: boolean }>;
+  if (custom.detail.handled || !ready.value || !state.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
+  custom.detail.handled = true;
+  togglePause();
+}
+
 function onGamepadMenu(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
   if (custom.detail.handled || !ready.value || !state.value || paused.value || summary.value || pendingUpgrade.value || evolving.value) return;
@@ -1394,6 +1409,8 @@ onMounted(() => {
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
   window.addEventListener('tcg-gamepad-direction', onGamepadDirection);
+  window.addEventListener('tcg-gamepad-action', onGamepadAction);
+  window.addEventListener('tcg-gamepad-back', onGamepadBack);
   window.addEventListener('tcg-gamepad-menu', onGamepadMenu);
   void openPicker();
 });
@@ -1418,6 +1435,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
   window.removeEventListener('tcg-gamepad-direction', onGamepadDirection);
+  window.removeEventListener('tcg-gamepad-action', onGamepadAction);
+  window.removeEventListener('tcg-gamepad-back', onGamepadBack);
   window.removeEventListener('tcg-gamepad-menu', onGamepadMenu);
   document.removeEventListener('visibilitychange', onVisibility);
   resizer?.disconnect();
