@@ -31,6 +31,7 @@ import {
   SURVIVOR_LOVE_CANDY_MS,
   SURVIVOR_MEGA_SHARD_MS,
   SURVIVOR_ARTIFACT_DETAILS,
+  survivorProjectileOpacity,
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
@@ -784,16 +785,21 @@ function draw(): void {
 
   for (const proj of s.projectiles) {
     const r = proj.size ?? 4;
+    // O dano direto já cai com a distância; a apresentação acompanha a mesma curva
+    // para o jogador perceber quando um disparo está fora do alcance ideal.
+    const distance = Math.hypot(proj.x - s.player.x, proj.y - s.player.y);
+    const distanceOpacity = survivorProjectileOpacity(distance);
     ctx.save();
-    ctx.globalAlpha = proj.source === 'support' ? 0.22 : 0.35;
+    ctx.globalAlpha = (proj.source === 'support' ? 0.22 : 0.35) * distanceOpacity;
     ctx.fillStyle = proj.move?.color ?? move.color;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, r * 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = proj.source === 'support' ? 0.72 : 1;
+    ctx.globalAlpha = (proj.source === 'support' ? 0.72 : 1) * distanceOpacity;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, r, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = distanceOpacity;
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, r * 0.45, 0, Math.PI * 2);
