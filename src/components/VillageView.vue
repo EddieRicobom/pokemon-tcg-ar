@@ -108,6 +108,8 @@ import QuizDialog from './QuizDialog.vue';
 const emit = defineEmits<{ close: [then?: 'pvp' | 'batalha' | 'caixa'] }>();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
+const dioramaFloorEl = ref<HTMLCanvasElement | null>(null);
+const dioramaPropsEl = ref<HTMLCanvasElement | null>(null);
 const arVideoEl = ref<HTMLVideoElement | null>(null);
 const arCanvasEl = ref<HTMLCanvasElement | null>(null);
 const wrapEl = ref<HTMLElement | null>(null);
@@ -141,13 +143,13 @@ async function toggleArBeta(): Promise<void> {
   const video = arVideoEl.value;
   const arCanvas = arCanvasEl.value;
   const wrap = wrapEl.value;
-  if (!video || !arCanvas || !wrap || !game) return;
+  if (!video || !arCanvas || !wrap || !game || !dioramaFloorEl.value || !dioramaPropsEl.value) return;
   try {
     arStream = await startRearCamera(video);
     game.setDioramaView(true);
     arActive.value = true;
     const { startVillageAr } = await loadChunk(() => import('../ar/start-village'));
-    villageAr = await startVillageAr({ video, canvas: arCanvas, container: wrap, villageCanvas: canvasEl.value! });
+    villageAr = await startVillageAr({ video, canvas: arCanvas, container: wrap, villageFloorCanvas: dioramaFloorEl.value, villagePropsCanvas: dioramaPropsEl.value });
     villageAr.setScale(arScale.value);
   } catch (error) {
     villageAr?.stop();
@@ -2692,7 +2694,10 @@ onMounted(async () => {
   // O atlas de tilesets (chão, natureza, casas, prédios): mesma regra, sem ele a Vila usa o desenho por código.
   const [groundTile, atlas, trainerAtlas] = await Promise.all([getVillageGroundTile().catch(() => null), getVillageAtlas().catch(() => null), trainerAtlasPromise]);
   if (!canvasEl.value || !wrapEl.value) return;
-  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas, trainerAtlas);
+  game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas, trainerAtlas, undefined, {
+    floor: dioramaFloorEl.value ?? undefined,
+    props: dioramaPropsEl.value ?? undefined,
+  });
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = () => { changed(); updateWorldProgress(); checkTapInteraction(); checkGuidedTrip(); };
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).
@@ -2795,12 +2800,9 @@ onBeforeUnmount(() => {
         @pointercancel.prevent="arActive ? (arLook = null) : joyUp($event)"
         @contextmenu.prevent
       ></canvas>
+      <canvas ref="dioramaFloorEl" class="diorama-layer-source" aria-hidden="true"></canvas>
+      <canvas ref="dioramaPropsEl" class="diorama-layer-source" aria-hidden="true"></canvas>
       <canvas ref="arCanvasEl" class="village-ar-canvas" :class="{ active: arActive }" aria-hidden="true"></canvas>
-      <div
-        v-if="arActive && effectiveVisual.villageFx"
-        class="village-ar-tilt-shift"
-        aria-hidden="true"
-      ></div>
       <div v-show="!loading && !welcome && sheet !== 'torre'" class="village-minimap" :class="{ big: miniBig }">
         <div class="village-minimap-head">
           <strong>Mapa da Vila</strong>
@@ -3337,3 +3339,4 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
+
