@@ -413,7 +413,7 @@ export interface SurvivorUpgrade {
   for?: readonly MoveCategory[];
   /** Especializações só aparecem para o tipo de quem está jogando. */
   type?: SurvivorMove['type'];
-  /** Limite por corrida; evita cartas esgotadas e escolhas sem efeito. */
+  /** Limite por corrida; ausente em bônus incrementais que podem empilhar. */
   maxLevels?: number;
   /** Upgrade anterior necessário para liberar esta carta em uma trilha. */
   requires?: string;
@@ -602,16 +602,16 @@ export const BALANCE = {
   bossDamagePerWave: 2,
   enemyHpBase: 16,
   /** Vida extra a cada `enemyHpEverySec` segundos; a simulação agora usa os golpes reais das espécies. */
-  enemyHpStep: 4,
+  enemyHpStep: 3,
   enemyHpEverySec: 30,
   enemyHpPerWave: 3,
   enemyDamageBase: 6,
-  enemyDamageStep: 2,
+  enemyDamageStep: 1,
   enemyDamageEverySec: 40,
   enemySpeedBase: 50,
   enemySpeedRandom: 20,
-  /** Curva de proteção inicial: converge para 1 aos 6 min, suavizando a chegada ao especial de 3 min. */
-  earlyGameMs: 360_000,
+  /** Curva de proteção inicial: converge para 1 aos 8 min, suavizando a chegada aos ramos de 7 min. */
+  earlyGameMs: 480_000,
   earlySpawnIntervalBonus: 0.75,
   earlyEnemyHpMultiplier: 0.70,
   earlyEnemyDamageMultiplier: 0.48,
@@ -630,7 +630,7 @@ export const BALANCE = {
   spawnPerWaveMs: 15,
   spawnFloorMs: 450,
   /** Pequeno aumento de densidade, sem reduzir o piso de segurança da arena. */
-  spawnRateMultiplier: 0.92,
+  spawnRateMultiplier: 0.90,
   /** Intervalo de invulnerabilidade após qualquer acerto; dá tempo para reposicionar sem remover o perigo. */
   hitInvulnerabilityMs: 750,
   playerDamage: 10,
@@ -640,8 +640,9 @@ export const BALANCE = {
   bossEveryMs: 90_000,
   /** Treinadores entram mais fortes sem alterar a curva dos inimigos comuns. */
   trainerStatMultiplier: 1.3,
-  artifactDropChance: 0.1,
-  artifactEliteDropChance: 0.24,
+  /** Artefatos são uma válvula de recuperação: um pouco mais comuns após a escalada de inimigos. */
+  artifactDropChance: 0.15,
+  artifactEliteDropChance: 0.3,
   artifactBossDropChance: 0.5,
   /** Depois dos 10 minutos, uma morte pode deixar uma Pokébola especial. */
   digitalPokeballDropChance: 0.025,
@@ -1759,7 +1760,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.enemies = state.enemies.filter((e) => e.hp > 0);
     state.kills += dead.length;
     for (const e of dead) {
-      const value = normalizeSurvivorXp(e.boss ? 40 : e.grade === 'chefao' ? 30 : e.grade === 'elite' ? 16 : 6);
+      const value = normalizeSurvivorXp(e.boss ? 48 : e.grade === 'chefao' ? 36 : e.grade === 'elite' ? 20 : 8);
       const doubleXp = state.rng() < BALANCE.doubleXpOrbChance;
       state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value, ...(doubleXp ? { doubleXp: true } : {}) });
       const dropChance = e.boss ? BALANCE.artifactBossDropChance : e.grade === 'chefao' || e.grade === 'elite' ? BALANCE.artifactEliteDropChance : BALANCE.artifactDropChance;

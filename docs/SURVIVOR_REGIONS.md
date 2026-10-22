@@ -1,5 +1,7 @@
 # Torre: regiões e inspirações
 
+> **Base de balanceamento:** consulte [Base primordial do balanceamento da Torre](SURVIVOR_BALANCE_PRINCIPLES.md) antes de alterar a curva, XP, upgrades ou recompensas do Survival. Toda mudança precisa atualizar a matriz de simulação e registrar suas limitações.
+
 ## Implementado nesta rodada
 
 Antes de iniciar uma corrida, a Torre oferece até três instâncias sem duplicação, incluindo Digital Pokémon. O botão “Sortear novamente” pode ser usado uma vez gratuitamente por tentativa; quando há opções suficientes, a nova leva não repete o conjunto anterior. A estrela de favorito usa o `id` da instância (carta ou `dp_*`), fica em `localStorage` sob `tcg-ar-survivor-favorites-v1` e aumenta a probabilidade sem eliminar a variedade. Favoritos removidos da coleção são descartados na leitura. Coleções com zero, uma, duas ou três opções continuam tendo um caminho finito.
