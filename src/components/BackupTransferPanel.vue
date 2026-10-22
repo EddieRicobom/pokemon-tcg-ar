@@ -82,6 +82,8 @@ function onConnected(next: PvpPeer, nextRole: TransferRole): void {
     if (state === 'closed') {
       status.value = '';
       error.value = 'A conexão foi encerrada. Crie uma sala nova para transferir outro backup.';
+      peer.value = null;
+      role.value = null;
       incoming.value = null;
       progress.value = null;
     }
