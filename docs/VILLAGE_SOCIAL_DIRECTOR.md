@@ -1,4 +1,3 @@
-
 # Diretor social da Vila
 
 Este documento é a base para ampliar a automação social da Vila. Ele descreve a intenção de design, a fórmula de seleção e o formato de novos acontecimentos. A implementação continua em `src/core/village/social.ts`; regras sem interface permanecem puras e testáveis.
@@ -56,7 +55,7 @@ amizade:          1,12 - 0,15 × pressão/100  (0,97–1,12)
 outros tipos:     1,00
 ```
 
-Enquanto a fórmula completa não estiver extraída, `pickMoment` já segue a parte essencial: drama e rivalidade têm peso menor quando não há tensão e maior quando existe ao menos uma relação rompida ou negativa.
+`pickMoment` segue a parte essencial da fórmula: drama e rivalidade têm peso menor quando não há tensão e maior quando existe ao menos uma relação rompida ou negativa. Os modelos de trabalho leem `SocialEnv.recentWork`, formado somente por registros concluídos em `state.farm.history`.
 
 ## Formato de evento
 
@@ -83,7 +82,7 @@ Crie modelos em grupos temáticos, por exemplo `INTRIGUE_MOMENTS`, com o tipo `T
 
 ## Próximas levas recomendadas
 
-1. **Trabalho visível:** expor no `SocialEnv` o local e a etapa do turno de cada morador; gerar conflitos por ferramenta, atraso, divisão de coleta e mérito. Nunca inventar loot: o evento só comenta uma tarefa realmente registrada.
+1. **Trabalho visível:** expor no `SocialEnv` o local e a etapa do turno de cada morador; gerar conflitos por ferramenta, atraso, divisão de coleta e mérito. A primeira camada já usa as tarefas concluídas em `recentWork`; nunca inventa loot: o evento só comenta uma tarefa realmente registrada.
 2. **Rumores persistentes:** criar um registro limitado de rumor com autor, alvo e validade. Um boato confirmado pode virar pedido de desculpas; um desmentido deve encerrar o rumor.
 3. **Recuperação emocional:** depois de dois eventos negativos do mesmo par, aumentar eventos de conversa, ajuda ou visita até que haja uma decisão que estabilize a relação.
 4. **Histórias em capítulos:** usar `SocialPlan` para encadear no máximo três cenas. O Diário deve nomear o capítulo e mostrar que o próximo encontro foi marcado.
@@ -100,5 +99,5 @@ Crie modelos em grupos temáticos, por exemplo `INTRIGUE_MOMENTS`, com o tipo `T
 
 ## Eventos inaugurais
 
-Esta leva introduz `Boato na praça`, `Quem fez o trabalho?`, `A colheita sem dono` e `Promessa atrasada`. Eles deixam memórias, mudam vínculos e, nas saídas construtivas, agendam visita ou ajuda. Assim o jogo passa a ter conflito, reparação e continuidade na mesma camada social.
+Esta leva introduz `Boato na praça`, `Quem fez o trabalho?`, `A colheita sem dono`, `Promessa atrasada`, `A ferramenta sumida`, `Depois do turno`, `Mérito do turno`, `Pedido de folga`, `A porta aberta`, `O recado trocado` e `Três bancos no lago`. Eles deixam memórias, mudam vínculos e, nas saídas construtivas, agendam visita, ajuda ou convite. Assim o jogo passa a ter conflito, reparação e continuidade na mesma camada social.
 
