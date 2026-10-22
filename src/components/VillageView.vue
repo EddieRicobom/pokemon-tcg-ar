@@ -2287,6 +2287,10 @@ const MINI_K = 3;
 const minimapSpeakerName = computed(() => minimapSpeakerId.value ? nameOf(minimapSpeakerId.value) : '');
 const minimapRouteLabel = computed(() => minimapRoute.value || (legendCluePlace.value ? `Pista: ${legendCluePlace.value.name}` : ''));
 const guidedTripActive = computed(() => { guidedTripVersion.value; return !!guidedTrip; });
+const MINIMAP_BUILDING_ICONS: Record<string, string> = {
+  cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', fountain: '⛲',
+};
+const MINIMAP_WORKSITE_ICONS: Record<string, string> = { farm: '🌱', mine: '⛏️', lumber: '🪓', fishing: '🎣' };
 const guidedRouteStatus = computed(() => {
   minimapTick.value;
   const trip = guidedTrip;
@@ -2328,17 +2332,46 @@ function drawMini(): void {
     ctx.lineWidth = 1;
     ctx.strokeRect(x * MINI_K + 0.5, y * MINI_K + 0.5, Math.max(1, w * MINI_K - 1), Math.max(1, h * MINI_K - 1));
   };
+  const label = (text: string, x: number, y: number, color: string) => {
+    if (!miniBig.value) return;
+    ctx.font = `600 ${Math.max(6, MINI_K * 2.1)}px system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const width = ctx.measureText(text).width + MINI_K * 1.8;
+    const height = MINI_K * 3.2;
+    const left = Math.max(1, Math.min(map.w * MINI_K - width - 1, x * MINI_K - width / 2));
+    const top = Math.max(1, y * MINI_K - height);
+    ctx.fillStyle = 'rgba(8, 14, 25, 0.88)';
+    ctx.fillRect(left, top, width, height);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(left + 0.5, top + 0.5, width - 1, height - 1);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, left + width / 2, top + height / 2 + 0.5);
+  };
+  const placeIcon = (icon: string, name: string, x: number, y: number, color: string) => {
+    ctx.font = `${Math.max(9, MINI_K * 3.2)}px system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(icon, (x + 0.5) * MINI_K, (y + 0.5) * MINI_K);
+    label(`${icon} ${name}`, x + 0.5, y - 0.1, color);
+  };
   // Contornos dos lugares principais: a base continua sendo a leitura do terreno, e estes contornos ajudam a reconhecer
   // um prédio mesmo quando o minimapa está reduzido no celular.
-  const placeColors: Partial<Record<string, string>> = { arcade: '#ffb347', pins: '#e78cff', arena: '#ff6d7a', torre: '#bd9cff', museum: '#71d7ff', cafe: '#ffc66d', mail: '#f5f0db' };
+  const placeColors: Partial<Record<string, string>> = { arcade: '#ffb347', pins: '#e78cff', arena: '#ff6d7a', torre: '#bd9cff', museum: '#71d7ff', cafe: '#ffc66d', mail: '#f5f0db', fountain: '#7de7ff' };
   for (const building of map.buildings) {
     if (building.kind === 'home') continue;
-    square(building.x, building.y, building.w, building.h, placeColors[building.kind] ?? '#ffffff');
+    const color = placeColors[building.kind] ?? '#ffffff';
+    square(building.x, building.y, building.w, building.h, color);
+    placeIcon(MINIMAP_BUILDING_ICONS[building.kind] ?? '•', building.name, building.x + building.w / 2 - 0.5, building.y + building.h / 2 - 0.5, color);
   }
   for (const site of WORK_SITES) {
     const color = site.id === 'farm' ? '#93d35b' : site.id === 'mine' ? '#b6b7c7' : site.id === 'lumber' ? '#d8a15d' : '#66bff2';
     square(site.visit.x - 1, site.visit.y - 1, 3, 3, color);
+    placeIcon(MINIMAP_WORKSITE_ICONS[site.id] ?? '•', site.name, site.visit.x - 0.5, site.visit.y - 0.5, color);
   }
+  square(map.shop.x, map.shop.y, map.shop.w, map.shop.h, '#ffd166');
+  placeIcon('🛒', 'Mercado', map.shop.x + map.shop.w / 2 - 0.5, map.shop.y + map.shop.h / 2 - 0.5, '#ffd166');
   const bell = map.decor.find((d) => d.kind === 'bell');
   if (bell) {
     ctx.font = `${MINI_K * 4}px ${'system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif'}`;
@@ -2386,17 +2419,36 @@ function drawMini(): void {
   if (speaker && !game.isAsleep(minimapSpeakerId.value!)) {
     const cx = (speaker.x + 0.5) * MINI_K;
     const cy = (speaker.y + 0.5) * MINI_K;
-    ctx.fillStyle = '#ff6fbe';
-    ctx.strokeStyle = '#fff';
+    // Balão de fala com cauda e três pontos: o marcador não parece mais uma
+    // esfera rosa e continua legível mesmo quando o mapa está pequeno.
+    const left = cx - MINI_K * 1.8;
+    const top = cy - MINI_K * 4.4;
+    const width = MINI_K * 3.6;
+    const height = MINI_K * 2.4;
+    const radius = MINI_K * 0.7;
+    ctx.fillStyle = '#f7fbff';
+    ctx.strokeStyle = '#2f6686';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(cx, cy - MINI_K * 2.4);
-    ctx.lineTo(cx + MINI_K * 1.1, cy - MINI_K * 1.2);
-    ctx.lineTo(cx, cy);
-    ctx.lineTo(cx - MINI_K * 1.1, cy - MINI_K * 1.2);
-    ctx.closePath();
+    ctx.moveTo(left + radius, top);
+    ctx.lineTo(left + width - radius, top);
+    ctx.quadraticCurveTo(left + width, top, left + width, top + radius);
+    ctx.lineTo(left + width, top + height - radius);
+    ctx.quadraticCurveTo(left + width, top + height, left + width - radius, top + height);
+    ctx.lineTo(left + MINI_K * 1.05, top + height);
+    ctx.lineTo(cx, cy - MINI_K * 0.2);
+    ctx.lineTo(left + radius, top + height);
+    ctx.quadraticCurveTo(left, top + height, left, top + height - radius);
+    ctx.lineTo(left, top + radius);
+    ctx.quadraticCurveTo(left, top, left + radius, top);
     ctx.fill();
     ctx.stroke();
+    ctx.fillStyle = '#2f6686';
+    for (const offset of [-0.8, 0, 0.8]) {
+      ctx.beginPath();
+      ctx.arc(cx + offset * MINI_K, top + height / 2, MINI_K * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   dot(game.player.x, game.player.y, '#ff4a4a', MINI_K * 1.3);
   minimapTick.value++;
