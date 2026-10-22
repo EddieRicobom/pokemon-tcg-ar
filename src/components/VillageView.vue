@@ -797,7 +797,7 @@ function nameOf(id: string): string {
 
 const inventory = computed(() => ITEMS.filter((i) => count(state, i.id) > 0));
 const backpackItems = computed(() => inventory.value.map((i) => ({ id: i.id, name: i.name, qty: count(state, i.id) })));
-const sellable = computed(() => inventory.value.filter((i) => i.sell > 0));
+const sellable = computed(() => inventory.value.filter((i) => i.sell > 0 && i.kind !== 'accessory' && !i.gift));
 const giftable = computed(() => inventory.value.filter((i) => i.kind !== 'accessory'));
 const nextHouse = computed(() => HOUSE_LEVELS[state.house + 1] ?? null);
 const selectedHomeItem = ref<ItemId | null>(null);
@@ -1688,9 +1688,10 @@ function openFountain(b: Building): void {
         label: 'Jogar uma moeda',
         disabled: state.coins < 1,
         run: () => {
-          const wish = wishAtFountain(state.coins, state.hoOhWishSeen);
+          const wish = wishAtFountain(state.coins, state.fountainWishes);
           if (!wish) return;
           state.coins = wish.coinsAfter;
+          state.fountainWishes = wish.wishesAfter;
           playSound('bell');
           changed();
           closeDialog();
