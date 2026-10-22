@@ -232,7 +232,7 @@ export class VillageGame {
   readonly villagers = new Map<string, Walker>();
   private readonly monSprites = new Map<string, MonSprite>();
   private readonly names = new Map<string, string>();
-  private readonly ctx: CanvasRenderingContext2D;
+  private ctx: CanvasRenderingContext2D;
   private groundFrames: HTMLCanvasElement[] = [];
   /** Recortes de tileset (null: sem a imagem, cai no desenho por código de sempre). */
   private readonly atlas: VillaAtlas | null;
@@ -341,7 +341,7 @@ export class VillageGame {
   }
 
   constructor(
-    private readonly canvas: HTMLCanvasElement,
+    private canvas: HTMLCanvasElement,
     readonly map: VillageMap,
     readonly state: VillageState,
     mons: readonly VillageMon[],
@@ -352,6 +352,8 @@ export class VillageGame {
     atlasImage?: Rgba | null,
     trainerAtlas?: TrainerAtlas | null,
     private readonly rng: Rng = Math.random,
+    /** No AR, o piso e os recortes são texturas distintas: evita uma placa opaca sobre a câmera. */
+    private readonly dioramaLayers?: { floor?: HTMLCanvasElement; props?: HTMLCanvasElement },
   ) {
     this.ctx = canvas.getContext('2d')!;
     let atlas: VillaAtlas | null = null;
@@ -747,8 +749,18 @@ export class VillageGame {
     this.diorama = on;
     if (on) {
       // A textura usa a proporção real do mapa (4:3), sem faixas vazias de uma tela de celular em pé.
-      this.canvas.width = this.map.w * TILE;
-      this.canvas.height = this.map.h * TILE;
+      const width = this.map.w * TILE;
+      const height = this.map.h * TILE;
+      this.canvas.width = width;
+      this.canvas.height = height;
+      if (this.dioramaLayers?.floor) {
+        this.dioramaLayers.floor.width = width;
+        this.dioramaLayers.floor.height = height;
+      }
+      if (this.dioramaLayers?.props) {
+        this.dioramaLayers.props.width = width;
+        this.dioramaLayers.props.height = height;
+      }
       this.scale = 1;
     }
   }
@@ -1249,6 +1261,27 @@ export class VillageGame {
   }
 
   private draw(now: number): void {
+    if (!this.diorama || !this.dioramaLayers?.floor || !this.dioramaLayers.props) {
+      this.drawLayer(now, 'scene');
+      return;
+    }
+    const sceneCanvas = this.canvas;
+    const sceneCtx = this.ctx;
+    try {
+      this.canvas = this.dioramaLayers.floor;
+      this.ctx = this.canvas.getContext('2d')!;
+      this.drawLayer(now, 'floor');
+      this.canvas = this.dioramaLayers.props;
+      this.ctx = this.canvas.getContext('2d')!;
+      this.drawLayer(now, 'props');
+    } finally {
+      this.canvas = sceneCanvas;
+      this.ctx = sceneCtx;
+    }
+  }
+
+  /** Uma única simulação, renderizada em camadas quando o Diorama AR está aberto. */
+  private drawLayer(now: number, layer: 'scene' | 'floor' | 'props'): void {
     const { ctx, canvas } = this;
     const W = canvas.width;
     const H = canvas.height;
@@ -1263,11 +1296,15 @@ export class VillageGame {
       ? Math.round((this.map.h * TILE * scale - H) / 2)
       : Math.round(Math.min(Math.max(0, (pp.y + 0.5) * TILE * scale - H / 2), this.map.h * TILE * scale - H));
     this.view = { camX, camY };
-    ctx.fillStyle = '#1d4a22';
-    ctx.fillRect(0, 0, W, H);
-    const ground = this.groundFrames[Math.floor(now / 450) % this.groundFrames.length]!;
-    if (this.diorama) ctx.drawImage(ground, -camX, -camY, this.map.w * TILE * scale, this.map.h * TILE * scale);
-    else ctx.drawImage(ground, camX / scale, camY / scale, W / scale, H / scale, 0, 0, W, H);
+    if (layer === 'props') {
+      ctx.clearRect(0, 0, W, H);
+    } else {
+      ctx.fillStyle = '#1d4a22';
+      ctx.fillRect(0, 0, W, H);
+      const ground = this.groundFrames[Math.floor(now / 450) % this.groundFrames.length]!;
+      if (this.diorama) ctx.drawImage(ground, -camX, -camY, this.map.w * TILE * scale, this.map.h * TILE * scale);
+      else ctx.drawImage(ground, camX / scale, camY / scale, W / scale, H / scale, 0, 0, W, H);
+    }
 
     const clock = new Date();
     const hour = clock.getHours();
@@ -1281,16 +1318,16 @@ export class VillageGame {
     const T = TILE * scale;
 
     // Chão molhado e neve acumulada (só o chão; os objetos ficam por cima).
-    if (wx.wet > 0.02) {
+    if (layer !== 'props' && wx.wet > 0.02) {
       ctx.fillStyle = `rgba(20,44,90,${(wx.wet * 0.16).toFixed(3)})`;
       ctx.fillRect(0, 0, W, H);
     }
-    if (wx.snowCover > 0.02) {
+    if (layer !== 'props' && wx.snowCover > 0.02) {
       ctx.fillStyle = `rgba(246,250,255,${(wx.snowCover * 0.5).toFixed(3)})`;
       ctx.fillRect(0, 0, W, H);
     }
     // Sombras das nuvens passando pelo chão.
-    if (!night && wx.cloud < 0.95) {
+    if (layer !== 'props' && !night && wx.cloud < 0.95) {
       const cover = 1 - wx.cloud * 0.5;
       for (let i = 0; i < 4; i++) {
         const bx = ((now / 1000) * (0.45 + wx.windX) + i * 23) % (this.map.w + 30) - 15;
@@ -1305,6 +1342,8 @@ export class VillageGame {
         ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
       }
     }
+
+    if (layer === 'floor') return;
 
     // Tudo que fica em pé, ordenado pela linha dos pés.
     type Drawable = { y: number; draw: () => void };
@@ -1956,7 +1995,7 @@ export class VillageGame {
     }
 
     // Clima: cor do céu, chuva e neve.
-    if (wx.cloud > 0.02 || wx.rain > 0.02 || wx.snow > 0.02) {
+    if (layer !== 'props' && (wx.cloud > 0.02 || wx.rain > 0.02 || wx.snow > 0.02)) {
       ctx.fillStyle = `rgba(34,46,70,${(wx.cloud * 0.16 + wx.rain * 0.14).toFixed(3)})`;
       ctx.fillRect(0, 0, W, H);
       if (wx.snow > 0.05) {
@@ -1964,7 +2003,7 @@ export class VillageGame {
         ctx.fillRect(0, 0, W, H);
       }
     }
-    if (wx.rain > 0.05) {
+    if (layer !== 'props' && wx.rain > 0.05) {
       const n = Math.round(wx.rain * 150);
       // A chuva cai quase na vertical. O vento só desloca levemente cada gota,
       // em vez de transformar toda a tela em riscos diagonais paralelos.
@@ -1998,7 +2037,7 @@ export class VillageGame {
         ctx.globalAlpha = 1;
       }
     }
-    if (wx.snow > 0.05) {
+    if (layer !== 'props' && wx.snow > 0.05) {
       const n = Math.round(wx.snow * 110);
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       for (let i = 0; i < n; i++) {
@@ -2011,13 +2050,15 @@ export class VillageGame {
     }
 
     // Dia e noite.
-    if (light.warm > 0) {
+    if (layer !== 'props' && light.warm > 0) {
       ctx.fillStyle = `rgba(255,140,60,${(light.warm * 0.16).toFixed(3)})`;
       ctx.fillRect(0, 0, W, H);
     }
     if (light.dark > 0) {
-      ctx.fillStyle = `rgba(12,18,58,${light.dark.toFixed(3)})`;
-      ctx.fillRect(0, 0, W, H);
+      if (layer !== 'props') {
+        ctx.fillStyle = `rgba(12,18,58,${light.dark.toFixed(3)})`;
+        ctx.fillRect(0, 0, W, H);
+      }
       ctx.globalCompositeOperation = 'lighter';
       const glow = (cx: number, cy: number, r: number, rgb: string, a: number) => {
         const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
@@ -2066,13 +2107,15 @@ export class VillageGame {
       }
       ctx.globalCompositeOperation = 'source-over';
     }
-    if (ambientFx && this.weatherMode() !== 'off') drawSunRays(ctx, W, H, now, (1 - light.dark) * (1 - wx.cloud) * (1 - wx.rain) * (1 - wx.snow));
-    // Vinheta: escurece de leve as bordas.
-    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.78);
-    vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, 'rgba(0,0,0,0.28)');
-    ctx.fillStyle = vg;
-    ctx.fillRect(0, 0, W, H);
+    if (layer !== 'props') {
+      if (ambientFx && this.weatherMode() !== 'off') drawSunRays(ctx, W, H, now, (1 - light.dark) * (1 - wx.cloud) * (1 - wx.rain) * (1 - wx.snow));
+      // Vinheta: escurece de leve as bordas.
+      const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.78);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, 'rgba(0,0,0,0.28)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     for (const o of overlays) o();
   }
@@ -2241,4 +2284,5 @@ export class VillageGame {
     ctx.restore();
   }
 }
+
 
