@@ -1408,7 +1408,6 @@ export function catchUp(state: VillageState, actors: readonly Actor[], now: numb
 
 // -------------------------------------------------------------------------------- comentários
 
-/** O que o Pokémon comenta ao conversar com você sobre o que viveu nas últimas 36 horas (ou `null`). */
 export interface RecentGossipOptions {
   /** Compacta apenas a memória antiga, preservando a fala atual que a envolve. */
   compact?: boolean;
