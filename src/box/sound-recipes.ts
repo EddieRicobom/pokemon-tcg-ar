@@ -191,8 +191,8 @@ function pinLayers(cue: Extract<SoundCue, { kind: `pin-${string}` }>): Layer[] {
     }
     case 'pin-hit': {
       const k = clamp(cue.strength, 0.15, 1);
-      // Clique metálico no aro e pancada plástica curta no tabuleiro.
-      const layers: Layer[] = [tone('sine', 190 + 120 * k, 60, 0, 0.1 + 0.1 * k, 0.25 + 0.35 * k), noise({ type: 'lowpass', f0: 1600 }, 0, 0.05 + 0.05 * k, 0.2 + 0.25 * k), tone('square', 1250 + 180 * k, 820, 0.005, 0.07, 0.08 + 0.08 * k), tone('triangle', 105, 70, 0, 0.13, 0.09 + 0.08 * k)];
+      // Ferro no ferro: pancada grave, clique agudo e um chiado curto de limalha.
+      const layers: Layer[] = [tone('sine', 190 + 120 * k, 60, 0, 0.1 + 0.1 * k, 0.25 + 0.35 * k), noise({ type: 'lowpass', f0: 1600 }, 0, 0.05 + 0.05 * k, 0.2 + 0.25 * k), tone('square', 1250 + 180 * k, 820, 0.005, 0.07, 0.08 + 0.08 * k), tone('triangle', 105, 70, 0, 0.13, 0.09 + 0.08 * k), tone('square', 1820 + 260 * k, 720, 0.006, 0.105, 0.08 + 0.08 * k), tone('sine', 2680 + 180 * k, 1460, 0.012, 0.14, 0.055 + 0.045 * k), noise({ type: 'highpass', f0: 3200, f1: 900, q: 1.2 }, 0.004, 0.045, 0.05 + 0.06 * k)];
       if (cue.edge === 'super') layers.push(tone('sine', 1046, 1568, 0.05, 0.3, 0.12), tone('sine', 1568, 2093, 0.1, 0.25, 0.09));
       else if (cue.edge === 'weak' || cue.edge === 'none') layers.push(tone('sine', 420, 300, 0.02, 0.2, 0.1));
       return layers;

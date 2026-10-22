@@ -48,7 +48,7 @@ interface TrayMove { index: number; name: string; label: string; hint: string; r
 interface TrayPin { id: string; name: string; cost: number; thumb: string; selected: boolean; affordable: boolean; moves: TrayMove[]; estimated: boolean }
 interface Popup { text: string; x: number; y: number; age: number; color: string }
 interface TerrainFx { kind: TerrainKind; x: number; y: number; age: number; life: number; reaction: boolean }
-interface ImpactFx { x: number; y: number; age: number; life: number; strength: number; ko: boolean; color: string }
+interface ImpactFx { x: number; y: number; age: number; life: number; strength: number; ko: boolean; metal: boolean; angle: number; color: string }
 
 const STEP = 1 / 120;
 /** Borda do pin: azul para o seu lado (ou a sua equipe), vermelha para os adversários. */
@@ -643,7 +643,12 @@ function handleEvents(events: PinEvent[]): void {
       const b = world.pins.find((pin) => pin.id === e.b);
       if (a && b && e.strength >= 0.12 && setup.value.effects && !effectiveVisual.value.rotomMode) {
         const color = e.edge === 'super' ? '#ffe36e' : e.edge === 'weak' ? '#aebbd4' : '#f4f7ff';
-        impactFx.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, age: 0, life: e.edge === 'super' ? 1.05 : 0.62, strength: e.strength, ko: false, color });
+        const relativeVx = a.vx - b.vx;
+        const relativeVy = a.vy - b.vy;
+        const normalVx = a.x - b.x;
+        const normalVy = a.y - b.y;
+        const angle = Math.hypot(relativeVx, relativeVy) > 1 ? Math.atan2(relativeVy, relativeVx) : Math.atan2(normalVy, normalVx);
+        impactFx.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, age: 0, life: e.edge === 'super' ? 1.05 : 0.62, strength: e.strength, ko: false, metal: true, angle, color });
         if (impactFx.length > 18) impactFx.splice(0, impactFx.length - 18);
       }
       if (a) pinImpactAt.set(a.id, performance.now());
@@ -690,7 +695,7 @@ function handleEvents(events: PinEvent[]): void {
       const p = world.pins.find((x) => x.id === e.id);
       if (p) popups.push({ text: p.side === 1 ? 'Fora!' : 'Caiu!', x: p.x * 0.85, y: p.y * 0.85, age: 0, color: p.side === 1 ? '#7dffa0' : '#ff8a8a' });
       if (p && setup.value.effects && !effectiveVisual.value.rotomMode) {
-        impactFx.push({ x: p.x, y: p.y, age: 0, life: 1.2, strength: 1, ko: outcomeOf(world) !== 'playing', color: p.side === 1 ? '#b9ffdb' : '#ffb0a8' });
+        impactFx.push({ x: p.x, y: p.y, age: 0, life: 1.2, strength: 1, ko: outcomeOf(world) !== 'playing', metal: false, angle: Math.atan2(p.vy, p.vx), color: p.side === 1 ? '#b9ffdb' : '#ffb0a8' });
         if (impactFx.length > 18) impactFx.splice(0, impactFx.length - 18);
       }
     }
@@ -1276,9 +1281,29 @@ function drawImpactBursts(ctx: CanvasRenderingContext2D, cx: number, k: number):
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.stroke();
+    if (fx.metal) {
+      // A colisão de ferro tem um clarão branco-azulado e riscos finos, como
+      // limalhas saindo do ponto de contato, em vez de partículas coloridas genéricas.
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `rgba(235,246,255,${fade * 0.92})`;
+      ctx.lineWidth = Math.max(1 * dpr, 1.8 * dpr * fade);
+      const glints = 5 + Math.round(fx.strength * 3);
+      for (let i = 0; i < glints; i++) {
+        const spread = (i - (glints - 1) / 2) * 0.13;
+        const angle = fx.angle + Math.PI / 2 + spread;
+        const inner = radius * (0.15 + t * 0.2);
+        const outer = radius * (0.72 + t * 0.68);
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(angle) * inner, y + Math.sin(angle) * inner);
+        ctx.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer);
+        ctx.stroke();
+      }
+    }
     const particles = fx.ko ? 12 : 7;
     for (let i = 0; i < particles; i++) {
-      const angle = i * Math.PI * 2 / particles + fx.strength * 0.7;
+      const angle = fx.metal
+        ? fx.angle + Math.PI / 2 + (i % 2 ? 0.42 : -0.42) + i * 0.08
+        : i * Math.PI * 2 / particles + fx.strength * 0.7;
       const distance = radius * (0.6 + t * 0.95);
       const px = x + Math.cos(angle) * distance;
       const py = y + Math.sin(angle) * distance;
