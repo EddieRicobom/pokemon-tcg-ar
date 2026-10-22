@@ -6706,6 +6706,43 @@ body.no-scroll .reward-toasts {
   text-align: center;
 }
 
+.survivor-summary {
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.survivor-feedback,
+.survivor-feedback-result {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 10px;
+  border: 1px solid rgb(75 95 150 / 24%);
+  border-radius: 12px;
+  background: rgb(242 245 255 / 72%);
+  color: #1b2036;
+  text-align: left;
+}
+
+.survivor-feedback h3,
+.survivor-feedback-result h3 { margin: 0; font-size: .98rem; text-align: center; }
+.survivor-feedback .note,
+.survivor-feedback-result .note { color: #4a526b; font-size: .78rem; }
+.survivor-feedback-question { display: grid; gap: 5px; margin: 0; padding: 7px 0 0; border: 0; }
+.survivor-feedback-question legend { padding: 0; font-size: .78rem; font-weight: 750; }
+.survivor-rating { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.survivor-rating button { min-height: 34px; padding: 4px; border: 1px solid #b7bfd8; border-radius: 8px; background: #fff; color: #263050; font-weight: 800; cursor: pointer; }
+.survivor-rating button.selected { border-color: #3e68c9; background: #dbe7ff; box-shadow: 0 0 0 2px rgb(62 104 201 / 18%); }
+.survivor-rating-legend { display: flex; justify-content: space-between; color: #66708b; font-size: .65rem; }
+.survivor-feedback-comment { display: grid; gap: 4px; margin-top: 3px; font-size: .78rem; font-weight: 700; }
+.survivor-feedback-comment textarea,
+.survivor-feedback-code { width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid #b7bfd8; border-radius: 8px; background: #fff; color: #1b2036; font: inherit; font-size: .75rem; padding: 7px; }
+.survivor-feedback-code { min-height: 92px; word-break: break-all; }
+.survivor-feedback-error { margin: 0; color: #a52b35; font-size: .76rem; font-weight: 700; }
+
 .survivor-pick {
   max-height: calc(100% - 24px);
   overflow-y: auto;
