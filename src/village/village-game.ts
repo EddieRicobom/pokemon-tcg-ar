@@ -329,6 +329,17 @@ export class VillageGame {
   /** Canvas de trabalho do brilho (um só, reaproveitado: o brilho é desenhado na hora, quadro a quadro). */
   private sheenCanvas: HTMLCanvasElement | null = null;
 
+  /**
+   * O diorama AR redesenha o mapa inteiro como textura da câmera. Quando o
+   * jogador deixa a taxa em automático, 30 fps constantes evitam a disputa
+   * entre esse mapa grande e o vídeo, sem alterar a Vila normal. Uma taxa
+   * escolhida nas opções continua tendo prioridade.
+   */
+  private renderFps(): number {
+    const configured = this.maxFps();
+    return this.diorama && (!Number.isFinite(configured) || configured <= 0) ? 30 : configured;
+  }
+
   constructor(
     private readonly canvas: HTMLCanvasElement,
     readonly map: VillageMap,
@@ -1059,8 +1070,8 @@ export class VillageGame {
     this.last = performance.now();
     const tick = (now: number) => {
       if (!this.running) return;
-      this.handle = requestGameFrame(tick, this.maxFps);
-      if (!isFrameDue(now, this.last, this.maxFps())) return;
+      this.handle = requestGameFrame(tick, () => this.renderFps());
+      if (!isFrameDue(now, this.last, this.renderFps())) return;
       const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
       this.update(dt, now);
@@ -1227,7 +1238,11 @@ export class VillageGame {
   }
 
   resize(width: number, height: number): void {
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    // Três vezes a densidade pinta mais de nove vezes os pixels de um celular
+    // comum. A Vila é pixel art e já usa `image-rendering: pixelated`, então
+    // limitar a 2× mantém a leitura nítida sem transformar cada quadro do mapa
+    // em uma carga desnecessária para a GPU.
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
     this.canvas.width = Math.round(width * dpr);
     this.canvas.height = Math.round(height * dpr);
     this.scale = villageScale(width, height, dpr);
@@ -1295,6 +1310,10 @@ export class VillageGame {
     type Drawable = { y: number; draw: () => void };
     const list: Drawable[] = [];
     const overlays: (() => void)[] = [];
+    // Efeitos altos não podem ficar presos ao z-order dos pés do prédio: uma
+    // árvore ou outro prédio à frente acabaria escondendo a coluna inteira.
+    // Eles são desenhados depois dos elementos do mapa, antes das partículas.
+    const towerFx: (() => void)[] = [];
     const x0 = Math.floor(camX / T) - 2;
     const y0 = Math.floor(camY / T) - 2;
     const x1 = x0 + Math.ceil(W / T) + 4;
@@ -1642,13 +1661,13 @@ export class VillageGame {
         list.push({
           y: buildingGroundY(b),
           draw: () => {
-            if (b.kind === 'torre' && ambientFx) drawTowerDataFx(ctx, mid, spriteBase, scale, now);
             shadow(mid, spriteBase - 2 * scale, wpx / 2 - 2 * scale, 3.5 * scale, 0.2);
             const at = stand(civicArt, mid, spriteBase, wpx);
             if (night) lightUp(civicId, civicId, at);
             this.drawTag(mid, at.y - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
         });
+        if (b.kind === 'torre' && ambientFx) towerFx.push(() => drawTowerDataFx(ctx, mid, spriteBase, scale, now));
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
         continue;
       }
@@ -1656,12 +1675,12 @@ export class VillageGame {
       list.push({
         y: buildingGroundY(b),
         draw: () => {
-          if (b.kind === 'torre' && ambientFx) drawTowerDataFx(ctx, mid, spriteBase, scale, now);
           shadow(mid, spriteBase - 2 * scale, (wpx / 2 - 2 * scale), 3.5 * scale, 0.2);
           ctx.drawImage(img, left, spriteBase - 48 * scale, wpx, 3 * T);
           this.drawTag(mid, spriteBase - 50 * scale + Math.sin(now / 350) * scale, emoji);
         },
       });
+      if (b.kind === 'torre' && ambientFx) towerFx.push(() => drawTowerDataFx(ctx, mid, spriteBase, scale, now));
       if (night) homeGlows.push({ x: left + 4 * scale, y: bottom - 20 * scale, w: wpx - 8 * scale, h: 6 * scale });
       if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
     }
@@ -1862,6 +1881,7 @@ export class VillageGame {
     }
     list.sort((a, b) => a.y - b.y);
     for (const d of list) d.draw();
+    for (const fx of towerFx) fx();
 
     // Partículas do mundo (poeira, folhas, fumaça, puf) e borboletas.
     for (const q of this.particles) {
