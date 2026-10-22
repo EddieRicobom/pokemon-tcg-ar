@@ -7496,7 +7496,7 @@ body.no-scroll .reward-toasts {
   .village-pad { position: absolute; z-index: 8; inset: 0; display: block; padding: 0; background: transparent; pointer-events: none; }
   .village-control-cluster { position: absolute; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); left: auto; width: auto; gap: 8px; pointer-events: none; }
   .village-pad .ab { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; margin: 0; pointer-events: auto; }
-  .village-pad .ab button { width: 58px; height: 58px; padding: 4px; border-radius: 17px; }
+  .village-pad .ab button { width: 58px; height: 58px; padding: 4px; border-radius: 17px; touch-action: none; user-select: none; -webkit-user-select: none; }
   .menu-control-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 58px; height: 58px; padding: 3px; border: 2px solid #a58b43; border-radius: 17px; background: linear-gradient(180deg, #63552e, #38311e); color: #fff0a6; font-size: 1.15rem; font-weight: 800; }
   .menu-control-btn small { font-size: .58rem; line-height: 1; }
 }
