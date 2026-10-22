@@ -798,6 +798,25 @@ function nameOf(id: string): string {
   return mons.value.find((m) => m.id === id)?.name ?? 'Pokémon';
 }
 
+/** Limpa memórias de saves antigos e mantém a conversa legível no cartão. */
+function compactResidentMessage(raw: string, limit = 300): string {
+  let text = raw.replace(/\s+/g, ' ').trim();
+  // Memórias antigas podem ter guardado o instanceId em vez do nome visível.
+  for (const mon of [...mons.value].sort((a, b) => b.id.length - a.id.length)) {
+    if (mon.id && mon.name && mon.id !== mon.name) text = text.split(mon.id).join(mon.name);
+  }
+  if (text.length <= limit) return text;
+  const firstSentences = text.split(/(?<=[.!?])\s+/u);
+  let out = '';
+  for (const sentence of firstSentences) {
+    const next = out ? `${out} ${sentence}` : sentence;
+    if (next.length > limit - 1) break;
+    out = next;
+  }
+  if (out.length >= 80) return `${out}…`;
+  return `${text.slice(0, limit - 1).trimEnd()}…`;
+}
+
 const inventory = computed(() => ITEMS.filter((i) => count(state, i.id) > 0));
 const backpackItems = computed(() => inventory.value.map((i) => ({ id: i.id, name: i.name, qty: count(state, i.id) })));
 const sellable = computed(() => inventory.value.filter((i) => i.sell > 0 && i.kind !== 'accessory' && !i.gift));
@@ -1295,6 +1314,29 @@ function answerMail(id: string, action: MailAction): void {
   if (result.ok) changed();
 }
 
+/** Conversa social comum, compartilhada por todos os moradores, inclusive o carteiro. */
+function speakToResident(id: string): void {
+  if (!game) return;
+  game.faceMe(id);
+  const today = refreshDay();
+  const name = nameOf(id);
+  const result = talk(state, id, name, types.get(id) ?? [], today, villageHour(), Math.random, recentGossip(state, id, Date.now()), game.weatherKind);
+  if (result.gained > 0) {
+    game.bubble(id, '❤️');
+    trainerEvent('talk', id);
+    earnCoins(5);
+  }
+  let text = result.text;
+  const help = dailyHelp(state, id, today, Math.random);
+  if (help.items.length > 0) text += ` Ah! Achei isto pela Vila para você: ${help.items.map((h) => `${h.qty} ${itemName(h.item)}`).join(' e ')}.`;
+  if (help.rare) {
+    text += ` E... guardei um presente especial: ${itemName(help.rare)}!`;
+    game.bubble(id, '🎁', 2600);
+  }
+  changed();
+  openFriendDialog(id, text);
+}
+
 function openMailCarrierDialog(id: string): void {
   const waiting = state.mail.inbox.filter((mail) => !mail.read).length;
   const lines = [
@@ -1307,6 +1349,7 @@ function openMailCarrierDialog(id: string): void {
     name: `📬 ${nameOf(id)} · Carteiro da Vila`,
     text: lines[(Date.now() / 1000 | 0) % lines.length]!,
     actions: [
+      { label: 'Conversar como morador', run: () => speakToResident(id) },
       { label: 'Abrir o Correio', run: openMail },
       { label: 'Continuar a entrega', run: () => { game?.deliverMail(state.mail.inbox.filter((mail) => mail.involvedIds.length > 0).flatMap((mail) => mail.involvedIds)); closeDialog(); } },
       { label: 'Sair', run: closeDialog },
@@ -2227,27 +2270,7 @@ function pressA(): void {
     game.faceMe(t.id);
     openQuiz(t.id);
   } else if (t.kind === 'mon') {
-    game.faceMe(t.id);
-    if (t.id === state.mailCarrierId) {
-      openMailCarrierDialog(t.id);
-      return;
-    }
-    const name = nameOf(t.id);
-    const result = talk(state, t.id, name, types.get(t.id) ?? [], today, villageHour(), Math.random, recentGossip(state, t.id, Date.now()), game.weatherKind);
-    if (result.gained > 0) {
-      game.bubble(t.id, '❤️');
-      trainerEvent('talk', t.id);
-      earnCoins(5);
-    }
-    let text = result.text;
-    const help = dailyHelp(state, t.id, today, Math.random);
-    if (help.items.length > 0) text += ` Ah! Achei isto pela Vila para você: ${help.items.map((h) => `${h.qty} ${itemName(h.item)}`).join(' e ')}.`;
-    if (help.rare) {
-      text += ` E... guardei um presente especial: ${itemName(help.rare)}!`;
-      game.bubble(t.id, '🎁', 2600);
-    }
-    changed();
-    openFriendDialog(t.id, text);
+    speakToResident(t.id);
   } else if (t.kind === 'crop') {
     const now = Date.now();
     tickCrops(state, now, effects().growthFactor);
@@ -2538,6 +2561,7 @@ function openFriendDialog(id: string, text: string): void {
   const lvl = friendLevel(f.points);
   const following = state.follower === id;
   const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: 'Presentear', run: () => { giftPick.value = true; } }];
+  if (id === state.mailCarrierId) actions.push({ label: '📬 Ver a bolsa do carteiro', run: () => openMailCarrierDialog(id) });
   actions.push({ label: 'Acessório', run: () => { dialog.value = null; openDress(id); } });
   actions.push({ label: nicknameOf(state, id) ? 'Mudar o apelido' : 'Dar apelido', disabled: !canNickname(state, id), run: () => openNickname(id) });
   actions.push({ label: '🚶 Passeio guiado', run: () => openGuidedTrip(id) });
@@ -2545,7 +2569,7 @@ function openFriendDialog(id: string, text: string): void {
   if (following) actions.push({ label: 'Pode passear', run: () => { state.follower = null; changed(); dialog.value = null; } });
   else if (canFollow(state, id)) actions.push({ label: 'Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
   actions.push({ label: 'Tchau', run: () => { dialog.value = null; } });
-  dialog.value = { id, name: `${nameOf(id)} · ${lvl.name} ${'♥'.repeat(lvl.hearts)}${'♡'.repeat(5 - lvl.hearts)}`, text, actions };
+  dialog.value = { id, name: `${nameOf(id)} · ${lvl.name} ${'♥'.repeat(lvl.hearts)}${'♡'.repeat(5 - lvl.hearts)}`, text: compactResidentMessage(text), actions };
 }
 
 function openGuidedTrip(id: string): void {
