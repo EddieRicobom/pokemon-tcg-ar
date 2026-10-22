@@ -1063,6 +1063,8 @@ function pressAClick(event: MouseEvent): void {
   if (performance.now() - lastPointerAPress > 180) pressA();
 }
 function onKey(e: KeyboardEvent): void {
+  // A Torre tem seu próprio teclado; a Vila não deve capturar essas teclas por trás dela.
+  if (sheet.value === 'torre') return;
   if (recapScenes.value.length) {
     if (e.type === 'keydown' && e.key === 'Escape') { e.preventDefault(); finishRecap(); }
     return;
@@ -1096,7 +1098,10 @@ function onKey(e: KeyboardEvent): void {
     e.preventDefault();
     return;
   }
-  if (isGameKeyboardControl(e.target) && !(dir && e.target instanceof Element && e.target.closest('.village-control-cluster'))) return;
+  const worldMovementActive = !sheet.value && !dialog.value && !quiz.value && !quizOpen.value && !cutsceneOpen.value && !welcome.value && !recapScenes.value.length;
+  // O foco pode continuar em um botão do HUD depois de um toque. Setas/WASD ainda devem mover a Vila;
+  // campos de texto continuam recebendo suas teclas normalmente.
+  if (isGameKeyboardControl(e.target) && !(worldMovementActive && dir) && !(dir && e.target instanceof Element && e.target.closest('.village-control-cluster'))) return;
   // Dentro de uma folha (jogos do Fliperama, Arena…) Enter, espaço e setas são da folha, não do personagem.
   if (sheet.value && (e.target as HTMLElement | null)?.closest?.('.village-sheet') && (KEYS[e.key] || e.key === ' ' || e.key === 'Enter')) return;
   if (e.type === 'keydown') {
@@ -2852,14 +2857,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="village" role="application" aria-label="Vila: modo vida da Caixa">
+  <div class="village" role="application" aria-label="Vila: modo vida da Caixa" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D Enter Space Z X Escape">
     <div ref="wrapEl" class="village-stage" :class="{ 'village-diorama': arActive }" role="group" tabindex="-1" aria-label="Mapa da Vila">
       <video ref="arVideoEl" class="village-ar-video" :class="{ active: arActive }" muted playsinline aria-hidden="true"></video>
       <canvas
         ref="canvasEl"
         class="village-canvas"
         :class="{ 'diorama-source': arActive }"
-        aria-label="Vila: arraste em qualquer lugar para andar; toque num lugar para ir até ele"
+        aria-label="Vila: arraste em qualquer lugar para andar; toque num lugar para ir até ele; teclado: setas ou WASD movem, Enter/Espaço/Z interagem, X/Escape voltam"
         @pointerdown.prevent="arActive ? arPointerDown($event) : joyDown($event)"
         @pointermove.prevent="arActive ? arPointerMove($event) : joyMove($event)"
         @pointerup.prevent="arActive ? arPointerUp($event) : joyUp($event)"
