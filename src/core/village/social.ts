@@ -576,8 +576,135 @@ const CORE: readonly Template[] = [
   },
 ];
 
+/**
+ * Momentos com consequências sociais mais longas. Eles têm peso baixo quando a Vila está tranquila;
+ * o sorteio os chama com mais frequência quando já há atritos, para a história parecer consequência
+ * do que os moradores viveram — e não uma punição aleatória para quem está visitando a Vila.
+ */
+const INTRIGUE_MOMENTS: readonly Template[] = [
+  {
+    id: 'tri-boato-na-praca', kind: 'drama', title: 'Boato na praça', emoji: '🗯️', cast: 3, weight: 5,
+    when: (c) => !!c.rel && c.rel.bond < 42 && c.env.hour >= 9 && c.env.hour < 22,
+    lines: (c) => [
+      L(2, `Eu não queria espalhar nada, mas ouvi que ${c.n[0]} disse que ${c.n[1]} atrapalha todo mundo.`, 'sweat'),
+      L(1, `Você disse isso, ${c.n[0]}?`, 'sad'),
+      L(0, 'Eu disse que alguém atrapalhou uma vez. Nem falei um nome!', 'shock'),
+      L(2, 'Então talvez eu tenha entendido... um pouquinho errado.', 'sweat'),
+    ],
+    outcome: { bond: -8, bond02: -4, bond12: -3, flag: 'brigados' },
+    choice: {
+      prompt: 'O boato já deixou os três tensos. Como você conduz a conversa?',
+      options: [
+        {
+          label: () => 'Pedir que cada um conte o que ouviu',
+          lines: () => [L(0, 'Tá. Eu falei isso quando estava irritado. Foi injusto.', 'sad'), L(1, 'Obrigada por falar direto comigo.', 'heart'), L(2, 'E eu vou parar de completar história dos outros.', 'idea')],
+          outcome: { bond: 5, bond02: 4, bond12: 4, flag: 'clear', friendBy: [1, 1, 1], plan: { kind: 'visitar', days: 2 } },
+        },
+        {
+          label: () => 'Separar os três para esfriarem a cabeça',
+          lines: (c) => [L(0, `Eu preciso pensar no que disse. Depois procuro ${c.n[1]}.`, 'sad'), L(2, 'Eu também vou pensar antes de contar uma coisa.', 'sweat')],
+          outcome: { bond: -2, bond02: -1, bond12: -1, friendBy: [0, 0, -1], plan: { kind: 'visitar', days: 3 } },
+        },
+        {
+          label: () => 'Mudar de assunto rápido demais',
+          lines: () => [L(0, 'Nossa, olha aquela nuvem!', 'sweat'), L(1, 'Não muda de assunto.', 'anger'), L(2, '(a praça fica bem silenciosa)', 'sad')],
+          outcome: { bond: -12, bond02: -6, bond12: -5, flag: 'brigados', friendBy: [-1, -1, -1] },
+        },
+      ],
+    },
+    after: (n, who) => who === 2 ? 'Eu aumentei uma história sem perceber. Agora vou conferir antes de repetir.' : `O boato na praça ainda está na minha cabeça. Preciso conversar com ${other(n, who)} direito.`,
+  },
+  {
+    id: 'tri-creditos-perdidos', kind: 'rivalidade', title: 'Quem fez o trabalho?', emoji: '📋', cast: 3, weight: 5,
+    when: (c) => c.env.town >= 2 && c.env.hour >= 7 && c.env.hour < 20,
+    lines: () => [
+      L(0, 'A placa agradece a "ideia brilhante" de alguém. Mas a ideia era nossa.', 'anger'),
+      L(1, 'Eu achei que todo mundo sabia que fizemos juntos.', 'shock'),
+      L(2, 'Eu ajudei a carregar tudo. Meu nome nem cabe na placa?', 'sad'),
+      L(1, 'Eu não quis ficar com o crédito. Eu só entreguei o recado.', 'sweat'),
+    ],
+    outcome: { bond: -7, bond02: -5, bond12: -5 },
+    choice: {
+      prompt: 'A discussão é por reconhecimento, não por moedas. O que você sugere?',
+      options: [
+        {
+          label: () => 'Refazer a placa com os três nomes',
+          needs: { item: 'madeira', qty: 1 },
+          lines: () => [L(2, 'Meu nome ficou pequeno, mas ficou!', 'star'), L(0, 'Agora parece justo.', 'heart'), L(1, 'Da próxima vez a gente assina junto desde o começo.', 'idea')],
+          outcome: { bond: 9, bond02: 9, bond12: 9, friend: 2, plan: { kind: 'ajudar', from: 1, to: 0, days: 2 } },
+        },
+        {
+          label: () => 'Dividir o próximo projeto desde o início',
+          lines: () => [L(0, 'Eu cuido do plano. Você entrega. E você confere os nomes.', 'idea'), L(1, 'Combinado.', 'heart'), L(2, 'Eu tenho uma caneta ótima para isso.', 'star')],
+          outcome: { bond: 5, bond02: 5, bond12: 5, friend: 1, plan: { kind: 'ajudar', from: 0, to: 1, days: 3 } },
+        },
+        {
+          label: () => 'Escolher um único responsável',
+          lines: () => [L(0, 'Então o próximo eu faço sozinho.', 'anger'), L(2, 'Não era isso que eu queria ouvir.', 'sad')],
+          outcome: { bond: -10, bond02: -8, bond12: -7, friendBy: [-1, 0, -1] },
+        },
+      ],
+    },
+  },
+  {
+    id: 'par-colheita-sem-dono', kind: 'drama', title: 'A colheita sem dono', emoji: '🥕', cast: 2, weight: 4,
+    when: (c) => c.env.ripeCrops > 0 && c.env.hour >= 8 && c.env.hour < 19,
+    lines: (c) => [
+      L(0, `${c.n[1]}, eu colhi uma fruta porque achei que estava sobrando.`, 'sweat'),
+      L(1, 'Eu estava guardando essa para a receita de hoje.', 'sad'),
+      L(0, 'Eu devia ter perguntado. Parecia tão pronta...', 'sad'),
+    ],
+    outcome: { bond: -7, eatCrop: true },
+    choice: {
+      prompt: 'Foi um erro, mas ainda dá para consertar. O que você faz?',
+      options: [
+        {
+          label: () => 'Usar uma Oran para repor a receita', needs: { item: 'oran', qty: 1 },
+          lines: () => [L(1, 'Não é a mesma receita, mas é um recomeço.', 'heart'), L(0, 'A próxima eu pergunto antes. Prometo.', 'sparkle')],
+          outcome: { bond: 8, flag: 'clear', friend: 2 },
+        },
+        {
+          label: () => 'Preparar outra coisa juntos',
+          lines: () => [L(0, 'Eu corto as frutas. Você escolhe a receita.', 'idea'), L(1, 'Assim ninguém fica culpado sozinho.', 'heart')],
+          outcome: { bond: 4, friend: 1, plan: { kind: 'ajudar', days: 2 } },
+        },
+        {
+          label: () => 'Dizer que era só uma fruta',
+          lines: () => [L(1, 'Para você era uma fruta. Para mim era uma promessa.', 'sad'), L(0, '(não encontra resposta)', 'sweat')],
+          outcome: { bond: -12, flag: 'brigados', friendBy: [-1, -1] },
+        },
+      ],
+    },
+  },
+  {
+    id: 'par-promessa-atrasada', kind: 'drama', title: 'Promessa atrasada', emoji: '⏳', cast: 2, weight: 5,
+    when: (c) => !!c.rel && (c.rel.flag === 'brigados' || c.rel.bond <= -8),
+    lines: (c) => [
+      L(1, `${c.n[0]}, você disse que ia me ajudar ontem. Eu esperei.`, 'sad'),
+      L(0, 'Eu sei. Aconteceu muita coisa e eu achei que ainda dava tempo.', 'sweat'),
+      L(1, 'Não era só a ajuda. Era você avisar.', 'anger'),
+    ],
+    outcome: { bond: -6, flag: 'brigados' },
+    choice: {
+      prompt: 'A promessa não foi cumprida. Como você ajuda a reparar isso?',
+      options: [
+        {
+          label: () => 'Marcar um horário e lembrar os dois',
+          lines: () => [L(0, 'Eu vou aparecer. E se atrasar, vou avisar.', 'heart'), L(1, 'Tudo bem. Eu acredito mais quando tem um plano.', 'sparkle')],
+          outcome: { bond: 7, flag: 'clear', friendBy: [1, 1], plan: { kind: 'ajudar', days: 3 } },
+        },
+        {
+          label: () => 'Deixar que resolvam no próprio tempo',
+          lines: () => [L(0, 'Eu vou provar com atitudes.', 'sad'), L(1, 'Então eu espero para ver.', 'question')],
+          outcome: { bond: -1, friendBy: [0, 0], plan: { kind: 'visitar', days: 3 } },
+        },
+      ],
+    },
+  },
+];
+
 /** Todos os momentos: os do começo (`CORE`) e as levas novas, por tipo de elenco e por ocasião. */
-export const TEMPLATES: readonly Template[] = [...CORE, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS, ...EXTRA_MOMENTS];
+export const TEMPLATES: readonly Template[] = [...CORE, ...INTRIGUE_MOMENTS, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS, ...EXTRA_MOMENTS];
 export const TEMPLATE_COUNT = TEMPLATES.length;
 export const TEMPLATE_BY_ID = new Map(TEMPLATES.map((t) => [t.id, t]));
 
@@ -746,10 +873,14 @@ export function pickMoment(actors: readonly Actor[], state: VillageState, env: S
   const immediate = state.diary.at(-1)?.tpl;
   const seen = new Set(state.seen);
   const pool = TEMPLATES.filter((t) => t.cast <= actors.length);
+  const hasTension = Object.values(state.rel).some((rel) => rel.flag === 'brigados' || rel.bond <= -12);
   const weight = (t: Template): number => {
     const base = t.weight * (seen.has(t.id) ? 1 : 1.8) * (recent.includes(t.id) ? 0.1 : 1);
     if (t.id === 'duo-revanche') return base * 2.5;
     if (t.id === 'par-pazes') return base * 2;
+    // Conflitos voltam a aparecer quando há uma razão no histórico da Vila. Em períodos
+    // tranquilos continuam possíveis, mas não dominam os momentos leves e cotidianos.
+    if (t.kind === 'drama' || t.kind === 'rivalidade') return base * (hasTension ? 1.65 : 0.7);
     return base;
   };
   for (let attempt = 0; attempt < 60; attempt++) {
