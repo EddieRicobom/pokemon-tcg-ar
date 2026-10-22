@@ -3612,6 +3612,40 @@ body.no-scroll .reward-toasts {
   font-size: 0.8rem;
 }
 
+.pin-ko-reward {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transform: translate(-50%, -50%) scale(1.04);
+  padding: 10px 16px;
+  border: 2px solid rgb(255 236 148 / 78%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgb(29 42 75 / 94%), rgb(10 18 36 / 95%));
+  box-shadow: 0 8px 20px rgb(0 0 0 / 42%), inset 0 2px 0 rgb(255 255 255 / 24%);
+  color: #fff3b2;
+  font-size: 0.9rem;
+  pointer-events: none;
+  animation: pin-ko-reward-in 180ms ease-out both;
+}
+
+.pin-ko-reward strong {
+  color: #fff;
+  letter-spacing: 0.08em;
+}
+
+@keyframes pin-ko-reward-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.82); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pin-ko-reward { animation: none; }
+}
+
 /* A arena é quadrada e nunca passa da altura que sobra na tela, para o dock caber junto. */
 .pin-stage {
   position: relative;
@@ -3633,14 +3667,45 @@ body.no-scroll .reward-toasts {
    ficha acima dele; assim chão, sombra e disco apontam para a mesma direção. */
 .pin-stage.pin-depth {
   perspective: 760px;
+  transform-style: preserve-3d;
+  isolation: isolate;
+  border: 1px solid rgb(255 255 255 / 16%);
   background:
     radial-gradient(ellipse at 50% 80%, rgb(27 69 115 / 58%), transparent 57%),
     #0b1429;
+  box-shadow:
+    0 18px 28px rgb(0 0 0 / 42%),
+    inset 0 3px 0 rgb(255 255 255 / 18%),
+    inset 0 -16px 24px rgb(0 0 0 / 28%);
+}
+
+/* A moldura e o brilho superior dão ao tabuleiro a leitura de brinquedo físico
+   sem outra camada WebGL. O pseudo-elemento fica atrás dos pins e não captura toque. */
+.pin-stage.pin-depth::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 1.5%;
+  border: 2px solid rgb(255 255 255 / 17%);
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: inset 0 4px 0 rgb(255 255 255 / 14%), inset 0 -12px 0 rgb(0 0 0 / 25%);
+}
+
+.pin-stage.pin-depth::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(158deg, rgb(255 255 255 / 13%), transparent 25%, transparent 72%, rgb(0 0 0 / 14%));
+  mix-blend-mode: screen;
+  opacity: 0.8;
 }
 
 .pin-stage.pin-depth canvas,
 .pin-stage.pin-depth .pin-sprites {
-  transform: rotateX(10deg) scale(0.98) translateY(-1.4%);
+  transform: rotateX(13deg) scale(0.98) translateY(-1.8%);
   transform-origin: center 61%;
   backface-visibility: hidden;
 }
@@ -3715,6 +3780,8 @@ body.no-scroll .reward-toasts {
   isolation: isolate;
   background: transparent;
   box-shadow: 0 calc(var(--pin-depth) + 5px) 10px rgb(0 0 0 / 42%);
+  transform-origin: 50% 74%;
+  transition: filter 80ms linear;
 }
 
 .pin-stage.pin-depth .pin-token::before {

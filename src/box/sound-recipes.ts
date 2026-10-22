@@ -184,19 +184,21 @@ function pinLayers(cue: Extract<SoundCue, { kind: `pin-${string}` }>): Layer[] {
   switch (cue.kind) {
     case 'pin-launch': {
       const p = clamp(cue.power, 0.1, 1);
-      const layers: Layer[] = [noise({ type: 'bandpass', f0: 500 + 600 * p, f1: 1800, q: 1 }, 0, 0.12 + 0.14 * p, 0.14 + 0.16 * p), tone('sine', 260 + 200 * p, 120, 0, 0.1 + 0.08 * p, 0.14)];
+      // Madeira sob a mão + mola curta: o disparo continua leve, mas tem corpo físico.
+      const layers: Layer[] = [noise({ type: 'bandpass', f0: 500 + 600 * p, f1: 1800, q: 1 }, 0, 0.12 + 0.14 * p, 0.14 + 0.16 * p), tone('sine', 260 + 200 * p, 120, 0, 0.1 + 0.08 * p, 0.14), tone('triangle', 180 + 90 * p, 90, 0.01, 0.16, 0.12)];
       if (cue.type) layers.push(...hitOf(cue.type, 0.5).map((l) => ({ ...l, gain: l.gain * 0.35 })));
       return layers;
     }
     case 'pin-hit': {
       const k = clamp(cue.strength, 0.15, 1);
-      const layers: Layer[] = [tone('sine', 190 + 120 * k, 60, 0, 0.1 + 0.1 * k, 0.25 + 0.35 * k), noise({ type: 'lowpass', f0: 1600 }, 0, 0.05 + 0.05 * k, 0.2 + 0.25 * k)];
+      // Clique metálico no aro e pancada plástica curta no tabuleiro.
+      const layers: Layer[] = [tone('sine', 190 + 120 * k, 60, 0, 0.1 + 0.1 * k, 0.25 + 0.35 * k), noise({ type: 'lowpass', f0: 1600 }, 0, 0.05 + 0.05 * k, 0.2 + 0.25 * k), tone('square', 1250 + 180 * k, 820, 0.005, 0.07, 0.08 + 0.08 * k), tone('triangle', 105, 70, 0, 0.13, 0.09 + 0.08 * k)];
       if (cue.edge === 'super') layers.push(tone('sine', 1046, 1568, 0.05, 0.3, 0.12), tone('sine', 1568, 2093, 0.1, 0.25, 0.09));
       else if (cue.edge === 'weak' || cue.edge === 'none') layers.push(tone('sine', 420, 300, 0.02, 0.2, 0.1));
       return layers;
     }
     case 'pin-bumper':
-      return [tone('triangle', 220, 760, 0, 0.18, 0.28), tone('sine', 660, 330, 0.05, 0.2, 0.14)];
+      return [tone('triangle', 220, 760, 0, 0.18, 0.28), tone('sine', 660, 330, 0.05, 0.2, 0.14), tone('square', 1480, 980, 0.01, 0.08, 0.1)];
     case 'pin-wave':
       return [tone('sine', 140, 40, 0, 0.45, 0.5), noise({ type: 'lowpass', f0: 1200, f1: 200 }, 0, 0.4, 0.25)];
     case 'pin-mark': {
@@ -207,8 +209,8 @@ function pinLayers(cue: Extract<SoundCue, { kind: `pin-${string}` }>): Layer[] {
       return [noise({ type: 'bandpass', f0: 3000, f1: 700, q: 1.5 }, 0, 0.5, 0.3), tone('sawtooth', 180, 420, 0, 0.3, 0.1, { filter: { type: 'lowpass', f0: 1400 } }), tone('sine', 880, 1320, 0.1, 0.3, 0.12)];
     case 'pin-out':
       return cue.mine
-        ? [tone('triangle', 520, 90, 0, 0.7, 0.28), noise({ type: 'lowpass', f0: 900, f1: 150 }, 0.05, 0.4, 0.14)]
-        : [tone('triangle', 520, 90, 0, 0.55, 0.2), tone('sine', 784, 1175, 0.45, 0.2, 0.14), tone('sine', 1175, 1568, 0.6, 0.25, 0.12)];
+        ? [tone('triangle', 520, 90, 0, 0.7, 0.28), noise({ type: 'lowpass', f0: 900, f1: 150 }, 0.05, 0.4, 0.14), tone('sawtooth', 180, 70, 0.02, 0.26, 0.09, { filter: { type: 'lowpass', f0: 700 } })]
+        : [tone('triangle', 520, 90, 0, 0.55, 0.2), tone('sine', 784, 1175, 0.45, 0.2, 0.14), tone('sine', 1175, 1568, 0.6, 0.25, 0.12), tone('square', 1680, 980, 0.02, 0.14, 0.08)];
     case 'pin-shrink':
       return [tone('sawtooth', 90, 55, 0, 0.9, 0.3, { filter: { type: 'lowpass', f0: 500 } }), noise({ type: 'lowpass', f0: 380, f1: 90 }, 0, 0.9, 0.35), tone('square', 880, 880, 0, 0.08, 0.07), tone('square', 880, 880, 0.16, 0.08, 0.07)];
     case 'pin-win':
