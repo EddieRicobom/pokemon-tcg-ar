@@ -24,8 +24,9 @@ import type { PokemonType } from './pokemon-data';
  * Sem DOM: funciona em `happy-dom`/`vitest` (ver docs/TESTING.md) e é determinístico com `seededRng`.
  */
 
-export const ARENA_W = 960;
-export const ARENA_H = 640;
+/** Dimensões do mundo jogável. A malha foi ampliada em 3× nos dois eixos; a câmera continua mostrando só uma janela. */
+export const ARENA_W = 2880;
+export const ARENA_H = 1920;
 export const PLAYER_RADIUS = 14;
 export const PICKUP_RADIUS = 46;
 /** Margem fora da arena onde os inimigos nascem (entram andando, nunca "aparecem" em cima de você). */
@@ -368,7 +369,7 @@ export type SurvivorEvent =
   | { type: 'milestone'; id: 'ten-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'mega-stone-shard' }
   | { type: 'bossSpawn' }
   /** Treinador apareceu: solta um grupo de `count` Pokémon elite (3 no normal, 6 no chefão final e no infinito). */
-  | { type: 'trainerSpawn'; count: number; final: boolean }
+  | { type: 'trainerSpawn'; count: number; final: boolean; trainerId: number }
   /** Treinador derrotado (todos os Pokémon dele caíram). */
   | { type: 'trainerDown'; final: boolean }
   /** Primeiro treinador derrotado: oferece a afinidade do segundo tipo real da espécie. */
@@ -851,7 +852,7 @@ function spawnTrainer(state: SurvivorState, count: number, final: boolean, event
   const trainerId = state.nextId++;
   const grade: SurvivorEnemyGrade = final ? 'chefao' : 'elite';
   for (let i = 0; i < count; i++) spawnEnemy(state, false, grade, trainerId);
-  events.push({ type: 'trainerSpawn', count, final });
+  events.push({ type: 'trainerSpawn', count, final, trainerId });
 }
 
 /** Resolve a aparência uma vez, depois de sortear os números de combate. */

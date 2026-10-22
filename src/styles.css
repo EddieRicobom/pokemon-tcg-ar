@@ -6356,11 +6356,11 @@ body.no-scroll .reward-toasts {
 }
 .survivor-guardian { z-index: 9; background: #080d19cc; }
 .survivor-guardian .card { border: 1px solid var(--special-color); box-shadow: 0 0 36px color-mix(in srgb, var(--special-color), transparent 70%); }
-.survivor-guardian .card { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; box-sizing: border-box; }
+.survivor-guardian .card { width: min(100%, 340px); max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; box-sizing: border-box; }
 .survivor-guardian h2 { margin: 6px 0; }
 .guardian-gift { position: relative; height: 105px; width: 160px; margin: 0 auto; }
-.guardian-gift img { display: block; height: 85px; max-width: 130px; object-fit: contain; margin: auto; image-rendering: pixelated; animation: guardian-arrive 650ms ease-out both; }
-.guardian-orb { position: absolute; left: 64px; top: 60px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 2px solid #fff8df; background: var(--special-color); box-shadow: 0 0 18px var(--special-color); animation: guardian-deliver 1500ms ease-out both; }
+.guardian-gift img { display: block; height: 85px; max-width: 130px; object-fit: contain; margin: auto; image-rendering: pixelated; animation: guardian-arrive 1700ms cubic-bezier(.2,.75,.25,1) both; }
+.guardian-orb { position: absolute; left: 64px; top: 60px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 2px solid #fff8df; background: var(--special-color); box-shadow: 0 0 18px var(--special-color); animation: guardian-deliver 3000ms cubic-bezier(.2,.72,.25,1) both; }
 .guardian-title { font-weight: 750; color: var(--special-color); margin: 4px 0; }
 .guardian-missing { display: grid; padding-top: 16px; }
 .guardian-missing small { font-size: 11px; opacity: 0.7; }
@@ -6369,6 +6369,34 @@ body.no-scroll .reward-toasts {
 @keyframes guardian-deliver { 0%, 25% { opacity: 0; transform: translateY(-48px) scale(0.3); } 65% { opacity: 1; transform: translateY(0) scale(1.15); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
 @media (prefers-reduced-motion: reduce) { .guardian-gift img, .guardian-orb { animation: none; } }
 @media (max-height: 500px) { .survivor-guardian .guardian-gift { height: 60px; } .survivor-guardian .guardian-gift img { height: 48px; } .survivor-guardian .guardian-orb { top: 25px; } }
+
+.survivor-trainer-intro {
+  position: absolute;
+  z-index: 8;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  gap: 4px;
+  width: min(82%, 320px);
+  padding: 13px 16px 14px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #ffd84a;
+  border-radius: 14px;
+  background: rgba(17, 22, 36, 0.92);
+  color: #fff8df;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 0 0 5px rgba(255, 216, 74, 0.12), 0 12px 34px rgba(0, 0, 0, 0.55);
+  animation: trainer-focus-in 420ms cubic-bezier(.2,.8,.25,1) both;
+}
+.survivor-trainer-intro.final { border-color: #ff6b70; box-shadow: 0 0 0 5px rgba(255, 107, 112, 0.16), 0 12px 34px rgba(0, 0, 0, 0.58); }
+.survivor-trainer-kicker { color: #ffe89a; font-size: .68rem; font-weight: 800; letter-spacing: .12em; }
+.survivor-trainer-intro.final .survivor-trainer-kicker { color: #ffb4b7; }
+.survivor-trainer-intro strong { font-size: clamp(1.25rem, 5vw, 1.8rem); letter-spacing: .04em; text-shadow: 0 2px 0 #351c20; }
+.survivor-trainer-intro small { color: #d9e1f2; font-size: .82rem; }
+.survivor-trainer-intro.reduced-motion { animation: none; }
+@keyframes trainer-focus-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.82); } 70% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .survivor-trainer-intro { animation: none; } }
 
 .survivor-minimap-marker {
   position: absolute;

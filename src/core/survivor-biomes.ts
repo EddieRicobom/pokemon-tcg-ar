@@ -20,6 +20,11 @@ export interface SurvivorBiomeDefinition {
   zones: readonly SurvivorBiomeZone[];
 }
 
+/** As zonas foram desenhadas numa célula de 960×640 e repetidas na malha expandida. */
+export const SURVIVOR_ARENA_SCALE = 3;
+const SURVIVOR_BASE_W = 960;
+const SURVIVOR_BASE_H = 640;
+
 /**
  * Efeitos ambientais determinísticos da Torre.
  *
@@ -116,6 +121,30 @@ function activeBiome(elapsedMs: number): SurvivorBiomeDefinition | null {
   return SURVIVOR_BIOMES.find((biome) => biome.regionIndex === current) ?? null;
 }
 
+const expandedZones = new Map<number, readonly SurvivorBiomeZone[]>();
+function zonesFor(biome: SurvivorBiomeDefinition): readonly SurvivorBiomeZone[] {
+  const cached = expandedZones.get(biome.regionIndex);
+  if (cached) return cached;
+  const zones = Array.from({ length: SURVIVOR_ARENA_SCALE * SURVIVOR_ARENA_SCALE }, (_, index) => {
+    const offsetX = (index % SURVIVOR_ARENA_SCALE) * SURVIVOR_BASE_W;
+    const offsetY = Math.floor(index / SURVIVOR_ARENA_SCALE) * SURVIVOR_BASE_H;
+    return biome.zones.map((zone) => ({ ...zone, id: `${zone.id}-${index}`, x: zone.x + offsetX, y: zone.y + offsetY }));
+  }).flat();
+  expandedZones.set(biome.regionIndex, zones);
+  return zones;
+}
+
+/** Zonas visuais e mecânicas já distribuídas por toda a arena expandida. */
+export function survivorBiomeZones(elapsedMs: number): readonly SurvivorBiomeZone[] {
+  const biome = activeBiome(elapsedMs);
+  return biome ? zonesFor(biome) : [];
+}
+
+/** Versão por definição, usada pelo renderer para desenhar a transição atual e a próxima. */
+export function survivorBiomeZonesOf(biome: SurvivorBiomeDefinition): readonly SurvivorBiomeZone[] {
+  return zonesFor(biome);
+}
+
 export function survivorBiomeAt(elapsedMs: number): SurvivorBiomeDefinition | null {
   return activeBiome(elapsedMs);
 }
@@ -127,7 +156,7 @@ export function survivorBiomeLabel(elapsedMs: number): string | null {
 export function survivorBiomeZoneAt(elapsedMs: number, x: number, y: number): SurvivorBiomeZone | null {
   const biome = activeBiome(elapsedMs);
   if (!biome || !Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return biome.zones.find((zone) => x >= zone.x && x <= zone.x + zone.width && y >= zone.y && y <= zone.y + zone.height) ?? null;
+  return zonesFor(biome).find((zone) => x >= zone.x && x <= zone.x + zone.width && y >= zone.y && y <= zone.y + zone.height) ?? null;
 }
 
 export function survivorBiomeMovementMultiplier(elapsedMs: number, x: number, y: number): number {

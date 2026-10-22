@@ -3,7 +3,8 @@ import type { SurvivorInput, SurvivorState } from './survivor';
 
 export type SurvivorSpecialId = 'dash' | 'shield' | 'teleport';
 export const SPECIAL_UNLOCK_MS = 180_000;
-export const SPECIAL_ARRIVAL_MS = 1800;
+/** Tempo da entrada do guardião. A escolha só abre depois da animação completa. */
+export const SPECIAL_ARRIVAL_MS = 4200;
 export const SURVIVOR_SPECIALS = {
   dash: { name: 'Investida elemental', icon: '➤', cooldownMs: 6500, durationMs: 300, description: 'Avance na última direção válida, protegido durante a investida. Recarga: 6,5 s.' },
   shield: { name: 'Bastião elemental', icon: '⬡', cooldownMs: 12_000, durationMs: 3000, description: 'Bloqueie todo dano durante 3 s. Recarga: 12 s.' },

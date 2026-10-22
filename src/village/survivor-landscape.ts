@@ -1,5 +1,5 @@
 import { SURVIVOR_REGIONS, survivorRegionAt } from '../core/survivor-regions';
-import { SURVIVOR_BIOMES } from '../core/survivor-biomes';
+import { SURVIVOR_BIOMES, survivorBiomeZonesOf } from '../core/survivor-biomes';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
 
 /** Tilesets originais do atlas por região: terreno, trilha e detalhe de cenário. */
@@ -199,7 +199,7 @@ export function drawSurvivorBiomeOverlay(ctx: CanvasRenderingContext2D, elapsedM
   const upcoming = blend > 0 ? SURVIVOR_BIOMES.find((biome) => biome.regionIndex === next) : undefined;
   const draw = (biome: typeof active, alpha: number): void => {
     if (!biome || alpha <= 0) return;
-    for (const zone of biome.zones) {
+    for (const zone of survivorBiomeZonesOf(biome)) {
       const color = zone.kind === 'folhagem' ? '#245d3a'
         : zone.kind === 'poça' ? '#2e8db8'
           : zone.kind === 'neve' ? '#d9f3ff'
