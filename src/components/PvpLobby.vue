@@ -156,9 +156,7 @@ onBeforeUnmount(dropPeer);
   <section class="pn-card pn-lobby" :aria-label="lobbyTitle">
     <template v-if="step === 'choose'">
       <h3>{{ lobbyTitle }}</h3>
-      <p class="pn-lobby-note">
-        Cada um joga no seu celular. Vocês trocam dois códigos (por WhatsApp, por exemplo) e a partida acontece direto entre os aparelhos, sem servidor do app.
-      </p>
+      <p class="pn-lobby-note">{{ lobbyNote }}</p>
       <p class="pn-lobby-note">
         Para achar o caminho entre os celulares, o navegador consulta servidores públicos do Google (STUN), que só veem o endereço de rede de vocês, não o jogo.
         Na mesma rede Wi-Fi funciona melhor; em algumas operadoras a conexão pode não fechar.
