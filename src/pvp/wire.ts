@@ -318,8 +318,9 @@ export function parseMessage(raw: unknown): WireMessage | null {
         ? { t: 'backup-chunk', id: v.id, index: v.index, total: v.total, data: v.data }
         : null;
     case 'backup-end':
+      return isStr(v.id, 80) && v.id.length > 0 ? { t: 'backup-end', id: v.id } : null;
     case 'backup-received':
-      return isStr(v.id, 80) && v.id.length > 0 ? { t: v.t, id: v.id } : null;
+      return isStr(v.id, 80) && v.id.length > 0 ? { t: 'backup-received', id: v.id } : null;
     case 'backup-failed':
       return isStr(v.id, 80) && v.id.length > 0 && isStr(v.reason, 160) ? { t: 'backup-failed', id: v.id, reason: v.reason } : null;
     case 'settled': {
