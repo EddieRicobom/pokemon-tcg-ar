@@ -56,6 +56,8 @@ export interface SurvivorPlayer {
   /** Multiplicador acumulado de XP dos buffs de experiência da corrida. */
   xpMultiplier: number;
   attackDamage: number;
+  /** Multiplicador do dano secundário em área; ataques híbridos começam em 15%. */
+  areaDamageMultiplier: number;
   attackRange: number;
   attackCooldownMs: number;
   attackTimerMs: number;
@@ -201,6 +203,8 @@ export interface SurvivorProjectile {
   move?: SurvivorMove;
   /** O apoio só muda a apresentação e a atribuição; continua saindo da posição do jogador. */
   source?: 'player' | 'support';
+  /** Distância do jogador até o alvo no momento do disparo, para o falloff de dano. */
+  distanceFromPlayer?: number;
 }
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
@@ -508,6 +512,10 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'renewal', rarity: 'normal', name: 'Renovação', description: '+15 de vida máxima e cura 15.', maxLevels: 1, valueRange: [12, 18], describeValue: (_m, value) => ({ name: 'Renovação', description: `+${value} de vida máxima e cura ${value}.` }), apply: (p, value = 15) => { p.maxHp += value; p.hp = Math.min(p.maxHp, p.hp + value); } },
   { id: 'tempo', rarity: 'normal', name: 'Passo cadenciado', description: '+8% de velocidade de movimento.', maxLevels: 1, valueRange: [6, 10], describeValue: (_m, value) => ({ name: 'Passo cadenciado', description: `+${value}% de velocidade de movimento.` }), apply: (p, value = 8) => { p.speed = round1(p.speed * (1 + value / 100)); } },
   { id: 'resonance', rarity: 'normal', name: 'Ressonância', description: '+10% de dano no golpe principal.', maxLevels: 1, valueRange: [8, 12], describeValue: (_m, value) => ({ name: 'Ressonância', description: `+${value}% de dano no golpe principal, até 60.` }), apply: (p, value = 10) => { p.attackDamage = Math.min(60, round1(p.attackDamage * (1 + value / 100))); } },
+  { id: 'area-damage-30', rarity: 'normal', name: 'Estilhaço amplo', description: 'Aumenta o dano em área secundário para 30%.', for: ['area'], maxLevels: 1, apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.30); } },
+  { id: 'area-damage-50', rarity: 'raro', name: 'Onda expandida', description: 'Aumenta o dano em área secundário para 50%.', for: ['area'], maxLevels: 1, requires: 'area-damage-30', apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.50); } },
+  { id: 'area-damage-75', rarity: 'lendario', name: 'Campo devastador', description: 'Aumenta o dano em área secundário para 75%.', for: ['area'], maxLevels: 1, requires: 'area-damage-50', apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.75); } },
+  { id: 'area-damage-100', rarity: 'ancestral', name: 'Área total', description: 'O dano em área secundário chega a 100% do dano direto.', for: ['area'], maxLevels: 1, requires: 'area-damage-75', apply: (p) => { p.areaDamageMultiplier = 1; } },
 ] as const;
 
 /** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */
@@ -654,6 +662,10 @@ export const BALANCE = {
   hitInvulnerabilityMs: 750,
   playerDamage: 10,
   playerCooldownMs: 600,
+  /** Distância inicial usada para normalizar a queda de dano dos golpes diretos. */
+  defaultAttackDistance: 170,
+  /** Mesmo no limite do alcance, um golpe direto mantém impacto suficiente para não invalidar builds de alcance. */
+  directDamageMinMultiplier: 0.55,
   /** Primeiro chefe e intervalo entre os seguintes (ms). */
   firstBossMs: 60_000,
   bossEveryMs: 90_000,
@@ -765,6 +777,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     xpToNext: xpForLevel(1),
     xpMultiplier: 1,
     attackDamage: (prof?.damage ?? BALANCE.playerDamage) * preparation.damageMultiplier,
+    areaDamageMultiplier: move.category === 'area' ? 0.15 : 1,
     attackRange: (prof?.range ?? 170) * preparation.rangeMultiplier,
     attackCooldownMs: prof?.cooldownMs ?? BALANCE.playerCooldownMs,
     attackTimerMs: 0,
@@ -1235,6 +1248,18 @@ function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void
 const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
 const hasUpgrade = (player: SurvivorPlayer, id: string): boolean => (player.upgradeLevels[id] ?? 0) > 0;
 
+export function survivorDirectDamageMultiplier(distance: number): number {
+  const normalized = Math.max(0, Math.min(1, (distance - BALANCE.defaultAttackDistance) / BALANCE.defaultAttackDistance));
+  return 1 - (1 - BALANCE.directDamageMinMultiplier) * normalized;
+}
+
+export function survivorRapidAttackDamageMultiplier(player: Pick<SurvivorPlayer, 'attackCooldownMs'>): number {
+  const attacksPerSecond = 1000 / Math.max(1, player.attackCooldownMs);
+  if (attacksPerSecond > 3) return 0.25;
+  if (attacksPerSecond > 2) return 0.5;
+  return 1;
+}
+
 /** Aplica apenas o efeito do tipo secundário, com intensidade menor e sem upgrades do golpe principal. */
 function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }): void {
   const affinity = state.typeAffinity;
@@ -1271,7 +1296,7 @@ function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: numbe
 }
 
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
-function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true): void {
+function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true, distanceFromPlayer = Math.hypot(e.x - state.player.x, e.y - state.player.y)): void {
   const move = attackMove;
   const p = state.player;
   const wasSeeded = (e.seededMs ?? 0) > 0;
@@ -1285,7 +1310,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     if (move.type === 'dragon' && hasUpgrade(p, 'dragon-pressure') && e.boss) upgradeMultiplier *= 1.15;
     if (move.type === 'dark' && hasUpgrade(p, 'dark-predation') && e.hp <= e.maxHp * 0.5) upgradeMultiplier *= 1.12;
   }
-  const environmentalDamage = damage * upgradeMultiplier
+  const environmentalDamage = damage * survivorDirectDamageMultiplier(distanceFromPlayer) * survivorRapidAttackDamageMultiplier(p) * upgradeMultiplier
     * (synergy?.damageMultiplier ?? 1)
     * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
   const reducedDamage = e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
@@ -1386,6 +1411,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       canChain: move.effect === 'saltar',
       size: p.projectileSize,
       move,
+      distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y),
     });
   }
 }
@@ -1401,13 +1427,13 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
     const target = nearestEnemies(state, range, 1)[0];
     if (!target) return false;
     const angle = Math.atan2(target.y - p.y, target.x - p.x);
-    state.projectiles.push({ id: state.nextId++, x: p.x, y: p.y, vx: Math.cos(angle) * profile.projectileSpeed, vy: Math.sin(angle) * profile.projectileSpeed, damage, pierce: move.effect === 'atravessar' ? 1 : 0, lifeMs: 1500, hit: [], canChain: move.effect === 'saltar', size: Math.max(3, profile.projectileSize * 0.8), move, source: 'support' });
+    state.projectiles.push({ id: state.nextId++, x: p.x, y: p.y, vx: Math.cos(angle) * profile.projectileSpeed, vy: Math.sin(angle) * profile.projectileSpeed, damage, pierce: move.effect === 'atravessar' ? 1 : 0, lifeMs: 1500, hit: [], canChain: move.effect === 'saltar', size: Math.max(3, profile.projectileSize * 0.8), move, source: 'support', distanceFromPlayer: Math.hypot(target.y - p.y, target.x - p.x) });
     return true;
   }
   if (move.category === 'aura' || move.category === 'orbit') {
     let hits = 0;
     for (const enemy of state.enemies) {
-      if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= radius + enemy.radius) { hitEnemy(state, enemy, damage, p, move); hits++; }
+      if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= radius + enemy.radius) { hitEnemy(state, enemy, damage, p, move, true, Math.hypot(enemy.x - p.x, enemy.y - p.y)); hits++; }
     }
     drain(state, hits, move);
     state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: radius, color: move.color, ageMs: 0, lifeMs: 260 });
@@ -1500,7 +1526,9 @@ function attack(state: SurvivorState): boolean {
     const center = { x: t.x, y: t.y };
     for (const e of state.enemies) {
       if (Math.hypot(e.x - center.x, e.y - center.y) <= p.attackRadius + e.radius) {
-        hitEnemy(state, e, artifactDamage(state), center);
+        const direct = e.id === t.id;
+        const damage = direct ? artifactDamage(state) : artifactDamage(state) * p.areaDamageMultiplier;
+        hitEnemy(state, e, damage, center, move, true, Math.hypot(e.x - p.x, e.y - p.y));
         hits++;
       }
     }
@@ -1826,7 +1854,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     for (const e of state.enemies) {
       if (proj.hit.includes(e.id)) continue;
       if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + 5) {
-        hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move);
+        hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move, true, proj.distanceFromPlayer ?? Math.hypot(e.x - p.x, e.y - p.y));
         drain(state, 1, proj.move ?? state.player.move);
         proj.hit.push(e.id);
         if (proj.canChain) {
@@ -1838,7 +1866,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           if (next) {
             const ang = Math.atan2(next.y - e.y, next.x - e.x);
             const speed = Math.hypot(proj.vx, proj.vy);
-            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size, move: proj.move, source: proj.source });
+            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size, move: proj.move, source: proj.source, distanceFromPlayer: proj.distanceFromPlayer });
           }
         }
         if (proj.pierce <= 0) return false;

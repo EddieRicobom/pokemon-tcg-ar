@@ -22,6 +22,8 @@ import {
   DIGITAL_DANGER_UNLOCK_MS,
   MAGNET_PICKUP_RADIUS_CAP,
   normalizeSurvivorXp,
+  survivorDirectDamageMultiplier,
+  survivorRapidAttackDamageMultiplier,
   xpForLevel,
 } from './survivor';
 import type { SurvivorEnemy, SurvivorState } from './survivor';
@@ -453,6 +455,26 @@ describe('golpes por tipo', () => {
     const s = quiet(createSurvivorState(1, { kindCount: 1, ...as('normal', 'area') }));
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.player.attackTimerMs).toBe(0);
+  });
+
+  it('reduz dano direto conforme a distância e protege contra ataque rápido demais', () => {
+    expect(survivorDirectDamageMultiplier(0)).toBe(1);
+    expect(survivorDirectDamageMultiplier(BALANCE.defaultAttackDistance)).toBe(1);
+    expect(survivorDirectDamageMultiplier(BALANCE.defaultAttackDistance * 2)).toBe(BALANCE.directDamageMinMultiplier);
+    expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 600 })).toBe(1);
+    expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 400 })).toBe(0.5);
+    expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 300 })).toBe(0.25);
+  });
+
+  it('separa o dano direto do dano em área e libera a trilha até 100%', () => {
+    const s = quiet(createSurvivorState(1, { kindCount: 1, ...as('ground', 'area') }));
+    expect(s.player.areaDamageMultiplier).toBe(0.15);
+    for (const id of ['area-damage-30', 'area-damage-50', 'area-damage-75', 'area-damage-100']) {
+      const upgrade = SURVIVOR_UPGRADES.find((u) => u.id === id)!;
+      s.pendingUpgrade = [{ id: upgrade.id, name: upgrade.name, description: upgrade.description, rarity: upgrade.rarity }];
+      applyUpgrade(s, upgrade.id);
+    }
+    expect(s.player.areaDamageMultiplier).toBe(1);
   });
 
   it('projétil Elétrico salta para mais um inimigo com menos dano', () => {
