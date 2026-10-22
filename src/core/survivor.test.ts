@@ -371,6 +371,7 @@ describe('stepSurvivor', () => {
 
   it('gasta o desejo de Jirachi e preserva as cartas raras ao trocar as normais', () => {
     const s = createSurvivorState(14, { kindCount: 1 });
+    s.rng = () => 0;
     s.player.upgradeRerolls = 1;
     s.pendingUpgrade = [
       { id: 'legs', name: 'Passo', description: '', rarity: 'normal' },
@@ -383,10 +384,12 @@ describe('stepSurvivor', () => {
     expect(s.pendingUpgrade?.some((option) => option.id === 'power')).toBe(true);
     expect(s.pendingUpgrade?.some((option) => option.id === 'legs')).toBe(false);
     expect(s.pendingUpgrade?.some((option) => option.id === 'vigor')).toBe(false);
+    expect(s.pendingUpgrade?.some((option) => option.rarity === 'normal')).toBe(true);
   });
 
   it('quando toda a oferta já é rara, troca uma carta e garante uma faixa superior liberada', () => {
     const s = createSurvivorState(15, { kindCount: 1 });
+    s.rng = () => 0;
     s.player.level = 8;
     s.player.upgradeRerolls = 1;
     s.pendingUpgrade = [
