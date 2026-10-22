@@ -24,8 +24,9 @@ import type { PokemonType } from './pokemon-data';
  * Sem DOM: funciona em `happy-dom`/`vitest` (ver docs/TESTING.md) e é determinístico com `seededRng`.
  */
 
-export const ARENA_W = 960;
-export const ARENA_H = 640;
+/** Dimensões do mundo jogável. A malha foi ampliada em 3× nos dois eixos; a câmera continua mostrando só uma janela. */
+export const ARENA_W = 2880;
+export const ARENA_H = 1920;
 export const PLAYER_RADIUS = 14;
 export const PICKUP_RADIUS = 46;
 /** Margem fora da arena onde os inimigos nascem (entram andando, nunca "aparecem" em cima de você). */

@@ -17,6 +17,7 @@ describe('biomas mecânicos da Torre', () => {
     expect(survivorBiomeAt(REGION_DURATION_MS * 2)?.name).toBe('Poças de Hoenn');
     expect(survivorBiomeAt(REGION_DURATION_MS * 4)?.name).toBe('Pedras de Unova');
     expect(survivorBiomeAt(REGION_DURATION_MS * 8)?.name).toBe('Olivais de Paldea');
+    expect(survivorBiomeZoneAt(0, 100 + 1920, 120 + 1280)?.label).toBe('Folhagem densa');
   });
 
   it('aplica efeitos distintos sem bloquear a arena', () => {

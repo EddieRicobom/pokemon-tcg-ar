@@ -43,6 +43,11 @@ function run(seed: number, kindCount = 4) {
 }
 
 describe('stepSurvivor', () => {
+  it('usa uma arena física três vezes maior em largura e altura', () => {
+    expect(ARENA_W).toBe(2880);
+    expect(ARENA_H).toBe(1920);
+  });
+
   it('oferece a afinidade dupla apenas depois do primeiro treinador derrotado', () => {
     const s = createSurvivorState(7, { kindCount: 4, typeAffinityChoices: ['ghost'] });
     s.trainersBeaten = 0;
