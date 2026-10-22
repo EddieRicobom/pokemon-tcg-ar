@@ -131,7 +131,9 @@ export interface VillageState {
   requests: { day: string; items: VillageRequest[]; story: VillageRequest[] };
   /** Digital Pokémon (presente inicial, Fonte, evolução) — pagos em moedas, o saldo único (`app/wallet.ts`). */
   digital: DigitalState;
-  /** A cena única do Ho-Oh ao desejar na Fonte já começou; retrocompatível com saves anteriores. */
+  /** Quantas moedas já foram lançadas na Fonte. */
+  fountainWishes: number;
+  /** A cena única do Ho-Oh já começou; retrocompatível com saves anteriores. */
   hoOhWishSeen: boolean;
   /** Encontros lendários raríssimos na Vila (ver `legendary.ts`). */
   legendary: LegendaryState;
@@ -158,7 +160,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), homeInteriors: {}, friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
-    digital: emptyDigital(), hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), ...emptyWorldProgress(), homeStyles: {},
+    digital: emptyDigital(), fountainWishes: 0, hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), ...emptyWorldProgress(), homeStyles: {},
   };
 }
 
@@ -226,6 +228,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
       ? { day: r.battleCoins.day.slice(0, 12), count: Math.max(0, Math.min(BATTLE_REWARDS_PER_DAY, r.battleCoins.count)) }
       : { day: '', count: 0 },
     digital: normalizeDigital(r.digital),
+    fountainWishes: r.hoOhWishSeen === true ? 3 : (Number.isInteger(r.fountainWishes) ? Math.max(0, Math.min(3, r.fountainWishes ?? 0)) : 0),
     hoOhWishSeen: r.hoOhWishSeen === true,
     legendary: normalizeLegendary(r.legendary),
     recap: { day: typeof r.recap?.day === 'string' ? r.recap.day : '', at: typeof r.recap?.at === 'number' && Number.isFinite(r.recap.at) && r.recap.at >= 0 ? r.recap.at : 0 },
@@ -650,10 +653,9 @@ export function sell(s: VillageState, id: ItemId, qty = 1): Interaction {
   const have = count(s, id);
   const n = Math.min(availableCount(s, id), Math.max(1, qty));
   if (!def || n <= 0) return { ok: false, message: availableCount(s, id) === 0 && have > 0 ? 'Esse estoque está reservado para uma proposta ativa do Conselho.' : 'Você não tem isso.' };
+  if (def.kind === 'accessory') return { ok: false, message: `${def.name} é um acessório permanente e não pode ser vendido.` };
+  if (def.gift) return { ok: false, message: `${def.name} é um prêmio único e não pode ser vendido.` };
   if (def.sell <= 0) return { ok: false, message: `${def.name} é um prêmio de conquista: não dá para vender.` };
-  if (def.kind === 'accessory' && Object.values(s.wear.mons).filter((w) => w === id).length + (s.wear.player === id ? 1 : 0) >= have) {
-    return { ok: false, message: 'Esse acessório está sendo usado. Tire antes de vender.' };
-  }
   s.inventory[id] = have - n;
   const earned = Math.round(def.sell * n * weeklyModifiers(s).saleMultiplier);
   s.coins += earned;

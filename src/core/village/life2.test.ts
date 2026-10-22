@@ -79,6 +79,20 @@ describe('loja e moedas', () => {
     expect(wear(s, 'player', 'laco').ok).toBe(true);
     expect(sell(s, 'laco').ok).toBe(false);
   });
+
+  it('não vende acessórios mesmo quando não estão equipados', () => {
+    const s = emptyVillage(1, map.spawn);
+    add(s, 'laco');
+    expect(sell(s, 'laco').ok).toBe(false);
+    expect(count(s, 'laco')).toBe(1);
+  });
+
+  it('não vende prêmios únicos recebidos como presentes', () => {
+    const s = emptyVillage(1, map.spawn);
+    add(s, 'trofeu');
+    expect(sell(s, 'trofeu').ok).toBe(false);
+    expect(count(s, 'trofeu')).toBe(1);
+  });
 });
 
 describe('horta', () => {
