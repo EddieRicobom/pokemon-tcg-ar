@@ -19,7 +19,8 @@ export const BACKUP_KEYS: readonly string[] = [
   'tcg-ar-scan-debug-v1', 'tcg-ar-scan-overlay-v1', 'tcg-ar-art-search-v1',
   'tcg-ar-layout-v3', 'tcg-ar-box-v1', 'tcg-ar-vila-v1-bak', 'tcg-ar-fala-gallade-v1',
   'tcg-ar-vila-controls-hint-hidden-v1', 'tcg-ar-stale-reload-v1', 'tcg-ar-dex-names-v1',
-  'tcg-ar-card-journeys-v1',
+  'tcg-ar-card-journeys-v1', 'tcg-ar-vila-hooh-wish-v1', 'tcg-ar-vila-diorama-v1',
+  'tcg-ar-village-music-v1', 'tcg-ar-survivor-music-v1', 'tcg-ar-survivor-favorites-v1',
 ];
 
 interface MetaEntry { key: string; value: unknown }

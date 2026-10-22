@@ -23,6 +23,14 @@ export interface Building {
   lot?: number;
 }
 
+export type HomeExteriorStyle = 'rústico' | 'jardim' | 'festivo' | 'moderno';
+export const HOME_EXTERIOR_STYLES: readonly { id: HomeExteriorStyle; name: string; description: string; cost: number }[] = [
+  { id: 'rústico', name: 'Rústico', description: 'madeira, vasos e detalhes acolhedores', cost: 0 },
+  { id: 'jardim', name: 'Jardim', description: 'folhas, flores e um toque de primavera', cost: 35 },
+  { id: 'festivo', name: 'Festivo', description: 'bandeirinhas e cores de comemoração', cost: 45 },
+  { id: 'moderno', name: 'Moderno', description: 'linhas limpas e detalhes metálicos', cost: 55 },
+];
+
 /** Limite sul do lote sólido, antes da calçada. Toda a largura da passagem diante da porta fica livre. */
 export function buildingGroundY(building: Pick<Building, 'y' | 'h'>): number {
   return building.y + building.h;

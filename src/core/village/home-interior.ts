@@ -22,6 +22,9 @@ export interface HomeInterior {
   placed: HomePlaced[];
 }
 
+/** Interiores dos moradores, indexados pelo número do terreno. Saves antigos começam vazios e ganham decoração aos poucos. */
+export type HomeInteriors = Record<string, HomeInterior>;
+
 export interface HomeInteraction {
   ok: boolean;
   message: string;
@@ -56,6 +59,17 @@ export function normalizeHomeInterior(raw: unknown): HomeInterior {
     }
   }
   return { wallpaper, floor, placed };
+}
+
+export function normalizeHomeInteriors(raw: unknown): HomeInteriors {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: HomeInteriors = {};
+  for (const [lot, value] of Object.entries(raw as Record<string, unknown>).slice(0, 80)) {
+    if (!/^\d+$/.test(lot)) continue;
+    const interior = normalizeHomeInterior(value);
+    if (interior.placed.length > 0 || interior.wallpaper !== 'creme' || interior.floor !== 'carvalho') out[lot] = interior;
+  }
+  return out;
 }
 
 export function homePlace(s: VillageState, item: string, x: number, y: number): HomeInteraction {

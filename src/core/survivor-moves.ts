@@ -117,8 +117,8 @@ export const CATEGORY_BASE: Record<MoveCategory, CategoryBase> = {
   projetil: { damage: 10, cooldownMs: 600, range: 170, radius: 0 },
   aura: { damage: 5, cooldownMs: 420, range: 0, radius: 62 },
   area: { damage: 15, cooldownMs: 1100, range: 190, radius: 48 },
-  cone: { damage: 11, cooldownMs: 720, range: 128, radius: 0 },
-  orbit: { damage: 7, cooldownMs: 520, range: 0, radius: 72 },
+  cone: { damage: 11, cooldownMs: 720, range: 140, radius: 0 },
+  orbit: { damage: 7, cooldownMs: 520, range: 0, radius: 82 },
 };
 
 /** Multiplicadores situacionais: golpes que exigem proximidade recebem mais retorno por exposição. */
@@ -126,15 +126,16 @@ export const CATEGORY_DAMAGE_FACTOR: Record<MoveCategory, number> = {
   projetil: 1,
   aura: 1.22,
   area: 1,
-  cone: 1.15,
-  orbit: 1.22,
+  cone: 1.2,
+  orbit: 1.32,
 };
 
 /** Pequenas compensações para tipos que dependem de exposição ou controle para causar dano. */
 export const TYPE_DAMAGE_FACTOR: Partial<Record<PokemonType, number>> = {
-  bug: 1.1,
+  bug: 1.14,
+  grass: 1.06,
   fighting: 1.12,
-  ice: 1.08,
+  ice: 1.10,
 };
 
 /** Os números do golpe e do corpo de quem joga, já com os stats aplicados. */

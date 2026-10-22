@@ -464,6 +464,16 @@ a:focus-visible {
 .first-run-guide > *, .scan-first-run > * { margin: 0; }
 .first-run-guide h3 { font-size: 1.05rem; }
 .first-run-kicker, .trainer-first-run > span { color: var(--gold); font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
+.first-run-overlay { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 18px; background: rgb(7 10 18 / 78%); }
+.first-run-card { width: min(100%, 560px); max-height: min(94svh, 760px); overflow: auto; display: grid; gap: 14px; padding: clamp(18px, 5vw, 30px); border: 1px solid rgb(255 216 74 / 42%); box-shadow: 0 20px 70px rgb(0 0 0 / 45%); }
+.first-run-card > * { margin: 0; }
+.first-run-name { display: grid; gap: 6px; font-weight: 700; }
+.first-run-name input { width: 100%; box-sizing: border-box; }
+.first-run-sprites { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
+.first-run-sprites button { display: grid; justify-items: center; gap: 3px; padding: 8px 4px; color: var(--text); background: rgb(14 20 34 / 80%); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.first-run-sprites button.selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgb(255 216 74 / 22%); }
+.first-run-sprites img { image-rendering: pixelated; }
+.first-run-actions { display: grid; gap: 9px; }
 .scan-first-run span { color: var(--muted); line-height: 1.45; }
 .scan-first-run a { width: fit-content; font-weight: 700; }
 .trainer-first-run { display: grid; gap: .7rem; }
@@ -5383,13 +5393,26 @@ body.no-scroll .reward-toasts {
   align-items: center;
   padding: 6px 8px;
   border-radius: 12px;
-  background: var(--surface-2);
+  border: 1px solid rgb(255 255 255 / 9%);
+  background: linear-gradient(135deg, rgb(255 255 255 / 9%), rgb(255 255 255 / 3%)), var(--surface-2);
+  box-shadow: inset 0 1px rgb(255 255 255 / 10%), 0 3px 8px rgb(0 0 0 / 12%);
 }
 
 .item-grid img,
 .collection-grid img,
 .village-choices img {
   image-rendering: pixelated;
+}
+
+.item-grid li > img,
+.item-grid li > button > img {
+  width: 46px;
+  height: 46px;
+  padding: 4px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 10px;
+  background: radial-gradient(circle at 30% 20%, rgb(255 255 255 / 18%), transparent 58%), #22283a;
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 30%));
 }
 
 .item-grid span {
@@ -5431,7 +5454,9 @@ body.no-scroll .reward-toasts {
   gap: 2px;
   padding: 6px 2px;
   border-radius: 10px;
-  background: var(--surface-2);
+  border: 1px solid rgb(255 255 255 / 9%);
+  background: linear-gradient(135deg, rgb(255 255 255 / 8%), rgb(255 255 255 / 2%)), var(--surface-2);
+  box-shadow: inset 0 1px rgb(255 255 255 / 9%);
   text-align: center;
 }
 
@@ -6235,24 +6260,22 @@ body.no-scroll .reward-toasts {
 /* O HUD não começa o joystick, mas os seus botões precisam receber o toque. */
 .survivor-hud button { pointer-events: auto; touch-action: manipulation; }
 .survivor-action-dock {
-  position: absolute;
-  right: calc(10px + env(safe-area-inset-right));
-  top: calc(98px + env(safe-area-inset-top));
-  z-index: 5;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 6px;
-  max-width: min(170px, 38vw);
+  margin-left: auto;
   pointer-events: auto;
 }
 .survivor-action-dock .chip {
-  min-height: 36px;
-  padding: 7px 10px;
-  border-radius: 12px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border-radius: 999px;
   background: rgba(12, 18, 32, 0.86);
   text-align: center;
-  white-space: normal;
+  white-space: nowrap;
 }
 .survivor-artifact-chip { border-color: #ffb35c !important; color: #ffe4a8 !important; }
 .survivor-xp small { font: inherit; opacity: 0.78; }
@@ -6319,7 +6342,6 @@ body.no-scroll .reward-toasts {
 .survivor-special-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
 @media (orientation: landscape) and (max-height: 540px) {
   .survivor-minimap { top: calc(8px + env(safe-area-inset-top)); right: 10px; width: 112px; height: 72px; }
-  .survivor-action-dock { top: calc(88px + env(safe-area-inset-top)); }
   .survivor-special-button { right: calc(14px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); width: 78px; height: 78px; }
   .survivor-hud { right: 136px; }
 }
@@ -7126,10 +7148,11 @@ body.no-scroll .reward-toasts {
 @media (prefers-reduced-motion: reduce) { .card-artwork-skeleton { animation: none; } }
 
 /* Casa do jogador: uma sala clicável e independente do quintal, com móveis em pixel art. */
-.home-room { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); width: min(100%, 390px); aspect-ratio: 7 / 5; margin: 12px auto; padding: 12px; border: 10px solid #704728; border-radius: 8px; background-color: var(--home-floor, #cb915c); background-image: var(--home-floor-img), var(--home-wall-img); box-shadow: inset 0 0 0 3px #d8ad70, 0 6px 16px #0004; }
-.home-slot { display: grid; place-items: center; min-width: 0; min-height: 0; padding: 1px; border: 1px solid rgb(80 55 35 / .18); border-radius: 0; background: transparent; }
-.home-slot:hover, .home-slot:focus-visible { outline: 2px solid #ffe16a; outline-offset: -2px; background: rgb(255 255 255 / .22); }
-.home-slot img { width: min(100%, 42px); max-height: 56px; image-rendering: pixelated; object-fit: contain; }
+.home-room { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); width: min(100%, 430px); aspect-ratio: 7 / 5; margin: 14px auto; padding: 14px; border: 12px solid #704728; border-radius: 14px; background-color: var(--home-floor, #cb915c); background-image: var(--home-floor-img), var(--home-wall-img); box-shadow: inset 0 0 0 3px #d8ad70, inset 0 -12px 18px rgb(66 36 20 / 20%), 0 8px 22px #0005; }
+.home-slot { display: grid; place-items: center; min-width: 0; min-height: 0; padding: 2px; border: 1px solid rgb(80 55 35 / .18); border-radius: 6px; background: rgb(255 250 230 / 8%); }
+.home-slot:hover, .home-slot:focus-visible { outline: 2px solid #ffe16a; outline-offset: -2px; background: rgb(255 255 255 / .28); }
+.home-slot:disabled { cursor: default; opacity: 1; }
+.home-slot img { width: min(100%, 48px); max-height: 60px; image-rendering: pixelated; object-fit: contain; filter: drop-shadow(0 3px 1px rgb(57 30 15 / 35%)); }
 .home-wall-creme { --home-wall-img: linear-gradient(#fff4d4 0 23%, transparent 23%); }
 .home-wall-floral { --home-wall-img: radial-gradient(#fff1a8 10%, transparent 12%), radial-gradient(#fff 9%, transparent 11%); }
 .home-wall-noite { --home-wall-img: radial-gradient(#fff5a6 1px, transparent 2px), linear-gradient(#40509a 0 23%, transparent 23%); }
@@ -7140,7 +7163,7 @@ body.no-scroll .reward-toasts {
 .home-floor-ladrilho { --home-floor: #b9d3dc; --home-floor-img: linear-gradient(#80a9b6 1px, transparent 1px), linear-gradient(90deg, #80a9b6 1px, transparent 1px); }
 .home-style { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .home-style label { display: grid; gap: 3px; color: var(--ink, #332b24); font-size: .84rem; }
-.home-style select { min-height: 34px; border: 1px solid #a67a50; border-radius: 7px; background: #fff8e9; font: inherit; }
+.home-style select { min-height: 36px; border: 1px solid #a67a50; border-radius: 9px; background: #fff8e9; font: inherit; }
 
 /* Controles e painéis da Vila em retrato e paisagem. */
 @media (max-width: 480px) {

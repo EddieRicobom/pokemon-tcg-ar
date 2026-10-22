@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyBackup, applyFullBackup, BACKUP_FORMAT, BACKUP_KEYS, backupFileName, buildBackup, parseBackup, parseBackupZip, serializeBackup, serializeBackupZip } from './backup';
+import { applyBackup, applyFullBackup, BACKUP_FORMAT, BACKUP_KEYS, backupFileName, buildBackup, buildFullBackup, parseBackup, parseBackupZip, serializeBackup, serializeBackupZip } from './backup';
 import { openCacheDb } from '../cache/db';
 import { applyEvent, emptyTrainer, normalizeTrainer } from '../core/trainer';
 import { loadVillage, saveVillage } from './village-store';
@@ -47,6 +47,13 @@ describe('backup — exportar', () => {
     const file = buildBackup(localStorage, NOW);
     expect(file.data['tcg-ar-village-music-v1']).toBe(localStorage.getItem('tcg-ar-village-music-v1'));
     expect(file.data['tcg-ar-survivor-music-v1']).toBe(localStorage.getItem('tcg-ar-survivor-music-v1'));
+  });
+
+  it('inclui marcos, aparência da Vila e favoritos do Survival mesmo quando estão vazios', () => {
+    const file = buildBackup({ getItem: () => null }, NOW);
+    for (const key of ['tcg-ar-vila-hooh-wish-v1', 'tcg-ar-vila-diorama-v1', 'tcg-ar-village-music-v1', 'tcg-ar-survivor-music-v1', 'tcg-ar-survivor-favorites-v1']) {
+      expect(file.data[key]).toBeNull();
+    }
   });
 
   it('serializa como JSON legível e com um nome de arquivo datado', () => {
@@ -115,6 +122,33 @@ describe('backup — importar', () => {
     expect(await restored.get('meta', 'last')).toEqual({ ok: true });
     restored.close();
     expect(await memoryCache.match('https://example.test/card.webp')).toBeDefined();
+  });
+
+  it('faz ida e volta do backup atual mantendo todas as chaves, banco local e arquivos em cache', async () => {
+    const db = await openCacheDb();
+    await db.clear('cards'); await db.clear('assets'); await db.clear('meta');
+    await db.put('meta', { version: 7 }, 'backup-check');
+    db.close();
+    memoryCache.clear();
+    await memoryCache.put('https://example.test/vila.png', new Response(new Uint8Array([7, 8, 9]), { headers: { 'content-type': 'image/png' } }));
+    localStorage.setItem('tcg-ar-vila-v1', JSON.stringify({ coins: 123, homeInteriors: { '0': { wallpaper: 'floral', floor: 'carvalho', placed: [] } } }));
+    localStorage.setItem('tcg-ar-vila-hooh-wish-v1', 'true');
+    localStorage.setItem('tcg-ar-mega-v1:25:normal', JSON.stringify({ level: 2 }));
+    localStorage.setItem('tcg-ar-survivor-favorites-v1', JSON.stringify(['pika']));
+    const before = Object.fromEntries(Object.entries(localStorage));
+    const source = await buildFullBackup(localStorage, NOW);
+    const parsed = parseBackupZip(serializeBackupZip(source));
+    expect(typeof parsed).not.toBe('string');
+    localStorage.clear();
+    const empty = await openCacheDb();
+    await empty.clear('cards'); await empty.clear('assets'); await empty.clear('meta'); empty.close();
+    memoryCache.clear();
+    await applyFullBackup(parsed as Exclude<typeof parsed, string>, localStorage);
+    expect(Object.fromEntries(Object.entries(localStorage))).toEqual(before);
+    const restored = await openCacheDb();
+    expect(await restored.get('meta', 'backup-check')).toEqual({ version: 7 });
+    restored.close();
+    expect(await memoryCache.match('https://example.test/vila.png')).toBeDefined();
   });
 
   it('ida e volta: exporta, limpa o aparelho, importa de volta — tudo igual', () => {

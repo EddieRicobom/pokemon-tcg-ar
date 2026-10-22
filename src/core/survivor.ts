@@ -234,10 +234,10 @@ export interface SurvivorUpgradeOption {
 
 export type SurvivorUpgradeRarity = 'normal' | 'raro' | 'lendario' | 'ancestral';
 export const SURVIVOR_UPGRADE_RARITIES: Record<SurvivorUpgradeRarity, { label: string; icon: string; weight: number; minLevel: number; impact: string }> = {
-  normal: { label: 'Normal', icon: '●', weight: 60, minLevel: 1, impact: 'Ajuste pequeno e útil' },
-  raro: { label: 'Raro', icon: '◆', weight: 30, minLevel: 3, impact: 'Muda a força ou o alcance da estratégia' },
-  lendario: { label: 'Lendário', icon: '✦', weight: 8, minLevel: 8, impact: 'Abre uma vantagem marcante' },
-  ancestral: { label: 'Ancestral', icon: '✶', weight: 2, minLevel: 12, impact: 'Transforma a corrida; uma escolha por partida' },
+  normal: { label: 'Poké Ball', icon: '●', weight: 60, minLevel: 1, impact: 'Ajuste pequeno e útil' },
+  raro: { label: 'Great Ball', icon: '◆', weight: 30, minLevel: 3, impact: 'Muda a força ou o alcance da estratégia' },
+  lendario: { label: 'Ultra Ball', icon: '✦', weight: 8, minLevel: 8, impact: 'Abre uma vantagem marcante' },
+  ancestral: { label: 'Master Ball', icon: '✶', weight: 2, minLevel: 12, impact: 'Transforma a corrida; uma escolha por partida' },
 };
 
 /** Afinidade rara: o segundo tipo da espécie reforça a corrida sem criar outro golpe. */
@@ -300,6 +300,10 @@ export interface SurvivorState {
   secondAttackOffered: boolean;
   /** Efeito do segundo tipo escolhido no início; não causa dano extra nem recebe upgrades. */
   typeAffinity: SurvivorTypeAffinity | null;
+  /** Tipos secundários reais que podem ser escolhidos depois do primeiro treinador. */
+  typeAffinityChoices: PokemonType[];
+  /** A oferta já apareceu; evita repetir a mesma escolha na corrida. */
+  typeAffinityOffered: boolean;
 }
 
 export interface SurvivorEvolutionOption {
@@ -367,6 +371,8 @@ export type SurvivorEvent =
   | { type: 'trainerSpawn'; count: number; final: boolean }
   /** Treinador derrotado (todos os Pokémon dele caíram). */
   | { type: 'trainerDown'; final: boolean }
+  /** Primeiro treinador derrotado: oferece a afinidade do segundo tipo real da espécie. */
+  | { type: 'typeAffinityOffer'; types: PokemonType[] }
   | { type: 'evolve'; dexId: number; name: string }
   | { type: 'secondAttack'; name: string }
   /** Artefato do chão realmente alcançado pelo jogador; a UI explica o efeito aplicado. */
@@ -560,14 +566,14 @@ export const BALANCE = {
   enemyDamageBase: 6,
   enemyDamageStep: 2,
   enemyDamageEverySec: 40,
-  enemySpeedBase: 55,
-  enemySpeedRandom: 25,
+  enemySpeedBase: 50,
+  enemySpeedRandom: 20,
   /** Curva de proteção inicial: converge para 1 aos 6 min, suavizando a chegada ao especial de 3 min. */
   earlyGameMs: 360_000,
-  earlySpawnIntervalBonus: 0.55,
-  earlyEnemyHpMultiplier: 0.75,
-  earlyEnemyDamageMultiplier: 0.58,
-  earlyEnemySpeedMultiplier: 0.75,
+  earlySpawnIntervalBonus: 0.75,
+  earlyEnemyHpMultiplier: 0.70,
+  earlyEnemyDamageMultiplier: 0.48,
+  earlyEnemySpeedMultiplier: 0.68,
   /** Ataques de exposição recebem uma margem curta contra colisões e projéteis. */
   closeRangeDamageMultiplier: 0.88,
   /** Atiradores andam mais devagar para abrir espaço de reação. */
@@ -640,6 +646,8 @@ export interface CreateSurvivorOptions {
   preparation?: SurvivorPreparationId;
   /** Segundo tipo raro escolhido no início da corrida. */
   typeAffinity?: SurvivorTypeAffinity;
+  /** Tipos secundários reais da espécie; a escolha só aparece após o primeiro líder derrotado. */
+  typeAffinityChoices?: readonly PokemonType[];
 }
 
 /** Técnica interna da Torre para que até Pokémon de um tipo tenham uma segunda opção desbloqueável. */
@@ -721,7 +729,21 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     support: null,
     secondAttackOffered: false,
     typeAffinity: options.typeAffinity ?? null,
+    typeAffinityChoices: [...(options.typeAffinityChoices ?? [])],
+    typeAffinityOffered: false,
   };
+}
+
+/** Ativa a afinidade oferecida pelo primeiro treinador; rejeita tipos que não pertencem à espécie. */
+export function chooseSurvivorTypeAffinity(state: SurvivorState, type: PokemonType): boolean {
+  if (!state.typeAffinityOffered || state.typeAffinity || !state.typeAffinityChoices.includes(type)) return false;
+  const effect = ({
+    fire: 'queimar', water: 'empurrar', electric: 'saltar', rock: 'atordoar', ice: 'lentidao', dragon: 'atravessar',
+    steel: 'atravessar', poison: 'queimar', ghost: 'lentidao', psychic: 'empurrar', fairy: 'roubar', grass: 'nenhum',
+    dark: 'roubar', flying: 'empurrar', ground: 'atordoar', fighting: 'empurrar', bug: 'lentidao', normal: 'nenhum',
+  } as const)[type];
+  state.typeAffinity = { type, effect };
+  return true;
 }
 
 /** Intervalo entre nascimentos (ms): começa folgado e aperta com o tempo e a onda, nunca abaixo do piso. */
@@ -1600,6 +1622,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       if (final) state.bossesBeaten += 1;
       if (final && !state.infinite) state.finalBossBeaten = true;
       events.push({ type: 'trainerDown', final });
+      if (!final && state.trainersBeaten === 1 && !state.typeAffinityOffered && state.typeAffinityChoices.length > 0) {
+        state.typeAffinityOffered = true;
+        events.push({ type: 'typeAffinityOffer', types: [...state.typeAffinityChoices] });
+      }
       // Chefão final caído no modo normal: a corrida termina com vitória (fecha o resumo e destrava o infinito).
       if (final && !state.infinite && !state.over) {
         state.over = true;

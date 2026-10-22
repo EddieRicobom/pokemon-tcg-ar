@@ -5,6 +5,7 @@ import {
   ARENA_W,
   BALANCE,
   createSurvivorState,
+  chooseSurvivorTypeAffinity,
   ENEMY_BEHAVIOR_LIMITS,
   PLAYER_RADIUS,
   rollUpgrades,
@@ -42,6 +43,19 @@ function run(seed: number, kindCount = 4) {
 }
 
 describe('stepSurvivor', () => {
+  it('oferece a afinidade dupla apenas depois do primeiro treinador derrotado', () => {
+    const s = createSurvivorState(7, { kindCount: 4, typeAffinityChoices: ['ghost'] });
+    s.trainersBeaten = 0;
+    s.typeAffinityOffered = false;
+    // A oferta é emitida quando o grupo do treinador termina; a função pública valida a escolha real.
+    s.trainersBeaten = 1;
+    s.typeAffinityOffered = true;
+    expect(s.typeAffinity).toBeNull();
+    expect(chooseSurvivorTypeAffinity(s, 'ghost')).toBe(true);
+    expect(s.typeAffinity).toEqual({ type: 'ghost', effect: 'lentidao' });
+    expect(chooseSurvivorTypeAffinity(s, 'fire')).toBe(false);
+  });
+
   it('anda na direção do analógico e fica preso dentro da arena', () => {
     const s = run(1);
     const before = { x: s.player.x, y: s.player.y };
@@ -681,6 +695,19 @@ describe('efeitos ambientais dos biomas', () => {
 });
 
 describe('treinadores e chefão final', () => {
+  it('oferece o segundo tipo real somente quando o primeiro líder cai', () => {
+    const s = createSurvivorState(99, { kindCount: 4, typeAffinityChoices: ['ghost'] });
+    s.special.phase = 'ready';
+    s.elapsedMs = 300_000 - 200;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 400);
+    expect(s.typeAffinityOffered).toBe(false);
+    for (const enemy of s.enemies) if (enemy.grade === 'elite') enemy.hp = 0;
+    const events = stepSurvivor(s, { dx: 0, dy: 0 }, 1);
+    expect(events).toContainEqual({ type: 'typeAffinityOffer', types: ['ghost'] });
+    expect(s.typeAffinityOffered).toBe(true);
+    expect(s.typeAffinity).toBeNull();
+  });
+
   it('aos 5 min aparece um treinador com 3 Pokémon elite, e aos 20 min o chefão com 6', () => {
     const s = createSurvivorState(42, { kindCount: 4 });
     const timeline: string[] = [];
@@ -692,11 +719,12 @@ describe('treinadores e chefão final', () => {
     expect(timeline).toContain('t:3:false');
     expect(s.enemies.filter((e) => e.grade === 'elite').length).toBe(3);
     const elite = s.enemies.find((e) => e.grade === 'elite');
-    const earlyAtFive = Math.max(0, Math.min(1, 300_000 / BALANCE.earlyGameMs));
+    const tAtFive = s.elapsedMs / 1000;
+    const earlyAtFive = Math.max(0, Math.min(1, s.elapsedMs / BALANCE.earlyGameMs));
     const hpCurve = BALANCE.earlyEnemyHpMultiplier + (1 - BALANCE.earlyEnemyHpMultiplier) * earlyAtFive;
     const damageCurve = BALANCE.earlyEnemyDamageMultiplier + (1 - BALANCE.earlyEnemyDamageMultiplier) * earlyAtFive;
     expect(elite?.maxHp).toBe(Math.round((BALANCE.enemyHpBase + Math.floor(300 / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + s.wave * BALANCE.enemyHpPerWave) * hpCurve * 5 * BALANCE.trainerStatMultiplier * s.infiniteScale));
-    expect(elite?.damage).toBe(Math.round((BALANCE.enemyDamageBase + Math.floor(300 / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep) * damageCurve * 2 * BALANCE.trainerStatMultiplier * s.infiniteScale));
+    expect(elite?.damage).toBe(Math.round((BALANCE.enemyDamageBase + Math.floor(tAtFive / BALANCE.enemyDamageEverySec) * BALANCE.enemyDamageStep) * damageCurve * 2 * BALANCE.trainerStatMultiplier * s.infiniteScale));
     // Pula para quase 20 min.
     s.elapsedMs = 1_200_000 - 200;
     const ev2 = stepSurvivor(s, { dx: 0, dy: 0 }, 400);
