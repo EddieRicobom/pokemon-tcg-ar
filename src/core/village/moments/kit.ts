@@ -11,6 +11,13 @@ export interface Actor {
   types: readonly PokemonType[];
 }
 
+/** Trabalho realmente concluído recentemente por um morador. A camada social só comenta registros existentes. */
+export interface WorkSignal {
+  residentId: string;
+  kind: 'plant' | 'water' | 'harvest' | 'mine' | 'lumber' | 'fish';
+  at: number;
+}
+
 /** O mundo no instante do momento (o que está colocado na Vila, a hora, o tempo). */
 export interface SocialEnv {
   /** O nome do treinador (para os Pokémon falarem de você). */
@@ -25,6 +32,8 @@ export interface SocialEnv {
   /** Nível da cidade da Vila (nível de Treinador visto por último) e o que você respondeu às perguntas dos Pokémon (as 8 últimas). */
   town: number;
   lingo: readonly string[];
+  /** Últimas tarefas concluídas pela automação, para eventos que nascem do trabalho visível. */
+  recentWork?: readonly WorkSignal[];
 }
 
 export interface Outcome {
@@ -141,3 +150,4 @@ export const friendsNow = (c: Ctx): boolean => !!c.rel && c.rel.bond >= 20 && c.
 export const rivals = (c: Ctx): boolean => !!c.rel && (c.rel.bond <= -15 || c.rel.flag === 'brigados');
 export const coupled = (c: Ctx): boolean => c.rel?.flag === 'casal';
 export const wearing = (c: Ctx, ...ids: string[]): boolean => ids.some((id) => c.env.worn?.has(id) === true);
+
