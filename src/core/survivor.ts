@@ -114,6 +114,8 @@ export interface SurvivorSupportCandidate {
 export const MAX_SURVIVOR_SUPPORTS = 5;
 /** Depois do primeiro apoio garantido, cada novo candidato entra como uma carta rara comum. */
 export const SURVIVOR_SUPPORT_RARE_OFFER_CHANCE = 0.3;
+/** No máximo três Pokébolas digitais podem ser encontradas em uma corrida. */
+export const MAX_DIGITAL_POKEBALLS_PER_RUN = 3;
 
 /** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
@@ -648,8 +650,12 @@ export const BALANCE = {
   artifactDropChance: 0.15,
   artifactEliteDropChance: 0.3,
   artifactBossDropChance: 0.5,
-  /** Depois dos 10 minutos, uma morte pode deixar uma Pokébola especial. */
-  digitalPokeballDropChance: 0.025,
+  /** Depois dos 10 minutos, uma morte pode deixar uma Pokébola especial. A chance varia por grau. */
+  digitalPokeballDropChance: {
+    comum: 0.005,
+    elite: 0.01,
+    chefao: 0.02,
+  },
   /** Chance independente de qualquer inimigo deixar um orbe de XP dobrada. */
   doubleXpOrbChance: 0.08,
   artifactSpeedMultiplier: 1.35,
@@ -1791,10 +1797,20 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       const doubleXp = state.rng() < BALANCE.doubleXpOrbChance;
       state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value, ...(doubleXp ? { doubleXp: true } : {}) });
       const dropChance = e.boss ? BALANCE.artifactBossDropChance : e.grade === 'chefao' || e.grade === 'elite' ? BALANCE.artifactEliteDropChance : BALANCE.artifactDropChance;
-       if (state.rng() < dropChance) state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: artifactKind(state.rng) });
-       if (state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS && state.rng() < BALANCE.digitalPokeballDropChance) {
+      if (state.rng() < dropChance) state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: artifactKind(state.rng) });
+      const pokeballsOnGround = state.artifacts.reduce((total, artifact) => total + (artifact.kind === 'pokeball' ? 1 : 0), 0);
+      const pokeballChance = e.boss || e.grade === 'chefao'
+        ? BALANCE.digitalPokeballDropChance.chefao
+        : e.grade === 'elite'
+          ? BALANCE.digitalPokeballDropChance.elite
+          : BALANCE.digitalPokeballDropChance.comum;
+      if (
+        state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS
+        && state.digitalPokeballs + pokeballsOnGround < MAX_DIGITAL_POKEBALLS_PER_RUN
+        && state.rng() < pokeballChance
+      ) {
          state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: 'pokeball' });
-       }
+      }
     }
     // Treinador derrotado: nenhum Pokémon dele continua em pé.
     const trainerIds = new Set(dead.map((e) => e.trainerId).filter((id): id is number => id !== undefined));

@@ -16,6 +16,7 @@ import {
   SURVIVOR_UPGRADES,
   SURVIVOR_UPGRADE_RARITIES,
   SURVIVOR_SUPPORT_RARE_OFFER_CHANCE,
+  MAX_DIGITAL_POKEBALLS_PER_RUN,
   normalizeSurvivorXp,
   xpForLevel,
 } from './survivor';
@@ -974,6 +975,25 @@ describe('artefatos temporários', () => {
     expect(s.digitalPokeballs).toBe(1);
     expect(s.fx.some((fx) => fx.kind === 'artifact' && fx.artifact === 'pokeball')).toBe(true);
     expect(events).toContainEqual({ type: 'artifactCollected', kind: 'pokeball' });
+  });
+
+  it('mantém a Pokébola digital rara e limita a três por corrida', () => {
+    expect(MAX_DIGITAL_POKEBALLS_PER_RUN).toBe(3);
+    expect(BALANCE.digitalPokeballDropChance).toEqual({ comum: 0.005, elite: 0.01, chefao: 0.02 });
+
+    const s = quiet(createSurvivorState(11, { kindCount: 1 }));
+    s.elapsedMs = 10 * 60_000;
+    s.rng = () => 0;
+    s.artifacts.push(
+      { id: 911, x: s.player.x + 300, y: s.player.y, kind: 'pokeball' },
+      { id: 912, x: s.player.x + 320, y: s.player.y, kind: 'pokeball' },
+      { id: 913, x: s.player.x + 340, y: s.player.y, kind: 'pokeball' },
+    );
+    s.enemies.push(dummy(914, s.player.x + 40, s.player.y, 1));
+    s.player.attackDamage = 1_000;
+    s.player.attackTimerMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.artifacts.filter((artifact) => artifact.kind === 'pokeball')).toHaveLength(3);
   });
 
   it('usa os novos artefatos Ímã e Foco sem criar alvo ou vida extra', () => {
