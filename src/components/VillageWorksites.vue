@@ -16,7 +16,7 @@ const activeTasks = computed(() => (props.tasks ?? []).map((task) => ({ task, pr
 
 <template>
   <section class="worksites" aria-label="Trabalhos dos moradores">
-    <p>Moradores livres escolhem entre fazenda, mineração, madeira e pesca conforme aptidões, interesses e energia. Eles caminham até o recurso e trabalham por 10 segundos antes de concluir; até três trabalham ao mesmo tempo.</p>
+    <p>Moradores livres escolhem entre fazenda, mineração, madeira e pesca conforme aptidões, interesses e energia. Eles caminham até o recurso e trabalham por cerca de 30 segundos antes de concluir; até cinco podem trabalhar ao mesmo tempo.</p>
     <p class="hint">Os itens entram na sua mochila. Descanso, passeios e vida social continuam fazendo parte da rotina. Dormir, acompanhar você ou estar em uma expedição impede receber trabalho. Menus interrompem as tarefas; o app fechado não gera produção destes postos.</p>
     <section v-if="activeTasks.length" class="worksite-active" aria-labelledby="active-work-title">
       <h4 id="active-work-title">Moradores trabalhando agora</h4>

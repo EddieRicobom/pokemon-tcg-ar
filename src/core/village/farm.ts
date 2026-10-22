@@ -4,7 +4,7 @@ import type { Crop, VillageState } from './life';
 import { isWalkable, reachableFrom, tileAt } from './map';
 import type { VillageMap } from './map';
 import { FIELDS, WORK_AREAS } from './town-layout';
-import { chooseActivity } from './vocations';
+import { chooseActivity, TYPE_AFFINITIES } from './vocations';
 import type { VillageActivity } from './vocations';
 import { COMMUNITY_RULES, normalizeResidentProgress } from './community';
 import type { PokemonType } from '../pokemon-data';
@@ -12,7 +12,7 @@ import { advance, moving, tryStep } from './actors';
 import type { Blocked, Dir, Walker } from './actors';
 import { pathStep } from './pathing';
 
-export const FARM_RULES = { decisionMs: 30_000, workMs: 10_000, travelMs: 120_000, workers: 3, history: 30 } as const;
+export const FARM_RULES = { decisionMs: 30_000, workMs: 30_000, travelMs: 120_000, workers: 5, history: 30 } as const;
 export const WORK_NAMES = { plant: 'Plantio', water: 'Rega', harvest: 'Colheita', mine: 'Mineração', lumber: 'Madeireira', fish: 'Pescaria' } as const;
 export type WorkKind = keyof typeof WORK_NAMES;
 const activityOf = (kind: WorkKind): VillageActivity => kind === 'mine' ? 'mineracao' : kind === 'lumber' ? 'madeireira' : kind === 'fish' ? 'pesca' : 'agricultura';
@@ -96,6 +96,7 @@ export class FarmSession {
 
   tick(state: VillageState, map: VillageMap, workers: readonly FarmWorker[], now: number, rng: () => number, occupied: (x: number, y: number) => boolean): boolean {
     let changed = false;
+    let completedWork = false;
     const unique = [...new Map(workers.map((worker) => [worker.id, worker])).values()].slice(0, 100);
     for (let i = this.tasks.length - 1; i >= 0; i--) {
       const task = this.tasks[i]!;
@@ -137,10 +138,14 @@ export class FarmSession {
       const message = task.kind === 'plant' ? `Plantou ${itemDef(task.seed)?.name ?? task.seed} usando a caixa da fazenda.` : task.kind === 'water' ? 'Regou um canteiro da fazenda.' : task.kind === 'mine' ? `Minerou na pedreira: ${result.message}${delivery}` : task.kind === 'lumber' ? `Trabalhou na madeireira: ${result.message}${delivery}` : task.kind === 'fish' ? `Pescou no lago: ${result.message}${delivery}` : `${result.message} A produção foi para sua mochila.`;
       state.farm.history = [...state.farm.history, { residentId: worker.id, at: now, message, kind: task.kind }].slice(-FARM_RULES.history);
       changed = true;
+      completedWork = true;
     }
     // Voltar o relógio não bloqueia o trabalho indefinidamente. Nenhum catch-up concede trabalho instantâneo.
     if (state.farm.nextDecisionAt > now + FARM_RULES.decisionMs) { state.farm.nextDecisionAt = now + FARM_RULES.decisionMs; changed = true; }
-    if (now < state.farm.nextDecisionAt) return changed;
+    // Deixa a conclusão visível antes de reservar outra tarefa para o mesmo
+    // ciclo; isso evita que um morador pareça trocar de posto no mesmo instante
+    // em que termina e dá espaço para a animação de loot ser percebida.
+    if (completedWork || now < state.farm.nextDecisionAt) return changed;
     state.farm.nextDecisionAt = now + FARM_RULES.decisionMs;
     changed = true;
     const lastWorked = new Map(state.farm.history.map((entry) => [entry.residentId, entry.at]));
@@ -154,11 +159,23 @@ export class FarmSession {
       if (!options.length) continue;
       const progress = state.community.residents[worker.id] ??= normalizeResidentProgress(null);
       const resourceOptions = options.filter((task) => task.kind === 'mine' || task.kind === 'lumber' || task.kind === 'fish');
+      const resourceActivities = new Set(resourceOptions.map((task) => activityOf(task.kind)));
+      const urgentFarmTask = options.some((task) => task.kind === 'harvest' || task.kind === 'water');
+      const hasResourcePreference = worker.types.some((type) => {
+        const affinities = TYPE_AFFINITIES[type] ?? [];
+        return [...resourceActivities].some((activity) => affinities.includes(activity));
+      }) || progress.interests.some((activity) => resourceActivities.has(activity));
+      const explicitFarmInterest = progress.interests.includes('agricultura');
+      const plantSupply = Object.values(state.farm.seeds).reduce((total, qty) => total + Math.max(0, qty ?? 0), 0);
+      const reservedPlants = this.tasks.filter((task) => task.kind === 'plant').length;
+      const farmQuotaReached = reservedPlants >= Math.min(2, plantSupply) || progress.recentActivity === 'agricultura';
       // Os tipos chegam em segundo plano. Enquanto não chegam, a urgência de
       // colheita acabava vencendo sempre e a vila parecia ter apenas fazenda.
       // Nesse intervalo, os moradores sem aptidão conhecida rodam pelos três
-      // postos; assim o comportamento continua vivo sem inventar uma espécie.
-      const neutralResource = worker.types.length === 0 && progress.interests.length === 0 && resourceOptions.length > 0
+      // postos; o mesmo vale para tipos que não têm afinidade com nenhum
+      // recurso. Assim o comportamento continua vivo sem inventar uma espécie,
+      // sem tirar a prioridade de uma colheita ou rega que já está pronta.
+      const neutralResource = !urgentFarmTask && !explicitFarmInterest && !hasResourcePreference && resourceOptions.length > 0 && farmQuotaReached
         ? resourceOptions[this.neutralWorkerRotation++ % resourceOptions.length]
         : undefined;
       const choice = neutralResource

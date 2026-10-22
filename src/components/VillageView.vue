@@ -2701,6 +2701,7 @@ onMounted(async () => {
   game.animSpeed = () => effects().animSpeed;
   game.metallic = () => effectiveVisual.value.metallic;
   game.ambientFx = () => effectiveVisual.value.villageFx;
+  game.nocturnal = (id) => types.get(id)?.includes('dark') === true;
   game.maxFps = () => effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
   // Presente recebido enquanto a cena abria: entra agora, ao lado do jogador.
   for (const entry of pendingDigital.values()) {

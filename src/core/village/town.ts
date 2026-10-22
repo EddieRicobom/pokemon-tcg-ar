@@ -328,8 +328,12 @@ export function knockDoor(residents: readonly KnockResident[], hour: number, rng
 
 // ----------------------------------------------------------------------------- dormir
 
-/** O Pokémon está dormindo agora? Cada um tem sua hora de deitar (21 a 23 h) e de acordar (5 a 7 h); alguns são notívagos. */
-export function isAsleep(id: string, hour: number): boolean {
+/** O Pokémon está dormindo agora? Cada um tem sua hora de deitar (21 a 23 h) e de acordar (5 a 7 h). */
+export function isAsleep(id: string, hour: number, nocturnal = false): boolean {
+  // O tipo Dark é mais ativo à noite: descansa pela manhã e volta a circular a
+  // partir do começo da tarde, sem depender de sorteio ou de um horário fixo
+  // inventado para a espécie.
+  if (nocturnal) return hour >= 6 && hour < 13;
   const h = hash(`sono:${id}`);
   if (h % 4 === 0) return hour >= 2 && hour < 8;
   const bed = 21 + (h % 3);

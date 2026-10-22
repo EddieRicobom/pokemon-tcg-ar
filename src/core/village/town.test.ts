@@ -272,6 +272,14 @@ describe('dormir', () => {
     expect(new Set(ids.map((id) => isAsleep(id, 1))).size).toBe(2);
     expect(new Set(ids.map((id) => isAsleep(id, 6))).size).toBe(2);
   });
+
+  it('mantém moradores do tipo Dark acordados à noite e descansando pela manhã', () => {
+    expect(isAsleep('dark-mon', 5, true)).toBe(false);
+    expect(isAsleep('dark-mon', 6, true)).toBe(true);
+    expect(isAsleep('dark-mon', 11, true)).toBe(true);
+    expect(isAsleep('dark-mon', 13, true)).toBe(false);
+    expect(isAsleep('dark-mon', 23, true)).toBe(false);
+  });
 });
 
 describe('Correio, Café e saves antigos', () => {
