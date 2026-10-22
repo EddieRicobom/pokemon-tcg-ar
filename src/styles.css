@@ -6700,6 +6700,25 @@ body.no-scroll .reward-toasts {
   background: linear-gradient(135deg, #fff8d6, #f4f6ff);
 }
 
+.survivor-jirachi-reroll {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1.5px solid #e7b9ff;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #fff5ff, #f2e8ff);
+  color: #442267;
+  text-align: left;
+  cursor: pointer;
+}
+.survivor-jirachi-reroll:hover,
+.survivor-jirachi-reroll:focus-visible { border-color: #a95cdb; background: #f7edff; }
+.survivor-jirachi-reroll small { display: block; margin-top: 2px; color: #5d4770; line-height: 1.35; }
+.survivor-jirachi-reroll:focus-visible { outline: 3px solid #6e3b98; outline-offset: 2px; }
+
 .survivor-pick-move {
   font-weight: 700;
   color: #1b2036;

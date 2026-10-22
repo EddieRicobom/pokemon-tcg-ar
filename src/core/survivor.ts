@@ -72,6 +72,10 @@ export interface SurvivorPlayer {
   facing: -1 | 1;
   /** Alcance para coletar orbe de XP ao passar perto (sobe com o upgrade "Ímã de XP"). */
   pickupRadius: number;
+  /** Quantas cartas aparecem em cada oferta; o jogador continua escolhendo apenas uma. */
+  upgradeChoices: number;
+  /** Rerrolagens de ofertas de upgrade concedidas pelo Desejo de Jirachi. */
+  upgradeRerolls: number;
   /** Segundo golpe automático, desbloqueável uma vez por corrida. */
   secondMove?: SurvivorMove;
   secondAttackTimerMs?: number;
@@ -103,6 +107,9 @@ export interface SurvivorSupportCandidate {
   move: SurvivorMove;
   profile: AttackProfile;
 }
+
+/** Limite de apoios simultâneos: complementam o protagonista sem substituir a build dele. */
+export const MAX_SURVIVOR_SUPPORTS = 5;
 
 /** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
@@ -304,6 +311,10 @@ export interface SurvivorState {
   secondMoveCandidate: SurvivorMove | null;
   /** Candidato real fornecido pela Caixa. Sem candidato, a corrida não inventa um segundo Pokémon. */
   supportCandidate: SurvivorSupportCandidate | null;
+  /** Candidatos restantes para as próximas ofertas de apoio. */
+  supportCandidates: SurvivorSupportCandidate[];
+  /** Apoios recrutados nesta corrida; nenhum recebe upgrades, vida ou hitbox própria. */
+  supports: SurvivorSupport[];
   support: SurvivorSupport | null;
   secondAttackOffered: boolean;
   /** Efeito do segundo tipo escolhido no início; não causa dano extra nem recebe upgrades. */
@@ -411,6 +422,7 @@ export interface SurvivorUpgrade {
 }
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
+const SURVIVOR_RARITY_ORDER: readonly SurvivorUpgradeRarity[] = ['normal', 'raro', 'lendario', 'ancestral'];
 
 const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   {
@@ -437,6 +449,16 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
     id: 'range', rarity: 'raro', name: 'Alcance maior', description: '+20% no alcance do golpe.', for: ['projetil', 'area', 'cone'], valueRange: [16, 24],
     describeValue: (_m, value) => ({ name: 'Alcance maior', description: `+${value}% no alcance do golpe.` }),
     apply: (p, value = 20) => { p.attackRange = round1(p.attackRange * (1 + value / 100)); },
+  },
+  {
+    id: 'more-upgrade-choices', rarity: 'raro', name: 'Mochila de escolhas',
+    description: '+1 opção nas ofertas de upgrade (você ainda escolhe apenas uma).', maxLevels: 2,
+    apply: (p) => { p.upgradeChoices = Math.min(5, Math.max(3, p.upgradeChoices) + 1); },
+  },
+  {
+    id: 'jirachi-reroll', rarity: 'raro', name: 'Desejo de Jirachi',
+    description: 'Ganha 1 rerrolagem de oferta. O desejo é consumido ao trocar as cartas.', maxLevels: 3,
+    apply: (p) => { p.upgradeRerolls = Math.min(3, Math.max(0, p.upgradeRerolls) + 1); },
   },
   { id: 'xp-boost-15', rarity: 'normal', name: 'Rota de experiência', description: '+15% de XP recebido dos orbes.', maxLevels: 1, apply: (p) => { p.xpMultiplier = Math.max(p.xpMultiplier ?? 1, 1.15); } },
   { id: 'xp-boost-25', rarity: 'raro', name: 'Rota de experiência II', description: '+25% de XP recebido dos orbes.', maxLevels: 1, requires: 'xp-boost-15', apply: (p) => { p.xpMultiplier = Math.max(p.xpMultiplier ?? 1, 1.25); } },
@@ -662,8 +684,10 @@ export interface CreateSurvivorOptions {
   profile?: AttackProfile;
   /** Golpe secundário real (por exemplo, o segundo tipo). Se omitido, o motor cria uma técnica interna compatível. */
   secondMove?: SurvivorMove;
-  /** Segundo Pokémon real elegível como apoio nesta corrida. */
+  /** Segundo Pokémon real elegível como apoio nesta corrida (compatibilidade com chamadas antigas). */
   supportCandidate?: SurvivorSupportCandidate;
+  /** Até cinco Pokémon reais elegíveis como apoio nesta corrida. */
+  supportCandidates?: readonly SurvivorSupportCandidate[];
   /** Espécie de quem joga (para a evolução). */
   dexId?: number;
   /**
@@ -694,6 +718,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
   const prof = options.profile;
   const preparation = survivorPreparation(options.preparation);
   const secondMoveCandidate = options.secondMove ?? secondaryMoveFor(move);
+  const supportCandidates = [...(options.supportCandidates ?? (options.supportCandidate ? [options.supportCandidate] : []))].slice(0, MAX_SURVIVOR_SUPPORTS);
   const player: SurvivorPlayer = {
     dexId: options.dexId ?? 0,
     stage: 0,
@@ -722,6 +747,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     artifactShieldMs: 0,
     facing: 1,
     pickupRadius: PICKUP_RADIUS * preparation.pickupRadiusMultiplier,
+    upgradeChoices: 3,
+    upgradeRerolls: 0,
     upgradeLevels: {},
     ...options.player,
   };
@@ -759,7 +786,9 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     profile: prof ?? null,
     enemyArchetypeFor: options.enemyArchetypeFor ?? null,
     secondMoveCandidate,
-    supportCandidate: options.supportCandidate ?? null,
+    supportCandidate: null,
+    supportCandidates,
+    supports: [],
     support: null,
     secondAttackOffered: false,
     typeAffinity: options.typeAffinity ?? null,
@@ -908,13 +937,30 @@ function rollUpgradeRarity(rng: Rng, pool: readonly SurvivorUpgrade[]): Survivor
 }
 
 /** Sorteia cartas distintas, com potência variável nos bônus numéricos. */
-export function rollUpgrades(rng: Rng, count = 3, move: SurvivorMove = BASIC_MOVE, player?: SurvivorPlayer): SurvivorUpgradeOption[] {
+export interface SurvivorUpgradeRollOptions {
+  /** IDs já exibidos nesta oferta, usados para que um reroll não devolva a mesma carta. */
+  excludeIds?: readonly string[];
+  /** Raridade mínima da nova carta (usado pelo desejo de Jirachi quando a oferta já é rara). */
+  minimumRarity?: SurvivorUpgradeRarity;
+}
+
+export function rollUpgrades(
+  rng: Rng,
+  count = 3,
+  move: SurvivorMove = BASIC_MOVE,
+  player?: SurvivorPlayer,
+  options?: SurvivorUpgradeRollOptions,
+): SurvivorUpgradeOption[] {
   const level = player?.level ?? 1;
+  const excludedIds = new Set(options?.excludeIds ?? []);
+  const minimumRank = options?.minimumRarity === undefined ? 0 : SURVIVOR_RARITY_ORDER.indexOf(options.minimumRarity);
   const alreadyAncestral = SURVIVOR_UPGRADES.some((upgrade) => upgrade.rarity === 'ancestral' && (player?.upgradeLevels[upgrade.id] ?? 0) > 0);
   const pool = SURVIVOR_UPGRADES.filter((u) =>
     (!u.for || u.for.includes(move.category))
     && (!u.type || u.type === move.type)
     && level >= SURVIVOR_UPGRADE_RARITIES[u.rarity].minLevel
+    && SURVIVOR_RARITY_ORDER.indexOf(u.rarity) >= minimumRank
+    && !excludedIds.has(u.id)
     && (!u.requires || (player?.upgradeLevels[u.requires] ?? 0) > 0)
     && (u.rarity !== 'ancestral' || !alreadyAncestral)
     && (player?.upgradeLevels[u.id] ?? 0) < (u.maxLevels ?? Number.POSITIVE_INFINITY)
@@ -940,6 +986,41 @@ export function rollUpgrades(rng: Rng, count = 3, move: SurvivorMove = BASIC_MOV
     }
   }
   return picked;
+}
+
+function rerollMinimumRarity(player: SurvivorPlayer, currentFloor: SurvivorUpgradeRarity): SurvivorUpgradeRarity {
+  const currentRank = SURVIVOR_RARITY_ORDER.indexOf(currentFloor);
+  for (let index = currentRank + 1; index < SURVIVOR_RARITY_ORDER.length; index += 1) {
+    const rarity = SURVIVOR_RARITY_ORDER[index]!;
+    if (player.level >= SURVIVOR_UPGRADE_RARITIES[rarity].minLevel) return rarity;
+  }
+  return currentFloor === 'normal' ? 'raro' : currentFloor;
+}
+
+/**
+ * Gasta um desejo de Jirachi para trocar a oferta atual. Cartas normais saem todas;
+ * se a oferta já é toda rara ou melhor, preservamos uma carta a menos e garantimos
+ * uma nova carta de faixa superior quando essa faixa já está liberada pelo nível.
+ */
+export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
+  const current = state.pendingUpgrade;
+  if (!current || current.length === 0 || state.player.upgradeRerolls <= 0) return false;
+
+  state.player.upgradeRerolls -= 1;
+  const nonRare = current.filter((option) => (option.rarity ? SURVIVOR_RARITY_ORDER.indexOf(option.rarity) : 0) < 1);
+  const allRareOrBetter = nonRare.length === 0;
+  const preserved = allRareOrBetter ? current.slice(0, Math.max(0, current.length - 1)) : current.filter((option) => option.rarity !== undefined && SURVIVOR_RARITY_ORDER.indexOf(option.rarity) >= 1);
+  const rerollCount = Math.max(1, current.length - preserved.length);
+  const floor = current.reduce<SurvivorUpgradeRarity>((lowest, option) => {
+    const rarity = option.rarity ?? 'normal';
+    return SURVIVOR_RARITY_ORDER.indexOf(rarity) < SURVIVOR_RARITY_ORDER.indexOf(lowest) ? rarity : lowest;
+  }, 'ancestral');
+  const rerolled = rollUpgrades(state.rng, rerollCount, state.player.move, state.player, {
+    excludeIds: current.map((option) => option.id),
+    ...(allRareOrBetter ? { minimumRarity: rerollMinimumRarity(state.player, floor) } : {}),
+  });
+  state.pendingUpgrade = [...preserved, ...rerolled];
+  return true;
 }
 
 /** A carta "Evoluir" desta escolha, se o nível já permite e existe uma próxima forma real (ramos: sorteia um). */
@@ -971,19 +1052,26 @@ function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
 function offerOwedUpgrade(state: SurvivorState): void {
   if (state.pendingUpgrade || state.upgradesOwed <= 0) return;
   state.upgradesOwed -= 1;
-  const options = rollUpgrades(state.rng, 3, state.player.move, state.player);
+  const options = rollUpgrades(state.rng, state.player.upgradeChoices, state.player.move, state.player);
   const evolve = evolutionOffer(state);
   if (evolve) options.splice(options.length - 1, 1, evolve);
-  else if (!state.secondAttackOffered && state.player.level >= 6 && state.supportCandidate) {
+  else if (!state.supportCandidate && state.player.level >= 6 && state.supportCandidates.length > 0) {
+    const candidate = state.supportCandidates[0]!;
+    state.supportCandidate = candidate;
     state.secondAttackOffered = true;
     options.splice(options.length - 1, 1, {
       id: 'second-attack',
       rarity: 'lendario',
-      name: `Chamar apoio: ${state.supportCandidate.name}`,
-      description: `${state.supportCandidate.move.icon} Ataca da sua posição com recarga própria. Não recebe upgrades nem pode ser atingido.`,
+      name: `Chamar apoio: ${candidate.name}`,
+      description: `${candidate.move.icon} Ataca da sua posição com recarga própria. Não recebe upgrades nem pode ser atingido. Apoio ${state.supports.length + 1}/${MAX_SURVIVOR_SUPPORTS}.`,
     });
   }
   state.pendingUpgrade = options;
+}
+
+function consumeSupportCandidate(state: SurvivorState, candidate: SurvivorSupportCandidate): void {
+  state.supportCandidates = state.supportCandidates.filter((item) => item !== candidate);
+  state.supportCandidate = null;
 }
 
 /**
@@ -1003,36 +1091,39 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
       events.push({ type: 'evolve', dexId: next.dexId, name: next.name });
     }
   } else if (id === 'second-attack') {
-    if (offered && state.supportCandidate && !state.support) {
-      const candidate = state.supportCandidate;
+    const candidate = state.supportCandidate ?? state.supportCandidates[0];
+    if (offered && candidate && state.supports.length < MAX_SURVIVOR_SUPPORTS) {
       const move = candidate.move;
       const p = state.player;
-      p.secondMove = move;
-      p.secondAttackTimerMs = 0;
-      p.secondAttackDamage = round1(candidate.profile.damage * 0.45);
-      p.secondAttackCooldownMs = Math.max(500, Math.round(candidate.profile.cooldownMs * 1.45));
-      p.secondAttackRange = candidate.profile.range;
-      p.secondAttackRadius = candidate.profile.radius;
-      state.support = {
+      const support: SurvivorSupport = {
         ...candidate,
         x: p.x - 24,
         y: p.y + 18,
         attackTimerMs: 0,
         damageFactor: 0.45,
       };
-      state.secondMoveCandidate = null;
-      state.supportCandidate = null;
+      state.supports.push(support);
+      state.support ??= support;
+      p.secondMove ??= move;
+      p.secondAttackTimerMs ??= 0;
+      p.secondAttackDamage ??= round1(candidate.profile.damage * 0.45);
+      p.secondAttackCooldownMs ??= Math.max(500, Math.round(candidate.profile.cooldownMs * 1.45));
+      p.secondAttackRange ??= candidate.profile.range;
+      p.secondAttackRadius ??= candidate.profile.radius;
+      consumeSupportCandidate(state, candidate);
       events.push({ type: 'secondAttack', name: candidate.name });
     }
   } else {
     const upgrade = SURVIVOR_UPGRADES.find((u) => u.id === id);
     // Upgrades comuns também precisam ser uma escolha real da rodada. Isso impede que uma
     // chamada atrasada ou manipulada aplique um bônus que nunca foi oferecido.
-    if (upgrade && offered) {
+    if (upgrade && offered && (state.player.upgradeLevels[id] ?? 0) < (upgrade.maxLevels ?? Number.POSITIVE_INFINITY)) {
       upgrade.apply(state.player, offeredOption?.value);
       state.player.upgradeLevels[id] = (state.player.upgradeLevels[id] ?? 0) + 1;
     }
   }
+  const offeredSupport = state.supportCandidate;
+  if (offeredSupport && id !== 'second-attack') consumeSupportCandidate(state, offeredSupport);
   state.pendingUpgrade = null;
   offerOwedUpgrade(state);
   return events;
@@ -1227,11 +1318,9 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
   }
 }
 
-/** Ataque do apoio: nasce sempre no jogador e usa o perfil congelado do Pokémon escolhido. */
-function attackSupport(state: SurvivorState): boolean {
+/** Ataque de um apoio: nasce sempre no jogador e usa o perfil congelado do Pokémon escolhido. */
+function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean {
   const p = state.player;
-  const support = state.support;
-  if (!support) return false;
   const { move, profile } = support;
   const damage = round1(profile.damage * support.damageFactor);
   const range = profile.range;
@@ -1581,19 +1670,30 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   // Autoataque com o golpe do tipo (projétil, aura ou área).
   p.attackTimerMs = Math.max(0, p.attackTimerMs - dtMs);
   if (p.attackTimerMs <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs;
-  if (state.support) {
-    const support = state.support;
-    // Posição visual apenas: o apoio alcança o jogador com a mesma velocidade normal, sem criar uma hitbox.
-    const desiredX = p.x - p.facing * 26;
-    const desiredY = p.y + 18;
-    const dxSupport = desiredX - support.x;
-    const dySupport = desiredY - support.y;
-    const distance = Math.hypot(dxSupport, dySupport);
-    const follow = Math.min(distance, p.speed * dt);
-    if (distance > 0.01) { support.x += dxSupport / distance * follow; support.y += dySupport / distance * follow; }
-    support.attackTimerMs = Math.max(0, support.attackTimerMs - dtMs);
-    if (support.attackTimerMs <= 0 && attackSupport(state)) support.attackTimerMs = Math.max(500, Math.round(support.profile.cooldownMs * 1.45));
-    p.secondAttackTimerMs = support.attackTimerMs;
+  if (state.supports.length > 0) {
+    // Formação visual: cada apoio tem uma posição própria e alcança o jogador
+    // com a mesma velocidade normal, sem criar vida ou hitbox adicional.
+    const supportOffsets = [
+      { x: -28, y: 22 },
+      { x: -54, y: -18 },
+      { x: -54, y: 62 },
+      { x: -80, y: 8 },
+      { x: -80, y: 86 },
+    ] as const;
+    for (const [index, support] of state.supports.entries()) {
+      const offset = supportOffsets[index] ?? supportOffsets[supportOffsets.length - 1]!;
+      const desiredX = p.x + p.facing * offset.x;
+      const desiredY = p.y + offset.y;
+      const dxSupport = desiredX - support.x;
+      const dySupport = desiredY - support.y;
+      const distance = Math.hypot(dxSupport, dySupport);
+      const follow = Math.min(distance, p.speed * dt);
+      if (distance > 0.01) { support.x += dxSupport / distance * follow; support.y += dySupport / distance * follow; }
+      support.attackTimerMs = Math.max(0, support.attackTimerMs - dtMs);
+      if (support.attackTimerMs <= 0 && attackSupport(state, support)) support.attackTimerMs = Math.max(500, Math.round(support.profile.cooldownMs * 1.45));
+    }
+    const firstSupport = state.supports[0];
+    if (firstSupport) p.secondAttackTimerMs = firstSupport.attackTimerMs;
   }
 
   // Projéteis: avançam, somem com o tempo/fora da arena, acertam o inimigo mais próximo no caminho.
