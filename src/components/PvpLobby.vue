@@ -162,8 +162,8 @@ onBeforeUnmount(dropPeer);
         Na mesma rede Wi-Fi funciona melhor; em algumas operadoras a conexão pode não fechar.
       </p>
       <div class="pn-lobby-actions">
-        <button type="button" class="primary" @click="createRoom">Criar sala</button>
-        <button type="button" @click="joinRoom">Entrar na sala de um amigo</button>
+        <button type="button" class="primary" @click="createRoom">{{ backupPurpose ? 'Criar sala de transferência' : 'Criar sala' }}</button>
+        <button type="button" @click="joinRoom">{{ backupPurpose ? 'Entrar na sala de transferência' : 'Entrar na sala de um amigo' }}</button>
       </div>
     </template>
 
