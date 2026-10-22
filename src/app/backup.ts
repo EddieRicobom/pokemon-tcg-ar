@@ -6,6 +6,9 @@ import { unzipSync, zipSync } from 'fflate';
 
 export const BACKUP_FORMAT = 'pokemon-tcg-ar-backup';
 export const BACKUP_VERSION = 2;
+/** O conteúdo continua sendo ZIP, mas o arquivo baixado não anuncia a implementação ao sistema operacional. */
+export const BACKUP_FILE_MIME = 'application/octet-stream';
+export const BACKUP_FILE_EXTENSION = 'dat';
 const LEGACY_VERSION = 1;
 const MAX_BACKUP_BYTES = 512 * 1024 * 1024;
 const MAX_ASSET_BYTES = 256 * 1024 * 1024;
@@ -43,6 +46,10 @@ export interface BackupFile {
   archive?: BackupArchive;
 }
 
+export type BackupProgressPhase = 'storage' | 'cards' | 'records' | 'metadata' | 'assets' | 'writing' | 'complete';
+export interface BackupProgress { phase: BackupProgressPhase; current: number; total: number }
+export type BackupProgressListener = (progress: BackupProgress) => void;
+
 export type BackupParseError = 'json-invalido' | 'formato-desconhecido' | 'versao-incompativel' | 'backup-invalido';
 
 function backupKeys(storage: Pick<Storage, 'getItem'> & Partial<Pick<Storage, 'length' | 'key'>>): string[] {
@@ -68,11 +75,13 @@ function hashBytes(bytes: Uint8Array): string {
   return `${(a >>> 0).toString(16).padStart(8, '0')}${(b >>> 0).toString(16).padStart(8, '0')}`;
 }
 
-async function readCollection(): Promise<BackupCollection> {
+async function readCollection(onProgress?: BackupProgressListener): Promise<BackupCollection> {
   const db = await openCacheDb();
   try {
     const cards = await db.getAll('cards');
+    onProgress?.({ phase: 'cards', current: 1, total: 1 });
     const records = await db.getAll('assets');
+    onProgress?.({ phase: 'records', current: 1, total: 1 });
     const metaKeys = await db.getAllKeys('meta');
     const meta: MetaEntry[] = [];
     for (const key of metaKeys) {
@@ -80,23 +89,29 @@ async function readCollection(): Promise<BackupCollection> {
       const value = await db.get('meta', metaKey);
       meta.push({ key: metaKey, value });
     }
+    onProgress?.({ phase: 'metadata', current: meta.length, total: meta.length || 1 });
     const cache = await caches.open(ASSET_CACHE_NAME);
     const assets: BackupAsset[] = [];
-    for (const request of await cache.keys()) {
+    const requests = await cache.keys();
+    onProgress?.({ phase: 'assets', current: 0, total: requests.length || 1 });
+    for (const [index, request] of requests.entries()) {
       const response = await cache.match(request);
-      if (!response) continue;
+      if (!response) { onProgress?.({ phase: 'assets', current: index + 1, total: requests.length || 1 }); continue; }
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (bytes.byteLength > MAX_ASSET_BYTES) throw new Error('arquivo grande demais');
       assets.push({ url: request.url, type: response.headers.get('content-type') ?? 'application/octet-stream', bytes: [...bytes], hash: hashBytes(bytes) });
+      onProgress?.({ phase: 'assets', current: index + 1, total: requests.length || 1 });
     }
     return { cards, records, meta, assets };
   } finally { db.close(); }
 }
 
-export async function buildFullBackup(storage: Storage = localStorage, now?: string): Promise<BackupFile> {
+export async function buildFullBackup(storage: Storage = localStorage, now?: string, onProgress?: BackupProgressListener): Promise<BackupFile> {
+  onProgress?.({ phase: 'storage', current: 1, total: 1 });
   const file = buildBackup(storage, now);
-  if (typeof indexedDB === 'undefined' || typeof caches === 'undefined') return file;
-  file.collection = await readCollection();
+  if (typeof indexedDB === 'undefined' || typeof caches === 'undefined') { onProgress?.({ phase: 'complete', current: 1, total: 1 }); return file; }
+  file.collection = await readCollection(onProgress);
+  onProgress?.({ phase: 'complete', current: 1, total: 1 });
   return file;
 }
 
@@ -127,7 +142,7 @@ async function snapshot(storage: Storage): Promise<Snapshot> {
   return { data: file.data, collection: typeof indexedDB !== 'undefined' && typeof caches !== 'undefined' ? await readCollection() : undefined };
 }
 
-async function writeCollection(collection: BackupCollection): Promise<void> {
+async function writeCollection(collection: BackupCollection, onProgress?: BackupProgressListener): Promise<void> {
   validateCollection(collection);
   const db = await openCacheDb();
   try {
@@ -138,14 +153,17 @@ async function writeCollection(collection: BackupCollection): Promise<void> {
     await db.clear('cards');
     await db.clear('assets');
     await db.clear('meta');
-    for (const card of collection.cards) await db.put('cards', card);
-    for (const record of collection.records) await db.put('assets', record);
-    for (const entry of collection.meta ?? []) await db.put('meta', entry.value, entry.key);
+    const totalWrites = Math.max(1, collection.cards.length + collection.records.length + (collection.meta?.length ?? 0) + collection.assets.length);
+    let written = 0;
+    for (const card of collection.cards) { await db.put('cards', card); onProgress?.({ phase: 'writing', current: ++written, total: totalWrites }); }
+    for (const record of collection.records) { await db.put('assets', record); onProgress?.({ phase: 'writing', current: ++written, total: totalWrites }); }
+    for (const entry of (collection.meta ?? [])) { await db.put('meta', entry.value, entry.key); onProgress?.({ phase: 'writing', current: ++written, total: totalWrites }); }
     const cache = await caches.open(ASSET_CACHE_NAME);
     for (const key of await cache.keys()) await cache.delete(key);
     for (const asset of collection.assets) {
       const bytes = Uint8Array.from(asset.bytes);
       await cache.put(asset.url, new Response(bytes, { headers: { 'content-type': asset.type } }));
+      onProgress?.({ phase: 'writing', current: ++written, total: totalWrites });
     }
   } finally { db.close(); }
 }
@@ -160,13 +178,14 @@ function writeData(file: BackupFile, storage: Storage): void {
 }
 
 /** Restauração transacional best-effort: qualquer erro tenta devolver o snapshot anterior. */
-export async function applyFullBackup(file: BackupFile, storage: Storage = localStorage): Promise<void> {
+export async function applyFullBackup(file: BackupFile, storage: Storage = localStorage, onProgress?: BackupProgressListener): Promise<void> {
   validateFile(file);
   if (file.collection && (typeof indexedDB === 'undefined' || typeof caches === 'undefined')) throw new Error('este navegador não suporta a coleção do backup');
   const before = await snapshot(storage);
   try {
-    if (file.collection && typeof indexedDB !== 'undefined' && typeof caches !== 'undefined') await writeCollection(file.collection);
+    if (file.collection && typeof indexedDB !== 'undefined' && typeof caches !== 'undefined') await writeCollection(file.collection, onProgress);
     writeData(file, storage);
+    onProgress?.({ phase: 'complete', current: 1, total: 1 });
   } catch (error) {
     try {
       if (before.collection && typeof indexedDB !== 'undefined' && typeof caches !== 'undefined') await writeCollection(before.collection);
@@ -244,6 +263,16 @@ export function parseBackupZip(bytes: Uint8Array): BackupFile | BackupParseError
   } catch { return 'backup-invalido'; }
 }
 
+/**
+ * Lê um backup pelo conteúdo, e não pelo nome/MIME informado pelo seletor de arquivos.
+ * Isso mantém a importação compatível com o arquivo genérico `.dat`, com cópias renomeadas
+ * e com os JSON/ZIP antigos que já foram exportados.
+ */
+export function parseBackupBytes(bytes: Uint8Array): BackupFile | BackupParseError {
+  const looksLikeZip = bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07);
+  return looksLikeZip ? parseBackupZip(bytes) : parseBackup(new TextDecoder().decode(bytes));
+}
+
 export function parseBackup(raw: string): BackupFile | BackupParseError {
   let value: unknown;
   try { value = JSON.parse(raw); } catch { return 'json-invalido'; }
@@ -262,4 +291,4 @@ export function parseBackup(raw: string): BackupFile | BackupParseError {
   try { validateFile(file); return file; } catch (error) { return String(error).includes('versão') ? 'versao-incompativel' : 'backup-invalido'; }
 }
 
-export function backupFileName(now = new Date()): string { return `pokemon-tcg-ar-backup-${now.toISOString().slice(0, 10)}.zip`; }
+export function backupFileName(now = new Date()): string { return `pokemon-tcg-ar-backup-${now.toISOString().slice(0, 10)}.${BACKUP_FILE_EXTENSION}`; }

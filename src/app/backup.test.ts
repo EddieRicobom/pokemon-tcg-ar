@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyBackup, applyFullBackup, BACKUP_FORMAT, BACKUP_KEYS, backupFileName, buildBackup, buildFullBackup, parseBackup, parseBackupZip, serializeBackup, serializeBackupZip } from './backup';
+import { applyBackup, applyFullBackup, BACKUP_FILE_EXTENSION, BACKUP_FILE_MIME, BACKUP_FORMAT, BACKUP_KEYS, backupFileName, buildBackup, buildFullBackup, parseBackup, parseBackupBytes, parseBackupZip, serializeBackup, serializeBackupZip } from './backup';
 import { openCacheDb } from '../cache/db';
 import { applyEvent, emptyTrainer, normalizeTrainer } from '../core/trainer';
 import { loadVillage, saveVillage } from './village-store';
@@ -59,7 +59,14 @@ describe('backup — exportar', () => {
   it('serializa como JSON legível e com um nome de arquivo datado', () => {
     const file = buildBackup(localStorage, NOW);
     expect(() => JSON.parse(serializeBackup(file))).not.toThrow();
-    expect(backupFileName(new Date(NOW))).toBe('pokemon-tcg-ar-backup-2026-10-16.zip');
+    expect(backupFileName(new Date(NOW))).toBe(`pokemon-tcg-ar-backup-2026-10-16.${BACKUP_FILE_EXTENSION}`);
+    expect(BACKUP_FILE_MIME).toBe('application/octet-stream');
+  });
+
+  it('reconhece o arquivo pelo conteúdo mesmo quando o nome e o MIME foram mascarados', () => {
+    const file = buildBackup(localStorage, NOW);
+    expect(parseBackupBytes(serializeBackupZip(file))).toEqual(file);
+    expect(parseBackupBytes(new TextEncoder().encode(serializeBackup(file)))).toEqual(file);
   });
 
   it('empacota o manifesto e recupera o backup ZIP', () => {

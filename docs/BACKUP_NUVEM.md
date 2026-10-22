@@ -7,11 +7,11 @@ O app continua hospedado no GitHub Pages. O navegador usa a API do Drive e o log
 Treinador → Seus dados → Backup no Google Drive:
 
 1. Preparar login Google carrega o SDK; Conectar abre a autorização da conta.
-2. Enviar backup agora guarda um ZIP completo, incluindo progresso, ajustes, cartas reconhecidas, IndexedDB e arquivos do cache do app.
+2. Enviar backup agora guarda um arquivo completo compactado, incluindo progresso, ajustes, cartas reconhecidas, IndexedDB e arquivos do cache do app. A cópia usa extensão genérica `.dat` e `application/octet-stream`; isso mascara o tipo para o sistema de arquivos, mas não é criptografia.
 3. Em outro aparelho, abra o mesmo app e conecte à mesma conta Google. Atualize a lista, escolha Restaurar e confira a confirmação antes de substituir o estado local.
 4. Cada envio cria uma cópia independente por data. A lista mostra até 20 cópias recentes, sem apagar as anteriores. A nuvem usa espaço da conta Google. Não há sincronização automática ou fusão de saves.
 
-A restauração usa a mesma validação e recuperação de falhas do backup local. Falhas persistentes de armazenamento podem impedir também a recuperação; mantenha uma cópia ZIP baixada. Um backup não é um mecanismo contra trapaça nem prova autenticidade: seus hashes detectam corrupção dos arquivos cobertos pelo manifesto.
+A restauração usa a mesma validação e recuperação de falhas do backup local. Falhas persistentes de armazenamento podem impedir também a recuperação; mantenha uma cópia baixada. Um backup não é um mecanismo contra trapaça nem prova autenticidade: seus hashes detectam corrupção dos arquivos cobertos pelo manifesto. A importação identifica o formato pelos bytes, então continua funcionando se o arquivo for renomeado ou se o navegador alterar o MIME.
 
 ## Habilitar no projeto (pelo navegador)
 
@@ -26,7 +26,7 @@ O Client ID é público. **Não crie nem publique Client Secret, credencial de c
 ## Privacidade e limites
 
 - A permissão `drive.appdata` dá acesso apenas à pasta de dados criada por este aplicativo. Ela fica oculta no Drive normal; não permite ler os demais documentos do usuário.
-- O conteúdo completo do backup é enviado ao Google somente após o jogador pedir. O app não adiciona criptografia própria ao ZIP.
+- O conteúdo completo do backup é enviado ao Google somente após o jogador pedir. O app não adiciona criptografia própria ao arquivo compactado.
 - Tokens ficam apenas em memória e não entram no backup, localStorage ou Service Worker. Desconectar revoga a autorização; sair da tela descarta o token local e cancela as solicitações em andamento.
 - Autorização expirada exige nova conexão por gesto do usuário. A rede/Google pode falhar ou recusar o envio por falta de espaço.
 - Upload usa o protocolo resumable do Drive em uma transferência. Não retoma automaticamente após recarregar a página. Envio interrompido não remove backups antigos.
