@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyVillage, normalizeVillage, tickCrops } from './life';
 import { generateVillage, isWalkable, reachableFrom, tileAt } from './map';
-import { emptyFarm, FarmSession, FARM_RULES, normalizeFarm, stepFarmWorker, transferFarmSeeds } from './farm';
+import { emptyFarm, FarmSession, FARM_RULES, farmTaskProgress, normalizeFarm, stepFarmWorker, transferFarmSeeds } from './farm';
 import type { FarmWorker } from './farm';
 import { normalizeResidentProgress } from './community';
 import { itemDef } from './catalog';
@@ -18,6 +18,12 @@ function setup() {
 }
 
 describe('caixa de sementes e autonomia da fazenda', () => {
+  it('resume a tarefa sem ultrapassar 100% nem mostrar trabalho antes da chegada', () => {
+    expect(farmTaskProgress({ workingSince: null }, 10_000)).toEqual({ phase: 'caminho', percent: 0 });
+    expect(farmTaskProgress({ workingSince: 10_000 }, 14_999)).toEqual({ phase: 'trabalho', percent: 50 });
+    expect(farmTaskProgress({ workingSince: 10_000 }, 99_999)).toEqual({ phase: 'trabalho', percent: 100 });
+  });
+
   it('transfere sementes reais nos dois sentidos sem duplicar ou perder no limite', () => {
     const { state } = setup();
     state.inventory['sem-tomate'] = 7;

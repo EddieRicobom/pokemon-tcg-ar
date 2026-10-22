@@ -5108,6 +5108,15 @@ body.no-scroll .reward-toasts {
 
 .village-minimap-callout { color: #ffd4eb; }
 .village-minimap-route { color: #bfeeff; }
+.village-guided-status {
+  display: grid;
+  gap: 4px;
+  margin: 0 2px 6px;
+  color: #d8f5ff;
+  font-size: .64rem;
+  line-height: 1.25;
+}
+.village-guided-status .link { justify-self: start; padding: 0; color: #ffcee8; font-size: .66rem; }
 
 .village-minimap canvas {
   display: block;

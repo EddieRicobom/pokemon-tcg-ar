@@ -207,6 +207,21 @@ describe('momentos: sorteio', () => {
     expect(counts.size).toBeGreaterThan(20);
   });
 
+  it('não repete imediatamente o mesmo momento comum quando há alternativas', () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const { s, env } = richEnv();
+      const previous = pickMoment(actors, s, env, seededRng(seed));
+      expect(previous).not.toBeNull();
+      s.diary.push({
+        id: `previous-${seed}`, t: 1_000, day: '2026-10-14', hour: 14, tpl: previous!.tpl.id,
+        kind: previous!.tpl.kind, title: previous!.tpl.title, emoji: previous!.tpl.emoji,
+        cast: previous!.cast.map((actor) => ({ id: actor.id, name: actor.name })), lines: previous!.lines, result: [],
+      });
+      const next = pickMoment(actors, s, env, seededRng(seed + 10_000));
+      expect(next?.tpl.id).not.toBe(previous!.tpl.id);
+    }
+  });
+
   it('memórias recentes de rivalidade puxam revanche e permitem uma reconciliação', () => {
     const s = fresh();
     s.rel[pairKey('a', 'b')] = { bond: -8, spark: 0, flag: null, since: '2026-10-10', met: 2 };
