@@ -661,8 +661,16 @@ function drawEnemy(e: SurvivorEnemy): void {
     const y = e.y - (e.boss ? 46 : 26);
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(e.x - w / 2, y, w, 4);
-    ctx.fillStyle = e.boss ? '#f06a6a' : '#8be06a';
+    // O suporte usa rosa e um coração: a recuperação deixa de parecer um HP que voltou sozinho.
+    ctx.fillStyle = e.boss ? '#f06a6a' : e.archetype === 'suporte' ? '#ff78b7' : '#8be06a';
     ctx.fillRect(e.x - w / 2, y, w * clamp(e.hp / e.maxHp, 0, 1), 4);
+  }
+  if (e.archetype === 'suporte') {
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ff78b7';
+    ctx.fillText('♥', e.x + (e.boss ? 26 : 17), e.y - (e.boss ? 48 : 27));
   }
 }
 
@@ -958,6 +966,21 @@ function draw(): void {
           ctx.restore();
         }
       }
+    } else if (f.kind === 'heal') {
+      // Pulso rosa e coração subindo indicam explicitamente que um suporte recuperou este alvo.
+      const rise = t * 24;
+      ctx.globalAlpha = 0.9 * (1 - t);
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y - 10 - rise * 0.35, f.r * (0.45 + t * 0.55), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1 - t;
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = f.color;
+      ctx.fillText('+♥', f.x, f.y - 16 - rise);
     } else if (f.kind === 'artifact') {
       const color = f.color;
       ctx.globalAlpha = 0.8 * (1 - t);
