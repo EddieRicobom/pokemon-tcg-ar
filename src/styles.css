@@ -5033,6 +5033,50 @@ body.no-scroll .reward-toasts {
   font-size: 0.8rem;
 }
 
+.mail-list .mail-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: start;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid rgb(96 126 168 / 24%);
+  background: linear-gradient(145deg, rgb(255 255 255 / 94%), rgb(235 244 255 / 90%));
+  color: #1d2b3c;
+}
+
+.mail-list .mail-card.unread {
+  border-color: #e4aa3f;
+  box-shadow: inset 3px 0 #e4aa3f;
+}
+
+.mail-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #52647a;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mail-card-head b {
+  color: #b66c0a;
+}
+
+.mail-card > p {
+  margin: 3px 0;
+  white-space: pre-line;
+}
+
+.mail-actions {
+  margin-top: 3px;
+}
+
+.mail-list.archived .mail-card,
+.mail-list.archived li {
+  background: rgb(245 248 252 / 78%);
+}
+
 .village-pad {
   display: flex;
   justify-content: space-between;
