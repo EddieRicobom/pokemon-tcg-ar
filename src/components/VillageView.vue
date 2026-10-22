@@ -992,13 +992,15 @@ function handleGamepadDirection(event: Event): void {
 }
 function handleGamepadAction(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  if (custom.detail.handled) return;
+  // A Torre tem seu próprio alvo: deixe o evento chegar ao minigame para A ativar o especial.
+  if (custom.detail.handled || sheet.value === 'torre') return;
   custom.detail.handled = true;
   pressA();
 }
 function handleGamepadBack(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  if (custom.detail.handled) return;
+  // B pausa/retoma a Torre; não navegue para fora da Vila durante a corrida.
+  if (custom.detail.handled || sheet.value === 'torre') return;
   custom.detail.handled = true;
   pressB();
 }
