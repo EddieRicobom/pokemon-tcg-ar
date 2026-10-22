@@ -17,7 +17,7 @@ describe('diorama AR da Vila', () => {
     expect(VILLAGE_AR_TILT_DEG).toBe(0);
   });
 
-  it('inclina apenas os objetos verticais do Diorama em 45 graus', () => {
-    expect(VILLAGE_DIORAMA_OBJECT_TILT_DEG).toBe(45);
+  it('mantém sprites verticais porque a inclinação pertence à base 3D', () => {
+    expect(VILLAGE_DIORAMA_OBJECT_TILT_DEG).toBe(0);
   });
 });
