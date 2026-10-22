@@ -775,6 +775,13 @@ export function scoreMatch(won: boolean, shots: number, enemies: number): number
   return clamp(100 - Math.max(0, shots - enemies) * 7, 20, 100);
 }
 
+/** Bônus direto em moedas por vitória no Pins; partidas PvP ficam fora da carteira local. */
+export const PINS_WIN_COINS = 10;
+
+export function pinCoinReward(won: boolean): number {
+  return won ? PINS_WIN_COINS : 0;
+}
+
 /** Quem pode ser disparado agora com esta energia. */
 export function affordable(world: PinWorld, energy: number): Pin[] {
   return aliveOf(world, 0).filter((p) => p.cost <= energy);

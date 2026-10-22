@@ -10,7 +10,7 @@ import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
 import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/village/life';
 import type { FurnitureId, VillageState } from '../core/village/life';
-import { homeDecor, homeLevel, homeOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
+import { homeDecor, homeLevel, homeOf, homeStyleOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
 import { buildingGroundY, WORK_AREAS, WORK_SITES } from '../core/village/town-layout';
 import type { Building, BuildingKind, WorksiteId } from '../core/village/town-layout';
 import { buildingAt, findFree, isSolidTile, isWalkable, tileAt } from '../core/village/map';
@@ -1608,7 +1608,8 @@ export class VillageGame {
         const lvl = homeLevel(v);
         const decor = homeDecor(v);
         const roof = ROOFS[roofIndex(v, lot)]!.rgb;
-        const img = this.sprite(`home:${lvl}:${roof}:${decor}`, () => paintHome(lvl, roof, decor));
+        const style = homeStyleOf(this.state, lot);
+        const img = this.sprite(`home:${lvl}:${roof}:${decor}:${style}`, () => paintHome(lvl, roof, decor, style));
         const who = [...this.homes].filter(([, l]) => l === lot).map(([id]) => id);
         const sleeping = who.length > 0 && who.every((id) => this.asleep.has(id));
         list.push({

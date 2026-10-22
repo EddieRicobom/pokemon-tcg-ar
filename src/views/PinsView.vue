@@ -9,11 +9,11 @@ import { defaultSetup, loadSetup, roleOf, saveSetup, setRole, setupBlocker } fro
 import type { PinsSetup, Role } from '../app/pins-setup';
 import { routeFlags, routeHref } from '../app/route';
 import { recordEvent } from '../app/trainer-store';
-import { coins, spendCoins } from '../app/wallet';
+import { addCoins, coins, spendCoins } from '../app/wallet';
 import { seededRng } from '../core/battle';
 import {
   advanceRound, afterShot, affordable, aliveOf, arenaLimit, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE, MAX_PULL,
-  nextLimit, outcomeOf, pinFromSpec, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
+  nextLimit, outcomeOf, pinCoinReward, pinFromSpec, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
 } from '../core/pins';
 import { randomOpponents } from '../core/pin-opponents';
 import { planEnemyShot } from '../core/pin-ai';
@@ -85,7 +85,7 @@ const message = ref('');
 const tray = ref<TrayPin[]>([]);
 const selectedId = ref<string | null>(null);
 const selectedMove = ref<number | null>(null);
-const result = ref<{ won: boolean; reason: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'; shots: number; score: number } | null>(null);
+const result = ref<{ won: boolean; reason: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'; shots: number; score: number; coins: number } | null>(null);
 const counts = ref({ mine: 0, enemy: 0 });
 const shotCount = ref(0);
 
@@ -759,7 +759,8 @@ function endGame(kind: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'): void {
   phase.value = 'over';
   const won = kind === 'won';
   const score = pvpMatch.value ? 0 : scoreMatch(won, shots, setup.value.enemy.length);
-  result.value = { won, reason: kind, shots, score };
+  const coinReward = !pvpMatch.value ? addCoins(pinCoinReward(won)) : 0;
+  result.value = { won, reason: kind, shots, score, coins: coinReward };
   message.value = '';
   // Contra um amigo não vale XP nem recorde (nada impede alguém de mexer no próprio aparelho).
   if (!pvpMatch.value) recordEvent({ type: 'minigame', game: 'pins', won, score });
@@ -1744,6 +1745,7 @@ function setMarks(on: boolean): void {
           <p class="pn-over-stats">
             <span>{{ result.shots }} disparo{{ result.shots === 1 ? '' : 's' }}</span>
             <span v-if="result.won && !pvpMatch">nota {{ result.score }}</span>
+            <span v-if="result.coins > 0">+{{ result.coins }} moedas</span>
           </p>
           <p v-if="result.reason === 'saiu'">A conexão com o amigo acabou. Você pode escolher os pins de novo e criar outra sala.</p>
           <p v-else-if="result.reason === 'empate'">Os dois lados perderam o último pin na mesma jogada.</p>

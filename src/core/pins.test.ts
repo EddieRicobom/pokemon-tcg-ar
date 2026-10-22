@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { seededRng } from './battle';
 import {
   advanceRound, afterShot, affordable, arenaLimit, limitForRound, MIN_LIMIT, nextLimit, SHRINK_AFTER_ROUND, SHRINK_STEP, ARENA_RADIUS, aliveOf, buildPatches, canUse, chooseEnemyShot, clearEffects, cooldownFor, createWorld, effectForAttack, isSettled, launch,
-  launchSpeed, layoutPins, massOf, MAX_MOVES, MAX_PER_SIDE, MAX_PULL, MIN_PULL, outcomeOf, pinFromSpec, previewPath, scoreMatch, shotFromDrag, stepWorld, STOP_SPEED, typeKnockback,
+  launchSpeed, layoutPins, massOf, MAX_MOVES, MAX_PER_SIDE, MAX_PULL, MIN_PULL, outcomeOf, pinCoinReward, pinFromSpec, previewPath, scoreMatch, shotFromDrag, stepWorld, STOP_SPEED, typeKnockback,
   typesOf, weightMass,
 } from './pins';
 import { cellOfWorld, createArenaGrid, frictionOfCell, stampType, terrainAffinity, TYPE_FOR_TERRAIN } from './pin-terrain';
@@ -352,6 +352,11 @@ describe('energia e nota', () => {
     expect(scoreMatch(true, 3, 3)).toBe(100);
     expect(scoreMatch(true, 8, 3)).toBeLessThan(scoreMatch(true, 5, 3));
     expect(scoreMatch(true, 99, 3)).toBe(20);
+  });
+
+  it('dá moedas somente por vitória contra o computador', () => {
+    expect(pinCoinReward(true)).toBe(10);
+    expect(pinCoinReward(false)).toBe(0);
   });
 
   it('o layout não deixa pins sobrepostos, mesmo com 10 pesados num lado', () => {

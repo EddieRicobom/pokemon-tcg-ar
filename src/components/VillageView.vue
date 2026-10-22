@@ -63,7 +63,7 @@ import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUE
 import type { Follow, Question } from '../core/village/quiz';
 import {
   assignHomes, CAFE_PRICE, cafeVisit, collectMail, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, knockDoor, LOTS, nextUnlock, paintRoof, PAINT_COST, residentsOf, ROOFS, roofIndex,
-  toggleDecor, townStage, unlockedBetween, upgradeHome,
+  HOME_EXTERIOR_STYLES, homeStyleOf, personalizeResidentHomes, setHomeStyle, toggleDecor, townStage, unlockedBetween, upgradeHome,
 } from '../core/village/town';
 import type { Building } from '../core/village/town';
 import type { Moment, MomentKind } from '../core/village/social-state';
@@ -828,9 +828,11 @@ const sellable = computed(() => inventory.value.filter((i) => i.sell > 0));
 const giftable = computed(() => inventory.value.filter((i) => i.kind !== 'accessory'));
 const nextHouse = computed(() => HOUSE_LEVELS[state.house + 1] ?? null);
 const selectedHomeItem = ref<ItemId | null>(null);
+const homeInteriorLot = ref<number | null>(null);
 const homeFurniture = computed(() => FURNITURE_IDS.filter((id) => count(state, id) > 0));
+const displayedHomeInterior = computed(() => homeInteriorLot.value === null ? state.homeInterior : state.homeInteriors[String(homeInteriorLot.value)] ?? { wallpaper: 'creme' as const, floor: 'carvalho' as const, placed: [] });
 function homeItemAt(x: number, y: number): string | undefined {
-  return state.homeInterior.placed.find((entry) => entry.x === x && entry.y === y)?.item;
+  return displayedHomeInterior.value.placed.find((entry) => entry.x === x && entry.y === y)?.item;
 }
 function homeItemNameAt(x: number, y: number): string {
   const item = homeItemAt(x, y);
@@ -838,16 +840,28 @@ function homeItemNameAt(x: number, y: number): string {
 }
 function openPlayerHome(): void {
   if (state.house < 1) { sheet.value = 'build'; return; }
+  homeInteriorLot.value = null;
   selectedHomeItem.value = null;
   sheet.value = 'home';
 }
 function useHomeCell(x: number, y: number): void {
+  if (homeInteriorLot.value !== null) return;
   const existing = homeItemAt(x, y);
   if (existing) { act(homePickUp(state, x, y)); return; }
   if (!selectedHomeItem.value) { say('Escolha um móvel da mochila para colocar nesse espaço.'); return; }
   const r = homePlace(state, selectedHomeItem.value, x, y);
   act(r);
   if (r.ok && count(state, selectedHomeItem.value) === 0) selectedHomeItem.value = null;
+}
+function setHomeWallpaper(value: string): void {
+  if (homeInteriorLot.value !== null) return;
+  if (['creme', 'floral', 'noite', 'madeira'].includes(value)) state.homeInterior.wallpaper = value as typeof state.homeInterior.wallpaper;
+  changed();
+}
+function setHomeFloor(value: string): void {
+  if (homeInteriorLot.value !== null) return;
+  if (['carvalho', 'xadrez', 'grama', 'ladrilho'].includes(value)) state.homeInterior.floor = value as typeof state.homeInterior.floor;
+  changed();
 }
 const shopItems = computed(() => shopToday(day.value));
 const collection = computed(() => FURNITURE_IDS.map((id) => ({ id, name: itemName(id), have: state.collected.includes(id), group: itemDef(id)?.group ?? '' })));
@@ -1260,6 +1274,13 @@ let homes = new Map<string, number>();
 function refreshTown(): void {
   homes = assignHomes(mons.value.map((m) => m.id), level.value);
   game?.setTown(level.value, homes);
+  const changes = personalizeResidentHomes(state, homes);
+  if (changes.length > 0) {
+    changed();
+    const first = changes[0]!;
+    const names = changes.slice(0, 3).map((change) => nameOf(change.residentId)).join(', ');
+    say(`🏠 ${names} ${changes.length === 1 ? 'decorou a própria casa' : 'decoraram as próprias casas'}${first.items.length ? ` com ${first.items.join(', ')}` : ''}.`, 5200);
+  }
 }
 
 /** Entrou na Vila com o nível mais alto que da última vez: a cidade cresceu. */
@@ -1709,7 +1730,7 @@ function knockAt(b: Building, ids: string[]): void {
   dialog.value = { name: ids.length === 1 ? nameOf(ids[0]!) : `Casa ${lot + 1}`, text: r.text, actions };
 }
 
-function openHome(b: Building, view: 'main' | 'decor' | 'roof' = 'main'): void {
+function openHome(b: Building, view: 'main' | 'decor' | 'roof' | 'inside' = 'main'): void {
   const lot = b.lot ?? 0;
   const ids = residentsOf(homes, lot);
   const names = ids.map((id) => nameOf(id));
@@ -1717,7 +1738,17 @@ function openHome(b: Building, view: 'main' | 'decor' | 'roof' = 'main'): void {
   const lvl = homeLevel(v);
   const sleeping = ids.length > 0 && ids.every((id) => game?.isAsleep(id));
   const title = ids.length === 0 ? `Terreno ${lot + 1} · livre` : `${HOME_STAGES[lvl]!.name} · ${names.join(' e ')}`;
-  const again = (to: 'main' | 'decor' | 'roof' = view) => openHome(b, to);
+  const again = (to: 'main' | 'decor' | 'roof' | 'inside' = view) => openHome(b, to);
+  if (view === 'inside') {
+    if (ids.length === 0) {
+      dialog.value = { name: title, text: 'Este terreno ainda está vazio. Quando alguém vier morar aqui, a casa vai ganhar um interior próprio.', actions: [{ label: 'Voltar', run: () => again('main') }] };
+      return;
+    }
+    dialog.value = null;
+    homeInteriorLot.value = lot;
+    sheet.value = 'home';
+    return;
+  }
   if (view === 'decor') {
     dialog.value = {
       name: title,
@@ -1739,6 +1770,16 @@ function openHome(b: Building, view: 'main' | 'decor' | 'roof' = 'main'): void {
             },
           };
         }),
+        ...HOME_EXTERIOR_STYLES.map((style) => ({
+          label: style.id === homeStyleOf(state, lot) ? `✓ Fachada ${style.name}` : `Fachada ${style.name} (${style.cost})`,
+          disabled: style.id === homeStyleOf(state, lot) || state.coins < style.cost,
+          run: () => {
+            const result = setHomeStyle(state, lot, style.id, ids);
+            say(result.message);
+            if (result.ok) { changed(); for (const id of ids) game?.pop(id, '✨'); }
+            again('decor');
+          },
+        })),
         { label: 'Voltar', run: () => again('main') },
       ],
     };
@@ -1785,6 +1826,7 @@ function openHome(b: Building, view: 'main' | 'decor' | 'roof' = 'main'): void {
     }
     actions.push({ label: 'Decorar', run: () => again('decor') });
     actions.push({ label: 'Pintar o telhado', run: () => again('roof') });
+    actions.push({ label: 'Entrar e decorar por dentro', run: () => again('inside') });
   }
   actions.push({ label: 'Sair', run: closeDialog });
   dialog.value = { name: title, text: next && ids.length > 0 ? `${comment}\n\nReforma (${next.name}): ${describeCost(state, next.cost)}.` : comment, actions };
@@ -2754,18 +2796,20 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" aria-label="Interior da sua casa">
-        <header><strong>🏠 Sua casa</strong><button type="button" class="link" @click="sheet = null">Sair</button></header>
-        <p class="hint">Toque num móvel para guardá-lo. Escolha um da mochila e toque num espaço vazio para decorar.</p>
-        <section class="home-room" :class="[`home-wall-${state.homeInterior.wallpaper}`, `home-floor-${state.homeInterior.floor}`]" aria-label="Planta interna da casa">
-          <button v-for="n in 35" :key="n" type="button" class="home-slot" :aria-label="homeItemAt((n - 1) % 7, Math.floor((n - 1) / 7)) ? `Guardar ${homeItemNameAt((n - 1) % 7, Math.floor((n - 1) / 7))}` : 'Espaço vazio da casa'" @click="useHomeCell((n - 1) % 7, Math.floor((n - 1) / 7))">
+      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" :aria-label="homeInteriorLot === null ? 'Interior da sua casa' : 'Interior da casa de um morador'">
+        <header><strong>🏠 {{ homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}` }}</strong><button type="button" class="link" @click="sheet = null">Sair</button></header>
+        <p v-if="homeInteriorLot === null" class="hint">Toque num móvel para guardá-lo. Escolha um da mochila e toque num espaço vazio para decorar, como num quarto de Animal Crossing.</p>
+        <p v-else class="hint">Este interior é comprado e organizado pelos moradores. Cada personalidade escolhe cores e móveis diferentes.</p>
+        <section class="home-room" :class="[`home-wall-${displayedHomeInterior.wallpaper}`, `home-floor-${displayedHomeInterior.floor}`]" aria-label="Planta interna da casa">
+          <button v-for="n in 35" :key="n" type="button" class="home-slot" :disabled="homeInteriorLot !== null" :aria-label="homeItemAt((n - 1) % 7, Math.floor((n - 1) / 7)) ? `Guardar ${homeItemNameAt((n - 1) % 7, Math.floor((n - 1) / 7))}` : 'Espaço vazio da casa'" @click="useHomeCell((n - 1) % 7, Math.floor((n - 1) / 7))">
             <img v-if="homeItemAt((n - 1) % 7, Math.floor((n - 1) / 7))" :src="icon(homeItemAt((n - 1) % 7, Math.floor((n - 1) / 7) ) ?? '')" :alt="homeItemNameAt((n - 1) % 7, Math.floor((n - 1) / 7))" />
           </button>
         </section>
         <div class="home-style">
-          <label>Parede <select v-model="state.homeInterior.wallpaper" @change="changed"><option value="creme">Creme</option><option value="floral">Floral</option><option value="noite">Noite estrelada</option><option value="madeira">Madeira</option></select></label>
-          <label>Piso <select v-model="state.homeInterior.floor" @change="changed"><option value="carvalho">Carvalho</option><option value="xadrez">Xadrez</option><option value="grama">Grama interna</option><option value="ladrilho">Ladrilho</option></select></label>
+          <label>Parede <select :value="displayedHomeInterior.wallpaper" :disabled="homeInteriorLot !== null" @change="setHomeWallpaper(($event.target as HTMLSelectElement).value)"><option value="creme">Creme</option><option value="floral">Floral</option><option value="noite">Noite estrelada</option><option value="madeira">Madeira</option></select></label>
+          <label>Piso <select :value="displayedHomeInterior.floor" :disabled="homeInteriorLot !== null" @change="setHomeFloor(($event.target as HTMLSelectElement).value)"><option value="carvalho">Carvalho</option><option value="xadrez">Xadrez</option><option value="grama">Grama interna</option><option value="ladrilho">Ladrilho</option></select></label>
         </div>
+        <template v-if="homeInteriorLot === null">
         <h3>Móveis na mochila</h3>
         <p v-if="selectedHomeItem" class="hint">Selecionado: <strong>{{ itemName(selectedHomeItem) }}</strong>. Toque num espaço livre para colocar.</p>
         <ul class="item-grid home-inventory">
@@ -2775,6 +2819,7 @@ onBeforeUnmount(() => {
           <li v-if="homeFurniture.length === 0" class="hint">Nenhum móvel na mochila. Visite a Loja, fabrique algo ou recolha itens do quintal.</li>
         </ul>
         <button v-if="nextHouse" type="button" class="link" @click="sheet = 'build'">Reformar a fachada</button>
+        </template>
       </div>
 
       <div v-if="sheet === 'shop'" class="village-sheet" role="dialog" aria-label="Loja da Vila">

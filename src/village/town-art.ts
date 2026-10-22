@@ -1,6 +1,7 @@
 import { createBuf } from '../box/ground-art';
 import type { PixelBuf } from '../box/ground-art';
 import { disc, outline, put, rect } from './village-art';
+import type { HomeExteriorStyle } from '../core/village/town-layout';
 
 /**
  * Pixel art da cidadinha da Vila, toda por código: a casa dos Pokémon em quatro níveis (com telhado de cor escolhida e
@@ -45,10 +46,11 @@ export const HOME_WINDOWS: readonly (readonly (readonly number[])[])[] = [
 export const HOME_LANTERN = { x: 15, y: 33 };
 
 /** A casa de um Pokémon (48×48: o telhado sobe 16 pontos acima do chão de 2 blocos). */
-export function paintHome(level: number, roofRgb: number, decor: number): PixelBuf {
+export function paintHome(level: number, roofRgb: number, decor: number, style: HomeExteriorStyle = 'rústico'): PixelBuf {
   const b = createBuf(48, 48);
   const lvl = Math.max(0, Math.min(3, level));
-  const wall = [0xc8985a, 0xb88450, 0xc4573e, 0xf3e8d0][lvl]!;
+  const baseWall = [0xc8985a, 0xb88450, 0xc4573e, 0xf3e8d0][lvl]!;
+  const wall = style === 'jardim' ? mix(baseWall, 1.08) : style === 'festivo' ? (lvl === 3 ? 0xffd58a : 0xd96a5d) : style === 'moderno' ? (lvl < 2 ? 0x9eb4c9 : 0xe7edf2) : baseWall;
   const trim = mix(wall, 0.78);
   const geo = [
     { x0: 8, x1: 39, top: 30, apex: 12, base: 32, half: 22, cx: 24 },
@@ -71,6 +73,14 @@ export function paintHome(level: number, roofRgb: number, decor: number): PixelB
     for (const x of [geo.x0, geo.x1 - 1, 23]) rect(b, x, geo.top, 2, 47 - geo.top, 0x8a5a2e);
   }
   gable(b, geo.cx, geo.apex, geo.base, geo.half, roofRgb);
+  if (style === 'festivo') {
+    for (let x = geo.cx - 18; x <= geo.cx + 18; x += 6) put(b, x, geo.base + 3 + (x % 4 === 0 ? 1 : 0), [0xffd84a, 0xf06048, 0x4f8fe0][Math.abs(x / 6) % 3]!);
+  } else if (style === 'jardim') {
+    for (const x of [geo.x0 + 2, geo.x1 - 2]) { rect(b, x, 39, 2, 5, 0x4aa84a); put(b, x - 1, 38, 0xffd84a); put(b, x + 2, 38, 0xf08ab0); }
+  } else if (style === 'moderno') {
+    rect(b, geo.x0 + 2, geo.top + 3, 2, 12, 0xd8e6ef);
+    rect(b, geo.x1 - 3, geo.top + 3, 2, 12, 0xd8e6ef);
+  }
   if (lvl >= 2) {
     rect(b, 34, geo.apex + 4, 6, 12, 0x9a968e);
     rect(b, 33, geo.apex + 3, 8, 2, 0x6e6a64);

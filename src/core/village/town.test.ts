@@ -3,8 +3,7 @@ import { seededRng } from '../battle';
 import { add, emptyVillage, friendOf, normalizeVillage, place } from './life';
 import { buildingAt, generateVillage, isSolidTile, tileAt } from './map';
 import {
-  assignHomes, cafeVisit, CAFE_PRICE, collectMail, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, homeRoof, homeValue, isAsleep, isDeepSleep, knockDoor, KNOCK_STAY_UP_MS, knockOpenChance, nextUnlock, paintRoof, ROOFS, roofIndex,
-  sanitizeTown, toggleDecor, townStage, unlockedBetween, unlockedLots, upgradeHome,
+  assignHomes, cafeVisit, CAFE_PRICE, collectMail, HOME_DECORS, HOME_EXTERIOR_STYLES, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, homeRoof, homeStyleOf, homeValue, isAsleep, isDeepSleep, knockDoor, KNOCK_STAY_UP_MS, knockOpenChance, nextUnlock, paintRoof, personalizeResidentHomes, ROOFS, roofIndex, sanitizeTown, setHomeStyle, toggleDecor, townStage, unlockedBetween, unlockedLots, upgradeHome,
 } from './town';
 import { buildingGroundY, CIVIC, DECOR, LOTS, TOWN, TOWN_STAGES } from './town-layout';
 
@@ -226,6 +225,38 @@ describe('casas, enfeites e telhado', () => {
     expect(bad.homes.z).toBeUndefined();
     expect(bad.town).toEqual({ level: 1, mailDay: '', cafeDay: '' });
     expect(normalizeVillage({ v: 1 }, 20261014, map.spawn).homes).toEqual({});
+  });
+});
+
+describe('casas personalizadas dos moradores', () => {
+  it('gera interiores coerentes com a personalidade e preserva a escolha no segundo carregamento', () => {
+    const s = fresh();
+    const homes = assignHomes(['resident-a', 'resident-b'], 1);
+    const first = personalizeResidentHomes(s, homes);
+    expect(first.length).toBeGreaterThan(0);
+    for (const [lot, interior] of Object.entries(s.homeInteriors)) {
+      expect(interior.wallpaper).toMatch(/^(creme|floral|noite|madeira)$/);
+      expect(interior.floor).toMatch(/^(carvalho|xadrez|grama|ladrilho)$/);
+      expect(interior.placed.length).toBeGreaterThan(0);
+      expect(interior.placed.every((item) => item.x >= 0 && item.x < 7 && item.y >= 0 && item.y < 5)).toBe(true);
+      expect(homeStyleOf(s, Number(lot))).toBe(s.homeStyles[lot]);
+    }
+    const snapshot = JSON.stringify({ interiors: s.homeInteriors, styles: s.homeStyles });
+    expect(personalizeResidentHomes(s, homes)).toEqual([]);
+    expect(JSON.stringify({ interiors: s.homeInteriors, styles: s.homeStyles })).toBe(snapshot);
+  });
+
+  it('permite ao jogador trocar a fachada com custo e uma pequena reação do morador', () => {
+    const s = fresh();
+    s.coins = 100;
+    const target = HOME_EXTERIOR_STYLES.find((style) => style.cost > 0)!;
+    const beforeFriendship = friendOf(s, 'resident-a').points;
+    const result = setHomeStyle(s, 0, target.id, ['resident-a']);
+    expect(result.ok).toBe(true);
+    expect(s.coins).toBe(100 - target.cost);
+    expect(homeStyleOf(s, 0)).toBe(target.id);
+    expect(friendOf(s, 'resident-a').points).toBe(beforeFriendship + 1);
+    expect(setHomeStyle(s, 0, target.id, ['resident-a']).ok).toBe(false);
   });
 });
 

@@ -13,8 +13,8 @@ import type { LegendaryState } from './legendary';
 import { emptyWorldProgress, normalizeWorldProgress, weeklyModifiers } from './world-progress';
 import type { DiscoveryState, Expedition, WeeklyState } from './world-progress';
 import type { VillageRequest } from './requests';
-import { emptyHomeInterior, normalizeHomeInterior } from './home-interior';
-import type { HomeInterior } from './home-interior';
+import { emptyHomeInterior, normalizeHomeInterior, normalizeHomeInteriors } from './home-interior';
+import type { HomeInterior, HomeInteriors } from './home-interior';
 import { emptyCommunity, normalizeCommunity } from './community';
 import type { CommunityState } from './community';
 import { emptyFarm, normalizeFarm } from './farm';
@@ -81,6 +81,8 @@ export interface VillageState {
   placed: { x: number; y: number; item: FurnitureId }[];
   /** Decoração interna da casa do jogador. Não ocupa blocos da Vila. */
   homeInterior: HomeInterior;
+  /** Decoração interna que cada casa de morador compra para si, indexada pelo terreno. */
+  homeInteriors: HomeInteriors;
   friends: Record<string, Friendship>;
   /** Último dia em que cada bloco foi coletado ("x,y" → dia). */
   harvested: Record<string, string>;
@@ -122,6 +124,8 @@ export interface VillageState {
   battleCoins: { day: string; count: number };
   /** A mini cidade (ver `town.ts`): nível de cada casa de Pokémon e o que já foi feito hoje nos prédios. */
   homes: Record<string, number>;
+  /** Estilo visual exterior escolhido para cada casa de morador. */
+  homeStyles: Record<string, string>;
   town: { level: number; mailDay: string; cafeDay: string };
   /** Pedidos diários do mural da praça. */
   requests: { day: string; items: VillageRequest[]; story: VillageRequest[] };
@@ -151,10 +155,10 @@ export interface Crop {
 
 export function emptyVillage(seed: number, spawn: { x: number; y: number }): VillageState {
   return {
-    v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), friends: {}, harvested: {}, follower: null,
+    v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), homeInteriors: {}, friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
-    digital: emptyDigital(), hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), ...emptyWorldProgress(),
+    digital: emptyDigital(), hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), ...emptyWorldProgress(), homeStyles: {},
   };
 }
 
@@ -198,6 +202,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     house: Number.isInteger(r.house) ? Math.max(0, Math.min(HOUSE_LEVELS.length - 1, r.house!)) : 0,
     placed: Array.isArray(r.placed) ? r.placed.filter((f) => f && Number.isInteger(f.x) && Number.isInteger(f.y) && FURNITURE_IDS.includes(f.item)).slice(0, 300) : [],
     homeInterior: normalizeHomeInterior(r.homeInterior),
+    homeInteriors: normalizeHomeInteriors(r.homeInteriors),
     friends: r.friends && typeof r.friends === 'object' ? r.friends : {},
     harvested: r.harvested && typeof r.harvested === 'object' ? r.harvested : {},
     follower: typeof r.follower === 'string' ? r.follower : null,
@@ -213,6 +218,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     ...normalizeSocial(r),
     claimed: Array.isArray(r.claimed) ? [...new Set(r.claimed.filter((id): id is string => typeof id === 'string' && id.length <= 40))].slice(0, 200) : [],
     homes: r.homes && typeof r.homes === 'object' ? Object.fromEntries(Object.entries(r.homes).filter(([k, v]) => k.length <= 80 && Number.isInteger(v)).slice(0, 80).map(([k, v]) => [k, Math.max(0, Math.min(511, v as number))])) : {},
+    homeStyles: r.homeStyles && typeof r.homeStyles === 'object' ? Object.fromEntries(Object.entries(r.homeStyles).filter(([k, v]) => k.length <= 80 && typeof v === 'string').slice(0, 80)) : {},
     town: { level: Number.isInteger(r.town?.level) ? Math.max(1, Math.min(99, r.town!.level)) : 1, mailDay: typeof r.town?.mailDay === 'string' ? r.town.mailDay.slice(0, 12) : '', cafeDay: typeof r.town?.cafeDay === 'string' ? r.town.cafeDay.slice(0, 12) : '' },
     requests: normalizeRequests(r.requests),
     fishing: r.fishing && typeof r.fishing.day === 'string' && Number.isInteger(r.fishing.casts) ? { day: r.fishing.day, casts: Math.max(0, Math.min(99, r.fishing.casts)) } : { day: '', casts: 0 },

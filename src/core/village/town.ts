@@ -1,14 +1,20 @@
 import type { Rng } from '../battle';
 import { add, canAfford, friendOf, itemName, pay } from './life';
 import type { Interaction, ItemId, VillageState } from './life';
+import { FURNITURE_IDS, itemDef } from './catalog';
+import { emptyHomeInterior, normalizeHomeInterior } from './home-interior';
+import type { HomeInterior } from './home-interior';
 import { cutsOff, isFront, isSolidTile, tileAt } from './map';
 import type { VillageMap } from './map';
-import { hash } from './personality';
-import { CIVIC, LOTS, TOWN_STAGES, townStage } from './town-layout';
+import { hash, personalityOf } from './personality';
+import { CIVIC, HOME_EXTERIOR_STYLES, LOTS, TOWN_STAGES, townStage } from './town-layout';
+import type { HomeExteriorStyle } from './town-layout';
 import type { Building } from './town-layout';
 
 export { buildingAt } from './map';
 export { LOTS, TOWN_STAGES, townStage };
+export { HOME_EXTERIOR_STYLES };
+export type { HomeExteriorStyle };
 export type { Building };
 
 /**
@@ -139,6 +145,73 @@ export function paintRoof(s: VillageState, lot: number, roof: number, residents:
     f.points = Math.min(100, f.points + 1);
   }
   return { ok: true, message: `Telhado ${ROOFS[roof]!.name.toLowerCase()} pronto!` };
+}
+
+export function homeStyleOf(s: VillageState, lot: number): HomeExteriorStyle {
+  const chosen = s.homeStyles[String(lot)];
+  return HOME_EXTERIOR_STYLES.some((style) => style.id === chosen) ? chosen as HomeExteriorStyle : HOME_EXTERIOR_STYLES[lot % HOME_EXTERIOR_STYLES.length]!.id;
+}
+
+/** Troca a linguagem visual da fachada; o telhado e os enfeites continuam independentes. */
+export function setHomeStyle(s: VillageState, lot: number, style: HomeExteriorStyle, residents: readonly string[]): Interaction {
+  const chosen = HOME_EXTERIOR_STYLES.find((entry) => entry.id === style);
+  if (!chosen) return { ok: false, message: 'Esse estilo de fachada não existe.' };
+  if (homeStyleOf(s, lot) === style && s.homeStyles[String(lot)] === style) return { ok: false, message: 'A fachada já está nesse estilo.' };
+  if (s.coins < chosen.cost) return { ok: false, message: `${chosen.name} custa ${chosen.cost} moedas.` };
+  s.coins -= chosen.cost;
+  s.homeStyles[String(lot)] = style;
+  for (const id of residents) friendOf(s, id).points = Math.min(100, friendOf(s, id).points + 1);
+  return { ok: true, message: `Fachada ${chosen.name.toLowerCase()} pronta: ${chosen.description}.` };
+}
+
+const RESIDENT_HOME_PREFS: Readonly<Record<string, { style: HomeExteriorStyle; wallpaper: HomeInterior['wallpaper']; floor: HomeInterior['floor']; items: readonly string[] }>> = {
+  Brincalhão: { style: 'festivo', wallpaper: 'floral', floor: 'grama', items: ['bola-praia', 'cama-elastica', 'pelucia'] },
+  Calmo: { style: 'jardim', wallpaper: 'noite', floor: 'carvalho', items: ['samambaia', 'poltrona', 'aquario'] },
+  Tímido: { style: 'rústico', wallpaper: 'madeira', floor: 'xadrez', items: ['cama', 'tapete', 'estante'] },
+  Corajoso: { style: 'moderno', wallpaper: 'madeira', floor: 'ladrilho', items: ['trofeu', 'piano', 'banco-cogumelo'] },
+  Guloso: { style: 'jardim', wallpaper: 'floral', floor: 'xadrez', items: ['mesa-cha', 'geladeira', 'fogao'] },
+  Sonhador: { style: 'moderno', wallpaper: 'noite', floor: 'carvalho', items: ['globo', 'quadro-mar', 'sofa-nuvem'] },
+  Curioso: { style: 'festivo', wallpaper: 'creme', floor: 'ladrilho', items: ['aquario', 'computador', 'maquina-gacha'] },
+  Mandão: { style: 'moderno', wallpaper: 'creme', floor: 'ladrilho', items: ['estante', 'televisao', 'trofeu'] },
+};
+const RESIDENT_ROOM_SLOTS = [{ x: 1, y: 1 }, { x: 3, y: 2 }, { x: 5, y: 3 }, { x: 2, y: 4 }] as const;
+
+export interface ResidentHomeChange {
+  lot: number;
+  residentId: string;
+  style: HomeExteriorStyle;
+  items: string[];
+}
+
+/** Moradores compram peças com o próprio orçamento simulado; isso não retira itens da mochila do jogador. */
+export function personalizeResidentHomes(s: VillageState, homes: ReadonlyMap<string, number>): ResidentHomeChange[] {
+  const groups = new Map<number, string[]>();
+  for (const [id, lot] of homes) groups.set(lot, [...(groups.get(lot) ?? []), id]);
+  const changes: ResidentHomeChange[] = [];
+  for (const [lot, ids] of groups) {
+    const residentId = [...ids].sort()[0];
+    if (!residentId) continue;
+    const personality = personalityOf(residentId).name;
+    const pref = RESIDENT_HOME_PREFS[personality] ?? RESIDENT_HOME_PREFS.Calmo!;
+    const key = String(lot);
+    const interior = s.homeInteriors[key] ? normalizeHomeInterior(s.homeInteriors[key]) : emptyHomeInterior();
+    const before = JSON.stringify(interior);
+    interior.wallpaper = pref.wallpaper;
+    interior.floor = pref.floor;
+    const target = Math.min(RESIDENT_ROOM_SLOTS.length, Math.max(1, homeLevel(homeOf(s, lot)) + 1));
+    const bought: string[] = [];
+    for (const id of pref.items) {
+      if (interior.placed.length >= target || !FURNITURE_IDS.includes(id) || interior.placed.some((entry) => entry.item === id)) continue;
+      const slot = RESIDENT_ROOM_SLOTS[interior.placed.length];
+      if (!slot) break;
+      interior.placed.push({ ...slot, item: id });
+      bought.push(itemDef(id)?.name ?? id);
+    }
+    s.homeInteriors[key] = interior;
+    if (!s.homeStyles[key]) s.homeStyles[key] = pref.style;
+    if (before !== JSON.stringify(interior) || bought.length > 0) changes.push({ lot, residentId, style: pref.style, items: bought });
+  }
+  return changes;
 }
 
 /** O que os moradores comentam quando você espia a casa. */
