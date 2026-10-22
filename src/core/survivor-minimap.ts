@@ -1,6 +1,6 @@
 import type { SurvivorEnemy, SurvivorState } from './survivor';
 
-export type SurvivorMinimapMarkerKind = 'player' | 'boss' | 'elite' | 'enemy';
+export type SurvivorMinimapMarkerKind = 'player' | 'boss' | 'elite' | 'enemy' | 'artifact';
 
 export interface SurvivorMinimapMarker {
   id: number;
@@ -25,7 +25,7 @@ export interface SurvivorMinimapSnapshot {
  * Escolhe os sinais que merecem espaço no mapa sem desenhar todos os inimigos vivos.
  * Chefes e elites sempre aparecem; os demais são os mais próximos do jogador.
  */
-export function minimapMarkers(state: Pick<SurvivorState, 'player' | 'enemies'>, limit = 36): SurvivorMinimapMarker[] {
+export function minimapMarkers(state: Pick<SurvivorState, 'player' | 'enemies'> & { artifacts?: SurvivorState['artifacts'] }, limit = 36): SurvivorMinimapMarker[] {
   const special: SurvivorEnemy[] = state.enemies.filter((enemy) => enemy.boss || enemy.grade !== 'comum');
   const ordinary = state.enemies
     .filter((enemy) => !enemy.boss && enemy.grade === 'comum')
@@ -33,6 +33,7 @@ export function minimapMarkers(state: Pick<SurvivorState, 'player' | 'enemies'>,
   const enemies = [...special, ...ordinary.slice(0, Math.max(0, limit))];
   return [
     { id: 0, x: state.player.x, y: state.player.y, kind: 'player' },
+    ...(state.artifacts ?? []).filter((artifact) => artifact.kind === 'pokeball').map((artifact) => ({ id: artifact.id, x: artifact.x, y: artifact.y, kind: 'artifact' as const })),
     ...enemies.map((enemy) => ({ id: enemy.id, x: enemy.x, y: enemy.y, kind: markerKind(enemy) })),
   ];
 }
@@ -54,7 +55,7 @@ export function minimapViewport(
 }
 
 export function survivorMinimapSnapshot(
-  state: Pick<SurvivorState, 'player' | 'enemies'>,
+  state: Pick<SurvivorState, 'player' | 'enemies' | 'artifacts'>,
   arena: { width: number; height: number },
   view: { width: number; height: number },
   limit = 36,
