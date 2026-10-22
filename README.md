@@ -6,6 +6,61 @@ PWA para celular que reconhece cartas físicas de Pokémon TCG pela câmera e mo
 
 > O app não finge reconhecer cartas nem rastrear AR. Quando uma fonte de dados, sprite ou rastreamento não está disponível, isso aparece como erro ou ausência. Testes em Chromium usam câmera falsa e WebGL por software; eles não medem câmera, sensores, GPU, calor, bateria ou fluidez em um celular. Consulte [docs/TESTING.md](docs/TESTING.md).
 
+## Demonstração e começo rápido
+
+**[▶ Abrir a demonstração ao vivo no GitHub Pages](https://eddiericobom.github.io/pokemon-tcg-ar/)**
+
+O app é uma PWA para celular. Abra o link em um aparelho compatível, aceite a câmera quando entrar em **Escanear** e aponte para uma carta real. A primeira abertura de cada modo baixa apenas os recursos daquele modo; depois eles podem ficar disponíveis no cache do navegador.
+
+O repositório não embute um vídeo pesado que possa ficar desatualizado. A demonstração acima é a versão publicada e mostra o fluxo real de câmera, reconhecimento e AR. Para uma validação reproduzível sem câmera física, use o [harness de câmera falsa](docs/TESTING.md#outras-verificações-não-fazem-parte-de-npm-test) descrito na documentação de testes.
+
+### Requisitos exatos
+
+- **Node.js 22 ou superior** e **npm** compatível com o Node instalado para desenvolvimento e CI.
+- Um navegador atual com **ES2022**, `getUserMedia`, IndexedDB e, para AR, WebGL2. Chrome/Edge no Android e Safari/Chrome no iOS são os alvos principais.
+- **HTTPS** para câmera e sensores em produção. `localhost` também é considerado uma origem segura durante o desenvolvimento.
+- Câmera traseira, boa iluminação e uma carta física para o fluxo de reconhecimento. O modo Escanear não inventa uma carta quando a câmera ou as fontes estão indisponíveis.
+- Não é necessário instalar Python, Unity ou OpenCV. Three.js, MindAR e TensorFlow.js são carregados somente nos modos que precisam deles.
+
+### Rodar localmente
+
+```bash
+git clone https://github.com/EddieRicobom/pokemon-tcg-ar.git
+cd pokemon-tcg-ar
+npm ci
+copy .env.example .env   # PowerShell; no macOS/Linux: cp .env.example .env
+npm run dev
+```
+
+Abra o endereço mostrado pelo Vite, normalmente `http://localhost:5173/pokemon-tcg-ar/`. Para testar em outro aparelho na mesma rede, use `npm run dev -- --host 0.0.0.0`; a câmera do aparelho exigirá HTTPS ou um túnel seguro. O servidor local não substitui o teste de sensores reais: a orientação e a fluidez precisam ser conferidas no aparelho.
+
+### Permissões de câmera e sensores
+
+1. Entre em **Escanear** ou **Caixa** e toque no botão de abrir a câmera; o navegador só permite a solicitação dentro de uma ação do usuário.
+2. Conceda acesso à câmera traseira. Se recusou antes, reative a permissão nas configurações do site e recarregue a página.
+3. Para o giro no AR da Caixa e no diorama da Vila, permita movimento/orientação quando o iOS solicitar. Se o sensor não existir ou estiver bloqueado, o app oferece controle manual por arraste quando disponível.
+4. Se a tela ficar preta, confira HTTPS, câmera em uso por outra aba, bloqueio de autoplay e se o navegador não está em modo privado com armazenamento desativado.
+
+### Fontes externas e configuração
+
+O núcleo não precisa de chave de API. As fontes públicas são consultadas sob demanda e os resultados são guardados localmente quando possível:
+
+| Fonte | Uso | Obrigatória? |
+| --- | --- | --- |
+| [TCGdex](https://tcgdex.dev/) | imagens, identificação e dados impressos das cartas | Para reconhecer/confirmar cartas que ainda não estão no cache |
+| [PokéAPI](https://pokeapi.co/) e [PokeAPI/sprites](https://github.com/PokeAPI/sprites) | tipos, atributos, golpes e sprites 2D | Para dados e visuais ainda não guardados |
+| Google Drive | cópia opcional do backup completo | Não; o backup local funciona sem conta |
+
+Copie `.env.example` para `.env` apenas se quiser habilitar o backup no Google Drive:
+
+```dotenv
+# Opcional. Client ID OAuth público do tipo Aplicativo da Web.
+# Nunca coloque Client Secret, token ou credencial de serviço aqui.
+VITE_GOOGLE_CLIENT_ID=
+```
+
+Sem esse valor, o app continua funcionando e a tela informa que a nuvem está desabilitada. No GitHub Pages, configure a variável de repositório `GOOGLE_DRIVE_CLIENT_ID`; o workflow a injeta como `VITE_GOOGLE_CLIENT_ID`. O passo a passo, as origens autorizadas e os limites estão em [docs/BACKUP_NUVEM.md](docs/BACKUP_NUVEM.md).
+
 ## Modos do app
 
 | Modo | O que faz |

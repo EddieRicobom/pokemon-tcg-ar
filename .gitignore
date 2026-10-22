@@ -4,6 +4,9 @@ dev-dist/
 coverage/
 *.local
 *.tsbuildinfo
+.env
+.env.*
+!.env.example
 .DS_Store
 .vite/
 
