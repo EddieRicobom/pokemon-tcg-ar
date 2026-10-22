@@ -80,6 +80,56 @@ const backupProgress = ref<{ value: number; label: string } | null>(null);
 const pendingImport = shallowRef<BackupFile | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 
+type BackupWritable = {
+  write(data: Blob): Promise<void>;
+  close(): Promise<void>;
+};
+
+type BackupSaveFileHandle = {
+  createWritable(): Promise<BackupWritable>;
+};
+
+type SaveFilePickerOptions = {
+  suggestedName?: string;
+  types?: Array<{
+    description: string;
+    accept: Record<string, string[]>;
+  }>;
+};
+
+type SaveFilePicker = (options?: SaveFilePickerOptions) => Promise<BackupSaveFileHandle>;
+
+type PickerWindow = Window & {
+  showSaveFilePicker?: SaveFilePicker;
+};
+
+async function saveBackupBlob(blob: Blob, fileName: string): Promise<'picker' | 'download' | 'cancelled'> {
+  const picker = (window as PickerWindow).showSaveFilePicker;
+  if (typeof picker === 'function') {
+    try {
+      const handle = await picker.call(window, {
+        suggestedName: fileName,
+        types: [{ description: 'Backup do Pokémon TCG AR', accept: { [BACKUP_FILE_MIME]: ['.dat'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return 'picker';
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled';
+      throw error;
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return 'download';
+}
+
 async function exportBackup(): Promise<void> {
   backupStatus.value = null;
   backupProgress.value = { value: 3, label: 'Lendo o progresso deste aparelho…' };
@@ -87,20 +137,25 @@ async function exportBackup(): Promise<void> {
     const file = await buildFullBackup(localStorage, undefined, (progress) => updateBackupProgress(progress, 'export'));
     backupProgress.value = { value: 82, label: 'Compactando os dados…' };
     const zip = serializeBackupZip(file);
-    backupProgress.value = { value: 94, label: 'Preparando o download…' };
+    backupProgress.value = { value: 94, label: 'Escolha onde salvar o backup…' };
     const blob = new Blob([zip.buffer as ArrayBuffer], { type: BACKUP_FILE_MIME });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = backupFileName();
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const mode = await saveBackupBlob(blob, backupFileName());
+    if (mode === 'cancelled') {
+      backupProgress.value = null;
+      backupStatus.value = { kind: 'ok', text: 'Salvamento cancelado. Nenhum dado foi alterado.' };
+      return;
+    }
     backupProgress.value = { value: 100, label: 'Backup concluído.' };
     setTimeout(() => { backupProgress.value = null; }, 1200);
-    backupStatus.value = { kind: 'ok', text: `Backup completo baixado (${file.collection?.cards.length ?? 0} cartas guardadas).` };
+    backupStatus.value = {
+      kind: 'ok',
+      text: mode === 'picker'
+        ? `Backup completo salvo (${file.collection?.cards.length ?? 0} cartas guardadas).`
+        : `Backup completo baixado (${file.collection?.cards.length ?? 0} cartas guardadas). Este navegador não permite escolher a pasta.`,
+    };
   } catch {
     backupProgress.value = null;
-    backupStatus.value = { kind: 'erro', text: 'Não consegui ler todos os dados do aparelho. Confira o espaço e tente novamente.' };
+    backupStatus.value = { kind: 'erro', text: 'Não consegui salvar o backup. Confira o espaço e tente novamente.' };
   }
 }
 
@@ -309,10 +364,11 @@ function cancelImport(): void {
         Os dados são validados antes da restauração; caches que não pertencem ao app ficam fora.
       </p>
       <div class="backup-actions">
-        <button type="button" :disabled="!!backupProgress" @click="exportBackup">Baixar backup</button>
+        <button type="button" :disabled="!!backupProgress" @click="exportBackup">Salvar backup em…</button>
         <button type="button" :disabled="!!backupProgress" @click="pickImportFile">Importar backup</button>
         <input ref="fileInput" type="file" accept=".dat,.zip,application/octet-stream,application/zip,application/json" class="sr-only" @change="onImportFileChosen" />
       </div>
+        <p class="note backup-location-note">No computador, o navegador permite escolher a pasta e o nome do arquivo. Em celulares ou navegadores sem esse recurso, o backup usa a pasta padrão de downloads.</p>
       <div v-if="backupProgress" class="backup-progress" role="status" aria-live="polite">
         <progress max="100" :value="backupProgress.value">{{ backupProgress.value }}%</progress>
         <span>{{ backupProgress.label }} {{ backupProgress.value }}%</span>
