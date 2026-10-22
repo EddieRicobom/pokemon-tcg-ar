@@ -46,7 +46,9 @@ try {
         await caches.delete(ASSET_CACHE_NAME);
       }, base);
       console.log('Dados apagados no perfil descartável');
-      await page.locator('input[type=file]').setInputFiles({ name: 'backup-validado.zip', mimeType: 'application/zip', buffer: zip });
+      // Simula a transferência para outro aparelho: o nome e o MIME são genéricos;
+      // o app precisa reconhecer o pacote pelos bytes.
+      await page.locator('input[type=file]').setInputFiles({ name: 'backup-validado.dat', mimeType: 'application/octet-stream', buffer: zip });
       await page.getByRole('button', { name: 'Confirmar e substituir', exact: true }).waitFor();
       expect(await page.evaluate(() => localStorage.getItem('tcg-ar-backup-validation-v1'))).toBeNull();
       console.log('Arquivo validado, confirmando');

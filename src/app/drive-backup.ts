@@ -1,4 +1,5 @@
 /** Google Drive direto do navegador: apenas a pasta privada de dados deste app. */
+const BACKUP_MIME = 'application/octet-stream';
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 export const MAX_CLOUD_BYTES = 512 * 1024 * 1024;
 const API = 'https://www.googleapis.com/drive/v3/files';
@@ -29,15 +30,15 @@ export class DriveBackup {
   async upload(bytes: Uint8Array, now = new Date()): Promise<void> {
     if (!bytes.length || bytes.length > MAX_CLOUD_BYTES) throw new Error('O backup está vazio ou ultrapassa o limite de 512 MB.');
     const started = await this.request(`https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=${FIELDS}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Upload-Content-Type': 'application/zip', 'X-Upload-Content-Length': String(bytes.length) },
-      body: JSON.stringify({ name: `pokemon-tcg-ar-${now.toISOString().replace(/[:.]/g, '-')}.zip`, parents: ['appDataFolder'], appProperties: { app: 'pokemon-tcg-ar-backup' } }),
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Upload-Content-Type': BACKUP_MIME, 'X-Upload-Content-Length': String(bytes.length) },
+      body: JSON.stringify({ name: `pokemon-tcg-ar-${now.toISOString().replace(/[:.]/g, '-')}.dat`, parents: ['appDataFolder'], appProperties: { app: 'pokemon-tcg-ar-backup' } }),
     });
     const location = started.headers.get('location');
     if (!location) throw new Error('O Google Drive não iniciou o envio. Tente novamente.');
     const target = new URL(location);
     if (target.origin !== 'https://www.googleapis.com' || !target.pathname.startsWith('/upload/drive/')) throw new Error('O Google Drive devolveu um endereço de envio inválido.');
     // Protocolo resumable em uma transferência; se falhar, mantém as cópias antigas e permite tentar de novo.
-    const finished = await this.request(target.href, { method: 'PUT', headers: { 'Content-Type': 'application/zip' }, body: new Blob([bytes.slice().buffer]) });
+    const finished = await this.request(target.href, { method: 'PUT', headers: { 'Content-Type': BACKUP_MIME }, body: new Blob([bytes.slice().buffer], { type: BACKUP_MIME }) });
     const saved = await finished.json() as { id?: unknown; size?: unknown };
     if (typeof saved.id !== 'string' || Number(saved.size) !== bytes.length) throw new Error('O Google Drive não confirmou o arquivo completo. Atualize a lista antes de tentar novamente.');
   }

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import CloudBackup from '../components/CloudBackup.vue';
 import { computed, ref, shallowRef } from 'vue';
-import { applyFullBackup, backupFileName, buildFullBackup, parseBackup, parseBackupZip, serializeBackupZip } from '../app/backup';
+import { applyFullBackup, BACKUP_FILE_MIME, backupFileName, buildFullBackup, parseBackupBytes, serializeBackupZip } from '../app/backup';
+import type { BackupProgress } from '../app/backup';
 import type { BackupFile } from '../app/backup';
 import { routeFlags, routeHref } from '../app/route';
 import { coins } from '../app/wallet';
@@ -73,26 +74,50 @@ const cardCount = computed(() => trainer.value.cardIds.length);
 
 // ---- Seus dados: backup completo do progresso e dos ajustes (ver `app/backup.ts`), sem servidor nenhum.
 const backupStatus = ref<{ kind: 'erro' | 'ok'; text: string } | null>(null);
+const backupProgress = ref<{ value: number; label: string } | null>(null);
 // IndexedDB não aceita proxies Vue: o arquivo validado precisa manter seus objetos originais.
 const pendingImport = shallowRef<BackupFile | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 
 async function exportBackup(): Promise<void> {
   backupStatus.value = null;
+  backupProgress.value = { value: 3, label: 'Lendo o progresso deste aparelho…' };
   try {
-    const file = await buildFullBackup(localStorage);
+    const file = await buildFullBackup(localStorage, undefined, (progress) => updateBackupProgress(progress, 'export'));
+    backupProgress.value = { value: 82, label: 'Compactando os dados…' };
     const zip = serializeBackupZip(file);
-    const blob = new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' });
+    backupProgress.value = { value: 94, label: 'Preparando o download…' };
+    const blob = new Blob([zip.buffer as ArrayBuffer], { type: BACKUP_FILE_MIME });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = backupFileName();
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    backupProgress.value = { value: 100, label: 'Backup concluído.' };
+    setTimeout(() => { backupProgress.value = null; }, 1200);
     backupStatus.value = { kind: 'ok', text: `Backup completo baixado (${file.collection?.cards.length ?? 0} cartas guardadas).` };
   } catch {
+    backupProgress.value = null;
     backupStatus.value = { kind: 'erro', text: 'Não consegui ler todos os dados do aparelho. Confira o espaço e tente novamente.' };
   }
+}
+
+function updateBackupProgress(progress: BackupProgress, operation: 'export' | 'import'): void {
+  const ratio = progress.total > 0 ? Math.min(1, progress.current / progress.total) : 0;
+  const labels: Record<BackupProgress['phase'], string> = {
+    storage: 'Lendo o progresso…', cards: 'Lendo cartas reconhecidas…', records: 'Lendo registros locais…',
+    metadata: 'Lendo metadados…', assets: 'Lendo arquivos locais…', writing: 'Restaurando arquivos locais…', complete: 'Dados conferidos.',
+  };
+  const value = operation === 'export'
+    ? ({ storage: 5, cards: 16, records: 26, metadata: 35, assets: 40 + Math.round(35 * ratio), writing: 55, complete: 78 }[progress.phase] ?? 5)
+    : ({ storage: 15, cards: 24, records: 32, metadata: 40, assets: 48, writing: 15 + Math.round(73 * ratio), complete: 88 }[progress.phase] ?? 15);
+  backupProgress.value = { value, label: labels[progress.phase] };
+}
+
+async function yieldToScreen(): Promise<void> {
+  // Cede uma rodada ao Vue para pintar a barra antes de compactar ou gravar muitos bytes.
+  await Promise.resolve();
 }
 
 function pickImportFile(): void {
@@ -105,9 +130,13 @@ async function onImportFileChosen(e: Event): Promise<void> {
   const picked = input.files?.[0] ?? null;
   input.value = '';
   if (!picked) return;
-  const parsed = picked.name.toLowerCase().endsWith('.zip')
-    ? parseBackupZip(new Uint8Array(await picked.arrayBuffer()))
-    : parseBackup(await picked.text());
+  backupProgress.value = { value: 8, label: 'Lendo o arquivo de backup…' };
+  await yieldToScreen();
+  const bytes = new Uint8Array(await picked.arrayBuffer());
+  backupProgress.value = { value: 45, label: 'Verificando integridade…' };
+  await yieldToScreen();
+  const parsed = parseBackupBytes(bytes);
+  backupProgress.value = null;
   if (parsed === 'json-invalido') {
     backupStatus.value = { kind: 'erro', text: 'Esse arquivo não é um JSON válido.' };
     return;
@@ -130,19 +159,23 @@ function backupDateLabel(iso: string): string {
 
 async function confirmImport(): Promise<void> {
   if (!pendingImport.value) return;
+  backupProgress.value = { value: 8, label: 'Preparando a restauração…' };
+  await yieldToScreen();
   try {
-    await applyFullBackup(pendingImport.value, localStorage);
+    await applyFullBackup(pendingImport.value, localStorage, (progress) => updateBackupProgress(progress, 'import'));
     pendingImport.value = null;
   // Vários dados (Treinador, perfil…) ficam em memória desde que o app abriu; a forma simples e segura de
   // garantir que tudo reflita o backup importado é recarregar a página — ela lê tudo de novo do zero.
   window.location.reload();
   } catch {
+    backupProgress.value = null;
     backupStatus.value = { kind: 'erro', text: 'Não consegui restaurar todos os dados. O aparelho pode estar sem espaço.' };
   }
 }
 
 function cancelImport(): void {
   pendingImport.value = null;
+  backupProgress.value = null;
 }
 </script>
 
@@ -271,13 +304,17 @@ function cancelImport(): void {
     <div v-else class="card">
       <h2>Seus dados</h2>
       <p class="note">
-        Baixe um ZIP com todo o progresso, ajustes, cartas reconhecidas e arquivos locais (referências, sprites e alvos de AR) para guardar fora do navegador ou levar para outro aparelho.
+        Baixe um arquivo compactado com todo o progresso, ajustes, cartas reconhecidas e arquivos locais (referências, sprites e alvos de AR) para guardar fora do navegador ou levar para outro aparelho.
         Os dados são validados antes da restauração; caches que não pertencem ao app ficam fora.
       </p>
       <div class="backup-actions">
-        <button type="button" @click="exportBackup">Baixar backup</button>
-        <button type="button" @click="pickImportFile">Importar backup</button>
-        <input ref="fileInput" type="file" accept=".zip,application/zip,application/json" class="sr-only" @change="onImportFileChosen" />
+        <button type="button" :disabled="!!backupProgress" @click="exportBackup">Baixar backup</button>
+        <button type="button" :disabled="!!backupProgress" @click="pickImportFile">Importar backup</button>
+        <input ref="fileInput" type="file" accept=".dat,.zip,application/octet-stream,application/zip,application/json" class="sr-only" @change="onImportFileChosen" />
+      </div>
+      <div v-if="backupProgress" class="backup-progress" role="status" aria-live="polite">
+        <progress max="100" :value="backupProgress.value">{{ backupProgress.value }}%</progress>
+        <span>{{ backupProgress.label }} {{ backupProgress.value }}%</span>
       </div>
       <p v-if="backupStatus" class="note" :class="backupStatus.kind">{{ backupStatus.text }}</p>
       <CloudBackup @restore="pendingImport = $event" />

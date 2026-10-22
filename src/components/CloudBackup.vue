@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from 'vue';
-import { buildFullBackup, parseBackupZip, serializeBackupZip } from '../app/backup';
+import { buildFullBackup, parseBackupBytes, serializeBackupZip } from '../app/backup';
 import type { BackupFile } from '../app/backup';
 import { DriveBackup } from '../app/drive-backup';
 import type { CloudCopy } from '../app/drive-backup';
@@ -43,7 +43,7 @@ function send(): void {
 }
 function restore(copy: CloudCopy): void {
   void run('Baixando e validando backup…', async () => {
-    const parsed = parseBackupZip(await service().download(copy.id));
+    const parsed = parseBackupBytes(await service().download(copy.id));
     if (typeof parsed === 'string') throw new Error('O arquivo na nuvem está corrompido, incompleto ou é incompatível. Nada foi restaurado.');
     if (active) { emit('restore', parsed); status.value = 'Arquivo validado. Confira a confirmação de restauração abaixo.'; }
   });

@@ -3,7 +3,7 @@ import { createApp, h, nextTick, type App } from 'vue';
 const mocks = vi.hoisted(() => ({ prepare: vi.fn(), connect: vi.fn(), list: vi.fn(), upload: vi.fn(), download: vi.fn(), build: vi.fn(), parse: vi.fn(), serialize: vi.fn(), revoke: vi.fn() }));
 vi.mock('../app/drive-login', () => ({ prepareDriveLogin: mocks.prepare, connectDrive: mocks.connect, revokeDrive: mocks.revoke }));
 vi.mock('../app/drive-backup', () => ({ DriveBackup: class { list = mocks.list; upload = mocks.upload; download = mocks.download; } }));
-vi.mock('../app/backup', () => ({ buildFullBackup: mocks.build, parseBackupZip: mocks.parse, serializeBackupZip: mocks.serialize }));
+vi.mock('../app/backup', () => ({ buildFullBackup: mocks.build, parseBackupBytes: mocks.parse, serializeBackupZip: mocks.serialize }));
 import CloudBackup from './CloudBackup.vue';
 let app: App, host: HTMLElement;
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); await nextTick(); };

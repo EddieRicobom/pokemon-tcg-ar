@@ -54,6 +54,38 @@ describe('backup completo — integridade e recuperação', () => {
     expect(await db.get('meta', 'last')).toEqual({ nested: ['valor', 42] }); db.close();
     expect([...new Uint8Array(await (await cache.match(url))!.arrayBuffer())]).toEqual([1, 2, 3, 255]);
   });
+  it('simula aparelho A → arquivo mascarado → perfil novo no aparelho B e preserva todas as camadas', async () => {
+    localStorage.setItem('tcg-ar-trainer-v1', JSON.stringify({ xp: 987654, torre: { runs: 12, bestWave: 38 } }));
+    localStorage.setItem('tcg-ar-vila-v1', JSON.stringify({ coins: 4321, inventory: { 'love-candy': 4 }, homes: { '0': 7 } }));
+    localStorage.setItem('tcg-ar-profile-v1:25', JSON.stringify({ name: 'Pikachu', moves: ['thunder-shock'] }));
+    localStorage.setItem('tcg-ar-mega-v1:25:normal', JSON.stringify({ level: 3, shards: 17 }));
+    localStorage.setItem('tcg-ar-empty-value', '');
+    localStorage.setItem('tcg-ar-unicode', 'áéíóú • 保存 • 🎒');
+    const db = await openCacheDb();
+    await db.put('cards', card);
+    await db.put('assets', { url, kind: 'reference', bytes: 1_048_576, refs: [card.id], storedAt: 42 });
+    await db.put('meta', { lastScan: '2026-10-22', flags: ['shiny', 'mega'] }, 'session');
+    db.close();
+    const megabyte = new Uint8Array(1_048_576); megabyte.fill(65);
+    await cache.put(url, new Response(megabyte, { headers: { 'content-type': 'image/webp' } }));
+    await cache.put('https://example.test/target.mind', new Response(Uint8Array.from([0, 1, 2, 3, 4]), { headers: { 'content-type': 'application/octet-stream' } }));
+
+    const source = await buildFullBackup(localStorage, '2026-10-22T12:00:00.000Z');
+    const bytes = serializeBackupZip(source);
+    expect(bytes.byteLength).toBeLessThan(JSON.stringify(source).length);
+    const parsed = parseBackupZip(bytes);
+    expect(typeof parsed).not.toBe('string');
+
+    // Perfil B: vazio, com uma chave de outro app e lixo tcg-ar- antigo para garantir substituição completa.
+    localStorage.clear(); localStorage.setItem('other-app-key', 'não tocar'); localStorage.setItem('tcg-ar-leftover-from-old-profile', 'remover');
+    const empty = await openCacheDb(); await empty.clear('cards'); await empty.clear('assets'); await empty.clear('meta'); empty.close(); values.clear();
+    await applyFullBackup(parsed as Exclude<typeof parsed, string>, localStorage);
+    const destination = await buildFullBackup(localStorage, '2026-10-22T12:00:00.000Z');
+    expect(destination.data).toEqual(source.data);
+    expect(destination.collection).toEqual(source.collection);
+    expect(localStorage.getItem('other-app-key')).toBe('não tocar');
+    expect(localStorage.getItem('tcg-ar-leftover-from-old-profile')).toBeNull();
+  });
   it('devolve coleção e progresso anteriores se Cache Storage falhar durante a restauração', async () => {
     await seed(); const before = await exported();
     const incoming: BackupFile = { ...before, data: { ...before.data, 'tcg-ar-vila-v1': '{"coins":0}' }, collection: { cards: [], records: [], meta: [], assets: [{ url: 'https://example.test/new', type: 'image/png', bytes: [5] }] } };

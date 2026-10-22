@@ -6918,6 +6918,20 @@ body.no-scroll .reward-toasts {
   margin: 4px 0 8px;
 }
 
+.backup-progress {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 10px;
+  color: var(--muted);
+  font-size: .86rem;
+}
+
+.backup-progress progress {
+  width: 100%;
+  height: 10px;
+  accent-color: var(--accent, #56c7ff);
+}
+
 .note.ok {
   color: var(--ok);
 }

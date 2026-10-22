@@ -19,8 +19,10 @@ describe('Google Drive — cópias privadas', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     const init = fetcher.mock.calls[0]![1]!;
     expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toMatchObject({ parents: ['appDataFolder'], name: 'pokemon-tcg-ar-2026-10-21T12-00-00-000Z.zip' });
+    expect(JSON.parse(String(init.body))).toMatchObject({ parents: ['appDataFolder'], name: 'pokemon-tcg-ar-2026-10-21T12-00-00-000Z.dat' });
+    expect(init.headers).toMatchObject({ 'X-Upload-Content-Type': 'application/octet-stream' });
     expect(fetcher.mock.calls[1]![1]?.method).toBe('PUT');
+    expect(fetcher.mock.calls[1]![1]?.headers).toMatchObject({ 'Content-Type': 'application/octet-stream' });
   });
   it('recusa confirmação de envio com tamanho incorreto', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { headers: { location: 'https://www.googleapis.com/upload/drive/v3/files?upload_id=test' } })).mockResolvedValueOnce(json({ id: 'new', size: '0' }));
