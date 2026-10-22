@@ -51,6 +51,8 @@ export interface SurvivorPlayer {
   level: number;
   xp: number;
   xpToNext: number;
+  /** Multiplicador acumulado de XP dos buffs de experiência da corrida. */
+  xpMultiplier: number;
   attackDamage: number;
   attackRange: number;
   attackCooldownMs: number;
@@ -396,6 +398,8 @@ export interface SurvivorUpgrade {
   type?: SurvivorMove['type'];
   /** Limite por corrida; evita cartas esgotadas e escolhas sem efeito. */
   maxLevels?: number;
+  /** Upgrade anterior necessário para liberar esta carta em uma trilha. */
+  requires?: string;
   /** Pequena variação numérica, sorteada quando a carta aparece. */
   valueRange?: readonly [number, number];
   describeValue?: (move: SurvivorMove, value: number) => { name: string; description: string };
@@ -432,6 +436,10 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
     describeValue: (_m, value) => ({ name: 'Alcance maior', description: `+${value}% no alcance do golpe.` }),
     apply: (p, value = 20) => { p.attackRange = round1(p.attackRange * (1 + value / 100)); },
   },
+  { id: 'xp-boost-15', rarity: 'normal', name: 'Rota de experiência', description: '+15% de XP recebido dos orbes.', maxLevels: 1, apply: (p) => { p.xpMultiplier = Math.max(p.xpMultiplier ?? 1, 1.15); } },
+  { id: 'xp-boost-25', rarity: 'raro', name: 'Rota de experiência II', description: '+25% de XP recebido dos orbes.', maxLevels: 1, requires: 'xp-boost-15', apply: (p) => { p.xpMultiplier = Math.max(p.xpMultiplier ?? 1, 1.25); } },
+  { id: 'xp-boost-35', rarity: 'lendario', name: 'Rota de experiência III', description: '+35% de XP recebido dos orbes.', maxLevels: 1, requires: 'xp-boost-25', apply: (p) => { p.xpMultiplier = Math.max(p.xpMultiplier ?? 1, 1.35); } },
+  { id: 'xp-boost-50', rarity: 'ancestral', name: 'Rota de experiência IV', description: '+50% de XP recebido dos orbes.', maxLevels: 1, requires: 'xp-boost-35', apply: (p) => { p.xpMultiplier = Math.max(p.xpMultiplier ?? 1, 1.5); } },
   {
     id: 'multishot', rarity: 'lendario', name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.', for: ['projetil', 'area'],
     describe: (m) => (m.category === 'area'
@@ -621,8 +629,20 @@ export const ENEMY_BEHAVIOR_LIMITS = {
   specialEffectsPerStep: 8,
 } as const;
 
+/**
+ * A progressão de XP usa passos de duas unidades. As recompensas atuais já são
+ * pares; a normalização também protege corridas/saves antigas caso um valor
+ * ímpar chegue ao motor no futuro.
+ */
+export const SURVIVOR_XP_UNIT = 2;
+
+export function normalizeSurvivorXp(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.floor(value / SURVIVOR_XP_UNIT) * SURVIVOR_XP_UNIT);
+}
+
 export function xpForLevel(level: number): number {
-  return Math.round(BALANCE.xpBase + level * BALANCE.xpPerLevel);
+  return normalizeSurvivorXp(Math.round(BALANCE.xpBase + level * BALANCE.xpPerLevel));
 }
 
 export interface CreateSurvivorOptions {
@@ -684,6 +704,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     level: 1,
     xp: 0,
     xpToNext: xpForLevel(1),
+    xpMultiplier: 1,
     attackDamage: (prof?.damage ?? BALANCE.playerDamage) * preparation.damageMultiplier,
     attackRange: (prof?.range ?? 170) * preparation.rangeMultiplier,
     attackCooldownMs: prof?.cooldownMs ?? BALANCE.playerCooldownMs,
@@ -885,11 +906,12 @@ function rollUpgradeRarity(rng: Rng, pool: readonly SurvivorUpgrade[]): Survivor
 /** Sorteia cartas distintas, com potência variável nos bônus numéricos. */
 export function rollUpgrades(rng: Rng, count = 3, move: SurvivorMove = BASIC_MOVE, player?: SurvivorPlayer): SurvivorUpgradeOption[] {
   const level = player?.level ?? 1;
-  const alreadyAncestral = ANCESTRAL_SURVIVOR_UPGRADES.some((upgrade) => (player?.upgradeLevels[upgrade.id] ?? 0) > 0);
+  const alreadyAncestral = SURVIVOR_UPGRADES.some((upgrade) => upgrade.rarity === 'ancestral' && (player?.upgradeLevels[upgrade.id] ?? 0) > 0);
   const pool = SURVIVOR_UPGRADES.filter((u) =>
     (!u.for || u.for.includes(move.category))
     && (!u.type || u.type === move.type)
     && level >= SURVIVOR_UPGRADE_RARITIES[u.rarity].minLevel
+    && (!u.requires || (player?.upgradeLevels[u.requires] ?? 0) > 0)
     && (u.rarity !== 'ancestral' || !alreadyAncestral)
     && (player?.upgradeLevels[u.id] ?? 0) < (u.maxLevels ?? Number.POSITIVE_INFINITY)
     && (!player || (u.id !== 'power' && u.id !== 'resonance' || player.attackDamage < 60))
@@ -928,8 +950,11 @@ function evolutionOffer(state: SurvivorState): SurvivorUpgradeOption | null {
 }
 
 function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
+  // Mantém a sobra par mesmo se uma corrida antiga ou uma recompensa futura
+  // trouxer XP ímpar. Arredondar para baixo nunca concede um nível adiantado.
+  state.player.xp = normalizeSurvivorXp(state.player.xp);
   while (state.player.xp >= state.player.xpToNext) {
-    state.player.xp -= state.player.xpToNext;
+    state.player.xp = normalizeSurvivorXp(state.player.xp - state.player.xpToNext);
     state.player.level += 1;
     state.player.xpToNext = xpForLevel(state.player.level);
     state.upgradesOwed += 1;
@@ -1616,7 +1641,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.enemies = state.enemies.filter((e) => e.hp > 0);
     state.kills += dead.length;
     for (const e of dead) {
-      const value = e.boss ? 40 : e.grade === 'chefao' ? 30 : e.grade === 'elite' ? 16 : 6;
+      const value = normalizeSurvivorXp(e.boss ? 40 : e.grade === 'chefao' ? 30 : e.grade === 'elite' ? 16 : 6);
       state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value });
       const dropChance = e.boss ? BALANCE.artifactBossDropChance : e.grade === 'chefao' || e.grade === 'elite' ? BALANCE.artifactEliteDropChance : BALANCE.artifactDropChance;
        if (state.rng() < dropChance) state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: artifactKind(state.rng) });
@@ -1655,7 +1680,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   // Coleta de orbes de XP (e nível, se passou da marca).
   state.orbs = state.orbs.filter((orb) => {
     if (Math.hypot(orb.x - p.x, orb.y - p.y) <= p.pickupRadius) {
-      p.xp += orb.value;
+      const multiplier = p.xpMultiplier ?? 1;
+      const boostedValue = normalizeSurvivorXp(Math.round((orb.value * multiplier) / SURVIVOR_XP_UNIT) * SURVIVOR_XP_UNIT);
+      p.xp = normalizeSurvivorXp(p.xp + boostedValue);
       return false;
     }
     return true;

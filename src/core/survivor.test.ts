@@ -14,6 +14,7 @@ import {
   survivorScore,
   SURVIVOR_UPGRADES,
   SURVIVOR_UPGRADE_RARITIES,
+  normalizeSurvivorXp,
   xpForLevel,
 } from './survivor';
 import type { SurvivorEnemy, SurvivorState } from './survivor';
@@ -260,6 +261,44 @@ describe('stepSurvivor', () => {
     applyUpgrade(s, s.pendingUpgrade![0]!.id);
     expect(s.pendingUpgrade).toBeNull();
     expect(s.upgradesOwed).toBe(0);
+  });
+
+  it('mantém a XP em passos pares e descarta apenas a unidade ímpar', () => {
+    for (let level = 1; level <= 40; level += 1) {
+      expect(xpForLevel(level) % 2).toBe(0);
+    }
+    expect(normalizeSurvivorXp(21)).toBe(20);
+    expect(normalizeSurvivorXp(22)).toBe(22);
+
+    const s = createSurvivorState(1, { kindCount: 1 });
+    s.player.xp = s.player.xpToNext + 1;
+    s.spawnAccumMs = -1e9;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.level).toBe(2);
+    expect(s.player.xp % 2).toBe(0);
+  });
+
+  it('aplica a trilha de bônus de XP em quatro degraus, sem permitir saltos', () => {
+    const s = createSurvivorState(3, { kindCount: 1 });
+    expect(rollUpgrades(seededRng(2), 20, s.player.move, s.player).map((option) => option.id)).not.toContain('xp-boost-25');
+
+    const tiers = [
+      ['xp-boost-15', 1.15],
+      ['xp-boost-25', 1.25],
+      ['xp-boost-35', 1.35],
+      ['xp-boost-50', 1.5],
+    ] as const;
+    for (const [id, multiplier] of tiers) {
+      s.pendingUpgrade = [{ id, name: id, description: '' }];
+      applyUpgrade(s, id);
+      expect(s.player.xpMultiplier).toBe(multiplier);
+    }
+
+    s.player.xpToNext = 100;
+    s.orbs.push({ id: 999, x: s.player.x, y: s.player.y, value: 16 });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.xp).toBe(24); // 16 × 1,5, arredondado para a unidade par mais próxima
+    expect(s.player.xp % 2).toBe(0);
   });
 });
 
