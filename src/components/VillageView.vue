@@ -2830,6 +2830,7 @@ onBeforeUnmount(() => {
           <input type="checkbox" @change="hideVillageControlsHint" />
           Não exibir mais ao entrar na Vila
         </label>
+        <button type="button" class="village-welcome-dismiss" @click.stop="welcome = false">Entendi</button>
       </div>
       <p v-if="toast && !recapScene && !cutsceneOpen && !welcome" class="village-toast" role="status">{{ toast }} <button type="button" class="link" aria-label="Dispensar aviso" @click="toast = ''">✕</button></p>
 

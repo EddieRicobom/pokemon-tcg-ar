@@ -5286,6 +5286,19 @@ body.no-scroll .reward-toasts {
   font-size: 0.9rem;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
 }
+.village-welcome-dismiss {
+  justify-self: end;
+  min-height: 38px;
+  margin-top: 4px;
+  padding: 6px 14px;
+  border: 1px solid #2e7d32;
+  border-radius: 10px;
+  background: #e8f5e9;
+  color: #1b5e20;
+  font: inherit;
+  font-weight: 750;
+}
+.village-welcome-dismiss:focus-visible { outline: 2px solid #1b5e20; outline-offset: 2px; }
 
 .village-sheet.tall {
   max-height: min(78dvh, 880px);

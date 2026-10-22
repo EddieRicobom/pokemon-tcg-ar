@@ -175,6 +175,19 @@ function onKey(event: KeyboardEvent): void {
   }
 }
 
+/** O painel captura as setas localmente para que navegadores móveis/DOM que não
+ * propagam o keydown da âncora ainda mantenham a navegação por controle. */
+function onMenuKey(event: KeyboardEvent): void {
+  const direction: Direction | undefined = ({
+    ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left',
+  } as const)[event.key];
+  if (direction) {
+    moveFocus(direction);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
 function sendDirection(direction: Direction, pressed: boolean): void {
   if (route.value.name !== 'vila' && (menuOpen.value || visibleDialogs().length)) {
     if (pressed) moveFocus(direction);
@@ -306,7 +319,7 @@ onBeforeUnmount(() => {
       <button class="universal-a" type="button" aria-label="Confirmar" @click="confirm">A<small>Confirmar</small></button>
       <button class="universal-menu-button" type="button" :aria-expanded="menuOpen" aria-label="Menu" @click="menuOpen = !menuOpen">☰<small>Menu</small></button>
     </div>
-    <nav v-if="menuOpen" class="universal-menu-panel" aria-label="Menu do aplicativo" @keydown.esc.stop.prevent="menuOpen = false">
+    <nav v-if="menuOpen" class="universal-menu-panel" aria-label="Menu do aplicativo" @keydown.esc.stop.prevent="menuOpen = false" @keydown="onMenuKey">
       <header><strong>Menu</strong><button type="button" aria-label="Fechar menu" @click="menuOpen = false">×</button></header>
       <p class="arrow-control-hint">Setas/controle navegam · A confirma · B volta</p>
       <a v-for="link in links" :key="link.name" :href="routeHref(link.name)" :aria-current="route.name === link.name ? 'page' : undefined" @click="menuOpen = false">{{ link.label }}</a>
