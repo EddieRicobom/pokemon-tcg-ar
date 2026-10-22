@@ -23,6 +23,7 @@ import {
   ARENA_W,
   createSurvivorState,
   chooseSurvivorTypeAffinity,
+  rerollSurvivorUpgradeOffer,
   stepSurvivor,
   survivorCoins,
   survivorScore,
@@ -66,6 +67,8 @@ import { drawSurvivorSpecial } from '../village/survivor-special-art';
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
   power: '💥', haste: '⏳', legs: '👟', vigor: '❤️', range: '📏', multishot: '🎯', pierce: '🏹', magnet: '🧲', radius: '⭕',
+  'more-upgrade-choices': '🃏',
+  'jirachi-reroll': '⭐',
   'second-attack': '✦',
 };
 const upgradeIcon = (id: string): string => (id.startsWith('evolve:') ? '✨' : (UPGRADE_ICON[id] ?? '✨'));
@@ -365,9 +368,10 @@ function showTrainerPresentation(event: { trainerId: number; count: number; fina
 const minimap = ref({ markers: [] as ReturnType<typeof survivorMinimapSnapshot>['markers'], viewport: { x: 0, y: 0, width: ARENA_W, height: ARENA_H } });
 const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
+const availableUpgradeRerolls = computed(() => state.value?.player.upgradeRerolls ?? 0);
 const summary = ref<SurvivorSummary | null>(null);
 const runUnlocks = ref<string[]>([]);
-/** Tela de escolha antes de cada corrida: 3 Pokémon aleatórios da caixa do jogador, pra ele dizer quem joga
+/** Tela de escolha antes de cada corrida: até 6 Pokémon aleatórios da caixa do jogador, para escolher quem joga
  * dessa vez. Null enquanto ainda está sorteando/carregando os retratos; [] se a caixa estiver vazia (cai pro
  * Pikachu de reserva sem tela de escolha, igual ao comportamento antigo). */
 const pickOptions = ref<PickOption[] | null>(null);
@@ -424,7 +428,7 @@ function playSound(cue: UiSound): void {
 let ctx: CanvasRenderingContext2D | null = null;
 let groundPattern: CanvasPattern | null = null;
 let playerSprite: Sprite | null = null;
-let supportSprite: Sprite | null = null;
+const supportSprites = new Map<number, Sprite | null>();
 const enemySprites = new Map<number, Sprite | null>();
 const enemySpriteLoads = new Map<number, Promise<void>>();
 const requestedEnemyRegions = new Set<number>();
@@ -688,11 +692,12 @@ function draw(): void {
 
   for (const e of s.enemies) drawEnemy(e);
 
-  // O apoio é puramente visual: o motor mantém sua posição separada e seus golpes continuam surgindo no jogador.
-  if (s.support) {
+  // Os apoios são puramente visuais: o motor mantém suas posições separadas e
+  // todos os golpes continuam surgindo no jogador, sem hitbox própria.
+  for (const support of s.supports) {
     ctx.save();
     ctx.globalAlpha = effectiveVisual.value.rotomMode ? 0.72 : 0.84;
-    drawSprite(supportSprite, s.support.x, s.support.y, s.player.facing < 0, 0.82);
+    drawSprite(supportSprites.get(support.dexId) ?? null, support.x, support.y, s.player.facing < 0, 0.76);
     ctx.restore();
   }
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
@@ -745,8 +750,8 @@ function draw(): void {
   for (const artifact of s.artifacts) {
     // A Pokébola é uma recompensa importante e continua visível no Modo Rotom; os artefatos temporários podem ser ocultados para economizar GPU.
     if (effectiveVisual.value.rotomMode && artifact.kind !== 'pokeball') continue;
-    const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb';
-    const icon = artifact.kind === 'pokeball' ? '★' : artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : '♥';
+    const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb';
+    const icon = artifact.kind === 'pokeball' ? '★' : artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : artifact.kind === 'magnet' ? '🧲' : artifact.kind === 'focus' ? '◈' : '♥';
     const pulse = 1 + (effectiveVisual.value.rotomMode ? 0 : Math.sin(animMs / 180 + artifact.id) * 0.12);
     const wobble = artifact.kind === 'pokeball' && !effectiveVisual.value.rotomMode
       ? Math.sin(animMs / 220 + artifact.id) * 0.12
@@ -883,7 +888,7 @@ function draw(): void {
       ctx.font = 'bold 20px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = color;
-      ctx.fillText(f.artifact === 'pokeball' ? '★' : f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : '♥', f.x, f.y - 8 - t * 24);
+      ctx.fillText(f.artifact === 'pokeball' ? '★' : f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : f.artifact === 'magnet' ? '🧲' : f.artifact === 'focus' ? '◈' : '♥', f.x, f.y - 8 - t * 24);
     } else {
       for (let k = 0; k < 3; k++) {
         ctx.globalAlpha = 0.7 * (1 - t);
@@ -995,6 +1000,13 @@ function chooseUpgrade(id: string): void {
   for (const ev of events) if (ev.type === 'evolve') void evolveTo(ev.dexId, ev.name);
 }
 
+function rerollUpgradeSelection(): void {
+  if (!state.value || !rerollSurvivorUpgradeOffer(state.value)) return;
+  pendingUpgrade.value = state.value.pendingUpgrade;
+  playSound('survivor-pickup');
+  say('⭐ Desejo de Jirachi: oferta renovada!', 2200);
+}
+
 function togglePause(): void {
   if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value || trainerPresentation.value) return;
   paused.value = !paused.value;
@@ -1046,7 +1058,7 @@ function confirmLeave(): void {
 
 defineExpose({ requestLeave });
 
-/** Sorteia 3 companheiros da caixa, identificados por carta/instância, pra escolher quem joga desta vez.
+/** Sorteia até 6 companheiros da caixa, identificados por carta/instância, pra escolher quem joga desta vez.
  * Caixa vazia (nenhuma carta ainda) não trava nada: cai pro Pikachu de reserva sem tela de escolha, como antes. */
 function readFavorites(ids: readonly string[]): Set<string> {
   try {
@@ -1081,7 +1093,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   if (pool.length === 0) return [];
   const ids = pool.map((item) => item.id);
   favoriteIds.value = readFavorites(ids);
-  const chosen = selectSurvivorCandidates(pool, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0), favoriteIds.value, 3, previousIds);
+  const chosen = selectSurvivorCandidates(pool, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0), favoriteIds.value, 6, previousIds);
   const thumbs = await Promise.all(
     chosen.map(({ dexId }) =>
       getLocalVillageSprite(dexId, false, 'Idle')
@@ -1097,7 +1109,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidate: SurvivorSupportCandidate | null = null, typeAffinityChoices: readonly PokemonType[] = []): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = []): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -1107,13 +1119,14 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     enemySprites.clear();
     enemySpriteLoads.clear();
     requestedEnemyRegions.clear();
-    const [player, support] = await Promise.all([
+    const [player, ...supports] = await Promise.all([
       loadSpriteOrNull(dexId),
-      supportCandidate ? loadSpriteOrNull(supportCandidate.dexId) : Promise.resolve(null),
+      ...supportCandidates.map((candidate) => loadSpriteOrNull(candidate.dexId)),
       preloadEnemyRegion(survivorRegionAt(0).current),
     ]);
     playerSprite = player;
-    supportSprite = support;
+    supportSprites.clear();
+    supportCandidates.forEach((candidate, index) => supportSprites.set(candidate.dexId, supports[index] ?? null));
     missingEnemySprites.value = REGIONAL_ENEMY_SPRITES.filter((id) => enemySprites.get(id) === null).length;
 
     if (disposed) return;
@@ -1136,7 +1149,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidate: supportCandidate ?? undefined, dexId, evolutions: evolutionsFor, infinite, preparation, typeAffinityChoices });
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, preparation, typeAffinityChoices });
     announcedRegion = survivorRegionLabel(0);
     guardianSprite.value = null;
     specialQueued = false;
@@ -1157,17 +1170,18 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
 function choosePlayer(opt: PickOption, picked?: PokemonType): void {
   unlockSound();
   runParticipant = { id: opt.id, name: opt.name };
-  const support = pickOptions.value?.find((candidate) => candidate.id !== opt.id);
-  const supportAttack = support ? attackOf(support.dexId) : null;
-  const supportCandidate = support && supportAttack ? {
-    dexId: support.dexId,
-    name: support.name,
-    move: supportAttack.move,
-    profile: supportAttack.profile,
-  } satisfies SurvivorSupportCandidate : null;
+  const supportCandidates = (pickOptions.value ?? [])
+    .filter((candidate) => candidate.id !== opt.id)
+    .slice(0, 5)
+    .map((support) => ({
+      dexId: support.dexId,
+      name: support.name,
+      move: support.move,
+      profile: attackProfile(support.move, statsOfDex(support.dexId)),
+    } satisfies SurvivorSupportCandidate));
   const primary = picked ?? opt.types[0] ?? opt.move.type;
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
-  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidate, typeAffinityChoices);
+  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidates, typeAffinityChoices);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
@@ -1335,10 +1349,10 @@ onBeforeUnmount(() => {
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
              <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
-             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0" class="chip survivor-artifact-chip" role="status">
-               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
+             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
+               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
              </span>
-              <span v-if="state.support" class="chip survivor-move-chip second" :style="{ '--move': state.support.move.color }" :title="`${state.support.name}: ${MOVE_EFFECT_LABELS_PT[state.support.move.effect]}. Ataca da sua posição e não recebe upgrades.`">🤝 {{ state.support.name }} · {{ moveLine(state.support.move) }}</span>
+               <span v-for="support in state.supports" :key="`${support.dexId}-${support.name}`" class="chip survivor-move-chip second" :style="{ '--move': support.move.color }" :title="`${support.name}: ${MOVE_EFFECT_LABELS_PT[support.move.effect]}. Ataca da sua posição e não recebe upgrades.`">🤝 {{ support.name }} · {{ moveLine(support.move) }}</span>
             <span class="chip survivor-xp" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">✨ {{ state.player.xp }}/{{ state.player.xpToNext }} XP <small v-if="hudExpanded">· faltam {{ Math.max(0, state.player.xpToNext - state.player.xp) }}</small></span>
             <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
             <span class="chip">☠ {{ state.kills }}</span>
@@ -1417,7 +1431,7 @@ onBeforeUnmount(() => {
                 </li>
               </ul>
             </details>
-             <p class="note">3 Pokémon sorteados da sua caixa. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
+             <p class="note">Até 6 Pokémon são sorteados da sua caixa: 1 protagonista e até 5 apoios para recrutar durante a corrida. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
             <p class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
             <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
             <div v-if="torre.infiniteUnlocked" class="survivor-mode" role="group" aria-label="Modo da Torre">
@@ -1527,6 +1541,10 @@ onBeforeUnmount(() => {
                 </span>
                 <strong>{{ u.name }}</strong><small>{{ u.description }}</small>
               </span>
+            </button>
+            <button v-if="availableUpgradeRerolls > 0" type="button" class="survivor-jirachi-reroll" @click="rerollUpgradeSelection">
+              <span class="survivor-upgrade-icon" aria-hidden="true">⭐</span>
+              <span><strong>Desejo de Jirachi · Rerrolar</strong><small>{{ availableUpgradeRerolls }} desejo(s) restante(s). Cartas normais são trocadas; se todas forem Great Ball ou melhor, uma nova raridade superior é garantida quando já estiver liberada.</small></span>
             </button>
           </div>
         </div>

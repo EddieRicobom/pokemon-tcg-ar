@@ -9,6 +9,7 @@ import {
   ENEMY_BEHAVIOR_LIMITS,
   PLAYER_RADIUS,
   rollUpgrades,
+  rerollSurvivorUpgradeOffer,
   stepSurvivor,
   survivorCoins,
   survivorScore,
@@ -301,6 +302,62 @@ describe('stepSurvivor', () => {
     expect(s.player.xp % 2).toBe(0);
   });
 
+  it('oferece o upgrade raro de escolhas extras sem mudar a regra de escolher uma carta', () => {
+    const s = createSurvivorState(12, { kindCount: 1 });
+    expect(s.player.upgradeChoices).toBe(3);
+    const card = { id: 'more-upgrade-choices', name: 'Mochila de escolhas', description: '', rarity: 'raro' as const };
+
+    s.pendingUpgrade = [card];
+    applyUpgrade(s, card.id);
+    expect(s.player.upgradeChoices).toBe(4);
+    expect(s.player.upgradeLevels[card.id]).toBe(1);
+
+    s.pendingUpgrade = [card];
+    applyUpgrade(s, card.id);
+    expect(s.player.upgradeChoices).toBe(5);
+    expect(s.player.upgradeLevels[card.id]).toBe(2);
+
+    s.pendingUpgrade = [card];
+    applyUpgrade(s, card.id);
+    expect(s.player.upgradeChoices).toBe(5);
+    expect(s.player.upgradeLevels[card.id]).toBe(2);
+
+    s.upgradesOwed = 1;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.pendingUpgrade).toHaveLength(5);
+  });
+
+  it('gasta o desejo de Jirachi e preserva as cartas raras ao trocar as normais', () => {
+    const s = createSurvivorState(14, { kindCount: 1 });
+    s.player.upgradeRerolls = 1;
+    s.pendingUpgrade = [
+      { id: 'legs', name: 'Passo', description: '', rarity: 'normal' },
+      { id: 'power', name: 'Golpe', description: '', rarity: 'raro' },
+      { id: 'vigor', name: 'Vida', description: '', rarity: 'normal' },
+    ];
+    expect(rerollSurvivorUpgradeOffer(s)).toBe(true);
+    expect(s.player.upgradeRerolls).toBe(0);
+    expect(s.pendingUpgrade).toHaveLength(3);
+    expect(s.pendingUpgrade?.some((option) => option.id === 'power')).toBe(true);
+    expect(s.pendingUpgrade?.some((option) => option.id === 'legs')).toBe(false);
+    expect(s.pendingUpgrade?.some((option) => option.id === 'vigor')).toBe(false);
+  });
+
+  it('quando toda a oferta já é rara, troca uma carta e garante uma faixa superior liberada', () => {
+    const s = createSurvivorState(15, { kindCount: 1 });
+    s.player.level = 8;
+    s.player.upgradeRerolls = 1;
+    s.pendingUpgrade = [
+      { id: 'power', name: 'Golpe', description: '', rarity: 'raro' },
+      { id: 'haste', name: 'Recarga', description: '', rarity: 'raro' },
+      { id: 'range', name: 'Alcance', description: '', rarity: 'raro' },
+    ];
+    expect(rerollSurvivorUpgradeOffer(s)).toBe(true);
+    expect(s.pendingUpgrade).toHaveLength(3);
+    expect(s.pendingUpgrade?.slice(0, 2).map((option) => option.id)).toEqual(['power', 'haste']);
+    expect(s.pendingUpgrade?.[2]?.rarity).toBe('lendario');
+  });
+
   it('pode criar um orbe de XP dobrada com visual identificável', () => {
     const s = createSurvivorState(4, { kindCount: 1 });
     s.rng = () => 0;
@@ -583,6 +640,31 @@ describe('efeitos defensivos de golpes próximos', () => {
 });
 
 describe('segundo golpe', () => {
+  it('permite recrutar até cinco apoios, oferecendo cada candidato em uma subida posterior', () => {
+    const supportMove = as('dark', 'projetil').move;
+    const supportProfile = attackProfile(supportMove, null);
+    const supportCandidates = Array.from({ length: 5 }, (_, index) => ({
+      dexId: 197 + index,
+      name: `Apoio ${index + 1}`,
+      move: supportMove,
+      profile: supportProfile,
+    }));
+    const s = quiet(createSurvivorState(13, { kindCount: 1, supportCandidates }));
+    s.player.level = 5;
+
+    for (let index = 0; index < 5; index += 1) {
+      s.player.xp = s.player.xpToNext;
+      stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+      expect(s.pendingUpgrade?.some((option) => option.id === 'second-attack')).toBe(true);
+      applyUpgrade(s, 'second-attack');
+      expect(s.supports).toHaveLength(index + 1);
+      expect(s.supports[index]?.name).toBe(`Apoio ${index + 1}`);
+    }
+
+    expect(s.supportCandidates).toHaveLength(0);
+    expect(s.support).toBe(s.supports[0]);
+  });
+
   it('chama um apoio real, que mantém o próprio perfil e ataca a partir do jogador', () => {
     const supportMove = as('dark', 'projetil').move;
     const supportProfile = attackProfile(supportMove, null);
@@ -850,5 +932,25 @@ describe('artefatos temporários', () => {
     expect(s.digitalPokeballs).toBe(1);
     expect(s.fx.some((fx) => fx.kind === 'artifact' && fx.artifact === 'pokeball')).toBe(true);
     expect(events).toContainEqual({ type: 'artifactCollected', kind: 'pokeball' });
+  });
+
+  it('usa os novos artefatos Ímã e Foco sem criar alvo ou vida extra', () => {
+    const s = createSurvivorState(10, { kindCount: 1 });
+    s.artifacts.push({ id: 903, x: s.player.x, y: s.player.y, kind: 'magnet' });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.artifactMagnetMs).toBe(8000);
+
+    s.artifacts.push({ id: 904, x: s.player.x + s.player.pickupRadius * 1.5, y: s.player.y, kind: 'speed' });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.artifacts).toHaveLength(0);
+
+    s.player.attackCooldownMs = 1000;
+    s.artifacts.push({ id: 905, x: s.player.x, y: s.player.y, kind: 'focus' });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.artifactFocusMs).toBe(8000);
+    s.enemies.push(dummy(906, s.player.x + 40, s.player.y, 1000));
+    s.player.attackTimerMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.attackTimerMs).toBe(800);
   });
 });
