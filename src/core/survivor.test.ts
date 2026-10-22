@@ -933,4 +933,24 @@ describe('artefatos temporários', () => {
     expect(s.fx.some((fx) => fx.kind === 'artifact' && fx.artifact === 'pokeball')).toBe(true);
     expect(events).toContainEqual({ type: 'artifactCollected', kind: 'pokeball' });
   });
+
+  it('usa os novos artefatos Ímã e Foco sem criar alvo ou vida extra', () => {
+    const s = createSurvivorState(10, { kindCount: 1 });
+    s.artifacts.push({ id: 903, x: s.player.x, y: s.player.y, kind: 'magnet' });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.artifactMagnetMs).toBe(8000);
+
+    s.artifacts.push({ id: 904, x: s.player.x + s.player.pickupRadius * 1.5, y: s.player.y, kind: 'speed' });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.artifacts).toHaveLength(0);
+
+    s.player.attackCooldownMs = 1000;
+    s.artifacts.push({ id: 905, x: s.player.x, y: s.player.y, kind: 'focus' });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.artifactFocusMs).toBe(8000);
+    s.enemies.push(dummy(906, s.player.x + 40, s.player.y, 1000));
+    s.player.attackTimerMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.attackTimerMs).toBe(800);
+  });
 });

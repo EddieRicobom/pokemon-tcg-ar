@@ -750,8 +750,8 @@ function draw(): void {
   for (const artifact of s.artifacts) {
     // A Pokébola é uma recompensa importante e continua visível no Modo Rotom; os artefatos temporários podem ser ocultados para economizar GPU.
     if (effectiveVisual.value.rotomMode && artifact.kind !== 'pokeball') continue;
-    const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb';
-    const icon = artifact.kind === 'pokeball' ? '★' : artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : '♥';
+    const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb';
+    const icon = artifact.kind === 'pokeball' ? '★' : artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : artifact.kind === 'magnet' ? '🧲' : artifact.kind === 'focus' ? '◈' : '♥';
     const pulse = 1 + (effectiveVisual.value.rotomMode ? 0 : Math.sin(animMs / 180 + artifact.id) * 0.12);
     const wobble = artifact.kind === 'pokeball' && !effectiveVisual.value.rotomMode
       ? Math.sin(animMs / 220 + artifact.id) * 0.12
@@ -888,7 +888,7 @@ function draw(): void {
       ctx.font = 'bold 20px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = color;
-      ctx.fillText(f.artifact === 'pokeball' ? '★' : f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : '♥', f.x, f.y - 8 - t * 24);
+      ctx.fillText(f.artifact === 'pokeball' ? '★' : f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : f.artifact === 'magnet' ? '🧲' : f.artifact === 'focus' ? '◈' : '♥', f.x, f.y - 8 - t * 24);
     } else {
       for (let k = 0; k < 3; k++) {
         ctx.globalAlpha = 0.7 * (1 - t);
@@ -1349,8 +1349,8 @@ onBeforeUnmount(() => {
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
              <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
-             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0" class="chip survivor-artifact-chip" role="status">
-               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
+             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
+               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
              </span>
                <span v-for="support in state.supports" :key="`${support.dexId}-${support.name}`" class="chip survivor-move-chip second" :style="{ '--move': support.move.color }" :title="`${support.name}: ${MOVE_EFFECT_LABELS_PT[support.move.effect]}. Ataca da sua posição e não recebe upgrades.`">🤝 {{ support.name }} · {{ moveLine(support.move) }}</span>
             <span class="chip survivor-xp" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">✨ {{ state.player.xp }}/{{ state.player.xpToNext }} XP <small v-if="hudExpanded">· faltam {{ Math.max(0, state.player.xpToNext - state.player.xp) }}</small></span>

@@ -68,6 +68,8 @@ export interface SurvivorPlayer {
   artifactSpeedMs: number;
   artifactPowerMs: number;
   artifactShieldMs: number;
+  artifactMagnetMs: number;
+  artifactFocusMs: number;
   /** -1 olhando para a esquerda, 1 para a direita (para virar o sprite). */
   facing: -1 | 1;
   /** Alcance para coletar orbe de XP ao passar perto (sobe com o upgrade "Ímã de XP"). */
@@ -210,13 +212,15 @@ export interface SurvivorFx {
   artifact?: SurvivorArtifactKind;
 }
 
-export type SurvivorArtifactKind = 'speed' | 'heal' | 'power' | 'pokeball';
+export type SurvivorArtifactKind = 'speed' | 'heal' | 'power' | 'magnet' | 'focus' | 'pokeball';
 
 /** Texto único para HUD e avisos: descreve exatamente os bônus temporários aplicados pelo motor. */
 export const SURVIVOR_ARTIFACT_DETAILS: Record<SurvivorArtifactKind, { icon: string; name: string; description: string }> = {
   speed: { icon: '⚡', name: 'Passo relâmpago', description: '+35% de velocidade por 8 s.' },
   power: { icon: '✦', name: 'Núcleo de poder', description: '+25% de dano por 8 s.' },
   heal: { icon: '♥', name: 'Pulso vital', description: 'Cura 28% da vida (mín. 18) e protege por 3 s.' },
+  magnet: { icon: '🧲', name: 'Ímã de experiência', description: '+70% de alcance para coletar orbes por 8 s.' },
+  focus: { icon: '◈', name: 'Foco preciso', description: 'Reduz em 20% a recarga do golpe por 8 s.' },
   pokeball: { icon: '★', name: 'Pokébola errante', description: 'Reúne opções de Digital Pokémon para escolher ao fim da corrida.' },
 };
 
@@ -625,6 +629,8 @@ export const BALANCE = {
   spawnPerSecMs: 4,
   spawnPerWaveMs: 15,
   spawnFloorMs: 450,
+  /** Pequeno aumento de densidade, sem reduzir o piso de segurança da arena. */
+  spawnRateMultiplier: 0.92,
   /** Intervalo de invulnerabilidade após qualquer acerto; dá tempo para reposicionar sem remover o perigo. */
   hitInvulnerabilityMs: 750,
   playerDamage: 10,
@@ -634,9 +640,9 @@ export const BALANCE = {
   bossEveryMs: 90_000,
   /** Treinadores entram mais fortes sem alterar a curva dos inimigos comuns. */
   trainerStatMultiplier: 1.3,
-  artifactDropChance: 0.08,
-  artifactEliteDropChance: 0.2,
-  artifactBossDropChance: 0.45,
+  artifactDropChance: 0.1,
+  artifactEliteDropChance: 0.24,
+  artifactBossDropChance: 0.5,
   /** Depois dos 10 minutos, uma morte pode deixar uma Pokébola especial. */
   digitalPokeballDropChance: 0.025,
   /** Chance independente de qualquer inimigo deixar um orbe de XP dobrada. */
@@ -745,6 +751,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     artifactSpeedMs: 0,
     artifactPowerMs: 0,
     artifactShieldMs: 0,
+    artifactMagnetMs: 0,
+    artifactFocusMs: 0,
     facing: 1,
     pickupRadius: PICKUP_RADIUS * preparation.pickupRadiusMultiplier,
     upgradeChoices: 3,
@@ -814,7 +822,7 @@ function spawnIntervalMs(state: SurvivorState): number {
   const t = state.elapsedMs / 1000;
   const base = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
   const early = Math.max(0, 1 - state.elapsedMs / BALANCE.earlyGameMs);
-  return base * (1 + BALANCE.earlySpawnIntervalBonus * early);
+  return base * (1 + BALANCE.earlySpawnIntervalBonus * early) * BALANCE.spawnRateMultiplier;
 }
 
 function earlyCurve(elapsedMs: number, start: number): number {
@@ -1544,7 +1552,7 @@ function artifactDamage(state: SurvivorState): number {
 
 function artifactKind(rng: Rng): SurvivorArtifactKind {
   const roll = rng();
-  return roll < 0.34 ? 'speed' : roll < 0.67 ? 'heal' : 'power';
+  return roll < 0.24 ? 'speed' : roll < 0.48 ? 'heal' : roll < 0.72 ? 'power' : roll < 0.86 ? 'magnet' : 'focus';
 }
 
 /**
@@ -1570,6 +1578,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   p.artifactSpeedMs = Math.max(0, p.artifactSpeedMs - dtMs);
   p.artifactPowerMs = Math.max(0, p.artifactPowerMs - dtMs);
   p.artifactShieldMs = Math.max(0, p.artifactShieldMs - dtMs);
+  p.artifactMagnetMs = Math.max(0, p.artifactMagnetMs - dtMs);
+  p.artifactFocusMs = Math.max(0, p.artifactFocusMs - dtMs);
   stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS);
 
   // Movimento do jogador, com a arena como cerca.
@@ -1669,7 +1679,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   // Autoataque com o golpe do tipo (projétil, aura ou área).
   p.attackTimerMs = Math.max(0, p.attackTimerMs - dtMs);
-  if (p.attackTimerMs <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs;
+  if (p.attackTimerMs <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
   if (state.supports.length > 0) {
     // Formação visual: cada apoio tem uma posição própria e alcança o jogador
     // com a mesma velocidade normal, sem criar vida ou hitbox adicional.
@@ -1794,15 +1804,18 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     return true;
   });
   state.artifacts = state.artifacts.filter((artifact) => {
-    if (Math.hypot(artifact.x - p.x, artifact.y - p.y) > p.pickupRadius) return true;
+    const pickupRadius = p.pickupRadius * (p.artifactMagnetMs > 0 ? 1.7 : 1);
+    if (Math.hypot(artifact.x - p.x, artifact.y - p.y) > pickupRadius) return true;
     if (artifact.kind === 'pokeball') state.digitalPokeballs += 1;
     else if (artifact.kind === 'speed') p.artifactSpeedMs = Math.max(p.artifactSpeedMs, BALANCE.artifactDurationMs);
     else if (artifact.kind === 'power') p.artifactPowerMs = Math.max(p.artifactPowerMs, BALANCE.artifactDurationMs);
+    else if (artifact.kind === 'magnet') p.artifactMagnetMs = Math.max(p.artifactMagnetMs, BALANCE.artifactDurationMs);
+    else if (artifact.kind === 'focus') p.artifactFocusMs = Math.max(p.artifactFocusMs, BALANCE.artifactDurationMs);
     else if (artifact.kind === 'heal') {
       p.hp = Math.min(p.maxHp, p.hp + Math.max(18, Math.round(p.maxHp * 0.28)));
       p.artifactShieldMs = 3_000;
     }
-    state.fx.push({ kind: 'artifact', artifact: artifact.kind, x: p.x, y: p.y, r: artifact.kind === 'pokeball' ? 30 : 24, color: artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb', ageMs: 0, lifeMs: artifact.kind === 'pokeball' ? 900 : 620 });
+    state.fx.push({ kind: 'artifact', artifact: artifact.kind, x: p.x, y: p.y, r: artifact.kind === 'pokeball' ? 30 : 24, color: artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb', ageMs: 0, lifeMs: artifact.kind === 'pokeball' ? 900 : 620 });
     events.push({ type: 'artifactCollected', kind: artifact.kind });
     return false;
   });
