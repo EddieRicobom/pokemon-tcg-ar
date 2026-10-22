@@ -1,4 +1,4 @@
-import { AmbientLight, BoxGeometry, CanvasTexture, Color, DirectionalLight, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, Vector2, Vector3, NearestFilter, Raycaster } from 'three';
+import { AmbientLight, BoxGeometry, CanvasTexture, Color, DirectionalLight, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, Vector2, Vector3, NearestFilter, Raycaster } from 'three';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES, intersectFloor } from '../box/floor';
 import { visibleVerticalFov } from '../box/orientation';
 import { OrientationSource } from '../box/orientation-source';
@@ -46,8 +46,8 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
   scene.background = null;
   const camera = new PerspectiveCamera();
   camera.position.set(0, 0, 0);
-  scene.add(new AmbientLight(new Color(0xffffff), 0.72));
-  const keyLight = new DirectionalLight(new Color(0xfff1d2), 1.15);
+  scene.add(new AmbientLight(new Color(0xffffff), 0.84));
+  const keyLight = new DirectionalLight(new Color(0xffffff), 0.55);
   keyLight.position.set(-0.6, 1.4, 0.9);
   scene.add(keyLight);
 
@@ -67,13 +67,23 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     new MeshStandardMaterial({ color: 0x26394c, roughness: 0.92, metalness: 0.02, transparent: true, opacity: 0.94 }),
   );
   backWall.position.set(0, 0.56, -VILLAGE_DIORAMA_DEPTH_M / 2 - 0.06);
-  const map = new Mesh(
+  // A cena fica em pé no fundo da maquete. Assim casas, itens e moradores
+  // deixam de ser uma textura deitada e passam a parecer recortes apoiados
+  // no chão, enquanto a base continua fornecendo o plano horizontal.
+  const sceneBoard = new Mesh(
     new PlaneGeometry(VILLAGE_DIORAMA_WIDTH_M, VILLAGE_DIORAMA_DEPTH_M),
-    new MeshStandardMaterial({ map: texture, transparent: true, alphaTest: 0.01, roughness: 0.96, metalness: 0 }),
+    new MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.01 }),
   );
-  map.rotation.x = -Math.PI / 2;
-  map.position.y = 0.008;
-  root.add(base, backWall, map);
+  sceneBoard.position.set(0, VILLAGE_DIORAMA_DEPTH_M / 2, -VILLAGE_DIORAMA_DEPTH_M / 2 - 0.115);
+  // O piso é deliberadamente neutro: a textura colorida permanece no painel
+  // vertical e não sofre um filtro de iluminação que altere as cores da Vila.
+  const floor = new Mesh(
+    new PlaneGeometry(VILLAGE_DIORAMA_WIDTH_M, VILLAGE_DIORAMA_DEPTH_M),
+    new MeshStandardMaterial({ color: 0x5d8d55, roughness: 0.96, metalness: 0 }),
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.008;
+  root.add(base, backWall, floor, sceneBoard);
   scene.add(root);
 
   const renderer = createWebglBackend(options.canvas);
@@ -165,9 +175,12 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
        (base.material as MeshStandardMaterial).dispose();
        backWall.geometry.dispose();
        (backWall.material as MeshStandardMaterial).dispose();
-      map.geometry.dispose();
-       (map.material as MeshStandardMaterial).dispose();
+      floor.geometry.dispose();
+       (floor.material as MeshStandardMaterial).dispose();
+      sceneBoard.geometry.dispose();
+       (sceneBoard.material as MeshBasicMaterial).dispose();
       renderer.dispose();
     },
   };
 }
+
