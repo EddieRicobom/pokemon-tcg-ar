@@ -28,7 +28,7 @@ const pendingImport = shallowRef<BackupFile | null>(null);
 const connected = computed(() => peer.value?.state === 'open');
 const incomingProgress = computed(() => incoming.value ? Math.round((incoming.value.receivedBytes / incoming.value.bytes) * 100) : 0);
 
-let incoming: IncomingTransfer | null = null;
+const incoming = shallowRef<IncomingTransfer | null>(null);
 let outgoingId = '';
 
 function makeTransferId(): string {
@@ -84,47 +84,49 @@ function onConnected(next: PvpPeer, nextRole: TransferRole): void {
     if (state === 'closed') {
       status.value = '';
       error.value = 'A conexão foi encerrada. Crie uma sala nova para transferir outro backup.';
-      incoming = null;
+      incoming.value = null;
       progress.value = null;
     }
   };
 }
 
 function failIncoming(message: string): void {
-  const id = incoming?.id;
+  const id = incoming.value?.id;
   if (id) peer.value?.send({ t: 'backup-failed', id, reason: message });
-  incoming = null;
+  incoming.value = null;
   progress.value = null;
   error.value = message;
 }
 
 function receiveOffer(message: Extract<WireMessage, { t: 'backup-offer' }>): void {
-  if (incoming || pendingImport.value || busy.value) {
+  if (incoming.value || pendingImport.value || busy.value) {
     peer.value?.send({ t: 'backup-failed', id: message.id, reason: 'Este aparelho já está processando outro backup.' });
     return;
   }
-  incoming = { id: message.id, name: message.name, bytes: message.bytes, chunks: message.chunks, data: Array.from({ length: message.chunks }), receivedBytes: 0 };
+  incoming.value = { id: message.id, name: message.name, bytes: message.bytes, chunks: message.chunks, data: Array.from({ length: message.chunks }), receivedBytes: 0 };
   error.value = '';
   setBackupProgress(0, 'Recebendo ' + message.name + '…');
   status.value = 'O backup está sendo transferido. Seus dados atuais continuam intactos até a confirmação.';
 }
 
 function receiveChunk(message: Extract<WireMessage, { t: 'backup-chunk' }>): void {
-  if (!incoming || message.id !== incoming.id || message.total !== incoming.chunks || message.index >= incoming.chunks) return;
-  if (incoming.data[message.index] !== undefined) return;
+  const current = incoming.value;
+  if (!current || message.id !== current.id || message.total !== current.chunks || message.index >= current.chunks) return;
+  if (current.data[message.index] !== undefined) return;
   const decoded = decodeBackupChunk(message.data);
-  if (!decoded || incoming.receivedBytes + decoded.byteLength > incoming.bytes) {
+  if (!decoded || current.receivedBytes + decoded.byteLength > current.bytes) {
     failIncoming('O backup recebido está corrompido ou excede o tamanho permitido.');
     return;
   }
-  incoming.data[message.index] = message.data;
-  incoming.receivedBytes += decoded.byteLength;
-  setBackupProgress(incomingProgress.value * 0.9, 'Recebendo backup… ' + incomingProgress.value + '%');
+  current.data[message.index] = message.data;
+  current.receivedBytes += decoded.byteLength;
+  const percent = Math.round((current.receivedBytes / current.bytes) * 100);
+  setBackupProgress(percent * 0.9, 'Recebendo backup… ' + percent + '%');
 }
 
 function finishIncoming(message: Extract<WireMessage, { t: 'backup-end' }>): void {
-  if (!incoming || message.id !== incoming.id) return;
-  const current = incoming;
+  const current = incoming.value;
+  if (!current || message.id !== current.id) return;
   const bytes = joinBackupChunks(current.data, current.bytes, current.chunks);
   if (!bytes) {
     failIncoming('Não foi possível remontar todos os fragmentos do backup.');
@@ -135,7 +137,7 @@ function finishIncoming(message: Extract<WireMessage, { t: 'backup-end' }>): voi
     failIncoming('O backup chegou, mas falhou na verificação de integridade.');
     return;
   }
-  incoming = null;
+  incoming.value = null;
   pendingImport.value = parsed;
   setBackupProgress(100, 'Backup recebido e conferido.');
   status.value = 'Backup recebido. Confirme a substituição somente se este for o aparelho de destino.';
