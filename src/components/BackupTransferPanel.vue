@@ -26,8 +26,6 @@ const busy = ref(false);
 const progress = ref<TransferProgress | null>(null);
 const pendingImport = shallowRef<BackupFile | null>(null);
 const connected = computed(() => peer.value?.state === 'open');
-const incomingProgress = computed(() => incoming.value ? Math.round((incoming.value.receivedBytes / incoming.value.bytes) * 100) : 0);
-
 const incoming = shallowRef<IncomingTransfer | null>(null);
 let outgoingId = '';
 
