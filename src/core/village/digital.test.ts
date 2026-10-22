@@ -12,6 +12,7 @@ import {
   evolve,
   EVOLVE_COST,
   grantStarter,
+  grantSurvival,
   isDigitalInstanceId,
   normalizeDigital,
   pickFonteSpecies,
@@ -171,6 +172,12 @@ describe('digital pokémon — normalização (nunca trava com dado salvo estran
     let s = grantStarter(emptyDigital(), BULBASAUR, NOW)!;
     s = summon(s, 600, IVYSAUR, NOW)!.state;
     expect(normalizeDigital(JSON.parse(JSON.stringify(s)))).toEqual(s);
+  });
+
+  it('registra um recrutamento vindo da Torre sem cobrar moedas', () => {
+    const s = grantSurvival(emptyDigital(), { dexId: 448, name: 'Lucario', cardId: 'x' }, NOW);
+    expect(s.instances[0]).toMatchObject({ dexId: 448, source: 'sobrevivencia', isDigitalPokemon: true });
+    expect(s.ledger).toEqual([]);
   });
 });
 

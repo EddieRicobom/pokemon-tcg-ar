@@ -201,13 +201,14 @@ export interface SurvivorFx {
   artifact?: SurvivorArtifactKind;
 }
 
-export type SurvivorArtifactKind = 'speed' | 'heal' | 'power';
+export type SurvivorArtifactKind = 'speed' | 'heal' | 'power' | 'pokeball';
 
 /** Texto único para HUD e avisos: descreve exatamente os bônus temporários aplicados pelo motor. */
 export const SURVIVOR_ARTIFACT_DETAILS: Record<SurvivorArtifactKind, { icon: string; name: string; description: string }> = {
   speed: { icon: '⚡', name: 'Passo relâmpago', description: '+35% de velocidade por 8 s.' },
   power: { icon: '✦', name: 'Núcleo de poder', description: '+25% de dano por 8 s.' },
   heal: { icon: '♥', name: 'Pulso vital', description: 'Cura 28% da vida (mín. 18) e protege por 3 s.' },
+  pokeball: { icon: '★', name: 'Pokébola errante', description: 'Reúne opções de Digital Pokémon para escolher ao fim da corrida.' },
 };
 
 export interface SurvivorArtifact {
@@ -235,10 +236,10 @@ export interface SurvivorUpgradeOption {
 
 export type SurvivorUpgradeRarity = 'normal' | 'raro' | 'lendario' | 'ancestral';
 export const SURVIVOR_UPGRADE_RARITIES: Record<SurvivorUpgradeRarity, { label: string; icon: string; weight: number; minLevel: number; impact: string }> = {
-  normal: { label: 'Poké Ball', icon: '●', weight: 60, minLevel: 1, impact: 'Ajuste pequeno e útil' },
-  raro: { label: 'Great Ball', icon: '◆', weight: 30, minLevel: 3, impact: 'Muda a força ou o alcance da estratégia' },
-  lendario: { label: 'Ultra Ball', icon: '✦', weight: 8, minLevel: 8, impact: 'Abre uma vantagem marcante' },
-  ancestral: { label: 'Master Ball', icon: '✶', weight: 2, minLevel: 12, impact: 'Transforma a corrida; uma escolha por partida' },
+  normal: { label: 'Poké Ball', icon: '⚪', weight: 60, minLevel: 1, impact: 'Ajuste pequeno e útil' },
+  raro: { label: 'Great Ball', icon: '🔵', weight: 30, minLevel: 3, impact: 'Muda a força ou o alcance da estratégia' },
+  lendario: { label: 'Ultra Ball', icon: '🟡', weight: 8, minLevel: 8, impact: 'Abre uma vantagem marcante' },
+  ancestral: { label: 'Master Ball', icon: '🟣', weight: 2, minLevel: 12, impact: 'Transforma a corrida; uma escolha por partida' },
 };
 
 /** Afinidade rara: o segundo tipo da espécie reforça a corrida sem criar outro golpe. */
@@ -261,6 +262,8 @@ export interface SurvivorState {
   hostileProjectiles: SurvivorHostileProjectile[];
   orbs: SurvivorOrb[];
   artifacts: SurvivorArtifact[];
+  /** Pokébolas especiais recolhidas nesta corrida; cada uma amplia a seleção no fim. */
+  digitalPokeballs: number;
   fx: SurvivorFx[];
   kills: number;
   wave: number;
@@ -337,6 +340,8 @@ export interface SurvivorSummary {
   finalBossBeaten: boolean;
   /** Era uma corrida do modo infinito? */
   infinite: boolean;
+  /** Quantas Pokébolas especiais foram realmente recolhidas durante a corrida. */
+  digitalPokeballs: number;
 }
 
 /** Pontuação da corrida (0–100): tempo vivo, derrotas e nível. */
@@ -600,6 +605,8 @@ export const BALANCE = {
   artifactDropChance: 0.08,
   artifactEliteDropChance: 0.2,
   artifactBossDropChance: 0.45,
+  /** Depois dos 10 minutos, uma morte pode deixar uma Pokébola especial. */
+  digitalPokeballDropChance: 0.025,
   artifactSpeedMultiplier: 1.35,
   artifactPowerMultiplier: 1.25,
   artifactDurationMs: 8_000,
@@ -705,6 +712,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     hostileProjectiles: [],
     orbs: [],
     artifacts: [],
+    digitalPokeballs: 0,
     fx: [],
     kills: 0,
     wave: 1,
@@ -1611,7 +1619,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       const value = e.boss ? 40 : e.grade === 'chefao' ? 30 : e.grade === 'elite' ? 16 : 6;
       state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value });
       const dropChance = e.boss ? BALANCE.artifactBossDropChance : e.grade === 'chefao' || e.grade === 'elite' ? BALANCE.artifactEliteDropChance : BALANCE.artifactDropChance;
-      if (state.rng() < dropChance) state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: artifactKind(state.rng) });
+       if (state.rng() < dropChance) state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: artifactKind(state.rng) });
+       if (state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS && state.rng() < BALANCE.digitalPokeballDropChance) {
+         state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: 'pokeball' });
+       }
     }
     // Treinador derrotado: nenhum Pokémon dele continua em pé.
     const trainerIds = new Set(dead.map((e) => e.trainerId).filter((id): id is number => id !== undefined));
@@ -1635,7 +1646,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         state.fx = [];
         events.push({
           type: 'gameover',
-          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite },
+          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs },
         });
       }
     }
@@ -1651,13 +1662,14 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   });
   state.artifacts = state.artifacts.filter((artifact) => {
     if (Math.hypot(artifact.x - p.x, artifact.y - p.y) > p.pickupRadius) return true;
-    if (artifact.kind === 'speed') p.artifactSpeedMs = Math.max(p.artifactSpeedMs, BALANCE.artifactDurationMs);
+    if (artifact.kind === 'pokeball') state.digitalPokeballs += 1;
+    else if (artifact.kind === 'speed') p.artifactSpeedMs = Math.max(p.artifactSpeedMs, BALANCE.artifactDurationMs);
     else if (artifact.kind === 'power') p.artifactPowerMs = Math.max(p.artifactPowerMs, BALANCE.artifactDurationMs);
-    else {
+    else if (artifact.kind === 'heal') {
       p.hp = Math.min(p.maxHp, p.hp + Math.max(18, Math.round(p.maxHp * 0.28)));
       p.artifactShieldMs = 3_000;
     }
-    state.fx.push({ kind: 'artifact', artifact: artifact.kind, x: p.x, y: p.y, r: 24, color: artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb', ageMs: 0, lifeMs: 620 });
+    state.fx.push({ kind: 'artifact', artifact: artifact.kind, x: p.x, y: p.y, r: artifact.kind === 'pokeball' ? 30 : 24, color: artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb', ageMs: 0, lifeMs: artifact.kind === 'pokeball' ? 900 : 620 });
     events.push({ type: 'artifactCollected', kind: artifact.kind });
     return false;
   });
@@ -1670,7 +1682,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.fx = [];
     events.push({
       type: 'gameover',
-      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite },
+      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs },
     });
   }
 

@@ -33,7 +33,7 @@ export interface DigitalPokemonInstance {
   dexId: number;
   name: string;
   readonly isDigitalPokemon: true;
-  source: 'presente' | 'fonte' | 'evolucao';
+  source: 'presente' | 'fonte' | 'evolucao' | 'sobrevivencia';
   /** ISO. */
   grantedAt: string;
   /** 0 = forma recebida; sobe 1 a cada evolução. */
@@ -174,6 +174,21 @@ export function summon(s: DigitalState, coins: number, species: SpeciesRef, now:
   return { state: { ...spent.state, instances: [...spent.state.instances, instance] }, coins: spent.coins };
 }
 
+/** Recruta um Digital Pokémon encontrado numa Pokébola da Torre, sem custo de moedas. */
+export function grantSurvival(s: DigitalState, species: SpeciesRef, now: string): DigitalState {
+  const instance: DigitalPokemonInstance = {
+    instanceId: makeInstanceId(s, species.dexId, now),
+    originCardId: species.cardId,
+    dexId: species.dexId,
+    name: species.name,
+    isDigitalPokemon: true,
+    source: 'sobrevivencia',
+    grantedAt: now,
+    stage: 0,
+  };
+  return { ...s, instances: [...s.instances, instance] };
+}
+
 /** As 3 condições da evolução (todas obrigatórias): 1000 moedas, amizade nível 3+, e uma próxima forma real. */
 export function canEvolve(s: DigitalState, coins: number, instanceId: string, friendshipLevel: number, hasNextForm: boolean): boolean {
   return hasNextForm && friendshipLevel >= EVOLVE_FRIEND_LEVEL && coins >= EVOLVE_COST && s.instances.some((i) => i.instanceId === instanceId);
@@ -222,6 +237,7 @@ const SOURCE_PT: Record<DigitalPokemonInstance['source'], string> = {
   presente: 'Presente inicial',
   fonte: 'Invocado na Fonte',
   evolucao: 'Evoluiu na Fonte',
+  sobrevivencia: 'Encontrado na Torre',
 };
 
 export function digitalRows(s: DigitalState): DigitalRow[] {

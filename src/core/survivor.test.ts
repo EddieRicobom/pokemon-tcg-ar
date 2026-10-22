@@ -788,4 +788,13 @@ describe('artefatos temporários', () => {
     expect(s.fx.some((fx) => fx.kind === 'artifact' && fx.artifact === 'heal')).toBe(true);
     expect(events).toContainEqual({ type: 'artifactCollected', kind: 'heal' });
   });
+
+  it('coleta a Pokébola especial e aumenta a seleção do fim da corrida', () => {
+    const s = createSurvivorState(9, { kindCount: 1 });
+    s.artifacts.push({ id: 902, x: s.player.x, y: s.player.y, kind: 'pokeball' });
+    const events = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.digitalPokeballs).toBe(1);
+    expect(s.fx.some((fx) => fx.kind === 'artifact' && fx.artifact === 'pokeball')).toBe(true);
+    expect(events).toContainEqual({ type: 'artifactCollected', kind: 'pokeball' });
+  });
 });

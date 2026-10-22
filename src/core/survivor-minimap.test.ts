@@ -26,9 +26,14 @@ describe('minimapa da Torre', () => {
   });
 
   it('produz uma fotografia estável para a interface', () => {
-    const snapshot = survivorMinimapSnapshot({ player, enemies: [] }, { width: ARENA_W, height: ARENA_H }, { width: 300, height: 200 });
+    const snapshot = survivorMinimapSnapshot({ player, enemies: [], artifacts: [] }, { width: ARENA_W, height: ARENA_H }, { width: 300, height: 200 });
     expect(snapshot.markers).toEqual([{ id: 0, x: player.x, y: player.y, kind: 'player' }]);
     expect(snapshot.viewport.width).toBe(300);
     expect(snapshot.viewport.height).toBe(200);
+  });
+
+  it('marca Pokébolas encontradas como estrelas', () => {
+    const snapshot = survivorMinimapSnapshot({ player, enemies: [], artifacts: [{ id: 77, x: 500, y: 600, kind: 'pokeball' }] }, { width: ARENA_W, height: ARENA_H }, { width: 300, height: 200 });
+    expect(snapshot.markers).toContainEqual({ id: 77, x: 500, y: 600, kind: 'artifact' });
   });
 });
