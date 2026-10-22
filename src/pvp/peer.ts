@@ -85,6 +85,35 @@ export class PvpPeer {
     }
   }
 
+  /** Quantidade ainda enfileirada no canal; a transferência de backup usa isso para não estourar a memória do navegador. */
+  get bufferedAmount(): number {
+    return this.channel?.bufferedAmount ?? 0;
+  }
+
+  /** Aguarda o canal esvaziar antes de enviar outro fragmento grande. */
+  waitForBuffer(maxBytes = 256 * 1024): Promise<void> {
+    if (this.bufferedAmount <= maxBytes) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const check = () => {
+        if (this.state === 'closed') {
+          reject(new Error('conexão fechada'));
+          return;
+        }
+        if (this.bufferedAmount <= maxBytes) {
+          resolve();
+          return;
+        }
+        if (Date.now() - started > 30_000) {
+          reject(new Error('canal P2P congestionado'));
+          return;
+        }
+        setTimeout(check, 25);
+      };
+      check();
+    });
+  }
+
   send(msg: WireMessage): boolean {
     if (this.channel?.readyState !== 'open') return false;
     this.channel.send(encodeMessage(msg));
