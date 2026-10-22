@@ -16,6 +16,11 @@ import {
   SURVIVOR_UPGRADES,
   SURVIVOR_UPGRADE_RARITIES,
   SURVIVOR_SUPPORT_RARE_OFFER_CHANCE,
+  MAX_DIGITAL_POKEBALLS_PER_RUN,
+  DIGITAL_DANGER_COOLDOWN_MS,
+  DIGITAL_DANGER_MAX,
+  DIGITAL_DANGER_UNLOCK_MS,
+  MAGNET_PICKUP_RADIUS_CAP,
   normalizeSurvivorXp,
   xpForLevel,
 } from './survivor';
@@ -49,6 +54,42 @@ describe('stepSurvivor', () => {
   it('usa uma arena física três vezes maior em largura e altura', () => {
     expect(ARENA_W).toBe(2880);
     expect(ARENA_H).toBe(1920);
+  });
+
+  it('enche o Digital Danger apenas parado e sem inimigos visíveis', () => {
+    const s = quiet(createSurvivorState(101, { kindCount: 1 }));
+    s.elapsedMs = DIGITAL_DANGER_UNLOCK_MS;
+    s.special.phase = 'ready';
+    s.nextTrainerAtMs = Number.POSITIVE_INFINITY;
+    s.finalBossAtMs = Number.POSITIVE_INFINITY;
+    stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 10_000);
+    expect(s.digitalDanger).toBeCloseTo(25, 5);
+
+    const beforeMoving = s.digitalDanger;
+    stepSurvivor(s, { dx: 1, dy: 0, visibleEnemies: 0 }, 1_000);
+    expect(s.digitalDanger).toBeLessThan(beforeMoving);
+
+    const beforeVisible = s.digitalDanger;
+    stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 1 }, 1_000);
+    expect(s.digitalDanger).toBeLessThan(beforeVisible);
+  });
+
+  it('convoca dois Pokémon quando o Digital Danger chega ao máximo e entra em recarga', () => {
+    const s = quiet(createSurvivorState(102, { kindCount: 1 }));
+    s.elapsedMs = DIGITAL_DANGER_UNLOCK_MS;
+    s.special.phase = 'ready';
+    s.nextTrainerAtMs = Number.POSITIVE_INFINITY;
+    s.finalBossAtMs = Number.POSITIVE_INFINITY;
+    s.digitalDanger = DIGITAL_DANGER_MAX - 1;
+    const events = stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 1_000);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'trainerSpawn', count: 2, trigger: 'digital-danger' }));
+    expect(s.digitalDanger).toBe(0);
+    expect(s.digitalDangerCooldownMs).toBe(DIGITAL_DANGER_COOLDOWN_MS);
+    expect(s.enemies.filter((enemy) => enemy.trainerId !== undefined)).toHaveLength(2);
+
+    const dangerAfterTrigger = s.digitalDanger;
+    stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 10_000);
+    expect(s.digitalDanger).toBeLessThanOrEqual(dangerAfterTrigger);
   });
 
   it('oferece a afinidade dupla apenas depois do primeiro treinador derrotado', () => {
@@ -976,6 +1017,25 @@ describe('artefatos temporários', () => {
     expect(events).toContainEqual({ type: 'artifactCollected', kind: 'pokeball' });
   });
 
+  it('mantém a Pokébola digital rara e limita a três por corrida', () => {
+    expect(MAX_DIGITAL_POKEBALLS_PER_RUN).toBe(3);
+    expect(BALANCE.digitalPokeballDropChance).toEqual({ comum: 0.005, elite: 0.01, chefao: 0.02 });
+
+    const s = quiet(createSurvivorState(11, { kindCount: 1 }));
+    s.elapsedMs = 10 * 60_000;
+    s.rng = () => 0;
+    s.artifacts.push(
+      { id: 911, x: s.player.x + 300, y: s.player.y, kind: 'pokeball' },
+      { id: 912, x: s.player.x + 320, y: s.player.y, kind: 'pokeball' },
+      { id: 913, x: s.player.x + 340, y: s.player.y, kind: 'pokeball' },
+    );
+    s.enemies.push(dummy(914, s.player.x + 40, s.player.y, 1));
+    s.player.attackDamage = 1_000;
+    s.player.attackTimerMs = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.artifacts.filter((artifact) => artifact.kind === 'pokeball')).toHaveLength(3);
+  });
+
   it('usa os novos artefatos Ímã e Foco sem criar alvo ou vida extra', () => {
     const s = createSurvivorState(10, { kindCount: 1 });
     s.artifacts.push({ id: 903, x: s.player.x, y: s.player.y, kind: 'magnet' });
@@ -994,5 +1054,15 @@ describe('artefatos temporários', () => {
     s.player.attackTimerMs = 0;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.player.attackTimerMs).toBe(800);
+  });
+
+  it('limita o raio temporário do Ímã para manter alguma movimentação', () => {
+    const s = quiet(createSurvivorState(12, { kindCount: 1 }));
+    s.player.pickupRadius = 70;
+    s.player.artifactMagnetMs = 8000;
+    s.orbs.push({ id: 906, x: s.player.x + MAGNET_PICKUP_RADIUS_CAP + 1, y: s.player.y, value: 8 });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.orbs).toHaveLength(1);
+    expect(MAGNET_PICKUP_RADIUS_CAP).toBe(90);
   });
 });
