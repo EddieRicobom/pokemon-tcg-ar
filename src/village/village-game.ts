@@ -1330,20 +1330,29 @@ export class VillageGame {
     /** Janelas do tileset acesas à noite (o vidro do desenho vira luz). */
     const glassGlows: { img: HTMLCanvasElement; x: number; y: number; w: number; h: number }[] = [];
     const atlas = this.atlas;
-    /** Inclina cada elemento em pé no diorama, mantendo o ponto dos pés acima do chão. */
+    /**
+     * Apresentação 2.5D do Diorama: sprites continuam em pé e ganham um
+     * cisalhamento discreto, sombra projetada para trás e contraste de maquete.
+     * Rotacionar o bitmap inteiro em 45° fazia prédios e personagens tombarem.
+     */
     const drawDioramaTilted = (cx: number, base: number, width: number, paint: () => void): void => {
       if (!this.diorama || width <= 0) {
         paint();
         return;
       }
-      // Ao girar um retângulo, a quina inferior ficaria `width * sin(45°) / 2`
-      // abaixo do apoio. Levantar exatamente essa folga evita cortar metade do
-      // sprite no chão e deixa o contato visual no bloco correto.
       const tilt = (VILLAGE_DIORAMA_OBJECT_TILT_DEG * Math.PI) / 180;
-      const lift = width * Math.sin(tilt) * 0.5;
+      // A constante de 45° define a força máxima da leitura 2.5D; ela não é
+      // usada como rotação. Um cisalhamento de 0.18 desloca o topo para trás
+      // e mantém a linha dos pés exatamente no ponto de contato com o chão.
+      const shear = -Math.min(0.18, Math.tan(tilt) * 0.18);
       ctx.save();
-      ctx.translate(cx, base - lift);
-      ctx.rotate(-tilt);
+      ctx.filter = 'saturate(1.06) contrast(1.05) brightness(0.98)';
+      ctx.shadowColor = 'rgba(8, 15, 28, 0.38)';
+      ctx.shadowBlur = Math.max(1.5, width * 0.035);
+      ctx.shadowOffsetX = width * 0.11;
+      ctx.shadowOffsetY = -width * 0.06;
+      ctx.translate(cx, base);
+      ctx.transform(1, 0, shear, 1, 0, 0);
       ctx.translate(-cx, -base);
       paint();
       ctx.restore();
