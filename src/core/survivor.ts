@@ -225,6 +225,8 @@ export interface SurvivorOrb {
   x: number;
   y: number;
   value: number;
+  /** Orbe raro que concede o dobro do valor base ao ser coletado. Opcional para compatibilidade com estados antigos. */
+  doubleXp?: boolean;
 }
 
 export interface SurvivorUpgradeOption {
@@ -615,6 +617,8 @@ export const BALANCE = {
   artifactBossDropChance: 0.45,
   /** Depois dos 10 minutos, uma morte pode deixar uma Pokébola especial. */
   digitalPokeballDropChance: 0.025,
+  /** Chance independente de qualquer inimigo deixar um orbe de XP dobrada. */
+  doubleXpOrbChance: 0.08,
   artifactSpeedMultiplier: 1.35,
   artifactPowerMultiplier: 1.25,
   artifactDurationMs: 8_000,
@@ -1642,7 +1646,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.kills += dead.length;
     for (const e of dead) {
       const value = normalizeSurvivorXp(e.boss ? 40 : e.grade === 'chefao' ? 30 : e.grade === 'elite' ? 16 : 6);
-      state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value });
+      const doubleXp = state.rng() < BALANCE.doubleXpOrbChance;
+      state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value, ...(doubleXp ? { doubleXp: true } : {}) });
       const dropChance = e.boss ? BALANCE.artifactBossDropChance : e.grade === 'chefao' || e.grade === 'elite' ? BALANCE.artifactEliteDropChance : BALANCE.artifactDropChance;
        if (state.rng() < dropChance) state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: artifactKind(state.rng) });
        if (state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS && state.rng() < BALANCE.digitalPokeballDropChance) {
@@ -1681,7 +1686,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   state.orbs = state.orbs.filter((orb) => {
     if (Math.hypot(orb.x - p.x, orb.y - p.y) <= p.pickupRadius) {
       const multiplier = p.xpMultiplier ?? 1;
-      const boostedValue = normalizeSurvivorXp(Math.round((orb.value * multiplier) / SURVIVOR_XP_UNIT) * SURVIVOR_XP_UNIT);
+      const orbValue = orb.doubleXp ? orb.value * 2 : orb.value;
+      const boostedValue = normalizeSurvivorXp(Math.round((orbValue * multiplier) / SURVIVOR_XP_UNIT) * SURVIVOR_XP_UNIT);
       p.xp = normalizeSurvivorXp(p.xp + boostedValue);
       return false;
     }

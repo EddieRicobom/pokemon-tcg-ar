@@ -31,7 +31,7 @@ import {
   SURVIVOR_MEGA_SHARD_MS,
   SURVIVOR_ARTIFACT_DETAILS,
 } from '../core/survivor';
-import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption } from '../core/survivor';
+import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
 import { typesOfDex } from '../core/species-filter';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
@@ -69,6 +69,12 @@ const UPGRADE_ICON: Record<string, string> = {
   'second-attack': '✦',
 };
 const upgradeIcon = (id: string): string => (id.startsWith('evolve:') ? '✨' : (UPGRADE_ICON[id] ?? '✨'));
+const RARITY_BALL_IMAGE: Record<SurvivorUpgradeRarity, string> = {
+  normal: assetUrl('assets/survivor/balls/poke-ball.png'),
+  raro: assetUrl('assets/survivor/balls/great-ball.png'),
+  lendario: assetUrl('assets/survivor/balls/ultra-ball.png'),
+  ancestral: assetUrl('assets/survivor/balls/master-ball.png'),
+};
 
 /** O golpe de uma espécie na Torre: elemento pelo 1º tipo, forma e números pelos stats reais (`core/survivor-moves.ts`). */
 function attackOf(dexId: number, picked?: PokemonType): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove } {
@@ -644,8 +650,23 @@ function draw(): void {
   ctx.fillStyle = '#ffe066';
   for (const orb of s.orbs) {
     ctx.beginPath();
-    ctx.arc(orb.x, orb.y, 5, 0, Math.PI * 2);
-    ctx.fill();
+    if (orb.doubleXp) {
+      // O diamante ciano distingue a recompensa rara sem animação contínua pesada.
+      ctx.fillStyle = '#62e6ff';
+      ctx.strokeStyle = '#e8fcff';
+      ctx.lineWidth = 1.5;
+      ctx.moveTo(orb.x, orb.y - 7);
+      ctx.lineTo(orb.x + 7, orb.y);
+      ctx.lineTo(orb.x, orb.y + 7);
+      ctx.lineTo(orb.x - 7, orb.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#ffe066';
+    } else {
+      ctx.arc(orb.x, orb.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   const move = s.player.move;
@@ -727,8 +748,12 @@ function draw(): void {
     const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb';
     const icon = artifact.kind === 'pokeball' ? '★' : artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : '♥';
     const pulse = 1 + (effectiveVisual.value.rotomMode ? 0 : Math.sin(animMs / 180 + artifact.id) * 0.12);
+    const wobble = artifact.kind === 'pokeball' && !effectiveVisual.value.rotomMode
+      ? Math.sin(animMs / 220 + artifact.id) * 0.12
+      : 0;
     ctx.save();
     ctx.translate(artifact.x, artifact.y);
+    ctx.rotate(wobble);
     ctx.globalAlpha = artifact.kind === 'pokeball' ? 0.38 : 0.28;
     ctx.fillStyle = color;
     ctx.shadowColor = color;
@@ -1497,7 +1522,9 @@ onBeforeUnmount(() => {
             <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" @click="chooseUpgrade(u.id)">
               <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u.id) }}</span>
               <span class="survivor-upgrade-text">
-                <span v-if="u.rarity" class="survivor-rarity-label">{{ SURVIVOR_UPGRADE_RARITIES[u.rarity].icon }} {{ SURVIVOR_UPGRADE_RARITIES[u.rarity].label }} · {{ SURVIVOR_UPGRADE_RARITIES[u.rarity].impact }}</span>
+                <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
+                  <img class="survivor-rarity-ball" :src="RARITY_BALL_IMAGE[u.rarity]" :alt="SURVIVOR_UPGRADE_RARITIES[u.rarity].label" />
+                </span>
                 <strong>{{ u.name }}</strong><small>{{ u.description }}</small>
               </span>
             </button>
