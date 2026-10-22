@@ -1,4 +1,4 @@
-import { AmbientLight, BoxGeometry, CanvasTexture, Color, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Scene, Vector2, Vector3, NearestFilter, Raycaster } from 'three';
+import { AmbientLight, BoxGeometry, CanvasTexture, Color, DirectionalLight, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, Vector2, Vector3, NearestFilter, Raycaster } from 'three';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES, intersectFloor } from '../box/floor';
 import { visibleVerticalFov } from '../box/orientation';
 import { OrientationSource } from '../box/orientation-source';
@@ -46,7 +46,10 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
   scene.background = null;
   const camera = new PerspectiveCamera();
   camera.position.set(0, 0, 0);
-  scene.add(new AmbientLight(new Color(0xffffff), 1));
+  scene.add(new AmbientLight(new Color(0xffffff), 0.72));
+  const keyLight = new DirectionalLight(new Color(0xfff1d2), 1.15);
+  keyLight.position.set(-0.6, 1.4, 0.9);
+  scene.add(keyLight);
 
   const texture = new CanvasTexture(options.villageCanvas);
   texture.magFilter = NearestFilter;
@@ -56,16 +59,21 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
   root.visible = false;
   const base = new Mesh(
     new BoxGeometry(VILLAGE_DIORAMA_WIDTH_M + 0.1, 0.08, VILLAGE_DIORAMA_DEPTH_M + 0.1),
-    new MeshBasicMaterial({ color: 0x1c3642, transparent: true, opacity: 0.92 }),
+    new MeshStandardMaterial({ color: 0x1c3642, roughness: 0.88, metalness: 0.04, transparent: true, opacity: 0.96 }),
   );
   base.position.y = -0.04;
+  const backWall = new Mesh(
+    new BoxGeometry(VILLAGE_DIORAMA_WIDTH_M + 0.1, 0.82, 0.08),
+    new MeshStandardMaterial({ color: 0x26394c, roughness: 0.92, metalness: 0.02, transparent: true, opacity: 0.94 }),
+  );
+  backWall.position.set(0, 0.41, -VILLAGE_DIORAMA_DEPTH_M / 2 - 0.04);
   const map = new Mesh(
     new PlaneGeometry(VILLAGE_DIORAMA_WIDTH_M, VILLAGE_DIORAMA_DEPTH_M),
-    new MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.01 }),
+    new MeshStandardMaterial({ map: texture, transparent: true, alphaTest: 0.01, roughness: 0.96, metalness: 0 }),
   );
   map.rotation.x = -Math.PI / 2;
   map.position.y = 0.003;
-  root.add(base, map);
+  root.add(base, backWall, map);
   scene.add(root);
 
   const renderer = createWebglBackend(options.canvas);
@@ -154,9 +162,11 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
       orientation.stop();
       texture.dispose();
       base.geometry.dispose();
-      (base.material as MeshBasicMaterial).dispose();
+       (base.material as MeshStandardMaterial).dispose();
+       backWall.geometry.dispose();
+       (backWall.material as MeshStandardMaterial).dispose();
       map.geometry.dispose();
-      (map.material as MeshBasicMaterial).dispose();
+       (map.material as MeshStandardMaterial).dispose();
       renderer.dispose();
     },
   };

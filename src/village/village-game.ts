@@ -46,7 +46,6 @@ import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
 import { harmonizePlayerCanvas, harmonizePlayerSprite } from './player-filter';
 import { wrapSpeech } from './speech-layout';
-import { VILLAGE_DIORAMA_OBJECT_TILT_DEG } from '../core/village/ar-diorama';
 import { groundPieces } from './ground-tiles';
 import { drawCommunityWorkAction, drawWorkAction } from './work-art';
 import { recolor, VillaAtlas, windowGlow } from './tileset-art';
@@ -1330,28 +1329,15 @@ export class VillageGame {
     /** Janelas do tileset acesas à noite (o vidro do desenho vira luz). */
     const glassGlows: { img: HTMLCanvasElement; x: number; y: number; w: number; h: number }[] = [];
     const atlas = this.atlas;
-    /**
-     * Apresentação 2.5D do Diorama: sprites continuam em pé e ganham um
-     * cisalhamento discreto. As sombras de contato já são desenhadas pelo mapa;
-     * aqui não usamos blur nem filtro por sprite, pois isso pesa muito em celular.
-     * Rotacionar o bitmap inteiro em 45° fazia prédios e personagens tombarem.
-     */
+    /** Sprites ficam em pé; a perspectiva 2.5D pertence à base 3D do AR. */
     const drawDioramaTilted = (cx: number, base: number, width: number, paint: () => void): void => {
-      if (!this.diorama || width <= 0) {
-        paint();
-        return;
-      }
-      const tilt = (VILLAGE_DIORAMA_OBJECT_TILT_DEG * Math.PI) / 180;
-      // A constante de 45° define a força máxima da leitura 2.5D; ela não é
-      // usada como rotação. Um cisalhamento de 0.18 desloca o topo para trás
-      // e mantém a linha dos pés exatamente no ponto de contato com o chão.
-      const shear = -Math.min(0.18, Math.tan(tilt) * 0.18);
-      ctx.save();
-      ctx.translate(cx, base);
-      ctx.transform(1, 0, shear, 1, 0, 0);
-      ctx.translate(-cx, -base);
+      // Mantém a assinatura enquanto os chamadores continuam organizando
+      // objetos pelo ponto dos pés. A geometria L do modo AR cria a leitura
+      // de profundidade sem inclinar ou cortar nenhum bitmap.
+      void cx;
+      void base;
+      void width;
       paint();
-      ctx.restore();
     };
     /** Desenha um recorte em pé: a última linha visível encosta no chão em (cx, base). */
     const stand = (img: HTMLCanvasElement, cx: number, base: number, maxWidth = Infinity) => {
