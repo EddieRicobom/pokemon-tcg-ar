@@ -46,6 +46,7 @@ import type { GroundTileImage } from './village-art';
 import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
 import { harmonizePlayerCanvas, harmonizePlayerSprite } from './player-filter';
 import { wrapSpeech } from './speech-layout';
+import { VILLAGE_DIORAMA_OBJECT_TILT_DEG } from '../core/village/ar-diorama';
 import { groundPieces } from './ground-tiles';
 import { drawCommunityWorkAction, drawWorkAction } from './work-art';
 import { recolor, VillaAtlas, windowGlow } from './tileset-art';
@@ -1329,6 +1330,24 @@ export class VillageGame {
     /** Janelas do tileset acesas à noite (o vidro do desenho vira luz). */
     const glassGlows: { img: HTMLCanvasElement; x: number; y: number; w: number; h: number }[] = [];
     const atlas = this.atlas;
+    /** Inclina cada elemento em pé no diorama, mantendo o ponto dos pés acima do chão. */
+    const drawDioramaTilted = (cx: number, base: number, width: number, paint: () => void): void => {
+      if (!this.diorama || width <= 0) {
+        paint();
+        return;
+      }
+      // Ao girar um retângulo, a quina inferior ficaria `width * sin(45°) / 2`
+      // abaixo do apoio. Levantar exatamente essa folga evita cortar metade do
+      // sprite no chão e deixa o contato visual no bloco correto.
+      const tilt = (VILLAGE_DIORAMA_OBJECT_TILT_DEG * Math.PI) / 180;
+      const lift = width * Math.sin(tilt) * 0.5;
+      ctx.save();
+      ctx.translate(cx, base - lift);
+      ctx.rotate(-tilt);
+      ctx.translate(-cx, -base);
+      paint();
+      ctx.restore();
+    };
     /** Desenha um recorte em pé: a última linha visível encosta no chão em (cx, base). */
     const stand = (img: HTMLCanvasElement, cx: number, base: number, maxWidth = Infinity) => {
       const pixelScale = Math.min(scale, maxWidth / img.width);
@@ -1347,7 +1366,7 @@ export class VillageGame {
         atlasOpaqueBottoms.set(img, opaqueBottom);
       }
       const y = Math.round(base - (opaqueBottom + 1) * pixelScale);
-      ctx.drawImage(img, x, y, w, h);
+      drawDioramaTilted(cx, base, w, () => ctx.drawImage(img, x, y, w, h));
       return { x, y, w, h };
     };
     const lightUp = (id: string, key: string, at: { x: number; y: number; w: number; h: number }, transform?: (img: Rgba) => Rgba) => {
@@ -1357,11 +1376,13 @@ export class VillageGame {
     const wind = wx.windX * 0.5;
     const sway = (x: number, y: number, amp: number) => Math.sin(now / 900 + x * 0.7 + y * 0.3) * amp + Math.sin(now / 2300 + x) * amp * 0.6 + wind * amp * (0.6 + wx.rain);
     const drawSwayed = (img: HTMLCanvasElement, dx: number, dy: number, w: number, h: number, k: number) => {
-      ctx.save();
-      ctx.translate(dx + w / 2, dy + h);
-      ctx.transform(1, 0, k, 1, 0, 0);
-      ctx.drawImage(img, -w / 2, -h, w, h);
-      ctx.restore();
+      drawDioramaTilted(dx + w / 2, dy + h, w, () => {
+        ctx.save();
+        ctx.translate(dx + w / 2, dy + h);
+        ctx.transform(1, 0, k, 1, 0, 0);
+        ctx.drawImage(img, -w / 2, -h, w, h);
+        ctx.restore();
+      });
     };
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
@@ -1501,7 +1522,7 @@ export class VillageGame {
         y: buildingGroundY(plot),
         draw: () => {
           shadow(sx(plot.x + 2), homeBase - 2 * scale, 30 * scale, 4 * scale, 0.2);
-          ctx.drawImage(img, sx(plot.x), homeBase - 4 * T, 4 * T, 4 * T);
+          drawDioramaTilted(sx(plot.x) + 2 * T, homeBase, 4 * T, () => ctx.drawImage(img, sx(plot.x), homeBase - 4 * T, 4 * T, 4 * T));
         },
       });
     }
@@ -1525,7 +1546,7 @@ export class VillageGame {
       y: shopBaseY,
       draw: () => {
         shadow(sx(shop.x + 1.5), sy(shopBaseY) - 2 * scale, 24 * scale, 3.5 * scale, 0.2);
-        ctx.drawImage(shopImg, sx(shop.x), sy(shopBaseY) - 3 * T, 3 * T, 3 * T);
+        drawDioramaTilted(sx(shop.x + 1.5), sy(shopBaseY), 3 * T, () => ctx.drawImage(shopImg, sx(shop.x), sy(shopBaseY) - 3 * T, 3 * T, 3 * T));
         this.drawTag(sx(shop.x + 1.5), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
       },
     });
@@ -1542,7 +1563,7 @@ export class VillageGame {
       if (b.kind === 'fountain') {
         const f = Math.floor(now / 450) % 2;
         const img = this.sprite(`fonte${f}`, () => paintFountain(f));
-        list.push({ y: buildingGroundY(b), draw: () => { shadow(mid, spriteBase - 3 * scale, 14 * scale, 4 * scale, 0.16); ctx.drawImage(img, left, spriteBase - 40 * scale, 32 * scale, 40 * scale); if (ambientFx) drawFountainFx(ctx, left + 16 * scale, spriteBase, scale, now); } });
+        list.push({ y: buildingGroundY(b), draw: () => { shadow(mid, spriteBase - 3 * scale, 14 * scale, 4 * scale, 0.16); drawDioramaTilted(mid, spriteBase, 32 * scale, () => ctx.drawImage(img, left, spriteBase - 40 * scale, 32 * scale, 40 * scale)); if (ambientFx) drawFountainFx(ctx, left + 16 * scale, spriteBase, scale, now); } });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
         continue;
       }
@@ -1550,7 +1571,7 @@ export class VillageGame {
       const fence = atlas ? this.art('fence-h') : null;
       const drawLot = () => {
         if (!fence) return false;
-        list.push({ y: b.y + b.h, draw: () => { for (let i = 0; i + 2 <= b.w + 1; i += 2) ctx.drawImage(fence, sx(b.x + Math.min(i, b.w - 2)), bottom - 16 * scale, 32 * scale, 16 * scale); } });
+        list.push({ y: b.y + b.h, draw: () => { drawDioramaTilted(mid, bottom, wpx, () => { for (let i = 0; i + 2 <= b.w + 1; i += 2) ctx.drawImage(fence, sx(b.x + Math.min(i, b.w - 2)), bottom - 16 * scale, 32 * scale, 16 * scale); }); } });
         return true;
       };
       if (!open && drawLot()) {
@@ -1563,14 +1584,14 @@ export class VillageGame {
       }
       if (!open) {
         const img = this.sprite('lot', paintLot);
-        list.push({ y: b.y + b.h, draw: () => ctx.drawImage(img, left, bottom - 48 * scale, wpx, 3 * T) });
+        list.push({ y: b.y + b.h, draw: () => drawDioramaTilted(mid, bottom, wpx, () => ctx.drawImage(img, left, bottom - 48 * scale, wpx, 3 * T)) });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, `🔒 Nível ${b.unlock} de Treinador`));
         continue;
       }
       if (b.kind === 'home' && [...this.homes.values()].every((l) => l !== b.lot)) {
         // Terreno liberado, mas sem morador ainda: a casa só é construída quando chega um Pokémon para morar nela.
         const img = this.sprite('lot', paintLot);
-        list.push({ y: b.y + b.h, draw: () => ctx.drawImage(img, left, bottom - 48 * scale, wpx, 3 * T) });
+        list.push({ y: b.y + b.h, draw: () => drawDioramaTilted(mid, bottom, wpx, () => ctx.drawImage(img, left, bottom - 48 * scale, wpx, 3 * T)) });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, 'Terreno livre'));
         continue;
       }
@@ -1597,19 +1618,21 @@ export class VillageGame {
               const at = stand(img, mid, spriteBase);
               if (night && who.length > 0) lightUp(id, key, at, tint);
               // Enfeites da casa (comprados na Vila): jardineira, cerquinha, lampião e caixa de correio.
-              if (planter) ctx.drawImage(planter, left, spriteBase - 10 * scale, 24 * scale, 13 * scale);
-              if (fenceArt) {
-                ctx.drawImage(fenceArt, 0, 0, 16, 16, left - 8 * scale, spriteBase - 14 * scale, 16 * scale, 16 * scale);
-                ctx.drawImage(fenceArt, 16, 0, 16, 16, left + b.w * T - 8 * scale, spriteBase - 14 * scale, 16 * scale, 16 * scale);
-              }
-              // No vão ao lado da casa (o desenho do tileset ocupa a frente inteira): não tapa janela nem porta.
-              if (lantern) ctx.drawImage(lantern, left + b.w * T, spriteBase - 2 * T, T, 2 * T);
-              if (decor & 8) {
-                ctx.fillStyle = '#6a4a28';
-                ctx.fillRect(left + 2 * scale, spriteBase - 10 * scale, 2 * scale, 10 * scale);
-                ctx.fillStyle = '#3f6fd0';
-                ctx.fillRect(left, spriteBase - 14 * scale, 6 * scale, 5 * scale);
-              }
+              drawDioramaTilted(mid, spriteBase, Math.max(wpx, b.w * T), () => {
+                if (planter) ctx.drawImage(planter, left, spriteBase - 10 * scale, 24 * scale, 13 * scale);
+                if (fenceArt) {
+                  ctx.drawImage(fenceArt, 0, 0, 16, 16, left - 8 * scale, spriteBase - 14 * scale, 16 * scale, 16 * scale);
+                  ctx.drawImage(fenceArt, 16, 0, 16, 16, left + b.w * T - 8 * scale, spriteBase - 14 * scale, 16 * scale, 16 * scale);
+                }
+                // No vão ao lado da casa (o desenho do tileset ocupa a frente inteira): não tapa janela nem porta.
+                if (lantern) ctx.drawImage(lantern, left + b.w * T, spriteBase - 2 * T, T, 2 * T);
+                if (decor & 8) {
+                  ctx.fillStyle = '#6a4a28';
+                  ctx.fillRect(left + 2 * scale, spriteBase - 10 * scale, 2 * scale, 10 * scale);
+                  ctx.fillStyle = '#3f6fd0';
+                  ctx.fillRect(left, spriteBase - 14 * scale, 6 * scale, 5 * scale);
+                }
+              });
               if (sleeping) this.drawTag(mid, at.y + 10 * scale + Math.sin(now / 600) * scale, '💤');
               const tag = this.houseTags.get(lot);
               if (tag && now > tag.until) this.houseTags.delete(lot);
@@ -1637,7 +1660,7 @@ export class VillageGame {
             y: buildingGroundY(b),
           draw: () => {
             shadow(mid, spriteBase - 2 * scale, 22 * scale, 3.5 * scale, 0.2);
-            ctx.drawImage(img, left, spriteBase - 48 * scale, 3 * T, 3 * T);
+            drawDioramaTilted(mid, spriteBase, 3 * T, () => ctx.drawImage(img, left, spriteBase - 48 * scale, 3 * T, 3 * T));
             if (sleeping) this.drawTag(mid, spriteBase - 38 * scale + Math.sin(now / 600) * scale, '💤');
             const tag = this.houseTags.get(lot);
             if (tag && now > tag.until) this.houseTags.delete(lot);
@@ -1676,7 +1699,7 @@ export class VillageGame {
         y: buildingGroundY(b),
         draw: () => {
           shadow(mid, spriteBase - 2 * scale, (wpx / 2 - 2 * scale), 3.5 * scale, 0.2);
-          ctx.drawImage(img, left, spriteBase - 48 * scale, wpx, 3 * T);
+          drawDioramaTilted(mid, spriteBase, wpx, () => ctx.drawImage(img, left, spriteBase - 48 * scale, wpx, 3 * T));
           this.drawTag(mid, spriteBase - 50 * scale + Math.sin(now / 350) * scale, emoji);
         },
       });
@@ -1690,7 +1713,7 @@ export class VillageGame {
       const img = this.sprite('public-bench', () => paintFurnitureItem('banco', false, 0));
       list.push({ y: bench.y + 0.5, draw: () => {
         shadow(sx(bench.x + 1), sy(bench.y + 1), 12 * scale, 2 * scale, 0.18);
-        ctx.drawImage(img, sx(bench.x), sy(bench.y), 2 * T, T);
+        drawDioramaTilted(sx(bench.x + 1), sy(bench.y + 1), 2 * T, () => ctx.drawImage(img, sx(bench.x), sy(bench.y), 2 * T, T));
       } });
     }
     const lamps: { x: number; y: number; big: boolean }[] = [];
@@ -1706,8 +1729,11 @@ export class VillageGame {
         y: f.y + 1,
         draw: () => {
           shadow(sx(f.x + 0.5), sy(f.y + 1) - 1.5 * scale, (tall ? 5 : 6) * scale, 2 * scale, 0.18);
-          if (tall) ctx.drawImage(img, sx(f.x), sy(f.y - 1), T, 2 * T);
-          else ctx.drawImage(img, sx(f.x), sy(f.y), T, T);
+          const base = sy(f.y + 1);
+          drawDioramaTilted(sx(f.x + 0.5), base, T, () => {
+            if (tall) ctx.drawImage(img, sx(f.x), sy(f.y - 1), T, 2 * T);
+            else ctx.drawImage(img, sx(f.x), sy(f.y), T, T);
+          });
         },
       });
     }
@@ -1758,31 +1784,33 @@ export class VillageGame {
           const frameLeft = cx - contentCx * fullW;
           const frameTop = base - sprite.bounds.bottom * fullH;
           shadow(cx, sy(pos.y + 1) - 2 * scale, (5 - hop / (2 * scale) * 0.3) * scale, 2 * scale, 0.22);
-          ctx.save();
-          // Os sprites do Showdown olham para a esquerda: andando para a direita, espelha. Quem já tem a pose
-          // direita de verdade (sprite local) não precisa desse truque.
-          if (!dirSet && w.dir === 'right') {
-            ctx.translate(cx, 0);
-            ctx.scale(-1, 1);
-            ctx.translate(-cx, 0);
-          }
-          const acc = this.state.wear.mons[id];
-          const def = acc ? itemDef(acc) : undefined;
-          const hx = frameLeft + sprite.headX * fullW;
-          const hy = frameTop + sprite.headTop * fullH;
-          if (acc && def?.pos === 'back') {
-            const size = Math.max(9 * scale, Math.min(16 * scale, wpx * 0.6));
-            ctx.drawImage(this.sprite(`acc:${acc}`, () => paintAccessory(acc)), Math.round(cx - size / 2), Math.round(base - h * 0.62), Math.round(size), Math.round(size));
-          }
-          ctx.drawImage(frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH));
-          if (metal) this.drawSheen(id, frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH), now);
-          if (acc && def && def.pos !== 'back') {
-            const size = Math.max(8 * scale, Math.min(14 * scale, wpx * 0.45));
-            const img = this.sprite(`acc:${acc}`, () => paintAccessory(acc));
-            const y = def.pos === 'hat' ? hy - size * 0.7 : def.pos === 'face' ? hy + size * 0.15 : hy + h * 0.2;
-            ctx.drawImage(img, Math.round(hx - size / 2), Math.round(y), Math.round(size), Math.round(size));
-          }
-          ctx.restore();
+          drawDioramaTilted(cx, base, Math.max(fullW, wpx), () => {
+            ctx.save();
+            // Os sprites do Showdown olham para a esquerda: andando para a direita, espelha. Quem já tem a pose
+            // direita de verdade (sprite local) não precisa desse truque.
+            if (!dirSet && w.dir === 'right') {
+              ctx.translate(cx, 0);
+              ctx.scale(-1, 1);
+              ctx.translate(-cx, 0);
+            }
+            const acc = this.state.wear.mons[id];
+            const def = acc ? itemDef(acc) : undefined;
+            const hx = frameLeft + sprite.headX * fullW;
+            const hy = frameTop + sprite.headTop * fullH;
+            if (acc && def?.pos === 'back') {
+              const size = Math.max(9 * scale, Math.min(16 * scale, wpx * 0.6));
+              ctx.drawImage(this.sprite(`acc:${acc}`, () => paintAccessory(acc)), Math.round(cx - size / 2), Math.round(base - h * 0.62), Math.round(size), Math.round(size));
+            }
+            ctx.drawImage(frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH));
+            if (metal) this.drawSheen(id, frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH), now);
+            if (acc && def && def.pos !== 'back') {
+              const size = Math.max(8 * scale, Math.min(14 * scale, wpx * 0.45));
+              const img = this.sprite(`acc:${acc}`, () => paintAccessory(acc));
+              const y = def.pos === 'hat' ? hy - size * 0.7 : def.pos === 'face' ? hy + size * 0.15 : hy + h * 0.2;
+              ctx.drawImage(img, Math.round(hx - size / 2), Math.round(y), Math.round(size), Math.round(size));
+            }
+            ctx.restore();
+          });
           const activeTask = this.farmTasks.get(id);
           if (activeTask?.workingSince != null && w.x === activeTask.stand.x && w.y === activeTask.stand.y && !moving(w)) drawWorkAction(ctx, activeTask, cx, base, sx(activeTask.x + .5), sy(activeTask.y + .65), scale, now, ambientFx);
            const activeCommunity = this.communityWork.get(id);
@@ -1822,34 +1850,38 @@ export class VillageGame {
         const py0 = sy(pp.y + 1) - (PLAYER_H + 1) * scale - hop;
         const dir = this.player.dir;
         const pos = accDef?.pos;
-        if (accP && pos === 'back' && dir !== 'up') this.drawAcc(accP, px0 + 2 * scale, py0 + 11 * scale, 12 * scale);
-        const atlas = this.trainerAtlas;
-        const frame = atlas ? trainerAtlasFrame(atlas.image.naturalWidth, atlas.image.naturalHeight, dir, moving(this.player), this.player.steps, this.player.t, now) : null;
-        if (atlas && frame) {
-          const bounds = atlas.bounds;
-          const height = PLAYER_H * scale;
-          const width = height * bounds.width / bounds.height;
-          const left = px0 + T / 2 - (frame.width / 2 - bounds.x) * height / bounds.height;
-           ctx.drawImage(atlas.filtered ?? atlas.image, frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height, left, py0, width, height);
-        } else if (trainerAvatar && dir !== 'up') {
-          const aspect = trainerAvatar.width / trainerAvatar.height;
-          const avatarH = Math.min(PLAYER_H * scale, (T * 1.4) / aspect);
-          const avatarW = avatarH * aspect;
-          const avatarX = px0 + (T - avatarW) / 2;
-          if (dir === 'left') {
-            ctx.save();
-            ctx.translate(avatarX + avatarW / 2, py0 + avatarH / 2);
-            ctx.scale(-1, 1);
-            ctx.drawImage(trainerAvatar, -avatarW / 2, -avatarH / 2, avatarW, avatarH);
-            ctx.restore();
-          } else ctx.drawImage(trainerAvatar, avatarX, py0, avatarW, avatarH);
-        } else if (pimg) ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
-        if (accP) {
-          if (pos === 'hat') this.drawAcc(accP, px0 + 1 * scale, py0 - 5 * scale, 14 * scale);
-          else if (pos === 'face' && dir !== 'up') this.drawAcc(accP, px0 + (dir === 'down' ? 3 : dir === 'right' ? 5 : 1) * scale, py0 + 3 * scale, 10 * scale);
-          else if (pos === 'neck') this.drawAcc(accP, px0 + 3 * scale, py0 + 8 * scale, 10 * scale);
-          else if (pos === 'back' && dir === 'up') this.drawAcc(accP, px0 + 2 * scale, py0 + 11 * scale, 12 * scale);
-        }
+        // O treinador também é uma peça em pé no Diorama. O ponto de apoio
+        // continua no chão e a elevação da rotação é calculada pelo helper.
+        drawDioramaTilted(px0 + T / 2, py0 + PLAYER_H * scale, T, () => {
+          if (accP && pos === 'back' && dir !== 'up') this.drawAcc(accP, px0 + 2 * scale, py0 + 11 * scale, 12 * scale);
+          const atlas = this.trainerAtlas;
+          const frame = atlas ? trainerAtlasFrame(atlas.image.naturalWidth, atlas.image.naturalHeight, dir, moving(this.player), this.player.steps, this.player.t, now) : null;
+          if (atlas && frame) {
+            const bounds = atlas.bounds;
+            const height = PLAYER_H * scale;
+            const width = height * bounds.width / bounds.height;
+            const left = px0 + T / 2 - (frame.width / 2 - bounds.x) * height / bounds.height;
+            ctx.drawImage(atlas.filtered ?? atlas.image, frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height, left, py0, width, height);
+          } else if (trainerAvatar && dir !== 'up') {
+            const aspect = trainerAvatar.width / trainerAvatar.height;
+            const avatarH = Math.min(PLAYER_H * scale, (T * 1.4) / aspect);
+            const avatarW = avatarH * aspect;
+            const avatarX = px0 + (T - avatarW) / 2;
+            if (dir === 'left') {
+              ctx.save();
+              ctx.translate(avatarX + avatarW / 2, py0 + avatarH / 2);
+              ctx.scale(-1, 1);
+              ctx.drawImage(trainerAvatar, -avatarW / 2, -avatarH / 2, avatarW, avatarH);
+              ctx.restore();
+            } else ctx.drawImage(trainerAvatar, avatarX, py0, avatarW, avatarH);
+          } else if (pimg) ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
+          if (accP) {
+            if (pos === 'hat') this.drawAcc(accP, px0 + 1 * scale, py0 - 5 * scale, 14 * scale);
+            else if (pos === 'face' && dir !== 'up') this.drawAcc(accP, px0 + (dir === 'down' ? 3 : dir === 'right' ? 5 : 1) * scale, py0 + 3 * scale, 10 * scale);
+            else if (pos === 'neck') this.drawAcc(accP, px0 + 3 * scale, py0 + 8 * scale, 10 * scale);
+            else if (pos === 'back' && dir === 'up') this.drawAcc(accP, px0 + 2 * scale, py0 + 11 * scale, 12 * scale);
+          }
+        });
       },
     });
     if (this.bobber) {

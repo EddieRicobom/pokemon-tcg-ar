@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VILLAGE_SCALE, VILLAGE_AR_TILT_DEG, VILLAGE_SCALE_RANGE, normalizeVillageScale } from './ar-diorama';
+import { DEFAULT_VILLAGE_SCALE, VILLAGE_AR_TILT_DEG, VILLAGE_DIORAMA_OBJECT_TILT_DEG, VILLAGE_SCALE_RANGE, normalizeVillageScale } from './ar-diorama';
 
 describe('diorama AR da Vila', () => {
   it('limita o zoom a uma escala que ainda cabe no ambiente', () => {
@@ -13,7 +13,11 @@ describe('diorama AR da Vila', () => {
     expect(normalizeVillageScale(4)).toBe(3);
   });
 
-  it('mantém a inclinação 2.5D do AR em 75 graus sem alterar o mapa original', () => {
+  it('mantém o plano horizontal do AR sem alterar o mapa original', () => {
     expect(VILLAGE_AR_TILT_DEG).toBe(0);
+  });
+
+  it('inclina apenas os objetos verticais do Diorama em 45 graus', () => {
+    expect(VILLAGE_DIORAMA_OBJECT_TILT_DEG).toBe(45);
   });
 });
