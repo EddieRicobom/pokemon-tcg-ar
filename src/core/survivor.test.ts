@@ -300,6 +300,21 @@ describe('stepSurvivor', () => {
     expect(s.player.xp).toBe(24); // 16 × 1,5, arredondado para a unidade par mais próxima
     expect(s.player.xp % 2).toBe(0);
   });
+
+  it('pode criar um orbe de XP dobrada com visual identificável', () => {
+    const s = createSurvivorState(4, { kindCount: 1 });
+    s.rng = () => 0;
+    s.spawnAccumMs = -1e9;
+    s.enemies.push({ id: 999, kind: 0, boss: false, grade: 'comum', x: s.player.x + 120, y: s.player.y, hp: 0, maxHp: 6, speed: 0, damage: 0, radius: 13, hitFlashMs: 0 });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.orbs).toHaveLength(1);
+    expect(s.orbs[0]!.doubleXp).toBe(true);
+
+    s.orbs[0]!.x = s.player.x;
+    s.orbs[0]!.y = s.player.y;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.xp).toBe(12);
+  });
 });
 
 describe('golpes por tipo', () => {
