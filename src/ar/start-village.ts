@@ -1,4 +1,4 @@
-import { AmbientLight, BoxGeometry, CanvasTexture, Color, DirectionalLight, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, Vector2, Vector3, NearestFilter, Raycaster } from 'three';
+import { BoxGeometry, CanvasTexture, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Scene, Vector2, Vector3, NearestFilter, Raycaster } from 'three';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES, intersectFloor } from '../box/floor';
 import { visibleVerticalFov } from '../box/orientation';
 import { OrientationSource } from '../box/orientation-source';
@@ -15,8 +15,9 @@ export interface StartVillageArOptions {
   video: HTMLVideoElement;
   canvas: HTMLCanvasElement;
   container: HTMLElement;
-  /** Canvas 2D que a Vila já atualiza; vira a textura viva do diorama. */
-  villageCanvas: HTMLCanvasElement;
+  /** Chão e recortes são renderizados separadamente para formar o diorama. */
+  villageFloorCanvas: HTMLCanvasElement;
+  villagePropsCanvas: HTMLCanvasElement;
   onModeChange?: (mode: OrientationMode) => void;
 }
 
@@ -46,44 +47,40 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
   scene.background = null;
   const camera = new PerspectiveCamera();
   camera.position.set(0, 0, 0);
-  scene.add(new AmbientLight(new Color(0xffffff), 0.84));
-  const keyLight = new DirectionalLight(new Color(0xffffff), 0.55);
-  keyLight.position.set(-0.6, 1.4, 0.9);
-  scene.add(keyLight);
-
-  const texture = new CanvasTexture(options.villageCanvas);
-  texture.magFilter = NearestFilter;
-  texture.minFilter = NearestFilter;
-  texture.colorSpace = 'srgb';
+  const textureFor = (canvas: HTMLCanvasElement) => {
+    const texture = new CanvasTexture(canvas);
+    texture.magFilter = NearestFilter;
+    texture.minFilter = NearestFilter;
+    texture.colorSpace = 'srgb';
+    return texture;
+  };
+  const floorTexture = textureFor(options.villageFloorCanvas);
+  const propsTexture = textureFor(options.villagePropsCanvas);
   const root = new Group();
   root.visible = false;
   const base = new Mesh(
     new BoxGeometry(VILLAGE_DIORAMA_WIDTH_M + 0.12, 0.14, VILLAGE_DIORAMA_DEPTH_M + 0.12),
-    new MeshStandardMaterial({ color: 0x1c3642, roughness: 0.88, metalness: 0.04, transparent: true, opacity: 0.96 }),
+    new MeshBasicMaterial({ color: 0x172b39, transparent: true, opacity: 0.84 }),
   );
   base.position.y = -0.07;
-  const backWall = new Mesh(
-    new BoxGeometry(VILLAGE_DIORAMA_WIDTH_M + 0.12, 1.12, 0.1),
-    new MeshStandardMaterial({ color: 0x26394c, roughness: 0.92, metalness: 0.02, transparent: true, opacity: 0.94 }),
-  );
-  backWall.position.set(0, 0.56, -VILLAGE_DIORAMA_DEPTH_M / 2 - 0.06);
-  // A cena fica em pé no fundo da maquete. Assim casas, itens e moradores
-  // deixam de ser uma textura deitada e passam a parecer recortes apoiados
-  // no chão, enquanto a base continua fornecendo o plano horizontal.
-  const sceneBoard = new Mesh(
-    new PlaneGeometry(VILLAGE_DIORAMA_WIDTH_M, VILLAGE_DIORAMA_DEPTH_M),
-    new MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.01 }),
-  );
-  sceneBoard.position.set(0, VILLAGE_DIORAMA_DEPTH_M / 2, -VILLAGE_DIORAMA_DEPTH_M / 2 - 0.115);
-  // O piso é deliberadamente neutro: a textura colorida permanece no painel
-  // vertical e não sofre um filtro de iluminação que altere as cores da Vila.
   const floor = new Mesh(
     new PlaneGeometry(VILLAGE_DIORAMA_WIDTH_M, VILLAGE_DIORAMA_DEPTH_M),
-    new MeshStandardMaterial({ color: 0x5d8d55, roughness: 0.96, metalness: 0 }),
+    new MeshBasicMaterial({ map: floorTexture }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0.008;
-  root.add(base, backWall, floor, sceneBoard);
+  // A camada transparente contém apenas prédios, itens e personagens. Ela
+  // recua a partir dos pés, criando altura e profundidade sem parede escura
+  // nem filtro na imagem inteira da Vila.
+  const propsHeight = VILLAGE_DIORAMA_DEPTH_M;
+  const propsLean = (18 * Math.PI) / 180;
+  const props = new Mesh(
+    new PlaneGeometry(VILLAGE_DIORAMA_WIDTH_M, propsHeight),
+    new MeshBasicMaterial({ map: propsTexture, transparent: true, alphaTest: 0.01, depthWrite: false }),
+  );
+  props.rotation.x = -propsLean;
+  props.position.y = Math.cos(propsLean) * propsHeight / 2 + 0.012;
+  root.add(base, floor, props);
   scene.add(root);
 
   const renderer = createWebglBackend(options.canvas);
@@ -119,8 +116,8 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     const forward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     // Respeita exatamente o ponto escolhido, inclusive quando fica bem perto do celular.
     root.position.copy(floor.point);
-    // O chão recua como a base de uma caixa-diorama; a parede traseira fica
-    // em pé atrás dele. A rotação é da maquete, nunca dos bitmaps individuais.
+    // A base fica paralela ao chão estimado. A profundidade é da camada de
+    // recortes, portanto a Vila não vira uma placa vertical no espaço.
     root.rotation.order = 'YXZ';
     root.rotation.set((-VILLAGE_AR_TILT_DEG * Math.PI) / 180, Math.atan2(forward.x, forward.z) + Math.PI, 0);
     root.visible = true;
@@ -150,7 +147,8 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     lastFrameAt = now;
     camera.quaternion.copy(orientation.read(now));
     camera.updateMatrixWorld(true);
-    texture.needsUpdate = true;
+    floorTexture.needsUpdate = true;
+    propsTexture.needsUpdate = true;
     renderer.render(scene, camera);
   };
   handle = requestGameFrame(tick, renderFps);
@@ -170,15 +168,14 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
       observer.disconnect();
       options.video.removeEventListener('loadedmetadata', resize);
       orientation.stop();
-      texture.dispose();
+      floorTexture.dispose();
+      propsTexture.dispose();
       base.geometry.dispose();
-       (base.material as MeshStandardMaterial).dispose();
-       backWall.geometry.dispose();
-       (backWall.material as MeshStandardMaterial).dispose();
+       (base.material as MeshBasicMaterial).dispose();
       floor.geometry.dispose();
-       (floor.material as MeshStandardMaterial).dispose();
-      sceneBoard.geometry.dispose();
-       (sceneBoard.material as MeshBasicMaterial).dispose();
+       (floor.material as MeshBasicMaterial).dispose();
+      props.geometry.dispose();
+       (props.material as MeshBasicMaterial).dispose();
       renderer.dispose();
     },
   };
