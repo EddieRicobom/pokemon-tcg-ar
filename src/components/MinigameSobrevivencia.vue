@@ -922,6 +922,14 @@ function updateMinimap(s: SurvivorState): void {
   objectives.value = survivorObjectives(s);
 }
 
+function visibleEnemyCountForDanger(s: SurvivorState): number {
+  const worldViewW = view.w;
+  const worldViewH = view.h;
+  const camX = clamp(s.player.x - worldViewW / 2, 0, Math.max(0, ARENA_W - worldViewW));
+  const camY = clamp(s.player.y - worldViewH / 2, 0, Math.max(0, ARENA_H - worldViewH));
+  return s.enemies.filter((enemy) => enemy.hp > 0 && enemy.x >= camX && enemy.x <= camX + worldViewW && enemy.y >= camY && enemy.y <= camY + worldViewH).length;
+}
+
 function loop(ts: number): void {
   if (disposed) {
     rafId = 0;
@@ -952,7 +960,7 @@ function loop(ts: number): void {
     const dx = kx + (joystick.active ? joystick.dx : 0);
     const dy = ky + (joystick.active ? joystick.dy : 0);
     const previousSpecialPhase = s.special.phase;
-    const events = stepSurvivor(s, { dx, dy, special: specialQueued }, dt);
+    const events = stepSurvivor(s, { dx, dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s) }, dt);
     specialQueued = false;
     const region = survivorRegionLabel(s.elapsedMs);
     if (region !== announcedRegion) {
@@ -991,7 +999,7 @@ function loop(ts: number): void {
         recordRun(ev.summary);
       }
       else if (ev.type === 'trainerSpawn') {
-        say(ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
+        say(ev.trigger === 'digital-danger' ? 'Você está atraindo treinadores!' : ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
         showTrainerPresentation(ev);
       }
       else if (ev.type === 'trainerDown') say(ev.final ? 'CHEFAO DERROTADO!' : 'Treinador derrotado!');
@@ -1392,6 +1400,11 @@ onBeforeUnmount(() => {
             :class="`kind-${marker.kind}`"
             :style="{ left: `${(marker.x / ARENA_W) * 100}%`, top: `${(marker.y / ARENA_H) * 100}%` }"
           ></span>
+        </div>
+
+        <div v-if="ready && state && !summary" class="survivor-danger-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(state.digitalDanger)" :aria-label="state.digitalDanger >= 60 ? 'Você está atraindo treinadores!' : 'Perigo digital'">
+          <div class="survivor-danger-fill" :style="{ width: `${state.digitalDanger}%` }"></div>
+          <span>{{ state.digitalDanger >= 60 ? 'Você está atraindo treinadores!' : 'Perigo digital' }}</span>
         </div>
 
         <div v-if="ready && state && hudExpanded && objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">

@@ -116,6 +116,11 @@ export const MAX_SURVIVOR_SUPPORTS = 5;
 export const SURVIVOR_SUPPORT_RARE_OFFER_CHANCE = 0.3;
 /** No máximo três Pokébolas digitais podem ser encontradas em uma corrida. */
 export const MAX_DIGITAL_POKEBALLS_PER_RUN = 3;
+/** A ameaça só começa depois que a corrida já tem ritmo e o jogador teve tempo de aprender o mapa. */
+export const DIGITAL_DANGER_UNLOCK_MS = 180_000;
+export const DIGITAL_DANGER_MAX = 100;
+export const DIGITAL_DANGER_COOLDOWN_MS = 90_000;
+export const DIGITAL_DANGER_VISIBLE_RADIUS = 520;
 
 /** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
@@ -283,6 +288,10 @@ export interface SurvivorState {
   artifacts: SurvivorArtifact[];
   /** Pokébolas especiais recolhidas nesta corrida; cada uma amplia a seleção no fim. */
   digitalPokeballs: number;
+  /** Medidor que pune ficar parado quando a tela está sem inimigos visíveis. */
+  digitalDanger: number;
+  /** Recarga após uma convocação automática de treinador. */
+  digitalDangerCooldownMs: number;
   fx: SurvivorFx[];
   kills: number;
   wave: number;
@@ -348,6 +357,8 @@ export interface SurvivorInput {
   /** Vetor de direção do analógico/arraste; não precisa estar normalizado (0,0 = parado). */
   dx: number;
   dy: number;
+  /** Quantos inimigos estão visíveis na janela atual; a cola Vue informa o valor real da câmera. */
+  visibleEnemies?: number;
 }
 
 export interface SurvivorSummary {
@@ -399,7 +410,7 @@ export type SurvivorEvent =
   | { type: 'milestone'; id: 'ten-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'mega-stone-shard' }
   | { type: 'bossSpawn' }
   /** Treinador apareceu: solta um grupo de `count` Pokémon elite (3 no normal, 6 no chefão final e no infinito). */
-  | { type: 'trainerSpawn'; count: number; final: boolean; trainerId: number }
+  | { type: 'trainerSpawn'; count: number; final: boolean; trainerId: number; trigger?: 'digital-danger' }
   /** Treinador derrotado (todos os Pokémon dele caíram). */
   | { type: 'trainerDown'; final: boolean }
   /** Primeiro treinador derrotado: oferece a afinidade do segundo tipo real da espécie. */
@@ -784,6 +795,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     orbs: [],
     artifacts: [],
     digitalPokeballs: 0,
+    digitalDanger: 0,
+    digitalDangerCooldownMs: 0,
     fx: [],
     kills: 0,
     wave: 1,
@@ -930,11 +943,11 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
 }
 
 /** Chama um treinador: `count` Pokémon elite nascem juntos, com o mesmo `trainerId` (para marcarmos a derrota). */
-function spawnTrainer(state: SurvivorState, count: number, final: boolean, events: SurvivorEvent[]): void {
+function spawnTrainer(state: SurvivorState, count: number, final: boolean, events: SurvivorEvent[], trigger?: 'digital-danger'): void {
   const trainerId = state.nextId++;
   const grade: SurvivorEnemyGrade = final ? 'chefao' : 'elite';
   for (let i = 0; i < count; i++) spawnEnemy(state, false, grade, trainerId);
-  events.push({ type: 'trainerSpawn', count, final, trainerId });
+  events.push({ type: 'trainerSpawn', count, final, trainerId, ...(trigger ? { trigger } : {}) });
 }
 
 /** Resolve a aparência uma vez, depois de sortear os números de combate. */
@@ -1589,6 +1602,43 @@ function artifactKind(rng: Rng): SurvivorArtifactKind {
   return roll < 0.24 ? 'speed' : roll < 0.48 ? 'heal' : roll < 0.72 ? 'power' : roll < 0.86 ? 'magnet' : 'focus';
 }
 
+function nearbyVisibleEnemyCount(state: SurvivorState): number {
+  const p = state.player;
+  return state.enemies.filter((enemy) => enemy.hp > 0 && Math.hypot(enemy.x - p.x, enemy.y - p.y) <= DIGITAL_DANGER_VISIBLE_RADIUS).length;
+}
+
+/**
+ * O medidor só pune uma espera segura: se há inimigos visíveis, o jogador pode
+ * parar para mirar; se a tela fica vazia, a Torre chama atenção para impedir
+ * que a corrida vire uma espera sem risco.
+ */
+function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: number, trainerSpawnedThisStep: boolean, events: SurvivorEvent[]): void {
+  if (state.over) return;
+  state.digitalDangerCooldownMs = Math.max(0, state.digitalDangerCooldownMs - dtMs);
+  if (state.elapsedMs < DIGITAL_DANGER_UNLOCK_MS) {
+    state.digitalDanger = 0;
+    return;
+  }
+  const visibleEnemies = input.visibleEnemies ?? nearbyVisibleEnemyCount(state);
+  const moving = Math.hypot(input.dx, input.dy) > 0.15;
+  const trainerActive = state.enemies.some((enemy) => enemy.hp > 0 && enemy.trainerId !== undefined);
+  if (state.digitalDangerCooldownMs > 0 || trainerSpawnedThisStep || trainerActive) {
+    state.digitalDanger = Math.max(0, state.digitalDanger - (dtMs / 1000) * 4);
+    return;
+  }
+  if (!moving && visibleEnemies === 0) {
+    state.digitalDanger = Math.min(DIGITAL_DANGER_MAX, state.digitalDanger + (dtMs / 1000) * 2.5);
+  } else {
+    state.digitalDanger = Math.max(0, state.digitalDanger - (dtMs / 1000) * (moving ? 4 : 1.5));
+  }
+  if (state.digitalDanger < DIGITAL_DANGER_MAX) return;
+
+  state.digitalDanger = 0;
+  state.digitalDangerCooldownMs = DIGITAL_DANGER_COOLDOWN_MS;
+  // Dois Pokémon mantêm a convocação ameaçadora sem antecipar o grupo normal de três.
+  spawnTrainer(state, 2, false, events, 'digital-danger');
+}
+
 /**
  * Avança `dtMs` de jogo. Não faz nada (devolve `[]`) se `state.over` ou se há um upgrade pendente — quem chama
  * (o componente Vue) deve pausar o laço de desenho/tempo nesses casos e só retomar depois de `applyUpgrade`.
@@ -1630,6 +1680,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
 
   // Nascimento de inimigos (onda cresce com o tempo) e do chefe periódico.
+  let trainerSpawnedThisStep = false;
   state.wave = 1 + Math.floor(state.elapsedMs / 30_000);
   state.spawnAccumMs += dtMs;
   const interval = spawnIntervalMs(state);
@@ -1650,10 +1701,12 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (finalDue) {
     state.finalBossAtMs = null;
     spawnTrainer(state, 6, true, events);
+    trainerSpawnedThisStep = true;
     if (state.infinite) state.nextTrainerAtMs = state.elapsedMs + INFINITE_BOSS_EVERY_MS;
   } else if (state.elapsedMs >= state.nextTrainerAtMs && (state.finalBossAtMs === null || state.elapsedMs + 15_000 < state.finalBossAtMs)) {
     state.nextTrainerAtMs += state.infinite ? INFINITE_BOSS_EVERY_MS : TRAINER_EVERY_MS;
     spawnTrainer(state, state.infinite ? 6 : 3, false, events);
+    trainerSpawnedThisStep = true;
   }
 
   // IA parametrizada: todos compartilham a mesma resolução de movimento/colisão, mas cada arquétipo
@@ -1879,6 +1932,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs },
     });
   }
+
+  updateDigitalDanger(state, input, dtMs, trainerSpawnedThisStep, events);
 
   return events;
 }
