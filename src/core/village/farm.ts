@@ -62,6 +62,18 @@ export interface FarmTask {
   crop?: Pick<Crop, 'seed' | 'stage' | 'wateredAt'>;
 }
 
+export interface FarmTaskProgress {
+  phase: 'caminho' | 'trabalho';
+  percent: number;
+}
+
+/** Resume uma tarefa para a interface sem expor a sessão mutável nem inventar produção. */
+export function farmTaskProgress(task: Pick<FarmTask, 'workingSince'>, now: number): FarmTaskProgress {
+  if (task.workingSince === null || !Number.isFinite(task.workingSince)) return { phase: 'caminho', percent: 0 };
+  const elapsed = Math.max(0, now - task.workingSince);
+  return { phase: 'trabalho', percent: Math.min(100, Math.round(elapsed / FARM_RULES.workMs * 100)) };
+}
+
 /** Percorre o mapa até o posto reservado e vira para o cultivo, sem teletransportar. */
 export function stepFarmWorker(worker: Walker, task: FarmTask, dt: number, map: VillageMap, blocked: Blocked): void {
   advance(worker, dt);

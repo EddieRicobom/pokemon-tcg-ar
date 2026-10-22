@@ -75,11 +75,12 @@ import { villageSummary } from '../core/village/summary';
 import type { SummaryEntry } from '../core/village/summary';
 import { advanceCommunity, communityForecast, decideCommunityProject } from '../core/village/community';
 import { FarmSession } from '../core/village/farm';
+import type { FarmTask } from '../core/village/farm';
 import FarmSeedBox from './FarmSeedBox.vue';
 import VillageWorksites from './VillageWorksites.vue';
 import { WORK_SITES } from '../core/village/town-layout';
 import type { WorksiteId } from '../core/village/town-layout';
-import { GUIDED_DESTINATIONS, guidedWalkArrived } from '../core/village/guided-walk';
+import { GUIDED_DESTINATIONS, guidedWalkArrived, guidedWalkProgress } from '../core/village/guided-walk';
 import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
 import type { PokemonType } from '../core/pokemon-data';
@@ -909,6 +910,7 @@ const bookMons = computed(() => mons.value.map((m) => ({ id: m.id, name: m.name,
 const accessoriesOwned = computed(() => ACCESSORY_IDS.filter((id) => count(state, id) > 0));
 
 let guidedTrip: { id: string; destination: typeof GUIDED_DESTINATIONS[number] } | null = null;
+const guidedTripVersion = ref(0);
 
 // ---- controle
 // ---- Movimento: joystick na tela (toque/mouse) e teclado (setas/WASD, com diagonais segurando duas teclas).
@@ -1415,6 +1417,7 @@ function recordSurvivalAdventure(summary: import('../core/survivor').SurvivorSum
 function finishGuidedTrip(): void {
   const trip = guidedTrip;
   guidedTrip = null;
+  guidedTripVersion.value++;
   minimapRoute.value = '';
   if (!trip) return;
   if (state.follower === trip.id) {
@@ -1435,6 +1438,18 @@ function finishGuidedTrip(): void {
   changed();
   game?.bubble(trip.id, '💖');
   say(`🚶 Passeio concluído! ${mon?.name ?? nameOf(trip.id)} ganhou +6 de amizade e o momento foi para o Diário.`);
+}
+
+function cancelGuidedTrip(): void {
+  const trip = guidedTrip;
+  guidedTrip = null;
+  guidedTripVersion.value++;
+  minimapRoute.value = '';
+  if (!trip) return;
+  if (state.follower === trip.id) state.follower = null;
+  game?.setWaiting(null);
+  changed();
+  say(`🚶 Passeio com ${nameOf(trip.id)} encerrado. Nenhuma recompensa foi registrada.`);
 }
 
 function updateWorldProgress(): void {
@@ -1481,7 +1496,7 @@ function beginExpedition(monId: string, place: DiscoveryPlace): void {
 function checkGuidedTrip(): void {
   const trip = guidedTrip;
   if (!trip || !game || game.walking) return;
-  if (state.follower !== trip.id) { guidedTrip = null; minimapRoute.value = ''; return; }
+  if (state.follower !== trip.id) { guidedTrip = null; guidedTripVersion.value++; minimapRoute.value = ''; return; }
   if (guidedWalkArrived(game.player, game.villagers.get(trip.id), trip.destination)) finishGuidedTrip();
 }
 
@@ -1499,6 +1514,7 @@ function checkTapInteraction(): void {
 function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.seed + id.length + refreshDay().length) % GUIDED_DESTINATIONS.length]!): void {
   if (!game) return;
   guidedTrip = { id, destination };
+  guidedTripVersion.value++;
   minimapRoute.value = `Passeio: ${destination.place}`;
   state.follower = id;
   game.setWaiting(null);
@@ -2033,8 +2049,11 @@ function toggleFav(m: Moment): void {
 }
 
 const farmSession = new FarmSession();
+const farmTasks = ref<readonly FarmTask[]>([]);
+const farmClock = ref(Date.now());
 function cancelFarm(): void {
   farmSession.cancel();
+  farmTasks.value = [];
   game?.setFarmTasks([]);
 }
 watch(() => !!sheet.value || !!dialog.value || !!quiz.value || quizOpen.value || cutsceneOpen.value || !!hoOhWishScene.value || !!legendaryScene.value, (blocked) => {
@@ -2059,6 +2078,8 @@ function tickFarm(): void {
   if (farmSession.tick(state, map, workers, Date.now(), Math.random, (x, y) => game!.occupied(x, y))) changed();
   const nearby = state.farm.history.find(record => !previousRecords.has(record) && workers.some(worker => worker.id === record.residentId && Math.abs(worker.x - game!.player.x) + Math.abs(worker.y - game!.player.y) <= 8));
   if (nearby) playSound(nearby.kind === 'mine' ? 'village-mine' : nearby.kind === 'lumber' ? 'village-chop' : nearby.kind === 'fish' || nearby.kind === 'water' ? 'village-water' : nearby.kind === 'plant' ? 'village-plant' : 'collect');
+  farmClock.value = Date.now();
+  farmTasks.value = farmSession.tasks.map((task) => ({ ...task, stand: { ...task.stand }, ...(task.crop ? { crop: { ...task.crop } } : {}) }));
   game.setFarmTasks(farmSession.tasks);
 }
 
@@ -2217,12 +2238,22 @@ function ringBell(): void {
 // ---- Minimapa: a Vila inteira num canto, com lugares, rota e quem está falando; tocar aumenta, e no grande um toque leva até lá.
 const miniEl = ref<HTMLCanvasElement | null>(null);
 const miniBig = ref(false);
+const minimapTick = ref(0);
 let miniBase: HTMLCanvasElement | null = null;
 let miniTimer: ReturnType<typeof setInterval> | null = null;
 /** Pixels por bloco no minimapa (o grande é o mesmo desenho, só que maior na tela). */
 const MINI_K = 3;
 const minimapSpeakerName = computed(() => minimapSpeakerId.value ? nameOf(minimapSpeakerId.value) : '');
 const minimapRouteLabel = computed(() => minimapRoute.value || (legendCluePlace.value ? `Pista: ${legendCluePlace.value.name}` : ''));
+const guidedTripActive = computed(() => { guidedTripVersion.value; return !!guidedTrip; });
+const guidedRouteStatus = computed(() => {
+  minimapTick.value;
+  const trip = guidedTrip;
+  if (!trip || !game) return '';
+  const progress = guidedWalkProgress(game.player, game.villagers.get(trip.id), trip.destination);
+  const companion = progress.companionDistance === null ? 'companheiro indisponível' : `${progress.companionDistance} bloco(s) do destino`;
+  return `${progress.playerDistance} bloco(s) para você · ${companion}`;
+});
 
 function buildMiniBase(): void {
   const c = document.createElement('canvas');
@@ -2327,6 +2358,7 @@ function drawMini(): void {
     ctx.stroke();
   }
   dot(game.player.x, game.player.y, '#ff4a4a', MINI_K * 1.3);
+  minimapTick.value++;
 }
 
 function startMini(): void {
@@ -2677,6 +2709,10 @@ onBeforeUnmount(() => {
         </div>
         <p v-if="minimapSpeakerName" class="village-minimap-callout"><span aria-hidden="true">💬</span> <strong>{{ minimapSpeakerName }}</strong> está falando</p>
         <p v-if="minimapRouteLabel" class="village-minimap-route"><span aria-hidden="true">🧭</span> {{ minimapRouteLabel }}</p>
+        <div v-if="guidedTripActive" class="village-guided-status" role="status">
+          <span>{{ guidedRouteStatus }}</span>
+          <button type="button" class="link" @click.stop="cancelGuidedTrip">Encerrar passeio</button>
+        </div>
         <canvas
           ref="miniEl"
           :width="map.w * MINI_K"
@@ -2950,7 +2986,7 @@ onBeforeUnmount(() => {
           </section>
         </div>
 
-        <VillageWorksites v-else-if="tab === 'trabalhos'" :state="state" :name-of="nameOf" @visit="visitWorksite" @seeds="sheet = 'farm'" />
+        <VillageWorksites v-else-if="tab === 'trabalhos'" :state="state" :name-of="nameOf" :tasks="farmTasks" :now="farmClock" @visit="visitWorksite" @seeds="sheet = 'farm'" />
         <VillageLegends v-else-if="tab === 'lendas'" :state="state.legendary" @investigate="startLegendInvestigation" @replay="showLegendaryCutscene($event, true)" @travel="travelToLegendClue" />
 
         <div v-else-if="tab === 'resumo'" class="diary village-summary">

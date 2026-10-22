@@ -743,6 +743,7 @@ export function pickMoment(actors: readonly Actor[], state: VillageState, env: S
     }
   }
   const recent = state.diary.slice(-8).map((m) => m.tpl);
+  const immediate = state.diary.at(-1)?.tpl;
   const seen = new Set(state.seen);
   const pool = TEMPLATES.filter((t) => t.cast <= actors.length);
   const weight = (t: Template): number => {
@@ -755,6 +756,9 @@ export function pickMoment(actors: readonly Actor[], state: VillageState, env: S
     const total = pool.reduce((n, t) => n + weight(t), 0);
     let roll = rng() * total;
     const tpl = pool.find((t) => (roll -= weight(t)) < 0) ?? pool[0]!;
+    // Evita repetir a mesma cena comum imediatamente quando o elenco oferece alternativas.
+    // O plano pendente acima continua tendo prioridade para não quebrar histórias em duas partes.
+    if (tpl.id === immediate && pool.length > 1 && attempt < 59) continue;
     const cast = pickCast(tpl.cast, actors, state, rng);
     const ctx = makeCtx(state, cast, env, rng);
     if (tpl.when && !tpl.when(ctx)) continue;
@@ -763,7 +767,8 @@ export function pickMoment(actors: readonly Actor[], state: VillageState, env: S
   }
   // Nenhum sorteio combinou com as condições: cai num modelo sem condição (sempre existe um para cada tamanho de elenco).
   const open = pool.filter((t) => !t.when);
-  const tpl = open[Math.floor(rng() * open.length)];
+  const varied = open.filter((t) => t.id !== immediate);
+  const tpl = (varied.length ? varied : open)[Math.floor(rng() * (varied.length ? varied : open).length)];
   if (!tpl) return null;
   const cast = pickCast(tpl.cast, actors, state, rng);
   const ctx = makeCtx(state, cast, env, rng);
