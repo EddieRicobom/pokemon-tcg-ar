@@ -2796,6 +2796,11 @@ onBeforeUnmount(() => {
         @contextmenu.prevent
       ></canvas>
       <canvas ref="arCanvasEl" class="village-ar-canvas" :class="{ active: arActive }" aria-hidden="true"></canvas>
+      <div
+        v-if="arActive && effectiveVisual.villageFx"
+        class="village-ar-tilt-shift"
+        aria-hidden="true"
+      ></div>
       <div v-show="!loading && !welcome && sheet !== 'torre'" class="village-minimap" :class="{ big: miniBig }">
         <div class="village-minimap-head">
           <strong>Mapa da Vila</strong>
