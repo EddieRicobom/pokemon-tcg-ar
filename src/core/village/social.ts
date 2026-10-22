@@ -1269,7 +1269,26 @@ export function catchUp(state: VillageState, actors: readonly Actor[], now: numb
 /** O que o Pokémon comenta ao conversar com você sobre o que viveu nas últimas 36 horas (ou `null`). */
 export function recentGossip(state: VillageState, id: string, now: number): string | null {
   const memory = [...state.memories].reverse().find((item) => item.mon === id && now - item.t <= 90 * 24 * 3_600_000);
-  if (memory) return `Ainda lembro: ${memory.text}`;
+  if (memory) {
+    const age = Math.max(0, now - memory.t);
+    const when = age < 3_600_000 ? 'agora há pouco' : age < 2 * 86_400_000 ? 'ontem' : 'há alguns dias';
+    const intros: Record<MemoryKind, readonly string[]> = {
+      amizade: ['Eu ainda sorrio quando penso nisso', 'Sabe o que me deixou feliz outro dia?', 'Fiquei lembrando de uma coisa boa'],
+      rivalidade: ['Aquilo ainda ficou atravessado', 'Eu tentei deixar isso para trás, mas', 'Ainda estou pensando naquela confusão'],
+      romance: ['Eu fico meio bobo quando lembro', 'Sabe aquele momento que dá frio na barriga?', 'Ainda guardo esse momento com carinho'],
+      descoberta: ['Eu não paro de pensar no que encontramos', 'Aquela descoberta ainda está na minha cabeça', 'Eu descobri uma coisa e preciso comentar'],
+    };
+    const choices = intros[memory.kind];
+    const opener = choices[hash(`${memory.id}:${memory.kind}`) % choices.length] ?? choices[0]!;
+    const tail = memory.kind === 'rivalidade'
+      ? 'Talvez eu devesse conversar com eles de novo.'
+      : memory.kind === 'romance'
+        ? 'Foi bonito, mesmo com toda a vergonha.'
+        : memory.kind === 'descoberta'
+          ? 'Quero ver o que acontece se a gente investigar mais.'
+          : 'Foi um daqueles dias que dá vontade de repetir.';
+    return `${opener} — ${when}: ${memory.text} ${tail}`;
+  }
   for (let i = state.diary.length - 1; i >= 0; i--) {
     const m = state.diary[i]!;
     if (now - m.t > 36 * 3_600_000) break;
