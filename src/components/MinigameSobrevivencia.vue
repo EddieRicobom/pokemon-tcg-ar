@@ -690,16 +690,18 @@ function draw(): void {
     ctx.restore();
   }
 
-  if (!effectiveVisual.value.rotomMode) for (const artifact of s.artifacts) {
+  for (const artifact of s.artifacts) {
+    // A Pokébola é uma recompensa importante e continua visível no Modo Rotom; os artefatos temporários podem ser ocultados para economizar GPU.
+    if (effectiveVisual.value.rotomMode && artifact.kind !== 'pokeball') continue;
     const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb';
     const icon = artifact.kind === 'pokeball' ? '★' : artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : '♥';
-    const pulse = 1 + Math.sin(animMs / 180 + artifact.id) * 0.12;
+    const pulse = 1 + (effectiveVisual.value.rotomMode ? 0 : Math.sin(animMs / 180 + artifact.id) * 0.12);
     ctx.save();
     ctx.translate(artifact.x, artifact.y);
     ctx.globalAlpha = artifact.kind === 'pokeball' ? 0.38 : 0.28;
     ctx.fillStyle = color;
     ctx.shadowColor = color;
-    ctx.shadowBlur = 16;
+    ctx.shadowBlur = effectiveVisual.value.rotomMode ? 0 : 16;
     ctx.beginPath();
     ctx.arc(0, 0, (artifact.kind === 'pokeball' ? 20 : 15) * pulse, 0, Math.PI * 2);
     ctx.fill();
