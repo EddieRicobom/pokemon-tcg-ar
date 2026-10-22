@@ -559,11 +559,12 @@ export function talk(s: VillageState, id: string, name: string, types: readonly 
   const flavor = level >= 1 ? PERSONALITY_LINES[personalityOf(id).name] : undefined;
   let pool: readonly string[] = flavor && rng() < 0.5 ? flavor : lines;
   if (weather && WEATHER_LINES[weather] && rng() < 0.25) pool = [WEATHER_LINES[weather]!];
-  if (gossip && level >= 1 && rng() < 0.6) pool = [gossip];
+  const remembers = !!gossip && level >= 1 && rng() < 0.6;
+  if (remembers) pool = [gossip!];
   let text = `${first ? greet : ''}${pool[Math.floor(rng() * pool.length)]}`;
   const req = f.request && f.request.day === day && !f.request.done ? f.request : null;
   if (req) text += ` Ah... você teria ${req.qty} ${itemName(req.item)}? Eu ia adorar!`;
-  else if (!first) text = `${name} está feliz em te ver.`;
+  else if (!first && !remembers) text = `${name} está feliz em te ver.`;
   return { text, gained, request: req };
 }
 
@@ -780,3 +781,4 @@ export function dailyHelp(s: VillageState, id: string, day: string, rng: Rng): {
   }
   return { items, rare };
 }
+
