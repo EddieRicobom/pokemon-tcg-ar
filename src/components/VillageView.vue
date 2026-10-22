@@ -11,8 +11,7 @@ import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { routeHref } from '../app/route';
 import { handleDialogEscape, isGameKeyboardControl } from '../app/game-keyboard';
-import { CameraError, startRearCamera, stopCamera } from '../core/camera';
-import { loadChunk } from '../app/stale-build';
+import { stopCamera } from '../core/camera';
 import type { RunningVillageAr } from '../ar/start-village';
 import { VILLAGE_SCALE_RANGE, normalizeVillageScale } from '../core/village/ar-diorama';
 import { canNickname, displayName, MAX_NICK_LEN, nickIdeas, nicknameOf, setNickname } from '../core/village/nickname';
@@ -111,7 +110,6 @@ const canvasEl = ref<HTMLCanvasElement | null>(null);
 const dioramaFloorEl = ref<HTMLCanvasElement | null>(null);
 const dioramaPropsEl = ref<HTMLCanvasElement | null>(null);
 const arVideoEl = ref<HTMLVideoElement | null>(null);
-const arCanvasEl = ref<HTMLCanvasElement | null>(null);
 const wrapEl = ref<HTMLElement | null>(null);
 const loading = ref('Abrindo a sua Vila…');
 const toast = ref('');
@@ -133,38 +131,6 @@ const arScale = ref(villageArSettings.scale);
 let arStream: MediaStream | null = null;
 let villageAr: RunningVillageAr | null = null;
 const arLook = ref<{ pointerId: number; x: number; y: number; moved: boolean } | null>(null);
-
-async function toggleArBeta(): Promise<void> {
-  if (arActive.value) {
-    stopArBeta();
-    sheet.value = null;
-    return;
-  }
-  const video = arVideoEl.value;
-  const arCanvas = arCanvasEl.value;
-  const wrap = wrapEl.value;
-  if (!video || !arCanvas || !wrap || !game || !dioramaFloorEl.value || !dioramaPropsEl.value) return;
-  try {
-    arStream = await startRearCamera(video);
-    game.setDioramaView(true);
-    arActive.value = true;
-    const { startVillageAr } = await loadChunk(() => import('../ar/start-village'));
-    villageAr = await startVillageAr({ video, canvas: arCanvas, container: wrap, villageFloorCanvas: dioramaFloorEl.value, villagePropsCanvas: dioramaPropsEl.value });
-    villageAr.setScale(arScale.value);
-  } catch (error) {
-    villageAr?.stop();
-    villageAr = null;
-    game.setDioramaView(false);
-    game.resize(wrap.clientWidth, wrap.clientHeight);
-    stopCamera(video, arStream);
-    arStream = null;
-    arActive.value = false;
-    say(error instanceof CameraError ? error.message : 'Não foi possível abrir a câmera.', 5000);
-    return;
-  }
-  say('Aponte para baixo e toque na tela para ancorar a Vila. Gire e incline o celular para observar a cidade.', 7000);
-  sheet.value = null;
-}
 
 function placeVillageAr(): void {
   const result = villageAr?.recenter();
@@ -286,7 +252,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   {
     title: 'Fora da Vila',
     tiles: [
-      { icon: '📷', label: arActive.value ? 'Sair do diorama AR' : 'Diorama AR experimental', hint: 'posição estimada pelos sensores', run: () => { void toggleArBeta(); } },
+      { icon: '📷', label: 'Diorama AR', hint: 'temporariamente indisponível', disabled: true },
       { href: routeHref('treinador'), icon: '🏅', label: 'Passaporte', hint: `Nv. ${level.value}` },
     ],
   },
