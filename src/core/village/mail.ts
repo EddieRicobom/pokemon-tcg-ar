@@ -1,5 +1,5 @@
-import { add, friendOf } from './life';
-import type { ItemId, VillageState } from './life';
+import { itemDef } from './catalog';
+import type { Friendship, ItemId, VillageState } from './life';
 import type { Moment, SocialPlanKind } from './social-state';
 
 /** O correio guarda acontecimentos reais da Vila. Cartas nunca inventam um momento: elas nascem do Diário. */
@@ -32,6 +32,16 @@ export const emptyMail = (): MailState => ({ inbox: [], archive: [], generatedDa
 const KINDS: readonly MailKind[] = ['agradecimento', 'pedido', 'convite', 'rumor', 'jornal'];
 const str = (value: unknown, max: number): string => typeof value === 'string' ? value.slice(0, max) : '';
 const cleanId = (value: unknown): string | null => typeof value === 'string' && value.length > 0 ? value.slice(0, 80) : null;
+
+/** Mantém o correio independente do módulo de vida (life.ts também normaliza MailState). */
+function friendshipFor(state: VillageState, id: string): Friendship {
+  return (state.friends[id] ??= { points: 0, lastTalk: '', lastGift: '', request: null });
+}
+
+function addMailReward(state: VillageState, item: ItemId, quantity: number): void {
+  state.inventory[item] = Math.min(999, (state.inventory[item] ?? 0) + quantity);
+  if (itemDef(item)?.kind === 'furniture' && !state.collected.includes(item)) state.collected.push(item);
+}
 
 function normalizeOne(raw: unknown): VillageMail | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -162,11 +172,13 @@ export function respondToMail(state: VillageState, id: string, action: MailActio
   }
   const participants = mail.involvedIds;
   if (action === 'responder' && mail.fromId) {
-    friendOf(state, mail.fromId).points = Math.min(100, friendOf(state, mail.fromId).points + 4);
+    const friendship = friendshipFor(state, mail.fromId);
+    friendship.points = Math.min(100, friendship.points + 4);
     mail.responded = true;
   }
   if (action === 'ajudar' && mail.fromId) {
-    friendOf(state, mail.fromId).points = Math.min(100, friendOf(state, mail.fromId).points + 2);
+    const friendship = friendshipFor(state, mail.fromId);
+    friendship.points = Math.min(100, friendship.points + 2);
     const target = participants.find((entry) => entry !== mail.fromId);
     if (target) {
       state.plans = [...state.plans.filter((plan) => !(plan.from === mail.fromId && plan.to === target && plan.kind === 'ajudar')), {
@@ -182,7 +194,7 @@ export function respondToMail(state: VillageState, id: string, action: MailActio
     mail.responded = true;
   }
   if (mail.reward?.coins) state.coins = Math.min(999999, state.coins + mail.reward.coins);
-  if (mail.reward?.item) add(state, mail.reward.item, mail.reward.qty ?? 1);
+  if (mail.reward?.item) addMailReward(state, mail.reward.item, mail.reward.qty ?? 1);
   state.mail.inbox.splice(index, 1);
   state.mail.archive = [...state.mail.archive, mail].slice(-120);
   return {
