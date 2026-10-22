@@ -6412,6 +6412,8 @@ body.no-scroll .reward-toasts {
 .survivor-minimap-marker.kind-player { width: 8px; height: 8px; margin: -4px 0 0 -4px; background: #5bc0ff; }
 .survivor-minimap-marker.kind-boss { width: 8px; height: 8px; margin: -4px 0 0 -4px; background: #ff5b5b; }
 .survivor-minimap-marker.kind-elite { background: #ffd84a; }
+.survivor-minimap-marker.kind-artifact { width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #fff1a8; color: #ffcf4d; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 0 7px #ffd84a; }
+.survivor-minimap-marker.kind-artifact::after { content: '★'; position: absolute; inset: -5px 0 0; color: #ffd84a; font-size: 15px; line-height: 10px; text-align: center; text-shadow: 0 1px 2px #121827; }
 
 .survivor-objectives {
   position: absolute;
@@ -6616,6 +6618,51 @@ body.no-scroll .reward-toasts {
 .survivor-upgrade-btn.rarity-lendario .survivor-rarity-label { color: #683b9d; }
 .survivor-upgrade-btn.rarity-ancestral { border-left: 5px solid #c78a25; background: #fff5df; }
 .survivor-upgrade-btn.rarity-ancestral .survivor-rarity-label { color: #835413; }
+
+.survival-digital-recruit,
+.survival-digital-cutscene {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  background: rgba(9, 13, 24, 0.78);
+}
+.survival-digital-recruit-card,
+.survival-digital-cutscene-card {
+  width: min(100%, 560px);
+  max-height: min(90vh, 700px);
+  overflow-y: auto;
+  padding: 20px;
+  border: 2px solid #ffd84a;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #18243b, #101827);
+  color: #f5f7ff;
+  text-align: center;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 0 5px rgba(255, 216, 74, 0.12);
+}
+.survival-digital-kicker { color: #ffe68a; font-size: .7rem; font-weight: 800; letter-spacing: .1em; }
+.survival-digital-recruit-card h2,
+.survival-digital-cutscene-card h2 { margin: 7px 0; color: #fff7d0; }
+.survival-digital-recruit-card p { margin: 6px 0 14px; color: #d6def2; }
+.survival-digital-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.survival-digital-option { display: grid; gap: 4px; min-height: 150px; align-content: center; padding: 10px; border: 1px solid #65749c; border-radius: 12px; background: #202d47; color: #fff; cursor: pointer; }
+.survival-digital-option:hover, .survival-digital-option:focus-visible { border-color: #ffd84a; background: #293a5b; transform: translateY(-2px); }
+.survival-digital-option:disabled { opacity: .6; cursor: wait; }
+.survival-digital-option img, .survival-digital-option-placeholder { width: 76px; height: 76px; margin: 0 auto; object-fit: contain; image-rendering: pixelated; }
+.survival-digital-option-placeholder { display: grid; place-items: center; border: 1px dashed #8f9dbc; border-radius: 50%; color: #ffe68a; font-size: 2rem; }
+.survival-digital-option strong { font-size: .95rem; }
+.survival-digital-option small { color: #b8c4dc; font-size: .7rem; }
+.survival-digital-cutscene { background: radial-gradient(circle at 50% 42%, rgba(55, 106, 169, .72), rgba(8, 12, 24, .95) 62%); }
+.survival-digital-cutscene-card { border-color: #7bdcff; animation: survival-digital-arrival 520ms cubic-bezier(.2,.8,.25,1) both; }
+.survival-digital-cutscene-card > small { color: #8ee6ff; font-weight: 800; letter-spacing: .14em; }
+.survival-digital-cutscene-sprite { display: grid; place-items: center; min-height: 150px; }
+.survival-digital-cutscene-sprite img { width: 150px; height: 150px; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 8px 12px rgba(0,0,0,.45)); }
+.survival-digital-cutscene-sprite span { font-size: 5rem; }
+.survival-digital-cutscene-card p { margin: 10px auto 18px; max-width: 36ch; color: #e2e9f8; font-size: 1.05rem; line-height: 1.45; }
+@keyframes survival-digital-arrival { from { opacity: 0; transform: translateY(18px) scale(.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .survival-digital-option:hover, .survival-digital-option:focus-visible, .survival-digital-cutscene-card { transform: none; animation: none; } }
 .survivor-upgrade-btn:focus-visible { outline: 3px solid #1b2036; outline-offset: 2px; }
 
 .survivor-upgrade-icon {
