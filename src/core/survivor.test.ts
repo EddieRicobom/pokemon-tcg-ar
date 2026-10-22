@@ -669,6 +669,7 @@ describe('arquétipos de inimigos', () => {
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(protectedAlly.hp).toBeGreaterThan(40);
     expect(protectedAlly.protectedMs).toBeGreaterThan(0);
+    expect(s.fx.some((fx) => fx.kind === 'heal' && fx.x === protectedAlly.x && fx.y === protectedAlly.y)).toBe(true);
   });
 
   it('limita projéteis hostis mesmo com muitos atiradores', () => {
