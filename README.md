@@ -1,121 +1,166 @@
+<div align="center">
+
+<img src="public/icons/icon-512.png" width="128" alt="Pokémon TCG AR" />
+
 # Pokémon TCG AR
 
-PWA para celular que reconhece cartas físicas de Pokémon TCG pela câmera e mostra o Pokémon como um GIF 2D transparente em realidade aumentada. O projeto também inclui uma Vila narrativa, uma Caixa em AR, Arena, Pins, Liga e a Torre de Sobrevivência.
+**Uma carta física vira uma porta para uma pequena aventura.**
 
-É um projeto de fã, não oficial. Pokémon, nomes, imagens e sprites pertencem aos respectivos detentores; veja [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). O código é MIT ([LICENSE](LICENSE)).
+Escaneie cartas reais, veja o Pokémon em AR, cuide da sua Vila e leve sua coleção para a Caixa, Arena, Pins e Torre de Sobrevivência.
 
-> O app não finge reconhecer cartas nem rastrear AR. Quando uma fonte de dados, sprite ou rastreamento não está disponível, isso aparece como erro ou ausência. Testes em Chromium usam câmera falsa e WebGL por software; eles não medem câmera, sensores, GPU, calor, bateria ou fluidez em um celular. Consulte [docs/TESTING.md](docs/TESTING.md).
+[![CI](https://github.com/EddieRicobom/pokemon-tcg-ar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/EddieRicobom/pokemon-tcg-ar/actions/workflows/ci.yml)
+[![Deploy](https://github.com/EddieRicobom/pokemon-tcg-ar/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/EddieRicobom/pokemon-tcg-ar/actions/workflows/deploy.yml)
+[![Licença MIT](https://img.shields.io/badge/código-MIT-2f855a)](LICENSE)
+[![Vue 3](https://img.shields.io/badge/Vue%203-TypeScript-42b883?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![PWA](https://img.shields.io/badge/PWA-GitHub%20Pages-5b5bd6)](https://developer.mozilla.org/docs/Web/Progressive_web_apps)
 
-## Modos do app
+<br />
 
-| Modo | O que faz |
+<a href="https://eddiericobom.github.io/pokemon-tcg-ar/"><strong>▶ Abrir a demonstração ao vivo</strong></a>
+&nbsp; · &nbsp;
+<a href="#comece-em-dois-minutos">Começar localmente</a>
+&nbsp; · &nbsp;
+<a href="docs/TESTE_NO_CELULAR.md">Testar no celular</a>
+
+</div>
+
+> Projeto de fã, não oficial. Pokémon, nomes, imagens, músicas e sprites pertencem aos respectivos detentores. Consulte [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). O código deste repositório é MIT.
+
+## O que é
+
+Pokémon TCG AR é uma PWA mobile-first que combina coleção física, reconhecimento visual e uma Vila persistente. A carta precisa estar realmente na câmera: o app não simula reconhecimento, não sorteia uma carta e não coloca um Pokémon no espaço sem rastreamento.
+
+O projeto é totalmente estático e roda no GitHub Pages. Não há servidor próprio, conta obrigatória ou banco remoto. O progresso fica no navegador e pode ser exportado para backup.
+
+## A experiência em uma tela
+
+| Modo | Experiência |
 | --- | --- |
-| **Escanear** | Detecta a carta, corrige a perspectiva, usa OCR e consulta o catálogo para confirmar a impressão. Depois mostra o sprite 2D sobre a carta rastreada. Há modo **Várias** para até quatro cartas. |
-| **Vila** | Hub narrativo sem câmera: exploração, conversas, amizades, Diário, Álbum, casas, móveis, roupas, loja, descobertas, festivais, Arena e Torre. |
-| **Caixa em AR** | Coloca a equipe no espaço pela câmera e orientação do aparelho. A batalha é uma exibição automática, não um RPG completo. |
-| **Arena** | Liga Pokémon, Ginásios, Elite 4, Campeã e PvP ligado à Caixa. |
-| **Pins** | Arena sem câmera, com física, adversário e PvP. |
-| **Cartas** | Box local com cartas coletadas, filtros, equipe, evolução de companheiros e acesso à Caixa em AR. |
-| **Treinador** | XP, nível, missões, coleção, conquistas, minigames, Liga e backup dos dados. |
-| **Diagnóstico** | Capacidades do aparelho, estado do catálogo, última leitura e caches locais. |
+| **Escanear** | Corrige a perspectiva, usa OCR e confirma a impressão no catálogo antes de mostrar o sprite 2D rastreado sobre a carta. Também há rastreamento de até quatro cartas. |
+| **Vila** | Hub narrativo com exploração, moradores, amizade, histórias, Diário, casas, móveis, roupas, fazenda, mina, madeireira, pescaria, festivais e descobertas. |
+| **Caixa em AR** | Coloca sua equipe no espaço com câmera e orientação. A batalha é uma apresentação automática para ver os Pokémon juntos, não um RPG manual completo. |
+| **Arena** | Liga, Ginásios, Elite 4, Campeã e partidas ligadas à equipe da Caixa. |
+| **Pins** | Disputas sem câmera com física, efeitos elementais e partidas PvP. |
+| **Torre** | Survival com ondas, treinadores, regiões, escolhas de buffs, artefatos, meta-progressão e recompensas persistentes para corridas concluídas. |
+| **Cartas** | Box local, filtros, seleção de Vila/equipe, evolução de companheiros e entrada para a Caixa. |
+| **Treinador** | Perfil, XP, missões, moedas, conquistas, minigames e backup local ou opcional no Google Drive. |
 
-## Vila autônoma
+### Fluxo recomendado para a primeira visita
 
-A Vila é um lugar visitável e conectado aos outros modos. O progresso geral fica no aparelho: amizade, Diário, Álbum, casas, móveis, roupas, cidade, moedas, festivais e descobertas.
+```text
+Escanear uma carta real
+        ↓
+Confirmar a impressão e guardar a carta
+        ↓
+Escolher “Ver na Vila” ou abrir a Caixa em AR
+        ↓
+Voltar à Vila para conversar, explorar e desbloquear histórias
+```
 
-### Caixa de sementes e fazenda
+Se você não possui cartas, o onboarding permite entrar direto na Vila. Um Digital Pokémon é sempre identificado como digital e nunca é apresentado como uma carta reconhecida.
 
-Há uma caixa fixa perto dos canteiros da fazenda. Ela aceita apenas sementes que já existem na mochila e permite depositar ou retirar o estoque. O conteúdo é salvo junto com a Vila e entra no backup.
+## Demonstração
 
-Enquanto a Vila está aberta, até três moradores livres podem escolher agricultura de acordo com aptidões, interesses, energia e necessidade da comunidade. Eles caminham até o canteiro e só concluem a tarefa depois de trabalhar por tempo real:
+**[Abrir o app publicado](https://eddiericobom.github.io/pokemon-tcg-ar/)** · **[roteiro de teste no aparelho real](docs/TESTE_NO_CELULAR.md)**
 
-- plantar consome uma semente da caixa;
-- regar usa as regras normais de crescimento;
-- colher entrega a produção e eventuais sementes recuperadas à mochila;
-- moradores dormindo, seguindo o treinador ou em expedição ficam indisponíveis;
-- sair da Vila, abrir um menu ou fechar o app interrompe a tarefa sem consumo nem recompensa;
-- não existe produção agrícola offline inventada.
+O repositório usa um link para a demonstração ao vivo em vez de versionar um GIF grande e rapidamente desatualizado. Assim, o botão acima sempre abre a versão que está no ar, com o fluxo real de câmera e AR. O [harness de câmera falsa](docs/TESTING.md) oferece uma demonstração reproduzível em Chromium sem precisar de uma carta ou câmera física.
 
-O histórico mostra quem concluiu cada trabalho. A escolha também considera os outros postos, para a fazenda não ocupar automaticamente todos os moradores.
+## Comece em dois minutos
 
-### Mina, madeireira e pescaria
+### Requisitos
 
-O menu **Minha Vila → Trabalhos da Vila** mostra os quatro postos, os resultados reais e um botão para caminhar até cada local. Também há placas interativas no mapa.
+- **Node.js 22 ou superior** e npm.
+- Navegador atual com ES2022, `getUserMedia`, IndexedDB e WebGL2 para os modos 3D/AR.
+- **HTTPS** em produção; `localhost` é aceito como origem segura no desenvolvimento.
+- Câmera traseira e uma carta real para testar o reconhecimento.
 
-- **Mina ao sul:** moradores mineram pedras, com as mesmas quantidades e chances de cristal e ouro da coleta manual.
-- **Madeireira no noroeste:** moradores coletam madeira em árvores acessíveis; árvores já trabalhadas aparecem como tocos até o dia seguinte.
-- **Pescaria no lago:** os moradores preferem o píer, lançam a linha e usam a mesma tabela de pesca do jogador. Os dez lançamentos diários são compartilhados.
+**Não é necessário instalar Unity, Python ou OpenCV.** O app é Vue 3 + TypeScript + Vite. Three.js, MindAR e TensorFlow.js entram somente nos modos que precisam deles, via carregamento sob demanda.
 
-As ferramentas e o progresso aparecem durante o trabalho. A produção só entra na mochila depois da caminhada e da conclusão; abrir menus ou sair interrompe tarefas em andamento. Aptidões e interesses favorecem profissões, e moradores livres também podem experimentar outros trabalhos. Os efeitos de movimento respeitam as opções visuais e movimento reduzido.
-
-No **passeio guiado**, o Pokémon acompanha a velocidade do treinador. O passeio só é registrado quando os dois chegam; os acessos aos destinos e aos postos têm testes de caminho no mapa real.
-
-### Caderno de Lendas
-
-Em **Vila → Menu → Histórias → Caderno de Lendas**, há 94 encontros de espécies lendárias e míticas, de Kanto a Paldea (incluindo Hisui). Cada visitante tem um roteiro de quatro capítulos, pistas e cenário próprios. Formas regionais, fusões e Megas não contam como espécies adicionais.
-
-Escolha **Investigar**, siga a primeira pista e use **Investigar pista** ou A quando estiver perto. A segunda pista leva ao local da aparição: lago, bosque, mina, praça, fazenda ou Torre. A investigação não exige moedas, cartas específicas ou partidas em outros modos. As visitas raras diárias também continuam possíveis.
-
-Os encontros ficam no Caderno e podem ser revistos sem repetir bônus. O Diário recebe uma lembrança; os efeitos dos visitantes antigos mantêm seus prazos, e os demais encontros oferecem o registro narrativo. Nenhuma visita captura ou adiciona automaticamente um Pokémon à coleção. A cena especial do primeiro desejo ao Ho-Oh continua única.
-
-Saves antigos preservam as visitas ainda presentes no histórico. Investigações e cenas pendentes são retomadas; o registro permanente das novas visitas não é apagado quando o histórico recente enche. Só o sprite do encontro aberto é solicitado. Ausência de sprite é informada na tela; animações respeitam o Modo Rotom, opções visuais e movimento reduzido.
-
-### Diorama AR da Vila
-
-O modo experimental da Vila usa a câmera, orientação do aparelho e uma altura estimada. O jogador escolhe o ponto na imagem e pode aproximar ou afastar o diorama; o controle de escala aumenta o tamanho real do modelo no mesmo ponto, até 3×. Ele não declara detectar mesa, chão ou distância física e a âncora precisa ser refeita em uma nova sessão.
-
-## Torre de Sobrevivência
-
-A Torre é um modo próprio da Vila. O jogador movimenta o Pokémon enquanto o ataque acontece automaticamente, enfrenta ondas, treinadores e um chefão final, escolhe melhorias e pode continuar no modo infinito depois do marco correspondente.
-
-A meta-progressão é persistente e só registra resultados de corridas encerradas:
-
-- corridas, melhores ondas e níveis;
-- chefes e treinadores derrotados;
-- doze desafios opcionais sorteados para cada corrida;
-- modo infinito após o chefão final aos 20 minutos;
-- preparações estratégicas liberadas aos 3, 6, 9 e 12 objetivos distintos;
-- segunda troca de sorteio após três desafios distintos concluídos.
-
-Abandonar uma corrida não registra objetivos, marcos ou recompensas. A tela da Torre mostra o próximo marco e a trilha de desafios.
-
-## Música, sons e pisos da Caixa
-
-- **Vila:** 12 músicas tranquilas, escolhidas pelo horário local e clima, alternando pares a cada seis minutos com transição de 12 segundos. No Menu da Vila, abra **Música e sons da Vila** para ajustar música e efeitos separadamente.
-- **Survival:** um tema de batalha para cada uma das nove regiões, com troca gradual nos mesmos 40 segundos da transição do cenário. Cinco são arranjos GBA; Kalos, Alola, Galar e Paldea receberam tratamento retrô das gravações regionais. Volume e liga/desliga ficam em **Música da Torre** e na pausa.
-- As músicas só carregam ao usar o modo e liberar o áudio por um gesto; no máximo duas faixas ficam carregadas, sem decodificar a playlist inteira. Esconder a página suspende o som. Fechar o modo cancela cargas e libera as fontes. Preferências entram no backup existente.
-- Sons sintetizados acompanham coleta, rega, plantio, mineração, madeira, pesca, compras, presentes e portas. Trabalhos de moradores só emitem sons próximos ao jogador; a ambientação distingue dia, noite e chuva.
-- Caixa e Arena têm pisos próprios: jardim com trilha contínua e borda de pedra; arena com área central limpa e marcações discretas. Os objetos de cenário usam orientação vertical correta e cores sRGB. O Modo Rotom continua usando piso leve, sem terreno ou decoração pesada.
-
-Créditos, originais e condições de uso estão em [public/audio/CREDITS.md](public/audio/CREDITS.md). A licença do código não se estende às músicas Pokémon.
-
-## Dados, privacidade e limites
-
-O projeto é estático e não tem backend, conta obrigatória ou banco remoto. Cartas, progresso, configurações e caches ficam no navegador, usando `localStorage`, IndexedDB e Cache API. O app exporta e importa backup JSON/ZIP, incluindo a Vila, companheiros, cartas e caches locais.
-
-O reconhecimento real depende de iluminação, foco, qualidade da carta, rede para dados ainda não cacheados e compatibilidade do aparelho. O rastreamento MindAR usa a imagem da carta; clicar em um botão nunca substitui a detecção. Companheiros digitais da Fonte são identificados como digitais e não entram no reconhecimento de cartas.
-
-O RPG de ação completo continua pendente: a batalha da Caixa é uma exibição automática e não oferece controle manual de golpes, itens, trocas ou progressão de RPG.
-
-## Publicação no GitHub Pages
-
-O projeto usa somente GitHub gratuito, repositório público, GitHub Actions e GitHub Pages.
-
-1. Em **Settings → Pages**, selecione **GitHub Actions** como fonte.
-2. Faça merge na `main`.
-3. O workflow **Deploy no GitHub Pages** instala dependências, atualiza os dados estáticos, roda tipos e testes, gera o build e publica `dist/`.
-
-O deploy também roda semanalmente para atualizar o índice do catálogo. O endereço público deste repositório é <https://eddiericobom.github.io/pokemon-tcg-ar/>.
-
-O site precisa de HTTPS para câmera e sensores. O PWA atualiza os arquivos quando uma nova versão assume, sem interromper uma câmera que já está aberta.
-
-## Desenvolvimento
-
-Requer Node.js 22 ou superior.
+### Instalação
 
 ```bash
+git clone https://github.com/EddieRicobom/pokemon-tcg-ar.git
+cd pokemon-tcg-ar
 npm ci
+cp .env.example .env
 npm run dev
+```
+
+No PowerShell, use `Copy-Item .env.example .env` no lugar de `cp`. Abra o endereço mostrado pelo Vite, normalmente `http://localhost:5173/pokemon-tcg-ar/`.
+
+Para abrir a partir de outro aparelho na rede:
+
+```bash
+npm run dev -- --host 0.0.0.0
+```
+
+O aparelho ainda precisará de HTTPS ou de um túnel seguro para liberar a câmera. A aparência e a fluidez de sensores só podem ser confirmadas em hardware real.
+
+## Câmera, sensores e AR
+
+1. Entre em **Escanear** ou **Caixa** e toque no botão de abrir a câmera; a permissão precisa partir de um gesto.
+2. Conceda acesso à câmera traseira e use boa luz, foco e uma carta inteira no enquadramento.
+3. No iOS, aceite também o pedido de movimento/orientação quando ele aparecer para o AR da Caixa e o diorama da Vila.
+4. Se a câmera ficar preta, reative a permissão nas configurações do site, feche outras abas que usam a câmera e recarregue.
+5. Sem sensor, alguns fluxos oferecem arraste manual. Isso não inventa posição física: o diorama da Vila usa uma âncora e uma altura estimada, sem detectar mesa ou distância real.
+
+## Dados externos e configuração
+
+O núcleo não exige chave de API. As fontes públicas são consultadas sob demanda, com cache local quando possível:
+
+| Fonte | Para que serve | Necessária? |
+| --- | --- | --- |
+| [TCGdex](https://tcgdex.dev/) | Imagem de referência, identificação e dados impressos da carta | Para cartas ainda não guardadas |
+| [PokéAPI](https://pokeapi.co/) | Tipos, atributos e golpes | Para painéis e batalhas ainda não cacheados |
+| [PokeAPI/sprites](https://github.com/PokeAPI/sprites) | Sprites GIF/PNG 2D | Para visuais ainda não cacheados |
+| Google Drive | Cópia opcional do backup completo | Não; o backup local funciona sem conta |
+
+O único valor de build opcional é o Client ID público do Google Drive. Ele já está documentado em [`.env.example`](.env.example):
+
+```dotenv
+# Opcional: OAuth “Aplicativo da Web”. Nunca coloque Client Secret aqui.
+VITE_GOOGLE_CLIENT_ID=
+```
+
+Sem esse valor, o app continua completo e mantém o backup local. No deploy, configure a variável `GOOGLE_DRIVE_CLIENT_ID` em **Settings → Secrets and variables → Actions → Variables**; o workflow a injeta como `VITE_GOOGLE_CLIENT_ID`. Veja [docs/BACKUP_NUVEM.md](docs/BACKUP_NUVEM.md) para origens autorizadas, escopo e limites.
+
+## Progresso, privacidade e backup
+
+- Cartas, progresso, configurações e caches ficam no navegador, em `localStorage`, IndexedDB e Cache API.
+- O backup local exporta e importa o estado completo, inclusive Vila, companheiros, cartas e caches cobertos pelo manifesto.
+- O arquivo exportado pode usar extensão genérica `.dat`; isso mascara o tipo para o sistema de arquivos, mas **não é criptografia**.
+- O Google Drive é opcional, usa a pasta privada `appDataFolder` e só envia uma cópia quando o jogador pede.
+- Tokens de autorização não entram no save nem no backup.
+- O reconhecimento depende de luz, foco, qualidade da carta, disponibilidade de rede e compatibilidade do aparelho. Uma falha aparece como falha; nenhum dado é inventado em silêncio.
+
+## Arquitetura
+
+```text
+Vue 3 / componentes
+        │
+        ├── src/app          rotas, stores, catálogo, backup e serviços
+        ├── src/core         regras puras e testáveis
+        ├── src/recognition  contorno, OCR e decisão de evidências
+        ├── src/ar           MindAR, câmera, rastreamento e sprites
+        ├── src/box          Three.js, Caixa e batalha automática
+        ├── src/village      mapa, renderização, trabalhos e histórias
+        └── src/sensors      orientação e sensores
+
+GitHub Actions → build estático → GitHub Pages
+```
+
+Tecnologias principais:
+
+- Vue 3, TypeScript estrito e Vite 8;
+- PWA com `vite-plugin-pwa`;
+- MindAR, TensorFlow.js e Three.js carregados dinamicamente para AR/Caixa;
+- Tesseract.js para OCR e `gifuct-js` para GIF;
+- Vitest + happy-dom para regras e Playwright para fluxos com câmera falsa;
+- sprites 2D; sem Unity, Flutter, React Native, GLB ou glTF.
+
+## Validar antes de abrir um PR
+
+```bash
 npm run typecheck
 npm test
 npm run build
@@ -134,51 +179,20 @@ npm run verify:sprite-pack
 npm run preview
 ```
 
-O `BASE_PATH` padrão é `/pokemon-tcg-ar/`; no CI ele é derivado do nome do repositório. Não use caminhos absolutos no código.
+O CI roda tipos, testes, verificação dos atlas, build e conferência do `dist/`. Testes automatizados usam câmera falsa e WebGL por software; eles não medem bateria, calor, sensores ou GPU de celular. Consulte [docs/TESTING.md](docs/TESTING.md) e [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
 
-## Stack e arquitetura
+## Limites atuais e próximos passos
 
-- Vue 3, TypeScript estrito e Vite 8;
-- PWA com `vite-plugin-pwa`;
-- MindAR, TensorFlow.js e Three.js apenas nas integrações de AR/Caixa, carregadas de forma dinâmica;
-- Tesseract.js para OCR e `gifuct-js` para GIF;
-- Vitest + happy-dom para testes unitários e Playwright para fluxos de câmera falsa;
-- lógica pura em `src/core/`, com testes ao lado dos módulos;
-- sprites 2D, sem Unity, Flutter, React Native, GLB ou glTF.
+- A batalha da Caixa continua sendo uma exibição automática; controle manual de golpes, itens e trocas é parte do plano futuro.
+- AR real depende de câmera, carta, iluminação, sensores e navegador compatíveis.
+- O catálogo e os sprites são carregados sob demanda para não transformar a primeira abertura em um download enorme.
+- O estado detalhado do roteiro fica em [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
-Estrutura principal:
+## Documentação e créditos
 
-```text
-config/                 base path e configuração do site
-public/                 ícones, OCR, dados e sprites estáticos
-scripts/                índices, sincronização, verificações e avaliações
-e2e/                    Playwright e harnesses de câmera falsa
-src/app/                rotas, stores, backup, catálogo e serviços
-src/ar/                 rastreamento MindAR e renderização AR
-src/box/                Caixa, arena e batalha automática
-src/components/         telas e componentes Vue
-src/core/               lógica testável sem interface
-src/recognition/        contorno, OCR e fusão de evidências
-src/village/            renderizador, mapa, arte e movimento da Vila
-src/sensors/            orientação e sensores
-.github/workflows/      CI, deploy, E2E e verificações externas
-docs/                   arquitetura e procedimentos de teste
-```
+- [Arquitetura](docs/ARCHITECTURE.md) · [Testes](docs/TESTING.md) · [Teste no celular](docs/TESTE_NO_CELULAR.md)
+- [Atlas de treinadores](docs/TRAINER_ART.md) · [Backup no Google Drive](docs/BACKUP_NUVEM.md)
+- [Histórico de mudanças](CHANGELOG.md) · [Avisos de terceiros](THIRD_PARTY_NOTICES.md)
+- [Créditos de áudio](public/audio/CREDITS.md)
 
-## Fluxo de contribuição
-
-Trabalhe em uma branch `Codex/...`, faça commits pequenos em português e abra um pull request. Antes de relatar sucesso, confirme `typecheck`, testes, build com `BASE_PATH`, `verify-dist`, estado do Git, CI e deploy. A `main` só deve receber mudanças depois do CI verde.
-
-## Documentação
-
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): decisões técnicas e limites;
-- [docs/TESTING.md](docs/TESTING.md): testes automatizados e limites do ambiente;
-- [docs/TRAINER_ART.md](docs/TRAINER_ART.md): atlas e sprites dos treinadores;
-- [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md): roteiro para aparelho real;
-- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md): estado por etapa e pendências;
-- [CHANGELOG.md](CHANGELOG.md): histórico de versões;
-- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): créditos e licenças de assets.
-
-### Backup em nuvem (Google Drive)
-
-Em **Treinador → Seus dados**, o backup local continua disponível. A integração opcional com Google Drive envia cópias completas por data e permite baixar, validar e confirmar a restauração em outro aparelho. Não sincroniza nem substitui saves automaticamente. Requer configurar o Client ID do Google no deploy; sem isso, a interface informa a indisponibilidade. Veja [configuração e limites](docs/BACKUP_NUVEM.md).
+Contribuições devem usar uma branch `Codex/...`, commits pequenos em português e pull request. A `main` recebe mudanças depois do CI verde.
