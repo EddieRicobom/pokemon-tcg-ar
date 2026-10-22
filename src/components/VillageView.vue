@@ -941,6 +941,7 @@ const KEYS: Record<string, Dir> = {
 const heldKeys = new Set<Dir>();
 const gamepadKeys = new Set<Dir>();
 const dpadPointers = new Map<number, Dir>();
+let lastPointerAPress = -Infinity;
 /** Teclas seguradas viram um vetor (duas teclas = diagonal), igual ao joystick. */
 function applyKeys(): void {
   if (joy.active) return;
@@ -1026,6 +1027,26 @@ function moveVillageFocus(direction: Dir): void {
 function dpadUp(event: PointerEvent): void {
   if (!dpadPointers.delete(event.pointerId)) return;
   applyKeys();
+}
+
+/**
+ * Confirma no início do toque. O direcional usa outro pointerId, então os dois
+ * podem permanecer pressionados ao mesmo tempo em telas touch (inclusive em
+ * navegadores que só disparariam `click` depois de soltar o dedo).
+ */
+function pressAPointer(event: PointerEvent): void {
+  event.preventDefault();
+  event.stopPropagation();
+  const now = performance.now();
+  lastPointerAPress = now;
+  pressA();
+}
+
+function pressAClick(event: MouseEvent): void {
+  event.stopPropagation();
+  // Touch browsers may dispatch click shortly after pointerdown; avoid a
+  // second interaction while preserving keyboard/assistive-technology clicks.
+  if (performance.now() - lastPointerAPress > 180) pressA();
 }
 function onKey(e: KeyboardEvent): void {
   if (recapScenes.value.length) {
@@ -1253,9 +1274,12 @@ function openMail(): void {
   const generated = generateDailyMail(state, refreshDay(), namesById());
   if (generated) {
     changed();
-    if (generated.involvedIds.length > 0) game?.deliverMail(generated.involvedIds);
     say(`📬 ${generated.fromName} deixou uma carta: ${generated.subject}`, 4800);
   }
+  // Cartas geradas enquanto o jogador estava fora também entram na rota do
+  // carteiro quando o Correio é aberto, sem repetir destinos na mesma visita.
+  const pendingTargets = [...new Set(state.mail.inbox.flatMap((mail) => mail.involvedIds))];
+  if (pendingTargets.length > 0) game?.deliverMail(pendingTargets);
   closeDialog();
   tab.value = 'correio';
   sheet.value = 'menu';
@@ -1924,8 +1948,12 @@ function announce(r: Resolved): void {
 function afterResolve(r: Resolved, ids: string[]): void {
   announce(r);
   const letter = queueMomentMail(state.mail, r.moment);
-  if (letter) game?.deliverMail(letter.involvedIds);
-  if (letter && r.firstTime) say(`📬 ${letter.fromName} escreveu sobre “${r.moment.title}”. Veja no Correio quando quiser.`, 4800);
+  if (letter) {
+    game?.deliverMail(letter.involvedIds);
+  }
+  if (letter && r.firstTime) {
+    say(`📬 ${letter.fromName} escreveu sobre “${r.moment.title}”. Veja no Correio quando quiser.`, 4800);
+  }
   if (r.followUp.length > 0 && game) {
     const firstSpeaker = ids[r.followUp[0]?.who ?? 0];
     minimapSpeakerId.value = firstSpeaker ?? null;
@@ -3348,7 +3376,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="ab">
           <button type="button" class="b-btn" :disabled="quizOpen && quizStep === 0" :aria-label="sheet || dialog || quiz || quizOpen ? 'Voltar' : 'Abrir menu'" @click="pressB">B<small aria-hidden="true">{{ sheet || dialog || quiz || quizOpen ? 'Voltar' : 'Menu' }}</small></button>
-          <button type="button" class="a-btn" aria-label="A: confirmar ou interagir" @click="pressA">A<small aria-hidden="true">{{ sheet || dialog || quiz || quizOpen ? 'Confirmar' : 'Interagir' }}</small></button>
+          <button type="button" class="a-btn" aria-label="A: confirmar ou interagir" @pointerdown="pressAPointer" @click="pressAClick">A<small aria-hidden="true">{{ sheet || dialog || quiz || quizOpen ? 'Confirmar' : 'Interagir' }}</small></button>
           <button v-if="!dialog && !quiz && !quizOpen && (!sheet || sheet === 'menu')" type="button" class="menu-control-btn" aria-label="Menu da Vila" @click="pressMenu">☰<small aria-hidden="true">Menu</small></button>
         </div>
       </div>
