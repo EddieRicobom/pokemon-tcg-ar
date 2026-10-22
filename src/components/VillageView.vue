@@ -44,11 +44,11 @@ import {
 } from '../core/village/life';
 import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
 import {
-  canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, evolve, EVOLVE_COST, grantStarter, instanceOf, pickAnySpecies,
+  canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, evolve, EVOLVE_COST, grantStarter, grantSurvival, instanceOf, LAST_DEX_ID, pickAnySpecies,
   pickFonteSpecies, summon, SUMMON_COST, summonWithCoins,
 } from '../core/village/digital';
 import { wishAtFountain } from '../core/village/fountain';
-import type { DigitalPokemonInstance } from '../core/village/digital';
+import type { DigitalPokemonInstance, SpeciesRef } from '../core/village/digital';
 import { celebiDiaryPage, dismissActive, legendaryEffects, legendaryOf, rollLegendary } from '../core/village/legendary';
 import type { LegendaryEffects } from '../core/village/legendary';
 import { ALL_QUESTIONS, FONTE_POOL, isComplete as quizComplete, nextForm, resolveStarter } from '../core/village/starter-quiz';
@@ -406,6 +406,10 @@ const hoOhWishScene = ref<{ spriteUrl: string } | null>(null);
 const legendaryScene = ref<{ story: LegendStory; gif: DecodedGif | null; loading: boolean; replay: boolean } | null>(null);
 const legendarySceneRef = ref<InstanceType<typeof LegendaryCutscene> | null>(null);
 const legendaryDefinition = computed(() => legendaryScene.value && legendaryOf(legendaryScene.value.story.id));
+type SurvivalDigitalOption = SpeciesRef & { thumb: string | null };
+const survivalDigitalChoice = ref<{ options: SurvivalDigitalOption[]; total: number; runId: string } | null>(null);
+const survivalDigitalCutscene = ref<{ species: SpeciesRef; spriteUrl: string | null } | null>(null);
+const survivalDigitalBusy = ref(false);
 const legendCluePlace = computed(() => state.legendary.investigation && investigationPlace(state.legendary.investigation.id, state.legendary.investigation.step));
 const legendClueName = computed(() => legendStoryOf(state.legendary.investigation?.id ?? '')?.name);
 let legendaryLoadToken = 0;
@@ -1389,7 +1393,39 @@ function finishFestival(choice: number): void {
   dialog.value = { name: result.title, text: `${result.text}\n\n+${result.coins} moedas.`, actions: [{ label: 'Voltar ao mural', run: openRequestBoard }] };
 }
 
-function recordSurvivalAdventure(summary: import('../core/survivor').SurvivorSummary, participant: { id: string; name: string }, runId: string): void {
+async function rollSurvivalDigitalOptions(total: number): Promise<SurvivalDigitalOption[]> {
+  const used = new Set(state.digital.instances.map((instance) => instance.dexId));
+  const options: SurvivalDigitalOption[] = [];
+  for (let index = 0; index < total; index++) {
+    let species: SpeciesRef | null = null;
+    for (let attempt = 0; attempt < 30 && !species; attempt++) {
+      const dexId = 1 + Math.floor(Math.random() * LAST_DEX_ID);
+      if (used.has(dexId)) continue;
+      used.add(dexId);
+      species = await resolveSpeciesByDexId(dexId).catch(() => null);
+    }
+    if (!species) continue;
+    const sprite = await getDigitalSprite(species.dexId, false).catch(() => null);
+    options.push({ ...species, thumb: sprite ? thumbOf(sprite.gif) : null });
+  }
+  return options;
+}
+
+async function chooseSurvivalDigital(option: SurvivalDigitalOption): Promise<void> {
+  if (survivalDigitalBusy.value || !survivalDigitalChoice.value) return;
+  survivalDigitalBusy.value = true;
+  const next = grantSurvival(state.digital, option, new Date().toISOString());
+  state.digital = next;
+  changed();
+  survivalDigitalChoice.value = null;
+  const instance = next.instances[next.instances.length - 1]!;
+  const sprite = await getDigitalSprite(option.dexId, false).catch(() => null);
+  await syncDigitalVillager(instance);
+  survivalDigitalCutscene.value = { species: option, spriteUrl: sprite ? thumbOf(sprite.gif) : null };
+  survivalDigitalBusy.value = false;
+}
+
+async function recordSurvivalAdventure(summary: import('../core/survivor').SurvivorSummary, participant: { id: string; name: string }, runId: string): Promise<void> {
   const id = `survival:${runId}`;
   if (state.diary.some((entry) => entry.id === id)) return;
   const now = new Date();
@@ -1407,11 +1443,16 @@ function recordSurvivalAdventure(summary: import('../core/survivor').SurvivorSum
   state.diary = trimMoments([...state.diary, {
     id, t: now.getTime(), day: refreshDay(), hour: now.getHours(), tpl: 'survival-adventure', kind: 'amizade', title: `Aventura na Torre · ${participant.name}`, emoji: '🗼',
     cast: [{ id: participant.id, name: participant.name }], lines: [{ who: 0, text: `${participant.name} enfrentou a Torre por ${time}.` }],
-    result: [`${summary.kills} derrotas · nível ${summary.level} · onda ${summary.wave}.`, won, ...milestoneRewards.map((reward) => `${reward} conquistado nesta corrida.`), ...(summary.finalBossBeaten ? ['O troféu da Torre foi conquistado; o modo Infinito está disponível.'] : [])],
+    result: [`${summary.kills} derrotas · nível ${summary.level} · onda ${summary.wave}.`, won, ...(summary.digitalPokeballs > 0 ? [`${summary.digitalPokeballs} Pokébola${summary.digitalPokeballs === 1 ? '' : 's'} especial${summary.digitalPokeballs === 1 ? '' : 'is'} recolhida${summary.digitalPokeballs === 1 ? '' : 's'}.`] : []), ...milestoneRewards.map((reward) => `${reward} conquistado nesta corrida.`), ...(summary.finalBossBeaten ? ['O troféu da Torre foi conquistado; o modo Infinito está disponível.'] : [])],
   }]);
   changed();
   syncTrainer();
   if (milestoneRewards.length > 0) say(`Recompensas da Torre: ${milestoneRewards.join(' · ')}.`, 7000);
+  if (summary.digitalPokeballs > 0) {
+    const options = await rollSurvivalDigitalOptions(summary.digitalPokeballs);
+    if (options.length > 0) survivalDigitalChoice.value = { options, total: summary.digitalPokeballs, runId };
+    else say('As Pokébolas foram registradas, mas não consegui confirmar opções de espécie agora. Tente voltar com conexão.', 7000);
+  }
 }
 
 function finishGuidedTrip(): void {
@@ -3207,5 +3248,33 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <BackpackView v-if="backpackOpen" :items="backpackItems" @close="backpackOpen = false" />
+    <div v-if="survivalDigitalChoice" class="survival-digital-recruit" role="dialog" aria-modal="true" aria-label="Escolha de Digital Pokémon da Torre">
+      <section class="survival-digital-recruit-card">
+        <small class="survival-digital-kicker">★ POKÉBOLA DA TORRE · RECOMPENSA REAL</small>
+        <h2>Escolha um novo companheiro</h2>
+        <p>Você recolheu {{ survivalDigitalChoice.total }} Pokébola{{ survivalDigitalChoice.total === 1 ? '' : 's' }}. Cada uma ampliou a busca por uma espécie confirmada.</p>
+        <div class="survival-digital-options">
+          <button v-for="option in survivalDigitalChoice.options" :key="option.cardId" type="button" class="survival-digital-option" :disabled="survivalDigitalBusy" @click="chooseSurvivalDigital(option)">
+            <img v-if="option.thumb" :src="option.thumb" :alt="option.name" />
+            <span v-else class="survival-digital-option-placeholder" aria-hidden="true">?</span>
+            <strong>{{ option.name }}</strong>
+            <small>Pokédex nº {{ option.dexId }} · confirmado por {{ option.cardId }}</small>
+          </button>
+        </div>
+        <p v-if="survivalDigitalBusy" class="hint" role="status">O novo morador está chegando à Vila…</p>
+      </section>
+    </div>
+    <div v-if="survivalDigitalCutscene" class="survival-digital-cutscene" role="dialog" aria-modal="true" aria-label="Chegada de um novo Digital Pokémon">
+      <section class="survival-digital-cutscene-card">
+        <div class="survival-digital-cutscene-sprite">
+          <img v-if="survivalDigitalCutscene.spriteUrl" :src="survivalDigitalCutscene.spriteUrl" :alt="survivalDigitalCutscene.species.name" />
+          <span v-else aria-hidden="true">✨</span>
+        </div>
+        <small>UM NOVO MORADOR CHEGOU</small>
+        <h2>{{ survivalDigitalCutscene.species.name }}</h2>
+        <p>“Fiquei feliz de conhecer um treinador tão forte. Quero ir para a sua Vila!”</p>
+        <button type="button" class="primary" @click="survivalDigitalCutscene = null">Levar para a Vila</button>
+      </section>
+    </div>
   </div>
 </template>

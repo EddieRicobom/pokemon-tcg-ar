@@ -691,23 +691,46 @@ function draw(): void {
   }
 
   if (!effectiveVisual.value.rotomMode) for (const artifact of s.artifacts) {
-    const color = artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb';
-    const icon = artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : '♥';
+    const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : '#ff8fbb';
+    const icon = artifact.kind === 'pokeball' ? '★' : artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : '♥';
     const pulse = 1 + Math.sin(animMs / 180 + artifact.id) * 0.12;
     ctx.save();
     ctx.translate(artifact.x, artifact.y);
-    ctx.globalAlpha = 0.28;
+    ctx.globalAlpha = artifact.kind === 'pokeball' ? 0.38 : 0.28;
     ctx.fillStyle = color;
     ctx.shadowColor = color;
     ctx.shadowBlur = 16;
     ctx.beginPath();
-    ctx.arc(0, 0, 15 * pulse, 0, Math.PI * 2);
+    ctx.arc(0, 0, (artifact.kind === 'pokeball' ? 20 : 15) * pulse, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
+    if (artifact.kind === 'pokeball') {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#f5f5f5';
+      ctx.beginPath();
+      ctx.arc(0, 0, 13 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, 13 * pulse, Math.PI, 0);
+      ctx.clip();
+      ctx.fillStyle = '#ef4b57';
+      ctx.fillRect(-15, -15, 30, 15);
+      ctx.restore();
+      ctx.strokeStyle = '#1d2433';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-13 * pulse, 0); ctx.lineTo(13 * pulse, 0); ctx.stroke();
+      ctx.fillStyle = '#fff8df';
+      ctx.beginPath(); ctx.arc(0, 0, 4 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#1d2433';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
     ctx.font = 'bold 18px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(icon, 0, 0);
+    if (artifact.kind !== 'pokeball') ctx.fillText(icon, 0, 0);
     ctx.restore();
   }
 
@@ -802,7 +825,7 @@ function draw(): void {
       ctx.font = 'bold 20px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = color;
-      ctx.fillText(f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : '♥', f.x, f.y - 8 - t * 24);
+      ctx.fillText(f.artifact === 'pokeball' ? '★' : f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : '♥', f.x, f.y - 8 - t * 24);
     } else {
       for (let k = 0; k < 3; k++) {
         ctx.globalAlpha = 0.7 * (1 - t);
@@ -1272,7 +1295,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Minimapa da arena; o ponto azul é você, pontos vermelhos são chefes e pontos amarelos são elites">
+        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Minimapa da arena; o ponto azul é você, pontos vermelhos são chefes, pontos amarelos são elites e estrelas são Pokébolas">
           <span class="survivor-minimap-title">Mapa</span>
           <span class="survivor-minimap-viewport" :style="{ left: `${(minimap.viewport.x / ARENA_W) * 100}%`, top: `${(minimap.viewport.y / ARENA_H) * 100}%`, width: `${(minimap.viewport.width / ARENA_W) * 100}%`, height: `${(minimap.viewport.height / ARENA_H) * 100}%` }"></span>
           <span
