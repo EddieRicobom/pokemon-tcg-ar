@@ -1541,7 +1541,6 @@ export class VillageGame {
       list.push({
         y: buildingGroundY(plot),
         draw: () => {
-          shadow(sx(plot.x + plot.w / 2), homeBase - 2 * scale, 34 * scale, 4 * scale, 0.2);
           const at = stand(houseArt, sx(plot.x + plot.w / 2), homeBase);
           if (night) lightUp(houseId, houseId, at);
         },
@@ -1551,7 +1550,6 @@ export class VillageGame {
       list.push({
         y: buildingGroundY(plot),
         draw: () => {
-          shadow(sx(plot.x + 2), homeBase - 2 * scale, 30 * scale, 4 * scale, 0.2);
           drawDioramaTilted(sx(plot.x) + 2 * T, homeBase, 4 * T, () => ctx.drawImage(img, sx(plot.x), homeBase - 4 * T, 4 * T, 4 * T));
         },
       });
@@ -1564,7 +1562,6 @@ export class VillageGame {
       list.push({
         y: shopBaseY,
         draw: () => {
-          shadow(sx(shop.x + shop.w / 2), sy(shopBaseY) - 2 * scale, 42 * scale, 4 * scale, 0.2);
           const at = stand(shopArt, sx(shop.x + shop.w / 2), sy(shopBaseY), shop.w * T);
           if (night) lightUp('market-store', 'market-store', at);
           this.drawTag(sx(shop.x + shop.w / 2), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
@@ -1575,7 +1572,6 @@ export class VillageGame {
     list.push({
       y: shopBaseY,
       draw: () => {
-        shadow(sx(shop.x + 1.5), sy(shopBaseY) - 2 * scale, 24 * scale, 3.5 * scale, 0.2);
         drawDioramaTilted(sx(shop.x + 1.5), sy(shopBaseY), 3 * T, () => ctx.drawImage(shopImg, sx(shop.x), sy(shopBaseY) - 3 * T, 3 * T, 3 * T));
         this.drawTag(sx(shop.x + 1.5), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
       },
@@ -1593,7 +1589,7 @@ export class VillageGame {
       if (b.kind === 'fountain') {
         const f = Math.floor(now / 450) % 2;
         const img = this.sprite(`fonte${f}`, () => paintFountain(f));
-        list.push({ y: buildingGroundY(b), draw: () => { shadow(mid, spriteBase - 3 * scale, 14 * scale, 4 * scale, 0.16); drawDioramaTilted(mid, spriteBase, 32 * scale, () => ctx.drawImage(img, left, spriteBase - 40 * scale, 32 * scale, 40 * scale)); if (ambientFx) drawFountainFx(ctx, left + 16 * scale, spriteBase, scale, now); } });
+        list.push({ y: buildingGroundY(b), draw: () => { drawDioramaTilted(mid, spriteBase, 32 * scale, () => ctx.drawImage(img, left, spriteBase - 40 * scale, 32 * scale, 40 * scale)); if (ambientFx) drawFountainFx(ctx, left + 16 * scale, spriteBase, scale, now); } });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
         continue;
       }
@@ -1644,7 +1640,6 @@ export class VillageGame {
           list.push({
             y: buildingGroundY(b),
             draw: () => {
-              shadow(mid, spriteBase - 2 * scale, 30 * scale, 3.5 * scale, 0.2);
               const at = stand(img, mid, spriteBase);
               if (night && who.length > 0) lightUp(id, key, at, tint);
               // Enfeites da casa (comprados na Vila): jardineira, cerquinha, lampião e caixa de correio.
@@ -1689,7 +1684,6 @@ export class VillageGame {
         list.push({
             y: buildingGroundY(b),
           draw: () => {
-            shadow(mid, spriteBase - 2 * scale, 22 * scale, 3.5 * scale, 0.2);
             drawDioramaTilted(mid, spriteBase, 3 * T, () => ctx.drawImage(img, left, spriteBase - 48 * scale, 3 * T, 3 * T));
             if (sleeping) this.drawTag(mid, spriteBase - 38 * scale + Math.sin(now / 600) * scale, '💤');
             const tag = this.houseTags.get(lot);
@@ -1714,7 +1708,6 @@ export class VillageGame {
         list.push({
           y: buildingGroundY(b),
           draw: () => {
-            shadow(mid, spriteBase - 2 * scale, wpx / 2 - 2 * scale, 3.5 * scale, 0.2);
             const at = stand(civicArt, mid, spriteBase, wpx);
             if (night) lightUp(civicId, civicId, at);
             this.drawTag(mid, at.y - 2 * scale + Math.sin(now / 350) * scale, emoji);
@@ -1728,7 +1721,6 @@ export class VillageGame {
       list.push({
         y: buildingGroundY(b),
         draw: () => {
-          shadow(mid, spriteBase - 2 * scale, (wpx / 2 - 2 * scale), 3.5 * scale, 0.2);
           drawDioramaTilted(mid, spriteBase, wpx, () => ctx.drawImage(img, left, spriteBase - 48 * scale, wpx, 3 * T));
           this.drawTag(mid, spriteBase - 50 * scale + Math.sin(now / 350) * scale, emoji);
         },
