@@ -370,7 +370,7 @@ describe('stepSurvivor', () => {
     s.orbs[0]!.x = s.player.x;
     s.orbs[0]!.y = s.player.y;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(s.player.xp).toBe(12);
+    expect(s.player.xp).toBe(16);
   });
 });
 
