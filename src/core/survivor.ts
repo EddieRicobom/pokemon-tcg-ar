@@ -112,6 +112,8 @@ export interface SurvivorSupportCandidate {
 
 /** Limite de apoios simultâneos: complementam o protagonista sem substituir a build dele. */
 export const MAX_SURVIVOR_SUPPORTS = 5;
+/** Depois do primeiro apoio garantido, cada novo candidato entra como uma carta rara comum. */
+export const SURVIVOR_SUPPORT_RARE_OFFER_CHANCE = 0.3;
 
 /** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
@@ -320,6 +322,8 @@ export interface SurvivorState {
   /** Apoios recrutados nesta corrida; nenhum recebe upgrades, vida ou hitbox própria. */
   supports: SurvivorSupport[];
   support: SurvivorSupport | null;
+  /** Distingue a primeira oferta garantida das ofertas raras que podem voltar depois de recusadas. */
+  supportCandidateGuaranteed: boolean;
   secondAttackOffered: boolean;
   /** Efeito do segundo tipo escolhido no início; não causa dano extra nem recebe upgrades. */
   typeAffinity: SurvivorTypeAffinity | null;
@@ -799,6 +803,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     supportCandidates,
     supports: [],
     support: null,
+    supportCandidateGuaranteed: false,
     secondAttackOffered: false,
     typeAffinity: options.typeAffinity ?? null,
     typeAffinityChoices: [...(options.typeAffinityChoices ?? [])],
@@ -1064,13 +1069,32 @@ function offerOwedUpgrade(state: SurvivorState): void {
   const options = rollUpgrades(state.rng, state.player.upgradeChoices, state.player.move, state.player);
   const evolve = evolutionOffer(state);
   if (evolve) options.splice(options.length - 1, 1, evolve);
-  else if (!state.supportCandidate && state.player.level >= 6 && state.supportCandidates.length > 0) {
+  else if (!state.supportCandidate && !state.secondAttackOffered && state.player.level >= 6 && state.supportCandidates.length > 0) {
     const candidate = state.supportCandidates[0]!;
     state.supportCandidate = candidate;
+    state.supportCandidateGuaranteed = true;
     state.secondAttackOffered = true;
     options.splice(options.length - 1, 1, {
       id: 'second-attack',
       rarity: 'lendario',
+      name: `Chamar apoio: ${candidate.name}`,
+      description: `${candidate.move.icon} Ataca da sua posição com recarga própria. Não recebe upgrades nem pode ser atingido. Apoio ${state.supports.length + 1}/${MAX_SURVIVOR_SUPPORTS}.`,
+    });
+  } else if (
+    !state.supportCandidate
+    && state.secondAttackOffered
+    && state.supports.length > 0
+    && state.supportCandidates.length > 0
+    && state.rng() < SURVIVOR_SUPPORT_RARE_OFFER_CHANCE
+  ) {
+    // Os quatro apoios restantes não entram em sequência: cada um disputa uma
+    // vaga rara em uma oferta futura e continua disponível se for recusado.
+    const candidate = state.supportCandidates[Math.floor(state.rng() * state.supportCandidates.length)]!;
+    state.supportCandidate = candidate;
+    state.supportCandidateGuaranteed = false;
+    options.splice(options.length - 1, 1, {
+      id: 'second-attack',
+      rarity: 'raro',
       name: `Chamar apoio: ${candidate.name}`,
       description: `${candidate.move.icon} Ataca da sua posição com recarga própria. Não recebe upgrades nem pode ser atingido. Apoio ${state.supports.length + 1}/${MAX_SURVIVOR_SUPPORTS}.`,
     });
@@ -1081,6 +1105,7 @@ function offerOwedUpgrade(state: SurvivorState): void {
 function consumeSupportCandidate(state: SurvivorState, candidate: SurvivorSupportCandidate): void {
   state.supportCandidates = state.supportCandidates.filter((item) => item !== candidate);
   state.supportCandidate = null;
+  state.supportCandidateGuaranteed = false;
 }
 
 /**
@@ -1132,7 +1157,9 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
     }
   }
   const offeredSupport = state.supportCandidate;
-  if (offeredSupport && id !== 'second-attack') consumeSupportCandidate(state, offeredSupport);
+  if (offeredSupport && id !== 'second-attack' && state.supportCandidateGuaranteed) consumeSupportCandidate(state, offeredSupport);
+  if (offeredSupport && id !== 'second-attack') state.supportCandidate = null;
+  state.supportCandidateGuaranteed = false;
   state.pendingUpgrade = null;
   offerOwedUpgrade(state);
   return events;
