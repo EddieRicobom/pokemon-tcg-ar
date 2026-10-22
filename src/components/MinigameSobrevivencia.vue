@@ -48,8 +48,9 @@ import type { ContentBounds } from '../village/local-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
 import { survivorBiomeAt, survivorBiomeLabel } from '../core/survivor-biomes';
-import { createSurvivorLandscape, drawSurvivorBiomeOverlay } from '../village/survivor-landscape';
-import { REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from '../core/survivor-encounters';
+import { createSurvivorLandscape } from '../village/survivor-landscape';
+import { REGIONAL_ENCOUNTERS, REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from '../core/survivor-encounters';
+import { survivorRegionAt } from '../core/survivor-regions';
 import type { SoundCue } from '../box/sound-recipes';
 import { normalizeSurvivorFavorites, selectSurvivorCandidates } from '../core/survivor-selection';
 import { dayKey } from '../core/trainer';
@@ -419,6 +420,8 @@ let groundPattern: CanvasPattern | null = null;
 let playerSprite: Sprite | null = null;
 let supportSprite: Sprite | null = null;
 const enemySprites = new Map<number, Sprite | null>();
+const enemySpriteLoads = new Map<number, Promise<void>>();
+const requestedEnemyRegions = new Set<number>();
 const missingEnemySprites = ref(0);
 let rafId = 0;
 /**
@@ -574,6 +577,35 @@ function drawEnemy(e: SurvivorEnemy): void {
   }
 }
 
+/** Carrega somente a região atual e a próxima; os 45 sprites não precisam ficar decodificados desde o menu inicial. */
+async function preloadEnemyRegion(index: number): Promise<void> {
+  const encounter = REGIONAL_ENCOUNTERS[index];
+  if (!encounter || requestedEnemyRegions.has(index)) return;
+  requestedEnemyRegions.add(index);
+  const ids = [...new Set([...encounter.wild, encounter.boss])];
+  await Promise.all(ids.map((id) => {
+    if (enemySprites.has(id)) return Promise.resolve();
+    const existing = enemySpriteLoads.get(id);
+    if (existing) return existing;
+    const load = loadSpriteOrNull(id).then((sprite) => {
+      enemySprites.set(id, sprite);
+      missingEnemySprites.value = REGIONAL_ENEMY_SPRITES.filter((candidate) => enemySprites.get(candidate) === null).length;
+    }).catch(() => {
+      enemySprites.set(id, null);
+      missingEnemySprites.value = REGIONAL_ENEMY_SPRITES.filter((candidate) => enemySprites.get(candidate) === null).length;
+    }).finally(() => enemySpriteLoads.delete(id));
+    enemySpriteLoads.set(id, load);
+    return load;
+  }));
+}
+
+function preloadVisibleEnemyRegions(elapsedMs: number): void {
+  const { current, next } = survivorRegionAt(elapsedMs);
+  void preloadEnemyRegion(current);
+  // Antecipar a próxima região evita uma forma neutra durante a transição sem bloquear a primeira tela.
+  void preloadEnemyRegion(next);
+}
+
 function draw(): void {
   if (!ctx || !canvasEl.value || !state.value) return;
   const s = state.value;
@@ -605,7 +637,6 @@ function draw(): void {
     ctx.fillStyle = '#4e9a62';
     ctx.fillRect(0, 0, ARENA_W, ARENA_H);
   }
-  drawSurvivorBiomeOverlay(ctx, s.elapsedMs);
   ctx.strokeStyle = 'rgba(0,0,0,0.3)';
   ctx.lineWidth = 4;
   ctx.strokeRect(2, 2, ARENA_W - 4, ARENA_H - 4);
@@ -870,6 +901,7 @@ function loop(ts: number): void {
   }
   animMs += dt;
   const s = state.value;
+  preloadVisibleEnemyRegions(s.elapsedMs);
   if (!s.over && !s.pendingUpgrade && !evolving.value) {
     const projectilesBefore = s.projectiles.length;
     const hpBefore = s.player.hp;
@@ -1047,16 +1079,17 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     avatarName.value = name;
     evolving.value = null;
     await Promise.all([loadSpriteSpecies(), loadLandscapeAtlas()]);
+    enemySprites.clear();
+    enemySpriteLoads.clear();
+    requestedEnemyRegions.clear();
     const [player, support] = await Promise.all([
       loadSpriteOrNull(dexId),
       supportCandidate ? loadSpriteOrNull(supportCandidate.dexId) : Promise.resolve(null),
-      ...REGIONAL_ENEMY_SPRITES.map(async (id) => {
-        if (!enemySprites.get(id)) enemySprites.set(id, await loadSpriteOrNull(id));
-      }),
+      preloadEnemyRegion(survivorRegionAt(0).current),
     ]);
     playerSprite = player;
     supportSprite = support;
-    missingEnemySprites.value = REGIONAL_ENEMY_SPRITES.filter((id) => !enemySprites.get(id)).length;
+    missingEnemySprites.value = REGIONAL_ENEMY_SPRITES.filter((id) => enemySprites.get(id) === null).length;
 
     if (disposed) return;
     if (!groundPattern) {
