@@ -196,6 +196,7 @@ export function buildPvpWorld(init: WireInit, hostSpecs: WireSpec[], guestSpecs:
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isNum = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
+const isBase64Url = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]+$/.test(v);
 
 function parseAttack(v: unknown): CardAttack | null {
   if (!isObj(v) || !isStr(v.name, 60) || !Array.isArray(v.cost) || v.cost.length > 8 || !v.cost.every((c) => isStr(c, 20))) return null;
@@ -314,7 +315,7 @@ export function parseMessage(raw: unknown): WireMessage | null {
     case 'backup-chunk':
       return isStr(v.id, 80) && v.id.length > 0 && isNum(v.index, 0, MAX_BACKUP_TRANSFER_CHUNKS - 1) && Number.isInteger(v.index)
         && isNum(v.total, 1, MAX_BACKUP_TRANSFER_CHUNKS) && Number.isInteger(v.total)
-        && v.index < v.total && isStr(v.data, 40000) && v.data.length > 0
+        && v.index < v.total && isBase64Url(v.data) && v.data.length > 0
         ? { t: 'backup-chunk', id: v.id, index: v.index, total: v.total, data: v.data }
         : null;
     case 'backup-end':
