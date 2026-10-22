@@ -336,6 +336,25 @@ function chooseSpecial(id: SurvivorSpecialId): void {
 const paused = ref(false);
 const leaveConfirm = ref(false);
 let wasPausedBeforeLeave = false;
+const trainerPresentation = ref<null | { trainerId: number; count: number; final: boolean }>(null);
+let trainerPresentationTimer: ReturnType<typeof setTimeout> | null = null;
+function clearTrainerPresentation(resume = false): void {
+  if (trainerPresentationTimer) clearTimeout(trainerPresentationTimer);
+  trainerPresentationTimer = null;
+  trainerPresentation.value = null;
+  if (resume && !leaveConfirm.value && !summary.value) {
+    paused.value = false;
+    lastTs = performance.now();
+  }
+}
+function showTrainerPresentation(event: { trainerId: number; count: number; final: boolean }): void {
+  clearTrainerPresentation();
+  heldKeys.clear();
+  joyUp();
+  paused.value = true;
+  trainerPresentation.value = event;
+  trainerPresentationTimer = setTimeout(() => clearTrainerPresentation(true), event.final ? 3400 : 2800);
+}
 const minimap = ref({ markers: [] as ReturnType<typeof survivorMinimapSnapshot>['markers'], viewport: { x: 0, y: 0, width: ARENA_W, height: ARENA_H } });
 const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
@@ -561,10 +580,22 @@ function draw(): void {
   const VIEW_W = view.w;
   const VIEW_H = view.h;
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
-  const camX = clamp(s.player.x - VIEW_W / 2, 0, Math.max(0, ARENA_W - VIEW_W));
-  const camY = clamp(s.player.y - VIEW_H / 2, 0, Math.max(0, ARENA_H - VIEW_H));
+  const presentation = trainerPresentation.value;
+  const focusEnemies = presentation ? s.enemies.filter((enemy) => enemy.trainerId === presentation.trainerId && enemy.hp > 0) : [];
+  const focus = focusEnemies.length
+    ? focusEnemies.reduce((center, enemy) => ({ x: center.x + enemy.x, y: center.y + enemy.y }), { x: 0, y: 0 })
+    : { x: s.player.x, y: s.player.y };
+  const zoom = presentation ? 1.38 : 1;
+  const targetX = focusEnemies.length ? focus.x / focusEnemies.length : focus.x;
+  const targetY = focusEnemies.length ? focus.y / focusEnemies.length : focus.y;
+  const worldViewW = VIEW_W / zoom;
+  const worldViewH = VIEW_H / zoom;
+  const camX = clamp(targetX - worldViewW / 2, 0, Math.max(0, ARENA_W - worldViewW));
+  const camY = clamp(targetY - worldViewH / 2, 0, Math.max(0, ARENA_H - worldViewH));
   ctx.save();
-  ctx.translate(-camX, -camY);
+  ctx.translate(VIEW_W / 2, VIEW_H / 2);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-(camX + worldViewW / 2), -(camY + worldViewH / 2));
   if (regionScenery.value) {
     drawLandscape(ctx, s.elapsedMs);
   } else if (groundPattern) {
@@ -808,6 +839,7 @@ function loop(ts: number): void {
   lastTs = ts;
   if (document.hidden || !state.value) return;
   if (paused.value) {
+    if (trainerPresentation.value) animMs += dt;
     draw();
     return;
   }
@@ -861,7 +893,10 @@ function loop(ts: number): void {
         summary.value = ev.summary;
         recordRun(ev.summary);
       }
-      else if (ev.type === 'trainerSpawn') say(ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
+      else if (ev.type === 'trainerSpawn') {
+        say(ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
+        showTrainerPresentation(ev);
+      }
       else if (ev.type === 'trainerDown') say(ev.final ? 'CHEFAO DERROTADO!' : 'Treinador derrotado!');
     }
   }
@@ -879,7 +914,7 @@ function chooseUpgrade(id: string): void {
 }
 
 function togglePause(): void {
-  if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value) return;
+  if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value || trainerPresentation.value) return;
   paused.value = !paused.value;
   joystick.active = false;
   joystick.pointerId = null;
@@ -907,6 +942,7 @@ function leaveNow(): void {
 function requestLeave(): void {
   if (leaveConfirm.value) return;
   heldKeys.clear(); joyUp(); specialQueued = false;
+  clearTrainerPresentation();
   if (summary.value) {
     leaveNow();
     return;
@@ -1013,6 +1049,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     summary.value = null;
     runUnlocks.value = [];
     pendingUpgrade.value = null;
+    clearTrainerPresentation();
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
@@ -1173,6 +1210,7 @@ onBeforeUnmount(() => {
   resizer = null;
   if (toastTimer) clearTimeout(toastTimer);
   if (artifactNoticeTimer) clearTimeout(artifactNoticeTimer);
+  clearTrainerPresentation();
   heldKeys.clear();
   sound.dispose();
   music.dispose();
@@ -1200,6 +1238,11 @@ onBeforeUnmount(() => {
         <div v-if="artifactNotice" class="survivor-artifact-notice" role="status" aria-live="polite">
           <span class="survivor-artifact-notice-icon" aria-hidden="true">{{ artifactNotice.icon }}</span>
           <span><b>{{ artifactNotice.name }}</b><small>{{ artifactNotice.description }}</small></span>
+        </div>
+        <div v-if="trainerPresentation" class="survivor-trainer-intro" :class="{ final: trainerPresentation.final, 'reduced-motion': !detailedSpecialEffects }" role="status" aria-live="assertive">
+          <span class="survivor-trainer-kicker">ATENÇÃO · NOVO DESAFIO</span>
+          <strong>{{ trainerPresentation.final ? 'CHEFÃO FINAL' : 'TREINADOR NA ARENA' }}</strong>
+          <small>{{ trainerPresentation.count }} Pokémon reforçados aguardam a batalha</small>
         </div>
         <div v-if="ready && state" class="survivor-hud">
           <div class="survivor-hp" :class="{ low: state.player.hp / state.player.maxHp < 0.3 }">

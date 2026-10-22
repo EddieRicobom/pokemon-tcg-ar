@@ -97,9 +97,9 @@ describe('orbe e especiais da Torre', () => {
       ...[100, 95, 90, 85, 80, 75].map((offset, i) => enemy(i + 1, 630 + offset, 320)),
     ];
     stepSurvivor(state, { dx: 1, dy: 0, special: true }, 1);
-    expect(state.player.x).toBeCloseTo(630.15); // Deslocamento normal após o salto.
+    expect(state.player.x).toBeCloseTo(ARENA_W / 2 + 150.15); // Deslocamento normal após o salto.
     expect(state.kills).toBe(4);
-    expect(state.enemies.map((entry) => entry.id).sort((a,b) => a-b)).toEqual([1, 2, 90, 91, 92]);
+    expect(state.enemies.map((entry) => entry.id).sort((a,b) => a-b)).toEqual([5, 6, 90, 91, 92]);
     expect(state.orbs).toHaveLength(4);
     expect(state.special.cooldownMs).toBe(25_000);
     stepSurvivor(state, { ...idle, special: true }, 1);

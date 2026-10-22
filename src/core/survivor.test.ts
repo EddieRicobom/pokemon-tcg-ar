@@ -723,6 +723,8 @@ describe('treinadores e chefão final', () => {
     for (const e of ev1) if (e.type === 'trainerSpawn') timeline.push(`t:${e.count}:${e.final}`);
     expect(timeline).toContain('t:3:false');
     expect(s.enemies.filter((e) => e.grade === 'elite').length).toBe(3);
+    const trainerEvent = ev1.find((e) => e.type === 'trainerSpawn');
+    expect(trainerEvent && s.enemies.filter((e) => e.grade === 'elite').every((e) => e.trainerId === trainerEvent.trainerId)).toBe(true);
     const elite = s.enemies.find((e) => e.grade === 'elite');
     const tAtFive = s.elapsedMs / 1000;
     const earlyAtFive = Math.max(0, Math.min(1, s.elapsedMs / BALANCE.earlyGameMs));
