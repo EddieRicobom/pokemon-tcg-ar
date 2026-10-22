@@ -30,7 +30,9 @@ describe('villageSummary', () => {
   it('faz uma memória persistente influenciar a fala do Pokémon', () => {
     const state = emptyVillage(1, { x: 1, y: 1 });
     state.memories.push({ id: 'm:a', mon: 'a', with: ['b'], kind: 'amizade', text: 'Piquenique: +5 amizade', day: '2026-10-17', t: 10, momentId: 'm' });
-    expect(recentGossip(state, 'a', 20)).toBe('Ainda lembro: Piquenique: +5 amizade');
+    const gossip = recentGossip(state, 'a', 20);
+    expect(gossip).toContain('Piquenique: +5 amizade');
+    expect(gossip).not.toBe('Ainda lembro: Piquenique: +5 amizade');
   });
 
   it('mostra compromissos sociais válidos e omite os vencidos', () => {
@@ -45,3 +47,4 @@ describe('villageSummary', () => {
     expect(summary.possible.some((entry) => entry.planId === 'p-velho')).toBe(false);
   });
 });
+
