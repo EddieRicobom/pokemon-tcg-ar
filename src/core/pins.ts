@@ -775,11 +775,17 @@ export function scoreMatch(won: boolean, shots: number, enemies: number): number
   return clamp(100 - Math.max(0, shots - enemies) * 7, 20, 100);
 }
 
-/** Bônus direto em moedas por vitória no Pins; partidas PvP ficam fora da carteira local. */
-export const PINS_WIN_COINS = 10;
-
-export function pinCoinReward(won: boolean): number {
-  return won ? PINS_WIN_COINS : 0;
+/**
+ * Recompensa de uma vitória solo no Pins.
+ * A nota já desconta disparos desperdiçados; a dificuldade e o tamanho do desafio entram separadamente para que uma
+ * vitória difícil e eficiente pague mais, sem transformar uma partida longa em uma fonte infinita de moedas.
+ */
+export function pinCoinReward(won: boolean, difficulty: Difficulty, score: number, enemies: number, solo: boolean): number {
+  if (!won || !solo) return 0;
+  const base = { facil: 12, normal: 20, dificil: 32 }[difficulty];
+  const quality = clamp(Math.round(score * 0.18), 0, 18);
+  const challenge = clamp(Math.max(0, Math.floor(enemies) - 1) * 3, 0, 12);
+  return base + quality + challenge;
 }
 
 /** Quem pode ser disparado agora com esta energia. */

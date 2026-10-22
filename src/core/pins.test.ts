@@ -355,8 +355,12 @@ describe('energia e nota', () => {
   });
 
   it('dá moedas somente por vitória contra o computador', () => {
-    expect(pinCoinReward(true)).toBe(10);
-    expect(pinCoinReward(false)).toBe(0);
+    expect(pinCoinReward(true, 'normal', 100, 3, true)).toBe(44);
+    expect(pinCoinReward(true, 'dificil', 100, 3, true)).toBeGreaterThan(pinCoinReward(true, 'normal', 100, 3, true));
+    expect(pinCoinReward(true, 'normal', 100, 6, true)).toBeGreaterThan(pinCoinReward(true, 'normal', 100, 3, true));
+    expect(pinCoinReward(true, 'normal', 20, 3, true)).toBeLessThan(pinCoinReward(true, 'normal', 100, 3, true));
+    expect(pinCoinReward(false, 'dificil', 100, 6, true)).toBe(0);
+    expect(pinCoinReward(true, 'dificil', 100, 6, false)).toBe(0);
   });
 
   it('o layout não deixa pins sobrepostos, mesmo com 10 pesados num lado', () => {

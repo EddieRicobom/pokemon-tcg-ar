@@ -759,7 +759,7 @@ function endGame(kind: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'): void {
   phase.value = 'over';
   const won = kind === 'won';
   const score = pvpMatch.value ? 0 : scoreMatch(won, shots, setup.value.enemy.length);
-  const coinReward = !pvpMatch.value ? addCoins(pinCoinReward(won)) : 0;
+  const coinReward = addCoins(pinCoinReward(won, setup.value.difficulty, score, setup.value.enemy.length, !pvpMatch.value));
   result.value = { won, reason: kind, shots, score, coins: coinReward };
   message.value = '';
   // Contra um amigo não vale XP nem recorde (nada impede alguém de mexer no próprio aparelho).
