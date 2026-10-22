@@ -1280,6 +1280,16 @@ export function recentGossip(state: VillageState, id: string, now: number): stri
     };
     const choices = intros[memory.kind];
     const opener = choices[hash(`${memory.id}:${memory.kind}`) % choices.length] ?? choices[0]!;
+    const source = state.diary.find((moment) => moment.id === memory.momentId);
+    const companions = source?.cast
+      .filter((participant) => participant.id !== id)
+      .map((participant) => participant.name)
+      .filter(Boolean) ?? [];
+    const withPeople = companions.length === 1
+      ? ` com ${companions[0]}`
+      : companions.length > 1
+        ? ` com ${companions.slice(0, -1).join(', ')} e ${companions.at(-1)}`
+        : '';
     const tail = memory.kind === 'rivalidade'
       ? 'Talvez eu devesse conversar com eles de novo.'
       : memory.kind === 'romance'
@@ -1287,7 +1297,7 @@ export function recentGossip(state: VillageState, id: string, now: number): stri
         : memory.kind === 'descoberta'
           ? 'Quero ver o que acontece se a gente investigar mais.'
           : 'Foi um daqueles dias que dá vontade de repetir.';
-    return `${opener} — ${when}: ${memory.text} ${tail}`;
+    return `${opener}${withPeople} — ${when}: ${memory.text} ${tail}`;
   }
   for (let i = state.diary.length - 1; i >= 0; i--) {
     const m = state.diary[i]!;
