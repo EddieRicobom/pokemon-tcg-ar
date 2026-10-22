@@ -798,22 +798,23 @@ function nameOf(id: string): string {
   return mons.value.find((m) => m.id === id)?.name ?? 'Pokémon';
 }
 
-/** Limpa memórias de saves antigos e mantém a conversa legível no cartão. */
-function compactResidentMessage(raw: string, limit = 300): string {
+/** Converte memórias antigas em uma fala curta e natural para o balão. */
+function compactResidentMessage(raw: string, limit = 220): string {
   let text = raw.replace(/\s+/g, ' ').trim();
-  // Memórias antigas podem ter guardado o instanceId em vez do nome visível.
+  // Saves antigos podem ter guardado instanceId; a conversa sempre mostra o nome/apelido atual.
   for (const mon of [...mons.value].sort((a, b) => b.id.length - a.id.length)) {
     if (mon.id && mon.name && mon.id !== mon.name) text = text.split(mon.id).join(mon.name);
   }
   if (text.length <= limit) return text;
-  const firstSentences = text.split(/(?<=[.!?])\s+/u);
-  let out = '';
-  for (const sentence of firstSentences) {
-    const next = out ? `${out} ${sentence}` : sentence;
+  // Mantém frases completas até o limite, sem deixar a lembrança virar um parágrafo.
+  const sentences = text.split(/(?<=[.!?])\s+/u);
+  let summary = '';
+  for (const sentence of sentences) {
+    const next = summary ? `${summary} ${sentence}` : sentence;
     if (next.length > limit - 1) break;
-    out = next;
+    summary = next;
   }
-  if (out.length >= 80) return `${out}…`;
+  if (summary.length >= 72) return `${summary}…`;
   return `${text.slice(0, limit - 1).trimEnd()}…`;
 }
 
