@@ -1354,7 +1354,12 @@ onBeforeUnmount(() => {
         <div v-if="ready && state" class="survivor-hud">
           <div class="survivor-hp" :class="{ low: state.player.hp / state.player.maxHp < 0.3 }">
             <div class="survivor-hp-fill" :style="{ width: Math.max(0, (state.player.hp / state.player.maxHp) * 100) + '%' }"></div>
-            <span>{{ avatarName }} · Nv {{ state.player.level }}</span>
+            <span class="survivor-hp-label">{{ avatarName }} · Nv {{ state.player.level }}</span>
+            <span class="survivor-hp-value">{{ Math.ceil(Math.max(0, state.player.hp)) }}/{{ Math.ceil(state.player.maxHp) }}</span>
+          </div>
+          <div class="survivor-xp-bar" role="progressbar" :aria-valuemin="0" :aria-valuemax="state.player.xpToNext" :aria-valuenow="state.player.xp" :aria-label="`Experiência: ${state.player.xp} de ${state.player.xpToNext} para o próximo nível`" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">
+            <div class="survivor-xp-fill" :style="{ width: `${Math.max(0, Math.min(100, (state.player.xp / Math.max(1, state.player.xpToNext)) * 100))}%` }"></div>
+            <span>XP {{ state.player.xp }}/{{ state.player.xpToNext }}</span>
           </div>
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
@@ -1362,16 +1367,14 @@ onBeforeUnmount(() => {
              <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
                {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
              </span>
-               <span v-for="support in state.supports" :key="`${support.dexId}-${support.name}`" class="chip survivor-move-chip second" :style="{ '--move': support.move.color }" :title="`${support.name}: ${MOVE_EFFECT_LABELS_PT[support.move.effect]}. Ataca da sua posição e não recebe upgrades.`">🤝 {{ support.name }} · {{ moveLine(support.move) }}</span>
-            <span class="chip survivor-xp" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">✨ {{ state.player.xp }}/{{ state.player.xpToNext }} XP <small v-if="hudExpanded">· faltam {{ Math.max(0, state.player.xpToNext - state.player.xp) }}</small></span>
-            <span class="chip">⏱ {{ formatTime(state.elapsedMs) }}</span>
-            <span class="chip">☠ {{ state.kills }}</span>
+                 <span v-if="state.supports.length" class="chip survivor-support-count" :title="`${state.supports.length} apoio(s) acompanhando; nenhum recebe upgrades`">🤝 {{ state.supports.length }}</span>
+             <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados`">⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
             <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
              <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
              <span class="survivor-action-dock" aria-label="Ações da Torre">
-               <button v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
-               <button type="button" class="chip" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">{{ hudExpanded ? 'Ocultar detalhes' : 'Detalhes e opções' }}</button>
+               <button v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" type="button" class="chip survivor-icon-btn survivor-pause-btn" :aria-label="paused ? 'Retomar corrida' : 'Pausar corrida'" :title="paused ? 'Retomar corrida' : 'Pausar corrida'" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶' : '⏸' }}</button>
+               <button type="button" class="chip survivor-icon-btn survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre'" :title="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre'" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">☰</button>
                <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
                <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
                <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="specialEffects" @pointerdown.stop @click.stop="specialEffects = !specialEffects">Efeitos: {{ specialEffects ? 'completos' : 'leves' }}</button>
