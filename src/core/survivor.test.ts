@@ -15,6 +15,7 @@ import {
   survivorScore,
   SURVIVOR_UPGRADES,
   SURVIVOR_UPGRADE_RARITIES,
+  SURVIVOR_SUPPORT_RARE_OFFER_CHANCE,
   normalizeSurvivorXp,
   xpForLevel,
 } from './survivor';
@@ -640,7 +641,7 @@ describe('efeitos defensivos de golpes próximos', () => {
 });
 
 describe('segundo golpe', () => {
-  it('permite recrutar até cinco apoios, oferecendo cada candidato em uma subida posterior', () => {
+  it('garante o primeiro apoio e sorteia os quatro seguintes como cartas raras', () => {
     const supportMove = as('dark', 'projetil').move;
     const supportProfile = attackProfile(supportMove, null);
     const supportCandidates = Array.from({ length: 5 }, (_, index) => ({
@@ -652,10 +653,21 @@ describe('segundo golpe', () => {
     const s = quiet(createSurvivorState(13, { kindCount: 1, supportCandidates }));
     s.player.level = 5;
 
-    for (let index = 0; index < 5; index += 1) {
+    s.rng = () => 0.99;
+    s.player.xp = s.player.xpToNext;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.pendingUpgrade?.find((option) => option.id === 'second-attack')?.rarity).toBe('lendario');
+    applyUpgrade(s, 'second-attack');
+    expect(s.supports).toHaveLength(1);
+
+    for (let index = 1; index < 5; index += 1) {
+      // Zero garante a entrada na vaga rara e mantém o primeiro candidato restante
+      // para tornar a sequência determinística neste teste.
+      s.rng = () => 0;
       s.player.xp = s.player.xpToNext;
       stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-      expect(s.pendingUpgrade?.some((option) => option.id === 'second-attack')).toBe(true);
+      const supportOption = s.pendingUpgrade?.find((option) => option.id === 'second-attack');
+      expect(supportOption?.rarity).toBe('raro');
       applyUpgrade(s, 'second-attack');
       expect(s.supports).toHaveLength(index + 1);
       expect(s.supports[index]?.name).toBe(`Apoio ${index + 1}`);
@@ -663,6 +675,36 @@ describe('segundo golpe', () => {
 
     expect(s.supportCandidates).toHaveLength(0);
     expect(s.support).toBe(s.supports[0]);
+  });
+
+  it('mantém o candidato raro disponível quando a oferta é recusada', () => {
+    const supportMove = as('dark', 'projetil').move;
+    const supportProfile = attackProfile(supportMove, null);
+    const s = quiet(createSurvivorState(14, {
+      kindCount: 1,
+      supportCandidates: [
+        { dexId: 197, name: 'Apoio 1', move: supportMove, profile: supportProfile },
+        { dexId: 198, name: 'Apoio 2', move: supportMove, profile: supportProfile },
+      ],
+    }));
+    s.player.level = 5;
+    s.player.xp = s.player.xpToNext;
+    s.rng = () => 0.99;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    applyUpgrade(s, 'second-attack');
+    expect(s.supportCandidates).toHaveLength(1);
+
+    s.rng = () => 0;
+    s.player.xp = s.player.xpToNext;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    const rare = s.pendingUpgrade?.find((option) => option.id === 'second-attack');
+    expect(rare?.rarity).toBe('raro');
+    const other = s.pendingUpgrade?.find((option) => option.id !== 'second-attack');
+    expect(other).toBeDefined();
+    applyUpgrade(s, other!.id);
+    expect(s.supports).toHaveLength(1);
+    expect(s.supportCandidates).toHaveLength(1);
+    expect(SURVIVOR_SUPPORT_RARE_OFFER_CHANCE).toBeCloseTo(0.3);
   });
 
   it('chama um apoio real, que mantém o próprio perfil e ataca a partir do jogador', () => {
