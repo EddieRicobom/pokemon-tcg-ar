@@ -87,6 +87,13 @@ function sceneFor(id: string): Scene | null {
       for (const hour of [14, 23, 8, 19, 6, 21]) {
         for (const weather of [null, 'chuva', 'neve']) {
           const s = WORLDS[vi]!;
+          if (id.startsWith('work-') && s.farm.history.length === 0) {
+            s.farm.history.push(
+              { residentId: 'm0', at: 1, message: 'Minerou na pedreira.', kind: 'mine' },
+              { residentId: 'm1', at: 2, message: 'Trabalhou na madeireira.', kind: 'lumber' },
+              { residentId: 'm2', at: 3, message: 'Pescou no lago.', kind: 'fish' },
+            );
+          }
           const env = { ...makeEnv(s, date, hour, weather), crops: 3, ripeCrops: 2 };
           const sc = sceneOfTemplate(tpl, cast12, s, env, seededRng(vi * 17 + hour), 40);
           if (sc) return sc;
@@ -574,3 +581,4 @@ describe('momentos: arquivo salvo', () => {
     sc.cast.forEach((c, i) => expect(friendOf(s, c.id).points).toBeGreaterThanOrEqual(before[i]!));
   });
 });
+

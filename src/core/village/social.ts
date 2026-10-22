@@ -13,7 +13,7 @@ import { EXTRA_MOMENTS } from './moments/extra';
 import { SEASON_MOMENTS } from './moments/season';
 import { SOLO_MOMENTS } from './moments/solo';
 import { TRIO_MOMENTS } from './moments/trio';
-import type { Actor, Ctx, Outcome, SocialEnv, Template } from './moments/kit';
+import type { Actor, Ctx, Outcome, SocialEnv, Template, WorkSignal } from './moments/kit';
 
 export type { Actor, Ctx, Outcome, SocialEnv, Template } from './moments/kit';
 
@@ -701,10 +701,270 @@ const INTRIGUE_MOMENTS: readonly Template[] = [
       ],
     },
   },
+  {
+    id: 'work-ferramenta-sumida', kind: 'drama', title: 'A ferramenta sumida', emoji: '🧰', cast: 2, weight: 5,
+    when: (c) => c.env.recentWork?.some((work) => work.kind === 'mine' || work.kind === 'lumber') === true && !!c.rel && c.rel.bond < 45,
+    lines: (c) => [
+      L(0, `${c.n[1]}, você viu a ferramenta que estava no posto? Eu deixei aqui depois do turno.`, 'question'),
+      L(1, 'Eu guardei na caixa para ninguém tropeçar. Achei que você soubesse.', 'sweat'),
+      L(0, 'Eu procurei a Vila inteira. Até dentro do lago.', 'shock'),
+      L(1, 'Pelo menos agora sabemos que não estava no lago.', 'laugh'),
+    ],
+    outcome: { bond: -3 },
+    choice: {
+      prompt: 'O turno terminou e a ferramenta foi encontrada. Como evitar a próxima confusão?',
+      options: [
+        { label: () => 'Criar um lugar fixo para ferramentas', lines: () => [L(0, 'A partir de hoje, tudo volta para a mesma caixa.', 'idea'), L(1, 'Assim eu consigo ajudar sem adivinhar.', 'heart')], outcome: { bond: 7, friend: 1, plan: { kind: 'ajudar', days: 2 } } },
+        { label: () => 'Deixar cada posto cuidar do próprio material', lines: () => [L(1, 'Eu anoto o que saiu e o que voltou.', 'note'), L(0, 'Combinado. Menos caça ao tesouro.', 'sparkle')], outcome: { bond: 3, plan: { kind: 'visitar', days: 2 } } },
+        { label: () => 'Culpar quem usou por último', lines: () => [L(1, 'Eu não vou assumir culpa por uma coisa que organizei.', 'anger'), L(0, 'Então resolvemos isso depois.', 'sad')], outcome: { bond: -9, flag: 'brigados' } },
+      ],
+    },
+  },
+  {
+    id: 'work-turno-cansativo', kind: 'amizade', title: 'Depois do turno', emoji: '🪵', cast: 3, weight: 5,
+    when: (c) => {
+      const workers = new Set((c.env.recentWork ?? []).filter((work) => work.kind === 'mine' || work.kind === 'lumber' || work.kind === 'fish').map((work) => work.residentId));
+      return workers.size >= 2 && c.env.hour >= 16 && c.env.hour < 23;
+    },
+    lines: () => [
+      L(0, 'Minhas patas estão tremendo. Quem inventou que pedra era tão pesada?', 'sweat'),
+      L(1, 'A madeira também não se corta sozinha.', 'fire'),
+      L(2, 'Eu trouxe água. A gente pode descansar no mesmo banco.', 'heart'),
+      L(0, 'Amanhã a gente divide o turno?', 'idea'),
+    ],
+    outcome: { bond: 7, bond02: 6, bond12: 6, friend: 1, plan: { kind: 'convidar', days: 2 } },
+    after: (n, who) => `Depois do trabalho, sentei com ${other(n, who)}. Até quem estava cansado sorriu.`,
+  },
+  {
+    id: 'work-merito-do-turno', kind: 'rivalidade', title: 'Mérito do turno', emoji: '🏷️', cast: 3, weight: 4,
+    when: (c) => (c.env.recentWork?.filter((work) => work.kind === 'mine' || work.kind === 'lumber' || work.kind === 'fish').length ?? 0) >= 2 && c.env.hour >= 10 && c.env.hour < 21,
+    lines: (c) => [
+      L(0, `O quadro diz que ${c.n[1]} fez tudo sozinho. Eu também fiquei no posto.`, 'anger'),
+      L(1, 'Eu só escrevi o resultado que me passaram.', 'sweat'),
+      L(2, 'Eu vi os dois trabalhando. O quadro é que ficou incompleto.', 'idea'),
+    ],
+    outcome: { bond: -5, bond02: -3, bond12: 1 },
+    choice: {
+      prompt: 'O quadro de tarefas não registra todo mundo. Como corrigir?',
+      options: [
+        { label: () => 'Registrar cada turno no mural', lines: () => [L(0, 'Agora ninguém fica invisível.', 'sparkle'), L(1, 'Eu atualizo depois de cada tarefa.', 'note'), L(2, 'E eu confiro antes de pendurar.', 'heart')], outcome: { bond: 8, bond02: 6, bond12: 6, friend: 1 } },
+        { label: () => 'Agradecer em voz alta na praça', lines: () => [L(2, 'Então: obrigado aos três!', 'star'), L(0, 'Já ajuda ouvir isso.', 'heart'), L(1, 'Amanhã eu faço a placa direito.', 'idea')], outcome: { bond: 5, bond02: 4, bond12: 4, plan: { kind: 'ajudar', from: 1, to: 2, days: 3 } } },
+        { label: () => 'Ignorar o quadro', lines: () => [L(0, 'Se ninguém olha, não vale a pena preencher.', 'sad'), L(1, 'Então o próximo erro vai ser maior.', 'anger')], outcome: { bond: -8, bond02: -6, bond12: -5, flag: 'brigados' } },
+      ],
+    },
+  },
+  {
+    id: 'work-pedido-de-folga', kind: 'drama', title: 'Pedido de folga', emoji: '🛌', cast: 2, weight: 4,
+    when: (c) => (c.env.recentWork?.length ?? 0) >= 2 && c.env.hour >= 7 && c.env.hour < 18,
+    lines: (c) => [
+      L(0, `${c.n[1]}, hoje eu precisava descansar. Meu turno estava marcado de novo.`, 'sad'),
+      L(1, 'Eu achei que você queria trabalhar mais. Você nunca disse que estava cansado.', 'sweat'),
+      L(0, 'Eu não queria decepcionar ninguém.', 'question'),
+    ],
+    outcome: { bond: -3 },
+    choice: {
+      prompt: 'A Vila precisa de trabalho, mas os moradores também precisam de pausa.',
+      options: [
+        { label: () => 'Montar uma escala de descanso', lines: () => [L(1, 'Amanhã eu cubro seu turno.', 'heart'), L(0, 'E depois eu cubro o seu.', 'sparkle')], outcome: { bond: 7, friend: 1, plan: { kind: 'ajudar', days: 2 } } },
+        { label: () => 'Pedir que avise antes', lines: () => [L(0, 'Eu aviso. Mesmo quando estiver com vergonha.', 'idea'), L(1, 'Isso já resolve metade do problema.', 'heart')], outcome: { bond: 3, plan: { kind: 'visitar', days: 2 } } },
+      ],
+    },
+  },
+  {
+    id: 'rumor-casa-aberta', kind: 'drama', title: 'A porta aberta', emoji: '🚪', cast: 3, weight: 4,
+    when: (c) => !!c.rel && c.rel.bond <= 15 && c.env.hour >= 18 && c.env.hour < 24,
+    lines: (c) => [
+      L(0, `Eu vi a porta de ${c.n[1]} aberta e achei que era um convite.`, 'question'),
+      L(1, 'Era só uma janela emperrada. Agora todo mundo acha que eu estava recebendo visitas.', 'sweat'),
+      L(2, 'Eu contei para duas pessoas. Talvez três.', 'sad'),
+      L(0, 'Então a gente bate antes de entrar. Parece simples.', 'idea'),
+    ],
+    outcome: { bond: -5, bond02: -2, bond12: -2 },
+    choice: {
+      prompt: 'Um mal-entendido virou comentário pela Vila. Como encerrar?',
+      options: [
+        { label: () => 'Explicar a história para todos', lines: () => [L(1, 'Não era segredo. Mas eu gostaria que perguntassem.', 'heart'), L(2, 'Eu vou corrigir o que falei.', 'sad')], outcome: { bond: 6, bond02: 4, bond12: 5, friend: 1, plan: { kind: 'visitar', days: 2 } } },
+        { label: () => 'Pedir privacidade e fechar a porta', lines: () => [L(1, 'Hoje eu quero silêncio.', 'sad'), L(0, 'Tudo bem. Eu volto amanhã.', 'heart')], outcome: { bond: 3, bond02: -1, bond12: 2, plan: { kind: 'visitar', days: 3 } } },
+        { label: () => 'Fazer piada com o boato', lines: () => [L(2, 'A porta aberta era uma festa secreta! Só que sem festa!', 'laugh'), L(1, 'Não achei engraçado.', 'anger')], outcome: { bond: -9, bond02: -5, bond12: -5, flag: 'brigados' } },
+      ],
+    },
+  },
+  {
+    id: 'rumor-recado-trocado', kind: 'rivalidade', title: 'O recado trocado', emoji: '📨', cast: 3, weight: 4,
+    when: (c) => c.env.lingo.length > 0 && c.env.hour >= 8 && c.env.hour < 22,
+    lines: (c) => [
+      L(0, `Eu ouvi que o treinador disse: "${c.env.lingo[0]}".`, 'shock'),
+      L(1, 'Eu ouvi outra coisa completamente diferente.', 'question'),
+      L(2, 'Talvez ninguém tenha ouvido direito. A praça estava barulhenta.', 'sweat'),
+      L(0, 'Então vamos perguntar antes de transformar isso em regra.', 'idea'),
+    ],
+    outcome: { bond: -2, bond02: -2, bond12: -2 },
+    choice: {
+      prompt: 'Uma frase sua virou três versões. O que você autoriza?',
+      options: [
+        { label: () => 'Repetir a mensagem correta', lines: () => [L(0, 'A frase era simples. Eu só queria dizer isso.', 'note'), L(1, 'Agora eu entendi.', 'heart'), L(2, 'Vou parar de completar as falas dos outros.', 'idea')], outcome: { bond: 5, bond02: 4, bond12: 4, friend: 1 } },
+        { label: () => 'Deixar o boato morrer sozinho', lines: () => [L(1, 'Sem confirmação, ninguém deveria espalhar.', 'sad'), L(2, 'Eu vou lembrar disso.', 'note')], outcome: { bond: 2, bond02: 1, bond12: 1 } },
+      ],
+    },
+  },
+  {
+    id: 'tri-reconciliacao-no-lago', kind: 'amizade', title: 'Três bancos no lago', emoji: '🌙', cast: 3, weight: 4,
+    when: (c) => c.rel?.flag === 'brigados' && c.env.hour >= 18 && c.env.hour < 24,
+    lines: (c) => [
+      L(2, `Eu reservei três lugares no lago. ${c.n[0]}, ${c.n[1]}, vocês não precisam resolver tudo hoje.`, 'heart'),
+      L(0, 'Eu posso começar dizendo que exagerei.', 'sad'),
+      L(1, 'Eu também. Só não queria continuar evitando você.', 'sparkle'),
+      L(2, 'Pronto. A primeira conversa já aconteceu.', 'star'),
+    ],
+    outcome: { bond: 8, bond02: 7, bond12: 7, flag: 'clear', friend: 2, plan: { kind: 'convidar', days: 2 } },
+    keep: true,
+  },
+];
+
+/** Estruturas de cinema e séries reinterpretadas com personagens próprios da Vila. */
+const CINEMATIC_MOMENTS: readonly Template[] = [
+  {
+    id: 'cin-abrigo-na-chuva', kind: 'amizade', title: 'Abrigo na chuva', emoji: '☔', cast: 2, weight: 5,
+    when: (c) => c.env.weather === 'chuva',
+    lines: (c) => [
+      L(0, `${c.n[1]}, corre! O telhado da praça ainda está seco!`, 'shock'),
+      L(1, '(os dois chegam ensopados e escorregam para dentro do abrigo)', 'sweat'),
+      L(0, 'A gente podia ter caminhado devagar.', 'laugh'),
+      L(1, 'Aí não teria sido uma entrada tão dramática.', 'star'),
+    ],
+    outcome: { bond: 8, spark: 2 },
+  },
+  {
+    id: 'cin-carta-trocada', kind: 'drama', title: 'A carta trocada', emoji: '✉️', cast: 2, weight: 5,
+    when: (c) => c.env.lingo.length > 0,
+    lines: (c) => [
+      L(0, `Eu encontrei uma carta para ${c.n[1]} e li só a primeira linha.`, 'sweat'),
+      L(1, 'Era para outra pessoa! Agora você sabe uma coisa que não era sua.', 'shock'),
+      L(0, 'Eu achei que era um pedido de desculpas para mim.', 'sad'),
+      L(1, 'Então talvez o pedido ainda possa acontecer. Só precisa ser para a pessoa certa.', 'idea'),
+    ],
+    outcome: { bond: -4 },
+    choice: {
+      prompt: 'Uma carta particular foi parar nas mãos erradas. O que você sugere?',
+      options: [
+        { label: () => 'Devolver sem comentar o conteúdo', lines: () => [L(0, 'Eu vou devolver e esquecer a primeira linha.', 'heart'), L(1, 'Obrigado. Isso é respeito.', 'sparkle')], outcome: { bond: 7, friend: 1, plan: { kind: 'visitar', days: 2 } } },
+        { label: () => 'Contar tudo para a Vila', lines: () => [L(1, 'Isso não era para virar anúncio!', 'anger'), L(0, 'Eu... achei que seria engraçado.', 'sad')], outcome: { bond: -10, flag: 'brigados' } },
+      ],
+    },
+  },
+  {
+    id: 'cin-tribunal-da-fruta', kind: 'comedia', title: 'O tribunal da fruta', emoji: '⚖️', cast: 3, weight: 5,
+    when: (c) => c.env.crops > 0 && c.env.hour >= 10 && c.env.hour < 20,
+    lines: (c) => [
+      L(0, `A fruta sumiu e ${c.n[1]} estava perto do canteiro. Eu exijo uma investigação!`, 'anger'),
+      L(1, 'Eu estava regando! Isso não é prova de nada!', 'shock'),
+      L(2, 'Silêncio no tribunal. A única testemunha é um Oddish.', 'note'),
+      L(0, '(o Oddish aponta para uma pegada... e depois para a própria barriga)', 'laugh'),
+    ],
+    outcome: { bond: 5, bond02: 5, bond12: 5 },
+    choice: {
+      prompt: 'A investigação virou uma peça. Quem decide o caso?',
+      options: [
+        { label: () => 'Declarar todos inocentes', lines: () => [L(2, 'Caso encerrado: a fruta foi comida por alguém com fome.', 'star'), L(0, 'Essa sentença parece justa.', 'heart')], outcome: { bond: 7, bond02: 6, bond12: 6, friend: 1 } },
+        { label: (c) => `Pedir que ${c.n[1]} confesse`, lines: () => [L(1, 'Eu não comi! ...Mas agora fiquei com vontade.', 'sweat'), L(0, 'O tribunal precisa de mais provas.', 'laugh')], outcome: { bond: -2, bond02: 3, bond12: 3 }, },
+        { label: () => 'Interrogar o Oddish', lines: () => [L(2, '(Oddish cruza os braços e pede um advogado)', 'shock'), L(0, 'Ele tem direitos!', 'sad')], outcome: { bond: 4, bond02: 4, bond12: 4, coins: 3 }, },
+      ],
+    },
+  },
+  {
+    id: 'cin-dupla-improvavel', kind: 'amizade', title: 'Dupla improvável', emoji: '🎬', cast: 2, weight: 5,
+    lines: (c) => [
+      L(0, `${c.n[1]}, ninguém apostou que a gente conseguiria terminar isso junto.`, 'idea'),
+      L(1, 'Eu também não apostei. Mas você trouxe a parte que faltava.', 'heart'),
+      L(0, 'Então a gente é uma dupla?', 'question'),
+      L(1, 'Uma dupla meio torta. Ainda assim, uma dupla.', 'star'),
+    ],
+    outcome: { bond: 12, friend: 2, plan: { kind: 'convidar', days: 3 } },
+  },
+  {
+    id: 'cin-ultimo-banco', kind: 'drama', title: 'O último banco', emoji: '🪑', cast: 2, weight: 5,
+    when: (c) => !!c.rel && c.rel.bond < 18 && c.env.hour >= 17,
+    lines: () => [
+      L(0, `Eu sentei no último banco porque achei que você não queria me ver.`, 'sad'),
+      L(1, 'Eu estava esperando você pedir para sentar junto.', 'sweat'),
+      L(0, 'A gente ficou esperando em bancos diferentes por orgulho?', 'question'),
+      L(1, 'Parece exatamente o tipo de coisa que a gente faria.', 'laugh'),
+    ],
+    outcome: { bond: 3 },
+    choice: {
+      prompt: 'Os dois querem conversar, mas nenhum quer dar o primeiro passo.',
+      options: [
+        { label: () => 'Juntar os bancos', lines: () => [L(0, 'Pronto. Agora ninguém precisa pedir.', 'heart'), L(1, 'Foi uma boa ideia.', 'sparkle')], outcome: { bond: 9, flag: 'clear', friend: 1, plan: { kind: 'visitar', days: 2 } } },
+        { label: () => 'Deixar um espaço entre eles', lines: () => [L(0, 'Ainda não estamos prontos.', 'sad'), L(1, 'Mas pelo menos ficamos perto.', 'idea')], outcome: { bond: 2, plan: { kind: 'visitar', days: 3 } } },
+      ],
+    },
+  },
+  {
+    id: 'cin-coroa-de-papel', kind: 'festa', title: 'A coroa de papel', emoji: '👑', cast: 3, weight: 4,
+    when: (c) => c.env.hour >= 12 && c.env.hour < 22,
+    lines: (c) => [
+      L(1, `Hoje ${c.n[0]} vai receber uma coroa. Não pergunte por quê.`, 'star'),
+      L(0, '(recebe uma coroa torta feita de papel de carta)', 'shock'),
+      L(2, 'É o prêmio por ter sobrevivido a mais uma semana na Vila.', 'laugh'),
+      L(0, 'Eu aceito. Mas quero um discurso.', 'fire'),
+    ],
+    outcome: { bond: 7, bond02: 7, bond12: 7, coins: 8 },
+  },
+  {
+    id: 'cin-fuga-do-piquenique', kind: 'comedia', title: 'Fuga do piquenique', emoji: '🧺', cast: 3, weight: 4,
+    when: (c) => c.env.placed.size > 0 && c.env.hour >= 10 && c.env.hour < 19,
+    lines: (c) => [
+      L(0, `Ninguém mexe no sanduíche até ${c.n[1]} chegar.`, 'fire'),
+      L(1, '(um Pidgey pousa, puxa o pão e sai correndo)', 'shock'),
+      L(2, 'Plano de recuperação: seguir o Pidgey sem parecer desesperado.', 'idea'),
+      L(0, '(os três correm atrás do almoço e esquecem o piquenique)', 'laugh'),
+    ],
+    outcome: { bond: 8, bond02: 8, bond12: 8, items: [['oran', 1]] },
+  },
+  {
+    id: 'cin-pequeno-heroismo', kind: 'amizade', title: 'Um pequeno heroísmo', emoji: '🦸', cast: 2, weight: 5,
+    when: (c) => c.env.weather !== 'neve',
+    lines: (c) => [
+      L(0, `${c.n[1]}, espera! Seu chapéu caiu no caminho.`, 'shock'),
+      L(1, 'Você atravessou a praça inteira para me devolver?', 'question'),
+      L(0, 'Ele era importante para você. Então era importante para mim também.', 'heart'),
+      L(1, 'Eu não vou esquecer isso.', 'sparkle'),
+    ],
+    outcome: { bond: 10, spark: 3, friend: 2 },
+  },
+  {
+    id: 'cin-final-do-turno', kind: 'festa', title: 'Final do expediente', emoji: '🌇', cast: 3, weight: 4,
+    when: (c) => (c.env.recentWork?.length ?? 0) >= 2 && c.env.hour >= 18,
+    lines: () => [
+      L(0, 'O último trabalho do dia terminou.', 'sparkle'),
+      L(1, 'Então está oficialmente permitido sentar e não fazer nada?', 'question'),
+      L(2, 'Permitido e recomendado.', 'star'),
+      L(0, '(os três olham o céu e comemoram com uma bebida de fruta)', 'heart'),
+    ],
+    outcome: { bond: 9, bond02: 9, bond12: 9, friend: 1, plan: { kind: 'convidar', days: 2 } },
+  },
+  {
+    id: 'cin-segredo-revelado', kind: 'drama', title: 'O segredo revelado', emoji: '🔐', cast: 3, weight: 4,
+    when: (c) => !!c.rel && c.rel.bond < 25 && c.env.hour >= 8 && c.env.hour < 22,
+    lines: (c) => [
+      L(0, `Eu contei para ${c.n[2]} porque achei que ele já soubesse.`, 'sweat'),
+      L(1, 'Eu não sabia! Agora eu sei e não sei o que fazer com isso.', 'shock'),
+      L(2, 'Eu posso devolver o segredo. É assim que funciona?', 'question'),
+      L(0, 'Não dá para devolver, mas dá para cuidar dele.', 'sad'),
+    ],
+    outcome: { bond: -5, bond02: -2, bond12: -2 },
+    choice: {
+      prompt: 'Um segredo saiu do círculo original. Como recuperar confiança?',
+      options: [
+        { label: () => 'Pedir desculpas sem se justificar', lines: () => [L(0, 'Eu errei. Não vou tentar deixar isso bonito.', 'sad'), L(1, 'Obrigado por falar direto.', 'heart'), L(2, 'Eu não vou contar para ninguém.', 'sparkle')], outcome: { bond: 8, bond02: 5, bond12: 5, flag: 'clear', friend: 1, plan: { kind: 'visitar', days: 2 } } },
+        { label: () => 'Fingir que nada aconteceu', lines: () => [L(1, 'A gente sabe que aconteceu.', 'anger'), L(0, 'Eu sei.', 'sad')], outcome: { bond: -8, bond02: -4, bond12: -4, flag: 'brigados' } },
+      ],
+    },
+  },
 ];
 
 /** Todos os momentos: os do começo (`CORE`) e as levas novas, por tipo de elenco e por ocasião. */
-export const TEMPLATES: readonly Template[] = [...CORE, ...INTRIGUE_MOMENTS, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS, ...EXTRA_MOMENTS];
+export const TEMPLATES: readonly Template[] = [...CORE, ...INTRIGUE_MOMENTS, ...CINEMATIC_MOMENTS, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS, ...EXTRA_MOMENTS];
 export const TEMPLATE_COUNT = TEMPLATES.length;
 export const TEMPLATE_BY_ID = new Map(TEMPLATES.map((t) => [t.id, t]));
 
@@ -766,7 +1026,8 @@ export function makeEnv(state: VillageState, day: string, hour: number, weather:
     const g = itemDef(c.seed)?.grows;
     return !!g && c.stage >= g.stages;
   }).length;
-  return { player, hour, day, weather, placed: new Set(state.placed.map((p) => p.item)), worn: new Set(Object.values(state.wear.mons).filter((id): id is string => !!id).concat(state.wear.player ? [state.wear.player] : [])), crops: state.crops.length, ripeCrops: ripe, town: state.town.level, lingo: state.lingo.slice(-8).map((x) => x.text) };
+  const recentWork: WorkSignal[] = state.farm.history.slice(-12).flatMap((entry) => entry.kind ? [{ residentId: entry.residentId, kind: entry.kind, at: entry.at }] : []);
+  return { player, hour, day, weather, placed: new Set(state.placed.map((p) => p.item)), worn: new Set(Object.values(state.wear.mons).filter((id): id is string => !!id).concat(state.wear.player ? [state.wear.player] : [])), crops: state.crops.length, ripeCrops: ripe, town: state.town.level, lingo: state.lingo.slice(-8).map((x) => x.text), recentWork };
 }
 
 function makeCtx(state: VillageState, cast: Actor[], env: SocialEnv, rng: Rng): Ctx {
@@ -1150,7 +1411,36 @@ export function catchUp(state: VillageState, actors: readonly Actor[], now: numb
 /** O que o Pokémon comenta ao conversar com você sobre o que viveu nas últimas 36 horas (ou `null`). */
 export function recentGossip(state: VillageState, id: string, now: number): string | null {
   const memory = [...state.memories].reverse().find((item) => item.mon === id && now - item.t <= 90 * 24 * 3_600_000);
-  if (memory) return `Ainda lembro: ${memory.text}`;
+  if (memory) {
+    const age = Math.max(0, now - memory.t);
+    const when = age < 3_600_000 ? 'agora há pouco' : age < 2 * 86_400_000 ? 'ontem' : 'há alguns dias';
+    const intros: Record<MemoryKind, readonly string[]> = {
+      amizade: ['Eu ainda sorrio quando penso nisso', 'Sabe o que me deixou feliz outro dia?', 'Fiquei lembrando de uma coisa boa'],
+      rivalidade: ['Aquilo ainda ficou atravessado', 'Eu tentei deixar isso para trás, mas', 'Ainda estou pensando naquela confusão'],
+      romance: ['Eu fico meio bobo quando lembro', 'Sabe aquele momento que dá frio na barriga?', 'Ainda guardo esse momento com carinho'],
+      descoberta: ['Eu não paro de pensar no que encontramos', 'Aquela descoberta ainda está na minha cabeça', 'Eu descobri uma coisa e preciso comentar'],
+    };
+    const choices = intros[memory.kind];
+    const opener = choices[hash(`${memory.id}:${memory.kind}`) % choices.length] ?? choices[0]!;
+    const source = state.diary.find((moment) => moment.id === memory.momentId);
+    const companions = source?.cast
+      .filter((participant) => participant.id !== id)
+      .map((participant) => participant.name)
+      .filter(Boolean) ?? [];
+    const withPeople = companions.length === 1
+      ? ` com ${companions[0]}`
+      : companions.length > 1
+        ? ` com ${companions.slice(0, -1).join(', ')} e ${companions.at(-1)}`
+        : '';
+    const tail = memory.kind === 'rivalidade'
+      ? 'Talvez eu devesse conversar com eles de novo.'
+      : memory.kind === 'romance'
+        ? 'Foi bonito, mesmo com toda a vergonha.'
+        : memory.kind === 'descoberta'
+          ? 'Quero ver o que acontece se a gente investigar mais.'
+          : 'Foi um daqueles dias que dá vontade de repetir.';
+    return `${opener}${withPeople} — ${when}: ${memory.text} ${tail}`;
+  }
   for (let i = state.diary.length - 1; i >= 0; i--) {
     const m = state.diary[i]!;
     if (now - m.t > 36 * 3_600_000) break;
@@ -1213,3 +1503,4 @@ export function albumEntries(state: VillageState): AlbumEntry[] {
 
 /** Os momentos guardados no Álbum, do mais novo para o mais antigo. */
 export const savedMoments = (state: VillageState): Moment[] => state.diary.filter((m) => m.fav).reverse();
+
