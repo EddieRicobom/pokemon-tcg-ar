@@ -34,7 +34,7 @@ export function drawElementMark(ctx: CanvasRenderingContext2D, type: PokemonType
 
 export function drawSurvivorSpecial(ctx: CanvasRenderingContext2D, state: SurvivorState, detailed: boolean): void {
   const special = state.special;
-  if (!special.selected || special.fxMs <= 0) return;
+  if (!special.selected || (special.fxMs <= 0 && !special.clone)) return;
   const p = state.player;
   const time = state.elapsedMs / 1000;
   ctx.save(); ctx.strokeStyle = p.move.color; ctx.lineWidth = 3;
@@ -47,7 +47,8 @@ export function drawSurvivorSpecial(ctx: CanvasRenderingContext2D, state: Surviv
     // Uma barreira contínua e um arco que se esvazia mostram proteção e tempo restante.
     ctx.beginPath(); ctx.arc(p.x, p.y - 10, 31, 0, Math.PI * 2); ctx.stroke();
     ctx.strokeStyle = '#fff3c9'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(p.x, p.y - 10, 35, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * special.activeMs / 3000); ctx.stroke();
+    const shieldProgress = Number.isFinite(special.activeMs) ? Math.min(1, special.activeMs / 3000) : 1;
+    ctx.beginPath(); ctx.arc(p.x, p.y - 10, 35, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * shieldProgress); ctx.stroke();
     ctx.strokeStyle = p.move.color;
     const count = detailed ? 6 : 2;
     for (let i = 0; i < count; i++) { const a = time * 0.8 + i * Math.PI * 2 / count; drawElementMark(ctx, special.type, p.x + Math.cos(a) * 31, p.y - 10 + Math.sin(a) * 31, 8, time); }
@@ -61,6 +62,14 @@ export function drawSurvivorSpecial(ctx: CanvasRenderingContext2D, state: Surviv
     if (special.selected === 'teleport') for (const target of special.targets) {
       ctx.beginPath(); ctx.moveTo(special.to.x, special.to.y - 10); ctx.lineTo(target.x, target.y - 10); ctx.stroke();
       drawElementMark(ctx, special.type, target.x, target.y - 10, 22, time);
+    }
+    if (special.clone) {
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.globalAlpha = Math.min(0.7, special.clone.activeMs / 900);
+      ctx.strokeStyle = '#d9f4ff';
+      drawElementMark(ctx, special.type, special.clone.x, special.clone.y - 10, 22, time + 0.5);
+      ctx.restore();
     }
   }
   ctx.restore();
