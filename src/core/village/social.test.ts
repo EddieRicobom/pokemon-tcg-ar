@@ -522,6 +522,17 @@ describe('momentos: fora da Vila, comentários e mapa', () => {
     expect(recentGossip(s, 'zzz', now + 1000)).toBeNull();
   });
 
+  it('compacta apenas a memória da fala e usa o apelido atual dos envolvidos', () => {
+    const s = fresh();
+    s.diary.push({ id: 'm-10', t: 10, day: '2026-10-14', hour: 14, tpl: 'par-piquenique', kind: 'amizade', title: 'Piquenique', emoji: '🧺', cast: [{ id: 'a', name: 'Ana' }, { id: 'b', name: 'Beto' }], lines: [], result: ['+5 amizade'] });
+    s.memories.push({ id: 'm-10:a', mon: 'a', with: ['b'], kind: 'amizade', text: 'Piquenique: +5 amizade', day: '2026-10-14', t: 10, momentId: 'm-10' });
+    const full = recentGossip(s, 'a', 20);
+    const compact = recentGossip(s, 'a', 20, { compact: true, nameOf: (id, fallback) => id === 'b' ? 'Brisa' : fallback });
+    expect(full).toContain('Piquenique: +5 amizade');
+    expect(compact).toContain('Piquenique — amizade fortalecida');
+    expect(compact).toContain('Brisa');
+    expect(compact).not.toContain('+5 amizade');
+  });
   it('o mapa de relações e as páginas do Livro mostram só quem já viveu algo junto', () => {
     const s = fresh();
     expect(relationMap(s, actors)).toEqual([]);

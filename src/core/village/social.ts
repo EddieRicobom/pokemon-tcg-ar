@@ -1408,8 +1408,15 @@ export function catchUp(state: VillageState, actors: readonly Actor[], now: numb
 
 // -------------------------------------------------------------------------------- comentários
 
+export interface RecentGossipOptions {
+  /** Compacta apenas a memória antiga, preservando a fala atual que a envolve. */
+  compact?: boolean;
+  /** Nome visível atual, incluindo apelido, para os companheiros do momento. */
+  nameOf?: (id: string, fallback: string) => string;
+}
+
 /** O que o Pokémon comenta ao conversar com você sobre o que viveu nas últimas 36 horas (ou `null`). */
-export function recentGossip(state: VillageState, id: string, now: number): string | null {
+export function recentGossip(state: VillageState, id: string, now: number, options: RecentGossipOptions = {}): string | null {
   const memory = [...state.memories].reverse().find((item) => item.mon === id && now - item.t <= 90 * 24 * 3_600_000);
   if (memory) {
     const age = Math.max(0, now - memory.t);
@@ -1425,7 +1432,7 @@ export function recentGossip(state: VillageState, id: string, now: number): stri
     const source = state.diary.find((moment) => moment.id === memory.momentId);
     const companions = source?.cast
       .filter((participant) => participant.id !== id)
-      .map((participant) => participant.name)
+      .map((participant) => options.nameOf?.(participant.id, participant.name) ?? participant.name)
       .filter(Boolean) ?? [];
     const withPeople = companions.length === 1
       ? ` com ${companions[0]}`
@@ -1439,7 +1446,10 @@ export function recentGossip(state: VillageState, id: string, now: number): stri
         : memory.kind === 'descoberta'
           ? 'Quero ver o que acontece se a gente investigar mais.'
           : 'Foi um daqueles dias que dá vontade de repetir.';
-    return `${opener}${withPeople} — ${when}: ${memory.text} ${tail}`;
+    const memoryText = options.compact
+      ? (source?.title ? `${source.title} — ${memory.kind === 'amizade' ? 'amizade fortalecida' : memory.kind === 'rivalidade' ? 'uma tensão ficou no ar' : memory.kind === 'romance' ? 'um momento especial' : 'uma nova pista'}` : memory.text)
+      : memory.text;
+    return `${opener}${withPeople} — ${when}: ${memoryText}. ${tail}`;
   }
   for (let i = state.diary.length - 1; i >= 0; i--) {
     const m = state.diary[i]!;
@@ -1448,7 +1458,7 @@ export function recentGossip(state: VillageState, id: string, now: number): stri
     if (who < 0) continue;
     const tpl = TEMPLATE_BY_ID.get(m.tpl);
     const line = tpl?.after?.(
-      m.cast.map((c) => c.name),
+      m.cast.map((c) => options.nameOf?.(c.id, c.name) ?? c.name),
       who,
     );
     if (line) return line;

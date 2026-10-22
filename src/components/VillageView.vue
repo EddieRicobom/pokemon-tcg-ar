@@ -798,24 +798,18 @@ function nameOf(id: string): string {
   return mons.value.find((m) => m.id === id)?.name ?? 'Pokémon';
 }
 
-/** Converte memórias antigas em uma fala curta e natural para o balão. */
-function compactResidentMessage(raw: string, limit = 220): string {
-  let text = raw.replace(/\s+/g, ' ').trim();
-  // Saves antigos podem ter guardado instanceId; a conversa sempre mostra o nome/apelido atual.
+function residentNameForDisplay(id: string, fallback: string): string {
+  const visible = nameOf(id);
+  return visible === 'Pokémon' ? fallback : visible;
+}
+
+/** Ajusta apenas IDs antigos de saves; o texto completo da conversa permanece intacto. */
+function displayResidentMessage(raw: string): string {
+  let text = raw.trim();
   for (const mon of [...mons.value].sort((a, b) => b.id.length - a.id.length)) {
     if (mon.id && mon.name && mon.id !== mon.name) text = text.split(mon.id).join(mon.name);
   }
-  if (text.length <= limit) return text;
-  // Mantém frases completas até o limite, sem deixar a lembrança virar um parágrafo.
-  const sentences = text.split(/(?<=[.!?])\s+/u);
-  let summary = '';
-  for (const sentence of sentences) {
-    const next = summary ? `${summary} ${sentence}` : sentence;
-    if (next.length > limit - 1) break;
-    summary = next;
-  }
-  if (summary.length >= 72) return `${summary}…`;
-  return `${text.slice(0, limit - 1).trimEnd()}…`;
+  return text;
 }
 
 const inventory = computed(() => ITEMS.filter((i) => count(state, i.id) > 0));
@@ -1321,7 +1315,7 @@ function speakToResident(id: string): void {
   game.faceMe(id);
   const today = refreshDay();
   const name = nameOf(id);
-  const result = talk(state, id, name, types.get(id) ?? [], today, villageHour(), Math.random, recentGossip(state, id, Date.now()), game.weatherKind);
+  const result = talk(state, id, name, types.get(id) ?? [], today, villageHour(), Math.random, recentGossip(state, id, Date.now(), { compact: true, nameOf: residentNameForDisplay }), game.weatherKind);
   if (result.gained > 0) {
     game.bubble(id, '❤️');
     trainerEvent('talk', id);
@@ -2570,7 +2564,7 @@ function openFriendDialog(id: string, text: string): void {
   if (following) actions.push({ label: 'Pode passear', run: () => { state.follower = null; changed(); dialog.value = null; } });
   else if (canFollow(state, id)) actions.push({ label: 'Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
   actions.push({ label: 'Tchau', run: () => { dialog.value = null; } });
-  dialog.value = { id, name: `${nameOf(id)} · ${lvl.name} ${'♥'.repeat(lvl.hearts)}${'♡'.repeat(5 - lvl.hearts)}`, text: compactResidentMessage(text), actions };
+  dialog.value = { id, name: `${nameOf(id)} · ${lvl.name} ${'♥'.repeat(lvl.hearts)}${'♡'.repeat(5 - lvl.hearts)}`, text: displayResidentMessage(text), actions };
 }
 
 function openGuidedTrip(id: string): void {
