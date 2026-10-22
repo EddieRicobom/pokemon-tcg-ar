@@ -1447,7 +1447,7 @@ export function recentGossip(state: VillageState, id: string, now: number, optio
           ? 'Quero ver o que acontece se a gente investigar mais.'
           : 'Foi um daqueles dias que dá vontade de repetir.';
     const memoryText = options.compact
-      ? (source?.title ? `${source.title} — ${memory.kind === 'amizade' ? 'amizade fortalecida' : memory.kind === 'rivalidade' ? 'uma tensão ficou no ar' : memory.kind === 'romance' ? 'um momento especial' : 'uma nova pista'}` : memory.text)
+      ? (source?.title ? `${source.title} — ${memory.kind === 'amizade' ? 'amizade fortalecida' : memory.kind === 'rivalidade' ? 'uma tensão ficou no ar' : memory.kind === 'romance' ? 'um momento especial' : 'uma nova pista'}` : `${memory.text.split(':')[0] ?? memory.text} — memória da Vila`)
       : memory.text;
     return `${opener}${withPeople} — ${when}: ${memoryText}. ${tail}`;
   }
