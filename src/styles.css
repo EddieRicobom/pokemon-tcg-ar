@@ -4665,47 +4665,10 @@ body.no-scroll .reward-toasts {
 
 .village-ar-canvas.active {
   opacity: 1;
-  /* Correção cromática estática: dá leitura de maquete sem animar o WebGL. */
-  filter: saturate(1.08) contrast(1.04);
 }
 
-/*
- * Tilt-shift leve para o Diorama. A faixa central fica limpa e as bordas
- * recebem uma névoa de foco curta, simulando profundidade de campo de lente
- * macro sem backdrop-filter ou blur contínuo sobre a câmera.
- */
-.village-ar-tilt-shift {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(
-      to bottom,
-      rgba(183, 211, 239, 0.16) 0%,
-      rgba(183, 211, 239, 0.07) 16%,
-      rgba(183, 211, 239, 0) 34%,
-      rgba(183, 211, 239, 0) 66%,
-      rgba(183, 211, 239, 0.07) 84%,
-      rgba(183, 211, 239, 0.16) 100%
-    ),
-    linear-gradient(
-      to bottom,
-      rgba(255, 255, 255, 0.08) 0%,
-      rgba(255, 255, 255, 0) 28%,
-      rgba(255, 255, 255, 0) 72%,
-      rgba(15, 28, 54, 0.08) 100%
-    );
-  mix-blend-mode: soft-light;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .village-ar-canvas.active {
-    filter: none;
-  }
-  .village-ar-tilt-shift {
-    opacity: 0.55;
-  }
+.diorama-layer-source {
+  display: none;
 }
 
 .village-ar-badge {
@@ -7583,3 +7546,4 @@ body.no-scroll .reward-toasts {
 .village-legend-clue { position: absolute; z-index: 8; top: 76px; left: max(12px,env(safe-area-inset-left)); max-width: min(330px,calc(100% - 28px)); display: grid; gap: 5px; padding: 10px; border: 1px solid #e7d89c70; border-radius: 12px; background: #121b2fed; color: #f6efcb; font-size: .8rem; }
 .village-legend-clue div { display: flex; gap: 8px; flex-wrap: wrap; }.village-legend-clue button { min-height: 44px; font-size: .8rem; }
 @media (orientation: landscape) and (max-height: 600px) { .village-legend-clue { top: 65px; max-width: 275px; } }
+
