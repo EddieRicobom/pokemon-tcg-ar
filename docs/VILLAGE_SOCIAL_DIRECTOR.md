@@ -99,5 +99,5 @@ Crie modelos em grupos temáticos, por exemplo `INTRIGUE_MOMENTS`, com o tipo `T
 
 ## Eventos inaugurais
 
-Esta leva introduz `Boato na praça`, `Quem fez o trabalho?`, `A colheita sem dono`, `Promessa atrasada`, `A ferramenta sumida`, `Depois do turno`, `Mérito do turno`, `Pedido de folga`, `A porta aberta`, `O recado trocado` e `Três bancos no lago`. Eles deixam memórias, mudam vínculos e, nas saídas construtivas, agendam visita, ajuda ou convite. Assim o jogo passa a ter conflito, reparação e continuidade na mesma camada social.
+Esta leva introduz `Boato na praça`, `Quem fez o trabalho?`, `A colheita sem dono`, `Promessa atrasada`, `A ferramenta sumida`, `Depois do turno`, `Mérito do turno`, `Pedido de folga`, `A porta aberta`, `O recado trocado` e `Três bancos no lago`. A leva cinematográfica acrescenta `Abrigo na chuva`, `A carta trocada`, `O tribunal da fruta`, `Dupla improvável`, `O último banco`, `A coroa de papel`, `Fuga do piquenique`, `Um pequeno heroísmo`, `Final do expediente` e `O segredo revelado`. Eles deixam memórias, mudam vínculos e, nas saídas construtivas, agendam visita, ajuda ou convite. Assim o jogo passa a ter conflito, humor, reparação e continuidade na mesma camada social.
 
