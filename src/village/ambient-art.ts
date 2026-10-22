@@ -48,6 +48,54 @@ export function drawFountainFx(ctx: CanvasRenderingContext2D, x: number, bottom:
   ctx.restore();
 }
 
+/**
+ * Coluna de dados da Torre de Sobrevivência.
+ *
+ * O efeito é feito só com retângulos pequenos, sem blur nem criação de
+ * partículas. Assim ele mantém o acabamento pixel art, sobe muito acima do
+ * prédio e continua barato para a GPU. O ciclo é determinístico para não
+ * causar mudanças bruscas quando a câmera é redesenhada.
+ */
+export function drawTowerDataFx(ctx: CanvasRenderingContext2D, x: number, bottom: number, scale: number, now: number): void {
+  ctx.save();
+  const height = 132 * scale;
+  const base = bottom - 22 * scale;
+  const phase = now / 1450;
+  const streams = [
+    { dx: -12, width: 2, speed: 0.88, color: 'rgba(83,220,255,0.72)' },
+    { dx: -5, width: 1, speed: 1.18, color: 'rgba(138,160,255,0.72)' },
+    { dx: 3, width: 2, speed: 0.72, color: 'rgba(103,248,207,0.68)' },
+    { dx: 10, width: 1, speed: 1.06, color: 'rgba(196,133,255,0.72)' },
+  ] as const;
+
+  // Trilhas verticais interrompidas simulam dados subindo, sem uma camada
+  // contínua que esconda a fachada da Torre.
+  for (let i = 0; i < streams.length; i++) {
+    const stream = streams[i]!;
+    const drift = Math.sin(phase * 0.7 + i * 1.8) * 2.4 * scale;
+    ctx.fillStyle = stream.color;
+    for (let j = 0; j < 7; j++) {
+      const progress = (phase * stream.speed + j * 0.17 + i * 0.23) % 1;
+      const y = base - progress * height;
+      const size = Math.max(1, Math.round((j % 3 === 0 ? 3 : 2) * scale));
+      const xOffset = (stream.dx + drift / scale + Math.sin(j * 2.7 + phase) * 1.2) * scale;
+      const alpha = 0.22 + (1 - progress) * 0.66;
+      ctx.globalAlpha = alpha;
+      ctx.fillRect(Math.round(x + xOffset), Math.round(y), stream.width * scale, size);
+    }
+  }
+
+  // Um fio central e o núcleo no topo dão a leitura de uma torre de dados.
+  ctx.globalAlpha = 0.5 + Math.sin(phase * 1.7) * 0.16;
+  ctx.fillStyle = '#b6f4ff';
+  ctx.fillRect(Math.round(x - scale), Math.round(base - height), Math.max(1, scale), Math.round(height));
+  ctx.globalAlpha = 0.9;
+  ctx.fillRect(Math.round(x - 2 * scale), Math.round(base - height - 2 * scale), 4 * scale, 2 * scale);
+  ctx.fillStyle = '#d9b6ff';
+  ctx.fillRect(Math.round(x - scale), Math.round(base - height - 4 * scale), 2 * scale, 2 * scale);
+  ctx.restore();
+}
+
 export function drawSunRays(ctx: CanvasRenderingContext2D, width: number, height: number, now: number, strength: number): void {
   if (strength <= 0.01) return;
   ctx.save();
