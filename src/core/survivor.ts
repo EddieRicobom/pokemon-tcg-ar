@@ -29,6 +29,8 @@ export const ARENA_W = 2880;
 export const ARENA_H = 1920;
 export const PLAYER_RADIUS = 14;
 export const PICKUP_RADIUS = 46;
+/** O artefato Ímã continua útil, mas não coleta orbes de uma tela inteira. */
+export const MAGNET_PICKUP_RADIUS_CAP = 90;
 /** Margem fora da arena onde os inimigos nascem (entram andando, nunca "aparecem" em cima de você). */
 const SPAWN_MARGIN = 48;
 
@@ -1905,7 +1907,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     return true;
   });
   state.artifacts = state.artifacts.filter((artifact) => {
-    const pickupRadius = p.pickupRadius * (p.artifactMagnetMs > 0 ? 1.7 : 1);
+    const pickupRadius = Math.min(MAGNET_PICKUP_RADIUS_CAP, p.pickupRadius * (p.artifactMagnetMs > 0 ? 1.7 : 1));
     if (Math.hypot(artifact.x - p.x, artifact.y - p.y) > pickupRadius) return true;
     if (artifact.kind === 'pokeball') state.digitalPokeballs += 1;
     else if (artifact.kind === 'speed') p.artifactSpeedMs = Math.max(p.artifactSpeedMs, BALANCE.artifactDurationMs);
