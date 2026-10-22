@@ -48,6 +48,7 @@ interface TrayMove { index: number; name: string; label: string; hint: string; r
 interface TrayPin { id: string; name: string; cost: number; thumb: string; selected: boolean; affordable: boolean; moves: TrayMove[]; estimated: boolean }
 interface Popup { text: string; x: number; y: number; age: number; color: string }
 interface TerrainFx { kind: TerrainKind; x: number; y: number; age: number; life: number; reaction: boolean }
+interface ImpactFx { x: number; y: number; age: number; life: number; strength: number; ko: boolean; color: string }
 
 const STEP = 1 / 120;
 /** Borda do pin: azul para o seu lado (ou a sua equipe), vermelha para os adversários. */
@@ -119,6 +120,8 @@ let drag: { fromX: number; fromY: number; toX: number; toY: number } | null = nu
 let virtualAimAngle = -Math.PI / 2;
 let popups: Popup[] = [];
 let terrainFx: TerrainFx[] = [];
+let impactFx: ImpactFx[] = [];
+const pinImpactAt = new Map<string, number>();
 const reducedMotion = ref(false);
 const cameraFxScale = ref(1);
 const cameraFxRotate = ref(0);
@@ -564,6 +567,7 @@ function update(dt: number): void {
   if (!world) return;
   popups = popups.filter((p) => (p.age += dt) < 1.1);
   terrainFx = terrainFx.filter((fx) => (fx.age += dt) < fx.life);
+  impactFx = impactFx.filter((fx) => (fx.age += dt) < fx.life);
   if (phase.value === 'rolling') {
     acc += dt;
     const events: PinEvent[] = [];
@@ -614,8 +618,8 @@ function updateCameraFx(now: number): void {
     return;
   }
   const envelope = Math.sin(Math.PI * t);
-  cameraFxScale.value = 1 + envelope * 0.16;
-  cameraFxRotate.value = Math.sin(t * Math.PI * 2.2) * envelope * 3.2;
+  cameraFxScale.value = 1 + envelope * 0.22;
+  cameraFxRotate.value = Math.sin(t * Math.PI * 2.2) * envelope * 4.8;
 }
 
 const stageFxStyle = computed(() => ({
@@ -635,6 +639,15 @@ function handleEvents(events: PinEvent[]): void {
   let outTheirs = false;
   for (const e of events) {
     if (e.type === 'hit') {
+      const a = world.pins.find((pin) => pin.id === e.a);
+      const b = world.pins.find((pin) => pin.id === e.b);
+      if (a && b && e.strength >= 0.12 && setup.value.effects && !effectiveVisual.value.rotomMode) {
+        const color = e.edge === 'super' ? '#ffe36e' : e.edge === 'weak' ? '#aebbd4' : '#f4f7ff';
+        impactFx.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, age: 0, life: e.edge === 'super' ? 1.05 : 0.62, strength: e.strength, ko: false, color });
+        if (impactFx.length > 18) impactFx.splice(0, impactFx.length - 18);
+      }
+      if (a) pinImpactAt.set(a.id, performance.now());
+      if (b) pinImpactAt.set(b.id, performance.now());
       if (e.strength > loudest) {
         loudest = e.strength;
         loudestEdge = e.edge;
@@ -676,6 +689,10 @@ function handleEvents(events: PinEvent[]): void {
     } else if (e.type === 'out') {
       const p = world.pins.find((x) => x.id === e.id);
       if (p) popups.push({ text: p.side === 1 ? 'Fora!' : 'Caiu!', x: p.x * 0.85, y: p.y * 0.85, age: 0, color: p.side === 1 ? '#7dffa0' : '#ff8a8a' });
+      if (p && setup.value.effects && !effectiveVisual.value.rotomMode) {
+        impactFx.push({ x: p.x, y: p.y, age: 0, life: 1.2, strength: 1, ko: outcomeOf(world) !== 'playing', color: p.side === 1 ? '#b9ffdb' : '#ffb0a8' });
+        if (impactFx.length > 18) impactFx.splice(0, impactFx.length - 18);
+      }
     }
   }
   if (marksChanged) refreshFloorMarks();
@@ -1242,6 +1259,41 @@ function drawElementalBursts(ctx: CanvasRenderingContext2D, cx: number, k: numbe
   }
 }
 
+/** Colisão de brinquedo: anel, faíscas e fragmentos curtos sobre o chão 2D. */
+function drawImpactBursts(ctx: CanvasRenderingContext2D, cx: number, k: number): void {
+  if (!setup.value.effects || effectiveVisual.value.rotomMode) return;
+  for (const fx of impactFx) {
+    const t = Math.min(1, fx.age / fx.life);
+    const fade = 1 - t;
+    const x = cx + fx.x * k;
+    const y = cx + fx.y * k;
+    const radius = (12 + fx.strength * 30) * k * (0.75 + t * 0.7);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = fade * (fx.ko ? 1 : 0.78);
+    ctx.strokeStyle = fx.color;
+    ctx.lineWidth = Math.max(1.5 * dpr, (fx.ko ? 5 : 3.2) * dpr * fade);
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    const particles = fx.ko ? 12 : 7;
+    for (let i = 0; i < particles; i++) {
+      const angle = i * Math.PI * 2 / particles + fx.strength * 0.7;
+      const distance = radius * (0.6 + t * 0.95);
+      const px = x + Math.cos(angle) * distance;
+      const py = y + Math.sin(angle) * distance;
+      const size = Math.max(1.5 * dpr, (fx.ko ? 4 : 3) * dpr * fade);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(angle + t * (i % 2 ? 2 : -2));
+      ctx.fillStyle = fx.color;
+      ctx.fillRect(-size / 2, -size / 2, size, size * (i % 3 === 0 ? 1.8 : 1));
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+}
+
 function draw(now: number): void {
   const canvas = canvasEl.value;
   const ctx = canvas?.getContext('2d');
@@ -1292,6 +1344,7 @@ function draw(now: number): void {
     ctx.restore();
   }
   drawElementalBursts(ctx, cx, k);
+  drawImpactBursts(ctx, cx, k);
   drawTerrainMotion(ctx, cx, k, now);
 
   // Na repetição os pins vêm do quadro gravado; fora dela, do mundo.
@@ -1389,10 +1442,18 @@ function draw(now: number): void {
     const token = sprites.get(pin.id);
     if (token) {
       const size = pin.r * 2 * (k / dpr) * scale;
+      const depth = setup.value.effects && !effectiveVisual.value.rotomMode;
+      const speed = Math.min(1, Math.hypot(pin.vx, pin.vy) / 900);
+      const impactAge = pinImpactAt.get(pin.id);
+      const impactPulse = impactAge === undefined ? 0 : Math.max(0, 1 - (now - impactAge) / 230);
+      if (impactAge !== undefined && now - impactAge >= 230) pinImpactAt.delete(pin.id);
+      const pitch = depth ? 7 + speed * 7 : 0;
+      const yaw = depth ? Math.max(-8, Math.min(8, -pin.vx * 0.018)) : 0;
+      const squash = depth ? 1 - impactPulse * 0.11 - speed * 0.035 : 1;
       token.style.width = `${size}px`;
       token.style.height = `${size}px`;
       token.style.borderWidth = `${Math.max(2.5, size * 0.1)}px`;
-      token.style.transform = `translate3d(${x / dpr - size / 2}px, ${y / dpr - size / 2}px, 10px) rotate(${pin.fall * 220}deg)`;
+      token.style.transform = `translate3d(${x / dpr - size / 2}px, ${y / dpr - size / 2}px, 10px) rotateX(${pitch}deg) rotateY(${yaw}deg) rotateZ(${pin.fall * 220}deg) scaleY(${squash})`;
       token.style.opacity = String(1 - pin.fall * 0.6);
       token.style.zIndex = String(Math.round(pin.y + 1000));
     }
@@ -1739,6 +1800,11 @@ function setMarks(on: boolean): void {
         <canvas ref="canvasEl" role="img" aria-label="Arena vista de cima com os pins"></canvas>
         <div ref="spriteLayer" class="pin-sprites" aria-hidden="true"></div>
         <button v-if="replaying" type="button" class="pin-skip" @click.stop="stopReplay">Pular repetição</button>
+        <div v-if="phase === 'over' && result?.won && result.coins > 0 && replaying" class="pin-ko-reward" role="status">
+          <span aria-hidden="true">✦</span>
+          <strong>KO!</strong>
+          <span>+{{ result.coins }} moedas</span>
+        </div>
         <div v-if="phase === 'over' && result && !replaying" class="pin-over" :class="result.won ? 'won' : 'lost'" role="dialog" aria-label="Fim da partida">
           <span class="pn-over-mark" aria-hidden="true">{{ result.won ? '★' : result.reason === 'energia' ? '○' : result.reason === 'empate' ? '＝' : result.reason === 'saiu' ? '…' : '✕' }}</span>
           <strong>{{ result.won ? 'Você venceu!' : result.reason === 'energia' ? 'Acabaram as moedas' : result.reason === 'empate' ? 'Empate!' : result.reason === 'saiu' ? 'O amigo saiu' : 'Você perdeu' }}</strong>
