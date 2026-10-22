@@ -60,8 +60,8 @@ import { fitSurvivorViewport } from '../core/survivor-camera';
 import { survivorObjectives, survivorRerollLimit, SURVIVOR_OBJECTIVE_DETAILS, SURVIVOR_OBJECTIVE_IDS } from '../core/survivor-objectives';
 import { availableSurvivorPreparations, SURVIVOR_PREPARATIONS } from '../core/survivor-preparations';
 import type { SurvivorPreparationId } from '../core/survivor-preparations';
-import { chooseSurvivorSpecial, SPECIAL_GUARDIANS, SURVIVOR_SPECIALS } from '../core/survivor-specials';
-import type { SurvivorSpecialId } from '../core/survivor-specials';
+import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch, SPECIAL_GUARDIANS, SURVIVOR_SPECIAL_BRANCHES, SURVIVOR_SPECIALS } from '../core/survivor-specials';
+import type { SurvivorSpecialBranchId, SurvivorSpecialId } from '../core/survivor-specials';
 import { drawSurvivorSpecial } from '../village/survivor-special-art';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
@@ -329,6 +329,11 @@ const avatarName = ref('');
 const state = ref<SurvivorState | null>(null);
 const guardian = computed(() => state.value ? SPECIAL_GUARDIANS[state.value.special.type] : null);
 const chosenSpecial = computed(() => state.value?.special.selected ? SURVIVOR_SPECIALS[state.value.special.selected] : null);
+const specialModalOpen = computed(() => {
+  const phase = state.value?.special.phase;
+  return phase === 'arrival' || phase === 'choice' || phase === 'branch-arrival' || phase === 'branch-choice';
+});
+const specialBranchOptions = computed(() => state.value?.special.selected ? SURVIVOR_SPECIAL_BRANCHES[state.value.special.selected] : []);
 const specialBlocked = computed(() => !state.value || state.value.over || paused.value || !!pendingUpgrade.value || !!evolving.value || state.value.special.phase !== 'ready');
 const guardianSprite = ref<string | null>(null);
 let specialQueued = false;
@@ -342,6 +347,11 @@ function chooseSpecial(id: SurvivorSpecialId): void {
   heldKeys.clear(); joyUp(); specialQueued = false;
   playSound('success');
   say(`${SURVIVOR_SPECIALS[id].name} pronto! Toque no botão à direita ou pressione E.`, 4500);
+}
+function chooseSpecialBranch(id: SurvivorSpecialBranchId): void {
+  if (!state.value || !chooseSurvivorSpecialBranch(state.value, id)) return;
+  heldKeys.clear(); joyUp(); specialQueued = false;
+  say('Ramo escolhido. O novo efeito está pronto.', 2200);
 }
 const paused = ref(false);
 const leaveConfirm = ref(false);
@@ -465,7 +475,7 @@ function onGamepadDirection(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean; direction?: string; pressed?: boolean }>;
   const direction = custom.detail.direction;
   if (custom.detail.handled || !direction || custom.detail.pressed === undefined) return;
-  if (!ready.value || paused.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || state.value?.special.phase === 'arrival' || state.value?.special.phase === 'choice') return;
+  if (!ready.value || paused.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
   if (custom.detail.pressed) heldKeys.add(direction);
   else heldKeys.delete(direction);
   custom.detail.handled = true;
@@ -475,12 +485,12 @@ function onGamepadMenu(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
   if (custom.detail.handled || !ready.value || !state.value || paused.value || summary.value || pendingUpgrade.value || evolving.value) return;
   custom.detail.handled = true;
-  if (state.value.special.phase === 'arrival' || state.value.special.phase === 'choice') return;
+  if (specialModalOpen.value) return;
   togglePause();
 }
 
 function joyDown(e: PointerEvent): void {
-  if (joystick.active || paused.value || !ready.value || summary.value || pickOptions.value || state.value?.special.phase === 'arrival' || state.value?.special.phase === 'choice') return;
+  if (joystick.active || paused.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value) return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
   if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
   unlockSound();
@@ -1360,7 +1370,7 @@ onBeforeUnmount(() => {
              <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
              <span class="survivor-action-dock" aria-label="Ações da Torre">
-               <button v-if="!summary && !pendingUpgrade && !evolving && state.special.phase !== 'arrival' && state.special.phase !== 'choice'" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
+               <button v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶ Retomar' : 'Ⅱ Pausar' }}</button>
                <button type="button" class="chip" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">{{ hudExpanded ? 'Ocultar detalhes' : 'Detalhes e opções' }}</button>
                <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
                <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
@@ -1494,7 +1504,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && state.special.phase !== 'arrival' && state.special.phase !== 'choice'"
+        <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
           type="button" class="survivor-special-button" :class="{ 'is-ready': chosenSpecial && !state.special.cooldownMs }"
           :style="{ '--special-color': state.player.move.color, '--charge': chosenSpecial ? `${(1 - state.special.cooldownMs / chosenSpecial.cooldownMs) * 100}%` : '0%' }"
           :disabled="specialBlocked || !chosenSpecial || state.special.cooldownMs > 0"
@@ -1519,6 +1529,25 @@ onBeforeUnmount(() => {
               <button v-for="(definition, id) in SURVIVOR_SPECIALS" :key="id" type="button" class="survivor-upgrade-btn" @click="chooseSpecial(id)">
                 <span class="survivor-upgrade-icon" aria-hidden="true">{{ definition.icon }}</span>
                 <span class="survivor-upgrade-text"><strong>{{ definition.name }}</strong><small>{{ definition.description }}</small></span>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <div v-if="ready && state && guardian && state.special.selected && !leaveConfirm && (state.special.phase === 'branch-arrival' || state.special.phase === 'branch-choice')" class="survivor-overlay survivor-guardian" :class="{ 'reduced-motion': !detailedSpecialEffects }" role="dialog" aria-modal="true" aria-label="Ramificação do especial" :style="{ '--special-color': state.player.move.color }" @pointerdown.stop>
+          <div class="card survivor-upgrades">
+            <div class="guardian-gift" :class="{ delivered: state.special.phase === 'branch-choice' }" aria-hidden="true">
+              <img v-if="guardianSprite" :src="guardianSprite" alt="" />
+              <span v-else class="guardian-missing">{{ guardian.name }}<small>Sprite indisponível</small></span>
+              <span class="guardian-orb">{{ chosenSpecial?.icon }}</span>
+            </div>
+            <p class="guardian-title">{{ guardian.name }} · segundo presságio</p>
+            <h2>{{ state.special.phase === 'branch-arrival' ? 'O especial encontrou dois novos caminhos…' : 'Escolha uma das duas ramificações' }}</h2>
+            <p role="status">{{ state.special.phase === 'branch-arrival' ? 'Aos 7 minutos, o Especial escolhido aos 3 minutos oferece duas opções próprias.' : 'Escolha uma das duas opções do seu Especial. A batalha está pausada.' }}</p>
+            <template v-if="state.special.phase === 'branch-choice'">
+              <button v-for="option in specialBranchOptions" :key="option.id" type="button" class="survivor-upgrade-btn" @click="chooseSpecialBranch(option.id)">
+                <span class="survivor-upgrade-icon" aria-hidden="true">{{ option.icon }}</span>
+                <span class="survivor-upgrade-text"><strong>{{ option.name }}</strong><small>{{ option.description }}</small></span>
               </button>
             </template>
           </div>

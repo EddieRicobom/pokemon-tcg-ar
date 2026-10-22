@@ -5,7 +5,7 @@ import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivo
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
 import { survivorPreparation } from './survivor-preparations';
 import type { SurvivorPreparationId } from './survivor-preparations';
-import { advanceSpecialEncounter, createSurvivorSpecial, specialProtects, stepSurvivorSpecial } from './survivor-specials';
+import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, specialProtects, stepSurvivorSpecial } from './survivor-specials';
 import type { SurvivorSpecialState } from './survivor-specials';
 import type { PokemonType } from './pokemon-data';
 
@@ -1648,7 +1648,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     e.x += (dx / d) * speed * dt;
     e.y += (dy / d) * speed * dt;
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
-    if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0 && !specialProtects(state)) {
+    if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
+      if (specialProtects(state)) {
+        breakSurvivorShield(state);
+        continue;
+      }
         const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? e.damage * 0.88 : e.damage) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
       p.hp = Math.max(0, p.hp - incoming);
       p.invulnMs = BALANCE.hitInvulnerabilityMs;

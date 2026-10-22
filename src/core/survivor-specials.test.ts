@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ARENA_H, ARENA_W, createSurvivorState, PLAYER_RADIUS, stepSurvivor } from './survivor';
 import type { SurvivorEnemy } from './survivor';
-import { chooseSurvivorSpecial, SPECIAL_ARRIVAL_MS, SPECIAL_GUARDIANS, SPECIAL_UNLOCK_MS, SURVIVOR_SPECIALS } from './survivor-specials';
+import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch, SPECIAL_ARRIVAL_MS, SPECIAL_BRANCH_ARRIVAL_MS, SPECIAL_BRANCH_UNLOCK_MS, SPECIAL_GUARDIANS, SPECIAL_UNLOCK_MS, SURVIVOR_SPECIALS } from './survivor-specials';
 import type { SurvivorSpecialId } from './survivor-specials';
 import { typesOfDex } from './species-filter';
 
@@ -121,5 +121,80 @@ describe('orbe e especiais da Torre', () => {
     stepSurvivor(state, { ...idle, special: true }, 1000);
     expect(state.special.cooldownMs).toBe(7000);
     expect(chooseSurvivorSpecial(state, 'shield')).toBe(false);
+  });
+
+  it('abre a cutscene dos 7 minutos e deixa escolher exatamente o ramo do especial', () => {
+    const state = armed('dash');
+    state.elapsedMs = SPECIAL_BRANCH_UNLOCK_MS - 1;
+    stepSurvivor(state, idle, 1);
+    expect(state.special.phase).toBe('branch-arrival');
+    stepSurvivor(state, idle, SPECIAL_BRANCH_ARRIVAL_MS);
+    expect(state.special.phase).toBe('branch-choice');
+    expect(chooseSurvivorSpecialBranch(state, 'dash-clone')).toBe(true);
+    expect(state.special.branch).toBe('dash-clone');
+    expect(state.special.phase).toBe('ready');
+    expect(chooseSurvivorSpecialBranch(state, 'dash-triple')).toBe(false);
+  });
+
+  it('ramo do dash cria clone evasivo ou permite três cargas antes da recarga longa', () => {
+    const clone = armed('dash');
+    clone.special.phase = 'branch-choice';
+    expect(chooseSurvivorSpecialBranch(clone, 'dash-clone')).toBe(true);
+    clone.enemies = [enemy(1, clone.player.x + 40, clone.player.y)];
+    stepSurvivor(clone, { ...idle, special: true }, 1);
+    expect(clone.special.clone).not.toBeNull();
+    const cloneX = clone.special.clone!.x;
+    stepSurvivor(clone, idle, 1000);
+    expect(clone.special.clone!.x).toBeLessThan(cloneX);
+
+    const triple = armed('dash');
+    triple.special.phase = 'branch-choice';
+    expect(chooseSurvivorSpecialBranch(triple, 'dash-triple')).toBe(true);
+    for (let i = 0; i < 3; i += 1) stepSurvivor(triple, { dx: 1, dy: 0, special: true }, 1);
+    expect(triple.special.dashCharges).toBe(0);
+    expect(triple.special.cooldownMs).toBe(10_000);
+    stepSurvivor(triple, idle, 10_000);
+    stepSurvivor(triple, { dx: 1, dy: 0, special: true }, 1);
+    expect(triple.special.dashCharges).toBe(2);
+  });
+
+  it('ramo do escudo fica permanente ou cura 25% quando quebra por contato', () => {
+    const permanent = armed('shield');
+    permanent.special.phase = 'branch-choice';
+    expect(chooseSurvivorSpecialBranch(permanent, 'shield-permanent')).toBe(true);
+    stepSurvivor(permanent, { ...idle, special: true }, 1);
+    expect(permanent.special.activeMs).toBe(Number.POSITIVE_INFINITY);
+    permanent.enemies = [enemy(1, permanent.player.x, permanent.player.y)];
+    stepSurvivor(permanent, idle, 1);
+    expect(permanent.special.activeMs).toBe(0);
+    expect(permanent.player.hp).toBe(100);
+
+    const healing = armed('shield');
+    healing.special.phase = 'branch-choice';
+    expect(chooseSurvivorSpecialBranch(healing, 'shield-heal')).toBe(true);
+    healing.player.hp = 40;
+    stepSurvivor(healing, { ...idle, special: true }, 1);
+    healing.enemies = [enemy(1, healing.player.x, healing.player.y)];
+    stepSurvivor(healing, idle, 1);
+    expect(healing.special.activeMs).toBe(0);
+    expect(healing.player.hp).toBe(65);
+  });
+
+  it('ramo do teleporte alcança a borda e elimina sete, ou puxa todos os orbes', () => {
+    const far = armed('teleport');
+    far.special.phase = 'branch-choice';
+    expect(chooseSurvivorSpecialBranch(far, 'teleport-infinite')).toBe(true);
+    far.enemies = Array.from({ length: 8 }, (_, i) => enemy(i + 1, far.player.x + 20 + i, far.player.y));
+    stepSurvivor(far, { dx: 1, dy: 0, special: true }, 1);
+    expect(far.player.x).toBe(ARENA_W - PLAYER_RADIUS);
+    expect(far.kills).toBe(7);
+
+    const vacuum = armed('teleport');
+    vacuum.special.phase = 'branch-choice';
+    expect(chooseSurvivorSpecialBranch(vacuum, 'teleport-vacuum')).toBe(true);
+    vacuum.orbs.push({ id: 1, x: 20, y: 20, value: 10 }, { id: 2, x: ARENA_W - 20, y: ARENA_H - 20, value: 12 });
+    stepSurvivor(vacuum, { dx: 1, dy: 0, special: true }, 1);
+    expect(vacuum.orbs).toHaveLength(0);
+    expect(vacuum.player.xp).toBeGreaterThan(0);
   });
 });
