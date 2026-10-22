@@ -1253,6 +1253,18 @@ export function survivorDirectDamageMultiplier(distance: number): number {
   return 1 - (1 - BALANCE.directDamageMinMultiplier) * normalized;
 }
 
+/**
+ * Opacidade visual do projétil do jogador.
+ *
+ * Usa a mesma curva do dano direto: no alcance padrão o golpe permanece
+ * totalmente legível; depois disso a transparência cresce gradualmente até o
+ * limite mínimo do dano. A curva é pura para manter gameplay e apresentação
+ * sincronizados e não afeta projéteis hostis.
+ */
+export function survivorProjectileOpacity(distance: number): number {
+  return survivorDirectDamageMultiplier(distance);
+}
+
 export function survivorRapidAttackDamageMultiplier(player: Pick<SurvivorPlayer, 'attackCooldownMs'>): number {
   const attacksPerSecond = 1000 / Math.max(1, player.attackCooldownMs);
   if (attacksPerSecond > 3) return 0.25;

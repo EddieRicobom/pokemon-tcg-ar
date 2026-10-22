@@ -23,6 +23,7 @@ import {
   MAGNET_PICKUP_RADIUS_CAP,
   normalizeSurvivorXp,
   survivorDirectDamageMultiplier,
+  survivorProjectileOpacity,
   survivorRapidAttackDamageMultiplier,
   xpForLevel,
 } from './survivor';
@@ -461,6 +462,10 @@ describe('golpes por tipo', () => {
     expect(survivorDirectDamageMultiplier(0)).toBe(1);
     expect(survivorDirectDamageMultiplier(BALANCE.defaultAttackDistance)).toBe(1);
     expect(survivorDirectDamageMultiplier(BALANCE.defaultAttackDistance * 2)).toBe(BALANCE.directDamageMinMultiplier);
+    expect(survivorProjectileOpacity(0)).toBe(1);
+    expect(survivorProjectileOpacity(BALANCE.defaultAttackDistance)).toBe(1);
+    expect(survivorProjectileOpacity(BALANCE.defaultAttackDistance * 1.5)).toBeLessThan(1);
+    expect(survivorProjectileOpacity(BALANCE.defaultAttackDistance * 2)).toBe(BALANCE.directDamageMinMultiplier);
     expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 600 })).toBe(1);
     expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 400 })).toBe(0.5);
     expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 300 })).toBe(0.25);
