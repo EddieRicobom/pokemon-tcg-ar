@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { PvpPeer } from '../pvp/peer';
 import type { PeerState } from '../pvp/peer';
 
@@ -8,6 +8,12 @@ import type { PeerState } from '../pvp/peer';
  * ligação abre sozinha. Quando abre, o componente entrega a ligação (`connected`) e deixa de ser dono dela.
  */
 const emit = defineEmits<{ connected: [peer: PvpPeer, role: 'host' | 'guest'] }>();
+const props = withDefaults(defineProps<{ purpose?: 'game' | 'backup' }>(), { purpose: 'game' });
+const backupPurpose = computed(() => props.purpose === 'backup');
+const lobbyTitle = computed(() => backupPurpose.value ? 'Transferir backup com um amigo' : 'Jogar contra um amigo');
+const lobbyNote = computed(() => backupPurpose.value
+  ? 'Crie uma sala para enviar uma cópia completa dos seus dados diretamente para outro aparelho. A conexão não usa servidor do app.'
+  : '{{ lobbyNote }}');
 
 type Step = 'choose' | 'host' | 'guest';
 const step = ref<Step>('choose');
@@ -147,9 +153,9 @@ onBeforeUnmount(dropPeer);
 </script>
 
 <template>
-  <section class="pn-card pn-lobby" aria-label="Jogar contra um amigo">
+  <section class="pn-card pn-lobby" :aria-label="lobbyTitle">
     <template v-if="step === 'choose'">
-      <h3>Jogar contra um amigo</h3>
+      <h3>{{ lobbyTitle }}</h3>
       <p class="pn-lobby-note">
         Cada um joga no seu celular. Vocês trocam dois códigos (por WhatsApp, por exemplo) e a partida acontece direto entre os aparelhos, sem servidor do app.
       </p>
@@ -164,7 +170,7 @@ onBeforeUnmount(dropPeer);
     </template>
 
     <template v-else-if="step === 'host'">
-      <h3>Criar sala</h3>
+      <h3>{{ backupPurpose ? 'Criar sala de transferência' : 'Criar sala' }}</h3>
       <p v-if="busy && !myCode" class="message" role="status">{{ busy }}</p>
       <template v-if="myCode">
         <ol class="pn-lobby-steps">
@@ -186,7 +192,7 @@ onBeforeUnmount(dropPeer);
     </template>
 
     <template v-else>
-      <h3>Entrar na sala</h3>
+      <h3>{{ backupPurpose ? 'Entrar na sala de transferência' : 'Entrar na sala' }}</h3>
       <template v-if="!myCode">
         <label class="pn-code-label" for="pvp-paste-offer">Código de convite do anfitrião</label>
         <textarea id="pvp-paste-offer" v-model="pasted" class="pn-code" rows="3" placeholder="Cole aqui o código que seu amigo mandou"></textarea>
