@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import CloudBackup from '../components/CloudBackup.vue';
+import BackupTransferPanel from '../components/BackupTransferPanel.vue';
 import { computed, ref, shallowRef } from 'vue';
 import { applyFullBackup, BACKUP_FILE_MIME, backupFileName, buildFullBackup, parseBackupBytes, serializeBackupZip } from '../app/backup';
 import type { BackupProgress } from '../app/backup';
@@ -318,6 +319,7 @@ function cancelImport(): void {
       </div>
       <p v-if="backupStatus" class="note" :class="backupStatus.kind">{{ backupStatus.text }}</p>
       <CloudBackup @restore="pendingImport = $event" />
+      <BackupTransferPanel />
       <div v-if="pendingImport" class="card backup-confirm">
         <p><strong>Importar este backup vai substituir os dados, as cartas guardadas e os ajustes deste aparelho.</strong></p>
         <p class="note">Backup de {{ backupDateLabel(pendingImport.exportedAt) }}.</p>
