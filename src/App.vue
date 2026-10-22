@@ -10,6 +10,7 @@ import { useInstallPrompt } from './composables/useInstallPrompt';
 import { detectCapabilities, isIosDevice } from './core/capabilities';
 import { lazyView } from './app/lazy-view';
 import ScanView from './views/ScanView.vue';
+import FirstRunOnboarding from './components/FirstRunOnboarding.vue';
 
 const CarregarView = lazyView(() => import('./views/CarregarView.vue'));
 const CaixaView = lazyView(() => import('./views/CaixaView.vue'));
@@ -23,6 +24,8 @@ const VariasView = lazyView(() => import('./views/VariasView.vue'));
 const capabilities = detectCapabilities();
 const { canInstall, installed, installError, install } = useInstallPrompt();
 const route = useRoute();
+const firstRun = ref(false);
+try { firstRun.value = localStorage.getItem('tcg-ar-onboarding-v1') !== '1'; } catch { firstRun.value = true; }
 
 const showIosHint =
   isIosDevice(navigator.userAgent, navigator.maxTouchPoints) && !capabilities.standalone;
@@ -128,6 +131,7 @@ watch(
     <RewardToasts />
     <PokemonSpeech />
     <UniversalControls />
+    <FirstRunOnboarding v-if="firstRun" @done="firstRun = false" />
 
     <footer class="app-footer">
       <a :href="routeHref('diagnostico')">Diagnóstico</a> ·
