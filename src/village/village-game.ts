@@ -1,4 +1,4 @@
-import { drawWaterFx, drawFountainFx, drawSunRays } from './ambient-art';
+import { drawWaterFx, drawFountainFx, drawSunRays, drawTowerDataFx } from './ambient-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
 import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
@@ -1640,6 +1640,7 @@ export class VillageGame {
         list.push({
           y: buildingGroundY(b),
           draw: () => {
+            if (b.kind === 'torre' && ambientFx) drawTowerDataFx(ctx, mid, spriteBase, scale, now);
             shadow(mid, spriteBase - 2 * scale, wpx / 2 - 2 * scale, 3.5 * scale, 0.2);
             const at = stand(civicArt, mid, spriteBase, wpx);
             if (night) lightUp(civicId, civicId, at);
@@ -1653,6 +1654,7 @@ export class VillageGame {
       list.push({
         y: buildingGroundY(b),
         draw: () => {
+          if (b.kind === 'torre' && ambientFx) drawTowerDataFx(ctx, mid, spriteBase, scale, now);
           shadow(mid, spriteBase - 2 * scale, (wpx / 2 - 2 * scale), 3.5 * scale, 0.2);
           ctx.drawImage(img, left, spriteBase - 48 * scale, wpx, 3 * T);
           this.drawTag(mid, spriteBase - 50 * scale + Math.sin(now / 350) * scale, emoji);
