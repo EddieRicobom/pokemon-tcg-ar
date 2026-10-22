@@ -276,6 +276,8 @@ export class VillageGame {
   private villagerZones = new Map<string, { x: number; y: number }>();
   /** Quem está dormindo em casa agora: some do mapa até acordar. */
   private readonly asleep = new Set<string>();
+  /** Tipo Dark: moradores noturnos dormem pela manhã e ficam ativos à noite. */
+  nocturnal: (id: string) => boolean = () => false;
   /** Quem foi acordado batendo na porta fica de pé até este instante (relógio de `Date.now()`), mesmo em hora de dormir. */
   private readonly stayUp = new Map<string, number>();
   /** Há quanto tempo (s) quem te segue está longe ou sem conseguir andar; passou do limite, ele aparece ao seu lado. */
@@ -571,7 +573,7 @@ export class VillageGame {
       }
       const up = (this.stayUp.get(id) ?? 0) > Date.now();
       if (!up) this.stayUp.delete(id);
-      const want = isAsleep(id, hour) && !up && this.state.follower !== id && !this.sceneBusy(id);
+      const want = isAsleep(id, hour, this.nocturnal(id)) && !up && this.state.follower !== id && !this.sceneBusy(id);
       if (want && !this.asleep.has(id)) {
         this.particles.push({ kind: 'poof', x: w.x + 0.5, y: w.y + 0.6, vx: 0, vy: 0, born: now, life: 500 });
         this.asleep.add(id);

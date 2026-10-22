@@ -21,7 +21,7 @@ describe('postos de trabalho e trajetos reais', () => {
     expect(tileAt(map, task.stand.x, task.stand.y)).toBe('pier');
     Object.assign(worker, task.stand);
     session.tick(state, map, [worker], now + 100, () => 0, free);
-    session.tick(state, map, [worker], now + 10_100, () => 0, free);
+    session.tick(state, map, [worker], now + FARM_RULES.workMs + 100, () => 0, free);
     expect(state.fishing.casts).toBe(1);
     expect(state.farm.history[0]?.message).toContain('Nada mordeu');
     expect(state.farm.history[0]?.message).not.toContain('Os itens foram');
@@ -41,6 +41,14 @@ describe('postos de trabalho e trajetos reais', () => {
     session.tick(state, map, workers, now, rng, free);
     expect(session.tasks.map((task) => task.kind)).toEqual(['mine', 'lumber', 'fish']);
     expect(state.farm.seeds['sem-tomate']).toBe(20);
+  });
+
+  it('faz moradores sem afinidade por recursos rodarem entre os postos', () => {
+    const map = generateVillage(9), state = emptyVillage(9, map.spawn), session = new FarmSession();
+    state.farm.seeds['sem-tomate'] = 20;
+    const workers: FarmWorker[] = ['a', 'b', 'c'].map((id) => ({ id, types: ['normal'], ...map.spawn, available: true }));
+    session.tick(state, map, workers, now, rng, free);
+    expect(session.tasks.map((task) => task.kind)).toEqual(['plant', 'plant', 'mine']);
   });
 
   it('um morador sem tarefa alcançável não impede a escolha do próximo', () => {
@@ -103,7 +111,7 @@ describe('postos de trabalho e trajetos reais', () => {
     Object.assign(worker, task.stand);
     session.tick(state, map, [worker], now + 100, rng, free);
     state.inventory.pedra = 999;
-    session.tick(state, map, [worker], now + 10_100, rng, free);
+    session.tick(state, map, [worker], now + FARM_RULES.workMs + 100, rng, free);
     expect(state.harvested[`${task.x},${task.y}`]).toBeUndefined();
     expect(state.farm.history).toHaveLength(0);
     state.inventory.pedra = 0;

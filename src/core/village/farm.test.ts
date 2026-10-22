@@ -20,7 +20,7 @@ function setup() {
 describe('caixa de sementes e autonomia da fazenda', () => {
   it('resume a tarefa sem ultrapassar 100% nem mostrar trabalho antes da chegada', () => {
     expect(farmTaskProgress({ workingSince: null }, 10_000)).toEqual({ phase: 'caminho', percent: 0 });
-    expect(farmTaskProgress({ workingSince: 10_000 }, 14_999)).toEqual({ phase: 'trabalho', percent: 50 });
+    expect(farmTaskProgress({ workingSince: 10_000 }, 10_000 + FARM_RULES.workMs / 2 - 1)).toEqual({ phase: 'trabalho', percent: 50 });
     expect(farmTaskProgress({ workingSince: 10_000 }, 99_999)).toEqual({ phase: 'trabalho', percent: 100 });
   });
 
@@ -60,10 +60,11 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     expect(state.crops).toHaveLength(0);
     Object.assign(worker, task.stand);
     session.tick(state, map, [worker], 21_000, rng, free);
-    session.tick(state, map, [worker], 31_000, rng, free);
-    expect(state.crops).toEqual([{ x: task.x, y: task.y, seed: task.seed, stage: 0, wateredAt: 31_000 }]);
+    const finishedAt = 21_000 + FARM_RULES.workMs + 100;
+    session.tick(state, map, [worker], finishedAt, rng, free);
+    expect(state.crops).toEqual([{ x: task.x, y: task.y, seed: task.seed, stage: 0, wateredAt: finishedAt }]);
     expect(state.farm.seeds['sem-tomate']).toBe(4);
-    session.tick(state, map, [worker], 31_000, rng, free);
+    session.tick(state, map, [worker], finishedAt, rng, free);
     expect(state.farm.seeds['sem-tomate']).toBe(4);
     expect(state.farm.history).toHaveLength(1);
     expect(state.community.residents[worker.id]?.experience.agricultura).toBe(1);
@@ -79,7 +80,7 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     expect(new Set(session.tasks.map((task) => `${task.x},${task.y}`)).size).toBe(session.tasks.length);
     for (const task of session.tasks) Object.assign(workers.find((entry) => entry.id === task.residentId)!, task.stand);
     session.tick(state, map, workers, 2000, rng, free);
-    session.tick(state, map, workers, 12_000, rng, free);
+    session.tick(state, map, workers, 2_000 + FARM_RULES.workMs + 100, rng, free);
     expect(state.crops).toHaveLength(2);
     expect(state.farm.seeds['sem-tomate'] ?? 0).toBe(0);
   });
@@ -90,11 +91,11 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     Object.assign(worker, session.tasks[0]!.stand);
     transferFarmSeeds(state, 'sem-tomate', 999, false);
     session.tick(state, map, [worker], 2000, rng, free);
-    session.tick(state, map, [worker], 12_000, rng, free);
+    session.tick(state, map, [worker], 2_000 + FARM_RULES.workMs + 100, rng, free);
     expect(state.crops).toHaveLength(0);
     expect(state.inventory['sem-tomate']).toBe(5);
     transferFarmSeeds(state, 'sem-tomate', 5, true);
-    session.tick(state, map, [worker], 31_000, rng, free);
+    session.tick(state, map, [worker], 2_000 + FARM_RULES.workMs + 100, rng, free);
     session.cancel();
     expect(session.tasks).toHaveLength(0);
     expect(state.farm.seeds['sem-tomate']).toBe(5);
@@ -126,19 +127,20 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     expect(session.tasks[0]?.kind).toBe('water');
     Object.assign(worker, session.tasks[0]!.stand);
     session.tick(state, map, [worker], 2000, rng, free);
-    session.tick(state, map, [worker], 12_000, rng, free);
-    expect(state.crops[0]?.wateredAt).toBe(12_000);
-    const grownAt = 12_000 + growth.minutes * 60_000;
+    const wateredAt = 2_000 + FARM_RULES.workMs + 100;
+    session.tick(state, map, [worker], wateredAt, rng, free);
+    expect(state.crops[0]?.wateredAt).toBe(wateredAt);
+    const grownAt = wateredAt + growth.minutes * 60_000;
     tickCrops(state, grownAt);
     session.tick(state, map, [worker], grownAt, rng, free);
     expect(session.tasks[0]?.kind).toBe('harvest');
     Object.assign(worker, session.tasks[0]!.stand);
     session.tick(state, map, [worker], grownAt + 1000, rng, free);
-    session.tick(state, map, [worker], grownAt + 11_000, rng, free);
+    session.tick(state, map, [worker], grownAt + 1000 + FARM_RULES.workMs + 100, rng, free);
     expect(state.crops).toHaveLength(0);
     expect(state.inventory.tomate).toBeGreaterThanOrEqual(growth.yield[0]);
     const inventory = { ...state.inventory };
-    session.tick(state, map, [worker], grownAt + 11_000, rng, free);
+    session.tick(state, map, [worker], grownAt + 1000 + FARM_RULES.workMs + 100, rng, free);
     expect(state.inventory).toEqual(inventory);
   });
 
@@ -200,7 +202,7 @@ describe('caixa de sementes e autonomia da fazenda', () => {
       expect(task.x).toBeLessThan(job.area.x + job.area.w);
       Object.assign(worker, task.stand);
       session.tick(state, map, [worker], now + 100, rng, free);
-      session.tick(state, map, [worker], now + 10_100, rng, free);
+      session.tick(state, map, [worker], now + FARM_RULES.workMs + 100, rng, free);
       expect(state.inventory[job.item as keyof typeof state.inventory]).toBeGreaterThan(0);
       expect(state.farm.history.at(-1)?.message).toContain('Os itens foram para sua mochila');
       expect(state.community.residents[worker.id]?.experience[job.kind === 'mine' ? 'mineracao' : 'madeireira']).toBe(1);
@@ -218,7 +220,7 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     expect(task.kind).toBe('fish');
     Object.assign(worker, task.stand);
     session.tick(state, map, [worker], now + 100, () => 0.4, free);
-    session.tick(state, map, [worker], now + 10_100, () => 0.4, free);
+    session.tick(state, map, [worker], now + FARM_RULES.workMs + 100, () => 0.4, free);
     expect(state.fishing.casts).toBe(10);
     expect(state.inventory.peixe).toBe(1);
     expect(session.tasks).toHaveLength(0);
@@ -229,7 +231,7 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     state.farm.seeds['sem-tomate'] = 1;
     const walker = makeWalker(worker.id, map.spawn.x, map.spawn.y, 3);
     const occupied = (x: number, y: number) => state.crops.some((crop) => crop.x === x && crop.y === y);
-    for (let now = 1000; now < 100_000 && !state.farm.history.length; now += 100) {
+    for (let now = 1000; now < 200_000 && !state.farm.history.length; now += 100) {
       Object.assign(worker, { x: walker.x, y: walker.y });
       if (now % 1000 === 0) session.tick(state, map, [worker], now, rng, occupied);
       const task = session.tasks[0];
