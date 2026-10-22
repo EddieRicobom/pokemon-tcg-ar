@@ -19,6 +19,8 @@ import { emptyCommunity, normalizeCommunity } from './community';
 import type { CommunityState } from './community';
 import { emptyFarm, normalizeFarm } from './farm';
 import type { FarmState } from './farm';
+import { emptyMail, normalizeMail } from './mail';
+import type { MailState } from './mail';
 
 /**
  * A vida na Vila: inventário, coleta (madeira, pedra, frutas, flores, conchas), a casa em níveis, móveis que você
@@ -143,6 +145,10 @@ export interface VillageState {
   expeditions: Expedition[];
   /** Economia comunitária diária, com histórico limitado e defaults retrocompatíveis. */
   community: CommunityState;
+  /** Caixa de entrada e arquivo de cartas ligadas aos momentos reais da Vila. */
+  mail: MailState;
+  /** Morador escolhido para o turno do Correio; saves antigos começam sem escolha. */
+  mailCarrierId: string | null;
 }
 
 export interface Crop {
@@ -160,7 +166,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), homeInteriors: {}, friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
-    digital: emptyDigital(), fountainWishes: 0, hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), ...emptyWorldProgress(), homeStyles: {},
+    digital: emptyDigital(), fountainWishes: 0, hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), mail: emptyMail(), mailCarrierId: null, ...emptyWorldProgress(), homeStyles: {},
   };
 }
 
@@ -234,6 +240,8 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     recap: { day: typeof r.recap?.day === 'string' ? r.recap.day : '', at: typeof r.recap?.at === 'number' && Number.isFinite(r.recap.at) && r.recap.at >= 0 ? r.recap.at : 0 },
     ...normalizeWorldProgress(r),
     community: normalizeCommunity(r.community),
+    mail: normalizeMail(r.mail),
+    mailCarrierId: typeof r.mailCarrierId === 'string' ? r.mailCarrierId.slice(0, 80) : null,
   };
 }
 

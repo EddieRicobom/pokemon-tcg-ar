@@ -101,3 +101,10 @@ Crie modelos em grupos temáticos, por exemplo `INTRIGUE_MOMENTS`, com o tipo `T
 
 Esta leva introduz `Boato na praça`, `Quem fez o trabalho?`, `A colheita sem dono`, `Promessa atrasada`, `A ferramenta sumida`, `Depois do turno`, `Mérito do turno`, `Pedido de folga`, `A porta aberta`, `O recado trocado` e `Três bancos no lago`. A leva cinematográfica acrescenta `Abrigo na chuva`, `A carta trocada`, `O tribunal da fruta`, `Dupla improvável`, `O último banco`, `A coroa de papel`, `Fuga do piquenique`, `Um pequeno heroísmo`, `Final do expediente` e `O segredo revelado`. Eles deixam memórias, mudam vínculos e, nas saídas construtivas, agendam visita, ajuda ou convite. Assim o jogo passa a ter conflito, humor, reparação e continuidade na mesma camada social.
 
+
+
+## Correio como continuação do momento
+
+Momentos concluídos entre dois ou mais moradores podem gerar uma carta persistente em `state.mail`. A carta guarda o dia, remetente, envolvidos, título do momento e um resumo derivado do resultado do Diário; ela não cria acontecimentos fora do registro social. O carteiro é um morador escolhido de forma estável e aparece com `📬`, conversa com o jogador e percorre as portas dos envolvidos antes de entregar o envelope.
+
+Na caixa de entrada, o jogador pode responder com carinho, prometer ajuda ou arquivar. Responder aumenta a amizade do remetente; prometer ajuda cria um `SocialPlan` real de tipo `ajudar`, que ganha prioridade em um próximo momento compatível. Ao concluir a resposta, a carta sai da entrada e fica no arquivo. Saves anteriores recebem uma caixa vazia e escolhem o primeiro morador disponível como carteiro, sem perder nenhuma progressão existente.

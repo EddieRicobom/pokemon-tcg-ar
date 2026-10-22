@@ -291,12 +291,16 @@ export class VillageGame {
   /** Atividade concluída neste ciclo: caminhada curta até o local e identificação na cena. */
   private readonly communityWork = new Map<string, { activity: CommunityActivityRecord['activity']; target: { x: number; y: number }; until: number }>();
   private farmTasks = new Map<string, FarmTask>();
+  /** O carteiro percorre as portas dos envolvidos numa carta, em ordem, para que a entrega seja visível. */
+  private readonly mailRoutes = new Map<string, { targets: string[]; index: number; pauseUntil: number }>();
+  private mailCarrierId: string | null = null;
 
   farmWorkers(): Omit<FarmWorker, 'types'>[] {
     const now = performance.now();
     return [...this.villagers].map(([id, walker]) => ({
       id, x: walker.x, y: walker.y,
       available: !this.asleep.has(id) && this.waiting !== id && this.state.follower !== id && !this.sceneBusy(id)
+        && id !== this.mailCarrierId && !this.mailRoutes.has(id)
         && !(now < this.calledUntil && this.called.has(id)) && !(now < (this.communityWork.get(id)?.until ?? 0)),
     }));
   }
@@ -490,6 +494,22 @@ export class VillageGame {
     this.townLevel = level;
     this.homes = homes;
     this.nextSleepCheck = 0;
+  }
+
+  /** Define quem tem a profissão de carteiro e mantém o símbolo sobre a cabeça. */
+  setMailCarrier(id: string | null): void {
+    this.mailCarrierId = id && this.villagers.has(id) ? id : null;
+  }
+
+  /** Faz o carteiro caminhar até as casas reais dos envolvidos numa carta. */
+  deliverMail(targetIds: readonly string[]): boolean {
+    const carrier = this.mailCarrierId;
+    if (!carrier || !this.villagers.has(carrier)) return false;
+    const targets = [...new Set(targetIds)].filter((id) => id !== carrier && this.villagers.has(id) && this.homeDoor(id) !== null);
+    if (targets.length === 0) return false;
+    this.mailRoutes.set(carrier, { targets, index: 0, pauseUntil: 0 });
+    this.bubble(carrier, '📬', 5_000);
+    return true;
   }
 
   /** Faz o Pokémon esperar você parado (ou solta, com `null`). */
@@ -1142,6 +1162,26 @@ export class VillageGame {
         continue;
       }
       const farmTask = this.farmTasks.get(id);
+      const mailRoute = this.mailRoutes.get(id);
+      if (mailRoute) {
+        const targetId = mailRoute.targets[mailRoute.index];
+        const door = targetId ? this.homeDoor(targetId) : null;
+        if (!targetId || !door) {
+          this.mailRoutes.delete(id);
+          continue;
+        }
+        if (now < mailRoute.pauseUntil) continue;
+        if (Math.abs(door.x - w.x) + Math.abs(door.y - w.y) <= 1) {
+          this.bubble(id, '📬', 1_800);
+          this.bubble(targetId, '✉️', 2_400);
+          mailRoute.index += 1;
+          mailRoute.pauseUntil = now + 1_250;
+          if (mailRoute.index >= mailRoute.targets.length) this.mailRoutes.delete(id);
+        } else {
+          stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, door);
+        }
+        continue;
+      }
       if (farmTask && this.waiting !== id && this.state.follower !== id && !(now < this.calledUntil && this.called.has(id))) {
         benchVisits.release(id, now);
         stepFarmWorker(w, farmTask, dt, this.map, (x, y) => this.occupied(x, y, id));
@@ -1839,6 +1879,7 @@ export class VillageGame {
            if (!activeTask && activeCommunity && now < activeCommunity.until && !moving(w)) {
              drawCommunityWorkAction(ctx, activeCommunity.activity, cx, base, sx(activeCommunity.target.x), sy(activeCommunity.target.y), scale, now, ambientFx);
            }
+           if (this.mailCarrierId === id) this.drawTag(cx, base - h - 18 * scale - Math.abs(Math.sin(now / 420)) * 2 * scale, '📬');
           if (near(w) && !this.scene) {
             const hearts = Math.round(friendOf(this.state, id).points / 20);
             const working = this.communityWork.get(id);

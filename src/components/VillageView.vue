@@ -61,7 +61,7 @@ import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABE
 import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, recordAnswer, wordOf } from '../core/village/quiz';
 import type { Follow, Question } from '../core/village/quiz';
 import {
-  assignHomes, CAFE_PRICE, cafeVisit, collectMail, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, knockDoor, LOTS, nextUnlock, paintRoof, PAINT_COST, residentsOf, ROOFS, roofIndex,
+  assignHomes, CAFE_PRICE, cafeVisit, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, knockDoor, LOTS, nextUnlock, paintRoof, PAINT_COST, residentsOf, ROOFS, roofIndex,
   HOME_EXTERIOR_STYLES, homeStyleOf, personalizeResidentHomes, setHomeStyle, toggleDecor, townStage, unlockedBetween, upgradeHome,
 } from '../core/village/town';
 import type { Building } from '../core/village/town';
@@ -100,6 +100,8 @@ import { loadCardCompanionEntry } from '../app/companion-creatures';
 import { companionCard } from '../app/card-evolution-store';
 import type { CachedCard } from '../cache/types';
 import QuizDialog from './QuizDialog.vue';
+import { generateDailyMail, mailActionLabel, mailKindLabel, markMailRead, queueMomentMail, respondToMail } from '../core/village/mail';
+import type { MailAction } from '../core/village/mail';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
 /** `close` sai da Vila; com `'pvp'` a Caixa abre o PvP em seguida (a Vila mora dentro da Caixa, então não há troca de tela). */
@@ -123,7 +125,7 @@ pruneHarvest(state, day.value);
 type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
 const backpackOpen = ref(false);
-type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos' | 'lendas';
+type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos' | 'lendas' | 'correio';
 const tab = ref<Tab>('inicio');
 const arActive = ref(false);
 const arAnchored = ref(false);
@@ -198,7 +200,7 @@ function stopArBeta(): void {
  */
 interface MenuTile { tab?: Tab; href?: string; run?: () => void; disabled?: boolean; icon: string; label: string; hint?: string; badge?: number }
 const MENU_TITLES: Record<Tab, string> = {
-  inicio: 'Menu da Vila', resumo: 'Resumo da Vila', expedicoes: 'Expedições', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos',
+  inicio: 'Menu da Vila', resumo: 'Resumo da Vila', expedicoes: 'Expedições', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos', correio: 'Correio da Vila',
   album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila', lendas: 'Caderno de Lendas',
 };
 /** Um lugar da Vila aberto direto pelo menu (ou trancado, com o nível que falta). */
@@ -247,7 +249,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   },
   {
     title: 'Lugares da Vila',
-    tiles: [placeTile('arcade', '🕹️', 'Fliperama'), placeTile('arena', '⚔️', 'Arena'), placeTile('torre', '🗼', 'Torre')],
+    tiles: [{ icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, placeTile('arcade', '🕹️', 'Fliperama'), placeTile('arena', '⚔️', 'Arena'), placeTile('torre', '🗼', 'Torre')],
   },
   {
     title: 'Fora da Vila',
@@ -283,6 +285,7 @@ const visibleMenuGroups = computed(() => {
 const shopTab = ref<'comprar' | 'vender'>('comprar');
 const dressFor = ref<string>('player');
 const dialog = ref<{ id?: string; name: string; text: string; actions: { label: string; run: () => void; disabled?: boolean }[] } | null>(null);
+const mailUnread = computed(() => state.mail.inbox.filter((entry) => !entry.read).length);
 /** O morador em destaque no minimapa enquanto uma conversa ou momento está acontecendo. */
 const minimapSpeakerId = ref<string | null>(null);
 /** Texto curto para a rota atual, sem transformar o minimapa em outro menu. */
@@ -938,6 +941,7 @@ const KEYS: Record<string, Dir> = {
 const heldKeys = new Set<Dir>();
 const gamepadKeys = new Set<Dir>();
 const dpadPointers = new Map<number, Dir>();
+let lastPointerAPress = -Infinity;
 /** Teclas seguradas viram um vetor (duas teclas = diagonal), igual ao joystick. */
 function applyKeys(): void {
   if (joy.active) return;
@@ -1023,6 +1027,26 @@ function moveVillageFocus(direction: Dir): void {
 function dpadUp(event: PointerEvent): void {
   if (!dpadPointers.delete(event.pointerId)) return;
   applyKeys();
+}
+
+/**
+ * Confirma no início do toque. O direcional usa outro pointerId, então os dois
+ * podem permanecer pressionados ao mesmo tempo em telas touch (inclusive em
+ * navegadores que só disparariam `click` depois de soltar o dedo).
+ */
+function pressAPointer(event: PointerEvent): void {
+  event.preventDefault();
+  event.stopPropagation();
+  const now = performance.now();
+  lastPointerAPress = now;
+  pressA();
+}
+
+function pressAClick(event: MouseEvent): void {
+  event.stopPropagation();
+  // Touch browsers may dispatch click shortly after pointerdown; avoid a
+  // second interaction while preserving keyboard/assistive-technology clicks.
+  if (performance.now() - lastPointerAPress > 180) pressA();
 }
 function onKey(e: KeyboardEvent): void {
   if (recapScenes.value.length) {
@@ -1245,9 +1269,61 @@ const challengeExhibits = computed(() => completedChallengeExhibits(trainer.valu
 const stage = computed(() => townStage(level.value));
 let homes = new Map<string, number>();
 
+/** Abre o Correio como uma caixa de entrada: a edição diária e as cartas de momentos ficam juntas no mesmo lugar. */
+function openMail(): void {
+  const generated = generateDailyMail(state, refreshDay(), namesById());
+  if (generated) {
+    changed();
+    say(`📬 ${generated.fromName} deixou uma carta: ${generated.subject}`, 4800);
+  }
+  // Cartas geradas enquanto o jogador estava fora também entram na rota do
+  // carteiro quando o Correio é aberto, sem repetir destinos na mesma visita.
+  const pendingTargets = [...new Set(state.mail.inbox.flatMap((mail) => mail.involvedIds))];
+  if (pendingTargets.length > 0) game?.deliverMail(pendingTargets);
+  closeDialog();
+  tab.value = 'correio';
+  sheet.value = 'menu';
+}
+
+function readMail(id: string): void {
+  if (markMailRead(state.mail, id)) changed();
+}
+
+function answerMail(id: string, action: MailAction): void {
+  const result = respondToMail(state, id, action, refreshDay());
+  say(result.message, 4200);
+  if (result.ok) changed();
+}
+
+function openMailCarrierDialog(id: string): void {
+  const waiting = state.mail.inbox.filter((mail) => !mail.read).length;
+  const lines = [
+    'Estou entregando as cartas!',
+    'Cada envelope tem o nome de quem viveu o momento.',
+    waiting > 0 ? `Ainda tenho ${waiting} carta(s) na bolsa.` : 'A bolsa está leve hoje. Quando houver um momento novo, eu volto.',
+  ];
+  dialog.value = {
+    id,
+    name: `📬 ${nameOf(id)} · Carteiro da Vila`,
+    text: lines[(Date.now() / 1000 | 0) % lines.length]!,
+    actions: [
+      { label: 'Abrir o Correio', run: openMail },
+      { label: 'Continuar a entrega', run: () => { game?.deliverMail(state.mail.inbox.filter((mail) => mail.involvedIds.length > 0).flatMap((mail) => mail.involvedIds)); closeDialog(); } },
+      { label: 'Sair', run: closeDialog },
+    ],
+  };
+}
+
 function refreshTown(): void {
   homes = assignHomes(mons.value.map((m) => m.id), level.value);
   game?.setTown(level.value, homes);
+  const residentIds = mons.value.map((mon) => mon.id);
+  if (state.mailCarrierId && !residentIds.includes(state.mailCarrierId)) state.mailCarrierId = null;
+  if (!state.mailCarrierId) {
+    state.mailCarrierId = [...residentIds].sort()[0] ?? null;
+    if (state.mailCarrierId) changed();
+  }
+  game?.setMailCarrier(state.mailCarrierId);
   const changes = personalizeResidentHomes(state, homes);
   if (changes.length > 0) {
     changed();
@@ -1563,15 +1639,7 @@ function openBuilding(b: Building): void {
   }
   if (b.kind === 'home') return openHome(b);
   if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena' || b.kind === 'torre') return openGameBuilding(b);
-  if (b.kind === 'mail') {
-    const r = collectMail(state, refreshDay(), Math.random, namesById());
-    if (r.ok) {
-      changed();
-      earnCoins(10);
-    }
-    dialog.value = { name: b.name, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] };
-    return;
-  }
+  if (b.kind === 'mail') return openMail();
   if (b.kind === 'cafe') {
     const text = `Cheiro de bolo no ar! Um lanche aqui custa ${CAFE_PRICE} moedas e rende amizade com os Pokémon que estão por perto (uma vez por dia). Você tem ${state.coins}.`;
     dialog.value = {
@@ -1879,6 +1947,13 @@ function announce(r: Resolved): void {
 
 function afterResolve(r: Resolved, ids: string[]): void {
   announce(r);
+  const letter = queueMomentMail(state.mail, r.moment);
+  if (letter) {
+    game?.deliverMail(letter.involvedIds);
+  }
+  if (letter && r.firstTime) {
+    say(`📬 ${letter.fromName} escreveu sobre “${r.moment.title}”. Veja no Correio quando quiser.`, 4800);
+  }
   if (r.followUp.length > 0 && game) {
     const firstSpeaker = ids[r.followUp[0]?.who ?? 0];
     minimapSpeakerId.value = firstSpeaker ?? null;
@@ -1946,6 +2021,7 @@ function awayCatchUp(): void {
   if (list.length > 0 && state.lastSeen > 0) {
     const moments = catchUp(state, list, now, null, Math.random, profile.name);
     if (moments.length > 0) {
+      for (const moment of moments) queueMomentMail(state.mail, moment);
       changed();
     }
   }
@@ -2152,6 +2228,10 @@ function pressA(): void {
     openQuiz(t.id);
   } else if (t.kind === 'mon') {
     game.faceMe(t.id);
+    if (t.id === state.mailCarrierId) {
+      openMailCarrierDialog(t.id);
+      return;
+    }
     const name = nameOf(t.id);
     const result = talk(state, t.id, name, types.get(t.id) ?? [], today, villageHour(), Math.random, recentGossip(state, t.id, Date.now()), game.weatherKind);
     if (result.gained > 0) {
@@ -3103,6 +3183,32 @@ onBeforeUnmount(() => {
           </section>
         </div>
 
+        <div v-else-if="tab === 'correio'" class="diary village-mail-panel">
+          <p class="hint">Cartas ligadas a momentos que realmente aconteceram. Os nomes abaixo são os Pokémon envolvidos no Diário; responder pode criar um novo compromisso social.</p>
+          <section aria-labelledby="mail-inbox-title">
+            <h4 id="mail-inbox-title">📬 Caixa de entrada <small v-if="mailUnread">· {{ mailUnread }} nova(s)</small></h4>
+            <ul v-if="state.mail.inbox.length" class="village-list mail-list">
+              <li v-for="mail in state.mail.inbox.slice().reverse()" :key="mail.id" class="mail-card" :class="{ unread: !mail.read }">
+                <div class="mail-card-head"><span>{{ mailKindLabel[mail.kind] }} · {{ mail.day }}</span><b v-if="!mail.read">NOVA</b></div>
+                <strong>{{ mail.subject }}</strong>
+                <small>De {{ mail.fromName }}<span v-if="mail.involvedIds.length"> · envolvidos: {{ mail.involvedIds.map(nameOf).join(', ') }}</span></small>
+                <p>{{ mail.body }}</p>
+                <div class="summary-actions mail-actions">
+                  <button v-if="!mail.read" type="button" @click="readMail(mail.id)">Marcar como lida</button>
+                  <button v-if="mail.fromId && !mail.responded" type="button" @click="answerMail(mail.id, 'responder')">{{ mailActionLabel('responder', mail.kind) }}</button>
+                  <button v-if="mail.fromId && mail.involvedIds.length > 1 && !mail.responded" type="button" @click="answerMail(mail.id, 'ajudar')">{{ mailActionLabel('ajudar', mail.kind) }}</button>
+                  <button type="button" @click="answerMail(mail.id, 'arquivar')">Guardar</button>
+                </div>
+              </li>
+            </ul>
+            <p v-else class="hint">Nenhuma carta esperando. Um momento novo entre moradores fará o carteiro voltar.</p>
+          </section>
+          <section v-if="state.mail.archive.length" aria-labelledby="mail-archive-title">
+            <h4 id="mail-archive-title">🗄️ Arquivo</h4>
+            <ul class="village-list mail-list archived"><li v-for="mail in state.mail.archive.slice().reverse().slice(0, 12)" :key="mail.id"><span><strong>{{ mail.subject }}</strong><small>{{ mail.fromName }} · {{ mail.day }}<span v-if="mail.responded"> · resposta enviada</span></small></span></li></ul>
+          </section>
+        </div>
+
         <div v-else-if="tab === 'expedicoes'" class="diary">
           <p class="hint">Cada expedição leva 15 minutos. O resultado combina tipo, personalidade, amizade e o clima registrado na partida.</p>
           <section v-if="weeklyEvent" class="weekly-event">
@@ -3270,7 +3376,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="ab">
           <button type="button" class="b-btn" :disabled="quizOpen && quizStep === 0" :aria-label="sheet || dialog || quiz || quizOpen ? 'Voltar' : 'Abrir menu'" @click="pressB">B<small aria-hidden="true">{{ sheet || dialog || quiz || quizOpen ? 'Voltar' : 'Menu' }}</small></button>
-          <button type="button" class="a-btn" aria-label="A: confirmar ou interagir" @click="pressA">A<small aria-hidden="true">{{ sheet || dialog || quiz || quizOpen ? 'Confirmar' : 'Interagir' }}</small></button>
+          <button type="button" class="a-btn" aria-label="A: confirmar ou interagir" @pointerdown="pressAPointer" @click="pressAClick">A<small aria-hidden="true">{{ sheet || dialog || quiz || quizOpen ? 'Confirmar' : 'Interagir' }}</small></button>
           <button v-if="!dialog && !quiz && !quizOpen && (!sheet || sheet === 'menu')" type="button" class="menu-control-btn" aria-label="Menu da Vila" @click="pressMenu">☰<small aria-hidden="true">Menu</small></button>
         </div>
       </div>
