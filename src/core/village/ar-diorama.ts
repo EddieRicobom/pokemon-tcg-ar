@@ -1,8 +1,8 @@
 /** Medidas e limites do diorama da Vila no modo AR. Não dependem de WebGL. */
 export const VILLAGE_DIORAMA_WIDTH_M = 2.8;
 export const VILLAGE_DIORAMA_DEPTH_M = VILLAGE_DIORAMA_WIDTH_M * 0.75;
-/** O plano do diorama fica horizontal. Inclinar o grupo inteiro transforma o mapa em uma lâmina diante da câmera. */
-export const VILLAGE_AR_TILT_DEG = 0;
+/** Inclinação da maquete: chão recua e a parede traseira permanece em pé. */
+export const VILLAGE_AR_TILT_DEG = 22;
 /** Sprites permanecem verticais; a perspectiva vem da base 3D em L do Diorama. */
 export const VILLAGE_DIORAMA_OBJECT_TILT_DEG = 0;
 

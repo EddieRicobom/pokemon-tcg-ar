@@ -3,7 +3,7 @@ import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES, intersectFloor } from '../box/f
 import { visibleVerticalFov } from '../box/orientation';
 import { OrientationSource } from '../box/orientation-source';
 import type { OrientationMode } from '../box/orientation-source';
-import { VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M, normalizeVillageScale } from '../core/village/ar-diorama';
+import { VILLAGE_AR_TILT_DEG, VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M, normalizeVillageScale } from '../core/village/ar-diorama';
 import { createWebglBackend } from './webgl-backend';
 import { maxVisualFps } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
@@ -58,21 +58,21 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
   const root = new Group();
   root.visible = false;
   const base = new Mesh(
-    new BoxGeometry(VILLAGE_DIORAMA_WIDTH_M + 0.1, 0.08, VILLAGE_DIORAMA_DEPTH_M + 0.1),
+    new BoxGeometry(VILLAGE_DIORAMA_WIDTH_M + 0.12, 0.14, VILLAGE_DIORAMA_DEPTH_M + 0.12),
     new MeshStandardMaterial({ color: 0x1c3642, roughness: 0.88, metalness: 0.04, transparent: true, opacity: 0.96 }),
   );
-  base.position.y = -0.04;
+  base.position.y = -0.07;
   const backWall = new Mesh(
-    new BoxGeometry(VILLAGE_DIORAMA_WIDTH_M + 0.1, 0.82, 0.08),
+    new BoxGeometry(VILLAGE_DIORAMA_WIDTH_M + 0.12, 1.12, 0.1),
     new MeshStandardMaterial({ color: 0x26394c, roughness: 0.92, metalness: 0.02, transparent: true, opacity: 0.94 }),
   );
-  backWall.position.set(0, 0.41, -VILLAGE_DIORAMA_DEPTH_M / 2 - 0.04);
+  backWall.position.set(0, 0.56, -VILLAGE_DIORAMA_DEPTH_M / 2 - 0.06);
   const map = new Mesh(
     new PlaneGeometry(VILLAGE_DIORAMA_WIDTH_M, VILLAGE_DIORAMA_DEPTH_M),
     new MeshStandardMaterial({ map: texture, transparent: true, alphaTest: 0.01, roughness: 0.96, metalness: 0 }),
   );
   map.rotation.x = -Math.PI / 2;
-  map.position.y = 0.003;
+  map.position.y = 0.008;
   root.add(base, backWall, map);
   scene.add(root);
 
@@ -109,10 +109,10 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     const forward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     // Respeita exatamente o ponto escolhido, inclusive quando fica bem perto do celular.
     root.position.copy(floor.point);
-    // O chão da Vila permanece horizontal. Inclinar o grupo inteiro fazia o mapa virar uma lâmina quase vertical;
-    // o yaw só escolhe qual lado da cidade fica à frente quando ela é posicionada.
+    // O chão recua como a base de uma caixa-diorama; a parede traseira fica
+    // em pé atrás dele. A rotação é da maquete, nunca dos bitmaps individuais.
     root.rotation.order = 'YXZ';
-    root.rotation.set(0, Math.atan2(forward.x, forward.z) + Math.PI, 0);
+    root.rotation.set((-VILLAGE_AR_TILT_DEG * Math.PI) / 180, Math.atan2(forward.x, forward.z) + Math.PI, 0);
     root.visible = true;
     return { ok: true };
   };

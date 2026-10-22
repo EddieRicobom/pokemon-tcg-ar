@@ -13,8 +13,8 @@ describe('diorama AR da Vila', () => {
     expect(normalizeVillageScale(4)).toBe(3);
   });
 
-  it('mantém o plano horizontal do AR sem alterar o mapa original', () => {
-    expect(VILLAGE_AR_TILT_DEG).toBe(0);
+  it('inclina a maquete sem rotacionar as sprites do mapa', () => {
+    expect(VILLAGE_AR_TILT_DEG).toBe(22);
   });
 
   it('mantém sprites verticais porque a inclinação pertence à base 3D', () => {
