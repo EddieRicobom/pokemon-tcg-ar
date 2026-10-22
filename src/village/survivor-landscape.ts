@@ -32,9 +32,48 @@ export type SurvivorLandscapeRenderer = ((ctx: CanvasRenderingContext2D, elapsed
   setAtlas(image: CanvasImageSource | null): void;
 };
 
+function drawBiomeOverlayLayer(ctx: CanvasRenderingContext2D, biome: typeof SURVIVOR_BIOMES[number] | undefined, alpha: number): void {
+  if (!biome || alpha <= 0) return;
+  for (const zone of survivorBiomeZonesOf(biome)) {
+    const color = zone.kind === 'folhagem' ? '#245d3a'
+      : zone.kind === 'poça' ? '#2e8db8'
+        : zone.kind === 'neve' ? '#d9f3ff'
+          : zone.kind === 'vento' ? '#b5a85f'
+            : zone.kind === 'pedra' ? '#706b62'
+              : zone.kind === 'flores' ? '#9c688f'
+                : zone.kind === 'areia' ? '#c6a85c'
+                  : zone.kind === 'ruínas' ? '#5d6670'
+                    : '#667d48';
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
+    ctx.strokeStyle = zone.kind === 'neve' || zone.kind === 'areia' ? '#ffffffcc' : '#ffffff88';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.strokeRect(zone.x + 2, zone.y + 2, zone.width - 4, zone.height - 4);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffffffdd';
+    ctx.font = '600 13px sans-serif';
+    const icon = zone.kind === 'folhagem' ? '🌿'
+      : zone.kind === 'poça' ? '💧'
+        : zone.kind === 'neve' ? '❄️'
+          : zone.kind === 'vento' ? '🍂'
+            : zone.kind === 'pedra' ? '🪨'
+              : zone.kind === 'flores' ? '🌸'
+                : zone.kind === 'areia' ? '🏖️'
+                  : zone.kind === 'ruínas' ? '🏛️'
+                    : '🫒';
+    ctx.fillText(icon, zone.x + 9, zone.y + 21);
+    ctx.fillText(zone.label, zone.x + 31, zone.y + 20);
+    ctx.restore();
+  }
+}
+
 /** Cacheia só a região atual e a próxima; o desenho de tiles ocorre uma vez por região, não a cada quadro. */
 export function createSurvivorLandscape(width: number, height: number): SurvivorLandscapeRenderer {
   const layers = new Map<number, HTMLCanvasElement>();
+  const overlayLayers = new Map<number, HTMLCanvasElement>();
   let atlas: CanvasImageSource | null = null;
 
   function drawAtlasTile(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, w: number, h: number, alpha = 1): boolean {
@@ -172,14 +211,28 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     return canvas;
   }
 
+  function overlayLayer(index: number): HTMLCanvasElement {
+    const cached = overlayLayers.get(index);
+    if (cached) return cached;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    drawBiomeOverlayLayer(canvas.getContext('2d')!, SURVIVOR_BIOMES.find((biome) => biome.regionIndex === index), 0.18);
+    overlayLayers.set(index, canvas);
+    return canvas;
+  }
+
   const render = ((ctx: CanvasRenderingContext2D, elapsedMs: number): void => {
     const { current, next, blend } = survivorRegionAt(elapsedMs);
     for (const key of layers.keys()) if (key !== current && key !== next) layers.delete(key);
+    for (const key of overlayLayers.keys()) if (key !== current && key !== next) overlayLayers.delete(key);
     ctx.save();
     ctx.drawImage(layer(current), 0, 0);
+    ctx.drawImage(overlayLayer(current), 0, 0);
     if (blend > 0) {
       ctx.globalAlpha = blend;
       ctx.drawImage(layer(next), 0, 0);
+      ctx.drawImage(overlayLayer(next), 0, 0);
     }
     ctx.restore();
   }) as SurvivorLandscapeRenderer;
@@ -188,6 +241,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     if (atlas === image) return;
     atlas = image;
     layers.clear();
+    overlayLayers.clear();
   };
   return render;
 }
@@ -195,45 +249,6 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
 /** Marca as áreas com efeito mecânico para que nenhum perigo fique invisível ao jogador. */
 export function drawSurvivorBiomeOverlay(ctx: CanvasRenderingContext2D, elapsedMs: number): void {
   const { current, next, blend } = survivorRegionAt(elapsedMs);
-  const active = SURVIVOR_BIOMES.find((biome) => biome.regionIndex === current);
-  const upcoming = blend > 0 ? SURVIVOR_BIOMES.find((biome) => biome.regionIndex === next) : undefined;
-  const draw = (biome: typeof active, alpha: number): void => {
-    if (!biome || alpha <= 0) return;
-    for (const zone of survivorBiomeZonesOf(biome)) {
-      const color = zone.kind === 'folhagem' ? '#245d3a'
-        : zone.kind === 'poça' ? '#2e8db8'
-          : zone.kind === 'neve' ? '#d9f3ff'
-            : zone.kind === 'vento' ? '#b5a85f'
-              : zone.kind === 'pedra' ? '#706b62'
-                : zone.kind === 'flores' ? '#9c688f'
-                  : zone.kind === 'areia' ? '#c6a85c'
-                    : zone.kind === 'ruínas' ? '#5d6670'
-                      : '#667d48';
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = color;
-      ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
-      ctx.strokeStyle = zone.kind === 'neve' || zone.kind === 'areia' ? '#ffffffcc' : '#ffffff88';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([8, 6]);
-      ctx.strokeRect(zone.x + 2, zone.y + 2, zone.width - 4, zone.height - 4);
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#ffffffdd';
-      ctx.font = '600 13px sans-serif';
-      const icon = zone.kind === 'folhagem' ? '🌿'
-        : zone.kind === 'poça' ? '💧'
-          : zone.kind === 'neve' ? '❄️'
-            : zone.kind === 'vento' ? '🍂'
-              : zone.kind === 'pedra' ? '🪨'
-                : zone.kind === 'flores' ? '🌸'
-                  : zone.kind === 'areia' ? '🏖️'
-                    : zone.kind === 'ruínas' ? '🏛️'
-                      : '🫒';
-      ctx.fillText(icon, zone.x + 9, zone.y + 21);
-      ctx.fillText(zone.label, zone.x + 31, zone.y + 20);
-      ctx.restore();
-    }
-  };
-  draw(active, 0.18);
-  draw(upcoming, blend * 0.18);
+  drawBiomeOverlayLayer(ctx, SURVIVOR_BIOMES.find((biome) => biome.regionIndex === current), 0.18);
+  drawBiomeOverlayLayer(ctx, blend > 0 ? SURVIVOR_BIOMES.find((biome) => biome.regionIndex === next) : undefined, blend * 0.18);
 }
