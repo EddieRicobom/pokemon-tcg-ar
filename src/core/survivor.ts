@@ -209,7 +209,7 @@ export interface SurvivorProjectile {
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
-  kind: 'pulse' | 'blast' | 'evolve' | 'echo' | 'follow-up' | 'artifact';
+  kind: 'pulse' | 'blast' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal';
   x: number;
   y: number;
   r: number;
@@ -1638,7 +1638,9 @@ function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: n
         for (const other of state.enemies) {
           if (other === enemy || other.hp <= 0 || healed >= ENEMY_BEHAVIOR_LIMITS.healingTargetsPerPulse) continue;
           if (Math.hypot(other.x - enemy.x, other.y - enemy.y) <= 110 && other.hp < other.maxHp) {
-            other.hp = Math.min(other.maxHp, other.hp + Math.max(1, Math.round(other.maxHp * 0.08)));
+            const amount = Math.max(1, Math.round(other.maxHp * 0.08));
+            other.hp = Math.min(other.maxHp, other.hp + amount);
+            state.fx.push({ kind: 'heal', x: other.x, y: other.y, r: 15, color: '#ff78b7', ageMs: 0, lifeMs: 850, count: amount });
             healed++;
           }
         }
