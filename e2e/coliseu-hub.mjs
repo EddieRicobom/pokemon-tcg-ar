@@ -53,9 +53,13 @@ try {
   const hub = ['Arena 3D (sem câmera)', 'Caixa em AR (câmera)', 'Liga e corridas 6×6', 'Batalhar com um amigo (PvP)'];
   for (const label of hub) await page.getByRole('button', { name: new RegExp(label.replace(/[()]/g, '\\$&')) }).waitFor({ timeout: 10_000 });
   await capture('coliseu-hub');
+  // A barra de baixo não tem mais a aba Arena nem a sub-aba Caixa em AR; a aba da Vila fica acesa nas lutas.
+  assert.deepEqual(await page.locator('nav.tabs a').allInnerTexts(), ['Escanear', 'Vila', 'Cartas', 'Pins', 'Treinador']);
   await page.getByRole('button', { name: /Arena 3D \(sem câmera\)/ }).click();
   await page.getByRole('heading', { name: 'Arena 3D' }).waitFor();
   assert.match(await hash(), /^#\/caixa/);
+  assert.deepEqual(await page.locator('nav.tabs a.active').allInnerTexts(), ['Vila']);
+  assert.equal(await page.locator('nav.modes').count(), 0);
   await page.getByRole('button', { name: /Entrar na Arena 3D/ }).waitFor();
   assert.equal(await page.getByRole('button', { name: '🏟️ Arena virtual' }).getAttribute('aria-pressed'), 'true');
   await capture('hub-arena3d');
@@ -86,6 +90,7 @@ try {
   // --- 4. Arena Digital: o padrão é a Arena 3D e o fundo acompanha o link
   await page.goto(`${base}#/arena`);
   await page.getByRole('heading', { name: 'Arena Digital' }).waitFor();
+  assert.deepEqual(await page.locator('nav.tabs a.active').allInnerTexts(), ['Vila']);
   assert.equal(await page.getByRole('button', { name: /Arena 3D \(sem câmera\)/ }).getAttribute('aria-pressed'), 'true');
   assert.match((await page.getByRole('link', { name: 'Abrir a Arena 3D' }).getAttribute('href')) ?? '', /virtual=1/);
   await page.getByRole('button', { name: /Caixa em AR \(câmera\)/ }).click();

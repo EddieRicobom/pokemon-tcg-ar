@@ -270,8 +270,6 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
     title: 'Atividades Externas',
     desc: 'Outros modos e conexões do app',
     tiles: [
-      { href: routeHref('caixa'), icon: '📦', label: 'Caixa AR', hint: 'câmera e cenário' },
-      { href: routeHref('arena'), icon: '⚔️', label: 'Arena Digital', hint: 'Liga, PvP e corridas 6×6' },
       { href: routeHref('cartas'), icon: '🃏', label: 'Minhas Cartas' },
       { href: routeHref('pins'), icon: '🎯', label: 'Mini Pins' },
       { href: routeHref('escanear'), icon: '📷', label: 'Escanear Carta' },

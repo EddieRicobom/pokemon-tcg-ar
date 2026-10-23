@@ -32,14 +32,14 @@ const showIosHint =
 
 /**
  * A barra de baixo tem só o essencial; "Várias" é modo do Escanear, e o Diagnóstico fica na engrenagem do topo. A Vila
- * tem aba própria (antes morava dentro da Caixa, atrás de um botão "Modo vida"). "Cartas" junta «Minhas cartas» (a Box,
- * que antes era modo do Escanear) e a «Caixa em AR» (que antes era aba própria) em duas sub-abas.
+ * tem aba própria (antes morava dentro da Caixa, atrás de um botão "Modo vida"). As lutas moram no Coliseu da Vila (o
+ * diálogo do prédio oferece a Arena 3D, a Caixa em AR, a Liga e as corridas 6×6): as telas `#/arena` e `#/caixa` continuam
+ * existindo e abrindo por endereço e por link, mas não têm aba nem sub-aba, e a aba da Vila fica acesa nelas.
  */
 const tabs: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Escanear' },
   { name: 'vila', label: 'Vila' },
   { name: 'cartas', label: 'Cartas' },
-  { name: 'arena', label: 'Arena' },
   { name: 'pins', label: 'Pins' },
   { name: 'treinador', label: 'Treinador' },
 ];
@@ -47,15 +47,12 @@ const scanModes: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Uma carta' },
   { name: 'varias', label: 'Várias' },
 ];
-const cardModes: { name: RouteName; label: string }[] = [
-  { name: 'cartas', label: 'Minhas cartas' },
-  { name: 'caixa', label: 'Caixa em AR' },
-];
+/** As telas das lutas, que moram no Coliseu da Vila: a aba da Vila fica acesa nelas. */
+const fightRoutes: readonly RouteName[] = ['arena', 'caixa'];
 const inScanGroup = computed(() => scanModes.some((m) => m.name === route.value.name));
-const inCardGroup = computed(() => cardModes.some((m) => m.name === route.value.name));
-const subModes = computed(() => (inScanGroup.value ? scanModes : inCardGroup.value ? cardModes : null));
+const subModes = computed(() => (inScanGroup.value ? scanModes : null));
 const tabActive = (name: RouteName): boolean =>
-  name === 'escanear' ? inScanGroup.value : name === 'cartas' ? inCardGroup.value : route.value.name === name;
+  name === 'escanear' ? inScanGroup.value : name === 'vila' ? route.value.name === 'vila' || fightRoutes.includes(route.value.name) : route.value.name === name;
 const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
 /** Para onde o ✕ da Vila volta: a última tela fora dela (ou o Escanear, se a Vila foi a primeira). */
 const beforeVila = ref<string>(route.value.name === 'vila' ? '#/' : window.location.hash || '#/');
@@ -114,7 +111,7 @@ watch(
       </p>
     </section>
 
-    <nav v-if="subModes" class="modes" :aria-label="inScanGroup ? 'Modos de escaneamento' : 'Cartas e Caixa'">
+    <nav v-if="subModes" class="modes" aria-label="Modos de escaneamento">
       <a v-for="m in subModes" :key="m.name" :href="routeHref(m.name)" :aria-current="route.name === m.name ? 'page' : undefined" :class="{ active: route.name === m.name }">{{ m.label }}</a>
     </nav>
 

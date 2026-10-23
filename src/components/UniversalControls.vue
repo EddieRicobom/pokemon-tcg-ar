@@ -9,7 +9,6 @@ const links: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Escanear' },
   { name: 'vila', label: 'Vila' },
   { name: 'cartas', label: 'Cartas' },
-  { name: 'arena', label: 'Arena' },
   { name: 'pins', label: 'Pins' },
   { name: 'treinador', label: 'Treinador' },
 ];
