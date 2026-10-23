@@ -23,6 +23,18 @@ describe('fachadas e chão em pixel art', () => {
     expect(solar.data.slice(-80 * 4)).toEqual(source.data.slice(-80 * 4));
     expect(balcony.data.slice(-80 * 4)).toEqual(source.data.slice(-80 * 4));
   });
+  it('pinta apenas o telhado e mantém estilos distintos desde a primeira reforma', () => {
+    const source = { w: 8, h: 64, data: new Uint8ClampedArray(8 * 64 * 4) };
+    for (let i = 0; i < source.data.length; i += 4) {
+      source.data[i] = 180; source.data[i + 1] = 112; source.data[i + 2] = 72; source.data[i + 3] = 255;
+    }
+    const renovated = renovateHomeTileset(source, 1, 'praiano', 0x3f84a9);
+    const roofPixel = [...renovated.data.slice(0, 4)];
+    const facadePixel = [...renovated.data.slice(48 * 8 * 4, 48 * 8 * 4 + 4)];
+    expect(roofPixel).not.toEqual([...source.data.slice(0, 4)]);
+    expect(facadePixel).toEqual([...source.data.slice(48 * 8 * 4, 48 * 8 * 4 + 4)]);
+    expect(new Set(HOME_EXTERIOR_STYLES.map((style) => homeTileset(1, style.id))).size).toBeGreaterThanOrEqual(5);
+  });
   it('grama e areia têm variantes discretas, sem transparência, e a doca só recebe borda no perímetro', () => {
     for (const piece of [villageGrassSheet(), villageSandTile(3, 2), villagePierTile(0, 0, 0), villagePierTile(15, 0, 0)]) {
       expect([...piece.data].filter((_, i) => i % 4 === 3).every((a) => a === 255)).toBe(true);

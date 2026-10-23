@@ -25,4 +25,11 @@ describe('tilesets regionais da Torre', () => {
     expect(after.current).toBe(1);
     expect(SURVIVOR_REGION_TILESETS[before.current]).not.toEqual(SURVIVOR_REGION_TILESETS[after.current]);
   });
+
+  it('combina terreno, trilha e detalhe para que cada região tenha leitura própria', () => {
+    const combinations = new Set(SURVIVOR_REGION_TILESETS.map((tiles) => `${tiles.ground}/${tiles.path}/${tiles.detail}`));
+    expect(combinations.size).toBe(SURVIVOR_REGION_TILESETS.length);
+    expect(new Set(SURVIVOR_REGION_TILESETS.map((tiles) => tiles.ground)).size).toBeGreaterThanOrEqual(5);
+    expect(new Set(SURVIVOR_REGION_TILESETS.map((tiles) => tiles.detail)).size).toBeGreaterThanOrEqual(7);
+  });
 });

@@ -5,14 +5,14 @@ import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
 /** Tilesets originais do atlas por região: terreno, trilha e detalhe de cenário. */
 export const SURVIVOR_REGION_TILESETS = [
   { ground: 'at-trail', path: 'at-path', detail: 'tree-big' },
-  { ground: 'at-trail', path: 'at-path', detail: 'pine-m' },
-  { ground: 'sand-grass', path: 'sea', detail: 'bush' },
-  { ground: 'at-plaza', path: 'at-path', detail: 'rock-1' },
-  { ground: 'at-plaza', path: 'at-trail', detail: 'rock-2' },
+  { ground: 'at-plaza', path: 'at-trail', detail: 'pine-m' },
+  { ground: 'sand-grass', path: 'sand-water', detail: 'bush' },
+  { ground: 'at-path', path: 'at-plaza', detail: 'rock-1' },
+  { ground: 'at-plot', path: 'at-trail', detail: 'rock-2' },
   { ground: 'at-trail', path: 'at-plaza', detail: 'flowers-white' },
-  { ground: 'sand-grass', path: 'sea', detail: 'rock-3' },
-  { ground: 'at-path', path: 'at-trail', detail: 'wall' },
-  { ground: 'at-trail', path: 'at-path', detail: 'pine-m' },
+  { ground: 'sand-water', path: 'sea', detail: 'rock-3' },
+  { ground: 'at-plaza', path: 'at-path', detail: 'wall' },
+  { ground: 'at-plot', path: 'at-trail', detail: 'pine-m' },
 ] as const;
 
 const atlasLayout = packAtlas();
@@ -48,24 +48,23 @@ function drawBiomeOverlayLayer(ctx: CanvasRenderingContext2D, biome: typeof SURV
     ctx.globalAlpha = alpha;
     ctx.fillStyle = color;
     ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
-    ctx.strokeStyle = zone.kind === 'neve' || zone.kind === 'areia' ? '#ffffffcc' : '#ffffff88';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 6]);
-    ctx.strokeRect(zone.x + 2, zone.y + 2, zone.width - 4, zone.height - 4);
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#ffffffdd';
-    ctx.font = '600 13px sans-serif';
-    const icon = zone.kind === 'folhagem' ? '🌿'
-      : zone.kind === 'poça' ? '💧'
-        : zone.kind === 'neve' ? '❄️'
-          : zone.kind === 'vento' ? '🍂'
-            : zone.kind === 'pedra' ? '🪨'
-              : zone.kind === 'flores' ? '🌸'
-                : zone.kind === 'areia' ? '🏖️'
-                  : zone.kind === 'ruínas' ? '🏛️'
-                    : '🫒';
-    ctx.fillText(icon, zone.x + 9, zone.y + 21);
-    ctx.fillText(zone.label, zone.x + 31, zone.y + 20);
+    // Cantos e marcas quadradas preservam a leitura da área mecânica sem caixas tracejadas ou emoji.
+    ctx.fillStyle = zone.kind === 'neve' || zone.kind === 'areia' ? '#ffffffcc' : '#ffffff9c';
+    const corner = 12;
+    for (const [x, y, dx, dy] of [
+      [zone.x + 3, zone.y + 3, 1, 1], [zone.x + zone.width - 3, zone.y + 3, -1, 1],
+      [zone.x + 3, zone.y + zone.height - 3, 1, -1], [zone.x + zone.width - 3, zone.y + zone.height - 3, -1, -1],
+    ] as const) {
+      for (let step = 0; step < corner; step += 3) {
+        ctx.fillRect(x + step * dx, y, 2, 2);
+        ctx.fillRect(x, y + step * dy, 2, 2);
+      }
+    }
+    const markX = zone.x + Math.floor(zone.width / 2) - 5;
+    const markY = zone.y + Math.floor(zone.height / 2) - 5;
+    ctx.fillStyle = '#ffffff88';
+    ctx.fillRect(markX, markY + 4, 10, 2);
+    ctx.fillRect(markX + 4, markY, 2, 10);
     ctx.restore();
   }
 }
@@ -114,22 +113,16 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     ctx.fillStyle = region.ground;
     ctx.fillRect(0, 0, width, height);
 
-    // Textura leve do tileset mantém a paleta regional e tira o aspecto de piso liso/procedural.
+    // O recorte de terreno domina a camada: menos ruído procedural, mais identidade de tileset.
     for (let y = 0; y < height; y += 16) {
-      for (let x = 0; x < width; x += 16) drawAtlasTile(ctx, tiles.ground, x, y, 16, 16, 0.2);
+      for (let x = 0; x < width; x += 16) drawAtlasTile(ctx, tiles.ground, x, y, 16, 16, 0.42);
     }
-    // Manchas e tufos independentes dos tiles evitam uma grade repetitiva, inclusive sem atlas.
-    for (let i = 0; i < 150; i++) {
-      ctx.fillStyle = i % 3 ? '#1b352209' : '#fff2c00d';
-      ctx.beginPath();
-      ctx.ellipse(hash(i * 5 + 1) * width, hash(i * 5 + 2) * height, 15 + hash(i + 9) * 48, 8 + hash(i + 19) * 23, hash(i + 29) * 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    for (let i = 0; i < 2800; i++) {
+    // Pequenos pixels de contraste quebram a repetição sem desenhar manchas vetoriais sobre o mapa.
+    for (let i = 0; i < 920; i++) {
       const x = Math.floor(hash(i * 3) * width), y = Math.floor(hash(i * 3 + 1) * height);
-      ctx.fillStyle = i % 3 ? '#213d2629' : '#f0edac35';
+      ctx.fillStyle = i % 3 ? '#213d2624' : '#f0edac2b';
       ctx.fillRect(x, y, 1, 2);
-      if (i % 7 === 0) { ctx.fillRect(x - 2, y - 1, 1, 2); ctx.fillRect(x + 2, y - 2, 1, 2); }
+      if (i % 11 === 0) { ctx.fillRect(x - 2, y - 1, 1, 2); ctx.fillRect(x + 2, y - 2, 1, 2); }
     }
 
     // Recorta corredores curvos e repete células de 16 px: o tileset não é esticado na trilha.
@@ -156,7 +149,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
         const center = horizontal ? height * 0.5 + Math.sin(x / 190) * 19 : width * 0.5 + Math.sin(y / 95) * 100;
         if (Math.abs((horizontal ? y : x) - center) <= half + 32) drawAtlasTile(ctx, tiles.path, x, y, 16, 16, 0.82);
       }
-      for (let i = 0; i < 900; i++) {
+      for (let i = 0; i < 420; i++) {
         ctx.fillStyle = i % 2 ? '#6d573021' : '#fff0cc30';
         ctx.fillRect(Math.floor(hash(i * 7) * width), Math.floor(hash(i * 7 + 1) * height), 2, 1);
       }
