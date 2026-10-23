@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import MusicControls from './MusicControls.vue';
 import { MusicPlayer } from '../app/music-player';
 import { survivorAudio } from '../app/survivor-audio-settings';
@@ -527,14 +527,86 @@ const heldKeys = new Set<string>();
 /** Joystick flutuante: aparece onde o dedo encostou na tela da Torre (`lx`, `ly`, relativos à tela). */
 const joystick = reactive({ active: false, pointerId: null as number | null, cx: 0, cy: 0, dx: 0, dy: 0, lx: 0, ly: 0 });
 
-const KEY_DIR: Record<string, string> = {
+type SurvivorDirection = 'up' | 'right' | 'down' | 'left';
+const KEY_DIR: Record<string, SurvivorDirection> = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
   w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
 };
 
+const SURVIVOR_ACTION_SELECTOR = 'button:not(:disabled), [role="button"][tabindex]:not([tabindex="-1"]), a[href], input:not(:disabled), select:not(:disabled)';
+
+function activeSurvivorDialog(): HTMLElement | null {
+  // Alguns momentos (como a afinidade do segundo tipo) pausam a corrida e deixam
+  // o aviso de pausa no DOM. O último overlay visível é o que está por cima.
+  return [...document.querySelectorAll<HTMLElement>('.survivor-overlay[role="dialog"], .survivor-overlay[role="alertdialog"]')].reverse()
+    .find((element) => element.getClientRects().length > 0) ?? null;
+}
+
+function focusFirstSurvivorAction(): void {
+  void nextTick(() => {
+    const dialog = activeSurvivorDialog();
+    const action = dialog?.querySelector<HTMLElement>(SURVIVOR_ACTION_SELECTOR);
+    action?.focus({ preventScroll: true });
+  });
+}
+
+function moveSurvivorFocus(direction: SurvivorDirection): boolean {
+  const dialog = activeSurvivorDialog();
+  if (!dialog) return false;
+  const actions = [...dialog.querySelectorAll<HTMLElement>(SURVIVOR_ACTION_SELECTOR)]
+    .filter((element) => element.getClientRects().length > 0);
+  if (!actions.length) return false;
+  const active = document.activeElement instanceof HTMLElement && dialog.contains(document.activeElement)
+    ? document.activeElement
+    : actions[0]!;
+  if (!dialog.contains(document.activeElement)) {
+    active.focus({ preventScroll: true });
+    return true;
+  }
+  const from = active.getBoundingClientRect();
+  const originX = from.left + from.width / 2;
+  const originY = from.top + from.height / 2;
+  const next = actions
+    .filter((element) => element !== active)
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      const dx = rect.left + rect.width / 2 - originX;
+      const dy = rect.top + rect.height / 2 - originY;
+      const primary = direction === 'left' ? -dx : direction === 'right' ? dx : direction === 'up' ? -dy : dy;
+      const secondary = direction === 'left' || direction === 'right' ? Math.abs(dy) : Math.abs(dx);
+      return { element, primary, score: primary + secondary * 1.7 };
+    })
+    .filter((candidate) => candidate.primary > 1)
+    .sort((a, b) => a.score - b.score)[0]?.element;
+  (next ?? actions[(actions.indexOf(active) + 1) % actions.length]!).focus({ preventScroll: true });
+  return true;
+}
+
+function confirmSurvivorDialog(): boolean {
+  const dialog = activeSurvivorDialog();
+  if (!dialog) return false;
+  const active = document.activeElement instanceof HTMLElement && dialog.contains(document.activeElement)
+    ? document.activeElement
+    : dialog.querySelector<HTMLElement>(SURVIVOR_ACTION_SELECTOR);
+  if (!active) return false;
+  active.click();
+  return true;
+}
+
 function onKey(e: KeyboardEvent): void {
-  if ((e.key === 'e' || e.key === 'E') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSpecial(); return; }
+  // Cartões acessíveis do seletor já tratam Enter/Espaço localmente.
+  // Ao chegar na janela, o mesmo evento não deve escolher a opção duas vezes.
+  if (e.defaultPrevented) return;
   const dir = KEY_DIR[e.key];
+  if (e.type === 'keydown' && dir && moveSurvivorFocus(dir)) {
+    e.preventDefault();
+    return;
+  }
+  if (e.type === 'keydown' && (e.key === ' ' || e.key === 'Enter' || e.key === 'z') && !(e.key !== 'z' && document.activeElement instanceof HTMLButtonElement) && confirmSurvivorDialog()) {
+    e.preventDefault();
+    return;
+  }
+  if ((e.key === 'e' || e.key === 'E') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSpecial(); return; }
   if (!dir) return;
   if (e.type === 'keydown') heldKeys.add(dir);
   else heldKeys.delete(dir);
@@ -1319,6 +1391,13 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
 const typeChoice = ref<PickOption | null>(null);
 const typeAffinityOffer = ref<PokemonType[] | null>(null);
+
+watch(
+  [pickOptions, typeChoice, typeAffinityOffer, pendingUpgrade, paused, leaveConfirm, specialModalOpen],
+  (next, previous) => {
+    if (next.some((value, index) => Boolean(value) && !previous[index])) focusFirstSurvivorAction();
+  },
+);
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
 const infiniteWanted = ref(false);
 const torre = computed(() => trainer.value.torre);
@@ -1493,8 +1572,7 @@ onBeforeUnmount(() => {
              <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
                {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
              </span>
-                 <span v-if="state.supports.length" class="chip survivor-support-count" :title="`${state.supports.length} apoio(s) acompanhando; nenhum recebe upgrades`">🤝 {{ state.supports.length }}</span>
-             <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados`">⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
+              <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados`">⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
             <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
              <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
@@ -1533,6 +1611,16 @@ onBeforeUnmount(() => {
             <small v-if="!objective.complete">{{ objective.unit === 's' ? Math.floor(objective.progress / 1000) : objective.progress }} / {{ objective.unit === 's' ? Math.floor(objective.target / 1000) : objective.target }}{{ objective.unit === 's' ? 's' : objective.unit }}</small>
           </span>
         </div>
+
+        <section v-if="ready && state && hudExpanded && state.supports.length" class="survivor-supports" aria-label="Aliados que seguem o protagonista">
+          <strong>🤝 Aliados · {{ state.supports.length }}/5</strong>
+          <small>Atacam a partir de você e não recebem upgrades.</small>
+          <div v-for="support in state.supports" :key="`${support.dexId}-${support.name}`" class="survivor-support-line">
+            <b>{{ support.name }}</b>
+            <span>{{ support.move.icon }} {{ support.move.name }} · {{ MOVE_CATEGORY_LABELS_PT[support.move.category] }}</span>
+            <small>{{ Math.round(support.profile.damage * support.damageFactor) }} dano · {{ Math.round(support.profile.cooldownMs) }} ms</small>
+          </div>
+        </section>
 
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
