@@ -231,7 +231,7 @@ const atlasOpaqueBottoms = new WeakMap<HTMLCanvasElement, number>();
 const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'home-orange', museum: 'manor', arcade: 'center-blue', pins: 'home-teal', arena: 'center-red', torre: 'tower' };
 /** Com o atlas: a casa de cada estágio (Cabana, Casa de madeira, Casa de tijolos, Sobrado — `HOME_STAGES`). */
 /** As que pegam a cor escolhida (o desenho tem partes coloridas para tingir). */
-const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼' };
+const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', altar: '💠' };
 
 export class VillageGame {
   readonly player: Walker;

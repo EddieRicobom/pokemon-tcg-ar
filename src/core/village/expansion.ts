@@ -1,4 +1,5 @@
 import type { Tile, VillageMap } from './map';
+import { buildingsFor } from './town-layout';
 
 export const LEISURE_SPOTS = [
   { id: 'garden', name: 'Jardim das Estações', icon: '🌷', x: 40, y: 81, action: 'Cuidar das flores', description: 'Um jardim de canteiros, cercas baixas e flores para recolher.' },
@@ -41,6 +42,14 @@ export function expandVillage(base: VillageMap, w: number, h: number, seed: numb
     ['mesa-piquenique', 97, 64], ['mesa-piquenique', 103, 69], ['barril-flores', 94, 67], ['lixeira-praca', 104, 64],
     ['banco-ferro', 103, 16], ['lanterna-pedra', 109, 16], ['espreguicadeira', 108, 44], ['guarda-sol', 110, 44], ['espreguicadeira', 108, 59], ['guarda-sol', 110, 59],
   ] as const) decoration(item, x, y);
+  // Prédios que só cabem no mapa grande (o mapa base 96×72 os descarta), como o Altar da Confiança.
+  const known = new Set(base.buildings.map((b) => b.id));
+  for (const b of buildingsFor(w, h)) {
+    if (known.has(b.id)) continue;
+    fill(b.x, b.y, b.w, b.h, 'building');
+    fill(b.x, b.y + b.h, b.w, 1, 'path');
+    map.buildings = [...map.buildings, b];
+  }
   for (const place of LEISURE_SPOTS) { put(place.x, place.y + 1, 'deco'); map.decor.push({ kind: 'leisure-sign', x: place.x, y: place.y + 1, w: 1, h: 1 }); }
   return map;
 }

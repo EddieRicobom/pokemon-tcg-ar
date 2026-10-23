@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick, type App as VueApp } from 'vue';
 
 // Carregamento dos sprites controlado pelo teste: todos ficam pendentes até `release()`.
@@ -15,6 +15,10 @@ const { default: MinigameSobrevivencia } = await import('./MinigameSobrevivencia
 describe('Torre de Sobrevivência: sair no meio', () => {
   let host: HTMLElement | null = null;
   let app: VueApp | null = null;
+  // Sem rede: o componente pede `village-sprite-meta.json`; sem este estanque o happy-dom tentava abrir localhost:3000.
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => null })));
+  });
   afterEach(() => {
     app?.unmount();
     host?.remove();
