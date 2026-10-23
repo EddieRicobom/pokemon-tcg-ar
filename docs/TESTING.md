@@ -82,6 +82,23 @@ Os trabalhos ativos têm cobertura em `worksites.test.ts`: concorrência com a f
 - **O que isso não diz:** a taxa com a câmera de um celular continua **não medida**. No teste de ponta a ponta (navegador, nível fácil) 3 das 4 cartas foram identificadas, o que mostra que os dois ambientes não são equivalentes; nenhum dos dois substitui fotos reais.
 - **Para medir de verdade:** reunir fotos de cartas físicas tiradas pelo celular (com a carta, a coleção e o número conferidos à mão), colocá-las em uma pasta de fixtures e rodar o mesmo pipeline sobre elas. Isso depende do dono fotografar as cartas.
 
+## Vila com muitos moradores: engasgos de caminho (2026-10-23)
+
+Relato: com 30 moradores a Vila ficava injogável. Causa medida **só na lógica**, num PC (não num celular, e sem o desenho): cada morador que anda até um destino a mais de 7 blocos refazia uma busca de caminho em largura a cada bloco, e a função de bloqueio (`occupied`) varria móveis, plantas, moradores e reservas, alocando arrays, a cada bloco visitado. Os moradores andam na mesma velocidade, então as buscas caíam no **mesmo quadro**: um engasgo periódico a cada ~0,4 s.
+
+Correção: grade de blocos fixos refeita por quadro (`core/village/occupancy.ts`), reservas sem alocação (`BenchVisits.reserved`), buffers da busca reaproveitados e limite de 3 buscas de moradores por quadro (`PathBudget` em `core/village/pathing.ts`; quem joga nunca espera). O `update` começa por um morador diferente a cada quadro para ninguém ficar sempre no fim da fila.
+
+`npx tsx scripts/village-path-bench.ts <moradores> <antigo|novo>` simula 60 s a 60 quadros/s (só caminhos). Resultado no PC de desenvolvimento:
+
+| Moradores | Modo | p99 do `update` | Máximo | Quadros acima de 16,7 ms |
+| ---: | --- | ---: | ---: | ---: |
+| 30 | antigo | 60 ms | 96 ms | 150 de 3600 |
+| 30 | novo | 7 ms | 21 ms | 1 de 3600 |
+| 50 | antigo | 144 ms | 218 ms | 150 de 3600 |
+| 50 | novo | 11 ms | 24 ms | 1 de 3600 |
+
+O modo «antigo» já usa os buffers reaproveitados, então subestima um pouco o custo anterior. `occupancy.test.ts` compara a regra nova com a antiga em todos os blocos de um mapa com 30 moradores, e `pathing.test.ts` cobre o limite de buscas. **Não medido:** o tempo de quadro real no navegador/celular (inclui o desenho) e se o Café, os bancos e a fazenda continuam fluidos com muita gente; o desenho também pode pesar com 30 moradores.
+
 ## O que NÃO é coberto automaticamente
 
 O registro de corridas concluídas da Torre, sua idempotência/migração, marcos de Pins e origem dos cosméticos também têm cobertura unitária em `src/core/trainer.test.ts` e `src/core/village/rewards.test.ts`. Esses testes validam somente o estado e os eventos puros; não medem desempenho em celular.

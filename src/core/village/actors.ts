@@ -1,7 +1,7 @@
 import type { Rng } from '../battle';
 import { isSolidTile, tileAt } from './map';
 import type { VillageMap } from './map';
-import { pathStep } from './pathing';
+import { PATH_DEFERRED, pathStepBudgeted } from './pathing';
 
 /**
  * Quem anda pela Vila: você e os Pokémon. O movimento é de bloco em bloco (como nos jogos de portátil), com a posição
@@ -110,7 +110,9 @@ export function stepVillager(w: Walker, dt: number, map: VillageMap, blocked: Bl
     const dy = follow.y - w.y;
     if (Math.abs(dx) + Math.abs(dy) <= 1) return;
     // O caminho mais curto contornando prédios e a fonte; se não houver, tenta o passo em linha reta (mesmo que encoste).
-    const along = pathStep(map, w, follow, blocked);
+    const along = pathStepBudgeted(map, w, follow, blocked);
+    // Sem busca disponível neste quadro: espera o próximo (ver `PathBudget`), sem andar em linha reta contra uma parede.
+    if (along === PATH_DEFERRED) return;
     if (along && tryStep(w, along, map, blocked)) return;
     const options: Dir[] = Math.abs(dx) >= Math.abs(dy) ? [dx > 0 ? 'right' : 'left', dy > 0 ? 'down' : 'up'] : [dy > 0 ? 'down' : 'up', dx > 0 ? 'right' : 'left'];
     for (const d of options) if (tryStep(w, d, map, blocked)) return;

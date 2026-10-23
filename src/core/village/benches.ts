@@ -3,7 +3,7 @@ import { advance, moving, tryStep } from './actors';
 import type { Blocked, Walker } from './actors';
 import { isWalkable } from './map';
 import type { VillageMap } from './map';
-import { pathStep } from './pathing';
+import { PATH_DEFERRED, pathStepBudgeted } from './pathing';
 
 export interface Bench { id: string; x: number; y: number }
 /** Dois lugares por banco, fora das portas e das vias principais. */
@@ -35,7 +35,8 @@ export class BenchVisits {
   }
 
   reserved(x: number, y: number, except?: string): boolean {
-    return [...this.visits].some(([id, v]) => id !== except && v.x === x && v.y === y);
+    for (const [id, v] of this.visits) if (id !== except && v.x === x && v.y === y) return true;
+    return false;
   }
 
   seated(id: string, w: Walker): boolean {
@@ -73,8 +74,8 @@ export class BenchVisits {
     const dy = visit.y - w.y;
     const dir = Math.abs(dx) + Math.abs(dy) === 1
       ? dx ? dx > 0 ? 'right' : 'left' : dy > 0 ? 'down' : 'up'
-      : pathStep(map, w, visit, blocked);
-    if (dir) tryStep(w, dir, map, blocked);
+      : pathStepBudgeted(map, w, visit, blocked);
+    if (dir && dir !== PATH_DEFERRED) tryStep(w, dir, map, blocked);
     return true;
   }
 }

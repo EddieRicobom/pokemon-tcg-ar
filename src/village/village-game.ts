@@ -19,7 +19,10 @@ import type { VillageState } from '../core/village/life';
 import { homeDecor, homeLevel, homeOf, homeStyleOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
 import { buildingGroundY, WORK_AREAS, WORK_SITES } from '../core/village/town-layout';
 import { buildingAt, findFree, isSolidTile, isWalkable, tileAt } from '../core/village/map';
-import { pathStep } from '../core/village/pathing';
+import { pathBudget, pathStep } from '../core/village/pathing';
+import { blockedForResident, StaticBlockGrid } from '../core/village/occupancy';
+import type { ResidentOccupancyWorld } from '../core/village/occupancy';
+import type { Blocked } from '../core/village/actors';
 import type { VillageMap } from '../core/village/map';
 import { FX_EMOJI } from '../core/village/social-state';
 import type { CommunityActivityRecord } from '../core/village/community';
@@ -593,6 +596,36 @@ export class VillageGame {
     return this.benchVisits ??= new BenchVisits(benchesFor(this.map).filter((b) => [0, 1].every((dx) => !isPlaced(this.state, b.x + dx, b.y) && !cropAt(this.state, b.x + dx, b.y))));
   }
 
+  /** Buscas de caminho que os moradores podem fazer por quadro (ver `PathBudget`): o resto espera o próximo quadro. */
+  private static readonly PATH_SEARCHES_PER_FRAME = 3;
+  private staticBlocks: StaticBlockGrid | null = null;
+  private residentWorld: ResidentOccupancyWorld | null = null;
+  private readonly residentBlockedFns = new Map<string, Blocked>();
+  private pathTurn = 0;
+
+  /** Móveis e plantas na grade e as reservas de lugar do quadro: refeito no começo de cada `update`. */
+  private refreshResidentWorld(): void {
+    const grid = (this.staticBlocks ??= new StaticBlockGrid(this.map.w, this.map.h));
+    grid.rebuild(this.state.placed, this.state.crops);
+    this.residentWorld = {
+      grid,
+      reservations: [(x, y, except) => this.getBenchVisits().reserved(x, y, except), (x, y, except) => this.getCafe().seats.reserved(x, y, except)],
+      player: this.player,
+      villagers: this.villagers,
+      asleep: this.asleep,
+    };
+  }
+
+  /** `occupied(x, y, id)` para um morador, rápido o bastante para a busca de caminho (função reaproveitada por morador). */
+  private residentBlocked(id: string): Blocked {
+    let fn = this.residentBlockedFns.get(id);
+    if (!fn) {
+      fn = (x, y) => (this.residentWorld ? blockedForResident(this.residentWorld, x, y, id) : this.occupied(x, y, id));
+      this.residentBlockedFns.set(id, fn);
+    }
+    return fn;
+  }
+
   /** Tem alguém ou alguma coisa ocupando o bloco? (Pokémon, você, móveis) */
   occupied(x: number, y: number, except?: string): boolean {
     const benches = this.getBenchVisits();
@@ -987,6 +1020,7 @@ export class VillageGame {
 
   stop(): void {
     this.running = false;
+    pathBudget.reset(Number.POSITIVE_INFINITY);
     cancelGameFrame(this.handle);
   }
 
@@ -1024,7 +1058,13 @@ export class VillageGame {
     for (const id of benchVisits.visits.keys()) {
       if (!this.villagers.has(id)) benchVisits.release(id, now);
     }
-    for (const [id, w] of this.villagers) {
+    // Cada quadro começa por um morador diferente: com o limite de buscas, ninguém fica sempre no fim da fila.
+    this.refreshResidentWorld();
+    pathBudget.reset(VillageGame.PATH_SEARCHES_PER_FRAME);
+    const residents = [...this.villagers];
+    const turn = residents.length > 0 ? this.pathTurn++ % residents.length : 0;
+    for (let n = 0; n < residents.length; n++) {
+      const [id, w] = residents[(n + turn) % residents.length]!;
       syncFollowerSpeed(w, p, this.state.follower === id);
       const calledToPlayer = now < this.calledUntil && this.called.has(id);
       if (this.asleep.has(id) || this.waiting === id || this.state.follower === id || this.sceneBusy(id) || calledToPlayer) cafe.release(id, now);
@@ -1035,14 +1075,14 @@ export class VillageGame {
         // No momento: o primeiro fica parado; os outros vão até ele. Depois do encontro, todos ficam parados.
         const anchor = this.villagers.get(sc.cast[0]!)!;
         const target = sc.phase === 'gather' && id !== sc.cast[0] ? { x: anchor.x, y: anchor.y } : { x: w.x, y: w.y };
-        stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, target);
+        stepVillager(w, dt, this.map, this.residentBlocked(id), this.rng, target);
         continue;
       }
       const farmTask = this.farmTasks.get(id);
       const mailRoute = this.mailRoutes.get(id);
       const serviceAllowed = this.state.follower !== id && !calledToPlayer && now >= (this.serviceBreaks.get(id) ?? 0);
       if (this.cafeWaiterId === id && serviceAllowed) {
-        const result = cafe.stepWaiter(w, dt, now, this.map, (x, y) => this.occupied(x, y, id), this.rng, this.localDay());
+        const result = cafe.stepWaiter(w, dt, now, this.map, this.residentBlocked(id), this.rng, this.localDay());
         if (result.served) { this.bubble(id, '☕', 2000); this.bubble(result.served, '🍰', 2500); this.onResidentEconomyChange?.(); }
         if (result.handled) { benchVisits.release(id, now); continue; }
       }
@@ -1062,25 +1102,25 @@ export class VillageGame {
           mailRoute.pauseUntil = now + 1_250;
           if (mailRoute.index >= mailRoute.targets.length) this.mailRoutes.delete(id);
         } else {
-          stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, door);
+          stepVillager(w, dt, this.map, this.residentBlocked(id), this.rng, door);
         }
         continue;
       }
       if (farmTask && this.waiting !== id && this.state.follower !== id && !(now < this.calledUntil && this.called.has(id))) {
         benchVisits.release(id, now);
-        stepFarmWorker(w, farmTask, dt, this.map, (x, y) => this.occupied(x, y, id));
+        stepFarmWorker(w, farmTask, dt, this.map, this.residentBlocked(id));
         continue;
       }
       const work = this.communityWork.get(id);
       if (work && now < work.until && this.state.follower !== id && !calledToPlayer) {
         if (Math.abs(work.target.x - w.x) + Math.abs(work.target.y - w.y) > 1) {
-          stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, work.target);
+          stepVillager(w, dt, this.map, this.residentBlocked(id), this.rng, work.target);
         }
         continue;
       }
       if (work) this.communityWork.delete(id);
       const called = now < this.calledUntil ? this.called.get(id) : undefined;
-      if (serviceAllowed && this.cafeWaiterId && this.cafeWaiterId !== id && !mailRoute && cafe.stepCustomer(w, dt, now, this.map, (x, y) => this.occupied(x, y, id), this.rng)) { benchVisits.release(id, now); continue; }
+      if (serviceAllowed && this.cafeWaiterId && this.cafeWaiterId !== id && !mailRoute && cafe.stepCustomer(w, dt, now, this.map, this.residentBlocked(id), this.rng)) { benchVisits.release(id, now); continue; }
       let schedule = this.roamSchedule.get(id);
       if (!schedule || now >= schedule.until) {
         const index = (schedule?.index ?? [...this.villagers.keys()].indexOf(id) * 3) + 1;
@@ -1094,8 +1134,8 @@ export class VillageGame {
         ? behind
         : called ?? (zone && Math.abs(zone.x - w.x) + Math.abs(zone.y - w.y) > 7 ? zone : null);
       if (follow) benchVisits.release(id, now);
-      if (!follow && benchVisits.step(w, dt, now, this.map, (x, y) => this.occupied(x, y, id), this.rng)) continue;
-      stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, follow);
+      if (!follow && benchVisits.step(w, dt, now, this.map, this.residentBlocked(id), this.rng)) continue;
+      stepVillager(w, dt, this.map, this.residentBlocked(id), this.rng, follow);
       if (follow && this.state.follower === id) this.catchUp(w, follow, dt, now);
     }
     if (now >= this.nextBenchChat) {
