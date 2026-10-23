@@ -21,3 +21,8 @@ test-results/
 playwright-report/
 e2e/.tmp/
 eng.traineddata
+
+# Restos de ferramentas locais (o projeto usa npm; estes não fazem parte do repositório)
+/.tmp/
+/pnpm-lock.yaml
+/pnpm-workspace.yaml
