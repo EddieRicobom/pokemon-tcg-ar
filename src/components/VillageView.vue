@@ -10,6 +10,7 @@ import { attachLiveVillage, detachLiveVillage, syncCoins } from '../app/wallet';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { routeHref } from '../app/route';
+import type { VilaExit } from '../app/route';
 import { handleDialogEscape, isGameKeyboardControl } from '../app/game-keyboard';
 import { stopCamera } from '../core/camera';
 import type { RunningVillageAr } from '../ar/start-village';
@@ -111,7 +112,7 @@ import type { MailAction } from '../core/village/mail';
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
 /** `close` sai da Vila; com `'pvp'` a Caixa abre o PvP em seguida (a Vila mora dentro da Caixa, então não há troca de tela). */
 /** `then`: para onde ir ao sair (Caixa com PvP, batalha na câmera ou desafio da Liga); sem nada, volta à tela anterior. */
-const emit = defineEmits<{ close: [then?: 'pvp' | 'batalha' | 'caixa'] }>();
+const emit = defineEmits<{ close: [then?: VilaExit] }>();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const dioramaFloorEl = ref<HTMLCanvasElement | null>(null);
@@ -1781,10 +1782,31 @@ function goToPvp(): void {
   emit('close', 'pvp');
 }
 
+/** Coliseu → Arena 3D: o palco virtual da Caixa, sem câmera nem sensores. */
+function goToArena3d(): void {
+  closeDialog();
+  sheet.value = null;
+  emit('close', 'arena3d');
+}
+
+/** Coliseu → Caixa em AR: a câmera e os sensores, com os Pokémon no chão da sua sala. */
+function goToCaixa(): void {
+  closeDialog();
+  sheet.value = null;
+  emit('close', 'caixa');
+}
+
 function goToArena(): void {
   closeDialog();
   sheet.value = null;
   window.location.hash = routeHref('arena', undefined, ['vila']);
+}
+
+/** Fliperama → batalha na Arena 3D: fecha a Vila e abre o palco virtual (sem câmera) com a batalha em destaque. */
+function goToBattle3d(): void {
+  closeDialog();
+  sheet.value = null;
+  emit('close', 'batalha3d');
 }
 
 /** Fliperama → batalha na câmera: fecha a Vila e já abre a câmera e os sensores da Caixa (no mesmo toque). */
@@ -1803,9 +1825,10 @@ function openGameBuilding(b: Building): void {
   if (b.kind === 'arcade') {
     dialog.value = {
       name: b.name,
-      text: `Luzes piscando e o barulhinho das máquinas! Aqui você joga os minigames (Quem é esse Pokémon?, Tipos e Memória) com as cartas que já escaneou — ou vai direto para uma batalha da sua caixa na câmera (${battleRewardText.value}).`,
+      text: `Luzes piscando e o barulhinho das máquinas! Aqui você joga os minigames (Quem é esse Pokémon?, Tipos e Memória) com as cartas que já escaneou — ou vai direto para uma batalha da sua caixa, na Arena 3D ou na câmera (${battleRewardText.value}).`,
       actions: [
-        { label: '⚔️ Batalha na câmera', run: goToBattle },
+        { label: '🏟️ Batalha na Arena 3D', run: goToBattle3d },
+        { label: '📷 Batalha na câmera', run: goToBattle },
         { label: 'Jogar minigames', run: () => { closeDialog(); sheet.value = 'arcade'; } },
         exit,
       ],
@@ -1819,9 +1842,11 @@ function openGameBuilding(b: Building): void {
   } else if (b.kind === 'arena') {
     dialog.value = {
       name: b.name,
-      text: 'A Arena Digital reúne Ginásios, Elite 4, Campeã, PvP e corridas automáticas 6×6. Você prepara tudo lá; a Caixa só exibe a luta na câmera.',
+      text: 'O Coliseu da Vila! Aqui os seus Pokémon lutam: na Arena 3D, um Coliseu virtual sem câmera, ou na Caixa em AR, com a luta no chão da sua sala pela câmera. A Liga (Ginásios, Elite 4 e Campeã), as corridas 6×6 e o PvP também saem daqui.',
       actions: [
-        { label: 'Abrir Arena', run: goToArena },
+        { label: '🏟️ Arena 3D (sem câmera)', run: goToArena3d },
+        { label: '📷 Caixa em AR (câmera)', run: goToCaixa },
+        { label: '🏅 Liga e corridas 6×6', run: goToArena },
         { label: 'Batalhar com um amigo (PvP)', run: goToPvp },
         exit,
       ],

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { pendingChallenge } from '../app/league-store';
-import { routeHref } from '../app/route';
+import { arenaFlags, routeHref } from '../app/route';
 import TeamPicker from '../components/TeamPicker.vue';
 import LeagueCard from '../components/LeagueCard.vue';
 import { ENDLESS_ARENA_LABELS } from '../core/endless-arena';
 import type { EndlessArenaMode } from '../core/endless-arena';
 
 const MODES: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
+/** Onde as lutas acontecem: a Arena 3D (sem câmera, padrão) ou a Caixa em AR (câmera). Vale enquanto esta tela está aberta. */
+const virtual = ref(true);
 const waitingChallenge = computed(() => pendingChallenge.value !== null);
 const selectedCount = ref<number | null>(null);
 const teamReady = computed(() => selectedCount.value === 6);
@@ -15,25 +17,29 @@ function updateTeam(ids: string[]): void { selectedCount.value = ids.length; }
 
 function enterEndless(mode: EndlessArenaMode): void {
   if (!teamReady.value) return;
-  // A câmera só pode abrir no toque seguinte; a Caixa recebe o modo e põe a batalha no botão principal.
-  window.location.hash = routeHref('caixa', undefined, [mode]);
+  // A câmera (se for o caso) só pode abrir no toque seguinte; a Caixa recebe o modo e põe a batalha no botão principal.
+  window.location.hash = routeHref('caixa', undefined, arenaFlags([mode], virtual.value));
 }
 
 function enterChallenge(): void {
-  window.location.hash = routeHref('caixa');
+  window.location.hash = routeHref('caixa', undefined, arenaFlags([], virtual.value));
 }
 </script>
 
 <template>
   <section class="card arena-view" aria-labelledby="arena-title">
     <h2 id="arena-title">Arena Digital</h2>
-    <p class="note">Prepare a equipe, escolha o desafio e abra a Caixa AR. A batalha é automática; você acompanha e pode encerrar quando quiser.</p>
-    <ol class="arena-steps" aria-label="Etapas para batalhar"><li :class="{ done: teamReady }">{{ teamReady ? '✓' : '1' }} Equipe · {{ selectedCount ?? '…' }}/6</li><li>2 · Escolher desafio</li><li>3 · Abrir câmera e colocar a Caixa</li></ol>
+    <p class="note">Prepare a equipe, escolha o desafio e entre na arena. A batalha é automática; você acompanha e pode encerrar quando quiser.</p>
+    <ol class="arena-steps" aria-label="Etapas para batalhar"><li :class="{ done: teamReady }">{{ teamReady ? '✓' : '1' }} Equipe · {{ selectedCount ?? '…' }}/6</li><li>2 · Escolher desafio</li><li>{{ virtual ? '3 · Entrar na Arena 3D' : '3 · Abrir câmera e colocar a Caixa' }}</li></ol>
+    <div class="box-backdrop" role="group" aria-label="Onde lutar">
+      <button type="button" :class="{ active: virtual }" :aria-pressed="virtual" @click="virtual = true">🏟️ Arena 3D (sem câmera)</button>
+      <button type="button" :class="{ active: !virtual }" :aria-pressed="!virtual" @click="virtual = false">📷 Caixa em AR (câmera)</button>
+    </div>
 
     <div v-if="waitingChallenge" class="arena-ready" role="status">
       <strong>Desafio da Liga marcado</strong>
       <span>Seu oponente já está esperando. A Caixa monta o revezamento da sua equipe contra a equipe completa dele.</span>
-      <button type="button" class="primary" @click="enterChallenge">Abrir a Caixa para o desafio</button>
+      <button type="button" class="primary" @click="enterChallenge">{{ virtual ? 'Entrar na Arena 3D para o desafio' : 'Abrir a Caixa para o desafio' }}</button>
     </div>
 
     <section class="arena-section" aria-labelledby="arena-team-title">
@@ -68,12 +74,12 @@ function enterChallenge(): void {
       <div>
         <h3>Combate comum</h3>
         <p class="note">Escolha formato, escalação e formas Mega na Caixa, sem corrida contínua.</p>
-        <a class="button" :href="routeHref('caixa')">Abrir Caixa AR</a>
+        <a class="button" :href="routeHref('caixa', undefined, arenaFlags([], virtual))">{{ virtual ? 'Abrir a Arena 3D' : 'Abrir Caixa AR' }}</a>
       </div>
       <div>
         <h3>Batalhar com um amigo</h3>
         <p class="note">Pareie dois celulares, escolha o modo e cada jogador vê a mesma luta na própria Caixa.</p>
-        <a class="button" :href="routeHref('caixa', undefined, ['pvp'])">Abrir PvP na Caixa</a>
+        <a class="button" :href="routeHref('caixa', undefined, arenaFlags(['pvp'], virtual))">Abrir PvP na Caixa</a>
       </div>
     </section>
 

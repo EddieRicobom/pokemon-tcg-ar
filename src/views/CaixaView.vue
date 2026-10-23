@@ -132,6 +132,8 @@ function openPvp(): void {
  * A câmera não abre sozinha porque trocar de tela quebra o "toque" e o iOS só pede os sensores a partir de um toque.
  */
 const battleShortcut = ref(arrival.has('batalha'));
+/** Vindo do Coliseu da Vila (`?vila=1`): o botão «Voltar à Vila» fica na tela inicial. */
+const fromVila = arrival.has('vila');
 
 onMounted(() => {
   motionPreference = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -922,7 +924,7 @@ onBeforeUnmount(() => {
       <button ref="openButton" type="button" class="primary" :class="{ 'battle-cta': battleShortcut }" :disabled="phase !== 'idle'" @click="open">
         {{ phase === 'starting' ? 'Abrindo…' : virtual ? (endlessShortcut ? `⚔️ Entrar na arena · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Entrar na arena e batalhar' : '🏟️ Entrar na Arena 3D') : endlessShortcut ? `⚔️ Abrir câmera · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Abrir câmera e batalhar' : 'Abrir câmera e sensores' }}
       </button>
-      <a v-if="battleShortcut || endlessShortcut" class="button" :href="routeHref(endlessShortcut ? 'arena' : 'vila')">{{ endlessShortcut ? 'Voltar à Arena' : 'Voltar à Vila' }}</a>
+      <a v-if="battleShortcut || endlessShortcut || fromVila" class="button" :href="routeHref(endlessShortcut ? 'arena' : 'vila')">{{ endlessShortcut ? 'Voltar à Arena' : 'Voltar à Vila' }}</a>
     </div>
 
     <p v-if="error && !immersive" class="message error" role="alert">{{ error }}</p>

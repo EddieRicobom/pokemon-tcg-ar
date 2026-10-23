@@ -66,6 +66,29 @@ export function routeHref(name: RouteName, cardId?: string, flags: readonly Rout
   return flags.length > 0 ? `${base}?${flags.map((f) => `${f}=1`).join('&')}` : base;
 }
 
+/** Como a Vila se despede (o `emit('close', …)` do `VillageView`): cada saída leva a uma tela da Caixa, já com os sinalizadores. */
+export type VilaExit = 'pvp' | 'batalha' | 'batalha3d' | 'caixa' | 'arena3d';
+
+/**
+ * Endereço da Caixa para cada saída da Vila: PvP e batalha do Fliperama abrem a câmera (como sempre), a Caixa em AR
+ * abre a câmera sem mais nada, e a Arena 3D (e a batalha do Fliperama na Arena 3D) abre o palco virtual, sem câmera.
+ * Quem vem do Coliseu leva `vila`, para a Caixa oferecer «Voltar à Vila».
+ */
+export function vilaExitHref(then: VilaExit): string {
+  switch (then) {
+    case 'pvp': return routeHref('caixa', undefined, ['pvp']);
+    case 'batalha': return routeHref('caixa', undefined, ['batalha']);
+    case 'batalha3d': return routeHref('caixa', undefined, ['batalha', 'virtual']);
+    case 'caixa': return routeHref('caixa', undefined, ['vila']);
+    case 'arena3d': return routeHref('caixa', undefined, ['virtual', 'vila']);
+  }
+}
+
+/** Os sinalizadores de uma luta que sai da Arena Digital: o modo escolhido mais o fundo (`virtual` = Arena 3D, sem câmera). */
+export function arenaFlags(extra: readonly RouteFlag[], virtual: boolean): RouteFlag[] {
+  return virtual ? [...extra, 'virtual'] : [...extra];
+}
+
 export function useRoute() {
   const route = ref<Route>(parseRoute(window.location.hash));
   const onChange = () => {

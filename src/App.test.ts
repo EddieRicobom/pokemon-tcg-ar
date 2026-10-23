@@ -75,7 +75,14 @@ describe('App', () => {
     expect(text).toContain('Equipe da Arena · 6 Pokémon');
     expect(text).toContain('Formatação digital');
     expect(text).toContain('Restauração digital');
-    expect([...(host?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href'))).toContain('#/caixa');
+    // O padrão é a Arena 3D (sem câmera); trocar o fundo para a câmera (AR) volta o link para a Caixa em AR de sempre.
+    const hrefs = () => [...(host?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href'));
+    expect(hrefs()).toContain('#/caixa?virtual=1');
+    expect(hrefs()).not.toContain('#/caixa');
+    [...host!.querySelectorAll<HTMLButtonElement>('.box-backdrop button')].find((b) => b.textContent?.includes('Caixa em AR'))!.click();
+    await nextTick();
+    expect(hrefs()).toContain('#/caixa');
+    expect(hrefs()).not.toContain('#/caixa?virtual=1');
   });
 
   it('a tela Treinador mostra nível, missões e conquistas, sem inventar progresso', async () => {
