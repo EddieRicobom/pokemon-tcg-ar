@@ -156,3 +156,11 @@ Simulação (`npx tsx scripts/simulate-survival.ts`, 20 sementes por tipo, mesma
 | Agressiva | 4,76 min | 4,86 min | 75 | 87 |
 
 Hipótese: os novos tipos aumentam a pressão no meio da corrida, e os buffs compensam sem empurrar a mediana para cima. O simulador não escolhe buffs de forma inteligente, então o efeito real das cartas precisa de sessão humana em celular.
+
+## Recarga de atordoamento — 23/10/2026
+
+Um inimigo só pode ser atordoado de novo 5 s depois do último atordoamento (`STUN_COOLDOWN_MS`, em `src/core/survivor.ts`). A regra vale para todas as fontes: golpe Tremor/Pedrada, afinidade de pedra e terra, Planta com semente e congelamento do gelo. Enquanto a recarga corre, um novo atordoamento é ignorado e não estende o atual.
+
+Motivo: uma run com Tremor em área, recarga de 240 ms e raio de 331 mantinha os inimigos parados enquanto estivessem no raio. Feedback SVF1 de Golurk (diversão 5, dificuldade 3): "O stun nos ataques está muito, mas muito forte".
+
+Simulação (mesma matriz, sem alteração de escolha de cartas): evasiva 3,60 min, agressiva 4,85 min, com 12 e 84 runs chegando a 5 min. O simulador usa pouco os golpes de atordoamento, então o efeito real precisa ser medido com novos códigos de feedback.

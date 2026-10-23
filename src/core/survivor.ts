@@ -754,6 +754,15 @@ function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void
 const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
 /** Raio da explosão do Pokémon explosivo ao cair (só atinge o jogador). */
 const EXPLOSION_RADIUS = 70;
+/** Um inimigo só pode ser atordoado de novo 5 s depois do último atordoamento (evita travar a arena com golpes de área). */
+export const STUN_COOLDOWN_MS = 5_000;
+
+/** Aplica atordoamento respeitando a recarga. Enquanto ela corre, o novo atordoamento é ignorado (não estende o atual). */
+function applyStun(e: SurvivorEnemy, ms: number): void {
+  if ((e.stunCooldownMs ?? 0) > 0) return;
+  e.stunMs = Math.max(e.stunMs ?? 0, ms);
+  e.stunCooldownMs = STUN_COOLDOWN_MS;
+}
 const hasUpgrade = (player: SurvivorPlayer, id: string): boolean => (player.upgradeLevels[id] ?? 0) > 0;
 
 export function survivorDirectDamageMultiplier(distance: number): number {
@@ -793,7 +802,7 @@ function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: numbe
       e.slowMs = Math.max(e.slowMs ?? 0, 900);
       break;
     case 'atordoar':
-      e.stunMs = Math.max(e.stunMs ?? 0, e.boss ? 90 : 220);
+      applyStun(e, e.boss ? 90 : 220);
       break;
     case 'empurrar': {
       const dx = e.x - from.x;
@@ -842,7 +851,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   if (synergy?.refreshSlowMs) e.slowMs = Math.max(e.slowMs ?? 0, synergy.refreshSlowMs);
   Object.assign(e, survivorElementalStatus(move.type));
   if (move === p.move && move.type === 'grass' && hasUpgrade(p, 'grass-roots') && wasSeeded) {
-    e.stunMs = Math.max(e.stunMs ?? 0, e.boss ? 100 : 250);
+    applyStun(e, e.boss ? 100 : 250);
   }
   switch (move.effect) {
     case 'queimar':
@@ -857,12 +866,12 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
         if (e.frostStacks >= frostThreshold) {
           e.frostStacks = 0;
           e.frostImmuneMs = e.boss ? 2200 : 1500;
-          e.stunMs = e.boss ? Math.max(e.stunMs ?? 0, 150) : Math.max(e.stunMs ?? 0, 550);
+          applyStun(e, e.boss ? 150 : 550);
         }
       }
       break;
     case 'atordoar':
-      e.stunMs = e.boss ? EFFECT_MS.bossStun : EFFECT_MS.stun;
+      applyStun(e, e.boss ? EFFECT_MS.bossStun : EFFECT_MS.stun);
       break;
     case 'empurrar': {
       const dx = e.x - from.x;
@@ -1353,6 +1362,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (e.hastenedMs && e.hastenedMs > 0) e.hastenedMs = Math.max(0, e.hastenedMs - dtMs);
     const stunned = !!e.stunMs && e.stunMs > 0;
     if (stunned) e.stunMs = Math.max(0, (e.stunMs ?? 0) - dtMs);
+    if ((e.stunCooldownMs ?? 0) > 0) e.stunCooldownMs = Math.max(0, (e.stunCooldownMs ?? 0) - dtMs);
     const target = updateEnemyBehavior(state, e, dtMs);
     const dx = target.x - e.x;
     const dy = target.y - e.y;
