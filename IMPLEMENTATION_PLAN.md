@@ -190,6 +190,8 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
 2. **Imagens e dados de cartas**: vêm do TCGdex, só das cartas que o usuário escaneia, e ficam no aparelho dele.
 3. **Direitos e marca**: projeto de fã, não oficial. Não publicar como produto sem revisar o uso de marcas e imagens.
 
+- **Engasgos da Vila com 30 moradores (2026-10-23):** causa medida e corrigida na lógica de caminhos (grade de ocupação por quadro + limite de buscas por quadro); detalhes e números em [docs/TESTING.md](docs/TESTING.md#vila-com-muitos-moradores-engasgos-de-caminho-2026-10-23). 🔶 Falta medir no navegador/celular com 30 moradores de verdade, incluindo o custo do desenho.
+
 ## Riscos conhecidos
 
 - Tudo que depende de câmera, GPU, sensores e desempenho de celular real continua sem medição.

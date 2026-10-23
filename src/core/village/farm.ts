@@ -10,7 +10,7 @@ import { COMMUNITY_RULES, normalizeResidentProgress } from './community';
 import type { PokemonType } from '../pokemon-data';
 import { advance, moving, tryStep } from './actors';
 import type { Blocked, Dir, Walker } from './actors';
-import { pathStep } from './pathing';
+import { PATH_DEFERRED, pathStepBudgeted } from './pathing';
 import { workActivityActive } from './professions';
 import { payResidentWork } from './resident-economy';
 
@@ -83,8 +83,8 @@ export function stepFarmWorker(worker: Walker, task: FarmTask, dt: number, map: 
   const directionTo = (point: { x: number; y: number }): Dir => point.x > worker.x ? 'right' : point.x < worker.x ? 'left' : point.y > worker.y ? 'down' : 'up';
   const distance = Math.abs(worker.x - task.stand.x) + Math.abs(worker.y - task.stand.y);
   if (!distance) { worker.dir = directionTo(task); return; }
-  const direction = distance === 1 ? directionTo(task.stand) : pathStep(map, worker, task.stand, blocked);
-  if (direction) tryStep(worker, direction, map, blocked);
+  const direction = distance === 1 ? directionTo(task.stand) : pathStepBudgeted(map, worker, task.stand, blocked);
+  if (direction && direction !== PATH_DEFERRED) tryStep(worker, direction, map, blocked);
 }
 
 const fieldSpots = FIELDS.flatMap((field) => Array.from({ length: field.w * field.h }, (_, n) => ({ x: field.x + n % field.w, y: field.y + Math.floor(n / field.w) })));
