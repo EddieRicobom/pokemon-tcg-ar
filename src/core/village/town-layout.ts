@@ -6,7 +6,7 @@
 
 import { CAFE_TABLES } from './cafe-layout';
 
-export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'fountain';
+export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'fountain' | 'altar';
 
 export interface Building {
   id: string;
@@ -81,6 +81,7 @@ export const CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>;
   { kind: 'arena', name: 'Arena', x: 19, y: 22, w: 5, h: 2, unlock: 6 },
   // Modo próprio (como a Arena e a Pista de Pins), não um minigame do Fliperama: ver `core/survivor.ts`.
   { kind: 'torre', name: 'Torre de Sobrevivência', x: 12, y: 22, w: 5, h: 2, unlock: 7 },
+  { kind: 'altar', name: 'Altar da Confiança', x: 46, y: 82, w: 3, h: 2, unlock: 4 },
 ];
 
 /** O mapa: tamanho, ruas e lugares fixos (o resto — matas, lago, flores — o sorteio espalha em volta). */

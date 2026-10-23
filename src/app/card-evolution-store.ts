@@ -30,8 +30,8 @@ export function recordCardVictories(mons: readonly CardCompanion[], trial: Evolu
   return next === cardJourneys.value || commit(next);
 }
 
-export function commitCardEvolution(mon: CardCompanion, friendship: number, nextDexId: number, battleCardId: string): boolean {
-  const next = evolveCard(cardJourneys.value, mon, friendship, nextDexId, battleCardId);
+export function commitCardEvolution(mon: CardCompanion, friendship: number, nextDexId: number, battleCardId: string, withTrustStone = false): boolean {
+  const next = evolveCard(cardJourneys.value, mon, friendship, nextDexId, battleCardId, withTrustStone);
   return next !== null && commit(next);
 }
 

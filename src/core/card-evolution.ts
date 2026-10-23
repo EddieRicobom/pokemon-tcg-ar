@@ -31,15 +31,15 @@ export function recordCardWin(state: CardJourneys, mon: CardCompanion, trial: Ev
   return { ...state, [mon.id]: { ...journey, wins: { ...journey.wins, [trial]: true } } };
 }
 
-export function canEvolveCard(journey: CardJourney, friendship: number, nextDexId: number): boolean {
-  return friendship >= 100 && journey.wins.survival && journey.wins.battle && journey.wins.pins
+export function canEvolveCard(journey: CardJourney, friendship: number, nextDexId: number, withTrustStone = false): boolean {
+  return friendship >= 100 && (withTrustStone || (journey.wins.survival && journey.wins.battle && journey.wins.pins))
     && nextEvolutions(journey.dexId).includes(nextDexId);
 }
 
-export function evolveCard(state: CardJourneys, mon: CardCompanion, friendship: number, nextDexId: number, battleCardId: string): CardJourneys | null {
+export function evolveCard(state: CardJourneys, mon: CardCompanion, friendship: number, nextDexId: number, battleCardId: string, withTrustStone = false): CardJourneys | null {
   if (!validCompanion(mon) || !battleCardId) return null;
   const journey = journeyFor(state, mon);
-  if (journey.dexId !== mon.dexId || !canEvolveCard(journey, friendship, nextDexId)) return null;
+  if (journey.dexId !== mon.dexId || !canEvolveCard(journey, friendship, nextDexId, withTrustStone)) return null;
   return { ...state, [mon.id]: { ...journey, dexId: nextDexId, battleCardId, history: [...journey.history, journey.dexId], wins: emptyTrials() } };
 }
 

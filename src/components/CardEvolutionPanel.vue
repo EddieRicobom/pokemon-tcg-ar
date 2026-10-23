@@ -7,8 +7,8 @@ import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { CachedCard } from '../cache/types';
 import type { Friendship } from '../core/village/life';
 
-const props = defineProps<{ friends: Readonly<Record<string, Friendship>> }>();
-const emit = defineEmits<{ evolved: [card: CachedCard] }>();
+const props = defineProps<{ friends: Readonly<Record<string, Friendship>>; trustStones?: number; altar?: boolean }>();
+const emit = defineEmits<{ evolved: [card: CachedCard]; spendTrustStones: [] }>();
 const cards = ref<CachedCard[]>([]);
 const selected = ref('');
 const busy = ref(false);
@@ -30,7 +30,9 @@ onMounted(async () => {
 });
 async function evolve(nextDexId: number): Promise<void> {
   const c = current.value;
-  if (!c || busy.value || !canEvolveCard(c.journey, c.points, nextDexId)) return;
+  if (!c || busy.value) return;
+  const useStone = props.altar === true && c.points >= 100 && (props.trustStones ?? 0) >= 5;
+  if (!canEvolveCard(c.journey, c.points, nextDexId, useStone)) return;
   busy.value = true;
   note.value = 'Preparando a evolução…';
   try {
@@ -40,10 +42,11 @@ async function evolve(nextDexId: number): Promise<void> {
       return;
     }
     // Reconfere amizade e provas depois da rede; nada é cobrado e o Pokémon mantém seu id.
-    if (!commitCardEvolution(c.mon, props.friends[c.card.id]?.points ?? 0, nextDexId, species.cardId)) {
+    if (!commitCardEvolution(c.mon, props.friends[c.card.id]?.points ?? 0, nextDexId, species.cardId, useStone)) {
       note.value = cardJourneyError.value || 'Ainda faltam requisitos para evoluir.';
       return;
     }
+    if (useStone) emit('spendTrustStones');
     note.value = `✨ ${c.mon.name} evoluiu para ${species.name}! A amizade continua; as três vitórias recomeçam para a próxima evolução.`;
     emit('evolved', c.card);
   } catch { note.value = 'Não consegui preparar a evolução agora. Nenhum progresso foi perdido.'; }
@@ -53,6 +56,7 @@ async function evolve(nextDexId: number): Promise<void> {
 
 <template>
   <div class="card-evolution-panel">
+    <p v-if="altar" class="note">💠 Altar da Confiança: com amizade máxima, entregue 5 Pedras da Confiança para evoluir uma carta sem as provas dos modos. Pedras disponíveis: {{ trustStones ?? 0 }}/5.</p>
     <p>O Pokémon da sua carta também pode evoluir. Chegue à amizade máxima e vença com ele nos três modos. A evolução é gratuita.</p>
     <p v-if="loading" role="status">Lendo suas cartas…</p>
     <p v-else-if="!cards.length">Escaneie uma carta de Pokémon para começar.</p>
@@ -71,7 +75,7 @@ async function evolve(nextDexId: number): Promise<void> {
         <li :class="{ done: current.journey.wins.pins }">{{ current.journey.wins.pins ? '✓' : '○' }} Pins · vencer na sua equipe contra o computador</li>
       </ul>
       <p v-if="!current.next.length">Esta forma não tem uma próxima evolução nos dados disponíveis.</p>
-      <button v-for="next in current.next" :key="next" type="button" class="primary" :disabled="busy || !canEvolveCard(current.journey, current.points, next)" @click="evolve(next)">Evoluir para {{ speciesName(next) }}</button>
+      <button v-for="next in current.next" :key="next" type="button" class="primary" :disabled="busy || !canEvolveCard(current.journey, current.points, next, altar === true && current.points >= 100 && (trustStones ?? 0) >= 5)" @click="evolve(next)">Evoluir para {{ speciesName(next) }}<template v-if="altar && current.points >= 100 && (trustStones ?? 0) >= 5"> · 5 Pedras</template></button>
       <p class="note">As vitórias podem vir em qualquer ordem, antes ou depois da amizade máxima. Cada evolução exige novas vitórias. Na câmera, a carta original chama seu companheiro evoluído com uma chegada especial.</p>
     </template>
     <p v-if="note || cardJourneyError" role="status">{{ cardJourneyError || note }}</p>

@@ -856,11 +856,13 @@ describe('segundo golpe', () => {
     expect(s.player.hp).toBeGreaterThan(s.player.maxHp - 10);
   });
 
-  it('avisa os marcos de 10 e 20 minutos uma única vez por corrida', () => {
+  it('avisa os marcos de 10, 15 e 20 minutos uma única vez por corrida', () => {
     const s = quiet(createSurvivorState(8, { kindCount: 1 }));
     const ten = stepSurvivor(s, { dx: 0, dy: 0 }, 600_000);
     expect(ten).toContainEqual({ type: 'milestone', id: 'ten-minutes', reward: 'love-candy' });
     expect(stepSurvivor(s, { dx: 0, dy: 0 }, 1)).not.toContainEqual(expect.objectContaining({ type: 'milestone' }));
+    const fifteen = quiet(createSurvivorState(18, { kindCount: 1 }));
+    expect(stepSurvivor(fifteen, { dx: 0, dy: 0 }, 900_000)).toContainEqual({ type: 'milestone', id: 'fifteen-minutes', reward: 'trust-stone' });
     const long = quiet(createSurvivorState(9, { kindCount: 1 }));
     long.player.hp = 1_000_000;
     long.player.maxHp = 1_000_000;

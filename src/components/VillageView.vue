@@ -31,7 +31,7 @@ import { beginInvestigation, inspectLegendClue, investigationPlace, legendDiaryP
 import type { DecodedGif } from '../core/gif';
 import MinigameHub from './MinigameHub.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
-import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS } from '../core/survivor';
+import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
 import { personalityOf } from '../core/village/personality';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
@@ -130,6 +130,7 @@ pruneHarvest(state, day.value);
 
 type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
+const cardEvolutionAtAltar = ref(false);
 const backpackOpen = ref(false);
 type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos' | 'lendas' | 'correio';
 const tab = ref<Tab>('inicio');
@@ -1560,6 +1561,10 @@ async function recordSurvivalAdventure(summary: import('../core/survivor').Survi
     add(state, 'love-candy');
     milestoneRewards.push('🍬 Love Candy');
   }
+  if (summary.survivedMs >= SURVIVOR_TRUST_STONE_MS) {
+    add(state, 'trust-stone');
+    milestoneRewards.push('💠 Pedra da Confiança');
+  }
   if (summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS) {
     add(state, 'mega-stone-shard');
     milestoneRewards.push('💎 Fragmento de Mega Stone');
@@ -1718,6 +1723,12 @@ function openBuilding(b: Building): void {
     return;
   }
   if (b.kind === 'home') return openHome(b);
+  if (b.kind === 'altar') {
+    cardEvolutionAtAltar.value = true;
+    sheet.value = 'card-evolution';
+    say('💠 Altar da Confiança: amizade máxima e 5 Pedras da Confiança evoluem uma carta sem as três provas.', 5200);
+    return;
+  }
   if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena' || b.kind === 'torre') return openGameBuilding(b);
   if (b.kind === 'mail') return openMail();
   if (b.kind === 'cafe') {
@@ -1873,7 +1884,7 @@ function openFountain(b: Building): void {
         ? [{ label: `Invocar qualquer um na sorte (${COIN_SUMMON_COST} moedas)`, disabled: state.coins < COIN_SUMMON_COST, run: () => void doCoinSummon() }]
         : []),
       { label: 'Evoluir um Digital Pokémon', disabled: state.digital.instances.length === 0, run: () => openEvolveList(b) },
-      { label: 'Evoluir Pokémon das cartas', run: () => { closeDialog(); sheet.value = 'card-evolution'; } },
+      { label: 'Evoluir Pokémon das cartas', run: () => { closeDialog(); cardEvolutionAtAltar.value = false; sheet.value = 'card-evolution'; } },
       { label: 'Sair', run: closeDialog },
     ],
   };
@@ -3194,7 +3205,7 @@ onBeforeUnmount(() => {
 
       <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-label="Evolução dos Pokémon das cartas">
         <header><strong>Evolução · seus companheiros</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
-        <CardEvolutionPanel :friends="state.friends" @evolved="syncCardEvolution" />
+        <CardEvolutionPanel :friends="state.friends" :trust-stones="count(state, 'trust-stone')" :altar="cardEvolutionAtAltar" @evolved="syncCardEvolution" @spend-trust-stones="() => { state.inventory['trust-stone'] = Math.max(0, count(state, 'trust-stone') - 5); changed(); }" />
       </div>
 
       <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" :aria-label="MENU_TITLES[tab]">

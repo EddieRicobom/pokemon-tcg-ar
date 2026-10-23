@@ -28,7 +28,9 @@ import {
   survivorCoins,
   survivorScore,
   SURVIVOR_UPGRADE_RARITIES,
+  SURVIVOR_UPGRADE_FAMILIES,
   SURVIVOR_LOVE_CANDY_MS,
+  SURVIVOR_TRUST_STONE_MS,
   SURVIVOR_MEGA_SHARD_MS,
   SURVIVOR_ARTIFACT_DETAILS,
   survivorProjectileOpacity,
@@ -74,7 +76,7 @@ const UPGRADE_ICON: Record<string, string> = {
   'jirachi-reroll': '⭐',
   'second-attack': '✦',
 };
-const upgradeIcon = (id: string): string => (id.startsWith('evolve:') ? '✨' : (UPGRADE_ICON[id] ?? '✨'));
+const upgradeIcon = (option: SurvivorUpgradeOption): string => (option.id.startsWith('evolve:') ? '✨' : (option.family ? SURVIVOR_UPGRADE_FAMILIES[option.family].icon : (UPGRADE_ICON[option.id] ?? '✨')));
 const RARITY_BALL_IMAGE: Record<SurvivorUpgradeRarity, string> = {
   normal: assetUrl('assets/survivor/balls/poke-ball.png'),
   raro: assetUrl('assets/survivor/balls/great-ball.png'),
@@ -1173,7 +1175,9 @@ function loop(ts: number): void {
         playSound('success');
         say(ev.id === 'ten-minutes'
           ? '🎁 Marco de 10 minutos! Love Candy garantido ao concluir a corrida.'
-          : '💎 Marco de 20 minutos! Fragmento de Mega Stone garantido ao concluir a corrida.', 6000);
+          : ev.id === 'fifteen-minutes'
+            ? '💠 Marco de 15 minutos! Pedra da Confiança garantida ao concluir a corrida.'
+            : '💎 Marco de 20 minutos! Fragmento de Mega Stone garantido ao concluir a corrida.', 6000);
       }
       else if (ev.type === 'artifactCollected') {
         playSound('survivor-pickup');
@@ -1795,11 +1799,12 @@ onBeforeUnmount(() => {
               <p>Great Ball: nível 3 · Ultra Ball: nível 8 · Master Ball: nível 12. Só uma carta Master Ball pode ser escolhida por corrida.</p>
             </details>
             <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" @click="chooseUpgrade(u.id)">
-              <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u.id) }}</span>
+              <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u) }}</span>
               <span class="survivor-upgrade-text">
                 <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
                   <img class="survivor-rarity-ball" :src="RARITY_BALL_IMAGE[u.rarity]" :alt="SURVIVOR_UPGRADE_RARITIES[u.rarity].label" />
                 </span>
+                <span v-if="u.family" class="survivor-upgrade-family">{{ SURVIVOR_UPGRADE_FAMILIES[u.family].icon }} {{ SURVIVOR_UPGRADE_FAMILIES[u.family].label }}</span>
                 <strong>{{ u.name }}</strong><small>{{ u.description }}</small>
               </span>
             </button>
@@ -1838,6 +1843,7 @@ onBeforeUnmount(() => {
               <small v-if="runClearBonus > 0"> (inclui o bônus de {{ runClearBonus }} por zerar, 1× por dia)</small>
             </p>
              <p v-if="summary.survivedMs >= SURVIVOR_LOVE_CANDY_MS" class="survivor-cleared" role="status">🍬 Love Candy conquistado por alcançar 10 minutos.</p>
+              <p v-if="summary.survivedMs >= SURVIVOR_TRUST_STONE_MS" class="survivor-cleared" role="status">💠 Pedra da Confiança conquistada por alcançar 15 minutos.</p>
              <p v-if="summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS" class="survivor-cleared" role="status">💎 Fragmento de Mega Stone conquistado por alcançar 20 minutos.</p>
              <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
             <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>
