@@ -26,7 +26,8 @@ function simulate(type: PokemonType, seed: number): number {
   return state.elapsedMs;
 }
 
-describe('regressão de dificuldade do Survival', () => {
+// Simulação pesada de CPU: com a suíte inteira em paralelo ela passava dos 5 s padrão e falhava só por tempo.
+describe('regressão de dificuldade do Survival', { timeout: 30_000 }, () => {
   it('mantém os tipos dentro de uma faixa justa nos primeiros quatro minutos', () => {
     const averages = new Map<PokemonType, number>();
     for (const type of TYPES) {
