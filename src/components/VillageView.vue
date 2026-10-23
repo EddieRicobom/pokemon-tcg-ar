@@ -120,6 +120,7 @@ const arVideoEl = ref<HTMLVideoElement | null>(null);
 const wrapEl = ref<HTMLElement | null>(null);
 const loading = ref('Abrindo a sua Vila…');
 const toast = ref('');
+const idleGuideDismissed = ref(false);
 const clock = ref('');
 const map = villageMap();
 const state = reactive(loadVillage());
@@ -471,6 +472,14 @@ function say(text: string, ms = 2800): void {
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (toast.value = ''), ms);
 }
+
+const idleGuideVisible = computed(() =>
+  !idleGuideDismissed.value && !loading.value && !arActive.value && !sheet.value && !dialog.value && !quiz.value && !quizOpen.value
+  && !cutsceneOpen.value && !welcome.value && !recapScenes.value.length && !legendaryScene.value && !hoOhWishScene.value && !toast.value,
+);
+const idleGuideText = computed(() => mons.value.length === 0
+  ? 'Abra o Menu para começar a história da Vila e receber seu primeiro companheiro.'
+  : 'Sem conversa por perto? Aproxime-se de um morador e use A, toque no mapa para explorar ou abra o Menu.');
 
 type UiSound = Extract<SoundCue, { kind: 'ui' }>['cue'];
 function unlockSound(): void {
@@ -3023,6 +3032,9 @@ onBeforeUnmount(() => {
         <button type="button" class="village-welcome-dismiss" @click.stop="welcome = false">Entendi</button>
       </div>
       <p v-if="toast && !recapScene && !cutsceneOpen && !welcome" class="village-toast" role="status">{{ toast }} <button type="button" class="link" aria-label="Dispensar aviso" @click="toast = ''">✕</button></p>
+      <p v-else-if="idleGuideVisible" class="village-idle-guide" role="status">
+        {{ idleGuideText }} <button type="button" class="link" @click="idleGuideDismissed = true">Entendi</button>
+      </p>
 
       <QuizDialog v-if="quiz" :name="quiz.name" :text="quiz.text" :stage="quiz.stage" :placeholder="quiz.q.placeholder" :chips="quiz.q.chips" :options="quiz.follow?.options.map((x) => x.label)" :submit-label="quiz.nick ? 'Salvar' : undefined" :cancel-label="quiz.nick ? 'Cancelar' : undefined" @answer="quizAnswer" @choose="quizChoose" @close="quizClose" />
       <div v-else-if="quizOpen && quizQuestion" class="speech in-stage village-dialog" role="dialog" aria-label="Presente inicial">

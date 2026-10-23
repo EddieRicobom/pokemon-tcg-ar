@@ -92,6 +92,14 @@ function attackOf(dexId: number, picked?: PokemonType): { move: SurvivorMove; pr
   return { move, profile: attackProfile(move, stats), types, ...(secondType ? { secondMove: moveFor([secondType], stats) } : {}) };
 }
 const moveLine = (m: SurvivorMove): string => `${m.icon} ${m.name} · ${MOVE_CATEGORY_LABELS_PT[m.category]}`;
+/** Uma frase de uso prático antes da corrida, sem esconder os números e efeitos reais do golpe. */
+const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
+  projetil: 'Mantenha distância: o dano cai conforme o alvo se afasta.',
+  aura: 'Fere quem encosta. Circule para não ficar cercado.',
+  area: 'Explode no alvo e também atinge inimigos próximos.',
+  cone: 'Acerte à frente e atravesse grupos em movimento.',
+  orbit: 'Ataca ao redor. Fica melhor quando você se aproxima e se move.',
+};
 
 /**
  * Zona de Sobrevivência: um modo próprio da Vila (como a Arena e a Pista de Pins), aberto pela Torre — não é um
@@ -1644,6 +1652,7 @@ onBeforeUnmount(() => {
               <button v-for="t in typeChoice.types" :key="t" type="button" class="survivor-pick-btn" @click="chooseType(typeChoice, t)">
                 <strong>{{ TYPE_LABELS_PT[t] }}</strong>
                 <small>{{ moveFor([t], null).name }}</small>
+                <small class="survivor-pick-tip">{{ MOVE_CATEGORY_HINTS_PT[typeChoice.move.category] }}</small>
               </button>
             </div>
             <button type="button" class="link" @click="typeChoice = null">Voltar</button>
@@ -1699,6 +1708,7 @@ onBeforeUnmount(() => {
                 <small>{{ opt.origin }}</small>
                 <small class="survivor-pick-move" :style="{ '--move': opt.move.color }">{{ opt.move.icon }} {{ opt.move.name }}</small>
                 <small class="survivor-pick-kind">{{ MOVE_CATEGORY_LABELS_PT[opt.move.category] }} · {{ MOVE_EFFECT_LABELS_PT[opt.move.effect] }}</small>
+                 <small class="survivor-pick-tip">{{ MOVE_CATEGORY_HINTS_PT[opt.move.category] }}</small>
                 <span class="survivor-pick-bars" :style="{ '--move': opt.move.color }">
                   <span v-for="b in opt.bars" :key="b.label" class="survivor-pick-bar"><small>{{ b.label }}</small><i><b :style="{ width: Math.round(b.value * 100) + '%' }"></b></i></span>
                 </span>
