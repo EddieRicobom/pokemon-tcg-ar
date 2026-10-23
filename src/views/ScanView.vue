@@ -669,6 +669,14 @@ async function includeScannedCard(): Promise<void> {
   }
 }
 
+/** A conclusão do scan leva diretamente ao próximo passo natural de uma coleção: conhecer a Vila. */
+async function takeScannedCardToVillage(): Promise<void> {
+  await includeScannedCard();
+  if (teamAction.value === 'added' || teamAction.value === 'already') {
+    window.location.hash = routeHref('vila');
+  }
+}
+
 async function retrySprite(): Promise<void> {
   await ar?.reloadSprite();
 }
@@ -1338,13 +1346,12 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
       <p v-if="spriteText" class="message" :class="{ error: spriteState?.kind === 'error' }">{{ spriteText }}</p>
       <button v-if="spriteState?.kind === 'error'" type="button" @click="retrySprite">Tentar baixar o GIF de novo</button>
       <div class="actions result-actions">
-        <a class="button primary" :href="routeHref('cartas')">Ver em Minhas cartas</a>
-        <button type="button" class="primary" :disabled="teamAction === 'loading' || teamAction === 'added' || teamAction === 'already' || teamAction === 'full' || teamAction === 'unavailable'" @click="includeScannedCard">
-          {{ teamAction === 'loading' ? 'Adicionando…' : teamAction === 'added' ? 'Na Vila ✓' : teamAction === 'already' ? 'Já está na Vila ✓' : teamAction === 'full' ? 'Vila cheia' : teamAction === 'unavailable' ? 'Pokémon não carregado' : 'Levar para a Vila' }}
+        <button type="button" class="primary" :disabled="teamAction === 'loading' || teamAction === 'added' || teamAction === 'already' || teamAction === 'full' || teamAction === 'unavailable'" @click="takeScannedCardToVillage">
+          {{ teamAction === 'loading' ? 'Levando para a Vila…' : teamAction === 'added' ? 'Na Vila ✓' : teamAction === 'already' ? 'Já mora na Vila ✓' : teamAction === 'full' ? 'Vila cheia' : teamAction === 'unavailable' ? 'Pokémon não carregado' : 'Próximo passo: levar para a Vila' }}
         </button>
+        <a class="button" :href="routeHref('cartas')">Ver em Minhas cartas</a>
         <a class="button" :href="routeHref('escanear', scan.card.id)">Ver esta carta em AR</a>
         <a class="button" :href="routeHref('caixa')">Abrir a Caixa em AR</a>
-        <a class="button" :href="routeHref('vila')">Visitar a Vila</a>
         <button type="button" @click="scanAnother">Escanear outra carta</button>
       </div>
       <p v-if="teamAction === 'added'" class="message" role="status">{{ scan.card.name }} agora mora na Vila e também aparece na Caixa em AR.</p>
