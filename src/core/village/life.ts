@@ -15,6 +15,10 @@ import type { DiscoveryState, Expedition, WeeklyState } from './world-progress';
 import type { VillageRequest } from './requests';
 import { emptyHomeInterior, normalizeHomeInterior, normalizeHomeInteriors } from './home-interior';
 import type { HomeInterior, HomeInteriors } from './home-interior';
+import { normalizeHomeProjects, normalizeHomeValue } from './home-state';
+import type { HomeProjects } from './home-state';
+import { normalizeResidentEconomy } from './resident-economy';
+import type { ResidentEconomy } from './resident-economy';
 import { emptyCommunity, normalizeCommunity } from './community';
 import type { CommunityState } from './community';
 import { emptyFarm, normalizeFarm } from './farm';
@@ -56,6 +60,8 @@ export const HOUSE_LEVELS: readonly HouseLevel[] = [
   { name: 'Cabana', cost: { madeira: 15, pedra: 8 } },
   { name: 'Casa', cost: { madeira: 25, pedra: 18, concha: 4 } },
   { name: 'Casa com jardim', cost: { madeira: 20, pedra: 12, flor: 10 } },
+  { name: 'Casa com varanda', cost: { tabua: 12, tijolo: 8, vidro: 3 } },
+  { name: 'Solar da Vila', cost: { tabua: 18, tijolo: 14, vidro: 6, flor: 12 } },
 ];
 
 export interface Friendship {
@@ -128,6 +134,8 @@ export interface VillageState {
   homes: Record<string, number>;
   /** Estilo visual exterior escolhido para cada casa de morador. */
   homeStyles: Record<string, string>;
+  /** Poupança doméstica e limite diário de reformas; nunca usa a carteira do jogador. */
+  homeProjects: HomeProjects;
   town: { level: number; mailDay: string; cafeDay: string };
   /** Pedidos diários do mural da praça. */
   requests: { day: string; items: VillageRequest[]; story: VillageRequest[] };
@@ -149,6 +157,8 @@ export interface VillageState {
   mail: MailState;
   /** Morador escolhido para o turno do Correio; saves antigos começam sem escolha. */
   mailCarrierId: string | null;
+  cafeWaiterId: string | null;
+  residentEconomy: ResidentEconomy;
 }
 
 export interface Crop {
@@ -166,7 +176,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), homeInteriors: {}, friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
-    digital: emptyDigital(), fountainWishes: 0, hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), mail: emptyMail(), mailCarrierId: null, ...emptyWorldProgress(), homeStyles: {},
+    digital: emptyDigital(), fountainWishes: 0, hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), mail: emptyMail(), mailCarrierId: null, cafeWaiterId: null, residentEconomy: {}, ...emptyWorldProgress(), homeStyles: {}, homeProjects: {},
   };
 }
 
@@ -225,8 +235,9 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     rareGift: r.rareGift && typeof r.rareGift === 'object' ? r.rareGift : {},
     ...normalizeSocial(r),
     claimed: Array.isArray(r.claimed) ? [...new Set(r.claimed.filter((id): id is string => typeof id === 'string' && id.length <= 40))].slice(0, 200) : [],
-    homes: r.homes && typeof r.homes === 'object' ? Object.fromEntries(Object.entries(r.homes).filter(([k, v]) => k.length <= 80 && Number.isInteger(v)).slice(0, 80).map(([k, v]) => [k, Math.max(0, Math.min(511, v as number))])) : {},
+    homes: r.homes && typeof r.homes === 'object' ? Object.fromEntries(Object.entries(r.homes).filter(([k, v]) => k.length <= 80 && Number.isInteger(v)).slice(0, 80).map(([k, v]) => [k, normalizeHomeValue(v as number)])) : {},
     homeStyles: r.homeStyles && typeof r.homeStyles === 'object' ? Object.fromEntries(Object.entries(r.homeStyles).filter(([k, v]) => k.length <= 80 && typeof v === 'string').slice(0, 80)) : {},
+    homeProjects: normalizeHomeProjects(r.homeProjects),
     town: { level: Number.isInteger(r.town?.level) ? Math.max(1, Math.min(99, r.town!.level)) : 1, mailDay: typeof r.town?.mailDay === 'string' ? r.town.mailDay.slice(0, 12) : '', cafeDay: typeof r.town?.cafeDay === 'string' ? r.town.cafeDay.slice(0, 12) : '' },
     requests: normalizeRequests(r.requests),
     fishing: r.fishing && typeof r.fishing.day === 'string' && Number.isInteger(r.fishing.casts) ? { day: r.fishing.day, casts: Math.max(0, Math.min(99, r.fishing.casts)) } : { day: '', casts: 0 },
@@ -242,6 +253,8 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     community: normalizeCommunity(r.community),
     mail: normalizeMail(r.mail),
     mailCarrierId: typeof r.mailCarrierId === 'string' ? r.mailCarrierId.slice(0, 80) : null,
+    cafeWaiterId: typeof r.cafeWaiterId === 'string' ? r.cafeWaiterId.slice(0, 80) : null,
+    residentEconomy: normalizeResidentEconomy(r.residentEconomy),
   };
 }
 

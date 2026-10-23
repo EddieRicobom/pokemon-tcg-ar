@@ -75,6 +75,7 @@ export function normalizeHomeInteriors(raw: unknown): HomeInteriors {
 export function homePlace(s: VillageState, item: string, x: number, y: number): HomeInteraction {
   if (s.house < 1) return { ok: false, message: 'Construa a primeira casa antes de decorar.' };
   if (!inRoom(x, y)) return { ok: false, message: 'Esse canto não faz parte da casa.' };
+  if (x === Math.floor(HOME_INTERIOR_WIDTH / 2) && y === HOME_INTERIOR_HEIGHT - 1) return { ok: false, message: 'Deixe o tapete da entrada livre para sair da casa.' };
   if (itemDef(item)?.kind !== 'furniture') return { ok: false, message: 'Só móveis podem entrar na casa.' };
   if ((s.inventory[item] ?? 0) <= 0) return { ok: false, message: `Você não tem ${itemDef(item)?.name ?? item}.` };
   if (s.homeInterior.placed.some((p) => p.x === x && p.y === y)) return { ok: false, message: 'Já há um móvel nesse espaço.' };
