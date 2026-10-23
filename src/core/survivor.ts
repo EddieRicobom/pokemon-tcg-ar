@@ -161,6 +161,10 @@ export interface SurvivorEnemy {
   frostImmuneMs?: number;
   /** Comportamento de gameplay; não representa atributo oficial da espécie. */
   archetype?: SurvivorEnemyArchetype;
+  /** Variação determinística do suporte: cura, acelera aliados ou dispara um projétil leve. */
+  supportRole?: SurvivorSupportRole;
+  /** Ms restantes do impulso de velocidade recebido de um Suporte. */
+  hastenedMs?: number;
   /** Recarga do comportamento especial, em milissegundos. */
   specialTimerMs?: number;
   /** Proteção temporária recebida de um Protetor aliado. */
@@ -169,6 +173,8 @@ export interface SurvivorEnemy {
 
 /** Perfis internos de comportamento reutilizáveis entre regiões e espécies. */
 export type SurvivorEnemyArchetype = 'perseguidor' | 'flanqueador' | 'atirador' | 'protetor' | 'suporte';
+
+export type SurvivorSupportRole = 'cura' | 'impulso' | 'disparo';
 
 export interface SurvivorHostileProjectile {
   id: number;
@@ -651,6 +657,8 @@ export const BALANCE = {
   hostileProjectileSpeed: 85,
   /** A aura reduz em 20% a velocidade de projéteis enquanto estiverem no seu raio. */
   auraProjectileSpeedMultiplier: 0.8,
+  /** Compensação moderada para golpes de exposição: melhora o dano sem apagar a vantagem do alcance. */
+  closeRangeAttackDamageMultiplier: 1.12,
   /** Intervalo entre nascimentos (ms) = início − porSegundo·t − porOnda·onda, nunca abaixo do piso. */
   spawnStartMs: 2400,
   spawnPerSecMs: 4,
@@ -694,6 +702,10 @@ export const ENEMY_BEHAVIOR_LIMITS = {
   hostileProjectiles: 48,
   healingTargetsPerPulse: 3,
   maxProtectionTargets: 4,
+  /** Limite de suportes vivos no elenco padrão; evita uma tela dominada por curas/efeitos. */
+  maxSupportEnemiesEarly: 1,
+  maxSupportEnemiesMid: 2,
+  maxSupportEnemiesLate: 3,
   specialEffectsPerStep: 8,
 } as const;
 
@@ -890,6 +902,35 @@ function defaultArchetype(kind: number, boss: boolean, grade: SurvivorEnemyGrade
   return (['perseguidor', 'flanqueador', 'atirador', 'suporte'] as const)[stableId % 4]!;
 }
 
+function supportRoleFor(stableId: number): SurvivorSupportRole {
+  return stableId % 3 === 0 ? 'cura' : stableId % 3 === 1 ? 'impulso' : 'disparo';
+}
+
+function maxSupportEnemiesAt(elapsedMs: number): number {
+  if (elapsedMs < 180_000) return ENEMY_BEHAVIOR_LIMITS.maxSupportEnemiesEarly;
+  if (elapsedMs < 420_000) return ENEMY_BEHAVIOR_LIMITS.maxSupportEnemiesMid;
+  return ENEMY_BEHAVIOR_LIMITS.maxSupportEnemiesLate;
+}
+
+function liveSupportCount(state: SurvivorState): number {
+  return state.enemies.filter((enemy) => enemy.hp > 0 && enemy.archetype === 'suporte').length;
+}
+
+function resolveEnemyArchetype(
+  state: SurvivorState,
+  kind: number,
+  boss: boolean,
+  grade: SurvivorEnemyGrade,
+  stableId: number,
+): SurvivorEnemyArchetype {
+  const custom = state.enemyArchetypeFor?.({ kind, boss, grade });
+  if (custom) return custom;
+  const candidate = defaultArchetype(kind, boss, grade, stableId);
+  if (candidate !== 'suporte' || liveSupportCount(state) < maxSupportEnemiesAt(state.elapsedMs)) return candidate;
+  // Quando a cota está cheia, mantém a variedade de movimento sem adicionar outra habilidade de suporte.
+  return stableId % 2 === 0 ? 'flanqueador' : 'perseguidor';
+}
+
 /**
  * Nasce um inimigo. `grade` muda o tamanho, HP, dano e orbe de XP:
  *  - `comum`: o inimigo normal, do grupo que vai aparecendo sozinho.
@@ -917,7 +958,7 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
       damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale),
       radius: 28,
       hitFlashMs: 0,
-        archetype: state.enemyArchetypeFor?.({ kind: state.kindCount, boss: true, grade: 'comum' }) ?? defaultArchetype(state.kindCount, true, 'comum', id),
+        archetype: resolveEnemyArchetype(state, state.kindCount, true, 'comum', id),
         specialTimerMs: 1800,
     });
     return;
@@ -938,6 +979,7 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
   const hp = Math.round(baseHp * hpMul * state.infiniteScale);
   const kind = Math.floor(state.rng() * state.kindCount);
   const id = state.nextId++;
+  const archetype = resolveEnemyArchetype(state, kind, false, grade, id);
   addEnemy(state, {
     id,
     kind,
@@ -952,8 +994,9 @@ function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGra
     damage: Math.round(baseDmg * dmgMul * state.infiniteScale),
     radius: grade === 'chefao' ? 20 : grade === 'elite' ? 16 : 13,
     hitFlashMs: 0,
-    archetype: state.enemyArchetypeFor?.({ kind, boss: false, grade }) ?? defaultArchetype(kind, false, grade, id),
+    archetype,
     specialTimerMs: grade === 'chefao' ? 1800 : 2400,
+    ...(archetype === 'suporte' ? { supportRole: supportRoleFor(id) } : {}),
   });
 }
 
@@ -1486,13 +1529,14 @@ function attack(state: SurvivorState): boolean {
     // A aura pulsa sempre (dá para ver o raio), mesmo sem ninguém dentro.
     const pulseRadius = p.attackRadius * 0.8;
     let hits = 0;
+    const damage = playerAttackDamage(state);
     for (const e of state.enemies) {
       const distance = Math.hypot(e.x - p.x, e.y - p.y);
       // A órbita também alcança quem encosta no jogador. Antes havia uma faixa interna sem dano,
       // que punia Inseto/Planta justamente quando precisavam de cobertura próxima.
        const inRange = distance <= pulseRadius + e.radius;
       if (inRange) {
-        hitEnemy(state, e, artifactDamage(state), p);
+        hitEnemy(state, e, damage, p);
         hits++;
       }
     }
@@ -1568,7 +1612,7 @@ function nearestAlly(state: SurvivorState, source: SurvivorEnemy, maxDistance: n
   return best;
 }
 
-function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, target: SurvivorPlayer): void {
+function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, target: SurvivorPlayer, damageMultiplier = 0.7): void {
   if (state.hostileProjectiles.length >= ENEMY_BEHAVIOR_LIMITS.hostileProjectiles) return;
   const dx = target.x - enemy.x;
   const dy = target.y - enemy.y;
@@ -1579,7 +1623,7 @@ function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, targ
   const effect = enemy.grade === 'comum' ? undefined : (enemy.id % 3 === 0 ? 'burn' : enemy.id % 3 === 1 ? 'slow' : 'stun');
   state.hostileProjectiles.push({
     id: state.nextId++, x: enemy.x, y: enemy.y, vx: (dx / distance) * speed, vy: (dy / distance) * speed,
-    damage: Math.max(1, Math.round(enemy.damage * 0.7)), lifeMs: 2600, size: enemy.grade === 'chefao' ? 8 : enemy.grade === 'elite' ? 7 : 6,
+     damage: Math.max(1, Math.round(enemy.damage * damageMultiplier)), lifeMs: 2600, size: enemy.grade === 'chefao' ? 8 : enemy.grade === 'elite' ? 7 : 6,
     grade: enemy.grade, ...(effect ? { effect } : {}),
   });
 }
@@ -1634,17 +1678,33 @@ function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: n
       if (ally) {
         targetX = ally.x;
         targetY = ally.y;
-        let healed = 0;
-        for (const other of state.enemies) {
-          if (other === enemy || other.hp <= 0 || healed >= ENEMY_BEHAVIOR_LIMITS.healingTargetsPerPulse) continue;
-          if (Math.hypot(other.x - enemy.x, other.y - enemy.y) <= 110 && other.hp < other.maxHp) {
-            const amount = Math.max(1, Math.round(other.maxHp * 0.08));
-            other.hp = Math.min(other.maxHp, other.hp + amount);
-            state.fx.push({ kind: 'heal', x: other.x, y: other.y, r: 15, color: '#ff78b7', ageMs: 0, lifeMs: 850, count: amount });
-            healed++;
+        const supportRole = enemy.supportRole ?? 'cura';
+        if (supportRole === 'cura') {
+          let healed = 0;
+          for (const other of state.enemies) {
+            if (other === enemy || other.hp <= 0 || healed >= ENEMY_BEHAVIOR_LIMITS.healingTargetsPerPulse) continue;
+            if (Math.hypot(other.x - enemy.x, other.y - enemy.y) <= 110 && other.hp < other.maxHp) {
+              const amount = Math.max(1, Math.round(other.maxHp * 0.08));
+              other.hp = Math.min(other.maxHp, other.hp + amount);
+              state.fx.push({ kind: 'heal', x: other.x, y: other.y, r: 15, color: '#ff78b7', ageMs: 0, lifeMs: 850, count: amount });
+              healed++;
+            }
           }
+        } else if (supportRole === 'impulso') {
+          let hastened = 0;
+          for (const other of state.enemies) {
+            if (other === enemy || other.hp <= 0 || hastened >= ENEMY_BEHAVIOR_LIMITS.maxProtectionTargets) continue;
+            if (Math.hypot(other.x - enemy.x, other.y - enemy.y) <= 130) {
+              other.hastenedMs = Math.max(other.hastenedMs ?? 0, 1800);
+              hastened++;
+            }
+          }
+          state.fx.push({ kind: 'pulse', x: enemy.x, y: enemy.y, r: 110, color: '#74e2a3', ageMs: 0, lifeMs: 500 });
+        } else if (distance <= 420) {
+          // O suporte ofensivo cria pressão legível, mas com dano menor e recarga mais longa que um atirador.
+          spawnHostileProjectile(state, enemy, p, 0.45);
         }
-        enemy.specialTimerMs = 5200;
+        enemy.specialTimerMs = supportRole === 'cura' ? 5200 : supportRole === 'impulso' ? 4600 : 3600;
       }
       else enemy.specialTimerMs = 1200;
     }
@@ -1654,6 +1714,11 @@ function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: n
 
 function artifactDamage(state: SurvivorState): number {
   return state.player.artifactPowerMs > 0 ? state.player.attackDamage * BALANCE.artifactPowerMultiplier : state.player.attackDamage;
+}
+
+function playerAttackDamage(state: SurvivorState): number {
+  const base = artifactDamage(state);
+  return state.player.move.category === 'aura' ? base * BALANCE.closeRangeAttackDamageMultiplier : base;
 }
 
 function artifactKind(rng: Rng): SurvivorArtifactKind {
@@ -1782,6 +1847,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (e.frostImmuneMs && e.frostImmuneMs > 0) e.frostImmuneMs = Math.max(0, e.frostImmuneMs - dtMs);
     if (e.wetMs && e.wetMs > 0) e.wetMs = Math.max(0, e.wetMs - dtMs);
     if (e.seededMs && e.seededMs > 0) e.seededMs = Math.max(0, e.seededMs - dtMs);
+    if (e.hastenedMs && e.hastenedMs > 0) e.hastenedMs = Math.max(0, e.hastenedMs - dtMs);
     const stunned = !!e.stunMs && e.stunMs > 0;
     if (stunned) e.stunMs = Math.max(0, (e.stunMs ?? 0) - dtMs);
     const target = updateEnemyBehavior(state, e, dtMs);
@@ -1790,7 +1856,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const d = Math.hypot(dx, dy) || 1;
     const rangedMultiplier = e.archetype === 'atirador' ? BALANCE.rangedEnemySpeedMultiplier : 1;
     const statusMultiplier = e.slowMs && e.slowMs > 0 ? 0.5 : 1;
-    const speed = stunned ? 0 : e.speed * rangedMultiplier * statusMultiplier;
+    const hasteMultiplier = e.hastenedMs && e.hastenedMs > 0 ? 1.18 : 1;
+    const speed = stunned ? 0 : e.speed * rangedMultiplier * statusMultiplier * hasteMultiplier;
     e.x += (dx / d) * speed * dt;
     e.y += (dy / d) * speed * dt;
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
