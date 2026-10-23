@@ -32,7 +32,7 @@ function itemAt(x: number, y: number): string | undefined {
 }
 
 function isWall(x: number, y: number): boolean {
-  return y === 0 || x === 0 || x === HOME_INTERIOR_WIDTH - 1 || (y === HOME_INTERIOR_HEIGHT - 1 && x !== Math.floor(HOME_INTERIOR_WIDTH / 2));
+  return y === 0 || x === 0 || x === HOME_INTERIOR_WIDTH - 1;
 }
 
 function isDoor(x: number, y: number): boolean {
