@@ -483,8 +483,8 @@ async function loadSpriteSpecies(): Promise<Set<number>> {
  * Próximas formas reais que a Torre consegue desenhar (sem sprite no pacote, a forma não é oferecida), com os números
  * pelos stats da nova forma — a forma do golpe continua a mesma da corrida.
  */
-function evolutionsFor(dexId: number): SurvivorEvolutionOption[] {
-  const move = state.value?.player.move;
+function evolutionsFor(dexId: number, moveOverride?: SurvivorMove): SurvivorEvolutionOption[] {
+  const move = moveOverride ?? state.value?.player.move;
   return nextEvolutions(dexId)
     .filter((id) => spriteSpecies?.has(id))
     .map((id) => {
@@ -1211,7 +1211,15 @@ function chooseUpgrade(id: string): void {
   const events = applyUpgrade(state.value, id);
   playSound('success');
   pendingUpgrade.value = null;
-  for (const ev of events) if (ev.type === 'evolve') void evolveTo(ev.dexId, ev.name);
+  for (const ev of events) {
+    if (ev.type === 'evolve') void evolveTo(ev.dexId, ev.name);
+    if (ev.type === 'supportEvolve') {
+      void loadSpriteOrNull(ev.dexId).then((sprite) => {
+        if (!disposed) supportSprites.set(ev.dexId, sprite);
+      });
+      say(`${ev.name} evoluiu e fortaleceu o seu apoio!`, 2600);
+    }
+  }
 }
 
 function rerollUpgradeSelection(): void {
