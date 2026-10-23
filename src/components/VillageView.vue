@@ -2808,6 +2808,9 @@ onMounted(async () => {
     const team = resolveTeam(savedTeam.value, await cache.list());
     const loaded = await loadCreatureEntries(cache, browserDecoders, team.ids, undefined, loadCardCompanionEntry);
     if (loaded.failed.length) say('Não consegui mostrar alguns companheiros: ' + loaded.failed.map((f) => f.name + ' (' + f.reason + ')').join('; '), 12000);
+    // Membros da equipe sem sprite no cache não entram na cena: continuam na equipe e voltam quando a carta for recarregada.
+    const withoutSprite = team.ids.length - loaded.entries.length - loaded.failed.length;
+    if (withoutSprite > 0) say(`${withoutSprite} companheiro(s) da equipe estão sem sprite neste aparelho. Em Carregar, toque em "Recarregar" nas cartas incompletas.`, 12000);
     // Sprite local da Vila (pacote de ação, derivado do PokéSurvivor/PMD SpriteCollab — ver THIRD_PARTY_NOTICES.md):
     // usado quando a espécie está no pacote; senão cai para o GIF que a Caixa já baixou e guardou no cache.
     villagers = await Promise.all(
