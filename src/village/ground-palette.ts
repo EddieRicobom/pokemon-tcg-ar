@@ -12,14 +12,19 @@ function fill(buf: PixelBuf, color: number): void {
   for (let y = 0; y < buf.h; y++) for (let x = 0; x < buf.w; x++) pixel(buf, x, y, color);
 }
 
-/** Quatro variantes com o MESMO fundo; detalhe esparso evita xadrez de grandes manchas. */
+/** Gramado em aglomerados suaves; a base comum evita xadrez entre os blocos do mapa. */
 export function villageGrassSheet(): PixelBuf {
   const buf = createBuf(32, 32);
   fill(buf, VILLAGE_GROUND.grass);
   for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
     const h = ((x * 37 + y * 61 + x * y * 3) >>> 0) % 113;
-    if (h < 4) pixel(buf, x, y, VILLAGE_GROUND.grassLight);
-    else if (h === 17) pixel(buf, x, y, VILLAGE_GROUND.grassDark);
+    if (h < 2) pixel(buf, x, y, VILLAGE_GROUND.grassLight);
+    else if (h === 17 || h === 46) pixel(buf, x, y, VILLAGE_GROUND.grassDark);
+  }
+  for (const [x, y] of [[4, 5], [13, 10], [25, 6], [8, 22], [21, 25], [29, 18]] as const) {
+    pixel(buf, x, y, VILLAGE_GROUND.grassDark);
+    pixel(buf, x + 1, y - 1, VILLAGE_GROUND.grassLight);
+    pixel(buf, x + 2, y, VILLAGE_GROUND.grassLight);
   }
   return buf;
 }
@@ -30,7 +35,12 @@ export function villageSandTile(c: number, r: number): PixelBuf {
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
     const h = ((x + c * 16) * 17 + (y + r * 16) * 31) % 83;
     if (h === 0) pixel(buf, x, y, VILLAGE_GROUND.sandDark);
-    else if (h === 2) pixel(buf, x, y, VILLAGE_GROUND.sandLight);
+    else if (h === 2 || h === 38) pixel(buf, x, y, VILLAGE_GROUND.sandLight);
+  }
+  // Marcas pequenas de vento ajudam a areia a conversar com a doca, sem parecer ruído aleatório.
+  if ((c + r) % 3 === 0) {
+    pixel(buf, 3, 11, VILLAGE_GROUND.sandDark); pixel(buf, 4, 11, VILLAGE_GROUND.sandDark);
+    pixel(buf, 5, 10, VILLAGE_GROUND.sandLight);
   }
   return buf;
 }
