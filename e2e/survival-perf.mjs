@@ -18,7 +18,7 @@ const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-await page.goto(`${base}/pokemon-tcg-ar/e2e/survival-perf/index.html?enemies=${ENEMIES}&orbs=${ORBS}`);
+await page.goto(`${base}/pokemon-tcg-ar/e2e/survival-perf/index.html?enemies=${ENEMIES}&orbs=${ORBS}&scenery=${process.env.PERF_SCENERY ?? 1}`);
 await page.waitForFunction(() => window.survivalPerf?.ready(), null, { timeout: 120_000 });
 await page.waitForTimeout(1000);
 await page.evaluate(() => window.survivalPerf.snapshot());

@@ -40,6 +40,8 @@ const timer = setInterval(() => {
   if (!s || injected.done) return;
   injected.done = true;
   // Mantém o jogador vivo para a medição durar; os inimigos extras têm vida alta e não morrem.
+  // `scenery=0` desliga a paisagem por região (para medir quanto ela custa).
+  if (params.get('scenery') === '0') (setup as unknown as { regionScenery: boolean }).regionScenery = false;
   s.player.hp = 1e9;
   s.player.maxHp = 1e9;
   const template = s.enemies[0]!;

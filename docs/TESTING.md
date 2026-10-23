@@ -119,6 +119,8 @@ Medido com harnesses reais no Chromium (`e2e/village-perf.mjs` monta o `VillageG
 
 **Torre:** três custos. (1) O estado era um `ref` profundo, então cada campo lido ou escrito pelo motor passava por um proxy do Vue (cerca de 35% do tempo); agora o laço e o desenho trabalham no objeto cru, com um `triggerRef` por quadro. (2) `save`/`restore`/`translate` por inimigo no desenho (cerca de 14%); sem espelho, o sprite é desenhado direto na posição. (3) Inimigos e orbes fora da câmera eram desenhados; agora só o que cai na câmera (com margem de 120 unidades) é pintado. Os orbes comuns viram um único caminho. Capturas antes e depois com o mesmo estresse mostram os mesmos orbes, as mesmas barras de vida e a mesma HUD.
 
+**Paisagem da Torre:** com a câmera cheia de inimigos a paisagem ainda custava metade do quadro com CPU 12x (medido desligando-a com `?scenery=0`). Duas mudanças: o bioma passa a ser assado na camada da região (uma blitagem por região, em vez de duas) e cada blitagem cobre só o retângulo visível da câmera. Com 301 inimigos e 399 orbes a 12x: mediana de 33 ms por quadro para 16,7 ms; quadros acima de 33 ms: 210 de 420 para 62 de 537.
+
 **Não medido:** o tempo no celular de verdade; a partida normal (sem injeção, a Torre tem dezenas de inimigos, não centenas); o custo de GPU da luz dos golpes.
 
 Reproduzir: `PERF_THROTTLE=6 PERF_BASE=http://127.0.0.1:<porta> node e2e/village-perf.mjs 30 12` e `node e2e/survival-perf.mjs 150 200 10`, com um `npx vite` já rodando (a porta é a do servidor; o caminho do repositório precisa ser o do worktree que você mede).
