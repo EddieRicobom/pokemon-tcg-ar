@@ -20,7 +20,7 @@ import { homeDecor, homeLevel, homeOf, homeStyleOf, isAsleep, ROOFS, roofIndex }
 import { buildingGroundY, WORK_AREAS, WORK_SITES } from '../core/village/town-layout';
 import { buildingAt, findFree, isSolidTile, isWalkable, tileAt } from '../core/village/map';
 import { pathBudget, pathStep } from '../core/village/pathing';
-import { blockedForResident, StaticBlockGrid } from '../core/village/occupancy';
+import { blockedForResident, MoverGrid, StaticBlockGrid } from '../core/village/occupancy';
 import type { ResidentOccupancyWorld } from '../core/village/occupancy';
 import type { Blocked } from '../core/village/actors';
 import type { VillageMap } from '../core/village/map';
@@ -600,6 +600,7 @@ export class VillageGame {
   /** Buscas de caminho que os moradores podem fazer por quadro (ver `PathBudget`): o resto espera o próximo quadro. */
   private static readonly PATH_SEARCHES_PER_FRAME = 3;
   private staticBlocks: StaticBlockGrid | null = null;
+  private moverBlocks: MoverGrid | null = null;
   private residentWorld: ResidentOccupancyWorld | null = null;
   private readonly residentBlockedFns = new Map<string, Blocked>();
   private pathTurn = 0;
@@ -608,12 +609,14 @@ export class VillageGame {
   private refreshResidentWorld(): void {
     const grid = (this.staticBlocks ??= new StaticBlockGrid(this.map.w, this.map.h));
     grid.rebuild(this.state.placed, this.state.crops);
+    const movers = (this.moverBlocks ??= new MoverGrid(this.map.w, this.map.h));
+    movers.clear();
+    for (const [id, w] of this.villagers) if (!this.asleep.has(id)) movers.enter(w);
     this.residentWorld = {
       grid,
+      movers,
       reservations: [(x, y, except) => this.getBenchVisits().reserved(x, y, except), (x, y, except) => this.getCafe().seats.reserved(x, y, except)],
       player: this.player,
-      villagers: this.villagers,
-      asleep: this.asleep,
     };
   }
 
@@ -1061,11 +1064,17 @@ export class VillageGame {
     }
     // Cada quadro começa por um morador diferente: com o limite de buscas, ninguém fica sempre no fim da fila.
     this.refreshResidentWorld();
+    const movers = this.residentWorld!.movers;
     pathBudget.reset(VillageGame.PATH_SEARCHES_PER_FRAME);
     const residents = [...this.villagers];
     const turn = residents.length > 0 ? this.pathTurn++ % residents.length : 0;
+    // Quem está andando sai da grade enquanto decide o passo e volta depois dele (ver `MoverGrid`).
+    let pending: Walker | null = null;
     for (let n = 0; n < residents.length; n++) {
+      if (pending && !this.asleep.has(pending.id)) movers.enter(pending);
       const [id, w] = residents[(n + turn) % residents.length]!;
+      movers.leave(id);
+      pending = w;
       syncFollowerSpeed(w, p, this.state.follower === id);
       const calledToPlayer = now < this.calledUntil && this.called.has(id);
       if (this.asleep.has(id) || this.waiting === id || this.state.follower === id || this.sceneBusy(id) || calledToPlayer) cafe.release(id, now);
@@ -1139,6 +1148,8 @@ export class VillageGame {
       stepVillager(w, dt, this.map, this.residentBlocked(id), this.rng, follow);
       if (follow && this.state.follower === id) this.catchUp(w, follow, dt, now);
     }
+    // O último morador só volta à grade depois do próprio passo (o laço acima já o tirou no início da vez dele).
+    if (pending && !this.asleep.has(pending.id)) movers.enter(pending);
     if (now >= this.nextBenchChat) {
       this.nextBenchChat = now + 8000;
       for (const [id, w] of this.villagers) {

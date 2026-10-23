@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRaw, triggerRef, watch } from 'vue';
 import MusicControls from './MusicControls.vue';
 import { MusicPlayer } from '../app/music-player';
 import { survivorAudio } from '../app/survivor-audio-settings';
@@ -703,9 +703,14 @@ function drawSprite(sprite: Sprite | null, x: number, y: number, flip: boolean, 
   // Pés (base dos pixels opacos) no ponto (x, y) e corpo centrado: a margem transparente da folha não conta.
   const left = -((sprite.bounds.left + sprite.bounds.right) / 2) * w;
   const top = -sprite.bounds.bottom * h;
+  // Sem espelho, a posição entra direto no desenho: sem `save`/`restore` por inimigo (são a parte mais cara aqui).
+  if (!flip) {
+    ctx.drawImage(frame, x + left, y + top, w, h);
+    return;
+  }
   ctx.save();
   ctx.translate(x, y);
-  if (flip) ctx.scale(-1, 1);
+  ctx.scale(-1, 1);
   ctx.drawImage(frame, left, top, w, h);
   ctx.restore();
 }
@@ -732,6 +737,21 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.arc(e.x, e.y - 8, e.protectedMs ? 21 : 17, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
+  }
+  if (e.chargeMs) {
+    // Aviso da investida: o anel vermelho se fecha até o avanço, para dar tempo de sair do caminho.
+    ctx.strokeStyle = '#ff5a5a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 26 - (e.chargeMs / 500) * 8, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (e.archetype === 'explosivo') {
+    // Pavio aceso: um ponto laranja acima do sprite indica que ele explode ao cair.
+    ctx.fillStyle = '#ff8c3a';
+    ctx.beginPath();
+    ctx.arc(e.x + 12, e.y - 30, 3, 0, Math.PI * 2);
+    ctx.fill();
   }
   drawSprite(sprite, e.x, e.y, false, scale);
   // Efeitos do golpe no inimigo: um pontinho colorido em cima (queimando, lento, atordoado).
@@ -802,7 +822,8 @@ function preloadVisibleEnemyRegions(elapsedMs: number): void {
 
 function draw(): void {
   if (!ctx || !canvasEl.value || !state.value) return;
-  const s = state.value;
+  // O motor escreve no objeto cru (ver `loop`); o proxy do Vue só custava leituras e escritas a mais no desenho.
+  const s = toRaw(state.value);
   const VIEW_W = view.w;
   const VIEW_H = view.h;
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
@@ -823,7 +844,7 @@ function draw(): void {
   ctx.scale(zoom, zoom);
   ctx.translate(-(camX + worldViewW / 2), -(camY + worldViewH / 2));
   if (regionScenery.value) {
-    drawLandscape(ctx, s.elapsedMs);
+    drawLandscape(ctx, s.elapsedMs, { x: camX - 2, y: camY - 2, w: worldViewW + 4, h: worldViewH + 4 });
   } else if (groundPattern) {
     ctx.fillStyle = groundPattern;
     ctx.fillRect(0, 0, ARENA_W, ARENA_H);
@@ -835,27 +856,37 @@ function draw(): void {
   ctx.lineWidth = 4;
   ctx.strokeRect(2, 2, ARENA_W - 4, ARENA_H - 4);
 
+  // Só o que cai na câmera (com folga para o desenho): fora da tela não há nada a pintar.
+  const margin = 120;
+  const left = camX - margin;
+  const right = camX + worldViewW + margin;
+  const top = camY - margin;
+  const bottom = camY + worldViewH + margin;
+  // Orbes comuns: um caminho e um preenchimento para todos (mesma cor, então a sobreposição não muda nada).
   ctx.fillStyle = '#ffe066';
+  ctx.beginPath();
   for (const orb of s.orbs) {
-    ctx.beginPath();
-    if (orb.doubleXp) {
-      // O diamante ciano distingue a recompensa rara sem animação contínua pesada.
-      ctx.fillStyle = '#62e6ff';
-      ctx.strokeStyle = '#e8fcff';
-      ctx.lineWidth = 1.5;
-      ctx.moveTo(orb.x, orb.y - 7);
-      ctx.lineTo(orb.x + 7, orb.y);
-      ctx.lineTo(orb.x, orb.y + 7);
-      ctx.lineTo(orb.x - 7, orb.y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#ffe066';
-    } else {
-      ctx.arc(orb.x, orb.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    if (orb.doubleXp || orb.x < left || orb.x > right || orb.y < top || orb.y > bottom) continue;
+    ctx.moveTo(orb.x + 5, orb.y);
+    ctx.arc(orb.x, orb.y, 5, 0, Math.PI * 2);
   }
+  ctx.fill();
+  // O diamante ciano distingue a recompensa rara sem animação contínua pesada.
+  for (const orb of s.orbs) {
+    if (!orb.doubleXp || orb.x < left || orb.x > right || orb.y < top || orb.y > bottom) continue;
+    ctx.beginPath();
+    ctx.fillStyle = '#62e6ff';
+    ctx.strokeStyle = '#e8fcff';
+    ctx.lineWidth = 1.5;
+    ctx.moveTo(orb.x, orb.y - 7);
+    ctx.lineTo(orb.x + 7, orb.y);
+    ctx.lineTo(orb.x, orb.y + 7);
+    ctx.lineTo(orb.x - 7, orb.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#ffe066';
 
   const move = s.player.move;
   // Aura: o raio fica sempre marcado de leve em volta do Pokémon, para dar para ver até onde o golpe chega.
@@ -874,7 +905,9 @@ function draw(): void {
     ctx.restore();
   }
 
-  for (const e of s.enemies) drawEnemy(e);
+  for (const e of s.enemies) {
+    if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
+  }
 
   // Os apoios são puramente visuais: o motor mantém suas posições separadas e
   // todos os golpes continuam surgindo no jogador, sem hitbox própria.
@@ -1142,7 +1175,10 @@ function loop(ts: number): void {
     return;
   }
   animMs += dt;
-  const s = state.value;
+  // A corrida inteira muda o objeto a cada quadro: o motor trabalha no objeto cru (sem um proxy do Vue por campo e
+  // por inimigo) e o `triggerRef` abaixo avisa a interface uma vez por quadro. As outras telas do componente continuam
+  // reativas, porque as mudanças fora do laço passam pelo proxy como antes.
+  const s = toRaw(state.value!);
   preloadVisibleEnemyRegions(s.elapsedMs);
   if (!s.over && !s.pendingUpgrade && !evolving.value) {
     const projectilesBefore = s.projectiles.length;
@@ -1203,6 +1239,7 @@ function loop(ts: number): void {
   }
   updateMinimap(s);
   pendingUpgrade.value = s.pendingUpgrade;
+  triggerRef(state);
   draw();
 }
 

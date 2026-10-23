@@ -75,6 +75,13 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'area-damage-50', family: 'ataque', rarity: 'raro', name: 'Onda expandida', description: 'Aumenta o dano em área secundário para 50%.', for: ['area'], maxLevels: 1, requires: 'area-damage-30', apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.50); } },
   { id: 'area-damage-75', family: 'ataque', rarity: 'lendario', name: 'Campo devastador', description: 'Aumenta o dano em área secundário para 75%.', for: ['area'], maxLevels: 1, requires: 'area-damage-50', apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.75); } },
   { id: 'area-damage-100', family: 'ataque', rarity: 'ancestral', name: 'Área total', description: 'O dano em área secundário chega a 100% do dano direto.', for: ['area'], maxLevels: 1, requires: 'area-damage-75', apply: (p) => { p.areaDamageMultiplier = 1; } },
+  // Defesa e sustento: limitados para não tornar o jogador invencível. Regeneração e espinhos têm teto por carta.
+  { id: 'regen', family: 'defesa', rarity: 'normal', name: 'Regeneração lenta', description: '+1 de vida por segundo (até 2 cartas).', maxLevels: 2, apply: (p) => { p.regenPerSec = (p.regenPerSec ?? 0) + 1; } },
+  { id: 'thorns', family: 'defesa', rarity: 'raro', name: 'Espinhos', description: 'Inimigos que encostam em você sofrem 6 de dano por segundo (até 2 cartas).', maxLevels: 2, apply: (p) => { p.thornsDamage = (p.thornsDamage ?? 0) + 6; } },
+  { id: 'second-wind', family: 'defesa', rarity: 'lendario', name: 'Segundo fôlego', description: 'Uma vez por corrida, ao cair até 25% de vida, recupera 35% do máximo.', maxLevels: 1, apply: (p) => { p.secondWindReady = true; } },
+  // Ataque e progresso: crítico e sorte de artefato, com teto de chance.
+  { id: 'crit', family: 'ataque', rarity: 'raro', name: 'Golpe certeiro', description: '+10% de chance de o golpe principal causar dano dobrado (até 3 cartas).', maxLevels: 3, apply: (p) => { p.critChance = Math.min(0.4, (p.critChance ?? 0) + 0.1); } },
+  { id: 'artifact-luck', family: 'progresso', rarity: 'normal', name: 'Faro de artefatos', description: '+25% de chance de artefatos caírem dos inimigos (até 2 cartas).', maxLevels: 2, apply: (p) => { p.artifactLuck = (p.artifactLuck ?? 0) + 0.25; } },
 ] as const;
 
 /** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */
@@ -153,4 +160,4 @@ export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   ...GENERIC_SURVIVOR_UPGRADES,
   ...TYPE_SURVIVOR_UPGRADES.map((upgrade) => LEGENDARY_TYPE_UPGRADES.has(upgrade.id) ? { ...upgrade, rarity: 'lendario' as const } : upgrade),
   ...ANCESTRAL_SURVIVOR_UPGRADES,
-];
+];

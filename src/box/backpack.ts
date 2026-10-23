@@ -1,20 +1,25 @@
 import {
   ACESFilmicToneMapping,
   AmbientLight,
+  AdditiveBlending,
   CapsuleGeometry,
   Color,
   DirectionalLight,
   Group,
   MathUtils,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   CanvasTexture,
+  PlaneGeometry,
+  Raycaster,
   Sprite,
   SpriteMaterial,
   TubeGeometry,
   PerspectiveCamera,
   Scene,
   WebGLRenderer,
+  Vector2,
   Vector3,
 } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -23,24 +28,25 @@ import { paintItemIcon } from '../village/item-art';
 import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
 import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
+import { clampOrbit, homeSlot, planBackpack, qtyBadge, type BackpackItem } from '../core/backpack-layout';
 
-export interface BackpackItem {
-  id: string;
-  name: string;
-  qty: number;
-}
+export type { BackpackItem };
 
 export interface BackpackOptions {
   canvas: HTMLCanvasElement;
   items: readonly BackpackItem[];
   fx: boolean;
   sound: boolean;
+  /** Chamado quando o jogador seleciona (ou solta) um item tocando nele ou na lista. */
+  onSelect?: (id: string | null) => void;
 }
 
 export interface RunningBackpack {
   shake(): void;
   recenter(): void;
   calibrate(): Promise<void>;
+  /** Seleciona o item da lista (ou solta, se já estava selecionado). Falso se ele não está no 3D. */
+  focusItem(id: string): boolean;
   setFx(on: boolean): void;
   setSound(on: boolean): void;
   resize(): void;
@@ -48,10 +54,17 @@ export interface RunningBackpack {
 }
 
 interface LooseItem {
+  item: BackpackItem;
   sprite: Sprite;
   texture: CanvasTexture;
   velocity: Vector3;
+  badge: Sprite | null;
+  scale: number;
+  appearAt: number;
 }
+
+const ITEM_SCALE = 0.31;
+const SELECTED_SCALE = 0.4;
 
 class Clinker {
   private ctx: AudioContext | null = null;
@@ -168,6 +181,52 @@ function spriteTexture(id: string): CanvasTexture {
   return texture;
 }
 
+function canvasTexture(width: number, height: number, paint: (ctx: CanvasRenderingContext2D) => void): CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D indisponível para a mochila.');
+  paint(ctx);
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = 'srgb';
+  return texture;
+}
+
+/** Mancha redonda que some nas bordas: serve de sombra no chão e de brilho do item selecionado. */
+function radialTexture(rgb: string, alpha: number): CanvasTexture {
+  return canvasTexture(128, 128, (ctx) => {
+    const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gradient.addColorStop(0, `rgba(${rgb}, ${alpha})`);
+    gradient.addColorStop(0.55, `rgba(${rgb}, ${alpha * 0.45})`);
+    gradient.addColorStop(1, `rgba(${rgb}, 0)`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 128, 128);
+  });
+}
+
+function badgeTexture(text: string): CanvasTexture {
+  return canvasTexture(96, 48, (ctx) => {
+    ctx.beginPath();
+    ctx.moveTo(22, 6);
+    ctx.arcTo(92, 6, 92, 24, 18);
+    ctx.arcTo(92, 42, 74, 42, 18);
+    ctx.arcTo(4, 42, 4, 24, 18);
+    ctx.arcTo(4, 6, 22, 6, 18);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(9, 15, 24, 0.86)';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255, 228, 154, 0.9)';
+    ctx.stroke();
+    ctx.font = '700 26px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff6d6';
+    ctx.fillText(text, 48, 25);
+  });
+}
+
 export async function startBackpack(options: BackpackOptions): Promise<RunningBackpack> {
   const canvas = options.canvas;
   const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -183,6 +242,18 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
   const key = new DirectionalLight(0xffe4bd, 3.2);
   key.position.set(-3, 5, 4);
   scene.add(key);
+  const rim = new DirectionalLight(0x7fdcc8, 1.5);
+  rim.position.set(3.5, 4, -4);
+  scene.add(rim);
+
+  // Sombra suave no chão: sem ela a mochila parece flutuar no fundo escuro.
+  const shadowTexture = radialTexture('0, 0, 0', 0.6);
+  const shadowGeometry = new PlaneGeometry(4.4, 2.6);
+  const shadowMaterial = new MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false });
+  const shadow = new Mesh(shadowGeometry, shadowMaterial);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(0, 0.22, 0.05);
+  scene.add(shadow);
 
   const bag = new Group();
   scene.add(bag);
@@ -261,20 +332,47 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
     tube([new Vector3(side * 0.89, 2.9, 0.55), new Vector3(side * 0.96, 2.5, 0.63), new Vector3(side * 0.96, 2.13, 0.67)], 0.012, piping);
   }
 
+  // Ordem de desenho dos sprites: brilho, depois o item, depois o selo de quantidade.
   const loose: LooseItem[] = [];
-  const visible = options.items.slice(0, 18);
-  visible.forEach((item, index) => {
-    const col = index % 4;
-    const row = Math.floor(index / 4);
-    const home = new Vector3(-0.63 + col * 0.42, 1.62 + row * 0.28, 0.1 + (index % 3) * 0.08);
+  const badgeTextures = new Map<string, CanvasTexture>();
+  const badgeMaterials: SpriteMaterial[] = [];
+  const bornAt = performance.now();
+  planBackpack(options.items).shown.forEach((item, index) => {
+    const home = homeSlot(index);
     const texture = spriteTexture(item.id);
     const material = new SpriteMaterial({ map: texture, transparent: true, depthWrite: false, color: 0xffffff });
     const sprite = new Sprite(material);
-    sprite.position.copy(home);
-    sprite.scale.set(0.31, 0.31, 1);
+    sprite.position.set(home.x, home.y, home.z);
+    sprite.scale.set(0.001, 0.001, 1);
+    sprite.renderOrder = 2;
     bag.add(sprite);
-    loose.push({ sprite, texture, velocity: new Vector3() });
+    let badge: Sprite | null = null;
+    const label = qtyBadge(item.qty);
+    if (label) {
+      let badgeMap = badgeTextures.get(label);
+      if (!badgeMap) {
+        badgeMap = badgeTexture(label);
+        badgeTextures.set(label, badgeMap);
+      }
+      const badgeMaterial = new SpriteMaterial({ map: badgeMap, transparent: true, depthWrite: false });
+      badgeMaterials.push(badgeMaterial);
+      badge = new Sprite(badgeMaterial);
+      // Filho do sprite: acompanha o item e a escala dele.
+      badge.position.set(0.36, -0.4, 0);
+      badge.scale.set(0.7, 0.35, 1);
+      badge.renderOrder = 3;
+      sprite.add(badge);
+    }
+    loose.push({ item, sprite, texture, velocity: new Vector3(), badge, scale: 0.001, appearAt: bornAt + 180 + index * 45 });
   });
+
+  const haloTexture = radialTexture('255, 232, 150', 0.95);
+  const haloMaterial = new SpriteMaterial({ map: haloTexture, transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: 0 });
+  const halo = new Sprite(haloMaterial);
+  halo.scale.set(0.8, 0.8, 1);
+  halo.renderOrder = 1;
+  halo.visible = false;
+  bag.add(halo);
 
   let fx = options.fx;
   let sound = options.sound;
@@ -284,10 +382,76 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
   let shakePower = 0;
   let rotation = 0;
   let targetRotation = 0;
+  let tiltX = 0;
+  let sway = 0;
+  let yaw = 0;
+  let pitch = 0;
+  let yawVelocity = 0;
+  let recentering = false;
+  let selected: LooseItem | null = null;
+  let drag: { id: number; startX: number; startY: number; x: number; y: number; time: number; moved: boolean } | null = null;
   let motion = { x: 0, y: 0, z: 0 };
   let orientation: { beta: number; gamma: number } | null = null;
   let calibration: { beta: number; gamma: number } | null = null;
   const clinker = new Clinker();
+  const raycaster = new Raycaster();
+  const pointer = new Vector2();
+  const spriteList = loose.map((item) => item.sprite);
+  const force = new Vector3();
+  const delta = new Vector3();
+  const relative = new Vector3();
+
+  const select = (next: LooseItem | null): void => {
+    selected = next;
+    if (next) {
+      // Um tapinha: o item pula para frente e faz barulho, então dá para achá-lo no meio dos outros.
+      next.velocity.y += 1.4;
+      next.velocity.z += 0.5;
+      if (sound) clinker.playImpact(0.55, 'item');
+    }
+    options.onSelect?.(next ? next.item.id : null);
+  };
+  const toggle = (item: LooseItem | null): void => select(item && item === selected ? null : item);
+  const pick = (clientX: number, clientY: number): LooseItem | null => {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    raycaster.setFromCamera(pointer, camera);
+    const hit = raycaster.intersectObjects(spriteList, false)[0]?.object;
+    return loose.find((item) => item.sprite === hit) ?? null;
+  };
+  const onPointerDown = (event: PointerEvent) => {
+    if (drag || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    clinker.unlock();
+    recentering = false;
+    drag = { id: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, time: event.timeStamp, moved: false };
+    try { canvas.setPointerCapture(event.pointerId); } catch { /* o arrasto funciona sem captura */ }
+  };
+  const onPointerMove = (event: PointerEvent) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6) return;
+    drag.moved = true;
+    const next = clampOrbit(yaw + (event.clientX - drag.x) * 0.006, pitch + (event.clientY - drag.y) * 0.003);
+    const seconds = Math.max(0.008, (event.timeStamp - drag.time) / 1000);
+    yawVelocity = MathUtils.clamp(yawVelocity * 0.5 + ((next.yaw - yaw) / seconds) * 0.5, -4, 4);
+    yaw = next.yaw;
+    pitch = next.pitch;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    drag.time = event.timeStamp;
+  };
+  const onPointerEnd = (event: PointerEvent) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const tap = !drag.moved && event.type === 'pointerup';
+    drag = null;
+    if (tap) toggle(pick(event.clientX, event.clientY));
+  };
+  const onContextLost = (event: Event) => event.preventDefault();
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerEnd);
+  canvas.addEventListener('pointercancel', onPointerEnd);
+  canvas.addEventListener('webglcontextlost', onContextLost);
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -317,20 +481,42 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
     const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
     last = now;
     shakePower *= Math.pow(0.16, dt);
+    // Giro por arrasto: segue o dedo, continua com inércia ao soltar e volta ao centro em "Centralizar".
+    if (!drag) {
+      if (recentering) {
+        yaw += (0 - yaw) * Math.min(1, dt * 6);
+        pitch += (0 - pitch) * Math.min(1, dt * 6);
+        yawVelocity = 0;
+        if (Math.abs(yaw) < 0.002 && Math.abs(pitch) < 0.002) recentering = false;
+      } else {
+        const next = clampOrbit(yaw + yawVelocity * dt, pitch);
+        if (next.yaw !== yaw + yawVelocity * dt) yawVelocity = 0;
+        yaw = next.yaw;
+      }
+    }
+    yawVelocity *= Math.pow(drag ? 0.0005 : 0.04, dt);
+    sway += ((fx ? 1 : 0) - sway) * Math.min(1, dt * 3);
+    let tiltZ: number;
     if (orientation && calibration) {
-      const tiltX = MathUtils.clamp((orientation.gamma - calibration.gamma) / 28, -1, 1);
-      const tiltY = MathUtils.clamp((orientation.beta - calibration.beta) / 28, -1, 1);
-      targetRotation = tiltX * 0.22;
-      bag.rotation.z += (targetRotation - bag.rotation.z) * Math.min(1, dt * 8);
-      bag.rotation.x += (tiltY * -0.12 - bag.rotation.x) * Math.min(1, dt * 8);
+      const sideways = MathUtils.clamp((orientation.gamma - calibration.gamma) / 28, -1, 1);
+      const forward = MathUtils.clamp((orientation.beta - calibration.beta) / 28, -1, 1);
+      tiltZ = sideways * 0.22;
+      tiltX += (forward * -0.12 - tiltX) * Math.min(1, dt * 8);
     } else {
       rotation += (targetRotation - rotation) * Math.min(1, dt * 7);
-      bag.rotation.z = Math.sin(rotation) * 0.05;
-      bag.rotation.y = rotation * 0.2;
+      tiltZ = Math.sin(rotation) * 0.05;
+      tiltX += (0 - tiltX) * Math.min(1, dt * 8);
     }
-    const force = orientation && calibration
-      ? new Vector3((orientation.gamma - calibration.gamma) / 28 * 2.4, 0, -(orientation.beta - calibration.beta) / 28 * 2.4)
-      : new Vector3(motion.x * 0.08, 0, -motion.y * 0.08);
+    bag.rotation.z += (tiltZ - bag.rotation.z) * Math.min(1, dt * 8);
+    bag.rotation.x = tiltX + pitch;
+    bag.rotation.y = yaw + rotation * 0.2 + Math.sin(now * 0.0006) * 0.035 * sway;
+    if (orientation && calibration) {
+      force.set((orientation.gamma - calibration.gamma) / 28 * 2.4, 0, -(orientation.beta - calibration.beta) / 28 * 2.4);
+    } else {
+      force.set(motion.x * 0.08, 0, -motion.y * 0.08);
+    }
+    // Girar a mochila faz os itens balançarem de lado, como numa mochila de verdade.
+    force.x += yawVelocity * 0.9;
     force.x += Math.sin(now * 0.032) * shakePower * 4.2;
     force.y += Math.max(0, Math.sin(now * 0.025)) * shakePower * 2.3;
     force.z += Math.cos(now * 0.029) * shakePower * 3.4;
@@ -340,11 +526,15 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
     let itemImpact = 0;
     let wallImpact = 0;
     for (const item of loose) {
-      item.velocity.add(force.clone().multiplyScalar(dt));
+      item.velocity.addScaledVector(force, dt);
       item.velocity.y -= 1.4 * dt;
       item.velocity.multiplyScalar(Math.pow(0.12, dt));
       item.sprite.position.addScaledVector(item.velocity, dt);
-      item.sprite.material.rotation += (item.velocity.x + item.velocity.z) * dt * 0.35;
+      // Gira ao ser empurrado, mas volta aos poucos para a posição em pé, para dar para ler o ícone.
+      item.sprite.material.rotation = (item.sprite.material.rotation + (item.velocity.x + item.velocity.z) * dt * 0.35) * Math.pow(0.4, dt);
+      const targetScale = now < item.appearAt ? 0.001 : item === selected ? SELECTED_SCALE : ITEM_SCALE;
+      item.scale += (targetScale - item.scale) * Math.min(1, dt * 10);
+      item.sprite.scale.set(item.scale, item.scale, 1);
 
       if (item.sprite.position.x < bounds.minX + radius) {
         item.sprite.position.x = bounds.minX + radius;
@@ -378,14 +568,14 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
       const first = loose[i]!;
       for (let j = i + 1; j < loose.length; j++) {
         const second = loose[j]!;
-        const delta = second.sprite.position.clone().sub(first.sprite.position);
+        delta.copy(second.sprite.position).sub(first.sprite.position);
         const distance = delta.length();
         if (distance >= radius * 2) continue;
-        const normal = distance > 0.0001 ? delta.multiplyScalar(1 / distance) : new Vector3(1, 0, 0);
+        const normal = distance > 0.0001 ? delta.multiplyScalar(1 / distance) : delta.set(1, 0, 0);
         const overlap = radius * 2 - distance;
         first.sprite.position.addScaledVector(normal, -overlap * 0.5);
         second.sprite.position.addScaledVector(normal, overlap * 0.5);
-        const relativeSpeed = second.velocity.clone().sub(first.velocity).dot(normal);
+        const relativeSpeed = relative.copy(second.velocity).sub(first.velocity).dot(normal);
         if (relativeSpeed < 0) {
           const impulse = -(1 + 0.38) * relativeSpeed * 0.5;
           first.velocity.addScaledVector(normal, -impulse);
@@ -399,10 +589,16 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
       if (wallImpact > 0.26) clinker.playImpact(Math.min(1, wallImpact * 0.42), 'wall');
       if (shakePower > 0.2) clinker.playFabric(shakePower);
     }
+    if (selected) {
+      halo.visible = true;
+      halo.position.copy(selected.sprite.position);
+      haloMaterial.opacity = 0.6 + Math.sin(now * 0.006) * 0.2;
+    } else {
+      halo.visible = false;
+    }
     if (fx) {
       key.intensity = 2.6 + Math.abs(Math.sin(now * 0.0012)) * 0.7;
       bag.position.y = Math.sin(now * 0.0018) * 0.025;
-      bag.rotation.y += Math.sin(now * 0.0008) * dt * 0.025;
     } else {
       bag.position.y += (0 - bag.position.y) * Math.min(1, dt * 4);
     }
@@ -413,7 +609,14 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
   frame = requestGameFrame(frameLoop, maxVisualFps);
   return {
     shake() { clinker.unlock(); shakePower = 1; targetRotation = targetRotation > 0 ? -0.35 : 0.35; },
-    recenter() { targetRotation = 0; },
+    recenter() { targetRotation = 0; recentering = true; },
+    focusItem(id) {
+      const item = loose.find((entry) => entry.item.id === id);
+      if (!item) return false;
+      clinker.unlock();
+      toggle(item);
+      return true;
+    },
     async calibrate() {
       clinker.unlock();
       const ctor = DeviceOrientationEvent as typeof DeviceOrientationEvent & { requestPermission?: () => Promise<'granted' | 'denied'> };
@@ -432,7 +635,16 @@ export async function startBackpack(options: BackpackOptions): Promise<RunningBa
       cancelGameFrame(frame);
       window.removeEventListener('devicemotion', onMotion);
       window.removeEventListener('deviceorientation', onOrientation);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerEnd);
+      canvas.removeEventListener('pointercancel', onPointerEnd);
+      canvas.removeEventListener('webglcontextlost', onContextLost);
       loose.forEach((item) => { item.texture.dispose(); item.sprite.material.dispose(); });
+      badgeMaterials.forEach((material) => material.dispose());
+      badgeTextures.forEach((texture) => texture.dispose());
+      haloTexture.dispose(); haloMaterial.dispose();
+      shadowTexture.dispose(); shadowGeometry.dispose(); shadowMaterial.dispose();
       meshes.forEach((mesh) => mesh.geometry.dispose());
       fabric.dispose(); trim.dispose(); piping.dispose(); lining.dispose(); metal.dispose();
       renderer.dispose();
