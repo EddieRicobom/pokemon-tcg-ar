@@ -1,73 +1,10 @@
 # Plano e estado do projeto
 
-## Bairros, casas e renda dos moradores (22/10/2026)
-
-- Expansão real para 120 × 96 blocos, com praia, jardim, praça, bosque e mirante conectados; 16 destinos de passeios e guias legíveis no minimapa.
-- 32 móveis com arte própria, interiores organizados por função, oito estilos de fachada e duas reformas extras, preservando a codificação dos saves antigos.
-- Salários por conclusão real de trabalho, carteiras individuais e compras autônomas de móveis/reformas. Profissões dependem da população; dinheiro pessoal também paga o Café.
-- Terraço com seis mesas, clientes e atendente caminhando, preparo/entrega, pagamento e momentos entre quem está comendo junto. Carteiro e atendente continuam moradores sociais.
-- Regras, testes, comandos de validação e limites em [VILLAGE_NEIGHBORHOODS.md](docs/VILLAGE_NEIGHBORHOODS.md).
-
-## Música regional, ambientação e revisão da Caixa (21/10/2026)
-
-- 12 faixas pacíficas da Vila por hora/clima; crossfade de 12 s e pares alternados a cada seis minutos. Sons de ações e trabalhos próximos, com ambientação noturna/chuva e volumes independentes.
-- 9 temas regionais do Survival; cinco arranjos GBA da Meeow’s Music e quatro gravações regionais com tratamento retrô reproduzível. Créditos e fontes fixadas em `public/audio/CREDITS.md`; troca usa a curva de 40 s do cenário.
-- Player compartilhado com até duas faixas comprimidas, carga sob demanda, cancelamento, pausa de página, URLs revogadas e contexto fechado. Músicas fora do pré-cache; respostas completas podem entrar no cache de execução. Preferências preservadas pelo backup existente.
-- Corrigida a serialização das regras de cache de músicas, chunks, OCR, catálogos e sprites: os callbacks anteriores capturavam `base`, ausente no worker gerado. Regras agora são expressões com o caminho incorporado; teste de configuração e `verify-dist` cobrem a regressão.
-- Caixa: cancelamento durante permissão/abertura, proteção contra população e cenas atrasadas, limpeza de temporizadores, terreno e áudio, pausa do relógio ao esconder a página. Painéis com Escape, foco restaurado, cabeçalhos acessíveis e melhor espaço em paisagem.
-- Arena: preparação em três passos, indicação de 6/6 e Digital Pokémon no seletor compartilhado. Pisos distintos de jardim/campo, curvas contínuas, paleta sRGB e correção da orientação vertical dos enfeites. O layout clássico dos Pins permanece separado.
-- Câmera real, sensores, desempenho e consumo em aparelho físico continuam exigindo validação no celular. O tratamento retrô das quatro gravações não é uma troca de instrumentação por arranjo GBA.
-
-## Encontros e cenas lendárias (21/10/2026)
-
-- Catálogo de 94 espécies (71 lendárias e 23 míticas), conferido no `pokemon_species.csv` da PokéAPI, com quatro capítulos e pistas escritas individualmente em `legendary-stories.ts`.
-- Caderno de Lendas em Histórias: filtros por região/visitas, investigação por duas ações próximas a locais reais do mapa e replay só de encontros vividos. Não exige grind em outros modos nem dá capturas automáticas.
-- Encenação 2D com sprite real sob demanda, cenários de cidade/água/bosque/pedra e 12 temas visuais. Partículas, movimento e animação do sprite desligam pelas opções visuais/Rotom ou movimento reduzido. Falta de sprite permanece explícita.
-- Registro permanente de visitas separado do histórico recente de efeitos; normalização recupera os registros antigos disponíveis. Retomada de pista/cena, backup no formato existente e replay sem recompensa duplicada.
-- Testes percorrem as 94 investigações, ida/volta do save, proteção contra repetição, expiração e caminhos em cinco sementes. `e2e/village-legends.mjs` percorre o fluxo de UI com save isolado, sem câmera nem AR simulados.
-- A cena única do desejo ao Ho-Oh foi preservada e recebeu ajustes de paisagem/rolagem e economia visual. Aparelho físico continua exigindo validação própria.
-
-## Arte, postos de trabalho e passeio guiado (21/10/2026)
-
-- Fachadas completas para casas, Correio e Pins; recortes corrigidos da Torre, Mercado, Café e murais. A grama usa uma base uniforme e as flores são sobrepostas sem o retângulo verde da folha de origem.
-- O atlas é gerado em `src/village/vila-atlas.png`, recebe hash no build e é conferido pixel a pixel pelos testes, evitando misturar imagens antigas em cache com novos recortes.
-- Mina ao sul, madeireira no noroeste e píer no lago têm corredores, placas e acesso pelo menu Trabalhos da Vila. A escolha entre os quatro postos considera aptidão, interesse, energia e recursos disponíveis; a fazenda não monopoliza a escolha.
-- Os moradores caminham até o recurso e trabalham antes de entregar loot, seguindo as mesmas tabelas e limites da coleta/pesca manual. Ferramentas, linha de pesca e progresso aparecem no canvas; efeitos respeitam opções visuais e movimento reduzido.
-- Passeio guiado usa a velocidade atual do treinador e só termina quando o companheiro também chega. Testes percorrem todos os destinos guiados, portas e postos, além de caminhadas completas até os recursos em mapas gerados.
-- Saves mantêm formato e backup existentes; itens e cultivos que colidam com os novos postos são reposicionados, preservando quantidade e estágio. Aparência e toque em celular físico continuam sem validação neste ambiente.
-
-## Impactos elementais em Pins e na Arena (19/10/2026)
-
-- Os golpes elementais agora espalham anéis e partículas com silhuetas por elemento; a opção persistente “Efeitos elementais intensos” permite desligá-los. Movimento reduzido congela a animação.
-- A Arena AR amplifica partículas e ondas de choque nos impactos, com opção persistente própria; a preferência de movimento reduzido desliga essa amplificação.
-- Saves antigos mantêm os efeitos ligados por padrão; perfil de efeitos e progresso da animação têm cobertura de teste.
-- A validação visual final em celular ainda precisa de confirmação.
-
-## Alinhamento dos prédios e tilesets da Torre (19/10/2026)
-
-- Fachadas, casa, fonte e mercado da Vila agora apoiam na borda inferior da calçada; o mapa mantém livre o bloco de interação da porta. Teste verifica o ponto de apoio e o piso sob ele.
-- Câmera da Torre aproximada em 1,5× (metade da área anterior no lado curto) sem passar dos limites da arena.
-- As nove regiões do Survival usam recortes próprios de chão, trilha e detalhes do atlas; a transição visual acompanha a mesma mudança temporal da região, sem depender do RNG da corrida. Fallback desenhado permanece disponível se o atlas não carregar.
-- Typecheck, testes, build com `BASE_PATH` e `verify-dist` concluídos. A leitura visual final em celular real ainda precisa de confirmação.
-
-## Survival e interface compartilhada (19/10/2026)
-
-- O Survival desacelera a chegada e a escalada de inimigos, tem uma janela maior de recuperação após acertos e aumenta o dano de aura, órbita e cone para compensar o combate próximo. Ajustes centralizados em `BALANCE` e `CATEGORY_DAMAGE_FACTOR`; teste compara DPS teórico com stats idênticos, sem alegar equilíbrio comprovado.
-- Tokens compartilhados de cor, foco, espaçamento e toque; cartões da equipe usam mais colunas; a Box permite selecionar caixas diretamente e organiza seus 30 espaços em até 8/10 colunas em telas largas, mantendo 6 no celular.
-- ✅ Typecheck, testes, build com `BASE_PATH` e `verify-dist` são os critérios antes do merge. 🔶 Dificuldade, legibilidade e toque ainda precisam de partidas e avaliação em celular real.
-
-- **Efeitos da Vila (2026-10-18):** ondas no lago e ondulações com chuva, gotas em arco e anéis na fonte e raios suaves de sol modulados por clima/horário. Opções permite desligar; movimento reduzido também desativa os novos efeitos. Tipos, build e dist conferidos; validação visual em celular pendente.
-
 Legenda: ✅ feito e coberto por testes automatizados / CI · 🔶 feito, **falta validar em celular real** · ⬜ a fazer
 
 Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado 🔶 passou nos testes e no Chromium com câmera falsa (GL por software), mas **nenhuma etapa foi vista num celular de verdade**. O roteiro está em [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
 
-## Vila: abertura e eventos (18/10/2026)
-
-- Abertura diária em capítulos, com falas e resultados reais do Diário e a última visita lendária; pode ser pulada e não se repete na mesma data local. Sem registros novos, informa isso explicitamente.
-- Momentos ambientes deixam de gerar avisos constantes; acessos rápidos para Menu, Mochila e Novidades. Avisos de ações ficam embaixo e podem ser dispensados.
-- Dez eventos novos: Articuno, Moltres, Raikou, Entei, Lugia, Ho-Oh, Regirock, Regice, Registeel e Rayquaza. Cenas próprias, bônus e consequências aplicados até o fim do dia; chance diária total preservada.
-- Verificação local: tipos, testes, build e conferência do dist; navegador com viewport móvel confirma abertura única por dia e acesso à mochila. Aparência em celular real ainda precisa ser avaliada.
+Registro de entregas já concluídas (cada uma com a data, o que mudou e o que não foi validado): [docs/HISTORICO.md](docs/HISTORICO.md). Foi movido para lá, sem alterar o texto, em 2026-10-23, para este plano ficar só com o **estado atual**, as **fases**, as **pendências** e os **riscos**.
 
 ## Estado atual
 
@@ -183,58 +120,6 @@ O dono do projeto enviou um prompt mestre completo (guardado na íntegra em [doc
 - ✅ **Fase 7 — Encontros lendários**: sorteio raro (`core/village/legendary.ts`), chance-base de 0,1% numa "oportunidade de sorteio" por dia do calendário do aparelho (nunca mais de uma, nunca re-sorteia abrindo/fechando a Vila nem com uma cutscene ainda pendente). Arquitetura extensível por dados: cada lendário (hoje Suicune, Zapdos, Celebi) é uma entrada em `LEGENDARIES` com falas, bônus e consequência próprios — adicionar um novo é só mais uma entrada, sem mexer no motor. Histórico guardado, cutscene com falas em sequência na Vila.
 - 🔶 **Fase 8 — Integração e acabamento**: contínua; cada PR já atualiza este documento e roda os testes. Falta um pente-fino de balanceamento (custos, chance do lendário, quanto cada atividade rende de energia) com o dono jogando de verdade — e otimizar a Torre pra celular mais fraco não foi medido ainda (só testado no software renderer do CI).
 
-## Scanner: Fase A (2026-10-16)
-
-O que mudou e por quê (causas reais, não só interface):
-
-- ✅ **Candidatas escondidas** (o "a lista parece parar antes do último resultado"): três cortes reais, corrigidos e cobertos por testes.
-  1. `rankCandidates` cortava o ranking em 5: com 6 candidatas do índice + até 6 da rodada de números parecidos + até 5 da ilustração, as de baixo sumiam mesmo depois de baixadas e comparadas. Agora devolve todas.
-  2. A escolha "Qual impressão é esta?" cortava em 4 (`slice(0, 4)`) e casava as porcentagens por posição depois de um filtro — podia mostrar a porcentagem de uma carta na outra. Agora `choicesOf` lista todas, cada uma com a própria confiança.
-  3. O índice e a busca manual cortavam em silêncio (6 candidatas baixadas; 30 resultados na busca). Agora dizem o total: a busca manual mostra "N de M" e "Mostrar mais" até a última; quando o número lido bate em mais cartas do que as comparadas, o diagnóstico diz quantas e abre a busca manual já com o número.
-- ✅ **Confirmação temporal com voto falso**: quando a carta sumia por um quadro, o controlador repetia a leitura anterior **e contava de novo como voto** — dava pra "confirmar" com uma única leitura real. Agora a repetição só segura a mensagem na tela; só leitura de verdade vota.
-- ✅ **OCR só com a carta parada**: antes, todo quadro com carta rodava o OCR inteiro (duas orientações, metades, nome — segundos no celular), inclusive com a carta mexendo. Agora a detecção (leve) roda em todo quadro e o OCR só depois de um par de quadros com a carta parada (movimento ≤ 2% da diagonal; `recognition/stability.ts`). A confirmação temporal continua exigindo leituras de OCR repetidas.
-- ✅ **Reaproveitamento entre quadros**: imagens de referência ficam na memória (24, LRU) — o quadro seguinte não baixa nem decodifica de novo; a orientação (carta de cabeça para baixo) achada num quadro é tentada primeiro no seguinte.
-- ✅ **Cancelamento de verdade**: cancelar/recomeçar descarta a leitura em andamento entre as etapas (`ScanCancelled`); antes o resultado de uma leitura velha ainda chegava depois.
-- ✅ **Instrumentação** (`recognition/stage-clock.ts`): tempo de captura, detecção, estabilização, perspectiva, recorte do número, recorte do nome, OCR do número, OCR do nome, catálogo, comparação visual, ordenação, confirmação temporal, até as primeiras candidatas, confirmação (guardar a carta) e início do AR. Etapa pulada guarda o motivo, nunca um tempo inventado. Na tela: tabela da última leitura (Escanear → Teste) e mediana/p90 da sessão (Diagnóstico).
-- ✅ **"Mostrar o que o app está vendo" ampliado**: contorno e os 4 cantos numerados, a faixa exata do número (e das metades, se lidas) e a do nome desenhadas sobre a câmera pela mesma homografia dos recortes (opção para desligar as sobreposições), os recortes reais enviados ao OCR (faixa, metades, nome), texto lido, estabilidade (movimento medido), luz e nitidez, e **todas** as candidatas com veredito (aceita / em dúvida / rejeitada) e o motivo — inclusive por que uma candidata ficou sem imagem de referência.
-- ✅ **Etapas honestas** (`app/scan-steps.ts`): "Etapa n de 8" (Localizando carta → … → Carta identificada) seguindo a etapa que o pipeline avisou que começou; pulada aparece tracejada com o motivo; tempo decorrido; **Cancelar** e **Reiniciar**. Avisos de carta mexendo, pouca luz e possível desfoque (os dois últimos são heurísticos e não bloqueiam a leitura).
-
-### Medição antes/depois
-
-Bancada `scripts/scan-bench.eval.ts` (Node num PC, Tesseract de verdade, foto real de câmera, mesmo roteiro nas duas versões, 3 amostras cada). **Não é celular**: no celular cada passada de OCR custa bem mais, mas isso não foi medido.
-
-| Roteiro | `main` (antes) | Fase A (depois) |
-|---|---|---|
-| Carta mexendo 3 quadros, depois parada | 2,36–2,59 s até confirmar · **14** passadas de OCR | 1,34–1,40 s · **2** passadas de OCR |
-| Carta parada desde o 1º quadro | 0,53 s · 1 quadro · 2 passadas | 0,69–0,70 s · 2 quadros · 2 passadas (**~0,17 s mais lento**: espera o par de quadros parados) |
-
-No Chromium (câmera falsa com a mesma foto), a tabela da sessão mostrou: até as primeiras candidatas ~1,9 s; guardar a carta (referência + sprite + compilar o alvo do MindAR) 19,9 s; início do AR 1,5 s. ⚠️ **Correção (Fase B):** esses tempos foram tirados com o painel do navegador **oculto**, quando o Chromium trata a página como aba em segundo plano e desacelera timers e GPU — não valem como medida. A indicação (guardar a carta pesa mais que reconhecer) continua plausível, mas precisa ser medida em celular: a tabela do Diagnóstico agora mostra cada parte de "guardar a carta" (ver Fase B).
-
-Numa das tentativas no Chromium as 3 imagens de referência falharam (a decisão caiu para "em dúvida" só pelo número); a causa não ficou registrada porque o erro era engolido. Agora o motivo aparece no veredito de cada candidata; na tentativa seguinte elas carregaram e a carta foi aceita com 91%.
-
-🔶 Nada disso foi visto num celular real.
-
-## AR: Fase B (2026-10-16)
-
-Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, ciclo de vida):
-
-- ✅ **Contexto WebGL vazando a cada carta**: o Escanear recria o `<canvas>` do AR a cada carta (para ter um contexto limpo), mas `renderer.dispose()` não devolve o contexto ao navegador — ele ficava vivo até o coletor de lixo. Depois de umas 16 leituras, o Chrome começa a derrubar o contexto mais antigo, às vezes o do TensorFlow.js do rastreador. Agora o contexto é liberado quando o canvas sai da página (`ar/context-release.ts`) e, explicitamente, antes de recriá-lo (inclusive depois de fechar e abrir a câmera). Canvas reaproveitado (Várias, Caixa) não perde o contexto. Conferido no Chromium: ao pedir outra carta, o canvas antigo disparou `webglcontextlost` e o AR novo rastreou normalmente.
-- ✅ **"Guardar a carta" medido por partes** (`PrepareResult.timings`): referência, características, sprite, imagem em alta e compilação do alvo aparecem no Diagnóstico como subetapas — é a medida que faltava para atacar o tempo no celular.
-- ✅ **Imagem em alta baixa em paralelo**: era o último download da fila (referência → sprite → imagem em alta → compilar). Agora começa junto com a referência e o sprite (teste que travaria com a fila antiga).
-- ✅ Relógio da etapa "Confirmando identificação" congelava enquanto guardava a carta; agora anda.
-- Revisado, sem mudança: falha ao iniciar libera motor, WebGL, sensores e observador; uma execução superada (outra carta, câmera fechada, sair da tela) é parada; sprite ausente e falha de rede aparecem na tela com "Tentar baixar o GIF de novo"; perda de rastreamento vira "lost" e volta a "tracking" sozinha; alvo de versão antiga é recompilado; "Recompilar o alvo da carta" e "Escolher outra carta" no erro.
-- 🔶 Não medido: tempos de câmera/alvo/rastreio em celular (o painel do navegador desta sessão estava oculto, o que invalida tempos). Nada visto em celular real.
-
-## Feito desde a Fase B (2026-10-16)
-
-- ✅ **Fliperama → batalha na câmera**: botão que fecha a Vila e abre câmera e sensores da Caixa no mesmo toque, com "Batalhar" em destaque; cada batalha comum da Caixa terminada rende **100 moedas** na Vila, até **3 por dia** (`claimBattleReward`, com teste). PvP e Liga têm recompensa própria. 🔶 Não visto na tela.
-- ✅ **Quem é esse Pokémon? (difícil)**: distorção bem mais forte (redemoinho largo + ondulação, deslocamento 70 + 26). 🔶 Não visto na tela.
-- ✅ Diagnóstico não anuncia mais o atalho do 666 (o atalho de depuração continua funcionando).
-- ✅ **Digital Pokémon em "Minhas cartas"**: seção própria com o selo 🔒 Digital (origem, data, carta de origem), sem botões de scan/AR. Conferido no Chromium.
-- ✅ **Carta de origem da espécie certa**: a busca `?dexId=1` da TCGdex casa por TRECHO do número (devolvia Unown 201 antes do Bulbasaur); agora usa `dexId=eq:` e prefere uma carta com imagem.
-- ✅ **Fonte diz quanto de energia falta** ("faltam 392 de energia") em vez de só ficar cinza — a invocação depois do primeiro funcionava (conferido: duas invocações seguidas com 1.100 de energia), mas parecia travada sem saldo.
-- ✅ **Invocação "qualquer um na sorte" por 700 moedas**: código pronto e testado (`summonWithCoins`, `pickAnySpecies`, 1–1025), **desligado** (`COIN_SUMMON_ENABLED = false`) até o dono pedir.
-
 ## Em andamento e próximo (atualizado em 2026-10-16)
 
 - ⏭️ Depois, na ordem: os itens ⬜ abaixo, de cima para baixo (os que dependem de celular real ficam para quando o dono testar).
@@ -263,8 +148,8 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
    - 🔶 Próximas rodadas, se o dono quiser: revisar a Caixa e os Pins com a câmera ligada num celular de verdade (sobreposições, tamanho dos botões ao toque), e a grade de conquistas (3.120 px na Coleção) poderia virar uma lista compacta.
 8. ⬜ **Validar tudo num celular real** seguindo o roteiro (inclui a maleta de insígnias: fluidez, polir com o dedo, sacudir o celular); anotar aparelho, navegador, leituras/s e o que falhar. É o maior risco aberto.
 9. ⬜ **Guardar a carta mais rápido**: medir no celular (Diagnóstico → "Tempo de cada etapa" já separa referência, sprite, imagem em alta e compilação do alvo) e, se a compilação dominar, avaliar alvo menor ou mostrar o Pokémon antes do alvo ficar pronto.
-10. ⬜ **Medir o reconhecimento** com fotos reais de cartas (conjunto, taxa de acerto, tempo) e publicar em `docs/TESTING.md`.
-11. ⬜ **Consertar o e2e** (`e2e.yml`): falha por CORS ao buscar imagens do TCGdex de `localhost` e ao carregar o worker do OCR no runner.
+10. 🔶 **Medir o reconhecimento**: medição sintética publicada em [docs/TESTING.md](docs/TESTING.md#reconhecimento-medição-sintética-2026-10-23) (escaneamentos oficiais distorcidos; 0 % de cartas erradas com confiança, mas o OCR do número lê só ~1/3 dos casos). **Falta** o conjunto de fotos reais de celular, que depende de o dono fotografar cartas, e melhorar a leitura do número.
+11. ✅ **Consertar o e2e** (2026-10-23): as falhas eram do teste, não do produto (tela de boas-vindas cobrindo a câmera, seletores antigos e referências das candidatas abortadas); com isso 4 cartas rodam o fluxo inteiro, offline incluído, em ~1,5 min. Detalhes e como rodar no PC em [docs/TESTING.md](docs/TESTING.md). 🔶 O workflow `Ponta a ponta` está **desativado no GitHub** (Actions → Ponta a ponta → Enable) e a `swsh1-65` não é identificada nesse cenário.
 12. ✅ **Escala pela altura real também na Caixa e no AR** (a Vila e a Torre já usavam). Mesma curva de `core/size-scale.ts`, agora como tamanho relativo (`speciesRelativeSize`: 1 = Pokémon de 1 m; Pikachu ≈ 0,7, Snorlax ≈ 1,35, gigantes presos no limite), sempre medindo o desenho sem a margem transparente do quadro. **Caixa**: só na cena em AR (passeio e batalha; a Box de "Minhas cartas" e o Livro não mudam, a pedido do dono); a forma Mega cresce pela arte, até 1,5×; sem dado de altura, tamanho pelo desenho, como antes. **AR da carta** (Uma carta e Várias): o ajuste "Tamanho base" vira a altura de um Pokémon de 1 m, com a opção "Tamanho pela altura real da espécie" para desligar. Visto no Edge com câmera falsa (Caixa a 375 px: Caterpie < Pikachu < Snorlax < Onix). 🔶 O AR da carta não foi visto na tela (precisa de câmera com carta); só por testes.
 13. ⬜ **Avaliar mais ideias do Momentoos** para rastreio difícil (variantes deformadas do alvo, pose flexível, resolução adaptativa) — só se a medição no celular mostrar perdas em ângulo.
 14. ⬜ **Desempenho**: custo no celular dos chunks de TensorFlow.js (~1,1 MB) e Three.js (~0,5 MB); dividir `ScanView.vue` e `battle-director.ts`.
@@ -281,11 +166,6 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
 25. ✅ **Torre de Sobrevivência: golpe próprio e evolução** (pedidos do dono): cada Pokémon ataca com um golpe próprio. O **1º tipo** dá o elemento (18 elementos com nome, cor, ícone e efeito: queimar, deixar lento, empurrar, saltar, atordoar, ir mais longe, roubar vida; `core/survivor-moves.ts`) e os **stats base reais** da PokéAPI (`scripts/build-stats.mjs` → `core/data/pokemon-stats.json`) dão a forma e os números: defesas e HP acima do ataque → **aura**; Ataque Especial ≥ Ataque → **projétil**; Ataque maior → **área**. Ataque/Atq. Esp. = dano, Velocidade = recarga e passo, HP = vida, Defesa = raio e tamanho do disparo, sempre dentro de limites. Os upgrades combinam com a forma (pierce só em projétil, raio em aura e área) e citam o golpe. A partir do **nível 8 (e 16)** a escolha de upgrade traz a carta **«Evoluir para …»** pela cadeia real (`scripts/build-evolutions.mjs`, ramos sorteados; só formas com sprite no pacote); os números passam a ser os dos stats da nova forma, com os upgrades mantidos. Só vale na corrida. A escolha mostra o golpe com barras (dano, rapidez, alcance ou raio, vida); a arena desenha os disparos na cor do elemento, o raio e os pulsos da aura, as explosões, os efeitos nos inimigos e o brilho da evolução. Lógica pura com testes. Visto no Edge a 375 px com **Digital Pokémon** (Charmander → Charmeleon em projétil, Squirtle → Wartortle em aura, Gastly na escolha). 🔶 O equilíbrio por forma não passou pelo robô de `scripts/survivor-sim.eval.ts` (ele ainda usa o golpe padrão); desempenho só vale em celular real.
 26. ✅ **Insígnias únicas e maleta 3D** (pedido do dono; desenho "metal esmaltado" escolhido entre dois): cada insígnia tem forma, metal e esmalte próprios ligados ao líder — Carvão (bloco lapidado, ferro escuro), Floresta (trevo, bronze), Punho (punho fechado, cobre), Pântano (gota com onda, prata), Relíquia (vitral em losango, ouro velho), Mina (engrenagem com escudo, aço escovado), Pingente (floco de neve de cristal translúcido) e Farol (sol de doze raios, ouro). A geometria é gerada em `core/badges.ts` e vira SVG na Liga (`BadgeIcon.vue`) e peça em relevo na **maleta 3D** (`box/badge-case.ts`, Three.js só por `import()` ao tocar "Abrir a maleta 3D"): couro vermelho, cantos e fecho dourados, forro de veludo com os 8 encaixes; insígnia não conquistada aparece como encaixe vazio com a silhueta, sem inventar conquista. Arrastar gira (com inércia; "Centralizar" volta girando); esfregar o dedo numa insígnia **pole** (a poeira some, o metal fica menos áspero, faíscas; o brilho fica salvo em `tcg-ar-insignias-v1`, entra no backup e perde 0,02 por dia até 0,2); girar rápido, "Chacoalhar" ou sacudir o celular fazem as insígnias **balançarem e baterem** nos encaixes (mola com folga em `core/badge-wobble.ts`, tilintar sintetizado se o som estiver ligado). "Reflexos e faíscas" (`visual.caseFx`) desliga reflexo de ambiente, sombras e faíscas. Visto no Chromium a 375 px (girar, polir e salvar, chacoalhar, tampa, reflexos desligados, Liga sem nenhuma insígnia; sem rolagem lateral). 🔶 O WebGL do teste é por software: desempenho, o toque de verdade, o sacudir pelo acelerômetro e o som só valem em celular real.
 
-## Decisões em aberto
-
-1. **Sprites**: hoje vêm do repositório PokeAPI/sprites (GIF `other/showdown`) em tempo de execução, com espelho no jsDelivr. Direitos sobre os desenhos pertencem aos titulares; o app não redistribui nada: o celular baixa o arquivo na hora.
-2. **Imagens e dados de cartas**: vêm do TCGdex, só das cartas que o usuário escaneia, e ficam no aparelho dele.
-3. **Direitos e marca**: projeto de fã, não oficial. Não publicar como produto sem revisar o uso de marcas e imagens.
 27. ✅ **Jogar sem nenhuma carta** (pedido do dono: começar com um Pokémon só e chegar ao jogo inteiro). Testado no Edge num perfil novo, sem cartas: o questionário dá o inicial (Digital Pokémon ligado a uma carta real do catálogo; precisa de rede para confirmar a espécie); coletar numa fileira de árvores e vender na loja rende moedas (8 madeiras = 32 moedas; no mapa grande, uns 5.600 por dia se coletar tudo); a Fonte invoca o segundo por 500; com os dois, a batalha da Caixa em AR anda (câmera falsa) e a Pista de Pins começa (golpe da carta de origem). Conta do XP sem cartas: ~300 por dia (conversas e perguntas, 5 vitórias de minigame, missões sem a de leitura, sequência), então Fliperama (nível 2) e Café (3) no 1º dia, Arena (6) em ~5 dias e Torre (7) em ~7. Destravado nesta rodada: **Memória** sem cartas (sorteia 6 da Pokédex, como o "Quem é"), **Pista de Pins** com Digital Pokémon, **"Vender todos"** na loja. Ainda presos a cartas por natureza: escanear, AR de carta e Várias; a missão diária de leitura (e o bônus de todas as missões). Ver também: a coleta rende muito no mapa grande (o 2º Pokémon sai na 1ª sessão) — o dono decide se quer frear.
 28. ✅ **Ajustes da Vila** (pedido do dono): apelido para qualquer Pokémon desde o primeiro dia (antes só a partir de «Grande amigo»); 2 blocos entre as casas e postes só na beira das ruas (teste garante que nenhum poste encosta numa casa e que sempre dá para passar entre duas casas); lampião de enfeite no vão ao lado da casa, sem tapar a fachada; menu com uma entrada só (botão "☰ Menu" no canto, com o número de momentos novos, e o B abrem o mesmo menu; A e B com rótulo "Falar" e "Menu/Voltar") e grupos novos (Você, Fazer, Pokémon e memórias, Lugares da Vila com Fliperama, Arena e Torre direto, Fora da Vila); com o aviso de boas-vindas na tela, o B só fecha o aviso (antes abria o menu junto). Torre: o resumo mostra as moedas da corrida (metade da pontuação, 5 a 50) e uma corrida de 20 s sem derrotar ninguém também paga.
 29. ✅ **Achar os Pokémon na Vila grande** (relato de jogadores: cidade vazia e grande demais): **minimapa** no canto (um pixel por bloco: ruas, água, matas, prédios; você em vermelho, os Pokémon acordados em amarelo e o 🔔), que aumenta com um toque e, grande, leva você andando até o ponto tocado (`village/minimap.ts`, com testes); **sino da praça** ao lado da fonte: o A no sino chama todo Pokémon acordado para perto dele (quem está a mais de 18 blocos aparece num "puf" no meio do caminho e chega correndo; quem dorme em casa não vem, e o aviso diz quem). **Tilesets**: os sobrados (Apathy Houses) saíam cortados à direita (recorte de 72 px; a casa tem 80) — corrigido nas 5 cores. Topo da Vila numa linha só em tela estreita. **Torre**: sem a pose de andar do pacote local, o Pokémon usa o GIF baixado (como na Vila) e, sem ele, a imagem parada do PokéAPI; a miniatura da escolha também. Visto no Edge a 390 px (sino, minimapa grande, Torre com Blitzle, que não está no pacote local).
@@ -293,12 +173,22 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
 31. ✅ **Torre: treinadores, chefão aos 20 min, modo infinito e cosméticos** (pedido do dono, com relato de "muito fácil"). Agenda: aos 5, 10 e 15 min aparece um treinador com **3 Pokémon elite** (+21× HP, +60% dano, +anel dourado); aos **20 min**, o **chefão final** com **6 Pokémon** (anel vermelho, mais HP e dano ainda). Vencer o chefão final uma vez destrava o **modo infinito**, escolhido na tela antes da corrida: começa 25% mais difícil e cresce +15%/min no HP e dano de todos os inimigos novos, com outro chefão (6 Pokémon) a cada 5 min. **Variedade**: ~34 espécies de inimigos selvagens (antes 12). **Escolha do tipo**: quando o Pokémon tem 2 tipos, abre uma tela antes da corrida para você escolher qual ataca. **Moedas**: além da pontuação (5–50), +40 por treinador e +80 por chefão derrotado; **zerar paga 500 moedas uma vez por dia** (`torre.lastClearBonusDay`). **Conquistas e cosméticos** (via `rewards.ts`, prêmios de conquista): Fita de sobrevivente (primeira corrida), Pino de Treinador (1º treinador), Troféu da Torre (zerou), Pino de Chefão (3 chefões), Capa de Sobrevivente (10 treinadores). **Dificuldade**: spawn mais apertado (`spawnPerSecMs`/`PerWaveMs` +, piso 220 ms). Testado no motor (`src/core/survivor.test.ts`): treinador aos 5 min, chefão aos 20 min, escala do infinito e moedas; e no Edge (botões Normal/Infinito e escolha Planta/Veneno do Bulbasaur).
 32. ✅ **Torre: dificuldade apertada e correção do destrave do infinito** (relato do dono: ainda fácil, infinito não destravou). HP dos inimigos comuns **dobrou** (`enemyHpBase` 10 → 20; passo e por onda também cresceram); treinadores (elite) ficaram com **+5× HP** e **+2× dano**; cada Pokémon do chefão final (6 pokés) com +7× HP e +2,5× dano. **Vitória automática no modo normal**: assim que o chefão final cai, a corrida termina em "venceu" (abre o resumo, grava a corrida e destrava o modo infinito pela 1ª vez) — antes só terminava se o jogador morresse, por isso o timer seguia e o infinito nunca destravava. No modo infinito, segue até morrer, como roguelike. Testes novos cobrem os dois casos.
 
-## Ligas regionais (18/10/2026)
+33. ✅ **Quadro de Pedidos da Vila**: os 3 objetivos diários determinísticos agora influenciam o mundo: pedidos ligados ao lago/à praia trazem chuva, entregas no correio estendem o horário, dois pedidos ampliam o alcance do sino e atender os três eleva o nível persistido da cidade. O estado continua em `tcg-ar-vila-v1`, sem backend.
+34. ✅ **Passeios guiados**: a conversa oferece oito destinos reais (Fonte Central, Lago Azul, Parquinho, Mercado, Fazenda, Bosque e duas trilhas), com escolha explícita; ao chegar, o passeio dá +6 de amizade e registra um momento no Diário.
+35. ✅ **Eventos semanais na praça**: a Vila escolhe um evento determinístico por semana e o exibe no menu, com local, detalhe e bônus próprios.
+36. ✅ **Expedições**: enviar um Pokémon para um dos quatro locais consome 15 minutos; o resultado usa tipo, personalidade, amizade e clima e entrega moedas e itens.
+37. ✅ **Descobertas encadeadas e percepções**: entrar em áreas diferentes revela pistas em cadeia, com recompensa ao concluir; momentos sociais reconhecem móveis colocados e acessórios usados.
+38. ✅ **Pontos secretos**: as quatro áreas reais de exploração (margem do lago, clareira do bosque, nascente da fazenda e caixa sob o parquinho) avançam só quando o jogador entra nelas, encadeiam pistas e pedidos persistentes e, ao fim, registram uma página factual guardada no Álbum/Diário. Cada ponto também entrega uma peça única de coleção ligada ao lugar (lampião de cristal, banco cogumelo, poço ou caixa de correio rosa), além de moedas e item; não há retropreenchimento de fatos em saves antigos.
+39. ✅ **Lendários verificados**: existem 3 espécies no catálogo atual — Suicune, Zapdos e Celebi. Há no máximo uma tentativa por dia e um encontro ativo por vez; depois de encerrado, uma espécie pode voltar em outro dia. O histórico mantém os últimos 20 registros.
+40. 🔶 **Fliperama com sensores e toque contextual** (primeira etapa): minigame de equilíbrio com uma Pokébola transparente na Honedge, usando o OrientationFeed real compartilhado com AR/Caixa; a recompensa cresce 1 moeda a cada 5 segundos, e a permissão ou ausência de sensor é informada claramente. Toques rápidos em Pokémon, prédios, mural, fonte, loja, plantações e objetos agora fazem o personagem caminhar até o alvo, virar-se e executar A automaticamente. Falta ampliar o conteúdo do Fliperama e os destinos contextuais.
+41. 🔶 **Mochila 3D com ASMR** (primeira etapa): a aba Mochila abre uma cena 3D carregada sob demanda com os itens reais do inventário, balanço por `devicemotion`, botão de chacoalhar, centralização e sons curtos quando os objetos se encostam. A opção de reflexos/animações usa a configuração visual existente. Falta validar a sensação do movimento e o áudio em aparelhos físicos diferentes.
+42. ✅ **Pins — IA e chão reativos**: a IA deixou de escolher candidatas por sorteio, mantém variedade entre atiradores, alvos, ângulos, forças e golpes, simula cópias isoladas do terreno com marcas e reações, considera o risco de gelo, flores, mato, pedras e lodo perto da borda, e usa Escudo quando um pin próprio está ameaçado (`core/pin-ai.ts`). A arena ganhou pulsos, anéis, ondulações, partículas temporárias e animações persistentes por bloco nas marcas (`PinsView.vue`). Typecheck, build com `BASE_PATH=/pokemon-tcg-ar/` e `verify-dist` passaram; os testes não foram executados nesta etapa.
 
-- Kanto (I), Johto (II) e Hoenn (III) acrescentadas à Sinnoh (IV): cada região tem oito Ginásios, quatro membros da Elite e um Campeão (Blue, Lance, Steven e Cynthia). Equipes de exibição inspiradas nos jogos, com dificuldade própria do app.
-- Treinador → Liga e Arena da Vila compartilham a seleção por região, as seções Ginásios / Elite 4 / Campeão e as quatro maletas 3D, cada uma com oito insígnias. Reflexos, polimento e balanço continuam disponíveis; Three.js permanece sob demanda.
-- O salvamento `tcg-ar-liga-v1` preserva IDs e índices de Sinnoh (0–7), reserva 8–15 para Kanto, 16–23 para Johto e 24–31 para Hoenn e guarda corridas/títulos regionais separadamente. O backup usa as mesmas chaves; o polimento aceita as 32 insígnias sem misturar encaixes.
-- Testes cobrem bloqueios, derrota/recomeço da Elite, primeira vitória/revanche, gravação e migração, títulos e seleção da interface. Conferência no Edge a 375 px: troca das quatro regiões e abertura das quatro maletas, sem erro de página nem rolagem horizontal. GPU, toque, sensores e fluidez em celular real continuam pendentes.
+## Decisões em aberto
+
+1. **Sprites**: hoje vêm do repositório PokeAPI/sprites (GIF `other/showdown`) em tempo de execução, com espelho no jsDelivr. Direitos sobre os desenhos pertencem aos titulares; o app não redistribui nada: o celular baixa o arquivo na hora.
+2. **Imagens e dados de cartas**: vêm do TCGdex, só das cartas que o usuário escaneia, e ficam no aparelho dele.
+3. **Direitos e marca**: projeto de fã, não oficial. Não publicar como produto sem revisar o uso de marcas e imagens.
 
 ## Riscos conhecidos
 
@@ -307,13 +197,3 @@ Pedidos do dono primeiro, na ordem combinada; depois os itens técnicos que já 
 - O giroscópio acompanha o giro, não a caminhada (sem SLAM no navegador).
 - Limites do iOS Safari para câmera, WebGL, sensores e instalação do PWA.
 - Dependência de serviços externos de terceiros (TCGdex, PokeAPI, jsDelivr) sem garantia de disponibilidade.
-31. ✅ **Quadro de Pedidos da Vila**: os 3 objetivos diários determinísticos agora influenciam o mundo: pedidos ligados ao lago/à praia trazem chuva, entregas no correio estendem o horário, dois pedidos ampliam o alcance do sino e atender os três eleva o nível persistido da cidade. O estado continua em `tcg-ar-vila-v1`, sem backend.
-32. ✅ **Passeios guiados**: a conversa oferece oito destinos reais (Fonte Central, Lago Azul, Parquinho, Mercado, Fazenda, Bosque e duas trilhas), com escolha explícita; ao chegar, o passeio dá +6 de amizade e registra um momento no Diário.
-33. ✅ **Eventos semanais na praça**: a Vila escolhe um evento determinístico por semana e o exibe no menu, com local, detalhe e bônus próprios.
-34. ✅ **Expedições**: enviar um Pokémon para um dos quatro locais consome 15 minutos; o resultado usa tipo, personalidade, amizade e clima e entrega moedas e itens.
-35. ✅ **Descobertas encadeadas e percepções**: entrar em áreas diferentes revela pistas em cadeia, com recompensa ao concluir; momentos sociais reconhecem móveis colocados e acessórios usados.
-36. ✅ **Pontos secretos**: as quatro áreas reais de exploração (margem do lago, clareira do bosque, nascente da fazenda e caixa sob o parquinho) avançam só quando o jogador entra nelas, encadeiam pistas e pedidos persistentes e, ao fim, registram uma página factual guardada no Álbum/Diário. Cada ponto também entrega uma peça única de coleção ligada ao lugar (lampião de cristal, banco cogumelo, poço ou caixa de correio rosa), além de moedas e item; não há retropreenchimento de fatos em saves antigos.
-37. ✅ **Lendários verificados**: existem 3 espécies no catálogo atual — Suicune, Zapdos e Celebi. Há no máximo uma tentativa por dia e um encontro ativo por vez; depois de encerrado, uma espécie pode voltar em outro dia. O histórico mantém os últimos 20 registros.
-36. 🔶 **Fliperama com sensores e toque contextual** (primeira etapa): minigame de equilíbrio com uma Pokébola transparente na Honedge, usando o OrientationFeed real compartilhado com AR/Caixa; a recompensa cresce 1 moeda a cada 5 segundos, e a permissão ou ausência de sensor é informada claramente. Toques rápidos em Pokémon, prédios, mural, fonte, loja, plantações e objetos agora fazem o personagem caminhar até o alvo, virar-se e executar A automaticamente. Falta ampliar o conteúdo do Fliperama e os destinos contextuais.
-37. 🔶 **Mochila 3D com ASMR** (primeira etapa): a aba Mochila abre uma cena 3D carregada sob demanda com os itens reais do inventário, balanço por `devicemotion`, botão de chacoalhar, centralização e sons curtos quando os objetos se encostam. A opção de reflexos/animações usa a configuração visual existente. Falta validar a sensação do movimento e o áudio em aparelhos físicos diferentes.
-36. ✅ **Pins — IA e chão reativos**: a IA deixou de escolher candidatas por sorteio, mantém variedade entre atiradores, alvos, ângulos, forças e golpes, simula cópias isoladas do terreno com marcas e reações, considera o risco de gelo, flores, mato, pedras e lodo perto da borda, e usa Escudo quando um pin próprio está ameaçado (`core/pin-ai.ts`). A arena ganhou pulsos, anéis, ondulações, partículas temporárias e animações persistentes por bloco nas marcas (`PinsView.vue`). Typecheck, build com `BASE_PATH=/pokemon-tcg-ar/` e `verify-dist` passaram; os testes não foram executados nesta etapa.
