@@ -3,6 +3,7 @@
  * mede, em janelas de 2 s, o tempo de `update` e de `draw` no navegador. Uso: `npm run dev` não é necessário; ver
  * `e2e/village-perf.mjs`, que sobe o Vite e coleta o perfil do Chromium.
  */
+import { reactive } from 'vue';
 import { generateVillage } from '../../src/core/village/map';
 import { emptyVillage } from '../../src/core/village/life';
 import { VillageGame } from '../../src/village/village-game';
@@ -13,7 +14,9 @@ const params = new URLSearchParams(location.search);
 const N = Number(params.get('n') ?? 30);
 const SEED = 20261014;
 const map = generateVillage(SEED);
-const state = emptyVillage(SEED, map.spawn);
+// Com `reactive=1` o estado é um proxy do Vue, como na Vila de verdade (`VillageView.vue` passa `reactive(...)`).
+const plainState = emptyVillage(SEED, map.spawn);
+const state = params.get('reactive') === '1' ? reactive(plainState) : plainState;
 state.house = 3;
 
 /** Um GIF de dois quadros com um corpo colorido: o custo de desenho é o de um sprite de verdade (tamanho parecido). */

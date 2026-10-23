@@ -32,7 +32,7 @@ try {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 200)); });
-  await page.goto(`${base}/pokemon-tcg-ar/e2e/village-perf/index.html?n=${N}`);
+  await page.goto(`${base}/pokemon-tcg-ar/e2e/village-perf/index.html?n=${N}&reactive=${process.env.PERF_REACTIVE ?? 1}`);
   try {
     await page.waitForFunction(() => window.villagePerf !== undefined, null, { timeout: 120_000 });
   } catch (error) {
