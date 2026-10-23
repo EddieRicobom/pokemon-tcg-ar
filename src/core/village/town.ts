@@ -10,6 +10,9 @@ import { hash, personalityOf } from './personality';
 import { CIVIC, HOME_EXTERIOR_STYLES, LOTS, TOWN_STAGES, townStage } from './town-layout';
 import type { HomeExteriorStyle } from './town-layout';
 import type { Building } from './town-layout';
+import { homeLevel, homeDecor, homeRoof, homeValue } from './home-state';
+import { findHomeFurnitureSlot } from './home-layout';
+export { homeLevel, homeDecor, homeRoof, homeValue } from './home-state';
 
 export { buildingAt } from './map';
 export { LOTS, TOWN_STAGES, townStage };
@@ -36,6 +39,8 @@ export const HOME_STAGES: readonly HomeStage[] = [
   { name: 'Casa de madeira', cost: { madeira: 10, pedra: 4 } },
   { name: 'Casa de tijolos', cost: { madeira: 16, pedra: 14 } },
   { name: 'Sobrado', cost: { madeira: 24, pedra: 20, concha: 3 } },
+  { name: 'Sobrado com varanda', cost: { tabua: 12, tijolo: 8, vidro: 3 } },
+  { name: 'Solar da Vila', cost: { tabua: 18, tijolo: 14, vidro: 6, flor: 12 } },
 ];
 
 export interface DecorDef {
@@ -62,12 +67,6 @@ export const ROOFS: readonly { name: string; rgb: number }[] = [
   { name: 'Rosa', rgb: 0xe878a8 },
 ];
 export const PAINT_COST = 15;
-
-/** Cada casa guarda um número só: nível (2 bits), enfeites (4 bits) e telhado (3 bits). */
-export const homeLevel = (v: number): number => v & 3;
-export const homeDecor = (v: number): number => (v >> 2) & 15;
-export const homeRoof = (v: number): number => (v >> 6) & 7;
-export const homeValue = (level: number, decor: number, roof: number): number => (level & 3) | ((decor & 15) << 2) | ((roof & 7) << 6);
 
 export const homeOf = (s: VillageState, lot: number): number => s.homes[String(lot)] ?? 0;
 
@@ -102,7 +101,7 @@ export function upgradeHome(s: VillageState, lot: number, residents: readonly st
   const v = homeOf(s, lot);
   const lvl = homeLevel(v);
   const next = HOME_STAGES[lvl + 1];
-  if (!next) return { ok: false, message: 'Esta casa já é um sobrado completo!' };
+  if (!next) return { ok: false, message: 'Esta casa já completou todas as reformas!' };
   if (!canAfford(s, next.cost)) {
     const lack = Object.entries(next.cost).filter(([k, n]) => (s.inventory[k as ItemId] ?? 0) < (n ?? 0)).map(([k, n]) => `${itemName(k as ItemId)} ${Math.min(s.inventory[k as ItemId] ?? 0, n ?? 0)}/${n}`);
     return { ok: false, message: `Para a ${next.name} faltam: ${lack.join(', ')}.` };
@@ -149,7 +148,7 @@ export function paintRoof(s: VillageState, lot: number, roof: number, residents:
 
 export function homeStyleOf(s: VillageState, lot: number): HomeExteriorStyle {
   const chosen = s.homeStyles[String(lot)];
-  return HOME_EXTERIOR_STYLES.some((style) => style.id === chosen) ? chosen as HomeExteriorStyle : HOME_EXTERIOR_STYLES[lot % HOME_EXTERIOR_STYLES.length]!.id;
+  return HOME_EXTERIOR_STYLES.some((style) => style.id === chosen) ? chosen as HomeExteriorStyle : HOME_EXTERIOR_STYLES[Math.abs(lot) % 4]!.id;
 }
 
 /** Troca a linguagem visual da fachada; o telhado e os enfeites continuam independentes. */
@@ -160,27 +159,31 @@ export function setHomeStyle(s: VillageState, lot: number, style: HomeExteriorSt
   if (s.coins < chosen.cost) return { ok: false, message: `${chosen.name} custa ${chosen.cost} moedas.` };
   s.coins -= chosen.cost;
   s.homeStyles[String(lot)] = style;
+  // Uma escolha manual ganha pelo menos uma semana antes de outra iniciativa do morador.
+  const project = s.homeProjects[String(lot)];
+  if (project) project.lastChangeDay = project.day;
   for (const id of residents) friendOf(s, id).points = Math.min(100, friendOf(s, id).points + 1);
   return { ok: true, message: `Fachada ${chosen.name.toLowerCase()} pronta: ${chosen.description}.` };
 }
 
-const RESIDENT_HOME_PREFS: Readonly<Record<string, { style: HomeExteriorStyle; wallpaper: HomeInterior['wallpaper']; floor: HomeInterior['floor']; items: readonly string[] }>> = {
-  Brincalhão: { style: 'festivo', wallpaper: 'floral', floor: 'grama', items: ['bola-praia', 'cama-elastica', 'pelucia'] },
-  Calmo: { style: 'jardim', wallpaper: 'noite', floor: 'carvalho', items: ['samambaia', 'poltrona', 'aquario'] },
-  Tímido: { style: 'rústico', wallpaper: 'madeira', floor: 'xadrez', items: ['cama', 'tapete', 'estante'] },
-  Corajoso: { style: 'moderno', wallpaper: 'madeira', floor: 'ladrilho', items: ['trofeu', 'piano', 'banco-cogumelo'] },
-  Guloso: { style: 'jardim', wallpaper: 'floral', floor: 'xadrez', items: ['mesa-cha', 'geladeira', 'fogao'] },
-  Sonhador: { style: 'moderno', wallpaper: 'noite', floor: 'carvalho', items: ['globo', 'quadro-mar', 'sofa-nuvem'] },
-  Curioso: { style: 'festivo', wallpaper: 'creme', floor: 'ladrilho', items: ['aquario', 'computador', 'maquina-gacha'] },
-  Mandão: { style: 'moderno', wallpaper: 'creme', floor: 'ladrilho', items: ['estante', 'televisao', 'trofeu'] },
+export const RESIDENT_HOME_PREFS: Readonly<Record<string, { style: HomeExteriorStyle; wallpaper: HomeInterior['wallpaper']; floor: HomeInterior['floor']; items: readonly string[] }>> = {
+  Brincalhão: { style: 'festivo', wallpaper: 'floral', floor: 'grama', items: ['pelucia', 'almofadas', 'mesa-jantar', 'maquina-gacha', 'sofa-nuvem', 'tapete-folha'] },
+  Calmo: { style: 'jardim', wallpaper: 'noite', floor: 'carvalho', items: ['samambaia', 'poltrona', 'estante-plantas', 'luminaria-leitura', 'aquario', 'cesto-la'] },
+  Tímido: { style: 'rústico', wallpaper: 'madeira', floor: 'xadrez', items: ['tapete', 'estante', 'comoda', 'cesto-la', 'almofadas', 'luminaria-leitura'] },
+  Corajoso: { style: 'serrano', wallpaper: 'madeira', floor: 'ladrilho', items: ['mapa-parede', 'trofeu', 'aparador', 'mesa-estudos', 'piano', 'relogio-parede'] },
+  Guloso: { style: 'tradicional', wallpaper: 'floral', floor: 'xadrez', items: ['mesa-cha', 'geladeira', 'fogao', 'balcao-cozinha', 'armario-loucas', 'prateleira-canecas'] },
+  Sonhador: { style: 'noturno', wallpaper: 'noite', floor: 'carvalho', items: ['globo', 'quadro-mar', 'sofa-nuvem', 'mapa-parede', 'almofadas', 'luminaria-leitura'] },
+  Curioso: { style: 'praiano', wallpaper: 'creme', floor: 'ladrilho', items: ['mesa-estudos', 'aquario', 'computador', 'maquina-gacha', 'mapa-parede', 'estante'] },
+  Mandão: { style: 'moderno', wallpaper: 'creme', floor: 'ladrilho', items: ['estante', 'televisao', 'trofeu', 'aparador', 'relogio-parede', 'mesa-jantar'] },
 };
-const RESIDENT_ROOM_SLOTS = [{ x: 1, y: 1 }, { x: 3, y: 2 }, { x: 5, y: 3 }, { x: 2, y: 4 }] as const;
 
 export interface ResidentHomeChange {
   lot: number;
   residentId: string;
   style: HomeExteriorStyle;
   items: string[];
+  renovation?: string;
+  restyled?: boolean;
 }
 
 /** Moradores compram peças com o próprio orçamento simulado; isso não retira itens da mochila do jogador. */
@@ -196,13 +199,13 @@ export function personalizeResidentHomes(s: VillageState, homes: ReadonlyMap<str
     const key = String(lot);
     const interior = s.homeInteriors[key] ? normalizeHomeInterior(s.homeInteriors[key]) : emptyHomeInterior();
     const before = JSON.stringify(interior);
-    interior.wallpaper = pref.wallpaper;
-    interior.floor = pref.floor;
-    const target = Math.min(RESIDENT_ROOM_SLOTS.length, Math.max(1, homeLevel(homeOf(s, lot)) + 1));
+    if (!s.homeInteriors[key]) { interior.wallpaper = pref.wallpaper; interior.floor = pref.floor; }
+    // Kit de mudança único: cama e uma peça pessoal. As próximas compras usam a poupança doméstica.
+    const target = 2;
     const bought: string[] = [];
-    for (const id of pref.items) {
+    for (const id of ['cama', ...pref.items]) {
       if (interior.placed.length >= target || !FURNITURE_IDS.includes(id) || interior.placed.some((entry) => entry.item === id)) continue;
-      const slot = RESIDENT_ROOM_SLOTS[interior.placed.length];
+      const slot = findHomeFurnitureSlot(interior, id);
       if (!slot) break;
       interior.placed.push({ ...slot, item: id });
       bought.push(itemDef(id)?.name ?? id);
@@ -231,6 +234,8 @@ export function homeComment(s: VillageState, lot: number, names: readonly string
   if (lvl === 1) lines.push(`${who}: "Gostei da casa de madeira! Dá para ouvir a chuva no telhado."`);
   if (lvl === 2) lines.push(`${who}: "Tijolinho por tijolinho, parece castelo!"`);
   if (lvl === 3) lines.push(`${who}: "Um sobrado! Eu tenho até escada. Venha tomar um chá!"`);
+  if (lvl === 4) lines.push(`${who}: "Na varanda dá para tomar chá e ver a rua passar."`);
+  if (lvl === 5) lines.push(`${who}: "Meu solar ficou pronto! Ainda tem lugar para mais uma visita."`);
   if (d === 0) lines.push(`${who}: "Tenho um cantinho vazio na frente. Será que cabe uma jardineira?"`);
   return lines[Math.floor(rng() * lines.length)]!;
 }

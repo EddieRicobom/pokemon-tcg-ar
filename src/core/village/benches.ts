@@ -20,17 +20,18 @@ export function benchesFor(map: VillageMap): Bench[] {
 }
 
 interface Visit { bench: string; x: number; y: number; deadline: number; until: number | null }
+interface VisitOptions { distance?: number; travelMs?: number; stayMs?: number; stayVarianceMs?: number; cooldownMs?: number }
 
 /** Estado efêmero: reservas exclusivas, chegada a pé e descanso com duração limitada. */
 export class BenchVisits {
   readonly visits = new Map<string, Visit>();
   private readonly nextTry = new Map<string, number>();
 
-  constructor(readonly benches: readonly Bench[]) {}
+  constructor(readonly benches: readonly Bench[], private readonly options: VisitOptions = {}) {}
 
   release(id: string, now: number): void {
     this.visits.delete(id);
-    this.nextTry.set(id, now + 45000);
+    this.nextTry.set(id, now + (this.options.cooldownMs ?? 45000));
   }
 
   reserved(x: number, y: number, except?: string): boolean {
@@ -49,12 +50,12 @@ export class BenchVisits {
       if (moving(w) || now < (this.nextTry.get(w.id) ?? 0)) return false;
       this.nextTry.set(w.id, now + 12000 + rng() * 23000);
       const candidates = this.benches.flatMap((b) => [0, 1].map((dx) => ({ bench: b.id, x: b.x + dx, y: b.y })))
-        .filter((s) => Math.abs(s.x - w.x) + Math.abs(s.y - w.y) <= 12 && !blocked(s.x, s.y) && !this.reserved(s.x, s.y, w.id));
+        .filter((s) => Math.abs(s.x - w.x) + Math.abs(s.y - w.y) <= (this.options.distance ?? 12) && !blocked(s.x, s.y) && !this.reserved(s.x, s.y, w.id));
       // Prefere fazer companhia a quem já escolheu o banco.
       candidates.sort((a, b) => Number([...this.visits.values()].some((v) => v.bench === b.bench)) - Number([...this.visits.values()].some((v) => v.bench === a.bench)));
       const seat = candidates[0];
       if (!seat) return false;
-      visit = { ...seat, deadline: now + 20000, until: null };
+      visit = { ...seat, deadline: now + (this.options.travelMs ?? 20000), until: null };
       this.visits.set(w.id, visit);
     }
     if (now >= (visit.until ?? visit.deadline) || blocked(visit.x, visit.y)) {
@@ -64,7 +65,7 @@ export class BenchVisits {
     advance(w, dt);
     if (moving(w)) return true;
     if (w.x === visit.x && w.y === visit.y) {
-      visit.until ??= now + 20000 + rng() * 25000;
+      visit.until ??= now + (this.options.stayMs ?? 20000) + rng() * (this.options.stayVarianceMs ?? 25000);
       w.dir = 'down';
       return true;
     }

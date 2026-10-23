@@ -94,7 +94,7 @@ function sceneFor(id: string): Scene | null {
               { residentId: 'm2', at: 3, message: 'Pescou no lago.', kind: 'fish' },
             );
           }
-          const env = { ...makeEnv(s, date, hour, weather), crops: 3, ripeCrops: 2 };
+          const env = { ...makeEnv(s, date, hour, weather), crops: 3, ripeCrops: 2, cafeGuests: id.startsWith('cafe-') ? cast12.map((a) => a.id) : [] };
           const sc = sceneOfTemplate(tpl, cast12, s, env, seededRng(vi * 17 + hour), 40);
           if (sc) return sc;
         }
@@ -105,6 +105,15 @@ function sceneFor(id: string): Scene | null {
 }
 
 describe('momentos: catálogo de modelos', () => {
+  it('momentos do Café exigem que todos os envolvidos estejam comendo juntos', () => {
+    const { s, env } = richEnv();
+    for (const tpl of TEMPLATES.filter((t) => t.id.startsWith('cafe-'))) {
+      expect(sceneOfTemplate(tpl, actors, s, env, seededRng(3), 20)).toBeNull();
+      expect(sceneOfTemplate(tpl, actors, s, { ...env, cafeGuests: ['a'] }, seededRng(3), 20)).toBeNull();
+      const scene = sceneOfTemplate(tpl, actors.slice(0, 2), s, { ...env, cafeGuests: ['a', 'b'] }, seededRng(3), 20);
+      expect(scene?.cast.map((a) => a.id).sort()).toEqual(['a', 'b']);
+    }
+  });
   it('são muitos, com ids únicos e todos os tipos de momento representados', () => {
     expect(TEMPLATE_COUNT).toBeGreaterThanOrEqual(150);
     expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(TEMPLATE_COUNT);
@@ -145,7 +154,7 @@ describe('momentos: catálogo de modelos', () => {
     const reached = common.filter((t) => got.has(t.id)).length;
     expect(n).toBeGreaterThan(1000);
     expect(reached / common.length).toBeGreaterThan(0.85);
-  });
+  }, 30000);
 
   it('toda fala aponta para alguém do elenco, tem texto e usa só efeitos conhecidos; os pares ficam bem escritos', () => {
     const missing: string[] = [];

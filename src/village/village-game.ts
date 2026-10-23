@@ -1,5 +1,10 @@
 import { drawWaterFx, drawFountainFx, drawSunRays, drawTowerDataFx } from './ambient-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
+import { CafeService } from '../core/village/cafe';
+import { CAFE_TABLES } from '../core/village/cafe-layout';
+import { LEISURE_SPOTS } from '../core/village/expansion';
+import { GUIDED_DESTINATIONS } from '../core/village/guided-walk';
+import { payResidentWork } from '../core/village/resident-economy';
 import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
 import type { DecodedGif } from '../core/gif';
@@ -8,6 +13,8 @@ import { trainerAtlasFrame, type TrainerAtlas } from './trainer-atlas';
 import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance, syncFollowerSpeed, WALK_SPEED } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
+import { homeTileset, renovateHomeTileset } from './home-exterior';
+import { harmonizeTerrain, villageGrassSheet, villagePierTile } from './ground-palette';
 import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/village/life';
 import type { FurnitureId, VillageState } from '../core/village/life';
 import { homeDecor, homeLevel, homeOf, homeStyleOf, isAsleep, ROOFS, roofIndex } from '../core/village/town';
@@ -43,12 +50,12 @@ import { outfitFor, paintSeedBox, paintBell, paintBush, paintHouse, paintPlayer,
 import type { FarmTask, FarmWorker } from '../core/village/farm';
 import { stepFarmWorker } from '../core/village/farm';
 import type { GroundTileImage } from './village-art';
-import { paintAccessory, paintCrop, paintFurnitureItem } from './item-art';
+import { paintAccessory, paintCrop, paintFurnitureItem, paintItemIcon } from './item-art';
 import { harmonizePlayerCanvas, harmonizePlayerSprite } from './player-filter';
 import { wrapSpeech } from './speech-layout';
 import { groundPieces } from './ground-tiles';
 import { drawCommunityWorkAction, drawWorkAction } from './work-art';
-import { recolor, VillaAtlas, windowGlow } from './tileset-art';
+import { VillaAtlas, windowGlow } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintArcade, paintArena, paintCafe, paintFountain, paintHome, paintLamp, paintLot, paintMail, paintMuseum, paintPins, paintTorre } from './town-art';
 
@@ -85,6 +92,7 @@ export interface VillageMon {
 export type Target =
   | { kind: 'mon'; id: string }
   | { kind: 'furniture'; x: number; y: number; item: FurnitureId }
+  | { kind: 'leisure'; id: string }
   | { kind: 'plot' }
   | { kind: 'crop'; x: number; y: number }
   | { kind: 'shop' }
@@ -222,9 +230,7 @@ const atlasOpaqueBottoms = new WeakMap<HTMLCanvasElement, number>();
 /** Com o atlas: o desenho de cada prédio (recortes de tileset, ver `atlas-spec.ts`). */
 const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'home-orange', museum: 'manor', arcade: 'center-blue', pins: 'home-teal', arena: 'center-red', torre: 'tower' };
 /** Com o atlas: a casa de cada estágio (Cabana, Casa de madeira, Casa de tijolos, Sobrado — `HOME_STAGES`). */
-const HOME_TILESET = ['home-orange', 'home-teal', 'house-brick', 'home-yellow'] as const;
 /** As que pegam a cor escolhida (o desenho tem partes coloridas para tingir). */
-const HOME_TINTED = new Set<string>(['home-orange', 'home-teal', 'home-yellow']);
 const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼' };
 
 export class VillageGame {
@@ -294,13 +300,23 @@ export class VillageGame {
   /** O carteiro percorre as portas dos envolvidos numa carta, em ordem, para que a entrega seja visível. */
   private readonly mailRoutes = new Map<string, { targets: string[]; index: number; pauseUntil: number }>();
   private mailCarrierId: string | null = null;
+  private cafeWaiterId: string | null = null;
+  private cafeService: CafeService | null = null;
+  private readonly serviceBreaks = new Map<string, number>();
+  private readonly roamSchedule = new Map<string, { until: number; index: number }>();
+  onResidentEconomyChange: (() => void) | null = null;
+  private getCafe(): CafeService { return this.cafeService ??= new CafeService(this.state); }
+  private localDay(): string { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+  cafeCompanions(): string[] { return this.getCafe().eatingTogether(this.villagers); }
+  pauseResidentWork(id: string): void { this.serviceBreaks.set(id, performance.now() + 20000); }
 
   farmWorkers(): Omit<FarmWorker, 'types'>[] {
     const now = performance.now();
     return [...this.villagers].map(([id, walker]) => ({
       id, x: walker.x, y: walker.y,
       available: !this.asleep.has(id) && this.waiting !== id && this.state.follower !== id && !this.sceneBusy(id)
-        && id !== this.mailCarrierId && !this.mailRoutes.has(id)
+        && !this.mailRoutes.has(id) && !(id === this.cafeWaiterId && this.getCafe().orders.size > 0)
+        && !this.getCafe().seats.visits.has(id)
         && !(now < this.calledUntil && this.called.has(id)) && !(now < (this.communityWork.get(id)?.until ?? 0)),
     }));
   }
@@ -421,6 +437,8 @@ export class VillageGame {
   }
 
   setMons(mons: readonly VillageMon[]): void {
+    this.roamSchedule.clear();
+    this.cafeService?.clear(performance.now());
     this.villagers.clear();
     this.villagerZones.clear();
     this.monSprites.clear();
@@ -499,6 +517,12 @@ export class VillageGame {
   /** Define quem tem a profissão de carteiro e mantém o símbolo sobre a cabeça. */
   setMailCarrier(id: string | null): void {
     this.mailCarrierId = id && this.villagers.has(id) ? id : null;
+    for (const carrier of this.mailRoutes.keys()) if (carrier !== this.mailCarrierId) this.mailRoutes.delete(carrier);
+  }
+
+  setCafeWaiter(id: string | null): void {
+    this.cafeWaiterId = id && this.villagers.has(id) && this.townLevel >= 3 ? id : null;
+    if (!this.cafeWaiterId) this.getCafe().clear(performance.now());
   }
 
   /** Faz o carteiro caminhar até as casas reais dos envolvidos numa carta. */
@@ -507,6 +531,7 @@ export class VillageGame {
     if (!carrier || !this.villagers.has(carrier)) return false;
     const targets = [...new Set(targetIds)].filter((id) => id !== carrier && this.villagers.has(id) && this.homeDoor(id) !== null);
     if (targets.length === 0) return false;
+    if (this.mailRoutes.has(carrier)) return true;
     this.mailRoutes.set(carrier, { targets, index: 0, pauseUntil: 0 });
     this.bubble(carrier, '📬', 5_000);
     return true;
@@ -647,15 +672,29 @@ export class VillageGame {
   }
 
   /** O chão inteiro pré-desenhado com os recortes do tileset (um quadro só; os brilhos da água são desenhados por cima). */
-  private buildTilesetGround(atlas: VillaAtlas, grass: GroundTileImage): HTMLCanvasElement {
+  private buildTilesetGround(atlas: VillaAtlas): HTMLCanvasElement {
     const c = document.createElement('canvas');
     c.width = this.map.w * TILE;
     c.height = this.map.h * TILE;
     const ctx = c.getContext('2d')!;
     const sheet = toCanvas(atlas.image);
-    const grassCanvas = toCanvas(grass);
+    const grassCanvas = toCanvas(villageGrassSheet());
+    const terrain = new Map<string, HTMLCanvasElement>();
+    for (const id of ['sand-grass', 'sand-water', 'tall', 'at-trail']) {
+      const piece = atlas.piece(id);
+      if (piece) terrain.set(id, toCanvas(harmonizeTerrain(piece)));
+    }
+    const pierCache = new Map<string, HTMLCanvasElement>();
     for (let y = 0; y < this.map.h; y++) {
       for (let x = 0; x < this.map.w; x++) {
+        if (tileAt(this.map, x, y) === 'pier') {
+          const edges = this.edgesOf(x, y);
+          const key = `${edges}:${x % 23}:${y % 23}`;
+          let piece = pierCache.get(key);
+          if (!piece) { piece = toCanvas(villagePierTile(edges, x, y)); pierCache.set(key, piece); }
+          ctx.drawImage(piece, x * TILE, y * TILE);
+          continue;
+        }
         for (const p of groundPieces(this.map, x, y)) {
           const dx = x * TILE + p.dx;
           const dy = y * TILE + p.dy;
@@ -664,7 +703,9 @@ export class VillageGame {
             continue;
           }
           const r = atlas.rect(p.src);
-          if (r) ctx.drawImage(sheet, r.x + p.sx, r.y + p.sy, p.w, p.h, dx, dy, p.w, p.h);
+          const toned = terrain.get(p.src);
+          if (toned) ctx.drawImage(toned, p.sx, p.sy, p.w, p.h, dx, dy, p.w, p.h);
+          else if (r) ctx.drawImage(sheet, r.x + p.sx, r.y + p.sy, p.w, p.h, dx, dy, p.w, p.h);
         }
       }
     }
@@ -684,8 +725,8 @@ export class VillageGame {
 
   /** O chão inteiro pré-desenhado (3 quadros, por causa da água). */
   private buildGround(): void {
-    if (this.atlas && this.groundTile) {
-      this.groundFrames = [this.buildTilesetGround(this.atlas, this.groundTile)];
+    if (this.atlas) {
+      this.groundFrames = [this.buildTilesetGround(this.atlas)];
       return;
     }
     this.groundFrames = [0, 1, 2].map((frame) => {
@@ -730,6 +771,7 @@ export class VillageGame {
   occupied(x: number, y: number, except?: string): boolean {
     const benches = this.getBenchVisits();
     if (benches.reserved(x, y, except)) return true;
+    if (this.getCafe().seats.reserved(x, y, except)) return true;
     if ((!except || except === 'eu') && benches.benches.some((b) => y === b.y && (x === b.x || x === b.x + 1))) return true;
     if (isPlaced(this.state, x, y) || cropAt(this.state, x, y)) return true;
     if (this.player && except !== 'eu' && ((this.player.x === x && this.player.y === y) || (this.player.tx === x && this.player.ty === y))) return true;
@@ -893,6 +935,10 @@ export class VillageGame {
     }
     if (tile === 'deco') {
       const decor = this.map.decor.find((d) => f.x >= d.x && f.x < d.x + d.w && f.y >= d.y && f.y < d.y + d.h);
+      if (decor?.kind === 'leisure-sign') {
+        const place = LEISURE_SPOTS.find((p) => p.x === decor.x && p.y + 1 === decor.y);
+        if (place) return { kind: 'leisure', id: place.id };
+      }
       if (decor?.kind === 'bell') return { kind: 'bell' };
       if (decor?.kind === 'seed-box') return { kind: 'seed-box' };
       if (decor?.kind === 'board') return { kind: 'board' };
@@ -972,6 +1018,7 @@ export class VillageGame {
   playScene(cast: string[], lines: SceneLine[], done: () => void): boolean {
     if (this.scene || cast.length === 0 || cast.some((id) => !this.villagers.has(id) || this.asleep.has(id))) return false;
     const now = performance.now();
+    for (const id of cast) this.getCafe().release(id, now);
     this.scene = { cast, lines, idx: -1, phase: cast.length > 1 ? 'gather' : 'talk', until: now + 9000, startedAt: now, done };
     if (cast.length === 1) this.startLine(0, now);
     return true;
@@ -1030,7 +1077,7 @@ export class VillageGame {
     for (const [id, w] of this.villagers) {
       if (this.asleep.has(id) || moving(w) || w.x !== f.x || w.y !== f.y) continue;
       if (this.waiting === id || this.speech.has(id) || this.scene?.cast.includes(id)) return false;
-      if (this.benchVisits?.seated(id, w)) return false;
+      if (this.benchVisits?.seated(id, w) || this.getCafe().seated(id, w)) return false;
       this.benchVisits?.release(id, performance.now());
       return swapPlaces(p, w);
     }
@@ -1146,11 +1193,15 @@ export class VillageGame {
     const behind = { x: p.x, y: p.y };
     this.updateSleep(now);
     const benchVisits = this.getBenchVisits();
+    const cafe = this.getCafe();
+    for (const id of cafe.seats.visits.keys()) if (!this.villagers.has(id)) cafe.release(id, now);
     for (const id of benchVisits.visits.keys()) {
       if (!this.villagers.has(id)) benchVisits.release(id, now);
     }
     for (const [id, w] of this.villagers) {
       syncFollowerSpeed(w, p, this.state.follower === id);
+      const calledToPlayer = now < this.calledUntil && this.called.has(id);
+      if (this.asleep.has(id) || this.waiting === id || this.state.follower === id || this.sceneBusy(id) || calledToPlayer) cafe.release(id, now);
       if (this.asleep.has(id) || this.waiting === id || this.state.follower === id || this.sceneBusy(id) || (now < this.calledUntil && this.called.has(id))) benchVisits.release(id, now);
       if (this.asleep.has(id) || (this.waiting === id && !moving(w))) continue;
       const sc = this.scene;
@@ -1163,7 +1214,13 @@ export class VillageGame {
       }
       const farmTask = this.farmTasks.get(id);
       const mailRoute = this.mailRoutes.get(id);
-      if (mailRoute) {
+      const serviceAllowed = this.state.follower !== id && !calledToPlayer && now >= (this.serviceBreaks.get(id) ?? 0);
+      if (this.cafeWaiterId === id && serviceAllowed) {
+        const result = cafe.stepWaiter(w, dt, now, this.map, (x, y) => this.occupied(x, y, id), this.rng, this.localDay());
+        if (result.served) { this.bubble(id, '☕', 2000); this.bubble(result.served, '🍰', 2500); this.onResidentEconomyChange?.(); }
+        if (result.handled) { benchVisits.release(id, now); continue; }
+      }
+      if (mailRoute && serviceAllowed) {
         const targetId = mailRoute.targets[mailRoute.index];
         const door = targetId ? this.homeDoor(targetId) : null;
         if (!targetId || !door) {
@@ -1171,9 +1228,10 @@ export class VillageGame {
           continue;
         }
         if (now < mailRoute.pauseUntil) continue;
-        if (Math.abs(door.x - w.x) + Math.abs(door.y - w.y) <= 1) {
+        if (!moving(w) && Math.abs(door.x - w.x) + Math.abs(door.y - w.y) <= 1) {
           this.bubble(id, '📬', 1_800);
           this.bubble(targetId, '✉️', 2_400);
+          if (payResidentWork(this.state, id, 'mail', `porta:${targetId}`, this.localDay(), 6)) this.onResidentEconomyChange?.();
           mailRoute.index += 1;
           mailRoute.pauseUntil = now + 1_250;
           if (mailRoute.index >= mailRoute.targets.length) this.mailRoutes.delete(id);
@@ -1188,7 +1246,7 @@ export class VillageGame {
         continue;
       }
       const work = this.communityWork.get(id);
-      if (work && now < work.until) {
+      if (work && now < work.until && this.state.follower !== id && !calledToPlayer) {
         if (Math.abs(work.target.x - w.x) + Math.abs(work.target.y - w.y) > 1) {
           stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, work.target);
         }
@@ -1196,6 +1254,15 @@ export class VillageGame {
       }
       if (work) this.communityWork.delete(id);
       const called = now < this.calledUntil ? this.called.get(id) : undefined;
+      if (serviceAllowed && this.cafeWaiterId && this.cafeWaiterId !== id && !mailRoute && cafe.stepCustomer(w, dt, now, this.map, (x, y) => this.occupied(x, y, id), this.rng)) { benchVisits.release(id, now); continue; }
+      let schedule = this.roamSchedule.get(id);
+      if (!schedule || now >= schedule.until) {
+        const index = (schedule?.index ?? [...this.villagers.keys()].indexOf(id) * 3) + 1;
+        const destination = GUIDED_DESTINATIONS[index % GUIDED_DESTINATIONS.length]!;
+        if (destination.x < this.map.w - 2 && destination.y < this.map.h - 2) this.villagerZones.set(id, destination);
+        schedule = { until: now + 120000 + (index % 4) * 20000, index };
+        this.roamSchedule.set(id, schedule);
+      }
       const zone = this.villagerZones.get(id);
       const follow = this.state.follower === id
         ? behind
@@ -1203,7 +1270,7 @@ export class VillageGame {
       if (follow) benchVisits.release(id, now);
       if (!follow && benchVisits.step(w, dt, now, this.map, (x, y) => this.occupied(x, y, id), this.rng)) continue;
       stepVillager(w, dt, this.map, (x, y) => this.occupied(x, y, id), this.rng, follow);
-      if (follow && !called) this.catchUp(w, follow, dt, now);
+      if (follow && this.state.follower === id) this.catchUp(w, follow, dt, now);
     }
     if (now >= this.nextBenchChat) {
       this.nextBenchChat = now + 8000;
@@ -1525,7 +1592,8 @@ export class VillageGame {
     {
       for (const d of this.map.decor) {
         const worksite = d.kind === 'mine-board' ? WORK_SITES[1] : d.kind === 'lumber-board' ? WORK_SITES[2] : d.kind === 'fishing-board' ? WORK_SITES[3] : null;
-        const img = d.kind === 'seed-box' ? this.sprite('seed-box', paintSeedBox) : d.kind === 'bell' ? this.sprite('bell', paintBell) : this.art(worksite ? 'board' : d.kind);
+        const furnitureId = d.kind === 'cafe-table' ? 'mesa-cha' : d.kind === 'furniture' ? d.item : d.kind === 'leisure-sign' ? 'placa' : null;
+        const img = furnitureId ? this.sprite(`fixed:${furnitureId}`, () => paintFurnitureItem(furnitureId)) : d.kind === 'seed-box' ? this.sprite('seed-box', paintSeedBox) : d.kind === 'bell' ? this.sprite('bell', paintBell) : this.art(worksite ? 'board' : d.kind);
         if (!img) continue;
         if (d.x + d.w < x0 || d.x > x1 || d.y + d.h < y0 || d.y + d.h - img.height / TILE > y1) continue;
         const tree = d.kind === 'tree-big' || d.kind === 'pine-m';
@@ -1575,14 +1643,17 @@ export class VillageGame {
     }
     const plot = this.map.plot;
     const homeBase = sy(buildingGroundY(plot));
-    const houseId = this.state.house >= 3 ? 'house-brick' : this.state.house === 2 ? 'home-teal' : 'home-orange';
-    const houseArt = atlas && this.state.house > 0 ? this.art(houseId) : null;
+    const playerStyle = homeStyleOf(this.state, -1);
+    const houseId = homeTileset(Math.max(0, this.state.house - 1), playerStyle);
+    const houseKey = `player-home:${houseId}:${this.state.house}:${playerStyle}`;
+    const houseTransform = (img: Rgba) => renovateHomeTileset(img, Math.max(0, this.state.house - 1), playerStyle, ROOFS[0]!.rgb);
+    const houseArt = atlas && this.state.house > 0 ? this.art(houseId, houseKey, houseTransform) : null;
     if (houseArt) {
       list.push({
         y: buildingGroundY(plot),
         draw: () => {
           const at = stand(houseArt, sx(plot.x + plot.w / 2), homeBase);
-          if (night) lightUp(houseId, houseId, at);
+          if (night) lightUp(houseId, houseKey, at, houseTransform);
         },
       });
     } else if (this.state.house > 0) {
@@ -1667,9 +1738,10 @@ export class VillageGame {
         const lvl = homeLevel(v);
         const decor = homeDecor(v);
         const roof = ROOFS[roofIndex(v, lot)]!.rgb;
-        const id = HOME_TILESET[lvl] ?? 'gazebo';
-        const tint = HOME_TINTED.has(id) ? (img: Rgba) => recolor(img, roof) : undefined;
-        const key = `${id}:${tint ? roof : 0}`;
+        const style = homeStyleOf(this.state, lot);
+        const id = homeTileset(lvl, style);
+        const tint = (img: Rgba) => renovateHomeTileset(img, lvl, style, roof);
+        const key = `${id}:${lvl}:${style}:${roof}`;
         const img = this.art(id, key, tint);
         const fenceArt = decor & 2 ? this.art('fence-h') : null;
         const planter = decor & 1 ? this.art('planter') : null;
@@ -1770,6 +1842,21 @@ export class VillageGame {
       if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
     }
     // O banco fica atrás dos moradores; os pés sobem até a altura do assento.
+    if (this.townLevel >= 3) for (const table of CAFE_TABLES) {
+      for (const dx of [0, 1]) {
+        const chair = this.sprite('cafe-chair', () => paintFurnitureItem('cadeira'));
+        list.push({ y: table.y + .3, draw: () => ctx.drawImage(chair, sx(table.x + dx), sy(table.y + .15), T, T) });
+      }
+      const meals = [...this.getCafe().orders.values()].filter((o) => o.table === table.id && o.stage === 'comendo');
+      if (meals.length) list.push({ y: table.y + 2.1, draw: () => {
+        for (const meal of meals) {
+          const visit = this.getCafe().seats.visits.get(meal.residentId);
+          if (!visit) continue;
+          const dish = this.sprite('cafe-tea', () => paintItemIcon('suco-pecha'));
+          ctx.drawImage(dish, sx(visit.x) + 4 * scale, sy(table.y + 1) + 2 * scale, 8 * scale, 8 * scale);
+        }
+      } });
+    }
     for (const bench of this.getBenchVisits().benches) {
       if (bench.x + 2 < x0 || bench.x > x1 || bench.y < y0 || bench.y > y1) continue;
       const img = this.sprite('public-bench', () => paintFurnitureItem('banco', false, 0));
@@ -1831,7 +1918,7 @@ export class VillageGame {
           // `h`/`wpx` são o tamanho do BICHO (sem a margem transparente); o quadro inteiro (`fullH`/`fullW`) é
           // desenhado maior na mesma proporção, pra caber a margem — e posicionado (`frameLeft`/`frameTop`) de
           // forma que os pixels opacos (não o quadro inteiro) fiquem centrados no bloco e com o pé no chão.
-          const seated = this.benchVisits?.seated(id, w) ?? false;
+          const seated = (this.benchVisits?.seated(id, w) ?? false) || this.getCafe().seated(id, w);
           const h = sprite.heightTiles * TILE * scale * (seated ? 0.85 : 1);
           const wpx = h * (sprite.gif.width / sprite.gif.height);
           const contentHeightFrac = Math.max(0.001, sprite.bounds.bottom - sprite.bounds.top);
@@ -1880,6 +1967,8 @@ export class VillageGame {
              drawCommunityWorkAction(ctx, activeCommunity.activity, cx, base, sx(activeCommunity.target.x), sy(activeCommunity.target.y), scale, now, ambientFx);
            }
            if (this.mailCarrierId === id) this.drawTag(cx, base - h - 18 * scale - Math.abs(Math.sin(now / 420)) * 2 * scale, '📬');
+           if (this.cafeWaiterId === id) this.drawTag(cx, base - h - 18 * scale, '☕');
+           if (this.getCafe().orders.get(id)?.stage === 'comendo') this.drawTag(cx + 8 * scale, base - h - 4 * scale, '🍰');
           if (near(w) && !this.scene) {
             const hearts = Math.round(friendOf(this.state, id).points / 20);
             const working = this.communityWork.get(id);

@@ -33,7 +33,11 @@ describe('layout da Vila: sem ilhas nem gargalos', () => {
   it('as ruas principais ficam inteiras, com duas faixas, de ponta a ponta', () => {
     const map = generateVillage(VILLAGE_SEED);
     const cy = TOWN.mainStreetY;
-    for (const y of [cy, cy + 1]) for (let x = 4; x < map.w - 4; x++) expect(['path', 'plaza'].includes(tileAt(map, x, y)), `${x},${y}`).toBe(true);
+    for (const y of [cy, cy + 1]) {
+      for (let x = 4; x < 92; x++) expect(['path', 'plaza'].includes(tileAt(map, x, y)), `${x},${y}`).toBe(true);
+      // A rua antiga continua como trilha costeira até a areia; o mar fica além dela.
+      for (let x = 92; x < 110; x++) expect(isWalkable(map, x, y), `${x},${y}`).toBe(true);
+    }
     const cx = TOWN.avenueX;
     for (const x of [cx, cx + 1]) for (let y = 4; y < map.h - 4; y++) expect(isWalkable(map, x, y) || tileAt(map, x, y) === 'building', `${x},${y}`).toBe(true);
     for (const y of [TOWN.gamesStreetY, TOWN.homesStreetY, TOWN.southStreetY]) expect(tileAt(map, cx - 3, y)).toBe('path');

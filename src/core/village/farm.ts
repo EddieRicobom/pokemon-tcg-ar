@@ -11,6 +11,8 @@ import type { PokemonType } from '../pokemon-data';
 import { advance, moving, tryStep } from './actors';
 import type { Blocked, Dir, Walker } from './actors';
 import { pathStep } from './pathing';
+import { workActivityActive } from './professions';
+import { payResidentWork } from './resident-economy';
 
 export const FARM_RULES = { decisionMs: 30_000, workMs: 30_000, travelMs: 120_000, workers: 5, history: 30 } as const;
 export const WORK_NAMES = { plant: 'Plantio', water: 'Rega', harvest: 'Colheita', mine: 'Mineração', lumber: 'Madeireira', fish: 'Pescaria' } as const;
@@ -94,7 +96,7 @@ export class FarmSession {
   private neutralWorkerRotation = 0;
   cancel(): void { this.tasks.length = 0; }
 
-  tick(state: VillageState, map: VillageMap, workers: readonly FarmWorker[], now: number, rng: () => number, occupied: (x: number, y: number) => boolean): boolean {
+  tick(state: VillageState, map: VillageMap, workers: readonly FarmWorker[], now: number, rng: () => number, occupied: (x: number, y: number) => boolean, population?: number): boolean {
     let changed = false;
     let completedWork = false;
     const unique = [...new Map(workers.map((worker) => [worker.id, worker])).values()].slice(0, 100);
@@ -107,7 +109,7 @@ export class FarmSession {
         : task.kind === 'mine' ? tile === 'rock' && state.harvested[`${task.x},${task.y}`] !== localDay(now)
           : task.kind === 'lumber' ? tile === 'tree' && state.harvested[`${task.x},${task.y}`] !== localDay(now)
             : task.kind === 'fish' ? tile === 'water' && (state.fishing.day !== localDay(now) || state.fishing.casts < FISH_PER_DAY) : !crop;
-      if (!worker?.available || !valid || now - task.createdAt > FARM_RULES.travelMs || now < task.createdAt) {
+      if (!worker?.available || !valid || population !== undefined && !workActivityActive(activityOf(task.kind), population) || now - task.createdAt > FARM_RULES.travelMs || now < task.createdAt) {
         this.tasks.splice(i, 1);
         continue;
       }
@@ -127,6 +129,8 @@ export class FarmSession {
             : task.kind === 'mine' || task.kind === 'lumber' ? harvest(state, map, task.x, task.y, today, rng)
               : fish(state, map, task.x, task.y, today, rng);
       if (!result.ok) continue;
+      const role = task.kind === 'mine' ? 'mine' : task.kind === 'lumber' ? 'lumber' : task.kind === 'fish' ? 'fishing' : 'farm';
+      payResidentWork(state, worker.id, role, `${task.kind}:${task.x},${task.y}:${task.createdAt}`, today, task.kind === 'water' || task.kind === 'plant' ? 5 : 8);
       const activity = activityOf(task.kind);
       const progress = state.community.residents[worker.id] ??= normalizeResidentProgress(null);
       progress.energy = Math.max(0, progress.energy - COMMUNITY_RULES.taskEnergyCost);
@@ -155,7 +159,7 @@ export class FarmSession {
     const reachable = reachableFrom(map, map.spawn.x, map.spawn.y, staticObstacle);
     for (const worker of ordered) {
       if (this.tasks.length >= FARM_RULES.workers) break;
-      const options = this.findTasks(state, map, worker, now, occupied, reachable);
+      const options = this.findTasks(state, map, worker, now, occupied, reachable).filter((task) => population === undefined || workActivityActive(activityOf(task.kind), population));
       if (!options.length) continue;
       const progress = state.community.residents[worker.id] ??= normalizeResidentProgress(null);
       const resourceOptions = options.filter((task) => task.kind === 'mine' || task.kind === 'lumber' || task.kind === 'fish');

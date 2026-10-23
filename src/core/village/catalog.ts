@@ -4,6 +4,8 @@
  * `price` = custo na loja em moedas (0 = não vende); `sell` = quanto a loja paga.
  */
 
+import { COZY_FURNITURE } from './furniture-collection';
+
 export type ItemKind = 'material' | 'furniture' | 'seed' | 'crop' | 'accessory' | 'food';
 export type AccessorySlot = 'player' | 'pokemon' | 'both';
 /** Onde o acessório vai no corpo: cabeça, rosto, pescoço ou costas. */
@@ -15,6 +17,9 @@ export interface ItemDef {
   kind: ItemKind;
   /** Grupo, para organizar o catálogo (móveis) ou o lugar do acessório. */
   group?: string;
+  /** Papel do móvel na casa: orienta a planta e explica a decoração ao jogador. */
+  purpose?: string;
+  roomZone?: 'rest' | 'kitchen' | 'social' | 'wall';
   price: number;
   sell: number;
   recipe?: Record<string, number>;
@@ -81,6 +86,7 @@ const BASE = {
 };
 
 export const ITEMS: readonly ItemDef[] = [
+  ...COZY_FURNITURE,
   // Materiais (coleta)
   m('madeira', 'Madeira', 4),
   m('pedra', 'Pedra', 4),
@@ -238,7 +244,6 @@ export const ITEMS: readonly ItemDef[] = [
   f('guarda-sol', 'Guarda-sol', 'Jardim', { recipe: { tecido: 3, madeira: 1 }, price: 160, sell: 35 }),
   f('churrasqueira', 'Churrasqueira', 'Jardim', { recipe: { pedra: 6, ferro: 2 }, price: 300, sell: 70, frames: 2 }),
   f('correio', 'Caixa de correio', 'Jardim', { recipe: { madeira: 2, ferro: 1 }, price: 90, sell: 20 }),
-  f('espantalho', 'Espantalho', 'Jardim', { recipe: { madeira: 3, tecido: 2 }, price: 140, sell: 30 }),
   f('poco', 'Poço', 'Jardim', { recipe: { pedra: 12, madeira: 3 }, price: 420, sell: 100 }),
   f('bonsai', 'Bonsai', 'Jardim', { price: 260, sell: 60 }),
   f('cogumelo', 'Cogumelo gigante', 'Jardim', { gift: true, sell: 80 }),

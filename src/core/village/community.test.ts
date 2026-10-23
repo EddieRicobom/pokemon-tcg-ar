@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { add, cook, emptyVillage, giveGift, normalizeVillage, sell } from './life';
 import { advanceCommunity, communityForecast, COMMUNITY_RULES, decideCommunityProject, normalizeCommunity, socialOpportunityFromMemories } from './community';
 import { scoreActivity } from './vocations';
+import type { CommunityResident } from './community';
+const population = (actors: CommunityResident[], min: number): CommunityResident[] => [...actors, ...Array.from({ length: Math.max(0, min - actors.length) }, (_, i) => ({ id: `vizinho-${i}` }))];
 
 const fresh = () => emptyVillage(9, { x: 10, y: 10 });
 
@@ -55,10 +57,10 @@ describe('economia diária da comunidade', () => {
     state.coins = 100;
     state.crops.push({ x: 80, y: 49, seed: 'sem-tomate', stage: 0, wateredAt: null });
 
-    const result = advanceCommunity(state, '2026-10-19', [{ id: 'bulbasaur', types: ['grass'] }]).cycles[0]!;
+    const result = advanceCommunity(state, '2026-10-19', population([{ id: 'bulbasaur', types: ['grass'] }], 3)).cycles[0]!;
 
     expect(state.crops[0]?.wateredAt).toBe(Date.parse('2026-10-19T12:00:00'));
-    expect(result.activities).toMatchObject([{ residentId: 'bulbasaur', activity: 'agricultura', icon: '🌱', x: 80, y: 49, result: expect.stringContaining('Regou') }]);
+    expect(result.activities[0]).toMatchObject({ residentId: 'bulbasaur', activity: 'agricultura', icon: '🌱', x: 80, y: 49, result: expect.stringContaining('Regou') });
     expect(state.community.residents.bulbasaur?.energy).toBe(COMMUNITY_RULES.initialEnergy - COMMUNITY_RULES.taskEnergyCost);
   });
 
@@ -68,7 +70,7 @@ describe('economia diária da comunidade', () => {
     state.coins = 100;
     state.crops.push({ x: 81, y: 49, seed: 'sem-tomate', stage: 3, wateredAt: null });
 
-    const cycle = advanceCommunity(state, '2026-10-19', [{ id: 'bulbasaur', types: ['grass'] }]).cycles[0]!;
+    const cycle = advanceCommunity(state, '2026-10-19', population([{ id: 'bulbasaur', types: ['grass'] }], 3)).cycles[0]!;
     const activity = cycle.activities[0]!;
 
     expect(state.crops).toEqual([]);
@@ -85,7 +87,7 @@ describe('economia diária da comunidade', () => {
     cooked.community.lastCycleDay = '2026-10-18';
     cooked.coins = 100;
     add(cooked, 'oran', 2);
-    const cookCycle = advanceCommunity(cooked, '2026-10-19', [{ id: 'charmander', types: ['fire'] }]).cycles[0]!;
+    const cookCycle = advanceCommunity(cooked, '2026-10-19', population([{ id: 'charmander', types: ['fire'] }], 8)).cycles[0]!;
     expect(cookCycle.activities[0]).toMatchObject({ activity: 'culinaria', item: 'suco-oran', qty: 1 });
     expect(cookCycle.consumed).toEqual([{ item: 'suco-oran', qty: 1 }]);
     expect(cooked.inventory.oran).toBeUndefined();
@@ -95,7 +97,7 @@ describe('economia diária da comunidade', () => {
     fishing.community.lastCycleDay = '2026-10-18';
     fishing.coins = 300;
     const anglers = [{ id: 'vaporeon', types: ['water'] as const }, { id: 'lapras', types: ['water'] as const }];
-    const fishingCycle = advanceCommunity(fishing, '2026-10-19', anglers).cycles[0]!;
+    const fishingCycle = advanceCommunity(fishing, '2026-10-19', population(anglers, 4)).cycles[0]!;
     expect(fishingCycle.activities.filter((entry) => entry.activity === 'pesca')).toHaveLength(1);
     expect(fishingCycle.activities.filter((entry) => entry.item === 'peixe').reduce((sum, entry) => sum + (entry.qty ?? 0), 0)).toBe(1);
   });
@@ -213,14 +215,14 @@ describe('economia diária da comunidade', () => {
     expect(supported.ok).toBe(true);
     expect(state.inventory.oran).toBe(4);
     state.coins = 100;
-    const execution = advanceCommunity(state, '2026-10-20', [{ id: 'charmander', types: ['fire'] }]).cycles[0]!;
+    const execution = advanceCommunity(state, '2026-10-20', population([{ id: 'charmander', types: ['fire'] }], 8)).cycles[0]!;
     expect(execution.activities[0]).toMatchObject({ activity: 'culinaria', item: 'suco-oran', qty: 2, projectId: project.id });
-    expect(execution.consumed).toEqual([{ item: 'suco-oran', qty: 1 }]);
+    expect(execution.consumed).toEqual([{ item: 'suco-oran', qty: 2 }]);
     expect(state.inventory.oran).toBeUndefined();
-    expect(state.inventory['suco-oran']).toBe(1);
+    expect(state.inventory['suco-oran']).toBeUndefined();
     expect(state.community.council[0]).toMatchObject({ status: 'concluido', participants: ['charmander'], ingredients: [{ item: 'oran', qty: 4 }], result: expect.stringContaining('preparou 2') });
     expect(advanceCommunity(state, '2026-10-20', [{ id: 'charmander', types: ['fire'] }]).cycles).toEqual([]);
-    expect(state.inventory['suco-oran']).toBe(1);
+    expect(state.inventory['suco-oran']).toBeUndefined();
   });
 
   it('adiar ou recusar não gasta estoque e expira a proposta sem cobrar recursos', () => {
@@ -288,7 +290,7 @@ describe('economia diária da comunidade', () => {
     expect(scoreActivity({ available: [], types: [], interests: [], energy: 70, socialOpportunity: 2 }, 'acolhimento').score).toBe(2);
 
     state.community.shortageDays = 1;
-    const cycle = advanceCommunity(state, '2026-10-19', [{ id: 'vaporeon', types: ['water'] }]).cycles[0]!;
+    const cycle = advanceCommunity(state, '2026-10-19', population([{ id: 'vaporeon', types: ['water'] }], 4)).cycles[0]!;
     expect(cycle.activities[0]).toMatchObject({ activity: 'pesca', item: 'peixe', qty: 1 });
     expect(cycle.consumed).toContainEqual({ item: 'peixe', qty: 1 });
     expect(state.diary).toContainEqual(expect.objectContaining({ id: 'comunidade:2026-10-19:ajuda-despensa', title: 'Ajuda na despensa' }));

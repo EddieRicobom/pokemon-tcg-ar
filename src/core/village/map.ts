@@ -2,6 +2,8 @@ import { seededRng } from '../battle';
 import type { Rng } from '../battle';
 import { buildingsFor, DECOR, FIELDS, lampSpots, TOWN, WORK_AREAS, WORK_SITES } from './town-layout';
 import type { Building, Decor } from './town-layout';
+import { CAFE_TERRACE } from './cafe-layout';
+import { expandVillage } from './expansion';
 
 /**
  * O mapa da Vila: uma grade de blocos. A cidade tem desenho fixo (`town-layout.ts`: ruas, praça, prédios, casas,
@@ -77,7 +79,12 @@ function trail(map: VillageMap, x0: number, y0: number, x1: number, y1: number):
   for (let y = Math.min(y0, y1); y <= Math.max(y0, y1) + 1; y++) fill(map, x1, y, 2, 1, 'trail', NATURE);
 }
 
-export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap {
+export function generateVillage(seed: number, w: number = MAP_W, h: number = MAP_H): VillageMap {
+  if (w > 96 && h > 72) {
+    const expanded = expandVillage(generateVillage(seed, 96, 72), w, h, seed);
+    repairLayout(expanded);
+    return expanded;
+  }
   const rng = seededRng(seed);
   const map: VillageMap = { w, h, tiles: new Array<Tile>(w * h).fill('grass'), spawn: { ...TOWN.spawn }, plot: { ...TOWN.plot }, shop: { ...TOWN.shop }, buildings: buildingsFor(w, h), decor: [] };
   // Borda de floresta (3 a 4 blocos, irregular).
@@ -163,6 +170,8 @@ export function generateVillage(seed: number, w = MAP_W, h = MAP_H): VillageMap 
     fill(map, b.x, b.y, b.w, b.h, 'building');
     if (b.kind !== 'fountain') fill(map, b.x, b.y + b.h, b.w, 1, 'path');
   }
+  // Terraço do Café: piso próprio, sem deslocar a rua nem os prédios existentes.
+  fill(map, CAFE_TERRACE.x, CAFE_TERRACE.y, CAFE_TERRACE.w, CAFE_TERRACE.h, 'plaza');
   // Enfeites fixos (só os que cabem no mapa).
   for (const d of DECOR) {
     if (d.x < 3 || d.y < 3 || d.x + d.w > w - 3 || d.y + d.h > h - 3) continue;

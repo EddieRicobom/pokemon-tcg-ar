@@ -13,6 +13,7 @@ import { EXTRA_MOMENTS } from './moments/extra';
 import { SEASON_MOMENTS } from './moments/season';
 import { SOLO_MOMENTS } from './moments/solo';
 import { TRIO_MOMENTS } from './moments/trio';
+import { CAFE_MOMENTS } from './moments/cafe';
 import type { Actor, Ctx, Outcome, SocialEnv, Template, WorkSignal } from './moments/kit';
 
 export type { Actor, Ctx, Outcome, SocialEnv, Template } from './moments/kit';
@@ -964,7 +965,7 @@ const CINEMATIC_MOMENTS: readonly Template[] = [
 ];
 
 /** Todos os momentos: os do começo (`CORE`) e as levas novas, por tipo de elenco e por ocasião. */
-export const TEMPLATES: readonly Template[] = [...CORE, ...INTRIGUE_MOMENTS, ...CINEMATIC_MOMENTS, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS, ...EXTRA_MOMENTS];
+export const TEMPLATES: readonly Template[] = [...CORE, ...INTRIGUE_MOMENTS, ...CINEMATIC_MOMENTS, ...SOLO_MOMENTS, ...DUO_MOMENTS, ...TRIO_MOMENTS, ...SEASON_MOMENTS, ...EXTRA_MOMENTS, ...CAFE_MOMENTS];
 export const TEMPLATE_COUNT = TEMPLATES.length;
 export const TEMPLATE_BY_ID = new Map(TEMPLATES.map((t) => [t.id, t]));
 

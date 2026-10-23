@@ -69,6 +69,10 @@ import type { Moment, MomentKind } from '../core/village/social-state';
 import type { ItemId } from '../core/village/life';
 import { homePickUp, homePlace } from '../core/village/home-interior';
 import HomeInteriorMap from './HomeInteriorMap.vue';
+import { advanceResidentHomes } from '../core/village/home-autonomy';
+import { chooseServiceResidents, professionActive } from '../core/village/professions';
+import { LEISURE_SPOTS } from '../core/village/expansion';
+import { enjoyVillagePlace } from '../core/village/leisure';
 import { dailyRecap, needsDailyRecap } from '../core/village/daily-recap';
 import type { RecapScene } from '../core/village/daily-recap';
 import { villageSummary } from '../core/village/summary';
@@ -833,10 +837,6 @@ const homeResidents = computed(() => {
 function homeItemAt(x: number, y: number): string | undefined {
   return displayedHomeInterior.value.placed.find((entry) => entry.x === x && entry.y === y)?.item;
 }
-function homeItemNameAt(x: number, y: number): string {
-  const item = homeItemAt(x, y);
-  return item ? itemName(item) : '';
-}
 function openPlayerHome(): void {
   if (state.house < 1) { sheet.value = 'build'; return; }
   homeInteriorLot.value = null;
@@ -856,6 +856,12 @@ function exitHomeInterior(): void {
   homeInteriorLot.value = null;
   selectedHomeItem.value = null;
   closeVillageSheet();
+}
+
+function setPlayerHomeStyle(style: typeof HOME_EXTERIOR_STYLES[number]['id']): void {
+  const result = setHomeStyle(state, -1, style, []);
+  say(result.message);
+  if (result.ok) changed();
 }
 
 function setHomeWallpaper(value: string): void {
@@ -1334,6 +1340,7 @@ function answerMail(id: string, action: MailAction): void {
 /** Conversa social comum, compartilhada por todos os moradores, inclusive o carteiro. */
 function speakToResident(id: string): void {
   if (!game) return;
+  game.pauseResidentWork(id);
   game.faceMe(id);
   const today = refreshDay();
   const name = nameOf(id);
@@ -1344,6 +1351,7 @@ function speakToResident(id: string): void {
     earnCoins(5);
   }
   let text = result.text;
+  if (id === state.cafeWaiterId && level.value >= 3 && professionActive('cafe', mons.value.length)) text = 'Estou atendendo as mesas do Café! Mas tenho um tempinho para conversar. ' + text;
   const help = dailyHelp(state, id, today, Math.random);
   if (help.items.length > 0) text += ` Ah! Achei isto pela Vila para você: ${help.items.map((h) => `${h.qty} ${itemName(h.item)}`).join(' e ')}.`;
   if (help.rare) {
@@ -1378,18 +1386,21 @@ function refreshTown(): void {
   homes = assignHomes(mons.value.map((m) => m.id), level.value);
   game?.setTown(level.value, homes);
   const residentIds = mons.value.map((mon) => mon.id);
-  if (state.mailCarrierId && !residentIds.includes(state.mailCarrierId)) state.mailCarrierId = null;
-  if (!state.mailCarrierId) {
-    state.mailCarrierId = [...residentIds].sort()[0] ?? null;
-    if (state.mailCarrierId) changed();
-  }
-  game?.setMailCarrier(state.mailCarrierId);
-  const changes = personalizeResidentHomes(state, homes);
+  const staff = chooseServiceResidents(residentIds, state.mailCarrierId, state.cafeWaiterId);
+  if (staff.carrier && state.mailCarrierId !== staff.carrier) { state.mailCarrierId = staff.carrier; changed(); }
+  if (staff.waiter && state.cafeWaiterId !== staff.waiter) { state.cafeWaiterId = staff.waiter; changed(); }
+  game?.setMailCarrier(staff.carrier);
+  game?.setCafeWaiter(staff.waiter);
+  const initial = personalizeResidentHomes(state, homes);
+  const automatic = advanceResidentHomes(state, homes, refreshDay());
+  if (automatic.changed) changed();
+  const changes = [...initial, ...automatic.events];
   if (changes.length > 0) {
     changed();
     const first = changes[0]!;
     const names = changes.slice(0, 3).map((change) => nameOf(change.residentId)).join(', ');
-    say(`🏠 ${names} ${changes.length === 1 ? 'decorou a própria casa' : 'decoraram as próprias casas'}${first.items.length ? ` com ${first.items.join(', ')}` : ''}.`, 5200);
+    const action = first.renovation ? `reformou a casa: ${first.renovation}` : first.restyled ? `escolheu uma fachada ${first.style}` : `decorou a própria casa${first.items.length ? ` com ${first.items.join(', ')}` : ''}`;
+    say(`🏠 ${names}: ${action}.`, 5200);
   }
 }
 
@@ -2056,13 +2067,19 @@ function finishScene(scene: Scene, ids: string[]): void {
   };
 }
 
+let nextCafeSceneAt = 0;
 function tickScenes(): void {
   if (!game || document.hidden || dialog.value || quiz.value || quizOpen.value || cutsceneOpen.value || hoOhWishScene.value || legendaryScene.value || recapScenes.value.length > 0 || sheet.value || welcome.value || game.sceneActive || mons.value.length === 0) return;
-  if (Date.now() < nextSceneAt) return;
+  const cafeIds = game.cafeCompanions();
+  const cafeOpportunity = cafeIds.length >= 2 && Date.now() >= nextCafeSceneAt && game.playerNear(cafeIds, 18);
+  if (Date.now() < nextSceneAt && !cafeOpportunity) return;
+  if (cafeOpportunity) nextCafeSceneAt = Date.now() + 60000;
   nextSceneAt = Date.now() + (SCENE_GAP_MIN + Math.random() * SCENE_GAP_VAR) * effects().quietFactor;
   // Só entre os Pokémon que estão por perto, para você não perder o espetáculo.
-  const near = actorList().filter((a) => game!.playerNear([a.id], 14) && !game!.sceneBusy(a.id));
+  const useCafe = cafeOpportunity && Math.random() < .65;
+  const near = actorList().filter((a) => (useCafe ? cafeIds.includes(a.id) : game!.playerNear([a.id], 14)) && !game!.sceneBusy(a.id));
   const env = makeEnv(state, refreshDay(), villageHour(), game.weatherKind, profile.name);
+  env.cafeGuests = cafeIds;
   const scene = pickMoment(near, state, env, Math.random);
   if (!scene) return;
   const ids = scene.cast.map((a) => a.id);
@@ -2221,7 +2238,7 @@ function tickFarm(): void {
     available: worker.available && !state.expeditions.some((expedition) => expedition.monId === worker.id && !expedition.result),
   }));
   const previousRecords = new Set(state.farm.history);
-  if (farmSession.tick(state, map, workers, Date.now(), Math.random, (x, y) => game!.occupied(x, y))) changed();
+  if (farmSession.tick(state, map, workers, Date.now(), Math.random, (x, y) => game!.occupied(x, y), mons.value.length)) changed();
   const nearby = state.farm.history.find(record => !previousRecords.has(record) && workers.some(worker => worker.id === record.residentId && Math.abs(worker.x - game!.player.x) + Math.abs(worker.y - game!.player.y) <= 8));
   if (nearby) playSound(nearby.kind === 'mine' ? 'village-mine' : nearby.kind === 'lumber' ? 'village-chop' : nearby.kind === 'fish' || nearby.kind === 'water' ? 'village-water' : nearby.kind === 'plant' ? 'village-plant' : 'collect');
   farmClock.value = Date.now();
@@ -2321,6 +2338,12 @@ function pressA(): void {
     ringBell();
   } else if (t.kind === 'seed-box') {
     sheet.value = 'farm';
+  } else if (t.kind === 'leisure') {
+    const place = LEISURE_SPOTS.find((p) => p.id === t.id)!;
+    dialog.value = { name: `${place.icon} ${place.name}`, text: place.description, actions: [
+      { label: place.action, run: () => { const nearby = mons.value.filter((m) => game!.playerNear([m.id], 5)).map((m) => m.id); const result = enjoyVillagePlace(state, place.id, refreshDay(), nearby); say(result.message, 5200); if (result.ok) { changed(); for (const id of nearby.slice(0, 3)) game?.pop(id, '❤️'); } closeDialog(); } },
+      { label: 'Voltar', run: closeDialog },
+    ] };
   } else if (t.kind === 'worksite') {
     tab.value = 'trabalhos';
     sheet.value = 'menu';
@@ -2372,7 +2395,13 @@ const minimapTick = ref(0);
 let miniBase: HTMLCanvasElement | null = null;
 let miniTimer: ReturnType<typeof setInterval> | null = null;
 /** Pixels por bloco no minimapa (o grande é o mesmo desenho, só que maior na tela). */
-const MINI_K = 3;
+let MINI_K = 3;
+const minimapGuides = [
+  ...map.buildings.filter((b) => b.kind !== 'home').map((b) => ({ name: b.name, icon: ({ cafe: '☕', mail: '✉️', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', fountain: '⛲' } as Record<string, string>)[b.kind] ?? '📍', x: b.door.x, y: b.door.y })),
+  ...WORK_SITES.map((p) => ({ name: p.name, icon: p.icon, ...p.visit })),
+  ...LEISURE_SPOTS,
+];
+function visitMapGuide(place: { name: string; x: number; y: number }): void { game?.walkTo(place.x, place.y); minimapRoute.value = place.name; miniBig.value = false; say(`🧭 Caminhando até ${place.name}…`); }
 const minimapSpeakerName = computed(() => minimapSpeakerId.value ? nameOf(minimapSpeakerId.value) : '');
 const minimapRouteLabel = computed(() => minimapRoute.value || (legendCluePlace.value ? `Pista: ${legendCluePlace.value.name}` : ''));
 const guidedTripActive = computed(() => { guidedTripVersion.value; return !!guidedTrip; });
@@ -2404,6 +2433,12 @@ function drawMini(): void {
   const el = miniEl.value;
   if (!el || !game) return;
   if (!miniBase) buildMiniBase();
+  const rect = el.getBoundingClientRect();
+  if (!rect.width) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const width = Math.round(rect.width * dpr), height = Math.round(rect.height * dpr);
+  if (el.width !== width || el.height !== height) { el.width = width; el.height = height; }
+  MINI_K = el.width / map.w;
   const ctx = el.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(miniBase!, 0, 0, map.w * MINI_K, map.h * MINI_K);
@@ -2422,12 +2457,12 @@ function drawMini(): void {
     ctx.strokeRect(x * MINI_K + 0.5, y * MINI_K + 0.5, Math.max(1, w * MINI_K - 1), Math.max(1, h * MINI_K - 1));
   };
   const label = (text: string, x: number, y: number, color: string) => {
-    if (!miniBig.value) return;
-    ctx.font = `600 ${Math.max(6, MINI_K * 2.1)}px system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+    if (!miniBig.value || !minimapRoute.value.includes(text.replace(/^\S+\s/, ''))) return;
+    ctx.font = `700 ${12 * dpr}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const width = ctx.measureText(text).width + MINI_K * 1.8;
-    const height = MINI_K * 3.2;
+    const height = 19 * dpr;
     const left = Math.max(1, Math.min(map.w * MINI_K - width - 1, x * MINI_K - width / 2));
     const top = Math.max(1, y * MINI_K - height);
     ctx.fillStyle = 'rgba(8, 14, 25, 0.88)';
@@ -2439,7 +2474,7 @@ function drawMini(): void {
     ctx.fillText(text, left + width / 2, top + height / 2 + 0.5);
   };
   const placeIcon = (icon: string, name: string, x: number, y: number, color: string) => {
-    ctx.font = `${Math.max(9, MINI_K * 3.2)}px system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+    ctx.font = `${(miniBig.value ? 12 : 7) * dpr}px system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(icon, (x + 0.5) * MINI_K, (y + 0.5) * MINI_K);
@@ -2459,6 +2494,7 @@ function drawMini(): void {
     square(site.visit.x - 1, site.visit.y - 1, 3, 3, color);
     placeIcon(MINIMAP_WORKSITE_ICONS[site.id] ?? '•', site.name, site.visit.x - 0.5, site.visit.y - 0.5, color);
   }
+  for (const place of LEISURE_SPOTS) placeIcon(place.icon, place.name, place.x, place.y, '#ffe0a3');
   square(map.shop.x, map.shop.y, map.shop.w, map.shop.h, '#ffd166');
   placeIcon('🛒', 'Mercado', map.shop.x + map.shop.w / 2 - 0.5, map.shop.y + map.shop.h / 2 - 0.5, '#ffd166');
   const bell = map.decor.find((d) => d.kind === 'bell');
@@ -2578,7 +2614,7 @@ function openFriendDialog(id: string, text: string): void {
   const lvl = friendLevel(f.points);
   const following = state.follower === id;
   const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: 'Presentear', run: () => { giftPick.value = true; } }];
-  if (id === state.mailCarrierId) actions.push({ label: '📬 Ver a bolsa do carteiro', run: () => openMailCarrierDialog(id) });
+  if (id === state.mailCarrierId && professionActive('mail', mons.value.length)) actions.push({ label: '📬 Ver a bolsa do carteiro', run: () => openMailCarrierDialog(id) });
   actions.push({ label: 'Acessório', run: () => { dialog.value = null; openDress(id); } });
   actions.push({ label: nicknameOf(state, id) ? 'Mudar o apelido' : 'Dar apelido', disabled: !canNickname(state, id), run: () => openNickname(id) });
   actions.push({ label: '🚶 Passeio guiado', run: () => openGuidedTrip(id) });
@@ -2698,7 +2734,10 @@ function tickClock(): void {
   const d = new Date();
   const h = d.getHours();
   clock.value = `${h >= 19 || h < 6 ? '🌙' : '☀️'} ${String(h).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  if (game) refreshDay();
+  if (game) {
+    const today = refreshDay();
+    if ([...new Set(homes.values())].some((lot) => state.homeProjects[String(lot)]?.day !== today)) refreshTown();
+  }
 }
 
 function thumbOf(gif: VillageMon['gif']): string {
@@ -2788,6 +2827,7 @@ onMounted(async () => {
   });
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = () => { changed(); updateWorldProgress(); checkTapInteraction(); checkGuidedTrip(); };
+  game.onResidentEconomyChange = changed;
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).
   game.weatherMode = () => (effectiveVisual.value.weather !== 'off' && (effects().rain || requestInfluence(state, refreshDay()).weather) ? (requestInfluence(state, refreshDay()).weather ?? 'chuva') : effectiveVisual.value.weather);
   game.lampStorm = () => effects().lampStorm;
@@ -2915,6 +2955,11 @@ onBeforeUnmount(() => {
         <p v-if="miniBig" class="village-minimap-legend">
           <span><i class="mm-you"></i> você</span><span><i class="mm-mon"></i> Pokémon</span><span><i class="mm-speaker"></i> falando</span><span><i class="mm-place"></i> lugar</span><span>🔔 sino (chama todos)</span>
         </p>
+        <nav v-if="miniBig" class="village-map-guides" aria-label="Guia de lugares da Vila">
+          <button v-for="place in minimapGuides" :key="place.name" type="button" @click="visitMapGuide(place)">
+            <span aria-hidden="true">{{ place.icon }}</span><span>{{ place.name }}</span><small>Ir a pé →</small>
+          </button>
+        </nav>
       </div>
       <div v-if="joy.active && joy.moved" class="village-joy floating" :style="{ left: `${joy.lx}px`, top: `${joy.ly}px` }" aria-hidden="true">
         <div class="village-joy-stick" :style="{ transform: `translate(${joy.x * JOY_MAX}px, ${joy.y * JOY_MAX}px)` }"></div>
@@ -3024,12 +3069,13 @@ onBeforeUnmount(() => {
 
       <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" :aria-label="homeInteriorLot === null ? 'Interior da sua casa' : 'Interior da casa de um morador'">
         <header><strong>🏠 {{ homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}` }}</strong><button type="button" class="link" @click="exitHomeInterior">Sair</button></header>
-        <p v-if="homeInteriorLot === null" class="hint">Toque num móvel para guardá-lo. Escolha um da mochila e toque num espaço vazio para decorar, como num quarto de Animal Crossing.</p>
-        <p v-else class="hint">Este interior é comprado e organizado pelos moradores. Cada personalidade escolhe cores e móveis diferentes.</p>
+        <p v-if="homeInteriorLot === null" class="hint">Sua casa tem cantinhos de descanso, cozinha e convivência. Use Organizar móveis para decorar.</p>
+        <p v-else class="hint">Os moradores organizam seus cantinhos e poupam para comprar móveis e reformar por conta própria.</p>
         <HomeInteriorMap
           :interior="displayedHomeInterior"
           :residents="homeResidents"
           :editable="homeInteriorLot === null"
+          :selected-item="selectedHomeItem"
           :item-name="itemName"
           :icon="icon"
           @cell="useHomeCell($event.x, $event.y)"
@@ -3040,6 +3086,15 @@ onBeforeUnmount(() => {
           <label>Piso <select :value="displayedHomeInterior.floor" :disabled="homeInteriorLot !== null" @change="setHomeFloor(($event.target as HTMLSelectElement).value)"><option value="carvalho">Carvalho</option><option value="xadrez">Xadrez</option><option value="grama">Grama interna</option><option value="ladrilho">Ladrilho</option></select></label>
         </div>
         <template v-if="homeInteriorLot === null">
+        <details class="home-facade-picker">
+          <summary>Estilo da fachada</summary>
+          <div class="village-choices">
+            <button v-for="style in HOME_EXTERIOR_STYLES" :key="style.id" type="button"
+              :aria-pressed="homeStyleOf(state, -1) === style.id"
+              :disabled="homeStyleOf(state, -1) === style.id || state.coins < style.cost"
+              @click="setPlayerHomeStyle(style.id)">{{ style.name }} · {{ style.cost }} moedas</button>
+          </div>
+        </details>
         <h3>Móveis na mochila</h3>
         <p v-if="selectedHomeItem" class="hint">Selecionado: <strong>{{ itemName(selectedHomeItem) }}</strong>. Toque num espaço livre para colocar.</p>
         <ul class="item-grid home-inventory">
@@ -3180,7 +3235,7 @@ onBeforeUnmount(() => {
           </section>
         </div>
 
-        <VillageWorksites v-else-if="tab === 'trabalhos'" :state="state" :name-of="nameOf" :tasks="farmTasks" :now="farmClock" @visit="visitWorksite" @seeds="sheet = 'farm'" />
+        <VillageWorksites v-else-if="tab === 'trabalhos'" :state="state" :population="mons.length" :cafe-available="level >= 3" :name-of="nameOf" :tasks="farmTasks" :now="farmClock" @visit="visitWorksite" @seeds="sheet = 'farm'" />
         <VillageLegends v-else-if="tab === 'lendas'" :state="state.legendary" @investigate="startLegendInvestigation" @replay="showLegendaryCutscene($event, true)" @travel="travelToLegendClue" />
 
         <div v-else-if="tab === 'resumo'" class="diary village-summary">

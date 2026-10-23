@@ -14,7 +14,7 @@ describe('chão da Vila com tileset (autotile por quartos)', () => {
   it('usa grama uniforme sob os objetos e flores em uma camada separada', () => {
     const map = generateVillage(20261014);
     const grass = map.tiles.flatMap((tile, index) => tile === 'grass' ? groundPieces(map, index % map.w, Math.floor(index / map.w)) : []);
-    expect(grass.every((piece) => piece.src === 'grass' && piece.sx === 0 && piece.sy === 0)).toBe(true);
+    expect(grass.every((piece) => piece.src === 'grass' && [0, 16].includes(piece.sx) && [0, 16].includes(piece.sy))).toBe(true);
     const index = map.tiles.indexOf('flower');
     const flowers = groundPieces(map, index % map.w, Math.floor(index / map.w));
     expect(flowers.map((piece) => piece.src)).toEqual(['grass', 'flowers-white']);

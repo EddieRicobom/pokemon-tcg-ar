@@ -4,6 +4,8 @@
  * liberados (os outros aparecem cercados, com uma placa). Só dados e geometria, para o mapa poder usar sem ciclos.
  */
 
+import { CAFE_TABLES } from './cafe-layout';
+
 export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'fountain';
 
 export interface Building {
@@ -23,12 +25,16 @@ export interface Building {
   lot?: number;
 }
 
-export type HomeExteriorStyle = 'rústico' | 'jardim' | 'festivo' | 'moderno';
+export type HomeExteriorStyle = 'rústico' | 'jardim' | 'festivo' | 'moderno' | 'praiano' | 'serrano' | 'tradicional' | 'noturno';
 export const HOME_EXTERIOR_STYLES: readonly { id: HomeExteriorStyle; name: string; description: string; cost: number }[] = [
   { id: 'rústico', name: 'Rústico', description: 'madeira, vasos e detalhes acolhedores', cost: 0 },
   { id: 'jardim', name: 'Jardim', description: 'folhas, flores e um toque de primavera', cost: 35 },
   { id: 'festivo', name: 'Festivo', description: 'bandeirinhas e cores de comemoração', cost: 45 },
   { id: 'moderno', name: 'Moderno', description: 'linhas limpas e detalhes metálicos', cost: 55 },
+  { id: 'praiano', name: 'Praiano', description: 'fachada azul e detalhes claros de cidade litorânea', cost: 55 },
+  { id: 'serrano', name: 'Serrano', description: 'tijolos, madeira e telhado de montanha', cost: 60 },
+  { id: 'tradicional', name: 'Tradicional', description: 'fachada quente e acabamento clássico', cost: 50 },
+  { id: 'noturno', name: 'Noturno', description: 'tons rosados e telhado violeta acolhedor', cost: 65 },
 ];
 
 /** Limite sul do lote sólido, antes da calçada. Toda a largura da passagem diante da porta fica livre. */
@@ -79,8 +85,8 @@ export const CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>;
 
 /** O mapa: tamanho, ruas e lugares fixos (o resto — matas, lago, flores — o sorteio espalha em volta). */
 export const TOWN = {
-  w: 96,
-  h: 72,
+  w: 120,
+  h: 96,
   /** Avenida (norte–sul, 2 blocos) e as ruas (leste–oeste, 2 blocos cada): linha de cima de cada uma. */
   avenueX: 47,
   mainStreetY: 38,
@@ -114,11 +120,12 @@ export const WORK_SITES = [
 ] as const;
 export type WorksiteId = typeof WORK_SITES[number]['id'];
 
-export type DecorKind = 'seed-box' | 'bell' | 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall' | 'mine-entrance' | 'log-depot' | 'mine-board' | 'lumber-board' | 'fishing-board';
+export type DecorKind = 'furniture' | 'leisure-sign' | 'cafe-table' | 'seed-box' | 'bell' | 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall' | 'mine-entrance' | 'log-depot' | 'mine-board' | 'lumber-board' | 'fishing-board';
 
 /** Enfeites fixos do mapa (sólidos; o desenho sai do atlas com o mesmo nome e fica em pé sobre a base). */
 export interface Decor {
   kind: DecorKind;
+  item?: string;
   x: number;
   y: number;
   w: number;
@@ -126,6 +133,7 @@ export interface Decor {
 }
 
 export const DECOR: readonly Decor[] = [
+  ...CAFE_TABLES.map((table) => ({ kind: 'cafe-table' as const, x: table.x, y: table.y + 1, w: 2, h: 1 })),
   { kind: 'mine-entrance', x: 6, y: 64, w: 3, h: 1 },
   { kind: 'mine-board', x: 17, y: 65, w: 2, h: 1 },
   { kind: 'log-depot', x: 14, y: 7, w: 2, h: 1 },

@@ -40,6 +40,8 @@ export const HOME_WINDOWS: readonly (readonly (readonly number[])[])[] = [
   [[8, 32, 8, 8], [32, 32, 8, 8]],
   [[8, 31, 8, 9], [32, 31, 8, 9]],
   [[7, 30, 8, 9], [33, 30, 8, 9], [21, 14, 6, 6]],
+  [[7, 30, 8, 9], [33, 30, 8, 9], [21, 14, 6, 6]],
+  [[7, 30, 8, 9], [33, 30, 8, 9], [8, 16, 7, 6], [33, 16, 7, 6]],
 ];
 
 /** Onde fica o lampião da porta, em pixels do desenho (para o brilho à noite). */
@@ -48,15 +50,18 @@ export const HOME_LANTERN = { x: 15, y: 33 };
 /** A casa de um Pokémon (48×48: o telhado sobe 16 pontos acima do chão de 2 blocos). */
 export function paintHome(level: number, roofRgb: number, decor: number, style: HomeExteriorStyle = 'rústico'): PixelBuf {
   const b = createBuf(48, 48);
-  const lvl = Math.max(0, Math.min(3, level));
-  const baseWall = [0xc8985a, 0xb88450, 0xc4573e, 0xf3e8d0][lvl]!;
-  const wall = style === 'jardim' ? mix(baseWall, 1.08) : style === 'festivo' ? (lvl === 3 ? 0xffd58a : 0xd96a5d) : style === 'moderno' ? (lvl < 2 ? 0x9eb4c9 : 0xe7edf2) : baseWall;
+  const lvl = Math.max(0, Math.min(5, level));
+  const baseWall = [0xc8985a, 0xb88450, 0xc4573e, 0xf3e8d0, 0xe6d9bd, 0xf6ecd5][lvl]!;
+  const accents: Partial<Record<HomeExteriorStyle, number>> = { praiano: 0xa4c6ca, serrano: 0xb7967c, tradicional: 0xe8c88c, noturno: 0xc1a5b8 };
+  const wall = accents[style] ?? (style === 'jardim' ? mix(baseWall, 1.08) : style === 'festivo' ? (lvl === 3 ? 0xffd58a : 0xd96a5d) : style === 'moderno' ? (lvl < 2 ? 0x9eb4c9 : 0xe7edf2) : baseWall);
   const trim = mix(wall, 0.78);
   const geo = [
     { x0: 8, x1: 39, top: 30, apex: 12, base: 32, half: 22, cx: 24 },
     { x0: 5, x1: 42, top: 26, apex: 8, base: 28, half: 24, cx: 24 },
     { x0: 4, x1: 43, top: 24, apex: 6, base: 26, half: 25, cx: 24 },
     { x0: 4, x1: 43, top: 22, apex: 2, base: 24, half: 25, cx: 24 },
+    { x0: 3, x1: 44, top: 22, apex: 2, base: 24, half: 25, cx: 24 },
+    { x0: 2, x1: 45, top: 22, apex: 0, base: 24, half: 25, cx: 24 },
   ][lvl]!;
   rect(b, geo.x0, geo.top, geo.x1 - geo.x0 + 1, 47 - geo.top, wall);
   if (lvl === 0) {
@@ -92,6 +97,11 @@ export function paintHome(level: number, roofRgb: number, decor: number, style: 
   put(b, 26, 42, 0xffd84a);
   if (lvl === 3) rect(b, 16, 36, 1, 11, 0x8a5a2e);
   for (const w of HOME_WINDOWS[lvl]!) window(b, w[0]!, w[1]!, w[2]!, w[3]!, lvl === 3 ? 0xffffff : mix(wall, 0.6));
+  if (lvl >= 4) {
+    rect(b, 5, 26, 38, 2, 0x7a5539);
+    rect(b, 5, 33, 38, 2, 0x7a5539);
+    for (let x = 6; x < 43; x += 4) rect(b, x, 28, 1, 5, 0xe5d6ba);
+  }
   // Enfeites.
   if (decor & 1) {
     for (const w of HOME_WINDOWS[lvl]!.slice(0, 2)) {

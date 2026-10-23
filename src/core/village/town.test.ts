@@ -143,7 +143,7 @@ describe('níveis da cidade', () => {
 
 describe('casas, enfeites e telhado', () => {
   it('o número da casa guarda nível, enfeites e telhado sem se misturar', () => {
-    for (let level = 0; level < 4; level++) {
+    for (let level = 0; level < 6; level++) {
       for (const d of [0, 5, 15]) {
         for (const r of [0, 3, 6]) {
           const v = homeValue(level, d, r);
@@ -164,11 +164,11 @@ describe('casas, enfeites e telhado', () => {
     expect(homeLevel(homeOf(s, 0))).toBe(1);
     expect(friendOf(s, 'a').points).toBe(4);
     expect(s.inventory.madeira ?? 0).toBe(0);
-    for (const lvl of [2, 3]) {
+    for (const lvl of [2, 3, 4, 5]) {
       for (const [k, n] of Object.entries(HOME_STAGES[lvl]!.cost)) add(s, k as never, n!);
       expect(upgradeHome(s, 0, []).ok).toBe(true);
     }
-    expect(homeLevel(homeOf(s, 0))).toBe(3);
+    expect(homeLevel(homeOf(s, 0))).toBe(5);
     expect(upgradeHome(s, 0, []).ok).toBe(false);
   });
 
@@ -220,7 +220,7 @@ describe('casas, enfeites e telhado', () => {
     const back = normalizeVillage(JSON.parse(JSON.stringify(s)), 20261014, map.spawn);
     expect(back.homes).toEqual(s.homes);
     const bad = normalizeVillage({ v: 1, seed: 20261014, homes: { x: 99999, y: -5, z: 'oi' }, town: { level: -3, mailDay: 7 } }, 20261014, map.spawn);
-    expect(bad.homes.x).toBe(511);
+    expect(bad.homes.x).toBe(homeValue(5, 15, 7));
     expect(bad.homes.y).toBe(0);
     expect(bad.homes.z).toBeUndefined();
     expect(bad.town).toEqual({ level: 1, mailDay: '', cafeDay: '' });

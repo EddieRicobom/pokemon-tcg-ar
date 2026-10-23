@@ -5236,8 +5236,9 @@ body.no-scroll .reward-toasts {
 .village-minimap canvas {
   display: block;
   width: 108px;
-  height: 81px;
-  image-rendering: pixelated;
+  height: auto;
+  aspect-ratio: 5 / 4;
+  image-rendering: auto;
   border-radius: 5px;
   cursor: pointer;
 }
@@ -5250,13 +5251,20 @@ body.no-scroll .reward-toasts {
   z-index: 5;
   width: auto;
   padding: 8px;
+  max-height: 88dvh;
+  overflow-y: auto;
+  touch-action: pan-y;
   box-shadow: 0 0 0 100vmax rgba(7, 10, 18, .72), 0 16px 44px rgba(0, 0, 0, .5);
 }
 
 .village-minimap.big canvas {
-  width: min(88vw, 576px);
-  height: calc(min(88vw, 576px) * 0.75);
+  width: min(88vw, 60dvh, 640px);
+  height: auto;
 }
+
+.village-map-guides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 8px; max-height: 28dvh; overflow-y: auto; touch-action: pan-y; }
+.village-map-guides button { display: grid; grid-template-columns: 20px 1fr; align-items: center; gap: 3px 5px; min-height: 48px; padding: 7px; text-align: left; font-size: .8rem; line-height: 1.25; white-space: normal; }
+.village-map-guides small { grid-column: 2; font-size: .7rem; color: var(--muted); }
 
 .village-minimap-legend {
   display: flex;
@@ -7524,8 +7532,8 @@ body.no-scroll .reward-toasts {
 .home-floor-grama { --home-floor: #86c969; --home-floor-img: radial-gradient(#b8e88d 1px, transparent 2px); }
 .home-floor-ladrilho { --home-floor: #b9d3dc; --home-floor-img: linear-gradient(#80a9b6 1px, transparent 1px), linear-gradient(90deg, #80a9b6 1px, transparent 1px); }
 .home-style { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
-.home-style label { display: grid; gap: 3px; color: var(--ink, #332b24); font-size: .84rem; }
-.home-style select { min-height: 36px; border: 1px solid #a67a50; border-radius: 9px; background: #fff8e9; font: inherit; }
+.home-style label { display: grid; gap: 3px; color: var(--text, #e8ecf8); font-size: .84rem; }
+.home-style select { min-height: 44px; border: 1px solid #a67a50; border-radius: 9px; background: #fff8e9; color: #332b24; font: inherit; }
 
 /* Controles e painéis da Vila em retrato e paisagem. */
 @media (max-width: 480px) {
@@ -7622,7 +7630,7 @@ body.no-scroll .reward-toasts {
 }
 .home-inventory li { padding: 0; }
 .home-inventory li > button { display: flex; align-items: center; width: 100%; gap: 8px; padding: 7px; border: 0; background: transparent; text-align: left; font: inherit; }
-.home-inventory li.selected { outline: 2px solid #f0c64f; background: #fff1ba; }
+.home-inventory li.selected { outline: 2px solid #f0c64f; background: #5e4b29; }
 .home-inventory li img { image-rendering: pixelated; object-fit: contain; }
 .village-legend-clue { position: absolute; z-index: 8; top: 76px; left: max(12px,env(safe-area-inset-left)); max-width: min(330px,calc(100% - 28px)); display: grid; gap: 5px; padding: 10px; border: 1px solid #e7d89c70; border-radius: 12px; background: #121b2fed; color: #f6efcb; font-size: .8rem; }
 .village-legend-clue div { display: flex; gap: 8px; flex-wrap: wrap; }.village-legend-clue button { min-height: 44px; font-size: .8rem; }

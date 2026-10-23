@@ -34,6 +34,8 @@ export interface SocialEnv {
   lingo: readonly string[];
   /** Últimas tarefas concluídas pela automação, para eventos que nascem do trabalho visível. */
   recentWork?: readonly WorkSignal[];
+  /** IDs realmente sentados e servidos na mesma mesa do Café nesta sessão. */
+  cafeGuests?: readonly string[];
 }
 
 export interface Outcome {
