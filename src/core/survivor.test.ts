@@ -30,7 +30,7 @@ import {
 import type { SurvivorEnemy, SurvivorState } from './survivor';
 import { seededRng } from './battle';
 import { attackProfile, moveFor } from './survivor-moves';
-import type { MoveCategory } from './survivor-moves';
+import type { MoveCategory, SurvivorMove } from './survivor-moves';
 import type { PokemonType } from './pokemon-data';
 
 /** Golpe de um elemento numa forma escolhida (com os números de stats médios). */
@@ -846,8 +846,8 @@ describe('segundo golpe', () => {
     const supportMove = as('grass', 'projetil').move;
     const baseProfile = attackProfile(supportMove, null);
     const evolvedProfile = { ...baseProfile, damage: baseProfile.damage * 1.4, maxHp: baseProfile.maxHp + 20 };
-    let evolutionMove: typeof supportMove | undefined;
-    const evolutions = (dexId: number, move?: typeof supportMove) => {
+    let evolutionMove: SurvivorMove | undefined;
+    const evolutions = (dexId: number, move?: SurvivorMove) => {
       evolutionMove = move;
       return dexId === 1 ? [{ dexId: 2, name: 'Ivysaur', profile: evolvedProfile }] : [];
     };

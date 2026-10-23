@@ -14,6 +14,36 @@ GitHub Pages (arquivos estáticos) ────────┘     → alvo Mind
 
 Quem faz o quê, em linhas gerais: `src/recognition/` reconhece; `src/app/` orquestra e guarda estado; `src/ar/` rastreia e desenha na carta; `src/box/` é a Caixa e a batalha; `src/core/` é lógica pura (câmera, GIF, suavização, motor de batalha).
 
+## Índice
+
+Atalhos para as seções deste documento (ele é grande de propósito: cada seção descreve um módulo com os limites do que foi validado).
+
+- [Mapa de módulos](#mapa-de-módulos)
+- [Decisões que valem lembrar](#decisões-que-valem-lembrar)
+- [Origem das técnicas](#origem-das-técnicas)
+- [Infraestrutura](#infraestrutura)
+- [Busca pela ilustração (reserva automática)](#busca-pela-ilustração-reserva-automática)
+- [Detecção da carta](#detecção-da-carta-srcrecognitiondetect-cardts-quad-linests)
+- [OCR e velocidade](#ocr-e-velocidade)
+- [AR](#ar)
+- [Caixa](#caixa-srcbox-srcviewscaixaviewvue)
+  - [Telas com câmera: tudo sobre a imagem (Escanear, Várias, Caixa e teste do renderizador)](#telas-com-câmera-tudo-sobre-a-imagem-escanear-várias-caixa-e-teste-do-renderizador)
+  - [Equipe, tela cheia e suavização](#equipe-tela-cheia-e-suavização)
+  - [Várias cartas ao mesmo tempo (aba "Várias")](#várias-cartas-ao-mesmo-tempo-aba-várias)
+  - [Batalha automática na Caixa](#batalha-automática-na-caixa)
+  - [Luz dos golpes](#luz-dos-golpes-srcboxfx-lightsts)
+  - [Sons da batalha](#sons-da-batalha-srcboxsound-recipests-srcboxsoundts)
+  - [Escalação da Caixa](#escalação-da-caixa-srcapproster-storets-planbattle-em-srccorebattlets)
+  - [Pin Mode](#pin-mode-srccorepinsts-srccorepin-terraints-srcpinsarena-artts-srcpinsterrain-paintts-srcapppins-setupts-srcviewspinsviewvue)
+  - [Treinador](#treinador-srccoretrainerts-srcapptrainer-storets-srcviewstreinadorviewvue)
+  - [Seu treinador](#seu-treinador-srccoretrainer-spritests-srcappprofile-storets-srccomponentstraineravatarvue)
+  - [Liga: 8 Ginásios, Elite 4 e Campeã](#liga-8-ginásios-elite-4-e-campeã-srccoreleaguets-srcappleague-storets-srcappchallenge-battlets-srccomponentsleaguecardvue)
+  - [PvP da Caixa](#pvp-da-caixa-srcpvpbox-wirets-srcappbox-pvp-storets-srccomponentsboxpvppanelvue)
+  - [Modo vida: a Vila](#modo-vida-a-vila-srccorevillage-srcvillage-srccomponentsvillageviewvue-srcappvillage-storets)
+  - [Giroscópio e suavização (tracking mais fluido)](#giroscópio-e-suavização-tracking-mais-fluido)
+- [Liga por região](#liga-por-região)
+  - [Backup opcional no Google Drive](#backup-opcional-no-google-drive)
+
 ## Mapa de módulos
 
 | Caminho | Responsabilidade |

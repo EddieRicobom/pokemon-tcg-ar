@@ -1,0 +1,131 @@
+# Histórico de entregas
+
+Registro cronológico do que já foi entregue, **movido sem alterações de texto** de `IMPLEMENTATION_PLAN.md` em 2026-10-23.
+O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMPLEMENTATION_PLAN.md); aqui ficam as entregas
+datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
+🔶 significa que **nada foi visto num celular real**.
+
+## Bairros, casas e renda dos moradores (22/10/2026)
+
+- Expansão real para 120 × 96 blocos, com praia, jardim, praça, bosque e mirante conectados; 16 destinos de passeios e guias legíveis no minimapa.
+- 32 móveis com arte própria, interiores organizados por função, oito estilos de fachada e duas reformas extras, preservando a codificação dos saves antigos.
+- Salários por conclusão real de trabalho, carteiras individuais e compras autônomas de móveis/reformas. Profissões dependem da população; dinheiro pessoal também paga o Café.
+- Terraço com seis mesas, clientes e atendente caminhando, preparo/entrega, pagamento e momentos entre quem está comendo junto. Carteiro e atendente continuam moradores sociais.
+- Regras, testes, comandos de validação e limites em [VILLAGE_NEIGHBORHOODS.md](docs/VILLAGE_NEIGHBORHOODS.md).
+
+## Música regional, ambientação e revisão da Caixa (21/10/2026)
+
+- 12 faixas pacíficas da Vila por hora/clima; crossfade de 12 s e pares alternados a cada seis minutos. Sons de ações e trabalhos próximos, com ambientação noturna/chuva e volumes independentes.
+- 9 temas regionais do Survival; cinco arranjos GBA da Meeow’s Music e quatro gravações regionais com tratamento retrô reproduzível. Créditos e fontes fixadas em `public/audio/CREDITS.md`; troca usa a curva de 40 s do cenário.
+- Player compartilhado com até duas faixas comprimidas, carga sob demanda, cancelamento, pausa de página, URLs revogadas e contexto fechado. Músicas fora do pré-cache; respostas completas podem entrar no cache de execução. Preferências preservadas pelo backup existente.
+- Corrigida a serialização das regras de cache de músicas, chunks, OCR, catálogos e sprites: os callbacks anteriores capturavam `base`, ausente no worker gerado. Regras agora são expressões com o caminho incorporado; teste de configuração e `verify-dist` cobrem a regressão.
+- Caixa: cancelamento durante permissão/abertura, proteção contra população e cenas atrasadas, limpeza de temporizadores, terreno e áudio, pausa do relógio ao esconder a página. Painéis com Escape, foco restaurado, cabeçalhos acessíveis e melhor espaço em paisagem.
+- Arena: preparação em três passos, indicação de 6/6 e Digital Pokémon no seletor compartilhado. Pisos distintos de jardim/campo, curvas contínuas, paleta sRGB e correção da orientação vertical dos enfeites. O layout clássico dos Pins permanece separado.
+- Câmera real, sensores, desempenho e consumo em aparelho físico continuam exigindo validação no celular. O tratamento retrô das quatro gravações não é uma troca de instrumentação por arranjo GBA.
+
+## Encontros e cenas lendárias (21/10/2026)
+
+- Catálogo de 94 espécies (71 lendárias e 23 míticas), conferido no `pokemon_species.csv` da PokéAPI, com quatro capítulos e pistas escritas individualmente em `legendary-stories.ts`.
+- Caderno de Lendas em Histórias: filtros por região/visitas, investigação por duas ações próximas a locais reais do mapa e replay só de encontros vividos. Não exige grind em outros modos nem dá capturas automáticas.
+- Encenação 2D com sprite real sob demanda, cenários de cidade/água/bosque/pedra e 12 temas visuais. Partículas, movimento e animação do sprite desligam pelas opções visuais/Rotom ou movimento reduzido. Falta de sprite permanece explícita.
+- Registro permanente de visitas separado do histórico recente de efeitos; normalização recupera os registros antigos disponíveis. Retomada de pista/cena, backup no formato existente e replay sem recompensa duplicada.
+- Testes percorrem as 94 investigações, ida/volta do save, proteção contra repetição, expiração e caminhos em cinco sementes. `e2e/village-legends.mjs` percorre o fluxo de UI com save isolado, sem câmera nem AR simulados.
+- A cena única do desejo ao Ho-Oh foi preservada e recebeu ajustes de paisagem/rolagem e economia visual. Aparelho físico continua exigindo validação própria.
+
+## Arte, postos de trabalho e passeio guiado (21/10/2026)
+
+- Fachadas completas para casas, Correio e Pins; recortes corrigidos da Torre, Mercado, Café e murais. A grama usa uma base uniforme e as flores são sobrepostas sem o retângulo verde da folha de origem.
+- O atlas é gerado em `src/village/vila-atlas.png`, recebe hash no build e é conferido pixel a pixel pelos testes, evitando misturar imagens antigas em cache com novos recortes.
+- Mina ao sul, madeireira no noroeste e píer no lago têm corredores, placas e acesso pelo menu Trabalhos da Vila. A escolha entre os quatro postos considera aptidão, interesse, energia e recursos disponíveis; a fazenda não monopoliza a escolha.
+- Os moradores caminham até o recurso e trabalham antes de entregar loot, seguindo as mesmas tabelas e limites da coleta/pesca manual. Ferramentas, linha de pesca e progresso aparecem no canvas; efeitos respeitam opções visuais e movimento reduzido.
+- Passeio guiado usa a velocidade atual do treinador e só termina quando o companheiro também chega. Testes percorrem todos os destinos guiados, portas e postos, além de caminhadas completas até os recursos em mapas gerados.
+- Saves mantêm formato e backup existentes; itens e cultivos que colidam com os novos postos são reposicionados, preservando quantidade e estágio. Aparência e toque em celular físico continuam sem validação neste ambiente.
+
+## Impactos elementais em Pins e na Arena (19/10/2026)
+
+- Os golpes elementais agora espalham anéis e partículas com silhuetas por elemento; a opção persistente “Efeitos elementais intensos” permite desligá-los. Movimento reduzido congela a animação.
+- A Arena AR amplifica partículas e ondas de choque nos impactos, com opção persistente própria; a preferência de movimento reduzido desliga essa amplificação.
+- Saves antigos mantêm os efeitos ligados por padrão; perfil de efeitos e progresso da animação têm cobertura de teste.
+- A validação visual final em celular ainda precisa de confirmação.
+
+## Alinhamento dos prédios e tilesets da Torre (19/10/2026)
+
+- Fachadas, casa, fonte e mercado da Vila agora apoiam na borda inferior da calçada; o mapa mantém livre o bloco de interação da porta. Teste verifica o ponto de apoio e o piso sob ele.
+- Câmera da Torre aproximada em 1,5× (metade da área anterior no lado curto) sem passar dos limites da arena.
+- As nove regiões do Survival usam recortes próprios de chão, trilha e detalhes do atlas; a transição visual acompanha a mesma mudança temporal da região, sem depender do RNG da corrida. Fallback desenhado permanece disponível se o atlas não carregar.
+- Typecheck, testes, build com `BASE_PATH` e `verify-dist` concluídos. A leitura visual final em celular real ainda precisa de confirmação.
+
+## Survival e interface compartilhada (19/10/2026)
+
+- O Survival desacelera a chegada e a escalada de inimigos, tem uma janela maior de recuperação após acertos e aumenta o dano de aura, órbita e cone para compensar o combate próximo. Ajustes centralizados em `BALANCE` e `CATEGORY_DAMAGE_FACTOR`; teste compara DPS teórico com stats idênticos, sem alegar equilíbrio comprovado.
+- Tokens compartilhados de cor, foco, espaçamento e toque; cartões da equipe usam mais colunas; a Box permite selecionar caixas diretamente e organiza seus 30 espaços em até 8/10 colunas em telas largas, mantendo 6 no celular.
+- ✅ Typecheck, testes, build com `BASE_PATH` e `verify-dist` são os critérios antes do merge. 🔶 Dificuldade, legibilidade e toque ainda precisam de partidas e avaliação em celular real.
+
+- **Efeitos da Vila (2026-10-18):** ondas no lago e ondulações com chuva, gotas em arco e anéis na fonte e raios suaves de sol modulados por clima/horário. Opções permite desligar; movimento reduzido também desativa os novos efeitos. Tipos, build e dist conferidos; validação visual em celular pendente.
+
+## Vila: abertura e eventos (18/10/2026)
+
+- Abertura diária em capítulos, com falas e resultados reais do Diário e a última visita lendária; pode ser pulada e não se repete na mesma data local. Sem registros novos, informa isso explicitamente.
+- Momentos ambientes deixam de gerar avisos constantes; acessos rápidos para Menu, Mochila e Novidades. Avisos de ações ficam embaixo e podem ser dispensados.
+- Dez eventos novos: Articuno, Moltres, Raikou, Entei, Lugia, Ho-Oh, Regirock, Regice, Registeel e Rayquaza. Cenas próprias, bônus e consequências aplicados até o fim do dia; chance diária total preservada.
+- Verificação local: tipos, testes, build e conferência do dist; navegador com viewport móvel confirma abertura única por dia e acesso à mochila. Aparência em celular real ainda precisa ser avaliada.
+
+## Scanner: Fase A (2026-10-16)
+
+O que mudou e por quê (causas reais, não só interface):
+
+- ✅ **Candidatas escondidas** (o "a lista parece parar antes do último resultado"): três cortes reais, corrigidos e cobertos por testes.
+  1. `rankCandidates` cortava o ranking em 5: com 6 candidatas do índice + até 6 da rodada de números parecidos + até 5 da ilustração, as de baixo sumiam mesmo depois de baixadas e comparadas. Agora devolve todas.
+  2. A escolha "Qual impressão é esta?" cortava em 4 (`slice(0, 4)`) e casava as porcentagens por posição depois de um filtro — podia mostrar a porcentagem de uma carta na outra. Agora `choicesOf` lista todas, cada uma com a própria confiança.
+  3. O índice e a busca manual cortavam em silêncio (6 candidatas baixadas; 30 resultados na busca). Agora dizem o total: a busca manual mostra "N de M" e "Mostrar mais" até a última; quando o número lido bate em mais cartas do que as comparadas, o diagnóstico diz quantas e abre a busca manual já com o número.
+- ✅ **Confirmação temporal com voto falso**: quando a carta sumia por um quadro, o controlador repetia a leitura anterior **e contava de novo como voto** — dava pra "confirmar" com uma única leitura real. Agora a repetição só segura a mensagem na tela; só leitura de verdade vota.
+- ✅ **OCR só com a carta parada**: antes, todo quadro com carta rodava o OCR inteiro (duas orientações, metades, nome — segundos no celular), inclusive com a carta mexendo. Agora a detecção (leve) roda em todo quadro e o OCR só depois de um par de quadros com a carta parada (movimento ≤ 2% da diagonal; `recognition/stability.ts`). A confirmação temporal continua exigindo leituras de OCR repetidas.
+- ✅ **Reaproveitamento entre quadros**: imagens de referência ficam na memória (24, LRU) — o quadro seguinte não baixa nem decodifica de novo; a orientação (carta de cabeça para baixo) achada num quadro é tentada primeiro no seguinte.
+- ✅ **Cancelamento de verdade**: cancelar/recomeçar descarta a leitura em andamento entre as etapas (`ScanCancelled`); antes o resultado de uma leitura velha ainda chegava depois.
+- ✅ **Instrumentação** (`recognition/stage-clock.ts`): tempo de captura, detecção, estabilização, perspectiva, recorte do número, recorte do nome, OCR do número, OCR do nome, catálogo, comparação visual, ordenação, confirmação temporal, até as primeiras candidatas, confirmação (guardar a carta) e início do AR. Etapa pulada guarda o motivo, nunca um tempo inventado. Na tela: tabela da última leitura (Escanear → Teste) e mediana/p90 da sessão (Diagnóstico).
+- ✅ **"Mostrar o que o app está vendo" ampliado**: contorno e os 4 cantos numerados, a faixa exata do número (e das metades, se lidas) e a do nome desenhadas sobre a câmera pela mesma homografia dos recortes (opção para desligar as sobreposições), os recortes reais enviados ao OCR (faixa, metades, nome), texto lido, estabilidade (movimento medido), luz e nitidez, e **todas** as candidatas com veredito (aceita / em dúvida / rejeitada) e o motivo — inclusive por que uma candidata ficou sem imagem de referência.
+- ✅ **Etapas honestas** (`app/scan-steps.ts`): "Etapa n de 8" (Localizando carta → … → Carta identificada) seguindo a etapa que o pipeline avisou que começou; pulada aparece tracejada com o motivo; tempo decorrido; **Cancelar** e **Reiniciar**. Avisos de carta mexendo, pouca luz e possível desfoque (os dois últimos são heurísticos e não bloqueiam a leitura).
+
+### Medição antes/depois
+
+Bancada `scripts/scan-bench.eval.ts` (Node num PC, Tesseract de verdade, foto real de câmera, mesmo roteiro nas duas versões, 3 amostras cada). **Não é celular**: no celular cada passada de OCR custa bem mais, mas isso não foi medido.
+
+| Roteiro | `main` (antes) | Fase A (depois) |
+|---|---|---|
+| Carta mexendo 3 quadros, depois parada | 2,36–2,59 s até confirmar · **14** passadas de OCR | 1,34–1,40 s · **2** passadas de OCR |
+| Carta parada desde o 1º quadro | 0,53 s · 1 quadro · 2 passadas | 0,69–0,70 s · 2 quadros · 2 passadas (**~0,17 s mais lento**: espera o par de quadros parados) |
+
+No Chromium (câmera falsa com a mesma foto), a tabela da sessão mostrou: até as primeiras candidatas ~1,9 s; guardar a carta (referência + sprite + compilar o alvo do MindAR) 19,9 s; início do AR 1,5 s. ⚠️ **Correção (Fase B):** esses tempos foram tirados com o painel do navegador **oculto**, quando o Chromium trata a página como aba em segundo plano e desacelera timers e GPU — não valem como medida. A indicação (guardar a carta pesa mais que reconhecer) continua plausível, mas precisa ser medida em celular: a tabela do Diagnóstico agora mostra cada parte de "guardar a carta" (ver Fase B).
+
+Numa das tentativas no Chromium as 3 imagens de referência falharam (a decisão caiu para "em dúvida" só pelo número); a causa não ficou registrada porque o erro era engolido. Agora o motivo aparece no veredito de cada candidata; na tentativa seguinte elas carregaram e a carta foi aceita com 91%.
+
+🔶 Nada disso foi visto num celular real.
+
+## AR: Fase B (2026-10-16)
+
+Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, ciclo de vida):
+
+- ✅ **Contexto WebGL vazando a cada carta**: o Escanear recria o `<canvas>` do AR a cada carta (para ter um contexto limpo), mas `renderer.dispose()` não devolve o contexto ao navegador — ele ficava vivo até o coletor de lixo. Depois de umas 16 leituras, o Chrome começa a derrubar o contexto mais antigo, às vezes o do TensorFlow.js do rastreador. Agora o contexto é liberado quando o canvas sai da página (`ar/context-release.ts`) e, explicitamente, antes de recriá-lo (inclusive depois de fechar e abrir a câmera). Canvas reaproveitado (Várias, Caixa) não perde o contexto. Conferido no Chromium: ao pedir outra carta, o canvas antigo disparou `webglcontextlost` e o AR novo rastreou normalmente.
+- ✅ **"Guardar a carta" medido por partes** (`PrepareResult.timings`): referência, características, sprite, imagem em alta e compilação do alvo aparecem no Diagnóstico como subetapas — é a medida que faltava para atacar o tempo no celular.
+- ✅ **Imagem em alta baixa em paralelo**: era o último download da fila (referência → sprite → imagem em alta → compilar). Agora começa junto com a referência e o sprite (teste que travaria com a fila antiga).
+- ✅ Relógio da etapa "Confirmando identificação" congelava enquanto guardava a carta; agora anda.
+- Revisado, sem mudança: falha ao iniciar libera motor, WebGL, sensores e observador; uma execução superada (outra carta, câmera fechada, sair da tela) é parada; sprite ausente e falha de rede aparecem na tela com "Tentar baixar o GIF de novo"; perda de rastreamento vira "lost" e volta a "tracking" sozinha; alvo de versão antiga é recompilado; "Recompilar o alvo da carta" e "Escolher outra carta" no erro.
+- 🔶 Não medido: tempos de câmera/alvo/rastreio em celular (o painel do navegador desta sessão estava oculto, o que invalida tempos). Nada visto em celular real.
+
+## Feito desde a Fase B (2026-10-16)
+
+- ✅ **Fliperama → batalha na câmera**: botão que fecha a Vila e abre câmera e sensores da Caixa no mesmo toque, com "Batalhar" em destaque; cada batalha comum da Caixa terminada rende **100 moedas** na Vila, até **3 por dia** (`claimBattleReward`, com teste). PvP e Liga têm recompensa própria. 🔶 Não visto na tela.
+- ✅ **Quem é esse Pokémon? (difícil)**: distorção bem mais forte (redemoinho largo + ondulação, deslocamento 70 + 26). 🔶 Não visto na tela.
+- ✅ Diagnóstico não anuncia mais o atalho do 666 (o atalho de depuração continua funcionando).
+- ✅ **Digital Pokémon em "Minhas cartas"**: seção própria com o selo 🔒 Digital (origem, data, carta de origem), sem botões de scan/AR. Conferido no Chromium.
+- ✅ **Carta de origem da espécie certa**: a busca `?dexId=1` da TCGdex casa por TRECHO do número (devolvia Unown 201 antes do Bulbasaur); agora usa `dexId=eq:` e prefere uma carta com imagem.
+- ✅ **Fonte diz quanto de energia falta** ("faltam 392 de energia") em vez de só ficar cinza — a invocação depois do primeiro funcionava (conferido: duas invocações seguidas com 1.100 de energia), mas parecia travada sem saldo.
+- ✅ **Invocação "qualquer um na sorte" por 700 moedas**: código pronto e testado (`summonWithCoins`, `pickAnySpecies`, 1–1025), **desligado** (`COIN_SUMMON_ENABLED = false`) até o dono pedir.
+
+## Ligas regionais (18/10/2026)
+
+- Kanto (I), Johto (II) e Hoenn (III) acrescentadas à Sinnoh (IV): cada região tem oito Ginásios, quatro membros da Elite e um Campeão (Blue, Lance, Steven e Cynthia). Equipes de exibição inspiradas nos jogos, com dificuldade própria do app.
+- Treinador → Liga e Arena da Vila compartilham a seleção por região, as seções Ginásios / Elite 4 / Campeão e as quatro maletas 3D, cada uma com oito insígnias. Reflexos, polimento e balanço continuam disponíveis; Three.js permanece sob demanda.
+- O salvamento `tcg-ar-liga-v1` preserva IDs e índices de Sinnoh (0–7), reserva 8–15 para Kanto, 16–23 para Johto e 24–31 para Hoenn e guarda corridas/títulos regionais separadamente. O backup usa as mesmas chaves; o polimento aceita as 32 insígnias sem misturar encaixes.
+- Testes cobrem bloqueios, derrota/recomeço da Elite, primeira vitória/revanche, gravação e migração, títulos e seleção da interface. Conferência no Edge a 375 px: troca das quatro regiões e abertura das quatro maletas, sem erro de página nem rolagem horizontal. GPU, toque, sensores e fluidez em celular real continuam pendentes.
+

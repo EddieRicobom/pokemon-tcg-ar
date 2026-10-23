@@ -29,8 +29,8 @@ function reach(from: { x: number; y: number }): Set<string> {
 describe('a cidade no mapa', () => {
   it('tem 14 terrenos de casa, os prédios da praça, o bairro dos jogos e a fonte, sem se sobrepor', () => {
     expect(map.buildings.filter((b) => b.kind === 'home')).toHaveLength(LOTS.length);
-    expect(map.buildings.map((b) => b.kind).filter((k) => k !== 'home').sort()).toEqual(['arcade', 'arena', 'cafe', 'fountain', 'mail', 'museum', 'pins', 'torre']);
-    expect(CIVIC).toHaveLength(7);
+    expect(map.buildings.map((b) => b.kind).filter((k) => k !== 'home').sort()).toEqual(['altar', 'arcade', 'arena', 'cafe', 'fountain', 'mail', 'museum', 'pins', 'torre']);
+    expect(CIVIC).toHaveLength(8);
     const cells = new Set<string>();
     for (const b of map.buildings) {
       for (let y = b.y; y < b.y + b.h; y++) {
@@ -107,9 +107,15 @@ describe('níveis da cidade', () => {
     expect(TOWN_STAGES[0]!.level).toBe(1);
   });
 
+  it('o Altar da Confiança existe no mapa grande e dá para chegar até a porta dele', () => {
+    const altar = map.buildings.find((b) => b.kind === 'altar');
+    expect(altar).toBeDefined();
+    expect(reach(map.spawn).has(`${altar!.door.x},${altar!.door.y}`)).toBe(true);
+  });
+
   it('avisa o que abriu entre dois níveis e qual é o próximo marco', () => {
     const u = unlockedBetween(2, 5);
-    expect(u.buildings).toEqual(['Café da Vila', 'Pista de Pins', 'Correio']);
+    expect(u.buildings).toEqual(['Café da Vila', 'Pista de Pins', 'Altar da Confiança', 'Correio']);
     expect(u.houses).toBe(unlockedLots(5).length - unlockedLots(2).length);
     expect(u.stage).toBe('Vila');
     expect(unlockedBetween(5, 5)).toEqual({ houses: 0, buildings: [], stage: null });

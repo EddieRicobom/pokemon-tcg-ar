@@ -43,6 +43,35 @@ async function openScan(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Abrir câmera' }).click();
 }
 
+// Com a câmera ligada o resultado e o estado do AR aparecem como avisos sobre a imagem (`.stage-head .pill`).
+const PILLS = '.stage-head .pill';
+const RECOGNIZED = 'reconhecida automaticamente';
+const TRACKING = 'Carta rastreada';
+
+/** Abre «Cartas» em modo Lista (a Box é o padrão e não mostra o estado de cada carta). */
+async function openCardList(page: Page): Promise<void> {
+  await page.evaluate(() => (window.location.hash = '#/cartas'));
+  await page.getByRole('button', { name: 'Lista', exact: true }).click({ timeout: 15_000 }).catch(() => undefined);
+}
+
+/** Ids das cartas guardadas no IndexedDB do app (a fonte da verdade do que foi reconhecido). */
+async function storedCardIds(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () =>
+      new Promise<string[]>((resolve) => {
+        const open = indexedDB.open('pokemon-tcg-ar');
+        open.onerror = () => resolve([]);
+        open.onsuccess = () => {
+          const db = open.result;
+          if (!db.objectStoreNames.contains('cards')) return resolve([]);
+          const all = db.transaction('cards').objectStore('cards').getAll();
+          all.onsuccess = () => resolve((all.result as { id: string; pending?: boolean }[]).filter((c) => !c.pending).map((c) => c.id));
+          all.onerror = () => resolve([]);
+        };
+      }),
+  );
+}
+
 async function waitText(page: Page, selector: string, text: string, timeout: number): Promise<boolean> {
   try {
     await page.locator(selector).filter({ hasText: text }).first().waitFor({ state: 'attached', timeout });
@@ -68,11 +97,24 @@ for (const id of cards) {
         ],
       });
       const context = await browser.newContext({ permissions: ['camera'], viewport: { width: 420, height: 900 }, serviceWorkers: 'allow' });
-      // O CI usa os bytes oficiais baixados no preparo, evitando depender do CORS duplicado do CDN.
-      // Candidatas que não são a carta deste cenário falham rápido; nunca injetamos um resultado de reconhecimento.
+      // A tela de boas-vindas da primeira abertura cobre o botão da câmera; o teste parte de um perfil que já a viu.
+      await context.addInitScript(() => {
+        try { localStorage.setItem('tcg-ar-onboarding-v1', '1'); } catch { /* sem armazenamento */ }
+      });
+      // A referência da carta do cenário vem dos bytes oficiais baixados no preparo (sem depender do CORS duplicado do CDN).
+      // As referências das outras candidatas vêm do CDN de verdade, só com o cabeçalho de CORS corrigido: se elas falhassem,
+      // as concorrentes ficariam sem comparação e o app (corretamente) pediria ao usuário para escolher a impressão.
+      // Nunca injetamos um resultado de reconhecimento.
       await context.route('https://assets.tcgdex.net/**', async (route) => {
         const fixture = references[route.request().url()];
-        if (!fixture) return route.abort();
+        if (!fixture) {
+          try {
+            const response = await route.fetch();
+            return await route.fulfill({ response, headers: { ...response.headers(), 'access-control-allow-origin': '*' } });
+          } catch {
+            return route.abort();
+          }
+        }
         return route.fulfill({
           status: 200,
           contentType: 'image/webp',
@@ -93,40 +135,50 @@ for (const id of cards) {
         // 1) Câmera → reconhecimento
         const started = Date.now();
         await openScan(page);
-        result.identified = await waitText(page, '.result', 'Reconhecida automaticamente', RECOGNITION_TIMEOUT);
+        result.identified = await waitText(page, PILLS, RECOGNIZED, RECOGNITION_TIMEOUT);
         result.recognizeMs = Date.now() - started;
         if (!result.identified) {
-          result.hudAfterScan = ((await page.locator('.hud').first().textContent().catch(() => '')) ?? '').slice(0, 160);
+          result.hudAfterScan = ((await page.locator('.stage-head').first().textContent().catch(() => '')) ?? '').replace(/\s+/g, ' ').slice(0, 160);
           return;
         }
-        result.predictedId = (await page.locator('.result code').first().textContent()) ?? undefined;
 
         // 2) AR: alvo compilado → rastreamento da carta → sprite
         const trackStart = Date.now();
-        result.tracking = await waitText(page, '.hud', 'Carta rastreada', TRACKING_TIMEOUT);
+        result.tracking = await waitText(page, PILLS, TRACKING, TRACKING_TIMEOUT);
         result.trackingMs = Date.now() - trackStart;
-        result.spriteText = ((await page.locator('.result .message').first().textContent().catch(() => '')) ?? '').slice(0, 160);
+        result.spriteText = ((await page.locator('.stage-head').first().textContent().catch(() => '')) ?? '').replace(/\s+/g, ' ').slice(0, 160);
+        // A carta só deixa de ser «pendente» quando referência, sprite e alvo terminam: espera até aparecer no armazenamento.
+        const deadline = Date.now() + CACHE_TIMEOUT;
+        let ids = await storedCardIds(page);
+        while (ids.length === 0 && Date.now() < deadline) {
+          await page.waitForTimeout(500);
+          ids = await storedCardIds(page);
+        }
+        result.predictedId = ids.length === 1 ? ids[0] : ids.join(',') || undefined;
         await page.screenshot({ path: `${dir}/${id}-ar.png` });
 
         // 3) Cache: aparece em "Carregar" e sobrevive a recarregar a página
-        await page.evaluate(() => (window.location.hash = '#/carregar'));
+        await openCardList(page);
         result.cacheListed = await waitText(page, '.card-row', result.predictedId ? '/' : '', CACHE_TIMEOUT);
         result.cacheBadge = ((await page.locator('.card-row .badge').first().textContent().catch(() => '')) ?? '').trim();
         await page.reload();
-        await page.evaluate(() => (window.location.hash = '#/carregar'));
+        await openCardList(page);
         result.survivedReload = await waitText(page, '.card-row', '/', CACHE_TIMEOUT);
         await page.screenshot({ path: `${dir}/${id}-carregar.png`, fullPage: true });
 
         // 4) Offline: reconhece a mesma carta só com o que está guardado
+        // Os módulos das telas só entram no cache quando são visitados: abre o Diagnóstico agora, com rede, para ele funcionar offline.
+        await page.evaluate(() => (window.location.hash = '#/diagnostico'));
+        await page.getByText('Diagnóstico', { exact: false }).first().waitFor({ timeout: 10_000 }).catch(() => undefined);
         await context.setOffline(true);
         await page.reload();
         await page.evaluate(() => (window.location.hash = '#/'));
         await page.getByRole('button', { name: 'Abrir câmera' }).click();
-        result.offlineRecognized = await waitText(page, '.result', 'Reconhecida automaticamente', RECOGNITION_TIMEOUT);
+        result.offlineRecognized = await waitText(page, PILLS, RECOGNIZED, RECOGNITION_TIMEOUT);
         if (result.offlineRecognized) {
-          result.offlineTracking = await waitText(page, '.hud', 'Carta rastreada', TRACKING_TIMEOUT);
+          result.offlineTracking = await waitText(page, PILLS, TRACKING, TRACKING_TIMEOUT);
           await page.evaluate(() => (window.location.hash = '#/diagnostico'));
-          const source = await page.locator('li', { hasText: 'Candidatas · origem' }).first().textContent().catch(() => '');
+          const source = await page.locator('li', { hasText: 'Candidatas · origem' }).first().textContent({ timeout: 10_000 }).catch(() => '');
           result.offlineSource = (source ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
         }
         await context.setOffline(false);
