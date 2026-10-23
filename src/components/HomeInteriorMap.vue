@@ -46,7 +46,11 @@ function isDoor(x: number, y: number): boolean {
       <span class="home-map-label">INTERIOR · MAPA DA CASA</span>
       <span class="home-map-residents">{{ residents.map((resident) => resident.name).join(' e ') }}</span>
     </div>
-    <div class="home-map-grid" :style="{ '--home-cols': HOME_INTERIOR_WIDTH }">
+    <div
+      class="home-map-grid"
+      :class="[`home-wall-${interior.wallpaper}`, `home-floor-${interior.floor}`]"
+      :style="{ '--home-cols': HOME_INTERIOR_WIDTH }"
+    >
       <div
         v-for="cell in cells"
         :key="`${cell.x}-${cell.y}`"
@@ -83,7 +87,7 @@ function isDoor(x: number, y: number): boolean {
         >
           <span aria-hidden="true">·</span>
         </button>
-        <span v-else class="home-map-floor" aria-hidden="true"></span>
+        <span v-else class="home-map-floor-cell" aria-hidden="true"></span>
       </div>
     </div>
     <div class="home-map-footer">
@@ -100,22 +104,22 @@ function isDoor(x: number, y: number): boolean {
 .home-map-residents { color: var(--muted); font-size: .82rem; }
 .home-map-grid {
   --home-cols: 7;
+  --home-floor: #bd8654;
+  --home-floor-img: linear-gradient(90deg, rgb(255 255 255 / .06) 1px, transparent 1px), linear-gradient(0deg, rgb(255 255 255 / .04) 1px, transparent 1px);
+  --home-wall-img: linear-gradient(135deg, #a96b46, #d09a62 52%, #875139);
   display: grid;
   grid-template-columns: repeat(var(--home-cols), minmax(0, 1fr));
   aspect-ratio: 7 / 5;
   overflow: hidden;
   border: 10px solid #5a392b;
   border-radius: 12px;
-  background:
-    linear-gradient(90deg, rgb(255 255 255 / .06) 1px, transparent 1px),
-    linear-gradient(0deg, rgb(255 255 255 / .04) 1px, transparent 1px),
-    #bd8654;
+  background: var(--home-floor-img), var(--home-floor);
   box-shadow: inset 0 0 0 3px #e5be7d, inset 0 -16px 20px rgb(47 25 17 / .25), 0 8px 20px rgb(0 0 0 / .28);
 }
 .home-map-cell { position: relative; min-width: 0; min-height: 0; border: 1px solid rgb(77 45 31 / .2); }
-.home-map-cell.is-wall { background: linear-gradient(135deg, #a96b46, #d09a62 52%, #875139); box-shadow: inset 0 -5px 0 rgb(70 35 25 / .26); }
+.home-map-cell.is-wall { background: var(--home-wall-img); box-shadow: inset 0 -5px 0 rgb(70 35 25 / .26); }
 .home-map-cell.is-door { background: #9a6648; }
-.home-map-floor { display: block; width: 100%; height: 100%; background: rgb(236 196 132 / .14); }
+.home-map-floor-cell { display: block; width: 100%; height: 100%; background: rgb(236 196 132 / .14); }
 .home-map-item, .home-map-empty, .home-map-door { display: grid; place-items: center; width: 100%; height: 100%; padding: .15rem; border: 0; background: transparent; color: #fff4d6; cursor: pointer; }
 .home-map-item:not(:disabled):hover, .home-map-empty:hover, .home-map-door:hover { background: rgb(255 241 184 / .2); }
 .home-map-item:disabled { cursor: default; }
@@ -126,6 +130,14 @@ function isDoor(x: number, y: number): boolean {
 .home-map-door small { font-size: .48rem; font-weight: 800; letter-spacing: .05em; }
 .home-map-footer { color: var(--muted); font-size: .75rem; }
 .home-map-exit { border: 1px solid #d9ae6b; border-radius: .55rem; background: #51362d; color: #ffe9ba; padding: .42rem .65rem; font: inherit; font-weight: 700; }
+.home-wall-creme { --home-wall-img: linear-gradient(#fff4d4 0 23%, transparent 23%), linear-gradient(135deg, #a96b46, #d09a62 52%, #875139); }
+.home-wall-floral { --home-wall-img: radial-gradient(#fff1a8 10%, transparent 12%), radial-gradient(#fff 9%, transparent 11%), linear-gradient(135deg, #a96b46, #d09a62 52%, #875139); }
+.home-wall-noite { --home-wall-img: radial-gradient(#fff5a6 1px, transparent 2px), linear-gradient(#40509a 0 23%, transparent 23%), linear-gradient(135deg, #a96b46, #d09a62 52%, #875139); }
+.home-wall-madeira { --home-wall-img: repeating-linear-gradient(0deg, #a96d43 0 2px, transparent 2px 18px), linear-gradient(135deg, #a96b46, #d09a62 52%, #875139); }
+.home-floor-carvalho { --home-floor: #cb915c; --home-floor-img: repeating-linear-gradient(90deg, rgb(100 58 33 / .28) 0 2px, transparent 2px 48px); }
+.home-floor-xadrez { --home-floor: #f0dfbc; --home-floor-img: conic-gradient(#d06d69 25%, #f0dfbc 0 50%, #d06d69 0 75%, #f0dfbc 0); }
+.home-floor-grama { --home-floor: #86c969; --home-floor-img: radial-gradient(#b8e88d 1px, transparent 2px); }
+.home-floor-ladrilho { --home-floor: #cdd3dc; --home-floor-img: repeating-linear-gradient(45deg, rgb(84 97 116 / .24) 0 2px, transparent 2px 18px); }
 @media (max-width: 480px) {
   .home-map-footer { align-items: stretch; flex-direction: column; }
   .home-map-exit { width: 100%; }
