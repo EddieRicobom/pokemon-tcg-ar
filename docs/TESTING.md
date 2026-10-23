@@ -81,6 +81,12 @@ O registro de corridas concluídas da Torre, sua idempotência/migração, marco
 
 ## Roteiro manual
 
+### Casas, bairros e economia da Vila
+
+`home-improvements.test.ts`, `village-expansion.test.ts` e `village-economy-backup.test.ts` cobrem móveis, reformas compatíveis, rotas de ida/volta, trabalho por 12 minutos, população mínima, salários, pedidos do Café e backup. Regras e limites em [VILLAGE_NEIGHBORHOODS.md](VILLAGE_NEIGHBORHOODS.md).
+
+Com Vite aberto, rode `APP_URL=http://127.0.0.1:4175/pokemon-tcg-ar/ node e2e/village-neighborhoods.mjs`. `BROWSER_PATH` seleciona o executável do Chromium; `SCREENSHOT_DIR` guarda capturas. O script usa armazenamento descartável, valida retrato/paisagem, exame dos móveis, porta, guias do minimapa e caminhada até a praia. Não representa teste de AR, reconhecimento ou desempenho móvel.
+
 O procedimento de referência está em [TESTE_NO_CELULAR.md](TESTE_NO_CELULAR.md). Relatos em aparelho físico e resultados automatizados são evidências complementares; nenhum deles deve ser apresentado como medição do outro.
 
 ## Backup e nuvem

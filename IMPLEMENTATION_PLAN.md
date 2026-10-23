@@ -1,5 +1,13 @@
 # Plano e estado do projeto
 
+## Bairros, casas e renda dos moradores (22/10/2026)
+
+- Expansão real para 120 × 96 blocos, com praia, jardim, praça, bosque e mirante conectados; 16 destinos de passeios e guias legíveis no minimapa.
+- 32 móveis com arte própria, interiores organizados por função, oito estilos de fachada e duas reformas extras, preservando a codificação dos saves antigos.
+- Salários por conclusão real de trabalho, carteiras individuais e compras autônomas de móveis/reformas. Profissões dependem da população; dinheiro pessoal também paga o Café.
+- Terraço com seis mesas, clientes e atendente caminhando, preparo/entrega, pagamento e momentos entre quem está comendo junto. Carteiro e atendente continuam moradores sociais.
+- Regras, testes, comandos de validação e limites em [VILLAGE_NEIGHBORHOODS.md](docs/VILLAGE_NEIGHBORHOODS.md).
+
 ## Música regional, ambientação e revisão da Caixa (21/10/2026)
 
 - 12 faixas pacíficas da Vila por hora/clima; crossfade de 12 s e pares alternados a cada seis minutos. Sons de ações e trabalhos próximos, com ambientação noturna/chuva e volumes independentes.
