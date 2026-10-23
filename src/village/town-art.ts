@@ -300,35 +300,6 @@ export function paintPins(): PixelBuf {
   return b;
 }
 
-/** A Arena: 64×48, muralha de pedra com arcada, faixas vermelha e azul e uma bola de captura no topo. */
-export function paintArena(): PixelBuf {
-  const b = createBuf(64, 48);
-  rect(b, 2, 16, 60, 31, 0xa8a49a);
-  for (let y = 18; y < 47; y += 5) for (let x = 2 + ((y / 5) % 2) * 5; x < 62; x += 10) rect(b, x, y, 9, 4, (x + y) % 3 === 0 ? 0xb8b4aa : 0x9a968c);
-  // Ameias.
-  for (let x = 2; x < 62; x += 8) rect(b, x, 12, 5, 5, 0xa8a49a);
-  // Bola de captura grande no centro, sobre a arcada.
-  disc(b, 32, 9, 7, 7, 0xffffff);
-  for (let y = 2; y <= 9; y++) for (let x = 25; x <= 39; x++) if ((x - 32) ** 2 + (y - 9) ** 2 <= 49) put(b, x, y, 0xe8453c);
-  rect(b, 25, 9, 15, 1, 0x1a1a22);
-  disc(b, 32, 9, 2, 2, 0xffffff);
-  put(b, 32, 9, 0x1a1a22);
-  // Faixas dos lados: uma vermelha, uma azul.
-  rect(b, 8, 20, 9, 18, 0xd8463c);
-  rect(b, 8, 36, 9, 2, 0xa02a24);
-  rect(b, 47, 20, 9, 18, 0x3f6fd0);
-  rect(b, 47, 36, 9, 2, 0x2a4a98);
-  rect(b, 10, 24, 5, 5, 0xffd84a);
-  rect(b, 49, 24, 5, 5, 0xffd84a);
-  // Arcada de entrada.
-  rect(b, 23, 26, 18, 21, 0x2a2a34);
-  for (let y = 26; y < 34; y++) { const k = 34 - y; for (let x = 23; x < 23 + k; x++) put(b, x, y, 0xa8a49a); for (let x = 41 - k; x < 41; x++) put(b, x, y, 0xa8a49a); }
-  rect(b, 26, 34, 12, 13, 0x1a1a22);
-  rect(b, 24, 44, 16, 3, 0x7a766c);
-  outline(b, 0x24221e);
-  return b;
-}
-
 /** A Torre de Sobrevivência: 48×48, torre de pedra estreita com telhado cônico vermelho e uma janela por andar. */
 export function paintTorre(): PixelBuf {
   const b = createBuf(48, 48);
