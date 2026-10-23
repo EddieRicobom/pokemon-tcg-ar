@@ -1,4 +1,4 @@
-import { visibleVerticalFov } from './orientation';
+import { stageVerticalFov } from './stage-view';
 import { OrientationSource } from './orientation-source';
 import type { OrientationMode } from './orientation-source';
 import { BoxScene, DEFAULT_HALF_SIZE_M } from './box-scene';
@@ -21,7 +21,8 @@ import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 export const DEFAULT_VIDEO_VFOV_DEG = 63;
 
 export interface StartBoxOptions {
-  video: HTMLVideoElement;
+  /** O vídeo da câmera atrás da cena (AR). Sem ele o palco é virtual: sem corte de imagem e sem luz do ambiente real. */
+  video?: HTMLVideoElement;
   canvas: HTMLCanvasElement;
   container: HTMLElement;
   onModeChange?: (mode: OrientationMode) => void;
@@ -91,13 +92,12 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     const width = options.container.clientWidth;
     const height = options.container.clientHeight;
     if (width === 0 || height === 0) return;
-    const videoAspect = options.video.videoWidth > 0 && options.video.videoHeight > 0 ? options.video.videoWidth / options.video.videoHeight : width / height;
-    scene.setView(width, height, visibleVerticalFov(videoFov, videoAspect, width / height));
+    scene.setView(width, height, stageVerticalFov(width, height, videoFov, options.video));
     renderer.setSize(width, height);
   };
   const observer = new ResizeObserver(resize);
   observer.observe(options.container);
-  options.video.addEventListener('loadedmetadata', resize);
+  options.video?.addEventListener('loadedmetadata', resize);
   resize();
 
   // Luz do ambiente real: uma amostra minúscula do vídeo a cada meio segundo (barato) ajusta o brilho e o tom dos sprites.
@@ -107,10 +107,11 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   const samplerCtx = sampler.getContext('2d', { willReadFrequently: true });
   let lastSample = 0;
   const sampleAmbient = (now: number) => {
-    if (!samplerCtx || now - lastSample < 500 || options.video.videoWidth === 0) return;
+    const video = options.video;
+    if (!video || !samplerCtx || now - lastSample < 500 || video.videoWidth === 0) return;
     lastSample = now;
     try {
-      samplerCtx.drawImage(options.video, 0, 0, 8, 6);
+      samplerCtx.drawImage(video, 0, 0, 8, 6);
       const a = ambientFromSample(samplerCtx.getImageData(0, 0, 8, 6).data);
       scene.setEnvironment(a.r, a.g, a.b);
     } catch {
@@ -188,7 +189,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
       cancelGameFrame(handle);
       observer.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
-      options.video.removeEventListener('loadedmetadata', resize);
+      options.video?.removeEventListener('loadedmetadata', resize);
       orientation.stop();
       sound.dispose();
       scene.dispose();

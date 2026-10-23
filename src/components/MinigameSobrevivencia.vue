@@ -738,6 +738,21 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.stroke();
     ctx.restore();
   }
+  if (e.chargeMs) {
+    // Aviso da investida: o anel vermelho se fecha até o avanço, para dar tempo de sair do caminho.
+    ctx.strokeStyle = '#ff5a5a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 26 - (e.chargeMs / 500) * 8, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (e.archetype === 'explosivo') {
+    // Pavio aceso: um ponto laranja acima do sprite indica que ele explode ao cair.
+    ctx.fillStyle = '#ff8c3a';
+    ctx.beginPath();
+    ctx.arc(e.x + 12, e.y - 30, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
   drawSprite(sprite, e.x, e.y, false, scale);
   // Efeitos do golpe no inimigo: um pontinho colorido em cima (queimando, lento, atordoado).
   const marks: string[] = [];
