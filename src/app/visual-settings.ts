@@ -17,6 +17,8 @@ export interface VisualSettings {
   social: boolean;
   /** Clima da Caixa: ciclo, um clima fixo ou desligado. Pesa na GPU (camadas e partículas). */
   weather: WeatherMode;
+  /** Muro, arquibancada e tochas do Coliseu na Arena 3D (palco virtual). Desligar deixa só a areia e poupa a GPU. */
+  scenery: boolean;
   /** Sons dos golpes e da vitória na batalha (Caixa). */
   sound: boolean;
   /** Sombra suave e brilho no chão sob o Pokémon sobre a carta (Escanear e Várias). */
@@ -37,16 +39,16 @@ export interface VisualSettings {
 
 const KEY = 'tcg-ar-visual-v2';
 const LEGACY_KEY = 'tcg-ar-visual-v1';
-const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, impactFx: true, terrain: true, social: true, weather: 'ciclo', sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, evolutionFx: true, frameRate: 'auto', rotomMode: false };
+const DEFAULTS: VisualSettings = { smoothing: DEFAULT_SMOOTHING, lighting: true, impactFx: true, terrain: true, social: true, weather: 'ciclo', scenery: true, sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, evolutionFx: true, frameRate: 'auto', rotomMode: false };
 
 export function normalizeVisual(raw: Partial<VisualSettings> | null | undefined): VisualSettings {
-  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, impactFx: raw?.impactFx !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false, villageFx: raw?.villageFx !== false, evolutionFx: raw?.evolutionFx !== false, frameRate: raw?.frameRate === '30' || raw?.frameRate === '20' ? raw.frameRate : 'auto', rotomMode: raw?.rotomMode === true };
+  return { smoothing: normalizeSmoothing(raw?.smoothing), lighting: raw?.lighting !== false, impactFx: raw?.impactFx !== false, terrain: raw?.terrain !== false, social: raw?.social !== false, weather: normalizeWeatherMode(raw?.weather), scenery: raw?.scenery !== false, sound: raw?.sound !== false, shadow: raw?.shadow !== false, metallic: raw?.metallic !== false, caseFx: raw?.caseFx !== false, villageFx: raw?.villageFx !== false, evolutionFx: raw?.evolutionFx !== false, frameRate: raw?.frameRate === '30' || raw?.frameRate === '20' ? raw.frameRate : 'auto', rotomMode: raw?.rotomMode === true };
 }
 
 /** Preferências efetivas sem alterar o que a pessoa escolheu para cada efeito. */
 export function effectiveVisualSettings(settings: VisualSettings): VisualSettings {
   if (!settings.rotomMode) return { ...settings };
-  return { ...settings, smoothing: 'nitido', lighting: false, impactFx: false, terrain: false, social: false, weather: 'off', shadow: false, metallic: false, caseFx: false, villageFx: false, evolutionFx: false, frameRate: '20' };
+  return { ...settings, smoothing: 'nitido', lighting: false, impactFx: false, terrain: false, social: false, weather: 'off', scenery: false, shadow: false, metallic: false, caseFx: false, villageFx: false, evolutionFx: false, frameRate: '20' };
 }
 
 function read(): VisualSettings {

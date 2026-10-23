@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { routeHref, useRoute } from './app/route';
+import { rememberBeforeVila, routeHref, useRoute } from './app/route';
 import type { RouteName } from './app/route';
 import NavIcon from './components/NavIcon.vue';
 import RewardToasts from './components/RewardToasts.vue';
@@ -36,7 +36,7 @@ const showIosHint =
  * diálogo do prédio oferece a Arena 3D, a Caixa em AR, a Liga e as corridas 6×6): as telas `#/arena` e `#/caixa` continuam
  * existindo e abrindo por endereço e por link, mas não têm aba nem sub-aba, e a aba da Vila fica acesa nelas.
  */
-const tabs: { name: RouteName; label: string }[] = [
+const tabs: { name: 'escanear' | 'vila' | 'cartas' | 'pins' | 'treinador'; label: string }[] = [
   { name: 'escanear', label: 'Escanear' },
   { name: 'vila', label: 'Vila' },
   { name: 'cartas', label: 'Cartas' },
@@ -60,7 +60,7 @@ watch(
   () => route.value.name,
   (name, previous) => {
     if (previous && previous !== 'vila' && name === 'vila') return;
-    if (name !== 'vila') beforeVila.value = window.location.hash || '#/';
+    if (name !== 'vila' && rememberBeforeVila(window.location.hash)) beforeVila.value = window.location.hash || '#/';
   },
 );
 /** Cada tela abre do topo: sem isto, a rolagem da aba anterior ficava (Várias abria no meio da página). */

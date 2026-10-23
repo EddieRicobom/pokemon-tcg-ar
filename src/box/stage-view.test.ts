@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { visibleVerticalFov } from './orientation';
-import { backdropAspect, stageVerticalFov, VIRTUAL_YAW_RAD, virtualPitchRad } from './stage-view';
+import { backdropAspect, stageVerticalFov, VIRTUAL_MAX_HALF_M, VIRTUAL_YAW_RAD, virtualHalfSize, virtualPitchRad } from './stage-view';
+import { minBoxDistance } from './floor';
 import { Vector3 } from 'three';
 import { ARENA_MAX_DISTANCE } from './arena';
 import { DEFAULT_PHONE_HEIGHT_M, intersectFloor } from './floor';
@@ -52,5 +53,17 @@ describe('câmera do palco virtual', () => {
 
   it('uma câmera mais alta olha mais para baixo para chegar ao mesmo ponto', () => {
     expect(virtualPitchRad(2, 3.2)).toBeLessThan(virtualPitchRad(1, 3.2));
+  });
+});
+
+describe('tamanho da caixa no palco virtual', () => {
+  it('uma caixa grande demais é limitada para a caixa nunca ser afastada além da arena', () => {
+    expect(virtualHalfSize(3)).toBe(VIRTUAL_MAX_HALF_M);
+    expect(minBoxDistance(virtualHalfSize(3))).toBeLessThanOrEqual(ARENA_MAX_DISTANCE + 1e-9);
+    expect(virtualHalfSize(1.2)).toBe(1.2);
+  });
+
+  it('o tamanho padrão (2,4 m de lado) cabe sem ser limitado', () => {
+    expect(2.4 / 2).toBeLessThan(VIRTUAL_MAX_HALF_M);
   });
 });

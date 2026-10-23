@@ -88,6 +88,7 @@ export class BoxScene {
   /** O fundo da cena: a câmera do celular (AR) ou o palco virtual do Coliseu (sem câmera). */
   private backdrop: Backdrop = 'camera';
   private scenery: ColiseuScenery | null = null;
+  private sceneryDetail = true;
   /** Encontros entre Pokémon e balões de emoji (só no passeio, nunca na batalha nem na formação). */
   private readonly social: SocialDirector;
   private socialOn = true;
@@ -131,13 +132,22 @@ export class BoxScene {
     this.backdrop = kind;
     if (kind === 'virtual') {
       this.scenery = new ColiseuScenery();
+      this.scenery.setDetail(this.sceneryDetail);
       this.scene.add(this.scenery.group);
     } else {
       this.scenery?.dispose();
       this.scenery = null;
     }
     this.floor.visible = this.anchor !== null && kind === 'camera' && !this.director;
+    // O chão de grama só existe com a câmera de fundo; no palco virtual a areia é o chão.
+    this.rebuildFloor();
     this.syncScenery();
+  }
+
+  /** Muro, arquibancada e tochas ligados ou desligados (desligado fica só a areia, bem mais leve). */
+  setScenery(on: boolean): void {
+    this.sceneryDetail = on;
+    this.scenery?.setDetail(on);
   }
 
   /** O cenário fica no chão, no centro da caixa colocada (escondido enquanto não há caixa). */
@@ -234,7 +244,7 @@ export class BoxScene {
     );
     plane.rotation.x = -Math.PI / 2;
     plane.position.y = y;
-    if (this.terrain) {
+    if (this.terrain && this.backdrop === 'camera') {
       // Chão em pixel art do tamanho da caixa; os enfeites ficam só na borda, para não tapar quem passeia.
       // Com relevo: morrinhos e baixadas suaves que somem na borda (a caixa fica rente ao chão de verdade).
       this.boxGround = new Ground({ halfW: h, halfD: h, shape: 'square', seed: 11, cols: Math.min(48, Math.max(12, Math.round((h * 2) / 0.12))), decor: Math.round(10 + h * 6), decorUnit: 0.16, opacity: 0.97, relief: reliefAmplitude(h) });

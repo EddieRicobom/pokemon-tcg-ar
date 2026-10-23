@@ -330,6 +330,7 @@ function applyBoxSettings(running: RunningBox): void {
   running.setLighting(effectiveVisual.value.lighting);
   running.setImpactEffects(effectiveVisual.value.impactFx && !reducedMotion.value);
   running.setTerrain(effectiveVisual.value.terrain);
+  running.setScenery(effectiveVisual.value.scenery);
   running.setSocial(effectiveVisual.value.social);
   running.setWeather(effectiveVisual.value.weather);
   running.setSound(effectiveVisual.value.sound);
@@ -507,6 +508,7 @@ watch(() => effectiveVisual.value.smoothing, (smoothing) => box?.setSmoothing(sm
 watch(() => effectiveVisual.value.lighting, (on) => box?.setLighting(on));
 watch(() => effectiveVisual.value.impactFx, (on) => box?.setImpactEffects(on && !reducedMotion.value));
 watch(() => effectiveVisual.value.terrain, (on) => box?.setTerrain(on));
+watch(() => effectiveVisual.value.scenery, (on) => box?.setScenery(on));
 watch(() => effectiveVisual.value.social, (on) => box?.setSocial(on));
 watch(() => effectiveVisual.value.weather, (mode) => box?.setWeather(mode));
 watch(() => effectiveVisual.value.sound, (on) => box?.setSound(on));
@@ -607,7 +609,8 @@ const notices = computed<Notice[]>(() => {
 const weatherLabel = ref('');
 const weatherTimer = setInterval(() => {
   if (document.hidden) return;
-  const now = box?.scene.weatherNow;
+  // O palco virtual não desenha o clima (chuva, poças e neve moram no chão da caixa): não o anuncia.
+  const now = virtual.value ? null : box?.scene.weatherNow;
   weatherLabel.value = now ? `${WEATHER_EMOJI[now.kind]} ${WEATHER_LABELS_PT[now.kind]}` : '';
 }, 2000);
 /** Linha de resumo fixa (pequena) enquanto a caixa está montada e nada mais pede atenção. */
@@ -872,7 +875,7 @@ onBeforeUnmount(() => {
             <label v-if="!virtual">Altura do celular ({{ phoneHeight.toFixed(2) }} m)
               <input v-model.number="phoneHeight" type="range" :min="PHONE_HEIGHT_RANGE.min" :max="PHONE_HEIGHT_RANGE.max" step="0.05" @input="onPhoneHeight" />
             </label>
-            <label>Tamanho da caixa ({{ boxSize.toFixed(1) }} m de lado)
+            <label v-if="!virtual">Tamanho da caixa ({{ boxSize.toFixed(1) }} m de lado)
               <input v-model.number="boxSize" type="range" min="1" max="6" step="0.2" @input="onBoxSize" />
             </label>
             <label v-if="!virtual">Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)

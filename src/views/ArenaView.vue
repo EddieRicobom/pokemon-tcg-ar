@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { pendingChallenge } from '../app/league-store';
 import { arenaFlags, routeHref } from '../app/route';
 import TeamPicker from '../components/TeamPicker.vue';
@@ -8,8 +8,23 @@ import { ENDLESS_ARENA_LABELS } from '../core/endless-arena';
 import type { EndlessArenaMode } from '../core/endless-arena';
 
 const MODES: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
-/** Onde as lutas acontecem: a Arena 3D (sem câmera, padrão) ou a Caixa em AR (câmera). Vale enquanto esta tela está aberta. */
-const virtual = ref(true);
+/** Onde as lutas acontecem: a Arena 3D (sem câmera, padrão) ou a Caixa em AR (câmera). A escolha fica guardada neste aparelho. */
+const FUNDO_KEY = 'tcg-ar-arena-fundo-v1';
+function storedBackdropIsVirtual(): boolean {
+  try {
+    return localStorage.getItem(FUNDO_KEY) !== 'camera';
+  } catch {
+    return true;
+  }
+}
+const virtual = ref(storedBackdropIsVirtual());
+watch(virtual, (on) => {
+  try {
+    localStorage.setItem(FUNDO_KEY, on ? 'virtual' : 'camera');
+  } catch {
+    // Só não lembra da escolha na próxima vez.
+  }
+});
 const waitingChallenge = computed(() => pendingChallenge.value !== null);
 const selectedCount = ref<number | null>(null);
 const teamReady = computed(() => selectedCount.value === 6);
@@ -78,8 +93,8 @@ function enterChallenge(): void {
       </div>
       <div>
         <h3>Batalhar com um amigo</h3>
-        <p class="note">Pareie dois celulares, escolha o modo e cada jogador vê a mesma luta na própria Caixa.</p>
-        <a class="button" :href="routeHref('caixa', undefined, arenaFlags(['pvp'], virtual))">Abrir PvP na Caixa</a>
+        <p class="note">Pareie dois celulares, escolha o modo e cada jogador vê a mesma luta na própria Caixa (com câmera; na tela inicial da Caixa dá para trocar o fundo).</p>
+        <a class="button" :href="routeHref('caixa', undefined, ['pvp'])">Abrir PvP na Caixa</a>
       </div>
     </section>
 

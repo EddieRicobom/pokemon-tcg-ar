@@ -397,16 +397,28 @@ describe('BoxScene com o palco virtual (Arena 3D)', () => {
     expect(scene.coliseu).toBeNull();
   });
 
-  it('o chão de grama da caixa fica escondido no palco virtual e volta com a câmera', () => {
+  it('o chão de grama da caixa nem é construído no palco virtual e volta com a câmera', () => {
     const scene = sceneLookingDown();
     scene.place(new Vector3(0, -1.3, -4));
-    const floorVisible = () => scene.groundOfBox!.group.parent!.visible;
-    expect(floorVisible()).toBe(true);
+    expect(scene.groundOfBox).not.toBeNull();
     scene.setBackdrop('virtual');
-    expect(floorVisible()).toBe(false);
+    expect(scene.groundOfBox).toBeNull();
+    scene.setHalfSize(1.5);
+    expect(scene.groundOfBox).toBeNull();
     scene.setBackdrop('camera');
-    expect(floorVisible()).toBe(true);
+    expect(scene.groundOfBox).not.toBeNull();
+    expect(scene.groundOfBox!.group.parent!.visible).toBe(true);
     expect(scene.coliseu).toBeNull();
+    scene.dispose();
+  });
+
+  it('a opção do cenário vale já na criação e depois de ligar de novo o palco virtual', () => {
+    const scene = sceneLookingDown();
+    scene.setScenery(false);
+    scene.setBackdrop('virtual');
+    expect(scene.coliseu!.detail).toBe(false);
+    scene.setScenery(true);
+    expect(scene.coliseu!.detail).toBe(true);
     scene.dispose();
   });
 

@@ -111,6 +111,23 @@ describe('ColiseuScenery', () => {
     scenery.dispose();
   });
 
+  it('desligar o detalhe deixa só a areia e as chamas param de ser atualizadas', () => {
+    const scenery = new ColiseuScenery();
+    const torch = scenery.group.children.find((c): c is Sprite => 'isSprite' in c)!;
+    scenery.update(0);
+    const before = torch.scale.y;
+    scenery.setDetail(false);
+    expect(scenery.detail).toBe(false);
+    const visible = scenery.group.children.filter((c) => c.visible);
+    expect(visible).toHaveLength(1);
+    expect((visible[0] as Mesh).position.y).toBeLessThan(0.002);
+    scenery.update(40);
+    expect(torch.scale.y).toBe(before);
+    scenery.setDetail(true);
+    expect(scenery.group.children.every((c) => c.visible)).toBe(true);
+    scenery.dispose();
+  });
+
   it('soltar o cenário esvazia o grupo e tira da cena', () => {
     const scenery = new ColiseuScenery();
     scenery.dispose();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arenaFlags, parseRoute, redirectFor, routeFlags, routeHref, vilaExitHref } from './route';
+import { arenaFlags, parseRoute, redirectFor, rememberBeforeVila, routeFlags, routeHref, vilaExitHref } from './route';
 
 describe('rotas por hash', () => {
   it('conhece a rota do Treinador', () => {
@@ -70,9 +70,9 @@ describe('rotas por hash', () => {
 
 describe('saídas da Vila e da Arena Digital', () => {
   it('cada saída da Vila leva à Caixa com o fundo certo', () => {
-    expect(vilaExitHref('pvp')).toBe('#/caixa?pvp=1');
-    expect(vilaExitHref('batalha')).toBe('#/caixa?batalha=1');
-    expect(vilaExitHref('batalha3d')).toBe('#/caixa?batalha=1&virtual=1');
+    expect(vilaExitHref('pvp')).toBe('#/caixa?pvp=1&vila=1');
+    expect(vilaExitHref('batalha')).toBe('#/caixa?batalha=1&vila=1');
+    expect(vilaExitHref('batalha3d')).toBe('#/caixa?batalha=1&virtual=1&vila=1');
     expect(vilaExitHref('caixa')).toBe('#/caixa?vila=1');
     expect(vilaExitHref('arena3d')).toBe('#/caixa?virtual=1&vila=1');
   });
@@ -97,5 +97,17 @@ describe('saídas da Vila e da Arena Digital', () => {
     expect(arenaFlags([], true)).toEqual(['virtual']);
     expect(base).toEqual(['formatacao']);
     expect(routeHref('caixa', undefined, arenaFlags(['restauracao'], true))).toBe('#/caixa?restauracao=1&virtual=1');
+  });
+});
+
+describe('para onde o ✕ da Vila volta', () => {
+  it('não guarda telas que a própria Vila abriu', () => {
+    for (const then of ['pvp', 'batalha', 'batalha3d', 'caixa', 'arena3d'] as const) expect(rememberBeforeVila(vilaExitHref(then))).toBe(false);
+    expect(rememberBeforeVila('#/pins?vila=1')).toBe(false);
+    expect(rememberBeforeVila('#/arena?vila=1')).toBe(false);
+  });
+
+  it('guarda as telas abertas de outro jeito (menu, links, endereço)', () => {
+    for (const hash of ['#/', '#/cartas', '#/caixa', '#/caixa?virtual=1', '#/arena?formatacao=1', '#/pins']) expect(rememberBeforeVila(hash)).toBe(true);
   });
 });

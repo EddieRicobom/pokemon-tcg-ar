@@ -1,4 +1,4 @@
-import { stageVerticalFov, VIRTUAL_YAW_RAD, virtualPitchRad } from './stage-view';
+import { stageVerticalFov, VIRTUAL_YAW_RAD, virtualHalfSize, virtualPitchRad } from './stage-view';
 import { ARENA_MAX_DISTANCE } from './arena';
 import { OrientationSource } from './orientation-source';
 import type { OrientationMode } from './orientation-source';
@@ -53,6 +53,8 @@ export interface RunningBox {
   setImpactEffects(on: boolean): void;
   /** Chão em pixel art e golpes que mudam o terreno. */
   setTerrain(on: boolean): void;
+  /** Muro, arquibancada e tochas do Coliseu (palco virtual); desligado fica só a areia. */
+  setScenery(on: boolean): void;
   setSocial(on: boolean): void;
   /** Clima da caixa (ciclo, fixo ou desligado). */
   setWeather(mode: WeatherMode): void;
@@ -116,10 +118,12 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   if (virtual) scene.setCameraQuaternion(orientation.read(performance.now()));
 
   // Luz do ambiente real: uma amostra minúscula do vídeo a cada meio segundo (barato) ajusta o brilho e o tom dos sprites.
-  const sampler = document.createElement('canvas');
-  sampler.width = 8;
-  sampler.height = 6;
-  const samplerCtx = sampler.getContext('2d', { willReadFrequently: true });
+  const sampler = video ? document.createElement('canvas') : null;
+  if (sampler) {
+    sampler.width = 8;
+    sampler.height = 6;
+  }
+  const samplerCtx = sampler?.getContext('2d', { willReadFrequently: true }) ?? null;
   let lastSample = 0;
   const sampleAmbient = (now: number) => {
     if (!video || !samplerCtx || now - lastSample < 500 || video.videoWidth === 0) return;
@@ -181,6 +185,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setLighting: (on) => scene.setLighting(on),
     setImpactEffects: (on) => scene.setImpactEffects(on),
     setTerrain: (on) => scene.setTerrain(on),
+    setScenery: (on) => scene.setScenery(on),
     setSocial: (on) => scene.setSocial(on),
     setWeather: (mode) => scene.setWeather(mode),
     setSound: (on) => sound.setEnabled(on),
@@ -192,7 +197,8 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
       // No palco virtual a câmera tem uma altura só (a pose da visão e o cenário dependem dela).
       if (!virtual) phoneHeight = meters;
     },
-    setHalfSize: (meters) => scene.setHalfSize(meters),
+    // No palco virtual a caixa tem um limite de tamanho (o cenário e a câmera fixa precisam caber).
+    setHalfSize: (meters) => scene.setHalfSize(virtual ? virtualHalfSize(meters) : meters),
     setVideoFov(deg) {
       videoFov = deg;
       resize();

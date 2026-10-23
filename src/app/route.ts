@@ -72,16 +72,24 @@ export type VilaExit = 'pvp' | 'batalha' | 'batalha3d' | 'caixa' | 'arena3d';
 /**
  * Endereço da Caixa para cada saída da Vila: PvP e batalha do Fliperama abrem a câmera (como sempre), a Caixa em AR
  * abre a câmera sem mais nada, e a Arena 3D (e a batalha do Fliperama na Arena 3D) abre o palco virtual, sem câmera.
- * Quem vem do Coliseu leva `vila`, para a Caixa oferecer «Voltar à Vila».
+ * Todas levam `vila`: a Caixa oferece «Voltar à Vila» e o ✕ da Vila não volta para ela (`rememberBeforeVila`).
  */
 export function vilaExitHref(then: VilaExit): string {
   switch (then) {
-    case 'pvp': return routeHref('caixa', undefined, ['pvp']);
-    case 'batalha': return routeHref('caixa', undefined, ['batalha']);
-    case 'batalha3d': return routeHref('caixa', undefined, ['batalha', 'virtual']);
+    case 'pvp': return routeHref('caixa', undefined, ['pvp', 'vila']);
+    case 'batalha': return routeHref('caixa', undefined, ['batalha', 'vila']);
+    case 'batalha3d': return routeHref('caixa', undefined, ['batalha', 'virtual', 'vila']);
     case 'caixa': return routeHref('caixa', undefined, ['vila']);
     case 'arena3d': return routeHref('caixa', undefined, ['virtual', 'vila']);
   }
+}
+
+/**
+ * O ✕ da Vila volta para a última tela fora dela, mas não para uma tela que a própria Vila abriu (`vila=1` no endereço:
+ * a Caixa, a Arena Digital, os Pins): senão o ✕ reabriria a luta em vez de voltar de onde a pessoa veio.
+ */
+export function rememberBeforeVila(hash: string): boolean {
+  return !routeFlags(hash).has('vila');
 }
 
 /** Os sinalizadores de uma luta que sai da Arena Digital: o modo escolhido mais o fundo (`virtual` = Arena 3D, sem câmera). */

@@ -80,6 +80,16 @@ useDialogFocus(dialogEl);
       </p>
     </section>
     <section v-if="battle">
+      <h4>Cenário do Coliseu</h4>
+      <div class="chips" role="group" aria-label="Cenário do Coliseu">
+        <button type="button" :class="{ active: visual.scenery }" :aria-pressed="visual.scenery" @click="visual.scenery = true">Ligado</button>
+        <button type="button" :class="{ active: !visual.scenery }" :aria-pressed="!visual.scenery" @click="visual.scenery = false">Desligado</button>
+      </div>
+      <p class="hint">
+        {{ visual.scenery ? 'Na Arena 3D (sem câmera): muro de arcadas, arquibancada com torcida e tochas que tremem em volta da arena.' : 'Na Arena 3D fica só a areia: mais leve para celulares fracos. Com a câmera como fundo nada muda.' }}
+      </p>
+    </section>
+    <section v-if="battle">
       <h4>Emoções e encontros</h4>
       <div class="chips" role="group" aria-label="Emoções e encontros">
         <button type="button" :class="{ active: visual.social }" :aria-pressed="visual.social" @click="visual.social = true">Ligado</button>

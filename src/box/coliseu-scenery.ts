@@ -123,6 +123,9 @@ export class ColiseuScenery {
   private readonly materials: MeshBasicMaterial[] = [];
   private readonly disposables: { dispose(): void }[] = [];
   private readonly torches: { sprite: Sprite; phase: number }[] = [];
+  /** Muro, arquibancada e tochas (desligado fica só a areia). */
+  private readonly detailParts: { visible: boolean }[] = [];
+  private detailOn = true;
 
   constructor(readonly radius: number = SCENERY_RADIUS) {
     const R = radius;
@@ -146,11 +149,13 @@ export class ColiseuScenery {
     const wall = new Mesh(geo(new CylinderGeometry(R, R, WALL_HEIGHT, 64, 1, true)), basic(texture(paintWallTile(), 16)));
     wall.position.y = WALL_HEIGHT / 2;
     this.group.add(wall);
+    this.detailParts.push(wall);
 
     // Arquibancada inclinada, subindo do muro para fora.
     const stands = new Mesh(geo(new CylinderGeometry(R + STANDS_DEPTH, R, STANDS_RISE, 96, 1, true)), basic(texture(paintStands())));
     stands.position.y = WALL_HEIGHT + STANDS_RISE / 2;
     this.group.add(stands);
+    this.detailParts.push(stands);
 
     // Tochas no alto do muro, de frente para o centro; a do fundo (de frente para a câmera) sempre aparece.
     const flame = texture(paintFlame());
@@ -164,8 +169,19 @@ export class ColiseuScenery {
       sprite.position.set(Math.sin(angle) * (R - 0.15), WALL_HEIGHT + 0.05, Math.cos(angle) * (R - 0.15));
       sprite.scale.set(0.3, 0.6, 1);
       this.group.add(sprite);
+      this.detailParts.push(sprite);
       this.torches.push({ sprite, phase: i * 1.7 });
     }
+  }
+
+  get detail(): boolean {
+    return this.detailOn;
+  }
+
+  /** Liga ou desliga o muro, a arquibancada e as tochas; sem eles só a areia é desenhada e as chamas não são atualizadas. */
+  setDetail(on: boolean): void {
+    this.detailOn = on;
+    for (const part of this.detailParts) part.visible = on;
   }
 
   /** Cor multiplicada nas texturas (acompanha a luz da cena e escurece no foco dos golpes). */
@@ -175,6 +191,7 @@ export class ColiseuScenery {
 
   /** As chamas tremem (só escala e brilho, de graça para a GPU). */
   update(nowMs: number): void {
+    if (!this.detailOn) return;
     for (const { sprite, phase } of this.torches) {
       const wobble = 1 + 0.14 * Math.sin(nowMs / 85 + phase) + 0.06 * Math.sin(nowMs / 37 + phase * 2);
       sprite.scale.set(0.3 * (1 + 0.06 * Math.sin(nowMs / 61 + phase)), 0.6 * (1 + (wobble - 1) * 0.6), 1);
@@ -187,6 +204,7 @@ export class ColiseuScenery {
     this.disposables.length = 0;
     this.materials.length = 0;
     this.torches.length = 0;
+    this.detailParts.length = 0;
     this.group.removeFromParent();
     this.group.clear();
   }

@@ -77,6 +77,14 @@ try {
   await page.getByRole('link', { name: 'Voltar à Vila' }).waitFor();
   await page.getByRole('link', { name: 'Voltar à Vila' }).click();
   await page.waitForSelector('.village-pad');
+  // O ✕ da Vila volta de onde a pessoa veio (aqui, o Escanear), não para a luta que a própria Vila abriu.
+  await dismissNotices();
+  await page.getByRole('button', { name: 'Sair da Vila' }).click();
+  await page.getByText('Escanear carta').first().waitFor();
+  assert.equal(await hash(), '#/');
+  await page.goto(`${base}#/vila`);
+  await page.waitForSelector('.village-pad');
+  await capture('vila-com-coliseu');
 
   // --- 3. Fliperama → batalha na Arena 3D (com a batalha em destaque)
   await dismissNotices();

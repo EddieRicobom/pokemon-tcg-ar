@@ -8,7 +8,6 @@ import type { Fx } from '../core/village/social-state';
 import type { PixelBuf } from '../box/ground-art';
 import type { Tile } from '../core/village/map';
 import { paintArcade, paintCafe, paintMail, paintMuseum, paintPins, paintTorre } from './town-art';
-import { paintColiseu } from './coliseu-art';
 
 /**
  * Tipos, constantes e auxiliares puros do jogo da Vila (movidos de `village-game.ts` sem mudar o texto, em 2026-10-23).
@@ -181,7 +180,7 @@ export const BELL_FAR = 18;
 export const EMOJI_FONT = 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
 /** O desenho e o emoji sobre a porta de cada prédio da praça. */
-export const CIVIC_ART: Partial<Record<BuildingKind, () => PixelBuf>> = { cafe: paintCafe, mail: paintMail, museum: paintMuseum, arcade: paintArcade, pins: paintPins, arena: paintColiseu, torre: paintTorre };
+export const CIVIC_ART: Partial<Record<BuildingKind, () => PixelBuf>> = { cafe: paintCafe, mail: paintMail, museum: paintMuseum, arcade: paintArcade, pins: paintPins, torre: paintTorre };
 export const atlasOpaqueBottoms = new WeakMap<HTMLCanvasElement, number>();
 /** Com o atlas: o desenho de cada prédio (recortes de tileset, ver `atlas-spec.ts`). */
 export const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'home-orange', museum: 'manor', arcade: 'center-blue', pins: 'home-teal', torre: 'tower' };
