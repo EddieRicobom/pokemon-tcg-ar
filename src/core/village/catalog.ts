@@ -112,6 +112,7 @@ export const ITEMS: readonly ItemDef[] = [
   m('alga', 'Alga', 3),
   m('bota', 'Bota velha', 1),
   { ...m('love-candy', 'Love Candy', 0), friendshipLevels: 1 },
+  m('trust-stone', 'Pedra da Confiança', 0),
   m('mega-stone-shard', 'Fragmento de Mega Stone', 0),
   // Materiais fabricados
   { ...m('tabua', 'Tábua', 9), recipe: { madeira: 2 } },

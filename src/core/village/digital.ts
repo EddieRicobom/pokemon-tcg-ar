@@ -12,6 +12,7 @@ export const SUMMON_COST = 500;
 export const EVOLVE_COST = 1000;
 /** Nível de amizade mínimo pra evoluir (índice de `FRIEND_LEVELS`: 3 = "Grande amigo"). */
 export const EVOLVE_FRIEND_LEVEL = 3;
+/** Cinco Pedras da Confiança permitem evoluir no vínculo máximo sem gasto de moedas. */
 /** Quantas transações o histórico guarda (as mais antigas somem; o saldo nunca depende do histórico). */
 const LEDGER_MAX = 40;
 

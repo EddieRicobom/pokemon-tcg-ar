@@ -842,6 +842,46 @@ describe('segundo golpe', () => {
     expect(projectile?.y).toBeCloseTo(origin.y, 0);
   });
 
+  it('evolui um apoio apenas para uma próxima forma real oferecida, sem transferir upgrades do protagonista', () => {
+    const supportMove = as('grass', 'projetil').move;
+    const baseProfile = attackProfile(supportMove, null);
+    const evolvedProfile = { ...baseProfile, damage: baseProfile.damage * 1.4, maxHp: baseProfile.maxHp + 20 };
+    let evolutionMove: typeof supportMove | undefined;
+    const evolutions = (dexId: number, move?: typeof supportMove) => {
+      evolutionMove = move;
+      return dexId === 1 ? [{ dexId: 2, name: 'Ivysaur', profile: evolvedProfile }] : [];
+    };
+    const s = quiet(createSurvivorState(101, {
+      kindCount: 1,
+      supportCandidate: { dexId: 1, name: 'Bulbasaur', move: supportMove, profile: baseProfile },
+      evolutions,
+    }));
+    s.pendingUpgrade = [{ id: 'second-attack', name: '', description: '' }];
+    applyUpgrade(s, 'second-attack');
+    const damageBeforePlayerUpgrade = s.support!.profile.damage;
+    s.pendingUpgrade = [{ id: 'power', name: '', description: '' }];
+    applyUpgrade(s, 'power');
+    expect(s.support!.profile.damage).toBe(damageBeforePlayerUpgrade);
+
+    // A carta rara entra apenas quando existe uma próxima forma real para o apoio.
+    s.player.level = 9;
+    s.player.xp = s.player.xpToNext;
+    s.rng = () => 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    const evolutionCard = s.pendingUpgrade!.find((option) => option.id === 'support-evolve:0:2');
+    expect(evolutionCard).toMatchObject({ rarity: 'raro', family: 'aliado', name: 'Laço evolutivo: Bulbasaur' });
+    expect(evolutionMove).toBe(supportMove);
+
+    const events = applyUpgrade(s, evolutionCard!.id);
+    expect(events).toEqual([{ type: 'supportEvolve', dexId: 2, name: 'Ivysaur' }]);
+    expect(s.support).toMatchObject({ dexId: 2, name: 'Ivysaur', profile: evolvedProfile, damageFactor: 0.45 });
+    expect(s.supports).toHaveLength(1);
+
+    s.pendingUpgrade = [{ id: 'support-evolve:0:1', name: '', description: '' }];
+    applyUpgrade(s, 'support-evolve:0:1');
+    expect(s.support!.dexId).toBe(2);
+  });
+
   it('atribui o roubo de vida ao golpe do apoio, não ao golpe principal', () => {
     const supportMove = as('dark', 'aura').move;
     const s = quiet(createSurvivorState(2, { kindCount: 1, supportCandidate: { dexId: 197, name: 'Umbreon', move: supportMove, profile: attackProfile(supportMove, null) } }));
@@ -856,11 +896,13 @@ describe('segundo golpe', () => {
     expect(s.player.hp).toBeGreaterThan(s.player.maxHp - 10);
   });
 
-  it('avisa os marcos de 10 e 20 minutos uma única vez por corrida', () => {
+  it('avisa os marcos de 10, 15 e 20 minutos uma única vez por corrida', () => {
     const s = quiet(createSurvivorState(8, { kindCount: 1 }));
     const ten = stepSurvivor(s, { dx: 0, dy: 0 }, 600_000);
     expect(ten).toContainEqual({ type: 'milestone', id: 'ten-minutes', reward: 'love-candy' });
     expect(stepSurvivor(s, { dx: 0, dy: 0 }, 1)).not.toContainEqual(expect.objectContaining({ type: 'milestone' }));
+    const fifteen = quiet(createSurvivorState(18, { kindCount: 1 }));
+    expect(stepSurvivor(fifteen, { dx: 0, dy: 0 }, 900_000)).toContainEqual({ type: 'milestone', id: 'fifteen-minutes', reward: 'trust-stone' });
     const long = quiet(createSurvivorState(9, { kindCount: 1 }));
     long.player.hp = 1_000_000;
     long.player.maxHp = 1_000_000;
