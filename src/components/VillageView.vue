@@ -68,6 +68,7 @@ import type { Building } from '../core/village/town';
 import type { Moment, MomentKind } from '../core/village/social-state';
 import type { ItemId } from '../core/village/life';
 import { homePickUp, homePlace } from '../core/village/home-interior';
+import HomeInteriorMap from './HomeInteriorMap.vue';
 import { dailyRecap, needsDailyRecap } from '../core/village/daily-recap';
 import type { RecapScene } from '../core/village/daily-recap';
 import { villageSummary } from '../core/village/summary';
@@ -821,6 +822,14 @@ const selectedHomeItem = ref<ItemId | null>(null);
 const homeInteriorLot = ref<number | null>(null);
 const homeFurniture = computed(() => FURNITURE_IDS.filter((id) => count(state, id) > 0));
 const displayedHomeInterior = computed(() => homeInteriorLot.value === null ? state.homeInterior : state.homeInteriors[String(homeInteriorLot.value)] ?? { wallpaper: 'creme' as const, floor: 'carvalho' as const, placed: [] });
+const homeResidents = computed(() => {
+  if (homeInteriorLot.value === null) return [{ id: 'player', name: profile.name }];
+  return residentsOf(homes, homeInteriorLot.value).map((id) => ({
+    id,
+    name: nameOf(id),
+    thumb: mons.value.find((mon) => mon.id === id)?.thumb,
+  }));
+});
 function homeItemAt(x: number, y: number): string | undefined {
   return displayedHomeInterior.value.placed.find((entry) => entry.x === x && entry.y === y)?.item;
 }
@@ -843,6 +852,12 @@ function useHomeCell(x: number, y: number): void {
   act(r);
   if (r.ok && count(state, selectedHomeItem.value) === 0) selectedHomeItem.value = null;
 }
+function exitHomeInterior(): void {
+  homeInteriorLot.value = null;
+  selectedHomeItem.value = null;
+  closeVillageSheet();
+}
+
 function setHomeWallpaper(value: string): void {
   if (homeInteriorLot.value !== null) return;
   if (['creme', 'floral', 'noite', 'madeira'].includes(value)) state.homeInterior.wallpaper = value as typeof state.homeInterior.wallpaper;
@@ -3008,14 +3023,18 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" :aria-label="homeInteriorLot === null ? 'Interior da sua casa' : 'Interior da casa de um morador'">
-        <header><strong>🏠 {{ homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}` }}</strong><button type="button" class="link" @click="sheet = null">Sair</button></header>
+        <header><strong>🏠 {{ homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}` }}</strong><button type="button" class="link" @click="exitHomeInterior">Sair</button></header>
         <p v-if="homeInteriorLot === null" class="hint">Toque num móvel para guardá-lo. Escolha um da mochila e toque num espaço vazio para decorar, como num quarto de Animal Crossing.</p>
         <p v-else class="hint">Este interior é comprado e organizado pelos moradores. Cada personalidade escolhe cores e móveis diferentes.</p>
-        <section class="home-room" :class="[`home-wall-${displayedHomeInterior.wallpaper}`, `home-floor-${displayedHomeInterior.floor}`]" aria-label="Planta interna da casa">
-          <button v-for="n in 35" :key="n" type="button" class="home-slot" :disabled="homeInteriorLot !== null" :aria-label="homeItemAt((n - 1) % 7, Math.floor((n - 1) / 7)) ? `Guardar ${homeItemNameAt((n - 1) % 7, Math.floor((n - 1) / 7))}` : 'Espaço vazio da casa'" @click="useHomeCell((n - 1) % 7, Math.floor((n - 1) / 7))">
-            <img v-if="homeItemAt((n - 1) % 7, Math.floor((n - 1) / 7))" :src="icon(homeItemAt((n - 1) % 7, Math.floor((n - 1) / 7) ) ?? '')" :alt="homeItemNameAt((n - 1) % 7, Math.floor((n - 1) / 7))" />
-          </button>
-        </section>
+        <HomeInteriorMap
+          :interior="displayedHomeInterior"
+          :residents="homeResidents"
+          :editable="homeInteriorLot === null"
+          :item-name="itemName"
+          :icon="icon"
+          @cell="useHomeCell($event.x, $event.y)"
+          @exit="exitHomeInterior"
+        />
         <div class="home-style">
           <label>Parede <select :value="displayedHomeInterior.wallpaper" :disabled="homeInteriorLot !== null" @change="setHomeWallpaper(($event.target as HTMLSelectElement).value)"><option value="creme">Creme</option><option value="floral">Floral</option><option value="noite">Noite estrelada</option><option value="madeira">Madeira</option></select></label>
           <label>Piso <select :value="displayedHomeInterior.floor" :disabled="homeInteriorLot !== null" @change="setHomeFloor(($event.target as HTMLSelectElement).value)"><option value="carvalho">Carvalho</option><option value="xadrez">Xadrez</option><option value="grama">Grama interna</option><option value="ladrilho">Ladrilho</option></select></label>
