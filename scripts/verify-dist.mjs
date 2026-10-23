@@ -4,7 +4,7 @@
  *
  *   BASE_PATH=/pokemon-tcg-ar/ REQUIRE_INDEX=1 node scripts/verify-dist.mjs
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 
 const base = process.env.BASE_PATH ?? '/pokemon-tcg-ar/';
@@ -109,6 +109,19 @@ function dirBytes(path) {
 const distBytes = dirBytes('dist');
 notes.push(`dist completo: ${(distBytes / 1024 / 1024).toFixed(1)} MB`);
 need(distBytes < 900 * 1024 * 1024, `dist passou do orçamento de segurança de 900 MB (${(distBytes / 1024 / 1024).toFixed(1)} MB)`);
+// Aviso antecipado (não falha o build): o orçamento acaba em 900 MB e o limite real do Pages é 1 GB.
+const SIZE_WARN_BYTES = 780 * 1024 * 1024;
+if (distBytes >= SIZE_WARN_BYTES && distBytes < 900 * 1024 * 1024) {
+  console.log(`::warning title=dist perto do limite::O dist tem ${(distBytes / 1024 / 1024).toFixed(0)} MB; o orçamento é 900 MB (limite do Pages: 1 GB). Reduza sprites ou áudio antes de acrescentar mais arquivos.`);
+}
+// Resumo da execução no GitHub Actions: deixa a folga visível a cada deploy.
+if (process.env.GITHUB_STEP_SUMMARY) {
+  const used = distBytes / 1024 / 1024;
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Tamanho do dist
+
+${used.toFixed(1)} MB de 900 MB de orçamento (folga de ${(900 - used).toFixed(1)} MB; limite do Pages: 1 GB).
+`);
+}
 
 for (const note of notes) console.log(`ok: ${note}`);
 if (problems.length > 0) {
