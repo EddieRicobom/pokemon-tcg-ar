@@ -63,5 +63,7 @@ describe('rotas por hash', () => {
     expect(routeFlags('#/pins?outra=1&vila').has('vila')).toBe(true);
     expect(routeFlags('#/pins?outra=1').size).toBe(0);
     expect([...routeFlags('#/caixa?formatacao=1')]).toEqual(['formatacao']);
+    expect([...routeFlags('#/caixa?virtual=1&batalha=1')].sort()).toEqual(['batalha', 'virtual']);
+    expect(routeHref('caixa', undefined, ['virtual'])).toBe('#/caixa?virtual=1');
   });
 });

@@ -46,10 +46,10 @@ export function parseRoute(hash: string): Route {
  * Sinalizadores que a Vila põe no endereço (`#/pins?vila=1`) para as outras telas saberem de onde você veio:
  * `vila` = «veio da Vila» (a tela mostra «Voltar à Vila»), `pvp` = abrir o PvP da Caixa, `batalha` = veio do
  * Fliperama para uma batalha na câmera, `formatacao`/`restauracao` levam o modo contínuo escolhido da Arena até a Caixa
- * e `jogos` = o Treinador abre nos minigames.
+ * `jogos` = o Treinador abre nos minigames e `virtual` = a Caixa abre na Arena 3D (palco virtual, sem câmera).
  */
-export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos';
-const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos'];
+export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual';
+const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual'];
 
 export function routeFlags(hash: string): Set<RouteFlag> {
   const query = hash.split('?')[1] ?? '';

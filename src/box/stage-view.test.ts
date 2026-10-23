@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { visibleVerticalFov } from './orientation';
-import { backdropAspect, stageVerticalFov } from './stage-view';
+import { backdropAspect, stageVerticalFov, VIRTUAL_YAW_RAD, virtualPitchRad } from './stage-view';
+import { Vector3 } from 'three';
+import { ARENA_MAX_DISTANCE } from './arena';
+import { DEFAULT_PHONE_HEIGHT_M, intersectFloor } from './floor';
+import { lookQuaternion } from './orientation';
 
 describe('palco da Caixa com e sem vídeo', () => {
   it('com vídeo, a proporção do fundo é a do vídeo', () => {
@@ -29,5 +33,24 @@ describe('palco da Caixa com e sem vídeo', () => {
 
   it('antes de o vídeo carregar, o campo é o mesmo de não ter vídeo', () => {
     expect(stageVerticalFov(900, 400, 63, { videoWidth: 0, videoHeight: 0 })).toBe(stageVerticalFov(900, 400, 63));
+  });
+});
+
+describe('câmera do palco virtual', () => {
+  it('olha para baixo para o centro da tela encontrar o chão onde a arena da batalha é posta', () => {
+    const pitch = virtualPitchRad(DEFAULT_PHONE_HEIGHT_M, ARENA_MAX_DISTANCE);
+    expect(pitch).toBeLessThan(0);
+    const forward = new Vector3(0, 0, -1).applyQuaternion(lookQuaternion(VIRTUAL_YAW_RAD, pitch));
+    const hit = intersectFloor(forward, DEFAULT_PHONE_HEIGHT_M);
+    expect(hit.ok).toBe(true);
+    if (hit.ok) {
+      expect(Math.hypot(hit.point.x, hit.point.z)).toBeCloseTo(ARENA_MAX_DISTANCE, 6);
+      expect(hit.point.x).toBeCloseTo(0, 9);
+      expect(hit.point.z).toBeLessThan(0);
+    }
+  });
+
+  it('uma câmera mais alta olha mais para baixo para chegar ao mesmo ponto', () => {
+    expect(virtualPitchRad(2, 3.2)).toBeLessThan(virtualPitchRad(1, 3.2));
   });
 });

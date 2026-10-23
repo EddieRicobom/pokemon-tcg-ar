@@ -160,6 +160,15 @@ Tela "Caixa": os Pokémon da equipe (até 40; sem escolha, as 6 cartas mais rece
 - Dados (`load-creatures.ts`): lê o cache de cartas, decodifica o GIF (ou PNG de reserva) de cada carta com sprite. Uma carta com defeito entra na lista de falhas e não impede as outras.
 - Limitações honestas: a caixa acompanha o **giro** do celular, mas não a **caminhada** (sem paralaxe: ao andar, ela parece deslizar); a altura do celular e o campo de visão são estimativas; nada disso foi validado em aparelho real. A batalha automática está descrita abaixo.
 
+### Arena 3D: o palco virtual da Caixa (`src/box/coliseu-scenery.ts`, `startBox({ virtual: true })`)
+
+A mesma tela da Caixa (`CaixaView`, a mesma sessão de batalha) abre sem câmera quando o endereço traz `?virtual=1` ou quando se escolhe **«Arena virtual»** no interruptor de fundo (ao lado de **«Câmera (AR)»**, que continua sendo a Caixa em AR de sempre; o fundo vale para a visita e não muda com a sessão aberta). No palco virtual:
+
+- **Nada de câmera nem de sensores**: `startBox` não pede permissão e `OrientationSource.startFixed` já começa no modo «arrastar para olhar», ignorando até a fonte de sensores compartilhada. A visão nasce de frente para a arena, com a inclinação que faz o centro da tela encontrar o chão a `ARENA_MAX_DISTANCE` (`virtualPitchRad` em `box/stage-view.ts`), e a arena é colocada sozinha (`placeAt(0, 0)`), sem «Colocar a caixa aqui» nem «Mover». A altura do celular e o atraso do sensor ficam fora dos Ajustes.
+- **Cenário do Coliseu** (`ColiseuScenery`, `BoxScene.setBackdrop('virtual')`): areia no chão, muro de arcadas de 5 m de raio, arquibancada inclinada com torcida (vermelha para a esquerda da tela e azul para a direita, como as equipes da batalha) e 12 tochas que tremem. Tudo é código (texturas pixeladas, ~12 cm por pixel, sem imagens), 3 malhas e 12 sprites; o céu é um degradê CSS atrás do canvas transparente (no lugar do vídeo). O cenário acompanha o ponto da caixa e a cor da luz da cena (escurece no foco dos golpes); o chão de grama da caixa e o clima de chão não aparecem nele.
+- **Arena de areia**: o chão da batalha usa o layout `coliseu` (`GroundLayout`, areia de ponta a ponta, só as marcações do duelo e sem enfeites); com a câmera continua o jardim de antes.
+- Não há opção própria para desligar o cenário (não pesa como o clima ou as luzes); «Economia» do Rotom e a taxa de quadros valem como nas outras telas. **Nada disso foi medido em celular real.**
+
 ### Telas com câmera: tudo sobre a imagem (Escanear, Várias, Caixa e teste do renderizador)
 
 - **Modo imersivo** (`useFullscreen(target, immersive)` em `src/app/fullscreen.ts`; classe `.viewport.immersive`): enquanto a câmera está ligada (ou abrindo), o visor cobre a janela inteira por CSS (`position: fixed`, acima das abas), a página de trás não rola (`body.no-scroll`) e **nada importante fica abaixo do visor**. É independente da Fullscreen API, que só esconde a barra do navegador (botão "Tela cheia"). "Fechar" devolve a página.

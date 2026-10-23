@@ -12,6 +12,7 @@ import { arenaFrame, arenaRadii } from './arena';
 import { BattleDirector } from './battle-director';
 import { FxLights } from './fx-lights';
 import { Ground } from './ground';
+import { ColiseuScenery } from './coliseu-scenery';
 import { disposeBubbleTextures } from './emoji-bubble';
 import { SocialDirector } from './social';
 import type { SoundSink } from './sound-recipes';
@@ -26,6 +27,8 @@ export const MAX_CREATURES = 40;
 export const DEFAULT_HALF_SIZE_M = 1.2;
 
 export type BoxMode = 'passeio' | 'formacao';
+/** O que fica atrás da cena: a câmera do celular (AR) ou o palco virtual do Coliseu. */
+export type Backdrop = 'camera' | 'virtual';
 
 /** Altura típica dos morrinhos da caixa (m) para o meio-lado `half`: dá relevo visível sem esconder os Pokémon. */
 export function reliefAmplitude(half: number): number {
@@ -82,6 +85,9 @@ export class BoxScene {
   /** Chão em pixel art e terreno que muda com os golpes. */
   private terrain = true;
   private boxGround: Ground | null = null;
+  /** O fundo da cena: a câmera do celular (AR) ou o palco virtual do Coliseu (sem câmera). */
+  private backdrop: Backdrop = 'camera';
+  private scenery: ColiseuScenery | null = null;
   /** Encontros entre Pokémon e balões de emoji (só no passeio, nunca na batalha nem na formação). */
   private readonly social: SocialDirector;
   private socialOn = true;
@@ -105,6 +111,40 @@ export class BoxScene {
 
   get placed(): boolean {
     return this.anchor !== null;
+  }
+
+  get backdropKind(): Backdrop {
+    return this.backdrop;
+  }
+
+  /** O cenário do Coliseu (null com a câmera como fundo). */
+  get coliseu(): ColiseuScenery | null {
+    return this.scenery;
+  }
+
+  /**
+   * Troca o fundo. No palco virtual o cenário do Coliseu (areia, muro, arquibancada e tochas) acompanha o ponto onde a caixa
+   * foi colocada e o chão de grama da caixa some (a areia é o chão); na câmera (AR) o cenário não existe.
+   */
+  setBackdrop(kind: Backdrop): void {
+    if (this.backdrop === kind) return;
+    this.backdrop = kind;
+    if (kind === 'virtual') {
+      this.scenery = new ColiseuScenery();
+      this.scene.add(this.scenery.group);
+    } else {
+      this.scenery?.dispose();
+      this.scenery = null;
+    }
+    this.floor.visible = this.anchor !== null && kind === 'camera' && !this.director;
+    this.syncScenery();
+  }
+
+  /** O cenário fica no chão, no centro da caixa colocada (escondido enquanto não há caixa). */
+  private syncScenery(): void {
+    if (!this.scenery) return;
+    this.scenery.group.visible = this.anchor !== null;
+    if (this.anchor) this.scenery.group.position.copy(this.anchor);
   }
 
   get halfSize(): number {
@@ -147,13 +187,15 @@ export class BoxScene {
     this.anchor = kept.point.clone();
     this.floor.position.copy(kept.point);
     this.setHalfSize(this.half);
-    this.floor.visible = true;
+    this.floor.visible = this.backdrop === 'camera';
+    this.syncScenery();
     return { moved: kept.moved };
   }
 
   clearPlacement(): void {
     this.anchor = null;
     this.floor.visible = false;
+    this.syncScenery();
   }
 
   setHalfSize(half: number): void {
@@ -165,6 +207,7 @@ export class BoxScene {
       if (kept.moved) {
         this.anchor = kept.point.clone();
         this.floor.position.copy(kept.point);
+        this.syncScenery();
       }
     }
     this.rebuildFloor();
@@ -322,7 +365,7 @@ export class BoxScene {
     this.floor.visible = false;
     this.director = new BattleDirector({
       fighters, creatures: fighting, result, root: this.battleRoot, camera: this.camera, rx, rz, rng, sound: this.sound ?? undefined, terrain: this.terrain,
-      teamNames: plan?.teamNames, banner: plan?.banner,
+      teamNames: plan?.teamNames, banner: plan?.banner, arenaLayout: this.backdrop === 'virtual' ? 'coliseu' : undefined,
     });
     this.director.lighting = this.lighting;
     this.director.impactFx = this.impactFx;
@@ -363,7 +406,7 @@ export class BoxScene {
         this.scene.add(creature.group);
         Object.assign(creature.state, createWander(this.half, this.rng));
       }
-      this.floor.visible = this.anchor !== null;
+      this.floor.visible = this.anchor !== null && this.backdrop === 'camera';
     }
   }
 
@@ -436,6 +479,8 @@ export class BoxScene {
     const gy = this.lighting ? Math.min(1.1, this.env.y * groundDim * wg) : 1;
     const gz = this.lighting ? Math.min(1.1, this.env.z * groundDim * wb) : 1;
     this.boxGround?.setTint(gx, gy, gz);
+    this.scenery?.setTint(gx, gy, gz);
+    this.scenery?.update(nowMs);
     this.director?.ground?.setTint(gx, gy, gz);
     this.camera.updateMatrixWorld(true);
     const right = this.director ? this.battleRight : new Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
@@ -464,6 +509,8 @@ export class BoxScene {
 
   dispose(): void {
     this.stopBattle();
+    this.scenery?.dispose();
+    this.scenery = null;
     this.weatherFx.dispose();
     this.boxGround?.dispose();
     this.boxGround = null;

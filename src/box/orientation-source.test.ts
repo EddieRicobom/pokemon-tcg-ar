@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Quaternion, Vector3 } from 'three';
 import { OrientationFeed } from '../sensors/orientation-feed';
 import { OrientationSource } from './orientation-source';
+import { lookQuaternion } from './orientation';
 
 const yaw = (deg: number) => new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), (deg * Math.PI) / 180);
 const angle = (a: Quaternion, b: Quaternion) => a.angleTo(b);
@@ -90,5 +91,49 @@ describe('OrientationSource', () => {
     expect(feed.active).toBe(true);
     source.stop();
     expect(feed.active).toBe(false);
+  });
+});
+
+describe('OrientationSource no palco virtual', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('começa no modo "arrastar para olhar", na pose pedida, sem avisar nem esperar o sensor', () => {
+    const feed = new OrientationFeed();
+    const source = new OrientationSource(feed);
+    const modes: string[] = [];
+    source.startFixed(0.5, -0.4, (m) => modes.push(m));
+    expect(source.mode).toBe('manual');
+    expect(angle(source.read(1000), lookQuaternion(0.5, -0.4))).toBeLessThan(1e-6);
+    vi.advanceTimersByTime(5000);
+    expect(source.mode).toBe('manual');
+    expect(modes).toEqual([]);
+    source.stop();
+  });
+
+  it('amostras de sensor (de outra tela, pela fonte compartilhada) não mexem na visão', () => {
+    const feed = new OrientationFeed();
+    const source = new OrientationSource(feed);
+    source.latencyMs = 0;
+    source.startFixed(0, -0.4);
+    feed.push(1000, yaw(80));
+    expect(angle(source.read(1000), lookQuaternion(0, -0.4))).toBeLessThan(1e-6);
+    expect(source.mode).toBe('manual');
+    source.stop();
+  });
+
+  it('arrastar gira a visão, e parar volta a aceitar o sensor', () => {
+    const feed = new OrientationFeed();
+    const source = new OrientationSource(feed);
+    source.latencyMs = 0;
+    source.startFixed(0, -0.4);
+    source.lookBy(60, 0);
+    expect(angle(source.read(1000), lookQuaternion(0, -0.4))).toBeGreaterThan(0.2);
+    source.stop();
+    source.start();
+    feed.push(2000, yaw(0));
+    source.read(2000);
+    expect(source.mode).toBe('sensor');
+    source.stop();
   });
 });

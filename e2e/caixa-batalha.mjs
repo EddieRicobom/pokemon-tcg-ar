@@ -1,5 +1,6 @@
 /** Fumaça da Caixa com câmera FALSA: abre a câmera, coloca a caixa, batalha e para, sem erros de página.
- * Dois cenários: a batalha comum (3 moradores) e a corrida 6×6 da Arena (6 moradores, `#/caixa?formatacao=1`).
+ * Três cenários: a batalha comum (3 moradores), a corrida 6×6 da Arena (6 moradores, `#/caixa?formatacao=1`) e a Arena 3D
+ * (palco virtual, `#/caixa?virtual=1`: sem câmera, sem sensores, a arena já nasce de frente).
  * Não simula cartas reconhecidas nem AR de verdade: os moradores são Digital Pokémon num save de teste, com sprites
  * do pacote local. Os dados de batalha vêm da rede (sem rede, o app usa valores neutros e avisa).
  * APP_URL=http://127.0.0.1:4175/pokemon-tcg-ar/ BROWSER_PATH=<opcional> SCREENSHOT_DIR=<opcional> node e2e/caixa-batalha.mjs
@@ -37,6 +38,9 @@ async function openPage(count) {
       recap: { day: '2026-10-23', at: Date.now() }, lastSeen: Date.now(),
       legendary: { history: [], attempts: 1, lastRollDay: '2026-10-23', active: null },
     }));
+    // Conta os pedidos de câmera: a Arena 3D (palco virtual) não pode pedir nenhum.
+    const gum = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+    if (gum) navigator.mediaDevices.getUserMedia = (...args) => { window.__gum = (window.__gum ?? 0) + 1; return gum(...args); };
     // Sem eventos de sensor o app cai no modo manual depois de 1,5 s.
     setInterval(() => window.dispatchEvent(Object.assign(new Event('deviceorientation'), { alpha: 0, beta: 25, gamma: 0 })), 16);
   }, count);
@@ -88,6 +92,42 @@ try {
     await page.getByRole('button', { name: 'Fechar' }).click();
     assert.deepEqual(errors, [], `erros na página (corrida 6×6): ${errors.join(' | ')}`);
     console.log('ok: corrida 6×6 da Arena (começar, em cena, desistir) sem erros');
+  }
+  {
+    const { page, errors, capture } = await openPage(3);
+    await page.goto(`${base}#/caixa?virtual=1`);
+    await page.getByRole('heading', { name: 'Arena 3D' }).waitFor();
+    await capture('arena3d-ociosa');
+    await page.getByRole('button', { name: /Entrar na Arena 3D/ }).click();
+    await waitEnabled(page, 'Batalhar');
+    assert.equal(await page.getByRole('button', { name: 'Colocar a caixa aqui' }).count(), 0, 'a Arena 3D não pede para colocar a caixa');
+    assert.equal(await bar(page).getByRole('button', { name: 'Mover' }).count(), 0, 'sem "Mover" no palco virtual');
+    await page.waitForTimeout(1500);
+    await capture('arena3d-montada');
+    // Sem sensores: arrastar na imagem gira a visão (para os lados e para cima), e a arena continua no lugar.
+    const stage = await page.locator('.box-viewport canvas').boundingBox();
+    await page.mouse.move(stage.x + 200, stage.y + 300);
+    await page.mouse.down();
+    await page.mouse.move(stage.x + 60, stage.y + 360, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(600);
+    await capture('arena3d-girada');
+    await bar(page).getByRole('button', { name: 'Batalhar' }).click();
+    await page.locator('.battle-hud').waitFor({ timeout: 60_000 });
+    await page.waitForTimeout(2500);
+    await capture('arena3d-batalha');
+    await page.getByRole('button', { name: 'De novo' }).waitFor({ timeout: 180_000 });
+    await capture('arena3d-fim');
+    await bar(page).getByRole('button', { name: 'Parar' }).click();
+    await page.locator('.battle-hud').waitFor({ state: 'detached', timeout: 10_000 });
+    await page.getByRole('button', { name: 'Fechar' }).click();
+    await page.getByRole('button', { name: /Entrar na Arena 3D/ }).waitFor();
+    assert.equal(await page.evaluate(() => window.__gum ?? 0), 0, 'a Arena 3D não pode pedir a câmera');
+    // O interruptor volta para a câmera (AR) sem recarregar.
+    await page.getByRole('button', { name: /Câmera \(AR\)/ }).click();
+    await page.getByRole('button', { name: /Abrir câmera e sensores/ }).waitFor();
+    assert.deepEqual(errors, [], `erros na página (Arena 3D): ${errors.join(' | ')}`);
+    console.log('ok: Arena 3D (sem câmera, sem pedir a câmera, batalha completa, parar, fechar e interruptor de AR) sem erros');
   }
 } finally {
   await browser.close();

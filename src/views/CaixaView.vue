@@ -35,7 +35,7 @@ import type { PokemonType } from '../core/pokemon-data';
 import { loadPinData } from '../app/services';
 import { boxPvp } from '../app/box-pvp-store';
 import { BOX_PVP_LABELS_PT } from '../pvp/box-wire';
-import type { BoxMode } from '../box/box-scene';
+import type { Backdrop, BoxMode } from '../box/box-scene';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { DEFAULT_PHONE_HEIGHT_M, PHONE_HEIGHT_RANGE } from '../box/floor';
 import { loadCreatureEntries } from '../box/load-creatures';
@@ -95,6 +95,12 @@ const loadingCreatures = ref(false);
 /** Vindo da Vila (`#/caixa?vila=1`) a Vila abre direto; vindo da Arena (`?pvp=1`) o PvP já aparece aberto. */
 const arrival = routeFlags(window.location.hash);
 const pvpOpen = ref(arrival.has('pvp'));
+/**
+ * O fundo da arena: a câmera do celular (AR, a Caixa em AR de sempre) ou o palco virtual do Coliseu (Arena 3D, sem câmera
+ * e sem sensores). Vem do endereço (`?virtual=1`) e dá para trocar no botão antes de abrir; durante a sessão não muda.
+ */
+const backdrop = ref<Backdrop>(arrival.has('virtual') ? 'virtual' : 'camera');
+const virtual = computed(() => backdrop.value === 'virtual');
 const endlessModes: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
 const endlessShortcut = ref<EndlessArenaMode | null>(arrival.has('formatacao') ? 'formatacao' : arrival.has('restauracao') ? 'restauracao' : null);
 const pvpEl = ref<HTMLDetailsElement | null>(null);
@@ -313,9 +319,58 @@ async function populate(): Promise<void> {
   }
 }
 
+/** O que a cena recebe ao abrir, com a câmera ou sem ela. */
+function applyBoxSettings(running: RunningBox): void {
+  running.setPhoneHeight(phoneHeight.value);
+  running.setHalfSize(boxSize.value / 2);
+  running.setVideoFov(videoFov.value);
+  running.setSmoothing(effectiveVisual.value.smoothing);
+  running.setLighting(effectiveVisual.value.lighting);
+  running.setImpactEffects(effectiveVisual.value.impactFx && !reducedMotion.value);
+  running.setTerrain(effectiveVisual.value.terrain);
+  running.setSocial(effectiveVisual.value.social);
+  running.setWeather(effectiveVisual.value.weather);
+  running.setSound(effectiveVisual.value.sound);
+  running.setMode(boxMode.value);
+}
+
+/** Arena 3D: sem câmera, sem sensores e sem escolher o ponto no chão (a arena nasce de frente para a visão). */
+async function openVirtual(version: number): Promise<void> {
+  const canvas = canvasEl.value;
+  const stage = stageEl.value;
+  if (!canvas || !stage) return;
+  phase.value = 'starting';
+  error.value = '';
+  try {
+    const { startBox } = await loadChunk(() => import('../box/start-box'));
+    if (disposed || version !== sessionVersion) return;
+    const openedBox = await startBox({
+      canvas, container: stage, virtual: true, onModeChange: (m) => (mode.value = m), onBattleHud: (hud) => (battleHud.value = hud),
+    });
+    if (disposed || version !== sessionVersion) { openedBox.stop(); return; }
+    box = openedBox;
+  } catch (e) {
+    if (disposed || version !== sessionVersion) return;
+    close();
+    error.value = `Não consegui montar a Arena 3D: ${e instanceof Error ? e.message : String(e)}`;
+    return;
+  }
+  applyBoxSettings(box);
+  const placed = box.placeAt(0, 0);
+  if (!placed.ok) {
+    close();
+    error.value = `Não consegui montar a Arena 3D: ${placed.message}`;
+    return;
+  }
+  phase.value = 'running';
+  hint.value = '';
+  void populate();
+}
+
 async function open(): Promise<void> {
   if (disposed || phase.value !== 'idle') return;
   const version = ++sessionVersion;
+  if (virtual.value) return openVirtual(version);
   const opening = new AbortController();
   cameraOpening = opening;
   // iOS: a permissão dos sensores precisa ser pedida direto do toque, antes de qualquer espera.
@@ -357,17 +412,7 @@ async function open(): Promise<void> {
     close();
     return;
   }
-  box.setPhoneHeight(phoneHeight.value);
-  box.setHalfSize(boxSize.value / 2);
-  box.setVideoFov(videoFov.value);
-  box.setSmoothing(effectiveVisual.value.smoothing);
-  box.setLighting(effectiveVisual.value.lighting);
-  box.setImpactEffects(effectiveVisual.value.impactFx && !reducedMotion.value);
-  box.setTerrain(effectiveVisual.value.terrain);
-  box.setSocial(effectiveVisual.value.social);
-  box.setWeather(effectiveVisual.value.weather);
-  box.setSound(effectiveVisual.value.sound);
-  box.setMode(boxMode.value);
+  applyBoxSettings(box);
   phase.value = 'placing';
   hint.value = 'Aponte o celular para o chão onde a caixa vai ficar e toque em "Colocar a caixa aqui".';
   void populate();
@@ -518,7 +563,7 @@ const notices = computed<Notice[]>(() => {
   const list: Notice[] = [];
   if (!immersive.value) return list;
   if (error.value) list.push({ text: error.value, tone: 'error' });
-  if (phase.value === 'starting') list.push({ text: 'Abrindo a câmera e os sensores…', tone: 'busy' });
+  if (phase.value === 'starting') list.push({ text: virtual.value ? 'Montando a arena…' : 'Abrindo a câmera e os sensores…', tone: 'busy' });
   for (const note of megaNotes.value) list.push({ text: note.text, tone: note.tone });
   if (battleHud.value) return list;
   if (hint.value) list.push({ text: hint.value, tone: phase.value === 'placing' ? 'ok' : 'busy' });
@@ -536,7 +581,7 @@ const notices = computed<Notice[]>(() => {
   } else if (battleShortcut.value && !preparing.value) {
     const left = battleRewardsLeft(village, dayKey(new Date()));
     list.push({
-      text: 'Fliperama: batalha na câmera',
+      text: virtual.value ? 'Fliperama: batalha na Arena 3D' : 'Fliperama: batalha na câmera',
       sub: `${phase.value === 'running' ? 'Toque em Batalhar' : 'Coloque a caixa no chão e toque em Batalhar'} · ${left > 0 ? `+100 moedas (${left} de ${BATTLE_REWARDS_PER_DAY} hoje)` : 'as moedas de hoje já saíram'}`,
       tone: 'ok',
       gold: true,
@@ -545,7 +590,7 @@ const notices = computed<Notice[]>(() => {
   if (picked.value) {
     list.push({ text: `${picked.value.name}${picked.value.dexId ? ` · Nº ${picked.value.dexId}` : ''}${picked.value.shiny ? ' · Shiny' : ''}${picked.value.mega ? ' · Mega' : ''}`, sub: picked.value.detail, tone: 'ok', gold: true });
   }
-  if (cameraOn.value && mode.value === 'manual') {
+  if (cameraOn.value && !virtual.value && mode.value === 'manual') {
     list.push({ text: 'Este aparelho não enviou dados dos sensores de movimento. Arraste na imagem para olhar em volta.', tone: 'warn' });
   }
   if (cameraOn.value && loadingCreatures.value) list.push({ text: 'Chamando os Pokémon…', tone: 'busy' });
@@ -607,8 +652,13 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="card" aria-labelledby="box-title">
-    <h2 id="box-title">Caixa em AR</h2>
-    <p class="note">
+    <h2 id="box-title">{{ virtual ? 'Arena 3D' : 'Caixa em AR' }}</h2>
+    <p v-if="virtual" class="note">
+      Os moradores da Vila lutam num Coliseu virtual, sem câmera nem sensores: arraste na imagem para olhar em volta. Quem
+      aparece você escolhe em <a :href="routeHref('cartas')">Minhas cartas</a>; quem luta em cada batalha é escolhido na
+      escalação. Prefere lutar na sua sala? Troque o fundo para a câmera (AR) antes de entrar.
+    </p>
+    <p v-else class="note">
       Até 40 moradores da Vila aparecem soltos num quadrado no chão. Gire o celular para olhar em volta. Quem aparece
       você escolhe em <a :href="routeHref('cartas')">Minhas cartas</a>; quem luta em cada batalha é
       escolhido na escalação.
@@ -623,14 +673,15 @@ onBeforeUnmount(() => {
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
     >
-      <video ref="videoEl" class="feed" playsinline muted :style="videoStyle"></video>
+      <video v-show="!virtual" ref="videoEl" class="feed" playsinline muted :style="videoStyle"></video>
+      <div v-if="virtual" class="virtual-sky" aria-hidden="true" :style="videoStyle"></div>
       <div v-if="battleHud" class="battle-env" aria-hidden="true" :style="shakeStyle">
         <div class="vignette" :style="{ opacity: Math.min(1, battleHud.dim * 3) }"></div>
         <div v-if="envLights" class="lights" :style="envLights"></div>
       </div>
       <canvas ref="canvasEl" class="overlay" :style="shakeStyle" aria-label="Caixa com os Pokémon escaneados"></canvas>
-      <p v-if="phase === 'idle'" class="placeholder">Câmera desligada</p>
-      <div v-if="phase === 'starting'" class="box-opening" role="status"><p>Abrindo câmera e sensores…</p><button type="button" @click.stop="close">Cancelar abertura</button></div>
+      <p v-if="phase === 'idle'" class="placeholder">{{ virtual ? 'Arena desligada' : 'Câmera desligada' }}</p>
+      <div v-if="phase === 'starting'" class="box-opening" role="status"><p>{{ virtual ? 'Montando a arena…' : 'Abrindo câmera e sensores…' }}</p><button type="button" @click.stop="close">Cancelar abertura</button></div>
       <div v-if="phase === 'placing'" class="crosshair" aria-hidden="true"></div>
       <div v-if="battleHud" class="battle-hud" :class="{ compact: battleHud.bars.length > 4, dense: battleHud.bars.length > DENSE_BARS }">
         <div class="battle-top">
@@ -816,19 +867,19 @@ onBeforeUnmount(() => {
             <button type="button" class="link" aria-label="Fechar ajustes da Caixa" @click="showAdjust = false">Fechar</button>
           </header>
           <div class="layout">
-            <label>Altura do celular ({{ phoneHeight.toFixed(2) }} m)
+            <label v-if="!virtual">Altura do celular ({{ phoneHeight.toFixed(2) }} m)
               <input v-model.number="phoneHeight" type="range" :min="PHONE_HEIGHT_RANGE.min" :max="PHONE_HEIGHT_RANGE.max" step="0.05" @input="onPhoneHeight" />
             </label>
             <label>Tamanho da caixa ({{ boxSize.toFixed(1) }} m de lado)
               <input v-model.number="boxSize" type="range" min="1" max="6" step="0.2" @input="onBoxSize" />
             </label>
-            <label>Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)
+            <label v-if="!virtual">Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)
               <input v-model.number="sensorSettings.latencyMs" type="range" :min="LATENCY_RANGE.min" :max="LATENCY_RANGE.max" step="5" />
             </label>
             <label>Ângulo de visão da câmera ({{ videoFov }}°)
               <input v-model.number="videoFov" type="range" min="45" max="85" step="1" @input="onFov" />
             </label>
-            <p class="meta">
+            <p v-if="!virtual" class="meta">
               A caixa fica presa ao chão pelos sensores de movimento: ela acompanha o giro do celular, mas não acompanha você andando.
               Se o chão parecer deslizar, ajuste a altura do celular e o ângulo de visão.
             </p>
@@ -846,7 +897,7 @@ onBeforeUnmount(() => {
           <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />
           <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
           <StageButton v-if="battling" icon="stop" :label="endlessRun ? `Desistir · ${endlessRun.score}` : 'Parar'" @click="stopBattle" />
-          <StageButton v-if="phase === 'running' && !battling" icon="move" label="Mover" @click="moveBox" />
+          <StageButton v-if="phase === 'running' && !battling && !virtual" icon="move" label="Mover" @click="moveBox" />
           <StageButton v-if="challenge && !battling" icon="close" label="Sem desafio" @click="cancelChallenge" />
           <StageButton icon="close" label="Fechar" @click="close" />
         </div>
@@ -862,9 +913,14 @@ onBeforeUnmount(() => {
       </span>
     </div>
 
+    <div v-if="phase === 'idle'" class="box-backdrop" role="group" aria-label="Fundo da arena">
+      <button type="button" :class="{ active: virtual }" :aria-pressed="virtual" @click="backdrop = 'virtual'">🏟️ Arena virtual</button>
+      <button type="button" :class="{ active: !virtual }" :aria-pressed="!virtual" @click="backdrop = 'camera'">📷 Câmera (AR)</button>
+    </div>
+
     <div class="actions">
       <button ref="openButton" type="button" class="primary" :class="{ 'battle-cta': battleShortcut }" :disabled="phase !== 'idle'" @click="open">
-        {{ phase === 'starting' ? 'Abrindo…' : endlessShortcut ? `⚔️ Abrir câmera · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Abrir câmera e batalhar' : 'Abrir câmera e sensores' }}
+        {{ phase === 'starting' ? 'Abrindo…' : virtual ? (endlessShortcut ? `⚔️ Entrar na arena · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Entrar na arena e batalhar' : '🏟️ Entrar na Arena 3D') : endlessShortcut ? `⚔️ Abrir câmera · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Abrir câmera e batalhar' : 'Abrir câmera e sensores' }}
       </button>
       <a v-if="battleShortcut || endlessShortcut" class="button" :href="routeHref(endlessShortcut ? 'arena' : 'vila')">{{ endlessShortcut ? 'Voltar à Arena' : 'Voltar à Vila' }}</a>
     </div>

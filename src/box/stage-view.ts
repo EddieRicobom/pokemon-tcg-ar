@@ -21,3 +21,12 @@ export function backdropAspect(width: number, height: number, video?: VideoSize 
 export function stageVerticalFov(width: number, height: number, fovDeg: number, video?: VideoSize | null): number {
   return visibleVerticalFov(fovDeg, backdropAspect(width, height, video), width / height);
 }
+
+/**
+ * A câmera do palco virtual: de frente para a arena, olhando para baixo o bastante para o centro da tela encontrar o chão
+ * a `distance` metros (a distância máxima em que a arena da batalha é posta, para o cenário e a luta ficarem alinhados).
+ */
+export const VIRTUAL_YAW_RAD = 0;
+export function virtualPitchRad(phoneHeightM: number, distanceM: number): number {
+  return -Math.atan2(phoneHeightM, distanceM);
+}

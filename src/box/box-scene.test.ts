@@ -4,6 +4,7 @@ import { BoxScene, MAX_CREATURES } from './box-scene';
 import type { CreatureEntry } from './box-scene';
 import { minBoxDistance } from './floor';
 import { lookQuaternion } from './orientation';
+import { buildFighter } from '../core/battle';
 
 function entry(i: number, size = 8): CreatureEntry {
   const data = new Uint8ClampedArray(size * size * 4);
@@ -374,5 +375,66 @@ describe('BoxScene: clima', () => {
     const amb = (s: BoxScene) => (s.fx as unknown as { ambient: { x: number } }).ambient?.x;
     if (amb(sunny) !== undefined) expect(amb(rainy)!).toBeLessThan(amb(sunny)!);
     expect(rainy.groundOfBox!.tint.r).toBeLessThan(sunny.groundOfBox!.tint.r);
+  });
+});
+
+describe('BoxScene com o palco virtual (Arena 3D)', () => {
+  const fighters = (n: number) => Array.from({ length: n }, (_, i) => buildFighter({ id: `c${i}`, name: `Mon ${i}`, profile: { dexId: i + 1, types: ['normal'], stats: { hp: 60, attack: 60, defense: 60, spAttack: 60, spDefense: 60, speed: 60 + i } }, card: null, gameMoves: [] }));
+
+  it('o cenário do Coliseu só aparece com a caixa colocada e vai para o centro dela', () => {
+    const scene = sceneLookingDown();
+    expect(scene.coliseu).toBeNull();
+    scene.setBackdrop('virtual');
+    expect(scene.backdropKind).toBe('virtual');
+    expect(scene.coliseu).not.toBeNull();
+    expect(scene.coliseu!.group.visible).toBe(false);
+    scene.place(new Vector3(0, -1.3, -4));
+    expect(scene.coliseu!.group.visible).toBe(true);
+    expect(scene.coliseu!.group.position.distanceTo(scene.center!)).toBeLessThan(1e-9);
+    scene.clearPlacement();
+    expect(scene.coliseu!.group.visible).toBe(false);
+    scene.dispose();
+    expect(scene.coliseu).toBeNull();
+  });
+
+  it('o chão de grama da caixa fica escondido no palco virtual e volta com a câmera', () => {
+    const scene = sceneLookingDown();
+    scene.place(new Vector3(0, -1.3, -4));
+    const floorVisible = () => scene.groundOfBox!.group.parent!.visible;
+    expect(floorVisible()).toBe(true);
+    scene.setBackdrop('virtual');
+    expect(floorVisible()).toBe(false);
+    scene.setBackdrop('camera');
+    expect(floorVisible()).toBe(true);
+    expect(scene.coliseu).toBeNull();
+    scene.dispose();
+  });
+
+  it('na batalha a arena é de areia de ponta a ponta; com a câmera continua o jardim de antes', () => {
+    const run = (backdrop: 'camera' | 'virtual') => {
+      const scene = sceneLookingDown();
+      scene.setBackdrop(backdrop);
+      scene.place(new Vector3(0, -1.3, -3.2));
+      scene.setCreatures([entry(0), entry(1)]);
+      scene.startBattle(fighters(2), seeded());
+      const grid = scene.battleGround!.grid;
+      const kinds = new Set<string>();
+      for (let i = 0; i < grid.cols * grid.rows; i++) kinds.add(grid.groundAt(i));
+      scene.dispose();
+      return kinds;
+    };
+    expect([...run('virtual')]).toEqual(['path']);
+    expect(run('camera').has('grass')).toBe(true);
+  });
+
+  it('o cenário acompanha a luz da cena e as tochas tremem a cada quadro, sem erro', () => {
+    const scene = sceneLookingDown();
+    scene.setBackdrop('virtual');
+    scene.place(new Vector3(0, -1.3, -3.2));
+    scene.setCreatures([entry(0), entry(1)]);
+    scene.update(100);
+    scene.update(116);
+    expect(() => scene.update(132)).not.toThrow();
+    scene.dispose();
   });
 });
