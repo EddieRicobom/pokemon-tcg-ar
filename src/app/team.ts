@@ -18,13 +18,16 @@ export function toggleMember(team: readonly string[], id: string, max: number = 
   return { team: [...team, id], full: false };
 }
 
-/** Só ids de cartas que ainda existem e têm sprite, sem repetir, até o limite. */
+/**
+ * Só ids de cartas que ainda existem no cache, sem repetir, até o limite. Carta com sprite faltando continua na equipe:
+ * o navegador pode expulsar o arquivo ou um download pode ter falhado, e regravar a equipe sem ela apagaria a escolha.
+ */
 export function sanitizeTeam(ids: unknown, cards: readonly TeamCandidate[], max: number = TEAM_SIZE): string[] {
   if (!Array.isArray(ids)) return [];
-  const usable = new Set(cards.filter((card) => card.sprite.state === 'ok').map((card) => card.id));
+  const known = new Set(cards.map((card) => card.id));
   const out: string[] = [];
   for (const id of ids) {
-    if (typeof id === 'string' && usable.has(id) && !out.includes(id)) out.push(id);
+    if (typeof id === 'string' && known.has(id) && !out.includes(id)) out.push(id);
     if (out.length >= max) break;
   }
   return out;
