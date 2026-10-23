@@ -75,6 +75,16 @@ export interface SurvivorPlayer {
   secondAttackRadius?: number;
   /** Especializações escolhidas na corrida, indexadas pelo id para limitar ofertas repetidas. */
   upgradeLevels: Record<string, number>;
+  /** Regeneração por segundo, somada pelas cartas "Regeneração lenta". */
+  regenPerSec?: number;
+  /** Dano por segundo que cada inimigo sofre ao encostar em você (cartas "Espinhos"). */
+  thornsDamage?: number;
+  /** Bônus de chance de cada artefato cair dos inimigos (0.25 = +25%). */
+  artifactLuck?: number;
+  /** Chance de cada golpe do tipo principal causar dano dobrado. */
+  critChance?: number;
+  /** Segundo fôlego pronto: revive com parte da vida na primeira vez que a vida cai até 25%. */
+  secondWindReady?: boolean;
 }
 
 /** Dados congelados do Pokémon de apoio. Ele acompanha apenas no desenho: não é um segundo alvo de combate. */
@@ -155,10 +165,14 @@ export interface SurvivorEnemy {
   specialTimerMs?: number;
   /** Proteção temporária recebida de um Protetor aliado. */
   protectedMs?: number;
+  /** Aviso antes da investida (ms restantes): o inimigo para e fica marcado em vermelho. */
+  chargeMs?: number;
+  /** Ms restantes da investida em alta velocidade. */
+  dashMs?: number;
 }
 
 /** Perfis internos de comportamento reutilizáveis entre regiões e espécies. */
-export type SurvivorEnemyArchetype = 'perseguidor' | 'flanqueador' | 'atirador' | 'protetor' | 'suporte';
+export type SurvivorEnemyArchetype = 'perseguidor' | 'flanqueador' | 'atirador' | 'protetor' | 'suporte' | 'investida' | 'explosivo';
 
 export type SurvivorSupportRole = 'cura' | 'impulso' | 'disparo';
 
@@ -454,4 +468,4 @@ export interface SurvivorUpgrade {
   /** Nome e texto falando do golpe de quem joga (ex.: "Bola de fogo mais forte"). */
   describe?: (move: SurvivorMove) => { name: string; description: string };
   apply: (p: SurvivorPlayer, value?: number) => void;
-}
+}

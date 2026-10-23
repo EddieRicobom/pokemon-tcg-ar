@@ -327,7 +327,7 @@ function defaultArchetype(kind: number, boss: boolean, grade: SurvivorEnemyGrade
   if (boss || grade === 'chefao') return 'protetor';
   // O id nasce da mesma sequência nos modos normal e regional; usar ele mantém o combate idêntico
   // quando `kindCount` muda apenas a espécie visual.
-  return (['perseguidor', 'flanqueador', 'atirador', 'suporte'] as const)[stableId % 4]!;
+  return (['perseguidor', 'flanqueador', 'atirador', 'suporte', 'investida', 'explosivo'] as const)[stableId % 6]!;
 }
 
 function supportRoleFor(stableId: number): SurvivorSupportRole {
@@ -752,6 +752,8 @@ function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void
 }
 
 const EFFECT_MS = { burn: 2000, slow: 1500, stun: 400, bossStun: 150 } as const;
+/** Raio da explosão do Pokémon explosivo ao cair (só atinge o jogador). */
+const EXPLOSION_RADIUS = 70;
 const hasUpgrade = (player: SurvivorPlayer, id: string): boolean => (player.upgradeLevels[id] ?? 0) > 0;
 
 export function survivorDirectDamageMultiplier(distance: number): number {
@@ -828,6 +830,8 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     if (move.type === 'dragon' && hasUpgrade(p, 'dragon-pressure') && e.boss) upgradeMultiplier *= 1.15;
     if (move.type === 'dark' && hasUpgrade(p, 'dark-predation') && e.hp <= e.maxHp * 0.5) upgradeMultiplier *= 1.12;
   }
+  // Crítico: sorteado só quando a carta existe, para não consumir o RNG das corridas sem ela.
+  if (move === p.move && (p.critChance ?? 0) > 0 && state.rng() < (p.critChance ?? 0)) upgradeMultiplier *= 2;
   const environmentalDamage = damage * survivorDirectDamageMultiplier(distanceFromPlayer) * survivorRapidAttackDamageMultiplier(p) * upgradeMultiplier
     * (synergy?.damageMultiplier ?? 1)
     * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
@@ -1172,7 +1176,39 @@ function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: n
       else enemy.specialTimerMs = 1200;
     }
   }
+  if (archetype === 'investida') {
+    // Leitura antes do golpe: o inimigo para por meio segundo, fica marcado em vermelho e então avança rápido.
+    if (enemy.chargeMs && enemy.chargeMs > 0) {
+      enemy.chargeMs = Math.max(0, enemy.chargeMs - dtMs);
+      if (enemy.chargeMs === 0) enemy.dashMs = 450;
+      else {
+        targetX = enemy.x;
+        targetY = enemy.y;
+      }
+    } else if (enemy.dashMs && enemy.dashMs > 0) {
+      enemy.dashMs = Math.max(0, enemy.dashMs - dtMs);
+    } else if (enemy.specialTimerMs <= 0 && distance <= 360) {
+      enemy.chargeMs = 500;
+      enemy.specialTimerMs = 2600;
+      targetX = enemy.x;
+      targetY = enemy.y;
+    }
+  }
   return { x: targetX, y: targetY };
+}
+
+/** Explosão do Pokémon explosivo ao cair: fere só o jogador (sem fogo amigo) e some se ele estiver longe. */
+function explodeOnDeath(state: SurvivorState, enemy: SurvivorEnemy): void {
+  const p = state.player;
+  state.fx.push({ kind: 'blast', x: enemy.x, y: enemy.y, r: EXPLOSION_RADIUS, color: '#ff8c3a', ageMs: 0, lifeMs: 380 });
+  if (Math.hypot(enemy.x - p.x, enemy.y - p.y) > EXPLOSION_RADIUS + PLAYER_RADIUS || p.invulnMs > 0) return;
+  if (specialProtects(state)) {
+    breakSurvivorShield(state);
+    return;
+  }
+  const incoming = Math.ceil(enemy.damage * 0.8 * (p.artifactShieldMs > 0 ? 0.65 : 1));
+  p.hp = Math.max(0, p.hp - incoming);
+  p.invulnMs = BALANCE.hitInvulnerabilityMs;
 }
 
 function artifactDamage(state: SurvivorState): number {
@@ -1268,6 +1304,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
   }
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
+  if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + (p.regenPerSec ?? 0) * dt);
 
   // Nascimento de inimigos (onda cresce com o tempo) e do chefe periódico.
   let trainerSpawnedThisStep = false;
@@ -1323,10 +1360,13 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const rangedMultiplier = e.archetype === 'atirador' ? BALANCE.rangedEnemySpeedMultiplier : 1;
     const statusMultiplier = e.slowMs && e.slowMs > 0 ? 0.5 : 1;
     const hasteMultiplier = e.hastenedMs && e.hastenedMs > 0 ? 1.18 : 1;
-    const speed = stunned ? 0 : e.speed * rangedMultiplier * statusMultiplier * hasteMultiplier;
+    const dashMultiplier = e.dashMs && e.dashMs > 0 ? 2.5 : 1;
+    const speed = stunned ? 0 : e.speed * rangedMultiplier * statusMultiplier * hasteMultiplier * dashMultiplier;
     e.x += (dx / d) * speed * dt;
     e.y += (dy / d) * speed * dt;
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
+    // Espinhos: quem encosta em você apanha, mesmo durante a janela de invulnerabilidade do jogador.
+    if ((p.thornsDamage ?? 0) > 0 && playerDistance < PLAYER_RADIUS + e.radius) e.hp -= (p.thornsDamage ?? 0) * dt;
     if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
       if (specialProtects(state)) {
         breakSurvivorShield(state);
@@ -1441,8 +1481,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       const value = normalizeSurvivorXp(e.boss ? 48 : e.grade === 'chefao' ? 36 : e.grade === 'elite' ? 20 : 8);
       const doubleXp = state.rng() < BALANCE.doubleXpOrbChance;
       state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value, ...(doubleXp ? { doubleXp: true } : {}) });
-      const dropChance = e.boss ? BALANCE.artifactBossDropChance : e.grade === 'chefao' || e.grade === 'elite' ? BALANCE.artifactEliteDropChance : BALANCE.artifactDropChance;
+      const dropChance = (e.boss ? BALANCE.artifactBossDropChance : e.grade === 'chefao' || e.grade === 'elite' ? BALANCE.artifactEliteDropChance : BALANCE.artifactDropChance) * (1 + (p.artifactLuck ?? 0));
       if (state.rng() < dropChance) state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: artifactKind(state.rng) });
+      if (e.archetype === 'explosivo') explodeOnDeath(state, e);
       const pokeballsOnGround = state.artifacts.reduce((total, artifact) => total + (artifact.kind === 'pokeball' ? 1 : 0), 0);
       const pokeballChance = e.boss || e.grade === 'chefao'
         ? BALANCE.digitalPokeballDropChance.chefao
@@ -1514,6 +1555,14 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   });
   levelUp(state, events);
 
+  // Segundo fôlego: uma vez por corrida, ao cair até 25% de vida, o jogador volta com 35% do máximo.
+  if (p.secondWindReady && p.hp <= p.maxHp * 0.25) {
+    p.secondWindReady = false;
+    const healed = Math.round(p.maxHp * 0.35);
+    p.hp = Math.min(p.maxHp, p.hp + healed);
+    p.invulnMs = Math.max(p.invulnMs, BALANCE.hitInvulnerabilityMs);
+    state.fx.push({ kind: 'heal', x: p.x, y: p.y, r: 34, color: '#7bdcff', ageMs: 0, lifeMs: 850, count: healed });
+  }
   if (p.hp <= 0 && !state.over) {
     state.over = true;
     state.projectiles = [];

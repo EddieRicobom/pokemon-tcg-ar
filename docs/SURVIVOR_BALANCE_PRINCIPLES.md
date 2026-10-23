@@ -132,3 +132,27 @@ esta seção ou crie uma nova seção datada, sem apagar a comparação anterior
 Essas fontes são referências de design, não garantias de que os números deste
 projeto estejam corretos. O contrato local desta base primordial e os dados das
 simulações do repositório têm precedência para decisões futuras.
+
+## Ampliação de 23/10/2026 — buffs e tipos de inimigo
+
+Novas cartas de buff (cada uma com teto explícito, testado em `src/core/survivor-buffs.test.ts`):
+
+- **Regeneração lenta** (normal, até 2): +1 de vida por segundo.
+- **Espinhos** (raro, até 2): quem encosta no jogador sofre 6 de dano por segundo por carta.
+- **Segundo fôlego** (lendário, 1 por corrida): ao cair até 25% de vida, recupera 35% do máximo.
+- **Golpe certeiro** (raro, até 3): +10% de chance de dano dobrado no golpe principal, com teto de 40%.
+- **Faro de artefatos** (normal, até 2): +25% de chance de drop de artefatos por carta.
+
+Novos arquétipos de inimigo, agora na rotação padrão (seis tipos em vez de quatro):
+
+- **Investida**: fica marcado em vermelho por meio segundo e avança 2,5× mais rápido por 450 ms. O aviso é a leitura pedida para ameaças de curta distância.
+- **Explosivo**: explode ao cair e fere só o jogador, em um raio de 70, com 80% do dano do inimigo. Não causa fogo amigo.
+
+Simulação (`npx tsx scripts/simulate-survival.ts`, 20 sementes por tipo, mesma matriz):
+
+| Estratégia | Antes: mediana | Depois: mediana | Antes: 5 min | Depois: 5 min |
+| --- | ---: | ---: | ---: | ---: |
+| Evasiva | 3,56 min | 3,60 min | 7 | 14 |
+| Agressiva | 4,76 min | 4,86 min | 75 | 87 |
+
+Hipótese: os novos tipos aumentam a pressão no meio da corrida, e os buffs compensam sem empurrar a mediana para cima. O simulador não escolhe buffs de forma inteligente, então o efeito real das cartas precisa de sessão humana em celular.
