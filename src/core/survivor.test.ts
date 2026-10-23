@@ -681,9 +681,41 @@ describe('arquétipos de inimigos', () => {
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.hostileProjectiles.length).toBeLessThanOrEqual(ENEMY_BEHAVIOR_LIMITS.hostileProjectiles);
   });
+
+  it('limita suportes padrão no começo e aumenta a cota sem criar uma parede de curas', () => {
+    const s = quiet(createSurvivorState(14, { kindCount: 1 }));
+    s.spawnAccumMs = 30_000;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.enemies.filter((enemy) => enemy.archetype === 'suporte')).toHaveLength(1);
+
+    s.enemies = [];
+    s.nextId = 1;
+    s.elapsedMs = 240_000;
+    s.spawnAccumMs = 30_000;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.enemies.filter((enemy) => enemy.archetype === 'suporte').length).toBeLessThanOrEqual(2);
+  });
+
+  it('distribui papéis de suporte de forma determinística', () => {
+    const s = quiet(createSurvivorState(15, { kindCount: 1, enemyArchetypeFor: () => 'suporte' }));
+    s.spawnAccumMs = 30_000;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(new Set(s.enemies.map((enemy) => enemy.supportRole))).toEqual(new Set(['cura', 'impulso', 'disparo']));
+  });
 });
 
 describe('efeitos defensivos de golpes próximos', () => {
+  it('compensa o dano do Aura sem alterar golpes de alcance', () => {
+    const aura = as('dragon', 'aura');
+    const s = quiet(createSurvivorState(15, { kindCount: 1, move: aura.move, profile: aura.profile }));
+    s.player.attackDamage = 100;
+    s.enemies = [dummy(1, s.player.x + 20, s.player.y, 1000)];
+    stepSurvivor(s, { dx: 0, dy: 0 }, 1);
+    // O cenário está numa região que reduz o dano pela metade; ainda assim a margem do Aura
+    // precisa superar o golpe sem compensação (50 de dano).
+    expect(s.enemies[0]!.hp).toBeLessThan(950);
+  });
+
   it('a aura desacelera projéteis dentro do raio em 20%', () => {
     const aura = as('psychic', 'aura');
     const s = quiet(createSurvivorState(5, { kindCount: 1, move: aura.move, profile: aura.profile }));
