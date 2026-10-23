@@ -25,6 +25,8 @@ export class OrientationSource {
   private yaw = 0;
   private pitch = -0.6;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** Palco virtual: a visão é sempre a que o jogador arrasta, nunca a dos sensores. */
+  private fixed = false;
   private onModeChange: ((mode: OrientationMode) => void) | null = null;
 
   constructor(private readonly feed: OrientationFeed = getOrientationFeed()) {}
@@ -54,6 +56,21 @@ export class OrientationSource {
     }, SENSOR_WAIT_MS);
   }
 
+  /**
+   * Palco virtual (sem câmera): começa já no modo "arrastar para olhar", olhando para `yaw`/`pitch`, sem pedir nem ler
+   * sensores (nem se outra tela estiver usando a fonte compartilhada).
+   */
+  startFixed(yaw: number, pitch: number, onModeChange?: (mode: OrientationMode) => void): void {
+    this.stop();
+    this.fixed = true;
+    this.mode = 'manual';
+    this.yaw = yaw;
+    this.pitch = pitch;
+    this.target = lookQuaternion(yaw, pitch);
+    this.current.copy(this.target);
+    this.onModeChange = onModeChange ?? null;
+  }
+
   /** Modo manual: arrastar com o dedo gira a visão (dx, dy em pixels). */
   lookBy(dx: number, dy: number): void {
     if (this.mode !== 'manual') return;
@@ -64,7 +81,7 @@ export class OrientationSource {
 
   /** Orientação suavizada; chamar uma vez por quadro. */
   read(nowMs: number = performance.now()): Quaternion {
-    if (this.feed.isFresh(nowMs, 1000)) {
+    if (!this.fixed && this.feed.isFresh(nowMs, 1000)) {
       const sample = this.feed.at(nowMs - this.latencyMs);
       if (sample) {
         this.target = sample;
@@ -90,5 +107,6 @@ export class OrientationSource {
     if (this.acquired) this.feed.release();
     this.acquired = false;
     this.hasReading = false;
+    this.fixed = false;
   }
 }

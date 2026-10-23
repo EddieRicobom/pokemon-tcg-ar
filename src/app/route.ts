@@ -46,10 +46,10 @@ export function parseRoute(hash: string): Route {
  * Sinalizadores que a Vila põe no endereço (`#/pins?vila=1`) para as outras telas saberem de onde você veio:
  * `vila` = «veio da Vila» (a tela mostra «Voltar à Vila»), `pvp` = abrir o PvP da Caixa, `batalha` = veio do
  * Fliperama para uma batalha na câmera, `formatacao`/`restauracao` levam o modo contínuo escolhido da Arena até a Caixa
- * e `jogos` = o Treinador abre nos minigames.
+ * `jogos` = o Treinador abre nos minigames e `virtual` = a Caixa abre na Arena 3D (palco virtual, sem câmera).
  */
-export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos';
-const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos'];
+export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual';
+const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual'];
 
 export function routeFlags(hash: string): Set<RouteFlag> {
   const query = hash.split('?')[1] ?? '';
@@ -64,6 +64,37 @@ export function routeFlags(hash: string): Set<RouteFlag> {
 export function routeHref(name: RouteName, cardId?: string, flags: readonly RouteFlag[] = []): string {
   const base = name === 'escanear' && cardId ? `#/escanear/${encodeURIComponent(cardId)}` : name === 'escanear' ? '#/' : `#/${name}`;
   return flags.length > 0 ? `${base}?${flags.map((f) => `${f}=1`).join('&')}` : base;
+}
+
+/** Como a Vila se despede (o `emit('close', …)` do `VillageView`): cada saída leva a uma tela da Caixa, já com os sinalizadores. */
+export type VilaExit = 'pvp' | 'batalha' | 'batalha3d' | 'caixa' | 'arena3d';
+
+/**
+ * Endereço da Caixa para cada saída da Vila: PvP e batalha do Fliperama abrem a câmera (como sempre), a Caixa em AR
+ * abre a câmera sem mais nada, e a Arena 3D (e a batalha do Fliperama na Arena 3D) abre o palco virtual, sem câmera.
+ * Todas levam `vila`: a Caixa oferece «Voltar à Vila» e o ✕ da Vila não volta para ela (`rememberBeforeVila`).
+ */
+export function vilaExitHref(then: VilaExit): string {
+  switch (then) {
+    case 'pvp': return routeHref('caixa', undefined, ['pvp', 'vila']);
+    case 'batalha': return routeHref('caixa', undefined, ['batalha', 'vila']);
+    case 'batalha3d': return routeHref('caixa', undefined, ['batalha', 'virtual', 'vila']);
+    case 'caixa': return routeHref('caixa', undefined, ['vila']);
+    case 'arena3d': return routeHref('caixa', undefined, ['virtual', 'vila']);
+  }
+}
+
+/**
+ * O ✕ da Vila volta para a última tela fora dela, mas não para uma tela que a própria Vila abriu (`vila=1` no endereço:
+ * a Caixa, a Arena Digital, os Pins): senão o ✕ reabriria a luta em vez de voltar de onde a pessoa veio.
+ */
+export function rememberBeforeVila(hash: string): boolean {
+  return !routeFlags(hash).has('vila');
+}
+
+/** Os sinalizadores de uma luta que sai da Arena Digital: o modo escolhido mais o fundo (`virtual` = Arena 3D, sem câmera). */
+export function arenaFlags(extra: readonly RouteFlag[], virtual: boolean): RouteFlag[] {
+  return virtual ? [...extra, 'virtual'] : [...extra];
 }
 
 export function useRoute() {

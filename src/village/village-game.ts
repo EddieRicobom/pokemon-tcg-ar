@@ -54,6 +54,7 @@ import { drawCommunityWorkAction, drawWorkAction } from './work-art';
 import { VillaAtlas, windowGlow } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintFountain, paintHome, paintLamp, paintLot, paintMuseum } from './town-art';
+import { COLISEU_GLOWS, paintColiseu } from './coliseu-art';
 
 /**
  * O jogo da Vila no navegador: canvas 2D em escala inteira (pixels nítidos), câmera que segue você, profundidade por
@@ -1691,6 +1692,23 @@ export class VillageGame {
         continue;
       }
       const emoji = CIVIC_EMOJI[b.kind] ?? '🏛️';
+      if (b.kind === 'arena') {
+        // O Coliseu é desenhado por código, no tamanho do próprio desenho (mais largo que um prédio comum), com ou sem atlas.
+        const img = this.sprite('coliseu', paintColiseu);
+        const cw = img.width * scale;
+        const ch = img.height * scale;
+        const cx0 = Math.round(mid - cw / 2);
+        list.push({
+          y: buildingGroundY(b),
+          draw: () => {
+            ctx.drawImage(img, cx0, spriteBase - ch, cw, ch);
+            this.drawTag(mid, spriteBase - ch - 2 * scale + Math.sin(now / 350) * scale, emoji);
+          },
+        });
+        if (night) for (const g of COLISEU_GLOWS) homeGlows.push({ x: cx0 + g.x * scale, y: spriteBase - ch + g.y * scale, w: g.w * scale, h: g.h * scale, lantern: g.torch });
+        if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
+        continue;
+      }
       const civicId = CIVIC_TILESET[b.kind];
       const civicArt = atlas && civicId ? this.art(civicId) : null;
       if (civicArt && civicId) {

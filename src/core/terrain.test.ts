@@ -4,6 +4,7 @@ import { seededRng } from './battle';
 import {
   applyTerrain, buildGrid, cellAt, cellCenter, DECOR_KINDS, GROUND_KINDS, planDecor, reactionFor, TERRAIN_FOR_TYPE, TERRAIN_KINDS, TERRAIN_LABELS_PT, TerrainGrid,
 } from './terrain';
+import { createBuf, paintTerrainCell, TILE } from '../box/ground-art';
 
 const HALF = { w: 1, d: 0.5 };
 
@@ -128,5 +129,36 @@ describe('enfeites', () => {
       expect(Math.max(Math.abs(item.x), Math.abs(item.z))).toBeGreaterThan(1.2 * 0.8);
       expect(Math.max(Math.abs(item.x), Math.abs(item.z))).toBeLessThanOrEqual(1.2);
     }
+  });
+});
+
+describe('chão do Coliseu', () => {
+  it('é areia de ponta a ponta, sem canteiros nem mato', () => {
+    const grid = buildGrid(36, 18, 'ellipse', 12, 'coliseu');
+    for (let i = 0; i < grid.cols * grid.rows; i++) expect(grid.groundAt(i)).toBe('path');
+  });
+
+  it('pinta só areia e as marcas do duelo: nenhum bloco de grama', () => {
+    const grid = buildGrid(36, 18, 'ellipse', 12, 'coliseu');
+    const buf = createBuf(36 * TILE, 18 * TILE);
+    for (let i = 0; i < grid.cols * grid.rows; i++) paintTerrainCell(buf, grid, i, 12, 'coliseu');
+    const grass = [0x71, 0x96, 0x53];
+    let sand = 0;
+    let grassPixels = 0;
+    for (let p = 0; p < buf.w * buf.h; p++) {
+      if (buf.data[p * 4 + 3] === 0) continue;
+      const rgb = [buf.data[p * 4], buf.data[p * 4 + 1], buf.data[p * 4 + 2]];
+      if (rgb[0] === grass[0] && rgb[1] === grass[1] && rgb[2] === grass[2]) grassPixels++;
+      if (rgb[0] === 0xc5 && rgb[1] === 0xb1 && rgb[2] === 0x84) sand++;
+    }
+    expect(grassPixels).toBe(0);
+    expect(sand).toBeGreaterThan(1000);
+  });
+
+  it('o jardim da batalha continua com grama na borda', () => {
+    const battle = buildGrid(36, 18, 'ellipse', 12, 'battle');
+    const kinds = new Set<string>();
+    for (let i = 0; i < battle.cols * battle.rows; i++) kinds.add(battle.groundAt(i));
+    expect(kinds.has('grass')).toBe(true);
   });
 });

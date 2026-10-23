@@ -77,7 +77,6 @@ export const ATLAS_SOURCES: readonly AtlasSource[] = [
   { id: 'home-teal', sheet: 'Apathy Houses.png', x: 0, y: 0, w: 80, h: 128, patches: [[0, 480, 80, 80, 0, 48]] },
   { id: 'home-blue', sheet: 'Apathy Houses.png', x: 0, y: 0, w: 80, h: 128, patches: [[0, 656, 80, 80, 0, 48]] },
   { id: 'home-pink', sheet: 'Apathy Houses.png', x: 0, y: 0, w: 80, h: 128, patches: [[0, 832, 80, 80, 0, 48]] },
-  { id: 'center-red', sheet: 'Pokémon Center and Mart Buildings.png', x: 0, y: 0, w: 82, h: 90 },
   { id: 'center-blue', sheet: 'Pokémon Center and Mart Buildings.png', x: 0, y: 625, w: 82, h: 90 },
   { id: 'kiosk-red', sheet: 'Pokémon Center and Mart Buildings.png', x: 86, y: 0, w: 42, h: 48 },
   { id: 'kiosk-blue', sheet: 'Pokémon Center and Mart Buildings.png', x: 86, y: 625, w: 42, h: 47 },

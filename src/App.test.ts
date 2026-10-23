@@ -30,7 +30,7 @@ describe('App', () => {
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
     const tabs = [...(host?.querySelectorAll('nav.tabs a') ?? [])].map((a) => [a.textContent?.trim(), a.getAttribute('href')]);
-    expect(tabs).toEqual([['Escanear', '#/'], ['Vila', '#/vila'], ['Cartas', '#/cartas'], ['Arena', '#/arena'], ['Pins', '#/pins'], ['Treinador', '#/treinador']]);
+    expect(tabs).toEqual([['Escanear', '#/'], ['Vila', '#/vila'], ['Cartas', '#/cartas'], ['Pins', '#/pins'], ['Treinador', '#/treinador']]);
     expect(host?.querySelectorAll('nav.modes a')).toHaveLength(2);
     expect(host?.querySelector('a.header-gear')?.getAttribute('href')).toBe('#/diagnostico');
     expect(host?.querySelector('video')).not.toBeNull();
@@ -75,7 +75,14 @@ describe('App', () => {
     expect(text).toContain('Equipe da Arena · 6 Pokémon');
     expect(text).toContain('Formatação digital');
     expect(text).toContain('Restauração digital');
-    expect([...(host?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href'))).toContain('#/caixa');
+    // O padrão é a Arena 3D (sem câmera); trocar o fundo para a câmera (AR) volta o link para a Caixa em AR de sempre.
+    const hrefs = () => [...(host?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href'));
+    expect(hrefs()).toContain('#/caixa?virtual=1');
+    expect(hrefs()).not.toContain('#/caixa');
+    [...host!.querySelectorAll<HTMLButtonElement>('.box-backdrop button')].find((b) => b.textContent?.includes('Caixa em AR'))!.click();
+    await nextTick();
+    expect(hrefs()).toContain('#/caixa');
+    expect(hrefs()).not.toContain('#/caixa?virtual=1');
   });
 
   it('a tela Treinador mostra nível, missões e conquistas, sem inventar progresso', async () => {
@@ -110,7 +117,7 @@ describe('App', () => {
     expect(text).toContain('Como funciona o chão');
   });
 
-  it('Várias é modo do Escanear; Minhas cartas e Caixa em AR são sub-abas de Cartas; o Diagnóstico vai para a engrenagem', async () => {
+  it('Várias é modo do Escanear; Cartas não tem sub-abas; a Arena e a Caixa acendem a aba da Vila; o Diagnóstico vai para a engrenagem', async () => {
     await mount('#/varias');
     expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Escanear');
     expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Várias');
@@ -119,18 +126,18 @@ describe('App', () => {
     host?.remove();
     await mount('#/cartas');
     expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Cartas');
-    expect([...(host?.querySelectorAll('nav.modes a') ?? [])].map((a) => [a.textContent?.trim(), a.getAttribute('href')])).toEqual([
-      ['Minhas cartas', '#/cartas'],
-      ['Caixa em AR', '#/caixa'],
-    ]);
-    expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Minhas cartas');
+    expect(host?.querySelector('nav.modes')).toBeNull();
     app?.unmount();
     host?.remove();
-    await mount('#/caixa');
-    expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Cartas');
-    expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Caixa em AR');
-    app?.unmount();
-    host?.remove();
+    for (const route of ['#/caixa', '#/caixa?virtual=1', '#/arena']) {
+      await mount(route);
+      // As lutas moram no Coliseu da Vila: a aba da Vila fica acesa e não há aba nem sub-aba delas.
+      expect([...(host?.querySelectorAll('nav.tabs a.active') ?? [])].map((a) => a.textContent?.trim())).toEqual(['Vila']);
+      expect(host?.querySelector('nav.modes')).toBeNull();
+      expect(host?.textContent).not.toContain('Minhas cartasCaixa em AR');
+      app?.unmount();
+      host?.remove();
+    }
     await mount('#/diagnostico');
     expect(host?.querySelector('nav.modes')).toBeNull();
     expect(host?.querySelector('nav.tabs a.active')).toBeNull();
@@ -141,7 +148,7 @@ describe('App', () => {
     const text = await mount('#/carregar');
     expect(window.location.hash).toBe('#/cartas');
     expect(text).toContain('As cartas que o app já reconheceu');
-    expect(host?.querySelector('nav.modes a.active')?.textContent).toContain('Minhas cartas');
+    expect(host?.querySelector('nav.tabs a.active')?.textContent).toContain('Cartas');
   });
 
   it('a tela Cartas não deixa "apagar tudo" entre os botões do dia a dia', async () => {

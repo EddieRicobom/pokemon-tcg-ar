@@ -1,4 +1,5 @@
 import { Ground } from './ground';
+import type { GroundLayout } from '../core/terrain';
 import { AdditiveBlending, CircleGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, RingGeometry, Vector3 } from 'three';
 
 /**
@@ -81,7 +82,7 @@ export class ArenaStage {
   private time = 0;
   private appear = 0;
 
-  constructor(readonly rx: number, readonly rz: number, terrain = false, seed = 1) {
+  constructor(readonly rx: number, readonly rz: number, terrain = false, seed = 1, layout: GroundLayout = 'battle') {
     // Com terreno o chão é maior que o disco de antes; a borda que acende acompanha a borda do chão.
     const ringX = terrain ? rx * 1.28 : rx * 1.15;
     const ringZ = terrain ? rz * 1.5 : rz * 1.25;
@@ -89,7 +90,7 @@ export class ArenaStage {
       mesh.rotation.x = -Math.PI / 2;
       mesh.scale.set(ringX, ringZ, 1);
     };
-    this.ground = terrain ? new Ground({ halfW: rx * 1.3, halfD: rz * 1.55, shape: 'ellipse', seed, cols: 36, decor: 14, decorUnit: Math.max(0.12, rx * 0.16), opacity: 0.98, layout: 'battle' }) : null;
+    this.ground = terrain ? new Ground({ halfW: rx * 1.3, halfD: rz * 1.55, shape: 'ellipse', seed, cols: 36, decor: layout === 'coliseu' ? 0 : 14, decorUnit: Math.max(0.12, rx * 0.16), opacity: 0.98, layout }) : null;
     if (this.ground) this.group.add(this.ground.group);
     this.disc = new Mesh(new CircleGeometry(1, 48), new MeshBasicMaterial({ color: 0x0a0f1e, transparent: true, opacity: 0.45, depthWrite: false, side: DoubleSide }));
     this.rim = new Mesh(new RingGeometry(0.965, 1, 64), new MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0.8, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));

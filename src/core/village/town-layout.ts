@@ -78,7 +78,8 @@ export const CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>;
   { kind: 'museum', name: 'Museu', x: 51, y: 22, w: 10, h: 2, unlock: 8 },
   { kind: 'arcade', name: 'Fliperama', x: 26, y: 22, w: 5, h: 2, unlock: 2 },
   { kind: 'pins', name: 'Pista de Pins', x: 32, y: 22, w: 5, h: 2, unlock: 4 },
-  { kind: 'arena', name: 'Arena', x: 19, y: 22, w: 5, h: 2, unlock: 6 },
+  // O Coliseu: 112 px de largura (7 blocos), entre a Torre (até x = 16) e o Fliperama (desde x = 26); a porta continua em x = 21.
+  { kind: 'arena', name: 'Arena', x: 18, y: 22, w: 7, h: 2, unlock: 6 },
   // Modo próprio (como a Arena e a Pista de Pins), não um minigame do Fliperama: ver `core/survivor.ts`.
   { kind: 'torre', name: 'Torre de Sobrevivência', x: 12, y: 22, w: 5, h: 2, unlock: 7 },
   { kind: 'altar', name: 'Altar da Confiança', x: 41, y: 83, w: 3, h: 2, unlock: 4 },

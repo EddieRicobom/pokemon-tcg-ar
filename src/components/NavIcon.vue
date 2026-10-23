@@ -1,5 +1,5 @@
 <script setup lang="ts">
-export type NavIconName = 'escanear' | 'varias' | 'vila' | 'caixa' | 'cartas' | 'arena' | 'diagnostico' | 'treinador' | 'pins';
+export type NavIconName = 'escanear' | 'varias' | 'vila' | 'caixa' | 'cartas' | 'diagnostico' | 'treinador' | 'pins';
 defineProps<{ name: NavIconName }>();
 </script>
 
@@ -26,11 +26,6 @@ defineProps<{ name: NavIconName }>();
     <template v-else-if="name === 'caixa'">
       <path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" />
       <path d="m4 7.5 8 4.5 8-4.5M12 12v9" />
-    </template>
-    <!-- Arena: dois raios de batalha dentro do círculo -->
-    <template v-else-if="name === 'arena'">
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="m9 7 3 4-2 1 3 5M15 7l-3 4 2 1-3 5" />
     </template>
     <!-- Pins: disco com a seta de disparo -->
     <template v-else-if="name === 'pins'">

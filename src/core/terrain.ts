@@ -51,7 +51,7 @@ export const TERRAIN_FOR_TYPE: Partial<Record<PokemonType, TerrainKind>> = {
 };
 
 export type GroundShape = 'ellipse' | 'square';
-export type GroundLayout = 'wild' | 'garden' | 'battle';
+export type GroundLayout = 'wild' | 'garden' | 'battle' | 'coliseu';
 
 /** Distância à trilha contínua em coordenadas normalizadas; compartilhada pela grade e pelo desenho. */
 export function gardenTrailDistance(nx: number, nz: number, seed: number): number {
@@ -138,7 +138,10 @@ export function buildGrid(cols: number, rows: number, shape: GroundShape, seed: 
       const i = grid.index(c, r);
       const nx = ((c + 0.5) / cols) * 2 - 1;
       const nz = ((r + 0.5) / rows) * 2 - 1;
-      if (layout === 'battle') {
+      if (layout === 'coliseu') {
+        // A arena do Coliseu é de areia de ponta a ponta (sem jardim na borda).
+        grid.base[i] = GROUND_KINDS.indexOf('path');
+      } else if (layout === 'battle') {
         // Área de combate limpa e contínua, com jardim somente na borda.
         grid.base[i] = GROUND_KINDS.indexOf(nx * nx + nz * nz < 0.68 ** 2 ? 'path' : 'grass');
       } else {

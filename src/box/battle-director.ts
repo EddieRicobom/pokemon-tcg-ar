@@ -18,6 +18,7 @@ import type { SoundCue, SoundSink } from './sound-recipes';
 import type { FxLight } from './fx-lights';
 import { stepToward } from './wander';
 import type { Ground } from './ground';
+import type { GroundLayout } from '../core/terrain';
 
 export type LabelTone = 'damage' | 'crit' | 'good' | 'bad' | 'miss' | 'info' | 'status';
 
@@ -127,6 +128,8 @@ export interface DirectorOptions {
   sound?: SoundSink;
   /** Chão em pixel art que os golpes elementais marcam (padrão: desligado). */
   terrain?: boolean;
+  /** Como é o chão da arena: jardim (padrão) ou Coliseu, de areia (palco virtual). */
+  arenaLayout?: GroundLayout;
   /** Nomes das equipes (Ginásio: você e o líder; PvP: os dois treinadores). Padrão: Vermelha e Azul. */
   teamNames?: readonly string[];
   /** Faixa de abertura no lugar da padrão (ex.: "Roark desafia você!"). */
@@ -361,7 +364,7 @@ export class BattleDirector {
       c.state.vx = 0;
       c.state.vz = 0;
     });
-    this.stage = new ArenaStage(o.rx, o.rz, o.terrain === true, o.terrain === true ? Math.floor(o.rng() * 0x7fffffff) : 1);
+    this.stage = new ArenaStage(o.rx, o.rz, o.terrain === true, o.terrain === true ? Math.floor(o.rng() * 0x7fffffff) : 1, o.arenaLayout);
     this.spotlight = new Sprite(new SpriteMaterial({ map: glowMap(), color: 0xffe27a, transparent: true, blending: AdditiveBlending, depthWrite: false, opacity: 0.7 }));
     this.spotlight.visible = false;
     o.root.add(this.stage.group, this.pools.group, this.spotlight, this.particles.group, this.rings.group, this.bolt.group);
