@@ -4,7 +4,7 @@ import { makeWalker } from './actors';
 import type { Walker } from './actors';
 import { BenchVisits, benchesFor } from './benches';
 import { generateVillage, isWalkable } from './map';
-import { blockedForResident, StaticBlockGrid } from './occupancy';
+import { blockedForResident, MoverGrid, StaticBlockGrid } from './occupancy';
 import type { ResidentOccupancyWorld } from './occupancy';
 
 const map = generateVillage(20261014);
@@ -26,6 +26,55 @@ describe('grade de blocos fixos', () => {
     expect(grid.has(3, 3)).toBe(true);
     grid.rebuild([]);
     expect(grid.has(3, 3)).toBe(false);
+  });
+});
+
+describe('grade de moradores', () => {
+  it('um morador não vê a própria marca; os outros sim, no bloco atual e no de destino', () => {
+    const grid = new MoverGrid(8, 8);
+    const a = makeWalker('a', 2, 2, 2.6);
+    a.tx = 3; a.ty = 2; a.t = 0.5;
+    grid.enter(a);
+    expect(grid.occupiedByOther(2, 2, 'a')).toBe(false);
+    expect(grid.occupiedByOther(3, 2, 'a')).toBe(false);
+    expect(grid.occupiedByOther(2, 2, 'b')).toBe(true);
+    expect(grid.occupiedByOther(3, 2, 'b')).toBe(true);
+    expect(grid.occupiedByOther(4, 2, 'b')).toBe(false);
+  });
+
+  it('sair da grade libera os blocos; entrar de novo os marca; entrar duas vezes não conta em dobro', () => {
+    const grid = new MoverGrid(8, 8);
+    const a = makeWalker('a', 1, 1, 2.6);
+    grid.enter(a);
+    grid.enter(a);
+    grid.leave('a');
+    expect(grid.occupiedByOther(1, 1, 'b')).toBe(false);
+    grid.enter(a);
+    expect(grid.occupiedByOther(1, 1, 'b')).toBe(true);
+    grid.leave('a');
+    grid.leave('a');
+    expect(grid.occupiedByOther(1, 1, 'b')).toBe(false);
+  });
+
+  it('andar por vários blocos mantém a grade igual à de uma grade montada do zero', () => {
+    const rng = seededRng(11);
+    const grid = new MoverGrid(16, 12);
+    const walkers = Array.from({ length: 12 }, (_, i) => makeWalker(`w${i}`, i % 16, Math.floor(i / 2) % 12, 2.6));
+    for (const w of walkers) grid.enter(w);
+    for (let step = 0; step < 400; step++) {
+      const w = walkers[Math.floor(rng() * walkers.length)]!;
+      grid.leave(w.id);
+      w.x = Math.floor(rng() * 16);
+      w.y = Math.floor(rng() * 12);
+      w.tx = Math.min(15, w.x + (rng() < 0.5 ? 1 : 0));
+      w.ty = w.y;
+      grid.enter(w);
+      const fresh = new MoverGrid(16, 12);
+      for (const other of walkers) fresh.enter(other);
+      for (let y = 0; y < 12; y++) for (let x = 0; x < 16; x++) {
+        expect(grid.occupiedByOther(x, y, 'nenhum')).toBe(fresh.occupiedByOther(x, y, 'nenhum'));
+      }
+    }
   });
 });
 
@@ -76,15 +125,18 @@ describe('blockedForResident', () => {
     player.tx = map.spawn.x + 1;
     const grid = new StaticBlockGrid(map.w, map.h);
     grid.rebuild(placed, crops);
+    const movers = new MoverGrid(map.w, map.h);
+    for (const [id, w] of villagers) if (!asleep.has(id)) movers.enter(w);
     const world: ResidentOccupancyWorld = {
       grid,
+      movers,
       reservations: [(x, y, except) => benches.reserved(x, y, except), (x, y, except) => cafe.reserved(x, y, except)],
       player,
-      villagers,
-      asleep,
     };
     let blockedCount = 0;
     for (const id of ['m0', 'm1', 'm2', 'm4', 'm29']) {
+      // Como no jogo: o morador que decide o passo já saiu da grade; a regra antiga e a nova têm de concordar.
+      movers.leave(id);
       for (let y = 0; y < map.h; y++) {
         for (let x = 0; x < map.w; x++) {
           const expected = referenceBlocked(placed, crops, [benches, cafe], player, villagers, asleep, x, y, id);
@@ -92,16 +144,20 @@ describe('blockedForResident', () => {
           expect(blockedForResident(world, x, y, id), `${id} em ${x},${y}`).toBe(expected);
         }
       }
+      const walker = villagers.get(id)!;
+      if (!asleep.has(id)) movers.enter(walker);
     }
     // O cenário precisa de fato exercitar os bloqueios (senão a igualdade acima não prova nada).
     expect(blockedCount).toBeGreaterThan(400);
   });
 
-  it('o próprio morador e quem dorme não bloqueiam; o jogador e os outros sim', () => {
+  it('o próprio morador (mesmo ainda na grade) não bloqueia; quem dorme não bloqueia; o jogador e os outros sim', () => {
     const villagers = new Map<string, Walker>([['a', makeWalker('a', 10, 10, 2.6)], ['b', makeWalker('b', 12, 10, 2.6)], ['c', makeWalker('c', 14, 10, 2.6)]]);
     const grid = new StaticBlockGrid(map.w, map.h);
     grid.rebuild([]);
-    const world: ResidentOccupancyWorld = { grid, reservations: [], player: makeWalker('eu', 20, 20, 5.5), villagers, asleep: new Set(['c']) };
+    const movers = new MoverGrid(map.w, map.h);
+    for (const [id, w] of villagers) if (id !== 'c') movers.enter(w);
+    const world: ResidentOccupancyWorld = { grid, movers, reservations: [], player: makeWalker('eu', 20, 20, 5.5) };
     expect(blockedForResident(world, 10, 10, 'a')).toBe(false);
     expect(blockedForResident(world, 12, 10, 'a')).toBe(true);
     expect(blockedForResident(world, 14, 10, 'a')).toBe(false);
