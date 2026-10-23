@@ -5096,7 +5096,6 @@ body.no-scroll .reward-toasts {
 }
 
 .village-dpad,
-.menu-control-btn { display: none; }
 
 /* Joystick da Vila (substitui o direcional): arrastar a partir do centro; na diagonal anda nos dois eixos. */
 .village-joy {
@@ -7542,8 +7541,6 @@ body.no-scroll .reward-toasts {
   .village-control-cluster { position: absolute; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); left: auto; width: auto; gap: 8px; pointer-events: none; }
   .village-pad .ab { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; margin: 0; pointer-events: auto; }
   .village-pad .ab button { width: 58px; height: 58px; padding: 4px; border-radius: 17px; touch-action: none; user-select: none; -webkit-user-select: none; }
-  .menu-control-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 58px; height: 58px; padding: 3px; border: 2px solid #a58b43; border-radius: 17px; background: linear-gradient(180deg, #63552e, #38311e); color: #fff0a6; font-size: 1.15rem; font-weight: 800; }
-  .menu-control-btn small { font-size: .58rem; line-height: 1; }
 }
 
 @media (orientation: landscape) {
@@ -7561,11 +7558,10 @@ body.no-scroll .reward-toasts {
   .village-dpad .dpad-down { grid-area: down; }
   .village-dpad .dpad-center { grid-area: center; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / 16%); border-radius: 50%; background: #181e31; color: #ffe789; }
   .village-pad .ab { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; margin: 0 -4px 0 0; transform: none; pointer-events: auto; }
-  .village-pad .ab button, .menu-control-btn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: clamp(54px, 11vh, 68px); height: clamp(54px, 11vh, 68px); min-height: 54px; padding: 3px; border: 2px solid rgb(255 255 255 / 30%); border-radius: 18px; color: #fff; font-size: 1.08rem; }
-  .village-pad .ab button small, .menu-control-btn small { margin: 0; font-size: .56rem; line-height: 1; }
+  .village-pad .ab button { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: clamp(54px, 11vh, 68px); height: clamp(54px, 11vh, 68px); min-height: 54px; padding: 3px; border: 2px solid rgb(255 255 255 / 30%); border-radius: 18px; color: #fff; font-size: 1.08rem; }
+  .village-pad .ab button small { margin: 0; font-size: .56rem; line-height: 1; }
   .village-pad .ab .a-btn { margin: 0; background: linear-gradient(180deg, #df5b50, #8f302e); }
   .village-pad .ab .b-btn { margin: 0; background: linear-gradient(180deg, #8268ca, #49367e); }
-  .menu-control-btn { background: linear-gradient(180deg, #746334, #40371e); color: #fff0a6; }
   .village-top { min-height: 46px; padding-block: 4px; }
   .village-top .village-menu-btn { display: none; }
   .village-sheet:not(.torre-full) { inset: max(58px, calc(env(safe-area-inset-top) + 52px)) auto max(76px, env(safe-area-inset-bottom)); left: 50%; right: auto; width: min(760px, 68vw); max-width: none; max-height: none; transform: translateX(-50%); }

@@ -772,7 +772,7 @@ function finishLegendaryCutscene(): void {
   legendaryLoadToken++;
   legendaryScene.value = null;
   if (!replay) { state.legendary = dismissActive(state.legendary); changed(); persist(); }
-  void nextTick(() => document.querySelector<HTMLButtonElement>('.menu-control-btn')?.focus());
+  void nextTick(() => document.querySelector<HTMLButtonElement>('.b-btn')?.focus());
 }
 function startLegendInvestigation(id: string): void {
   state.legendary = beginInvestigation(state.legendary, id);
@@ -2159,9 +2159,9 @@ function onVisibility(): void {
   }
 }
 
-/** O botão "☰ Menu" do canto: o mesmo menu do B (uma entrada só). */
+/** Abre o menu compartilhado quando a Vila está livre; o B usa este mesmo caminho. */
 function openMenu(): void {
-  if (recapScenes.value.length || cutsceneOpen.value || loading.value) return;
+  if (recapScenes.value.length || cutsceneOpen.value || loading.value || game?.sceneActive) return;
   welcome.value = false;
   updateWorldProgress();
   askingMon = null;
@@ -2667,10 +2667,7 @@ function pressB(): void {
   else if (sheet.value === 'menu' && tab.value !== 'inicio') tab.value = 'inicio'; // B dentro de uma seção volta ao menu
   else if (sheet.value === 'torre') towerGameRef.value?.requestLeave();
   else if (sheet.value) closeVillageSheet(); // fecha pelo mesmo caminho do ✕ e libera o estado de interação da Vila
-  else {
-    tab.value = 'inicio';
-    sheet.value = 'menu';
-  }
+  else openMenu();
 }
 
 function pressMenu(): void {
@@ -3477,7 +3474,6 @@ onBeforeUnmount(() => {
         <div class="ab">
           <button type="button" class="b-btn" :disabled="quizOpen && quizStep === 0" :aria-label="sheet || dialog || quiz || quizOpen ? 'Voltar' : 'Abrir menu'" @click="pressB">B<small aria-hidden="true">{{ sheet || dialog || quiz || quizOpen ? 'Voltar' : 'Menu' }}</small></button>
           <button type="button" class="a-btn" aria-label="A: confirmar ou interagir" @pointerdown="pressAPointer" @click="pressAClick">A<small aria-hidden="true">{{ sheet || dialog || quiz || quizOpen ? 'Confirmar' : 'Interagir' }}</small></button>
-          <button v-if="!dialog && !quiz && !quizOpen && (!sheet || sheet === 'menu')" type="button" class="menu-control-btn" aria-label="Menu da Vila" @click="pressMenu">☰<small aria-hidden="true">Menu</small></button>
         </div>
       </div>
     </div>
