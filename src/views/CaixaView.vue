@@ -2,31 +2,20 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useDialogFocus } from '../composables/useDialogFocus';
 import { isTap } from '../ar/gestures';
-import { fetchSprite, getCache, loadBattle, prepareMegaFor } from '../app/services';
+import { fetchSprite, getCache } from '../app/services';
+import { createBattleSession, decodeSprite } from '../app/box-battle-session';
 import { digitalCandidates } from '../app/digital-members';
 import { loadCardCompanionEntry } from '../app/companion-creatures';
-import { cardJourneyError, recordCardVictories } from '../app/card-evolution-store';
-import { battleWinners } from '../core/card-evolution';
-import type { CardCompanion } from '../core/card-evolution';
-import { challengePlan, isLeaderCreature, leaderFighter, leaderLoader, loadArenaEntries, loadLeaderEntries, MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
-import { league, pendingChallenge, recordLeagueResult } from '../app/league-store';
-import { profile } from '../app/profile-store';
+import { MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
+import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { routeFlags, routeHref } from '../app/route';
 import { displayName, setNickname } from '../core/village/nickname';
-import { challengeById, statusOf } from '../core/league';
-import type { Challenge } from '../core/league';
-import { trainerSpriteUrl } from '../core/trainer-sprites';
 import type { CreatureEntry } from '../box/box-scene';
-import type { BattleResult } from '../core/battle';
-import { prepareFighters } from '../app/battle-setup';
-import { megaAwareLoader, planMegaBattle } from '../app/mega-battle';
 import { useFullscreen } from '../app/fullscreen';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
 import { resetRoster, roster, rosterFor, setSlot, slotOf } from '../app/roster-store';
 import { battleMode, setBattleMode } from '../app/battle-mode-store';
-import { recordEvent } from '../app/trainer-store';
-import { coins, spendCoins, withVillage } from '../app/wallet';
 import { maybeGalladeSpeaks } from '../app/speech-store';
 import { effectiveVisual } from '../app/visual-settings';
 import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
@@ -38,32 +27,29 @@ import TeamPicker from '../components/TeamPicker.vue';
 import BoxPvpPanel from '../components/BoxPvpPanel.vue';
 import PokeBook from '../components/PokeBook.vue';
 import { loadVillage, saveVillage } from '../app/village-store';
-import { BATTLE_REWARDS_PER_DAY, battleRewardsLeft, claimBattleReward, dailyHelp, friendLevel, itemName } from '../core/village/life';
+import { BATTLE_REWARDS_PER_DAY, battleRewardsLeft, dailyHelp, friendLevel, itemName } from '../core/village/life';
 import type { VillageState } from '../core/village/life';
 import { paintAccessory } from '../village/item-art';
 import { dayKey } from '../core/trainer';
 import type { PokemonType } from '../core/pokemon-data';
 import { loadPinData } from '../app/services';
-import { boxPvp, sendTeam, startBoxPvp } from '../app/box-pvp-store';
-import type { BoxPvpStart } from '../app/box-pvp-store';
-import { boxPvpBattle, BOX_PVP_LABELS_PT, BOX_PVP_MAX } from '../pvp/box-wire';
-import type { BoxPvpMon, BoxPvpTeam } from '../pvp/box-wire';
+import { boxPvp } from '../app/box-pvp-store';
+import { BOX_PVP_LABELS_PT } from '../pvp/box-wire';
 import type { BoxMode } from '../box/box-scene';
 import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { DEFAULT_PHONE_HEIGHT_M, PHONE_HEIGHT_RANGE } from '../box/floor';
-import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
+import { loadCreatureEntries } from '../box/load-creatures';
 import type { RunningBox } from '../box/start-box';
 import type { OrientationMode } from '../box/orientation-source';
 import type { BoxCreature } from '../box/creature';
-import type { BattleHud } from '../box/battle-director';
 import { MEGA_ENERGY_COST } from '../core/mega';
 import { WEATHER_EMOJI, WEATHER_LABELS_PT } from '../core/weather';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
-import { TEAM_NAMES_PT, TEAM_COLORS, BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, planBattle, rosterBlocker, seededRng, STATUS_LABELS_PT, summarizeBattle } from '../core/battle';
-import type { BattleMode, BattleSummary, Fighter, RosterSlot } from '../core/battle';
+import { TEAM_COLORS, BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, rosterBlocker, STATUS_LABELS_PT } from '../core/battle';
+import type { BattleMode, RosterSlot } from '../core/battle';
 import { loadChunk } from '../app/stale-build';
-import { abandonEndlessArena, ENDLESS_ARENA_LABELS, nextEndlessOpponent, resolveEndlessBattle, startEndlessArena } from '../core/endless-arena';
-import type { EndlessArenaMode, EndlessArenaRun } from '../core/endless-arena';
+import { ENDLESS_ARENA_LABELS } from '../core/endless-arena';
+import type { EndlessArenaMode } from '../core/endless-arena';
 
 type Phase = 'idle' | 'starting' | 'placing' | 'running';
 
@@ -81,8 +67,6 @@ const teamDialog = ref<HTMLElement | null>(null);
 const adjustDialog = ref<HTMLElement | null>(null);
 const summaryDialog = ref<HTMLElement | null>(null);
 useDialogFocus(modesDialog); useDialogFocus(teamDialog); useDialogFocus(adjustDialog); useDialogFocus(summaryDialog);
-/** Entramos em tela cheia só para a batalha (e saímos dela ao parar). */
-let fullscreenForBattle = false;
 const boxMode = ref<BoxMode>('passeio');
 
 const phase = ref<Phase>('idle');
@@ -95,23 +79,6 @@ const mode = ref<OrientationMode>('sensor');
 const population = ref({ shown: 0, available: 0, failed: 0 });
 /** Quem está na caixa agora (para a escalação das batalhas). */
 const rosterRows = ref<{ id: string; name: string; shiny: boolean; mega: boolean }[]>([]);
-/** Cartas Mega marcadas para mudar de forma na próxima batalha (cada uma custa MEGA_ENERGY_COST moedas). */
-const megaPicks = ref<string[]>([]);
-/** O que aconteceu com a forma Mega na última batalha montada (quem trocou, quem ficou normal e por quê). */
-const megaNotes = ref<{ text: string; tone: 'ok' | 'warn' }[]>([]);
-let megaNotesTimer: ReturnType<typeof setTimeout> | null = null;
-/** Saldo único de moedas (`app/wallet.ts`): paga a forma Mega (antes era a energia do Treinador). */
-const energy = computed(() => coins.value);
-const megaWanted = computed(() => megaPicks.value.length);
-const megaAffordable = computed(() => Math.floor(energy.value / MEGA_ENERGY_COST));
-function toggleMega(id: string): void {
-  megaPicks.value = megaPicks.value.includes(id) ? megaPicks.value.filter((x) => x !== id) : [...megaPicks.value, id];
-}
-function showMegaNotes(notes: { text: string; tone: 'ok' | 'warn' }[]): void {
-  megaNotes.value = notes;
-  if (megaNotesTimer) clearTimeout(megaNotesTimer);
-  megaNotesTimer = notes.length > 0 ? setTimeout(() => (megaNotes.value = []), 9000) : null;
-}
 const currentRoster = computed(() => rosterFor(rosterRows.value.map((r) => r.id)));
 const modeBlocker = (m: BattleMode) => rosterBlocker(m, population.value.shown, currentRoster.value);
 const rosterCustom = computed(() => rosterRows.value.some((r) => slotOf(r.id) !== 'auto'));
@@ -128,6 +95,7 @@ const loadingCreatures = ref(false);
 /** Vindo da Vila (`#/caixa?vila=1`) a Vila abre direto; vindo da Arena (`?pvp=1`) o PvP já aparece aberto. */
 const arrival = routeFlags(window.location.hash);
 const pvpOpen = ref(arrival.has('pvp'));
+const endlessModes: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
 const endlessShortcut = ref<EndlessArenaMode | null>(arrival.has('formatacao') ? 'formatacao' : arrival.has('restauracao') ? 'restauracao' : null);
 const pvpEl = ref<HTMLDetailsElement | null>(null);
 if (arrival.size > 0) window.history.replaceState(null, '', routeHref('caixa'));
@@ -179,10 +147,6 @@ let motionPreference: MediaQueryList | null = null;
 const phoneHeight = ref(DEFAULT_PHONE_HEIGHT_M);
 const boxSize = ref(2.4);
 const videoFov = ref(63);
-const battleHud = ref<BattleHud | null>(null);
-const preparing = ref(false);
-const battleFighters = ref<Fighter[]>([]);
-const battleSummary = ref<{ winner: string; turns: number; rounds: number; stats: BattleSummary; mode: BattleMode } | null>(null);
 
 let stream: MediaStream | null = null;
 let box: RunningBox | null = null;
@@ -212,13 +176,6 @@ const bookThumbs = reactive(new Map<string, string>());
 const bookList = ref<{ id: string; name: string; real: string }[]>([]);
 const bookMons = computed(() => bookList.value.map((r) => ({ id: r.id, name: r.name, real: r.real, types: bookTypes.get(r.id) ?? [], thumb: bookThumbs.get(r.id) })));
 const bondOf = (id: string): number => friendLevel(village.friends[id]?.points ?? 0).level;
-/** Põe a intimidade nos lutadores da sua equipe (crítico e "aguentou firme"). */
-function withBond(fighters: Fighter[]): Fighter[] {
-  return fighters.map((f) => {
-    const bond = bondOf(f.id);
-    return bond > 0 ? { ...f, bond } : f;
-  });
-}
 
 /** Ao montar a caixa: acessórios da Vila, corações dos mais próximos e a ajuda diária dos amigos. */
 function applyVillage(): void {
@@ -307,170 +264,28 @@ async function openBook(): Promise<void> {
 /** O que foi carregado da sua equipe por último (a equipe do desafio sai daqui, sem os Pokémon do líder). */
 let lastEntries: CreatureEntry[] = [];
 
-// ---- Liga: desafio de Ginásio, Elite 4 ou Campeã (escolhido no Treinador)
-const challenge = computed<Challenge | null>(() => (pendingChallenge.value ? challengeById(pendingChallenge.value) : null));
-/** Os dois treinadores da batalha em cena (desafio ou PvP): aparecem nos cantos do visor. */
-const versus = ref<{ me: { name: string; sprite: string }; them: { name: string; sprite: string; role: string } } | null>(null);
-/** Fala dentro do visor (funciona também em tela cheia, onde o resto do app não aparece). */
-const stageSpeech = ref<{ name: string; text: string; sprite: string } | null>(null);
-let stageSpeechTimer: ReturnType<typeof setTimeout> | null = null;
-let activeChallenge: Challenge | null = null;
-let lastResult: BattleResult | null = null;
-const endlessRun = ref<EndlessArenaRun | null>(null);
-const endlessModes: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
-let endlessEntries: CreatureEntry[] = [];
-let endlessFighters: Fighter[] = [];
-let endlessTimer: ReturnType<typeof setTimeout> | null = null;
-
-function clearEndlessTimer(): void {
-  if (!endlessTimer) return;
-  clearTimeout(endlessTimer);
-  endlessTimer = null;
-}
-
-const endlessLabel = computed(() => endlessRun.value ? ENDLESS_ARENA_LABELS[endlessRun.value.mode] : null);
-
-/** Encerra só a corrida contínua; a Caixa continua no chão para o jogador decidir o próximo passo. */
-function finishEndlessRun(reason: string): void {
-  const run = endlessRun.value;
-  if (!run) return;
-  clearEndlessTimer();
-  const ended = abandonEndlessArena(run);
-  const label = ENDLESS_ARENA_LABELS[ended.mode].title;
-  showMegaNotes([{ text: `${label}: ${reason} Placar final ${ended.score} · ${ended.wins} vitória${ended.wins === 1 ? '' : 's'}.`, tone: ended.wins > 0 ? 'ok' : 'warn' }]);
-  endlessRun.value = null;
-  endlessEntries = [];
-  endlessFighters = [];
-}
-
-/** Uma falha de carregamento não troca silenciosamente a corrida por uma batalha comum: ela fica encerrada até Desistir. */
-function interruptEndlessRun(reason: string): void {
-  const run = endlessRun.value;
-  if (!run) return;
-  clearEndlessTimer();
-  const ended = abandonEndlessArena(run);
-  const label = ENDLESS_ARENA_LABELS[ended.mode].title;
-  endlessRun.value = ended;
-  showMegaNotes([{ text: `${label}: ${reason} Placar ${ended.score} · ${ended.wins} vitória${ended.wins === 1 ? '' : 's'}.`, tone: ended.wins > 0 ? 'ok' : 'warn' }]);
-}
-
-function say(name: string, text: string, sprite: string, ms = 7000): void {
-  stageSpeech.value = { name, text, sprite };
-  if (stageSpeechTimer) clearTimeout(stageSpeechTimer);
-  stageSpeechTimer = setTimeout(() => (stageSpeech.value = null), ms);
-}
-
-function cancelChallenge(): void {
-  pendingChallenge.value = null;
-}
-
-/** Tira os Pokémon do adversário da caixa e volta a sua equipe. */
-async function endVersus(): Promise<void> {
-  if (!versus.value && !(box?.scene.creatureList.some((c) => isLeaderCreature(c.info.id)) ?? false)) return;
-  versus.value = null;
-  activeChallenge = null;
-  activePvp = null;
-  await populate();
-}
-
-// ---- PvP da Caixa (dois celulares)
-const pvpOn = computed(() => boxPvp.peer !== null);
-let activePvp: { myTeam: number; friend: string } | null = null;
-let pvpTeamKey = '';
-let pvpFighters: Fighter[] = [];
-
-/** Monta (uma vez por equipe) os lutadores da sua equipe e manda ao amigo, com o aviso de caixa no chão. */
-async function syncPvpTeam(): Promise<void> {
-  if (!boxPvp.peer) return;
-  const mine = lastEntries.slice(0, BOX_PVP_MAX);
-  if (mine.length === 0) return;
-  const key = mine.map((e) => e.info.id).join('|');
-  if (key !== pvpTeamKey) {
-    pvpTeamKey = key;
-    pvpFighters = withBond(await prepareFighters(mine.map((e) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), dexId: e.info.dexId })), loadBattle));
-    if (key !== pvpTeamKey) return;
-  }
-  const mons: BoxPvpMon[] = mine.map((e, i) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), sprite: e.info.dexId ?? 1, shiny: e.info.shiny === true, fighter: pvpFighters[i]! }));
-  const team: BoxPvpTeam = { name: profile.name, trainer: profile.sprite, mons };
-  sendTeam(team, phase.value === 'running');
-}
-
-watch(() => [boxPvp.peer, phase.value] as const, () => void syncPvpTeam());
-
-/** Encena a luta combinada: as duas equipes na caixa, na ordem anfitrião → convidado, com a semente combinada. */
-async function runPvp(start: BoxPvpStart): Promise<void> {
-  const current = box;
-  const mine = boxPvp.mine;
-  const friend = boxPvp.friend;
-  if (!current || !mine || !friend || !boxPvp.role || preparing.value) return;
-  boxPvp.pending = null;
-  const host = boxPvp.role === 'host' ? mine : friend;
-  const guest = boxPvp.role === 'host' ? friend : mine;
-  const battle = boxPvpBattle(host, guest, { host: start.host, guest: start.guest });
-  preparing.value = true;
-  error.value = '';
-  hint.value = `Chamando a equipe de ${friend.name}…`;
-  if (!fullscreen.value) {
-    fullscreenForBattle = true;
-    void toggleFullscreen();
-  }
-  try {
-    if (versus.value) {
-      current.stopBattle();
-      await endVersus();
-    }
-    const myIds = new Set(mine.mons.map((m) => m.id));
-    const isMine = (k: number) => (boxPvp.role === 'host' ? k < start.host : k >= start.host);
-    const entries: CreatureEntry[] = [];
-    for (let k = 0; k < battle.mons.length; k++) {
-      const m = battle.mons[k]!;
-      const own = isMine(k) && myIds.has(m.id) ? lastEntries.find((e) => e.info.id === m.id) : undefined;
-      const info = { id: m.fighter.id, name: m.name, dexId: m.sprite, detail: isMine(k) ? mine.name : friend.name, shiny: m.shiny };
-      if (own) {
-        entries.push({ info, source: own.source });
-        continue;
-      }
-      const sprite = await fetchSprite(m.sprite, undefined, { shiny: m.shiny });
-      if (!sprite) throw new Error(`sem sprite para ${m.name}`);
-      entries.push({ info, source: await decodeSprite(sprite) });
-    }
-    if (disposed || box !== current) return;
-    current.setCreatures(entries);
-    current.unlockAudio();
-    battleCounted = false;
-    activePvp = { myTeam: boxPvp.role === 'host' ? 0 : 1, friend: friend.name };
-    const result = current.startBattle(battle.fighters, battle.plan, seededRng(start.seed));
-    lastResult = result;
-    battleFighters.value = battle.fighters;
-    battleSummary.value = {
-      mode: 'tres',
-      winner: battle.plan.teamNames[result.winningTeam ?? 0] ?? '',
-      turns: result.turns.length,
-      rounds: result.turns.at(-1)?.round ?? 0,
-      stats: summarizeBattle(battle.fighters, result),
-    };
-    // Os cantos seguem as cores das equipes: anfitrião à esquerda (vermelha), convidado à direita (azul).
-    versus.value = {
-      me: { name: host.name, sprite: trainerSpriteUrl(host.trainer) },
-      them: { name: guest.name, sprite: trainerSpriteUrl(guest.trainer), role: `PvP · ${BOX_PVP_LABELS_PT[start.mode].title}` },
-    };
-  } catch (e) {
-    error.value = `Não consegui montar a luta do PvP: ${e instanceof Error ? e.message : String(e)}`;
-    activePvp = null;
-    await populate();
-  } finally {
-    preparing.value = false;
-    hint.value = '';
-  }
-}
-
-// O convidado encena quando a luta chega e a caixa dele está no chão.
-watch(
-  () => [boxPvp.pending, phase.value] as const,
-  ([pending, ph]) => {
-    if (pending && boxPvp.role === 'guest' && ph === 'running') void runPvp(pending);
-  },
-);
+// ---- A sessão de batalha (batalha comum, desafio da Liga, corrida 6×6 e PvP) mora em `app/box-battle-session.ts`;
+// aqui ficam a câmera, a cena e os Pokémon da caixa, que a sessão pede por `BattleSessionHost`.
+const session = createBattleSession({
+  box: () => box,
+  disposed: () => disposed,
+  entries: () => lastEntries,
+  populate,
+  shown,
+  bondOf,
+  refreshVillage: () => { village = loadVillage(); },
+  fullscreen: { active: () => fullscreen.value, toggle: () => void toggleFullscreen(), exit: () => void exitFullscreen() },
+  closeSummary: () => { showSummary.value = false; },
+  closeSheets: () => { showFilters.value = showTeam.value = showAdjust.value = showModes.value = false; },
+  openModes: () => { showModes.value = true; },
+}, { error, hint, phase, endlessShortcut, battleShortcut });
+const {
+  battleHud, preparing, battleFighters, battleSummary, megaPicks, megaNotes, versus, stageSpeech, endlessRun, endlessLabel,
+  challenge, pvpOn, battling, endlessTeam, energy,
+  toggleMega, showMegaNotes, cancelChallenge, startBattle, startSelectedBattle, startEndless, stopBattle,
+} = session;
+const megaWanted = computed(() => megaPicks.value.length);
+const megaAffordable = computed(() => Math.floor(energy.value / MEGA_ENERGY_COST));
 
 async function populate(): Promise<void> {
   const current = box;
@@ -485,7 +300,7 @@ async function populate(): Promise<void> {
     current.setCreatures(loaded.entries);
     lastEntries = loaded.entries;
     applyVillage();
-    void syncPvpTeam();
+    void session.syncPvpTeam();
     for (const entry of loaded.entries) if (maybeGalladeSpeaks(entry.info)) break;
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
     rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), shiny: e.info.shiny === true, mega: e.info.mega === true }));
@@ -563,24 +378,16 @@ function close(): void {
   sessionVersion++;
   populationVersion++;
   loadingCreatures.value = false;
-  clearEndlessTimer();
-  endlessRun.value = null;
-  endlessEntries = [];
-  endlessFighters = [];
+  session.reset();
   lastEntries = [];
-  battleFighters.value = [];
   rosterRows.value = [];
   population.value = { shown: 0, available: 0, failed: 0 };
-  battleHud.value = null;
-  battleSummary.value = null;
-  preparing.value = false;
   void exitFullscreen();
   showFilters.value = false;
   showTeam.value = false;
   showAdjust.value = false;
   showSummary.value = false;
   showModes.value = false;
-  fullscreenForBattle = false;
   box?.stop();
   box = null;
   stopCamera(videoEl.value, stream);
@@ -659,396 +466,14 @@ watch(() => effectiveVisual.value.sound, (on) => box?.setSound(on));
 
 const canBattle = computed(() => phase.value === 'running' && population.value.shown >= (challenge.value || pvpOn.value ? 1 : 2) && !loadingCreatures.value && !preparing.value);
 /** A Arena usa deliberadamente os seis marcados como Vermelha: a escalação deixa de ser um detalhe escondido. */
-const endlessTeamEntries = computed(() => endlessShortcut.value ? lastEntries.slice(0, MAX_CHALLENGE_TEAM) : lastEntries.filter((entry) => slotOf(entry.info.id) === 0));
-const canStartEndless = computed(() => phase.value === 'running' && endlessTeamEntries.value.length === MAX_CHALLENGE_TEAM && !loadingCreatures.value && !preparing.value && !pvpOn.value);
-const battling = computed(() => battleHud.value !== null);
+// A lista da equipe não é reativa: os sinais reativos vêm antes dela, para o botão ser reavaliado quando a equipe terminar de carregar.
+const canStartEndless = computed(() => phase.value === 'running' && !loadingCreatures.value && !preparing.value && !pvpOn.value && endlessTeam().length === MAX_CHALLENGE_TEAM);
 /** Tremor e "soco" de zoom da imagem desenhada nos golpes fortes (o vídeo da câmera não treme). */
 const shakeStyle = computed(() => {
   const s = battleHud.value?.shake;
   if (!s || (Math.abs(s.x) < 0.2 && Math.abs(s.y) < 0.2 && s.zoom < 1.002)) return undefined;
   return { transform: `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) scale(${s.zoom.toFixed(3)})` };
 });
-
-/** Carrega os dados de cada Pokémon da caixa (jogo + carta) e começa a luta automática. */
-/** A batalha em cena já rendeu XP ao Treinador (só conta quando termina). */
-let battleCounted = false;
-let battleCompanions: CardCompanion[] = [];
-watch(
-  () => battleHud.value?.phase,
-  (phase) => {
-    if (phase !== 'finished' || battleCounted) return;
-    battleCounted = true;
-    if (endlessRun.value && lastResult) {
-      const previous = endlessRun.value;
-      const next = resolveEndlessBattle(previous, endlessFighters, lastResult);
-      endlessRun.value = next;
-      const label = ENDLESS_ARENA_LABELS[next.mode].title;
-      if (next.stopped) {
-        showMegaNotes([{ text: `${label}: a corrida terminou. Placar ${next.score} · ${next.wins} vitória${next.wins === 1 ? '' : 's'}.`, tone: next.wins > 0 ? 'ok' : 'warn' }]);
-        return;
-      }
-      showMegaNotes([{ text: `${label}: vitória ${next.wins}! Próxima batalha em instantes · ${next.score} pontos.`, tone: 'ok' }]);
-      clearEndlessTimer();
-      endlessTimer = setTimeout(() => void startEndlessWave(), 1800);
-      return;
-    }
-    if (activePvp && lastResult) {
-      const won = lastResult.winningTeam === activePvp.myTeam;
-      recordEvent({ type: 'pvp', won });
-      showMegaNotes([{ text: won ? `Você venceu ${activePvp.friend}!` : `${activePvp.friend} venceu desta vez.`, tone: won ? 'ok' : 'warn' }]);
-      return;
-    }
-    const ch = activeChallenge;
-    if (ch && lastResult) {
-      const won = lastResult.winningTeam === 0;
-      const outcome = recordLeagueResult(ch, won);
-      say(`${ch.role} ${ch.leader}`, won ? ch.defeat : 'Boa luta! Treine sua equipe e volte quando quiser a revanche.', trainerSpriteUrl(ch.sprite), 9000);
-      showMegaNotes([{ text: outcome.message, tone: won ? 'ok' : 'warn' }]);
-      if (won) pendingChallenge.value = null;
-      return;
-    }
-    if (lastResult) {
-      const winners = new Set(battleWinners(battleFighters.value, lastResult));
-      if (!recordCardVictories(battleCompanions.filter((mon) => winners.has(mon.id)), 'battle')) {
-        error.value = cardJourneyError.value;
-      }
-    }
-    recordEvent({ type: 'battle', team: battleSummary.value ? battleSummary.value.mode !== 'royale' : false });
-    // Moedas da Vila: cada batalha terminada rende moedas, até BATTLE_REWARDS_PER_DAY vezes por dia.
-    // Pela carteira (saldo único): grava na Vila viva ou na guardada, e o saldo mostrado acompanha.
-    const today = dayKey(new Date());
-    let gained = 0;
-    let left = 0;
-    withVillage((v) => {
-      gained = claimBattleReward(v, today);
-      left = battleRewardsLeft(v, today);
-      return gained > 0;
-    });
-    village = loadVillage();
-    if (gained > 0) {
-      showMegaNotes([{ text: `+${gained} moedas! (${BATTLE_REWARDS_PER_DAY - left} de ${BATTLE_REWARDS_PER_DAY} hoje)`, tone: 'ok' }]);
-    } else {
-      showMegaNotes([{ text: `As batalhas de hoje já renderam as moedas (${BATTLE_REWARDS_PER_DAY} de ${BATTLE_REWARDS_PER_DAY}). Amanhã tem mais.`, tone: 'warn' }]);
-    }
-    battleShortcut.value = false;
-  },
-);
-
-async function decodeSprite(sprite: { kind: 'gif' | 'static'; blob: Blob }) {
-  return sprite.kind === 'gif'
-    ? ({ kind: 'gif', gif: await browserDecoders.gif(sprite.blob) } as const)
-    : ({ kind: 'image', image: await browserDecoders.image(sprite.blob) } as const);
-}
-
-/** Desafio da Liga: até 6 da sua caixa contra a equipe do líder, em revezamento. */
-async function startChallenge(ch: Challenge): Promise<void> {
-  const current = box;
-  if (!current || preparing.value) return;
-  if (statusOf(league.value, ch) === 'locked') {
-    error.value = 'Esse desafio ainda está bloqueado: vença os anteriores primeiro.';
-    return;
-  }
-  current.unlockAudio();
-  if (versus.value) {
-    current.stopBattle();
-    await endVersus();
-  }
-  const mine = lastEntries.slice(0, MAX_CHALLENGE_TEAM);
-  if (mine.length === 0) {
-    error.value = 'Sua Caixa está vazia: escaneie cartas ou escolha moradores da Vila antes do desafio.';
-    return;
-  }
-  preparing.value = true;
-  showSummary.value = false;
-  showFilters.value = showTeam.value = showAdjust.value = showModes.value = false;
-  if (!fullscreen.value) {
-    fullscreenForBattle = true;
-    void toggleFullscreen();
-  }
-  error.value = '';
-  hint.value = `Chamando a equipe de ${ch.leader}…`;
-  try {
-    const leader = await loadLeaderEntries(ch, { fetchSprite: (dex) => fetchSprite(dex), decode: decodeSprite });
-    if (leader.entries.length === 0) throw new Error('não consegui baixar a equipe do líder (sem conexão?)');
-    if (disposed || box !== current) return;
-    current.setCreatures([...mine, ...leader.entries]);
-    hint.value = 'Preparando a batalha: buscando atributos e golpes…';
-    const creatures = current.scene.creatureList;
-    const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: shown(c.info.id, c.info.name), dexId: c.info.dexId })), leaderLoader(loadBattle));
-    if (disposed || box !== current) return;
-    const fighters = raw.map((f, i) => (i >= mine.length ? leaderFighter(f, ch.power) : withBond([f])[0]!));
-    const plan = challengePlan(mine.length, leader.entries.length, ch, profile.name);
-    battleCounted = false;
-    activeChallenge = ch;
-    const result = current.startBattle(fighters, plan);
-    lastResult = result;
-    battleFighters.value = fighters;
-    battleSummary.value = {
-      mode: 'tres',
-      winner: result.winningTeam === 0 ? profile.name : ch.leader,
-      turns: result.turns.length,
-      rounds: result.turns.at(-1)?.round ?? 0,
-      stats: summarizeBattle(fighters, result),
-    };
-    versus.value = { me: { name: profile.name, sprite: trainerSpriteUrl(profile.sprite) }, them: { name: ch.leader, sprite: trainerSpriteUrl(ch.sprite), role: ch.role } };
-    say(`${ch.role} ${ch.leader}`, ch.intro, trainerSpriteUrl(ch.sprite));
-    if (leader.failed.length > 0) showMegaNotes([{ text: `Não carregaram da equipe do líder: ${leader.failed.join(', ')}.`, tone: 'warn' }]);
-  } catch (e) {
-    error.value = `Não consegui começar o desafio: ${e instanceof Error ? e.message : String(e)}`;
-    activeChallenge = null;
-    await populate();
-    if (fullscreenForBattle) {
-      fullscreenForBattle = false;
-      void exitFullscreen();
-    }
-  } finally {
-    preparing.value = false;
-    hint.value = '';
-  }
-}
-
-/** Abre uma corrida 6×6 da Arena. A equipe fica fixa, mas o oponente é materializado de verdade a cada onda. */
-async function startEndless(mode: EndlessArenaMode): Promise<void> {
-  const current = box;
-  if (!current || preparing.value || pvpOn.value) return;
-  const mine = endlessTeamEntries.value;
-  if (mine.length !== MAX_CHALLENGE_TEAM) {
-    error.value = endlessShortcut.value
-      ? 'A Arena contínua precisa de uma equipe de batalha com exatamente 6 Pokémon. Volte à Arena para organizá-la.'
-      : 'A Arena contínua precisa de exatamente 6 Pokémon marcados em Vermelha na escalação.';
-    showModes.value = true;
-    return;
-  }
-  current.unlockAudio();
-  if (versus.value) {
-    current.stopBattle();
-    await endVersus();
-  }
-  pendingChallenge.value = null;
-  preparing.value = true;
-  showSummary.value = false;
-  showFilters.value = showTeam.value = showAdjust.value = showModes.value = false;
-  if (!fullscreen.value) {
-    fullscreenForBattle = true;
-    void toggleFullscreen();
-  }
-  error.value = '';
-  hint.value = 'Conferindo a sua equipe de 6 para a Arena…';
-  try {
-    const fighters = withBond(await prepareFighters(mine.map((c) => ({ id: c.info.id, name: shown(c.info.id, c.info.name), dexId: c.info.dexId })), loadBattle));
-    if (disposed || box !== current) return;
-    const run = startEndlessArena(mode, fighters);
-    if (!run) throw new Error('a sua equipe precisa ter exatamente 6 Pokémon');
-    endlessEntries = mine;
-    endlessFighters = fighters;
-    endlessRun.value = run;
-    await startEndlessWave();
-  } catch (e) {
-    finishEndlessRun('não foi possível preparar a equipe.');
-    error.value = `Não consegui começar a Arena: ${e instanceof Error ? e.message : String(e)}`;
-    if (fullscreenForBattle) {
-      fullscreenForBattle = false;
-      void exitFullscreen();
-    }
-  } finally {
-    preparing.value = false;
-    hint.value = '';
-  }
-}
-
-/** Materializa a próxima equipe adversária e começa outra batalha automática sem curar indevidamente o jogador. */
-async function startEndlessWave(): Promise<void> {
-  const current = box;
-  const run = endlessRun.value;
-  if (!current || !run || run.stopped || preparing.value && endlessFighters.length === 0) return;
-  clearEndlessTimer();
-  preparing.value = true;
-  error.value = '';
-  const label = ENDLESS_ARENA_LABELS[run.mode].title;
-  hint.value = `${label}: escolhendo o próximo treinador…`;
-  try {
-    const seed = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff) ^ (run.battles + 1) * 0x45d9f3b) >>> 0;
-    const opponent = nextEndlessOpponent(seededRng(seed));
-    const loaded = await loadArenaEntries(run.battles + 1, opponent.trainer, opponent.dexIds, { fetchSprite: (dex) => fetchSprite(dex), decode: decodeSprite });
-    if (loaded.entries.length !== MAX_CHALLENGE_TEAM) {
-      const missing = loaded.failed.length > 0 ? loaded.failed.join(', ') : 'a equipe adversária completa';
-      throw new Error(`a onda não abriu porque não carregou: ${missing}`);
-    }
-    if (disposed || box !== current || endlessRun.value !== run || run.stopped) return;
-    hint.value = 'Preparando atributos e golpes da próxima equipe…';
-    current.setCreatures([...endlessEntries, ...loaded.entries]);
-    const creatures = current.scene.creatureList;
-    const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: shown(c.info.id, c.info.name), dexId: c.info.dexId })), leaderLoader(loadBattle));
-    if (disposed || box !== current || endlessRun.value !== run || run.stopped) return;
-    if (raw.length !== MAX_CHALLENGE_TEAM * 2) throw new Error('a equipe adversária não ficou completa');
-    const power = Math.min(1.72, 1.2 + run.wins * 0.035);
-    const foes = raw.slice(MAX_CHALLENGE_TEAM).map((fighter) => leaderFighter(fighter, power));
-    const fighters = [...endlessFighters, ...foes];
-    const plan = {
-      picks: Array.from({ length: fighters.length }, (_, i) => i),
-      teams: fighters.map((_, i) => i < MAX_CHALLENGE_TEAM ? 0 : 1),
-      relay: true,
-      initialHp: [...run.hp, ...foes.map((fighter) => fighter.maxHp)],
-      teamNames: [profile.name, opponent.trainer],
-      banner: { text: label, sub: `Batalha ${run.battles + 1} · ${run.wins} vitórias · ${run.score} pontos` },
-    };
-    battleCounted = false;
-    activeChallenge = null;
-    const result = current.startBattle(fighters, plan, seededRng(seed ^ 0x9e3779b9));
-    lastResult = result;
-    battleCompanions = [];
-    battleFighters.value = fighters;
-    battleSummary.value = {
-      mode: 'tres',
-      winner: result.winningTeam === 0 ? profile.name : opponent.trainer,
-      turns: result.turns.length,
-      rounds: result.turns.at(-1)?.round ?? 0,
-      stats: summarizeBattle(fighters, result),
-    };
-    versus.value = { me: { name: profile.name, sprite: trainerSpriteUrl(profile.sprite) }, them: { name: opponent.trainer, sprite: trainerSpriteUrl('ace'), role: 'Arena digital' } };
-    say(opponent.trainer, `Seis contra seis. Vamos ver até onde sua equipe aguenta!`, trainerSpriteUrl('ace'));
-  } catch (e) {
-    if (endlessRun.value === run) interruptEndlessRun('a conexão não conseguiu montar a próxima onda.');
-    error.value = `Não consegui abrir a próxima batalha da Arena: ${e instanceof Error ? e.message : String(e)}`;
-  } finally {
-    preparing.value = false;
-    hint.value = '';
-  }
-}
-
-async function startBattle(): Promise<void> {
-  if (pvpOn.value) {
-    if (boxPvp.role !== 'host') {
-      error.value = 'No PvP quem começa a luta é o anfitrião.';
-      return;
-    }
-    const start = startBoxPvp();
-    if (!start) {
-      error.value = 'Esperando a equipe do amigo chegar.';
-      return;
-    }
-    return runPvp(start);
-  }
-  if (challenge.value) return startChallenge(challenge.value);
-  const current = box;
-  if (!current || preparing.value) return;
-  if (versus.value) {
-    current.stopBattle();
-    await endVersus();
-  }
-  const creatures = current.scene.creatureList;
-  if (creatures.length < 2) return;
-  const slots = rosterFor(creatures.map((c) => c.info.id));
-  const blocker = rosterBlocker(battleMode.value, creatures.length, slots);
-  if (blocker) {
-    error.value = blocker;
-    showModes.value = true;
-    return;
-  }
-  // O navegador só libera o áudio dentro de um toque: isso vem antes de qualquer espera.
-  current.unlockAudio();
-  preparing.value = true;
-  showSummary.value = false;
-  // A arena é pequena: a tela cheia (pedida já no toque, antes de esperar a rede) dá mais espaço para ver o que acontece.
-  if (!fullscreen.value) {
-    fullscreenForBattle = true;
-    void toggleFullscreen();
-  }
-  error.value = '';
-  hint.value = 'Preparando a batalha: buscando atributos e golpes…';
-  showFilters.value = false;
-  showTeam.value = false;
-  showAdjust.value = false;
-  showModes.value = false;
-  try {
-    // Todos da caixa lutam por padrão; equipes e 3x3 sorteiam os lados (e, no 3x3, quem entra) a cada batalha,
-    // a menos que o jogador tenha montado a escalação (equipe fixa ou fora da luta).
-    const plan = planBattle(battleMode.value, creatures.length, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0), slots);
-    const fighting = plan.picks.map((i) => creatures[i]!);
-    // Forma Mega (só desta batalha): deixa tudo pronto antes; as moedas só são cobradas depois que a batalha começa.
-    restoreForms(current);
-    const wanted = fighting.filter((c) => c.info.mega === true && megaPicks.value.includes(c.info.id));
-    if (wanted.length > 0) hint.value = 'Preparando a forma Mega…';
-    const megaPlan = await planMegaBattle(
-      wanted.map((c) => ({ id: c.info.id, name: c.info.name, baseDexId: c.info.dexId, shiny: c.info.shiny })),
-      energy.value,
-      { prepare: prepareMegaFor, decode: decodeMegaSprite },
-    );
-    const fighters = withBond(await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: shown(c.info.id, c.info.name), dexId: c.info.dexId })), megaAwareLoader(loadBattle, megaPlan.entries)));
-    if (disposed || box !== current) return;
-    battleCounted = false;
-    for (const entry of megaPlan.entries) fighting.find((c) => c.info.id === entry.cardId)?.setForm(entry.source);
-    let result;
-    try {
-      result = current.startBattle(fighters, plan.mode === 'royale' ? undefined : plan);
-      lastResult = result;
-      battleCompanions = fighting.flatMap((c) => c.info.dexId === undefined || c.info.digital ? [] : [{ id: c.info.id, dexId: c.info.dexId, name: c.info.name }]);
-    } catch (e) {
-      restoreForms(current);
-      throw e;
-    }
-    const notes: { text: string; tone: 'ok' | 'warn' }[] = megaPlan.notes.map((text) => ({ text, tone: 'warn' }));
-    if (megaPlan.cost > 0) {
-      if (spendCoins(megaPlan.cost)) {
-        const names = megaPlan.entries.map((e) => fighting.find((c) => c.info.id === e.cardId)?.info.name ?? 'Pokémon').join(', ');
-        notes.unshift({ text: `${names}: forma Mega só nesta batalha (−${megaPlan.cost} moedas).`, tone: 'ok' });
-        megaPicks.value = megaPicks.value.filter((id) => !megaPlan.entries.some((e) => e.cardId === id));
-      } else {
-        notes.unshift({ text: 'As moedas acabaram antes de a batalha começar; nada foi cobrado.', tone: 'warn' });
-      }
-    }
-    showMegaNotes(notes);
-    battleFighters.value = fighters;
-    battleSummary.value = {
-      mode: plan.mode,
-      winner: result.winningTeam === undefined ? (fighters[result.winner]?.name ?? '') : `${TEAM_NAMES_PT[result.winningTeam] ?? 'A equipe'} (${fighters[result.winner]?.name ?? ''})`,
-      turns: result.turns.length,
-      rounds: result.turns.at(-1)?.round ?? 0,
-      stats: summarizeBattle(fighters, result),
-    };
-  } catch (e) {
-    restoreForms(current);
-    error.value = `Não consegui começar a batalha: ${e instanceof Error ? e.message : String(e)}`;
-    if (fullscreenForBattle) {
-      fullscreenForBattle = false;
-      void exitFullscreen();
-    }
-  } finally {
-    preparing.value = false;
-    hint.value = '';
-  }
-}
-
-function startSelectedBattle(): void {
-  if (endlessShortcut.value) void startEndless(endlessShortcut.value);
-  else void startBattle();
-}
-
-/** Volta cada Pokémon à forma da carta (a Mega dura uma batalha só). */
-function restoreForms(running: RunningBox | null): void {
-  for (const creature of running?.scene.creatureList ?? []) creature.restoreForm();
-}
-
-async function decodeMegaSprite(ready: { sprite: { kind: 'gif' | 'static'; blob: Blob } }) {
-  return ready.sprite.kind === 'gif'
-    ? ({ kind: 'gif', gif: await browserDecoders.gif(ready.sprite.blob) } as const)
-    : ({ kind: 'image', image: await browserDecoders.image(ready.sprite.blob) } as const);
-}
-
-function stopBattle(): void {
-  if (endlessRun.value) finishEndlessRun('você desistiu da corrida.');
-  box?.stopBattle();
-  restoreForms(box);
-  stageSpeech.value = null;
-  void endVersus();
-  battleHud.value = null;
-  battleSummary.value = null;
-  showSummary.value = false;
-  if (fullscreenForBattle) {
-    fullscreenForBattle = false;
-    void exitFullscreen();
-  }
-}
 
 const mvp = computed(() => {
   const sum = battleSummary.value;
@@ -1173,8 +598,7 @@ onBeforeUnmount(() => {
   disposed = true;
   clearInterval(weatherTimer);
   clearInterval(heartTimer);
-  if (stageSpeechTimer) clearTimeout(stageSpeechTimer);
-  if (megaNotesTimer) clearTimeout(megaNotesTimer);
+  session.dispose();
   if (pickedTimer) clearTimeout(pickedTimer);
   motionPreference?.removeEventListener('change', onMotionPreferenceChange);
   close();
@@ -1326,7 +750,7 @@ onBeforeUnmount(() => {
                 <span>{{ ENDLESS_ARENA_LABELS[m].tutorial }}</span>
               </button>
             </div>
-            <small v-if="endlessTeamEntries.length !== MAX_CHALLENGE_TEAM">Vermelha: {{ endlessTeamEntries.length }}/{{ MAX_CHALLENGE_TEAM }} · selecione exatamente 6 para liberar.</small>
+            <small v-if="endlessTeam().length !== MAX_CHALLENGE_TEAM">Vermelha: {{ endlessTeam().length }}/{{ MAX_CHALLENGE_TEAM }} · selecione exatamente 6 para liberar.</small>
           </section>
           <p class="hint">3 · Escale os Pokémon abaixo. Para mudar quem passeia na Caixa AR, abra Quem passeia.</p>
           <p v-if="rosterRows.some((r) => r.mega)" class="hint mega-hint">
