@@ -58,8 +58,8 @@ export function quarterCell(qx: 0 | 1, qy: 0 | 1, sameV: boolean, sameH: boolean
 /** Os pedaços que formam o bloco (x, y) do chão, de baixo para cima. */
 export function groundPieces(map: VillageMap, x: number, y: number): GroundPiece[] {
   const tile = tileAt(map, x, y);
-  // Os outros quadrantes têm preenchimentos de outra cor: sorteá-los criava grandes manchas quadradas.
-  const grass: GroundPiece = { src: 'grass', sx: 0, sy: 0, w: T, h: T, dx: 0, dy: 0 };
+  // As quatro variantes geradas usam a mesma base; só os pequenos tufos mudam.
+  const grass: GroundPiece = { src: 'grass', sx: (x % 2) * T, sy: (y % 2) * T, w: T, h: T, dx: 0, dy: 0 };
   const at = AUTOTILE[tile];
   if (at) return autotile(map, x, y, tile, at);
   switch (tile) {

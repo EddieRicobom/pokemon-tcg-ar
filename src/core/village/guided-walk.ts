@@ -1,4 +1,5 @@
 import type { Walker } from './actors';
+import { LEISURE_SPOTS } from './expansion';
 
 export const GUIDED_DESTINATIONS = [
   { x: 47, y: 36, place: 'Fonte Central' },
@@ -9,6 +10,10 @@ export const GUIDED_DESTINATIONS = [
   { x: 86, y: 50, place: 'Fazenda dos Canteiros' },
   { x: 22, y: 64, place: 'Bosque do Sul' },
   { x: 74, y: 18, place: 'Trilha do Lago' },
+  ...LEISURE_SPOTS.map((place) => ({ x: place.x, y: place.y, place: place.name })),
+  { x: 67, y: 26, place: 'Terraço do Café' },
+  { x: 15, y: 13, place: 'Trilha da Madeireira' },
+  { x: 17, y: 66, place: 'Pedreira do Sul' },
 ] as const;
 
 export interface GuidedWalkProgress {

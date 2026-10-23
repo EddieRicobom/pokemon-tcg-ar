@@ -2,6 +2,7 @@ import { seededRng } from '../core/battle';
 import type { Tile } from '../core/village/map';
 import { createBuf, EDGE, paintGround, TILE } from '../box/ground-art';
 import type { PixelBuf } from '../box/ground-art';
+import { villageGrassSheet, villagePierTile, villageSandTile } from './ground-palette';
 
 /**
  * Pixel art da Vila, toda desenhada por código (sem imagens): blocos do chão, árvores, pedras, arbustos, água, a casa em
@@ -44,7 +45,6 @@ export function outline(buf: PixelBuf, rgb: number): void {
 
 // ----------------------------------------------------------------------------- chão
 
-const SAND = { base: 0xf0dca0, dot: 0xd8c080, light: 0xfff0c0 };
 const WATER = { base: 0x4f8fe0, deep: 0x3a74c8, light: 0x9cd0ff, foam: 0xe8f6ff };
 const DIRT = { base: 0xb88a52, dark: 0x8e6638, light: 0xd2a66c, stake: 0x6a4a28 };
 
@@ -55,7 +55,7 @@ const DIRT = { base: 0xb88a52, dark: 0x8e6638, light: 0xd2a66c, stake: 0x6a4a28 
 export interface GroundTileImage {
   w: number;
   h: number;
-  data: Uint8ClampedArray;
+  data: Uint8ClampedArray | Uint8Array;
 }
 
 /** Copia uma das 4 variações de 16×16 do recorte (conforme a posição do bloco, pra variar) para o bloco do chão. */
@@ -80,9 +80,7 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
   const rng = seededRng((c * 73856093) ^ (r * 19349663) ^ 0x5bd1e995);
   switch (tile) {
     case 'pier':
-      rect(buf, 0, 0, TILE, TILE, 0x825942);
-      for (let y = 0; y < TILE; y += 4) { rect(buf, 0, y, TILE, 1, 0x4b3432); rect(buf, 1, y + 1, TILE - 2, 1, 0xb09066); }
-      break;
+      return villagePierTile(edges, c, r);
     case 'shop':
       paintGround(buf, 0, 0, 'path', rng, 0, { c, r });
       break;
@@ -94,7 +92,7 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
     case 'rock':
     case 'bush':
       if (groundTile) paintGroundTileImage(buf, groundTile, c, r);
-      else paintGround(buf, 0, 0, (c + r) % 3 === 0 ? 'grass2' : 'grass', rng, 0, { c, r });
+      else paintGroundTileImage(buf, villageGrassSheet(), c, r);
       break;
     case 'flower':
       paintGround(buf, 0, 0, 'flowers', rng, 0, { c, r });
@@ -108,9 +106,7 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
       paintGround(buf, 0, 0, 'path', rng, edges, { c, r });
       break;
     case 'sand':
-      rect(buf, 0, 0, TILE, TILE, SAND.base);
-      for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) if ((x * 5 + y * 3 + c * 7 + r * 13) % 19 === 0) put(buf, x, y, (x + y) % 2 ? SAND.dot : SAND.light);
-      break;
+      return villageSandTile(c, r);
     case 'water': {
       rect(buf, 0, 0, TILE, TILE, WATER.base);
       for (let y = 0; y < TILE; y++) {
@@ -223,6 +219,17 @@ export function paintHouse(level: number): PixelBuf {
       rect(buf, x, 47, 14, 3, 0x8a5a2e);
       for (let i = 0; i < 6; i++) put(buf, x + 1 + i * 2, 46, [0xf06048, 0xffd84a, 0xf8a8c8][i % 3]!);
     }
+  }
+  if (level >= 5) {
+    rect(buf, 5, 47, 54, 3, 0xb78e62);
+    for (const x of [7, 54]) rect(buf, x, 48, 3, 14, 0x896342);
+    for (let x = 9; x < 54; x += 5) if (x < 25 || x > 38) rect(buf, x, 55, 1, 7, 0xe4d1ac);
+  }
+  if (level >= 6) {
+    rect(buf, 24, 20, 16, 13, wall);
+    rect(buf, 27, 22, 10, 8, 0x8fd0ff);
+    rect(buf, 31, 22, 2, 8, 0xf2e6c8);
+    rect(buf, 27, 26, 10, 1, 0xf2e6c8);
   }
   outline(buf, 0x2a1a10);
   return buf;

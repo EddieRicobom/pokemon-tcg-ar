@@ -3,6 +3,8 @@ import type { VillageState } from './life';
 import { TYPE_AFFINITIES, VILLAGE_ACTIVITIES } from './vocations';
 import type { VillageActivity } from './vocations';
 import { chooseActivity } from './vocations';
+import { workActivityActive } from './professions';
+import { payResidentWork } from './resident-economy';
 import type { PokemonType } from '../pokemon-data';
 import { recordMomentAndMemory } from './social-state';
 
@@ -376,7 +378,7 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
   if (available.length === 1) available.push('exploracao', 'pesquisa');
   const shortageNeed = state.community.shortageDays > 0 ? 4 : 0;
   const choice = chooseActivity({
-    available, types: resident.types ?? [], interests: progress.interests, energy: progress.energy,
+    available: available.filter((activity) => workActivityActive(activity, residentCount)), types: resident.types ?? [], interests: progress.interests, energy: progress.energy,
     socialOpportunity: resident.socialOpportunity ?? (residentCount > 1 ? 1 : 0),
     communityNeeds: [
       ...(agricultureAvailable ? [{ activity: 'agricultura' as const, urgency: (harvestCrop ? 3 : 2) + shortageNeed }] : []),
@@ -452,6 +454,8 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
   progress.rememberedActivity = experience >= 2 ? choice.activity : progress.rememberedActivity;
   progress.recentActivity = choice.activity;
   if (learned) result += ' Essa atividade está virando um novo interesse.';
+  const paidRole = choice.activity === 'agricultura' ? 'farm' : choice.activity === 'pesca' ? 'fishing' : choice.activity === 'culinaria' ? 'cafe' : null;
+  if (paidRole && ((qty ?? 0) > 0 || choice.activity === 'agricultura' && x !== undefined)) payResidentWork(state, resident.id, paidRole, `comunidade:${day}`, day, 8);
   return { residentId: resident.id, activity: choice.activity, icon: ACTIVITY_ICONS[choice.activity], result, ...(item ? { item } : {}), ...(qty !== undefined ? { qty } : {}), ...(x !== undefined ? { x } : {}), ...(y !== undefined ? { y } : {}), ...(kitchenProject?.status === 'concluido' && kitchenProject.participants.includes(resident.id) ? { projectId: kitchenProject.id } : {}) };
 }
 
