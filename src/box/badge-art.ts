@@ -1,9 +1,10 @@
 import { polishLook } from '../core/badges';
-import type { BadgeDesign, Finish, Point } from '../core/badges';
+import type { BadgeDesign, Fill, Point } from '../core/badges';
 
 /**
  * Desenha a face de uma insígnia num canvas 2D (vira a textura da face na maleta 3D): metal com degradê e riscos finos,
- * esmalte, poeira que some com o polimento. O canvas cobre o quadrado de -1 a 1 do desenho.
+ * esmalte com filetes entre as cores, verniz, poeira que some com o polimento. O canvas cobre o quadrado de -1 a 1 do
+ * desenho. `drawBadgeHeight` faz o relevo (metal alto, esmalte afundado) e `drawBadgeMask` diz o que é metal.
  */
 
 /** Ruído fixo por insígnia (a poeira não "pula" a cada redesenho). */
@@ -27,6 +28,29 @@ function trace(ctx: CanvasRenderingContext2D, points: readonly Point[], size: nu
   if (close) ctx.closePath();
 }
 
+/** Pinta cada camada (área ou linha) com o estilo que `style` der para o acabamento dela. */
+function paintLayers(ctx: CanvasRenderingContext2D, design: BadgeDesign, size: number, style: (f: Fill) => string | CanvasGradient, wire?: string): void {
+  for (const layer of design.layers) {
+    trace(ctx, layer.points, size, layer.line === undefined);
+    if (layer.line === undefined) {
+      ctx.fillStyle = style(layer.fill);
+      ctx.fill();
+      if (wire && layer.fill !== 'shine' && layer.fill !== 'metal') {
+        ctx.strokeStyle = wire;
+        ctx.lineWidth = size * 0.011;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      }
+    } else {
+      ctx.strokeStyle = style(layer.fill);
+      ctx.lineWidth = (layer.line * size) / 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+  }
+}
+
 export function drawBadgeFace(canvas: HTMLCanvasElement, design: BadgeDesign, polish: number): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -36,7 +60,7 @@ export function drawBadgeFace(canvas: HTMLCanvasElement, design: BadgeDesign, po
   metal.addColorStop(0, design.metal.light);
   metal.addColorStop(0.45, design.metal.base);
   metal.addColorStop(1, design.metal.dark);
-  const fill = (f: Finish): string | CanvasGradient => {
+  const fill = (f: Fill): string | CanvasGradient => {
     switch (f) {
       case 'metal':
         return metal;
@@ -50,6 +74,8 @@ export function drawBadgeFace(canvas: HTMLCanvasElement, design: BadgeDesign, po
         return design.metal.dark;
       case 'shine':
         return 'rgba(255,255,255,0.7)';
+      default:
+        return f;
     }
   };
 
@@ -73,19 +99,14 @@ export function drawBadgeFace(canvas: HTMLCanvasElement, design: BadgeDesign, po
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
-  for (const layer of design.layers) {
-    trace(ctx, layer.points, size, layer.line === undefined);
-    if (layer.line === undefined) {
-      ctx.fillStyle = fill(layer.fill);
-      ctx.fill();
-    } else {
-      ctx.strokeStyle = fill(layer.fill) as string;
-      ctx.lineWidth = (layer.line * size) / 2;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.stroke();
-    }
-  }
+  paintLayers(ctx, design, size, fill, 'rgba(0,0,0,0.3)');
+  // Verniz: luz de cima à esquerda, sombra embaixo à direita.
+  const glaze = ctx.createRadialGradient(size * 0.3, size * 0.22, 0, size * 0.3, size * 0.22, size * 0.85);
+  glaze.addColorStop(0, 'rgba(255,255,255,0.14)');
+  glaze.addColorStop(0.5, 'rgba(255,255,255,0)');
+  glaze.addColorStop(1, 'rgba(0,0,0,0.16)');
+  ctx.fillStyle = glaze;
+  ctx.fillRect(0, 0, size, size);
   // Borda do metal em volta do esmalte.
   trace(ctx, design.outline, size, true);
   ctx.strokeStyle = design.metal.dark;
@@ -109,6 +130,27 @@ export function drawBadgeFace(canvas: HTMLCanvasElement, design: BadgeDesign, po
 }
 
 /**
+ * Relevo da face (vira o `bumpMap`): o metal e os filetes ficam altos, o esmalte afundado dentro deles, e a borda
+ * externa ganha um aro. Um leve desfoque arredonda as quinas.
+ */
+export function drawBadgeHeight(canvas: HTMLCanvasElement, design: BadgeDesign): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const size = canvas.width;
+  const gray = (v: number): string => `rgb(${v},${v},${v})`;
+  ctx.filter = `blur(${Math.max(1, size / 220)}px)`;
+  ctx.fillStyle = gray(200);
+  ctx.fillRect(0, 0, size, size);
+  const height = (f: Fill): string => (f === 'metal' ? gray(225) : f === 'dark' ? gray(150) : f === 'shine' ? gray(150) : gray(110));
+  paintLayers(ctx, design, size, height, gray(185));
+  trace(ctx, design.outline, size, true);
+  ctx.strokeStyle = gray(245);
+  ctx.lineWidth = size * 0.05;
+  ctx.stroke();
+  ctx.filter = 'none';
+}
+
+/**
  * Máscara do material da face: verde = aspereza relativa, azul = metal. Metal (e traço escuro) fica metálico; esmalte
  * é vidrado e não metálico, então a cor dele aparece mesmo com o reflexo do ambiente.
  */
@@ -120,17 +162,5 @@ export function drawBadgeMask(canvas: HTMLCanvasElement, design: BadgeDesign): v
   const enamel = design.translucent ? 'rgb(0,60,40)' : 'rgb(0,110,0)';
   ctx.fillStyle = metal;
   ctx.fillRect(0, 0, size, size);
-  for (const layer of design.layers) {
-    const style = layer.fill === 'metal' || layer.fill === 'dark' ? metal : enamel;
-    trace(ctx, layer.points, size, layer.line === undefined);
-    if (layer.line === undefined) {
-      ctx.fillStyle = style;
-      ctx.fill();
-    } else {
-      ctx.strokeStyle = style;
-      ctx.lineWidth = (layer.line * size) / 2;
-      ctx.lineCap = 'round';
-      ctx.stroke();
-    }
-  }
+  paintLayers(ctx, design, size, (f) => (f === 'metal' || f === 'dark' ? metal : enamel));
 }

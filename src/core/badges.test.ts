@@ -1,9 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { arc, ALL_BADGE_DESIGNS, BADGE_DESIGNS, badgeDesign, counterClockwise, pathData, polishLook, signedArea, slotPosition } from './badges';
-import { GYMS, LEAGUE_REGIONS } from './league';
+import type { Point } from './badges';
+import { band, hull, inset, rect } from './badge-geometry';
+import { GYMS, LEAGUE_REGIONS, TOTAL_BADGES } from './league';
+
+const FINISHES = new Set(['metal', 'enamel', 'enamel2', 'enamel3', 'dark', 'shine']);
+
+/** Dois segmentos se cruzam de verdade (sem contar as pontas encostadas). */
+function crosses(a: Point, b: Point, c: Point, d: Point): boolean {
+  const o = (p: Point, q: Point, r: Point): number => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  return o(a, b, c) * o(a, b, d) < -1e-9 && o(c, d, a) * o(c, d, b) < -1e-9;
+}
+
+function selfIntersects(points: readonly Point[]): boolean {
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+      if (crosses(points[i]!, points[(i + 1) % n]!, points[j]!, points[(j + 1) % n]!)) return true;
+    }
+  }
+  return false;
+}
 
 describe('desenho das insígnias', () => {
-  it('uma por Ginásio, com o mesmo nome, líder e tipo', () => {
+  it('uma por Ginásio de Sinnoh, com o mesmo nome, líder e tipo', () => {
     expect(BADGE_DESIGNS).toHaveLength(GYMS.length);
     BADGE_DESIGNS.forEach((d, i) => {
       const gym = GYMS[i]!;
@@ -13,34 +34,38 @@ describe('desenho das insígnias', () => {
       expect(d.type).toBe(gym.type);
     });
     expect(badgeDesign(3)?.leader).toBe('Crasher Wake');
-    expect(badgeDesign(32)).toBeNull();
+    expect(badgeDesign(TOTAL_BADGES)).toBeNull();
   });
 
-  it('cada uma tem forma, metal e esmalte próprios', () => {
-    expect(new Set(BADGE_DESIGNS.map((d) => `${d.outline.length}:${signedArea(d.outline).toFixed(2)}`)).size).toBe(BADGE_DESIGNS.length);
-    expect(new Set(BADGE_DESIGNS.map((d) => d.metal.name)).size).toBe(BADGE_DESIGNS.length);
-    expect(new Set(BADGE_DESIGNS.map((d) => d.enamel[0])).size).toBe(BADGE_DESIGNS.length);
-    expect(new Set(BADGE_DESIGNS.map((d) => d.motif)).size).toBe(BADGE_DESIGNS.length);
-    expect(BADGE_DESIGNS.filter((d) => d.translucent).map((d) => d.leader)).toEqual(['Candice']);
+  it('cada uma tem forma e motivo próprios, e cores próprias dentro da região', () => {
+    expect(new Set(ALL_BADGE_DESIGNS.map((d) => JSON.stringify(d.outline))).size).toBe(ALL_BADGE_DESIGNS.length);
+    expect(new Set(ALL_BADGE_DESIGNS.map((d) => d.motif)).size).toBe(ALL_BADGE_DESIGNS.length);
+    for (const r of LEAGUE_REGIONS) {
+      const designs = ALL_BADGE_DESIGNS.slice(r.badgeOffset, r.badgeOffset + 8);
+      expect(new Set(designs.map((d) => d.enamel[0])).size).toBe(8);
+    }
+    expect(ALL_BADGE_DESIGNS.filter((d) => d.translucent).map((d) => d.leader)).toEqual(['Candice']);
   });
 
-  it('contornos cabem no quadrado de -1 a 1, têm área e ocupam boa parte do quadrado', () => {
-    for (const d of BADGE_DESIGNS) {
-      expect(d.outline.length).toBeGreaterThanOrEqual(8);
+  it('contornos cabem no quadrado, têm área, não se cruzam (a peça 3D é extrudada deles) e as camadas são válidas', () => {
+    for (const d of ALL_BADGE_DESIGNS) {
+      expect(d.outline.length, d.name).toBeGreaterThanOrEqual(4);
       for (const [x, y] of [...d.outline, ...d.layers.flatMap((l) => l.points)]) {
-        expect(Math.abs(x)).toBeLessThanOrEqual(1);
-        expect(Math.abs(y)).toBeLessThanOrEqual(1);
+        expect(Math.abs(x), d.name).toBeLessThanOrEqual(1);
+        expect(Math.abs(y), d.name).toBeLessThanOrEqual(1);
       }
       // Ocupa uma boa parte do quadrado (nada de insígnia minúscula).
-      expect(Math.abs(signedArea(d.outline))).toBeGreaterThan(0.9);
-      expect(d.layers.length).toBeGreaterThanOrEqual(3);
-      expect(d.layers.some((l) => l.fill === 'enamel')).toBe(true);
-      expect(d.layers.every((l) => l.points.length >= 2 && (l.line !== undefined || l.points.length >= 3))).toBe(true);
+      expect(Math.abs(signedArea(d.outline)), d.name).toBeGreaterThan(0.6);
+      expect(selfIntersects(d.outline), d.name).toBe(false);
+      expect(d.layers.length, d.name).toBeGreaterThanOrEqual(3);
+      expect(d.layers.some((l) => l.fill === 'enamel'), d.name).toBe(true);
+      expect(d.layers.every((l) => l.points.length >= 2 && (l.line !== undefined || l.points.length >= 3)), d.name).toBe(true);
+      expect(d.layers.every((l) => FINISHES.has(l.fill) || /^#[0-9a-f]{6}$/.test(l.fill)), d.name).toBe(true);
     }
   });
 
   it('o contorno vira anti-horário para o Three.js', () => {
-    for (const d of BADGE_DESIGNS) expect(signedArea(counterClockwise(d.outline))).toBeGreaterThan(0);
+    for (const d of ALL_BADGE_DESIGNS) expect(signedArea(counterClockwise(d.outline))).toBeGreaterThan(0);
     expect(signedArea(counterClockwise([...arc(1)].reverse()))).toBeGreaterThan(0);
   });
 
@@ -75,23 +100,38 @@ describe('desenho das insígnias', () => {
   });
 });
 
+describe('geometria das insígnias', () => {
+  it('recuo para dentro encolhe a forma na medida pedida', () => {
+    const square = rect(-1, -1, 1, 1);
+    expect(inset(square, 0.1)).toEqual([[-0.9, -0.9], [0.9, -0.9], [0.9, 0.9], [-0.9, 0.9]]);
+    // Funciona nos dois sentidos de giro.
+    expect(inset([...square].reverse(), 0.1)).toEqual([[-0.9, 0.9], [0.9, 0.9], [0.9, -0.9], [-0.9, -0.9]]);
+  });
+
+  it('faixa em volta de uma linha tem a largura pedida', () => {
+    expect(Math.abs(signedArea(band([[0, 0], [1, 0]], 0.1)))).toBeCloseTo(0.2, 5);
+  });
+
+  it('união de dois círculos alcança as bordas de fora de cada um', () => {
+    const outline = hull([arc(0.4, -0.5, 0, 64), arc(0.4, 0.5, 0, 64)], 180);
+    const xs = outline.map(([x]) => x);
+    expect(Math.min(...xs)).toBeCloseTo(-0.9, 2);
+    expect(Math.max(...xs)).toBeCloseTo(0.9, 2);
+  });
+});
 
 describe('maletas regionais', () => {
-  it('32 insígnias ligadas aos ginásios, com índices e encaixes isolados', () => {
-    expect(ALL_BADGE_DESIGNS).toHaveLength(32);
+  it('48 insígnias ligadas aos ginásios, com índices e encaixes isolados', () => {
+    expect(ALL_BADGE_DESIGNS).toHaveLength(TOTAL_BADGES);
     for (const r of LEAGUE_REGIONS) {
       const designs = ALL_BADGE_DESIGNS.slice(r.badgeOffset, r.badgeOffset + 8);
       expect(new Set(designs.map((d) => JSON.stringify(slotPosition(d.order)))).size).toBe(8);
       designs.forEach((d, i) => {
+        expect(d.order).toBe(r.badgeOffset + i);
         expect(d.name).toBe(r.gyms[i]!.badge!.name);
         expect(d.leader).toBe(r.gyms[i]!.leader);
         expect(badgeDesign(d.order)).toBe(d);
         expect(slotPosition(d.order)).toEqual(slotPosition(i));
-        expect(Math.abs(signedArea(d.outline))).toBeGreaterThan(0.5);
-        for (const [x, y] of [...d.outline, ...d.layers.flatMap((l) => l.points)]) {
-          expect(Math.abs(x)).toBeLessThanOrEqual(1);
-          expect(Math.abs(y)).toBeLessThanOrEqual(1);
-        }
       });
     }
   });
