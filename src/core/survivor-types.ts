@@ -39,6 +39,8 @@ export interface SurvivorPlayer {
   xpToNext: number;
   /** Multiplicador acumulado de XP dos buffs de experiência da corrida. */
   xpMultiplier: number;
+  /** Fração de XP dos orbes guardada para manter a redução total precisa apesar da unidade par. */
+  xpCarry?: number;
   attackDamage: number;
   /** Multiplicador do dano secundário em área; ataques híbridos começam em 15%. */
   areaDamageMultiplier: number;
@@ -48,6 +50,12 @@ export interface SurvivorPlayer {
   projectileSpeed: number;
   /** Quantos inimigos extras um projétil atravessa antes de sumir. */
   pierce: number;
+  /** Carta lendária: o golpe pode aparar um projétil inimigo por ataque. */
+  projectileDeflection?: boolean;
+  /** Moedas prometidas pelas cartas da corrida; entram na carteira só no resultado final. */
+  bonusCoins?: number;
+  /** Acúmulos voluntários de dificuldade; não há teto de escolha. */
+  difficultyStacks?: number;
   /** Projéteis disparados por rajada (em leque, a partir de 2); na área, quantos inimigos diferentes recebem explosão. */
   shots: number;
   /** Janela de invencibilidade após levar dano (ms restantes). */
@@ -277,6 +285,8 @@ export interface SurvivorUpgradeOption {
   id: string;
   name: string;
   description: string;
+  /** Ícone próprio da carta, quando ela precisa se destacar da família. */
+  icon?: string;
   rarity?: SurvivorUpgradeRarity;
   /** Família visível da carta; não altera o sorteio nem o efeito. */
   family?: SurvivorUpgradeFamily;
@@ -295,9 +305,9 @@ export const SURVIVOR_UPGRADE_FAMILIES: Record<SurvivorUpgradeFamily, { label: s
   aliado: { label: 'Aliado', icon: '✦' },
 };
 export const SURVIVOR_UPGRADE_RARITIES: Record<SurvivorUpgradeRarity, { label: string; icon: string; weight: number; minLevel: number; impact: string }> = {
-  normal: { label: 'Poké Ball', icon: '⚪', weight: 60, minLevel: 1, impact: 'Ajuste pequeno e útil' },
-  raro: { label: 'Great Ball', icon: '🔵', weight: 30, minLevel: 3, impact: 'Muda a força ou o alcance da estratégia' },
-  lendario: { label: 'Ultra Ball', icon: '🟡', weight: 8, minLevel: 8, impact: 'Abre uma vantagem marcante' },
+  normal: { label: 'Poké Ball', icon: '⚪', weight: 74, minLevel: 1, impact: 'Ajuste pequeno e útil' },
+  raro: { label: 'Great Ball', icon: '🔵', weight: 18, minLevel: 3, impact: 'Muda a força ou o alcance da estratégia' },
+  lendario: { label: 'Ultra Ball', icon: '🟡', weight: 6, minLevel: 8, impact: 'Abre uma vantagem marcante' },
   ancestral: { label: 'Master Ball', icon: '🟣', weight: 2, minLevel: 12, impact: 'Transforma a corrida; uma escolha por partida' },
 };
 
@@ -415,6 +425,8 @@ export interface SurvivorSummary {
   infinite: boolean;
   /** Quantas Pokébolas especiais foram realmente recolhidas durante a corrida. */
   digitalPokeballs: number;
+  /** Moedas concedidas por cartas durante a corrida, pagas apenas no resultado final. */
+  bonusCoins?: number;
 }
 
 /** Pontuação da corrida (0–100): tempo vivo, derrotas e nível. */
@@ -439,9 +451,9 @@ export const SURVIVOR_CLEAR_BONUS = 500;
  *  - metade da pontuação, de 5 a 50, se durou/derrotou algo (como antes);
  *  - +40 por treinador comum derrotado, +80 por chefão (6 Pokémon).
  */
-export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 'level' | 'trainersBeaten' | 'bossesBeaten'>): number {
+export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 'level' | 'trainersBeaten' | 'bossesBeaten' | 'bonusCoins'>): number {
   const base = (s.kills === 0 && s.survivedMs < SURVIVOR_MIN_MS) ? 0 : Math.max(5, Math.round(survivorScore(s) / 2));
-  return base + (s.trainersBeaten - s.bossesBeaten) * 40 + s.bossesBeaten * 80;
+  return base + (s.trainersBeaten - s.bossesBeaten) * 40 + s.bossesBeaten * 80 + Math.max(0, Math.round(s.bonusCoins ?? 0));
 }
 
 export type SurvivorEvent =
@@ -466,6 +478,8 @@ export interface SurvivorUpgrade {
   id: string;
   name: string;
   description: string;
+  /** Ícone próprio da carta, quando ela precisa se destacar da família. */
+  icon?: string;
   rarity: SurvivorUpgradeRarity;
   family: SurvivorUpgradeFamily;
   /** Categorias de golpe em que o upgrade faz sentido (sem lista = todas). */

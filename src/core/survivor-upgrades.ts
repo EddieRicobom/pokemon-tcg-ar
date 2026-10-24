@@ -62,6 +62,11 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
     apply: (p) => { p.pierce = Math.min(4, p.pierce + 1); },
   },
   {
+    id: 'projectile-deflection', family: 'defesa', rarity: 'lendario', name: 'Deflexão precisa',
+    description: 'O golpe intercepta 1 projétil inimigo dentro do alcance por ataque.', icon: '🛡', for: ['orbit', 'cone'], maxLevels: 1,
+    apply: (p) => { p.projectileDeflection = true; },
+  },
+  {
     id: 'radius', family: 'ataque', rarity: 'raro', name: 'Golpe maior', description: '+20% no raio do golpe.', for: ['aura', 'area', 'orbit'], valueRange: [16, 24],
     describeValue: (m, value) => ({ name: 'Golpe maior', description: `${m.name}: +${value}% no ${m.category === 'aura' ? 'raio da aura' : 'raio do golpe'}.` }),
     apply: (p, value = 20) => { p.attackRadius = round1(p.attackRadius * (1 + value / 100)); },
@@ -76,10 +81,15 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'area-damage-75', family: 'ataque', rarity: 'lendario', name: 'Campo devastador', description: 'Aumenta o dano em área secundário para 75%.', for: ['area'], maxLevels: 1, requires: 'area-damage-50', apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.75); } },
   { id: 'area-damage-100', family: 'ataque', rarity: 'ancestral', name: 'Área total', description: 'O dano em área secundário chega a 100% do dano direto.', for: ['area'], maxLevels: 1, requires: 'area-damage-75', apply: (p) => { p.areaDamageMultiplier = 1; } },
   // Defesa e sustento: limitados para não tornar o jogador invencível. Regeneração e espinhos têm teto por carta.
+  { id: 'heal-30', family: 'defesa', rarity: 'normal', name: 'Fruta Oran', description: 'Recupera 30 de vida imediatamente.', icon: '🍓', maxLevels: 3, apply: (p) => { p.hp = Math.min(p.maxHp, p.hp + 30); } },
   { id: 'regen', family: 'defesa', rarity: 'normal', name: 'Regeneração lenta', description: '+1 de vida por segundo (até 2 cartas).', maxLevels: 2, apply: (p) => { p.regenPerSec = (p.regenPerSec ?? 0) + 1; } },
   { id: 'thorns', family: 'defesa', rarity: 'raro', name: 'Espinhos', description: 'Inimigos que encostam em você sofrem 6 de dano por segundo (até 2 cartas).', maxLevels: 2, apply: (p) => { p.thornsDamage = (p.thornsDamage ?? 0) + 6; } },
   { id: 'second-wind', family: 'defesa', rarity: 'lendario', name: 'Segundo fôlego', description: 'Uma vez por corrida, ao cair até 25% de vida, recupera 35% do máximo.', maxLevels: 1, apply: (p) => { p.secondWindReady = true; } },
-  // Ataque e progresso: crítico e sorte de artefato, com teto de chance.
+  // Ataque e progresso: crítico e sorte de artefato, com teto de chance. Bolsas entram na carteira apenas ao fim da corrida.
+  { id: 'coins-100', family: 'progresso', rarity: 'normal', name: 'Bolsa de moedas', description: 'Ganha 100 moedas quando a corrida terminar.', icon: '🪙', maxLevels: 1, apply: (p) => { p.bonusCoins = (p.bonusCoins ?? 0) + 100; } },
+  { id: 'coins-200', family: 'progresso', rarity: 'raro', name: 'Cofre portátil', description: 'Ganha 200 moedas quando a corrida terminar.', icon: '🪙', maxLevels: 1, apply: (p) => { p.bonusCoins = (p.bonusCoins ?? 0) + 200; } },
+  { id: 'coins-500', family: 'progresso', rarity: 'lendario', name: 'Tesouro da Torre', description: 'Ganha 500 moedas quando a corrida terminar.', icon: '🪙', maxLevels: 1, apply: (p) => { p.bonusCoins = (p.bonusCoins ?? 0) + 500; } },
+  { id: 'difficulty', family: 'progresso', rarity: 'normal', name: 'Dificuldade', description: '+15% densidade e +12% de velocidade e dano dos inimigos. Pode acumular.', icon: '☠', apply: (p) => { p.difficultyStacks = (p.difficultyStacks ?? 0) + 1; } },
   { id: 'crit', family: 'ataque', rarity: 'raro', name: 'Golpe certeiro', description: '+10% de chance de o golpe principal causar dano dobrado (até 3 cartas).', maxLevels: 3, apply: (p) => { p.critChance = Math.min(0.4, (p.critChance ?? 0) + 0.1); } },
   { id: 'artifact-luck', family: 'progresso', rarity: 'normal', name: 'Faro de artefatos', description: '+25% de chance de artefatos caírem dos inimigos (até 2 cartas).', maxLevels: 2, apply: (p) => { p.artifactLuck = (p.artifactLuck ?? 0) + 0.25; } },
   // BONK: estas cartas só entram na variante em terceira pessoa e alteram a física, não o combate base.

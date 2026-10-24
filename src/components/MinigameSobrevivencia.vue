@@ -80,7 +80,7 @@ const UPGRADE_ICON: Record<string, string> = {
   'jirachi-reroll': '⭐',
   'second-attack': '✦',
 };
-const upgradeIcon = (option: SurvivorUpgradeOption): string => (option.id.startsWith('evolve:') ? '✨' : (option.family ? SURVIVOR_UPGRADE_FAMILIES[option.family].icon : (UPGRADE_ICON[option.id] ?? '✨')));
+const upgradeIcon = (option: SurvivorUpgradeOption): string => (option.icon ?? (option.id.startsWith('evolve:') ? '✨' : (UPGRADE_ICON[option.id] ?? (option.family ? SURVIVOR_UPGRADE_FAMILIES[option.family].icon : '✨'))));
 const RARITY_BALL_IMAGE: Record<SurvivorUpgradeRarity, string> = {
   normal: assetUrl('assets/survivor/balls/poke-ball.png'),
   raro: assetUrl('assets/survivor/balls/great-ball.png'),
@@ -1946,6 +1946,8 @@ onBeforeUnmount(() => {
              <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
                {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
              </span>
+              <span v-if="(state.player.difficultyStacks ?? 0) > 0" class="chip" :title="`Dificuldade ${state.player.difficultyStacks}: +${(state.player.difficultyStacks ?? 0) * 15}% densidade e +${(state.player.difficultyStacks ?? 0) * 12}% de velocidade e dano dos inimigos`">☠ Dificuldade {{ state.player.difficultyStacks }}</span>
+              <span v-if="(state.player.bonusCoins ?? 0) > 0" class="chip" title="Moedas das cartas, pagas no fim da corrida">🪙 +{{ state.player.bonusCoins }} no fim</span>
               <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados`">⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
             <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
              <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
@@ -2176,7 +2178,7 @@ onBeforeUnmount(() => {
             <p class="survivor-rarity-hint">Cada carta tem uma raridade e um efeito próprio. O Especial continua disponível após o encontro com o guardião.</p>
             <details class="survivor-rarity-guide">
               <summary>Como funcionam as raridades</summary>
-              <p>Pesos relativos entre cartas disponíveis: Poké Ball 60, Great Ball 30, Ultra Ball 8 e Master Ball 2. As chances mudam quando uma faixa ainda não está liberada ou acaba.</p>
+              <p>Pesos relativos entre cartas disponíveis: Poké Ball 74, Great Ball 18, Ultra Ball 6 e Master Ball 2. As chances mudam quando uma faixa ainda não está liberada ou acaba.</p>
               <p>Great Ball: nível 3 · Ultra Ball: nível 8 · Master Ball: nível 12. Só uma carta Master Ball pode ser escolhida por corrida.</p>
             </details>
             <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" @click="chooseUpgrade(u.id)">
