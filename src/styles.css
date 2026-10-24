@@ -6402,6 +6402,8 @@ body.no-scroll .reward-toasts {
   pointer-events: none;
   white-space: normal;
 }
+/* No BONK, os botões Pular e Especial ocupam o canto de baixo: a dica sobe para cima deles. */
+.survivor-move-hint.is-bonk { top: calc(136px + env(safe-area-inset-top)); bottom: auto; max-width: calc(100% - 24px); }
 
 .survivor-stage {
   position: relative;
@@ -6683,26 +6685,45 @@ body.no-scroll .reward-toasts {
   right: calc(112px + env(safe-area-inset-right));
   bottom: calc(22px + env(safe-area-inset-bottom));
   z-index: 4;
-  width: 74px;
-  height: 74px;
+  width: 82px;
+  height: 82px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0;
+  gap: 1px;
   padding: 4px;
-  border: 2px solid #fff0ad;
+  border: 3px solid #fff4c4;
   border-radius: 50%;
   color: #fffdf0;
-  background: radial-gradient(circle at 38% 28%, #ffe789, #d78b26 62%, #8e4f18 100%);
-  box-shadow: 0 4px 0 #5b2f12, 0 5px 18px #0008;
-  touch-action: manipulation;
+  background: radial-gradient(circle at 36% 26%, #fff3b0 0%, #ffc94a 36%, #e0811f 70%, #9a4d12 100%);
+  box-shadow: 0 5px 0 #6a3410, 0 8px 18px rgba(0, 0, 0, .45), inset 0 -6px 10px rgba(120, 50, 10, .35), inset 0 4px 8px rgba(255, 255, 255, .45);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .08s ease-out, box-shadow .08s ease-out, filter .15s;
 }
-.survivor-jump-button.is-airborne { border-color: #d9c6ff; background: radial-gradient(circle at 38% 28%, #dacdff, #825bcc 62%, #403069 100%); }
-.survivor-jump-button:disabled { opacity: .65; }
-.survivor-jump-button > span { font-size: 25px; line-height: .9; }
-.survivor-jump-button strong { font-size: 10px; letter-spacing: .05em; }
-.survivor-jump-button small { font-size: 9px; }
+/* Apertado: afunda e encolhe a sombra, para o toque ter resposta mesmo antes do pulo aparecer na cena. */
+.survivor-jump-button:active,
+.survivor-jump-button.is-pressed {
+  transform: translateY(4px) scale(.96);
+  box-shadow: 0 1px 0 #6a3410, 0 3px 10px rgba(0, 0, 0, .4), inset 0 -3px 8px rgba(120, 50, 10, .35), inset 0 4px 8px rgba(255, 255, 255, .4);
+}
+.survivor-jump-button.is-airborne {
+  border-color: #e4d8ff;
+  background: radial-gradient(circle at 36% 26%, #efe8ff 0%, #b79bff 36%, #7b55d0 70%, #3f2a78 100%);
+  box-shadow: 0 5px 0 #2c1d57, 0 8px 18px rgba(0, 0, 0, .45), inset 0 -6px 10px rgba(40, 20, 90, .4), inset 0 4px 8px rgba(255, 255, 255, .45);
+}
+.survivor-jump-button.is-airborne.is-pressed { box-shadow: 0 1px 0 #2c1d57, 0 3px 10px rgba(0, 0, 0, .4); }
+/* Sem salto sobrando no ar: o botão apaga até o pouso devolver os saltos. */
+.survivor-jump-button.is-empty { filter: grayscale(.65) brightness(.82); }
+.survivor-jump-button:disabled { opacity: .6; }
+.survivor-jump-button .jump-icon { width: 27px; height: 27px; fill: #fff; filter: drop-shadow(0 1px 0 rgba(90, 40, 10, .75)); }
+.survivor-jump-button strong { font-size: 11px; line-height: 1; letter-spacing: .08em; text-shadow: 0 1px 0 rgba(90, 40, 10, .8); }
+.survivor-jump-button .jump-pips { display: flex; gap: 3px; margin-top: 2px; min-height: 7px; }
+.survivor-jump-button .jump-pips i { width: 7px; height: 7px; border-radius: 50%; background: rgba(60, 25, 5, .55); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .4); }
+.survivor-jump-button .jump-pips i.on { background: #fff; box-shadow: 0 0 5px rgba(255, 255, 255, .7); }
 .survivor-jump-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
 @media (orientation: landscape) and (max-height: 540px) {
   /* Em paisagem, a arena ganha o centro. Indicadores ficam em duas colunas curtas,
@@ -6725,7 +6746,9 @@ body.no-scroll .reward-toasts {
   .survivor-objectives { top: calc(108px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); bottom: auto; width: 116px; max-height: 86px; overflow: hidden; font-size: .53rem; }
   .survivor-supports { top: calc(92px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left)); width: min(32vw, 230px); max-height: calc(100% - 112px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); font-size: .56rem; }
   .survivor-special-button { right: calc(12px + env(safe-area-inset-right)); bottom: calc(10px + env(safe-area-inset-bottom)); width: 74px; height: 74px; }
-  .survivor-jump-button { right: calc(96px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); width: 62px; height: 62px; }
+  .survivor-jump-button { right: calc(96px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); width: 70px; height: 70px; }
+  .survivor-jump-button .jump-icon { width: 22px; height: 22px; }
+  .survivor-move-hint.is-bonk { top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 36vw; }
   .survivor-special-button .special-icon { font-size: 23px; }
   .survivor-special-button small { font-size: 9px; }
 
@@ -6807,6 +6830,22 @@ body.no-scroll .reward-toasts {
 .survivor-minimap-marker.kind-elite { background: #ffd84a; }
 .survivor-minimap-marker.kind-artifact { width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #fff1a8; color: #ffcf4d; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 0 7px #ffd84a; }
 .survivor-minimap-marker.kind-artifact::after { content: '★'; position: absolute; inset: -5px 0 0; color: #ffd84a; font-size: 15px; line-height: 10px; text-align: center; text-shadow: 0 1px 2px #121827; }
+/* BONK: obstáculos reais no mapa e o cone da câmera (aponta para onde "para cima" leva). */
+.survivor-minimap-obstacle { position: absolute; min-width: 2px; min-height: 2px; border-radius: 1px; background: rgba(206, 192, 222, .7); pointer-events: none; }
+.survivor-minimap-obstacle.kind-tree { background: rgba(92, 172, 102, .85); border-radius: 50%; }
+.survivor-minimap-obstacle.kind-boulder { background: rgba(172, 182, 198, .8); border-radius: 40%; }
+.survivor-minimap-obstacle.kind-crystal { background: rgba(186, 152, 255, .9); border-radius: 30%; }
+.survivor-minimap-obstacle.kind-bridge { background: rgba(216, 160, 96, .9); }
+.survivor-minimap-view {
+  position: absolute;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  background: conic-gradient(from 60deg, rgba(91, 192, 255, .6) 0 60deg, transparent 60deg);
+  pointer-events: none;
+}
 
 .survivor-objectives {
   position: absolute;

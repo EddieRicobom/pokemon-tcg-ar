@@ -9,6 +9,14 @@ import type { SurvivorPlayer } from './survivor-types';
 
 export const BONK_GRAVITY = 1250;
 export const BONK_BASE_JUMP_POWER = 470;
+/** Câmera em terceira pessoa: atrás e acima do jogador, com o horizonte no terço de cima da tela. */
+export const BONK_CAMERA = { distance: 250, height: 120, horizonRatio: 0.3, focalRatio: 1, minFocal: 320, near: 20 } as const;
+/** Giro da câmera por segundo com o analógico todo para o lado. */
+export const BONK_TURN_RATE = 1.35;
+/** Um toque no Pular um pouco antes de pousar ainda vale: o salto fica guardado por esse tempo. */
+export const BONK_JUMP_BUFFER_MS = 140;
+/** Duração do efeito de pouso (poeira e achatamento do sprite). */
+export const BONK_LANDING_MS = 220;
 
 export type BonkObstacleKind = 'tree' | 'boulder' | 'wall' | 'ruin' | 'crystal' | 'bridge';
 
@@ -34,6 +42,10 @@ export interface BonkPhysics {
   /** Direção em radianos em que a câmera olha; ela gira atrás do movimento. */
   cameraYaw: number;
   collisionFlashMs: number;
+  /** Salto pedido e ainda não executado (ms restantes); ver `BONK_JUMP_BUFFER_MS`. */
+  jumpBufferMs: number;
+  /** Ms restantes do efeito de pouso, só para o desenho. */
+  landingMs: number;
   obstacles: readonly BonkObstacle[];
 }
 
@@ -77,10 +89,6 @@ const OBSTACLES: readonly BonkObstacle[] = [
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 const normalizeAngle = (angle: number): number => Math.atan2(Math.sin(angle), Math.cos(angle));
 
-function approachAngle(current: number, target: number, amount: number): number {
-  return current + normalizeAngle(target - current) * clamp(amount, 0, 1);
-}
-
 /** Cria a arena física; ela usa o mesmo mundo amplo (2880×1920) do Survival. */
 export function createBonkPhysics(initialYaw = Math.PI / 2): BonkPhysics {
   return {
@@ -90,7 +98,29 @@ export function createBonkPhysics(initialYaw = Math.PI / 2): BonkPhysics {
     grounded: true,
     cameraYaw: initialYaw,
     collisionFlashMs: 0,
+    jumpBufferMs: 0,
+    landingMs: 0,
     obstacles: OBSTACLES,
+  };
+}
+
+/**
+ * Converte o analógico (tela) em direção no mundo, relativa à câmera: para cima avança para onde a câmera olha,
+ * para os lados anda de lado. Sem isso, a câmera gira e o mesmo gesto passa a levar para outro lado.
+ */
+export function bonkInputToWorld(physics: Pick<BonkPhysics, 'cameraYaw'>, dx: number, dy: number): { dx: number; dy: number } {
+  const forward = -dy;
+  const side = dx;
+  const cos = Math.cos(physics.cameraYaw);
+  const sin = Math.sin(physics.cameraYaw);
+  return { dx: cos * forward - sin * side, dy: sin * forward + cos * side };
+}
+
+/** Posição da câmera no mundo (atrás do jogador, na direção oposta ao olhar). */
+export function bonkCameraPosition(physics: Pick<BonkPhysics, 'cameraYaw'>, player: Pick<SurvivorPlayer, 'x' | 'y'>): { x: number; y: number } {
+  return {
+    x: player.x - Math.cos(physics.cameraYaw) * BONK_CAMERA.distance,
+    y: player.y - Math.sin(physics.cameraYaw) * BONK_CAMERA.distance,
   };
 }
 
@@ -155,7 +185,11 @@ export function resolveBonkPosition(
   return { x: clamp(x, radius, ARENA_W - radius), y: clamp(y, radius, ARENA_H - radius), collided };
 }
 
-/** Avança gravidade, colisão e a câmera que se posiciona atrás da direção de movimento. */
+/**
+ * Avança gravidade, colisão e a câmera. `input` é o analógico na tela (o mesmo que foi convertido por
+ * `bonkInputToWorld` para mover o jogador): o lado gira a câmera aos poucos, frente e trás não giram, então
+ * recuar para fugir de um inimigo mantém a mira da câmera.
+ */
 export function stepBonkPhysics(
   physics: BonkPhysics,
   player: Pick<SurvivorPlayer, 'x' | 'y' | 'bonkGravityFactor' | 'bonkJumpPower' | 'bonkAirJumps'>,
@@ -164,20 +198,27 @@ export function stepBonkPhysics(
   dtMs: number,
 ): void {
   const dt = Math.max(0, Math.min(80, dtMs)) / 1000;
-  if (input.jump) tryBonkJump(physics, player);
-  const length = Math.hypot(input.dx, input.dy);
-  if (length > 0.04) {
-    const targetYaw = Math.atan2(input.dy, input.dx);
-    physics.cameraYaw = approachAngle(physics.cameraYaw, targetYaw, 1 - Math.exp(-dt * 8));
+  if (input.jump) physics.jumpBufferMs = BONK_JUMP_BUFFER_MS;
+  if (physics.jumpBufferMs > 0) {
+    if (tryBonkJump(physics, player)) physics.jumpBufferMs = 0;
+    else physics.jumpBufferMs = Math.max(0, physics.jumpBufferMs - dtMs);
+  }
+  if (Math.hypot(input.dx, input.dy) > 0.04) {
+    physics.cameraYaw = normalizeAngle(physics.cameraYaw + clamp(input.dx, -1, 1) * BONK_TURN_RATE * dt);
   }
 
+  const wasAirborne = !physics.grounded;
   physics.verticalVelocity -= BONK_GRAVITY * (player.bonkGravityFactor ?? 1) * dt;
   physics.z += physics.verticalVelocity * dt;
+  physics.landingMs = Math.max(0, physics.landingMs - dtMs);
   if (physics.z <= 0) {
     physics.z = 0;
     physics.verticalVelocity = 0;
     physics.grounded = true;
     physics.jumpsUsed = 0;
+    if (wasAirborne) physics.landingMs = BONK_LANDING_MS;
+    // Salto guardado durante a queda sai no mesmo quadro do pouso.
+    if (physics.jumpBufferMs > 0 && tryBonkJump(physics, player)) physics.jumpBufferMs = 0;
   }
   const resolved = resolveBonkPosition(physics, player.x, player.y);
   player.x = resolved.x;
@@ -194,19 +235,20 @@ export function projectBonkPoint(
   viewport: { width: number; height: number },
 ): BonkProjection | null {
   const yaw = physics.cameraYaw;
-  const cameraDistance = 175;
-  const cameraHeight = 110;
-  const cameraX = player.x - Math.cos(yaw) * cameraDistance;
-  const cameraY = player.y - Math.sin(yaw) * cameraDistance;
-  const dx = point.x - cameraX;
-  const dy = point.y - cameraY;
+  const camera = bonkCameraPosition(physics, player);
+  const dx = point.x - camera.x;
+  const dy = point.y - camera.y;
   const depth = dx * Math.cos(yaw) + dy * Math.sin(yaw);
-  if (depth <= 20) return null;
+  if (depth <= BONK_CAMERA.near) return null;
   const side = -dx * Math.sin(yaw) + dy * Math.cos(yaw);
-  const focal = Math.max(320, viewport.height * 1.08);
-  const scale = focal / depth;
-  const horizon = viewport.height * 0.34;
-  return { x: viewport.width / 2 + side * scale, y: horizon + (cameraHeight - (point.z ?? 0)) * scale, scale, depth };
+  const scale = bonkFocal(viewport) / depth;
+  const horizon = viewport.height * BONK_CAMERA.horizonRatio;
+  return { x: viewport.width / 2 + side * scale, y: horizon + (BONK_CAMERA.height - (point.z ?? 0)) * scale, scale, depth };
+}
+
+/** Distância focal em pixels: acompanha a altura da tela para o jogador ficar no mesmo lugar em qualquer aparelho. */
+export function bonkFocal(viewport: { height: number }): number {
+  return Math.max(BONK_CAMERA.minFocal, viewport.height * BONK_CAMERA.focalRatio);
 }
 
 /** Converte coordenadas locais da câmera em mundo, útil para desenhar o terreno em perspectiva. */
@@ -217,10 +259,9 @@ export function bonkCameraLocalToWorld(
   side: number,
 ): { x: number; y: number } {
   const yaw = physics.cameraYaw;
-  const cameraX = player.x - Math.cos(yaw) * 175;
-  const cameraY = player.y - Math.sin(yaw) * 175;
+  const camera = bonkCameraPosition(physics, player);
   return {
-    x: cameraX + forward * Math.cos(yaw) - side * Math.sin(yaw),
-    y: cameraY + forward * Math.sin(yaw) + side * Math.cos(yaw),
+    x: camera.x + forward * Math.cos(yaw) - side * Math.sin(yaw),
+    y: camera.y + forward * Math.sin(yaw) + side * Math.cos(yaw),
   };
 }
