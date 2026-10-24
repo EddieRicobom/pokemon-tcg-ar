@@ -3,7 +3,7 @@ import { seededRng } from '../battle';
 import { emptyVillage, friendOf, normalizeVillage } from './life';
 import { generateVillage } from './map';
 import {
-  applyFollow, canAsk, FOLLOWS, markAsked, oddReaction, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, QUESTIONS, recordAnswer, setWord, spreadWords, withWords, wordOf,
+  applyFollow, canAsk, DEFAULT_WORDS, FOLLOWS, markAsked, oddReaction, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, QUESTIONS, recordAnswer, setWord, spreadWords, withWords, wordOf,
 } from './quiz';
 import type { QKind } from './quiz';
 import { cleanAnswer, MAX_ANSWERS, MAX_LINGO, FX_EMOJI } from './social-state';
@@ -16,7 +16,8 @@ const KINDS: QKind[] = ['comida', 'coisa', 'lugar', 'bicho', 'pessoa', 'opiniao'
 
 describe('perguntas dos Pokémon', () => {
   it('há muitas perguntas, com ids únicos, texto, sugestões e todos os tipos', () => {
-    expect(QUESTIONS.length).toBeGreaterThanOrEqual(50);
+    expect(QUESTIONS.length).toBeGreaterThanOrEqual(150);
+    expect(QUESTIONS.length).toBeLessThan(MAX_ANSWERS);
     expect(new Set(QUESTIONS.map((x) => x.id)).size).toBe(QUESTIONS.length);
     for (const k of KINDS) expect(QUESTIONS.some((x) => x.kind === k), k).toBe(true);
     for (const x of QUESTIONS) {
@@ -170,6 +171,17 @@ describe('perguntas dos Pokémon', () => {
     }
     expect(spread).toBeGreaterThan(5);
     expect(spreadWords(s, [mon], seededRng(1))).toBeNull();
+  });
+
+  it('bordões variados: muitos por personalidade e nas sugestões, sem repetir e sem passar do limite de setWord', () => {
+    const all = [...Object.values(DEFAULT_WORDS).flat(), ...QUESTIONS.filter((x) => x.kind === 'bordao').flatMap((x) => x.chips)];
+    for (const list of Object.values(DEFAULT_WORDS)) expect(list.length).toBeGreaterThanOrEqual(14);
+    expect(QUESTIONS.filter((x) => x.kind === 'bordao').length).toBeGreaterThanOrEqual(8);
+    expect(new Set(all).size).toBe(all.length);
+    for (const w of all) {
+      expect(w.length, w).toBeLessThanOrEqual(24);
+      expect(cleanAnswer(w, 24), w).toBe(w);
+    }
   });
 
   it('tudo isso persiste: ao abrir um salvamento, respostas, gírias, bordões e perguntas do dia voltam', () => {

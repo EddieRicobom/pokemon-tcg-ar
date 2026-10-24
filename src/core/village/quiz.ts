@@ -89,10 +89,127 @@ export const QUESTIONS: readonly Question[] = [
   q('superpoder', 'poder', 'Se você tivesse um superpoder, qual seria?', 'Meu superpoder seria…', ['Voar', 'Ficar invisível', 'Ler mentes', 'Teletransporte']),
   q('golpe', 'poder', 'Qual seria o seu golpe especial?', 'Meu golpe seria…', ['Soco de mola', 'Abraço urso', 'Cócegas', 'Espirro atômico']),
   q('apelido-heroi', 'poder', 'Qual seria o seu nome de super-herói?', 'Eu seria o…', ['Capitão Pipoca', 'Sombra', 'Trovão', 'Mestre Soneca']),
+  // mais comida
+  q('pipoca', 'comida', 'O que você come no cinema?', 'No cinema eu como…', ['Pipoca salgada', 'Pipoca doce', 'Chocolate', 'Nachos']),
+  q('festa-junina', 'comida', 'Qual é a melhor comida de festa junina?', 'Na festa junina eu como…', ['Pamonha', 'Canjica', 'Paçoca', 'Milho cozido']),
+  q('salgado', 'comida', 'Qual é o seu salgadinho de festa favorito?', 'Meu salgadinho favorito é…', ['Coxinha', 'Esfiha', 'Pastel', 'Enroladinho']),
+  q('bolo', 'comida', 'Qual bolo você pediria no seu aniversário?', 'Eu pediria bolo de…', ['Chocolate', 'Cenoura', 'Prestígio', 'Morango']),
+  q('comida-estranha', 'comida', 'Qual é a comida mais estranha que você já provou?', 'A mais estranha foi…', ['Escargot', 'Pé de porco', 'Jaca', 'Sushi de manga']),
+  q('domingo', 'comida', 'O que tem no almoço de domingo perfeito?', 'No almoço de domingo tem…', ['Macarronada', 'Churrasco', 'Feijoada', 'Frango assado']),
+  q('bebida', 'comida', 'Qual é a sua bebida favorita?', 'Minha bebida favorita é…', ['Suco de laranja', 'Refrigerante', 'Água de coco', 'Chocolate quente']),
+  q('frio', 'comida', 'O que você come num dia bem frio?', 'No frio eu como…', ['Sopa', 'Caldo verde', 'Fondue', 'Pão de queijo']),
+  q('cozinhar', 'comida', 'O que você sabe cozinhar?', 'Eu sei fazer…', ['Ovo frito', 'Miojo', 'Brigadeiro', 'Nada']),
+  q('pizza-sabor', 'comida', 'Qual é o melhor sabor de pizza?', 'O melhor sabor é…', ['Calabresa', 'Margherita', 'Portuguesa', 'Quatro queijos']),
+  // mais coisas
+  q('brinquedo', 'coisa', 'Qual era o seu brinquedo favorito quando era pequeno?', 'Meu brinquedo favorito era…', ['Carrinho', 'Boneca', 'Bola', 'Videogame']),
+  q('bolso', 'coisa', 'O que você sempre tem no bolso?', 'No meu bolso sempre tem…', ['Chave', 'Moeda', 'Bala', 'Papel amassado']),
+  q('invencao', 'coisa', 'Qual é a melhor invenção de todos os tempos?', 'A melhor invenção é…', ['Internet', 'Cama', 'Ventilador', 'Pizza']),
+  q('jogo', 'coisa', 'Qual é o seu jogo favorito?', 'Meu jogo favorito é…', ['Pokémon', 'Uno', 'Xadrez', 'Esconde-esconde']),
+  q('livro', 'coisa', 'Qual livro (ou gibi) você recomenda?', 'Eu recomendo…', ['Turma da Mônica', 'Harry Potter', 'Mangá', 'Livro de receitas']),
+  q('roupa', 'coisa', 'Qual é a sua roupa favorita?', 'Minha roupa favorita é…', ['Pijama', 'Moletom', 'Camiseta velha', 'Chinelo']),
+  q('guardado', 'coisa', 'Qual coisa você guarda há anos e nunca jogou fora?', 'Eu guardo…', ['Cartinhas', 'Ingresso', 'Ursinho', 'Caixa de sapato']),
+  q('veiculo', 'coisa', 'Se você pudesse ter qualquer veículo, qual seria?', 'Eu teria…', ['Moto', 'Balão', 'Submarino', 'Skate']),
+  q('perdi', 'coisa', 'O que você mais perde em casa?', 'Eu sempre perco…', ['Controle remoto', 'Chave', 'Meia', 'Óculos']),
+  // mais lugares
+  q('lugar-calmo', 'lugar', 'Qual é o lugar mais calmo que você conhece?', 'O mais calmo é…', ['Biblioteca', 'Sítio da avó', 'Igreja', 'Varanda']),
+  q('lugar-espaco', 'lugar', 'Se você pudesse visitar outro planeta, qual seria?', 'Eu visitaria…', ['Marte', 'Lua', 'Saturno', 'Plutão']),
+  q('passeio', 'lugar', 'Qual é o passeio perfeito de fim de semana?', 'O passeio perfeito é…', ['Parque', 'Shopping', 'Cachoeira', 'Sofá']),
+  q('regiao-pokemon', 'lugar', 'Qual região Pokémon você queria visitar?', 'Eu visitaria…', ['Kanto', 'Johto', 'Hoenn', 'Galar']),
+  q('lugar-infancia', 'lugar', 'Qual lugar te lembra a infância?', 'Me lembra a infância…', ['Casa da avó', 'Escola', 'Pracinha', 'Rua de casa']),
+  q('lugar-assustador', 'lugar', 'Qual lugar você nunca entraria sozinho?', 'Eu nunca entraria em…', ['Porão', 'Cemitério', 'Floresta', 'Casa abandonada']),
+  q('lugar-comer', 'lugar', 'Qual é o melhor lugar para comer?', 'O melhor lugar para comer é…', ['Padaria', 'Feira', 'Casa da mãe', 'Rodízio']),
+  q('acampar', 'lugar', 'Onde você armaria uma barraca para acampar?', 'Eu acamparia em…', ['Praia', 'Serra', 'Quintal', 'Sala']),
+  // mais bichos
+  q('bicho-voar', 'bicho', 'Se você pudesse virar um bicho que voa, qual seria?', 'Eu viraria…', ['Águia', 'Coruja', 'Borboleta', 'Morcego']),
+  q('bicho-mar', 'bicho', 'Qual é o bicho do mar mais legal?', 'O mais legal do mar é…', ['Golfinho', 'Polvo', 'Tubarão', 'Baleia']),
+  q('pokemon-fav', 'bicho', 'Qual é o seu Pokémon favorito? (pode ser eu!)', 'Meu Pokémon favorito é…', ['Charizard', 'Gengar', 'Lucario', 'Mew']),
+  q('bicho-manha', 'bicho', 'Qual bicho é mais parecido com você de manhã?', 'De manhã eu sou um…', ['Bicho-preguiça', 'Urso', 'Galo', 'Coala']),
+  q('bicho-fazenda', 'bicho', 'Qual bicho de fazenda você teria?', 'Eu teria…', ['Vaca', 'Galinha', 'Cabra', 'Porquinho']),
+  q('bicho-inventado', 'bicho', 'Inventa um bicho misturando dois!', 'Meu bicho inventado é…', ['Gato-pato', 'Cachorrafa', 'Leão-pão', 'Tubarãozinho']),
+  q('bicho-esquisito', 'bicho', 'Qual é o bicho mais esquisito do mundo?', 'O mais esquisito é…', ['Ornitorrinco', 'Bicho-pau', 'Baiacu', 'Tatu']),
+  q('bicho-dupla', 'bicho', 'Que bicho seria o seu parceiro de aventura?', 'Meu parceiro seria…', ['Cachorro', 'Lobo', 'Papagaio', 'Tartaruga']),
+  // mais pessoas
+  q('professor', 'pessoa', 'Quem foi o melhor professor que você já teve?', 'O melhor professor foi…', ['Minha professora', 'O de Educação Física', 'Meu avô', 'A internet']),
+  q('famoso', 'pessoa', 'Se você pudesse conhecer um famoso, quem seria?', 'Eu conheceria…', ['Um cantor', 'Um jogador', 'Um youtuber', 'O Professor Carvalho']),
+  q('conselho', 'pessoa', 'Quem te dá os melhores conselhos?', 'Quem me aconselha é…', ['Minha mãe', 'Minha avó', 'Meu amigo', 'Meu travesseiro']),
+  q('vizinho', 'pessoa', 'Quem é o vizinho mais marcante que você já teve?', 'O vizinho mais marcante é…', ['Seu Zé', 'Dona Maria', 'O do cachorro', 'Ninguém']),
+  q('cozinheiro', 'pessoa', 'Quem cozinha melhor na sua família?', 'Quem cozinha melhor é…', ['Minha avó', 'Meu pai', 'Minha tia', 'Eu']),
+  q('rival', 'pessoa', 'Quem é o seu maior rival (de brincadeira)?', 'Meu rival é…', ['Meu irmão', 'Meu primo', 'Gary', 'Eu mesmo']),
+  q('dupla-batalha', 'pessoa', 'Com quem você formaria dupla numa batalha?', 'Minha dupla seria…', ['Meu melhor amigo', 'Minha mãe', 'Ash', 'Você']),
+  q('saudade', 'pessoa', 'De quem você está com saudade?', 'Estou com saudade de…', ['Meus avós', 'Um amigo', 'Minha família', 'Ninguém']),
+  // mais opiniões
+  q('biscoito', 'opiniao', 'É biscoito ou bolacha?', 'O certo é…', ['Biscoito', 'Bolacha']),
+  q('feijao', 'opiniao', 'Feijão por cima ou por baixo do arroz?', 'O feijão vai…', ['Por cima', 'Por baixo', 'Do lado']),
+  q('ketchup', 'opiniao', 'Ketchup ou maionese?', 'Eu prefiro…', ['Ketchup', 'Maionese', 'Os dois', 'Nenhum']),
+  q('chuva-sol', 'opiniao', 'Dia de chuva ou dia de sol?', 'Eu prefiro…', ['Chuva', 'Sol']),
+  q('doce-salgado', 'opiniao', 'Doce ou salgado?', 'Eu sou mais…', ['Doce', 'Salgado']),
+  q('meia-cama', 'opiniao', 'Dormir de meia: pode ou não pode?', 'Dormir de meia…', ['Pode', 'Jamais']),
+  q('acordar-cedo', 'opiniao', 'Acordar cedo é bom ou é um castigo?', 'Acordar cedo é…', ['Bom', 'Castigo', 'Depende']),
+  q('cafe-cha', 'opiniao', 'Café ou chá?', 'Eu prefiro…', ['Café', 'Chá', 'Chocolate quente']),
+  q('sorvete-inverno', 'opiniao', 'Sorvete no inverno: vale?', 'Sorvete no inverno…', ['Vale sempre', 'Nem pensar']),
+  q('papel-higienico', 'opiniao', 'Papel higiênico: a ponta vai para a frente ou para trás?', 'A ponta vai…', ['Para a frente', 'Para trás']),
+  q('filme-serie', 'opiniao', 'Filme ou série?', 'Eu prefiro…', ['Filme', 'Série', 'Desenho']),
+  q('inicial', 'opiniao', 'Inicial de fogo, água ou planta?', 'Eu escolho…', ['Fogo', 'Água', 'Planta']),
+  // mais palavras
+  q('palavra-dificil', 'palavra', 'Qual é a palavra mais difícil de falar?', 'A mais difícil é…', ['Paralelepípedo', 'Otorrinolaringologista', 'Pneumonia', 'Trava-língua']),
+  q('palavra-bonita', 'palavra', 'Qual é a palavra mais bonita que existe?', 'A mais bonita é…', ['Aurora', 'Cafuné', 'Lua', 'Serenata']),
+  q('xingamento-fofo', 'palavra', 'Me ensina um xingamento bem fofinho?', 'Um xingamento fofo é…', ['Seu pamonha', 'Bobão', 'Cabeça de abóbora', 'Seu chuchu']),
+  q('som-boca', 'palavra', 'Qual é o barulho mais gostoso de fazer com a boca?', 'O barulho é…', ['Pop', 'Brrr', 'Tsss', 'Nhoc']),
+  q('apelido', 'palavra', 'Que apelido você me daria?', 'Seu apelido seria…', ['Fofucho', 'Chefinho', 'Pipoquinha', 'Trovãozinho']),
+  q('palavra-inventada', 'palavra', 'Inventa uma palavra nova que não existe!', 'A palavra nova é…', ['Pirulitaço', 'Bambolê-bum', 'Xiruba', 'Fofomático']),
+  q('palavra-estrangeira', 'palavra', 'Me ensina uma palavra em outra língua?', 'A palavra é…', ['Arigatô', 'Hello', 'Merci', 'Hola']),
+  // mais sonhos
+  q('casa-sonho', 'sonho', 'O que não pode faltar na casa dos seus sonhos?', 'A casa dos sonhos tem…', ['Piscina', 'Escorregador', 'Biblioteca', 'Sala de jogos']),
+  q('loteria', 'sonho', 'Se ganhasse na loteria, o que faria primeiro?', 'Eu faria…', ['Viajaria', 'Daria para a família', 'Compraria uma casa', 'Dormiria um mês']),
+  q('talento', 'sonho', 'Qual talento você queria ter?', 'Eu queria saber…', ['Cantar', 'Desenhar', 'Dançar', 'Cozinhar']),
+  q('viagem-tempo', 'sonho', 'Se pudesse viajar no tempo, para quando iria?', 'Eu iria para…', ['Dinossauros', 'O futuro', 'Minha infância', 'Ontem']),
+  q('recorde', 'sonho', 'Qual recorde mundial você queria bater?', 'Eu bateria o recorde de…', ['Mais pizza comida', 'Maior soneca', 'Mais abraços', 'Mais cartas']),
+  q('dia-perfeito', 'sonho', 'Como seria o seu dia perfeito?', 'Meu dia perfeito é…', ['Na praia', 'Jogando', 'Com os amigos', 'Dormindo']),
+  q('treinador', 'sonho', 'Que tipo de treinador você sonha ser?', 'Eu quero ser…', ['Campeão da Liga', 'Líder de ginásio', 'Criador', 'Pesquisador']),
+  q('aventura', 'sonho', 'Qual aventura você ainda quer viver?', 'Eu quero…', ['Saltar de paraquedas', 'Mergulhar', 'Escalar um vulcão', 'Ver a aurora']),
+  // mais medos
+  q('pesadelo', 'medo', 'Qual foi o pesadelo mais esquisito que você já teve?', 'Eu sonhei com…', ['Prova surpresa', 'Cair', 'Dentes caindo', 'Ser perseguido']),
+  q('monstro', 'medo', 'Qual monstro de filme mais te assusta?', 'O que mais assusta é…', ['Zumbi', 'Vampiro', 'Lobisomem', 'Alienígena']),
+  q('medo-bobo', 'medo', 'Qual é o seu medo mais bobo?', 'Meu medo bobo é…', ['Pé debaixo da cama', 'Espelho de noite', 'Balão estourando', 'Galinha']),
+  q('dentista', 'medo', 'O que é pior: dentista ou injeção?', 'O pior é…', ['Dentista', 'Injeção', 'Os dois']),
+  q('nervoso', 'medo', 'Qual situação te dá mais nervoso?', 'Me dá nervoso…', ['Falar em público', 'Prova', 'Elevador parado', 'Ligação']),
+  q('pokemon-medo', 'medo', 'Qual Pokémon você teria medo de encontrar no escuro?', 'Eu teria medo de…', ['Gengar', 'Haunter', 'Darkrai', 'Mimikyu']),
+  q('inseto', 'medo', 'Qual inseto faz você sair correndo?', 'Eu fujo de…', ['Barata voadora', 'Abelha', 'Mariposa', 'Grilo']),
+  q('sozinho', 'medo', 'Do que você tem medo quando está sozinho em casa?', 'Sozinho eu tenho medo de…', ['Barulho estranho', 'Escuro', 'Campainha', 'Nada']),
+  // mais música
+  q('festa-musica', 'musica', 'Qual música não pode faltar numa festa?', 'Na festa tem que tocar…', ['Axé', 'Forró', 'Pagode', 'Pop']),
+  q('dormir-musica', 'musica', 'Que música você ouve para dormir?', 'Para dormir eu ouço…', ['Barulho de chuva', 'Música clássica', 'Lo-fi', 'Silêncio']),
+  q('banda', 'musica', 'Se você tivesse uma banda, qual seria o nome?', 'Minha banda se chamaria…', ['Os Pikachus', 'Trovão Rosa', 'Banda Soneca', 'Pokérock']),
+  q('danca', 'musica', 'Qual é a sua dança favorita?', 'Eu danço…', ['Forró', 'Funk', 'Valsa', 'Dancinha do robô']),
+  q('trilha', 'musica', 'Qual é a melhor música de desenho ou jogo?', 'A melhor é…', ['Abertura de Pokémon', 'Música do Mario', 'Dragon Ball', 'Tema da batalha']),
+  q('karaoke', 'musica', 'O que você cantaria num karaokê?', 'No karaokê eu canto…', ['Sertanejo', 'Uma romântica', 'Rock', 'Funk']),
+  q('estilo', 'musica', 'Qual estilo de música combina comigo?', 'Combina com você…', ['MPB', 'Rock', 'Samba', 'Música eletrônica']),
+  q('grudou', 'musica', 'Qual música grudou na sua cabeça esta semana?', 'Grudou na cabeça…', ['Uma do rádio', 'Um jingle', 'Uma de desenho', 'Uma que eu inventei']),
+  // mais cores
+  q('cor-cabelo', 'cor', 'Se pudesse pintar o cabelo de qualquer cor, qual seria?', 'Eu pintaria de…', ['Azul', 'Rosa', 'Verde', 'Arco-íris']),
+  q('cor-feia', 'cor', 'Qual cor você acha mais feia?', 'A mais feia é…', ['Marrom', 'Bege', 'Laranja', 'Nenhuma']),
+  q('cor-carro', 'cor', 'De que cor seria o seu carro?', 'Meu carro seria…', ['Preto', 'Vermelho', 'Amarelo', 'Verde-limão']),
+  q('cor-humor', 'cor', 'Que cor é o seu humor hoje?', 'Hoje meu humor é…', ['Amarelo', 'Cinza', 'Laranja', 'Roxo']),
+  q('cor-quarto', 'cor', 'De que cor é (ou seria) o seu quarto?', 'Meu quarto é…', ['Branco', 'Azul-claro', 'Lilás', 'Verde']),
+  q('cor-shiny', 'cor', 'Se eu fosse shiny, de que cor eu seria?', 'Você seria…', ['Dourado', 'Prateado', 'Rosa', 'Preto']),
+  // mais poderes
+  q('poder-inutil', 'poder', 'Qual seria o superpoder mais inútil do mundo?', 'O mais inútil seria…', ['Esquentar sopa fria', 'Falar com pombos', 'Trocar de meia', 'Saber a hora']),
+  q('arma-secreta', 'poder', 'Qual seria a minha arma secreta na batalha?', 'Sua arma secreta é…', ['Olhar fofo', 'Grito agudo', 'Pum', 'Dancinha']),
+  q('poder-animal', 'poder', 'Qual poder de bicho você queria ter?', 'Eu queria…', ['Respirar na água', 'Ver no escuro', 'Correr como guepardo', 'Grudar na parede']),
+  q('golpe-nome', 'poder', 'Inventa o nome de um golpe Pokémon novo!', 'O golpe se chama…', ['Raio Pipoca', 'Soneca Sísmica', 'Chute Arco-íris', 'Bafo de Dragão']),
+  q('poder-casa', 'poder', 'Que poder ajudaria a arrumar a casa?', 'O poder seria…', ['Telecinese', 'Clonagem', 'Vento', 'Mágica']),
+  q('tipo', 'poder', 'Se você fosse um Pokémon, qual seria o seu tipo?', 'Eu seria do tipo…', ['Fogo', 'Fantasma', 'Dragão', 'Normal']),
+  q('item-magico', 'poder', 'Qual item mágico você queria ter?', 'Eu queria ter…', ['Varinha', 'Capa de invisibilidade', 'Botas voadoras', 'Mochila sem fundo']),
+  q('ataque-final', 'poder', 'Qual seria o seu ataque final, aquele que encerra tudo?', 'Meu ataque final é…', ['Hiper Raio', 'Explosão', 'Abraço eterno', 'Cochilo profundo']),
   // bordões
   q('bordao-1', 'bordao', 'Eu preciso de um bordão! Me inventa um?', 'Meu bordão seria…', ['Tá pago!', 'Oxe!', 'Que isso, meu filho!', 'Bora!']),
   q('bordao-2', 'bordao', 'O que eu devia gritar quando fico animado?', 'Grite…', ['Uhuuul!', 'É nóis!', 'Partiu!', 'Aêêê!']),
   q('bordao-3', 'bordao', 'Preciso de um grito de guerra para as batalhas!', 'O grito é…', ['Pra cima!', 'Vamos nessa!', 'Aguenta aí!', 'Chegou!']),
+  q('bordao-4', 'bordao', 'Que palavra eu falo quando levo um susto?', 'Quando me assusto, eu digo…', ['Eita!', 'Vixe Maria!', 'Misericórdia!', 'Caramba!']),
+  q('bordao-5', 'bordao', 'Como eu devia comemorar quando ganho alguma coisa?', 'Comemora com…', ['Toma essa!', 'Sou demais!', 'Rumo ao topo!', 'Ganhei, ganhei!']),
+  q('bordao-6', 'bordao', 'O que eu falo quando alguma coisa dá errado?', 'Quando dá errado…', ['Faz parte!', 'Bola pra frente!', 'Deu ruim!', 'Ops!']),
+  q('bordao-7', 'bordao', 'Me ensina um jeito de dizer que algo é muito bom?', 'É muito bom: …', ['Show de bola!', 'Top demais!', 'Que massa!', 'Bom demais da conta!']),
+  q('bordao-8', 'bordao', 'Como eu devia dar oi para todo mundo?', 'Eu dou oi assim…', ['E aí, galera!', 'Salve, salve!', 'Fala, meu povo!', 'Bom dia, flor do dia!']),
 ];
 
 export const QUESTION_BY_ID = new Map(QUESTIONS.map((x) => [x.id, x]));
@@ -303,15 +420,40 @@ export function pickEcho(state: VillageState, ids: readonly string[], names: Rea
 
 // ----------------------------------------------------------------------------- bordões
 
-const DEFAULT_WORDS: Record<string, readonly string[]> = {
-  Brincalhão: ['Hihihi!', 'Pega eu!', 'Bora brincar!', 'Uiii!'],
-  Calmo: ['Calma, calma.', 'Tudo no tempo.', 'Respira…', 'Hmm, tranquilo.'],
-  Tímido: ['Ah… desculpa.', 'Se não for incômodo…', 'Hã… oi.', 'Eu só queria…'],
-  Corajoso: ['Pode vir!', 'Sem medo!', 'Eu seguro!', 'Bora pra cima!'],
-  Guloso: ['Tem fruta?', 'Hmm, delícia!', 'Dá um pedacinho?', 'Que fominha!'],
-  Sonhador: ['Será que sim?', 'Nas nuvens…', 'Que lindo, né?', 'Um dia…'],
-  Curioso: ['Ué?', 'Me conta mais!', 'O que é isso?', 'Interessante!'],
-  Mandão: ['É ordem!', 'Eu mando aqui!', 'Faz assim.', 'Escuta o chefe!'],
+/** Bordões padrão de cada personalidade (no máximo 24 letras, o limite de `setWord`, porque também passam de um a outro). */
+export const DEFAULT_WORDS: Record<string, readonly string[]> = {
+  Brincalhão: [
+    'Hihihi!', 'Pega eu!', 'Bora brincar!', 'Uiii!', 'Tá com você!', 'Cosquinha!', 'Peguei!', 'Bu! Assustei?', 'Mais uma vez!',
+    'Uhuuu, que farra!', 'Duvido você me pegar!', 'Pisca-pisca!', 'Iupiii!', 'Lá vem bagunça!',
+  ],
+  Calmo: [
+    'Calma, calma.', 'Tudo no tempo.', 'Respira…', 'Hmm, tranquilo.', 'Devagarinho…', 'Sem pressa.', 'Tá tudo bem.', 'Deixa fluir.',
+    'Paz e fruta.', 'Uma coisa de cada vez.', 'Ahh, que brisa.', 'Tranquilo, tranquilo.', 'Relaxa.', 'Tudo se ajeita.',
+  ],
+  Tímido: [
+    'Ah… desculpa.', 'Se não for incômodo…', 'Hã… oi.', 'Eu só queria…', 'Hum… tá bom.', 'Posso ficar aqui?', 'Foi sem querer…',
+    'Ai, que vergonha.', 'Talvez… sim?', 'Com licencinha…', 'Eu acho que…', 'Desculpa o mau jeito.', 'Ninguém viu, né?', 'Psiu… oi.',
+  ],
+  Corajoso: [
+    'Pode vir!', 'Sem medo!', 'Eu seguro!', 'Bora pra cima!', 'Deixa comigo!', 'Pode contar comigo!', 'Avante!', 'Medo de quê?',
+    'Eu vou na frente!', 'Ninguém me para!', 'Firme e forte!', 'É agora ou nunca!', 'Segura essa!', 'Vem com tudo!',
+  ],
+  Guloso: [
+    'Tem fruta?', 'Hmm, delícia!', 'Dá um pedacinho?', 'Que fominha!', 'Que cheirinho bom!', 'Já é hora do lanche?', 'Sobrou alguma coisa?',
+    'Nham nham!', 'Barriga roncando!', 'Mais um pouquinho!', 'Hmm, que fome!', 'Isso se come?', 'Guarda pra mim!', 'Comida é vida!',
+  ],
+  Sonhador: [
+    'Será que sim?', 'Nas nuvens…', 'Que lindo, né?', 'Um dia…', 'E se fosse verdade?', 'Olha aquela nuvem!', 'Imagina só…',
+    'Quem sabe amanhã…', 'Que dia mágico!', 'Parece um sonho.', 'As estrelas sabem.', 'Lá longe…', 'Faz um pedido!', 'Tudo é possível!',
+  ],
+  Curioso: [
+    'Ué?', 'Me conta mais!', 'O que é isso?', 'Interessante!', 'Por quê?', 'Como assim?', 'E depois?', 'Deixa eu ver!', 'Hmm, que estranho!',
+    'Será que funciona?', 'Quem fez isso?', 'Eu quero saber!', 'Opa, o que é aquilo?', 'Explica de novo?',
+  ],
+  Mandão: [
+    'É ordem!', 'Eu mando aqui!', 'Faz assim.', 'Escuta o chefe!', 'Anda logo!', 'Sem discussão!', 'Fila indiana!', 'Eu decido!',
+    'Obedece!', 'Já falei!', 'Isso é comigo.', 'Tá decidido!', 'Todo mundo atento!', 'Do meu jeito!',
+  ],
 };
 
 /** O bordão do Pokémon: o que ele pegou (ou o que você deu) ou um padrão do jeito dele (fixo pelo id da carta). */

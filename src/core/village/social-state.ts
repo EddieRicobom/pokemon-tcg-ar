@@ -126,7 +126,8 @@ export interface SocialState {
   nicks: Record<string, string>;
 }
 
-export const MAX_ANSWERS = 80;
+/** Mais que o número de perguntas (`QUESTIONS`), para nenhuma voltar antes de todas terem sido respondidas. */
+export const MAX_ANSWERS = 200;
 export const MAX_LINGO = 16;
 export const MAX_WORDS = 80;
 export const MAX_ANSWER_LEN = 28;
