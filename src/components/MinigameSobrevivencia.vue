@@ -68,6 +68,9 @@ import type { SurvivorSpecialBranchId, SurvivorSpecialId } from '../core/survivo
 import { drawSurvivorSpecial } from '../village/survivor-special-art';
 import { emptySurvivorFeedbackAnswers, encodeSurvivorFeedback } from '../core/survivor-feedback';
 import type { FeedbackRating, FeedbackRatingKey } from '../core/survivor-feedback';
+import { bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics } from '../core/survivor-bonk';
+import type { BonkPhysics } from '../core/survivor-bonk';
+import { drawBonkLandscape } from '../village/survivor-bonk-landscape';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -138,7 +141,7 @@ function fitView(): void {
   view.w = fitted.w;
   view.h = fitted.h;
   // Mudar o tamanho do canvas apaga o contexto: as configurações voltam no próximo quadro (`draw` refaz tudo).
-  if (ctx) ctx.imageSmoothingEnabled = false;
+  if (ctx) ctx.imageSmoothingEnabled = bonkRun.value;
 }
 const JOY_MAX = 42;
 const regionScenery = ref(true);
@@ -341,6 +344,10 @@ const ready = ref(false);
 const failed = ref(false);
 const avatarName = ref('');
 const state = ref<SurvivorState | null>(null);
+/** Variante BONK: mesma corrida, mas com câmera em terceira pessoa e terreno físico. */
+const bonkRun = ref(false);
+const bonkPhysics = ref<BonkPhysics | null>(null);
+let bonkJumpQueued = false;
 const guardian = computed(() => state.value ? SPECIAL_GUARDIANS[state.value.special.type] : null);
 const chosenSpecial = computed(() => state.value?.special.selected ? SURVIVOR_SPECIALS[state.value.special.selected] : null);
 const specialModalOpen = computed(() => {
@@ -369,6 +376,18 @@ function chooseSpecialBranch(id: SurvivorSpecialBranchId): void {
 }
 const paused = ref(false);
 const leaveConfirm = ref(false);
+const bonkJumpBlocked = computed(() => !bonkRun.value || !state.value || state.value.over || paused.value || !!pendingUpgrade.value || !!evolving.value || specialModalOpen.value);
+const bonkJumpLabel = computed(() => {
+  const physics = bonkPhysics.value;
+  const player = state.value?.player;
+  if (!physics || !player) return '';
+  return physics.grounded ? 'CHÃO' : `${bonkJumpsRemaining(physics, player)}x`;
+});
+function queueBonkJump(): void {
+  if (bonkJumpBlocked.value) return;
+  unlockSound();
+  bonkJumpQueued = true;
+}
 let wasPausedBeforeLeave = false;
 const trainerPresentation = ref<null | { trainerId: number; count: number; final: boolean }>(null);
 let trainerPresentationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -617,6 +636,11 @@ function onKey(e: KeyboardEvent): void {
     return;
   }
   if ((e.key === 'e' || e.key === 'E') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSpecial(); return; }
+  if (bonkRun.value && (e.key === 'q' || e.key === 'Q' || e.key === ' ') && e.type === 'keydown' && !e.repeat && !(e.key === ' ' && document.activeElement instanceof HTMLButtonElement)) {
+    queueBonkJump();
+    if (bonkRun.value) e.preventDefault();
+    return;
+  }
   if (!dir) return;
   if (e.type === 'keydown') heldKeys.add(dir);
   else heldKeys.delete(dir);
@@ -791,6 +815,140 @@ function drawEnemy(e: SurvivorEnemy): void {
   }
 }
 
+/** Sprite 2D voltado para a câmera (billboard): a perspectiva vem da projeção, não de um modelo 3D inventado. */
+function drawBonkBillboard(sprite: Sprite | null, x: number, y: number, scale: number, flip = false, alpha = 1): void {
+  if (!ctx) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(13, 23, 43, .28)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 2, Math.max(3, 15 * scale), Math.max(1.5, 5 * scale), 0, 0, Math.PI * 2);
+  ctx.fill();
+  drawSprite(sprite, x, y, flip, scale);
+  ctx.restore();
+}
+
+function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): void {
+  if (!ctx) return;
+  const sprite = e.dexId === undefined ? null : (enemySprites.get(e.dexId) ?? null);
+  const size = (e.boss ? 1.2 : e.grade === 'chefao' ? 1.12 : e.grade === 'elite' ? 0.96 : 0.84) * scale;
+  if (e.grade !== 'comum') {
+    ctx.save();
+    ctx.strokeStyle = e.grade === 'chefao' ? '#ff6e73' : '#ffd84a';
+    ctx.lineWidth = Math.max(1, scale * 1.8);
+    ctx.beginPath();
+    ctx.ellipse(x, y, 16 * size, 5 * size, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  drawBonkBillboard(sprite, x, y, size);
+  if (e.hp < e.maxHp) {
+    const width = Math.max(14, 28 * scale);
+    const barY = y - Math.max(22, 38 * scale);
+    ctx.fillStyle = 'rgba(8, 14, 25, .72)';
+    ctx.fillRect(x - width / 2, barY, width, Math.max(2, 3 * scale));
+    ctx.fillStyle = e.archetype === 'suporte' ? '#ff78b7' : '#8be06a';
+    ctx.fillRect(x - width / 2, barY, width * clamp(e.hp / e.maxHp, 0, 1), Math.max(2, 3 * scale));
+  }
+  const mark = e.stunMs ? '#ffe23d' : e.burnMs ? '#ff7a2f' : e.slowMs ? '#9fe8ff' : null;
+  if (mark) {
+    ctx.fillStyle = mark;
+    ctx.beginPath();
+    ctx.arc(x, y - Math.max(25, 42 * scale), Math.max(2, 3 * scale), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/** Renderizador BONK: perspectiva suave, profundidade e sprites em billboard; o motor de combate é o mesmo da Torre. */
+function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
+  if (!ctx) return;
+  const viewport = { width: view.w, height: view.h };
+  ctx.clearRect(0, 0, viewport.width, viewport.height);
+  drawBonkLandscape(ctx, physics, s.player, viewport, s.elapsedMs);
+
+  const drawPoint = (point: { x: number; y: number }, z = 0) => projectBonkPoint(physics, s.player, { ...point, z }, viewport);
+  for (const orb of s.orbs) {
+    const p = drawPoint(orb, 10);
+    if (!p || p.scale < 0.05) continue;
+    const color = orb.doubleXp ? '#62e6ff' : '#ffe066';
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = Math.min(16, 8 * p.scale);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, clamp(4 * p.scale, 1.4, 10), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  for (const artifact of s.artifacts) {
+    const p = drawPoint(artifact, 14);
+    if (!p) continue;
+    const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb';
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = Math.min(18, 10 * p.scale);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, clamp(8 * p.scale, 3, 15), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const figures: { depth: number; draw: () => void }[] = [];
+  for (const enemy of s.enemies) {
+    if (enemy.hp <= 0) continue;
+    const p = drawPoint(enemy);
+    if (!p || p.scale < 0.08) continue;
+    figures.push({ depth: p.depth, draw: () => drawBonkEnemy(enemy, p.x, p.y, clamp(p.scale * 0.62, 0.24, 1.45)) });
+  }
+  for (const support of s.supports) {
+    const p = drawPoint(support);
+    if (!p || p.scale < 0.08) continue;
+    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(supportSprites.get(support.dexId) ?? null, p.x, p.y, clamp(p.scale * 0.46, 0.18, 0.9), s.player.facing < 0, 0.82) });
+  }
+  const playerPoint = drawPoint(s.player, physics.z);
+  if (playerPoint) figures.push({ depth: playerPoint.depth - 0.01, draw: () => drawBonkBillboard(playerSprite, playerPoint.x, playerPoint.y, clamp(playerPoint.scale * 0.58, 0.3, 1.8), s.player.facing < 0, s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0 ? 0.45 : 1) });
+  figures.sort((a, b) => b.depth - a.depth).forEach((figure) => figure.draw());
+
+  for (const projectile of s.projectiles) {
+    const p = drawPoint(projectile, 18);
+    if (!p) continue;
+    const radius = clamp((projectile.size ?? 4) * p.scale * 0.55, 1.5, 10);
+    const color = projectile.move?.color ?? s.player.move.color;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = radius * 3;
+    ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  for (const projectile of s.hostileProjectiles) {
+    const p = drawPoint(projectile, 16);
+    if (!p) continue;
+    ctx.fillStyle = projectile.effect === 'stun' ? '#e6b6ff' : projectile.effect === 'slow' ? '#7bdcff' : '#ff6c64';
+    ctx.beginPath(); ctx.arc(p.x, p.y, clamp(projectile.size * p.scale * 0.65, 1.5, 10), 0, Math.PI * 2); ctx.fill();
+  }
+  if (playerPoint && (s.player.move.category === 'aura' || s.player.move.category === 'orbit' || s.special.activeMs > 0)) {
+    ctx.save();
+    ctx.strokeStyle = s.player.move.color;
+    ctx.globalAlpha = 0.62;
+    ctx.lineWidth = Math.max(1.5, playerPoint.scale * 1.1);
+    ctx.beginPath();
+    ctx.ellipse(playerPoint.x, playerPoint.y, clamp(s.player.attackRadius * playerPoint.scale * 0.22, 12, 150), clamp(s.player.attackRadius * playerPoint.scale * 0.065, 4, 44), 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  if (physics.collisionFlashMs > 0 && playerPoint) {
+    ctx.save();
+    ctx.globalAlpha = physics.collisionFlashMs / 130;
+    ctx.strokeStyle = '#fff6bd';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(playerPoint.x, playerPoint.y - 18, 15, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
 /** Carrega somente a região atual e a próxima; os 45 sprites não precisam ficar decodificados desde o menu inicial. */
 async function preloadEnemyRegion(index: number): Promise<void> {
   const encounter = REGIONAL_ENCOUNTERS[index];
@@ -824,6 +982,10 @@ function draw(): void {
   if (!ctx || !canvasEl.value || !state.value) return;
   // O motor escreve no objeto cru (ver `loop`); o proxy do Vue só custava leituras e escritas a mais no desenho.
   const s = toRaw(state.value);
+  if (bonkRun.value && bonkPhysics.value) {
+    drawBonkScene(s, bonkPhysics.value);
+    return;
+  }
   const VIEW_W = view.w;
   const VIEW_H = view.h;
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
@@ -1189,9 +1351,22 @@ function loop(ts: number): void {
     const ky = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
     const dx = kx + (joystick.active ? joystick.dx : 0);
     const dy = ky + (joystick.active ? joystick.dy : 0);
+    const beforeBonkPosition = bonkRun.value ? { x: s.player.x, y: s.player.y } : null;
     const previousSpecialPhase = s.special.phase;
     const events = stepSurvivor(s, { dx, dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s) }, dt);
     specialQueued = false;
+    if (bonkRun.value && bonkPhysics.value && beforeBonkPosition) {
+      stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, dt);
+      // Inimigos também respeitam rochas e paredes; a altura do jogador não deve abrir a parede para eles.
+      const groundPhysics = { ...bonkPhysics.value, z: 0 };
+      for (const enemy of s.enemies) {
+        if (enemy.hp <= 0) continue;
+        const resolved = resolveBonkPosition(groundPhysics, enemy.x, enemy.y, enemy.radius);
+        enemy.x = resolved.x;
+        enemy.y = resolved.y;
+      }
+    }
+    bonkJumpQueued = false;
     const region = survivorRegionLabel(s.elapsedMs);
     if (region !== announcedRegion) {
       announcedRegion = region;
@@ -1368,7 +1543,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = []): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = []): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -1409,10 +1584,14 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, preparation, typeAffinityChoices });
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices });
+    bonkRun.value = bonk;
+    bonkPhysics.value = bonk ? createBonkPhysics() : null;
+    if (ctx) ctx.imageSmoothingEnabled = bonk;
     announcedRegion = survivorRegionLabel(0);
     guardianSprite.value = null;
     specialQueued = false;
+    bonkJumpQueued = false;
     const runState = state.value;
     void loadSpriteOrNull(SPECIAL_GUARDIANS[move.type].dexId).then((sprite) => {
       if (!disposed && state.value === runState) guardianSprite.value = sprite?.frames[0]?.toDataURL() ?? null;
@@ -1442,7 +1621,7 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
     } satisfies SurvivorSupportCandidate));
   const primary = picked ?? opt.types[0] ?? opt.move.type;
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
-  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidates, typeAffinityChoices);
+  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, bonkWanted.value, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidates, typeAffinityChoices);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
@@ -1457,6 +1636,7 @@ watch(
 );
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
 const infiniteWanted = ref(false);
+const bonkWanted = ref(false);
 const torre = computed(() => trainer.value.torre);
 const rerollLimit = computed(() => survivorRerollLimit(torre.value.completedObjectives));
 const recordedObjectiveCount = computed(() => new Set(torre.value.completedObjectives).size);
@@ -1493,6 +1673,9 @@ watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) infiniteWanted.valu
 async function openPicker(): Promise<void> {
   music.reset();
   ready.value = false;
+  bonkRun.value = false;
+  bonkPhysics.value = null;
+  bonkJumpQueued = false;
   pickBusy.value = true;
   pickOptions.value = null;
   try {
@@ -1599,7 +1782,7 @@ onBeforeUnmount(() => {
         @pointerup="joyUp"
         @pointercancel="joyUp"
       >
-        <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" aria-label="Torre: arraste em qualquer lugar para andar"></canvas>
+        <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" :class="{ 'bonk-canvas': bonkRun }" :aria-label="bonkRun ? 'BONK: arraste para andar, botão Pular para saltar' : 'Torre: arraste em qualquer lugar para andar'"></canvas>
 
         <div class="survivor-vignette" aria-hidden="true"></div>
 
@@ -1625,6 +1808,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
+            <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK · {{ bonkJumpLabel }}</span>
              <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
              <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
                {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
@@ -1682,7 +1866,7 @@ onBeforeUnmount(() => {
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
-        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint">Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa</p>
+        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint">{{ bonkRun ? 'Arraste ou use setas/WASD para andar · Pular: Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
 
         <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
@@ -1722,11 +1906,13 @@ onBeforeUnmount(() => {
               </ul>
             </details>
              <p class="note">Até 6 Pokémon são sorteados da sua caixa: 1 protagonista e até 5 apoios para recrutar durante a corrida. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
-            <p class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
+            <p v-if="!bonkWanted" class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
+            <p v-else class="note bonk-picker-note">💥 BONK é um teste opcional: câmera em terceira pessoa, mapa amplo com ruínas, ponte e bosque físicos. Pedras e muretas bloqueiam; use o botão Pular ou Q/Espaço para atravessar obstáculos baixos.</p>
             <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
-            <div v-if="torre.infiniteUnlocked" class="survivor-mode" role="group" aria-label="Modo da Torre">
-              <button type="button" :class="{ active: !infiniteWanted }" @click="infiniteWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
-              <button type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true">♾️ Infinito<small>Mais difícil, sem fim</small></button>
+            <div class="survivor-mode survivor-mode-bonk" role="group" aria-label="Modo da Torre">
+              <button type="button" :class="{ active: !infiniteWanted && !bonkWanted }" @click="infiniteWanted = false; bonkWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
+              <button type="button" class="bonk-mode-button" :class="{ active: bonkWanted }" @click="bonkWanted = true; infiniteWanted = false">💥 BONK<small>3D, física e pulo</small></button>
+              <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true; bonkWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
             </div>
             <section v-if="preparations.length > 1" class="survivor-preparations" aria-label="Preparação para a corrida">
               <strong>Preparação</strong>
@@ -1784,6 +1970,16 @@ onBeforeUnmount(() => {
             <button type="button" class="link" @click="skipTypeAffinity">Continuar sem afinidade</button>
           </div>
         </div>
+
+        <button v-if="bonkRun && ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
+          type="button" class="survivor-jump-button" :class="{ 'is-airborne': bonkPhysics && !bonkPhysics.grounded }"
+          :disabled="bonkJumpBlocked"
+          :aria-label="`Pular: ${bonkJumpLabel || 'indisponível'}; tecla Q ou Espaço`"
+          @pointerdown.stop.prevent="queueBonkJump">
+          <span aria-hidden="true">⬆</span>
+          <strong>PULAR</strong>
+          <small>{{ bonkJumpLabel }}</small>
+        </button>
 
         <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
           type="button" class="survivor-special-button" :class="{ 'is-ready': chosenSpecial && !state.special.cooldownMs }"

@@ -82,6 +82,10 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   // Ataque e progresso: crítico e sorte de artefato, com teto de chance.
   { id: 'crit', family: 'ataque', rarity: 'raro', name: 'Golpe certeiro', description: '+10% de chance de o golpe principal causar dano dobrado (até 3 cartas).', maxLevels: 3, apply: (p) => { p.critChance = Math.min(0.4, (p.critChance ?? 0) + 0.1); } },
   { id: 'artifact-luck', family: 'progresso', rarity: 'normal', name: 'Faro de artefatos', description: '+25% de chance de artefatos caírem dos inimigos (até 2 cartas).', maxLevels: 2, apply: (p) => { p.artifactLuck = (p.artifactLuck ?? 0) + 0.25; } },
+  // BONK: estas cartas só entram na variante em terceira pessoa e alteram a física, não o combate base.
+  { id: 'bonk-springs', family: 'movimento', rarity: 'normal', name: 'Molas de bolso', description: '+55 de força de pulo (até 2 cartas).', bonkOnly: true, maxLevels: 2, apply: (p) => { p.bonkJumpPower = (p.bonkJumpPower ?? 470) + 55; } },
+  { id: 'bonk-air-step', family: 'movimento', rarity: 'raro', name: 'Passo no ar', description: '+1 salto extra no ar (até 2 cartas).', bonkOnly: true, maxLevels: 2, apply: (p) => { p.bonkAirJumps = (p.bonkAirJumps ?? 0) + 1; } },
+  { id: 'bonk-feather-fall', family: 'movimento', rarity: 'lendario', name: 'Queda de pluma', description: 'A gravidade do salto cai 22%.', bonkOnly: true, maxLevels: 1, apply: (p) => { p.bonkGravityFactor = Math.min(p.bonkGravityFactor ?? 1, 0.78); } },
 ] as const;
 
 /** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */

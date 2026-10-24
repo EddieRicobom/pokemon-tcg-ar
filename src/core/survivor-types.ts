@@ -85,6 +85,14 @@ export interface SurvivorPlayer {
   critChance?: number;
   /** Segundo fôlego pronto: revive com parte da vida na primeira vez que a vida cai até 25%. */
   secondWindReady?: boolean;
+  /** Só no BONK: força vertical inicial de cada salto. */
+  bonkJumpPower?: number;
+  /** Só no BONK: quantos saltos extras podem ser usados no ar. */
+  bonkAirJumps?: number;
+  /** Só no BONK: multiplicador da gravidade; menor deixa o salto mais longo. */
+  bonkGravityFactor?: number;
+  /** Marca interna para que cartas exclusivas do BONK não apareçam no Survival clássico. */
+  bonkMode?: boolean;
 }
 
 /** Dados congelados do Pokémon de apoio. Ele acompanha apenas no desenho: não é um segundo alvo de combate. */
@@ -339,6 +347,8 @@ export interface SurvivorState {
   finalBossBeaten: boolean;
   /** Modo infinito: treinadores com 6 Pokémon a cada 5 min, inimigos escalam com o tempo. */
   infinite: boolean;
+  /** Variante opcional em terceira pessoa, com física e salto. */
+  bonk: boolean;
   /** Multiplicador do HP/dano que o infinito aplica sobre `elapsedMs` (sem o infinito, sempre 1). */
   infiniteScale: number;
   /** Não-nulo pausa o avanço (ver `stepSurvivor`): espera `applyUpgrade`. */
@@ -462,6 +472,8 @@ export interface SurvivorUpgrade {
   for?: readonly MoveCategory[];
   /** Especializações só aparecem para o tipo de quem está jogando. */
   type?: SurvivorMove['type'];
+  /** Só pode aparecer numa corrida BONK. */
+  bonkOnly?: boolean;
   /** Limite por corrida; ausente em bônus incrementais que podem empilhar. */
   maxLevels?: number;
   /** Upgrade anterior necessário para liberar esta carta em uma trilha. */
