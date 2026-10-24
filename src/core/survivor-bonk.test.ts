@@ -86,6 +86,15 @@ describe('física do modo BONK', () => {
     expect(ahead!.x).toBeCloseTo(300, 6);
   });
 
+  it('gera obstáculos determinísticos para a seed da corrida, mas muda a arena na próxima', () => {
+    const first = createBonkPhysics(Math.PI / 2, 12345);
+    const same = createBonkPhysics(Math.PI / 2, 12345);
+    const next = createBonkPhysics(Math.PI / 2, 54321);
+    expect(first.obstacles).toEqual(same.obstacles);
+    expect(first.obstacles).not.toEqual(next.obstacles);
+    expect(first.obstacles.find((obstacle) => obstacle.id === 'bridge')).toEqual(next.obstacles.find((obstacle) => obstacle.id === 'bridge'));
+  });
+
   it('guarda um toque no Pular dado um pouco antes de pousar', () => {
     const p = player();
     const physics = createBonkPhysics();

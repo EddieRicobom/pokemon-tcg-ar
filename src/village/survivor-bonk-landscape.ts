@@ -3,6 +3,7 @@ import type { BonkObstacle, BonkPhysics, BonkProjection } from '../core/survivor
 import { ARENA_H, ARENA_W } from '../core/survivor-types';
 import type { SurvivorPlayer } from '../core/survivor-types';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
+import { SURVIVOR_REGION_TILESETS } from './survivor-landscape';
 
 /**
  * Cenário BONK em perspectiva. É Canvas 2D projetado, não WebGL: mantém o carregamento leve da Torre e entrega
@@ -111,7 +112,25 @@ export interface BonkArt {
   wall: BonkTexture | null;
   plaza: BonkTexture | null;
   plank: BonkTexture | null;
+  /** Varia por seed para trocar a leitura do cenário, inclusive nas árvores. */
+  tilesetIndex: number;
+  treeStyle: 'broadleaf' | 'pine';
   sprites: Partial<Record<BonkSpriteId, HTMLCanvasElement>>;
+}
+
+/**
+ * Mesmas opções de tiles do Survival 2D, embaralhadas pelo seed do BONK. Assim
+ * uma partida mantém sua identidade, mas a próxima pode receber outro bioma.
+ */
+const BONK_TILESET_ORDER = [0, 4, 2, 7, 1, 6, 5, 8, 3] as const;
+
+export function bonkTilesetIndex(seed: number, regionStep = 0): number {
+  let value = Math.floor(seed) >>> 0;
+  value = Math.imul(value ^ value >>> 16, 0x45d9f3b);
+  value = Math.imul(value ^ value >>> 16, 0x45d9f3b);
+  value = (value ^ value >>> 16) >>> 0;
+  const start = value % BONK_TILESET_ORDER.length;
+  return BONK_TILESET_ORDER[(start + Math.floor(regionStep)) % BONK_TILESET_ORDER.length]!;
 }
 
 function averageColor(image: CanvasImageSource, fallback: Rgb): Rgb {
@@ -222,9 +241,11 @@ function makePedestalSprite(): HTMLCanvasElement | null {
  * Monta a arte a partir do atlas da Vila (`vila-atlas.png`) e da grama do Survival (`survivor-grass.png`). As peças
  * saem pelo mesmo mapa de posições que a Vila usa (`atlas-spec.ts`); os autotiles usam a célula do meio do 3 × 3.
  */
-export function createBonkArt(ctx: CanvasRenderingContext2D, atlas: CanvasImageSource | null, grass: HTMLImageElement | HTMLCanvasElement | null): BonkArt {
+export function createBonkArt(ctx: CanvasRenderingContext2D, atlas: CanvasImageSource | null, grass: HTMLImageElement | HTMLCanvasElement | null, landscapeSeed = 0, regionStep = 0): BonkArt {
   const layout = packAtlas();
   const sources = new Map(ATLAS_SOURCES.map((source) => [source.id, source]));
+  const tilesetIndex = bonkTilesetIndex(landscapeSeed, regionStep);
+  const tiles = SURVIVOR_REGION_TILESETS[tilesetIndex]!;
   const crop = (id: string, region?: 'center' | { x: number; y: number; w: number; h: number }): HTMLCanvasElement | null => {
     const rect = layout.rects.get(id);
     const source = sources.get(id);
@@ -275,15 +296,23 @@ export function createBonkArt(ctx: CanvasRenderingContext2D, atlas: CanvasImageS
   const pedestal = makePedestalSprite();
   if (orb) sprites.orb = orb;
   if (pedestal) sprites.pedestal = pedestal;
+  const ground = crop(tiles.ground, 'center');
+  const path = crop(tiles.path, 'center');
+  const waterId = tiles.ground === 'sand-water'
+    ? tiles.ground
+    : tiles.path === 'sand-water' ? tiles.path : 'sea';
   return {
-    grass: texture(grass, GRASS_A),
-    water: texture(crop('sea', 'center'), WATER_A),
-    sand: texture(crop('sand-grass', 'center'), SAND),
-    path: texture(crop('at-path', 'center'), ROAD),
+    // O atlas disponível determina os tiles reais; sem ele, a grama original continua como fallback honesto.
+    grass: texture(ground ?? grass, GRASS_A),
+    water: texture(crop(waterId, 'center'), WATER_A),
+    sand: texture(tilesetIndex === 2 ? ground : crop('sand-grass', 'center'), SAND),
+    path: texture(path, ROAD),
     // A peça `wall` começa com 16 px de água e grama e um acabamento: a textura usa só os tijolos.
     wall: texture(crop('wall', { x: 18, y: 0, w: 32, h: 16 }), PALETTES.wall.side),
-    plaza: texture(crop('at-plaza', 'center'), PALETTES.ruin.side),
+    plaza: texture(ground ?? crop('at-plaza', 'center'), PALETTES.ruin.side),
     plank: texture(crop('pier-deck'), PALETTES.bridge.top),
+    tilesetIndex,
+    treeStyle: tilesetIndex === 1 || tilesetIndex === 4 || tilesetIndex === 8 ? 'pine' : 'broadleaf',
     sprites,
   };
 }
@@ -338,11 +367,14 @@ interface View {
   focal: number;
   elapsedMs: number;
   art: BonkArt | null;
+  /** Muda junto com o tileset: os detalhes decorativos ganham nova posição a cada região. */
+  decorSeed: number;
 }
 
 function makeView(ctx: CanvasRenderingContext2D, physics: BonkPhysics, player: SurvivorPlayer, viewport: BonkViewport, elapsedMs: number, art: BonkArt | null): View {
   return {
     ctx, physics, player, viewport, elapsedMs, art,
+    decorSeed: art?.tilesetIndex ?? 0,
     camera: bonkCameraPosition(physics, player),
     forward: { x: Math.cos(physics.cameraYaw), y: Math.sin(physics.cameraYaw) },
     focal: bonkFocal(viewport),
@@ -591,10 +623,10 @@ function drawGroundDetails(view: View): void {
       const tx = x / TILE;
       const ty = y / TILE;
       for (let k = 0; k < 2; k++) {
-        const kind = hash(tx * 3.1 + k, ty * 1.7 - k);
+        const kind = hash(tx * 3.1 + k + view.decorSeed * 17.3, ty * 1.7 - k - view.decorSeed * 11.7);
         if (kind < 0.42) continue;
-        const wx = x + hash(tx + k * 5, ty + 9) * TILE;
-        const wy = y + hash(tx + 4, ty - k * 3) * TILE;
+        const wx = x + hash(tx + k * 5 + view.decorSeed * 7.1, ty + 9 - view.decorSeed * 3.7) * TILE;
+        const wy = y + hash(tx + 4 - view.decorSeed * 5.3, ty - k * 3 + view.decorSeed * 9.1) * TILE;
         if (streamDistance(wx, wy) < TILE * 0.8 || onRoad(wx, wy)) continue;
         const depth = depthOf(view, wx, wy);
         // Colado na câmera, um tufo vira uma parede na tela: os detalhes começam um pouco antes do jogador.
@@ -897,7 +929,7 @@ function drawTree(view: View, o: BonkObstacle, depth: number): void {
   const cy = o.y + o.h / 2;
   const ground = project(view, cx, cy);
   if (!ground) return;
-  const sprite = o.id.startsWith('tree-east') ? view.art?.sprites.pine : view.art?.sprites.tree;
+  const sprite = o.id.startsWith('tree-east') || view.art?.treeStyle === 'pine' ? view.art?.sprites.pine : view.art?.sprites.tree;
   if (sprite) {
     // A mesma árvore da Vila, em pé: os pés do recorte no centro da área sólida.
     const solid = bonkGroundEllipse(ground, o.w * 0.5);
@@ -1161,27 +1193,34 @@ export function drawBonkGround(
   viewport: BonkViewport,
   elapsedMs: number,
   art: BonkArt | null = null,
+  nextArt: BonkArt | null = null,
+  transition = 0,
 ): void {
-  const view = makeView(ctx, physics, player, viewport, elapsedMs, art);
-  ctx.save();
-  ctx.imageSmoothingEnabled = true;
-  const horizon = drawSky(view);
-  drawGroundTiles(view);
-  drawRibbon(view, MAIN_ROAD, 84, MAIN_ROAD_NORMALS, MAIN_ROAD_DISTANCES);
-  drawRibbon(view, CROSS_ROAD, 52, CROSS_ROAD_NORMALS, CROSS_ROAD_DISTANCES);
-  drawGroundDetails(view);
-  ctx.fillStyle = 'rgba(18, 36, 40, .2)';
-  for (const obstacle of physics.obstacles) {
-    const depth = nearestDepth(view, obstacle);
-    if (depth > 40 && depth < FAR) drawShadow(view, obstacle);
-  }
-  // Névoa baixa no horizonte junta o fim do chão às serras.
-  const fog = ctx.createLinearGradient(0, horizon - 12, 0, horizon + viewport.height * 0.1);
-  fog.addColorStop(0, css(HAZE, 0.55));
-  fog.addColorStop(1, css(HAZE, 0));
-  ctx.fillStyle = fog;
-  ctx.fillRect(0, horizon - 12, viewport.width, viewport.height * 0.1 + 12);
-  ctx.restore();
+  const drawLayer = (layer: BonkArt | null, alpha: number): void => {
+    const view = makeView(ctx, physics, player, viewport, elapsedMs, layer);
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    ctx.imageSmoothingEnabled = true;
+    const horizon = drawSky(view);
+    drawGroundTiles(view);
+    drawRibbon(view, MAIN_ROAD, 84, MAIN_ROAD_NORMALS, MAIN_ROAD_DISTANCES);
+    drawRibbon(view, CROSS_ROAD, 52, CROSS_ROAD_NORMALS, CROSS_ROAD_DISTANCES);
+    drawGroundDetails(view);
+    ctx.fillStyle = 'rgba(18, 36, 40, .2)';
+    for (const obstacle of physics.obstacles) {
+      const depth = nearestDepth(view, obstacle);
+      if (depth > 40 && depth < FAR) drawShadow(view, obstacle);
+    }
+    // Névoa baixa no horizonte junta o fim do chão às serras.
+    const fog = ctx.createLinearGradient(0, horizon - 12, 0, horizon + viewport.height * 0.1);
+    fog.addColorStop(0, css(HAZE, 0.55));
+    fog.addColorStop(1, css(HAZE, 0));
+    ctx.fillStyle = fog;
+    ctx.fillRect(0, horizon - 12, viewport.width, viewport.height * 0.1 + 12);
+    ctx.restore();
+  };
+  drawLayer(art, 1);
+  if (nextArt && transition > 0) drawLayer(nextArt, clamp(transition, 0, 1));
 }
 
 /**
@@ -1195,29 +1234,36 @@ export function bonkObstacleDrawables(
   viewport: BonkViewport,
   elapsedMs: number,
   art: BonkArt | null = null,
+  nextArt: BonkArt | null = null,
+  transition = 0,
 ): BonkDrawable[] {
-  const view = makeView(ctx, physics, player, viewport, elapsedMs, art);
   const out: BonkDrawable[] = [];
-  for (const obstacle of physics.obstacles) {
-    const depth = nearestDepth(view, obstacle);
-    if (depth > FAR + 200) continue;
-    const centerDepth = depthOf(view, obstacle.x + obstacle.w / 2, obstacle.y + obstacle.h / 2);
-    if (centerDepth < BONK_CAMERA.near + 10) continue;
-    const occludes = (blocksView(view.camera, player, obstacle) && obstacle.height > 30) || depth < 110;
-    out.push({
-      depth: obstacle.kind === 'tree' ? centerDepth - obstacle.w * 0.5 : depth,
-      draw: () => {
-        ctx.save();
-        if (occludes) ctx.globalAlpha = 0.38;
-        if (obstacle.kind === 'tree') drawTree(view, obstacle, centerDepth);
-        else if (obstacle.kind === 'boulder') drawBoulder(view, obstacle, centerDepth);
-        else if (obstacle.kind === 'crystal') drawCrystal(view, obstacle, centerDepth);
-        else if (obstacle.kind === 'bridge') drawBridge(view, obstacle, centerDepth);
-        else if (obstacle.kind === 'ruin') drawRuin(view, obstacle, centerDepth);
-        else drawWall(view, obstacle, centerDepth);
-        ctx.restore();
-      },
-    });
-  }
+  const appendLayer = (layer: BonkArt | null, alpha: number): void => {
+    const view = makeView(ctx, physics, player, viewport, elapsedMs, layer);
+    for (const obstacle of physics.obstacles) {
+      const depth = nearestDepth(view, obstacle);
+      if (depth > FAR + 200) continue;
+      const centerDepth = depthOf(view, obstacle.x + obstacle.w / 2, obstacle.y + obstacle.h / 2);
+      if (centerDepth < BONK_CAMERA.near + 10) continue;
+      const occludes = (blocksView(view.camera, player, obstacle) && obstacle.height > 30) || depth < 110;
+      out.push({
+        depth: obstacle.kind === 'tree' ? centerDepth - obstacle.w * 0.5 : depth,
+        draw: () => {
+          ctx.save();
+          ctx.globalAlpha *= alpha;
+          if (occludes) ctx.globalAlpha *= 0.38;
+          if (obstacle.kind === 'tree') drawTree(view, obstacle, centerDepth);
+          else if (obstacle.kind === 'boulder') drawBoulder(view, obstacle, centerDepth);
+          else if (obstacle.kind === 'crystal') drawCrystal(view, obstacle, centerDepth);
+          else if (obstacle.kind === 'bridge') drawBridge(view, obstacle, centerDepth);
+          else if (obstacle.kind === 'ruin') drawRuin(view, obstacle, centerDepth);
+          else drawWall(view, obstacle, centerDepth);
+          ctx.restore();
+        },
+      });
+    }
+  };
+  appendLayer(art, 1);
+  if (nextArt && transition > 0) appendLayer(nextArt, clamp(transition, 0, 1));
   return out;
 }

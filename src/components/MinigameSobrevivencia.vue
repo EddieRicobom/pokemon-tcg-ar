@@ -157,8 +157,17 @@ let landscapeAtlasLoaded = false;
 let landscapeAtlasImage: HTMLImageElement | null = null;
 /** Grama do Survival (`survivor-grass.png`), também usada como textura do chão do BONK. */
 let groundImage: HTMLImageElement | null = null;
-/** Texturas e recortes do BONK, montados uma vez quando o atlas e a grama estão prontos. */
-let bonkArt: BonkArt | null = null;
+/** Arte por região da corrida BONK: a próxima entra durante a transição, sem recarregar imagens por quadro. */
+let bonkLandscapeSeed = 0;
+const bonkArtByRegion = new Map<number, BonkArt>();
+function bonkArtForRegion(region: number): BonkArt | null {
+  if (!ctx || !bonkRun.value) return null;
+  const cached = bonkArtByRegion.get(region);
+  if (cached) return cached;
+  const art = createBonkArt(ctx, landscapeAtlasImage, groundImage, bonkLandscapeSeed, region);
+  bonkArtByRegion.set(region, art);
+  return art;
+}
 async function loadLandscapeAtlas(): Promise<void> {
   if (landscapeAtlasLoaded) return;
   landscapeAtlasLoaded = true;
@@ -914,11 +923,14 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   const c = ctx;
   const viewport = { width: view.w, height: view.h };
   c.clearRect(0, 0, viewport.width, viewport.height);
-  drawBonkGround(c, physics, s.player, viewport, s.elapsedMs, bonkArt);
+  const region = survivorRegionAt(s.elapsedMs);
+  const art = bonkArtForRegion(region.current);
+  const nextArt = region.blend > 0 ? bonkArtForRegion(region.next) : null;
+  drawBonkGround(c, physics, s.player, viewport, s.elapsedMs, art, nextArt, region.blend);
 
   const drawPoint = (point: { x: number; y: number }, z = 0) => projectBonkPoint(physics, s.player, { ...point, z }, viewport);
   // Tudo que tem altura entra numa só ordenação: obstáculo na frente cobre o inimigo atrás, e vice-versa.
-  const figures = bonkObstacleDrawables(c, physics, s.player, viewport, s.elapsedMs, bonkArt);
+  const figures = bonkObstacleDrawables(c, physics, s.player, viewport, s.elapsedMs, art, nextArt, region.blend);
   for (const orb of s.orbs) {
     const ground = drawPoint(orb);
     const p = drawPoint(orb, 10 + Math.sin(animMs / 320 + orb.id) * 3);
@@ -1690,9 +1702,6 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
         groundImage = groundImg;
       }
     }
-    // Sem atlas nem grama, o BONK continua com o cenário desenhado por código (nada é inventado no lugar).
-    if (bonk && ctx && !bonkArt && (landscapeAtlasImage || groundImage)) bonkArt = createBonkArt(ctx, landscapeAtlasImage, groundImage);
-
     if (disposed) return;
     pickOptions.value = null;
     summary.value = null;
@@ -1705,7 +1714,12 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
     state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices });
     bonkRun.value = bonk;
-    bonkPhysics.value = bonk ? createBonkPhysics() : null;
+    bonkPhysics.value = bonk ? createBonkPhysics(Math.PI / 2, state.value.runSeed) : null;
+    // Cada corrida BONK usa a própria seed para trocar tiles, árvores e posição dos obstáculos.
+    // Sem atlas/grama, a função ainda devolve o fallback desenhado por código — sem fingir um asset ausente.
+    bonkLandscapeSeed = state.value.runSeed;
+    bonkArtByRegion.clear();
+    if (bonk) bonkArtForRegion(0);
     if (ctx) ctx.imageSmoothingEnabled = bonk;
     announcedRegion = survivorRegionLabel(0);
     guardianSprite.value = null;
