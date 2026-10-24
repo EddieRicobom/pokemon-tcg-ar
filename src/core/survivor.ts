@@ -763,6 +763,19 @@ function applyStun(e: SurvivorEnemy, ms: number): void {
   e.stunMs = Math.max(e.stunMs ?? 0, ms);
   e.stunCooldownMs = STUN_COOLDOWN_MS;
 }
+/** Depois de um empurrão, o inimigo só pode ser empurrado de novo daqui a 5 s (golpes de área não o mandam longe sem parar). */
+export const KNOCKBACK_COOLDOWN_MS = 5_000;
+/** Empurra `e` para longe de `from` em `push` unidades, se a recarga permitir; devolve se empurrou. */
+function applyKnockback(e: SurvivorEnemy, from: { x: number; y: number }, push: number): boolean {
+  if ((e.knockbackCooldownMs ?? 0) > 0) return false;
+  const dx = e.x - from.x;
+  const dy = e.y - from.y;
+  const d = Math.hypot(dx, dy) || 1;
+  e.x += (dx / d) * push;
+  e.y += (dy / d) * push;
+  e.knockbackCooldownMs = KNOCKBACK_COOLDOWN_MS;
+  return true;
+}
 const hasUpgrade = (player: SurvivorPlayer, id: string): boolean => (player.upgradeLevels[id] ?? 0) > 0;
 
 export function survivorDirectDamageMultiplier(distance: number): number {
@@ -804,15 +817,9 @@ function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: numbe
     case 'atordoar':
       applyStun(e, e.boss ? 90 : 220);
       break;
-    case 'empurrar': {
-      const dx = e.x - from.x;
-      const dy = e.y - from.y;
-      const d = Math.hypot(dx, dy) || 1;
-      const push = e.boss ? 1.5 : 5;
-      e.x += (dx / d) * push;
-      e.y += (dy / d) * push;
+    case 'empurrar':
+      applyKnockback(e, from, e.boss ? 1.5 : 5);
       break;
-    }
     case 'roubar':
       state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1);
       break;
@@ -874,13 +881,8 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
       applyStun(e, e.boss ? EFFECT_MS.bossStun : EFFECT_MS.stun);
       break;
     case 'empurrar': {
-      const dx = e.x - from.x;
-      const dy = e.y - from.y;
-      const d = Math.hypot(dx, dy) || 1;
-       const strongerPush = move === p.move && ((move.type === 'water' && hasUpgrade(p, 'water-tide')) || (move.type === 'fighting' && hasUpgrade(p, 'fighting-impact')));
-       const push = (e.boss ? 3 : 11) * (strongerPush ? 1.5 : 1);
-      e.x += (dx / d) * push;
-      e.y += (dy / d) * push;
+      const strongerPush = move === p.move && ((move.type === 'water' && hasUpgrade(p, 'water-tide')) || (move.type === 'fighting' && hasUpgrade(p, 'fighting-impact')));
+      applyKnockback(e, from, (e.boss ? 3 : 11) * (strongerPush ? 1.5 : 1));
       break;
     }
     default:
@@ -1363,6 +1365,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const stunned = !!e.stunMs && e.stunMs > 0;
     if (stunned) e.stunMs = Math.max(0, (e.stunMs ?? 0) - dtMs);
     if ((e.stunCooldownMs ?? 0) > 0) e.stunCooldownMs = Math.max(0, (e.stunCooldownMs ?? 0) - dtMs);
+    if ((e.knockbackCooldownMs ?? 0) > 0) e.knockbackCooldownMs = Math.max(0, (e.knockbackCooldownMs ?? 0) - dtMs);
     const target = updateEnemyBehavior(state, e, dtMs);
     const dx = target.x - e.x;
     const dy = target.y - e.y;
