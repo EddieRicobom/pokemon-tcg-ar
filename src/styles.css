@@ -5191,6 +5191,8 @@ body.no-scroll .reward-toasts {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  /* A/B pertencem sempre ao canto direito, mesmo quando o direcional está oculto. */
+  margin-left: auto;
   gap: 12px;
   width: auto;
   flex: 0 0 auto;
@@ -7799,7 +7801,7 @@ body.no-scroll .reward-toasts {
   .village-pad { position: absolute; z-index: 8; inset: 0; display: block; padding: 0; background: transparent; pointer-events: none; }
   .village-pad .village-move-hint { display: none; }
   .village-pad .village-arrow-hint { position: absolute; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); display: block; transform: translateX(-50%); margin: 0; padding: 5px 10px; border: 1px solid rgb(255 225 106 / 25%); border-radius: 999px; background: rgb(16 21 35 / 88%); color: #ffe789; font-size: .72rem; font-weight: 700; white-space: nowrap; pointer-events: none; }
-  .village-control-cluster { position: absolute; inset: auto max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); display: flex; align-items: flex-end; justify-content: space-between; width: auto; pointer-events: none; }
+  .village-control-cluster { position: absolute; inset: auto max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) auto; display: flex; align-items: flex-end; justify-content: flex-end; width: auto; pointer-events: none; }
   /* O analógico flutuante já cobre o toque; o D-pad de quatro botões não aparece na Vila. */
   .village-dpad { display: none; }
   .village-dpad button { min-width: 0; min-height: 0; width: 100%; height: 100%; padding: 0; border: 1px solid rgb(255 255 255 / 26%); border-radius: 13px; background: linear-gradient(180deg, #343c5c, #1c2238); color: #f4f6ff; font-size: 1rem; touch-action: none; user-select: none; -webkit-user-select: none; }
