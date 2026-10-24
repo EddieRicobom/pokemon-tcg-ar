@@ -1880,6 +1880,13 @@ watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) infiniteWanted.valu
 async function openPicker(): Promise<void> {
   music.reset();
   ready.value = false;
+  // O resumo encerra a corrida anterior, mas não pode continuar por cima da seleção seguinte.
+  // Sem isto, "Jogar de novo" abria o seletor atrás do overlay do resultado.
+  summary.value = null;
+  pendingUpgrade.value = null;
+  typeAffinityOffer.value = null;
+  leaveConfirm.value = false;
+  clearTrainerPresentation();
   bonkRun.value = false;
   bonkPhysics.value = null;
   bonkJumpQueued = false;
