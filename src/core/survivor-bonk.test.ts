@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng } from './battle';
 import { createSurvivorState, rollUpgrades } from './survivor';
-import { bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics, tryBonkJump } from './survivor-bonk';
+import { BONK_LANDING_MS, BONK_TURN_RATE, bonkInputToWorld, bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics, tryBonkJump } from './survivor-bonk';
 
 function player() {
   return createSurvivorState(7, { kindCount: 1, bonk: true }).player;
@@ -57,17 +57,65 @@ describe('física do modo BONK', () => {
     expect(jumped.collided).toBe(false);
   });
 
-  it('gira a câmera atrás da direção do movimento e projeta o mundo à frente', () => {
+  it('o analógico é relativo à câmera: para cima avança para onde ela olha, o lado anda de lado', () => {
+    const physics = createBonkPhysics(Math.PI / 2);
+    const forward = bonkInputToWorld(physics, 0, -1);
+    expect(forward.dx).toBeCloseTo(0, 6);
+    expect(forward.dy).toBeCloseTo(1, 6);
+    const right = bonkInputToWorld(physics, 1, 0);
+    // A direita da tela, com a câmera olhando para +y, é o -x do mundo.
+    expect(right.dx).toBeCloseTo(-1, 6);
+    expect(right.dy).toBeCloseTo(0, 6);
+    const p = player();
+    const point = projectBonkPoint(physics, p, { x: p.x + right.dx * 100, y: p.y + right.dy * 100 }, { width: 600, height: 420 });
+    expect(point!.x).toBeGreaterThan(300);
+  });
+
+  it('o lado gira a câmera aos poucos; frente e trás não giram', () => {
     const p = player();
     const physics = createBonkPhysics(0);
-    stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 0, dy: 1 }, 300);
-    expect(physics.cameraYaw).toBeGreaterThan(0.5);
-    const point = projectBonkPoint(physics, p, {
+    stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 0, dy: -1 }, 60);
+    stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 0, dy: 1 }, 60);
+    expect(physics.cameraYaw).toBe(0);
+    for (let i = 0; i < 5; i++) stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 1, dy: 0 }, 60);
+    expect(physics.cameraYaw).toBeCloseTo(BONK_TURN_RATE * 0.3, 6);
+    const ahead = projectBonkPoint(physics, p, {
       x: p.x + Math.cos(physics.cameraYaw) * 500,
       y: p.y + Math.sin(physics.cameraYaw) * 500,
     }, { width: 600, height: 420 });
-    expect(point).not.toBeNull();
-    expect(point!.x).toBeGreaterThan(150);
-    expect(point!.x).toBeLessThan(450);
+    expect(ahead!.x).toBeCloseTo(300, 6);
+  });
+
+  it('guarda um toque no Pular dado um pouco antes de pousar', () => {
+    const p = player();
+    const physics = createBonkPhysics();
+    expect(tryBonkJump(physics, p)).toBe(true);
+    // Sobe e começa a cair, com o único salto já usado.
+    while (physics.verticalVelocity > -300) stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 0, dy: 0 }, 16);
+    physics.z = Math.min(physics.z, 4);
+    stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 0, dy: 0, jump: true }, 1);
+    expect(physics.jumpBufferMs).toBeGreaterThan(0);
+    for (let i = 0; i < 4 && physics.verticalVelocity <= 0; i++) stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 0, dy: 0 }, 16);
+    expect(physics.verticalVelocity).toBeGreaterThan(0);
+    expect(physics.jumpBufferMs).toBe(0);
+  });
+
+  it('o pedido de salto expira se o pouso demorar mais que a janela', () => {
+    const p = player();
+    const physics = createBonkPhysics();
+    tryBonkJump(physics, p);
+    stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 0, dy: 0, jump: true }, 16);
+    for (let i = 0; i < 12; i++) stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 0, dy: 0 }, 16);
+    expect(physics.jumpBufferMs).toBe(0);
+    expect(physics.grounded).toBe(false);
+  });
+
+  it('liga o efeito de pouso ao tocar o chão depois de um salto', () => {
+    const p = player();
+    const physics = createBonkPhysics();
+    tryBonkJump(physics, p);
+    for (let frame = 0; frame < 180 && !physics.grounded; frame += 1) stepBonkPhysics(physics, p, { x: p.x, y: p.y }, { dx: 0, dy: 0 }, 16);
+    expect(physics.grounded).toBe(true);
+    expect(physics.landingMs).toBe(BONK_LANDING_MS);
   });
 });

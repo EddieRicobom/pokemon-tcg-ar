@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRaw, triggerRef, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, toRaw, triggerRef, watch } from 'vue';
 import MusicControls from './MusicControls.vue';
 import { MusicPlayer } from '../app/music-player';
 import { survivorAudio } from '../app/survivor-audio-settings';
@@ -68,9 +68,9 @@ import type { SurvivorSpecialBranchId, SurvivorSpecialId } from '../core/survivo
 import { drawSurvivorSpecial } from '../village/survivor-special-art';
 import { emptySurvivorFeedbackAnswers, encodeSurvivorFeedback } from '../core/survivor-feedback';
 import type { FeedbackRating, FeedbackRatingKey } from '../core/survivor-feedback';
-import { bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics } from '../core/survivor-bonk';
+import { BONK_LANDING_MS, bonkInputToWorld, bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics } from '../core/survivor-bonk';
 import type { BonkPhysics } from '../core/survivor-bonk';
-import { drawBonkLandscape } from '../village/survivor-bonk-landscape';
+import { bonkGroundEllipse, bonkObstacleDrawables, drawBonkGround } from '../village/survivor-bonk-landscape';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -346,8 +346,11 @@ const avatarName = ref('');
 const state = ref<SurvivorState | null>(null);
 /** Variante BONK: mesma corrida, mas com câmera em terceira pessoa e terreno físico. */
 const bonkRun = ref(false);
-const bonkPhysics = ref<BonkPhysics | null>(null);
+// Mudado em todo quadro pelo laço: `shallowRef` evita um proxy por campo, e o laço chama `triggerRef` uma vez.
+const bonkPhysics = shallowRef<BonkPhysics | null>(null);
 let bonkJumpQueued = false;
+/** Para que lado o sprite olha no BONK: segue o lado do analógico na tela, não a direção no mundo. */
+let bonkFacing: -1 | 1 = 1;
 const guardian = computed(() => state.value ? SPECIAL_GUARDIANS[state.value.special.type] : null);
 const chosenSpecial = computed(() => state.value?.special.selected ? SURVIVOR_SPECIALS[state.value.special.selected] : null);
 const specialModalOpen = computed(() => {
@@ -377,16 +380,30 @@ function chooseSpecialBranch(id: SurvivorSpecialBranchId): void {
 const paused = ref(false);
 const leaveConfirm = ref(false);
 const bonkJumpBlocked = computed(() => !bonkRun.value || !state.value || state.value.over || paused.value || !!pendingUpgrade.value || !!evolving.value || specialModalOpen.value);
-const bonkJumpLabel = computed(() => {
+/** Saltos disponíveis agora (true) e já usados (false), na ordem; vira as bolinhas do botão Pular. */
+const bonkJumpPips = computed(() => {
   const physics = bonkPhysics.value;
   const player = state.value?.player;
-  if (!physics || !player) return '';
-  return physics.grounded ? 'CHÃO' : `${bonkJumpsRemaining(physics, player)}x`;
+  if (!physics || !player) return [] as boolean[];
+  const maximum = 1 + Math.max(0, player.bonkAirJumps ?? 0);
+  const remaining = bonkJumpsRemaining(physics, player);
+  return Array.from({ length: maximum }, (_, i) => i < remaining);
 });
+const bonkJumpLabel = computed(() => {
+  const pips = bonkJumpPips.value;
+  if (pips.length === 0) return '';
+  return `${pips.filter(Boolean).length} de ${pips.length} saltos`;
+});
+/** Liga o estado "apertado" do botão por um instante: no toque, `:active` some antes de o quadro ser desenhado. */
+const bonkJumpPressed = ref(false);
+let bonkJumpPressTimer: ReturnType<typeof setTimeout> | null = null;
 function queueBonkJump(): void {
   if (bonkJumpBlocked.value) return;
   unlockSound();
   bonkJumpQueued = true;
+  bonkJumpPressed.value = true;
+  if (bonkJumpPressTimer) clearTimeout(bonkJumpPressTimer);
+  bonkJumpPressTimer = setTimeout(() => { bonkJumpPressed.value = false; bonkJumpPressTimer = null; }, 160);
 }
 let wasPausedBeforeLeave = false;
 const trainerPresentation = ref<null | { trainerId: number; count: number; final: boolean }>(null);
@@ -816,15 +833,27 @@ function drawEnemy(e: SurvivorEnemy): void {
 }
 
 /** Sprite 2D voltado para a câmera (billboard): a perspectiva vem da projeção, não de um modelo 3D inventado. */
-function drawBonkBillboard(sprite: Sprite | null, x: number, y: number, scale: number, flip = false, alpha = 1): void {
+function drawBonkBillboard(
+  sprite: Sprite | null, x: number, y: number, scale: number, flip = false, alpha = 1,
+  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0,
+): void {
   if (!ctx) return;
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.fillStyle = 'rgba(13, 23, 43, .28)';
+  // A sombra fica no chão: no pulo, o sprite sobe e ela encolhe embaixo dele (é o que dá para ler a altura).
+  const ground = shadow ?? { x, y: y + 2, rx: Math.max(3, 15 * scale), ry: Math.max(1.5, 5 * scale) };
+  ctx.fillStyle = 'rgba(13, 23, 43, .32)';
   ctx.beginPath();
-  ctx.ellipse(x, y + 2, Math.max(3, 15 * scale), Math.max(1.5, 5 * scale), 0, 0, Math.PI * 2);
+  ctx.ellipse(ground.x, ground.y, ground.rx, ground.ry, 0, 0, Math.PI * 2);
   ctx.fill();
-  drawSprite(sprite, x, y, flip, scale);
+  if (squash !== 0) {
+    // Achatado ao pousar (squash > 0), esticado ao subir (squash < 0), sempre com os pés no mesmo ponto.
+    ctx.translate(x, y);
+    ctx.scale(1 + squash * 0.7, 1 - squash);
+    drawSprite(sprite, 0, 0, flip, scale);
+  } else {
+    drawSprite(sprite, x, y, flip, scale);
+  }
   ctx.restore();
 }
 
@@ -841,6 +870,16 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
     ctx.stroke();
     ctx.restore();
   }
+  if (e.chargeMs) {
+    // Aviso da investida também no BONK: anel vermelho no chão que se fecha até o avanço.
+    ctx.save();
+    ctx.strokeStyle = '#ff5a5a';
+    ctx.lineWidth = Math.max(1.5, 2.4 * scale);
+    ctx.beginPath();
+    ctx.ellipse(x, y, (26 - (e.chargeMs / 500) * 8) * size, (8 - (e.chargeMs / 500) * 2.5) * size, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
   drawBonkBillboard(sprite, x, y, size);
   if (e.hp < e.maxHp) {
     const width = Math.max(14, 28 * scale);
@@ -850,7 +889,7 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
     ctx.fillStyle = e.archetype === 'suporte' ? '#ff78b7' : '#8be06a';
     ctx.fillRect(x - width / 2, barY, width * clamp(e.hp / e.maxHp, 0, 1), Math.max(2, 3 * scale));
   }
-  const mark = e.stunMs ? '#ffe23d' : e.burnMs ? '#ff7a2f' : e.slowMs ? '#9fe8ff' : null;
+  const mark = e.stunMs ? '#ffe23d' : e.burnMs ? '#ff7a2f' : e.slowMs ? '#9fe8ff' : e.archetype === 'explosivo' ? '#ff8c3a' : null;
   if (mark) {
     ctx.fillStyle = mark;
     ctx.beginPath();
@@ -862,53 +901,90 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
 /** Renderizador BONK: perspectiva suave, profundidade e sprites em billboard; o motor de combate é o mesmo da Torre. */
 function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   if (!ctx) return;
+  const c = ctx;
   const viewport = { width: view.w, height: view.h };
-  ctx.clearRect(0, 0, viewport.width, viewport.height);
-  drawBonkLandscape(ctx, physics, s.player, viewport, s.elapsedMs);
+  c.clearRect(0, 0, viewport.width, viewport.height);
+  drawBonkGround(c, physics, s.player, viewport, s.elapsedMs);
 
   const drawPoint = (point: { x: number; y: number }, z = 0) => projectBonkPoint(physics, s.player, { ...point, z }, viewport);
+  // Tudo que tem altura entra numa só ordenação: obstáculo na frente cobre o inimigo atrás, e vice-versa.
+  const figures = bonkObstacleDrawables(c, physics, s.player, viewport, s.elapsedMs);
   for (const orb of s.orbs) {
-    const p = drawPoint(orb, 10);
-    if (!p || p.scale < 0.05) continue;
+    const ground = drawPoint(orb);
+    const p = drawPoint(orb, 10 + Math.sin(animMs / 320 + orb.id) * 3);
+    if (!p || !ground || p.scale < 0.05) continue;
     const color = orb.doubleXp ? '#62e6ff' : '#ffe066';
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = Math.min(16, 8 * p.scale);
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, clamp(4 * p.scale, 1.4, 10), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    figures.push({ depth: ground.depth, draw: () => {
+      const shadow = bonkGroundEllipse(ground, 5);
+      c.fillStyle = 'rgba(13, 23, 43, .22)';
+      c.beginPath(); c.ellipse(ground.x, ground.y, shadow.rx, shadow.ry, 0, 0, Math.PI * 2); c.fill();
+      c.save();
+      c.globalAlpha = 0.92;
+      c.fillStyle = color;
+      c.shadowColor = color;
+      c.shadowBlur = Math.min(16, 8 * p.scale);
+      c.beginPath();
+      c.arc(p.x, p.y, clamp(4 * p.scale, 1.4, 10), 0, Math.PI * 2);
+      c.fill();
+      c.restore();
+    } });
   }
   for (const artifact of s.artifacts) {
-    const p = drawPoint(artifact, 14);
-    if (!p) continue;
+    const ground = drawPoint(artifact);
+    const p = drawPoint(artifact, 16 + Math.sin(animMs / 260 + artifact.id) * 4);
+    if (!p || !ground) continue;
     const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb';
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = Math.min(18, 10 * p.scale);
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, clamp(8 * p.scale, 3, 15), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    figures.push({ depth: ground.depth, draw: () => {
+      const ring = bonkGroundEllipse(ground, 14);
+      c.save();
+      c.strokeStyle = color;
+      c.globalAlpha = 0.7;
+      c.lineWidth = Math.max(1, ground.scale * 0.8);
+      c.beginPath(); c.ellipse(ground.x, ground.y, ring.rx, ring.ry, 0, 0, Math.PI * 2); c.stroke();
+      c.globalAlpha = 1;
+      c.fillStyle = color;
+      c.shadowColor = color;
+      c.shadowBlur = Math.min(18, 10 * p.scale);
+      c.beginPath();
+      c.arc(p.x, p.y, clamp(8 * p.scale, 3, 15), 0, Math.PI * 2);
+      c.fill();
+      c.restore();
+    } });
   }
-
-  const figures: { depth: number; draw: () => void }[] = [];
   for (const enemy of s.enemies) {
     if (enemy.hp <= 0) continue;
     const p = drawPoint(enemy);
     if (!p || p.scale < 0.08) continue;
-    figures.push({ depth: p.depth, draw: () => drawBonkEnemy(enemy, p.x, p.y, clamp(p.scale * 0.62, 0.24, 1.45)) });
+    figures.push({ depth: p.depth, draw: () => drawBonkEnemy(enemy, p.x, p.y, clamp(p.scale * 0.8, 0.55, 3)) });
   }
   for (const support of s.supports) {
     const p = drawPoint(support);
     if (!p || p.scale < 0.08) continue;
-    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(supportSprites.get(support.dexId) ?? null, p.x, p.y, clamp(p.scale * 0.46, 0.18, 0.9), s.player.facing < 0, 0.82) });
+    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(supportSprites.get(support.dexId) ?? null, p.x, p.y, clamp(p.scale * 0.6, 0.18, 2), bonkFacing < 0, 0.82) });
   }
+  const playerGround = drawPoint(s.player);
   const playerPoint = drawPoint(s.player, physics.z);
-  if (playerPoint) figures.push({ depth: playerPoint.depth - 0.01, draw: () => drawBonkBillboard(playerSprite, playerPoint.x, playerPoint.y, clamp(playerPoint.scale * 0.58, 0.3, 1.8), s.player.facing < 0, s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0 ? 0.45 : 1) });
+  if (playerPoint && playerGround) {
+    const scale = clamp(playerPoint.scale * 0.92, 0.3, 3.2);
+    // Quanto mais alto, menor e mais clara a sombra.
+    const lift = clamp(physics.z / 220, 0, 0.6);
+    const shadow = bonkGroundEllipse(playerGround, 17 * (1 - lift));
+    const landing = physics.landingMs / BONK_LANDING_MS;
+    const squash = landing > 0 ? 0.2 * landing : !physics.grounded && physics.verticalVelocity > 120 ? -0.08 : 0;
+    figures.push({ depth: playerGround.depth - 0.01, draw: () => {
+      // Anel na cor do golpe sob os pés: acha o próprio Pokémon no meio de uma onda.
+      const ring = bonkGroundEllipse(playerGround, 22);
+      c.save();
+      c.strokeStyle = s.player.move.color;
+      c.globalAlpha = 0.55;
+      c.lineWidth = Math.max(1.5, playerGround.scale * 0.9);
+      c.beginPath(); c.ellipse(playerGround.x, playerGround.y, ring.rx, ring.ry, 0, 0, Math.PI * 2); c.stroke();
+      c.restore();
+      drawBonkBillboard(playerSprite, playerPoint.x, playerPoint.y, scale, bonkFacing < 0,
+        s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0 ? 0.45 : 1,
+        { x: playerGround.x, y: playerGround.y, rx: shadow.rx, ry: shadow.ry }, squash);
+    } });
+  }
   figures.sort((a, b) => b.depth - a.depth).forEach((figure) => figure.draw());
 
   for (const projectile of s.projectiles) {
@@ -916,36 +992,60 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     if (!p) continue;
     const radius = clamp((projectile.size ?? 4) * p.scale * 0.55, 1.5, 10);
     const color = projectile.move?.color ?? s.player.move.color;
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = radius * 3;
-    ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    c.save();
+    c.fillStyle = color;
+    c.shadowColor = color;
+    c.shadowBlur = radius * 3;
+    c.beginPath(); c.arc(p.x, p.y, radius, 0, Math.PI * 2); c.fill();
+    c.restore();
   }
   for (const projectile of s.hostileProjectiles) {
     const p = drawPoint(projectile, 16);
     if (!p) continue;
-    ctx.fillStyle = projectile.effect === 'stun' ? '#e6b6ff' : projectile.effect === 'slow' ? '#7bdcff' : '#ff6c64';
-    ctx.beginPath(); ctx.arc(p.x, p.y, clamp(projectile.size * p.scale * 0.65, 1.5, 10), 0, Math.PI * 2); ctx.fill();
+    c.fillStyle = projectile.effect === 'stun' ? '#e6b6ff' : projectile.effect === 'slow' ? '#7bdcff' : '#ff6c64';
+    c.beginPath(); c.arc(p.x, p.y, clamp(projectile.size * p.scale * 0.65, 1.5, 10), 0, Math.PI * 2); c.fill();
   }
-  if (playerPoint && (s.player.move.category === 'aura' || s.player.move.category === 'orbit' || s.special.activeMs > 0)) {
-    ctx.save();
-    ctx.strokeStyle = s.player.move.color;
-    ctx.globalAlpha = 0.62;
-    ctx.lineWidth = Math.max(1.5, playerPoint.scale * 1.1);
-    ctx.beginPath();
-    ctx.ellipse(playerPoint.x, playerPoint.y, clamp(s.player.attackRadius * playerPoint.scale * 0.22, 12, 150), clamp(s.player.attackRadius * playerPoint.scale * 0.065, 4, 44), 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
+  for (const fx of s.fx) {
+    if (fx.kind !== 'blast' && fx.kind !== 'pulse') continue;
+    const p = drawPoint(fx);
+    if (!p) continue;
+    const t = fx.ageMs / fx.lifeMs;
+    const size = bonkGroundEllipse(p, fx.r * (0.6 + t * 0.4));
+    c.save();
+    c.globalAlpha = (1 - t) * 0.6;
+    c.strokeStyle = fx.color;
+    c.lineWidth = Math.max(1.5, p.scale * 2);
+    c.beginPath(); c.ellipse(p.x, p.y, size.rx, size.ry, 0, 0, Math.PI * 2); c.stroke();
+    c.restore();
+  }
+  if (playerGround && (s.player.move.category === 'aura' || s.player.move.category === 'orbit' || s.special.activeMs > 0)) {
+    const ring = bonkGroundEllipse(playerGround, Math.max(20, s.player.attackRadius * 0.8));
+    c.save();
+    c.strokeStyle = s.player.move.color;
+    c.globalAlpha = 0.5;
+    c.lineWidth = Math.max(1.5, playerGround.scale * 1.1);
+    c.setLineDash([6, 5]);
+    c.beginPath(); c.ellipse(playerGround.x, playerGround.y, ring.rx, ring.ry, 0, 0, Math.PI * 2); c.stroke();
+    c.restore();
+  }
+  if (playerGround && physics.landingMs > 0) {
+    // Poeira do pouso: um anel que abre e some.
+    const t = 1 - physics.landingMs / BONK_LANDING_MS;
+    const dust = bonkGroundEllipse(playerGround, 18 + t * 26);
+    c.save();
+    c.globalAlpha = (1 - t) * 0.7;
+    c.strokeStyle = '#f4ead2';
+    c.lineWidth = Math.max(1.5, playerGround.scale * 1.4 * (1 - t));
+    c.beginPath(); c.ellipse(playerGround.x, playerGround.y, dust.rx, dust.ry, 0, 0, Math.PI * 2); c.stroke();
+    c.restore();
   }
   if (physics.collisionFlashMs > 0 && playerPoint) {
-    ctx.save();
-    ctx.globalAlpha = physics.collisionFlashMs / 130;
-    ctx.strokeStyle = '#fff6bd';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(playerPoint.x, playerPoint.y - 18, 15, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
+    c.save();
+    c.globalAlpha = physics.collisionFlashMs / 130;
+    c.strokeStyle = '#fff6bd';
+    c.lineWidth = 2;
+    c.beginPath(); c.arc(playerPoint.x, playerPoint.y - 18, 15, 0, Math.PI * 2); c.stroke();
+    c.restore();
   }
 }
 
@@ -1353,7 +1453,10 @@ function loop(ts: number): void {
     const dy = ky + (joystick.active ? joystick.dy : 0);
     const beforeBonkPosition = bonkRun.value ? { x: s.player.x, y: s.player.y } : null;
     const previousSpecialPhase = s.special.phase;
-    const events = stepSurvivor(s, { dx, dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s) }, dt);
+    // No BONK o analógico é relativo à câmera: para cima avança para onde ela olha, os lados andam de lado e giram.
+    const move = bonkRun.value && bonkPhysics.value ? bonkInputToWorld(bonkPhysics.value, dx, dy) : { dx, dy };
+    if (bonkRun.value && Math.abs(dx) > 0.15) bonkFacing = dx < 0 ? -1 : 1;
+    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s) }, dt);
     specialQueued = false;
     if (bonkRun.value && bonkPhysics.value && beforeBonkPosition) {
       stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, dt);
@@ -1365,6 +1468,7 @@ function loop(ts: number): void {
         enemy.x = resolved.x;
         enemy.y = resolved.y;
       }
+      triggerRef(bonkPhysics);
     }
     bonkJumpQueued = false;
     const region = survivorRegionLabel(s.elapsedMs);
@@ -1808,7 +1912,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="survivor-stats">
             <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
-            <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK · {{ bonkJumpLabel }}</span>
+            <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
              <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
              <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
                {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
@@ -1829,7 +1933,13 @@ onBeforeUnmount(() => {
 
         <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Minimapa da arena; o ponto azul é você, pontos vermelhos são chefes, pontos amarelos são elites e estrelas são Pokébolas">
           <span class="survivor-minimap-title">Mapa</span>
-          <span class="survivor-minimap-viewport" :style="{ left: `${(minimap.viewport.x / ARENA_W) * 100}%`, top: `${(minimap.viewport.y / ARENA_H) * 100}%`, width: `${(minimap.viewport.width / ARENA_W) * 100}%`, height: `${(minimap.viewport.height / ARENA_H) * 100}%` }"></span>
+          <span v-if="!bonkRun" class="survivor-minimap-viewport" :style="{ left: `${(minimap.viewport.x / ARENA_W) * 100}%`, top: `${(minimap.viewport.y / ARENA_H) * 100}%`, width: `${(minimap.viewport.width / ARENA_W) * 100}%`, height: `${(minimap.viewport.height / ARENA_H) * 100}%` }"></span>
+          <template v-if="bonkRun && bonkPhysics">
+            <!-- No BONK o mapa mostra o que bloqueia de verdade e um cone para onde a câmera olha. -->
+            <span v-for="obstacle in bonkPhysics.obstacles" :key="obstacle.id" class="survivor-minimap-obstacle" :class="`kind-${obstacle.kind}`"
+              :style="{ left: `${(obstacle.x / ARENA_W) * 100}%`, top: `${(obstacle.y / ARENA_H) * 100}%`, width: `${(obstacle.w / ARENA_W) * 100}%`, height: `${(obstacle.h / ARENA_H) * 100}%` }"></span>
+            <span class="survivor-minimap-view" :style="{ left: `${(state.player.x / ARENA_W) * 100}%`, top: `${(state.player.y / ARENA_H) * 100}%`, transform: `rotate(${bonkPhysics.cameraYaw}rad)` }"></span>
+          </template>
           <span
             v-for="marker in minimap.markers"
             :key="`${marker.kind}-${marker.id}`"
@@ -1866,7 +1976,7 @@ onBeforeUnmount(() => {
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
-        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint">{{ bonkRun ? 'Arraste ou use setas/WASD para andar · Pular: Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
+        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint" :class="{ 'is-bonk': bonkRun }">{{ bonkRun ? 'Arraste: para cima avança, para os lados vira a câmera · Pular: botão, Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
 
         <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
@@ -1972,13 +2082,14 @@ onBeforeUnmount(() => {
         </div>
 
         <button v-if="bonkRun && ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
-          type="button" class="survivor-jump-button" :class="{ 'is-airborne': bonkPhysics && !bonkPhysics.grounded }"
+          type="button" class="survivor-jump-button"
+          :class="{ 'is-airborne': bonkPhysics && !bonkPhysics.grounded, 'is-empty': bonkJumpPips.length > 0 && !bonkJumpPips.some(Boolean), 'is-pressed': bonkJumpPressed }"
           :disabled="bonkJumpBlocked"
           :aria-label="`Pular: ${bonkJumpLabel || 'indisponível'}; tecla Q ou Espaço`"
           @pointerdown.stop.prevent="queueBonkJump">
-          <span aria-hidden="true">⬆</span>
+          <svg class="jump-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 20 12h-5v7.5H9V12H4z" /></svg>
           <strong>PULAR</strong>
-          <small>{{ bonkJumpLabel }}</small>
+          <span class="jump-pips" aria-hidden="true"><i v-for="(available, index) in bonkJumpPips" :key="index" :class="{ on: available }"></i></span>
         </button>
 
         <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
