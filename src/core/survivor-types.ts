@@ -152,6 +152,8 @@ export interface SurvivorEnemy {
   stunMs?: number;
   /** Recarga do atordoamento (ms restantes): enquanto corre, o inimigo não pode ser atordoado de novo. */
   stunCooldownMs?: number;
+  /** Recarga do empurrão (ms restantes): enquanto corre, o inimigo não pode ser empurrado de novo. */
+  knockbackCooldownMs?: number;
   wetMs?: number;
   seededMs?: number;
   /** Acúmulos de frio. O congelamento é curto e tem intervalo por alvo. */
