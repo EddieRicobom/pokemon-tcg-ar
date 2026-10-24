@@ -180,6 +180,8 @@ export interface CreateSurvivorOptions {
   player?: Partial<SurvivorPlayer>;
   /** Começa já no modo infinito (precisa ser destravado antes: `TrainerState.torre.infiniteUnlocked`). */
   infinite?: boolean;
+  /** Variante opcional com câmera em terceira pessoa, terreno físico e salto. */
+  bonk?: boolean;
   /** Preparação estratégica opcional, liberada por objetivos de corridas concluídas. */
   preparation?: SurvivorPreparationId;
   /** Segundo tipo raro escolhido no início da corrida. */
@@ -234,6 +236,10 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     pickupRadius: PICKUP_RADIUS * preparation.pickupRadiusMultiplier,
     upgradeChoices: 3,
     upgradeRerolls: 0,
+    bonkJumpPower: 470,
+    bonkAirJumps: 0,
+    bonkGravityFactor: 1,
+    bonkMode: options.bonk === true,
     upgradeLevels: {},
     ...options.player,
   };
@@ -265,6 +271,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     bossesBeaten: 0,
     finalBossBeaten: false,
     infinite: options.infinite === true,
+    bonk: options.bonk === true,
     infiniteScale: options.infinite === true ? 1.25 : 1,
     pendingUpgrade: null,
     upgradesOwed: 0,
@@ -477,6 +484,7 @@ export function rollUpgrades(
   const pool = SURVIVOR_UPGRADES.filter((u) =>
     (!u.for || u.for.includes(move.category))
     && (!u.type || u.type === move.type)
+    && (!u.bonkOnly || player?.bonkMode === true)
     && level >= SURVIVOR_UPGRADE_RARITIES[u.rarity].minLevel
     && SURVIVOR_RARITY_ORDER.indexOf(u.rarity) >= minimumRank
     && !excludedIds.has(u.id)

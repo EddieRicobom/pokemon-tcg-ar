@@ -6302,6 +6302,17 @@ body.no-scroll .reward-toasts {
   background: #ffd84a;
   border-color: #c89a2a;
 }
+.survivor-mode-bonk .bonk-mode-button {
+  background: linear-gradient(135deg, #263d75, #7d4faf);
+  border-color: #a681e2;
+  color: #fff;
+}
+.survivor-mode-bonk .bonk-mode-button.active {
+  background: linear-gradient(135deg, #4d80d6, #b16be0);
+  border-color: #fff0a8;
+  box-shadow: 0 0 0 2px rgba(144, 105, 224, .25);
+}
+.bonk-picker-note { border-left: 3px solid #a983eb; padding-left: 8px; }
 
 .survivor-preparations {
   margin: 12px 0;
@@ -6401,6 +6412,10 @@ body.no-scroll .reward-toasts {
   width: 100%;
   height: 100%;
   image-rendering: pixelated;
+}
+.survivor-canvas.bonk-canvas {
+  image-rendering: auto;
+  background: #1a396c;
 }
 
 .survivor-hud {
@@ -6541,6 +6556,7 @@ body.no-scroll .reward-toasts {
 .survivor-artifact-chip { border-color: #ffb35c !important; color: #ffe4a8 !important; }
 .survivor-support-count { border-color: rgba(167, 216, 255, 0.55) !important; }
 .survivor-run-stats { font-variant-numeric: tabular-nums; }
+.survivor-bonk-chip { border-color: #b894ff !important; color: #efe5ff !important; background: rgba(63, 47, 108, .75) !important; }
 
 .survivor-minimap {
   position: absolute;
@@ -6637,6 +6653,32 @@ body.no-scroll .reward-toasts {
 .survivor-special-button strong { font-size: 11px; letter-spacing: 0.05em; }
 .survivor-special-button small { font-size: 10px; }
 .survivor-special-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+.survivor-jump-button {
+  position: absolute;
+  right: calc(112px + env(safe-area-inset-right));
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  z-index: 4;
+  width: 74px;
+  height: 74px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 4px;
+  border: 2px solid #fff0ad;
+  border-radius: 50%;
+  color: #fffdf0;
+  background: radial-gradient(circle at 38% 28%, #ffe789, #d78b26 62%, #8e4f18 100%);
+  box-shadow: 0 4px 0 #5b2f12, 0 5px 18px #0008;
+  touch-action: manipulation;
+}
+.survivor-jump-button.is-airborne { border-color: #d9c6ff; background: radial-gradient(circle at 38% 28%, #dacdff, #825bcc 62%, #403069 100%); }
+.survivor-jump-button:disabled { opacity: .65; }
+.survivor-jump-button > span { font-size: 25px; line-height: .9; }
+.survivor-jump-button strong { font-size: 10px; letter-spacing: .05em; }
+.survivor-jump-button small { font-size: 9px; }
+.survivor-jump-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
 @media (orientation: landscape) and (max-height: 540px) {
   /* Em paisagem, a arena ganha o centro. Indicadores ficam em duas colunas curtas,
      deixando livres o meio da cena e os cantos de toque. */
@@ -6658,6 +6700,7 @@ body.no-scroll .reward-toasts {
   .survivor-objectives { top: calc(108px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); bottom: auto; width: 116px; max-height: 86px; overflow: hidden; font-size: .53rem; }
   .survivor-supports { top: calc(92px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left)); width: min(32vw, 230px); max-height: calc(100% - 112px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); font-size: .56rem; }
   .survivor-special-button { right: calc(12px + env(safe-area-inset-right)); bottom: calc(10px + env(safe-area-inset-bottom)); width: 74px; height: 74px; }
+  .survivor-jump-button { right: calc(96px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); width: 62px; height: 62px; }
   .survivor-special-button .special-icon { font-size: 23px; }
   .survivor-special-button small { font-size: 9px; }
 
