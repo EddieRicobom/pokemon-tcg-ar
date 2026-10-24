@@ -10,9 +10,10 @@ import type { PinsSetup, Role } from '../app/pins-setup';
 import { routeFlags, routeHref } from '../app/route';
 import { recordEvent } from '../app/trainer-store';
 import { addCoins, coins, spendCoins } from '../app/wallet';
+import { recordSightings } from '../app/pokedex-store';
 import { seededRng } from '../core/battle';
 import {
-  advanceRound, afterShot, affordable, aliveOf, arenaLimit, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE, MAX_PULL,
+  advanceRound, afterShot, affordable, aliveOf, arenaLimit, PIN_KO_COINS, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE, MAX_PULL,
   nextLimit, outcomeOf, pinCoinReward, pinFromSpec, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
 } from '../core/pins';
 import { randomOpponents } from '../core/pin-opponents';
@@ -86,7 +87,7 @@ const message = ref('');
 const tray = ref<TrayPin[]>([]);
 const selectedId = ref<string | null>(null);
 const selectedMove = ref<number | null>(null);
-const result = ref<{ won: boolean; reason: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'; shots: number; score: number; coins: number } | null>(null);
+const result = ref<{ won: boolean; reason: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'; shots: number; score: number; coins: number; kos: number } | null>(null);
 const counts = ref({ mine: 0, enemy: 0 });
 const shotCount = ref(0);
 
@@ -127,6 +128,32 @@ const reducedMotion = ref(false);
 const cameraFxScale = ref(1);
 const cameraFxRotate = ref(0);
 let koImpactAt = 0;
+/** Câmera: quanto aproxima (escolha do jogador, guardada) e para onde olha, em unidades do mundo. */
+const ZOOM_LEVELS = [1.5, 2, 2.5, 3] as const;
+/** Os pins são desenhados um pouco maiores que o corpo físico, para ler bem no celular (a colisão não muda). */
+const PIN_VISUAL_SCALE = 1.3;
+const ZOOM_KEY = 'tcg-ar-pins-zoom-v1';
+function readZoom(): number {
+  try {
+    const saved = Number(localStorage.getItem(ZOOM_KEY));
+    return ZOOM_LEVELS.includes(saved as (typeof ZOOM_LEVELS)[number]) ? saved : 2;
+  } catch {
+    return 2;
+  }
+}
+const zoomLevel = ref<number>(readZoom());
+function setZoom(level: number): void {
+  zoomLevel.value = level;
+  try { localStorage.setItem(ZOOM_KEY, String(level)); } catch { /* sem armazenamento: vale só nesta partida */ }
+}
+let camX = 0;
+let camY = 0;
+let camTargetX = 0;
+let camTargetY = 0;
+/** Rastro curto dos pins em movimento (só desenho). */
+const trails = new Map<string, { x: number; y: number }[]>();
+/** Adversários derrubados nesta partida: cada um paga moedas no fim (`pinCoinReward`). */
+let koCount = 0;
 let motionQuery: MediaQueryList | null = null;
 let disposed = false;
 let cssSize = 0;
@@ -306,6 +333,7 @@ async function start(): Promise<void> {
     const mon = cardCompanion(byId(id));
     return mon && !id.startsWith('dp_') ? [mon] : [];
   });
+  recordSightings(setup.value.enemy.map((id) => byId(id).dexIds[0]), 'pins');
   world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => { const spec = specOf(byId(id)); const enemyId = `cpu:${id}`; thumbs.value[enemyId] = thumbs.value[id] ?? ''; return { ...spec, id: enemyId }; }) }, rng, { marks: setup.value.marks, shrink: setup.value.shrink });
   await beginMatch('aim');
 }
@@ -320,6 +348,10 @@ async function beginMatch(first: 'aim' | 'enemy'): Promise<void> {
   refreshRound();
   shots = 0;
   shotCount.value = 0;
+  koCount = 0;
+  trails.clear();
+  camX = camTargetX = 0;
+  camY = camTargetY = 0;
   popups = [];
   terrainFx = [];
   result.value = null;
@@ -573,8 +605,63 @@ function startLoop(): void {
   raf = requestGameFrame(frame, maxVisualFps);
 }
 
+function cameraFocus(): { x: number; y: number } | null {
+  if (!world || phase.value === 'over' || phase.value === 'setup' || phase.value === 'loading') return { x: 0, y: 0 };
+  const alive = world.pins.filter((p) => p.alive && p.fall === 0);
+  if (phase.value === 'aim') {
+    const mine = alive.find((p) => p.id === selectedId.value);
+    const foes = alive.filter((p) => p.side === 1);
+    if (!mine) return { x: 0, y: 0 };
+    if (foes.length === 0) return { x: mine.x, y: mine.y };
+    // Enquadra o disparo: entre o seu pin e o centro dos adversários.
+    const fx = foes.reduce((s, p) => s + p.x, 0) / foes.length;
+    const fy = foes.reduce((s, p) => s + p.y, 0) / foes.length;
+    return { x: (mine.x + fx) / 2, y: (mine.y + fy) / 2 };
+  }
+  // Rolando: acompanha o que se move, mais o que anda mais rápido.
+  let w = 0;
+  let x = 0;
+  let y = 0;
+  for (const p of alive) {
+    const weight = Math.hypot(p.vx, p.vy);
+    if (weight < 60) continue;
+    w += weight;
+    x += p.x * weight;
+    y += p.y * weight;
+  }
+  return w > 0 ? { x: x / w, y: y / w } : null;
+}
+
+function updateCamera(dt: number): void {
+  if (!world) return;
+  const z = zoomLevel.value;
+  const focus = cameraFocus();
+  if (focus) {
+    // O limite é a borda da arte: a câmera nunca mostra o vazio fora do tabuleiro.
+    const max = (artSize(world.radius) * UNITS_PER_PIXEL / 2) * (1 - 1 / z);
+    camTargetX = Math.max(-max, Math.min(max, focus.x));
+    camTargetY = Math.max(-max, Math.min(max, focus.y));
+  }
+  const ease = reducedMotion.value ? 1 : 1 - Math.exp(-dt * 4.5);
+  camX += (camTargetX - camX) * ease;
+  camY += (camTargetY - camY) * ease;
+  const keep = setup.value.effects && !effectiveVisual.value.rotomMode && !reducedMotion.value;
+  for (const pin of world.pins) {
+    const trail = trails.get(pin.id) ?? [];
+    if (keep && pin.alive && pin.fall === 0 && Math.hypot(pin.vx, pin.vy) > 140) {
+      trail.push({ x: pin.x, y: pin.y });
+      if (trail.length > 9) trail.shift();
+    } else if (trail.length > 0) {
+      trail.shift();
+    }
+    if (trail.length > 0) trails.set(pin.id, trail);
+    else trails.delete(pin.id);
+  }
+}
+
 function update(dt: number): void {
   if (!world) return;
+  updateCamera(dt);
   popups = popups.filter((p) => (p.age += dt) < 1.1);
   terrainFx = terrainFx.filter((fx) => (fx.age += dt) < fx.life);
   impactFx = impactFx.filter((fx) => (fx.age += dt) < fx.life);
@@ -704,6 +791,10 @@ function handleEvents(events: PinEvent[]): void {
     } else if (e.type === 'out') {
       const p = world.pins.find((x) => x.id === e.id);
       if (p) popups.push({ text: p.side === 1 ? 'Fora!' : 'Caiu!', x: p.x * 0.85, y: p.y * 0.85, age: 0, color: p.side === 1 ? '#7dffa0' : '#ff8a8a' });
+      if (p && p.side === 1 && !pvpMatch.value) {
+        koCount++;
+        popups.push({ text: `+${PIN_KO_COINS} ✦`, x: p.x * 0.85, y: p.y * 0.85 - 34, age: 0, color: '#ffd23f' });
+      }
       if (p && setup.value.effects && !effectiveVisual.value.rotomMode) {
         impactFx.push({ x: p.x, y: p.y, age: 0, life: 1.2, strength: 1, ko: outcomeOf(world) !== 'playing', metal: false, angle: Math.atan2(p.vy, p.vx), color: p.side === 1 ? '#b9ffdb' : '#ffb0a8' });
         if (impactFx.length > 18) impactFx.splice(0, impactFx.length - 18);
@@ -791,8 +882,9 @@ function endGame(kind: 'won' | 'lost' | 'energia' | 'saiu' | 'empate'): void {
   phase.value = 'over';
   const won = kind === 'won';
   const score = pvpMatch.value ? 0 : scoreMatch(won, shots, setup.value.enemy.length);
-  const coinReward = addCoins(pinCoinReward(won, setup.value.difficulty, score, setup.value.enemy.length, !pvpMatch.value));
-  result.value = { won, reason: kind, shots, score, coins: coinReward };
+  const kos = kind === 'saiu' ? 0 : koCount;
+  const coinReward = addCoins(pinCoinReward(won, setup.value.difficulty, score, setup.value.enemy.length, !pvpMatch.value, kos));
+  result.value = { won, reason: kind, shots, score, coins: coinReward, kos: pvpMatch.value ? 0 : kos };
   message.value = '';
   // Contra um amigo não vale XP nem recorde (nada impede alguém de mexer no próprio aparelho).
   if (!pvpMatch.value) recordEvent({ type: 'minigame', game: 'pins', won, score });
@@ -1136,8 +1228,8 @@ function toWorld(clientX: number, clientY: number): { x: number; y: number } | n
   const rect = stageEl.value?.getBoundingClientRect();
   if (!rect || rect.width === 0) return null;
   const unitsAcross = artSize(ARENA_RADIUS) * UNITS_PER_PIXEL;
-  const k = unitsAcross / rect.width;
-  return { x: (clientX - rect.left - rect.width / 2) * k, y: (clientY - rect.top - rect.height / 2) * k };
+  const k = unitsAcross / rect.width / zoomLevel.value;
+  return { x: camX + (clientX - rect.left - rect.width / 2) * k, y: camY + (clientY - rect.top - rect.height / 2) * k };
 }
 
 function onDown(ev: PointerEvent): void {
@@ -1340,6 +1432,10 @@ function draw(now: number): void {
   const cx = canvas.width / 2;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Câmera: o desenho do mundo inteiro passa por uma única transformação (aproxima e acompanha a ação).
+  const z = zoomLevel.value;
+  ctx.save();
+  ctx.setTransform(z, 0, 0, z, cx - z * (cx + camX * k), cx - z * (cx + camY * k));
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(artCanvas, 0, 0, canvas.width, canvas.height);
   if (terrainCanvas && terrainArt) {
@@ -1428,12 +1524,28 @@ function draw(now: number): void {
   if (bumperCanvas) ctx.drawImage(bumperCanvas, 0, 0, canvas.width, canvas.height);
 
   const selected = world.pins.find((p) => p.id === selectedId.value);
+  if (!frame && trails.size > 0) {
+    // Rastro: cópias que somem atrás de quem corre, na cor do lado (azul seu, vermelho adversário).
+    for (const pin of world.pins) {
+      const trail = trails.get(pin.id);
+      if (!trail) continue;
+      ctx.fillStyle = TEAM_COLORS[pin.side];
+      trail.forEach((pt, i) => {
+        const t = (i + 1) / (trail.length + 1);
+        ctx.globalAlpha = t * 0.28;
+        ctx.beginPath();
+        ctx.arc(cx + pt.x * k, cx + pt.y * k, pin.r * k * (0.45 + t * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+    ctx.globalAlpha = 1;
+  }
   const pinsSorted = [...drawPins].filter((p) => p.alive).sort((a, b) => a.y - b.y);
   for (const pin of pinsSorted) {
     const x = cx + pin.x * k;
     const y = cx + pin.y * k;
     const scale = 1 - pin.fall;
-    const r = pin.r * k * scale;
+    const r = pin.r * PIN_VISUAL_SCALE * k * scale;
     ctx.globalAlpha = 1 - pin.fall * 0.5;
     // Sombra baixa e achatada: a ficha fica suspensa sobre o plano inclinado, mas a
     // posição continua fiel à física 2D.
@@ -1477,7 +1589,9 @@ function draw(now: number): void {
     ctx.globalAlpha = 1;
     const token = sprites.get(pin.id);
     if (token) {
-      const size = pin.r * 2 * (k / dpr) * scale;
+      const size = pin.r * PIN_VISUAL_SCALE * 2 * (k / dpr) * scale * z;
+      const sx = z * (x - cx - camX * k) + cx;
+      const sy = z * (y - cx - camY * k) + cx;
       const depth = setup.value.effects && !effectiveVisual.value.rotomMode;
       const speed = Math.min(1, Math.hypot(pin.vx, pin.vy) / 900);
       const impactAge = pinImpactAt.get(pin.id);
@@ -1489,7 +1603,7 @@ function draw(now: number): void {
       token.style.width = `${size}px`;
       token.style.height = `${size}px`;
       token.style.borderWidth = `${Math.max(2.5, size * 0.1)}px`;
-      token.style.transform = `translate3d(${x / dpr - size / 2}px, ${y / dpr - size / 2}px, 10px) rotateX(${pitch}deg) rotateY(${yaw}deg) rotateZ(${pin.fall * 220}deg) scaleY(${squash})`;
+      token.style.transform = `translate3d(${sx / dpr - size / 2}px, ${sy / dpr - size / 2}px, 10px) rotateX(${pitch}deg) rotateY(${yaw}deg) rotateZ(${pin.fall * 220}deg) scaleY(${squash})`;
       token.style.opacity = String(1 - pin.fall * 0.6);
       token.style.zIndex = String(Math.round(pin.y + 1000));
     }
@@ -1542,6 +1656,7 @@ function draw(now: number): void {
     ctx.fillText(p.text, tx, ty);
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 
   // Repetição: tarjas de cinema e o rótulo.
   if (frame) {
@@ -1835,6 +1950,9 @@ function setMarks(on: boolean): void {
       >
         <canvas ref="canvasEl" role="img" aria-label="Arena vista de cima com os pins"></canvas>
         <div ref="spriteLayer" class="pin-sprites" aria-hidden="true"></div>
+        <div class="pin-zoom" role="group" aria-label="Zoom da câmera" @pointerdown.stop @pointerup.stop>
+          <button v-for="level in ZOOM_LEVELS" :key="level" type="button" :class="{ on: zoomLevel === level }" :aria-pressed="zoomLevel === level" :aria-label="`Zoom ${String(level).replace('.', ',')} vezes`" @click.stop="setZoom(level)">{{ String(level).replace('.', ',') }}×</button>
+        </div>
         <button v-if="replaying" type="button" class="pin-skip" @click.stop="stopReplay">Pular repetição</button>
         <div v-if="phase === 'over' && result?.won && result.coins > 0 && replaying" class="pin-ko-reward" role="status">
           <span aria-hidden="true">✦</span>
@@ -1847,7 +1965,8 @@ function setMarks(on: boolean): void {
           <p class="pn-over-stats">
             <span>{{ result.shots }} disparo{{ result.shots === 1 ? '' : 's' }}</span>
             <span v-if="result.won && !pvpMatch">nota {{ result.score }}</span>
-            <span v-if="result.coins > 0">+{{ result.coins }} moedas</span>
+            <span v-if="result.kos > 0">{{ result.kos }} derrubada{{ result.kos === 1 ? '' : 's' }}</span>
+            <span v-if="result.coins > 0" class="pn-over-coins">+{{ result.coins }} moedas</span>
           </p>
           <p v-if="result.reason === 'saiu'">A conexão com o amigo acabou. Você pode escolher os pins de novo e criar outra sala.</p>
           <p v-else-if="result.reason === 'empate'">Os dois lados perderam o último pin na mesma jogada.</p>

@@ -9,6 +9,7 @@ import villageAtlasUrl from '../village/vila-atlas.png?url';
 import { fetchSprite } from '../ar/sprite-source';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { recordEvent } from '../app/trainer-store';
+import { recordSightings } from '../app/pokedex-store';
 import { addCoins } from '../app/wallet';
 import { cardCompanion, cardJourneyError, recordCardVictories } from '../app/card-evolution-store';
 import type { CardCompanion } from '../core/card-evolution';
@@ -1480,6 +1481,22 @@ function draw(): void {
   ctx.restore();
 }
 
+/** Espécies de inimigos já registradas na Pokédex nesta corrida (cada espécie conta uma vez por corrida). */
+const runSeenDex = new Set<number>();
+let lastDexScanMs = 0;
+function scanEnemySightings(s: SurvivorState): void {
+  if (animMs - lastDexScanMs < 600) return;
+  lastDexScanMs = animMs;
+  const fresh: number[] = [];
+  for (const enemy of s.enemies) {
+    if (enemy.dexId !== undefined && !runSeenDex.has(enemy.dexId)) {
+      runSeenDex.add(enemy.dexId);
+      fresh.push(enemy.dexId);
+    }
+  }
+  if (fresh.length > 0) recordSightings(fresh, 'torre');
+}
+
 function updateMinimap(s: SurvivorState): void {
   // O minimapa é uma fotografia leve, atualizada algumas vezes por segundo; a arena continua no canvas a cada frame.
   if (animMs - lastMinimapMs < 120) return;
@@ -1608,6 +1625,7 @@ function loop(ts: number): void {
       else if (ev.type === 'trainerDown') say(ev.final ? 'CHEFAO DERROTADO!' : 'Treinador derrotado!');
     }
   }
+  scanEnemySightings(s);
   updateMinimap(s);
   pendingUpgrade.value = s.pendingUpgrade;
   triggerRef(state);
@@ -1784,6 +1802,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     clearTrainerPresentation();
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
+    runSeenDex.clear();
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
     state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices });
     bonkRun.value = bonk;

@@ -38,6 +38,11 @@ export function dismissReward(key: number): void {
   rewardFeed.value = rewardFeed.value.filter((item) => item.key !== key);
 }
 
+/** Mostra um aviso na faixa de recompensas sem passar pelo XP (Pokédex, por exemplo). */
+export function showReward(reward: Reward): void {
+  rewardFeed.value = [...rewardFeed.value, { key: ++seq, reward }].slice(-6);
+}
+
 /** Registra um feito (carta lida, batalha, minigame) e devolve o que foi ganho. */
 export function recordEvent(event: TrainerEvent, now: Date = new Date()): Reward[] {
   const before = trainer.value.xp;

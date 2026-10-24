@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { seededRng } from './battle';
 import {
   advanceRound, afterShot, affordable, arenaLimit, limitForRound, MIN_LIMIT, nextLimit, SHRINK_AFTER_ROUND, SHRINK_STEP, ARENA_RADIUS, aliveOf, buildPatches, canUse, chooseEnemyShot, clearEffects, cooldownFor, createWorld, effectForAttack, isSettled, launch,
-  launchSpeed, layoutPins, massOf, MAX_MOVES, MAX_PER_SIDE, MAX_PULL, MIN_PULL, outcomeOf, pinCoinReward, pinFromSpec, previewPath, scoreMatch, shotFromDrag, stepWorld, STOP_SPEED, typeKnockback,
+  launchSpeed, layoutPins, massOf, MAX_MOVES, MAX_PER_SIDE, MAX_PULL, MIN_PULL, outcomeOf, pinCoinReward, PIN_KO_COINS, PIN_LOSS_COINS_CAP, pinFromSpec, previewPath, scoreMatch, shotFromDrag, stepWorld, STOP_SPEED, typeKnockback,
   typesOf, weightMass,
 } from './pins';
 import { cellOfWorld, createArenaGrid, frictionOfCell, stampType, terrainAffinity, TYPE_FOR_TERRAIN } from './pin-terrain';
@@ -352,6 +352,15 @@ describe('energia e nota', () => {
     expect(scoreMatch(true, 3, 3)).toBe(100);
     expect(scoreMatch(true, 8, 3)).toBeLessThan(scoreMatch(true, 5, 3));
     expect(scoreMatch(true, 99, 3)).toBe(20);
+  });
+
+  it('paga moedas por adversário derrubado e um consolo limitado na derrota', () => {
+    expect(pinCoinReward(true, 'normal', 100, 3, true, 3)).toBe(44 + 3 * PIN_KO_COINS);
+    expect(pinCoinReward(false, 'normal', 0, 3, true, 2)).toBe(2 * PIN_KO_COINS);
+    expect(pinCoinReward(false, 'normal', 0, 6, true, 6)).toBe(PIN_LOSS_COINS_CAP);
+    expect(pinCoinReward(false, 'normal', 0, 3, true, 0)).toBe(0);
+    expect(pinCoinReward(true, 'normal', 100, 3, false, 3)).toBe(0);
+    expect(pinCoinReward(false, 'normal', 0, 3, false, 3)).toBe(0);
   });
 
   it('dá moedas somente por vitória contra o computador', () => {

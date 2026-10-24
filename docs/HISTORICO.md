@@ -12,6 +12,15 @@ datadas (com o que foi e o que não foi validado em cada uma). A regra de valida
 - Há no máximo três encontros, espaçados depois de cada vitória. O efeito visual respeita o Modo Rotom e a opção de efeitos leves.
 - 🔶 Validado no motor puro e no typecheck; a legibilidade da cutscene, das chamas e da dificuldade ainda exige celular real. O build local precisa ser repetido quando o diretório `dist` não estiver em uso.
 
+## Pins: zoom, rastros, moedas por derrubada e Pokédex (24/10/2026)
+
+- Câmera dos Pins com zoom de 1,5×, 2× (padrão), 2,5× ou 3×, pins desenhados 30% maiores que o corpo físico e arena mais alta na tela (escolha guardada em `tcg-ar-pins-zoom-v1`): uma única transformação do canvas aproxima o mundo e acompanha a ação (enquadra o seu pin e os adversários ao mirar; segue o que corre durante a jogada). Nunca mostra fora da arte; o toque e o arrasto continuam batendo com a física (`toWorld` desfaz a câmera).
+- Visual: rastro que some atrás de quem corre (azul seu lado, vermelho adversário), vinheta nas bordas, seletor de zoom no canto e moedas "+3 ✦" subindo onde um adversário cai. "Efeitos" desligados e movimento reduzido removem rastro e suavização.
+- Moedas: cada adversário derrubado paga 3 (`PIN_KO_COINS`) no fim da partida contra o computador; derrota paga o mesmo limitado a 9 (`PIN_LOSS_COINS_CAP`); sair da sala ou jogar contra amigo não paga. A tela final mostra as derrubadas e o total.
+- Pokédex (aba Treinador): uma casa por espécie nacional (1 a 1025), preenchida só pelo que apareceu de verdade: carta escaneada, Digital Pokémon da Vila, adversário nos Pins e inimigo na Torre (`core/pokedex.ts`, `app/pokedex-store.ts`, chave `tcg-ar-pokedex-v1`, incluída no backup). Espécie nova rende 10 moedas; marcos de 10, 25, 50, 100, 200, 400 e 800 espécies pagam bônus uma vez. Ao abrir, junta as cartas e moradores que já estavam no aparelho (retroativo, com um aviso).
+- Teste de rota da Arena (`App.test.ts`) atualizado: o título "Equipe da Arena · 6 Pokémon" tinha virado "Monte seu time de batalha" e a suíte já falhava na main.
+- 🔶 Visto só no Chromium de desenvolvimento (retrato, uma partida jogada com arrasto real); nada validado em celular real.
+
 ## Torre: golpes elementais, cone, órbita e painéis (24/10/2026)
 
 - Cone de verdade: leque de ~38° (`core/survivor-shapes.ts`) apontado para a frente do Pokémon, que segue o último passo em qualquer direção. No BONK a frente é a câmera (`SurvivorInput.aimAngle`), então o golpe sai sempre adiante na tela, nunca de lado. Alcance base 140 → 185 para compensar o leque mais estreito.

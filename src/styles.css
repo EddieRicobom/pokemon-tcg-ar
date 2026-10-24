@@ -3677,6 +3677,59 @@ body.no-scroll .reward-toasts {
   color: #ffb35c;
 }
 
+/* Zoom da câmera: três níveis fixos, no canto da arena (o toque aqui não puxa o pin). */
+.pin-zoom {
+  position: absolute;
+  z-index: 5;
+  left: 4px;
+  top: 4px;
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 999px;
+  background: rgb(8 13 26 / 72%);
+  backdrop-filter: blur(3px);
+}
+.pin-zoom button {
+  min-width: 32px;
+  min-height: 30px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #cfd8f2;
+  font: inherit;
+  font-size: .7rem;
+  font-weight: 800;
+}
+.pin-zoom button.on { background: var(--gold); color: #1b2036; }
+.pin-zoom button:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+
+/* Vinheta suave nas bordas: dá foco ao centro quando a câmera aproxima e esconde o corte da arte. */
+.pin-stage::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 36px 6px rgb(4 8 20 / 52%);
+}
+.pin-stage.pin-depth::after {
+  z-index: 3;
+  background: linear-gradient(158deg, rgb(255 255 255 / 13%), transparent 25%, transparent 72%, rgb(0 0 0 / 14%));
+  box-shadow: inset 0 0 36px 6px rgb(4 8 20 / 52%);
+}
+
+.pn-over-stats .pn-over-coins {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: rgb(255 210 63 / 18%);
+  color: #ffd23f;
+  font-weight: 800;
+}
+
 .pin-skip {
   position: absolute;
   right: 10px;
@@ -3729,7 +3782,7 @@ body.no-scroll .reward-toasts {
 /* A arena é quadrada e nunca passa da altura que sobra na tela, para o dock caber junto. */
 .pin-stage {
   position: relative;
-  width: min(100%, 560px, max(260px, calc(100dvh - 470px)));
+  width: min(100%, 560px, max(300px, calc(100dvh - 400px)));
   aspect-ratio: 1;
   margin: 0 auto;
   border-radius: var(--radius);
@@ -8095,3 +8148,25 @@ body.no-scroll .reward-toasts {
 .village-legend-clue div { display: flex; gap: 8px; flex-wrap: wrap; }.village-legend-clue button { min-height: 44px; font-size: .8rem; }
 @media (orientation: landscape) and (max-height: 600px) { .village-legend-clue { top: 65px; max-width: 275px; } }
 
+
+/* ---------------------------------------------------------------- Pokédex */
+.pokedex .dex-bar { height: 8px; margin: 4px 0 12px; border-radius: 999px; background: rgb(255 255 255 / 10%); overflow: hidden; }
+.pokedex .dex-bar b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--gold)); }
+.dex-gens { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+.dex-gens button { display: grid; flex: 0 0 auto; min-width: 56px; min-height: 44px; padding: 4px 8px; gap: 0; border-radius: 12px; font-weight: 800; }
+.dex-gens button small { color: var(--ui-muted); font-size: .62rem; font-weight: 600; }
+.dex-only { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; color: var(--ui-muted); font-size: .85rem; }
+.dex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.dex-grid button { display: grid; place-items: center; width: 100%; min-height: 84px; padding: 4px 2px; gap: 0; border: 1px solid var(--ui-border); border-radius: 12px; background: rgb(255 255 255 / 4%); color: var(--ui-muted); }
+.dex-grid button.seen { background: linear-gradient(180deg, rgb(255 255 255 / 9%), rgb(255 255 255 / 3%)); color: var(--ui-text); cursor: pointer; }
+.dex-grid button.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+.dex-grid button:disabled { opacity: 1; cursor: default; }
+.dex-grid img { width: 56px; height: 56px; object-fit: contain; image-rendering: pixelated; }
+.dex-grid small { font-size: .62rem; font-variant-numeric: tabular-nums; }
+.dex-unknown { display: grid; place-items: center; width: 56px; height: 56px; color: rgb(255 255 255 / 22%); font-size: 1.6rem; font-weight: 800; }
+.dex-detail { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--gold); border-radius: 14px; background: rgb(255 203 5 / 8%); }
+.dex-detail img { flex: 0 0 auto; width: 96px; height: 96px; object-fit: contain; image-rendering: pixelated; }
+.dex-detail p { margin: 4px 0 0; }
+.dex-detail small { color: var(--ui-muted); font-weight: 600; }
+.dex-types { display: flex; flex-wrap: wrap; gap: 4px; }
+.dex-type { padding: 1px 9px; border-radius: 999px; background: rgb(255 255 255 / 14%); font-size: .72rem; font-weight: 800; }
