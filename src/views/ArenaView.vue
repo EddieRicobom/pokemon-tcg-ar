@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { pendingChallenge } from '../app/league-store';
+import { league } from '../app/league-store';
 import { arenaFlags, routeHref } from '../app/route';
 import TeamPicker from '../components/TeamPicker.vue';
 import LeagueCard from '../components/LeagueCard.vue';
 import { ENDLESS_ARENA_LABELS } from '../core/endless-arena';
 import type { EndlessArenaMode } from '../core/endless-arena';
+import { LEAGUE_REGIONS, nextChallenge, regionalProgress } from '../core/league';
+import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 
 const MODES: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
 /** Onde as lutas acontecem: a Arena 3D (sem câmera, padrão) ou a Caixa em AR (câmera). A escolha fica guardada neste aparelho. */
@@ -29,6 +32,10 @@ const waitingChallenge = computed(() => pendingChallenge.value !== null);
 const selectedCount = ref<number | null>(null);
 const teamReady = computed(() => selectedCount.value === 6);
 function updateTeam(ids: string[]): void { selectedCount.value = ids.length; }
+const leagueRegion = computed(() => LEAGUE_REGIONS.find((region) => regionalProgress(league.value, region.id).badges.length < 8) ?? LEAGUE_REGIONS[0]!);
+const nextLeader = computed(() => nextChallenge(league.value, leagueRegion.value.id));
+function goToLeague(): void { document.getElementById('arena-league')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+function goToTeam(): void { document.getElementById('arena-team')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 
 function enterEndless(mode: EndlessArenaMode): void {
   if (!teamReady.value) return;
@@ -44,8 +51,24 @@ function enterChallenge(): void {
 <template>
   <section class="card arena-view" aria-labelledby="arena-title">
     <h2 id="arena-title">Arena Digital</h2>
-    <p class="note">Prepare a equipe, escolha o desafio e entre na arena. A batalha é automática; você acompanha e pode encerrar quando quiser.</p>
-    <ol class="arena-steps" aria-label="Etapas para batalhar"><li :class="{ done: teamReady }">{{ teamReady ? '✓' : '1' }} Equipe · {{ selectedCount ?? '…' }}/6</li><li>2 · Escolher desafio</li><li>{{ virtual ? '3 · Entrar na Arena 3D' : '3 · Abrir câmera e colocar a Caixa' }}</li></ol>
+    <p class="note">Escolha uma rota abaixo. A batalha é automática: você prepara a equipe, assiste ao combate e pode encerrar quando quiser.</p>
+    <section class="arena-route" aria-label="Próximo passo na Arena">
+      <template v-if="nextLeader">
+        <span class="arena-kicker">ROTA DA LIGA · {{ leagueRegion.name }}</span>
+        <h3>Próximo líder: {{ nextLeader.leader }}</h3>
+        <p><span v-if="nextLeader.type" class="arena-type" :style="{ '--type': TYPE_COLORS[nextLeader.type] }">{{ TYPE_LABELS_PT[nextLeader.type] }}</span> {{ nextLeader.role }} · equipe de {{ nextLeader.team.length }} Pokémon</p>
+        <button type="button" class="primary" @click="goToLeague">Ver {{ nextLeader.leader }} e desafiar</button>
+      </template>
+      <template v-else>
+        <span class="arena-kicker">LIGA CONCLUÍDA</span><h3>Escolha uma revanche ou uma corrida 6×6</h3>
+      </template>
+    </section>
+    <nav class="arena-paths" aria-label="Rotas da Arena">
+      <button type="button" @click="goToLeague">🏅 Liga · líderes e insígnias</button>
+      <button type="button" @click="goToTeam">👥 Corridas · monte um time de 6</button>
+      <a :href="routeHref('caixa', undefined, arenaFlags([], virtual))">⚔️ Batalha livre</a>
+    </nav>
+    <ol class="arena-steps" aria-label="Etapas para desafio da Liga"><li :class="{ done: teamReady }">{{ teamReady ? '✓' : '1' }} Monte até 6 Pokémon · {{ selectedCount ?? '…' }}/6</li><li>2 · Escolha o líder na Liga</li><li>{{ virtual ? '3 · Entrar na Arena 3D' : '3 · Abrir a Caixa em AR' }}</li></ol>
     <div class="box-backdrop" role="group" aria-label="Onde lutar">
       <button type="button" :class="{ active: virtual }" :aria-pressed="virtual" @click="virtual = true">🏟️ Arena 3D (sem câmera)</button>
       <button type="button" :class="{ active: !virtual }" :aria-pressed="!virtual" @click="virtual = false">📷 Caixa em AR (câmera)</button>
@@ -57,9 +80,15 @@ function enterChallenge(): void {
       <button type="button" class="primary" @click="enterChallenge">{{ virtual ? 'Entrar na Arena 3D para o desafio' : 'Abrir a Caixa para o desafio' }}</button>
     </div>
 
-    <section class="arena-section" aria-labelledby="arena-team-title">
-      <h3 id="arena-team-title">Equipe da Arena · 6 Pokémon</h3>
-      <TeamPicker :max="6" group-label="equipe de batalha" hint="Escolha os 6 Pokémon que lutam nos modos contínuos. Essa seleção também define quem mora na Vila e aparece na Caixa em AR." @ready="updateTeam" @change="updateTeam" />
+    <section id="arena-league" class="arena-section arena-league" aria-label="Liga Pokémon e líderes de ginásio">
+      <header><span class="arena-kicker">1 · ENCONTRE UM LÍDER</span><h3>Liga Pokémon</h3><p class="note">Os líderes estão organizados por região e por ordem. O próximo desafio aberto aparece destacado; os demais mostram claramente o que falta.</p></header>
+      <LeagueCard />
+    </section>
+
+    <section id="arena-team" class="arena-section" aria-labelledby="arena-team-title">
+      <h3 id="arena-team-title">2 · Monte seu time de batalha</h3>
+      <p class="note">Use até 6 Pokémon. Para a Liga, qualquer seleção disponível participa; para as corridas 6×6, complete exatamente 6.</p>
+      <TeamPicker :max="6" group-label="time de batalha" hint="Este é o time de batalha da Arena e da Liga. Os moradores da Vila continuam sendo uma coleção separada." @ready="updateTeam" @change="updateTeam" />
     </section>
 
     <section v-if="selectedCount === 0" class="arena-first-run" aria-labelledby="arena-first-run-title">
@@ -98,14 +127,18 @@ function enterChallenge(): void {
       </div>
     </section>
 
-    <section class="arena-section" aria-label="Liga Pokémon">
-      <LeagueCard />
-    </section>
   </section>
 </template>
 
 <style scoped>
 .arena-view { display: grid; gap: 1rem; }
+.arena-route { display: grid; gap: .45rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--accent) 75%, var(--line)); border-radius: .9rem; background: linear-gradient(135deg, rgba(242, 85, 75, .18), rgba(12, 17, 34, .72)); }
+.arena-route > * { margin: 0; }
+.arena-kicker { color: var(--gold); font-size: .73rem; font-weight: 800; letter-spacing: .08em; }
+.arena-type { display: inline-block; padding: .12rem .42rem; border: 1px solid var(--type); border-radius: 99px; color: var(--type); font-size: .8rem; font-weight: 750; }
+.arena-paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+.arena-paths > * { display: grid; place-items: center; min-height: 3rem; padding: .5rem; border: 1px solid var(--line); border-radius: .7rem; color: inherit; font: inherit; text-align: center; text-decoration: none; background: rgba(12, 17, 34, .55); }
+.arena-paths > *:hover, .arena-paths > *:focus-visible { border-color: var(--accent); }
 .arena-steps { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
 .arena-steps li { padding: .5rem .7rem; border: 1px solid var(--line); border-radius: .7rem; font-size: .85rem; }
 .arena-steps .done { border-color: #68bd91; color: #a7ebc3; }
@@ -118,4 +151,5 @@ function enterChallenge(): void {
 .arena-mode-grid, .arena-shortcuts { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 .arena-mode-card, .arena-shortcuts > div { display: grid; gap: 0.55rem; align-content: start; padding: 0.9rem; border: 1px solid var(--line); border-radius: 0.85rem; background: rgba(12, 17, 34, 0.55); }
 .arena-mode-card p { margin: 0; color: var(--muted); }
+@media (max-width: 520px) { .arena-paths { grid-template-columns: 1fr; } }
 </style>
