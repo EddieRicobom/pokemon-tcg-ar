@@ -44,6 +44,12 @@ export const TRAINER_FIRST_MS = 300_000;
 export const TRAINER_EVERY_MS = 300_000;
 /** Quando o chefão final aparece (ms). Vence-lo destrava o modo infinito. */
 export const FINAL_BOSS_MS = 1_200_000;
+/** O Ritmo acelerado encerra no minuto 10 do relógio exibido (cinco minutos reais). */
+export const FAST_FINAL_BOSS_MS = 600_000;
+/** O laço visual passa este fator ao motor; a arte continua no ritmo normal. */
+export const FAST_TIME_SCALE = 2;
+/** Bônus por orbe no Ritmo acelerado: compensa a corrida curta sem pular níveis demais. */
+export const FAST_XP_MULTIPLIER = 1.75;
 /** Depois do chefão final (modo infinito), outro chefão (6 Pokémon) a cada tanto. */
 export const INFINITE_BOSS_EVERY_MS = 300_000;
 /** Cada minuto no infinito dá +`INFINITE_SCALE_PER_MIN` ao HP e ao dano de todos os inimigos novos. */
@@ -191,6 +197,8 @@ export interface CreateSurvivorOptions {
   player?: Partial<SurvivorPlayer>;
   /** Começa já no modo infinito (precisa ser destravado antes: `TrainerState.torre.infiniteUnlocked`). */
   infinite?: boolean;
+  /** Corrida curta desbloqueada após zerar a Torre: relógio 2×, orbes 1,75× XP e chefão aos 10 min. */
+  fast?: boolean;
   /** Variante opcional com câmera em terceira pessoa, terreno físico e salto. */
   bonk?: boolean;
   /** Preparação estratégica opcional, liberada por objetivos de corridas concluídas. */
@@ -210,6 +218,7 @@ function secondaryMoveFor(move: SurvivorMove): SurvivorMove {
 
 export function createSurvivorState(seed: number, options: CreateSurvivorOptions): SurvivorState {
   const move = options.move ?? BASIC_MOVE;
+  const fast = options.fast === true && options.infinite !== true;
   const shadowGuardian = SHADOW_GUARDIANS[0]!;
   const prof = options.profile;
   const preparation = survivorPreparation(options.preparation);
@@ -229,7 +238,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     level: 1,
     xp: 0,
     xpToNext: xpForLevel(1),
-    xpMultiplier: 1,
+    xpMultiplier: fast ? FAST_XP_MULTIPLIER : 1,
     attackDamage: (prof?.damage ?? BALANCE.playerDamage) * preparation.damageMultiplier,
     areaDamageMultiplier: move.category === 'area' ? 0.15 : 1,
     attackRange: (prof?.range ?? 170) * preparation.rangeMultiplier,
@@ -280,15 +289,17 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     kills: 0,
     wave: 1,
     spawnAccumMs: 0,
-    nextBossAtMs: BALANCE.firstBossMs,
+    // O relógio do rápido corre 2×; alongar as janelas mantém a pressão por segundo real próxima da corrida normal.
+    nextBossAtMs: BALANCE.firstBossMs * (fast ? FAST_TIME_SCALE : 1),
     kindCount: Math.max(1, Math.floor(options.kindCount)),
     over: false,
     nextTrainerAtMs: TRAINER_FIRST_MS,
-    finalBossAtMs: FINAL_BOSS_MS,
+    finalBossAtMs: fast ? FAST_FINAL_BOSS_MS : FINAL_BOSS_MS,
     trainersBeaten: 0,
     bossesBeaten: 0,
     finalBossBeaten: false,
     infinite: options.infinite === true,
+    fast,
     bonk: options.bonk === true,
     infiniteScale: options.infinite === true ? 1.25 : 1,
     pendingUpgrade: null,
@@ -327,7 +338,9 @@ function spawnIntervalMs(state: SurvivorState): number {
   const t = state.elapsedMs / 1000;
   const base = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
   const early = Math.max(0, 1 - state.elapsedMs / BALANCE.earlyGameMs);
-  return base * (1 + BALANCE.earlySpawnIntervalBonus * early) * BALANCE.spawnRateMultiplier / survivorDifficultyDensityMultiplier(state.player.difficultyStacks ?? 0);
+  const interval = base * (1 + BALANCE.earlySpawnIntervalBonus * early) * BALANCE.spawnRateMultiplier / survivorDifficultyDensityMultiplier(state.player.difficultyStacks ?? 0);
+  // `stepSurvivor` recebe 2× o delta no Ritmo acelerado: esta compensação evita dobrar inimigos por segundo real.
+  return interval * (state.fast ? FAST_TIME_SCALE : 1);
 }
 
 /** Dificuldade voluntária: mais inimigos e atributos mais fortes, sem teto de acúmulos da carta. */
@@ -1436,7 +1449,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     spawnEnemy(state, false);
   }
   if (state.elapsedMs >= state.nextBossAtMs) {
-    state.nextBossAtMs += BALANCE.bossEveryMs;
+    state.nextBossAtMs += BALANCE.bossEveryMs * (state.fast ? FAST_TIME_SCALE : 1);
     spawnEnemy(state, true);
     events.push({ type: 'bossSpawn' });
   }
@@ -1651,7 +1664,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         state.fx = [];
         events.push({
           type: 'gameover',
-          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: state.player.bonusCoins ?? 0 },
+          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, fast: state.fast, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: state.player.bonusCoins ?? 0 },
         });
       }
     }
@@ -1706,7 +1719,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.fx = [];
     events.push({
       type: 'gameover',
-      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: p.bonusCoins ?? 0 },
+      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, fast: state.fast, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: p.bonusCoins ?? 0 },
     });
   }
 

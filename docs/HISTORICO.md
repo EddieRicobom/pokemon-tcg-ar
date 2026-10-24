@@ -5,6 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: direções reais e Ritmo acelerado (24/10/2026)
+
+- Jogador, apoios, inimigos e chefes agora escolhem a pose `up`/`down`/`left`/`right` da folha local `Walk` pelo deslocamento, também no BONK. O pacote creditado cobre 966 espécies; sem folha direcional na origem, permanece apenas a pose realmente disponível, sem arte inventada.
+- Depois da primeira vitória contra o chefão final, o modificador **Ritmo acelerado** fica disponível para Normal e BONK. O relógio do motor avança 2×, a corrida encerra com o chefão aos 10 min mostrados (~5 min reais) e orbes rendem 1,75× XP. Ele não combina com o Infinito.
+- O intervalo de nascimentos e de chefes periódicos é compensado pelo mesmo fator do relógio, evitando dobrar a pressão por segundo real.
+- 🔶 Typecheck e 82 testes focados passaram. A compilação local foi bloqueada por `dist/sprites` preso pelo Windows; aparência, toque e dificuldade ainda precisam de aparelho real.
+
 ## Torre: Pokébolas Sombrias e recompensas visíveis (24/10/2026)
 
 - A partir de 13 min, uma Pokébola Sombria opcional pode aparecer na arena. Cada uma sorteia um lendário real, abre uma curta cena de chegada e o coloca na batalha com sprite ampliado, chamas de sombra e números próprios de risco médio-alto.

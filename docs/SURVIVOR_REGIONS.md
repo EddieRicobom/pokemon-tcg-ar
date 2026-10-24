@@ -6,6 +6,8 @@
 
 Antes de iniciar uma corrida, a Torre oferece até três instâncias sem duplicação, incluindo Digital Pokémon. O botão “Sortear novamente” pode ser usado uma vez gratuitamente por tentativa; quando há opções suficientes, a nova leva não repete o conjunto anterior. A estrela de favorito usa o `id` da instância (carta ou `dp_*`), fica em `localStorage` sob `tcg-ar-survivor-favorites-v1` e aumenta a probabilidade sem eliminar a variedade. Favoritos removidos da coleção são descartados na leitura. Coleções com zero, uma, duas ou três opções continuam tendo um caminho finito.
 
+Após derrotar o chefão final uma vez, a seleção também libera o modificador **Ritmo acelerado** (ele não combina com o Infinito). O relógio e os eventos da simulação avançam em 2×, o chefão final chega aos 10 min mostrados (aproximadamente cinco minutos reais) e cada orbe rende 1,75× XP. A cadência de nascimentos e chefes é compensada pelo mesmo fator para não dobrar a pressão por segundo real; a corrida é curta, não uma arena propositalmente mais lotada.
+
 O motor também rejeita upgrades comuns que não estejam na oferta pendente, assim como já fazia com evoluções. Isso evita aplicar bônus por chamadas atrasadas ou inválidas e mantém o contrato de que a tela é a fonte da escolha. O bônus diário por zerar a Torre usa `dayKey`, o mesmo calendário local do Treinador, em vez de comparar a data UTC.
 
 A corrida percorre Kanto, Johto, Hoenn, Sinnoh, Unova, Kalos, Alola, Galar e Paldea. Cada etapa dura 2min15s; seus últimos 40s misturam suavemente a próxima paisagem. Paldea começa aos 18 minutos, antes do chefão dos 20 minutos. No infinito, o ciclo recomeça depois de Paldea. O relógio é o do motor: escolhas de upgrade e pausas da simulação também pausam a viagem.
@@ -44,7 +46,7 @@ Os limites de projéteis, alvos de cura e proteção ficam em `ENEMY_BEHAVIOR_LI
 
 A partir do nível 6, uma escolha especial pode desbloquear um segundo golpe. Ele tem identidade visual própria, recarga e dano separados e continua automático; a pessoa só controla o movimento. Pokémon de dois tipos usam o segundo tipo real como base. Pokémon de um tipo recebem uma técnica secundária interna da Torre, explicitamente marcada como mecânica do app. O limite é de dois golpes e o estado da corrida é limpo ao terminar.
 
-As 45 espécies são carregadas antes da corrida. Sprites que falharem usam uma forma neutra, com aviso explícito no HUD, e são tentados novamente na próxima corrida. Não são substituídos por outro Pokémon. O teste do catálogo confere a região de origem, os metadados Walk e a existência dos 45 arquivos locais.
+As 45 espécies regionais são carregadas antes da corrida. Para o jogador, apoios, inimigos e chefes, a Torre usa as quatro direções reais da folha local `Walk` quando a espécie está no pacote; a pose acompanha o deslocamento, sem espelhamento artificial. O pacote creditado cobre 966 espécies. As que não têm folha direcional na fonte continuam com a única pose realmente disponível; não são substituídas por outro Pokémon nem recebem arte inventada. O teste do catálogo confere a região de origem, os metadados Walk e a existência dos 45 arquivos locais.
 
 ## Referência e próximos passos de equilíbrio
 
