@@ -28,7 +28,7 @@ const AIM_ERROR: Record<Difficulty, number> = { facil: 0.5, normal: 0.06, difici
 const POWER_ERROR: Record<Difficulty, number> = { facil: 0.3, normal: 0.05, dificil: 0.015 };
 
 const SIM_DT = 1 / 60;
-const SIM_SECONDS = 3.2;
+const SIM_SECONDS = 4.5;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const bell = (rng: Rng) => (rng() + rng() + rng()) / 1.5 - 1;
 

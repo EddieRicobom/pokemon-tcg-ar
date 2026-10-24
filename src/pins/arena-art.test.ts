@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { ARENA_RADIUS, createWorld } from '../core/pins';
 import type { Patch } from '../core/pins';
 import { seededRng } from '../core/battle';
-import { createArenaGrid, stampType } from '../core/pin-terrain';
+import { createArenaGrid, stampType, TERRAIN_MARGIN } from '../core/pin-terrain';
 import { TILE } from '../box/ground-art';
-import { artSize, paintArena, paintBumpers, UNITS_PER_PIXEL } from './arena-art';
+import { artSize, paintArena, paintArenaLines, paintBumpers, UNITS_PER_PIXEL } from './arena-art';
 import { ArenaTerrainArt } from './terrain-paint';
 
 const bumper: Patch = { kind: 'bumper', x: 100, y: -100, r: 28, angle: 0 };
@@ -37,8 +37,27 @@ describe('arte da arena', () => {
     const [r, g, b] = at(buf, 0, 0);
     expect(g).toBeGreaterThan(r);
     expect(g).toBeGreaterThan(b);
-    const [or, og, ob] = at(buf, ARENA_RADIUS + 38, 0);
+    const [or, og, ob] = at(buf, ARENA_RADIUS + 70, 0);
     expect(or + og + ob).toBeLessThan(150);
+  });
+
+  it('a camada de linhas é transparente no meio do gramado e marca as zonas, o meio e a sombra da mureta', () => {
+    const layer = paintArenaLines(ARENA_RADIUS);
+    expect(layer.w).toBe(artSize(ARENA_RADIUS));
+    // Fora do chão e entre o círculo central e a zona de saída nada é pintado.
+    expect(at(layer, 0, ARENA_RADIUS + 40)[3]).toBe(0);
+    expect(at(layer, 180, 40)[3]).toBe(0);
+    // Giz no centro, véu azul embaixo (seu lado) e vermelho em cima.
+    expect(at(layer, 0, 0)[3]).toBeGreaterThan(100);
+    const [, , blue, blueA] = at(layer, 40, 400);
+    expect(blueA).toBeGreaterThan(0);
+    expect(blue).toBeGreaterThan(200);
+    const [red, , , redA] = at(layer, 40, -400);
+    expect(redA).toBeGreaterThan(0);
+    expect(red).toBeGreaterThan(200);
+    // A sombra escurece o gramado junto da mureta.
+    const edge = at(layer, 0, -(ARENA_RADIUS - 24));
+    expect(edge[3]).toBeGreaterThan(40);
   });
 
   it('os pinos de mola ficam numa camada transparente por cima', () => {
@@ -59,7 +78,7 @@ describe('chão em pixel art do Pin Mode', () => {
     const art = new ArenaTerrainArt(grid, ARENA_RADIUS, 5);
     expect(art.buf.w).toBe(grid.cols * TILE);
     expect(art.buf.h).toBe(grid.rows * TILE);
-    expect(art.half).toBe(ARENA_RADIUS - 10);
+    expect(art.half).toBe(ARENA_RADIUS - TERRAIN_MARGIN);
     expect(alphaOf(art, grid.cols >> 1, grid.rows >> 1)).toBe(255);
     expect(alphaOf(art, 0, 0)).toBe(0);
   });
