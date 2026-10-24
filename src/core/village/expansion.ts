@@ -15,6 +15,13 @@ export function expandVillage(base: VillageMap, w: number, h: number, seed: numb
   const put = (x: number, y: number, tile: Tile) => { if (x >= 0 && y >= 0 && x < w && y < h) map.tiles[y * w + x] = tile; };
   const fill = (x: number, y: number, width: number, height: number, tile: Tile) => { for (let j = y; j < y + height; j++) for (let i = x; i < x + width; i++) put(i, j, tile); };
   for (let y = 0; y < base.h; y++) for (let x = 0; x < base.w; x++) put(x, y, base.tiles[y * base.w + x]!);
+  // A borda de floresta do mapa antigo (4 blocos a leste e ao sul) agora fica no meio do mapa: vira a mesma mata esparsa
+  // do anexo, para não sobrar uma faixa reta de árvores (um "quadrado") em volta da cidade.
+  for (let y = 0; y < base.h; y++) for (let x = 0; x < base.w; x++) {
+    if ((x < base.w - 4 && y < base.h - 4) || base.tiles[y * base.w + x] !== 'tree') continue;
+    if (Math.min(x, y, w - 1 - x, h - 1 - y) < 3) continue;
+    put(x, y, (x * 31 + y * 53 + seed) % 37 === 0 ? 'tree' : 'grass');
+  }
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     if (x < base.w && y < base.h) continue;
     const edge = Math.min(x, y, w - 1 - x, h - 1 - y);
