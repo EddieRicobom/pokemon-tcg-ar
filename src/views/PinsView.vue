@@ -32,7 +32,7 @@ import type { TerrainKind } from '../core/terrain';
 import type { Difficulty, PinEvent, PinSpec, PinWorld, Shot } from '../core/pins';
 import { energyLabelPt, TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { CardBattleInfo, PokemonProfile, PokemonType } from '../core/pokemon-data';
-import { artSize, paintArena, paintBumpers, UNITS_PER_PIXEL } from '../pins/arena-art';
+import { artSize, paintArena, paintArenaLines, paintBumpers, UNITS_PER_PIXEL } from '../pins/arena-art';
 import { ArenaTerrainArt } from '../pins/terrain-paint';
 import type { CachedCard } from '../cache/types';
 import { spriteIdOf } from '../core/dex-form';
@@ -98,6 +98,7 @@ let world: PinWorld | null = null;
 /** Camadas da arena: fundo, chão em blocos (muda com os golpes) e pinos de mola por cima. */
 let artCanvas: HTMLCanvasElement | null = null;
 let bumperCanvas: HTMLCanvasElement | null = null;
+let linesCanvas: HTMLCanvasElement | null = null;
 let terrainArt: ArenaTerrainArt | null = null;
 let terrainCanvas: HTMLCanvasElement | null = null;
 let terrainShown = -1;
@@ -143,6 +144,12 @@ const shown = computed(() => {
   const q = search.value.trim().toLowerCase();
   return usable.value.filter((c) => !q || `${c.name} ${c.setName}`.toLowerCase().includes(q)).slice(0, 80);
 });
+/**
+ * Quem pode ser sorteado como adversário: todo Pokémon escaneado ou digital. O sprite da carta pode ainda não ter sido
+ * baixado (`missing`) ou ter falhado (`error`): o adversário usa o sprite público da espécie, então só ficam de fora as
+ * cartas sem Pokémon ou sem sprite para a espécie (`unavailable`).
+ */
+const enemyPool = computed(() => cards.value.filter((c) => c.dexIds.length > 0 && c.sprite.state !== 'unavailable'));
 const blocker = computed(() => setup.value.mine.length === 0 ? 'Escolha pelo menos 1 pin seu.' : randomEnemy.value ? null : setupBlocker(setup.value));
 
 function specOf(card: CachedCard): PinSpec {
@@ -272,10 +279,10 @@ async function start(): Promise<void> {
   phase.value = 'loading';
   notice.value = '';
   if (randomEnemy.value) {
-    await loadInfos(usable.value);
+    await loadInfos(enemyPool.value);
     if (disposed) return;
     const mine = setup.value.mine.map((id) => specOf(cards.value.find((c) => c.id === id)!));
-    const opponents = randomOpponents(mine, usable.value.map(specOf), setup.value.difficulty, rng);
+    const opponents = randomOpponents(mine, enemyPool.value.map(specOf), setup.value.difficulty, rng);
     setup.value = { ...setup.value, enemy: opponents.map((p) => p.id) };
   }
   const chosen = [...setup.value.mine, ...setup.value.enemy].map((id) => cards.value.find((c) => c.id === id)).filter((c): c is CachedCard => !!c);
@@ -289,7 +296,9 @@ async function start(): Promise<void> {
       continue;
     }
     const blob = await cache.getAssetBlob(card, 'sprite').catch(() => null);
+    const publicId = spriteIdOf(card);
     if (blob) thumbs.value = { ...thumbs.value, [card.id]: URL.createObjectURL(blob) };
+    else if (publicId !== undefined) thumbs.value = { ...thumbs.value, [card.id]: pokemonSpriteUrl(publicId, card.shiny === true) };
   }
   if (disposed) return;
   const byId = (id: string) => cards.value.find((c) => c.id === id)!;
@@ -359,6 +368,7 @@ function canvasOf(art: { w: number; h: number; data: Uint8Array | Uint8ClampedAr
 function buildArt(w: PinWorld): void {
   artCanvas = canvasOf(paintArena(w.radius, Math.floor(rng() * 1e6)));
   bumperCanvas = canvasOf(paintBumpers(w.radius, w.patches));
+  linesCanvas = canvasOf(paintArenaLines(w.radius));
   terrainArt = w.terrain ? new ArenaTerrainArt(w.terrain, w.radius, Math.floor(rng() * 1e6)) : null;
   terrainCanvas = terrainArt ? canvasOf(terrainArt.buf) : null;
   terrainShown = terrainArt ? terrainArt.version : -1;
@@ -600,7 +610,7 @@ function update(dt: number): void {
   }
   // A borda mostrada anda até o raio real.
   const target = arenaLimit(world);
-  shownLimit += Math.sign(target - shownLimit) * Math.min(Math.abs(target - shownLimit), dt * 70);
+  shownLimit += Math.sign(target - shownLimit) * Math.min(Math.abs(target - shownLimit), dt * 140);
 }
 
 function triggerKoImpact(): void {
@@ -1337,6 +1347,7 @@ function draw(now: number): void {
     const half = terrainArt.half * k;
     ctx.drawImage(terrainCanvas, cx - half, cx - half, half * 2, half * 2);
   }
+  if (linesCanvas) ctx.drawImage(linesCanvas, 0, 0, canvas.width, canvas.height);
 
   // O chão reage por alguns instantes ao golpe. A textura continua pixelada, mas o pulso
   // deixa claro onde nasceu a marca e torna as combinações elementais legíveis.
@@ -1388,12 +1399,12 @@ function draw(now: number): void {
   if (limit < world.radius - 0.5) {
     ctx.fillStyle = 'rgba(13,22,46,0.96)';
     ctx.beginPath();
-    ctx.arc(cx, cx, (world.radius + 7) * k, 0, Math.PI * 2);
+    ctx.arc(cx, cx, (world.radius + 13) * k, 0, Math.PI * 2);
     ctx.arc(cx, cx, limit * k, 0, Math.PI * 2, true);
     ctx.fill('evenodd');
     ctx.strokeStyle = '#d9d2c2';
-    ctx.lineWidth = Math.max(2, 5 * k);
-    ctx.setLineDash([9 * k, 7 * k]);
+    ctx.lineWidth = Math.max(2, 8 * k);
+    ctx.setLineDash([18 * k, 14 * k]);
     ctx.beginPath();
     ctx.arc(cx, cx, limit * k, 0, Math.PI * 2);
     ctx.stroke();
@@ -1407,8 +1418,8 @@ function draw(now: number): void {
     ctx.arc(cx, cx, warn * k, 0, Math.PI * 2, true);
     ctx.fill('evenodd');
     ctx.strokeStyle = `rgba(255,176,60,${0.55 + 0.45 * pulse})`;
-    ctx.lineWidth = Math.max(2, 4 * k);
-    ctx.setLineDash([6 * k, 8 * k]);
+    ctx.lineWidth = Math.max(2, 7 * k);
+    ctx.setLineDash([12 * k, 16 * k]);
     ctx.beginPath();
     ctx.arc(cx, cx, warn * k, 0, Math.PI * 2);
     ctx.stroke();

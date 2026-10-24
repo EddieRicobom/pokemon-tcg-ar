@@ -15,7 +15,7 @@ import type { GroundKind, TerrainGrid, TerrainKind, TerrainReaction } from './te
 /** Blocos na largura da arena. */
 export const TERRAIN_COLS = 22;
 /** O chão marcável termina antes da mureta. */
-export const TERRAIN_MARGIN = 10;
+export const TERRAIN_MARGIN = 20;
 
 export const terrainHalf = (radius: number): number => radius - TERRAIN_MARGIN;
 
@@ -140,7 +140,7 @@ export function stampType(grid: TerrainGrid, radius: number, type: PokemonType, 
 }
 
 /** Marcas com que a arena começa (cada uma vira uma região pequena), longe de quem começa. */
-const START_MARKS: readonly TerrainKind[] = ['frost', 'frost', 'puddle', 'puddle', 'thicket', 'toxic', 'rubble'];
+const START_MARKS: readonly TerrainKind[] = ['frost', 'puddle', 'thicket', 'toxic', 'rubble', 'frost', 'puddle', 'thicket', 'toxic'];
 
 export interface Spot {
   x: number;
@@ -151,14 +151,16 @@ export interface Spot {
 export function seedMarks(grid: TerrainGrid, radius: number, rng: Rng, avoid: readonly Spot[] = []): MarkResult[] {
   const out: MarkResult[] = [];
   const centers: { x: number; y: number }[] = [];
+  // As distâncias vêm do tamanho do bloco: uma marca alcança até ~3 blocos do centro.
+  const cell = (2 * terrainHalf(radius)) / grid.cols;
   for (const kind of START_MARKS) {
     for (let attempt = 0; attempt < 60; attempt++) {
       const a = rng() * Math.PI * 2;
       const d = Math.sqrt(rng()) * radius * 0.72;
       const x = Math.cos(a) * d;
       const y = Math.sin(a) * d;
-      if (avoid.some((s) => Math.hypot(s.x - x, s.y - y) < s.r + 70)) continue;
-      if (centers.some((c) => Math.hypot(c.x - x, c.y - y) < 95)) continue;
+      if (avoid.some((s) => Math.hypot(s.x - x, s.y - y) < s.r + 3.2 * cell)) continue;
+      if (centers.some((c) => Math.hypot(c.x - x, c.y - y) < 3 * cell)) continue;
       const hit = stampKind(grid, radius, kind, x, y, 0.55 + rng() * 0.45, rng);
       if (hit) {
         out.push(hit);

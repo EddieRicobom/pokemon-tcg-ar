@@ -16,14 +16,14 @@ export type { Spot };
  * canvas). Você começa embaixo (lado 0) e os adversários em cima (lado 1).
  */
 
-export const ARENA_RADIUS = 330;
+export const ARENA_RADIUS = 660;
 /** Distância de arrasto (em unidades) que dá a força máxima. */
-export const MAX_PULL = 150;
+export const MAX_PULL = 300;
 /** Arrasto menor que isso cancela o disparo. */
-export const MIN_PULL = 14;
+export const MIN_PULL = 28;
 /** Velocidade de saída do disparo com força máxima e `shot` = 1. */
-export const BASE_SPEED = 760;
-export const MAX_SPEED = 1350;
+export const BASE_SPEED = 1075;
+export const MAX_SPEED = 1910;
 /** Desaceleração do chão comum (unidades/s²). */
 export const GROUND_DECEL = 420;
 const RESTITUTION = 0.86;
@@ -298,7 +298,7 @@ export type PinEvent =
   | { type: 'shrink'; limit: number }
   | { type: 'mark'; kind: TerrainKind; x: number; y: number; cells: number[]; reaction: TerrainReaction | null };
 
-const PATCH_SPECS: { kind: PatchKind; count: number; min: number; max: number }[] = [{ kind: 'bumper', count: 2, min: 22, max: 27 }];
+const PATCH_SPECS: { kind: PatchKind; count: number; min: number; max: number }[] = [{ kind: 'bumper', count: 4, min: 24, max: 30 }];
 
 /**
  * Sorteia os obstáculos dentro da arena, sem cobrir quem começa (`avoid`) e sem se sobrepor. Com muitos pins a
@@ -335,7 +335,7 @@ export function layoutPins(pins: Pin[], radius = ARENA_RADIUS): void {
     const spacing = 2 * rmax + 8;
     let placed = 0;
     for (let row = 0; placed < group.length; row++) {
-      const y = radius * 0.7 - row * (spacing + 2);
+      const y = radius * 0.5 - row * (spacing + 2);
       const half = Math.sqrt(Math.max(0, (radius - rmax - 8) ** 2 - y * y));
       const capacity = Math.max(1, Math.floor((2 * half) / spacing) + 1);
       const n = Math.min(capacity, group.length - placed);
@@ -356,8 +356,8 @@ export function layoutPins(pins: Pin[], radius = ARENA_RADIUS): void {
 /** Primeira rodada completa depois da qual a borda começa a avançar (as 2 primeiras são de aquecimento). */
 export const SHRINK_AFTER_ROUND = 2;
 /** Quanto a borda avança a cada rodada (unidades) e o menor raio que ela chega a ter. */
-export const SHRINK_STEP = 28;
-export const MIN_LIMIT = 170;
+export const SHRINK_STEP = 56;
+export const MIN_LIMIT = 340;
 
 /** Raio da arena depois de `round` rodadas completas. */
 export function limitForRound(radius: number, round: number): number {

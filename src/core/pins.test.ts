@@ -215,12 +215,12 @@ describe('física', () => {
 
 describe('disparo de estilingue', () => {
   it('o pin sai para o lado contrário do arrasto e a força cresce com a distância', () => {
-    const shot = shotFromDrag(0, 0, 0, 75)!;
+    const shot = shotFromDrag(0, 0, 0, MAX_PULL / 2)!;
     expect(shot.dirX).toBeCloseTo(0);
     expect(shot.dirY).toBe(-1);
     expect(shot.power).toBeCloseTo(0.5);
     expect(shotFromDrag(0, 0, 0, MAX_PULL * 3)!.power).toBe(1);
-    expect(shotFromDrag(0, 0, 3, 3)).toBeNull();
+    expect(shotFromDrag(0, 0, 6, 6)).toBeNull();
     expect(shotFromDrag(0, 0, MIN_PULL, 0)).not.toBeNull();
   });
 
@@ -234,8 +234,8 @@ describe('disparo de estilingue', () => {
     expect(fast.vy).toBeCloseTo(0);
   });
 
-  it('um disparo com força máxima atravessa a arena no chão comum', () => {
-    const pin = pinAt('a', 0, 0, 270);
+  it('um disparo com força máxima atravessa o meio da arena no chão comum', () => {
+    const pin = pinAt('a', 0, 0, ARENA_RADIUS * 0.4);
     const w = world([pin]);
     launch(pin, { dirX: 0, dirY: -1, power: 1 });
     run(w, 6);
