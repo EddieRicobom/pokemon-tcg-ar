@@ -7809,7 +7809,7 @@ body.no-scroll .reward-toasts {
   .universal-dpad .pad-right { grid-area: right; }
   .universal-dpad .pad-down { grid-area: down; }
   .universal-dpad .pad-center { grid-area: center; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / 16%); border-radius: 50%; background: #131a2b; color: var(--gold); }
-  .universal-actions { display: flex; align-items: flex-end; justify-content: flex-end; gap: 7px; margin-right: -4px; pointer-events: auto; }
+  .universal-actions { display: flex; align-items: flex-end; justify-content: flex-end; gap: 7px; margin-left: auto; margin-right: -4px; pointer-events: auto; }
   .universal-actions button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: clamp(50px, 11vw, 60px); height: clamp(50px, 11vw, 60px); min-height: 50px; padding: 3px; border: 2px solid rgb(255 255 255 / 28%); border-radius: 16px; color: #fff; font-size: 1rem; font-weight: 850; }
   .universal-actions small { font-size: .54rem; line-height: 1; }
   .universal-b { background: linear-gradient(180deg, #8268ca, #49367e); }
