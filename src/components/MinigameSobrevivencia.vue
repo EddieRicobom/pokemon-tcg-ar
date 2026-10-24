@@ -1468,7 +1468,9 @@ function loop(ts: number): void {
   const fps = effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
   if (!isFrameDue(ts, lastTs, fps)) return;
   if (ts - lastMusicSync > 100) { lastMusicSync = ts; syncMusic(); }
-  const dt = Math.min(60, ts - lastTs || 16);
+  // O carimbo do quadro pode vir antes de um `lastTs` marcado com performance.now() (ao retomar): sem tempo negativo,
+  // que faria o pouso do BONK "desandar" e o anel de poeira ganhar raio negativo.
+  const dt = Math.min(60, Math.max(1, ts - lastTs || 16));
   lastTs = ts;
   if (document.hidden || !state.value) return;
   if (paused.value) {

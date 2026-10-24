@@ -7418,7 +7418,7 @@ body.no-scroll .reward-toasts {
 .survivor-overlay .survivor-pick-bar i { background: rgba(255, 255, 255, .1); }
 .survivor-overlay .survivor-pick-thumb { filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .45)); }
 .survivor-overlay .survivor-pick-thumb.placeholder { background: rgba(255, 255, 255, .06); color: #8d97b5; }
-.survivor-overlay .survivor-favorite { background: rgba(255, 255, 255, .1); color: #ffd84a; }
+.survivor-overlay .survivor-favorite { width: 30px; min-width: 30px; height: 30px; min-height: 30px; padding: 0; border: 0; background: rgba(255, 255, 255, .1); color: #ffd84a; font-size: 1rem; }
 .survivor-overlay .survivor-mode button { border-color: var(--sv-line); background: rgba(255, 255, 255, .05); color: var(--sv-text); }
 .survivor-overlay .survivor-mode button small { color: var(--sv-muted); }
 .survivor-overlay .survivor-mode button.active { border-color: #ffd84a; background: rgba(255, 216, 74, .16); box-shadow: 0 0 0 1px rgba(255, 216, 74, .45); }
@@ -7477,7 +7477,8 @@ body.no-scroll .reward-toasts {
   .survivor-choice-list .survivor-upgrade-text { align-items: center; }
   .survivor-choice-list .survivor-upgrade-icon { width: 46px; height: 46px; font-size: 1.5rem; }
   .survivor-overlay > .survivor-pick { max-width: min(980px, calc(100% - 24px)); }
-  .survivor-pick-grid { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
+  /* Os 6 sorteados cabem numa fileira só. */
+  .survivor-pick-grid { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
   .survivor-type-choice .survivor-pick-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
   .survivor-overlay > .survivor-pause { max-width: min(460px, calc(100% - 24px)); }
 }

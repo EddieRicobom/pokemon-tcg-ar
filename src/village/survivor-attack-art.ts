@@ -337,7 +337,7 @@ export function drawElementProjectile(
   const headRotation = type === 'fire' || type === 'water' || type === 'dragon' ? pointing(back)
     : type === 'ice' || type === 'flying' || type === 'ghost' ? pointing(dir)
       : timeMs / (type === 'steel' ? 50 : 140) + seed;
-  drawParticle(ctx, type, head.x, head.y, size * 1.25, headRotation, timeMs / 1000 + seed);
+  drawParticle(ctx, type, head.x, head.y, size * 1.6, headRotation, timeMs / 1000 + seed);
   if (type === 'electric' || type === 'normal' || type === 'fairy') {
     ctx.fillStyle = pal.core;
     ctx.beginPath(); ctx.arc(head.x, head.y, size * 0.45, 0, TAU); ctx.fill();
@@ -369,7 +369,7 @@ function burstParticle(
       : POINTED.has(type) ? pointing(outward) : t * 6 + h1 * 6;
   const fade = motion === 'rise' ? 1 - t * 0.8 : 1 - t;
   ctx.globalAlpha = clamp01(fade) * 0.95;
-  drawParticle(ctx, type, p.x, p.y, (3.2 + h1 * 2.6) * p.s * (1 - t * 0.35), rotation, t * 4 + i);
+  drawParticle(ctx, type, p.x, p.y, (5 + h1 * 4) * p.s * (1 - t * 0.35), rotation, t * 4 + i);
 }
 
 /** Pulsos da aura em volta do Pokémon, com a forma e o movimento do elemento. */
@@ -403,7 +403,7 @@ function drawPulse(ctx: CanvasRenderingContext2D, fx: SurvivorFx, type: PokemonT
     const outward = screenAngle(center, p);
     const rotation = type === 'fire' ? 0 : POINTED.has(type) ? pointing(outward) : spin * 4 + i;
     ctx.globalAlpha = 0.9 * (1 - t);
-    drawParticle(ctx, type, p.x, p.y, (type === 'fire' ? 5.5 : 4.4) * p.s * (1 - t * 0.4), rotation, timeMs / 1000 + i);
+    drawParticle(ctx, type, p.x, p.y, (type === 'fire' ? 9 : 7) * p.s * (1 - t * 0.35), rotation, timeMs / 1000 + i);
   }
   if (type === 'electric' && ringPoints.length > 1) {
     // A aura elétrica é uma coroa de arcos que estala entre os pontos do anel.
@@ -412,7 +412,7 @@ function drawPulse(ctx: CanvasRenderingContext2D, fx: SurvivorFx, type: PokemonT
       const a = ringPoints[i]!;
       const b = ringPoints[(i + 1) % ringPoints.length]!;
       zigzag(ctx, a, b, seed + i + Math.floor(timeMs / 50), 4, 5 * center.s);
-      strokeBolt(ctx, pal, Math.max(0.8, 1.1 * center.s));
+      strokeBolt(ctx, pal, Math.max(1, 1.6 * center.s));
     }
   }
   if ((type === 'rock' || type === 'ground') && detailed) {
@@ -439,12 +439,42 @@ function drawBlast(ctx: CanvasRenderingContext2D, fx: SurvivorFx, type: PokemonT
   if (!center) return;
   const seed = Math.round(fx.x * 3 + fx.y);
   const grow = 0.35 + 0.65 * Math.min(1, t * 1.6);
-  ctx.globalAlpha = 0.42 * (1 - t);
+  // Clarão curto no centro e uma marca leve no chão: quem conta o elemento são as partículas e os extras.
+  ctx.globalAlpha = 0.16 * (1 - t);
   if (groundRing(ctx, map, fx.x, fx.y, fx.r * grow, 0, 28)) { ctx.fillStyle = pal.body; ctx.fill(); }
-  ctx.globalAlpha = 0.7 * (1 - t);
-  if (groundRing(ctx, map, fx.x, fx.y, fx.r * grow * 0.45, 0, 20)) { ctx.fillStyle = pal.core; ctx.fill(); }
-  ctx.globalAlpha = 0.85 * (1 - t);
-  if (groundRing(ctx, map, fx.x, fx.y, fx.r * grow, 0, 28)) { ctx.strokeStyle = pal.edge; ctx.lineWidth = Math.max(1, 2 * center.s); ctx.stroke(); }
+  const flash = clamp01(1 - t * 2.5);
+  if (flash > 0) {
+    ctx.globalAlpha = 0.75 * flash;
+    if (groundRing(ctx, map, fx.x, fx.y, fx.r * (0.25 + t), 0, 20)) { ctx.fillStyle = pal.core; ctx.fill(); }
+  }
+  ctx.globalAlpha = 0.6 * (1 - t);
+  if (groundRing(ctx, map, fx.x, fx.y, fx.r * grow, 0, 28)) { ctx.strokeStyle = pal.body; ctx.lineWidth = Math.max(1, 2.4 * center.s); ctx.stroke(); }
+  if (type === 'fire' || type === 'dragon') {
+    // Bola de fogo: labaredas grandes que sobem do centro.
+    for (let i = 0; i < (detailed ? 5 : 3); i++) {
+      const a = (i / 5) * TAU + hash(seed, i, 11);
+      const p = map(fx.x + Math.cos(a) * fx.r * 0.22, fx.y + Math.sin(a) * fx.r * 0.22, fx.r * 0.5 * t);
+      if (!p) continue;
+      ctx.globalAlpha = 0.95 * (1 - t);
+      drawParticle(ctx, type, p.x, p.y, (11 + hash(seed, i, 12) * 6) * p.s * (1 - t * 0.4), (hash(seed, i, 13) - 0.5) * 0.5, timeMs / 1000 + i);
+    }
+  }
+  if (type === 'poison' || type === 'water') {
+    // Veneno borbulha no lugar; a água deixa uma segunda onda.
+    if (type === 'water') {
+      ctx.globalAlpha = 0.7 * (1 - t);
+      if (groundRing(ctx, map, fx.x, fx.y, fx.r * grow * 0.6, 0, 24)) { ctx.strokeStyle = pal.core; ctx.lineWidth = Math.max(1, 2 * center.s); ctx.stroke(); }
+    } else {
+      for (let i = 0; i < (detailed ? 6 : 3); i++) {
+        const a = hash(seed, i, 14) * TAU;
+        const d = hash(seed, i, 15) * fx.r * 0.6;
+        const p = map(fx.x + Math.cos(a) * d, fx.y + Math.sin(a) * d, fx.r * 0.2 * t);
+        if (!p) continue;
+        ctx.globalAlpha = 0.8 * (1 - t);
+        drawParticle(ctx, type, p.x, p.y, (6 + hash(seed, i, 16) * 7) * p.s * (0.5 + t), 0, 0);
+      }
+    }
+  }
 
   if (type === 'electric' && t < 0.6) {
     // O raio cai do céu no alvo.
@@ -591,18 +621,19 @@ function drawCone(ctx: CanvasRenderingContext2D, fx: SurvivorFx, type: PokemonTy
     }
   }
   // Jato de partículas do elemento ao longo do leque.
-  const n = detailed ? 14 : 6;
+  const n = detailed ? 18 : 7;
   for (let i = 0; i < n; i++) {
     const h1 = hash(seed, i, 1);
     const h2 = hash(seed, i, 2);
     const a = aim + (h1 * 2 - 1) * spread * 0.9;
-    const d = fx.r * clamp01(0.12 + t * (0.9 + h2 * 0.5) - h2 * 0.15);
+    // Cada partícula corre do Pokémon até a borda em fase própria: o leque inteiro fica cheio, não uma fileira.
+    const d = fx.r * (0.12 + 0.85 * ((h2 + t * 1.4) % 1));
     const p = map(fx.x + Math.cos(a) * d, fx.y + Math.sin(a) * d, 6 + (type === 'fire' ? fx.r * 0.12 * t : 0));
     if (!p) continue;
     const dir = screenAngle(apex, p);
     const rotation = type === 'fire' ? pointing(dir + Math.PI) : POINTED.has(type) ? pointing(dir) : t * 5 + h1 * 6;
     ctx.globalAlpha = 0.95 * (1 - t);
-    drawParticle(ctx, type, p.x, p.y, (3 + h2 * 3) * p.s * (0.7 + d / fx.r * 0.6), rotation, timeMs / 1000 + i);
+    drawParticle(ctx, type, p.x, p.y, (4.5 + h2 * 4) * p.s * (0.6 + d / fx.r * 0.7), rotation, timeMs / 1000 + i);
   }
 }
 
@@ -694,7 +725,7 @@ export function drawElementOrbiter(
   const heading = ahead ? screenAngle(p, ahead) : orbiter.angle + Math.PI / 2;
   const rotation = type === 'bug' || POINTED.has(type) ? pointing(heading) : timeMs / 70 + index;
   ctx.globalAlpha = 1;
-  drawParticle(ctx, type, p.x, p.y, size * 1.25 * p.s, rotation, timeMs / 1000 + index);
+  drawParticle(ctx, type, p.x, p.y, size * 1.05 * p.s, rotation, timeMs / 1000 + index);
   ctx.restore();
 }
 
