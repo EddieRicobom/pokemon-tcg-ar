@@ -382,6 +382,8 @@ export interface SurvivorState {
   finalBossBeaten: boolean;
   /** Modo infinito: treinadores com 6 Pokémon a cada 5 min, inimigos escalam com o tempo. */
   infinite: boolean;
+  /** Modificador de corrida curta: relógio 2×, XP 1,75× e chefão final aos 10 min exibidos. */
+  fast: boolean;
   /** Variante opcional em terceira pessoa, com física e salto. */
   bonk: boolean;
   /** Multiplicador do HP/dano que o infinito aplica sobre `elapsedMs` (sem o infinito, sempre 1). */
@@ -450,6 +452,8 @@ export interface SurvivorSummary {
   finalBossBeaten: boolean;
   /** Era uma corrida do modo infinito? */
   infinite: boolean;
+  /** A corrida usou o modificador Ritmo acelerado? */
+  fast?: boolean;
   /** Quantas Pokébolas especiais foram realmente recolhidas durante a corrida. */
   digitalPokeballs: number;
   /** Pedras da Confiança asseguradas pelos lendários sombrios nesta corrida. */

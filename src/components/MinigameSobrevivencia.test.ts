@@ -8,6 +8,7 @@ vi.mock('../app/services', () => ({
   assetUrl: (path: string) => path,
   getCache: async () => ({ list: async () => [] }),
   getLocalVillageSprite: () => new Promise((resolve) => pending.push(() => resolve(null))),
+  getLocalVillageSpriteDirs: () => new Promise((resolve) => pending.push(() => resolve(null))),
 }));
 
 const { default: MinigameSobrevivencia } = await import('./MinigameSobrevivencia.vue');

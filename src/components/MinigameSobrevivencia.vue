@@ -34,6 +34,7 @@ import {
   SURVIVOR_MEGA_SHARD_MS,
   SURVIVOR_ARTIFACT_DETAILS,
   survivorProjectileOpacity,
+  FAST_TIME_SCALE,
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
@@ -75,6 +76,8 @@ import type { BonkArt } from '../village/survivor-bonk-landscape';
 import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
 import type { WorldToScreen } from '../village/survivor-attack-art';
 import { survivorOrbiters } from '../core/survivor-shapes';
+import { survivorSpriteDirection, survivorSpriteDirectionFromAngle } from '../core/survivor-sprite-direction';
+import type { SurvivorSpriteDirection } from '../core/survivor-sprite-direction';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -198,6 +201,9 @@ interface Sprite {
   fit: number;
 }
 
+/** Folhas locais têm quatro poses reais; fontes externas continuam com uma só, sem inventar direções. */
+type SpriteAsset = Sprite | Partial<Record<SurvivorSpriteDirection, Sprite>>;
+
 /** Pixels de altura na Torre para 1 bloco de altura real (`core/size-scale.ts`); Pikachu ≈ 19 px, Snorlax ≈ 37 px. */
 const SURVIVOR_TILE_PX = 22;
 
@@ -227,6 +233,12 @@ function frameIndex(sprite: Sprite, timeMs: number): number {
     if (remaining < 0) return i;
   }
   return sprite.frames.length - 1;
+}
+
+function firstSpriteFrame(asset: SpriteAsset | null | undefined): HTMLCanvasElement | null {
+  if (!asset) return null;
+  const sprite = 'frames' in asset ? asset : (asset.down ?? asset.right ?? asset.left ?? asset.up ?? null);
+  return sprite?.frames[0] ?? null;
 }
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
@@ -270,9 +282,9 @@ async function staticAsGif(blob: Blob): Promise<DecodedGif> {
  * `getDigitalSprite`); senão a imagem parada do PokéAPI. Sem nenhum dos três, null (vira a forma neutra, sem fingir
  * ser outro Pokémon).
  */
-const spriteMemory = new Map<number, Promise<Sprite | null>>();
+const spriteMemory = new Map<number, Promise<SpriteAsset | null>>();
 
-async function loadSpriteOrNull(dexId: number): Promise<Sprite | null> {
+async function loadSpriteOrNull(dexId: number): Promise<SpriteAsset | null> {
   const cached = spriteMemory.get(dexId);
   if (cached) return cached;
   const pending = loadSpriteOrNullUncached(dexId);
@@ -281,10 +293,17 @@ async function loadSpriteOrNull(dexId: number): Promise<Sprite | null> {
   return pending;
 }
 
-async function loadSpriteOrNullUncached(dexId: number): Promise<Sprite | null> {
+async function loadSpriteOrNullUncached(dexId: number): Promise<SpriteAsset | null> {
   try {
-    const gif = await getLocalVillageSprite(dexId, false, 'Walk');
-    if (gif) return toSprite(gif, dexId);
+    const dirs = await getLocalVillageSpriteDirs(dexId, false, 'Walk');
+    if (dirs?.down) {
+      const local: Partial<Record<SurvivorSpriteDirection, Sprite>> = {};
+      for (const direction of ['up', 'right', 'down', 'left'] as const) {
+        const gif = dirs[direction];
+        if (gif) local[direction] = toSprite(gif, dexId);
+      }
+      return local;
+    }
   } catch {
     // segue para a próxima alternativa
   }
@@ -589,11 +608,11 @@ function playSound(cue: UiSound): void {
 
 let ctx: CanvasRenderingContext2D | null = null;
 let groundPattern: CanvasPattern | null = null;
-let playerSprite: Sprite | null = null;
+let playerSprite: SpriteAsset | null = null;
 /** Só no BONK: o mesmo Pokémon de costas para a câmera (ver `loadBackSpriteOrNull`). */
 let playerBackSprite: Sprite | null = null;
-const supportSprites = new Map<number, Sprite | null>();
-const enemySprites = new Map<number, Sprite | null>();
+const supportSprites = new Map<number, SpriteAsset | null>();
+const enemySprites = new Map<number, SpriteAsset | null>();
 const enemySpriteLoads = new Map<number, Promise<void>>();
 const requestedEnemyRegions = new Set<number>();
 const missingEnemySprites = ref(0);
@@ -768,15 +787,18 @@ function joyUp(e?: PointerEvent): void {
   joystick.dy = 0;
 }
 
-function drawSprite(sprite: Sprite | null, x: number, y: number, flip: boolean, scale: number): void {
+function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down'): void {
   if (!ctx) return;
-  if (!sprite) {
+  if (!asset) {
     ctx.fillStyle = 'rgba(110,116,130,0.92)';
     ctx.beginPath();
     ctx.ellipse(x, y, 12 * scale, 14 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
     return;
   }
+  const directional = !('frames' in asset);
+  const sprite = directional ? (asset[direction] ?? asset.down ?? asset.right ?? asset.left ?? asset.up ?? null) : asset;
+  if (!sprite) return;
   const frame = sprite.frames[frameIndex(sprite, animMs)] ?? sprite.frames[0]!;
   const w = sprite.w * sprite.fit * scale;
   const h = sprite.h * sprite.fit * scale;
@@ -784,7 +806,7 @@ function drawSprite(sprite: Sprite | null, x: number, y: number, flip: boolean, 
   const left = -((sprite.bounds.left + sprite.bounds.right) / 2) * w;
   const top = -sprite.bounds.bottom * h;
   // Sem espelho, a posição entra direto no desenho: sem `save`/`restore` por inimigo (são a parte mais cara aqui).
-  if (!flip) {
+  if (!flip || directional) {
     ctx.drawImage(frame, x + left, y + top, w, h);
     return;
   }
@@ -854,7 +876,8 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.arc(e.x + 12, e.y - 30, 3, 0, Math.PI * 2);
     ctx.fill();
   }
-  drawSprite(sprite, e.x, e.y, false, scale);
+  const player = state.value?.player;
+  drawSprite(sprite, e.x, e.y, false, scale, player ? survivorSpriteDirection(player.x - e.x, player.y - e.y) : 'down');
   // Efeitos do golpe no inimigo: um pontinho colorido em cima (queimando, lento, atordoado).
   const marks: string[] = [];
   if (e.burnMs) marks.push(state.value?.player.move.color ?? '#ff7a2f');
@@ -894,8 +917,8 @@ function drawEnemy(e: SurvivorEnemy): void {
 
 /** Sprite 2D voltado para a câmera (billboard): a perspectiva vem da projeção, não de um modelo 3D inventado. */
 function drawBonkBillboard(
-  sprite: Sprite | null, x: number, y: number, scale: number, flip = false, alpha = 1,
-  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0,
+  sprite: SpriteAsset | null, x: number, y: number, scale: number, flip = false, alpha = 1,
+  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0, direction: SurvivorSpriteDirection = 'down',
 ): void {
   if (!ctx) return;
   ctx.save();
@@ -910,9 +933,9 @@ function drawBonkBillboard(
     // Achatado ao pousar (squash > 0), esticado ao subir (squash < 0), sempre com os pés no mesmo ponto.
     ctx.translate(x, y);
     ctx.scale(1 + squash * 0.7, 1 - squash);
-    drawSprite(sprite, 0, 0, flip, scale);
+    drawSprite(sprite, 0, 0, flip, scale, direction);
   } else {
-    drawSprite(sprite, x, y, flip, scale);
+    drawSprite(sprite, x, y, flip, scale, direction);
   }
   ctx.restore();
 }
@@ -941,7 +964,8 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
     ctx.stroke();
     ctx.restore();
   }
-  drawBonkBillboard(sprite, x, y, size);
+  const player = state.value?.player;
+  drawBonkBillboard(sprite, x, y, size, false, 1, null, 0, player ? survivorSpriteDirection(player.x - e.x, player.y - e.y) : 'down');
   if (e.hp < e.maxHp) {
     const width = Math.max(14, 28 * scale);
     const barY = y - Math.max(22, 38 * scale);
@@ -1034,7 +1058,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   for (const support of s.supports) {
     const p = drawPoint(support);
     if (!p || p.scale < 0.08) continue;
-    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(supportSprites.get(support.dexId) ?? null, p.x, p.y, clamp(p.scale * 0.6, 0.18, 2), bonkFacing < 0, 0.82) });
+    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(supportSprites.get(support.dexId) ?? null, p.x, p.y, clamp(p.scale * 0.6, 0.18, 2), bonkFacing < 0, 0.82, null, 0, survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y)) });
   }
   const playerGround = drawPoint(s.player);
   const playerPoint = drawPoint(s.player, physics.z);
@@ -1156,7 +1180,7 @@ async function preloadShadowBoss(dexId: number): Promise<void> {
     enemySpriteLoads.set(dexId, load);
     await load;
   }
-  shadowBossSprite.value = enemySprites.get(dexId)?.frames[0]?.toDataURL() ?? null;
+  shadowBossSprite.value = firstSpriteFrame(enemySprites.get(dexId))?.toDataURL() ?? null;
 }
 
 function preloadVisibleEnemyRegions(elapsedMs: number): void {
@@ -1256,14 +1280,14 @@ function draw(): void {
   for (const support of s.supports) {
     ctx.save();
     ctx.globalAlpha = effectiveVisual.value.rotomMode ? 0.72 : 0.84;
-    drawSprite(supportSprites.get(support.dexId) ?? null, support.x, support.y, s.player.facing < 0, 0.76);
+    drawSprite(supportSprites.get(support.dexId) ?? null, support.x, support.y, s.player.facing < 0, 0.76, survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y));
     ctx.restore();
   }
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
   // Orbitais acima do Pokémon na tela passam por trás dele; os de baixo, pela frente.
   const orbiters = move.category === 'orbit' ? survivorOrbiters(s.player) : [];
   orbiters.forEach((orbiter, index) => { if (orbiter.y < s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
-  if (!blink) drawSprite(playerSprite, s.player.x, s.player.y, s.player.facing < 0, 1);
+  if (!blink) drawSprite(playerSprite, s.player.x, s.player.y, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(s.player.aimAngle, s.player.facing));
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
   drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
 
@@ -1535,10 +1559,12 @@ function loop(ts: number): void {
     // No BONK o analógico é relativo à câmera: para cima avança para onde ela olha, os lados andam de lado e giram.
     const move = bonkRun.value && bonkPhysics.value ? bonkInputToWorld(bonkPhysics.value, dx, dy) : { dx, dy };
     if (bonkRun.value && Math.abs(dx) > 0.15) bonkFacing = dx < 0 ? -1 : 1;
-    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, dt);
+    // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
+    const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
+    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
     specialQueued = false;
     if (bonkRun.value && bonkPhysics.value && beforeBonkPosition) {
-      stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, dt);
+      stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, simulationDt);
       // Inimigos também respeitam rochas e paredes; a altura do jogador não deve abrir a parede para eles.
       const groundPhysics = { ...bonkPhysics.value, z: 0 };
       for (const enemy of s.enemies) {
@@ -1740,7 +1766,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = []): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -1759,7 +1785,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     playerSprite = player;
     playerBackSprite = back as Sprite | null;
     supportSprites.clear();
-    supportCandidates.forEach((candidate, index) => supportSprites.set(candidate.dexId, (supports[index] as Sprite | null | undefined) ?? null));
+    supportCandidates.forEach((candidate, index) => supportSprites.set(candidate.dexId, (supports[index] as SpriteAsset | null | undefined) ?? null));
     missingEnemySprites.value = REGIONAL_ENEMY_SPRITES.filter((id) => enemySprites.get(id) === null).length;
 
     if (disposed) return;
@@ -1785,7 +1811,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices });
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast });
     bonkRun.value = bonk;
     bonkPhysics.value = bonk ? createBonkPhysics(Math.PI / 2, state.value.runSeed) : null;
     // Cada corrida BONK usa a própria seed para trocar tiles, árvores e posição dos obstáculos.
@@ -1801,7 +1827,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     bonkJumpQueued = false;
     const runState = state.value;
     void loadSpriteOrNull(SPECIAL_GUARDIANS[move.type].dexId).then((sprite) => {
-      if (!disposed && state.value === runState) guardianSprite.value = sprite?.frames[0]?.toDataURL() ?? null;
+      if (!disposed && state.value === runState) guardianSprite.value = firstSpriteFrame(sprite)?.toDataURL() ?? null;
     });
     ready.value = true;
     lastTs = performance.now();
@@ -1828,7 +1854,8 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
     } satisfies SurvivorSupportCandidate));
   const primary = picked ?? opt.types[0] ?? opt.move.type;
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
-  void beginRun(opt.dexId, opt.name, picked, infiniteWanted.value && torre.value.infiniteUnlocked, bonkWanted.value, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidates, typeAffinityChoices);
+  const infinite = infiniteWanted.value && torre.value.infiniteUnlocked;
+  void beginRun(opt.dexId, opt.name, picked, infinite, bonkWanted.value, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidates, typeAffinityChoices, fastWanted.value && torre.value.infiniteUnlocked && !infinite);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
@@ -1844,13 +1871,14 @@ watch(
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
 const infiniteWanted = ref(false);
 const bonkWanted = ref(false);
+const fastWanted = ref(false);
 const torre = computed(() => trainer.value.torre);
 const rerollLimit = computed(() => survivorRerollLimit(torre.value.completedObjectives));
 const recordedObjectiveCount = computed(() => new Set(torre.value.completedObjectives).size);
 const preparations = computed(() => availableSurvivorPreparations(torre.value.completedObjectives));
 const nextPreparation = computed(() => SURVIVOR_PREPARATIONS.find(({ unlockAtObjectives }) => unlockAtObjectives > recordedObjectiveCount.value));
 const nextTowerGoal = computed(() => {
-  if (!torre.value.infiniteUnlocked) return 'Próximo marco: derrote o chefão final aos 20 min para abrir o modo infinito.';
+  if (!torre.value.infiniteUnlocked) return 'Próximo marco: derrote o chefão final aos 20 min para liberar o Infinito e o Ritmo acelerado.';
   if (torre.value.trainersBeaten < 10) return `Próximo marco: derrote ${10 - torre.value.trainersBeaten} treinador(es) para a conquista Mestre da Torre.`;
   if (torre.value.bossesBeaten < 3) return `Próximo marco: derrote ${3 - torre.value.bossesBeaten} chefão(ões) para Caçador do infinito.`;
   if (recordedObjectiveCount.value < 3) return `Próximo marco: conclua ${3 - recordedObjectiveCount.value} desafio(s) opcional(is) distinto(s) em corridas encerradas para liberar outra troca de sorteio.`;
@@ -1874,7 +1902,7 @@ function skipTypeAffinity(): void {
   paused.value = false;
   say('Você guardou a afinidade para outra corrida.', 2600);
 }
-watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) infiniteWanted.value = false; });
+watch(() => torre.value.infiniteUnlocked, (ok) => { if (!ok) { infiniteWanted.value = false; fastWanted.value = false; } });
 
 /** Abre a tela de escolha de novo (3 novos sorteados) antes de cada corrida, inclusive ao "Jogar de novo". */
 async function openPicker(): Promise<void> {
@@ -2033,7 +2061,7 @@ onBeforeUnmount(() => {
               <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
               <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
               <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
-              <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados`">⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
+              <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
             <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
              <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
@@ -2138,8 +2166,17 @@ onBeforeUnmount(() => {
             <div class="survivor-mode survivor-mode-bonk" role="group" aria-label="Modo da Torre">
               <button type="button" :class="{ active: !infiniteWanted && !bonkWanted }" @click="infiniteWanted = false; bonkWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
               <button type="button" class="bonk-mode-button" :class="{ active: bonkWanted }" @click="bonkWanted = true; infiniteWanted = false">💥 BONK<small>3D, física e pulo</small></button>
-              <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true; bonkWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
+              <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true; bonkWanted = false; fastWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
             </div>
+            <section v-if="torre.infiniteUnlocked" class="survivor-preparations" aria-label="Modificadores da corrida">
+              <strong>Modificadores</strong>
+              <div class="survivor-mode" role="group" aria-label="Ritmo da corrida">
+                <button type="button" :class="{ active: fastWanted }" :disabled="infiniteWanted" :aria-pressed="fastWanted" @click="fastWanted = !fastWanted">
+                  ⚡ Ritmo acelerado<small>Relógio 2× · orbes 1,75× XP · chefão aos 10 min</small>
+                </button>
+              </div>
+              <p class="note">10 min no relógio da Torre equivalem a cerca de 5 min reais. A densidade e os chefes compensam o relógio para a arena não ficar apertada.</p>
+            </section>
             <section v-if="preparations.length > 1" class="survivor-preparations" aria-label="Preparação para a corrida">
               <strong>Preparação</strong>
               <div class="survivor-mode" role="group" aria-label="Escolha uma preparação">
@@ -2319,6 +2356,7 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
+            <p v-if="summary.fast" class="survivor-cleared" role="status">⚡ Ritmo acelerado: relógio 2× e orbes com 1,75× XP.</p>
             <p v-if="objectives.length" class="survivor-objectives-summary" role="status">
               Objetivos opcionais: {{ objectives.filter((objective) => objective.complete).length }}/{{ objectives.length }} concluídos.
             </p>

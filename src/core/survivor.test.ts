@@ -29,6 +29,9 @@ import {
   survivorRapidAttackDamageMultiplier,
   SURVIVOR_SHADOW_BALL_FIRST_MS,
   SURVIVOR_SHADOW_CUTSCENE_MS,
+  FAST_FINAL_BOSS_MS,
+  FAST_TIME_SCALE,
+  FAST_XP_MULTIPLIER,
   xpForLevel,
 } from './survivor';
 import type { SurvivorEnemy, SurvivorState } from './survivor';
@@ -1180,6 +1183,30 @@ describe('treinadores e chefão final', () => {
     s.elapsedMs = 10 * 60_000;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.infiniteScale).toBeGreaterThan(2);
+  });
+
+  it('Ritmo acelerado encurta a corrida sem dobrar a pressão de chefes e dá 1,75× XP', () => {
+    const normal = createSurvivorState(7, { kindCount: 2 });
+    const fast = createSurvivorState(7, { kindCount: 2, fast: true });
+    expect(fast.fast).toBe(true);
+    expect(fast.infinite).toBe(false);
+    expect(fast.finalBossAtMs).toBe(FAST_FINAL_BOSS_MS);
+    expect(fast.player.xpMultiplier).toBe(FAST_XP_MULTIPLIER);
+    // Como o componente passa 2× o delta ao motor, esta janela 2× mantém o mesmo intervalo real.
+    expect(fast.nextBossAtMs).toBe(normal.nextBossAtMs * FAST_TIME_SCALE);
+    // Mesmo delta dobrado por quadro, o primeiro nascimento leva o mesmo tempo real.
+    fast.spawnAccumMs = 0;
+    normal.spawnAccumMs = 0;
+    stepSurvivor(normal, { dx: 0, dy: 0 }, 1_000);
+    stepSurvivor(fast, { dx: 0, dy: 0 }, 2_000);
+    expect(fast.enemies.length).toBe(normal.enemies.length);
+  });
+
+  it('não combina Ritmo acelerado com o Infinito', () => {
+    const state = createSurvivorState(7, { kindCount: 2, fast: true, infinite: true });
+    expect(state.infinite).toBe(true);
+    expect(state.fast).toBe(false);
+    expect(state.player.xpMultiplier).toBe(1);
   });
 
   it('moedas: +40 por treinador, +80 por chefão (além da pontuação)', () => {
