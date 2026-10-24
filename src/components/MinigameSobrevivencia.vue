@@ -70,7 +70,8 @@ import { emptySurvivorFeedbackAnswers, encodeSurvivorFeedback } from '../core/su
 import type { FeedbackRating, FeedbackRatingKey } from '../core/survivor-feedback';
 import { BONK_LANDING_MS, bonkInputToWorld, bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics } from '../core/survivor-bonk';
 import type { BonkPhysics } from '../core/survivor-bonk';
-import { bonkGroundEllipse, bonkObstacleDrawables, drawBonkGround } from '../village/survivor-bonk-landscape';
+import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround } from '../village/survivor-bonk-landscape';
+import type { BonkArt } from '../village/survivor-bonk-landscape';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -152,6 +153,12 @@ const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').ma
 const detailedSpecialEffects = computed(() => specialEffects.value && !reducedMotion && !effectiveVisual.value.rotomMode);
 const drawLandscape = createSurvivorLandscape(ARENA_W, ARENA_H);
 let landscapeAtlasLoaded = false;
+/** Atlas da Vila já carregado (null enquanto carrega ou se falhar): o BONK recorta as texturas dele. */
+let landscapeAtlasImage: HTMLImageElement | null = null;
+/** Grama do Survival (`survivor-grass.png`), também usada como textura do chão do BONK. */
+let groundImage: HTMLImageElement | null = null;
+/** Texturas e recortes do BONK, montados uma vez quando o atlas e a grama estão prontos. */
+let bonkArt: BonkArt | null = null;
 async function loadLandscapeAtlas(): Promise<void> {
   if (landscapeAtlasLoaded) return;
   landscapeAtlasLoaded = true;
@@ -161,7 +168,10 @@ async function loadLandscapeAtlas(): Promise<void> {
     image.onload = () => resolve();
     image.onerror = () => resolve();
   });
-  if (image.naturalWidth > 0) drawLandscape.setAtlas(image);
+  if (image.naturalWidth > 0) {
+    drawLandscape.setAtlas(image);
+    landscapeAtlasImage = image;
+  }
 }
 
 interface Sprite {
@@ -904,11 +914,11 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   const c = ctx;
   const viewport = { width: view.w, height: view.h };
   c.clearRect(0, 0, viewport.width, viewport.height);
-  drawBonkGround(c, physics, s.player, viewport, s.elapsedMs);
+  drawBonkGround(c, physics, s.player, viewport, s.elapsedMs, bonkArt);
 
   const drawPoint = (point: { x: number; y: number }, z = 0) => projectBonkPoint(physics, s.player, { ...point, z }, viewport);
   // Tudo que tem altura entra numa só ordenação: obstáculo na frente cobre o inimigo atrás, e vice-versa.
-  const figures = bonkObstacleDrawables(c, physics, s.player, viewport, s.elapsedMs);
+  const figures = bonkObstacleDrawables(c, physics, s.player, viewport, s.elapsedMs, bonkArt);
   for (const orb of s.orbs) {
     const ground = drawPoint(orb);
     const p = drawPoint(orb, 10 + Math.sin(animMs / 320 + orb.id) * 3);
@@ -1675,8 +1685,13 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
         groundImg.onload = () => resolve();
         groundImg.onerror = () => resolve();
       });
-      if (ctx && groundImg.naturalWidth > 0) groundPattern = ctx.createPattern(groundImg, 'repeat');
+      if (ctx && groundImg.naturalWidth > 0) {
+        groundPattern = ctx.createPattern(groundImg, 'repeat');
+        groundImage = groundImg;
+      }
     }
+    // Sem atlas nem grama, o BONK continua com o cenário desenhado por código (nada é inventado no lugar).
+    if (bonk && ctx && !bonkArt && (landscapeAtlasImage || groundImage)) bonkArt = createBonkArt(ctx, landscapeAtlasImage, groundImage);
 
     if (disposed) return;
     pickOptions.value = null;

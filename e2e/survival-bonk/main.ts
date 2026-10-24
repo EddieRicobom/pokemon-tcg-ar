@@ -33,4 +33,6 @@ setTimeout(() => {
 (window as unknown as { survivalBonk: unknown }).survivalBonk = {
   state: () => setup.state,
   physics: () => setup.bonkPhysics,
+  /** Estado inteiro do componente, para inspecionar pelo console (por exemplo, `setup().bonkArt`). */
+  setup: () => setup,
 };

@@ -2,6 +2,7 @@ import { BONK_CAMERA, bonkCameraPosition, bonkFocal, projectBonkPoint } from '..
 import type { BonkObstacle, BonkPhysics, BonkProjection } from '../core/survivor-bonk';
 import { ARENA_H, ARENA_W } from '../core/survivor-types';
 import type { SurvivorPlayer } from '../core/survivor-types';
+import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
 
 /**
  * Cenário BONK em perspectiva. É Canvas 2D projetado, não WebGL: mantém o carregamento leve da Torre e entrega
@@ -80,6 +81,247 @@ function polygon(ctx: CanvasRenderingContext2D, points: readonly Point[]): void 
   ctx.closePath();
 }
 
+// ----------------------------------------------------------------------------- arte da Vila
+
+/**
+ * Mundo por pixel de textura: um bloco de 16 px da Vila vale 40 unidades (o jogador tem raio 14), então a grama de
+ * 32 px cobre exatamente um ladrilho do chão (`TILE`).
+ */
+const WORLD_PER_PX = 2.5;
+/** Até onde a textura aparece; mais longe o chão usa a cor média dela (sem mipmap, o pixel distante só cintila). */
+const TEXTURE_NEAR = 520;
+const TEXTURE_FAR = 1100;
+
+export interface BonkTexture {
+  pattern: CanvasPattern;
+  w: number;
+  h: number;
+  /** Cor média, para o chão distante e para a base embaixo da textura. */
+  avg: Rgb;
+}
+
+type BonkSpriteId = 'tree' | 'pine' | 'pineSmall' | 'rock1' | 'rock2' | 'rock3' | 'bush' | 'tall' | 'flower' | 'stump' | 'orb' | 'pedestal';
+
+/** Texturas e recortes do atlas da Vila usados pelo BONK. Qualquer peça ausente volta para o desenho por código. */
+export interface BonkArt {
+  grass: BonkTexture | null;
+  water: BonkTexture | null;
+  sand: BonkTexture | null;
+  path: BonkTexture | null;
+  wall: BonkTexture | null;
+  plaza: BonkTexture | null;
+  plank: BonkTexture | null;
+  sprites: Partial<Record<BonkSpriteId, HTMLCanvasElement>>;
+}
+
+function averageColor(image: CanvasImageSource, fallback: Rgb): Rgb {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 8;
+    canvas.height = 8;
+    const c = canvas.getContext('2d', { willReadFrequently: true });
+    if (!c) return fallback;
+    c.drawImage(image, 0, 0, 8, 8);
+    const data = c.getImageData(0, 0, 8, 8).data;
+    let r = 0; let g = 0; let b = 0; let n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if ((data[i + 3] ?? 0) < 128) continue;
+      r += data[i] ?? 0; g += data[i + 1] ?? 0; b += data[i + 2] ?? 0; n++;
+    }
+    return n > 0 ? [r / n, g / n, b / n] : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function pixelCanvas(w: number, h: number): { canvas: HTMLCanvasElement; c: CanvasRenderingContext2D } | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const c = canvas.getContext('2d');
+  return c ? { canvas, c } : null;
+}
+
+/**
+ * Orbe em pixel art (24 × 24) no traço da Vila: contorno escuro, quatro tons com pontilhado nas passagens, luz de
+ * cima à esquerda (a mesma das sombras do cenário), brilho branco e um reflexo do chão embaixo.
+ */
+function makeOrbSprite(): HTMLCanvasElement | null {
+  const size = 24;
+  const made = pixelCanvas(size, size);
+  if (!made) return null;
+  const { canvas, c } = made;
+  const shades = ['#43298c', '#6447c9', '#8f73f0', '#c4b0ff'] as const;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x + 0.5 - size / 2;
+      const dy = y + 0.5 - size / 2;
+      const r = Math.hypot(dx, dy);
+      if (r > 10.6) continue;
+      if (r > 9.5) {
+        c.fillStyle = '#25174f';
+      } else {
+        const light = ((-dx * 0.55 - dy * 0.75) / 9.5) * 0.5 + 0.5 - (r / 9.5) * 0.2;
+        const dither = ((x + y) % 2) * 0.07;
+        c.fillStyle = shades[Math.max(0, Math.min(3, Math.floor((light + dither) * 4)))]!;
+      }
+      c.fillRect(x, y, 1, 1);
+    }
+  }
+  // Névoa clara dentro do orbe, brilho e o reflexo rebatido do chão.
+  c.fillStyle = '#ddd2ff';
+  for (const [x, y] of [[7, 7], [8, 6], [9, 6], [7, 8], [10, 6], [6, 9]] as const) c.fillRect(x, y, 1, 1);
+  c.fillStyle = '#ffffff';
+  c.fillRect(8, 7, 2, 1);
+  c.fillRect(8, 8, 1, 1);
+  c.fillStyle = '#a58dff';
+  for (const [x, y] of [[13, 19], [14, 19], [15, 18], [16, 17], [17, 16]] as const) c.fillRect(x, y, 1, 1);
+  return canvas;
+}
+
+/** Pedestal de pedra com runa (24 × 14): fica no chão, do tamanho da área sólida, embaixo do orbe flutuante. */
+function makePedestalSprite(): HTMLCanvasElement | null {
+  const w = 24;
+  const h = 14;
+  const made = pixelCanvas(w, h);
+  if (!made) return null;
+  const { canvas, c } = made;
+  const filled: (string | null)[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => null));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = x + 0.5 - w / 2;
+      const top = (dx / 10.5) ** 2 + ((y + 0.5 - 4) / 3.4) ** 2 <= 1;
+      const body = y >= 4 && y <= 12 && Math.abs(dx) <= 10.5 - (y - 4) * 0.2;
+      if (top) filled[y]![x] = (dx < -2 && y < 4) ? '#d6d0de' : '#b7afc4';
+      else if (body) filled[y]![x] = dx < -4 ? '#958da3' : dx > 5 ? '#6c657a' : '#837b92';
+    }
+  }
+  // Runa acesa: um anel no topo e um traço na face da frente, na cor do orbe.
+  for (const [x, y] of [[9, 3], [10, 2], [11, 2], [12, 2], [13, 2], [14, 3], [9, 5], [10, 6], [11, 6], [12, 6], [13, 6], [14, 5], [8, 4], [15, 4]] as const) filled[y]![x] = '#a88cff';
+  for (const [x, y] of [[10, 9], [11, 8], [12, 8], [13, 9], [11, 10], [12, 10]] as const) filled[y]![x] = '#b9a2ff';
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const color = filled[y]![x];
+      if (color) {
+        c.fillStyle = color;
+        c.fillRect(x, y, 1, 1);
+        continue;
+      }
+      // Contorno de um pixel em volta da pedra, como nas peças da Vila.
+      const neighbour = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].some(([nx, ny]) => !!filled[ny!]?.[nx!]);
+      if (neighbour) {
+        c.fillStyle = '#332b40';
+        c.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+  return canvas;
+}
+
+/**
+ * Monta a arte a partir do atlas da Vila (`vila-atlas.png`) e da grama do Survival (`survivor-grass.png`). As peças
+ * saem pelo mesmo mapa de posições que a Vila usa (`atlas-spec.ts`); os autotiles usam a célula do meio do 3 × 3.
+ */
+export function createBonkArt(ctx: CanvasRenderingContext2D, atlas: CanvasImageSource | null, grass: HTMLImageElement | HTMLCanvasElement | null): BonkArt {
+  const layout = packAtlas();
+  const sources = new Map(ATLAS_SOURCES.map((source) => [source.id, source]));
+  const crop = (id: string, region?: 'center' | { x: number; y: number; w: number; h: number }): HTMLCanvasElement | null => {
+    const rect = layout.rects.get(id);
+    const source = sources.get(id);
+    if (!atlas || !rect || !source) return null;
+    let sx = rect.x;
+    let sy = rect.y;
+    let w = rect.w;
+    let h = rect.h;
+    if (region === 'center') {
+      sx += source.half ? 16 : Math.max(0, Math.floor((w - 16) / 2));
+      sy += source.half ? 32 : Math.max(0, Math.floor((h - 16) / 2));
+      w = 16;
+      h = 16;
+    } else if (region) {
+      sx += region.x; sy += region.y; w = region.w; h = region.h;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const c = canvas.getContext('2d');
+    if (!c) return null;
+    c.imageSmoothingEnabled = false;
+    c.drawImage(atlas, sx, sy, w, h, 0, 0, w, h);
+    return canvas;
+  };
+  const texture = (image: HTMLImageElement | HTMLCanvasElement | null, fallback: Rgb): BonkTexture | null => {
+    if (!image || image.width === 0) return null;
+    const pattern = ctx.createPattern(image, 'repeat');
+    return pattern ? { pattern, w: image.width, h: image.height, avg: averageColor(image, fallback) } : null;
+  };
+  const sprites: BonkArt['sprites'] = {};
+  const sprite = (id: BonkSpriteId, atlasId: string, region?: { x: number; y: number; w: number; h: number }): void => {
+    const canvas = crop(atlasId, region);
+    if (canvas) sprites[id] = canvas;
+  };
+  sprite('tree', 'tree-big');
+  sprite('pine', 'pine-m');
+  sprite('pineSmall', 'pine-s2');
+  sprite('rock1', 'rock-1');
+  sprite('rock2', 'rock-2');
+  sprite('rock3', 'rock-3');
+  sprite('bush', 'bush');
+  sprite('tall', 'tall', { x: 0, y: 16, w: 16, h: 32 });
+  sprite('flower', 'flowers-white', { x: 0, y: 0, w: 16, h: 16 });
+  sprite('stump', 'stump');
+  // Nenhuma folha da Vila tem um cristal: o orbe e o pedestal são pixel art desenhada aqui, no mesmo traço.
+  const orb = makeOrbSprite();
+  const pedestal = makePedestalSprite();
+  if (orb) sprites.orb = orb;
+  if (pedestal) sprites.pedestal = pedestal;
+  return {
+    grass: texture(grass, GRASS_A),
+    water: texture(crop('sea', 'center'), WATER_A),
+    sand: texture(crop('sand-grass', 'center'), SAND),
+    path: texture(crop('at-path', 'center'), ROAD),
+    // A peça `wall` começa com 16 px de água e grama e um acabamento: a textura usa só os tijolos.
+    wall: texture(crop('wall', { x: 18, y: 0, w: 32, h: 16 }), PALETTES.wall.side),
+    plaza: texture(crop('at-plaza', 'center'), PALETTES.ruin.side),
+    plank: texture(crop('pier-deck'), PALETTES.bridge.top),
+    sprites,
+  };
+}
+
+/**
+ * Preenche um polígono com a textura mapeada por uma transformação afim: `u` e `v` são o deslocamento na tela de um
+ * pixel da textura em cada eixo. Em pedaços pequenos (um ladrilho, um trecho de muro) a diferença para a perspectiva
+ * verdadeira não aparece.
+ */
+function fillTextured(ctx: CanvasRenderingContext2D, texture: BonkTexture, origin: Point, u: Point, v: Point, points: readonly Point[], alpha = 1): void {
+  if (alpha <= 0.02) return;
+  texture.pattern.setTransform(new DOMMatrix([u.x, u.y, v.x, v.y, origin.x, origin.y]));
+  const previous = ctx.globalAlpha;
+  ctx.globalAlpha = previous * alpha;
+  ctx.fillStyle = texture.pattern;
+  polygon(ctx, points);
+  ctx.fill();
+  ctx.globalAlpha = previous;
+}
+
+const textureFade = (depth: number): number => (1 - clamp((depth - TEXTURE_NEAR) / (TEXTURE_FAR - TEXTURE_NEAR), 0, 1)) * (1 - fogAmount(depth) * 1.2);
+
+/** Recorte da Vila em pé no mundo (como um sprite), com os pés no ponto do chão e pixel nítido. */
+function drawAtlasBillboard(view: View, image: HTMLCanvasElement, x: number, y: number, worldWidth: number, worldHeight: number, depth: number, z = 0): void {
+  const p = project(view, x, y, z);
+  if (!p) return;
+  const w = worldWidth * p.scale;
+  const h = worldHeight * p.scale;
+  if (w < 1 || h < 1) return;
+  const { ctx } = view;
+  const previous = ctx.globalAlpha;
+  ctx.globalAlpha = previous * clamp(1 - fogAmount(depth) * 0.9, 0.15, 1);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(image, Math.round(p.x - w / 2), Math.round(p.y - h), Math.round(w), Math.round(h));
+  ctx.imageSmoothingEnabled = true;
+  ctx.globalAlpha = previous;
+}
+
 /** Raios na tela de um círculo deitado no chão: na perspectiva ele vira uma elipse achatada pela distância. */
 export function bonkGroundEllipse(point: BonkProjection, worldRadius: number): { rx: number; ry: number } {
   const rx = worldRadius * point.scale;
@@ -95,11 +337,12 @@ interface View {
   forward: Point;
   focal: number;
   elapsedMs: number;
+  art: BonkArt | null;
 }
 
-function makeView(ctx: CanvasRenderingContext2D, physics: BonkPhysics, player: SurvivorPlayer, viewport: BonkViewport, elapsedMs: number): View {
+function makeView(ctx: CanvasRenderingContext2D, physics: BonkPhysics, player: SurvivorPlayer, viewport: BonkViewport, elapsedMs: number, art: BonkArt | null): View {
   return {
-    ctx, physics, player, viewport, elapsedMs,
+    ctx, physics, player, viewport, elapsedMs, art,
     camera: bonkCameraPosition(physics, player),
     forward: { x: Math.cos(physics.cameraYaw), y: Math.sin(physics.cameraYaw) },
     focal: bonkFocal(viewport),
@@ -229,19 +472,48 @@ function drawGroundTiles(view: View): void {
       const c = project(view, x + TILE, y + TILE);
       const d = project(view, x, y + TILE);
       if (!a || !b || !c || !d) continue;
-      const color = css(fogged(groundColor(cx, cy, view.elapsedMs), depth));
+      const texture = groundTexture(view.art, cx, cy);
+      const patches = texture === view.art?.grass ? clamp((valueNoise(cx / 430, cy / 430) - 0.45) * 1.6, 0, 0.55) : 0;
+      // Base lisa (cor média da textura) com contorno da mesma cor: tapa as frestas entre ladrilhos.
+      const base = texture ? mix(texture.avg, GRASS_DARK, patches) : groundColor(cx, cy, view.elapsedMs);
+      const color = css(fogged(base, depth));
       ctx.fillStyle = color;
       ctx.strokeStyle = color;
       polygon(ctx, [a, b, c, d]);
       ctx.fill();
       ctx.stroke();
+      if (!texture) continue;
+      const fade = textureFade(depth);
+      if (fade <= 0.02) continue;
+      const span = TILE / WORLD_PER_PX;
+      const u = { x: (b.x - a.x) / span, y: (b.y - a.y) / span };
+      const v = { x: (d.x - a.x) / span, y: (d.y - a.y) / span };
+      // A água corre devagar ao longo do riacho; o resto fica preso ao chão.
+      const flow = texture === view.art?.water ? (view.elapsedMs / 110) % texture.w : 0;
+      ctx.imageSmoothingEnabled = false;
+      fillTextured(ctx, texture, { x: a.x - u.x * flow, y: a.y - u.y * flow }, u, v, [a, b, c, d], fade);
+      ctx.imageSmoothingEnabled = true;
+      if (patches > 0.05) {
+        ctx.fillStyle = css(GRASS_DARK, patches * 0.55 * fade);
+        polygon(ctx, [a, b, c, d]);
+        ctx.fill();
+      }
     }
   }
 }
 
+function groundTexture(art: BonkArt | null, x: number, y: number): BonkTexture | null {
+  if (!art || !insideArena(x, y)) return null;
+  const stream = streamDistance(x, y);
+  if (stream < 0) return art.water;
+  if (stream < TILE * 0.75) return art.sand;
+  return art.grass;
+}
+
 /** Faixa contínua (estrada) ao longo de uma linha central, com bordas mais escuras. */
-function drawRibbon(view: View, points: readonly Point[], halfWidth: number, normals: readonly Point[]): void {
+function drawRibbon(view: View, points: readonly Point[], halfWidth: number, normals: readonly Point[], distances: readonly number[]): void {
   const { ctx } = view;
+  const texture = view.art?.path ?? null;
   for (let i = 0; i < points.length - 1; i++) {
     const p = points[i]!;
     const q = points[i + 1]!;
@@ -256,12 +528,24 @@ function drawRibbon(view: View, points: readonly Point[], halfWidth: number, nor
     const r2 = project(view, q.x - nq.x * halfWidth, q.y - nq.y * halfWidth);
     const r1 = project(view, p.x - np.x * halfWidth, p.y - np.y * halfWidth);
     if (!l1 || !l2 || !r1 || !r2) continue;
-    const color = css(fogged(mix(ROAD, [210, 176, 128], hash(i, 11) * 0.5), depth));
+    const color = css(fogged(texture ? texture.avg : mix(ROAD, [210, 176, 128], hash(i, 11) * 0.5), depth));
     ctx.fillStyle = color;
     ctx.strokeStyle = color;
     polygon(ctx, [l1, l2, r2, r1]);
     ctx.fill();
     ctx.stroke();
+    const fade = texture ? textureFade(depth) : 0;
+    if (texture && fade > 0.02) {
+      // Calçamento da Vila ao longo da estrada: `u` segue o trajeto (contínuo entre trechos), `v` atravessa.
+      const along = Math.hypot(q.x - p.x, q.y - p.y) / WORLD_PER_PX;
+      const across = (halfWidth * 2) / WORLD_PER_PX;
+      const u = { x: (l2.x - l1.x) / along, y: (l2.y - l1.y) / along };
+      const v = { x: (r1.x - l1.x) / across, y: (r1.y - l1.y) / across };
+      const offset = ((distances[i] ?? 0) / WORLD_PER_PX) % texture.w;
+      ctx.imageSmoothingEnabled = false;
+      fillTextured(ctx, texture, { x: l1.x - u.x * offset, y: l1.y - u.y * offset }, u, v, [l1, l2, r2, r1], fade);
+      ctx.imageSmoothingEnabled = true;
+    }
     ctx.strokeStyle = css(fogged(ROAD_EDGE, depth), 0.85);
     ctx.lineWidth = clamp(l1.y > 0 ? 6 / Math.max(1, depth / 120) : 1, 1, 4);
     ctx.beginPath(); ctx.moveTo(l1.x, l1.y); ctx.lineTo(l2.x, l2.y); ctx.moveTo(r1.x, r1.y); ctx.lineTo(r2.x, r2.y); ctx.stroke();
@@ -279,6 +563,14 @@ const MAIN_ROAD_NORMALS: readonly Point[] = MAIN_ROAD.map((_, i) => {
 });
 const CROSS_ROAD: readonly Point[] = Array.from({ length: Math.ceil(ARENA_H / ROAD_STEP) + 1 }, (_, i) => ({ x: 1440, y: i * ROAD_STEP }));
 const CROSS_ROAD_NORMALS: readonly Point[] = CROSS_ROAD.map(() => ({ x: 1, y: 0 }));
+/** Distância percorrida ao longo de cada estrada, para a textura continuar sem emenda entre os trechos. */
+function cumulative(points: readonly Point[]): number[] {
+  const out = [0];
+  for (let i = 1; i < points.length; i++) out.push(out[i - 1]! + Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.y - points[i - 1]!.y));
+  return out;
+}
+const MAIN_ROAD_DISTANCES = cumulative(MAIN_ROAD);
+const CROSS_ROAD_DISTANCES = cumulative(CROSS_ROAD);
 
 function onRoad(x: number, y: number): boolean {
   return Math.abs(y - (970 + Math.sin(x / 260) * 120)) < 92 || Math.abs(x - 1440) < 60;
@@ -287,11 +579,13 @@ function onRoad(x: number, y: number): boolean {
 /** Tufos de grama, flores e pedrinhas presos ao mundo: dão escala e sensação de movimento ao correr. */
 function drawGroundDetails(view: View): void {
   const { ctx, camera } = view;
-  const reach = 900;
+  const reach = view.art ? 1000 : 900;
   const minX = Math.max(0, Math.floor((camera.x - reach) / TILE) * TILE);
   const maxX = Math.min(ARENA_W, camera.x + reach);
   const minY = Math.max(0, Math.floor((camera.y - reach) / TILE) * TILE);
   const maxY = Math.min(ARENA_H, camera.y + reach);
+  // Os recortes em pé se sobrepõem: junta tudo e desenha do mais longe para o mais perto.
+  const items: { depth: number; draw: () => void }[] = [];
   for (let x = minX; x < maxX; x += TILE) {
     for (let y = minY; y < maxY; y += TILE) {
       const tx = x / TILE;
@@ -303,30 +597,48 @@ function drawGroundDetails(view: View): void {
         const wy = y + hash(tx + 4, ty - k * 3) * TILE;
         if (streamDistance(wx, wy) < TILE * 0.8 || onRoad(wx, wy)) continue;
         const depth = depthOf(view, wx, wy);
-        if (depth < 150 || depth > reach) continue;
+        // Colado na câmera, um tufo vira uma parede na tela: os detalhes começam um pouco antes do jogador.
+        if (depth < 215 || depth > reach) continue;
         const p = project(view, wx, wy);
-        if (!p || p.x < -20 || p.x > view.viewport.width + 20) continue;
+        if (!p || p.x < -40 || p.x > view.viewport.width + 40) continue;
         const s = p.scale;
         const alpha = 1 - fogAmount(depth);
-        if (kind > 0.94) {
-          ctx.fillStyle = css(kind > 0.97 ? [255, 214, 92] : [246, 140, 196], alpha);
-          ctx.beginPath(); ctx.arc(p.x, p.y - 2.4 * s, Math.max(1, 2.2 * s), 0, Math.PI * 2); ctx.fill();
-        } else if (kind > 0.88) {
-          ctx.fillStyle = css([150, 152, 150], alpha * 0.9);
-          ctx.beginPath(); ctx.ellipse(p.x, p.y, Math.max(1, 3.4 * s), Math.max(0.8, 1.8 * s), 0, 0, Math.PI * 2); ctx.fill();
-        } else {
-          ctx.strokeStyle = css(kind > 0.65 ? [58, 118, 56] : [136, 196, 98], alpha * 0.9);
-          ctx.lineWidth = Math.max(1, 1.1 * s);
-          ctx.beginPath();
-          for (const lean of [-1, 0, 1]) {
-            ctx.moveTo(p.x + lean * 1.6 * s, p.y);
-            ctx.lineTo(p.x + lean * 3.4 * s, p.y - (6 + (lean === 0 ? 3 : 0)) * s);
-          }
-          ctx.stroke();
+        const sprites = view.art?.sprites;
+        // Com o atlas: o mesmo mato, arbusto, pedra, flor e toco da Vila, em pé no chão.
+        const decor = !sprites ? null
+          : kind > 0.985 ? { image: sprites.stump, w: 30, h: 30 }
+            : kind > 0.95 ? { image: sprites.flower, w: 26, h: 26 }
+              : kind > 0.91 ? { image: sprites.rock1, w: 22, h: 22 }
+                : kind > 0.85 ? { image: sprites.bush, w: 34, h: 34 }
+                  : kind > 0.79 ? { image: sprites.tall, w: 18, h: 30 }
+                    : null;
+        const image = decor?.image;
+        if (decor && image) {
+          items.push({ depth, draw: () => drawAtlasBillboard(view, image, wx, wy, decor.w, decor.h, depth) });
+          continue;
         }
+        items.push({ depth, draw: () => {
+          if (kind > 0.94) {
+            ctx.fillStyle = css(kind > 0.97 ? [255, 214, 92] : [246, 140, 196], alpha);
+            ctx.beginPath(); ctx.arc(p.x, p.y - 2.4 * s, Math.max(1, 2.2 * s), 0, Math.PI * 2); ctx.fill();
+          } else if (kind > 0.88) {
+            ctx.fillStyle = css([150, 152, 150], alpha * 0.9);
+            ctx.beginPath(); ctx.ellipse(p.x, p.y, Math.max(1, 3.4 * s), Math.max(0.8, 1.8 * s), 0, 0, Math.PI * 2); ctx.fill();
+          } else {
+            ctx.strokeStyle = css(kind > 0.65 ? [58, 118, 56] : [136, 196, 98], alpha * 0.9);
+            ctx.lineWidth = Math.max(1, 1.1 * s);
+            ctx.beginPath();
+            for (const lean of [-1, 0, 1]) {
+              ctx.moveTo(p.x + lean * 1.6 * s, p.y);
+              ctx.lineTo(p.x + lean * 3.4 * s, p.y - (6 + (lean === 0 ? 3 : 0)) * s);
+            }
+            ctx.stroke();
+          }
+        } });
       }
     }
   }
+  items.sort((a, b) => b.depth - a.depth).forEach((item) => item.draw());
   ctx.lineWidth = 1;
 }
 
@@ -355,8 +667,104 @@ const FACES = [
 
 interface Box { x: number; y: number; w: number; h: number; z0: number; z1: number }
 
+/** Trechos de até 80 unidades: a transformação afim de cada um não entorta a textura na perspectiva. */
+const TEXTURE_PIECE = 80;
+
+/** Face vertical com textura da Vila, com a luz da face por cima (as folhas da Vila vêm iluminadas por igual). */
+function drawTexturedFace(view: View, texture: BonkTexture, a: Point, b: Point, z0: number, z1: number, depth: number, light: number, wpp: number): void {
+  const { ctx } = view;
+  const length = Math.hypot(b.x - a.x, b.y - a.y);
+  const pieces = Math.max(1, Math.ceil(length / TEXTURE_PIECE));
+  const fade = textureFade(depth);
+  const base = css(fogged(shade(texture.avg, light), depth));
+  for (let i = 0; i < pieces; i++) {
+    const t0 = i / pieces;
+    const t1 = (i + 1) / pieces;
+    const p0 = { x: a.x + (b.x - a.x) * t0, y: a.y + (b.y - a.y) * t0 };
+    const p1 = { x: a.x + (b.x - a.x) * t1, y: a.y + (b.y - a.y) * t1 };
+    const top0 = project(view, p0.x, p0.y, z1);
+    const top1 = project(view, p1.x, p1.y, z1);
+    const bottom0 = project(view, p0.x, p0.y, z0);
+    const bottom1 = project(view, p1.x, p1.y, z0);
+    if (!top0 || !top1 || !bottom0 || !bottom1) continue;
+    const quad = [top0, top1, bottom1, bottom0];
+    ctx.fillStyle = base;
+    ctx.strokeStyle = base;
+    polygon(ctx, quad);
+    ctx.fill();
+    ctx.stroke();
+    if (fade <= 0.02) continue;
+    const along = length / pieces / wpp;
+    const tall = (z1 - z0) / wpp;
+    const u = { x: (top1.x - top0.x) / along, y: (top1.y - top0.y) / along };
+    const v = { x: (bottom0.x - top0.x) / tall, y: (bottom0.y - top0.y) / tall };
+    const offset = ((length * t0) / wpp) % texture.w;
+    ctx.imageSmoothingEnabled = false;
+    fillTextured(ctx, texture, { x: top0.x - u.x * offset, y: top0.y - u.y * offset }, u, v, quad, fade);
+    ctx.imageSmoothingEnabled = true;
+    if (light < 0.98) {
+      ctx.fillStyle = `rgba(16, 14, 30, ${((1 - light) * 0.85 * fade).toFixed(3)})`;
+      polygon(ctx, quad);
+      ctx.fill();
+    }
+  }
+}
+
+/** Topo com textura, em trechos ao longo do lado mais comprido. `uAlongX` diz para onde corre o eixo x da textura. */
+function drawTexturedTop(view: View, texture: BonkTexture, box: Box, depth: number, wpp: number, uAlongX: boolean): void {
+  const { ctx } = view;
+  const splitX = box.w >= box.h;
+  const length = splitX ? box.w : box.h;
+  const pieces = Math.max(1, Math.ceil(length / TEXTURE_PIECE));
+  const fade = textureFade(depth);
+  const base = css(fogged(texture.avg, depth));
+  for (let i = 0; i < pieces; i++) {
+    const s0 = (length * i) / pieces;
+    const s1 = (length * (i + 1)) / pieces;
+    const x0 = splitX ? box.x + s0 : box.x;
+    const x1 = splitX ? box.x + s1 : box.x + box.w;
+    const y0 = splitX ? box.y : box.y + s0;
+    const y1 = splitX ? box.y + box.h : box.y + s1;
+    const c0 = project(view, x0, y0, box.z1);
+    const c1 = project(view, x1, y0, box.z1);
+    const c2 = project(view, x1, y1, box.z1);
+    const c3 = project(view, x0, y1, box.z1);
+    if (!c0 || !c1 || !c2 || !c3) continue;
+    const quad = [c0, c1, c2, c3];
+    ctx.fillStyle = base;
+    ctx.strokeStyle = base;
+    polygon(ctx, quad);
+    ctx.fill();
+    ctx.stroke();
+    if (fade <= 0.02) continue;
+    const xAxis = { x: (c1.x - c0.x) / ((x1 - x0) / wpp), y: (c1.y - c0.y) / ((x1 - x0) / wpp) };
+    const yAxis = { x: (c3.x - c0.x) / ((y1 - y0) / wpp), y: (c3.y - c0.y) / ((y1 - y0) / wpp) };
+    const u = uAlongX ? xAxis : yAxis;
+    const v = uAlongX ? yAxis : xAxis;
+    // O deslocamento do trecho cai no eixo da textura que corre na mesma direção do corte.
+    const shift = (s0 / wpp) % (uAlongX === splitX ? texture.w : texture.h);
+    const origin = uAlongX === splitX
+      ? { x: c0.x - u.x * shift, y: c0.y - u.y * shift }
+      : { x: c0.x - v.x * shift, y: c0.y - v.y * shift };
+    ctx.imageSmoothingEnabled = false;
+    fillTextured(ctx, texture, origin, u, v, quad, fade);
+    ctx.imageSmoothingEnabled = true;
+  }
+}
+
+interface BoxOptions {
+  top?: boolean;
+  courses?: number;
+  /** Textura das faces (da Vila); sem ela, cor lisa com fiadas desenhadas. */
+  texture?: BonkTexture | null;
+  topTexture?: BonkTexture | null;
+  /** Unidades do mundo por pixel da textura deste bloco. */
+  wpp?: number;
+  topUAlongX?: boolean;
+}
+
 /** Bloco com só as faces que encaram a câmera (antes, uma face de trás podia cobrir a da frente). */
-function drawBox(view: View, box: Box, palette: Palette, depth: number, options: { top?: boolean; courses?: number } = {}): boolean {
+function drawBox(view: View, box: Box, palette: Palette, depth: number, options: BoxOptions = {}): boolean {
   const { ctx, camera } = view;
   const corners: Point[] = [
     { x: box.x, y: box.y }, { x: box.x + box.w, y: box.y }, { x: box.x + box.w, y: box.y + box.h }, { x: box.x, y: box.y + box.h },
@@ -377,7 +785,15 @@ function drawBox(view: View, box: Box, palette: Palette, depth: number, options:
     .filter((item) => item.facing)
     .sort((p, q) => q.distance - p.distance);
   ctx.lineWidth = 1;
+  const wpp = options.wpp ?? WORLD_PER_PX;
   for (const { face } of visible) {
+    if (options.texture) {
+      drawTexturedFace(view, options.texture, corners[face.a]!, corners[face.b]!, box.z0, box.z1, depth, faceLight(face.nx, face.ny), wpp);
+      polygon(ctx, [b[face.a]!, b[face.b]!, u[face.b]!, u[face.a]!]);
+      ctx.strokeStyle = css(fogged(shade(palette.detail, 0.7), depth), 0.5);
+      ctx.stroke();
+      continue;
+    }
     ctx.fillStyle = css(fogged(shade(palette.side, faceLight(face.nx, face.ny)), depth));
     polygon(ctx, [b[face.a]!, b[face.b]!, u[face.b]!, u[face.a]!]);
     ctx.fill();
@@ -397,7 +813,12 @@ function drawBox(view: View, box: Box, palette: Palette, depth: number, options:
       ctx.stroke();
     }
   }
-  if (options.top !== false && box.z1 < BONK_CAMERA.height - 4) {
+  if (options.top !== false && box.z1 < BONK_CAMERA.height - 4 && options.topTexture) {
+    drawTexturedTop(view, options.topTexture, box, depth, wpp, options.topUAlongX ?? true);
+    polygon(ctx, u);
+    ctx.strokeStyle = css(fogged(shade(palette.detail, 0.8), depth), 0.45);
+    ctx.stroke();
+  } else if (options.top !== false && box.z1 < BONK_CAMERA.height - 4) {
     ctx.fillStyle = css(fogged(palette.top, depth));
     polygon(ctx, u);
     ctx.fill();
@@ -408,12 +829,16 @@ function drawBox(view: View, box: Box, palette: Palette, depth: number, options:
 }
 
 function drawWall(view: View, o: BonkObstacle, depth: number): void {
-  drawBox(view, { x: o.x, y: o.y, w: o.w, h: o.h, z0: 0, z1: o.height }, PALETTES.wall, depth, { courses: 21 });
+  // Muro de pedra da Vila nas faces e calçamento no topo das muretas baixas.
+  drawBox(view, { x: o.x, y: o.y, w: o.w, h: o.h, z0: 0, z1: o.height }, PALETTES.wall, depth, {
+    courses: 21, texture: view.art?.wall, topTexture: view.art?.plaza, wpp: 2.6,
+  });
 }
 
 function drawRuin(view: View, o: BonkObstacle, depth: number): void {
   const palette = PALETTES.ruin;
-  if (!drawBox(view, { x: o.x, y: o.y, w: o.w, h: o.h, z0: 0, z1: o.height * 0.82 }, palette, depth, { courses: 18 })) return;
+  const options: BoxOptions = { courses: 18, texture: view.art?.plaza, topTexture: view.art?.plaza, wpp: 2.2 };
+  if (!drawBox(view, { x: o.x, y: o.y, w: o.w, h: o.h, z0: 0, z1: o.height * 0.82 }, palette, depth, options)) return;
   // Topo quebrado: blocos soltos de alturas diferentes e musgo, para não parecer uma caixa lisa.
   const long = o.w >= o.h;
   const count = 4;
@@ -424,18 +849,20 @@ function drawRuin(view: View, o: BonkObstacle, depth: number): void {
     const block: Box = long
       ? { x: o.x + t0 * o.w + 2, y: o.y, w: size - 4, h: o.h, z0: o.height * 0.82, z1: o.height * (0.88 + hash(i, o.y) * 0.12) }
       : { x: o.x, y: o.y + t0 * o.h + 2, w: o.w, h: size - 4, z0: o.height * 0.82, z1: o.height * (0.88 + hash(i, o.x) * 0.12) };
-    drawBox(view, block, { ...palette, top: mix(palette.top, palette.detail, 0.55) }, depth);
+    drawBox(view, block, { ...palette, top: mix(palette.top, palette.detail, 0.55) }, depth, { texture: options.texture, wpp: options.wpp });
   }
 }
 
 function drawBridge(view: View, o: BonkObstacle, depth: number): void {
   const { ctx } = view;
   const palette = PALETTES.bridge;
-  if (!drawBox(view, { x: o.x, y: o.y, w: o.w, h: o.h, z0: 0, z1: o.height }, palette, depth)) return;
   const along = o.w >= o.h;
+  // Tábuas do píer da Vila atravessando a ponte (o eixo x da textura corre na largura, não no comprimento).
+  const plank = view.art?.plank ?? null;
+  if (!drawBox(view, { x: o.x, y: o.y, w: o.w, h: o.h, z0: 0, z1: o.height }, palette, depth, { topTexture: plank, topUAlongX: !along, wpp: 2.2 })) return;
   const length = along ? o.w : o.h;
   ctx.beginPath();
-  for (let s = 16; s < length; s += 16) {
+  for (let s = 16; s < length && !plank; s += 16) {
     const a = along ? project(view, o.x + s, o.y, o.height) : project(view, o.x, o.y + s, o.height);
     const b = along ? project(view, o.x + s, o.y + o.h, o.height) : project(view, o.x + o.w, o.y + s, o.height);
     if (a && b) { ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
@@ -470,6 +897,16 @@ function drawTree(view: View, o: BonkObstacle, depth: number): void {
   const cy = o.y + o.h / 2;
   const ground = project(view, cx, cy);
   if (!ground) return;
+  const sprite = o.id.startsWith('tree-east') ? view.art?.sprites.pine : view.art?.sprites.tree;
+  if (sprite) {
+    // A mesma árvore da Vila, em pé: os pés do recorte no centro da área sólida.
+    const solid = bonkGroundEllipse(ground, o.w * 0.5);
+    ctx.fillStyle = css(fogged([40, 80, 46], depth), 0.35);
+    ctx.beginPath(); ctx.ellipse(ground.x, ground.y, solid.rx, solid.ry, 0, 0, Math.PI * 2); ctx.fill();
+    const worldHeight = o.height * (sprite === view.art?.sprites.pine ? 1.1 : 1);
+    drawAtlasBillboard(view, sprite, cx, cy, worldHeight * (sprite.width / sprite.height), worldHeight, depth);
+    return;
+  }
   // Base de raízes e capim alto do tamanho da área sólida: mostra onde a árvore bloqueia.
   const base = bonkGroundEllipse(ground, o.w * 0.55);
   ctx.fillStyle = css(fogged([54, 96, 54], depth), 0.85);
@@ -501,6 +938,22 @@ function drawBoulder(view: View, o: BonkObstacle, depth: number): void {
   const { ctx } = view;
   const cx = o.x + o.w / 2;
   const cy = o.y + o.h / 2;
+  const rocks = [view.art?.sprites.rock1, view.art?.sprites.rock2, view.art?.sprites.rock3].filter((rock): rock is HTMLCanvasElement => !!rock);
+  if (rocks.length > 0) {
+    // Pedras da Vila agrupadas sobre a área sólida, na altura do obstáculo (dá para ver que se pula por cima).
+    const along = o.w >= o.h;
+    const length = along ? o.w : o.h;
+    const size = o.height * 1.3;
+    const count = Math.max(1, Math.round(length / (size * 0.8)));
+    const pieces = Array.from({ length: count }, (_, i) => {
+      const t = (i + 0.5) / count;
+      const x = along ? o.x + o.w * t : o.x + o.w / 2 + (hash(i, o.x) - 0.5) * o.w * 0.2;
+      const y = along ? o.y + o.h / 2 + (hash(i, o.y) - 0.5) * o.h * 0.2 : o.y + o.h * t;
+      return { x, y, s: size * (0.85 + hash(o.x, i) * 0.3), image: rocks[Math.floor(hash(o.y, i) * rocks.length)]!, depth: depthOf(view, x, y) };
+    }).sort((a, b) => b.depth - a.depth);
+    for (const piece of pieces) drawAtlasBillboard(view, piece.image, piece.x, piece.y, piece.s, piece.s, depth);
+    return;
+  }
   const ground = project(view, cx, cy);
   const peak = project(view, cx, cy, o.height);
   if (!ground || !peak) return;
@@ -538,8 +991,63 @@ function drawBoulder(view: View, o: BonkObstacle, depth: number): void {
   ctx.beginPath(); ctx.ellipse(ground.x - rx * 0.32, peak.y + tall * 0.3, rx * 0.26, tall * 0.13, -0.3, 0, Math.PI * 2); ctx.fill();
 }
 
+/** Cristal com arte: orbe em pixel art flutuando sobre um pedestal com runa, com brilho que pulsa e faíscas. */
+function drawFloatingOrb(view: View, o: BonkObstacle, depth: number, orb: HTMLCanvasElement, pedestal: HTMLCanvasElement): void {
+  const { ctx } = view;
+  const cx = o.x + o.w / 2;
+  const cy = o.y + o.h / 2;
+  const t = view.elapsedMs;
+  const phase = o.x * 0.013 + o.y * 0.007;
+  const pulse = 0.55 + 0.45 * Math.sin(t / 650 + phase);
+  const bob = Math.sin(t / 720 + phase) * 7;
+  const size = o.w * 1.05;
+  const floatZ = o.height * 0.5 + bob;
+  const ground = project(view, cx, cy);
+  if (!ground) return;
+  // Luz da runa no chão e a sombra do orbe, que encolhe quando ele sobe.
+  const glow = bonkGroundEllipse(ground, o.w * 1.1);
+  const light = ctx.createRadialGradient(ground.x, ground.y, 1, ground.x, ground.y, Math.max(2, glow.rx));
+  light.addColorStop(0, `rgba(196, 170, 255, ${(0.4 * pulse).toFixed(3)})`);
+  light.addColorStop(1, 'rgba(196, 170, 255, 0)');
+  ctx.fillStyle = light;
+  ctx.beginPath(); ctx.ellipse(ground.x, ground.y, glow.rx, glow.ry, 0, 0, Math.PI * 2); ctx.fill();
+  const shadow = bonkGroundEllipse(ground, size * 0.5 * (1 - bob / 40));
+  ctx.fillStyle = 'rgba(30, 16, 64, .28)';
+  ctx.beginPath(); ctx.ellipse(ground.x, ground.y, shadow.rx, shadow.ry, 0, 0, Math.PI * 2); ctx.fill();
+  drawAtlasBillboard(view, pedestal, cx, cy, o.w * 1.15, o.w * 1.15 * (pedestal.height / pedestal.width), depth);
+  const center = project(view, cx, cy, floatZ + size / 2);
+  if (center) {
+    const radius = size * center.scale;
+    const halo = ctx.createRadialGradient(center.x, center.y, radius * 0.2, center.x, center.y, radius);
+    halo.addColorStop(0, `rgba(205, 182, 255, ${(0.5 * pulse).toFixed(3)})`);
+    halo.addColorStop(1, 'rgba(205, 182, 255, 0)');
+    const previous = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(center.x, center.y, radius, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = previous;
+  }
+  drawAtlasBillboard(view, orb, cx, cy, size, size, depth, floatZ);
+  if (!center) return;
+  // Faíscas em órbita: quadradinhos de pixel, não círculos, para combinar com o recorte.
+  const pixel = Math.max(1.5, size * center.scale / 12);
+  ctx.fillStyle = `rgba(240, 232, 255, ${(0.6 + 0.4 * pulse).toFixed(3)})`;
+  for (let i = 0; i < 3; i++) {
+    const a = t / 900 + phase + (i * Math.PI * 2) / 3;
+    const sx = center.x + Math.cos(a) * size * center.scale * 0.72;
+    const sy = center.y + Math.sin(a) * size * center.scale * 0.22 - Math.sin(t / 400 + i) * pixel;
+    ctx.fillRect(Math.round(sx - pixel / 2), Math.round(sy - pixel / 2), Math.round(pixel), Math.round(pixel));
+  }
+}
+
 function drawCrystal(view: View, o: BonkObstacle, depth: number): void {
   const { ctx } = view;
+  const orb = view.art?.sprites.orb;
+  const pedestal = view.art?.sprites.pedestal;
+  if (orb && pedestal) {
+    drawFloatingOrb(view, o, depth, orb, pedestal);
+    return;
+  }
   const cx = o.x + o.w / 2;
   const cy = o.y + o.h / 2;
   const spikes = [
@@ -652,14 +1160,15 @@ export function drawBonkGround(
   player: SurvivorPlayer,
   viewport: BonkViewport,
   elapsedMs: number,
+  art: BonkArt | null = null,
 ): void {
-  const view = makeView(ctx, physics, player, viewport, elapsedMs);
+  const view = makeView(ctx, physics, player, viewport, elapsedMs, art);
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   const horizon = drawSky(view);
   drawGroundTiles(view);
-  drawRibbon(view, MAIN_ROAD, 84, MAIN_ROAD_NORMALS);
-  drawRibbon(view, CROSS_ROAD, 52, CROSS_ROAD_NORMALS);
+  drawRibbon(view, MAIN_ROAD, 84, MAIN_ROAD_NORMALS, MAIN_ROAD_DISTANCES);
+  drawRibbon(view, CROSS_ROAD, 52, CROSS_ROAD_NORMALS, CROSS_ROAD_DISTANCES);
   drawGroundDetails(view);
   ctx.fillStyle = 'rgba(18, 36, 40, .2)';
   for (const obstacle of physics.obstacles) {
@@ -685,8 +1194,9 @@ export function bonkObstacleDrawables(
   player: SurvivorPlayer,
   viewport: BonkViewport,
   elapsedMs: number,
+  art: BonkArt | null = null,
 ): BonkDrawable[] {
-  const view = makeView(ctx, physics, player, viewport, elapsedMs);
+  const view = makeView(ctx, physics, player, viewport, elapsedMs, art);
   const out: BonkDrawable[] = [];
   for (const obstacle of physics.obstacles) {
     const depth = nearestDepth(view, obstacle);
