@@ -73,6 +73,71 @@ function fill(map: VillageMap, x: number, y: number, w: number, h: number, tile:
 
 const NATURE: Tile[] = ['grass', 'tall', 'flower', 'tree', 'rock', 'bush'];
 
+/** O miolo livre de mata (cidade, ruas, parque): as árvores só começam depois dele. */
+export const CLEARING = { x0: 10, y0: 14, x1: 79, y1: 65 } as const;
+/** Largura da transição entre o miolo livre e a mata fechada das bordas do mapa. */
+const FOREST_BAND = 14;
+/** O desenho original do mapa (antes da expansão): só ali a mata é refeita; os anexos novos têm o próprio desenho. */
+const BASE_W = 96;
+const BASE_H = 72;
+
+const hash2 = (x: number, y: number, seed: number): number => {
+  let h = Math.imul(x * 374761393 + y * 668265263 + seed, 2246822519) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 3266489917) >>> 0;
+  return ((h ^ (h >>> 13)) >>> 0) / 4294967296;
+};
+
+/** Ruído suave (0 a 1) em manchas de ~`cell` blocos: dá ao bosque clareiras e adensamentos em vez de uma densidade uniforme. */
+function valueNoise(x: number, y: number, seed: number, cell: number): number {
+  const gx = Math.floor(x / cell);
+  const gy = Math.floor(y / cell);
+  const fx = x / cell - gx;
+  const fy = y / cell - gy;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const a = hash2(gx, gy, seed);
+  const b = hash2(gx + 1, gy, seed);
+  const c = hash2(gx, gy + 1, seed);
+  const d = hash2(gx + 1, gy + 1, seed);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+
+/**
+ * A mata em volta do miolo da cidade: no lugar das faixas retangulares de densidade igual (que viravam um "quadrado"
+ * de árvores no minimapa), a mata engrossa aos poucos com a distância do miolo e ganha manchas, clareiras e bordas
+ * irregulares. Só mexe em grama e árvore longe de ruas, água, prédios e áreas de trabalho, e nunca perto da borda do
+ * mapa (a floresta da borda continua fechada). Novas árvores só nascem a 3 blocos ou mais do miolo, para não tomar o
+ * lugar de móveis de quem já joga; árvores existentes mais perto podem sumir (o `sanitizeTown` cuida do resto).
+ */
+function softenForest(map: VillageMap, seed: number): void {
+  const NEAR_OK = new Set<Tile>(['grass', 'tall', 'flower', 'tree', 'rock', 'bush']);
+  const work = Object.values(WORK_AREAS);
+  const changes: [number, number, Tile][] = [];
+  for (let y = 5; y < Math.min(map.h - 5, BASE_H); y++) {
+    for (let x = 5; x < Math.min(map.w - 5, BASE_W); x++) {
+      const here = tileAt(map, x, y);
+      if (here !== 'grass' && here !== 'tree') continue;
+      const dx = Math.max(CLEARING.x0 - x, 0, x - CLEARING.x1);
+      const dy = Math.max(CLEARING.y0 - y, 0, y - CLEARING.y1);
+      const d = Math.hypot(dx, dy);
+      if (d <= 0 || d > FOREST_BAND) continue;
+      if (work.some((a) => x >= a.x - 2 && y >= a.y - 2 && x < a.x + a.w + 2 && y < a.y + a.h + 2)) continue;
+      let free = true;
+      for (let j = -2; j <= 2 && free; j++) for (let i = -2; i <= 2; i++) if (!NEAR_OK.has(tileAt(map, x + i, y + j))) { free = false; break; }
+      if (!free) continue;
+      const t = Math.min(1, Math.max(0, (d - 1.5) / (FOREST_BAND - 1.5)));
+      // A mata engrossa perto da borda de verdade do mapa (as pontas fechadas); em volta da cidade só aparecem manchas.
+      const rim = Math.max(0, 1 - (Math.min(x, y, map.w - 1 - x, map.h - 1 - y) - 5) / 9);
+      const base = Math.max(rim * 0.85, t * t * (3 - 2 * t) * 0.3);
+      const patch = 0.35 + 1.3 * valueNoise(x, y, seed ^ 0x51f0, 7);
+      const wantTree = hash2(x, y, seed ^ 0x2f6e) < Math.min(0.92, base * patch);
+      if (wantTree && here === 'grass' && d >= 3) changes.push([x, y, 'tree']);
+      else if (!wantTree && here === 'tree') changes.push([x, y, 'grass']);
+    }
+  }
+  for (const [x, y, tile] of changes) setTile(map, x, y, tile);
+}
+
 /** Uma trilha de terra (2 blocos) de (x0, y0) até (x1, y1): na horizontal, depois na vertical, só por cima da natureza. */
 function trail(map: VillageMap, x0: number, y0: number, x1: number, y1: number): void {
   for (let x = Math.min(x0, x1); x <= Math.max(x0, x1) + 1; x++) fill(map, x, y0, 1, 2, 'trail', NATURE);
@@ -80,11 +145,14 @@ function trail(map: VillageMap, x0: number, y0: number, x1: number, y1: number):
 }
 
 export function generateVillage(seed: number, w: number = MAP_W, h: number = MAP_H): VillageMap {
-  if (w > 96 && h > 72) {
-    const expanded = expandVillage(generateVillage(seed, 96, 72), w, h, seed);
-    repairLayout(expanded);
-    return expanded;
-  }
+  const map = w > 96 && h > 72 ? expandVillage(generateBase(seed, 96, 72), w, h, seed) : generateBase(seed, w, h);
+  // A mata é suavizada no mapa final (as bordas de verdade são as dele, não as do mapa antigo de 96×72).
+  softenForest(map, seed);
+  repairLayout(map);
+  return map;
+}
+
+function generateBase(seed: number, w: number, h: number): VillageMap {
   const rng = seededRng(seed);
   const map: VillageMap = { w, h, tiles: new Array<Tile>(w * h).fill('grass'), spawn: { ...TOWN.spawn }, plot: { ...TOWN.plot }, shop: { ...TOWN.shop }, buildings: buildingsFor(w, h), decor: [] };
   // Borda de floresta (3 a 4 blocos, irregular).
