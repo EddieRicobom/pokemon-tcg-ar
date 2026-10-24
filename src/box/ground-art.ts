@@ -168,11 +168,17 @@ function pathBorder(buf: PixelBuf, ox: number, oy: number, edges: number): void 
 }
 
 /** Paleta mais terrosa e tufos variados para o diorama; o estilo dos Pins permanece separado. */
+/** A arena da batalha (jardim ou Coliseu): disco limpo no meio, com as marcações do duelo. */
+function arenaLike(layout: GroundLayout): boolean {
+  return layout === 'battle' || layout === 'coliseu';
+}
+
 function paintNaturalGround(buf: PixelBuf, ox: number, oy: number, kind: GroundKind, rng: Rng, layout: GroundLayout, seed: number): void {
   const grass = 0x719653;
   const soil = 0xc5b184;
   const pathAt = (x: number, y: number) => {
     const nx = (x + .5) / buf.w * 2 - 1; const nz = (y + .5) / buf.h * 2 - 1;
+    if (layout === 'coliseu') return true;
     return layout === 'battle' ? Math.hypot(nx, nz) < .68 : gardenTrailDistance(nx, nz, seed) < .13;
   };
   for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
@@ -203,7 +209,7 @@ function finishNaturalGround(buf: PixelBuf, ox: number, oy: number, grid: Terrai
   for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
     const px = ox + x; const py = oy + y;
     const nx = (px + 0.5) / buf.w * 2 - 1; const nz = (py + 0.5) / buf.h * 2 - 1;
-    if (layout === 'battle' && Math.hypot(nx, nz) >= 1) { put(buf, px, py, 0, 0); continue; }
+    if (arenaLike(layout) && Math.hypot(nx, nz) >= 1) { put(buf, px, py, 0, 0); continue; }
     if (alphaAt(buf, px, py) === 0) continue;
     if (layout === 'garden' && grid.shape === 'square') {
       const edge = Math.min(px, py, buf.w - 1 - px, buf.h - 1 - py);
@@ -211,7 +217,7 @@ function finishNaturalGround(buf: PixelBuf, ox: number, oy: number, grid: Terrai
         const along = px < 4 || px >= buf.w - 4 ? py : px;
         put(buf, px, py, along % 13 === 0 ? 0x626b55 : edge === 0 ? 0x667456 : edge === 3 ? 0x899878 : 0xa3ad8e);
       }
-    } else if (layout === 'battle') {
+    } else if (arenaLike(layout)) {
       const radius = Math.hypot(nx, nz);
       const circle = Math.hypot(nx / 0.18, nz / 0.18);
       if (Math.abs(radius - 0.72) < 0.009 || Math.abs(circle - 1) < 0.045 || Math.abs(nz) < 0.008 && Math.abs(nx) < 0.71 && circle > 1) put(buf, px, py, 0xe8dfbc);
@@ -456,7 +462,7 @@ export function paintTerrainCell(buf: PixelBuf, grid: TerrainGrid, i: number, se
   const ox = c * TILE;
   const oy = r * TILE;
   for (let y = 0; y < TILE; y++) buf.data.fill(0, ((oy + y) * buf.w + ox) * 4, ((oy + y) * buf.w + ox + TILE) * 4);
-  if (!grid.inside[i] && layout !== 'battle') return;
+  if (!grid.inside[i] && !arenaLike(layout)) return;
   const salt = (seed * 31 + i * 2654435761) >>> 0;
   const neighbor = (dc: number, dr: number): number | null => {
     const nc = c + dc;
@@ -477,7 +483,7 @@ export function paintTerrainCell(buf: PixelBuf, grid: TerrainGrid, i: number, se
   let shape = 0;
   for (const [bit, n] of around) if (n === null || !grid.inside[n]) shape |= bit;
   if (grid.shape === 'ellipse' && layout === 'wild') fadeEdges(buf, ox, oy, shape, seededRng(salt ^ 0xabcdef));
-  else if (grid.shape === 'ellipse' && layout !== 'battle') {
+  else if (grid.shape === 'ellipse' && !arenaLike(layout)) {
     for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) if (((ox + x + .5) / buf.w * 2 - 1) ** 2 + ((oy + y + .5) / buf.h * 2 - 1) ** 2 >= 1) put(buf, ox + x, oy + y, 0, 0);
   }
   if (layout !== 'wild') finishNaturalGround(buf, ox, oy, grid, layout);

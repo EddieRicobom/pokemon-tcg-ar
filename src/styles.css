@@ -1906,6 +1906,31 @@ button.link {
   font-size: 0.95rem;
 }
 
+/* Arena 3D (palco virtual): o céu do Coliseu fica atrás do canvas transparente, no lugar do vídeo da câmera. */
+.viewport .virtual-sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #2a3d7a 0%, #6f7fc4 38%, #f0b27a 62%, #8c6a4a 100%);
+}
+
+.box-backdrop {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.box-backdrop button {
+  flex: 1;
+  min-height: 44px;
+}
+
+.box-backdrop button.active {
+  background: #ffcb05;
+  border-color: #ffcb05;
+  color: #1a1a22;
+  font-weight: 700;
+}
+
 /* Fica entre o vídeo e os sprites: escurece e ilumina o ambiente sem apagar os Pokémon. */
 .battle-env {
   position: absolute;

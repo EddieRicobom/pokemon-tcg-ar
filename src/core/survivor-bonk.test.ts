@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createSurvivorState } from './survivor';
+import { seededRng } from './battle';
+import { createSurvivorState, rollUpgrades } from './survivor';
 import { bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics, tryBonkJump } from './survivor-bonk';
 
 function player() {
@@ -7,6 +8,20 @@ function player() {
 }
 
 describe('física do modo BONK', () => {
+  it('mantém Normal e Infinito fora da variante e sem cartas de pulo', () => {
+    for (const state of [
+      createSurvivorState(11, { kindCount: 1 }),
+      createSurvivorState(12, { kindCount: 1, infinite: true }),
+    ]) {
+      expect(state.bonk).toBe(false);
+      expect(state.player.bonkMode).toBe(false);
+      const offered = Array.from({ length: 40 }, (_, seed) =>
+        rollUpgrades(seededRng(seed), 12, state.player.move, state.player),
+      ).flat();
+      expect(offered.some((upgrade) => upgrade.id.startsWith('bonk-'))).toBe(false);
+    }
+  });
+
   it('salta, cai pela gravidade e restaura o salto ao pousar', () => {
     const p = player();
     const physics = createBonkPhysics();

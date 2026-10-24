@@ -1,4 +1,5 @@
-import { stageVerticalFov } from './stage-view';
+import { stageVerticalFov, VIRTUAL_YAW_RAD, virtualHalfSize, virtualPitchRad } from './stage-view';
+import { ARENA_MAX_DISTANCE } from './arena';
 import { OrientationSource } from './orientation-source';
 import type { OrientationMode } from './orientation-source';
 import { BoxScene, DEFAULT_HALF_SIZE_M } from './box-scene';
@@ -21,8 +22,13 @@ import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 export const DEFAULT_VIDEO_VFOV_DEG = 63;
 
 export interface StartBoxOptions {
-  /** O vídeo da câmera atrás da cena (AR). Sem ele o palco é virtual: sem corte de imagem e sem luz do ambiente real. */
+  /** O vídeo da câmera atrás da cena (AR). Sem ele não há corte de imagem nem luz do ambiente real. */
   video?: HTMLVideoElement;
+  /**
+   * Palco virtual (Arena 3D, sem câmera): o cenário do Coliseu fica em volta da caixa, a visão começa de frente para a
+   * arena e só gira se o jogador arrastar; não pede nem lê os sensores. O vídeo, se vier, é ignorado.
+   */
+  virtual?: boolean;
   canvas: HTMLCanvasElement;
   container: HTMLElement;
   onModeChange?: (mode: OrientationMode) => void;
@@ -47,6 +53,8 @@ export interface RunningBox {
   setImpactEffects(on: boolean): void;
   /** Chão em pixel art e golpes que mudam o terreno. */
   setTerrain(on: boolean): void;
+  /** Muro, arquibancada e tochas do Coliseu (palco virtual); desligado fica só a areia. */
+  setScenery(on: boolean): void;
   setSocial(on: boolean): void;
   /** Clima da caixa (ciclo, fixo ou desligado). */
   setWeather(mode: WeatherMode): void;
@@ -75,10 +83,17 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     try { return createWebglBackend(options.canvas); }
     catch (error) { scene.dispose(); sound.dispose(); throw error; }
   })();
+  const virtual = options.virtual === true;
+  const video = virtual ? undefined : options.video;
   const orientation = new OrientationSource();
-  try { await orientation.requestPermission(); }
-  catch (error) { orientation.stop(); renderer.dispose(); scene.dispose(); sound.dispose(); throw error; }
-  orientation.start(options.onModeChange);
+  if (virtual) {
+    scene.setBackdrop('virtual');
+    orientation.startFixed(VIRTUAL_YAW_RAD, virtualPitchRad(DEFAULT_PHONE_HEIGHT_M, ARENA_MAX_DISTANCE), options.onModeChange);
+  } else {
+    try { await orientation.requestPermission(); }
+    catch (error) { orientation.stop(); renderer.dispose(); scene.dispose(); sound.dispose(); throw error; }
+    orientation.start(options.onModeChange);
+  }
 
   let phoneHeight = DEFAULT_PHONE_HEIGHT_M;
   let videoFov = DEFAULT_VIDEO_VFOV_DEG;
@@ -92,22 +107,25 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     const width = options.container.clientWidth;
     const height = options.container.clientHeight;
     if (width === 0 || height === 0) return;
-    scene.setView(width, height, stageVerticalFov(width, height, videoFov, options.video));
+    scene.setView(width, height, stageVerticalFov(width, height, videoFov, video));
     renderer.setSize(width, height);
   };
   const observer = new ResizeObserver(resize);
   observer.observe(options.container);
-  options.video?.addEventListener('loadedmetadata', resize);
+  video?.addEventListener('loadedmetadata', resize);
   resize();
+  // No palco virtual a arena é colocada logo ao abrir, antes do primeiro quadro: a visão inicial já precisa estar na câmera.
+  if (virtual) scene.setCameraQuaternion(orientation.read(performance.now()));
 
   // Luz do ambiente real: uma amostra minúscula do vídeo a cada meio segundo (barato) ajusta o brilho e o tom dos sprites.
-  const sampler = document.createElement('canvas');
-  sampler.width = 8;
-  sampler.height = 6;
-  const samplerCtx = sampler.getContext('2d', { willReadFrequently: true });
+  const sampler = video ? document.createElement('canvas') : null;
+  if (sampler) {
+    sampler.width = 8;
+    sampler.height = 6;
+  }
+  const samplerCtx = sampler?.getContext('2d', { willReadFrequently: true }) ?? null;
   let lastSample = 0;
   const sampleAmbient = (now: number) => {
-    const video = options.video;
     if (!video || !samplerCtx || now - lastSample < 500 || video.videoWidth === 0) return;
     lastSample = now;
     try {
@@ -167,6 +185,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setLighting: (on) => scene.setLighting(on),
     setImpactEffects: (on) => scene.setImpactEffects(on),
     setTerrain: (on) => scene.setTerrain(on),
+    setScenery: (on) => scene.setScenery(on),
     setSocial: (on) => scene.setSocial(on),
     setWeather: (mode) => scene.setWeather(mode),
     setSound: (on) => sound.setEnabled(on),
@@ -175,9 +194,11 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     stopBattle: () => scene.stopBattle(),
     recenterBattle: () => scene.recenterBattle(),
     setPhoneHeight(meters) {
-      phoneHeight = meters;
+      // No palco virtual a câmera tem uma altura só (a pose da visão e o cenário dependem dela).
+      if (!virtual) phoneHeight = meters;
     },
-    setHalfSize: (meters) => scene.setHalfSize(meters),
+    // No palco virtual a caixa tem um limite de tamanho (o cenário e a câmera fixa precisam caber).
+    setHalfSize: (meters) => scene.setHalfSize(virtual ? virtualHalfSize(meters) : meters),
     setVideoFov(deg) {
       videoFov = deg;
       resize();
@@ -189,7 +210,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
       cancelGameFrame(handle);
       observer.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
-      options.video?.removeEventListener('loadedmetadata', resize);
+      video?.removeEventListener('loadedmetadata', resize);
       orientation.stop();
       sound.dispose();
       scene.dispose();

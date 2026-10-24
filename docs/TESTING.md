@@ -65,7 +65,8 @@ Os trabalhos ativos têm cobertura em `worksites.test.ts`: concorrência com a f
 - **Bancada do scanner** (`scripts/scan-bench.eval.ts`, sem rede): roda o `ScanController` e o `RecognitionPipeline` reais com Tesseract de verdade no Node sobre a foto real `meowth-jungle-56.jpg`, em dois roteiros fixos (carta mexendo 3 quadros e depois parada; carta parada desde o 1º quadro). Imprime tempo até confirmar, passadas de OCR, referências carregadas e quadros. Catálogo e referências são de teste: **mede custo, não acerto**, e é um PC, não um celular. Para comparar antes/depois, rode o mesmo arquivo nas duas versões: `npx vitest run -c vitest.eval.config.ts scripts/scan-bench.eval.ts --silent=false`.
 - **Tempos por etapa no aparelho**: Escanear → Teste → "Mostrar o que o app está vendo" mostra o tempo de cada etapa da última leitura (e as puladas, com o motivo); Diagnóstico → "Tempo de cada etapa" mostra mediana e p90 da sessão. É o jeito de medir no celular de verdade.
 - **Verificação externa** (`external-verification.yml`): API e CDN do TCGdex (status, CORS, formato) e sprites do PokeAPI. Consulte o relatório da execução para disponibilidade e tamanho do catálogo naquele momento.
-- **Fumaça da Caixa com câmera falsa** (`e2e/caixa-batalha.mjs`, ferramenta de desenvolvimento, **não roda no CI**): `APP_URL=http://127.0.0.1:4175/pokemon-tcg-ar/ node e2e/caixa-batalha.mjs` (`BROWSER_PATH` e `SCREENSHOT_DIR` opcionais). Dois cenários em contextos descartáveis: a **batalha comum** (3 Digital Pokémon num save de teste: abre a câmera, coloca a caixa, batalha até o fim, resumo, Parar e Fechar) e a **corrida 6×6 da Arena** (`#/caixa?formatacao=1` com 6 moradores: Começar, em cena, Desistir). Exige zero erros de página. A lógica dessas sessões está em `box-battle-session.test.ts` (cena falsa, dentro do `npm test`). Não valida câmera, sensores nem GPU reais; os dados de batalha vêm da rede (sem rede, valores neutros com aviso).
+- **Hub do Coliseu** (`e2e/coliseu-hub.mjs`, ferramenta de desenvolvimento, **não roda no CI**): `APP_URL=http://127.0.0.1:4175/pokemon-tcg-ar/ node e2e/coliseu-hub.mjs` (`BROWSER_PATH` e `SCREENSHOT_DIR` opcionais). Save de teste no nível 10; pelo menu da Vila (aba «Lugares») abre o Coliseu e confere a barra de baixo (sem a aba Arena nem sub-abas, com a aba da Vila acesa nas lutas), os botões Arena 3D, Caixa em AR, Liga e PvP, entra em cada um e volta pela Caixa com «Voltar à Vila», confere a batalha na Arena 3D do Fliperama e o interruptor «Onde lutar» da Arena Digital. Não abre câmera nem WebGL. A montagem dos endereços está em `route.test.ts`.
+- **Fumaça da Caixa com câmera falsa** (`e2e/caixa-batalha.mjs`, ferramenta de desenvolvimento, **não roda no CI**): `APP_URL=http://127.0.0.1:4175/pokemon-tcg-ar/ node e2e/caixa-batalha.mjs` (`BROWSER_PATH` e `SCREENSHOT_DIR` opcionais). Três cenários em contextos descartáveis: a **Arena 3D** (`#/caixa?virtual=1`: nenhum pedido de câmera, a arena já nasce de frente, arrastar gira a visão, batalha completa, Parar, Fechar e o interruptor de volta para a câmera), a **batalha comum** (3 Digital Pokémon num save de teste: abre a câmera, coloca a caixa, batalha até o fim, resumo, Parar e Fechar) e a **corrida 6×6 da Arena** (`#/caixa?formatacao=1` com 6 moradores: Começar, em cena, Desistir). Exige zero erros de página. A lógica dessas sessões está em `box-battle-session.test.ts` (cena falsa, dentro do `npm test`). Não valida câmera, sensores nem GPU reais; os dados de batalha vêm da rede (sem rede, valores neutros com aviso).
 - **Harness do AR** (`e2e/ar-harness.html` e `.mjs`, `ar-harness-multi.*`): ferramenta de desenvolvimento, **não roda no CI**. Compila o alvo, inicia o rastreador com câmera falsa e imprime estado e leituras/s. Uso: `npx vite build -c e2e/vite.harness.config.mjs`, copiar `card.png` e `sprite.gif` para a pasta gerada, servir estaticamente e rodar `node e2e/ar-harness.mjs` com um vídeo `e2e/.tmp/cam.y4m` (feito com `ffmpeg`). Serve para comparar antes e depois de uma mudança (por exemplo, as leituras/s com e sem a normalização de contraste); roda com GL por software, então **os números não valem para celular**.
 
 ## Reconhecimento: medição sintética (2026-10-23)
@@ -99,6 +100,32 @@ Correção: grade de blocos fixos refeita por quadro (`core/village/occupancy.ts
 | 50 | novo | 11 ms | 24 ms | 1 de 3600 |
 
 O modo «antigo» já usa os buffers reaproveitados, então subestima um pouco o custo anterior. `occupancy.test.ts` compara a regra nova com a antiga em todos os blocos de um mapa com 30 moradores, e `pathing.test.ts` cobre o limite de buscas. **Não medido:** o tempo de quadro real no navegador/celular (inclui o desenho) e se o Café, os bancos e a fazenda continuam fluidos com muita gente; o desenho também pode pesar com 30 moradores.
+
+## Desempenho da Vila e da Torre em CPU lenta (2026-10-23)
+
+Medido com harnesses reais no Chromium (`e2e/village-perf.mjs` monta o `VillageGame`; `e2e/survival-perf.mjs` monta a Torre de verdade e injeta inimigos e orbes). `PERF_THROTTLE=6` limita a CPU a 1/6 para aproximar um celular de faixa média; sem isso, este PC não reproduz o engasgo. **Não é medição de celular**: a câmera, a GPU e o toque não entram.
+
+| Cena (CPU 6x) | Versão | Resultado |
+| --- | --- | --- |
+| Vila, 30 moradores | e56b1a6f (antes da correção) | 14 quadros/s; `update` com picos de 500 ms |
+| Vila, 30 moradores | 5f06aec0 (main) | `update` mediano 31 ms, quadro de 67 ms |
+| Vila, 30 moradores | atual | `update` mediano 4 ms (+ `draw` 3 ms) |
+| Vila, 50 moradores | e56b1a6f | 5 quadros/s; `update` com picos de 1.500 ms |
+| Vila, 50 moradores | atual | `update` mediano 8 ms |
+| Torre, 154 inimigos e 200 orbes | antes | 33 ms por quadro; 205 de 391 quadros acima de 33 ms |
+| Torre, 154 inimigos e 200 orbes | atual | 16,7 ms por quadro; 1 de 602 acima de 33 ms |
+| Torre, 301 inimigos e 399 orbes | antes | 50 ms por quadro (~20 fps) |
+| Torre, 301 inimigos e 399 orbes | atual | 16,7 ms por quadro (60 fps) |
+
+**Vila:** 30% do tempo estava em `blockedForResident`, que varria todos os moradores a cada bloco da busca de caminho. A grade de moradores (`core/village/occupancy.ts`, `MoverGrid`) corrige isso. O limite de buscas por quadro sozinho ajudava pouco.
+
+**Torre:** três custos. (1) O estado era um `ref` profundo, então cada campo lido ou escrito pelo motor passava por um proxy do Vue (cerca de 35% do tempo); agora o laço e o desenho trabalham no objeto cru, com um `triggerRef` por quadro. (2) `save`/`restore`/`translate` por inimigo no desenho (cerca de 14%); sem espelho, o sprite é desenhado direto na posição. (3) Inimigos e orbes fora da câmera eram desenhados; agora só o que cai na câmera (com margem de 120 unidades) é pintado. Os orbes comuns viram um único caminho. Capturas antes e depois com o mesmo estresse mostram os mesmos orbes, as mesmas barras de vida e a mesma HUD.
+
+**Paisagem da Torre:** com a câmera cheia de inimigos a paisagem ainda custava metade do quadro com CPU 12x (medido desligando-a com `?scenery=0`). Duas mudanças: o bioma passa a ser assado na camada da região (uma blitagem por região, em vez de duas) e cada blitagem cobre só o retângulo visível da câmera. Com 301 inimigos e 399 orbes a 12x: mediana de 33 ms por quadro para 16,7 ms; quadros acima de 33 ms: 210 de 420 para 62 de 537.
+
+**Não medido:** o tempo no celular de verdade; a partida normal (sem injeção, a Torre tem dezenas de inimigos, não centenas); o custo de GPU da luz dos golpes.
+
+Reproduzir: `PERF_THROTTLE=6 PERF_BASE=http://127.0.0.1:<porta> node e2e/village-perf.mjs 30 12` e `node e2e/survival-perf.mjs 150 200 10`, com um `npx vite` já rodando (a porta é a do servidor; o caminho do repositório precisa ser o do worktree que você mede).
 
 ## O que NÃO é coberto automaticamente
 

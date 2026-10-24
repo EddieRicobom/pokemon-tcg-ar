@@ -28,7 +28,10 @@ function tilePatch(id: string): { sx: number; sy: number } | null {
     : { sx: rect.x + Math.max(0, Math.floor((rect.w - 16) / 2)), sy: rect.y + Math.max(0, Math.floor((rect.h - 16) / 2)) };
 }
 
-export type SurvivorLandscapeRenderer = ((ctx: CanvasRenderingContext2D, elapsedMs: number) => void) & {
+/** Retângulo do mundo que aparece na tela (câmera); sem ele a paisagem inteira é desenhada. */
+export interface LandscapeView { x: number; y: number; w: number; h: number }
+
+export type SurvivorLandscapeRenderer = ((ctx: CanvasRenderingContext2D, elapsedMs: number, view?: LandscapeView) => void) & {
   setAtlas(image: CanvasImageSource | null): void;
 };
 
@@ -72,7 +75,6 @@ function drawBiomeOverlayLayer(ctx: CanvasRenderingContext2D, biome: typeof SURV
 /** Cacheia só a região atual e a próxima; o desenho de tiles ocorre uma vez por região, não a cada quadro. */
 export function createSurvivorLandscape(width: number, height: number): SurvivorLandscapeRenderer {
   const layers = new Map<number, HTMLCanvasElement>();
-  const overlayLayers = new Map<number, HTMLCanvasElement>();
   let atlas: CanvasImageSource | null = null;
 
   function drawAtlasTile(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, w: number, h: number, alpha = 1): boolean {
@@ -200,32 +202,34 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
         drawAtlasTile(ctx, id, x, y, 22, 15, 0.96);
       }
     }
+    // O bioma vai assado na própria camada: uma blitagem por região a cada quadro, em vez de camada + sobreposição.
+    drawBiomeOverlayLayer(ctx, SURVIVOR_BIOMES.find((biome) => biome.regionIndex === index), 0.18);
     layers.set(index, canvas);
     return canvas;
   }
 
-  function overlayLayer(index: number): HTMLCanvasElement {
-    const cached = overlayLayers.get(index);
-    if (cached) return cached;
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    drawBiomeOverlayLayer(canvas.getContext('2d')!, SURVIVOR_BIOMES.find((biome) => biome.regionIndex === index), 0.18);
-    overlayLayers.set(index, canvas);
-    return canvas;
+  /** Desenha uma camada da arena inteira, ou só o retângulo visível: o resto nunca chega à tela, e a arena tem 2880×1920. */
+  function paint(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, view: LandscapeView | undefined): void {
+    if (!view) {
+      ctx.drawImage(canvas, 0, 0);
+      return;
+    }
+    const x = Math.max(0, Math.floor(view.x));
+    const y = Math.max(0, Math.floor(view.y));
+    const right = Math.min(width, Math.ceil(view.x + view.w));
+    const bottom = Math.min(height, Math.ceil(view.y + view.h));
+    if (right <= x || bottom <= y) return;
+    ctx.drawImage(canvas, x, y, right - x, bottom - y, x, y, right - x, bottom - y);
   }
 
-  const render = ((ctx: CanvasRenderingContext2D, elapsedMs: number): void => {
+  const render = ((ctx: CanvasRenderingContext2D, elapsedMs: number, view?: LandscapeView): void => {
     const { current, next, blend } = survivorRegionAt(elapsedMs);
     for (const key of layers.keys()) if (key !== current && key !== next) layers.delete(key);
-    for (const key of overlayLayers.keys()) if (key !== current && key !== next) overlayLayers.delete(key);
     ctx.save();
-    ctx.drawImage(layer(current), 0, 0);
-    ctx.drawImage(overlayLayer(current), 0, 0);
+    paint(ctx, layer(current), view);
     if (blend > 0) {
       ctx.globalAlpha = blend;
-      ctx.drawImage(layer(next), 0, 0);
-      ctx.drawImage(overlayLayer(next), 0, 0);
+      paint(ctx, layer(next), view);
     }
     ctx.restore();
   }) as SurvivorLandscapeRenderer;
@@ -234,7 +238,6 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     if (atlas === image) return;
     atlas = image;
     layers.clear();
-    overlayLayers.clear();
   };
   return render;
 }
