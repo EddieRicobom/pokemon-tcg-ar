@@ -4,7 +4,7 @@ import MusicControls from './MusicControls.vue';
 import { MusicPlayer } from '../app/music-player';
 import { survivorAudio } from '../app/survivor-audio-settings';
 import { survivorMusicMix, survivorMusicTitle } from '../core/survivor-music';
-import { assetUrl, getCache, getDigitalSprite, getLocalVillageSprite } from '../app/services';
+import { assetUrl, getCache, getDigitalSprite, getLocalVillageSprite, getLocalVillageSpriteDirs } from '../app/services';
 import villageAtlasUrl from '../village/vila-atlas.png?url';
 import { fetchSprite } from '../ar/sprite-source';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
@@ -72,6 +72,9 @@ import { BONK_LANDING_MS, bonkInputToWorld, bonkJumpsRemaining, createBonkPhysic
 import type { BonkPhysics } from '../core/survivor-bonk';
 import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround } from '../village/survivor-bonk-landscape';
 import type { BonkArt } from '../village/survivor-bonk-landscape';
+import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
+import type { WorldToScreen } from '../village/survivor-attack-art';
+import { survivorOrbiters } from '../core/survivor-shapes';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -298,6 +301,19 @@ async function loadSpriteOrNullUncached(dexId: number): Promise<Sprite | null> {
     // sem rede: fica a forma neutra
   }
   return null;
+}
+
+/**
+ * Pose de costas (linha "up" da folha de andar local) para o BONK: a câmera fica atrás do Pokémon, então ele
+ * precisa estar de costas para a cena parecer terceira pessoa. Sem essa pose no pacote, null (fica a de frente).
+ */
+async function loadBackSpriteOrNull(dexId: number): Promise<Sprite | null> {
+  try {
+    const dirs = await getLocalVillageSpriteDirs(dexId, false, 'Walk');
+    return dirs?.up ? toSprite(dirs.up, dexId) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Moedas que a última corrida rendeu (mostradas no resumo). */
@@ -572,6 +588,8 @@ function playSound(cue: UiSound): void {
 let ctx: CanvasRenderingContext2D | null = null;
 let groundPattern: CanvasPattern | null = null;
 let playerSprite: Sprite | null = null;
+/** Só no BONK: o mesmo Pokémon de costas para a câmera (ver `loadBackSpriteOrNull`). */
+let playerBackSprite: Sprite | null = null;
 const supportSprites = new Map<number, Sprite | null>();
 const enemySprites = new Map<number, Sprite | null>();
 const enemySpriteLoads = new Map<number, Promise<void>>();
@@ -929,6 +947,16 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   drawBonkGround(c, physics, s.player, viewport, s.elapsedMs, art, nextArt, region.blend);
 
   const drawPoint = (point: { x: number; y: number }, z = 0) => projectBonkPoint(physics, s.player, { ...point, z }, viewport);
+  const toScreen: WorldToScreen = (x, y, z = 0) => {
+    const p = projectBonkPoint(physics, s.player, { x, y, z }, viewport);
+    return p ? { x: p.x, y: p.y, s: p.scale } : null;
+  };
+  const move = s.player.move;
+  const detailed = detailedSpecialEffects.value;
+  // Marcas de alcance no chão vão antes das figuras: o Pokémon e os inimigos ficam por cima delas.
+  if (move.category === 'aura') drawElementAuraField(c, s.player, move.type, toScreen, animMs, detailed);
+  else if (move.category === 'cone') drawConeGuide(c, s.player, s.player.attackRange, move.type, toScreen, 1 - s.player.attackTimerMs / Math.max(1, s.player.attackCooldownMs));
+  else if (move.category === 'orbit') drawOrbitPath(c, s.player, move.type, toScreen);
   // Tudo que tem altura entra numa só ordenação: obstáculo na frente cobre o inimigo atrás, e vice-versa.
   const figures = bonkObstacleDrawables(c, physics, s.player, viewport, s.elapsedMs, art, nextArt, region.blend);
   for (const orb of s.orbs) {
@@ -1002,24 +1030,26 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.lineWidth = Math.max(1.5, playerGround.scale * 0.9);
       c.beginPath(); c.ellipse(playerGround.x, playerGround.y, ring.rx, ring.ry, 0, 0, Math.PI * 2); c.stroke();
       c.restore();
-      drawBonkBillboard(playerSprite, playerPoint.x, playerPoint.y, scale, bonkFacing < 0,
+      drawBonkBillboard(playerBackSprite ?? playerSprite, playerPoint.x, playerPoint.y, scale, bonkFacing < 0,
         s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0 ? 0.45 : 1,
         { x: playerGround.x, y: playerGround.y, rx: shadow.rx, ry: shadow.ry }, squash);
     } });
   }
+  if (move.category === 'orbit') {
+    // Cada orbital entra na ordenação: o que passa atrás do Pokémon some atrás dele, o da frente cobre.
+    survivorOrbiters(s.player).forEach((orbiter, index) => {
+      const p = drawPoint(orbiter, 12);
+      if (p) figures.push({ depth: p.depth, draw: () => drawElementOrbiter(c, s.player, move.type, toScreen, index, animMs, detailed) });
+    });
+  }
   figures.sort((a, b) => b.depth - a.depth).forEach((figure) => figure.draw());
 
   for (const projectile of s.projectiles) {
-    const p = drawPoint(projectile, 18);
-    if (!p) continue;
-    const radius = clamp((projectile.size ?? 4) * p.scale * 0.55, 1.5, 10);
-    const color = projectile.move?.color ?? s.player.move.color;
-    c.save();
-    c.fillStyle = color;
-    c.shadowColor = color;
-    c.shadowBlur = radius * 3;
-    c.beginPath(); c.arc(p.x, p.y, radius, 0, Math.PI * 2); c.fill();
-    c.restore();
+    const head = toScreen(projectile.x, projectile.y, 18);
+    const tail = toScreen(projectile.x - projectile.vx * 0.05, projectile.y - projectile.vy * 0.05, 18);
+    if (!head || !tail) continue;
+    const support = projectile.source === 'support';
+    drawElementProjectile(c, projectile.move?.type ?? move.type, head, tail, clamp((projectile.size ?? 4) * head.s * 0.7, 1.5, 12), support ? 0.75 : 1, animMs, detailed && !support, projectile.id);
   }
   for (const projectile of s.hostileProjectiles) {
     const p = drawPoint(projectile, 16);
@@ -1028,6 +1058,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     c.beginPath(); c.arc(p.x, p.y, clamp(projectile.size * p.scale * 0.65, 1.5, 10), 0, Math.PI * 2); c.fill();
   }
   for (const fx of s.fx) {
+    if (drawElementFx(c, fx, toScreen, animMs, detailed)) continue;
     if (fx.kind !== 'blast' && fx.kind !== 'pulse') continue;
     const p = drawPoint(fx);
     if (!p) continue;
@@ -1040,7 +1071,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     c.beginPath(); c.ellipse(p.x, p.y, size.rx, size.ry, 0, 0, Math.PI * 2); c.stroke();
     c.restore();
   }
-  if (playerGround && (s.player.move.category === 'aura' || s.player.move.category === 'orbit' || s.special.activeMs > 0)) {
+  if (playerGround && s.special.activeMs > 0) {
     const ring = bonkGroundEllipse(playerGround, Math.max(20, s.player.attackRadius * 0.8));
     c.save();
     c.strokeStyle = s.player.move.color;
@@ -1173,21 +1204,13 @@ function draw(): void {
   ctx.fillStyle = '#ffe066';
 
   const move = s.player.move;
-  // Aura: o raio fica sempre marcado de leve em volta do Pokémon, para dar para ver até onde o golpe chega.
-  if (move.category === 'aura' || move.category === 'orbit') {
-    ctx.save();
-    ctx.globalAlpha = 0.16;
-    ctx.fillStyle = move.color;
-    ctx.beginPath();
-    ctx.arc(s.player.x, s.player.y - 8, s.player.attackRadius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 0.45;
-    ctx.strokeStyle = move.color;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 5]);
-    ctx.stroke();
-    ctx.restore();
-  }
+  const detailed = detailedSpecialEffects.value;
+  // Vista de cima: a altura (z) de um efeito só o sobe na tela.
+  const flat: WorldToScreen = (x, y, z = 0) => ({ x, y: y - z, s: 1 });
+  // O alcance fica sempre marcado de leve: o anel da aura, o leque do cone e a trilha da órbita.
+  if (move.category === 'aura') drawElementAuraField(ctx, s.player, move.type, flat, animMs, detailed);
+  else if (move.category === 'cone') drawConeGuide(ctx, s.player, s.player.attackRange, move.type, flat, 1 - s.player.attackTimerMs / Math.max(1, s.player.attackCooldownMs));
+  else if (move.category === 'orbit') drawOrbitPath(ctx, s.player, move.type, flat);
 
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
@@ -1202,31 +1225,22 @@ function draw(): void {
     ctx.restore();
   }
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
+  // Orbitais acima do Pokémon na tela passam por trás dele; os de baixo, pela frente.
+  const orbiters = move.category === 'orbit' ? survivorOrbiters(s.player) : [];
+  orbiters.forEach((orbiter, index) => { if (orbiter.y < s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
   if (!blink) drawSprite(playerSprite, s.player.x, s.player.y, s.player.facing < 0, 1);
+  orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
   drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
 
   for (const proj of s.projectiles) {
-    const r = proj.size ?? 4;
+    if (proj.x < left || proj.x > right || proj.y < top || proj.y > bottom) continue;
     // O dano direto já cai com a distância; a apresentação acompanha a mesma curva
     // para o jogador perceber quando um disparo está fora do alcance ideal.
-    const distance = Math.hypot(proj.x - s.player.x, proj.y - s.player.y);
-    const distanceOpacity = survivorProjectileOpacity(distance);
-    ctx.save();
-    ctx.globalAlpha = (proj.source === 'support' ? 0.22 : 0.35) * distanceOpacity;
-    ctx.fillStyle = proj.move?.color ?? move.color;
-    ctx.beginPath();
-    ctx.arc(proj.x, proj.y, r * 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = (proj.source === 'support' ? 0.72 : 1) * distanceOpacity;
-    ctx.beginPath();
-    ctx.arc(proj.x, proj.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = distanceOpacity;
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.beginPath();
-    ctx.arc(proj.x, proj.y, r * 0.45, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    const distanceOpacity = survivorProjectileOpacity(Math.hypot(proj.x - s.player.x, proj.y - s.player.y));
+    const type = proj.move?.type ?? move.type;
+    const support = proj.source === 'support';
+    drawElementProjectile(ctx, type, { x: proj.x, y: proj.y, s: 1 }, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05, s: 1 },
+      (proj.size ?? 4) * (support ? 0.85 : 1), (support ? 0.72 : 1) * distanceOpacity, animMs, detailed && !support, proj.id);
   }
 
   for (const proj of s.hostileProjectiles) {
@@ -1303,8 +1317,12 @@ function draw(): void {
     ctx.restore();
   }
 
-  // Pulsos da aura, explosões da área e o brilho da evolução.
-  if (!effectiveVisual.value.rotomMode) for (const f of s.fx) {
+  // Golpes com a arte do elemento (aura, área, cone, toques da órbita) e, no fim, as marcas genéricas.
+  // No Modo Rotom só o leque do cone continua (é ele que mostra para onde o golpe saiu), em versão leve.
+  for (const f of s.fx) {
+    if (effectiveVisual.value.rotomMode && f.kind !== 'cone') continue;
+    if (drawElementFx(ctx, f, flat, animMs, detailed)) continue;
+    if (effectiveVisual.value.rotomMode) continue;
     const t = clamp(f.ageMs / f.lifeMs, 0, 1);
     ctx.save();
     if (f.kind === 'pulse') {
@@ -1478,7 +1496,7 @@ function loop(ts: number): void {
     // No BONK o analógico é relativo à câmera: para cima avança para onde ela olha, os lados andam de lado e giram.
     const move = bonkRun.value && bonkPhysics.value ? bonkInputToWorld(bonkPhysics.value, dx, dy) : { dx, dy };
     if (bonkRun.value && Math.abs(dx) > 0.15) bonkFacing = dx < 0 ? -1 : 1;
-    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s) }, dt);
+    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, dt);
     specialQueued = false;
     if (bonkRun.value && bonkPhysics.value && beforeBonkPosition) {
       stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, dt);
@@ -1581,9 +1599,10 @@ function togglePause(): void {
 /** Troca o sprite pela nova forma; o jogo espera (com o brilho) até carregar. Sem sprite, a forma neutra no lugar. */
 async function evolveTo(dexId: number, name: string): Promise<void> {
   evolving.value = `${avatarName.value} evoluiu para ${name}!`;
-  const [sprite] = await Promise.all([loadSpriteOrNull(dexId), new Promise((r) => setTimeout(r, 900))]);
+  const [sprite, back] = await Promise.all([loadSpriteOrNull(dexId), bonkRun.value ? loadBackSpriteOrNull(dexId) : Promise.resolve(null), new Promise((r) => setTimeout(r, 900))]);
   if (disposed) return;
   playerSprite = sprite;
+  playerBackSprite = back;
   avatarName.value = name;
   evolving.value = null;
   lastTs = performance.now();
@@ -1679,14 +1698,16 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     enemySprites.clear();
     enemySpriteLoads.clear();
     requestedEnemyRegions.clear();
-    const [player, ...supports] = await Promise.all([
+    const [player, back, ...supports] = await Promise.all([
       loadSpriteOrNull(dexId),
+      bonk ? loadBackSpriteOrNull(dexId) : Promise.resolve(null),
       ...supportCandidates.map((candidate) => loadSpriteOrNull(candidate.dexId)),
       preloadEnemyRegion(survivorRegionAt(0).current),
     ]);
     playerSprite = player;
+    playerBackSprite = back as Sprite | null;
     supportSprites.clear();
-    supportCandidates.forEach((candidate, index) => supportSprites.set(candidate.dexId, supports[index] ?? null));
+    supportCandidates.forEach((candidate, index) => supportSprites.set(candidate.dexId, (supports[index] as Sprite | null | undefined) ?? null));
     missingEnemySprites.value = REGIONAL_ENEMY_SPRITES.filter((id) => enemySprites.get(id) === null).length;
 
     if (disposed) return;
@@ -1910,6 +1931,7 @@ onBeforeUnmount(() => {
         ref="stageEl"
         class="survivor-stage"
         :class="{ 'survivor-stage-picker': pickOptions }"
+        :style="{ '--move': state?.player.move.color ?? '#ffd84a' }"
         @pointerdown="joyDown"
         @pointermove="joyMove"
         @pointerup="joyUp"
@@ -2144,12 +2166,12 @@ onBeforeUnmount(() => {
             <p class="guardian-title">{{ guardian.name }}{{ guardian.mythical ? ' · mítico' : ' · lendário' }}</p>
             <h2>{{ state.special.phase === 'arrival' ? 'Uma presença elemental…' : `Orbe do tipo ${TYPE_LABELS_PT[state.special.type]}` }}</h2>
             <p role="status">{{ state.special.phase === 'arrival' ? 'O guardião entrega uma orbe para o seu Pokémon.' : 'Escolha um especial para esta corrida. O combate está pausado.' }}</p>
-            <template v-if="state.special.phase === 'choice'">
+            <div v-if="state.special.phase === 'choice'" class="survivor-choice-list">
               <button v-for="(definition, id) in SURVIVOR_SPECIALS" :key="id" type="button" class="survivor-upgrade-btn" @click="chooseSpecial(id)">
                 <span class="survivor-upgrade-icon" aria-hidden="true">{{ definition.icon }}</span>
                 <span class="survivor-upgrade-text"><strong>{{ definition.name }}</strong><small>{{ definition.description }}</small></span>
               </button>
-            </template>
+            </div>
           </div>
         </div>
 
@@ -2163,34 +2185,38 @@ onBeforeUnmount(() => {
             <p class="guardian-title">{{ guardian.name }} · segundo presságio</p>
             <h2>{{ state.special.phase === 'branch-arrival' ? 'O especial encontrou dois novos caminhos…' : 'Escolha uma das duas ramificações' }}</h2>
             <p role="status">{{ state.special.phase === 'branch-arrival' ? 'Aos 7 minutos, o Especial escolhido aos 3 minutos oferece duas opções próprias.' : 'Escolha uma das duas opções do seu Especial. A batalha está pausada.' }}</p>
-            <template v-if="state.special.phase === 'branch-choice'">
+            <div v-if="state.special.phase === 'branch-choice'" class="survivor-choice-list">
               <button v-for="option in specialBranchOptions" :key="option.id" type="button" class="survivor-upgrade-btn" @click="chooseSpecialBranch(option.id)">
                 <span class="survivor-upgrade-icon" aria-hidden="true">{{ option.icon }}</span>
                 <span class="survivor-upgrade-text"><strong>{{ option.name }}</strong><small>{{ option.description }}</small></span>
               </button>
-            </template>
+            </div>
           </div>
         </div>
 
         <div v-if="pendingUpgrade" class="survivor-overlay" role="dialog" aria-label="Escolha um upgrade">
-          <div class="card survivor-upgrades">
+          <div class="card survivor-upgrades survivor-levelup">
+            <p class="survivor-kicker">Nível {{ state?.player.level }}</p>
             <h2>Subiu de nível!</h2>
             <p class="survivor-rarity-hint">Cada carta tem uma raridade e um efeito próprio. O Especial continua disponível após o encontro com o guardião.</p>
             <details class="survivor-rarity-guide">
               <summary>Como funcionam as raridades</summary>
-              <p>Pesos relativos entre cartas disponíveis: Poké Ball 74, Great Ball 18, Ultra Ball 6 e Master Ball 2. As chances mudam quando uma faixa ainda não está liberada ou acaba.</p>
+              <p>Pesos relativos entre cartas disponíveis: Poké Ball {{ SURVIVOR_UPGRADE_RARITIES.normal.weight }}, Great Ball {{ SURVIVOR_UPGRADE_RARITIES.raro.weight }}, Ultra Ball {{ SURVIVOR_UPGRADE_RARITIES.lendario.weight }} e Master Ball {{ SURVIVOR_UPGRADE_RARITIES.ancestral.weight }}. As chances mudam quando uma faixa ainda não está liberada ou acaba.</p>
               <p>Great Ball: nível 3 · Ultra Ball: nível 8 · Master Ball: nível 12. Só uma carta Master Ball pode ser escolhida por corrida.</p>
             </details>
-            <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" @click="chooseUpgrade(u.id)">
-              <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u) }}</span>
-              <span class="survivor-upgrade-text">
-                <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
-                  <img class="survivor-rarity-ball" :src="RARITY_BALL_IMAGE[u.rarity]" :alt="SURVIVOR_UPGRADE_RARITIES[u.rarity].label" />
+            <div class="survivor-choice-list">
+              <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" @click="chooseUpgrade(u.id)">
+                <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u) }}</span>
+                <span class="survivor-upgrade-text">
+                  <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
+                    <img class="survivor-rarity-ball" :src="RARITY_BALL_IMAGE[u.rarity]" alt="" />
+                    <span>{{ SURVIVOR_UPGRADE_RARITIES[u.rarity].label }}</span>
+                  </span>
+                  <span v-if="u.family" class="survivor-upgrade-family">{{ SURVIVOR_UPGRADE_FAMILIES[u.family].icon }} {{ SURVIVOR_UPGRADE_FAMILIES[u.family].label }}</span>
+                  <strong>{{ u.name }}</strong><small>{{ u.description }}</small>
                 </span>
-                <span v-if="u.family" class="survivor-upgrade-family">{{ SURVIVOR_UPGRADE_FAMILIES[u.family].icon }} {{ SURVIVOR_UPGRADE_FAMILIES[u.family].label }}</span>
-                <strong>{{ u.name }}</strong><small>{{ u.description }}</small>
-              </span>
-            </button>
+              </button>
+            </div>
             <button v-if="availableUpgradeRerolls > 0" type="button" class="survivor-jirachi-reroll" @click="rerollUpgradeSelection">
               <span class="survivor-upgrade-icon" aria-hidden="true">⭐</span>
               <span><strong>Desejo de Jirachi · Rerrolar</strong><small>{{ availableUpgradeRerolls }} desejo(s) restante(s). Cartas normais são trocadas; se todas forem Great Ball ou melhor, uma nova raridade superior é garantida quando já estiver liberada.</small></span>

@@ -117,7 +117,7 @@ export const CATEGORY_BASE: Record<MoveCategory, CategoryBase> = {
   projetil: { damage: 10, cooldownMs: 600, range: 170, radius: 0 },
   aura: { damage: 5, cooldownMs: 420, range: 0, radius: 62 },
   area: { damage: 15, cooldownMs: 1100, range: 190, radius: 48 },
-  cone: { damage: 11, cooldownMs: 720, range: 140, radius: 0 },
+  cone: { damage: 11, cooldownMs: 720, range: 185, radius: 0 },
   orbit: { damage: 7, cooldownMs: 520, range: 0, radius: 82 },
 };
 

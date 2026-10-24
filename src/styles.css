@@ -7299,6 +7299,204 @@ body.no-scroll .reward-toasts {
   margin: 0;
 }
 
+/* ---------------------------------------------------------------- Torre: linguagem visual
+   Painéis de jogo escuros e consistentes (escolha, nível, especial, pausa, fim), com a cor do elemento de quem joga
+   (`--move`, definida no palco) como destaque. Antes, cada diálogo misturava cartão escuro do app com botões
+   claros; agora o texto claro vale para tudo dentro da Torre. */
+.survivor-stage {
+  --sv-panel: linear-gradient(165deg, #1e2948 0%, #141b31 55%, #0f1527 100%);
+  --sv-tile: linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .025));
+  --sv-line: rgba(255, 255, 255, .13);
+  --sv-text: #eef2ff;
+  --sv-muted: #aeb8d8;
+  --sv-glow: color-mix(in srgb, var(--move, #ffd84a) 45%, transparent);
+}
+.survivor-overlay {
+  background: radial-gradient(circle at 50% 30%, rgba(26, 38, 70, .74), rgba(5, 8, 17, .9));
+}
+.survivor-overlay > .card {
+  position: relative;
+  border: 1px solid var(--sv-line);
+  border-top: 3px solid var(--move, #ffd84a);
+  border-radius: 20px;
+  background: var(--sv-panel);
+  color: var(--sv-text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .35), inset 0 1px rgba(255, 255, 255, .08);
+}
+.survivor-overlay > .card h2 {
+  margin: 2px 0 8px;
+  font-size: 1.35rem;
+  letter-spacing: .01em;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .35);
+}
+.survivor-overlay > .card .note,
+.survivor-overlay > .card .hint,
+.survivor-overlay > .card > p { color: var(--sv-muted); }
+.survivor-overlay > .card .survivor-kicker {
+  margin: 0;
+  color: var(--move, #ffd84a);
+  font-size: .68rem;
+  font-weight: 850;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+/* Cartas de escolha (nível, especial, ramificação): a mesma peça em retrato (lista) e paisagem (lado a lado). */
+.survivor-choice-list { display: grid; gap: 8px; margin-top: 8px; }
+.survivor-overlay .survivor-upgrade-btn {
+  position: relative;
+  margin-top: 0;
+  overflow: hidden;
+  border: 1px solid var(--sv-line);
+  border-radius: 14px;
+  background: var(--sv-tile), #172038;
+  color: var(--sv-text);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .06), 0 3px 0 rgba(0, 0, 0, .3);
+  transition: transform .12s ease-out, border-color .12s, box-shadow .12s;
+}
+.survivor-overlay .survivor-upgrade-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--rarity, var(--move, #ffd84a));
+  opacity: .9;
+}
+.survivor-overlay .survivor-upgrade-btn:hover,
+.survivor-overlay .survivor-upgrade-btn:focus-visible {
+  border-color: var(--rarity, var(--move, #ffd84a));
+  box-shadow: 0 0 0 1px var(--rarity, var(--move, #ffd84a)), 0 6px 18px color-mix(in srgb, var(--rarity, var(--move, #ffd84a)) 30%, transparent);
+  transform: translateY(-2px);
+  filter: none;
+}
+.survivor-overlay .survivor-upgrade-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.survivor-overlay .survivor-upgrade-btn small { color: #c7cfe8; line-height: 1.35; }
+.survivor-overlay .survivor-upgrade-btn strong { font-size: .95rem; }
+.survivor-overlay .survivor-upgrade-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--rarity, var(--move, #ffd84a)) 18%, rgba(0, 0, 0, .25));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rarity, var(--move, #ffd84a)) 40%, transparent);
+  font-size: 1.25rem;
+}
+.survivor-overlay .survivor-upgrade-btn.rarity-normal,
+.survivor-overlay .survivor-upgrade-btn.rarity-raro,
+.survivor-overlay .survivor-upgrade-btn.rarity-lendario,
+.survivor-overlay .survivor-upgrade-btn.rarity-ancestral { border-left-width: 1px; }
+.survivor-overlay .survivor-upgrade-btn.rarity-normal { --rarity: #98a5c2; }
+.survivor-overlay .survivor-upgrade-btn.rarity-raro { --rarity: #4fa8ff; background: linear-gradient(180deg, rgba(79, 168, 255, .16), rgba(79, 168, 255, .03)), #172038; }
+.survivor-overlay .survivor-upgrade-btn.rarity-lendario { --rarity: #c08bff; background: linear-gradient(180deg, rgba(192, 139, 255, .2), rgba(192, 139, 255, .04)), #1a1a3a; }
+.survivor-overlay .survivor-upgrade-btn.rarity-ancestral { --rarity: #ffc23d; background: linear-gradient(180deg, rgba(255, 194, 61, .22), rgba(255, 194, 61, .05)), #241f2c; box-shadow: 0 0 0 1px rgba(255, 194, 61, .45), 0 0 22px rgba(255, 194, 61, .18); }
+.survivor-overlay .survivor-upgrade-btn.evolve { --rarity: #ffe066; border-color: rgba(255, 224, 102, .7); background: linear-gradient(135deg, rgba(255, 224, 102, .24), rgba(255, 255, 255, .03)), #1d2236; }
+.survivor-overlay .survivor-upgrade-btn .survivor-rarity-label { gap: 6px; min-height: 24px; color: var(--rarity, #c7cfe8); font-size: .66rem; letter-spacing: .06em; text-transform: uppercase; }
+.survivor-overlay .survivor-rarity-ball { width: 22px; height: 22px; }
+.survivor-overlay .survivor-upgrade-family { background: rgba(255, 255, 255, .09); color: #dfe5f7; }
+.survivor-overlay .survivor-rarity-hint { color: var(--sv-muted); }
+.survivor-overlay .survivor-rarity-guide { border-color: var(--sv-line); background: rgba(0, 0, 0, .18); color: var(--sv-muted); }
+.survivor-overlay .survivor-jirachi-reroll { border-color: rgba(214, 156, 255, .55); background: linear-gradient(135deg, rgba(190, 120, 255, .22), rgba(255, 255, 255, .03)), #1c1a38; color: #f1e4ff; }
+.survivor-overlay .survivor-jirachi-reroll small { color: #d6c6ea; }
+
+/* Seleção do Pokémon e dos modos. */
+.survivor-overlay .survivor-pick-btn {
+  border: 1px solid var(--sv-line);
+  border-radius: 14px;
+  background: var(--sv-tile), #172038;
+  color: var(--sv-text);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .06), 0 3px 0 rgba(0, 0, 0, .3);
+  transition: transform .12s ease-out, border-color .12s;
+}
+.survivor-overlay .survivor-pick-btn:hover,
+.survivor-overlay .survivor-pick-btn:focus-visible { border-color: var(--move, #ffd84a); transform: translateY(-2px); }
+.survivor-overlay .survivor-pick-btn small,
+.survivor-overlay .survivor-pick-kind,
+.survivor-overlay .survivor-pick-bar { color: #b9c3e0; }
+.survivor-overlay .survivor-pick-move { color: #fff; }
+.survivor-overlay .survivor-pick-bar i { background: rgba(255, 255, 255, .1); }
+.survivor-overlay .survivor-pick-thumb { filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .45)); }
+.survivor-overlay .survivor-pick-thumb.placeholder { background: rgba(255, 255, 255, .06); color: #8d97b5; }
+.survivor-overlay .survivor-favorite { background: rgba(255, 255, 255, .1); color: #ffd84a; }
+.survivor-overlay .survivor-mode button { border-color: var(--sv-line); background: rgba(255, 255, 255, .05); color: var(--sv-text); }
+.survivor-overlay .survivor-mode button small { color: var(--sv-muted); }
+.survivor-overlay .survivor-mode button.active { border-color: #ffd84a; background: rgba(255, 216, 74, .16); box-shadow: 0 0 0 1px rgba(255, 216, 74, .45); }
+.survivor-overlay .survivor-mode-bonk .bonk-mode-button { border-color: #a681e2; background: linear-gradient(135deg, #263d75, #7d4faf); color: #fff; }
+.survivor-overlay .survivor-mode-bonk .bonk-mode-button.active { border-color: #fff0a8; background: linear-gradient(135deg, #4d80d6, #b16be0); }
+.survivor-overlay .survivor-mode-bonk .bonk-mode-button small { color: #e8dcff; }
+
+/* Fim de corrida. */
+.survivor-overlay .survivor-summary-grid div { border: 1px solid var(--sv-line); background: rgba(255, 255, 255, .05); }
+.survivor-overlay .survivor-summary-grid strong { font-size: 1.1rem; color: #fff; }
+.survivor-overlay .survivor-summary-grid small { color: var(--sv-muted); }
+.survivor-overlay .survivor-coins { color: #ffd84a; }
+.survivor-overlay .survivor-cleared { color: #ffd98a; }
+.survivor-overlay .survivor-cleared small { color: var(--sv-muted); }
+.survivor-overlay .survivor-feedback,
+.survivor-overlay .survivor-feedback-result { border-color: var(--sv-line); background: rgba(0, 0, 0, .2); color: var(--sv-text); }
+.survivor-overlay .survivor-feedback .note,
+.survivor-overlay .survivor-feedback-result .note,
+.survivor-overlay .survivor-rating-legend { color: var(--sv-muted); }
+.survivor-overlay .survivor-rating button { border-color: var(--sv-line); background: rgba(255, 255, 255, .06); color: var(--sv-text); }
+.survivor-overlay .survivor-rating button.selected { border-color: #ffd84a; background: rgba(255, 216, 74, .2); box-shadow: none; }
+.survivor-overlay .survivor-feedback-comment textarea,
+.survivor-overlay .survivor-feedback-code { border-color: var(--sv-line); background: rgba(0, 0, 0, .25); color: var(--sv-text); }
+.survivor-overlay .survivor-feedback-error { color: #ff9a9a; }
+
+/* HUD: vidro escuro, barra de vida com brilho e o golpe destacado na cor do elemento. */
+.survivor-hp {
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, .26);
+  background: rgba(8, 12, 22, .72);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35), inset 0 1px 2px rgba(0, 0, 0, .5);
+}
+.survivor-hp-fill { background: linear-gradient(180deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, 0) 55%), linear-gradient(90deg, #4fd27a, #b6ef5c); }
+.survivor-hp:not(.low) .survivor-hp-fill { box-shadow: 0 0 10px rgba(110, 230, 120, .35); }
+.survivor-hp.low .survivor-hp-fill { background: linear-gradient(180deg, rgba(255, 255, 255, .25), rgba(255, 255, 255, 0) 55%), linear-gradient(90deg, #ff3b3b, #ff8a5a); }
+.survivor-hp span { font-weight: 750; }
+.survivor-xp-fill { box-shadow: 0 0 8px rgba(120, 170, 255, .55); }
+.survivor-stats .chip { background: rgba(8, 12, 22, .66); border-color: rgba(255, 255, 255, .16); box-shadow: 0 1px 4px rgba(0, 0, 0, .3); }
+.survivor-stats .survivor-move-chip { border-color: var(--move, rgba(255, 255, 255, .18)); background: linear-gradient(90deg, color-mix(in srgb, var(--move, #fff) 26%, rgba(8, 12, 22, .75)), rgba(8, 12, 22, .7)); box-shadow: 0 0 10px color-mix(in srgb, var(--move, #fff) 22%, transparent); }
+.survivor-minimap { border-color: rgba(255, 255, 255, .3); border-radius: 10px; background: rgba(8, 12, 22, .7); }
+.survivor-special-button.is-ready { box-shadow: 0 4px 0 #0a0f1b, 0 0 18px var(--sv-glow), 0 5px 18px #0008; }
+
+@media (orientation: landscape) {
+  /* Paisagem: as cartas ficam lado a lado, como uma mão de cartas, em vez de uma lista comprida. */
+  .survivor-overlay > .survivor-upgrades { max-width: min(980px, calc(100% - 24px)); }
+  .survivor-guardian > .card { width: min(100%, 820px); max-width: min(820px, calc(100% - 24px)); }
+  .survivor-choice-list { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 10px; margin-top: 10px; }
+  .survivor-choice-list .survivor-upgrade-btn {
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+    padding: 14px 10px 12px;
+    text-align: center;
+  }
+  .survivor-choice-list .survivor-upgrade-text { align-items: center; }
+  .survivor-choice-list .survivor-upgrade-icon { width: 46px; height: 46px; font-size: 1.5rem; }
+  .survivor-overlay > .survivor-pick { max-width: min(980px, calc(100% - 24px)); }
+  .survivor-pick-grid { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
+  .survivor-type-choice .survivor-pick-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .survivor-overlay > .survivor-pause { max-width: min(460px, calc(100% - 24px)); }
+}
+@media (orientation: landscape) and (max-height: 540px) {
+  .survivor-overlay > .card h2 { font-size: 1.1rem; margin-bottom: 4px; }
+  .survivor-levelup .survivor-rarity-hint { margin: 0 0 4px; font-size: .68rem; }
+  .survivor-choice-list { gap: 8px; margin-top: 6px; }
+  .survivor-choice-list .survivor-upgrade-btn { gap: 4px; padding: 10px 8px 9px; }
+  .survivor-choice-list .survivor-upgrade-icon { width: 36px; height: 36px; font-size: 1.2rem; }
+  .survivor-choice-list .survivor-upgrade-btn strong { font-size: .82rem; }
+  .survivor-choice-list .survivor-upgrade-btn small { font-size: .68rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .survivor-overlay .survivor-upgrade-btn,
+  .survivor-overlay .survivor-pick-btn { transition: none; }
+  .survivor-overlay .survivor-upgrade-btn:hover,
+  .survivor-overlay .survivor-pick-btn:hover { transform: none; }
+}
+
 /* ---------------------------------------------------------------- Depuração (Diagnóstico) */
 
 .debug-sprite-row {

@@ -51,10 +51,12 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'xp-boost-35', family: 'progresso', rarity: 'lendario', name: 'Rota de experiência III', description: '+35% de XP recebido dos orbes.', maxLevels: 1, requires: 'xp-boost-25', apply: (p) => { p.xpMultiplier = Math.max(p.xpMultiplier ?? 1, 1.35); } },
   { id: 'xp-boost-50', family: 'progresso', rarity: 'ancestral', name: 'Rota de experiência IV', description: '+50% de XP recebido dos orbes.', maxLevels: 1, requires: 'xp-boost-35', apply: (p) => { p.xpMultiplier = Math.max(p.xpMultiplier ?? 1, 1.5); } },
   {
-    id: 'multishot', family: 'ataque', rarity: 'lendario', name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.', for: ['projetil', 'area'],
+    id: 'multishot', family: 'ataque', rarity: 'lendario', name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.', for: ['projetil', 'area', 'orbit'],
     describe: (m) => (m.category === 'area'
       ? { name: 'Explosão extra', description: `${m.name}: +1 explosão por ataque, em outro inimigo.` }
-      : { name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.' }),
+      : m.category === 'orbit'
+        ? { name: 'Orbital extra', description: `${m.name}: +1 orbital girando em volta (até 6).` }
+        : { name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.' }),
     apply: (p) => { p.shots = Math.min(5, p.shots + 1); },
   },
   {
