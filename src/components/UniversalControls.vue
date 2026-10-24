@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { routeHref, useRoute } from '../app/route';
 import type { RouteName } from '../app/route';
+import { gamepadButtonPressed, gamepadDirections, type GamepadDirection } from '../app/gamepad';
 
 const route = useRoute();
 const menuOpen = ref(false);
@@ -19,11 +20,11 @@ let skipHistoryPush = false;
 let returnFocus: HTMLElement | null = null;
 let lastAction: HTMLElement | null = null;
 const selector = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]';
-type Direction = 'up' | 'right' | 'down' | 'left';
+type Direction = GamepadDirection;
 const directions: Direction[] = ['up', 'right', 'down', 'left'];
 const heldGamepadDirections = new Set<Direction>();
 const nextGamepadRepeat = new Map<Direction, number>();
-const heldGamepadButtons = new Set<number>();
+const heldGamepadButtons = new Set<string>();
 let gamepadFrame = 0;
 
 function visibleActions(root: ParentNode = document): HTMLElement[] {
@@ -210,28 +211,27 @@ function sendControllerAction(name: 'tcg-gamepad-action' | 'tcg-gamepad-back' | 
   else if (route.value.name !== 'vila') menuOpen.value = !menuOpen.value;
 }
 
-function controllerButtonPressed(pad: Gamepad, index: number): boolean {
-  const button = pad.buttons[index];
-  return button ? button.pressed || button.value > 0.55 : false;
+function connectedGamepads(): Gamepad[] {
+  return [...(navigator.getGamepads?.() ?? [])].filter((pad): pad is Gamepad => !!pad?.connected);
+}
+
+function resetGamepadState(): void {
+  for (const direction of heldGamepadDirections) sendDirection(direction, false);
+  heldGamepadDirections.clear();
+  nextGamepadRepeat.clear();
+  heldGamepadButtons.clear();
 }
 
 function pollGamepad(): void {
-  const pad = [...(navigator.getGamepads?.() ?? [])].find((candidate) => candidate?.connected);
-  if (!pad) {
-    for (const direction of heldGamepadDirections) sendDirection(direction, false);
-    heldGamepadDirections.clear();
-    nextGamepadRepeat.clear();
-    heldGamepadButtons.clear();
+  const pads = connectedGamepads();
+  if (!pads.length) {
+    resetGamepadState();
     gamepadFrame = 0;
     return;
   }
 
-  const axes = pad.axes;
   const input = new Set<Direction>();
-  if (controllerButtonPressed(pad, 12) || (axes[1] ?? 0) < -0.55) input.add('up');
-  if (controllerButtonPressed(pad, 13) || (axes[1] ?? 0) > 0.55) input.add('down');
-  if (controllerButtonPressed(pad, 14) || (axes[0] ?? 0) < -0.55) input.add('left');
-  if (controllerButtonPressed(pad, 15) || (axes[0] ?? 0) > 0.55) input.add('right');
+  for (const pad of pads) for (const direction of gamepadDirections(pad)) input.add(direction);
   const now = performance.now();
   for (const direction of directions) {
     const down = input.has(direction);
@@ -250,11 +250,16 @@ function pollGamepad(): void {
   const actions: [number, 'tcg-gamepad-action' | 'tcg-gamepad-back' | 'tcg-gamepad-menu'][] = [
     [0, 'tcg-gamepad-action'], [1, 'tcg-gamepad-back'], [9, 'tcg-gamepad-menu'],
   ];
-  for (const [button, action] of actions) {
-    const down = controllerButtonPressed(pad, button);
-    if (down && !heldGamepadButtons.has(button)) sendControllerAction(action);
-    if (down) heldGamepadButtons.add(button);
-    else heldGamepadButtons.delete(button);
+  const connectedIndexes = new Set(pads.map((pad) => pad.index));
+  for (const key of heldGamepadButtons) {
+    if (!connectedIndexes.has(Number(key.split(':', 1)[0]))) heldGamepadButtons.delete(key);
+  }
+  for (const pad of pads) for (const [button, action] of actions) {
+    const key = `${pad.index}:${button}`;
+    const down = gamepadButtonPressed(pad, button);
+    if (down && !heldGamepadButtons.has(key)) sendControllerAction(action);
+    if (down) heldGamepadButtons.add(key);
+    else heldGamepadButtons.delete(key);
   }
   gamepadFrame = requestAnimationFrame(pollGamepad);
 }
@@ -265,24 +270,18 @@ function startGamepadPolling(): void {
 
 function onGamepadConnected(): void { startGamepadPolling(); }
 function onGamepadDisconnected(): void {
-  if (![...(navigator.getGamepads?.() ?? [])].some((pad) => pad?.connected)) {
+  if (!connectedGamepads().length) {
     cancelAnimationFrame(gamepadFrame);
     gamepadFrame = 0;
-    for (const direction of heldGamepadDirections) sendDirection(direction, false);
-    heldGamepadDirections.clear();
-    nextGamepadRepeat.clear();
-    heldGamepadButtons.clear();
+    resetGamepadState();
   }
 }
 function onVisibilityChange(): void {
   if (document.hidden) {
     cancelAnimationFrame(gamepadFrame);
     gamepadFrame = 0;
-    for (const direction of heldGamepadDirections) sendDirection(direction, false);
-    heldGamepadDirections.clear();
-    nextGamepadRepeat.clear();
-    heldGamepadButtons.clear();
-  } else if ([...(navigator.getGamepads?.() ?? [])].some((pad) => pad?.connected)) startGamepadPolling();
+    resetGamepadState();
+  } else if (connectedGamepads().length) startGamepadPolling();
 }
 
 window.addEventListener('keydown', onKey);
@@ -290,7 +289,8 @@ onMounted(() => {
   window.addEventListener('gamepadconnected', onGamepadConnected);
   window.addEventListener('gamepaddisconnected', onGamepadDisconnected);
   document.addEventListener('visibilitychange', onVisibilityChange);
-  if ([...(navigator.getGamepads?.() ?? [])].some((pad) => pad?.connected)) startGamepadPolling();
+  window.addEventListener('focus', onGamepadConnected);
+  if (connectedGamepads().length) startGamepadPolling();
 });
 onBeforeUnmount(() => {
   document.removeEventListener('focusin', onFocus);
@@ -299,6 +299,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('gamepadconnected', onGamepadConnected);
   window.removeEventListener('gamepaddisconnected', onGamepadDisconnected);
   document.removeEventListener('visibilitychange', onVisibilityChange);
+  window.removeEventListener('focus', onGamepadConnected);
   cancelAnimationFrame(gamepadFrame);
   gamepadFrame = 0;
 });

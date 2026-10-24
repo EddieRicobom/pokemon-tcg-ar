@@ -12,7 +12,7 @@ export const BONK_BASE_JUMP_POWER = 470;
 /** Câmera em terceira pessoa: atrás e acima do jogador, com o horizonte no terço de cima da tela. */
 export const BONK_CAMERA = { distance: 250, height: 120, horizonRatio: 0.3, focalRatio: 1, minFocal: 320, near: 20 } as const;
 /** Giro da câmera por segundo com o analógico todo para o lado. */
-export const BONK_TURN_RATE = 1.35;
+export const BONK_TURN_RATE = 3.2;
 /** Um toque no Pular um pouco antes de pousar ainda vale: o salto fica guardado por esse tempo. */
 export const BONK_JUMP_BUFFER_MS = 140;
 /** Duração do efeito de pouso (poeira e achatamento do sprite). */
@@ -46,6 +46,8 @@ export interface BonkPhysics {
   jumpBufferMs: number;
   /** Ms restantes do efeito de pouso, só para o desenho. */
   landingMs: number;
+  /** Semente visual/física do cenário desta corrida; não consome o RNG do combate. */
+  landscapeSeed: number;
   obstacles: readonly BonkObstacle[];
 }
 
@@ -86,11 +88,69 @@ const OBSTACLES: readonly BonkObstacle[] = [
   { id: 'stone-east-2', x: 2580, y: 790, w: 110, h: 74, height: 48, kind: 'boulder' },
 ] as const;
 
+const DEFAULT_LANDSCAPE_SEED = 0x0b0a5eed;
+const START_CLEAR_RADIUS = 96;
+const JITTER: Record<BonkObstacleKind, number> = {
+  tree: 170,
+  boulder: 130,
+  wall: 52,
+  ruin: 92,
+  crystal: 150,
+  // A ponte ainda precisa cruzar o riacho; a variedade dela vem do tileset.
+  bridge: 0,
+};
+
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 const normalizeAngle = (angle: number): number => Math.atan2(Math.sin(angle), Math.cos(angle));
 
+/** RNG local do cenário: uma nova arena não altera inimigos, drops nem upgrades da mesma seed de combate. */
+function landscapeRng(seed: number): () => number {
+  let state = (Math.floor(seed) >>> 0) || DEFAULT_LANDSCAPE_SEED;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let value = Math.imul(state ^ state >>> 15, 1 | state);
+    value ^= value + Math.imul(value ^ value >>> 7, 61 | value);
+    return ((value ^ value >>> 14) >>> 0) / 0x1_0000_0000;
+  };
+}
+
+function keepsStartClear(obstacle: Pick<BonkObstacle, 'x' | 'y' | 'w' | 'h'>): boolean {
+  const closestX = clamp(ARENA_W / 2, obstacle.x, obstacle.x + obstacle.w);
+  const closestY = clamp(ARENA_H / 2, obstacle.y, obstacle.y + obstacle.h);
+  return Math.hypot(ARENA_W / 2 - closestX, ARENA_H / 2 - closestY) >= START_CLEAR_RADIUS;
+}
+
+/**
+ * Mantém os marcos legíveis (ponte, muralhas e clareira inicial), mas dá a cada
+ * seed posições e tamanhos diferentes para árvores, pedras, ruínas e cristais.
+ */
+export function createBonkObstacles(seed: number): readonly BonkObstacle[] {
+  const random = landscapeRng(seed);
+  return OBSTACLES.map((base) => {
+    if (base.kind === 'bridge') return { ...base };
+    const spread = JITTER[base.kind];
+    const scale = 0.9 + random() * 0.22;
+    const w = Math.max(24, Math.round(base.w * scale));
+    const h = Math.max(24, Math.round(base.h * scale));
+    const height = Math.max(18, Math.round(base.height * (0.92 + random() * 0.16)));
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const candidate = {
+        ...base,
+        x: clamp(Math.round(base.x + (random() - 0.5) * spread), 0, ARENA_W - w),
+        y: clamp(Math.round(base.y + (random() - 0.5) * spread), 0, ARENA_H - h),
+        w,
+        h,
+        height,
+      };
+      if (keepsStartClear(candidate)) return candidate;
+    }
+    return { ...base, w, h, height };
+  });
+}
+
 /** Cria a arena física; ela usa o mesmo mundo amplo (2880×1920) do Survival. */
-export function createBonkPhysics(initialYaw = Math.PI / 2): BonkPhysics {
+export function createBonkPhysics(initialYaw = Math.PI / 2, landscapeSeed = DEFAULT_LANDSCAPE_SEED): BonkPhysics {
+  const normalizedSeed = Math.floor(landscapeSeed) >>> 0;
   return {
     z: 0,
     verticalVelocity: 0,
@@ -100,7 +160,8 @@ export function createBonkPhysics(initialYaw = Math.PI / 2): BonkPhysics {
     collisionFlashMs: 0,
     jumpBufferMs: 0,
     landingMs: 0,
-    obstacles: OBSTACLES,
+    landscapeSeed: normalizedSeed,
+    obstacles: createBonkObstacles(normalizedSeed),
   };
 }
 
