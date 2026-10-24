@@ -59,11 +59,12 @@ export const BALANCE = {
   xpPerLevel: 8,
   /** Orbes soltam 65% da XP anterior; o resto fracionário é carregado para o próximo orbe. */
   xpOrbMultiplier: 0.65,
-  bossHpBase: 150,
-  bossHpPerWave: 45,
-  bossSpeed: 62,
-  bossDamageBase: 10,
-  bossDamagePerWave: 2,
+  /** Chefes periódicos: ameaças raras, mas com vida suficiente para exigir reposicionamento e coleta sob pressão. */
+  bossHpBase: 220,
+  bossHpPerWave: 70,
+  bossSpeed: 72,
+  bossDamageBase: 15,
+  bossDamagePerWave: 3,
   enemyHpBase: 16,
   /** Vida extra a cada `enemyHpEverySec` segundos; a simulação agora usa os golpes reais das espécies. */
   enemyHpStep: 3,
@@ -106,8 +107,9 @@ export const BALANCE = {
   /** Mesmo no limite do alcance, um golpe direto mantém impacto suficiente para não invalidar builds de alcance. */
   directDamageMinMultiplier: 0.55,
   /** Primeiro chefe e intervalo entre os seguintes (ms). */
+  /** O primeiro chefe respeita o aprendizado; depois a Torre chama um novo a cada minuto. */
   firstBossMs: 60_000,
-  bossEveryMs: 90_000,
+  bossEveryMs: 60_000,
   /** Treinadores entram mais fortes sem alterar a curva dos inimigos comuns. */
   trainerStatMultiplier: 1.3,
   /** Artefatos são uma válvula de recuperação: um pouco mais comuns após a escalada de inimigos. */
@@ -117,8 +119,8 @@ export const BALANCE = {
   /** Depois dos 10 minutos, uma morte pode deixar uma Pokébola especial. A chance varia por grau. */
   digitalPokeballDropChance: {
     comum: 0.005,
-    elite: 0.01,
-    chefao: 0.02,
+    elite: 0.02,
+    chefao: 0.10,
   },
   /** Chance independente de qualquer inimigo deixar um orbe de XP dobrada. */
   doubleXpOrbChance: 0.08,

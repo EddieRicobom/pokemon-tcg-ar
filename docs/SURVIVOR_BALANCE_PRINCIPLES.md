@@ -164,3 +164,22 @@ Um inimigo só pode ser atordoado de novo 5 s depois do último atordoamento (`S
 Motivo: uma run com Tremor em área, recarga de 240 ms e raio de 331 mantinha os inimigos parados enquanto estivessem no raio. Feedback SVF1 de Golurk (diversão 5, dificuldade 3): "O stun nos ataques está muito, mas muito forte".
 
 Simulação (mesma matriz, sem alteração de escolha de cartas): evasiva 3,60 min, agressiva 4,85 min, com 12 e 84 runs chegando a 5 min. O simulador usa pouco os golpes de atordoamento, então o efeito real precisa ser medido com novos códigos de feedback.
+
+## Chefes e Pokébolas digitais — 24/10/2026
+
+O chefe periódico individual agora aparece aos 60 s e volta a cada 60 s (antes,
+a cada 90 s). A curva dele foi reforçada para exigir uma resposta de build e
+movimento: vida base 220 + 70 por onda, dano base 15 + 3 por onda e velocidade
+72. O primeiro encontro continua depois da janela de aprendizado inicial. As
+Pokébolas digitais continuam limitadas a três por corrida, mas a chance de
+drop sobe para 2% em elites e 10% em chefões; inimigos comuns permanecem em
+0,5%, para a recompensa continuar ligada a encontros de risco.
+
+Hipótese: os encontros antigos estavam tão espaçados e frágeis que não davam
+identidade ao clímax da Torre; aproximá-los e tornar a recompensa de chefão
+mais provável cria marcos reconhecíveis sem transformar cada inimigo comum em
+uma loteria. A simulação rápida atual (200 corridas por estratégia, sem escolha
+humana de builds) deu mediana de 2,82 min para evasiva e 3,57 min para
+agressiva, com 1/200 e 19/200 chegando a 5 min, respectivamente. Isso é um
+sinal de pressão forte, não uma prova de equilíbrio: a meta de 18–20 minutos
+precisa ser revisitada com a matriz completa e uma sessão humana em celular.

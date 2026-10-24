@@ -1112,6 +1112,23 @@ describe('treinadores e chefão final', () => {
     expect(over?.summary.infinite).toBe(false);
   });
 
+  it('repete os chefes periódicos a cada minuto e escala seus atributos', () => {
+    const s = createSurvivorState(77, { kindCount: 2 });
+    s.nextBossAtMs = BALANCE.firstBossMs;
+    s.elapsedMs = BALANCE.firstBossMs - 100;
+
+    const first = stepSurvivor(s, { dx: 0, dy: 0 }, 200);
+    expect(first).toContainEqual({ type: 'bossSpawn' });
+    const boss = s.enemies.find((enemy) => enemy.boss);
+    expect(boss?.maxHp).toBe(Math.round((BALANCE.bossHpBase + s.wave * BALANCE.bossHpPerWave) * s.infiniteScale));
+    expect(boss?.damage).toBe(Math.round((BALANCE.bossDamageBase + s.wave * BALANCE.bossDamagePerWave) * s.infiniteScale));
+    expect(boss?.speed).toBe(BALANCE.bossSpeed);
+
+    s.elapsedMs = BALANCE.firstBossMs + BALANCE.bossEveryMs - 100;
+    const second = stepSurvivor(s, { dx: 0, dy: 0 }, 200);
+    expect(second).toContainEqual({ type: 'bossSpawn' });
+  });
+
   it('modo infinito: derrotar o chefão não termina a corrida (segue até morrer)', () => {
     const s = createSurvivorState(42, { kindCount: 4, infinite: true });
     s.special.phase = 'ready';
@@ -1163,7 +1180,7 @@ describe('artefatos temporários', () => {
 
   it('mantém a Pokébola digital rara e limita a três por corrida', () => {
     expect(MAX_DIGITAL_POKEBALLS_PER_RUN).toBe(3);
-    expect(BALANCE.digitalPokeballDropChance).toEqual({ comum: 0.005, elite: 0.01, chefao: 0.02 });
+    expect(BALANCE.digitalPokeballDropChance).toEqual({ comum: 0.005, elite: 0.02, chefao: 0.10 });
 
     const s = quiet(createSurvivorState(11, { kindCount: 1 }));
     s.elapsedMs = 10 * 60_000;
