@@ -68,6 +68,10 @@ export interface SurvivorPlayer {
   artifactFocusMs: number;
   /** -1 olhando para a esquerda, 1 para a direita (para virar o sprite). */
   facing: -1 | 1;
+  /** Frente do Pokémon em radianos (último passo; no BONK, para onde a câmera olha). O cone ataca nessa direção. */
+  aimAngle?: number;
+  /** Fase do giro dos orbitais (radianos), avançada a cada quadro pelo golpe de órbita. */
+  orbitAngle?: number;
   /** Alcance para coletar orbe de XP ao passar perto (sobe com o upgrade "Ímã de XP"). */
   pickupRadius: number;
   /** Quantas cartas aparecem em cada oferta; o jogador continua escolhendo apenas uma. */
@@ -170,6 +174,8 @@ export interface SurvivorEnemy {
   stunCooldownMs?: number;
   /** Recarga do empurrão (ms restantes): enquanto corre, o inimigo não pode ser empurrado de novo. */
   knockbackCooldownMs?: number;
+  /** Ms até um orbital poder acertar este inimigo de novo. */
+  orbitHitMs?: number;
   wetMs?: number;
   seededMs?: number;
   /** Acúmulos de frio. O congelamento é curto e tem intervalo por alvo. */
@@ -235,13 +241,18 @@ export interface SurvivorProjectile {
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
-  kind: 'pulse' | 'blast' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal';
+  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal';
   x: number;
   y: number;
   r: number;
   color: string;
   ageMs: number;
   lifeMs: number;
+  /** Tipo do golpe que criou a marca: o desenho usa a forma do elemento (chama, gota, faísca…), não só a cor. */
+  moveType?: PokemonType;
+  /** Cone: direção (radianos) e meia abertura do leque que acertou. */
+  angle?: number;
+  spread?: number;
   /** Efeito secundário que parte do jogador depois do impacto principal. */
   element?: 'bug' | 'ghost';
   fromX?: number;
@@ -404,6 +415,8 @@ export interface SurvivorInput {
   /** Vetor de direção do analógico/arraste; não precisa estar normalizado (0,0 = parado). */
   dx: number;
   dy: number;
+  /** Frente fixa em radianos (BONK: a direção da câmera). Sem ela, a frente segue o último passo. */
+  aimAngle?: number;
   /** Quantos inimigos estão visíveis na janela atual; a cola Vue informa o valor real da câmera. */
   visibleEnemies?: number;
 }

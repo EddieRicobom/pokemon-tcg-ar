@@ -5,6 +5,15 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: golpes elementais, cone, órbita e painéis (24/10/2026)
+
+- Cone de verdade: leque de ~38° (`core/survivor-shapes.ts`) apontado para a frente do Pokémon, que segue o último passo em qualquer direção. No BONK a frente é a câmera (`SurvivorInput.aimAngle`), então o golpe sai sempre adiante na tela, nunca de lado. Alcance base 140 → 185 para compensar o leque mais estreito.
+- Órbita deixa de ser um pulso igual ao da aura: 3 orbitais giram em volta do jogador e acertam por contato, com intervalo por inimigo; "Disparo múltiplo" acrescenta orbitais (até 6) e a recarga define a velocidade do giro. Um orbital que encosta num projétil inimigo o desfaz, no máximo um por recarga.
+- Arte elemental dos golpes (`village/survivor-attack-art.ts`), na Torre e no BONK: chama que sobe, gotas que espirram, raio que cai do céu, espinhos de gelo, rachaduras e pedras, bolhas de veneno, anéis psíquicos, folhas, insetos etc., em projéteis, aura, área, cone e orbitais. "Efeitos: leves" e o Modo Rotom reduzem partículas, gradientes e rastros.
+- BONK usa a pose de costas (linha "up" da folha de andar local) para o jogador; sem essa pose no pacote, fica a de frente.
+- Painéis da Torre (escolha, nível, especial, pausa, fim) com o mesmo visual escuro e o destaque na cor do elemento; em paisagem, as cartas de nível e de especial ficam lado a lado e os 6 sorteados cabem numa fileira.
+- 🔶 Visto só no Chromium de desenvolvimento (galeria dos 18 tipos e corridas pelo harness, retrato e paisagem). Simulação de 170 s: órbita e cone no mesmo patamar dos demais golpes, sem provar equilíbrio. Aparência, legibilidade e custo de GPU no celular ainda precisam de aparelho real.
+
 ## Bairros, casas e renda dos moradores (22/10/2026)
 
 - Expansão real para 120 × 96 blocos, com praia, jardim, praça, bosque e mirante conectados; 16 destinos de passeios e guias legíveis no minimapa.

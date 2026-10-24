@@ -6,6 +6,7 @@ import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergie
 import { survivorPreparation } from './survivor-preparations';
 import type { SurvivorPreparationId } from './survivor-preparations';
 import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, specialProtects, stepSurvivorSpecial } from './survivor-specials';
+import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR_ORBIT_MAX, survivorAimAngle, survivorOrbitAngularSpeed, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitHitIntervalMs } from './survivor-shapes';
 import type { PokemonType } from './pokemon-data';
 
 /**
@@ -235,6 +236,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     artifactMagnetMs: 0,
     artifactFocusMs: 0,
     facing: 1,
+    aimAngle: 0,
+    orbitAngle: 0,
     pickupRadius: PICKUP_RADIUS * preparation.pickupRadiusMultiplier,
     upgradeChoices: 3,
     upgradeRerolls: 0,
@@ -504,7 +507,7 @@ export function rollUpgrades(
     && (player?.upgradeLevels[u.id] ?? 0) < (u.maxLevels ?? Number.POSITIVE_INFINITY)
     && (!player || (u.id !== 'power' && u.id !== 'resonance' || player.attackDamage < 60))
     && (!player || u.id !== 'haste' || player.attackCooldownMs > 240)
-    && (!player || u.id !== 'multishot' || player.shots < 5)
+    && (!player || u.id !== 'multishot' || player.shots < (move.category === 'orbit' ? 1 + SURVIVOR_ORBIT_MAX - SURVIVOR_ORBIT_BASE : 5))
     && (!player || u.id !== 'pierce' || player.pierce < 4)
     && (!player || u.id !== 'heal-30' || player.hp < player.maxHp),
   );
@@ -989,16 +992,17 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
       if (Math.hypot(enemy.x - p.x, enemy.y - p.y) <= radius + enemy.radius) { hitEnemy(state, enemy, damage, p, move, true, Math.hypot(enemy.x - p.x, enemy.y - p.y)); hits++; }
     }
     drain(state, hits, move);
-    state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: radius, color: move.color, ageMs: 0, lifeMs: 260 });
+    state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: radius, color: move.color, ageMs: 0, lifeMs: 260, moveType: move.type });
     return true;
   }
   if (move.category === 'cone') {
     let hits = 0;
     for (const enemy of state.enemies) {
-      const dx = enemy.x - p.x; const dy = enemy.y - p.y; const distance = Math.hypot(dx, dy);
-      if (distance <= range + enemy.radius && dx * p.facing / (distance || 1) >= 0.35) { hitEnemy(state, enemy, damage, p, move); hits++; }
+      const distance = Math.hypot(enemy.x - p.x, enemy.y - p.y);
+      if (inSurvivorCone(p, enemy.x, enemy.y, range, enemy.radius)) { hitEnemy(state, enemy, damage, p, move, true, distance); hits++; }
     }
     drain(state, hits, move);
+    if (hits > 0) state.fx.push({ kind: 'cone', x: p.x, y: p.y, r: range, color: move.color, ageMs: 0, lifeMs: 280, moveType: move.type, angle: survivorAimAngle(p), spread: SURVIVOR_CONE_HALF_ANGLE });
     return hits > 0;
   }
   const target = nearestEnemies(state, range, 1)[0];
@@ -1008,7 +1012,7 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
     if (Math.hypot(enemy.x - target.x, enemy.y - target.y) <= radius + enemy.radius) { hitEnemy(state, enemy, damage, p, move); hits++; }
   }
   drain(state, hits, move);
-  state.fx.push({ kind: 'blast', x: target.x, y: target.y, r: radius, color: move.color, ageMs: 0, lifeMs: 320 });
+  state.fx.push({ kind: 'blast', x: target.x, y: target.y, r: radius, color: move.color, ageMs: 0, lifeMs: 320, moveType: move.type });
   return true;
 }
 
@@ -1023,56 +1027,50 @@ function attack(state: SurvivorState): boolean {
     fireProjectiles(state, target);
     return true;
   }
-  if (move.category === 'aura' || move.category === 'orbit') {
+  if (move.category === 'aura') {
     // A aura pulsa sempre (dá para ver o raio), mesmo sem ninguém dentro.
     const pulseRadius = p.attackRadius * 0.8;
     let hits = 0;
     const damage = playerAttackDamage(state);
     for (const e of state.enemies) {
-      const distance = Math.hypot(e.x - p.x, e.y - p.y);
-      // A órbita também alcança quem encosta no jogador. Antes havia uma faixa interna sem dano,
-      // que punia Inseto/Planta justamente quando precisavam de cobertura próxima.
-       const inRange = distance <= pulseRadius + e.radius;
-      if (inRange) {
+      if (Math.hypot(e.x - p.x, e.y - p.y) <= pulseRadius + e.radius) {
         hitEnemy(state, e, damage, p);
         hits++;
       }
     }
     drain(state, hits, move);
-    // A carta lendária intercepta no máximo um projétil por pulso e somente dentro do alcance.
-    if (move.category === 'orbit' && p.projectileDeflection) {
-      const projectileIndex = state.hostileProjectiles.findIndex((projectile) =>
-        Math.hypot(projectile.x - p.x, projectile.y - p.y) <= pulseRadius + projectile.size,
-      );
-      if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
-    }
-    state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: pulseRadius, color: move.color, ageMs: 0, lifeMs: 360 });
+    state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: pulseRadius, color: move.color, ageMs: 0, lifeMs: 360, moveType: move.type });
+    return true;
+  }
+  if (move.category === 'orbit') {
+    // O dano da órbita vem do contato dos orbitais (`stepOrbiters`). A recarga só limita o bloqueio:
+    // um orbital que encosta num projétil inimigo o desfaz, no máximo um por recarga.
+    if (!p.projectileDeflection) return false;
+    const hitRadius = survivorOrbiterHitRadius(p);
+    const orbiters = survivorOrbiters(p);
+    const projectileIndex = state.hostileProjectiles.findIndex((projectile) =>
+      orbiters.some((orbiter) => Math.hypot(projectile.x - orbiter.x, projectile.y - orbiter.y) <= hitRadius + projectile.size),
+    );
+    if (projectileIndex < 0) return false;
+    const [blocked] = state.hostileProjectiles.splice(projectileIndex, 1);
+    if (blocked) state.fx.push({ kind: 'orbit-hit', x: blocked.x, y: blocked.y, r: hitRadius, color: move.color, ageMs: 0, lifeMs: 260, moveType: move.type });
     return true;
   }
   if (move.category === 'cone') {
     let hits = 0;
-    const direction = p.facing;
     for (const e of state.enemies) {
-      const dx = e.x - p.x;
-      const dy = e.y - p.y;
-      const distance = Math.hypot(dx, dy);
-      if (distance <= attackRange + e.radius && dx * direction / (distance || 1) >= 0.35) {
+      if (inSurvivorCone(p, e.x, e.y, attackRange, e.radius)) {
         hitEnemy(state, e, artifactDamage(state), p);
         hits++;
       }
     }
     drain(state, hits, move);
-    // O golpe frontal só pode aparar um projétil próximo com a carta lendária.
+    // A carta lendária pode aparar só um projétil por ataque, sem limpar ondas inteiras.
     if (p.projectileDeflection) {
-      const projectileIndex = state.hostileProjectiles.findIndex((projectile) => {
-        const dx = projectile.x - p.x;
-        const dy = projectile.y - p.y;
-        const distance = Math.hypot(dx, dy);
-        return distance <= attackRange + projectile.size && dx * direction / (distance || 1) >= 0.35;
-      });
+      const projectileIndex = state.hostileProjectiles.findIndex((projectile) => inSurvivorCone(p, projectile.x, projectile.y, attackRange, projectile.size));
       if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
     }
-    state.fx.push({ kind: 'blast', x: p.x + direction * attackRange * 0.55, y: p.y, r: attackRange * 0.55, color: move.color, ageMs: 0, lifeMs: 300 });
+    state.fx.push({ kind: 'cone', x: p.x, y: p.y, r: attackRange, color: move.color, ageMs: 0, lifeMs: 300, moveType: move.type, angle: survivorAimAngle(p), spread: SURVIVOR_CONE_HALF_ANGLE });
     return true;
   }
   const targets = nearestEnemies(state, attackRange, p.shots);
@@ -1088,10 +1086,36 @@ function attack(state: SurvivorState): boolean {
         hits++;
       }
     }
-    state.fx.push({ kind: 'blast', x: center.x, y: center.y, r: p.attackRadius, color: move.color, ageMs: 0, lifeMs: 420 });
+    state.fx.push({ kind: 'blast', x: center.x, y: center.y, r: p.attackRadius, color: move.color, ageMs: 0, lifeMs: 420, moveType: move.type });
   }
   drain(state, hits, move);
   return true;
+}
+
+/**
+ * Órbita: os orbitais giram em volta do jogador o tempo todo e acertam quem tocam. Cada inimigo tem um intervalo
+ * curto entre toques (`orbitHitMs`), para um orbital que passa por cima não acertar a cada quadro.
+ */
+function stepOrbiters(state: SurvivorState, dtMs: number): void {
+  const p = state.player;
+  const cooldownMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
+  p.orbitAngle = ((p.orbitAngle ?? 0) + survivorOrbitAngularSpeed(cooldownMs) * dtMs) % (Math.PI * 2);
+  const orbiters = survivorOrbiters(p);
+  const hitRadius = survivorOrbiterHitRadius(p);
+  const intervalMs = survivorOrbitHitIntervalMs(p, cooldownMs);
+  const damage = playerAttackDamage(state);
+  let hits = 0;
+  for (const e of state.enemies) {
+    if (e.hp <= 0 || (e.orbitHitMs ?? 0) > 0) continue;
+    const orbiter = orbiters.find((candidate) => Math.hypot(e.x - candidate.x, e.y - candidate.y) <= hitRadius + e.radius);
+    if (!orbiter) continue;
+    e.orbitHitMs = intervalMs;
+    // O empurrão (Planta/Inseto não empurram, mas afinidades podem) sai do jogador, nunca puxa para dentro do giro.
+    hitEnemy(state, e, damage, p, p.move, true, Math.hypot(e.x - p.x, e.y - p.y));
+    state.fx.push({ kind: 'orbit-hit', x: e.x, y: e.y, r: Math.max(10, e.radius), color: p.move.color, ageMs: 0, lifeMs: 220, moveType: p.move.type });
+    hits++;
+  }
+  drain(state, Math.min(2, hits), p.move);
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -1335,7 +1359,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     p.x = clamp(p.x + ux * p.speed * artifactSpeed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
     p.y = clamp(p.y + uy * p.speed * artifactSpeed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
+    p.aimAngle = Math.atan2(uy, ux);
   }
+  // No BONK a frente é a câmera: o cone sempre acerta o que está adiante na tela, nunca ao lado.
+  if (input.aimAngle !== undefined && Number.isFinite(input.aimAngle)) p.aimAngle = input.aimAngle;
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
   if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + (p.regenPerSec ?? 0) * dt);
 
@@ -1388,6 +1415,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (stunned) e.stunMs = Math.max(0, (e.stunMs ?? 0) - dtMs);
     if ((e.stunCooldownMs ?? 0) > 0) e.stunCooldownMs = Math.max(0, (e.stunCooldownMs ?? 0) - dtMs);
     if ((e.knockbackCooldownMs ?? 0) > 0) e.knockbackCooldownMs = Math.max(0, (e.knockbackCooldownMs ?? 0) - dtMs);
+    if ((e.orbitHitMs ?? 0) > 0) e.orbitHitMs = Math.max(0, (e.orbitHitMs ?? 0) - dtMs);
     const target = updateEnemyBehavior(state, e, dtMs);
     const dx = target.x - e.x;
     const dy = target.y - e.y;
@@ -1438,6 +1466,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   // Autoataque com o golpe do tipo (projétil, aura ou área).
   p.attackTimerMs = Math.max(0, p.attackTimerMs - dtMs);
   if (p.attackTimerMs <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
+  if (p.move.category === 'orbit') stepOrbiters(state, dtMs);
   if (state.supports.length > 0) {
     // Formação visual: cada apoio tem uma posição própria e alcança o jogador
     // com a mesma velocidade normal, sem criar vida ou hitbox adicional.
