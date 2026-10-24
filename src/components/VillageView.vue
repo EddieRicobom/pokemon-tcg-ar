@@ -59,7 +59,7 @@ import { completeFestival, discoverAt, festivalRound, requestInfluence, resolveE
 import type { DiscoveryPlace, WeeklyEvent } from '../core/village/world-progress';
 import type { Resolved, Scene } from '../core/village/social';
 import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABELS, trimMoments } from '../core/village/social-state';
-import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, recordAnswer, wordOf } from '../core/village/quiz';
+import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, recordAnswer, rerollWords, wordOf } from '../core/village/quiz';
 import type { Follow, Question } from '../core/village/quiz';
 import {
   assignHomes, CAFE_PRICE, cafeVisit, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, knockDoor, LOTS, nextUnlock, paintRoof, PAINT_COST, residentsOf, ROOFS, roofIndex,
@@ -2857,6 +2857,14 @@ onMounted(async () => {
     if (!sprite) continue;
     villagers.push({ id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), shiny: false, gif: sprite.gif, dirGifs: sprite.dirs, digital: true, dexId: inst.dexId });
     mons.value = [...mons.value, { id: inst.instanceId, name: displayName(state, inst.instanceId, inst.name), real: inst.name, shiny: false, dexId: inst.dexId, thumb: thumbOf(sprite.gif) }];
+  }
+  // Migração única de hoje: substitui os bordões antigos pela pool ampliada e grava o resultado no save.
+  const today = dayKey(new Date());
+  const wordIds = [...new Set([...mons.value.map((mon) => mon.id), ...Object.keys(state.words)])];
+  if (state.wordRerollDay !== today && wordIds.length > 0) {
+    rerollWords(state, wordIds, today);
+    state.wordRerollDay = today;
+    saveVillage(state);
   }
   villagerList = villagers;
   // Recorte real de tileset pra grama (ver `village-art.ts`); null se não der pra baixar, cai no ladrilho

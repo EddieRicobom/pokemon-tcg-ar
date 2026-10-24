@@ -116,6 +116,8 @@ export interface SocialState {
   answers: Answer[];
   /** O bordão de cada Pokémon (o que ele repete no fim das falas). */
   words: Record<string, string>;
+  /** Dia em que a migração única da pool ampliada de bordões foi aplicada. */
+  wordRerollDay: string;
   lingo: Lingo[];
   memories: SocialMemory[];
   /** Compromissos criados por momentos importantes (visitas, ajuda e convites). */
@@ -151,7 +153,7 @@ const MAX_SEEN = 600;
 export const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 export function emptySocial(): SocialState {
-  return { rel: {}, diary: [], seen: [], lastSeen: 0, diaryRead: 0, answers: [], words: {}, lingo: [], memories: [], plans: [], asked: {}, nicks: {} };
+  return { rel: {}, diary: [], seen: [], lastSeen: 0, diaryRead: 0, answers: [], words: {}, wordRerollDay: '', lingo: [], memories: [], plans: [], asked: {}, nicks: {} };
 }
 
 const num = (v: unknown, lo: number, hi: number, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : fallback);
@@ -219,7 +221,7 @@ export function recordMomentAndMemory(
   return isNewMoment;
 }
 
-export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown; answers?: unknown; words?: unknown; lingo?: unknown; memories?: unknown; plans?: unknown; asked?: unknown; nicks?: unknown }): SocialState {
+export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: unknown; lastSeen?: unknown; diaryRead?: unknown; answers?: unknown; words?: unknown; wordRerollDay?: unknown; lingo?: unknown; memories?: unknown; plans?: unknown; asked?: unknown; nicks?: unknown }): SocialState {
   const rel: Record<string, Relation> = {};
   if (raw.rel && typeof raw.rel === 'object') {
     for (const [k, v] of Object.entries(raw.rel as Record<string, Partial<Relation>>)) {
@@ -262,6 +264,7 @@ export function normalizeSocial(raw: { rel?: unknown; diary?: unknown; seen?: un
           .slice(-MAX_ANSWERS)
       : [],
     words: raw.words && typeof raw.words === 'object' ? Object.fromEntries(Object.entries(raw.words as Record<string, unknown>).filter(([k, v]) => k.length <= 80 && cleanAnswer(v, 24) !== '').slice(0, MAX_WORDS).map(([k, v]) => [k, cleanAnswer(v, 24)])) : {},
+    wordRerollDay: typeof raw.wordRerollDay === 'string' ? raw.wordRerollDay.slice(0, 12) : '',
     nicks: raw.nicks && typeof raw.nicks === 'object' ? Object.fromEntries(Object.entries(raw.nicks as Record<string, unknown>).filter(([k, v]) => k.length <= 80 && cleanAnswer(v, MAX_NICK_LEN) !== '').slice(0, MAX_NICKS).map(([k, v]) => [k, cleanAnswer(v, MAX_NICK_LEN)])) : {},
     lingo: Array.isArray(raw.lingo)
       ? raw.lingo

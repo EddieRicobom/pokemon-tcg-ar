@@ -120,6 +120,8 @@ export interface VillageState {
   /** Perguntas dos Pokémon, suas respostas, bordões e "gírias" da Vila (ver `quiz.ts`). */
   answers: Answer[];
   words: Record<string, string>;
+  /** Dia da migração única da pool ampliada de bordões. */
+  wordRerollDay: string;
   lingo: Lingo[];
   asked: Record<string, { day: string; n: number }>;
   /** Apelidos dados aos Pokémon (ver `nickname.ts`). */

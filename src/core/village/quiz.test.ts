@@ -3,7 +3,7 @@ import { seededRng } from '../battle';
 import { emptyVillage, friendOf, normalizeVillage } from './life';
 import { generateVillage } from './map';
 import {
-  applyFollow, canAsk, DEFAULT_WORDS, FOLLOWS, markAsked, oddReaction, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, QUESTIONS, recordAnswer, setWord, spreadWords, withWords, wordOf,
+  applyFollow, canAsk, DEFAULT_WORDS, FOLLOWS, markAsked, oddReaction, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, QUESTIONS, recordAnswer, rerollWords, setWord, spreadWords, withWords, wordOf,
 } from './quiz';
 import type { QKind } from './quiz';
 import { cleanAnswer, MAX_ANSWERS, MAX_LINGO, FX_EMOJI } from './social-state';
@@ -184,15 +184,29 @@ describe('perguntas dos Pokémon', () => {
     }
   });
 
+  it('resorteia uma vez os bordões persistidos sem repetir os antigos', () => {
+    const s = fresh();
+    setWord(s, 'a', 'Tá pago!');
+    setWord(s, 'b', 'Oxe!');
+    rerollWords(s, ['a', 'b'], '2026-10-24');
+    expect(s.words.a).toBeTruthy();
+    expect(s.words.b).toBeTruthy();
+    expect(s.words.a).not.toBe('Tá pago!');
+    expect(s.words.b).not.toBe('Oxe!');
+    expect(s.words.a).not.toBe(s.words.b);
+  });
+
   it('tudo isso persiste: ao abrir um salvamento, respostas, gírias, bordões e perguntas do dia voltam', () => {
     const s = fresh();
     recordAnswer(s, mon, sq, 'bunda fedida', 1000, '2026-10-15', 'Ash');
     setWord(s, 'b', 'Oxe!');
+    s.wordRerollDay = '2026-10-24';
     markAsked(s, 'a', '2026-10-15');
     const back = normalizeVillage(JSON.parse(JSON.stringify(s)), 20261014, map.spawn);
     expect(back.answers).toEqual(s.answers);
     expect(back.lingo.map((x) => x.text)).toEqual(['bunda fedida']);
     expect(back.words).toEqual({ b: 'Oxe!' });
+    expect(back.wordRerollDay).toBe('2026-10-24');
     expect(back.asked).toEqual({ a: { day: '2026-10-15', n: 1 } });
     // lixo no disco vira vazio, sem quebrar
     const junk = normalizeVillage({ ...JSON.parse(JSON.stringify(s)), answers: [1, null, { q: 5 }, { q: 'x', a: '', mon: 'a' }], words: { a: 5 }, lingo: 'no', asked: 7 }, 20261014, map.spawn);

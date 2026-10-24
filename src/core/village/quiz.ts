@@ -456,12 +456,35 @@ export const DEFAULT_WORDS: Record<string, readonly string[]> = {
   ],
 };
 
-/** O bordão do Pokémon: o que ele pegou (ou o que você deu) ou um padrão do jeito dele (fixo pelo id da carta). */
+/** O bordão do Pokémon: o que ele pegou (ou o que você deu) ou um padrão fixo do jeito dele. */
 export function wordOf(state: VillageState, id: string): string {
   const w = state.words[id];
   if (w) return w;
   const list = DEFAULT_WORDS[personalityOf(id).name] ?? DEFAULT_WORDS.Curioso!;
   return list[hash(`w:${id}`) % list.length]!;
+}
+
+/**
+ * Resorteia, uma única vez, os bordões já gravados usando a pool atual. O chamador guarda a data no save para que esta
+ * ação seja permanente e não aconteça de novo ao reabrir a Vila.
+ */
+export function rerollWords(state: VillageState, ids: readonly string[], day: string): void {
+  const used = new Set<string>();
+  for (const id of [...new Set(ids)]) {
+    const list = DEFAULT_WORDS[personalityOf(id).name] ?? DEFAULT_WORDS.Curioso!;
+    const old = state.words[id];
+    const start = hash(`reroll:${day}:${id}`) % list.length;
+    let picked = list[start]!;
+    for (let offset = 0; offset < list.length; offset++) {
+      const candidate = list[(start + offset) % list.length]!;
+      if (candidate !== old && !used.has(candidate)) {
+        picked = candidate;
+        break;
+      }
+    }
+    state.words[id] = picked;
+    used.add(picked);
+  }
 }
 
 export function setWord(state: VillageState, id: string, word: string): void {
