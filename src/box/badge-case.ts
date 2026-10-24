@@ -38,7 +38,7 @@ import { BADGE_DESIGNS, counterClockwise, polishLook, slotPosition } from '../co
 import type { BadgeDesign, Point } from '../core/badges';
 import { isResting, restingWobble, secondDerivative, shakeOffset, stepWobble } from '../core/badge-wobble';
 import type { Wobble } from '../core/badge-wobble';
-import { drawBadgeFace, drawBadgeMask } from './badge-art';
+import { drawBadgeFace, drawBadgeHeight, drawBadgeMask } from './badge-art';
 import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
 import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
@@ -91,6 +91,10 @@ const LID_H = 0.14;
 const BADGE_R = 0.21;
 const CLEARANCE = 0.04;
 const OPEN_ANGLE = -1.9;
+/** Força do relevo da face (metal alto, esmalte afundado), na escala do `bumpScale` do Three.js. */
+const BUMP = 1.6;
+/** Cor da face com os reflexos ligados (multiplica a textura). */
+const FX_FACE_TINT = 0.62;
 /** Altura do forro: um pouco acima do topo da base, para as superfícies não brigarem na profundidade. */
 const LINING_Y = BASE_H + 0.006;
 
@@ -330,7 +334,7 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
     if (!won.has(design.order)) continue;
     const geo = keep(new ExtrudeGeometry(shapeOf(design.outline), { depth: 0.12, bevelEnabled: true, bevelThickness: 0.07, bevelSize: 0.06, bevelSegments: 3, curveSegments: 4 }));
     const c = document.createElement('canvas');
-    c.width = c.height = 256;
+    c.width = c.height = 512;
     const texture = keep(new CanvasTexture(c));
     texture.colorSpace = SRGBColorSpace;
     texture.wrapS = texture.wrapT = ClampToEdgeWrapping;
@@ -344,7 +348,15 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
     mask.wrapS = mask.wrapT = ClampToEdgeWrapping;
     mask.repeat.set(0.5, 0.5);
     mask.offset.set(0.5, 0.5);
-    const face = keep(new MeshStandardMaterial({ map: texture, metalnessMap: mask, roughnessMap: mask, metalness: design.metal.metalness, roughness: design.metal.roughness }));
+    // Relevo: metal e filetes altos, esmalte afundado entre eles (a luz desenha as bordas de cada cor).
+    const heightCanvas = document.createElement('canvas');
+    heightCanvas.width = heightCanvas.height = 256;
+    drawBadgeHeight(heightCanvas, design);
+    const bump = keep(new CanvasTexture(heightCanvas));
+    bump.wrapS = bump.wrapT = ClampToEdgeWrapping;
+    bump.repeat.set(0.5, 0.5);
+    bump.offset.set(0.5, 0.5);
+    const face = keep(new MeshStandardMaterial({ map: texture, metalnessMap: mask, roughnessMap: mask, bumpMap: bump, bumpScale: BUMP, metalness: design.metal.metalness, roughness: design.metal.roughness }));
     const side = keep(new MeshStandardMaterial({ color: new Color(design.metal.base), metalness: design.metal.metalness, roughness: design.metal.roughness }));
     if (design.translucent) {
       face.transparent = side.transparent = true;
@@ -405,6 +417,8 @@ export async function startBadgeCase(options: BadgeCaseOptions): Promise<Running
     for (const n of nodes) {
       const m = fx ? n.design.metal.metalness : Math.min(0.5, n.design.metal.metalness);
       n.face.metalness = n.side.metalness = m;
+      // Com o ambiente e o tone mapping, o esmalte recebe luz demais e desbota: escurece a face para a cor voltar.
+      n.face.color.setScalar(fx ? FX_FACE_TINT : 1);
     }
     gold.metalness = fx ? 1 : 0.55;
     for (const m of [leather, gold, velvet, socketMat, rimMat, ...nodes.flatMap((n) => [n.face, n.side])] as Material[]) m.needsUpdate = true;

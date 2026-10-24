@@ -27,7 +27,7 @@ const polishFor = (order: number): number => {
 /** Liga: estojo de insígnias, os Ginásios em ordem, a Elite 4 e a Campeã. O desafio é preparado na Arena e exibido na Caixa. */
 const next = computed(() => nextChallenge(league.value, selected.value));
 // Ordem cronológica, sem alterar os índices persistidos de Sinnoh.
-const regionTabs = ['kanto', 'johto', 'hoenn', 'sinnoh'].map((id) => LEAGUE_REGIONS.find((r) => r.id === id)!);
+const regionTabs = ['kanto', 'johto', 'hoenn', 'sinnoh', 'unova', 'kalos'].map((id) => LEAGUE_REGIONS.find((r) => r.id === id)!);
 const sections = computed(() => [
   { title: 'Ginásios', challenges: region.value.gyms },
   { title: 'Elite 4', challenges: region.value.elite },

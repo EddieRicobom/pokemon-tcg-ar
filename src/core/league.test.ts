@@ -1,25 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_CHALLENGES, LEAGUE_REGIONS, regionalProgress, applyLeagueResult, CHAMPION, challengeById, ELITE, emptyLeague, GYMS, nextChallenge, normalizeLeague, statusOf } from './league';
+import { ALL_CHALLENGES, LEAGUE_REGIONS, regionalProgress, applyLeagueResult, CHAMPION, challengeById, ELITE, emptyLeague, GYMS, nextChallenge, normalizeLeague, statusOf, TOTAL_BADGES } from './league';
 import type { LeagueProgress } from './league';
 
 const winAll = (p: LeagueProgress, list = GYMS) => list.reduce((acc, c) => applyLeagueResult(acc, c, true).progress, p);
 
 describe('a Liga', () => {
-  it('8 Ginásios, 4 da Elite e a Campeã, com Ginásios de seis e dificuldade crescente', () => {
+  it('8 Ginásios, 4 da Elite e a Campeã, todos com seis Pokémon e dificuldade crescente', () => {
     expect(GYMS).toHaveLength(8);
     expect(ELITE).toHaveLength(4);
-    expect(new Set(ALL_CHALLENGES.map((c) => c.id)).size).toBe(52);
+    expect(new Set(ALL_CHALLENGES.map((c) => c.id)).size).toBe(LEAGUE_REGIONS.length * 13);
     let power = 0;
     for (const c of [...GYMS, ...ELITE, CHAMPION]) {
-      expect(c.team.length).toBeGreaterThanOrEqual(3);
-      expect(c.team.length).toBeLessThanOrEqual(6);
+      expect(c.team).toHaveLength(6);
       expect(c.power).toBeGreaterThan(power);
       power = c.power;
       expect(c.intro.length).toBeGreaterThan(10);
       expect(c.defeat.length).toBeGreaterThan(10);
     }
     expect(GYMS.every((g) => g.badge)).toBe(true);
-    expect(GYMS.every((g) => g.team.length === 6)).toBe(true);
     expect(challengeById('gym-3')?.leader).toBe('Crasher Wake');
     expect(challengeById('nada')).toBeNull();
   });
@@ -88,7 +86,7 @@ describe('nomes das equipes dos líderes', () => {
 
 describe('Ligas regionais', () => {
   it('cada região tem 8 ginásios, 4 elites, campeão e IDs próprios', () => {
-    expect(LEAGUE_REGIONS.map((r) => r.name)).toEqual(['Sinnoh', 'Kanto', 'Johto', 'Hoenn']);
+    expect(LEAGUE_REGIONS.map((r) => r.name)).toEqual(['Sinnoh', 'Kanto', 'Johto', 'Hoenn', 'Unova', 'Kalos']);
     for (const r of LEAGUE_REGIONS) {
       expect(r.gyms).toHaveLength(8);
       expect(r.elite).toHaveLength(4);
@@ -97,10 +95,8 @@ describe('Ligas regionais', () => {
         expect(challengeById(c.id)).toBe(c);
         expect(c.power).toBeGreaterThan(power);
         power = c.power;
-        expect(c.team.length).toBeGreaterThanOrEqual(3);
-        expect(c.team.length).toBeLessThanOrEqual(6);
+        expect(c.team).toHaveLength(6);
       }
-      expect(r.gyms.every((g) => g.team.length === 6)).toBe(true);
     }
   });
   it('insígnias e corrida da Elite ficam isoladas, inclusive depois de salvar', () => {
@@ -129,14 +125,15 @@ describe('Ligas regionais', () => {
       expect(repeat.first).toBe(false);
       p = repeat.progress;
     }
-    expect(p.badges).toHaveLength(32);
+    expect(p.badges).toHaveLength(TOTAL_BADGES);
+    expect(TOTAL_BADGES).toBe(48);
     expect(p.championWins).toBe(0);
     expect(p.eliteStreak).toBe(4);
   });
   it('limpa contadores regionais inválidos e conserva salvamento antigo', () => {
     expect(normalizeLeague({ badges: [0, 7], eliteStreak: 2, championWins: 1 })).toEqual({ badges: [0, 7], eliteStreak: 2, championWins: 1, beaten: [] });
-    const p = normalizeLeague({ regions: { kanto: { eliteStreak: 99, championWins: -1 }, johto: null }, badges: [8, 31, 32] });
-    expect(p.badges).toEqual([8, 31]);
+    const p = normalizeLeague({ regions: { kanto: { eliteStreak: 99, championWins: -1 }, johto: null }, badges: [8, 31, 47, 48] });
+    expect(p.badges).toEqual([8, 31, 47]);
     expect(p.regions?.kanto).toEqual({ eliteStreak: 4, championWins: 0 });
     expect(p.regions?.johto).toEqual({ eliteStreak: 0, championWins: 0 });
   });

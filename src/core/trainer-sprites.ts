@@ -71,7 +71,8 @@ export function trainerSprite(id: string): TrainerSprite {
   return BY_ID.get(id) ?? BY_ID.get(DEFAULT_TRAINER_SPRITE)!;
 }
 
+/** Aceita o id do jogador, um caminho dentro de `TRAINER_SPRITE_BASE` ou um endereço completo (os líderes de Kalos). */
 export function trainerSpriteUrl(pathOrId: string): string {
   const path = BY_ID.get(pathOrId)?.path ?? pathOrId;
-  return `${TRAINER_SPRITE_BASE}/${path}.png`;
+  return path.startsWith('https://') ? `${path}.png` : `${TRAINER_SPRITE_BASE}/${path}.png`;
 }

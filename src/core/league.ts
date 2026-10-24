@@ -215,6 +215,140 @@ export const SPECIES_NAMES: Readonly<Record<number, string>> = {
   404: 'Luxio',
   135: 'Jolteon',
   466: 'Electivire',
+  // Elite 4 completas (6 Pokémon) e as Ligas de Unova e Kalos.
+  70: 'Weepinbell',
+  185: 'Sudowoodo',
+  189: 'Jumpluff',
+  199: 'Slowking',
+  267: 'Beautifly',
+  283: 'Surskit',
+  284: 'Masquerain',
+  303: 'Mawile',
+  342: 'Crawdaunt',
+  361: 'Snorunt',
+  363: 'Spheal',
+  371: 'Bagon',
+  504: 'Patrat',
+  505: 'Watchog',
+  506: 'Lillipup',
+  507: 'Herdier',
+  508: 'Stoutland',
+  510: 'Liepard',
+  511: 'Pansage',
+  512: 'Simisage',
+  513: 'Pansear',
+  514: 'Simisear',
+  515: 'Panpour',
+  516: 'Simipour',
+  518: 'Musharna',
+  519: 'Pidove',
+  520: 'Tranquill',
+  521: 'Unfezant',
+  522: 'Blitzle',
+  523: 'Zebstrika',
+  527: 'Woobat',
+  528: 'Swoobat',
+  529: 'Drilbur',
+  530: 'Excadrill',
+  531: 'Audino',
+  533: 'Gurdurr',
+  534: 'Conkeldurr',
+  536: 'Palpitoad',
+  538: 'Throh',
+  539: 'Sawk',
+  541: 'Swadloon',
+  542: 'Leavanny',
+  543: 'Venipede',
+  545: 'Scolipede',
+  551: 'Sandile',
+  552: 'Krokorok',
+  553: 'Krookodile',
+  557: 'Dwebble',
+  558: 'Crustle',
+  560: 'Scrafty',
+  561: 'Sigilyph',
+  562: 'Yamask',
+  563: 'Cofagrigus',
+  571: 'Zoroark',
+  576: 'Gothitelle',
+  579: 'Reuniclus',
+  581: 'Swanna',
+  582: 'Vanillite',
+  583: 'Vanillish',
+  584: 'Vanilluxe',
+  587: 'Emolga',
+  589: 'Escavalier',
+  592: 'Frillish',
+  593: 'Jellicent',
+  595: 'Joltik',
+  596: 'Galvantula',
+  604: 'Eelektross',
+  606: 'Beheeyem',
+  609: 'Chandelure',
+  610: 'Axew',
+  611: 'Fraxure',
+  612: 'Haxorus',
+  613: 'Cubchoo',
+  614: 'Beartic',
+  615: 'Cryogonal',
+  617: 'Accelgor',
+  620: 'Mienshao',
+  621: 'Druddigon',
+  623: 'Golurk',
+  625: 'Bisharp',
+  626: 'Bouffalant',
+  630: 'Mandibuzz',
+  635: 'Hydreigon',
+  637: 'Volcarona',
+  655: 'Delphox',
+  658: 'Greninja',
+  663: 'Talonflame',
+  664: 'Scatterbug',
+  665: 'Spewpa',
+  666: 'Vivillon',
+  668: 'Pyroar',
+  672: 'Skiddo',
+  673: 'Gogoat',
+  675: 'Pangoro',
+  677: 'Espurr',
+  678: 'Meowstic',
+  680: 'Doublade',
+  681: 'Aegislash',
+  683: 'Aromatisse',
+  685: 'Slurpuff',
+  689: 'Barbaracle',
+  691: 'Dragalge',
+  693: 'Clawitzer',
+  694: 'Helioptile',
+  695: 'Heliolisk',
+  696: 'Tyrunt',
+  697: 'Tyrantrum',
+  698: 'Amaura',
+  699: 'Aurorus',
+  700: 'Sylveon',
+  701: 'Hawlucha',
+  702: 'Dedenne',
+  703: 'Carbink',
+  706: 'Goodra',
+  707: 'Klefki',
+  709: 'Trevenant',
+  711: 'Gourgeist',
+  712: 'Bergmite',
+  713: 'Avalugg',
+  715: 'Noivern',
+  546: 'Cottonee',
+  548: 'Petilil',
+  556: 'Maractus',
+  619: 'Mienfoo',
+  654: 'Braixen',
+  667: 'Litleo',
+  674: 'Pancham',
+  679: 'Honedge',
+  682: 'Spritzee',
+  688: 'Binacle',
+  692: 'Clauncher',
+  708: 'Phantump',
+  714: 'Noibat',
 };
 
 export const speciesName = (dex: number): string => SPECIES_NAMES[dex] ?? `Pokémon nº ${dex}`;
@@ -249,7 +383,7 @@ const DP = 'gen4/diamond-pearl/';
 export const GYMS: readonly Challenge[] = [
   { id: 'gym-0', kind: 'gym', order: 0, leader: 'Roark', role: 'Líder de Ginásio', sprite: `${DP}Roark`, type: 'rock', team: [74, 75, 76, 95, 408, 409], power: 0.9, badge: { name: 'Insígnia Carvão', color: '#8a8070' }, xp: 120, intro: 'Meus Pokémon de pedra são duros como a mina onde trabalho. Vamos ver do que você é feito!', defeat: 'Você rachou a minha defesa! Leve a Insígnia Carvão, você mereceu.' },
   { id: 'gym-1', kind: 'gym', order: 1, leader: 'Gardenia', role: 'Líder de Ginásio', sprite: `${DP}Gardenia`, type: 'grass', team: [387, 388, 389, 420, 421, 407], power: 0.95, badge: { name: 'Insígnia Floresta', color: '#4caf50' }, xp: 130, intro: 'Meus Pokémon de grama crescem fortes ao sol. Preparado para ser enraizado?', defeat: 'Que florada de batalha! A Insígnia Floresta é sua.' },
-  { id: 'gym-2', kind: 'gym', order: 2, leader: 'Maylene', role: 'Líder de Ginásio', sprite: `${DP}Maylene`, type: 'fighting', team: [66, 67, 68, 307, 308, 448], power: 1.0, badge: { name: 'Insígnia Punho', color: '#c0504d' }, xp: 140, intro: 'Treino descalça na neve todos os dias. Mostre a força do seu coração!', defeat: 'Seus Pokémon lutaram com tudo. A Insígnia Punho é sua!' },
+  { id: 'gym-2', kind: 'gym', order: 2, leader: 'Maylene', role: 'Líder de Ginásio', sprite: `${DP}Maylene`, type: 'fighting', team: [66, 67, 68, 307, 308, 448], power: 1.0, badge: { name: 'Insígnia Pedregulho', color: '#c0504d' }, xp: 140, intro: 'Treino descalça na neve todos os dias. Mostre a força do seu coração!', defeat: 'Seus Pokémon lutaram com tudo. A Insígnia Pedregulho é sua!' },
   { id: 'gym-3', kind: 'gym', order: 3, leader: 'Crasher Wake', role: 'Líder de Ginásio', sprite: `${DP}Crasher_Wake`, type: 'water', team: [130, 195, 418, 419, 423, 457], power: 1.05, badge: { name: 'Insígnia Pântano', color: '#3a8fe0' }, xp: 150, intro: 'Uma onda gigante está chegando! Segure firme ou vai ser levado!', defeat: 'Que tsunami de talento! Tome a Insígnia Pântano!' },
   { id: 'gym-4', kind: 'gym', order: 4, leader: 'Fantina', role: 'Líder de Ginásio', sprite: `${DP}Fantina`, type: 'ghost', team: [93, 94, 355, 429, 426, 477], power: 1.1, badge: { name: 'Insígnia Relíquia', color: '#7e57c2' }, xp: 160, intro: 'Meus Pokémon fantasmas dançam no escuro. Você consegue acompanhar?', defeat: 'Magnífique! Você dança muito bem. A Insígnia Relíquia é sua.' },
   { id: 'gym-5', kind: 'gym', order: 5, leader: 'Byron', role: 'Líder de Ginásio', sprite: `${DP}Byron`, type: 'steel', team: [208, 411, 436, 437, 462, 476], power: 1.15, badge: { name: 'Insígnia Mina', color: '#90a4ae' }, xp: 170, intro: 'Aço forjado na mina! Nenhum golpe vai amassar meus Pokémon!', defeat: 'Amassou o aço! Você é de ferro. Leve a Insígnia Mina.' },
@@ -258,10 +392,10 @@ export const GYMS: readonly Challenge[] = [
 ];
 
 export const ELITE: readonly Challenge[] = [
-  { id: 'elite-0', kind: 'elite', order: 0, leader: 'Aaron', role: 'Elite 4', sprite: `${DP}Aaron`, type: 'bug', team: [469, 212, 416, 214, 452], power: 1.3, xp: 220, intro: 'Os Pokémon inseto são lindos e fortes. Vou provar isso agora!', defeat: 'Você venceu com elegância. Siga em frente, a Bertha espera.' },
-  { id: 'elite-1', kind: 'elite', order: 1, leader: 'Bertha', role: 'Elite 4', sprite: `${DP}Bertha`, type: 'ground', team: [340, 472, 450, 76, 464], power: 1.34, xp: 230, intro: 'Ah, que jovem animado! Vamos ver se você aguenta o tremor da terra.', defeat: 'Que maravilha! Faz tempo que não me divirto tanto. Vá, querido.' },
-  { id: 'elite-2', kind: 'elite', order: 2, leader: 'Flint', role: 'Elite 4', sprite: `${DP}Flint`, type: 'fire', team: [229, 136, 78, 392, 467], power: 1.38, xp: 240, intro: 'Meu fogo queima mais quente que qualquer coisa! Vamos acender essa batalha!', defeat: 'Você apagou minhas chamas... mas acendeu meu coração. Siga!' },
-  { id: 'elite-3', kind: 'elite', order: 3, leader: 'Lucian', role: 'Elite 4', sprite: `${DP}Lucian`, type: 'psychic', team: [122, 196, 437, 65, 475], power: 1.42, xp: 250, intro: 'Estava terminando um livro. Imagino que nossa batalha será um capítulo melhor.', defeat: 'Que final brilhante. A Campeã aguarda na próxima sala.' },
+  { id: 'elite-0', kind: 'elite', order: 0, leader: 'Aaron', role: 'Elite 4', sprite: `${DP}Aaron`, type: 'bug', team: [267, 469, 212, 416, 214, 452], power: 1.3, xp: 220, intro: 'Os Pokémon inseto são lindos e fortes. Vou provar isso agora!', defeat: 'Você venceu com elegância. Siga em frente, a Bertha espera.' },
+  { id: 'elite-1', kind: 'elite', order: 1, leader: 'Bertha', role: 'Elite 4', sprite: `${DP}Bertha`, type: 'ground', team: [185, 340, 472, 450, 76, 464], power: 1.34, xp: 230, intro: 'Ah, que jovem animado! Vamos ver se você aguenta o tremor da terra.', defeat: 'Que maravilha! Faz tempo que não me divirto tanto. Vá, querido.' },
+  { id: 'elite-2', kind: 'elite', order: 2, leader: 'Flint', role: 'Elite 4', sprite: `${DP}Flint`, type: 'fire', team: [229, 136, 78, 59, 392, 467], power: 1.38, xp: 240, intro: 'Meu fogo queima mais quente que qualquer coisa! Vamos acender essa batalha!', defeat: 'Você apagou minhas chamas... mas acendeu meu coração. Siga!' },
+  { id: 'elite-3', kind: 'elite', order: 3, leader: 'Lucian', role: 'Elite 4', sprite: `${DP}Lucian`, type: 'psychic', team: [122, 203, 196, 437, 65, 475], power: 1.42, xp: 250, intro: 'Estava terminando um livro. Imagino que nossa batalha será um capítulo melhor.', defeat: 'Que final brilhante. A Campeã aguarda na próxima sala.' },
 ];
 
 export const CHAMPION: Challenge = {
@@ -270,7 +404,7 @@ export const CHAMPION: Challenge = {
   defeat: 'Você é o novo Campeão! Seu nome e o de seus Pokémon vão para o Hall da Fama.',
 };
 
-export type RegionId = 'sinnoh' | 'kanto' | 'johto' | 'hoenn';
+export type RegionId = 'sinnoh' | 'kanto' | 'johto' | 'hoenn' | 'unova' | 'kalos';
 export interface LeagueRegion {
   id: RegionId;
   name: string;
@@ -281,13 +415,13 @@ export interface LeagueRegion {
   champion: Challenge;
 }
 
-// Equipes de exibição inspiradas em FireRed/LeafGreen, Gold/Silver e Ruby/Sapphire.
-// A progressão e a dificuldade são próprias do app, como em Sinnoh.
+// Equipes de exibição inspiradas em FireRed/LeafGreen, HeartGold/SoulSilver, Ruby/Sapphire, Black/White e X/Y.
+// Todos os treinadores levam 6 Pokémon; a progressão e a dificuldade são próprias do app, como em Sinnoh.
 type LeaderData = readonly [string, PokemonType, readonly number[], string?, string?];
-function makeRegion(id: RegionId, name: string, generation: string, badgeOffset: number, spriteBase: string, gyms: readonly LeaderData[], elite: readonly LeaderData[], champion: LeaderData): LeagueRegion {
+function makeRegion(id: RegionId, name: string, generation: string, badgeOffset: number, spriteBase: string, gyms: readonly LeaderData[], elite: readonly LeaderData[], champion: LeaderData, championRole = 'Campeão'): LeagueRegion {
   const make = (data: LeaderData, kind: ChallengeKind, order: number): Challenge => {
     const [leader, type, team, badge, sprite] = data;
-    const role = kind === 'gym' ? 'Líder de Ginásio' : kind === 'elite' ? 'Elite 4' : 'Campeão';
+    const role = kind === 'gym' ? 'Líder de Ginásio' : kind === 'elite' ? 'Elite 4' : championRole;
     return { id: `${id}-${kind}-${order}`, region: id, kind, order, leader, role,
       sprite: `${spriteBase}${sprite ?? leader.replaceAll(' ', '_')}`, type, team,
       power: kind === 'gym' ? 0.9 + order * 0.05 : kind === 'elite' ? 1.3 + order * 0.04 : 1.5,
@@ -299,6 +433,12 @@ function makeRegion(id: RegionId, name: string, generation: string, badgeOffset:
   };
   return { id, name, generation, badgeOffset, gyms: gyms.map((d, i) => make(d, 'gym', i)), elite: elite.map((d, i) => make(d, 'elite', i)), champion: make(champion, 'champion', 0) };
 }
+
+/**
+ * Kalos não tem sprites de treinador no repositório da Smogon: usa os do servidor do Pokémon Showdown (endereço
+ * completo; `trainerSpriteUrl` aceita os dois). Conferidos em 2026-10-24.
+ */
+const KALOS_SPRITES = 'https://play.pokemonshowdown.com/sprites/trainers/';
 
 export const LEAGUE_REGIONS: readonly LeagueRegion[] = [
   { id: 'sinnoh', name: 'Sinnoh', generation: 'IV', badgeOffset: 0, gyms: GYMS, elite: ELITE, champion: CHAMPION },
@@ -312,10 +452,10 @@ export const LEAGUE_REGIONS: readonly LeagueRegion[] = [
     ['Blaine', 'fire', [58, 77, 78, 59, 126, 37], 'Vulcão'],
     ['Giovanni', 'ground', [111, 51, 31, 34, 112, 28], 'Terra'],
   ], [
-    ['Lorelei', 'ice', [87, 91, 80, 124, 131]],
-    ['Bruno', 'fighting', [95, 107, 106, 68]],
-    ['Agatha', 'ghost', [94, 42, 93, 24]],
-    ['Lance', 'dragon', [130, 148, 142, 149]],
+    ['Lorelei', 'ice', [87, 91, 80, 221, 124, 131]],
+    ['Bruno', 'fighting', [95, 57, 62, 107, 106, 68]],
+    ['Agatha', 'ghost', [92, 42, 93, 24, 110, 94]],
+    ['Lance', 'dragon', [147, 148, 130, 142, 6, 149]],
   ], ['Blue', 'normal', [18, 65, 112, 103, 130, 6]]),
   makeRegion('johto', 'Johto', 'II', 16, 'gen4/heartgold-soulsilver/', [
     ['Falkner', 'flying', [16, 17, 163, 164, 21, 22], 'Zephyr'],
@@ -327,10 +467,10 @@ export const LEAGUE_REGIONS: readonly LeagueRegion[] = [
     ['Pryce', 'ice', [86, 87, 221, 124, 91, 131], 'Geleira'],
     ['Clair', 'dragon', [148, 130, 230, 147, 149, 334], 'Ascendente'],
   ], [
-    ['Will', 'psychic', [178, 124, 103, 80]],
-    ['Koga', 'poison', [168, 205, 89, 49, 169]],
-    ['Bruno', 'fighting', [237, 106, 107, 95, 68]],
-    ['Karen', 'dark', [197, 45, 94, 198, 229]],
+    ['Will', 'psychic', [178, 124, 103, 80, 122, 196]],
+    ['Koga', 'poison', [168, 205, 89, 49, 110, 169]],
+    ['Bruno', 'fighting', [237, 57, 106, 107, 95, 68]],
+    ['Karen', 'dark', [197, 215, 45, 94, 198, 229]],
   ], ['Lance', 'dragon', [130, 149, 142, 6, 148, 230]]),
   makeRegion('hoenn', 'Hoenn', 'III', 24, 'gen3/ruby-sapphire/', [
     ['Roxanne', 'rock', [74, 299, 75, 76, 95, 306], 'Pedra'],
@@ -342,12 +482,44 @@ export const LEAGUE_REGIONS: readonly LeagueRegion[] = [
     ['Tate e Liza', 'psychic', [344, 178, 337, 338, 202, 282], 'Mente', 'Tate_and_Liza'],
     ['Wallace', 'water', [370, 340, 364, 119, 350, 121], 'Chuva'],
   ], [
-    ['Sidney', 'dark', [262, 275, 332, 319, 359]],
-    ['Phoebe', 'ghost', [356, 354, 302]],
-    ['Glacia', 'ice', [362, 364, 365]],
-    ['Drake', 'dragon', [372, 334, 330, 373]],
+    ['Sidney', 'dark', [262, 275, 332, 342, 319, 359]],
+    ['Phoebe', 'ghost', [353, 355, 302, 200, 354, 356]],
+    ['Glacia', 'ice', [361, 363, 362, 364, 131, 365]],
+    ['Drake', 'dragon', [371, 372, 334, 330, 230, 373]],
   ], ['Steven', 'steel', [227, 344, 306, 346, 348, 376]]),
+  makeRegion('unova', 'Unova', 'V', 32, 'gen5/black-white/', [
+    ['Cilan', 'grass', [506, 511, 512, 546, 548, 556], 'Trio'],
+    ['Lenora', 'normal', [504, 505, 506, 507, 508, 531], 'Básica'],
+    ['Burgh', 'bug', [541, 543, 557, 545, 558, 542], 'Inseto'],
+    ['Elesa', 'electric', [522, 587, 595, 596, 604, 523], 'Raio'],
+    ['Clay', 'ground', [529, 536, 551, 552, 553, 530], 'Tremor'],
+    ['Skyla', 'flying', [519, 520, 527, 528, 581, 521], 'Jato'],
+    ['Brycen', 'ice', [582, 583, 613, 615, 584, 614], 'Congelante'],
+    ['Drayden', 'dragon', [610, 611, 621, 334, 635, 612], 'Lenda'],
+  ], [
+    ['Shauntal', 'ghost', [562, 563, 592, 593, 623, 609]],
+    ['Grimsley', 'dark', [510, 553, 560, 630, 571, 625]],
+    ['Caitlin', 'psychic', [518, 561, 576, 606, 579, 282]],
+    ['Marshal', 'fighting', [533, 538, 539, 560, 620, 534]],
+  ], ['Alder', 'bug', [617, 626, 621, 584, 589, 637]]),
+  makeRegion('kalos', 'Kalos', 'VI', 40, KALOS_SPRITES, [
+    ['Viola', 'bug', [283, 664, 665, 284, 12, 666], 'Besouro', 'viola'],
+    ['Grant', 'rock', [703, 688, 696, 698, 689, 697], 'Penhasco', 'grant'],
+    ['Korrina', 'fighting', [619, 674, 67, 675, 701, 448], 'Estrondo', 'korrina'],
+    ['Ramos', 'grass', [189, 70, 672, 708, 709, 673], 'Planta', 'ramos'],
+    ['Clemont', 'electric', [694, 587, 702, 82, 695, 462], 'Voltagem', 'clemont'],
+    ['Valerie', 'fairy', [303, 122, 682, 683, 685, 700], 'Fada', 'valerie'],
+    ['Olympia', 'psychic', [677, 561, 199, 576, 655, 678], 'Psíquica', 'olympia'],
+    ['Wulfric', 'ice', [712, 615, 362, 460, 87, 713], 'Iceberg', 'wulfric'],
+  ], [
+    ['Malva', 'fire', [667, 324, 609, 654, 663, 668], undefined, 'malva'],
+    ['Siebold', 'water', [692, 91, 121, 130, 689, 693], undefined, 'siebold'],
+    ['Wikstrom', 'steel', [679, 680, 476, 212, 707, 681], undefined, 'wikstrom'],
+    ['Drasna', 'dragon', [714, 334, 621, 691, 706, 715], undefined, 'drasna'],
+  ], ['Diantha', 'fairy', [701, 697, 699, 711, 706, 282], undefined, 'diantha'], 'Campeã'),
 ];
+/** Quantas insígnias existem ao todo (8 por região). */
+export const TOTAL_BADGES = LEAGUE_REGIONS.length * 8;
 export const ALL_CHALLENGES: readonly Challenge[] = LEAGUE_REGIONS.flatMap((r) => [...r.gyms, ...r.elite, r.champion]);
 export const regionOf = (c: Challenge): LeagueRegion => LEAGUE_REGIONS.find((r) => r.id === (c.region ?? 'sinnoh'))!;
 export function regionalProgress(p: LeagueProgress, id: RegionId): LeagueProgress {
@@ -362,7 +534,7 @@ export function challengeById(id: string): Challenge | null {
 }
 
 export interface LeagueProgress {
-  /** Insígnias globais: Sinnoh 0–7, Kanto 8–15, Johto 16–23, Hoenn 24–31. */
+  /** Insígnias globais: Sinnoh 0–7, Kanto 8–15, Johto 16–23, Hoenn 24–31, Unova 32–39, Kalos 40–47. */
   badges: number[];
   /** Corridas e títulos das regiões novas; os campos antigos abaixo continuam sendo Sinnoh. */
   regions?: Partial<Record<RegionId, { eliteStreak: number; championWins: number }>>;
@@ -380,7 +552,7 @@ export function emptyLeague(): LeagueProgress {
 
 export function normalizeLeague(raw: unknown): LeagueProgress {
   const r = (raw ?? {}) as Partial<LeagueProgress>;
-  const badges = Array.isArray(r.badges) ? [...new Set(r.badges.filter((b) => Number.isInteger(b) && b >= 0 && b < 32))].sort((a, b) => a - b) : [];
+  const badges = Array.isArray(r.badges) ? [...new Set(r.badges.filter((b) => Number.isInteger(b) && b >= 0 && b < TOTAL_BADGES))].sort((a, b) => a - b) : [];
   const ids = new Set(ALL_CHALLENGES.map((c) => c.id));
   return {
     badges,

@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 import { currentPolish, normalizePolish, onlyWon, rubBadge } from '../core/badge-polish';
 import type { PolishState } from '../core/badge-polish';
+import { TOTAL_BADGES } from '../core/league';
 import { league } from './league-store';
 
 const KEY = 'tcg-ar-insignias-v1';
@@ -8,7 +9,7 @@ const KEY = 'tcg-ar-insignias-v1';
 function read(): PolishState {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? onlyWon(normalizePolish(JSON.parse(raw), 32), league.value.badges) : {};
+    return raw ? onlyWon(normalizePolish(JSON.parse(raw), TOTAL_BADGES), league.value.badges) : {};
   } catch {
     return {};
   }

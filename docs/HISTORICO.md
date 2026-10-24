@@ -122,6 +122,13 @@ Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, cic
 - ✅ **Fonte diz quanto de energia falta** ("faltam 392 de energia") em vez de só ficar cinza — a invocação depois do primeiro funcionava (conferido: duas invocações seguidas com 1.100 de energia), mas parecia travada sem saldo.
 - ✅ **Invocação "qualquer um na sorte" por 700 moedas**: código pronto e testado (`summonWithCoins`, `pickAnySpecies`, 1–1025), **desligado** (`COIN_SUMMON_ENABLED = false`) até o dono pedir.
 
+## Insígnias até a Geração VI (24/10/2026)
+
+- Unova (V) e Kalos (VI) entram na Liga: Cilan, Lenora, Burgh, Elesa, Clay, Skyla, Brycen e Drayden, Elite de Unova e o Campeão Alder; Viola, Grant, Korrina, Ramos, Clemont, Valerie, Olympia e Wulfric, Elite de Kalos e a Campeã Diantha. Insígnias 32–47; nada salvo antes muda.
+- Todo treinador da Liga (Ginásios, Elite 4 e Campeões das seis regiões) agora leva 6 Pokémon.
+- As 48 insígnias foram redesenhadas no formato e nas cores das insígnias dos jogos (a de Maylene passou a se chamar Pedregulho, como a dos jogos), com filetes entre as cores, verniz e relevo de verdade na maleta 3D; com "Reflexos e faíscas" ligado o esmalte não desbota mais.
+- Conferido no preview local: as 48 em SVG, as maletas 3D de Kanto e Unova e os sprites dos líderes de Unova e Kalos. GPU e toque em celular real continuam pendentes.
+
 ## Ligas regionais (18/10/2026)
 
 - Kanto (I), Johto (II) e Hoenn (III) acrescentadas à Sinnoh (IV): cada região tem oito Ginásios, quatro membros da Elite e um Campeão (Blue, Lance, Steven e Cynthia). Equipes de exibição inspiradas nos jogos, com dificuldade própria do app.

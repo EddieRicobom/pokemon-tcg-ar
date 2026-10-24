@@ -7,7 +7,11 @@ describe('sprites de treinador', () => {
     expect(new Set(PLAYER_SPRITES.map((s) => s.id)).size).toBe(PLAYER_SPRITES.length);
     expect(PLAYER_SPRITES.length).toBeGreaterThanOrEqual(30);
     expect(trainerSpriteUrl('dawn')).toBe('https://raw.githubusercontent.com/smogon/sprites/master/src/_uncategorized/canonical/trainers/gen4/platinum/Dawn.png');
-    for (const c of ALL_CHALLENGES) expect(trainerSpriteUrl(c.sprite)).toMatch(/\/gen[34]\/[-a-z]+\/[A-Za-z_.]+\.png$/);
+    for (const c of ALL_CHALLENGES) {
+      // Kalos não está no repositório da Smogon: vem do servidor do Showdown.
+      if (c.region === 'kalos') expect(trainerSpriteUrl(c.sprite)).toMatch(/^https:\/\/play\.pokemonshowdown\.com\/sprites\/trainers\/[a-z]+\.png$/);
+      else expect(trainerSpriteUrl(c.sprite)).toMatch(/\/gen[345]\/[-a-z0-9]+\/[A-Za-z_.]+\.png$/);
+    }
   });
 
   it('escolha desconhecida vira o padrão', () => {
