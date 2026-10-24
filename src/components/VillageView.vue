@@ -1568,10 +1568,13 @@ async function recordSurvivalAdventure(summary: import('../core/survivor').Survi
     add(state, 'mega-stone-shard');
     milestoneRewards.push('💎 Fragmento de Mega Stone');
   }
+  const shadowTrustStones = Math.max(0, Math.floor(summary.shadowTrustStones ?? 0));
+  for (let i = 0; i < shadowTrustStones; i++) add(state, 'trust-stone');
+  if (shadowTrustStones > 0) milestoneRewards.push(`💠 ${shadowTrustStones} Pedra${shadowTrustStones === 1 ? '' : 's'} da Confiança (lendário sombrio)`);
   state.diary = trimMoments([...state.diary, {
     id, t: now.getTime(), day: refreshDay(), hour: now.getHours(), tpl: 'survival-adventure', kind: 'amizade', title: `Aventura na Torre · ${participant.name}`, emoji: '🗼',
     cast: [{ id: participant.id, name: participant.name }], lines: [{ who: 0, text: `${participant.name} enfrentou a Torre por ${time}.` }],
-    result: [`${summary.kills} derrotas · nível ${summary.level} · onda ${summary.wave}.`, won, ...(summary.digitalPokeballs > 0 ? [`${summary.digitalPokeballs} Pokébola${summary.digitalPokeballs === 1 ? '' : 's'} especial${summary.digitalPokeballs === 1 ? '' : 'is'} recolhida${summary.digitalPokeballs === 1 ? '' : 's'}.`] : []), ...milestoneRewards.map((reward) => `${reward} conquistado nesta corrida.`), ...(summary.finalBossBeaten ? ['O troféu da Torre foi conquistado; o modo Infinito está disponível.'] : [])],
+    result: [`${summary.kills} derrotas · nível ${summary.level} · onda ${summary.wave}.`, won, ...(summary.digitalPokeballs > 0 ? [`${summary.digitalPokeballs} Pokébola${summary.digitalPokeballs === 1 ? '' : 's'} especial${summary.digitalPokeballs === 1 ? '' : 'is'} recolhida${summary.digitalPokeballs === 1 ? '' : 's'}.`] : []), ...(shadowTrustStones > 0 ? [`${shadowTrustStones} lendário${shadowTrustStones === 1 ? '' : 's'} sombrio${shadowTrustStones === 1 ? '' : 's'} derrotado${shadowTrustStones === 1 ? '' : 's'}: Pedra${shadowTrustStones === 1 ? '' : 's'} da Confiança assegurada${shadowTrustStones === 1 ? '' : 's'}.`] : []), ...milestoneRewards.map((reward) => `${reward} conquistado nesta corrida.`), ...(summary.finalBossBeaten ? ['O troféu da Torre foi conquistado; o modo Infinito está disponível.'] : [])],
   }]);
   changed();
   syncTrainer();

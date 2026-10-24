@@ -5,7 +5,7 @@ import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivo
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
 import { survivorPreparation } from './survivor-preparations';
 import type { SurvivorPreparationId } from './survivor-preparations';
-import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, specialProtects, stepSurvivorSpecial } from './survivor-specials';
+import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, SPECIAL_GUARDIANS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
 import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR_ORBIT_MAX, survivorAimAngle, survivorOrbitAngularSpeed, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitHitIntervalMs } from './survivor-shapes';
 import type { PokemonType } from './pokemon-data';
 
@@ -25,7 +25,7 @@ import type { PokemonType } from './pokemon-data';
  */
 
 export * from './survivor-types';
-import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
+import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 export { SURVIVOR_UPGRADES };
@@ -34,6 +34,8 @@ export { SURVIVOR_UPGRADES };
 export const EVOLVE_LEVELS = [8, 16] as const;
 const EVOLVE_PREFIX = 'evolve:';
 const SUPPORT_EVOLVE_PREFIX = 'support-evolve:';
+/** Lendários reais que podem atravessar uma Pokébola Sombria; o sorteio usa o RNG da corrida. */
+const SHADOW_GUARDIANS = Object.values(SPECIAL_GUARDIANS);
 
 // ----------------------------------------------------------------------------- treinadores e chefão
 
@@ -65,6 +67,10 @@ export const BALANCE = {
   bossSpeed: 72,
   bossDamageBase: 15,
   bossDamagePerWave: 3,
+  /** Lendários de Pokébola Sombria: encontros opcionais de risco médio-alto. */
+  shadowBossHpMultiplier: 4.5,
+  shadowBossDamageMultiplier: 2.2,
+  shadowBossSpeed: 88,
   enemyHpBase: 16,
   /** Vida extra a cada `enemyHpEverySec` segundos; a simulação agora usa os golpes reais das espécies. */
   enemyHpStep: 3,
@@ -204,6 +210,7 @@ function secondaryMoveFor(move: SurvivorMove): SurvivorMove {
 
 export function createSurvivorState(seed: number, options: CreateSurvivorOptions): SurvivorState {
   const move = options.move ?? BASIC_MOVE;
+  const shadowGuardian = SHADOW_GUARDIANS[0]!;
   const prof = options.profile;
   const preparation = survivorPreparation(options.preparation);
   const secondMoveCandidate = options.secondMove ?? secondaryMoveFor(move);
@@ -265,6 +272,10 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     digitalPokeballs: 0,
     digitalDanger: 0,
     digitalDangerCooldownMs: 0,
+    shadowEncounter: { phase: 'idle', dexId: shadowGuardian.dexId, name: shadowGuardian.name, arrivalMs: 0 },
+    nextShadowBallAtMs: SURVIVOR_SHADOW_BALL_FIRST_MS,
+    shadowBallsSpawned: 0,
+    shadowTrustStones: 0,
     fx: [],
     kills: 0,
     wave: 1,
@@ -389,28 +400,37 @@ function resolveEnemyArchetype(
  *  - `chefao`: um dos 6 do chefão final (ou do infinito): maior ainda, dá bem mais XP.
  * `trainerId` liga os Pokémon do mesmo treinador para contarmos quando todos caíram.
  */
-function spawnEnemy(state: SurvivorState, boss: boolean, grade: SurvivorEnemyGrade = 'comum', trainerId?: number): void {
+function spawnEnemy(
+  state: SurvivorState,
+  boss: boolean,
+  grade: SurvivorEnemyGrade = 'comum',
+  trainerId?: number,
+  options?: { shadowBoss?: boolean; dexId?: number },
+): void {
   if (state.enemies.length >= ENEMY_BEHAVIOR_LIMITS.maxEnemies && !boss && grade === 'comum') return;
   const { x, y } = spawnPoint(state.rng);
   const t = state.elapsedMs / 1000;
   if (boss) {
-    const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale);
+    const shadow = options?.shadowBoss === true;
+    const hp = Math.round((BALANCE.bossHpBase + state.wave * BALANCE.bossHpPerWave) * state.infiniteScale * (shadow ? BALANCE.shadowBossHpMultiplier : 1));
     const id = state.nextId++;
     addEnemy(state, {
       id,
       kind: state.kindCount,
       boss: true,
+      ...(shadow ? { shadowBoss: true } : {}),
       grade: 'comum',
       x,
       y,
       hp,
       maxHp: hp,
-      speed: BALANCE.bossSpeed,
-      damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale),
-      radius: 28,
+      speed: shadow ? BALANCE.shadowBossSpeed : BALANCE.bossSpeed,
+      damage: Math.round((BALANCE.bossDamageBase + state.wave * BALANCE.bossDamagePerWave) * state.infiniteScale * (shadow ? BALANCE.shadowBossDamageMultiplier : 1)),
+      radius: shadow ? 36 : 28,
       hitFlashMs: 0,
         archetype: resolveEnemyArchetype(state, state.kindCount, true, 'comum', id),
-        specialTimerMs: 1800,
+      specialTimerMs: shadow ? 1200 : 1800,
+      ...(options?.dexId !== undefined ? { dexId: options.dexId } : {}),
     });
     return;
   }
@@ -461,7 +481,7 @@ function spawnTrainer(state: SurvivorState, count: number, final: boolean, event
 
 /** Resolve a aparência uma vez, depois de sortear os números de combate. */
 function addEnemy(state: SurvivorState, enemy: SurvivorEnemy): void {
-  if (state.enemyDexId) enemy.dexId = state.enemyDexId(enemy, state.elapsedMs);
+  if (enemy.dexId === undefined && state.enemyDexId) enemy.dexId = state.enemyDexId(enemy, state.elapsedMs);
   state.enemies.push(enemy);
 }
 
@@ -1321,6 +1341,42 @@ function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: n
   spawnTrainer(state, 2, false, events, 'digital-danger');
 }
 
+function shadowBallPoint(state: SurvivorState): { x: number; y: number } {
+  const p = state.player;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const x = PLAYER_RADIUS + state.rng() * (ARENA_W - PLAYER_RADIUS * 2);
+    const y = PLAYER_RADIUS + state.rng() * (ARENA_H - PLAYER_RADIUS * 2);
+    if (Math.hypot(x - p.x, y - p.y) >= 360) return { x, y };
+  }
+  return { x: Math.max(PLAYER_RADIUS, ARENA_W - p.x), y: Math.max(PLAYER_RADIUS, ARENA_H - p.y) };
+}
+
+/** A cutscene congela a Torre: o lendário só entra depois que a chegada fica legível. */
+function advanceShadowEncounter(state: SurvivorState, dtMs: number, events: SurvivorEvent[]): boolean {
+  const encounter = state.shadowEncounter;
+  if (encounter.phase !== 'arrival') return false;
+  encounter.arrivalMs = Math.min(SURVIVOR_SHADOW_CUTSCENE_MS, encounter.arrivalMs + dtMs);
+  if (encounter.arrivalMs < SURVIVOR_SHADOW_CUTSCENE_MS) return true;
+  encounter.phase = 'battle';
+  spawnEnemy(state, true, 'comum', undefined, { shadowBoss: true, dexId: encounter.dexId });
+  events.push({ type: 'shadowBossArrival', dexId: encounter.dexId, name: encounter.name });
+  return false;
+}
+
+function spawnShadowBallIfDue(state: SurvivorState, events: SurvivorEvent[]): void {
+  const encounter = state.shadowEncounter;
+  if (encounter.phase !== 'idle' || state.shadowBallsSpawned >= SURVIVOR_SHADOW_BALL_MAX_PER_RUN || state.elapsedMs < state.nextShadowBallAtMs) return;
+  // Cada Pokébola tem seu próprio sorteio. Como usa `state.rng`, uma seed continua reproduzindo a mesma aventura.
+  const guardian = SHADOW_GUARDIANS[Math.floor(state.rng() * SHADOW_GUARDIANS.length)]!;
+  encounter.dexId = guardian.dexId;
+  encounter.name = guardian.name;
+  const point = shadowBallPoint(state);
+  state.artifacts.push({ id: state.nextId++, ...point, kind: 'shadow-ball' });
+  state.shadowBallsSpawned += 1;
+  encounter.phase = 'available';
+  events.push({ type: 'shadowBallSpawn', dexId: encounter.dexId, name: encounter.name });
+}
+
 /**
  * Avança `dtMs` de jogo. Não faz nada (devolve `[]`) se `state.over` ou se há um upgrade pendente — quem chama
  * (o componente Vue) deve pausar o laço de desenho/tempo nesses casos e só retomar depois de `applyUpgrade`.
@@ -1330,6 +1386,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (state.over || state.pendingUpgrade) return events;
   if (!Number.isFinite(dtMs) || dtMs <= 0) return events;
   if (advanceSpecialEncounter(state, dtMs)) return events;
+  if (advanceShadowEncounter(state, dtMs, events)) return events;
   const dt = dtMs / 1000;
   const previousElapsedMs = state.elapsedMs;
   state.elapsedMs += dtMs;
@@ -1342,6 +1399,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (previousElapsedMs < SURVIVOR_MEGA_SHARD_MS && state.elapsedMs >= SURVIVOR_MEGA_SHARD_MS) {
     events.push({ type: 'milestone', id: 'twenty-minutes', reward: 'mega-stone-shard' });
   }
+  spawnShadowBallIfDue(state, events);
   if (advanceSpecialEncounter(state, 0)) return events;
   const p = state.player;
   p.artifactSpeedMs = Math.max(0, p.artifactSpeedMs - dtMs);
@@ -1563,6 +1621,13 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       ) {
          state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: 'pokeball' });
       }
+      if (e.shadowBoss) {
+        state.shadowTrustStones += 1;
+        state.shadowEncounter.phase = 'idle';
+        state.shadowEncounter.arrivalMs = 0;
+        state.nextShadowBallAtMs = state.elapsedMs + SURVIVOR_SHADOW_BALL_EVERY_MS;
+        events.push({ type: 'shadowBossDefeated', dexId: state.shadowEncounter.dexId, name: state.shadowEncounter.name, trustStones: state.shadowTrustStones });
+      }
     }
     // Treinador derrotado: nenhum Pokémon dele continua em pé.
     const trainerIds = new Set(dead.map((e) => e.trainerId).filter((id): id is number => id !== undefined));
@@ -1586,7 +1651,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         state.fx = [];
         events.push({
           type: 'gameover',
-          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs, bonusCoins: state.player.bonusCoins ?? 0 },
+          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: state.player.bonusCoins ?? 0 },
         });
       }
     }
@@ -1608,7 +1673,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   state.artifacts = state.artifacts.filter((artifact) => {
     const pickupRadius = Math.min(MAGNET_PICKUP_RADIUS_CAP, p.pickupRadius * (p.artifactMagnetMs > 0 ? 1.7 : 1));
     if (Math.hypot(artifact.x - p.x, artifact.y - p.y) > pickupRadius) return true;
-    if (artifact.kind === 'pokeball') state.digitalPokeballs += 1;
+    if (artifact.kind === 'shadow-ball') {
+      state.shadowEncounter.phase = 'arrival';
+      state.shadowEncounter.arrivalMs = 0;
+    } else if (artifact.kind === 'pokeball') state.digitalPokeballs += 1;
     else if (artifact.kind === 'speed') p.artifactSpeedMs = Math.max(p.artifactSpeedMs, BALANCE.artifactDurationMs);
     else if (artifact.kind === 'power') p.artifactPowerMs = Math.max(p.artifactPowerMs, BALANCE.artifactDurationMs);
     else if (artifact.kind === 'magnet') p.artifactMagnetMs = Math.max(p.artifactMagnetMs, BALANCE.artifactDurationMs);
@@ -1617,7 +1685,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       p.hp = Math.min(p.maxHp, p.hp + Math.max(18, Math.round(p.maxHp * 0.28)));
       p.artifactShieldMs = 3_000;
     }
-    state.fx.push({ kind: 'artifact', artifact: artifact.kind, x: p.x, y: p.y, r: artifact.kind === 'pokeball' ? 30 : 24, color: artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb', ageMs: 0, lifeMs: artifact.kind === 'pokeball' ? 900 : 620 });
+    state.fx.push({ kind: 'artifact', artifact: artifact.kind, x: p.x, y: p.y, r: artifact.kind === 'pokeball' || artifact.kind === 'shadow-ball' ? 30 : 24, color: artifact.kind === 'shadow-ball' ? '#a66bff' : artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb', ageMs: 0, lifeMs: artifact.kind === 'pokeball' || artifact.kind === 'shadow-ball' ? 900 : 620 });
     events.push({ type: 'artifactCollected', kind: artifact.kind });
     return false;
   });
@@ -1638,7 +1706,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.fx = [];
     events.push({
       type: 'gameover',
-      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs, bonusCoins: p.bonusCoins ?? 0 },
+      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: p.bonusCoins ?? 0 },
     });
   }
 

@@ -183,3 +183,22 @@ humana de builds) deu mediana de 2,82 min para evasiva e 3,57 min para
 agressiva, com 1/200 e 19/200 chegando a 5 min, respectivamente. Isso é um
 sinal de pressão forte, não uma prova de equilíbrio: a meta de 18–20 minutos
 precisa ser revisitada com a matriz completa e uma sessão humana em celular.
+
+## Pokébolas Sombrias — 24/10/2026
+
+Aos 13 minutos, a Torre pode colocar uma **Pokébola Sombria** no mapa. Ela não
+inicia nada sozinha: a pessoa decide coletá-la. Cada bola sorteia, com o RNG
+determinístico da própria corrida, um lendário real da lista de guardiões. A
+coleta pausa brevemente a ação para uma apresentação legível; depois o lendário
+entra com sprite maior, chamas de sombra opcionais (desligadas no Modo Rotom) e
+vida/dano multiplicados por 4,5/2,2 em relação ao chefe periódico. Há no máximo
+três encontros por corrida, espaçados por três minutos depois de cada vitória.
+
+Vencer assegura uma Pedra da Confiança imediatamente no HUD e no resumo, mas a
+pedra só é persistida no inventário quando a corrida é encerrada normalmente.
+Isso mantém a recompensa visível em vez de escondida até o fim e evita que
+abandonar a run vire uma forma de farmá-la. A simulação determinística de 200
+corridas permanece em 2,82 min de mediana no perfil evasivo e 3,57 no perfil
+agressivo (1 e 19 chegadas a 5 min); ela não alcança o minuto 13 nessa matriz,
+portanto mede apenas a ausência de regressão antes do encontro. A dificuldade
+real do lendário ainda requer sessão humana em celular.

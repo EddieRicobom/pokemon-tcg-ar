@@ -27,6 +27,8 @@ import {
   survivorDirectDamageMultiplier,
   survivorProjectileOpacity,
   survivorRapidAttackDamageMultiplier,
+  SURVIVOR_SHADOW_BALL_FIRST_MS,
+  SURVIVOR_SHADOW_CUTSCENE_MS,
   xpForLevel,
 } from './survivor';
 import type { SurvivorEnemy, SurvivorState } from './survivor';
@@ -946,6 +948,36 @@ describe('segundo golpe', () => {
     long.player.maxHp = 1_000_000;
     const twenty = stepSurvivor(long, { dx: 0, dy: 0 }, 1_200_000);
     expect(twenty).toContainEqual({ type: 'milestone', id: 'twenty-minutes', reward: 'mega-stone-shard' });
+  });
+
+  it('sorteia uma Pokébola Sombria aos 13 minutos, pausa a chegada e assegura Pedra da Confiança ao vencer o lendário', () => {
+    const s = quiet(createSurvivorState(19, { kindCount: 1 }));
+    s.special.phase = 'ready';
+    s.nextTrainerAtMs = Number.POSITIVE_INFINITY;
+    s.finalBossAtMs = Number.POSITIVE_INFINITY;
+    s.elapsedMs = SURVIVOR_SHADOW_BALL_FIRST_MS - 1;
+    // Torna o sorteio explícito: o último guardião da lista é uma espécie real e o resultado é reproduzível.
+    s.rng = () => 0.999;
+    const spawn = stepSurvivor(s, { dx: 0, dy: 0 }, 2);
+    expect(spawn).toContainEqual(expect.objectContaining({ type: 'shadowBallSpawn', dexId: s.shadowEncounter.dexId, name: s.shadowEncounter.name }));
+    const ball = s.artifacts.find((artifact) => artifact.kind === 'shadow-ball');
+    expect(ball).toBeDefined();
+    ball!.x = s.player.x;
+    ball!.y = s.player.y;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.shadowEncounter.phase).toBe('arrival');
+
+    const arrival = stepSurvivor(s, { dx: 0, dy: 0 }, SURVIVOR_SHADOW_CUTSCENE_MS);
+    expect(arrival).toContainEqual(expect.objectContaining({ type: 'shadowBossArrival', dexId: s.shadowEncounter.dexId }));
+    const boss = s.enemies.find((enemy) => enemy.shadowBoss);
+    expect(boss).toMatchObject({ boss: true, shadowBoss: true, dexId: s.shadowEncounter.dexId });
+    expect(boss!.maxHp).toBeGreaterThan(BALANCE.bossHpBase * 4);
+
+    boss!.hp = 0;
+    const defeated = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(defeated).toContainEqual(expect.objectContaining({ type: 'shadowBossDefeated', trustStones: 1 }));
+    expect(s.shadowTrustStones).toBe(1);
+    expect(s.shadowEncounter.phase).toBe('idle');
   });
 
   it('gelo congela por pouco tempo e inseto aplica apenas um eco de dano por impacto', () => {
