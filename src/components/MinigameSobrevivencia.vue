@@ -392,9 +392,11 @@ const specialModalOpen = computed(() => {
   const phase = state.value?.special.phase;
   return phase === 'arrival' || phase === 'choice' || phase === 'branch-arrival' || phase === 'branch-choice';
 });
+const shadowCutsceneOpen = computed(() => state.value?.shadowEncounter.phase === 'arrival');
 const specialBranchOptions = computed(() => state.value?.special.selected ? SURVIVOR_SPECIAL_BRANCHES[state.value.special.selected] : []);
-const specialBlocked = computed(() => !state.value || state.value.over || paused.value || !!pendingUpgrade.value || !!evolving.value || state.value.special.phase !== 'ready');
+const specialBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!evolving.value || state.value.special.phase !== 'ready');
 const guardianSprite = ref<string | null>(null);
+const shadowBossSprite = ref<string | null>(null);
 let specialQueued = false;
 function queueSpecial(): void {
   if (specialBlocked.value || (state.value?.special.cooldownMs ?? 1) > 0) return;
@@ -704,7 +706,7 @@ function onGamepadDirection(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean; direction?: string; pressed?: boolean }>;
   const direction = custom.detail.direction;
   if (custom.detail.handled || !direction || custom.detail.pressed === undefined) return;
-  if (!ready.value || paused.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
+  if (!ready.value || paused.value || shadowCutsceneOpen.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
   if (custom.detail.pressed) heldKeys.add(direction);
   else heldKeys.delete(direction);
   custom.detail.handled = true;
@@ -712,7 +714,7 @@ function onGamepadDirection(event: Event): void {
 
 function onGamepadAction(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  if (custom.detail.handled || !ready.value || !state.value || paused.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
+  if (custom.detail.handled || !ready.value || !state.value || paused.value || shadowCutsceneOpen.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
   if (!chosenSpecial.value || state.value.special.cooldownMs > 0) return;
   custom.detail.handled = true;
   queueSpecial();
@@ -720,7 +722,7 @@ function onGamepadAction(event: Event): void {
 
 function onGamepadBack(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  if (custom.detail.handled || !ready.value || !state.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
+  if (custom.detail.handled || !ready.value || !state.value || shadowCutsceneOpen.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
   custom.detail.handled = true;
   togglePause();
 }
@@ -734,7 +736,7 @@ function onGamepadMenu(event: Event): void {
 }
 
 function joyDown(e: PointerEvent): void {
-  if (joystick.active || paused.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value) return;
+  if (joystick.active || paused.value || shadowCutsceneOpen.value || !ready.value || summary.value || pickOptions.value || specialModalOpen.value) return;
   // Botões das cartas (escolha, upgrades, resumo) continuam sendo botões: o joystick não pega esse toque.
   if ((e.target as HTMLElement | null)?.closest?.('button, .card')) return;
   unlockSound();
@@ -793,6 +795,26 @@ function drawSprite(sprite: Sprite | null, x: number, y: number, flip: boolean, 
   ctx.restore();
 }
 
+function drawShadowFlames(x: number, y: number, radius: number): void {
+  if (!ctx || effectiveVisual.value.rotomMode) return;
+  ctx.save();
+  ctx.globalAlpha = 0.75;
+  ctx.strokeStyle = '#b575ff';
+  ctx.shadowColor = '#6826b8';
+  ctx.shadowBlur = 13;
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 8; i++) {
+    const angle = (Math.PI * 2 * i) / 8 + animMs / 820;
+    const fx = x + Math.cos(angle) * radius;
+    const fy = y - 10 + Math.sin(angle) * radius * 0.58;
+    ctx.beginPath();
+    ctx.moveTo(fx - 4, fy + 8);
+    ctx.quadraticCurveTo(fx + Math.sin(angle) * 9, fy - 17, fx + 5, fy + 6);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawEnemy(e: SurvivorEnemy): void {
   if (!ctx) return;
   const sprite = e.dexId === undefined ? null : (enemySprites.get(e.dexId) ?? null);
@@ -804,7 +826,8 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.arc(e.x, e.y, (e.grade === 'chefao' ? 22 : 18), 0, Math.PI * 2);
     ctx.stroke();
   }
-  const scale = e.boss ? 1.2 : e.grade === 'chefao' ? 1.3 : e.grade === 'elite' ? 1.1 : 1;
+  const scale = e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.3 : e.grade === 'elite' ? 1.1 : 1;
+  if (e.shadowBoss) drawShadowFlames(e.x, e.y, 31);
   if (e.archetype === 'protetor' || e.archetype === 'suporte' || e.protectedMs) {
     ctx.save();
     ctx.globalAlpha = e.protectedMs ? 0.55 : 0.3;
@@ -897,7 +920,8 @@ function drawBonkBillboard(
 function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): void {
   if (!ctx) return;
   const sprite = e.dexId === undefined ? null : (enemySprites.get(e.dexId) ?? null);
-  const size = (e.boss ? 1.2 : e.grade === 'chefao' ? 1.12 : e.grade === 'elite' ? 0.96 : 0.84) * scale;
+  const size = (e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.12 : e.grade === 'elite' ? 0.96 : 0.84) * scale;
+  if (e.shadowBoss) drawShadowFlames(x, y, 20 * size);
   if (e.grade !== 'comum') {
     ctx.save();
     ctx.strokeStyle = e.grade === 'chefao' ? '#ff6e73' : '#ffd84a';
@@ -983,7 +1007,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     const ground = drawPoint(artifact);
     const p = drawPoint(artifact, 16 + Math.sin(animMs / 260 + artifact.id) * 4);
     if (!p || !ground) continue;
-    const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb';
+    const color = artifact.kind === 'shadow-ball' ? '#a66bff' : artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb';
     figures.push({ depth: ground.depth, draw: () => {
       const ring = bonkGroundEllipse(ground, 14);
       c.save();
@@ -1122,6 +1146,17 @@ async function preloadEnemyRegion(index: number): Promise<void> {
     enemySpriteLoads.set(id, load);
     return load;
   }));
+}
+
+async function preloadShadowBoss(dexId: number): Promise<void> {
+  const existing = enemySpriteLoads.get(dexId);
+  if (existing) await existing;
+  else if (!enemySprites.has(dexId)) {
+    const load = loadSpriteOrNull(dexId).then((sprite) => { enemySprites.set(dexId, sprite); }).catch(() => { enemySprites.set(dexId, null); }).finally(() => enemySpriteLoads.delete(dexId));
+    enemySpriteLoads.set(dexId, load);
+    await load;
+  }
+  shadowBossSprite.value = enemySprites.get(dexId)?.frames[0]?.toDataURL() ?? null;
 }
 
 function preloadVisibleEnemyRegions(elapsedMs: number): void {
@@ -1269,25 +1304,27 @@ function draw(): void {
 
   for (const artifact of s.artifacts) {
     // A Pokébola é uma recompensa importante e continua visível no Modo Rotom; os artefatos temporários podem ser ocultados para economizar GPU.
-    if (effectiveVisual.value.rotomMode && artifact.kind !== 'pokeball') continue;
-    const color = artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb';
-    const icon = artifact.kind === 'pokeball' ? '★' : artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : artifact.kind === 'magnet' ? '🧲' : artifact.kind === 'focus' ? '◈' : '♥';
+    if (effectiveVisual.value.rotomMode && artifact.kind !== 'pokeball' && artifact.kind !== 'shadow-ball') continue;
+    const ball = artifact.kind === 'pokeball' || artifact.kind === 'shadow-ball';
+    const shadowBall = artifact.kind === 'shadow-ball';
+    const color = shadowBall ? '#a66bff' : artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb';
+    const icon = ball ? '★' : artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : artifact.kind === 'magnet' ? '🧲' : artifact.kind === 'focus' ? '◈' : '♥';
     const pulse = 1 + (effectiveVisual.value.rotomMode ? 0 : Math.sin(animMs / 180 + artifact.id) * 0.12);
-    const wobble = artifact.kind === 'pokeball' && !effectiveVisual.value.rotomMode
+    const wobble = ball && !effectiveVisual.value.rotomMode
       ? Math.sin(animMs / 220 + artifact.id) * 0.12
       : 0;
     ctx.save();
     ctx.translate(artifact.x, artifact.y);
     ctx.rotate(wobble);
-    ctx.globalAlpha = artifact.kind === 'pokeball' ? 0.38 : 0.28;
+    ctx.globalAlpha = ball ? 0.38 : 0.28;
     ctx.fillStyle = color;
     ctx.shadowColor = color;
     ctx.shadowBlur = effectiveVisual.value.rotomMode ? 0 : 16;
     ctx.beginPath();
-    ctx.arc(0, 0, (artifact.kind === 'pokeball' ? 20 : 15) * pulse, 0, Math.PI * 2);
+    ctx.arc(0, 0, (ball ? 20 : 15) * pulse, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
-    if (artifact.kind === 'pokeball') {
+    if (ball) {
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#f5f5f5';
       ctx.beginPath();
@@ -1297,7 +1334,7 @@ function draw(): void {
       ctx.beginPath();
       ctx.arc(0, 0, 13 * pulse, Math.PI, 0);
       ctx.clip();
-      ctx.fillStyle = '#ef4b57';
+      ctx.fillStyle = shadowBall ? '#4c2069' : '#ef4b57';
       ctx.fillRect(-15, -15, 30, 15);
       ctx.restore();
       ctx.strokeStyle = '#1d2433';
@@ -1313,7 +1350,7 @@ function draw(): void {
     ctx.font = 'bold 18px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    if (artifact.kind !== 'pokeball') ctx.fillText(icon, 0, 0);
+    if (!ball) ctx.fillText(icon, 0, 0);
     ctx.restore();
   }
 
@@ -1427,7 +1464,7 @@ function draw(): void {
       ctx.font = 'bold 20px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = color;
-      ctx.fillText(f.artifact === 'pokeball' ? '★' : f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : f.artifact === 'magnet' ? '🧲' : f.artifact === 'focus' ? '◈' : '♥', f.x, f.y - 8 - t * 24);
+      ctx.fillText(f.artifact === 'pokeball' || f.artifact === 'shadow-ball' ? '★' : f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : f.artifact === 'magnet' ? '🧲' : f.artifact === 'focus' ? '◈' : '♥', f.x, f.y - 8 - t * 24);
     } else {
       for (let k = 0; k < 3; k++) {
         ctx.globalAlpha = 0.7 * (1 - t);
@@ -1531,10 +1568,23 @@ function loop(ts: number): void {
       else if (ev.type === 'milestone') {
         playSound('success');
         say(ev.id === 'ten-minutes'
-          ? '🎁 Marco de 10 minutos! Love Candy garantido ao concluir a corrida.'
+          ? '🎁 Marco de 10 minutos! Love Candy assegurado — conclua a corrida para guardar.'
           : ev.id === 'fifteen-minutes'
-            ? '💠 Marco de 15 minutos! Pedra da Confiança garantida ao concluir a corrida.'
-            : '💎 Marco de 20 minutos! Fragmento de Mega Stone garantido ao concluir a corrida.', 6000);
+            ? '💠 Marco de 15 minutos! Pedra da Confiança assegurada — conclua a corrida para guardar.'
+            : '💎 Marco de 20 minutos! Fragmento de Mega Stone assegurado — conclua a corrida para guardar.', 6000);
+      }
+      else if (ev.type === 'shadowBallSpawn') {
+        void preloadShadowBoss(ev.dexId);
+        playSound('survivor-boss');
+        say(`◉ Pokébola Sombria detectada: ${ev.name} foi sorteado. Encontre-a para abrir o desafio.`, 6500);
+      }
+      else if (ev.type === 'shadowBossArrival') {
+        playSound('survivor-boss');
+        say(`CHAMAS SOMBRIAS · ${ev.name} entrou na arena!`, 5000);
+      }
+      else if (ev.type === 'shadowBossDefeated') {
+        playSound('success');
+        say(`💠 Pedra da Confiança assegurada (${ev.trustStones}/5). Conclua a corrida para guardá-la.`, 6500);
       }
       else if (ev.type === 'artifactCollected') {
         playSound('survivor-pickup');
@@ -1746,6 +1796,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     if (ctx) ctx.imageSmoothingEnabled = bonk;
     announcedRegion = survivorRegionLabel(0);
     guardianSprite.value = null;
+    shadowBossSprite.value = null;
     specialQueued = false;
     bonkJumpQueued = false;
     const runState = state.value;
@@ -1972,6 +2023,9 @@ onBeforeUnmount(() => {
              </span>
               <span v-if="(state.player.difficultyStacks ?? 0) > 0" class="chip" :title="`Dificuldade ${state.player.difficultyStacks}: +${(state.player.difficultyStacks ?? 0) * 15}% densidade e +${(state.player.difficultyStacks ?? 0) * 12}% de velocidade e dano dos inimigos`">☠ Dificuldade {{ state.player.difficultyStacks }}</span>
               <span v-if="(state.player.bonusCoins ?? 0) > 0" class="chip" title="Moedas das cartas, pagas no fim da corrida">🪙 +{{ state.player.bonusCoins }} no fim</span>
+              <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
+              <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
+              <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
               <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados`">⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
             <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
              <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
@@ -2158,6 +2212,18 @@ onBeforeUnmount(() => {
           <small>{{ state.player.move.icon }} Especial</small>
         </button>
 
+        <div v-if="ready && state && shadowCutsceneOpen && !leaveConfirm" class="survivor-overlay survivor-shadow-cutscene" :class="{ 'reduced-motion': !detailedSpecialEffects }" role="dialog" aria-modal="true" aria-label="Chegada de lendário sombrio" @pointerdown.stop>
+          <div class="card survivor-upgrades">
+            <div class="shadow-boss-arrival" aria-hidden="true">
+              <img v-if="shadowBossSprite" :src="shadowBossSprite" alt="" />
+              <span v-else class="guardian-missing">{{ state.shadowEncounter.name }}<small>Sprite indisponível</small></span>
+            </div>
+            <p class="guardian-title">LENDÁRIO SOMBRIO · sorteado nesta Pokébola</p>
+            <h2>{{ state.shadowEncounter.name }} atravessa a fenda</h2>
+            <p role="status">A arena está congelada por um instante. Derrote-o para assegurar uma Pedra da Confiança; ela entra no inventário ao concluir a corrida.</p>
+          </div>
+        </div>
+
         <div v-if="ready && state && guardian && !leaveConfirm && (state.special.phase === 'arrival' || state.special.phase === 'choice')" class="survivor-overlay survivor-guardian" :class="{ 'reduced-motion': !detailedSpecialEffects }" role="dialog" aria-modal="true" aria-label="Orbe elemental: escolha um especial" :style="{ '--special-color': state.player.move.color }" @pointerdown.stop>
           <div class="card survivor-upgrades">
             <div class="guardian-gift" :class="{ delivered: state.special.phase === 'choice' }" aria-hidden="true">
@@ -2255,6 +2321,7 @@ onBeforeUnmount(() => {
             </p>
              <p v-if="summary.survivedMs >= SURVIVOR_LOVE_CANDY_MS" class="survivor-cleared" role="status">🍬 Love Candy conquistado por alcançar 10 minutos.</p>
               <p v-if="summary.survivedMs >= SURVIVOR_TRUST_STONE_MS" class="survivor-cleared" role="status">💠 Pedra da Confiança conquistada por alcançar 15 minutos.</p>
+             <p v-if="(summary.shadowTrustStones ?? 0) > 0" class="survivor-cleared" role="status">💠 {{ summary.shadowTrustStones }} Pedra{{ summary.shadowTrustStones === 1 ? '' : 's' }} da Confiança assegurada{{ summary.shadowTrustStones === 1 ? '' : 's' }} ao derrotar lendário{{ summary.shadowTrustStones === 1 ? '' : 's' }} sombrio{{ summary.shadowTrustStones === 1 ? '' : 's' }}.</p>
              <p v-if="summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS" class="survivor-cleared" role="status">💎 Fragmento de Mega Stone conquistado por alcançar 20 minutos.</p>
              <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
             <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>

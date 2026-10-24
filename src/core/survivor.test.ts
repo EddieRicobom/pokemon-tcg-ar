@@ -27,6 +27,8 @@ import {
   survivorDirectDamageMultiplier,
   survivorProjectileOpacity,
   survivorRapidAttackDamageMultiplier,
+  SURVIVOR_SHADOW_BALL_FIRST_MS,
+  SURVIVOR_SHADOW_CUTSCENE_MS,
   xpForLevel,
 } from './survivor';
 import type { SurvivorEnemy, SurvivorState } from './survivor';
@@ -948,6 +950,36 @@ describe('segundo golpe', () => {
     expect(twenty).toContainEqual({ type: 'milestone', id: 'twenty-minutes', reward: 'mega-stone-shard' });
   });
 
+  it('sorteia uma Pokébola Sombria aos 13 minutos, pausa a chegada e assegura Pedra da Confiança ao vencer o lendário', () => {
+    const s = quiet(createSurvivorState(19, { kindCount: 1 }));
+    s.special.phase = 'ready';
+    s.nextTrainerAtMs = Number.POSITIVE_INFINITY;
+    s.finalBossAtMs = Number.POSITIVE_INFINITY;
+    s.elapsedMs = SURVIVOR_SHADOW_BALL_FIRST_MS - 1;
+    // Torna o sorteio explícito: o último guardião da lista é uma espécie real e o resultado é reproduzível.
+    s.rng = () => 0.999;
+    const spawn = stepSurvivor(s, { dx: 0, dy: 0 }, 2);
+    expect(spawn).toContainEqual(expect.objectContaining({ type: 'shadowBallSpawn', dexId: s.shadowEncounter.dexId, name: s.shadowEncounter.name }));
+    const ball = s.artifacts.find((artifact) => artifact.kind === 'shadow-ball');
+    expect(ball).toBeDefined();
+    ball!.x = s.player.x;
+    ball!.y = s.player.y;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.shadowEncounter.phase).toBe('arrival');
+
+    const arrival = stepSurvivor(s, { dx: 0, dy: 0 }, SURVIVOR_SHADOW_CUTSCENE_MS);
+    expect(arrival).toContainEqual(expect.objectContaining({ type: 'shadowBossArrival', dexId: s.shadowEncounter.dexId }));
+    const boss = s.enemies.find((enemy) => enemy.shadowBoss);
+    expect(boss).toMatchObject({ boss: true, shadowBoss: true, dexId: s.shadowEncounter.dexId });
+    expect(boss!.maxHp).toBeGreaterThan(BALANCE.bossHpBase * 4);
+
+    boss!.hp = 0;
+    const defeated = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(defeated).toContainEqual(expect.objectContaining({ type: 'shadowBossDefeated', trustStones: 1 }));
+    expect(s.shadowTrustStones).toBe(1);
+    expect(s.shadowEncounter.phase).toBe('idle');
+  });
+
   it('gelo congela por pouco tempo e inseto aplica apenas um eco de dano por impacto', () => {
     const ice = as('ice', 'projetil');
     const cold = quiet(createSurvivorState(3, { kindCount: 1, move: ice.move, profile: ice.profile }));
@@ -1112,6 +1144,23 @@ describe('treinadores e chefão final', () => {
     expect(over?.summary.infinite).toBe(false);
   });
 
+  it('repete os chefes periódicos a cada minuto e escala seus atributos', () => {
+    const s = createSurvivorState(77, { kindCount: 2 });
+    s.nextBossAtMs = BALANCE.firstBossMs;
+    s.elapsedMs = BALANCE.firstBossMs - 100;
+
+    const first = stepSurvivor(s, { dx: 0, dy: 0 }, 200);
+    expect(first).toContainEqual({ type: 'bossSpawn' });
+    const boss = s.enemies.find((enemy) => enemy.boss);
+    expect(boss?.maxHp).toBe(Math.round((BALANCE.bossHpBase + s.wave * BALANCE.bossHpPerWave) * s.infiniteScale));
+    expect(boss?.damage).toBe(Math.round((BALANCE.bossDamageBase + s.wave * BALANCE.bossDamagePerWave) * s.infiniteScale));
+    expect(boss?.speed).toBe(BALANCE.bossSpeed);
+
+    s.elapsedMs = BALANCE.firstBossMs + BALANCE.bossEveryMs - 100;
+    const second = stepSurvivor(s, { dx: 0, dy: 0 }, 200);
+    expect(second).toContainEqual({ type: 'bossSpawn' });
+  });
+
   it('modo infinito: derrotar o chefão não termina a corrida (segue até morrer)', () => {
     const s = createSurvivorState(42, { kindCount: 4, infinite: true });
     s.special.phase = 'ready';
@@ -1163,7 +1212,7 @@ describe('artefatos temporários', () => {
 
   it('mantém a Pokébola digital rara e limita a três por corrida', () => {
     expect(MAX_DIGITAL_POKEBALLS_PER_RUN).toBe(3);
-    expect(BALANCE.digitalPokeballDropChance).toEqual({ comum: 0.005, elite: 0.01, chefao: 0.02 });
+    expect(BALANCE.digitalPokeballDropChance).toEqual({ comum: 0.005, elite: 0.02, chefao: 0.10 });
 
     const s = quiet(createSurvivorState(11, { kindCount: 1 }));
     s.elapsedMs = 10 * 60_000;

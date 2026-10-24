@@ -5,6 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Torre: Pokébolas Sombrias e recompensas visíveis (24/10/2026)
+
+- A partir de 13 min, uma Pokébola Sombria opcional pode aparecer na arena. Cada uma sorteia um lendário real, abre uma curta cena de chegada e o coloca na batalha com sprite ampliado, chamas de sombra e números próprios de risco médio-alto.
+- Ao vencer, a Pedra da Confiança fica marcada no HUD e no resumo no mesmo instante; ela só entra no inventário ao encerrar a corrida, evitando recompensa invisível e farm por abandono. O marco de tempo e os demais itens especiais também passaram a dizer claramente que estão assegurados, mas pendentes de encerramento.
+- Há no máximo três encontros, espaçados depois de cada vitória. O efeito visual respeita o Modo Rotom e a opção de efeitos leves.
+- 🔶 Validado no motor puro e no typecheck; a legibilidade da cutscene, das chamas e da dificuldade ainda exige celular real. O build local precisa ser repetido quando o diretório `dist` não estiver em uso.
+
 ## Torre: golpes elementais, cone, órbita e painéis (24/10/2026)
 
 - Cone de verdade: leque de ~38° (`core/survivor-shapes.ts`) apontado para a frente do Pokémon, que segue o último passo em qualquer direção. No BONK a frente é a câmera (`SurvivorInput.aimAngle`), então o golpe sai sempre adiante na tela, nunca de lado. Alcance base 140 → 185 para compensar o leque mais estreito.

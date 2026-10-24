@@ -6789,6 +6789,17 @@ body.no-scroll .reward-toasts {
 @keyframes guardian-deliver { 0%, 25% { opacity: 0; transform: translateY(-48px) scale(0.3); } 65% { opacity: 1; transform: translateY(0) scale(1.15); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
 @media (prefers-reduced-motion: reduce) { .guardian-gift img, .guardian-orb { animation: none; } }
 @media (max-height: 500px) { .survivor-guardian .guardian-gift { height: 60px; } .survivor-guardian .guardian-gift img { height: 48px; } .survivor-guardian .guardian-orb { top: 25px; } }
+.survivor-shadow-chip { border-color: #a66bff; background: #241438e8; color: #f0dfff; }
+.survivor-shadow-cutscene { z-index: 10; background: radial-gradient(circle, #3d1766e8, #070810ee 68%); }
+.survivor-shadow-cutscene .card { width: min(100%, 360px); border: 2px solid #b575ff; box-shadow: 0 0 42px #7d35caaa; text-align: center; }
+.shadow-boss-arrival { position: relative; display: grid; min-height: 148px; place-items: center; isolation: isolate; }
+.shadow-boss-arrival::before, .shadow-boss-arrival::after { position: absolute; z-index: -1; width: 112px; height: 112px; border: 3px solid #c486ff; border-radius: 48% 52% 42% 58%; content: ''; filter: drop-shadow(0 0 12px #7d35ca); animation: shadow-flame-ring 1s ease-in-out infinite alternate; }
+.shadow-boss-arrival::after { width: 142px; height: 78px; border-color: #6927a7; animation-delay: -.45s; }
+.shadow-boss-arrival img { height: 138px; max-width: 210px; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 0 16px #9a55e8); animation: shadow-boss-rise 850ms cubic-bezier(.18,.82,.25,1) both; }
+.survivor-shadow-cutscene.reduced-motion .shadow-boss-arrival::before, .survivor-shadow-cutscene.reduced-motion .shadow-boss-arrival::after, .survivor-shadow-cutscene.reduced-motion .shadow-boss-arrival img { animation: none; }
+@keyframes shadow-boss-rise { from { opacity: 0; transform: translateY(-28px) scale(.55); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes shadow-flame-ring { from { transform: rotate(-8deg) scale(.86); opacity: .48; } to { transform: rotate(10deg) scale(1.1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .shadow-boss-arrival::before, .shadow-boss-arrival::after, .shadow-boss-arrival img { animation: none; } }
 
 .survivor-trainer-intro {
   position: absolute;

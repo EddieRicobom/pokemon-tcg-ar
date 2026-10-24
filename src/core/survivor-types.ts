@@ -152,6 +152,8 @@ export interface SurvivorEnemy {
   /** Índice da espécie no elenco desta corrida (ver `kindCount` em `createSurvivorState`); chefes usam `kindCount`. */
   kind: number;
   boss: boolean;
+  /** Lendário chamado por uma Pokébola Sombria: recebe apresentação, escala e recompensa próprias. */
+  shadowBoss?: boolean;
   /** Grau: muda o tamanho, HP, dano, cor do contorno e orbe de XP ao morrer. */
   grade: SurvivorEnemyGrade;
   /** Treinador a que esse Pokémon pertence (apenas elites e chefões): quando todos de um id caem, o treinador perdeu. */
@@ -264,7 +266,7 @@ export interface SurvivorFx {
   artifact?: SurvivorArtifactKind;
 }
 
-export type SurvivorArtifactKind = 'speed' | 'heal' | 'power' | 'magnet' | 'focus' | 'pokeball';
+export type SurvivorArtifactKind = 'speed' | 'heal' | 'power' | 'magnet' | 'focus' | 'pokeball' | 'shadow-ball';
 
 /** Texto único para HUD e avisos: descreve exatamente os bônus temporários aplicados pelo motor. */
 export const SURVIVOR_ARTIFACT_DETAILS: Record<SurvivorArtifactKind, { icon: string; name: string; description: string }> = {
@@ -274,6 +276,7 @@ export const SURVIVOR_ARTIFACT_DETAILS: Record<SurvivorArtifactKind, { icon: str
   magnet: { icon: '🧲', name: 'Ímã de experiência', description: '+70% de alcance para coletar orbes por 8 s.' },
   focus: { icon: '◈', name: 'Foco preciso', description: 'Reduz em 20% a recarga do golpe por 8 s.' },
   pokeball: { icon: '★', name: 'Pokébola errante', description: 'Reúne opções de Digital Pokémon para escolher ao fim da corrida.' },
+  'shadow-ball': { icon: '◉', name: 'Pokébola Sombria', description: 'Desafio opcional: chama um lendário perigoso. Vença para assegurar uma Pedra da Confiança ao concluir a corrida.' },
 };
 
 export interface SurvivorArtifact {
@@ -348,6 +351,17 @@ export interface SurvivorState {
   digitalDanger: number;
   /** Recarga após uma convocação automática de treinador. */
   digitalDangerCooldownMs: number;
+  /** Encontro opcional a partir dos 13 min: a cutscene pausa a Torre antes do lendário entrar. */
+  shadowEncounter: {
+    phase: 'idle' | 'available' | 'arrival' | 'battle';
+    dexId: number;
+    name: string;
+    arrivalMs: number;
+  };
+  nextShadowBallAtMs: number;
+  shadowBallsSpawned: number;
+  /** Pedras asseguradas ao derrotar lendários; entram no inventário quando a corrida termina. */
+  shadowTrustStones: number;
   fx: SurvivorFx[];
   kills: number;
   wave: number;
@@ -438,6 +452,8 @@ export interface SurvivorSummary {
   infinite: boolean;
   /** Quantas Pokébolas especiais foram realmente recolhidas durante a corrida. */
   digitalPokeballs: number;
+  /** Pedras da Confiança asseguradas pelos lendários sombrios nesta corrida. */
+  shadowTrustStones?: number;
   /** Moedas concedidas por cartas durante a corrida, pagas apenas no resultado final. */
   bonusCoins?: number;
 }
@@ -455,6 +471,11 @@ export const SURVIVOR_LOVE_CANDY_MS = 10 * 60_000;
 /** Marco de 15 min: concede uma Pedra da Confiança depois que a corrida termina. */
 export const SURVIVOR_TRUST_STONE_MS = 15 * 60_000;
 export const SURVIVOR_MEGA_SHARD_MS = 20 * 60_000;
+/** A primeira Pokébola Sombria aparece aos 13 min; a mesma corrida pode ter até três encontros. */
+export const SURVIVOR_SHADOW_BALL_FIRST_MS = 13 * 60_000;
+export const SURVIVOR_SHADOW_BALL_EVERY_MS = 3 * 60_000;
+export const SURVIVOR_SHADOW_BALL_MAX_PER_RUN = 3;
+export const SURVIVOR_SHADOW_CUTSCENE_MS = 2_800;
 
 /** Prêmio por zerar a Torre (chefão final caído): só uma vez por dia (`today.clearedTorre`). */
 export const SURVIVOR_CLEAR_BONUS = 500;
@@ -473,6 +494,9 @@ export type SurvivorEvent =
   | { type: 'levelup'; level: number }
   | { type: 'milestone'; id: 'ten-minutes' | 'fifteen-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'trust-stone' | 'mega-stone-shard' }
   | { type: 'bossSpawn' }
+  | { type: 'shadowBallSpawn'; dexId: number; name: string }
+  | { type: 'shadowBossArrival'; dexId: number; name: string }
+  | { type: 'shadowBossDefeated'; dexId: number; name: string; trustStones: number }
   /** Treinador apareceu: solta um grupo de `count` Pokémon elite (3 no normal, 6 no chefão final e no infinito). */
   | { type: 'trainerSpawn'; count: number; final: boolean; trainerId: number; trigger?: 'digital-danger' }
   /** Treinador derrotado (todos os Pokémon dele caíram). */
