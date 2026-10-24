@@ -56,6 +56,8 @@ export const BASIC_MOVE: SurvivorMove = { type: 'normal', name: 'Golpe', categor
 export const BALANCE = {
   xpBase: 12,
   xpPerLevel: 8,
+  /** Orbes soltam 65% da XP anterior; o resto fracionário é carregado para o próximo orbe. */
+  xpOrbMultiplier: 0.65,
   bossHpBase: 150,
   bossHpPerWave: 45,
   bossSpeed: 62,
@@ -309,7 +311,16 @@ function spawnIntervalMs(state: SurvivorState): number {
   const t = state.elapsedMs / 1000;
   const base = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
   const early = Math.max(0, 1 - state.elapsedMs / BALANCE.earlyGameMs);
-  return base * (1 + BALANCE.earlySpawnIntervalBonus * early) * BALANCE.spawnRateMultiplier;
+  return base * (1 + BALANCE.earlySpawnIntervalBonus * early) * BALANCE.spawnRateMultiplier / survivorDifficultyDensityMultiplier(state.player.difficultyStacks ?? 0);
+}
+
+/** Dificuldade voluntária: mais inimigos e atributos mais fortes, sem teto de acúmulos da carta. */
+export function survivorDifficultyDensityMultiplier(stacks: number): number {
+  return 1 + Math.max(0, Math.floor(Number.isFinite(stacks) ? stacks : 0)) * 0.15;
+}
+
+export function survivorDifficultyEnemyMultiplier(stacks: number): number {
+  return 1 + Math.max(0, Math.floor(Number.isFinite(stacks) ? stacks : 0)) * 0.12;
 }
 
 function earlyCurve(elapsedMs: number, start: number): number {
@@ -494,7 +505,8 @@ export function rollUpgrades(
     && (!player || (u.id !== 'power' && u.id !== 'resonance' || player.attackDamage < 60))
     && (!player || u.id !== 'haste' || player.attackCooldownMs > 240)
     && (!player || u.id !== 'multishot' || player.shots < 5)
-    && (!player || u.id !== 'pierce' || player.pierce < 4),
+    && (!player || u.id !== 'pierce' || player.pierce < 4)
+    && (!player || u.id !== 'heal-30' || player.hp < player.maxHp),
   );
   const picked: SurvivorUpgradeOption[] = [];
   for (let i = 0; i < count && pool.length > 0; i++) {
@@ -507,7 +519,7 @@ export function rollUpgrades(
       : undefined;
     const copy = value !== undefined ? u.describeValue?.(move, value) : undefined;
     const description = copy ?? u.describe?.(move) ?? { name: u.name, description: u.description };
-    picked.push({ id: u.id, family: u.family, rarity, ...(value === undefined ? {} : { value }), ...description });
+    picked.push({ id: u.id, family: u.family, rarity, ...(u.icon ? { icon: u.icon } : {}), ...(value === undefined ? {} : { value }), ...description });
     if (rarity === 'ancestral') {
       for (let j = pool.length - 1; j >= 0; j--) if (pool[j]!.rarity === 'ancestral') pool.splice(j, 1);
     }
@@ -1027,8 +1039,8 @@ function attack(state: SurvivorState): boolean {
       }
     }
     drain(state, hits, move);
-    // A órbita intercepta no máximo um projétil por pulso e somente dentro do seu alcance.
-    if (move.category === 'orbit') {
+    // A carta lendária intercepta no máximo um projétil por pulso e somente dentro do alcance.
+    if (move.category === 'orbit' && p.projectileDeflection) {
       const projectileIndex = state.hostileProjectiles.findIndex((projectile) =>
         Math.hypot(projectile.x - p.x, projectile.y - p.y) <= pulseRadius + projectile.size,
       );
@@ -1050,14 +1062,16 @@ function attack(state: SurvivorState): boolean {
       }
     }
     drain(state, hits, move);
-    // O golpe frontal pode aparar um projétil próximo por ataque, sem limpar ondas inteiras.
-    const projectileIndex = state.hostileProjectiles.findIndex((projectile) => {
-      const dx = projectile.x - p.x;
-      const dy = projectile.y - p.y;
-      const distance = Math.hypot(dx, dy);
-      return distance <= attackRange + projectile.size && dx * direction / (distance || 1) >= 0.35;
-    });
-    if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
+    // O golpe frontal só pode aparar um projétil próximo com a carta lendária.
+    if (p.projectileDeflection) {
+      const projectileIndex = state.hostileProjectiles.findIndex((projectile) => {
+        const dx = projectile.x - p.x;
+        const dy = projectile.y - p.y;
+        const distance = Math.hypot(dx, dy);
+        return distance <= attackRange + projectile.size && dx * direction / (distance || 1) >= 0.35;
+      });
+      if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
+    }
     state.fx.push({ kind: 'blast', x: p.x + direction * attackRange * 0.55, y: p.y, r: attackRange * 0.55, color: move.color, ageMs: 0, lifeMs: 300 });
     return true;
   }
@@ -1225,7 +1239,7 @@ function explodeOnDeath(state: SurvivorState, enemy: SurvivorEnemy): void {
     breakSurvivorShield(state);
     return;
   }
-  const incoming = Math.ceil(enemy.damage * 0.8 * (p.artifactShieldMs > 0 ? 0.65 : 1));
+  const incoming = Math.ceil(enemy.damage * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * 0.8 * (p.artifactShieldMs > 0 ? 0.65 : 1));
   p.hp = Math.max(0, p.hp - incoming);
   p.invulnMs = BALANCE.hitInvulnerabilityMs;
 }
@@ -1382,7 +1396,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const statusMultiplier = e.slowMs && e.slowMs > 0 ? 0.5 : 1;
     const hasteMultiplier = e.hastenedMs && e.hastenedMs > 0 ? 1.18 : 1;
     const dashMultiplier = e.dashMs && e.dashMs > 0 ? 2.5 : 1;
-    const speed = stunned ? 0 : e.speed * rangedMultiplier * statusMultiplier * hasteMultiplier * dashMultiplier;
+    const speed = stunned ? 0 : e.speed * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * rangedMultiplier * statusMultiplier * hasteMultiplier * dashMultiplier;
     e.x += (dx / d) * speed * dt;
     e.y += (dy / d) * speed * dt;
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
@@ -1393,7 +1407,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         breakSurvivorShield(state);
         continue;
       }
-        const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? e.damage * 0.88 : e.damage) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
+        const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? e.damage * 0.88 : e.damage) * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
       p.hp = Math.max(0, p.hp - incoming);
       p.invulnMs = BALANCE.hitInvulnerabilityMs;
     }
@@ -1412,7 +1426,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (proj.lifeMs <= 0 || proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size) {
       if (p.invulnMs <= 0 && !specialProtects(state)) {
-         const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
+          const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
         p.hp = Math.max(0, p.hp - incoming);
         p.invulnMs = BALANCE.hitInvulnerabilityMs;
       }
@@ -1541,7 +1555,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         state.fx = [];
         events.push({
           type: 'gameover',
-          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs },
+          summary: { survivedMs: state.elapsedMs, level: state.player.level, stage: state.player.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs, bonusCoins: state.player.bonusCoins ?? 0 },
         });
       }
     }
@@ -1552,7 +1566,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (Math.hypot(orb.x - p.x, orb.y - p.y) <= p.pickupRadius) {
       const multiplier = p.xpMultiplier ?? 1;
       const orbValue = orb.doubleXp ? orb.value * 2 : orb.value;
-      const boostedValue = normalizeSurvivorXp(Math.round((orbValue * multiplier) / SURVIVOR_XP_UNIT) * SURVIVOR_XP_UNIT);
+      const xpWithCarry = orbValue * multiplier * BALANCE.xpOrbMultiplier + (p.xpCarry ?? 0);
+      const boostedValue = normalizeSurvivorXp(xpWithCarry);
+      p.xpCarry = Math.max(0, xpWithCarry - boostedValue);
       p.xp = normalizeSurvivorXp(p.xp + boostedValue);
       return false;
     }
@@ -1591,7 +1607,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.fx = [];
     events.push({
       type: 'gameover',
-      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs },
+      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, digitalPokeballs: state.digitalPokeballs, bonusCoins: p.bonusCoins ?? 0 },
     });
   }
 

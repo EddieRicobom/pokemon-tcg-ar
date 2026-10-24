@@ -12,6 +12,8 @@ import {
   rerollSurvivorUpgradeOffer,
   stepSurvivor,
   survivorCoins,
+  survivorDifficultyDensityMultiplier,
+  survivorDifficultyEnemyMultiplier,
   survivorScore,
   SURVIVOR_UPGRADES,
   SURVIVOR_UPGRADE_RARITIES,
@@ -343,8 +345,17 @@ describe('stepSurvivor', () => {
     s.player.xpToNext = 100;
     s.orbs.push({ id: 999, x: s.player.x, y: s.player.y, value: 16 });
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(s.player.xp).toBe(24); // 16 × 1,5, arredondado para a unidade par mais próxima
+    expect(s.player.xp).toBe(14); // 16 × 1,5 × 65%, convertido para a unidade par abaixo
     expect(s.player.xp % 2).toBe(0);
+  });
+
+  it('reduz a XP dos orbes em 35% no total, sem perder os restos fracionários', () => {
+    const s = quiet(createSurvivorState(4, { kindCount: 1 }));
+    s.player.xpToNext = 1_000;
+    for (let id = 0; id < 10; id++) s.orbs.push({ id, x: s.player.x, y: s.player.y, value: 8 });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.xp).toBe(52); // 10 × 8 × 65%
+    expect(s.player.xpCarry).toBeCloseTo(0);
   });
 
   it('oferece o upgrade raro de escolhas extras sem mudar a regra de escolher uma carta', () => {
@@ -418,7 +429,7 @@ describe('stepSurvivor', () => {
     s.orbs[0]!.x = s.player.x;
     s.orbs[0]!.y = s.player.y;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(s.player.xp).toBe(16);
+    expect(s.player.xp).toBe(10); // 16 de XP dobrada × 65%, preservando a unidade par
   });
 });
 
@@ -582,6 +593,7 @@ describe('golpes por tipo', () => {
     expect(counts.lendario).toBeGreaterThan(counts.ancestral);
     expect(counts.ancestral).toBeGreaterThan(0);
     expect(Object.values(SURVIVOR_UPGRADE_RARITIES).map((rarity) => rarity.minLevel)).toEqual([1, 3, 8, 12]);
+    expect(Object.values(SURVIVOR_UPGRADE_RARITIES).map((rarity) => rarity.weight)).toEqual([74, 18, 6, 2]);
     const ancestral = SURVIVOR_UPGRADES.find((upgrade) => upgrade.rarity === 'ancestral')!;
     state.pendingUpgrade = [{ id: ancestral.id, name: ancestral.name, description: ancestral.description, rarity: 'ancestral' }];
     applyUpgrade(state, ancestral.id);
@@ -619,6 +631,27 @@ describe('golpes por tipo', () => {
     applyUpgrade(s, 'haste');
     expect(s.player.attackDamage).toBe(75);
     expect(s.player.attackCooldownMs).toBe(180);
+  });
+
+  it('dilui as escolhas com cura, moedas e uma dificuldade sem teto', () => {
+    const s = quiet(createSurvivorState(1, { kindCount: 1 }));
+    s.player.hp = 10;
+    s.pendingUpgrade = [{ id: 'heal-30', name: '', description: '' }];
+    applyUpgrade(s, 'heal-30');
+    expect(s.player.hp).toBe(40);
+    for (const id of ['coins-100', 'coins-200', 'coins-500', 'difficulty', 'difficulty', 'difficulty']) {
+      s.pendingUpgrade = [{ id, name: '', description: '' }];
+      applyUpgrade(s, id);
+    }
+    expect(s.player.bonusCoins).toBe(800);
+    expect(s.player.difficultyStacks).toBe(3);
+    const difficulty = SURVIVOR_UPGRADES.find((upgrade) => upgrade.id === 'difficulty');
+    expect(difficulty?.icon).toBe('☠');
+    expect(difficulty?.maxLevels).toBeUndefined();
+    expect(survivorDifficultyDensityMultiplier(s.player.difficultyStacks ?? 0)).toBeCloseTo(1.45);
+    expect(survivorDifficultyEnemyMultiplier(s.player.difficultyStacks ?? 0)).toBeCloseTo(1.36);
+    const fullHealth = createSurvivorState(2, { kindCount: 1 }).player;
+    for (let seed = 0; seed < 20; seed++) expect(rollUpgrades(seededRng(seed), 12, fullHealth.move, fullHealth).some((option) => option.id === 'heal-30')).toBe(false);
   });
 });
 
@@ -730,7 +763,7 @@ describe('efeitos defensivos de golpes próximos', () => {
     expect(s.hostileProjectiles.find((projectile) => projectile.id === 21)?.x).toBeCloseTo(farX + 10);
   });
 
-  it('órbita e cone apararam no máximo um projétil por ataque', () => {
+  it('órbita e cone só apararam um projétil por ataque após a carta lendária', () => {
     for (const category of ['orbit', 'cone'] as const) {
       const profile = as(category === 'orbit' ? 'grass' : 'fighting', category);
       const s = quiet(createSurvivorState(6, { kindCount: 1, move: profile.move, profile: profile.profile }));
@@ -738,6 +771,11 @@ describe('efeitos defensivos de golpes próximos', () => {
         { id: 30, x: s.player.x + 45, y: s.player.y, vx: 0, vy: 0, damage: 1, lifeMs: 1000, size: 4 },
         { id: 31, x: s.player.x + 48, y: s.player.y, vx: 0, vy: 0, damage: 1, lifeMs: 1000, size: 4 },
       );
+      stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+      expect(s.hostileProjectiles.map((projectile) => projectile.id)).toEqual([30, 31]);
+      s.pendingUpgrade = [{ id: 'projectile-deflection', name: '', description: '' }];
+      applyUpgrade(s, 'projectile-deflection');
+      s.player.attackTimerMs = 0;
       stepSurvivor(s, { dx: 0, dy: 0 }, 16);
       expect(s.hostileProjectiles.map((projectile) => projectile.id)).toEqual([31]);
     }
@@ -994,6 +1032,7 @@ describe('moedas da Torre', () => {
     expect(survivorCoins({ survivedMs: 25_000, kills: 0, level: 1, trainersBeaten: 0, bossesBeaten: 0 })).toBe(15);
     expect(survivorCoins({ survivedMs: 3000, kills: 1, level: 1, trainersBeaten: 0, bossesBeaten: 0 })).toBe(5);
     expect(survivorCoins({ survivedMs: 600_000, kills: 400, level: 30, trainersBeaten: 0, bossesBeaten: 0 })).toBe(50);
+    expect(survivorCoins({ survivedMs: 3000, kills: 1, level: 1, trainersBeaten: 0, bossesBeaten: 0, bonusCoins: 300 })).toBe(305);
     expect(survivorScore({ survivedMs: 60_000, kills: 10, level: 4 })).toBe(100);
   });
 });
