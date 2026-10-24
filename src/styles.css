@@ -5054,6 +5054,8 @@ body.no-scroll .reward-toasts {
 
 .village-sheet {
   position: absolute;
+  /* Acima do minimapa (z-index 2, e 5 quando aberto): o menu e as folhas não podem ficar atrás dele. */
+  z-index: 6;
   inset: auto 8px 8px 8px;
   max-height: min(70dvh, 780px);
   inset: auto max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
