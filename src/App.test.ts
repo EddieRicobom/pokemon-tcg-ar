@@ -72,7 +72,7 @@ describe('App', () => {
   it('a Arena separa a equipe de seis, os modos contínuos e a caixa que exibe a luta', async () => {
     const text = await mount('#/arena');
     expect(text).toContain('Arena Digital');
-    expect(text).toContain('Equipe da Arena · 6 Pokémon');
+    expect(text).toContain('Monte seu time de batalha');
     expect(text).toContain('Formatação digital');
     expect(text).toContain('Restauração digital');
     // O padrão é a Arena 3D (sem câmera); trocar o fundo para a câmera (AR) volta o link para a Caixa em AR de sempre.
@@ -94,11 +94,23 @@ describe('App', () => {
     expect(text).toContain('0 XP');
     // Uma seção por vez: as conquistas ficam em "Coleção".
     const sections = [...(host?.querySelectorAll('.trainer-sections button') ?? [])].map((b) => b.textContent?.trim());
-    expect(sections).toEqual(['Resumo', 'Liga', 'Jogos', 'Coleção', 'Dados']);
+    expect(sections).toEqual(['Resumo', 'Liga', 'Jogos', 'Pokédex', 'Coleção', 'Dados']);
     expect(host?.textContent).not.toContain('Conquistas');
     [...host!.querySelectorAll<HTMLButtonElement>('.trainer-sections button')].find((b) => b.textContent?.includes('Coleção'))!.click();
     await nextTick();
     expect(host?.textContent).toContain('Conquistas');
+  });
+
+  it('a Pokédex começa vazia e só mostra o que foi encontrado', async () => {
+    localStorage.removeItem('tcg-ar-pokedex-v1');
+    await mount('#/treinador');
+    [...host!.querySelectorAll<HTMLButtonElement>('.trainer-sections button')].find((b) => b.textContent?.includes('Pokédex'))!.click();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await nextTick();
+    expect(host?.textContent).toContain('0 de 1025');
+    expect(host?.textContent).toContain('Nenhuma espécie ainda');
+    expect(host?.querySelectorAll('.dex-grid button.seen').length).toBe(0);
   });
 
   it('o Treinador abre direto nos minigames com ?jogos=1', async () => {

@@ -780,13 +780,21 @@ export function scoreMatch(won: boolean, shots: number, enemies: number): number
  * A nota já desconta disparos desperdiçados; a dificuldade e o tamanho do desafio entram separadamente para que uma
  * vitória difícil e eficiente pague mais, sem transformar uma partida longa em uma fonte infinita de moedas.
  */
-export function pinCoinReward(won: boolean, difficulty: Difficulty, score: number, enemies: number, solo: boolean): number {
-  if (!won || !solo) return 0;
+export function pinCoinReward(won: boolean, difficulty: Difficulty, score: number, enemies: number, solo: boolean, knockouts = 0): number {
+  if (!solo) return 0;
+  const kos = clamp(Math.floor(knockouts), 0, 12);
+  // Derrota: quem derrubou adversários leva um consolo pequeno (limitado), para a partida nunca pagar zero por nada.
+  if (!won) return Math.min(PIN_LOSS_COINS_CAP, kos * PIN_KO_COINS);
   const base = { facil: 12, normal: 20, dificil: 32 }[difficulty];
   const quality = clamp(Math.round(score * 0.18), 0, 18);
   const challenge = clamp(Math.max(0, Math.floor(enemies) - 1) * 3, 0, 12);
-  return base + quality + challenge;
+  return base + quality + challenge + kos * PIN_KO_COINS;
 }
+
+/** Moedas por adversário derrubado da arena (pagas no fim da partida contra o computador). */
+export const PIN_KO_COINS = 3;
+/** Teto do consolo por derrota. */
+export const PIN_LOSS_COINS_CAP = 9;
 
 /** Quem pode ser disparado agora com esta energia. */
 export function affordable(world: PinWorld, energy: number): Pin[] {

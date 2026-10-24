@@ -9,6 +9,7 @@ import { routeFlags, routeHref } from '../app/route';
 import { coins } from '../app/wallet';
 import { trainer } from '../app/trainer-store';
 import LeagueCard from '../components/LeagueCard.vue';
+import PokedexView from '../components/PokedexView.vue';
 import MinigameHub from '../components/MinigameHub.vue';
 import TrainerAvatar from '../components/TrainerAvatar.vue';
 import { itemDef } from '../core/village/catalog';
@@ -22,11 +23,12 @@ import { LOTS } from '../core/village/town-layout';
  * O Treinador mostra uma seção por vez (antes era tudo empilhado: ~6.000 px de rolagem no celular). O topo (nível,
  * moedas, sequência) fica sempre à vista; `#/treinador?jogos=1` abre direto nos minigames.
  */
-type Section = 'resumo' | 'liga' | 'jogos' | 'colecao' | 'dados';
+type Section = 'resumo' | 'liga' | 'jogos' | 'pokedex' | 'colecao' | 'dados';
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'resumo', label: 'Resumo' },
   { id: 'liga', label: 'Liga' },
   { id: 'jogos', label: 'Jogos' },
+  { id: 'pokedex', label: 'Pokédex' },
   { id: 'colecao', label: 'Coleção' },
   { id: 'dados', label: 'Dados' },
 ];
@@ -255,6 +257,7 @@ function cancelImport(): void {
     </template>
 
     <LeagueCard v-else-if="section === 'liga'" />
+    <PokedexView v-else-if="section === 'pokedex'" />
 
     <template v-else-if="section === 'jogos'">
     <MinigameHub />
