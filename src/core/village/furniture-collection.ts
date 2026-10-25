@@ -35,3 +35,111 @@ export const COZY_FURNITURE: readonly ItemDef[] = [
   { id: 'carrinho-cha', name: 'Carrinho de chá', kind: 'furniture', group: 'Jardim', price: 240, sell: 54, recipe: { tabua: 3, ferro: 2, argila: 1 }, purpose: 'Conjunto de chá para encontros ao ar livre.', roomZone: 'social' },
   { id: 'canteiro-pedras', name: 'Canteiro de pedras e flores', kind: 'furniture', group: 'Jardim', price: 180, sell: 40, recipe: { pedra: 4, flor: 4 }, purpose: 'Composição baixa para os cantos da praça.', roomZone: 'wall' },
 ];
+
+type Zone = ItemDef['roomZone'];
+type Get = { price?: number; recipe?: Record<string, number>; prize?: true };
+
+/** Móvel da segunda leva: vendido (`price`), fabricado (`recipe`) ou prêmio de conquista (`prize`, ver `rewards.ts`). */
+function mv(id: string, name: string, group: string, zone: Zone, get: Get, opt: Partial<ItemDef> = {}): ItemDef {
+  const parts = Object.values(get.recipe ?? {}).reduce((n, q) => n + q, 0);
+  const sell = get.prize ? 0 : Math.max(8, Math.round((get.price ? get.price / 4.5 : parts * 9) / 2) * 2);
+  return { id, name, kind: 'furniture', group, price: get.price ?? 0, sell, ...(get.recipe ? { recipe: get.recipe } : {}), ...(get.prize ? { prize: true } : {}), ...(zone ? { roomZone: zone } : {}), ...opt };
+}
+
+/** Móveis da segunda leva, no estilo dos interiores da 3ª geração (decorações da Base Secreta incluídas). */
+export const NEW_FURNITURE_ITEMS: readonly ItemDef[] = [
+  // Bonecos de Pokémon.
+  mv('boneco-pikachu', 'Boneco de Pikachu', 'Pokémon', 'social', { price: 220 }),
+  mv('boneco-bulbasaur', 'Boneco de Bulbasaur', 'Pokémon', 'social', { price: 200 }),
+  mv('boneco-charmander', 'Boneco de Charmander', 'Pokémon', 'social', { price: 200 }),
+  mv('boneco-squirtle', 'Boneco de Squirtle', 'Pokémon', 'social', { price: 200 }),
+  mv('boneco-jigglypuff', 'Boneco de Jigglypuff', 'Pokémon', 'social', { recipe: { la: 3, tecido: 2 } }),
+  mv('boneco-eevee', 'Boneco de Eevee', 'Pokémon', 'social', { price: 240 }),
+  mv('boneco-togepi', 'Boneco de Togepi', 'Pokémon', 'social', { prize: true }),
+  mv('boneco-meowth', 'Boneco de Meowth', 'Pokémon', 'social', { recipe: { la: 2, tecido: 2, ouro: 1 } }),
+  mv('boneco-psyduck', 'Boneco de Psyduck', 'Pokémon', 'social', { recipe: { la: 3, tecido: 1, pena: 1 } }),
+  mv('boneco-clefairy', 'Boneco de Clefairy', 'Pokémon', 'social', { recipe: { la: 3, tecido: 1, 'pedra-lua': 1 } }),
+  mv('boneco-marill', 'Boneco de Marill', 'Pokémon', 'social', { recipe: { la: 3, tecido: 1, 'concha-espiral': 1 } }),
+  mv('boneco-snorlax', 'Boneco gigante de Snorlax', 'Pokémon', 'social', { recipe: { la: 10, tecido: 6 } }, { tall: true }),
+  // Plantas.
+  mv('planta-vermelha', 'Planta vermelha', 'Casa', 'wall', { price: 110 }),
+  mv('planta-tropical', 'Planta tropical', 'Casa', 'wall', { recipe: { flor: 2, argila: 2, erva: 1 } }),
+  mv('flores-bonitas', 'Flores bonitas', 'Casa', 'social', { recipe: { flor: 5, argila: 1 } }),
+  mv('planta-colorida', 'Planta colorida', 'Casa', 'wall', { price: 130 }),
+  mv('suculenta', 'Suculenta', 'Casa', 'wall', { recipe: { erva: 2, argila: 1, pedra: 1 } }),
+  mv('orquidea', 'Orquídea', 'Casa', 'social', { price: 180 }),
+  mv('bambu-vaso', 'Bambu no vaso', 'Casa', 'wall', { recipe: { madeira: 3, argila: 2 } }),
+  mv('lirio', 'Lírios', 'Casa', 'rest', { recipe: { flor: 4, argila: 1 } }),
+  mv('planta-grande', 'Planta grande', 'Casa', 'wall', { price: 260 }, { tall: true }),
+  mv('planta-exuberante', 'Planta exuberante', 'Casa', 'wall', { recipe: { flor: 4, erva: 3, argila: 3 } }, { tall: true }),
+  // Mesas.
+  mv('escrivaninha-pequena', 'Escrivaninha pequena', 'Casa', 'wall', { recipe: { tabua: 3 } }),
+  mv('mesa-pokemon', 'Mesa Pokémon', 'Casa', 'social', { prize: true }),
+  mv('mesa-pesada', 'Mesa pesada', 'Casa', 'social', { recipe: { tabua: 6, ferro: 1 } }),
+  mv('mesa-rustica', 'Mesa rústica', 'Casa', 'social', { recipe: { madeira: 6 } }),
+  mv('mesa-vidro', 'Mesa de vidro', 'Casa', 'social', { recipe: { vidro: 2, ferro: 2 } }),
+  mv('mesa-centro', 'Mesa de centro', 'Casa', 'social', { price: 150 }),
+  mv('mesa-cozinha', 'Mesa da cozinha', 'Casa', 'kitchen', { recipe: { tabua: 4, tecido: 1 } }),
+  mv('bancada-lab', 'Bancada de laboratório', 'Casa', 'wall', { recipe: { ferro: 3, vidro: 3, quartzo: 1 } }),
+  // Cadeiras.
+  mv('cadeira-pokemon', 'Cadeira Pokémon', 'Casa', 'social', { price: 160 }),
+  mv('cadeira-pesada', 'Cadeira pesada', 'Casa', 'social', { recipe: { tabua: 4 } }),
+  mv('cadeira-escritorio', 'Cadeira de escritório', 'Casa', 'wall', { price: 190 }),
+  mv('banco-piano', 'Banco de piano', 'Casa', 'social', { recipe: { tabua: 2, tecido: 1 } }),
+  mv('cadeira-balanco', 'Cadeira de balanço', 'Casa', 'rest', { recipe: { madeira: 5, tabua: 2 } }, { frames: 2 }),
+  // Tapetes e pôsteres.
+  mv('tapete-pokebola', 'Tapete Poké Bola', 'Casa', 'social', { price: 140 }),
+  mv('tapete-fogo', 'Tapete do Fogo', 'Casa', 'social', { recipe: { tecido: 3, 'pedra-fogo': 1 } }),
+  mv('tapete-onda', 'Tapete da Onda', 'Casa', 'social', { recipe: { tecido: 3, 'pedra-agua': 1 } }),
+  mv('tapete-trovao', 'Tapete do Trovão', 'Casa', 'social', { recipe: { tecido: 3, 'pedra-trovao': 1 } }),
+  mv('poster-pokebola', 'Pôster Poké Bola', 'Casa', 'wall', { prize: true }),
+  mv('poster-pikachu', 'Pôster do Pikachu', 'Casa', 'wall', { price: 90 }),
+  mv('poster-mapa', 'Pôster do mapa', 'Casa', 'wall', { price: 80 }),
+  mv('poster-estrelas', 'Pôster do céu estrelado', 'Casa', 'wall', { prize: true }),
+  // Eletrônicos.
+  mv('tv-tela-plana', 'TV de tela plana', 'Casa', 'social', { price: 420 }, { frames: 2 }),
+  mv('videogame', 'Videogame', 'Casa', 'social', { price: 380 }, { frames: 2 }),
+  mv('pc-pokemon', 'PC de armazenamento', 'Casa', 'wall', { recipe: { ferro: 4, vidro: 2, quartzo: 2 } }, { frames: 2 }),
+  mv('radio-antigo', 'Rádio antigo', 'Casa', 'wall', { price: 170 }),
+  mv('telefone', 'Telefone', 'Casa', 'wall', { price: 90 }),
+  mv('microondas', 'Micro-ondas', 'Casa', 'kitchen', { price: 210 }),
+  mv('ventilador', 'Ventilador', 'Casa', 'rest', { recipe: { ferro: 3 } }, { frames: 2 }),
+  mv('computador-lab', 'Computador do laboratório', 'Casa', 'wall', { recipe: { ferro: 4, vidro: 3, cristal: 1 } }, { frames: 2 }),
+  mv('maquina-cura', 'Máquina de cura', 'Pokémon', 'wall', { recipe: { ferro: 6, vidro: 3, cristal: 2, 'escama-coracao': 1 } }, { tall: true, frames: 2 }),
+  mv('maquina-vendas', 'Máquina de bebidas', 'Luz', 'wall', { price: 520 }, { tall: true, light: true }),
+  // Cozinha.
+  mv('geladeira-dupla', 'Geladeira duplex', 'Casa', 'kitchen', { price: 480 }, { tall: true }),
+  mv('cafeteira', 'Cafeteira', 'Casa', 'kitchen', { recipe: { ferro: 1, vidro: 1, tabua: 1 } }),
+  mv('forno-pizza', 'Forno a lenha', 'Casa', 'kitchen', { recipe: { tijolo: 6, pedra: 4, carvao: 2 } }, { frames: 2 }),
+  mv('chaleira', 'Chaleira no fogareiro', 'Casa', 'kitchen', { recipe: { ferro: 2, carvao: 1 } }),
+  mv('prateleira-temperos', 'Prateleira de temperos', 'Casa', 'kitchen', { recipe: { tabua: 2, erva: 2, 'sal-praia': 1 } }),
+  mv('lava-loucas', 'Lava-louças', 'Casa', 'kitchen', { price: 360 }),
+  // Quarto e banheiro.
+  mv('beliche', 'Beliche', 'Casa', 'rest', { recipe: { tabua: 6, tecido: 4 } }, { tall: true }),
+  mv('berco', 'Berço', 'Casa', 'rest', { recipe: { tabua: 4, tecido: 2 } }),
+  mv('penteadeira', 'Penteadeira', 'Casa', 'rest', { price: 280 }),
+  mv('armario-alto', 'Armário alto', 'Casa', 'rest', { recipe: { tabua: 8, ferro: 1 } }, { tall: true }),
+  mv('cesto-roupa', 'Cesto de roupas', 'Casa', 'rest', { recipe: { madeira: 3, tecido: 1 } }),
+  mv('espelho-oval', 'Espelho oval', 'Casa', 'rest', { recipe: { vidro: 2, ouro: 1 } }),
+  mv('bau-brinquedos', 'Baú de brinquedos', 'Pokémon', 'rest', { price: 170 }),
+  mv('pia-banheiro', 'Pia do banheiro', 'Casa', 'wall', { price: 200 }),
+  // Decoração (da Base Secreta).
+  mv('escudo-prata', 'Escudo de prata', 'Pokémon', 'wall', { prize: true }),
+  mv('escudo-ouro', 'Escudo de ouro', 'Pokémon', 'wall', { prize: true }),
+  mv('ornamento-vidro', 'Ornamento de vidro', 'Casa', 'social', { prize: true }),
+  mv('ornamento-areia', 'Ornamento de areia', 'Casa', 'social', { recipe: { areia: 6, 'sal-praia': 1 } }),
+  mv('pneu', 'Pneu', 'Jardim', 'wall', { recipe: { carvao: 3, ferro: 1 } }),
+  mv('estande-trofeu', 'Estante de troféus', 'Pokémon', 'wall', { prize: true }),
+  mv('globo-neve', 'Globo de neve', 'Casa', 'social', { recipe: { vidro: 1, 'pedra-gelo': 1 } }, { frames: 2 }),
+  mv('aquario-grande', 'Aquário grande', 'Casa', 'wall', { recipe: { vidro: 4, ferro: 2, alga: 3, dourado: 1 } }, { frames: 2 }),
+  mv('relogio-cuco', 'Relógio cuco', 'Casa', 'wall', { prize: true }, { frames: 2 }),
+  mv('vitrola', 'Vitrola', 'Casa', 'social', { price: 320 }, { frames: 2 }),
+  mv('jukebox', 'Jukebox', 'Luz', 'social', { price: 640 }, { frames: 3, light: true }),
+  mv('mesa-sinuca', 'Mesa de sinuca', 'Casa', 'social', { recipe: { tabua: 6, tecido: 3, pedra: 2 } }),
+  // Jardim.
+  mv('casinha-passaro', 'Casinha de passarinho', 'Jardim', 'wall', { recipe: { tabua: 2, pena: 1 } }),
+  mv('regador', 'Regador', 'Jardim', 'wall', { price: 60 }),
+  mv('carrinho-mao', 'Carrinho de mão', 'Jardim', 'wall', { recipe: { ferro: 2, tabua: 2 } }),
+  mv('cata-vento-jardim', 'Cata-vento de jardim', 'Jardim', 'wall', { price: 70 }, { frames: 2 }),
+  mv('fonte-anjo', 'Fonte do anjo', 'Jardim', 'wall', { recipe: { pedra: 12, quartzo: 2 } }, { tall: true, frames: 2 }),
+];

@@ -5,6 +5,15 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Vila: visual novo de itens, acessórios e móveis, com 300 peças novas (25/10/2026)
+
+- Pincel novo (`src/village/art/pen.ts`): rampas de cor com variação de matiz, contorno no tom escuro da própria cor (`sel`) ou quase preto (`ink`) e sprites escritos como mapa de pixels. Tudo continua desenhado por código, sem imagens.
+- Acessórios (estilo dos acessórios da 4ª geração): os 50 antigos redesenhados e 100 novos, no tamanho real (um pixel do desenho = um pixel do tileset da Vila; na Torre, do tileset da Torre). A posição sai de uma âncora genérica sobre a caixa do corpo e o topo da cabeça (`core/village/accessory-fit.ts`: cabeça, cabelo, olhos, boca, pescoço, peito, cintura, costas, mão), igual na Vila, na Torre e na Caixa, sabendo para que lado o corpo olha (capas atrás, o que se segura na frente; de costas o rosto some). Todo acessório serve no treinador e nos Pokémon.
+- Itens da mochila (estilo dos ícones da 5ª geração): materiais, colheitas, sementes e pratos redesenhados, e 100 novos com origem real — pedras de evolução, carvão, quartzo, âmbar e fósseis nas rochas; bolota, pinha e seiva nas árvores; trevo, erva e cogumelos no mato; caranguejo, lula e Escama Coração na pesca; sal e concha espiral na areia; leite, ovo, açúcar e manteiga na loja; farinha na bancada; 15 sementes e colheitas (10 frutas Pokémon e 5 legumes) e 41 pratos.
+- Móveis (estilo dos tilesets de interior da 3ª geração, perspectiva 3/4): os antigos redesenhados e 100 novos (bonecos de Pokémon, plantas, mesas, eletrônicos, decorações da Base Secreta, jardim e as famílias almofada e banqueta em 8 cores). Animação por quadros sobrepostos e luz noturna por troca de paleta.
+- Conquistas: 27 novas. 22 acessórios e 9 móveis só saem de conquista (`prize`).
+- 🔶 Typecheck, 2239 testes e build passaram. Conferido no navegador do PC (Vila com acessórios no treinador e nos Pokémon, interior da casa com móveis novos e antigos) e em folhas de contato renderizadas por script. Nada visto em celular real; posição dos acessórios em espécies de formato incomum (serpentes, Pokémon muito largos) não foi revisada uma a uma.
+
 ## Vila: amizade com os moradores que se vê evoluir (25/10/2026)
 
 - Diagnóstico: a amizade subia, mas nada mostrava. Nenhuma ação anunciava a troca de nível (só o recorde geral ia para o Treinador), os momentos davam ±1–2 pontos e diziam apenas "+ amizade com você", conversar de novo no mesmo dia dava sempre a mesma frase, o "não gosta" do Livro não tinha efeito no presente e o mural dava +3.

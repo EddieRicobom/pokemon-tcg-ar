@@ -7,7 +7,7 @@
 import { NEW_ACCESSORIES } from './accessory-collection';
 import { NEW_CROPS, NEW_FOODS, NEW_MATERIALS, NEW_SEEDS } from './item-collection';
 import type { AccessoryPos } from './accessory-fit';
-import { COZY_FURNITURE } from './furniture-collection';
+import { COZY_FURNITURE, NEW_FURNITURE_ITEMS } from './furniture-collection';
 
 export type ItemKind = 'material' | 'furniture' | 'seed' | 'crop' | 'accessory' | 'food';
 export type AccessorySlot = 'player' | 'pokemon' | 'both';
@@ -28,6 +28,8 @@ export interface ItemDef {
   recipe?: Record<string, number>;
   /** Só aparece como presente de amigo (raro). */
   gift?: boolean;
+  /** Só vem como prêmio de conquista (ver `rewards.ts`). */
+  prize?: boolean;
   /** Acessório: quem pode usar e onde vai. */
   slot?: AccessorySlot;
   pos?: AccessoryPos;
@@ -88,10 +90,17 @@ const BASE = {
   tapete: f('tapete', 'Tapete', 'Casa', { recipe: { tecido: 3 }, price: 90, sell: 20 }),
   vaso: f('vaso', 'Vaso de flores', 'Jardim', { recipe: { flor: 3, pedra: 1 }, sell: 14 }),
   cerca: f('cerca', 'Cerca', 'Jardim', { recipe: { madeira: 2 }, sell: 6 }),
+  almofada: f('almofada', 'Almofada de chão', 'Casa', { recipe: { tecido: 2, la: 1 }, price: 70, sell: 16, roomZone: 'social' }),
+  banqueta: f('banqueta', 'Banqueta', 'Casa', { recipe: { tabua: 2, tecido: 1 }, price: 90, sell: 20, roomZone: 'kitchen' }),
 };
 
 export const ITEMS: readonly ItemDef[] = [
   ...COZY_FURNITURE,
+  ...NEW_FURNITURE_ITEMS,
+  BASE.almofada,
+  ...variants(BASE.almofada, true, ['vermelho', 'azul', 'verde', 'rosa', 'amarelo', 'roxo', 'listrado']),
+  BASE.banqueta,
+  ...variants(BASE.banqueta, true, ['vermelho', 'azul', 'verde', 'rosa', 'amarelo', 'roxo', 'listrado']),
   // Materiais (coleta)
   m('madeira', 'Madeira', 4),
   m('pedra', 'Pedra', 4),

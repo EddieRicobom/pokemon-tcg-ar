@@ -31,7 +31,7 @@ describe('catálogo', () => {
     for (const i of ITEMS) for (const k of Object.keys(i.recipe ?? {})) expect(itemDef(k), `${i.id}→${k}`).toBeDefined();
     for (const id of FURNITURE_IDS) {
       const d = itemDef(id)!;
-      expect(Boolean(d.recipe) || d.price > 0 || d.gift, id).toBe(true);
+      expect(Boolean(d.recipe) || d.price > 0 || d.gift || d.prize, id).toBe(true);
     }
   });
 

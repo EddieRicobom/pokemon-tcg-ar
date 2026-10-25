@@ -7,7 +7,7 @@ import { itemDef } from './catalog';
 
 export interface Prize {
   coins: number;
-  /** Acessório exclusivo (não vende em loja nenhuma). */
+  /** Acessório ou móvel exclusivo (não vende em loja nenhuma). */
   item?: string;
   /** Origem apresentada ao jogador quando o prêmio chega à Vila. */
   origin?: string;
@@ -57,7 +57,7 @@ export const PRIZES: Record<string, Prize> = {
   'torre-infinito': { coins: 300, item: 'pin-chefao', origin: 'pino de chefão, por derrotar três chefões' },
   'torre-mestre': { coins: 500, item: 'capa-sobrevivente', origin: 'capa da Torre, por vencer dez treinadores' },
   // Segunda leva.
-  'cartas-25': { coins: 60 },
+  'cartas-25': { coins: 60, item: 'poster-pokebola' },
   'cartas-100': { coins: 200, item: 'broche-escudo' },
   'cartas-300': { coins: 600, item: 'aureola' },
   'colecao-40': { coins: 300, item: 'medalhao' },
@@ -65,24 +65,24 @@ export const PRIZES: Record<string, Prize> = {
   'leituras-100': { coins: 150, item: 'visor-futurista' },
   'sequencia-14': { coins: 200, item: 'relogio-bolso' },
   'sequencia-60': { coins: 600, item: 'coroa-gelo' },
-  'batalhas-100': { coins: 400 },
+  'batalhas-100': { coins: 400, item: 'escudo-prata' },
   'equipe-10': { coins: 150, item: 'estrela-ninja' },
   'minigame-50': { coins: 200, item: 'tiara-estrelas' },
   'minigame-vitorias-30': { coins: 250, item: 'varinha' },
-  'nivel-15': { coins: 300 },
+  'nivel-15': { coins: 300, item: 'mesa-pokemon' },
   'nivel-30': { coins: 700, item: 'asas-dragao' },
   'vila-conversa-100': { coins: 200, item: 'presilha-coracao' },
-  'vila-perguntas-50': { coins: 200 },
-  'vila-album-60': { coins: 300 },
-  'vila-apelidos-5': { coins: 120 },
+  'vila-perguntas-50': { coins: 200, item: 'poster-estrelas' },
+  'vila-album-60': { coins: 300, item: 'relogio-cuco' },
+  'vila-apelidos-5': { coins: 120, item: 'boneco-togepi' },
   'liga-quatro': { coins: 200, item: 'tridente' },
   'liga-campea-3': { coins: 800, item: 'cinturao', origin: 'cinturão da Liga, por vencer a Campeã três vezes' },
   'pvp-10': { coins: 150, item: 'cimitarra' },
   'pvp-vitorias-5': { coins: 250, item: 'chapeu-pirata' },
-  'shiny-5': { coins: 300 },
-  'pins-10': { coins: 150 },
+  'shiny-5': { coins: 300, item: 'ornamento-vidro' },
+  'pins-10': { coins: 150, item: 'estande-trofeu' },
   'torre-corridas-10': { coins: 150, item: 'tapa-olho', origin: 'tapa-olho da Torre, por concluir dez corridas' },
-  'torre-nivel-30': { coins: 250 },
+  'torre-nivel-30': { coins: 250, item: 'escudo-ouro' },
   'torre-chefoes-10': { coins: 600, item: 'quepe', origin: 'quepe de capitão, por derrotar dez chefões da Torre' },
 };
 

@@ -1,232 +1,39 @@
 import type { PixelBuf } from '../box/ground-art';
 import { COLOR_NAMES, itemDef } from '../core/village/catalog';
+import type { ColorKey } from '../core/village/catalog';
 import { ACCESSORY_SPRITE_IDS, paintAccessoryArt, paintAccessoryIconArt } from './art/accessories';
 import { FOOD_ICON_ART } from './art/foods';
+import { furn, paintFurn } from './art/furniture';
+import type { Furn } from './art/furniture';
+import { GARDEN_FURNITURE, TALL_FURNITURE } from './art/furniture-garden';
+import { fabric, FAMILY_DEFAULT, FAMILY_ROWS, HOME_FURNITURE } from './art/furniture-home';
+import { NEW_FURNITURE, NEW_TALL_FURNITURE } from './art/furniture-new';
 import { NEW_CROP_COLOR, NEW_CROP_ICONS, NEW_MATERIAL_ICONS, OLD_MATERIAL_ICONS, paintIcon, seedBagIcon } from './art/items';
 import { render } from './art/pen';
-import type { Draw, Pen } from './art/pen';
-import type { ColorKey } from '../core/village/catalog';
+import type { Draw } from './art/pen';
 
 /**
- * Ícones e móveis da Vila em pixel art (16×16, ou 16×32 nos móveis altos), todos desenhados por código. Cada móvel tem o
- * seu desenho (o mesmo no chão e na mochila); sementes viram saquinhos com a cor da planta; colheitas, frutas, comidas,
- * peixes e materiais têm o próprio ícone. O acabamento (`render`, em `art/pen.ts`) dá luz de cima à esquerda, sombra
- * embaixo à direita e um contorno no tom escuro da própria cor, como os ícones da mochila da 5ª geração. Os acessórios
- * ficam em `art/accessories.ts`.
+ * Ícones e móveis da Vila em pixel art (16×16, ou 16×32 nos móveis altos), todos desenhados por código. Os desenhos
+ * ficam em `art/`: móveis no estilo dos interiores da 3ª geração (`furniture*.ts`), ícones da mochila no estilo da 5ª
+ * (`items.ts`, `foods.ts`) e acessórios no estilo da 4ª (`accessories.ts`). Cada móvel tem o mesmo desenho no chão e na
+ * mochila; sementes viram saquinhos com a cor da planta.
  */
 
-const WOOD = 0xb8844a;
-const WOOD_D = 0x8a5a2e;
-const WOOD_L = 0xd2a66c;
-const LEG = 0x6a4a28;
-const STONE = 0x9a968e;
-const STONE_L = 0xc4c0b8;
-const IRON = 0x6a6e7a;
-const IRON_L = 0x9aa0ae;
-const RED = 0xd8463c;
-const WHITE = 0xf6f6f6;
-const GOLD = 0xffcb05;
 const GREEN = 0x4aa84a;
 const GREEN_D = 0x2f7f36;
 const GREEN_L = 0x6cc85c;
-const BLUE = 0x4f8fe0;
-const PINK = 0xf8a8c8;
-const DARK = 0x2a2a34;
-const CLOTH = 0x5a8ad8;
-const GLASS = 0x8fd0ff;
+const GOLD = 0xffcb05;
 const ORANGE = 0xf08a28;
+const PINK = 0xf8a8c8;
 
-interface Pal {
-  m: number;
-  l: number;
-  d: number;
+const TALL: Record<string, Furn> = { ...TALL_FURNITURE, ...NEW_TALL_FURNITURE };
+const FURNITURE: Record<string, Furn> = { ...HOME_FURNITURE, ...GARDEN_FURNITURE, ...NEW_FURNITURE, ...TALL };
+
+// Famílias com variação de cor: o móvel original (cor padrão) e `<família>-<cor>` para cada cor.
+for (const [base, rows] of Object.entries(FAMILY_ROWS)) {
+  FURNITURE[base] = furn(rows, FAMILY_DEFAULT[base]!);
+  for (const color of Object.keys(COLOR_NAMES) as ColorKey[]) FURNITURE[`${base}-${color}`] ??= furn(rows, fabric(color));
 }
-const PAL: Record<ColorKey, Pal> = {
-  vermelho: { m: 0xd8463c, l: 0xf0705f, d: 0xa83228 },
-  azul: { m: 0x4f8fe0, l: 0x7aa8f0, d: 0x3a6ad8 },
-  verde: { m: 0x4aa84a, l: 0x6cc85c, d: 0x2f7f36 },
-  rosa: { m: 0xe86aa0, l: 0xf8a8c8, d: 0xb84a78 },
-  amarelo: { m: 0xf2c84a, l: 0xffe27a, d: 0xc89a2a },
-  roxo: { m: 0x8a5ad8, l: 0xa88af0, d: 0x6a3aa8 },
-  listrado: { m: 0xe86aa0, l: 0xffe27a, d: 0x4f8fe0 },
-};
-
-type Furn = (p: Pen, lit: boolean, frame: number) => void;
-
-// Famílias que têm variação de cor (o desenho recebe a paleta).
-const FAMILY: Record<string, (p: Pen, c: Pal) => void> = {
-  cadeira: (p, c) => { p.rect(4, 2, 8, 7, WOOD_D); p.rect(5, 3, 6, 5, c.m); p.rect(5, 3, 6, 1, c.l); p.rect(3, 9, 10, 3, c.m); p.rect(3, 9, 10, 1, c.l); p.rect(4, 12, 2, 3, LEG); p.rect(10, 12, 2, 3, LEG); },
-  sofa: (p, c) => { p.rect(0, 3, 16, 7, c.d); p.rect(1, 4, 14, 4, c.m); p.rect(1, 4, 14, 1, c.l); p.rect(0, 8, 16, 5, c.m); p.rect(0, 8, 16, 1, c.l); p.rect(7, 4, 1, 9, c.d); p.rect(1, 13, 2, 2, LEG); p.rect(13, 13, 2, 2, LEG); },
-  poltrona: (p, c) => { p.rect(2, 2, 12, 9, c.d); p.rect(4, 3, 8, 6, c.m); p.rect(4, 3, 8, 1, c.l); p.rect(1, 6, 3, 7, c.d); p.rect(12, 6, 3, 7, c.d); p.rect(4, 9, 8, 4, c.m); p.rect(3, 13, 2, 2, LEG); p.rect(11, 13, 2, 2, LEG); },
-  cama: (p, c) => { p.rect(1, 1, 14, 14, WOOD_D); p.rect(2, 2, 12, 3, WHITE); p.rect(3, 3, 4, 2, 0xe6ecf4); p.rect(2, 5, 12, 9, c.m); p.rect(2, 5, 12, 1, c.l); p.rect(2, 9, 12, 1, c.d); p.rect(2, 13, 12, 1, c.d); },
-  tapete: (p, c) => { p.rect(1, 4, 14, 9, c.m); p.rect(2, 5, 12, 7, c.l); p.rect(4, 6, 8, 5, c.m); p.rect(6, 7, 4, 3, c.d); for (let x = 1; x < 15; x += 2) { p.px(x, 3, c.l); p.px(x, 13, c.l); } },
-  vaso: (p, c) => { p.rect(4, 9, 8, 6, 0xc8643c); p.rect(3, 8, 10, 2, 0xe07a4c); p.rect(5, 10, 6, 1, 0xa84a2c); for (const [x, y, k] of [[5, 4, c.m], [8, 3, c.l], [10, 5, c.m], [7, 6, GREEN], [6, 7, GREEN], [9, 7, GREEN]] as const) p.rect(x, y, 2, 2, k); },
-};
-
-const VARIANT_BASE: Record<string, string> = { cadeira: 'cadeira', sofa: 'sofa', poltrona: 'poltrona', cama: 'cama', tapete: 'tapete', vaso: 'vaso' };
-
-/** Cor padrão de cada família quando não há variação (o móvel original). */
-const FAMILY_DEFAULT: Record<string, Pal> = {
-  cadeira: { m: 0xc8a068, l: 0xe0be88, d: 0x8a5a2e },
-  sofa: PAL.azul,
-  poltrona: { m: 0xe06a5a, l: 0xf08a7a, d: 0xa83a38 },
-  cama: PAL.rosa,
-  tapete: { m: 0xc0504d, l: 0xf2c84a, d: 0x8a2a2a },
-  vaso: { m: 0xf06048, l: 0xffd84a, d: 0xe84a3a },
-};
-
-const FURNITURE: Record<string, Furn> = {
-  aparador: (p) => { p.rect(1, 6, 14, 7, WOOD); p.rect(0, 5, 16, 2, WOOD_L); p.rect(7, 7, 1, 6, WOOD_D); p.px(5, 9, GOLD); p.px(10, 9, GOLD); p.rect(2, 13, 2, 2, LEG); p.rect(12, 13, 2, 2, LEG); p.disc(5, 3, 2, 2, WHITE); p.rect(10, 2, 3, 3, GREEN); },
-  comoda: (p) => { p.rect(2, 3, 12, 11, WOOD); p.rect(1, 2, 14, 2, WOOD_L); for (const y of [5, 8, 11]) { p.rect(3, y, 10, 2, WOOD_D); p.rect(7, y, 2, 1, GOLD); } p.rect(3, 14, 2, 1, LEG); p.rect(11, 14, 2, 1, LEG); },
-  sapateira: (p) => { p.rect(1, 5, 14, 9, WOOD_D); for (const y of [6, 10]) { p.rect(2, y, 12, 3, WOOD_L); p.rect(3, y, 4, 2, BLUE); p.rect(9, y, 4, 2, RED); } p.rect(0, 4, 16, 1, WOOD_L); },
-  'mesa-jantar': (p) => { p.rect(1, 4, 14, 7, WOOD); p.rect(2, 4, 12, 5, WHITE); p.rect(2, 11, 2, 4, LEG); p.rect(12, 11, 2, 4, LEG); for (const x of [4, 11]) { p.disc(x, 6, 2, 1, GLASS); p.px(x, 5, WHITE); } p.rect(7, 3, 2, 3, GREEN); p.px(8, 2, PINK); },
-  'balcao-cozinha': (p) => { p.rect(1, 5, 14, 9, WOOD); p.rect(0, 4, 16, 3, STONE_L); p.rect(7, 7, 1, 7, WOOD_D); p.px(5, 9, GOLD); p.px(10, 9, GOLD); p.rect(3, 2, 5, 2, WOOD_L); p.rect(10, 2, 3, 2, GREEN); },
-  'armario-loucas': (p) => { p.rect(2, 1, 12, 14, WOOD_D); p.rect(3, 2, 10, 7, GLASS); p.rect(7, 2, 1, 7, WOOD); for (const x of [4, 9]) { p.rect(x, 4, 2, 2, WHITE); p.rect(x, 7, 3, 1, WHITE); } p.rect(3, 10, 10, 4, WOOD); p.px(6, 11, GOLD); p.px(9, 11, GOLD); },
-  'cama-colcha': (p) => { FAMILY.cama!(p, PAL.verde); for (const x of [3, 7, 11]) for (const y of [6, 10]) p.rect(x, y, 2, 2, 0xe8d8a8); },
-  almofadas: (p) => { p.disc(6, 10, 5, 4, PAL.azul.d); p.disc(6, 9, 4, 3, PAL.azul.l); p.disc(11, 7, 4, 3, PAL.rosa.m); p.disc(11, 6, 3, 2, PAL.rosa.l); p.px(6, 9, WHITE); p.px(11, 6, WHITE); },
-  'estante-plantas': (p) => { p.rect(1, 1, 2, 14, WOOD_D); p.rect(13, 1, 2, 14, WOOD_D); for (const y of [6, 13]) { p.rect(2, y, 12, 2, WOOD); for (const x of [4, 10]) { p.rect(x, y - 3, 3, 3, ORANGE); p.disc(x + 1, y - 4, 2, 2, GREEN); p.px(x, y - 5, GREEN_L); } } },
-  'mapa-parede': (p) => { p.rect(1, 2, 14, 11, WOOD_D); p.rect(2, 3, 12, 9, 0xeadbb4); p.disc(5, 7, 2, 3, GREEN); p.disc(11, 8, 2, 2, BLUE); p.line(4, 9, 11, 5, RED); p.px(10, 4, RED); p.px(12, 6, RED); },
-  'relogio-parede': (p) => { p.disc(8, 7, 6, 6, WOOD_D); p.disc(8, 7, 5, 5, WHITE); p.line(8, 7, 8, 3, DARK); p.line(8, 7, 11, 8, DARK); p.px(8, 11, GOLD); },
-  'prateleira-canecas': (p) => { for (const x of [2, 7, 12]) { p.rect(x, 5, 3, 5, [BLUE, WHITE, RED][(x - 2) / 5]!); p.rect(x + 3, 6, 1, 3, WOOD_L); } p.rect(0, 10, 16, 2, WOOD); p.rect(2, 12, 2, 3, WOOD_D); p.rect(12, 12, 2, 3, WOOD_D); },
-  'mesa-estudos': (p) => { p.rect(0, 7, 16, 3, WOOD_L); p.rect(1, 10, 2, 5, LEG); p.rect(11, 10, 4, 4, WOOD); p.px(12, 11, GOLD); p.rect(3, 4, 7, 3, WHITE); p.rect(6, 4, 1, 3, WOOD_D); p.rect(12, 2, 2, 5, GREEN); p.rect(11, 1, 4, 2, GOLD); },
-  'cesto-la': (p) => { p.disc(8, 10, 6, 4, WOOD); p.disc(5, 7, 3, 3, PINK); p.disc(10, 6, 3, 3, BLUE); p.line(5, 7, 6, 9, WHITE); p.rect(2, 10, 12, 1, WOOD_D); p.line(8, 2, 12, 11, WOOD_L); },
-  'luminaria-leitura': (p, lit) => { p.rect(7, 5, 2, 9, IRON); p.rect(4, 14, 8, 1, IRON); p.tri(8, 1, 2, 14, 7, lit ? 0xffe9b8 : 0xd8c89a); p.rect(2, 7, 12, 1, WOOD_D); },
-  'tapete-folha': (p) => { p.disc(8, 9, 7, 5, GREEN_D); p.disc(8, 8, 6, 4, GREEN); p.line(3, 11, 13, 5, GREEN_L); p.line(6, 9, 6, 6, GREEN_L); p.line(9, 7, 12, 9, GREEN_L); },
-  'mesa-piquenique': (p) => { p.rect(1, 4, 14, 5, WOOD_L); p.rect(1, 6, 14, 1, WOOD_D); p.rect(0, 11, 16, 2, WOOD); p.line(4, 9, 11, 15, LEG); p.line(12, 9, 4, 15, LEG); p.rect(6, 4, 4, 5, RED); },
-  espreguicadeira: (p) => { p.rect(3, 2, 10, 10, WOOD); for (let y = 3; y < 12; y++) p.rect(4, y, 8, 1, y % 3 ? WHITE : BLUE); p.rect(2, 12, 12, 2, WOOD_L); p.rect(3, 14, 2, 1, LEG); p.rect(11, 14, 2, 1, LEG); },
-  'jardineira-lavanda': (p) => { p.rect(1, 9, 14, 6, WOOD); p.rect(0, 8, 16, 2, WOOD_L); for (const x of [3, 7, 11]) { p.rect(x, 4, 1, 5, GREEN); p.rect(x - 1, 2, 3, 4, 0x9c75ba); p.px(x, 2, 0xd6b9e6); } },
-  'bebedouro-aves': (p) => { p.rect(6, 7, 4, 7, STONE); p.disc(8, 14, 5, 1, STONE_L); p.disc(8, 6, 7, 3, STONE_L); p.disc(8, 5, 5, 2, GLASS); p.px(5, 4, WHITE); },
-  'banco-ferro': (p) => { p.rect(1, 3, 14, 2, WOOD); p.rect(1, 6, 14, 2, WOOD_L); p.rect(0, 10, 16, 2, WOOD); for (const x of [2, 12]) p.rect(x, 4, 2, 11, IRON); p.rect(0, 8, 3, 1, IRON); p.rect(13, 8, 3, 1, IRON); },
-  'carroca-flores': (p) => { p.rect(1, 8, 12, 5, WOOD); p.rect(0, 7, 14, 2, WOOD_L); p.disc(3, 13, 2, 2, IRON); p.disc(11, 13, 2, 2, IRON); p.line(13, 8, 15, 5, WOOD_D); for (const x of [3, 7, 11]) { p.rect(x, 4, 1, 4, GREEN); p.disc(x, 3, 2, 2, x === 7 ? PINK : GOLD); } },
-  'caixote-horta': (p) => { p.rect(1, 7, 9, 7, WOOD); p.rect(9, 10, 6, 5, WOOD_D); p.rect(1, 9, 9, 1, WOOD_L); p.disc(4, 6, 2, 2, RED); p.disc(8, 6, 2, 2, ORANGE); p.rect(3, 3, 2, 2, GREEN); p.rect(11, 8, 2, 2, GREEN); },
-  'suporte-lenha': (p) => { p.rect(1, 3, 2, 12, IRON); p.rect(13, 3, 2, 12, IRON); for (const [x, y] of [[4, 12], [8, 12], [12, 12], [6, 8], [10, 8], [8, 4]] as const) { p.disc(x, y, 2, 2, WOOD_D); p.disc(x, y, 1, 1, WOOD_L); } },
-  'bancada-jardim': (p) => { p.rect(0, 7, 16, 3, WOOD); p.rect(1, 10, 2, 5, LEG); p.rect(13, 10, 2, 5, LEG); p.rect(1, 13, 14, 1, WOOD_L); p.rect(3, 3, 4, 4, ORANGE); p.rect(10, 5, 3, 2, IRON); p.line(12, 5, 14, 2, WOOD_D); p.disc(5, 2, 2, 2, GREEN); },
-  'barril-flores': (p) => { p.disc(8, 10, 5, 5, WOOD); p.rect(3, 8, 10, 1, IRON); p.rect(3, 12, 10, 1, IRON); p.disc(8, 5, 6, 3, GREEN_D); for (const [x, c] of [[4, PINK], [8, GOLD], [12, RED]] as const) p.disc(x, 3, 2, 2, c); },
-  'placa-lago': (p) => { p.rect(7, 7, 2, 8, WOOD_D); p.rect(1, 2, 14, 7, WOOD_L); p.disc(7, 5, 3, 2, BLUE); p.tri(13, 3, 10, 13, 7, BLUE); p.px(5, 5, WHITE); },
-  'lixeira-praca': (p) => { p.rect(3, 4, 10, 11, GREEN_D); p.rect(2, 3, 12, 3, IRON); p.rect(5, 4, 6, 1, DARK); for (const x of [4, 7, 10]) p.rect(x, 7, 1, 6, GREEN_L); },
-  'lanterna-pedra': (p, lit) => { p.rect(5, 13, 6, 2, STONE); p.rect(7, 8, 2, 5, STONE); p.rect(4, 4, 8, 5, STONE_L); p.rect(6, 5, 4, 3, lit ? GOLD : DARK); p.tri(8, 1, 1, 15, 4, STONE); },
-  'arco-bambu': (p) => { for (const x of [1, 12]) { p.rect(x, 3, 3, 12, GREEN); for (const y of [5, 9, 13]) p.rect(x, y, 3, 1, GREEN_D); } p.rect(0, 1, 16, 3, WOOD_L); p.rect(1, 4, 14, 1, WOOD_D); p.px(3, 1, GREEN_L); },
-  'carrinho-cha': (p) => { p.rect(1, 7, 14, 3, WOOD_L); p.rect(2, 10, 2, 4, WOOD_D); p.rect(12, 10, 2, 4, WOOD_D); p.rect(3, 12, 10, 1, WOOD); p.disc(3, 14, 1, 1, IRON); p.disc(13, 14, 1, 1, IRON); p.disc(6, 5, 3, 2, WHITE); p.rect(5, 2, 2, 2, WHITE); p.rect(11, 4, 3, 3, PINK); },
-  'canteiro-pedras': (p) => { p.disc(8, 11, 7, 4, GREEN_D); for (const x of [2, 6, 10, 14]) p.disc(x, 13, 2, 1, STONE_L); for (const [x, c] of [[4, PINK], [8, GOLD], [12, WHITE]] as const) { p.rect(x, 7, 1, 4, GREEN); p.disc(x, 6, 2, 2, c); } },
-  banquinho: (p) => { p.rect(3, 6, 10, 3, WOOD); p.rect(3, 6, 10, 1, WOOD_L); p.rect(4, 9, 2, 6, LEG); p.rect(10, 9, 2, 6, LEG); },
-  'banco-praca': (p) => { p.rect(1, 6, 14, 4, WOOD); p.rect(2, 6, 12, 1, WOOD_L); p.rect(2, 10, 2, 5, LEG); p.rect(12, 10, 2, 5, LEG); p.rect(4, 3, 2, 4, WOOD_D); p.rect(10, 3, 2, 4, WOOD_D); },
-  'fonte-mini': (p, _l, f) => { p.rect(3, 9, 10, 5, STONE); p.rect(2, 8, 12, 2, STONE_L); p.rect(6, 4, 4, 5, STONE); p.rect(5, 3, 6, 2, STONE_L); p.disc(8, 7, 2, 1, f % 2 ? BLUE : GLASS); },
-  'placa-bemvindo': (p) => { p.rect(3, 3, 10, 7, WOOD); p.rect(4, 4, 8, 5, WOOD_L); p.rect(7, 10, 2, 5, LEG); p.rect(5, 6, 6, 1, RED); p.rect(6, 5, 1, 3, RED); p.rect(9, 5, 1, 3, RED); },
-  mesa: (p) => { p.rect(1, 5, 14, 4, WOOD); p.rect(1, 5, 14, 1, WOOD_L); p.rect(2, 9, 2, 6, LEG); p.rect(12, 9, 2, 6, LEG); p.rect(6, 3, 4, 2, WHITE); p.px(7, 2, RED); },
-  mesinha: (p) => { p.disc(8, 8, 6, 3, WOOD); p.disc(8, 7.5, 5, 2, WOOD_L); p.rect(7, 10, 2, 5, LEG); p.rect(5, 14, 6, 1, LEG); },
-  estante: (p) => { p.rect(2, 1, 12, 14, WOOD_D); for (const y of [2, 7, 12]) { p.rect(3, y, 10, 4, 0x4a2e18); for (let x = 3; x < 13; x += 2) p.rect(x, y + 1, 1, 3, [RED, BLUE, GREEN, GOLD, PINK][(x + y) % 5]!); } },
-  bau: (p) => { p.rect(2, 5, 12, 9, WOOD); p.rect(2, 5, 12, 3, WOOD_D); p.rect(2, 8, 12, 1, IRON); p.rect(7, 7, 2, 3, GOLD); p.rect(3, 5, 1, 9, IRON); p.rect(12, 5, 1, 9, IRON); },
-  relogio: (p) => { p.rect(5, 0, 6, 15, WOOD_D); p.rect(6, 1, 4, 13, WOOD); p.disc(8, 4, 2.5, 2.5, WHITE); p.px(8, 3, DARK); p.px(9, 4, DARK); p.rect(7, 8, 2, 5, GOLD); },
-  quadro: (p) => { p.rect(2, 3, 12, 10, GOLD); p.rect(3, 4, 10, 8, GLASS); p.rect(3, 9, 10, 3, GREEN); p.disc(10, 6, 1.5, 1.5, 0xffe27a); },
-  'quadro-mar': (p) => { p.rect(2, 3, 12, 10, WOOD_D); p.rect(3, 4, 10, 8, 0xbfe8ff); p.rect(3, 8, 10, 4, BLUE); for (const x of [4, 7, 10]) p.rect(x, 9, 2, 1, WHITE); p.tri(11, 5, 10, 12, 8, WHITE); p.rect(11, 8, 1, 1, WOOD_D); },
-  'quadro-pokebola': (p) => { p.rect(2, 3, 12, 10, DARK); p.rect(3, 4, 10, 8, 0xf2e6c8); p.disc(8, 8, 3.5, 3.5, WHITE); for (let y = 4; y < 8; y++) for (let x = 4; x < 13; x++) if (((x - 8) / 3.5) ** 2 + ((y - 8) / 3.5) ** 2 <= 1) p.px(x, y, RED); p.rect(4, 8, 8, 1, DARK); p.disc(8, 8, 1, 1, WHITE); },
-  'quadro-flores': (p) => { p.rect(2, 3, 12, 10, GOLD); p.rect(3, 4, 10, 8, 0xf2e6c8); p.rect(7, 8, 2, 3, 0x3a6ad8); for (const [x, y, c] of [[5, 6, RED], [8, 5, PINK], [10, 7, 0xffd84a]] as const) p.rect(x, y, 2, 2, c); p.rect(8, 7, 1, 1, GREEN); },
-  'sofa-nuvem': (p) => { p.disc(3, 8, 4, 4, WHITE); p.disc(8, 6, 5, 5, WHITE); p.disc(13, 8, 4, 4, WHITE); p.rect(1, 9, 14, 4, 0xdcecff); p.rect(3, 13, 2, 2, LEG); p.rect(11, 13, 2, 2, LEG); p.px(6, 5, 0xb8d8f8); p.px(11, 7, 0xb8d8f8); },
-  'mesa-cha': (p) => { p.disc(8, 8, 7, 3.5, 0xf0d098); p.disc(8, 7, 6, 2, 0xffe8b8); p.rect(7, 10, 2, 5, WOOD_D); p.disc(5, 5, 2, 2, PINK); p.rect(4, 4, 2, 1, WHITE); p.rect(10, 5, 3, 2, 0x6ac8e8); p.px(12, 4, WHITE); },
-  'estante-bichinhos': (p) => { p.rect(2, 1, 12, 14, WOOD_D); p.rect(3, 2, 10, 12, WOOD); for (const y of [5, 10]) p.rect(3, y, 10, 1, WOOD_D); p.disc(5, 3.5, 2, 1.8, PINK); p.disc(10, 3.5, 2, 1.8, GOLD); p.disc(6, 8, 2.2, 1.8, GREEN); p.disc(11, 8, 1.8, 2, BLUE); p.rect(5, 11, 2, 3, RED); p.rect(10, 11, 2, 3, 0x8a5ad8); },
-  'maquina-gacha': (p, _l, f) => { p.rect(3, 4, 10, 11, RED); p.rect(4, 5, 8, 6, 0xd8f0ff); p.disc(8, 8, 3.5, 3.5, f % 2 ? 0xffd84a : PINK); p.rect(6, 12, 4, 2, DARK); p.rect(7, 13, 2, 2, IRON); p.rect(5, 1, 6, 3, GOLD); },
-  'luz-lava': (p, lit, f) => { p.rect(6, 1, 4, 2, IRON); p.tri(8, 3, 4, 13, 12, lit ? 0xe86aa0 : 0x8a5ad8); p.disc(7 + f * 2, 8, 1.8, 2.5, lit ? 0xffd84a : 0xc050a8); p.rect(5, 13, 6, 2, IRON); },
-  'toca-discos': (p, _l, f) => { p.rect(2, 5, 12, 9, WOOD); p.rect(3, 6, 10, 2, WOOD_L); p.disc(6, 10, 3.5, 3.5, DARK); p.disc(6, 10, 1.2, 1.2, f % 2 ? RED : GOLD); p.rect(10, 9, 2, 1, WHITE); p.rect(10, 12, 2, 1, WHITE); },
-  cabideiro: (p) => { p.rect(7, 1, 2, 13, WOOD_D); p.rect(2, 3, 12, 2, WOOD); p.tri(4, 6, 2, 6, 12, PINK); p.tri(8, 6, 6, 10, 12, BLUE); p.tri(12, 6, 10, 14, 12, GREEN); p.rect(4, 14, 8, 1, WOOD_D); },
-  'planta-monstera': (p) => { p.rect(5, 11, 6, 4, 0xc8643c); p.rect(4, 10, 8, 2, 0xe07a4c); p.line(8, 11, 8, 3, GREEN_D); for (const [x, y, rx, ry] of [[4, 6, 3, 2], [12, 6, 3, 2], [5, 3, 3, 2], [11, 3, 3, 2]] as const) p.disc(x, y, rx, ry, GREEN); p.px(5, 5, GREEN_L); p.px(11, 2, GREEN_L); },
-  'maquina-costura': (p) => { p.rect(2, 9, 12, 5, WOOD); p.rect(3, 8, 10, 2, WOOD_L); p.rect(5, 3, 6, 5, IRON); p.rect(9, 4, 3, 2, IRON); p.rect(11, 5, 1, 4, DARK); p.disc(5, 7, 2, 2, GOLD); p.rect(4, 14, 2, 1, LEG); p.rect(10, 14, 2, 1, LEG); },
-  biombo: (p) => { for (const x of [1, 6, 11]) { p.rect(x, 2, 4, 12, WOOD); p.rect(x + 1, 3, 2, 10, 0xe8c8a8); p.px(x + 2, 5, PINK); p.px(x + 2, 9, BLUE); } },
-  'cama-gatinho': (p) => { p.disc(8, 10, 7, 4.5, PINK); p.disc(8, 10, 5, 3, 0xffd8e8); p.tri(4, 4, 2, 6, 8, PINK); p.tri(12, 4, 8, 14, 6, PINK); p.disc(6, 8, 1, 1, DARK); p.disc(10, 8, 1, 1, DARK); p.rect(7, 11, 2, 1, DARK); },
-  arranhador: (p) => { p.rect(6, 2, 4, 11, 0xd8b878); for (let y = 3; y < 13; y += 3) p.rect(6, y, 4, 1, 0xa88452); p.rect(2, 13, 12, 2, WOOD_D); p.disc(8, 2, 4, 2, PINK); p.rect(7, 0, 2, 2, 0xe86aa0); },
-  'banco-cogumelo': (p) => { p.rect(6, 8, 4, 7, 0xf2e6c8); p.disc(8, 6, 7, 4, RED); for (const [x, y] of [[4, 5], [9, 3], [12, 7]] as const) p.rect(x, y, 2, 2, WHITE); },
-  'banquinho-toco': (p) => { p.rect(3, 6, 10, 9, WOOD); p.disc(8, 6, 5, 2.5, 0xe0b878); p.ring(8, 6, 2.5, 1.2, 0x9a6a38); p.rect(4, 11, 1, 3, WOOD_D); p.rect(11, 10, 1, 4, WOOD_D); },
-  varal: (p) => { p.rect(1, 1, 2, 14, WOOD_D); p.rect(13, 1, 2, 14, WOOD_D); p.line(2, 3, 14, 3, DARK); p.tri(5, 4, 3, 7, 10, BLUE); p.tri(9, 4, 7, 11, 8, PINK); p.tri(12, 4, 10, 14, 8, 0xffe27a); },
-  'caixa-correio-rosa': (p) => { p.rect(7, 8, 2, 7, LEG); p.rect(3, 3, 10, 6, PINK); p.disc(8, 4, 5, 2, 0xf8a8c8); p.rect(4, 4, 8, 1, WHITE); p.rect(11, 2, 1, 4, RED); p.rect(11, 2, 3, 2, RED); },
-  televisao: (p, _l, f) => { p.rect(1, 3, 14, 9, DARK); p.rect(2, 4, 12, 7, f % 2 ? 0x6ac8e8 : 0x4aa8d8); p.rect(3, 5, 4, 2, f % 2 ? 0xffe27a : 0xb0f0ff); p.rect(8, 8, 4, 2, f % 2 ? 0xe86aa0 : 0x8ae8a8); p.rect(6, 12, 4, 3, DARK); },
-  radio: (p, _l, f) => { p.rect(2, 5, 12, 8, 0x8a5ad8); p.rect(2, 5, 12, 1, 0xa88af0); p.disc(5.5, 9, 2, 2, DARK); p.rect(9, 7, 4, 1, WHITE); p.rect(9, 9, 4, 1, WHITE); p.rect(11, 1, 1, 4, IRON); if (f % 2) p.px(13, 3, 0xffe27a); },
-  lareira: (p, _l, f) => { p.rect(1, 2, 14, 13, STONE); p.rect(1, 2, 14, 2, STONE_L); p.rect(4, 7, 8, 8, 0x2a1a14); p.disc(8, 12, 2.4 + (f % 2) * 1.2, 2.2 + (f % 2) * 1.1, 0xf06048); p.disc(8, 12.5, 1.2, 1.5 + (f % 2) * 0.6, 0xffd84a); if (f % 2) p.px(10, 8, 0xffd84a); },
-  geladeira: (p) => { p.rect(3, 1, 10, 14, 0xe8eef4); p.rect(3, 1, 10, 1, WHITE); p.rect(3, 6, 10, 1, 0xaab4c0); p.rect(11, 3, 1, 2, IRON); p.rect(11, 8, 1, 3, IRON); p.rect(12, 2, 1, 13, 0xc8d2dc); },
-  fogao: (p, _l, f) => { p.rect(2, 5, 12, 10, 0xdcdcdc); p.rect(2, 5, 12, 1, WHITE); p.rect(3, 4, 4, 1, DARK); p.rect(9, 4, 4, 1, DARK); p.rect(4, 9, 8, 4, DARK); p.rect(5, 10, 6, 2, 0x5a5a68); for (const x of [4, 7, 10]) p.px(x, 7, RED); if (f % 2) { p.px(4, 3, 0xffd84a); p.px(5, 3, ORANGE); p.px(10, 3, ORANGE); p.px(11, 3, 0xffd84a); } },
-  pia: (p) => { p.rect(1, 7, 14, 8, WOOD); p.rect(1, 6, 14, 2, 0xdcdcdc); p.rect(5, 5, 6, 2, 0x9ac8e8); p.rect(8, 2, 1, 3, IRON_L); p.rect(8, 2, 3, 1, IRON_L); p.rect(4, 9, 3, 5, WOOD_D); p.rect(9, 9, 3, 5, WOOD_D); },
-  'guarda-roupa': (p) => { p.rect(2, 1, 12, 14, WOOD_D); p.rect(3, 2, 5, 12, WOOD); p.rect(8, 2, 5, 12, WOOD); p.rect(3, 2, 10, 1, WOOD_L); p.px(7, 8, GOLD); p.px(9, 8, GOLD); },
-  espelho: (p) => { p.rect(4, 1, 8, 13, GOLD); p.rect(5, 2, 6, 11, 0xbfe8ff); p.px(6, 3, WHITE); p.px(7, 4, WHITE); p.px(6, 5, WHITE); p.rect(6, 14, 4, 1, WOOD_D); },
-  piano: (p) => { p.rect(1, 3, 14, 8, DARK); p.rect(5, 1, 6, 2, WHITE); p.rect(1, 10, 14, 3, WHITE); for (let x = 2; x < 15; x += 2) p.rect(x, 10, 1, 2, DARK); p.rect(2, 13, 2, 2, DARK); p.rect(12, 13, 2, 2, DARK); p.rect(1, 3, 14, 1, 0x4a4a58); },
-  violao: (p) => { p.rect(7, 0, 2, 6, WOOD_D); p.rect(6, 0, 4, 1, LEG); p.disc(8, 10, 5, 5, 0xd8883a); p.disc(8, 10, 1.5, 1.5, 0x2a1a10); p.rect(7, 12, 2, 1, WOOD_D); p.disc(6.5, 8, 1.5, 1, 0xf0a860); },
-  aquario: (p, _l, f) => { p.rect(1, 3, 14, 11, GLASS); p.rect(1, 3, 14, 1, 0xd8f0ff); p.rect(1, 12, 14, 2, 0xe8d8a0); p.rect(12, 7, 1, 5, GREEN); p.rect(11, 8, 1, 2, GREEN_L); p.rect(3 + f * 4, 7, 3, 2, ORANGE); p.px(2 + f * 4, 7, 0xffd84a); p.px(f * 4 + 4, 6, WHITE); p.px(10, 5 + f, WHITE); p.px(9, 4 + f, WHITE); p.rect(0, 2, 16, 1, IRON); },
-  samambaia: (p) => { p.rect(5, 11, 6, 4, 0xc8643c); p.rect(4, 10, 8, 2, 0xe07a4c); for (const [x, y, rx] of [[8, 4, 1.5], [5, 6, 2.5], [11, 6, 2.5], [4, 8, 2], [12, 8, 2], [8, 8, 2]] as const) p.disc(x, y, rx, 2.5, GREEN); p.disc(8, 5, 1, 1.5, GREEN_L); },
-  cacto: (p) => { p.rect(5, 12, 6, 3, 0xc8643c); p.rect(6, 3, 4, 10, GREEN); p.rect(6, 3, 1, 10, GREEN_L); p.rect(3, 6, 3, 2, GREEN); p.rect(3, 4, 2, 3, GREEN); p.rect(10, 7, 3, 2, GREEN); p.rect(12, 5, 2, 3, GREEN); p.px(8, 2, PINK); p.px(7, 1, PINK); p.px(9, 1, PINK); },
-  globo: (p) => { p.rect(7, 12, 2, 3, WOOD_D); p.rect(5, 14, 6, 1, WOOD_D); p.disc(8, 7, 5.5, 5.5, BLUE); for (const [x, y, w, h] of [[5, 4, 3, 3], [9, 7, 3, 4], [6, 9, 2, 2]] as const) p.rect(x, y, w, h, GREEN); p.ring(8, 7, 6.5, 6.5, GOLD); },
-  cortina: (p) => { p.rect(1, 1, 14, 1, IRON); p.rect(6, 2, 4, 12, GLASS); p.rect(1, 2, 5, 12, 0xc0504d); p.rect(10, 2, 5, 12, 0xc0504d); for (const x of [2, 4, 11, 13]) p.rect(x, 2, 1, 12, 0x8a2a2a); p.rect(6, 7, 4, 1, WHITE); },
-  escrivaninha: (p) => { p.rect(1, 5, 14, 2, WOOD); p.rect(1, 5, 14, 1, WOOD_L); p.rect(1, 7, 5, 8, WOOD_D); p.rect(2, 8, 3, 2, WOOD); p.rect(2, 11, 3, 2, WOOD); p.rect(13, 7, 2, 8, LEG); p.rect(8, 3, 4, 2, WHITE); p.px(9, 2, RED); },
-  computador: (p, _l, f) => { p.rect(2, 2, 12, 8, DARK); p.rect(3, 3, 10, 6, f % 2 ? 0x6ac8e8 : 0x4a90d8); p.rect(4, 4, 5, 1, WHITE); p.rect(4, 6, 3, 1, 0x8ae8a8); p.rect(7, 10, 2, 2, IRON); p.rect(3, 12, 10, 2, IRON_L); },
-  banheira: (p, _l, f) => { p.rect(1, 6, 14, 7, WHITE); p.rect(1, 6, 14, 1, 0xe6ecf4); p.rect(2, 7, 12, 3, 0x9cd0ff); p.rect(2, 12, 12, 1, 0xc8d2dc); p.rect(2, 13, 2, 2, GOLD); p.rect(12, 13, 2, 2, GOLD); p.rect(13, 3, 1, 3, IRON_L); p.px(5 + f * 4, 6, WHITE); p.px(9, 5 - f, WHITE); p.px(4, 5, WHITE); },
-  pufe: (p) => { p.disc(8, 10, 6, 5, 0x8a5ad8); p.disc(6, 8, 2.5, 1.5, 0xa88af0); p.rect(5, 14, 6, 1, 0x6a3aa8); },
-  'criado-mudo': (p) => { p.rect(3, 6, 10, 9, WOOD); p.rect(3, 6, 10, 1, WOOD_L); p.rect(4, 8, 8, 3, WOOD_D); p.px(8, 9, GOLD); p.rect(4, 12, 8, 2, WOOD_D); p.px(8, 13, GOLD); p.rect(5, 3, 2, 3, 0xe86aa0); },
-  fliperama: (p, _l, f) => { p.rect(3, 0, 10, 15, 0x3a3ad8); p.rect(3, 0, 10, 2, 0xffd84a); p.rect(4, 3, 8, 5, DARK); p.rect(5, 4, 6, 3, f % 2 ? 0xffd84a : 0xff6a4a); p.rect(4, 9, 8, 2, 0x2a2aa8); p.px(6, 10, RED); p.px(9, 10, 0x8ae8a8); p.px(10, 10, 0xffd84a); p.rect(4, 12, 8, 3, DARK); },
-  'caixa-som': (p, _l, f) => { p.rect(3, 1, 10, 14, DARK); p.rect(3, 1, 10, 1, 0x4a4a58); p.disc(8, 5, 2 + (f % 2) * 0.5, 2 + (f % 2) * 0.5, 0x4a4a58); p.disc(8, 5, 0.8, 0.8, IRON_L); p.disc(8, 11, 3.5 + (f % 2) * 0.5, 3.5 + (f % 2) * 0.5, 0x4a4a58); p.disc(8, 11, 1.5, 1.5, IRON_L); },
-  'bola-disco': (p, _l, f) => { p.rect(8, 0, 1, 3, IRON_L); p.disc(8, 8, 5, 5, 0xcfd8e8); for (let y = 3; y < 14; y += 2) for (let x = 3; x < 14; x += 2) if (((x - 8) / 5) ** 2 + ((y - 8) / 5) ** 2 <= 1) p.px(x, y, [0xffffff, 0xff8ac8, 0x8ad8ff, 0xffe27a][(x + y + f) % 4]!); p.px(15, 3 + f, WHITE); p.px(1, 10 - f, WHITE); },
-  rede: (p) => { p.rect(1, 2, 2, 13, WOOD_D); p.rect(13, 2, 2, 13, WOOD_D); for (let x = 3; x < 13; x++) { const y = 6 + Math.round(((x - 8) / 5) ** 2 * 3); p.rect(x, y, 1, 3, x % 2 ? 0xe8a03a : 0xc8802a); } p.px(3, 5, 0xe8a03a); p.px(12, 5, 0xe8a03a); },
-  'ping-pong': (p) => { p.rect(1, 6, 14, 4, 0x2f7fa8); p.rect(1, 6, 14, 1, 0x4a9fc8); p.rect(8, 4, 1, 6, WHITE); p.rect(2, 10, 2, 5, IRON); p.rect(12, 10, 2, 5, IRON); p.px(4, 5, WHITE); p.px(11, 5, 0xffd84a); },
-  bandeirinhas: (p) => { p.rect(0, 3, 16, 1, 0x4a3a28); for (let x = 1; x < 16; x += 3) p.tri(x + 1, 8, x - 0, x + 2, 4, [RED, 0xffd84a, BLUE, GREEN][((x - 1) / 3) % 4]!); p.rect(0, 2, 1, 13, WOOD_D); p.rect(15, 2, 1, 13, WOOD_D); },
-  fossil: (p) => { p.rect(2, 10, 12, 5, STONE); p.rect(2, 10, 12, 1, STONE_L); p.disc(8, 7, 6, 6, 0xc8b898); p.disc(8, 7, 4, 4, 0xe0d4b4); p.disc(8, 7, 2, 2, 0xc8b898); p.disc(8, 7, 0.7, 0.7, 0x8a7a5a); },
-  ovo: (p, _l, f) => { p.disc(8 + (f % 2), 9, 5, 6, 0xf6f0d8); p.disc(6 + (f % 2), 7, 1.5, 1.5, 0xffffff); for (const [x, y, c] of [[9, 8, GREEN], [7, 11, RED], [10, 11, GREEN]] as const) p.rect(x + (f % 2), y, 2, 2, c); },
-  luminaria: (p, lit) => { p.rect(7, 6, 2, 9, 0x4a4a52); p.rect(5, 13, 6, 2, 0x4a4a52); p.rect(5, 1, 6, 6, lit ? 0xffe27a : 0xc8b070); p.rect(6, 2, 4, 4, lit ? 0xfff6c0 : 0xe0d098); },
-  abajur: (p, lit) => { p.rect(4, 3, 8, 5, lit ? 0xfff0a0 : 0xf2e2a0); p.rect(4, 3, 8, 1, WHITE); p.rect(7, 8, 2, 5, IRON); p.rect(5, 13, 6, 2, IRON); },
-  poste: (p, lit) => { p.rect(7, 3, 2, 12, IRON); p.rect(5, 14, 6, 1, IRON); p.rect(5, 0, 6, 4, IRON_L); p.rect(6, 1, 4, 2, lit ? 0xfff6c0 : 0xd0d4dc); },
-  lanterna: (p, lit) => { p.rect(7, 0, 2, 2, DARK); p.disc(8, 7, 5, 5, lit ? 0xf87050 : RED); for (const y of [4, 7, 10]) p.rect(4, y, 9, 1, 0xa83228); p.rect(6, 12, 4, 2, DARK); },
-  fogueira: (p, _l, f) => { p.rect(3, 12, 10, 2, WOOD_D); p.rect(5, 11, 6, 2, WOOD); for (const x of [2, 4, 11, 13]) p.disc(x, 13.5, 1.5, 1.2, STONE); p.disc(8, 8 - (f % 2), 3 - (f === 1 ? 0.5 : 0), 4, 0xf06048); p.disc(8, 9, 2, 2.5 + (f % 3 === 2 ? 1 : 0), 0xffa028); p.disc(8, 10, 1, 1.6, 0xffe27a); },
-  tocha: (p, _l, f) => { p.rect(7, 7, 2, 8, WOOD_D); p.rect(6, 6, 4, 2, 0x4a3a28); p.disc(8, 4, 2.2 + (f % 3 === 1 ? 0.6 : 0), 3.2 + (f % 3) * 0.7, 0xf06048); p.disc(8, 4.5, 1.2, 2, 0xffe27a); },
-  'pisca-pisca': (p, _l, f) => { p.rect(0, 3, 16, 1, DARK); for (let x = 1; x < 16; x += 3) { p.rect(x, 4, 1, 1, DARK); p.rect(x - 0, 5, 2, 2, [0xff5a5a, 0xffe27a, 0x5aff8a, 0x5ab8ff][((x - 1) / 3 + f) % 4]!); } p.rect(0, 2, 1, 13, WOOD_D); p.rect(15, 2, 1, 13, WOOD_D); },
-  'lampiao-cristal': (p, lit, f) => { p.rect(7, 9, 2, 5, IRON); p.rect(5, 14, 6, 1, IRON); p.tri(8, 1, 4, 12, 9, lit ? 0xc8f8ff : 0x8adaf0); p.tri(8, 3, 6, 10, 8, WHITE); p.px(3 + (f % 2) * 9, 4 + (f % 2) * 3, WHITE); },
-  fonte: (p, _l, f) => { p.disc(8, 11, 7, 4, STONE); p.disc(8, 10.5, 5.5, 2.6, BLUE); p.rect(7, 3, 2, 8, STONE); for (const [x, y] of (f % 2 ? [[5, 4], [11, 5], [8, 1]] : [[6, 5], [10, 4], [8, 2]]) as [number, number][]) p.px(x, y, 0x9cd0ff); },
-  placa: (p) => { p.rect(7, 9, 2, 6, LEG); p.rect(2, 2, 12, 8, WOOD); p.rect(2, 2, 12, 1, WOOD_L); p.rect(4, 4, 8, 1, LEG); p.rect(4, 6, 6, 1, LEG); },
-  banco: (p) => { p.rect(0, 4, 16, 2, WOOD); p.rect(0, 8, 16, 2, WOOD); p.rect(1, 10, 2, 5, IRON); p.rect(13, 10, 2, 5, IRON); p.rect(1, 4, 1, 6, IRON); p.rect(14, 4, 1, 6, IRON); },
-  balanco: (p, _l, f) => { p.rect(1, 0, 14, 2, WOOD_D); p.rect(1, 0, 2, 15, WOOD_D); p.rect(13, 0, 2, 15, WOOD_D); const o = f % 2 ? 1 : -1; p.line(5, 2, 5 + o, 11, 0x8a8a8a); p.line(10, 2, 10 + o, 11, 0x8a8a8a); p.rect(4 + o, 11, 8, 2, RED); },
-  escorregador: (p) => { p.rect(1, 3, 2, 12, IRON); p.rect(1, 3, 5, 2, IRON_L); for (let i = 0; i < 10; i++) p.rect(5 + i, 4 + i, 2, 2, 0xf2c84a); p.rect(1, 7, 3, 1, IRON_L); p.rect(1, 11, 3, 1, IRON_L); },
-  'guarda-sol': (p) => { p.disc(8, 5, 7, 4, RED); for (const x of [3, 8, 13]) p.rect(x - 1, 2, 2, 6, WHITE); p.rect(7, 8, 2, 7, 0x8a8a8a); },
-  churrasqueira: (p, _l, f) => { p.disc(8, 7, 6, 3, DARK); p.rect(3, 6, 10, 1, IRON_L); p.rect(4, 9, 2, 6, IRON); p.rect(10, 9, 2, 6, IRON); p.px(6, 5, 0xf06048); p.px(10, 5, 0xffd84a); if (f % 2) { p.px(8, 3, 0xcfd2da); p.px(9, 2, 0xcfd2da); p.px(7, 4, 0xcfd2da); } },
-  correio: (p) => { p.rect(7, 8, 2, 7, LEG); p.rect(3, 3, 10, 6, CLOTH); p.disc(8, 4, 5, 2, CLOTH); p.rect(12, 2, 1, 4, RED); p.rect(12, 2, 3, 2, RED); },
-  espantalho: (p) => { p.rect(7, 5, 2, 10, WOOD_D); p.rect(2, 7, 12, 2, WOOD_D); p.disc(8, 3, 3, 3, 0xf2e2a0); p.rect(4, 0, 8, 2, 0xd8b060); p.rect(5, 8, 6, 4, 0x6a8ad8); p.px(7, 3, DARK); p.px(9, 3, DARK); },
-  poco: (p) => { p.rect(2, 8, 12, 7, STONE); p.rect(2, 8, 12, 2, STONE_L); p.rect(3, 1, 2, 8, WOOD_D); p.rect(11, 1, 2, 8, WOOD_D); p.rect(2, 0, 12, 2, RED); p.rect(7, 2, 1, 5, 0x8a8a8a); p.rect(6, 6, 3, 2, WOOD); },
-  bonsai: (p) => { p.rect(4, 11, 8, 4, 0x3a5ad8); p.rect(7, 6, 2, 5, WOOD_D); p.disc(5, 6, 3, 2, GREEN); p.disc(11, 5, 3, 2, GREEN); p.disc(8, 3, 3, 2, GREEN_D); },
-  cogumelo: (p) => { p.rect(6, 8, 4, 7, 0xf1e6c8); p.disc(8, 6, 7, 5, RED); for (const [x, y] of [[4, 5], [9, 3], [11, 7], [6, 8]] as const) p.rect(x, y, 2, 2, WHITE); },
-  'abobora-lanterna': (p, lit) => { p.disc(8, 9, 7, 5.5, ORANGE); p.rect(7, 2, 2, 3, GREEN_D); p.rect(4, 7, 2, 2, lit ? 0xffe27a : 0x5a2a0a); p.rect(10, 7, 2, 2, lit ? 0xffe27a : 0x5a2a0a); p.rect(5, 11, 6, 1, lit ? 0xffe27a : 0x5a2a0a); },
-  girassois: (p) => { p.rect(1, 12, 14, 3, WOOD); for (const x of [4, 8, 12]) { p.rect(x, 5, 1, 7, GREEN_D); p.disc(x, 4, 2.5, 2.5, 0xffd84a); p.px(x, 4, 0x6a3a1a); } },
-  cerca: (p) => { p.rect(2, 4, 2, 11, WOOD_L); p.rect(12, 4, 2, 11, WOOD_L); p.rect(0, 6, 16, 2, WOOD); p.rect(0, 11, 16, 2, WOOD); },
-  'cerca-branca': (p) => { for (const x of [1, 4, 7, 10, 13]) { p.rect(x, 4, 2, 11, WHITE); p.px(x, 3, WHITE); p.px(x + 1, 3, WHITE); } p.rect(0, 7, 16, 1, 0xd8dce4); p.rect(0, 11, 16, 1, 0xd8dce4); },
-  'cerca-pedra': (p) => { for (const [x, y, w] of [[0, 8, 5], [5, 8, 5], [10, 8, 6], [2, 11, 6], [8, 11, 6], [0, 14, 4]] as const) { p.rect(x, y, w, 3, (x + y) % 2 ? STONE : STONE_L); p.rect(x, y + 2, w, 1, 0x7a766e); } },
-  'cerca-viva': (p) => { p.disc(8, 10, 8, 5, GREEN_D); p.disc(5, 8, 4, 3.5, GREEN); p.disc(11, 9, 4, 3.5, GREEN); p.disc(8, 7, 3, 2.5, GREEN_L); p.px(4, 7, PINK); p.px(12, 9, PINK); },
-  topiaria: (p) => { p.rect(5, 12, 6, 3, 0xc8643c); p.rect(7, 10, 2, 3, WOOD_D); p.disc(8, 8, 5, 3, GREEN); p.disc(8, 4, 3.5, 3, GREEN_L); p.disc(8, 1.5, 1.5, 1.5, GREEN); p.px(6, 8, GREEN_D); p.px(10, 7, GREEN_D); },
-  laguinho: (p, _l, f) => { p.disc(8, 10, 7.5, 4.5, STONE); p.disc(8, 10, 6.5, 3.5, BLUE); p.disc(8, 10, 5, 2.5, 0x6aa8f0); p.ring(8 + (f - 1) * 1, 11, 2.5 + f * 0.6, 1.2 + f * 0.3, 0xcfe8ff); p.rect(5 + f, 8, 3, 2, 0xffd84a); p.px(5 + f, 8, ORANGE); p.px(5 + f, 7, 0xffd84a); },
-  'cesta-piquenique': (p) => { p.rect(0, 10, 16, 5, WHITE); for (let y = 10; y < 15; y += 2) for (let x = (y / 2) % 2 ? 0 : 2; x < 16; x += 4) p.rect(x, y, 2, 2, RED); p.disc(8, 8, 5, 3, WOOD_L); p.rect(3, 8, 10, 2, WOOD); p.ring(8, 6, 4, 3, WOOD_D); p.px(6, 9, RED); p.px(10, 9, 0xffd84a); },
-  tenda: (p) => { p.tri(8, 1, 0, 15, 14, 0xe8a03a); p.tri(8, 1, 6, 10, 14, 0xc8802a); p.tri(8, 6, 6, 10, 14, DARK); p.rect(7, 0, 2, 2, 0x4a3a28); p.rect(0, 14, 16, 1, 0x8a5a2e); },
-  estufa: (p) => { p.rect(1, 5, 14, 10, 0xc8f0e0); p.tri(8, 1, 0, 15, 5, 0xb0e0d0); for (const x of [1, 5, 10, 14]) p.rect(x, 4, 1, 11, WHITE); p.rect(1, 9, 14, 1, WHITE); p.rect(0, 14, 16, 1, IRON_L); for (const [x, y] of [[3, 11], [7, 12], [12, 11]] as const) p.rect(x, y, 2, 2, GREEN); p.px(7, 11, RED); },
-  'carrinho-sorvete': (p) => { p.rect(2, 9, 12, 4, PINK); p.rect(2, 9, 12, 1, WHITE); p.disc(8, 5, 7.5, 3, WHITE); for (const x of [2, 6, 10]) p.rect(x, 3, 2, 5, RED); p.rect(8, 2, 1, 8, 0x8a8a8a); p.disc(4, 14, 2, 2, DARK); p.disc(12, 14, 2, 2, DARK); p.rect(5, 6, 1, 2, ORANGE); },
-  'barraca-suco': (p) => { p.rect(1, 8, 14, 7, WOOD); p.rect(1, 8, 14, 1, WOOD_L); for (let x = 0; x < 16; x += 4) { p.rect(x, 2, 2, 5, RED); p.rect(x + 2, 2, 2, 5, WHITE); } p.rect(0, 7, 16, 1, 0xa83228); for (const [x, c] of [[3, ORANGE], [7, 0xe84a8a], [11, 0x8ae848]] as const) { p.rect(x, 9, 2, 3, c); p.rect(x, 9, 2, 1, WHITE); } },
-  bicicleta: (p) => { p.ring(4, 11, 3.2, 3.2, DARK); p.ring(12, 11, 3.2, 3.2, DARK); p.line(4, 11, 8, 6, RED); p.line(8, 6, 12, 11, RED); p.line(4, 11, 8, 11, RED); p.line(8, 11, 8, 6, RED); p.line(6, 5, 9, 5, DARK); p.line(12, 11, 11, 5, IRON); p.line(10, 4, 12, 4, DARK); },
-  skate: (p) => { p.rect(2, 10, 12, 2, 0xe8503a); p.rect(2, 10, 12, 1, 0xff8a6a); p.disc(4, 13, 1.2, 1.2, DARK); p.disc(12, 13, 1.2, 1.2, DARK); p.px(7, 11, WHITE); p.px(8, 11, WHITE); },
-  pokebola: (p) => { p.disc(8, 8, 7, 7, WHITE); for (let y = 1; y < 8; y++) for (let x = 1; x < 16; x++) if (((x - 8) / 7) ** 2 + ((y - 8) / 7) ** 2 <= 1) p.px(x, y, RED); p.rect(1, 7, 14, 2, DARK); p.disc(8, 8, 2.5, 2.5, DARK); p.disc(8, 8, 1.4, 1.4, WHITE); },
-  'cama-poke': (p) => { p.disc(8, 10, 7, 5, 0xe86aa0); p.disc(8, 10, 5, 3, 0xf8c8dc); p.disc(6, 9, 1.5, 1, WHITE); },
-  trofeu: (p) => { p.rect(4, 2, 8, 6, GOLD); p.rect(2, 3, 2, 3, GOLD); p.rect(12, 3, 2, 3, GOLD); p.rect(7, 8, 2, 4, GOLD); p.rect(4, 12, 8, 3, WOOD_D); p.px(6, 3, 0xfff6c0); },
-  pelucia: (p) => { p.disc(8, 9, 6, 6, WHITE); for (let y = 3; y < 9; y++) for (let x = 2; x < 15; x++) if (((x - 8) / 6) ** 2 + ((y - 9) / 6) ** 2 <= 1) p.px(x, y, RED); p.rect(2, 8, 12, 1, DARK); p.disc(8, 9, 1.5, 1.5, DARK); p.px(5, 7, 0x1a1a24); p.px(11, 7, 0x1a1a24); },
-  totem: (p) => { p.rect(5, 1, 6, 14, WOOD_D); for (const [y, c] of [[2, 0x8a8070], [5, GREEN], [8, BLUE], [11, GOLD]] as const) p.rect(6, y, 4, 2, c); },
-  comedouro: (p) => { p.rect(2, 9, 12, 5, WOOD); p.rect(3, 9, 10, 2, WOOD_D); for (const x of [4, 7, 10]) p.disc(x + 1, 8, 1.5, 1.2, 0x4a6ae8); },
-  'caixa-areia': (p) => { p.rect(0, 8, 16, 7, WOOD); p.rect(1, 9, 14, 5, 0xf0dca0); p.rect(0, 8, 16, 1, WOOD_L); p.rect(2, 10, 4, 1, 0xd8c080); p.tri(11, 5, 9, 13, 9, 0xe0c080); p.rect(10, 7, 2, 2, 0xd8b060); p.rect(3, 6, 3, 3, RED); p.rect(3, 6, 3, 1, 0xa83228); },
-  'cama-elastica': (p, _l, f) => { p.ring(8, 10, 7, 3, IRON); p.disc(8, 10 - (f % 2), 6, 2.5, DARK); p.rect(2, 10, 1, 5, IRON); p.rect(13, 10, 1, 5, IRON); p.rect(7, 12, 2, 3, IRON); },
-  gangorra: (p, _l, f) => { p.tri(8, 9, 5, 11, 15, IRON); for (let x = 1; x < 15; x++) p.rect(x, Math.round(10 + (f ? 1 : -1) * ((x - 8) / 7) * 2), 1, 2, x % 3 ? 0xf2c84a : 0xd8a828); p.rect(1, f ? 9 : 12, 2, 2, RED); p.rect(13, f ? 12 : 9, 2, 2, RED); },
-  'bola-praia': (p) => { p.disc(8, 9, 6, 6, WHITE); for (let y = 3; y < 15; y++) for (let x = 2; x < 15; x++) { if (((x - 8) / 6) ** 2 + ((y - 9) / 6) ** 2 > 1) continue; const a = Math.atan2(y - 9, x - 8); p.px(x, y, [RED, WHITE, BLUE, 0xffd84a][Math.floor(((a + Math.PI) / (Math.PI * 2)) * 4) % 4]!); } p.disc(8, 9, 1, 1, WHITE); },
-  casinha: (p) => { p.rect(2, 8, 12, 7, 0xd2a66c); p.tri(8, 1, 0, 15, 8, 0xd8463c); p.tri(8, 3, 4, 11, 8, 0xe86a5a); p.disc(8, 13, 2, 2.2, 0x3a2a1a); p.rect(6, 13, 4, 2, 0x3a2a1a); p.rect(3, 9, 2, 2, GLASS); p.rect(11, 9, 2, 2, GLASS); },
-  'roda-giratoria': (p, _l, f) => { p.ring(8, 8, 6.5, 6.5, IRON_L); p.ring(8, 8, 5.5, 5.5, IRON); for (let k = 0; k < 4; k++) { const a = (k / 4) * Math.PI * 2 + f * 0.4; p.line(8, 8, 8 + Math.cos(a) * 6, 8 + Math.sin(a) * 6, IRON_L); } p.rect(7, 13, 2, 2, IRON); p.rect(4, 14, 8, 1, IRON); },
-  'pelucia-gigante': (p) => { p.disc(4, 3, 2.5, 2.5, 0xb88858); p.disc(12, 3, 2.5, 2.5, 0xb88858); p.disc(8, 8, 6.5, 6, 0xd8a870); p.disc(8, 10, 3.5, 3, 0xf0d0a0); p.px(6, 7, DARK); p.px(10, 7, DARK); p.rect(7, 9, 2, 1, DARK); p.rect(6, 13, 4, 2, 0xe8503a); p.px(8, 13, GOLD); },
-};
-
-/** Móveis altos (16×32): o pé fica na linha de baixo e a copa sobe um bloco. */
-const TALL: Record<string, Furn> = {
-  'arco-flores': (p) => { p.rect(1, 15, 3, 16, WOOD_D); p.rect(12, 15, 3, 16, WOOD_D); p.ring(8, 15, 6.5, 11, GREEN); p.ring(8, 15, 5.5, 10, GREEN_L); for (const [x, y, c] of [[3, 10, PINK], [6, 4, RED], [10, 5, 0xffd84a], [13, 11, PINK], [4, 18, 0x8a5ad8], [12, 19, RED]] as const) p.disc(x, y, 1.6, 1.6, c); },
-  moinho: (p, _l, f) => { p.tri(8, 12, 4, 12, 31, 0xe8d8c0); p.tri(8, 12, 7, 9, 31, 0xd8c8a8); p.tri(8, 6, 3, 13, 12, 0xc8643c); p.rect(6, 24, 4, 7, 0x6a4a28); p.rect(7, 16, 2, 3, GLASS); for (let k = 0; k < 4; k++) { const a = (k / 4) * Math.PI * 2 + (f * Math.PI) / 8; p.line(8, 11, 8 + Math.cos(a) * 9, 11 + Math.sin(a) * 9, WHITE, 2); } p.disc(8, 11, 1.5, 1.5, WOOD_D); },
-  gazebo: (p) => { p.tri(8, 2, 0, 15, 13, 0xd8463c); p.tri(8, 4, 3, 12, 13, 0xe86a5a); p.rect(0, 13, 16, 2, 0xa83228); for (const x of [1, 13]) p.rect(x, 15, 2, 14, WHITE); p.rect(0, 29, 16, 2, WOOD_D); p.rect(0, 27, 16, 2, WOOD_L); for (const x of [3, 5, 9, 11]) p.rect(x, 21, 1, 6, 0xd8dce4); p.rect(2, 21, 12, 1, WHITE); for (const [x, y] of [[2, 16], [13, 18], [3, 24], [12, 22]] as const) p.px(x, y, GREEN); p.px(2, 17, PINK); p.px(13, 19, PINK); },
-  cerejeira: (p, _l, f) => { p.rect(7, 16, 3, 15, 0x6a4a38); p.rect(7, 16, 1, 15, 0x8a6a52); p.rect(5, 22, 2, 1, 0x6a4a38); p.rect(10, 20, 2, 1, 0x6a4a38); p.disc(8, 9, 8, 7, 0xf8a8c8); p.disc(5, 7, 4, 4, 0xfcc8dc); p.disc(11, 12, 4, 3, 0xe88aa8); p.disc(10, 5, 3, 2.5, 0xfcc8dc); for (const [x, y] of [[3, 16 + f * 2], [13, 20 - f], [9, 25 + f]] as const) p.px(x, y, 0xfcc8dc); },
-  palmeira: (p, _l, f) => { for (let y = 12; y < 31; y++) p.rect(7 + Math.round(Math.sin((y - 12) / 6) * 1.2), y, 3, 1, y % 3 ? 0x9a7a52 : 0x7a5a3a); for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2 + 0.3 + (f ? 0.12 : 0); p.line(9, 11, 9 + Math.cos(a) * 8, 11 + Math.sin(a) * 4 + Math.abs(Math.cos(a)) * 3, k % 2 ? GREEN : GREEN_D, 2); } p.disc(8, 12, 1.4, 1.4, 0x6a4a28); p.disc(10, 13, 1.3, 1.3, 0x6a4a28); },
-  pinheirinho: (p, lit, f) => { p.rect(7, 27, 2, 4, WOOD_D); p.tri(8, 5, 4, 12, 13, GREEN); p.tri(8, 10, 2, 14, 21, GREEN_D); p.tri(8, 16, 0, 16, 28, GREEN); p.px(7, 3, GOLD); p.rect(7, 3, 2, 3, GOLD); p.px(8, 2, 0xfff6c0); for (const [x, y, c] of [[6, 10, RED], [9, 14, 0xffd84a], [5, 19, BLUE], [11, 20, PINK], [8, 24, RED], [3, 26, 0xffd84a], [13, 26, BLUE]] as const) p.rect(x, y, 2, 2, lit ? [0xff5a5a, 0xffe27a, 0x5ab8ff, 0xff8ac8][(x + f) % 4]! : c); },
-  estatua: (p) => { p.rect(3, 25, 10, 6, STONE); p.rect(3, 25, 10, 1, STONE_L); p.rect(4, 23, 8, 2, 0x8a867e); p.disc(8, 8, 3, 3, STONE_L); p.rect(5, 11, 6, 11, STONE); p.rect(5, 11, 2, 11, STONE_L); p.rect(11, 6, 2, 8, STONE); p.disc(12, 5, 2.2, 2.2, 0xb8c0cc); p.rect(5, 16, 2, 6, 0x7a766e); p.rect(9, 22, 2, 1, 0x6e6a64); },
-  'estatua-dourada': (p) => { p.rect(3, 25, 10, 6, 0x6a4a28); p.rect(3, 25, 10, 1, 0x9a7a48); p.rect(4, 23, 8, 2, 0x8a6a38); p.disc(8, 8, 3, 3, 0xffe27a); p.rect(5, 11, 6, 11, GOLD); p.rect(5, 11, 2, 11, 0xfff0a0); p.rect(11, 6, 2, 8, GOLD); p.disc(12, 5, 2.2, 2.2, RED); p.rect(5, 16, 2, 6, 0xc89a2a); p.px(6, 7, WHITE); p.px(12, 4, WHITE); },
-  mastro: (p, _l, f) => { p.rect(3, 1, 2, 30, IRON_L); p.rect(3, 1, 1, 30, WHITE); p.disc(4, 1, 1.5, 1.5, GOLD); for (let x = 0; x < 9; x++) { const wave = Math.round(Math.sin(x * 0.8 + f * 1.6) * 1); p.rect(5 + x, 3 + wave, 1, 7, x < 4 ? BLUE : 0xe8503a); } p.px(7, 6 + (f ? 0 : 0), GOLD); p.rect(1, 29, 6, 2, STONE); },
-};
 
 /** Materiais e colheitas (os desenhos ficam em `art/items.ts`). */
 const MATERIAL_ICONS = { ...OLD_MATERIAL_ICONS, ...NEW_MATERIAL_ICONS, ...NEW_CROP_ICONS };
@@ -235,21 +42,11 @@ function draw(fn: Draw | null, h = 16): PixelBuf {
   return render(fn, 16, h);
 }
 
-// Registra as variações de cor das famílias: `<família>-<cor>` e o móvel original (cor padrão da família).
-for (const base of Object.keys(VARIANT_BASE)) {
-  const fam = FAMILY[base]!;
-  FURNITURE[base] = (p) => fam(p, FAMILY_DEFAULT[base]!);
-  for (const color of Object.keys(COLOR_NAMES) as ColorKey[]) FURNITURE[`${base}-${color}`] = (p) => fam(p, PAL[color]);
-}
-// O tapete listrado tem faixas de várias cores.
-FURNITURE['tapete-listrado'] = (p) => { p.rect(1, 4, 14, 9, 0xf6f6f6); for (let x = 1; x < 15; x += 3) { p.rect(x, 4, 1, 9, 0xe86aa0); p.rect(x + 1, 4, 1, 9, 0x4f8fe0); } for (let x = 1; x < 15; x += 2) { p.px(x, 3, 0xffe27a); p.px(x, 13, 0xffe27a); } };
-
-for (const [id, fn] of Object.entries(TALL)) FURNITURE[id] = fn;
-
 /** Móvel no chão (`lit` à noite para luzes; `frame` para os móveis animados). Os altos têm 16×32. */
 export function paintFurnitureItem(id: string, lit = false, frame = 0): PixelBuf {
-  const fn = FURNITURE[id];
-  return draw(fn ? (p) => fn(p, lit, frame) : null, id in TALL ? 32 : 16);
+  const f = FURNITURE[id];
+  const h = id in TALL ? 32 : 16;
+  return f ? paintFurn(f, lit, frame, h) : draw(null, h);
 }
 
 /** Ícone de qualquer item (mochila, loja, catálogo). */
