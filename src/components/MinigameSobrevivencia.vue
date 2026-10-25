@@ -2112,7 +2112,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="survivor">
+  <div class="survivor" :class="{ 'survivor-gameplay': ready && state && !summary }">
     <p v-if="failed" class="hint">Não deu para carregar a Zona de Sobrevivência agora. Tente de novo mais tarde.</p>
     <template v-else>
       <div

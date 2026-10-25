@@ -2,7 +2,6 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import './styles.css';
 import './selection-ui.css';
-import './app/visual-settings';
 import { watchForNewVersion } from './app/stale-build';
 
 watchForNewVersion();
