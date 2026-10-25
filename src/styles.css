@@ -6498,7 +6498,7 @@ body.no-scroll .reward-toasts {
   image-rendering: pixelated;
 }
 .survivor-canvas.bonk-canvas {
-  image-rendering: auto;
+  image-rendering: pixelated;
   background: #1a396c;
 }
 

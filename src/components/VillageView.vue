@@ -3217,7 +3217,7 @@ onBeforeUnmount(() => {
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
       <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="pressB">Fechar</button></header>
-        <MinigameSobrevivencia ref="towerGameRef" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name }))" @complete="recordSurvivalAdventure" @leave="sheet = null" />
+        <MinigameSobrevivencia ref="towerGameRef" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="sheet = null" />
       </div>
 
       <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">

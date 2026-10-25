@@ -81,6 +81,8 @@ import type { WorldToScreen } from '../village/survivor-attack-art';
 import { survivorOrbiters } from '../core/survivor-shapes';
 import { survivorSpriteDirection, survivorSpriteDirectionFromAngle } from '../core/survivor-sprite-direction';
 import type { SurvivorSpriteDirection } from '../core/survivor-sprite-direction';
+import { paintAccessory } from '../village/item-art';
+import { metallicTint } from '../core/metallic';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -129,7 +131,7 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
  */
 const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }, runId: string] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
-const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string }[] }>();
+const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string; shiny?: boolean; accessory?: string | null }[]; accessories?: Record<string, string | null | undefined> }>();
 
 /**
  * A Torre ocupa a tela inteira. O lado menor parte de `VIEW_SHORT` unidades e aproxima 1,5×, mantendo o formato do
@@ -151,7 +153,7 @@ function fitView(): void {
   view.w = fitted.w;
   view.h = fitted.h;
   // Mudar o tamanho do canvas apaga o contexto: as configurações voltam no próximo quadro (`draw` refaz tudo).
-  if (ctx) ctx.imageSmoothingEnabled = bonkRun.value;
+  if (ctx) ctx.imageSmoothingEnabled = false;
 }
 const JOY_MAX = 42;
 const regionScenery = ref(true);
@@ -210,14 +212,14 @@ type SpriteAsset = Sprite | Partial<Record<SurvivorSpriteDirection, Sprite>>;
 /** Pixels de altura na Torre para 1 bloco de altura real (`core/size-scale.ts`); Pikachu ≈ 19 px, Snorlax ≈ 37 px. */
 const SURVIVOR_TILE_PX = 22;
 
-function toSprite(gif: DecodedGif, dexId?: number): Sprite {
+function toSprite(gif: DecodedGif, dexId?: number, metallic = false): Sprite {
   const frames = gif.frames.map((f) => {
     const c = document.createElement('canvas');
     c.width = gif.width;
     c.height = gif.height;
     const fctx = c.getContext('2d')!;
     const img = fctx.createImageData(gif.width, gif.height);
-    img.data.set(f.rgba);
+    img.data.set(metallic ? metallicTint(f.rgba) : f.rgba);
     fctx.putImageData(img, 0, 0);
     return c;
   });
@@ -226,6 +228,24 @@ function toSprite(gif: DecodedGif, dexId?: number): Sprite {
   const tiles = speciesTiles(dexId);
   const fit = tiles === undefined ? 1 : (tiles * SURVIVOR_TILE_PX) / contentPx;
   return { frames, delays: gif.frames.map((f) => f.delayMs), durationMs: gif.durationMs, w: gif.width, h: gif.height, bounds, fit };
+}
+
+const accessoryMemory = new Map<string, HTMLCanvasElement | null>();
+function accessoryCanvas(id: string | null | undefined): HTMLCanvasElement | null {
+  if (!id) return null;
+  if (accessoryMemory.has(id)) return accessoryMemory.get(id) ?? null;
+  try {
+    const art = paintAccessory(id);
+    const canvas = document.createElement('canvas');
+    canvas.width = art.w;
+    canvas.height = art.h;
+    canvas.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(art.data), art.w, art.h), 0, 0);
+    accessoryMemory.set(id, canvas);
+    return canvas;
+  } catch {
+    accessoryMemory.set(id, null);
+    return null;
+  }
 }
 
 function frameIndex(sprite: Sprite, timeMs: number): number {
@@ -285,25 +305,26 @@ async function staticAsGif(blob: Blob): Promise<DecodedGif> {
  * `getDigitalSprite`); senão a imagem parada do PokéAPI. Sem nenhum dos três, null (vira a forma neutra, sem fingir
  * ser outro Pokémon).
  */
-const spriteMemory = new Map<number, Promise<SpriteAsset | null>>();
+const spriteMemory = new Map<string, Promise<SpriteAsset | null>>();
 
-async function loadSpriteOrNull(dexId: number): Promise<SpriteAsset | null> {
-  const cached = spriteMemory.get(dexId);
+async function loadSpriteOrNull(dexId: number, shiny = false, metallic = false): Promise<SpriteAsset | null> {
+  const key = `${dexId}:${shiny ? 's' : 'n'}:${metallic ? 'm' : 'p'}`;
+  const cached = spriteMemory.get(key);
   if (cached) return cached;
-  const pending = loadSpriteOrNullUncached(dexId);
-  pending.catch(() => spriteMemory.delete(dexId));
-  spriteMemory.set(dexId, pending);
+  const pending = loadSpriteOrNullUncached(dexId, shiny, metallic);
+  pending.catch(() => spriteMemory.delete(key));
+  spriteMemory.set(key, pending);
   return pending;
 }
 
-async function loadSpriteOrNullUncached(dexId: number): Promise<SpriteAsset | null> {
+async function loadSpriteOrNullUncached(dexId: number, shiny = false, metallic = false): Promise<SpriteAsset | null> {
   try {
-    const dirs = await getLocalVillageSpriteDirs(dexId, false, 'Walk');
+    const dirs = await getLocalVillageSpriteDirs(dexId, shiny, 'Walk');
     if (dirs?.down) {
       const local: Partial<Record<SurvivorSpriteDirection, Sprite>> = {};
       for (const direction of ['up', 'right', 'down', 'left'] as const) {
         const gif = dirs[direction];
-        if (gif) local[direction] = toSprite(gif, dexId);
+        if (gif) local[direction] = toSprite(gif, dexId, metallic);
       }
       return local;
     }
@@ -311,14 +332,14 @@ async function loadSpriteOrNullUncached(dexId: number): Promise<SpriteAsset | nu
     // segue para a próxima alternativa
   }
   try {
-    const any = await getDigitalSprite(dexId, false);
-    if (any) return toSprite(any.gif, dexId);
+    const any = await getDigitalSprite(dexId, shiny);
+    if (any) return toSprite(any.gif, dexId, metallic);
   } catch {
     // segue para a próxima alternativa
   }
   try {
-    const src = await fetchSprite(dexId);
-    if (src && src.kind !== 'gif') return toSprite(await staticAsGif(src.blob), dexId);
+    const src = await fetchSprite(dexId, undefined, { shiny });
+    if (src && src.kind !== 'gif') return toSprite(await staticAsGif(src.blob), dexId, metallic);
   } catch {
     // sem rede: fica a forma neutra
   }
@@ -329,10 +350,10 @@ async function loadSpriteOrNullUncached(dexId: number): Promise<SpriteAsset | nu
  * Pose de costas (linha "up" da folha de andar local) para o BONK: a câmera fica atrás do Pokémon, então ele
  * precisa estar de costas para a cena parecer terceira pessoa. Sem essa pose no pacote, null (fica a de frente).
  */
-async function loadBackSpriteOrNull(dexId: number): Promise<Sprite | null> {
+async function loadBackSpriteOrNull(dexId: number, shiny = false, metallic = false): Promise<Sprite | null> {
   try {
-    const dirs = await getLocalVillageSpriteDirs(dexId, false, 'Walk');
-    return dirs?.up ? toSprite(dirs.up, dexId) : null;
+    const dirs = await getLocalVillageSpriteDirs(dexId, shiny, 'Walk');
+    return dirs?.up ? toSprite(dirs.up, dexId, metallic) : null;
   } catch {
     return null;
   }
@@ -394,6 +415,9 @@ interface PickOption {
   bars: { label: string; value: number }[];
   /** Retrato (data URL) pro cartão de escolha; null quando o pacote local não tem sprite pra essa espécie. */
   thumb: string | null;
+  shiny?: boolean;
+  accessory?: string | null;
+  digital?: boolean;
 }
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
@@ -615,6 +639,8 @@ let playerSprite: SpriteAsset | null = null;
 /** Só no BONK: o mesmo Pokémon de costas para a câmera (ver `loadBackSpriteOrNull`). */
 let playerBackSprite: Sprite | null = null;
 const supportSprites = new Map<number, SpriteAsset | null>();
+const supportAccessories = new Map<number, string | null | undefined>();
+let playerAccessory: string | null | undefined;
 const enemySprites = new Map<number, SpriteAsset | null>();
 const enemySpriteLoads = new Map<number, Promise<void>>();
 const requestedEnemyRegions = new Set<number>();
@@ -816,7 +842,7 @@ function joyCancel(e: PointerEvent): void {
   joyUp(e);
 }
 
-function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down'): void {
+function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down', accessory?: string | null): void {
   if (!ctx) return;
   if (!asset) {
     ctx.fillStyle = 'rgba(110,116,130,0.92)';
@@ -837,12 +863,28 @@ function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boole
   // Sem espelho, a posição entra direto no desenho: sem `save`/`restore` por inimigo (são a parte mais cara aqui).
   if (!flip || directional) {
     ctx.drawImage(frame, x + left, y + top, w, h);
+    drawAccessoryOverlay(accessory, x, y + top, w, h);
     return;
   }
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(-1, 1);
   ctx.drawImage(frame, left, top, w, h);
+  ctx.restore();
+  drawAccessoryOverlay(accessory, x, y + top, w, h, flip);
+}
+
+/** A Vila desenha acessórios em pixel art; a Torre reaproveita o mesmo desenho sobre o sprite. */
+function drawAccessoryOverlay(id: string | null | undefined, x: number, top: number, w: number, h: number, flip = false): void {
+  if (!ctx || !id) return;
+  const art = accessoryCanvas(id);
+  if (!art) return;
+  const size = Math.max(8, Math.min(w * 0.34, h * 0.28));
+  const left = x - size / 2;
+  const y = top + h * 0.16;
+  ctx.save();
+  if (flip) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.drawImage(art, -size / 2, y, size, size); }
+  else ctx.drawImage(art, left, y, size, size);
   ctx.restore();
 }
 
@@ -947,7 +989,7 @@ function drawEnemy(e: SurvivorEnemy): void {
 /** Sprite 2D voltado para a câmera (billboard): a perspectiva vem da projeção, não de um modelo 3D inventado. */
 function drawBonkBillboard(
   sprite: SpriteAsset | null, x: number, y: number, scale: number, flip = false, alpha = 1,
-  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0, direction: SurvivorSpriteDirection = 'down',
+  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0, direction: SurvivorSpriteDirection = 'down', accessory?: string | null,
 ): void {
   if (!ctx) return;
   ctx.save();
@@ -962,9 +1004,9 @@ function drawBonkBillboard(
     // Achatado ao pousar (squash > 0), esticado ao subir (squash < 0), sempre com os pés no mesmo ponto.
     ctx.translate(x, y);
     ctx.scale(1 + squash * 0.7, 1 - squash);
-    drawSprite(sprite, 0, 0, flip, scale, direction);
+    drawSprite(sprite, 0, 0, flip, scale, direction, accessory);
   } else {
-    drawSprite(sprite, x, y, flip, scale, direction);
+    drawSprite(sprite, x, y, flip, scale, direction, accessory);
   }
   ctx.restore();
 }
@@ -1087,7 +1129,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   for (const support of s.supports) {
     const p = drawPoint(support);
     if (!p || p.scale < 0.08) continue;
-    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(supportSprites.get(support.dexId) ?? null, p.x, p.y, clamp(p.scale * 0.6, 0.18, 2), bonkFacing < 0, 0.82, null, 0, survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y)) });
+    figures.push({ depth: p.depth, draw: () => drawBonkBillboard(supportSprites.get(support.dexId) ?? null, p.x, p.y, clamp(p.scale * 0.6, 0.18, 2), bonkFacing < 0, 0.82, null, 0, survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y), supportAccessories.get(support.dexId)) });
   }
   const playerGround = drawPoint(s.player);
   const playerPoint = drawPoint(s.player, physics.z);
@@ -1109,7 +1151,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.restore();
       drawBonkBillboard(playerBackSprite ?? playerSprite, playerPoint.x, playerPoint.y, scale, bonkFacing < 0,
         s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0 ? 0.45 : 1,
-        { x: playerGround.x, y: playerGround.y, rx: shadow.rx, ry: shadow.ry }, squash);
+        { x: playerGround.x, y: playerGround.y, rx: shadow.rx, ry: shadow.ry }, squash, 'down', playerAccessory);
     } });
   }
   if (move.category === 'orbit') {
@@ -1309,14 +1351,14 @@ function draw(): void {
   for (const support of s.supports) {
     ctx.save();
     ctx.globalAlpha = effectiveVisual.value.rotomMode ? 0.72 : 0.84;
-    drawSprite(supportSprites.get(support.dexId) ?? null, support.x, support.y, s.player.facing < 0, 0.76, survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y));
+    drawSprite(supportSprites.get(support.dexId) ?? null, support.x, support.y, s.player.facing < 0, 0.76, survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y), supportAccessories.get(support.dexId));
     ctx.restore();
   }
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
   // Orbitais acima do Pokémon na tela passam por trás dele; os de baixo, pela frente.
   const orbiters = move.category === 'orbit' ? survivorOrbiters(s.player) : [];
   orbiters.forEach((orbiter, index) => { if (orbiter.y < s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
-  if (!blink) drawSprite(playerSprite, s.player.x, s.player.y, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(s.player.aimAngle, s.player.facing));
+  if (!blink) drawSprite(playerSprite, s.player.x, s.player.y, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(s.player.aimAngle, s.player.facing), playerAccessory);
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
   drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
 
@@ -1789,30 +1831,30 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   const pool: (CardCompanion & { origin: string })[] = [];
   for (const c of cards) {
     const mon = cardCompanion(c);
-    if (mon) pool.push({ ...mon, origin: `${c.setName} ${c.localId}` });
+    if (mon) pool.push({ ...mon, accessory: props.accessories?.[c.id] ?? null, digital: false, origin: `${c.setName} ${c.localId}` });
   }
   // Digital Pokémon entram no mesmo sorteio (Fase 6): não vêm de carta nenhuma, mas jogam igual a qualquer outro.
-  for (const [i, d] of (props.digital ?? []).entries()) pool.push({ id: d.instanceId ?? `dp_torre_${i}`, dexId: d.dexId, name: d.name, origin: 'Digital Pokémon' });
+  for (const [i, d] of (props.digital ?? []).entries()) pool.push({ id: d.instanceId ?? `dp_torre_${i}`, dexId: d.dexId, name: d.name, shiny: d.shiny, accessory: d.accessory, digital: true, origin: 'Digital Pokémon' });
   if (pool.length === 0) return [];
   const ids = pool.map((item) => item.id);
   favoriteIds.value = readFavorites(ids);
   const chosen = selectSurvivorCandidates(pool, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0), favoriteIds.value, 6, previousIds);
   const thumbs = await Promise.all(
-    chosen.map(({ dexId }) =>
-      getLocalVillageSprite(dexId, false, 'Idle')
+    chosen.map(({ dexId, shiny }) =>
+      getLocalVillageSprite(dexId, shiny === true, 'Idle')
         .then((g) => (g ? toSprite(g).frames[0]?.toDataURL() ?? null : null))
         .catch(() => null)
         // Fora do pacote local: o sprite público da espécie (o mesmo que a Torre baixa para jogar).
         .then((url) => url ?? pokemonSpriteUrl(dexId)),
     ),
   );
-  return chosen.map(({ id, dexId, name, origin }, i) => {
+  return chosen.map(({ id, dexId, name, origin, shiny, accessory }, i) => {
     const { move, profile, types } = attackOf(dexId);
-    return { id, dexId, name, origin, types, move, bars: profileBars(move, profile), thumb: thumbs[i] ?? null };
+    return { id, dexId, name, origin, types, move, bars: profileBars(move, profile), thumb: thumbs[i] ?? null, shiny, accessory, digital: chosen[i]?.digital === true };
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -1823,15 +1865,20 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     enemySpriteLoads.clear();
     requestedEnemyRegions.clear();
     const [player, back, ...supports] = await Promise.all([
-      loadSpriteOrNull(dexId),
-      bonk ? loadBackSpriteOrNull(dexId) : Promise.resolve(null),
-      ...supportCandidates.map((candidate) => loadSpriteOrNull(candidate.dexId)),
+      loadSpriteOrNull(dexId, shiny, runParticipant?.id.startsWith('dp_') === true && visual.metallic),
+      bonk ? loadBackSpriteOrNull(dexId, shiny, runParticipant?.id.startsWith('dp_') === true && visual.metallic) : Promise.resolve(null),
+      ...supportCandidates.map((candidate) => loadSpriteOrNull(candidate.dexId, candidate.shiny === true, candidate.digital === true && visual.metallic)),
       preloadEnemyRegion(survivorRegionAt(0).current),
     ]);
     playerSprite = player;
     playerBackSprite = back as Sprite | null;
     supportSprites.clear();
-    supportCandidates.forEach((candidate, index) => supportSprites.set(candidate.dexId, (supports[index] as SpriteAsset | null | undefined) ?? null));
+    supportAccessories.clear();
+    supportCandidates.forEach((candidate, index) => {
+      supportSprites.set(candidate.dexId, (supports[index] as SpriteAsset | null | undefined) ?? null);
+      supportAccessories.set(candidate.dexId, candidate.accessory);
+    });
+    playerAccessory = accessory;
     missingEnemySprites.value = REGIONAL_ENEMY_SPRITES.filter((id) => enemySprites.get(id) === null).length;
 
     if (disposed) return;
@@ -1866,7 +1913,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     bonkLandscapeSeed = state.value.runSeed;
     bonkArtByRegion.clear();
     if (bonk) bonkArtForRegion(0);
-    if (ctx) ctx.imageSmoothingEnabled = bonk;
+    if (ctx) ctx.imageSmoothingEnabled = false;
     announcedRegion = survivorRegionLabel(0);
     guardianSprite.value = null;
     shadowBossSprite.value = null;
@@ -1899,11 +1946,14 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
       name: support.name,
       move: support.move,
       profile: attackProfile(support.move, statsOfDex(support.dexId)),
+      shiny: support.shiny,
+      accessory: support.accessory,
+      digital: support.digital,
     } satisfies SurvivorSupportCandidate));
   const primary = picked ?? opt.types[0] ?? opt.move.type;
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
   const infinite = infiniteWanted.value && torre.value.infiniteUnlocked;
-  void beginRun(opt.dexId, opt.name, picked, infinite, bonkWanted.value, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name }, selectedPreparation.value, supportCandidates, typeAffinityChoices, fastWanted.value && torre.value.infiniteUnlocked && !infinite);
+  void beginRun(opt.dexId, opt.name, picked, infinite, bonkWanted.value, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, selectedPreparation.value, supportCandidates, typeAffinityChoices, fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
