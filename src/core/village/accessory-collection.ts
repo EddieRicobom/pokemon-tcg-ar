@@ -117,7 +117,7 @@ export const NEW_ACCESSORIES: readonly ItemDef[] = [
   acc('vara-pesca', 'Vara de pescar', 'hand', { recipe: { madeira: 2, tecido: 1 } }),
   acc('tridente', 'Tridente', 'hand', 'prize'),
   acc('trompete', 'Trompete', 'hand', { price: 220 }),
-  acc('lanterna-papel', 'Lanterna de papel', 'hand', { price: 90 }),
+  acc('lanterna-papel', 'Lanterna de mão', 'hand', { price: 90 }),
   acc('balao', 'Balão', 'hand', { price: 40 }, { dy: -4 }),
   acc('livro', 'Livro de histórias', 'hand', 'prize'),
   acc('martelo', 'Martelo', 'hand', { recipe: { ferro: 1, madeira: 1 } }),

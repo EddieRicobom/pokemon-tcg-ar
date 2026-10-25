@@ -5,6 +5,7 @@
  */
 
 import { NEW_ACCESSORIES } from './accessory-collection';
+import { NEW_CROPS, NEW_FOODS, NEW_MATERIALS, NEW_SEEDS } from './item-collection';
 import type { AccessoryPos } from './accessory-fit';
 import { COZY_FURNITURE } from './furniture-collection';
 
@@ -122,6 +123,7 @@ export const ITEMS: readonly ItemDef[] = [
   { ...m('tabua', 'Tábua', 9), recipe: { madeira: 2 } },
   { ...m('tijolo', 'Tijolo', 14), recipe: { pedra: 2, argila: 1 } },
   { ...m('vidro', 'Vidro', 20), recipe: { areia: 3, pedra: 1 } },
+  ...NEW_MATERIALS,
   // Colheitas da horta
   c('girassol', 'Girassol', 18),
   c('abobora', 'Abóbora', 30),
@@ -133,6 +135,7 @@ export const ITEMS: readonly ItemDef[] = [
   c('melancia', 'Melancia', 34),
   c('batata', 'Batata', 11),
   c('lavanda', 'Lavanda', 20),
+  ...NEW_CROPS,
   // Sementes (loja; às vezes no mato alto)
   s('sem-oran', 'Semente de Oran', 'oran', 8, 20),
   s('sem-pecha', 'Semente de Pecha', 'pecha', 8, 20),
@@ -146,6 +149,7 @@ export const ITEMS: readonly ItemDef[] = [
   s('sem-melancia', 'Semente de Melancia', 'melancia', 22, 56),
   s('sem-batata', 'Semente de Batata', 'batata', 9, 20),
   s('sem-lavanda', 'Semente de Lavanda', 'lavanda', 12, 32),
+  ...NEW_SEEDS,
   // Comidas (cozinha)
   d('suco-oran', 'Suco de Oran', 8, 26, { oran: 2 }),
   d('suco-pecha', 'Suco de Pecha', 8, 26, { pecha: 2 }),
@@ -161,6 +165,7 @@ export const ITEMS: readonly ItemDef[] = [
   d('melancia-gelada', 'Melancia gelada', 12, 60, { melancia: 1 }),
   d('ensopado', 'Ensopado caseiro', 14, 66, { batata: 1, cenoura: 1, champignon: 1 }),
   d('lanche-pokebola', 'Lanche Pokébola', 18, 110, { 'pao-mel': 1, tomate: 1, peixe: 1 }),
+  ...NEW_FOODS,
 
   // Móveis: casa
   BASE.cadeira,

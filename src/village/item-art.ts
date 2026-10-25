@@ -1,6 +1,8 @@
 import type { PixelBuf } from '../box/ground-art';
 import { COLOR_NAMES, itemDef } from '../core/village/catalog';
 import { ACCESSORY_SPRITE_IDS, paintAccessoryArt, paintAccessoryIconArt } from './art/accessories';
+import { FOOD_ICON_ART } from './art/foods';
+import { NEW_CROP_COLOR, NEW_CROP_ICONS, NEW_MATERIAL_ICONS, OLD_MATERIAL_ICONS, paintIcon, seedBagIcon } from './art/items';
 import { render } from './art/pen';
 import type { Draw, Pen } from './art/pen';
 import type { ColorKey } from '../core/village/catalog';
@@ -226,77 +228,8 @@ const TALL: Record<string, Furn> = {
   mastro: (p, _l, f) => { p.rect(3, 1, 2, 30, IRON_L); p.rect(3, 1, 1, 30, WHITE); p.disc(4, 1, 1.5, 1.5, GOLD); for (let x = 0; x < 9; x++) { const wave = Math.round(Math.sin(x * 0.8 + f * 1.6) * 1); p.rect(5 + x, 3 + wave, 1, 7, x < 4 ? BLUE : 0xe8503a); } p.px(7, 6 + (f ? 0 : 0), GOLD); p.rect(1, 29, 6, 2, STONE); },
 };
 
-const MATERIAL_ICONS: Record<string, Draw> = {
-  madeira: (p) => { p.rect(2, 5, 12, 6, WOOD); p.disc(13, 8, 2, 3, WOOD_L); p.rect(2, 7, 10, 1, WOOD_D); },
-  pedra: (p) => { p.disc(8, 9, 6, 5, STONE); p.disc(6, 7, 3, 2, STONE_L); },
-  oran: (p) => { p.disc(8, 9, 5, 5, 0x4a6ae8); p.disc(6.5, 7.5, 1.5, 1.5, 0x9ab8ff); p.rect(7, 2, 2, 3, GREEN_D); },
-  pecha: (p) => { p.disc(8, 9, 5, 5, PINK); p.disc(6.5, 7.5, 1.5, 1.5, 0xffe0ec); p.rect(7, 2, 2, 3, GREEN_D); },
-  flor: (p) => { p.rect(7, 8, 2, 7, GREEN); for (const [dx, dy] of [[0, -3], [-3, 0], [3, 0], [0, 3]] as const) p.disc(8 + dx, 6 + dy, 2, 2, 0xf06048); p.disc(8, 6, 1.5, 1.5, 0xffd84a); },
-  concha: (p) => { p.disc(8, 9, 6, 5, 0xf8c8b0); for (let x = 4; x < 13; x += 2) p.rect(x, 6, 1, 7, 0xe8a088); },
-  tecido: (p) => { p.rect(2, 4, 12, 9, CLOTH); p.rect(2, 4, 12, 2, 0x7aa8f0); p.rect(4, 8, 8, 1, 0x3a6ad8); },
-  ferro: (p) => { p.rect(2, 6, 12, 6, IRON); p.rect(3, 6, 10, 2, IRON_L); },
-  areia: (p) => { p.disc(8, 11, 7, 4, 0xf0dca0); p.disc(8, 9, 4.5, 3, 0xf6e8b8); for (const [x, y] of [[4, 11], [10, 12], [7, 9]] as const) p.px(x, y, 0xd8c080); },
-  argila: (p) => { p.disc(8, 10, 6, 4.5, 0xc8703c); p.disc(6.5, 8.5, 3, 2, 0xe08a52); p.px(10, 11, 0xa85a2c); p.px(5, 11, 0xa85a2c); },
-  mel: (p) => { p.rect(4, 5, 8, 9, 0xe8a828); p.rect(5, 6, 6, 7, 0xf8c848); p.rect(3, 3, 10, 3, 0x8a5a2e); p.rect(4, 3, 8, 1, 0xa8743e); p.px(6, 8, WHITE); },
-  champignon: (p) => { p.rect(6, 8, 4, 6, 0xf1e6c8); p.disc(8, 7, 6, 4, 0xb87a48); p.disc(6.5, 5.5, 2.5, 1.5, 0xd8a070); p.px(10, 7, 0xf1e6c8); },
-  pena: (p) => { p.line(3, 13, 12, 3, 0xe8edf4, 3); p.line(3, 13, 13, 2, IRON_L); for (let k = 0; k < 4; k++) p.line(5 + k * 2, 11 - k * 2, 9 + k * 2, 11 - k * 2 + 1, 0xcfd8e8); },
-  cristal: (p) => { p.tri(8, 1, 4, 12, 10, 0x6ae8f0); p.tri(8, 9, 4, 12, 14, 0x3ab8e0); p.tri(8, 3, 6, 9, 9, 0xc8fcff); p.px(7, 5, WHITE); },
-  ouro: (p) => { p.disc(8, 9, 6, 4.5, GOLD); p.disc(6, 7.5, 3, 2, 0xfff0a0); p.disc(11, 11, 3, 2, 0xc89a2a); p.px(5, 7, WHITE); },
-  la: (p) => { for (const [x, y] of [[5, 8], [8, 6], [11, 8], [6, 11], [10, 11], [8, 9]] as const) p.disc(x, y, 3, 3, 0xf6f6f6); p.px(6, 6, 0xdce4ee); p.px(10, 10, 0xdce4ee); },
-  peixe: (p) => { p.disc(7, 8, 5, 3.5, 0x6aa8e8); p.tri(14, 8, 11, 14, 4, 0x4a88c8); p.tri(14, 8, 11, 14, 12, 0x4a88c8); p.disc(7, 10, 4, 1.5, 0xcfe8ff); p.px(4, 7, DARK); p.px(8, 6, 0x8ac8ff); },
-  dourado: (p) => { p.disc(7, 8, 5, 3.8, ORANGE); p.tri(14, 8, 11, 15, 3, 0xffd84a); p.tri(14, 8, 11, 15, 13, 0xffd84a); p.disc(7, 5, 2, 1.5, 0xffd84a); p.px(4, 7, DARK); p.px(7, 8, 0xffe27a); p.px(9, 9, 0xffe27a); },
-  estrela: (p) => { for (let k = 0; k < 5; k++) { const a = (k / 5) * Math.PI * 2 - Math.PI / 2; p.line(8, 8, 8 + Math.cos(a) * 6.5, 8 + Math.sin(a) * 6.5, 0xe86a3a, 3); } p.disc(8, 8, 2, 2, 0xf88a5a); p.px(8, 4, 0xffd0a0); },
-  perola: (p) => { p.disc(8, 11, 7, 4, 0xe8d8e8); for (let x = 2; x < 15; x += 2) p.rect(x, 8, 1, 6, 0xc8b0c8); p.disc(8, 8, 3, 3, WHITE); p.px(7, 7, 0xe8f0ff); p.px(9, 9, 0xdcc8e8); },
-  alga: (p) => { for (const [x, o] of [[4, 0], [8, 2], [12, 1]] as const) for (let y = 2 + o; y < 15; y++) p.rect(x + Math.round(Math.sin(y * 0.8 + x) * 1), y, 2, 1, y % 3 ? GREEN : GREEN_D); },
-  bota: (p) => { p.rect(5, 2, 5, 9, 0x8a5a2e); p.rect(5, 2, 5, 2, 0xa8743e); p.rect(4, 10, 10, 4, 0x6a4a28); p.rect(4, 13, 10, 1, DARK); p.px(6, 6, 0xc89a5a); p.px(9, 7, 0x5a3a1e); },
-  'love-candy': (p) => { p.disc(8, 8, 6, 5, PINK); p.tri(8, 14, 3, 7, 10, PINK); p.disc(6, 7, 1.8, 1.8, 0xffe0ec); p.disc(10, 7, 1.8, 1.8, 0xffe0ec); p.px(8, 5, WHITE); },
-  'trust-stone': (p) => { p.disc(8, 8, 6, 5.5, 0x3aa8a0); p.disc(8, 7, 5, 4, 0x6ad0c4); p.disc(6, 5, 1.8, 1.2, 0xcff8f0); p.disc(6, 8, 1.4, 1.4, GOLD); p.disc(10, 8, 1.4, 1.4, GOLD); p.tri(8, 12, 4, 7, 9, GOLD); p.px(11, 5, WHITE); },
-  'mega-stone-shard': (p) => { p.tri(8, 1, 3, 13, 13, 0x8a6ae8); p.tri(8, 3, 6, 10, 10, 0xc8b8ff); p.line(8, 2, 8, 13, WHITE); p.px(5, 9, 0x6a4ac8); p.px(11, 7, 0xe8dcff); },
-  tabua: (p) => { p.rect(1, 3, 14, 3, WOOD_L); p.rect(1, 7, 14, 3, WOOD); p.rect(1, 11, 14, 3, WOOD_D); for (const [x, y] of [[4, 4], [11, 8], [7, 12]] as const) p.px(x, y, LEG); },
-  tijolo: (p) => { for (const [x, y, w] of [[1, 3, 7], [9, 3, 6], [1, 7, 3], [5, 7, 7], [13, 7, 2], [1, 11, 7], [9, 11, 6]] as const) { p.rect(x, y, w, 3, 0xc8503c); p.rect(x, y, w, 1, 0xe0705a); } },
-  vidro: (p) => { p.rect(3, 2, 10, 12, 0xcfeeff); p.rect(3, 2, 10, 1, WHITE); p.rect(4, 3, 8, 10, 0xa8dcf8); p.line(5, 11, 9, 4, WHITE); p.line(8, 12, 11, 7, 0xe8f8ff); },
-  girassol: (p) => { p.rect(7, 9, 2, 6, GREEN); p.disc(8, 6, 5, 5, 0xffd84a); p.disc(8, 6, 2.5, 2.5, 0x6a3a1a); },
-  abobora: (p) => { p.disc(8, 9, 7, 5.5, ORANGE); p.rect(7, 2, 2, 3, GREEN_D); p.rect(5, 5, 1, 9, 0xd8701a); p.rect(10, 5, 1, 9, 0xd8701a); },
-  tomate: (p) => { p.disc(8, 9, 5.5, 5, 0xe84a3a); p.rect(6, 3, 4, 2, GREEN); p.px(6, 7, 0xff9a8a); },
-  morango: (p) => { p.disc(8, 9, 5, 5.5, 0xe8344a); p.rect(5, 3, 6, 2, GREEN); for (const [x, y] of [[6, 8], [9, 10], [7, 12], [10, 7]] as const) p.px(x, y, 0xffe27a); },
-  cenoura: (p) => { p.tri(8, 15, 4, 12, 5, ORANGE); p.tri(8, 14, 6, 9, 6, 0xffa850); for (const x of [6, 8, 10]) p.rect(x, 1, 1, 4, GREEN); p.rect(5, 8, 3, 1, 0xd8701a); p.rect(8, 11, 3, 1, 0xd8701a); },
-  milho: (p) => { p.disc(8, 8, 3, 6.5, 0xffd84a); for (let y = 3; y < 13; y += 2) for (let x = 6; x < 11; x += 2) p.px(x, y, 0xffe88a); p.tri(3, 15, 3, 9, 6, GREEN); p.tri(13, 15, 7, 13, 6, GREEN_D); },
-  uva: (p) => { for (const [x, y] of [[5, 7], [8, 6], [11, 7], [6, 10], [10, 10], [8, 13], [8, 9]] as const) { p.disc(x, y, 2.2, 2.2, 0x8a3ad8); p.px(x - 1, y - 1, 0xc88af0); } p.rect(8, 1, 1, 3, GREEN_D); p.rect(9, 2, 3, 2, GREEN); },
-  melancia: (p) => { p.tri(8, 14, 0, 16, 5, GREEN_D); p.tri(8, 13, 1, 15, 5, 0xf8f0d0); p.tri(8, 12, 2, 14, 5, 0xe84a5a); for (const [x, y] of [[6, 8], [9, 9], [8, 6], [11, 7], [5, 7]] as const) p.px(x, y, DARK); },
-  batata: (p) => { p.disc(8, 9, 6, 4.5, 0xc8a068); p.disc(6.5, 8, 3, 2, 0xe0be88); for (const [x, y] of [[5, 10], [10, 8], [9, 11]] as const) p.px(x, y, 0x8a6a38); },
-  lavanda: (p) => { p.rect(8, 7, 1, 8, GREEN_D); p.rect(5, 9, 1, 6, GREEN); p.rect(11, 9, 1, 6, GREEN); for (const [x, y] of [[8, 1], [8, 3], [8, 5], [5, 4], [5, 6], [11, 4], [11, 6]] as const) p.rect(x - 1, y, 3, 2, 0x9a6ae8); p.px(8, 1, 0xc8a8f8); },
-};
-
-const FOOD_ICONS: Record<string, Draw> = {
-  'suco-oran': (p) => { p.rect(4, 5, 8, 9, 0xdcf0ff); p.rect(5, 7, 6, 6, 0x4a6ae8); p.rect(5, 7, 6, 1, 0x9ab8ff); p.line(9, 1, 10, 6, 0xe8503a); p.disc(4, 5, 2, 1.5, ORANGE); },
-  'suco-pecha': (p) => { p.rect(4, 5, 8, 9, 0xdcf0ff); p.rect(5, 7, 6, 6, 0xf28ab0); p.rect(5, 7, 6, 1, 0xffd0e0); p.line(9, 1, 10, 6, 0xe8503a); p.disc(4, 5, 2, 1.5, PINK); },
-  salada: (p) => { p.disc(8, 10, 7, 4, 0xf6f6f6); p.disc(8, 9, 6, 3, GREEN); p.disc(8, 8, 4, 2, GREEN_L); p.disc(6, 8, 1.5, 1.2, 0xe84a3a); p.disc(10, 9, 1.5, 1.2, ORANGE); },
-  'sopa-abobora': (p) => { p.disc(8, 10, 7, 4.5, 0xf6f6f6); p.disc(8, 9, 6, 3, ORANGE); p.disc(8, 8.5, 4, 1.8, 0xffa850); p.px(6, 3, 0xe8edf4); p.px(8, 2, 0xe8edf4); p.px(10, 4, 0xe8edf4); },
-  'bolo-morango': (p) => { p.rect(2, 9, 12, 5, 0xf8e0c0); p.rect(2, 9, 12, 2, 0xf6f6f6); p.rect(3, 6, 10, 4, 0xf8a8c8); p.rect(3, 6, 10, 1, WHITE); p.disc(8, 5, 2, 2, 0xe8344a); p.px(8, 2, GREEN); p.px(5, 5, 0xe8344a); p.px(11, 5, 0xe8344a); },
-  'torta-pecha': (p) => { p.tri(8, 4, 1, 15, 14, 0xe8b868); p.tri(8, 6, 4, 12, 13, 0xf28ab0); p.rect(1, 12, 14, 2, 0xc89048); p.px(7, 9, WHITE); p.px(9, 10, WHITE); p.px(6, 11, 0xe86a98); },
-  'pao-mel': (p) => { p.disc(8, 9, 7, 5, 0xb87a38); p.disc(8, 7.5, 6, 3.5, 0xd89a48); p.disc(6, 6, 2.5, 1.5, 0xf0c878); p.px(10, 8, 0xf8d888); p.px(7, 10, 0x8a5a2e); },
-  'peixe-grelhado': (p) => { p.disc(8, 11, 7.5, 3.5, WHITE); p.disc(7, 9, 5, 3, 0xd8985a); p.tri(13, 9, 11, 15, 6, 0xc8803a); p.tri(13, 9, 11, 15, 12, 0xc8803a); for (let x = 4; x < 11; x += 2) p.rect(x, 7, 1, 4, 0x8a5a2e); p.px(3, 8, DARK); p.rect(10, 5, 2, 1, GREEN); },
-  espetinho: (p) => { p.line(1, 14, 14, 2, WOOD_D); for (const [x, y, c] of [[4, 11, 0xb87a48], [6, 9, 0xe84a3a], [8, 7, 0xb87a48], [10, 5, 0xe84a3a], [12, 3, 0xb87a48]] as const) p.disc(x, y, 2, 2, c); p.px(3, 10, 0xd8a070); },
-  pipoca: (p) => { p.rect(3, 7, 10, 8, WHITE); for (let x = 3; x < 13; x += 4) p.rect(x, 7, 2, 8, RED); for (const [x, y] of [[4, 5], [7, 3], [10, 5], [6, 5], [9, 3], [12, 6], [3, 6]] as const) { p.disc(x, y, 2, 2, 0xfff6d0); p.px(x, y, 0xf8d878); } },
-  geleia: (p) => { p.rect(4, 5, 8, 9, 0x8a3ad8); p.rect(5, 6, 6, 7, 0xb86af0); p.rect(3, 3, 10, 3, 0xe8d8b0); p.rect(4, 2, 8, 1, 0xa88850); p.rect(5, 8, 4, 3, 0xf6f6f6); p.px(6, 9, 0x8a3ad8); },
-  'melancia-gelada': (p) => { p.tri(8, 13, 0, 16, 4, GREEN_D); p.tri(8, 12, 1, 15, 4, 0xf8f0d0); p.tri(8, 11, 2, 14, 4, 0xe84a5a); for (const [x, y] of [[6, 7], [9, 8], [8, 5]] as const) p.px(x, y, DARK); p.rect(10, 1, 3, 3, 0xcfeeff); p.px(11, 2, WHITE); },
-  ensopado: (p) => { p.disc(8, 10, 7, 4.5, 0x6a4a38); p.rect(1, 8, 14, 2, 0x8a6a52); p.disc(8, 8, 6, 2, 0xa86a38); p.disc(6, 8, 1.5, 1.2, ORANGE); p.disc(10, 8, 1.5, 1.2, 0xc8a068); p.px(8, 3, 0xe8edf4); p.px(6, 2, 0xe8edf4); p.px(10, 2, 0xe8edf4); },
-  'lanche-pokebola': (p) => { p.disc(8, 9, 7, 6, 0xe8b868); for (let y = 3; y < 9; y++) for (let x = 1; x < 16; x++) if (((x - 8) / 7) ** 2 + ((y - 9) / 6) ** 2 <= 1) p.px(x, y, RED); p.rect(1, 8, 14, 1, 0x8a5a2e); p.rect(2, 9, 12, 1, GREEN); p.rect(2, 10, 12, 1, 0xe84a3a); p.disc(8, 8, 2, 2, WHITE); p.disc(8, 8, 1, 1, DARK); },
-};
-
-
-const SEED_COLORS: Record<string, number> = {
-  'sem-oran': 0x4a6ae8, 'sem-pecha': PINK, 'sem-girassol': 0xffd84a, 'sem-tomate': 0xe84a3a, 'sem-morango': 0xe8344a, 'sem-abobora': ORANGE,
-  'sem-cenoura': ORANGE, 'sem-milho': 0xffe27a, 'sem-uva': 0x8a3ad8, 'sem-melancia': 0xe84a5a, 'sem-batata': 0xc8a068, 'sem-lavanda': 0x9a6ae8,
-};
-
-function seedBag(p: Pen, color: number): void {
-  p.rect(4, 5, 8, 9, 0xe8d8b0);
-  p.rect(5, 3, 6, 3, 0xd8c890);
-  p.rect(5, 2, 6, 1, 0xa88850);
-  p.disc(8, 10, 2.5, 2.5, color);
-  p.px(7, 9, WHITE);
-}
+/** Materiais e colheitas (os desenhos ficam em `art/items.ts`). */
+const MATERIAL_ICONS = { ...OLD_MATERIAL_ICONS, ...NEW_MATERIAL_ICONS, ...NEW_CROP_ICONS };
 
 function draw(fn: Draw | null, h = 16): PixelBuf {
   return render(fn, 16, h);
@@ -323,10 +256,10 @@ export function paintFurnitureItem(id: string, lit = false, frame = 0): PixelBuf
 export function paintItemIcon(id: string): PixelBuf {
   const def = itemDef(id);
   if (def?.kind === 'furniture') return paintFurnitureItem(id, true, 0);
-  if (def?.kind === 'seed') return draw((p) => seedBag(p, SEED_COLORS[id] ?? GREEN));
+  if (def?.kind === 'seed') return paintIcon(seedBagIcon(CROP_COLOR[def.grows?.crop ?? ''] ?? GREEN));
   if (def?.kind === 'accessory') return paintAccessoryIconArt(id);
-  if (def?.kind === 'food') return draw(FOOD_ICONS[id] ?? null);
-  return draw(MATERIAL_ICONS[id] ?? null);
+  const icon = def?.kind === 'food' ? FOOD_ICON_ART[id] : MATERIAL_ICONS[id];
+  return icon ? paintIcon(icon) : draw(null);
 }
 
 /** Acessório para vestir: o desenho no tamanho real (um pixel = um pixel do tileset), recortado. */
@@ -340,7 +273,7 @@ export function accessorySize(id: string): { w: number; h: number } {
   return { w: b.w, h: b.h };
 }
 
-const CROP_COLOR: Record<string, number> = { girassol: 0xffd84a, abobora: ORANGE, tomate: 0xe84a3a, morango: 0xe8344a, oran: 0x4a6ae8, pecha: PINK, cenoura: ORANGE, milho: 0xffd84a, uva: 0x8a3ad8, melancia: GREEN_D, batata: 0xc8a068, lavanda: 0x9a6ae8 };
+const CROP_COLOR: Record<string, number> = { girassol: 0xffd84a, abobora: ORANGE, tomate: 0xe84a3a, morango: 0xe8344a, oran: 0x4a6ae8, pecha: PINK, cenoura: ORANGE, milho: 0xffd84a, uva: 0x8a3ad8, melancia: GREEN_D, batata: 0xc8a068, lavanda: 0x9a6ae8, ...NEW_CROP_COLOR };
 
 /** Planta na horta: brotinho, folhas, planta crescida e a colheita aparecendo. */
 export function paintCrop(cropId: string, stage: number, stages: number): PixelBuf {
@@ -390,6 +323,6 @@ export function paintCrop(cropId: string, stage: number, stages: number): PixelB
 /** Lista de itens desenhados (para conferir que todo item do catálogo tem arte). */
 export const FURNITURE_ART_IDS = Object.keys(FURNITURE);
 export const MATERIAL_ART_IDS = Object.keys(MATERIAL_ICONS);
-export const FOOD_ART_IDS = Object.keys(FOOD_ICONS);
+export const FOOD_ART_IDS = Object.keys(FOOD_ICON_ART);
 export const ACCESSORY_ART_IDS = ACCESSORY_SPRITE_IDS;
 export const TALL_ART_IDS = Object.keys(TALL);

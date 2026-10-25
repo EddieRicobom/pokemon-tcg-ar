@@ -305,15 +305,19 @@ interface HarvestRule {
   extra?: { item: ItemId; chance: number; verb: string }[];
 }
 
+/** Sementes das frutas Pokémon: achado raro no mato alto (também vendem na loja). */
+const BERRY_SEEDS_WILD = ['sem-cheri', 'sem-chesto', 'sem-rawst', 'sem-aspear', 'sem-leppa', 'sem-persim', 'sem-razz', 'sem-nanab'] as const;
+const STONES = ['pedra-fogo', 'pedra-agua', 'pedra-trovao', 'pedra-folha', 'pedra-gelo', 'pedra-lua', 'pedra-sol'] as const;
+
 const SEEDS_WILD = ['sem-oran', 'sem-pecha', 'sem-girassol', 'sem-tomate', 'sem-cenoura', 'sem-milho', 'sem-batata', 'sem-lavanda'] as const;
 
 const HARVEST: Partial<Record<Tile, HarvestRule>> = {
-  tree: { item: 'madeira', qty: [1, 3], verb: 'Você cortou galhos da árvore', extra: [{ item: 'pena', chance: 0.12, verb: 'caiu uma pena do ninho' }, { item: 'mel', chance: 0.05, verb: 'achou um favo de mel' }] },
-  rock: { item: 'pedra', qty: [1, 2], verb: 'Você quebrou um pedaço da pedra', extra: [{ item: 'cristal', chance: 0.12, verb: 'brilhou um cristal lá dentro' }, { item: 'ouro', chance: 0.04, verb: 'tinha uma pepita de ouro' }] },
-  bush: { item: (rng) => (rng() < 0.6 ? 'oran' : 'pecha'), qty: [1, 2], verb: 'Você colheu frutas do arbusto', extra: [{ item: 'sem-morango', chance: 0.06, verb: 'achou uma semente de morango' }] },
-  flower: { item: 'flor', qty: [1, 2], verb: 'Você colheu flores', extra: [{ item: 'mel', chance: 0.18, verb: 'as abelhas deixaram mel' }] },
+  tree: { item: 'madeira', qty: [1, 3], verb: 'Você cortou galhos da árvore', extra: [{ item: 'pena', chance: 0.12, verb: 'caiu uma pena do ninho' }, { item: 'mel', chance: 0.05, verb: 'achou um favo de mel' }, { item: 'bolota', chance: 0.14, verb: 'caiu uma bolota' }, { item: 'pinha', chance: 0.1, verb: 'caiu uma pinha' }, { item: 'seiva', chance: 0.05, verb: 'escorreu seiva do tronco' }] },
+  rock: { item: 'pedra', qty: [1, 2], verb: 'Você quebrou um pedaço da pedra', extra: [{ item: 'cristal', chance: 0.12, verb: 'brilhou um cristal lá dentro' }, { item: 'ouro', chance: 0.04, verb: 'tinha uma pepita de ouro' }, { item: 'carvao', chance: 0.2, verb: 'saiu carvão' }, { item: 'quartzo', chance: 0.07, verb: 'apareceu um quartzo' }, { item: 'ambar', chance: 0.03, verb: 'achou um âmbar' }, { item: 'fossil-helix', chance: 0.015, verb: 'era um Fóssil Hélice!' }, { item: 'fossil-domo', chance: 0.015, verb: 'era um Fóssil Domo!' }, ...STONES.map((item) => ({ item, chance: 0.008, verb: 'brilhou uma pedra de evolução!' }))] },
+  bush: { item: (rng) => (rng() < 0.6 ? 'oran' : 'pecha'), qty: [1, 2], verb: 'Você colheu frutas do arbusto', extra: [{ item: 'sem-morango', chance: 0.06, verb: 'achou uma semente de morango' }, { item: 'erva', chance: 0.12, verb: 'e um raminho de erva aromática' }] },
+  flower: { item: 'flor', qty: [1, 2], verb: 'Você colheu flores', extra: [{ item: 'mel', chance: 0.18, verb: 'as abelhas deixaram mel' }, { item: 'trevo', chance: 0.04, verb: 'e, no meio delas, um trevo de quatro folhas' }] },
   sand: { item: 'concha', qty: [1, 1], verb: 'Você achou uma concha na areia' },
-  tall: { item: (rng) => SEEDS_WILD[Math.floor(rng() * SEEDS_WILD.length)]!, qty: [1, 1], verb: 'Você achou no mato alto', extra: [{ item: 'champignon', chance: 0.3, verb: 'e um cogumelo' }] },
+  tall: { item: (rng) => (rng() < 0.12 ? BERRY_SEEDS_WILD[Math.floor(rng() * BERRY_SEEDS_WILD.length)]! : SEEDS_WILD[Math.floor(rng() * SEEDS_WILD.length)]!), qty: [1, 1], verb: 'Você achou no mato alto', extra: [{ item: 'champignon', chance: 0.3, verb: 'e um cogumelo' }, { item: 'cogumelo-pequeno', chance: 0.1, verb: 'e um Cogumelo Pequeno' }, { item: 'cogumelo-grande', chance: 0.02, verb: 'e um Cogumelo Grande!' }] },
 };
 
 /** Coleta no bloco (x, y): cada bloco dá uma vez por dia (a natureza volta no dia seguinte). */
@@ -321,12 +325,12 @@ export function harvest(s: VillageState, map: VillageMap, x: number, y: number, 
   const tile = tileAt(map, x, y);
   const rule = HARVEST[tile];
   if (!rule) return { ok: false, message: '' };
-  // Areia: só às vezes tem concha, e o resto é areia ou argila.
+  // Areia: só às vezes tem concha, e o resto é areia, argila, sal ou, raramente, uma concha espiral.
   let sandItem: ItemId | null = null;
   if (tile === 'sand') {
     const roll = rng();
     if (roll < 0.2) return { ok: false, message: 'Só areia por aqui.' };
-    sandItem = roll < 0.55 ? 'concha' : roll < 0.85 ? 'areia' : 'argila';
+    sandItem = roll < 0.52 ? 'concha' : roll < 0.76 ? 'areia' : roll < 0.88 ? 'argila' : roll < 0.96 ? 'sal-praia' : 'concha-espiral';
   }
   if (tile === 'tall' && rng() < 0.5) return { ok: false, message: 'Nada no mato desta vez.' };
   const key = `${x},${y}`;
@@ -379,7 +383,17 @@ const FISH_TABLE: readonly { item: ItemId | null; w: number; msg: string }[] = [
   { item: 'dourado', w: 8, msg: 'Um peixe-dourado reluzente' },
   { item: 'perola', w: 3, msg: 'Uma pérola dentro de uma concha' },
   { item: 'cristal', w: 2, msg: 'Um cristal brilhando no fundo' },
+  { item: 'caranguejo', w: 8, msg: 'Um caranguejo agarrou a isca' },
+  { item: 'lula', w: 6, msg: 'Uma lula saiu da água' },
+  { item: 'escama-coracao', w: 3, msg: 'Uma Escama Coração brilhando no anzol' },
 ];
+
+/** Tudo o que a natureza dá (coleta por bloco, areia e pesca): para conferir que todo material tem de onde vir. */
+export const WILD_FINDS: ReadonlySet<string> = new Set<string>([
+  ...Object.values(HARVEST).flatMap((r) => [...(typeof r.item === 'string' ? [r.item] : []), ...(r.extra ?? []).map((e) => e.item)]),
+  ...SEEDS_WILD, ...BERRY_SEEDS_WILD, 'concha', 'areia', 'argila', 'sal-praia', 'concha-espiral',
+  ...FISH_TABLE.flatMap((f) => (f.item ? [f.item] : [])),
+]);
 
 /** Joga a linha num bloco de água (10 lançamentos por dia). */
 export function fish(s: VillageState, map: VillageMap, x: number, y: number, day: string, rng: Rng): Interaction {
