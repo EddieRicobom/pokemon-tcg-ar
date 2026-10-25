@@ -72,6 +72,8 @@ import { emptySurvivorFeedbackAnswers, encodeSurvivorFeedback } from '../core/su
 import type { FeedbackRating, FeedbackRatingKey } from '../core/survivor-feedback';
 import { BONK_LANDING_MS, bonkInputToWorld, bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics } from '../core/survivor-bonk';
 import type { BonkPhysics } from '../core/survivor-bonk';
+import { isBonkDoubleTap, isBonkTap } from '../core/survivor-gesture';
+import type { SurvivorPointerSample } from '../core/survivor-gesture';
 import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround } from '../village/survivor-bonk-landscape';
 import type { BonkArt } from '../village/survivor-bonk-landscape';
 import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
@@ -631,6 +633,13 @@ let announcedRegion = '';
 const heldKeys = new Set<string>();
 /** Joystick flutuante: aparece onde o dedo encostou na tela da Torre (`lx`, `ly`, relativos à tela). */
 const joystick = reactive({ active: false, pointerId: null as number | null, cx: 0, cy: 0, dx: 0, dy: 0, lx: 0, ly: 0 });
+let bonkPointerStart: (SurvivorPointerSample & { pointerId: number }) | null = null;
+let previousBonkTap: SurvivorPointerSample | null = null;
+
+function clearBonkTap(): void {
+  bonkPointerStart = null;
+  previousBonkTap = null;
+}
 
 type SurvivorDirection = 'up' | 'right' | 'down' | 'left';
 const KEY_DIR: Record<string, SurvivorDirection> = {
@@ -768,6 +777,7 @@ function joyDown(e: PointerEvent): void {
   joystick.cy = e.clientY;
   joystick.lx = e.clientX - rect.left;
   joystick.ly = e.clientY - rect.top;
+  if (bonkRun.value && e.button === 0) bonkPointerStart = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, at: e.timeStamp };
   el.setPointerCapture?.(e.pointerId);
   joyMove(e);
 }
@@ -782,10 +792,28 @@ function joyMove(e: PointerEvent): void {
 }
 function joyUp(e?: PointerEvent): void {
   if (e && e.pointerId !== joystick.pointerId) return;
+  const start = bonkPointerStart;
   joystick.active = false;
   joystick.pointerId = null;
   joystick.dx = 0;
   joystick.dy = 0;
+  bonkPointerStart = null;
+  if (!e || !start || start.pointerId !== e.pointerId || !bonkRun.value) return;
+  const tap = { x: e.clientX, y: e.clientY, at: e.timeStamp };
+  if (!isBonkTap(start, tap)) {
+    previousBonkTap = null;
+    return;
+  }
+  if (isBonkDoubleTap(previousBonkTap, tap)) {
+    previousBonkTap = null;
+    queueBonkJump();
+    return;
+  }
+  previousBonkTap = tap;
+}
+function joyCancel(e: PointerEvent): void {
+  clearBonkTap();
+  joyUp(e);
 }
 
 function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down'): void {
@@ -1844,6 +1872,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     shadowBossSprite.value = null;
     specialQueued = false;
     bonkJumpQueued = false;
+    clearBonkTap();
     const runState = state.value;
     void loadSpriteOrNull(SPECIAL_GUARDIANS[move.type].dexId).then((sprite) => {
       if (!disposed && state.value === runState) guardianSprite.value = firstSpriteFrame(sprite)?.toDataURL() ?? null;
@@ -1937,6 +1966,7 @@ async function openPicker(): Promise<void> {
   bonkRun.value = false;
   bonkPhysics.value = null;
   bonkJumpQueued = false;
+  clearBonkTap();
   pickBusy.value = true;
   pickOptions.value = null;
   try {
@@ -2004,6 +2034,7 @@ function onVisibility(): void {
     joystick.pointerId = null;
     joystick.dx = 0;
     joystick.dy = 0;
+    clearBonkTap();
   }
 }
 document.addEventListener('visibilitychange', onVisibility);
@@ -2042,9 +2073,9 @@ onBeforeUnmount(() => {
         @pointerdown="joyDown"
         @pointermove="joyMove"
         @pointerup="joyUp"
-        @pointercancel="joyUp"
+        @pointercancel="joyCancel"
       >
-        <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" :class="{ 'bonk-canvas': bonkRun }" :aria-label="bonkRun ? 'BONK: arraste para andar, botão Pular para saltar' : 'Torre: arraste em qualquer lugar para andar'"></canvas>
+        <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" :class="{ 'bonk-canvas': bonkRun }" :aria-label="bonkRun ? 'BONK: arraste para andar, toque ou clique duplo na tela para pular' : 'Torre: arraste em qualquer lugar para andar'"></canvas>
 
         <div class="survivor-vignette" aria-hidden="true"></div>
 
@@ -2139,7 +2170,7 @@ onBeforeUnmount(() => {
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
-        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint" :class="{ 'is-bonk': bonkRun }">{{ bonkRun ? 'Arraste: para cima avança, para os lados vira a câmera · Pular: botão, Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
+        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint" :class="{ 'is-bonk': bonkRun }">{{ bonkRun ? 'Arraste: para cima avança, para os lados vira a câmera · Pular: botão, toque/clique duplo, Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
 
         <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
@@ -2257,7 +2288,7 @@ onBeforeUnmount(() => {
           type="button" class="survivor-jump-button"
           :class="{ 'is-airborne': bonkPhysics && !bonkPhysics.grounded, 'is-empty': bonkJumpPips.length > 0 && !bonkJumpPips.some(Boolean), 'is-pressed': bonkJumpPressed }"
           :disabled="bonkJumpBlocked"
-          :aria-label="`Pular: ${bonkJumpLabel || 'indisponível'}; tecla Q ou Espaço`"
+          :aria-label="`Pular: ${bonkJumpLabel || 'indisponível'}; toque ou clique duplo na tela, tecla Q ou Espaço`"
           @pointerdown.stop.prevent="queueBonkJump">
           <svg class="jump-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 20 12h-5v7.5H9V12H4z" /></svg>
           <strong>PULAR</strong>

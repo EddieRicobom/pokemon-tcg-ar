@@ -642,7 +642,8 @@ function drawGroundDetails(view: View): void {
             : kind > 0.95 ? { image: sprites.flower, w: 26, h: 26 }
               : kind > 0.91 ? { image: sprites.rock1, w: 22, h: 22 }
                 : kind > 0.85 ? { image: sprites.bush, w: 34, h: 34 }
-                  : kind > 0.79 ? { image: sprites.tall, w: 18, h: 30 }
+                  // Mato alto forma moitas reconhecíveis em qualquer região; flores e pedras continuam raras.
+                  : kind > 0.66 ? { image: sprites.tall, w: 22, h: 34 }
                     : null;
         const image = decor?.image;
         if (decor && image) {

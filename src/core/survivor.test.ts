@@ -1185,7 +1185,7 @@ describe('treinadores e chefão final', () => {
     expect(s.infiniteScale).toBeGreaterThan(2);
   });
 
-  it('Ritmo acelerado encurta a corrida sem dobrar a pressão de chefes e dá 1,75× XP', () => {
+  it('Ritmo acelerado encurta a corrida e acelera junto o spawn e a densidade', () => {
     const normal = createSurvivorState(7, { kindCount: 2 });
     const fast = createSurvivorState(7, { kindCount: 2, fast: true });
     expect(fast.fast).toBe(true);
@@ -1194,12 +1194,24 @@ describe('treinadores e chefão final', () => {
     expect(fast.player.xpMultiplier).toBe(FAST_XP_MULTIPLIER);
     // Como o componente passa 2× o delta ao motor, esta janela 2× mantém o mesmo intervalo real.
     expect(fast.nextBossAtMs).toBe(normal.nextBossAtMs * FAST_TIME_SCALE);
-    // Mesmo delta dobrado por quadro, o primeiro nascimento leva o mesmo tempo real.
+    // O motor recebe 2× o delta e não compensa a horda: ela também acelera.
     fast.spawnAccumMs = 0;
     normal.spawnAccumMs = 0;
-    stepSurvivor(normal, { dx: 0, dy: 0 }, 1_000);
-    stepSurvivor(fast, { dx: 0, dy: 0 }, 2_000);
-    expect(fast.enemies.length).toBe(normal.enemies.length);
+    stepSurvivor(normal, { dx: 0, dy: 0 }, 2_000);
+    stepSurvivor(fast, { dx: 0, dy: 0 }, 4_000);
+    expect(fast.enemies.length).toBeGreaterThan(normal.enemies.length);
+
+    // Depois de um minuto real, a onda e o total nascido também acompanham o ritmo acelerado.
+    normal.player.hp = normal.player.maxHp = 1_000_000;
+    fast.player.hp = fast.player.maxHp = 1_000_000;
+    normal.player.attackDamage = 0;
+    fast.player.attackDamage = 0;
+    for (let second = 2; second < 60; second += 1) {
+      stepSurvivor(normal, { dx: 0, dy: 0 }, 1_000);
+      stepSurvivor(fast, { dx: 0, dy: 0 }, 2_000);
+    }
+    expect(fast.wave).toBeGreaterThan(normal.wave);
+    expect(fast.enemies.length).toBeGreaterThan(normal.enemies.length);
   });
 
   it('não combina Ritmo acelerado com o Infinito', () => {
