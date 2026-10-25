@@ -339,8 +339,7 @@ function spawnIntervalMs(state: SurvivorState): number {
   const base = Math.max(BALANCE.spawnFloorMs, BALANCE.spawnStartMs - t * BALANCE.spawnPerSecMs - state.wave * BALANCE.spawnPerWaveMs);
   const early = Math.max(0, 1 - state.elapsedMs / BALANCE.earlyGameMs);
   const interval = base * (1 + BALANCE.earlySpawnIntervalBonus * early) * BALANCE.spawnRateMultiplier / survivorDifficultyDensityMultiplier(state.player.difficultyStacks ?? 0);
-  // `stepSurvivor` recebe 2× o delta no Ritmo acelerado: esta compensação evita dobrar inimigos por segundo real.
-  return interval * (state.fast ? FAST_TIME_SCALE : 1);
+  return interval;
 }
 
 /** Dificuldade voluntária: mais inimigos e atributos mais fortes, sem teto de acúmulos da carta. */
