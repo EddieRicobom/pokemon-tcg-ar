@@ -1,28 +1,46 @@
 import { SURVIVOR_REGIONS, survivorRegionAt } from '../core/survivor-regions';
 import { SURVIVOR_BIOMES, survivorBiomeZonesOf } from '../core/survivor-biomes';
+import type { SurvivorBiomeZoneKind } from '../core/survivor-biomes';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
+import { quarterCell } from './ground-tiles';
+import { SURVIVOR_FLOOR_PALETTES, SURVIVOR_FLOWER_COLORS, floorHash, recolorGrassBase, survivorDecorTile, survivorFloorTexture } from './survivor-floor-art';
+import type { FlowerColors, SurvivorDecorKind, SurvivorFloorKind } from './survivor-floor-art';
 
-/** Tilesets originais do atlas por região: terreno, trilha, cenário e cobertura baixa do chão. */
+/**
+ * Chão regional da Torre. `floor` é a base em pixel art (mesma cor da borda do autotile da trilha, então as duas
+ * emendam sem costura); `path` é o autotile da rota; `detail` é o objeto de cenário espalhado; `cover`, a cobertura
+ * baixa em aglomerados; `border`, as árvores que fecham a arena. `ground` é o recorte que o BONK usa como textura.
+ */
 export const SURVIVOR_REGION_TILESETS = [
-  // Kanto: terra batida entre prados e árvores altas.
-  { ground: 'at-trail', path: 'at-plot', detail: 'tree-big', cover: 'tall', coverDensity: 0.19 },
-  // Johto: chão quente de folhas, com trilha de terra escura.
-  { ground: 'at-trail', path: 'at-harvest', detail: 'pine-m', cover: 'tall', coverDensity: 0.15 },
-  // Hoenn: areia clara de rota costeira sobre a grama úmida.
-  { ground: 'sand-grass', path: 'at-sand', detail: 'bush', cover: 'tall', coverDensity: 0.11 },
-  // Sinnoh: neve compactada e pedras frias para o caminho de altitude.
-  { ground: 'at-snow', path: 'at-snow-rock', detail: 'rock-1', cover: 'bush', coverDensity: 0.13 },
-  // Unova: piso de ruínas com faixas de tijolo antigo.
-  { ground: 'at-ruins', path: 'at-brick', detail: 'rock-2', cover: 'bush', coverDensity: 0.1 },
-  // Kalos: jardim com caminho de pedra clara e flores baixas.
-  { ground: 'at-trail', path: 'at-path', detail: 'flowers-white', cover: 'flowers-white', coverDensity: 0.23 },
-  // Alola: faixa de areia entre o gramado costeiro e as lagoas.
-  { ground: 'sand-water', path: 'at-sand', detail: 'rock-3', cover: 'bush', coverDensity: 0.08 },
-  // Galar: passagem de ruínas com pedras de estrada irregulares.
-  { ground: 'at-ruins', path: 'at-ruins-path', detail: 'wall', cover: 'tall', coverDensity: 0.12 },
-  // Paldea: campo seco de oliveiras com trilha de pedra e terra.
-  { ground: 'at-trail', path: 'at-harvest-stone', detail: 'pine-m', cover: 'bush', coverDensity: 0.14 },
-] as const;
+  // Kanto: grama de rota com trilha de terra, moitas de mato alto e flores vermelhas.
+  { floor: 'grass', ground: 'at-trail', path: 'at-plot', detail: 'tree-big', cover: 'tall', coverDensity: 0.19, border: 'tree-big', decor: ['tuft', 'flowers', 'clover'], flowers: ['red', 'white'] },
+  // Johto: capim dourado de outono, trilha de terra escura e folhas caídas.
+  { floor: 'autumn', ground: 'at-trail', path: 'at-harvest', detail: 'pine-m', cover: 'tall', coverDensity: 0.12, border: 'pine-m', decor: ['leaves', 'tuft', 'leaves'], flowers: ['yellow'] },
+  // Hoenn: gramado costeiro com rota de areia clara e poças.
+  { floor: 'grass', ground: 'sand-grass', path: 'sand-grass', detail: 'bush', cover: 'tall', coverDensity: 0.11, border: 'tree-big', decor: ['tuft', 'flowers', 'tuft'], flowers: ['yellow', 'red'] },
+  // Sinnoh: neve compactada, caminho de pedras frias e montes de neve.
+  { floor: 'snow', ground: 'at-snow', path: 'at-snow-rock', detail: 'rock-1', cover: 'pine-s1', coverDensity: 0.1, border: 'pine-m', decor: ['drift', 'pebbles', 'drift'], flowers: ['white'] },
+  // Unova: campo aberto cortado por estradas de pedra lavrada.
+  { floor: 'grass', ground: 'at-ruins', path: 'at-plaza', detail: 'rock-2', cover: 'bush', coverDensity: 0.1, border: 'tree-big', decor: ['pebbles', 'tuft', 'clover'], flowers: ['blue'] },
+  // Kalos: jardim com caminho de pedra clara e canteiros de flores.
+  { floor: 'grass', ground: 'at-trail', path: 'at-path', detail: 'flowers-white', cover: 'flowers-white', coverDensity: 0.2, border: 'tree-big', decor: ['flowers', 'tuft', 'flowers'], flowers: ['pink', 'white', 'yellow', 'red'] },
+  // Alola: areia dourada com trilha de pedras e conchas.
+  { floor: 'sand', ground: 'sand-water', path: 'at-harvest-stone', detail: 'rock-3', cover: 'bush', coverDensity: 0.08, border: 'pine-s2', decor: ['shell', 'ripple', 'shell'], flowers: ['pink'] },
+  // Galar: chão batido de ruínas, estrada de tijolos partidos e mato alto.
+  { floor: 'dust', ground: 'at-ruins', path: 'at-ruins-path', detail: 'wall', cover: 'tall', coverDensity: 0.12, border: 'pine-m', decor: ['crack', 'pebbles', 'tuft'], flowers: ['white'] },
+  // Paldea: campo de oliveiras com trilha de terra seca.
+  { floor: 'meadow', ground: 'at-trail', path: 'at-trail', detail: 'stump', cover: 'bush', coverDensity: 0.14, border: 'tree-big', decor: ['tuft', 'clover', 'flowers'], flowers: ['yellow', 'white'] },
+] as const satisfies readonly {
+  floor: SurvivorFloorKind;
+  ground: string;
+  path: string;
+  detail: string;
+  cover: string;
+  coverDensity: number;
+  border: string;
+  decor: readonly SurvivorDecorKind[];
+  flowers: readonly (keyof typeof SURVIVOR_FLOWER_COLORS)[];
+}[];
 
 export interface SurvivorRouteDefinition {
   /** Pontos normalizados da rota principal, de uma borda da arena à outra. */
@@ -45,38 +63,28 @@ export const SURVIVOR_REGION_ROUTES: readonly SurvivorRouteDefinition[] = [
   { main: [[0.06, -0.06], [0.2, 0.18], [0.38, 0.34], [0.62, 0.5], [0.92, 0.66], [1.06, 0.78]], branches: [[[0.38, 0.34], [0.25, 0.43], [0.13, 0.56]]], width: 114 },
 ] as const;
 
-const atlasLayout = packAtlas();
-const sourceById = new Map(ATLAS_SOURCES.map((source) => [source.id, source]));
-
-/** Patch de 16 × 16 sem borda do recorte (autotiles usam a célula central do 3 × 3). */
-function tilePatch(id: string): { sx: number; sy: number } | null {
-  const source = sourceById.get(id);
-  const rect = atlasLayout.rects.get(id);
-  if (!source || !rect) return null;
-  return source.half
-    ? { sx: rect.x + 16, sy: rect.y + 32 }
-    : { sx: rect.x + Math.max(0, Math.floor((rect.w - 16) / 2)), sy: rect.y + Math.max(0, Math.floor((rect.h - 16) / 2)) };
-}
+const T = 16;
+const Q = 8;
 
 interface RoutePoint { x: number; y: number }
 
-function routePoints(points: readonly (readonly [number, number])[], width: number, height: number): RoutePoint[] {
-  return points.map(([x, y]) => ({ x: x * width, y: y * height }));
-}
-
-function traceRoute(ctx: CanvasRenderingContext2D, points: readonly RoutePoint[]): void {
-  const first = points[0];
-  if (!first) return;
-  ctx.moveTo(first.x, first.y);
-  if (points.length === 1) return;
-  for (let i = 1; i < points.length - 1; i += 1) {
-    const current = points[i]!;
-    const next = points[i + 1]!;
-    const midpoint = { x: (current.x + next.x) / 2, y: (current.y + next.y) / 2 };
-    ctx.quadraticCurveTo(current.x, current.y, midpoint.x, midpoint.y);
+/** Amostra a mesma curva suave (quadráticas entre pontos médios) que a rota tinha quando era um traço vetorial. */
+function sampleRoute(points: readonly (readonly [number, number])[], width: number, height: number): RoutePoint[] {
+  const p = points.map(([x, y]) => ({ x: x * width, y: y * height }));
+  if (p.length < 3) return p;
+  const out: RoutePoint[] = [p[0]!];
+  let start = p[0]!;
+  for (let i = 1; i < p.length - 1; i += 1) {
+    const control = p[i]!;
+    const end = i === p.length - 2 ? p[i + 1]! : { x: (control.x + p[i + 1]!.x) / 2, y: (control.y + p[i + 1]!.y) / 2 };
+    for (let s = 1; s <= 12; s += 1) {
+      const t = s / 12;
+      const a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t;
+      out.push({ x: a * start.x + b * control.x + c * end.x, y: a * start.y + b * control.y + c * end.y });
+    }
+    start = end;
   }
-  const penultimate = points[points.length - 2]!;
-  ctx.quadraticCurveTo(penultimate.x, penultimate.y, points[points.length - 1]!.x, points[points.length - 1]!.y);
+  return out;
 }
 
 function distanceToSegment(x: number, y: number, a: RoutePoint, b: RoutePoint): number {
@@ -93,6 +101,83 @@ function distanceToRoutes(x: number, y: number, routes: readonly (readonly Route
     for (let i = 1; i < route.length; i += 1) nearest = Math.min(nearest, distanceToSegment(x, y, route[i - 1]!, route[i]!));
   }
   return nearest;
+}
+
+/** O que ocupa cada bloco de 16 px do chão. */
+export const FLOOR_CELL = { base: 0, path: 1, cover: 2, zone: 3 } as const;
+export type FloorCell = typeof FLOOR_CELL[keyof typeof FLOOR_CELL];
+
+export interface SurvivorFloorPlan {
+  cols: number;
+  rows: number;
+  cells: Uint8Array;
+  /** Blocos da rota (1), inclusive os que passam por baixo de uma zona de bioma. */
+  path: Uint8Array;
+  /** Bioma mecânico de cada bloco (`null` fora das zonas); vira terreno temático no desenho. */
+  zones: readonly (SurvivorBiomeZoneKind | null)[];
+  /** Distância (px) de cada bloco até a rota. */
+  routeDistance: Float32Array;
+}
+
+/** Faixa das bordas reservada às copas das árvores que fecham a arena. */
+export const FLOOR_BORDER_PX = 24;
+
+/**
+ * Planta o chão da região em blocos de 16 px: rota, zonas de bioma (no mesmo retângulo da mecânica) e moitas.
+ * Pura e determinística, para que a mesma região sempre tenha o mesmo mapa.
+ */
+export function planSurvivorFloor(index: number, width: number, height: number): SurvivorFloorPlan {
+  const cols = Math.ceil(width / T);
+  const rows = Math.ceil(height / T);
+  const cells = new Uint8Array(cols * rows);
+  const zones: (SurvivorBiomeZoneKind | null)[] = new Array(cols * rows).fill(null);
+  const routeDistance = new Float32Array(cols * rows);
+  const definition = SURVIVOR_REGION_ROUTES[index]!;
+  const tiles = SURVIVOR_REGION_TILESETS[index]!;
+  const routes = [definition.main, ...definition.branches].map((points) => sampleRoute(points, width, height));
+  const half = definition.width / 2;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    routeDistance[i] = distanceToRoutes(c * T + 8, r * T + 8, routes);
+    if (routeDistance[i]! <= half) cells[i] = FLOOR_CELL.path;
+  }
+  // Sem pontas de um bloco nem passagens só pela diagonal: o autotile fica com cantos limpos.
+  const isPath = (c: number, r: number) => c < 0 || r < 0 || c >= cols || r >= rows || cells[r * cols + c] === FLOOR_CELL.path;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      const n = isPath(c, r - 1), s = isPath(c, r + 1), w = isPath(c - 1, r), e = isPath(c + 1, r);
+      if (cells[i] !== FLOOR_CELL.path && ((n && s) || (w && e))) cells[i] = FLOOR_CELL.path;
+      else if (cells[i] === FLOOR_CELL.path && Number(n) + Number(s) + Number(w) + Number(e) <= 1) cells[i] = FLOOR_CELL.base;
+    }
+  }
+  const path = Uint8Array.from(cells, (cell) => (cell === FLOOR_CELL.path ? 1 : 0));
+  const biome = SURVIVOR_BIOMES.find((candidate) => candidate.regionIndex === index);
+  for (const zone of biome ? survivorBiomeZonesOf(biome) : []) {
+    const c0 = Math.max(0, Math.round(zone.x / T)), c1 = Math.min(cols, Math.round((zone.x + zone.width) / T));
+    const r0 = Math.max(0, Math.round(zone.y / T)), r1 = Math.min(rows, Math.round((zone.y + zone.height) / T));
+    for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
+      cells[r * cols + c] = FLOOR_CELL.zone;
+      zones[r * cols + c] = zone.kind;
+    }
+  }
+  // Moitas em manchas arredondadas (nunca um bloco solto), longe da rota e das bordas.
+  const border = Math.ceil(FLOOR_BORDER_PX / T) + 1;
+  for (let gr = 0; gr < rows; gr += 9) for (let gc = 0; gc < cols; gc += 9) {
+    if (floorHash(index, gr, gc, 11) > tiles.coverDensity * 2) continue;
+    const cx = gc + 2 + Math.floor(floorHash(index, gr, gc, 12) * 5);
+    const cy = gr + 2 + Math.floor(floorHash(index, gr, gc, 13) * 5);
+    const rx = 2.2 + floorHash(index, gr, gc, 14) * 2.4;
+    const ry = 1.4 + floorHash(index, gr, gc, 15) * 1.6;
+    for (let r = Math.floor(cy - ry); r <= Math.ceil(cy + ry); r++) for (let c = Math.floor(cx - rx); c <= Math.ceil(cx + rx); c++) {
+      if (c < border || r < border || c >= cols - border || r >= rows - border) continue;
+      const i = r * cols + c;
+      const dx = (c - cx) / rx, dy = (r - cy) / ry;
+      if (dx * dx + dy * dy > 1 || cells[i] !== FLOOR_CELL.base || routeDistance[i]! <= half + 24) continue;
+      cells[i] = FLOOR_CELL.cover;
+    }
+  }
+  return { cols, rows, cells, path, zones, routeDistance };
 }
 
 /** Retângulo do mundo que aparece na tela (câmera); sem ele a paisagem inteira é desenhada. */
@@ -119,6 +204,7 @@ function drawBiomeOverlayLayer(ctx: CanvasRenderingContext2D, biome: typeof SURV
     ctx.fillStyle = color;
     ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
     // Cantos e marcas quadradas preservam a leitura da área mecânica sem caixas tracejadas ou emoji.
+    ctx.globalAlpha = Math.min(1, alpha * 4);
     ctx.fillStyle = zone.kind === 'neve' || zone.kind === 'areia' ? '#ffffffcc' : '#ffffff9c';
     const corner = 12;
     for (const [x, y, dx, dy] of [
@@ -139,29 +225,82 @@ function drawBiomeOverlayLayer(ctx: CanvasRenderingContext2D, biome: typeof SURV
   }
 }
 
+const atlasLayout = packAtlas();
+const sourceById = new Map(ATLAS_SOURCES.map((source) => [source.id, source]));
+
+/** Autotiles do RPG Maker XP (prévia e cantos de dentro na primeira linha) ou blocos 3 × 3 simples. */
+function autotileFormat(id: string): 'rmxp' | 'block' {
+  return sourceById.get(id)?.half ? 'rmxp' : 'block';
+}
+
+function bufferCanvas(buf: { w: number; h: number; data: Uint8Array | Uint8ClampedArray }): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = buf.w;
+  canvas.height = buf.h;
+  canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(buf.data), buf.w, buf.h), 0, 0);
+  return canvas;
+}
+
+function hex(rgb: number): string {
+  return `#${rgb.toString(16).padStart(6, '0')}`;
+}
+
 /** Cacheia só a região atual e a próxima; o desenho de tiles ocorre uma vez por região, não a cada quadro. */
 export function createSurvivorLandscape(width: number, height: number): SurvivorLandscapeRenderer {
   const layers = new Map<number, HTMLCanvasElement>();
+  const objectAtlases = new Map<SurvivorFloorKind, CanvasImageSource>();
   let atlas: CanvasImageSource | null = null;
 
-  function drawAtlasTile(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, w: number, h: number, alpha = 1): boolean {
-    if (!atlas) return false;
-    const source = sourceById.get(id);
+  /** Atlas com as sombras verde-água dos objetos trocadas pelos tons do chão da região. */
+  function objectAtlas(floor: SurvivorFloorKind): CanvasImageSource | null {
+    if (!atlas || floor === 'grass') return atlas;
+    const cached = objectAtlases.get(floor);
+    if (cached) return cached;
+    const source = atlas as HTMLImageElement;
+    const w = source.width, h = source.height;
+    if (!w || !h) return atlas;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const c = canvas.getContext('2d')!;
+    c.drawImage(source, 0, 0);
+    const image = c.getImageData(0, 0, w, h);
+    image.data.set(recolorGrassBase({ w, h, data: image.data }, floor));
+    c.putImageData(image, 0, 0);
+    objectAtlases.set(floor, canvas);
+    return canvas;
+  }
+
+  function drawSprite(ctx: CanvasRenderingContext2D, image: CanvasImageSource | null, id: string, x: number, y: number, crop?: { x: number; y: number; w: number; h: number }): boolean {
     const rect = atlasLayout.rects.get(id);
-    if (!source || !rect) return false;
-    const cell = tilePatch(id);
-    if (!cell) return false;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    if (id === 'wall' || id === 'tree-big' || id === 'pine-m' || id === 'flowers-white' || id === 'tall') {
-      const sw = source.half ? source.w / 2 : source.w;
-      const sh = source.half ? source.h / 2 : source.h;
-      ctx.drawImage(atlas, rect.x, rect.y, sw, sh, x, y, w, h);
-    } else {
-      ctx.drawImage(atlas, cell.sx, cell.sy, 16, 16, x, y, w, h);
-    }
-    ctx.restore();
+    if (!image || !rect) return false;
+    const part = crop ?? { x: 0, y: 0, w: rect.w, h: rect.h };
+    ctx.drawImage(image, rect.x + part.x, rect.y + part.y, part.w, part.h, Math.round(x), Math.round(y), part.w, part.h);
     return true;
+  }
+
+  /** Bloco de autotile montado em quatro quartos de 8 px, cada um olhando seus vizinhos (como o chão da Vila). */
+  function drawAutotile(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, same: (dx: number, dy: number) => boolean): void {
+    const rect = atlasLayout.rects.get(id);
+    if (!atlas || !rect) return;
+    const rmxp = autotileFormat(id) === 'rmxp';
+    for (const qy of [0, 1] as const) for (const qx of [0, 1] as const) {
+      const dxn = qx === 0 ? -1 : 1;
+      const dyn = qy === 0 ? -1 : 1;
+      const sameV = same(0, dyn);
+      const sameH = same(dxn, 0);
+      let cx: number;
+      let cy: number;
+      if (rmxp && sameV && sameH && !same(dxn, dyn)) {
+        cx = 2;
+        cy = 0;
+      } else {
+        const cell = quarterCell(qx, qy, sameV, sameH);
+        cx = cell.cx;
+        cy = cell.cy + (rmxp ? 1 : 0);
+      }
+      ctx.drawImage(atlas, rect.x + cx * T + qx * Q, rect.y + cy * T + qy * Q, Q, Q, x + qx * Q, y + qy * Q, Q, Q);
+    }
   }
 
   function layer(index: number): HTMLCanvasElement {
@@ -171,128 +310,207 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
     const region = SURVIVOR_REGIONS[index]!;
     const tiles = SURVIVOR_REGION_TILESETS[index]!;
-    const hash = (n: number): number => {
-      let h = n ^ 0x9e3779b9;
-      h = Math.imul(h ^ h >>> 16, 0x7feb352d);
-      h = Math.imul(h ^ h >>> 15, 0x846ca68b);
-      return ((h ^ h >>> 16) >>> 0) / 0x100000000;
+    const floor: SurvivorFloorKind = tiles.floor;
+    const palette = SURVIVOR_FLOOR_PALETTES[floor];
+    const objects = objectAtlas(floor);
+    const plan = planSurvivorFloor(index, width, height);
+    const { cols, rows, cells, zones } = plan;
+    const at = (c: number, r: number) => (c < 0 || r < 0 || c >= cols || r >= rows ? null : r * cols + c);
+    const cellIs = (c: number, r: number, kind: FloorCell, outside = true) => {
+      const i = at(c, r);
+      return i === null ? outside : cells[i] === kind;
     };
-    ctx.fillStyle = region.ground;
+    const zoneIs = (c: number, r: number, kind: SurvivorBiomeZoneKind) => {
+      const i = at(c, r);
+      return i === null ? false : zones[i] === kind;
+    };
+    const flowerColors: FlowerColors[] = tiles.flowers.map((name) => SURVIVOR_FLOWER_COLORS[name]);
+    const decorCache = new Map<string, HTMLCanvasElement>();
+    const decor = (kind: SurvivorDecorKind, variant: number, colors = flowerColors) => {
+      const key = `${kind}:${variant % 6}:${colors.length}`;
+      let tile = decorCache.get(key);
+      if (!tile) {
+        tile = bufferCanvas(survivorDecorTile(kind, floor, variant % 6, colors));
+        decorCache.set(key, tile);
+      }
+      return tile;
+    };
+
+    // 1. Base: ladrilho de 64 px repetido, sem transparência e sem cor chapada por baixo aparecendo.
+    const texture = ctx.createPattern(bufferCanvas(survivorFloorTexture(floor)), 'repeat');
+    ctx.fillStyle = texture ?? hex(palette.base);
     ctx.fillRect(0, 0, width, height);
 
-    // O recorte de terreno domina a camada: menos ruído procedural, mais identidade de tileset.
-    for (let y = 0; y < height; y += 16) {
-      for (let x = 0; x < width; x += 16) drawAtlasTile(ctx, tiles.ground, x, y, 16, 16, 0.42);
-    }
-    // Pequenos pixels de contraste quebram a repetição sem desenhar manchas vetoriais sobre o mapa.
-    for (let i = 0; i < 920; i++) {
-      const x = Math.floor(hash(i * 3) * width), y = Math.floor(hash(i * 3 + 1) * height);
-      ctx.fillStyle = i % 3 ? '#213d2624' : '#f0edac2b';
-      ctx.fillRect(x, y, 1, 2);
-      if (i % 11 === 0) { ctx.fillRect(x - 2, y - 1, 1, 2); ctx.fillRect(x + 2, y - 2, 1, 2); }
+    // 2. Detalhes miúdos espalhados pela base: tufos, flores, pedrinhas, folhas... nunca colados um no outro.
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (cells[r * cols + c] !== FLOOR_CELL.base) continue;
+      const h = floorHash(index, c, r, 3);
+      if (h > 0.085 || (c + r) % 2) continue;
+      const kind = tiles.decor[Math.floor(floorHash(index, c, r, 4) * tiles.decor.length)]!;
+      ctx.drawImage(decor(kind, Math.floor(h * 1000)), c * T, r * T);
     }
 
-    // Uma rota principal e ramificações curtas dão leitura de caminho natural; não há mais ondas periódicas.
-    const routeDefinition = SURVIVOR_REGION_ROUTES[index]!;
-    const routes = [routeDefinition.main, ...routeDefinition.branches]
-      .map((points) => routePoints(points, width, height));
-    const nearRoute = (x: number, y: number, extra = 0): boolean => distanceToRoutes(x, y, routes) <= routeDefinition.width / 2 + extra;
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = routeDefinition.width + 8;
-    ctx.strokeStyle = '#231d1738';
-    for (const route of routes) {
-      ctx.beginPath();
-      traceRoute(ctx, route);
-      ctx.stroke();
-    }
-    ctx.lineWidth = routeDefinition.width;
-    ctx.strokeStyle = region.path;
-    for (const route of routes) {
-      ctx.beginPath();
-      traceRoute(ctx, route);
-      ctx.stroke();
-    }
-    // Repete células de 16 px sem esticar a arte; o recorte regional agora acompanha a rota escolhida acima.
-    for (let y = 0; y < height; y += 16) for (let x = 0; x < width; x += 16) {
-      if (nearRoute(x + 8, y + 8, 15)) drawAtlasTile(ctx, tiles.path, x, y, 16, 16, 0.82);
-    }
-    for (let i = 0; i < 420; i++) {
-      const x = Math.floor(hash(i * 7) * width), y = Math.floor(hash(i * 7 + 1) * height);
-      if (nearRoute(x, y, 10)) {
-        ctx.fillStyle = i % 2 ? '#6d573021' : '#fff0cc30';
-        ctx.fillRect(x, y, 2, 1);
-      }
-    }
-    ctx.restore();
-
-    // Cobertura baixa presa à grade: mato alto, arbustos ou flores vindos do atlas, como nas rotas de GBA.
-    // Fica fora dos dois corredores para a leitura do combate e dos golpes continuar limpa.
-    const coverSize = tiles.cover === 'tall' ? { w: 48, h: 64 }
-      : tiles.cover === 'flowers-white' ? { w: 32, h: 18 }
-        : { w: 24, h: 22 };
-    for (let y = 24; y < height - coverSize.h; y += 48) {
-      for (let x = 20; x < width - coverSize.w; x += 48) {
-        const row = Math.floor(y / 48);
-        const col = Math.floor(x / 48);
-        if (hash((index + 1) * 1103 + row * 71 + col * 17) > tiles.coverDensity) continue;
-        const px = x + Math.floor(hash((index + 1) * 3109 + row * 13 + col) * 18);
-        const py = y + Math.floor(hash((index + 1) * 1013 + row + col * 29) * 18);
-        if (!nearRoute(px + coverSize.w / 2, py + coverSize.h / 2, 34)) drawAtlasTile(ctx, tiles.cover, px, py, coverSize.w, coverSize.h, 0.92);
-      }
-    }
-
-    // O centro permanece livre; cada bioma usa seu recorte temático junto às bordas.
-    for (let i = 0; i < 24; i++) {
-      const x = i % 2 === 0 ? 22 + (i * 47) % 100 : width - 120 + (i * 31) % 90;
-      const y = 24 + (i * 83) % (height - 64);
-      ctx.fillStyle = '#243b3330';
-      ctx.fillRect(x - 2, y + 10, 24, 8);
+    // 3. Rota em autotile: borda, cantos de fora e de dentro presos à grade, como nas rotas dos jogos.
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (!plan.path[r * cols + c]) continue;
       if (!atlas) {
-        if (region.detail === 'tree') {
-          ctx.fillStyle = '#76624a';
-          ctx.fillRect(x + 8, y + 8, 5, 12);
-          ctx.fillStyle = region.accent;
-          ctx.fillRect(x, y - 7, 22, 18);
-          ctx.fillRect(x + 5, y - 14, 12, 9);
-        } else if (region.detail === 'pool') {
-          ctx.fillStyle = region.path;
-          ctx.fillRect(x - 4, y - 4, 34, 24);
-          ctx.fillStyle = region.accent;
-          ctx.fillRect(x, y, 26, 16);
-          ctx.fillStyle = '#a3d3cd';
-          ctx.fillRect(x + 4, y + 4, 13, 2);
-        } else if (region.detail === 'flower') {
-          for (let f = 0; f < 5; f++) {
-            ctx.fillStyle = f % 2 ? '#e5c2cc' : region.accent;
-            ctx.fillRect(x + f * 5, y + f % 3 * 5, 3, 3);
-          }
-        } else {
-          ctx.fillStyle = region.accent;
-          ctx.fillRect(x, y, 22, 15);
-          ctx.fillStyle = '#ffffff35';
-          ctx.fillRect(x + 3, y + 2, 12, 3);
-        }
+        ctx.fillStyle = region.path;
+        ctx.fillRect(c * T, r * T, T, T);
         continue;
       }
-      const id = tiles.detail;
-      if (id === 'tree-big' || id === 'pine-m' || id === 'wall') {
-        drawAtlasTile(ctx, id, x - 3, y - 14, id === 'wall' ? 32 : 30, 32, 0.96);
-      } else if (id === 'flowers-white') {
-        drawAtlasTile(ctx, id, x - 2, y - 5, 28, 18, 0.95);
-      } else if (id === 'bush') {
-        drawAtlasTile(ctx, id, x, y - 2, 25, 22, 0.96);
-      } else {
-        drawAtlasTile(ctx, id, x, y, 22, 15, 0.96);
+      // A rota segue por baixo das zonas: o terreno da zona vem depois, por cima.
+      drawAutotile(ctx, tiles.path, c * T, r * T, (dx, dy) => {
+        const i = at(c + dx, r + dy);
+        return i === null || plan.path[i] === 1;
+      });
+    }
+
+    // 4. Zonas de bioma viram terreno de verdade, no retângulo exato da mecânica (as marcas de canto vêm no fim).
+    // Mato alto: corpo no bloco, pontas das folhas sobre o bloco de cima e pé com sombra na última fileira.
+    const tallCell = (c: number, r: number, isTall: (c: number, r: number) => boolean) => {
+      const column = (c % 3) * T;
+      const row = !isTall(c, r + 1) ? 3 : 1 + (r % 2);
+      drawSprite(ctx, objects, 'tall', c * T, r * T, { x: column, y: row * T, w: T, h: T });
+      if (!isTall(c, r - 1)) drawSprite(ctx, objects, 'tall', c * T, (r - 1) * T, { x: column, y: 0, w: T, h: T });
+    };
+    const zoneTall = (c: number, r: number) => zoneIs(c, r, 'folhagem');
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      const kind = zones[i];
+      if (!kind) continue;
+      const x = c * T, y = r * T;
+      const variant = Math.floor(floorHash(index, c, r, 5) * 1000);
+      switch (kind) {
+        case 'folhagem':
+          if (!atlas) break;
+          tallCell(c, r, zoneTall);
+          break;
+        case 'poça':
+          drawWater(ctx, c, r, (dc, dr) => zoneIs(c + dc, r + dr, 'poça'));
+          break;
+        case 'neve':
+          ctx.fillStyle = hex(palette.shade);
+          ctx.globalAlpha = 0.35;
+          ctx.fillRect(x, y, T, T);
+          ctx.globalAlpha = 1;
+          ctx.drawImage(decor('drift', variant), x, y);
+          break;
+        case 'vento':
+          ctx.drawImage(decor('leaves', variant), x, y);
+          if (variant % 2) ctx.drawImage(decor('leaves', variant + 1), x, y);
+          break;
+        case 'pedra':
+          ctx.drawImage(decor('pebbles', variant), x, y);
+          if (variant % 5 === 0 && atlas) drawSprite(ctx, objects, variant % 2 ? 'rock-1' : 'rock-2', x, y);
+          break;
+        case 'flores':
+          ctx.drawImage(decor('flowers', variant, flowerColors), x, y);
+          break;
+        case 'areia':
+          ctx.fillStyle = hex(palette.shade);
+          ctx.globalAlpha = 0.45;
+          ctx.fillRect(x, y, T, T);
+          ctx.globalAlpha = 1;
+          ctx.drawImage(decor('ripple', variant), x, y);
+          break;
+        case 'ruínas':
+          if (atlas) drawAutotile(ctx, 'at-brick', x, y, (dx, dy) => zoneIs(c + dx, r + dy, 'ruínas'));
+          break;
+        case 'olival':
+          ctx.drawImage(decor((c + r) % 2 ? 'clover' : 'tuft', variant), x, y);
+          break;
       }
     }
-    // O bioma vai assado na própria camada: uma blitagem por região a cada quadro, em vez de camada + sobreposição.
-    drawBiomeOverlayLayer(ctx, SURVIVOR_BIOMES.find((biome) => biome.regionIndex === index), 0.18);
+    // Oliveiras em fileiras dentro do olival, com o mesmo passo das plantações.
+    if (atlas) {
+      for (let r = 0; r < rows; r += 2) for (let c = (r / 2) % 2; c < cols; c += 3) {
+        if (zoneIs(c, r, 'olival') && zoneIs(c, r + 1, 'olival')) drawSprite(ctx, objects, 'bush', c * T, r * T + 4);
+      }
+    }
+
+    // 5. Cobertura baixa em manchas: mato alto encaixado na grade, arbustos ou canteiros de flores.
+    const coverAt = (c: number, r: number) => cellIs(c, r, FLOOR_CELL.cover, false);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (!coverAt(c, r)) continue;
+      const variant = Math.floor(floorHash(index, c, r, 6) * 1000);
+      if (tiles.cover === 'tall') {
+        if (atlas) tallCell(c, r, coverAt);
+      } else if (tiles.cover === 'flowers-white') {
+        ctx.drawImage(decor('flowers', variant, flowerColors), c * T, r * T);
+      } else if (tiles.cover === 'pine-s1') {
+        // Bosque de pinheiros pequenos: um a cada dois blocos, com o tronco na fileira de baixo.
+        if (atlas && (c + r) % 2 === 0 && r % 2 === 0) drawSprite(ctx, objects, 'pine-s1', c * T, (r - 1) * T);
+        else ctx.drawImage(decor('drift', variant), c * T, r * T);
+      } else if (variant % 5 < 3 && atlas) {
+        drawSprite(ctx, objects, 'bush', c * T, r * T);
+      } else {
+        ctx.drawImage(decor('tuft', variant), c * T, r * T);
+      }
+    }
+
+    // 6. Objetos de cenário soltos, sempre fora da rota e com folga entre eles.
+    const detailRect = atlasLayout.rects.get(tiles.detail);
+    if (atlas && detailRect) {
+      for (let r = 4; r < rows - 6; r += 9) for (let c = 4; c < cols - 6; c += 11) {
+        const cc = c + Math.floor(floorHash(index, c, r, 7) * 6);
+        const rr = r + Math.floor(floorHash(index, c, r, 8) * 5);
+        if (floorHash(index, c, r, 9) > 0.5) continue;
+        const spanC = Math.ceil(detailRect.w / T), spanR = Math.ceil(detailRect.h / T);
+        let free = true;
+        for (let y = rr; y < rr + spanR && free; y++) for (let x = cc; x < cc + spanC && free; x++) free = cellIs(x, y, FLOOR_CELL.base, false) && plan.routeDistance[at(x, y)!]! > SURVIVOR_REGION_ROUTES[index]!.width / 2 + 16;
+        if (!free) continue;
+        if (tiles.detail === 'flowers-white') {
+          ctx.drawImage(decor('flowers', cc + rr, flowerColors), cc * T, rr * T);
+          ctx.drawImage(decor('flowers', cc + rr + 1, flowerColors), (cc + 1) * T, rr * T);
+        } else {
+          drawSprite(ctx, objects, tiles.detail, cc * T, rr * T);
+        }
+      }
+    }
+
+    // 7. Árvores fechando a arena: copas cortadas pela borda, de cima para baixo para sobrepor certo.
+    const borderRect = atlasLayout.rects.get(tiles.border);
+    if (atlas && borderRect) {
+      const trees: { x: number; y: number }[] = [];
+      const stepX = Math.max(16, borderRect.w - 10);
+      const stepY = Math.max(16, borderRect.h - 18);
+      for (let x = -stepX / 2; x < width; x += stepX) {
+        trees.push({ x, y: -borderRect.h + FLOOR_BORDER_PX + Math.floor(floorHash(index, x, 1) * 6) });
+        trees.push({ x: x + stepX / 2, y: height - FLOOR_BORDER_PX - 8 - Math.floor(floorHash(index, x, 2) * 6) });
+      }
+      for (let y = 0; y < height; y += stepY) {
+        trees.push({ x: -borderRect.w + FLOOR_BORDER_PX + Math.floor(floorHash(index, y, 3) * 6), y });
+        trees.push({ x: width - FLOOR_BORDER_PX - Math.floor(floorHash(index, y, 4) * 6), y });
+      }
+      trees.sort((a, b) => a.y - b.y);
+      for (const tree of trees) drawSprite(ctx, objects, tiles.border, tree.x, tree.y);
+    }
+
+    // 8. A área mecânica de cada bioma continua marcada nos cantos, por cima do terreno temático.
+    drawBiomeOverlayLayer(ctx, SURVIVOR_BIOMES.find((biome) => biome.regionIndex === index), 0.1);
     layers.set(index, canvas);
     return canvas;
+  }
+
+  /**
+   * Água das poças: o bloco 3 × 3 do mar (margem rasa e cantos arredondados) e um contorno escuro de 1 px onde a
+   * água encosta na terra, como os lagos das rotas.
+   */
+  function drawWater(ctx: CanvasRenderingContext2D, c: number, r: number, wet: (dc: number, dr: number) => boolean): void {
+    const x = c * T, y = r * T;
+    if (atlas && atlasLayout.rects.get('sea')) drawAutotile(ctx, 'sea', x, y, wet);
+    else {
+      ctx.fillStyle = '#579eae';
+      ctx.fillRect(x, y, T, T);
+    }
+    ctx.fillStyle = '#3c6e7c';
+    if (!wet(0, -1)) ctx.fillRect(x, y, T, 1);
+    if (!wet(0, 1)) ctx.fillRect(x, y + T - 1, T, 1);
+    if (!wet(-1, 0)) ctx.fillRect(x, y, 1, T);
+    if (!wet(1, 0)) ctx.fillRect(x + T - 1, y, 1, T);
   }
 
   /** Desenha uma camada da arena inteira, ou só o retângulo visível: o resto nunca chega à tela, e a arena tem 2880×1920. */
@@ -325,6 +543,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     if (atlas === image) return;
     atlas = image;
     layers.clear();
+    objectAtlases.clear();
   };
   return render;
 }
