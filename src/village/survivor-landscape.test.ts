@@ -5,8 +5,8 @@ import { SURVIVOR_BIOMES, survivorBiomeZonesOf } from '../core/survivor-biomes';
 import { SURVIVOR_REGIONS, REGION_DURATION_MS, survivorRegionAt } from '../core/survivor-regions';
 import { ARENA_H, ARENA_W } from '../core/survivor-types';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
-import { SURVIVOR_FLOOR_PALETTES } from './survivor-floor-art';
-import { FLOOR_CELL, SURVIVOR_REGION_ROUTES, SURVIVOR_REGION_TILESETS, planSurvivorFloor } from './survivor-landscape';
+import { SURVIVOR_FLOOR_PALETTES, floorTone } from './survivor-floor-art';
+import { FLOOR_CELL, SURVIVOR_REGION_TILESETS, SURVIVOR_REGION_ROUTES, ZONE_SPILL, planSurvivorFloor, routePolyline, trailHalfWidth } from './survivor-landscape';
 
 describe('tilesets regionais da Torre', () => {
   it('cada região tem recortes reais de terreno, trilha, detalhe e cobertura baixa no atlas', () => {
@@ -17,7 +17,9 @@ describe('tilesets regionais da Torre', () => {
       expect(available.has(tiles.path)).toBe(true);
       expect(available.has(tiles.detail)).toBe(true);
       expect(available.has(tiles.cover)).toBe(true);
-      expect(available.has(tiles.border)).toBe(true);
+      expect(tiles.trees.length).toBeGreaterThan(0);
+      for (const [tree] of tiles.trees) expect(available.has(tree)).toBe(true);
+      expect(tiles.forestDepth).toBeGreaterThan(2);
       expect(SURVIVOR_FLOOR_PALETTES[tiles.floor]).toBeDefined();
       expect(tiles.coverDensity).toBeGreaterThan(0);
     }
@@ -39,18 +41,27 @@ describe('tilesets regionais da Torre', () => {
     const combinations = new Set(SURVIVOR_REGION_TILESETS.map((tiles) => `${tiles.floor}/${tiles.path}/${tiles.detail}/${tiles.cover}`));
     expect(combinations.size).toBe(SURVIVOR_REGION_TILESETS.length);
     expect(new Set(SURVIVOR_REGION_TILESETS.map((tiles) => tiles.floor)).size).toBeGreaterThanOrEqual(5);
-    expect(new Set(SURVIVOR_REGION_TILESETS.map((tiles) => tiles.path)).size).toBe(SURVIVOR_REGION_TILESETS.length);
+    expect(new Set(SURVIVOR_REGION_TILESETS.map((tiles) => tiles.trees.map(([id, tint]) => `${id}:${tint}`).join())).size).toBe(SURVIVOR_REGION_TILESETS.length);
     expect(new Set(SURVIVOR_REGION_TILESETS.map((tiles) => tiles.detail)).size).toBeGreaterThanOrEqual(7);
     expect(SURVIVOR_REGION_TILESETS.filter((tiles) => tiles.cover === 'tall').length).toBeGreaterThanOrEqual(4);
   });
 
-  it('usa rotas autorais com curvas suaves em vez de corredores ondulados repetidos', () => {
+  it('usa rotas autorais que andam retas e viram em ângulo reto, presas ao centro dos blocos', () => {
     expect(SURVIVOR_REGION_ROUTES).toHaveLength(SURVIVOR_REGIONS.length);
     for (const route of SURVIVOR_REGION_ROUTES) {
       expect(route.main.length).toBeGreaterThanOrEqual(4);
       expect(route.width).toBeGreaterThan(90);
       expect(route.branches.length).toBeGreaterThan(0);
       expect(route.main.some(([x, y]) => x < 0 || x > 1 || y < 0 || y > 1)).toBe(true);
+      for (const points of [route.main, ...route.branches]) {
+        const line = routePolyline(points, ARENA_W, ARENA_H);
+        for (let i = 1; i < line.length; i++) {
+          const a = line[i - 1]!, b = line[i]!;
+          expect(a.x === b.x || a.y === b.y).toBe(true);
+          expect(((b.x - 8) % 16 + 16) % 16).toBe(0);
+          expect(((b.y - 8) % 16 + 16) % 16).toBe(0);
+        }
+      }
     }
   });
 });
@@ -67,8 +78,8 @@ describe('chão da Torre em blocos de 16 px', () => {
     for (const tiles of SURVIVOR_REGION_TILESETS) {
       const rect = rects.get(tiles.path)!;
       const half = ATLAS_SOURCES.find((source) => source.id === tiles.path)!.half;
-      // Canto de fora do 3 × 3: o primeiro pixel já é o chão vizinho.
-      expect(pixel(rect.x, rect.y + (half ? 16 : 0)), tiles.path).toBe(SURVIVOR_FLOOR_PALETTES[tiles.floor].base);
+      // Canto de fora do 3 × 3: o primeiro pixel já é o chão vizinho (depois da troca de tons da região).
+      expect(floorTone(pixel(rect.x, rect.y + (half ? 16 : 0)), tiles.floor), tiles.path).toBe(SURVIVOR_FLOOR_PALETTES[tiles.floor].base);
     }
   });
 
@@ -88,26 +99,65 @@ describe('chão da Torre em blocos de 16 px', () => {
           expect(neighbours).toBeGreaterThanOrEqual(2);
           expect(plan.cells[i]).not.toBe(FLOOR_CELL.cover);
         }
-        if (plan.cells[i] === FLOOR_CELL.cover) expect(plan.routeDistance[i]).toBeGreaterThan(SURVIVOR_REGION_ROUTES[index]!.width / 2);
+        if (plan.cells[i] === FLOOR_CELL.cover || plan.cells[i] === FLOOR_CELL.forest) {
+          expect(plan.routeDistance[i]).toBeGreaterThan(trailHalfWidth(SURVIVOR_REGION_ROUTES[index]!.width));
+        }
       }
       expect(pathCells).toBeGreaterThan(plan.cells.length * 0.04);
+      // Rota principal e ramificações formam um caminho só.
+      const start = plan.path.indexOf(1);
+      const seen = new Uint8Array(plan.path.length);
+      const queue = [start];
+      seen[start] = 1;
+      let reached = 0;
+      while (queue.length) {
+        const i = queue.pop()!;
+        reached += 1;
+        const c = i % plan.cols, r = Math.floor(i / plan.cols);
+        for (const [dc, dr] of [[0, -1], [0, 1], [-1, 0], [1, 0]] as const) {
+          const x = c + dc, y = r + dr;
+          const j = y * plan.cols + x;
+          if (x < 0 || y < 0 || x >= plan.cols || y >= plan.rows || seen[j] || !plan.path[j]) continue;
+          seen[j] = 1;
+          queue.push(j);
+        }
+      }
+      expect(reached, `região ${index}`).toBe(pathCells);
       expect(plan.cells.some((cell) => cell === FLOOR_CELL.cover)).toBe(true);
     });
   });
 
-  it('cada zona de bioma vira terreno no retângulo da própria mecânica', () => {
+  it('cada zona de bioma vira terreno sobre todo o retângulo da mecânica, com orla irregular e curta', () => {
     for (const biome of SURVIVOR_BIOMES) {
       const plan = planSurvivorFloor(biome.regionIndex, ARENA_W, ARENA_H);
-      for (const zone of survivorBiomeZonesOf(biome)) {
-        const c = Math.floor((zone.x + zone.width / 2) / 16);
-        const r = Math.floor((zone.y + zone.height / 2) / 16);
-        expect(plan.zones[r * plan.cols + c]).toBe(zone.kind);
-        expect(plan.cells[r * plan.cols + c]).toBe(FLOOR_CELL.zone);
-        // Fora do retângulo (com folga de meio bloco) não há terreno daquela zona.
-        const outside = Math.floor((zone.x + zone.width + 24) / 16);
-        if (outside < plan.cols) expect(plan.zones[r * plan.cols + outside]).not.toBe(zone.kind);
+      const zones = survivorBiomeZonesOf(biome);
+      for (const zone of zones) {
+        // Todo bloco que a mecânica toca tem o terreno da zona: nenhum perigo fica sem desenho.
+        for (let r = Math.floor(zone.y / 16); r < Math.ceil((zone.y + zone.height) / 16); r++) {
+          for (let c = Math.floor(zone.x / 16); c < Math.ceil((zone.x + zone.width) / 16); c++) {
+            expect(plan.zones[r * plan.cols + c]).toBe(zone.kind);
+          }
+        }
       }
+      // E nada desse terreno longe de uma zona.
+      plan.zones.forEach((kind, i) => {
+        if (!kind) return;
+        const x = (i % plan.cols) * 16 + 8, y = Math.floor(i / plan.cols) * 16 + 8;
+        const near = zones.some((zone) => x > zone.x - (ZONE_SPILL + 1) * 16 && x < zone.x + zone.width + (ZONE_SPILL + 1) * 16
+          && y > zone.y - (ZONE_SPILL + 1) * 16 && y < zone.y + zone.height + (ZONE_SPILL + 1) * 16);
+        expect(near).toBe(true);
+      });
     }
+  });
+
+  it('fecha a arena com floresta nas bordas, deixando a trilha sair por elas', () => {
+    SURVIVOR_REGION_TILESETS.forEach((_, index) => {
+      const plan = planSurvivorFloor(index, ARENA_W, ARENA_H);
+      const edge = Array.from({ length: plan.cols }, (_, c) => plan.cells[plan.cols * 2 + c]);
+      expect(edge.filter((cell) => cell === FLOOR_CELL.forest).length).toBeGreaterThan(plan.cols * 0.5);
+      const forest = plan.cells.filter((cell) => cell === FLOOR_CELL.forest).length;
+      expect(forest).toBeLessThan(plan.cells.length * 0.4);
+    });
   });
 
   it('é determinístico: a mesma região gera sempre o mesmo mapa', () => {

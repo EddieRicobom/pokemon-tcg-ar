@@ -19,12 +19,13 @@ export interface SurvivorFloorPalette {
 }
 
 export const SURVIVOR_FLOOR_PALETTES: Record<SurvivorFloorKind, SurvivorFloorPalette> = {
-  // Borda de `at-path`, `at-plot`, `at-plaza` e `sand-grass`.
-  grass: { base: 0x70c8a0, light: 0x98e0b8, shade: 0x58b088, deep: 0x409878, glint: 0xc8f0d8 },
+  // Verde-água das rotas de HeartGold e SoulSilver: os mesmos tons da borda de `at-path`, `at-plot`, `at-plaza` e
+  // `sand-grass` e da sombra das árvores do atlas.
+  grass: { base: 0x70c8a0, light: 0xa0e0c0, shade: 0x40b088, deep: 0x18a068, glint: 0xc8f0d8 },
   // Borda de `at-trail`.
   meadow: { base: 0x82ba7e, light: 0xa2d294, shade: 0x6aa468, deep: 0x528a56, glint: 0xc8e4a8 },
-  // Borda de `at-harvest`: capim dourado de outono.
-  autumn: { base: 0xd8c880, light: 0xece0a4, shade: 0xc0a860, deep: 0xa08848, glint: 0xe8904c },
+  // Capim verde-amarelado dos bosques de outono; a borda verde-água dos autotiles recebe estes tons.
+  autumn: { base: 0xb8d078, light: 0xd8e8a0, shade: 0x98b858, deep: 0x6e9a40, glint: 0xf0c050 },
   // Borda de `at-snow` e `at-snow-rock`.
   snow: { base: 0xeeeef4, light: 0xffffff, shade: 0xc2dce5, deep: 0x98b8cc, glint: 0xffffff },
   // Borda de `at-sand` e `at-harvest-stone`.
@@ -117,13 +118,32 @@ export function survivorFloorTexture(kind: SurvivorFloorKind): PixelBuf {
   return buf;
 }
 
+/**
+ * Tons do chão verde-água que o atlas traz pintados na borda dos autotiles, sob as árvores (`tree-big`, `pine-*`) e no
+ * pé do mato alto (`tall`), cada um com o papel que ocupa na paleta. Folhas de arbusto também são verde-água, mas
+ * têm outros tons e ficam fora da lista.
+ */
+export const GRASS_BASE_TONES: ReadonlyMap<number, keyof SurvivorFloorPalette> = new Map([
+  [0x70c8a0, 'base'], [0xa0e0c0, 'light'], [0x7bd694, 'light'], [0x40b088, 'shade'], [0x54c085, 'shade'], [0x18a068, 'deep'], [0x2d9567, 'deep'],
+]);
+
+/** O corpo do mato alto vem num verde-azulado escuro; na grama viva das rotas ele fica verde de folha. */
+export const TALL_GRASS_TONES: ReadonlyMap<number, number> = new Map([[0x3f6f5e, 0x3d7a48], [0x364b44, 0x2b5236]]);
+
+/** Cor que um pixel do atlas recebe no chão da região: só os tons das duas listas mudam. */
+export function floorTone(rgb: number, floor: SurvivorFloorKind): number {
+  const role = GRASS_BASE_TONES.get(rgb);
+  return role ? SURVIVOR_FLOOR_PALETTES[floor][role] : TALL_GRASS_TONES.get(rgb) ?? rgb;
+}
+
 export type SurvivorDecorKind = 'tuft' | 'flowers' | 'pebbles' | 'leaves' | 'drift' | 'shell' | 'ripple' | 'crack' | 'clover';
 
 export interface FlowerColors { petal: number; shade: number; light: number; core: number }
 
 /** Flores das rotas: vermelha, amarela, rosa, branca e azul. */
-export const SURVIVOR_FLOWER_COLORS: Record<'red' | 'yellow' | 'pink' | 'white' | 'blue', FlowerColors> = {
+export const SURVIVOR_FLOWER_COLORS: Record<'red' | 'orange' | 'yellow' | 'pink' | 'white' | 'blue', FlowerColors> = {
   red: { petal: 0xe85850, shade: 0xb03840, light: 0xf8a090, core: 0xf8e070 },
+  orange: { petal: 0xf09048, shade: 0xc06028, light: 0xf8c898, core: 0xf8f0a0 },
   yellow: { petal: 0xf0d040, shade: 0xc89820, light: 0xf8f0a0, core: 0xe07830 },
   pink: { petal: 0xf090c0, shade: 0xc06090, light: 0xf8c8e0, core: 0xf8e070 },
   white: { petal: 0xf4f4f0, shade: 0xb8c0c8, light: 0xffffff, core: 0xf0c040 },
@@ -142,7 +162,7 @@ const CLOVER = ['.g.g', 'gGgG', '.gG.'];
  * Detalhe de 16 × 16 com fundo transparente, desenhado por cima da base. `variant` muda a posição das peças para
  * que dois blocos vizinhos nunca pareçam carimbos iguais.
  */
-export function survivorDecorTile(kind: SurvivorDecorKind, floor: SurvivorFloorKind, variant: number, flowers: readonly FlowerColors[] = [SURVIVOR_FLOWER_COLORS.red]): PixelBuf {
+export function survivorDecorTile(kind: SurvivorDecorKind, floor: SurvivorFloorKind, variant: number, flowers: readonly FlowerColors[] = [SURVIVOR_FLOWER_COLORS.red], frame = 0): PixelBuf {
   const p = SURVIVOR_FLOOR_PALETTES[floor];
   const buf = createBuf(DECOR_SIZE, DECOR_SIZE);
   const v = Math.abs(variant | 0);
@@ -156,9 +176,11 @@ export function survivorDecorTile(kind: SurvivorDecorKind, floor: SurvivorFloorK
       const spots = v % 2 ? [[1, 1], [9, 8]] : [[8, 1], [2, 9]];
       spots.forEach(([x, y], i) => {
         const c = flowers[(v + i) % flowers.length]!;
-        // Sombra no chão e duas folhinhas embaixo, como nas flores das rotas.
+        // Sombra no chão e duas folhinhas embaixo, como nas flores das rotas; no segundo quadro a flor balança 1 px
+        // (cada uma para um lado) e a base fica parada.
+        const sway = frame % 2 ? (i % 2 ? -1 : 1) : 0;
         stamp(buf, x! + 1, y! + 5, ['.ggg.'], { g: p.deep });
-        stamp(buf, x!, y!, FLOWER, { o: c.shade, P: c.petal, W: c.light, c: c.core });
+        stamp(buf, x! + sway, y!, FLOWER, { o: c.shade, P: c.petal, W: c.light, c: c.core });
       });
       break;
     }
@@ -199,29 +221,56 @@ export function survivorDecorTile(kind: SurvivorDecorKind, floor: SurvivorFloorK
   return buf;
 }
 
-/** Tons de grama pintados sob as árvores (`tree-big`, `pine-*`) e na base do mato alto (`tall`). */
-export const GRASS_BASE_TONES: ReadonlySet<number> = new Set([0x70c8a0, 0x40b088, 0x18a068, 0x2d9567, 0x54c085, 0x7bd694]);
-
 /**
- * As sombras e a base verde-água das árvores e do mato alto do atlas foram pintadas para a grama. Em neve, areia
- * ou capim, esses pixels recebem os tons da base da região (mesma luminosidade relativa), e o resto fica intacto.
+ * As sombras e a base verde-água das árvores, do mato alto e da borda dos autotiles foram pintadas para um chão
+ * verde-água. Cada um desses tons recebe o tom de mesmo papel na paleta da região; o resto fica intacto.
  */
 export function recolorGrassBase(source: { w: number; h: number; data: Uint8Array | Uint8ClampedArray }, floor: SurvivorFloorKind): Uint8ClampedArray {
   const out = new Uint8ClampedArray(source.data);
-  if (floor === 'grass') return out;
-  const target = SURVIVOR_FLOOR_PALETTES[floor].base;
-  const mint = SURVIVOR_FLOOR_PALETTES.grass.base;
-  const lum = (r: number, g: number, b: number) => r * 0.3 + g * 0.59 + b * 0.11;
-  const mintLum = lum(mint >> 16, (mint >> 8) & 255, mint & 255);
   for (let i = 0; i < out.length; i += 4) {
     if (!out[i + 3]) continue;
-    const r = out[i]!, g = out[i + 1]!, b = out[i + 2]!;
-    // Só a lista fechada de tons do chão: folhas de arbusto também são verde-água e não podem mudar.
-    if (!GRASS_BASE_TONES.has((r << 16) | (g << 8) | b)) continue;
-    const k = Math.max(0.55, Math.min(1.2, lum(r, g, b) / mintLum));
-    out[i] = Math.round(Math.min(255, (target >> 16) * k));
-    out[i + 1] = Math.round(Math.min(255, ((target >> 8) & 255) * k));
-    out[i + 2] = Math.round(Math.min(255, (target & 255) * k));
+    const rgb = (out[i]! << 16) | (out[i + 1]! << 8) | out[i + 2]!;
+    const tone = floorTone(rgb, floor);
+    if (tone === rgb) continue;
+    out[i] = tone >> 16;
+    out[i + 1] = (tone >> 8) & 255;
+    out[i + 2] = tone & 255;
+  }
+  return out;
+}
+
+export type FoliageTint = 'green' | 'deep' | 'lime' | 'gold' | 'orange' | 'snowy';
+
+/** Papel de cada tom das copas do atlas (`tree-big`, `pine-*`): brilho, meio-tom, sombra e contorno. */
+const FOLIAGE_ROLES: ReadonlyMap<number, 0 | 1 | 2 | 3> = new Map([
+  [0xb6fb82, 0], [0xb6fb81, 0], [0xb7fb82, 0], [0xb1f77e, 0],
+  [0x7ace58, 1], [0x79ce58, 1], [0x75cb54, 1],
+  [0x2e8828, 2], [0x2c8626, 2], [0x389030, 2],
+  [0x2e4e0b, 3], [0x2d4d0b, 3], [0x2f4f0b, 3], [0x385810, 3],
+]);
+
+/** Copas em vários tons, como as florestas misturadas das rotas: verde-escuro, lima, dourado, laranja e nevado. */
+export const FOLIAGE_TINTS: Record<Exclude<FoliageTint, 'green'>, readonly [number, number, number, number]> = {
+  deep: [0x78d070, 0x3c9a40, 0x1e6a2c, 0x143c10],
+  lime: [0xe8f890, 0xb0d848, 0x6a9a20, 0x3a5208],
+  gold: [0xfff0a0, 0xf0c040, 0xc08820, 0x6a4410],
+  orange: [0xffd090, 0xe89040, 0xb05a20, 0x5a2c10],
+  snowy: [0xffffff, 0xd8eef0, 0x2c8626, 0x2e4e0b],
+};
+
+/** Troca só os tons das copas; tronco, sombra no chão e transparência ficam como estão. */
+export function tintFoliage(data: Uint8Array | Uint8ClampedArray, tint: FoliageTint): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(data);
+  if (tint === 'green') return out;
+  const tones = FOLIAGE_TINTS[tint];
+  for (let i = 0; i < out.length; i += 4) {
+    if (!out[i + 3]) continue;
+    const role = FOLIAGE_ROLES.get((out[i]! << 16) | (out[i + 1]! << 8) | out[i + 2]!);
+    if (role === undefined) continue;
+    const tone = tones[role];
+    out[i] = tone >> 16;
+    out[i + 1] = (tone >> 8) & 255;
+    out[i + 2] = tone & 255;
   }
   return out;
 }

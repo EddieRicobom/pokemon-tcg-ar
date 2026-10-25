@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FLOOR_TEXTURE_SIZE, GRASS_BASE_TONES, SURVIVOR_FLOOR_PALETTES, recolorGrassBase, survivorDecorTile, survivorFloorTexture } from './survivor-floor-art';
+import { FLOOR_TEXTURE_SIZE, FOLIAGE_TINTS, GRASS_BASE_TONES, SURVIVOR_FLOOR_PALETTES, TALL_GRASS_TONES, floorTone, recolorGrassBase, survivorDecorTile, survivorFloorTexture, tintFoliage } from './survivor-floor-art';
 import type { SurvivorDecorKind, SurvivorFloorKind } from './survivor-floor-art';
 
 const rgbAt = (data: Uint8Array | Uint8ClampedArray, i: number) => (data[i]! << 16) | (data[i + 1]! << 8) | data[i + 2]!;
@@ -44,16 +44,35 @@ describe('pixel art do chão da Torre', () => {
     }
   });
 
-  it('troca só a grama pintada sob árvores e mato alto pelos tons da região', () => {
-    const tones = [...GRASS_BASE_TONES];
+  it('troca só a grama pintada sob árvores, mato alto e borda dos autotiles pelos tons da região', () => {
+    const tones = [...GRASS_BASE_TONES.keys()];
     const leaf = 0x70c88b; // folha de arbusto: verde-água, mas não é chão
     const colors = [...tones, leaf];
     const data = new Uint8Array(colors.flatMap((c) => [c >> 16, (c >> 8) & 255, c & 255, 255]));
     const source = { w: colors.length, h: 1, data };
-    expect(Array.from(recolorGrassBase(source, 'grass'))).toEqual(Array.from(data));
-    const snow = recolorGrassBase(source, 'snow');
-    expect(rgbAt(snow, tones.indexOf(0x70c8a0) * 4)).toBe(SURVIVOR_FLOOR_PALETTES.snow.base);
-    tones.forEach((tone, i) => expect(rgbAt(snow, i * 4)).not.toBe(tone));
-    expect(rgbAt(snow, tones.length * 4)).toBe(leaf);
+    for (const floor of floors) {
+      const out = recolorGrassBase(source, floor);
+      tones.forEach((tone, i) => expect(rgbAt(out, i * 4)).toBe(SURVIVOR_FLOOR_PALETTES[floor][GRASS_BASE_TONES.get(tone)!]));
+      expect(rgbAt(out, tones.length * 4)).toBe(leaf);
+    }
+    expect(floorTone(0x70c8a0, 'grass')).toBe(SURVIVOR_FLOOR_PALETTES.grass.base);
+    expect(floorTone(0x3f6f5e, 'snow')).toBe(TALL_GRASS_TONES.get(0x3f6f5e));
+  });
+
+  it('as flores balançam no segundo quadro e voltam no terceiro', () => {
+    const a = survivorDecorTile('flowers', 'grass', 2, undefined, 0);
+    const b = survivorDecorTile('flowers', 'grass', 2, undefined, 1);
+    expect(Array.from(a.data)).not.toEqual(Array.from(b.data));
+    expect(Array.from(survivorDecorTile('flowers', 'grass', 2, undefined, 2).data)).toEqual(Array.from(a.data));
+  });
+
+  it('pinta só as copas das árvores no tom pedido, sem mexer no tronco nem na sombra', () => {
+    const leaf = 0x7ace58, trunk = 0x403830, shadow = 0x40b088;
+    const data = new Uint8Array([leaf, trunk, shadow].flatMap((c) => [c >> 16, (c >> 8) & 255, c & 255, 255]));
+    expect(Array.from(tintFoliage(data, 'green'))).toEqual(Array.from(data));
+    const gold = tintFoliage(data, 'gold');
+    expect(rgbAt(gold, 0)).toBe(FOLIAGE_TINTS.gold[1]);
+    expect(rgbAt(gold, 4)).toBe(trunk);
+    expect(rgbAt(gold, 8)).toBe(shadow);
   });
 });
