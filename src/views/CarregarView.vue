@@ -153,6 +153,15 @@ function slotText(label: string, slot: SlotInfo): string {
   return `${label}: ${SLOT_STATE_TEXT[slot.state]}${kind}${size}${why}`;
 }
 
+/** Por que a carta falhou, em uma frase: o erro do primeiro item (imagem, sprite ou alvo) que não ficou guardado. */
+function failReason(row: Row): string {
+  for (const [label, slot] of [['Imagem', row.reference], ['Sprite', row.sprite], ['Alvo de AR', row.target]] as const) {
+    if (slot.state === 'ok' || !slot.error) continue;
+    return `${label}: ${slot.error === LEGACY_NO_DEX_ERROR ? NO_DEX_ERROR : slot.error}`;
+  }
+  return '';
+}
+
 async function refresh(): Promise<void> {
   const cache = await getCache();
   const list = await cache.list();
@@ -213,7 +222,7 @@ async function prepareAll(): Promise<void> {
     message.value =
       result.count === 0
         ? 'Todas as cartas já reconhecidas estão completas.'
-        : `${result.completo} de ${result.count} carta(s) ficaram completas${result.falhou ? `; ${result.falhou} falharam (use "Recarregar")` : ''}.`;
+        : `${result.completo} de ${result.count} carta(s) ficaram completas${result.falhou ? `; ${result.falhou} falharam (use "Tentar de novo")` : ''}.`;
   } catch (error) {
     message.value = `Não consegui carregar todas: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
@@ -366,11 +375,17 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
           <strong>{{ row.name }} <CardMarks :card="row" /></strong>
           <span>{{ row.setName }} · {{ row.localId }}/{{ row.setOfficial }}</span>
           <small>Última vez: {{ formatDate(row.lastSeenAt) }} · {{ row.scanCount }} leitura(s)</small>
-          <small>{{ slotText('Imagem', row.reference) }}</small>
-          <small>{{ slotText('Sprite', row.sprite) }}</small>
-          <small>{{ slotText('Alvo de AR', row.target) }}</small>
+          <small v-if="progressText[row.id]" role="status">Preparando {{ progressText[row.id] }}…</small>
+          <small v-else-if="row.status === 'falhou' && failReason(row)">{{ failReason(row) }}</small>
+          <details class="card-tech">
+            <summary>Detalhes técnicos</summary>
+            <small>{{ slotText('Imagem', row.reference) }}</small>
+            <small>{{ slotText('Sprite', row.sprite) }}</small>
+            <small>{{ slotText('Alvo de AR', row.target) }}</small>
+          </details>
           <div class="actions card-actions">
-            <button v-if="row.status !== 'completo'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'prepare')">Carregar</button>
+            <button v-if="row.status === 'parcial'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'prepare')">Carregar</button>
+            <button v-else-if="row.status === 'falhou'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'reload')">Tentar de novo</button>
             <a class="button" :href="routeHref('escanear', row.id)">Ver em AR</a>
             <button type="button" :class="{ active: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" @click="toggleTeam(row)">
               {{ team.ids.includes(row.id) ? 'Na Vila ✓' : 'Adicionar à Vila' }}
@@ -393,14 +408,18 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
           <span class="badge" :class="row.status">{{ STATUS_TEXT[row.status] }}</span>
           <span v-if="justLoaded.has(row.id)" class="sr-only" role="status">Carta carregada.</span>
           <small>Última vez: {{ formatDate(row.lastSeenAt) }} · {{ row.scanCount }} leitura(s)</small>
-          <small>{{ slotText('Imagem', row.reference) }}</small>
-          <small>{{ slotText('Sprite', row.sprite) }}</small>
-          <small>{{ slotText('Alvo de AR', row.target) }}</small>
           <small v-if="progressText[row.id]" role="status">Preparando {{ progressText[row.id] }}…</small>
+          <small v-else-if="row.status === 'falhou' && failReason(row)">{{ failReason(row) }}</small>
+          <details class="card-tech">
+            <summary>Detalhes técnicos</summary>
+            <small>{{ slotText('Imagem', row.reference) }}</small>
+            <small>{{ slotText('Sprite', row.sprite) }}</small>
+            <small>{{ slotText('Alvo de AR', row.target) }}</small>
+          </details>
         </div>
         <div class="actions card-actions">
-          <button v-if="row.status !== 'completo'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'prepare')">Carregar</button>
-          <button v-if="row.status !== 'completo'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'reload')">Recarregar</button>
+          <button v-if="row.status === 'parcial'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'prepare')">Carregar</button>
+          <button v-else-if="row.status === 'falhou'" type="button" :disabled="busyId === row.id" @click="run(row.id, 'reload')">Tentar de novo</button>
           <a class="button" :href="routeHref('escanear', row.id)">Ver em AR</a>
           <button type="button" :class="{ active: team.ids.includes(row.id) }" :aria-pressed="team.ids.includes(row.id)" @click="toggleTeam(row)">
             {{ team.ids.includes(row.id) ? 'Na Vila ✓' : 'Adicionar à Vila' }}
