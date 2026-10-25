@@ -465,6 +465,37 @@ function chooseSpecialBranch(id: SurvivorSpecialBranchId): void {
   say('Ramo escolhido. O novo efeito está pronto.', 2200);
 }
 const paused = ref(false);
+/** Ajuda dos controles aberta (dentro da pausa: abrir a ajuda pausa a corrida, retomar fecha). */
+const helpOpen = ref(false);
+
+/** Botões Pular e Especial: tamanho e arranjo ajustáveis para uso com dois polegares (ficam guardados no aparelho). */
+type ButtonSize = 'p' | 'm' | 'g';
+type ButtonLayout = 'lado' | 'pilha' | 'troca';
+const BUTTONS_KEY = 'tcg-ar-survivor-buttons-v1';
+const BUTTON_SCALE: Record<ButtonSize, number> = { p: 0.85, m: 1, g: 1.2 };
+const BUTTON_SIZE_LABELS: Record<ButtonSize, string> = { p: 'Pequenos', m: 'Médios', g: 'Grandes' };
+const BUTTON_LAYOUT_LABELS: Record<ButtonLayout, string> = { lado: 'Lado a lado', pilha: 'Empilhados', troca: 'Trocados' };
+function readButtons(): { size: ButtonSize; layout: ButtonLayout } {
+  try {
+    const raw = JSON.parse(localStorage.getItem(BUTTONS_KEY) ?? 'null') as { size?: string; layout?: string } | null;
+    return {
+      size: raw?.size === 'p' || raw?.size === 'g' ? raw.size : 'm',
+      layout: raw?.layout === 'pilha' || raw?.layout === 'troca' ? raw.layout : 'lado',
+    };
+  } catch {
+    return { size: 'm', layout: 'lado' };
+  }
+}
+const savedButtons = readButtons();
+const buttonSize = ref<ButtonSize>(savedButtons.size);
+const buttonLayout = ref<ButtonLayout>(savedButtons.layout);
+watch([buttonSize, buttonLayout], () => {
+  try { localStorage.setItem(BUTTONS_KEY, JSON.stringify({ size: buttonSize.value, layout: buttonLayout.value })); } catch { /* armazenamento indisponível */ }
+});
+function openHelp(): void {
+  if (!paused.value) togglePause();
+  if (paused.value) helpOpen.value = true;
+}
 const leaveConfirm = ref(false);
 const bonkJumpBlocked = computed(() => !bonkRun.value || !state.value || state.value.over || paused.value || !!pendingUpgrade.value || !!evolving.value || specialModalOpen.value);
 /** Saltos disponíveis agora (true) e já usados (false), na ordem; vira as bolinhas do botão Pular. */
@@ -1792,6 +1823,7 @@ function rerollUpgradeSelection(): void {
 function togglePause(): void {
   if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value || trainerPresentation.value) return;
   paused.value = !paused.value;
+  if (!paused.value) helpOpen.value = false;
   joystick.active = false;
   joystick.pointerId = null;
   joystick.dx = 0;
@@ -2013,6 +2045,14 @@ const rerollLimit = computed(() => survivorRerollLimit(torre.value.completedObje
 const recordedObjectiveCount = computed(() => new Set(torre.value.completedObjectives).size);
 const preparations = computed(() => availableSurvivorPreparations(torre.value.completedObjectives));
 const nextPreparation = computed(() => SURVIVOR_PREPARATIONS.find(({ unlockAtObjectives }) => unlockAtObjectives > recordedObjectiveCount.value));
+/** Resumo do que ficou escolhido dentro de "Mais opções" (preparação e ritmo), para nada ficar escondido sem aviso. */
+const optionsSummary = computed(() => {
+  const parts: string[] = [];
+  const prep = preparations.value.find((p) => p.id === selectedPreparation.value);
+  if (preparations.value.length > 1 && prep) parts.push(`Preparação: ${prep.name}`);
+  if (fastWanted.value) parts.push('Ritmo acelerado');
+  return parts.join(' · ');
+});
 const nextTowerGoal = computed(() => {
   if (!torre.value.infiniteUnlocked) return 'Próximo marco: derrote o chefão final aos 20 min para liberar o Infinito e o Ritmo acelerado.';
   if (torre.value.trainersBeaten < 10) return `Próximo marco: derrote ${10 - torre.value.trainersBeaten} treinador(es) para a conquista Mestre da Torre.`;
@@ -2159,8 +2199,8 @@ onBeforeUnmount(() => {
       <div
         ref="stageEl"
         class="survivor-stage"
-        :class="{ 'survivor-stage-picker': pickOptions }"
-        :style="{ '--move': state?.player.move.color ?? '#ffd84a' }"
+        :class="[{ 'survivor-stage-picker': pickOptions }, `btn-${buttonLayout}`]"
+        :style="{ '--move': state?.player.move.color ?? '#ffd84a', '--sv-s': BUTTON_SCALE[buttonSize] }"
         @pointerdown="joyDown"
         @pointermove="joyMove"
         @pointerup="joyUp"
@@ -2209,6 +2249,7 @@ onBeforeUnmount(() => {
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
              <span class="survivor-action-dock" aria-label="Ações da Torre">
                <button v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" type="button" class="chip survivor-icon-btn survivor-pause-btn" :aria-label="paused ? 'Retomar corrida' : 'Pausar corrida'" :title="paused ? 'Retomar corrida' : 'Pausar corrida'" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶' : '⏸' }}</button>
+               <button v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" type="button" class="chip survivor-icon-btn survivor-help-btn" aria-label="Ajuda dos controles" title="Ajuda dos controles" @pointerdown.stop @click.stop="openHelp">?</button>
                <button type="button" class="chip survivor-icon-btn survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre'" :title="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre'" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">☰</button>
                <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
                <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
@@ -2269,6 +2310,27 @@ onBeforeUnmount(() => {
             <h2>Jogo pausado</h2>
             <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :track="survivorMusicTitle(state?.elapsedMs ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
+            <details class="survivor-help" :open="helpOpen" @toggle="helpOpen = ($event.target as HTMLDetailsElement).open">
+              <summary>Como jogar · controles</summary>
+              <ul>
+                <li v-if="bonkRun"><b>Andar:</b> arraste para cima para avançar e para os lados para virar a câmera. Teclado: setas ou WASD.</li>
+                <li v-else><b>Andar:</b> arraste em qualquer lugar da tela. Teclado: setas ou WASD. Controle: analógico.</li>
+                <li><b>Atacar:</b> automático, em quem chegar perto.</li>
+                <li v-if="bonkRun"><b>Pular:</b> botão PULAR, toque duplo na tela, Q ou Espaço. Dá para pular de novo no ar enquanto sobrar bolinha no botão.</li>
+                <li><b>Especial:</b> botão do canto ou tecla E. Libera aos 3 minutos e recarrega sozinho.</li>
+                <li><b>Pausar:</b> botão ⏸ ou Start no controle. O botão ? abre esta ajuda.</li>
+              </ul>
+            </details>
+            <section class="survivor-button-prefs" aria-label="Botões Pular e Especial">
+              <strong>Botões da tela</strong>
+              <div class="survivor-mode" role="group" aria-label="Tamanho dos botões">
+                <button v-for="size in (['p', 'm', 'g'] as const)" :key="size" type="button" :class="{ active: buttonSize === size }" :aria-pressed="buttonSize === size" @pointerdown.stop @click.stop="buttonSize = size">{{ BUTTON_SIZE_LABELS[size] }}</button>
+              </div>
+              <div class="survivor-mode" role="group" aria-label="Posição dos botões">
+                <button v-for="layout in (['lado', 'pilha', 'troca'] as const)" :key="layout" type="button" :class="{ active: buttonLayout === layout }" :aria-pressed="buttonLayout === layout" @pointerdown.stop @click.stop="buttonLayout = layout">{{ BUTTON_LAYOUT_LABELS[layout] }}</button>
+              </div>
+              <small>Empilhados deixa os dois mais perto da borda; Trocados põe o Pular no canto e o Especial ao lado.</small>
+            </section>
             <button type="button" class="primary" @pointerdown.stop @click.stop="togglePause">▶ Retomar</button>
           </div>
         </div>
@@ -2288,48 +2350,13 @@ onBeforeUnmount(() => {
           </div>
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
-            <details><summary>Música da Torre</summary><MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :unavailable="musicUnavailable" regional @unlock="unlockMusic" /><p class="hint">As nove regiões têm temas próprios: cinco arranjos GBA e quatro temas com tratamento sonoro retrô. A troca acompanha a transição do cenário.</p></details>
             <p class="note" role="status">{{ nextTowerGoal }}</p>
-            <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
-            <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
-            <details class="survivor-ledger">
-              <summary>Trilha dos desafios · {{ recordedObjectiveCount }}/{{ SURVIVOR_OBJECTIVE_IDS.length }} concluídos</summary>
-              <ul>
-                <li v-for="objectiveId in SURVIVOR_OBJECTIVE_IDS" :key="objectiveId" :class="{ complete: torre.completedObjectives.includes(objectiveId) }">
-                  <span>{{ SURVIVOR_OBJECTIVE_DETAILS[objectiveId].title }}</span>
-                  <small>{{ torre.completedObjectives.includes(objectiveId) ? 'Concluído em corrida encerrada' : 'Ainda não registrado' }}</small>
-                </li>
-              </ul>
-            </details>
-             <p class="note">Até 6 Pokémon são sorteados da sua caixa: 1 protagonista e até 5 apoios para recrutar durante a corrida. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
-            <p v-if="!bonkWanted" class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
-            <p v-else class="note bonk-picker-note">💥 BONK é um teste opcional: câmera em terceira pessoa, mapa amplo com ruínas, ponte e bosque físicos. Pedras e muretas bloqueiam; use o botão Pular ou Q/Espaço para atravessar obstáculos baixos.</p>
-            <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
             <div class="survivor-mode survivor-mode-bonk" role="group" aria-label="Modo da Torre">
               <button type="button" :class="{ active: !infiniteWanted && !bonkWanted }" @click="infiniteWanted = false; bonkWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
               <button type="button" class="bonk-mode-button" :class="{ active: bonkWanted }" @click="bonkWanted = true; infiniteWanted = false">💥 BONK<small>3D, física e pulo</small></button>
               <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true; bonkWanted = false; fastWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
             </div>
-            <section v-if="torre.infiniteUnlocked" class="survivor-preparations" aria-label="Modificadores da corrida">
-              <strong>Modificadores</strong>
-              <div class="survivor-mode" role="group" aria-label="Ritmo da corrida">
-                <button type="button" :class="{ active: fastWanted }" :disabled="infiniteWanted" :aria-pressed="fastWanted" @click="fastWanted = !fastWanted">
-                  ⚡ Ritmo acelerado<small>Relógio 2× · orbes 1,75× XP · chefão aos 10 min</small>
-                </button>
-              </div>
-              <p class="note">10 min no relógio da Torre equivalem a cerca de 5 min reais. A densidade e os chefes compensam o relógio para a arena não ficar apertada.</p>
-            </section>
-            <section v-if="preparations.length > 1" class="survivor-preparations" aria-label="Preparação para a corrida">
-              <strong>Preparação</strong>
-              <div class="survivor-mode" role="group" aria-label="Escolha uma preparação">
-                <button v-for="preparation in preparations" :key="preparation.id" type="button" :class="{ active: selectedPreparation === preparation.id }" :aria-pressed="selectedPreparation === preparation.id" @click="selectedPreparation = preparation.id">
-                  {{ preparation.name }}<small>{{ preparation.description }}</small>
-                </button>
-              </div>
-            </section>
-            <p v-if="preparations.length > 1 && nextPreparation" class="note">{{ recordedObjectiveCount }} desafio(s) distinto(s) registrado(s). Próxima preparação: {{ nextPreparation.name }} após {{ nextPreparation.unlockAtObjectives }} objetivos.</p>
-            <p v-else-if="preparations.length > 1" class="note">Todas as preparações estratégicas estão liberadas pelos seus desafios concluídos.</p>
-            <p v-else class="note">Conclua desafios em corridas reais para liberar preparações: 3 objetivos distintos liberam Passo leve; 6, Mira calculada; 9, Ímã de campo; 12, Mira de longo alcance.</p>
+            <p v-if="bonkWanted" class="note bonk-picker-note">💥 BONK: câmera em terceira pessoa e física. Use o botão Pular (ou Q/Espaço) para atravessar obstáculos baixos.</p>
             <div class="survivor-pick-grid">
                <div
                 v-for="opt in pickOptions"
@@ -2356,9 +2383,48 @@ onBeforeUnmount(() => {
                </div>
             </div>
              <button type="button" class="link survivor-reroll" :disabled="rerollsUsed >= rerollLimit || pickBusy" @click="rerollPicker">🔄 Sortear novamente <small>{{ Math.max(0, rerollLimit - rerollsUsed) }} de {{ rerollLimit }} troca(s) grátis nesta tentativa</small></button>
+            <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
+            <details class="survivor-more">
+              <summary>Mais opções e informações<small v-if="optionsSummary"> · {{ optionsSummary }}</small></summary>
+            <details><summary>Música da Torre</summary><MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :unavailable="musicUnavailable" regional @unlock="unlockMusic" /><p class="hint">As nove regiões têm temas próprios: cinco arranjos GBA e quatro temas com tratamento sonoro retrô. A troca acompanha a transição do cenário.</p></details>
+            <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
+            <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
+            <details class="survivor-ledger">
+              <summary>Trilha dos desafios · {{ recordedObjectiveCount }}/{{ SURVIVOR_OBJECTIVE_IDS.length }} concluídos</summary>
+              <ul>
+                <li v-for="objectiveId in SURVIVOR_OBJECTIVE_IDS" :key="objectiveId" :class="{ complete: torre.completedObjectives.includes(objectiveId) }">
+                  <span>{{ SURVIVOR_OBJECTIVE_DETAILS[objectiveId].title }}</span>
+                  <small>{{ torre.completedObjectives.includes(objectiveId) ? 'Concluído em corrida encerrada' : 'Ainda não registrado' }}</small>
+                </li>
+              </ul>
+            </details>
+             <p class="note">Até 6 Pokémon são sorteados da sua caixa: 1 protagonista e até 5 apoios para recrutar durante a corrida. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
+            <p v-if="!bonkWanted" class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
+            <p v-else class="note bonk-picker-note">💥 BONK é um teste opcional: câmera em terceira pessoa, mapa amplo com ruínas, ponte e bosque físicos. Pedras e muretas bloqueiam; use o botão Pular ou Q/Espaço para atravessar obstáculos baixos.</p>
+            <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
+            <section v-if="torre.infiniteUnlocked" class="survivor-preparations" aria-label="Modificadores da corrida">
+              <strong>Modificadores</strong>
+              <div class="survivor-mode" role="group" aria-label="Ritmo da corrida">
+                <button type="button" :class="{ active: fastWanted }" :disabled="infiniteWanted" :aria-pressed="fastWanted" @click="fastWanted = !fastWanted">
+                  ⚡ Ritmo acelerado<small>Relógio 2× · orbes 1,75× XP · chefão aos 10 min</small>
+                </button>
+              </div>
+              <p class="note">10 min no relógio da Torre equivalem a cerca de 5 min reais. A densidade e os chefes compensam o relógio para a arena não ficar apertada.</p>
+            </section>
+            <section v-if="preparations.length > 1" class="survivor-preparations" aria-label="Preparação para a corrida">
+              <strong>Preparação</strong>
+              <div class="survivor-mode" role="group" aria-label="Escolha uma preparação">
+                <button v-for="preparation in preparations" :key="preparation.id" type="button" :class="{ active: selectedPreparation === preparation.id }" :aria-pressed="selectedPreparation === preparation.id" @click="selectedPreparation = preparation.id">
+                  {{ preparation.name }}<small>{{ preparation.description }}</small>
+                </button>
+              </div>
+            </section>
+            <p v-if="preparations.length > 1 && nextPreparation" class="note">{{ recordedObjectiveCount }} desafio(s) distinto(s) registrado(s). Próxima preparação: {{ nextPreparation.name }} após {{ nextPreparation.unlockAtObjectives }} objetivos.</p>
+            <p v-else-if="preparations.length > 1" class="note">Todas as preparações estratégicas estão liberadas pelos seus desafios concluídos.</p>
+            <p v-else class="note">Conclua desafios em corridas reais para liberar preparações: 3 objetivos distintos liberam Passo leve; 6, Mira calculada; 9, Ímã de campo; 12, Mira de longo alcance.</p>
             <p v-if="rerollLimit === 1" class="note">Conclua 3 desafios distintos em corridas encerradas para liberar uma segunda troca de sorteio nas próximas tentativas.</p>
             <p v-else class="note">📜 Caderno de campo completo: a segunda troca de sorteio foi liberada pelos seus três desafios concluídos.</p>
-            <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
+            </details>
           </div>
         </div>
 

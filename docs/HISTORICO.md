@@ -5,6 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Interface: preparação do Survival, controles do BONK e lista de cartas (25/10/2026)
+
+- Preparação do Survival: a tela agora mostra, nesta ordem, o próximo marco, o modo (Normal, BONK, Infinito), os Pokémon sorteados e "Sortear novamente". Música, histórico de corridas, trilha de desafios, explicações, modificadores e preparação foram para "Mais opções e informações", fechado por padrão; o título mostra o que ficou escolhido lá dentro (preparação e ritmo acelerado), para nada ficar escondido sem aviso.
+- Controles do BONK e da Torre: botão `?` no HUD abre a pausa já com "Como jogar · controles" aberto (controles de toque, teclado e controle, diferentes no BONK e no modo normal); retomar fecha. Na pausa, "Botões da tela" ajusta o tamanho do Pular e do Especial (pequenos, médios, grandes) e o arranjo (lado a lado, empilhados, trocados), guardados no aparelho. O cartão da pausa agora rola em telas baixas.
+- Lista de cartas: cada carta mostra só situação, última leitura e uma ação principal por estado ("Carregar" para parcial, "Tentar de novo" para falha, com o motivo da falha à vista); imagem, sprite e alvo de AR ficaram em "Detalhes técnicos" recolhido. Caixas e grade seguem a mesma regra; os textos que citavam "Recarregar" foram atualizados.
+- 🔶 Typecheck, 2245 testes e build passaram. Conferido no navegador do PC: tela de preparação reorganizada, corrida BONK com a ajuda aberta pelo `?`, tamanho e arranjo dos botões (geometria medida nos três arranjos) e a lista com os detalhes técnicos recolhidos. Não testei o estado de falha da lista com uma falha real, nem toque com dois polegares, nem celular.
+
 ## Interface: grade de cartas, miniaturas na busca manual e atalhos de jogos (25/10/2026)
 
 - Grade de cartas (`CarregarView`): tocar na carta agora só abre os detalhes (a carta se expande com última leitura, situação de imagem, sprite e alvo de AR, Carregar, Ver em AR e Adicionar à Vila). Adicionar ou tirar da Vila é um botão próprio de 44 px embaixo de cada carta ("+ Vila" / "✓ Na Vila"), então um toque descuidado não muda mais a equipe.
