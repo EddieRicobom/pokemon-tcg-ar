@@ -73,6 +73,7 @@ import type { FeedbackRating, FeedbackRatingKey } from '../core/survivor-feedbac
 import { BONK_LANDING_MS, bonkInputToWorld, bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics } from '../core/survivor-bonk';
 import type { BonkPhysics } from '../core/survivor-bonk';
 import { isBonkDoubleTap, isBonkTap } from '../core/survivor-gesture';
+import { survivorStick } from '../core/survivor-controls';
 import type { SurvivorPointerSample } from '../core/survivor-gesture';
 import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround } from '../village/survivor-bonk-landscape';
 import type { BonkArt } from '../village/survivor-bonk-landscape';
@@ -779,6 +780,8 @@ function onGamepadDirection(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean; direction?: string; pressed?: boolean }>;
   const direction = custom.detail.direction;
   if (custom.detail.handled || !direction || custom.detail.pressed === undefined) return;
+  // Soltar precisa funcionar mesmo se um diálogo abriu enquanto o botão estava pressionado.
+  if (!custom.detail.pressed) heldKeys.delete(direction);
   if (!ready.value || paused.value || shadowCutsceneOpen.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
   if (custom.detail.pressed) heldKeys.add(direction);
   else heldKeys.delete(direction);
@@ -829,10 +832,9 @@ function joyMove(e: PointerEvent): void {
   if (!joystick.active || e.pointerId !== joystick.pointerId) return;
   const dx = e.clientX - joystick.cx;
   const dy = e.clientY - joystick.cy;
-  const len = Math.hypot(dx, dy) || 1;
-  const factor = Math.min(len, JOY_MAX) / len;
-  joystick.dx = (dx * factor) / JOY_MAX;
-  joystick.dy = (dy * factor) / JOY_MAX;
+  const stick = survivorStick(dx, dy, JOY_MAX);
+  joystick.dx = stick.dx;
+  joystick.dy = stick.dy;
 }
 function joyUp(e?: PointerEvent): void {
   if (e && e.pointerId !== joystick.pointerId) return;
@@ -856,6 +858,7 @@ function joyUp(e?: PointerEvent): void {
   previousBonkTap = tap;
 }
 function joyCancel(e: PointerEvent): void {
+  if (e.pointerId !== joystick.pointerId) return;
   clearBonkTap();
   joyUp(e);
 }
@@ -1678,7 +1681,7 @@ function loop(ts: number): void {
     const dy = ky + (joystick.active ? joystick.dy : 0);
     const beforeBonkPosition = bonkRun.value ? { x: s.player.x, y: s.player.y } : null;
     const previousSpecialPhase = s.special.phase;
-    // No BONK o analógico é relativo à câmera: para cima avança para onde ela olha, os lados andam de lado e giram.
+    // No BONK, frente/trás move; os lados deslocam lateralmente e giram a câmera.
     const move = bonkRun.value && bonkPhysics.value ? bonkInputToWorld(bonkPhysics.value, dx, dy) : { dx, dy };
     if (bonkRun.value && Math.abs(dx) > 0.15) bonkFacing = dx < 0 ? -1 : 1;
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
@@ -2162,6 +2165,7 @@ onBeforeUnmount(() => {
         @pointermove="joyMove"
         @pointerup="joyUp"
         @pointercancel="joyCancel"
+        @lostpointercapture="joyCancel"
       >
         <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" :class="{ 'bonk-canvas': bonkRun }" :aria-label="bonkRun ? 'BONK: arraste para andar, toque ou clique duplo na tela para pular' : 'Torre: arraste em qualquer lugar para andar'"></canvas>
 

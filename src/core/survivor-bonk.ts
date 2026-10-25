@@ -167,7 +167,7 @@ export function createBonkPhysics(initialYaw = Math.PI / 2, landscapeSeed = DEFA
 
 /**
  * Converte o analógico (tela) em direção no mundo, relativa à câmera: para cima avança para onde a câmera olha,
- * para os lados anda de lado. Sem isso, a câmera gira e o mesmo gesto passa a levar para outro lado.
+ * para os lados anda de lado enquanto gira a câmera.
  */
 export function bonkInputToWorld(physics: Pick<BonkPhysics, 'cameraYaw'>, dx: number, dy: number): { dx: number; dy: number } {
   const forward = -dy;
@@ -228,6 +228,7 @@ export function resolveBonkPosition(
     const dy = y - nearestY;
     if (dx !== 0 || dy !== 0) {
       const distance = Math.hypot(dx, dy) || 1;
+      if (distance >= radius) continue;
       x = nearestX + (dx / distance) * radius;
       y = nearestY + (dy / distance) * radius;
     } else {
