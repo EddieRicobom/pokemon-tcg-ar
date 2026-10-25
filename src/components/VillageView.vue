@@ -9,8 +9,8 @@ import { villageArSettings } from '../app/village-ar-settings';
 import { attachLiveVillage, detachLiveVillage, syncCoins } from '../app/wallet';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
-import { routeHref } from '../app/route';
-import type { VilaExit } from '../app/route';
+import { gameShortcutOf, routeHref } from '../app/route';
+import type { GameShortcut, VilaExit } from '../app/route';
 import { handleDialogEscape, isGameKeyboardControl } from '../app/game-keyboard';
 import { stopCamera } from '../core/camera';
 import type { RunningVillageAr } from '../ar/start-village';
@@ -213,22 +213,49 @@ const MENU_TITLES: Record<Tab, string> = {
   album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila', lendas: 'Caderno de Lendas',
 };
 /** Um lugar da Vila aberto direto pelo menu (ou trancado, com o nível que falta). */
-function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: string): MenuTile {
+function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: string, opt: { bonk?: boolean; hint?: string } = {}): MenuTile {
   const b = map.buildings.find((x) => x.kind === kind);
   const open = !!b && level.value >= b.unlock;
   return {
     icon,
     label,
     disabled: !open,
-    hint: open ? undefined : `🔒 nível ${b?.unlock ?? '?'}`,
-    run: () => {
-      if (!b || !open) return;
-      if (kind === 'torre') sheet.value = 'torre';
-      else openGameBuilding(b);
-    },
+    hint: open ? opt.hint : `🔒 nível ${b?.unlock ?? '?'}`,
+    run: () => openPlace(kind, opt.bonk === true),
   };
 }
+/** Abre um jogo direto (menu e atalhos de endereço), com o aviso do nível que falta quando ainda está trancado. */
+function openPlace(kind: 'arcade' | 'arena' | 'torre', bonk = false): void {
+  const b = map.buildings.find((x) => x.kind === kind);
+  if (!b) return;
+  if (level.value < b.unlock) {
+    say(`${b.name} abre no nível ${b.unlock}.`);
+    return;
+  }
+  if (kind === 'torre') {
+    towerStartBonk.value = bonk;
+    sheet.value = 'torre';
+  } else openGameBuilding(b);
+}
+/** Modo BONK já escolhido ao abrir a Torre (atalho do menu ou do endereço). */
+const towerStartBonk = ref(false);
+/** Atalho de jogo pedido pelo endereço (`#/vila?torre=1`): abre na chegada, depois dos avisos de boas-vindas. */
+let pendingGame: GameShortcut | null = gameShortcutOf(window.location.hash);
+function openRequestedGame(): void {
+  const game = pendingGame;
+  if (!game || dialog.value || legendaryScene.value || hoOhWishScene.value || sheet.value) return;
+  pendingGame = null;
+  // Tira o atalho do endereço: recarregar ou voltar não deve reabrir o jogo.
+  window.history.replaceState(null, '', routeHref('vila'));
+  if (game === 'coliseu') openPlace('arena');
+  else openPlace('torre', game === 'bonk');
+}
 const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[]>(() => [
+  {
+    title: 'Jogar',
+    desc: 'Direto aos jogos, sem andar até o prédio.',
+    tiles: [placeTile('torre', '🗼', 'Survival', { hint: 'Torre de Sobrevivência' }), placeTile('torre', '💥', 'BONK', { bonk: true, hint: 'Torre em 3D' }), placeTile('arena', '⚔️', 'Arena', { hint: 'Coliseu' })],
+  },
   {
     title: 'Você',
     tiles: [
@@ -258,7 +285,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   },
   {
     title: 'Lugares da Vila',
-    tiles: [{ icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, placeTile('arcade', '🕹️', 'Fliperama'), placeTile('arena', '⚔️', 'Arena'), placeTile('torre', '🗼', 'Torre')],
+    tiles: [{ icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, placeTile('arcade', '🕹️', 'Fliperama')],
   },
   {
     title: 'Fora da Vila',
@@ -280,7 +307,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
 type MenuSection = 'vila' | 'historias' | 'lugares' | 'modos';
 const menuSection = ref<MenuSection>('vila');
 const menuSections: { id: MenuSection; label: string; icon: string; groups: string[] }[] = [
-  { id: 'vila', label: 'Minha Vila', icon: '🏡', groups: ['Você', 'Fazer'] },
+  { id: 'vila', label: 'Minha Vila', icon: '🏡', groups: ['Jogar', 'Você', 'Fazer'] },
   { id: 'historias', label: 'Histórias', icon: '📖', groups: ['Pokémon e memórias'] },
   { id: 'lugares', label: 'Lugares', icon: '🗺️', groups: ['Lugares da Vila'] },
   { id: 'modos', label: 'Outros modos', icon: '🎮', groups: ['Fora da Vila', 'Atividades Externas'] },
@@ -369,6 +396,7 @@ function finishArrival(): void {
   // O presente inicial (questionário) tem prioridade; o sorteio de lendário (no máximo 1/dia) espera a próxima vez.
   if (!state.digital.starterGiven) maybeOfferStarter();
   else rollLegendaryToday();
+  openRequestedGame();
 }
 
 // ---- Fase 4: cutscene da primeira entrada (antes do aviso de controles, só na primeira vez de verdade).
@@ -2892,7 +2920,7 @@ onMounted(async () => {
     if (loaded.failed.length) say('Não consegui mostrar alguns companheiros: ' + loaded.failed.map((f) => f.name + ' (' + f.reason + ')').join('; '), 12000);
     // Membros da equipe sem sprite no cache não entram na cena: continuam na equipe e voltam quando a carta for recarregada.
     const withoutSprite = team.ids.length - loaded.entries.length - loaded.failed.length;
-    if (withoutSprite > 0) say(`${withoutSprite} companheiro(s) da equipe estão sem sprite neste aparelho. Em Carregar, toque em "Recarregar" nas cartas incompletas.`, 12000);
+    if (withoutSprite > 0) say(`${withoutSprite} companheiro(s) da equipe estão sem sprite neste aparelho. Em Carregar, toque em "Carregar" ou "Tentar de novo" nas cartas incompletas.`, 12000);
     // Sprite local da Vila (pacote de ação, derivado do PokéSurvivor/PMD SpriteCollab — ver THIRD_PARTY_NOTICES.md):
     // usado quando a espécie está no pacote; senão cai para o GIF que a Caixa já baixou e guardou no cache.
     villagers = await Promise.all(
@@ -3276,7 +3304,7 @@ onBeforeUnmount(() => {
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
       <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="pressB">Fechar</button></header>
-        <MinigameSobrevivencia ref="towerGameRef" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="sheet = null" />
+        <MinigameSobrevivencia ref="towerGameRef" :start-bonk="towerStartBonk" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="sheet = null" />
       </div>
 
       <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">

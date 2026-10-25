@@ -45,6 +45,8 @@ interface SetDetail {
   name: string;
   releaseDate?: string;
   tcgOnline?: string;
+  /** Série da coleção: o TCGdex monta o endereço da imagem de cada carta com ela. */
+  serie?: { id?: string };
   abbreviation?: { official?: string; normal?: string };
   cardCount?: { official?: number; total?: number };
   cards?: { id: string; localId: string; name: string }[];
@@ -90,6 +92,7 @@ const sets = enDetails.map((detail) => {
     total: detail.cardCount?.total ?? detail.cards?.length ?? 0,
     release: detail.releaseDate,
     code: detail.abbreviation?.official ?? detail.tcgOnline,
+    serie: detail.serie?.id,
     cards: (detail.cards ?? []).map((c) => {
       const ptName = ptNames.get(c.localId);
       return ptName && ptName !== c.name ? [c.localId, c.name, ptName] : [c.localId, c.name];

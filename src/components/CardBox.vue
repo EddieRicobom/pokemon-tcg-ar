@@ -215,8 +215,8 @@ const teamIndex = (id: string) => props.team.indexOf(id);
         <span>{{ selectedCard.setName }} · {{ selectedCard.localId }}/{{ selectedCard.setOfficial }}{{ selectedCard.dexIds[0] ? ` · Pokédex nº ${selectedCard.dexIds[0]}` : '' }}</span>
         <span class="badge" :class="selectedCard.status">{{ statusText[selectedCard.status] }}</span>
         <div class="actions card-actions">
-          <button v-if="selectedCard.status !== 'completo'" type="button" :disabled="busyId === selectedCard.id" @click="emit('run', selectedCard.id, 'prepare')">Carregar</button>
-          <button v-if="selectedCard.status !== 'completo'" type="button" :disabled="busyId === selectedCard.id" @click="emit('run', selectedCard.id, 'reload')">Recarregar</button>
+          <button v-if="selectedCard.status === 'parcial'" type="button" :disabled="busyId === selectedCard.id" @click="emit('run', selectedCard.id, 'prepare')">Carregar</button>
+          <button v-else-if="selectedCard.status === 'falhou'" type="button" :disabled="busyId === selectedCard.id" @click="emit('run', selectedCard.id, 'reload')">Tentar de novo</button>
           <a class="button" :href="routeHref('escanear', selectedCard.id)">Ver em AR</a>
           <button type="button" :class="{ active: teamIndex(selectedCard.id) >= 0 }" @click="emit('toggleTeam', selectedCard.id)">
             {{ teamIndex(selectedCard.id) >= 0 ? '✓ Na Vila · tirar' : '+ Adicionar à Vila' }}

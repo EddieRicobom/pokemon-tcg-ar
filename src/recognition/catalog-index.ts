@@ -1,6 +1,7 @@
 import type { ParsedBottom } from './parse-ocr';
 import type { CandidateInfo } from './ranking';
 import { nameSimilarity, normalizeName } from './text';
+import { cardImageUrl, TCGDEX_ASSETS } from './tcgdex';
 
 /**
  * Índice estático gerado no GitHub Actions (`scripts/build-catalog-index.ts`). Não é o catálogo:
@@ -15,6 +16,8 @@ export interface IndexSet {
   total: number;
   release?: string;
   code?: string;
+  /** Série da coleção no TCGdex (índices antigos não trazem: a busca manual fica sem miniatura). */
+  serie?: string;
   /** [localId, nome em inglês, nome em português (se diferente)] */
   cards: [string, string, string?][];
 }
@@ -64,6 +67,8 @@ export interface ManualMatch {
   localId: string;
   setOfficial: number;
   release?: string;
+  /** Miniatura da carta no CDN do TCGdex; ausente quando o índice não sabe a série (nada de endereço inventado). */
+  thumb?: string;
 }
 
 export class CatalogLookup {
@@ -234,7 +239,8 @@ export class CatalogLookup {
           exact = names.includes(q);
           if (!exact && !names.some((n) => n.includes(q)) && !names.some((n) => nameSimilarity(query, n) >= 0.85)) continue;
         }
-        out.push({ id: `${set.id}-${localId}`, name, setName: set.name, localId, setOfficial: set.official, release: set.release, exact });
+        const thumb = set.serie ? cardImageUrl(`${TCGDEX_ASSETS}/en/${set.serie}/${set.id}/${localId}`, 'low', 'webp') : undefined;
+        out.push({ id: `${set.id}-${localId}`, name, setName: set.name, localId, setOfficial: set.official, release: set.release, ...(thumb ? { thumb } : {}), exact });
       }
     }
     out.sort((a, b) => Number(b.exact) - Number(a.exact) || (b.release ?? '').localeCompare(a.release ?? ''));
