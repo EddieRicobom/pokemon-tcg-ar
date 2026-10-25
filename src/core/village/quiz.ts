@@ -237,7 +237,7 @@ export const FOLLOWS: Record<QKind, readonly Follow[]> = {
   comida: [
     f((a) => `${a}? Hmm! E você come ${a} com frequência?`, o('Todo dia!', (a) => `Todo dia?! Eu quero ser seu vizinho de ${a}.`, 'heart', 3), o('Só de vez em quando', (a) => `Entendi! ${a} é para ocasiões especiais.`, 'sparkle'), o('Nunca comi, só falei', (a) => `Nunca?! Então por que me disse ${a}?! Vou ficar pensando nisso.`, 'shock', 1)),
     f((a) => `${a} combina com o quê? Eu nunca provei.`, o('Com tudo', (a) => `Com tudo?! Vou misturar ${a} com tudo que eu achar!`, 'star'), o('Sozinho já é perfeito', (a) => `${a} sozinho, sem enfeite. Um purista!`, 'sparkle'), o('Com fruta', (a) => `${a} com fruta... isso deve ser uma delícia esquisita.`, 'question')),
-    f((a) => `Posso provar um pedacinho de ${a}?`, o('Claro, divide comigo', (a) => `Dividir ${a} com você é o meu momento favorito do dia!`, 'heart', 4), o('Só se você pedir direito', () => 'Por favorzinho com açúcar em cima?', 'laugh'), o('Nem pensar', (a) => `Nem um pedacinho de ${a}? Ai, o meu coração!`, 'sad', 0)),
+    f((a) => `Posso provar um pedacinho de ${a}?`, o('Claro, divide comigo', (a) => `Dividir ${a} com você é o meu momento favorito do dia!`, 'heart', 4), o('Só se você pedir direito', () => 'Por favorzinho com açúcar em cima?', 'laugh'), o('Nem pensar', (a) => `Nem um pedacinho de ${a}? Ai, o meu coração!`, 'sad', -1)),
   ],
   coisa: [
     f((a) => `${a}! E você tem isso em casa?`, o('Tenho, e é lindo', (a) => `Você tem ${a}?! Quero ver um dia!`, 'star', 3), o('Não, só queria', () => 'Quem sabe a gente dá um jeito!', 'sparkle'), o('Tenho dois', (a) => `Dois de ${a}? Você é muito rico!`, 'shock')),
@@ -291,7 +291,7 @@ export const FOLLOWS: Record<QKind, readonly Follow[]> = {
   ],
   poder: [
     f((a) => `${a}! Eu também queria isso. E o que você faria primeiro?`, o('Salvaria o mundo', () => 'Salvaria o mundo e ainda voltaria para o almoço!', 'star', 3), o('Faria uma pegadinha', () => 'Uma pegadinha com superpoder. Genial!', 'laugh', 2), o('Ficaria na cama', () => 'Ficar na cama com superpoder: o melhor dos mundos.', 'zzz')),
-    f((a) => `Se você tivesse "${a}", me emprestava um dia?`, o('Emprestava!', () => 'Combinado! Eu devolvo limpinho.', 'heart', 4), o('Só no fim de semana', () => 'Fim de semana está ótimo!', 'sparkle'), o('Nunca!', () => 'Nem por uma fruta?', 'sad', 0)),
+    f((a) => `Se você tivesse "${a}", me emprestava um dia?`, o('Emprestava!', () => 'Combinado! Eu devolvo limpinho.', 'heart', 4), o('Só no fim de semana', () => 'Fim de semana está ótimo!', 'sparkle'), o('Nunca!', () => 'Nem por uma fruta?', 'sad', -1)),
     f((a) => `"${a}" seria útil numa batalha?`, o('Muito', () => 'Então você será meu parceiro de dupla!', 'fire', 3), o('Só para fazer graça', () => 'Fazer graça também vence batalha. Já vi.', 'laugh'), o('Atrapalharia', () => 'Atrapalhar o inimigo é vencer, ué!', 'idea')),
   ],
   bordao: [

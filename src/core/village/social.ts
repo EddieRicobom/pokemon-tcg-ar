@@ -1,7 +1,7 @@
 import type { Rng } from '../battle';
 import { itemDef } from './catalog';
 import { unlocksAt } from './book';
-import { add, availableCount, count, friendOf, gainFriendship, itemName } from './life';
+import { add, availableCount, count, FRIEND_LEVELS, friendOf, gainFriendship, itemName } from './life';
 import type { FriendMilestone, ItemId, VillageState } from './life';
 import { hash, personalityOf } from './personality';
 import { MAX_SAVED, MAX_SOCIAL_PLANS, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
@@ -1256,7 +1256,7 @@ function applyOutcome(state: VillageState, cast: Actor[], o: Outcome, day: strin
   }
   cast.forEach((m, i) => {
     const d = (o.friendBy?.[i] ?? o.friend ?? 0) * scale;
-    const applied = d !== 0 ? gainFriendship(state, m.id, d) : 0;
+    const applied = d !== 0 ? gainFriendship(state, m.id, d, day) : 0;
     if (applied !== 0) chips.push(`${applied > 0 ? '+' : '−'}${Math.abs(applied)} amizade com você (${m.name})`);
   });
   if (o.eatCrop) {
@@ -1527,28 +1527,58 @@ const MILESTONE_LINES: Record<number, string> = {
   4: 'Melhor amigo! Não tem insígnia que valha mais do que isso.',
 };
 
+/** Quando a amizade esfria e cai para este nível. */
+const DROP_LINES: Record<number, string> = {
+  0: 'Parece que a gente voltou a ser quase desconhecido...',
+  1: 'Eu achava que a gente era amigo. Acho que fiquei meio de lado.',
+  2: 'Ainda gosto de você, mas senti a gente se afastando um pouco.',
+  3: 'Você continua importante para mim. Só queria você mais por perto, como antes.',
+};
+
+/** Quando volta a um nível que já tinha tido. */
+const BACK_LINES: Record<number, string> = {
+  1: 'Que bom conversar de novo! Vamos recomeçar devagar?',
+  2: 'Voltamos a ser amigos! Eu sabia que a gente se acertava.',
+  3: 'Eu senti falta disso. Grandes amigos de novo!',
+  4: 'Melhores amigos outra vez. Desta vez eu não deixo você sumir!',
+};
+
 /**
- * Grava no Diário o marco de amizade que acabou de acontecer (`claimFriendMilestones`): a fala do Pokémon, o que se abriu
- * em cada nível atravessado e, no «Melhor amigo», a página fica guardada no Álbum. Devolve o momento gravado.
+ * Grava no Diário a mudança de nível que acabou de acontecer (`claimFriendMilestones`). Subida: a fala do Pokémon, o que
+ * se abriu e, no «Melhor amigo», a página fica guardada no Álbum. Queda: a mágoa e o que fica fechado até recuperar.
+ * Volta: a reconciliação. Devolve o momento gravado.
  */
 export function recordFriendMilestone(state: VillageState, mon: { id: string; name: string }, milestone: FriendMilestone, now: number, day: string, hour: number): Moment {
+  const fromName = FRIEND_LEVELS[milestone.from]?.name ?? '';
+  const down = milestone.kind === 'down';
   const unlocks = milestone.passed.flatMap((level) => unlocksAt(level));
-  const keep = milestone.level >= 4 && state.diary.filter((x) => x.fav).length < MAX_SAVED;
+  const keep = milestone.kind === 'up' && milestone.level >= 4 && state.diary.filter((x) => x.fav).length < MAX_SAVED;
+  const lines: MomentLine[] = down
+    ? [
+        { who: 0, text: DROP_LINES[milestone.level] ?? 'A gente se afastou um pouco.', fx: 'sad' },
+        ...unlocks.slice(0, 4).map((text) => ({ who: 0, text: `(Fica para quando a amizade voltar: ${text})`, fx: 'sad' as const })),
+      ]
+    : milestone.kind === 'back'
+      ? [{ who: 0, text: BACK_LINES[milestone.level] ?? 'A nossa amizade voltou a crescer!', fx: 'heart' }]
+      : [
+          { who: 0, text: MILESTONE_LINES[milestone.level] ?? 'A nossa amizade cresceu!', fx: 'heart' },
+          ...unlocks.slice(0, 4).map((text) => ({ who: 0, text: `(Novo: ${text})`, fx: 'sparkle' as const })),
+        ];
   const moment: Moment = {
-    id: `${now.toString(36)}-amizade-marco-${mon.id}-${milestone.level}`,
+    id: `${now.toString(36)}-amizade-${milestone.kind}-${mon.id}-${milestone.level}`,
     t: now,
     day,
     hour,
     tpl: FRIEND_MILESTONE_TPL,
-    kind: 'amizade',
-    title: `Amizade: ${milestone.name}`,
-    emoji: '💖',
+    kind: down ? 'drama' : 'amizade',
+    title: down ? `Amizade abalada: ${milestone.name}` : milestone.kind === 'back' ? `Amizade recuperada: ${milestone.name}` : `Amizade: ${milestone.name}`,
+    emoji: down ? '💔' : '💖',
     cast: [{ id: mon.id, name: mon.name }],
-    lines: [
-      { who: 0, text: MILESTONE_LINES[milestone.level] ?? 'A nossa amizade cresceu!', fx: 'heart' },
-      ...unlocks.slice(0, 4).map((text) => ({ who: 0, text: `(Novo: ${text})`, fx: 'sparkle' as const })),
+    lines,
+    result: [
+      down ? `${mon.name} e você: de ${fromName} para ${milestone.name} 💔` : milestone.kind === 'back' ? `${mon.name} voltou a ser seu ${milestone.name} 💖` : `${mon.name} agora é seu ${milestone.name} 💖`,
+      ...(keep ? ['📌 Guardado no Álbum para sempre'] : []),
     ],
-    result: [`${mon.name} agora é seu ${milestone.name} 💖`, ...(keep ? ['📌 Guardado no Álbum para sempre'] : [])],
     ...(keep ? { fav: true } : {}),
   };
   recordMomentAndMemory(state, moment);

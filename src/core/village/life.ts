@@ -73,8 +73,12 @@ export interface Friendship {
   lastMeal?: string;
   /** Pedido do dia (o Pokémon quer este item). */
   request: { day: string; item: ItemId; qty: number; done: boolean } | null;
-  /** Maior nível de amizade já comemorado (ver `claimFriendMilestones`): cada marco é anunciado uma vez só. */
+  /** Maior nível de amizade já comemorado (ver `claimFriendMilestones`): o que se abre em cada nível é anunciado uma vez só. */
   milestone?: number;
+  /** Nível que você viu por último: cair abaixo dele ou voltar a ele também é anunciado. */
+  known?: number;
+  /** Dia da última mágoa (amizade perdida): o Livro mostra no humor do dia. */
+  hurt?: string;
 }
 
 /** Versão do desenho do mapa: saves de antes do mapa grande (sem este número) passam por `migrateLayout`. */
@@ -482,7 +486,7 @@ export const FRIEND_LEVELS = [
 ] as const;
 
 export function friendOf(s: VillageState, id: string): Friendship {
-  return (s.friends[id] ??= { points: 0, lastTalk: '', lastGift: '', request: null, milestone: 0 });
+  return (s.friends[id] ??= { points: 0, lastTalk: '', lastGift: '', request: null, milestone: 0, known: 0 });
 }
 
 /** Pontos máximos: a evolução por amizade da carta pede a amizade cheia (100), um passo depois de «Melhor amigo». */
@@ -504,26 +508,34 @@ export function friendProgressText(points: number): string {
   return next ? `faltam ${toNext} para ${next.name}` : 'amizade máxima';
 }
 
-/** Soma (ou tira) amizade com o limite de 0 a 100; devolve quanto de fato mudou. */
-export function gainFriendship(s: VillageState, id: string, delta: number): number {
+/**
+ * Soma (ou tira) amizade com o limite de 0 a 100; devolve quanto de fato mudou. Com `day`, uma perda marca a mágoa do
+ * dia (o humor no Livro).
+ */
+export function gainFriendship(s: VillageState, id: string, delta: number, day?: string): number {
   const f = friendOf(s, id);
   const before = f.points;
   f.points = Math.max(0, Math.min(FRIEND_MAX, Math.round(before + delta)));
+  if (day && f.points < before) f.hurt = day;
   return f.points - before;
 }
 
 export interface FriendMilestone {
   id: string;
-  /** Nível alcançado agora (índice de `FRIEND_LEVELS`). */
+  /** `up`: nível novo; `back`: voltou a um nível que já tinha tido; `down`: a amizade esfriou e caiu de nível. */
+  kind: 'up' | 'back' | 'down';
+  /** Nível de agora (índice de `FRIEND_LEVELS`). */
   level: number;
   name: string;
-  /** Níveis atravessados de uma vez (do primeiro ao alcançado), para listar tudo o que se abriu. */
+  /** Nível que você conhecia antes da mudança. */
+  from: number;
+  /** Em `up`, os níveis abertos pela primeira vez (para listar o que se abriu); em `down`, os níveis perdidos. */
   passed: number[];
 }
 
 /**
- * Marcos de amizade ainda não comemorados: quem subiu de nível desde o último anúncio, venha o ganho de onde vier
- * (conversa, presente, momento, carta, mural ou reforma). Marca o marco como visto; cair de nível e voltar não repete.
+ * Mudanças de nível ainda não anunciadas, venha o ganho ou a perda de onde vier (conversa, presente, momento, carta,
+ * mural, reforma, ausência). O que se abre num nível é comemorado só na primeira vez; cair e se recuperar também aparece.
  */
 export function claimFriendMilestones(s: VillageState, ids: readonly string[] = Object.keys(s.friends)): FriendMilestone[] {
   const out: FriendMilestone[] = [];
@@ -531,17 +543,44 @@ export function claimFriendMilestones(s: VillageState, ids: readonly string[] = 
     const f = s.friends[id];
     if (!f) continue;
     const { level, name } = friendLevel(f.points);
-    const seen = f.milestone ?? 0;
-    if (level <= seen) continue;
-    f.milestone = level;
-    out.push({ id, level, name, passed: Array.from({ length: level - seen }, (_, k) => seen + 1 + k) });
+    const best = f.milestone ?? 0;
+    const known = f.known ?? best;
+    if (level === known) continue;
+    f.known = level;
+    if (level < known) {
+      out.push({ id, kind: 'down', level, name, from: known, passed: Array.from({ length: known - level }, (_, k) => known - k) });
+      continue;
+    }
+    const fresh = Array.from({ length: Math.max(0, level - best) }, (_, k) => best + 1 + k);
+    f.milestone = Math.max(best, level);
+    out.push({ id, kind: fresh.length > 0 ? 'up' : 'back', level, name, from: known, passed: fresh });
   }
   return out;
 }
 
+/** Perdas por descuido: pequenas, com teto, e recuperáveis com uma conversa e um presente. */
+export const FRIEND_LOSS = {
+  /** Pedido do dia que ficou sem resposta até a próxima conversa. */
+  ignoredRequest: 2,
+  /** Dias sem conversar antes de a saudade pesar. */
+  absenceGraceDays: 7,
+  /** Perda por semana inteira sem conversar. */
+  absencePerWeek: 2,
+  /** Teto da saudade numa volta só. */
+  absenceMax: 8,
+  /** Presente que o Livro diz que ele não gosta. */
+  dislikedGift: 2,
+} as const;
+
+function daysBetween(from: string, to: string): number {
+  const a = Date.parse(`${from}T12:00:00Z`);
+  const b = Date.parse(`${to}T12:00:00Z`);
+  return Number.isFinite(a) && Number.isFinite(b) ? Math.round((b - a) / 86_400_000) : 0;
+}
+
 /**
- * Limpa as amizades do save. Saves de antes dos marcos não têm `milestone`: o nível atual vale como já comemorado,
- * para ninguém receber de uma vez os avisos de tudo o que já tinha conquistado.
+ * Limpa as amizades do save. Saves de antes dos marcos não têm `milestone`/`known`: o nível atual vale como já
+ * comemorado, para ninguém receber de uma vez os avisos de tudo o que já tinha conquistado.
  */
 function normalizeFriends(raw: unknown): Record<string, Friendship> {
   if (!raw || typeof raw !== 'object') return {};
@@ -551,7 +590,8 @@ function normalizeFriends(raw: unknown): Record<string, Friendship> {
     const points = typeof v.points === 'number' && Number.isFinite(v.points) ? Math.max(0, Math.min(FRIEND_MAX, Math.round(v.points))) : 0;
     const level = friendLevel(points).level;
     const milestone = Number.isInteger(v.milestone) ? Math.max(0, Math.min(FRIEND_LEVELS.length - 1, v.milestone!)) : level;
-    out[id] = { ...v, points, lastTalk: typeof v.lastTalk === 'string' ? v.lastTalk : '', lastGift: typeof v.lastGift === 'string' ? v.lastGift : '', request: v.request ?? null, milestone } as Friendship;
+    const known = Number.isInteger(v.known) ? Math.max(0, Math.min(FRIEND_LEVELS.length - 1, v.known!)) : level;
+    out[id] = { ...v, points, lastTalk: typeof v.lastTalk === 'string' ? v.lastTalk : '', lastGift: typeof v.lastGift === 'string' ? v.lastGift : '', request: v.request ?? null, milestone, known } as Friendship;
   }
   return out;
 }
@@ -636,6 +676,8 @@ const AGAIN_LINES: Record<number, (name: string) => string> = {
 export interface Talk {
   text: string;
   gained: number;
+  /** Amizade perdida antes da conversa de hoje (pedido sem resposta, muito tempo sem aparecer). */
+  lost: number;
   /** Pedido feito agora (ou que segue aberto). */
   request: Friendship['request'];
 }
@@ -643,15 +685,34 @@ export interface Talk {
 /** Amizade da primeira conversa do dia. */
 export const TALK_FRIENDSHIP = 6;
 
+/** Como ele recebe você depois de muito tempo sem conversar, pelo nível de agora. */
+const MISSED_YOU: Record<number, (days: number) => string> = {
+  0: () => 'Ah, é você. Achei que tinha esquecido da Vila.',
+  1: (days) => `Faz ${days} dias que a gente não conversa...`,
+  2: (days) => `${days} dias sem aparecer! Eu fiquei com saudade, sabia?`,
+  3: () => 'Você sumiu! Eu olhava a estrada todo dia esperando você voltar.',
+  4: () => 'Finalmente! Eu guardei um monte de coisa para te contar.',
+};
+
 /**
  * Conversa: a primeira do dia vale amizade (+6). Às vezes (1 em 3 dias) o Pokémon pede um item; entregar vale bem mais.
+ * Antes dela, pesa um pouco o que ficou para trás: o pedido sem resposta e a saudade de mais de uma semana (`FRIEND_LOSS`).
  * O texto muda com o nível de amizade e com a hora (bom dia / boa noite).
  */
 export function talk(s: VillageState, id: string, name: string, types: readonly PokemonType[], day: string, hour: number, rng: Rng, gossip: string | null = null, weather: string | null = null): Talk {
   const f = friendOf(s, id);
   let gained = 0;
+  let lost = 0;
+  let grievance = '';
   const first = f.lastTalk !== day;
   if (first) {
+    const away = f.lastTalk ? daysBetween(f.lastTalk, day) : 0;
+    const missed = f.request && f.request.day !== day && !f.request.done ? f.request : null;
+    const missing = away >= FRIEND_LOSS.absenceGraceDays ? Math.min(FRIEND_LOSS.absenceMax, FRIEND_LOSS.absencePerWeek * Math.floor(away / 7)) : 0;
+    const change = gainFriendship(s, id, -((missed ? FRIEND_LOSS.ignoredRequest : 0) + missing), day);
+    lost = change < 0 ? -change : 0;
+    if (missing > 0) grievance = `${MISSED_YOU[friendLevel(f.points).level]!(away)} `;
+    if (missed) grievance += `Da última vez eu te pedi ${missed.qty} ${itemName(missed.item)}... tudo bem, fica para a próxima. `;
     f.lastTalk = day;
     gained = gainFriendship(s, id, TALK_FRIENDSHIP);
     if (!f.request || f.request.day !== day) {
@@ -667,11 +728,11 @@ export function talk(s: VillageState, id: string, name: string, types: readonly 
   if (weather && WEATHER_LINES[weather] && rng() < 0.25) pool = [WEATHER_LINES[weather]!];
   const remembers = !!gossip && level >= 1 && rng() < 0.6;
   if (remembers) pool = [gossip!];
-  let text = `${first ? greet : ''}${pool[Math.floor(rng() * pool.length)]}`;
+  let text = `${first ? greet : ''}${grievance}${pool[Math.floor(rng() * pool.length)]}`;
   const req = f.request && f.request.day === day && !f.request.done ? f.request : null;
   if (req) text += ` Ah... você teria ${req.qty} ${itemName(req.item)}? Eu ia adorar!`;
   else if (!first && !remembers) text = AGAIN_LINES[level]!(name);
-  return { text, gained, request: req };
+  return { text, gained, lost, request: req };
 }
 
 export interface Gift {
@@ -680,7 +741,7 @@ export interface Gift {
   gained: number;
 }
 
-/** Presente: entrega o pedido do dia (muito), o favorito (bastante), qualquer coisa (um pouco) ou o que ele não gosta (quase nada). Um presente por dia. */
+/** Presente: entrega o pedido do dia (muito), o favorito (bastante), qualquer coisa (um pouco) ou o que ele não gosta (tira um pouco). Um presente por dia. */
 export function giveGift(s: VillageState, id: string, types: readonly PokemonType[], item: ItemId, day: string): Gift {
   const f = friendOf(s, id);
   const def = itemDef(item);
@@ -688,7 +749,7 @@ export function giveGift(s: VillageState, id: string, types: readonly PokemonTyp
     if (availableCount(s, item) <= 0) return { ok: false, text: `Você não tem ${itemName(item)} disponível.`, gained: 0 };
     const current = friendLevel(f.points).level;
     const next = FRIEND_LEVELS[current + 1];
-    if (!next) return { ok: false, text: `${id} já está no maior nível de amizade.`, gained: 0 };
+    if (!next) return { ok: false, text: 'A gente já é melhor amigo! Guarde esse doce para outra pessoa.', gained: 0 };
     s.inventory[item] = count(s, item) - 1;
     const gained = next.min - f.points;
     f.points = Math.min(100, next.min);
@@ -719,10 +780,10 @@ export function giveGift(s: VillageState, id: string, types: readonly PokemonTyp
   s.inventory[item] = count(s, item) - 1;
   f.lastGift = day;
   const fav = favoriteOf(types) === item;
-  // O Livro avisa do que ele não gosta: dar isso ainda conta como gentileza, mas quase não aproxima.
+  // O Livro avisa do que ele não gosta: insistir nisso afasta um pouquinho.
   const disliked = !fav && dislikeOf(id, types) === item;
-  const gained = gainFriendship(s, id, fav ? 10 : disliked ? 1 : 4);
-  return { ok: true, text: fav ? `${itemName(item)}! É o meu favorito!` : disliked ? `${itemName(item)}... hum, obrigado. Não é bem o meu tipo de presente.` : 'Que gentil, obrigado!', gained };
+  const gained = gainFriendship(s, id, fav ? 10 : disliked ? -FRIEND_LOSS.dislikedGift : 4, day);
+  return { ok: true, text: fav ? `${itemName(item)}! É o meu favorito!` : disliked ? `${itemName(item)}... Ah. Obrigado, mas eu não gosto muito disso.` : 'Que gentil, obrigado!', gained };
 }
 
 /** Só um Grande amigo (ou mais) aceita seguir você pela vila. */

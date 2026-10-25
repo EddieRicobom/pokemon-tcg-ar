@@ -501,30 +501,38 @@ function trainerEvent(action: 'talk' | 'answer' | 'moment' | 'nickname', id?: st
   recordEvent({ type: 'village', action, level: id ? friendLevel(friendOf(state, id).points).level : undefined });
 }
 
-/** "+6 amizade (faltam 18 para Amigo)": o ganho de agora e o caminho até o próximo marco. */
-function friendGainNote(id: string, gained: number): string {
-  return gained > 0 ? ` ❤️ +${gained} amizade (${friendProgressText(friendOf(state, id).points)}).` : '';
+/** "+6 amizade (faltam 18 para Amigo)" ou "−2 amizade (…)": a mudança de agora e o caminho até o próximo marco. */
+function friendGainNote(id: string, delta: number): string {
+  if (delta === 0) return '';
+  const progress = friendProgressText(friendOf(state, id).points);
+  return delta > 0 ? ` ❤️ +${delta} amizade (${progress}).` : ` 💔 −${-delta} amizade (${progress}).`;
 }
 
 /**
- * Marcos de amizade, venha o ganho de onde vier (conversa, presente, momento, carta, mural, reforma): aviso na tela,
- * coração sobre o Pokémon e uma página no Diário com o que se abriu. Cada marco é comemorado uma vez só.
+ * Mudanças de nível de amizade, venha o ganho ou a perda de onde vier (conversa, presente, momento, carta, mural,
+ * reforma, ausência): aviso na tela, emoji sobre o Pokémon e uma página no Diário. Quem cai abaixo de «Grande amigo»
+ * deixa de seguir você até a amizade voltar.
  */
 function celebrateFriendMilestones(): void {
-  const reached = claimFriendMilestones(state, mons.value.map((m) => m.id));
-  if (reached.length === 0) return;
+  const changes = claimFriendMilestones(state, mons.value.map((m) => m.id));
+  if (changes.length === 0) return;
   const now = Date.now();
   const today = refreshDay();
-  for (const m of reached) {
+  for (const m of changes) {
     recordFriendMilestone(state, { id: m.id, name: nameOf(m.id) }, m, now, today, villageHour());
-    game?.bubble(m.id, '💖', 3200);
+    game?.bubble(m.id, m.kind === 'down' ? '💔' : '💖', 3200);
+    if (m.kind === 'down' && state.follower === m.id && !canFollow(state, m.id)) state.follower = null;
   }
-  const first = reached[0]!;
-  const unlock = unlocksAt(first.level)[0];
-  say(reached.length === 1
-    ? `💖 ${nameOf(first.id)} agora é seu ${first.name}!${unlock ? ` Novo: ${unlock}` : ''}`
-    : `💖 Amizades cresceram: ${reached.map((m) => `${nameOf(m.id)} (${m.name})`).join(', ')}. Veja no Diário.`, 6500);
-  playSound('success');
+  const first = changes[0]!;
+  const name = nameOf(first.id);
+  const unlock = first.kind === 'up' ? unlocksAt(first.level)[0] : undefined;
+  const one = first.kind === 'down'
+    ? `💔 A amizade com ${name} esfriou: agora é ${first.name}. Converse e leve um presente de que ele goste para recuperar.`
+    : first.kind === 'back'
+      ? `💖 ${name} voltou a ser seu ${first.name}!`
+      : `💖 ${name} agora é seu ${first.name}!${unlock ? ` Novo: ${unlock}` : ''}`;
+  say(changes.length === 1 ? one : `Amizades mudaram: ${changes.map((m) => `${m.kind === 'down' ? '💔' : '💖'} ${nameOf(m.id)} (${m.name})`).join(', ')}. Veja no Diário.`, 6500);
+  playSound(changes.some((m) => m.kind !== 'down') ? 'success' : 'menu');
   syncTrainer();
 }
 
@@ -1387,7 +1395,8 @@ function speakToResident(id: string): void {
     trainerEvent('talk', id);
     earnCoins(5);
   }
-  let text = result.text + friendGainNote(id, result.gained);
+  if (result.lost > 0) game.bubble(id, '😞', 2600);
+  let text = result.text + friendGainNote(id, result.gained - result.lost);
   if (id === state.cafeWaiterId && level.value >= 3 && professionActive('cafe', mons.value.length)) text = 'Estou atendendo as mesas do Café! Mas tenho um tempinho para conversar. ' + text;
   const help = dailyHelp(state, id, today, Math.random);
   if (help.items.length > 0) text += ` Ah! Achei isto pela Vila para você: ${help.items.map((h) => `${h.qty} ${itemName(h.item)}`).join(' e ')}.`;
@@ -2687,16 +2696,32 @@ function openFriendDialog(id: string, text: string): void {
   const f = friendOf(state, id);
   const lvl = friendLevel(f.points);
   const following = state.follower === id;
-  const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: 'Presentear', run: () => { giftPick.value = true; } }];
+  // Só o essencial na primeira tela (presente, o que depende da amizade e despedida); o resto fica em "Mais opções",
+  // para quem acabou de chegar não encarar oito botões de uma vez.
+  const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: '🎁 Presentear', run: () => { giftPick.value = true; } }];
   if (id === state.mailCarrierId && professionActive('mail', mons.value.length)) actions.push({ label: '📬 Ver a bolsa do carteiro', run: () => openMailCarrierDialog(id) });
-  actions.push({ label: 'Acessório', run: () => { dialog.value = null; openDress(id); } });
-  actions.push({ label: nicknameOf(state, id) ? 'Mudar o apelido' : 'Dar apelido', disabled: !canNickname(state, id), run: () => openNickname(id) });
-  actions.push({ label: '🚶 Passeio guiado', run: () => openGuidedTrip(id) });
-  actions.push({ label: '📖 Ver no Livro', run: () => openBookFromDialog(id) });
   if (following) actions.push({ label: 'Pode passear', run: () => { state.follower = null; changed(); dialog.value = null; } });
-  else if (canFollow(state, id)) actions.push({ label: 'Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
+  else if (canFollow(state, id)) actions.push({ label: '🥰 Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
+  actions.push({ label: '⋯ Mais opções', run: () => openFriendMore(id) });
   actions.push({ label: 'Tchau', run: () => { dialog.value = null; } });
   dialog.value = { id, name: `${nameOf(id)} · ${lvl.name} ${'♥'.repeat(lvl.hearts)}${'♡'.repeat(5 - lvl.hearts)}`, text: displayResidentMessage(text), actions };
+}
+
+/** O que se faz com um morador com menos frequência: Livro, acessório, apelido e passeio. "Voltar" devolve a conversa. */
+function openFriendMore(id: string): void {
+  const main = dialog.value;
+  dialog.value = {
+    id,
+    name: main?.name ?? nameOf(id),
+    text: `O que você quer fazer com ${nameOf(id)}?`,
+    actions: [
+      { label: '📖 Ver no Livro', run: () => openBookFromDialog(id) },
+      { label: '🎀 Acessório', run: () => { dialog.value = null; openDress(id); } },
+      { label: nicknameOf(state, id) ? '✏️ Mudar o apelido' : '✏️ Dar apelido', disabled: !canNickname(state, id), run: () => openNickname(id) },
+      { label: '🚶 Passeio guiado', run: () => openGuidedTrip(id) },
+      { label: 'Voltar', run: () => { dialog.value = main; } },
+    ],
+  };
 }
 
 function openGuidedTrip(id: string): void {
@@ -2716,7 +2741,7 @@ function give(item: ItemId): void {
   if (r.ok) {
     playSound('gift');
     changed();
-    game?.bubble(id, r.gained >= 10 ? '😍' : r.gained <= 1 ? '😅' : '😊');
+    game?.bubble(id, r.gained >= 10 ? '😍' : r.gained < 0 ? '😕' : '😊');
   }
   openFriendDialog(id, r.text + (r.ok ? friendGainNote(id, r.gained) : ''));
 }

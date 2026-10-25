@@ -33,8 +33,9 @@ const MOODS = [
 
 export { dislikeOf };
 
-/** Humor de hoje: conversou e ganhou presente → radiante; de noite → sonolento; senão, o humor do dia. */
+/** Humor de hoje: magoado com você → chateado; conversou e ganhou presente → radiante; de noite → sonolento; senão, o humor do dia. */
 export function moodOf(id: string, f: Friendship | undefined, day: string, hour: number): { name: string; emoji: string; why: string } {
+  if (f && f.hurt === day) return { name: 'Chateado', emoji: '😞', why: 'A amizade de vocês levou um baque hoje. Uma conversa ou um presente de que ele gosta ajudam.' };
   if (f && f.lastTalk === day && f.lastGift === day) return { name: 'Radiante', emoji: '🥰', why: 'Você conversou com ele e deu presente hoje.' };
   if (hour >= 22 || hour < 6) return { name: 'Sonolento', emoji: '😴', why: 'Já é tarde. Ele está quase dormindo.' };
   if (f && f.lastTalk === day) return { name: 'Contente', emoji: '😄', why: 'Vocês já conversaram hoje.' };
