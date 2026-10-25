@@ -64,6 +64,7 @@ const visibleIdSet = computed(() => {
   );
 });
 const teamNotice = ref('');
+const teamNoticeId = ref('');
 
 const team = computed(() => resolveTeam(savedTeam.value, [...rows.value, ...digitalCandidates(villageDigital)]));
 const teamRows = computed(() => team.value.ids.map((id) => boxCards.value.find((row) => row.id === id)).filter((row): row is Row => row !== undefined));
@@ -100,6 +101,7 @@ const clearTyped = ref('');
 const clearReady = computed(() => clearTyped.value.trim().toUpperCase() === CLEAR_WORD);
 
 function toggleTeam(row: Row): void {
+  teamNoticeId.value = row.id;
   if (row.sprite.state !== 'ok') {
     teamNotice.value = `«${row.name}» ainda não tem o Pokémon carregado. Use "Carregar" antes de incluir na Vila.`;
     return;
@@ -243,9 +245,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
 <template>
   <section class="card" aria-labelledby="load-title">
     <h2 id="load-title">Minhas cartas</h2>
-    <p class="note">
-      As cartas que o app já reconheceu neste aparelho, guardadas no navegador. Fotos da câmera não são guardadas.
-    </p>
+    <p class="note">As cartas que o app já reconheceu e os Pokémon digitais estão na Caixa. Toque em um para escolher quem vai à Vila.</p>
 
     <div v-if="needsLoading" class="actions">
       <button type="button" class="primary" :disabled="bulk !== null" @click="prepareAll">
@@ -266,13 +266,12 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
       </div>
     </section>
 
-    <nav v-else class="collection-flow" aria-label="Da coleção à batalha">
-      <div class="flow-step current"><span>1</span><div><strong>Pokémon disponíveis</strong><small>Cartas escaneadas e companheiros da Vila</small></div></div>
-      <div class="flow-step"><span>2</span><div><strong>Equipe da Vila · {{ teamRows.length }}/{{ TEAM_SIZE }}</strong><small>Escolha quem mora com você e entra nas atividades</small></div></div>
-      <a class="flow-step" :href="routeHref('caixa')"><span>3</span><div><strong>Abrir Caixa em AR →</strong><small>Posicione a equipe e acompanhe uma batalha de exibição</small></div></a>
-    </nav>
-    <div v-if="teamRows.length > 0" class="team-strip" role="group" aria-label="Moradores da Vila">
-      <strong>Moradores da Vila ({{ teamRows.length }}/{{ TEAM_SIZE }})<small v-if="team.auto"> · automática</small></strong>
+    <div v-else class="collection-shortcuts">
+      <a class="button" :href="routeHref('vila')">Ir para a Vila</a>
+      <a class="button" :href="routeHref('caixa')">Caixa em AR</a>
+    </div>
+    <details v-if="teamRows.length > 0" class="team-strip">
+      <summary>Moradores da Vila · {{ teamRows.length }}/{{ TEAM_SIZE }}<small v-if="team.auto"> · automática</small></summary>
       <ul>
         <li v-for="row in teamRows" :key="row.id">
           <img v-if="row.thumb || row.icon" :src="row.thumb ?? row.icon" :alt="row.name" width="40" height="56" :class="{ sprite: !row.thumb }" />
@@ -281,16 +280,17 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
           <CardMarks :card="row" compact />
         </li>
       </ul>
-    </div>
+    </details>
     <p v-if="teamNotice" class="message error" role="alert">{{ teamNotice }}</p>
 
-    <div v-if="rows.length > 0" class="filter-bar" role="search">
+    <div v-if="boxCards.length > 0" class="filter-bar" role="search">
       <div class="chips view-switch" role="group" aria-label="Modo de exibição">
         <button type="button" :class="{ active: viewMode === 'box' }" :aria-pressed="viewMode === 'box'" @click="viewMode = 'box'">Caixas da coleção</button>
         <button type="button" :class="{ active: viewMode === 'lista' }" :aria-pressed="viewMode === 'lista'" @click="viewMode = 'lista'">Lista</button>
         <button type="button" :class="{ active: viewMode === 'grade' }" :aria-pressed="viewMode === 'grade'" @click="viewMode = 'grade'">Grade</button>
       </div>
       <input v-model="search" type="text" :placeholder="viewMode === 'box' ? 'Buscar nas caixas da coleção' : 'Buscar por nome, coleção ou número'" aria-label="Buscar nas cartas guardadas" autocomplete="off" />
+      <details class="collection-filters"><summary>Filtros de tipo e geração</summary>
       <div class="filter-row species-filters">
         <ElementTypeFilter v-model="typeFilter" />
         <label>Geração
@@ -301,6 +301,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
         </label>
         <button v-if="typeFilter || genFilter" type="button" class="link" @click="typeFilter = ''; genFilter = 0">Limpar</button>
       </div>
+      </details>
       <!-- Na Box a ordem é a que você arrumou: filtros de situação e ordem ficam para a Lista e a Grade. -->
       <div v-if="viewMode !== 'box'" class="chips" role="group" aria-label="Filtrar por situação">
         <button v-for="option in ([['todas', 'Todas'], ['completo', 'Completas'], ['parcial', 'Parciais'], ['falhou', 'Com falha'], ['sem-pokemon', 'Sem Pokémon']] as const)" :key="option[0]" type="button" :class="{ active: statusFilter === option[0] }" :aria-pressed="statusFilter === option[0]" @click="statusFilter = option[0]">
@@ -327,9 +328,11 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <p v-else-if="rows.length === 0 && digital.length > 0" class="message">Ainda não há carta escaneada. <a :href="routeHref('escanear')">Escanear uma carta</a> adiciona a coleção sem tirar seus companheiros digitais da Vila.</p>
 
     <CardBox
-      v-if="viewMode === 'box' && rows.length > 0"
+      v-if="viewMode === 'box' && boxCards.length > 0"
       :cards="boxCards"
       :team="team.ids"
+      :team-notice="teamNotice"
+      :team-notice-id="teamNoticeId"
       :busy-id="busyId"
       :visible-ids="visibleIdSet"
       :status-text="STATUS_TEXT"
@@ -385,8 +388,8 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
       </li>
     </ul>
 
-    <section v-if="digital.length > 0" class="digital-list" aria-labelledby="digital-title">
-      <h3 id="digital-title">Digital Pokémon <small>· moram na Vila</small></h3>
+    <details v-if="digital.length > 0" class="digital-list">
+      <summary>Digital Pokémon · {{ digital.length }}</summary>
       <p class="note">
         Vêm do presente inicial e da Fonte, não de uma carta física: moram na Vila, jogam na Torre e andam na Caixa em AR
         com a equipe. Como não têm carta, não são escaneados nem aparecem em Várias.
@@ -403,7 +406,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
           </div>
         </li>
       </ul>
-    </section>
+    </details>
 
     <!-- Detalhes técnicos do armazenamento: recolhidos, para não pesar o topo da tela. -->
     <details class="storage-details">

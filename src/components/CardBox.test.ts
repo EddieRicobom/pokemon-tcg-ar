@@ -69,6 +69,9 @@ describe('Box (tela)', () => {
     const detail = host!.querySelector('.pbox-detail');
     expect(detail?.textContent).toContain('Pikachu');
     expect(detail?.textContent).toContain('Ver em AR');
+    host!.querySelector<HTMLButtonElement>('.pbox-detail-close')!.click();
+    await nextTick();
+    expect(host!.querySelector('.pbox-detail')).toBeNull();
   });
 
   it('permite escolher diretamente entre caixas adicionais', async () => {

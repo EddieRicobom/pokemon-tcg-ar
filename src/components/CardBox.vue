@@ -22,6 +22,8 @@ const props = defineProps<{
   /** Ids dos moradores da Vila, na ordem (o número aparece no canto do espaço). */
   team: string[];
   busyId: string | null;
+  teamNotice?: string;
+  teamNoticeId?: string;
   /** Cartas que passam no filtro/busca da tela; as outras ficam apagadas na grade. */
   visibleIds: Set<string>;
   statusText: Record<CacheStatus, string>;
@@ -178,6 +180,8 @@ const teamIndex = (id: string) => props.team.indexOf(id);
       </button>
     </div>
 
+    <details class="pbox-organize">
+      <summary>Organizar caixas</summary>
     <div class="pbox-tools">
       <button type="button" :class="{ active: moving }" :aria-pressed="moving" @click="toggleMove">{{ moving ? 'Concluir' : '↔ Mover' }}</button>
       <button type="button" :disabled="moving" @click="arrange('pokedex')">Arrumar pela Pokédex</button>
@@ -185,14 +189,17 @@ const teamIndex = (id: string) => props.team.indexOf(id);
       <button type="button" :disabled="moving" @click="newBox">+ Caixa</button>
       <button v-if="filled === 0 && layout.boxes.length > 1" type="button" @click="dropEmptyBox">Apagar esta caixa</button>
     </div>
+    </details>
     <p v-if="notice" class="pbox-notice" role="status">{{ notice }}</p>
-    <p class="pbox-legend">
+    <details class="pbox-help"><summary>Como usar a Caixa</summary><p class="pbox-legend">
       Número no canto = posição entre moradores da Vila · ✨ = Digital Pokémon (sem carta física) · borda tracejada = carta ainda não completa · apagadas = fora do filtro.
-    </p>
+    </p></details>
 
     <div v-if="selectedCard && !moving" class="pbox-detail" role="region" :aria-label="`Detalhes de ${selectedCard.name}`">
+      <button type="button" class="pbox-detail-close" aria-label="Fechar detalhes" @click="selected = null">×</button>
       <img v-if="selectedCard.thumb" :src="selectedCard.thumb" :alt="`Carta ${selectedCard.name}`" width="72" height="100" />
       <div>
+        <p v-if="teamNotice && teamNoticeId === selectedCard.id" class="message error" role="alert">{{ teamNotice }}</p>
         <template v-if="selectedCard.digital">
           <strong>{{ selectedCard.name }} <span class="badge digital">✨ Digital</span></strong>
           <span>Pokédex nº {{ selectedCard.dexIds[0] }} · carta de origem {{ selectedCard.originCardId }}</span>

@@ -8225,3 +8225,25 @@ html.classic-font body :not(svg):not(path) {
   .survivor-hp { height: auto; min-height: 59px; }
   .survivor-hp .survivor-hp-heading span, .survivor-hp .survivor-hp-value { font-size: .65rem; }
 }
+
+
+/* Colecao: o essencial fica junto da grade; ferramentas e detalhes extras podem ser abertos. */
+.collection-shortcuts { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.collection-shortcuts .button { flex: 1 1 130px; text-align: center; }
+.team-strip summary, .collection-filters summary, .digital-list summary, .pbox-organize summary, .pbox-help summary { cursor: pointer; font-weight: 700; }
+.collection-filters, .pbox-organize, .pbox-help { padding: 7px 0; }
+.pbox-detail {
+  position: fixed; z-index: 30; left: 50%; bottom: calc(8px + env(safe-area-inset-bottom));
+  transform: translateX(-50%); width: min(560px, calc(100% - 24px)); max-height: min(55dvh, 420px);
+  overflow-y: auto; overscroll-behavior: contain; padding: 14px; padding-right: 48px;
+  box-shadow: 0 4px 24px #000b; background: var(--surface-2);
+}
+.pbox-detail-close { position: absolute; right: 8px; top: 8px; min-width: 40px; min-height: 40px; font-size: 1.4rem; }
+.pbox-detail > div { flex: 1; }
+@media (orientation: portrait) {
+  .survivor-overlay > .survivor-upgrades { width: calc(100% - 16px); max-width: 520px; max-height: calc(100% - 16px); padding: 14px; }
+  .survivor-levelup .survivor-rarity-hint { margin: 2px 0 6px; }
+  .survivor-levelup .survivor-rarity-guide { margin: 10px 0 0; }
+  .survivor-choice-list { gap: 8px; }
+  .survivor-overlay .survivor-upgrade-btn { padding: 10px; }
+}

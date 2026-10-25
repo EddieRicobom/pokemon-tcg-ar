@@ -2361,11 +2361,6 @@ onBeforeUnmount(() => {
             <p class="survivor-kicker">Nível {{ state?.player.level }}</p>
             <h2>Subiu de nível!</h2>
             <p class="survivor-rarity-hint">Cada carta tem uma raridade e um efeito próprio. O Especial continua disponível após o encontro com o guardião.</p>
-            <details class="survivor-rarity-guide">
-              <summary>Como funcionam as raridades</summary>
-              <p>Pesos relativos entre cartas disponíveis: Poké Ball {{ SURVIVOR_UPGRADE_RARITIES.normal.weight }}, Great Ball {{ SURVIVOR_UPGRADE_RARITIES.raro.weight }}, Ultra Ball {{ SURVIVOR_UPGRADE_RARITIES.lendario.weight }} e Master Ball {{ SURVIVOR_UPGRADE_RARITIES.ancestral.weight }}. As chances mudam quando uma faixa ainda não está liberada ou acaba.</p>
-              <p>Great Ball: nível 3 · Ultra Ball: nível 8 · Master Ball: nível 12. Só uma carta Master Ball pode ser escolhida por corrida.</p>
-            </details>
             <div class="survivor-choice-list">
               <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" @click="chooseUpgrade(u.id)">
                 <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u) }}</span>
@@ -2383,6 +2378,11 @@ onBeforeUnmount(() => {
               <span class="survivor-upgrade-icon" aria-hidden="true">⭐</span>
               <span><strong>Desejo de Jirachi · Rerrolar</strong><small>{{ availableUpgradeRerolls }} desejo(s) restante(s). Cartas normais são trocadas; se todas forem Great Ball ou melhor, uma nova raridade superior é garantida quando já estiver liberada.</small></span>
             </button>
+            <details class="survivor-rarity-guide">
+              <summary>Como funcionam as raridades</summary>
+              <p>Pesos relativos entre cartas disponíveis: Poké Ball {{ SURVIVOR_UPGRADE_RARITIES.normal.weight }}, Great Ball {{ SURVIVOR_UPGRADE_RARITIES.raro.weight }}, Ultra Ball {{ SURVIVOR_UPGRADE_RARITIES.lendario.weight }} e Master Ball {{ SURVIVOR_UPGRADE_RARITIES.ancestral.weight }}. As chances mudam quando uma faixa ainda não está liberada ou acaba.</p>
+              <p>Great Ball: nível 3 · Ultra Ball: nível 8 · Master Ball: nível 12. Só uma carta Master Ball pode ser escolhida por corrida.</p>
+            </details>
           </div>
         </div>
 
