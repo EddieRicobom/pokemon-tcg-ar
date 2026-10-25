@@ -24,6 +24,7 @@ import { ensureModeStories } from '../core/village/mode-stories';
 import { challengeGalleryUnlocked, completedChallengeExhibits } from '../core/village/challenge-gallery';
 import BackpackView from './BackpackView.vue';
 import VillageSheetHeader from './VillageSheetHeader.vue';
+import { villageSheetCloseAction } from '../core/village/sheet-close';
 import HoOhWishCutscene from './HoOhWishCutscene.vue';
 import LegendaryCutscene from './LegendaryCutscene.vue';
 import VillageLegends from './VillageLegends.vue';
@@ -1768,6 +1769,8 @@ function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.se
 
 function closeVillageSheet(): void {
   sheet.value = null;
+  homeInteriorLot.value = null;
+  selectedHomeItem.value = null;
   bookDialogId.value = null;
   askingMon = null;
   heldKeys.clear();
@@ -1775,6 +1778,13 @@ function closeVillageSheet(): void {
   tapInteraction = null;
   game?.setWaiting(null);
   game?.holdStick(null);
+}
+
+function requestCloseSheet(): void {
+  const action = villageSheetCloseAction(sheet.value, tab.value === 'inicio');
+  if (action === 'back') tab.value = 'inicio';
+  else if (action === 'tower') towerGameRef.value?.requestLeave();
+  else if (action === 'close') closeVillageSheet();
 }
 
 function openBookFromDialog(id: string): void {
@@ -1848,41 +1858,41 @@ function goToPins(): void {
 
 function goToPvp(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   emit('close', 'pvp');
 }
 
 /** Coliseu → Arena 3D: o palco virtual da Caixa, sem câmera nem sensores. */
 function goToArena3d(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   emit('close', 'arena3d');
 }
 
 /** Coliseu → Caixa em AR: a câmera e os sensores, com os Pokémon no chão da sua sala. */
 function goToCaixa(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   emit('close', 'caixa');
 }
 
 function goToArena(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   window.location.hash = routeHref('arena', undefined, ['vila']);
 }
 
 /** Fliperama → batalha na Arena 3D: fecha a Vila e abre o palco virtual (sem câmera) com a batalha em destaque. */
 function goToBattle3d(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   emit('close', 'batalha3d');
 }
 
 /** Fliperama → batalha na câmera: fecha a Vila e já abre a câmera e os sensores da Caixa (no mesmo toque). */
 function goToBattle(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   emit('close', 'batalha');
 }
 const battleRewardText = computed(() => {
@@ -2795,9 +2805,7 @@ function pressB(): void {
   else if (quizOpen.value) return;
   else if (pendingChoice) decide(null);
   else if (dialog.value) dialog.value = null;
-  else if (sheet.value === 'menu' && tab.value !== 'inicio') tab.value = 'inicio'; // B dentro de uma seção volta ao menu
-  else if (sheet.value === 'torre') towerGameRef.value?.requestLeave();
-  else if (sheet.value) closeVillageSheet(); // fecha pelo mesmo caminho do ✕ e libera o estado de interação da Vila
+  else if (sheet.value) requestCloseSheet();
   else openMenu();
 }
 
@@ -2805,8 +2813,7 @@ function pressMenu(): void {
   if (legendaryScene.value) return;
   if (dialog.value || quiz.value || (sheet.value && sheet.value !== 'menu')) return;
   if (sheet.value === 'menu') {
-    if (tab.value !== 'inicio') tab.value = 'inicio';
-    else closeVillageSheet();
+    requestCloseSheet();
     return;
   }
   openMenu();
@@ -2817,7 +2824,7 @@ function act(result: { ok: boolean; message: string }, close = false, cue: UiSou
   if (result.ok) {
     playSound(cue);
     changed();
-    if (close) sheet.value = null;
+    if (close) closeVillageSheet();
   }
 }
 
@@ -3192,7 +3199,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'build'" class="village-sheet" role="dialog" aria-label="Construir a casa">
-        <VillageSheetHeader :title="`Sua casa: ${HOUSE_LEVELS[state.house]?.name}`" title-id="village-build-title" @close="closeVillageSheet" />
+        <VillageSheetHeader :title="`Sua casa: ${HOUSE_LEVELS[state.house]?.name}`" title-id="village-build-title" @close="requestCloseSheet" />
         <template v-if="nextHouse">
           <p>Próximo: <strong>{{ nextHouse.name }}</strong></p>
           <p class="hint">Precisa de: {{ describeCost(state, nextHouse.cost) }}</p>
@@ -3251,7 +3258,7 @@ onBeforeUnmount(() => {
             <button type="button" role="tab" :class="{ active: shopTab === 'vender' }" :aria-selected="shopTab === 'vender'" @click="shopTab = 'vender'">Vender</button>
           </div>
           <span class="village-coins"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
-          <button type="button" class="link" @click="sheet = null">Fechar</button>
+          <button type="button" class="link" @click="requestCloseSheet">Fechar</button>
         </header>
         <p class="hint">{{ shopTab === 'comprar' ? 'Sementes sempre; os móveis e acessórios mudam todo dia.' : 'A loja compra tudo o que você coleta e colhe.' }}</p>
         <ul v-if="shopTab === 'comprar'" class="item-grid">
@@ -3275,7 +3282,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'dress'" class="village-sheet" role="dialog" aria-label="Acessórios">
-        <VillageSheetHeader :title="`Acessório ${dressFor === 'player' ? 'para você' : `para ${nameOf(dressFor)}`}`" title-id="village-dress-title" @close="closeVillageSheet" />
+        <VillageSheetHeader :title="`Acessório ${dressFor === 'player' ? 'para você' : `para ${nameOf(dressFor)}`}`" title-id="village-dress-title" @close="requestCloseSheet" />
         <ul class="item-grid">
           <li v-for="acc in accessoriesOwned.filter(fitsWho)" :key="acc">
             <img :src="icon(acc)" alt="" width="40" height="40" />
@@ -3288,28 +3295,28 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-label="Fliperama">
-        <VillageSheetHeader title="Fliperama" title-id="village-arcade-title" @close="closeVillageSheet" />
+        <VillageSheetHeader title="Fliperama" title-id="village-arcade-title" @close="requestCloseSheet" />
         <div class="card arcade-battle">
           <h2>⚔️ Batalha na câmera</h2>
           <p class="note">Abre a câmera e os sensores da Caixa direto no modo de batalha: coloque a caixa no chão e toque em Batalhar. {{ battleRewardText }}.</p>
           <button type="button" class="primary" @click="goToBattle">Abrir câmera e batalhar</button>
         </div>
-        <MinigameHub closable @leave="sheet = null" />
+        <MinigameHub closable @leave="closeVillageSheet" />
       </div>
 
       <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-label="Caixa de sementes">
-        <header><strong>🌱 Caixa de sementes</strong><button type="button" class="link" @click="closeVillageSheet">Fechar</button></header>
+        <header><strong>🌱 Caixa de sementes</strong><button type="button" class="link" @click="requestCloseSheet">Fechar</button></header>
         <FarmSeedBox :state="state" :name-of="nameOf" @change="changed" />
       </div>
 
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
       <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="pressB">Fechar</button></header>
-        <MinigameSobrevivencia ref="towerGameRef" :start-bonk="towerStartBonk" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="sheet = null" />
+        <MinigameSobrevivencia ref="towerGameRef" :start-bonk="towerStartBonk" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="closeVillageSheet" />
       </div>
 
       <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">
-        <VillageSheetHeader title="Vitrine de desafios" icon="🏆" title-id="village-gallery-title" @close="closeVillageSheet" />
+        <VillageSheetHeader title="Vitrine de desafios" icon="🏆" title-id="village-gallery-title" @close="requestCloseSheet" />
         <p class="hint">O pedestal foi montado com as lembranças da Liga e dos Pins. Cada peça abaixo corresponde a um marco registrado numa partida concluída.</p>
         <ul class="village-list">
           <li v-for="exhibit in challengeExhibits" :key="exhibit.achievementId">
@@ -3321,7 +3328,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-label="Evolução dos Pokémon das cartas">
-        <VillageSheetHeader title="Evolução · seus companheiros" title-id="village-evolution-title" @close="closeVillageSheet" />
+        <VillageSheetHeader title="Evolução · seus companheiros" title-id="village-evolution-title" @close="requestCloseSheet" />
         <CardEvolutionPanel :friends="state.friends" :trust-stones="count(state, 'trust-stone')" :altar="cardEvolutionAtAltar" @evolved="syncCardEvolution" @spend-trust-stones="() => { state.inventory['trust-stone'] = Math.max(0, count(state, 'trust-stone') - 5); changed(); }" />
       </div>
 
@@ -3329,7 +3336,7 @@ onBeforeUnmount(() => {
         <header class="menu-head">
           <button v-if="tab !== 'inicio'" type="button" class="link menu-back" @click="tab = 'inicio'">← Menu</button>
           <strong>{{ MENU_TITLES[tab] }}</strong>
-          <button type="button" class="menu-close" aria-label="Fechar o menu" @click="closeVillageSheet">✕</button>
+          <button type="button" class="menu-close" aria-label="Fechar o menu" @click="requestCloseSheet">✕</button>
         </header>
 
         <div v-if="tab === 'inicio'" class="menu-home">
