@@ -8,6 +8,12 @@ describe('configurações visuais', () => {
     expect(normalizeVisual(null)).toMatchObject({ smoothing: 'bordas', frameRate: 'auto', rotomMode: false });
   });
 
+  it('a fonte clássica é opcional e continua escolhida no Modo Rotom', () => {
+    expect(normalizeVisual(null).classicFont).toBe(false);
+    expect(normalizeVisual({ classicFont: 'sim' as never }).classicFont).toBe(false);
+    expect(effectiveVisualSettings(normalizeVisual({ classicFont: true, rotomMode: true })).classicFont).toBe(true);
+  });
+
   it('os reflexos da maleta vêm ligados e só desligam com false explícito', () => {
     expect(normalizeVisual({ caseFx: false }).caseFx).toBe(false);
     expect(normalizeVisual({ caseFx: 'x' as never }).caseFx).toBe(true);

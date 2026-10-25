@@ -2090,9 +2090,9 @@ onBeforeUnmount(() => {
           <small>{{ trainerPresentation.count }} Pokémon reforçados aguardam a batalha</small>
         </div>
         <div v-if="ready && state" class="survivor-hud">
-          <div class="survivor-hp" :class="{ low: state.player.hp / state.player.maxHp < 0.3 }">
-            <div class="survivor-hp-fill" :style="{ width: Math.max(0, (state.player.hp / state.player.maxHp) * 100) + '%' }"></div>
-            <span class="survivor-hp-label">{{ avatarName }} · Nv {{ state.player.level }}</span>
+          <div class="survivor-hp" :class="{ low: state.player.hp / state.player.maxHp < 0.3, medium: state.player.hp / state.player.maxHp >= 0.3 && state.player.hp / state.player.maxHp < 0.5 }">
+            <div class="survivor-hp-heading"><span class="survivor-hp-label">{{ avatarName }}</span><span>Nv {{ state.player.level }}</span></div>
+            <div class="survivor-hp-row"><b>HP</b><div class="survivor-hp-track"><div class="survivor-hp-fill" :style="{ width: Math.max(0, Math.min(100, (state.player.hp / state.player.maxHp) * 100)) + '%' }"></div></div></div>
             <span class="survivor-hp-value">{{ Math.ceil(Math.max(0, state.player.hp)) }}/{{ Math.ceil(state.player.maxHp) }}</span>
           </div>
           <div class="survivor-xp-bar" role="progressbar" :aria-valuemin="0" :aria-valuemax="state.player.xpToNext" :aria-valuenow="state.player.xp" :aria-label="`Experiência: ${state.player.xp} de ${state.player.xpToNext} para o próximo nível`" :title="`Faltam ${Math.max(0, state.player.xpToNext - state.player.xp)} XP para o próximo nível`">

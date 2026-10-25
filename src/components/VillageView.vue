@@ -3482,6 +3482,10 @@ onBeforeUnmount(() => {
             <span>Modo Rotom: 20 FPS e efeitos gráficos pesados suspensos; desligue para restaurar suas opções</span>
           </label>
           <label class="art-option">
+            <input v-model="visual.classicFont" type="checkbox" />
+            <span>Fonte Pokémon clássica na interface</span>
+          </label>
+          <label class="art-option">
             <span>Limite global de quadros</span>
             <select v-model="visual.frameRate" :disabled="visual.rotomMode" aria-label="Taxa de quadros dos jogos">
               <option value="auto">Automática</option><option value="30">30 FPS</option><option value="20">20 FPS</option>
