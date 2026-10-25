@@ -5650,6 +5650,12 @@ body.no-scroll .reward-toasts {
   flex-wrap: wrap;
 }
 
+.village-sheet .village-sheet-header { display: flex; gap: 8px; align-items: center; }
+.village-sheet-header strong { flex: 1; min-width: 0; }
+.village-sheet-header .village-sheet-close, .village-sheet-header .village-sheet-back { min-width: 44px; min-height: 44px; }
+.village-sheet-header .village-sheet-close { border-radius: 50%; border: 1px solid var(--line); background: transparent; color: inherit; }
+.village-sheet-header .village-sheet-actions { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
 .village-sheet .chips {
   flex-wrap: wrap;
 }

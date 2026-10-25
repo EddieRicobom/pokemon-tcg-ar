@@ -5,6 +5,11 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Janelas da Vila (25/10/2026)
+
+- Cabeçalhos compartilhados, fechamento com limpeza e navegação por Tab das folhas da Vila; menu em seção volta antes de fechar e a Torre conserva confirmação de saída. Conversas continuam com OK/Voltar. Não foi adicionado fechamento ao tocar fora.
+- Edge em perfil descartável: casa e menu abertos, Tab mantido na folha, Esc, retorno do foco do menu e confirmação de saída da Torre; as demais janelas, leitor de tela e tecla presa ainda precisam de validação manual. Celular real, sensores e GPU não foram testados.
+
 ## Interface: preparação do Survival, controles do BONK e lista de cartas (25/10/2026)
 
 - Preparação do Survival: a tela agora mostra, nesta ordem, o próximo marco, o modo (Normal, BONK, Infinito), os Pokémon sorteados e "Sortear novamente". Modificadores (Ritmo acelerado) e a preparação ficam à vista, entre o modo e os Pokémon, porque escolher um Pokémon já inicia a corrida. Música, histórico de corridas, trilha de desafios e explicações foram para "Mais opções e informações", fechado por padrão.

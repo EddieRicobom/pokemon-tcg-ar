@@ -23,6 +23,9 @@ import { claimPrizes } from '../core/village/rewards';
 import { ensureModeStories } from '../core/village/mode-stories';
 import { challengeGalleryUnlocked, completedChallengeExhibits } from '../core/village/challenge-gallery';
 import BackpackView from './BackpackView.vue';
+import VillageSheetHeader from './VillageSheetHeader.vue';
+import { villageSheetCloseAction } from '../core/village/sheet-close';
+import { wrappedFocusIndex } from '../core/village/sheet-focus';
 import HoOhWishCutscene from './HoOhWishCutscene.vue';
 import LegendaryCutscene from './LegendaryCutscene.vue';
 import VillageLegends from './VillageLegends.vue';
@@ -342,17 +345,18 @@ function rememberVillageActionFocus(event: FocusEvent): void {
 }
 function focusFirstVillageAction(selector: string): void {
   const panel = document.querySelector<HTMLElement>(selector);
-  const candidates = panel?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex="0"]');
-  const first = [...(candidates ?? [])].find((element) => !element.matches('.menu-close, .bc-close, .village-close') && element.textContent?.trim() !== 'Fechar') ?? candidates?.item(0);
+  const candidates = [...(panel?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]') ?? [])]
+    .filter((element) => element.getClientRects().length > 0 && !element.closest('[inert]'));
+  const first = candidates.find((element) => !element.matches('.menu-close, .bc-close, .village-close, .village-sheet-close') && element.textContent?.trim() !== 'Fechar') ?? candidates[0];
   focusWithArrowIndicator(first);
 }
 watch(sheet, (next, previous) => {
   if (next && !previous) sheetFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
-  if (next && !previous) void nextTick(() => focusFirstVillageAction('.village-sheet'));
+  if (next && next !== previous) void nextTick(() => { if (sheet.value === next) focusFirstVillageAction('.village-sheet'); });
   if (!next && previous) {
     const target = sheetFocusReturn;
     sheetFocusReturn = null;
-    void nextTick(() => (target?.isConnected ? target : wrapEl.value)?.focus());
+    void nextTick(() => { if (!sheet.value) (target?.isConnected ? target : wrapEl.value)?.focus(); });
   }
 });
 watch(tab, (next, previous) => {
@@ -1162,6 +1166,35 @@ function pressAClick(event: MouseEvent): void {
   if (performance.now() - lastPointerAPress > 180) pressA();
 }
 function onKey(e: KeyboardEvent): void {
+  if (backpackOpen.value) {
+    if (e.type === 'keydown' && e.key === 'Escape') {
+      e.preventDefault();
+      backpackOpen.value = false;
+    }
+    return;
+  }
+  if (e.type === 'keydown' && e.key === 'Tab' && sheet.value && !backpackOpen.value) {
+    const panel = document.querySelector<HTMLElement>('.village-sheet');
+    const nested = panel && [...panel.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]')]
+      .filter((element) => element.getClientRects().length > 0).at(-1);
+    const activePanel = nested ?? panel;
+    if (activePanel) {
+      const controls = [...activePanel.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]')]
+        .filter((element) => element.getClientRects().length > 0 && !element.closest('[inert]'));
+      if (controls.length) {
+        const index = controls.indexOf(document.activeElement as HTMLElement);
+        const next = wrappedFocusIndex(index, controls.length, e.shiftKey);
+        if (next !== null) {
+          e.preventDefault();
+          controls[next]?.focus();
+        }
+      } else {
+        e.preventDefault();
+        activePanel.focus();
+      }
+    }
+    return;
+  }
   // A Torre tem seu próprio teclado; a Vila não deve capturar essas teclas por trás dela.
   if (sheet.value === 'torre') return;
   if (recapScenes.value.length) {
@@ -1767,6 +1800,8 @@ function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.se
 
 function closeVillageSheet(): void {
   sheet.value = null;
+  homeInteriorLot.value = null;
+  selectedHomeItem.value = null;
   bookDialogId.value = null;
   askingMon = null;
   heldKeys.clear();
@@ -1774,6 +1809,13 @@ function closeVillageSheet(): void {
   tapInteraction = null;
   game?.setWaiting(null);
   game?.holdStick(null);
+}
+
+function requestCloseSheet(): void {
+  const action = villageSheetCloseAction(sheet.value, tab.value === 'inicio');
+  if (action === 'back') tab.value = 'inicio';
+  else if (action === 'tower') towerGameRef.value?.requestLeave();
+  else if (action === 'close') closeVillageSheet();
 }
 
 function openBookFromDialog(id: string): void {
@@ -1847,41 +1889,41 @@ function goToPins(): void {
 
 function goToPvp(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   emit('close', 'pvp');
 }
 
 /** Coliseu → Arena 3D: o palco virtual da Caixa, sem câmera nem sensores. */
 function goToArena3d(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   emit('close', 'arena3d');
 }
 
 /** Coliseu → Caixa em AR: a câmera e os sensores, com os Pokémon no chão da sua sala. */
 function goToCaixa(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   emit('close', 'caixa');
 }
 
 function goToArena(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   window.location.hash = routeHref('arena', undefined, ['vila']);
 }
 
 /** Fliperama → batalha na Arena 3D: fecha a Vila e abre o palco virtual (sem câmera) com a batalha em destaque. */
 function goToBattle3d(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   emit('close', 'batalha3d');
 }
 
 /** Fliperama → batalha na câmera: fecha a Vila e já abre a câmera e os sensores da Caixa (no mesmo toque). */
 function goToBattle(): void {
   closeDialog();
-  sheet.value = null;
+  closeVillageSheet();
   emit('close', 'batalha');
 }
 const battleRewardText = computed(() => {
@@ -2794,9 +2836,7 @@ function pressB(): void {
   else if (quizOpen.value) return;
   else if (pendingChoice) decide(null);
   else if (dialog.value) dialog.value = null;
-  else if (sheet.value === 'menu' && tab.value !== 'inicio') tab.value = 'inicio'; // B dentro de uma seção volta ao menu
-  else if (sheet.value === 'torre') towerGameRef.value?.requestLeave();
-  else if (sheet.value) closeVillageSheet(); // fecha pelo mesmo caminho do ✕ e libera o estado de interação da Vila
+  else if (sheet.value) requestCloseSheet();
   else openMenu();
 }
 
@@ -2804,8 +2844,7 @@ function pressMenu(): void {
   if (legendaryScene.value) return;
   if (dialog.value || quiz.value || (sheet.value && sheet.value !== 'menu')) return;
   if (sheet.value === 'menu') {
-    if (tab.value !== 'inicio') tab.value = 'inicio';
-    else closeVillageSheet();
+    requestCloseSheet();
     return;
   }
   openMenu();
@@ -2816,7 +2855,7 @@ function act(result: { ok: boolean; message: string }, close = false, cue: UiSou
   if (result.ok) {
     playSound(cue);
     changed();
-    if (close) sheet.value = null;
+    if (close) closeVillageSheet();
   }
 }
 
@@ -3190,8 +3229,8 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="sheet === 'build'" class="village-sheet" role="dialog" aria-label="Construir a casa">
-        <header><strong>Sua casa: {{ HOUSE_LEVELS[state.house]?.name }}</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+      <div v-if="sheet === 'build'" class="village-sheet" role="dialog" aria-modal="true" aria-labelledby="village-build-title" tabindex="-1">
+        <VillageSheetHeader :title="`Sua casa: ${HOUSE_LEVELS[state.house]?.name}`" title-id="village-build-title" @close="requestCloseSheet" />
         <template v-if="nextHouse">
           <p>Próximo: <strong>{{ nextHouse.name }}</strong></p>
           <p class="hint">Precisa de: {{ describeCost(state, nextHouse.cost) }}</p>
@@ -3203,8 +3242,8 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" :aria-label="homeInteriorLot === null ? 'Interior da sua casa' : 'Interior da casa de um morador'">
-        <header><strong>🏠 {{ homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}` }}</strong><button type="button" class="link" @click="exitHomeInterior">Sair</button></header>
+      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" aria-modal="true" aria-labelledby="village-home-title" tabindex="-1">
+        <VillageSheetHeader :title="homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}`" icon="🏠" title-id="village-home-title" close-label="Sair" @close="requestCloseSheet" />
         <p v-if="homeInteriorLot === null" class="hint">Sua casa tem cantinhos de descanso, cozinha e convivência. Use Organizar móveis para decorar.</p>
         <p v-else class="hint">Os moradores organizam seus cantinhos e poupam para comprar móveis e reformar por conta própria.</p>
         <HomeInteriorMap
@@ -3243,15 +3282,16 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <div v-if="sheet === 'shop'" class="village-sheet" role="dialog" aria-label="Loja da Vila">
-        <header>
+      <div v-if="sheet === 'shop'" class="village-sheet" role="dialog" aria-modal="true" aria-labelledby="village-shop-title" tabindex="-1">
+        <VillageSheetHeader title="Loja da Vila" title-id="village-shop-title" @close="requestCloseSheet">
+          <template #actions>
           <div class="chips" role="tablist">
             <button type="button" role="tab" :class="{ active: shopTab === 'comprar' }" :aria-selected="shopTab === 'comprar'" @click="shopTab = 'comprar'">Comprar</button>
             <button type="button" role="tab" :class="{ active: shopTab === 'vender' }" :aria-selected="shopTab === 'vender'" @click="shopTab = 'vender'">Vender</button>
           </div>
           <span class="village-coins"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
-          <button type="button" class="link" @click="sheet = null">Fechar</button>
-        </header>
+          </template>
+        </VillageSheetHeader>
         <p class="hint">{{ shopTab === 'comprar' ? 'Sementes sempre; os móveis e acessórios mudam todo dia.' : 'A loja compra tudo o que você coleta e colhe.' }}</p>
         <ul v-if="shopTab === 'comprar'" class="item-grid">
           <li v-for="i in shopItems" :key="i.id">
@@ -3273,8 +3313,8 @@ onBeforeUnmount(() => {
         </ul>
       </div>
 
-      <div v-if="sheet === 'dress'" class="village-sheet" role="dialog" aria-label="Acessórios">
-        <header><strong>Acessório {{ dressFor === 'player' ? 'para você' : `para ${nameOf(dressFor)}` }}</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+      <div v-if="sheet === 'dress'" class="village-sheet" role="dialog" aria-modal="true" aria-labelledby="village-dress-title" tabindex="-1">
+        <VillageSheetHeader :title="`Acessório ${dressFor === 'player' ? 'para você' : `para ${nameOf(dressFor)}`}`" title-id="village-dress-title" @close="requestCloseSheet" />
         <ul class="item-grid">
           <li v-for="acc in accessoriesOwned.filter(fitsWho)" :key="acc">
             <img :src="icon(acc)" alt="" width="40" height="40" />
@@ -3286,29 +3326,29 @@ onBeforeUnmount(() => {
         <button type="button" @click="dress(null)">Tirar o acessório</button>
       </div>
 
-      <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-label="Fliperama">
-        <header><strong>Fliperama</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+      <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-modal="true" aria-labelledby="village-arcade-title" tabindex="-1">
+        <VillageSheetHeader title="Fliperama" title-id="village-arcade-title" @close="requestCloseSheet" />
         <div class="card arcade-battle">
           <h2>⚔️ Batalha na câmera</h2>
           <p class="note">Abre a câmera e os sensores da Caixa direto no modo de batalha: coloque a caixa no chão e toque em Batalhar. {{ battleRewardText }}.</p>
           <button type="button" class="primary" @click="goToBattle">Abrir câmera e batalhar</button>
         </div>
-        <MinigameHub closable @leave="sheet = null" />
+        <MinigameHub closable @leave="closeVillageSheet" />
       </div>
 
-      <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-label="Caixa de sementes">
-        <header><strong>🌱 Caixa de sementes</strong><button type="button" class="link" @click="closeVillageSheet">Fechar</button></header>
+      <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-labelledby="village-farm-title" tabindex="-1">
+        <VillageSheetHeader title="Caixa de sementes" icon="🌱" title-id="village-farm-title" @close="requestCloseSheet" />
         <FarmSeedBox :state="state" :name-of="nameOf" @change="changed" />
       </div>
 
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
-      <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
-        <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="pressB">Fechar</button></header>
-        <MinigameSobrevivencia ref="towerGameRef" :start-bonk="towerStartBonk" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="sheet = null" />
+      <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-labelledby="village-tower-title" tabindex="-1">
+        <VillageSheetHeader title="Torre de Sobrevivência" title-id="village-tower-title" @close="requestCloseSheet" />
+        <MinigameSobrevivencia ref="towerGameRef" :start-bonk="towerStartBonk" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="closeVillageSheet" />
       </div>
 
-      <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">
-        <header><strong>🏆 Vitrine de desafios</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+      <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-modal="true" aria-labelledby="village-gallery-title" tabindex="-1">
+        <VillageSheetHeader title="Vitrine de desafios" icon="🏆" title-id="village-gallery-title" @close="requestCloseSheet" />
         <p class="hint">O pedestal foi montado com as lembranças da Liga e dos Pins. Cada peça abaixo corresponde a um marco registrado numa partida concluída.</p>
         <ul class="village-list">
           <li v-for="exhibit in challengeExhibits" :key="exhibit.achievementId">
@@ -3319,17 +3359,13 @@ onBeforeUnmount(() => {
         <p class="hint">Novas lembranças aparecem aqui quando você conquista outros marcos.</p>
       </div>
 
-      <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-label="Evolução dos Pokémon das cartas">
-        <header><strong>Evolução · seus companheiros</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+      <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-modal="true" aria-labelledby="village-evolution-title" tabindex="-1">
+        <VillageSheetHeader title="Evolução · seus companheiros" title-id="village-evolution-title" @close="requestCloseSheet" />
         <CardEvolutionPanel :friends="state.friends" :trust-stones="count(state, 'trust-stone')" :altar="cardEvolutionAtAltar" @evolved="syncCardEvolution" @spend-trust-stones="() => { state.inventory['trust-stone'] = Math.max(0, count(state, 'trust-stone') - 5); changed(); }" />
       </div>
 
-      <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" :aria-label="MENU_TITLES[tab]">
-        <header class="menu-head">
-          <button v-if="tab !== 'inicio'" type="button" class="link menu-back" @click="tab = 'inicio'">← Menu</button>
-          <strong>{{ MENU_TITLES[tab] }}</strong>
-          <button type="button" class="menu-close" aria-label="Fechar o menu" @click="closeVillageSheet">✕</button>
-        </header>
+      <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" aria-modal="true" aria-labelledby="village-menu-title" tabindex="-1">
+        <VillageSheetHeader class="menu-head" :title="MENU_TITLES[tab]" title-id="village-menu-title" :back="tab !== 'inicio' ? { label: 'Menu', run: () => { tab = 'inicio'; } } : undefined" @close="requestCloseSheet" />
 
         <div v-if="tab === 'inicio'" class="menu-home">
           <details><summary>Música e sons da Vila</summary><MusicControls v-model:enabled="villageAudio.enabled" v-model:volume="villageAudio.volume" v-model:effects-volume="villageAudio.effectsVolume" :track="musicTitle" :unavailable="musicUnavailable" @unlock="unlockMusic" /><p v-if="!visual.sound" class="hint">Os efeitos estão desligados nas opções gerais. A música tem seu próprio controle.</p></details>
