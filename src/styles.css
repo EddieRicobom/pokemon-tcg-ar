@@ -8170,3 +8170,58 @@ body.no-scroll .reward-toasts {
 .dex-detail small { color: var(--ui-muted); font-weight: 600; }
 .dex-types { display: flex; flex-wrap: wrap; gap: 4px; }
 .dex-type { padding: 1px 9px; border-radius: 999px; background: rgb(255 255 255 / 14%); font-size: .72rem; font-weight: 800; }
+
+
+/* Fonte fornecida para a opção global; símbolos e emojis usam a fonte de reserva. */
+@font-face {
+  font-family: 'Pokemon Classic';
+  src: url('./assets/pokemon-classic.ttf') format('truetype');
+  font-display: swap;
+}
+html.classic-font { --font-display: 'Pokemon Classic', system-ui, sans-serif; }
+html.classic-font body,
+html.classic-font body :not(svg):not(path) {
+  font-family: 'Pokemon Classic', system-ui, sans-serif !important;
+}
+
+/* Painéis claros, contornos escalonados e medidores inspirados nas batalhas da geração IV. */
+.survivor-hp {
+  height: auto;
+  min-height: 62px;
+  display: block;
+  overflow: visible;
+  padding: 5px 9px 4px;
+  border: 3px solid #555b58;
+  border-radius: 5px 5px 12px 5px;
+  background: #f5f3dc;
+  box-shadow: inset 0 0 0 2px #c4c7b6, 3px 3px 0 #303839;
+  color: #252d30;
+}
+.survivor-hp-heading { display: flex; justify-content: space-between; gap: 5px; line-height: 1.2; }
+.survivor-hp .survivor-hp-heading span, .survivor-hp .survivor-hp-value {
+  position: static; color: #252d30; text-shadow: 1px 1px #b7bbb0; font-size: .72rem; font-weight: 700;
+}
+.survivor-hp .survivor-hp-label { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.survivor-hp-row { display: flex; align-items: center; gap: 5px; margin-top: 3px; }
+.survivor-hp-row b { color: #dc9d33; font-size: .62rem; line-height: 1; }
+.survivor-hp-track { flex: 1; height: 8px; border: 2px solid #454e4b; border-radius: 4px; background: #313d3b; overflow: hidden; }
+.survivor-hp .survivor-hp-fill, .survivor-hp:not(.low) .survivor-hp-fill { position: static; height: 100%; background: #64c879; box-shadow: none; }
+.survivor-hp.medium .survivor-hp-fill { background: #e8c151; }
+.survivor-hp.low .survivor-hp-fill { background: #e76b5d; animation: none; }
+.survivor-hp .survivor-hp-value { display: block; margin: 2px 0 0; text-align: right; line-height: 1; }
+.survivor-xp-bar { height: 10px; border: 2px solid #555b58; border-radius: 2px; background: #303c3d; box-shadow: none; }
+.survivor-xp-fill { background: #62c4df; border-radius: 0; box-shadow: none; }
+.survivor-xp-bar span { font-size: .5rem; line-height: 10px; }
+.survivor-stats .chip, .survivor-stats .survivor-move-chip, .survivor-action-dock .chip {
+  border: 2px solid #555b58; border-radius: 4px; background: #f5f3dc; color: #252d30; box-shadow: 2px 2px 0 #303839;
+}
+.survivor-stats .survivor-move-chip { box-shadow: inset 3px 0 var(--move, #555b58), 2px 2px 0 #303839; }
+.survivor-stats .survivor-artifact-chip, .survivor-stats .survivor-bonk-chip { color: #252d30 !important; background: #f5f3dc !important; }
+.survivor-minimap { border: 3px solid #555b58; border-radius: 4px; background: rgba(235, 237, 213, .9); box-shadow: 3px 3px 0 #303839; }
+.survivor-minimap-title { color: #252d30; }
+.survivor-minimap-viewport { border-color: #657971; }
+.survivor-danger-meter { border-radius: 3px; border: 2px solid #555b58; }
+@media (max-width: 480px) {
+  .survivor-hp { height: auto; min-height: 59px; }
+  .survivor-hp .survivor-hp-heading span, .survivor-hp .survivor-hp-value { font-size: .65rem; }
+}

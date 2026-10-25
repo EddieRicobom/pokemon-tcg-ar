@@ -117,3 +117,7 @@ luz, a fonte da praça, os móveis, as plantas da horta e o seu personagem. Folh
 
 O parquinho (balanço, escorregador, carrossel, gangorra, trepa-trepa), a cerca, o muro de pedra e o mural de recados
 vêm de `Daisy Route.png`.
+
+## Pokemon Classic
+
+Fonte Pokemon Classic, copyright TheLouster115 (2016), fornecida pelo usuario. Licenca [Creative Commons Attribution-ShareAlike 3.0](https://creativecommons.org/licenses/by-sa/3.0/). O arquivo da fonte nao foi modificado.
