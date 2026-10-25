@@ -5,6 +5,14 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Vila: amizade com os moradores que se vê evoluir (25/10/2026)
+
+- Diagnóstico: a amizade subia, mas nada mostrava. Nenhuma ação anunciava a troca de nível (só o recorde geral ia para o Treinador), os momentos davam ±1–2 pontos e diziam apenas "+ amizade com você", conversar de novo no mesmo dia dava sempre a mesma frase, o "não gosta" do Livro não tinha efeito no presente e o mural dava +3.
+- Marcos (`claimFriendMilestones`, campo `milestone` em cada amizade): qualquer origem de pontos (conversa, presente, momento, carta, mural, reforma) é conferida antes de salvar. Cada nível é comemorado uma vez só: aviso na tela com o que se abriu, coração sobre o Pokémon e uma página no Diário (`recordFriendMilestone`), que entra no resumo do dia; «Melhor amigo» fica guardado no Álbum. Saves antigos contam o nível atual como já comemorado.
+- Ganhos: momentos multiplicam `friend`/`friendBy` por 3 quando você decide, por 2 perto de você e por 1 enquanto está fora, com número e nome ("+6 amizade com você (Ana)"). Mural: visitar dá +5 e entregar dá +8. O presente de que o Pokémon não gosta dá +1, com fala própria.
+- Visível: conversa e presente mostram "❤️ +6 amizade (faltam 18 para Grande amigo)"; a lista de amigos e o Livro mostram o caminho até o próximo marco (e até a amizade máxima, que a evolução pede). A conversa repetida muda de tom com o nível.
+- 🔶 Typecheck, 2195 testes (16 novos em `friendship-progress.test.ts`) e build passaram. Nada visto no navegador nem em celular real: o aviso, o coração e o Diário só foram conferidos pela lógica.
+
 ## Torre: direções reais e Ritmo acelerado (24/10/2026)
 
 - Jogador, apoios, inimigos e chefes agora escolhem a pose `up`/`down`/`left`/`right` da folha local `Walk` pelo deslocamento, também no BONK. O pacote creditado cobre 966 espécies; sem folha direcional na origem, permanece apenas a pose realmente disponível, sem arte inventada.

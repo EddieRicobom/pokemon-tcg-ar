@@ -78,7 +78,7 @@ function go(step: number): void {
             <p v-if="current.mon.real && current.mon.real !== current.page.name" class="hint">Na carta: {{ current.mon.real }}</p>
             <p class="book-hearts" :aria-label="`${current.page.levelName}, ${current.page.hearts} de 5 corações`">
               <span v-for="k in 5" :key="k" :class="{ on: k <= current.page.hearts }">♥</span>
-              <small>{{ current.page.levelName }} · {{ current.page.points }}/100</small>
+              <small>{{ current.page.levelName }} · {{ current.page.points }}/100 · {{ current.page.progress }}</small>
             </p>
           </div>
         </header>

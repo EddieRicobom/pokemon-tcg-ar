@@ -1,7 +1,8 @@
 import type { Rng } from '../battle';
 import { itemDef } from './catalog';
-import { add, availableCount, count, friendOf, itemName } from './life';
-import type { ItemId, VillageState } from './life';
+import { unlocksAt } from './book';
+import { add, availableCount, count, friendOf, gainFriendship, itemName } from './life';
+import type { FriendMilestone, ItemId, VillageState } from './life';
 import { hash, personalityOf } from './personality';
 import { MAX_SAVED, MAX_SOCIAL_PLANS, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
 import type { MemoryKind, Moment, MomentKind, MomentLine, Relation, SocialPlan, SocialPlanKind } from './social-state';
@@ -1208,7 +1209,13 @@ export function sceneChoice(scene: Scene): ChoiceView | null {
 
 // -------------------------------------------------------------------------------- aplicar
 
-function applyOutcome(state: VillageState, cast: Actor[], o: Outcome, day: string, now: number): string[] {
+/**
+ * Quanto cada ponto de `friend`/`friendBy` de um momento vale em amizade com você. Os modelos usam 1 a 6; sem escala,
+ * o ganho sumia na barra de 0 a 100. Pesa mais quando você decidiu a cena e menos quando aconteceu sem você.
+ */
+export const MOMENT_FRIEND_SCALE = { chosen: 3, near: 2, away: 1 } as const;
+
+function applyOutcome(state: VillageState, cast: Actor[], o: Outcome, day: string, now: number, scale: number = MOMENT_FRIEND_SCALE.near): string[] {
   const chips: string[] = [];
   const a = cast[0]!;
   const b = cast[1];
@@ -1247,15 +1254,11 @@ function applyOutcome(state: VillageState, cast: Actor[], o: Outcome, day: strin
     add(state, item, qty);
     chips.push(`+${qty} ${itemName(item)}`);
   }
-  const friendDeltas = cast.map((_, i) => o.friendBy?.[i] ?? o.friend ?? 0);
   cast.forEach((m, i) => {
-    const d = friendDeltas[i]!;
-    if (d !== 0) {
-      const f = friendOf(state, m.id);
-      f.points = clamp(f.points + d, 0, 100);
-    }
+    const d = (o.friendBy?.[i] ?? o.friend ?? 0) * scale;
+    const applied = d !== 0 ? gainFriendship(state, m.id, d) : 0;
+    if (applied !== 0) chips.push(`${applied > 0 ? '+' : '−'}${Math.abs(applied)} amizade com você (${m.name})`);
   });
-  if (friendDeltas.some((d) => d > 0)) chips.push('+ amizade com você');
   if (o.eatCrop) {
     const ripe = state.crops.findIndex((cr) => {
       const g = itemDef(cr.seed)?.grows;
@@ -1313,7 +1316,7 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
   const spec = used ? used.outcome : tpl.outcome;
   const outcome = typeof spec === 'function' ? spec(ctx) : spec;
   const followUp = used?.lines ? used.lines(ctx) : [];
-  const result = applyOutcome(state, cast, outcome, day, now);
+  const result = applyOutcome(state, cast, outcome, day, now, used ? MOMENT_FRIEND_SCALE.chosen : away ? MOMENT_FRIEND_SCALE.away : MOMENT_FRIEND_SCALE.near);
   const planId = typeof ctx.memo.socialPlanId === 'string' ? ctx.memo.socialPlanId : null;
   const fulfilledPlan = planId
     ? state.plans.find((plan) => plan.id === planId
@@ -1515,3 +1518,42 @@ export function albumEntries(state: VillageState): AlbumEntry[] {
 /** Os momentos guardados no Álbum, do mais novo para o mais antigo. */
 export const savedMoments = (state: VillageState): Moment[] => state.diary.filter((m) => m.fav).reverse();
 
+// -------------------------------------------------------------------------------- marcos de amizade com você
+
+const MILESTONE_LINES: Record<number, string> = {
+  1: 'Acho que agora a gente já é colega de verdade! Posso te contar do que eu gosto?',
+  2: 'Somos amigos! Quando eu achar coisas boas pela Vila, vou guardar para você.',
+  3: 'Você é um grande amigo. Se quiser companhia, é só chamar: eu vou junto!',
+  4: 'Melhor amigo! Não tem insígnia que valha mais do que isso.',
+};
+
+/**
+ * Grava no Diário o marco de amizade que acabou de acontecer (`claimFriendMilestones`): a fala do Pokémon, o que se abriu
+ * em cada nível atravessado e, no «Melhor amigo», a página fica guardada no Álbum. Devolve o momento gravado.
+ */
+export function recordFriendMilestone(state: VillageState, mon: { id: string; name: string }, milestone: FriendMilestone, now: number, day: string, hour: number): Moment {
+  const unlocks = milestone.passed.flatMap((level) => unlocksAt(level));
+  const keep = milestone.level >= 4 && state.diary.filter((x) => x.fav).length < MAX_SAVED;
+  const moment: Moment = {
+    id: `${now.toString(36)}-amizade-marco-${mon.id}-${milestone.level}`,
+    t: now,
+    day,
+    hour,
+    tpl: FRIEND_MILESTONE_TPL,
+    kind: 'amizade',
+    title: `Amizade: ${milestone.name}`,
+    emoji: '💖',
+    cast: [{ id: mon.id, name: mon.name }],
+    lines: [
+      { who: 0, text: MILESTONE_LINES[milestone.level] ?? 'A nossa amizade cresceu!', fx: 'heart' },
+      ...unlocks.slice(0, 4).map((text) => ({ who: 0, text: `(Novo: ${text})`, fx: 'sparkle' as const })),
+    ],
+    result: [`${mon.name} agora é seu ${milestone.name} 💖`, ...(keep ? ['📌 Guardado no Álbum para sempre'] : [])],
+    ...(keep ? { fav: true } : {}),
+  };
+  recordMomentAndMemory(state, moment);
+  return moment;
+}
+
+/** Id de modelo dos marcos de amizade no Diário (não entra no Álbum de momentos entre Pokémon). */
+export const FRIEND_MILESTONE_TPL = 'amizade-marco';

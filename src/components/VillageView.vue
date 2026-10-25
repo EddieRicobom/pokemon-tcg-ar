@@ -38,11 +38,11 @@ import { personalityOf } from '../core/village/personality';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
 import {
-  add, buy, canFollow, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
+  add, buy, canFollow, claimFriendMilestones, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, friendProgressText, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
   plant, pruneHarvest, RECIPES, sell, talk, tickCrops, upgradeHouse, water, wear,
   BATTLE_REWARD_COINS, BATTLE_REWARDS_PER_DAY, battleRewardsLeft, favoriteFoodOf,
 } from '../core/village/life';
-import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
+import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, recordFriendMilestone, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
 import {
   canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, evolve, EVOLVE_COST, grantStarter, grantSurvival, instanceOf, LAST_DEX_ID, pickAnySpecies,
   pickFonteSpecies, summon, SUMMON_COST, summonWithCoins,
@@ -101,6 +101,7 @@ import type { MusicTransition } from '../core/music';
 import type { SoundCue } from '../box/sound-recipes';
 import MomentCard from './MomentCard.vue';
 import PokeBook from './PokeBook.vue';
+import { unlocksAt } from '../core/village/book';
 import CardEvolutionPanel from './CardEvolutionPanel.vue';
 import { loadCardCompanionEntry } from '../app/companion-creatures';
 import { companionCard } from '../app/card-evolution-store';
@@ -498,6 +499,33 @@ function playSound(cue: UiSound): void {
 // ---- Treinador: o que acontece na Vila conta lá, e as conquistas voltam como acessórios e moedas
 function trainerEvent(action: 'talk' | 'answer' | 'moment' | 'nickname', id?: string): void {
   recordEvent({ type: 'village', action, level: id ? friendLevel(friendOf(state, id).points).level : undefined });
+}
+
+/** "+6 amizade (faltam 18 para Amigo)": o ganho de agora e o caminho até o próximo marco. */
+function friendGainNote(id: string, gained: number): string {
+  return gained > 0 ? ` ❤️ +${gained} amizade (${friendProgressText(friendOf(state, id).points)}).` : '';
+}
+
+/**
+ * Marcos de amizade, venha o ganho de onde vier (conversa, presente, momento, carta, mural, reforma): aviso na tela,
+ * coração sobre o Pokémon e uma página no Diário com o que se abriu. Cada marco é comemorado uma vez só.
+ */
+function celebrateFriendMilestones(): void {
+  const reached = claimFriendMilestones(state, mons.value.map((m) => m.id));
+  if (reached.length === 0) return;
+  const now = Date.now();
+  const today = refreshDay();
+  for (const m of reached) {
+    recordFriendMilestone(state, { id: m.id, name: nameOf(m.id) }, m, now, today, villageHour());
+    game?.bubble(m.id, '💖', 3200);
+  }
+  const first = reached[0]!;
+  const unlock = unlocksAt(first.level)[0];
+  say(reached.length === 1
+    ? `💖 ${nameOf(first.id)} agora é seu ${first.name}!${unlock ? ` Novo: ${unlock}` : ''}`
+    : `💖 Amizades cresceram: ${reached.map((m) => `${nameOf(m.id)} (${m.name})`).join(', ')}. Veja no Diário.`, 6500);
+  playSound('success');
+  syncTrainer();
 }
 
 /** Entrega os prêmios de conquistas novas e avisa o Treinador se a amizade com alguém subiu. */
@@ -1359,7 +1387,7 @@ function speakToResident(id: string): void {
     trainerEvent('talk', id);
     earnCoins(5);
   }
-  let text = result.text;
+  let text = result.text + friendGainNote(id, result.gained);
   if (id === state.cafeWaiterId && level.value >= 3 && professionActive('cafe', mons.value.length)) text = 'Estou atendendo as mesas do Café! Mas tenho um tempinho para conversar. ' + text;
   const help = dailyHelp(state, id, today, Math.random);
   if (help.items.length > 0) text += ` Ah! Achei isto pela Vila para você: ${help.items.map((h) => `${h.qty} ${itemName(h.item)}`).join(' e ')}.`;
@@ -2688,9 +2716,9 @@ function give(item: ItemId): void {
   if (r.ok) {
     playSound('gift');
     changed();
-    game?.bubble(id, r.gained >= 10 ? '😍' : '😊');
+    game?.bubble(id, r.gained >= 10 ? '😍' : r.gained <= 1 ? '😅' : '😊');
   }
-  openFriendDialog(id, r.text);
+  openFriendDialog(id, r.text + (r.ok ? friendGainNote(id, r.gained) : ''));
 }
 
 function pressB(): void {
@@ -2923,7 +2951,10 @@ onMounted(async () => {
       state.lastSeen = Date.now();
       dirty = true;
     }
-    if (dirty) dirty = !persist();
+    if (dirty) {
+      celebrateFriendMilestones();
+      dirty = !persist();
+    }
   }, 1500);
   // Tipos (presente favorito, opiniões do Livro) chegam em segundo plano; sem rede, ficam neutros.
   for (const m of mons.value) {
@@ -3503,7 +3534,7 @@ onBeforeUnmount(() => {
           <h4>Amigos e pedidos de hoje</h4>
           <ul class="village-list">
             <li v-for="m in friendRows()" :key="m.id">
-              <span>{{ m.name }}<small>{{ m.lvl.name }} · {{ '♥'.repeat(m.lvl.hearts) }}{{ '♡'.repeat(5 - m.lvl.hearts) }}{{ m.following ? ' · seguindo você' : '' }}{{ m.req ? ` · quer ${m.req.qty} ${itemName(m.req.item)}` : '' }}</small></span>
+              <span>{{ m.name }}<small>{{ m.lvl.name }} · {{ '♥'.repeat(m.lvl.hearts) }}{{ '♡'.repeat(5 - m.lvl.hearts) }} · {{ m.points }}/100{{ m.lvl.next ? ` (faltam ${m.lvl.toNext} para ${m.lvl.next.name})` : '' }}{{ m.following ? ' · seguindo você' : '' }}{{ m.req ? ` · quer ${m.req.qty} ${itemName(m.req.item)}` : '' }}</small></span>
             </li>
             <li v-if="mons.length === 0" class="hint">Nenhum Pokémon na Vila ainda.</li>
           </ul>

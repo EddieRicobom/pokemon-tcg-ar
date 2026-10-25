@@ -1,4 +1,4 @@
-import { add, count, friendOf, itemName, pay } from './life';
+import { add, count, friendOf, gainFriendship, itemName, pay } from './life';
 import type { ItemId, VillageState } from './life';
 
 export type VillageRequestKind = 'collect' | 'talk' | 'deliver';
@@ -25,6 +25,9 @@ export interface VillageRequest {
 
 export interface RequestClaim { ok: boolean; message: string; coins: number; targetId?: string }
 
+/** Amizade com o morador do pedido: levar o que ele precisa aproxima mais do que só passar para conversar. */
+export const REQUEST_FRIENDSHIP: Record<VillageRequestKind, number> = { collect: 0, talk: 5, deliver: 8 };
+
 const MATERIAL_POOL: readonly { item: ItemId; place: string }[] = [
   { item: 'madeira', place: 'Bosque do Sul' }, { item: 'pedra', place: 'Pedreira' },
   { item: 'flor', place: 'Parque' }, { item: 'oran', place: 'Mata perto do lago' },
@@ -42,7 +45,7 @@ const pick = <T,>(list: readonly T[], seed: number, offset: number): T => list[(
 function common(state: VillageState, day: string, index: number, title: string, detail: string, location: string, item: ItemId, qty: number, kind: VillageRequestKind, targetId?: string, targetName?: string): VillageRequest {
   const seed = hash(`${state.seed}:${day}:${index}:${item}`);
   const rewardItem = pick(['flor', 'oran', 'pecha', 'tecido', 'cristal'] as const, seed, 3);
-  return { id: `${day}:${index}`, day, kind, title, detail, location, item, qty, ...(targetId ? { targetId } : {}), ...(targetName ? { targetName } : {}), rewardCoins: 12 + (seed % 4) * 4, rewardItem, rewardQty: 1 + (seed % 2), rewardFriend: kind === 'talk' || kind === 'deliver' ? 3 : 0, done: false };
+  return { id: `${day}:${index}`, day, kind, title, detail, location, item, qty, ...(targetId ? { targetId } : {}), ...(targetName ? { targetName } : {}), rewardCoins: 12 + (seed % 4) * 4, rewardItem, rewardQty: 1 + (seed % 2), rewardFriend: REQUEST_FRIENDSHIP[kind], done: false };
 }
 
 export function makeRequests(state: VillageState, day: string, residents: readonly { id: string; name: string }[]): VillageRequest[] {
@@ -91,7 +94,7 @@ export function claimRequest(state: VillageState, requestId: string, day: string
   if (!status.ready) return { ok: false, message: status.text, coins: 0 };
   if (request.kind !== 'talk') pay(state, { [request.item ?? '']: request.qty ?? 1 });
   add(state, request.rewardItem, request.rewardQty);
-  if (request.targetId && request.rewardFriend > 0) friendOf(state, request.targetId).points = Math.min(100, friendOf(state, request.targetId).points + request.rewardFriend);
+  const friendship = request.targetId && request.rewardFriend > 0 ? gainFriendship(state, request.targetId, request.rewardFriend) : 0;
   request.done = true;
-  return { ok: true, message: `Pedido concluído! +${request.rewardCoins} moedas e ${request.rewardQty} ${itemName(request.rewardItem)}.${request.targetId ? ` ${request.targetName} ficou contente.` : ''}`, coins: request.rewardCoins, ...(request.targetId ? { targetId: request.targetId } : {}) };
+  return { ok: true, message: `Pedido concluído! +${request.rewardCoins} moedas e ${request.rewardQty} ${itemName(request.rewardItem)}.${request.targetId ? ` ${request.targetName} ficou contente${friendship > 0 ? ` (+${friendship} amizade)` : ''}.` : ''}`, coins: request.rewardCoins, ...(request.targetId ? { targetId: request.targetId } : {}) };
 }

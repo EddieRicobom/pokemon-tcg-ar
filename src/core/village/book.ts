@@ -1,7 +1,7 @@
 import { typeEffectiveness } from '../battle';
 import type { PokemonType } from '../pokemon-data';
 import { itemDef } from './catalog';
-import { favoriteOf, friendLevel } from './life';
+import { dislikeOf, favoriteOf, friendLevel, friendProgressText } from './life';
 import type { Friendship } from './life';
 import { hash, personalityOf, PERSONALITIES } from './personality';
 
@@ -31,14 +31,7 @@ const MOODS = [
   { name: 'Brincalhão', emoji: '😜' },
 ] as const;
 
-const DISLIKE_POOL = ['pedra', 'madeira', 'concha', 'flor', 'tomate', 'abobora'] as const;
-
-/** O que ele não gosta de ganhar (nunca é o favorito). */
-export function dislikeOf(id: string, types: readonly PokemonType[]): string {
-  const fav = favoriteOf(types);
-  const pool = DISLIKE_POOL.filter((i) => i !== fav);
-  return pool[hash(`d:${id}`) % pool.length]!;
-}
+export { dislikeOf };
 
 /** Humor de hoje: conversou e ganhou presente → radiante; de noite → sonolento; senão, o humor do dia. */
 export function moodOf(id: string, f: Friendship | undefined, day: string, hour: number): { name: string; emoji: string; why: string } {
@@ -96,6 +89,9 @@ export const UNLOCKS: readonly Unlock[] = [
   { level: 4, levelName: 'Melhor amigo', text: 'Na batalha, aguenta firme por você: um golpe que o derrubaria deixa 1 PS (uma vez por luta).' },
 ];
 
+/** O que se abre exatamente em cada nível (para o aviso de marco de amizade e o Diário). */
+export const unlocksAt = (level: number): string[] => UNLOCKS.filter((u) => u.level === level).map((u) => u.text);
+
 export interface BookPage {
   id: string;
   name: string;
@@ -103,6 +99,8 @@ export interface BookPage {
   levelName: string;
   hearts: number;
   points: number;
+  /** "faltam 12 para Amigo": o caminho até o próximo marco. */
+  progress: string;
   personality: (typeof PERSONALITIES)[number];
   mood: { name: string; emoji: string; why: string };
   aboutYou: string;
@@ -125,6 +123,7 @@ export function bookPage(mon: BookMon, others: readonly BookMon[], f: Friendship
     levelName: lvl.name,
     hearts: lvl.hearts,
     points,
+    progress: friendProgressText(points),
     personality: personalityOf(mon.id),
     mood: moodOf(mon.id, f, day, hour),
     aboutYou: opinionOfYou(points),
