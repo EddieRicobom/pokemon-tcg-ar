@@ -8178,11 +8178,27 @@ body.no-scroll .reward-toasts {
   src: url('./assets/pokemon-classic.ttf') format('truetype');
   font-display: swap;
 }
-html.classic-font { --font-display: 'Pokemon Classic', system-ui, sans-serif; }
-html.classic-font body,
-html.classic-font body :not(svg):not(path) {
+/* A fonte pixelada entra apenas quando uma corrida da Torre está ativa. O seletor fica no componente para não alterar a Vila, menus ou escolhas preliminares. */
+.survivor-gameplay,
+.survivor-gameplay :not(svg):not(path) {
   font-family: 'Pokemon Classic', system-ui, sans-serif !important;
 }
+.survivor-gameplay .survivor-hud { line-height: 1.25; }
+.survivor-gameplay .survivor-hp-heading span,
+.survivor-gameplay .survivor-hp-value { font-size: clamp(.58rem, 2.1vw, .72rem); }
+.survivor-gameplay .survivor-stats .chip { font-size: clamp(.55rem, 1.8vw, .7rem); }
+.survivor-gameplay .survivor-action-dock .chip {
+  max-width: 100%;
+  font-size: clamp(.5rem, 1.6vw, .64rem);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.survivor-gameplay .survivor-toast,
+.survivor-gameplay .survivor-move-hint { line-height: 1.35; }
+.survivor-gameplay .survivor-danger-meter span { font-size: clamp(.44rem, 1.5vw, .53rem); }
+.survivor-gameplay .survivor-special-button strong,
+.survivor-gameplay .survivor-jump-button strong { font-size: clamp(.56rem, 1.7vw, .68rem); }
+.survivor-gameplay .survivor-special-button small { font-size: clamp(.5rem, 1.5vw, .62rem); }
 
 /* Painéis claros, contornos escalonados e medidores inspirados nas batalhas da geração IV. */
 .survivor-hp {
