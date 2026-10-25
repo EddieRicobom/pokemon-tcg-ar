@@ -1566,6 +1566,25 @@ button.link {
   font: inherit;
 }
 
+.manual-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 64px;
+  padding: 6px 10px;
+  text-align: left;
+}
+.manual-result > .card-artwork,
+.manual-result > .thumb-missing {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 62px;
+}
+.manual-result > .card-artwork .card-artwork-fallback { padding: 2px; font-size: 0.55rem; line-height: 1.15; }
+.manual-result-text { display: grid; gap: 2px; min-width: 0; }
+.manual-result-text small { color: var(--muted); }
+
 .card-grid {
   list-style: none;
   margin: 12px 0 0;
@@ -1598,6 +1617,37 @@ button.link {
 .grid-card.picked {
   border-color: var(--gold);
   box-shadow: 0 0 0 2px var(--gold) inset;
+}
+
+/* Grade: a carta abre os detalhes; adicionar à Vila é o botão do canto (alvo de toque de 44px). */
+.grid-cell { display: flex; flex-direction: column; gap: 6px; height: 100%; }
+.grid-cell > .grid-card { flex: 1 1 auto; }
+.grid-team {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.grid-team.active {
+  background: var(--gold);
+  color: #1b1b1b;
+  border-color: var(--gold);
+}
+.card-grid > li.grid-open { grid-column: 1 / -1; }
+.card-grid > li.grid-open > .grid-cell { width: min(100%, 160px); height: auto; margin: 0 auto; }
+.card-grid > li.grid-open .grid-card { height: auto; }
+.grid-details {
+  margin-top: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 0.85rem;
 }
 
 .filter-bar input[type='text'],
