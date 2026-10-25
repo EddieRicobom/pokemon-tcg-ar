@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SURVIVOR_REGIONS, REGION_DURATION_MS, survivorRegionAt } from '../core/survivor-regions';
 import { ATLAS_SOURCES } from './atlas-spec';
-import { SURVIVOR_REGION_TILESETS } from './survivor-landscape';
+import { SURVIVOR_REGION_ROUTES, SURVIVOR_REGION_TILESETS } from './survivor-landscape';
 
 describe('tilesets regionais da Torre', () => {
   it('cada região tem recortes reais de terreno, trilha, detalhe e cobertura baixa no atlas', () => {
@@ -34,5 +34,15 @@ describe('tilesets regionais da Torre', () => {
     expect(new Set(SURVIVOR_REGION_TILESETS.map((tiles) => tiles.ground)).size).toBeGreaterThanOrEqual(5);
     expect(new Set(SURVIVOR_REGION_TILESETS.map((tiles) => tiles.detail)).size).toBeGreaterThanOrEqual(7);
     expect(SURVIVOR_REGION_TILESETS.filter((tiles) => tiles.cover === 'tall').length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('usa rotas autorais com curvas suaves em vez de corredores ondulados repetidos', () => {
+    expect(SURVIVOR_REGION_ROUTES).toHaveLength(SURVIVOR_REGIONS.length);
+    for (const route of SURVIVOR_REGION_ROUTES) {
+      expect(route.main.length).toBeGreaterThanOrEqual(4);
+      expect(route.width).toBeGreaterThan(90);
+      expect(route.branches.length).toBeGreaterThan(0);
+      expect(route.main.some(([x, y]) => x < 0 || x > 1 || y < 0 || y > 1)).toBe(true);
+    }
   });
 });

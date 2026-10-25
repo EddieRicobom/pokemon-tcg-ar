@@ -7172,6 +7172,7 @@ body.no-scroll .reward-toasts {
   touch-action: pan-y;
 }
 .survivor-rarity-hint { margin: 4px 0 10px; font-size: 0.78rem; color: #4a5068; }
+.survivor-upgrade-delay { margin: -2px 0 8px; color: #745b16; font-size: .72rem; font-weight: 700; }
 .survivor-rarity-guide { margin: 0 0 8px; padding: 6px 8px; border: 1px solid #d8dcf0; border-radius: 8px; text-align: left; color: #35425c; font-size: 0.72rem; }
 .survivor-rarity-guide summary { cursor: pointer; font-weight: 700; }
 .survivor-rarity-guide p { margin: 6px 0 0; line-height: 1.35; }
