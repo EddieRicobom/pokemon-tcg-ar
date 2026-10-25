@@ -4,13 +4,15 @@ import { ATLAS_SOURCES } from './atlas-spec';
 import { SURVIVOR_REGION_TILESETS } from './survivor-landscape';
 
 describe('tilesets regionais da Torre', () => {
-  it('cada região tem recortes reais de terreno, trilha e detalhe no atlas', () => {
+  it('cada região tem recortes reais de terreno, trilha, detalhe e cobertura baixa no atlas', () => {
     const available = new Set(ATLAS_SOURCES.map((source) => source.id));
     expect(SURVIVOR_REGION_TILESETS).toHaveLength(SURVIVOR_REGIONS.length);
     for (const tiles of SURVIVOR_REGION_TILESETS) {
       expect(available.has(tiles.ground)).toBe(true);
       expect(available.has(tiles.path)).toBe(true);
       expect(available.has(tiles.detail)).toBe(true);
+      expect(available.has(tiles.cover)).toBe(true);
+      expect(tiles.coverDensity).toBeGreaterThan(0);
     }
   });
 
@@ -26,10 +28,11 @@ describe('tilesets regionais da Torre', () => {
     expect(SURVIVOR_REGION_TILESETS[before.current]).not.toEqual(SURVIVOR_REGION_TILESETS[after.current]);
   });
 
-  it('combina terreno, trilha e detalhe para que cada região tenha leitura própria', () => {
-    const combinations = new Set(SURVIVOR_REGION_TILESETS.map((tiles) => `${tiles.ground}/${tiles.path}/${tiles.detail}`));
+  it('combina terreno, trilha, detalhe e cobertura para que cada região tenha leitura própria', () => {
+    const combinations = new Set(SURVIVOR_REGION_TILESETS.map((tiles) => `${tiles.ground}/${tiles.path}/${tiles.detail}/${tiles.cover}`));
     expect(combinations.size).toBe(SURVIVOR_REGION_TILESETS.length);
     expect(new Set(SURVIVOR_REGION_TILESETS.map((tiles) => tiles.ground)).size).toBeGreaterThanOrEqual(5);
     expect(new Set(SURVIVOR_REGION_TILESETS.map((tiles) => tiles.detail)).size).toBeGreaterThanOrEqual(7);
+    expect(SURVIVOR_REGION_TILESETS.filter((tiles) => tiles.cover === 'tall').length).toBeGreaterThanOrEqual(4);
   });
 });

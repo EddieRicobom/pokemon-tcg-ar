@@ -2,17 +2,17 @@ import { SURVIVOR_REGIONS, survivorRegionAt } from '../core/survivor-regions';
 import { SURVIVOR_BIOMES, survivorBiomeZonesOf } from '../core/survivor-biomes';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
 
-/** Tilesets originais do atlas por região: terreno, trilha e detalhe de cenário. */
+/** Tilesets originais do atlas por região: terreno, trilha, cenário e cobertura baixa do chão. */
 export const SURVIVOR_REGION_TILESETS = [
-  { ground: 'at-trail', path: 'at-path', detail: 'tree-big' },
-  { ground: 'at-plaza', path: 'at-trail', detail: 'pine-m' },
-  { ground: 'sand-grass', path: 'sand-water', detail: 'bush' },
-  { ground: 'at-path', path: 'at-plaza', detail: 'rock-1' },
-  { ground: 'at-plot', path: 'at-trail', detail: 'rock-2' },
-  { ground: 'at-trail', path: 'at-plaza', detail: 'flowers-white' },
-  { ground: 'sand-water', path: 'sea', detail: 'rock-3' },
-  { ground: 'at-plaza', path: 'at-path', detail: 'wall' },
-  { ground: 'at-plot', path: 'at-trail', detail: 'pine-m' },
+  { ground: 'at-trail', path: 'at-path', detail: 'tree-big', cover: 'tall', coverDensity: 0.19 },
+  { ground: 'at-plaza', path: 'at-trail', detail: 'pine-m', cover: 'tall', coverDensity: 0.15 },
+  { ground: 'sand-grass', path: 'sand-water', detail: 'bush', cover: 'tall', coverDensity: 0.11 },
+  { ground: 'at-path', path: 'at-plaza', detail: 'rock-1', cover: 'bush', coverDensity: 0.13 },
+  { ground: 'at-plot', path: 'at-trail', detail: 'rock-2', cover: 'bush', coverDensity: 0.1 },
+  { ground: 'at-trail', path: 'at-plaza', detail: 'flowers-white', cover: 'flowers-white', coverDensity: 0.23 },
+  { ground: 'sand-water', path: 'sea', detail: 'rock-3', cover: 'bush', coverDensity: 0.08 },
+  { ground: 'at-plaza', path: 'at-path', detail: 'wall', cover: 'tall', coverDensity: 0.12 },
+  { ground: 'at-plot', path: 'at-trail', detail: 'pine-m', cover: 'bush', coverDensity: 0.14 },
 ] as const;
 
 const atlasLayout = packAtlas();
@@ -86,7 +86,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     if (!cell) return false;
     ctx.save();
     ctx.globalAlpha = alpha;
-    if (id === 'wall' || id === 'tree-big' || id === 'pine-m' || id === 'flowers-white') {
+    if (id === 'wall' || id === 'tree-big' || id === 'pine-m' || id === 'flowers-white' || id === 'tall') {
       const sw = source.half ? source.w / 2 : source.w;
       const sh = source.half ? source.h / 2 : source.h;
       ctx.drawImage(atlas, rect.x, rect.y, sw, sh, x, y, w, h);
@@ -156,6 +156,24 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
         ctx.fillRect(Math.floor(hash(i * 7) * width), Math.floor(hash(i * 7 + 1) * height), 2, 1);
       }
       ctx.restore();
+    }
+
+    // Cobertura baixa presa à grade: mato alto, arbustos ou flores vindos do atlas, como nas rotas de GBA.
+    // Fica fora dos dois corredores para a leitura do combate e dos golpes continuar limpa.
+    const coverSize = tiles.cover === 'tall' ? { w: 48, h: 64 }
+      : tiles.cover === 'flowers-white' ? { w: 32, h: 18 }
+        : { w: 24, h: 22 };
+    for (let y = 24; y < height - coverSize.h; y += 48) {
+      for (let x = 20; x < width - coverSize.w; x += 48) {
+        const row = Math.floor(y / 48);
+        const col = Math.floor(x / 48);
+        if (hash((index + 1) * 1103 + row * 71 + col * 17) > tiles.coverDensity) continue;
+        const px = x + Math.floor(hash((index + 1) * 3109 + row * 13 + col) * 18);
+        const py = y + Math.floor(hash((index + 1) * 1013 + row + col * 29) * 18);
+        const inHorizontalPath = Math.abs(py - (height * 0.5 + Math.sin(px / 190) * 19)) < 52;
+        const inVerticalPath = Math.abs(px - (width * 0.5 + Math.sin(py / 95) * 100)) < 66;
+        if (!inHorizontalPath && !inVerticalPath) drawAtlasTile(ctx, tiles.cover, px, py, coverSize.w, coverSize.h, 0.92);
+      }
     }
 
     // O centro permanece livre; cada bioma usa seu recorte temático junto às bordas.
