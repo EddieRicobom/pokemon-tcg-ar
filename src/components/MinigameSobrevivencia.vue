@@ -787,6 +787,12 @@ function onKey(e: KeyboardEvent): void {
   // Cartões acessíveis do seletor já tratam Enter/Espaço localmente.
   // Ao chegar na janela, o mesmo evento não deve escolher a opção duas vezes.
   if (e.defaultPrevented) return;
+  if (e.type === 'keydown' && e.key === 'Escape') {
+    e.preventDefault();
+    if (leaveConfirm.value) cancelLeave();
+    else requestLeave();
+    return;
+  }
   const dir = KEY_DIR[e.key];
   if (e.type === 'keydown' && dir && moveSurvivorFocus(dir)) {
     e.preventDefault();

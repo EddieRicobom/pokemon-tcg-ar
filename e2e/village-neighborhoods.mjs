@@ -33,7 +33,7 @@ try {
   await capture('village-start');
   await page.keyboard.press('z');
   await capture('village-interact');
-  const home = page.getByRole('dialog', { name: 'Interior da sua casa', exact: true });
+  const home = page.getByRole('dialog', { name: 'Sua casa', exact: true });
   await home.waitFor();
   assert.equal(await home.locator('.home-furniture').count(), 7);
   await home.getByRole('button', { name: /Examinar Cama com colcha/ }).click();

@@ -345,17 +345,18 @@ function rememberVillageActionFocus(event: FocusEvent): void {
 }
 function focusFirstVillageAction(selector: string): void {
   const panel = document.querySelector<HTMLElement>(selector);
-  const candidates = panel?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex="0"]');
-  const first = [...(candidates ?? [])].find((element) => !element.matches('.menu-close, .bc-close, .village-close, .village-sheet-close') && element.textContent?.trim() !== 'Fechar') ?? candidates?.item(0);
+  const candidates = [...(panel?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]') ?? [])]
+    .filter((element) => element.getClientRects().length > 0 && !element.closest('[inert]'));
+  const first = candidates.find((element) => !element.matches('.menu-close, .bc-close, .village-close, .village-sheet-close') && element.textContent?.trim() !== 'Fechar') ?? candidates[0];
   focusWithArrowIndicator(first);
 }
 watch(sheet, (next, previous) => {
   if (next && !previous) sheetFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
-  if (next && next !== previous) void nextTick(() => focusFirstVillageAction('.village-sheet'));
+  if (next && next !== previous) void nextTick(() => { if (sheet.value === next) focusFirstVillageAction('.village-sheet'); });
   if (!next && previous) {
     const target = sheetFocusReturn;
     sheetFocusReturn = null;
-    void nextTick(() => (target?.isConnected ? target : wrapEl.value)?.focus());
+    void nextTick(() => { if (!sheet.value) (target?.isConnected ? target : wrapEl.value)?.focus(); });
   }
 });
 watch(tab, (next, previous) => {
@@ -1165,6 +1166,13 @@ function pressAClick(event: MouseEvent): void {
   if (performance.now() - lastPointerAPress > 180) pressA();
 }
 function onKey(e: KeyboardEvent): void {
+  if (backpackOpen.value) {
+    if (e.type === 'keydown' && e.key === 'Escape') {
+      e.preventDefault();
+      backpackOpen.value = false;
+    }
+    return;
+  }
   if (e.type === 'keydown' && e.key === 'Tab' && sheet.value && !backpackOpen.value) {
     const panel = document.querySelector<HTMLElement>('.village-sheet');
     const nested = panel && [...panel.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]')]
@@ -3234,8 +3242,8 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" aria-modal="true" :aria-label="homeInteriorLot === null ? 'Interior da sua casa' : 'Interior da casa de um morador'" tabindex="-1">
-        <header><strong>🏠 {{ homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}` }}</strong><button type="button" class="link" @click="exitHomeInterior">Sair</button></header>
+      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" aria-modal="true" aria-labelledby="village-home-title" tabindex="-1">
+        <VillageSheetHeader :title="homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}`" icon="🏠" title-id="village-home-title" close-label="Sair" @close="requestCloseSheet" />
         <p v-if="homeInteriorLot === null" class="hint">Sua casa tem cantinhos de descanso, cozinha e convivência. Use Organizar móveis para decorar.</p>
         <p v-else class="hint">Os moradores organizam seus cantinhos e poupam para comprar móveis e reformar por conta própria.</p>
         <HomeInteriorMap
@@ -3274,15 +3282,16 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <div v-if="sheet === 'shop'" class="village-sheet" role="dialog" aria-modal="true" aria-label="Loja da Vila" tabindex="-1">
-        <header>
+      <div v-if="sheet === 'shop'" class="village-sheet" role="dialog" aria-modal="true" aria-labelledby="village-shop-title" tabindex="-1">
+        <VillageSheetHeader title="Loja da Vila" title-id="village-shop-title" @close="requestCloseSheet">
+          <template #actions>
           <div class="chips" role="tablist">
             <button type="button" role="tab" :class="{ active: shopTab === 'comprar' }" :aria-selected="shopTab === 'comprar'" @click="shopTab = 'comprar'">Comprar</button>
             <button type="button" role="tab" :class="{ active: shopTab === 'vender' }" :aria-selected="shopTab === 'vender'" @click="shopTab = 'vender'">Vender</button>
           </div>
           <span class="village-coins"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
-          <button type="button" class="link" @click="requestCloseSheet">Fechar</button>
-        </header>
+          </template>
+        </VillageSheetHeader>
         <p class="hint">{{ shopTab === 'comprar' ? 'Sementes sempre; os móveis e acessórios mudam todo dia.' : 'A loja compra tudo o que você coleta e colhe.' }}</p>
         <ul v-if="shopTab === 'comprar'" class="item-grid">
           <li v-for="i in shopItems" :key="i.id">
@@ -3327,14 +3336,14 @@ onBeforeUnmount(() => {
         <MinigameHub closable @leave="closeVillageSheet" />
       </div>
 
-      <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-label="Caixa de sementes" tabindex="-1">
-        <header><strong>🌱 Caixa de sementes</strong><button type="button" class="link" @click="requestCloseSheet">Fechar</button></header>
+      <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-labelledby="village-farm-title" tabindex="-1">
+        <VillageSheetHeader title="Caixa de sementes" icon="🌱" title-id="village-farm-title" @close="requestCloseSheet" />
         <FarmSeedBox :state="state" :name-of="nameOf" @change="changed" />
       </div>
 
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
-      <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Torre de Sobrevivência" tabindex="-1">
-        <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="pressB">Fechar</button></header>
+      <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-labelledby="village-tower-title" tabindex="-1">
+        <VillageSheetHeader title="Torre de Sobrevivência" title-id="village-tower-title" @close="requestCloseSheet" />
         <MinigameSobrevivencia ref="towerGameRef" :start-bonk="towerStartBonk" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="closeVillageSheet" />
       </div>
 
@@ -3355,12 +3364,8 @@ onBeforeUnmount(() => {
         <CardEvolutionPanel :friends="state.friends" :trust-stones="count(state, 'trust-stone')" :altar="cardEvolutionAtAltar" @evolved="syncCardEvolution" @spend-trust-stones="() => { state.inventory['trust-stone'] = Math.max(0, count(state, 'trust-stone') - 5); changed(); }" />
       </div>
 
-      <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" aria-modal="true" :aria-label="MENU_TITLES[tab]" tabindex="-1">
-        <header class="menu-head">
-          <button v-if="tab !== 'inicio'" type="button" class="link menu-back" @click="tab = 'inicio'">← Menu</button>
-          <strong>{{ MENU_TITLES[tab] }}</strong>
-          <button type="button" class="menu-close" aria-label="Fechar o menu" @click="requestCloseSheet">✕</button>
-        </header>
+      <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" aria-modal="true" aria-labelledby="village-menu-title" tabindex="-1">
+        <VillageSheetHeader class="menu-head" :title="MENU_TITLES[tab]" title-id="village-menu-title" :back="tab !== 'inicio' ? { label: 'Menu', run: () => { tab = 'inicio'; } } : undefined" @close="requestCloseSheet" />
 
         <div v-if="tab === 'inicio'" class="menu-home">
           <details><summary>Música e sons da Vila</summary><MusicControls v-model:enabled="villageAudio.enabled" v-model:volume="villageAudio.volume" v-model:effects-volume="villageAudio.effectsVolume" :track="musicTitle" :unavailable="musicUnavailable" @unlock="unlockMusic" /><p v-if="!visual.sound" class="hint">Os efeitos estão desligados nas opções gerais. A música tem seu próprio controle.</p></details>
