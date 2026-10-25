@@ -23,6 +23,7 @@ import { claimPrizes } from '../core/village/rewards';
 import { ensureModeStories } from '../core/village/mode-stories';
 import { challengeGalleryUnlocked, completedChallengeExhibits } from '../core/village/challenge-gallery';
 import BackpackView from './BackpackView.vue';
+import VillageSheetHeader from './VillageSheetHeader.vue';
 import HoOhWishCutscene from './HoOhWishCutscene.vue';
 import LegendaryCutscene from './LegendaryCutscene.vue';
 import VillageLegends from './VillageLegends.vue';
@@ -343,7 +344,7 @@ function rememberVillageActionFocus(event: FocusEvent): void {
 function focusFirstVillageAction(selector: string): void {
   const panel = document.querySelector<HTMLElement>(selector);
   const candidates = panel?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex="0"]');
-  const first = [...(candidates ?? [])].find((element) => !element.matches('.menu-close, .bc-close, .village-close') && element.textContent?.trim() !== 'Fechar') ?? candidates?.item(0);
+  const first = [...(candidates ?? [])].find((element) => !element.matches('.menu-close, .bc-close, .village-close, .village-sheet-close') && element.textContent?.trim() !== 'Fechar') ?? candidates?.item(0);
   focusWithArrowIndicator(first);
 }
 watch(sheet, (next, previous) => {
@@ -3191,7 +3192,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'build'" class="village-sheet" role="dialog" aria-label="Construir a casa">
-        <header><strong>Sua casa: {{ HOUSE_LEVELS[state.house]?.name }}</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <VillageSheetHeader :title="`Sua casa: ${HOUSE_LEVELS[state.house]?.name}`" title-id="village-build-title" @close="closeVillageSheet" />
         <template v-if="nextHouse">
           <p>Próximo: <strong>{{ nextHouse.name }}</strong></p>
           <p class="hint">Precisa de: {{ describeCost(state, nextHouse.cost) }}</p>
@@ -3274,7 +3275,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'dress'" class="village-sheet" role="dialog" aria-label="Acessórios">
-        <header><strong>Acessório {{ dressFor === 'player' ? 'para você' : `para ${nameOf(dressFor)}` }}</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <VillageSheetHeader :title="`Acessório ${dressFor === 'player' ? 'para você' : `para ${nameOf(dressFor)}`}`" title-id="village-dress-title" @close="closeVillageSheet" />
         <ul class="item-grid">
           <li v-for="acc in accessoriesOwned.filter(fitsWho)" :key="acc">
             <img :src="icon(acc)" alt="" width="40" height="40" />
@@ -3287,7 +3288,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-label="Fliperama">
-        <header><strong>Fliperama</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <VillageSheetHeader title="Fliperama" title-id="village-arcade-title" @close="closeVillageSheet" />
         <div class="card arcade-battle">
           <h2>⚔️ Batalha na câmera</h2>
           <p class="note">Abre a câmera e os sensores da Caixa direto no modo de batalha: coloque a caixa no chão e toque em Batalhar. {{ battleRewardText }}.</p>
@@ -3308,7 +3309,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">
-        <header><strong>🏆 Vitrine de desafios</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <VillageSheetHeader title="Vitrine de desafios" icon="🏆" title-id="village-gallery-title" @close="closeVillageSheet" />
         <p class="hint">O pedestal foi montado com as lembranças da Liga e dos Pins. Cada peça abaixo corresponde a um marco registrado numa partida concluída.</p>
         <ul class="village-list">
           <li v-for="exhibit in challengeExhibits" :key="exhibit.achievementId">
@@ -3320,7 +3321,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-label="Evolução dos Pokémon das cartas">
-        <header><strong>Evolução · seus companheiros</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
+        <VillageSheetHeader title="Evolução · seus companheiros" title-id="village-evolution-title" @close="closeVillageSheet" />
         <CardEvolutionPanel :friends="state.friends" :trust-stones="count(state, 'trust-stone')" :altar="cardEvolutionAtAltar" @evolved="syncCardEvolution" @spend-trust-stones="() => { state.inventory['trust-stone'] = Math.max(0, count(state, 'trust-stone') - 5); changed(); }" />
       </div>
 
