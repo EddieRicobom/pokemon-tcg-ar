@@ -298,9 +298,7 @@ export function createBonkArt(ctx: CanvasRenderingContext2D, atlas: CanvasImageS
   if (pedestal) sprites.pedestal = pedestal;
   const ground = crop(tiles.ground, 'center');
   const path = crop(tiles.path, 'center');
-  const waterId = tiles.ground === 'sand-water'
-    ? tiles.ground
-    : tiles.path === 'sand-water' ? tiles.path : 'sea';
+  const waterId = tiles.ground === 'sand-water' ? tiles.ground : 'sea';
   return {
     // O atlas disponível determina os tiles reais; sem ele, a grama original continua como fallback honesto.
     grass: texture(ground ?? grass, GRASS_A),

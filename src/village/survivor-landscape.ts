@@ -4,15 +4,45 @@ import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
 
 /** Tilesets originais do atlas por região: terreno, trilha, cenário e cobertura baixa do chão. */
 export const SURVIVOR_REGION_TILESETS = [
-  { ground: 'at-trail', path: 'at-path', detail: 'tree-big', cover: 'tall', coverDensity: 0.19 },
-  { ground: 'at-plaza', path: 'at-trail', detail: 'pine-m', cover: 'tall', coverDensity: 0.15 },
-  { ground: 'sand-grass', path: 'sand-water', detail: 'bush', cover: 'tall', coverDensity: 0.11 },
-  { ground: 'at-path', path: 'at-plaza', detail: 'rock-1', cover: 'bush', coverDensity: 0.13 },
-  { ground: 'at-plot', path: 'at-trail', detail: 'rock-2', cover: 'bush', coverDensity: 0.1 },
-  { ground: 'at-trail', path: 'at-plaza', detail: 'flowers-white', cover: 'flowers-white', coverDensity: 0.23 },
-  { ground: 'sand-water', path: 'sea', detail: 'rock-3', cover: 'bush', coverDensity: 0.08 },
-  { ground: 'at-plaza', path: 'at-path', detail: 'wall', cover: 'tall', coverDensity: 0.12 },
-  { ground: 'at-plot', path: 'at-trail', detail: 'pine-m', cover: 'bush', coverDensity: 0.14 },
+  // Kanto: terra batida entre prados e árvores altas.
+  { ground: 'at-trail', path: 'at-plot', detail: 'tree-big', cover: 'tall', coverDensity: 0.19 },
+  // Johto: chão quente de folhas, com trilha de terra escura.
+  { ground: 'at-trail', path: 'at-harvest', detail: 'pine-m', cover: 'tall', coverDensity: 0.15 },
+  // Hoenn: areia clara de rota costeira sobre a grama úmida.
+  { ground: 'sand-grass', path: 'at-sand', detail: 'bush', cover: 'tall', coverDensity: 0.11 },
+  // Sinnoh: neve compactada e pedras frias para o caminho de altitude.
+  { ground: 'at-snow', path: 'at-snow-rock', detail: 'rock-1', cover: 'bush', coverDensity: 0.13 },
+  // Unova: piso de ruínas com faixas de tijolo antigo.
+  { ground: 'at-ruins', path: 'at-brick', detail: 'rock-2', cover: 'bush', coverDensity: 0.1 },
+  // Kalos: jardim com caminho de pedra clara e flores baixas.
+  { ground: 'at-trail', path: 'at-path', detail: 'flowers-white', cover: 'flowers-white', coverDensity: 0.23 },
+  // Alola: faixa de areia entre o gramado costeiro e as lagoas.
+  { ground: 'sand-water', path: 'at-sand', detail: 'rock-3', cover: 'bush', coverDensity: 0.08 },
+  // Galar: passagem de ruínas com pedras de estrada irregulares.
+  { ground: 'at-ruins', path: 'at-ruins-path', detail: 'wall', cover: 'tall', coverDensity: 0.12 },
+  // Paldea: campo seco de oliveiras com trilha de pedra e terra.
+  { ground: 'at-trail', path: 'at-harvest-stone', detail: 'pine-m', cover: 'bush', coverDensity: 0.14 },
+] as const;
+
+export interface SurvivorRouteDefinition {
+  /** Pontos normalizados da rota principal, de uma borda da arena à outra. */
+  main: readonly (readonly [number, number])[];
+  /** Ramificações curtas que tornam a trilha um caminho, não uma faixa repetida. */
+  branches: readonly (readonly (readonly [number, number])[])[];
+  width: number;
+}
+
+/** Rotas desenhadas à mão: curvas suaves, sem a ondulação periódica do cenário antigo. */
+export const SURVIVOR_REGION_ROUTES: readonly SurvivorRouteDefinition[] = [
+  { main: [[-0.06, 0.67], [0.2, 0.6], [0.47, 0.66], [0.73, 0.55], [1.06, 0.59]], branches: [[[0.5, 0.65], [0.53, 0.43], [0.62, 0.28]]], width: 112 },
+  { main: [[0.38, -0.06], [0.43, 0.19], [0.36, 0.45], [0.48, 0.68], [0.42, 1.06]], branches: [[[0.38, 0.46], [0.2, 0.5], [0.07, 0.62]]], width: 120 },
+  { main: [[-0.06, 0.74], [0.18, 0.7], [0.4, 0.59], [0.67, 0.49], [1.06, 0.43]], branches: [[[0.42, 0.59], [0.54, 0.77], [0.7, 0.9]]], width: 116 },
+  { main: [[0.63, -0.06], [0.6, 0.2], [0.69, 0.42], [0.58, 0.68], [0.64, 1.06]], branches: [[[0.6, 0.68], [0.42, 0.79], [0.25, 0.77]]], width: 124 },
+  { main: [[-0.06, 0.43], [0.2, 0.48], [0.45, 0.41], [0.72, 0.49], [1.06, 0.42]], branches: [[[0.45, 0.42], [0.47, 0.2], [0.59, 0.08]], [[0.72, 0.49], [0.84, 0.67]]], width: 118 },
+  { main: [[-0.06, 0.68], [0.2, 0.62], [0.42, 0.7], [0.67, 0.59], [1.06, 0.66]], branches: [[[0.42, 0.69], [0.39, 0.46], [0.27, 0.29]], [[0.67, 0.59], [0.81, 0.42], [0.91, 0.31]]], width: 106 },
+  { main: [[-0.06, 0.34], [0.2, 0.39], [0.43, 0.32], [0.69, 0.43], [1.06, 0.36]], branches: [[[0.69, 0.43], [0.78, 0.61], [0.88, 0.76]]], width: 112 },
+  { main: [[-0.06, 0.76], [0.2, 0.67], [0.41, 0.72], [0.66, 0.56], [1.06, 0.48]], branches: [[[0.41, 0.71], [0.35, 0.5], [0.23, 0.36]]], width: 128 },
+  { main: [[0.06, -0.06], [0.2, 0.18], [0.38, 0.34], [0.62, 0.5], [0.92, 0.66], [1.06, 0.78]], branches: [[[0.38, 0.34], [0.25, 0.43], [0.13, 0.56]]], width: 114 },
 ] as const;
 
 const atlasLayout = packAtlas();
@@ -26,6 +56,43 @@ function tilePatch(id: string): { sx: number; sy: number } | null {
   return source.half
     ? { sx: rect.x + 16, sy: rect.y + 32 }
     : { sx: rect.x + Math.max(0, Math.floor((rect.w - 16) / 2)), sy: rect.y + Math.max(0, Math.floor((rect.h - 16) / 2)) };
+}
+
+interface RoutePoint { x: number; y: number }
+
+function routePoints(points: readonly (readonly [number, number])[], width: number, height: number): RoutePoint[] {
+  return points.map(([x, y]) => ({ x: x * width, y: y * height }));
+}
+
+function traceRoute(ctx: CanvasRenderingContext2D, points: readonly RoutePoint[]): void {
+  const first = points[0];
+  if (!first) return;
+  ctx.moveTo(first.x, first.y);
+  if (points.length === 1) return;
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const current = points[i]!;
+    const next = points[i + 1]!;
+    const midpoint = { x: (current.x + next.x) / 2, y: (current.y + next.y) / 2 };
+    ctx.quadraticCurveTo(current.x, current.y, midpoint.x, midpoint.y);
+  }
+  const penultimate = points[points.length - 2]!;
+  ctx.quadraticCurveTo(penultimate.x, penultimate.y, points[points.length - 1]!.x, points[points.length - 1]!.y);
+}
+
+function distanceToSegment(x: number, y: number, a: RoutePoint, b: RoutePoint): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lengthSquared));
+  return Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t));
+}
+
+function distanceToRoutes(x: number, y: number, routes: readonly (readonly RoutePoint[])[]): number {
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const route of routes) {
+    for (let i = 1; i < route.length; i += 1) nearest = Math.min(nearest, distanceToSegment(x, y, route[i - 1]!, route[i]!));
+  }
+  return nearest;
 }
 
 /** Retângulo do mundo que aparece na tela (câmera); sem ele a paisagem inteira é desenhada. */
@@ -127,36 +194,40 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       if (i % 11 === 0) { ctx.fillRect(x - 2, y - 1, 1, 2); ctx.fillRect(x + 2, y - 2, 1, 2); }
     }
 
-    // Recorta corredores curvos e repete células de 16 px: o tileset não é esticado na trilha.
-    for (const horizontal of [false, true]) {
-      const points: { x: number; y: number }[] = [];
-      const extent = horizontal ? width : height;
-      const half = horizontal ? 16 : 24;
-      for (let coordinate = -16; coordinate <= extent + 16; coordinate += 8) {
-        const center = horizontal ? height * 0.5 + Math.sin(coordinate / 190) * 19 : width * 0.5 + Math.sin(coordinate / 95) * 100;
-        points.push({ x: horizontal ? coordinate : center, y: horizontal ? center : coordinate });
-      }
-      ctx.save();
+    // Uma rota principal e ramificações curtas dão leitura de caminho natural; não há mais ondas periódicas.
+    const routeDefinition = SURVIVOR_REGION_ROUTES[index]!;
+    const routes = [routeDefinition.main, ...routeDefinition.branches]
+      .map((points) => routePoints(points, width, height));
+    const nearRoute = (x: number, y: number, extra = 0): boolean => distanceToRoutes(x, y, routes) <= routeDefinition.width / 2 + extra;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = routeDefinition.width + 8;
+    ctx.strokeStyle = '#231d1738';
+    for (const route of routes) {
       ctx.beginPath();
-      for (const [i, point] of points.entries()) {
-        const x = point.x - (horizontal ? 0 : half), y = point.y - (horizontal ? half : 0);
-        if (!i) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      for (const point of points.reverse()) ctx.lineTo(point.x + (horizontal ? 0 : half), point.y + (horizontal ? half : 0));
-      ctx.closePath();
-      ctx.strokeStyle = '#293d2825'; ctx.lineWidth = 3; ctx.stroke();
-      ctx.clip();
-      ctx.fillStyle = region.path; ctx.fillRect(0, 0, width, height);
-      for (let y = 0; y < height; y += 16) for (let x = 0; x < width; x += 16) {
-        const center = horizontal ? height * 0.5 + Math.sin(x / 190) * 19 : width * 0.5 + Math.sin(y / 95) * 100;
-        if (Math.abs((horizontal ? y : x) - center) <= half + 32) drawAtlasTile(ctx, tiles.path, x, y, 16, 16, 0.82);
-      }
-      for (let i = 0; i < 420; i++) {
-        ctx.fillStyle = i % 2 ? '#6d573021' : '#fff0cc30';
-        ctx.fillRect(Math.floor(hash(i * 7) * width), Math.floor(hash(i * 7 + 1) * height), 2, 1);
-      }
-      ctx.restore();
+      traceRoute(ctx, route);
+      ctx.stroke();
     }
+    ctx.lineWidth = routeDefinition.width;
+    ctx.strokeStyle = region.path;
+    for (const route of routes) {
+      ctx.beginPath();
+      traceRoute(ctx, route);
+      ctx.stroke();
+    }
+    // Repete células de 16 px sem esticar a arte; o recorte regional agora acompanha a rota escolhida acima.
+    for (let y = 0; y < height; y += 16) for (let x = 0; x < width; x += 16) {
+      if (nearRoute(x + 8, y + 8, 15)) drawAtlasTile(ctx, tiles.path, x, y, 16, 16, 0.82);
+    }
+    for (let i = 0; i < 420; i++) {
+      const x = Math.floor(hash(i * 7) * width), y = Math.floor(hash(i * 7 + 1) * height);
+      if (nearRoute(x, y, 10)) {
+        ctx.fillStyle = i % 2 ? '#6d573021' : '#fff0cc30';
+        ctx.fillRect(x, y, 2, 1);
+      }
+    }
+    ctx.restore();
 
     // Cobertura baixa presa à grade: mato alto, arbustos ou flores vindos do atlas, como nas rotas de GBA.
     // Fica fora dos dois corredores para a leitura do combate e dos golpes continuar limpa.
@@ -170,9 +241,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
         if (hash((index + 1) * 1103 + row * 71 + col * 17) > tiles.coverDensity) continue;
         const px = x + Math.floor(hash((index + 1) * 3109 + row * 13 + col) * 18);
         const py = y + Math.floor(hash((index + 1) * 1013 + row + col * 29) * 18);
-        const inHorizontalPath = Math.abs(py - (height * 0.5 + Math.sin(px / 190) * 19)) < 52;
-        const inVerticalPath = Math.abs(px - (width * 0.5 + Math.sin(py / 95) * 100)) < 66;
-        if (!inHorizontalPath && !inVerticalPath) drawAtlasTile(ctx, tiles.cover, px, py, coverSize.w, coverSize.h, 0.92);
+        if (!nearRoute(px + coverSize.w / 2, py + coverSize.h / 2, 34)) drawAtlasTile(ctx, tiles.cover, px, py, coverSize.w, coverSize.h, 0.92);
       }
     }
 

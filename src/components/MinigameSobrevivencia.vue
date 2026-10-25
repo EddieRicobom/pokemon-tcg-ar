@@ -511,6 +511,21 @@ function showTrainerPresentation(event: { trainerId: number; count: number; fina
 const minimap = ref({ markers: [] as ReturnType<typeof survivorMinimapSnapshot>['markers'], viewport: { x: 0, y: 0, width: ARENA_W, height: ARENA_H } });
 const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
+const upgradeMenuLocked = ref(false);
+const UPGRADE_OPEN_DELAY_MS = 1000;
+let upgradeMenuLockTimer: ReturnType<typeof setTimeout> | null = null;
+watch(pendingUpgrade, (offer) => {
+  if (upgradeMenuLockTimer) clearTimeout(upgradeMenuLockTimer);
+  upgradeMenuLockTimer = null;
+  upgradeMenuLocked.value = Boolean(offer);
+  if (offer) {
+    upgradeMenuLockTimer = setTimeout(() => {
+      upgradeMenuLockTimer = null;
+      upgradeMenuLocked.value = false;
+      focusFirstSurvivorAction();
+    }, UPGRADE_OPEN_DELAY_MS);
+  }
+});
 const availableUpgradeRerolls = computed(() => state.value?.player.upgradeRerolls ?? 0);
 const summary = ref<SurvivorSummary | null>(null);
 const feedback = reactive(emptySurvivorFeedbackAnswers());
@@ -1729,7 +1744,7 @@ function loop(ts: number): void {
 }
 
 function chooseUpgrade(id: string): void {
-  if (!state.value) return;
+  if (!state.value || upgradeMenuLocked.value) return;
   const events = applyUpgrade(state.value, id);
   playSound('success');
   pendingUpgrade.value = null;
@@ -1745,7 +1760,7 @@ function chooseUpgrade(id: string): void {
 }
 
 function rerollUpgradeSelection(): void {
-  if (!state.value || !rerollSurvivorUpgradeOffer(state.value)) return;
+  if (upgradeMenuLocked.value || !state.value || !rerollSurvivorUpgradeOffer(state.value)) return;
   pendingUpgrade.value = state.value.pendingUpgrade;
   playSound('survivor-pickup');
   say('⭐ Desejo de Jirachi: oferta renovada!', 2200);
@@ -2105,6 +2120,9 @@ onBeforeUnmount(() => {
   if (toastTimer) clearTimeout(toastTimer);
   if (artifactNoticeTimer) clearTimeout(artifactNoticeTimer);
   clearTrainerPresentation();
+  if (upgradeMenuLockTimer) clearTimeout(upgradeMenuLockTimer);
+  upgradeMenuLockTimer = null;
+  upgradeMenuLocked.value = false;
   heldKeys.clear();
   sound.dispose();
   music.dispose();
@@ -2411,8 +2429,9 @@ onBeforeUnmount(() => {
             <p class="survivor-kicker">Nível {{ state?.player.level }}</p>
             <h2>Subiu de nível!</h2>
             <p class="survivor-rarity-hint">Cada carta tem uma raridade e um efeito próprio. O Especial continua disponível após o encontro com o guardião.</p>
+            <p v-if="upgradeMenuLocked" class="survivor-upgrade-delay" role="status" aria-live="polite">Escolha liberada em instantes…</p>
             <div class="survivor-choice-list">
-              <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" @click="chooseUpgrade(u.id)">
+              <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" :disabled="upgradeMenuLocked" @pointerdown.stop @click="chooseUpgrade(u.id)">
                 <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u) }}</span>
                 <span class="survivor-upgrade-text">
                   <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
@@ -2424,7 +2443,7 @@ onBeforeUnmount(() => {
                 </span>
               </button>
             </div>
-            <button v-if="availableUpgradeRerolls > 0" type="button" class="survivor-jirachi-reroll" @click="rerollUpgradeSelection">
+            <button v-if="availableUpgradeRerolls > 0" type="button" class="survivor-jirachi-reroll" :disabled="upgradeMenuLocked" @pointerdown.stop @click="rerollUpgradeSelection">
               <span class="survivor-upgrade-icon" aria-hidden="true">⭐</span>
               <span><strong>Desejo de Jirachi · Rerrolar</strong><small>{{ availableUpgradeRerolls }} desejo(s) restante(s). Cartas normais são trocadas; se todas forem Great Ball ou melhor, uma nova raridade superior é garantida quando já estiver liberada.</small></span>
             </button>
