@@ -25,6 +25,7 @@ import { challengeGalleryUnlocked, completedChallengeExhibits } from '../core/vi
 import BackpackView from './BackpackView.vue';
 import VillageSheetHeader from './VillageSheetHeader.vue';
 import { villageSheetCloseAction } from '../core/village/sheet-close';
+import { wrappedFocusIndex } from '../core/village/sheet-focus';
 import HoOhWishCutscene from './HoOhWishCutscene.vue';
 import LegendaryCutscene from './LegendaryCutscene.vue';
 import VillageLegends from './VillageLegends.vue';
@@ -350,7 +351,7 @@ function focusFirstVillageAction(selector: string): void {
 }
 watch(sheet, (next, previous) => {
   if (next && !previous) sheetFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
-  if (next && !previous) void nextTick(() => focusFirstVillageAction('.village-sheet'));
+  if (next && next !== previous) void nextTick(() => focusFirstVillageAction('.village-sheet'));
   if (!next && previous) {
     const target = sheetFocusReturn;
     sheetFocusReturn = null;
@@ -1164,6 +1165,28 @@ function pressAClick(event: MouseEvent): void {
   if (performance.now() - lastPointerAPress > 180) pressA();
 }
 function onKey(e: KeyboardEvent): void {
+  if (e.type === 'keydown' && e.key === 'Tab' && sheet.value && !backpackOpen.value) {
+    const panel = document.querySelector<HTMLElement>('.village-sheet');
+    const nested = panel && [...panel.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]')]
+      .filter((element) => element.getClientRects().length > 0).at(-1);
+    const activePanel = nested ?? panel;
+    if (activePanel) {
+      const controls = [...activePanel.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]')]
+        .filter((element) => element.getClientRects().length > 0 && !element.closest('[inert]'));
+      if (controls.length) {
+        const index = controls.indexOf(document.activeElement as HTMLElement);
+        const next = wrappedFocusIndex(index, controls.length, e.shiftKey);
+        if (next !== null) {
+          e.preventDefault();
+          controls[next]?.focus();
+        }
+      } else {
+        e.preventDefault();
+        activePanel.focus();
+      }
+    }
+    return;
+  }
   // A Torre tem seu próprio teclado; a Vila não deve capturar essas teclas por trás dela.
   if (sheet.value === 'torre') return;
   if (recapScenes.value.length) {
@@ -3198,7 +3221,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="sheet === 'build'" class="village-sheet" role="dialog" aria-label="Construir a casa">
+      <div v-if="sheet === 'build'" class="village-sheet" role="dialog" aria-modal="true" aria-labelledby="village-build-title" tabindex="-1">
         <VillageSheetHeader :title="`Sua casa: ${HOUSE_LEVELS[state.house]?.name}`" title-id="village-build-title" @close="requestCloseSheet" />
         <template v-if="nextHouse">
           <p>Próximo: <strong>{{ nextHouse.name }}</strong></p>
@@ -3211,7 +3234,7 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" :aria-label="homeInteriorLot === null ? 'Interior da sua casa' : 'Interior da casa de um morador'">
+      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" aria-modal="true" :aria-label="homeInteriorLot === null ? 'Interior da sua casa' : 'Interior da casa de um morador'" tabindex="-1">
         <header><strong>🏠 {{ homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}` }}</strong><button type="button" class="link" @click="exitHomeInterior">Sair</button></header>
         <p v-if="homeInteriorLot === null" class="hint">Sua casa tem cantinhos de descanso, cozinha e convivência. Use Organizar móveis para decorar.</p>
         <p v-else class="hint">Os moradores organizam seus cantinhos e poupam para comprar móveis e reformar por conta própria.</p>
@@ -3251,7 +3274,7 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <div v-if="sheet === 'shop'" class="village-sheet" role="dialog" aria-label="Loja da Vila">
+      <div v-if="sheet === 'shop'" class="village-sheet" role="dialog" aria-modal="true" aria-label="Loja da Vila" tabindex="-1">
         <header>
           <div class="chips" role="tablist">
             <button type="button" role="tab" :class="{ active: shopTab === 'comprar' }" :aria-selected="shopTab === 'comprar'" @click="shopTab = 'comprar'">Comprar</button>
@@ -3281,7 +3304,7 @@ onBeforeUnmount(() => {
         </ul>
       </div>
 
-      <div v-if="sheet === 'dress'" class="village-sheet" role="dialog" aria-label="Acessórios">
+      <div v-if="sheet === 'dress'" class="village-sheet" role="dialog" aria-modal="true" aria-labelledby="village-dress-title" tabindex="-1">
         <VillageSheetHeader :title="`Acessório ${dressFor === 'player' ? 'para você' : `para ${nameOf(dressFor)}`}`" title-id="village-dress-title" @close="requestCloseSheet" />
         <ul class="item-grid">
           <li v-for="acc in accessoriesOwned.filter(fitsWho)" :key="acc">
@@ -3294,7 +3317,7 @@ onBeforeUnmount(() => {
         <button type="button" @click="dress(null)">Tirar o acessório</button>
       </div>
 
-      <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-label="Fliperama">
+      <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-modal="true" aria-labelledby="village-arcade-title" tabindex="-1">
         <VillageSheetHeader title="Fliperama" title-id="village-arcade-title" @close="requestCloseSheet" />
         <div class="card arcade-battle">
           <h2>⚔️ Batalha na câmera</h2>
@@ -3304,18 +3327,18 @@ onBeforeUnmount(() => {
         <MinigameHub closable @leave="closeVillageSheet" />
       </div>
 
-      <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-label="Caixa de sementes">
+      <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-label="Caixa de sementes" tabindex="-1">
         <header><strong>🌱 Caixa de sementes</strong><button type="button" class="link" @click="requestCloseSheet">Fechar</button></header>
         <FarmSeedBox :state="state" :name-of="nameOf" @change="changed" />
       </div>
 
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
-      <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
+      <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Torre de Sobrevivência" tabindex="-1">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="pressB">Fechar</button></header>
         <MinigameSobrevivencia ref="towerGameRef" :start-bonk="towerStartBonk" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="closeVillageSheet" />
       </div>
 
-      <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">
+      <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-modal="true" aria-labelledby="village-gallery-title" tabindex="-1">
         <VillageSheetHeader title="Vitrine de desafios" icon="🏆" title-id="village-gallery-title" @close="requestCloseSheet" />
         <p class="hint">O pedestal foi montado com as lembranças da Liga e dos Pins. Cada peça abaixo corresponde a um marco registrado numa partida concluída.</p>
         <ul class="village-list">
@@ -3327,12 +3350,12 @@ onBeforeUnmount(() => {
         <p class="hint">Novas lembranças aparecem aqui quando você conquista outros marcos.</p>
       </div>
 
-      <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-label="Evolução dos Pokémon das cartas">
+      <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-modal="true" aria-labelledby="village-evolution-title" tabindex="-1">
         <VillageSheetHeader title="Evolução · seus companheiros" title-id="village-evolution-title" @close="requestCloseSheet" />
         <CardEvolutionPanel :friends="state.friends" :trust-stones="count(state, 'trust-stone')" :altar="cardEvolutionAtAltar" @evolved="syncCardEvolution" @spend-trust-stones="() => { state.inventory['trust-stone'] = Math.max(0, count(state, 'trust-stone') - 5); changed(); }" />
       </div>
 
-      <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" :aria-label="MENU_TITLES[tab]">
+      <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" aria-modal="true" :aria-label="MENU_TITLES[tab]" tabindex="-1">
         <header class="menu-head">
           <button v-if="tab !== 'inicio'" type="button" class="link menu-back" @click="tab = 'inicio'">← Menu</button>
           <strong>{{ MENU_TITLES[tab] }}</strong>
