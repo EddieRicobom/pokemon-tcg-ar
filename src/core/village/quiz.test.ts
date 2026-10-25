@@ -40,7 +40,8 @@ describe('perguntas dos Pokémon', () => {
           expect(op.label.length).toBeGreaterThan(2);
           expect(op.reply('bunda fedida').length).toBeGreaterThan(5);
           expect(FX_EMOJI[op.fx]).toBeDefined();
-          expect(op.friend).toBeGreaterThanOrEqual(0);
+          // Recusar de um jeito seco pode custar um ponto; nada além disso.
+          expect(op.friend).toBeGreaterThanOrEqual(-1);
         }
       }
     }

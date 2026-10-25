@@ -1,7 +1,8 @@
 import type { Rng } from '../battle';
 import { itemDef } from './catalog';
-import { add, availableCount, count, friendOf, itemName } from './life';
-import type { ItemId, VillageState } from './life';
+import { unlocksAt } from './book';
+import { add, availableCount, count, FRIEND_LEVELS, friendOf, gainFriendship, itemName } from './life';
+import type { FriendMilestone, ItemId, VillageState } from './life';
 import { hash, personalityOf } from './personality';
 import { MAX_SAVED, MAX_SOCIAL_PLANS, MOMENT_EMOJI, pairKey, relationStatus, trimMoments } from './social-state';
 import type { MemoryKind, Moment, MomentKind, MomentLine, Relation, SocialPlan, SocialPlanKind } from './social-state';
@@ -598,7 +599,7 @@ const INTRIGUE_MOMENTS: readonly Template[] = [
       options: [
         {
           label: () => 'Pedir que cada um conte o que ouviu',
-          lines: () => [L(0, 'Tá. Eu falei isso quando estava irritado. Foi injusto.', 'sad'), L(1, 'Obrigada por falar direto comigo.', 'heart'), L(2, 'E eu vou parar de completar história dos outros.', 'idea')],
+          lines: () => [L(0, 'Tá. Eu falei isso quando estava irritado. Foi injusto.', 'sad'), L(1, 'Obrigado por falar direto comigo.', 'heart'), L(2, 'E eu vou parar de completar história dos outros.', 'idea')],
           outcome: { bond: 5, bond02: 4, bond12: 4, flag: 'clear', friendBy: [1, 1, 1], plan: { kind: 'visitar', days: 2 } },
         },
         {
@@ -1208,7 +1209,13 @@ export function sceneChoice(scene: Scene): ChoiceView | null {
 
 // -------------------------------------------------------------------------------- aplicar
 
-function applyOutcome(state: VillageState, cast: Actor[], o: Outcome, day: string, now: number): string[] {
+/**
+ * Quanto cada ponto de `friend`/`friendBy` de um momento vale em amizade com você. Os modelos usam 1 a 6; sem escala,
+ * o ganho sumia na barra de 0 a 100. Pesa mais quando você decidiu a cena e menos quando aconteceu sem você.
+ */
+export const MOMENT_FRIEND_SCALE = { chosen: 3, near: 2, away: 1 } as const;
+
+function applyOutcome(state: VillageState, cast: Actor[], o: Outcome, day: string, now: number, scale: number = MOMENT_FRIEND_SCALE.near): string[] {
   const chips: string[] = [];
   const a = cast[0]!;
   const b = cast[1];
@@ -1247,15 +1254,11 @@ function applyOutcome(state: VillageState, cast: Actor[], o: Outcome, day: strin
     add(state, item, qty);
     chips.push(`+${qty} ${itemName(item)}`);
   }
-  const friendDeltas = cast.map((_, i) => o.friendBy?.[i] ?? o.friend ?? 0);
   cast.forEach((m, i) => {
-    const d = friendDeltas[i]!;
-    if (d !== 0) {
-      const f = friendOf(state, m.id);
-      f.points = clamp(f.points + d, 0, 100);
-    }
+    const d = (o.friendBy?.[i] ?? o.friend ?? 0) * scale;
+    const applied = d !== 0 ? gainFriendship(state, m.id, d, day) : 0;
+    if (applied !== 0) chips.push(`${applied > 0 ? '+' : '−'}${Math.abs(applied)} amizade com você (${m.name})`);
   });
-  if (friendDeltas.some((d) => d > 0)) chips.push('+ amizade com você');
   if (o.eatCrop) {
     const ripe = state.crops.findIndex((cr) => {
       const g = itemDef(cr.seed)?.grows;
@@ -1313,7 +1316,7 @@ export function resolveScene(state: VillageState, scene: Scene, choice: number |
   const spec = used ? used.outcome : tpl.outcome;
   const outcome = typeof spec === 'function' ? spec(ctx) : spec;
   const followUp = used?.lines ? used.lines(ctx) : [];
-  const result = applyOutcome(state, cast, outcome, day, now);
+  const result = applyOutcome(state, cast, outcome, day, now, used ? MOMENT_FRIEND_SCALE.chosen : away ? MOMENT_FRIEND_SCALE.away : MOMENT_FRIEND_SCALE.near);
   const planId = typeof ctx.memo.socialPlanId === 'string' ? ctx.memo.socialPlanId : null;
   const fulfilledPlan = planId
     ? state.plans.find((plan) => plan.id === planId
@@ -1416,20 +1419,19 @@ export interface RecentGossipOptions {
   nameOf?: (id: string, fallback: string) => string;
 }
 
-/** O que o Pokémon comenta ao conversar com você sobre o que viveu nas últimas 36 horas (ou `null`). */
+/** Por quanto tempo uma lembrança ainda vira assunto na conversa (antes eram 90 dias, e a mesma voltava toda vez). */
+const GOSSIP_MEMORY_DAYS = 14;
+
+/**
+ * O que o Pokémon comenta ao conversar com você: uma das lembranças recentes dele (revezando entre as três últimas, uma
+ * por dia, para não repetir sempre a mesma) ou o que viveu nas últimas 36 horas (ou `null`).
+ */
 export function recentGossip(state: VillageState, id: string, now: number, options: RecentGossipOptions = {}): string | null {
-  const memory = [...state.memories].reverse().find((item) => item.mon === id && now - item.t <= 90 * 24 * 3_600_000);
+  const fresh = state.memories.filter((item) => item.mon === id && now - item.t >= 0 && now - item.t <= GOSSIP_MEMORY_DAYS * 86_400_000).slice(-3);
+  const memory = fresh.length > 0 ? fresh[(fresh.length - 1 + Math.floor(now / 86_400_000)) % fresh.length] : undefined;
   if (memory) {
     const age = Math.max(0, now - memory.t);
-    const when = age < 3_600_000 ? 'agora há pouco' : age < 2 * 86_400_000 ? 'ontem' : 'há alguns dias';
-    const intros: Record<MemoryKind, readonly string[]> = {
-      amizade: ['Eu ainda sorrio quando penso nisso', 'Sabe o que me deixou feliz outro dia?', 'Fiquei lembrando de uma coisa boa'],
-      rivalidade: ['Aquilo ainda ficou atravessado', 'Eu tentei deixar isso para trás, mas', 'Ainda estou pensando naquela confusão'],
-      romance: ['Eu fico meio bobo quando lembro', 'Sabe aquele momento que dá frio na barriga?', 'Ainda guardo esse momento com carinho'],
-      descoberta: ['Eu não paro de pensar no que encontramos', 'Aquela descoberta ainda está na minha cabeça', 'Eu descobri uma coisa e preciso comentar'],
-    };
-    const choices = intros[memory.kind];
-    const opener = choices[hash(`${memory.id}:${memory.kind}`) % choices.length] ?? choices[0]!;
+    const when = age < 3_600_000 ? 'agora há pouco' : age < 2 * 86_400_000 ? 'ontem' : 'esses dias';
     const source = state.diary.find((moment) => moment.id === memory.momentId);
     const companions = source?.cast
       .filter((participant) => participant.id !== id)
@@ -1441,16 +1443,24 @@ export function recentGossip(state: VillageState, id: string, now: number, optio
         ? ` com ${companions.slice(0, -1).join(', ')} e ${companions.at(-1)}`
         : '';
     const tail = memory.kind === 'rivalidade'
-      ? 'Talvez eu devesse conversar com eles de novo.'
+      ? `Talvez eu devesse conversar com ${companions.length === 1 ? companions[0] : companions.length > 1 ? 'eles' : 'quem estava lá'} de novo.`
       : memory.kind === 'romance'
         ? 'Foi bonito, mesmo com toda a vergonha.'
         : memory.kind === 'descoberta'
           ? 'Quero ver o que acontece se a gente investigar mais.'
-          : 'Foi um daqueles dias que dá vontade de repetir.';
-    const memoryText = options.compact
-      ? (source?.title ? `${source.title} — ${memory.kind === 'amizade' ? 'amizade fortalecida' : memory.kind === 'rivalidade' ? 'uma tensão ficou no ar' : memory.kind === 'romance' ? 'um momento especial' : 'uma nova pista'}` : `${memory.text.split(':')[0] ?? memory.text} — memória da Vila`)
-      : memory.text;
-    return `${opener}${withPeople} — ${when}: ${memoryText}. ${tail}`;
+          : 'Foi um daqueles dias que a gente quer repetir.';
+    // Na conversa, o nome do momento (sem os números do Diário); fora dela, o registro inteiro.
+    const topic = options.compact
+      ? `“${source?.title ?? memory.text.split(':')[0] ?? memory.text}”${withPeople}`
+      : `${memory.text.replace(/\.$/, '')}${withPeople}`;
+    const sentences: Record<MemoryKind, readonly string[]> = {
+      amizade: [`Eu ainda sorrio quando lembro de ${topic}, ${when}.`, `Uma coisa boa não sai da minha cabeça: ${topic}, ${when}.`, `Fiquei lembrando de ${topic}, ${when}. Que dia!`],
+      rivalidade: [`Ainda estou pensando em ${topic}, ${when}.`, `Eu tentei deixar ${topic} para trás, mas ainda incomoda.`, `Aquilo de ${topic}, ${when}, ficou atravessado.`],
+      romance: [`Eu fico meio bobo quando lembro de ${topic}, ${when}.`, `Ainda dá um frio na barriga quando penso em ${topic}.`, `Guardo com carinho ${topic}, ${when}.`],
+      descoberta: [`Não paro de pensar em ${topic}, ${when}.`, `Preciso comentar: ${topic}, ${when}. Ainda está na minha cabeça.`, `Lembra de ${topic}, ${when}? Eu não esqueço.`],
+    };
+    const choices = sentences[memory.kind];
+    return `${choices[hash(`${memory.id}:${memory.kind}`) % choices.length] ?? choices[0]!} ${tail}`;
   }
   for (let i = state.diary.length - 1; i >= 0; i--) {
     const m = state.diary[i]!;
@@ -1515,3 +1525,72 @@ export function albumEntries(state: VillageState): AlbumEntry[] {
 /** Os momentos guardados no Álbum, do mais novo para o mais antigo. */
 export const savedMoments = (state: VillageState): Moment[] => state.diary.filter((m) => m.fav).reverse();
 
+// -------------------------------------------------------------------------------- marcos de amizade com você
+
+const MILESTONE_LINES: Record<number, string> = {
+  1: 'Acho que agora a gente já é colega de verdade! Posso te contar do que eu gosto?',
+  2: 'Somos amigos! Quando eu achar coisas boas pela Vila, vou guardar para você.',
+  3: 'Você é um grande amigo. Se quiser companhia, é só chamar: eu vou junto!',
+  4: 'Melhor amigo! Não tem insígnia que valha mais do que isso.',
+};
+
+/** Quando a amizade esfria e cai para este nível. */
+const DROP_LINES: Record<number, string> = {
+  0: 'Parece que a gente voltou a ser quase desconhecido...',
+  1: 'Eu achava que a gente era amigo. Acho que fiquei meio de lado.',
+  2: 'Ainda gosto de você, mas senti a gente se afastando um pouco.',
+  3: 'Você continua importante para mim. Só queria você mais por perto, como antes.',
+};
+
+/** Quando volta a um nível que já tinha tido. */
+const BACK_LINES: Record<number, string> = {
+  1: 'Que bom conversar de novo! Vamos recomeçar devagar?',
+  2: 'Voltamos a ser amigos! Eu sabia que a gente se acertava.',
+  3: 'Eu senti falta disso. Grandes amigos de novo!',
+  4: 'Melhores amigos outra vez. Desta vez eu não deixo você sumir!',
+};
+
+/**
+ * Grava no Diário a mudança de nível que acabou de acontecer (`claimFriendMilestones`). Subida: a fala do Pokémon, o que
+ * se abriu e, no «Melhor amigo», a página fica guardada no Álbum. Queda: a mágoa e o que fica fechado até recuperar.
+ * Volta: a reconciliação. Devolve o momento gravado.
+ */
+export function recordFriendMilestone(state: VillageState, mon: { id: string; name: string }, milestone: FriendMilestone, now: number, day: string, hour: number): Moment {
+  const fromName = FRIEND_LEVELS[milestone.from]?.name ?? '';
+  const down = milestone.kind === 'down';
+  const unlocks = milestone.passed.flatMap((level) => unlocksAt(level));
+  const keep = milestone.kind === 'up' && milestone.level >= 4 && state.diary.filter((x) => x.fav).length < MAX_SAVED;
+  const lines: MomentLine[] = down
+    ? [
+        { who: 0, text: DROP_LINES[milestone.level] ?? 'A gente se afastou um pouco.', fx: 'sad' },
+        ...unlocks.slice(0, 4).map((text) => ({ who: 0, text: `(Fica para quando a amizade voltar: ${text})`, fx: 'sad' as const })),
+      ]
+    : milestone.kind === 'back'
+      ? [{ who: 0, text: BACK_LINES[milestone.level] ?? 'A nossa amizade voltou a crescer!', fx: 'heart' }]
+      : [
+          { who: 0, text: MILESTONE_LINES[milestone.level] ?? 'A nossa amizade cresceu!', fx: 'heart' },
+          ...unlocks.slice(0, 4).map((text) => ({ who: 0, text: `(Novo: ${text})`, fx: 'sparkle' as const })),
+        ];
+  const moment: Moment = {
+    id: `${now.toString(36)}-amizade-${milestone.kind}-${mon.id}-${milestone.level}`,
+    t: now,
+    day,
+    hour,
+    tpl: FRIEND_MILESTONE_TPL,
+    kind: down ? 'drama' : 'amizade',
+    title: down ? `Amizade abalada: ${milestone.name}` : milestone.kind === 'back' ? `Amizade recuperada: ${milestone.name}` : `Amizade: ${milestone.name}`,
+    emoji: down ? '💔' : '💖',
+    cast: [{ id: mon.id, name: mon.name }],
+    lines,
+    result: [
+      down ? `${mon.name} e você: de ${fromName} para ${milestone.name} 💔` : milestone.kind === 'back' ? `${mon.name} voltou a ser seu ${milestone.name} 💖` : `${mon.name} agora é seu ${milestone.name} 💖`,
+      ...(keep ? ['📌 Guardado no Álbum para sempre'] : []),
+    ],
+    ...(keep ? { fav: true } : {}),
+  };
+  recordMomentAndMemory(state, moment);
+  return moment;
+}
+
+/** Id de modelo dos marcos de amizade no Diário (não entra no Álbum de momentos entre Pokémon). */
+export const FRIEND_MILESTONE_TPL = 'amizade-marco';

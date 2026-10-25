@@ -81,18 +81,50 @@ function kindFor(moment: Moment): MailKind {
   return 'agradecimento';
 }
 
-/** Cria uma carta a partir de um momento concluído. O id do momento impede duplicatas. */
-export function mailFromMoment(moment: Moment): VillageMail | null {
+/** A despedida da carta acompanha a amizade de quem escreve com você (nível de `FRIEND_LEVELS`, 0 a 4). */
+const SIGN_OFF: readonly ((name: string) => string)[] = [
+  (name) => `— ${name}`,
+  (name) => `Até mais, ${name}`,
+  (name) => `Um abraço, ${name}`,
+  (name) => `Com carinho, ${name}`,
+  (name) => `Do seu melhor amigo, ${name}`,
+];
+
+/** Id de modelo dos marcos de amizade com você (o mesmo de `social.ts`, repetido para o correio não depender dele). */
+const FRIEND_MILESTONE_TPL = 'amizade-marco';
+
+/** O que quem escreve disse no momento (a primeira fala de verdade, sem as rubricas entre parênteses). */
+function ownWords(moment: Moment): string {
+  return moment.lines.find((line) => line.who === 0 && !line.text.startsWith('('))?.text ?? '';
+}
+
+/**
+ * Cria uma carta a partir de um momento concluído, escrita por quem abriu a cena: o que aconteceu, com quem, a fala dele
+ * e o registro do Diário, com uma despedida que muda com a amizade (`level`). O id do momento impede duplicatas.
+ */
+export function mailFromMoment(moment: Moment, level = 0): VillageMail | null {
   if (moment.cast.length === 0 || moment.kind === 'solo') return null;
   const involvedIds = moment.cast.map((entry) => entry.id).slice(0, 3);
   const involvedNames = moment.cast.map((entry) => entry.name).slice(0, 3);
-  const kind = kindFor(moment);
+  const milestone = moment.tpl === FRIEND_MILESTONE_TPL;
+  const kind = milestone ? (moment.kind === 'drama' ? 'pedido' : 'agradecimento') : kindFor(moment);
   const first = involvedNames[0] ?? 'A Vila';
-  const result = moment.result.find((line) => line.trim()) ?? 'A Vila guardou essa lembrança no Diário.';
-  const subject = kind === 'pedido' ? `Um pedido depois de “${moment.title}”` : kind === 'convite' ? `Convite: ${moment.title}` : `Sobre ${moment.title}`;
-  const body = kind === 'rumor'
-    ? `${first} escreveu rindo: “Você viu o que aconteceu com ${names(involvedNames)}?” O Diário registrou o momento: ${result}`
-    : `${first} quis deixar registrado o que aconteceu com ${names(involvedNames)} em “${moment.title}”. ${result}`;
+  const others = involvedNames.slice(1);
+  const withOthers = others.length > 0 ? ` com ${names(others)}` : '';
+  const said = ownWords(moment);
+  const result = moment.result.find((line) => line.trim());
+  const signOff = (SIGN_OFF[Math.max(0, Math.min(SIGN_OFF.length - 1, Math.round(level)))] ?? SIGN_OFF[0]!)(first);
+  const subject = milestone ? moment.title : kind === 'pedido' ? `Um pedido depois de “${moment.title}”` : kind === 'convite' ? `Convite: ${moment.title}` : `Sobre ${moment.title}`;
+  const opening = milestone
+    ? said
+    : kind === 'rumor'
+      ? `Você viu o que aconteceu em “${moment.title}”${withOthers}? Eu ainda estou rindo.${said ? ` Eu bem que disse: “${said}”` : ''}`
+      : kind === 'pedido'
+        ? `Não paro de pensar em “${moment.title}”${withOthers}.${said ? ` Eu disse: “${said}”` : ''} Se puder, me ajuda a resolver isso?`
+        : kind === 'convite'
+          ? `Queria que você estivesse em “${moment.title}”${withOthers}!${said ? ` Eu disse: “${said}”` : ''} Da próxima vez, vem junto?`
+          : `Queria te contar de “${moment.title}”${withOthers}.${said ? ` Eu disse: “${said}”` : ''}`;
+  const body = `${opening}${result ? ` 📓 No Diário: ${result}.` : ''} ${signOff}`.trim();
   return {
     id: `carta-${moment.id}`,
     day: moment.day,
@@ -108,20 +140,20 @@ export function mailFromMoment(moment: Moment): VillageMail | null {
   };
 }
 
-/** Enfileira uma carta de um momento sem repetir a mesma lembrança. */
-export function queueMomentMail(state: MailState, moment: Moment): VillageMail | null {
-  const mail = mailFromMoment(moment);
+/** Enfileira uma carta de um momento sem repetir a mesma lembrança. `levelOf` dá a amizade de quem escreve com você. */
+export function queueMomentMail(state: MailState, moment: Moment, levelOf: (id: string) => number = () => 0): VillageMail | null {
+  const mail = mailFromMoment(moment, moment.cast[0] ? levelOf(moment.cast[0].id) : 0);
   if (!mail || [...state.inbox, ...state.archive].some((entry) => entry.id === mail.id)) return null;
   state.inbox = [...state.inbox, mail].slice(-40);
   return mail;
 }
 
 /** Gera uma edição diária apenas com fatos disponíveis no estado atual. */
-export function generateDailyMail(state: VillageState, day: string, actorNames: Readonly<Record<string, string>>): VillageMail | null {
+export function generateDailyMail(state: VillageState, day: string, actorNames: Readonly<Record<string, string>>, levelOf: (id: string) => number = () => 0): VillageMail | null {
   if (state.mail.generatedDay === day) return null;
   state.mail.generatedDay = day;
   const latest = [...state.diary].reverse().find((moment) => moment.day <= day);
-  const fromMoment = latest ? mailFromMoment(latest) : null;
+  const fromMoment = latest ? mailFromMoment(latest, latest.cast[0] ? levelOf(latest.cast[0].id) : 0) : null;
   if (fromMoment && ![...state.mail.inbox, ...state.mail.archive].some((entry) => entry.id === fromMoment.id)) {
     state.mail.inbox = [...state.mail.inbox, fromMoment].slice(-40);
     return fromMoment;
@@ -135,8 +167,8 @@ export function generateDailyMail(state: VillageState, day: string, actorNames: 
     kind: 'jornal',
     subject: 'Edição da praça',
     body: people.length > 0
-      ? `A praça amanheceu com ${people.length} morador(es) por perto: ${names(people)}. Nenhum acontecimento novo foi inventado; fique atento ao próximo momento do Diário.`
-      : 'A praça está quieta hoje. Quando houver um momento real entre moradores, o Correio vai trazer a história.',
+      ? `Na praça hoje: ${names(people)}. Ainda não aconteceu nada de novo entre os moradores; quando acontecer, o Correio traz a história.`
+      : 'A praça está quieta hoje. Quando algo acontecer entre os moradores, o Correio traz a história.',
     involvedIds: [],
     read: false,
     responded: false,
@@ -197,9 +229,16 @@ export function respondToMail(state: VillageState, id: string, action: MailActio
   if (mail.reward?.item) addMailReward(state, mail.reward.item, mail.reward.qty ?? 1);
   state.mail.inbox.splice(index, 1);
   state.mail.archive = [...state.mail.archive, mail].slice(-120);
+  const bond = mail.fromId ? ` ❤️ +${action === 'responder' ? 4 : 2} amizade com ${mail.fromName}.` : '';
   return {
     ok: true,
-    message: action === 'responder' ? `Você respondeu com carinho a ${mail.fromName}. A amizade cresceu.` : `Você prometeu ajudar ${mail.fromName}. Um novo momento pode nascer disso.`,
+    message: !mail.fromId
+      ? 'Carta lida e guardada no arquivo do Correio.'
+      : action === 'responder'
+        ? `Você respondeu ${mail.kind === 'rumor' ? 'brincando' : 'com carinho'} a ${mail.fromName}.${bond}`
+        : mail.kind === 'convite'
+          ? `Você confirmou presença com ${mail.fromName}. Um novo momento pode nascer disso.${bond}`
+          : `Você prometeu ajudar ${mail.fromName}. Um novo momento pode nascer disso.${bond}`,
   };
 }
 

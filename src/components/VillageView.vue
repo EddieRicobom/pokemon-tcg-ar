@@ -38,11 +38,11 @@ import { personalityOf } from '../core/village/personality';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
 import {
-  add, buy, canFollow, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
+  add, buy, canFollow, claimFriendMilestones, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, friendProgressText, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
   plant, pruneHarvest, RECIPES, sell, talk, tickCrops, upgradeHouse, water, wear,
   BATTLE_REWARD_COINS, BATTLE_REWARDS_PER_DAY, battleRewardsLeft, favoriteFoodOf,
 } from '../core/village/life';
-import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
+import { albumEntries, albumProgress, catchUp, makeEnv, pickMoment, recentGossip, recordFriendMilestone, relationMap, relationsOf, resolveScene, savedMoments, sceneChoice, setFavorite, unreadCount } from '../core/village/social';
 import {
   canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, evolve, EVOLVE_COST, grantStarter, grantSurvival, instanceOf, LAST_DEX_ID, pickAnySpecies,
   pickFonteSpecies, summon, SUMMON_COST, summonWithCoins,
@@ -101,6 +101,7 @@ import type { MusicTransition } from '../core/music';
 import type { SoundCue } from '../box/sound-recipes';
 import MomentCard from './MomentCard.vue';
 import PokeBook from './PokeBook.vue';
+import { unlocksAt } from '../core/village/book';
 import CardEvolutionPanel from './CardEvolutionPanel.vue';
 import { loadCardCompanionEntry } from '../app/companion-creatures';
 import { companionCard } from '../app/card-evolution-store';
@@ -473,13 +474,13 @@ function say(text: string, ms = 2800): void {
   toastTimer = setTimeout(() => (toast.value = ''), ms);
 }
 
+// Só aparece com a Vila ainda vazia, para dizer como começar. Com moradores, o aviso "aproxime-se de um morador"
+// voltava a cada entrada no topo da tela e o dono pediu para tirar.
 const idleGuideVisible = computed(() =>
-  !idleGuideDismissed.value && !loading.value && !arActive.value && !sheet.value && !dialog.value && !quiz.value && !quizOpen.value
+  mons.value.length === 0 && !idleGuideDismissed.value && !loading.value && !arActive.value && !sheet.value && !dialog.value && !quiz.value && !quizOpen.value
   && !cutsceneOpen.value && !welcome.value && !recapScenes.value.length && !legendaryScene.value && !hoOhWishScene.value && !toast.value,
 );
-const idleGuideText = computed(() => mons.value.length === 0
-  ? 'Abra o Menu para começar a história da Vila e receber seu primeiro companheiro.'
-  : 'Sem conversa por perto? Aproxime-se de um morador e use A, toque no mapa para explorar ou abra o Menu.');
+const idleGuideText = 'Abra o Menu para começar a história da Vila e receber seu primeiro companheiro.';
 
 type UiSound = Extract<SoundCue, { kind: 'ui' }>['cue'];
 function unlockSound(): void {
@@ -498,6 +499,44 @@ function playSound(cue: UiSound): void {
 // ---- Treinador: o que acontece na Vila conta lá, e as conquistas voltam como acessórios e moedas
 function trainerEvent(action: 'talk' | 'answer' | 'moment' | 'nickname', id?: string): void {
   recordEvent({ type: 'village', action, level: id ? friendLevel(friendOf(state, id).points).level : undefined });
+}
+
+/** Nível de amizade de um morador com você (o tom da despedida nas cartas). */
+const friendLevelOf = (id: string): number => friendLevel(friendOf(state, id).points).level;
+
+/** "+6 amizade (faltam 18 para Amigo)" ou "−2 amizade (…)": a mudança de agora e o caminho até o próximo marco. */
+function friendGainNote(id: string, delta: number): string {
+  if (delta === 0) return '';
+  const progress = friendProgressText(friendOf(state, id).points);
+  return delta > 0 ? ` ❤️ +${delta} amizade (${progress}).` : ` 💔 −${-delta} amizade (${progress}).`;
+}
+
+/**
+ * Mudanças de nível de amizade, venha o ganho ou a perda de onde vier (conversa, presente, momento, carta, mural,
+ * reforma, ausência): aviso na tela, emoji sobre o Pokémon e uma página no Diário. Quem cai abaixo de «Grande amigo»
+ * deixa de seguir você até a amizade voltar.
+ */
+function celebrateFriendMilestones(): void {
+  const changes = claimFriendMilestones(state, mons.value.map((m) => m.id));
+  if (changes.length === 0) return;
+  const now = Date.now();
+  const today = refreshDay();
+  for (const m of changes) {
+    recordFriendMilestone(state, { id: m.id, name: nameOf(m.id) }, m, now, today, villageHour());
+    game?.bubble(m.id, m.kind === 'down' ? '💔' : '💖', 3200);
+    if (m.kind === 'down' && state.follower === m.id && !canFollow(state, m.id)) state.follower = null;
+  }
+  const first = changes[0]!;
+  const name = nameOf(first.id);
+  const unlock = first.kind === 'up' ? unlocksAt(first.level)[0] : undefined;
+  const one = first.kind === 'down'
+    ? `💔 A amizade com ${name} esfriou: agora é ${first.name}. Converse e leve um presente de que ele goste para recuperar.`
+    : first.kind === 'back'
+      ? `💖 ${name} voltou a ser seu ${first.name}!`
+      : `💖 ${name} agora é seu ${first.name}!${unlock ? ` Novo: ${unlock}` : ''}`;
+  say(changes.length === 1 ? one : `Amizades mudaram: ${changes.map((m) => `${m.kind === 'down' ? '💔' : '💖'} ${nameOf(m.id)} (${m.name})`).join(', ')}. Veja no Diário.`, 6500);
+  playSound(changes.some((m) => m.kind !== 'down') ? 'success' : 'menu');
+  syncTrainer();
 }
 
 /** Entrega os prêmios de conquistas novas e avisa o Treinador se a amizade com alguém subiu. */
@@ -1322,7 +1361,7 @@ let homes = new Map<string, number>();
 
 /** Abre o Correio como uma caixa de entrada: a edição diária e as cartas de momentos ficam juntas no mesmo lugar. */
 function openMail(): void {
-  const generated = generateDailyMail(state, refreshDay(), namesById());
+  const generated = generateDailyMail(state, refreshDay(), namesById(), friendLevelOf);
   if (generated) {
     changed();
     say(`📬 ${generated.fromName} deixou uma carta: ${generated.subject}`, 4800);
@@ -1359,7 +1398,8 @@ function speakToResident(id: string): void {
     trainerEvent('talk', id);
     earnCoins(5);
   }
-  let text = result.text;
+  if (result.lost > 0) game.bubble(id, '😞', 2600);
+  let text = result.text + friendGainNote(id, result.gained - result.lost);
   if (id === state.cafeWaiterId && level.value >= 3 && professionActive('cafe', mons.value.length)) text = 'Estou atendendo as mesas do Café! Mas tenho um tempinho para conversar. ' + text;
   const help = dailyHelp(state, id, today, Math.random);
   if (help.items.length > 0) text += ` Ah! Achei isto pela Vila para você: ${help.items.map((h) => `${h.qty} ${itemName(h.item)}`).join(' e ')}.`;
@@ -2064,7 +2104,7 @@ function announce(r: Resolved): void {
 
 function afterResolve(r: Resolved, ids: string[]): void {
   announce(r);
-  const letter = queueMomentMail(state.mail, r.moment);
+  const letter = queueMomentMail(state.mail, r.moment, friendLevelOf);
   if (letter) {
     game?.deliverMail(letter.involvedIds);
   }
@@ -2144,7 +2184,7 @@ function awayCatchUp(): void {
   if (list.length > 0 && state.lastSeen > 0) {
     const moments = catchUp(state, list, now, null, Math.random, profile.name);
     if (moments.length > 0) {
-      for (const moment of moments) queueMomentMail(state.mail, moment);
+      for (const moment of moments) queueMomentMail(state.mail, moment, friendLevelOf);
       changed();
     }
   }
@@ -2659,16 +2699,32 @@ function openFriendDialog(id: string, text: string): void {
   const f = friendOf(state, id);
   const lvl = friendLevel(f.points);
   const following = state.follower === id;
-  const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: 'Presentear', run: () => { giftPick.value = true; } }];
+  // Só o essencial na primeira tela (presente, o que depende da amizade e despedida); o resto fica em "Mais opções",
+  // para quem acabou de chegar não encarar oito botões de uma vez.
+  const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: '🎁 Presentear', run: () => { giftPick.value = true; } }];
   if (id === state.mailCarrierId && professionActive('mail', mons.value.length)) actions.push({ label: '📬 Ver a bolsa do carteiro', run: () => openMailCarrierDialog(id) });
-  actions.push({ label: 'Acessório', run: () => { dialog.value = null; openDress(id); } });
-  actions.push({ label: nicknameOf(state, id) ? 'Mudar o apelido' : 'Dar apelido', disabled: !canNickname(state, id), run: () => openNickname(id) });
-  actions.push({ label: '🚶 Passeio guiado', run: () => openGuidedTrip(id) });
-  actions.push({ label: '📖 Ver no Livro', run: () => openBookFromDialog(id) });
   if (following) actions.push({ label: 'Pode passear', run: () => { state.follower = null; changed(); dialog.value = null; } });
-  else if (canFollow(state, id)) actions.push({ label: 'Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
+  else if (canFollow(state, id)) actions.push({ label: '🥰 Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
+  actions.push({ label: '⋯ Mais opções', run: () => openFriendMore(id) });
   actions.push({ label: 'Tchau', run: () => { dialog.value = null; } });
   dialog.value = { id, name: `${nameOf(id)} · ${lvl.name} ${'♥'.repeat(lvl.hearts)}${'♡'.repeat(5 - lvl.hearts)}`, text: displayResidentMessage(text), actions };
+}
+
+/** O que se faz com um morador com menos frequência: Livro, acessório, apelido e passeio. "Voltar" devolve a conversa. */
+function openFriendMore(id: string): void {
+  const main = dialog.value;
+  dialog.value = {
+    id,
+    name: main?.name ?? nameOf(id),
+    text: `O que você quer fazer com ${nameOf(id)}?`,
+    actions: [
+      { label: '📖 Ver no Livro', run: () => openBookFromDialog(id) },
+      { label: '🎀 Acessório', run: () => { dialog.value = null; openDress(id); } },
+      { label: nicknameOf(state, id) ? '✏️ Mudar o apelido' : '✏️ Dar apelido', disabled: !canNickname(state, id), run: () => openNickname(id) },
+      { label: '🚶 Passeio guiado', run: () => openGuidedTrip(id) },
+      { label: 'Voltar', run: () => { dialog.value = main; } },
+    ],
+  };
 }
 
 function openGuidedTrip(id: string): void {
@@ -2688,9 +2744,9 @@ function give(item: ItemId): void {
   if (r.ok) {
     playSound('gift');
     changed();
-    game?.bubble(id, r.gained >= 10 ? '😍' : '😊');
+    game?.bubble(id, r.gained >= 10 ? '😍' : r.gained < 0 ? '😕' : '😊');
   }
-  openFriendDialog(id, r.text);
+  openFriendDialog(id, r.text + (r.ok ? friendGainNote(id, r.gained) : ''));
 }
 
 function pressB(): void {
@@ -2923,7 +2979,10 @@ onMounted(async () => {
       state.lastSeen = Date.now();
       dirty = true;
     }
-    if (dirty) dirty = !persist();
+    if (dirty) {
+      celebrateFriendMilestones();
+      dirty = !persist();
+    }
   }, 1500);
   // Tipos (presente favorito, opiniões do Livro) chegam em segundo plano; sem rede, ficam neutros.
   for (const m of mons.value) {
@@ -3503,7 +3562,7 @@ onBeforeUnmount(() => {
           <h4>Amigos e pedidos de hoje</h4>
           <ul class="village-list">
             <li v-for="m in friendRows()" :key="m.id">
-              <span>{{ m.name }}<small>{{ m.lvl.name }} · {{ '♥'.repeat(m.lvl.hearts) }}{{ '♡'.repeat(5 - m.lvl.hearts) }}{{ m.following ? ' · seguindo você' : '' }}{{ m.req ? ` · quer ${m.req.qty} ${itemName(m.req.item)}` : '' }}</small></span>
+              <span>{{ m.name }}<small>{{ m.lvl.name }} · {{ '♥'.repeat(m.lvl.hearts) }}{{ '♡'.repeat(5 - m.lvl.hearts) }} · {{ m.points }}/100{{ m.lvl.next ? ` (faltam ${m.lvl.toNext} para ${m.lvl.next.name})` : '' }}{{ m.following ? ' · seguindo você' : '' }}{{ m.req ? ` · quer ${m.req.qty} ${itemName(m.req.item)}` : '' }}</small></span>
             </li>
             <li v-if="mons.length === 0" class="hint">Nenhum Pokémon na Vila ainda.</li>
           </ul>
