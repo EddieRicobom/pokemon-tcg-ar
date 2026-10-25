@@ -3,7 +3,7 @@ import type { BattleResult, Fighter } from './battle';
 import type { SurvivorSummary } from './survivor';
 
 export type EvolutionTrial = 'survival' | 'battle' | 'pins';
-export interface CardCompanion { id: string; dexId: number; name: string }
+export interface CardCompanion { id: string; dexId: number; name: string; shiny?: boolean; accessory?: string | null; digital?: boolean }
 export interface CardJourney {
   originDexId: number;
   dexId: number;

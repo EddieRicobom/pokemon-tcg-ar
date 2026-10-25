@@ -126,6 +126,9 @@ export interface SurvivorSupportCandidate {
   name: string;
   move: SurvivorMove;
   profile: AttackProfile;
+  shiny?: boolean;
+  accessory?: string | null;
+  digital?: boolean;
 }
 
 /** Limite de apoios simultâneos: complementam o protagonista sem substituir a build dele. */

@@ -45,7 +45,7 @@ export function companionCard(card: CachedCard): CachedCard {
 export function cardCompanion(card: CachedCard): CardCompanion | null {
   const projected = companionCard(card);
   const dexId = spriteIdOf(projected);
-  return dexId === undefined ? null : { id: card.id, dexId, name: projected.name };
+  return dexId === undefined ? null : { id: card.id, dexId, name: projected.name, shiny: projected.shiny === true };
 }
 
 export function evolvedBattleCardId(id: string): string | undefined {
