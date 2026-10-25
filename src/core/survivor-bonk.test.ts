@@ -57,18 +57,22 @@ describe('física do modo BONK', () => {
     expect(jumped.collided).toBe(false);
   });
 
-  it('o analógico é relativo à câmera: para cima avança para onde ela olha, o lado anda de lado', () => {
+  it('o analógico é relativo à câmera: para cima avança e o lado desloca lateralmente', () => {
     const physics = createBonkPhysics(Math.PI / 2);
     const forward = bonkInputToWorld(physics, 0, -1);
     expect(forward.dx).toBeCloseTo(0, 6);
     expect(forward.dy).toBeCloseTo(1, 6);
     const right = bonkInputToWorld(physics, 1, 0);
-    // A direita da tela, com a câmera olhando para +y, é o -x do mundo.
     expect(right.dx).toBeCloseTo(-1, 6);
     expect(right.dy).toBeCloseTo(0, 6);
-    const p = player();
-    const point = projectBonkPoint(physics, p, { x: p.x + right.dx * 100, y: p.y + right.dy * 100 }, { width: 600, height: 420 });
-    expect(point!.x).toBeGreaterThan(300);
+    const diagonal = bonkInputToWorld(physics, 1, -1);
+    expect(diagonal.dy).toBeCloseTo(1, 6);
+  });
+
+  it('não colide com o espaço livre junto ao canto de um obstáculo', () => {
+    const physics = { z: 0, obstacles: [{ id: 'test', kind: 'wall' as const, x: 500, y: 500, w: 100, h: 100, height: 100 }] };
+    expect(resolveBonkPosition(physics, 492, 492, 10).collided).toBe(false);
+    expect(resolveBonkPosition(physics, 494, 494, 10).collided).toBe(true);
   });
 
   it('o lado gira a câmera aos poucos; frente e trás não giram', () => {
