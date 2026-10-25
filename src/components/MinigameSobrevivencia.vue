@@ -82,6 +82,9 @@ import { survivorOrbiters } from '../core/survivor-shapes';
 import { survivorSpriteDirection, survivorSpriteDirectionFromAngle } from '../core/survivor-sprite-direction';
 import type { SurvivorSpriteDirection } from '../core/survivor-sprite-direction';
 import { paintAccessory } from '../village/item-art';
+import { placeAccessory } from '../core/village/accessory-fit';
+import { itemDef } from '../core/village/catalog';
+import type { Facing, Placement } from '../core/village/accessory-fit';
 import { metallicTint } from '../core/metallic';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
@@ -875,31 +878,47 @@ function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boole
   // Pés (base dos pixels opacos) no ponto (x, y) e corpo centrado: a margem transparente da folha não conta.
   const left = -((sprite.bounds.left + sprite.bounds.right) / 2) * w;
   const top = -sprite.bounds.bottom * h;
+  const mirror = flip && !directional;
+  // Sem poses por direção, a folha mostra sempre a mesma pose de frente (o espelho só a vira).
+  const facing: Facing = !directional ? 'front' : direction === 'up' ? 'back' : direction === 'down' ? 'front' : direction;
+  const fit = accessory ? accessoryFit(accessory, sprite, x, y + top, w, h, scale, facing, mirror) : null;
+  if (fit?.behind) drawAccessoryOverlay(fit);
   // Sem espelho, a posição entra direto no desenho: sem `save`/`restore` por inimigo (são a parte mais cara aqui).
-  if (!flip || directional) {
-    ctx.drawImage(frame, x + left, y + top, w, h);
-    drawAccessoryOverlay(accessory, x, y + top, w, h);
-    return;
+  if (!mirror) ctx.drawImage(frame, x + left, y + top, w, h);
+  else {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(-1, 1);
+    ctx.drawImage(frame, left, top, w, h);
+    ctx.restore();
   }
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(-1, 1);
-  ctx.drawImage(frame, left, top, w, h);
-  ctx.restore();
-  drawAccessoryOverlay(accessory, x, y + top, w, h, flip);
+  if (fit && !fit.behind) drawAccessoryOverlay(fit);
 }
 
-/** A Vila desenha acessórios em pixel art; a Torre reaproveita o mesmo desenho sobre o sprite. */
-function drawAccessoryOverlay(id: string | null | undefined, x: number, top: number, w: number, h: number, flip = false): void {
-  if (!ctx || !id) return;
+interface AccessoryFit extends Placement { art: HTMLCanvasElement; mirror: boolean }
+
+/**
+ * A Vila desenha acessórios em pixel art; a Torre reaproveita o mesmo desenho e a mesma âncora genérica, com o pixel do
+ * desenho do tamanho de um pixel do tileset da Torre (`SURVIVOR_TILE_PX` por bloco de 16).
+ */
+function accessoryFit(id: string, sprite: Sprite, x: number, frameTop: number, w: number, h: number, scale: number, facing: Facing, mirror: boolean): AccessoryFit | null {
+  const def = itemDef(id);
   const art = accessoryCanvas(id);
-  if (!art) return;
-  const size = Math.max(8, Math.min(w * 0.34, h * 0.28));
-  const left = x - size / 2;
-  const y = top + h * 0.16;
+  if (!def?.pos || !art) return null;
+  const frameLeft = x - ((sprite.bounds.left + sprite.bounds.right) / 2) * w;
+  const body = { left: frameLeft + sprite.bounds.left * w, top: frameTop + sprite.bounds.top * h, w: (sprite.bounds.right - sprite.bounds.left) * w, h: (sprite.bounds.bottom - sprite.bounds.top) * h };
+  const placed = placeAccessory(def.pos, { w: art.width, h: art.height }, (SURVIVOR_TILE_PX / 16) * scale, { ...body, headX: x, headTop: body.top }, facing, def.nudge);
+  if (placed.hidden) return null;
+  return { ...placed, x: mirror ? Math.round(2 * x - placed.x - placed.w) : placed.x, art, mirror };
+}
+
+function drawAccessoryOverlay(fit: AccessoryFit): void {
+  if (!ctx) return;
+  if (!fit.mirror) { ctx.drawImage(fit.art, fit.x, fit.y, fit.w, fit.h); return; }
   ctx.save();
-  if (flip) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.drawImage(art, -size / 2, y, size, size); }
-  else ctx.drawImage(art, left, y, size, size);
+  ctx.translate(fit.x + fit.w / 2, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(fit.art, -fit.w / 2, fit.y, fit.w, fit.h);
   ctx.restore();
 }
 

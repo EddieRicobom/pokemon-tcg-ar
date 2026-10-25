@@ -31,7 +31,7 @@ describe('catálogo', () => {
     for (const i of ITEMS) for (const k of Object.keys(i.recipe ?? {})) expect(itemDef(k), `${i.id}→${k}`).toBeDefined();
     for (const id of FURNITURE_IDS) {
       const d = itemDef(id)!;
-      expect(Boolean(d.recipe) || d.price > 0 || d.gift, id).toBe(true);
+      expect(Boolean(d.recipe) || d.price > 0 || d.gift || d.prize, id).toBe(true);
     }
   });
 
@@ -148,10 +148,11 @@ describe('acessórios e coleção', () => {
     expect(wear(s, 'player', 'laco').ok).toBe(false);
     add(s, 'laco');
     expect(wear(s, 'player', 'laco').ok).toBe(true);
+    // A posição é genérica (`accessory-fit.ts`): chapéus e óculos servem em você e nos Pokémon.
     add(s, 'cartola');
-    expect(wear(s, 'player', 'cartola').ok).toBe(false);
+    expect(wear(s, 'player', 'cartola').ok).toBe(true);
     add(s, 'oculos');
-    expect(wear(s, 'p1', 'oculos').ok).toBe(false);
+    expect(wear(s, 'p1', 'oculos').ok).toBe(true);
     expect(wear(s, 'p1', null).ok).toBe(true);
     expect(s.wear.mons.p1).toBeNull();
   });

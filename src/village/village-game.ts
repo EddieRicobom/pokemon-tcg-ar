@@ -12,6 +12,7 @@ import { trainerAtlasFrame, type TrainerAtlas } from './trainer-atlas';
 import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance, syncFollowerSpeed, WALK_SPEED } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
+import { placeAccessory, replacesHeadGear } from '../core/village/accessory-fit';
 import { homeTileset, renovateHomeTileset } from './home-exterior';
 import { harmonizeTerrain, villageGrassSheet, villagePierTile } from './ground-palette';
 import { cropAt, daylight, friendOf, isPlaced, needsWater } from '../core/village/life';
@@ -46,7 +47,7 @@ import { outfitFor, paintSeedBox, paintBell, paintBush, paintHouse, paintPlayer,
 import type { FarmTask, FarmWorker } from '../core/village/farm';
 import { stepFarmWorker } from '../core/village/farm';
 import type { GroundTileImage } from './village-art';
-import { paintAccessory, paintCrop, paintFurnitureItem, paintItemIcon } from './item-art';
+import { accessorySize, paintAccessory, paintCrop, paintFurnitureItem, paintItemIcon } from './item-art';
 import { harmonizePlayerCanvas, harmonizePlayerSprite } from './player-filter';
 import { wrapSpeech } from './speech-layout';
 import { groundPieces } from './ground-tiles';
@@ -1839,20 +1840,17 @@ export class VillageGame {
             }
             const acc = this.state.wear.mons[id];
             const def = acc ? itemDef(acc) : undefined;
-            const hx = frameLeft + sprite.headX * fullW;
-            const hy = frameTop + sprite.headTop * fullH;
-            if (acc && def?.pos === 'back') {
-              const size = Math.max(9 * scale, Math.min(16 * scale, wpx * 0.6));
-              ctx.drawImage(this.sprite(`acc:${acc}`, () => paintAccessory(acc)), Math.round(cx - size / 2), Math.round(base - h * 0.62), Math.round(size), Math.round(size));
-            }
+            // O acessório tem o pixel do tileset (`scale`) e a posição vem da âncora genérica sobre a caixa do bicho.
+            const fit = acc && def?.pos ? placeAccessory(def.pos, accessorySize(acc), scale, {
+              left: frameLeft + sprite.bounds.left * fullW, top: frameTop + sprite.bounds.top * fullH,
+              w: (sprite.bounds.right - sprite.bounds.left) * fullW, h: (sprite.bounds.bottom - sprite.bounds.top) * fullH,
+              headX: frameLeft + sprite.headX * fullW, headTop: frameTop + sprite.headTop * fullH,
+            // Sem pose própria da direção, o GIF mostra sempre a mesma pose de frente (o espelho, acima, só a vira).
+            }, !dirSet ? 'front' : w.dir === 'up' ? 'back' : w.dir === 'down' ? 'front' : w.dir, def.nudge) : null;
+            if (acc && fit?.behind && !fit.hidden) this.drawAcc(acc, fit);
             ctx.drawImage(frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH));
             if (metal) this.drawSheen(id, frame, Math.round(frameLeft), Math.round(frameTop), Math.round(fullW), Math.round(fullH), now);
-            if (acc && def && def.pos !== 'back') {
-              const size = Math.max(8 * scale, Math.min(14 * scale, wpx * 0.45));
-              const img = this.sprite(`acc:${acc}`, () => paintAccessory(acc));
-              const y = def.pos === 'hat' ? hy - size * 0.7 : def.pos === 'face' ? hy + size * 0.15 : hy + h * 0.2;
-              ctx.drawImage(img, Math.round(hx - size / 2), Math.round(y), Math.round(size), Math.round(size));
-            }
+            if (acc && fit && !fit.behind && !fit.hidden) this.drawAcc(acc, fit);
             ctx.restore();
           });
           const activeTask = this.farmTasks.get(id);
@@ -1884,7 +1882,7 @@ export class VillageGame {
     const outfit = outfitFor(this.trainerId);
     const accP = this.state.wear.player;
     const accDef = accP ? itemDef(accP) : undefined;
-    const hatless = accDef?.pos === 'hat';
+    const hatless = replacesHeadGear(accDef?.pos);
     const step = moving(this.player) ? this.player.steps + (this.player.t > 0.5 ? 1 : 0) : -1;
     const pimg = this.trainerAtlas ? null : this.sprite(`p:${this.player.dir}:${step < 0 ? 's' : step % 2}:${this.trainerId}:${hatless}`, () => harmonizePlayerSprite(paintPlayer(this.player.dir, step, hatless ? { ...outfit, gear: 'none' } : outfit)));
     const trainerAvatar = this.trainerAvatar;
@@ -1896,11 +1894,14 @@ export class VillageGame {
         const px0 = sx(pp.x);
         const py0 = sy(pp.y + 1) - (PLAYER_H + 1) * scale - hop;
         const dir = this.player.dir;
-        const pos = accDef?.pos;
+        // Treinador: corpo de 12×24 pixels do tileset, cabeça centrada no topo.
+        const fitP = accP && accDef?.pos ? placeAccessory(accDef.pos, accessorySize(accP), scale, {
+          left: px0 + 2 * scale, top: py0, w: 12 * scale, h: PLAYER_H * scale, headX: px0 + 8 * scale, headTop: py0 + 1 * scale,
+        }, dir === 'up' ? 'back' : dir === 'down' ? 'front' : dir, accDef.nudge) : null;
         // O treinador também é uma peça em pé no Diorama. O ponto de apoio
         // continua no chão e a elevação da rotação é calculada pelo helper.
         drawDioramaTilted(px0 + T / 2, py0 + PLAYER_H * scale, T, () => {
-          if (accP && pos === 'back' && dir !== 'up') this.drawAcc(accP, px0 + 2 * scale, py0 + 11 * scale, 12 * scale);
+          if (accP && fitP?.behind && !fitP.hidden) this.drawAcc(accP, fitP);
           const atlas = this.trainerAtlas;
           const frame = atlas ? trainerAtlasFrame(atlas.image.naturalWidth, atlas.image.naturalHeight, dir, moving(this.player), this.player.steps, this.player.t, now) : null;
           if (atlas && frame) {
@@ -1922,12 +1923,7 @@ export class VillageGame {
               ctx.restore();
             } else ctx.drawImage(trainerAvatar, avatarX, py0, avatarW, avatarH);
           } else if (pimg) ctx.drawImage(pimg, px0, py0, T, PLAYER_H * scale);
-          if (accP) {
-            if (pos === 'hat') this.drawAcc(accP, px0 + 1 * scale, py0 - 5 * scale, 14 * scale);
-            else if (pos === 'face' && dir !== 'up') this.drawAcc(accP, px0 + (dir === 'down' ? 3 : dir === 'right' ? 5 : 1) * scale, py0 + 3 * scale, 10 * scale);
-            else if (pos === 'neck') this.drawAcc(accP, px0 + 3 * scale, py0 + 8 * scale, 10 * scale);
-            else if (pos === 'back' && dir === 'up') this.drawAcc(accP, px0 + 2 * scale, py0 + 11 * scale, 12 * scale);
-          }
+          if (accP && fitP && !fitP.behind && !fitP.hidden) this.drawAcc(accP, fitP);
         });
       },
     });
@@ -2164,9 +2160,9 @@ export class VillageGame {
     this.ctx.drawImage(c, x, y, w, h);
   }
 
-  private drawAcc(id: string, x: number, y: number, size: number): void {
+  private drawAcc(id: string, at: { x: number; y: number; w: number; h: number }): void {
     const img = this.sprite(`acc:${id}`, () => paintAccessory(id));
-    this.ctx.drawImage(img, Math.round(x), Math.round(y), Math.round(size), Math.round(size));
+    this.ctx.drawImage(img, at.x, at.y, at.w, at.h);
   }
 
   /** Emoji pequeno sem balão (gota da horta, brilho de pronto). */

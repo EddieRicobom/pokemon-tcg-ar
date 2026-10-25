@@ -30,6 +30,7 @@ import { loadVillage, saveVillage } from '../app/village-store';
 import { BATTLE_REWARDS_PER_DAY, battleRewardsLeft, dailyHelp, friendLevel, itemName } from '../core/village/life';
 import type { VillageState } from '../core/village/life';
 import { paintAccessory } from '../village/item-art';
+import { itemDef } from '../core/village/catalog';
 import { dayKey } from '../core/trainer';
 import type { PokemonType } from '../core/pokemon-data';
 import { loadPinData } from '../app/services';
@@ -194,7 +195,8 @@ function applyVillage(): void {
   const notes: { text: string; tone: 'ok' | 'warn' }[] = [];
   for (const c of current.scene.creatureList) {
     const acc = village.wear.mons[c.info.id];
-    c.setAccessory(acc ? paintAccessory(acc) : null);
+    const accDef = acc ? itemDef(acc) : undefined;
+    c.setAccessory(acc ? paintAccessory(acc) : null, accDef?.pos, accDef?.nudge);
     const help = dailyHelp(village, c.info.id, today, Math.random);
     if (help.items.length > 0 || help.rare) {
       c.say('🎁', 2600);

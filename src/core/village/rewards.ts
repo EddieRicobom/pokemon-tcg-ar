@@ -7,7 +7,7 @@ import { itemDef } from './catalog';
 
 export interface Prize {
   coins: number;
-  /** Acessório exclusivo (não vende em loja nenhuma). */
+  /** Acessório ou móvel exclusivo (não vende em loja nenhuma). */
   item?: string;
   /** Origem apresentada ao jogador quando o prêmio chega à Vila. */
   origin?: string;
@@ -20,19 +20,19 @@ export const PRIZES: Record<string, Prize> = {
   'primeira-carta': { coins: 40, item: 'bone-treinador' },
   'cartas-10': { coins: 40 },
   'cartas-50': { coins: 120, item: 'monoculo' },
-  'cartas-150': { coins: 300 },
+  'cartas-150': { coins: 300, item: 'capelo' },
   'colecao-8': { coins: 60 },
-  'colecao-20': { coins: 180 },
+  'colecao-20': { coins: 180, item: 'livro' },
   'sequencia-3': { coins: 40 },
   'sequencia-7': { coins: 100, item: 'fita-chama' },
   'sequencia-30': { coins: 400, item: 'colar-estrela' },
   'batalha-1': { coins: 30 },
   'batalhas-10': { coins: 80 },
-  'batalhas-50': { coins: 250 },
+  'batalhas-50': { coins: 250, item: 'elmo-cavaleiro' },
   equipe: { coins: 50 },
   'minigame-1': { coins: 30 },
   'minigame-10': { coins: 120 },
-  'minigame-perfeito': { coins: 200 },
+  'minigame-perfeito': { coins: 200, item: 'microfone' },
   'nivel-5': { coins: 80 },
   'nivel-10': { coins: 200, item: 'oculos-estrela' },
   'nivel-20': { coins: 500, item: 'capa-estelar' },
@@ -56,6 +56,34 @@ export const PRIZES: Record<string, Prize> = {
   'torre-chefao': { coins: 400, item: 'trofeu-torre', origin: 'troféu da Torre, por derrotar o chefão final aos 20 minutos; abre uma história opcional no Museu da Vila', unlocks: 'modo Infinito' },
   'torre-infinito': { coins: 300, item: 'pin-chefao', origin: 'pino de chefão, por derrotar três chefões' },
   'torre-mestre': { coins: 500, item: 'capa-sobrevivente', origin: 'capa da Torre, por vencer dez treinadores' },
+  // Segunda leva.
+  'cartas-25': { coins: 60, item: 'poster-pokebola' },
+  'cartas-100': { coins: 200, item: 'broche-escudo' },
+  'cartas-300': { coins: 600, item: 'aureola' },
+  'colecao-40': { coins: 300, item: 'medalhao' },
+  'colecoes-5': { coins: 150, item: 'mochila-pokebola' },
+  'leituras-100': { coins: 150, item: 'visor-futurista' },
+  'sequencia-14': { coins: 200, item: 'relogio-bolso' },
+  'sequencia-60': { coins: 600, item: 'coroa-gelo' },
+  'batalhas-100': { coins: 400, item: 'escudo-prata' },
+  'equipe-10': { coins: 150, item: 'estrela-ninja' },
+  'minigame-50': { coins: 200, item: 'tiara-estrelas' },
+  'minigame-vitorias-30': { coins: 250, item: 'varinha' },
+  'nivel-15': { coins: 300, item: 'mesa-pokemon' },
+  'nivel-30': { coins: 700, item: 'asas-dragao' },
+  'vila-conversa-100': { coins: 200, item: 'presilha-coracao' },
+  'vila-perguntas-50': { coins: 200, item: 'poster-estrelas' },
+  'vila-album-60': { coins: 300, item: 'relogio-cuco' },
+  'vila-apelidos-5': { coins: 120, item: 'boneco-togepi' },
+  'liga-quatro': { coins: 200, item: 'tridente' },
+  'liga-campea-3': { coins: 800, item: 'cinturao', origin: 'cinturão da Liga, por vencer a Campeã três vezes' },
+  'pvp-10': { coins: 150, item: 'cimitarra' },
+  'pvp-vitorias-5': { coins: 250, item: 'chapeu-pirata' },
+  'shiny-5': { coins: 300, item: 'ornamento-vidro' },
+  'pins-10': { coins: 150, item: 'estande-trofeu' },
+  'torre-corridas-10': { coins: 150, item: 'tapa-olho', origin: 'tapa-olho da Torre, por concluir dez corridas' },
+  'torre-nivel-30': { coins: 250, item: 'escudo-ouro' },
+  'torre-chefoes-10': { coins: 600, item: 'quepe', origin: 'quepe de capitão, por derrotar dez chefões da Torre' },
 };
 
 /** Acessório que uma conquista dá (para o Treinador mostrar o prêmio). */

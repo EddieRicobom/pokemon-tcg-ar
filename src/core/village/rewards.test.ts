@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { ACHIEVEMENTS } from '../trainer';
-import { ACCESSORY_IDS, itemDef } from './catalog';
+import { itemDef } from './catalog';
 import { emptyVillage, normalizeVillage, sell } from './life';
 import { claimPrizes, PRIZES } from './rewards';
 
 const fresh = () => emptyVillage(7, { x: 1, y: 1 });
 
 describe('prêmios das conquistas', () => {
-  it('toda conquista tem prêmio e todo prêmio aponta para uma conquista e um acessório de verdade', () => {
+  it('toda conquista tem prêmio e todo prêmio aponta para uma conquista e um acessório ou móvel de verdade', () => {
     for (const a of ACHIEVEMENTS) expect(PRIZES[a.id], a.id).toBeDefined();
     const ids = new Set(ACHIEVEMENTS.map((a) => a.id));
     for (const [id, prize] of Object.entries(PRIZES)) {
@@ -15,8 +15,9 @@ describe('prêmios das conquistas', () => {
       if (!id.startsWith('minigame')) expect(ids.has(id), id).toBe(true);
       expect(prize.coins).toBeGreaterThan(0);
       if (prize.item) {
-        expect(ACCESSORY_IDS).toContain(prize.item);
-        expect(itemDef(prize.item)!.price).toBe(0);
+        const def = itemDef(prize.item);
+        expect(def?.kind === 'accessory' || def?.prize, prize.item).toBe(true);
+        expect(def!.price).toBe(0);
       }
     }
   });

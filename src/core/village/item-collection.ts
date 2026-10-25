@@ -1,0 +1,125 @@
+import type { ItemDef } from './catalog';
+
+/**
+ * Itens da segunda leva. Todos têm de onde vir e para que servir: pedras, fósseis e minérios saem das rochas; bolota,
+ * pinha e seiva das árvores; trevo, erva e cogumelos do mato, das flores e dos arbustos; Escama Coração, caranguejo e
+ * lula da pesca; sal e concha espiral da areia (ver `HARVEST`/`FISH_TABLE` em `life.ts`). Leite, ovo, açúcar e
+ * manteiga são vendidos na loja; a farinha se faz com trigo. Frutas e legumes novos crescem na horta e viram pratos.
+ */
+
+const m = (id: string, name: string, sell: number, opt: Partial<ItemDef> = {}): ItemDef => ({ id, name, kind: 'material', price: 0, sell, ...opt });
+const c = (id: string, name: string, sell: number): ItemDef => ({ id, name, kind: 'crop', price: 0, sell, nutrition: 1 });
+const s = (id: string, name: string, crop: string, minutes: number, price: number): ItemDef => ({ id, name, kind: 'seed', price, sell: Math.floor(price / 2), grows: { crop, stages: 3, minutes, yield: [2, 4] } });
+const d = (id: string, name: string, feeds: number, sell: number, recipe: Record<string, number>): ItemDef => ({ id, name, kind: 'food', price: 0, sell, recipe, feeds, nutrition: 2 });
+
+export const NEW_MATERIALS: readonly ItemDef[] = [
+  m('pedra-fogo', 'Pedra de Fogo', 70),
+  m('pedra-agua', 'Pedra d’Água', 70),
+  m('pedra-trovao', 'Pedra do Trovão', 70),
+  m('pedra-folha', 'Pedra da Folha', 70),
+  m('pedra-gelo', 'Pedra do Gelo', 70),
+  m('pedra-lua', 'Pedra da Lua', 70),
+  m('pedra-sol', 'Pedra do Sol', 70),
+  m('carvao', 'Carvão', 6),
+  m('quartzo', 'Quartzo', 25),
+  m('ambar', 'Âmbar', 60),
+  m('fossil-helix', 'Fóssil Hélice', 100),
+  m('fossil-domo', 'Fóssil Domo', 100),
+  m('bolota', 'Bolota', 5),
+  m('pinha', 'Pinha', 4),
+  m('seiva', 'Seiva', 15),
+  m('trevo', 'Trevo de quatro folhas', 20),
+  m('erva', 'Erva aromática', 6),
+  m('cogumelo-pequeno', 'Cogumelo Pequeno', 12, { nutrition: 1 }),
+  m('cogumelo-grande', 'Cogumelo Grande', 50, { nutrition: 1 }),
+  m('escama-coracao', 'Escama Coração', 80),
+  m('caranguejo', 'Caranguejo', 20, { nutrition: 1 }),
+  m('lula', 'Lula', 18, { nutrition: 1 }),
+  m('sal-praia', 'Sal da Praia', 6),
+  m('concha-espiral', 'Concha Espiral', 25),
+  m('leite', 'Leite Moomoo', 10, { price: 30, nutrition: 1 }),
+  m('ovo-fresco', 'Ovo fresco', 6, { price: 18, nutrition: 1 }),
+  m('acucar', 'Açúcar', 5, { price: 15 }),
+  m('manteiga', 'Manteiga', 10, { price: 30, nutrition: 1 }),
+  m('farinha', 'Farinha', 8, { recipe: { trigo: 2 } }),
+];
+
+export const NEW_CROPS: readonly ItemDef[] = [
+  c('cheri', 'Fruta Cheri', 16),
+  c('chesto', 'Fruta Chesto', 16),
+  c('rawst', 'Fruta Rawst', 18),
+  c('aspear', 'Fruta Aspear', 18),
+  c('leppa', 'Fruta Leppa', 22),
+  c('sitrus', 'Fruta Sitrus', 30),
+  c('persim', 'Fruta Persim', 20),
+  c('lum', 'Fruta Lum', 40),
+  c('razz', 'Fruta Razz', 24),
+  c('nanab', 'Fruta Nanab', 20),
+  c('trigo', 'Trigo', 10),
+  c('arroz', 'Arroz', 12),
+  c('cebola', 'Cebola', 11),
+  c('pimentao', 'Pimentão', 15),
+  c('beterraba', 'Beterraba', 14),
+];
+
+export const NEW_SEEDS: readonly ItemDef[] = [
+  s('sem-cheri', 'Semente de Cheri', 'cheri', 10, 26),
+  s('sem-chesto', 'Semente de Chesto', 'chesto', 10, 26),
+  s('sem-rawst', 'Semente de Rawst', 'rawst', 11, 28),
+  s('sem-aspear', 'Semente de Aspear', 'aspear', 11, 28),
+  s('sem-leppa', 'Semente de Leppa', 'leppa', 13, 34),
+  s('sem-sitrus', 'Semente de Sitrus', 'sitrus', 18, 48),
+  s('sem-persim', 'Semente de Persim', 'persim', 12, 32),
+  s('sem-lum', 'Semente de Lum', 'lum', 24, 64),
+  s('sem-razz', 'Semente de Razz', 'razz', 14, 38),
+  s('sem-nanab', 'Semente de Nanab', 'nanab', 12, 32),
+  s('sem-trigo', 'Semente de Trigo', 'trigo', 8, 18),
+  s('sem-arroz', 'Semente de Arroz', 'arroz', 9, 20),
+  s('sem-cebola', 'Semente de Cebola', 'cebola', 9, 20),
+  s('sem-pimentao', 'Semente de Pimentão', 'pimentao', 11, 26),
+  s('sem-beterraba', 'Semente de Beterraba', 'beterraba', 10, 24),
+];
+
+export const NEW_FOODS: readonly ItemDef[] = [
+  d('omelete', 'Omelete', 10, 30, { 'ovo-fresco': 2, leite: 1 }),
+  d('panqueca', 'Panquecas', 12, 44, { farinha: 1, 'ovo-fresco': 1, leite: 1 }),
+  d('pao', 'Pão caseiro', 10, 30, { farinha: 2 }),
+  d('sanduiche', 'Sanduíche', 12, 60, { pao: 1, tomate: 1, cebola: 1 }),
+  d('pizza', 'Pizza', 14, 66, { farinha: 1, tomate: 2, cebola: 1 }),
+  d('onigiri', 'Onigiri', 9, 34, { arroz: 2, alga: 1 }),
+  d('curry', 'Curry da Vila', 16, 90, { arroz: 1, batata: 1, cenoura: 1, cebola: 1 }),
+  d('curry-doce', 'Curry doce', 15, 84, { arroz: 1, mel: 1, pecha: 1 }),
+  d('curry-picante', 'Curry picante', 15, 84, { arroz: 1, cheri: 1, pimentao: 1 }),
+  d('sorvete', 'Sorvete de Castelia', 11, 40, { leite: 1, acucar: 1 }),
+  d('cookie-lava', 'Biscoito de Lava', 12, 52, { farinha: 1, acucar: 1, cheri: 1 }),
+  d('gateau-velho', 'Bolo Antigo', 16, 78, { farinha: 1, 'ovo-fresco': 1, acucar: 1, leite: 1 }),
+  d('barra-raiva', 'Barra Doce da Fúria', 12, 50, { acucar: 2, mel: 1 }),
+  d('galette', 'Galette de Lumiose', 13, 56, { farinha: 1, manteiga: 1, acucar: 1 }),
+  d('sable', 'Sablé de Shalour', 11, 40, { farinha: 1, manteiga: 1 }),
+  d('malassada', 'Malassada Grande', 15, 72, { farinha: 1, 'ovo-fresco': 1, acucar: 1, manteiga: 1 }),
+  d('crocante-pewter', 'Crocantes de Pewter', 11, 44, { trigo: 2, mel: 1 }),
+  d('pudim', 'Pudim', 13, 54, { leite: 1, 'ovo-fresco': 1, acucar: 1 }),
+  d('crepe', 'Crepe de morango', 13, 62, { farinha: 1, leite: 1, morango: 1 }),
+  d('waffle', 'Waffle', 12, 50, { farinha: 1, 'ovo-fresco': 1, manteiga: 1 }),
+  d('cha-ervas', 'Chá de ervas', 8, 24, { erva: 2 }),
+  d('vitamina', 'Vitamina de frutas', 12, 80, { leite: 1, sitrus: 1, nanab: 1 }),
+  d('suco-sitrus', 'Suco de Sitrus', 10, 70, { sitrus: 2 }),
+  d('refresco-lum', 'Refresco de Lum', 14, 96, { lum: 2 }),
+  d('geleia-razz', 'Geleia de Razz', 13, 64, { razz: 2, acucar: 1 }),
+  d('salada-frutas', 'Salada de frutas', 13, 74, { aspear: 1, persim: 1, nanab: 1 }),
+  d('broa', 'Broa de milho', 11, 46, { milho: 2, farinha: 1 }),
+  d('sopa-cebola', 'Sopa de cebola', 11, 44, { cebola: 2, manteiga: 1 }),
+  d('creme-beterraba', 'Creme de beterraba', 12, 52, { beterraba: 2, leite: 1 }),
+  d('risoto', 'Risoto de cogumelos', 14, 70, { arroz: 1, champignon: 2, manteiga: 1 }),
+  d('pimentao-recheado', 'Pimentão recheado', 13, 58, { pimentao: 1, arroz: 1, cebola: 1 }),
+  d('batata-frita', 'Batata frita', 10, 36, { batata: 2, 'sal-praia': 1 }),
+  d('pure', 'Purê de batata', 11, 44, { batata: 2, leite: 1, manteiga: 1 }),
+  d('peixe-ervas', 'Peixe com ervas', 14, 54, { peixe: 1, erva: 1 }),
+  d('sushi', 'Sushi', 14, 64, { arroz: 1, peixe: 1, alga: 1 }),
+  d('caranguejo-cozido', 'Caranguejo cozido', 14, 56, { caranguejo: 1, manteiga: 1 }),
+  d('lula-grelhada', 'Lula grelhada', 13, 50, { lula: 1, cebola: 1 }),
+  d('bolo-persim', 'Bolo de Persim', 15, 76, { farinha: 1, 'ovo-fresco': 1, persim: 1 }),
+  d('poffin', 'Poffin de Pecha', 14, 54, { pecha: 1, farinha: 1, acucar: 1 }),
+  d('pokebloco', 'Pokébloco', 14, 70, { chesto: 1, rawst: 1, aspear: 1 }),
+  d('leite-quente', 'Leite quente com mel', 10, 40, { leite: 2, mel: 1 }),
+];

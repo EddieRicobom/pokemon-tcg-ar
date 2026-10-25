@@ -4,12 +4,15 @@
  * `price` = custo na loja em moedas (0 = não vende); `sell` = quanto a loja paga.
  */
 
-import { COZY_FURNITURE } from './furniture-collection';
+import { NEW_ACCESSORIES } from './accessory-collection';
+import { NEW_CROPS, NEW_FOODS, NEW_MATERIALS, NEW_SEEDS } from './item-collection';
+import type { AccessoryPos } from './accessory-fit';
+import { COZY_FURNITURE, NEW_FURNITURE_ITEMS } from './furniture-collection';
 
 export type ItemKind = 'material' | 'furniture' | 'seed' | 'crop' | 'accessory' | 'food';
 export type AccessorySlot = 'player' | 'pokemon' | 'both';
-/** Onde o acessório vai no corpo: cabeça, rosto, pescoço ou costas. */
-export type AccessoryPos = 'hat' | 'face' | 'neck' | 'back';
+/** Onde o acessório vai no corpo (ver `accessory-fit.ts`). */
+export type { AccessoryPos } from './accessory-fit';
 
 export interface ItemDef {
   id: string;
@@ -25,9 +28,13 @@ export interface ItemDef {
   recipe?: Record<string, number>;
   /** Só aparece como presente de amigo (raro). */
   gift?: boolean;
+  /** Só vem como prêmio de conquista (ver `rewards.ts`). */
+  prize?: boolean;
   /** Acessório: quem pode usar e onde vai. */
   slot?: AccessorySlot;
   pos?: AccessoryPos;
+  /** Acessório: ajuste fino da posição, em pixels do desenho (ex.: a auréola flutua acima da cabeça). */
+  nudge?: { dx?: number; dy?: number };
   /** Semente: o que nasce e em quantos estágios (cada estágio precisa de rega e de tempo). */
   grows?: { crop: string; stages: number; minutes: number; yield: [number, number] };
   /** Móvel alto: o desenho tem 2 blocos de altura (ocupa 1 só no chão). */
@@ -83,10 +90,17 @@ const BASE = {
   tapete: f('tapete', 'Tapete', 'Casa', { recipe: { tecido: 3 }, price: 90, sell: 20 }),
   vaso: f('vaso', 'Vaso de flores', 'Jardim', { recipe: { flor: 3, pedra: 1 }, sell: 14 }),
   cerca: f('cerca', 'Cerca', 'Jardim', { recipe: { madeira: 2 }, sell: 6 }),
+  almofada: f('almofada', 'Almofada de chão', 'Casa', { recipe: { tecido: 2, la: 1 }, price: 70, sell: 16, roomZone: 'social' }),
+  banqueta: f('banqueta', 'Banqueta', 'Casa', { recipe: { tabua: 2, tecido: 1 }, price: 90, sell: 20, roomZone: 'kitchen' }),
 };
 
 export const ITEMS: readonly ItemDef[] = [
   ...COZY_FURNITURE,
+  ...NEW_FURNITURE_ITEMS,
+  BASE.almofada,
+  ...variants(BASE.almofada, true, ['vermelho', 'azul', 'verde', 'rosa', 'amarelo', 'roxo', 'listrado']),
+  BASE.banqueta,
+  ...variants(BASE.banqueta, true, ['vermelho', 'azul', 'verde', 'rosa', 'amarelo', 'roxo', 'listrado']),
   // Materiais (coleta)
   m('madeira', 'Madeira', 4),
   m('pedra', 'Pedra', 4),
@@ -118,6 +132,7 @@ export const ITEMS: readonly ItemDef[] = [
   { ...m('tabua', 'Tábua', 9), recipe: { madeira: 2 } },
   { ...m('tijolo', 'Tijolo', 14), recipe: { pedra: 2, argila: 1 } },
   { ...m('vidro', 'Vidro', 20), recipe: { areia: 3, pedra: 1 } },
+  ...NEW_MATERIALS,
   // Colheitas da horta
   c('girassol', 'Girassol', 18),
   c('abobora', 'Abóbora', 30),
@@ -129,6 +144,7 @@ export const ITEMS: readonly ItemDef[] = [
   c('melancia', 'Melancia', 34),
   c('batata', 'Batata', 11),
   c('lavanda', 'Lavanda', 20),
+  ...NEW_CROPS,
   // Sementes (loja; às vezes no mato alto)
   s('sem-oran', 'Semente de Oran', 'oran', 8, 20),
   s('sem-pecha', 'Semente de Pecha', 'pecha', 8, 20),
@@ -142,6 +158,7 @@ export const ITEMS: readonly ItemDef[] = [
   s('sem-melancia', 'Semente de Melancia', 'melancia', 22, 56),
   s('sem-batata', 'Semente de Batata', 'batata', 9, 20),
   s('sem-lavanda', 'Semente de Lavanda', 'lavanda', 12, 32),
+  ...NEW_SEEDS,
   // Comidas (cozinha)
   d('suco-oran', 'Suco de Oran', 8, 26, { oran: 2 }),
   d('suco-pecha', 'Suco de Pecha', 8, 26, { pecha: 2 }),
@@ -157,6 +174,7 @@ export const ITEMS: readonly ItemDef[] = [
   d('melancia-gelada', 'Melancia gelada', 12, 60, { melancia: 1 }),
   d('ensopado', 'Ensopado caseiro', 14, 66, { batata: 1, cenoura: 1, champignon: 1 }),
   d('lanche-pokebola', 'Lanche Pokébola', 18, 110, { 'pao-mel': 1, tomate: 1, peixe: 1 }),
+  ...NEW_FOODS,
 
   // Móveis: casa
   BASE.cadeira,
@@ -292,11 +310,11 @@ export const ITEMS: readonly ItemDef[] = [
 
   // Acessórios: cabeça
   a('chapeu-palha', 'Chapéu de palha', 'both', 'hat', 120),
-  a('bone', 'Boné esportivo', 'player', 'hat', 90),
-  a('laco', 'Laço', 'both', 'hat', 80),
+  a('bone', 'Boné esportivo', 'both', 'hat', 90),
+  a('laco', 'Laço', 'both', 'ear', 80),
   a('coroa-flores', 'Coroa de flores', 'both', 'hat', 0, { recipe: { flor: 6 } }),
-  a('cartola', 'Mini cartola', 'pokemon', 'hat', 200),
-  a('tiara', 'Tiara brilhante', 'both', 'hat', 260),
+  a('cartola', 'Cartola', 'both', 'hat', 200),
+  a('tiara', 'Tiara dourada', 'both', 'hat', 260),
   a('gorro', 'Gorro de inverno', 'both', 'hat', 150),
   a('chapeu-bruxa', 'Chapéu de bruxa', 'both', 'hat', 220),
   a('chapeu-festa', 'Chapéu de festa', 'both', 'hat', 60),
@@ -308,20 +326,20 @@ export const ITEMS: readonly ItemDef[] = [
   a('orelhas-gato', 'Orelhinhas de gato', 'both', 'hat', 100),
   a('chifres', 'Chifrinhos', 'both', 'hat', 100),
   a('bandana', 'Bandana', 'both', 'hat', 70),
-  a('flor-orelha', 'Florzinha', 'both', 'hat', 0, { recipe: { flor: 2 } }),
+  a('flor-orelha', 'Florzinha', 'both', 'ear', 0, { recipe: { flor: 2 } }),
   a('fones', 'Fones de ouvido', 'both', 'hat', 160),
   // Acessórios: rosto
-  a('oculos', 'Óculos escuros', 'player', 'face', 140),
+  a('oculos', 'Óculos escuros', 'both', 'face', 140),
   a('oculos-redondos', 'Óculos redondos', 'both', 'face', 120),
   a('mascara', 'Máscara de herói', 'both', 'face', 150),
   a('bigode', 'Bigode falso', 'both', 'face', 50),
   a('nariz-palhaco', 'Nariz de palhaço', 'both', 'face', 40),
   // Acessórios: pescoço
-  a('cachecol', 'Cachecol', 'player', 'neck', 110),
+  a('cachecol', 'Cachecol', 'both', 'neck', 110),
   a('gravata', 'Gravata-borboleta', 'both', 'neck', 90),
   a('medalha', 'Medalha dourada', 'both', 'neck', 0, { recipe: { ouro: 1, tecido: 1 } }),
   // Acessórios: costas
-  a('mochila', 'Mochila de aventura', 'player', 'back', 160),
+  a('mochila', 'Mochila de aventura', 'both', 'back', 160),
   a('capa', 'Capa de herói', 'both', 'back', 240),
   a('asinhas', 'Asinhas de anjo', 'both', 'back', 280),
   // Prêmios de conquistas: não vendem em lugar nenhum, só vêm do Treinador (ver `rewards.ts`).
@@ -330,22 +348,23 @@ export const ITEMS: readonly ItemDef[] = [
   a('louros', 'Coroa de louros', 'both', 'hat', 0, { sell: 0 }),
   a('tiara-brilho', 'Tiara brilhante', 'both', 'hat', 0, { sell: 0 }),
   a('tiara-coracoes', 'Tiara de corações', 'both', 'hat', 0, { sell: 0 }),
-  a('monoculo', 'Monóculo', 'player', 'face', 0, { sell: 0 }),
+  a('monoculo', 'Monóculo', 'both', 'face', 0, { sell: 0 }),
   a('oculos-estrela', 'Óculos de estrela', 'both', 'face', 0, { sell: 0 }),
   a('colar-estrela', 'Colar de estrela', 'both', 'neck', 0, { sell: 0 }),
   a('laco-amizade', 'Laço da amizade', 'both', 'neck', 0, { sell: 0 }),
-  a('insignia', 'Insígnia dourada', 'both', 'neck', 0, { sell: 0 }),
-  a('faixa-vencedor', 'Faixa de vencedor', 'both', 'neck', 0, { sell: 0 }),
+  a('insignia', 'Insígnia dourada', 'both', 'chest', 0, { sell: 0 }),
+  a('faixa-vencedor', 'Faixa de vencedor', 'both', 'chest', 0, { sell: 0 }),
   a('capa-estelar', 'Capa estelar', 'both', 'back', 0, { sell: 0 }),
   a('capa-liga', 'Capa da Liga', 'both', 'back', 0, { sell: 0 }),
   // Cosméticos da Torre de Sobrevivência (prêmios de conquistas, nunca vendem).
   a('fita-torre', 'Fita de sobrevivente', 'both', 'neck', 0, { sell: 0 }),
-  a('pin-treinador', 'Pino de Treinador', 'both', 'face', 0, { sell: 0 }),
-  a('pin-chefao', 'Pino de Chefão', 'both', 'face', 0, { sell: 0 }),
-  a('trofeu-torre', 'Troféu da Torre', 'both', 'hat', 0, { sell: 0 }),
+  a('pin-treinador', 'Pino de Treinador', 'both', 'chest', 0, { sell: 0 }),
+  a('pin-chefao', 'Pino de Chefão', 'both', 'chest', 0, { sell: 0 }),
+  a('trofeu-torre', 'Troféu da Torre', 'both', 'hand', 0, { sell: 0 }),
   a('capa-sobrevivente', 'Capa de Sobrevivente', 'both', 'back', 0, { sell: 0 }),
-  a('pin-pista', 'Pino da Pista', 'both', 'face', 0, { sell: 0 }),
-  a('trofeu-pista', 'Troféu dos Pins', 'both', 'hat', 0, { sell: 0 }),
+  a('pin-pista', 'Pino da Pista', 'both', 'chest', 0, { sell: 0 }),
+  a('trofeu-pista', 'Troféu dos Pins', 'both', 'hand', 0, { sell: 0 }),
+  ...NEW_ACCESSORIES,
 ];
 
 export const ITEM_BY_ID = new Map(ITEMS.map((i) => [i.id, i]));
