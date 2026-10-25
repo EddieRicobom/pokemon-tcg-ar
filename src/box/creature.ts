@@ -13,6 +13,9 @@ import type { SmoothingMode } from '../core/pixel-upscale';
 import type { RgbaImage } from '../recognition/types';
 import { speciesRelativeSize } from '../core/size-scale';
 import { contentBounds } from '../village/local-sprite';
+import type { ContentBounds } from '../village/local-sprite';
+import { placeAccessory } from '../core/village/accessory-fit';
+import type { AccessoryPos } from '../core/village/accessory-fit';
 import type { WanderState } from './wander';
 
 export interface CreatureInfo {
@@ -116,6 +119,10 @@ export const BOX_METERS_PER_RELATIVE = 0.26;
 /** A forma Mega cresce pela arte (desenho maior que o da forma base), até este fator. */
 export const MEGA_MAX_GROWTH = 1.5;
 
+function boundsOf(source: CreatureSource): ContentBounds {
+  return contentBounds(source.kind === 'gif' ? source.gif : { width: source.image.width, height: source.image.height, frames: [{ rgba: source.image.data, delayMs: 0 }] });
+}
+
 /** Fração da altura do quadro ocupada pelo desenho, e a altura do desenho em pixels. */
 function measure(source: CreatureSource): { frac: number; px: number } {
   const gif = source.kind === 'gif' ? source.gif : { width: source.image.width, height: source.image.height, frames: [{ rgba: source.image.data, delayMs: 0 }] };
@@ -169,8 +176,11 @@ export class BoxCreature {
   groundY = 0;
   private bubble: BubbleState | null = null;
   private aura: ShinyAura | null = null;
-  /** Acessório da Vila (laço, chapéu…) em cima da cabeça. */
+  /** Acessório da Vila (laço, chapéu, capa…), no lugar do corpo que a âncora dele indica. */
   private accessory: Sprite | null = null;
+  private accessoryFit: { pos: AccessoryPos; w: number; h: number; nudge?: { dx?: number; dy?: number } } | null = null;
+  /** Caixa dos pixels opacos do quadro atual (onde fica o corpo, para posicionar o acessório). */
+  private bounds: ContentBounds;
   /** Reflexo na poça (de ponta-cabeça sob os pés); null até a primeira poça. */
   private reflection: Mesh<PlaneGeometry, MeshBasicMaterial> | null = null;
   private reflectionStrength = 0;
@@ -187,6 +197,7 @@ export class BoxCreature {
     this.lastRgba = first;
     this.texture = this.makeTexture(this.prepare(0, first));
 
+    this.bounds = boundsOf(source);
     this.height = creatureSizeFor(info.dexId, source);
     this.baseHeight = this.height;
     this.width = this.height * (width / height);
@@ -228,6 +239,7 @@ export class BoxCreature {
     old.dispose();
     this.height = this.formHeight(source);
     this.width = this.height * (width / height);
+    this.bounds = boundsOf(source);
     this.startedAt = 0;
     this.shownFrame = -1;
     this.swapped = source !== this.baseSource;
@@ -258,15 +270,20 @@ export class BoxCreature {
     return this.megaActive;
   }
 
-  /** Põe (ou tira, com `null`) um acessório em pixel art (RGBA 16×16) em cima da cabeça. */
-  setAccessory(rgba: { w: number; h: number; data: Uint8Array } | null): void {
+  /**
+   * Põe (ou tira, com `null`) um acessório em pixel art (RGBA no tamanho real do desenho) no lugar do corpo de `pos`.
+   * Um pixel do acessório tem o tamanho de um pixel do sprite do Pokémon.
+   */
+  setAccessory(rgba: { w: number; h: number; data: Uint8Array } | null, pos: AccessoryPos = 'hat', nudge?: { dx?: number; dy?: number }): void {
     if (this.accessory) {
       this.accessory.material.map?.dispose();
       this.accessory.material.dispose();
       this.accessory.removeFromParent();
       this.accessory = null;
     }
+    this.accessoryFit = null;
     if (!rgba) return;
+    this.accessoryFit = { pos, w: rgba.w, h: rgba.h, ...(nudge ? { nudge } : {}) };
     const tex = new DataTexture(rgba.data, rgba.w, rgba.h, RGBAFormat, UnsignedByteType);
     tex.colorSpace = SRGBColorSpace;
     tex.magFilter = NearestFilter;
@@ -275,7 +292,7 @@ export class BoxCreature {
     tex.offset.set(0, 1);
     tex.needsUpdate = true;
     this.accessory = new Sprite(new SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5 }));
-    this.accessory.center.set(0.5, 0.25);
+    this.accessory.center.set(0.5, 0.5);
     this.group.add(this.accessory);
   }
 
@@ -469,11 +486,21 @@ export class BoxCreature {
     this.mesh.position.y = hop;
     this.updateBubble(dtMs, nowMs);
     this.updateReflection();
-    if (this.accessory) {
-      const size = Math.min(0.16, Math.max(0.08, this.width * 0.45));
-      this.accessory.scale.set(size, size, 1);
-      this.accessory.position.set(0, this.mesh.position.y + this.height * fx.scale * fx.squash * 0.92, 0);
-      this.accessory.visible = fx.faint < 0.5;
+    if (this.accessory && this.accessoryFit) {
+      // Posição em pixels do quadro (y para baixo), convertida para metros com a mesma escala do sprite.
+      const W = this.spriteWidth;
+      const H = this.spriteHeight;
+      const b = this.bounds;
+      const fit = this.accessoryFit;
+      const at = placeAccessory(fit.pos, fit, 1, {
+        left: b.left * W, top: b.top * H, w: (b.right - b.left) * W, h: (b.bottom - b.top) * H, headX: ((b.left + b.right) / 2) * W, headTop: b.top * H,
+      }, 'front', fit.nudge);
+      const kx = (this.width * fx.scale) / W;
+      const ky = (this.height * fx.scale * fx.squash) / H;
+      this.accessory.scale.set(at.w * kx * this.flip, at.h * ky, 1);
+      this.accessory.position.set((at.x + at.w / 2 - W / 2) * kx * this.flip, this.mesh.position.y + (H - at.y - at.h / 2) * ky, at.behind ? -0.002 : 0.002);
+      this.accessory.renderOrder = at.behind ? -1 : 1;
+      this.accessory.visible = fx.faint < 0.5 && !at.hidden;
     }
     if (this.aura) {
       this.aura.update(nowMs);

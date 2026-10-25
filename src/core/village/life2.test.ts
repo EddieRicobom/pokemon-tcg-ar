@@ -148,10 +148,11 @@ describe('acessórios e coleção', () => {
     expect(wear(s, 'player', 'laco').ok).toBe(false);
     add(s, 'laco');
     expect(wear(s, 'player', 'laco').ok).toBe(true);
+    // A posição é genérica (`accessory-fit.ts`): chapéus e óculos servem em você e nos Pokémon.
     add(s, 'cartola');
-    expect(wear(s, 'player', 'cartola').ok).toBe(false);
+    expect(wear(s, 'player', 'cartola').ok).toBe(true);
     add(s, 'oculos');
-    expect(wear(s, 'p1', 'oculos').ok).toBe(false);
+    expect(wear(s, 'p1', 'oculos').ok).toBe(true);
     expect(wear(s, 'p1', null).ok).toBe(true);
     expect(s.wear.mons.p1).toBeNull();
   });
