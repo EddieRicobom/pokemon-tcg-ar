@@ -8,7 +8,7 @@ datadas (com o que foi e o que não foi validado em cada uma). A regra de valida
 ## Janelas da Vila (25/10/2026)
 
 - Cabeçalhos compartilhados, fechamento com limpeza e navegação por Tab das folhas da Vila; menu em seção volta antes de fechar e a Torre conserva confirmação de saída. Conversas continuam com OK/Voltar. Não foi adicionado fechamento ao tocar fora.
-- Edge em perfil descartável: casa e menu abertos, Tab mantido na folha, Esc e retorno do foco do menu; as demais janelas, leitor de tela e tecla presa ainda precisam de validação manual. Celular real, sensores e GPU não foram testados.
+- Edge em perfil descartável: casa e menu abertos, Tab mantido na folha, Esc, retorno do foco do menu e confirmação de saída da Torre; as demais janelas, leitor de tela e tecla presa ainda precisam de validação manual. Celular real, sensores e GPU não foram testados.
 
 ## Interface: preparação do Survival, controles do BONK e lista de cartas (25/10/2026)
 

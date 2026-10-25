@@ -9,6 +9,7 @@ try {
   await page.addInitScript(() => {
     localStorage.setItem('tcg-ar-onboarding-v1', '1');
     localStorage.setItem('tcg-ar-perfil-v1', JSON.stringify({ name: 'Teste', sprite: 'red' }));
+    localStorage.setItem('tcg-ar-trainer-v1', JSON.stringify({ v: 1, xp: 1000000 }));
     localStorage.setItem('tcg-ar-vila-controls-hint-hidden-v1', 'true');
     localStorage.setItem('tcg-ar-vila-v1', JSON.stringify({ v: 1, layout: 2, seed: 20261014,
       house: 6, player: { x: 32, y: 34, dir: 'up' }, coins: 500,
@@ -44,5 +45,14 @@ try {
   await page.keyboard.press('Escape');
   await menu.waitFor({ state: 'detached' });
   assert.equal(await menuButton.evaluate((el) => el === document.activeElement), true);
-  console.log('ok: casa e menu abrem, Tab permanece no painel, Esc volta da seção e fecha, foco retorna ao menu');
+  await menuButton.click();
+  await menu.getByRole('button', { name: /Survival/ }).click();
+  const tower = page.getByRole('dialog', { name: 'Torre de Sobrevivência', exact: true });
+  await tower.waitFor();
+  await tower.getByRole('button', { name: 'Fechar Torre de Sobrevivência' }).click();
+  const confirm = tower.getByRole('alertdialog', { name: 'Abandonar corrida' });
+  await confirm.waitFor();
+  await confirm.getByRole('button', { name: 'Continuar na Torre' }).click();
+  await confirm.waitFor({ state: 'detached' });
+  console.log('ok: casa e menu, Tab, Esc, retorno de foco e confirmação de saída da Torre');
 } finally { await browser.close(); }
