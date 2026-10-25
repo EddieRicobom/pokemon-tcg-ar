@@ -1304,7 +1304,8 @@ function draw(): void {
   ctx.scale(zoom, zoom);
   ctx.translate(-(camX + worldViewW / 2), -(camY + worldViewH / 2));
   if (regionScenery.value) {
-    drawLandscape(ctx, s.elapsedMs, { x: camX - 2, y: camY - 2, w: worldViewW + 4, h: worldViewH + 4 });
+    // Flores e brilho da água só balançam com "Efeitos: completos" (e sem movimento reduzido nem modo Rotom).
+    drawLandscape(ctx, s.elapsedMs, { x: camX - 2, y: camY - 2, w: worldViewW + 4, h: worldViewH + 4 }, { timeMs: animMs, animate: detailedSpecialEffects.value });
   } else if (groundPattern) {
     ctx.fillStyle = groundPattern;
     ctx.fillRect(0, 0, ARENA_W, ARENA_H);
