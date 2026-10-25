@@ -599,7 +599,7 @@ const INTRIGUE_MOMENTS: readonly Template[] = [
       options: [
         {
           label: () => 'Pedir que cada um conte o que ouviu',
-          lines: () => [L(0, 'Tá. Eu falei isso quando estava irritado. Foi injusto.', 'sad'), L(1, 'Obrigada por falar direto comigo.', 'heart'), L(2, 'E eu vou parar de completar história dos outros.', 'idea')],
+          lines: () => [L(0, 'Tá. Eu falei isso quando estava irritado. Foi injusto.', 'sad'), L(1, 'Obrigado por falar direto comigo.', 'heart'), L(2, 'E eu vou parar de completar história dos outros.', 'idea')],
           outcome: { bond: 5, bond02: 4, bond12: 4, flag: 'clear', friendBy: [1, 1, 1], plan: { kind: 'visitar', days: 2 } },
         },
         {
@@ -1419,20 +1419,19 @@ export interface RecentGossipOptions {
   nameOf?: (id: string, fallback: string) => string;
 }
 
-/** O que o Pokémon comenta ao conversar com você sobre o que viveu nas últimas 36 horas (ou `null`). */
+/** Por quanto tempo uma lembrança ainda vira assunto na conversa (antes eram 90 dias, e a mesma voltava toda vez). */
+const GOSSIP_MEMORY_DAYS = 14;
+
+/**
+ * O que o Pokémon comenta ao conversar com você: uma das lembranças recentes dele (revezando entre as três últimas, uma
+ * por dia, para não repetir sempre a mesma) ou o que viveu nas últimas 36 horas (ou `null`).
+ */
 export function recentGossip(state: VillageState, id: string, now: number, options: RecentGossipOptions = {}): string | null {
-  const memory = [...state.memories].reverse().find((item) => item.mon === id && now - item.t <= 90 * 24 * 3_600_000);
+  const fresh = state.memories.filter((item) => item.mon === id && now - item.t >= 0 && now - item.t <= GOSSIP_MEMORY_DAYS * 86_400_000).slice(-3);
+  const memory = fresh.length > 0 ? fresh[(fresh.length - 1 + Math.floor(now / 86_400_000)) % fresh.length] : undefined;
   if (memory) {
     const age = Math.max(0, now - memory.t);
-    const when = age < 3_600_000 ? 'agora há pouco' : age < 2 * 86_400_000 ? 'ontem' : 'há alguns dias';
-    const intros: Record<MemoryKind, readonly string[]> = {
-      amizade: ['Eu ainda sorrio quando penso nisso', 'Sabe o que me deixou feliz outro dia?', 'Fiquei lembrando de uma coisa boa'],
-      rivalidade: ['Aquilo ainda ficou atravessado', 'Eu tentei deixar isso para trás, mas', 'Ainda estou pensando naquela confusão'],
-      romance: ['Eu fico meio bobo quando lembro', 'Sabe aquele momento que dá frio na barriga?', 'Ainda guardo esse momento com carinho'],
-      descoberta: ['Eu não paro de pensar no que encontramos', 'Aquela descoberta ainda está na minha cabeça', 'Eu descobri uma coisa e preciso comentar'],
-    };
-    const choices = intros[memory.kind];
-    const opener = choices[hash(`${memory.id}:${memory.kind}`) % choices.length] ?? choices[0]!;
+    const when = age < 3_600_000 ? 'agora há pouco' : age < 2 * 86_400_000 ? 'ontem' : 'esses dias';
     const source = state.diary.find((moment) => moment.id === memory.momentId);
     const companions = source?.cast
       .filter((participant) => participant.id !== id)
@@ -1444,16 +1443,24 @@ export function recentGossip(state: VillageState, id: string, now: number, optio
         ? ` com ${companions.slice(0, -1).join(', ')} e ${companions.at(-1)}`
         : '';
     const tail = memory.kind === 'rivalidade'
-      ? 'Talvez eu devesse conversar com eles de novo.'
+      ? `Talvez eu devesse conversar com ${companions.length === 1 ? companions[0] : companions.length > 1 ? 'eles' : 'quem estava lá'} de novo.`
       : memory.kind === 'romance'
         ? 'Foi bonito, mesmo com toda a vergonha.'
         : memory.kind === 'descoberta'
           ? 'Quero ver o que acontece se a gente investigar mais.'
-          : 'Foi um daqueles dias que dá vontade de repetir.';
-    const memoryText = options.compact
-      ? (source?.title ? `${source.title} — ${memory.kind === 'amizade' ? 'amizade fortalecida' : memory.kind === 'rivalidade' ? 'uma tensão ficou no ar' : memory.kind === 'romance' ? 'um momento especial' : 'uma nova pista'}` : `${memory.text.split(':')[0] ?? memory.text} — memória da Vila`)
-      : memory.text;
-    return `${opener}${withPeople} — ${when}: ${memoryText}. ${tail}`;
+          : 'Foi um daqueles dias que a gente quer repetir.';
+    // Na conversa, o nome do momento (sem os números do Diário); fora dela, o registro inteiro.
+    const topic = options.compact
+      ? `“${source?.title ?? memory.text.split(':')[0] ?? memory.text}”${withPeople}`
+      : `${memory.text.replace(/\.$/, '')}${withPeople}`;
+    const sentences: Record<MemoryKind, readonly string[]> = {
+      amizade: [`Eu ainda sorrio quando lembro de ${topic}, ${when}.`, `Uma coisa boa não sai da minha cabeça: ${topic}, ${when}.`, `Fiquei lembrando de ${topic}, ${when}. Que dia!`],
+      rivalidade: [`Ainda estou pensando em ${topic}, ${when}.`, `Eu tentei deixar ${topic} para trás, mas ainda incomoda.`, `Aquilo de ${topic}, ${when}, ficou atravessado.`],
+      romance: [`Eu fico meio bobo quando lembro de ${topic}, ${when}.`, `Ainda dá um frio na barriga quando penso em ${topic}.`, `Guardo com carinho ${topic}, ${when}.`],
+      descoberta: [`Não paro de pensar em ${topic}, ${when}.`, `Preciso comentar: ${topic}, ${when}. Ainda está na minha cabeça.`, `Lembra de ${topic}, ${when}? Eu não esqueço.`],
+    };
+    const choices = sentences[memory.kind];
+    return `${choices[hash(`${memory.id}:${memory.kind}`) % choices.length] ?? choices[0]!} ${tail}`;
   }
   for (let i = state.diary.length - 1; i >= 0; i--) {
     const m = state.diary[i]!;

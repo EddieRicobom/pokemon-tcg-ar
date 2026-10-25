@@ -48,3 +48,43 @@ describe('Correio ligado aos momentos', () => {
   });
 });
 
+
+describe('cartas com a voz de quem escreve', () => {
+  it('a carta traz a fala do remetente, quem estava junto (sem repetir o remetente) e o registro do Diário', () => {
+    const mail = mailFromMoment(moment)!;
+    expect(mail.body).toContain('com Eevee');
+    expect(mail.body).not.toContain('com Pikachu');
+    expect(mail.body).toContain('“Trouxe um sanduíche.”');
+    expect(mail.body).toContain('No Diário: +8 amizade');
+  });
+
+  it('a despedida acompanha a amizade de quem escreve', () => {
+    expect(mailFromMoment(moment, 0)!.body.endsWith('— Pikachu')).toBe(true);
+    expect(mailFromMoment(moment, 2)!.body.endsWith('Um abraço, Pikachu')).toBe(true);
+    expect(mailFromMoment(moment, 4)!.body.endsWith('Do seu melhor amigo, Pikachu')).toBe(true);
+    const state = emptyVillage(1, { x: 2, y: 2 });
+    expect(queueMomentMail(state.mail, moment, (id) => (id === 'a' ? 3 : 0))!.body).toContain('Com carinho, Pikachu');
+  });
+
+  it('o marco de amizade vira uma carta pessoal, e a queda vira um pedido', () => {
+    const up: Moment = { ...moment, id: 'marco', tpl: 'amizade-marco', title: 'Amizade: Amigo', cast: [{ id: 'a', name: 'Pikachu' }], lines: [{ who: 0, text: 'Somos amigos!' }], result: ['Pikachu agora é seu Amigo 💖'] };
+    const mail = mailFromMoment(up, 2)!;
+    expect(mail).toMatchObject({ kind: 'agradecimento', subject: 'Amizade: Amigo' });
+    expect(mail.body.startsWith('Somos amigos!')).toBe(true);
+    expect(mailFromMoment({ ...up, id: 'queda', kind: 'drama', title: 'Amizade abalada: Colega' })!.kind).toBe('pedido');
+  });
+
+  it('o jornal fala como jornal e responder a ele não promete amizade', () => {
+    const state = emptyVillage(1, { x: 2, y: 2 });
+    const bulletin = generateDailyMail(state, '2026-10-22', { a: 'Pikachu', b: 'Eevee' })!;
+    expect(bulletin.body).toContain('Na praça hoje: Pikachu e Eevee');
+    expect(bulletin.body).not.toMatch(/inventad|real/);
+    expect(respondToMail(state, bulletin.id, 'responder', '2026-10-22').message).not.toContain('amizade');
+  });
+
+  it('responder uma carta diz quanto a amizade subiu', () => {
+    const state = emptyVillage(1, { x: 2, y: 2 });
+    queueMomentMail(state.mail, moment);
+    expect(respondToMail(state, 'carta-momento-1', 'responder', '2026-10-22').message).toContain('+4 amizade com Pikachu');
+  });
+});

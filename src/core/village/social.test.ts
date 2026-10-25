@@ -319,7 +319,7 @@ describe('momentos: resultado', () => {
     expect(memories).toHaveLength(2);
     expect(memories.map((memory) => memory.mon).sort()).toEqual(['a', 'b']);
     expect(memories[0]?.text).toContain('Promessa cumprida: Ana visitou Beto.');
-    expect(recentGossip(s, 'a', completed.moment.t + 1)).toContain('Promessa cumprida: Ana visitou Beto.');
+    expect(recentGossip(s, 'a', completed.moment.t + 1)).toContain('Promessa cumprida: Ana visitou Beto');
   });
 
   it('não trata compromisso vencido como promessa cumprida nem cria a cena especial', () => {
@@ -538,7 +538,7 @@ describe('momentos: fora da Vila, comentários e mapa', () => {
     const full = recentGossip(s, 'a', 20);
     const compact = recentGossip(s, 'a', 20, { compact: true, nameOf: (id, fallback) => id === 'b' ? 'Brisa' : fallback });
     expect(full).toContain('Piquenique: +5 amizade');
-    expect(compact).toContain('Piquenique — amizade fortalecida');
+    expect(compact).toContain('“Piquenique” com Brisa');
     expect(compact).toContain('Brisa');
     expect(compact).not.toContain('+5 amizade');
   });

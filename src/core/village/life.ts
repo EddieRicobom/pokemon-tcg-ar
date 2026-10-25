@@ -657,10 +657,10 @@ const WEATHER_LINES: Record<string, string> = {
 };
 
 const LINES: Record<number, readonly string[]> = {
-  0: ['Oi! Ainda estou me acostumando com a vila.', 'Você é quem me escaneou, né? Prazer!', 'Que lugar bonito... posso explorar?'],
+  0: ['Oi! Ainda estou me acostumando com a vila.', 'Você é quem cuida da Vila, né? Prazer!', 'Que lugar bonito... posso explorar?'],
   1: ['Bom te ver de novo!', 'Hoje achei um cantinho ótimo perto do lago.', 'Vamos treinar depois?'],
   2: ['Você é um bom amigo, sabia?', 'Quando você chega, o dia fica melhor!', 'Guardei um lugar para você na sombra.'],
-  3: ['Eu confio em você para qualquer batalha!', 'Lembra da nossa primeira batalha? Eu lembro!', 'Quero ficar sempre na sua equipe.'],
+  3: ['Eu confio em você para qualquer batalha!', 'Lembra do dia em que eu cheguei na Vila? Eu lembro!', 'Quero ficar sempre na sua equipe.'],
   4: ['Você é meu melhor amigo!', 'Vou te seguir para onde você for!', 'Nenhuma insígnia vale mais que a nossa amizade.'],
 };
 

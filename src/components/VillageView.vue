@@ -474,13 +474,13 @@ function say(text: string, ms = 2800): void {
   toastTimer = setTimeout(() => (toast.value = ''), ms);
 }
 
+// Só aparece com a Vila ainda vazia, para dizer como começar. Com moradores, o aviso "aproxime-se de um morador"
+// voltava a cada entrada no topo da tela e o dono pediu para tirar.
 const idleGuideVisible = computed(() =>
-  !idleGuideDismissed.value && !loading.value && !arActive.value && !sheet.value && !dialog.value && !quiz.value && !quizOpen.value
+  mons.value.length === 0 && !idleGuideDismissed.value && !loading.value && !arActive.value && !sheet.value && !dialog.value && !quiz.value && !quizOpen.value
   && !cutsceneOpen.value && !welcome.value && !recapScenes.value.length && !legendaryScene.value && !hoOhWishScene.value && !toast.value,
 );
-const idleGuideText = computed(() => mons.value.length === 0
-  ? 'Abra o Menu para começar a história da Vila e receber seu primeiro companheiro.'
-  : 'Sem conversa por perto? Aproxime-se de um morador e use A, toque no mapa para explorar ou abra o Menu.');
+const idleGuideText = 'Abra o Menu para começar a história da Vila e receber seu primeiro companheiro.';
 
 type UiSound = Extract<SoundCue, { kind: 'ui' }>['cue'];
 function unlockSound(): void {
@@ -500,6 +500,9 @@ function playSound(cue: UiSound): void {
 function trainerEvent(action: 'talk' | 'answer' | 'moment' | 'nickname', id?: string): void {
   recordEvent({ type: 'village', action, level: id ? friendLevel(friendOf(state, id).points).level : undefined });
 }
+
+/** Nível de amizade de um morador com você (o tom da despedida nas cartas). */
+const friendLevelOf = (id: string): number => friendLevel(friendOf(state, id).points).level;
 
 /** "+6 amizade (faltam 18 para Amigo)" ou "−2 amizade (…)": a mudança de agora e o caminho até o próximo marco. */
 function friendGainNote(id: string, delta: number): string {
@@ -1358,7 +1361,7 @@ let homes = new Map<string, number>();
 
 /** Abre o Correio como uma caixa de entrada: a edição diária e as cartas de momentos ficam juntas no mesmo lugar. */
 function openMail(): void {
-  const generated = generateDailyMail(state, refreshDay(), namesById());
+  const generated = generateDailyMail(state, refreshDay(), namesById(), friendLevelOf);
   if (generated) {
     changed();
     say(`📬 ${generated.fromName} deixou uma carta: ${generated.subject}`, 4800);
@@ -2101,7 +2104,7 @@ function announce(r: Resolved): void {
 
 function afterResolve(r: Resolved, ids: string[]): void {
   announce(r);
-  const letter = queueMomentMail(state.mail, r.moment);
+  const letter = queueMomentMail(state.mail, r.moment, friendLevelOf);
   if (letter) {
     game?.deliverMail(letter.involvedIds);
   }
@@ -2181,7 +2184,7 @@ function awayCatchUp(): void {
   if (list.length > 0 && state.lastSeen > 0) {
     const moments = catchUp(state, list, now, null, Math.random, profile.name);
     if (moments.length > 0) {
-      for (const moment of moments) queueMomentMail(state.mail, moment);
+      for (const moment of moments) queueMomentMail(state.mail, moment, friendLevelOf);
       changed();
     }
   }

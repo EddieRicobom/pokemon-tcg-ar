@@ -9,7 +9,7 @@ import { L } from './moments/kit';
 import type { Template } from './moments/kit';
 import { claimRequest, REQUEST_FRIENDSHIP } from './requests';
 import type { VillageRequest } from './requests';
-import { FRIEND_MILESTONE_TPL, makeEnv, MOMENT_FRIEND_SCALE, recordFriendMilestone, resolveScene, sceneOfTemplate } from './social';
+import { FRIEND_MILESTONE_TPL, makeEnv, MOMENT_FRIEND_SCALE, recentGossip, recordFriendMilestone, resolveScene, sceneOfTemplate } from './social';
 import type { Actor } from './social';
 import { villageSummary } from './summary';
 
@@ -309,5 +309,31 @@ describe('momentos entre os Pokémon e a amizade com você', () => {
   it('um ganho que vem de um momento também dispara o marco', () => {
     const { s, ids } = play(0, false, FRIEND_LEVELS[1].min - 1);
     expect(claimFriendMilestones(s, ids)).toEqual([{ id: ids[0], kind: 'up', level: 1, name: 'Colega', from: 0, passed: [1] }]);
+  });
+});
+
+describe('o que os moradores lembram na conversa', () => {
+  const memoryAt = (s: ReturnType<typeof fresh>, n: number, t: number) => {
+    s.diary.push({ id: `m${n}`, t, day: DAY, hour: 12, tpl: 'par-piquenique', kind: 'amizade', title: `Momento ${n}`, emoji: '🧺', cast: [{ id: 'a', name: 'Ana' }, { id: 'b', name: 'Beto' }], lines: [{ who: 0, text: 'Oi' }], result: ['+5 amizade'] });
+    s.memories.push({ id: `m${n}:a`, mon: 'a', with: ['b'], kind: 'amizade', text: `Momento ${n}: +5 amizade`, day: DAY, t, momentId: `m${n}` });
+  };
+
+  it('reveza entre as lembranças recentes de um dia para o outro em vez de repetir sempre a mesma', () => {
+    const s = fresh();
+    const base = Date.parse(`${DAY}T12:00:00Z`);
+    for (let n = 1; n <= 4; n++) memoryAt(s, n, base + n * 60_000);
+    const said = new Set(Array.from({ length: 3 }, (_, d) => recentGossip(s, 'a', base + d * 86_400_000 + 3_600_000, { compact: true })));
+    expect(said.size).toBe(3);
+    expect([...said].join(' ')).not.toContain('Momento 1');
+  });
+
+  it('a lembrança vira assunto por duas semanas, sem os números do Diário', () => {
+    const s = fresh();
+    const base = Date.parse(`${DAY}T12:00:00Z`);
+    memoryAt(s, 1, base);
+    const talkAbout = recentGossip(s, 'a', base + 86_400_000, { compact: true })!;
+    expect(talkAbout).toContain('“Momento 1” com Beto');
+    expect(talkAbout).not.toContain('+5');
+    expect(recentGossip(s, 'a', base + 15 * 86_400_000, { compact: true })).toBeNull();
   });
 });
