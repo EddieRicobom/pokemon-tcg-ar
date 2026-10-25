@@ -47,9 +47,26 @@ export function parseRoute(hash: string): Route {
  * `vila` = «veio da Vila» (a tela mostra «Voltar à Vila»), `pvp` = abrir o PvP da Caixa, `batalha` = veio do
  * Fliperama para uma batalha na câmera, `formatacao`/`restauracao` levam o modo contínuo escolhido da Arena até a Caixa
  * `jogos` = o Treinador abre nos minigames e `virtual` = a Caixa abre na Arena 3D (palco virtual, sem câmera).
+ * `torre`, `bonk` e `coliseu` são atalhos de jogo: a Vila abre e já entra na Torre (Survival), na Torre em modo BONK ou
+ * no Coliseu (Arena), sem andar até o prédio.
  */
-export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual';
-const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual'];
+export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual' | GameShortcut;
+const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual', 'torre', 'bonk', 'coliseu'];
+
+/** Jogos que a Vila abre direto pelo endereço. */
+export type GameShortcut = 'torre' | 'bonk' | 'coliseu';
+const GAME_SHORTCUTS: readonly GameShortcut[] = ['torre', 'bonk', 'coliseu'];
+
+/** Endereço que abre a Vila já dentro do jogo. */
+export function gameHref(game: GameShortcut): string {
+  return routeHref('vila', undefined, [game]);
+}
+
+/** O atalho de jogo pedido pelo endereço, se houver (só o primeiro vale). */
+export function gameShortcutOf(hash: string): GameShortcut | null {
+  const flags = routeFlags(hash);
+  return GAME_SHORTCUTS.find((game) => flags.has(game)) ?? null;
+}
 
 export function routeFlags(hash: string): Set<RouteFlag> {
   const query = hash.split('?')[1] ?? '';

@@ -135,7 +135,7 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
  */
 const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }, runId: string] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
-const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string; shiny?: boolean; accessory?: string | null }[]; accessories?: Record<string, string | null | undefined> }>();
+const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string; shiny?: boolean; accessory?: string | null }[]; accessories?: Record<string, string | null | undefined>; /** Abre já com o modo BONK escolhido (atalho da Vila). */ startBonk?: boolean }>();
 
 /**
  * A Torre ocupa a tela inteira. O lado menor parte de `VIEW_SHORT` unidades e aproxima 1,5×, mantendo o formato do
@@ -2006,7 +2006,7 @@ watch(
 );
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
 const infiniteWanted = ref(false);
-const bonkWanted = ref(false);
+const bonkWanted = ref(props.startBonk === true);
 const fastWanted = ref(false);
 const torre = computed(() => trainer.value.torre);
 const rerollLimit = computed(() => survivorRerollLimit(torre.value.completedObjectives));

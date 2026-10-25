@@ -5,6 +5,13 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Interface: grade de cartas, miniaturas na busca manual e atalhos de jogos (25/10/2026)
+
+- Grade de cartas (`CarregarView`): tocar na carta agora só abre os detalhes (a carta se expande com última leitura, situação de imagem, sprite e alvo de AR, Carregar, Ver em AR e Adicionar à Vila). Adicionar ou tirar da Vila é um botão próprio de 44 px embaixo de cada carta ("+ Vila" / "✓ Na Vila"), então um toque descuidado não muda mais a equipe.
+- Busca manual (`ScanView`): cada resultado mostra a miniatura da carta, o nome, a coleção, o número e o ano. A miniatura vem do CDN do TCGdex pela série da coleção, que o índice passou a guardar (`serie`, gerado por `scripts/build-catalog-index.ts`). Índice antigo, sem `serie`, mostra "sem imagem"; carta sem arquivo no CDN mostra "Carta indisponível". Nada de endereço inventado.
+- Atalhos de jogos: o menu da Vila ganhou o grupo "Jogar" (Survival, BONK, Arena) e o Treinador, na aba Jogos, os mesmos três links. Os endereços `#/vila?torre=1`, `?bonk=1` e `?coliseu=1` abrem a Vila e entram direto no jogo (BONK já selecionado), depois dos avisos de boas-vindas e da abertura do dia. Jogo ainda trancado diz em que nível abre. O atalho sai do endereço ao abrir, para recarregar não reabrir o jogo.
+- 🔶 Typecheck, 2245 testes e build passaram. Conferido no navegador do PC com o índice real (220 coleções, 23.736 cartas): miniaturas carregando do CDN (algumas cartas recentes ou promocionais não têm arquivo lá e caem no "Carta indisponível"), grade abrindo detalhes sem mexer na equipe, e os três atalhos entrando na Vila, na Torre (Normal e BONK) e no Coliseu. Não testei o aviso de jogo trancado nem nada em celular real.
+
 ## Vila: visual novo de itens, acessórios e móveis, com 300 peças novas (25/10/2026)
 
 - Pincel novo (`src/village/art/pen.ts`): rampas de cor com variação de matiz, contorno no tom escuro da própria cor (`sel`) ou quase preto (`ink`) e sprites escritos como mapa de pixels. Tudo continua desenhado por código, sem imagens.
