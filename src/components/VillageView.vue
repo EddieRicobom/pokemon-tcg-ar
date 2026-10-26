@@ -450,7 +450,8 @@ function prepareDailyRecap(): void {
   const today = dayKey(new Date(now));
   if (!needsDailyRecap(state.recap.day, today)) return;
   recapIndex.value = 0;
-  recapScenes.value = dailyRecap(state, state.recap.at, now);
+  // Registros antigos do Diário guardam o id do morador no lugar do nome; mostra o nome atual.
+  recapScenes.value = dailyRecap(state, state.recap.at, now).map((scene) => ({ title: displayResidentMessage(scene.title), text: displayResidentMessage(scene.text), cast: scene.cast.map(displayResidentMessage) }));
   state.recap = { day: today, at: now };
   // Persiste ao abrir: sair ou pular a cena não repete a abertura hoje.
   changed();
@@ -3562,7 +3563,7 @@ onBeforeUnmount(() => {
             <button type="button" :class="{ active: kindFilter === 'guardados' }" @click="kindFilter = 'guardados'">📌</button>
             <button v-for="k in MOMENT_KINDS" :key="k" type="button" :class="{ active: kindFilter === k }" @click="kindFilter = k">{{ MOMENT_EMOJI[k] }} {{ MOMENT_LABELS[k] }}</button>
           </div>
-          <MomentCard v-for="m in diaryList" :key="m.id" :moment="m" :class="{ 'moment-focus': summaryMomentId === m.id }" @toggle="toggleFav(m)" />
+          <MomentCard v-for="m in diaryList" :key="m.id" :moment="m" :fix="displayResidentMessage" :class="{ 'moment-focus': summaryMomentId === m.id }" @toggle="toggleFav(m)" />
           <p v-if="diaryList.length === 0" class="hint">{{ kindFilter === 'todos' ? 'Nada registrado ainda. Fique na Vila e veja o que os Pokémon aprontam!' : 'Nenhum momento assim por enquanto.' }}</p>
         </div>
 
@@ -3573,7 +3574,7 @@ onBeforeUnmount(() => {
           </div>
           <template v-if="albumView === 'guardados'">
             <p class="hint">O que você guarda aqui fica para sempre (até {{ MAX_SAVED }}), mesmo depois que o Diário apaga os mais antigos. Pedidos de namoro, casamentos, términos e festas de aniversário entram sozinhos.</p>
-            <MomentCard v-for="m in saved" :key="m.id" :moment="m" @toggle="toggleFav(m)" />
+            <MomentCard v-for="m in saved" :key="m.id" :moment="m" :fix="displayResidentMessage" @toggle="toggleFav(m)" />
             <p v-if="saved.length === 0" class="hint">Nada guardado ainda. No Diário, toque em 📍 num momento de que você gostou.</p>
           </template>
           <template v-else>
