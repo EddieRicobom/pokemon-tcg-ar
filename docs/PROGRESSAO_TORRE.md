@@ -126,9 +126,9 @@ A trilha só mexe nas escolhas de upgrade, nunca nos números do Pokémon.
 
 | Família | Ingrediente | T1 | T2 | T3 | Teto |
 |---|---|---|---|---|---|
-| Doce | mel | 0,2 HP/s | 0,3 HP/s | 0,4 HP/s | cura total de 30% do HP máx. |
+| Doce | mel, açúcar, leite, manteiga, ovo | 0,2 HP/s | 0,3 HP/s | 0,4 HP/s | cura total de 30% do HP máx. |
 | Peixe | peixe, peixe-dourado | XP ×1,10 | ×1,15 | ×1,20 | usa o maior valor com `xpMultiplier`, não multiplica |
-| Fruta | oran, pecha, uva | −15% duração de status | −20% | −25% | −25% |
+| Fruta | oran, pecha, uva e outras frutas e ervas | +15% de proteção depois de levar um golpe | +20% | +25% | +25% |
 | Raiz | batata, cenoura, abóbora | +4 Def/DefEsp | +7 | +10 | +20 somando com a Postura |
 | Grão | milho, trigo | +5% raio de coleta | +8% | +10% | teto de 90 px |
 | Fresco | melancia, tomate | +2% velocidade | +3% | +4% | +8% somando com a Passada |
@@ -243,3 +243,12 @@ export const PURE_LOADOUT: TowerLoadout;
 - Arte das cinco peças de treino e do Dojô nas três reformas.
 - Falas do Instrutor por tipo e por resultado da última corrida.
 - Se o Instrutor deve ter preferência por moradores do tipo Lutador na escolha automática.
+
+## Como ficou implementado
+
+- **Fruta** virou proteção maior depois de um golpe (`hitInvulnerabilityMs`), porque o jogador não tem status negativos no motor e o efeito não seria inventado.
+- **Instrutor** é escolhido por `chooseInstructor` (nunca o carteiro nem a garçonete). Ele só aparece com a população mínima, mas o que foi comprado continua valendo.
+- **Marmita** devolve-se à mochila se a corrida durar menos de 20 s. Se o app fechar no meio da corrida, ela continua reservada e só é gasta quando uma corrida terminar.
+- **BONK**: usa o mesmo `createSurvivorState`; Dojô, sorte, marmita e banimento valem nos dois modos.
+- **Recordes**: `torre.bestPureMs` guarda o melhor tempo sem nada da Vila; saves antigos herdam o `bestMs`, porque tudo era puro antes.
+- **Ainda não feito**: o Instrutor só tem o símbolo 🥋 (não caminha até o Dojô), a arte das peças e do Dojô não foi vista em aparelho real, e o teste de orçamento de 15% por simulação não foi escrito.
