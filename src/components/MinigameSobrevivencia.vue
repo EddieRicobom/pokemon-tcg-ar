@@ -40,12 +40,12 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
-import { typesOfDex } from '../core/species-filter';
+import { survivorAttackOf } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
 import { trainer } from '../app/trainer-store';
-import type { AttackProfile, SurvivorMove } from '../core/survivor-moves';
+import type { SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { DecodedGif } from '../core/gif';
@@ -104,15 +104,6 @@ const RARITY_BALL_IMAGE: Record<SurvivorUpgradeRarity, string> = {
   ancestral: assetUrl('assets/survivor/balls/master-ball.png'),
 };
 
-/** O golpe de uma espécie na Torre: elemento pelo 1º tipo, forma e números pelos stats reais (`core/survivor-moves.ts`). */
-function attackOf(dexId: number, picked?: PokemonType): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove } {
-  const stats = statsOfDex(dexId);
-  const types = typesOfDex(dexId);
-  const ordered = picked ? [picked, ...types.filter((t) => t !== picked)] : types;
-  const move = moveFor(ordered, stats);
-  const secondType = types.find((type) => type !== picked && type !== move.type);
-  return { move, profile: attackProfile(move, stats), types, ...(secondType ? { secondMove: moveFor([secondType], stats) } : {}) };
-}
 const moveLine = (m: SurvivorMove): string => `${m.icon} ${m.name} · ${MOVE_CATEGORY_LABELS_PT[m.category]}`;
 /** Uma frase de uso prático antes da corrida, sem esconder os números e efeitos reais do golpe. */
 const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
@@ -1926,7 +1917,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
     ),
   );
   return chosen.map(({ id, dexId, name, origin, shiny, accessory }, i) => {
-    const { move, profile, types } = attackOf(dexId);
+    const { move, profile, types } = survivorAttackOf(dexId);
     return { id, dexId, name, origin, types, move, bars: profileBars(move, profile), thumb: thumbs[i] ?? null, shiny, accessory, digital: chosen[i]?.digital === true };
   });
 }
@@ -1979,7 +1970,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     pendingUpgrade.value = null;
     clearTrainerPresentation();
     paused.value = false;
-    const { move, profile, secondMove } = attackOf(dexId, picked);
+    const { move, profile, secondMove } = survivorAttackOf(dexId, picked);
     runSeenDex.clear();
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
     state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast });

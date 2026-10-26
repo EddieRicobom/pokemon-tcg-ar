@@ -4,7 +4,7 @@ Esta revisão identifica pontos para dividir o trabalho sem alterar o comportame
 
 ## Prioridades
 
-1. **Dados e navegação.** Manter importação de backup transacional, preservar compatibilidade dos formatos antigos e testar entradas inválidas; links malformados e falhas de atualização devem mostrar recuperação em vez de impedir a abertura do app.
+1. **Dados e navegação.** Manter a validação antes da importação, a tentativa de recuperação em caso de falha e a compatibilidade dos formatos antigos; testar entradas inválidas. A recuperação é de melhor esforço e também pode falhar; links malformados e falhas de atualização devem mostrar recuperação em vez de impedir a abertura do app.
 2. **Vila, história e Torre.** `VillageView.vue` e `MinigameSobrevivencia.vue` concentram interface, estado e vários fluxos. Extrair aos poucos telas e controladores com limites claros, preservando saves e diálogos; `core/village/social.ts` e os dados de histórias também merecem divisão por responsabilidade. Cada extração deve ter testes de comportamento e verificação visual. No build desta revisão, o pacote da Vila teve cerca de 885 kB antes da compressão; avaliar carregamento sob demanda ao separar os fluxos.
 3. **Reconhecimento e AR.** Manter separado o processamento puro da câmera e do WebGL. Validar câmera, desempenho, temperatura, gestos e qualidade do reconhecimento em aparelho real conforme [TESTE_NO_CELULAR.md](TESTE_NO_CELULAR.md); a câmera falsa não demonstra essas condições.
 4. **Documentação.** Registrar o que foi realmente testado em cada entrega e manter o plano de funcionalidades alinhado ao código. O histórico não deve ser reescrito como se validações antigas tivessem ocorrido.
@@ -22,7 +22,7 @@ As mudanças desta rodada tratam entradas inválidas em rotas e backups e impede
 | Caixa, batalhas e Pins | `src/box/`, `src/core/battle.ts`, `src/core/pins.ts`, `src/views/CaixaView.vue`, `src/views/PinsView.vue` | Caixa em AR, batalha de exibição, Arena e Pins têm regras, efeitos e controles próprios. A batalha da Caixa não deve ser apresentada como RPG jogável. |
 | Treinador e progresso | `src/core/trainer.ts`, `src/app/trainer-store.ts`, `src/views/TreinadorView.vue` | XP, missões, conquistas, Liga e opções locais têm relações com outras atividades. |
 | Vila | `src/core/village/`, `src/village/`, `src/components/VillageView.vue`, `src/app/village-store.ts` | Mapa, moradores, construção, agricultura, amizades, narrativas e jogos; o save tem normalização, migração e cópia de recuperação. |
-| Torre e Bonk | `src/core/survivor*.ts`, `src/village/survivor*.ts`, `src/components/MinigameSobrevivencia.vue` | Corridas, chefes, melhorias, suporte, evolução, defesa, arte e modo Bonk; motor puro e apresentação têm responsabilidades diferentes. |
+| Torre e Bonk | `src/core/survivor*.ts`, `src/village/survivor*.ts`, `src/components/MinigameSobrevivencia.vue` | Corridas, chefes, melhorias, suporte, evolução, defesa, arte e modo Bonk; motor puro e apresentação têm responsabilidades diferentes. `survivor-loadout.ts` reúne a escolha dos golpes e atributos usados pela tela. |
 | Dados e backup | `src/cache/`, `src/app/backup.ts`, stores em `src/app/` | Estado local, cartas, arquivos e formatos antigos; a restauração completa substitui as chaves atuais, enquanto backups antigos sem coleção preservam a coleção local. Validar falhas e compatibilidade antes de alterar esse contrato. |
 | Publicação | `vite.config.ts`, `config/`, `scripts/`, `.github/workflows/` | Base do Pages, PWA, dados estáticos, verificações e deploy pelo GitHub. |
 
@@ -36,3 +36,5 @@ As mudanças desta rodada tratam entradas inválidas em rotas e backups e impede
 ### Cuidados para próximas extrações
 
 Mover uma responsabilidade com seus tipos e manter as exportações usadas por outros módulos; comparar dados e textos antes e depois; preservar chaves de armazenamento, caminhos de assets, créditos e compatibilidade dos saves. Arquivo grande, roteiro antigo ou código de migração não são evidência de que algo pode ser apagado. Antes de retirar qualquer trecho, confirmar usos, testes e necessidade de compatibilidade.
+
+Quando o armazenamento de sessão está bloqueado, o app evita recarregar automaticamente em laço após uma atualização; a troca do Service Worker não mostra aviso imediato. Se uma tela não carregar, ela oferece tentativa manual. Melhorar esse aviso requer preservar o uso da câmera e evitar recargas involuntárias.
