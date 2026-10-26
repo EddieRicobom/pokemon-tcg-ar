@@ -2459,9 +2459,10 @@ function pressA(): void {
     return;
   }
   if (!game) return;
-  if (nearbyLegendClues(state.legendary, game.player, legendRegions.value).length) { investigateLegendClue(); return; }
   const today = refreshDay();
   const t = game.target();
+  // Moradores, plantas e prédios têm prioridade; o botão "Investigar pista" cobre quando há um deles perto da pista.
+  if (t.kind === 'nothing' && nearbyLegendClues(state.legendary, game.player, legendRegions.value).length) { investigateLegendClue(); return; }
   if (t.kind === 'mon' && askingMon?.id === t.id) {
     game.faceMe(t.id);
     openQuiz(t.id);

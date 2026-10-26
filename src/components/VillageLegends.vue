@@ -6,8 +6,8 @@ import { investigationPlace, legendStep } from '../core/village/legendary-invest
 const props = defineProps<{ state: LegendaryState; regions: ReadonlySet<string> }>();
 defineEmits<{ replay: [id: string]; travel: [id: string] }>();
 const region = ref('Todas'), filter = ref('Todas');
-/** Só as regiões cuja Liga foi vencida aparecem; as outras ficam fora do menu. */
-const stories = computed(() => LEGEND_STORIES.filter((entry) => props.regions.has(entry.region)));
+/** Só as regiões cuja Liga foi vencida aparecem; encontros já vividos (saves antigos) continuam no Caderno. */
+const stories = computed(() => LEGEND_STORIES.filter((entry) => props.regions.has(entry.region) || !!props.state.seen[entry.id]));
 const regionNames = computed(() => [...new Set(stories.value.map((entry) => entry.region))]);
 const entries = computed(() => stories.value.filter((entry) => (region.value === 'Todas' || entry.region === region.value) && (filter.value === 'Todas' || (filter.value === 'Vividas') === !!props.state.seen[entry.id])));
 const seenCount = computed(() => stories.value.filter((entry) => props.state.seen[entry.id]).length);
