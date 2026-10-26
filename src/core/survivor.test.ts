@@ -61,6 +61,24 @@ function run(seed: number, kindCount = 4) {
 }
 
 describe('stepSurvivor', () => {
+  it('registra o golpe fatal de contato com o chefe e a vida anterior', () => {
+    const state = quiet(run(1));
+    state.player.hp = 20;
+    state.enemies.push({ ...dummy(1, state.player.x, state.player.y), boss: true, grade: 'chefao', dexId: 150, damage: 80 });
+    const events = stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    const end = events.find((event) => event.type === 'gameover');
+    expect(end?.type === 'gameover' && end.summary.finalHit).toEqual({ dexId: 150, boss: true, grade: 'chefao', kind: 'contato', damage: 80, hpBefore: 20 });
+  });
+
+  it('preserva a origem do projétil após o inimigo desaparecer', () => {
+    const state = quiet(run(1));
+    state.player.hp = 10;
+    state.hostileProjectiles.push({ id: 2, x: state.player.x, y: state.player.y, vx: 0, vy: 0, damage: 40, lifeMs: 1000, size: 6, source: { dexId: 150, boss: true, grade: 'chefao' } });
+    const events = stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    const end = events.find((event) => event.type === 'gameover');
+    expect(end?.type === 'gameover' && end.summary.finalHit).toEqual({ dexId: 150, boss: true, grade: 'chefao', kind: 'projétil', damage: 40, hpBefore: 10 });
+  });
+
   it('usa uma arena física três vezes maior em largura e altura', () => {
     expect(ARENA_W).toBe(2880);
     expect(ARENA_H).toBe(1920);

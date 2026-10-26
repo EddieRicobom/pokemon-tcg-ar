@@ -2499,6 +2499,9 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
+            <p v-if="summary.finalHit" class="note" role="status">
+              Golpe final: {{ summary.finalHit.shadowBoss ? 'lendário sombrio' : summary.finalHit.boss || summary.finalHit.grade === 'chefao' ? 'chefão' : summary.finalHit.grade === 'elite' ? 'inimigo de treinador' : 'inimigo' }}{{ summary.finalHit.dexId ? ` (${speciesName(summary.finalHit.dexId) || `Pokémon nº ${summary.finalHit.dexId}`})` : '' }} · {{ summary.finalHit.kind }} · {{ summary.finalHit.damage }} de dano (vida antes: {{ Math.ceil(summary.finalHit.hpBefore) }}).
+            </p>
             <p v-if="summary.fast" class="survivor-cleared" role="status">⚡ Ritmo acelerado: relógio 2× e orbes com 1,75× XP.</p>
             <p v-if="objectives.length" class="survivor-objectives-summary" role="status">
               Objetivos opcionais: {{ objectives.filter((objective) => objective.complete).length }}/{{ objectives.length }} concluídos.
