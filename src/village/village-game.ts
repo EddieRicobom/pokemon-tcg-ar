@@ -9,6 +9,7 @@ import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { trainerAtlasFrame, type TrainerAtlas } from './trainer-atlas';
+import { emptyInstructorShift, stepInstructorShift } from '../core/village/instructor';
 import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance, syncFollowerSpeed, WALK_SPEED } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
@@ -133,6 +134,7 @@ export class VillageGame {
   private mailCarrierId: string | null = null;
   private cafeWaiterId: string | null = null;
   private instructorId: string | null = null;
+  private instructorShift = emptyInstructorShift();
   private cafeService: CafeService | null = null;
   private readonly serviceBreaks = new Map<string, number>();
   private readonly roamSchedule = new Map<string, { until: number; index: number }>();
@@ -352,9 +354,16 @@ export class VillageGame {
     for (const carrier of this.mailRoutes.keys()) if (carrier !== this.mailCarrierId) this.mailRoutes.delete(carrier);
   }
 
-  /** Instrutor do Dojô da Torre: só o símbolo sobre a cabeça (o morador segue a rotina normal). */
+  /** Instrutor do Dojô da Torre: o símbolo sobre a cabeça e a rotina de treinar na porta da Torre de Sobrevivência. */
   setInstructor(id: string | null): void {
+    if (id !== this.instructorId) this.instructorShift = emptyInstructorShift();
     this.instructorId = id && this.villagers.has(id) ? id : null;
+  }
+
+  /** Onde o Instrutor treina: a porta da Torre de Sobrevivência, assim que o prédio estiver liberado. */
+  private trainingSpot(): { x: number; y: number } | null {
+    const tower = this.map.buildings.find((b) => b.kind === 'torre');
+    return tower && this.townLevel >= tower.unlock ? tower.door : null;
   }
 
   setCafeWaiter(id: string | null): void {
@@ -1102,6 +1111,14 @@ export class VillageGame {
         const result = cafe.stepWaiter(w, dt, now, this.map, this.residentBlocked(id), this.rng, this.localDay());
         if (result.served) { this.bubble(id, '☕', 2000); this.bubble(result.served, '🍰', 2500); this.onResidentEconomyChange?.(); }
         if (result.handled) { benchVisits.release(id, now); continue; }
+      }
+      if (this.instructorId === id && serviceAllowed && !mailRoute) {
+        const spot = this.trainingSpot();
+        const arrived = !!spot && !moving(w) && Math.abs(spot.x - w.x) + Math.abs(spot.y - w.y) <= 1;
+        const step = stepInstructorShift(this.instructorShift, now, spot !== null, arrived);
+        if (step.bubble) this.bubble(id, step.bubble, 1_800);
+        if (step.action === 'walk' && spot) { benchVisits.release(id, now); stepVillager(w, dt, this.map, this.residentBlocked(id), this.rng, spot); continue; }
+        if (step.action === 'train') { benchVisits.release(id, now); continue; }
       }
       if (mailRoute && serviceAllowed) {
         const targetId = mailRoute.targets[mailRoute.index];

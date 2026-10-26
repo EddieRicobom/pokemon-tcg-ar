@@ -251,4 +251,4 @@ export const PURE_LOADOUT: TowerLoadout;
 - **Marmita** devolve-se à mochila se a corrida durar menos de 20 s. Se o app fechar no meio da corrida, ela continua reservada e só é gasta quando uma corrida terminar.
 - **BONK**: usa o mesmo `createSurvivorState`; Dojô, sorte, marmita e banimento valem nos dois modos.
 - **Recordes**: `torre.bestPureMs` guarda o melhor tempo sem nada da Vila; saves antigos herdam o `bestMs`, porque tudo era puro antes.
-- **Ainda não feito**: o Instrutor só tem o símbolo 🥋 (não caminha até o Dojô), a arte das peças e do Dojô não foi vista em aparelho real, e o teste de orçamento de 15% por simulação não foi escrito.
+- **Ainda não feito**: o Dojô ainda não é um prédio desenhado (o Instrutor treina na porta da Torre de Sobrevivência: 20 s de treino a cada 75 s de rotina comum), a arte das peças e do Dojô não foi vista em aparelho real, e o teste de orçamento de 15% por simulação não foi escrito.
