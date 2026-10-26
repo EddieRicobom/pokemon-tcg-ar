@@ -14,9 +14,11 @@ import { recordSightings } from '../app/pokedex-store';
 import { seededRng } from '../core/battle';
 import {
   advanceRound, afterShot, affordable, aliveOf, arenaLimit, PIN_KO_COINS, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE, MAX_PULL,
-  nextLimit, outcomeOf, pinCoinReward, pinFromSpec, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
+  nextLimit, outcomeOf, pinCoinReward, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
 } from '../core/pins';
 import { randomOpponents } from '../core/pin-opponents';
+import { pinRowInfo, pinSpecOf } from '../core/pin-card-info';
+import type { PinCardInfo } from '../core/pin-card-info';
 import { planEnemyShot } from '../core/pin-ai';
 import { MARK_HINT_PT, TYPE_FOR_TERRAIN } from '../core/pin-terrain';
 import { ELEMENTAL_BURST_PROFILES, elementalBurstFrame } from '../core/pin-visual-effects';
@@ -32,7 +34,6 @@ import { TERRAIN_KINDS, TERRAIN_LABELS_PT } from '../core/terrain';
 import type { TerrainKind } from '../core/terrain';
 import type { Difficulty, PinEvent, PinSpec, PinWorld, Shot } from '../core/pins';
 import { energyLabelPt, TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
-import type { CardBattleInfo, PokemonProfile, PokemonType } from '../core/pokemon-data';
 import { artSize, paintArena, paintArenaLines, paintBumpers, UNITS_PER_PIXEL } from '../pins/arena-art';
 import { ArenaTerrainArt } from '../pins/terrain-paint';
 import type { CachedCard } from '../cache/types';
@@ -44,7 +45,6 @@ import { applyWorld, buildPvpWorld, prefixSpecs, PVP_MAX_PINS, shotFromWire, sho
 import type { Frame, WireMessage, WireSpec, WireWorld } from '../pvp/wire';
 
 type Phase = 'setup' | 'loading' | 'aim' | 'rolling' | 'enemy' | 'over';
-interface Info { state: 'loading' | 'ok'; profile: PokemonProfile | null; card: CardBattleInfo | null }
 interface TrayMove { index: number; name: string; label: string; hint: string; remaining: number; energy: string[] }
 interface TrayPin { id: string; name: string; cost: number; thumb: string; selected: boolean; affordable: boolean; moves: TrayMove[]; estimated: boolean }
 interface Popup { text: string; x: number; y: number; age: number; color: string }
@@ -69,7 +69,7 @@ const roomNotice = ref('');
 let pendingSettled: { world: WireWorld; at: number } | null = null;
 const cards = ref<CachedCard[]>([]);
 const thumbs = ref<Record<string, string>>({});
-const infos = ref<Record<string, Info>>({});
+const infos = ref<Record<string, PinCardInfo>>({});
 const setup = ref<PinsSetup>({ mine: [], enemy: [], difficulty: 'normal', marks: true, shrink: true, sound: true, haptics: true, effects: true });
 /** Rodada em andamento (1, 2, …) e o aviso de que a borda vai avançar no fim dela. */
 const roundNo = ref(1);
@@ -179,37 +179,8 @@ const shown = computed(() => {
 const enemyPool = computed(() => cards.value.filter((c) => c.dexIds.length > 0 && c.sprite.state !== 'unavailable'));
 const blocker = computed(() => setup.value.mine.length === 0 ? 'Escolha pelo menos 1 pin seu.' : randomEnemy.value ? null : setupBlocker(setup.value));
 
-function specOf(card: CachedCard): PinSpec {
-  const info = infos.value[card.id];
-  const cardTypes = (info?.card?.types ?? []).map((t) => energyTypeOf(t)).filter((t): t is PokemonType => t !== null);
-  return {
-    id: card.id,
-    name: card.name,
-    types: info?.profile?.types.length ? info.profile.types : cardTypes,
-    stats: info?.profile?.stats ?? null,
-    weightKg: info?.profile?.weightKg ?? null,
-    attacks: info?.card?.attacks,
-  };
-}
-
-function energyTypeOf(name: string): PokemonType | null {
-  const lower = name.toLowerCase();
-  const map: Record<string, PokemonType> = { lightning: 'electric', darkness: 'dark', metal: 'steel' };
-  const type = map[lower] ?? lower;
-  return (Object.keys(TYPE_LABELS_PT) as PokemonType[]).find((t) => t === type) ?? null;
-}
-
-function rowInfo(card: CachedCard): { cost: number | null; types: PokemonType[]; moves: number; note: string } {
-  const info = infos.value[card.id];
-  if (!info || info.state === 'loading') return { cost: null, types: [], moves: 0, note: 'carregando…' };
-  const pin = pinFromSpec(specOf(card), 0);
-  return {
-    cost: pin.cost,
-    types: pin.types,
-    moves: pin.moves.length,
-    note: pin.estimated ? 'sem todos os dados (valores neutros)' : '',
-  };
-}
+function specOf(card: CachedCard): PinSpec { return pinSpecOf(card, infos.value[card.id]); }
+function rowInfo(card: CachedCard) { return pinRowInfo(card, infos.value[card.id]); }
 
 async function loadInfo(card: CachedCard): Promise<void> {
   if (infos.value[card.id]?.state === 'ok') return;

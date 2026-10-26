@@ -1566,6 +1566,29 @@ button.link {
   font: inherit;
 }
 
+.card-tech { margin-top: 2px; }
+.card-tech > summary { min-height: 32px; display: flex; align-items: center; cursor: pointer; font-size: 0.78rem; color: var(--muted); }
+.card-tech small { display: block; }
+
+.manual-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 64px;
+  padding: 6px 10px;
+  text-align: left;
+}
+.manual-result > .card-artwork,
+.manual-result > .thumb-missing {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 62px;
+}
+.manual-result > .card-artwork .card-artwork-fallback { padding: 2px; font-size: 0.55rem; line-height: 1.15; }
+.manual-result-text { display: grid; gap: 2px; min-width: 0; }
+.manual-result-text small { color: var(--muted); }
+
 .card-grid {
   list-style: none;
   margin: 12px 0 0;
@@ -1598,6 +1621,37 @@ button.link {
 .grid-card.picked {
   border-color: var(--gold);
   box-shadow: 0 0 0 2px var(--gold) inset;
+}
+
+/* Grade: a carta abre os detalhes; adicionar à Vila é o botão do canto (alvo de toque de 44px). */
+.grid-cell { display: flex; flex-direction: column; gap: 6px; height: 100%; }
+.grid-cell > .grid-card { flex: 1 1 auto; }
+.grid-team {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.grid-team.active {
+  background: var(--gold);
+  color: #1b1b1b;
+  border-color: var(--gold);
+}
+.card-grid > li.grid-open { grid-column: 1 / -1; }
+.card-grid > li.grid-open > .grid-cell { width: min(100%, 160px); height: auto; margin: 0 auto; }
+.card-grid > li.grid-open .grid-card { height: auto; }
+.grid-details {
+  margin-top: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 0.85rem;
 }
 
 .filter-bar input[type='text'],
@@ -5596,6 +5650,12 @@ body.no-scroll .reward-toasts {
   flex-wrap: wrap;
 }
 
+.village-sheet .village-sheet-header { display: flex; gap: 8px; align-items: center; }
+.village-sheet-header strong { flex: 1; min-width: 0; }
+.village-sheet-header .village-sheet-close, .village-sheet-header .village-sheet-back { min-width: 44px; min-height: 44px; }
+.village-sheet-header .village-sheet-close { border-radius: 50%; border: 1px solid var(--line); background: transparent; color: inherit; }
+.village-sheet-header .village-sheet-actions { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
 .village-sheet .chips {
   flex-wrap: wrap;
 }
@@ -6506,6 +6566,7 @@ body.no-scroll .reward-toasts {
   position: absolute;
   /* Reserva a coluna direita para mapa e ações, sem cobrir os indicadores de combate. */
   inset: calc(8px + env(safe-area-inset-top)) 144px auto 8px;
+  max-height: calc(100% - 150px - env(safe-area-inset-top));
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -6627,6 +6688,7 @@ body.no-scroll .reward-toasts {
   text-align: center;
   white-space: nowrap;
 }
+.survivor-action-dock .survivor-menu-btn { min-width: 76px; font-weight: 800; }
 .survivor-action-dock .survivor-icon-btn {
   display: grid;
   width: 32px;
@@ -6637,6 +6699,26 @@ body.no-scroll .reward-toasts {
   font-size: 1rem;
   line-height: 1;
 }
+/* Painel único do menu (☰): pausa, informações e opções numa só caixa, no fluxo do HUD.
+   Fica abaixo da linha de chips, então nada cobre o botão que o fecha. */
+.survivor-info-panel {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(10, 14, 24, 0.86);
+  color: rgba(255, 255, 255, 0.9);
+  pointer-events: auto;
+}
+.survivor-info-actions, .survivor-info-section { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.survivor-info-section > strong { flex: 0 0 100%; font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; color: #dcecff; }
+.survivor-info-panel .chip { min-height: 30px; padding: 4px 9px; font-size: .66rem; font-weight: 600; white-space: normal; text-align: left; color: #fff; background: rgba(12, 18, 32, 0.86); border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 999px; }
+.survivor-info-panel .survivor-info-actions .chip { flex: 1 1 0; text-align: center; font-weight: 800; }
 .survivor-artifact-chip { border-color: #ffb35c !important; color: #ffe4a8 !important; }
 .survivor-support-count { border-color: rgba(167, 216, 255, 0.55) !important; }
 .survivor-run-stats { font-variant-numeric: tabular-nums; }
@@ -6711,13 +6793,23 @@ body.no-scroll .reward-toasts {
   white-space: nowrap;
 }
 
+/* Botões Pular e Especial: tamanho (`--sv-s`) e arranjo (`btn-lado`, `btn-pilha`, `btn-troca`) vêm das preferências do jogador. */
+.survivor-stage {
+  --sv-s: 1;
+  --sv-sp: 88px;
+  --sv-ju: 82px;
+  --sv-edge: 14px;
+  --sv-gap: 10px;
+  --sv-sp-b: 16px;
+  --sv-ju-b: 22px;
+}
 .survivor-special-button {
   position: absolute;
-  right: calc(14px + env(safe-area-inset-right));
-  bottom: calc(16px + env(safe-area-inset-bottom));
+  right: calc(var(--sv-edge) + env(safe-area-inset-right));
+  bottom: calc(var(--sv-sp-b) + env(safe-area-inset-bottom));
   z-index: 4;
-  width: 88px;
-  height: 88px;
+  width: calc(var(--sv-sp) * var(--sv-s));
+  height: calc(var(--sv-sp) * var(--sv-s));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6739,11 +6831,11 @@ body.no-scroll .reward-toasts {
 .survivor-special-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
 .survivor-jump-button {
   position: absolute;
-  right: calc(112px + env(safe-area-inset-right));
-  bottom: calc(22px + env(safe-area-inset-bottom));
+  right: calc(var(--sv-edge) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + env(safe-area-inset-right));
+  bottom: calc(var(--sv-ju-b) + env(safe-area-inset-bottom));
   z-index: 4;
-  width: 82px;
-  height: 82px;
+  width: calc(var(--sv-ju) * var(--sv-s));
+  height: calc(var(--sv-ju) * var(--sv-s));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6782,12 +6874,37 @@ body.no-scroll .reward-toasts {
 .survivor-jump-button .jump-pips i { width: 7px; height: 7px; border-radius: 50%; background: rgba(60, 25, 5, .55); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .4); }
 .survivor-jump-button .jump-pips i.on { background: #fff; box-shadow: 0 0 5px rgba(255, 255, 255, .7); }
 .survivor-jump-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+/* Empilhados: o Pular sobe para cima do Especial, os dois junto da borda. */
+.survivor-stage.btn-pilha .survivor-jump-button {
+  right: calc(var(--sv-edge) + env(safe-area-inset-right));
+  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) + var(--sv-gap) + env(safe-area-inset-bottom));
+}
+/* Trocados: o Pular fica no canto e o Especial ao lado dele. */
+.survivor-stage.btn-troca .survivor-jump-button {
+  right: calc(var(--sv-edge) + env(safe-area-inset-right));
+  bottom: calc(var(--sv-sp-b) + env(safe-area-inset-bottom));
+}
+.survivor-stage.btn-troca .survivor-special-button {
+  right: calc(var(--sv-edge) + var(--sv-ju) * var(--sv-s) + var(--sv-gap) + env(safe-area-inset-right));
+  bottom: calc(var(--sv-ju-b) + env(safe-area-inset-bottom));
+}
+/* Ajuda e botões na pausa. */
+.survivor-help { margin: 8px 0; text-align: left; }
+.survivor-help ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: .8rem; line-height: 1.3; }
+.survivor-button-prefs { display: grid; gap: 6px; margin: 8px 0; text-align: left; }
+.survivor-button-prefs small { color: var(--muted); font-size: .72rem; }
+.survivor-more { margin-top: 12px; text-align: left; }
+.survivor-more > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 700; }
+.survivor-more > summary::before { content: '▸'; margin-right: 6px; }
+.survivor-more[open] > summary::before { content: '▾'; }
+.survivor-more > summary small { margin-left: 4px; font-weight: 500; color: var(--muted); }
 @media (orientation: landscape) and (max-height: 540px) {
   /* Em paisagem, a arena ganha o centro. Indicadores ficam em duas colunas curtas,
      deixando livres o meio da cena e os cantos de toque. */
   .survivor-hud {
     inset: calc(6px + env(safe-area-inset-top)) auto auto calc(8px + env(safe-area-inset-left));
     width: min(42vw, 390px);
+    max-height: calc(100% - 16px - env(safe-area-inset-top));
     gap: 4px;
   }
   .survivor-hp { height: 20px; }
@@ -6800,10 +6917,7 @@ body.no-scroll .reward-toasts {
 
   .survivor-minimap { top: calc(6px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); width: 116px; height: 74px; }
   .survivor-danger-meter { top: calc(86px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); width: 116px; }
-  .survivor-objectives { top: calc(108px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); bottom: auto; width: 116px; max-height: 86px; overflow: hidden; font-size: .53rem; }
-  .survivor-supports { top: calc(92px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left)); width: min(32vw, 230px); max-height: calc(100% - 112px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); font-size: .56rem; }
-  .survivor-special-button { right: calc(12px + env(safe-area-inset-right)); bottom: calc(10px + env(safe-area-inset-bottom)); width: 74px; height: 74px; }
-  .survivor-jump-button { right: calc(96px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); width: 70px; height: 70px; }
+  .survivor-stage { --sv-sp: 74px; --sv-ju: 70px; --sv-edge: 12px; --sv-gap: 10px; --sv-sp-b: 10px; --sv-ju-b: 12px; }
   .survivor-jump-button .jump-icon { width: 22px; height: 22px; }
   .survivor-move-hint.is-bonk { top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 36vw; }
   .survivor-special-button .special-icon { font-size: 23px; }
@@ -6916,22 +7030,14 @@ body.no-scroll .reward-toasts {
 }
 
 .survivor-objectives {
-  position: absolute;
-  z-index: 2;
-  right: 10px;
-  top: auto;
-  bottom: calc(230px + env(safe-area-inset-bottom));
-  width: 142px;
-  padding: 6px 7px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  background: rgba(10, 14, 24, 0.6);
-  color: rgba(255, 255, 255, 0.86);
-  font-size: 0.58rem;
-  pointer-events: none;
+  display: grid;
+  gap: 3px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.66rem;
 }
 
-.survivor-objectives-title { display: block; margin-bottom: 3px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.survivor-objectives-title { display: block; margin-bottom: 1px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
 
 .survivor-ledger { margin: 10px 0; border: 1px solid rgb(255 255 255 / 15%); border-radius: 10px; padding: 8px 10px; background: rgb(0 0 0 / 12%); }
 .survivor-ledger summary { cursor: pointer; font-weight: 750; }
@@ -6948,24 +7054,13 @@ body.no-scroll .reward-toasts {
 /* Informações dos apoios só aparecem no menu de detalhes (☰), para a corrida
    manter a arena legível tanto em retrato quanto em paisagem. */
 .survivor-supports {
-  position: absolute;
-  z-index: 2;
-  left: 10px;
-  top: 112px;
-  width: min(188px, calc(100% - 20px));
-  max-height: 172px;
   display: grid;
   gap: 4px;
-  padding: 7px 8px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 1px solid rgba(167, 216, 255, 0.38);
-  border-radius: 8px;
-  background: rgba(10, 14, 24, 0.72);
+  padding-top: 6px;
+  border-top: 1px solid rgba(167, 216, 255, 0.3);
   color: rgba(255, 255, 255, 0.9);
-  font-size: .62rem;
+  font-size: .66rem;
   line-height: 1.2;
-  pointer-events: auto;
 }
 .survivor-supports > strong { color: #dcecff; font-size: .68rem; }
 .survivor-supports > small { color: rgba(255, 255, 255, 0.64); }
@@ -7025,6 +7120,11 @@ body.no-scroll .reward-toasts {
 .survivor-pause {
   width: 100%;
   max-width: 300px;
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   text-align: center;
 }
 
@@ -8285,10 +8385,10 @@ body.no-scroll .reward-toasts {
 .survivor-xp-bar { height: 10px; border: 2px solid #555b58; border-radius: 2px; background: #303c3d; box-shadow: none; }
 .survivor-xp-fill { background: #62c4df; border-radius: 0; box-shadow: none; }
 .survivor-xp-bar span { font-size: .5rem; line-height: 10px; }
-.survivor-stats .chip, .survivor-stats .survivor-move-chip, .survivor-action-dock .chip {
+.survivor-stats .chip, .survivor-stats .survivor-move-chip, .survivor-action-dock .chip, .survivor-info-panel .chip {
   border: 2px solid #555b58; border-radius: 4px; background: #f5f3dc; color: #252d30; box-shadow: 2px 2px 0 #303839;
 }
-.survivor-stats .survivor-move-chip { box-shadow: inset 3px 0 var(--move, #555b58), 2px 2px 0 #303839; }
+.survivor-stats .survivor-move-chip, .survivor-info-panel .survivor-move-chip { box-shadow: inset 3px 0 var(--move, #555b58), 2px 2px 0 #303839; }
 .survivor-stats .survivor-artifact-chip, .survivor-stats .survivor-bonk-chip { color: #252d30 !important; background: #f5f3dc !important; }
 .survivor-minimap { border: 3px solid #555b58; border-radius: 4px; background: rgba(235, 237, 213, .9); box-shadow: 3px 3px 0 #303839; }
 .survivor-minimap-title { color: #252d30; }

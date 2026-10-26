@@ -12,12 +12,12 @@ export interface Route {
  * Rotas antigas que viraram outras (o endereço é trocado ao abrir, para links e atalhos guardados continuarem valendo):
  * `#/carregar` era «Minhas cartas» como modo do Escanear; hoje é a primeira sub-aba de Cartas (`#/cartas`).
  */
-const OLD_ROUTES: Record<string, RouteName> = { carregar: 'cartas' };
+const OLD_ROUTES: ReadonlyMap<string, RouteName> = new Map([['carregar', 'cartas']]);
 
 /** Endereço novo de um endereço antigo (mantém os sinalizadores depois do `?`), ou null se o endereço já é atual. */
 export function redirectFor(hash: string): string | null {
   const [path = '', query] = hash.replace(/^#\/?/, '').split('?');
-  const target = OLD_ROUTES[path.split('/')[0] ?? ''];
+  const target = OLD_ROUTES.get(path.split('/')[0] ?? '');
   if (!target) return null;
   return query ? `${routeHref(target)}?${query}` : routeHref(target);
 }
@@ -34,12 +34,14 @@ export function parseRoute(hash: string): Route {
   if (first === 'caixa') return { name: 'caixa' };
   if (first === 'arena') return { name: 'arena' };
   if (first === 'pins') return { name: 'pins' };
-  const old = OLD_ROUTES[first ?? ''];
+  const old = OLD_ROUTES.get(first ?? '');
   if (old) return { name: old };
   if (first === 'treinador') return { name: 'treinador' };
   if (first === 'diagnostico') return { name: 'diagnostico' };
   const id = rest.join('/');
-  return id ? { name: 'escanear', cardId: decodeURIComponent(id) } : { name: 'escanear' };
+  if (!id) return { name: 'escanear' };
+  try { return { name: 'escanear', cardId: decodeURIComponent(id) }; }
+  catch { return { name: 'escanear' }; }
 }
 
 /**
@@ -47,9 +49,26 @@ export function parseRoute(hash: string): Route {
  * `vila` = «veio da Vila» (a tela mostra «Voltar à Vila»), `pvp` = abrir o PvP da Caixa, `batalha` = veio do
  * Fliperama para uma batalha na câmera, `formatacao`/`restauracao` levam o modo contínuo escolhido da Arena até a Caixa
  * `jogos` = o Treinador abre nos minigames e `virtual` = a Caixa abre na Arena 3D (palco virtual, sem câmera).
+ * `torre`, `bonk` e `coliseu` são atalhos de jogo: a Vila abre e já entra na Torre (Survival), na Torre em modo BONK ou
+ * no Coliseu (Arena), sem andar até o prédio.
  */
-export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual';
-const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual'];
+export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual' | GameShortcut;
+const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual', 'torre', 'bonk', 'coliseu'];
+
+/** Jogos que a Vila abre direto pelo endereço. */
+export type GameShortcut = 'torre' | 'bonk' | 'coliseu';
+const GAME_SHORTCUTS: readonly GameShortcut[] = ['torre', 'bonk', 'coliseu'];
+
+/** Endereço que abre a Vila já dentro do jogo. */
+export function gameHref(game: GameShortcut): string {
+  return routeHref('vila', undefined, [game]);
+}
+
+/** O atalho de jogo pedido pelo endereço, se houver (só o primeiro vale). */
+export function gameShortcutOf(hash: string): GameShortcut | null {
+  const flags = routeFlags(hash);
+  return GAME_SHORTCUTS.find((game) => flags.has(game)) ?? null;
+}
 
 export function routeFlags(hash: string): Set<RouteFlag> {
   const query = hash.split('?')[1] ?? '';

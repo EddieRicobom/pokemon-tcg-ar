@@ -1255,14 +1255,14 @@ describe('treinadores e chefão final', () => {
     expect(s.bossesBeaten).toBeGreaterThanOrEqual(1);
   });
 
-  it('modo infinito começa mais difícil (escala 1,25) e cresce a cada minuto', () => {
+  it('modo infinito começa mais difícil (escala 1,15) e cresce a cada minuto', () => {
     const s = createSurvivorState(7, { kindCount: 2, infinite: true });
     s.special.phase = 'ready';
     expect(s.infinite).toBe(true);
-    expect(s.infiniteScale).toBeCloseTo(1.25, 3);
+    expect(s.infiniteScale).toBeCloseTo(1.15, 3);
     s.elapsedMs = 10 * 60_000;
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(s.infiniteScale).toBeGreaterThan(2);
+    expect(s.infiniteScale).toBeCloseTo(1.75, 3);
   });
 
   it('Ritmo acelerado encurta a corrida e acelera junto o spawn e a densidade', () => {

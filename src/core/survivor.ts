@@ -60,7 +60,7 @@ export const FAST_XP_MULTIPLIER = 1.75;
 /** Depois do chefão final (modo infinito), outro chefão (6 Pokémon) a cada tanto. */
 export const INFINITE_BOSS_EVERY_MS = 300_000;
 /** Cada minuto no infinito dá +`INFINITE_SCALE_PER_MIN` ao HP e ao dano de todos os inimigos novos. */
-export const INFINITE_SCALE_PER_MIN = 0.15;
+export const INFINITE_SCALE_PER_MIN = 0.06;
 
 /** Golpe padrão do motor (testes e simulação): um projétil simples, sem efeito. A Torre sempre passa o golpe do tipo. */
 export const BASIC_MOVE: SurvivorMove = { type: 'normal', name: 'Golpe', category: 'projetil', effect: 'nenhum', color: '#fffbe0', icon: '✦' };
@@ -76,7 +76,7 @@ export const BALANCE = {
   xpOrbMultiplier: 0.65,
   /** Chefes periódicos: ameaças raras, mas com vida suficiente para exigir reposicionamento e coleta sob pressão. */
   bossHpBase: 220,
-  bossHpPerWave: 70,
+  bossHpPerWave: 55,
   bossSpeed: 72,
   bossDamageBase: 15,
   bossDamagePerWave: 1.5,
@@ -86,9 +86,9 @@ export const BALANCE = {
   shadowBossSpeed: 88,
   enemyHpBase: 16,
   /** Vida extra a cada `enemyHpEverySec` segundos; a simulação agora usa os golpes reais das espécies. */
-  enemyHpStep: 3,
+  enemyHpStep: 2,
   enemyHpEverySec: 30,
-  enemyHpPerWave: 3,
+  enemyHpPerWave: 2,
   enemyDamageBase: 6,
   enemyDamageStep: 1,
   enemyDamageEverySec: 40,
@@ -322,7 +322,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     infinite: options.infinite === true,
     fast,
     bonk: options.bonk === true,
-    infiniteScale: options.infinite === true ? 1.25 : 1,
+    infiniteScale: options.infinite === true ? 1.15 : 1,
     pendingUpgrade: null,
     upgradesOwed: 0,
     bansLeft: loadout.bans,
@@ -1569,7 +1569,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   // Treinadores (minuto 5, 10, 15, …): 3 Pokémon elite juntos. O chefão final (minuto 20) tem 6 Pokémon.
   // No modo infinito, depois do chefão final, cai outro chefão de 6 a cada `INFINITE_BOSS_EVERY_MS`.
-  if (state.infinite) state.infiniteScale = 1.25 + (state.elapsedMs / 60_000) * INFINITE_SCALE_PER_MIN;
+  if (state.infinite) state.infiniteScale = 1.15 + (state.elapsedMs / 60_000) * INFINITE_SCALE_PER_MIN;
   const finalDue = state.finalBossAtMs !== null && state.elapsedMs >= state.finalBossAtMs;
   if (finalDue) {
     state.finalBossAtMs = null;

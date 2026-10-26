@@ -93,6 +93,15 @@ describe('backup — exportar', () => {
 describe('backup — importar', () => {
   beforeEach(() => localStorage.clear());
 
+  it('recusa valores inválidos no backup antes de substituir o progresso', () => {
+    localStorage.setItem('tcg-ar-trainer-v1', '{"xp":500}');
+    const file = buildBackup(localStorage, NOW);
+    const broken = { ...file, data: { ...file.data, 'tcg-ar-trainer-v1': 42 } };
+    expect(parseBackup(JSON.stringify(broken))).toBe('backup-invalido');
+    expect(parseBackup(JSON.stringify({ ...file, data: [] }))).toBe('formato-desconhecido');
+    expect(localStorage.getItem('tcg-ar-trainer-v1')).toBe('{"xp":500}');
+  });
+
   it('restaura sementes depositadas e trabalhos reais da fazenda pelo ZIP', () => {
     const state = loadVillage();
     state.inventory['sem-tomate'] = 3;
@@ -229,12 +238,12 @@ describe('backup — importar', () => {
     expect(parseBackup(JSON.stringify({ format: 'outra-coisa', version: 1, data: {} }))).toBe('formato-desconhecido');
   });
 
-  it('ignora chaves externas e descarta valores não-string pras conhecidas', () => {
+  it('ignora chaves externas e preserva valores válidos', () => {
     const raw = JSON.stringify({
       format: BACKUP_FORMAT,
       version: 1,
       exportedAt: NOW,
-      data: { 'tcg-ar-trainer-v1': 123, 'tcg-ar-perfil-v1': '{"name":"Ash"}', 'chave-que-nao-existe': 'x' },
+      data: { 'tcg-ar-trainer-v1': null, 'tcg-ar-perfil-v1': '{"name":"Ash"}', 'chave-que-nao-existe': 'x' },
     });
     const parsed = parseBackup(raw);
     expect(parsed).not.toBe('json-invalido');

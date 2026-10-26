@@ -10,6 +10,7 @@ import type { ArState } from '../ar/session';
 import type { SpriteLoadState } from '../ar/sprite-loader';
 import { prepareArAssets } from '../app/ar-prepare';
 import { arLoadHint, arLoadingMode, arStageTitle, arStepList, arStatusText, elapsedSeconds } from '../app/ar-stages';
+import CardArtwork from '../components/CardArtwork.vue';
 import CardMarks from '../components/CardMarks.vue';
 import ArLoading from '../components/ArLoading.vue';
 import type { ArStage } from '../app/ar-stages';
@@ -1378,8 +1379,13 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
         <button type="button" class="primary" @click="searchManual()">Buscar</button>
         <p v-if="manualMessage" class="message">{{ manualMessage }}</p>
         <p v-if="manualTotal > 0" class="meta">Mostrando {{ manualResults.length }} de {{ manualTotal }} cartas.</p>
-        <button v-for="match in manualResults" :key="match.id" type="button" @click="pickManual(match.id)">
-          {{ match.name }} · {{ match.setName }} {{ match.localId }}/{{ match.setOfficial }}
+        <button v-for="match in manualResults" :key="match.id" type="button" class="manual-result" @click="pickManual(match.id)">
+          <CardArtwork v-if="match.thumb" :src="match.thumb" :alt="`Carta ${match.name}, ${match.setName}`" />
+          <span v-else class="thumb-missing" aria-hidden="true">sem imagem</span>
+          <span class="manual-result-text">
+            <strong>{{ match.name }}</strong>
+            <small>{{ match.setName }} · {{ match.localId }}/{{ match.setOfficial }}{{ match.release ? ` · ${match.release.slice(0, 4)}` : '' }}</small>
+          </span>
         </button>
         <button v-if="manualResults.length < manualTotal" type="button" class="link" @click="searchManual(true)">
           Mostrar mais ({{ manualTotal - manualResults.length }} restantes)

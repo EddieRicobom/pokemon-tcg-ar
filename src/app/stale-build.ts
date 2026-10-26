@@ -32,13 +32,15 @@ export interface ReloadEnv {
 
 /** Recarrega a página no máximo uma vez por minuto. Devolve true se mandou recarregar. */
 export function reloadOnce(env: ReloadEnv): boolean {
+  if (!env.storage) return false;
   const now = env.now();
   try {
-    const last = Number(env.storage?.getItem(RELOAD_KEY));
+    const last = Number(env.storage.getItem(RELOAD_KEY));
     if (Number.isFinite(last) && last > 0 && now - last < RELOAD_COOLDOWN_MS) return false;
-    env.storage?.setItem(RELOAD_KEY, String(now));
+    env.storage.setItem(RELOAD_KEY, String(now));
   } catch {
-    // Sem armazenamento (modo privado): recarrega mesmo assim; o risco de laço só existe com armazenamento que falha só na leitura.
+    // Sem conseguir guardar a tentativa, não é possível impedir um laço de recarregamentos.
+    return false;
   }
   env.reload();
   return true;

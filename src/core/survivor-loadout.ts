@@ -1,6 +1,11 @@
 import { TRAINING_DEFENSE_CAP, TRAINING_SPEED_CAP } from './survivor-lunch';
 import type { LunchEffect } from './survivor-lunch';
 import type { TowerState } from './village/tower-state';
+import { typesOfDex } from './species-filter';
+import { attackProfile, moveFor } from './survivor-moves';
+import { statsOfDex } from './survivor-stats';
+import type { PokemonType } from './pokemon-data';
+import type { AttackProfile, SurvivorMove } from './survivor-moves';
 
 /**
  * O que a Vila entrega para uma corrida do Survival (clássico e BONK usam o mesmo `createSurvivorState`).
@@ -76,4 +81,14 @@ export function towerLoadout(tower: TowerState, options: TowerLoadoutOptions): T
   };
   loadout.trained = summary.length > 0;
   return loadout;
+}
+
+/** Monta os golpes da Torre a partir dos tipos e atributos reais da espécie. */
+export function survivorAttackOf(dexId: number, picked?: PokemonType): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove } {
+  const stats = statsOfDex(dexId);
+  const types = typesOfDex(dexId);
+  const ordered = picked ? [picked, ...types.filter((t) => t !== picked)] : types;
+  const move = moveFor(ordered, stats);
+  const secondType = types.find((type) => type !== picked && type !== move.type);
+  return { move, profile: attackProfile(move, stats), types, ...(secondType ? { secondMove: moveFor([secondType], stats) } : {}) };
 }

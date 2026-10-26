@@ -28,7 +28,9 @@ import LegendaryCutscene from './LegendaryCutscene.vue';
 import VillageLegends from './VillageLegends.vue';
 import { legendStoryOf } from '../core/village/legendary-stories';
 import type { LegendStory } from '../core/village/legendary-stories';
-import { beginInvestigation, inspectLegendClue, investigationPlace, legendDiaryPage } from '../core/village/legendary-investigation';
+import { inspectLegendClue, investigationPlace, legendDiaryPage, legendStep, nearbyLegendClues, openLegendClues } from '../core/village/legendary-investigation';
+import { isLegendUnlocked, unlockedLegendRegions } from '../core/village/legendary-unlock';
+import { league } from '../app/league-store';
 import type { DecodedGif } from '../core/gif';
 import MinigameHub from './MinigameHub.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
@@ -85,9 +87,9 @@ import { FarmSession } from '../core/village/farm';
 import type { FarmTask } from '../core/village/farm';
 import FarmSeedBox from './FarmSeedBox.vue';
 import VillageWorksites from './VillageWorksites.vue';
+import VillageDojo from './VillageDojo.vue';
 import { WORK_SITES } from '../core/village/town-layout';
 import type { WorksiteId } from '../core/village/town-layout';
-import VillageDojo from './VillageDojo.vue';
 import { GUIDED_DESTINATIONS, guidedWalkArrived, guidedWalkProgress } from '../core/village/guided-walk';
 import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
@@ -243,9 +245,9 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
     title: 'Fazer',
     tiles: [
       { tab: 'trabalhos', icon: '🛠️', label: 'Trabalhos da Vila', hint: 'fazenda, mina, madeira e pesca' },
+      { tab: 'dojo', icon: '🥋', label: 'Dojô da Torre', hint: 'treinos e lições para o Survival' },
       { tab: 'fabricar', icon: '🔨', label: 'Fabricar' },
       { tab: 'cozinha', icon: '🍳', label: 'Cozinha' },
-      { tab: 'dojo', icon: '🥋', label: 'Dojô da Torre', hint: 'treinos e lições para o Survival' },
     ],
   },
   {
@@ -392,8 +394,15 @@ type SurvivalDigitalOption = SpeciesRef & { thumb: string | null };
 const survivalDigitalChoice = ref<{ options: SurvivalDigitalOption[]; total: number; runId: string } | null>(null);
 const survivalDigitalCutscene = ref<{ species: SpeciesRef; spriteUrl: string | null } | null>(null);
 const survivalDigitalBusy = ref(false);
-const legendCluePlace = computed(() => state.legendary.investigation && investigationPlace(state.legendary.investigation.id, state.legendary.investigation.step));
-const legendClueName = computed(() => legendStoryOf(state.legendary.investigation?.id ?? '')?.name);
+const legendRegions = computed(() => unlockedLegendRegions(league.value));
+/** Pista aberta ao alcance do jogador; atualizada pelo relógio da cena porque a posição não é reativa. */
+const legendNearby = ref<ReturnType<typeof nearbyLegendClues>>([]);
+const legendNearbyKey = (list: ReturnType<typeof nearbyLegendClues>) => list.map((clue) => `${clue.story.id}:${clue.step}`).join();
+function refreshLegendNearby(): void {
+  const next = game && !state.legendary.active ? nearbyLegendClues(state.legendary, game.player, legendRegions.value) : [];
+  if (legendNearbyKey(next) !== legendNearbyKey(legendNearby.value)) legendNearby.value = next;
+}
+const legendNearbyLabel = computed(() => legendNearby.value.length === 1 ? legendNearby.value[0]!.story.name : `${legendNearby.value.length} lendários`);
 let legendaryLoadToken = 0;
 const recapScenes = ref<RecapScene[]>([]);
 const recapIndex = ref(0);
@@ -784,7 +793,7 @@ function effects(): LegendaryEffects {
 }
 
 function rollLegendaryToday(): void {
-  const r = rollLegendary(state.legendary, Math.random, day.value, new Date().toISOString());
+  const r = rollLegendary(state.legendary, Math.random, day.value, new Date().toISOString(), (id) => isLegendUnlocked(id, legendRegions.value));
   state.legendary = r.state;
   changed(); // Persiste inclusive a tentativa sem visita: reabrir não dá outro sorteio.
   // Celebi deixa a página especial no Diário (o bônus prometido na cutscene, de verdade).
@@ -824,29 +833,27 @@ function finishLegendaryCutscene(): void {
   legendaryLoadToken++;
   legendaryScene.value = null;
   if (!replay) { state.legendary = dismissActive(state.legendary); changed(); persist(); }
+  // Vários lendários no mesmo ponto: o próximo da fila entra em seguida.
+  if (!replay && state.legendary.active) { showLegendaryCutscene(); return; }
   void nextTick(() => document.querySelector<HTMLButtonElement>('.b-btn')?.focus());
 }
-function startLegendInvestigation(id: string): void {
-  state.legendary = beginInvestigation(state.legendary, id);
-  changed(); persist();
-  travelToLegendClue();
-}
-function travelToLegendClue(): void {
-  const place = legendCluePlace.value;
+function travelToLegendClue(id: string): void {
+  const place = isLegendUnlocked(id, legendRegions.value) && !state.legendary.seen[id] ? investigationPlace(id, legendStep(state.legendary, id)) : null;
   if (!place) return;
   closeVillageSheet();
   game?.walkTo(place.x, place.y);
   minimapRoute.value = `Pista: ${place.name}`;
-  say(`🔎 ${legendClueName.value}: siga até ${place.name} e use Investigar pista ou A.`, 6000);
+  say(`🔎 ${legendStoryOf(id)?.name}: siga até ${place.name} e use Investigar pista ou A.`, 6000);
 }
 function investigateLegendClue(): void {
   if (!game || sheet.value || dialog.value || legendaryScene.value || game.player.t < 1) return;
   minimapRoute.value = '';
-  const result = inspectLegendClue(state.legendary, game.player, new Date().toISOString());
+  const result = inspectLegendClue(state.legendary, game.player, new Date().toISOString(), legendRegions.value);
   state.legendary = result.state;
+  refreshLegendNearby();
   changed(); persist();
   if (result.encounter) {
-    if (state.legendary.active?.id === 'celebi') state.diary = trimMoments([...state.diary, celebiDiaryPage(Date.now(), day.value, villageHour())]);
+    if (result.encounters.includes('celebi')) state.diary = trimMoments([...state.diary, celebiDiaryPage(Date.now(), day.value, villageHour())]);
     showLegendaryCutscene();
   } else say(result.message, 7000);
 }
@@ -1364,13 +1371,6 @@ const stage = computed(() => townStage(level.value));
 let homes = new Map<string, number>();
 
 /** Abre o Correio como uma caixa de entrada: a edição diária e as cartas de momentos ficam juntas no mesmo lugar. */
-function openMail(): void {
-  const generated = generateDailyMail(state, refreshDay(), namesById(), friendLevelOf);
-  if (generated) {
-    changed();
-    say(`📬 ${generated.fromName} deixou uma carta: ${generated.subject}`, 4800);
-  }
-  // Cartas geradas enquanto o jogador estava fora também entram na rota do
 /** A porta do Dojô: abre o painel dos treinos e das reformas e conta o que falta para o Instrutor assumir. */
 function openDojoBuilding(b: Building): void {
   const names = ['Terreno do Dojô', 'Tatame', 'Dojô', 'Dojô de pedra'];
@@ -1386,6 +1386,13 @@ function openDojoBuilding(b: Building): void {
   };
 }
 
+function openMail(): void {
+  const generated = generateDailyMail(state, refreshDay(), namesById(), friendLevelOf);
+  if (generated) {
+    changed();
+    say(`📬 ${generated.fromName} deixou uma carta: ${generated.subject}`, 4800);
+  }
+  // Cartas geradas enquanto o jogador estava fora também entram na rota do
   // carteiro quando o Correio é aberto, sem repetir destinos na mesma visita.
   const pendingTargets = [...new Set(state.mail.inbox.flatMap((mail) => mail.involvedIds))];
   if (pendingTargets.length > 0) game?.deliverMail(pendingTargets);
@@ -1430,13 +1437,6 @@ function speakToResident(id: string): void {
   openFriendDialog(id, text);
 }
 
-function openMailCarrierDialog(id: string): void {
-  const waiting = state.mail.inbox.filter((mail) => !mail.read).length;
-  const lines = [
-    'Estou entregando as cartas!',
-    'Cada envelope tem o nome de quem viveu o momento.',
-    waiting > 0 ? `Ainda tenho ${waiting} carta(s) na bolsa.` : 'A bolsa está leve hoje. Quando houver um momento novo, eu volto.',
-  ];
 /** Cozinha do Café: uma comida da mochila vira a marmita da próxima corrida do Survival/BONK (só uma por vez). */
 function openLunchDialog(title: string): void {
   const current = state.tower.lunchbox;
@@ -1461,12 +1461,20 @@ function openLunchDialog(title: string): void {
   };
 }
 
+function openMailCarrierDialog(id: string): void {
+  const waiting = state.mail.inbox.filter((mail) => !mail.read).length;
+  const lines = [
+    'Estou entregando as cartas!',
+    'Cada envelope tem o nome de quem viveu o momento.',
+    waiting > 0 ? `Ainda tenho ${waiting} carta(s) na bolsa.` : 'A bolsa está leve hoje. Quando houver um momento novo, eu volto.',
+  ];
   dialog.value = {
     id,
     name: `📬 ${nameOf(id)} · Carteiro da Vila`,
     text: lines[(Date.now() / 1000 | 0) % lines.length]!,
     actions: [
       { label: 'Conversar como morador', run: () => speakToResident(id) },
+      { label: '✉️ Ler a carta da sorte', run: () => { const r = readLuckLetter(state, refreshDay()); if (r.ok) changed(); dialog.value = { id, name: `📬 ${nameOf(id)} · Carteiro da Vila`, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] }; } },
       { label: 'Abrir o Correio', run: openMail },
       { label: 'Continuar a entrega', run: () => { game?.deliverMail(state.mail.inbox.filter((mail) => mail.involvedIds.length > 0).flatMap((mail) => mail.involvedIds)); closeDialog(); } },
       { label: 'Sair', run: closeDialog },
@@ -1474,7 +1482,6 @@ function openLunchDialog(title: string): void {
   };
 }
 
-      { label: '✉️ Ler a carta da sorte', run: () => { const r = readLuckLetter(state, refreshDay()); if (r.ok) changed(); dialog.value = { id, name: `📬 ${nameOf(id)} · Carteiro da Vila`, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] }; } },
 function refreshTown(): void {
   homes = assignHomes(mons.value.map((m) => m.id), level.value);
   game?.setTown(level.value, homes);
@@ -1482,18 +1489,18 @@ function refreshTown(): void {
   const staff = chooseServiceResidents(residentIds, state.mailCarrierId, state.cafeWaiterId);
   if (staff.carrier && state.mailCarrierId !== staff.carrier) { state.mailCarrierId = staff.carrier; changed(); }
   if (staff.waiter && state.cafeWaiterId !== staff.waiter) { state.cafeWaiterId = staff.waiter; changed(); }
+  const instructor = chooseInstructor(residentIds, staff.carrier, staff.waiter, state.instructorId);
+  if (instructor && state.instructorId !== instructor) { state.instructorId = instructor; changed(); }
   game?.setMailCarrier(staff.carrier);
   game?.setCafeWaiter(staff.waiter);
+  game?.setInstructor(instructor);
   const initial = personalizeResidentHomes(state, homes);
   const automatic = advanceResidentHomes(state, homes, refreshDay());
   if (automatic.changed) changed();
   const changes = [...initial, ...automatic.events];
   if (changes.length > 0) {
-  const instructor = chooseInstructor(residentIds, staff.carrier, staff.waiter, state.instructorId);
-  if (instructor && state.instructorId !== instructor) { state.instructorId = instructor; changed(); }
     changed();
     const first = changes[0]!;
-  game?.setInstructor(instructor);
     const names = changes.slice(0, 3).map((change) => nameOf(change.residentId)).join(', ');
     const action = first.renovation ? `reformou a casa: ${first.renovation}` : first.restyled ? `escolheu uma fachada ${first.style}` : `decorou a própria casa${first.items.length ? ` com ${first.items.join(', ')}` : ''}`;
     say(`🏠 ${names}: ${action}.`, 5200);
@@ -1819,6 +1826,7 @@ function openBuilding(b: Building): void {
     return;
   }
   if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena' || b.kind === 'torre') return openGameBuilding(b);
+  if (b.kind === 'dojo') return openDojoBuilding(b);
   if (b.kind === 'mail') return openMail();
   if (b.kind === 'cafe') {
     const text = `Cheiro de bolo no ar! Um lanche aqui custa ${CAFE_PRICE} moedas e rende amizade com os Pokémon que estão por perto (uma vez por dia). Você tem ${state.coins}.`;
@@ -1826,7 +1834,6 @@ function openBuilding(b: Building): void {
       name: b.name,
       text,
       actions: [
-  if (b.kind === 'dojo') return openDojoBuilding(b);
         {
           label: `Lanchar (${CAFE_PRICE})`,
           disabled: state.coins < CAFE_PRICE || state.town.cafeDay === day.value,
@@ -1841,6 +1848,7 @@ function openBuilding(b: Building): void {
             dialog.value = { name: b.name, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] };
           },
         },
+        ...(level.value >= 3 && professionActive('cafe', mons.value.length) ? [{ label: '🍱 Preparar marmita', run: () => openLunchDialog(b.name) }] : []),
         { label: 'Sair', run: closeDialog },
       ],
     };
@@ -1848,7 +1856,6 @@ function openBuilding(b: Building): void {
   }
   const done = state.collected.length;
   dialog.value = {
-        ...(level.value >= 3 && professionActive('cafe', mons.value.length) ? [{ label: '🍱 Preparar marmita', run: () => openLunchDialog(b.name) }] : []),
     name: b.name,
     text: `Vitrines de tudo o que você já juntou. Móveis na coleção: ${done} de ${FURNITURE_IDS.length}. Momentos no Álbum: ${album.value.seen} de ${album.value.total}.`,
     actions: [
@@ -2431,10 +2438,10 @@ function pressA(): void {
     return;
   }
   if (!game) return;
-  const clue = legendCluePlace.value;
-  if (clue && Math.abs(game.player.x - clue.x) + Math.abs(game.player.y - clue.y) <= 2) { investigateLegendClue(); return; }
   const today = refreshDay();
   const t = game.target();
+  // Moradores, plantas e prédios têm prioridade; o botão "Investigar pista" cobre quando há um deles perto da pista.
+  if (t.kind === 'nothing' && nearbyLegendClues(state.legendary, game.player, legendRegions.value).length) { investigateLegendClue(); return; }
   if (t.kind === 'mon' && askingMon?.id === t.id) {
     game.faceMe(t.id);
     openQuiz(t.id);
@@ -2538,7 +2545,7 @@ const minimapGuides = [
 ];
 function visitMapGuide(place: { name: string; x: number; y: number }): void { game?.walkTo(place.x, place.y); minimapRoute.value = place.name; miniBig.value = false; say(`🧭 Caminhando até ${place.name}…`); }
 const minimapSpeakerName = computed(() => minimapSpeakerId.value ? nameOf(minimapSpeakerId.value) : '');
-const minimapRouteLabel = computed(() => minimapRoute.value || (legendCluePlace.value ? `Pista: ${legendCluePlace.value.name}` : ''));
+const minimapRouteLabel = computed(() => minimapRoute.value);
 const guidedTripActive = computed(() => { guidedTripVersion.value; return !!guidedTrip; });
 const MINIMAP_BUILDING_ICONS: Record<string, string> = {
   cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', fountain: '⛲',
@@ -2658,6 +2665,21 @@ function drawMini(): void {
     ctx.fillText('📌', (point.x + 0.5) * MINI_K, (point.y - 1) * MINI_K);
   }
   for (const [id, w] of game.villagers) if (!game.isAsleep(id)) dot(w.x, w.y, '#ffd84a', MINI_K * 0.9);
+  // Pistas lendárias abertas (todas ao mesmo tempo): uma estrela por local, sem revelar de quem é.
+  const clueSpots = new Set<string>();
+  for (const story of openLegendClues(state.legendary, legendRegions.value)) {
+    const spot = investigationPlace(story.id, legendStep(state.legendary, story.id));
+    if (spot) clueSpots.add(`${spot.x},${spot.y}`);
+  }
+  if (clueSpots.size) {
+    ctx.font = `${MINI_K * 3}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const key of clueSpots) {
+      const [x, y] = key.split(',').map(Number);
+      ctx.fillText('✨', (x! + 0.5) * MINI_K, (y! + 0.5) * MINI_K);
+    }
+  }
   const follower = state.follower ? game.villagers.get(state.follower) : undefined;
   if (follower && !game.isAsleep(state.follower!)) {
     ctx.strokeStyle = '#7de7ff';
@@ -2752,6 +2774,7 @@ function openFriendDialog(id: string, text: string): void {
   // para quem acabou de chegar não encarar oito botões de uma vez.
   const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: '🎁 Presentear', run: () => { giftPick.value = true; } }];
   if (id === state.mailCarrierId && professionActive('mail', mons.value.length)) actions.push({ label: '📬 Ver a bolsa do carteiro', run: () => openMailCarrierDialog(id) });
+  if (id === state.instructorId && professionActive('dojo', mons.value.length)) actions.push({ label: '🥋 Falar com o Instrutor', run: () => { closeDialog(); tab.value = 'dojo'; sheet.value = 'menu'; } });
   if (following) actions.push({ label: 'Pode passear', run: () => { state.follower = null; changed(); dialog.value = null; } });
   else if (canFollow(state, id)) actions.push({ label: '🥰 Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
   actions.push({ label: '⋯ Mais opções', run: () => openFriendMore(id) });
@@ -2774,7 +2797,6 @@ function openFriendMore(id: string): void {
       { label: 'Voltar', run: () => { dialog.value = main; } },
     ],
   };
-  if (id === state.instructorId && professionActive('dojo', mons.value.length)) actions.push({ label: '🥋 Falar com o Instrutor', run: () => { closeDialog(); tab.value = 'dojo'; sheet.value = 'menu'; } });
 }
 
 function openGuidedTrip(id: string): void {
@@ -3011,6 +3033,7 @@ onMounted(async () => {
     syncMusic();
     tickScenes();
     tickQuestions();
+    refreshLegendNearby();
     if (!document.hidden && visual.sound && !dialog.value && !sheet.value && !legendaryScene.value && !hoOhWishScene.value && !cutsceneOpen.value && Date.now() >= nextAmbientSoundAt) {
       nextAmbientSoundAt = Date.now() + 18000 + Math.random() * 26000;
       const hour = new Date().getHours();
@@ -3360,7 +3383,6 @@ onBeforeUnmount(() => {
             <span>⭐ Nível <b>{{ level }}</b></span>
             <span>✨ <b>{{ state.digital.instances.length }}</b> Digital Pokémon</span>
           </p>
-        <VillageDojo v-else-if="tab === 'dojo'" :state="state" :population="mons.length" :instructor-name="state.instructorId ? nameOf(state.instructorId) : null" @changed="changed" />
           <nav class="menu-section-tabs" aria-label="Categorias do menu da Vila" role="tablist">
             <button v-for="section in menuSections" :key="section.id" type="button" role="tab" :aria-selected="menuSection === section.id" :class="{ active: menuSection === section.id }" @click="menuSection = section.id">
               <span aria-hidden="true">{{ section.icon }}</span><span>{{ section.label }}</span>
@@ -3395,7 +3417,8 @@ onBeforeUnmount(() => {
         </div>
 
         <VillageWorksites v-else-if="tab === 'trabalhos'" :state="state" :population="mons.length" :cafe-available="level >= 3" :name-of="nameOf" :tasks="farmTasks" :now="farmClock" @visit="visitWorksite" @seeds="sheet = 'farm'" />
-        <VillageLegends v-else-if="tab === 'lendas'" :state="state.legendary" @investigate="startLegendInvestigation" @replay="showLegendaryCutscene($event, true)" @travel="travelToLegendClue" />
+        <VillageDojo v-else-if="tab === 'dojo'" :state="state" :population="mons.length" :instructor-name="state.instructorId ? nameOf(state.instructorId) : null" @changed="changed" />
+        <VillageLegends v-else-if="tab === 'lendas'" :state="state.legendary" :regions="legendRegions" @replay="showLegendaryCutscene($event, true)" @travel="travelToLegendClue" />
 
         <div v-else-if="tab === 'resumo'" class="diary village-summary">
           <p class="hint">Uma visão rápida baseada no Diário, nas relações e nos pedidos reais da Vila.</p>
@@ -3621,7 +3644,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-if="legendCluePlace && !sheet && !dialog && !legendaryScene && !hoOhWishScene && !welcome && !loading && !recapScene && !cutsceneOpen && !quizOpen && !quiz" class="village-legend-clue" role="region" aria-label="Pista lendária"><small>🔎 {{ legendClueName }} · pista {{ (state.legendary.investigation?.step ?? 0) + 1 }}/2</small><span>{{ legendCluePlace.name }}</span><div><button type="button" @click="travelToLegendClue">Seguir pista</button><button type="button" @click="investigateLegendClue">Investigar pista</button></div></div>
+    <div v-if="legendNearby.length && !sheet && !dialog && !legendaryScene && !hoOhWishScene && !welcome && !loading && !recapScene && !cutsceneOpen && !quizOpen && !quiz" class="village-legend-clue" role="region" aria-label="Pista lendária"><small>🔎 {{ legendNearbyLabel }} · {{ legendNearby.length === 1 ? `pista ${legendNearby[0]!.step + 1}/2` : 'pistas aqui' }}</small><span>{{ legendNearby[0]!.place.name }}</span><div><button type="button" @click="investigateLegendClue">Investigar pista</button></div></div>
     <div v-show="!loading && !recapScene && !cutsceneOpen && !welcome && !legendaryScene" class="village-pad" @contextmenu.prevent>
       <p class="village-move-hint">Arraste para andar · toque para ir<span> · setas/WASD</span></p>
       <p class="village-arrow-hint">Setas/controle navegam · A confirma · B volta</p>

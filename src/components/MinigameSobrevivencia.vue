@@ -46,18 +46,17 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
-import { typesOfDex } from '../core/species-filter';
+import { survivorAttackOf } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
 import { trainer } from '../app/trainer-store';
-import type { AttackProfile, SurvivorMove } from '../core/survivor-moves';
+import type { SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { DecodedGif } from '../core/gif';
-import { speciesTiles } from '../core/size-scale';
-import { contentBounds } from '../village/local-sprite';
-import type { ContentBounds } from '../village/local-sprite';
+import { firstSpriteFrame, frameIndex, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
+import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
 import { survivorBiomeAt, survivorBiomeLabel } from '../core/survivor-biomes';
@@ -93,7 +92,6 @@ import { paintAccessory } from '../village/item-art';
 import { placeAccessory } from '../core/village/accessory-fit';
 import { itemDef } from '../core/village/catalog';
 import type { Facing, Placement } from '../core/village/accessory-fit';
-import { metallicTint } from '../core/metallic';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -110,15 +108,6 @@ const RARITY_BALL_IMAGE: Record<SurvivorUpgradeRarity, string> = {
   ancestral: assetUrl('assets/survivor/balls/master-ball.png'),
 };
 
-/** O golpe de uma espécie na Torre: elemento pelo 1º tipo, forma e números pelos stats reais (`core/survivor-moves.ts`). */
-function attackOf(dexId: number, picked?: PokemonType): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove } {
-  const stats = statsOfDex(dexId);
-  const types = typesOfDex(dexId);
-  const ordered = picked ? [picked, ...types.filter((t) => t !== picked)] : types;
-  const move = moveFor(ordered, stats);
-  const secondType = types.find((type) => type !== picked && type !== move.type);
-  return { move, profile: attackProfile(move, stats), types, ...(secondType ? { secondMove: moveFor([secondType], stats) } : {}) };
-}
 const moveLine = (m: SurvivorMove): string => `${m.icon} ${m.name} · ${MOVE_CATEGORY_LABELS_PT[m.category]}`;
 /** Uma frase de uso prático antes da corrida, sem esconder os números e efeitos reais do golpe. */
 const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
@@ -142,7 +131,7 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
  */
 const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }, runId: string] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
-const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string; shiny?: boolean; accessory?: string | null }[]; accessories?: Record<string, string | null | undefined> }>();
+const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string; shiny?: boolean; accessory?: string | null }[]; accessories?: Record<string, string | null | undefined>; /** Abre já com o modo BONK escolhido (atalho da Vila). */ startBonk?: boolean }>();
 
 /**
  * A Torre ocupa a tela inteira. O lado menor parte de `VIEW_SHORT` unidades e aproxima 1,5×, mantendo o formato do
@@ -205,42 +194,6 @@ async function loadLandscapeAtlas(): Promise<void> {
   }
 }
 
-interface Sprite {
-  frames: HTMLCanvasElement[];
-  delays: number[];
-  durationMs: number;
-  w: number;
-  h: number;
-  /** Caixa dos pixels opacos (frações do quadro): os pés ficam no ponto do chão, sem a margem da folha. */
-  bounds: ContentBounds;
-  /** Fator que leva o desenho ao tamanho pela altura real da espécie (1 = tamanho da folha, sem dado de altura). */
-  fit: number;
-}
-
-/** Folhas locais têm quatro poses reais; fontes externas continuam com uma só, sem inventar direções. */
-type SpriteAsset = Sprite | Partial<Record<SurvivorSpriteDirection, Sprite>>;
-
-/** Pixels de altura na Torre para 1 bloco de altura real (`core/size-scale.ts`); Pikachu ≈ 19 px, Snorlax ≈ 37 px. */
-const SURVIVOR_TILE_PX = 22;
-
-function toSprite(gif: DecodedGif, dexId?: number, metallic = false): Sprite {
-  const frames = gif.frames.map((f) => {
-    const c = document.createElement('canvas');
-    c.width = gif.width;
-    c.height = gif.height;
-    const fctx = c.getContext('2d')!;
-    const img = fctx.createImageData(gif.width, gif.height);
-    img.data.set(metallic ? metallicTint(f.rgba) : f.rgba);
-    fctx.putImageData(img, 0, 0);
-    return c;
-  });
-  const bounds = contentBounds(gif);
-  const contentPx = Math.max(1, (bounds.bottom - bounds.top) * gif.height);
-  const tiles = speciesTiles(dexId);
-  const fit = tiles === undefined ? 1 : (tiles * SURVIVOR_TILE_PX) / contentPx;
-  return { frames, delays: gif.frames.map((f) => f.delayMs), durationMs: gif.durationMs, w: gif.width, h: gif.height, bounds, fit };
-}
-
 const accessoryMemory = new Map<string, HTMLCanvasElement | null>();
 function accessoryCanvas(id: string | null | undefined): HTMLCanvasElement | null {
   if (!id) return null;
@@ -257,22 +210,6 @@ function accessoryCanvas(id: string | null | undefined): HTMLCanvasElement | nul
     accessoryMemory.set(id, null);
     return null;
   }
-}
-
-function frameIndex(sprite: Sprite, timeMs: number): number {
-  if (sprite.frames.length <= 1 || sprite.durationMs <= 0) return 0;
-  let remaining = ((timeMs % sprite.durationMs) + sprite.durationMs) % sprite.durationMs;
-  for (let i = 0; i < sprite.delays.length; i++) {
-    remaining -= sprite.delays[i] ?? 0;
-    if (remaining < 0) return i;
-  }
-  return sprite.frames.length - 1;
-}
-
-function firstSpriteFrame(asset: SpriteAsset | null | undefined): HTMLCanvasElement | null {
-  if (!asset) return null;
-  const sprite = 'frames' in asset ? asset : (asset.down ?? asset.right ?? asset.left ?? asset.up ?? null);
-  return sprite?.frames[0] ?? null;
 }
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
@@ -527,6 +464,37 @@ function chooseSpecialBranch(id: SurvivorSpecialBranchId): void {
   say('Ramo escolhido. O novo efeito está pronto.', 2200);
 }
 const paused = ref(false);
+/** Ajuda dos controles aberta (dentro da pausa: abrir a ajuda pausa a corrida, retomar fecha). */
+const helpOpen = ref(false);
+
+/** Botões Pular e Especial: tamanho e arranjo ajustáveis para uso com dois polegares (ficam guardados no aparelho). */
+type ButtonSize = 'p' | 'm' | 'g';
+type ButtonLayout = 'lado' | 'pilha' | 'troca';
+const BUTTONS_KEY = 'tcg-ar-survivor-buttons-v1';
+const BUTTON_SCALE: Record<ButtonSize, number> = { p: 0.85, m: 1, g: 1.2 };
+const BUTTON_SIZE_LABELS: Record<ButtonSize, string> = { p: 'Pequenos', m: 'Médios', g: 'Grandes' };
+const BUTTON_LAYOUT_LABELS: Record<ButtonLayout, string> = { lado: 'Lado a lado', pilha: 'Empilhados', troca: 'Trocados' };
+function readButtons(): { size: ButtonSize; layout: ButtonLayout } {
+  try {
+    const raw = JSON.parse(localStorage.getItem(BUTTONS_KEY) ?? 'null') as { size?: string; layout?: string } | null;
+    return {
+      size: raw?.size === 'p' || raw?.size === 'g' ? raw.size : 'm',
+      layout: raw?.layout === 'pilha' || raw?.layout === 'troca' ? raw.layout : 'lado',
+    };
+  } catch {
+    return { size: 'm', layout: 'lado' };
+  }
+}
+const savedButtons = readButtons();
+const buttonSize = ref<ButtonSize>(savedButtons.size);
+const buttonLayout = ref<ButtonLayout>(savedButtons.layout);
+watch([buttonSize, buttonLayout], () => {
+  try { localStorage.setItem(BUTTONS_KEY, JSON.stringify({ size: buttonSize.value, layout: buttonLayout.value })); } catch { /* armazenamento indisponível */ }
+});
+function openHelp(): void {
+  if (!paused.value) togglePause();
+  if (paused.value) helpOpen.value = true;
+}
 const leaveConfirm = ref(false);
 const bonkJumpBlocked = computed(() => !bonkRun.value || !state.value || state.value.over || paused.value || !!pendingUpgrade.value || !!evolving.value || specialModalOpen.value);
 /** Saltos disponíveis agora (true) e já usados (false), na ordem; vira as bolinhas do botão Pular. */
@@ -661,9 +629,10 @@ async function copyFeedbackCode(): Promise<void> {
 }
 const runUnlocks = ref<string[]>([]);
 /** Tela de escolha antes de cada corrida: até 6 Pokémon aleatórios da caixa do jogador, para escolher quem joga
- * dessa vez. Null enquanto ainda está sorteando/carregando os retratos; [] se a caixa estiver vazia (cai pro
- * Pikachu de reserva sem tela de escolha, igual ao comportamento antigo). */
+ * dessa vez. Null enquanto ainda está sorteando/carregando os retratos. */
 const pickOptions = ref<PickOption[] | null>(null);
+/** A Torre nunca inventa um protagonista: sem parceiro, explica como conseguir um antes de iniciar. */
+const noCompanion = ref(false);
 const pickBusy = ref(false);
 const rerollsUsed = ref(0);
 const previousPickIds = ref<string[]>([]);
@@ -818,6 +787,12 @@ function onKey(e: KeyboardEvent): void {
   // Cartões acessíveis do seletor já tratam Enter/Espaço localmente.
   // Ao chegar na janela, o mesmo evento não deve escolher a opção duas vezes.
   if (e.defaultPrevented) return;
+  if (e.type === 'keydown' && e.key === 'Escape') {
+    e.preventDefault();
+    if (leaveConfirm.value) cancelLeave();
+    else requestLeave();
+    return;
+  }
   const dir = KEY_DIR[e.key];
   if (e.type === 'keydown' && dir && moveSurvivorFocus(dir)) {
     e.preventDefault();
@@ -1884,6 +1859,7 @@ function rerollUpgradeSelection(): void {
 function togglePause(): void {
   if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value || trainerPresentation.value) return;
   paused.value = !paused.value;
+  if (!paused.value) helpOpen.value = false;
   joystick.active = false;
   joystick.pointerId = null;
   joystick.dx = 0;
@@ -1980,7 +1956,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
     ),
   );
   return chosen.map(({ id, dexId, name, origin, shiny, accessory }, i) => {
-    const { move, profile, types } = attackOf(dexId);
+    const { move, profile, types } = survivorAttackOf(dexId);
     return { id, dexId, name, origin, types, move, bars: profileBars(move, profile), thumb: thumbs[i] ?? null, shiny, accessory, digital: chosen[i]?.digital === true };
   });
 }
@@ -2033,7 +2009,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     pendingUpgrade.value = null;
     clearTrainerPresentation();
     paused.value = false;
-    const { move, profile, secondMove } = attackOf(dexId, picked);
+    const { move, profile, secondMove } = survivorAttackOf(dexId, picked);
     runSeenDex.clear();
     // A Vila entrega o loadout (e gasta a sorte do Carteiro) antes de a corrida existir; vale no Survival e no BONK.
     runLoadout = takeRunLoadout(pureWanted.value);
@@ -2107,7 +2083,7 @@ watch(
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
 watch(pickOptions, (options) => { if (options) refreshTowerPreview(); });
 const infiniteWanted = ref(false);
-const bonkWanted = ref(false);
+const bonkWanted = ref(props.startBonk === true);
 const fastWanted = ref(false);
 const torre = computed(() => trainer.value.torre);
 const rerollLimit = computed(() => survivorRerollLimit(torre.value.completedObjectives));
@@ -2158,14 +2134,14 @@ async function openPicker(): Promise<void> {
   clearBonkTap();
   pickBusy.value = true;
   pickOptions.value = null;
+  noCompanion.value = false;
   try {
     rerollsUsed.value = 0;
     previousPickIds.value = [];
     const options = await rollPickOptions();
     if (disposed) return;
     if (options.length === 0) {
-      // Caixa vazia: sem tela de escolha, igual ao comportamento de antes.
-      await beginRun(25, 'Pikachu');
+      noCompanion.value = true;
       return;
     }
     pickOptions.value = options;
@@ -2260,8 +2236,8 @@ onBeforeUnmount(() => {
       <div
         ref="stageEl"
         class="survivor-stage"
-        :class="{ 'survivor-stage-picker': pickOptions }"
-        :style="{ '--move': state?.player.move.color ?? '#ffd84a' }"
+        :class="[{ 'survivor-stage-picker': pickOptions }, `btn-${buttonLayout}`]"
+        :style="{ '--move': state?.player.move.color ?? '#ffd84a', '--sv-s': BUTTON_SCALE[buttonSize] }"
         @pointerdown="joyDown"
         @pointermove="joyMove"
         @pointerup="joyUp"
@@ -2293,30 +2269,61 @@ onBeforeUnmount(() => {
             <span>XP {{ state.player.xp }}/{{ state.player.xpToNext }}</span>
           </div>
           <div class="survivor-stats">
-            <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
-             <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
-             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
-               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
-             </span>
+            <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
+            <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
+              {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
+            </span>
+            <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
+            <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
+            <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
+            <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
+            <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
+            <span class="survivor-action-dock">
+              <button type="button" class="chip survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre: pausa, informações e opções'" :title="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre: pausa, informações e opções'" :aria-expanded="hudExpanded" aria-controls="survivor-info-panel" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">{{ hudExpanded ? '✕ Fechar' : '☰ Menu' }}</button>
+            </span>
+          </div>
+          <section v-if="hudExpanded" id="survivor-info-panel" class="survivor-info-panel" aria-label="Menu da Torre: pausa, informações e opções" @pointerdown.stop>
+            <div v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" class="survivor-info-actions">
+              <button type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @click.stop="togglePause">{{ paused ? '▶ Retomar' : '⏸ Pausar' }}</button>
+              <button type="button" class="chip survivor-help-btn" @click.stop="openHelp">? Controles</button>
+            </div>
+            <div class="survivor-info-section">
+              <strong>Golpe e defesas</strong>
+              <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
               <span class="chip" title="Contato e explosões usam Defesa; projéteis usam Defesa Especial. Cartas defensivas somam pontos aos atributos reais.">{{ survivorDefenseReduction(state.player, 'contato') === null ? 'Defesas indisponíveis' : `🛡 ${Math.round((survivorDefenseReduction(state.player, 'contato') ?? 0) * 100)}% físico · ✨ ${Math.round((survivorDefenseReduction(state.player, 'projétil') ?? 0) * 100)}% especial` }}</span>
+            </div>
+            <div class="survivor-info-section">
+              <strong>Corrida</strong>
+              <span class="chip">🌊 Onda {{ state.wave }}</span>
+              <span v-if="survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
               <span v-if="(state.player.difficultyStacks ?? 0) > 0" class="chip" :title="`Dificuldade ${state.player.difficultyStacks}: +${(state.player.difficultyStacks ?? 0) * 15}% densidade e +${(state.player.difficultyStacks ?? 0) * 12}% de velocidade e dano dos inimigos`">☠ Dificuldade {{ state.player.difficultyStacks }}</span>
               <span v-if="(state.player.bonusCoins ?? 0) > 0" class="chip" title="Moedas das cartas, pagas no fim da corrida">🪙 +{{ state.player.bonusCoins }} no fim</span>
-              <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
-              <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
-              <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
-              <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
-            <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
-             <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
-            <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
-             <span class="survivor-action-dock" aria-label="Ações da Torre">
-               <button v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" type="button" class="chip survivor-icon-btn survivor-pause-btn" :aria-label="paused ? 'Retomar corrida' : 'Pausar corrida'" :title="paused ? 'Retomar corrida' : 'Pausar corrida'" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶' : '⏸' }}</button>
-               <button type="button" class="chip survivor-icon-btn survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre'" :title="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre'" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">☰</button>
-               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
-               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
-               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="specialEffects" @pointerdown.stop @click.stop="specialEffects = !specialEffects">Efeitos: {{ specialEffects ? 'completos' : 'leves' }}</button>
-             </span>
-          </div>
+            </div>
+            <div class="survivor-info-section">
+              <strong>Exibição</strong>
+              <button type="button" class="chip" :aria-pressed="minimapEnabled" @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
+              <button type="button" class="chip" :aria-pressed="regionScenery" @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
+              <button type="button" class="chip" :aria-pressed="specialEffects" @click.stop="specialEffects = !specialEffects">Efeitos: {{ specialEffects ? 'completos' : 'leves' }}</button>
+            </div>
+            <div v-if="objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">
+              <strong class="survivor-objectives-title">Objetivos</strong>
+              <span v-for="objective in objectives" :key="objective.id" class="survivor-objective" :class="{ complete: objective.complete }">
+                <b>{{ objective.complete ? '✓' : '○' }}</b>
+                <span>{{ objective.title }}</span>
+                <small v-if="!objective.complete">{{ objective.unit === 's' ? Math.floor(objective.progress / 1000) : objective.progress }} / {{ objective.unit === 's' ? Math.floor(objective.target / 1000) : objective.target }}{{ objective.unit === 's' ? 's' : objective.unit }}</small>
+              </span>
+            </div>
+            <div v-if="state.supports.length" class="survivor-supports" aria-label="Aliados que seguem o protagonista">
+              <strong>🤝 Aliados · {{ state.supports.length }}/5</strong>
+              <small>Atacam a partir de você e não recebem upgrades.</small>
+              <div v-for="support in state.supports" :key="`${support.dexId}-${support.name}`" class="survivor-support-line">
+                <b>{{ support.name }}</b>
+                <span>{{ support.move.icon }} {{ support.move.name }} · {{ MOVE_CATEGORY_LABELS_PT[support.move.category] }}</span>
+                <small>{{ Math.round(support.profile.damage * support.damageFactor) }} dano · {{ Math.round(support.profile.cooldownMs) }} ms</small>
+              </div>
+            </div>
+          </section>
         </div>
 
         <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Minimapa da arena; o ponto azul é você, pontos vermelhos são chefes, pontos amarelos são elites e estrelas são Pokébolas">
@@ -2342,35 +2349,37 @@ onBeforeUnmount(() => {
           <span>{{ state.digitalDanger >= 60 ? 'Você está atraindo treinadores!' : 'Perigo digital' }}</span>
         </div>
 
-        <div v-if="ready && state && hudExpanded && objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">
-          <span class="survivor-objectives-title">Objetivos</span>
-          <span v-for="objective in objectives" :key="objective.id" class="survivor-objective" :class="{ complete: objective.complete }">
-            <b>{{ objective.complete ? '✓' : '○' }}</b>
-            <span>{{ objective.title }}</span>
-            <small v-if="!objective.complete">{{ objective.unit === 's' ? Math.floor(objective.progress / 1000) : objective.progress }} / {{ objective.unit === 's' ? Math.floor(objective.target / 1000) : objective.target }}{{ objective.unit === 's' ? 's' : objective.unit }}</small>
-          </span>
-        </div>
-
-        <section v-if="ready && state && hudExpanded && state.supports.length" class="survivor-supports" aria-label="Aliados que seguem o protagonista">
-          <strong>🤝 Aliados · {{ state.supports.length }}/5</strong>
-          <small>Atacam a partir de você e não recebem upgrades.</small>
-          <div v-for="support in state.supports" :key="`${support.dexId}-${support.name}`" class="survivor-support-line">
-            <b>{{ support.name }}</b>
-            <span>{{ support.move.icon }} {{ support.move.name }} · {{ MOVE_CATEGORY_LABELS_PT[support.move.category] }}</span>
-            <small>{{ Math.round(support.profile.damage * support.damageFactor) }} dano · {{ Math.round(support.profile.cooldownMs) }} ms</small>
-          </div>
-        </section>
-
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
-        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint" :class="{ 'is-bonk': bonkRun }">{{ bonkRun ? 'Arraste: para cima avança, para os lados vira a câmera · Pular: botão, toque/clique duplo, Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
+        <p v-if="ready && !summary && !joystick.active && !pickOptions && !hudExpanded && state && state.elapsedMs < 6000" class="survivor-move-hint" :class="{ 'is-bonk': bonkRun }">{{ bonkRun ? 'Arraste: para cima avança, para os lados vira a câmera · Pular: botão, toque/clique duplo, Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
 
         <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
             <h2>Jogo pausado</h2>
             <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :track="survivorMusicTitle(state?.elapsedMs ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
+            <details class="survivor-help" :open="helpOpen" @toggle="helpOpen = ($event.target as HTMLDetailsElement).open">
+              <summary>Como jogar · controles</summary>
+              <ul>
+                <li v-if="bonkRun"><b>Andar:</b> arraste para cima para avançar e para os lados para virar a câmera. Teclado: setas ou WASD.</li>
+                <li v-else><b>Andar:</b> arraste em qualquer lugar da tela. Teclado: setas ou WASD. Controle: analógico.</li>
+                <li><b>Atacar:</b> automático, em quem chegar perto.</li>
+                <li v-if="bonkRun"><b>Pular:</b> botão PULAR, toque duplo na tela, Q ou Espaço. Dá para pular de novo no ar enquanto sobrar bolinha no botão.</li>
+                <li><b>Especial:</b> botão do canto ou tecla E. Libera aos 3 minutos e recarrega sozinho.</li>
+                <li><b>Pausar:</b> botão ⏸ ou Start no controle. O botão ? abre esta ajuda.</li>
+              </ul>
+            </details>
+            <section class="survivor-button-prefs" aria-label="Botões Pular e Especial">
+              <strong>Botões da tela</strong>
+              <div class="survivor-mode" role="group" aria-label="Tamanho dos botões">
+                <button v-for="size in (['p', 'm', 'g'] as const)" :key="size" type="button" :class="{ active: buttonSize === size }" :aria-pressed="buttonSize === size" @pointerdown.stop @click.stop="buttonSize = size">{{ BUTTON_SIZE_LABELS[size] }}</button>
+              </div>
+              <div class="survivor-mode" role="group" aria-label="Posição dos botões">
+                <button v-for="layout in (['lado', 'pilha', 'troca'] as const)" :key="layout" type="button" :class="{ active: buttonLayout === layout }" :aria-pressed="buttonLayout === layout" @pointerdown.stop @click.stop="buttonLayout = layout">{{ BUTTON_LAYOUT_LABELS[layout] }}</button>
+              </div>
+              <small>Empilhados deixa os dois mais perto da borda; Trocados põe o Pular no canto e o Especial ao lado.</small>
+            </section>
             <button type="button" class="primary" @pointerdown.stop @click.stop="togglePause">▶ Retomar</button>
           </div>
         </div>
@@ -2390,7 +2399,6 @@ onBeforeUnmount(() => {
           </div>
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
-            <details><summary>Música da Torre</summary><MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :unavailable="musicUnavailable" regional @unlock="unlockMusic" /><p class="hint">As nove regiões têm temas próprios: cinco arranjos GBA e quatro temas com tratamento sonoro retrô. A troca acompanha a transição do cenário.</p></details>
             <p class="note" role="status">{{ nextTowerGoal }}</p>
             <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · melhor tempo {{ formatTime(torre.bestMs) }} (corrida pura: {{ torre.bestPureMs > 0 ? formatTime(torre.bestPureMs) : '—' }}) · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
             <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
@@ -2412,6 +2420,7 @@ onBeforeUnmount(() => {
               <button type="button" class="bonk-mode-button" :class="{ active: bonkWanted }" @click="bonkWanted = true; infiniteWanted = false">💥 BONK<small>3D, física e pulo</small></button>
               <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true; bonkWanted = false; fastWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
             </div>
+            <p v-if="bonkWanted" class="note bonk-picker-note">💥 BONK: câmera em terceira pessoa e física. Use o botão Pular (ou Q/Espaço) para atravessar obstáculos baixos.</p>
             <section v-if="torre.infiniteUnlocked" class="survivor-preparations" aria-label="Modificadores da corrida">
               <strong>Modificadores</strong>
               <div class="survivor-mode" role="group" aria-label="Ritmo da corrida">
@@ -2470,9 +2479,39 @@ onBeforeUnmount(() => {
                </div>
             </div>
              <button type="button" class="link survivor-reroll" :disabled="rerollsUsed >= rerollLimit || pickBusy" @click="rerollPicker">🔄 Sortear novamente <small>{{ Math.max(0, rerollLimit - rerollsUsed) }} de {{ rerollLimit }} troca(s) grátis nesta tentativa</small></button>
+            <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
+            <details class="survivor-more">
+              <summary>Mais opções e informações</summary>
+            <details><summary>Música da Torre</summary><MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :unavailable="musicUnavailable" regional @unlock="unlockMusic" /><p class="hint">As nove regiões têm temas próprios: cinco arranjos GBA e quatro temas com tratamento sonoro retrô. A troca acompanha a transição do cenário.</p></details>
+            <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
+            <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
+            <details class="survivor-ledger">
+              <summary>Trilha dos desafios · {{ recordedObjectiveCount }}/{{ SURVIVOR_OBJECTIVE_IDS.length }} concluídos</summary>
+              <ul>
+                <li v-for="objectiveId in SURVIVOR_OBJECTIVE_IDS" :key="objectiveId" :class="{ complete: torre.completedObjectives.includes(objectiveId) }">
+                  <span>{{ SURVIVOR_OBJECTIVE_DETAILS[objectiveId].title }}</span>
+                  <small>{{ torre.completedObjectives.includes(objectiveId) ? 'Concluído em corrida encerrada' : 'Ainda não registrado' }}</small>
+                </li>
+              </ul>
+            </details>
+             <p class="note">Até 6 Pokémon são sorteados da sua caixa: 1 protagonista e até 5 apoios para recrutar durante a corrida. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
+            <p v-if="!bonkWanted" class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
+            <p v-else class="note bonk-picker-note">💥 BONK é um teste opcional: câmera em terceira pessoa, mapa amplo com ruínas, ponte e bosque físicos. Pedras e muretas bloqueiam; use o botão Pular ou Q/Espaço para atravessar obstáculos baixos.</p>
+            <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
+            <p v-if="preparations.length > 1 && nextPreparation" class="note">{{ recordedObjectiveCount }} desafio(s) distinto(s) registrado(s). Próxima preparação: {{ nextPreparation.name }} após {{ nextPreparation.unlockAtObjectives }} objetivos.</p>
+            <p v-else-if="preparations.length > 1" class="note">Todas as preparações estratégicas estão liberadas pelos seus desafios concluídos.</p>
+            <p v-else class="note">Conclua desafios em corridas reais para liberar preparações: 3 objetivos distintos liberam Passo leve; 6, Mira calculada; 9, Ímã de campo; 12, Mira de longo alcance.</p>
             <p v-if="rerollLimit === 1" class="note">Conclua 3 desafios distintos em corridas encerradas para liberar uma segunda troca de sorteio nas próximas tentativas.</p>
             <p v-else class="note">📜 Caderno de campo completo: a segunda troca de sorteio foi liberada pelos seus três desafios concluídos.</p>
-            <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
+            </details>
+          </div>
+        </div>
+
+        <div v-else-if="noCompanion" class="survivor-overlay" role="dialog" aria-modal="true" aria-label="Você precisa de um companheiro">
+          <div class="card survivor-pick">
+            <h2>Você precisa de um companheiro</h2>
+            <p class="note">A Torre usa Pokémon da sua coleção ou Digital Pokémon da Vila. Escaneie uma carta ou conclua o questionário inicial da Vila para receber seu primeiro companheiro.</p>
+            <button type="button" class="primary" @pointerdown.stop @click.stop="emit('leave')">Voltar à Vila</button>
           </div>
         </div>
 

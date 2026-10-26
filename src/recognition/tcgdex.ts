@@ -5,6 +5,8 @@
  * novas tentativas com espera e respeito a `Retry-After`.
  */
 export const TCGDEX_API = 'https://api.tcgdex.net/v2';
+/** CDN das imagens das cartas (`<idioma>/<série>/<coleção>/<número>/low.webp`). */
+export const TCGDEX_ASSETS = 'https://assets.tcgdex.net';
 
 export interface TcgdexCard {
   id: string;

@@ -2,25 +2,18 @@
  * Inclui míticos; formas regionais, Megas e fusões não contam como outra espécie.
  * https://github.com/PokeAPI/pokeapi/blob/master/data/v2/csv/pokemon_species.csv
  */
-export const LEGEND_PLACES = {
-  plaza: { name: 'Fonte Central', x: 47, y: 38, landscape: 'city' },
-  lake: { name: 'Píer do Lago Azul', x: 80, y: 18, landscape: 'water' },
-  woods: { name: 'Clareira da Madeireira', x: 15, y: 13, landscape: 'forest' },
-  mine: { name: 'Entrada da Mina', x: 16, y: 66, landscape: 'stone' },
-  park: { name: 'Parquinho Oeste', x: 16, y: 47, landscape: 'forest' },
-  farm: { name: 'Caminho da Fazenda', x: 84, y: 46, landscape: 'forest' },
-  south: { name: 'Trilha do Bosque do Sul', x: 22, y: 64, landscape: 'forest' },
-  tower: { name: 'Calçada da Torre', x: 14, y: 24, landscape: 'city' },
-} as const;
-export type LegendPlace = keyof typeof LEGEND_PLACES;
+import type { LegendEncounterPlace } from './legendary-places';
+export { LEGEND_PLACES, firstSignPlace } from './legendary-places';
+export type { LegendPlace } from './legendary-places';
+
 export type LegendTheme = 'frost' | 'storm' | 'flame' | 'mind' | 'forest' | 'ocean' | 'rainbow' | 'stone' | 'cosmos' | 'shadow' | 'prism' | 'guardian';
 export interface LegendStory {
   id: string; dexId: number; name: string; region: string; mythical: boolean;
-  title: string; theme: LegendTheme; place: LegendPlace; clue: string;
+  title: string; theme: LegendTheme; place: LegendEncounterPlace; clue: string;
   chapters: readonly { title: string; text: string }[];
 }
 const MYTHICAL = new Set([151, 251, 385, 386, 489, 490, 491, 492, 493, 494, 647, 648, 649, 719, 720, 721, 801, 802, 807, 808, 809, 893, 1025]);
-function story(dexId: number, id: string, name: string, title: string, theme: LegendTheme, place: LegendPlace, clue: string, arrival: string, encounter: string, farewell: string): LegendStory {
+function story(dexId: number, id: string, name: string, title: string, theme: LegendTheme, place: LegendEncounterPlace, clue: string, arrival: string, encounter: string, farewell: string): LegendStory {
   const region = dexId <= 151 ? 'Kanto' : dexId <= 251 ? 'Johto' : dexId <= 386 ? 'Hoenn' : dexId <= 493 ? 'Sinnoh' : dexId <= 649 ? 'Unova' : dexId <= 721 ? 'Kalos' : dexId <= 809 ? 'Alola' : dexId <= 898 ? 'Galar' : dexId === 905 ? 'Hisui' : 'Paldea';
   return { id, dexId, name, region, mythical: MYTHICAL.has(dexId), title, theme, place, clue, chapters: [
     { title: 'O primeiro sinal', text: clue }, { title: 'A Vila prende a respiração', text: arrival },

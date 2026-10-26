@@ -5,7 +5,7 @@ import { computed, ref, shallowRef } from 'vue';
 import { applyFullBackup, BACKUP_FILE_MIME, backupFileName, buildFullBackup, parseBackupBytes, serializeBackupZip } from '../app/backup';
 import type { BackupProgress } from '../app/backup';
 import type { BackupFile } from '../app/backup';
-import { routeFlags, routeHref } from '../app/route';
+import { gameHref, routeFlags, routeHref } from '../app/route';
 import { coins } from '../app/wallet';
 import { trainer } from '../app/trainer-store';
 import LeagueCard from '../components/LeagueCard.vue';
@@ -260,6 +260,15 @@ function cancelImport(): void {
     <PokedexView v-else-if="section === 'pokedex'" />
 
     <template v-else-if="section === 'jogos'">
+    <section class="card game-shortcuts" aria-label="Jogar agora">
+      <h2>Jogar agora</h2>
+      <p class="note">Abrem direto na Vila, sem andar até o prédio. Se o jogo ainda estiver trancado, a Vila diz em que nível ele abre.</p>
+      <div class="actions row">
+        <a class="button" :href="gameHref('torre')">🗼 Survival</a>
+        <a class="button" :href="gameHref('bonk')">💥 BONK</a>
+        <a class="button" :href="gameHref('coliseu')">⚔️ Arena</a>
+      </div>
+    </section>
     <MinigameHub />
 
     <div class="card">

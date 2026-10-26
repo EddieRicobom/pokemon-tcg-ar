@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arenaFlags, parseRoute, redirectFor, rememberBeforeVila, routeFlags, routeHref, vilaExitHref } from './route';
+import { arenaFlags, gameHref, gameShortcutOf, parseRoute, redirectFor, rememberBeforeVila, routeFlags, routeHref, vilaExitHref } from './route';
 
 describe('rotas por hash', () => {
   it('conhece a rota do Treinador', () => {
@@ -23,6 +23,13 @@ describe('rotas por hash', () => {
   it('carta carregada do cache vai na própria rota (ids têm ponto e hífen)', () => {
     expect(parseRoute('#/escanear/sv03.5-025')).toEqual({ name: 'escanear', cardId: 'sv03.5-025' });
     expect(parseRoute(routeHref('escanear', 'swsh12tg-TG05'))).toEqual({ name: 'escanear', cardId: 'swsh12tg-TG05' });
+  });
+
+  it('ignora links malformados e nomes herdados do protótipo', () => {
+    for (const hash of ['#/escanear/%', '#/escanear/%E0%A4%A', '#/toString', '#/constructor']) {
+      expect(parseRoute(hash)).toEqual({ name: 'escanear' });
+      expect(redirectFor(hash)).toBeNull();
+    }
   });
 
   it('a Vila tem rota própria', () => {
@@ -65,6 +72,28 @@ describe('rotas por hash', () => {
     expect([...routeFlags('#/caixa?formatacao=1')]).toEqual(['formatacao']);
     expect([...routeFlags('#/caixa?virtual=1&batalha=1')].sort()).toEqual(['batalha', 'virtual']);
     expect(routeHref('caixa', undefined, ['virtual'])).toBe('#/caixa?virtual=1');
+  });
+});
+
+describe('atalhos de jogo', () => {
+  it('cada atalho abre a Vila e é reconhecido pelo endereço', () => {
+    expect(gameHref('torre')).toBe('#/vila?torre=1');
+    expect(gameHref('bonk')).toBe('#/vila?bonk=1');
+    expect(gameHref('coliseu')).toBe('#/vila?coliseu=1');
+    for (const game of ['torre', 'bonk', 'coliseu'] as const) {
+      expect(parseRoute(gameHref(game))).toEqual({ name: 'vila' });
+      expect(gameShortcutOf(gameHref(game))).toBe(game);
+    }
+  });
+
+  it('sem atalho, ou com outros sinalizadores, não abre jogo nenhum', () => {
+    expect(gameShortcutOf('#/vila')).toBeNull();
+    expect(gameShortcutOf('#/vila?vila=1')).toBeNull();
+    expect(gameShortcutOf('#/treinador?jogos=1')).toBeNull();
+  });
+
+  it('o atalho não conta como «veio da Vila» para o ✕ voltar', () => {
+    expect(rememberBeforeVila(gameHref('torre'))).toBe(true);
   });
 });
 

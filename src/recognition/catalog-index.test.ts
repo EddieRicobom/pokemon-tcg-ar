@@ -7,7 +7,7 @@ const data: CatalogIndexData = {
   version: 1,
   generatedAt: '2026-10-11T00:00:00Z',
   sets: [
-    { id: 'base1', name: 'Base Set', official: 102, total: 102, release: '1999-01-09', code: 'BS', cards: [['4', 'Charizard'], ['58', 'Pikachu']] },
+    { id: 'base1', name: 'Base Set', official: 102, total: 102, release: '1999-01-09', code: 'BS', serie: 'base', cards: [['4', 'Charizard'], ['58', 'Pikachu']] },
     { id: 'base2', name: 'Jungle', official: 64, total: 64, release: '1999-06-16', cards: [['60', 'Pikachu']] },
     { id: 'hgss4', name: 'Triumphant', official: 102, total: 102, release: '2010-11-03', cards: [['58', 'Gengar']] },
     { id: 'sv03.5', name: '151', ptName: '151', official: 165, total: 207, release: '2023-09-22', code: 'MEW', cards: [['025', 'Pikachu'], ['006', 'Charizard ex', 'Charizard ex']] },
@@ -23,6 +23,11 @@ describe('CatalogLookup', () => {
     expect(lookup.search('', 25).map((m) => m.id)).toEqual(['sv03.5-025']);
     expect(lookup.search('')).toEqual([]);
     expect(lookup.search('charzard').map((m) => m.id)).toContain('base1-4'); // erro de digitação
+  });
+
+  it('busca manual: miniatura só quando o índice sabe a série da coleção', () => {
+    expect(lookup.search('pikachu', 58)[0]?.thumb).toBe('https://assets.tcgdex.net/en/base/base1/58/low.webp');
+    expect(lookup.search('pikachu', 60)[0]?.thumb).toBeUndefined();
   });
 
   it('conta sets e cartas', () => {

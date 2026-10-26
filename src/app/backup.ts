@@ -278,12 +278,13 @@ export function parseBackup(raw: string): BackupFile | BackupParseError {
   try { value = JSON.parse(raw); } catch { return 'json-invalido'; }
   if (!value || typeof value !== 'object') return 'formato-desconhecido';
   const v = value as Partial<BackupFile>;
-  if (v.format !== BACKUP_FORMAT || typeof v.version !== 'number' || !v.data || typeof v.data !== 'object') return 'formato-desconhecido';
+  if (v.format !== BACKUP_FORMAT || typeof v.version !== 'number' || !v.data || typeof v.data !== 'object' || Array.isArray(v.data)) return 'formato-desconhecido';
   if (v.version > BACKUP_VERSION || v.version < LEGACY_VERSION) return 'versao-incompativel';
   const rawData = v.data as Record<string, unknown>; const data: Record<string, string | null> = {};
   for (const key of new Set([...BACKUP_KEYS, ...Object.keys(rawData)])) {
     if (!key.startsWith(KEY_PREFIX)) continue;
     const entry = rawData[key];
+    if (entry !== undefined && entry !== null && typeof entry !== 'string') return 'backup-invalido';
     data[key] = typeof entry === 'string' ? entry : null;
   }
   const collection = v.collection && typeof v.collection === 'object' ? v.collection as BackupCollection : undefined;

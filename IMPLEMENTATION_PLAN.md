@@ -2,7 +2,7 @@
 
 Legenda: ✅ feito e coberto por testes automatizados / CI · 🔶 feito, **falta validar em celular real** · ⬜ a fazer
 
-Regra do plano: nada é dado como "funciona" sem verificação. Tudo marcado 🔶 passou nos testes e no Chromium com câmera falsa (GL por software), mas **nenhuma etapa foi vista num celular de verdade**. O roteiro está em [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
+Regra do plano: nada é dado como "funciona" sem verificação. O símbolo 🔶 indica que ainda falta validação em celular real; confira a descrição de cada entrega para saber se ela também foi vista no Chromium com câmera falsa (GL por software). O roteiro está em [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
 
 Registro de entregas já concluídas (cada uma com a data, o que mudou e o que não foi validado): [docs/HISTORICO.md](docs/HISTORICO.md). Foi movido para lá, sem alterar o texto, em 2026-10-23, para este plano ficar só com o **estado atual**, as **fases**, as **pendências** e os **riscos**.
 
