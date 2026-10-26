@@ -27,6 +27,7 @@ import {
   rerollSurvivorUpgradeOffer,
   stepSurvivor,
   survivorCoins,
+  survivorDefenseReduction,
   survivorScore,
   SURVIVOR_UPGRADE_RARITIES,
   SURVIVOR_UPGRADE_FAMILIES,
@@ -2198,6 +2199,7 @@ onBeforeUnmount(() => {
              <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
                {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
              </span>
+              <span class="chip" title="Redução de dano pela média da Defesa e Defesa Especial. Quanto maior a defesa, menor o ganho percentual por ponto.">{{ survivorDefenseReduction(state.player.dexId) === null ? 'Defesa indisponível' : `🛡 Redução ${Math.round((survivorDefenseReduction(state.player.dexId) ?? 0) * 100)}%` }}</span>
               <span v-if="(state.player.difficultyStacks ?? 0) > 0" class="chip" :title="`Dificuldade ${state.player.difficultyStacks}: +${(state.player.difficultyStacks ?? 0) * 15}% densidade e +${(state.player.difficultyStacks ?? 0) * 12}% de velocidade e dano dos inimigos`">☠ Dificuldade {{ state.player.difficultyStacks }}</span>
               <span v-if="(state.player.bonusCoins ?? 0) > 0" class="chip" title="Moedas das cartas, pagas no fim da corrida">🪙 +{{ state.player.bonusCoins }} no fim</span>
               <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>

@@ -1,4 +1,5 @@
 import { seededRng } from './battle';
+import { statsOfDex } from './survivor-stats';
 import type { Rng } from './battle';
 import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
@@ -1174,10 +1175,20 @@ function hitSource(enemy: SurvivorEnemy): SurvivorHitSource {
   return { ...(enemy.dexId !== undefined ? { dexId: enemy.dexId } : {}), boss: enemy.boss, grade: enemy.grade, ...(enemy.shadowBoss ? { shadowBoss: true } : {}) };
 }
 
+/** Média das duas defesas; retornos decrescentes como a armadura de League of Legends. */
+export function survivorDefenseReduction(dexId: number): number | null {
+  const stats = statsOfDex(dexId);
+  if (!stats) return null;
+  const defense = (stats.defense + stats.spDefense) / 2;
+  return defense / (200 + defense);
+}
+
 function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalHit['kind'], source: SurvivorHitSource): void {
   const p = state.player;
-  state.lastHit = { ...source, kind, damage, hpBefore: p.hp };
-  p.hp = Math.max(0, p.hp - damage);
+  const reduction = survivorDefenseReduction(p.dexId);
+  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)))) : 0;
+  state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
+  p.hp = Math.max(0, p.hp - effectiveDamage);
 }
 
 function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, target: SurvivorPlayer, damageMultiplier = 0.7): void {

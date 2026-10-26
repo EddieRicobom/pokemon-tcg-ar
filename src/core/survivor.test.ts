@@ -12,6 +12,7 @@ import {
   rerollSurvivorUpgradeOffer,
   stepSurvivor,
   survivorCoins,
+  survivorDefenseReduction,
   survivorDifficultyDensityMultiplier,
   survivorDifficultyEnemyMultiplier,
   survivorScore,
@@ -61,6 +62,19 @@ function run(seed: number, kindCount = 4) {
 }
 
 describe('stepSurvivor', () => {
+  it('aplica as duas defesas com retornos decrescentes e não inventa dados ausentes', () => {
+    // Pikachu: Defesa 40 e Defesa Especial 50, média 45.
+    expect(survivorDefenseReduction(25)).toBeCloseTo(45 / 245);
+    expect(survivorDefenseReduction(0)).toBeNull();
+    const state = quiet(run(1));
+    state.player.dexId = 25;
+    state.player.hp = 20;
+    state.enemies.push({ ...dummy(1, state.player.x, state.player.y), boss: true, grade: 'chefao', damage: 100 });
+    const events = stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    const end = events.find((event) => event.type === 'gameover');
+    expect(end?.type === 'gameover' && end.summary.finalHit?.damage).toBe(82);
+  });
+
   it('registra o golpe fatal de contato com o chefe e a vida anterior', () => {
     const state = quiet(run(1));
     state.player.hp = 20;
