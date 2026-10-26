@@ -33,6 +33,9 @@ export interface SurvivorPlayer {
   y: number;
   hp: number;
   maxHp: number;
+  /** Pontos obtidos em cartas nesta corrida; somam aos atributos reais da espécie. */
+  defenseBonus?: number;
+  spDefenseBonus?: number;
   speed: number;
   level: number;
   xp: number;

@@ -73,7 +73,7 @@ export const BALANCE = {
   bossHpPerWave: 70,
   bossSpeed: 72,
   bossDamageBase: 15,
-  bossDamagePerWave: 3,
+  bossDamagePerWave: 1.5,
   /** Lendários de Pokébola Sombria: encontros opcionais de risco médio-alto. */
   shadowBossHpMultiplier: 4.5,
   shadowBossDamageMultiplier: 2.2,
@@ -544,7 +544,8 @@ export function rollUpgrades(
     && (!player || u.id !== 'haste' || player.attackCooldownMs > 240)
     && (!player || u.id !== 'multishot' || player.shots < (move.category === 'orbit' ? 1 + SURVIVOR_ORBIT_MAX - SURVIVOR_ORBIT_BASE : 5))
     && (!player || u.id !== 'pierce' || player.pierce < 4)
-    && (!player || u.id !== 'heal-30' || player.hp < player.maxHp),
+    && (!player || u.id !== 'heal-30' || player.hp < player.maxHp)
+    && (!player || !u.id.startsWith('guard-') || statsOfDex(player.dexId) !== null),
   );
   const picked: SurvivorUpgradeOption[] = [];
   for (let i = 0; i < count && pool.length > 0; i++) {
@@ -1175,17 +1176,17 @@ function hitSource(enemy: SurvivorEnemy): SurvivorHitSource {
   return { ...(enemy.dexId !== undefined ? { dexId: enemy.dexId } : {}), boss: enemy.boss, grade: enemy.grade, ...(enemy.shadowBoss ? { shadowBoss: true } : {}) };
 }
 
-/** Média das duas defesas; retornos decrescentes como a armadura de League of Legends. */
-export function survivorDefenseReduction(dexId: number): number | null {
-  const stats = statsOfDex(dexId);
+/** Contato e explosão são físicos; projéteis são especiais. Cada defesa dá retornos decrescentes. */
+export function survivorDefenseReduction(player: Pick<SurvivorPlayer, 'dexId' | 'defenseBonus' | 'spDefenseBonus'>, kind: SurvivorFinalHit['kind']): number | null {
+  const stats = statsOfDex(player.dexId);
   if (!stats) return null;
-  const defense = (stats.defense + stats.spDefense) / 2;
+  const defense = kind === 'projétil' ? stats.spDefense + (player.spDefenseBonus ?? 0) : stats.defense + (player.defenseBonus ?? 0);
   return defense / (200 + defense);
 }
 
 function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalHit['kind'], source: SurvivorHitSource): void {
   const p = state.player;
-  const reduction = survivorDefenseReduction(p.dexId);
+  const reduction = survivorDefenseReduction(p, kind);
   const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)))) : 0;
   state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
   p.hp = Math.max(0, p.hp - effectiveDamage);

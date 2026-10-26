@@ -11,22 +11,27 @@ import { attackProfile, moveFor } from '../src/core/survivor-moves';
 import { statsOfDex } from '../src/core/survivor-stats';
 import { LAST_DEX, typesOfDex } from '../src/core/species-filter';
 import { applyUpgrade, ARENA_H, ARENA_W, createSurvivorState, stepSurvivor } from '../src/core/survivor';
+import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch } from '../src/core/survivor-specials';
 import type { SurvivorInput, SurvivorState } from '../src/core/survivor';
 
-const DT = 16;
+/** Amostra e passo menores para diagnósticos locais; o padrão de avaliação continua em 200 corridas a 60 fps. */
+const DT = Math.max(16, Math.min(100, Number(process.env.SURVIVOR_SIM_DT ?? 16)));
+const RUNS = Math.max(1, Math.min(200, Number(process.env.SURVIVOR_SIM_RUNS ?? 200)));
 // O chefe final chega aos 20 min; o teto precisa ultrapassá-lo para observar o modo infinito.
-const CAP_MS = 25 * 60_000;
+const CAP_MS = Math.max(60_000, Math.min(25 * 60_000, Number(process.env.SURVIVOR_SIM_CAP_MIN ?? 25) * 60_000));
 
 /** Robô "jogador mediano": foge de quem está perto (chefe pesa mais), evita parede, pega orbe quando está seguro. */
 function bot(s: SurvivorState): SurvivorInput {
   const p = s.player;
   let fx = 0;
   let fy = 0;
+  let bossNear = false;
   for (const e of s.enemies) {
     const dx = p.x - e.x;
     const dy = p.y - e.y;
     const d = Math.hypot(dx, dy) || 1;
     if (d > 230) continue;
+    if (e.boss && d < 180) bossNear = true;
     const w = ((e.boss ? 3 : 1) * 1e4) / (d * d);
     fx += (dx / d) * w;
     fy += (dy / d) * w;
@@ -49,7 +54,7 @@ function bot(s: SurvivorState): SurvivorInput {
     fx += (best.x - p.x) / (bd || 1);
     fy += (best.y - p.y) / (bd || 1);
   }
-  return { dx: fx, dy: fy };
+  return { dx: fx, dy: fy, special: bossNear && s.special.phase === 'ready' && s.special.cooldownMs === 0 };
 }
 
 interface Run {
@@ -60,6 +65,9 @@ interface Run {
   bossesSpawned: number;
   bossesKilled: number;
   diedWithBoss: boolean;
+  diedFromBoss: boolean;
+  oneShotFromFull: boolean;
+  defenseCards: number;
   moveCategory: string;
 }
 
@@ -81,9 +89,19 @@ function play(seed: number, pick: (s: SurvivorState, rng: Rng) => string, noBoss
   const rng = seededRng(seed ^ 0x5eed);
   let bossesSpawned = 0;
   let bossesKilled = 0;
+  let steps = 0;
   while (!s.over && s.elapsedMs < CAP_MS) {
+    if (++steps > (CAP_MS / DT) * 3) throw new Error(`Simulação parada aos ${s.elapsedMs} ms (${s.special.phase})`);
     if (s.pendingUpgrade) {
       applyUpgrade(s, pick(s, rng));
+      continue;
+    }
+    if (s.special.phase === 'choice') {
+      chooseSurvivorSpecial(s, 'shield');
+      continue;
+    }
+    if (s.special.phase === 'branch-choice') {
+      chooseSurvivorSpecialBranch(s, 'shield-permanent');
       continue;
     }
     const bossesBefore = s.enemies.filter((e) => e.boss).length;
@@ -96,11 +114,18 @@ function play(seed: number, pick: (s: SurvivorState, rng: Rng) => string, noBoss
   return {
     survivedMs: s.elapsedMs, level: s.player.level, wave: s.wave, kills: s.kills, bossesSpawned, bossesKilled,
     diedWithBoss: s.over && s.enemies.some((e) => e.boss),
+    diedFromBoss: s.over && s.lastHit?.boss === true,
+    oneShotFromFull: s.over && !!s.lastHit && s.lastHit.hpBefore >= s.player.maxHp && s.lastHit.damage >= s.lastHit.hpBefore,
+    defenseCards: ['guard-physical', 'guard-special', 'guard-balanced'].reduce((count, id) => count + (s.player.upgradeLevels[id] ?? 0), 0),
     moveCategory: move.category,
   };
 }
 
 const randomPick = (s: SurvivorState, rng: Rng) => s.pendingUpgrade![Math.floor(rng() * s.pendingUpgrade!.length)]!.id;
+const defensePick = (s: SurvivorState, rng: Rng) => {
+  const preferred = ['guard-physical', 'guard-balanced', 'guard-special', 'second-wind', 'vigor'];
+  return preferred.map((id) => s.pendingUpgrade?.find((card) => card.id === id)).find((card) => card !== undefined)?.id ?? randomPick(s, rng);
+};
 
 function pct(sorted: number[], q: number): number {
   return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * q))] ?? 0;
@@ -121,7 +146,11 @@ function report(label: string, runs: Run[]): void {
     viuChefe: `${Math.round((sawBoss.length / runs.length) * 100)}%`,
     derrotouAlgumChefe: sawBoss.length ? `${Math.round((killedFirst / sawBoss.length) * 100)}% de quem viu` : '—',
     morreuComChefeEmCampo: `${Math.round((runs.filter((r) => r.diedWithBoss).length / runs.length) * 100)}%`,
-    chegouAos25min: `${Math.round((capped / runs.length) * 100)}%`,
+    golpeFinalDeChefe: `${Math.round((runs.filter((r) => r.diedFromBoss).length / runs.length) * 100)}%`,
+    morteComVidaCheia: `${Math.round((runs.filter((r) => r.oneShotFromFull).length / runs.length) * 100)}%`,
+    cartasDeDefesaMediana: pct(runs.map((r) => r.defenseCards).sort((a, b) => a - b), 0.5),
+    limiteMin: CAP_MS / 60_000,
+    chegouAoLimite: `${Math.round((capped / runs.length) * 100)}%`,
     porFormaDeGolpe: Object.fromEntries([...new Set(runs.map((run) => run.moveCategory))].sort().map((category) => {
       const group = runs.filter((run) => run.moveCategory === category);
       const times = group.map((run) => run.survivedMs / 1000).sort((a, b) => a - b);
@@ -150,14 +179,19 @@ function advanceWithSafety(infinite: boolean, targetMs: number): SurvivorState {
 }
 
 describe('balanceamento da Torre (robô)', () => {
-  it('200 corridas, upgrades ao acaso', () => {
-    const runs = Array.from({ length: 200 }, (_, i) => play(1000 + i, randomPick));
+  it(`${RUNS} corridas, upgrades ao acaso`, () => {
+    const runs = Array.from({ length: RUNS }, (_, i) => play(1000 + i, randomPick));
     report('acaso', runs);
   }, 600_000);
 
   it('diagnóstico: as mesmas corridas sem chefe (o que mata é o chefe ou a multidão?)', () => {
-    const runs = Array.from({ length: 200 }, (_, i) => play(1000 + i, randomPick, true));
+    const runs = Array.from({ length: RUNS }, (_, i) => play(1000 + i, randomPick, true));
     report('sem-chefe', runs);
+  }, 600_000);
+
+  it('diagnóstico: as mesmas corridas priorizando cartas de defesa', () => {
+    const runs = Array.from({ length: RUNS }, (_, i) => play(1000 + i, defensePick));
+    report('defesa', runs);
   }, 600_000);
 
   it('cobre os marcos do relógio e o infinito depois de 20 minutos', () => {
