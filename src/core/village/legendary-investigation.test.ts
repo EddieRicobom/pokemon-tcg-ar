@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LEGEND_STORIES, LEGEND_PLACES } from './legendary-stories';
-import { beginInvestigation, inspectLegendClue, investigationPlace, legendDiaryPage } from './legendary-investigation';
+import { firstSignPlace, LEGEND_STORIES, LEGEND_PLACES, legendStoryOf } from './legendary-stories';
+import { inspectLegendClue, investigationPlace, legendDiaryPage, legendStep, nearbyLegendClues, openLegendClues } from './legendary-investigation';
 import { dismissActive, emptyLegendary, legendaryEffects, normalizeLegendary, NO_EFFECTS, LEGENDARIES, LEGENDARY_HISTORY_LIMIT } from './legendary';
 import { generateVillage, isWalkable, reachableFrom } from './map';
 import { pathStep } from './pathing';
@@ -20,45 +20,89 @@ describe('catálogo completo das lendas', () => {
   });
 });
 
+const ALL = new Set(LEGEND_STORIES.map((story) => story.region));
 describe('investigações com ações reais', () => {
   it.each(LEGEND_STORIES.map((story) => [story.id] as const))('%s: requer as duas pistas em locais distintos, persiste a etapa e não duplica visita', (id) => {
-    const initial = emptyLegendary();
-    let state = beginInvestigation(initial, id);
+    // Os outros já vividos: vários lendários dividem a mesma pista e o mais antigo da lista tem prioridade.
+    const initial = { ...emptyLegendary(), seen: Object.fromEntries(LEGEND_STORIES.filter((story) => story.id !== id).map((story) => [story.id, NOW])) };
+    let state = initial;
     const first = investigationPlace(id, 0)!, last = investigationPlace(id, 1)!;
     expect(first).not.toEqual(last);
-    expect(inspectLegendClue(state, { x: 0, y: 0 }, NOW).state).toBe(state);
+    expect(inspectLegendClue(state, { x: 0, y: 0 }, NOW, ALL).state).toBe(state);
+    expect(inspectLegendClue(state, first, NOW, new Set()).state).toBe(state);
     expect(initial.history).toHaveLength(0);
-    state = inspectLegendClue(state, first, NOW).state;
-    expect(state.investigation?.step).toBe(1);
+    state = inspectLegendClue(state, first, NOW, new Set([legendStoryOf(id)!.region])).state;
+    expect(legendStep(state, id)).toBe(1);
     expect(state.active).toBeNull();
     state = normalizeLegendary(JSON.parse(JSON.stringify(state)));
-    expect(state.investigation?.step).toBe(1);
-    const result = inspectLegendClue(state, last, NOW);
+    expect(legendStep(state, id)).toBe(1);
+    const result = inspectLegendClue(state, last, NOW, ALL);
     expect(result.encounter).toBe(true);
     expect(result.state.history).toEqual([{ id, at: NOW }]);
     expect(result.state.seen[id]).toBe(NOW);
     expect(result.state.active?.id).toBe(id);
-    expect(inspectLegendClue(result.state, last, NOW).encounter).toBe(false);
-    const finished = dismissActive(result.state);
-    expect(beginInvestigation(finished, id)).toBe(finished);
+    expect(result.state.progress[id]).toBeUndefined();
+    expect(inspectLegendClue(result.state, last, NOW, ALL).encounter).toBe(false);
     expect(legendDiaryPage(id, Date.parse(NOW), '2026-10-21', 12)?.cast[0]?.name).toBe(LEGEND_STORIES.find((story) => story.id === id)?.name);
   });
 
-  it('não troca uma cena pendente por outra investigação e rejeita dados inválidos', () => {
-    const initial = { ...emptyLegendary(), active: { id: 'lugia' } };
-    expect(beginInvestigation(initial, 'mew')).toBe(initial);
-    expect(beginInvestigation(emptyLegendary(), 'fake').investigation).toBeNull();
-    const started = beginInvestigation(emptyLegendary(), 'mew');
-    expect(inspectLegendClue(started, investigationPlace('mew',0)!, 'invalid').state).toBe(started);
+  it('só abre pistas das regiões liberadas, todas ao mesmo tempo', () => {
+    const state = emptyLegendary();
+    expect(openLegendClues(state, new Set())).toHaveLength(0);
+    const kanto = openLegendClues(state, new Set(['Kanto']));
+    expect(kanto.length).toBeGreaterThan(1);
+    expect(kanto.every((story) => story.region === 'Kanto')).toBe(true);
+    const story = LEGEND_STORIES.find((entry) => entry.region === 'Johto')!;
+    const spot = investigationPlace(story.id, 0)!;
+    expect(inspectLegendClue(state, spot, NOW, new Set(['Kanto'])).state).toBe(state);
+    expect(nearbyLegendClues(state, spot, new Set(['Johto'])).length).toBeGreaterThan(0);
+  });
+
+  it('não troca uma cena pendente por outra e rejeita data inválida', () => {
+    const pending = { ...emptyLegendary(), active: { id: 'lugia' } };
+    const place = investigationPlace('mew', 0)!;
+    expect(inspectLegendClue(pending, place, NOW, ALL).state).toBe(pending);
+    const initial = emptyLegendary();
+    expect(inspectLegendClue(initial, place, 'invalid', ALL).state).toBe(initial);
+  });
+
+  it('vários lendários no mesmo ponto avançam juntos e os encontros entram em fila', () => {
+    const regions = new Set(['Kanto', 'Johto', 'Hoenn']);
+    const stories = openLegendClues(emptyLegendary(), regions);
+    const spot = investigationPlace(stories[0]!.id, 0)!;
+    const together = stories.filter((story) => investigationPlace(story.id, 0) === spot);
+    expect(together.length).toBeGreaterThan(1);
+    let state = inspectLegendClue(emptyLegendary(), spot, NOW, regions).state;
+    for (const story of together) expect(legendStep(state, story.id)).toBe(1);
+    const finalSpot = investigationPlace(together[0]!.id, 1)!;
+    const sharing = together.filter((story) => investigationPlace(story.id, 1) === finalSpot);
+    const result = inspectLegendClue(state, finalSpot, NOW, regions);
+    state = result.state;
+    expect(result.encounters).toEqual(sharing.map((story) => story.id));
+    expect(state.active?.id).toBe(sharing[0]!.id);
+    expect(state.queue).toEqual(sharing.slice(1).map((story) => story.id));
+    for (const story of sharing) expect(state.seen[story.id]).toBe(NOW);
+    expect(inspectLegendClue(state, finalSpot, NOW, regions).state).toBe(state);
+    for (let i = 1; i < sharing.length; i++) {
+      state = dismissActive(state);
+      expect(state.active?.id).toBe(sharing[i]!.id);
+    }
+    state = dismissActive(state);
+    expect(state.active).toBeNull();
+    expect(state.queue).toEqual([]);
+  });
+
+  it('a primeira pista nunca fica no cenário final e usa vários pontos do mapa', () => {
+    for (const story of LEGEND_STORIES) expect(firstSignPlace(story), story.id).not.toBe(story.place);
+    expect(new Set(LEGEND_STORIES.map((story) => firstSignPlace(story))).size).toBeGreaterThanOrEqual(9);
   });
 
   it('preserva todas as 94 lembranças mesmo quando o histórico de efeitos descarta visitas antigas', () => {
     let state = emptyLegendary();
-    for (const story of LEGEND_STORIES) {
-      state = beginInvestigation(state, story.id);
-      state = inspectLegendClue(state, investigationPlace(story.id,0)!,NOW).state;
-      state = inspectLegendClue(state, investigationPlace(story.id,1)!,NOW).state;
-      state = dismissActive(state);
+    const spots = Object.values(LEGEND_PLACES);
+    for (let round = 0; round < 2; round++) for (const spot of spots) {
+      state = inspectLegendClue(state, spot, NOW, ALL).state;
+      while (state.active) state = dismissActive(state);
     }
     expect(legendaryEffects(state, Date.parse(NOW),'2026-10-21',(ms)=>new Date(ms).toISOString().slice(0,10)).coinMultiplier).toBe(1.3);
     state.history = [...state.history, ...Array.from({ length: 128 }, () => ({ id: 'articuno', at: NOW }))].slice(-LEGENDARY_HISTORY_LIMIT);
@@ -70,9 +114,9 @@ describe('investigações com ações reais', () => {
   });
 
   it('migra visitas antigas e descarta pesquisas concluídas e datas corrompidas', () => {
-    const state = normalizeLegendary({ history: [{ id: 'suicune', at: NOW }], seen: { mew: 'not-a-date', fake: NOW }, investigation: { id: 'suicune', step: 1 }, attempts: Infinity });
+    const state = normalizeLegendary({ history: [{ id: 'suicune', at: NOW }], seen: { mew: 'not-a-date', fake: NOW }, investigation: { id: 'mew', step: 1 }, attempts: Infinity });
     expect(state.seen).toEqual({ suicune: NOW });
-    expect(state.investigation).toBeNull();
+    expect(state.progress).toEqual({ mew: 1 });
     expect(state.attempts).toBe(0);
     expect(legendDiaryPage('fake',1,'2026-10-21',12)).toBeNull();
   });

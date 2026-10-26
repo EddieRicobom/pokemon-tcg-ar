@@ -11,8 +11,31 @@ export const LEGEND_PLACES = {
   farm: { name: 'Caminho da Fazenda', x: 84, y: 46, landscape: 'forest' },
   south: { name: 'Trilha do Bosque do Sul', x: 22, y: 64, landscape: 'forest' },
   tower: { name: 'Calçada da Torre', x: 14, y: 24, landscape: 'city' },
+  // Bairros do mapa grande (coordenadas dos pontos de passeio em `expansion.ts`): servem de primeira pista.
+  garden: { name: 'Jardim das Estações', x: 40, y: 81, landscape: 'forest' },
+  square: { name: 'Praça dos Encontros', x: 71, y: 83, landscape: 'city' },
+  grove: { name: 'Bosque do Piquenique', x: 99, y: 66, landscape: 'forest' },
+  lookout: { name: 'Mirante das Nuvens', x: 104, y: 19, landscape: 'water' },
+  beach: { name: 'Praia das Conchas', x: 109, y: 49, landscape: 'water' },
 } as const;
 export type LegendPlace = keyof typeof LEGEND_PLACES;
+/** Cenários finais dos encontros; os demais lugares só abrigam a primeira pista. */
+const FINAL_PLACES = ['plaza', 'lake', 'woods', 'mine', 'park', 'farm', 'south', 'tower'] as const;
+/** Onde cada encontro dá o primeiro sinal: espalhado pelo mapa grande, nunca no próprio cenário final. */
+const FIRST_SIGNS: Record<(typeof FINAL_PLACES)[number], readonly LegendPlace[]> = {
+  plaza: ['park', 'square', 'garden', 'tower'],
+  lake: ['lookout', 'beach', 'farm', 'plaza'],
+  woods: ['tower', 'park', 'plaza', 'south'],
+  mine: ['south', 'garden', 'park', 'woods'],
+  park: ['plaza', 'tower', 'garden', 'mine'],
+  farm: ['grove', 'beach', 'square', 'south'],
+  south: ['garden', 'square', 'mine', 'farm'],
+  tower: ['plaza', 'woods', 'square', 'park'],
+};
+export function firstSignPlace(story: { dexId: number; place: LegendPlace }): LegendPlace {
+  const options = FIRST_SIGNS[story.place as (typeof FINAL_PLACES)[number]];
+  return options[story.dexId % options.length]!;
+}
 export type LegendTheme = 'frost' | 'storm' | 'flame' | 'mind' | 'forest' | 'ocean' | 'rainbow' | 'stone' | 'cosmos' | 'shadow' | 'prism' | 'guardian';
 export interface LegendStory {
   id: string; dexId: number; name: string; region: string; mythical: boolean;

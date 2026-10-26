@@ -167,11 +167,14 @@ export interface LegendaryState {
   active: { id: string } | null;
   /** Primeiras visitas testemunhadas, sem o limite do histórico temporário de efeitos. */
   seen: Record<string, string>;
-  investigation: { id: string; step: 0 | 1 } | null;
+  /** Pistas abertas ao mesmo tempo: só guarda quem já passou da primeira (id → 1); o resto está na etapa 0. */
+  progress: Record<string, 1>;
+  /** Encontros do mesmo ponto à espera da cena atual terminar (já registrados como vistos). */
+  queue: string[];
 }
 
 export function emptyLegendary(): LegendaryState {
-  return { history: [], attempts: 0, lastRollDay: '', active: null, seen: {}, investigation: null };
+  return { history: [], attempts: 0, lastRollDay: '', active: null, seen: {}, progress: {}, queue: [] };
 }
 
 export function normalizeLegendary(raw: unknown): LegendaryState {
@@ -182,9 +185,15 @@ export function normalizeLegendary(raw: unknown): LegendaryState {
   if (r.seen && typeof r.seen === 'object') for (const [id, at] of Object.entries(r.seen)) if (ids.has(id) && validTime(at)) seen[id] = at;
   const history = Array.isArray(r.history) ? r.history.filter((e): e is LegendaryEncounter => !!e && typeof e.id === 'string' && validTime(e.at)).slice(-LEGENDARY_HISTORY_LIMIT) : [];
   for (const entry of history) if (ids.has(entry.id) && !seen[entry.id]) seen[entry.id] = entry.at;
+  const progress: Record<string, 1> = {};
+  const saved = r.progress && typeof r.progress === 'object' ? r.progress : {};
+  for (const [id, step] of Object.entries(saved)) if (ids.has(id) && !seen[id] && step === 1) progress[id] = 1;
+  // Saves antigos guardavam uma única investigação em andamento.
+  const old = (raw as { investigation?: { id?: unknown; step?: unknown } | null } | null)?.investigation;
+  if (old && typeof old.id === 'string' && ids.has(old.id) && !seen[old.id] && old.step === 1) progress[old.id] = 1;
   return {
-    history, seen,
-    investigation: r.investigation && ids.has(r.investigation.id) && !seen[r.investigation.id] ? { id: r.investigation.id, step: r.investigation.step === 1 ? 1 : 0 } : null,
+    history, seen, progress,
+    queue: Array.isArray(r.queue) ? [...new Set(r.queue.filter((id): id is string => typeof id === 'string' && ids.has(id)))].filter((id) => id !== r.active?.id) : [],
     attempts: typeof r.attempts === 'number' && Number.isFinite(r.attempts) && r.attempts >= 0 ? Math.floor(r.attempts) : 0,
     lastRollDay: typeof r.lastRollDay === 'string' ? r.lastRollDay : '',
     active: r.active && typeof r.active === 'object' && typeof r.active.id === 'string' && ids.has(r.active.id) ? { id: r.active.id } : null,
@@ -204,15 +213,16 @@ export interface RollResult {
  * Uma oportunidade de sorteio (no máximo uma por `day`, veja o comentário do arquivo). Se já rolou hoje ou se um
  * encontro já está ativo esperando o jogador ver a cutscene, não sorteia de novo (evita manipular reabrindo a Vila).
  */
-export function rollLegendary(s: LegendaryState, rng: Rng, day: string, now: string): RollResult {
+export function rollLegendary(s: LegendaryState, rng: Rng, day: string, now: string, eligible: (id: string) => boolean = () => true): RollResult {
   if (s.lastRollDay === day || s.active) return { state: s, legendary: null };
   const attempts = s.attempts + 1;
   const base: LegendaryState = { ...s, attempts, lastRollDay: day };
-  if (rng() >= BASE_CHANCE) return { state: base, legendary: null };
-  const totalWeight = LEGENDARIES.reduce((sum, l) => sum + l.weight, 0);
+  const pool = LEGENDARIES.filter((l) => eligible(l.id));
+  if (!pool.length || rng() >= BASE_CHANCE) return { state: base, legendary: null };
+  const totalWeight = pool.reduce((sum, l) => sum + l.weight, 0);
   let roll = rng() * totalWeight;
-  let chosen = LEGENDARIES[0]!;
-  for (const l of LEGENDARIES) {
+  let chosen = pool[0]!;
+  for (const l of pool) {
     if (roll < l.weight) {
       chosen = l;
       break;
@@ -220,12 +230,14 @@ export function rollLegendary(s: LegendaryState, rng: Rng, day: string, now: str
     roll -= l.weight;
   }
   const history = [...s.history, { id: chosen.id, at: now }].slice(-LEGENDARY_HISTORY_LIMIT);
-  return { state: { ...base, history, seen: { ...s.seen, [chosen.id]: s.seen[chosen.id] ?? now }, investigation: s.investigation?.id === chosen.id ? null : s.investigation, active: { id: chosen.id } }, legendary: chosen };
+  return { state: { ...base, history, seen: { ...s.seen, [chosen.id]: s.seen[chosen.id] ?? now }, progress: Object.fromEntries(Object.entries(s.progress).filter(([id]) => id !== chosen.id)), active: { id: chosen.id } }, legendary: chosen };
 }
 
 /** Fecha a cutscene ativa (o jogador já viu); o encontro já ficou registrado no histórico ao sortear. */
 export function dismissActive(s: LegendaryState): LegendaryState {
-  return s.active ? { ...s, active: null } : s;
+  if (!s.active) return s;
+  const [next, ...queue] = s.queue;
+  return { ...s, active: next ? { id: next } : null, queue };
 }
 
 /**
