@@ -25,6 +25,13 @@ describe('rotas por hash', () => {
     expect(parseRoute(routeHref('escanear', 'swsh12tg-TG05'))).toEqual({ name: 'escanear', cardId: 'swsh12tg-TG05' });
   });
 
+  it('ignora links malformados e nomes herdados do protótipo', () => {
+    for (const hash of ['#/escanear/%', '#/escanear/%E0%A4%A', '#/toString', '#/constructor']) {
+      expect(parseRoute(hash)).toEqual({ name: 'escanear' });
+      expect(redirectFor(hash)).toBeNull();
+    }
+  });
+
   it('a Vila tem rota própria', () => {
     expect(parseRoute('#/vila')).toEqual({ name: 'vila' });
     expect(routeHref('vila')).toBe('#/vila');

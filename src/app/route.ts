@@ -12,12 +12,12 @@ export interface Route {
  * Rotas antigas que viraram outras (o endereço é trocado ao abrir, para links e atalhos guardados continuarem valendo):
  * `#/carregar` era «Minhas cartas» como modo do Escanear; hoje é a primeira sub-aba de Cartas (`#/cartas`).
  */
-const OLD_ROUTES: Record<string, RouteName> = { carregar: 'cartas' };
+const OLD_ROUTES: ReadonlyMap<string, RouteName> = new Map([['carregar', 'cartas']]);
 
 /** Endereço novo de um endereço antigo (mantém os sinalizadores depois do `?`), ou null se o endereço já é atual. */
 export function redirectFor(hash: string): string | null {
   const [path = '', query] = hash.replace(/^#\/?/, '').split('?');
-  const target = OLD_ROUTES[path.split('/')[0] ?? ''];
+  const target = OLD_ROUTES.get(path.split('/')[0] ?? '');
   if (!target) return null;
   return query ? `${routeHref(target)}?${query}` : routeHref(target);
 }
@@ -34,12 +34,14 @@ export function parseRoute(hash: string): Route {
   if (first === 'caixa') return { name: 'caixa' };
   if (first === 'arena') return { name: 'arena' };
   if (first === 'pins') return { name: 'pins' };
-  const old = OLD_ROUTES[first ?? ''];
+  const old = OLD_ROUTES.get(first ?? '');
   if (old) return { name: old };
   if (first === 'treinador') return { name: 'treinador' };
   if (first === 'diagnostico') return { name: 'diagnostico' };
   const id = rest.join('/');
-  return id ? { name: 'escanear', cardId: decodeURIComponent(id) } : { name: 'escanear' };
+  if (!id) return { name: 'escanear' };
+  try { return { name: 'escanear', cardId: decodeURIComponent(id) }; }
+  catch { return { name: 'escanear' }; }
 }
 
 /**

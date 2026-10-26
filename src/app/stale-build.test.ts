@@ -38,13 +38,17 @@ describe('reloadOnce', () => {
     const later = env(1_000_000 + RELOAD_COOLDOWN_MS + 1, storage);
     expect(reloadOnce(later)).toBe(true);
   });
-  it('sem armazenamento ou com armazenamento que falha, ainda recarrega', () => {
+  it('sem armazenamento ou quando ele falha, evita recarregar em laço', () => {
     const e1 = env(5, null);
-    expect(reloadOnce(e1)).toBe(true);
+    expect(reloadOnce(e1)).toBe(false);
     const broken: ReloadEnv['storage'] = { getItem: () => { throw new Error('bloqueado'); }, setItem: () => undefined };
     const e2 = env(5, broken);
-    expect(reloadOnce(e2)).toBe(true);
-    expect(e2.reload).toHaveBeenCalled();
+    expect(reloadOnce(e2)).toBe(false);
+    expect(e1.reload).not.toHaveBeenCalled();
+    expect(e2.reload).not.toHaveBeenCalled();
+    const writeFails = env(5, { getItem: () => null, setItem: () => { throw new Error('bloqueado'); } });
+    expect(reloadOnce(writeFails)).toBe(false);
+    expect(writeFails.reload).not.toHaveBeenCalled();
   });
 });
 
