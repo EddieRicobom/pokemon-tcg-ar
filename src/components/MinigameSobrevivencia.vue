@@ -40,18 +40,17 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
-import { typesOfDex } from '../core/species-filter';
+import { survivorAttackOf } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
 import { trainer } from '../app/trainer-store';
-import type { AttackProfile, SurvivorMove } from '../core/survivor-moves';
+import type { SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { DecodedGif } from '../core/gif';
-import { speciesTiles } from '../core/size-scale';
-import { contentBounds } from '../village/local-sprite';
-import type { ContentBounds } from '../village/local-sprite';
+import { firstSpriteFrame, frameIndex, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
+import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
 import { survivorBiomeAt, survivorBiomeLabel } from '../core/survivor-biomes';
@@ -87,7 +86,6 @@ import { paintAccessory } from '../village/item-art';
 import { placeAccessory } from '../core/village/accessory-fit';
 import { itemDef } from '../core/village/catalog';
 import type { Facing, Placement } from '../core/village/accessory-fit';
-import { metallicTint } from '../core/metallic';
 
 /** Ícone por upgrade, só pra ficar mais fácil de reconhecer na hora do susto do nível — não muda a lógica. */
 const UPGRADE_ICON: Record<string, string> = {
@@ -104,15 +102,6 @@ const RARITY_BALL_IMAGE: Record<SurvivorUpgradeRarity, string> = {
   ancestral: assetUrl('assets/survivor/balls/master-ball.png'),
 };
 
-/** O golpe de uma espécie na Torre: elemento pelo 1º tipo, forma e números pelos stats reais (`core/survivor-moves.ts`). */
-function attackOf(dexId: number, picked?: PokemonType): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove } {
-  const stats = statsOfDex(dexId);
-  const types = typesOfDex(dexId);
-  const ordered = picked ? [picked, ...types.filter((t) => t !== picked)] : types;
-  const move = moveFor(ordered, stats);
-  const secondType = types.find((type) => type !== picked && type !== move.type);
-  return { move, profile: attackProfile(move, stats), types, ...(secondType ? { secondMove: moveFor([secondType], stats) } : {}) };
-}
 const moveLine = (m: SurvivorMove): string => `${m.icon} ${m.name} · ${MOVE_CATEGORY_LABELS_PT[m.category]}`;
 /** Uma frase de uso prático antes da corrida, sem esconder os números e efeitos reais do golpe. */
 const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
@@ -199,42 +188,6 @@ async function loadLandscapeAtlas(): Promise<void> {
   }
 }
 
-interface Sprite {
-  frames: HTMLCanvasElement[];
-  delays: number[];
-  durationMs: number;
-  w: number;
-  h: number;
-  /** Caixa dos pixels opacos (frações do quadro): os pés ficam no ponto do chão, sem a margem da folha. */
-  bounds: ContentBounds;
-  /** Fator que leva o desenho ao tamanho pela altura real da espécie (1 = tamanho da folha, sem dado de altura). */
-  fit: number;
-}
-
-/** Folhas locais têm quatro poses reais; fontes externas continuam com uma só, sem inventar direções. */
-type SpriteAsset = Sprite | Partial<Record<SurvivorSpriteDirection, Sprite>>;
-
-/** Pixels de altura na Torre para 1 bloco de altura real (`core/size-scale.ts`); Pikachu ≈ 19 px, Snorlax ≈ 37 px. */
-const SURVIVOR_TILE_PX = 22;
-
-function toSprite(gif: DecodedGif, dexId?: number, metallic = false): Sprite {
-  const frames = gif.frames.map((f) => {
-    const c = document.createElement('canvas');
-    c.width = gif.width;
-    c.height = gif.height;
-    const fctx = c.getContext('2d')!;
-    const img = fctx.createImageData(gif.width, gif.height);
-    img.data.set(metallic ? metallicTint(f.rgba) : f.rgba);
-    fctx.putImageData(img, 0, 0);
-    return c;
-  });
-  const bounds = contentBounds(gif);
-  const contentPx = Math.max(1, (bounds.bottom - bounds.top) * gif.height);
-  const tiles = speciesTiles(dexId);
-  const fit = tiles === undefined ? 1 : (tiles * SURVIVOR_TILE_PX) / contentPx;
-  return { frames, delays: gif.frames.map((f) => f.delayMs), durationMs: gif.durationMs, w: gif.width, h: gif.height, bounds, fit };
-}
-
 const accessoryMemory = new Map<string, HTMLCanvasElement | null>();
 function accessoryCanvas(id: string | null | undefined): HTMLCanvasElement | null {
   if (!id) return null;
@@ -251,22 +204,6 @@ function accessoryCanvas(id: string | null | undefined): HTMLCanvasElement | nul
     accessoryMemory.set(id, null);
     return null;
   }
-}
-
-function frameIndex(sprite: Sprite, timeMs: number): number {
-  if (sprite.frames.length <= 1 || sprite.durationMs <= 0) return 0;
-  let remaining = ((timeMs % sprite.durationMs) + sprite.durationMs) % sprite.durationMs;
-  for (let i = 0; i < sprite.delays.length; i++) {
-    remaining -= sprite.delays[i] ?? 0;
-    if (remaining < 0) return i;
-  }
-  return sprite.frames.length - 1;
-}
-
-function firstSpriteFrame(asset: SpriteAsset | null | undefined): HTMLCanvasElement | null {
-  if (!asset) return null;
-  const sprite = 'frames' in asset ? asset : (asset.down ?? asset.right ?? asset.left ?? asset.up ?? null);
-  return sprite?.frames[0] ?? null;
 }
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
@@ -1926,7 +1863,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
     ),
   );
   return chosen.map(({ id, dexId, name, origin, shiny, accessory }, i) => {
-    const { move, profile, types } = attackOf(dexId);
+    const { move, profile, types } = survivorAttackOf(dexId);
     return { id, dexId, name, origin, types, move, bars: profileBars(move, profile), thumb: thumbs[i] ?? null, shiny, accessory, digital: chosen[i]?.digital === true };
   });
 }
@@ -1979,7 +1916,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     pendingUpgrade.value = null;
     clearTrainerPresentation();
     paused.value = false;
-    const { move, profile, secondMove } = attackOf(dexId, picked);
+    const { move, profile, secondMove } = survivorAttackOf(dexId, picked);
     runSeenDex.clear();
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
     state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast });

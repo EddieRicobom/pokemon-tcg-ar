@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import VillageMailPanel from './VillageMailPanel.vue';
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { getCache, getDigitalSprite, getLocalVillageSprite, getLocalVillageSpriteDirs, getVillageAtlas, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
 import { resolveTeam } from '../app/team';
@@ -36,7 +37,8 @@ import { isLegendUnlocked, unlockedLegendRegions } from '../core/village/legenda
 import { league } from '../app/league-store';
 import type { DecodedGif } from '../core/gif';
 import MinigameHub from './MinigameHub.vue';
-import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
+import { lazyView } from '../app/lazy-view';
+const MinigameSobrevivencia = lazyView(() => import('./MinigameSobrevivencia.vue'));
 import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
 import { personalityOf } from '../core/village/personality';
@@ -112,7 +114,7 @@ import { loadCardCompanionEntry } from '../app/companion-creatures';
 import { companionCard } from '../app/card-evolution-store';
 import type { CachedCard } from '../cache/types';
 import QuizDialog from './QuizDialog.vue';
-import { generateDailyMail, mailActionLabel, mailKindLabel, markMailRead, queueMomentMail, respondToMail } from '../core/village/mail';
+import { generateDailyMail, markMailRead, queueMomentMail, respondToMail } from '../core/village/mail';
 import type { MailAction } from '../core/village/mail';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
@@ -1821,7 +1823,10 @@ function closeVillageSheet(): void {
 function requestCloseSheet(): void {
   const action = villageSheetCloseAction(sheet.value, tab.value === 'inicio');
   if (action === 'back') tab.value = 'inicio';
-  else if (action === 'tower') towerGameRef.value?.requestLeave();
+  else if (action === 'tower') {
+    if (typeof towerGameRef.value?.requestLeave === 'function') towerGameRef.value.requestLeave();
+    else closeVillageSheet(); // A Torre ainda está carregando ou não pôde abrir.
+  }
   else if (action === 'close') closeVillageSheet();
 }
 
@@ -3478,31 +3483,7 @@ onBeforeUnmount(() => {
           </section>
         </div>
 
-        <div v-else-if="tab === 'correio'" class="diary village-mail-panel">
-          <p class="hint">Cartas ligadas a momentos que realmente aconteceram. Os nomes abaixo são os Pokémon envolvidos no Diário; responder pode criar um novo compromisso social.</p>
-          <section aria-labelledby="mail-inbox-title">
-            <h4 id="mail-inbox-title">📬 Caixa de entrada <small v-if="mailUnread">· {{ mailUnread }} nova(s)</small></h4>
-            <ul v-if="state.mail.inbox.length" class="village-list mail-list">
-              <li v-for="mail in state.mail.inbox.slice().reverse()" :key="mail.id" class="mail-card" :class="{ unread: !mail.read }">
-                <div class="mail-card-head"><span>{{ mailKindLabel[mail.kind] }} · {{ mail.day }}</span><b v-if="!mail.read">NOVA</b></div>
-                <strong>{{ mail.subject }}</strong>
-                <small>De {{ mail.fromName }}<span v-if="mail.involvedIds.length"> · envolvidos: {{ mail.involvedIds.map(nameOf).join(', ') }}</span></small>
-                <p>{{ mail.body }}</p>
-                <div class="summary-actions mail-actions">
-                  <button v-if="!mail.read" type="button" @click="readMail(mail.id)">Marcar como lida</button>
-                  <button v-if="mail.fromId && !mail.responded" type="button" @click="answerMail(mail.id, 'responder')">{{ mailActionLabel('responder', mail.kind) }}</button>
-                  <button v-if="mail.fromId && mail.involvedIds.length > 1 && !mail.responded" type="button" @click="answerMail(mail.id, 'ajudar')">{{ mailActionLabel('ajudar', mail.kind) }}</button>
-                  <button type="button" @click="answerMail(mail.id, 'arquivar')">Guardar</button>
-                </div>
-              </li>
-            </ul>
-            <p v-else class="hint">Nenhuma carta esperando. Um momento novo entre moradores fará o carteiro voltar.</p>
-          </section>
-          <section v-if="state.mail.archive.length" aria-labelledby="mail-archive-title">
-            <h4 id="mail-archive-title">🗄️ Arquivo</h4>
-            <ul class="village-list mail-list archived"><li v-for="mail in state.mail.archive.slice().reverse().slice(0, 12)" :key="mail.id"><span><strong>{{ mail.subject }}</strong><small>{{ mail.fromName }} · {{ mail.day }}<span v-if="mail.responded"> · resposta enviada</span></small></span></li></ul>
-          </section>
-        </div>
+        <VillageMailPanel v-else-if="tab === 'correio'" :mail="state.mail" :unread="mailUnread" :name-of="nameOf" @read="readMail" @answer="answerMail" />
 
         <div v-else-if="tab === 'expedicoes'" class="diary">
           <p class="hint">Cada expedição leva 15 minutos. O resultado combina tipo, personalidade, amizade e o clima registrado na partida.</p>

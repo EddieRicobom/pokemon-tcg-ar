@@ -45,10 +45,35 @@ try {
   await page.keyboard.press('Escape');
   await menu.waitFor({ state: 'detached' });
   assert.equal(await menuButton.evaluate((el) => el === document.activeElement), true);
+  // Segura o download da Torre para verificar que a pessoa pode fechar a tela enquanto ela carrega.
+  let releaseTower;
+  let signalRequest;
+  let signalContinued;
+  const towerContinued = new Promise((resolve) => { signalContinued = resolve; });
+  const towerRequested = new Promise((resolve) => { signalRequest = resolve; });
+  const towerPattern = '**/src/components/MinigameSobrevivencia.vue*';
+  const delayTower = async (route) => {
+    signalRequest();
+    await new Promise((resolve) => { releaseTower = resolve; });
+    await route.continue();
+    signalContinued();
+  };
+  await page.route(towerPattern, delayTower);
   await menuButton.click();
   await menu.getByRole('button', { name: /Survival/ }).click();
   const tower = page.getByRole('dialog', { name: 'Torre de Sobrevivência', exact: true });
   await tower.waitFor();
+  await towerRequested;
+  await tower.getByRole('button', { name: 'Fechar Torre de Sobrevivência' }).click();
+  await tower.waitFor({ state: 'detached' });
+  releaseTower();
+  await towerContinued;
+  await page.unroute(towerPattern, delayTower);
+  await menuButton.click();
+  await menu.getByRole('button', { name: /Survival/ }).click();
+  await tower.waitFor();
+  // Só o jogo montado pode confirmar a saída de uma corrida.
+  await tower.locator('.survivor').waitFor();
   await tower.getByRole('button', { name: 'Fechar Torre de Sobrevivência' }).click();
   const confirm = tower.getByRole('alertdialog', { name: 'Abandonar corrida' });
   await confirm.waitFor();

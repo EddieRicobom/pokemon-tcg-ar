@@ -2,48 +2,18 @@
  * Inclui míticos; formas regionais, Megas e fusões não contam como outra espécie.
  * https://github.com/PokeAPI/pokeapi/blob/master/data/v2/csv/pokemon_species.csv
  */
-export const LEGEND_PLACES = {
-  plaza: { name: 'Fonte Central', x: 47, y: 38, landscape: 'city' },
-  lake: { name: 'Píer do Lago Azul', x: 80, y: 18, landscape: 'water' },
-  woods: { name: 'Clareira da Madeireira', x: 15, y: 13, landscape: 'forest' },
-  mine: { name: 'Entrada da Mina', x: 16, y: 66, landscape: 'stone' },
-  park: { name: 'Parquinho Oeste', x: 16, y: 47, landscape: 'forest' },
-  farm: { name: 'Caminho da Fazenda', x: 84, y: 46, landscape: 'forest' },
-  south: { name: 'Trilha do Bosque do Sul', x: 22, y: 64, landscape: 'forest' },
-  tower: { name: 'Calçada da Torre', x: 14, y: 24, landscape: 'city' },
-  // Bairros do mapa grande (coordenadas dos pontos de passeio em `expansion.ts`): servem de primeira pista.
-  garden: { name: 'Jardim das Estações', x: 40, y: 81, landscape: 'forest' },
-  square: { name: 'Praça dos Encontros', x: 71, y: 83, landscape: 'city' },
-  grove: { name: 'Bosque do Piquenique', x: 99, y: 66, landscape: 'forest' },
-  lookout: { name: 'Mirante das Nuvens', x: 104, y: 19, landscape: 'water' },
-  beach: { name: 'Praia das Conchas', x: 109, y: 49, landscape: 'water' },
-} as const;
-export type LegendPlace = keyof typeof LEGEND_PLACES;
-/** Cenários finais dos encontros; os demais lugares só abrigam a primeira pista. */
-const FINAL_PLACES = ['plaza', 'lake', 'woods', 'mine', 'park', 'farm', 'south', 'tower'] as const;
-/** Onde cada encontro dá o primeiro sinal: espalhado pelo mapa grande, nunca no próprio cenário final. */
-const FIRST_SIGNS: Record<(typeof FINAL_PLACES)[number], readonly LegendPlace[]> = {
-  plaza: ['park', 'square', 'garden', 'tower'],
-  lake: ['lookout', 'beach', 'farm', 'plaza'],
-  woods: ['tower', 'park', 'plaza', 'south'],
-  mine: ['south', 'garden', 'park', 'woods'],
-  park: ['plaza', 'tower', 'garden', 'mine'],
-  farm: ['grove', 'beach', 'square', 'south'],
-  south: ['garden', 'square', 'mine', 'farm'],
-  tower: ['plaza', 'woods', 'square', 'park'],
-};
-export function firstSignPlace(story: { dexId: number; place: LegendPlace }): LegendPlace {
-  const options = FIRST_SIGNS[story.place as (typeof FINAL_PLACES)[number]];
-  return options[story.dexId % options.length]!;
-}
+import type { LegendEncounterPlace } from './legendary-places';
+export { LEGEND_PLACES, firstSignPlace } from './legendary-places';
+export type { LegendPlace } from './legendary-places';
+
 export type LegendTheme = 'frost' | 'storm' | 'flame' | 'mind' | 'forest' | 'ocean' | 'rainbow' | 'stone' | 'cosmos' | 'shadow' | 'prism' | 'guardian';
 export interface LegendStory {
   id: string; dexId: number; name: string; region: string; mythical: boolean;
-  title: string; theme: LegendTheme; place: LegendPlace; clue: string;
+  title: string; theme: LegendTheme; place: LegendEncounterPlace; clue: string;
   chapters: readonly { title: string; text: string }[];
 }
 const MYTHICAL = new Set([151, 251, 385, 386, 489, 490, 491, 492, 493, 494, 647, 648, 649, 719, 720, 721, 801, 802, 807, 808, 809, 893, 1025]);
-function story(dexId: number, id: string, name: string, title: string, theme: LegendTheme, place: LegendPlace, clue: string, arrival: string, encounter: string, farewell: string): LegendStory {
+function story(dexId: number, id: string, name: string, title: string, theme: LegendTheme, place: LegendEncounterPlace, clue: string, arrival: string, encounter: string, farewell: string): LegendStory {
   const region = dexId <= 151 ? 'Kanto' : dexId <= 251 ? 'Johto' : dexId <= 386 ? 'Hoenn' : dexId <= 493 ? 'Sinnoh' : dexId <= 649 ? 'Unova' : dexId <= 721 ? 'Kalos' : dexId <= 809 ? 'Alola' : dexId <= 898 ? 'Galar' : dexId === 905 ? 'Hisui' : 'Paldea';
   return { id, dexId, name, region, mythical: MYTHICAL.has(dexId), title, theme, place, clue, chapters: [
     { title: 'O primeiro sinal', text: clue }, { title: 'A Vila prende a respiração', text: arrival },
