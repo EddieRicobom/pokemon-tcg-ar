@@ -2169,31 +2169,61 @@ onBeforeUnmount(() => {
             <span>XP {{ state.player.xp }}/{{ state.player.xpToNext }}</span>
           </div>
           <div class="survivor-stats">
-            <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
-             <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
-             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
-               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
-             </span>
+            <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
+            <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
+              {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
+            </span>
+            <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
+            <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
+            <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
+            <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
+            <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
+            <span class="survivor-action-dock">
+              <button type="button" class="chip survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre: pausa, informações e opções'" :title="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre: pausa, informações e opções'" :aria-expanded="hudExpanded" aria-controls="survivor-info-panel" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">{{ hudExpanded ? '✕ Fechar' : '☰ Menu' }}</button>
+            </span>
+          </div>
+          <section v-if="hudExpanded" id="survivor-info-panel" class="survivor-info-panel" aria-label="Menu da Torre: pausa, informações e opções" @pointerdown.stop>
+            <div v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" class="survivor-info-actions">
+              <button type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @click.stop="togglePause">{{ paused ? '▶ Retomar' : '⏸ Pausar' }}</button>
+              <button type="button" class="chip survivor-help-btn" @click.stop="openHelp">? Controles</button>
+            </div>
+            <div class="survivor-info-section">
+              <strong>Golpe e defesas</strong>
+              <span class="chip survivor-move-chip" :style="{ '--move': state.player.move.color }" :title="MOVE_EFFECT_LABELS_PT[state.player.move.effect]">{{ moveLine(state.player.move) }}</span>
               <span class="chip" title="Contato e explosões usam Defesa; projéteis usam Defesa Especial. Cartas defensivas somam pontos aos atributos reais.">{{ survivorDefenseReduction(state.player, 'contato') === null ? 'Defesas indisponíveis' : `🛡 ${Math.round((survivorDefenseReduction(state.player, 'contato') ?? 0) * 100)}% físico · ✨ ${Math.round((survivorDefenseReduction(state.player, 'projétil') ?? 0) * 100)}% especial` }}</span>
+            </div>
+            <div class="survivor-info-section">
+              <strong>Corrida</strong>
+              <span class="chip">🌊 Onda {{ state.wave }}</span>
+              <span v-if="survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
               <span v-if="(state.player.difficultyStacks ?? 0) > 0" class="chip" :title="`Dificuldade ${state.player.difficultyStacks}: +${(state.player.difficultyStacks ?? 0) * 15}% densidade e +${(state.player.difficultyStacks ?? 0) * 12}% de velocidade e dano dos inimigos`">☠ Dificuldade {{ state.player.difficultyStacks }}</span>
               <span v-if="(state.player.bonusCoins ?? 0) > 0" class="chip" title="Moedas das cartas, pagas no fim da corrida">🪙 +{{ state.player.bonusCoins }} no fim</span>
-              <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
-              <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
-              <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
-              <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
-            <span v-if="hudExpanded" class="chip">🌊 Onda {{ state.wave }}</span>
-             <span v-if="hudExpanded && survivorBiomeLabel(state.elapsedMs)" class="chip" :title="survivorBiomeAt(state.elapsedMs)?.description">{{ survivorBiomeLabel(state.elapsedMs) }}</span>
-            <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
-             <span class="survivor-action-dock" aria-label="Ações da Torre">
-               <button v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" type="button" class="chip survivor-icon-btn survivor-pause-btn" :aria-label="paused ? 'Retomar corrida' : 'Pausar corrida'" :title="paused ? 'Retomar corrida' : 'Pausar corrida'" :aria-pressed="paused" @pointerdown.stop @click.stop="togglePause">{{ paused ? '▶' : '⏸' }}</button>
-               <button v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" type="button" class="chip survivor-icon-btn survivor-help-btn" aria-label="Ajuda dos controles" title="Ajuda dos controles" @pointerdown.stop @click.stop="openHelp">?</button>
-               <button type="button" class="chip survivor-icon-btn survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre'" :title="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre'" :aria-expanded="hudExpanded" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">☰</button>
-               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="minimapEnabled" @pointerdown.stop @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
-               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="regionScenery" @pointerdown.stop @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
-               <button v-if="hudExpanded" type="button" class="chip" :aria-pressed="specialEffects" @pointerdown.stop @click.stop="specialEffects = !specialEffects">Efeitos: {{ specialEffects ? 'completos' : 'leves' }}</button>
-             </span>
-          </div>
+            </div>
+            <div class="survivor-info-section">
+              <strong>Exibição</strong>
+              <button type="button" class="chip" :aria-pressed="minimapEnabled" @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
+              <button type="button" class="chip" :aria-pressed="regionScenery" @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
+              <button type="button" class="chip" :aria-pressed="specialEffects" @click.stop="specialEffects = !specialEffects">Efeitos: {{ specialEffects ? 'completos' : 'leves' }}</button>
+            </div>
+            <div v-if="objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">
+              <strong class="survivor-objectives-title">Objetivos</strong>
+              <span v-for="objective in objectives" :key="objective.id" class="survivor-objective" :class="{ complete: objective.complete }">
+                <b>{{ objective.complete ? '✓' : '○' }}</b>
+                <span>{{ objective.title }}</span>
+                <small v-if="!objective.complete">{{ objective.unit === 's' ? Math.floor(objective.progress / 1000) : objective.progress }} / {{ objective.unit === 's' ? Math.floor(objective.target / 1000) : objective.target }}{{ objective.unit === 's' ? 's' : objective.unit }}</small>
+              </span>
+            </div>
+            <div v-if="state.supports.length" class="survivor-supports" aria-label="Aliados que seguem o protagonista">
+              <strong>🤝 Aliados · {{ state.supports.length }}/5</strong>
+              <small>Atacam a partir de você e não recebem upgrades.</small>
+              <div v-for="support in state.supports" :key="`${support.dexId}-${support.name}`" class="survivor-support-line">
+                <b>{{ support.name }}</b>
+                <span>{{ support.move.icon }} {{ support.move.name }} · {{ MOVE_CATEGORY_LABELS_PT[support.move.category] }}</span>
+                <small>{{ Math.round(support.profile.damage * support.damageFactor) }} dano · {{ Math.round(support.profile.cooldownMs) }} ms</small>
+              </div>
+            </div>
+          </section>
         </div>
 
         <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Minimapa da arena; o ponto azul é você, pontos vermelhos são chefes, pontos amarelos são elites e estrelas são Pokébolas">
@@ -2219,29 +2249,10 @@ onBeforeUnmount(() => {
           <span>{{ state.digitalDanger >= 60 ? 'Você está atraindo treinadores!' : 'Perigo digital' }}</span>
         </div>
 
-        <div v-if="ready && state && hudExpanded && objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">
-          <span class="survivor-objectives-title">Objetivos</span>
-          <span v-for="objective in objectives" :key="objective.id" class="survivor-objective" :class="{ complete: objective.complete }">
-            <b>{{ objective.complete ? '✓' : '○' }}</b>
-            <span>{{ objective.title }}</span>
-            <small v-if="!objective.complete">{{ objective.unit === 's' ? Math.floor(objective.progress / 1000) : objective.progress }} / {{ objective.unit === 's' ? Math.floor(objective.target / 1000) : objective.target }}{{ objective.unit === 's' ? 's' : objective.unit }}</small>
-          </span>
-        </div>
-
-        <section v-if="ready && state && hudExpanded && state.supports.length" class="survivor-supports" aria-label="Aliados que seguem o protagonista">
-          <strong>🤝 Aliados · {{ state.supports.length }}/5</strong>
-          <small>Atacam a partir de você e não recebem upgrades.</small>
-          <div v-for="support in state.supports" :key="`${support.dexId}-${support.name}`" class="survivor-support-line">
-            <b>{{ support.name }}</b>
-            <span>{{ support.move.icon }} {{ support.move.name }} · {{ MOVE_CATEGORY_LABELS_PT[support.move.category] }}</span>
-            <small>{{ Math.round(support.profile.damage * support.damageFactor) }} dano · {{ Math.round(support.profile.cooldownMs) }} ms</small>
-          </div>
-        </section>
-
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
           <div class="survivor-joy-stick" :style="{ transform: `translate(${joystick.dx * JOY_MAX}px, ${joystick.dy * JOY_MAX}px)` }"></div>
         </div>
-        <p v-if="ready && !summary && !joystick.active && !pickOptions && state && state.elapsedMs < 6000" class="survivor-move-hint" :class="{ 'is-bonk': bonkRun }">{{ bonkRun ? 'Arraste: para cima avança, para os lados vira a câmera · Pular: botão, toque/clique duplo, Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
+        <p v-if="ready && !summary && !joystick.active && !pickOptions && !hudExpanded && state && state.elapsedMs < 6000" class="survivor-move-hint" :class="{ 'is-bonk': bonkRun }">{{ bonkRun ? 'Arraste: para cima avança, para os lados vira a câmera · Pular: botão, toque/clique duplo, Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
 
         <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
