@@ -22,7 +22,7 @@ export function dojoOpen(residents: number): boolean {
 const CLOSED = { ok: false, message: 'O Dojô está fechado: faltam moradores para o Instrutor assumir.' } as const;
 
 export function nextDojoUpgrade(s: VillageState) {
-  return DOJO_LEVELS[s.tower.dojoLevel] ?? null;
+  return (DOJO_LEVELS as readonly (typeof DOJO_LEVELS)[number][])[s.tower.dojoLevel] ?? null;
 }
 
 export function upgradeDojo(s: VillageState, open = true): Interaction {

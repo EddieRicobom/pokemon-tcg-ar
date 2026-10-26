@@ -71,7 +71,9 @@ import type { ItemId } from '../core/village/life';
 import { homePickUp, homePlace } from '../core/village/home-interior';
 import HomeInteriorMap from './HomeInteriorMap.vue';
 import { advanceResidentHomes } from '../core/village/home-autonomy';
-import { chooseServiceResidents, professionActive } from '../core/village/professions';
+import { chooseInstructor, chooseServiceResidents, professionActive } from '../core/village/professions';
+import { lunchChoices, packLunch, readLuckLetter, unpackLunch } from '../core/village/dojo';
+import { describeLunch, lunchEffectFor } from '../core/survivor-lunch';
 import { LEISURE_SPOTS } from '../core/village/expansion';
 import { enjoyVillagePlace } from '../core/village/leisure';
 import { dailyRecap, needsDailyRecap } from '../core/village/daily-recap';
@@ -85,6 +87,7 @@ import FarmSeedBox from './FarmSeedBox.vue';
 import VillageWorksites from './VillageWorksites.vue';
 import { WORK_SITES } from '../core/village/town-layout';
 import type { WorksiteId } from '../core/village/town-layout';
+import VillageDojo from './VillageDojo.vue';
 import { GUIDED_DESTINATIONS, guidedWalkArrived, guidedWalkProgress } from '../core/village/guided-walk';
 import type { Dir } from '../core/village/actors';
 import { stickDirs, stickVector } from '../core/village/joystick';
@@ -134,7 +137,7 @@ type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 't
 const sheet = ref<Sheet>(null);
 const cardEvolutionAtAltar = ref(false);
 const backpackOpen = ref(false);
-type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos' | 'lendas' | 'correio';
+type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos' | 'lendas' | 'correio' | 'dojo';
 const tab = ref<Tab>('inicio');
 const arActive = ref(false);
 const arAnchored = ref(false);
@@ -210,7 +213,7 @@ function stopArBeta(): void {
 interface MenuTile { tab?: Tab; href?: string; run?: () => void; disabled?: boolean; icon: string; label: string; hint?: string; badge?: number }
 const MENU_TITLES: Record<Tab, string> = {
   inicio: 'Menu da Vila', resumo: 'Resumo da Vila', expedicoes: 'Expedições', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos', correio: 'Correio da Vila',
-  album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila', lendas: 'Caderno de Lendas',
+  album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila', dojo: 'Dojô da Torre', lendas: 'Caderno de Lendas',
 };
 /** Um lugar da Vila aberto direto pelo menu (ou trancado, com o nível que falta). */
 function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: string): MenuTile {
@@ -242,6 +245,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
       { tab: 'trabalhos', icon: '🛠️', label: 'Trabalhos da Vila', hint: 'fazenda, mina, madeira e pesca' },
       { tab: 'fabricar', icon: '🔨', label: 'Fabricar' },
       { tab: 'cozinha', icon: '🍳', label: 'Cozinha' },
+      { tab: 'dojo', icon: '🥋', label: 'Dojô da Torre', hint: 'treinos e lições para o Survival' },
     ],
   },
   {
@@ -1418,6 +1422,30 @@ function openMailCarrierDialog(id: string): void {
     'Cada envelope tem o nome de quem viveu o momento.',
     waiting > 0 ? `Ainda tenho ${waiting} carta(s) na bolsa.` : 'A bolsa está leve hoje. Quando houver um momento novo, eu volto.',
   ];
+/** Cozinha do Café: uma comida da mochila vira a marmita da próxima corrida do Survival/BONK (só uma por vez). */
+function openLunchDialog(title: string): void {
+  const current = state.tower.lunchbox;
+  const currentEffect = current ? lunchEffectFor(current) : null;
+  const choices = lunchChoices(state).slice(0, 8);
+  const minutes = (ms: number) => `${Math.round(ms / 60_000)} min`;
+  const lines = currentEffect
+    ? [`Marmita guardada: ${itemName(current!)} (${minutes(currentEffect.durationMs)}).`, ...describeLunch(currentEffect)]
+    : ['Nenhuma marmita guardada. Escolha uma comida que você já cozinhou; cada prato dá um efeito diferente e só uma vale por corrida.'];
+  if (choices.length === 0 && !currentEffect) lines.push('Sua mochila não tem nenhuma comida pronta. Cozinhe algo no menu Cozinha.');
+  dialog.value = {
+    name: `🍱 ${title}`,
+    text: lines.join('\n'),
+    actions: [
+      ...choices.map((food) => {
+        const effect = lunchEffectFor(food)!;
+        return { label: `${itemName(food)} ×${count(state, food)} · ${minutes(effect.durationMs)}`, run: () => { const r = packLunch(state, food); if (r.ok) changed(); say(r.message); openLunchDialog(title); } };
+      }),
+      ...(currentEffect ? [{ label: 'Devolver à mochila', run: () => { if (unpackLunch(state).ok) changed(); openLunchDialog(title); } }] : []),
+      { label: 'Voltar', run: closeDialog },
+    ],
+  };
+}
+
   dialog.value = {
     id,
     name: `📬 ${nameOf(id)} · Carteiro da Vila`,
@@ -1431,6 +1459,7 @@ function openMailCarrierDialog(id: string): void {
   };
 }
 
+      { label: '✉️ Ler a carta da sorte', run: () => { const r = readLuckLetter(state, refreshDay()); if (r.ok) changed(); dialog.value = { id, name: `📬 ${nameOf(id)} · Carteiro da Vila`, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] }; } },
 function refreshTown(): void {
   homes = assignHomes(mons.value.map((m) => m.id), level.value);
   game?.setTown(level.value, homes);
@@ -1445,8 +1474,11 @@ function refreshTown(): void {
   if (automatic.changed) changed();
   const changes = [...initial, ...automatic.events];
   if (changes.length > 0) {
+  const instructor = chooseInstructor(residentIds, staff.carrier, staff.waiter, state.instructorId);
+  if (instructor && state.instructorId !== instructor) { state.instructorId = instructor; changed(); }
     changed();
     const first = changes[0]!;
+  game?.setInstructor(instructor);
     const names = changes.slice(0, 3).map((change) => nameOf(change.residentId)).join(', ');
     const action = first.renovation ? `reformou a casa: ${first.renovation}` : first.restyled ? `escolheu uma fachada ${first.style}` : `decorou a própria casa${first.items.length ? ` com ${first.items.join(', ')}` : ''}`;
     say(`🏠 ${names}: ${action}.`, 5200);
@@ -1800,6 +1832,7 @@ function openBuilding(b: Building): void {
   }
   const done = state.collected.length;
   dialog.value = {
+        ...(level.value >= 3 && professionActive('cafe', mons.value.length) ? [{ label: '🍱 Preparar marmita', run: () => openLunchDialog(b.name) }] : []),
     name: b.name,
     text: `Vitrines de tudo o que você já juntou. Móveis na coleção: ${done} de ${FURNITURE_IDS.length}. Momentos no Álbum: ${album.value.seen} de ${album.value.total}.`,
     actions: [
@@ -2725,6 +2758,7 @@ function openFriendMore(id: string): void {
       { label: 'Voltar', run: () => { dialog.value = main; } },
     ],
   };
+  if (id === state.instructorId && professionActive('dojo', mons.value.length)) actions.push({ label: '🥋 Falar com o Instrutor', run: () => { closeDialog(); tab.value = 'dojo'; sheet.value = 'menu'; } });
 }
 
 function openGuidedTrip(id: string): void {
@@ -3310,6 +3344,7 @@ onBeforeUnmount(() => {
             <span>⭐ Nível <b>{{ level }}</b></span>
             <span>✨ <b>{{ state.digital.instances.length }}</b> Digital Pokémon</span>
           </p>
+        <VillageDojo v-else-if="tab === 'dojo'" :state="state" :population="mons.length" :instructor-name="state.instructorId ? nameOf(state.instructorId) : null" @changed="changed" />
           <nav class="menu-section-tabs" aria-label="Categorias do menu da Vila" role="tablist">
             <button v-for="section in menuSections" :key="section.id" type="button" role="tab" :aria-selected="menuSection === section.id" :class="{ active: menuSection === section.id }" @click="menuSection = section.id">
               <span aria-hidden="true">{{ section.icon }}</span><span>{{ section.label }}</span>

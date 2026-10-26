@@ -132,6 +132,7 @@ export class VillageGame {
   private readonly mailRoutes = new Map<string, { targets: string[]; index: number; pauseUntil: number }>();
   private mailCarrierId: string | null = null;
   private cafeWaiterId: string | null = null;
+  private instructorId: string | null = null;
   private cafeService: CafeService | null = null;
   private readonly serviceBreaks = new Map<string, number>();
   private readonly roamSchedule = new Map<string, { until: number; index: number }>();
@@ -349,6 +350,11 @@ export class VillageGame {
   setMailCarrier(id: string | null): void {
     this.mailCarrierId = id && this.villagers.has(id) ? id : null;
     for (const carrier of this.mailRoutes.keys()) if (carrier !== this.mailCarrierId) this.mailRoutes.delete(carrier);
+  }
+
+  /** Instrutor do Dojô da Torre: só o símbolo sobre a cabeça (o morador segue a rotina normal). */
+  setInstructor(id: string | null): void {
+    this.instructorId = id && this.villagers.has(id) ? id : null;
   }
 
   setCafeWaiter(id: string | null): void {
@@ -1861,6 +1867,7 @@ export class VillageGame {
            }
            if (this.mailCarrierId === id) this.drawTag(cx, base - h - 18 * scale - Math.abs(Math.sin(now / 420)) * 2 * scale, '📬');
            if (this.cafeWaiterId === id) this.drawTag(cx, base - h - 18 * scale, '☕');
+           if (this.instructorId === id) this.drawTag(cx, base - h - 18 * scale, '🥋');
            if (this.getCafe().orders.get(id)?.stage === 'comendo') this.drawTag(cx + 8 * scale, base - h - 4 * scale, '🍰');
           if (near(w) && !this.scene) {
             const hearts = Math.round(friendOf(this.state, id).points / 20);
