@@ -6,6 +6,7 @@ export const PROFESSIONS = [
   { id: 'mine', name: 'Mineração', min: 5, icon: '⛏️' },
   { id: 'lumber', name: 'Madeireira', min: 5, icon: '🪓' },
   { id: 'mail', name: 'Carteiro', min: 6, icon: '✉️' },
+  { id: 'dojo', name: 'Instrutor do Dojô', min: 7, icon: '🥋' },
   { id: 'cafe', name: 'Atendimento do Café', min: 8, icon: '☕' },
 ] as const;
 export type Profession = typeof PROFESSIONS[number]['id'];
@@ -25,4 +26,16 @@ export function chooseServiceResidents(ids: readonly string[], carrier: string |
   const candidates = unique.filter((id) => id !== mail);
   const cafe = professionActive('cafe', unique.length) ? (waiter && candidates.includes(waiter) ? waiter : candidates[1] ?? candidates[0]!) : null;
   return { carrier: mail, waiter: cafe };
+}
+
+/**
+ * O Instrutor do Dojô é um terceiro posto: nunca é o carteiro nem a garçonete. A escolha anterior vale enquanto o morador
+ * existe e continua livre; senão o primeiro da ordem estável assume. Sem população, o posto fica suspenso (a preferência
+ * guardada continua no save).
+ */
+export function chooseInstructor(ids: readonly string[], carrier: string | null, waiter: string | null, current: string | null): string | null {
+  if (!professionActive('dojo', new Set(ids).size)) return null;
+  const candidates = [...new Set(ids)].sort().filter((id) => id !== carrier && id !== waiter);
+  if (candidates.length === 0) return null;
+  return current && candidates.includes(current) ? current : candidates[candidates.length - 1]!;
 }

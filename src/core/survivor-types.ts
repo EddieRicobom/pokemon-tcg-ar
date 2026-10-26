@@ -2,6 +2,7 @@ import type { Rng } from './battle';
 import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorSpecialState } from './survivor-specials';
+import type { LunchEffect } from './survivor-lunch';
 
 /**
  * Tipos, constantes e pontuação do modo Sobrevivência (movidos de `survivor.ts` sem mudar o texto, em 2026-10-23).
@@ -108,6 +109,18 @@ export interface SurvivorPlayer {
   bonkGravityFactor?: number;
   /** Marca interna para que cartas exclusivas do BONK não apareçam no Survival clássico. */
   bonkMode?: boolean;
+  /** Defesa e Defesa Especial vindas do Dojô (campo próprio; soma com a marmita até `TRAINING_DEFENSE_CAP`). */
+  trainingDefense?: number;
+  /** Defesa e Defesa Especial da marmita de Raiz enquanto ela dura. */
+  lunchDefense?: number;
+  /** Fração somada à velocidade pela marmita de Fresco enquanto ela dura. */
+  lunchSpeedBonus?: number;
+  /** Fração somada ao alcance de coleta pela marmita de Grão enquanto ela dura. */
+  lunchPickupBonus?: number;
+  /** Fração somada à janela de proteção depois de um golpe (marmita de Fruta enquanto dura). */
+  lunchHitInvulnBonus?: number;
+  /** Marmita ativa: o efeito e quanto já curou (a cura tem teto por corrida). */
+  lunch?: { effect: LunchEffect; healed: number; active: boolean };
 }
 
 /** Dados congelados do Pokémon de apoio. Ele acompanha apenas no desenho: não é um segundo alvo de combate. */
@@ -437,6 +450,15 @@ export interface SurvivorState {
   typeAffinityChoices: PokemonType[];
   /** A oferta já apareceu; evita repetir a mesma escolha na corrida. */
   typeAffinityOffered: boolean;
+  /** Banimentos que ainda restam e as cartas banidas desta corrida (a Vila entrega pelo Dojô). */
+  bansLeft?: number;
+  bannedUpgradeIds?: string[];
+  /** Cartas extras que a primeira oferta de upgrade ainda mostra (Olhar treinado). */
+  firstOfferBonus?: number;
+  /** O que a Vila entregou para esta corrida; vazio na corrida pura. */
+  towerSummary?: string[];
+  /** false = corrida pura (nada da Vila entrou). */
+  trained?: boolean;
 }
 
 export interface SurvivorEvolutionOption {

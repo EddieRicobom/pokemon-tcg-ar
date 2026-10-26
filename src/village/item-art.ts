@@ -8,7 +8,7 @@ import type { Furn } from './art/furniture';
 import { GARDEN_FURNITURE, TALL_FURNITURE } from './art/furniture-garden';
 import { fabric, FAMILY_DEFAULT, FAMILY_ROWS, HOME_FURNITURE } from './art/furniture-home';
 import { NEW_FURNITURE, NEW_TALL_FURNITURE } from './art/furniture-new';
-import { NEW_CROP_COLOR, NEW_CROP_ICONS, NEW_MATERIAL_ICONS, OLD_MATERIAL_ICONS, paintIcon, seedBagIcon } from './art/items';
+import { NEW_CROP_COLOR, NEW_CROP_ICONS, NEW_MATERIAL_ICONS, OLD_MATERIAL_ICONS, TOWER_PIECE_ICONS, paintIcon, seedBagIcon } from './art/items';
 import { render } from './art/pen';
 import type { Draw } from './art/pen';
 
@@ -36,7 +36,7 @@ for (const [base, rows] of Object.entries(FAMILY_ROWS)) {
 }
 
 /** Materiais e colheitas (os desenhos ficam em `art/items.ts`). */
-const MATERIAL_ICONS = { ...OLD_MATERIAL_ICONS, ...NEW_MATERIAL_ICONS, ...NEW_CROP_ICONS };
+const MATERIAL_ICONS = { ...OLD_MATERIAL_ICONS, ...NEW_MATERIAL_ICONS, ...NEW_CROP_ICONS, ...TOWER_PIECE_ICONS };
 
 function draw(fn: Draw | null, h = 16): PixelBuf {
   return render(fn, 16, h);

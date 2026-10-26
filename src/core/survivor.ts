@@ -5,6 +5,9 @@ import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
 import { survivorPreparation } from './survivor-preparations';
+import { MAX_OFFER_CHOICES, PURE_LOADOUT } from './survivor-loadout';
+import type { TowerLoadout } from './survivor-loadout';
+import { LUNCH_HEAL_CAP_FRACTION, TRAINING_DEFENSE_CAP, TRAINING_SPEED_CAP } from './survivor-lunch';
 import type { SurvivorPreparationId } from './survivor-preparations';
 import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, SPECIAL_GUARDIANS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
 import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR_ORBIT_MAX, survivorAimAngle, survivorOrbitAngularSpeed, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitHitIntervalMs } from './survivor-shapes';
@@ -30,6 +33,9 @@ import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGIT
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 export { SURVIVOR_UPGRADES };
+
+/** Estoque máximo de Desejos de Jirachi (a carta, a lição do Dojô e a sorte do Carteiro somam até aqui). */
+export const MAX_STARTING_REROLLS_STOCK = 3;
 
 /** Níveis a partir dos quais a carta "Evoluir" aparece: o 1º para a 1ª evolução, o 2º para a 2ª. */
 export const EVOLVE_LEVELS = [8, 16] as const;
@@ -204,6 +210,8 @@ export interface CreateSurvivorOptions {
   bonk?: boolean;
   /** Preparação estratégica opcional, liberada por objetivos de corridas concluídas. */
   preparation?: SurvivorPreparationId;
+  /** O que a Vila entrega (Dojô, sorte do Carteiro, marmita). Sem isto a corrida é a de sempre; vale também no BONK. */
+  loadout?: TowerLoadout;
   /** Segundo tipo raro escolhido no início da corrida. */
   typeAffinity?: SurvivorTypeAffinity;
   /** Tipos secundários reais da espécie; a escolha só aparece após o primeiro líder derrotado. */
@@ -223,6 +231,9 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
   const shadowGuardian = SHADOW_GUARDIANS[0]!;
   const prof = options.profile;
   const preparation = survivorPreparation(options.preparation);
+  const loadout = options.loadout ?? PURE_LOADOUT;
+  const lunch = loadout.lunch;
+  const baseMaxHp = (prof?.maxHp ?? 100) + loadout.maxHpBonus;
   const secondMoveCandidate = options.secondMove ?? secondaryMoveFor(move);
   const supportCandidates = [...(options.supportCandidates ?? (options.supportCandidate ? [options.supportCandidate] : []))].slice(0, MAX_SURVIVOR_SUPPORTS);
   const player: SurvivorPlayer = {
@@ -233,9 +244,9 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     projectileSize: prof?.projectileSize ?? 4,
     x: ARENA_W / 2,
     y: ARENA_H / 2,
-    hp: prof?.maxHp ?? 100,
-    maxHp: prof?.maxHp ?? 100,
-    speed: (prof?.walkSpeed ?? 150) * preparation.speedMultiplier,
+    hp: baseMaxHp,
+    maxHp: baseMaxHp,
+    speed: (prof?.walkSpeed ?? 150) * preparation.speedMultiplier * (1 + loadout.speedBonus),
     level: 1,
     xp: 0,
     xpToNext: xpForLevel(1),
@@ -257,9 +268,18 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     facing: 1,
     aimAngle: 0,
     orbitAngle: 0,
-    pickupRadius: PICKUP_RADIUS * preparation.pickupRadiusMultiplier,
+    pickupRadius: PICKUP_RADIUS * preparation.pickupRadiusMultiplier * (1 + loadout.pickupBonus),
     upgradeChoices: 3,
-    upgradeRerolls: 0,
+    upgradeRerolls: Math.min(MAX_STARTING_REROLLS_STOCK, loadout.startingRerolls),
+    ...(loadout.defenseBonus > 0 ? { trainingDefense: loadout.defenseBonus } : {}),
+    ...(lunch ? {
+      lunch: { effect: lunch, healed: 0, active: true },
+      // A marmita de Raiz e a de Fresco somam com o Dojô até o teto combinado; o excedente simplesmente não vale.
+      lunchDefense: Math.min(lunch.defense, Math.max(0, TRAINING_DEFENSE_CAP - loadout.defenseBonus)),
+      lunchSpeedBonus: Math.min(lunch.speedBonus, Math.max(0, TRAINING_SPEED_CAP - loadout.speedBonus)),
+      lunchPickupBonus: lunch.pickupBonus,
+      lunchHitInvulnBonus: lunch.hitInvulnBonus,
+    } : {}),
     bonkJumpPower: 470,
     bonkAirJumps: 0,
     bonkGravityFactor: 1,
@@ -305,6 +325,11 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     infiniteScale: options.infinite === true ? 1.25 : 1,
     pendingUpgrade: null,
     upgradesOwed: 0,
+    bansLeft: loadout.bans,
+    bannedUpgradeIds: [],
+    firstOfferBonus: loadout.firstOfferExtraChoices,
+    towerSummary: [...loadout.summary],
+    trained: loadout.trained,
     nextId: 1,
     evolutions: options.evolutions ?? (() => []),
     profile: prof ?? null,
@@ -545,6 +570,7 @@ export function rollUpgrades(
     && (!player || u.id !== 'multishot' || player.shots < (move.category === 'orbit' ? 1 + SURVIVOR_ORBIT_MAX - SURVIVOR_ORBIT_BASE : 5))
     && (!player || u.id !== 'pierce' || player.pierce < 4)
     && (!player || u.id !== 'heal-30' || player.hp < player.maxHp)
+    && (!player || u.id !== 'jirachi-reroll' || player.upgradeRerolls < MAX_STARTING_REROLLS_STOCK)
     && (!player || !u.id.startsWith('guard-') || statsOfDex(player.dexId) !== null),
   );
   const picked: SurvivorUpgradeOption[] = [];
@@ -595,8 +621,9 @@ export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
     const rarity = option.rarity ?? 'normal';
     return SURVIVOR_RARITY_ORDER.indexOf(rarity) < SURVIVOR_RARITY_ORDER.indexOf(lowest) ? rarity : lowest;
   }, 'ancestral');
+  const banned = state.bannedUpgradeIds ?? [];
   const naturalRerolled = rollUpgrades(state.rng, rerollCount, state.player.move, state.player, {
-    excludeIds: current.map((option) => option.id),
+    excludeIds: [...current.map((option) => option.id), ...banned],
   });
   let rerolled = naturalRerolled;
   if (allRareOrBetter) {
@@ -606,13 +633,39 @@ export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
     });
     if (!hasHigherRarity) {
       const guaranteed = rollUpgrades(state.rng, rerollCount, state.player.move, state.player, {
-        excludeIds: current.map((option) => option.id),
+        excludeIds: [...current.map((option) => option.id), ...banned],
         minimumRarity: rerollMinimumRarity(state.player, floor),
       });
       if (guaranteed.length > 0) rerolled = guaranteed;
     }
   }
   state.pendingUpgrade = [...preserved, ...rerolled];
+  return true;
+}
+
+/** Por que uma carta da oferta não pode ser banida; null quando pode. Serve também para a interface explicar o botão. */
+export function survivorBanBlockReason(state: SurvivorState, id: string): string | null {
+  if (!state.pendingUpgrade?.some((option) => option.id === id)) return 'Essa carta não está na escolha.';
+  if ((state.bansLeft ?? 0) <= 0) return 'Sem banimentos restantes.';
+  // Só cartas do catálogo: evolução, apoio e segundo golpe não são upgrades sorteados.
+  if (!SURVIVOR_UPGRADES.some((upgrade) => upgrade.id === id)) return 'Esta oferta especial não pode ser banida.';
+  if ((state.player.upgradeLevels[id] ?? 0) > 0) return 'Você já tem esta carta nesta corrida.';
+  return null;
+}
+
+/**
+ * Bane uma carta da escolha aberta: ela não volta nesta corrida e a vaga é reposta por outra. Se não houver outra carta
+ * possível para repor, o banimento é recusado (a oferta nunca fica menor nem vazia).
+ */
+export function banSurvivorUpgrade(state: SurvivorState, id: string): boolean {
+  if (survivorBanBlockReason(state, id) !== null) return false;
+  const current = state.pendingUpgrade!;
+  const banned = state.bannedUpgradeIds ?? [];
+  const [replacement] = rollUpgrades(state.rng, 1, state.player.move, state.player, { excludeIds: [...current.map((option) => option.id), ...banned, id] });
+  if (!replacement) return false;
+  state.pendingUpgrade = current.map((option) => (option.id === id ? replacement : option));
+  state.bannedUpgradeIds = [...banned, id];
+  state.bansLeft = Math.max(0, (state.bansLeft ?? 0) - 1);
   return true;
 }
 
@@ -660,7 +713,10 @@ function levelUp(state: SurvivorState, events: SurvivorEvent[]): void {
 function offerOwedUpgrade(state: SurvivorState): void {
   if (state.pendingUpgrade || state.upgradesOwed <= 0) return;
   state.upgradesOwed -= 1;
-  const options = rollUpgrades(state.rng, state.player.upgradeChoices, state.player.move, state.player);
+  // Olhar treinado (Dojô): só a primeira oferta mostra a carta a mais, e nunca passa do teto de 5.
+  const choices = Math.min(MAX_OFFER_CHOICES, Math.max(state.player.upgradeChoices, state.player.upgradeChoices + (state.firstOfferBonus ?? 0)));
+  state.firstOfferBonus = 0;
+  const options = rollUpgrades(state.rng, choices, state.player.move, state.player, { excludeIds: state.bannedUpgradeIds ?? [] });
   const evolve = evolutionOffer(state);
   if (evolve) options.splice(options.length - 1, 1, evolve);
   else if (!state.supportCandidate && !state.secondAttackOffered && state.player.level >= 6 && state.supportCandidates.length > 0) {
@@ -1172,15 +1228,50 @@ function nearestAlly(state: SurvivorState, source: SurvivorEnemy, maxDistance: n
   return best;
 }
 
+/**
+ * Marmita da Vila: cura aos poucos (com teto por corrida) e some quando o tempo do prato acaba. Os bônus de defesa,
+ * velocidade, coleta e proteção são campos do jogador zerados na expiração.
+ */
+function stepLunch(state: SurvivorState, dt: number): void {
+  const p = state.player;
+  const lunch = p.lunch;
+  if (!lunch?.active) return;
+  if (state.elapsedMs >= lunch.effect.durationMs) {
+    lunch.active = false;
+    p.lunchDefense = 0;
+    p.lunchSpeedBonus = 0;
+    p.lunchPickupBonus = 0;
+    p.lunchHitInvulnBonus = 0;
+    return;
+  }
+  if (lunch.effect.regenPerSec <= 0 || p.hp <= 0) return;
+  const room = Math.max(0, p.maxHp * LUNCH_HEAL_CAP_FRACTION - lunch.healed);
+  const heal = Math.min(lunch.effect.regenPerSec * dt, room, Math.max(0, p.maxHp - p.hp));
+  p.hp += heal;
+  lunch.healed += heal;
+}
+
+/** Alcance de coleta com a marmita de Grão (enquanto dura). */
+function effectivePickupRadius(p: SurvivorPlayer): number {
+  return p.pickupRadius * (1 + (p.lunchPickupBonus ?? 0));
+}
+
+/** Janela de proteção depois de levar um golpe; a marmita de Fruta a alonga enquanto dura. */
+function hitInvulnerabilityMs(p: SurvivorPlayer): number {
+  return Math.round(BALANCE.hitInvulnerabilityMs * (1 + (p.lunchHitInvulnBonus ?? 0)));
+}
+
 function hitSource(enemy: SurvivorEnemy): SurvivorHitSource {
   return { ...(enemy.dexId !== undefined ? { dexId: enemy.dexId } : {}), boss: enemy.boss, grade: enemy.grade, ...(enemy.shadowBoss ? { shadowBoss: true } : {}) };
 }
 
 /** Contato e explosão são físicos; projéteis são especiais. Cada defesa dá retornos decrescentes. */
-export function survivorDefenseReduction(player: Pick<SurvivorPlayer, 'dexId' | 'defenseBonus' | 'spDefenseBonus'>, kind: SurvivorFinalHit['kind']): number | null {
+export function survivorDefenseReduction(player: Pick<SurvivorPlayer, 'dexId' | 'defenseBonus' | 'spDefenseBonus' | 'trainingDefense' | 'lunchDefense'>, kind: SurvivorFinalHit['kind']): number | null {
   const stats = statsOfDex(player.dexId);
   if (!stats) return null;
-  const defense = kind === 'projétil' ? stats.spDefense + (player.spDefenseBonus ?? 0) : stats.defense + (player.defenseBonus ?? 0);
+  // Dojô e marmita têm campo próprio e teto combinado: não furam o limite de cartas `guard-*`.
+  const trained = Math.min(TRAINING_DEFENSE_CAP, (player.trainingDefense ?? 0) + (player.lunchDefense ?? 0));
+  const defense = kind === 'projétil' ? stats.spDefense + (player.spDefenseBonus ?? 0) + trained : stats.defense + (player.defenseBonus ?? 0) + trained;
   return defense / (200 + defense);
 }
 
@@ -1321,7 +1412,7 @@ function explodeOnDeath(state: SurvivorState, enemy: SurvivorEnemy): void {
   }
   const incoming = Math.ceil(enemy.damage * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * 0.8 * (p.artifactShieldMs > 0 ? 0.65 : 1));
   damagePlayer(state, incoming, 'explosão', hitSource(enemy));
-  p.invulnMs = BALANCE.hitInvulnerabilityMs;
+  p.invulnMs = hitInvulnerabilityMs(p);
 }
 
 function artifactDamage(state: SurvivorState): number {
@@ -1449,7 +1540,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const ux = input.dx / len;
     const uy = input.dy / len;
     const terrainSpeed = survivorBiomeMovementMultiplier(state.elapsedMs, p.x, p.y);
-    const artifactSpeed = p.artifactSpeedMs > 0 ? BALANCE.artifactSpeedMultiplier : 1;
+    const artifactSpeed = (p.artifactSpeedMs > 0 ? BALANCE.artifactSpeedMultiplier : 1) * (1 + (p.lunchSpeedBonus ?? 0));
     p.x = clamp(p.x + ux * p.speed * artifactSpeed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
     p.y = clamp(p.y + uy * p.speed * artifactSpeed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
@@ -1459,6 +1550,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (input.aimAngle !== undefined && Number.isFinite(input.aimAngle)) p.aimAngle = input.aimAngle;
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
   if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + (p.regenPerSec ?? 0) * dt);
+  stepLunch(state, dt);
 
   // Nascimento de inimigos (onda cresce com o tempo) e do chefe periódico.
   let trainerSpawnedThisStep = false;
@@ -1531,7 +1623,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       }
         const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? e.damage * 0.88 : e.damage) * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
       damagePlayer(state, incoming, 'contato', hitSource(e));
-      p.invulnMs = BALANCE.hitInvulnerabilityMs;
+      p.invulnMs = hitInvulnerabilityMs(p);
     }
   }
 
@@ -1550,7 +1642,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       if (p.invulnMs <= 0 && !specialProtects(state)) {
           const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
         damagePlayer(state, incoming, 'projétil', proj.source ?? { boss: false, grade: proj.grade ?? 'comum' });
-        p.invulnMs = BALANCE.hitInvulnerabilityMs;
+        p.invulnMs = hitInvulnerabilityMs(p);
       }
       return false;
     }
@@ -1693,8 +1785,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   // Coleta de orbes de XP (e nível, se passou da marca).
   state.orbs = state.orbs.filter((orb) => {
-    if (Math.hypot(orb.x - p.x, orb.y - p.y) <= p.pickupRadius) {
-      const multiplier = p.xpMultiplier ?? 1;
+    if (Math.hypot(orb.x - p.x, orb.y - p.y) <= effectivePickupRadius(p)) {
+      // A marmita de Peixe não multiplica o ritmo acelerado: vale o maior dos dois.
+      const multiplier = Math.max(p.xpMultiplier ?? 1, p.lunch?.active ? 1 + p.lunch.effect.xpBonus : 1);
       const orbValue = orb.doubleXp ? orb.value * 2 : orb.value;
       const xpWithCarry = orbValue * multiplier * BALANCE.xpOrbMultiplier + (p.xpCarry ?? 0);
       const boostedValue = normalizeSurvivorXp(xpWithCarry);
@@ -1705,7 +1798,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     return true;
   });
   state.artifacts = state.artifacts.filter((artifact) => {
-    const pickupRadius = Math.min(MAGNET_PICKUP_RADIUS_CAP, p.pickupRadius * (p.artifactMagnetMs > 0 ? 1.7 : 1));
+    const pickupRadius = Math.min(MAGNET_PICKUP_RADIUS_CAP, effectivePickupRadius(p) * (p.artifactMagnetMs > 0 ? 1.7 : 1));
     if (Math.hypot(artifact.x - p.x, artifact.y - p.y) > pickupRadius) return true;
     if (artifact.kind === 'shadow-ball') {
       state.shadowEncounter.phase = 'arrival';
