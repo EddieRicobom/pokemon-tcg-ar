@@ -186,4 +186,4 @@ export const atlasOpaqueBottoms = new WeakMap<HTMLCanvasElement, number>();
 export const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'home-orange', museum: 'manor', arcade: 'center-blue', pins: 'home-teal', torre: 'tower' };
 /** Com o atlas: a casa de cada estágio (Cabana, Casa de madeira, Casa de tijolos, Sobrado — `HOME_STAGES`). */
 /** As que pegam a cor escolhida (o desenho tem partes coloridas para tingir). */
-export const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '🏟️', torre: '🗼', altar: '💠' };
+export const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '🏟️', torre: '🗼', dojo: '🥋', altar: '💠' };

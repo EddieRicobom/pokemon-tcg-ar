@@ -71,7 +71,7 @@ import type { ItemId } from '../core/village/life';
 import { homePickUp, homePlace } from '../core/village/home-interior';
 import HomeInteriorMap from './HomeInteriorMap.vue';
 import { advanceResidentHomes } from '../core/village/home-autonomy';
-import { chooseInstructor, chooseServiceResidents, professionActive } from '../core/village/professions';
+import { chooseInstructor, chooseServiceResidents, professionActive, PROFESSIONS } from '../core/village/professions';
 import { lunchChoices, packLunch, readLuckLetter, unpackLunch } from '../core/village/dojo';
 import { describeLunch, lunchEffectFor } from '../core/survivor-lunch';
 import { LEISURE_SPOTS } from '../core/village/expansion';
@@ -1371,6 +1371,21 @@ function openMail(): void {
     say(`📬 ${generated.fromName} deixou uma carta: ${generated.subject}`, 4800);
   }
   // Cartas geradas enquanto o jogador estava fora também entram na rota do
+/** A porta do Dojô: abre o painel dos treinos e das reformas e conta o que falta para o Instrutor assumir. */
+function openDojoBuilding(b: Building): void {
+  const names = ['Terreno do Dojô', 'Tatame', 'Dojô', 'Dojô de pedra'];
+  const open = professionActive('dojo', mons.value.length);
+  const who = state.instructorId && open ? `${nameOf(state.instructorId)} cuida do Dojô.` : `O Instrutor assume com ${PROFESSIONS.find((p) => p.id === 'dojo')!.min} moradores (você tem ${mons.value.length}).`;
+  dialog.value = {
+    name: state.tower.dojoLevel === 0 ? names[0]! : b.name,
+    text: `${names[state.tower.dojoLevel]}. ${who} Aqui você treina para a Torre e aprende lições com materiais fabricados.`,
+    actions: [
+      { label: '🥋 Abrir o Dojô', run: () => { closeDialog(); tab.value = 'dojo'; sheet.value = 'menu'; } },
+      { label: 'Sair', run: closeDialog },
+    ],
+  };
+}
+
   // carteiro quando o Correio é aberto, sem repetir destinos na mesma visita.
   const pendingTargets = [...new Set(state.mail.inbox.flatMap((mail) => mail.involvedIds))];
   if (pendingTargets.length > 0) game?.deliverMail(pendingTargets);
@@ -1811,6 +1826,7 @@ function openBuilding(b: Building): void {
       name: b.name,
       text,
       actions: [
+  if (b.kind === 'dojo') return openDojoBuilding(b);
         {
           label: `Lanchar (${CAFE_PRICE})`,
           disabled: state.coins < CAFE_PRICE || state.town.cafeDay === day.value,

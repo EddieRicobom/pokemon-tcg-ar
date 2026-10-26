@@ -1,5 +1,5 @@
 /**
- * Rotina do Instrutor do Dojô: de tempos em tempos ele caminha até a porta da Torre de Sobrevivência, treina ali por
+ * Rotina do Instrutor do Dojô: de tempos em tempos ele caminha até a porta do Dojô, treina ali por
  * alguns segundos e depois volta à vida normal da Vila (descansa mais do que treina: ele é um morador comum, com casa, passeios e conversas). Só a máquina de estados; o caminhar fica no `village-game.ts`.
  */
 
@@ -13,7 +13,7 @@ export interface InstructorShift {
 
 export const INSTRUCTOR_REST_MS = 75_000;
 export const INSTRUCTOR_TRAIN_MS = 20_000;
-/** Se não chegar à Torre neste tempo (caminho bloqueado), desiste e descansa. */
+/** Se não chegar ao Dojô neste tempo (caminho bloqueado), desiste e descansa. */
 export const INSTRUCTOR_WALK_TIMEOUT_MS = 60_000;
 export const INSTRUCTOR_BUBBLE_EVERY_MS = 2_200;
 

@@ -10,6 +10,7 @@ import { frameIndexAt } from '../core/gif';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { trainerAtlasFrame, type TrainerAtlas } from './trainer-atlas';
 import { emptyInstructorShift, stepInstructorShift } from '../core/village/instructor';
+import { DOJO_WINDOWS, paintDojo } from './art/dojo-art';
 import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance, syncFollowerSpeed, WALK_SPEED } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
@@ -360,10 +361,10 @@ export class VillageGame {
     this.instructorId = id && this.villagers.has(id) ? id : null;
   }
 
-  /** Onde o Instrutor treina: a porta da Torre de Sobrevivência, assim que o prédio estiver liberado. */
+  /** Onde o Instrutor treina: na frente do Dojô, assim que o prédio estiver liberado. */
   private trainingSpot(): { x: number; y: number } | null {
-    const tower = this.map.buildings.find((b) => b.kind === 'torre');
-    return tower && this.townLevel >= tower.unlock ? tower.door : null;
+    const dojo = this.map.buildings.find((b) => b.kind === 'dojo');
+    return dojo && this.townLevel >= dojo.unlock ? dojo.door : null;
   }
 
   setCafeWaiter(id: string | null): void {
@@ -1731,6 +1732,24 @@ export class VillageGame {
         });
         if (night) for (const g of COLISEU_GLOWS) homeGlows.push({ x: cx0 + g.x * scale, y: spriteBase - ch + g.y * scale, w: g.w * scale, h: g.h * scale, lantern: g.torch });
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
+        continue;
+      }
+      if (b.kind === 'dojo') {
+        // O Dojô muda de desenho a cada reforma (terreno, Tatame, Dojô, Dojô de pedra), por código, com ou sem atlas.
+        const level = this.state.tower.dojoLevel;
+        const img = this.sprite(`dojo:${level}`, () => paintDojo(level));
+        const dw = img.width * scale;
+        const dh = img.height * scale;
+        const dx0 = Math.round(mid - dw / 2);
+        list.push({
+          y: buildingGroundY(b),
+          draw: () => {
+            ctx.drawImage(img, dx0, spriteBase - dh, dw, dh);
+            this.drawTag(mid, spriteBase - dh - 2 * scale + Math.sin(now / 350) * scale, emoji);
+          },
+        });
+        if (night) for (const g of DOJO_WINDOWS[level] ?? []) homeGlows.push({ x: dx0 + g[0]! * scale, y: spriteBase - dh + g[1]! * scale, w: g[2]! * scale, h: g[3]! * scale });
+        if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, level === 0 ? 'Terreno do Dojô' : b.name));
         continue;
       }
       const civicId = CIVIC_TILESET[b.kind];
