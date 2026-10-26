@@ -568,9 +568,10 @@ async function copyFeedbackCode(): Promise<void> {
 }
 const runUnlocks = ref<string[]>([]);
 /** Tela de escolha antes de cada corrida: até 6 Pokémon aleatórios da caixa do jogador, para escolher quem joga
- * dessa vez. Null enquanto ainda está sorteando/carregando os retratos; [] se a caixa estiver vazia (cai pro
- * Pikachu de reserva sem tela de escolha, igual ao comportamento antigo). */
+ * dessa vez. Null enquanto ainda está sorteando/carregando os retratos. */
 const pickOptions = ref<PickOption[] | null>(null);
+/** A Torre nunca inventa um protagonista: sem parceiro, explica como conseguir um antes de iniciar. */
+const noCompanion = ref(false);
 const pickBusy = ref(false);
 const rerollsUsed = ref(0);
 const previousPickIds = ref<string[]>([]);
@@ -2033,14 +2034,14 @@ async function openPicker(): Promise<void> {
   clearBonkTap();
   pickBusy.value = true;
   pickOptions.value = null;
+  noCompanion.value = false;
   try {
     rerollsUsed.value = 0;
     previousPickIds.value = [];
     const options = await rollPickOptions();
     if (disposed) return;
     if (options.length === 0) {
-      // Caixa vazia: sem tela de escolha, igual ao comportamento de antes.
-      await beginRun(25, 'Pikachu');
+      noCompanion.value = true;
       return;
     }
     pickOptions.value = options;
@@ -2362,6 +2363,14 @@ onBeforeUnmount(() => {
             <p v-if="rerollLimit === 1" class="note">Conclua 3 desafios distintos em corridas encerradas para liberar uma segunda troca de sorteio nas próximas tentativas.</p>
             <p v-else class="note">📜 Caderno de campo completo: a segunda troca de sorteio foi liberada pelos seus três desafios concluídos.</p>
             </details>
+          </div>
+        </div>
+
+        <div v-else-if="noCompanion" class="survivor-overlay" role="dialog" aria-modal="true" aria-label="Você precisa de um companheiro">
+          <div class="card survivor-pick">
+            <h2>Você precisa de um companheiro</h2>
+            <p class="note">A Torre usa Pokémon da sua coleção ou Digital Pokémon da Vila. Escaneie uma carta ou conclua o questionário inicial da Vila para receber seu primeiro companheiro.</p>
+            <button type="button" class="primary" @pointerdown.stop @click.stop="emit('leave')">Voltar à Vila</button>
           </div>
         </div>
 
