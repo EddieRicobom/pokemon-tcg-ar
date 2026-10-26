@@ -27,6 +27,7 @@ import {
   rerollSurvivorUpgradeOffer,
   stepSurvivor,
   survivorCoins,
+  survivorDefenseReduction,
   survivorScore,
   SURVIVOR_UPGRADE_RARITIES,
   SURVIVOR_UPGRADE_FAMILIES,
@@ -2236,6 +2237,7 @@ onBeforeUnmount(() => {
              <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
                {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
              </span>
+              <span class="chip" title="Contato e explosões usam Defesa; projéteis usam Defesa Especial. Cartas defensivas somam pontos aos atributos reais.">{{ survivorDefenseReduction(state.player, 'contato') === null ? 'Defesas indisponíveis' : `🛡 ${Math.round((survivorDefenseReduction(state.player, 'contato') ?? 0) * 100)}% físico · ✨ ${Math.round((survivorDefenseReduction(state.player, 'projétil') ?? 0) * 100)}% especial` }}</span>
               <span v-if="(state.player.difficultyStacks ?? 0) > 0" class="chip" :title="`Dificuldade ${state.player.difficultyStacks}: +${(state.player.difficultyStacks ?? 0) * 15}% densidade e +${(state.player.difficultyStacks ?? 0) * 12}% de velocidade e dano dos inimigos`">☠ Dificuldade {{ state.player.difficultyStacks }}</span>
               <span v-if="(state.player.bonusCoins ?? 0) > 0" class="chip" title="Moedas das cartas, pagas no fim da corrida">🪙 +{{ state.player.bonusCoins }} no fim</span>
               <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
@@ -2563,6 +2565,9 @@ onBeforeUnmount(() => {
               <div><strong>{{ summary.kills }}</strong><small>Derrotas</small></div>
               <div><strong>{{ summary.wave }}</strong><small>Onda</small></div>
             </div>
+            <p v-if="summary.finalHit" class="note" role="status">
+              Golpe final: {{ summary.finalHit.shadowBoss ? 'lendário sombrio' : summary.finalHit.boss || summary.finalHit.grade === 'chefao' ? 'chefão' : summary.finalHit.grade === 'elite' ? 'inimigo de treinador' : 'inimigo' }}{{ summary.finalHit.dexId ? ` (${speciesName(summary.finalHit.dexId) || `Pokémon nº ${summary.finalHit.dexId}`})` : '' }} · {{ summary.finalHit.kind }} · {{ summary.finalHit.damage }} de dano (vida antes: {{ Math.ceil(summary.finalHit.hpBefore) }}).
+            </p>
             <p v-if="summary.fast" class="survivor-cleared" role="status">⚡ Ritmo acelerado: relógio 2× e orbes com 1,75× XP.</p>
             <p v-if="objectives.length" class="survivor-objectives-summary" role="status">
               Objetivos opcionais: {{ objectives.filter((objective) => objective.complete).length }}/{{ objectives.length }} concluídos.

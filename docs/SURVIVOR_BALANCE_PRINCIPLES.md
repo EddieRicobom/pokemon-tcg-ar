@@ -202,3 +202,66 @@ corridas permanece em 2,82 min de mediana no perfil evasivo e 3,57 no perfil
 agressivo (1 e 19 chegadas a 5 min); ela não alcança o minuto 13 nessa matriz,
 portanto mede apenas a ausência de regressão antes do encontro. A dificuldade
 real do lendário ainda requer sessão humana em celular.
+
+## Defesas e cartas de proteção — 25/10/2026
+
+Hipótese: os chefes podem encerrar uma corrida com um acerto forte antes que a
+pessoa entenda a causa. A tela de derrota agora mostra o último golpe; a
+mitigação usa os atributos reais da espécie e oferece escolhas para fortalecê-los.
+
+Referências de design: o [motor original do PokéSurvivor](https://github.com/JPTER78/pokesurvivor/blob/main/js/systems/stats.js)
+distingue Defesa de Defesa Especial e suaviza o efeito dos atributos extremos;
+suas [melhorias permanentes](https://github.com/JPTER78/pokesurvivor/blob/main/js/data/upgrades.js)
+concedem 2 pontos percentuais de proteção por nível, até oito níveis. O
+[item Armor de Vampire Survivors](https://vampire.survivors.wiki/w/Armor_%28item%29)
+também tem limite de cinco níveis. São referências para limitar o acúmulo, não
+números transplantados para a Torre.
+
+No catálogo local de 1.025 espécies, a mediana da Defesa base é 70 e a da
+Defesa Especial é 67; o percentil 90 fica em 110 e 105. A Torre usa
+`defesa / (200 + defesa)` para a redução percentual, com contato e explosão
+tratados como físicos e projéteis como especiais. Assim, a defesa mediana
+reduz aproximadamente 26% ou 25%, e cada ponto adicional rende menos redução
+percentual. Sem dado real da espécie, não se presume uma defesa média nem se
+oferece uma carta que não teria efeito.
+
+**Cartas da corrida:** Casca firme (+25 Defesa, normal, até duas), Manto especial
+(+25 Defesa Especial, normal, até duas) e Postura defensiva (+20 em ambas, rara,
+uma vez). Em Pikachu, duas Casca firme aumentam a proteção contra contato de
+17% para 31%; com Postura defensiva, chega a 35%. A escolha compete com HP,
+ataque e movimento, e os bônus seguem a espécie após a evolução. A mesma
+regra vale para o BONK, pois as variantes usam o mesmo motor de combate.
+
+Esses percentuais não significam sobrevivência garantida a um golpe de chefe:
+o HP base de espécies frágeis permanece baixo. A hipótese precisa de partidas
+humanas, especialmente no minuto 13 contra lendários sombrios e no clímax.
+
+A taxa de dano dos chefes periódicos foi reduzida de **+3 para +1,5 por onda**;
+o multiplicador do lendário sombrio permanece 2,2. No primeiro encontro sombrio
+possível (onda 27), o dano bruto cai de aproximadamente 211 para 122. Um
+Pokémon com 100 HP e Defesa 78 recebe 88 no contato e pode reagir; espécies
+mais frágeis ou encontros tardios ainda exigem preparo e movimento. A vida dos
+chefes e o dano dos inimigos comuns não foram alterados nesta revisão.
+
+Diagnóstico comparável: `SURVIVOR_SIM_RUNS=40`, `SURVIVOR_SIM_DT=32`,
+`SURVIVOR_SIM_CAP_MIN=20`, com as mesmas 40 sementes e espécies reais nos
+cenários comparados. O robô foi corrigido para escolher o especial e sua
+ramificação, evitando travar o relógio aos 3 ou 7 minutos. Os valores de
+p10/mediana/p90, em segundos, foram:
+
+| Escolha de cartas | Antes da redução por onda | Depois da redução por onda |
+| --- | --- | --- |
+| Aleatória | 173 / 309 / 602 | 191 / 315 / 615 |
+| Prioriza defesa | 188 / 317 / 514 | 199 / 321 / 631 |
+| Aleatória, sem chefes | 296 / 373 / 646 | 296 / 373 / 646 |
+
+Depois da redução, 63% das mortes na escolha aleatória e 57% na defensiva
+tiveram um golpe final de chefe. A mediana escolheu zero carta nova de defesa
+no primeiro grupo e uma no segundo. A pequena melhora mediana mostra que as
+cartas são úteis por golpe, mas competem com ataque e não eliminam sozinhas
+a pressão de vários chefes. O cenário sem chefes aponta para essa pressão,
+sem isolar contato, acúmulo de chefes e a dificuldade do robô em abatê-los.
+O robô não chegou ao encontro sombrio opcional nem reproduziu uma morte de
+vida cheia por golpe único. Portanto esses números não justificam concluir
+que o relato do jogador foi resolvido. A tela de derrota agora fornece o
+dano e a origem necessários para uma sessão humana investigar esse caso.

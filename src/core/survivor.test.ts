@@ -12,6 +12,7 @@ import {
   rerollSurvivorUpgradeOffer,
   stepSurvivor,
   survivorCoins,
+  survivorDefenseReduction,
   survivorDifficultyDensityMultiplier,
   survivorDifficultyEnemyMultiplier,
   survivorScore,
@@ -61,6 +62,72 @@ function run(seed: number, kindCount = 4) {
 }
 
 describe('stepSurvivor', () => {
+  it('usa a defesa adequada ao golpe, com retornos decrescentes e sem inventar dados', () => {
+    // Pikachu: Defesa 40 e Defesa Especial 50.
+    expect(survivorDefenseReduction({ dexId: 25 }, 'contato')).toBeCloseTo(40 / 240);
+    expect(survivorDefenseReduction({ dexId: 25 }, 'projétil')).toBeCloseTo(50 / 250);
+    expect(survivorDefenseReduction({ dexId: 25 }, 'explosão')).toBeCloseTo(40 / 240);
+    expect(survivorDefenseReduction({ dexId: 0 }, 'contato')).toBeNull();
+    const state = quiet(run(1));
+    state.player.dexId = 25;
+    state.player.hp = 20;
+    state.enemies.push({ ...dummy(1, state.player.x, state.player.y), boss: true, grade: 'chefao', damage: 100 });
+    const events = stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    const end = events.find((event) => event.type === 'gameover');
+    expect(end?.type === 'gameover' && end.summary.finalHit?.damage).toBe(84);
+  });
+
+  it.each([false, true])('cartas de defesa têm teto e mitigam contato e projétil no modo BONK=%s', (bonk) => {
+    const state = quiet(createSurvivorState(7, { kindCount: 1, dexId: 25, bonk }));
+    for (const [id, times] of [['guard-physical', 3], ['guard-special', 3], ['guard-balanced', 2]] as const) {
+      const card = SURVIVOR_UPGRADES.find((upgrade) => upgrade.id === id)!;
+      for (let i = 0; i < times; i++) {
+        state.pendingUpgrade = [{ id, name: card.name, description: card.description, rarity: card.rarity }];
+        applyUpgrade(state, id);
+      }
+      expect(state.player.upgradeLevels[id]).toBe(card.maxLevels);
+    }
+    expect(state.player.defenseBonus).toBe(70);
+    expect(state.player.spDefenseBonus).toBe(70);
+    expect(survivorDefenseReduction(state.player, 'contato')).toBeCloseTo(110 / 310);
+    expect(survivorDefenseReduction(state.player, 'projétil')).toBeCloseTo(120 / 320);
+    state.player.hp = 200;
+    state.player.maxHp = 200;
+    state.enemies.push({ ...dummy(1, state.player.x, state.player.y), boss: true, dexId: 150, damage: 100 });
+    stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    expect(state.lastHit?.damage).toBe(65);
+    state.enemies = [];
+    state.player.invulnMs = 0;
+    state.hostileProjectiles.push({ id: 2, x: state.player.x, y: state.player.y, vx: 0, vy: 0, damage: 100, lifeMs: 1000, size: 6 });
+    stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    expect(state.lastHit?.damage).toBe(63);
+  });
+
+  it('não oferece cartas de defesa sem atributos reais', () => {
+    const state = quiet(run(3));
+    for (let seed = 0; seed < 40; seed++) {
+      expect(rollUpgrades(seededRng(seed), 3, state.player.move, state.player).some((option) => option.id.startsWith('guard-'))).toBe(false);
+    }
+  });
+
+  it('registra o golpe fatal de contato com o chefe e a vida anterior', () => {
+    const state = quiet(run(1));
+    state.player.hp = 20;
+    state.enemies.push({ ...dummy(1, state.player.x, state.player.y), boss: true, grade: 'chefao', dexId: 150, damage: 80 });
+    const events = stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    const end = events.find((event) => event.type === 'gameover');
+    expect(end?.type === 'gameover' && end.summary.finalHit).toEqual({ dexId: 150, boss: true, grade: 'chefao', kind: 'contato', damage: 80, hpBefore: 20 });
+  });
+
+  it('preserva a origem do projétil após o inimigo desaparecer', () => {
+    const state = quiet(run(1));
+    state.player.hp = 10;
+    state.hostileProjectiles.push({ id: 2, x: state.player.x, y: state.player.y, vx: 0, vy: 0, damage: 40, lifeMs: 1000, size: 6, source: { dexId: 150, boss: true, grade: 'chefao' } });
+    const events = stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    const end = events.find((event) => event.type === 'gameover');
+    expect(end?.type === 'gameover' && end.summary.finalHit).toEqual({ dexId: 150, boss: true, grade: 'chefao', kind: 'projétil', damage: 40, hpBefore: 10 });
+  });
+
   it('usa uma arena física três vezes maior em largura e altura', () => {
     expect(ARENA_W).toBe(2880);
     expect(ARENA_H).toBe(1920);
@@ -975,6 +1042,19 @@ describe('segundo golpe', () => {
     const boss = s.enemies.find((enemy) => enemy.shadowBoss);
     expect(boss).toMatchObject({ boss: true, shadowBoss: true, dexId: s.shadowEncounter.dexId });
     expect(boss!.maxHp).toBeGreaterThan(BALANCE.bossHpBase * 4);
+    // O aumento por onda foi reduzido pela metade: o primeiro sombrio ainda é forte,
+    // mas uma espécie de 100 HP e Defesa 78 não perde toda a vida num só contato.
+    expect(s.wave).toBe(27);
+    expect(boss!.damage).toBe(122);
+    s.player.dexId = 6;
+    s.player.hp = 100;
+    s.player.maxHp = 100;
+    boss!.x = s.player.x;
+    boss!.y = s.player.y;
+    boss!.speed = 0;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.hp).toBeGreaterThan(0);
+    expect(s.lastHit?.damage).toBe(88);
 
     boss!.hp = 0;
     const defeated = stepSurvivor(s, { dx: 0, dy: 0 }, 16);

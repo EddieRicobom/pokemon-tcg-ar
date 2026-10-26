@@ -31,6 +31,10 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   },
   { id: 'legs', family: 'movimento', rarity: 'normal', name: 'Passo mais rápido', description: '+12% de velocidade ao andar.', valueRange: [9, 14], describeValue: (_m, value) => ({ name: 'Passo mais rápido', description: `+${value}% de velocidade ao andar.` }), apply: (p, value = 12) => { p.speed = round1(p.speed * (1 + value / 100)); } },
   { id: 'vigor', family: 'defesa', rarity: 'normal', name: 'Mais vida', description: '+25 no HP máximo e cura 25.', valueRange: [20, 30], describeValue: (_m, value) => ({ name: 'Mais vida', description: `+${value} no HP máximo e cura ${value}.` }), apply: (p, value = 25) => { p.maxHp += value; p.hp = Math.min(p.maxHp, p.hp + value); } },
+  // Duas escolhas incrementais por defesa e uma rara mista. O teto preserva o risco dos chefes.
+  { id: 'guard-physical', family: 'defesa', rarity: 'normal', name: 'Casca firme', description: '+25 de Defesa contra contato e explosões (até 2 cartas).', icon: '🛡', maxLevels: 2, apply: (p) => { p.defenseBonus = (p.defenseBonus ?? 0) + 25; } },
+  { id: 'guard-special', family: 'defesa', rarity: 'normal', name: 'Manto especial', description: '+25 de Defesa Especial contra projéteis (até 2 cartas).', icon: '✨', maxLevels: 2, apply: (p) => { p.spDefenseBonus = (p.spDefenseBonus ?? 0) + 25; } },
+  { id: 'guard-balanced', family: 'defesa', rarity: 'raro', name: 'Postura defensiva', description: '+20 de Defesa e Defesa Especial (uma vez por corrida).', icon: '🛡', maxLevels: 1, apply: (p) => { p.defenseBonus = (p.defenseBonus ?? 0) + 20; p.spDefenseBonus = (p.spDefenseBonus ?? 0) + 20; } },
   {
     id: 'range', family: 'ataque', rarity: 'raro', name: 'Alcance maior', description: '+20% no alcance do golpe.', for: ['projetil', 'area', 'cone'], valueRange: [16, 24],
     describeValue: (_m, value) => ({ name: 'Alcance maior', description: `+${value}% no alcance do golpe.` }),

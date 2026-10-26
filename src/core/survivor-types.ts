@@ -33,6 +33,9 @@ export interface SurvivorPlayer {
   y: number;
   hp: number;
   maxHp: number;
+  /** Pontos obtidos em cartas nesta corrida; somam aos atributos reais da espécie. */
+  defenseBonus?: number;
+  spDefenseBonus?: number;
   speed: number;
   level: number;
   xp: number;
@@ -207,6 +210,19 @@ export type SurvivorEnemyArchetype = 'perseguidor' | 'flanqueador' | 'atirador' 
 
 export type SurvivorSupportRole = 'cura' | 'impulso' | 'disparo';
 
+export interface SurvivorHitSource {
+  dexId?: number;
+  boss: boolean;
+  shadowBoss?: boolean;
+  grade: SurvivorEnemyGrade;
+}
+
+export interface SurvivorFinalHit extends SurvivorHitSource {
+  kind: 'contato' | 'projétil' | 'explosão';
+  damage: number;
+  hpBefore: number;
+}
+
 export interface SurvivorHostileProjectile {
   id: number;
   x: number;
@@ -216,6 +232,7 @@ export interface SurvivorHostileProjectile {
   damage: number;
   lifeMs: number;
   size: number;
+  source?: SurvivorHitSource;
   /** Ataques de Pokémon de treinadores têm leitura visual própria. */
   grade?: SurvivorEnemyGrade;
   effect?: 'burn' | 'slow' | 'stun';
@@ -335,6 +352,7 @@ export interface SurvivorTypeAffinity {
 }
 
 export interface SurvivorState {
+  lastHit?: SurvivorFinalHit;
   special: SurvivorSpecialState;
   rng: Rng;
   /** Semente original desta corrida, usada também para objetivos determinísticos. */
@@ -441,6 +459,7 @@ export interface SurvivorInput {
 }
 
 export interface SurvivorSummary {
+  finalHit?: SurvivorFinalHit;
   survivedMs: number;
   level: number;
   /** Quantas vezes evoluiu na corrida. */

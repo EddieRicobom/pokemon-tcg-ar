@@ -1,4 +1,5 @@
 import { seededRng } from './battle';
+import { statsOfDex } from './survivor-stats';
 import type { Rng } from './battle';
 import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
@@ -26,7 +27,7 @@ import type { PokemonType } from './pokemon-data';
 
 export * from './survivor-types';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
-import type { SurvivorArtifactKind, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
+import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 export { SURVIVOR_UPGRADES };
 
@@ -72,7 +73,7 @@ export const BALANCE = {
   bossHpPerWave: 70,
   bossSpeed: 72,
   bossDamageBase: 15,
-  bossDamagePerWave: 3,
+  bossDamagePerWave: 1.5,
   /** Lendários de Pokébola Sombria: encontros opcionais de risco médio-alto. */
   shadowBossHpMultiplier: 4.5,
   shadowBossDamageMultiplier: 2.2,
@@ -543,7 +544,8 @@ export function rollUpgrades(
     && (!player || u.id !== 'haste' || player.attackCooldownMs > 240)
     && (!player || u.id !== 'multishot' || player.shots < (move.category === 'orbit' ? 1 + SURVIVOR_ORBIT_MAX - SURVIVOR_ORBIT_BASE : 5))
     && (!player || u.id !== 'pierce' || player.pierce < 4)
-    && (!player || u.id !== 'heal-30' || player.hp < player.maxHp),
+    && (!player || u.id !== 'heal-30' || player.hp < player.maxHp)
+    && (!player || !u.id.startsWith('guard-') || statsOfDex(player.dexId) !== null),
   );
   const picked: SurvivorUpgradeOption[] = [];
   for (let i = 0; i < count && pool.length > 0; i++) {
@@ -1170,6 +1172,26 @@ function nearestAlly(state: SurvivorState, source: SurvivorEnemy, maxDistance: n
   return best;
 }
 
+function hitSource(enemy: SurvivorEnemy): SurvivorHitSource {
+  return { ...(enemy.dexId !== undefined ? { dexId: enemy.dexId } : {}), boss: enemy.boss, grade: enemy.grade, ...(enemy.shadowBoss ? { shadowBoss: true } : {}) };
+}
+
+/** Contato e explosão são físicos; projéteis são especiais. Cada defesa dá retornos decrescentes. */
+export function survivorDefenseReduction(player: Pick<SurvivorPlayer, 'dexId' | 'defenseBonus' | 'spDefenseBonus'>, kind: SurvivorFinalHit['kind']): number | null {
+  const stats = statsOfDex(player.dexId);
+  if (!stats) return null;
+  const defense = kind === 'projétil' ? stats.spDefense + (player.spDefenseBonus ?? 0) : stats.defense + (player.defenseBonus ?? 0);
+  return defense / (200 + defense);
+}
+
+function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalHit['kind'], source: SurvivorHitSource): void {
+  const p = state.player;
+  const reduction = survivorDefenseReduction(p, kind);
+  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)))) : 0;
+  state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
+  p.hp = Math.max(0, p.hp - effectiveDamage);
+}
+
 function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, target: SurvivorPlayer, damageMultiplier = 0.7): void {
   if (state.hostileProjectiles.length >= ENEMY_BEHAVIOR_LIMITS.hostileProjectiles) return;
   const dx = target.x - enemy.x;
@@ -1182,7 +1204,7 @@ function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, targ
   state.hostileProjectiles.push({
     id: state.nextId++, x: enemy.x, y: enemy.y, vx: (dx / distance) * speed, vy: (dy / distance) * speed,
      damage: Math.max(1, Math.round(enemy.damage * damageMultiplier)), lifeMs: 2600, size: enemy.grade === 'chefao' ? 8 : enemy.grade === 'elite' ? 7 : 6,
-    grade: enemy.grade, ...(effect ? { effect } : {}),
+    grade: enemy.grade, source: hitSource(enemy), ...(effect ? { effect } : {}),
   });
 }
 
@@ -1298,7 +1320,7 @@ function explodeOnDeath(state: SurvivorState, enemy: SurvivorEnemy): void {
     return;
   }
   const incoming = Math.ceil(enemy.damage * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * 0.8 * (p.artifactShieldMs > 0 ? 0.65 : 1));
-  p.hp = Math.max(0, p.hp - incoming);
+  damagePlayer(state, incoming, 'explosão', hitSource(enemy));
   p.invulnMs = BALANCE.hitInvulnerabilityMs;
 }
 
@@ -1508,7 +1530,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
         continue;
       }
         const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? e.damage * 0.88 : e.damage) * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
-      p.hp = Math.max(0, p.hp - incoming);
+      damagePlayer(state, incoming, 'contato', hitSource(e));
       p.invulnMs = BALANCE.hitInvulnerabilityMs;
     }
   }
@@ -1527,7 +1549,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size) {
       if (p.invulnMs <= 0 && !specialProtects(state)) {
           const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
-        p.hp = Math.max(0, p.hp - incoming);
+        damagePlayer(state, incoming, 'projétil', proj.source ?? { boss: false, grade: proj.grade ?? 'comum' });
         p.invulnMs = BALANCE.hitInvulnerabilityMs;
       }
       return false;
@@ -1718,7 +1740,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.fx = [];
     events.push({
       type: 'gameover',
-      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, fast: state.fast, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: p.bonusCoins ?? 0 },
+      summary: { survivedMs: state.elapsedMs, level: p.level, stage: p.stage, kills: state.kills, wave: state.wave, trainersBeaten: state.trainersBeaten, bossesBeaten: state.bossesBeaten, finalBossBeaten: state.finalBossBeaten, infinite: state.infinite, fast: state.fast, digitalPokeballs: state.digitalPokeballs, shadowTrustStones: state.shadowTrustStones, bonusCoins: p.bonusCoins ?? 0, ...(state.lastHit ? { finalHit: state.lastHit } : {}) },
     });
   }
 
