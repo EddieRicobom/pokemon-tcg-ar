@@ -396,11 +396,30 @@ describe('Vila, Liga e PvP no Treinador', () => {
     const run: TrainerEvent = { type: 'survivor', runId: 'corrida-1', survivedMs: 60_000, trainersBeaten: 1, bossesBeaten: 0, clearedTorre: false, infinite: false, wave: 4, kills: 18, level: 5, completedObjectives: ['tempo-1m', 'abates-20', 'inventado'] };
     const first = applyEvent(emptyTrainer(), run, day);
     expect(first.state.torre).toMatchObject({ runs: 1, bestWave: 4, bestLevel: 5, runIds: ['corrida-1'], completedObjectives: ['tempo-1m', 'abates-20'] });
-    expect(first.state.torre.recentRuns).toEqual([{ id: 'corrida-1', day, survivedMs: 60_000, wave: 4, kills: 18, level: 5, infinite: false, cleared: false }]);
+    expect(first.state.torre.recentRuns).toEqual([{ id: 'corrida-1', day, survivedMs: 60_000, wave: 4, kills: 18, level: 5, infinite: false, cleared: false, trained: false }]);
     const repeated = applyEvent(first.state, run, '2026-10-20');
     expect(repeated.state).toEqual(first.state);
     expect(repeated.rewards).toEqual([]);
     expect(repeated.state.torre.runs).toBe(1);
+  });
+
+  it('o recorde puro só sobe com corrida sem nada da Vila; a treinada marca o histórico', () => {
+    const base = { type: 'survivor', trainersBeaten: 0, bossesBeaten: 0, clearedTorre: false, infinite: false } as const;
+    const pure = applyEvent(emptyTrainer(), { ...base, runId: 'p1', survivedMs: 90_000 }, day);
+    expect(pure.state.torre).toMatchObject({ bestMs: 90_000, bestPureMs: 90_000 });
+    const trained = applyEvent(pure.state, { ...base, runId: 't1', survivedMs: 150_000, trained: true }, day);
+    expect(trained.state.torre).toMatchObject({ bestMs: 150_000, bestPureMs: 90_000 });
+    expect(trained.state.torre.recentRuns.map((run) => run.trained)).toEqual([false, true]);
+    const explicitPure = applyEvent(trained.state, { ...base, runId: 'p2', survivedMs: 100_000, trained: false }, day);
+    expect(explicitPure.state.torre.bestPureMs).toBe(100_000);
+  });
+
+  it('saves sem bestPureMs herdam bestMs (tudo era puro antes do Dojô), mas um save novo com 0 continua 0', () => {
+    expect(normalizeTrainer({ ...emptyTrainer(), torre: { bestMs: 45_000 } }).torre.bestPureMs).toBe(45_000);
+    const modern = normalizeTrainer({ ...emptyTrainer(), torre: { bestMs: 45_000, bestPureMs: 0 } });
+    expect(modern.torre.bestPureMs).toBe(0);
+    const legacyRun = normalizeTrainer({ ...emptyTrainer(), torre: { recentRuns: [{ id: 'a', day: '2026-10-01', survivedMs: 1, wave: 1, kills: 0, level: 1 }] } });
+    expect(legacyRun.torre.recentRuns[0]!.trained).toBe(false);
   });
 
   it('completa compatibilidade de saves antigos da Torre sem sobrescrever marcas existentes', () => {

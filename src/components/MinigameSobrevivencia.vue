@@ -10,7 +10,11 @@ import { fetchSprite } from '../ar/sprite-source';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { recordEvent } from '../app/trainer-store';
 import { recordSightings } from '../app/pokedex-store';
-import { addCoins } from '../app/wallet';
+import { addCoins, withVillage } from '../app/wallet';
+import { settleTowerRun, startTowerRun } from '../core/village/dojo';
+import { PURE_LOADOUT, towerLoadout } from '../core/survivor-loadout';
+import type { TowerLoadout } from '../core/survivor-loadout';
+import { lunchEffectFor } from '../core/survivor-lunch';
 import { cardCompanion, cardJourneyError, recordCardVictories } from '../app/card-evolution-store';
 import type { CardCompanion } from '../core/card-evolution';
 import { survivalWinners } from '../core/card-evolution';
@@ -20,6 +24,8 @@ import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
 import { seededRng } from '../core/battle';
 import {
   applyUpgrade,
+  banSurvivorUpgrade,
+  survivorBanBlockReason,
   ARENA_H,
   ARENA_W,
   createSurvivorState,
@@ -378,6 +384,61 @@ let runCounter = 0;
 let activeRunId = '';
 const completedRunIds = new Set<string>();
 const selectedPreparation = ref<SurvivorPreparationId>('classica');
+
+// ----------------------------------------------------------------------------- Vila na corrida (Survival e BONK)
+// Dojô, sorte do Carteiro e marmita entram pelo mesmo `beginRun`, então valem nos dois modos. Nada é inventado: se a
+// Vila não puder ser lida, a corrida sai pura (PURE_LOADOUT).
+const PURE_PREF_KEY = 'tcg-ar-survivor-pure-v1';
+function readPurePref(): boolean {
+  try { return localStorage.getItem(PURE_PREF_KEY) === '1'; } catch { return false; }
+}
+/** "Corrida pura": sem Dojô, sorte nem marmita. Preferência leve do aparelho. */
+const pureWanted = ref(readPurePref());
+watch(pureWanted, (value) => {
+  try { localStorage.setItem(PURE_PREF_KEY, value ? '1' : '0'); } catch { /* armazenamento indisponível */ }
+});
+/** O que a Vila entregaria agora, só para mostrar na seleção (não consome a sorte nem a marmita). */
+const towerPreview = ref<string[]>([]);
+function refreshTowerPreview(): void {
+  const lines: string[] = [];
+  try {
+    withVillage((village) => {
+      const lunch = village.tower.lunchbox ? lunchEffectFor(village.tower.lunchbox) : null;
+      lines.push(...towerLoadout(village.tower, { pure: false, luck: village.tower.luckPending, lunch }).summary);
+      return false;
+    });
+  } catch { /* sem Vila legível: nada a mostrar */ }
+  towerPreview.value = lines;
+}
+let runLoadout: TowerLoadout = PURE_LOADOUT;
+let runLoadoutSettled = true;
+let lunchWasActive = false;
+/** Pede à Vila o loadout da corrida (consome a sorte do Carteiro) na mesma escrita. */
+function takeRunLoadout(pure: boolean): TowerLoadout {
+  let loadout: TowerLoadout = PURE_LOADOUT;
+  try {
+    withVillage((village) => {
+      const luckBefore = village.tower.luckPending;
+      loadout = startTowerRun(village, { pure }).loadout;
+      return village.tower.luckPending !== luckBefore;
+    });
+  } catch { loadout = PURE_LOADOUT; }
+  return loadout;
+}
+/** Fim ou abandono: a marmita é gasta se a corrida contou e volta para a mochila se foi desistência logo no começo. */
+function settleRunLoadout(survivedMs: number): void {
+  if (runLoadoutSettled) return;
+  runLoadoutSettled = true;
+  const loadout = runLoadout;
+  try {
+    withVillage((village) => {
+      const before = village.tower.lunchbox;
+      settleTowerRun(village, loadout, survivedMs);
+      return village.tower.lunchbox !== before;
+    });
+  } catch { /* a Vila não gravou: a marmita continua reservada */ }
+}
+
 function recordRun(s: SurvivorSummary): void {
   // A recompensa só é emitida pelo evento gameover, e o mesmo resultado não pode ser aplicado duas vezes.
   if (!activeRunId || completedRunIds.has(activeRunId)) return;
@@ -387,7 +448,7 @@ function recordRun(s: SurvivorSummary): void {
   const beforeInfinite = trainer.value.torre.infiniteUnlocked;
   const runRewards = recordEvent({
     type: 'survivor', runId: activeRunId, survivedMs: s.survivedMs, trainersBeaten: s.trainersBeaten, bossesBeaten: s.bossesBeaten,
-    clearedTorre: s.finalBossBeaten, infinite: s.infinite, wave: s.wave, kills: s.kills, level: s.level,
+    clearedTorre: s.finalBossBeaten, infinite: s.infinite, trained: runLoadout.trained, wave: s.wave, kills: s.kills, level: s.level,
     completedObjectives: survivorObjectives(state.value!).filter((objective) => objective.complete).map((objective) => objective.id),
   });
   runUnlocks.value = runRewards.filter((reward) => reward.tone === 'achievement').map((reward) => reward.sub ?? reward.text);
@@ -1751,6 +1812,7 @@ function loop(ts: number): void {
         playSound('survivor-gameover');
         objectives.value = survivorObjectives(s);
         summary.value = ev.summary;
+        settleRunLoadout(ev.summary.survivedMs);
         recordRun(ev.summary);
       }
       else if (ev.type === 'trainerSpawn') {
@@ -1763,12 +1825,17 @@ function loop(ts: number): void {
   scanEnemySightings(s);
   updateMinimap(s);
   pendingUpgrade.value = s.pendingUpgrade;
+  if (lunchWasActive && s.player.lunch && !s.player.lunch.active) {
+    lunchWasActive = false;
+    say('🍱 A marmita acabou: o efeito terminou.', 3200);
+  }
   triggerRef(state);
   draw();
 }
 
 function chooseUpgrade(id: string): void {
   if (!state.value || upgradeMenuLocked.value) return;
+  if (banMode.value) { banUpgradeCard(id); return; }
   const events = applyUpgrade(state.value, id);
   playSound('success');
   pendingUpgrade.value = null;
@@ -1782,6 +1849,30 @@ function chooseUpgrade(id: string): void {
     }
   }
 }
+
+/** Modo banir: o próximo toque numa carta a bane em vez de escolhê-la. */
+const banMode = ref(false);
+const bansLeft = computed(() => state.value?.bansLeft ?? 0);
+const banAvailable = computed(() => bansLeft.value > 0 || (state.value?.bannedUpgradeIds?.length ?? 0) > 0);
+function banBlock(id: string): string | null {
+  return state.value ? survivorBanBlockReason(state.value, id) : 'Corrida indisponível.';
+}
+function toggleBanMode(): void {
+  if (upgradeMenuLocked.value || bansLeft.value <= 0) return;
+  banMode.value = !banMode.value;
+}
+function banUpgradeCard(id: string): void {
+  if (!state.value || upgradeMenuLocked.value) return;
+  const reason = survivorBanBlockReason(state.value, id);
+  if (reason) { say(reason, 2600); return; }
+  if (!banSurvivorUpgrade(state.value, id)) { say('Não há outra carta para ocupar a vaga: banimento cancelado.', 3000); return; }
+  pendingUpgrade.value = state.value.pendingUpgrade;
+  banMode.value = false;
+  triggerRef(state);
+  playSound('survivor-pickup');
+  say(`🚫 Carta banida até o fim da corrida. Restam ${state.value.bansLeft ?? 0}.`, 2600);
+}
+watch(pendingUpgrade, () => { banMode.value = false; });
 
 function rerollUpgradeSelection(): void {
   if (upgradeMenuLocked.value || !state.value || !rerollSurvivorUpgradeOffer(state.value)) return;
@@ -1837,6 +1928,7 @@ function cancelLeave(): void {
 
 function confirmLeave(): void {
   leaveConfirm.value = false;
+  if (state.value && !state.value.over) settleRunLoadout(state.value.elapsedMs);
   emit('leave');
 }
 
@@ -1943,8 +2035,15 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     paused.value = false;
     const { move, profile, secondMove } = attackOf(dexId, picked);
     runSeenDex.clear();
+    // A Vila entrega o loadout (e gasta a sorte do Carteiro) antes de a corrida existir; vale no Survival e no BONK.
+    runLoadout = takeRunLoadout(pureWanted.value);
+    runLoadoutSettled = false;
+    lunchWasActive = runLoadout.lunch !== null;
+    banMode.value = false;
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast });
+    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout });
+    const perks = runLoadout.summary.filter((line) => line.startsWith('Sorte') || line.startsWith('Marmita'));
+    if (perks.length > 0) say(`🍀 ${perks.join(' · ')}`, 4200);
     bonkRun.value = bonk;
     bonkPhysics.value = bonk ? createBonkPhysics(Math.PI / 2, state.value.runSeed) : null;
     // Cada corrida BONK usa a própria seed para trocar tiles, árvores e posição dos obstáculos.
@@ -2006,6 +2105,7 @@ watch(
   },
 );
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
+watch(pickOptions, (options) => { if (options) refreshTowerPreview(); });
 const infiniteWanted = ref(false);
 const bonkWanted = ref(false);
 const fastWanted = ref(false);
@@ -2292,7 +2392,7 @@ onBeforeUnmount(() => {
             <h2>Quem vai pra Torre dessa vez?</h2>
             <details><summary>Música da Torre</summary><MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :unavailable="musicUnavailable" regional @unlock="unlockMusic" /><p class="hint">As nove regiões têm temas próprios: cinco arranjos GBA e quatro temas com tratamento sonoro retrô. A troca acompanha a transição do cenário.</p></details>
             <p class="note" role="status">{{ nextTowerGoal }}</p>
-            <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
+            <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · melhor tempo {{ formatTime(torre.bestMs) }} (corrida pura: {{ torre.bestPureMs > 0 ? formatTime(torre.bestPureMs) : '—' }}) · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
             <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
             <details class="survivor-ledger">
               <summary>Trilha dos desafios · {{ recordedObjectiveCount }}/{{ SURVIVOR_OBJECTIVE_IDS.length }} concluídos</summary>
@@ -2332,6 +2432,18 @@ onBeforeUnmount(() => {
             <p v-if="preparations.length > 1 && nextPreparation" class="note">{{ recordedObjectiveCount }} desafio(s) distinto(s) registrado(s). Próxima preparação: {{ nextPreparation.name }} após {{ nextPreparation.unlockAtObjectives }} objetivos.</p>
             <p v-else-if="preparations.length > 1" class="note">Todas as preparações estratégicas estão liberadas pelos seus desafios concluídos.</p>
             <p v-else class="note">Conclua desafios em corridas reais para liberar preparações: 3 objetivos distintos liberam Passo leve; 6, Mira calculada; 9, Ímã de campo; 12, Mira de longo alcance.</p>
+            <section class="survivor-preparations survivor-tower-perks" aria-label="O que a Vila entrega">
+              <strong>Da Vila para a Torre</strong>
+              <label class="survivor-pure-toggle">
+                <input v-model="pureWanted" type="checkbox" />
+                <span><strong>Corrida pura</strong><small>Sem Dojô, sem sorte do Carteiro e sem marmita. Conta num recorde separado.</small></span>
+              </label>
+              <p v-if="pureWanted" class="note" role="status">Corrida pura ligada: nada da Vila entra nesta corrida.</p>
+              <ul v-else-if="towerPreview.length" class="survivor-tower-list" aria-label="Entra nesta corrida">
+                <li v-for="line in towerPreview" :key="line">{{ line }}</li>
+              </ul>
+              <p v-else class="note">Nada da Vila entra por enquanto. Treinos do Dojô, a sorte do Carteiro e a marmita do Café aparecem aqui.</p>
+            </section>
             <div class="survivor-pick-grid">
                <div
                 v-for="opt in pickOptions"
@@ -2451,13 +2563,13 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="pendingUpgrade" class="survivor-overlay" role="dialog" aria-label="Escolha um upgrade">
-          <div class="card survivor-upgrades survivor-levelup">
+          <div class="card survivor-upgrades survivor-levelup" @click.self="banMode = false">
             <p class="survivor-kicker">Nível {{ state?.player.level }}</p>
             <h2>Subiu de nível!</h2>
             <p class="survivor-rarity-hint">Cada carta tem uma raridade e um efeito próprio. O Especial continua disponível após o encontro com o guardião.</p>
             <p v-if="upgradeMenuLocked" class="survivor-upgrade-delay" role="status" aria-live="polite">Escolha liberada em instantes…</p>
             <div class="survivor-choice-list">
-              <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" :disabled="upgradeMenuLocked" @pointerdown.stop @click="chooseUpgrade(u.id)">
+              <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" :disabled="upgradeMenuLocked || (banMode && !!banBlock(u.id))" :title="banMode ? (banBlock(u.id) ?? 'Banir esta carta') : undefined" @pointerdown.stop @click="chooseUpgrade(u.id)">
                 <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u) }}</span>
                 <span class="survivor-upgrade-text">
                   <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
@@ -2466,9 +2578,14 @@ onBeforeUnmount(() => {
                   </span>
                   <span v-if="u.family" class="survivor-upgrade-family">{{ SURVIVOR_UPGRADE_FAMILIES[u.family].icon }} {{ SURVIVOR_UPGRADE_FAMILIES[u.family].label }}</span>
                   <strong>{{ u.name }}</strong><small>{{ u.description }}</small>
+                  <small v-if="banMode && banBlock(u.id)" class="survivor-ban-reason">Não dá para banir: {{ banBlock(u.id) }}</small>
                 </span>
               </button>
             </div>
+            <button v-if="banAvailable" type="button" class="survivor-ban-toggle" :class="{ active: banMode }" :disabled="upgradeMenuLocked || bansLeft <= 0" :aria-pressed="banMode" @pointerdown.stop @click="toggleBanMode">
+              <span class="survivor-upgrade-icon" aria-hidden="true">🚫</span>
+              <span><strong>Banir ({{ bansLeft }})</strong><small>{{ banMode ? 'Toque numa carta para bani-la; toque aqui de novo para cancelar.' : 'A carta banida não aparece mais nesta corrida e a vaga é reposta.' }}</small></span>
+            </button>
             <button v-if="availableUpgradeRerolls > 0" type="button" class="survivor-jirachi-reroll" :disabled="upgradeMenuLocked" @pointerdown.stop @click="rerollUpgradeSelection">
               <span class="survivor-upgrade-icon" aria-hidden="true">⭐</span>
               <span><strong>Desejo de Jirachi · Rerrolar</strong><small>{{ availableUpgradeRerolls }} desejo(s) restante(s). Cartas normais são trocadas; se todas forem Great Ball ou melhor, uma nova raridade superior é garantida quando já estiver liberada.</small></span>
@@ -2504,6 +2621,11 @@ onBeforeUnmount(() => {
             <p v-if="summary.finalHit" class="note" role="status">
               Golpe final: {{ summary.finalHit.shadowBoss ? 'lendário sombrio' : summary.finalHit.boss || summary.finalHit.grade === 'chefao' ? 'chefão' : summary.finalHit.grade === 'elite' ? 'inimigo de treinador' : 'inimigo' }}{{ summary.finalHit.dexId ? ` (${speciesName(summary.finalHit.dexId) || `Pokémon nº ${summary.finalHit.dexId}`})` : '' }} · {{ summary.finalHit.kind }} · {{ summary.finalHit.damage }} de dano (vida antes: {{ Math.ceil(summary.finalHit.hpBefore) }}).
             </p>
+            <p v-if="state && !state.trained" class="note" role="status">🧼 Corrida pura: nada da Vila entrou. Conta no recorde puro.</p>
+            <div v-else-if="state?.towerSummary?.length" class="survivor-tower-summary" role="status">
+              <strong>Da Vila nesta corrida</strong>
+              <ul><li v-for="line in state.towerSummary" :key="line">{{ line }}</li></ul>
+            </div>
             <p v-if="summary.fast" class="survivor-cleared" role="status">⚡ Ritmo acelerado: relógio 2× e orbes com 1,75× XP.</p>
             <p v-if="objectives.length" class="survivor-objectives-summary" role="status">
               Objetivos opcionais: {{ objectives.filter((objective) => objective.complete).length }}/{{ objectives.length }} concluídos.
