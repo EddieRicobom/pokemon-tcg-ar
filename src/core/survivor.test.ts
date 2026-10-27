@@ -375,7 +375,8 @@ describe('stepSurvivor', () => {
     s.spawnAccumMs = -1e9;
     s.player.pierce = 1;
     s.player.upgradeLevels = { pierce: 1, power: 2, 'damage-projectile': 2 };
-    s.enemies.push({ id: 999, kind: 0, boss: false, grade: 'comum', x: s.player.x + 200, y: s.player.y, hp: 1000, maxHp: 1000, speed: 0, damage: 0, radius: 20, hitFlashMs: 0 });
+    // O golpe padrão alcança 170 px; manter o alvo dentro do alcance garante que o projétil exista para a asserção visual.
+    s.enemies.push({ id: 999, kind: 0, boss: false, grade: 'comum', x: s.player.x + 150, y: s.player.y, hp: 1000, maxHp: 1000, speed: 0, damage: 0, radius: 20, hitFlashMs: 0 });
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
     expect(s.projectiles[0]?.look).toEqual({ tier: 2, piercing: true, critical: false });
   });
