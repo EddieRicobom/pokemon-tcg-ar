@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { advanceMusicTransition, MUSIC_FADE_MS, normalizeMusicSettings, transitionMusicMix, VILLAGE_TRACKS, villageMusicTrack } from './music';
 import { survivorMusicMix, SURVIVOR_TRACKS } from './survivor-music';
-import { REGION_DURATION_MS, REGION_TRANSITION_MS, SURVIVOR_REGIONS } from './survivor-regions';
+import { REGION_DURATION_MS, REGION_TRANSITION_MS, SURVIVOR_REGIONS, survivorRegionAt } from './survivor-regions';
 
 describe('playlist da Vila', () => {
   it('oferece doze músicas distintas e alterna pares a cada seis minutos', () => {
@@ -36,8 +36,12 @@ describe('playlist da Vila', () => {
 
 describe('playlist da Torre', () => {
   it('acompanha todas as regiões e volta a Kanto no infinito', () => {
-    for (let i = 0; i < SURVIVOR_REGIONS.length; i++) expect(survivorMusicMix(i * REGION_DURATION_MS)[0]?.path).toBe(`audio/survival/${SURVIVOR_TRACKS[i]![0]}.mp3`);
-    expect(survivorMusicMix(9 * REGION_DURATION_MS)).toEqual(survivorMusicMix(0));
+    const seed = 1337;
+    for (let i = 0; i < SURVIVOR_REGIONS.length; i++) {
+      const region = survivorRegionAt(i * REGION_DURATION_MS, seed).current;
+      expect(survivorMusicMix(i * REGION_DURATION_MS, seed)[0]?.path).toBe(`audio/survival/${SURVIVOR_TRACKS[region]![0]}.mp3`);
+    }
+    expect(survivorMusicMix(9 * REGION_DURATION_MS, seed)).not.toEqual([]);
     expect(survivorMusicMix(NaN)).toEqual(survivorMusicMix(0));
   });
   it('usa os quarenta segundos da transição do cenário com potência constante', () => {

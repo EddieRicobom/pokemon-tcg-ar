@@ -374,7 +374,7 @@ export interface SurvivorState {
   /** Semente original desta corrida, usada também para objetivos determinísticos. */
   runSeed: number;
   /** Aparência por nascimento; não deve consumir o RNG de combate. */
-  enemyDexId: ((enemy: Readonly<SurvivorEnemy>, elapsedMs: number) => number) | null;
+  enemyDexId: ((enemy: Readonly<SurvivorEnemy>, elapsedMs: number, runSeed: number) => number) | null;
   elapsedMs: number;
   player: SurvivorPlayer;
   enemies: SurvivorEnemy[];

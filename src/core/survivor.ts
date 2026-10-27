@@ -9,7 +9,7 @@ import { MAX_OFFER_CHOICES, PURE_LOADOUT } from './survivor-loadout';
 import type { TowerLoadout } from './survivor-loadout';
 import { LUNCH_HEAL_CAP_FRACTION, TRAINING_DEFENSE_CAP, TRAINING_SPEED_CAP } from './survivor-lunch';
 import type { SurvivorPreparationId } from './survivor-preparations';
-import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, SPECIAL_GUARDIANS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
+import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, DASH_DAMAGE_MULTIPLIER, DASH_TRIPLE_DAMAGE_MULTIPLIER, SPECIAL_GUARDIANS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
 import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR_ORBIT_MAX, survivorAimAngle, survivorOrbitAngularSpeed, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitHitIntervalMs } from './survivor-shapes';
 import type { PokemonType } from './pokemon-data';
 
@@ -180,7 +180,7 @@ export function xpForLevel(level: number): number {
 
 export interface CreateSurvivorOptions {
   /** Resolve apenas a espécie visual, preservando os números da onda e do grau. */
-  enemyDexId?: (enemy: Readonly<SurvivorEnemy>, elapsedMs: number) => number;
+  enemyDexId?: (enemy: Readonly<SurvivorEnemy>, elapsedMs: number, runSeed: number) => number;
   /** Perfil interno do inimigo. Se omitido, os quatro tipos comuns alternam por `kind`. */
   enemyArchetypeFor?: (enemy: Pick<SurvivorEnemy, 'kind' | 'boss' | 'grade'>) => SurvivorEnemyArchetype;
   /** Quantas espécies "comuns" o elenco desta corrida tem (o chefe usa o índice seguinte). Mínimo 1. */
@@ -520,7 +520,7 @@ function spawnTrainer(state: SurvivorState, count: number, final: boolean, event
 
 /** Resolve a aparência uma vez, depois de sortear os números de combate. */
 function addEnemy(state: SurvivorState, enemy: SurvivorEnemy): void {
-  if (enemy.dexId === undefined && state.enemyDexId) enemy.dexId = state.enemyDexId(enemy, state.elapsedMs);
+  if (enemy.dexId === undefined && state.enemyDexId) enemy.dexId = state.enemyDexId(enemy, state.elapsedMs, state.runSeed);
   state.enemies.push(enemy);
 }
 
@@ -1017,6 +1017,30 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
       kind: 'follow-up', x: e.x, y: e.y, r: Math.max(8, e.radius * 0.75), color: move.color, ageMs: 0, lifeMs: 480,
       element: move.type, fromX: p.x, fromY: p.y, toX: e.x, toY: e.y, delayMs: 85, count: move.type === 'bug' ? 4 : 3,
     });
+  }
+}
+
+/** Distância mínima de um inimigo ao trecho percorrido pela investida. */
+function distanceToPath(x: number, y: number, from: { x: number; y: number }, to: { x: number; y: number }): number {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) return Math.hypot(x - from.x, y - from.y);
+  const t = Math.max(0, Math.min(1, ((x - from.x) * dx + (y - from.y) * dy) / lengthSq));
+  return Math.hypot(x - (from.x + dx * t), y - (from.y + dy * t));
+}
+
+/** A bênção do dash bate uma vez em cada inimigo atravessado, sem depender do autoataque. */
+function hitDashPath(state: SurvivorState, path: { from: { x: number; y: number }; to: { x: number; y: number } }): void {
+  const special = state.special;
+  const multiplier = special.branch === 'dash-triple' ? DASH_TRIPLE_DAMAGE_MULTIPLIER : DASH_DAMAGE_MULTIPLIER;
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0 || special.dashHitEnemyIds.includes(enemy.id)) continue;
+    if (distanceToPath(enemy.x, enemy.y, path.from, path.to) > PLAYER_RADIUS + enemy.radius) continue;
+    const damage = state.player.attackDamage * multiplier * ((enemy.protectedMs ?? 0) > 0 ? 0.75 : 1);
+    enemy.hp -= damage;
+    enemy.hitFlashMs = 90;
+    special.dashHitEnemyIds.push(enemy.id);
   }
 }
 
@@ -1535,7 +1559,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   p.artifactShieldMs = Math.max(0, p.artifactShieldMs - dtMs);
   p.artifactMagnetMs = Math.max(0, p.artifactMagnetMs - dtMs);
   p.artifactFocusMs = Math.max(0, p.artifactFocusMs - dtMs);
-  stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS);
+  const dashPath = stepSurvivorSpecial(state, input, dtMs, ARENA_W, ARENA_H, PLAYER_RADIUS);
+  if (dashPath) hitDashPath(state, dashPath);
 
   // Movimento do jogador, com a arena como cerca.
   const len = Math.hypot(input.dx, input.dy);

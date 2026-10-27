@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { REGIONAL_ENCOUNTERS, REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from './survivor-encounters';
-import { REGION_DURATION_MS as D, REGION_TRANSITION_MS as T, SURVIVOR_REGIONS } from './survivor-regions';
+import { REGION_DURATION_MS as D, REGION_TRANSITION_MS as T, SURVIVOR_REGIONS, survivorRegionAt } from './survivor-regions';
 import { applyUpgrade, BALANCE, createSurvivorState, stepSurvivor } from './survivor';
 import type { SurvivorState } from './survivor';
 
@@ -10,9 +10,9 @@ describe('espécies regionais da Torre', () => {
     const meta = JSON.parse(readFileSync('public/data/village-sprite-meta.json', 'utf8')) as Record<string, { a: Record<string, unknown> }>;
     const bounds = [0, 151, 251, 386, 493, 649, 721, 809, 905, 1025];
     expect(REGIONAL_ENCOUNTERS).toHaveLength(SURVIVOR_REGIONS.length);
-    expect(new Set(REGIONAL_ENEMY_SPRITES).size).toBe(45);
+    expect(new Set(REGIONAL_ENEMY_SPRITES).size).toBe(REGIONAL_ENCOUNTERS.reduce((total, encounter) => total + encounter.wild.length + 1, 0));
     REGIONAL_ENCOUNTERS.forEach((r, i) => {
-      expect(r.wild).toHaveLength(REGIONAL_KIND_COUNT);
+      expect(r.wild.length).toBeGreaterThanOrEqual(12);
       for (const dexId of [...r.wild, r.boss]) {
         expect(dexId).toBeGreaterThan(bounds[i]!);
         expect(dexId).toBeLessThanOrEqual(bounds[i + 1]!);
@@ -22,22 +22,26 @@ describe('espécies regionais da Torre', () => {
     });
   });
 
-  it('troca o elenco inteiro e o chefe em cada região, inclusive no loop', () => {
+  it('sorteia espécies nativas de modo uniforme e troca o elenco com a geração sorteada', () => {
+    const seed = 82;
     for (let i = 0; i <= REGIONAL_ENCOUNTERS.length; i++) {
-      const r = REGIONAL_ENCOUNTERS[i % REGIONAL_ENCOUNTERS.length]!;
-      for (let kind = 0; kind < REGIONAL_KIND_COUNT; kind++) {
-        const e = { id: 42, kind, boss: false };
-        expect(regionalEnemyDexId(e, i * D)).toBe(r.wild[kind]);
-        expect(regionalEnemyDexId({ ...e, boss: true }, i * D)).toBe(r.boss);
-      }
+      const { current } = survivorRegionAt(i * D, seed);
+      const r = REGIONAL_ENCOUNTERS[current]!;
+      const seen = new Set<number>();
+      for (let id = 1; id <= 4096; id++) seen.add(regionalEnemyDexId({ id, kind: id % REGIONAL_KIND_COUNT, boss: false }, i * D, seed));
+      expect(seen).toEqual(new Set(r.wild));
+      expect(regionalEnemyDexId({ id: 42, kind: 0, boss: true }, i * D, seed)).toBe(r.boss);
     }
   });
 
   it('mistura os nascimentos em proporção à transição, sem trocar tudo de uma vez', () => {
+    const seed = 91;
+    const incomingGeneration = survivorRegionAt(D - T, seed).next;
     const incoming = (time: number): number => {
+      const next = REGIONAL_ENCOUNTERS[incomingGeneration]!;
       let count = 0;
       for (let id = 1; id <= 4096; id++) {
-        if (regionalEnemyDexId({ id, kind: 0, boss: false }, time) === 161) count++;
+        if ((next.wild as readonly number[]).includes(regionalEnemyDexId({ id, kind: 0, boss: false }, time, seed))) count++;
       }
       return count / 4096;
     };
@@ -60,7 +64,7 @@ describe('espécies regionais da Torre', () => {
     s.spawnAccumMs = interval - 1;
     stepSurvivor(s, { dx: 0, dy: 0 }, 50);
     const enemy = s.enemies[0]!;
-    expect(REGIONAL_ENCOUNTERS[0].wild).toContain(enemy.dexId);
+    expect(REGIONAL_ENCOUNTERS[survivorRegionAt(s.elapsedMs, s.runSeed).current]!.wild).toContain(enemy.dexId);
     const dexId = enemy.dexId;
     s.elapsedMs = D + 100;
     s.spawnAccumMs = -1e9;

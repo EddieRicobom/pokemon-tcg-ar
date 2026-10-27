@@ -5,18 +5,23 @@ export type SurvivorSpecialId = 'dash' | 'shield' | 'teleport';
 export type SurvivorSpecialBranchId = 'dash-clone' | 'dash-triple' | 'shield-permanent' | 'shield-heal' | 'teleport-infinite' | 'teleport-vacuum';
 export const SPECIAL_UNLOCK_MS = 180_000;
 export const SPECIAL_BRANCH_UNLOCK_MS = 420_000;
+/** A investida atravessa inimigos e usa este múltiplo do dano atual do golpe principal. */
+export const DASH_DAMAGE_MULTIPLIER = 2;
+/** A trilha Tríplice abre três cargas e torna cada atravessada ainda mais perigosa. */
+export const DASH_TRIPLE_DAMAGE_MULTIPLIER = 3;
+export const DASH_CLONE_DURATION_MS = 6000;
 /** Tempo da entrada do guardião. A escolha só abre depois da animação completa. */
 export const SPECIAL_ARRIVAL_MS = 4200;
 export const SPECIAL_BRANCH_ARRIVAL_MS = 3000;
 export const SURVIVOR_SPECIALS = {
-  dash: { name: 'Investida elemental', icon: '➤', cooldownMs: 6500, durationMs: 300, description: 'Avance na última direção válida, protegido durante a investida. Recarga: 6,5 s.' },
+  dash: { name: 'Investida elemental', icon: '➤', cooldownMs: 6500, durationMs: 300, description: 'Avance na última direção válida, protegido durante a investida e cause 2× o dano do golpe aos inimigos atravessados. Recarga: 6,5 s.' },
   shield: { name: 'Bastião elemental', icon: '⬡', cooldownMs: 12_000, durationMs: 3000, description: 'Bloqueie todo dano durante 3 s. Recarga: 12 s.' },
   teleport: { name: 'Salto de execução', icon: '✧', cooldownMs: 25_000, durationMs: 0, description: 'Teleporte na direção do movimento e elimine até 4 selvagens próximos ao destino. Não afeta chefes ou equipes de treinadores. Recarga: 25 s.' },
 } as const;
 export const SURVIVOR_SPECIAL_BRANCHES: Record<SurvivorSpecialId, readonly { id: SurvivorSpecialBranchId; name: string; icon: string; description: string }[]> = {
   dash: [
-    { id: 'dash-clone', name: 'Eco evasivo', icon: '👥', description: 'Cria um clone que dispara para longe da direção dos inimigos por 3 s.' },
-    { id: 'dash-triple', name: 'Tríplice investida', icon: '➤➤➤', description: 'Permite 3 investidas seguidas; depois, a recarga sobe para 10 s.' },
+    { id: 'dash-clone', name: 'Eco evasivo', icon: '👥', description: 'Cria um clone que dispara para longe da direção dos inimigos por 6 s.' },
+    { id: 'dash-triple', name: 'Tríplice investida', icon: '➤➤➤', description: 'Permite 3 investidas seguidas, cada uma causando 3× o dano do golpe; depois, a recarga sobe para 10 s.' },
   ],
   shield: [
     { id: 'shield-permanent', name: 'Muralha permanente', icon: '⬡', description: 'O escudo fica ativo até um inimigo encostar em você.' },
@@ -38,6 +43,7 @@ export const SPECIAL_GUARDIANS: Record<PokemonType, { dexId: number; name: strin
   dark: { dexId: 717, name: 'Yveltal' }, steel: { dexId: 483, name: 'Dialga' }, fairy: { dexId: 716, name: 'Xerneas' },
 };
 export interface SpecialPoint { x: number; y: number }
+export interface SurvivorDashPath { from: SpecialPoint; to: SpecialPoint }
 export interface SurvivorSpecialClone extends SpecialPoint { dx: number; dy: number; activeMs: number }
 export interface SurvivorSpecialState {
   type: PokemonType;
@@ -52,13 +58,15 @@ export interface SurvivorSpecialState {
   from: SpecialPoint;
   to: SpecialPoint;
   targets: SpecialPoint[];
+  /** IDs já atingidos pela investida atual; atravessar o mesmo alvo não o acerta todo quadro. */
+  dashHitEnemyIds: number[];
   dashCharges: number;
   shieldBroken: boolean;
   clone: SurvivorSpecialClone | null;
 }
 export function createSurvivorSpecial(type: PokemonType): SurvivorSpecialState {
   return { type, phase: 'locked', selected: null, arrivalMs: 0, cooldownMs: 0, activeMs: 0, fxMs: 0,
-    direction: { x: 1, y: 0 }, from: { x: 0, y: 0 }, to: { x: 0, y: 0 }, targets: [], branch: null, dashCharges: 0, shieldBroken: false, clone: null };
+    direction: { x: 1, y: 0 }, from: { x: 0, y: 0 }, to: { x: 0, y: 0 }, targets: [], dashHitEnemyIds: [], branch: null, dashCharges: 0, shieldBroken: false, clone: null };
 }
 export function chooseSurvivorSpecial(state: SurvivorState, id: SurvivorSpecialId): boolean {
   if (state.over || state.special.phase !== 'choice' || !Object.hasOwn(SURVIVOR_SPECIALS, id)) return false;
@@ -111,8 +119,9 @@ export function breakSurvivorShield(state: SurvivorState): boolean {
   state.special.fxMs = 800;
   return true;
 }
-export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, dtMs: number, width: number, height: number, margin: number): void {
+export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, dtMs: number, width: number, height: number, margin: number): SurvivorDashPath | null {
   const special = state.special;
+  let dashPath: SurvivorDashPath | null = null;
   const wasShieldActive = special.activeMs > 0;
   let activeStepMs = Math.min(dtMs, special.activeMs);
   special.cooldownMs = Math.max(0, special.cooldownMs - dtMs);
@@ -149,12 +158,13 @@ export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, 
     special.shieldBroken = false;
     special.from = { x: state.player.x, y: state.player.y };
     special.targets = [];
+    special.dashHitEnemyIds = [];
     if (special.selected === 'dash' && special.branch === 'dash-clone') {
       const nearest = state.enemies.filter((enemy) => enemy.hp > 0).sort((a, b) => Math.hypot(a.x - state.player.x, a.y - state.player.y) - Math.hypot(b.x - state.player.x, b.y - state.player.y))[0];
       const dx = nearest ? state.player.x - nearest.x : -special.direction.x;
       const dy = nearest ? state.player.y - nearest.y : -special.direction.y;
       const distance = Math.hypot(dx, dy) || 1;
-      special.clone = { x: state.player.x, y: state.player.y, dx: dx / distance, dy: dy / distance, activeMs: 3000 };
+      special.clone = { x: state.player.x, y: state.player.y, dx: dx / distance, dy: dy / distance, activeMs: DASH_CLONE_DURATION_MS };
     }
     if (special.selected === 'shield' && special.branch === 'shield-permanent') special.activeMs = Number.POSITIVE_INFINITY;
     if (special.selected === 'teleport') {
@@ -170,7 +180,10 @@ export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, 
     special.to = { x: state.player.x, y: state.player.y };
   }
   if (special.selected === 'dash' && activeStepMs > 0) {
+    const from = { x: state.player.x, y: state.player.y };
     Object.assign(state.player, destination(800 * activeStepMs / 1000));
     special.to = { x: state.player.x, y: state.player.y };
+    dashPath = { from, to: { ...special.to } };
   }
+  return dashPath;
 }
