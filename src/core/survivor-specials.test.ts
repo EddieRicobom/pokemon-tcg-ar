@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ARENA_H, ARENA_W, createSurvivorState, PLAYER_RADIUS, stepSurvivor } from './survivor';
 import type { SurvivorEnemy } from './survivor';
-import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch, SPECIAL_ARRIVAL_MS, SPECIAL_BRANCH_ARRIVAL_MS, SPECIAL_BRANCH_UNLOCK_MS, SPECIAL_GUARDIANS, SPECIAL_UNLOCK_MS, SURVIVOR_SPECIALS } from './survivor-specials';
+import { chooseSurvivorSpecial, chooseSurvivorSpecialBranch, DASH_CLONE_DURATION_MS, SPECIAL_ARRIVAL_MS, SPECIAL_BRANCH_ARRIVAL_MS, SPECIAL_BRANCH_UNLOCK_MS, SPECIAL_GUARDIANS, SPECIAL_UNLOCK_MS, SURVIVOR_SPECIALS } from './survivor-specials';
 import type { SurvivorSpecialId } from './survivor-specials';
 import { typesOfDex } from './species-filter';
 
@@ -74,6 +74,19 @@ describe('orbe e especiais da Torre', () => {
     expect(state.special.cooldownMs).toBe(SURVIVOR_SPECIALS.dash.cooldownMs);
   });
 
+  it('dash atravessa cada inimigo uma vez e causa duas vezes o dano do golpe', () => {
+    const state = armed('dash');
+    state.player.attackDamage = 17;
+    const crossed = enemy(1, state.player.x + 100, state.player.y, { hp: 100, maxHp: 100 });
+    const outside = enemy(2, state.player.x + 100, state.player.y + 90, { hp: 100, maxHp: 100 });
+    state.enemies = [crossed, outside];
+    stepSurvivor(state, { dx: 1, dy: 0, special: true }, 300);
+    expect(crossed.hp).toBe(66);
+    expect(outside.hp).toBe(100);
+    stepSurvivor(state, idle, 16);
+    expect(crossed.hp).toBe(66);
+  });
+
   it('escudo bloqueia contato e projéteis por 3 s e volta a receber dano ao terminar', () => {
     const state = armed('shield');
     state.enemies = [enemy(1, state.player.x, state.player.y)];
@@ -143,14 +156,22 @@ describe('orbe e especiais da Torre', () => {
     clone.enemies = [enemy(1, clone.player.x + 40, clone.player.y)];
     stepSurvivor(clone, { ...idle, special: true }, 1);
     expect(clone.special.clone).not.toBeNull();
+    expect(clone.special.clone!.activeMs).toBe(DASH_CLONE_DURATION_MS);
     const cloneX = clone.special.clone!.x;
-    stepSurvivor(clone, idle, 1000);
+    stepSurvivor(clone, idle, DASH_CLONE_DURATION_MS - 1);
     expect(clone.special.clone!.x).toBeLessThan(cloneX);
+    stepSurvivor(clone, idle, 1);
+    expect(clone.special.clone).toBeNull();
 
     const triple = armed('dash');
     triple.special.phase = 'branch-choice';
     expect(chooseSurvivorSpecialBranch(triple, 'dash-triple')).toBe(true);
-    for (let i = 0; i < 3; i += 1) stepSurvivor(triple, { dx: 1, dy: 0, special: true }, 1);
+    triple.player.attackDamage = 14;
+    const crossed = enemy(99, triple.player.x + 80, triple.player.y, { hp: 100, maxHp: 100 });
+    triple.enemies = [crossed];
+    stepSurvivor(triple, { dx: 1, dy: 0, special: true }, 300);
+    expect(crossed.hp).toBe(58);
+    for (let i = 0; i < 2; i += 1) stepSurvivor(triple, { dx: 1, dy: 0, special: true }, 1);
     expect(triple.special.dashCharges).toBe(0);
     expect(triple.special.cooldownMs).toBe(10_000);
     stepSurvivor(triple, idle, 10_000);

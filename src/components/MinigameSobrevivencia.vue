@@ -667,7 +667,7 @@ const musicUnavailable = ref(false);
 const music = new MusicPlayer(path => `${import.meta.env.BASE_URL}${path}`, () => { musicUnavailable.value = true; });
 function syncMusic(): void {
   const s = state.value;
-  music.update(survivorMusicMix(s?.elapsedMs ?? 0), !!s && ready.value && !s.over && !paused.value && !leaveConfirm.value && !pendingUpgrade.value && !evolving.value && !document.hidden, survivorAudio.enabled ? survivorAudio.volume / 100 : 0);
+  music.update(survivorMusicMix(s?.elapsedMs ?? 0, s?.runSeed ?? 0), !!s && ready.value && !s.over && !paused.value && !leaveConfirm.value && !pendingUpgrade.value && !evolving.value && !document.hidden, survivorAudio.enabled ? survivorAudio.volume / 100 : 0);
 }
 watch([() => survivorAudio.enabled, () => survivorAudio.volume, ready, paused, leaveConfirm, pendingUpgrade, evolving, summary], syncMusic);
 function unlockMusic(): void { musicUnavailable.value = false; syncMusic(); music.unlock(); }
@@ -1135,7 +1135,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   const c = ctx;
   const viewport = { width: view.w, height: view.h };
   c.clearRect(0, 0, viewport.width, viewport.height);
-  const region = survivorRegionAt(s.elapsedMs);
+  const region = survivorRegionAt(s.elapsedMs, s.runSeed);
   const art = bonkArtForRegion(region.current);
   const nextArt = region.blend > 0 ? bonkArtForRegion(region.next) : null;
   drawBonkGround(c, physics, s.player, viewport, s.elapsedMs, art, nextArt, region.blend);
@@ -1329,8 +1329,8 @@ async function preloadShadowBoss(dexId: number): Promise<void> {
   shadowBossSprite.value = firstSpriteFrame(enemySprites.get(dexId))?.toDataURL() ?? null;
 }
 
-function preloadVisibleEnemyRegions(elapsedMs: number): void {
-  const { current, next } = survivorRegionAt(elapsedMs);
+function preloadVisibleEnemyRegions(elapsedMs: number, runSeed = 0): void {
+  const { current, next } = survivorRegionAt(elapsedMs, runSeed);
   void preloadEnemyRegion(current);
   // Antecipar a próxima região evita uma forma neutra durante a transição sem bloquear a primeira tela.
   void preloadEnemyRegion(next);
@@ -1365,7 +1365,7 @@ function draw(): void {
   ctx.translate(-(camX + worldViewW / 2), -(camY + worldViewH / 2));
   if (regionScenery.value) {
     // Flores e brilho da água só balançam com "Efeitos: completos" (e sem movimento reduzido nem modo Rotom).
-    drawLandscape(ctx, s.elapsedMs, { x: camX - 2, y: camY - 2, w: worldViewW + 4, h: worldViewH + 4 }, { timeMs: animMs, animate: detailedSpecialEffects.value });
+    drawLandscape(ctx, s.elapsedMs, { x: camX - 2, y: camY - 2, w: worldViewW + 4, h: worldViewH + 4 }, { timeMs: animMs, animate: detailedSpecialEffects.value }, s.runSeed);
   } else if (groundPattern) {
     ctx.fillStyle = groundPattern;
     ctx.fillRect(0, 0, ARENA_W, ARENA_H);
@@ -1707,7 +1707,7 @@ function loop(ts: number): void {
   // por inimigo) e o `triggerRef` abaixo avisa a interface uma vez por quadro. As outras telas do componente continuam
   // reativas, porque as mudanças fora do laço passam pelo proxy como antes.
   const s = toRaw(state.value!);
-  preloadVisibleEnemyRegions(s.elapsedMs);
+  preloadVisibleEnemyRegions(s.elapsedMs, s.runSeed);
   if (!s.over && !s.pendingUpgrade && !evolving.value) {
     const projectilesBefore = s.projectiles.length;
     const hpBefore = s.player.hp;
@@ -1739,7 +1739,7 @@ function loop(ts: number): void {
       triggerRef(bonkPhysics);
     }
     bonkJumpQueued = false;
-    const region = survivorRegionLabel(s.elapsedMs);
+    const region = survivorRegionLabel(s.elapsedMs, s.runSeed);
     if (region !== announcedRegion) {
       announcedRegion = region;
       if (s.elapsedMs > 0) say(`Região: ${region}`, 2200);
@@ -1973,6 +1973,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   try {
     avatarName.value = name;
     evolving.value = null;
+    const runSeed = Math.floor(Math.random() * 2 ** 31);
     await Promise.all([loadSpriteSpecies(), loadLandscapeAtlas()]);
     enemySprites.clear();
     enemySpriteLoads.clear();
@@ -1981,7 +1982,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
       loadSpriteOrNull(dexId, shiny, runParticipant?.id.startsWith('dp_') === true && visual.metallic),
       bonk ? loadBackSpriteOrNull(dexId, shiny, runParticipant?.id.startsWith('dp_') === true && visual.metallic) : Promise.resolve(null),
       ...supportCandidates.map((candidate) => loadSpriteOrNull(candidate.dexId, candidate.shiny === true, candidate.digital === true && visual.metallic)),
-      preloadEnemyRegion(survivorRegionAt(0).current),
+      preloadEnemyRegion(survivorRegionAt(0, runSeed).current),
     ]);
     playerSprite = player;
     playerBackSprite = back as Sprite | null;
@@ -2023,7 +2024,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     lunchWasActive = runLoadout.lunch !== null;
     banMode.value = false;
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
-    state.value = createSurvivorState(Math.floor(Math.random() * 2 ** 31), { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout });
+    state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout });
     const perks = runLoadout.summary.filter((line) => line.startsWith('Sorte') || line.startsWith('Marmita'));
     if (perks.length > 0) say(`🍀 ${perks.join(' · ')}`, 4200);
     bonkRun.value = bonk;
@@ -2034,7 +2035,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     bonkArtByRegion.clear();
     if (bonk) bonkArtForRegion(0);
     if (ctx) ctx.imageSmoothingEnabled = false;
-    announcedRegion = survivorRegionLabel(0);
+    announcedRegion = survivorRegionLabel(0, state.value.runSeed);
     guardianSprite.value = null;
     shadowBossSprite.value = null;
     specialQueued = false;
@@ -2363,7 +2364,7 @@ onBeforeUnmount(() => {
         <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
             <h2>Jogo pausado</h2>
-            <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :track="survivorMusicTitle(state?.elapsedMs ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
+            <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
             <details class="survivor-help" :open="helpOpen" @toggle="helpOpen = ($event.target as HTMLDetailsElement).open">
               <summary>Como jogar · controles</summary>

@@ -262,7 +262,7 @@ export interface LandscapeView { x: number; y: number; w: number; h: number }
 /** Relógio da animação do chão (flores e brilho da água). `animate: false` deixa tudo no primeiro quadro. */
 export interface LandscapeMotion { timeMs: number; animate: boolean }
 
-export type SurvivorLandscapeRenderer = ((ctx: CanvasRenderingContext2D, elapsedMs: number, view?: LandscapeView, motion?: LandscapeMotion) => void) & {
+export type SurvivorLandscapeRenderer = ((ctx: CanvasRenderingContext2D, elapsedMs: number, view?: LandscapeView, motion?: LandscapeMotion, runSeed?: number) => void) & {
   setAtlas(image: CanvasImageSource | null): void;
 };
 
@@ -676,8 +676,8 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     }
   }
 
-  const render = ((ctx: CanvasRenderingContext2D, elapsedMs: number, view?: LandscapeView, motion: LandscapeMotion = { timeMs: 0, animate: false }): void => {
-    const { current, next, blend } = survivorRegionAt(elapsedMs);
+  const render = ((ctx: CanvasRenderingContext2D, elapsedMs: number, view?: LandscapeView, motion: LandscapeMotion = { timeMs: 0, animate: false }, runSeed = 0): void => {
+    const { current, next, blend } = survivorRegionAt(elapsedMs, runSeed);
     for (const key of layers.keys()) if (key !== current && key !== next) layers.delete(key);
     for (const key of regionAtlases.keys()) if (key !== current && key !== next) regionAtlases.delete(key);
     ctx.save();
