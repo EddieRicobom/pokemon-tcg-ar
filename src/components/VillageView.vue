@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import VillageMailPanel from './VillageMailPanel.vue';
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { getCache, getDigitalSprite, getLocalVillageSprite, getLocalVillageSpriteDirs, getVillageAtlas, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
 import { resolveTeam } from '../app/team';
@@ -10,8 +9,8 @@ import { villageArSettings } from '../app/village-ar-settings';
 import { attachLiveVillage, detachLiveVillage, syncCoins } from '../app/wallet';
 import { loadVillage, requestPersistence, saveVillage, villageMap } from '../app/village-store';
 import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
-import { gameShortcutOf, routeHref } from '../app/route';
-import type { GameShortcut, VilaExit } from '../app/route';
+import { routeHref } from '../app/route';
+import type { VilaExit } from '../app/route';
 import { handleDialogEscape, isGameKeyboardControl } from '../app/game-keyboard';
 import { stopCamera } from '../core/camera';
 import type { RunningVillageAr } from '../ar/start-village';
@@ -24,9 +23,6 @@ import { claimPrizes } from '../core/village/rewards';
 import { ensureModeStories } from '../core/village/mode-stories';
 import { challengeGalleryUnlocked, completedChallengeExhibits } from '../core/village/challenge-gallery';
 import BackpackView from './BackpackView.vue';
-import VillageSheetHeader from './VillageSheetHeader.vue';
-import { villageSheetCloseAction } from '../core/village/sheet-close';
-import { wrappedFocusIndex } from '../core/village/sheet-focus';
 import HoOhWishCutscene from './HoOhWishCutscene.vue';
 import LegendaryCutscene from './LegendaryCutscene.vue';
 import VillageLegends from './VillageLegends.vue';
@@ -37,8 +33,7 @@ import { isLegendUnlocked, unlockedLegendRegions } from '../core/village/legenda
 import { league } from '../app/league-store';
 import type { DecodedGif } from '../core/gif';
 import MinigameHub from './MinigameHub.vue';
-import { lazyView } from '../app/lazy-view';
-const MinigameSobrevivencia = lazyView(() => import('./MinigameSobrevivencia.vue'));
+import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
 import { personalityOf } from '../core/village/personality';
@@ -78,7 +73,9 @@ import type { ItemId } from '../core/village/life';
 import { homePickUp, homePlace } from '../core/village/home-interior';
 import HomeInteriorMap from './HomeInteriorMap.vue';
 import { advanceResidentHomes } from '../core/village/home-autonomy';
-import { chooseServiceResidents, professionActive } from '../core/village/professions';
+import { chooseInstructor, chooseServiceResidents, professionActive, PROFESSIONS } from '../core/village/professions';
+import { lunchChoices, packLunch, readLuckLetter, unpackLunch } from '../core/village/dojo';
+import { describeLunch, lunchEffectFor } from '../core/survivor-lunch';
 import { LEISURE_SPOTS } from '../core/village/expansion';
 import { enjoyVillagePlace } from '../core/village/leisure';
 import { dailyRecap, needsDailyRecap } from '../core/village/daily-recap';
@@ -90,6 +87,7 @@ import { FarmSession } from '../core/village/farm';
 import type { FarmTask } from '../core/village/farm';
 import FarmSeedBox from './FarmSeedBox.vue';
 import VillageWorksites from './VillageWorksites.vue';
+import VillageDojo from './VillageDojo.vue';
 import { WORK_SITES } from '../core/village/town-layout';
 import type { WorksiteId } from '../core/village/town-layout';
 import { GUIDED_DESTINATIONS, guidedWalkArrived, guidedWalkProgress } from '../core/village/guided-walk';
@@ -114,7 +112,7 @@ import { loadCardCompanionEntry } from '../app/companion-creatures';
 import { companionCard } from '../app/card-evolution-store';
 import type { CachedCard } from '../cache/types';
 import QuizDialog from './QuizDialog.vue';
-import { generateDailyMail, markMailRead, queueMomentMail, respondToMail } from '../core/village/mail';
+import { generateDailyMail, mailActionLabel, mailKindLabel, markMailRead, queueMomentMail, respondToMail } from '../core/village/mail';
 import type { MailAction } from '../core/village/mail';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
@@ -141,7 +139,7 @@ type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 't
 const sheet = ref<Sheet>(null);
 const cardEvolutionAtAltar = ref(false);
 const backpackOpen = ref(false);
-type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos' | 'lendas' | 'correio';
+type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos' | 'lendas' | 'correio' | 'dojo';
 const tab = ref<Tab>('inicio');
 const arActive = ref(false);
 const arAnchored = ref(false);
@@ -217,52 +215,25 @@ function stopArBeta(): void {
 interface MenuTile { tab?: Tab; href?: string; run?: () => void; disabled?: boolean; icon: string; label: string; hint?: string; badge?: number }
 const MENU_TITLES: Record<Tab, string> = {
   inicio: 'Menu da Vila', resumo: 'Resumo da Vila', expedicoes: 'Expedições', mochila: 'Mochila', fabricar: 'Fabricar', cozinha: 'Cozinha', diario: 'Diário de Momentos', correio: 'Correio da Vila',
-  album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila', lendas: 'Caderno de Lendas',
+  album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila', dojo: 'Dojô da Torre', lendas: 'Caderno de Lendas',
 };
 /** Um lugar da Vila aberto direto pelo menu (ou trancado, com o nível que falta). */
-function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: string, opt: { bonk?: boolean; hint?: string } = {}): MenuTile {
+function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: string): MenuTile {
   const b = map.buildings.find((x) => x.kind === kind);
   const open = !!b && level.value >= b.unlock;
   return {
     icon,
     label,
     disabled: !open,
-    hint: open ? opt.hint : `🔒 nível ${b?.unlock ?? '?'}`,
-    run: () => openPlace(kind, opt.bonk === true),
+    hint: open ? undefined : `🔒 nível ${b?.unlock ?? '?'}`,
+    run: () => {
+      if (!b || !open) return;
+      if (kind === 'torre') sheet.value = 'torre';
+      else openGameBuilding(b);
+    },
   };
 }
-/** Abre um jogo direto (menu e atalhos de endereço), com o aviso do nível que falta quando ainda está trancado. */
-function openPlace(kind: 'arcade' | 'arena' | 'torre', bonk = false): void {
-  const b = map.buildings.find((x) => x.kind === kind);
-  if (!b) return;
-  if (level.value < b.unlock) {
-    say(`${b.name} abre no nível ${b.unlock}.`);
-    return;
-  }
-  if (kind === 'torre') {
-    towerStartBonk.value = bonk;
-    sheet.value = 'torre';
-  } else openGameBuilding(b);
-}
-/** Modo BONK já escolhido ao abrir a Torre (atalho do menu ou do endereço). */
-const towerStartBonk = ref(false);
-/** Atalho de jogo pedido pelo endereço (`#/vila?torre=1`): abre na chegada, depois dos avisos de boas-vindas. */
-let pendingGame: GameShortcut | null = gameShortcutOf(window.location.hash);
-function openRequestedGame(): void {
-  const game = pendingGame;
-  if (!game || dialog.value || legendaryScene.value || hoOhWishScene.value || sheet.value) return;
-  pendingGame = null;
-  // Tira o atalho do endereço: recarregar ou voltar não deve reabrir o jogo.
-  window.history.replaceState(null, '', routeHref('vila'));
-  if (game === 'coliseu') openPlace('arena');
-  else openPlace('torre', game === 'bonk');
-}
 const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[]>(() => [
-  {
-    title: 'Jogar',
-    desc: 'Direto aos jogos, sem andar até o prédio.',
-    tiles: [placeTile('torre', '🗼', 'Survival', { hint: 'Torre de Sobrevivência' }), placeTile('torre', '💥', 'BONK', { bonk: true, hint: 'Torre em 3D' }), placeTile('arena', '⚔️', 'Arena', { hint: 'Coliseu' })],
-  },
   {
     title: 'Você',
     tiles: [
@@ -274,6 +245,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
     title: 'Fazer',
     tiles: [
       { tab: 'trabalhos', icon: '🛠️', label: 'Trabalhos da Vila', hint: 'fazenda, mina, madeira e pesca' },
+      { tab: 'dojo', icon: '🥋', label: 'Dojô da Torre', hint: 'treinos e lições para o Survival' },
       { tab: 'fabricar', icon: '🔨', label: 'Fabricar' },
       { tab: 'cozinha', icon: '🍳', label: 'Cozinha' },
     ],
@@ -292,7 +264,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   },
   {
     title: 'Lugares da Vila',
-    tiles: [{ icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, placeTile('arcade', '🕹️', 'Fliperama')],
+    tiles: [{ icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, placeTile('arcade', '🕹️', 'Fliperama'), placeTile('arena', '⚔️', 'Arena'), placeTile('torre', '🗼', 'Torre')],
   },
   {
     title: 'Fora da Vila',
@@ -314,7 +286,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
 type MenuSection = 'vila' | 'historias' | 'lugares' | 'modos';
 const menuSection = ref<MenuSection>('vila');
 const menuSections: { id: MenuSection; label: string; icon: string; groups: string[] }[] = [
-  { id: 'vila', label: 'Minha Vila', icon: '🏡', groups: ['Jogar', 'Você', 'Fazer'] },
+  { id: 'vila', label: 'Minha Vila', icon: '🏡', groups: ['Você', 'Fazer'] },
   { id: 'historias', label: 'Histórias', icon: '📖', groups: ['Pokémon e memórias'] },
   { id: 'lugares', label: 'Lugares', icon: '🗺️', groups: ['Lugares da Vila'] },
   { id: 'modos', label: 'Outros modos', icon: '🎮', groups: ['Fora da Vila', 'Atividades Externas'] },
@@ -349,18 +321,17 @@ function rememberVillageActionFocus(event: FocusEvent): void {
 }
 function focusFirstVillageAction(selector: string): void {
   const panel = document.querySelector<HTMLElement>(selector);
-  const candidates = [...(panel?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]') ?? [])]
-    .filter((element) => element.getClientRects().length > 0 && !element.closest('[inert]'));
-  const first = candidates.find((element) => !element.matches('.menu-close, .bc-close, .village-close, .village-sheet-close') && element.textContent?.trim() !== 'Fechar') ?? candidates[0];
+  const candidates = panel?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex="0"]');
+  const first = [...(candidates ?? [])].find((element) => !element.matches('.menu-close, .bc-close, .village-close') && element.textContent?.trim() !== 'Fechar') ?? candidates?.item(0);
   focusWithArrowIndicator(first);
 }
 watch(sheet, (next, previous) => {
   if (next && !previous) sheetFocusReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
-  if (next && next !== previous) void nextTick(() => { if (sheet.value === next) focusFirstVillageAction('.village-sheet'); });
+  if (next && !previous) void nextTick(() => focusFirstVillageAction('.village-sheet'));
   if (!next && previous) {
     const target = sheetFocusReturn;
     sheetFocusReturn = null;
-    void nextTick(() => { if (!sheet.value) (target?.isConnected ? target : wrapEl.value)?.focus(); });
+    void nextTick(() => (target?.isConnected ? target : wrapEl.value)?.focus());
   }
 });
 watch(tab, (next, previous) => {
@@ -404,7 +375,6 @@ function finishArrival(): void {
   // O presente inicial (questionário) tem prioridade; o sorteio de lendário (no máximo 1/dia) espera a próxima vez.
   if (!state.digital.starterGiven) maybeOfferStarter();
   else rollLegendaryToday();
-  openRequestedGame();
 }
 
 // ---- Fase 4: cutscene da primeira entrada (antes do aviso de controles, só na primeira vez de verdade).
@@ -1175,35 +1145,6 @@ function pressAClick(event: MouseEvent): void {
   if (performance.now() - lastPointerAPress > 180) pressA();
 }
 function onKey(e: KeyboardEvent): void {
-  if (backpackOpen.value) {
-    if (e.type === 'keydown' && e.key === 'Escape') {
-      e.preventDefault();
-      backpackOpen.value = false;
-    }
-    return;
-  }
-  if (e.type === 'keydown' && e.key === 'Tab' && sheet.value && !backpackOpen.value) {
-    const panel = document.querySelector<HTMLElement>('.village-sheet');
-    const nested = panel && [...panel.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]')]
-      .filter((element) => element.getClientRects().length > 0).at(-1);
-    const activePanel = nested ?? panel;
-    if (activePanel) {
-      const controls = [...activePanel.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]')]
-        .filter((element) => element.getClientRects().length > 0 && !element.closest('[inert]'));
-      if (controls.length) {
-        const index = controls.indexOf(document.activeElement as HTMLElement);
-        const next = wrappedFocusIndex(index, controls.length, e.shiftKey);
-        if (next !== null) {
-          e.preventDefault();
-          controls[next]?.focus();
-        }
-      } else {
-        e.preventDefault();
-        activePanel.focus();
-      }
-    }
-    return;
-  }
   // A Torre tem seu próprio teclado; a Vila não deve capturar essas teclas por trás dela.
   if (sheet.value === 'torre') return;
   if (recapScenes.value.length) {
@@ -1430,6 +1371,21 @@ const stage = computed(() => townStage(level.value));
 let homes = new Map<string, number>();
 
 /** Abre o Correio como uma caixa de entrada: a edição diária e as cartas de momentos ficam juntas no mesmo lugar. */
+/** A porta do Dojô: abre o painel dos treinos e das reformas e conta o que falta para o Instrutor assumir. */
+function openDojoBuilding(b: Building): void {
+  const names = ['Terreno do Dojô', 'Tatame', 'Dojô', 'Dojô de pedra'];
+  const open = professionActive('dojo', mons.value.length);
+  const who = state.instructorId && open ? `${nameOf(state.instructorId)} cuida do Dojô.` : `O Instrutor assume com ${PROFESSIONS.find((p) => p.id === 'dojo')!.min} moradores (você tem ${mons.value.length}).`;
+  dialog.value = {
+    name: state.tower.dojoLevel === 0 ? names[0]! : b.name,
+    text: `${names[state.tower.dojoLevel]}. ${who} Aqui você treina para a Torre e aprende lições com materiais fabricados.`,
+    actions: [
+      { label: '🥋 Abrir o Dojô', run: () => { closeDialog(); tab.value = 'dojo'; sheet.value = 'menu'; } },
+      { label: 'Sair', run: closeDialog },
+    ],
+  };
+}
+
 function openMail(): void {
   const generated = generateDailyMail(state, refreshDay(), namesById(), friendLevelOf);
   if (generated) {
@@ -1481,6 +1437,30 @@ function speakToResident(id: string): void {
   openFriendDialog(id, text);
 }
 
+/** Cozinha do Café: uma comida da mochila vira a marmita da próxima corrida do Survival/BONK (só uma por vez). */
+function openLunchDialog(title: string): void {
+  const current = state.tower.lunchbox;
+  const currentEffect = current ? lunchEffectFor(current) : null;
+  const choices = lunchChoices(state).slice(0, 8);
+  const minutes = (ms: number) => `${Math.round(ms / 60_000)} min`;
+  const lines = currentEffect
+    ? [`Marmita guardada: ${itemName(current!)} (${minutes(currentEffect.durationMs)}).`, ...describeLunch(currentEffect)]
+    : ['Nenhuma marmita guardada. Escolha uma comida que você já cozinhou; cada prato dá um efeito diferente e só uma vale por corrida.'];
+  if (choices.length === 0 && !currentEffect) lines.push('Sua mochila não tem nenhuma comida pronta. Cozinhe algo no menu Cozinha.');
+  dialog.value = {
+    name: `🍱 ${title}`,
+    text: lines.join('\n'),
+    actions: [
+      ...choices.map((food) => {
+        const effect = lunchEffectFor(food)!;
+        return { label: `${itemName(food)} ×${count(state, food)} · ${minutes(effect.durationMs)}`, run: () => { const r = packLunch(state, food); if (r.ok) changed(); say(r.message); openLunchDialog(title); } };
+      }),
+      ...(currentEffect ? [{ label: 'Devolver à mochila', run: () => { if (unpackLunch(state).ok) changed(); openLunchDialog(title); } }] : []),
+      { label: 'Voltar', run: closeDialog },
+    ],
+  };
+}
+
 function openMailCarrierDialog(id: string): void {
   const waiting = state.mail.inbox.filter((mail) => !mail.read).length;
   const lines = [
@@ -1494,6 +1474,7 @@ function openMailCarrierDialog(id: string): void {
     text: lines[(Date.now() / 1000 | 0) % lines.length]!,
     actions: [
       { label: 'Conversar como morador', run: () => speakToResident(id) },
+      { label: '✉️ Ler a carta da sorte', run: () => { const r = readLuckLetter(state, refreshDay()); if (r.ok) changed(); dialog.value = { id, name: `📬 ${nameOf(id)} · Carteiro da Vila`, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] }; } },
       { label: 'Abrir o Correio', run: openMail },
       { label: 'Continuar a entrega', run: () => { game?.deliverMail(state.mail.inbox.filter((mail) => mail.involvedIds.length > 0).flatMap((mail) => mail.involvedIds)); closeDialog(); } },
       { label: 'Sair', run: closeDialog },
@@ -1508,8 +1489,11 @@ function refreshTown(): void {
   const staff = chooseServiceResidents(residentIds, state.mailCarrierId, state.cafeWaiterId);
   if (staff.carrier && state.mailCarrierId !== staff.carrier) { state.mailCarrierId = staff.carrier; changed(); }
   if (staff.waiter && state.cafeWaiterId !== staff.waiter) { state.cafeWaiterId = staff.waiter; changed(); }
+  const instructor = chooseInstructor(residentIds, staff.carrier, staff.waiter, state.instructorId);
+  if (instructor && state.instructorId !== instructor) { state.instructorId = instructor; changed(); }
   game?.setMailCarrier(staff.carrier);
   game?.setCafeWaiter(staff.waiter);
+  game?.setInstructor(instructor);
   const initial = personalizeResidentHomes(state, homes);
   const automatic = advanceResidentHomes(state, homes, refreshDay());
   if (automatic.changed) changed();
@@ -1809,8 +1793,6 @@ function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.se
 
 function closeVillageSheet(): void {
   sheet.value = null;
-  homeInteriorLot.value = null;
-  selectedHomeItem.value = null;
   bookDialogId.value = null;
   askingMon = null;
   heldKeys.clear();
@@ -1818,16 +1800,6 @@ function closeVillageSheet(): void {
   tapInteraction = null;
   game?.setWaiting(null);
   game?.holdStick(null);
-}
-
-function requestCloseSheet(): void {
-  const action = villageSheetCloseAction(sheet.value, tab.value === 'inicio');
-  if (action === 'back') tab.value = 'inicio';
-  else if (action === 'tower') {
-    if (typeof towerGameRef.value?.requestLeave === 'function') towerGameRef.value.requestLeave();
-    else closeVillageSheet(); // A Torre ainda está carregando ou não pôde abrir.
-  }
-  else if (action === 'close') closeVillageSheet();
 }
 
 function openBookFromDialog(id: string): void {
@@ -1854,6 +1826,7 @@ function openBuilding(b: Building): void {
     return;
   }
   if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena' || b.kind === 'torre') return openGameBuilding(b);
+  if (b.kind === 'dojo') return openDojoBuilding(b);
   if (b.kind === 'mail') return openMail();
   if (b.kind === 'cafe') {
     const text = `Cheiro de bolo no ar! Um lanche aqui custa ${CAFE_PRICE} moedas e rende amizade com os Pokémon que estão por perto (uma vez por dia). Você tem ${state.coins}.`;
@@ -1875,6 +1848,7 @@ function openBuilding(b: Building): void {
             dialog.value = { name: b.name, text: r.message, actions: [{ label: 'Ok', run: closeDialog }] };
           },
         },
+        ...(level.value >= 3 && professionActive('cafe', mons.value.length) ? [{ label: '🍱 Preparar marmita', run: () => openLunchDialog(b.name) }] : []),
         { label: 'Sair', run: closeDialog },
       ],
     };
@@ -1901,41 +1875,41 @@ function goToPins(): void {
 
 function goToPvp(): void {
   closeDialog();
-  closeVillageSheet();
+  sheet.value = null;
   emit('close', 'pvp');
 }
 
 /** Coliseu → Arena 3D: o palco virtual da Caixa, sem câmera nem sensores. */
 function goToArena3d(): void {
   closeDialog();
-  closeVillageSheet();
+  sheet.value = null;
   emit('close', 'arena3d');
 }
 
 /** Coliseu → Caixa em AR: a câmera e os sensores, com os Pokémon no chão da sua sala. */
 function goToCaixa(): void {
   closeDialog();
-  closeVillageSheet();
+  sheet.value = null;
   emit('close', 'caixa');
 }
 
 function goToArena(): void {
   closeDialog();
-  closeVillageSheet();
+  sheet.value = null;
   window.location.hash = routeHref('arena', undefined, ['vila']);
 }
 
 /** Fliperama → batalha na Arena 3D: fecha a Vila e abre o palco virtual (sem câmera) com a batalha em destaque. */
 function goToBattle3d(): void {
   closeDialog();
-  closeVillageSheet();
+  sheet.value = null;
   emit('close', 'batalha3d');
 }
 
 /** Fliperama → batalha na câmera: fecha a Vila e já abre a câmera e os sensores da Caixa (no mesmo toque). */
 function goToBattle(): void {
   closeDialog();
-  closeVillageSheet();
+  sheet.value = null;
   emit('close', 'batalha');
 }
 const battleRewardText = computed(() => {
@@ -2800,6 +2774,7 @@ function openFriendDialog(id: string, text: string): void {
   // para quem acabou de chegar não encarar oito botões de uma vez.
   const actions: { label: string; run: () => void; disabled?: boolean }[] = [{ label: '🎁 Presentear', run: () => { giftPick.value = true; } }];
   if (id === state.mailCarrierId && professionActive('mail', mons.value.length)) actions.push({ label: '📬 Ver a bolsa do carteiro', run: () => openMailCarrierDialog(id) });
+  if (id === state.instructorId && professionActive('dojo', mons.value.length)) actions.push({ label: '🥋 Falar com o Instrutor', run: () => { closeDialog(); tab.value = 'dojo'; sheet.value = 'menu'; } });
   if (following) actions.push({ label: 'Pode passear', run: () => { state.follower = null; changed(); dialog.value = null; } });
   else if (canFollow(state, id)) actions.push({ label: '🥰 Vem comigo!', run: () => { state.follower = id; changed(); game?.bubble(id, '🥰'); dialog.value = null; } });
   actions.push({ label: '⋯ Mais opções', run: () => openFriendMore(id) });
@@ -2863,7 +2838,9 @@ function pressB(): void {
   else if (quizOpen.value) return;
   else if (pendingChoice) decide(null);
   else if (dialog.value) dialog.value = null;
-  else if (sheet.value) requestCloseSheet();
+  else if (sheet.value === 'menu' && tab.value !== 'inicio') tab.value = 'inicio'; // B dentro de uma seção volta ao menu
+  else if (sheet.value === 'torre') towerGameRef.value?.requestLeave();
+  else if (sheet.value) closeVillageSheet(); // fecha pelo mesmo caminho do ✕ e libera o estado de interação da Vila
   else openMenu();
 }
 
@@ -2871,7 +2848,8 @@ function pressMenu(): void {
   if (legendaryScene.value) return;
   if (dialog.value || quiz.value || (sheet.value && sheet.value !== 'menu')) return;
   if (sheet.value === 'menu') {
-    requestCloseSheet();
+    if (tab.value !== 'inicio') tab.value = 'inicio';
+    else closeVillageSheet();
     return;
   }
   openMenu();
@@ -2882,7 +2860,7 @@ function act(result: { ok: boolean; message: string }, close = false, cue: UiSou
   if (result.ok) {
     playSound(cue);
     changed();
-    if (close) closeVillageSheet();
+    if (close) sheet.value = null;
   }
 }
 
@@ -2986,7 +2964,7 @@ onMounted(async () => {
     if (loaded.failed.length) say('Não consegui mostrar alguns companheiros: ' + loaded.failed.map((f) => f.name + ' (' + f.reason + ')').join('; '), 12000);
     // Membros da equipe sem sprite no cache não entram na cena: continuam na equipe e voltam quando a carta for recarregada.
     const withoutSprite = team.ids.length - loaded.entries.length - loaded.failed.length;
-    if (withoutSprite > 0) say(`${withoutSprite} companheiro(s) da equipe estão sem sprite neste aparelho. Em Carregar, toque em "Carregar" ou "Tentar de novo" nas cartas incompletas.`, 12000);
+    if (withoutSprite > 0) say(`${withoutSprite} companheiro(s) da equipe estão sem sprite neste aparelho. Em Carregar, toque em "Recarregar" nas cartas incompletas.`, 12000);
     // Sprite local da Vila (pacote de ação, derivado do PokéSurvivor/PMD SpriteCollab — ver THIRD_PARTY_NOTICES.md):
     // usado quando a espécie está no pacote; senão cai para o GIF que a Caixa já baixou e guardou no cache.
     villagers = await Promise.all(
@@ -3257,8 +3235,8 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="sheet === 'build'" class="village-sheet" role="dialog" aria-modal="true" aria-labelledby="village-build-title" tabindex="-1">
-        <VillageSheetHeader :title="`Sua casa: ${HOUSE_LEVELS[state.house]?.name}`" title-id="village-build-title" @close="requestCloseSheet" />
+      <div v-if="sheet === 'build'" class="village-sheet" role="dialog" aria-label="Construir a casa">
+        <header><strong>Sua casa: {{ HOUSE_LEVELS[state.house]?.name }}</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
         <template v-if="nextHouse">
           <p>Próximo: <strong>{{ nextHouse.name }}</strong></p>
           <p class="hint">Precisa de: {{ describeCost(state, nextHouse.cost) }}</p>
@@ -3270,8 +3248,8 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" aria-modal="true" aria-labelledby="village-home-title" tabindex="-1">
-        <VillageSheetHeader :title="homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}`" icon="🏠" title-id="village-home-title" close-label="Sair" @close="requestCloseSheet" />
+      <div v-if="sheet === 'home'" class="village-sheet tall home-sheet" role="dialog" :aria-label="homeInteriorLot === null ? 'Interior da sua casa' : 'Interior da casa de um morador'">
+        <header><strong>🏠 {{ homeInteriorLot === null ? 'Sua casa' : `Casa de ${residentsOf(homes, homeInteriorLot).map((id) => nameOf(id)).join(' e ')}` }}</strong><button type="button" class="link" @click="exitHomeInterior">Sair</button></header>
         <p v-if="homeInteriorLot === null" class="hint">Sua casa tem cantinhos de descanso, cozinha e convivência. Use Organizar móveis para decorar.</p>
         <p v-else class="hint">Os moradores organizam seus cantinhos e poupam para comprar móveis e reformar por conta própria.</p>
         <HomeInteriorMap
@@ -3310,16 +3288,15 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <div v-if="sheet === 'shop'" class="village-sheet" role="dialog" aria-modal="true" aria-labelledby="village-shop-title" tabindex="-1">
-        <VillageSheetHeader title="Loja da Vila" title-id="village-shop-title" @close="requestCloseSheet">
-          <template #actions>
+      <div v-if="sheet === 'shop'" class="village-sheet" role="dialog" aria-label="Loja da Vila">
+        <header>
           <div class="chips" role="tablist">
             <button type="button" role="tab" :class="{ active: shopTab === 'comprar' }" :aria-selected="shopTab === 'comprar'" @click="shopTab = 'comprar'">Comprar</button>
             <button type="button" role="tab" :class="{ active: shopTab === 'vender' }" :aria-selected="shopTab === 'vender'" @click="shopTab = 'vender'">Vender</button>
           </div>
           <span class="village-coins"><span class="coin-mark" aria-hidden="true"></span>{{ state.coins }}</span>
-          </template>
-        </VillageSheetHeader>
+          <button type="button" class="link" @click="sheet = null">Fechar</button>
+        </header>
         <p class="hint">{{ shopTab === 'comprar' ? 'Sementes sempre; os móveis e acessórios mudam todo dia.' : 'A loja compra tudo o que você coleta e colhe.' }}</p>
         <ul v-if="shopTab === 'comprar'" class="item-grid">
           <li v-for="i in shopItems" :key="i.id">
@@ -3341,8 +3318,8 @@ onBeforeUnmount(() => {
         </ul>
       </div>
 
-      <div v-if="sheet === 'dress'" class="village-sheet" role="dialog" aria-modal="true" aria-labelledby="village-dress-title" tabindex="-1">
-        <VillageSheetHeader :title="`Acessório ${dressFor === 'player' ? 'para você' : `para ${nameOf(dressFor)}`}`" title-id="village-dress-title" @close="requestCloseSheet" />
+      <div v-if="sheet === 'dress'" class="village-sheet" role="dialog" aria-label="Acessórios">
+        <header><strong>Acessório {{ dressFor === 'player' ? 'para você' : `para ${nameOf(dressFor)}` }}</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
         <ul class="item-grid">
           <li v-for="acc in accessoriesOwned.filter(fitsWho)" :key="acc">
             <img :src="icon(acc)" alt="" width="40" height="40" />
@@ -3354,29 +3331,29 @@ onBeforeUnmount(() => {
         <button type="button" @click="dress(null)">Tirar o acessório</button>
       </div>
 
-      <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-modal="true" aria-labelledby="village-arcade-title" tabindex="-1">
-        <VillageSheetHeader title="Fliperama" title-id="village-arcade-title" @close="requestCloseSheet" />
+      <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-label="Fliperama">
+        <header><strong>Fliperama</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
         <div class="card arcade-battle">
           <h2>⚔️ Batalha na câmera</h2>
           <p class="note">Abre a câmera e os sensores da Caixa direto no modo de batalha: coloque a caixa no chão e toque em Batalhar. {{ battleRewardText }}.</p>
           <button type="button" class="primary" @click="goToBattle">Abrir câmera e batalhar</button>
         </div>
-        <MinigameHub closable @leave="closeVillageSheet" />
+        <MinigameHub closable @leave="sheet = null" />
       </div>
 
-      <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-labelledby="village-farm-title" tabindex="-1">
-        <VillageSheetHeader title="Caixa de sementes" icon="🌱" title-id="village-farm-title" @close="requestCloseSheet" />
+      <div v-if="sheet === 'farm'" class="village-sheet tall" role="dialog" aria-modal="true" aria-label="Caixa de sementes">
+        <header><strong>🌱 Caixa de sementes</strong><button type="button" class="link" @click="closeVillageSheet">Fechar</button></header>
         <FarmSeedBox :state="state" :name-of="nameOf" @change="changed" />
       </div>
 
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
-      <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-labelledby="village-tower-title" tabindex="-1">
-        <VillageSheetHeader title="Torre de Sobrevivência" title-id="village-tower-title" @close="requestCloseSheet" />
-        <MinigameSobrevivencia ref="towerGameRef" :start-bonk="towerStartBonk" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="closeVillageSheet" />
+      <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
+        <header><strong>Torre de Sobrevivência</strong><button type="button" class="link" @click="pressB">Fechar</button></header>
+        <MinigameSobrevivencia ref="towerGameRef" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="sheet = null" />
       </div>
 
-      <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-modal="true" aria-labelledby="village-gallery-title" tabindex="-1">
-        <VillageSheetHeader title="Vitrine de desafios" icon="🏆" title-id="village-gallery-title" @close="requestCloseSheet" />
+      <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">
+        <header><strong>🏆 Vitrine de desafios</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
         <p class="hint">O pedestal foi montado com as lembranças da Liga e dos Pins. Cada peça abaixo corresponde a um marco registrado numa partida concluída.</p>
         <ul class="village-list">
           <li v-for="exhibit in challengeExhibits" :key="exhibit.achievementId">
@@ -3387,13 +3364,17 @@ onBeforeUnmount(() => {
         <p class="hint">Novas lembranças aparecem aqui quando você conquista outros marcos.</p>
       </div>
 
-      <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-modal="true" aria-labelledby="village-evolution-title" tabindex="-1">
-        <VillageSheetHeader title="Evolução · seus companheiros" title-id="village-evolution-title" @close="requestCloseSheet" />
+      <div v-if="sheet === 'card-evolution'" class="village-sheet tall" role="dialog" aria-label="Evolução dos Pokémon das cartas">
+        <header><strong>Evolução · seus companheiros</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
         <CardEvolutionPanel :friends="state.friends" :trust-stones="count(state, 'trust-stone')" :altar="cardEvolutionAtAltar" @evolved="syncCardEvolution" @spend-trust-stones="() => { state.inventory['trust-stone'] = Math.max(0, count(state, 'trust-stone') - 5); changed(); }" />
       </div>
 
-      <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" aria-modal="true" aria-labelledby="village-menu-title" tabindex="-1">
-        <VillageSheetHeader class="menu-head" :title="MENU_TITLES[tab]" title-id="village-menu-title" :back="tab !== 'inicio' ? { label: 'Menu', run: () => { tab = 'inicio'; } } : undefined" @close="requestCloseSheet" />
+      <div v-if="sheet === 'menu'" class="village-sheet tall village-menu" role="dialog" :aria-label="MENU_TITLES[tab]">
+        <header class="menu-head">
+          <button v-if="tab !== 'inicio'" type="button" class="link menu-back" @click="tab = 'inicio'">← Menu</button>
+          <strong>{{ MENU_TITLES[tab] }}</strong>
+          <button type="button" class="menu-close" aria-label="Fechar o menu" @click="closeVillageSheet">✕</button>
+        </header>
 
         <div v-if="tab === 'inicio'" class="menu-home">
           <details><summary>Música e sons da Vila</summary><MusicControls v-model:enabled="villageAudio.enabled" v-model:volume="villageAudio.volume" v-model:effects-volume="villageAudio.effectsVolume" :track="musicTitle" :unavailable="musicUnavailable" @unlock="unlockMusic" /><p v-if="!visual.sound" class="hint">Os efeitos estão desligados nas opções gerais. A música tem seu próprio controle.</p></details>
@@ -3436,6 +3417,7 @@ onBeforeUnmount(() => {
         </div>
 
         <VillageWorksites v-else-if="tab === 'trabalhos'" :state="state" :population="mons.length" :cafe-available="level >= 3" :name-of="nameOf" :tasks="farmTasks" :now="farmClock" @visit="visitWorksite" @seeds="sheet = 'farm'" />
+        <VillageDojo v-else-if="tab === 'dojo'" :state="state" :population="mons.length" :instructor-name="state.instructorId ? nameOf(state.instructorId) : null" @changed="changed" />
         <VillageLegends v-else-if="tab === 'lendas'" :state="state.legendary" :regions="legendRegions" @replay="showLegendaryCutscene($event, true)" @travel="travelToLegendClue" />
 
         <div v-else-if="tab === 'resumo'" class="diary village-summary">
@@ -3483,7 +3465,31 @@ onBeforeUnmount(() => {
           </section>
         </div>
 
-        <VillageMailPanel v-else-if="tab === 'correio'" :mail="state.mail" :unread="mailUnread" :name-of="nameOf" @read="readMail" @answer="answerMail" />
+        <div v-else-if="tab === 'correio'" class="diary village-mail-panel">
+          <p class="hint">Cartas ligadas a momentos que realmente aconteceram. Os nomes abaixo são os Pokémon envolvidos no Diário; responder pode criar um novo compromisso social.</p>
+          <section aria-labelledby="mail-inbox-title">
+            <h4 id="mail-inbox-title">📬 Caixa de entrada <small v-if="mailUnread">· {{ mailUnread }} nova(s)</small></h4>
+            <ul v-if="state.mail.inbox.length" class="village-list mail-list">
+              <li v-for="mail in state.mail.inbox.slice().reverse()" :key="mail.id" class="mail-card" :class="{ unread: !mail.read }">
+                <div class="mail-card-head"><span>{{ mailKindLabel[mail.kind] }} · {{ mail.day }}</span><b v-if="!mail.read">NOVA</b></div>
+                <strong>{{ mail.subject }}</strong>
+                <small>De {{ mail.fromName }}<span v-if="mail.involvedIds.length"> · envolvidos: {{ mail.involvedIds.map(nameOf).join(', ') }}</span></small>
+                <p>{{ mail.body }}</p>
+                <div class="summary-actions mail-actions">
+                  <button v-if="!mail.read" type="button" @click="readMail(mail.id)">Marcar como lida</button>
+                  <button v-if="mail.fromId && !mail.responded" type="button" @click="answerMail(mail.id, 'responder')">{{ mailActionLabel('responder', mail.kind) }}</button>
+                  <button v-if="mail.fromId && mail.involvedIds.length > 1 && !mail.responded" type="button" @click="answerMail(mail.id, 'ajudar')">{{ mailActionLabel('ajudar', mail.kind) }}</button>
+                  <button type="button" @click="answerMail(mail.id, 'arquivar')">Guardar</button>
+                </div>
+              </li>
+            </ul>
+            <p v-else class="hint">Nenhuma carta esperando. Um momento novo entre moradores fará o carteiro voltar.</p>
+          </section>
+          <section v-if="state.mail.archive.length" aria-labelledby="mail-archive-title">
+            <h4 id="mail-archive-title">🗄️ Arquivo</h4>
+            <ul class="village-list mail-list archived"><li v-for="mail in state.mail.archive.slice().reverse().slice(0, 12)" :key="mail.id"><span><strong>{{ mail.subject }}</strong><small>{{ mail.fromName }} · {{ mail.day }}<span v-if="mail.responded"> · resposta enviada</span></small></span></li></ul>
+          </section>
+        </div>
 
         <div v-else-if="tab === 'expedicoes'" class="diary">
           <p class="hint">Cada expedição leva 15 minutos. O resultado combina tipo, personalidade, amizade e o clima registrado na partida.</p>

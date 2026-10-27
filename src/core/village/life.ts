@@ -24,6 +24,8 @@ import type { CommunityState } from './community';
 import { emptyFarm, normalizeFarm } from './farm';
 import type { FarmState } from './farm';
 import { emptyMail, normalizeMail } from './mail';
+import { emptyTower, normalizeTower } from './tower-state';
+import type { TowerState } from './tower-state';
 import type { MailState } from './mail';
 
 /**
@@ -164,6 +166,10 @@ export interface VillageState {
   /** Morador escolhido para o turno do Correio; saves antigos começam sem escolha. */
   mailCarrierId: string | null;
   cafeWaiterId: string | null;
+  /** Morador que cuida do Dojô da Torre (terceiro posto, além do carteiro e da garçonete). */
+  instructorId: string | null;
+  /** Dojô, treinos, lições, sorte do carteiro e marmita: a progressão do Survival/BONK (ver `docs/PROGRESSAO_TORRE.md`). */
+  tower: TowerState;
   residentEconomy: ResidentEconomy;
 }
 
@@ -182,7 +188,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), homeInteriors: {}, friends: {}, harvested: {}, follower: null,
     coins: 100, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
-    digital: emptyDigital(), fountainWishes: 0, hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), mail: emptyMail(), mailCarrierId: null, cafeWaiterId: null, residentEconomy: {}, ...emptyWorldProgress(), homeStyles: {}, homeProjects: {},
+    digital: emptyDigital(), fountainWishes: 0, hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), mail: emptyMail(), mailCarrierId: null, cafeWaiterId: null, instructorId: null, tower: emptyTower(), residentEconomy: {}, ...emptyWorldProgress(), homeStyles: {}, homeProjects: {},
   };
 }
 
@@ -260,6 +266,8 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     mail: normalizeMail(r.mail),
     mailCarrierId: typeof r.mailCarrierId === 'string' ? r.mailCarrierId.slice(0, 80) : null,
     cafeWaiterId: typeof r.cafeWaiterId === 'string' ? r.cafeWaiterId.slice(0, 80) : null,
+    instructorId: typeof r.instructorId === 'string' ? r.instructorId.slice(0, 80) : null,
+    tower: normalizeTower(r.tower),
     residentEconomy: normalizeResidentEconomy(r.residentEconomy),
   };
 }

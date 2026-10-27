@@ -9,6 +9,8 @@ import type { Rng } from '../core/battle';
 import { frameIndexAt } from '../core/gif';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { trainerAtlasFrame, type TrainerAtlas } from './trainer-atlas';
+import { emptyInstructorShift, stepInstructorShift } from '../core/village/instructor';
+import { DOJO_WINDOWS, paintDojo } from './art/dojo-art';
 import { drawPos, facing, makeWalker, moving, stepVillager, swapPlaces, tryStep, advance, syncFollowerSpeed, WALK_SPEED } from '../core/village/actors';
 import type { Dir, Walker } from '../core/village/actors';
 import { itemDef } from '../core/village/catalog';
@@ -132,6 +134,8 @@ export class VillageGame {
   private readonly mailRoutes = new Map<string, { targets: string[]; index: number; pauseUntil: number }>();
   private mailCarrierId: string | null = null;
   private cafeWaiterId: string | null = null;
+  private instructorId: string | null = null;
+  private instructorShift = emptyInstructorShift();
   private cafeService: CafeService | null = null;
   private readonly serviceBreaks = new Map<string, number>();
   private readonly roamSchedule = new Map<string, { until: number; index: number }>();
@@ -349,6 +353,18 @@ export class VillageGame {
   setMailCarrier(id: string | null): void {
     this.mailCarrierId = id && this.villagers.has(id) ? id : null;
     for (const carrier of this.mailRoutes.keys()) if (carrier !== this.mailCarrierId) this.mailRoutes.delete(carrier);
+  }
+
+  /** Instrutor do Dojô da Torre: o símbolo sobre a cabeça e a rotina de treinar na porta da Torre de Sobrevivência. */
+  setInstructor(id: string | null): void {
+    if (id !== this.instructorId) this.instructorShift = emptyInstructorShift();
+    this.instructorId = id && this.villagers.has(id) ? id : null;
+  }
+
+  /** Onde o Instrutor treina: na frente do Dojô, assim que o prédio estiver liberado. */
+  private trainingSpot(): { x: number; y: number } | null {
+    const dojo = this.map.buildings.find((b) => b.kind === 'dojo');
+    return dojo && this.townLevel >= dojo.unlock ? dojo.door : null;
   }
 
   setCafeWaiter(id: string | null): void {
@@ -1097,6 +1113,14 @@ export class VillageGame {
         if (result.served) { this.bubble(id, '☕', 2000); this.bubble(result.served, '🍰', 2500); this.onResidentEconomyChange?.(); }
         if (result.handled) { benchVisits.release(id, now); continue; }
       }
+      if (this.instructorId === id && serviceAllowed && !mailRoute) {
+        const spot = this.trainingSpot();
+        const arrived = !!spot && !moving(w) && Math.abs(spot.x - w.x) + Math.abs(spot.y - w.y) <= 1;
+        const step = stepInstructorShift(this.instructorShift, now, spot !== null, arrived);
+        if (step.bubble) this.bubble(id, step.bubble, 1_800);
+        if (step.action === 'walk' && spot) { benchVisits.release(id, now); stepVillager(w, dt, this.map, this.residentBlocked(id), this.rng, spot); continue; }
+        if (step.action === 'train') { benchVisits.release(id, now); continue; }
+      }
       if (mailRoute && serviceAllowed) {
         const targetId = mailRoute.targets[mailRoute.index];
         const door = targetId ? this.homeDoor(targetId) : null;
@@ -1710,6 +1734,24 @@ export class VillageGame {
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
         continue;
       }
+      if (b.kind === 'dojo') {
+        // O Dojô muda de desenho a cada reforma (terreno, Tatame, Dojô, Dojô de pedra), por código, com ou sem atlas.
+        const level = this.state.tower.dojoLevel;
+        const img = this.sprite(`dojo:${level}`, () => paintDojo(level));
+        const dw = img.width * scale;
+        const dh = img.height * scale;
+        const dx0 = Math.round(mid - dw / 2);
+        list.push({
+          y: buildingGroundY(b),
+          draw: () => {
+            ctx.drawImage(img, dx0, spriteBase - dh, dw, dh);
+            this.drawTag(mid, spriteBase - dh - 2 * scale + Math.sin(now / 350) * scale, emoji);
+          },
+        });
+        if (night) for (const g of DOJO_WINDOWS[level] ?? []) homeGlows.push({ x: dx0 + g[0]! * scale, y: spriteBase - dh + g[1]! * scale, w: g[2]! * scale, h: g[3]! * scale });
+        if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, level === 0 ? 'Terreno do Dojô' : b.name));
+        continue;
+      }
       const civicId = CIVIC_TILESET[b.kind];
       const civicArt = atlas && civicId ? this.art(civicId) : null;
       if (civicArt && civicId) {
@@ -1861,6 +1903,7 @@ export class VillageGame {
            }
            if (this.mailCarrierId === id) this.drawTag(cx, base - h - 18 * scale - Math.abs(Math.sin(now / 420)) * 2 * scale, '📬');
            if (this.cafeWaiterId === id) this.drawTag(cx, base - h - 18 * scale, '☕');
+           if (this.instructorId === id) this.drawTag(cx, base - h - 18 * scale, '🥋');
            if (this.getCafe().orders.get(id)?.stage === 'comendo') this.drawTag(cx + 8 * scale, base - h - 4 * scale, '🍰');
           if (near(w) && !this.scene) {
             const hearts = Math.round(friendOf(this.state, id).points / 20);

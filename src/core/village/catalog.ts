@@ -132,6 +132,12 @@ export const ITEMS: readonly ItemDef[] = [
   { ...m('tabua', 'Tábua', 9), recipe: { madeira: 2 } },
   { ...m('tijolo', 'Tijolo', 14), recipe: { pedra: 2, argila: 1 } },
   { ...m('vidro', 'Vidro', 20), recipe: { areia: 3, pedra: 1 } },
+  // Peças de treino do Dojô da Torre (docs/PROGRESSAO_TORRE.md): fabricadas no menu de fabricar, só servem ao Instrutor.
+  { ...m('boneco-treino', 'Boneco de treino', 40), recipe: { tabua: 2, tecido: 1, la: 1 } },
+  { ...m('faixa-treino', 'Faixa de treino', 32), recipe: { tecido: 2, la: 1 } },
+  { ...m('placa-armadura', 'Placa de armadura', 42), recipe: { ferro: 2, tijolo: 1 } },
+  { ...m('sino-desejo', 'Sino do desejo', 64), recipe: { ferro: 1, estrela: 1, vidro: 1 } },
+  { ...m('lente-foco', 'Lente de foco', 95), recipe: { vidro: 2, dourado: 1 } },
   ...NEW_MATERIALS,
   // Colheitas da horta
   c('girassol', 'Girassol', 18),

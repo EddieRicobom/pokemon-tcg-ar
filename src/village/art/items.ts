@@ -830,3 +830,75 @@ cccccdcccccd
 .....N......
 `, Q(0x9a6ae8)),
 };
+
+// ----------------------------------------------------------------------------- peças fabricadas para a Torre
+
+export const TOWER_PIECE_ICONS: Record<string, Icon> = {
+  // Saco de palha pendurado numa corda, com remendo costurado.
+  'boneco-treino': ic(`
+.....ef.....
+.....ef.....
+...egffgfe..
+...abbbbc...
+..abbbbbbc..
+.abWbbbbbbc.
+.abbbbeebbc.
+.abbbbefbbc.
+.abbbbbbbbc.
+.cbbbbbbbcd.
+..cbbbbbcd..
+...cccccd...
+....dddd....
+`, Q(0xe0c898, 0xb08850)),
+  // Faixa vermelha com nó central, tiras caindo e listra clara.
+  'faixa-treino': ic(`
+.abbbbbbbbbc.
+abWbbbbbbbbcd
+aeeeeeeeeeeed
+cbbbbbbbbbbcd
+.cccccccccdd.
+.....abb.....
+...ab.bc.bc..
+...bc.cd.cd..
+...cd....cd..
+`, Q(0xd83830, 0xffe0d0)),
+  // Placa de ferro com rebites nos cantos e no centro.
+  'placa-armadura': ic(`
+.abbbbbbbbbc.
+abWbbbbbbbbcd
+abebbbbbbebcd
+abbbbbbbbbbcd
+abbbbbebbbbcd
+abbbbbbbbbbcd
+abebbbbbbebcd
+.cbbbbbbbbcd.
+..cccccccdd..
+`, Q(0x7a8ea8, 0xd8e4f0)),
+  // Sininho dourado com badalo e uma estrelinha brilhando ao lado.
+  'sino-desejo': ic(`
+.......Y....
+...ab.YWY...
+...bc..Y....
+..abbbc.....
+.abWbbbc....
+.abbbbbc....
+.abbbbbbc...
+abbbbbbbbc..
+cccccccccd..
+dddddddddd..
+...fgg......
+`, Q(0xf0b830, 0xb07a48)),
+  // Lente azul-clara dentro de aro dourado, com cabo e brilho.
+  'lente-foco': ic(`
+...eeffgg...
+..efabbcfg..
+.efaWbbbcfg.
+.efabbbbbfg.
+.efbbbbbccg.
+.efbbbbccdg.
+..efccccdg..
+...eeffgg...
+.........TU.
+..........U.
+`, Q(0xa8e0f8, 0xe8b830)),
+};

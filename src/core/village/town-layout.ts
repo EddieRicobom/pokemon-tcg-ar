@@ -6,7 +6,7 @@
 
 import { CAFE_TABLES } from './cafe-layout';
 
-export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'fountain' | 'altar';
+export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'dojo' | 'fountain' | 'altar';
 
 export interface Building {
   id: string;
@@ -82,6 +82,8 @@ export const CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>;
   { kind: 'arena', name: 'Arena', x: 18, y: 22, w: 7, h: 2, unlock: 6 },
   // Modo próprio (como a Arena e a Pista de Pins), não um minigame do Fliperama: ver `core/survivor.ts`.
   { kind: 'torre', name: 'Torre de Sobrevivência', x: 12, y: 22, w: 5, h: 2, unlock: 7 },
+  // O Dojô da Torre, a oeste da Torre de Sobrevivência: o desenho muda com o nível da reforma (`state.tower.dojoLevel`).
+  { kind: 'dojo', name: 'Dojô da Torre', x: 4, y: 22, w: 6, h: 2, unlock: 7 },
   { kind: 'altar', name: 'Altar da Confiança', x: 41, y: 83, w: 3, h: 2, unlock: 4 },
 ];
 
