@@ -1,5 +1,6 @@
 import type { PokemonType } from '../core/pokemon-data';
 import type { SurvivorFx, SurvivorPlayer } from '../core/survivor';
+import { projectileTierScale, type SurvivorProjectileLook } from '../core/survivor-projectile-power';
 import { SURVIVOR_CONE_HALF_ANGLE, survivorAimAngle, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitRadius } from '../core/survivor-shapes';
 
 /**
@@ -281,28 +282,44 @@ function strokeBolt(ctx: CanvasRenderingContext2D, pal: Palette, width: number):
 /**
  * Disparo do elemento: cabeça com a forma do tipo e um rastro próprio (brasas, gotas, raio que treme, cauda de
  * fantasma…). `head` e `tail` já estão na tela; `tail` é o ponto de onde o disparo veio há pouco.
+ *
+ * `look` é a evolução do disparo pelas cartas coletadas (`core/survivor-projectile-power.ts`): cada nível deixa a
+ * cabeça maior, o rastro mais longo e soma camadas (anel pulsante, núcleo incandescente, centelhas em órbita, raios).
+ * Perfurar alonga o disparo como uma lança; crítico faz brilhos em cruz piscarem. Só muda o desenho, nunca o acerto.
  */
 export function drawElementProjectile(
-  ctx: CanvasRenderingContext2D, type: PokemonType, head: ScreenPoint, tail: ScreenPoint,
-  sizePx: number, alpha: number, timeMs: number, detailed: boolean, seed: number,
+  ctx: CanvasRenderingContext2D, type: PokemonType, head: ScreenPoint, rawTail: ScreenPoint,
+  sizePx: number, alpha: number, timeMs: number, detailed: boolean, seed: number, look?: SurvivorProjectileLook,
 ): void {
   const pal = PALETTE[type];
+  const tier = look?.tier ?? 0;
+  const stretch = 1 + tier * 0.3 + (look?.piercing ? 0.5 : 0);
+  const tail: ScreenPoint = { x: head.x - (head.x - rawTail.x) * stretch, y: head.y - (head.y - rawTail.y) * stretch, s: rawTail.s };
   const dir = screenAngle(tail, head);
   const back = dir + Math.PI;
-  const size = Math.max(2, sizePx);
+  const size = Math.max(2, sizePx) * projectileTierScale(tier);
   ctx.save();
   ctx.globalAlpha = alpha;
-  // Halo: dá volume sem `shadowBlur` (caro por disparo).
-  if (detailed) {
-    const halo = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, size * 2.6);
+  // Halo: dá volume sem `shadowBlur` (caro por disparo). A partir do nível 2 aparece mesmo nos efeitos leves.
+  if (detailed || tier >= 2) {
+    const haloR = size * (2.6 + tier * 0.45);
+    const halo = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, haloR);
     halo.addColorStop(0, pal.body);
     halo.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.globalAlpha = alpha * 0.45;
+    ctx.globalAlpha = alpha * Math.min(0.8, 0.45 + tier * 0.08);
     ctx.fillStyle = halo;
-    ctx.beginPath(); ctx.arc(head.x, head.y, size * 2.6, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(head.x, head.y, haloR, 0, TAU); ctx.fill();
     ctx.globalAlpha = alpha;
   }
-  const trail = detailed ? 4 : 2;
+  if (look?.piercing) {
+    // Lança: um fio claro e afiado que vai do rastro até a ponta.
+    ctx.beginPath(); ctx.moveTo(tail.x, tail.y); ctx.lineTo(head.x, head.y);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = pal.body; ctx.lineWidth = size * 0.9; ctx.globalAlpha = alpha * 0.35; ctx.stroke();
+    ctx.strokeStyle = pal.core; ctx.lineWidth = Math.max(1, size * 0.3); ctx.globalAlpha = alpha * 0.8; ctx.stroke();
+    ctx.globalAlpha = alpha;
+  }
+  const trail = (detailed ? 4 : 2) + (detailed ? tier : Math.floor(tier / 2));
   const dx = head.x - tail.x;
   const dy = head.y - tail.y;
   if (type === 'electric') {
@@ -337,10 +354,55 @@ export function drawElementProjectile(
   const headRotation = type === 'fire' || type === 'water' || type === 'dragon' ? pointing(back)
     : type === 'ice' || type === 'flying' || type === 'ghost' ? pointing(dir)
       : timeMs / (type === 'steel' ? 50 : 140) + seed;
+  if (tier >= 2) {
+    // Anel de energia que pulsa em volta da cabeça.
+    const pulse = 0.5 + 0.5 * Math.sin(timeMs / 110 + seed);
+    ctx.beginPath(); ctx.arc(head.x, head.y, size * (1.9 + pulse * 0.5), 0, TAU);
+    ctx.strokeStyle = pal.edge; ctx.lineWidth = Math.max(1, size * 0.22); ctx.globalAlpha = alpha * (0.35 + pulse * 0.35); ctx.stroke();
+    ctx.globalAlpha = alpha;
+  }
+  if (tier >= 4) {
+    // Raios que giram por trás da cabeça: o disparo no auge.
+    const rays = detailed ? 6 : 4;
+    const spin = timeMs / 260 + seed;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = pal.core; ctx.lineWidth = Math.max(1, size * 0.18); ctx.globalAlpha = alpha * 0.55;
+    ctx.beginPath();
+    for (let i = 0; i < rays; i++) {
+      const a = spin + (i / rays) * TAU;
+      ctx.moveTo(head.x + Math.cos(a) * size * 1.1, head.y + Math.sin(a) * size * 1.1);
+      ctx.lineTo(head.x + Math.cos(a) * size * 3.1, head.y + Math.sin(a) * size * 3.1);
+    }
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = alpha;
+  }
   drawParticle(ctx, type, head.x, head.y, size * 1.6, headRotation, timeMs / 1000 + seed);
-  if (type === 'electric' || type === 'normal' || type === 'fairy') {
+  if (type === 'electric' || type === 'normal' || type === 'fairy' || tier >= 3) {
+    // Do nível 3 em diante todo disparo ganha um núcleo incandescente.
+    if (tier >= 3) ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = pal.core;
-    ctx.beginPath(); ctx.arc(head.x, head.y, size * 0.45, 0, TAU); ctx.fill();
+    ctx.globalAlpha = alpha * (tier >= 3 ? 0.85 : 1);
+    ctx.beginPath(); ctx.arc(head.x, head.y, size * (0.45 + tier * 0.05), 0, TAU); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = alpha;
+  }
+  if (tier >= 3 && detailed) {
+    // Centelhas do próprio elemento girando em volta da cabeça.
+    const motes = tier - 1;
+    for (let i = 0; i < motes; i++) {
+      const a = timeMs / 150 + seed + (i / motes) * TAU;
+      drawParticle(ctx, type, head.x + Math.cos(a) * size * 2.1, head.y + Math.sin(a) * size * 2.1, size * 0.55, a, timeMs / 1000 + i);
+    }
+  }
+  if (look?.critical && Math.sin(timeMs / 90 + seed * 1.7) > 0.35) {
+    // Brilho em cruz: o disparo pode acertar em dobro.
+    const r = size * 2.2;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1, size * 0.16); ctx.globalAlpha = alpha * 0.9;
+    ctx.beginPath();
+    ctx.moveTo(head.x - r, head.y); ctx.lineTo(head.x + r, head.y);
+    ctx.moveTo(head.x, head.y - r); ctx.lineTo(head.x, head.y + r);
+    ctx.stroke();
   }
   ctx.restore();
 }

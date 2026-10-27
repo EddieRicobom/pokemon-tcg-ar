@@ -83,6 +83,7 @@ import { survivorStick } from '../core/survivor-controls';
 import type { SurvivorPointerSample } from '../core/survivor-gesture';
 import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround } from '../village/survivor-bonk-landscape';
 import type { BonkArt } from '../village/survivor-bonk-landscape';
+import { PROJECTILE_TIER_NAMES, survivorProjectileTier } from '../core/survivor-projectile-power';
 import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
 import type { WorldToScreen } from '../village/survivor-attack-art';
 import { survivorOrbiters } from '../core/survivor-shapes';
@@ -1242,7 +1243,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     const tail = toScreen(projectile.x - projectile.vx * 0.05, projectile.y - projectile.vy * 0.05, 18);
     if (!head || !tail) continue;
     const support = projectile.source === 'support';
-    drawElementProjectile(c, projectile.move?.type ?? move.type, head, tail, clamp((projectile.size ?? 4) * head.s * 0.7, 1.5, 12), support ? 0.75 : 1, animMs, detailed && !support, projectile.id);
+    drawElementProjectile(c, projectile.move?.type ?? move.type, head, tail, clamp((projectile.size ?? 4) * head.s * 0.7, 1.5, 12), support ? 0.75 : 1, animMs, detailed && !support, projectile.id, projectile.look);
   }
   for (const projectile of s.hostileProjectiles) {
     const p = drawPoint(projectile, 16);
@@ -1445,7 +1446,7 @@ function draw(): void {
     const type = proj.move?.type ?? move.type;
     const support = proj.source === 'support';
     drawElementProjectile(ctx, type, { x: proj.x, y: proj.y, s: 1 }, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05, s: 1 },
-      (proj.size ?? 4) * (support ? 0.85 : 1), (support ? 0.72 : 1) * distanceOpacity, animMs, detailed && !support, proj.id);
+      (proj.size ?? 4) * (support ? 0.85 : 1), (support ? 0.72 : 1) * distanceOpacity, animMs, detailed && !support, proj.id, proj.look);
   }
 
   for (const proj of s.hostileProjectiles) {
@@ -1811,8 +1812,13 @@ function loop(ts: number): void {
 function chooseUpgrade(id: string): void {
   if (!state.value || upgradeMenuLocked.value) return;
   if (banMode.value) { banUpgradeCard(id); return; }
+  const tierBefore = survivorProjectileTier(state.value.player);
   const events = applyUpgrade(state.value, id);
   playSound('success');
+  const tierAfter = survivorProjectileTier(state.value.player);
+  if (state.value.player.move.category === 'projetil' && tierAfter > tierBefore) {
+    say(`✦ Seus projéteis evoluíram: ${PROJECTILE_TIER_NAMES[tierAfter]} (nível ${tierAfter}/4)!`, 3200);
+  }
   pendingUpgrade.value = null;
   for (const ev of events) {
     if (ev.type === 'evolve') void evolveTo(ev.dexId, ev.name);

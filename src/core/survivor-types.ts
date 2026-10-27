@@ -3,6 +3,7 @@ import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorSpecialState } from './survivor-specials';
 import type { LunchEffect } from './survivor-lunch';
+import type { SurvivorProjectileLook } from './survivor-projectile-power';
 
 /**
  * Tipos, constantes e pontuação do modo Sobrevivência (movidos de `survivor.ts` sem mudar o texto, em 2026-10-23).
@@ -272,6 +273,8 @@ export interface SurvivorProjectile {
   source?: 'player' | 'support';
   /** Distância do jogador até o alvo no momento do disparo, para o falloff de dano. */
   distanceFromPlayer?: number;
+  /** Aparência evoluída pelas cartas coletadas até o disparo (só desenho; ausente nos apoios). */
+  look?: SurvivorProjectileLook;
 }
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */

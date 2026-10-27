@@ -369,6 +369,17 @@ describe('stepSurvivor', () => {
     expect(s.enemies.find((e) => e.id === 999)!.hp).toBe(995);
   });
 
+  it('o disparo leva a aparência evoluída pelas cartas coletadas até ali', () => {
+    const s = createSurvivorState(1, { kindCount: 1 });
+    s.nextBossAtMs = Number.POSITIVE_INFINITY;
+    s.spawnAccumMs = -1e9;
+    s.player.pierce = 1;
+    s.player.upgradeLevels = { pierce: 1, power: 2, 'damage-projectile': 2 };
+    s.enemies.push({ id: 999, kind: 0, boss: false, grade: 'comum', x: s.player.x + 200, y: s.player.y, hp: 1000, maxHp: 1000, speed: 0, damage: 0, radius: 20, hitFlashMs: 0 });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.projectiles[0]?.look).toEqual({ tier: 2, piercing: true, critical: false });
+  });
+
   it('subir dois níveis de uma vez dá duas escolhas de upgrade, uma depois da outra', () => {
     const s = createSurvivorState(1, { kindCount: 1 });
     s.player.xp = xpForLevel(1) + xpForLevel(2); // XP de dois níveis (ex.: orbe de chefe)
