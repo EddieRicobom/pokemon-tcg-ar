@@ -32,6 +32,7 @@ export * from './survivor-types';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
+import { survivorProjectileLook } from './survivor-projectile-power';
 export { SURVIVOR_UPGRADES };
 
 /** Estoque máximo de Desejos de Jirachi (a carta, a lição do Dojô e a sorte do Carteiro somam até aqui). */
@@ -1043,6 +1044,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
   const move = p.move;
   const baseAngle = Math.atan2(target.y - p.y, target.x - p.x);
   const spread = 0.26;
+  const look = survivorProjectileLook(p);
   for (let i = 0; i < p.shots; i++) {
     const offset = p.shots === 1 ? 0 : (i - (p.shots - 1) / 2) * spread;
     const angle = baseAngle + offset;
@@ -1060,6 +1062,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       size: p.projectileSize,
       move,
       distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y),
+      look,
     });
   }
 }
@@ -1703,7 +1706,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           if (next) {
             const ang = Math.atan2(next.y - e.y, next.x - e.x);
             const speed = Math.hypot(proj.vx, proj.vy);
-            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size, move: proj.move, source: proj.source, distanceFromPlayer: proj.distanceFromPlayer });
+            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size, move: proj.move, source: proj.source, distanceFromPlayer: proj.distanceFromPlayer, look: proj.look });
           }
         }
         if (proj.pierce <= 0) return false;
