@@ -104,6 +104,44 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'bonk-feather-fall', family: 'movimento', rarity: 'lendario', name: 'Queda de pluma', description: 'A gravidade do salto cai 22%.', bonkOnly: true, maxLevels: 1, apply: (p) => { p.bonkGravityFactor = Math.min(p.bonkGravityFactor ?? 1, 0.78); } },
 ] as const;
 
+/** Dez opções de dano direto: as seis especializadas só aparecem para a forma de golpe compatível. */
+const DAMAGE_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
+  { id: 'damage-spark', family: 'ataque', rarity: 'normal', name: 'Faísca ofensiva', description: '+8% de dano no golpe principal.', maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.08)); } },
+  { id: 'damage-pressure', family: 'ataque', rarity: 'raro', name: 'Pressão ofensiva', description: '+12% de dano no golpe principal.', maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.12)); } },
+  { id: 'damage-momentum', family: 'ataque', rarity: 'raro', name: 'Momento de impacto', description: '+16% de dano no golpe principal.', maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.16)); } },
+  { id: 'damage-projectile', family: 'ataque', rarity: 'normal', name: 'Ponta de projétil', description: '+13% de dano de projéteis.', for: ['projetil'], maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.13)); } },
+  { id: 'damage-aura', family: 'ataque', rarity: 'normal', name: 'Pulso concentrado', description: '+14% de dano dos pulsos de aura.', for: ['aura'], maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.14)); } },
+  { id: 'damage-area', family: 'ataque', rarity: 'normal', name: 'Centro da explosão', description: '+15% de dano de explosões.', for: ['area'], maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.15)); } },
+  { id: 'damage-cone', family: 'ataque', rarity: 'normal', name: 'Fio do cone', description: '+15% de dano de golpes em cone.', for: ['cone'], maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.15)); } },
+  { id: 'damage-orbit', family: 'ataque', rarity: 'normal', name: 'Órbita cortante', description: '+16% de dano dos orbitais.', for: ['orbit'], maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.16)); } },
+  { id: 'damage-precision', family: 'ataque', rarity: 'raro', name: 'Precisão letal', description: '+18% de dano no golpe principal.', maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.18)); } },
+  { id: 'damage-overdrive', family: 'ataque', rarity: 'lendario', name: 'Sobrecarga de poder', description: '+22% de dano no golpe principal.', maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.22)); } },
+];
+
+/** Cada forma de ataque tem uma árvore de quatro degraus: poder, alcance, ritmo e finalização. */
+const ATTACK_TREE_NAMES: Record<MoveCategory, readonly [string, string, string, string]> = {
+  projetil: ['Mira de projétil', 'Trajetória estendida', 'Gatilho rápido', 'Canhão perfurante'],
+  aura: ['Núcleo da aura', 'Halo expandido', 'Pulso cadenciado', 'Nova protetora'],
+  area: ['Ponto de impacto', 'Onda expansiva', 'Detonação veloz', 'Cratera total'],
+  cone: ['Postura de cone', 'Arco crescente', 'Sequência ágil', 'Corte sísmico'],
+  orbit: ['Orbital afiado', 'Órbita larga', 'Rotação veloz', 'Constelação ofensiva'],
+};
+
+function attackTree(category: MoveCategory): SurvivorUpgrade[] {
+  const [power, reach, cadence, finale] = ATTACK_TREE_NAMES[category];
+  const root = `attack-tree-${category}-1`;
+  const second = `attack-tree-${category}-2`;
+  const third = `attack-tree-${category}-3`;
+  return [
+    { id: root, family: 'ataque', rarity: 'normal', name: power, description: '+10% de dano nesta forma de golpe.', for: [category], maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.1)); } },
+    { id: second, family: 'ataque', rarity: 'raro', name: reach, description: '+15% de alcance ou raio nesta forma de golpe.', for: [category], requires: root, maxLevels: 1, apply: (p) => { improveReach(p, 1.15); } },
+    { id: third, family: 'ataque', rarity: 'raro', name: cadence, description: '-12% no tempo entre ataques desta forma.', for: [category], requires: second, maxLevels: 1, apply: (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.88)); } },
+    { id: `attack-tree-${category}-4`, family: 'ataque', rarity: 'lendario', name: finale, description: '+20% de dano e +1 disparo/impacto desta forma.', for: [category], requires: third, maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.2)); p.shots = Math.min(5, p.shots + 1); } },
+  ];
+}
+
+const ATTACK_TREE_UPGRADES: readonly SurvivorUpgrade[] = (Object.keys(ATTACK_TREE_NAMES) as MoveCategory[]).flatMap(attackTree);
+
 /** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */
 function typeUpgrade(type: PokemonType, id: string, name: string, description: string, apply: (p: SurvivorPlayer) => void, forCategories?: readonly MoveCategory[]): SurvivorUpgrade {
   return { id, type, name, description, family: 'elemento', rarity: 'raro', maxLevels: 1, ...(forCategories ? { for: forCategories } : {}), apply };
@@ -152,6 +190,27 @@ const TYPE_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   typeUpgrade('fairy', 'fairy-pulse', 'Pulso reconfortante', 'Roubo de vida cura até 3 por ativação.', (p) => { p.upgradeLevels['fairy-pulse'] = 0; }),
 ];
 
+/** Uma trilha de quatro escolhas para cada elemento: sintonia, alcance, cadência e ápice. */
+const ELEMENT_TREE_NAMES: Record<PokemonType, string> = {
+  normal: 'Equilíbrio', fire: 'Chama', water: 'Maré', electric: 'Voltagem', grass: 'Folhagem', ice: 'Geada', fighting: 'Combate', poison: 'Toxina', ground: 'Terra', flying: 'Vento',
+  psychic: 'Mente', bug: 'Enxame', rock: 'Rocha', ghost: 'Sombra', dragon: 'Dragão', dark: 'Noite', steel: 'Aço', fairy: 'Fada',
+};
+
+function elementTree(type: PokemonType): SurvivorUpgrade[] {
+  const name = ELEMENT_TREE_NAMES[type];
+  const root = `element-tree-${type}-1`;
+  const second = `element-tree-${type}-2`;
+  const third = `element-tree-${type}-3`;
+  return [
+    { id: root, type, family: 'elemento', rarity: 'normal', name: `${name} sintonizado`, description: `+9% de dano para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.09)); } },
+    { id: second, type, family: 'elemento', rarity: 'raro', name: `${name} expansivo`, description: `+14% de alcance ou raio para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, requires: root, maxLevels: 1, apply: (p) => { improveReach(p, 1.14); } },
+    { id: third, type, family: 'elemento', rarity: 'raro', name: `${name} acelerado`, description: `-10% no tempo entre ataques de ${name.toLocaleLowerCase('pt-BR')}.`, requires: second, maxLevels: 1, apply: (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.9)); } },
+    { id: `element-tree-${type}-4`, type, family: 'elemento', rarity: 'lendario', name: `Ápice de ${name}`, description: `+18% de dano e +1 impacto para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, requires: third, maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.18)); p.shots = Math.min(5, p.shots + 1); } },
+  ];
+}
+
+const ELEMENT_TREE_UPGRADES: readonly SurvivorUpgrade[] = (Object.keys(ELEMENT_TREE_NAMES) as PokemonType[]).flatMap(elementTree);
+
 /** Especializações que mudam o comportamento do golpe exigem mais tempo de corrida. */
 const LEGENDARY_TYPE_UPGRADES = new Set([
   'fire-brasa', 'electric-arc', 'grass-roots', 'ice-deep-cold', 'poison-dose', 'ground-aftershock',
@@ -174,10 +233,38 @@ const ANCESTRAL_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
     description: '-18% no tempo entre ataques (mínimo 240 ms) e +12% de velocidade.', maxLevels: 1,
     apply: (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.82)); p.speed = round1(p.speed * 1.12); },
   },
+  {
+    id: 'ancestral-arsenal', family: 'ataque', rarity: 'ancestral', name: 'Arsenal ancestral',
+    description: '+1 disparo/impacto, +1 perfuração e +15% de alcance ou raio.', maxLevels: 1,
+    apply: (p) => { p.shots = Math.min(5, p.shots + 1); p.pierce = Math.min(4, p.pierce + 1); improveReach(p, 1.15); },
+  },
+  {
+    id: 'ancestral-bastion', family: 'defesa', rarity: 'ancestral', name: 'Bastião ancestral',
+    description: '+35 de Defesa e Defesa Especial, +35 de vida máxima e cura 35.', maxLevels: 1,
+    apply: (p) => { p.defenseBonus = (p.defenseBonus ?? 0) + 35; p.spDefenseBonus = (p.spDefenseBonus ?? 0) + 35; p.maxHp += 35; p.hp = Math.min(p.maxHp, p.hp + 35); },
+  },
+  {
+    id: 'ancestral-tempest', family: 'movimento', rarity: 'ancestral', name: 'Tempestade ancestral',
+    description: '+18% de velocidade e -15% no tempo entre ataques.', maxLevels: 1,
+    apply: (p) => { p.speed = round1(p.speed * 1.18); p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.85)); },
+  },
+  {
+    id: 'ancestral-revival', family: 'defesa', rarity: 'ancestral', name: 'Renascimento ancestral',
+    description: '+30 de vida máxima, cura total e prepara um segundo fôlego.', maxLevels: 1,
+    apply: (p) => { p.maxHp += 30; p.hp = p.maxHp; p.secondWindReady = true; },
+  },
+  {
+    id: 'ancestral-precision', family: 'ataque', rarity: 'ancestral', name: 'Precisão ancestral',
+    description: '+20% de dano e +25% de chance de crítico.', maxLevels: 1,
+    apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.2)); p.critChance = Math.min(0.4, (p.critChance ?? 0) + 0.25); },
+  },
 ];
 
 export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   ...GENERIC_SURVIVOR_UPGRADES,
+  ...DAMAGE_SURVIVOR_UPGRADES,
+  ...ATTACK_TREE_UPGRADES,
   ...TYPE_SURVIVOR_UPGRADES.map((upgrade) => LEGENDARY_TYPE_UPGRADES.has(upgrade.id) ? { ...upgrade, rarity: 'lendario' as const } : upgrade),
+  ...ELEMENT_TREE_UPGRADES,
   ...ANCESTRAL_SURVIVOR_UPGRADES,
 ];

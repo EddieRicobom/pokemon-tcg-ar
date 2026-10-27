@@ -5800,6 +5800,44 @@ body.no-scroll .reward-toasts {
   opacity: 0.45;
 }
 
+/* Busca, filtro e ordenação das listas longas de mochila, fabricação e cozinha. */
+.item-browser-controls {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) repeat(2, auto);
+  gap: 6px;
+  align-items: end;
+  margin: 0 0 10px;
+}
+
+.item-browser-controls input,
+.item-browser-controls select {
+  min-height: 36px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.item-browser-controls input { min-width: 0; padding: 6px 9px; }
+
+.item-browser-controls label {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.item-browser-controls select { max-width: 150px; padding: 4px 6px; }
+
+@media (max-width: 460px) {
+  .item-browser-controls { grid-template-columns: 1fr 1fr; }
+  .item-browser-controls input { grid-column: 1 / -1; }
+  .item-browser-controls select { max-width: none; width: 100%; }
+}
+
 .collection-grid {
   list-style: none;
   margin: 0;
