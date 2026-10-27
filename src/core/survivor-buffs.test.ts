@@ -29,6 +29,40 @@ function enemy(id: number, x: number, y: number, overrides: Partial<SurvivorEnem
 }
 
 describe('novas cartas de buff', () => {
+  it('oferece dez buffs de dano e dez cartas ancestrais únicas', () => {
+    const damage = SURVIVOR_UPGRADES.filter((upgrade) => upgrade.id.startsWith('damage-'));
+    const ancestral = SURVIVOR_UPGRADES.filter((upgrade) => upgrade.rarity === 'ancestral');
+    expect(damage).toHaveLength(10);
+    expect(ancestral).toHaveLength(10);
+    expect(new Set(ancestral.map((upgrade) => upgrade.id)).size).toBe(10);
+  });
+
+  it('monta quatro degraus para cada forma de ataque e elemento', () => {
+    const categories: MoveCategory[] = ['projetil', 'aura', 'area', 'cone', 'orbit'];
+    const types: PokemonType[] = ['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'];
+    for (const category of categories) {
+      const tree = SURVIVOR_UPGRADES.filter((upgrade) => upgrade.id.startsWith(`attack-tree-${category}-`));
+      expect(tree).toHaveLength(4);
+      expect(tree.map((upgrade) => upgrade.requires)).toEqual([undefined, `attack-tree-${category}-1`, `attack-tree-${category}-2`, `attack-tree-${category}-3`]);
+    }
+    for (const type of types) {
+      const tree = SURVIVOR_UPGRADES.filter((upgrade) => upgrade.id.startsWith(`element-tree-${type}-`));
+      expect(tree).toHaveLength(4);
+      expect(tree.map((upgrade) => upgrade.requires)).toEqual([undefined, `element-tree-${type}-1`, `element-tree-${type}-2`, `element-tree-${type}-3`]);
+    }
+  });
+
+  it('aplica de verdade os quatro efeitos da árvore da forma de ataque', () => {
+    const projectile = as('normal', 'projetil');
+    const s = quiet(createSurvivorState(18, { kindCount: 1, move: projectile.move, profile: projectile.profile }));
+    const before = { damage: s.player.attackDamage, range: s.player.attackRange, cooldown: s.player.attackCooldownMs, shots: s.player.shots };
+    for (const id of ['attack-tree-projetil-1', 'attack-tree-projetil-2', 'attack-tree-projetil-3', 'attack-tree-projetil-4']) pick(s, id);
+    expect(s.player.attackDamage).toBeGreaterThan(before.damage);
+    expect(s.player.attackRange).toBeGreaterThan(before.range);
+    expect(s.player.attackCooldownMs).toBeLessThan(before.cooldown);
+    expect(s.player.shots).toBeGreaterThan(before.shots);
+  });
+
   it('existem no catálogo com teto explícito', () => {
     const byId = new Map(SURVIVOR_UPGRADES.map((upgrade) => [upgrade.id, upgrade]));
     expect(byId.get('regen')?.maxLevels).toBe(2);
