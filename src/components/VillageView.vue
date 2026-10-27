@@ -39,8 +39,9 @@ import { dayKey, levelOf } from '../core/trainer';
 import { personalityOf } from '../core/village/personality';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
+import type { ItemKind } from '../core/village/catalog';
 import {
-  add, buy, canFollow, claimFriendMilestones, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, friendProgressText, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
+  add, buy, canAfford, canFollow, claimFriendMilestones, cook, count, craft, dailyHelp, describeCost, fish, FISH_PER_DAY, friendLevel, friendOf, friendProgressText, giveGift, harvest, harvestCrop, HOUSE_LEVELS, itemName, pickUp, place,
   plant, pruneHarvest, RECIPES, sell, talk, tickCrops, upgradeHouse, water, wear,
   BATTLE_REWARD_COINS, BATTLE_REWARDS_PER_DAY, battleRewardsLeft, favoriteFoodOf,
 } from '../core/village/life';
@@ -114,6 +115,8 @@ import type { CachedCard } from '../cache/types';
 import QuizDialog from './QuizDialog.vue';
 import { generateDailyMail, mailActionLabel, mailKindLabel, markMailRead, queueMomentMail, respondToMail } from '../core/village/mail';
 import type { MailAction } from '../core/village/mail';
+import { browseItems } from '../core/village/item-browser';
+import type { ItemBrowserSort } from '../core/village/item-browser';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
 /** `close` sai da Vila; com `'pvp'` a Caixa abre o PvP em seguida (a Vila mora dentro da Caixa, então não há troca de tela). */
@@ -880,6 +883,35 @@ const inventory = computed(() => ITEMS.filter((i) => count(state, i.id) > 0));
 const backpackItems = computed(() => inventory.value.map((i) => ({ id: i.id, name: i.name, qty: count(state, i.id) })));
 const sellable = computed(() => inventory.value.filter((i) => i.sell > 0 && i.kind !== 'accessory' && !i.gift));
 const giftable = computed(() => inventory.value.filter((i) => i.kind !== 'accessory'));
+type RecipeAvailability = 'todos' | 'prontas' | 'faltando';
+const inventoryQuery = ref('');
+const inventoryKind = ref<ItemKind | 'todos'>('todos');
+const inventorySort = ref<ItemBrowserSort>('catalogo');
+const craftQuery = ref('');
+const craftKind = ref<ItemKind | 'todos'>('todos');
+const craftAvailability = ref<RecipeAvailability>('todos');
+const craftSort = ref<ItemBrowserSort>('catalogo');
+const cookQuery = ref('');
+const cookAvailability = ref<RecipeAvailability>('todos');
+const cookSort = ref<ItemBrowserSort>('catalogo');
+const inventoryList = computed(() => browseItems(
+  inventory.value.map((item) => ({ ...item, quantity: count(state, item.id) })),
+  { query: inventoryQuery.value, kind: inventoryKind.value, sort: inventorySort.value },
+));
+const craftList = computed(() => browseItems(
+  CRAFT_IDS.flatMap((id) => {
+    const item = itemDef(id);
+    return item ? [{ ...item, ready: canAfford(state, RECIPES[id] ?? {}) }] : [];
+  }),
+  { query: craftQuery.value, kind: craftKind.value, availability: craftAvailability.value, sort: craftSort.value },
+));
+const cookList = computed(() => browseItems(
+  COOK_IDS.flatMap((id) => {
+    const item = itemDef(id);
+    return item ? [{ ...item, quantity: count(state, id), ready: canAfford(state, RECIPES[id] ?? {}) }] : [];
+  }),
+  { query: cookQuery.value, availability: cookAvailability.value, sort: cookSort.value },
+));
 const nextHouse = computed(() => HOUSE_LEVELS[state.house + 1] ?? null);
 const selectedHomeItem = ref<ItemId | null>(null);
 const homeInteriorLot = ref<number | null>(null);
@@ -935,8 +967,6 @@ function setHomeFloor(value: string): void {
 }
 const shopItems = computed(() => shopToday(day.value));
 const collection = computed(() => FURNITURE_IDS.map((id) => ({ id, name: itemName(id), have: state.collected.includes(id), group: itemDef(id)?.group ?? '' })));
-const craftable = CRAFT_IDS;
-const cookable = COOK_IDS;
 const actorList = (): { id: string; name: string; types: PokemonType[] }[] => mons.value.map((m) => ({ id: m.id, name: m.name, types: types.get(m.id) ?? [] }));
 const unread = computed(() => unreadCount(state));
 const summary = computed(() => villageSummary(state, mons.value, Date.now()));
@@ -3521,37 +3551,62 @@ onBeforeUnmount(() => {
           </section>
         </div>
 
-        <ul v-else-if="tab === 'mochila'" class="item-grid">
-          <li class="backpack-launch">
-            <span>🎒 <strong>Mochila 3D</strong><small>Gire o celular para explorar os itens e ouvir os sons.</small></span>
-            <button type="button" class="primary" @click="backpackOpen = true">Abrir mochila 3D</button>
-          </li>
-          <li v-for="i in inventory" :key="i.id">
-            <img :src="icon(i.id)" alt="" width="40" height="40" />
-            <span>{{ i.name }} ×{{ count(state, i.id) }}<small>{{ { material: 'Material', crop: 'Colheita', seed: 'Semente', furniture: i.group ?? 'Móvel', accessory: 'Acessório', food: 'Comida' }[i.kind] }}</small></span>
-            <button v-if="i.kind === 'furniture'" type="button" @click="doPlace(i.id)">Colocar à frente</button>
-            <button v-else-if="i.kind === 'seed'" type="button" @click="doPlant(i.id)">Plantar à frente</button>
-            <button v-else-if="i.kind === 'accessory'" type="button" @click="openDress('player')">Usar</button>
-          </li>
-          <li v-if="inventory.length === 0" class="hint">Vazia. De frente para árvores, pedras, arbustos, flores, mato alto ou areia, toque em A para coletar.</li>
-        </ul>
+        <div v-else-if="tab === 'mochila'">
+          <div class="item-browser-controls" aria-label="Organizar mochila">
+            <input v-model="inventoryQuery" type="search" placeholder="Buscar item" aria-label="Buscar item na mochila" />
+            <label>Filtrar <select v-model="inventoryKind" aria-label="Filtrar itens da mochila por categoria"><option value="todos">Tudo</option><option value="material">Materiais</option><option value="crop">Colheitas</option><option value="seed">Sementes</option><option value="furniture">Móveis</option><option value="accessory">Acessórios</option><option value="food">Comidas</option></select></label>
+            <label>Organizar <select v-model="inventorySort" aria-label="Organizar itens da mochila"><option value="catalogo">Catálogo</option><option value="nome">Nome (A–Z)</option><option value="quantidade">Maior quantidade</option><option value="categoria">Categoria</option></select></label>
+          </div>
+          <p v-if="inventory.length && inventoryList.length === 0" class="hint">Nenhum item corresponde aos filtros.</p>
+          <ul class="item-grid">
+            <li class="backpack-launch">
+              <span>🎒 <strong>Mochila 3D</strong><small>Gire o celular para explorar os itens e ouvir os sons.</small></span>
+              <button type="button" class="primary" @click="backpackOpen = true">Abrir mochila 3D</button>
+            </li>
+            <li v-for="i in inventoryList" :key="i.id">
+              <img :src="icon(i.id)" alt="" width="40" height="40" />
+              <span>{{ i.name }} ×{{ i.quantity }}<small>{{ { material: 'Material', crop: 'Colheita', seed: 'Semente', furniture: i.group ?? 'Móvel', accessory: 'Acessório', food: 'Comida' }[i.kind] }}</small></span>
+              <button v-if="i.kind === 'furniture'" type="button" @click="doPlace(i.id)">Colocar à frente</button>
+              <button v-else-if="i.kind === 'seed'" type="button" @click="doPlant(i.id)">Plantar à frente</button>
+              <button v-else-if="i.kind === 'accessory'" type="button" @click="openDress('player')">Usar</button>
+            </li>
+            <li v-if="inventory.length === 0" class="hint">Vazia. De frente para árvores, pedras, arbustos, flores, mato alto ou areia, toque em A para coletar.</li>
+          </ul>
+        </div>
 
-        <ul v-else-if="tab === 'fabricar'" class="item-grid">
-          <li v-for="id in craftable" :key="id">
-            <img :src="icon(id)" alt="" width="40" height="40" />
-            <span>{{ itemName(id) }}<small>{{ describeCost(state, RECIPES[id]!) }}</small></span>
-            <button type="button" @click="act(craft(state, id))">Fazer</button>
-          </li>
-        </ul>
+        <div v-else-if="tab === 'fabricar'">
+          <div class="item-browser-controls" aria-label="Organizar receitas de fabricação">
+            <input v-model="craftQuery" type="search" placeholder="Buscar receita" aria-label="Buscar receita para fabricar" />
+            <label>Categoria <select v-model="craftKind" aria-label="Filtrar receitas por categoria"><option value="todos">Todas</option><option value="material">Materiais</option><option value="furniture">Móveis</option><option value="accessory">Acessórios</option></select></label>
+            <label>Ingredientes <select v-model="craftAvailability" aria-label="Filtrar receitas pela disponibilidade"><option value="todos">Todas</option><option value="prontas">Posso fazer</option><option value="faltando">Faltam itens</option></select></label>
+            <label>Organizar <select v-model="craftSort" aria-label="Organizar receitas de fabricação"><option value="catalogo">Catálogo</option><option value="nome">Nome (A–Z)</option><option value="categoria">Categoria</option><option value="prontas">Prontas primeiro</option></select></label>
+          </div>
+          <p v-if="craftList.length === 0" class="hint">Nenhuma receita corresponde aos filtros.</p>
+          <ul class="item-grid">
+            <li v-for="i in craftList" :key="i.id">
+              <img :src="icon(i.id)" alt="" width="40" height="40" />
+              <span>{{ i.name }}<small>{{ describeCost(state, RECIPES[i.id]!) }}</small></span>
+              <button type="button" @click="act(craft(state, i.id))">Fazer</button>
+            </li>
+          </ul>
+        </div>
 
-        <ul v-else-if="tab === 'cozinha'" class="item-grid">
-          <li class="hint">Comida cozida deixa o Pokémon mais feliz (uma refeição por dia cada). Os preferidos de cada um rendem mais.</li>
-          <li v-for="id in cookable" :key="id">
-            <img :src="icon(id)" alt="" width="40" height="40" />
-            <span>{{ itemName(id) }} <small v-if="count(state, id) > 0">(você tem {{ count(state, id) }})</small><small>{{ describeCost(state, RECIPES[id]!) }}</small></span>
-            <button type="button" @click="act(cook(state, id))">Cozinhar</button>
-          </li>
-        </ul>
+        <div v-else-if="tab === 'cozinha'">
+          <p class="hint">Comida cozida deixa o Pokémon mais feliz (uma refeição por dia cada). Os preferidos de cada um rendem mais.</p>
+          <div class="item-browser-controls" aria-label="Organizar receitas da cozinha">
+            <input v-model="cookQuery" type="search" placeholder="Buscar prato" aria-label="Buscar prato para cozinhar" />
+            <label>Ingredientes <select v-model="cookAvailability" aria-label="Filtrar pratos pela disponibilidade"><option value="todos">Todos</option><option value="prontas">Posso cozinhar</option><option value="faltando">Faltam itens</option></select></label>
+            <label>Organizar <select v-model="cookSort" aria-label="Organizar receitas da cozinha"><option value="catalogo">Catálogo</option><option value="nome">Nome (A–Z)</option><option value="quantidade">Mais preparados</option><option value="prontas">Prontas primeiro</option></select></label>
+          </div>
+          <p v-if="cookList.length === 0" class="hint">Nenhum prato corresponde aos filtros.</p>
+          <ul class="item-grid">
+            <li v-for="i in cookList" :key="i.id">
+              <img :src="icon(i.id)" alt="" width="40" height="40" />
+              <span>{{ i.name }} <small v-if="i.quantity">(você tem {{ i.quantity }})</small><small>{{ describeCost(state, RECIPES[i.id]!) }}</small></span>
+              <button type="button" @click="act(cook(state, i.id))">Cozinhar</button>
+            </li>
+          </ul>
+        </div>
 
         <div v-else-if="tab === 'diario'" class="diary">
           <p class="hint">O Diário guarda só os <strong>últimos {{ MAX_DIARY }} momentos</strong>; os mais antigos vão sumindo. Toque em 📍 para <strong>guardar no Álbum</strong>: lá fica para sempre. Os Pokémon vivem a vida mesmo quando você sai!</p>
