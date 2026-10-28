@@ -129,8 +129,8 @@ describe('stepSurvivor', () => {
   });
 
   it('usa uma arena física três vezes maior em largura e altura', () => {
-    expect(ARENA_W).toBe(2880);
-    expect(ARENA_H).toBe(1920);
+    expect(ARENA_W).toBe(8640);
+    expect(ARENA_H).toBe(5760);
   });
 
   it('enche o Digital Danger apenas parado e sem inimigos visíveis', () => {

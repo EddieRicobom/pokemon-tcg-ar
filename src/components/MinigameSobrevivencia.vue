@@ -28,6 +28,7 @@ import {
   survivorBanBlockReason,
   ARENA_H,
   ARENA_W,
+  PLAYER_RADIUS,
   createSurvivorState,
   chooseSurvivorTypeAffinity,
   rerollSurvivorUpgradeOffer,
@@ -43,6 +44,8 @@ import {
   SURVIVOR_ARTIFACT_DETAILS,
   survivorProjectileOpacity,
   FAST_TIME_SCALE,
+  SURVIVOR_LANDSCAPE_TILE_H,
+  SURVIVOR_LANDSCAPE_TILE_W,
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
@@ -60,7 +63,8 @@ import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
 import { survivorBiomeAt, survivorBiomeLabel } from '../core/survivor-biomes';
-import { createSurvivorLandscape } from '../village/survivor-landscape';
+import { resolveSurvivorLandscapeMove } from '../core/survivor-collision';
+import { createSurvivorLandscape, planSurvivorFloor, SURVIVOR_LANDSCAPE_CELL } from '../village/survivor-landscape';
 import { REGIONAL_ENCOUNTERS, REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from '../core/survivor-encounters';
 import { survivorRegionAt } from '../core/survivor-regions';
 import type { SoundCue } from '../box/sound-recipes';
@@ -163,7 +167,18 @@ const specialEffects = ref(true);
 const hudExpanded = ref(false);
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 const detailedSpecialEffects = computed(() => specialEffects.value && !reducedMotion && !effectiveVisual.value.rotomMode);
-const drawLandscape = createSurvivorLandscape(ARENA_W, ARENA_H);
+// A arte é um setor repetível: o mundo cresce sem ampliar árvores, itens ou a textura de cada canvas.
+const drawLandscape = createSurvivorLandscape(SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
+const collisionPlans = new Map<number, ReturnType<typeof planSurvivorFloor>>();
+function landscapeCollisionPlan(elapsedMs: number, runSeed: number) {
+  const { current } = survivorRegionAt(elapsedMs, runSeed);
+  let plan = collisionPlans.get(current);
+  if (!plan) {
+    plan = planSurvivorFloor(current, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
+    collisionPlans.set(current, plan);
+  }
+  return { cols: plan.cols, rows: plan.rows, cellSize: SURVIVOR_LANDSCAPE_CELL, solid: plan.solid };
+}
 let landscapeAtlasLoaded = false;
 /** Atlas da Vila já carregado (null enquanto carrega ou se falhar): o BONK recorta as texturas dele. */
 let landscapeAtlasImage: HTMLImageElement | null = null;
@@ -539,6 +554,9 @@ function showTrainerPresentation(event: { trainerId: number; count: number; fina
   clearTrainerPresentation();
   heldKeys.clear();
   joyUp();
+  // A chegada do treinador interrompe a corrida por alguns segundos; o menu aberto
+  // antes não deve disputar atenção com esse aviso.
+  hudExpanded.value = false;
   paused.value = true;
   trainerPresentation.value = event;
   trainerPresentationTimer = setTimeout(() => clearTrainerPresentation(true), event.final ? 3400 : 2800);
@@ -790,8 +808,7 @@ function onKey(e: KeyboardEvent): void {
   if (e.defaultPrevented) return;
   if (e.type === 'keydown' && e.key === 'Escape') {
     e.preventDefault();
-    if (leaveConfirm.value) cancelLeave();
-    else requestLeave();
+    requestBack();
     return;
   }
   const dir = KEY_DIR[e.key];
@@ -836,9 +853,9 @@ function onGamepadAction(event: Event): void {
 
 function onGamepadBack(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  if (custom.detail.handled || !ready.value || !state.value || shadowCutsceneOpen.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
+  if (custom.detail.handled) return;
   custom.detail.handled = true;
-  togglePause();
+  requestBack();
 }
 
 function onGamepadMenu(event: Event): void {
@@ -1718,6 +1735,7 @@ function loop(ts: number): void {
     const dx = kx + (joystick.active ? joystick.dx : 0);
     const dy = ky + (joystick.active ? joystick.dy : 0);
     const beforeBonkPosition = bonkRun.value ? { x: s.player.x, y: s.player.y } : null;
+    const beforeLandscapePosition = !bonkRun.value && regionScenery.value ? { x: s.player.x, y: s.player.y } : null;
     const previousSpecialPhase = s.special.phase;
     // No BONK, frente/trás move; os lados deslocam lateralmente e giram a câmera.
     const move = bonkRun.value && bonkPhysics.value ? bonkInputToWorld(bonkPhysics.value, dx, dy) : { dx, dy };
@@ -1737,6 +1755,16 @@ function loop(ts: number): void {
         enemy.y = resolved.y;
       }
       triggerRef(bonkPhysics);
+    }
+    if (beforeLandscapePosition) {
+      const resolved = resolveSurvivorLandscapeMove(
+        landscapeCollisionPlan(s.elapsedMs, s.runSeed),
+        beforeLandscapePosition,
+        s.player,
+        PLAYER_RADIUS,
+      );
+      s.player.x = resolved.x;
+      s.player.y = resolved.y;
     }
     bonkJumpQueued = false;
     const region = survivorRegionLabel(s.elapsedMs, s.runSeed);
@@ -1892,12 +1920,14 @@ function leaveNow(): void {
 
 function requestLeave(): void {
   if (leaveConfirm.value) return;
-  heldKeys.clear(); joyUp(); specialQueued = false;
-  clearTrainerPresentation();
-  if (summary.value) {
+  // Na escolha de Pokémon (ou depois do resultado) não há uma corrida a abandonar.
+  // Volta imediatamente para a Vila, sem apresentar um aviso que sugira perda de progresso.
+  if (!ready.value || !state.value || summary.value) {
     leaveNow();
     return;
   }
+  heldKeys.clear(); joyUp(); specialQueued = false;
+  clearTrainerPresentation();
   wasPausedBeforeLeave = paused.value;
   paused.value = true;
   leaveConfirm.value = true;
@@ -1914,7 +1944,21 @@ function confirmLeave(): void {
   emit('leave');
 }
 
-defineExpose({ requestLeave });
+/** O caminho de Voltar fica dentro da Torre; sair exige a ação explícita de saída. */
+function requestBack(): void {
+  if (leaveConfirm.value) { cancelLeave(); return; }
+  if (typeChoice.value) { typeChoice.value = null; return; }
+  if (helpOpen.value) { helpOpen.value = false; return; }
+  if (hudExpanded.value) { hudExpanded.value = false; return; }
+  if (paused.value) { togglePause(); return; }
+  if (summary.value) { playAgain(); return; }
+  // Escolhas que alteram a corrida não podem ser descartadas pelo botão Voltar.
+  if (pickOptions.value || noCompanion.value || pendingUpgrade.value || typeAffinityOffer.value || shadowCutsceneOpen.value || specialModalOpen.value) return;
+  // Durante a corrida, Voltar abre a pausa; outro Voltar retoma.
+  if (ready.value && state.value) togglePause();
+}
+
+defineExpose({ requestBack, requestLeave });
 
 /** Sorteia até 6 companheiros da caixa, identificados por carta/instância, pra escolher quem joga desta vez.
  * Caixa vazia (nenhuma carta ainda) não trava nada: cai pro Pikachu de reserva sem tela de escolha, como antes. */
@@ -2294,6 +2338,7 @@ onBeforeUnmount(() => {
             <div v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" class="survivor-info-actions">
               <button type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @click.stop="togglePause">{{ paused ? '▶ Retomar' : '⏸ Pausar' }}</button>
               <button type="button" class="chip survivor-help-btn" @click.stop="openHelp">? Controles</button>
+              <button type="button" class="chip survivor-back-btn" @click.stop="requestBack">← Voltar</button>
             </div>
             <div class="survivor-info-section">
               <strong>Golpe e defesas</strong>
@@ -2361,7 +2406,7 @@ onBeforeUnmount(() => {
         </div>
         <p v-if="ready && !summary && !joystick.active && !pickOptions && !hudExpanded && state && state.elapsedMs < 6000" class="survivor-move-hint" :class="{ 'is-bonk': bonkRun }">{{ bonkRun ? 'Arraste: para cima avança, para os lados vira a câmera · Pular: botão, toque/clique duplo, Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
 
-        <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
+        <div v-if="paused && !trainerPresentation && !typeAffinityOffer && !leaveConfirm" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
             <h2>Jogo pausado</h2>
             <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
@@ -2388,6 +2433,8 @@ onBeforeUnmount(() => {
               <small>Empilhados deixa os dois mais perto da borda; Trocados põe o Pular no canto e o Especial ao lado.</small>
             </section>
             <button type="button" class="primary" @pointerdown.stop @click.stop="togglePause">▶ Retomar</button>
+            <button type="button" class="link survivor-back" @pointerdown.stop @click.stop="requestBack">← Voltar</button>
+            <button type="button" class="link survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
           </div>
         </div>
 
@@ -2402,7 +2449,7 @@ onBeforeUnmount(() => {
                 <small class="survivor-pick-tip">{{ MOVE_CATEGORY_HINTS_PT[typeChoice.move.category] }}</small>
               </button>
             </div>
-            <button type="button" class="link" @click="typeChoice = null">Voltar</button>
+            <button type="button" class="link survivor-back" @click="typeChoice = null">← Voltar aos Pokémon</button>
           </div>
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
@@ -2518,7 +2565,7 @@ onBeforeUnmount(() => {
           <div class="card survivor-pick">
             <h2>Você precisa de um companheiro</h2>
             <p class="note">A Torre usa Pokémon da sua coleção ou Digital Pokémon da Vila. Escaneie uma carta ou conclua o questionário inicial da Vila para receber seu primeiro companheiro.</p>
-            <button type="button" class="primary" @pointerdown.stop @click.stop="emit('leave')">Voltar à Vila</button>
+            <button type="button" class="primary survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
           </div>
         </div>
 
@@ -2712,7 +2759,8 @@ onBeforeUnmount(() => {
                <p v-if="feedbackError" class="survivor-feedback-error" role="alert">{{ feedbackError }}</p>
              </section>
             <button type="button" class="primary" @click="playAgain">Jogar de novo</button>
-            <button type="button" class="link" @click="leaveNow">Voltar aos jogos</button>
+            <button type="button" class="link survivor-back" @click="playAgain">← Voltar ao menu da Torre</button>
+            <button type="button" class="link survivor-exit" @click="leaveNow">Sair da Torre</button>
           </div>
         </div>
 

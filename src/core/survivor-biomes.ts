@@ -20,8 +20,8 @@ export interface SurvivorBiomeDefinition {
   zones: readonly SurvivorBiomeZone[];
 }
 
-/** As zonas foram desenhadas numa célula de 960×640 e repetidas na malha expandida. */
-export const SURVIVOR_ARENA_SCALE = 3;
+/** As zonas foram desenhadas numa célula de 960×640 e repetidas pela arena 9× maior. */
+export const SURVIVOR_ARENA_SCALE = 9;
 const SURVIVOR_BASE_W = 960;
 const SURVIVOR_BASE_H = 640;
 
