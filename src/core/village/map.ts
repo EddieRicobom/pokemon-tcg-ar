@@ -76,6 +76,29 @@ function blob(map: VillageMap, rng: Rng, cx: number, cy: number, r: number, tile
   }
 }
 
+/**
+ * Um campo de mato alto não deve parecer um retângulo carimbado no gramado. Ao contrário dos lagos e das clareiras,
+ * ele ganha lobos e recortes na borda: a largura muda de uma faixa para a outra e alguns tufos avançam para fora.
+ * Continua sendo determinístico para uma mesma semente e só ocupa o chão permitido.
+ */
+function tallPatch(map: VillageMap, rng: Rng, cx: number, cy: number, r: number, only: Tile[]): void {
+  const phase = rng() * Math.PI * 2;
+  const lean = (rng() - 0.5) * 0.55;
+  const lobes = 0.16 + rng() * 0.08;
+  for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) {
+    for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) {
+      const dx = (x - cx) / r;
+      const dy = (y - cy) / (r * 0.86);
+      const angle = Math.atan2(dy, dx);
+      // Três ondulações grandes evitam uma borda circular perfeita; a menor quebra os degraus longos do grid.
+      const contour = 1 + Math.sin(angle * 3 + phase) * lobes + Math.sin(angle * 5 - phase * 0.7) * 0.07;
+      const skewed = Math.hypot(dx - dy * lean, dy);
+      const fringe = (rng() - 0.5) * 0.22;
+      if (skewed <= contour + fringe && only.includes(tileAt(map, x, y))) setTile(map, x, y, 'tall');
+    }
+  }
+}
+
 function fill(map: VillageMap, x: number, y: number, w: number, h: number, tile: Tile, only?: Tile[]): void {
   for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) if (!only || only.includes(tileAt(map, i, j))) setTile(map, i, j, tile);
 }
@@ -192,7 +215,7 @@ function generateBase(seed: number, w: number, h: number): VillageMap {
   blob(map, rng, lake.x, lake.y, lake.water, 'water');
   // Campos de mato alto, flores, pedras e arbustos de frutas.
   for (const [mx, my, r] of [[60, 66, 3.2], [30, 66, 2.8], [12, 30, 2.6], [64, 14, 2.4], [88, 64, 2.2], [24, 8, 2.4]] as const) {
-    blob(map, rng, mx + (rng() - 0.5) * 3, my + (rng() - 0.5) * 2, r, 'tall', ['grass']);
+    tallPatch(map, rng, mx + (rng() - 0.5) * 3, my + (rng() - 0.5) * 2, r, ['grass']);
   }
   for (let n = 0; n < 26; n++) blob(map, rng, 5 + rng() * (w - 10), 5 + rng() * (h - 10), 1.3, 'flower', ['grass']);
   for (let n = 0; n < 46; n++) {
