@@ -8,16 +8,15 @@ import type { BaseStats } from './survivor-moves';
 import type { SurvivorState } from './survivor-types';
 
 /**
- * Mega Evolução temporária da Torre de Sobrevivência. Na seleção, quem tem forma Mega na PokéAPI pode megaevoluir
- * gastando 1 Fragmento de Megapedra da mochila da Vila: a corrida começa na forma Mega, com os stats base dessa forma
- * (`data/pokemon-megas.json`, gerado por `scripts/build-megas.mjs`), e volta à forma normal quando o tempo acaba.
+ * Mega Evolução da Torre de Sobrevivência, válida por uma corrida. Na seleção, quem tem forma Mega na PokéAPI pode
+ * megaevoluir gastando 1 Fragmento de Megapedra da mochila da Vila: a corrida começa na forma Mega, com os stats base
+ * dessa forma (`data/pokemon-megas.json`, gerado por `scripts/build-megas.mjs`), e fica assim até a corrida acabar.
+ * Sem limite de tempo; só a evolução encerra a Mega antes (a forma Mega é da espécie de agora).
  * Espécie sem forma Mega no dado não ganha a opção — nada é inventado.
  */
 
 /** Item da Vila gasto pela Mega (id antigo do catálogo; o nome mostrado é "Fragmento de Megapedra"). */
 export const SURVIVOR_MEGA_ITEM = 'mega-stone-shard';
-/** Quanto a forma Mega dura, no relógio da corrida. */
-export const SURVIVOR_MEGA_DURATION_MS = 3 * 60_000;
 /** Corrida abandonada antes disto devolve o fragmento (o mesmo limite da marmita, `TOWER_RUN_MIN_MS`). */
 export const SURVIVOR_MEGA_REFUND_MS = 20_000;
 
@@ -44,8 +43,6 @@ export interface SurvivorMegaState {
   formId: number;
   label: string;
   stats: BaseStats;
-  /** Relógio da corrida em que a forma acaba. */
-  untilMs: number;
   active: boolean;
   ratios: { maxHp: number; damage: number; cooldownMs: number; radius: number; walkSpeed: number; projectileSpeed: number };
   /** Tamanho do disparo antes da Mega (não é proporcional: volta exatamente). */
@@ -120,7 +117,7 @@ const ratio = (a: number, b: number): number => (a > 0 && b > 0 ? b / a : 1);
  * Entra na forma Mega: cada número do jogador muda na proporção entre o perfil dos stats da espécie e o da forma Mega
  * (como na evolução, mas sem bônus). A vida sobe junto, mantendo a fração. Sem stats da espécie, não aplica (false).
  */
-export function startSurvivorMega(state: SurvivorState, form: SurvivorMegaForm, durationMs = SURVIVOR_MEGA_DURATION_MS): boolean {
+export function startSurvivorMega(state: SurvivorState, form: SurvivorMegaForm): boolean {
   const p = state.player;
   if (p.mega?.active || form.dexId !== p.dexId) return false;
   const baseStats = statsOfDex(p.dexId);
@@ -135,7 +132,7 @@ export function startSurvivorMega(state: SurvivorState, form: SurvivorMegaForm, 
     walkSpeed: ratio(before.walkSpeed, after.walkSpeed),
     projectileSpeed: ratio(before.projectileSpeed, after.projectileSpeed),
   };
-  p.mega = { formId: form.formId, label: form.label, stats: form.stats, untilMs: state.elapsedMs + durationMs, active: true, ratios, baseProjectileSize: p.projectileSize };
+  p.mega = { formId: form.formId, label: form.label, stats: form.stats, active: true, ratios, baseProjectileSize: p.projectileSize };
   scalePlayer(state, ratios, after.projectileSize);
   return true;
 }
@@ -153,7 +150,7 @@ function scalePlayer(state: SurvivorState, r: SurvivorMegaState['ratios'], proje
   p.projectileSize = projectileSize;
 }
 
-/** Volta à forma normal (desfaz as razões; upgrades pegos durante a Mega continuam valendo). */
+/** Volta à forma normal, usado só quando o Pokémon evolui (desfaz as razões; upgrades pegos durante a Mega continuam valendo). */
 export function endSurvivorMega(state: SurvivorState): boolean {
   const mega = state.player.mega;
   if (!mega?.active) return false;
@@ -167,19 +164,7 @@ export function endSurvivorMega(state: SurvivorState): boolean {
   return true;
 }
 
-/** Chamado a cada passo: encerra a Mega quando o relógio passa do fim. */
-export function stepSurvivorMega(state: SurvivorState): void {
-  const mega = state.player.mega;
-  if (mega?.active && state.elapsedMs >= mega.untilMs) endSurvivorMega(state);
-}
-
-/** Tempo restante da Mega (0 quando não há Mega ativa). */
-export function survivorMegaRemainingMs(state: Pick<SurvivorState, 'elapsedMs' | 'player'>): number {
-  const mega = state.player.mega;
-  return mega?.active ? Math.max(0, mega.untilMs - state.elapsedMs) : 0;
-}
-
-/** Stats para a defesa: os da forma Mega enquanto ela dura, senão os da espécie. */
+/** Stats para a defesa: os da forma Mega enquanto ela estiver ativa, senão os da espécie. */
 export function survivorPlayerStats(player: { dexId: number; mega?: SurvivorMegaState }): BaseStats | null {
   return player.mega?.active ? player.mega.stats : statsOfDex(player.dexId);
 }

@@ -137,7 +137,7 @@ export interface SurvivorPlayer {
   lunchHitInvulnBonus?: number;
   /** Marmita ativa: o efeito e quanto já curou (a cura tem teto por corrida). */
   lunch?: { effect: LunchEffect; healed: number; active: boolean };
-  /** Mega temporária da corrida (`core/survivor-mega.ts`); `active` cai para false quando o tempo acaba. */
+  /** Mega da corrida (`core/survivor-mega.ts`); fica ativa até o fim, e `active` só cai para false se o Pokémon evoluir. */
   mega?: SurvivorMegaState;
 }
 

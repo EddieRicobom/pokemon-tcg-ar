@@ -12,19 +12,18 @@ import {
   survivorMegaCount,
   survivorMegaForm,
   survivorMegaForms,
-  survivorMegaRemainingMs,
   survivorMegaStatDelta,
-  SURVIVOR_MEGA_DURATION_MS,
+  survivorPlayerStats,
   SURVIVOR_MEGA_ITEM,
   SURVIVOR_MEGA_REFUND_MS,
   takeMegaShard,
 } from './survivor-mega';
 import type { SurvivorMegaForm } from './survivor-mega';
 
-function runFor(dexId: number, mega?: SurvivorMegaForm, megaDurationMs?: number) {
+function runFor(dexId: number, mega?: SurvivorMegaForm) {
   const stats = statsOfDex(dexId);
   const move = moveFor(typesOfDex(dexId), stats);
-  return createSurvivorState(7, { kindCount: 4, dexId, move, profile: attackProfile(move, stats), ...(mega ? { mega } : {}), ...(megaDurationMs ? { megaDurationMs } : {}) });
+  return createSurvivorState(7, { kindCount: 4, dexId, move, profile: attackProfile(move, stats), ...(mega ? { mega } : {}) });
 }
 
 describe('formas Mega (dado da PokéAPI)', () => {
@@ -64,36 +63,40 @@ describe('formas Mega (dado da PokéAPI)', () => {
   });
 });
 
-describe('Mega temporária na corrida', () => {
+describe('Mega na corrida', () => {
   const megaX = survivorMegaForms(6)[0]!;
 
   it('começa na forma Mega com os números dos stats da forma', () => {
     const normal = runFor(6);
     const mega = runFor(6, megaX);
     expect(mega.player.mega?.active).toBe(true);
-    expect(mega.player.mega?.untilMs).toBe(SURVIVOR_MEGA_DURATION_MS);
     // Mega Charizard X tem Ataque e Defesa maiores: dano e raio sobem; vida igual (mesmo HP base).
     expect(mega.player.attackDamage).toBeGreaterThan(normal.player.attackDamage);
     expect(mega.player.maxHp).toBe(normal.player.maxHp);
     expect(survivorDefenseReduction(mega.player, 'contato')!).toBeGreaterThan(survivorDefenseReduction(normal.player, 'contato')!);
   });
 
-  it('volta à forma normal quando o tempo acaba', () => {
+  it('não tem limite de tempo: continua ativa até o fim da corrida', () => {
+    const state = runFor(6, megaX);
+    const damage = state.player.attackDamage;
+    stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    // Bem depois de qualquer duração antiga (3 min) e do marco de 20 min, a forma Mega segue ativa.
+    state.elapsedMs = 25 * 60_000;
+    stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    expect(state.player.mega?.active).toBe(true);
+    expect(state.player.attackDamage).toBe(damage);
+    expect(survivorPlayerStats(state.player)).toEqual(megaX.stats);
+  });
+
+  it('desfazer a Mega (só na evolução) devolve os números da forma normal', () => {
     const normal = runFor(6);
-    const state = runFor(6, megaX, 1_000);
-    for (let i = 0; i < 80 && state.player.mega?.active; i++) stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    const state = runFor(6, megaX);
+    expect(endSurvivorMega(state)).toBe(true);
     expect(state.player.mega?.active).toBe(false);
-    expect(survivorMegaRemainingMs(state)).toBe(0);
     expect(state.player.attackDamage).toBeCloseTo(normal.player.attackDamage, 0);
     expect(state.player.attackCooldownMs).toBe(normal.player.attackCooldownMs);
     expect(state.player.projectileSize).toBe(normal.player.projectileSize);
     expect(survivorDefenseReduction(state.player, 'contato')).toBe(survivorDefenseReduction(normal.player, 'contato'));
-  });
-
-  it('o tempo restante cai com o relógio da corrida', () => {
-    const state = runFor(6, megaX);
-    stepSurvivor(state, { dx: 0, dy: 0 }, 16);
-    expect(survivorMegaRemainingMs(state)).toBe(SURVIVOR_MEGA_DURATION_MS - state.elapsedMs);
   });
 
   it('a vida mantém a fração ao entrar e sair', () => {
