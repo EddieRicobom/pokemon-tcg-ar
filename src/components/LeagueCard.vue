@@ -37,6 +37,8 @@ const badgeCount = computed(() => progress.value.badges.length);
 
 /** `challenge` avisa que o desafio foi marcado (a tela da Arena mostra o atalho para a Caixa). */
 const emit = defineEmits<{ challenge: [] }>();
+/** Dentro da Arena o título e o cartão vêm da própria seção; no Treinador a Liga é um cartão. */
+defineProps<{ embedded?: boolean }>();
 
 function challenge(c: Challenge): void {
   pendingChallenge.value = c.id;
@@ -44,12 +46,21 @@ function challenge(c: Challenge): void {
   emit('challenge');
 }
 
-const STATUS_PT = { locked: 'Bloqueado', open: 'Aberto', beaten: 'Vencido' } as const;
+const STATUS_PT = { locked: '🔒 Bloqueado', open: 'Aberto', beaten: '✓ Vencido' } as const;
+
+/** Diz por que um desafio ainda está fechado, em vez de só repetir «Bloqueado». */
+function lockReason(c: Challenge): string {
+  if (c.kind === 'gym') return `Vença ${region.value.gyms[c.order - 1]?.leader ?? 'o ginásio anterior'} primeiro`;
+  if (c.kind === 'elite') return c.order === 0 ? 'Exige as 8 insígnias' : 'Vença o membro anterior da Elite 4';
+  return 'Exige vencer a Elite 4';
+}
+const doneOf = (rows: { status: string }[]): number => rows.filter((r) => r.status === 'beaten').length;
 </script>
 
 <template>
-  <div class="card league">
-    <h2>Liga Pokémon <small class="count">{{ badgeCount }} de 8 insígnias</small></h2>
+  <div :class="['league', { card: !embedded, embedded }]">
+    <h2 v-if="!embedded">Liga Pokémon <small class="count">{{ badgeCount }} de 8 insígnias</small></h2>
+    <p v-else class="league-count" role="status">{{ badgeCount }} de 8 insígnias de {{ region.name }}</p>
     <nav class="league-regions" aria-label="Regiões da Liga">
       <button v-for="r in regionTabs" :key="r.id" type="button" :aria-pressed="selected === r.id" :class="{ primary: selected === r.id }" @click="selected = r.id">{{ r.name }} · {{ r.generation }}</button>
     </nav>
@@ -67,16 +78,17 @@ const STATUS_PT = { locked: 'Bloqueado', open: 'Aberto', beaten: 'Vencido' } as 
     <p v-if="progress.championWins > 0" class="note champion-note">Campeão da Liga de {{ region.name }} {{ progress.championWins }} {{ progress.championWins === 1 ? 'vez' : 'vezes' }}! Seu nome está no Hall da Fama.</p>
     <p v-else-if="next" class="note">Próximo desafio: <strong>{{ next.leader }}</strong> ({{ next.role }}). A batalha é na Caixa, em revezamento, com a sua equipe contra a do líder.</p>
     <section v-for="section in sections" :key="section.title" :aria-label="`${section.title} de ${region.name}`">
-    <h3>{{ section.title }}</h3>
+    <h3 class="league-heading">{{ section.title }} <small v-if="section.rows.length > 1" class="count">{{ doneOf(section.rows) }}/{{ section.rows.length }}</small></h3>
     <ul class="league-list">
-      <li v-for="{ c, status } in section.rows" :key="c.id" :class="status">
+      <li v-for="{ c, status } in section.rows" :key="c.id" :class="[status, { next: next?.id === c.id }]" :aria-current="next?.id === c.id ? 'step' : undefined">
         <img :src="trainerSpriteUrl(c.sprite)" alt="" width="48" height="48" loading="lazy" />
         <span class="l-text">
-          <strong>{{ c.leader }}</strong>
-          <small>
-            {{ c.role }}<template v-if="c.type"> · <span class="type-dot" :style="{ background: TYPE_COLORS[c.type] }"></span>{{ TYPE_LABELS_PT[c.type] }}</template>
-            · {{ c.team.length }} Pokémon
+          <span class="l-name"><strong>{{ c.leader }}</strong> <em v-if="next?.id === c.id" class="l-next">Próximo</em></span>
+          <small class="l-meta">
+            <span v-if="c.type" class="l-type"><span class="type-dot" :style="{ background: TYPE_COLORS[c.type] }"></span>{{ TYPE_LABELS_PT[c.type] }}</span>
+            <span>{{ c.team.length }} Pokémon</span>
           </small>
+          <small v-if="status === 'locked'" class="l-lock">{{ lockReason(c) }}</small>
           <small v-if="c.kind === 'elite' && status === 'open' && c.order > 0">Corrida: perder volta ao começo da Elite 4</small>
         </span>
         <button v-if="status !== 'locked'" type="button" :class="status === 'open' ? 'primary' : ''" @click="challenge(c)">{{ status === 'open' ? 'Desafiar' : 'Revanche' }}</button>
@@ -88,6 +100,17 @@ const STATUS_PT = { locked: 'Bloqueado', open: 'Aberto', beaten: 'Vencido' } as 
 </template>
 
 <style scoped>
-.league-regions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-block: 1rem; }
-.league-regions button { flex: 1 1 7rem; }
+.league-regions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin-block: 1rem; }
+.league-regions button { padding-inline: 0.4rem; white-space: nowrap; }
+.league-count { margin: 0; color: var(--gold); font-weight: 700; }
+.embedded { display: grid; gap: 0.6rem; }
+.embedded > * { margin-block: 0; }
+.league-heading { display: flex; align-items: baseline; gap: 0.5rem; }
+.l-meta { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; }
+.l-type { white-space: nowrap; }
+.l-lock { font-style: italic; }
+.l-next { padding: 0.05rem 0.4rem; border-radius: 99px; background: var(--accent); color: #fff; font-size: 0.68rem; font-style: normal; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 0.1em; }
+.league-list li.next { box-shadow: inset 0 0 0 2px var(--accent); }
+.l-status { white-space: nowrap; }
+@media (max-width: 340px) { .league-regions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

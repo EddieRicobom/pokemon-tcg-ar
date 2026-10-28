@@ -239,6 +239,18 @@ body {
   margin-top: 12px;
 }
 
+/* Ação principal e o caminho de volta empilhados, os dois com a largura toda. */
+.actions.stack {
+  display: grid;
+  gap: 8px;
+}
+
+.actions.stack > .button {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+}
+
 /* Ação única (ex.: "Abrir câmera"): ocupa a largura toda, fácil de tocar com o polegar. */
 .actions > button.primary:only-child {
   width: 100%;

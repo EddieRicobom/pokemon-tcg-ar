@@ -779,7 +779,7 @@ onBeforeUnmount(() => {
       </span>
     </div>
 
-    <div class="actions">
+    <div class="actions" :class="{ stack: battleShortcut || endlessShortcut || fromVila || fromArena }">
       <button ref="openButton" type="button" class="primary" :class="{ 'battle-cta': battleShortcut }" :disabled="phase !== 'idle'" @click="open">
         {{ phase === 'starting' ? 'Abrindo…' : endlessShortcut ? `⚔️ Entrar na arena · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Entrar na arena e batalhar' : '🏟️ Entrar na Arena 3D' }}
       </button>

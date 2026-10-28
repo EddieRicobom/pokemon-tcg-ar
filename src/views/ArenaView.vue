@@ -48,7 +48,7 @@ onMounted(() => { if (waitingChallenge.value) void nextTick(goToTeam); });
 <template>
   <section class="card arena-view" aria-labelledby="arena-title">
     <h2 id="arena-title">Arena Digital</h2>
-    <p class="note">Escolha uma rota abaixo. A batalha é automática: você prepara a equipe, assiste ao combate e pode encerrar quando quiser.</p>
+    <p class="note">A batalha é automática: você prepara a equipe, assiste ao combate e pode encerrar quando quiser.</p>
     <section class="arena-route" aria-label="Próximo passo na Arena">
       <template v-if="nextLeader">
         <span class="arena-kicker">ROTA DA LIGA · {{ leagueRegion.name }}</span>
@@ -61,15 +61,15 @@ onMounted(() => { if (waitingChallenge.value) void nextTick(goToTeam); });
       </template>
     </section>
     <nav class="arena-paths" aria-label="Rotas da Arena">
-      <button type="button" @click="goToLeague">🏅 Liga · líderes e insígnias</button>
-      <button type="button" @click="goToTeam">👥 Corridas · monte um time de 6</button>
-      <a :href="routeHref('caixa', undefined, arenaBoxFlags())">⚔️ Batalha livre</a>
+      <button type="button" @click="goToLeague"><span aria-hidden="true">🏅</span>Liga<small>líderes e insígnias</small></button>
+      <button type="button" @click="goToTeam"><span aria-hidden="true">👥</span>Corridas<small>time de 6</small></button>
+      <a :href="routeHref('caixa', undefined, arenaBoxFlags())"><span aria-hidden="true">⚔️</span>Batalha livre<small>sem corrida</small></a>
     </nav>
-    <ol class="arena-steps" aria-label="Etapas para desafio da Liga"><li :class="{ done: waitingChallenge }">{{ waitingChallenge ? '✓' : '1' }} Escolha o líder na Liga</li><li :class="{ done: hasBattleTeam }">{{ hasBattleTeam ? '✓' : '2' }} Monte até 6 Pokémon · {{ selectedCount ?? '…' }}/6</li><li>3 · Entrar na Arena 3D</li></ol>
+    <ol class="arena-steps" aria-label="Etapas para desafio da Liga"><li :class="{ done: waitingChallenge }"><b>{{ waitingChallenge ? '✓' : '1' }}</b>Escolha o líder</li><li :class="{ done: hasBattleTeam }"><b>{{ hasBattleTeam ? '✓' : '2' }}</b>Monte o time · {{ selectedCount ?? '…' }}/6</li><li><b>3</b>Entre na Arena 3D</li></ol>
 
     <section id="arena-league" class="arena-section arena-league" aria-label="Liga Pokémon e líderes de ginásio">
-      <header><span class="arena-kicker">1 · ENCONTRE UM LÍDER</span><h3>Liga Pokémon</h3><p class="note">Os líderes estão organizados por região e por ordem. O próximo desafio aberto aparece destacado; os demais mostram claramente o que falta.</p></header>
-      <LeagueCard @challenge="goToTeam" />
+      <header><span class="arena-kicker">1 · ENCONTRE UM LÍDER</span><h3>Liga Pokémon</h3><p class="note">Por região e em ordem. O próximo desafio aberto vem destacado e cada bloqueio diz o que falta.</p></header>
+      <LeagueCard embedded @challenge="goToTeam" />
     </section>
 
     <section id="arena-team" class="arena-section" aria-labelledby="arena-team-title">
@@ -131,12 +131,18 @@ onMounted(() => { if (waitingChallenge.value) void nextTick(goToTeam); });
 .arena-kicker { color: var(--gold); font-size: .73rem; font-weight: 800; letter-spacing: .08em; }
 .arena-type { display: inline-block; padding: .12rem .42rem; border: 1px solid var(--type); border-radius: 99px; color: var(--type); font-size: .8rem; font-weight: 750; }
 .arena-paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
-.arena-paths > * { display: grid; place-items: center; min-height: 3rem; padding: .5rem; border: 1px solid var(--line); border-radius: .7rem; color: inherit; font: inherit; text-align: center; text-decoration: none; background: rgba(12, 17, 34, .55); }
+.arena-paths > * { display: grid; justify-items: center; align-content: center; gap: .1rem; min-height: 4.4rem; padding: .5rem .3rem; border: 1px solid var(--line); border-radius: .7rem; color: inherit; font: inherit; font-size: .92rem; font-weight: 700; line-height: 1.2; text-align: center; text-decoration: none; background: rgba(12, 17, 34, .55); }
+.arena-paths small { color: var(--muted); font-size: .72rem; font-weight: 500; }
 .arena-paths > *:hover, .arena-paths > *:focus-visible { border-color: var(--accent); }
-.arena-steps { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
-.arena-steps li { padding: .5rem .7rem; border: 1px solid var(--line); border-radius: .7rem; font-size: .85rem; }
+.arena-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.arena-steps li { display: grid; justify-items: center; gap: .15rem; padding: .45rem .3rem; border: 1px solid var(--line); border-radius: .7rem; font-size: .78rem; line-height: 1.2; text-align: center; color: var(--muted); }
+.arena-steps b { display: grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--line); color: var(--text); font-size: .75rem; }
+.arena-steps .done b { background: #68bd91; color: #0c1122; }
 .arena-steps .done { border-color: #68bd91; color: #a7ebc3; }
-.arena-section { display: grid; gap: 0.7rem; }
+.arena-section { display: grid; gap: 0.7rem; scroll-margin-top: .75rem; }
+.arena-league { padding-top: .5rem; border-top: 1px solid var(--line); }
+.arena-league > header { display: grid; gap: .25rem; }
+.arena-league > header > * { margin: 0; }
 .arena-section > h3, .arena-mode-card h4 { margin: 0; }
 .arena-ready { display: grid; gap: 0.5rem; padding: 1rem; border: 1px solid var(--accent); border-radius: 0.85rem; background: rgba(242, 85, 75, 0.12); }
 .arena-first-run { display: grid; gap: .7rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--gold) 55%, var(--line)); border-radius: .85rem; background: linear-gradient(135deg, rgba(255, 216, 74, .12), rgba(12, 17, 34, .55)); }
@@ -145,5 +151,4 @@ onMounted(() => { if (waitingChallenge.value) void nextTick(goToTeam); });
 .arena-mode-grid, .arena-shortcuts { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 .arena-mode-card, .arena-shortcuts > div { display: grid; gap: 0.55rem; align-content: start; padding: 0.9rem; border: 1px solid var(--line); border-radius: 0.85rem; background: rgba(12, 17, 34, 0.55); }
 .arena-mode-card p { margin: 0; color: var(--muted); }
-@media (max-width: 520px) { .arena-paths { grid-template-columns: 1fr; } }
 </style>

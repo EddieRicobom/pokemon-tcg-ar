@@ -157,10 +157,13 @@ onBeforeUnmount(dropPeer);
     <template v-if="step === 'choose'">
       <h3>{{ lobbyTitle }}</h3>
       <p class="pn-lobby-note">{{ lobbyNote }}</p>
-      <p class="pn-lobby-note">
-        Para achar o caminho entre os celulares, o navegador consulta servidores públicos do Google (STUN), que só veem o endereço de rede de vocês, não o jogo.
-        Na mesma rede Wi-Fi funciona melhor; em algumas operadoras a conexão pode não fechar.
-      </p>
+      <details class="pn-lobby-note">
+        <summary>Como a conexão é feita e o que o Google vê</summary>
+        <p>
+          Para achar o caminho entre os celulares, o navegador consulta servidores públicos do Google (STUN), que só veem o endereço de rede de vocês, não o jogo.
+          Na mesma rede Wi-Fi funciona melhor; em algumas operadoras a conexão pode não fechar.
+        </p>
+      </details>
       <div class="pn-lobby-actions">
         <button type="button" class="primary" @click="createRoom">{{ backupPurpose ? 'Criar sala de transferência' : 'Criar sala' }}</button>
         <button type="button" @click="joinRoom">{{ backupPurpose ? 'Entrar na sala de transferência' : 'Entrar na sala de um amigo' }}</button>
