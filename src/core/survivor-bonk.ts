@@ -240,10 +240,32 @@ export function resolveBonkPosition(
   return { x: clamp(x, radius, ARENA_W - radius), y: clamp(y, radius, ARENA_H - radius), collided };
 }
 
+/** Círculo de colisão de uma árvore: o mesmo raio do tronco desenhado (metade da largura da área sólida). */
+function treeCircle(o: Pick<BonkObstacle, 'x' | 'y' | 'w' | 'h'>): { cx: number; cy: number; r: number } {
+  return { cx: o.x + o.w / 2, cy: o.y + o.h / 2, r: o.w / 2 };
+}
+
 function pushOutOfObstacles(physics: Pick<BonkPhysics, 'z' | 'obstacles'>, x: number, y: number, radius: number): { x: number; y: number } {
   for (const obstacle of physics.obstacles) {
     // A ponte é chão seguro sobre a água, não uma parede para o círculo do jogador.
     if (obstacle.kind === 'bridge') continue;
+    if (obstacle.kind === 'tree') {
+      // Árvores são redondas no desenho: a colisão também é um círculo, para os cantos de um quadrado não bloquearem
+      // diagonais que estão livres na tela.
+      if (physics.z > obstacle.height + radius * 0.35) continue;
+      const c = treeCircle(obstacle);
+      const dx = x - c.cx;
+      const dy = y - c.cy;
+      const distance = Math.hypot(dx, dy);
+      const minimum = c.r + radius;
+      if (distance >= minimum) continue;
+      if (distance === 0) x = c.cx + minimum;
+      else {
+        x = c.cx + (dx / distance) * minimum;
+        y = c.cy + (dy / distance) * minimum;
+      }
+      continue;
+    }
     // O centro do jogador está acima do topo: pedras e muretas tornam-se puláveis,
     // árvores, ruínas e muros altos continuam sendo barreiras reais.
     if (physics.z > obstacle.height + radius * 0.35) continue;
@@ -281,7 +303,14 @@ function pushOutOfObstacles(physics: Pick<BonkPhysics, 'z' | 'obstacles'>, x: nu
 
 /** Se (x, y) está dentro de algum obstáculo alto o bastante para bloquear, contando o raio do jogador (exceto `skip`). */
 function insideAnyObstacle(physics: Pick<BonkPhysics, 'z' | 'obstacles'>, x: number, y: number, radius: number, skip: BonkObstacle): boolean {
-  return physics.obstacles.some((o) => o !== skip && physics.z <= o.height + radius * 0.35 && x > o.x - radius && x < o.x + o.w + radius && y > o.y - radius && y < o.y + o.h + radius);
+  return physics.obstacles.some((o) => {
+    if (o === skip || o.kind === 'bridge' || physics.z > o.height + radius * 0.35) return false;
+    if (o.kind === 'tree') {
+      const c = treeCircle(o);
+      return Math.hypot(x - c.cx, y - c.cy) < c.r + radius;
+    }
+    return x > o.x - radius && x < o.x + o.w + radius && y > o.y - radius && y < o.y + o.h + radius;
+  });
 }
 
 /**
