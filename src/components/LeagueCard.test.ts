@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, nextTick, type App } from 'vue';
 import LeagueCard from './LeagueCard.vue';
 import { league, pendingChallenge } from '../app/league-store';
@@ -14,10 +14,10 @@ afterEach(() => {
   window.location.hash = '';
 });
 
-function mount(): HTMLDivElement {
+function mount(onChallenge?: () => void): HTMLDivElement {
   host = document.createElement('div');
   document.body.append(host);
-  app = createApp(LeagueCard);
+  app = createApp(LeagueCard, onChallenge ? { onChallenge } : undefined);
   app.mount(host);
   return host;
 }
@@ -46,11 +46,13 @@ describe('seções regionais da Liga', () => {
   });
   it('encaminha o identificador regional para o atalho da Arena', async () => {
     league.value = emptyLeague();
-    const el = mount();
+    const onChallenge = vi.fn();
+    const el = mount(onChallenge);
     [...el.querySelectorAll<HTMLButtonElement>('.league-regions button')].find((b) => b.textContent?.includes('Hoenn'))!.click();
     await nextTick();
     el.querySelector<HTMLButtonElement>('.league-list button')!.click();
     expect(pendingChallenge.value).toBe('hoenn-gym-0');
     expect(window.location.hash).toBe('#/arena');
+    expect(onChallenge).toHaveBeenCalledOnce();
   });
 });

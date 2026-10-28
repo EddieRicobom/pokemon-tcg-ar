@@ -706,6 +706,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="battleHud.callout" :key="battleHud.callout.key" class="battle-callout" :style="{ color: battleHud.callout.color, opacity: Math.min(1, (1 - battleHud.callout.age) * 2.2) }">{{ battleHud.callout.text }}</div>
         <div v-if="battleHud.flash" class="battle-flash" :style="{ background: battleHud.flash.color, opacity: battleHud.flash.strength }"></div>
+        <div v-if="battleHud.impactFrame" :key="battleHud.impactFrame.key" class="critical-impact-frame" :style="{ '--impact': battleHud.impactFrame.color }" aria-hidden="true"></div>
         <div
           v-for="bar in battleHud.bars"
           v-show="bar.visible"

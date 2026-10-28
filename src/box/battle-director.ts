@@ -98,6 +98,8 @@ export interface BattleHud {
   labels: HudLabel[];
   /** Clarão sobre a tela toda (golpes fortes). */
   flash: { color: string; strength: number } | null;
+  /** Quadro de impacto exclusivo de acertos críticos. É nulo quando os efeitos visuais estão desligados. */
+  impactFrame: { key: number; color: string } | null;
   /** Tremor e "soco" de zoom da imagem desenhada (em pixels e fator), nos golpes fortes. */
   shake: { x: number; y: number; zoom: number };
   /** Escurecimento da câmera (0–1) para dar foco ao golpe. */
@@ -146,6 +148,8 @@ export const GUARD_MS = 950;
 export const SKIP_MS = 850;
 export const RESIDUAL_MS = 900;
 export const ENTER_MS = 1000;
+/** Pausa curta, em tempo real, para o quadro de impacto de um acerto crítico. */
+export const CRITICAL_IMPACT_FRAME_MS = 100;
 
 const MELEE_TIMES: Record<PhysicalStyle, { windup: number; approach: number; strike: number }> = {
   tackle: { windup: 350, approach: 520, strike: 170 },
@@ -322,6 +326,8 @@ export class BattleDirector {
   private realClock = 0;
   private slowUntil = 0;
   private slowScale = 1;
+  private criticalImpactFrame: { key: number; at: number; color: string } | null = null;
+  private criticalImpactSeq = 0;
   private shakePower = 0;
   private dimNow = 0;
   private callout: { key: number; text: string; color: string; born: number } | null = null;
@@ -516,10 +522,13 @@ export class BattleDirector {
   update(dtMs: number): void {
     const real = Math.min(Math.max(dtMs, 0), 100);
     this.realClock += real;
-    const dt = this.realClock < this.slowUntil ? real * this.slowScale : real;
+    const impactFrameActive = this.criticalImpactFrame !== null
+      && this.realClock - this.criticalImpactFrame.at < CRITICAL_IMPACT_FRAME_MS;
+    // O relógio real continua para que a pausa termine, mas a cena fica no instante exato do crítico.
+    const dt = impactFrameActive ? 0 : this.realClock < this.slowUntil ? real * this.slowScale : real;
     this.shakePower = Math.max(0, this.shakePower - real / 380);
     this.clock += dt;
-    this.stage.update(real);
+    this.stage.update(impactFrameActive ? 0 : real);
     this.particles.update(dt);
     this.rings.update(dt);
     this.labels = this.labels.filter((l) => this.clock - l.born < LABEL_TTL_MS);
@@ -1093,7 +1102,10 @@ export class BattleDirector {
       this.addLabel(`${this.o.fighters[target]!.name} desmaiou!`, 'info', '#f8fafc', top.clone().add(new Vector3(0, lift, 0)));
     }
     // Clarão na tela: crítico, super efetivo forte ou tipos de energia bruta.
-    if (turn.critical) this.flash('#ffffff', 0.35);
+    if (turn.critical) {
+      this.flash('#ffffff', 0.35);
+      if (this.impactFx) this.criticalImpactFrame = { key: ++this.criticalImpactSeq, at: this.realClock, color: '#fff3a6' };
+    }
     else if (IMPACT_STYLES[type].flash) this.flash(css, 0.28);
     else if (turn.effectiveness >= 4) this.flash(css, 0.3);
     this.dramatize(turn, frac, guarded);
@@ -1290,6 +1302,8 @@ export class BattleDirector {
       return { x: pos.x, y: pos.y, color: '#' + l.color.toString(16).padStart(6, '0'), intensity: l.intensity, radius: 14 + 22 * Math.min(1, l.radius / 1.6) };
     });
     const flashAge = this.screenFlash ? (this.clock - this.screenFlash.at) / FLASH_MS : 1;
+    const impactFrameActive = this.criticalImpactFrame !== null
+      && this.realClock - this.criticalImpactFrame.at < CRITICAL_IMPACT_FRAME_MS;
     const w = result.winner;
     const calloutAge = this.callout ? (this.realClock - this.callout.born) / CALLOUT_MS : 1;
     const power = this.shakePower * this.shakePower;
@@ -1299,6 +1313,9 @@ export class BattleDirector {
       bars,
       labels,
       flash: this.screenFlash && flashAge < 1 ? { color: this.screenFlash.color, strength: this.screenFlash.strength * (1 - flashAge) } : null,
+      impactFrame: impactFrameActive && this.criticalImpactFrame
+        ? { key: this.criticalImpactFrame.key, color: this.criticalImpactFrame.color }
+        : null,
       shake: { x: Math.sin(this.realClock * 0.13) * 11 * power, y: Math.cos(this.realClock * 0.17) * 8 * power, zoom: 1 + 0.035 * power },
       dim: this.dimNow,
       lights,

@@ -7,7 +7,7 @@ import TeamPicker from '../components/TeamPicker.vue';
 import LeagueCard from '../components/LeagueCard.vue';
 import { ENDLESS_ARENA_LABELS } from '../core/endless-arena';
 import type { EndlessArenaMode } from '../core/endless-arena';
-import { LEAGUE_REGIONS, nextChallenge, regionalProgress } from '../core/league';
+import { challengeById, LEAGUE_REGIONS, nextChallenge, regionalProgress } from '../core/league';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 
 const MODES: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
@@ -31,6 +31,9 @@ watch(virtual, (on) => {
 const waitingChallenge = computed(() => pendingChallenge.value !== null);
 const selectedCount = ref<number | null>(null);
 const teamReady = computed(() => selectedCount.value === 6);
+/** A Liga aceita uma equipe incompleta; as corridas continuam pedindo os seis espaços. */
+const hasBattleTeam = computed(() => (selectedCount.value ?? 0) > 0);
+const selectedChallenge = computed(() => pendingChallenge.value ? challengeById(pendingChallenge.value) : null);
 function updateTeam(ids: string[]): void { selectedCount.value = ids.length; }
 const leagueRegion = computed(() => LEAGUE_REGIONS.find((region) => regionalProgress(league.value, region.id).badges.length < 8) ?? LEAGUE_REGIONS[0]!);
 const nextLeader = computed(() => nextChallenge(league.value, leagueRegion.value.id));
@@ -44,6 +47,10 @@ function enterEndless(mode: EndlessArenaMode): void {
 }
 
 function enterChallenge(): void {
+  if (!hasBattleTeam.value) {
+    goToTeam();
+    return;
+  }
   window.location.hash = routeHref('caixa', undefined, arenaFlags([], virtual.value));
 }
 </script>
@@ -68,27 +75,27 @@ function enterChallenge(): void {
       <button type="button" @click="goToTeam">👥 Corridas · monte um time de 6</button>
       <a :href="routeHref('caixa', undefined, arenaFlags([], virtual))">⚔️ Batalha livre</a>
     </nav>
-    <ol class="arena-steps" aria-label="Etapas para desafio da Liga"><li :class="{ done: teamReady }">{{ teamReady ? '✓' : '1' }} Monte até 6 Pokémon · {{ selectedCount ?? '…' }}/6</li><li>2 · Escolha o líder na Liga</li><li>{{ virtual ? '3 · Entrar na Arena 3D' : '3 · Abrir a Caixa em AR' }}</li></ol>
+    <ol class="arena-steps" aria-label="Etapas para desafio da Liga"><li :class="{ done: waitingChallenge }">{{ waitingChallenge ? '✓' : '1' }} Escolha o líder na Liga</li><li :class="{ done: hasBattleTeam }">{{ hasBattleTeam ? '✓' : '2' }} Monte até 6 Pokémon · {{ selectedCount ?? '…' }}/6</li><li>{{ virtual ? '3 · Entrar na Arena 3D' : '3 · Abrir a Caixa em AR' }}</li></ol>
     <div class="box-backdrop" role="group" aria-label="Onde lutar">
       <button type="button" :class="{ active: virtual }" :aria-pressed="virtual" @click="virtual = true">🏟️ Arena 3D (sem câmera)</button>
       <button type="button" :class="{ active: !virtual }" :aria-pressed="!virtual" @click="virtual = false">📷 Caixa em AR (câmera)</button>
     </div>
 
-    <div v-if="waitingChallenge" class="arena-ready" role="status">
-      <strong>Desafio da Liga marcado</strong>
-      <span>Seu oponente já está esperando. A Caixa monta o revezamento da sua equipe contra a equipe completa dele.</span>
-      <button type="button" class="primary" @click="enterChallenge">{{ virtual ? 'Entrar na Arena 3D para o desafio' : 'Abrir a Caixa para o desafio' }}</button>
-    </div>
-
     <section id="arena-league" class="arena-section arena-league" aria-label="Liga Pokémon e líderes de ginásio">
       <header><span class="arena-kicker">1 · ENCONTRE UM LÍDER</span><h3>Liga Pokémon</h3><p class="note">Os líderes estão organizados por região e por ordem. O próximo desafio aberto aparece destacado; os demais mostram claramente o que falta.</p></header>
-      <LeagueCard />
+      <LeagueCard @challenge="goToTeam" />
     </section>
 
     <section id="arena-team" class="arena-section" aria-labelledby="arena-team-title">
       <h3 id="arena-team-title">2 · Monte seu time de batalha</h3>
       <p class="note">Use até 6 Pokémon. Para a Liga, qualquer seleção disponível participa; para as corridas 6×6, complete exatamente 6.</p>
       <TeamPicker :max="6" group-label="time de batalha" hint="Este é o time de batalha da Arena e da Liga. Os moradores da Vila continuam sendo uma coleção separada." @ready="updateTeam" @change="updateTeam" />
+      <div v-if="waitingChallenge" class="arena-ready" role="status">
+        <strong>{{ selectedChallenge ? `Desafio contra ${selectedChallenge.leader} pronto` : 'Desafio da Liga pronto' }}</strong>
+        <span>Seu oponente espera esta equipe. Selecione pelo menos um Pokémon acima e comece quando estiver pronto.</span>
+        <button type="button" class="primary" :disabled="!hasBattleTeam" @click="enterChallenge">{{ virtual ? 'Começar desafio na Arena 3D' : 'Começar desafio na Caixa em AR' }}</button>
+        <small v-if="!hasBattleTeam" class="hint">Escolha ao menos um Pokémon para começar.</small>
+      </div>
     </section>
 
     <section v-if="selectedCount === 0" class="arena-first-run" aria-labelledby="arena-first-run-title">
