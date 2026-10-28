@@ -20,8 +20,19 @@ export const PLAYER_RADIUS = 14;
 export const PICKUP_RADIUS = 46;
 /** O artefato Ímã continua útil, mas não coleta orbes de uma tela inteira. */
 export const MAGNET_PICKUP_RADIUS_CAP = 90;
-/** Margem fora da arena onde os inimigos nascem (entram andando, nunca "aparecem" em cima de você). */
+/** Margem interna que mantém os nascimentos longe da borda do mundo. */
 export const SPAWN_MARGIN = 48;
+/**
+ * Os inimigos surgem em um anel ao redor do jogador: perto o bastante para a
+ * ação continuar, mas fora do alcance imediato e normalmente além da borda da
+ * câmera. Chefes ganham tempo extra para serem lidos ao entrar.
+ */
+export const SURVIVOR_SPAWN_DISTANCE = {
+  commonMin: 300,
+  commonMax: 420,
+  bossMin: 440,
+  bossMax: 560,
+} as const;
 
 export interface SurvivorPlayer {
   /** Espécie de agora (muda ao evoluir). 0 = sem espécie (testes e simulação). */

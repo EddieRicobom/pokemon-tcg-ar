@@ -75,7 +75,16 @@ describe('espécies regionais da Torre', () => {
 
 function combatSnapshot(s: SurvivorState) {
   const { rng: _rng, enemyDexId: _appearance, evolutions: _evolutions, enemies, ...rest } = s;
-  return { ...rest, enemies: enemies.map(({ dexId: _dex, kind: _kind, ...enemy }) => enemy) };
+  return {
+    ...rest,
+    enemies: enemies.map(({ dexId: _dex, kind: _kind, ...enemy }) => enemy),
+    // A espécie é visual; quando o inimigo já está perto, ela também viaja no metadado do projétil.
+    hostileProjectiles: rest.hostileProjectiles.map(({ source, ...projectile }) => {
+      if (!source) return projectile;
+      const { dexId: _dex, ...combatSource } = source;
+      return { ...projectile, source: combatSource };
+    }),
+  };
 }
 
 it('preserva combate, recompensas e RNG em ondas, treinadores, chefão e infinito', () => {
