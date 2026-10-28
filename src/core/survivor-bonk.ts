@@ -17,8 +17,8 @@ export const BONK_TURN_RATE = 3.2;
 export const BONK_JUMP_BUFFER_MS = 140;
 /** Duração do efeito de pouso (poeira e achatamento do sprite). */
 export const BONK_LANDING_MS = 220;
-/** Tempo do respingo/aviso ao cair no riacho; evita repetir o evento a cada quadro na margem. */
-export const BONK_WATER_FALL_MS = 520;
+/** Fator de movimento dentro da água rasa do riacho; a ponte mantém a velocidade normal. */
+export const BONK_WATER_SPEED_FACTOR = 0.58;
 /** Leito vertical do riacho do BONK. A ponte o cruza na altura de `y: 810`. */
 export const BONK_STREAM = { x0: 2040, x1: 2260, y0: 280, y1: 1640 } as const;
 
@@ -50,8 +50,6 @@ export interface BonkPhysics {
   jumpBufferMs: number;
   /** Ms restantes do efeito de pouso, só para o desenho. */
   landingMs: number;
-  /** Ms restantes do efeito de queda na água. */
-  waterFallMs: number;
   /** Semente visual/física do cenário desta corrida; não consome o RNG do combate. */
   landscapeSeed: number;
   obstacles: readonly BonkObstacle[];
@@ -132,7 +130,7 @@ function overlapsStream(obstacle: Pick<BonkObstacle, 'x' | 'y' | 'w' | 'h'>): bo
     && obstacle.y < BONK_STREAM.y1 && obstacle.y + obstacle.h > BONK_STREAM.y0;
 }
 
-/** A água é perigosa fora da ponte; o piso dela é transitável e nunca vira uma colisão invisível. */
+/** A água reduz o passo fora da ponte; o piso dela é transitável e nunca vira uma colisão invisível. */
 export function bonkWaterAt(x: number, y: number, obstacles: readonly BonkObstacle[]): boolean {
   const inStream = x >= BONK_STREAM.x0 && x <= BONK_STREAM.x1 && y >= BONK_STREAM.y0 && y <= BONK_STREAM.y1;
   if (!inStream) return false;
@@ -179,7 +177,6 @@ export function createBonkPhysics(initialYaw = Math.PI / 2, landscapeSeed = DEFA
     collisionFlashMs: 0,
     jumpBufferMs: 0,
     landingMs: 0,
-    waterFallMs: 0,
     landscapeSeed: normalizedSeed,
     obstacles: createBonkObstacles(normalizedSeed),
   };
@@ -280,7 +277,7 @@ export function stepBonkPhysics(
   from: { x: number; y: number },
   input: { dx: number; dy: number; jump?: boolean },
   dtMs: number,
-): { fellInWater: boolean } {
+): void {
   const dt = Math.max(0, Math.min(80, dtMs)) / 1000;
   if (input.jump) physics.jumpBufferMs = BONK_JUMP_BUFFER_MS;
   if (physics.jumpBufferMs > 0) {
@@ -295,7 +292,6 @@ export function stepBonkPhysics(
   physics.verticalVelocity -= BONK_GRAVITY * (player.bonkGravityFactor ?? 1) * dt;
   physics.z += physics.verticalVelocity * dt;
   physics.landingMs = Math.max(0, physics.landingMs - dtMs);
-  physics.waterFallMs = Math.max(0, physics.waterFallMs - dtMs);
   if (physics.z <= 0) {
     physics.z = 0;
     physics.verticalVelocity = 0;
@@ -310,20 +306,11 @@ export function stepBonkPhysics(
   player.y = resolved.y;
   if (resolved.collided && (Math.abs(player.x - from.x) > 0.01 || Math.abs(player.y - from.y) > 0.01)) physics.collisionFlashMs = 130;
   else physics.collisionFlashMs = Math.max(0, physics.collisionFlashMs - dtMs);
-  const fellInWater = bonkWaterAt(player.x, player.y, physics.obstacles);
-  if (fellInWater) {
-    // Volta à última posição seca: água é risco de cenário, não um atalho nem uma parede invisível.
-    player.x = from.x;
-    player.y = from.y;
-    physics.z = 0;
-    physics.verticalVelocity = 0;
-    physics.grounded = true;
-    physics.jumpsUsed = 0;
-    const announce = physics.waterFallMs <= 0;
-    physics.waterFallMs = BONK_WATER_FALL_MS;
-    return { fellInWater: announce };
+  if (bonkWaterAt(player.x, player.y, physics.obstacles)) {
+    // A água rasa continua atravessável, só segura o passo. A ponte não entra nesta regra.
+    player.x = from.x + (player.x - from.x) * BONK_WATER_SPEED_FACTOR;
+    player.y = from.y + (player.y - from.y) * BONK_WATER_SPEED_FACTOR;
   }
-  return { fellInWater: false };
 }
 
 /** Projeção perspectiva da câmera em terceira pessoa. Retorna null atrás da câmera ou perto demais. */
