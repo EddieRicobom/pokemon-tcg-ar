@@ -6,11 +6,18 @@ const LEVELS: readonly DojoLevel[] = [0, 1, 2, 3];
 const opaque = (data: Uint8Array): number => { let n = 0; for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) n++; return n; };
 
 describe('arte do Dojô', () => {
-  it('os quatro estágios têm 96×48 e desenham algo', () => {
+  it('os quatro estágios têm 96 de largura, crescem com a reforma e pisam na última linha', () => {
+    let last = 0;
     for (const level of LEVELS) {
       const buf = paintDojo(level);
-      expect([buf.w, buf.h]).toEqual([96, 48]);
+      expect(buf.w).toBe(96);
+      expect(buf.h, `nível ${level}`).toBeGreaterThanOrEqual(Math.max(48, last));
+      expect(buf.h).toBeLessThanOrEqual(96);
+      last = buf.h;
       expect(opaque(buf.data), `nível ${level}`).toBeGreaterThan(300);
+      let bottom = 0;
+      for (let x = 0; x < buf.w; x++) if (buf.data[((buf.h - 1) * buf.w + x) * 4 + 3]! > 0) bottom++;
+      expect(bottom, `nível ${level}`).toBeGreaterThan(20);
     }
   });
 
@@ -23,11 +30,17 @@ describe('arte do Dojô', () => {
   it('as janelas iluminadas cabem no desenho e o terreno não tem nenhuma', () => {
     expect(DOJO_WINDOWS).toHaveLength(4);
     expect(DOJO_WINDOWS[0]).toEqual([]);
-    for (const list of DOJO_WINDOWS) for (const [x = -1, y = -1, w = 0, h = 0] of list) {
-      expect(x).toBeGreaterThanOrEqual(0);
-      expect(y).toBeGreaterThanOrEqual(0);
-      expect(x + w).toBeLessThanOrEqual(96);
-      expect(y + h).toBeLessThanOrEqual(48);
-    }
+    LEVELS.forEach((level) => {
+      const buf = paintDojo(level);
+      for (const [x = -1, y = -1, w = 0, h = 0] of DOJO_WINDOWS[level]!) {
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(y).toBeGreaterThanOrEqual(0);
+        expect(x + w).toBeLessThanOrEqual(buf.w);
+        expect(y + h).toBeLessThanOrEqual(buf.h);
+        // Só janelas e lanternas pequenas, em cima de desenho de verdade.
+        expect(w * h).toBeLessThanOrEqual(100);
+        expect(buf.data[(y * buf.w + x) * 4 + 3]).toBe(255);
+      }
+    });
   });
 });
