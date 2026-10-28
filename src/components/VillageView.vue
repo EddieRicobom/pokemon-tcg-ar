@@ -3038,6 +3038,8 @@ onMounted(async () => {
   game.animSpeed = () => effects().animSpeed;
   game.metallic = () => effectiveVisual.value.metallic;
   game.ambientFx = () => effectiveVisual.value.villageFx;
+  game.glowFx = () => effectiveVisual.value.villageGlow;
+  game.windFx = () => effectiveVisual.value.villageWind;
   game.nocturnal = (id) => types.get(id)?.includes('dark') === true;
   game.maxFps = () => effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
   // Presente recebido enquanto a cena abria: entra agora, ao lado do jogador.
@@ -3686,6 +3688,14 @@ onBeforeUnmount(() => {
           <label class="art-option">
             <input v-model="visual.villageFx" type="checkbox" />
             <span>Efeitos da Vila: ondas, respingos da fonte e raios de sol (desligue em celular fraco)</span>
+          </label>
+          <label class="art-option">
+            <input v-model="visual.villageGlow" type="checkbox" />
+            <span>Brilho suave das luzes da Vila à noite: halos de janelas, postes e lampiões (desligue em celular fraco)</span>
+          </label>
+          <label class="art-option">
+            <input v-model="visual.villageWind" type="checkbox" />
+            <span>Mato alto e flores balançando ao vento na Vila (desligue em celular fraco)</span>
           </label>
           <button type="button" @click="openDress('player')">Escolher acessório</button>
           <h4>Amigos e pedidos de hoje</h4>

@@ -73,5 +73,9 @@ describe('efeitos da Vila', () => {
   it('migra saves antigos e preserva a escolha de desligar', () => {
     expect(normalizeVisual({}).villageFx).toBe(true);
     expect(normalizeVisual({ villageFx: false }).villageFx).toBe(false);
+    // Halos noturnos e grama ao vento: ligados por padrão, desligáveis e desligados no modo Rotom.
+    expect(normalizeVisual({})).toMatchObject({ villageGlow: true, villageWind: true });
+    expect(normalizeVisual({ villageGlow: false, villageWind: false })).toMatchObject({ villageGlow: false, villageWind: false });
+    expect(effectiveVisualSettings({ ...normalizeVisual({}), rotomMode: true })).toMatchObject({ villageGlow: false, villageWind: false });
   });
 });

@@ -54,7 +54,7 @@ import { harmonizePlayerCanvas, harmonizePlayerSprite } from './player-filter';
 import { wrapSpeech } from './speech-layout';
 import { groundPieces } from './ground-tiles';
 import { drawCommunityWorkAction, drawWorkAction } from './work-art';
-import { VillaAtlas, windowGlow } from './tileset-art';
+import { VillaAtlas, windowGlow, windowRects } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintFountain, paintHome, paintLamp, paintLot, paintMuseum } from './town-art';
 import { COLISEU_GLOWS, paintColiseu } from './coliseu-art';
@@ -79,6 +79,8 @@ export class VillageGame {
   private trainerAvatar: HTMLCanvasElement | null = null;
   private trainerAtlas: TrainerAtlas | null = null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
+  /** Janelas de cada desenho do tileset (px do recorte), achadas uma vez junto com a luz delas. */
+  private readonly windowRectCache = new Map<string, { x: number; y: number; w: number; h: number }[]>();
   private running = false;
   private handle = 0;
   private last = 0;
@@ -172,6 +174,10 @@ export class VillageGame {
   onStep: (() => void) | null = null;
   /** Modo do clima (vem das opções visuais): 'off' desliga, 'ciclo' alterna, ou um clima fixo. */
   ambientFx: () => boolean = () => true;
+  /** Halos suaves das luzes à noite (opção «Brilho suave das luzes»). */
+  glowFx: () => boolean = () => true;
+  /** Mato alto e flores balançando ao vento (opção «Mato alto e flores balançando»). */
+  windFx: () => boolean = () => true;
   maxFps: () => number = () => 0;
   private readonly reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   weatherMode: () => WeatherMode = () => 'ciclo';
@@ -1375,8 +1381,9 @@ export class VillageGame {
     };
     const streetLamps: { x: number; y: number }[] = [];
     const homeGlows: { x: number; y: number; w: number; h: number; lantern?: boolean }[] = [];
-    /** Janelas do tileset acesas à noite (o vidro do desenho vira luz). */
+    /** Janelas do tileset acesas à noite (o vidro do desenho vira luz) e o halo suave de cada uma, em px da tela. */
     const glassGlows: { img: HTMLCanvasElement; x: number; y: number; w: number; h: number }[] = [];
+    const windowHalos: { x: number; y: number; w: number; h: number }[] = [];
     const atlas = this.atlas;
     /** Sprites ficam em pé; a perspectiva 2.5D pertence à base 3D do AR. */
     const drawDioramaTilted = (cx: number, base: number, width: number, paint: () => void): void => {
@@ -1410,8 +1417,15 @@ export class VillageGame {
       return { x, y, w, h };
     };
     const lightUp = (id: string, key: string, at: { x: number; y: number; w: number; h: number }, transform?: (img: Rgba) => Rgba) => {
-      const glass = this.art(id, `glass:${key}`, (img) => windowGlow(transform ? transform(img) : img));
-      if (glass) glassGlows.push({ img: glass, ...at });
+      const glass = this.art(id, `glass:${key}`, (img) => {
+        const painted = transform ? transform(img) : img;
+        this.windowRectCache.set(key, windowRects(painted).map(({ x, y, w, h }) => ({ x, y, w, h })));
+        return windowGlow(painted);
+      });
+      if (!glass) return;
+      glassGlows.push({ img: glass, ...at });
+      const k = at.w / glass.width;
+      for (const r of this.windowRectCache.get(key) ?? []) windowHalos.push({ x: at.x + r.x * k, y: at.y + r.y * k, w: r.w * k, h: r.h * k });
     };
     const wind = wx.windX * 0.5;
     const sway = (x: number, y: number, amp: number) => Math.sin(now / 900 + x * 0.7 + y * 0.3) * amp + Math.sin(now / 2300 + x) * amp * 0.6 + wind * amp * (0.6 + wx.rain);
@@ -1776,7 +1790,8 @@ export class VillageGame {
         },
       });
       if (b.kind === 'torre' && ambientFx) towerFx.push(() => drawTowerDataFx(ctx, mid, spriteBase, scale, now));
-      if (night) homeGlows.push({ x: left + 4 * scale, y: bottom - 20 * scale, w: wpx - 8 * scale, h: 6 * scale });
+      // Sem o atlas: duas janelinhas acesas, não uma faixa de luz pela fachada inteira.
+      if (night) for (const k of [0.25, 0.75]) homeGlows.push({ x: left + wpx * k - 3 * scale, y: bottom - 20 * scale, w: 6 * scale, h: 6 * scale });
       if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
     }
     // O banco fica atrás dos moradores; os pés sobem até a altura do assento.
@@ -2115,6 +2130,28 @@ export class VillageGame {
         ctx.fillStyle = `rgba(12,18,58,${light.dark.toFixed(3)})`;
         ctx.fillRect(0, 0, W, H);
       }
+      // Quanto da noite já caiu (0 a 1): a luz das janelas acompanha o escuro, sem nunca passar do tom quente.
+      const dusk = Math.min(1, light.dark / 0.55);
+      const halos = this.glowFx();
+      // 1) Janelas e lampiões: a luz entra por cima do desenho (source-over), no lugar do vidro, sem estourar em branco.
+      for (const g of glassGlows) {
+        ctx.globalAlpha = 0.84 * dusk;
+        ctx.drawImage(g.img, g.x, g.y, g.w, g.h);
+      }
+      ctx.globalAlpha = 1;
+      const warm = (a: number) => `rgba(255,200,108,${a.toFixed(3)})`;
+      for (const g of homeGlows) {
+        ctx.fillStyle = warm((g.lantern ? 0.9 : 0.74) * dusk);
+        ctx.fillRect(g.x, g.y, g.w, g.h);
+      }
+      const oldHouseWindows: number[][] = !houseArt && this.state.house >= 2 ? (this.state.house >= 3 ? [[11, 38, 10, 9], [43, 38, 10, 9]] : [[12, 40, 8, 7]]) : [];
+      const ox = sx(plot.x);
+      const oy = sy(plot.y + plot.h + 1 - 4);
+      for (const [wx0, wy0, ww, wh] of oldHouseWindows) {
+        ctx.fillStyle = warm(0.74 * dusk);
+        ctx.fillRect(ox + wx0! * (T / 16), oy + wy0! * (T / 16), ww! * (T / 16), wh! * (T / 16));
+      }
+      // 2) Halos: luz somada (lighter), fraca e curta, para o brilho parecer sair da janela e não da parede inteira.
       ctx.globalCompositeOperation = 'lighter';
       const glow = (cx: number, cy: number, r: number, rgb: string, a: number) => {
         const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
@@ -2131,29 +2168,13 @@ export class VillageGame {
           : l.big ? 0.85 + Math.sin(now / 120 + l.x) * 0.15 : 1;
         glow(sx(l.x + 0.5), sy(l.y + 0.2), (l.big ? 3.4 : 2.5) * T, '255,214,120', light.dark * 0.7 * flicker);
       }
-      // Janelas acesas da casa e a luz da loja.
-      for (const g of glassGlows) {
-        ctx.globalAlpha = Math.min(1, light.dark * 1.3);
-        ctx.drawImage(g.img, g.x, g.y, g.w, g.h);
-        ctx.globalAlpha = 1;
+      if (halos) {
+        for (const w of windowHalos) glow(w.x + w.w / 2, w.y + w.h / 2, Math.max(w.w, w.h) * 0.9 + 0.55 * T, '255,196,110', 0.2 * dusk);
+        for (const [wx0, wy0, ww, wh] of oldHouseWindows) glow(ox + (wx0! + ww! / 2) * (T / 16), oy + (wy0! + wh! / 2) * (T / 16), 1.2 * T, '255,196,110', 0.2 * dusk);
+        for (const g of homeGlows) glow(g.x + g.w / 2, g.y + g.h / 2, g.lantern ? 1.5 * T : Math.max(g.w, g.h) * 0.9 + 0.55 * T, '255,196,110', (g.lantern ? 0.32 : 0.2) * dusk);
+        glow(sx(shop.x + 1.5), sy(shop.y + shop.h + 1 - 1.2), 2.4 * T, '255,190,120', light.dark * 0.4);
       }
-      if (!houseArt && this.state.house >= 2) {
-        const ox = sx(plot.x);
-        const oy = sy(plot.y + plot.h + 1 - 4);
-        const win = this.state.house >= 3 ? [[11, 38, 10, 9], [43, 38, 10, 9]] : [[12, 40, 8, 7]];
-        for (const [wx0, wy0, ww, wh] of win as number[][]) {
-          ctx.fillStyle = `rgba(255,214,120,${(light.dark * 1.4).toFixed(3)})`;
-          ctx.fillRect(ox + wx0! * (T / 16), oy + wy0! * (T / 16), ww! * (T / 16), wh! * (T / 16));
-          glow(ox + (wx0! + ww! / 2) * (T / 16), oy + (wy0! + wh! / 2) * (T / 16), 2.2 * T, '255,200,110', light.dark * 0.45);
-        }
-      }
-      glow(sx(shop.x + 1.5), sy(shop.y + shop.h + 1 - 1.2), 3 * T, '255,190,120', light.dark * 0.5);
-      for (const l of streetLamps) glow(sx(l.x + 0.5), sy(l.y - 0.3), 2.6 * T, '255,214,120', light.dark * 0.6);
-      for (const g of homeGlows) {
-        ctx.fillStyle = `rgba(255,214,120,${(light.dark * 1.2).toFixed(3)})`;
-        ctx.fillRect(g.x, g.y, g.w, g.h);
-        glow(g.x + g.w / 2, g.y + g.h / 2, (g.lantern ? 1.8 : 1.5) * T, '255,200,110', light.dark * 0.4);
-      }
+      for (const l of streetLamps) glow(sx(l.x + 0.5), sy(l.y - 0.3), 2.6 * T, '255,214,120', light.dark * (halos ? 0.6 : 0.35));
       // Vagalumes.
       if (night) {
         for (const m of this.motes) {
