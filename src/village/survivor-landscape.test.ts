@@ -6,9 +6,22 @@ import { SURVIVOR_REGIONS, REGION_DURATION_MS, survivorRegionAt } from '../core/
 import { SURVIVOR_LANDSCAPE_TILE_H, SURVIVOR_LANDSCAPE_TILE_W } from '../core/survivor-types';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
 import { SURVIVOR_FLOOR_PALETTES, floorTone } from './survivor-floor-art';
-import { FLOOR_CELL, SURVIVOR_REGION_TILESETS, SURVIVOR_REGION_ROUTES, ZONE_SPILL, planSurvivorFloor, routePolyline, trailHalfWidth } from './survivor-landscape';
+import { FLOOR_CELL, SURVIVOR_LANDSCAPE_CHUNK_SIZE, SURVIVOR_REGION_TILESETS, SURVIVOR_REGION_ROUTES, ZONE_SPILL, planSurvivorFloor, routePolyline, survivorLandscapeChunks, trailHalfWidth } from './survivor-landscape';
 
 describe('tilesets regionais da Torre', () => {
+  it('separa a paisagem em chunks visíveis, sem pedir o setor inteiro à câmera', () => {
+    const chunks = survivorLandscapeChunks({ x: 480, y: 490, w: 377, h: 240 }, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
+    expect(SURVIVOR_LANDSCAPE_CHUNK_SIZE).toBe(512);
+    expect(chunks).toEqual([
+      { col: 0, row: 0, x: 0, y: 0, w: 512, h: 512 },
+      { col: 1, row: 0, x: 512, y: 0, w: 512, h: 512 },
+      { col: 0, row: 1, x: 0, y: 512, w: 512, h: 512 },
+      { col: 1, row: 1, x: 512, y: 512, w: 512, h: 512 },
+    ]);
+    expect(survivorLandscapeChunks({ x: 2_700, y: 1_800, w: 300, h: 200 }, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H))
+      .toEqual([{ col: 5, row: 3, x: 2_560, y: 1_536, w: 320, h: 384 }]);
+  });
+
   it('cada região tem recortes reais de terreno, trilha, detalhe e cobertura baixa no atlas', () => {
     const available = new Set(ATLAS_SOURCES.map((source) => source.id));
     expect(SURVIVOR_REGION_TILESETS).toHaveLength(SURVIVOR_REGIONS.length);

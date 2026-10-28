@@ -140,12 +140,10 @@ export function getLocalVillageSpriteDirs(dexId: number, shiny: boolean, animNam
 }
 
 /**
- * O recorte real de tileset usado como grama da Vila (`village-art.ts`), o mesmo ladrilho 32×32 já usado como
- * chão da Zona de Sobrevivência (ver THIRD_PARTY_NOTICES.md) — null se não der pra baixar (cai no ladrilho
- * desenhado por código de sempre).
+ * Camada transparente de tufos usada sobre a base de grama da Vila. Null mantém o ladrilho desenhado por código.
  */
 export function getVillageGroundTile(): Promise<{ w: number; h: number; data: Uint8ClampedArray } | null> {
-  return loadImageRgba(assetUrl('tilesets/survivor-grass.png'), 32, 32)
+  return loadImageRgba(assetUrl('tilesets/village-grass-tufts.png'), 32, 32)
     .then(({ image }) => ({ w: image.width, h: image.height, data: image.data }))
     .catch(() => null);
 }

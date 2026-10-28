@@ -73,6 +73,8 @@ export class VillageGame {
   private readonly names = new Map<string, string>();
   private ctx: CanvasRenderingContext2D;
   private groundFrames: HTMLCanvasElement[] = [];
+  /** Base opaca mais a camada de tufos transparentes do tileset escolhido. */
+  private readonly grassSheet: PixelBuf;
   /** Recortes de tileset (null: sem a imagem, cai no desenho por código de sempre). */
   private readonly atlas: VillaAtlas | null;
   /** Sprite oficial do treinador escolhido; null mantém o avatar pixel-art de fallback. */
@@ -201,8 +203,8 @@ export class VillageGame {
     readonly state: VillageState,
     mons: readonly VillageMon[],
     private readonly trainerId: string,
-    /** Recorte real de tileset pra grama (ver `village-art.ts`); null/undefined cai no ladrilho desenhado por código. */
-    private readonly groundTile?: GroundTileImage | null,
+    /** Camada de tufos transparentes para a grama; null/undefined mantém só o ladrilho desenhado por código. */
+    groundTile?: GroundTileImage | null,
     /** O atlas de tilesets da Vila (asset com hash no build); null cai no desenho por código. */
     atlasImage?: Rgba | null,
     trainerAtlas?: TrainerAtlas | null,
@@ -218,6 +220,7 @@ export class VillageGame {
       atlas = null;
     }
     this.atlas = atlas;
+    this.grassSheet = villageGrassSheet(groundTile ?? undefined);
     this.trainerAtlas = trainerAtlas ?? null;
     if (!this.trainerAtlas) this.loadTrainerAvatar();
     this.player = makeWalker('eu', state.player.x, state.player.y, WALK_SPEED.player);
@@ -525,7 +528,7 @@ export class VillageGame {
     c.height = this.map.h * TILE;
     const ctx = c.getContext('2d')!;
     const sheet = toCanvas(atlas.image);
-    const grassCanvas = toCanvas(villageGrassSheet());
+    const grassCanvas = toCanvas(this.grassSheet);
     const terrain = new Map<string, HTMLCanvasElement>();
     for (const id of ['sand-grass', 'sand-water', 'tall', 'at-trail']) {
       const piece = atlas.piece(id);
@@ -590,7 +593,7 @@ export class VillageGame {
           const key = `${tile}:${edges}:${tile === 'water' || tile === 'path' || tile === 'sand' ? `${x % 12},${y % 12}` : `${(x + y) % 6},${x % 2}`}:${frame}`;
           let img = cache.get(key);
           if (!img) {
-            img = toCanvas(paintTile(tile, edges, x, y, frame, this.groundTile ?? undefined));
+            img = toCanvas(paintTile(tile, edges, x, y, frame, this.grassSheet));
             cache.set(key, img);
           }
           ctx.drawImage(img, x * TILE, y * TILE);
