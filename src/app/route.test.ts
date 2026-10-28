@@ -98,34 +98,33 @@ describe('atalhos de jogo', () => {
 });
 
 describe('saídas da Vila e da Arena Digital', () => {
-  it('cada saída da Vila leva à Caixa com o fundo certo', () => {
-    expect(vilaExitHref('pvp')).toBe('#/caixa?pvp=1&vila=1');
-    expect(vilaExitHref('batalha')).toBe('#/caixa?batalha=1&vila=1');
+  it('cada saída da Vila leva à Arena 3D', () => {
+    expect(vilaExitHref('pvp')).toBe('#/caixa?pvp=1&virtual=1&vila=1');
+    expect(vilaExitHref('batalha')).toBe('#/caixa?batalha=1&virtual=1&vila=1');
     expect(vilaExitHref('batalha3d')).toBe('#/caixa?batalha=1&virtual=1&vila=1');
-    expect(vilaExitHref('caixa')).toBe('#/caixa?vila=1');
+    expect(vilaExitHref('caixa')).toBe('#/caixa?virtual=1&vila=1');
     expect(vilaExitHref('arena3d')).toBe('#/caixa?virtual=1&vila=1');
   });
 
-  it('só a Arena 3D abre sem câmera; a Caixa em AR e as lutas do Fliperama e do PvP abrem a câmera', () => {
+  it('todas as saídas da Vila usam a Arena 3D, sem câmera', () => {
     const virtual = (then: Parameters<typeof vilaExitHref>[0]) => routeFlags(vilaExitHref(then)).has('virtual');
     expect(virtual('arena3d')).toBe(true);
     expect(virtual('batalha3d')).toBe(true);
-    expect(virtual('caixa')).toBe(false);
-    expect(virtual('batalha')).toBe(false);
-    expect(virtual('pvp')).toBe(false);
+    expect(virtual('caixa')).toBe(true);
+    expect(virtual('batalha')).toBe(true);
+    expect(virtual('pvp')).toBe(true);
   });
 
   it('as saídas da Vila voltam a ser lidas pelas mesmas funções da Caixa', () => {
     for (const then of ['pvp', 'batalha', 'batalha3d', 'caixa', 'arena3d'] as const) expect(parseRoute(vilaExitHref(then))).toEqual({ name: 'caixa' });
   });
 
-  it('a Arena Digital acrescenta o fundo ao modo escolhido, sem mexer na lista original', () => {
+  it('a Arena Digital sempre acrescenta o palco virtual, sem mexer na lista original', () => {
     const base = ['formatacao'] as const;
-    expect(arenaFlags(base, false)).toEqual(['formatacao']);
-    expect(arenaFlags(base, true)).toEqual(['formatacao', 'virtual']);
-    expect(arenaFlags([], true)).toEqual(['virtual']);
+    expect(arenaFlags(base)).toEqual(['formatacao', 'virtual']);
+    expect(arenaFlags([])).toEqual(['virtual']);
     expect(base).toEqual(['formatacao']);
-    expect(routeHref('caixa', undefined, arenaFlags(['restauracao'], true))).toBe('#/caixa?restauracao=1&virtual=1');
+    expect(routeHref('caixa', undefined, arenaFlags(['restauracao']))).toBe('#/caixa?restauracao=1&virtual=1');
   });
 });
 

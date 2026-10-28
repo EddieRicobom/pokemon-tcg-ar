@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useDialogFocus } from '../composables/useDialogFocus';
-import { isTap } from '../ar/gestures';
 import { fetchSprite, getCache } from '../app/services';
 import { createBattleSession, decodeSprite } from '../app/box-battle-session';
 import { digitalCandidates } from '../app/digital-members';
@@ -18,8 +17,6 @@ import { resetRoster, roster, rosterFor, setSlot, slotOf } from '../app/roster-s
 import { battleMode, setBattleMode } from '../app/battle-mode-store';
 import { maybeGalladeSpeaks } from '../app/speech-store';
 import { effectiveVisual } from '../app/visual-settings';
-import { LATENCY_RANGE, sensorSettings } from '../app/sensor-settings';
-import { requestOrientationPermission } from '../core/orientation-permission';
 import CardMarks from '../components/CardMarks.vue';
 import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
@@ -36,15 +33,11 @@ import type { PokemonType } from '../core/pokemon-data';
 import { loadPinData } from '../app/services';
 import { boxPvp } from '../app/box-pvp-store';
 import { BOX_PVP_LABELS_PT } from '../pvp/box-wire';
-import type { Backdrop, BoxMode } from '../box/box-scene';
-import { CameraError, startRearCamera, stopCamera } from '../core/camera';
-import { DEFAULT_PHONE_HEIGHT_M, PHONE_HEIGHT_RANGE } from '../box/floor';
+import type { BoxMode } from '../box/box-scene';
 import { loadCreatureEntries } from '../box/load-creatures';
 import type { RunningBox } from '../box/start-box';
-import type { OrientationMode } from '../box/orientation-source';
 import type { BoxCreature } from '../box/creature';
 import { MEGA_ENERGY_COST } from '../core/mega';
-import { WEATHER_EMOJI, WEATHER_LABELS_PT } from '../core/weather';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import { TEAM_COLORS, BATTLE_MODE_HINTS_PT, BATTLE_MODE_LABELS_PT, BATTLE_MODES, rosterBlocker, STATUS_LABELS_PT } from '../core/battle';
 import type { BattleMode, RosterSlot } from '../core/battle';
@@ -52,9 +45,8 @@ import { loadChunk } from '../app/stale-build';
 import { ENDLESS_ARENA_LABELS } from '../core/endless-arena';
 import type { EndlessArenaMode } from '../core/endless-arena';
 
-type Phase = 'idle' | 'starting' | 'placing' | 'running';
+type Phase = 'idle' | 'starting' | 'running';
 
-const videoEl = ref<HTMLVideoElement | null>(null);
 const openButton = ref<HTMLButtonElement | null>(null);
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const stageEl = ref<HTMLElement | null>(null);
@@ -76,7 +68,6 @@ const immersive = computed(() => phase.value !== 'idle');
 const { fullscreen, pseudo, toggle: toggleFullscreen, exit: exitFullscreen } = useFullscreen(stageEl, immersive);
 const error = ref('');
 const hint = ref('');
-const mode = ref<OrientationMode>('sensor');
 const population = ref({ shown: 0, available: 0, failed: 0 });
 /** Quem está na caixa agora (para a escalação das batalhas). */
 const rosterRows = ref<{ id: string; name: string; shiny: boolean; mega: boolean }[]>([]);
@@ -96,12 +87,8 @@ const loadingCreatures = ref(false);
 /** Vindo da Vila (`#/caixa?vila=1`) a Vila abre direto; vindo da Arena (`?pvp=1`) o PvP já aparece aberto. */
 const arrival = routeFlags(window.location.hash);
 const pvpOpen = ref(arrival.has('pvp'));
-/**
- * O fundo da arena: a câmera do celular (AR, a Caixa em AR de sempre) ou o palco virtual do Coliseu (Arena 3D, sem câmera
- * e sem sensores). Vem do endereço (`?virtual=1`) e dá para trocar no botão antes de abrir; durante a sessão não muda.
- */
-const backdrop = ref<Backdrop>(arrival.has('virtual') ? 'virtual' : 'camera');
-const virtual = computed(() => backdrop.value === 'virtual');
+/** Fluxos confirmados na Arena entram no palco e iniciam a batalha sem uma terceira confirmação. */
+const autoStart = arrival.has('autoiniciar');
 const endlessModes: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
 const endlessShortcut = ref<EndlessArenaMode | null>(arrival.has('formatacao') ? 'formatacao' : arrival.has('restauracao') ? 'restauracao' : null);
 const pvpEl = ref<HTMLDetailsElement | null>(null);
@@ -129,12 +116,12 @@ function openPvp(): void {
 }
 
 /**
- * Veio do Fliperama ("Batalha na câmera", `?batalha=1`): um botão grande abre a câmera e o Batalhar fica em destaque.
- * A câmera não abre sozinha porque trocar de tela quebra o "toque" e o iOS só pede os sensores a partir de um toque.
+ * Veio do Fliperama (`?batalha=1`): o botão principal destaca a batalha na Arena 3D.
  */
 const battleShortcut = ref(arrival.has('batalha'));
 /** Vindo do Coliseu da Vila (`?vila=1`): o botão «Voltar à Vila» fica na tela inicial. */
 const fromVila = arrival.has('vila');
+const fromArena = arrival.has('arena');
 
 onMounted(() => {
   motionPreference = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -149,25 +136,20 @@ function onMotionPreferenceChange(): void {
 
 onMounted(() => {
   if (arrival.has('pvp')) openPvp();
+  if (autoStart) void nextTick(open);
 });
 const picked = ref<{ name: string; detail: string; dexId?: number; shiny?: boolean; mega?: boolean } | null>(null);
 const reducedMotion = ref(false);
 let motionPreference: MediaQueryList | null = null;
-const phoneHeight = ref(DEFAULT_PHONE_HEIGHT_M);
-const boxSize = ref(2.4);
-const videoFov = ref(63);
-
-let stream: MediaStream | null = null;
 let box: RunningBox | null = null;
 let disposed = false;
 let sessionVersion = 0;
 let populationVersion = 0;
-let cameraOpening: AbortController | null = null;
-let tapDown: { x: number; y: number; at: number } | null = null;
-let lastDrag: { x: number; y: number } | null = null;
+let pointerDown: { x: number; y: number } | null = null;
+let lastPointer: { x: number; y: number } | null = null;
 let pickedTimer: ReturnType<typeof setTimeout> | null = null;
 
-const cameraOn = computed(() => phase.value !== 'idle' && phase.value !== 'starting');
+const arenaOn = computed(() => phase.value !== 'idle' && phase.value !== 'starting');
 
 function ndcOf(clientX: number, clientY: number): { x: number; y: number } | null {
   const rect = stageEl.value?.getBoundingClientRect();
@@ -275,7 +257,7 @@ async function openBook(): Promise<void> {
 let lastEntries: CreatureEntry[] = [];
 
 // ---- A sessão de batalha (batalha comum, desafio da Liga, corrida 6×6 e PvP) mora em `app/box-battle-session.ts`;
-// aqui ficam a câmera, a cena e os Pokémon da caixa, que a sessão pede por `BattleSessionHost`.
+// aqui ficam a cena 3D e os Pokémon da equipe, que a sessão pede por `BattleSessionHost`.
 const session = createBattleSession({
   box: () => box,
   disposed: () => disposed,
@@ -315,6 +297,7 @@ async function populate(): Promise<void> {
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
     rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), shiny: e.info.shiny === true, mega: e.info.mega === true }));
     megaPicks.value = megaPicks.value.filter((id) => rosterRows.value.some((r) => r.id === id && r.mega));
+    if (autoStart && phase.value === 'running') void nextTick(startSelectedBattle);
   } catch (e) {
     if (disposed || box !== current || version !== populationVersion) return;
     error.value = `Não consegui ler as cartas guardadas: ${e instanceof Error ? e.message : String(e)}`;
@@ -323,11 +306,8 @@ async function populate(): Promise<void> {
   }
 }
 
-/** O que a cena recebe ao abrir, com a câmera ou sem ela. */
+/** O que a cena virtual recebe ao abrir. */
 function applyBoxSettings(running: RunningBox): void {
-  running.setPhoneHeight(phoneHeight.value);
-  running.setHalfSize(boxSize.value / 2);
-  running.setVideoFov(videoFov.value);
   running.setSmoothing(effectiveVisual.value.smoothing);
   running.setLighting(effectiveVisual.value.lighting);
   running.setImpactEffects(effectiveVisual.value.impactFx && !reducedMotion.value);
@@ -350,7 +330,7 @@ async function openVirtual(version: number): Promise<void> {
     const { startBox } = await loadChunk(() => import('../box/start-box'));
     if (disposed || version !== sessionVersion) return;
     const openedBox = await startBox({
-      canvas, container: stage, virtual: true, onModeChange: (m) => (mode.value = m), onBattleHud: (hud) => (battleHud.value = hud),
+      canvas, container: stage, virtual: true, onBattleHud: (hud) => (battleHud.value = hud),
     });
     if (disposed || version !== sessionVersion) { openedBox.stop(); return; }
     box = openedBox;
@@ -374,57 +354,10 @@ async function openVirtual(version: number): Promise<void> {
 
 async function open(): Promise<void> {
   if (disposed || phase.value !== 'idle') return;
-  const version = ++sessionVersion;
-  if (virtual.value) return openVirtual(version);
-  const opening = new AbortController();
-  cameraOpening = opening;
-  // iOS: a permissão dos sensores precisa ser pedida direto do toque, antes de qualquer espera.
-  void requestOrientationPermission();
-  const video = videoEl.value;
-  const canvas = canvasEl.value;
-  const stage = stageEl.value;
-  if (!video || !canvas || !stage) return;
-  phase.value = 'starting';
-  error.value = '';
-  try {
-    const openedStream = await startRearCamera(video, undefined, opening.signal);
-    if (disposed || version !== sessionVersion) {
-      stopCamera(video.srcObject === openedStream ? video : null, openedStream);
-      return;
-    }
-    stream = openedStream;
-  } catch (e) {
-    if (disposed || version !== sessionVersion) return;
-    phase.value = 'idle';
-    error.value = e instanceof CameraError ? e.message : 'Não foi possível abrir a câmera.';
-    return;
-  }
-  try {
-    const { startBox } = await loadChunk(() => import('../box/start-box'));
-    if (disposed || version !== sessionVersion) return;
-    const openedBox = await startBox({
-      video, canvas, container: stage, onModeChange: (m) => (mode.value = m), onBattleHud: (hud) => (battleHud.value = hud),
-    });
-    if (disposed || version !== sessionVersion) { openedBox.stop(); return; }
-    box = openedBox;
-  } catch (e) {
-    if (disposed || version !== sessionVersion) return;
-    close();
-    error.value = `Não consegui iniciar a Caixa: ${e instanceof Error ? e.message : String(e)}`;
-    return;
-  }
-  if (disposed) {
-    close();
-    return;
-  }
-  applyBoxSettings(box);
-  phase.value = 'placing';
-  hint.value = 'Aponte o celular para o chão onde a caixa vai ficar e toque em "Colocar a caixa aqui".';
-  void populate();
+  return openVirtual(++sessionVersion);
 }
 
 function close(): void {
-  cameraOpening?.abort(); cameraOpening = null;
   sessionVersion++;
   populationVersion++;
   loadingCreatures.value = false;
@@ -440,35 +373,10 @@ function close(): void {
   showModes.value = false;
   box?.stop();
   box = null;
-  stopCamera(videoEl.value, stream);
-  stream = null;
   phase.value = 'idle';
   picked.value = null;
   hint.value = '';
   if (!disposed) void nextTick(() => openButton.value?.focus());
-}
-
-function placeAt(ndc: { x: number; y: number } | null): void {
-  if (!box || !ndc) return;
-  const result = box.placeAt(ndc.x, ndc.y);
-  if (result.ok) {
-    phase.value = 'running';
-    hint.value = result.moved ? 'Afastei a caixa para ela não ficar colada em você. Use "Mover" para escolher outro ponto.' : '';
-  } else {
-    hint.value = result.message;
-  }
-}
-
-function placeHere(): void {
-  placeAt({ x: 0, y: 0 });
-}
-
-function moveBox(): void {
-  stopBattle();
-  box?.clearPlacement();
-  picked.value = null;
-  phase.value = 'placing';
-  hint.value = 'Aponte para o novo lugar no chão e toque em "Colocar a caixa aqui".';
 }
 
 function showPicked(creature: BoxCreature): void {
@@ -480,27 +388,24 @@ function showPicked(creature: BoxCreature): void {
 }
 
 function onPointerDown(event: PointerEvent): void {
-  tapDown = { x: event.clientX, y: event.clientY, at: performance.now() };
-  lastDrag = { x: event.clientX, y: event.clientY };
+  pointerDown = { x: event.clientX, y: event.clientY };
+  lastPointer = { x: event.clientX, y: event.clientY };
 }
 
 function onPointerMove(event: PointerEvent): void {
-  if (!lastDrag || !box) return;
-  // Sem sensores (computador), arrastar gira a visão.
-  box.orientation.lookBy(event.clientX - lastDrag.x, event.clientY - lastDrag.y);
-  lastDrag = { x: event.clientX, y: event.clientY };
+  if (!lastPointer || !box) return;
+  box.orientation.lookBy(event.clientX - lastPointer.x, event.clientY - lastPointer.y);
+  lastPointer = { x: event.clientX, y: event.clientY };
 }
 
 function onPointerUp(event: PointerEvent): void {
-  const down = tapDown;
-  tapDown = null;
-  lastDrag = null;
-  if (!down || !box || !isTap(down, { x: event.clientX, y: event.clientY, at: performance.now() })) return;
+  const down = pointerDown;
+  pointerDown = null;
+  lastPointer = null;
+  if (!down || !box || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 12) return;
   const ndc = ndcOf(event.clientX, event.clientY);
   if (!ndc) return;
-  if (phase.value === 'placing') {
-    placeAt(ndc);
-  } else if (phase.value === 'running') {
+  if (phase.value === 'running') {
     const creature = box.pick(ndc.x, ndc.y);
     if (creature) showPicked(creature);
   }
@@ -569,26 +474,26 @@ const notices = computed<Notice[]>(() => {
   const list: Notice[] = [];
   if (!immersive.value) return list;
   if (error.value) list.push({ text: error.value, tone: 'error' });
-  if (phase.value === 'starting') list.push({ text: virtual.value ? 'Montando a arena…' : 'Abrindo a câmera e os sensores…', tone: 'busy' });
+  if (phase.value === 'starting') list.push({ text: 'Montando a arena…', tone: 'busy' });
   for (const note of megaNotes.value) list.push({ text: note.text, tone: note.tone });
   if (battleHud.value) return list;
-  if (hint.value) list.push({ text: hint.value, tone: phase.value === 'placing' ? 'ok' : 'busy' });
+  if (hint.value) list.push({ text: hint.value, tone: 'busy' });
   if (pvpOn.value && !preparing.value) {
     const friend = boxPvp.friend?.name ?? 'o amigo';
     const sub = boxPvp.role === 'host'
       ? boxPvp.friend ? `${BOX_PVP_LABELS_PT[boxPvp.mode].title} · toque em Batalhar${boxPvp.friendPlaced ? '' : ` (${friend} ainda não colocou a caixa)`}` : 'Esperando a equipe do amigo…'
-      : boxPvp.pending ? 'Coloque a caixa no chão para ver a luta.' : 'Esperando o anfitrião começar.';
+      : boxPvp.pending ? 'Aguarde a Arena 3D ser montada.' : 'Esperando o anfitrião começar.';
     list.push({ text: `PvP com ${friend}`, sub, tone: 'ok', gold: true });
   } else if (endlessShortcut.value && !preparing.value) {
     const mode = ENDLESS_ARENA_LABELS[endlessShortcut.value];
-    list.push({ text: `Arena Digital: ${mode.title}`, sub: phase.value === 'running' ? 'Toque em Começar para a primeira batalha 6×6.' : 'Coloque a Caixa no chão para iniciar a corrida 6×6.', tone: 'ok', gold: true });
+    list.push({ text: `Arena Digital: ${mode.title}`, sub: 'Toque em Começar para a primeira batalha 6×6.', tone: 'ok', gold: true });
   } else if (challenge.value && !preparing.value) {
     list.push({ text: `Desafio: ${challenge.value.role} ${challenge.value.leader}`, sub: 'Toque em Batalhar: até 6 da sua caixa contra a equipe do líder, um duelo por vez.', tone: 'ok', gold: true });
   } else if (battleShortcut.value && !preparing.value) {
     const left = battleRewardsLeft(village, dayKey(new Date()));
     list.push({
-      text: virtual.value ? 'Fliperama: batalha na Arena 3D' : 'Fliperama: batalha na câmera',
-      sub: `${phase.value === 'running' ? 'Toque em Batalhar' : 'Coloque a caixa no chão e toque em Batalhar'} · ${left > 0 ? `+100 moedas (${left} de ${BATTLE_REWARDS_PER_DAY} hoje)` : 'as moedas de hoje já saíram'}`,
+      text: 'Fliperama: batalha na Arena 3D',
+      sub: `Toque em Batalhar · ${left > 0 ? `+100 moedas (${left} de ${BATTLE_REWARDS_PER_DAY} hoje)` : 'as moedas de hoje já saíram'}`,
       tone: 'ok',
       gold: true,
     });
@@ -596,33 +501,21 @@ const notices = computed<Notice[]>(() => {
   if (picked.value) {
     list.push({ text: `${picked.value.name}${picked.value.dexId ? ` · Nº ${picked.value.dexId}` : ''}${picked.value.shiny ? ' · Shiny' : ''}${picked.value.mega ? ' · Mega' : ''}`, sub: picked.value.detail, tone: 'ok', gold: true });
   }
-  if (cameraOn.value && !virtual.value && mode.value === 'manual') {
-    list.push({ text: 'Este aparelho não enviou dados dos sensores de movimento. Arraste na imagem para olhar em volta.', tone: 'warn' });
-  }
-  if (cameraOn.value && loadingCreatures.value) list.push({ text: 'Chamando os Pokémon…', tone: 'busy' });
-  else if (cameraOn.value && population.value.available === 0) {
+  if (arenaOn.value && loadingCreatures.value) list.push({ text: 'Chamando os Pokémon…', tone: 'busy' });
+  else if (arenaOn.value && population.value.available === 0) {
     list.push({ text: 'A caixa está vazia. Escaneie uma carta (aba Escanear) ou carregue suas cartas (aba Cartas) para os Pokémon aparecerem aqui.', tone: 'warn' });
   } else if (phase.value === 'running' && population.value.shown === 1) {
-    list.push({ text: 'Para batalhar, inclua pelo menos 2 Pokémon na Caixa em AR.', tone: 'warn' });
+    list.push({ text: 'Para batalhar, inclua pelo menos 2 Pokémon na equipe.', tone: 'warn' });
   }
   return list;
 });
-/** Clima atual (o ciclo muda sozinho): lido da cena a cada poucos segundos para a linha de resumo. */
-const weatherLabel = ref('');
-const weatherTimer = setInterval(() => {
-  if (document.hidden) return;
-  // O palco virtual não desenha o clima (chuva, poças e neve moram no chão da caixa): não o anuncia.
-  const now = virtual.value ? null : box?.scene.weatherNow;
-  weatherLabel.value = now ? `${WEATHER_EMOJI[now.kind]} ${WEATHER_LABELS_PT[now.kind]}` : '';
-}, 2000);
 /** Linha de resumo fixa (pequena) enquanto a caixa está montada e nada mais pede atenção. */
 const populationNote = computed(() => {
   if (phase.value !== 'running' || battleHud.value || loadingCreatures.value || population.value.available === 0) return '';
   const { shown, available, failed } = population.value;
   const more = available > shown ? ` (de ${available} guardados)` : '';
   const broken = failed > 0 ? ` · ${failed} sprite(s) sem leitura` : '';
-  const sky = weatherLabel.value ? ` · ${weatherLabel.value}` : '';
-  return `${shown} Pokémon na caixa${more}${broken}${sky} · toque num Pokémon para ver quem é`;
+  return `${shown} Pokémon na arena${more}${broken} · toque num Pokémon para ver quem é`;
 });
 
 const incompleteFighters = computed(() => (battleHud.value ? battleFighters.value.filter((f) => f.notes.length > 0) : []));
@@ -636,19 +529,8 @@ function toggleMode(): void {
   box?.setMode(boxMode.value);
 }
 
-function onPhoneHeight(): void {
-  box?.setPhoneHeight(phoneHeight.value);
-}
-function onBoxSize(): void {
-  box?.setHalfSize(boxSize.value / 2);
-}
-function onFov(): void {
-  box?.setVideoFov(videoFov.value);
-}
-
 onBeforeUnmount(() => {
   disposed = true;
-  clearInterval(weatherTimer);
   clearInterval(heartTimer);
   session.dispose();
   if (pickedTimer) clearTimeout(pickedTimer);
@@ -659,37 +541,30 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="card" aria-labelledby="box-title">
-    <h2 id="box-title">{{ virtual ? 'Arena 3D' : 'Caixa em AR' }}</h2>
-    <p v-if="virtual" class="note">
+    <h2 id="box-title">Arena 3D</h2>
+    <p class="note">
       Os moradores da Vila lutam num Coliseu virtual, sem câmera nem sensores: arraste na imagem para olhar em volta. Quem
       aparece você escolhe em <a :href="routeHref('cartas')">Minhas cartas</a>; quem luta em cada batalha é escolhido na
-      escalação. Prefere lutar na sua sala? Troque o fundo para a câmera (AR) antes de entrar.
-    </p>
-    <p v-else class="note">
-      Até 40 moradores da Vila aparecem soltos num quadrado no chão. Gire o celular para olhar em volta. Quem aparece
-      você escolhe em <a :href="routeHref('cartas')">Minhas cartas</a>; quem luta em cada batalha é
-      escolhido na escalação.
+      escalação.
     </p>
 
     <div
       ref="stageEl"
       class="viewport box-viewport"
-      :class="{ placing: phase === 'placing', 'pseudo-full': pseudo, immersive }"
+      :class="{ 'pseudo-full': pseudo, immersive }"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
     >
-      <video v-show="!virtual" ref="videoEl" class="feed" playsinline muted :style="videoStyle"></video>
-      <div v-if="virtual" class="virtual-sky" aria-hidden="true" :style="videoStyle"></div>
+      <div class="virtual-sky" aria-hidden="true" :style="videoStyle"></div>
       <div v-if="battleHud" class="battle-env" aria-hidden="true" :style="shakeStyle">
         <div class="vignette" :style="{ opacity: Math.min(1, battleHud.dim * 3) }"></div>
         <div v-if="envLights" class="lights" :style="envLights"></div>
       </div>
       <canvas ref="canvasEl" class="overlay" :style="shakeStyle" aria-label="Caixa com os Pokémon escaneados"></canvas>
-      <p v-if="phase === 'idle'" class="placeholder">{{ virtual ? 'Arena desligada' : 'Câmera desligada' }}</p>
-      <div v-if="phase === 'starting'" class="box-opening" role="status"><p>{{ virtual ? 'Montando a arena…' : 'Abrindo câmera e sensores…' }}</p><button type="button" @click.stop="close">Cancelar abertura</button></div>
-      <div v-if="phase === 'placing'" class="crosshair" aria-hidden="true"></div>
+      <p v-if="phase === 'idle'" class="placeholder">Arena desligada</p>
+      <div v-if="phase === 'starting'" class="box-opening" role="status"><p>Montando a arena…</p><button type="button" @click.stop="close">Cancelar abertura</button></div>
       <div v-if="battleHud" class="battle-hud" :class="{ compact: battleHud.bars.length > 4, dense: battleHud.bars.length > DENSE_BARS }">
         <div class="battle-top">
           <div v-if="battleHud.banner" class="battle-banner" :style="{ '--fx': battleHud.banner.color }">
@@ -755,8 +630,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="immersive" class="stage-foot" @pointerdown.stop @pointerup.stop>
-        <button v-if="phase === 'placing'" type="button" class="primary stage-cta" @click="placeHere">Colocar a caixa aqui</button>
-        <SmoothingSheet v-if="showFilters && cameraOn" battle @close="showFilters = false" />
+        <SmoothingSheet v-if="showFilters && arenaOn" battle @close="showFilters = false" />
         <div v-if="showSummary && battleSummary && battleHud?.phase === 'finished'" ref="summaryDialog" class="stage-sheet battle-summary" role="dialog" aria-label="Resumo da batalha" @keydown.esc.stop.prevent="showSummary = false" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
             <strong>{{ battleSummary.winner }} venceu</strong>
@@ -771,7 +645,7 @@ onBeforeUnmount(() => {
             <p v-for="f in incompleteFighters" :key="f.id" class="hint">{{ f.name }}: {{ f.notes.join('; ') }}</p>
           </template>
         </div>
-        <div v-if="showModes && cameraOn && !battling" ref="modesDialog" class="stage-sheet battle-team-sheet" role="dialog" aria-label="Equipe de batalha" @keydown.esc.stop.prevent="showModes = false" @pointerdown.stop @pointerup.stop @click.stop>
+        <div v-if="showModes && arenaOn && !battling" ref="modesDialog" class="stage-sheet battle-team-sheet" role="dialog" aria-label="Equipe de batalha" @keydown.esc.stop.prevent="showModes = false" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
             <strong>Equipe de batalha</strong>
             <button type="button" class="link" aria-label="Fechar equipe de batalha" @click="showModes = false">Fechar</button>
@@ -811,7 +685,7 @@ onBeforeUnmount(() => {
             </div>
             <small v-if="endlessTeam().length !== MAX_CHALLENGE_TEAM">Vermelha: {{ endlessTeam().length }}/{{ MAX_CHALLENGE_TEAM }} · selecione exatamente 6 para liberar.</small>
           </section>
-          <p class="hint">3 · Escale os Pokémon abaixo. Para mudar quem passeia na Caixa AR, abra Quem passeia.</p>
+          <p class="hint">3 · Escale os Pokémon abaixo. Para mudar quem aparece na Arena, abra Quem passeia.</p>
           <p v-if="rosterRows.some((r) => r.mega)" class="hint mega-hint">
             Cartas Mega podem mudar de forma por uma batalha: marque «Forma Mega» embaixo do nome delas. Moedas: {{ energy }}<template v-if="megaWanted > megaAffordable"> (só dá para {{ megaAffordable }} {{ megaAffordable === 1 ? 'troca' : 'trocas' }}; as outras lutam na forma normal)</template>.
           </p>
@@ -862,38 +736,23 @@ onBeforeUnmount(() => {
             </ul>
           </div>
         </div>
-        <div v-if="showTeam && cameraOn" ref="teamDialog" class="stage-sheet" role="dialog" aria-label="Moradores na Caixa" @keydown.esc.stop.prevent="showTeam = false" @pointerdown.stop @pointerup.stop @click.stop>
+        <div v-if="showTeam && arenaOn" ref="teamDialog" class="stage-sheet" role="dialog" aria-label="Moradores na Caixa" @keydown.esc.stop.prevent="showTeam = false" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
             <strong>Moradores da Vila</strong>
             <button type="button" class="link" aria-label="Fechar moradores na Caixa" @click="showTeam = false">Fechar</button>
           </header>
           <TeamPicker @change="populate" />
         </div>
-        <div v-if="showAdjust && cameraOn && !battling" ref="adjustDialog" class="stage-sheet" role="dialog" aria-label="Ajustes da caixa" @keydown.esc.stop.prevent="showAdjust = false" @pointerdown.stop @pointerup.stop @click.stop>
+        <div v-if="showAdjust && arenaOn && !battling" ref="adjustDialog" class="stage-sheet" role="dialog" aria-label="Ajustes da caixa" @keydown.esc.stop.prevent="showAdjust = false" @pointerdown.stop @pointerup.stop @click.stop>
           <header>
             <strong>Ajustes da caixa</strong>
             <button type="button" class="link" aria-label="Fechar ajustes da Caixa" @click="showAdjust = false">Fechar</button>
           </header>
           <div class="layout">
-            <label v-if="!virtual">Altura do celular ({{ phoneHeight.toFixed(2) }} m)
-              <input v-model.number="phoneHeight" type="range" :min="PHONE_HEIGHT_RANGE.min" :max="PHONE_HEIGHT_RANGE.max" step="0.05" @input="onPhoneHeight" />
-            </label>
-            <label v-if="!virtual">Tamanho da caixa ({{ boxSize.toFixed(1) }} m de lado)
-              <input v-model.number="boxSize" type="range" min="1" max="6" step="0.2" @input="onBoxSize" />
-            </label>
-            <label v-if="!virtual">Atraso da câmera para o sensor ({{ sensorSettings.latencyMs }} ms)
-              <input v-model.number="sensorSettings.latencyMs" type="range" :min="LATENCY_RANGE.min" :max="LATENCY_RANGE.max" step="5" />
-            </label>
-            <label>Ângulo de visão da câmera ({{ videoFov }}°)
-              <input v-model.number="videoFov" type="range" min="45" max="85" step="1" @input="onFov" />
-            </label>
-            <p v-if="!virtual" class="meta">
-              A caixa fica presa ao chão pelos sensores de movimento: ela acompanha o giro do celular, mas não acompanha você andando.
-              Se o chão parecer deslizar, ajuste a altura do celular e o ângulo de visão.
-            </p>
+            <p class="meta">Arraste a Arena para olhar ao redor. Os efeitos visuais podem ser ajustados sem usar câmera ou sensores.</p>
           </div>
         </div>
-        <div v-if="cameraOn" class="stage-bar" role="toolbar" aria-label="Controles da Caixa AR">
+        <div v-if="arenaOn" class="stage-bar" role="toolbar" aria-label="Controles da Arena 3D">
           <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
           <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters; showTeam = false; showAdjust = false; showModes = false" />
           <StageButton v-if="!battling" icon="team" label="Quem passeia" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false; showModes = false" />
@@ -905,7 +764,6 @@ onBeforeUnmount(() => {
           <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />
           <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
           <StageButton v-if="battling" icon="stop" :label="endlessRun ? `Desistir · ${endlessRun.score}` : 'Parar'" @click="stopBattle" />
-          <StageButton v-if="phase === 'running' && !battling && !virtual" icon="move" label="Mover" @click="moveBox" />
           <StageButton v-if="challenge && !battling" icon="close" label="Sem desafio" @click="cancelChallenge" />
           <StageButton icon="close" label="Fechar" @click="close" />
         </div>
@@ -916,21 +774,16 @@ onBeforeUnmount(() => {
       <img :src="trainerSpriteUrl(challenge.sprite)" alt="" width="72" height="72" />
       <span>
         <strong>Desafio: {{ challenge.role }} {{ challenge.leader }}</strong>
-        <small>Abra a câmera, coloque a caixa e toque em Batalhar. Até 6 da sua caixa lutam contra a equipe do líder, um duelo por vez.</small>
+        <small>Entre na Arena e toque em Batalhar. Até 6 Pokémon da sua equipe lutam contra a equipe do líder, um duelo por vez.</small>
         <button type="button" class="link" @click="cancelChallenge">Cancelar desafio</button>
       </span>
     </div>
 
-    <div v-if="phase === 'idle'" class="box-backdrop" role="group" aria-label="Fundo da arena">
-      <button type="button" :class="{ active: virtual }" :aria-pressed="virtual" @click="backdrop = 'virtual'">🏟️ Arena virtual</button>
-      <button type="button" :class="{ active: !virtual }" :aria-pressed="!virtual" @click="backdrop = 'camera'">📷 Câmera (AR)</button>
-    </div>
-
     <div class="actions">
       <button ref="openButton" type="button" class="primary" :class="{ 'battle-cta': battleShortcut }" :disabled="phase !== 'idle'" @click="open">
-        {{ phase === 'starting' ? 'Abrindo…' : virtual ? (endlessShortcut ? `⚔️ Entrar na arena · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Entrar na arena e batalhar' : '🏟️ Entrar na Arena 3D') : endlessShortcut ? `⚔️ Abrir câmera · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Abrir câmera e batalhar' : 'Abrir câmera e sensores' }}
+        {{ phase === 'starting' ? 'Abrindo…' : endlessShortcut ? `⚔️ Entrar na arena · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Entrar na arena e batalhar' : '🏟️ Entrar na Arena 3D' }}
       </button>
-      <a v-if="battleShortcut || endlessShortcut || fromVila" class="button" :href="routeHref(endlessShortcut ? 'arena' : 'vila')">{{ endlessShortcut ? 'Voltar à Arena' : 'Voltar à Vila' }}</a>
+      <a v-if="battleShortcut || endlessShortcut || fromVila || fromArena" class="button" :href="routeHref(endlessShortcut || fromArena ? 'arena' : 'vila')">{{ endlessShortcut || fromArena ? 'Voltar à Arena' : 'Voltar à Vila' }}</a>
     </div>
 
     <p v-if="error && !immersive" class="message error" role="alert">{{ error }}</p>

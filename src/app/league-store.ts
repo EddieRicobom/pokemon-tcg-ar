@@ -1,9 +1,10 @@
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { applyLeagueResult, emptyLeague, normalizeLeague, statusOf } from '../core/league';
 import type { Challenge, LeagueOutcome, LeagueProgress } from '../core/league';
 import { recordEvent } from './trainer-store';
 
 const KEY = 'tcg-ar-liga-v1';
+const PENDING_KEY = 'tcg-ar-liga-desafio-v1';
 
 function read(): LeagueProgress {
   try {
@@ -18,7 +19,25 @@ function read(): LeagueProgress {
 export const league = ref<LeagueProgress>(read());
 
 /** Desafio escolhido no Treinador, à espera da Caixa (a batalha acontece lá). */
-export const pendingChallenge = ref<string | null>(null);
+function readPending(): string | null {
+  try {
+    const value = localStorage.getItem(PENDING_KEY);
+    return value && value.length <= 80 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Desafio escolhido, preservado enquanto a pessoa troca entre Arena e Caixa ou recarrega a página. */
+export const pendingChallenge = ref<string | null>(readPending());
+watch(pendingChallenge, (value) => {
+  try {
+    if (value) localStorage.setItem(PENDING_KEY, value);
+    else localStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Sem armazenamento, ainda vale até a pessoa fechar esta sessão.
+  }
+});
 
 /** Guarda o resultado de uma batalha da Liga e dá o XP (e as moedas) ao Treinador quando vence. */
 export function recordLeagueResult(challenge: Challenge, won: boolean): LeagueOutcome {

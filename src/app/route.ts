@@ -46,14 +46,15 @@ export function parseRoute(hash: string): Route {
 
 /**
  * Sinalizadores que a Vila põe no endereço (`#/pins?vila=1`) para as outras telas saberem de onde você veio:
- * `vila` = «veio da Vila» (a tela mostra «Voltar à Vila»), `pvp` = abrir o PvP da Caixa, `batalha` = veio do
- * Fliperama para uma batalha na câmera, `formatacao`/`restauracao` levam o modo contínuo escolhido da Arena até a Caixa
- * `jogos` = o Treinador abre nos minigames e `virtual` = a Caixa abre na Arena 3D (palco virtual, sem câmera).
+ * `vila` = «veio da Vila» (a tela mostra «Voltar à Vila»), `pvp` = abrir o PvP da Arena e `batalha` = veio do
+ * Fliperama para uma batalha. `formatacao`/`restauracao` levam o modo contínuo escolhido da Arena até o palco 3D;
+ * `jogos` = o Treinador abre nos minigames, `autoiniciar` entra e começa uma batalha assim que a Arena estiver pronta.
+ * `virtual` é mantido em links antigos, mas a Arena é sempre virtual.
  * `torre`, `bonk` e `coliseu` são atalhos de jogo: a Vila abre e já entra na Torre (Survival), na Torre em modo BONK ou
  * no Coliseu (Arena), sem andar até o prédio.
  */
-export type RouteFlag = 'vila' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual' | GameShortcut;
-const FLAGS: readonly RouteFlag[] = ['vila', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual', 'torre', 'bonk', 'coliseu'];
+export type RouteFlag = 'vila' | 'arena' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual' | 'autoiniciar' | GameShortcut;
+const FLAGS: readonly RouteFlag[] = ['vila', 'arena', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual', 'autoiniciar', 'torre', 'bonk', 'coliseu'];
 
 /** Jogos que a Vila abre direto pelo endereço. */
 export type GameShortcut = 'torre' | 'bonk' | 'coliseu';
@@ -89,16 +90,15 @@ export function routeHref(name: RouteName, cardId?: string, flags: readonly Rout
 export type VilaExit = 'pvp' | 'batalha' | 'batalha3d' | 'caixa' | 'arena3d';
 
 /**
- * Endereço da Caixa para cada saída da Vila: PvP e batalha do Fliperama abrem a câmera (como sempre), a Caixa em AR
- * abre a câmera sem mais nada, e a Arena 3D (e a batalha do Fliperama na Arena 3D) abre o palco virtual, sem câmera.
- * Todas levam `vila`: a Caixa oferece «Voltar à Vila» e o ✕ da Vila não volta para ela (`rememberBeforeVila`).
+ * Endereço da Arena para cada saída da Vila. Toda batalha usa o palco 3D virtual, sem câmera ou sensores.
+ * Todas levam `vila`: a Arena oferece «Voltar à Vila» e o ✕ da Vila não volta para ela (`rememberBeforeVila`).
  */
 export function vilaExitHref(then: VilaExit): string {
   switch (then) {
-    case 'pvp': return routeHref('caixa', undefined, ['pvp', 'vila']);
-    case 'batalha': return routeHref('caixa', undefined, ['batalha', 'vila']);
+    case 'pvp': return routeHref('caixa', undefined, ['pvp', 'virtual', 'vila']);
+    case 'batalha': return routeHref('caixa', undefined, ['batalha', 'virtual', 'vila']);
     case 'batalha3d': return routeHref('caixa', undefined, ['batalha', 'virtual', 'vila']);
-    case 'caixa': return routeHref('caixa', undefined, ['vila']);
+    case 'caixa': return routeHref('caixa', undefined, ['virtual', 'vila']);
     case 'arena3d': return routeHref('caixa', undefined, ['virtual', 'vila']);
   }
 }
@@ -111,9 +111,9 @@ export function rememberBeforeVila(hash: string): boolean {
   return !routeFlags(hash).has('vila');
 }
 
-/** Os sinalizadores de uma luta que sai da Arena Digital: o modo escolhido mais o fundo (`virtual` = Arena 3D, sem câmera). */
-export function arenaFlags(extra: readonly RouteFlag[], virtual: boolean): RouteFlag[] {
-  return virtual ? [...extra, 'virtual'] : [...extra];
+/** Os sinalizadores de uma luta que sai da Arena Digital: sempre no palco 3D, sem câmera. */
+export function arenaFlags(extra: readonly RouteFlag[]): RouteFlag[] {
+  return [...extra, 'virtual'];
 }
 
 export function useRoute() {

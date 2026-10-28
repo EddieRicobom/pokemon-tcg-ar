@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { pendingChallenge } from '../app/league-store';
 import { league } from '../app/league-store';
 import { arenaFlags, routeHref } from '../app/route';
@@ -7,43 +7,32 @@ import TeamPicker from '../components/TeamPicker.vue';
 import LeagueCard from '../components/LeagueCard.vue';
 import { ENDLESS_ARENA_LABELS } from '../core/endless-arena';
 import type { EndlessArenaMode } from '../core/endless-arena';
-import { challengeById, LEAGUE_REGIONS, nextChallenge, regionalProgress } from '../core/league';
+import { challengeById, LEAGUE_REGIONS, nextChallenge } from '../core/league';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 
 const MODES: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
-/** Onde as lutas acontecem: a Arena 3D (sem câmera, padrão) ou a Caixa em AR (câmera). A escolha fica guardada neste aparelho. */
-const FUNDO_KEY = 'tcg-ar-arena-fundo-v1';
-function storedBackdropIsVirtual(): boolean {
-  try {
-    return localStorage.getItem(FUNDO_KEY) !== 'camera';
-  } catch {
-    return true;
-  }
-}
-const virtual = ref(storedBackdropIsVirtual());
-watch(virtual, (on) => {
-  try {
-    localStorage.setItem(FUNDO_KEY, on ? 'virtual' : 'camera');
-  } catch {
-    // Só não lembra da escolha na próxima vez.
-  }
-});
 const waitingChallenge = computed(() => pendingChallenge.value !== null);
 const selectedCount = ref<number | null>(null);
 const teamReady = computed(() => selectedCount.value === 6);
 /** A Liga aceita uma equipe incompleta; as corridas continuam pedindo os seis espaços. */
 const hasBattleTeam = computed(() => (selectedCount.value ?? 0) > 0);
 const selectedChallenge = computed(() => pendingChallenge.value ? challengeById(pendingChallenge.value) : null);
-function updateTeam(ids: string[]): void { selectedCount.value = ids.length; }
-const leagueRegion = computed(() => LEAGUE_REGIONS.find((region) => regionalProgress(league.value, region.id).badges.length < 8) ?? LEAGUE_REGIONS[0]!);
+function updateTeam(ids: string[]): void {
+  const wasComplete = selectedCount.value === 6;
+  selectedCount.value = ids.length;
+  // Uma seleção de seis confirma que a equipe do desafio está fechada: segue sem pedir mais um botão.
+  if (waitingChallenge.value && ids.length === 6 && !wasComplete) void nextTick(enterChallenge);
+}
+const leagueRegion = computed(() => LEAGUE_REGIONS.find((region) => nextChallenge(league.value, region.id) !== null) ?? LEAGUE_REGIONS[0]!);
 const nextLeader = computed(() => nextChallenge(league.value, leagueRegion.value.id));
 function goToLeague(): void { document.getElementById('arena-league')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 function goToTeam(): void { document.getElementById('arena-team')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 
+function arenaBoxFlags(extra: Parameters<typeof arenaFlags>[0] = []): ReturnType<typeof arenaFlags> { return ['arena', ...arenaFlags(extra)]; }
 function enterEndless(mode: EndlessArenaMode): void {
   if (!teamReady.value) return;
-  // A câmera (se for o caso) só pode abrir no toque seguinte; a Caixa recebe o modo e põe a batalha no botão principal.
-  window.location.hash = routeHref('caixa', undefined, arenaFlags([mode], virtual.value));
+  // A Arena abre no toque seguinte e põe a batalha no botão principal.
+  window.location.hash = routeHref('caixa', undefined, arenaBoxFlags([mode, 'autoiniciar']));
 }
 
 function enterChallenge(): void {
@@ -51,8 +40,9 @@ function enterChallenge(): void {
     goToTeam();
     return;
   }
-  window.location.hash = routeHref('caixa', undefined, arenaFlags([], virtual.value));
+  window.location.hash = routeHref('caixa', undefined, arenaBoxFlags(['autoiniciar']));
 }
+onMounted(() => { if (waitingChallenge.value) void nextTick(goToTeam); });
 </script>
 
 <template>
@@ -73,13 +63,9 @@ function enterChallenge(): void {
     <nav class="arena-paths" aria-label="Rotas da Arena">
       <button type="button" @click="goToLeague">🏅 Liga · líderes e insígnias</button>
       <button type="button" @click="goToTeam">👥 Corridas · monte um time de 6</button>
-      <a :href="routeHref('caixa', undefined, arenaFlags([], virtual))">⚔️ Batalha livre</a>
+      <a :href="routeHref('caixa', undefined, arenaBoxFlags())">⚔️ Batalha livre</a>
     </nav>
-    <ol class="arena-steps" aria-label="Etapas para desafio da Liga"><li :class="{ done: waitingChallenge }">{{ waitingChallenge ? '✓' : '1' }} Escolha o líder na Liga</li><li :class="{ done: hasBattleTeam }">{{ hasBattleTeam ? '✓' : '2' }} Monte até 6 Pokémon · {{ selectedCount ?? '…' }}/6</li><li>{{ virtual ? '3 · Entrar na Arena 3D' : '3 · Abrir a Caixa em AR' }}</li></ol>
-    <div class="box-backdrop" role="group" aria-label="Onde lutar">
-      <button type="button" :class="{ active: virtual }" :aria-pressed="virtual" @click="virtual = true">🏟️ Arena 3D (sem câmera)</button>
-      <button type="button" :class="{ active: !virtual }" :aria-pressed="!virtual" @click="virtual = false">📷 Caixa em AR (câmera)</button>
-    </div>
+    <ol class="arena-steps" aria-label="Etapas para desafio da Liga"><li :class="{ done: waitingChallenge }">{{ waitingChallenge ? '✓' : '1' }} Escolha o líder na Liga</li><li :class="{ done: hasBattleTeam }">{{ hasBattleTeam ? '✓' : '2' }} Monte até 6 Pokémon · {{ selectedCount ?? '…' }}/6</li><li>3 · Entrar na Arena 3D</li></ol>
 
     <section id="arena-league" class="arena-section arena-league" aria-label="Liga Pokémon e líderes de ginásio">
       <header><span class="arena-kicker">1 · ENCONTRE UM LÍDER</span><h3>Liga Pokémon</h3><p class="note">Os líderes estão organizados por região e por ordem. O próximo desafio aberto aparece destacado; os demais mostram claramente o que falta.</p></header>
@@ -93,17 +79,18 @@ function enterChallenge(): void {
       <div v-if="waitingChallenge" class="arena-ready" role="status">
         <strong>{{ selectedChallenge ? `Desafio contra ${selectedChallenge.leader} pronto` : 'Desafio da Liga pronto' }}</strong>
         <span>Seu oponente espera esta equipe. Selecione pelo menos um Pokémon acima e comece quando estiver pronto.</span>
-        <button type="button" class="primary" :disabled="!hasBattleTeam" @click="enterChallenge">{{ virtual ? 'Começar desafio na Arena 3D' : 'Começar desafio na Caixa em AR' }}</button>
+        <button type="button" class="primary" :disabled="!hasBattleTeam" @click="enterChallenge">Começar desafio na Arena 3D</button>
         <small v-if="!hasBattleTeam" class="hint">Escolha ao menos um Pokémon para começar.</small>
       </div>
     </section>
 
     <section v-if="selectedCount === 0" class="arena-first-run" aria-labelledby="arena-first-run-title">
       <span>ANTES DA ARENA</span>
-      <h3 id="arena-first-run-title">Você precisa de Pokémon para formar uma equipe</h3>
-      <p>Escaneie cartas físicas ou entre na Vila para receber um companheiro digital. Depois, volte aqui e escolha até 6 Pokémon.</p>
+      <h3 id="arena-first-run-title">Você precisa de Pokémon prontos para formar uma equipe</h3>
+      <p>Escaneie cartas físicas, abra <a :href="routeHref('cartas')">Minhas Cartas</a> para carregar um Pokémon salvo, ou entre na Vila para receber um companheiro digital.</p>
       <div class="actions row">
         <a class="button primary" :href="routeHref('escanear')">Escanear uma carta</a>
+        <a class="button" :href="routeHref('cartas')">Minhas Cartas</a>
         <a class="button" :href="routeHref('vila')">Ir para a Vila</a>
       </div>
     </section>
@@ -111,7 +98,7 @@ function enterChallenge(): void {
     <section class="arena-section" aria-labelledby="arena-continuous-title">
       <h3 id="arena-continuous-title">Modos contínuos</h3>
       <p v-if="!teamReady" class="hint" role="status">{{ selectedCount === null ? 'Lendo a equipe…' : `Escolha 6 Pokémon acima para preparar uma corrida (atualmente ${selectedCount}/6).` }}</p>
-      <p class="note">Os adversários usam espécies em estágio final, equipes completas e treinadores sorteados. A qualquer momento, use <strong>Desistir</strong> na Caixa para encerrar a corrida e guardar o placar da sessão.</p>
+      <p class="note">Os adversários usam espécies em estágio final, equipes completas e treinadores sorteados. Ao preparar uma corrida, ela começa assim que a Arena estiver montada; use <strong>Desistir</strong> para encerrar e guardar o placar da sessão.</p>
       <div class="arena-mode-grid">
         <article v-for="mode in MODES" :key="mode" class="arena-mode-card">
           <h4>{{ ENDLESS_ARENA_LABELS[mode].title }}</h4>
@@ -125,12 +112,12 @@ function enterChallenge(): void {
       <div>
         <h3>Combate comum</h3>
         <p class="note">Escolha formato, escalação e formas Mega na Caixa, sem corrida contínua.</p>
-        <a class="button" :href="routeHref('caixa', undefined, arenaFlags([], virtual))">{{ virtual ? 'Abrir a Arena 3D' : 'Abrir Caixa AR' }}</a>
+        <a class="button" :href="routeHref('caixa', undefined, arenaBoxFlags())">Abrir a Arena 3D</a>
       </div>
       <div>
         <h3>Batalhar com um amigo</h3>
-        <p class="note">Pareie dois celulares, escolha o modo e cada jogador vê a mesma luta na própria Caixa (com câmera; na tela inicial da Caixa dá para trocar o fundo).</p>
-        <a class="button" :href="routeHref('caixa', undefined, ['pvp'])">Abrir PvP na Caixa</a>
+        <p class="note">PvP acontece na Arena 3D; prepare sua equipe antes de convidar um amigo.</p>
+        <a class="button" :href="routeHref('caixa', undefined, ['pvp', 'arena', 'virtual'])">Abrir PvP na Arena 3D</a>
       </div>
     </section>
 

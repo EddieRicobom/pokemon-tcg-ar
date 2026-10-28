@@ -43,7 +43,7 @@ export function speciesTiles(dexId: number | undefined): number | undefined {
 export const REFERENCE_HEIGHT_M = 1;
 
 /**
- * Tamanho relativo da espécie, para cenas que não usam blocos da Vila (a Caixa em AR e o AR da carta): 1 para um
+ * Tamanho relativo da espécie, para cenas que não usam blocos da Vila (a Arena 3D e o AR da carta): 1 para um
  * Pokémon de 1 m, ~0,7 para um Pikachu, ~1,35 para um Snorlax. Mesma curva e mesmos limites de `tilesForHeight`.
  * Undefined sem dado de altura (quem chama mantém o tamanho pelo desenho, como antes).
  */
