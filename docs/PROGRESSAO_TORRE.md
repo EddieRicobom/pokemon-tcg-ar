@@ -135,6 +135,14 @@ A trilha só mexe nas escolhas de upgrade, nunca nos números do Pokémon.
 
 Exemplos: Pão de mel (mel 2 + milho 1) é Doce + Grão T2. Lanche Pokébola é T3 com Doce, Peixe e Fresco a 60%. `lunchEffectFor(foodId)` deriva tudo isso da receita em `RECIPES`, e um teste cobre todas as comidas (`kind: 'food'`).
 
+### Mega Evolução da corrida
+
+- Na seleção, todo Pokémon cuja espécie tem forma Mega na PokéAPI ganha botões «💎 Mega» no cartão (um por forma: X/Y no Charizard, no Mewtwo e no Raichu; Mega e Mega Z no Absol, no Garchomp e no Lucario; macho/fêmea no Meowstic etc.). O painel mostra a diferença nos stats base e se a forma tem sprite.
+- Custa **1 Fragmento de Megapedra** (item `mega-stone-shard`). Ele sai da mochila ao começar e volta se a corrida durar menos de 20 s, como a marmita. Corrida pura não usa a Mega.
+- Como ganhar: **marco de 20 min** numa corrida (já existia) ou **fabricar na bancada** (2 Pedras da Confiança, 2 Cristais e 1 Pérola).
+- A corrida começa na forma Mega e fica assim **até o fim da corrida**, sem limite de tempo (pedido do dono, 2026-10-28). O HUD mostra o chip «💎 Mega …». Os números do jogador mudam na proporção entre o perfil dos stats da espécie e o da forma Mega (como na evolução, sem bônus), e a defesa usa Defesa/Def. Esp. da Mega. Upgrades pegos durante a Mega continuam valendo. Só a evolução desfaz a Mega, porque a forma é da espécie de antes (Floette ainda vira Florges); aparece o aviso «💎 A evolução desfez a Mega».
+- Dados: `src/core/data/pokemon-megas.json`, gerado por `node scripts/build-megas.mjs` a partir dos CSVs da PokéAPI, com os stats de cada forma e se o repositório PokeAPI/sprites tem o GIF animado (Showdown) e o PNG parado. Em 2026-10-28: 97 formas; 40 sem GIF animado (aparece a imagem parada e o painel avisa) e a Mega Zygarde sem sprite nenhum (mantém o sprite normal e o painel avisa). Lógica: `src/core/survivor-mega.ts`.
+
 ## 4. Regras de proteção
 
 - **Corrida pura**: um interruptor na seleção desliga Dojô, sorte e marmita. A sorte fica guardada e a marmita fica na mochila. Cada treino e lição também tem seu interruptor.

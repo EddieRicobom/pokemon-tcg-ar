@@ -5,7 +5,7 @@ import { ATLAS_SOURCES } from './atlas-spec';
 import { groundPieces, quarterCell } from './ground-tiles';
 
 function tiny(rows: string[]): VillageMap {
-  const key: Record<string, Tile> = { '.': 'grass', '=': 'path', ':': 'sand', '~': 'water', '+': 'plaza', f: 'field' };
+  const key: Record<string, Tile> = { '.': 'grass', '=': 'path', ':': 'sand', '~': 'water', '+': 'plaza', f: 'field', T: 'tall' };
   const tiles = rows.flatMap((r) => [...r].map((c) => key[c]!));
   return { w: rows[0]!.length, h: rows.length, tiles, spawn: { x: 0, y: 0 }, plot: { x: 0, y: 0, w: 0, h: 0 }, shop: { x: 0, y: 0, w: 0, h: 0 }, buildings: [], decor: [] };
 }
@@ -18,6 +18,11 @@ describe('chão da Vila com tileset (autotile por quartos)', () => {
     const index = map.tiles.indexOf('flower');
     const flowers = groundPieces(map, index % map.w, Math.floor(index / map.w));
     expect(flowers.map((piece) => piece.src)).toEqual(['grass', 'flowers-white']);
+  });
+  it('usa o recorte próprio do tileset somente sobre os blocos de mato alto', () => {
+    const pieces = groundPieces(tiny(['T']), 0, 0);
+    expect(pieces.map((piece) => piece.src)).toEqual(['grass', 'tall']);
+    expect(ATLAS_SOURCES.find((source) => source.id === 'tall')?.sheet).toBe('Daisy Route.png');
   });
   it('quarto escolhe canto, borda ou miolo do bloco 3×3', () => {
     expect(quarterCell(0, 0, false, false)).toEqual({ cx: 0, cy: 0 });

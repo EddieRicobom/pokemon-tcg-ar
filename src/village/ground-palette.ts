@@ -12,10 +12,8 @@ function fill(buf: PixelBuf, color: number): void {
   for (let y = 0; y < buf.h; y++) for (let x = 0; x < buf.w; x++) pixel(buf, x, y, color);
 }
 
-type TransparentGrassOverlay = { w: number; h: number; data: Uint8Array | Uint8ClampedArray };
-
 /** Gramado em aglomerados suaves; a base comum evita xadrez entre os blocos do mapa. */
-export function villageGrassSheet(overlay?: TransparentGrassOverlay | null): PixelBuf {
+export function villageGrassSheet(): PixelBuf {
   const buf = createBuf(32, 32);
   fill(buf, VILLAGE_GROUND.grass);
   for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
@@ -27,15 +25,6 @@ export function villageGrassSheet(overlay?: TransparentGrassOverlay | null): Pix
     pixel(buf, x, y, VILLAGE_GROUND.grassDark);
     pixel(buf, x + 1, y - 1, VILLAGE_GROUND.grassLight);
     pixel(buf, x + 2, y, VILLAGE_GROUND.grassLight);
-  }
-  // A arte importada só traz os tufos: seu alpha deixa a base verde aparecer entre as folhas.
-  if (overlay && overlay.w > 0 && overlay.h > 0) for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
-    const sx = x % overlay.w, sy = y % overlay.h;
-    const source = (sy * overlay.w + sx) * 4;
-    const alpha = overlay.data[source + 3]! / 255;
-    if (alpha <= 0) continue;
-    const target = (y * 32 + x) * 4;
-    for (let channel = 0; channel < 3; channel++) buf.data[target + channel] = Math.round(buf.data[target + channel]! * (1 - alpha) + overlay.data[source + channel]! * alpha);
   }
   return buf;
 }

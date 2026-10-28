@@ -7761,6 +7761,24 @@ body.no-scroll .reward-toasts {
   font-size: .82rem;
   line-height: 1.4;
 }
+/* Mega temporária da Torre: botões no cartão do Pokémon, painel do efeito e chip com o tempo no HUD. */
+.survivor-mega-panel { border-color: rgba(255, 120, 200, .5); }
+.survivor-mega-picks { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 6px; }
+.survivor-mega-pick {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 120, 200, .7);
+  border-radius: 999px;
+  background: rgba(255, 120, 200, .12);
+  color: inherit;
+  font: inherit;
+  font-size: .74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.survivor-mega-pick.active { background: #d8489a; border-color: #ffd0ec; color: #fff; }
+.survivor-mega-pick:disabled { opacity: .45; cursor: not-allowed; }
+.survivor-mega-chip { background: rgba(216, 72, 154, .85); color: #fff; font-weight: 700; }
 .survivor-tower-summary {
   margin: 8px 0;
   padding: 8px 10px;

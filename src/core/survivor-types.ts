@@ -3,6 +3,7 @@ import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorSpecialState } from './survivor-specials';
 import type { LunchEffect } from './survivor-lunch';
+import type { SurvivorMegaState } from './survivor-mega';
 import type { SurvivorProjectileLook } from './survivor-projectile-power';
 
 /**
@@ -136,6 +137,8 @@ export interface SurvivorPlayer {
   lunchHitInvulnBonus?: number;
   /** Marmita ativa: o efeito e quanto já curou (a cura tem teto por corrida). */
   lunch?: { effect: LunchEffect; healed: number; active: boolean };
+  /** Mega da corrida (`core/survivor-mega.ts`); fica ativa até o fim, e `active` só cai para false se o Pokémon evoluir. */
+  mega?: SurvivorMegaState;
 }
 
 /** Dados congelados do Pokémon de apoio. Ele acompanha apenas no desenho: não é um segundo alvo de combate. */
