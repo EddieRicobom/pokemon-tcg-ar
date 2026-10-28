@@ -1745,7 +1745,8 @@ function loop(ts: number): void {
     const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
     specialQueued = false;
     if (bonkRun.value && bonkPhysics.value && beforeBonkPosition) {
-      stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, simulationDt);
+      const bonkStep = stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, simulationDt);
+      if (bonkStep.fellInWater) say('Você caiu no riacho. Atravesse pela ponte.', 1_800);
       // Inimigos também respeitam rochas e paredes; a altura do jogador não deve abrir a parede para eles.
       const groundPhysics = { ...bonkPhysics.value, z: 0 };
       for (const enemy of s.enemies) {

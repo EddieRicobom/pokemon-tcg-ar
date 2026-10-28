@@ -17,6 +17,10 @@ export const BONK_TURN_RATE = 3.2;
 export const BONK_JUMP_BUFFER_MS = 140;
 /** Duração do efeito de pouso (poeira e achatamento do sprite). */
 export const BONK_LANDING_MS = 220;
+/** Tempo do respingo/aviso ao cair no riacho; evita repetir o evento a cada quadro na margem. */
+export const BONK_WATER_FALL_MS = 520;
+/** Leito vertical do riacho do BONK. A ponte o cruza na altura de `y: 810`. */
+export const BONK_STREAM = { x0: 2040, x1: 2260, y0: 280, y1: 1640 } as const;
 
 export type BonkObstacleKind = 'tree' | 'boulder' | 'wall' | 'ruin' | 'crystal' | 'bridge';
 
@@ -46,6 +50,8 @@ export interface BonkPhysics {
   jumpBufferMs: number;
   /** Ms restantes do efeito de pouso, só para o desenho. */
   landingMs: number;
+  /** Ms restantes do efeito de queda na água. */
+  waterFallMs: number;
   /** Semente visual/física do cenário desta corrida; não consome o RNG do combate. */
   landscapeSeed: number;
   obstacles: readonly BonkObstacle[];
@@ -77,14 +83,15 @@ const OBSTACLES: readonly BonkObstacle[] = [
   { id: 'wall-south', x: 1110, y: 1540, w: 650, h: 48, height: 126, kind: 'wall' },
   { id: 'low-wall-1', x: 1150, y: 900, w: 180, h: 34, height: 38, kind: 'wall' },
   { id: 'low-wall-2', x: 1560, y: 1060, w: 180, h: 34, height: 38, kind: 'wall' },
-  { id: 'bridge', x: 1980, y: 810, w: 320, h: 84, height: 18, kind: 'bridge' },
+  // Piso raso: não bloqueia o passo, mas é a única passagem segura sobre o riacho.
+  { id: 'bridge', x: 1980, y: 810, w: 320, h: 84, height: 0, kind: 'bridge' },
   // Cristais e pedras da margem direita fazem o mapa continuar legível e detalhado longe da clareira.
-  { id: 'crystal-1', x: 2120, y: 470, w: 56, h: 56, height: 104, kind: 'crystal' },
-  { id: 'crystal-2', x: 2330, y: 620, w: 64, h: 64, height: 112, kind: 'crystal' },
-  { id: 'crystal-3', x: 2470, y: 1020, w: 54, h: 54, height: 98, kind: 'crystal' },
+  { id: 'crystal-1', x: 2380, y: 470, w: 56, h: 56, height: 104, kind: 'crystal' },
+  { id: 'crystal-2', x: 2470, y: 620, w: 64, h: 64, height: 112, kind: 'crystal' },
+  { id: 'crystal-3', x: 2390, y: 1020, w: 54, h: 54, height: 98, kind: 'crystal' },
   { id: 'tree-east-1', x: 2380, y: 1320, w: 98, h: 98, height: 194, kind: 'tree' },
   { id: 'tree-east-2', x: 2580, y: 1480, w: 88, h: 88, height: 180, kind: 'tree' },
-  { id: 'stone-east-1', x: 2180, y: 1210, w: 128, h: 82, height: 52, kind: 'boulder' },
+  { id: 'stone-east-1', x: 2400, y: 1210, w: 128, h: 82, height: 52, kind: 'boulder' },
   { id: 'stone-east-2', x: 2580, y: 790, w: 110, h: 74, height: 48, kind: 'boulder' },
 ] as const;
 
@@ -120,6 +127,18 @@ function keepsStartClear(obstacle: Pick<BonkObstacle, 'x' | 'y' | 'w' | 'h'>): b
   return Math.hypot(ARENA_W / 2 - closestX, ARENA_H / 2 - closestY) >= START_CLEAR_RADIUS;
 }
 
+function overlapsStream(obstacle: Pick<BonkObstacle, 'x' | 'y' | 'w' | 'h'>): boolean {
+  return obstacle.x < BONK_STREAM.x1 && obstacle.x + obstacle.w > BONK_STREAM.x0
+    && obstacle.y < BONK_STREAM.y1 && obstacle.y + obstacle.h > BONK_STREAM.y0;
+}
+
+/** A água é perigosa fora da ponte; o piso dela é transitável e nunca vira uma colisão invisível. */
+export function bonkWaterAt(x: number, y: number, obstacles: readonly BonkObstacle[]): boolean {
+  const inStream = x >= BONK_STREAM.x0 && x <= BONK_STREAM.x1 && y >= BONK_STREAM.y0 && y <= BONK_STREAM.y1;
+  if (!inStream) return false;
+  return !obstacles.some((obstacle) => obstacle.kind === 'bridge' && x >= obstacle.x && x <= obstacle.x + obstacle.w && y >= obstacle.y && y <= obstacle.y + obstacle.h);
+}
+
 /**
  * Mantém os marcos legíveis (ponte, muralhas e clareira inicial), mas dá a cada
  * seed posições e tamanhos diferentes para árvores, pedras, ruínas e cristais.
@@ -142,7 +161,7 @@ export function createBonkObstacles(seed: number): readonly BonkObstacle[] {
         h,
         height,
       };
-      if (keepsStartClear(candidate)) return candidate;
+      if (keepsStartClear(candidate) && !overlapsStream(candidate)) return candidate;
     }
     return { ...base, w, h, height };
   });
@@ -160,6 +179,7 @@ export function createBonkPhysics(initialYaw = Math.PI / 2, landscapeSeed = DEFA
     collisionFlashMs: 0,
     jumpBufferMs: 0,
     landingMs: 0,
+    waterFallMs: 0,
     landscapeSeed: normalizedSeed,
     obstacles: createBonkObstacles(normalizedSeed),
   };
@@ -213,6 +233,8 @@ export function resolveBonkPosition(
   let collided = x !== desiredX || y !== desiredY;
 
   for (const obstacle of physics.obstacles) {
+    // A ponte é chão seguro sobre a água, não uma parede para o círculo do jogador.
+    if (obstacle.kind === 'bridge') continue;
     // O centro do jogador está acima do topo: pedras e muretas tornam-se puláveis,
     // árvores, ruínas e muros altos continuam sendo barreiras reais.
     if (physics.z > obstacle.height + radius * 0.35) continue;
@@ -258,7 +280,7 @@ export function stepBonkPhysics(
   from: { x: number; y: number },
   input: { dx: number; dy: number; jump?: boolean },
   dtMs: number,
-): void {
+): { fellInWater: boolean } {
   const dt = Math.max(0, Math.min(80, dtMs)) / 1000;
   if (input.jump) physics.jumpBufferMs = BONK_JUMP_BUFFER_MS;
   if (physics.jumpBufferMs > 0) {
@@ -273,6 +295,7 @@ export function stepBonkPhysics(
   physics.verticalVelocity -= BONK_GRAVITY * (player.bonkGravityFactor ?? 1) * dt;
   physics.z += physics.verticalVelocity * dt;
   physics.landingMs = Math.max(0, physics.landingMs - dtMs);
+  physics.waterFallMs = Math.max(0, physics.waterFallMs - dtMs);
   if (physics.z <= 0) {
     physics.z = 0;
     physics.verticalVelocity = 0;
@@ -287,6 +310,20 @@ export function stepBonkPhysics(
   player.y = resolved.y;
   if (resolved.collided && (Math.abs(player.x - from.x) > 0.01 || Math.abs(player.y - from.y) > 0.01)) physics.collisionFlashMs = 130;
   else physics.collisionFlashMs = Math.max(0, physics.collisionFlashMs - dtMs);
+  const fellInWater = bonkWaterAt(player.x, player.y, physics.obstacles);
+  if (fellInWater) {
+    // Volta à última posição seca: água é risco de cenário, não um atalho nem uma parede invisível.
+    player.x = from.x;
+    player.y = from.y;
+    physics.z = 0;
+    physics.verticalVelocity = 0;
+    physics.grounded = true;
+    physics.jumpsUsed = 0;
+    const announce = physics.waterFallMs <= 0;
+    physics.waterFallMs = BONK_WATER_FALL_MS;
+    return { fellInWater: announce };
+  }
+  return { fellInWater: false };
 }
 
 /** Projeção perspectiva da câmera em terceira pessoa. Retorna null atrás da câmera ou perto demais. */

@@ -1,4 +1,4 @@
-import { BONK_CAMERA, bonkCameraPosition, bonkFocal, projectBonkPoint } from '../core/survivor-bonk';
+import { BONK_CAMERA, BONK_STREAM, bonkCameraPosition, bonkFocal, projectBonkPoint } from '../core/survivor-bonk';
 import type { BonkObstacle, BonkPhysics, BonkProjection } from '../core/survivor-bonk';
 import { ARENA_H, ARENA_W } from '../core/survivor-types';
 import type { SurvivorPlayer } from '../core/survivor-types';
@@ -42,7 +42,6 @@ const WATER_A: Rgb = [52, 140, 196];
 const WATER_B: Rgb = [92, 186, 230];
 const ROAD: Rgb = [196, 160, 112];
 const ROAD_EDGE: Rgb = [146, 112, 76];
-const STREAM = { x0: 2020, x1: 2520, y0: 650, y1: 1250 } as const;
 
 function normalize(x: number, y: number): Point {
   const length = Math.hypot(x, y) || 1;
@@ -462,9 +461,9 @@ function insideArena(x: number, y: number): boolean {
 }
 
 function streamDistance(x: number, y: number): number {
-  const dx = Math.max(STREAM.x0 - x, 0, x - STREAM.x1);
-  const dy = Math.max(STREAM.y0 - y, 0, y - STREAM.y1);
-  return dx === 0 && dy === 0 ? -Math.min(x - STREAM.x0, STREAM.x1 - x, y - STREAM.y0, STREAM.y1 - y) : Math.hypot(dx, dy);
+  const dx = Math.max(BONK_STREAM.x0 - x, 0, x - BONK_STREAM.x1);
+  const dy = Math.max(BONK_STREAM.y0 - y, 0, y - BONK_STREAM.y1);
+  return dx === 0 && dy === 0 ? -Math.min(x - BONK_STREAM.x0, BONK_STREAM.x1 - x, y - BONK_STREAM.y0, BONK_STREAM.y1 - y) : Math.hypot(dx, dy);
 }
 
 function groundColor(x: number, y: number, t: number): Rgb {
@@ -934,7 +933,7 @@ function drawBridge(view: View, o: BonkObstacle, depth: number): void {
   }
   ctx.strokeStyle = css(fogged(palette.detail, depth), 0.7);
   ctx.stroke();
-  // Corrimão só visual (a ponte continua pulável): postes e uma barra em cada lateral.
+  // Corrimão só visual: o piso plano da ponte é a passagem segura sobre o riacho.
   ctx.beginPath();
   for (const edge of [0, along ? o.h : o.w]) {
     const rail: Point[] = [];
