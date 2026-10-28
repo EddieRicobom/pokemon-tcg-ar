@@ -10,9 +10,12 @@ import type { SurvivorProjectileLook } from './survivor-projectile-power';
  * `survivor.ts` reexporta tudo daqui, então os imports existentes continuam valendo.
  */
 
-/** Dimensões do mundo jogável. A malha foi ampliada em 3× nos dois eixos; a câmera continua mostrando só uma janela. */
-export const ARENA_W = 2880;
-export const ARENA_H = 1920;
+/** Um setor de paisagem: mantém o tamanho visual dos tiles, árvores e itens. */
+export const SURVIVOR_LANDSCAPE_TILE_W = 2880;
+export const SURVIVOR_LANDSCAPE_TILE_H = 1920;
+/** Dimensões do mundo jogável. A arena agora reúne nove setores 2.880×1.920; a câmera continua mostrando só uma janela. */
+export const ARENA_W = SURVIVOR_LANDSCAPE_TILE_W * 3;
+export const ARENA_H = SURVIVOR_LANDSCAPE_TILE_H * 3;
 export const PLAYER_RADIUS = 14;
 export const PICKUP_RADIUS = 46;
 /** O artefato Ímã continua útil, mas não coleta orbes de uma tela inteira. */

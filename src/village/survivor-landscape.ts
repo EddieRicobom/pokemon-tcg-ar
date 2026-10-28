@@ -72,7 +72,9 @@ export const SURVIVOR_REGION_ROUTES: readonly SurvivorRouteDefinition[] = [
   { main: [[0.06, -0.06], [0.2, 0.18], [0.38, 0.34], [0.62, 0.5], [0.92, 0.66], [1.06, 0.78]], branches: [[[0.38, 0.34], [0.25, 0.43], [0.13, 0.56]]], width: 114 },
 ] as const;
 
-const T = 16;
+/** Lado de uma célula da paisagem e da grade de colisão, em pixels do mundo. */
+export const SURVIVOR_LANDSCAPE_CELL = 16;
+const T = SURVIVOR_LANDSCAPE_CELL;
 const Q = 8;
 
 interface RoutePoint { x: number; y: number }
@@ -138,6 +140,8 @@ export interface SurvivorFloorPlan {
   cols: number;
   rows: number;
   cells: Uint8Array;
+  /** Células que têm um tronco, rocha, muro ou mata fechada; o jogador não as atravessa. */
+  solid: Uint8Array;
   /** Blocos da rota (1), inclusive os que passam por baixo de uma zona de bioma. */
   path: Uint8Array;
   /** Bioma mecânico de cada bloco (`null` fora das zonas); vira terreno temático no desenho. */
@@ -253,7 +257,31 @@ export function planSurvivorFloor(index: number, width: number, height: number):
       cells[i] = FLOOR_CELL.cover;
     }
   }
-  return { cols, rows, cells, path, zones, routeDistance };
+  // Mata fechada é uma parede contínua de árvores. Objetos soltos usam a mesma
+  // grade e o mesmo sorteio do desenho abaixo, para a hitbox acompanhar a arte.
+  const solid = new Uint8Array(cols * rows);
+  const markSolid = (c: number, r: number, w = 1, h = 1) => {
+    for (let y = r; y < r + h; y++) for (let x = c; x < c + w; x++) {
+      if (x >= 0 && y >= 0 && x < cols && y < rows) solid[y * cols + x] = 1;
+    }
+  };
+  for (let i = 0; i < cells.length; i++) if (cells[i] === FLOOR_CELL.forest) solid[i] = 1;
+  const detailFootprint = tiles.detail === 'tree-big' || tiles.detail === 'pine-m'
+    ? { w: 2, h: 2 }
+    : tiles.detail === 'wall' ? { w: 2, h: 1 }
+      : { w: 1, h: 1 };
+  for (let r = 4; r < rows - 6; r += 9) for (let c = 4; c < cols - 6; c += 11) {
+    const cc = c + Math.floor(floorHash(index, c, r, 7) * 6);
+    const rr = r + Math.floor(floorHash(index, c, r, 8) * 5);
+    if (floorHash(index, c, r, 9) > 0.5 || tiles.detail === 'flowers-white') continue;
+    let free = true;
+    for (let y = rr; y < rr + detailFootprint.h && free; y++) for (let x = cc; x < cc + detailFootprint.w && free; x++) {
+      const i = y * cols + x;
+      free = x >= 0 && y >= 0 && x < cols && y < rows && cells[i] === FLOOR_CELL.base && routeDistance[i]! > trailHalfWidth(SURVIVOR_REGION_ROUTES[index]!.width) + 24;
+    }
+    if (free) markSolid(cc, rr, detailFootprint.w, detailFootprint.h);
+  }
+  return { cols, rows, cells, solid, path, zones, routeDistance };
 }
 
 /** Retângulo do mundo que aparece na tela (câmera); sem ele a paisagem inteira é desenhada. */
@@ -644,7 +672,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     };
   }
 
-  /** Desenha uma camada da arena inteira, ou só o retângulo visível: o resto nunca chega à tela, e a arena tem 2880×1920. */
+  /** Desenha um setor 2.880×1.920, ou apenas o retângulo visível dele. */
   function paint(ctx: CanvasRenderingContext2D, region: RegionLayer, view: LandscapeView | undefined, motion: LandscapeMotion): void {
     const { x, y, right, bottom } = viewRect(view);
     if (right <= x || bottom <= y) return;
@@ -680,13 +708,23 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     const { current, next, blend } = survivorRegionAt(elapsedMs, runSeed);
     for (const key of layers.keys()) if (key !== current && key !== next) layers.delete(key);
     for (const key of regionAtlases.keys()) if (key !== current && key !== next) regionAtlases.delete(key);
-    ctx.save();
-    paint(ctx, layer(current), view, motion);
-    if (blend > 0) {
-      ctx.globalAlpha = blend;
-      paint(ctx, layer(next), view, motion);
+    // A arena pode ser maior que um único canvas de cenário. Repetir o setor
+    // preserva tamanho de árvores/itens e evita uma textura de centenas de MB.
+    const visible = view ?? { x: 0, y: 0, w: width, h: height };
+    const firstX = Math.floor(visible.x / width), lastX = Math.floor((visible.x + visible.w - 1) / width);
+    const firstY = Math.floor(visible.y / height), lastY = Math.floor((visible.y + visible.h - 1) / height);
+    for (let tileY = firstY; tileY <= lastY; tileY++) for (let tileX = firstX; tileX <= lastX; tileX++) {
+      const offsetX = tileX * width, offsetY = tileY * height;
+      const localView = { x: visible.x - offsetX, y: visible.y - offsetY, w: visible.w, h: visible.h };
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+      paint(ctx, layer(current), localView, motion);
+      if (blend > 0) {
+        ctx.globalAlpha = blend;
+        paint(ctx, layer(next), localView, motion);
+      }
+      ctx.restore();
     }
-    ctx.restore();
   }) as SurvivorLandscapeRenderer;
 
   render.setAtlas = (image) => {

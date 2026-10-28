@@ -3,7 +3,7 @@ import { PNG } from 'pngjs';
 import { describe, expect, it } from 'vitest';
 import { SURVIVOR_BIOMES, survivorBiomeZonesOf } from '../core/survivor-biomes';
 import { SURVIVOR_REGIONS, REGION_DURATION_MS, survivorRegionAt } from '../core/survivor-regions';
-import { ARENA_H, ARENA_W } from '../core/survivor-types';
+import { SURVIVOR_LANDSCAPE_TILE_H, SURVIVOR_LANDSCAPE_TILE_W } from '../core/survivor-types';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
 import { SURVIVOR_FLOOR_PALETTES, floorTone } from './survivor-floor-art';
 import { FLOOR_CELL, SURVIVOR_REGION_TILESETS, SURVIVOR_REGION_ROUTES, ZONE_SPILL, planSurvivorFloor, routePolyline, trailHalfWidth } from './survivor-landscape';
@@ -54,7 +54,7 @@ describe('tilesets regionais da Torre', () => {
       expect(route.branches.length).toBeGreaterThan(0);
       expect(route.main.some(([x, y]) => x < 0 || x > 1 || y < 0 || y > 1)).toBe(true);
       for (const points of [route.main, ...route.branches]) {
-        const line = routePolyline(points, ARENA_W, ARENA_H);
+        const line = routePolyline(points, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
         for (let i = 1; i < line.length; i++) {
           const a = line[i - 1]!, b = line[i]!;
           expect(a.x === b.x || a.y === b.y).toBe(true);
@@ -85,8 +85,9 @@ describe('chão da Torre em blocos de 16 px', () => {
 
   it('a rota atravessa a arena sem blocos soltos e as moitas nunca ficam sobre ela', () => {
     SURVIVOR_REGION_TILESETS.forEach((_, index) => {
-      const plan = planSurvivorFloor(index, ARENA_W, ARENA_H);
+      const plan = planSurvivorFloor(index, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
       expect(plan.cols * plan.rows).toBe(plan.cells.length);
+      expect(plan.solid).toHaveLength(plan.cells.length);
       let pathCells = 0;
       for (let r = 0; r < plan.rows; r++) for (let c = 0; c < plan.cols; c++) {
         const i = r * plan.cols + c;
@@ -102,6 +103,7 @@ describe('chão da Torre em blocos de 16 px', () => {
         if (plan.cells[i] === FLOOR_CELL.cover || plan.cells[i] === FLOOR_CELL.forest) {
           expect(plan.routeDistance[i]).toBeGreaterThan(trailHalfWidth(SURVIVOR_REGION_ROUTES[index]!.width));
         }
+        if (plan.cells[i] === FLOOR_CELL.forest) expect(plan.solid[i]).toBe(1);
       }
       expect(pathCells).toBeGreaterThan(plan.cells.length * 0.04);
       // Rota principal e ramificações formam um caminho só.
@@ -129,8 +131,8 @@ describe('chão da Torre em blocos de 16 px', () => {
 
   it('cada zona de bioma vira terreno sobre todo o retângulo da mecânica, com orla irregular e curta', () => {
     for (const biome of SURVIVOR_BIOMES) {
-      const plan = planSurvivorFloor(biome.regionIndex, ARENA_W, ARENA_H);
-      const zones = survivorBiomeZonesOf(biome);
+      const plan = planSurvivorFloor(biome.regionIndex, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
+      const zones = survivorBiomeZonesOf(biome).filter((zone) => zone.x < SURVIVOR_LANDSCAPE_TILE_W && zone.y < SURVIVOR_LANDSCAPE_TILE_H);
       for (const zone of zones) {
         // Todo bloco que a mecânica toca tem o terreno da zona: nenhum perigo fica sem desenho.
         for (let r = Math.floor(zone.y / 16); r < Math.ceil((zone.y + zone.height) / 16); r++) {
@@ -152,7 +154,7 @@ describe('chão da Torre em blocos de 16 px', () => {
 
   it('fecha a arena com floresta nas bordas, deixando a trilha sair por elas', () => {
     SURVIVOR_REGION_TILESETS.forEach((_, index) => {
-      const plan = planSurvivorFloor(index, ARENA_W, ARENA_H);
+      const plan = planSurvivorFloor(index, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
       const edge = Array.from({ length: plan.cols }, (_, c) => plan.cells[plan.cols * 2 + c]);
       expect(edge.filter((cell) => cell === FLOOR_CELL.forest).length).toBeGreaterThan(plan.cols * 0.5);
       const forest = plan.cells.filter((cell) => cell === FLOOR_CELL.forest).length;
@@ -161,9 +163,10 @@ describe('chão da Torre em blocos de 16 px', () => {
   });
 
   it('é determinístico: a mesma região gera sempre o mesmo mapa', () => {
-    const a = planSurvivorFloor(4, ARENA_W, ARENA_H);
-    const b = planSurvivorFloor(4, ARENA_W, ARENA_H);
+    const a = planSurvivorFloor(4, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
+    const b = planSurvivorFloor(4, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
     expect(Array.from(a.cells)).toEqual(Array.from(b.cells));
-    expect(Array.from(a.cells)).not.toEqual(Array.from(planSurvivorFloor(5, ARENA_W, ARENA_H).cells));
+    expect(Array.from(a.solid)).toEqual(Array.from(b.solid));
+    expect(Array.from(a.cells)).not.toEqual(Array.from(planSurvivorFloor(5, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H).cells));
   });
 });

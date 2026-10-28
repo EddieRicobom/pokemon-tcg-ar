@@ -28,6 +28,7 @@ import {
   survivorBanBlockReason,
   ARENA_H,
   ARENA_W,
+  PLAYER_RADIUS,
   createSurvivorState,
   chooseSurvivorTypeAffinity,
   rerollSurvivorUpgradeOffer,
@@ -43,6 +44,8 @@ import {
   SURVIVOR_ARTIFACT_DETAILS,
   survivorProjectileOpacity,
   FAST_TIME_SCALE,
+  SURVIVOR_LANDSCAPE_TILE_H,
+  SURVIVOR_LANDSCAPE_TILE_W,
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
@@ -60,7 +63,8 @@ import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
 import { survivorBiomeAt, survivorBiomeLabel } from '../core/survivor-biomes';
-import { createSurvivorLandscape } from '../village/survivor-landscape';
+import { resolveSurvivorLandscapeMove } from '../core/survivor-collision';
+import { createSurvivorLandscape, planSurvivorFloor, SURVIVOR_LANDSCAPE_CELL } from '../village/survivor-landscape';
 import { REGIONAL_ENCOUNTERS, REGIONAL_ENEMY_SPRITES, REGIONAL_KIND_COUNT, regionalEnemyDexId } from '../core/survivor-encounters';
 import { survivorRegionAt } from '../core/survivor-regions';
 import type { SoundCue } from '../box/sound-recipes';
@@ -163,7 +167,18 @@ const specialEffects = ref(true);
 const hudExpanded = ref(false);
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 const detailedSpecialEffects = computed(() => specialEffects.value && !reducedMotion && !effectiveVisual.value.rotomMode);
-const drawLandscape = createSurvivorLandscape(ARENA_W, ARENA_H);
+// A arte é um setor repetível: o mundo cresce sem ampliar árvores, itens ou a textura de cada canvas.
+const drawLandscape = createSurvivorLandscape(SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
+const collisionPlans = new Map<number, ReturnType<typeof planSurvivorFloor>>();
+function landscapeCollisionPlan(elapsedMs: number, runSeed: number) {
+  const { current } = survivorRegionAt(elapsedMs, runSeed);
+  let plan = collisionPlans.get(current);
+  if (!plan) {
+    plan = planSurvivorFloor(current, SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
+    collisionPlans.set(current, plan);
+  }
+  return { cols: plan.cols, rows: plan.rows, cellSize: SURVIVOR_LANDSCAPE_CELL, solid: plan.solid };
+}
 let landscapeAtlasLoaded = false;
 /** Atlas da Vila já carregado (null enquanto carrega ou se falhar): o BONK recorta as texturas dele. */
 let landscapeAtlasImage: HTMLImageElement | null = null;
@@ -1720,6 +1735,7 @@ function loop(ts: number): void {
     const dx = kx + (joystick.active ? joystick.dx : 0);
     const dy = ky + (joystick.active ? joystick.dy : 0);
     const beforeBonkPosition = bonkRun.value ? { x: s.player.x, y: s.player.y } : null;
+    const beforeLandscapePosition = !bonkRun.value && regionScenery.value ? { x: s.player.x, y: s.player.y } : null;
     const previousSpecialPhase = s.special.phase;
     // No BONK, frente/trás move; os lados deslocam lateralmente e giram a câmera.
     const move = bonkRun.value && bonkPhysics.value ? bonkInputToWorld(bonkPhysics.value, dx, dy) : { dx, dy };
@@ -1739,6 +1755,16 @@ function loop(ts: number): void {
         enemy.y = resolved.y;
       }
       triggerRef(bonkPhysics);
+    }
+    if (beforeLandscapePosition) {
+      const resolved = resolveSurvivorLandscapeMove(
+        landscapeCollisionPlan(s.elapsedMs, s.runSeed),
+        beforeLandscapePosition,
+        s.player,
+        PLAYER_RADIUS,
+      );
+      s.player.x = resolved.x;
+      s.player.y = resolved.y;
     }
     bonkJumpQueued = false;
     const region = survivorRegionLabel(s.elapsedMs, s.runSeed);
