@@ -24,7 +24,7 @@ export function digitalInstance(id: string, d: DigitalState): DigitalPokemonInst
   return isDigitalInstanceId(id) ? d.instances.find((i) => i.instanceId === id) : undefined;
 }
 
-/** Linha da Box para um Digital Pokémon: o mesmo formato das cartas, marcado como `digital` (sem scan nem AR sobre carta; entra na Caixa em AR). */
+/** Linha da Arena para um Digital Pokémon: o mesmo formato das cartas, marcado como `digital` (sem scan nem AR sobre carta; entra na Arena 3D). */
 export interface DigitalBoxRow {
   id: string;
   schema: number;

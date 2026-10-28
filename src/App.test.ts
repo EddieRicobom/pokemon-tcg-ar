@@ -44,11 +44,11 @@ describe('App', () => {
     expect(text).not.toContain('Escolhida por você');
   });
 
-  it('a tela Caixa abre com a câmera desligada e explica como usar', async () => {
+  it('a tela Arena abre desligada e explica como usar', async () => {
     const text = await mount('#/caixa');
-    expect(text).toContain('Caixa em AR');
-    expect(text).toContain('Câmera desligada');
-    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Abrir câmera e sensores');
+    expect(text).toContain('Arena 3D');
+    expect(text).toContain('Arena desligada');
+    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('🏟️ Entrar na Arena 3D');
     // A Vila tem aba própria: a Caixa não esconde mais um "Modo vida" dentro dela.
     expect(text).not.toContain('Modo vida');
     // A escolha da turma mora em Minhas cartas; a Caixa só aponta para lá.
@@ -56,9 +56,9 @@ describe('App', () => {
     expect([...(host?.querySelectorAll('a') ?? [])].some((a) => a.getAttribute('href') === '#/cartas')).toBe(true);
   });
 
-  it('vindo da batalha do Fliperama, a Caixa oferece um toque para abrir a câmera e batalhar', async () => {
+  it('vindo da batalha do Fliperama, a Arena oferece entrada direta para batalhar', async () => {
     await mount('#/caixa?batalha=1');
-    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('⚔️ Abrir câmera e batalhar');
+    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('⚔️ Entrar na arena e batalhar');
     expect([...(host?.querySelectorAll('a') ?? [])].some((a) => a.getAttribute('href') === '#/vila')).toBe(true);
   });
 
@@ -75,14 +75,10 @@ describe('App', () => {
     expect(text).toContain('Monte seu time de batalha');
     expect(text).toContain('Formatação digital');
     expect(text).toContain('Restauração digital');
-    // O padrão é a Arena 3D (sem câmera); trocar o fundo para a câmera (AR) volta o link para a Caixa em AR de sempre.
+    // A Arena é sempre 3D e todos os atalhos apontam para o palco virtual.
     const hrefs = () => [...(host?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href'));
-    expect(hrefs()).toContain('#/caixa?virtual=1');
+    expect(hrefs()).toContain('#/caixa?arena=1&virtual=1');
     expect(hrefs()).not.toContain('#/caixa');
-    [...host!.querySelectorAll<HTMLButtonElement>('.box-backdrop button')].find((b) => b.textContent?.includes('Caixa em AR'))!.click();
-    await nextTick();
-    expect(hrefs()).toContain('#/caixa');
-    expect(hrefs()).not.toContain('#/caixa?virtual=1');
   });
 
   it('a tela Treinador mostra nível, missões e conquistas, sem inventar progresso', async () => {
@@ -146,7 +142,7 @@ describe('App', () => {
       // As lutas moram no Coliseu da Vila: a aba da Vila fica acesa e não há aba nem sub-aba delas.
       expect([...(host?.querySelectorAll('nav.tabs a.active') ?? [])].map((a) => a.textContent?.trim())).toEqual(['Vila']);
       expect(host?.querySelector('nav.modes')).toBeNull();
-      expect(host?.textContent).not.toContain('Minhas cartasCaixa em AR');
+      expect(host?.textContent).not.toContain('Minhas cartasArena 3D');
       app?.unmount();
       host?.remove();
     }

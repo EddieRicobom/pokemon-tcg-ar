@@ -78,7 +78,7 @@ onBeforeUnmount(() => { disposed = true; urls.splice(0).forEach((url) => URL.rev
 
 <template>
   <div class="team-picker">
-    <p class="hint">{{ hint ?? 'Escolha quem mora na Vila. Os moradores também aparecem na Caixa em AR; tirar daqui mantém o Pokémon na coleção.' }}</p>
+    <p class="hint">{{ hint ?? 'Escolha quem mora na Vila. Os moradores também podem lutar na Arena 3D; tirar daqui mantém o Pokémon na coleção.' }}</p>
     <p class="meta" role="status">
       {{ groupLabel }}: {{ team.ids.length }}/{{ max }}
       <template v-if="team.auto && team.ids.length > 0"> (automática: as mais recentes)</template>

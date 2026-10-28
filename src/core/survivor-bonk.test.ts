@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng } from './battle';
 import { createSurvivorState, rollUpgrades } from './survivor';
-import { BONK_LANDING_MS, BONK_TURN_RATE, bonkInputToWorld, bonkJumpsRemaining, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics, tryBonkJump } from './survivor-bonk';
+import { BONK_LANDING_MS, BONK_STREAM, BONK_TURN_RATE, BONK_WATER_SPEED_FACTOR, bonkInputToWorld, bonkJumpsRemaining, bonkWaterAt, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics, tryBonkJump } from './survivor-bonk';
 
 function player() {
   return createSurvivorState(7, { kindCount: 1, bonk: true }).player;
@@ -55,6 +55,23 @@ describe('física do modo BONK', () => {
     physics.z = 120;
     const jumped = resolveBonkPosition(physics, stone.x + stone.w / 2, stone.y + stone.h / 2);
     expect(jumped.collided).toBe(false);
+  });
+
+  it('deixa caminhar pela ponte e reduz o passo dentro do riacho', () => {
+    const p = player();
+    const physics = createBonkPhysics();
+    const bridge = physics.obstacles.find((obstacle) => obstacle.id === 'bridge')!;
+    expect(resolveBonkPosition(physics, bridge.x + bridge.w / 2, bridge.y + bridge.h / 2).collided).toBe(false);
+    expect(bonkWaterAt(BONK_STREAM.x0 + 20, bridge.y + bridge.h / 2, physics.obstacles)).toBe(false);
+    expect(bonkWaterAt(BONK_STREAM.x0 + 20, BONK_STREAM.y0 + 100, physics.obstacles)).toBe(true);
+
+    const shore = { x: BONK_STREAM.x0 - 30, y: BONK_STREAM.y0 + 100 };
+    const desired = { x: BONK_STREAM.x0 + 70, y: shore.y };
+    p.x = desired.x;
+    p.y = desired.y;
+    stepBonkPhysics(physics, p, shore, { dx: 0, dy: 0 }, 16);
+    expect(p.x).toBeCloseTo(shore.x + (desired.x - shore.x) * BONK_WATER_SPEED_FACTOR);
+    expect(p.y).toBe(shore.y);
   });
 
   it('o analógico é relativo à câmera: para cima avança e o lado desloca lateralmente', () => {

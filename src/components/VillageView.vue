@@ -123,7 +123,7 @@ import type { ItemBrowserSort } from '../core/village/item-browser';
 
 /** Modo vida da Caixa: a Vila, sem câmera, com controle na tela. */
 /** `close` sai da Vila; com `'pvp'` a Caixa abre o PvP em seguida (a Vila mora dentro da Caixa, então não há troca de tela). */
-/** `then`: para onde ir ao sair (Caixa com PvP, batalha na câmera ou desafio da Liga); sem nada, volta à tela anterior. */
+/** `then`: para onde ir ao sair (Arena, PvP ou desafio da Liga); sem nada, volta à tela anterior. */
 const emit = defineEmits<{ close: [then?: VilaExit] }>();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
@@ -635,7 +635,7 @@ function advanceCutscene(): void {
 
 // -- Mini tutorial dos Digital Pokémon (Fase 4): uma vez, logo depois do presente inicial.
 const TUTORIAL_LINES: readonly string[] = [
-  'Ele mora na Vila como qualquer outro: conversa, cria amizade, tem casa e anda na Caixa em AR com sua equipe. Só não é escaneado, porque não vem de nenhuma carta física.',
+  'Ele mora na Vila como qualquer outro: conversa, cria amizade, tem casa e luta na Arena 3D com sua equipe. Só não é escaneado, porque não vem de nenhuma carta física.',
   'Você ganha moedas conversando, respondendo perguntas, lanchando no Café, usando o Correio e vencendo minigames, corridas na Torre e batalhas.',
   'Na Fonte: 500 moedas invocam outro Digital Pokémon; 1000 + amizade bem alta evoluem o que você já tem, pra uma forma real.',
 ];
@@ -1959,13 +1959,6 @@ function goToArena3d(): void {
   emit('close', 'arena3d');
 }
 
-/** Coliseu → Caixa em AR: a câmera e os sensores, com os Pokémon no chão da sua sala. */
-function goToCaixa(): void {
-  closeDialog();
-  sheet.value = null;
-  emit('close', 'caixa');
-}
-
 function goToArena(): void {
   closeDialog();
   sheet.value = null;
@@ -1979,12 +1972,6 @@ function goToBattle3d(): void {
   emit('close', 'batalha3d');
 }
 
-/** Fliperama → batalha na câmera: fecha a Vila e já abre a câmera e os sensores da Caixa (no mesmo toque). */
-function goToBattle(): void {
-  closeDialog();
-  sheet.value = null;
-  emit('close', 'batalha');
-}
 const battleRewardText = computed(() => {
   const left = battleRewardsLeft(state, day.value);
   return left > 0 ? `+${BATTLE_REWARD_COINS} moedas por batalha · ${left} de ${BATTLE_REWARDS_PER_DAY} hoje` : `as moedas de hoje já saíram (${BATTLE_REWARDS_PER_DAY} de ${BATTLE_REWARDS_PER_DAY}); amanhã tem mais`;
@@ -1995,10 +1982,9 @@ function openGameBuilding(b: Building): void {
   if (b.kind === 'arcade') {
     dialog.value = {
       name: b.name,
-      text: `Luzes piscando e o barulhinho das máquinas! Aqui você joga os minigames (Quem é esse Pokémon?, Tipos e Memória) com as cartas que já escaneou — ou vai direto para uma batalha da sua caixa, na Arena 3D ou na câmera (${battleRewardText.value}).`,
+      text: `Luzes piscando e o barulhinho das máquinas! Aqui você joga os minigames (Quem é esse Pokémon?, Tipos e Memória) com as cartas que já escaneou — ou vai direto para uma batalha na Arena 3D (${battleRewardText.value}).`,
       actions: [
         { label: '🏟️ Batalha na Arena 3D', run: goToBattle3d },
-        { label: '📷 Batalha na câmera', run: goToBattle },
         { label: 'Jogar minigames', run: () => { closeDialog(); sheet.value = 'arcade'; } },
         exit,
       ],
@@ -2012,10 +1998,9 @@ function openGameBuilding(b: Building): void {
   } else if (b.kind === 'arena') {
     dialog.value = {
       name: b.name,
-      text: 'O Coliseu da Vila! Aqui os seus Pokémon lutam: na Arena 3D, um Coliseu virtual sem câmera, ou na Caixa em AR, com a luta no chão da sua sala pela câmera. A Liga (Ginásios, Elite 4 e Campeã), as corridas 6×6 e o PvP também saem daqui.',
+      text: 'O Coliseu da Vila! Aqui os seus Pokémon lutam na Arena 3D, um Coliseu virtual sem câmera. A Liga (Ginásios, Elite 4 e Campeã), as corridas 6×6 e o PvP também saem daqui.',
       actions: [
-        { label: '🏟️ Arena 3D (sem câmera)', run: goToArena3d },
-        { label: '📷 Caixa em AR (câmera)', run: goToCaixa },
+        { label: '🏟️ Abrir Arena 3D', run: goToArena3d },
         { label: '🏅 Liga e corridas 6×6', run: goToArena },
         { label: 'Batalhar com um amigo (PvP)', run: goToPvp },
         exit,
@@ -3414,9 +3399,9 @@ onBeforeUnmount(() => {
       <div v-if="sheet === 'arcade'" class="village-sheet tall game-sheet" role="dialog" aria-label="Fliperama">
         <header><strong>Fliperama</strong><button type="button" class="link" @click="sheet = null">Fechar</button></header>
         <div class="card arcade-battle">
-          <h2>⚔️ Batalha na câmera</h2>
-          <p class="note">Abre a câmera e os sensores da Caixa direto no modo de batalha: coloque a caixa no chão e toque em Batalhar. {{ battleRewardText }}.</p>
-          <button type="button" class="primary" @click="goToBattle">Abrir câmera e batalhar</button>
+          <h2>⚔️ Batalha na Arena 3D</h2>
+          <p class="note">Abre a Arena 3D direto no modo de batalha. {{ battleRewardText }}.</p>
+          <button type="button" class="primary" @click="goToBattle3d">Entrar na Arena e batalhar</button>
         </div>
         <MinigameHub closable @leave="sheet = null" />
       </div>

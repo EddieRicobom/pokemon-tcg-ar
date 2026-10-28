@@ -1352,11 +1352,11 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
         </button>
         <a class="button" :href="routeHref('cartas')">Ver em Minhas cartas</a>
         <a class="button" :href="routeHref('escanear', scan.card.id)">Ver esta carta em AR</a>
-        <a class="button" :href="routeHref('caixa')">Abrir a Caixa em AR</a>
+        <a class="button" :href="routeHref('caixa', undefined, ['virtual'])">Abrir a Arena 3D</a>
         <button type="button" @click="scanAnother">Escanear outra carta</button>
       </div>
-      <p v-if="teamAction === 'added'" class="message" role="status">{{ scan.card.name }} agora mora na Vila e também aparece na Caixa em AR.</p>
-      <p v-else-if="teamAction === 'already'" class="message" role="status">{{ scan.card.name }} já mora na Vila e aparece na Caixa em AR.</p>
+      <p v-if="teamAction === 'added'" class="message" role="status">{{ scan.card.name }} agora mora na Vila e pode lutar na Arena 3D.</p>
+      <p v-else-if="teamAction === 'already'" class="message" role="status">{{ scan.card.name }} já mora na Vila e pode lutar na Arena 3D.</p>
       <p v-else-if="teamAction === 'full'" class="message error" role="alert">A Vila chegou ao limite. <a :href="routeHref('cartas')">Abra Minhas cartas para trocar moradores.</a></p>
       <p v-else-if="teamAction === 'unavailable'" class="message" role="status">O Pokémon desta carta ainda não está carregado. <a :href="routeHref('cartas')">Veja o status em Minhas cartas.</a></p>
       <p v-else-if="teamAction === 'error'" class="message error" role="alert">Não consegui atualizar os moradores da Vila. Tente novamente ou abra <a :href="routeHref('cartas')">Minhas cartas</a>.</p>

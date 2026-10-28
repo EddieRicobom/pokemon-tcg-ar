@@ -41,7 +41,7 @@ function onConnected(peer: PvpPeer, role: 'host' | 'guest'): void {
           <small v-else>Esperando a equipe…</small>
         </div>
       </div>
-      <p class="hint">Os dois abrem a câmera e colocam a caixa. {{ boxPvp.role === 'host' ? 'Depois toque em Batalhar.' : 'Quando o anfitrião começar, a luta aparece na sua caixa.' }}</p>
+      <p class="hint">Os dois entram na Arena 3D. {{ boxPvp.role === 'host' ? 'Depois toque em Batalhar.' : 'Quando o anfitrião começar, a luta aparece na sua Arena.' }}</p>
       <button type="button" class="link" @click="leaveBoxPvp">Sair do PvP</button>
     </template>
     <p v-if="boxPvp.notice" class="message error" role="alert">{{ boxPvp.notice }}</p>

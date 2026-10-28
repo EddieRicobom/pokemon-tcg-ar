@@ -1,4 +1,4 @@
-import { BONK_CAMERA, bonkCameraPosition, bonkFocal, projectBonkPoint } from '../core/survivor-bonk';
+import { BONK_CAMERA, BONK_STREAM, bonkCameraPosition, bonkFocal, projectBonkPoint } from '../core/survivor-bonk';
 import type { BonkObstacle, BonkPhysics, BonkProjection } from '../core/survivor-bonk';
 import { ARENA_H, ARENA_W } from '../core/survivor-types';
 import type { SurvivorPlayer } from '../core/survivor-types';
@@ -42,7 +42,6 @@ const WATER_A: Rgb = [52, 140, 196];
 const WATER_B: Rgb = [92, 186, 230];
 const ROAD: Rgb = [196, 160, 112];
 const ROAD_EDGE: Rgb = [146, 112, 76];
-const STREAM = { x0: 2020, x1: 2520, y0: 650, y1: 1250 } as const;
 
 function normalize(x: number, y: number): Point {
   const length = Math.hypot(x, y) || 1;
@@ -462,9 +461,9 @@ function insideArena(x: number, y: number): boolean {
 }
 
 function streamDistance(x: number, y: number): number {
-  const dx = Math.max(STREAM.x0 - x, 0, x - STREAM.x1);
-  const dy = Math.max(STREAM.y0 - y, 0, y - STREAM.y1);
-  return dx === 0 && dy === 0 ? -Math.min(x - STREAM.x0, STREAM.x1 - x, y - STREAM.y0, STREAM.y1 - y) : Math.hypot(dx, dy);
+  const dx = Math.max(BONK_STREAM.x0 - x, 0, x - BONK_STREAM.x1);
+  const dy = Math.max(BONK_STREAM.y0 - y, 0, y - BONK_STREAM.y1);
+  return dx === 0 && dy === 0 ? -Math.min(x - BONK_STREAM.x0, BONK_STREAM.x1 - x, y - BONK_STREAM.y0, BONK_STREAM.y1 - y) : Math.hypot(dx, dy);
 }
 
 function groundColor(x: number, y: number, t: number): Rgb {
@@ -606,6 +605,43 @@ function onRoad(x: number, y: number): boolean {
   return Math.abs(y - (970 + Math.sin(x / 260) * 120)) < 92 || Math.abs(x - 1440) < 60;
 }
 
+export type BonkGroundDetail = 'tall' | 'bush' | 'flower' | 'rock' | 'stump' | null;
+
+/**
+ * Define o habitat do detalhe no chão. Cada célula grande ganha uma moita, pedregal ou clareira deliberada; o hash
+ * só escolhe a posição e a densidade dentro daquele habitat. Assim há corredores visuais vazios perto das estradas
+ * e grupos que se leem como vegetação, em vez de uma distribuição igual de objetos pelo mundo inteiro.
+ */
+export function bonkGroundDetail(seed: number, x: number, y: number): BonkGroundDetail {
+  if (onRoad(x, y) || streamDistance(x, y) < TILE * 0.8) return null;
+  const span = 560;
+  const gx = Math.floor(x / span);
+  const gy = Math.floor(y / span);
+  let nearest = Number.POSITIVE_INFINITY;
+  let habitat = 0;
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+    const cx = gx + ox, cy = gy + oy;
+    const jitterX = hash(cx + seed * 0.013, cy - seed * 0.021);
+    const jitterY = hash(cx - seed * 0.017, cy + seed * 0.009);
+    const px = (cx + 0.2 + jitterX * 0.6) * span;
+    const py = (cy + 0.2 + jitterY * 0.6) * span;
+    const radius = 145 + hash(cx + seed * 0.031, cy + seed * 0.027) * 115;
+    const distance = Math.hypot(x - px, y - py) / radius;
+    if (distance < nearest) {
+      nearest = distance;
+      habitat = hash(cx + seed * 0.041, cy - seed * 0.037);
+    }
+  }
+  if (nearest > 1) return null;
+  // No miolo da mancha a vegetação é mais densa; na borda ela se dissolve em chão livre.
+  const density = 0.28 + (1 - nearest) * 0.58;
+  if (hash(x / TILE + seed * 0.053, y / TILE - seed * 0.047) > density) return null;
+  if (habitat > 0.9) return 'stump';
+  if (habitat > 0.76) return 'rock';
+  if (habitat > 0.58) return 'flower';
+  return habitat > 0.27 ? 'bush' : 'tall';
+}
+
 /** Tufos de grama, flores e pedrinhas presos ao mundo: dão escala e sensação de movimento ao correr. */
 function drawGroundDetails(view: View): void {
   const { ctx, camera } = view;
@@ -621,11 +657,10 @@ function drawGroundDetails(view: View): void {
       const tx = x / TILE;
       const ty = y / TILE;
       for (let k = 0; k < 2; k++) {
-        const kind = hash(tx * 3.1 + k + view.decorSeed * 17.3, ty * 1.7 - k - view.decorSeed * 11.7);
-        if (kind < 0.42) continue;
         const wx = x + hash(tx + k * 5 + view.decorSeed * 7.1, ty + 9 - view.decorSeed * 3.7) * TILE;
         const wy = y + hash(tx + 4 - view.decorSeed * 5.3, ty - k * 3 + view.decorSeed * 9.1) * TILE;
-        if (streamDistance(wx, wy) < TILE * 0.8 || onRoad(wx, wy)) continue;
+        const kind = bonkGroundDetail(view.decorSeed, wx, wy);
+        if (!kind) continue;
         const depth = depthOf(view, wx, wy);
         // Colado na câmera, um tufo vira uma parede na tela: os detalhes começam um pouco antes do jogador.
         if (depth < 215 || depth > reach) continue;
@@ -636,27 +671,25 @@ function drawGroundDetails(view: View): void {
         const sprites = view.art?.sprites;
         // Com o atlas: o mesmo mato, arbusto, pedra, flor e toco da Vila, em pé no chão.
         const decor = !sprites ? null
-          : kind > 0.985 ? { image: sprites.stump, w: 30, h: 30 }
-            : kind > 0.95 ? { image: sprites.flower, w: 26, h: 26 }
-              : kind > 0.91 ? { image: sprites.rock1, w: 22, h: 22 }
-                : kind > 0.85 ? { image: sprites.bush, w: 34, h: 34 }
-                  // Mato alto forma moitas reconhecíveis em qualquer região; flores e pedras continuam raras.
-                  : kind > 0.66 ? { image: sprites.tall, w: 22, h: 34 }
-                    : null;
+          : kind === 'stump' ? { image: sprites.stump, w: 30, h: 30 }
+            : kind === 'flower' ? { image: sprites.flower, w: 26, h: 26 }
+              : kind === 'rock' ? { image: sprites.rock1, w: 22, h: 22 }
+                : kind === 'bush' ? { image: sprites.bush, w: 34, h: 34 }
+                  : { image: sprites.tall, w: 22, h: 34 };
         const image = decor?.image;
         if (decor && image) {
           items.push({ depth, draw: () => drawAtlasBillboard(view, image, wx, wy, decor.w, decor.h, depth) });
           continue;
         }
         items.push({ depth, draw: () => {
-          if (kind > 0.94) {
-            ctx.fillStyle = css(kind > 0.97 ? [255, 214, 92] : [246, 140, 196], alpha);
+          if (kind === 'flower') {
+            ctx.fillStyle = css([246, 140, 196], alpha);
             ctx.beginPath(); ctx.arc(p.x, p.y - 2.4 * s, Math.max(1, 2.2 * s), 0, Math.PI * 2); ctx.fill();
-          } else if (kind > 0.88) {
+          } else if (kind === 'rock' || kind === 'stump') {
             ctx.fillStyle = css([150, 152, 150], alpha * 0.9);
             ctx.beginPath(); ctx.ellipse(p.x, p.y, Math.max(1, 3.4 * s), Math.max(0.8, 1.8 * s), 0, 0, Math.PI * 2); ctx.fill();
           } else {
-            ctx.strokeStyle = css(kind > 0.65 ? [58, 118, 56] : [136, 196, 98], alpha * 0.9);
+            ctx.strokeStyle = css(kind === 'bush' ? [58, 118, 56] : [136, 196, 98], alpha * 0.9);
             ctx.lineWidth = Math.max(1, 1.1 * s);
             ctx.beginPath();
             for (const lean of [-1, 0, 1]) {
@@ -900,7 +933,7 @@ function drawBridge(view: View, o: BonkObstacle, depth: number): void {
   }
   ctx.strokeStyle = css(fogged(palette.detail, depth), 0.7);
   ctx.stroke();
-  // Corrimão só visual (a ponte continua pulável): postes e uma barra em cada lateral.
+  // Corrimão só visual: o piso plano da ponte é a passagem segura sobre o riacho.
   ctx.beginPath();
   for (const edge of [0, along ? o.h : o.w]) {
     const rail: Point[] = [];

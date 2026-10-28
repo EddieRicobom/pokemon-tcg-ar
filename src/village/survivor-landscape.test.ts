@@ -6,7 +6,7 @@ import { SURVIVOR_REGIONS, REGION_DURATION_MS, survivorRegionAt } from '../core/
 import { SURVIVOR_LANDSCAPE_TILE_H, SURVIVOR_LANDSCAPE_TILE_W } from '../core/survivor-types';
 import { ATLAS_SOURCES, packAtlas } from './atlas-spec';
 import { SURVIVOR_FLOOR_PALETTES, floorTone } from './survivor-floor-art';
-import { FLOOR_CELL, SURVIVOR_LANDSCAPE_CHUNK_SIZE, SURVIVOR_REGION_TILESETS, SURVIVOR_REGION_ROUTES, ZONE_SPILL, planSurvivorFloor, routePolyline, survivorLandscapeChunkPaintBounds, survivorLandscapeChunks, trailHalfWidth } from './survivor-landscape';
+import { FLOOR_CELL, SURVIVOR_LANDSCAPE_CHUNK_SIZE, SURVIVOR_REGION_SCENES, SURVIVOR_REGION_TILESETS, SURVIVOR_REGION_ROUTES, ZONE_SPILL, planSurvivorFloor, routePolyline, survivorLandscapeChunkPaintBounds, survivorLandscapeChunks, trailHalfWidth } from './survivor-landscape';
 
 describe('tilesets regionais da Torre', () => {
   it('separa a paisagem em chunks visíveis, sem pedir o setor inteiro à câmera', () => {
@@ -87,6 +87,22 @@ describe('tilesets regionais da Torre', () => {
           expect(((b.x - 8) % 16 + 16) % 16).toBe(0);
           expect(((b.y - 8) % 16 + 16) % 16).toBe(0);
         }
+      }
+    }
+  });
+
+  it('compõe cada região com bosques e moitas em pontos de cena, não numa chuva uniforme de sorteios', () => {
+    expect(SURVIVOR_REGION_SCENES).toHaveLength(SURVIVOR_REGIONS.length);
+    for (const scene of SURVIVOR_REGION_SCENES) {
+      expect(scene.groves.length).toBeGreaterThanOrEqual(2);
+      expect(scene.cover.length).toBeGreaterThanOrEqual(2);
+      for (const [x, y, rx, ry] of [...scene.groves, ...scene.cover]) {
+        expect(x).toBeGreaterThan(0);
+        expect(x).toBeLessThan(1);
+        expect(y).toBeGreaterThan(0);
+        expect(y).toBeLessThan(1);
+        expect(rx).toBeGreaterThan(0.08);
+        expect(ry).toBeGreaterThan(0.05);
       }
     }
   });
