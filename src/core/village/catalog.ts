@@ -127,7 +127,8 @@ export const ITEMS: readonly ItemDef[] = [
   m('bota', 'Bota velha', 1),
   { ...m('love-candy', 'Love Candy', 0), friendshipLevels: 1 },
   m('trust-stone', 'Pedra da Confiança', 0),
-  m('mega-stone-shard', 'Fragmento de Mega Stone', 0),
+  // Prêmio do marco de 20 min da Torre; também sai da bancada. Gasto na Mega temporária da Torre (`survivor-mega.ts`).
+  { ...m('mega-stone-shard', 'Fragmento de Megapedra', 0), recipe: { 'trust-stone': 2, cristal: 2, perola: 1 } },
   // Materiais fabricados
   { ...m('tabua', 'Tábua', 9), recipe: { madeira: 2 } },
   { ...m('tijolo', 'Tijolo', 14), recipe: { pedra: 2, argila: 1 } },
