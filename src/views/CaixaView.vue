@@ -759,11 +759,11 @@ onBeforeUnmount(() => {
           <StageButton v-if="!battling" icon="sliders" label="Ajustes" :active="showAdjust" @click="showAdjust = !showAdjust; showFilters = false; showTeam = false; showModes = false" />
           <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
           <StageButton v-if="!battling" icon="modes" :label="BATTLE_MODE_LABELS_PT[battleMode]" :active="showModes" @click="showModes = !showModes; showFilters = false; showTeam = false; showAdjust = false" />
-          <StageButton v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : endlessShortcut ? `Começar ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : 'Batalhar'" :disabled="endlessShortcut ? !canStartEndless : !canBattle" :attention="endlessShortcut ? canStartEndless && !preparing : battleShortcut && canBattle && !preparing" @click="startSelectedBattle" />
-          <StageButton v-if="battling && battleHud?.phase === 'finished' && !endlessRun" icon="battle" label="De novo" @click="startBattle" />
+          <StageButton class="stage-primary" v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : endlessShortcut ? `Começar ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : 'Batalhar'" :disabled="endlessShortcut ? !canStartEndless : !canBattle" :attention="endlessShortcut ? canStartEndless && !preparing : battleShortcut && canBattle && !preparing" @click="startSelectedBattle" />
+          <StageButton class="stage-primary" v-if="battling && battleHud?.phase === 'finished' && !endlessRun" icon="battle" label="De novo" @click="startBattle" />
           <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />
           <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
-          <StageButton v-if="battling" icon="stop" :label="endlessRun ? `Desistir · ${endlessRun.score}` : 'Parar'" @click="stopBattle" />
+          <StageButton class="stage-primary" v-if="battling" icon="stop" :label="endlessRun ? `Desistir · ${endlessRun.score}` : 'Parar'" @click="stopBattle" />
           <StageButton v-if="challenge && !battling" icon="close" label="Sem desafio" @click="cancelChallenge" />
           <StageButton icon="close" label="Fechar" @click="close" />
         </div>

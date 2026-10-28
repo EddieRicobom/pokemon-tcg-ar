@@ -1000,6 +1000,11 @@ body.no-scroll {
   pointer-events: auto;
 }
 
+/* A ação que leva à batalha (ou a encerra) vem primeiro: no celular a barra rola e ela ficava fora da tela. */
+.viewport .stage-bar > .stage-primary {
+  order: -1;
+}
+
 /* Tudo que importa fica sobre a câmera: avisos no topo (.stage-head) e folhas + botões na base (.stage-foot). */
 .viewport .stage-head {
   position: absolute;
