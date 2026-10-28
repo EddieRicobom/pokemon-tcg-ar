@@ -336,10 +336,21 @@ const FLOWER_FRAME_MS = 450;
 const WATER_FRAME_MS = 260;
 /** 512 px é grande o bastante para reduzir emendas, mas ocupa só 1 MiB por canvas RGBA. */
 export const SURVIVOR_LANDSCAPE_CHUNK_SIZE = 512;
-const MAX_CACHED_LANDSCAPE_CHUNKS = 24;
+/** A sobra coberta pelos chunks vizinhos elimina cortes de copas e detalhes na borda. */
 const CHUNK_DRAW_BLEED = 64;
+// Cada canvas inclui a sobra acima; 18 preserva um teto de memória próximo ao cache anterior.
+const MAX_CACHED_LANDSCAPE_CHUNKS = 18;
 
 export interface LandscapeChunkCoordinate { col: number; row: number; x: number; y: number; w: number; h: number }
+
+/** Área real pintada pelo canvas do chunk, com sobreposição aparada nas bordas do mundo. */
+export function survivorLandscapeChunkPaintBounds(bounds: LandscapeChunkCoordinate, width: number, height: number): { x: number; y: number; w: number; h: number } {
+  const x = Math.max(0, bounds.x - CHUNK_DRAW_BLEED);
+  const y = Math.max(0, bounds.y - CHUNK_DRAW_BLEED);
+  const right = Math.min(width, bounds.x + bounds.w + CHUNK_DRAW_BLEED);
+  const bottom = Math.min(height, bounds.y + bounds.h + CHUNK_DRAW_BLEED);
+  return { x, y, w: right - x, h: bottom - y };
+}
 
 /** Blocos da paisagem que cruzam o retângulo visível. */
 export function survivorLandscapeChunks(view: LandscapeView, width: number, height: number, chunkSize = SURVIVOR_LANDSCAPE_CHUNK_SIZE): LandscapeChunkCoordinate[] {
@@ -355,7 +366,7 @@ export function survivorLandscapeChunks(view: LandscapeView, width: number, heig
   return chunks;
 }
 
-/** Cacheia os planos regionais e no máximo 24 chunks visíveis; o mapa inteiro nunca vira uma textura única. */
+/** Cacheia os planos regionais e no máximo 18 chunks visíveis; o mapa inteiro nunca vira uma textura única. */
 export function createSurvivorLandscape(width: number, height: number): SurvivorLandscapeRenderer {
   const layers = new Map<number, RegionLayer>();
   const chunks = new Map<string, LandscapeChunk>();
@@ -467,12 +478,13 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
   }
 
   function buildChunk(index: number, regionLayer: RegionLayer, bounds: LandscapeChunkCoordinate): LandscapeChunk {
+    const paintBounds = survivorLandscapeChunkPaintBounds(bounds, width, height);
     const canvas = document.createElement('canvas');
-    canvas.width = bounds.w;
-    canvas.height = bounds.h;
+    canvas.width = paintBounds.w;
+    canvas.height = paintBounds.h;
     const ctx = canvas.getContext('2d')!;
     ctx.imageSmoothingEnabled = false;
-    ctx.translate(-bounds.x, -bounds.y);
+    ctx.translate(-paintBounds.x, -paintBounds.y);
     const region = SURVIVOR_REGIONS[index]!;
     const tiles = SURVIVOR_REGION_TILESETS[index]!;
     const floor: SurvivorFloorKind = tiles.floor;
@@ -481,16 +493,16 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     const { plan } = regionLayer;
     const { cols, rows, cells, zones } = plan;
     const result: LandscapeChunk = {
-      x: bounds.x,
-      y: bounds.y,
+      x: paintBounds.x,
+      y: paintBounds.y,
       canvas,
       flowers: Array.from({ length: rows }, () => []),
       water: Array.from({ length: rows }, () => []),
     };
-    const minC = Math.max(0, Math.floor((bounds.x - CHUNK_DRAW_BLEED) / T));
-    const maxC = Math.min(cols - 1, Math.floor((bounds.x + bounds.w + CHUNK_DRAW_BLEED - 1) / T));
-    const minR = Math.max(0, Math.floor((bounds.y - CHUNK_DRAW_BLEED) / T));
-    const maxR = Math.min(rows - 1, Math.floor((bounds.y + bounds.h + CHUNK_DRAW_BLEED - 1) / T));
+    const minC = Math.max(0, Math.floor(paintBounds.x / T));
+    const maxC = Math.min(cols - 1, Math.floor((paintBounds.x + paintBounds.w - 1) / T));
+    const minR = Math.max(0, Math.floor(paintBounds.y / T));
+    const maxR = Math.min(rows - 1, Math.floor((paintBounds.y + paintBounds.h - 1) / T));
     const at = (c: number, r: number) => (c < 0 || r < 0 || c >= cols || r >= rows ? null : r * cols + c);
     const cellIs = (c: number, r: number, kind: FloorCell, outside = true) => {
       const i = at(c, r);
@@ -500,6 +512,10 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       const i = at(c, r);
       return i === null ? false : zones[i] === kind;
     };
+    // A sobra deixa um desenho atravessar a borda, mas cada elemento tem um único dono.
+    // Assim texturas semitransparentes não escurecem ao serem desenhadas duas vezes.
+    const ownsCell = (c: number, r: number) => c * T >= bounds.x && c * T < bounds.x + bounds.w && r * T >= bounds.y && r * T < bounds.y + bounds.h;
+    const ownsPoint = (x: number, y: number) => x >= bounds.x && x < bounds.x + bounds.w && y >= bounds.y && y < bounds.y + bounds.h;
     const flowerColors: FlowerColors[] = tiles.flowers.map((name) => SURVIVOR_FLOWER_COLORS[name]);
     const decor = (kind: SurvivorDecorKind, variant: number, frame = 0) => {
       const key = `${kind}:${variant % 6}:${frame}`;
@@ -517,7 +533,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     };
     const placeDecor = (kind: SurvivorDecorKind, c: number, r: number, variant: number) => {
       if (kind === 'flowers') placeFlower(c, r, variant);
-      else ctx.drawImage(decor(kind, variant), c * T, r * T);
+      else if (ownsCell(c, r)) ctx.drawImage(decor(kind, variant), c * T, r * T);
     };
     /** Árvore do atlas com a copa no tom pedido (`tintFoliage`), recortada uma vez por região. */
     const tree = (id: string, tint: FoliageTint): HTMLCanvasElement | null => {
@@ -568,6 +584,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
 
     // 3. Rota em autotile: borda, cantos de fora e de dentro presos à grade, como nas rotas dos jogos.
     for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
+      if (!ownsCell(c, r)) continue;
       if (!plan.path[r * cols + c]) continue;
       if (!art) {
         ctx.fillStyle = region.path;
@@ -594,6 +611,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       // Na beira da mancha o terreno rareia, em vez de acabar numa linha reta.
       [[0, -1], [0, 1], [-1, 0], [1, 0]].filter(([dc, dr]) => !zoneIs(c + dc!, r + dr!, kind)).length;
     for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
+      if (!ownsCell(c, r)) continue;
       const i = r * cols + c;
       const kind = zones[i];
       if (!kind) continue;
@@ -647,6 +665,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     // 5. Cobertura baixa em manchas: mato alto encaixado na grade, arbustos, pinheirinhos ou canteiros de flores.
     const coverAt = (c: number, r: number) => cellIs(c, r, FLOOR_CELL.cover, false);
     for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
+      if (!ownsCell(c, r)) continue;
       if (!coverAt(c, r)) continue;
       const variant = Math.floor(floorHash(index, c, r, 6) * 1000);
       if (tiles.cover === 'tall') {
@@ -670,6 +689,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       for (let r = firstStepped(4, 9, minR - 5); r < rows - 6 && r <= maxR; r += 9) for (let c = firstStepped(4, 11, minC - 6); c < cols - 6 && c <= maxC; c += 11) {
         const cc = c + Math.floor(floorHash(index, c, r, 7) * 6);
         const rr = r + Math.floor(floorHash(index, c, r, 8) * 5);
+        if (!ownsCell(cc, rr)) continue;
         if (floorHash(index, c, r, 9) > 0.5) continue;
         const spanC = Math.ceil(detailRect.w / T), spanR = Math.ceil(detailRect.h / T);
         let free = true;
@@ -708,6 +728,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
         if (!sprite) continue;
         const jx = Math.floor(floorHash(index, c, r, 71) * 7) - 3;
         const jy = Math.floor(floorHash(index, c, r, 72) * 5) - 2;
+        if (!ownsPoint(c * T + T, (r + 2) * T)) continue;
         trees.push({ sprite, x: c * T + T - sprite.width / 2 + jx, y: (r + 2) * T - sprite.height + jy });
         }
       }

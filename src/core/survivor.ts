@@ -29,7 +29,7 @@ import type { PokemonType } from './pokemon-data';
  */
 
 export * from './survivor-types';
-import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
+import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { survivorProjectileLook } from './survivor-projectile-power';
@@ -388,12 +388,23 @@ function closeRangeDamageMultiplier(state: SurvivorState): number {
   return category === 'aura' || category === 'orbit' || category === 'cone' ? BALANCE.closeRangeDamageMultiplier : 1;
 }
 
-function spawnPoint(rng: Rng): { x: number; y: number } {
-  const side = Math.floor(rng() * 4);
-  if (side === 0) return { x: rng() * ARENA_W, y: -SPAWN_MARGIN };
-  if (side === 1) return { x: ARENA_W + SPAWN_MARGIN, y: rng() * ARENA_H };
-  if (side === 2) return { x: rng() * ARENA_W, y: ARENA_H + SPAWN_MARGIN };
-  return { x: -SPAWN_MARGIN, y: rng() * ARENA_H };
+function spawnPoint(rng: Rng, player: Pick<SurvivorPlayer, 'x' | 'y'>, boss: boolean): { x: number; y: number } {
+  const minDistance = boss ? SURVIVOR_SPAWN_DISTANCE.bossMin : SURVIVOR_SPAWN_DISTANCE.commonMin;
+  const maxDistance = boss ? SURVIVOR_SPAWN_DISTANCE.bossMax : SURVIVOR_SPAWN_DISTANCE.commonMax;
+  // Se o jogador estiver junto da borda, tenta outro ângulo sem reduzir a distância segura.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const angle = rng() * Math.PI * 2;
+    const distance = minDistance + rng() * (maxDistance - minDistance);
+    const x = player.x + Math.cos(angle) * distance;
+    const y = player.y + Math.sin(angle) * distance;
+    if (x >= SPAWN_MARGIN && x <= ARENA_W - SPAWN_MARGIN && y >= SPAWN_MARGIN && y <= ARENA_H - SPAWN_MARGIN) return { x, y };
+  }
+  // Sempre há espaço para o centro; este plano B preserva a distância mínima até no canto da arena.
+  const towardCenter = Math.atan2(ARENA_H / 2 - player.y, ARENA_W / 2 - player.x);
+  return {
+    x: clamp(player.x + Math.cos(towardCenter) * minDistance, SPAWN_MARGIN, ARENA_W - SPAWN_MARGIN),
+    y: clamp(player.y + Math.sin(towardCenter) * minDistance, SPAWN_MARGIN, ARENA_H - SPAWN_MARGIN),
+  };
 }
 
 function defaultArchetype(kind: number, boss: boolean, grade: SurvivorEnemyGrade, stableId = kind): SurvivorEnemyArchetype {
@@ -447,7 +458,7 @@ function spawnEnemy(
   options?: { shadowBoss?: boolean; dexId?: number },
 ): void {
   if (state.enemies.length >= ENEMY_BEHAVIOR_LIMITS.maxEnemies && !boss && grade === 'comum') return;
-  const { x, y } = spawnPoint(state.rng);
+  const { x, y } = spawnPoint(state.rng, state.player, boss);
   const t = state.elapsedMs / 1000;
   if (boss) {
     const shadow = options?.shadowBoss === true;
@@ -1610,8 +1621,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     trainerSpawnedThisStep = true;
   }
 
-  // IA parametrizada: todos compartilham a mesma resolução de movimento/colisão, mas cada arquétipo
-  // escolhe um alvo e uma ação especial limitada por recarga.
+  // IA parametrizada: cada arquétipo escolhe um alvo e uma ação especial limitada por recarga.
+  // No Survival comum, árvores, mato e itens são só cenário: inimigos os atravessam. O BONK aplica
+  // sua própria colisão física depois deste passo, sem mudar este comportamento do modo normal.
   for (const e of state.enemies) {
     if (e.hp <= 0) continue;
     if (e.hitFlashMs > 0) e.hitFlashMs = Math.max(0, e.hitFlashMs - dtMs);

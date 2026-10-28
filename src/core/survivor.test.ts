@@ -30,6 +30,7 @@ import {
   survivorRapidAttackDamageMultiplier,
   SURVIVOR_SHADOW_BALL_FIRST_MS,
   SURVIVOR_SHADOW_CUTSCENE_MS,
+  SURVIVOR_SPAWN_DISTANCE,
   FAST_FINAL_BOSS_MS,
   FAST_TIME_SCALE,
   FAST_XP_MULTIPLIER,
@@ -203,21 +204,35 @@ describe('stepSurvivor', () => {
     expect(s.player.y).toBe(before.y);
   });
 
-  it('nasce inimigo fora da arena (nunca em cima do jogador) e ele persegue', () => {
-    const s = run(3);
-    // Passos pequenos: pega o inimigo no quadro em que ele acabou de nascer, antes de andar muito.
-    let justSpawned: { x: number; y: number } | null = null;
-    for (let i = 0; i < Math.ceil((BALANCE.spawnStartMs * (1 + BALANCE.earlySpawnIntervalBonus) + 100) / 20) && !justSpawned; i++) {
-      stepSurvivor(s, { dx: 0, dy: 0 }, 20);
-      if (s.enemies.length > 0) justSpawned = { x: s.enemies[0]!.x, y: s.enemies[0]!.y };
+  it('nasce em um anel próximo e seguro, no Survival e no BONK, e então persegue', () => {
+    for (const bonk of [false, true]) {
+      const s = createSurvivorState(3, { kindCount: 4, bonk });
+      // Passos pequenos: pega o inimigo no quadro em que ele acabou de nascer, antes de andar muito.
+      let justSpawned: { x: number; y: number } | null = null;
+      for (let i = 0; i < Math.ceil((BALANCE.spawnStartMs * (1 + BALANCE.earlySpawnIntervalBonus) + 100) / 20) && !justSpawned; i++) {
+        stepSurvivor(s, { dx: 0, dy: 0 }, 20);
+        if (s.enemies.length > 0) justSpawned = { x: s.enemies[0]!.x, y: s.enemies[0]!.y };
+      }
+      expect(justSpawned).not.toBeNull();
+      const inside = justSpawned!.x >= 0 && justSpawned!.x <= ARENA_W && justSpawned!.y >= 0 && justSpawned!.y <= ARENA_H;
+      expect(inside).toBe(true);
+      const d0 = Math.hypot(s.enemies[0]!.x - s.player.x, s.enemies[0]!.y - s.player.y);
+      expect(d0).toBeGreaterThanOrEqual(SURVIVOR_SPAWN_DISTANCE.commonMin - 2);
+      expect(d0).toBeLessThanOrEqual(SURVIVOR_SPAWN_DISTANCE.commonMax + 2);
+      expect(d0).toBeGreaterThan(s.player.attackRange + s.enemies[0]!.radius);
+      stepSurvivor(s, { dx: 0, dy: 0 }, 500);
+      const d1 = Math.hypot(s.enemies[0]!.x - s.player.x, s.enemies[0]!.y - s.player.y);
+      expect(d1).toBeLessThan(d0); // perseguindo
     }
-    expect(justSpawned).not.toBeNull();
-    const inside = justSpawned!.x >= 0 && justSpawned!.x <= ARENA_W && justSpawned!.y >= 0 && justSpawned!.y <= ARENA_H;
-    expect(inside).toBe(false); // ainda não entrou quando nasceu
-    const d0 = Math.hypot(s.enemies[0]!.x - s.player.x, s.enemies[0]!.y - s.player.y);
+  });
+
+  it('inimigos do Survival comum atravessam o cenário sem usar as colisões do BONK', () => {
+    const s = quiet(run(4));
+    const enemy = { ...dummy(999, s.player.x + 220, s.player.y), speed: 90 };
+    s.enemies.push(enemy);
     stepSurvivor(s, { dx: 0, dy: 0 }, 500);
-    const d1 = Math.hypot(s.enemies[0]!.x - s.player.x, s.enemies[0]!.y - s.player.y);
-    expect(d1).toBeLessThan(d0); // perseguindo
+    expect(s.bonk).toBe(false);
+    expect(enemy.x).toBeLessThan(s.player.x + 220);
   });
 
   it('autoataque derruba um inimigo parado ao alcance e dá XP (orbe coletado)', () => {
