@@ -56,7 +56,7 @@ import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
 import { trainer } from '../app/trainer-store';
 import type { SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
-import { megaShardCount, settleMegaShard, survivorMegaForm, survivorMegaForms, survivorMegaRemainingMs, survivorMegaStatDelta, SURVIVOR_MEGA_DURATION_MS, takeMegaShard } from '../core/survivor-mega';
+import { megaShardCount, settleMegaShard, survivorMegaForm, survivorMegaForms, survivorMegaStatDelta, takeMegaShard } from '../core/survivor-mega';
 import type { SurvivorMegaForm, SurvivorMegaSprite } from '../core/survivor-mega';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { DecodedGif } from '../core/gif';
@@ -369,9 +369,9 @@ let runLoadout: TowerLoadout = PURE_LOADOUT;
 let runLoadoutSettled = true;
 let lunchWasActive = false;
 
-// ----------------------------------------------------------------------------- Mega temporária (core/survivor-mega.ts)
+// ----------------------------------------------------------------------------- Mega da corrida (core/survivor-mega.ts)
 // Na seleção, quem tem forma Mega na PokéAPI ganha o botão; a corrida começa na forma Mega gastando 1 Fragmento de
-// Megapedra da mochila da Vila e volta à forma normal quando o tempo acaba. Corrida pura não usa nada da Vila.
+// Megapedra da mochila da Vila e fica assim até o fim (sem tempo). Corrida pura não usa nada da Vila.
 const megaShards = ref(0);
 /** Mega marcada na seleção: qual Pokémon (id da opção) e qual forma. */
 const megaPick = ref<{ optId: string; formId: number } | null>(null);
@@ -400,7 +400,6 @@ const MEGA_SPRITE_NOTES: Record<SurvivorMegaSprite, string> = {
   parado: 'Esta forma não tem GIF animado no repositório de sprites: aparece a imagem parada.',
   nenhum: 'Esta forma não tem sprite no repositório: o Pokémon mantém o sprite normal.',
 };
-const megaDurationLabel = `${Math.round(SURVIVOR_MEGA_DURATION_MS / 60_000)} min`;
 /** Tira o fragmento da mochila para a corrida; false se não houver (a corrida sai na forma normal). */
 function takeRunMegaShard(): boolean {
   let taken = false;
@@ -1882,11 +1881,12 @@ function loop(ts: number): void {
     lunchWasActive = false;
     say('🍱 A marmita acabou: o efeito terminou.', 3200);
   }
+  // A Mega não tem tempo: só a evolução a desfaz (a forma Mega é da espécie de antes). O sprite novo chega por `evolveTo`.
   if (megaWasActive && !s.player.mega?.active) {
     megaWasActive = false;
     playerSprite = normalPlayerSprite;
     playerBackSprite = normalPlayerBackSprite;
-    say(`💎 A Mega acabou: ${avatarName.value} voltou à forma normal.`, 3600);
+    say('💎 A evolução desfez a Mega.', 3600);
   }
   triggerRef(state);
   draw();
@@ -2142,7 +2142,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     }
     refreshMegaShards();
     const perks = runLoadout.summary.filter((line) => line.startsWith('Sorte') || line.startsWith('Marmita'));
-    if (megaWasActive && runMega) perks.unshift(`💎 ${runMega.label} por ${megaDurationLabel}${megaSprite ? '' : ' (sem sprite da forma)'}`);
+    if (megaWasActive && runMega) perks.unshift(`💎 ${runMega.label} até o fim da corrida${megaSprite ? '' : ' (sem sprite da forma)'}`);
     else if (mega) say('💎 Sem Fragmento de Megapedra na mochila: a corrida começou na forma normal.', 4200);
     if (perks.length > 0) say(`🍀 ${perks.join(' · ')}`, 4200);
     bonkRun.value = bonk;
@@ -2402,7 +2402,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="survivor-stats">
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
-            <span v-if="state.player.mega?.active" class="chip survivor-mega-chip" role="timer" :title="`Stats base da forma Mega (PokéAPI) até o tempo acabar; depois volta à forma normal.`">💎 {{ state.player.mega.label }} · {{ formatTime(survivorMegaRemainingMs(state)) }}</span>
+            <span v-if="state.player.mega?.active" class="chip survivor-mega-chip" role="status" title="Stats base da forma Mega (PokéAPI) até o fim da corrida.">💎 {{ state.player.mega.label }}</span>
             <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
@@ -2593,9 +2593,9 @@ onBeforeUnmount(() => {
               <strong>💎 Mega Evolução · {{ megaShards }} Fragmento{{ megaShards === 1 ? '' : 's' }} de Megapedra</strong>
               <p v-if="pureWanted" class="note">Corrida pura ligada: a Mega usa um item da Vila e fica de fora.</p>
               <p v-else-if="megaShards < 1" class="note">Sem fragmentos. Ganhe 1 ao chegar aos 20 min numa corrida ou fabrique na bancada da Vila (2 Pedras da Confiança, 2 Cristais e 1 Pérola).</p>
-              <p v-else-if="!megaPickForm" class="note">Toque em «Mega» no Pokémon que tem forma Mega para começar a corrida megaevoluído. Gasta 1 fragmento e dura {{ megaDurationLabel }}.</p>
+              <p v-else-if="!megaPickForm" class="note">Toque em «Mega» no Pokémon que tem forma Mega para começar a corrida megaevoluído. Gasta 1 fragmento e vale até o fim da corrida.</p>
               <div v-else class="survivor-mega-detail" role="status">
-                <p class="note"><strong>{{ megaPickForm.label }}</strong> para {{ megaPickOption?.name }}: a corrida começa na forma Mega, com os stats base dela, por {{ megaDurationLabel }} no relógio da Torre. Depois volta à forma normal. Gasta 1 fragmento (devolvido se você desistir nos primeiros 20 s).</p>
+                <p class="note"><strong>{{ megaPickForm.label }}</strong> para {{ megaPickOption?.name }}: a corrida começa na forma Mega, com os stats base dela, e fica assim até o fim da corrida (só uma evolução desfaz a Mega). Gasta 1 fragmento (devolvido se você desistir nos primeiros 20 s).</p>
                 <ul class="survivor-tower-list" aria-label="Efeito nos stats base">
                   <li v-for="row in survivorMegaStatDelta(megaPickForm)" :key="row.stat">{{ row.label }} {{ row.delta > 0 ? '+' : '' }}{{ row.delta }}</li>
                 </ul>

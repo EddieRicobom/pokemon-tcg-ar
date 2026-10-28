@@ -8,7 +8,7 @@ import { survivorPreparation } from './survivor-preparations';
 import { MAX_OFFER_CHOICES, PURE_LOADOUT } from './survivor-loadout';
 import type { TowerLoadout } from './survivor-loadout';
 import { LUNCH_HEAL_CAP_FRACTION, TRAINING_DEFENSE_CAP, TRAINING_SPEED_CAP } from './survivor-lunch';
-import { endSurvivorMega, startSurvivorMega, stepSurvivorMega, survivorPlayerStats } from './survivor-mega';
+import { endSurvivorMega, startSurvivorMega, survivorPlayerStats } from './survivor-mega';
 import type { SurvivorMegaForm } from './survivor-mega';
 import type { SurvivorPreparationId } from './survivor-preparations';
 import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, DASH_DAMAGE_MULTIPLIER, DASH_TRIPLE_DAMAGE_MULTIPLIER, SPECIAL_GUARDIANS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
@@ -219,9 +219,8 @@ export interface CreateSurvivorOptions {
   typeAffinity?: SurvivorTypeAffinity;
   /** Tipos secundários reais da espécie; a escolha só aparece após o primeiro líder derrotado. */
   typeAffinityChoices?: readonly PokemonType[];
-  /** Forma Mega temporária escolhida na seleção (`core/survivor-mega.ts`); começa ativa e dura `megaDurationMs`. */
+  /** Forma Mega escolhida na seleção (`core/survivor-mega.ts`); começa ativa e dura até o fim da corrida. */
   mega?: SurvivorMegaForm;
-  megaDurationMs?: number;
 }
 
 /** Técnica interna da Torre para que até Pokémon de um tipo tenham uma segunda opção desbloqueável. */
@@ -351,7 +350,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     typeAffinityChoices: [...(options.typeAffinityChoices ?? [])],
     typeAffinityOffered: false,
   };
-  if (options.mega) startSurvivorMega(state, options.mega, options.megaDurationMs);
+  if (options.mega) startSurvivorMega(state, options.mega);
   return state;
 }
 
@@ -1599,7 +1598,6 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
   if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + (p.regenPerSec ?? 0) * dt);
   stepLunch(state, dt);
-  stepSurvivorMega(state);
 
   // Nascimento de inimigos (onda cresce com o tempo) e do chefe periódico.
   let trainerSpawnedThisStep = false;
