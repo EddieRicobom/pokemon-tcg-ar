@@ -33,6 +33,8 @@ export interface SurvivorMegaForm {
   formName: string;
   /** "Mega Charizard X". */
   label: string;
+  /** Rótulo curto do botão na seleção ("Mega X", "Mega"). */
+  short: string;
   stats: BaseStats;
   sprite: SurvivorMegaSprite;
 }
@@ -62,11 +64,16 @@ const FORM_LABELS: Record<string, string> = {
   stretchy: 'Forma Estendida',
 };
 
+/** O que distingue a forma ("X", "(fêmea)"), vazio quando a espécie só tem uma Mega simples. */
+function extraOf(raw: RawForm): string {
+  if (raw.variant) return raw.variant.toUpperCase();
+  const middle = raw.name.replace(/-mega$/, '').split('-').slice(1).join('-');
+  return middle ? FORM_LABELS[middle] ?? middle : '';
+}
+
 function labelOf(raw: RawForm): string {
   const species = speciesName(raw.dex) || raw.name.split('-')[0]!;
-  if (raw.variant) return `Mega ${species} ${raw.variant.toUpperCase()}`;
-  const middle = raw.name.replace(/-mega$/, '').split('-').slice(1).join('-');
-  const extra = middle ? FORM_LABELS[middle] ?? middle : '';
+  const extra = extraOf(raw);
   return `Mega ${species}${extra ? ` ${extra}` : ''}`;
 }
 
@@ -74,7 +81,7 @@ function toForm(raw: RawForm): SurvivorMegaForm | null {
   const [hp, attack, defense, spAttack, spDefense, speed] = raw.stats;
   if (raw.stats.length < 6 || raw.stats.some((v) => !(v > 0))) return null;
   return {
-    dexId: raw.dex, formId: raw.id, formName: raw.name, label: labelOf(raw),
+    dexId: raw.dex, formId: raw.id, formName: raw.name, label: labelOf(raw), short: `Mega${extraOf(raw) ? ` ${extraOf(raw)}` : ''}`,
     stats: { hp: hp!, attack: attack!, defense: defense!, spAttack: spAttack!, spDefense: spDefense!, speed: speed! },
     sprite: raw.animated ? 'animado' : raw.still ? 'parado' : 'nenhum',
   };

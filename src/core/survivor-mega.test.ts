@@ -32,6 +32,8 @@ describe('formas Mega (dado da PokéAPI)', () => {
     expect(survivorMegaCount()).toBeGreaterThanOrEqual(48);
     const charizard = survivorMegaForms(6);
     expect(charizard.map((f) => f.label)).toEqual(['Mega Charizard X', 'Mega Charizard Y']);
+    expect(charizard.map((f) => f.short)).toEqual(['Mega X', 'Mega Y']);
+    expect(survivorMegaForms(445).map((f) => f.short)).toEqual(['Mega', 'Mega Z']);
     // Stats base da PokéAPI: Mega Charizard X 78/130/111/130/85/100; Y 78/104/78/159/115/100.
     expect(charizard[0]!.stats).toEqual({ hp: 78, attack: 130, defense: 111, spAttack: 130, spDefense: 85, speed: 100 });
     expect(charizard[1]!.stats.spAttack).toBe(159);

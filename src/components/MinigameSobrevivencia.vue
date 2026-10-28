@@ -56,6 +56,8 @@ import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
 import { trainer } from '../app/trainer-store';
 import type { SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
+import { megaShardCount, settleMegaShard, survivorMegaForm, survivorMegaForms, survivorMegaRemainingMs, survivorMegaStatDelta, SURVIVOR_MEGA_DURATION_MS, takeMegaShard } from '../core/survivor-mega';
+import type { SurvivorMegaForm, SurvivorMegaSprite } from '../core/survivor-mega';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { DecodedGif } from '../core/gif';
 import { firstSpriteFrame, frameIndex, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
@@ -366,6 +368,47 @@ function refreshTowerPreview(): void {
 let runLoadout: TowerLoadout = PURE_LOADOUT;
 let runLoadoutSettled = true;
 let lunchWasActive = false;
+
+// ----------------------------------------------------------------------------- Mega temporária (core/survivor-mega.ts)
+// Na seleção, quem tem forma Mega na PokéAPI ganha o botão; a corrida começa na forma Mega gastando 1 Fragmento de
+// Megapedra da mochila da Vila e volta à forma normal quando o tempo acaba. Corrida pura não usa nada da Vila.
+const megaShards = ref(0);
+/** Mega marcada na seleção: qual Pokémon (id da opção) e qual forma. */
+const megaPick = ref<{ optId: string; formId: number } | null>(null);
+const megaPickForm = computed(() => (megaPick.value ? survivorMegaForm(megaPick.value.formId) : null));
+const megaPickOption = computed(() => pickOptions.value?.find((opt) => opt.id === megaPick.value?.optId) ?? null);
+let megaWasActive = false;
+let runMegaShardTaken = false;
+/** Sprites da forma normal, para voltar quando a Mega acabar. */
+let normalPlayerSprite: SpriteAsset | null = null;
+let normalPlayerBackSprite: Sprite | null = null;
+function refreshMegaShards(): void {
+  let total = 0;
+  try {
+    withVillage((village) => { total = megaShardCount(village); return false; });
+  } catch { total = 0; }
+  megaShards.value = total;
+  if (total < 1 || pureWanted.value) megaPick.value = null;
+}
+function toggleMegaPick(opt: PickOption, form: SurvivorMegaForm): void {
+  if (megaShards.value < 1 || pureWanted.value) return;
+  megaPick.value = megaPick.value?.optId === opt.id && megaPick.value.formId === form.formId ? null : { optId: opt.id, formId: form.formId };
+}
+watch(pureWanted, () => refreshMegaShards());
+const MEGA_SPRITE_NOTES: Record<SurvivorMegaSprite, string> = {
+  animado: 'Sprite animado da forma Mega.',
+  parado: 'Esta forma não tem GIF animado no repositório de sprites: aparece a imagem parada.',
+  nenhum: 'Esta forma não tem sprite no repositório: o Pokémon mantém o sprite normal.',
+};
+const megaDurationLabel = `${Math.round(SURVIVOR_MEGA_DURATION_MS / 60_000)} min`;
+/** Tira o fragmento da mochila para a corrida; false se não houver (a corrida sai na forma normal). */
+function takeRunMegaShard(): boolean {
+  let taken = false;
+  try {
+    withVillage((village) => { taken = takeMegaShard(village); return taken; });
+  } catch { taken = false; }
+  return taken;
+}
 /** Pede à Vila o loadout da corrida (consome a sorte do Carteiro) na mesma escrita. */
 function takeRunLoadout(pure: boolean): TowerLoadout {
   let loadout: TowerLoadout = PURE_LOADOUT;
@@ -390,6 +433,12 @@ function settleRunLoadout(survivedMs: number): void {
       return village.tower.lunchbox !== before;
     });
   } catch { /* a Vila não gravou: a marmita continua reservada */ }
+  if (runMegaShardTaken) {
+    runMegaShardTaken = false;
+    try {
+      withVillage((village) => settleMegaShard(village, survivedMs));
+    } catch { /* a Vila não gravou: o fragmento fica gasto */ }
+  }
 }
 
 function recordRun(s: SurvivorSummary): void {
@@ -1788,7 +1837,7 @@ function loop(ts: number): void {
           ? '🎁 Marco de 10 minutos! Love Candy assegurado — conclua a corrida para guardar.'
           : ev.id === 'fifteen-minutes'
             ? '💠 Marco de 15 minutos! Pedra da Confiança assegurada — conclua a corrida para guardar.'
-            : '💎 Marco de 20 minutos! Fragmento de Mega Stone assegurado — conclua a corrida para guardar.', 6000);
+            : '💎 Marco de 20 minutos! Fragmento de Megapedra assegurado — conclua a corrida para guardar.', 6000);
       }
       else if (ev.type === 'shadowBallSpawn') {
         void preloadShadowBoss(ev.dexId);
@@ -1832,6 +1881,12 @@ function loop(ts: number): void {
   if (lunchWasActive && s.player.lunch && !s.player.lunch.active) {
     lunchWasActive = false;
     say('🍱 A marmita acabou: o efeito terminou.', 3200);
+  }
+  if (megaWasActive && !s.player.mega?.active) {
+    megaWasActive = false;
+    playerSprite = normalPlayerSprite;
+    playerBackSprite = normalPlayerBackSprite;
+    say(`💎 A Mega acabou: ${avatarName.value} voltou à forma normal.`, 3600);
   }
   triggerRef(state);
   draw();
@@ -1907,6 +1962,8 @@ async function evolveTo(dexId: number, name: string): Promise<void> {
   evolving.value = `${avatarName.value} evoluiu para ${name}!`;
   const [sprite, back] = await Promise.all([loadSpriteOrNull(dexId), bonkRun.value ? loadBackSpriteOrNull(dexId) : Promise.resolve(null), new Promise((r) => setTimeout(r, 900))]);
   if (disposed) return;
+  normalPlayerSprite = sprite;
+  normalPlayerBackSprite = back;
   playerSprite = sprite;
   playerBackSprite = back;
   avatarName.value = name;
@@ -2011,7 +2068,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -2022,14 +2079,19 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     enemySprites.clear();
     enemySpriteLoads.clear();
     requestedEnemyRegions.clear();
-    const [player, back, ...supports] = await Promise.all([
+    // Sprite da forma Mega (GIF animado ou imagem parada); sem nenhum, a forma normal continua no desenho.
+    const megaSpriteLoad = mega && mega.sprite !== 'nenhum' ? loadSpriteOrNull(mega.formId, shiny).catch(() => null) : Promise.resolve(null);
+    const [player, back, megaSprite, ...supports] = await Promise.all([
       loadSpriteOrNull(dexId, shiny, runParticipant?.id.startsWith('dp_') === true && visual.metallic),
       bonk ? loadBackSpriteOrNull(dexId, shiny, runParticipant?.id.startsWith('dp_') === true && visual.metallic) : Promise.resolve(null),
+      megaSpriteLoad,
       ...supportCandidates.map((candidate) => loadSpriteOrNull(candidate.dexId, candidate.shiny === true, candidate.digital === true && visual.metallic)),
       preloadEnemyRegion(survivorRegionAt(0, runSeed).current),
     ]);
-    playerSprite = player;
-    playerBackSprite = back as Sprite | null;
+    normalPlayerSprite = player;
+    normalPlayerBackSprite = back as Sprite | null;
+    playerSprite = normalPlayerSprite;
+    playerBackSprite = normalPlayerBackSprite;
     supportSprites.clear();
     supportAccessories.clear();
     supportCandidates.forEach((candidate, index) => {
@@ -2068,8 +2130,20 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     lunchWasActive = runLoadout.lunch !== null;
     banMode.value = false;
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
-    state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout });
+    // A Mega só entra se o fragmento saiu mesmo da mochila; ele volta se a corrida for abandonada logo no começo.
+    runMegaShardTaken = mega !== null && !pureWanted.value && takeRunMegaShard();
+    const runMega = runMegaShardTaken ? mega : null;
+    state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
+    megaWasActive = state.value.player.mega?.active === true;
+    if (megaWasActive && megaSprite) {
+      playerSprite = megaSprite as SpriteAsset;
+      // Não há pose de costas da forma Mega: no BONK a Mega aparece de frente em vez da costas da forma normal.
+      playerBackSprite = null;
+    }
+    refreshMegaShards();
     const perks = runLoadout.summary.filter((line) => line.startsWith('Sorte') || line.startsWith('Marmita'));
+    if (megaWasActive && runMega) perks.unshift(`💎 ${runMega.label} por ${megaDurationLabel}${megaSprite ? '' : ' (sem sprite da forma)'}`);
+    else if (mega) say('💎 Sem Fragmento de Megapedra na mochila: a corrida começou na forma normal.', 4200);
     if (perks.length > 0) say(`🍀 ${perks.join(' · ')}`, 4200);
     bonkRun.value = bonk;
     bonkPhysics.value = bonk ? createBonkPhysics(Math.PI / 2, state.value.runSeed) : null;
@@ -2118,7 +2192,9 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
   const primary = picked ?? opt.types[0] ?? opt.move.type;
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
   const infinite = infiniteWanted.value && torre.value.infiniteUnlocked;
-  void beginRun(opt.dexId, opt.name, picked, infinite, bonkWanted.value, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, selectedPreparation.value, supportCandidates, typeAffinityChoices, fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null);
+  const mega = megaPick.value?.optId === opt.id && !pureWanted.value ? survivorMegaForm(megaPick.value.formId) : null;
+  megaPick.value = null;
+  void beginRun(opt.dexId, opt.name, picked, infinite, bonkWanted.value, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, selectedPreparation.value, supportCandidates, typeAffinityChoices, fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null, mega?.dexId === opt.dexId ? mega : null);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
@@ -2132,7 +2208,12 @@ watch(
   },
 );
 /** Marcou "Modo infinito" na tela de escolha (so vale se ja estiver destravado). */
-watch(pickOptions, (options) => { if (options) refreshTowerPreview(); });
+watch(pickOptions, (options) => {
+  if (!options) return;
+  refreshTowerPreview();
+  if (megaPick.value && !options.some((opt) => opt.id === megaPick.value?.optId)) megaPick.value = null;
+  refreshMegaShards();
+});
 const infiniteWanted = ref(false);
 const bonkWanted = ref(props.startBonk === true);
 const fastWanted = ref(false);
@@ -2321,6 +2402,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="survivor-stats">
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
+            <span v-if="state.player.mega?.active" class="chip survivor-mega-chip" role="timer" :title="`Stats base da forma Mega (PokéAPI) até o tempo acabar; depois volta à forma normal.`">💎 {{ state.player.mega.label }} · {{ formatTime(survivorMegaRemainingMs(state)) }}</span>
             <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
@@ -2507,6 +2589,19 @@ onBeforeUnmount(() => {
               </ul>
               <p v-else class="note">Nada da Vila entra por enquanto. Treinos do Dojô, a sorte do Carteiro e a marmita do Café aparecem aqui.</p>
             </section>
+            <section class="survivor-preparations survivor-mega-panel" aria-label="Mega Evolução temporária">
+              <strong>💎 Mega Evolução · {{ megaShards }} Fragmento{{ megaShards === 1 ? '' : 's' }} de Megapedra</strong>
+              <p v-if="pureWanted" class="note">Corrida pura ligada: a Mega usa um item da Vila e fica de fora.</p>
+              <p v-else-if="megaShards < 1" class="note">Sem fragmentos. Ganhe 1 ao chegar aos 20 min numa corrida ou fabrique na bancada da Vila (2 Pedras da Confiança, 2 Cristais e 1 Pérola).</p>
+              <p v-else-if="!megaPickForm" class="note">Toque em «Mega» no Pokémon que tem forma Mega para começar a corrida megaevoluído. Gasta 1 fragmento e dura {{ megaDurationLabel }}.</p>
+              <div v-else class="survivor-mega-detail" role="status">
+                <p class="note"><strong>{{ megaPickForm.label }}</strong> para {{ megaPickOption?.name }}: a corrida começa na forma Mega, com os stats base dela, por {{ megaDurationLabel }} no relógio da Torre. Depois volta à forma normal. Gasta 1 fragmento (devolvido se você desistir nos primeiros 20 s).</p>
+                <ul class="survivor-tower-list" aria-label="Efeito nos stats base">
+                  <li v-for="row in survivorMegaStatDelta(megaPickForm)" :key="row.stat">{{ row.label }} {{ row.delta > 0 ? '+' : '' }}{{ row.delta }}</li>
+                </ul>
+                <p class="note">{{ MEGA_SPRITE_NOTES[megaPickForm.sprite] }}</p>
+              </div>
+            </section>
             <div class="survivor-pick-grid">
                <div
                 v-for="opt in pickOptions"
@@ -2530,6 +2625,20 @@ onBeforeUnmount(() => {
                   <span v-for="b in opt.bars" :key="b.label" class="survivor-pick-bar"><small>{{ b.label }}</small><i><b :style="{ width: Math.round(b.value * 100) + '%' }"></b></i></span>
                 </span>
                 <small v-if="opt.move.estimated" class="survivor-pick-kind">Sem stats desta espécie: números médios.</small>
+                <span v-if="survivorMegaForms(opt.dexId).length" class="survivor-mega-picks" role="group" :aria-label="`Mega de ${opt.name}`">
+                  <button
+                    v-for="form in survivorMegaForms(opt.dexId)"
+                    :key="form.formId"
+                    type="button"
+                    class="survivor-mega-pick"
+                    :class="{ active: megaPick?.optId === opt.id && megaPick.formId === form.formId }"
+                    :aria-pressed="megaPick?.optId === opt.id && megaPick.formId === form.formId"
+                    :disabled="megaShards < 1 || pureWanted || pickBusy"
+                    :title="megaShards < 1 ? 'Precisa de 1 Fragmento de Megapedra' : `${form.label}: gasta 1 fragmento`"
+                    @click.stop="toggleMegaPick(opt, form)"
+                    @keydown.enter.stop
+                  >💎 {{ form.short }}</button>
+                </span>
                </div>
             </div>
              <button type="button" class="link survivor-reroll" :disabled="rerollsUsed >= rerollLimit || pickBusy" @click="rerollPicker">🔄 Sortear novamente <small>{{ Math.max(0, rerollLimit - rerollsUsed) }} de {{ rerollLimit }} troca(s) grátis nesta tentativa</small></button>
@@ -2730,7 +2839,7 @@ onBeforeUnmount(() => {
              <p v-if="summary.survivedMs >= SURVIVOR_LOVE_CANDY_MS" class="survivor-cleared" role="status">🍬 Love Candy conquistado por alcançar 10 minutos.</p>
               <p v-if="summary.survivedMs >= SURVIVOR_TRUST_STONE_MS" class="survivor-cleared" role="status">💠 Pedra da Confiança conquistada por alcançar 15 minutos.</p>
              <p v-if="(summary.shadowTrustStones ?? 0) > 0" class="survivor-cleared" role="status">💠 {{ summary.shadowTrustStones }} Pedra{{ summary.shadowTrustStones === 1 ? '' : 's' }} da Confiança assegurada{{ summary.shadowTrustStones === 1 ? '' : 's' }} ao derrotar lendário{{ summary.shadowTrustStones === 1 ? '' : 's' }} sombrio{{ summary.shadowTrustStones === 1 ? '' : 's' }}.</p>
-             <p v-if="summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS" class="survivor-cleared" role="status">💎 Fragmento de Mega Stone conquistado por alcançar 20 minutos.</p>
+             <p v-if="summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS" class="survivor-cleared" role="status">💎 Fragmento de Megapedra conquistado por alcançar 20 minutos.</p>
              <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
             <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>
             <p v-if="summary.trainersBeaten > 0 || summary.bossesBeaten > 0" class="note">Treinadores derrotados: {{ summary.trainersBeaten }}{{ summary.bossesBeaten > 0 ? ` · chefões: ${summary.bossesBeaten}` : '' }}.</p>
