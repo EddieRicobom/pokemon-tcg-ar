@@ -149,3 +149,32 @@ describe('física do modo BONK', () => {
     expect(physics.landingMs).toBe(BONK_LANDING_MS);
   });
 });
+
+describe('pouso preso entre obstáculos que se sobrepõem', () => {
+  it('um jogador espremido entre dois blocos sobrepostos sai para uma posição livre', () => {
+    const obstacles = [
+      { id: 'a', x: 100, y: 100, w: 100, h: 100, height: 200, kind: 'boulder' as const },
+      { id: 'b', x: 190, y: 100, w: 110, h: 100, height: 200, kind: 'boulder' as const },
+    ];
+    const r = 16;
+    const result = resolveBonkPosition({ z: 0, obstacles }, 195, 150, r);
+    for (const o of obstacles) {
+      const inside = result.x > o.x - r && result.x < o.x + o.w + r && result.y > o.y - r && result.y < o.y + o.h + r;
+      expect(inside, `dentro de ${o.id}`).toBe(false);
+    }
+  });
+});
+
+describe('árvores: colisão redonda, como o desenho', () => {
+  it('um jogador na diagonal de uma árvore, fora do tronco redondo, não é empurrado pelo canto do quadrado', () => {
+    const tree = { id: 't', x: 300, y: 300, w: 86, h: 86, height: 178, kind: 'tree' as const };
+    const cx = tree.x + tree.w / 2;
+    const cy = tree.y + tree.h / 2;
+    // Distância 65 na diagonal: fora do tronco (43 + raio 14 = 57), mas dentro do canto do quadrado expandido.
+    const d = 65 / Math.SQRT2;
+    const result = resolveBonkPosition({ z: 0, obstacles: [tree] }, cx + d, cy + d, 14);
+    expect(result.collided).toBe(false);
+    expect(result.x).toBeCloseTo(cx + d, 5);
+    expect(result.y).toBeCloseTo(cy + d, 5);
+  });
+});
