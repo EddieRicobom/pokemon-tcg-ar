@@ -6,6 +6,7 @@ import { makeWalker } from './actors';
 import { generateVillage, isWalkable, keyPoints, reachableFrom, tileAt } from './map';
 import { WORK_AREAS, WORK_SITES } from './town-layout';
 import { normalizeResidentProgress } from './community';
+import { WEST } from './west';
 
 const now = new Date(2026, 9, 19, 12).getTime();
 const free = () => false;
@@ -55,7 +56,7 @@ describe('postos de trabalho e trajetos reais', () => {
     const map = generateVillage(9), state = emptyVillage(9, map.spawn), session = new FarmSession();
     const workers: FarmWorker[] = [
       { id: 'a', types: ['rock'], ...map.spawn, available: true },
-      { id: 'b', types: ['rock'], x: 7, y: 68, available: true },
+      { id: 'b', types: ['rock'], x: WEST + 7, y: 68, available: true },
     ];
     session.tick(state, map, workers, now, rng, () => true);
     expect(session.tasks).toHaveLength(1);

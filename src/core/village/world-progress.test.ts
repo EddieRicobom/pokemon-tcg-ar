@@ -2,39 +2,40 @@ import { describe, expect, it } from 'vitest';
 import { add, emptyVillage, normalizeVillage } from './life';
 import { claimRequest } from './requests';
 import { completeFestival, discoverAt, festivalRound, normalizeWorldProgress, requestInfluence, resolveExpeditions, startExpedition, weeklyEventFor, weeklyModifiers } from './world-progress';
+import { WEST } from './west';
 
 const fresh = () => emptyVillage(20261017, { x: 45, y: 41 });
 
 describe('progresso vivo da Vila', () => {
   it('desbloqueia uma descoberta em etapas e não repete a recompensa', () => {
     const s = fresh();
-    expect(discoverAt(s, 81, 16)?.completed).toBe(false);
-    discoverAt(s, 10, 45);
-    expect(discoverAt(s, 81, 16)?.completed).toBe(false);
-    discoverAt(s, 10, 45);
-    const done = discoverAt(s, 81, 16);
+    expect(discoverAt(s, WEST + 81, 16)?.completed).toBe(false);
+    discoverAt(s, WEST + 10, 45);
+    expect(discoverAt(s, WEST + 81, 16)?.completed).toBe(false);
+    discoverAt(s, WEST + 10, 45);
+    const done = discoverAt(s, WEST + 81, 16);
     expect(done?.completed).toBe(true);
     expect(done).toMatchObject({ title: 'A passagem do lago', rewardFurniture: 'lampiao-cristal' });
     expect(done?.diary).toContain('passagem escondida');
     expect(s.discoveries.found).toContain(done?.id);
-    expect(discoverAt(s, 81, 16)).toBeNull();
+    expect(discoverAt(s, WEST + 81, 16)).toBeNull();
   });
 
   it('mantém o pedido da descoberta até ser entregue e só então libera a próxima pista', () => {
     const s = fresh();
-    discoverAt(s, 81, 16);
-    discoverAt(s, 48, 37);
-    discoverAt(s, 81, 16);
-    discoverAt(s, 48, 37);
-    const done = discoverAt(s, 81, 16);
+    discoverAt(s, WEST + 81, 16);
+    discoverAt(s, WEST + 48, 37);
+    discoverAt(s, WEST + 81, 16);
+    discoverAt(s, WEST + 48, 37);
+    const done = discoverAt(s, WEST + 81, 16);
     expect(done?.completed).toBe(true);
     expect(s.requests.story[0]).toMatchObject({ id: 'desc:lago-caverna', persistent: true, done: false, item: 'concha', qty: 2 });
-    expect(discoverAt(s, 10, 63)).toBeNull();
+    expect(discoverAt(s, WEST + 10, 63)).toBeNull();
     add(s, 'concha', 2);
     expect(claimRequest(s, 'desc:lago-caverna', '2099-01-01').ok).toBe(true);
     expect(s.requests.story[0]?.done).toBe(true);
-    discoverAt(s, 48, 37);
-    expect(discoverAt(s, 10, 63)?.id).toBe('bosque-atalho');
+    discoverAt(s, WEST + 48, 37);
+    expect(discoverAt(s, WEST + 10, 63)?.id).toBe('bosque-atalho');
   });
 
   it('gera o mesmo evento semanal e transforma pedidos pendentes em influência', () => {

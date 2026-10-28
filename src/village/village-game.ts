@@ -53,6 +53,9 @@ import { accessorySize, paintAccessory, paintCrop, paintFurnitureItem, paintItem
 import { harmonizePlayerCanvas, harmonizePlayerSprite } from './player-filter';
 import { wrapSpeech } from './speech-layout';
 import { groundPieces } from './ground-tiles';
+import { mountainPiece, mountainPieceKey, paintMountainPiece } from './mountain-ground';
+import { MOUNTAIN_SPOTS } from '../core/village/mountain';
+import { west } from '../core/village/west';
 import { drawCommunityWorkAction, drawWorkAction } from './work-art';
 import { VillaAtlas, windowGlow, windowRects } from './tileset-art';
 import type { Rgba } from './tileset-art';
@@ -79,6 +82,7 @@ export class VillageGame {
   private trainerAvatar: HTMLCanvasElement | null = null;
   private trainerAtlas: TrainerAtlas | null = null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
+  private readonly mountainTiles = new Map<string, HTMLCanvasElement>();
   /** Janelas de cada desenho do tileset (px do recorte), achadas uma vez junto com a luz delas. */
   private readonly windowRectCache = new Map<string, { x: number; y: number; w: number; h: number }[]>();
   private running = false;
@@ -284,14 +288,15 @@ export class VillageGame {
     this.villagerZones.clear();
     this.monSprites.clear();
     this.names.clear();
-    // Zonas próximas às ruas, casas, parquinho, lago e fazenda. A busca em
+    // Zonas próximas às ruas, casas, parquinho, lago e fazenda (e dois patamares do Monte Miragem). A busca em
     // espiral corrige automaticamente uma âncora que caiu sobre um obstáculo.
     const zones = [
       { x: 43, y: 34 }, { x: 52, y: 34 }, { x: 58, y: 29 }, { x: 68, y: 28 },
       { x: 31, y: 28 }, { x: 22, y: 38 }, { x: 31, y: 45 }, { x: 43, y: 46 },
       { x: 55, y: 46 }, { x: 67, y: 46 }, { x: 76, y: 39 }, { x: 76, y: 52 },
       { x: 42, y: 56 }, { x: 55, y: 56 }, { x: 70, y: 57 }, { x: 78, y: 63 },
-    ];
+    ].map(west);
+    if (this.map.elev) zones.splice(6, 0, MOUNTAIN_SPOTS[0]!, MOUNTAIN_SPOTS[1]!);
     for (const [i, mon] of mons.entries()) {
       const anchor = zones[i % zones.length]!;
       const spot = findFree(this.map, anchor.x, anchor.y, (x, y) => this.occupied(x, y), this.rng);
@@ -404,11 +409,11 @@ export class VillageGame {
       if (!this.villagers.has(task.residentId) || this.state.follower === task.residentId || this.waiting === task.residentId || this.sceneBusy(task.residentId)) continue;
       const worksite = task.x !== undefined && task.y !== undefined
         ? { x: task.x, y: task.y }
-        : task.activity === 'acolhimento' || task.activity === 'brincadeira' ? { x: 47, y: 40 }
-          : task.activity === 'culinaria' ? { x: 66, y: 24 }
-            : task.activity === 'pesca' ? { x: 76, y: 17 }
-              : task.activity === 'pesquisa' || task.activity === 'vigilancia' ? { x: 56, y: 24 }
-                : task.activity === 'exploracao' ? { x: 17, y: 63 }
+        : task.activity === 'acolhimento' || task.activity === 'brincadeira' ? west({ x: 47, y: 40 })
+          : task.activity === 'culinaria' ? west({ x: 66, y: 24 })
+            : task.activity === 'pesca' ? west({ x: 76, y: 17 })
+              : task.activity === 'pesquisa' || task.activity === 'vigilancia' ? west({ x: 56, y: 24 })
+                : task.activity === 'exploracao' ? (this.map.elev ? MOUNTAIN_SPOTS[2]! : west({ x: 17, y: 63 }))
                   : task.activity === 'descanso' ? this.homeDoor(task.residentId) ?? this.villagerZones.get(task.residentId) ?? this.player
                     : this.villagerZones.get(task.residentId) ?? this.player;
       const candidates = task.x !== undefined && task.y !== undefined
@@ -540,6 +545,7 @@ export class VillageGame {
     const pierCache = new Map<string, HTMLCanvasElement>();
     for (let y = 0; y < this.map.h; y++) {
       for (let x = 0; x < this.map.w; x++) {
+        if (this.drawMountainGround(ctx, x, y)) continue;
         if (tileAt(this.map, x, y) === 'pier') {
           const edges = this.edgesOf(x, y);
           const key = `${edges}:${x % 23}:${y % 23}`;
@@ -563,6 +569,20 @@ export class VillageGame {
       }
     }
     return c;
+  }
+
+  /** O chão do Monte Miragem (patamar, penhasco, degraus), igual com ou sem o atlas. Devolve se desenhou. */
+  private drawMountainGround(ctx: CanvasRenderingContext2D, x: number, y: number): boolean {
+    const piece = mountainPiece(this.map, x, y);
+    if (!piece) return false;
+    const key = `mtn:${mountainPieceKey(piece)}:${x % 4},${y % 4}`;
+    let img = this.mountainTiles.get(key);
+    if (!img) {
+      img = toCanvas(paintMountainPiece(piece, x % 4, y % 4));
+      this.mountainTiles.set(key, img);
+    }
+    ctx.drawImage(img, x * TILE, y * TILE);
+    return true;
   }
 
   /** Um recorte do atlas como canvas (guardado); `transform` muda os pixels antes (ex.: a cor da casa). */
@@ -590,6 +610,7 @@ export class VillageGame {
       const cache = new Map<string, HTMLCanvasElement>();
       for (let y = 0; y < this.map.h; y++) {
         for (let x = 0; x < this.map.w; x++) {
+          if (this.drawMountainGround(ctx, x, y)) continue;
           const tile = tileAt(this.map, x, y);
           const edges = this.edgesOf(x, y);
           // Blocos iguais em lugares iguais do padrão reaproveitam o desenho.

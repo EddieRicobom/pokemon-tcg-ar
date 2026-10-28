@@ -2,9 +2,15 @@
  * O desenho fixo da cidadinha da Vila (sem lógica de jogo): onde ficam os terrenos das casas dos Pokémon, os prédios da
  * praça, a fonte e os postes. O mapa é sempre o mesmo; o que muda com o nível de Treinador é quais terrenos estão
  * liberados (os outros aparecem cercados, com uma placa). Só dados e geometria, para o mapa poder usar sem ciclos.
+ *
+ * Os nomes com `BASE_` estão no quadro antigo (antes do Monte Miragem, a oeste) e servem só ao gerador do mapa, que
+ * continua desenhando a cidade como sempre; os nomes sem prefixo são os do jogo, já deslocados `WEST` colunas.
  */
 
-import { CAFE_TABLES } from './cafe-layout';
+import { BASE_CAFE_TABLES } from './cafe-layout';
+import { WEST, west } from './west';
+
+export { WEST };
 
 export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'dojo' | 'fountain' | 'altar';
 
@@ -48,7 +54,7 @@ export function buildingGroundY(building: Pick<Building, 'y' | 'h'>): number {
  * rua. Duas fileiras: a Rua das Casas (y = 50) e a Rua do Sul (y = 62). Ordem = ordem em que são liberadas (as mais
  * perto da avenida primeiro).
  */
-export const LOTS: readonly { x: number; y: number; unlock: number }[] = [
+export const BASE_LOTS: readonly { x: number; y: number; unlock: number }[] = [
   // 2 blocos livres entre uma casa e outra (o desenho do tileset é largo): dá para passar sempre entre elas.
   { x: 36, y: 48, unlock: 1 },
   { x: 51, y: 48, unlock: 1 },
@@ -65,6 +71,7 @@ export const LOTS: readonly { x: number; y: number; unlock: number }[] = [
   { x: 65, y: 60, unlock: 10 },
   { x: 72, y: 60, unlock: 12 },
 ];
+export const LOTS = BASE_LOTS.map(west);
 export const HOME_W = 5;
 export const HOME_H = 2;
 
@@ -72,7 +79,7 @@ export const HOME_H = 2;
  * Os prédios, todos na Rua dos Jogos (y = 24), ao norte da praça; a largura vem do desenho de cada um no tileset.
  * Cada prédio abre um modo do app (minigames, Pin Mode, Ginásios e PvP, a Torre) ou um serviço da Vila.
  */
-export const CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>; name: string; x: number; y: number; w: number; h: number; unlock: number }[] = [
+export const BASE_CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>; name: string; x: number; y: number; w: number; h: number; unlock: number }[] = [
   { kind: 'cafe', name: 'Café da Vila', x: 63, y: 22, w: 8, h: 2, unlock: 3 },
   { kind: 'mail', name: 'Correio', x: 72, y: 22, w: 5, h: 2, unlock: 5 },
   { kind: 'museum', name: 'Museu', x: 51, y: 22, w: 10, h: 2, unlock: 8 },
@@ -86,9 +93,10 @@ export const CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'fountain'>;
   { kind: 'dojo', name: 'Dojô da Torre', x: 4, y: 22, w: 6, h: 2, unlock: 7 },
   { kind: 'altar', name: 'Altar da Confiança', x: 41, y: 83, w: 3, h: 2, unlock: 4 },
 ];
+export const CIVIC = BASE_CIVIC.map(west);
 
 /** O mapa: tamanho, ruas e lugares fixos (o resto — matas, lago, flores — o sorteio espalha em volta). */
-export const TOWN = {
+export const BASE_TOWN = {
   w: 120,
   h: 96,
   /** Avenida (norte–sul, 2 blocos) e as ruas (leste–oeste, 2 blocos cada): linha de cima de cada uma. */
@@ -108,23 +116,41 @@ export const TOWN = {
   /** O lago com praia, ao nordeste. */
   lake: { x: 81, y: 11, sand: 8.6, water: 6.2 },
 } as const;
+/** O mapa do jogo: o desenho antigo mais as `WEST` colunas do Monte Miragem, à esquerda. */
+export const TOWN = {
+  ...BASE_TOWN,
+  w: BASE_TOWN.w + WEST,
+  avenueX: BASE_TOWN.avenueX + WEST,
+  plaza: west(BASE_TOWN.plaza),
+  fountain: west(BASE_TOWN.fountain),
+  plot: west(BASE_TOWN.plot),
+  shop: west(BASE_TOWN.shop),
+  spawn: west(BASE_TOWN.spawn),
+  lake: west(BASE_TOWN.lake),
+} as const;
 
 /** Zonas fixas de trabalho: a mata do noroeste, a pedreira ao sul e a margem do lago. */
-export const WORK_AREAS = {
+export const BASE_WORK_AREAS = {
   lumber: { x: 5, y: 6, w: 13, h: 9 },
   mine: { x: 5, y: 64, w: 15, h: 6 },
   fishing: { x: 72, y: 5, w: 18, h: 15 },
 } as const;
+export const WORK_AREAS = {
+  lumber: west(BASE_WORK_AREAS.lumber),
+  mine: west(BASE_WORK_AREAS.mine),
+  fishing: west(BASE_WORK_AREAS.fishing),
+} as const;
 
-export const WORK_SITES = [
+export const BASE_WORK_SITES = [
   { id: 'farm', name: 'Fazenda', icon: '🌱', location: 'Leste da Vila', visit: { x: 84, y: 46 }, description: 'Plantio com sementes da caixa, rega e colheita dos canteiros. A produção vai para sua mochila.' },
   { id: 'mine', name: 'Mina', icon: '⛏️', location: 'Sul da Vila', visit: { x: 16, y: 66 }, description: 'Pedras rendem pedra e podem conter cristal (12%) e ouro (4%), como na coleta manual. Cada pedra rende uma vez por dia.' },
   { id: 'lumber', name: 'Madeireira', icon: '🪓', location: 'Noroeste da Vila', visit: { x: 15, y: 13 }, description: 'As árvores rendem madeira e podem deixar pena (12%) ou mel (5%). Cada árvore rende uma vez por dia.' },
   { id: 'fishing', name: 'Pescaria', icon: '🎣', location: 'Píer do lago, no nordeste', visit: { x: 80, y: 18 }, description: 'Usa as mesmas chances da sua pescaria: peixes, algas e achados raros; a isca também pode voltar vazia. Moradores e jogador compartilham 10 lançamentos por dia.' },
 ] as const;
-export type WorksiteId = typeof WORK_SITES[number]['id'];
+export const WORK_SITES = BASE_WORK_SITES.map((site) => ({ ...site, visit: west(site.visit) }));
+export type WorksiteId = typeof BASE_WORK_SITES[number]['id'];
 
-export type DecorKind = 'furniture' | 'leisure-sign' | 'cafe-table' | 'seed-box' | 'bell' | 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall' | 'mine-entrance' | 'log-depot' | 'mine-board' | 'lumber-board' | 'fishing-board';
+export type DecorKind = 'mew-statue' | 'furniture' | 'leisure-sign' | 'cafe-table' | 'seed-box' | 'bell' | 'swing' | 'slide' | 'carousel' | 'seesaw' | 'gym' | 'board' | 'barn' | 'planter' | 'pot' | 'tree-big' | 'pine-m' | 'fence-h' | 'wall' | 'mine-entrance' | 'log-depot' | 'mine-board' | 'lumber-board' | 'fishing-board';
 
 /** Enfeites fixos do mapa (sólidos; o desenho sai do atlas com o mesmo nome e fica em pé sobre a base). */
 export interface Decor {
@@ -136,8 +162,8 @@ export interface Decor {
   h: number;
 }
 
-export const DECOR: readonly Decor[] = [
-  ...CAFE_TABLES.map((table) => ({ kind: 'cafe-table' as const, x: table.x, y: table.y + 1, w: 2, h: 1 })),
+export const BASE_DECOR: readonly Decor[] = [
+  ...BASE_CAFE_TABLES.map((table) => ({ kind: 'cafe-table' as const, x: table.x, y: table.y + 1, w: 2, h: 1 })),
   { kind: 'mine-entrance', x: 6, y: 64, w: 3, h: 1 },
   { kind: 'mine-board', x: 17, y: 65, w: 2, h: 1 },
   { kind: 'log-depot', x: 14, y: 7, w: 2, h: 1 },
@@ -169,14 +195,16 @@ export const DECOR: readonly Decor[] = [
   { kind: 'tree-big', x: 14, y: 64, w: 1, h: 1 },
   { kind: 'pine-m', x: 80, y: 64, w: 1, h: 1 },
 ];
+export const DECOR = BASE_DECOR.map(west);
 
 /** Canteiros da fazenda (terra arada: dá para plantar, como na grama). */
-export const FIELDS: readonly { x: number; y: number; w: number; h: number }[] = [
+export const BASE_FIELDS: readonly { x: number; y: number; w: number; h: number }[] = [
   { x: 78, y: 48, w: 5, h: 3 },
   { x: 85, y: 48, w: 5, h: 3 },
   { x: 78, y: 53, w: 5, h: 3 },
   { x: 85, y: 53, w: 5, h: 3 },
 ];
+export const FIELDS = BASE_FIELDS.map(west);
 
 /** Os níveis da cidade (pelo nível de Treinador), com o que cada um traz. */
 export const TOWN_STAGES: readonly { level: number; name: string }[] = [
@@ -194,17 +222,17 @@ export function townStage(level: number): { index: number; name: string; next: {
   return { index, name: TOWN_STAGES[index]!.name, next: TOWN_STAGES[index + 1] ?? null };
 }
 
-/** Todos os prédios que cabem num mapa `w`×`h` (o desenho pressupõe o mapa de `TOWN.w`×`TOWN.h`). */
+/** Todos os prédios que cabem num mapa `w`×`h` do quadro antigo (o desenho pressupõe `BASE_TOWN.w`×`BASE_TOWN.h`). */
 export function buildingsFor(w: number, h: number): Building[] {
   const out: Building[] = [];
   const fits = (b: { x: number; y: number; w: number; h: number }) => b.x >= 3 && b.y >= 3 && b.x + b.w <= w - 3 && b.y + b.h + 1 <= h - 3;
-  const f = TOWN.fountain;
+  const f = BASE_TOWN.fountain;
   if (fits(f)) out.push({ id: 'fonte', kind: 'fountain', name: 'Fonte da praça', ...f, door: { x: f.x, y: f.y + f.h }, unlock: 1 });
-  LOTS.forEach((l, i) => {
+  BASE_LOTS.forEach((l, i) => {
     const b = { x: l.x, y: l.y, w: HOME_W, h: HOME_H };
     if (fits(b)) out.push({ id: `casa${i}`, ...b, kind: 'home', name: `Terreno ${i + 1}`, door: { x: b.x + 2, y: b.y + b.h }, unlock: l.unlock, lot: i });
   });
-  for (const c of CIVIC) if (fits(c)) out.push({ id: c.kind, kind: c.kind, name: c.name, x: c.x, y: c.y, w: c.w, h: c.h, door: { x: c.x + Math.floor(c.w / 2), y: c.y + c.h }, unlock: c.unlock });
+  for (const c of BASE_CIVIC) if (fits(c)) out.push({ id: c.kind, kind: c.kind, name: c.name, x: c.x, y: c.y, w: c.w, h: c.h, door: { x: c.x + Math.floor(c.w / 2), y: c.y + c.h }, unlock: c.unlock });
   return out;
 }
 
@@ -214,12 +242,13 @@ export function buildingsFor(w: number, h: number): Building[] {
  */
 export function lampSpots(w: number, h: number): { x: number; y: number }[] {
   const spots: { x: number; y: number }[] = [];
-  for (let x = 8; x < 88; x += 12) spots.push({ x, y: TOWN.mainStreetY - 1 }, { x: x + 6, y: TOWN.mainStreetY + 2 });
-  for (let x = 11; x < 78; x += 11) spots.push({ x, y: TOWN.gamesStreetY + 2 });
-  for (const l of LOTS) spots.push({ x: l.x + HOME_W + 1, y: l.y + HOME_H + 2 });
-  for (let y = 8; y < 66; y += 12) spots.push({ x: TOWN.avenueX - 1, y }, { x: TOWN.avenueX + 2, y: y + 6 });
+  const T = BASE_TOWN;
+  for (let x = 8; x < 88; x += 12) spots.push({ x, y: T.mainStreetY - 1 }, { x: x + 6, y: T.mainStreetY + 2 });
+  for (let x = 11; x < 78; x += 11) spots.push({ x, y: T.gamesStreetY + 2 });
+  for (const l of BASE_LOTS) spots.push({ x: l.x + HOME_W + 1, y: l.y + HOME_H + 2 });
+  for (let y = 8; y < 66; y += 12) spots.push({ x: T.avenueX - 1, y }, { x: T.avenueX + 2, y: y + 6 });
   // Nada de poste dentro do desenho de uma construção (o desenho sobe uns 9 blocos acima da base) nem colado nela.
   const under = (s: { x: number; y: number }, b: { x: number; y: number; w: number; h: number }) => s.x >= b.x - 1 && s.x <= b.x + b.w && s.y >= b.y - 9 && s.y <= b.y + b.h;
-  const blocks = [...buildingsFor(w, h), TOWN.plot, TOWN.shop];
+  const blocks = [...buildingsFor(w, h), T.plot, T.shop];
   return spots.filter((s) => s.x >= 3 && s.y >= 3 && s.x < w - 3 && s.y < h - 3 && !blocks.some((b) => under(s, b)));
 }

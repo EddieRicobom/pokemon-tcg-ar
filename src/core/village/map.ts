@@ -1,9 +1,14 @@
 import { seededRng } from '../battle';
 import type { Rng } from '../battle';
-import { buildingsFor, DECOR, FIELDS, lampSpots, TOWN, WORK_AREAS, WORK_SITES } from './town-layout';
+// O gerador desenha a cidade no quadro antigo (`BASE_*`, ver `west.ts`); o mapa pronto é deslocado para o oeste ganhar o monte.
+import { BASE_DECOR as DECOR, BASE_FIELDS as FIELDS, BASE_TOWN, BASE_WORK_AREAS as WORK_AREAS, buildingsFor, lampSpots, TOWN as GAME_TOWN, WORK_SITES } from './town-layout';
 import type { Building, Decor } from './town-layout';
-import { CAFE_TERRACE } from './cafe-layout';
+import { BASE_CAFE_TERRACE as CAFE_TERRACE } from './cafe-layout';
 import { expandVillage } from './expansion';
+import { addMountain, MEW_STATUE_FRONT, shiftWest } from './mountain';
+import { WEST } from './west';
+
+const TOWN = BASE_TOWN;
 
 /**
  * O mapa da Vila: uma grade de blocos. A cidade tem desenho fixo (`town-layout.ts`: ruas, praça, prédios, casas,
@@ -14,11 +19,13 @@ import { expandVillage } from './expansion';
 export type Tile =
   | 'grass' | 'tall' | 'flower' | 'path' | 'sand' | 'water' | 'tree' | 'rock' | 'bush' | 'plot' | 'shop' | 'building' | 'lamp'
   /** Trilha de terra (fora da cidade), piso de pedra da praça, canteiro arado da fazenda e enfeite fixo (`DECOR`). */
-  | 'trail' | 'plaza' | 'field' | 'deco' | 'pier';
-export const TILES: readonly Tile[] = ['grass', 'tall', 'flower', 'path', 'sand', 'water', 'tree', 'rock', 'bush', 'plot', 'shop', 'building', 'lamp', 'trail', 'plaza', 'field', 'deco', 'pier'];
+  | 'trail' | 'plaza' | 'field' | 'deco' | 'pier'
+  /** Monte Miragem (`mountain.ts`): chão de rocha dos patamares, borda e paredão do penhasco (sólidos) e degraus. */
+  | 'mtn' | 'cliff' | 'stairs';
+export const TILES: readonly Tile[] = ['grass', 'tall', 'flower', 'path', 'sand', 'water', 'tree', 'rock', 'bush', 'plot', 'shop', 'building', 'lamp', 'trail', 'plaza', 'field', 'deco', 'pier', 'mtn', 'cliff', 'stairs'];
 
 /** Blocos que não dá para atravessar. */
-const SOLID = new Set<Tile>(['water', 'tree', 'rock', 'bush', 'shop', 'building', 'lamp', 'deco']);
+const SOLID = new Set<Tile>(['water', 'tree', 'rock', 'bush', 'shop', 'building', 'lamp', 'deco', 'cliff']);
 
 export interface VillageMap {
   w: number;
@@ -34,6 +41,8 @@ export interface VillageMap {
   buildings: Building[];
   /** Enfeites fixos (parquinho, celeiro, jardineiras, árvores grandes); o chão deles é o bloco `deco`. */
   decor: Decor[];
+  /** Altura de cada bloco (0 = chão da Vila; 1 a 4 = terraços do Monte Miragem). Só no mapa com o monte. */
+  elev?: Uint8Array;
 }
 
 /** O prédio que ocupa o bloco (x, y), se houver. */
@@ -41,8 +50,8 @@ export function buildingAt(map: VillageMap, x: number, y: number): Building | nu
   return map.buildings.find((b) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) ?? null;
 }
 
-export const MAP_W = TOWN.w;
-export const MAP_H = TOWN.h;
+export const MAP_W = GAME_TOWN.w;
+export const MAP_H = GAME_TOWN.h;
 
 export function tileAt(map: VillageMap, x: number, y: number): Tile {
   if (x < 0 || y < 0 || x >= map.w || y >= map.h) return 'tree';
@@ -74,7 +83,9 @@ function fill(map: VillageMap, x: number, y: number, w: number, h: number, tile:
 const NATURE: Tile[] = ['grass', 'tall', 'flower', 'tree', 'rock', 'bush'];
 
 /** O miolo livre de mata (cidade, ruas, parque): as árvores só começam depois dele. */
-export const CLEARING = { x0: 10, y0: 14, x1: 79, y1: 65 } as const;
+const BASE_CLEARING = { x0: 10, y0: 14, x1: 79, y1: 65 } as const;
+/** O miolo no mapa do jogo (deslocado `WEST` colunas). */
+export const CLEARING = { ...BASE_CLEARING, x0: BASE_CLEARING.x0 + WEST, x1: BASE_CLEARING.x1 + WEST } as const;
 /** Largura da transição entre o miolo livre e a mata fechada das bordas do mapa. */
 const FOREST_BAND = 14;
 /** O desenho original do mapa (antes da expansão): só ali a mata é refeita; os anexos novos têm o próprio desenho. */
@@ -117,8 +128,8 @@ function softenForest(map: VillageMap, seed: number): void {
     for (let x = 5; x < Math.min(map.w - 5, BASE_W); x++) {
       const here = tileAt(map, x, y);
       if (here !== 'grass' && here !== 'tree') continue;
-      const dx = Math.max(CLEARING.x0 - x, 0, x - CLEARING.x1);
-      const dy = Math.max(CLEARING.y0 - y, 0, y - CLEARING.y1);
+      const dx = Math.max(BASE_CLEARING.x0 - x, 0, x - BASE_CLEARING.x1);
+      const dy = Math.max(BASE_CLEARING.y0 - y, 0, y - BASE_CLEARING.y1);
       const d = Math.hypot(dx, dy);
       if (d <= 0 || d > FOREST_BAND) continue;
       if (work.some((a) => x >= a.x - 2 && y >= a.y - 2 && x < a.x + a.w + 2 && y < a.y + a.h + 2)) continue;
@@ -145,9 +156,13 @@ function trail(map: VillageMap, x0: number, y0: number, x1: number, y1: number):
 }
 
 export function generateVillage(seed: number, w: number = MAP_W, h: number = MAP_H): VillageMap {
-  const map = w > 96 && h > 72 ? expandVillage(generateBase(seed, 96, 72), w, h, seed) : generateBase(seed, w, h);
+  // O mapa do jogo (`MAP_W`×`MAP_H`) é o desenho antigo de 120×96 mais as colunas do Monte Miragem a oeste.
+  const withMountain = w === MAP_W && h === MAP_H;
+  const bw = withMountain ? w - WEST : w;
+  const base = bw > 96 && h > 72 ? expandVillage(generateBase(seed, 96, 72), bw, h, seed) : generateBase(seed, bw, h);
   // A mata é suavizada no mapa final (as bordas de verdade são as dele, não as do mapa antigo de 96×72).
-  softenForest(map, seed);
+  softenForest(base, seed);
+  const map = withMountain ? addMountain(shiftWest(base), seed) : base;
   repairLayout(map);
   return map;
 }
@@ -315,6 +330,8 @@ export function keyPoints(map: VillageMap): { x: number; y: number }[] {
   out.push({ x: map.shop.x + 1, y: map.shop.y + map.shop.h });
   out.push({ x: map.plot.x + map.plot.w, y: map.plot.y + map.plot.h - 1 });
   for (const site of WORK_SITES) if (site.visit.x < map.w && site.visit.y < map.h) out.push({ ...site.visit });
+  // No mapa com o monte, a frente da Estátua do Mew (lá no topo) também precisa ficar ao alcance.
+  if (map.elev) out.push({ ...MEW_STATUE_FRONT });
   return out;
 }
 
@@ -426,7 +443,7 @@ export function findFree(map: VillageMap, x: number, y: number, blocked: (x: num
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r) ring.push({ x: x + dx, y: y + dy });
     const ok = ring.filter((c) => {
       const t = tileAt(map, c.x, c.y);
-      return (t === 'grass' || t === 'path' || t === 'flower' || t === 'tall' || t === 'trail' || t === 'plaza' || t === 'field' || t === 'pier') && !blocked(c.x, c.y);
+      return (t === 'grass' || t === 'path' || t === 'flower' || t === 'tall' || t === 'trail' || t === 'plaza' || t === 'field' || t === 'pier' || t === 'mtn') && !blocked(c.x, c.y);
     });
     if (ok.length > 0) return ok[Math.floor(rng() * ok.length)]!;
   }

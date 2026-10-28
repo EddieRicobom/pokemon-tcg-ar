@@ -1,21 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { emptyVillage, MAP_LAYOUT, normalizeVillage } from './life';
+import { emptyVillage, MAP_LAYOUT, MAP_LAYOUT_BEFORE_MOUNTAIN, normalizeVillage } from './life';
 import { generateVillage, tileAt } from './map';
 import { migrateLayout } from './migrate';
+import { WEST } from './west';
 
 const map = generateVillage(20261014);
 
 describe('save do mapa antigo no mapa grande', () => {
   it('preserva mobília e estágio das plantas quando um novo posto ocupa seu terreno', () => {
     const state = emptyVillage(20261014, map.spawn);
-    state.placed.push({ x: 6, y: 64, item: 'cadeira' });
-    state.crops.push({ x: 80, y: 17, seed: 'sem-tomate', stage: 2, wateredAt: 1234 });
-    state.player = { x: 7, y: 64, dir: 'down' };
+    state.placed.push({ x: WEST + 6, y: 64, item: 'cadeira' });
+    state.crops.push({ x: WEST + 80, y: 17, seed: 'sem-tomate', stage: 2, wateredAt: 1234 });
+    state.player = { x: WEST + 7, y: 64, dir: 'down' };
     expect(migrateLayout(state, map)).toBe(true);
     expect(state.placed).toHaveLength(1);
-    expect(state.placed[0]).not.toMatchObject({ x: 6, y: 64 });
+    expect(state.placed[0]).not.toMatchObject({ x: WEST + 6, y: 64 });
     expect(state.crops[0]).toMatchObject({ seed: 'sem-tomate', stage: 2, wateredAt: 1234 });
-    expect(state.crops[0]).not.toMatchObject({ x: 80, y: 17 });
+    expect(state.crops[0]).not.toMatchObject({ x: WEST + 80, y: 17 });
     expect(state.inventory.cadeira ?? 0).toBe(0);
     expect(migrateLayout(state, map)).toBe(false);
   });
@@ -38,9 +39,26 @@ describe('save do mapa antigo no mapa grande', () => {
     expect(migrateLayout(s, map)).toBe(false);
   });
 
+  it('save de antes do Monte Miragem: tudo anda WEST blocos e continua no mesmo lugar da cidade', () => {
+    const s = { ...emptyVillage(20261014, map.spawn), layout: MAP_LAYOUT_BEFORE_MOUNTAIN };
+    // Uma cadeira na praça, um tomate num canteiro e você na frente da fonte, nas coordenadas do desenho anterior.
+    s.placed.push({ x: 42, y: 36, item: 'cadeira' });
+    s.crops.push({ x: 78, y: 48, seed: 'sem-tomate', stage: 2, wateredAt: 99 });
+    s.player = { x: 45, y: 41, dir: 'left' };
+    const back = normalizeVillage(JSON.parse(JSON.stringify(s)), 20261014, map.spawn);
+    expect(back.layout).toBe(MAP_LAYOUT_BEFORE_MOUNTAIN);
+    expect(migrateLayout(back, map)).toBe(true);
+    expect(back.layout).toBe(MAP_LAYOUT);
+    expect(back.placed[0]).toMatchObject({ x: WEST + 42, y: 36 });
+    expect(back.crops[0]).toMatchObject({ x: WEST + 78, y: 48, stage: 2, wateredAt: 99 });
+    expect(tileAt(map, back.crops[0]!.x, back.crops[0]!.y)).toBe('field');
+    expect(back.player).toEqual({ x: WEST + 45, y: 41, dir: 'left' });
+    expect(migrateLayout(back, map)).toBe(false);
+  });
+
   it('save novo já nasce no mapa grande e passa intacto', () => {
     const s = emptyVillage(20261014, map.spawn);
-    s.placed.push({ x: 24, y: 29, item: 'cadeira' });
+    s.placed.push({ x: WEST + 24, y: 29, item: 'cadeira' });
     const back = normalizeVillage(JSON.parse(JSON.stringify(s)), 20261014, map.spawn);
     expect(back.layout).toBe(MAP_LAYOUT);
     expect(migrateLayout(back, map)).toBe(false);

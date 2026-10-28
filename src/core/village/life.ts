@@ -83,8 +83,13 @@ export interface Friendship {
   hurt?: string;
 }
 
-/** Versão do desenho do mapa: saves de antes do mapa grande (sem este número) passam por `migrateLayout`. */
-export const MAP_LAYOUT = 2;
+/**
+ * Versão do desenho do mapa: saves de antes do mapa grande (sem este número) passam por `migrateLayout`. A versão 3
+ * acrescentou o Monte Miragem a oeste: a cidade inteira andou `WEST` blocos para a direita.
+ */
+export const MAP_LAYOUT = 3;
+/** O mapa grande antes do Monte Miragem (mesmo desenho, sem as colunas do oeste). */
+export const MAP_LAYOUT_BEFORE_MOUNTAIN = 2;
 
 export interface VillageState {
   v: 1;
@@ -225,7 +230,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
   return {
     ...base,
     // Sem o número (save de antes do mapa grande) = mapa antigo; quem carrega passa por `migrateLayout`.
-    layout: r.layout === MAP_LAYOUT ? MAP_LAYOUT : 1,
+    layout: r.layout === MAP_LAYOUT || r.layout === MAP_LAYOUT_BEFORE_MOUNTAIN ? r.layout : 1,
     player: p && Number.isInteger(p.x) && Number.isInteger(p.y) ? { x: p.x, y: p.y, dir: ['up', 'down', 'left', 'right'].includes(p.dir) ? p.dir : 'down' } : base.player,
     inventory: inv,
     farm: normalizeFarm(r.farm),

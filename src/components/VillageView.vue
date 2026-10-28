@@ -90,6 +90,8 @@ import FarmSeedBox from './FarmSeedBox.vue';
 import VillageWorksites from './VillageWorksites.vue';
 import VillageDojo from './VillageDojo.vue';
 import { WORK_SITES } from '../core/village/town-layout';
+import { west } from '../core/village/west';
+import { MEW_STATUE_FRONT } from '../core/village/mountain';
 import type { WorksiteId } from '../core/village/town-layout';
 import { GUIDED_DESTINATIONS, guidedWalkArrived, guidedWalkProgress } from '../core/village/guided-walk';
 import type { Dir } from '../core/village/actors';
@@ -2678,11 +2680,12 @@ function drawMini(): void {
   }
   const requestPoint = (location: string): { x: number; y: number } | null => {
     const l = location.toLowerCase();
-    if (l.includes('lago') || l.includes('praia')) return { x: 81, y: 16 };
-    if (l.includes('bosque') || l.includes('pedreira')) return { x: 15, y: 64 };
-    if (l.includes('parque')) return { x: 12, y: 48 };
-    if (l.includes('fazenda') || l.includes('canteiro')) return { x: 82, y: 56 };
-    if (l.includes('praça') || l.includes('mural')) return { x: 48, y: 37 };
+    if (l.includes('monte') || l.includes('estátua') || l.includes('mew')) return { ...MEW_STATUE_FRONT };
+    if (l.includes('lago') || l.includes('praia')) return west({ x: 81, y: 16 });
+    if (l.includes('bosque') || l.includes('pedreira')) return west({ x: 15, y: 64 });
+    if (l.includes('parque')) return west({ x: 12, y: 48 });
+    if (l.includes('fazenda') || l.includes('canteiro')) return west({ x: 82, y: 56 });
+    if (l.includes('praça') || l.includes('mural')) return west({ x: 48, y: 37 });
     return null;
   };
   for (const request of state.requests.items) {

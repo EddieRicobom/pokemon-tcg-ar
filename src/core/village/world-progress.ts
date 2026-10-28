@@ -1,6 +1,7 @@
 import type { FurnitureId, ItemId, VillageState } from './life';
 import type { PersonalityName } from './personality';
 import type { VillageRequest } from './requests';
+import { WEST } from './west';
 
 export type DiscoveryPlace = 'lago' | 'parque' | 'bosque' | 'fazenda' | 'praca';
 
@@ -141,7 +142,10 @@ export function normalizeWorldProgress(raw: unknown): ReturnType<typeof emptyWor
   return { discoveries: { steps, found, lastPlace }, weekly: { week: typeof w.week === 'string' ? w.week.slice(0, 10) : '', eventId: typeof w.eventId === 'string' ? w.eventId.slice(0, 40) : '', festivalWeek: typeof w.festivalWeek === 'string' ? w.festivalWeek.slice(0, 10) : '', festivalWon: w.festivalWon === true }, expeditions };
 }
 
-function placeFor(x: number, y: number): DiscoveryPlace | null {
+function placeFor(mapX: number, y: number): DiscoveryPlace | null {
+  // As faixas abaixo são do desenho antigo da cidade; o Monte Miragem (a oeste) não é um desses lugares.
+  if (mapX < WEST) return null;
+  const x = mapX - WEST;
   if (x >= 76 && y <= 25) return 'lago';
   if (x <= 22 && y >= 40 && y <= 59) return 'parque';
   if (x <= 28 && y >= 58) return 'bosque';
