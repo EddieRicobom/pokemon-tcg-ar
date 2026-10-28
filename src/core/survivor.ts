@@ -8,6 +8,8 @@ import { survivorPreparation } from './survivor-preparations';
 import { MAX_OFFER_CHOICES, PURE_LOADOUT } from './survivor-loadout';
 import type { TowerLoadout } from './survivor-loadout';
 import { LUNCH_HEAL_CAP_FRACTION, TRAINING_DEFENSE_CAP, TRAINING_SPEED_CAP } from './survivor-lunch';
+import { endSurvivorMega, startSurvivorMega, stepSurvivorMega, survivorPlayerStats } from './survivor-mega';
+import type { SurvivorMegaForm } from './survivor-mega';
 import type { SurvivorPreparationId } from './survivor-preparations';
 import { advanceSpecialEncounter, breakSurvivorShield, createSurvivorSpecial, DASH_DAMAGE_MULTIPLIER, DASH_TRIPLE_DAMAGE_MULTIPLIER, SPECIAL_GUARDIANS, specialProtects, stepSurvivorSpecial } from './survivor-specials';
 import { inSurvivorCone, SURVIVOR_CONE_HALF_ANGLE, SURVIVOR_ORBIT_BASE, SURVIVOR_ORBIT_MAX, survivorAimAngle, survivorOrbitAngularSpeed, survivorOrbiterHitRadius, survivorOrbiters, survivorOrbitHitIntervalMs } from './survivor-shapes';
@@ -217,6 +219,9 @@ export interface CreateSurvivorOptions {
   typeAffinity?: SurvivorTypeAffinity;
   /** Tipos secundários reais da espécie; a escolha só aparece após o primeiro líder derrotado. */
   typeAffinityChoices?: readonly PokemonType[];
+  /** Forma Mega temporária escolhida na seleção (`core/survivor-mega.ts`); começa ativa e dura `megaDurationMs`. */
+  mega?: SurvivorMegaForm;
+  megaDurationMs?: number;
 }
 
 /** Técnica interna da Torre para que até Pokémon de um tipo tenham uma segunda opção desbloqueável. */
@@ -288,7 +293,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     upgradeLevels: {},
     ...options.player,
   };
-  return {
+  const state: SurvivorState = {
     special: createSurvivorSpecial(move.type),
     rng: seededRng(seed),
     runSeed: Math.floor(seed) >>> 0,
@@ -346,6 +351,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     typeAffinityChoices: [...(options.typeAffinityChoices ?? [])],
     typeAffinityOffered: false,
   };
+  if (options.mega) startSurvivorMega(state, options.mega, options.megaDurationMs);
+  return state;
 }
 
 /** Ativa a afinidade oferecida pelo primeiro treinador; rejeita tipos que não pertencem à espécie. */
@@ -789,6 +796,8 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
     const dexId = Number(id.slice(EVOLVE_PREFIX.length));
     const next = offered ? state.evolutions(state.player.dexId).find((o) => o.dexId === dexId) : undefined;
     if (next) {
+      // A forma Mega é da espécie de agora: evoluir encerra a Mega antes (Floette, por exemplo, ainda vira Florges).
+      endSurvivorMega(state);
       evolvePlayer(state, next);
       events.push({ type: 'evolve', dexId: next.dexId, name: next.name });
     }
@@ -1304,8 +1313,8 @@ function hitSource(enemy: SurvivorEnemy): SurvivorHitSource {
 }
 
 /** Contato e explosão são físicos; projéteis são especiais. Cada defesa dá retornos decrescentes. */
-export function survivorDefenseReduction(player: Pick<SurvivorPlayer, 'dexId' | 'defenseBonus' | 'spDefenseBonus' | 'trainingDefense' | 'lunchDefense'>, kind: SurvivorFinalHit['kind']): number | null {
-  const stats = statsOfDex(player.dexId);
+export function survivorDefenseReduction(player: Pick<SurvivorPlayer, 'dexId' | 'defenseBonus' | 'spDefenseBonus' | 'trainingDefense' | 'lunchDefense' | 'mega'>, kind: SurvivorFinalHit['kind']): number | null {
+  const stats = survivorPlayerStats(player);
   if (!stats) return null;
   // Dojô e marmita têm campo próprio e teto combinado: não furam o limite de cartas `guard-*`.
   const trained = Math.min(TRAINING_DEFENSE_CAP, (player.trainingDefense ?? 0) + (player.lunchDefense ?? 0));
@@ -1590,6 +1599,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
   if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + (p.regenPerSec ?? 0) * dt);
   stepLunch(state, dt);
+  stepSurvivorMega(state);
 
   // Nascimento de inimigos (onda cresce com o tempo) e do chefe periódico.
   let trainerSpawnedThisStep = false;

@@ -1733,7 +1733,7 @@ async function recordSurvivalAdventure(summary: import('../core/survivor').Survi
   }
   if (summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS) {
     add(state, 'mega-stone-shard');
-    milestoneRewards.push('💎 Fragmento de Mega Stone');
+    milestoneRewards.push('💎 Fragmento de Megapedra');
   }
   const shadowTrustStones = Math.max(0, Math.floor(summary.shadowTrustStones ?? 0));
   for (let i = 0; i < shadowTrustStones; i++) add(state, 'trust-stone');
