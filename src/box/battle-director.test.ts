@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
 import { BoxScene } from './box-scene';
 import type { CreatureEntry } from './box-scene';
-import { attackStyleOf, GUARD_MS, INTRO_MAX_MS, RESIDUAL_MS, SKIP_MS, turnDuration, turnPlan } from './battle-director';
+import { attackStyleOf, CRITICAL_IMPACT_FRAME_MS, GUARD_MS, INTRO_MAX_MS, RESIDUAL_MS, SKIP_MS, turnDuration, turnPlan } from './battle-director';
 import { buildFighter, seededRng } from '../core/battle';
 import { PERSONALITY_LABELS_PT } from '../core/battle';
 import type { BattleTurn } from '../core/battle';
@@ -111,6 +111,32 @@ describe('batalha na cena', () => {
     } else {
       expect(labels.length).toBeGreaterThan(0);
     }
+  });
+
+  it('congela e expõe um quadro de impacto quando o acerto é crítico', () => {
+    const scene = ready(2);
+    // A semente 2 gera um crítico válido cedo; vínculo 3 aumenta a chance sem forçar o resultado.
+    const team = fighters(2).map((fighter) => ({ ...fighter, bond: 3 }));
+    const result = scene.startBattle(team, seededRng(2));
+    expect(result.turns.some((turn) => turn.critical && turn.damage > 0)).toBe(true);
+
+    let now = 1000;
+    scene.update(now);
+    let impactFrameSeen = false;
+    for (let i = 0; i < 2200; i++) {
+      now += 16;
+      scene.update(now);
+      if (scene.battleHud?.impactFrame) {
+        impactFrameSeen = true;
+        break;
+      }
+    }
+    expect(impactFrameSeen).toBe(true);
+    expect(scene.battleHud?.impactFrame?.color).toBe('#fff3a6');
+
+    now += CRITICAL_IMPACT_FRAME_MS + 32;
+    scene.update(now);
+    expect(scene.battleHud?.impactFrame).toBeNull();
   });
 
   it('o anúncio do golpe usa o nome e a origem do golpe', () => {
