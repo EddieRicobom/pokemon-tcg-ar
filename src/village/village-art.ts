@@ -131,6 +131,13 @@ export function paintTile(tile: Tile, edges: number, c: number, r: number, frame
       for (let y = 1; y < TILE; y += 4) for (let x = 0; x < TILE; x++) put(buf, x, y, (x + r) % 6 === 0 ? DIRT.light : DIRT.dark);
       if (edges & EDGE.north) for (let x = 1; x < TILE; x += 5) rect(buf, x, 0, 2, 3, DIRT.stake);
       break;
+    case 'mtn':
+    case 'cliff':
+    case 'stairs':
+      // Reserva: o jogo desenha o Monte Miragem por `mountain-ground.ts`, com borda, paredão e degraus.
+      rect(buf, 0, 0, TILE, TILE, tile === 'cliff' ? 0x8a6a4e : 0xcdb894);
+      for (let i = 0; i < 10; i++) put(buf, Math.floor(rng() * TILE), Math.floor(rng() * TILE), tile === 'cliff' ? 0x634a37 : 0xb9a27c);
+      break;
   }
   return buf;
 }

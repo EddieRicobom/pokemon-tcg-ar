@@ -1,13 +1,16 @@
 import type { Tile, VillageMap } from './map';
 import { buildingsFor } from './town-layout';
+import { west } from './west';
 
-export const LEISURE_SPOTS = [
+/** Pontos de passeio no quadro antigo do gerador; o jogo usa `LEISURE_SPOTS` (deslocados, ver `west.ts`). */
+export const BASE_LEISURE_SPOTS = [
   { id: 'garden', name: 'Jardim das Estações', icon: '🌷', x: 40, y: 81, action: 'Cuidar das flores', description: 'Um jardim de canteiros, cercas baixas e flores para recolher.' },
   { id: 'square', name: 'Praça dos Encontros', icon: '🎵', x: 71, y: 83, action: 'Fazer uma roda de conversa', description: 'Uma praça para sentar, conversar e encontrar os vizinhos.' },
   { id: 'grove', name: 'Bosque do Piquenique', icon: '🧺', x: 99, y: 66, action: 'Dividir uma fruta', description: 'Mesas entre as árvores. Traga uma Oran ou Pecha para compartilhar.' },
   { id: 'lookout', name: 'Mirante das Nuvens', icon: '🔭', x: 104, y: 19, action: 'Observar a paisagem', description: 'Um deck tranquilo, acima da margem, para observar o céu com um amigo.' },
   { id: 'beach', name: 'Praia das Conchas', icon: '🐚', x: 109, y: 49, action: 'Procurar uma concha', description: 'Areia clara, mar, guarda-sóis e um pequeno píer de madeira.' },
 ] as const;
+export const LEISURE_SPOTS = BASE_LEISURE_SPOTS.map(west);
 
 /** Mantém o mapa antigo pixel a pixel e acrescenta bairros ao leste e ao sul. */
 export function expandVillage(base: VillageMap, w: number, h: number, seed: number): VillageMap {
@@ -57,6 +60,6 @@ export function expandVillage(base: VillageMap, w: number, h: number, seed: numb
     fill(b.x, b.y + b.h, b.w, 1, 'path');
     map.buildings = [...map.buildings, b];
   }
-  for (const place of LEISURE_SPOTS) { put(place.x, place.y + 1, 'deco'); map.decor.push({ kind: 'leisure-sign', x: place.x, y: place.y + 1, w: 1, h: 1 }); }
+  for (const place of BASE_LEISURE_SPOTS) { put(place.x, place.y + 1, 'deco'); map.decor.push({ kind: 'leisure-sign', x: place.x, y: place.y + 1, w: 1, h: 1 }); }
   return map;
 }

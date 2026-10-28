@@ -2,6 +2,7 @@ import type { Rng } from '../battle';
 import type { PokemonType } from '../pokemon-data';
 import { ACCESSORY_IDS, FURNITURE_IDS, isItem, itemDef, ITEMS, MATERIAL_IDS, shopToday } from './catalog';
 import { hash, personalityOf } from './personality';
+import { MOUNTAIN_REMARKS, MOUNTAIN_TALK_LINES, STATUE_REMARKS } from './mew-shrine';
 import { emptySocial, normalizeSocial } from './social-state';
 import type { Answer, Lingo, Moment, Relation, SocialMemory, SocialPlan } from './social-state';
 import { cutsOff, isFront, tileAt } from './map';
@@ -83,8 +84,13 @@ export interface Friendship {
   hurt?: string;
 }
 
-/** Versão do desenho do mapa: saves de antes do mapa grande (sem este número) passam por `migrateLayout`. */
-export const MAP_LAYOUT = 2;
+/**
+ * Versão do desenho do mapa: saves de antes do mapa grande (sem este número) passam por `migrateLayout`. A versão 3
+ * acrescentou o Monte Miragem a oeste: a cidade inteira andou `WEST` blocos para a direita.
+ */
+export const MAP_LAYOUT = 3;
+/** O mapa grande antes do Monte Miragem (mesmo desenho, sem as colunas do oeste). */
+export const MAP_LAYOUT_BEFORE_MOUNTAIN = 2;
 
 export interface VillageState {
   v: 1;
@@ -225,7 +231,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
   return {
     ...base,
     // Sem o número (save de antes do mapa grande) = mapa antigo; quem carrega passa por `migrateLayout`.
-    layout: r.layout === MAP_LAYOUT ? MAP_LAYOUT : 1,
+    layout: r.layout === MAP_LAYOUT || r.layout === MAP_LAYOUT_BEFORE_MOUNTAIN ? r.layout : 1,
     player: p && Number.isInteger(p.x) && Number.isInteger(p.y) ? { x: p.x, y: p.y, dir: ['up', 'down', 'left', 'right'].includes(p.dir) ? p.dir : 'down' } : base.player,
     inventory: inv,
     farm: normalizeFarm(r.farm),
@@ -721,7 +727,10 @@ const MISSED_YOU: Record<number, (days: number) => string> = {
  * Antes dela, pesa um pouco o que ficou para trás: o pedido sem resposta e a saudade de mais de uma semana (`FRIEND_LOSS`).
  * O texto muda com o nível de amizade e com a hora (bom dia / boa noite).
  */
-export function talk(s: VillageState, id: string, name: string, types: readonly PokemonType[], day: string, hour: number, rng: Rng, gossip: string | null = null, weather: string | null = null): Talk {
+/** Onde a conversa acontece, quando o lugar muda o assunto: nos patamares do Monte Miragem ou diante da Estátua do Mew. */
+export type TalkPlace = 'mountain' | 'statue' | null;
+
+export function talk(s: VillageState, id: string, name: string, types: readonly PokemonType[], day: string, hour: number, rng: Rng, gossip: string | null = null, weather: string | null = null, place: TalkPlace = null): Talk {
   const f = friendOf(s, id);
   let gained = 0;
   let lost = 0;
@@ -748,6 +757,12 @@ export function talk(s: VillageState, id: string, name: string, types: readonly 
   const flavor = level >= 1 ? PERSONALITY_LINES[personalityOf(id).name] : undefined;
   let pool: readonly string[] = flavor && rng() < 0.5 ? flavor : lines;
   if (weather && WEATHER_LINES[weather] && rng() < 0.25) pool = [WEATHER_LINES[weather]!];
+  // O Monte Miragem: lá em cima o assunto é a subida e a estátua; na cidade, de vez em quando (≈8% dos dias, pelo
+  // hash — sem gastar o sorteio da conversa), o morador comenta o monte do jeito dele.
+  const roll = hash(`monte:${id}:${day}`) % 100;
+  if (place === 'statue' && roll < 70) pool = STATUE_REMARKS;
+  else if (place === 'mountain' && roll < 60) pool = MOUNTAIN_REMARKS;
+  else if (place === null && level >= 1 && roll < 8) pool = [MOUNTAIN_TALK_LINES[personalityOf(id).name]];
   const remembers = !!gossip && level >= 1 && rng() < 0.6;
   if (remembers) pool = [gossip!];
   let text = `${first ? greet : ''}${grievance}${pool[Math.floor(rng() * pool.length)]}`;

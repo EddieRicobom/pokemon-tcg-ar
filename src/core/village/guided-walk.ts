@@ -1,19 +1,20 @@
+import { WEST } from './west';
 import type { Walker } from './actors';
 import { LEISURE_SPOTS } from './expansion';
 
 export const GUIDED_DESTINATIONS = [
-  { x: 47, y: 36, place: 'Fonte Central' },
-  { x: 81, y: 16, place: 'Lago Azul' },
-  { x: 10, y: 48, place: 'Parquinho' },
-  { x: 58, y: 38, place: 'Mercado da Praça' },
-  { x: 16, y: 47, place: 'Parquinho Oeste' },
-  { x: 86, y: 50, place: 'Fazenda dos Canteiros' },
-  { x: 22, y: 64, place: 'Bosque do Sul' },
-  { x: 74, y: 18, place: 'Trilha do Lago' },
+  { x: WEST + 47, y: 36, place: 'Fonte Central' },
+  { x: WEST + 81, y: 16, place: 'Lago Azul' },
+  { x: WEST + 10, y: 48, place: 'Parquinho' },
+  { x: WEST + 58, y: 38, place: 'Mercado da Praça' },
+  { x: WEST + 16, y: 47, place: 'Parquinho Oeste' },
+  { x: WEST + 86, y: 50, place: 'Fazenda dos Canteiros' },
+  { x: WEST + 22, y: 64, place: 'Bosque do Sul' },
+  { x: WEST + 74, y: 18, place: 'Trilha do Lago' },
   ...LEISURE_SPOTS.map((place) => ({ x: place.x, y: place.y, place: place.name })),
-  { x: 67, y: 26, place: 'Terraço do Café' },
-  { x: 15, y: 13, place: 'Trilha da Madeireira' },
-  { x: 17, y: 66, place: 'Pedreira do Sul' },
+  { x: WEST + 67, y: 26, place: 'Terraço do Café' },
+  { x: WEST + 15, y: 13, place: 'Trilha da Madeireira' },
+  { x: WEST + 17, y: 66, place: 'Pedreira do Sul' },
 ] as const;
 
 export interface GuidedWalkProgress {

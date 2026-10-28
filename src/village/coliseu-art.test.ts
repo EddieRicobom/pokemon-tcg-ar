@@ -19,10 +19,23 @@ describe('arte do Coliseu', () => {
     expect(alpha(art, 0, 0)).toBe(0);
   });
 
-  it('pisa no chão: a última linha tem pedra e o desenho sobe daí', () => {
+  it('pisa no chão: os degraus do portão chegam à última linha, no meio do desenho', () => {
     let bottom = 0;
     for (let x = 0; x < art.w; x++) if (alpha(art, x, art.h - 1) > 0) bottom++;
-    expect(bottom).toBeGreaterThan(90);
+    expect(bottom).toBeGreaterThan(24);
+    expect(alpha(art, COLISEU_W / 2, art.h - 1)).toBe(255);
+  });
+
+  it('as luzes são pequenas (janelas e tochas), nunca a fachada inteira', () => {
+    for (const g of COLISEU_GLOWS) expect(g.w * g.h).toBeLessThanOrEqual(20);
+  });
+
+  it('o azul-claro do vidro só aparece nas janelas', () => {
+    const glass = new Set([0xd0e0f8, 0xa8c8f8, 0x8cb6f6]);
+    for (let y = 0; y < art.h; y++) for (let x = 0; x < art.w; x++) {
+      if (!glass.has(rgb(art, x, y))) continue;
+      expect(COLISEU_GLOWS.some((g) => x >= g.x - 1 && x <= g.x + g.w && y >= g.y - 1 && y <= g.y + g.h), `vidro solto em ${x},${y}`).toBe(true);
+    }
   });
 
   it('mostra as duas equipes: vermelho de um lado e azul do outro', () => {

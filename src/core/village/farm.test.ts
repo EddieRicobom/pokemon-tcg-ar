@@ -6,6 +6,7 @@ import type { FarmWorker } from './farm';
 import { normalizeResidentProgress } from './community';
 import { itemDef } from './catalog';
 import { makeWalker } from './actors';
+import { WEST } from './west';
 
 const map = generateVillage(9);
 const free = () => false;
@@ -13,7 +14,7 @@ const rng = () => 0.4;
 function setup() {
   const state = emptyVillage(9, map.spawn);
   state.farm.seeds['sem-tomate'] = 5;
-  const worker: FarmWorker = { id: 'digital:bulbasaur', types: ['normal'], x: 45, y: 41, available: true };
+  const worker: FarmWorker = { id: 'digital:bulbasaur', types: ['normal'], x: WEST + 45, y: 41, available: true };
   return { state, worker, session: new FarmSession() };
 }
 
@@ -121,7 +122,7 @@ describe('caixa de sementes e autonomia da fazenda', () => {
     const { state, worker } = setup();
     state.farm.seeds = {};
     const growth = itemDef('sem-tomate')!.grows!;
-    state.crops.push({ x: 78, y: 48, seed: 'sem-tomate', stage: growth.stages - 1, wateredAt: null });
+    state.crops.push({ x: WEST + 78, y: 48, seed: 'sem-tomate', stage: growth.stages - 1, wateredAt: null });
     const session = new FarmSession();
     session.tick(state, map, [worker], 1000, rng, free);
     expect(session.tasks[0]?.kind).toBe('water');
@@ -147,7 +148,7 @@ describe('caixa de sementes e autonomia da fazenda', () => {
   it('não destrói cultivos com estoque cheio e descarta tarefas antigas ou alteradas', () => {
     const { state, worker, session } = setup();
     state.farm.seeds = {};
-    state.crops.push({ x: 78, y: 48, seed: 'sem-tomate', stage: 3, wateredAt: null });
+    state.crops.push({ x: WEST + 78, y: 48, seed: 'sem-tomate', stage: 3, wateredAt: null });
     state.inventory.tomate = 999;
     session.tick(state, map, [worker], 1000, rng, free);
     expect(session.tasks.some((task) => task.kind === 'harvest')).toBe(false);
@@ -167,15 +168,15 @@ describe('caixa de sementes e autonomia da fazenda', () => {
 
   it('coloca a caixa ao lado dos canteiros com acesso livre pela trilha', () => {
     const box = map.decor.find((entry) => entry.kind === 'seed-box')!;
-    expect(box).toMatchObject({ x: 83, y: 46 });
+    expect(box).toMatchObject({ x: WEST + 83, y: 46 });
     expect(isWalkable(map, box.x + 1, box.y)).toBe(true);
   });
 
   it('cria mata de trabalho, mina ao sul e margem de pesca alcançáveis', () => {
     const reached = reachableFrom(map, map.spawn.x, map.spawn.y);
-    const mineRocks = map.tiles.flatMap((tile, index) => tile === 'rock' && index % map.w >= 5 && index % map.w < 20 && Math.floor(index / map.w) >= 64 ? [index] : []);
-    const lumberTrees = map.tiles.flatMap((tile, index) => tile === 'tree' && index % map.w >= 5 && index % map.w < 18 && Math.floor(index / map.w) >= 6 && Math.floor(index / map.w) < 15 ? [index] : []);
-    const lakeWater = map.tiles.flatMap((tile, index) => tile === 'water' && index % map.w >= 72 && index % map.w < 90 && Math.floor(index / map.w) >= 5 && Math.floor(index / map.w) < 20 ? [index] : []);
+    const mineRocks = map.tiles.flatMap((tile, index) => tile === 'rock' && index % map.w >= WEST + 5 && index % map.w < WEST + 20 && Math.floor(index / map.w) >= 64 ? [index] : []);
+    const lumberTrees = map.tiles.flatMap((tile, index) => tile === 'tree' && index % map.w >= WEST + 5 && index % map.w < WEST + 18 && Math.floor(index / map.w) >= 6 && Math.floor(index / map.w) < 15 ? [index] : []);
+    const lakeWater = map.tiles.flatMap((tile, index) => tile === 'water' && index % map.w >= WEST + 72 && index % map.w < WEST + 90 && Math.floor(index / map.w) >= 5 && Math.floor(index / map.w) < 20 ? [index] : []);
     expect(mineRocks.length).toBeGreaterThan(0);
     expect(lumberTrees.length).toBeGreaterThan(0);
     expect(lakeWater.length).toBeGreaterThan(0);
@@ -190,7 +191,7 @@ describe('caixa de sementes e autonomia da fazenda', () => {
   });
 
   it('faz moradores minerarem e derrubarem árvores com o mesmo loot diário do jogador', () => {
-    for (const job of [{ kind: 'mine' as const, types: ['rock'] as const, area: { x: 5, y: 64, w: 15, h: 6 }, item: 'pedra' }, { kind: 'lumber' as const, types: ['grass'] as const, area: { x: 5, y: 6, w: 13, h: 9 }, item: 'madeira' }]) {
+    for (const job of [{ kind: 'mine' as const, types: ['rock'] as const, area: { x: WEST + 5, y: 64, w: 15, h: 6 }, item: 'pedra' }, { kind: 'lumber' as const, types: ['grass'] as const, area: { x: WEST + 5, y: 6, w: 13, h: 9 }, item: 'madeira' }]) {
       const state = emptyVillage(9, map.spawn);
       const worker: FarmWorker = { id: `worker:${job.kind}`, types: job.types, x: map.spawn.x, y: map.spawn.y, available: true };
       const session = new FarmSession();

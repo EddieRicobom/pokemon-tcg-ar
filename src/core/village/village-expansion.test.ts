@@ -12,11 +12,12 @@ import { CafeService } from './cafe';
 import { FarmSession, stepFarmWorker } from './farm';
 import { seededRng } from '../battle';
 import { enjoyVillagePlace } from './leisure';
+import { WEST } from './west';
 
 describe('expansão, profissões e vida fora do centro', () => {
   it.each([1, 42, 20261014])('semente %i: passeios de ida e volta são caminháveis, com o companheiro na mesma velocidade', (seed) => {
     const map = generateVillage(seed);
-    expect([map.w, map.h]).toEqual([120, 96]);
+    expect([map.w, map.h]).toEqual([WEST + 120, 96]);
     const reached = reachableFrom(map, map.spawn.x, map.spawn.y);
     for (const destination of [...GUIDED_DESTINATIONS, map.spawn]) {
       expect([[0, 0], [0, 1], [1, 0], [-1, 0], [0, -1]].some(([dx, dy]) => reached[(destination.y + dy!) * map.w + destination.x + dx!] === 1), JSON.stringify(destination)).toBe(true);
@@ -49,11 +50,11 @@ describe('expansão, profissões e vida fora do centro', () => {
       expect(reached[table.y * map.w + table.x - 1]).toBe(1);
     }
   });
-  it('mantém a cidade antiga nas mesmas coordenadas ao expandir', () => {
+  it('mantém a cidade antiga no mesmo desenho ao expandir (só deslocada WEST blocos pelo Monte Miragem)', () => {
     const old = generateVillage(7, 96, 72), full = generateVillage(7);
-    for (const b of old.buildings) expect(full.buildings.find((other) => other.id === b.id)).toEqual(b);
-    for (const spot of [{ x: 45, y: 41 }, { x: 30, y: 31 }, { x: 56, y: 34 }, { x: 83, y: 46 }]) expect(tileAt(full, spot.x, spot.y)).toBe(tileAt(old, spot.x, spot.y));
-    expect(LEISURE_SPOTS.every((p) => p.x >= 96 || p.y >= 72)).toBe(true);
+    for (const b of old.buildings) expect(full.buildings.find((other) => other.id === b.id)).toEqual({ ...b, x: b.x + WEST, door: { ...b.door, x: b.door.x + WEST } });
+    for (const spot of [{ x: 45, y: 41 }, { x: 30, y: 31 }, { x: 56, y: 34 }, { x: 83, y: 46 }]) expect(tileAt(full, spot.x + WEST, spot.y)).toBe(tileAt(old, spot.x, spot.y));
+    expect(LEISURE_SPOTS.every((p) => p.x >= WEST + 96 || p.y >= 72)).toBe(true);
   });
   it('ativa postos só no limite de população e escolhe profissionais distintos de forma estável', () => {
     for (const job of PROFESSIONS) { expect(professionActive(job.id, job.min - 1)).toBe(false); expect(professionActive(job.id, job.min)).toBe(true); }

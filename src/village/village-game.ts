@@ -53,8 +53,13 @@ import { accessorySize, paintAccessory, paintCrop, paintFurnitureItem, paintItem
 import { harmonizePlayerCanvas, harmonizePlayerSprite } from './player-filter';
 import { wrapSpeech } from './speech-layout';
 import { groundPieces } from './ground-tiles';
+import { mountainPiece, mountainPieceKey, paintMountainPiece } from './mountain-ground';
+import { elevationAt, MEW_STATUE_FRONT, MOUNTAIN_SPOTS } from '../core/village/mountain';
+import { MEW_STATUE_GLOW, paintMewStatue } from './mountain-art';
+import type { TalkPlace } from '../core/village/life';
+import { west } from '../core/village/west';
 import { drawCommunityWorkAction, drawWorkAction } from './work-art';
-import { VillaAtlas, windowGlow } from './tileset-art';
+import { VillaAtlas, windowGlow, windowRects } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintFountain, paintHome, paintLamp, paintLot, paintMuseum } from './town-art';
 import { COLISEU_GLOWS, paintColiseu } from './coliseu-art';
@@ -79,6 +84,12 @@ export class VillageGame {
   private trainerAvatar: HTMLCanvasElement | null = null;
   private trainerAtlas: TrainerAtlas | null = null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
+  private readonly mountainTiles = new Map<string, HTMLCanvasElement>();
+  /** O chão foi montado sem o mato alto e as flores, que balançam ao vento por cima (opção «Mato alto e flores»). */
+  private groundWind = false;
+  private windArt: { sheet: HTMLCanvasElement; tall: HTMLCanvasElement | null } | null = null;
+  /** Janelas de cada desenho do tileset (px do recorte), achadas uma vez junto com a luz delas. */
+  private readonly windowRectCache = new Map<string, { x: number; y: number; w: number; h: number }[]>();
   private running = false;
   private handle = 0;
   private last = 0;
@@ -172,6 +183,10 @@ export class VillageGame {
   onStep: (() => void) | null = null;
   /** Modo do clima (vem das opções visuais): 'off' desliga, 'ciclo' alterna, ou um clima fixo. */
   ambientFx: () => boolean = () => true;
+  /** Halos suaves das luzes à noite (opção «Brilho suave das luzes»). */
+  glowFx: () => boolean = () => true;
+  /** Mato alto e flores balançando ao vento (opção «Mato alto e flores balançando»). */
+  windFx: () => boolean = () => true;
   maxFps: () => number = () => 0;
   private readonly reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   weatherMode: () => WeatherMode = () => 'ciclo';
@@ -278,14 +293,15 @@ export class VillageGame {
     this.villagerZones.clear();
     this.monSprites.clear();
     this.names.clear();
-    // Zonas próximas às ruas, casas, parquinho, lago e fazenda. A busca em
+    // Zonas próximas às ruas, casas, parquinho, lago e fazenda (e dois patamares do Monte Miragem). A busca em
     // espiral corrige automaticamente uma âncora que caiu sobre um obstáculo.
     const zones = [
       { x: 43, y: 34 }, { x: 52, y: 34 }, { x: 58, y: 29 }, { x: 68, y: 28 },
       { x: 31, y: 28 }, { x: 22, y: 38 }, { x: 31, y: 45 }, { x: 43, y: 46 },
       { x: 55, y: 46 }, { x: 67, y: 46 }, { x: 76, y: 39 }, { x: 76, y: 52 },
       { x: 42, y: 56 }, { x: 55, y: 56 }, { x: 70, y: 57 }, { x: 78, y: 63 },
-    ];
+    ].map(west);
+    if (this.map.elev) zones.splice(6, 0, MOUNTAIN_SPOTS[0]!, MOUNTAIN_SPOTS[1]!);
     for (const [i, mon] of mons.entries()) {
       const anchor = zones[i % zones.length]!;
       const spot = findFree(this.map, anchor.x, anchor.y, (x, y) => this.occupied(x, y), this.rng);
@@ -398,11 +414,11 @@ export class VillageGame {
       if (!this.villagers.has(task.residentId) || this.state.follower === task.residentId || this.waiting === task.residentId || this.sceneBusy(task.residentId)) continue;
       const worksite = task.x !== undefined && task.y !== undefined
         ? { x: task.x, y: task.y }
-        : task.activity === 'acolhimento' || task.activity === 'brincadeira' ? { x: 47, y: 40 }
-          : task.activity === 'culinaria' ? { x: 66, y: 24 }
-            : task.activity === 'pesca' ? { x: 76, y: 17 }
-              : task.activity === 'pesquisa' || task.activity === 'vigilancia' ? { x: 56, y: 24 }
-                : task.activity === 'exploracao' ? { x: 17, y: 63 }
+        : task.activity === 'acolhimento' || task.activity === 'brincadeira' ? west({ x: 47, y: 40 })
+          : task.activity === 'culinaria' ? west({ x: 66, y: 24 })
+            : task.activity === 'pesca' ? west({ x: 76, y: 17 })
+              : task.activity === 'pesquisa' || task.activity === 'vigilancia' ? west({ x: 56, y: 24 })
+                : task.activity === 'exploracao' ? (this.map.elev ? MOUNTAIN_SPOTS[2]! : west({ x: 17, y: 63 }))
                   : task.activity === 'descanso' ? this.homeDoor(task.residentId) ?? this.villagerZones.get(task.residentId) ?? this.player
                     : this.villagerZones.get(task.residentId) ?? this.player;
       const candidates = task.x !== undefined && task.y !== undefined
@@ -532,8 +548,13 @@ export class VillageGame {
       if (piece) terrain.set(id, toCanvas(harmonizeTerrain(piece)));
     }
     const pierCache = new Map<string, HTMLCanvasElement>();
+    // Com o vento ligado, o mato alto e as flores saem do chão pré-desenhado e balançam a cada quadro (ver `draw`).
+    this.windArt = { sheet, tall: terrain.get('tall') ?? null };
+    const windy = this.groundWind;
     for (let y = 0; y < this.map.h; y++) {
       for (let x = 0; x < this.map.w; x++) {
+        if (this.drawMountainGround(ctx, x, y)) continue;
+        const swaying = windy && (tileAt(this.map, x, y) === 'tall' || tileAt(this.map, x, y) === 'flower');
         if (tileAt(this.map, x, y) === 'pier') {
           const edges = this.edgesOf(x, y);
           const key = `${edges}:${x % 23}:${y % 23}`;
@@ -549,6 +570,7 @@ export class VillageGame {
             ctx.drawImage(grassCanvas, p.sx, p.sy, p.w, p.h, dx, dy, p.w, p.h);
             continue;
           }
+          if (swaying) continue;
           const r = atlas.rect(p.src);
           const toned = terrain.get(p.src);
           if (toned) ctx.drawImage(toned, p.sx, p.sy, p.w, p.h, dx, dy, p.w, p.h);
@@ -557,6 +579,20 @@ export class VillageGame {
       }
     }
     return c;
+  }
+
+  /** O chão do Monte Miragem (patamar, penhasco, degraus), igual com ou sem o atlas. Devolve se desenhou. */
+  private drawMountainGround(ctx: CanvasRenderingContext2D, x: number, y: number): boolean {
+    const piece = mountainPiece(this.map, x, y);
+    if (!piece) return false;
+    const key = `mtn:${mountainPieceKey(piece)}:${x % 4},${y % 4}`;
+    let img = this.mountainTiles.get(key);
+    if (!img) {
+      img = toCanvas(paintMountainPiece(piece, x % 4, y % 4));
+      this.mountainTiles.set(key, img);
+    }
+    ctx.drawImage(img, x * TILE, y * TILE);
+    return true;
   }
 
   /** Um recorte do atlas como canvas (guardado); `transform` muda os pixels antes (ex.: a cor da casa). */
@@ -584,6 +620,7 @@ export class VillageGame {
       const cache = new Map<string, HTMLCanvasElement>();
       for (let y = 0; y < this.map.h; y++) {
         for (let x = 0; x < this.map.w; x++) {
+          if (this.drawMountainGround(ctx, x, y)) continue;
           const tile = tileAt(this.map, x, y);
           const edges = this.edgesOf(x, y);
           // Blocos iguais em lugares iguais do padrão reaproveitam o desenho.
@@ -820,6 +857,7 @@ export class VillageGame {
         if (place) return { kind: 'leisure', id: place.id };
       }
       if (decor?.kind === 'bell') return { kind: 'bell' };
+      if (decor?.kind === 'mew-statue') return { kind: 'mew-statue' };
       if (decor?.kind === 'seed-box') return { kind: 'seed-box' };
       if (decor?.kind === 'board') return { kind: 'board' };
       if (decor?.kind === 'mine-board') return { kind: 'worksite', site: 'mine' };
@@ -866,6 +904,14 @@ export class VillageGame {
   }
 
   /** Algum desses Pokémon está a até `dist` blocos de você? */
+  /** Onde o morador está, quando o lugar muda o assunto da conversa (Monte Miragem ou diante da Estátua do Mew). */
+  placeOf(id: string): TalkPlace {
+    const v = this.villagers.get(id);
+    if (!v) return null;
+    if (Math.abs(v.x - MEW_STATUE_FRONT.x) + Math.abs(v.y - MEW_STATUE_FRONT.y) <= 3) return 'statue';
+    return elevationAt(this.map, v.x, v.y) > 0 ? 'mountain' : null;
+  }
+
   playerNear(ids: readonly string[], dist: number): boolean {
     return ids.some((id) => {
       const w = this.villagers.get(id);
@@ -1323,6 +1369,12 @@ export class VillageGame {
     const night = light.dark > 0.3;
     const wx = this.weather;
     const ambientFx = this.ambientFx() && !this.reducedMotion?.matches;
+    const windy = !!this.atlas && this.windFx() && !this.reducedMotion?.matches;
+    if (windy !== this.groundWind) {
+      // Ligar ou desligar o vento remonta o chão uma vez (com ou sem o mato alto pintado nele).
+      this.groundWind = windy;
+      this.buildGround();
+    }
     const sx = (x: number) => Math.round(x * TILE * scale - camX);
     const sy = (y: number) => Math.round(y * TILE * scale - camY);
     const T = TILE * scale;
@@ -1375,8 +1427,11 @@ export class VillageGame {
     };
     const streetLamps: { x: number; y: number }[] = [];
     const homeGlows: { x: number; y: number; w: number; h: number; lantern?: boolean }[] = [];
-    /** Janelas do tileset acesas à noite (o vidro do desenho vira luz). */
+    /** Janelas do tileset acesas à noite (o vidro do desenho vira luz) e o halo suave de cada uma, em px da tela. */
     const glassGlows: { img: HTMLCanvasElement; x: number; y: number; w: number; h: number }[] = [];
+    const windowHalos: { x: number; y: number; w: number; h: number }[] = [];
+    /** Os olhos da Estátua do Mew: um brilho rosado bem fraco à noite (só enfeite). */
+    const shrineGlows: { x: number; y: number; w: number; h: number }[] = [];
     const atlas = this.atlas;
     /** Sprites ficam em pé; a perspectiva 2.5D pertence à base 3D do AR. */
     const drawDioramaTilted = (cx: number, base: number, width: number, paint: () => void): void => {
@@ -1410,8 +1465,15 @@ export class VillageGame {
       return { x, y, w, h };
     };
     const lightUp = (id: string, key: string, at: { x: number; y: number; w: number; h: number }, transform?: (img: Rgba) => Rgba) => {
-      const glass = this.art(id, `glass:${key}`, (img) => windowGlow(transform ? transform(img) : img));
-      if (glass) glassGlows.push({ img: glass, ...at });
+      const glass = this.art(id, `glass:${key}`, (img) => {
+        const painted = transform ? transform(img) : img;
+        this.windowRectCache.set(key, windowRects(painted).map(({ x, y, w, h }) => ({ x, y, w, h })));
+        return windowGlow(painted);
+      });
+      if (!glass) return;
+      glassGlows.push({ img: glass, ...at });
+      const k = at.w / glass.width;
+      for (const r of this.windowRectCache.get(key) ?? []) windowHalos.push({ x: at.x + r.x * k, y: at.y + r.y * k, w: r.w * k, h: r.h * k });
     };
     const wind = wx.windX * 0.5;
     const sway = (x: number, y: number, amp: number) => Math.sin(now / 900 + x * 0.7 + y * 0.3) * amp + Math.sin(now / 2300 + x) * amp * 0.6 + wind * amp * (0.6 + wx.rain);
@@ -1427,6 +1489,32 @@ export class VillageGame {
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const t = tileAt(this.map, x, y);
+        if (this.groundWind && atlas && this.windArt && (t === 'tall' || t === 'flower')) {
+          const art = this.windArt;
+          const pieces = groundPieces(this.map, x, y).filter((p) => p.src !== 'grass');
+          // A base fica presa ao chão e a ponta das folhas vai e volta com o vento (mais forte no mato alto).
+          const k = sway(x, y, t === 'tall' ? 0.11 : 0.07);
+          list.push({
+            y: y + 0.9,
+            draw: () => {
+              for (const p of pieces) {
+                const r = atlas.rect(p.src);
+                const src = p.src === 'tall' && art.tall ? art.tall : art.sheet;
+                const ox = src === art.sheet && r ? r.x : 0;
+                const oy = src === art.sheet && r ? r.y : 0;
+                if (src === art.sheet && !r) continue;
+                const w = p.w * scale;
+                const h = p.h * scale;
+                ctx.save();
+                ctx.translate(sx(x) + p.dx * scale + w / 2, sy(y) + (p.dy + p.h) * scale);
+                ctx.transform(1, 0, k, 1, 0, 0);
+                ctx.drawImage(src, ox + p.sx, oy + p.sy, p.w, p.h, -w / 2, -h, w, h);
+                ctx.restore();
+              }
+            },
+          });
+          continue;
+        }
         if (atlas && (t === 'tree' || t === 'rock' || t === 'bush')) {
           const hv = hashN(x * 31 + y * 17);
           const depleted = this.harvestedToday(x, y);
@@ -1496,7 +1584,7 @@ export class VillageGame {
       for (const d of this.map.decor) {
         const worksite = d.kind === 'mine-board' ? WORK_SITES[1] : d.kind === 'lumber-board' ? WORK_SITES[2] : d.kind === 'fishing-board' ? WORK_SITES[3] : null;
         const furnitureId = d.kind === 'cafe-table' ? 'mesa-cha' : d.kind === 'furniture' ? d.item : d.kind === 'leisure-sign' ? 'placa' : null;
-        const img = furnitureId ? this.sprite(`fixed:${furnitureId}`, () => paintFurnitureItem(furnitureId)) : d.kind === 'seed-box' ? this.sprite('seed-box', paintSeedBox) : d.kind === 'bell' ? this.sprite('bell', paintBell) : this.art(worksite ? 'board' : d.kind);
+        const img = furnitureId ? this.sprite(`fixed:${furnitureId}`, () => paintFurnitureItem(furnitureId)) : d.kind === 'seed-box' ? this.sprite('seed-box', paintSeedBox) : d.kind === 'bell' ? this.sprite('bell', paintBell) : d.kind === 'mew-statue' ? this.sprite('mew-statue', paintMewStatue) : this.art(worksite ? 'board' : d.kind);
         if (!img) continue;
         if (d.x + d.w < x0 || d.x > x1 || d.y + d.h < y0 || d.y + d.h - img.height / TILE > y1) continue;
         const tree = d.kind === 'tree-big' || d.kind === 'pine-m';
@@ -1506,6 +1594,10 @@ export class VillageGame {
             if (tree) drawSwayed(img, sx(d.x + d.w / 2) - (img.width * scale) / 2, sy(d.y + d.h) - img.height * scale, img.width * scale, img.height * scale, sway(d.x, d.y, 0.02));
             else {
               const at = stand(img, sx(d.x + d.w / 2), sy(d.y + d.h), d.w * T);
+              if (d.kind === 'mew-statue' && night) {
+                const k = at.w / img.width;
+                shrineGlows.push({ x: at.x + MEW_STATUE_GLOW.x * k, y: at.y + MEW_STATUE_GLOW.y * k, w: MEW_STATUE_GLOW.w * k, h: MEW_STATUE_GLOW.h * k });
+              }
               if (d.kind === 'swing') {
                 // O recorte do tileset traz a armação, mas o assento vermelho fica em uma peça vizinha da folha.
                 // Desenhá-lo aqui mantém a parte interativa visível mesmo quando o atlas é recompilado.
@@ -1776,7 +1868,8 @@ export class VillageGame {
         },
       });
       if (b.kind === 'torre' && ambientFx) towerFx.push(() => drawTowerDataFx(ctx, mid, spriteBase, scale, now));
-      if (night) homeGlows.push({ x: left + 4 * scale, y: bottom - 20 * scale, w: wpx - 8 * scale, h: 6 * scale });
+      // Sem o atlas: duas janelinhas acesas, não uma faixa de luz pela fachada inteira.
+      if (night) for (const k of [0.25, 0.75]) homeGlows.push({ x: left + wpx * k - 3 * scale, y: bottom - 20 * scale, w: 6 * scale, h: 6 * scale });
       if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
     }
     // O banco fica atrás dos moradores; os pés sobem até a altura do assento.
@@ -2115,6 +2208,32 @@ export class VillageGame {
         ctx.fillStyle = `rgba(12,18,58,${light.dark.toFixed(3)})`;
         ctx.fillRect(0, 0, W, H);
       }
+      // Quanto da noite já caiu (0 a 1): a luz das janelas acompanha o escuro, sem nunca passar do tom quente.
+      const dusk = Math.min(1, light.dark / 0.55);
+      const halos = this.glowFx();
+      // 1) Janelas e lampiões: a luz entra por cima do desenho (source-over), no lugar do vidro, sem estourar em branco.
+      for (const g of glassGlows) {
+        ctx.globalAlpha = 0.84 * dusk;
+        ctx.drawImage(g.img, g.x, g.y, g.w, g.h);
+      }
+      ctx.globalAlpha = 1;
+      const warm = (a: number) => `rgba(255,200,108,${a.toFixed(3)})`;
+      for (const g of homeGlows) {
+        ctx.fillStyle = warm((g.lantern ? 0.9 : 0.74) * dusk);
+        ctx.fillRect(g.x, g.y, g.w, g.h);
+      }
+      const oldHouseWindows: number[][] = !houseArt && this.state.house >= 2 ? (this.state.house >= 3 ? [[11, 38, 10, 9], [43, 38, 10, 9]] : [[12, 40, 8, 7]]) : [];
+      const ox = sx(plot.x);
+      const oy = sy(plot.y + plot.h + 1 - 4);
+      for (const [wx0, wy0, ww, wh] of oldHouseWindows) {
+        ctx.fillStyle = warm(0.74 * dusk);
+        ctx.fillRect(ox + wx0! * (T / 16), oy + wy0! * (T / 16), ww! * (T / 16), wh! * (T / 16));
+      }
+      for (const g of shrineGlows) {
+        ctx.fillStyle = `rgba(255,188,236,${(0.45 * dusk).toFixed(3)})`;
+        ctx.fillRect(g.x, g.y, g.w, g.h);
+      }
+      // 2) Halos: luz somada (lighter), fraca e curta, para o brilho parecer sair da janela e não da parede inteira.
       ctx.globalCompositeOperation = 'lighter';
       const glow = (cx: number, cy: number, r: number, rgb: string, a: number) => {
         const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
@@ -2131,29 +2250,14 @@ export class VillageGame {
           : l.big ? 0.85 + Math.sin(now / 120 + l.x) * 0.15 : 1;
         glow(sx(l.x + 0.5), sy(l.y + 0.2), (l.big ? 3.4 : 2.5) * T, '255,214,120', light.dark * 0.7 * flicker);
       }
-      // Janelas acesas da casa e a luz da loja.
-      for (const g of glassGlows) {
-        ctx.globalAlpha = Math.min(1, light.dark * 1.3);
-        ctx.drawImage(g.img, g.x, g.y, g.w, g.h);
-        ctx.globalAlpha = 1;
+      if (halos) {
+        for (const w of windowHalos) glow(w.x + w.w / 2, w.y + w.h / 2, Math.max(w.w, w.h) * 0.9 + 0.55 * T, '255,196,110', 0.2 * dusk);
+        for (const [wx0, wy0, ww, wh] of oldHouseWindows) glow(ox + (wx0! + ww! / 2) * (T / 16), oy + (wy0! + wh! / 2) * (T / 16), 1.2 * T, '255,196,110', 0.2 * dusk);
+        for (const g of homeGlows) glow(g.x + g.w / 2, g.y + g.h / 2, g.lantern ? 1.5 * T : Math.max(g.w, g.h) * 0.9 + 0.55 * T, '255,196,110', (g.lantern ? 0.32 : 0.2) * dusk);
+        glow(sx(shop.x + 1.5), sy(shop.y + shop.h + 1 - 1.2), 2.4 * T, '255,190,120', light.dark * 0.4);
       }
-      if (!houseArt && this.state.house >= 2) {
-        const ox = sx(plot.x);
-        const oy = sy(plot.y + plot.h + 1 - 4);
-        const win = this.state.house >= 3 ? [[11, 38, 10, 9], [43, 38, 10, 9]] : [[12, 40, 8, 7]];
-        for (const [wx0, wy0, ww, wh] of win as number[][]) {
-          ctx.fillStyle = `rgba(255,214,120,${(light.dark * 1.4).toFixed(3)})`;
-          ctx.fillRect(ox + wx0! * (T / 16), oy + wy0! * (T / 16), ww! * (T / 16), wh! * (T / 16));
-          glow(ox + (wx0! + ww! / 2) * (T / 16), oy + (wy0! + wh! / 2) * (T / 16), 2.2 * T, '255,200,110', light.dark * 0.45);
-        }
-      }
-      glow(sx(shop.x + 1.5), sy(shop.y + shop.h + 1 - 1.2), 3 * T, '255,190,120', light.dark * 0.5);
-      for (const l of streetLamps) glow(sx(l.x + 0.5), sy(l.y - 0.3), 2.6 * T, '255,214,120', light.dark * 0.6);
-      for (const g of homeGlows) {
-        ctx.fillStyle = `rgba(255,214,120,${(light.dark * 1.2).toFixed(3)})`;
-        ctx.fillRect(g.x, g.y, g.w, g.h);
-        glow(g.x + g.w / 2, g.y + g.h / 2, (g.lantern ? 1.8 : 1.5) * T, '255,200,110', light.dark * 0.4);
-      }
+      for (const l of streetLamps) glow(sx(l.x + 0.5), sy(l.y - 0.3), 2.6 * T, '255,214,120', light.dark * (halos ? 0.6 : 0.35));
+      if (halos) for (const g of shrineGlows) glow(g.x + g.w / 2, g.y + g.h / 2, 1.6 * T, '235,160,255', 0.22 * dusk * (0.8 + 0.2 * Math.sin(now / 900)));
       // Vagalumes.
       if (night) {
         for (const m of this.motes) {

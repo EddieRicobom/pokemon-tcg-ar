@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ATLAS_SOURCES, ATLAS_W, packAtlas } from './atlas-spec';
-import { cropRgba, double, recolor, VillaAtlas, windowGlow } from './tileset-art';
+import { cropRgba, double, recolor, VillaAtlas, windowGlow, windowRects } from './tileset-art';
 
 const px = (...rgba: number[][]) => ({ w: rgba.length, h: 1, data: new Uint8ClampedArray(rgba.flat()) });
 
@@ -59,9 +59,37 @@ describe('cor da casa e janelas acesas', () => {
   });
 
   it('acende só o vidro', () => {
-    const out = windowGlow(px([150, 200, 240, 255], [230, 190, 40, 255], [150, 200, 240, 0]));
+    const out = windowGlow(px([150, 200, 240, 255], [150, 200, 240, 255], [230, 190, 40, 255], [150, 200, 240, 0]));
     expect(out.data[3]).toBe(255);
-    expect(out.data[7]).toBe(0);
+    expect(out.data[7]).toBe(255);
     expect(out.data[11]).toBe(0);
+    expect(out.data[15]).toBe(0);
+    // Luz quente, não branca: o azul cai bem abaixo do vermelho.
+    expect(out.data[0]).toBe(255);
+    expect(out.data[2]!).toBeLessThan(170);
+  });
+
+  const canvas = (w: number, h: number, paint: (x: number, y: number) => number[]) => {
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) data.set(paint(x, y), (y * w + x) * 4);
+    return { w, h, data };
+  };
+  const GLASS = [150, 200, 240, 255];
+  const WALL = [200, 170, 120, 255];
+
+  it('janela com caixilho de 1 px é uma janela só', () => {
+    // Janela 7×6 com uma cruz de caixilho no meio, numa parede.
+    const img = canvas(20, 12, (x, y) => (x >= 4 && x < 11 && y >= 3 && y < 9 && x !== 7 && y !== 6 ? GLASS : WALL));
+    const rects = windowRects(img);
+    expect(rects).toHaveLength(1);
+    expect(rects[0]).toMatchObject({ x: 4, y: 3, w: 7, h: 6 });
+  });
+
+  it('fachada ou telhado azul inteiro não acende (só janelas pequenas)', () => {
+    // Telhado azul de 40×20 com riscas escuras de 1 px: continua uma mancha grande.
+    const img = canvas(40, 20, (_x, y) => (y % 3 === 2 ? [40, 60, 110, 255] : GLASS));
+    expect(windowRects(img)).toHaveLength(0);
+    const out = windowGlow(img);
+    expect(out.data.some((v, i) => i % 4 === 3 && v > 0)).toBe(false);
   });
 });

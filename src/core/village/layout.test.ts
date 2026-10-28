@@ -8,9 +8,10 @@ import { add, emptyVillage, place, plant } from './life';
 import { sanitizeTown } from './town';
 import { VILLAGE_SEED } from '../../app/village-store';
 import { TOWN } from './town-layout';
+import { WEST } from './west';
 
 /** Um bloco de grama aberta no gramado a oeste da praça (mapa de `VILLAGE_SEED`). */
-const OPEN = { x: 24, y: 29 };
+const OPEN = { x: WEST + 24, y: 29 };
 
 const SEEDS = [VILLAGE_SEED, 1, 2, 3, 7, 42, 99, 1234, 20240101, 777777];
 
@@ -34,9 +35,9 @@ describe('layout da Vila: sem ilhas nem gargalos', () => {
     const map = generateVillage(VILLAGE_SEED);
     const cy = TOWN.mainStreetY;
     for (const y of [cy, cy + 1]) {
-      for (let x = 4; x < 92; x++) expect(['path', 'plaza'].includes(tileAt(map, x, y)), `${x},${y}`).toBe(true);
+      for (let x = WEST + 4; x < WEST + 92; x++) expect(['path', 'plaza'].includes(tileAt(map, x, y)), `${x},${y}`).toBe(true);
       // A rua antiga continua como trilha costeira até a areia; o mar fica além dela.
-      for (let x = 92; x < 110; x++) expect(isWalkable(map, x, y), `${x},${y}`).toBe(true);
+      for (let x = WEST + 92; x < WEST + 110; x++) expect(isWalkable(map, x, y), `${x},${y}`).toBe(true);
     }
     const cx = TOWN.avenueX;
     for (const x of [cx, cx + 1]) for (let y = 4; y < map.h - 4; y++) expect(isWalkable(map, x, y) || tileAt(map, x, y) === 'building', `${x},${y}`).toBe(true);
@@ -115,17 +116,17 @@ describe('caminho dos Pokémon', () => {
   it('contorna quem está no caminho', () => {
     const map = generateVillage(VILLAGE_SEED);
     const cy = Math.floor(map.h / 2);
-    const from = { x: 8, y: cy };
-    const goal = { x: 14, y: cy };
+    const from = { x: WEST + 8, y: cy };
+    const goal = { x: WEST + 14, y: cy };
     // Alguém parado logo à frente: o primeiro passo não é para a direita (bateria nele).
     expect(pathStep(map, from, goal, (x, y) => x === 9 && y === cy)).not.toBe('right');
     // Já ao lado do destino, não precisa andar.
-    expect(pathStep(map, { x: 13, y: cy }, goal, () => false)).toBeNull();
+    expect(pathStep(map, { x: WEST + 13, y: cy }, goal, () => false)).toBeNull();
   });
 
   it('sem caminho nenhum (destino numa ilha), devolve null', () => {
     const map = generateVillage(VILLAGE_SEED);
-    expect(pathStep(map, { x: 24, y: 23 }, { x: 0, y: 0 }, () => false)).toBeNull();
+    expect(pathStep(map, { x: WEST + 24, y: 23 }, { x: 0, y: 0 }, () => false)).toBeNull();
   });
 });
 

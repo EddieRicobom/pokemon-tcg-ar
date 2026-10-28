@@ -4,11 +4,12 @@ import { generateVillage } from './map';
 import { isWalkable, reachableFrom } from './map';
 import { pathStep } from './pathing';
 import { GUIDED_DESTINATIONS, guidedWalkArrived } from './guided-walk';
+import { WEST } from './west';
 
 describe('velocidade do passeio guiado', () => {
   it('acompanha a velocidade atual e restaura a caminhada livre ao terminar', () => {
-    const leader = makeWalker('player', 15, 38, WALK_SPEED.player);
-    const mon = makeWalker('mon', 13, 38, WALK_SPEED.resident);
+    const leader = makeWalker('player', WEST + 15, 38, WALK_SPEED.player);
+    const mon = makeWalker('mon', WEST + 13, 38, WALK_SPEED.resident);
     syncFollowerSpeed(mon, leader, true);
     expect(mon.speed).toBe(leader.speed);
     leader.speed = 4;
@@ -19,12 +20,12 @@ describe('velocidade do passeio guiado', () => {
   });
 
   it('mantém o ritmo em um passeio longo sem teleporte e sem ocupar o treinador', () => {
-    const map = generateVillage(42), leader = makeWalker('player', 15, 38, WALK_SPEED.player);
-    const mon = makeWalker('mon', 13, 38, WALK_SPEED.resident);
+    const map = generateVillage(42), leader = makeWalker('player', WEST + 15, 38, WALK_SPEED.player);
+    const mon = makeWalker('mon', WEST + 13, 38, WALK_SPEED.resident);
     let maxDistance = 0;
     for (let tick = 0; tick < 2400; tick++) {
       advance(leader, 1 / 120);
-      if (!moving(leader) && leader.x < 86) tryStep(leader, 'right', map, () => false);
+      if (!moving(leader) && leader.x < WEST + 86) tryStep(leader, 'right', map, () => false);
       syncFollowerSpeed(mon, leader, true);
       stepVillager(mon, 1 / 120, map, (x, y) => x === leader.x && y === leader.y || x === leader.tx && y === leader.ty, () => .5, leader);
       maxDistance = Math.max(maxDistance, Math.abs(mon.x - leader.x) + Math.abs(mon.y - leader.y));
@@ -36,11 +37,11 @@ describe('velocidade do passeio guiado', () => {
   });
 
   it('só registra o passeio quando o companheiro também chegou e parou', () => {
-    const player = makeWalker('player', 81, 17, WALK_SPEED.player);
-    const mon = makeWalker('mon', 45, 41, WALK_SPEED.resident);
+    const player = makeWalker('player', WEST + 81, 17, WALK_SPEED.player);
+    const mon = makeWalker('mon', WEST + 45, 41, WALK_SPEED.resident);
     const destination = GUIDED_DESTINATIONS[1]!;
     expect(guidedWalkArrived(player, mon, destination)).toBe(false);
-    Object.assign(mon, { x: 80, y: 17, t: .7 });
+    Object.assign(mon, { x: WEST + 80, y: 17, t: .7 });
     expect(guidedWalkArrived(player, mon, destination)).toBe(false);
     mon.t = 1;
     expect(guidedWalkArrived(player, mon, destination)).toBe(true);

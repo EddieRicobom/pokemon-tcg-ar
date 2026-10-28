@@ -1,8 +1,9 @@
-import { add, MAP_LAYOUT } from './life';
+import { add, MAP_LAYOUT, MAP_LAYOUT_BEFORE_MOUNTAIN } from './life';
 import type { Crop, VillageState } from './life';
 import { findFree, isWalkable, tileAt } from './map';
 import type { VillageMap } from './map';
 import { FIELDS } from './town-layout';
+import { WEST } from './west';
 
 /**
  * Traz um save do mapa antigo (48×40) para o mapa grande: as posições antigas não querem dizer nada no desenho novo,
@@ -12,6 +13,16 @@ import { FIELDS } from './town-layout';
  */
 export function migrateLayout(s: VillageState, map: VillageMap): boolean {
   if (s.layout === MAP_LAYOUT) return repairOccupiedTerrain(s, map);
+  if (s.layout === MAP_LAYOUT_BEFORE_MOUNTAIN) {
+    // O Monte Miragem entrou a oeste e a cidade andou `WEST` blocos: tudo vai junto, no mesmo lugar de antes.
+    for (const f of s.placed) f.x += WEST;
+    for (const c of s.crops) c.x += WEST;
+    s.player = { ...s.player, x: s.player.x + WEST };
+    s.harvested = {};
+    s.layout = MAP_LAYOUT;
+    repairOccupiedTerrain(s, map);
+    return true;
+  }
   for (const f of s.placed) add(s, f.item, 1);
   s.placed = [];
   const spots: { x: number; y: number }[] = [];

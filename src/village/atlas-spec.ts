@@ -102,6 +102,34 @@ export const ATLAS_SOURCES: readonly AtlasSource[] = [
   { id: 'log-depot', sheet: 'Ivy Woods.png', x: 0, y: 16, w: 32, h: 16 },
   { id: 'stump', sheet: 'Ivy Woods.png', x: 0, y: 16, w: 16, h: 16 },
   { id: 'pier-deck', sheet: 'Route 224.png', x: 80, y: 320, w: 48, h: 32 },
+  // ---- prédios cívicos no mesmo estilo das casas (contorno azul-marinho, 1 px = 1 px de bloco de 16, telhado em 3/4)
+  // Fliperama: a lojinha de telhado laranja com o fliperama (gabinete de jogo) do lado, de Silph City; 80 de largura,
+  // a do prédio (o 'center-blue' tinha 82 e saía encolhido). O poste listrado à direita fica de fora do recorte.
+  { id: 'arcade-shop', sheet: 'Silph City.png', x: 0, y: 768, w: 80, h: 64, erase: [[64, 768, 16, 36]] },
+  // Pista de Pins: o salão de muralha ameiada com a quadra verde no terraço (Sinnoh Tile Dump, Ekat), sem o toldo.
+  { id: 'pins-hall', sheet: 'Sinnoh Tile Dump.png', x: 112, y: 144, w: 80, h: 80 },
+  // ---- Montanha do Mew (tudo de 'All Cliffs.png', a mesma rocha marrom-rosada; a estátua é `mountain-art.ts`)
+  // Chão do platô, 48×48: as 9 células são a mesma rocha rachada do miolo do `cliff` (ladrilha sem emenda). Não há
+  // autotile de rocha nessa paleta (os 'Moon_*' são cinza-esverdeados); a borda do platô quem faz é o `cliff`.
+  {
+    id: 'mtn-ground', sheet: 'All Cliffs.png', x: 0, y: 192, w: 48, h: 48,
+    patches: [0, 16, 32].flatMap((dy) => [0, 16, 32].map((dx) => [16, 208, 16, 16, dx, dy] as const)),
+  },
+  // Penhasco 3×3 (48×48), visto de cima. Linha de cima (y 0–15): borda superior do platô (cantos arredondados e a
+  // aresta de cima); linha do meio (y 16–31): as laterais esquerda/direita com o miolo de rocha rachada (a face de
+  // pedras começa a aparecer em y ≈ 26); linha de baixo (y 32–47): a FACE do penhasco voltada para o sul (blocos de
+  // pedra) com a sombra cinza na última linha. A face tem ~22 px (y 26–47), então cabe nos 16 px da linha de baixo
+  // mais o fim da linha do meio: não precisou do formato 48×64.
+  { id: 'cliff', sheet: 'All Cliffs.png', x: 0, y: 192, w: 48, h: 48 },
+  // Degraus de pedra (16×16): tábuas de pedra horizontais que sobem a face do penhasco (ladrilham na vertical).
+  { id: 'mtn-stairs', sheet: 'All Cliffs.png', x: 32, y: 240, w: 16, h: 16 },
+  // Pedra grande (32×32) com a sombra embaixo; o chão de areia dos cantos sai transparente (`erase`, linha a linha).
+  {
+    id: 'boulder', sheet: 'All Cliffs.png', x: 32, y: 48, w: 32, h: 32,
+    erase: [[32, 48, 13, 1], [51, 48, 13, 1], [32, 49, 10, 1], [54, 49, 10, 1], [32, 50, 7, 1], [57, 50, 3, 1], [61, 50, 3, 1], [32, 51, 5, 1], [59, 51, 1, 1], [62, 51, 2, 1], [32, 52, 4, 1], [61, 52, 3, 1], [32, 53, 4, 1], [60, 53, 4, 1], [32, 54, 4, 1], [60, 54, 4, 1], [32, 55, 3, 1], [61, 55, 3, 1], [32, 56, 3, 1], [61, 56, 3, 1], [32, 57, 3, 1], [61, 57, 3, 1], [32, 58, 2, 1], [62, 58, 1, 1], [32, 59, 2, 1], [62, 59, 2, 1], [32, 60, 1, 1], [63, 60, 1, 1], [32, 72, 1, 1], [32, 73, 1, 1], [32, 74, 1, 1], [32, 75, 2, 1], [62, 75, 2, 1], [32, 76, 2, 1], [62, 76, 2, 1], [32, 77, 2, 1], [62, 77, 2, 1], [32, 78, 3, 1], [61, 78, 3, 1], [32, 79, 4, 1], [61, 79, 3, 1]],
+  },
+  // Pedrinha solta (16×16, já com fundo transparente na folha).
+  { id: 'mtn-rock', sheet: 'All Cliffs.png', x: 0, y: 176, w: 16, h: 16 },
 ];
 
 /** Largura do atlas (px). */

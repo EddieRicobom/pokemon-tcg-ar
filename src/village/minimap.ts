@@ -24,6 +24,10 @@ export const MINI_COLORS: Readonly<Record<Tile, number>> = {
   building: 0x8a5a3a,
   lamp: 0x6cc070,
   deco: 0x7a6a8a,
+  // Monte Miragem: patamar de rocha clara, penhasco escuro e degraus.
+  mtn: 0xb7a58a,
+  cliff: 0x6e5a48,
+  stairs: 0xd8c8a8,
 };
 
 /** Os pixels RGBA do minimapa (largura × altura do mapa). */

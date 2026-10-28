@@ -1,3 +1,4 @@
+import { WEST } from './west';
 import type { Rng } from '../battle';
 import { advance, moving, tryStep } from './actors';
 import type { Blocked, Walker } from './actors';
@@ -8,11 +9,11 @@ import { PATH_DEFERRED, pathStepBudgeted } from './pathing';
 export interface Bench { id: string; x: number; y: number }
 /** Dois lugares por banco, fora das portas e das vias principais. */
 export const PUBLIC_BENCHES: readonly Bench[] = [
-  { id: 'praca-oeste', x: 41, y: 37 },
-  { id: 'praca-leste', x: 51, y: 39 },
-  { id: 'parque', x: 10, y: 46 },
-  { id: 'casas-oeste', x: 37, y: 52 },
-  { id: 'casas-leste', x: 54, y: 52 },
+  { id: 'praca-oeste', x: WEST + 41, y: 37 },
+  { id: 'praca-leste', x: WEST + 51, y: 39 },
+  { id: 'parque', x: WEST + 10, y: 46 },
+  { id: 'casas-oeste', x: WEST + 37, y: 52 },
+  { id: 'casas-leste', x: WEST + 54, y: 52 },
 ];
 
 export function benchesFor(map: VillageMap): Bench[] {
