@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { PNG } from 'pngjs';
 import { homeTileset, renovateHomeTileset } from './home-exterior';
 import { HOME_EXTERIOR_STYLES } from '../core/village/town-layout';
 import { ATLAS_SOURCES } from './atlas-spec';
@@ -47,5 +49,20 @@ describe('fachadas e chão em pixel art', () => {
     expect(harmonizeTerrain(water).data).toEqual(water.data);
     const clear = { w: 1, h: 1, data: new Uint8ClampedArray([70, 150, 60, 0]) };
     expect(harmonizeTerrain(clear).data).toEqual(clear.data);
+  });
+
+  it('mistura os tufos transparentes sobre a base sem deixar buracos no chão', () => {
+    const overlay = { w: 1, h: 1, data: new Uint8ClampedArray([0, 80, 20, 128]) };
+    const plain = villageGrassSheet();
+    const withTufts = villageGrassSheet(overlay);
+    expect([...withTufts.data].filter((_, i) => i % 4 === 3).every((alpha) => alpha === 255)).toBe(true);
+    expect([...withTufts.data.slice(0, 3)]).not.toEqual([...plain.data.slice(0, 3)]);
+  });
+
+  it('usa uma camada de tufos com alpha real, sem um fundo opaco no asset', () => {
+    const tufts = PNG.sync.read(readFileSync('public/tilesets/village-grass-tufts.png'));
+    const alpha = tufts.data.filter((_, index) => index % 4 === 3);
+    expect(alpha.some((value) => value === 0)).toBe(true);
+    expect(alpha.some((value) => value > 0)).toBe(true);
   });
 });
