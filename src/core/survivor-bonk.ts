@@ -229,6 +229,18 @@ export function resolveBonkPosition(
   let y = clamp(desiredY, radius, ARENA_H - radius);
   let collided = x !== desiredX || y !== desiredY;
 
+  // Obstáculos podem se sobrepor (o jitter do cenário não evita isso). Empurrar para fora de um pode cair dentro de
+  // outro, então repete a resolução até uma passada inteira ficar livre (limite pequeno: não trava o quadro).
+  for (let pass = 0; pass < 4; pass += 1) {
+    const before = x + y;
+    ({ x, y } = pushOutOfObstacles(physics, x, y, radius));
+    if (x + y === before) break;
+    collided = true;
+  }
+  return { x: clamp(x, radius, ARENA_W - radius), y: clamp(y, radius, ARENA_H - radius), collided };
+}
+
+function pushOutOfObstacles(physics: Pick<BonkPhysics, 'z' | 'obstacles'>, x: number, y: number, radius: number): { x: number; y: number } {
   for (const obstacle of physics.obstacles) {
     // A ponte é chão seguro sobre a água, não uma parede para o círculo do jogador.
     if (obstacle.kind === 'bridge') continue;
@@ -251,19 +263,25 @@ export function resolveBonkPosition(
       x = nearestX + (dx / distance) * radius;
       y = nearestY + (dy / distance) * radius;
     } else {
-      const left = x - minX;
-      const right = maxX - x;
-      const top = y - minY;
-      const bottom = maxY - y;
-      const minimum = Math.min(left, right, top, bottom);
-      if (minimum === left) x = minX;
-      else if (minimum === right) x = maxX;
-      else if (minimum === top) y = minY;
-      else y = maxY;
+      // Dentro do bloco: sai pela face mais próxima que não caia dentro de outro obstáculo (senão, pela mais próxima).
+      const exits = [
+        { x: minX, y, d: x - minX },
+        { x: maxX, y, d: maxX - x },
+        { x, y: minY, d: y - minY },
+        { x, y: maxY, d: maxY - y },
+      ].sort((a, b) => a.d - b.d);
+      const free = exits.find((e) => !insideAnyObstacle(physics, e.x, e.y, radius, obstacle));
+      const exit = free ?? exits[0]!;
+      x = exit.x;
+      y = exit.y;
     }
-    collided = true;
   }
-  return { x: clamp(x, radius, ARENA_W - radius), y: clamp(y, radius, ARENA_H - radius), collided };
+  return { x, y };
+}
+
+/** Se (x, y) está dentro de algum obstáculo alto o bastante para bloquear, contando o raio do jogador (exceto `skip`). */
+function insideAnyObstacle(physics: Pick<BonkPhysics, 'z' | 'obstacles'>, x: number, y: number, radius: number, skip: BonkObstacle): boolean {
+  return physics.obstacles.some((o) => o !== skip && physics.z <= o.height + radius * 0.35 && x > o.x - radius && x < o.x + o.w + radius && y > o.y - radius && y < o.y + o.h + radius);
 }
 
 /**

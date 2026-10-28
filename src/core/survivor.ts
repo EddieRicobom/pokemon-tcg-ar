@@ -35,6 +35,7 @@ import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGIT
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { survivorProjectileLook } from './survivor-projectile-power';
+import { healersReaching, healShare, SUPPORT_HEAL_RADIUS } from './survivor-heal';
 export { SURVIVOR_UPGRADES };
 
 /** Estoque máximo de Desejos de Jirachi (a carta, a lição do Dojô e a sorte do Carteiro somam até aqui). */
@@ -1398,10 +1399,12 @@ function updateEnemyBehavior(state: SurvivorState, enemy: SurvivorEnemy, dtMs: n
         const supportRole = enemy.supportRole ?? 'cura';
         if (supportRole === 'cura') {
           let healed = 0;
+          const healers = state.enemies.filter((e) => e.hp > 0 && e.archetype === 'suporte' && (e.supportRole ?? 'cura') === 'cura');
           for (const other of state.enemies) {
             if (other === enemy || other.hp <= 0 || healed >= ENEMY_BEHAVIOR_LIMITS.healingTargetsPerPulse) continue;
-            if (Math.hypot(other.x - enemy.x, other.y - enemy.y) <= 110 && other.hp < other.maxHp) {
-              const amount = Math.max(1, Math.round(other.maxHp * 0.08));
+            if (Math.hypot(other.x - enemy.x, other.y - enemy.y) <= SUPPORT_HEAL_RADIUS && other.hp < other.maxHp) {
+              // Curadores em volta dividem a cura do alvo: um grupo não se cura em cadeia e fica imortal.
+              const amount = healShare(other.maxHp, healersReaching(other, healers));
               other.hp = Math.min(other.maxHp, other.hp + amount);
               state.fx.push({ kind: 'heal', x: other.x, y: other.y, r: 15, color: '#ff78b7', ageMs: 0, lifeMs: 850, count: amount });
               healed++;

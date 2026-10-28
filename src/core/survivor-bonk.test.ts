@@ -149,3 +149,18 @@ describe('física do modo BONK', () => {
     expect(physics.landingMs).toBe(BONK_LANDING_MS);
   });
 });
+
+describe('pouso preso entre obstáculos que se sobrepõem', () => {
+  it('um jogador espremido entre dois blocos sobrepostos sai para uma posição livre', () => {
+    const obstacles = [
+      { id: 'a', x: 100, y: 100, w: 100, h: 100, height: 200, kind: 'boulder' as const },
+      { id: 'b', x: 190, y: 100, w: 110, h: 100, height: 200, kind: 'boulder' as const },
+    ];
+    const r = 16;
+    const result = resolveBonkPosition({ z: 0, obstacles }, 195, 150, r);
+    for (const o of obstacles) {
+      const inside = result.x > o.x - r && result.x < o.x + o.w + r && result.y > o.y - r && result.y < o.y + o.h + r;
+      expect(inside, `dentro de ${o.id}`).toBe(false);
+    }
+  });
+});
