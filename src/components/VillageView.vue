@@ -92,6 +92,7 @@ import VillageDojo from './VillageDojo.vue';
 import { WORK_SITES } from '../core/village/town-layout';
 import { west } from '../core/village/west';
 import { MEW_STATUE_FRONT } from '../core/village/mountain';
+import { meditationMessage, MEW_SHRINE } from '../core/village/mew-shrine';
 import type { WorksiteId } from '../core/village/town-layout';
 import { GUIDED_DESTINATIONS, guidedWalkArrived, guidedWalkProgress } from '../core/village/guided-walk';
 import type { Dir } from '../core/village/actors';
@@ -1443,6 +1444,25 @@ function answerMail(id: string, action: MailAction): void {
   if (result.ok) changed();
 }
 
+/** Quantas vezes você meditou hoje diante da estátua (cada vez, outra mensagem; nada disso dá bônus). */
+const meditations = { day: '', count: 0 };
+/** A Estátua do Mew, no topo do Monte Miragem: só «Meditar», puramente decorativo. */
+function openMewStatue(): void {
+  dialog.value = {
+    name: `⛰️ ${MEW_SHRINE.statue}`,
+    text: 'Uma estátua de pedra clara do Mew, no alto do Monte Miragem. O vento sopra devagar aqui em cima e dá para ver a Vila inteira lá embaixo.',
+    actions: [
+      { label: `🧘 ${MEW_SHRINE.action}`, run: () => {
+        const day = refreshDay();
+        if (meditations.day !== day) Object.assign(meditations, { day, count: 0 });
+        const message = meditationMessage(day, meditations.count++);
+        dialog.value = { name: `✨ ${message.title}`, text: message.lines.join(' '), actions: [{ label: 'Abrir os olhos', run: closeDialog }] };
+      } },
+      { label: 'Voltar', run: closeDialog },
+    ],
+  };
+}
+
 /** Conversa social comum, compartilhada por todos os moradores, inclusive o carteiro. */
 function speakToResident(id: string): void {
   if (!game) return;
@@ -1450,7 +1470,7 @@ function speakToResident(id: string): void {
   game.faceMe(id);
   const today = refreshDay();
   const name = nameOf(id);
-  const result = talk(state, id, name, types.get(id) ?? [], today, villageHour(), Math.random, recentGossip(state, id, Date.now(), { compact: true, nameOf: residentNameForDisplay }), game.weatherKind);
+  const result = talk(state, id, name, types.get(id) ?? [], today, villageHour(), Math.random, recentGossip(state, id, Date.now(), { compact: true, nameOf: residentNameForDisplay }), game.weatherKind, game.placeOf(id));
   if (result.gained > 0) {
     game.bubble(id, '❤️');
     trainerEvent('talk', id);
@@ -2510,6 +2530,8 @@ function pressA(): void {
     sheet.value = 'shop';
   } else if (t.kind === 'bell') {
     ringBell();
+  } else if (t.kind === 'mew-statue') {
+    openMewStatue();
   } else if (t.kind === 'seed-box') {
     sheet.value = 'farm';
   } else if (t.kind === 'leisure') {

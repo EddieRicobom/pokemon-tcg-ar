@@ -52,6 +52,7 @@ export type Target =
   | { kind: 'crop'; x: number; y: number }
   | { kind: 'shop' }
   | { kind: 'bell' }
+  | { kind: 'mew-statue' }
   | { kind: 'seed-box' }
   | { kind: 'worksite'; site: WorksiteId }
   | { kind: 'board' }

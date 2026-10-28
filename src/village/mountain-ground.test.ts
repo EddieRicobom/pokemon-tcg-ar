@@ -4,7 +4,7 @@ import { MEW_STATUE_FRONT, TERRACES } from '../core/village/mountain';
 import { mountainPiece, mountainPieceKey, paintMountainPiece } from './mountain-ground';
 
 const map = generateVillage(20261014);
-const opaque = (b: { data: Uint8ClampedArray }) => b.data.filter((_, i) => i % 4 === 3 && b.data[i] === 255).length;
+const opaque = (b: { data: ArrayLike<number> }) => { let n = 0; for (let i = 3; i < b.data.length; i += 4) if (b.data[i] === 255) n++; return n; };
 
 describe('chão do Monte Miragem', () => {
   it('reconhece patamar, paredão (linha de cima e de baixo), degraus e a sombra no pé do paredão', () => {

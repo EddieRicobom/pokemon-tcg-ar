@@ -113,8 +113,8 @@ export function addMountain(map: VillageMap, seed: number): VillageMap {
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (get(x + dx, y + dy) === 'mtn') room++;
       if (room < 9) continue;
       const r = hash(x, y, seed ^ 0x51ab);
-      if (r < 0.07) put(x, y, 'tree');
-      else if (r < 0.13) put(x, y, 'rock');
+      if (r < 0.1) put(x, y, 'tree');
+      else if (r < 0.17) put(x, y, 'rock');
     }
   }
   // A estátua no topo (enfeite fixo) e a trilha do sopé até a Rua Principal.

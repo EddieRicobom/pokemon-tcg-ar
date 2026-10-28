@@ -52,6 +52,15 @@ const hash = (x: number, y: number): number => {
 
 function ground(b: PixelBuf, seed: number): void {
   rect(b, 0, 0, 16, 16, GROUND.base);
+  // Rachaduras finas e manchas de terra mais escura: o patamar não fica liso como um piso.
+  if (hash(seed, 11) < 0.45) {
+    let cx = Math.floor(hash(seed, 13) * 12) + 2;
+    for (let y = 2 + (seed % 4); y < 14; y++) {
+      put(b, cx, y, GROUND.pebble);
+      if (hash(seed + y, 17) < 0.4) cx += hash(seed, y) < 0.5 ? -1 : 1;
+    }
+  }
+  if (hash(seed, 19) < 0.5) rect(b, Math.floor(hash(seed, 23) * 10) + 1, Math.floor(hash(seed, 29) * 10) + 2, 4, 2, GROUND.speck);
   for (let i = 0; i < 18; i++) {
     const r = hash(seed + i, i * 7);
     put(b, Math.floor(r * 16), Math.floor(hash(i, seed) * 16), r > 0.6 ? GROUND.light : GROUND.speck);
@@ -121,20 +130,24 @@ export function paintMountainPiece(p: MountainPiece, x: number, y: number): Pixe
   // Borda de cima e laterais: o patamar com um lábio de rocha virado para fora e o contorno na beira.
   ground(b, seed);
   if (part === 'top') {
-    rect(b, 0, 0, 16, 1, ROCK.line);
-    rect(b, 0, 1, 16, 3, ROCK.mid);
-    rect(b, 0, 1, 16, 1, ROCK.lip);
-    rect(b, 0, 4, 16, 1, ROCK.dark);
-  } else if (part === 'side-left') {
-    rect(b, 0, 0, 1, 16, ROCK.line);
-    rect(b, 1, 0, 3, 16, ROCK.mid);
-    rect(b, 1, 0, 1, 16, ROCK.lip);
-    rect(b, 4, 0, 1, 16, ROCK.dark);
+    // Beira de trás do patamar: o paredão do norte não aparece (está de costas), só a crista de pedra.
+    rect(b, 0, 0, 16, 2, ROCK.line);
+    for (let x = 0; x < 16; x++) rect(b, x, 2, 1, 4, (x + seed) % 4 === 0 ? ROCK.light : ROCK.mid);
+    rect(b, 0, 2, 16, 1, ROCK.lip);
+    rect(b, 0, 6, 16, 1, ROCK.dark);
+    rect(b, 0, 7, 16, 1, GROUND.speck);
   } else {
-    rect(b, 15, 0, 1, 16, ROCK.line);
-    rect(b, 12, 0, 3, 16, ROCK.mid);
-    rect(b, 14, 0, 1, 16, ROCK.deep);
-    rect(b, 11, 0, 1, 16, ROCK.light);
+    // Laterais: uma parede de rocha de 6 px caindo para o terraço de baixo, com o lábio claro em cima da beira.
+    const left = part === 'side-left';
+    const x0 = left ? 0 : 10;
+    for (let x = 0; x < 6; x++) {
+      const col = (x + seed) % 3;
+      rect(b, x0 + x, 0, 1, 16, col === 0 ? ROCK.light : col === 2 ? ROCK.dark : ROCK.mid);
+    }
+    for (let y = seed % 5; y < 16; y += 5) rect(b, x0 + 1, y, 4, 1, ROCK.deep);
+    rect(b, left ? 0 : 15, 0, 1, 16, ROCK.line);
+    rect(b, left ? 6 : 9, 0, 1, 16, ROCK.lip);
+    rect(b, left ? 7 : 8, 0, 1, 16, ROCK.dark);
   }
   if (p.shadow) for (let yy = 0; yy < 3; yy++) for (let xx = 0; xx < 16; xx++) darken(b, xx, yy, 0.7 + yy * 0.1);
   return b;
