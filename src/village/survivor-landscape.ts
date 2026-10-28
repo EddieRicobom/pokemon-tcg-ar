@@ -14,7 +14,8 @@ const SAND_YELLOW = { 0xf0e0c0: 0xecdc98, 0xead4a8: 0xd8c47a, 0xf8e8d0: 0xf6ecba
  * Chão regional da Torre. `floor` é a base em pixel art (a borda do autotile da trilha recebe os mesmos tons, então
  * as duas emendam sem costura); `path` é o autotile da rota (`pathTones` recolore a areia dela); `detail` é o objeto
  * de cenário espalhado; `cover`, a cobertura baixa em manchas; `trees`, as espécies e tons das florestas, que fecham
- * as bordas (`forestDepth` blocos, com a orla irregular) e formam bosques (`groves`, chance por trecho). `ground` é o
+ * as bordas (`forestDepth` blocos, com a orla irregular) e formam bosques (a escala de `groves` regula as âncoras da
+ * cena). `ground` é o
  * recorte que o BONK usa como textura.
  */
 export const SURVIVOR_REGION_TILESETS = [
@@ -71,6 +72,23 @@ export const SURVIVOR_REGION_ROUTES: readonly SurvivorRouteDefinition[] = [
   { main: [[-0.06, 0.76], [0.2, 0.67], [0.41, 0.72], [0.66, 0.56], [1.06, 0.48]], branches: [[[0.41, 0.71], [0.35, 0.5], [0.23, 0.36]]], width: 128 },
   { main: [[0.06, -0.06], [0.2, 0.18], [0.38, 0.34], [0.62, 0.5], [0.92, 0.66], [1.06, 0.78]], branches: [[[0.38, 0.34], [0.25, 0.43], [0.13, 0.56]]], width: 114 },
 ] as const;
+
+/**
+ * Pontos de composição de cada rota. Eles dão à paisagem lugares reconhecíveis — um bosque que enquadra uma curva,
+ * uma moita perto de uma ramificação, uma clareira antes da saída — sem depender de uma chuva uniforme de sorteios.
+ * As bordas continuam orgânicas no gerador; estas coordenadas só definem a intenção da cena.
+ */
+export const SURVIVOR_REGION_SCENES = [
+  { groves: [[0.18, 0.27, 0.13, 0.1], [0.78, 0.27, 0.15, 0.12]], cover: [[0.31, 0.78, 0.1, 0.06], [0.67, 0.74, 0.12, 0.07]] },
+  { groves: [[0.2, 0.22, 0.14, 0.11], [0.75, 0.77, 0.13, 0.15]], cover: [[0.17, 0.63, 0.1, 0.08], [0.76, 0.38, 0.11, 0.07]] },
+  { groves: [[0.17, 0.2, 0.14, 0.11], [0.82, 0.76, 0.14, 0.1]], cover: [[0.24, 0.78, 0.12, 0.07], [0.73, 0.21, 0.1, 0.08]] },
+  { groves: [[0.2, 0.38, 0.14, 0.16], [0.78, 0.56, 0.13, 0.13]], cover: [[0.37, 0.82, 0.1, 0.08], [0.77, 0.17, 0.1, 0.08]] },
+  { groves: [[0.18, 0.72, 0.15, 0.1], [0.82, 0.2, 0.14, 0.12]], cover: [[0.32, 0.19, 0.11, 0.07], [0.7, 0.74, 0.1, 0.08]] },
+  { groves: [[0.18, 0.23, 0.14, 0.11], [0.8, 0.8, 0.15, 0.1]], cover: [[0.25, 0.7, 0.11, 0.08], [0.73, 0.27, 0.1, 0.08]] },
+  { groves: [[0.2, 0.72, 0.15, 0.1], [0.8, 0.23, 0.13, 0.12]], cover: [[0.31, 0.24, 0.1, 0.08], [0.72, 0.74, 0.12, 0.07]] },
+  { groves: [[0.18, 0.2, 0.14, 0.13], [0.8, 0.75, 0.15, 0.11]], cover: [[0.2, 0.78, 0.12, 0.07], [0.73, 0.28, 0.1, 0.08]] },
+  { groves: [[0.72, 0.21, 0.14, 0.12], [0.22, 0.8, 0.15, 0.1]], cover: [[0.26, 0.24, 0.1, 0.08], [0.72, 0.72, 0.12, 0.07]] },
+] as const satisfies readonly { groves: readonly (readonly [number, number, number, number])[]; cover: readonly (readonly [number, number, number, number])[] }[];
 
 /** Lado de uma célula da paisagem e da grade de colisão, em pixels do mundo. */
 export const SURVIVOR_LANDSCAPE_CELL = 16;
@@ -230,33 +248,25 @@ export function planSurvivorFloor(index: number, width: number, height: number):
     const depth = tiles.forestDepth + (floorNoise(index, c, r, 6, 51) - 0.5) * 8;
     if (edge < depth && forestAt(i)) cells[i] = FLOOR_CELL.forest;
   }
-  for (let gr = 0; gr < rows; gr += 14) for (let gc = 0; gc < cols; gc += 14) {
-    if (floorHash(index, gr, gc, 61) > tiles.groves) continue;
-    const cx = gc + 3 + Math.floor(floorHash(index, gr, gc, 62) * 8);
-    const cy = gr + 3 + Math.floor(floorHash(index, gr, gc, 63) * 8);
-    const radius = 2 + floorHash(index, gr, gc, 64) * 2.5;
-    for (let r = Math.floor(cy - radius - 2); r <= cy + radius + 2; r++) for (let c = Math.floor(cx - radius - 2); c <= cx + radius + 2; c++) {
-      if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
-      const d = Math.hypot((c - cx) / 1.3, r - cy) / radius;
-      if (d < 0.7 + floorNoise(index, c, r, 2, 65) * 0.5 && forestAt(r * cols + c)) cells[r * cols + c] = FLOOR_CELL.forest;
+  const scene = SURVIVOR_REGION_SCENES[index]!;
+  const paintScenePatch = (anchors: readonly (readonly [number, number, number, number])[], cell: FloorCell, salt: number, scale = 1) => {
+    for (const [x, y, rx, ry] of anchors) {
+      const cx = x * cols, cy = y * rows;
+      const radiusX = rx * cols * scale, radiusY = ry * rows * scale;
+      for (let r = Math.floor(cy - radiusY - 2); r <= Math.ceil(cy + radiusY + 2); r++) for (let c = Math.floor(cx - radiusX - 2); c <= Math.ceil(cx + radiusX + 2); c++) {
+        if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+        const d = Math.hypot((c - cx) / radiusX, (r - cy) / radiusY);
+        // O ruído apenas desgasta a borda do ponto de cena; não escolhe onde a cena acontece.
+        if (d > 0.72 + floorNoise(index, c, r, 3, salt) * 0.42) continue;
+        const i = r * cols + c;
+        if (cell === FLOOR_CELL.forest ? forestAt(i) : cells[i] === FLOOR_CELL.base && routeDistance[i]! > half + 24) cells[i] = cell;
+      }
     }
-  }
+  };
+  paintScenePatch(scene.groves, FLOOR_CELL.forest, 65, 0.78 + tiles.groves * 0.6);
 
   // Moitas em manchas de borda orgânica, longe da rota.
-  for (let gr = 0; gr < rows; gr += 9) for (let gc = 0; gc < cols; gc += 9) {
-    if (floorHash(index, gr, gc, 11) > tiles.coverDensity * 2) continue;
-    const cx = gc + 2 + Math.floor(floorHash(index, gr, gc, 12) * 5);
-    const cy = gr + 2 + Math.floor(floorHash(index, gr, gc, 13) * 5);
-    const rx = 2.2 + floorHash(index, gr, gc, 14) * 2.4;
-    const ry = 1.4 + floorHash(index, gr, gc, 15) * 1.6;
-    for (let r = Math.floor(cy - ry - 1); r <= Math.ceil(cy + ry + 1); r++) for (let c = Math.floor(cx - rx - 1); c <= Math.ceil(cx + rx + 1); c++) {
-      if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
-      const i = r * cols + c;
-      const d = Math.hypot((c - cx) / rx, (r - cy) / ry);
-      if (d > 0.75 + floorNoise(index, c, r, 2, 16) * 0.5 || cells[i] !== FLOOR_CELL.base || routeDistance[i]! <= half + 24) continue;
-      cells[i] = FLOOR_CELL.cover;
-    }
-  }
+  paintScenePatch(scene.cover, FLOOR_CELL.cover, 16);
   // Mata fechada é uma parede contínua de árvores. Objetos soltos usam a mesma
   // grade e o mesmo sorteio do desenho abaixo, para a hitbox acompanhar a arte.
   const solid = new Uint8Array(cols * rows);
