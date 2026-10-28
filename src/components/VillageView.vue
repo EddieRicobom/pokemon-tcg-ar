@@ -134,12 +134,33 @@ const idleGuideDismissed = ref(false);
 const clock = ref('');
 const map = villageMap();
 const state = reactive(loadVillage());
-const towerGameRef = ref<{ requestLeave: () => void } | null>(null);
+const towerGameRef = ref<{ requestBack: () => void; requestLeave: () => void } | null>(null);
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
 type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
+let towerHistoryGuard = false;
+
+/**
+ * A Torre é uma camada da Vila, não uma rota. A entrada de histórico duplicada
+ * converte o Voltar físico do Android em um retorno interno, sem abandonar o modo.
+ */
+function onTowerHistoryBack(): void {
+  if (sheet.value !== 'torre') return;
+  window.history.pushState({ tcgArTowerBackGuard: true }, '', window.location.href);
+  void nextTick(() => towerGameRef.value?.requestBack());
+}
+
+watch(sheet, (next, previous) => {
+  if (next === 'torre' && previous !== 'torre' && !towerHistoryGuard) {
+    window.history.pushState({ tcgArTowerBackGuard: true }, '', window.location.href);
+    towerHistoryGuard = true;
+  } else if (previous === 'torre' && next !== 'torre' && towerHistoryGuard) {
+    towerHistoryGuard = false;
+    window.history.back();
+  }
+});
 const cardEvolutionAtAltar = ref(false);
 const backpackOpen = ref(false);
 type Tab = 'inicio' | 'resumo' | 'expedicoes' | 'mochila' | 'fabricar' | 'cozinha' | 'diario' | 'album' | 'colecao' | 'livro' | 'visual' | 'trabalhos' | 'lendas' | 'correio' | 'dojo';
@@ -2869,7 +2890,7 @@ function pressB(): void {
   else if (pendingChoice) decide(null);
   else if (dialog.value) dialog.value = null;
   else if (sheet.value === 'menu' && tab.value !== 'inicio') tab.value = 'inicio'; // B dentro de uma seção volta ao menu
-  else if (sheet.value === 'torre') towerGameRef.value?.requestLeave();
+  else if (sheet.value === 'torre') towerGameRef.value?.requestBack();
   else if (sheet.value) closeVillageSheet(); // fecha pelo mesmo caminho do ✕ e libera o estado de interação da Vila
   else openMenu();
 }
@@ -2962,10 +2983,12 @@ onBeforeUnmount(() => {
   detachLiveVillage(state);
   sound.dispose();
   music.dispose();
+  window.removeEventListener('popstate', onTowerHistoryBack);
 });
 
 onMounted(async () => {
   document.addEventListener('focusin', rememberVillageActionFocus);
+  window.addEventListener('popstate', onTowerHistoryBack);
   // Baixa o treinador enquanto cache e moradores são preparados, sem somar até 8 s à abertura.
   const trainerAtlasPromise = loadTrainerAtlas(profile.sprite);
   // Cutscene da primeira entrada (Fase 4): só na primeira vez de verdade, antes do aviso de controles.
@@ -3378,7 +3401,7 @@ onBeforeUnmount(() => {
 
       <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
       <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
-        <header><strong>Torre de Sobrevivência</strong><button type="button" class="link village-sheet-back" aria-label="Voltar à Vila" @click="pressB">← Voltar à Vila</button></header>
+        <header><strong>Torre de Sobrevivência</strong><button type="button" class="link village-sheet-back" aria-label="Sair da Torre" @click="towerGameRef?.requestLeave()">Sair da Torre</button></header>
         <MinigameSobrevivencia ref="towerGameRef" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="sheet = null" />
       </div>
 

@@ -793,8 +793,7 @@ function onKey(e: KeyboardEvent): void {
   if (e.defaultPrevented) return;
   if (e.type === 'keydown' && e.key === 'Escape') {
     e.preventDefault();
-    if (leaveConfirm.value) cancelLeave();
-    else requestLeave();
+    requestBack();
     return;
   }
   const dir = KEY_DIR[e.key];
@@ -839,9 +838,9 @@ function onGamepadAction(event: Event): void {
 
 function onGamepadBack(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  if (custom.detail.handled || !ready.value || !state.value || shadowCutsceneOpen.value || summary.value || pickOptions.value || pendingUpgrade.value || evolving.value || specialModalOpen.value) return;
+  if (custom.detail.handled) return;
   custom.detail.handled = true;
-  togglePause();
+  requestBack();
 }
 
 function onGamepadMenu(event: Event): void {
@@ -1919,7 +1918,21 @@ function confirmLeave(): void {
   emit('leave');
 }
 
-defineExpose({ requestLeave });
+/** O caminho de Voltar fica dentro da Torre; sair exige a ação explícita de saída. */
+function requestBack(): void {
+  if (leaveConfirm.value) { cancelLeave(); return; }
+  if (typeChoice.value) { typeChoice.value = null; return; }
+  if (helpOpen.value) { helpOpen.value = false; return; }
+  if (hudExpanded.value) { hudExpanded.value = false; return; }
+  if (paused.value) { togglePause(); return; }
+  if (summary.value) { playAgain(); return; }
+  // Escolhas que alteram a corrida não podem ser descartadas pelo botão Voltar.
+  if (pickOptions.value || noCompanion.value || pendingUpgrade.value || typeAffinityOffer.value || shadowCutsceneOpen.value || specialModalOpen.value) return;
+  // Durante a corrida, Voltar abre a pausa; outro Voltar retoma.
+  if (ready.value && state.value) togglePause();
+}
+
+defineExpose({ requestBack, requestLeave });
 
 /** Sorteia até 6 companheiros da caixa, identificados por carta/instância, pra escolher quem joga desta vez.
  * Caixa vazia (nenhuma carta ainda) não trava nada: cai pro Pikachu de reserva sem tela de escolha, como antes. */
@@ -2299,7 +2312,7 @@ onBeforeUnmount(() => {
             <div v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" class="survivor-info-actions">
               <button type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @click.stop="togglePause">{{ paused ? '▶ Retomar' : '⏸ Pausar' }}</button>
               <button type="button" class="chip survivor-help-btn" @click.stop="openHelp">? Controles</button>
-              <button type="button" class="chip survivor-back-btn" @click.stop="requestLeave">← Voltar à Vila</button>
+              <button type="button" class="chip survivor-back-btn" @click.stop="requestBack">← Voltar</button>
             </div>
             <div class="survivor-info-section">
               <strong>Golpe e defesas</strong>
@@ -2394,7 +2407,8 @@ onBeforeUnmount(() => {
               <small>Empilhados deixa os dois mais perto da borda; Trocados põe o Pular no canto e o Especial ao lado.</small>
             </section>
             <button type="button" class="primary" @pointerdown.stop @click.stop="togglePause">▶ Retomar</button>
-            <button type="button" class="link survivor-back" @pointerdown.stop @click.stop="requestLeave">← Voltar à Vila</button>
+            <button type="button" class="link survivor-back" @pointerdown.stop @click.stop="requestBack">← Voltar</button>
+            <button type="button" class="link survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
           </div>
         </div>
 
@@ -2493,7 +2507,6 @@ onBeforeUnmount(() => {
                </div>
             </div>
              <button type="button" class="link survivor-reroll" :disabled="rerollsUsed >= rerollLimit || pickBusy" @click="rerollPicker">🔄 Sortear novamente <small>{{ Math.max(0, rerollLimit - rerollsUsed) }} de {{ rerollLimit }} troca(s) grátis nesta tentativa</small></button>
-             <button type="button" class="link survivor-back" @click="requestLeave">← Voltar à Vila</button>
             <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
             <details class="survivor-more">
               <summary>Mais opções e informações</summary>
@@ -2526,7 +2539,7 @@ onBeforeUnmount(() => {
           <div class="card survivor-pick">
             <h2>Você precisa de um companheiro</h2>
             <p class="note">A Torre usa Pokémon da sua coleção ou Digital Pokémon da Vila. Escaneie uma carta ou conclua o questionário inicial da Vila para receber seu primeiro companheiro.</p>
-            <button type="button" class="primary survivor-back" @pointerdown.stop @click.stop="requestLeave">← Voltar à Vila</button>
+            <button type="button" class="primary survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
           </div>
         </div>
 
@@ -2720,7 +2733,8 @@ onBeforeUnmount(() => {
                <p v-if="feedbackError" class="survivor-feedback-error" role="alert">{{ feedbackError }}</p>
              </section>
             <button type="button" class="primary" @click="playAgain">Jogar de novo</button>
-            <button type="button" class="link survivor-back" @click="leaveNow">← Voltar à Vila</button>
+            <button type="button" class="link survivor-back" @click="playAgain">← Voltar ao menu da Torre</button>
+            <button type="button" class="link survivor-exit" @click="leaveNow">Sair da Torre</button>
           </div>
         </div>
 

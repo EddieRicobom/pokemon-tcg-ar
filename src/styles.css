@@ -7217,9 +7217,10 @@ body.no-scroll .reward-toasts {
   color: #fff2a8;
 }
 
-/* Todo menu da Torre usa o mesmo retorno explícito; evita depender do botão Voltar do navegador. */
+/* Todo menu da Torre usa o mesmo retorno explícito; o Voltar físico não sai da Torre. */
 .survivor-back { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; margin-top: 8px; font-weight: 800; }
 .survivor-pause .survivor-back { width: 100%; }
+.survivor-exit { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; margin-top: 8px; color: #ffcece; font-weight: 800; }
 
 .survivor-pick-grid {
   display: grid;
