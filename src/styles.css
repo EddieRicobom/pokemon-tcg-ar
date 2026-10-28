@@ -6757,6 +6757,7 @@ body.no-scroll .reward-toasts {
 .survivor-info-section > strong { flex: 0 0 100%; font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; color: #dcecff; }
 .survivor-info-panel .chip { min-height: 30px; padding: 4px 9px; font-size: .66rem; font-weight: 600; white-space: normal; text-align: left; color: #fff; background: rgba(12, 18, 32, 0.86); border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 999px; }
 .survivor-info-panel .survivor-info-actions .chip { flex: 1 1 0; text-align: center; font-weight: 800; }
+.survivor-info-panel .survivor-back-btn { flex-basis: 100%; border-color: rgba(255, 216, 74, 0.62); color: #fff0af; }
 .survivor-artifact-chip { border-color: #ffb35c !important; color: #ffe4a8 !important; }
 .survivor-support-count { border-color: rgba(167, 216, 255, 0.55) !important; }
 .survivor-run-stats { font-variant-numeric: tabular-nums; }
@@ -7215,6 +7216,10 @@ body.no-scroll .reward-toasts {
   border-color: #ffe066;
   color: #fff2a8;
 }
+
+/* Todo menu da Torre usa o mesmo retorno explícito; evita depender do botão Voltar do navegador. */
+.survivor-back { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; margin-top: 8px; font-weight: 800; }
+.survivor-pause .survivor-back { width: 100%; }
 
 .survivor-pick-grid {
   display: grid;

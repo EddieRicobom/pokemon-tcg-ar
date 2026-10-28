@@ -539,6 +539,9 @@ function showTrainerPresentation(event: { trainerId: number; count: number; fina
   clearTrainerPresentation();
   heldKeys.clear();
   joyUp();
+  // A chegada do treinador interrompe a corrida por alguns segundos; o menu aberto
+  // antes não deve disputar atenção com esse aviso.
+  hudExpanded.value = false;
   paused.value = true;
   trainerPresentation.value = event;
   trainerPresentationTimer = setTimeout(() => clearTrainerPresentation(true), event.final ? 3400 : 2800);
@@ -1892,12 +1895,14 @@ function leaveNow(): void {
 
 function requestLeave(): void {
   if (leaveConfirm.value) return;
-  heldKeys.clear(); joyUp(); specialQueued = false;
-  clearTrainerPresentation();
-  if (summary.value) {
+  // Na escolha de Pokémon (ou depois do resultado) não há uma corrida a abandonar.
+  // Volta imediatamente para a Vila, sem apresentar um aviso que sugira perda de progresso.
+  if (!ready.value || !state.value || summary.value) {
     leaveNow();
     return;
   }
+  heldKeys.clear(); joyUp(); specialQueued = false;
+  clearTrainerPresentation();
   wasPausedBeforeLeave = paused.value;
   paused.value = true;
   leaveConfirm.value = true;
@@ -2294,6 +2299,7 @@ onBeforeUnmount(() => {
             <div v-if="!summary && !pendingUpgrade && !evolving && !specialModalOpen" class="survivor-info-actions">
               <button type="button" class="chip survivor-pause-btn" :aria-pressed="paused" @click.stop="togglePause">{{ paused ? '▶ Retomar' : '⏸ Pausar' }}</button>
               <button type="button" class="chip survivor-help-btn" @click.stop="openHelp">? Controles</button>
+              <button type="button" class="chip survivor-back-btn" @click.stop="requestLeave">← Voltar à Vila</button>
             </div>
             <div class="survivor-info-section">
               <strong>Golpe e defesas</strong>
@@ -2361,7 +2367,7 @@ onBeforeUnmount(() => {
         </div>
         <p v-if="ready && !summary && !joystick.active && !pickOptions && !hudExpanded && state && state.elapsedMs < 6000" class="survivor-move-hint" :class="{ 'is-bonk': bonkRun }">{{ bonkRun ? 'Arraste: para cima avança, para os lados vira a câmera · Pular: botão, toque/clique duplo, Q ou Espaço · Start pausa' : 'Arraste, use setas/WASD ou o analógico do controle para andar · Start pausa' }}</p>
 
-        <div v-if="paused" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
+        <div v-if="paused && !trainerPresentation && !typeAffinityOffer && !leaveConfirm" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
             <h2>Jogo pausado</h2>
             <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
@@ -2388,6 +2394,7 @@ onBeforeUnmount(() => {
               <small>Empilhados deixa os dois mais perto da borda; Trocados põe o Pular no canto e o Especial ao lado.</small>
             </section>
             <button type="button" class="primary" @pointerdown.stop @click.stop="togglePause">▶ Retomar</button>
+            <button type="button" class="link survivor-back" @pointerdown.stop @click.stop="requestLeave">← Voltar à Vila</button>
           </div>
         </div>
 
@@ -2402,7 +2409,7 @@ onBeforeUnmount(() => {
                 <small class="survivor-pick-tip">{{ MOVE_CATEGORY_HINTS_PT[typeChoice.move.category] }}</small>
               </button>
             </div>
-            <button type="button" class="link" @click="typeChoice = null">Voltar</button>
+            <button type="button" class="link survivor-back" @click="typeChoice = null">← Voltar aos Pokémon</button>
           </div>
           <div v-else class="card survivor-pick">
             <h2>Quem vai pra Torre dessa vez?</h2>
@@ -2486,6 +2493,7 @@ onBeforeUnmount(() => {
                </div>
             </div>
              <button type="button" class="link survivor-reroll" :disabled="rerollsUsed >= rerollLimit || pickBusy" @click="rerollPicker">🔄 Sortear novamente <small>{{ Math.max(0, rerollLimit - rerollsUsed) }} de {{ rerollLimit }} troca(s) grátis nesta tentativa</small></button>
+             <button type="button" class="link survivor-back" @click="requestLeave">← Voltar à Vila</button>
             <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
             <details class="survivor-more">
               <summary>Mais opções e informações</summary>
@@ -2518,7 +2526,7 @@ onBeforeUnmount(() => {
           <div class="card survivor-pick">
             <h2>Você precisa de um companheiro</h2>
             <p class="note">A Torre usa Pokémon da sua coleção ou Digital Pokémon da Vila. Escaneie uma carta ou conclua o questionário inicial da Vila para receber seu primeiro companheiro.</p>
-            <button type="button" class="primary" @pointerdown.stop @click.stop="emit('leave')">Voltar à Vila</button>
+            <button type="button" class="primary survivor-back" @pointerdown.stop @click.stop="requestLeave">← Voltar à Vila</button>
           </div>
         </div>
 
@@ -2712,7 +2720,7 @@ onBeforeUnmount(() => {
                <p v-if="feedbackError" class="survivor-feedback-error" role="alert">{{ feedbackError }}</p>
              </section>
             <button type="button" class="primary" @click="playAgain">Jogar de novo</button>
-            <button type="button" class="link" @click="leaveNow">Voltar aos jogos</button>
+            <button type="button" class="link survivor-back" @click="leaveNow">← Voltar à Vila</button>
           </div>
         </div>
 
