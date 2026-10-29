@@ -13,11 +13,18 @@ export const HD2D_GROUND_TILT = 0.28;
 
 /** Pixel art continua nítida sem renderizar quatro vezes mais pixels em telas Retina. */
 export const HD2D_MAX_DPR = 1.25;
+/** Em automático, o 2D-HD mantém a resposta da Vila no ritmo de 60 Hz. */
+export const HD2D_AUTO_FPS = 60;
 
 /** A Vila normal preserva até 2×; o acabamento 2D-HD prioriza fluidez no celular. */
 export function hd2dPixelRatio(devicePixelRatio: number, enabled: boolean): number {
   const safeDpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
   return Math.min(enabled ? HD2D_MAX_DPR : 2, safeDpr);
+}
+
+/** O Modo Rotom desliga o 2D-HD antes deste ponto; com ele ativo, automático é 60 FPS. */
+export function hd2dFrameRate(configuredFps: number, enabled: boolean): number {
+  return enabled && (!Number.isFinite(configuredFps) || configuredFps <= 0) ? HD2D_AUTO_FPS : configuredFps;
 }
 
 /** Conversão entre o eixo do mapa e o chão projetado na tela. */
