@@ -9,7 +9,7 @@ export interface VisualSettings {
   smoothing: SmoothingMode;
   /** Luz dos golpes nos Pokémon, no chão e no vídeo (Caixa). Desligar poupa a GPU de celulares fracos. */
   lighting: boolean;
-  /** Partículas e ondas de choque intensas nos impactos elementais da Arena. */
+  /** Partículas e ondas de choque intensas na Arena, além do aviso ao tomar dano na Torre. */
   impactFx: boolean;
   /** Chão em pixel art e terreno que muda com os golpes elementais (Caixa). Desligar poupa a GPU. */
   terrain: boolean;

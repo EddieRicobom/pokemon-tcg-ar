@@ -4,6 +4,7 @@ import type { Layer, SoundCue } from './sound-recipes';
 import { POKEMON_TYPES } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import type { Personality, StatusKind } from '../core/battle';
+import type { MoveCategory } from '../core/survivor-moves';
 
 const STATUSES: StatusKind[] = ['burn', 'poison', 'paralysis', 'freeze'];
 const PERSONALITIES: Personality[] = ['agressivo', 'defensivo', 'veloz', 'equilibrado'];
@@ -18,6 +19,7 @@ function allCues(): SoundCue[] {
       cues.push({ kind: 'impact', type, strength, critical: false, effectiveness: 1, guarded: false });
     }
     cues.push({ kind: 'impact', type, strength: 1.6, critical: true, effectiveness: 4, guarded: true });
+    for (const category of ['projetil', 'aura', 'area', 'cone', 'orbit'] as MoveCategory[]) cues.push({ kind: 'survivor-attack', type, category });
   }
   for (const status of STATUSES) cues.push({ kind: 'status', status }, { kind: 'tick', cause: status }, { kind: 'skip', cause: status });
   for (const personality of PERSONALITIES) cues.push({ kind: 'victory', personality });
@@ -57,6 +59,12 @@ describe('receitas de som', () => {
     const sig = (type: PokemonType) => JSON.stringify(layersFor({ kind: 'impact', type, strength: 1, critical: false, effectiveness: 1, guarded: false }));
     const signatures = new Set(POKEMON_TYPES.map(sig));
     expect(signatures.size).toBe(POKEMON_TYPES.length);
+  });
+
+  it('muda a articulação conforme a forma do ataque da Torre', () => {
+    const projectile = JSON.stringify(layersFor({ kind: 'survivor-attack', type: 'fire', category: 'projetil' }));
+    const aura = JSON.stringify(layersFor({ kind: 'survivor-attack', type: 'fire', category: 'aura' }));
+    expect(aura).not.toBe(projectile);
   });
 
   it('golpe forte soa mais alto que fraco; crítico e super efetivo acrescentam sons', () => {

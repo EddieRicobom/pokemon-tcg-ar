@@ -66,7 +66,7 @@ useDialogFocus(dialogEl);
         <button type="button" :class="{ active: !visual.impactFx }" :aria-pressed="!visual.impactFx" @click="visual.impactFx = false">Desligados</button>
       </div>
       <p class="hint">
-        {{ visual.impactFx ? 'Golpes elementais criam uma explosão maior, partículas temáticas e ondas de choque extras. Pode pesar em celulares fracos.' : 'Usa os impactos leves padrão.' }}
+        {{ visual.impactFx ? 'Golpes elementais criam uma explosão maior, partículas temáticas e ondas de choque extras. Na Torre, também mostra um breve alerta ao tomar dano. Pode pesar em celulares fracos.' : 'Usa os impactos leves padrão e desliga o alerta visual de dano da Torre.' }}
       </p>
     </section>
     <section v-if="battle">
