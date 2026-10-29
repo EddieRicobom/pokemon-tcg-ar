@@ -115,6 +115,8 @@ export class VillageGame {
   private speech = new Map<string, { text: string; name: string; start: number; until: number; tint: string }>();
   /** Áreas dos balões no último quadro: permitem tocar numa fala sem confundir com o chão. */
   private bubbleHitboxes = new Map<string, { x: number; y: number; w: number; h: number }>();
+  /** Fachadas e sprites têm profundidade visual; estes retângulos evitam tratar o toque como se fosse só no chão. */
+  private clickHitboxes: { x: number; y: number; w: number; h: number; target: { x: number; y: number; id?: string } }[] = [];
   /** Alvo selecionado por toque: um anel no chão deixa clara a ação que será feita ao chegar. */
   private interactionMarker: { x: number; y: number } | null = null;
   private bounce = new Map<string, number>();
@@ -787,6 +789,24 @@ export class VillageGame {
     return null;
   }
 
+  /** Resolve o objeto desenhado sob o toque para o bloco que realmente aceita a interação. */
+  interactionAtScreen(clientX: number, clientY: number): { x: number; y: number; id?: string } | null {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const x = ((clientX - rect.left) / rect.width) * this.canvas.width;
+    const y = ((clientY - rect.top) / rect.height) * this.canvas.height;
+    for (let i = this.clickHitboxes.length - 1; i >= 0; i--) {
+      const hit = this.clickHitboxes[i]!;
+      if (x >= hit.x && x <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) return { ...hit.target };
+    }
+    return null;
+  }
+
+  residentPosition(id: string): { x: number; y: number } | null {
+    const resident = this.villagers.get(id);
+    return resident ? { x: resident.x, y: resident.y } : null;
+  }
+
   stopWalk(): void {
     this.goal = null;
     this.held = null;
@@ -1360,6 +1380,7 @@ export class VillageGame {
 
   private draw(now: number): void {
     this.bubbleHitboxes.clear();
+    this.clickHitboxes = [];
     if (!this.diorama || !this.dioramaLayers?.floor || !this.dioramaLayers.props) {
       this.drawLayer(now, 'scene');
       return;
@@ -1779,6 +1800,8 @@ export class VillageGame {
       const spriteBase = sy(buildingGroundY(b));
       const left = sx(b.x);
       const mid = sx(b.x + b.w / 2);
+      // A fachada é alta e inclinada, mas a ação acontece na porta dela.
+      this.clickHitboxes.push({ x: left, y: spriteBase - Math.max(4 * T, b.h * T * 1.8), w: b.w * T, h: Math.max(4 * T, b.h * T * 1.8), target: { x: b.door.x, y: b.door.y } });
       const nearDoor = Math.abs(this.player.x - b.door.x) + Math.abs(this.player.y - b.door.y) <= 4;
       if (b.kind === 'fountain') {
         const f = Math.floor(now / 450) % 2;
@@ -2057,6 +2080,13 @@ export class VillageGame {
           const contentCx = (sprite.bounds.left + sprite.bounds.right) / 2;
           const frameLeft = cx - contentCx * fullW;
           const frameTop = base - sprite.bounds.bottom * fullH;
+          this.clickHitboxes.push({
+            x: frameLeft + sprite.bounds.left * fullW,
+            y: frameTop + sprite.bounds.top * fullH,
+            w: (sprite.bounds.right - sprite.bounds.left) * fullW,
+            h: (sprite.bounds.bottom - sprite.bounds.top) * fullH,
+            target: { x: w.x, y: w.y, id },
+          });
           shadow(cx, sy(pos.y + 1) - 2 * scale, (5 - hop / (2 * scale) * 0.3) * scale, 2 * scale, 0.22);
           drawDioramaTilted(cx, base, Math.max(fullW, wpx), () => {
             ctx.save();
