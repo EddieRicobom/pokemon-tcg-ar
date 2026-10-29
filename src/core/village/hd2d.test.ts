@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hd2dDepthStyle } from './hd2d';
+import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dGroundProjection } from './hd2d';
 
 describe('acabamento 2D-HD da Vila', () => {
   it('mantém o objeto no plano de foco nítido e iluminado', () => {
@@ -12,5 +12,13 @@ describe('acabamento 2D-HD da Vila', () => {
     expect(style.opacity).toBeLessThan(1);
     expect(style.opacity).toBeGreaterThanOrEqual(0.78);
     expect(style.brightness).toBeLessThan(1);
+  });
+
+  it('inclina o chão e conserva o caminho inverso do toque até o mapa', () => {
+    const projection = hd2dGroundProjection(100);
+    expect(HD2D_GROUND_TILT).toBeLessThan(1);
+    expect(projection.screenY).toBe(68);
+    expect(projection.mapY).toBeCloseTo(147.0588, 3);
+    expect(hd2dGroundProjection(projection.screenY).mapY).toBeCloseTo(100, 6);
   });
 });
