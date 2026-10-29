@@ -15,23 +15,44 @@ import { gzipSync } from 'node:zlib';
 
 const API = 'https://api.tcgdex.net/v2';
 const OUT = process.argv[2] ?? 'public/data/catalog-index.json';
-const CONCURRENCY = 8;
+// O TCGdex atende muitas coleções em sequência. Um limite moderado evita que uma
+// rajada do Actions provoque respostas 503 e impede publicar um índice parcial.
+const CONCURRENCY = 4;
+const MAX_ATTEMPTS = 6;
 
 let requests = 0;
 let downloadedBytes = 0;
 
-async function getJson<T>(url: string, attempts = 4): Promise<T> {
+function retryDelay(response: Response | undefined, attempt: number): number {
+  const retryAfter = response?.headers.get('retry-after');
+  const retryAfterSeconds = retryAfter ? Number(retryAfter) : Number.NaN;
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) return retryAfterSeconds * 1_000;
+
+  // 1 s, 2 s, 4 s, 8 s e 16 s. Dá tempo ao serviço se recuperar sem tornar
+  // falhas permanentes (como 404) artificialmente lentas.
+  return Math.min(1_000 * 2 ** (attempt - 1), 16_000);
+}
+
+async function getJson<T>(url: string, attempts = MAX_ATTEMPTS): Promise<T> {
   for (let attempt = 1; ; attempt++) {
+    let response: Response | undefined;
     try {
       requests++;
-      const response = await fetch(url);
+      response = await fetch(url);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const buffer = await response.arrayBuffer();
       downloadedBytes += buffer.byteLength;
       return JSON.parse(new TextDecoder().decode(buffer)) as T;
     } catch (error) {
       if (attempt >= attempts) throw new Error(`${url}: ${error instanceof Error ? error.message : String(error)}`);
-      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+      // Não repete 4xx definitivos. Para 429/5xx e indisponibilidade de rede,
+      // faz backoff exponencial e preserva a exigência de um índice completo.
+      if (response && response.status < 500 && response.status !== 429) {
+        throw new Error(`${url}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      const delay = retryDelay(response, attempt);
+      console.warn(`Tentativa ${attempt}/${attempts} falhou para ${url}; nova tentativa em ${delay} ms.`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 }
