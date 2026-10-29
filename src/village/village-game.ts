@@ -113,6 +113,10 @@ export class VillageGame {
   private diorama = false;
   private bubbles = new Map<string, { emoji: string; until: number }>();
   private speech = new Map<string, { text: string; name: string; start: number; until: number; tint: string }>();
+  /** Áreas dos balões no último quadro: permitem tocar numa fala sem confundir com o chão. */
+  private bubbleHitboxes = new Map<string, { x: number; y: number; w: number; h: number }>();
+  /** Alvo selecionado por toque: um anel no chão deixa clara a ação que será feita ao chegar. */
+  private interactionMarker: { x: number; y: number } | null = null;
   private bounce = new Map<string, number>();
   /** Borboletas (dia) e vagalumes (noite), em blocos. */
   private readonly motes: Mote[] = [];
@@ -763,6 +767,26 @@ export class VillageGame {
     this.goal = { x, y };
   }
 
+  setInteractionMarker(target: { x: number; y: number } | null): void {
+    this.interactionMarker = target;
+  }
+
+  /** Tocar no balão leva até o morador, parando no bloco livre ao lado dele. */
+  walkToBubbleAtScreen(clientX: number, clientY: number): string | null {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const x = ((clientX - rect.left) / rect.width) * this.canvas.width;
+    const y = ((clientY - rect.top) / rect.height) * this.canvas.height;
+    for (const [id, hit] of this.bubbleHitboxes) {
+      if (x < hit.x || x > hit.x + hit.w || y < hit.y || y > hit.y + hit.h) continue;
+      const speaker = this.villagers.get(id);
+      if (!speaker) return null;
+      this.walkTo(speaker.x, speaker.y);
+      return id;
+    }
+    return null;
+  }
+
   stopWalk(): void {
     this.goal = null;
     this.held = null;
@@ -888,6 +912,12 @@ export class VillageGame {
 
   bubble(id: string, emoji: string, ms = 1800): void {
     this.bubbles.set(id, { emoji, until: performance.now() + ms });
+  }
+
+  clearBubble(id: string): void {
+    this.bubbles.delete(id);
+    this.speech.delete(id);
+    this.bubbleHitboxes.delete(id);
   }
 
   /** Solta um emoji que sobe e some sobre o Pokémon (e ele dá um pulinho). */
@@ -1329,6 +1359,7 @@ export class VillageGame {
   }
 
   private draw(now: number): void {
+    this.bubbleHitboxes.clear();
     if (!this.diorama || !this.dioramaLayers?.floor || !this.dioramaLayers.props) {
       this.drawLayer(now, 'scene');
       return;
@@ -2372,6 +2403,19 @@ export class VillageGame {
       ctx.fillStyle = lens;
       ctx.fillRect(0, 0, W, H);
     }
+    if (layer === 'scene' && !this.diorama && this.interactionMarker) {
+      const target = this.interactionMarker;
+      const pulse = 1 + Math.sin(now / 110) * 0.12;
+      ctx.save();
+      ctx.strokeStyle = '#ffe36e';
+      ctx.lineWidth = Math.max(2, scale * 0.8);
+      ctx.shadowColor = '#402e0b';
+      ctx.shadowBlur = 3 * scale;
+      ctx.beginPath();
+      ctx.ellipse(sx(target.x + 0.5), sy(target.y + 0.82), 8 * scale * pulse, 3.2 * scale * pulse, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
     for (const o of overlays) o();
   }
 
@@ -2447,7 +2491,7 @@ export class VillageGame {
     const talk = this.speech.get(id);
     if (talk) {
       if (now > talk.until + 150) this.speech.delete(id);
-      else this.drawSpeech(cx, top, talk, now);
+      else this.drawSpeech(id, cx, top, talk, now);
       return;
     }
     const b = this.bubbles.get(id);
@@ -2460,6 +2504,7 @@ export class VillageGame {
     const size = 9 * scale;
     const x = cx - size / 2 - 2 * scale;
     const y = top - size - 4 * scale;
+    this.bubbleHitboxes.set(id, { x, y, w: size + 4 * scale, h: size + 2 * scale });
     ctx.fillStyle = '#ffffff';
     ctx.strokeStyle = '#1a1a24';
     ctx.lineWidth = scale;
@@ -2475,7 +2520,7 @@ export class VillageGame {
   }
 
   /** O balão de fala dos momentos: o texto aparece letra por letra, com o nome de quem fala. */
-  private drawSpeech(cx: number, top: number, s: { text: string; name: string; start: number; tint: string }, now: number): void {
+  private drawSpeech(id: string, cx: number, top: number, s: { text: string; name: string; start: number; tint: string }, now: number): void {
     const { ctx, canvas, scale } = this;
     const fs = Math.max(13, Math.round(5.4 * scale));
     ctx.font = `bold ${fs}px system-ui, sans-serif`;
@@ -2492,6 +2537,7 @@ export class VillageGame {
     // Não passa por baixo da barra do topo (≈ 56 px de tela).
     const topBar = Math.round(58 * (canvas.width / Math.max(1, canvas.clientWidth || canvas.width)));
     const y = Math.max(topBar, top - boxH - 7 * scale);
+    this.bubbleHitboxes.set(id, { x, y, w: boxW, h: boxH + 4 * scale });
     ctx.save();
     // Balão leve, inspirado em mangá: papel claro, contorno de tinta e acento só no nome.
     // Assim continua legível sobre grama, água e áreas noturnas sem virar uma janela de dark mode.
