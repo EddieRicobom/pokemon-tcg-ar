@@ -11,6 +11,21 @@ export function hd2dDepthBand(depth: number, focus: number): 0 | 1 | 2 {
 
 export interface Hd2dBounds { x: number; y: number; w: number; h: number }
 
+/** Escala assinada pela distância à câmera: fundo menor, primeiro plano maior.
+ * O meio da tela fica perto de 1×. Os limites evitam sprites gigantes fora da tela.
+ */
+export function hd2dPerspectiveScale(groundY: number, height: number): number {
+  if (!Number.isFinite(groundY) || !Number.isFinite(height) || height <= 0) return 1;
+  const depth = Math.max(0, Math.min(1, groundY / height));
+  return 0.58 + depth * 0.94;
+}
+
+/** Escala ao redor dos pés: o objeto cresce sem deslizar sobre o chão. */
+export function hd2dPerspectiveBounds(bounds: Hd2dBounds, base: number, scale: number): Hd2dBounds {
+  const cx = bounds.x + bounds.w / 2;
+  return { x: cx - bounds.w * scale / 2, y: base + (bounds.y - base) * scale, w: bounds.w * scale, h: bounds.h * scale };
+}
+
 /** Só fachadas à frente que cruzam a silhueta do treinador devem ficar transparentes. */
 export function hd2dOccludes(bounds: Hd2dBounds, player: Hd2dBounds, baseY: number): boolean {
   return baseY > player.y + player.h && bounds.x < player.x + player.w

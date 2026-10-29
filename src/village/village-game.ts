@@ -65,7 +65,7 @@ import { HOME_LANTERN, HOME_WINDOWS, paintFountain, paintHome, paintLamp, paintL
 import { COLISEU_GLOWS, paintColiseu } from './coliseu-art';
 import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, hd2dOccludes, hd2dOcclusionOpacity, hd2dPixelRatio } from '../core/village/hd2d';
 import type { Hd2dBounds } from '../core/village/hd2d';
-import { hd2dDepthBand } from '../core/village/hd2d';
+import { hd2dDepthBand, hd2dPerspectiveBounds, hd2dPerspectiveScale } from '../core/village/hd2d';
 import { DepthSpriteCache } from './depth-sprite-cache';
 
 /**
@@ -1471,14 +1471,19 @@ export class VillageGame {
     const drawDepthSprite = (img: HTMLCanvasElement, x: number, y: number, w: number, h: number) => {
       this.depthSprites.draw(ctx, img, x, y, w, h, depthBand);
     };
-    /** Sprites ficam em pé; a perspectiva 2.5D pertence à base 3D do AR. */
+    /** Escala cada peça em pé pela sua base, sem filtros nem cópias adicionais. */
     const drawDioramaTilted = (cx: number, base: number, width: number, paint: () => void): void => {
-      // Mantém a assinatura enquanto os chamadores continuam organizando
-      // objetos pelo ponto dos pés. A geometria L do modo AR cria a leitura
-      // de profundidade sem inclinar ou cortar nenhum bitmap.
-      void cx;
-      void base;
       void width;
+      if (hd2d) {
+        const perspective = hd2dPerspectiveScale(base, H);
+        ctx.save();
+        ctx.translate(cx, base);
+        ctx.scale(perspective, perspective);
+        ctx.translate(-cx, -base);
+        paint();
+        ctx.restore();
+        return;
+      }
       paint();
     };
     /** Desenha um recorte em pé: a última linha visível encosta no chão em (cx, base). */
@@ -1504,7 +1509,8 @@ export class VillageGame {
     const stand = (img: HTMLCanvasElement, cx: number, base: number, maxWidth = Infinity) => {
       const at = standBounds(img, cx, base, maxWidth);
       drawDioramaTilted(cx, base, at.w, () => drawDepthSprite(img, at.x, at.y, at.w, at.h));
-      return at;
+      // Janelas, halos e etiquetas acompanham o novo tamanho da fachada.
+      return hd2d ? hd2dPerspectiveBounds(at, base, hd2dPerspectiveScale(base, H)) : at;
     };
     const lightUp = (id: string, key: string, at: { x: number; y: number; w: number; h: number }, transform?: (img: Rgba) => Rgba) => {
       // Janelas desenhadas depois não devem reaparecer sobre o treinador
@@ -1576,12 +1582,12 @@ export class VillageGame {
                 y: y + 1,
                 draw: () => {
                   shadow(sx(x + 0.5), sy(y + 1) - 1.5 * scale, 6 * scale, 2 * scale, 0.2);
-                  drawSwayed(img, sx(x), sy(y), T, T, sway(x, y, 0.04));
+                  drawSwayed(img, sx(x), sy(y + 1) - T, T, T, sway(x, y, 0.04));
                   // Frutinhas (Oran e Pecha) enquanto dá para colher hoje.
                   if (fruit) {
                     for (const [fx, fy, c] of [[4, 6, '#4a6ae8'], [9, 4, '#f28ab0'], [11, 9, '#4a6ae8'], [6, 11, '#f28ab0']] as const) {
                       ctx.fillStyle = c;
-                      ctx.fillRect(sx(x) + fx * scale, sy(y) + fy * scale, 2 * scale, 2 * scale);
+                      ctx.fillRect(sx(x) + fx * scale, sy(y + 1) - T + fy * scale, 2 * scale, 2 * scale);
                     }
                   }
                 },
@@ -1597,10 +1603,10 @@ export class VillageGame {
           const img = this.sprite(`tree${variant}`, () => paintTree(variant));
           list.push({
             y: y + 1,
-            bounds: { x: sx(x), y: sy(y - 1), w: T, h: 2 * T },
+            bounds: { x: sx(x), y: sy(y + 1) - 2 * T, w: T, h: 2 * T },
             draw: () => {
               shadow(sx(x + 0.5), sy(y + 1) - scale, 6 * scale, 2.2 * scale, 0.18);
-              drawSwayed(img, sx(x), sy(y - 1), T, 2 * T, sway(x, y, 0.028));
+              drawSwayed(img, sx(x), sy(y + 1) - 2 * T, T, 2 * T, sway(x, y, 0.028));
             },
           });
         } else if (t === 'rock') {
@@ -1872,7 +1878,7 @@ export class VillageGame {
           y: buildingGroundY(b),
           bounds: { x: cx0, y: spriteBase - ch, w: cw, h: ch },
           draw: () => {
-            drawDepthSprite(img, cx0, spriteBase - ch, cw, ch);
+            drawDioramaTilted(mid, spriteBase, cw, () => drawDepthSprite(img, cx0, spriteBase - ch, cw, ch));
             this.drawTag(mid, spriteBase - ch - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
         });
@@ -1891,7 +1897,7 @@ export class VillageGame {
           y: buildingGroundY(b),
           bounds: { x: dx0, y: spriteBase - dh, w: dw, h: dh },
           draw: () => {
-            drawDepthSprite(img, dx0, spriteBase - dh, dw, dh);
+            drawDioramaTilted(mid, spriteBase, dw, () => drawDepthSprite(img, dx0, spriteBase - dh, dw, dh));
             this.drawTag(mid, spriteBase - dh - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
         });
@@ -2149,8 +2155,9 @@ export class VillageGame {
     }
     list.sort((a, b) => a.y - b.y);
     const focusDepth = pp.y + 0.8;
-    const playerBounds = { x: sx(pp.x + 0.5) - 6 * scale, y: sy(pp.y + 1) - PLAYER_H * scale, w: 12 * scale, h: PLAYER_H * scale };
-    const blockers = hd2d ? new Set(list.filter((d) => d.bounds && hd2dOccludes(d.bounds, playerBounds, sy(d.y)))) : null;
+    const playerBase = sy(pp.y + 1);
+    const playerBounds = hd2dPerspectiveBounds({ x: sx(pp.x + 0.5) - 6 * scale, y: playerBase - PLAYER_H * scale, w: 12 * scale, h: PLAYER_H * scale }, playerBase, hd2d ? hd2dPerspectiveScale(playerBase, H) : 1);
+    const blockers = hd2d ? new Set(list.filter((d) => d.bounds && hd2dOccludes(hd2dPerspectiveBounds(d.bounds, sy(d.y), hd2dPerspectiveScale(sy(d.y), H)), playerBounds, sy(d.y)))) : null;
     const occlusionAlpha = hd2dOcclusionOpacity(blockers?.size ?? 0);
     for (const d of list) {
       depthBand = hd2d ? hd2dDepthBand(d.y, focusDepth) : 0;
