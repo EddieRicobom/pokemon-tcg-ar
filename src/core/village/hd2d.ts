@@ -9,7 +9,7 @@ export interface Hd2dDepthStyle {
  * Quanto o eixo do chão encolhe no modo 2D-HD (câmera quase deitada).
  * Prédios e personagens não usam esta escala: só a base onde se apoiam.
  */
-export const HD2D_GROUND_TILT = 0.42;
+export const HD2D_GROUND_TILT = 0.28;
 
 /** Conversão entre o eixo do mapa e o chão projetado na tela. */
 export function hd2dGroundProjection(y: number, tilt = HD2D_GROUND_TILT): { screenY: number; mapY: number } {

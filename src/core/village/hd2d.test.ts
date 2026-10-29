@@ -17,8 +17,8 @@ describe('acabamento 2D-HD da Vila', () => {
   it('inclina o chão e conserva o caminho inverso do toque até o mapa', () => {
     const projection = hd2dGroundProjection(100);
     expect(HD2D_GROUND_TILT).toBeLessThan(1);
-    expect(projection.screenY).toBe(42);
-    expect(projection.mapY).toBeCloseTo(238.0952, 3);
+    expect(projection.screenY).toBeCloseTo(28, 6);
+    expect(projection.mapY).toBeCloseTo(357.1429, 3);
     expect(hd2dGroundProjection(projection.screenY).mapY).toBeCloseTo(100, 6);
   });
 });
