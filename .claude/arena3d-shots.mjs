@@ -1,0 +1,30 @@
+// Arena 3D com moradores digitais semeados. uso: node .claude/arena3d-shots.mjs <prefixo> [porta] [m|d]
+import { chromium } from 'playwright';
+const [out, port = '5192', size = 'm'] = process.argv.slice(2);
+const base = `http://localhost:${port}/pokemon-tcg-ar/`;
+const b = await chromium.launch({ channel: 'msedge', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const ctx = await b.newContext({ viewport: size === 'm' ? { width: 375, height: 812 } : { width: 1280, height: 800 }, hasTouch: size === 'm' });
+const page = await ctx.newPage();
+page.on('pageerror', (e) => console.log('pageerror', e.message));
+page.on('console', (m) => { if (m.type() === 'error') console.log('console', m.text().slice(0, 200)); });
+await page.goto(`${base}#/treinador`);
+await page.evaluate(() => { localStorage.setItem('tcg-ar-onboarding-v1', '1'); const k = 'tcg-ar-trainer-v1'; const t = JSON.parse(localStorage.getItem(k) || '{}'); localStorage.setItem(k, JSON.stringify({ ...t, v: t.v ?? 1, xp: 400000 })); });
+await page.goto(`${base}?r=2#/vila`);
+await page.waitForTimeout(3500);
+await page.goto(`${base}?r=3#/treinador`);
+await page.waitForTimeout(800);
+await page.evaluate(() => {
+  const k = 'tcg-ar-vila-v1'; const v = JSON.parse(localStorage.getItem(k));
+  const mk = (i, dex, name) => ({ instanceId: `dp_t${i}_${dex}_${i}`, originCardId: 'base1-58', dexId: dex, name, isDigitalPokemon: true, source: 'fonte', grantedAt: `2026-10-16T10:0${i}:00.000Z`, stage: 0 });
+  v.digital = { ...v.digital, starterGiven: true, introSeen: true, instances: [mk(0, 25, 'Pikachu'), mk(1, 1, 'Bulbasaur'), mk(2, 4, 'Charmander'), mk(3, 7, 'Squirtle'), mk(4, 133, 'Eevee'), mk(5, 143, 'Snorlax')] };
+  localStorage.setItem(k, JSON.stringify(v));
+});
+await page.goto(`${base}?r=4#/caixa?arena=1&virtual=1`);
+await page.waitForTimeout(2500);
+await page.screenshot({ path: `${out}-0-pre.png`, fullPage: true });
+await page.getByRole('button', { name: /Entrar na Arena 3D/ }).click();
+await page.waitForTimeout(15000);
+await page.screenshot({ path: `${out}-1-dentro.png` });
+console.log((await page.locator('[role=toolbar] button').allTextContents()).join(' | '));
+await page.getByRole("button", { name: /Batalhar/ }).click(); await page.waitForTimeout(3000); await page.screenshot({ path: `${out}-2-inicio.png` }); await page.waitForTimeout(12000); await page.screenshot({ path: `${out}-3-meio.png` });
+await b.close();

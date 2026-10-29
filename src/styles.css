@@ -239,6 +239,18 @@ body {
   margin-top: 12px;
 }
 
+/* Ação principal e o caminho de volta empilhados, os dois com a largura toda. */
+.actions.stack {
+  display: grid;
+  gap: 8px;
+}
+
+.actions.stack > .button {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+}
+
 /* Ação única (ex.: "Abrir câmera"): ocupa a largura toda, fácil de tocar com o polegar. */
 .actions > button.primary:only-child {
   width: 100%;
@@ -986,6 +998,11 @@ body.no-scroll {
 
 .viewport .stage-bar > * {
   pointer-events: auto;
+}
+
+/* A ação que leva à batalha (ou a encerra) vem primeiro: no celular a barra rola e ela ficava fora da tela. */
+.viewport .stage-bar > .stage-primary {
+  order: -1;
 }
 
 /* Tudo que importa fica sobre a câmera: avisos no topo (.stage-head) e folhas + botões na base (.stage-foot). */

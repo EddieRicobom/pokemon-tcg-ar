@@ -17,6 +17,9 @@ const designs = computed(() => ALL_BADGE_DESIGNS.filter((d) => d.order >= region
 const emit = defineEmits<{ close: [] }>();
 
 const canvas = ref<HTMLCanvasElement | null>(null);
+const closeButton = ref<HTMLButtonElement | null>(null);
+/** Quem abriu a maleta volta a ter o foco ao fechá-la (teclado e leitores de tela). */
+const opener = typeof document === 'undefined' ? null : (document.activeElement as HTMLElement | null);
 const state = ref<'loading' | 'ready' | 'error'>('loading');
 const isOpen = ref(true);
 const focus = ref<number | null>(null);
@@ -77,6 +80,7 @@ watch(() => visual.sound, (on) => running?.setSound(on));
 
 onMounted(() => {
   document.body.classList.add('no-scroll');
+  closeButton.value?.focus();
   window.addEventListener('keydown', onKey);
   window.addEventListener('resize', onResize);
   void start();
@@ -89,6 +93,7 @@ onBeforeUnmount(() => {
   running?.stop();
   running = null;
   savePolishNow();
+  opener?.focus?.();
 });
 </script>
 
@@ -96,12 +101,12 @@ onBeforeUnmount(() => {
   <div class="badge-case-3d" role="dialog" aria-modal="true" aria-labelledby="case-title">
     <header class="bc-head">
       <h2 id="case-title">Maleta de {{ regionInfo.name }} <small>{{ won.length }} de 8</small></h2>
-      <button type="button" class="bc-close" aria-label="Fechar a maleta" @click="emit('close')">✕</button>
+      <button ref="closeButton" type="button" class="bc-close" aria-label="Fechar a maleta" @click="emit('close')">✕</button>
     </header>
     <div class="bc-stage">
       <canvas ref="canvas" class="bc-canvas" @pointerup="syncLid" aria-label="Maleta 3D com as insígnias conquistadas. Arraste para girar; esfregue uma insígnia para polir."></canvas>
-      <p v-if="state === 'loading'" class="bc-msg">Abrindo a maleta…</p>
-      <p v-else-if="state === 'error'" class="bc-msg">Não deu para mostrar a maleta 3D neste aparelho (o navegador não liberou o WebGL). As insígnias continuam na Liga.</p>
+      <p v-if="state === 'loading'" class="bc-msg" role="status">Abrindo a maleta…</p>
+      <p v-else-if="state === 'error'" class="bc-msg" role="alert">Não deu para mostrar a maleta 3D neste aparelho (o navegador não liberou o WebGL). As insígnias continuam na Liga.</p>
       <p v-if="focused" class="bc-focus" aria-live="polite">
         <strong>{{ focused.name }}</strong> · {{ focused.metal }} · {{ focused.label }} ({{ focused.pct }}%)
       </p>
