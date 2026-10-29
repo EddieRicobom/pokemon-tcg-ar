@@ -3,7 +3,7 @@ import { effectiveVisualSettings, normalizeVisual } from './visual-settings';
 
 describe('configurações visuais', () => {
   it('aceita só modos de suavização conhecidos', () => {
-    expect(normalizeVisual({ smoothing: 'macio' })).toMatchObject({ smoothing: 'macio', lighting: true, impactFx: true, terrain: true, social: true, weather: 'ciclo', scenery: true, sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, evolutionFx: true, frameRate: 'auto', rotomMode: false });
+    expect(normalizeVisual({ smoothing: 'macio' })).toMatchObject({ smoothing: 'macio', lighting: true, impactFx: true, terrain: true, social: true, weather: 'ciclo', scenery: true, sound: true, shadow: true, metallic: true, caseFx: true, villageFx: true, villageHd2d: false, evolutionFx: true, frameRate: 'auto', rotomMode: false });
     expect(normalizeVisual({ smoothing: 'xyz' as never })).toMatchObject({ smoothing: 'bordas', frameRate: 'auto', rotomMode: false });
     expect(normalizeVisual(null)).toMatchObject({ smoothing: 'bordas', frameRate: 'auto', rotomMode: false });
   });
@@ -74,8 +74,8 @@ describe('efeitos da Vila', () => {
     expect(normalizeVisual({}).villageFx).toBe(true);
     expect(normalizeVisual({ villageFx: false }).villageFx).toBe(false);
     // Halos noturnos e grama ao vento: ligados por padrão, desligáveis e desligados no modo Rotom.
-    expect(normalizeVisual({})).toMatchObject({ villageGlow: true, villageWind: true });
-    expect(normalizeVisual({ villageGlow: false, villageWind: false })).toMatchObject({ villageGlow: false, villageWind: false });
-    expect(effectiveVisualSettings({ ...normalizeVisual({}), rotomMode: true })).toMatchObject({ villageGlow: false, villageWind: false });
+    expect(normalizeVisual({})).toMatchObject({ villageGlow: true, villageWind: true, villageHd2d: false });
+    expect(normalizeVisual({ villageGlow: false, villageWind: false, villageHd2d: true })).toMatchObject({ villageGlow: false, villageWind: false, villageHd2d: true });
+    expect(effectiveVisualSettings({ ...normalizeVisual({ villageHd2d: true }), rotomMode: true })).toMatchObject({ villageGlow: false, villageWind: false, villageHd2d: false });
   });
 });

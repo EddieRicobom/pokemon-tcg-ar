@@ -63,6 +63,7 @@ import { VillaAtlas, windowGlow, windowRects } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintFountain, paintHome, paintLamp, paintLot, paintMuseum } from './town-art';
 import { COLISEU_GLOWS, paintColiseu } from './coliseu-art';
+import { hd2dDepthStyle } from '../core/village/hd2d';
 
 /**
  * O jogo da Vila no navegador: canvas 2D em escala inteira (pixels nítidos), câmera que segue você, profundidade por
@@ -187,6 +188,8 @@ export class VillageGame {
   glowFx: () => boolean = () => true;
   /** Mato alto e flores balançando ao vento (opção «Mato alto e flores balançando»). */
   windFx: () => boolean = () => true;
+  /** Profundidade de campo por objeto, no estilo 2D-HD; o Modo Rotom a suspende. */
+  hd2d: () => boolean = () => false;
   maxFps: () => number = () => 0;
   private readonly reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   weatherMode: () => WeatherMode = () => 'ciclo';
@@ -207,6 +210,10 @@ export class VillageGame {
    */
   private renderFps(): number {
     const configured = this.maxFps();
+    // O desfoque por objeto pede superfícies intermediárias no canvas. Em
+    // automático, 30 FPS preserva a leitura 2D-HD sem virar custo de 60 FPS;
+    // uma escolha explícita de 30 ou 20 continua tendo prioridade.
+    if (this.hd2d() && !this.reducedMotion?.matches && (!Number.isFinite(configured) || configured <= 0)) return 30;
     return this.diorama && (!Number.isFinite(configured) || configured <= 0) ? 30 : configured;
   }
 
@@ -2091,7 +2098,24 @@ export class VillageGame {
       }
     }
     list.sort((a, b) => a.y - b.y);
-    for (const d of list) d.draw();
+    const hd2d = this.hd2d() && !this.reducedMotion?.matches;
+    const focusDepth = pp.y + 0.8;
+    for (const d of list) {
+      if (!hd2d) {
+        d.draw();
+        continue;
+      }
+      // A profundidade é calculada por item (prédio, árvore, morador), em vez
+      // de desfocar uma foto pronta da Vila inteira.
+      const style = hd2dDepthStyle(d.y, focusDepth);
+      ctx.save();
+      // Filtros em canvas criam uma superfície extra: não peça uma para uma
+      // diferença imperceptível de foco em cada árvore ou enfeite.
+      if (style.blurPx >= 0.25) ctx.filter = `blur(${style.blurPx.toFixed(2)}px) brightness(${style.brightness.toFixed(3)})`;
+      ctx.globalAlpha = style.opacity;
+      d.draw();
+      ctx.restore();
+    }
     for (const fx of towerFx) fx();
 
     // Partículas do mundo (poeira, folhas, fumaça, puf) e borboletas.
@@ -2277,6 +2301,17 @@ export class VillageGame {
       ctx.fillRect(0, 0, W, H);
     }
 
+    if (hd2d) {
+      // Vinheta seletiva: dá volume à cena sem ocultar informação ou aplicar
+      // um filtro caro no canvas inteiro. O centro acompanha o treinador.
+      const focusY = sy(focusDepth);
+      const lens = ctx.createRadialGradient(W / 2, focusY, Math.min(W, H) * 0.16, W / 2, focusY, Math.max(W, H) * 0.72);
+      lens.addColorStop(0, 'rgba(22,32,54,0)');
+      lens.addColorStop(0.7, 'rgba(22,32,54,0.018)');
+      lens.addColorStop(1, 'rgba(12,18,34,0.13)');
+      ctx.fillStyle = lens;
+      ctx.fillRect(0, 0, W, H);
+    }
     for (const o of overlays) o();
   }
 

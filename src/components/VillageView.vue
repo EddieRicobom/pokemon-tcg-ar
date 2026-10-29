@@ -174,6 +174,9 @@ const arScale = ref(villageArSettings.scale);
 let arStream: MediaStream | null = null;
 let villageAr: RunningVillageAr | null = null;
 const arLook = ref<{ pointerId: number; x: number; y: number; moved: boolean } | null>(null);
+const reducedMotion = ref(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
+const reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+const syncReducedMotion = (event: MediaQueryListEvent) => { reducedMotion.value = event.matches; };
 
 function placeVillageAr(): void {
   const result = villageAr?.recenter();
@@ -2997,6 +3000,7 @@ onBeforeUnmount(() => {
 });
 
 onMounted(async () => {
+  reducedMotionQuery?.addEventListener('change', syncReducedMotion);
   document.addEventListener('focusin', rememberVillageActionFocus);
   window.addEventListener('popstate', onTowerHistoryBack);
   // Baixa o treinador enquanto cache e moradores são preparados, sem somar até 8 s à abertura.
@@ -3073,6 +3077,7 @@ onMounted(async () => {
   game.ambientFx = () => effectiveVisual.value.villageFx;
   game.glowFx = () => effectiveVisual.value.villageGlow;
   game.windFx = () => effectiveVisual.value.villageWind;
+  game.hd2d = () => effectiveVisual.value.villageHd2d;
   game.nocturnal = (id) => types.get(id)?.includes('dark') === true;
   game.maxFps = () => effectiveVisual.value.frameRate === 'auto' ? 0 : Number(effectiveVisual.value.frameRate);
   // Presente recebido enquanto a cena abria: entra agora, ao lado do jogador.
@@ -3129,6 +3134,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  reducedMotionQuery?.removeEventListener('change', syncReducedMotion);
   document.removeEventListener('focusin', rememberVillageActionFocus);
   legendaryLoadToken++;
   cancelFarm();
@@ -3730,6 +3736,12 @@ onBeforeUnmount(() => {
             <input v-model="visual.villageWind" type="checkbox" />
             <span>Mato alto e flores balançando ao vento na Vila (desligue em celular fraco)</span>
           </label>
+          <label class="art-option">
+            <input v-model="visual.villageHd2d" type="checkbox" :disabled="visual.rotomMode" />
+            <span>Profundidade 2D-HD na Vila: foco seletivo por prédio, árvore e personagem (desligue em celular fraco)</span>
+          </label>
+          <p v-if="visual.rotomMode" class="hint">A profundidade 2D-HD fica suspensa pelo Modo Rotom e volta à sua escolha ao desligá-lo.</p>
+          <p v-else-if="reducedMotion" class="hint">A preferência do sistema «Reduzir movimento» suspende a profundidade 2D-HD para diminuir estímulos visuais.</p>
           <button type="button" @click="openDress('player')">Escolher acessório</button>
           <h4>Amigos e pedidos de hoje</h4>
           <ul class="village-list">
