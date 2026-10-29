@@ -1055,7 +1055,10 @@ const TAP_MS = 320;
 const TAP_PX = 10;
 function applyStick(x: number, y: number): void {
   if (legendaryScene.value) { game?.holdStick(null); return; }
-  if (x !== 0 || y !== 0) tapInteraction = null;
+  if (x !== 0 || y !== 0) {
+    tapInteraction = null;
+    game?.setInteractionMarker(null);
+  }
   const dirs = stickDirs(x, y);
   game?.holdStick(dirs.primary ? dirs : null);
 }
@@ -1081,9 +1084,17 @@ function joyUp(e: PointerEvent): void {
   Object.assign(joy, { active: false, pointerId: -1, x: 0, y: 0, moved: false });
   applyKeys();
   if (tap && game) {
+    const speaker = game.walkToBubbleAtScreen(e.clientX, e.clientY);
+    if (speaker) {
+      tapInteraction = null;
+      game.setInteractionMarker(null);
+      say(`🚶 Caminhando até ${nameOf(speaker)}…`, 1500);
+      return;
+    }
     const t = game.tileAtScreen(e.clientX, e.clientY);
     if (t) {
       tapInteraction = game.interactableAt(t.x, t.y) ? t : null;
+      game.setInteractionMarker(tapInteraction);
       game.walkTo(t.x, t.y);
     }
   }
@@ -1297,14 +1308,15 @@ watch(quizOpen, (next, previous) => {
     void nextTick(() => (target?.isConnected ? target : wrapEl.value)?.focus());
   }
 });
-/** Um Pokémon que quer te perguntar algo (o ❗ sobre ele); some sozinho depois de um tempo. */
-let askingMon: { id: string; until: number } | null = null;
+/** Um Pokémon que quer te perguntar algo; o ❗ fica no balão e a pergunta só abre quando você chega. */
+let askingMon: { id: string; until: number; question: Question } | null = null;
 let nextAskAt = Date.now() + 60000 + Math.random() * 60000;
 let nextEchoAt = Date.now() + 40000 + Math.random() * 40000;
 
 function tickQuestions(): void {
   const now = Date.now();
   if (askingMon && now > askingMon.until) {
+    game?.clearBubble(askingMon.id);
     askingMon = null;
     game?.setWaiting(null);
   }
@@ -1315,10 +1327,13 @@ function tickQuestions(): void {
     const near = actorList().filter((a) => game!.playerNear([a.id], 10) && !game!.sceneBusy(a.id) && canAsk(state, a.id, today));
     const who = near[Math.floor(Math.random() * near.length)];
     if (who) {
-      askingMon = { id: who.id, until: now + 40000 };
+      const question = pickQuestion(state, Math.random);
+      askingMon = { id: who.id, until: now + 40000, question };
       game.setWaiting(who.id);
       game.pop(who.id, '❗');
       game.faceMe(who.id);
+      // É um convite pendente, não a pergunta já aberta: mostra somente o ❗ até você chegar.
+      game.clearBubble(who.id);
       game.bubble(who.id, '❗', 40000);
     }
     return;
@@ -1335,7 +1350,8 @@ function tickQuestions(): void {
 
 function openQuiz(id: string): void {
   const today = refreshDay();
-  const q = pickQuestion(state, Math.random);
+  const q = askingMon?.id === id ? askingMon.question : pickQuestion(state, Math.random);
+  game?.clearBubble(id);
   askingMon = null;
   game?.setWaiting(null);
   markAsked(state, id, today);
@@ -1851,8 +1867,13 @@ function checkTapInteraction(): void {
   const distance = Math.abs(game.player.x - target.x) + Math.abs(game.player.y - target.y);
   if (distance <= 1) {
     tapInteraction = null;
+    game.setInteractionMarker(null);
     game.facePoint(target.x, target.y);
     pressA();
+  } else {
+    // O caminho ficou inacessível (por exemplo, outro morador parou na passagem).
+    tapInteraction = null;
+    game.setInteractionMarker(null);
   }
 }
 
@@ -1873,10 +1894,12 @@ function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.se
 function closeVillageSheet(): void {
   sheet.value = null;
   bookDialogId.value = null;
+  if (askingMon) game?.clearBubble(askingMon.id);
   askingMon = null;
   heldKeys.clear();
   dpadPointers.clear();
   tapInteraction = null;
+  game?.setInteractionMarker(null);
   game?.setWaiting(null);
   game?.holdStick(null);
 }
@@ -2370,9 +2393,11 @@ function openMenu(): void {
   if (recapScenes.value.length || cutsceneOpen.value || loading.value || game?.sceneActive) return;
   welcome.value = false;
   updateWorldProgress();
+  if (askingMon) game?.clearBubble(askingMon.id);
   askingMon = null;
   dpadPointers.clear();
   tapInteraction = null;
+  game?.setInteractionMarker(null);
   game?.setWaiting(null);
   game?.holdStick(null);
   tab.value = 'inicio';
