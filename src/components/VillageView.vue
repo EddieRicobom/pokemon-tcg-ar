@@ -1050,7 +1050,7 @@ const JOY_MAX = 44;
  * Um toque rápido, sem arrastar, leva você andando até aquele lugar (`game.walkTo`).
  */
 const joy = reactive({ active: false, pointerId: -1, cx: 0, cy: 0, x: 0, y: 0, lx: 0, ly: 0, downAt: 0, moved: false });
-let tapInteraction: { x: number; y: number } | null = null;
+let tapInteraction: ({ kind: 'point'; x: number; y: number } | { kind: 'mon'; id: string }) | null = null;
 const TAP_MS = 320;
 const TAP_PX = 10;
 function applyStick(x: number, y: number): void {
@@ -1091,10 +1091,17 @@ function joyUp(e: PointerEvent): void {
       say(`🚶 Caminhando até ${nameOf(speaker)}…`, 1500);
       return;
     }
+    const object = game.interactionAtScreen(e.clientX, e.clientY);
+    if (object) {
+      tapInteraction = object.id ? { kind: 'mon', id: object.id } : { kind: 'point', x: object.x, y: object.y };
+      game.setInteractionMarker({ x: object.x, y: object.y });
+      game.walkTo(object.x, object.y);
+      return;
+    }
     const t = game.tileAtScreen(e.clientX, e.clientY);
     if (t) {
-      tapInteraction = game.interactableAt(t.x, t.y) ? t : null;
-      game.setInteractionMarker(tapInteraction);
+      tapInteraction = game.interactableAt(t.x, t.y) ? { kind: 'point', ...t } : null;
+      game.setInteractionMarker(tapInteraction?.kind === 'point' ? tapInteraction : null);
       game.walkTo(t.x, t.y);
     }
   }
@@ -1863,13 +1870,25 @@ function checkGuidedTrip(): void {
 
 function checkTapInteraction(): void {
   const target = tapInteraction;
-  if (!target || !game || game.walking) return;
-  const distance = Math.abs(game.player.x - target.x) + Math.abs(game.player.y - target.y);
+  if (!target || !game) return;
+  const point = target.kind === 'mon' ? game.residentPosition(target.id) : target;
+  if (!point) {
+    tapInteraction = null;
+    game.setInteractionMarker(null);
+    return;
+  }
+  const distance = Math.abs(game.player.x - point.x) + Math.abs(game.player.y - point.y);
   if (distance <= 1) {
     tapInteraction = null;
     game.setInteractionMarker(null);
-    game.facePoint(target.x, target.y);
+    game.facePoint(point.x, point.y);
     pressA();
+  } else if (target.kind === 'mon') {
+    // O Pokémon pode continuar passeando: atualiza o destino a cada passo até alcançar o vizinho atual.
+    game.setInteractionMarker(point);
+    game.walkTo(point.x, point.y);
+  } else if (game.walking) {
+    return;
   } else {
     // O caminho ficou inacessível (por exemplo, outro morador parou na passagem).
     tapInteraction = null;
