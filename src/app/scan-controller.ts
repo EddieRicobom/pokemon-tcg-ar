@@ -4,6 +4,7 @@ import type { CachedCard } from '../cache/types';
 import type { CardDetection } from '../recognition/detect-card';
 import type { CardFeatures } from '../recognition/hash';
 import { SAME_CARD_SIMILARITY } from '../recognition/snapshot';
+import { BestFrameCapture } from '../recognition/best-frame';
 import type { CardRecordLike, IdentifiedCard, RecognitionMetrics, RecognitionResult, RecognizeOptions } from '../recognition/pipeline';
 import { qualityWarning, StabilityTracker } from '../recognition/stability';
 import type { FrameQuality, StabilityState } from '../recognition/stability';
@@ -111,6 +112,8 @@ export interface ScanDeps {
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+/** Depois de congelar uma boa foto, toleramos poucos quadros desfocados antes de concluir que a carta mudou. */
+const PHOTO_UNCERTAIN_FRAME_LIMIT = 3;
 
 /**
  * Opções de escolha de uma leitura ambígua: TODAS as candidatas comparadas, na ordem do ranking, cada uma com a
@@ -140,8 +143,12 @@ export class ScanController {
   private lastAmbiguous: RecognitionResult | null = null;
   private readonly temporal: TemporalAggregator;
   private readonly stability = new StabilityTracker();
+  /** A melhor foto nítida da curta janela de estabilização, antes de gastar OCR. */
+  private readonly bestFrame = new BestFrameCapture();
   /** Leitura guardada junto com a foto temporária (a que vai ser confirmada ou oferecida para escolha). */
   private photoResult: RecognitionResult | null = null;
+  /** Autofoco pode borrar um ou dois quadros logo depois da captura; isso não deve reiniciar a leitura boa. */
+  private photoUncertainFrames = 0;
 
   constructor(private readonly deps: ScanDeps) {
     this.temporal = deps.temporal ?? new TemporalAggregator();
@@ -165,7 +172,9 @@ export class ScanController {
     this.lastValidResult = undefined;
     this.noCardStreak = 0;
     this.stability.reset();
+    this.bestFrame.clear();
     this.photoResult = null;
+    this.photoUncertainFrames = 0;
     this.running = true;
     const id = ++this.runId;
     this.state = { phase: 'scanning', message: 'Procurando a carta…', frames: 0, timeline: { startedAt: this.now() }, photo: undefined };
@@ -177,11 +186,14 @@ export class ScanController {
     this.running = false;
     this.runId++;
     this.photoResult = null;
+    this.photoUncertainFrames = 0;
+    this.bestFrame.clear();
   }
 
   /** Descarta a foto temporária (a carta mudou): a próxima leitura volta a usar o OCR. */
   private dropPhoto(): void {
     this.photoResult = null;
+    this.photoUncertainFrames = 0;
     this.temporal.reset();
     this.ambiguousStreak = 0;
     this.set({ photo: undefined });
@@ -248,6 +260,7 @@ export class ScanController {
       }
       // Detecção leve em todo quadro; o OCR (caro) só com a carta parada.
       let detection: CardDetection | undefined;
+      let recognitionFrame = frame;
       let gateTimes: { capture: number; detect: number; stability: number } | undefined;
       if (this.deps.locate) {
         const tDetect = this.now();
@@ -257,23 +270,33 @@ export class ScanController {
         const stability = this.stability.push(located.detection?.quad ?? null);
         const stabilityMs = this.now() - tStable;
         gateTimes = { capture: captureMs, detect: detectMs, stability: stabilityMs };
+        if (!located.detection) this.bestFrame.clear();
+        // Um deslocamento real da carta invalida a foto da janela anterior; oscilações pequenas de autofoco não.
+        else if (stability.motion !== null && stability.motion > 0.04) this.bestFrame.clear();
+        if (located.detection && located.quality) {
+          this.bestFrame.consider({ frame, quality: located.quality, detection: located.detection, at: this.now() });
+        }
         if (!located.detection || stability.kind !== 'stable') {
           this.gatedAttempt(frame, this.state.frames + 1, located, stability, gateTimes);
           const spent = Date.now() - started;
           if (spent < interval) await sleep(interval - spent);
           continue;
         }
-        detection = located.detection;
+        const best = this.bestFrame.take(this.now());
+        recognitionFrame = best?.frame ?? frame;
+        detection = best?.detection ?? located.detection;
         this.set({ stability, qualityHint: located.quality ? qualityWarning(located.quality) : null });
         // Foto temporária: em vez de ler de novo, confere se é a mesma carta da foto (barato) e confirma.
         const photo = this.photoResult;
         if (photo?.features && this.deps.sameCard && this.state.photo) {
           const tCompare = this.now();
-          const score = this.deps.sameCard(photo.features, frame, detection.quad);
+          // A confirmação usa o contorno do quadro atual. `detection` pode apontar para a foto mais nítida
+          // escolhida para o OCR e não deve ser misturada com pixels de um quadro posterior.
+          const score = this.deps.sameCard(photo.features, frame, located.detection.quad);
           const compareMs = Math.round((this.now() - tCompare) * 10) / 10;
           const frames = this.state.frames + 1;
           const last: LastAttempt = {
-            status: photo.status, message: '', confidence: photo.confidence, quad: detection.quad, frameSize: { width: frame.width, height: frame.height },
+            status: photo.status, message: '', confidence: photo.confidence, quad: located.detection.quad, frameSize: { width: frame.width, height: frame.height },
             metrics: {
               ...photo.metrics, totalMs: Math.round(captureMs + gateTimes.detect + gateTimes.stability + compareMs),
               stages: { capture: captureMs, detect: gateTimes.detect, stability: gateTimes.stability, temporal: compareMs },
@@ -282,6 +305,7 @@ export class ScanController {
             gated: true,
           };
           if (score >= SAME_CARD_SIMILARITY) {
+            this.photoUncertainFrames = 0;
             const matches = this.state.photo.matches + 1;
             last.message = `Mesma carta da foto (${Math.round(score * 100)}% parecida).`;
             this.deps.onAttempt?.(last);
@@ -309,6 +333,19 @@ export class ScanController {
             if (spent < interval) await sleep(interval - spent);
             continue;
           }
+          // Durante o autofoco a detecção ainda pode achar a carta, mas a comparação cai por poucos quadros.
+          // Mantemos a foto boa por uma janela curta se a própria heurística acusa foco/luz ruins; assim o OCR já
+          // concluído não é descartado por um tremor da câmera no meio da confirmação.
+          const focusWarning = located.quality ? qualityWarning(located.quality) : null;
+          if (focusWarning && this.photoUncertainFrames < PHOTO_UNCERTAIN_FRAME_LIMIT) {
+            this.photoUncertainFrames++;
+            last.message = `Foto preservada enquanto o foco estabiliza (${this.photoUncertainFrames}/${PHOTO_UNCERTAIN_FRAME_LIMIT}).`;
+            this.deps.onAttempt?.(last);
+            this.set({ frames, last, stage: 'temporal', message: `${focusWarning} Mantendo a foto nítida já capturada…` });
+            const spent = Date.now() - started;
+            if (spent < interval) await sleep(interval - spent);
+            continue;
+          }
           // Outra carta (ou outro ângulo demais): a foto não vale mais, volta a ler.
           last.message = `A carta mudou (${Math.round(score * 100)}% parecida com a foto): lendo de novo.`;
           this.deps.onAttempt?.(last);
@@ -318,7 +355,7 @@ export class ScanController {
       }
       let result: RecognitionResult;
       try {
-        result = await this.deps.recognize(frame, {
+        result = await this.deps.recognize(recognitionFrame, {
           detection,
           isCurrent: () => this.running && id === this.runId,
           onStage: (stage) => {
@@ -375,7 +412,7 @@ export class ScanController {
         quad: result.quad,
         view: result.view,
         reused,
-        frameSize: { width: frame.width, height: frame.height },
+        frameSize: { width: recognitionFrame.width, height: recognitionFrame.height },
       };
       if (!reused) this.deps.onAttempt?.(last);
 
@@ -393,7 +430,7 @@ export class ScanController {
         this.lastAmbiguous = result.status === 'ambiguous' ? result : this.lastAmbiguous;
         this.set({
           frames, last, timeline, stage: 'temporal',
-          photo: { frame, cardName: result.card.name, matches: 0, need: this.deps.photoMatches ?? 1 },
+          photo: { frame: recognitionFrame, cardName: result.card.name, matches: 0, need: this.deps.photoMatches ?? 1 },
           message: `📸 Foto tirada: ${result.card.name}. Segure a carta mais um instante para confirmar…`,
         });
       } else if (result.status === 'identified') {
