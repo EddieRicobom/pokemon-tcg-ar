@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyVillage, normalizeVillage } from './life';
-import { emptyMail, generateDailyMail, mailFromMoment, markMailRead, queueMomentMail, respondToMail } from './mail';
+import { emptyMail, generateDailyMail, mailFromMoment, markAllMailRead, markMailRead, queueMomentMail, respondToMail } from './mail';
 import type { Moment } from './social-state';
 
 const moment: Moment = {
@@ -37,6 +37,16 @@ describe('Correio ligado aos momentos', () => {
     expect(markMailRead(state.mail, generated!.id)).toBe(true);
     expect(state.mail.inbox[0]?.read).toBe(true);
     expect(generateDailyMail(state, '2026-10-22', { a: 'Pikachu' })).toBeNull();
+  });
+
+  it('marca todas as cartas pendentes sem arquivá-las nem mexer nas que já estavam lidas', () => {
+    const state = emptyVillage(1, { x: 2, y: 2 });
+    queueMomentMail(state.mail, moment);
+    state.mail.inbox.push({ ...mailFromMoment({ ...moment, id: 'momento-2' })!, id: 'carta-momento-2', read: true });
+    expect(markAllMailRead(state.mail)).toBe(1);
+    expect(state.mail.inbox).toHaveLength(2);
+    expect(state.mail.inbox.every((mail) => mail.read)).toBe(true);
+    expect(markAllMailRead(state.mail)).toBe(0);
   });
 
   it('migra save antigo sem apagar progressão e cria a caixa nova vazia', () => {

@@ -5363,6 +5363,29 @@ body.no-scroll .reward-toasts {
   box-shadow: inset 3px 0 #e4aa3f;
 }
 
+.mail-inbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mail-inbox-head h4 { margin: 0; }
+
+.mail-inbox-head button {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid #9ab2d3;
+  background: #f7fbff;
+  color: #38516f;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.mail-inbox-head button:disabled { opacity: 0.48; }
+
 .mail-card-head {
   display: flex;
   justify-content: space-between;

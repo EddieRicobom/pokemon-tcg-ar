@@ -116,7 +116,7 @@ import { loadCardCompanionEntry } from '../app/companion-creatures';
 import { companionCard } from '../app/card-evolution-store';
 import type { CachedCard } from '../cache/types';
 import QuizDialog from './QuizDialog.vue';
-import { generateDailyMail, mailActionLabel, mailKindLabel, markMailRead, queueMomentMail, respondToMail } from '../core/village/mail';
+import { generateDailyMail, mailActionLabel, mailKindLabel, markAllMailRead, markMailRead, queueMomentMail, respondToMail } from '../core/village/mail';
 import type { MailAction } from '../core/village/mail';
 import { browseItems } from '../core/village/item-browser';
 import type { ItemBrowserSort } from '../core/village/item-browser';
@@ -1489,6 +1489,11 @@ function openMail(): void {
 
 function readMail(id: string): void {
   if (markMailRead(state.mail, id)) changed();
+}
+
+function readAllMail(): void {
+  const marked = markAllMailRead(state.mail);
+  if (marked > 0) changed();
 }
 
 function answerMail(id: string, action: MailAction): void {
@@ -3607,7 +3612,7 @@ onBeforeUnmount(() => {
         <div v-else-if="tab === 'correio'" class="diary village-mail-panel">
           <p class="hint">Cartas ligadas a momentos que realmente aconteceram. Os nomes abaixo são os Pokémon envolvidos no Diário; responder pode criar um novo compromisso social.</p>
           <section aria-labelledby="mail-inbox-title">
-            <h4 id="mail-inbox-title">📬 Caixa de entrada <small v-if="mailUnread">· {{ mailUnread }} nova(s)</small></h4>
+            <div class="mail-inbox-head"><h4 id="mail-inbox-title">📬 Caixa de entrada <small v-if="mailUnread">· {{ mailUnread }} nova(s)</small></h4><button type="button" :disabled="mailUnread === 0" @click="readAllMail">Marcar todas como lidas</button></div>
             <ul v-if="state.mail.inbox.length" class="village-list mail-list">
               <li v-for="mail in state.mail.inbox.slice().reverse()" :key="mail.id" class="mail-card" :class="{ unread: !mail.read }">
                 <div class="mail-card-head"><span>{{ mailKindLabel[mail.kind] }} · {{ mail.day }}</span><b v-if="!mail.read">NOVA</b></div>
