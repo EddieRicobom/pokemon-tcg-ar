@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { hd2dDepthBand } from './hd2d';
 import { HD2D_AUTO_FPS, HD2D_GROUND_TILT, HD2D_MAX_DPR, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, hd2dOccludes, hd2dOcclusionOpacity, hd2dPixelRatio } from './hd2d';
 
 describe('acabamento 2D-HD da Vila', () => {
+  it('preserva o foco e limita o acabamento a duas variantes distantes', () => {
+    expect(hd2dDepthBand(12, 12)).toBe(0);
+    expect(hd2dDepthBand(18, 12)).toBe(0);
+    expect(hd2dDepthBand(20, 12)).toBe(1);
+    expect(hd2dDepthBand(4, 12)).toBe(1);
+    expect(hd2dDepthBand(40, 12)).toBe(2);
+  });
   it('mantém o objeto no plano de foco nítido e iluminado', () => {
     expect(hd2dDepthStyle(12, 12)).toEqual({ opacity: 1 });
   });

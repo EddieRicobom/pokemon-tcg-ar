@@ -65,6 +65,8 @@ import { HOME_LANTERN, HOME_WINDOWS, paintFountain, paintHome, paintLamp, paintL
 import { COLISEU_GLOWS, paintColiseu } from './coliseu-art';
 import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, hd2dOccludes, hd2dOcclusionOpacity, hd2dPixelRatio } from '../core/village/hd2d';
 import type { Hd2dBounds } from '../core/village/hd2d';
+import { hd2dDepthBand } from '../core/village/hd2d';
+import { DepthSpriteCache } from './depth-sprite-cache';
 
 /**
  * O jogo da Vila no navegador: canvas 2D em escala inteira (pixels nítidos), câmera que segue você, profundidade por
@@ -86,6 +88,7 @@ export class VillageGame {
   private trainerAvatar: HTMLCanvasElement | null = null;
   private trainerAtlas: TrainerAtlas | null = null;
   private readonly sprites = new Map<string, HTMLCanvasElement>();
+  private readonly depthSprites = new DepthSpriteCache();
   private readonly mountainTiles = new Map<string, HTMLCanvasElement>();
   /** O chão foi montado sem o mato alto e as flores, que balançam ao vento por cima (opção «Mato alto e flores»). */
   private groundWind = false;
@@ -1464,6 +1467,10 @@ export class VillageGame {
     /** Os olhos da Estátua do Mew: um brilho rosado bem fraco à noite (só enfeite). */
     const shrineGlows: { x: number; y: number; w: number; h: number }[] = [];
     const atlas = this.atlas;
+    let depthBand: 0 | 1 | 2 = 0;
+    const drawDepthSprite = (img: HTMLCanvasElement, x: number, y: number, w: number, h: number) => {
+      this.depthSprites.draw(ctx, img, x, y, w, h, depthBand);
+    };
     /** Sprites ficam em pé; a perspectiva 2.5D pertence à base 3D do AR. */
     const drawDioramaTilted = (cx: number, base: number, width: number, paint: () => void): void => {
       // Mantém a assinatura enquanto os chamadores continuam organizando
@@ -1496,7 +1503,7 @@ export class VillageGame {
     };
     const stand = (img: HTMLCanvasElement, cx: number, base: number, maxWidth = Infinity) => {
       const at = standBounds(img, cx, base, maxWidth);
-      drawDioramaTilted(cx, base, at.w, () => ctx.drawImage(img, at.x, at.y, at.w, at.h));
+      drawDioramaTilted(cx, base, at.w, () => drawDepthSprite(img, at.x, at.y, at.w, at.h));
       return at;
     };
     const lightUp = (id: string, key: string, at: { x: number; y: number; w: number; h: number }, transform?: (img: Rgba) => Rgba) => {
@@ -1520,7 +1527,7 @@ export class VillageGame {
         ctx.save();
         ctx.translate(dx + w / 2, dy + h);
         ctx.transform(1, 0, k, 1, 0, 0);
-        ctx.drawImage(img, -w / 2, -h, w, h);
+        drawDepthSprite(img, -w / 2, -h, w, h);
         ctx.restore();
       });
     };
@@ -1698,7 +1705,7 @@ export class VillageGame {
         y: buildingGroundY(plot),
         bounds: { x: sx(plot.x), y: homeBase - 4 * T, w: 4 * T, h: 4 * T },
         draw: () => {
-          drawDioramaTilted(sx(plot.x) + 2 * T, homeBase, 4 * T, () => ctx.drawImage(img, sx(plot.x), homeBase - 4 * T, 4 * T, 4 * T));
+          drawDioramaTilted(sx(plot.x) + 2 * T, homeBase, 4 * T, () => drawDepthSprite(img, sx(plot.x), homeBase - 4 * T, 4 * T, 4 * T));
         },
       });
     }
@@ -1722,7 +1729,7 @@ export class VillageGame {
       y: shopBaseY,
       bounds: { x: sx(shop.x), y: sy(shopBaseY) - 3 * T, w: 3 * T, h: 3 * T },
       draw: () => {
-        drawDioramaTilted(sx(shop.x + 1.5), sy(shopBaseY), 3 * T, () => ctx.drawImage(shopImg, sx(shop.x), sy(shopBaseY) - 3 * T, 3 * T, 3 * T));
+        drawDioramaTilted(sx(shop.x + 1.5), sy(shopBaseY), 3 * T, () => drawDepthSprite(shopImg, sx(shop.x), sy(shopBaseY) - 3 * T, 3 * T, 3 * T));
         this.drawTag(sx(shop.x + 1.5), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
       },
     });
@@ -1837,7 +1844,7 @@ export class VillageGame {
             y: buildingGroundY(b),
           bounds: { x: left, y: spriteBase - 48 * scale, w: 3 * T, h: 3 * T },
           draw: () => {
-            drawDioramaTilted(mid, spriteBase, 3 * T, () => ctx.drawImage(img, left, spriteBase - 48 * scale, 3 * T, 3 * T));
+            drawDioramaTilted(mid, spriteBase, 3 * T, () => drawDepthSprite(img, left, spriteBase - 48 * scale, 3 * T, 3 * T));
             if (sleeping) this.drawTag(mid, spriteBase - 38 * scale + Math.sin(now / 600) * scale, '💤');
             const tag = this.houseTags.get(lot);
             if (tag && now > tag.until) this.houseTags.delete(lot);
@@ -1865,7 +1872,7 @@ export class VillageGame {
           y: buildingGroundY(b),
           bounds: { x: cx0, y: spriteBase - ch, w: cw, h: ch },
           draw: () => {
-            ctx.drawImage(img, cx0, spriteBase - ch, cw, ch);
+            drawDepthSprite(img, cx0, spriteBase - ch, cw, ch);
             this.drawTag(mid, spriteBase - ch - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
         });
@@ -1884,7 +1891,7 @@ export class VillageGame {
           y: buildingGroundY(b),
           bounds: { x: dx0, y: spriteBase - dh, w: dw, h: dh },
           draw: () => {
-            ctx.drawImage(img, dx0, spriteBase - dh, dw, dh);
+            drawDepthSprite(img, dx0, spriteBase - dh, dw, dh);
             this.drawTag(mid, spriteBase - dh - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
         });
@@ -1913,7 +1920,7 @@ export class VillageGame {
         y: buildingGroundY(b),
         bounds: { x: left, y: spriteBase - 48 * scale, w: wpx, h: 3 * T },
         draw: () => {
-          drawDioramaTilted(mid, spriteBase, wpx, () => ctx.drawImage(img, left, spriteBase - 48 * scale, wpx, 3 * T));
+          drawDioramaTilted(mid, spriteBase, wpx, () => drawDepthSprite(img, left, spriteBase - 48 * scale, wpx, 3 * T));
           this.drawTag(mid, spriteBase - 50 * scale + Math.sin(now / 350) * scale, emoji);
         },
       });
@@ -2146,6 +2153,7 @@ export class VillageGame {
     const blockers = hd2d ? new Set(list.filter((d) => d.bounds && hd2dOccludes(d.bounds, playerBounds, sy(d.y)))) : null;
     const occlusionAlpha = hd2dOcclusionOpacity(blockers?.size ?? 0);
     for (const d of list) {
+      depthBand = hd2d ? hd2dDepthBand(d.y, focusDepth) : 0;
       if (!hd2d) {
         d.draw();
         continue;
@@ -2160,6 +2168,7 @@ export class VillageGame {
         ctx.globalAlpha = previousAlpha;
       } else d.draw();
     }
+    depthBand = 0;
     for (const fx of towerFx) fx();
 
     // Partículas do mundo (poeira, folhas, fumaça, puf) e borboletas.

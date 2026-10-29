@@ -3,6 +3,12 @@ export interface Hd2dDepthStyle {
   opacity: number;
 }
 
+/** Três planos de acabamento compartilhados pelos sprites, sem filtro contínuo. */
+export function hd2dDepthBand(depth: number, focus: number): 0 | 1 | 2 {
+  const distance = Math.abs(depth - focus);
+  return distance < 7 ? 0 : distance < 12 ? 1 : 2;
+}
+
 export interface Hd2dBounds { x: number; y: number; w: number; h: number }
 
 /** Só fachadas à frente que cruzam a silhueta do treinador devem ficar transparentes. */
