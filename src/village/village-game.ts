@@ -63,7 +63,8 @@ import { VillaAtlas, windowGlow, windowRects } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintFountain, paintHome, paintLamp, paintLot, paintMuseum } from './town-art';
 import { COLISEU_GLOWS, paintColiseu } from './coliseu-art';
-import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, hd2dNeedsCanvasFilter, hd2dPixelRatio } from '../core/village/hd2d';
+import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, hd2dOccludes, hd2dOcclusionOpacity, hd2dPixelRatio } from '../core/village/hd2d';
+import type { Hd2dBounds } from '../core/village/hd2d';
 
 /**
  * O jogo da Vila no navegador: canvas 2D em escala inteira (pixels nítidos), câmera que segue você, profundidade por
@@ -1389,7 +1390,9 @@ export class VillageGame {
     const night = light.dark > 0.3;
     const wx = this.weather;
     const ambientFx = this.ambientFx() && !this.reducedMotion?.matches;
-    const windy = !!this.atlas && this.windFx() && !this.reducedMotion?.matches;
+    // No chão quase deitado, centenas de tufos cabem na tela. O mato passa
+    // a integrar o chão pré-renderizado; árvores continuam animadas em pé.
+    const windy = !hd2d && !!this.atlas && this.windFx() && !this.reducedMotion?.matches;
     if (windy !== this.groundWind) {
       // Ligar ou desligar o vento remonta o chão uma vez (com ou sem o mato alto pintado nele).
       this.groundWind = windy;
@@ -1428,7 +1431,7 @@ export class VillageGame {
     if (layer === 'floor') return;
 
     // Tudo que fica em pé, ordenado pela linha dos pés.
-    type Drawable = { y: number; draw: () => void };
+    type Drawable = { y: number; bounds?: Hd2dBounds; draw: () => void };
     const list: Drawable[] = [];
     const overlays: (() => void)[] = [];
     // Efeitos altos não podem ficar presos ao z-order dos pés do prédio: uma
@@ -1440,13 +1443,13 @@ export class VillageGame {
     // gastar CPU com itens que ainda estão longe demais para aparecer.
     const overscanX = W * 0.2;
     const overscanY = viewHeight * 0.2;
-    const x0 = Math.floor((camX - overscanX) / T);
-    const y0 = Math.floor((camY - overscanY) / T);
-    const x1 = Math.ceil((camX + W + overscanX) / T);
+    const x0 = Math.max(0, Math.floor((camX - overscanX) / T));
+    const y0 = Math.max(0, Math.floor((camY - overscanY) / T));
+    const x1 = Math.min(this.map.w - 1, Math.ceil((camX + W + overscanX) / T));
     // O chão comprimido mostra mais linhas do mapa do que o canvas mede. O
     // mesmo alcance precisa alimentar os objetos em pé, senão eles somem
     // quando entram na área visível da projeção.
-    const y1 = Math.ceil((camY + viewHeight + overscanY) / T);
+    const y1 = Math.min(this.map.h - 1, Math.ceil((camY + viewHeight + overscanY) / T));
     const shadow = (cx: number, cy: number, rx: number, ry: number, a = 0.2) => {
       ctx.fillStyle = `rgba(0,0,0,${a})`;
       ctx.beginPath();
@@ -1472,7 +1475,7 @@ export class VillageGame {
       paint();
     };
     /** Desenha um recorte em pé: a última linha visível encosta no chão em (cx, base). */
-    const stand = (img: HTMLCanvasElement, cx: number, base: number, maxWidth = Infinity) => {
+    const standBounds = (img: HTMLCanvasElement, cx: number, base: number, maxWidth = Infinity) => {
       const pixelScale = Math.min(scale, maxWidth / img.width);
       const w = img.width * pixelScale;
       const h = img.height * pixelScale;
@@ -1489,10 +1492,17 @@ export class VillageGame {
         atlasOpaqueBottoms.set(img, opaqueBottom);
       }
       const y = Math.round(base - (opaqueBottom + 1) * pixelScale);
-      drawDioramaTilted(cx, base, w, () => ctx.drawImage(img, x, y, w, h));
       return { x, y, w, h };
     };
+    const stand = (img: HTMLCanvasElement, cx: number, base: number, maxWidth = Infinity) => {
+      const at = standBounds(img, cx, base, maxWidth);
+      drawDioramaTilted(cx, base, at.w, () => ctx.drawImage(img, at.x, at.y, at.w, at.h));
+      return at;
+    };
     const lightUp = (id: string, key: string, at: { x: number; y: number; w: number; h: number }, transform?: (img: Rgba) => Rgba) => {
+      // Janelas desenhadas depois não devem reaparecer sobre o treinador
+      // quando a fachada que as contém está transparente.
+      if (hd2d && ctx.globalAlpha < 0.5) return;
       const glass = this.art(id, `glass:${key}`, (img) => {
         const painted = transform ? transform(img) : img;
         this.windowRectCache.set(key, windowRects(painted).map(({ x, y, w, h }) => ({ x, y, w, h })));
@@ -1552,7 +1562,7 @@ export class VillageGame {
           if (img) {
             const h = img.height * scale;
             if (t === 'tree') {
-              list.push({ y: y + 1, draw: () => drawSwayed(img, sx(x), sy(y + 1) - h, T, h, depleted ? 0 : sway(x, y, 0.028)) });
+              list.push({ y: y + 1, bounds: { x: sx(x), y: sy(y + 1) - h, w: T, h }, draw: () => drawSwayed(img, sx(x), sy(y + 1) - h, T, h, depleted ? 0 : sway(x, y, 0.028)) });
             } else if (t === 'bush') {
               const fruit = !this.harvestedToday(x, y);
               list.push({
@@ -1580,6 +1590,7 @@ export class VillageGame {
           const img = this.sprite(`tree${variant}`, () => paintTree(variant));
           list.push({
             y: y + 1,
+            bounds: { x: sx(x), y: sy(y - 1), w: T, h: 2 * T },
             draw: () => {
               shadow(sx(x + 0.5), sy(y + 1) - scale, 6 * scale, 2.2 * scale, 0.18);
               drawSwayed(img, sx(x), sy(y - 1), T, 2 * T, sway(x, y, 0.028));
@@ -1618,6 +1629,7 @@ export class VillageGame {
         const tree = d.kind === 'tree-big' || d.kind === 'pine-m';
         list.push({
           y: d.y + d.h,
+          bounds: tree ? { x: sx(d.x + d.w / 2) - img.width * scale / 2, y: sy(d.y + d.h) - img.height * scale, w: img.width * scale, h: img.height * scale } : standBounds(img, sx(d.x + d.w / 2), sy(d.y + d.h), d.w * T),
           draw: () => {
             if (tree) drawSwayed(img, sx(d.x + d.w / 2) - (img.width * scale) / 2, sy(d.y + d.h) - img.height * scale, img.width * scale, img.height * scale, sway(d.x, d.y, 0.02));
             else {
@@ -1674,6 +1686,7 @@ export class VillageGame {
     if (houseArt) {
       list.push({
         y: buildingGroundY(plot),
+        bounds: standBounds(houseArt, sx(plot.x + plot.w / 2), homeBase),
         draw: () => {
           const at = stand(houseArt, sx(plot.x + plot.w / 2), homeBase);
           if (night) lightUp(houseId, houseKey, at, houseTransform);
@@ -1683,6 +1696,7 @@ export class VillageGame {
       const img = this.sprite(`house${this.state.house}`, () => paintHouse(this.state.house));
       list.push({
         y: buildingGroundY(plot),
+        bounds: { x: sx(plot.x), y: homeBase - 4 * T, w: 4 * T, h: 4 * T },
         draw: () => {
           drawDioramaTilted(sx(plot.x) + 2 * T, homeBase, 4 * T, () => ctx.drawImage(img, sx(plot.x), homeBase - 4 * T, 4 * T, 4 * T));
         },
@@ -1695,6 +1709,7 @@ export class VillageGame {
     if (shopArt) {
       list.push({
         y: shopBaseY,
+        bounds: standBounds(shopArt, sx(shop.x + shop.w / 2), sy(shopBaseY), shop.w * T),
         draw: () => {
           const at = stand(shopArt, sx(shop.x + shop.w / 2), sy(shopBaseY), shop.w * T);
           if (night) lightUp('market-store', 'market-store', at);
@@ -1705,6 +1720,7 @@ export class VillageGame {
     const shopImg = this.sprite('shop', paintShop);
     list.push({
       y: shopBaseY,
+      bounds: { x: sx(shop.x), y: sy(shopBaseY) - 3 * T, w: 3 * T, h: 3 * T },
       draw: () => {
         drawDioramaTilted(sx(shop.x + 1.5), sy(shopBaseY), 3 * T, () => ctx.drawImage(shopImg, sx(shop.x), sy(shopBaseY) - 3 * T, 3 * T, 3 * T));
         this.drawTag(sx(shop.x + 1.5), sy(shop.y - 1) + Math.sin(now / 350) * scale - 1 * scale, '🛒');
@@ -1774,6 +1790,7 @@ export class VillageGame {
         if (img) {
           list.push({
             y: buildingGroundY(b),
+            bounds: standBounds(img, mid, spriteBase),
             draw: () => {
               const at = stand(img, mid, spriteBase);
               if (night && who.length > 0) lightUp(id, key, at, tint);
@@ -1818,6 +1835,7 @@ export class VillageGame {
         const sleeping = who.length > 0 && who.every((id) => this.asleep.has(id));
         list.push({
             y: buildingGroundY(b),
+          bounds: { x: left, y: spriteBase - 48 * scale, w: 3 * T, h: 3 * T },
           draw: () => {
             drawDioramaTilted(mid, spriteBase, 3 * T, () => ctx.drawImage(img, left, spriteBase - 48 * scale, 3 * T, 3 * T));
             if (sleeping) this.drawTag(mid, spriteBase - 38 * scale + Math.sin(now / 600) * scale, '💤');
@@ -1845,6 +1863,7 @@ export class VillageGame {
         const cx0 = Math.round(mid - cw / 2);
         list.push({
           y: buildingGroundY(b),
+          bounds: { x: cx0, y: spriteBase - ch, w: cw, h: ch },
           draw: () => {
             ctx.drawImage(img, cx0, spriteBase - ch, cw, ch);
             this.drawTag(mid, spriteBase - ch - 2 * scale + Math.sin(now / 350) * scale, emoji);
@@ -1863,6 +1882,7 @@ export class VillageGame {
         const dx0 = Math.round(mid - dw / 2);
         list.push({
           y: buildingGroundY(b),
+          bounds: { x: dx0, y: spriteBase - dh, w: dw, h: dh },
           draw: () => {
             ctx.drawImage(img, dx0, spriteBase - dh, dw, dh);
             this.drawTag(mid, spriteBase - dh - 2 * scale + Math.sin(now / 350) * scale, emoji);
@@ -1877,6 +1897,7 @@ export class VillageGame {
       if (civicArt && civicId) {
         list.push({
           y: buildingGroundY(b),
+          bounds: standBounds(civicArt, mid, spriteBase, wpx),
           draw: () => {
             const at = stand(civicArt, mid, spriteBase, wpx);
             if (night) lightUp(civicId, civicId, at);
@@ -1890,6 +1911,7 @@ export class VillageGame {
       const img = this.sprite(b.kind, CIVIC_ART[b.kind] ?? paintMuseum);
       list.push({
         y: buildingGroundY(b),
+        bounds: { x: left, y: spriteBase - 48 * scale, w: wpx, h: 3 * T },
         draw: () => {
           drawDioramaTilted(mid, spriteBase, wpx, () => ctx.drawImage(img, left, spriteBase - 48 * scale, wpx, 3 * T));
           this.drawTag(mid, spriteBase - 50 * scale + Math.sin(now / 350) * scale, emoji);
@@ -2120,26 +2142,20 @@ export class VillageGame {
     }
     list.sort((a, b) => a.y - b.y);
     const focusDepth = pp.y + 0.8;
+    const playerBounds = { x: sx(pp.x + 0.5) - 6 * scale, y: sy(pp.y + 1) - PLAYER_H * scale, w: 12 * scale, h: PLAYER_H * scale };
+    const blockers = hd2d ? new Set(list.filter((d) => d.bounds && hd2dOccludes(d.bounds, playerBounds, sy(d.y)))) : null;
+    const occlusionAlpha = hd2dOcclusionOpacity(blockers?.size ?? 0);
     for (const d of list) {
       if (!hd2d) {
         d.draw();
         continue;
       }
-      // A profundidade é calculada por item (prédio, árvore, morador), em vez
-      // de desfocar uma foto pronta da Vila inteira.
-      const style = hd2dDepthStyle(d.y, focusDepth);
-      if (hd2dNeedsCanvasFilter(style)) {
-        // Filtros criam uma superfície intermediária. Só os planos realmente
-        // afastados a usam; a camada de opacidade dá profundidade ao resto.
-        ctx.save();
-        ctx.filter = `blur(${style.blurPx.toFixed(2)}px) brightness(${style.brightness.toFixed(3)})`;
-        ctx.globalAlpha = style.opacity;
-        d.draw();
-        ctx.restore();
-      } else if (style.opacity < 0.999) {
-        // Evita save/restore para cada grama, árvore e enfeite próximo.
+      // A projeção e a ordem dos pés mantêm o volume. Opacidade por item
+      // evita as superfícies intermediárias caras de blur/brightness.
+      const opacity = blockers?.has(d) ? occlusionAlpha : hd2dDepthStyle(d.y, focusDepth).opacity;
+      if (opacity < 0.999) {
         const previousAlpha = ctx.globalAlpha;
-        ctx.globalAlpha = style.opacity;
+        ctx.globalAlpha = opacity;
         d.draw();
         ctx.globalAlpha = previousAlpha;
       } else d.draw();
