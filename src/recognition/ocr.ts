@@ -3,10 +3,10 @@ import type { RgbaImage } from './types';
 import { loadChunk } from '../app/stale-build';
 
 /**
- * Tipo de região lida: a faixa inferior inteira (número, código do set), as metades esquerda/direita dessa
- * faixa (segunda tentativa, com lista de caracteres) ou a faixa do nome.
+ * Tipo de região lida: a faixa inferior inteira (número, código do set), a mesma faixa binarizada como
+ * recuperação local, as metades esquerda/direita dessa faixa ou a faixa do nome.
  */
-export type OcrRegion = 'bottom' | 'bottom-side' | 'name';
+export type OcrRegion = 'bottom' | 'bottom-binary' | 'bottom-side' | 'name';
 
 /** Caracteres que aparecem no número de coleção e no código do set (segunda tentativa de leitura). */
 export const BOTTOM_WHITELIST = '0123456789/ ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -14,7 +14,7 @@ export const BOTTOM_WHITELIST = '0123456789/ ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 /** Modos de página do Tesseract usados (6 = bloco, 7 = linha). Escolhidos pelo laboratório de OCR do CI. */
 export function ocrParams(region: OcrRegion): { psm: '6' | '7'; whitelist: string } {
   if (region === 'name') return { psm: '7', whitelist: '' };
-  return { psm: '6', whitelist: region === 'bottom-side' ? BOTTOM_WHITELIST : '' };
+  return { psm: '6', whitelist: region === 'bottom' ? '' : BOTTOM_WHITELIST };
 }
 
 export interface OcrEngine {
@@ -119,7 +119,9 @@ export async function createTesseractEngine(options: TesseractEngineOptions): Pr
         tessedit_char_whitelist: params.whitelist,
         user_defined_dpi: '150',
       });
-      const result = await worker.recognize(options.toCanvas(prepareForOcr(image)));
+      // A versão binarizada é uma tentativa de recuperação da MESMA foto estática, só quando a leitura normal
+      // não encontrou o número. Não usa outro quadro nem inventa texto que o OCR não devolveu.
+      const result = await worker.recognize(options.toCanvas(prepareForOcr(image, 96, region === 'bottom-binary')));
       return result.data.text;
     },
     async dispose() {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prepareForOcr } from './ocr';
+import { ocrParams, prepareForOcr } from './ocr';
 import type { RgbaImage } from './types';
 
 function strip(width: number, height: number, background: number, ink: number): RgbaImage {
@@ -46,5 +46,12 @@ describe('prepareForOcr', () => {
     for (let i = 0; i < out.data.length; i += 4) values.add(out.data[i] ?? 0);
     expect([...values].sort()).toEqual([0, 255]);
     expect(out.data[0]).toBe(255);
+  });
+});
+
+describe('parâmetros de recuperação do rodapé', () => {
+  it('limita a passada binarizada aos caracteres possíveis da coleção', () => {
+    expect(ocrParams('bottom-binary')).toMatchObject({ psm: '6' });
+    expect(ocrParams('bottom-binary').whitelist).toContain('0123456789/');
   });
 });

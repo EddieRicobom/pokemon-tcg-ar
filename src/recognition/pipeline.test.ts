@@ -173,21 +173,21 @@ describe('RecognitionPipeline', () => {
     expect(calls.ocr).toEqual([]);
   });
 
-  it('segunda tentativa nas metades da faixa quando a leitura inteira não acha o número', async () => {
+  it('recupera o número da mesma foto binarizada antes de recortar metades', async () => {
     const calls2: OcrRegion[] = [];
     const { deps } = makeDeps({
       ocr: {
         async recognize(_i, region) {
           calls2.push(region);
           if (region === 'bottom') return 'ruído ilegível';
-          return region === 'bottom-side' ? '60/64' : 'Pikachu';
+          return region === 'bottom-binary' ? '60/64' : 'Pikachu';
         },
         async dispose() {},
       },
     });
     const result = await new RecognitionPipeline(deps).recognize(photoOf(3));
-    // Primeiro a faixa inteira nas duas orientações (rápido); só depois as metades (mais lentas).
-    expect(calls2.slice(0, 4)).toEqual(['bottom', 'bottom', 'bottom-side', 'bottom-side']);
+    // A recuperação usa a mesma captura estática e evita a passada mais lenta nas metades.
+    expect(calls2).toEqual(['bottom', 'bottom-binary']);
     expect(result.card?.id).toBe('base2-60');
   });
 

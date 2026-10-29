@@ -237,6 +237,27 @@ describe('ScanController (Fase A: estabilidade, cancelar, candidatas)', () => {
     expect(states.some((s) => s.last?.gated && s.last.metrics.skipped.ocrNumber)).toBe(true);
   });
 
+  it('congela o quadro mais nítido da estabilização e manda essa foto estática ao OCR', async () => {
+    const soft = { width: 2, height: 2, data: new Uint8ClampedArray([1, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255]) };
+    const sharp = { width: 2, height: 2, data: new Uint8ClampedArray([9, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255]) };
+    const frames = [soft, sharp];
+    const base = setup([]);
+    let recognized: RgbaImage | undefined;
+    const recognize = vi.fn(async (incoming: RgbaImage) => { recognized = incoming; return identified(); });
+    const controller = new ScanController({
+      grabFrame: () => frames.shift() ?? sharp,
+      recognize,
+      locate: (_frame) => ({ detection: det(0), quality: { brightness: 100, sharpness: frames.length === 1 ? 4 : 9 } }),
+      cache: base.cache,
+      onState: (s) => base.states.push(s),
+      sleep: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    });
+    controller.start();
+    await controller.whenSettled();
+    expect(recognize).toHaveBeenCalledTimes(1);
+    expect(recognized?.data[0]).toBe(9);
+  });
+
   it('cancelar para a leitura e diz isso (nada é gravado)', async () => {
     const medium = result({ status: 'identified', card: card('base1-58'), confidence: 0.85, margin: 0.12 });
     const { controller, cache } = setup([medium]);
@@ -296,7 +317,7 @@ describe('ScanController (foto temporária)', () => {
   const det = { quad, areaFraction: 0.4, aspect: 0.7, fillRatio: 0.9, score: 1 };
   const features = { version: 1, fullHash: new Uint8Array(8), artHash: new Uint8Array(8), color: new Uint8Array(48) };
 
-  function photoSetup(results: RecognitionResult[], similarity: number[], photoMatches?: number) {
+  function photoSetup(results: RecognitionResult[], similarity: number[], photoMatches?: number, blurry = false) {
     const queue = [...results];
     const scores = [...similarity];
     const recognize = vi.fn(async () => queue.shift() ?? result({ status: 'not-found' }));
@@ -305,7 +326,7 @@ describe('ScanController (foto temporária)', () => {
     const controller = new ScanController({
       grabFrame: () => frame,
       recognize,
-      locate: () => ({ detection: det }),
+      locate: () => ({ detection: det, ...(blurry ? { quality: { brightness: 120, sharpness: 1 } } : {}) }),
       sameCard,
       photoMatches,
       cache: base.cache,
@@ -339,6 +360,17 @@ describe('ScanController (foto temporária)', () => {
     expect(recognize).toHaveBeenCalledTimes(2);
     expect(cache.scanCard.mock.calls[0]![0].card.id).toBe('hgss4-58');
     expect(states.some((s) => s.last?.message.includes('A carta mudou'))).toBe(true);
+  });
+
+  it('preserva a foto estática durante um quadro desfocado em vez de reiniciar o OCR', async () => {
+    const medium = result({ status: 'identified', card: card('base1-58'), confidence: 0.85, margin: 0.12, features, quad });
+    const { controller, recognize, states, cache } = photoSetup([medium], [0.42, 0.93], undefined, true);
+    controller.start();
+    await waitFor(() => cache.scanCard.mock.calls.length > 0);
+    controller.stop();
+    expect(recognize).toHaveBeenCalledTimes(1);
+    expect(cache.scanCard.mock.calls[0]![0].card.id).toBe('base1-58');
+    expect(states.some((s) => s.message.includes('Mantendo a foto nítida'))).toBe(true);
   });
 
   it('ambígua: a foto confirmada abre a escolha com todas as candidatas, com um OCR só', async () => {

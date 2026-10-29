@@ -248,6 +248,8 @@ interface ReadResult {
   bottom: ParsedBottom;
   names: string[];
   bottomText?: string;
+  /** Segunda leitura da mesma faixa, com contraste binarizado (só no fallback). */
+  binaryText?: string;
   nameText?: string;
   /** Faixa inferior enviada ao OCR (diagnóstico). */
   strip?: RgbaImage;
@@ -634,6 +636,18 @@ export class RecognitionPipeline {
       previous?.strip ?? clock.time('cropNumber', () => rectifyRegion(frame, quad, BOTTOM_STRIP_BOX, BOTTOM_OCR_FULL_WIDTH) ?? cropFraction(rectified, BOTTOM_STRIP_BOX));
     let text = previous?.bottomText ?? (await clock.timeAsync('ocrNumber', () => this.deps.ocr.recognize(strip, 'bottom')));
     let bottom = previous?.bottom ?? parseBottomText(text);
+    let binaryText = previous?.binaryText;
+    // Reflexo e impressão com pouco contraste às vezes derrubam a leitura em tons de cinza. Antes de recortar
+    // metades ou abandonar a foto, tenta a mesma captura binarizada e limitada aos caracteres do rodapé.
+    if (!bottom.number?.total && !binaryText) {
+      binaryText = await clock.timeAsync('ocrNumber', () => this.deps.ocr.recognize(strip, 'bottom-binary'));
+      const combined = `${text}\n${binaryText}`;
+      const recovered = parseBottomText(combined);
+      if (recovered.number?.total || !bottom.number) {
+        text = combined;
+        bottom = recovered;
+      }
+    }
     let sidesOut: RgbaImage[] | undefined;
     if (withSides && !bottom.number?.total) {
       const sides: string[] = [];
@@ -656,7 +670,7 @@ export class RecognitionPipeline {
         }
       }
     }
-    return { bottom, names: [], bottomText: text, strip, sides: sidesOut };
+    return { bottom, names: [], bottomText: text, binaryText, strip, sides: sidesOut };
   }
 
   /** Sem índice estático: pergunta ao TCGdex pelas cartas com esse número e esse total. */

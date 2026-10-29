@@ -43,7 +43,7 @@ async function realOcr(): Promise<{ engine: OcrEngine; passes: Record<OcrRegion,
   const worker = await Tesseract.createWorker('eng', Tesseract.OEM.LSTM_ONLY, {
     langPath: join(__dirname, '../node_modules/@tesseract.js-data/eng/4.0.0_best_int'), cachePath: tmpdir(), gzip: true,
   });
-  const passes: Record<OcrRegion, number> = { bottom: 0, 'bottom-side': 0, name: 0 };
+  const passes: Record<OcrRegion, number> = { bottom: 0, 'bottom-binary': 0, 'bottom-side': 0, name: 0 };
   const ms: number[] = [];
   const engine: OcrEngine = {
     async recognize(image, region) {
