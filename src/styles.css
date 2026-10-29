@@ -1722,6 +1722,8 @@ button.link {
   font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 216, 74, 0.38);
+  box-shadow: 0 0 12px rgba(255, 216, 74, 0.16);
 }
 
 .battle-turn i {
@@ -1795,6 +1797,8 @@ button.link {
   line-height: 1.15;
   text-align: center;
   white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.26);
 }
 
 .battle-hud.compact .hp-bar {
@@ -1844,8 +1848,38 @@ button.link {
 }
 
 .hp-bar.reserve {
-  opacity: 0.8;
-  transform: translate(-50%, -100%) scale(0.82);
+  opacity: 0.88;
+  transform: translate(-50%, -100%) scale(0.86);
+  border-style: dashed;
+}
+
+.hp-bar.acting {
+  z-index: 3;
+  border-color: var(--gold, #ffcb05);
+  box-shadow: 0 0 0 2px rgba(255, 203, 5, 0.28), 0 0 20px rgba(255, 203, 5, 0.42);
+  animation: battle-active-pulse 780ms ease-in-out infinite alternate;
+}
+
+.battle-role {
+  justify-self: center;
+  margin-top: -1px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: var(--gold, #ffcb05);
+  color: #171208;
+  font-size: 0.47rem;
+  font-weight: 950;
+  letter-spacing: .08em;
+}
+
+.battle-role.waiting {
+  background: rgba(205, 220, 255, 0.78);
+  color: #14213b;
+}
+
+@keyframes battle-active-pulse {
+  from { transform: translate(-50%, -100%) scale(1); }
+  to { transform: translate(-50%, -100%) scale(1.045); }
 }
 
 .battle-score {
@@ -1863,6 +1897,27 @@ button.link {
   border: 1.5px solid var(--team);
   font-size: 0.68rem;
   font-weight: 800;
+}
+
+.battle-score strong { font-size: 0.64rem; }
+
+.team-pips {
+  display: inline-flex;
+  gap: 2px;
+  font-style: normal;
+}
+
+.team-pips b {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--team);
+  box-shadow: 0 0 5px var(--team);
+}
+
+.team-pips b.out {
+  opacity: 0.23;
+  box-shadow: none;
 }
 
 .battle-score i {
@@ -2116,7 +2171,8 @@ button.link {
 
 @media (prefers-reduced-motion: reduce) {
   .battle-banner,
-  .battle-callout {
+  .battle-callout,
+  .hp-bar.acting {
     animation: none;
   }
 

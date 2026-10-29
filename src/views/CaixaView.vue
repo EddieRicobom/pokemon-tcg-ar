@@ -572,7 +572,10 @@ onBeforeUnmount(() => {
             <span>{{ battleHud.banner.sub }}</span>
           </div>
           <div v-if="battleHud.scoreboard" class="battle-score" aria-label="Placar das equipes">
-            <span v-for="s in battleHud.scoreboard" :key="s.team" :style="{ '--team': s.color }"><i></i>{{ s.name.replace('Equipe ', '') }} {{ s.alive }}/{{ s.total }}</span>
+            <span v-for="s in battleHud.scoreboard" :key="s.team" :style="{ '--team': s.color }">
+              <i></i><strong>{{ s.name.replace('Equipe ', '') }}</strong>
+              <em class="team-pips" :aria-label="`${s.alive} de ${s.total} Pokémon de pé`"><b v-for="n in s.total" :key="n" :class="{ out: n > s.alive }"></b></em>
+            </span>
           </div>
           <div v-if="battleHud.phase === 'fight'" class="battle-turn" :aria-label="`Rodada ${battleHud.round}, turno ${battleHud.turn} de ${battleHud.totalTurns}`">
             <span>Rodada {{ battleHud.round }}</span>
@@ -598,6 +601,7 @@ onBeforeUnmount(() => {
             <b v-if="bar.status" class="badge" :class="'badge-' + bar.status">{{ STATUS_LABELS_PT[bar.status] }}</b>
             <b v-if="bar.guard" class="badge badge-guard">Defesa</b>
           </span>
+          <span v-if="bar.acting || bar.reserve" class="battle-role" :class="{ waiting: bar.reserve }">{{ bar.acting ? 'AGINDO' : 'BANCO' }}</span>
           <span class="hp-track"><i :class="hpTone(bar.frac)" :style="{ width: bar.frac * 100 + '%' }"></i></span>
           <span class="hp-num">{{ bar.hp }}/{{ bar.maxHp }}</span>
         </div>
