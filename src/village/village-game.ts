@@ -63,7 +63,7 @@ import { VillaAtlas, windowGlow, windowRects } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintFountain, paintHome, paintLamp, paintLot, paintMuseum } from './town-art';
 import { COLISEU_GLOWS, paintColiseu } from './coliseu-art';
-import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dGroundProjection } from '../core/village/hd2d';
+import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dGroundProjection, hd2dNeedsCanvasFilter, hd2dPixelRatio } from '../core/village/hd2d';
 
 /**
  * O jogo da Vila no navegador: canvas 2D em escala inteira (pixels nítidos), câmera que segue você, profundidade por
@@ -210,8 +210,8 @@ export class VillageGame {
    */
   private renderFps(): number {
     const configured = this.maxFps();
-    // O desfoque por objeto pede superfícies intermediárias no canvas. Em
-    // automático, 30 FPS preserva a leitura 2D-HD sem virar custo de 60 FPS;
+    // O acabamento por objeto pede trabalho extra no canvas. Em automático,
+    // 30 FPS preserva a leitura 2D-HD sem virar custo de 60 FPS;
     // uma escolha explícita de 30 ou 20 continua tendo prioridade.
     if (this.hd2d() && !this.reducedMotion?.matches && (!Number.isFinite(configured) || configured <= 0)) return 30;
     return this.diorama && (!Number.isFinite(configured) || configured <= 0) ? 30 : configured;
@@ -1317,8 +1317,9 @@ export class VillageGame {
     // Três vezes a densidade pinta mais de nove vezes os pixels de um celular
     // comum. A Vila é pixel art e já usa `image-rendering: pixelated`, então
     // limitar a 2× mantém a leitura nítida sem transformar cada quadro do mapa
-    // em uma carga desnecessária para a GPU.
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    // em uma carga desnecessária para a GPU. No 2D-HD, 1,25× é suficiente para
+    // pixel art e corta de forma grande a área que precisa ser redesenhada.
+    const dpr = hd2dPixelRatio(window.devicePixelRatio || 1, this.hd2d() && !this.diorama && !this.reducedMotion?.matches);
     this.canvas.width = Math.round(width * dpr);
     this.canvas.height = Math.round(height * dpr);
     this.scale = villageScale(width, height, dpr);
@@ -2120,13 +2121,21 @@ export class VillageGame {
       // A profundidade é calculada por item (prédio, árvore, morador), em vez
       // de desfocar uma foto pronta da Vila inteira.
       const style = hd2dDepthStyle(d.y, focusDepth);
-      ctx.save();
-      // Filtros em canvas criam uma superfície extra: não peça uma para uma
-      // diferença imperceptível de foco em cada árvore ou enfeite.
-      if (style.blurPx >= 0.25) ctx.filter = `blur(${style.blurPx.toFixed(2)}px) brightness(${style.brightness.toFixed(3)})`;
-      ctx.globalAlpha = style.opacity;
-      d.draw();
-      ctx.restore();
+      if (hd2dNeedsCanvasFilter(style)) {
+        // Filtros criam uma superfície intermediária. Só os planos realmente
+        // afastados a usam; a camada de opacidade dá profundidade ao resto.
+        ctx.save();
+        ctx.filter = `blur(${style.blurPx.toFixed(2)}px) brightness(${style.brightness.toFixed(3)})`;
+        ctx.globalAlpha = style.opacity;
+        d.draw();
+        ctx.restore();
+      } else if (style.opacity < 0.999) {
+        // Evita save/restore para cada grama, árvore e enfeite próximo.
+        const previousAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = style.opacity;
+        d.draw();
+        ctx.globalAlpha = previousAlpha;
+      } else d.draw();
     }
     for (const fx of towerFx) fx();
 

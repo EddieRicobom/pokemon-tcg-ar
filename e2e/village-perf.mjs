@@ -14,6 +14,7 @@ const N = process.argv[2] ?? '30';
 const SECONDS = Number(process.argv[3] ?? 12);
 /** Lentidão simulada da CPU (1 = este PC; ~4–6 aproxima um celular de faixa média). */
 const THROTTLE = Number(process.env.PERF_THROTTLE ?? 1);
+const HD2D = process.env.PERF_HD2D === '1';
 const PORT = 4190;
 // PERF_BASE aponta para um Vite já rodando (ex.: http://127.0.0.1:4192); sem ele o script sobe o próprio.
 const base = process.env.PERF_BASE ?? `http://127.0.0.1:${PORT}`;
@@ -32,7 +33,7 @@ try {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 200)); });
-  await page.goto(`${base}/pokemon-tcg-ar/e2e/village-perf/index.html?n=${N}&reactive=${process.env.PERF_REACTIVE ?? 1}`);
+  await page.goto(`${base}/pokemon-tcg-ar/e2e/village-perf/index.html?n=${N}&reactive=${process.env.PERF_REACTIVE ?? 1}&hd2d=${HD2D ? 1 : 0}`);
   try {
     await page.waitForFunction(() => window.villagePerf !== undefined, null, { timeout: 120_000 });
   } catch (error) {
@@ -49,7 +50,7 @@ try {
   await page.waitForTimeout(SECONDS * 1000);
   const snap = await page.evaluate(() => window.villagePerf.snapshot());
   const { profile } = await cdp.send('Profiler.stop');
-  console.log(`[CPU ${THROTTLE}x] moradores=${N}: frames=${snap.frames} (${(snap.frames / SECONDS).toFixed(1)}/s) · update mediana ${snap.updateMedian} ms, p95 ${snap.updateP95} ms · draw mediana ${snap.drawMedian} ms, p95 ${snap.drawP95} ms, máx ${snap.drawMax} ms`);
+  console.log(`[CPU ${THROTTLE}x] moradores=${N}, 2D-HD=${HD2D ? 'ligado' : 'desligado'}: frames=${snap.frames} (${(snap.frames / SECONDS).toFixed(1)}/s) · update mediana ${snap.updateMedian} ms, p95 ${snap.updateP95} ms · draw mediana ${snap.drawMedian} ms, p95 ${snap.drawP95} ms, máx ${snap.drawMax} ms`);
   console.log(`  intervalo entre quadros: mediana ${snap.gapMedian} ms, p99 ${snap.gapP99} ms · quadros acima de 33 ms (abaixo de 30 fps): ${snap.longFrames} de ${snap.gaps}`);
   if (errors.length) console.log('erros de página:', errors.slice(0, 3));
   mkdirSync('e2e/.tmp', { recursive: true });
