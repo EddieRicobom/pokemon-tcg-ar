@@ -21,6 +21,7 @@ import { survivalWinners } from '../core/card-evolution';
 import { effectiveVisual, maxVisualFps, visual } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
 import { cancelGameFrame, requestGameFrame } from '../app/frame-scheduler';
+import { combatMotion } from '../core/combat-motion';
 import { seededRng } from '../core/battle';
 import {
   applyUpgrade,
@@ -795,6 +796,8 @@ let disposed = false;
 let lastTs = 0;
 let lastMusicSync = -Infinity;
 let animMs = 0;
+// Marca única do último golpe: o desenho consulta a pose por quadro, sem timers por Pokémon.
+let playerAttackAt = -Infinity;
 let lastMinimapMs = -Infinity;
 let announcedRegion = '';
 const heldKeys = new Set<string>();
@@ -1313,9 +1316,15 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.lineWidth = Math.max(1.5, playerGround.scale * 0.9);
       c.beginPath(); c.ellipse(playerGround.x, playerGround.y, ring.rx, ring.ry, 0, 0, Math.PI * 2); c.stroke();
       c.restore();
-      drawBonkBillboard(playerBackSprite ?? playerSprite, playerPoint.x, playerPoint.y, scale, bonkFacing < 0,
+      const motion = effectiveVisual.value.impactFx && !reducedMotion ? combatMotion(animMs - playerAttackAt) : combatMotion(-1);
+      // A pose acontece no billboard projetado: o avanço segue a frente da câmera e não altera posição, hitbox ou câmera.
+      c.save();
+      c.translate(playerPoint.x, playerPoint.y);
+      c.scale(motion.scaleX, motion.scaleY);
+      drawBonkBillboard(playerBackSprite ?? playerSprite, motion.lunge * 18 * scale, 0, scale, bonkFacing < 0,
         s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0 ? 0.45 : 1,
-        { x: playerGround.x, y: playerGround.y, rx: shadow.rx, ry: shadow.ry }, squash, 'down', playerAccessory);
+        { x: playerGround.x - playerPoint.x, y: playerGround.y - playerPoint.y, rx: shadow.rx, ry: shadow.ry }, squash, 'down', playerAccessory);
+      c.restore();
     } });
   }
   if (move.category === 'orbit') {
@@ -1523,7 +1532,18 @@ function draw(): void {
   // Orbitais acima do Pokémon na tela passam por trás dele; os de baixo, pela frente.
   const orbiters = move.category === 'orbit' ? survivorOrbiters(s.player) : [];
   orbiters.forEach((orbiter, index) => { if (orbiter.y < s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
-  if (!blink) drawSprite(playerSprite, s.player.x, s.player.y, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(s.player.aimAngle, s.player.facing), playerAccessory);
+  if (!blink) {
+    const motion = effectiveVisual.value.impactFx && !reducedMotion ? combatMotion(animMs - playerAttackAt) : combatMotion(-1);
+    const aimAngle = s.player.aimAngle ?? (s.player.facing < 0 ? Math.PI : 0);
+    const aimX = Math.cos(aimAngle);
+    const aimY = Math.sin(aimAngle);
+    ctx.save();
+    ctx.translate(s.player.x, s.player.y);
+    ctx.rotate(motion.rotation * s.player.facing);
+    ctx.scale(motion.scaleX, motion.scaleY);
+    drawSprite(playerSprite, motion.lunge * 18 * aimX, motion.lunge * 12 * aimY, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(aimAngle, s.player.facing), playerAccessory);
+    ctx.restore();
+  }
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
   drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
 
@@ -1816,7 +1836,10 @@ function loop(ts: number): void {
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
     const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
-    if (s.player.attackTimerMs > attackTimerBefore) playAttackSound(s.player.move, ts);
+    if (s.player.attackTimerMs > attackTimerBefore) {
+      playerAttackAt = animMs;
+      playAttackSound(s.player.move, ts);
+    }
     specialQueued = false;
     if (bonkRun.value && bonkPhysics.value && beforeBonkPosition) {
       stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, simulationDt);

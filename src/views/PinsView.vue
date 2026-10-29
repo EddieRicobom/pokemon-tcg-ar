@@ -12,6 +12,7 @@ import { recordEvent } from '../app/trainer-store';
 import { addCoins, coins, spendCoins } from '../app/wallet';
 import { recordSightings } from '../app/pokedex-store';
 import { seededRng } from '../core/battle';
+import { combatMotion } from '../core/combat-motion';
 import {
   advanceRound, afterShot, affordable, aliveOf, arenaLimit, PIN_KO_COINS, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE, MAX_PULL,
   nextLimit, outcomeOf, pinCoinReward, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
@@ -124,6 +125,7 @@ let popups: Popup[] = [];
 let terrainFx: TerrainFx[] = [];
 let impactFx: ImpactFx[] = [];
 const pinImpactAt = new Map<string, number>();
+const pinAttackAt = new Map<string, number>();
 const reducedMotion = ref(false);
 const cameraFxScale = ref(1);
 const cameraFxRotate = ref(0);
@@ -837,6 +839,7 @@ function fireEnemy(): void {
     nextAim();
     return;
   }
+  pinAttackAt.set(pin.id, performance.now());
   afterShot(world, 1, { pinId: pin.id, moveIndex: plan.moveIndex });
   recorder.start(world);
   cue({ kind: 'pin-launch', power: plan.shot.power, type: pin.active?.kind === 'elemental' ? pin.active.type : null });
@@ -894,6 +897,7 @@ function fireMine(shot: Shot): void {
   }
   const moveIndex = selectedMove.value;
   launch(pin, shot, moveIndex);
+  pinAttackAt.set(pin.id, performance.now());
   afterShot(world, 0, { pinId: pin.id, moveIndex });
   if (pvpMatch.value) peer.value?.send({ t: 'shot', pinId: pin.id, moveIndex, ...shotToWire(frame.value, shot) });
   recorder.start(world);
@@ -1117,6 +1121,7 @@ function onRemoteShot(msg: Extract<WireMessage, { t: 'shot' }>): void {
   if (!world || !pvpMatch.value || phase.value !== 'enemy') return;
   const pin = world.pins.find((p) => p.id === msg.pinId && p.side === 1 && p.alive && p.fall === 0);
   if (!pin || !launch(pin, shotFromWire(frame.value, msg), msg.moveIndex)) return;
+  pinAttackAt.set(pin.id, performance.now());
   afterShot(world, 1, { pinId: pin.id, moveIndex: msg.moveIndex });
   recorder.start(world);
   cue({ kind: 'pin-launch', power: msg.power, type: pin.active?.kind === 'elemental' ? pin.active.type : null });
@@ -1571,10 +1576,13 @@ function draw(now: number): void {
       const pitch = depth ? 7 + speed * 7 : 0;
       const yaw = depth ? Math.max(-8, Math.min(8, -pin.vx * 0.018)) : 0;
       const squash = depth ? 1 - impactPulse * 0.11 - speed * 0.035 : 1;
+      const attackAt = pinAttackAt.get(pin.id);
+      const motion = combatMotion(attackAt === undefined ? -1 : now - attackAt);
+      if (attackAt !== undefined && motion.phase === 'idle') pinAttackAt.delete(pin.id);
       token.style.width = `${size}px`;
       token.style.height = `${size}px`;
       token.style.borderWidth = `${Math.max(2.5, size * 0.1)}px`;
-      token.style.transform = `translate3d(${sx / dpr - size / 2}px, ${sy / dpr - size / 2}px, 10px) rotateX(${pitch}deg) rotateY(${yaw}deg) rotateZ(${pin.fall * 220}deg) scaleY(${squash})`;
+      token.style.transform = `translate3d(${sx / dpr - size / 2 + motion.lunge * size * 0.35}px, ${sy / dpr - size / 2}px, 10px) rotateX(${pitch}deg) rotateY(${yaw}deg) rotateZ(${pin.fall * 220 + motion.rotation * 28}deg) scale(${motion.scaleX}, ${squash * motion.scaleY})`;
       token.style.opacity = String(1 - pin.fall * 0.6);
       token.style.zIndex = String(Math.round(pin.y + 1000));
     }
