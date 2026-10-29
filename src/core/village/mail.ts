@@ -184,6 +184,17 @@ export function markMailRead(state: MailState, id: string): boolean {
   return true;
 }
 
+/** Marca a caixa atual como lida sem mover cartas, dar recompensas ou responder por elas. */
+export function markAllMailRead(state: MailState): number {
+  let marked = 0;
+  for (const mail of state.inbox) {
+    if (mail.read) continue;
+    mail.read = true;
+    marked++;
+  }
+  return marked;
+}
+
 function shiftDay(day: string, days: number): string {
   const parsed = Date.parse(`${day}T00:00:00Z`);
   if (!Number.isFinite(parsed)) return day;
