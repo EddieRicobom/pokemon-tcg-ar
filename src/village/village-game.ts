@@ -63,7 +63,7 @@ import { VillaAtlas, windowGlow, windowRects } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintFountain, paintHome, paintLamp, paintLot, paintMuseum } from './town-art';
 import { COLISEU_GLOWS, paintColiseu } from './coliseu-art';
-import { hd2dDepthStyle } from '../core/village/hd2d';
+import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dGroundProjection } from '../core/village/hd2d';
 
 /**
  * O jogo da Vila no navegador: canvas 2D em escala inteira (pixels nítidos), câmera que segue você, profundidade por
@@ -101,7 +101,7 @@ export class VillageGame {
   /** Toque na tela: o bloco aonde você está indo a pé (o caminho contorna o que estiver no meio). */
   private goal: { x: number; y: number } | null = null;
   /** A câmera do último quadro, para converter um toque na tela em bloco do mapa. */
-  private view = { camX: 0, camY: 0 };
+  private view = { camX: 0, camY: 0, groundTilt: 1 };
   private stick: Pick<StickDirs, 'primary' | 'secondary'> | null = null;
   private stepParity = 0;
   private scale = 3;
@@ -723,7 +723,8 @@ export class VillageGame {
     const rect = this.canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
     const px = ((clientX - rect.left) / rect.width) * this.canvas.width + this.view.camX;
-    const py = ((clientY - rect.top) / rect.height) * this.canvas.height + this.view.camY;
+    const screenY = ((clientY - rect.top) / rect.height) * this.canvas.height;
+    const py = hd2dGroundProjection(screenY, this.view.groundTilt).mapY + this.view.camY;
     const x = Math.floor(px / (TILE * this.scale));
     const y = Math.floor(py / (TILE * this.scale));
     return x >= 0 && y >= 0 && x < this.map.w && y < this.map.h ? { x, y } : null;
@@ -1351,14 +1352,21 @@ export class VillageGame {
     const scale = this.scale;
     ctx.imageSmoothingEnabled = false;
     const pp = drawPos(this.player);
+    // A Vila 2D-HD continua sendo um canvas: o chão é comprimido no eixo y,
+    // enquanto os objetos apoiados nele permanecem em pé. Isso cria a leitura
+    // de câmera inclinada sem tocar no Diorama AR nem em modelos 3D.
+    const hd2d = !this.diorama && this.hd2d() && !this.reducedMotion?.matches;
+    const groundTilt = hd2d ? HD2D_GROUND_TILT : 1;
+    const viewHeight = H / groundTilt;
+    const maxCamY = Math.max(0, this.map.h * TILE * scale - viewHeight);
     // No diorama a textura sempre mostra a Vila inteira; no modo normal a câmera segue o treinador.
     const camX = this.diorama
       ? Math.round((this.map.w * TILE * scale - W) / 2)
       : Math.round(Math.min(Math.max(0, (pp.x + 0.5) * TILE * scale - W / 2), this.map.w * TILE * scale - W));
     const camY = this.diorama
       ? Math.round((this.map.h * TILE * scale - H) / 2)
-      : Math.round(Math.min(Math.max(0, (pp.y + 0.5) * TILE * scale - H / 2), this.map.h * TILE * scale - H));
-    this.view = { camX, camY };
+      : Math.round(Math.min(Math.max(0, (pp.y + 0.5) * TILE * scale - viewHeight / 2), maxCamY));
+    this.view = { camX, camY, groundTilt };
     if (layer === 'props') {
       ctx.clearRect(0, 0, W, H);
     } else {
@@ -1366,7 +1374,12 @@ export class VillageGame {
       ctx.fillRect(0, 0, W, H);
       const ground = this.groundFrames[Math.floor(now / 450) % this.groundFrames.length]!;
       if (this.diorama) ctx.drawImage(ground, -camX, -camY, this.map.w * TILE * scale, this.map.h * TILE * scale);
-      else ctx.drawImage(ground, camX / scale, camY / scale, W / scale, H / scale, 0, 0, W, H);
+      else if (hd2d) {
+        ctx.save();
+        ctx.scale(1, groundTilt);
+        ctx.drawImage(ground, camX / scale, camY / scale, W / scale, viewHeight / scale, 0, 0, W, viewHeight);
+        ctx.restore();
+      } else ctx.drawImage(ground, camX / scale, camY / scale, W / scale, H / scale, 0, 0, W, H);
     }
 
     const clock = new Date();
@@ -1383,7 +1396,7 @@ export class VillageGame {
       this.buildGround();
     }
     const sx = (x: number) => Math.round(x * TILE * scale - camX);
-    const sy = (y: number) => Math.round(y * TILE * scale - camY);
+    const sy = (y: number) => Math.round(hd2dGroundProjection(y * TILE * scale - camY, groundTilt).screenY);
     const T = TILE * scale;
 
     // Chão molhado e neve acumulada (só o chão; os objetos ficam por cima).
@@ -2098,7 +2111,6 @@ export class VillageGame {
       }
     }
     list.sort((a, b) => a.y - b.y);
-    const hd2d = this.hd2d() && !this.reducedMotion?.matches;
     const focusDepth = pp.y + 0.8;
     for (const d of list) {
       if (!hd2d) {

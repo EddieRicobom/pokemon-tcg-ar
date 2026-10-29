@@ -5,6 +5,15 @@ export interface Hd2dDepthStyle {
   brightness: number;
 }
 
+/** Quanto o eixo do chão encolhe no modo 2D-HD (câmera mais inclinada). */
+export const HD2D_GROUND_TILT = 0.68;
+
+/** Conversão entre o eixo do mapa e o chão projetado na tela. */
+export function hd2dGroundProjection(y: number, tilt = HD2D_GROUND_TILT): { screenY: number; mapY: number } {
+  const safeTilt = Number.isFinite(tilt) && tilt > 0 ? tilt : HD2D_GROUND_TILT;
+  return { screenY: y * safeTilt, mapY: y / safeTilt };
+}
+
 /**
  * Cada objeto recebe o acabamento a partir da sua própria linha de apoio,
  * não a partir de um filtro aplicado ao mapa inteiro.
