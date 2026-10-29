@@ -1,18 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { HD2D_AUTO_FPS, HD2D_GROUND_TILT, HD2D_MAX_DPR, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, hd2dNeedsCanvasFilter, hd2dPixelRatio } from './hd2d';
+import { HD2D_AUTO_FPS, HD2D_GROUND_TILT, HD2D_MAX_DPR, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, hd2dOccludes, hd2dOcclusionOpacity, hd2dPixelRatio } from './hd2d';
 
 describe('acabamento 2D-HD da Vila', () => {
   it('mantém o objeto no plano de foco nítido e iluminado', () => {
-    expect(hd2dDepthStyle(12, 12)).toEqual({ blurPx: 0, opacity: 1, brightness: 1 });
+    expect(hd2dDepthStyle(12, 12)).toEqual({ opacity: 1 });
   });
 
-  it('desfoca cada objeto distante sem esconder a sua profundidade', () => {
+  it('dá profundidade aos objetos distantes usando apenas opacidade', () => {
     const style = hd2dDepthStyle(26, 12);
-    expect(style.blurPx).toBeGreaterThan(0);
     expect(style.opacity).toBeLessThan(1);
     expect(style.opacity).toBeGreaterThanOrEqual(0.78);
-    expect(style.brightness).toBeLessThan(1);
-    expect(hd2dNeedsCanvasFilter(style)).toBe(true);
+  });
+
+  it('revela o treinador só quando a fachada está à frente e cruza sua silhueta', () => {
+    const player = { x: 50, y: 80, w: 16, h: 24 };
+    expect(hd2dOccludes({ x: 40, y: 50, w: 60, h: 100 }, player, 150)).toBe(true);
+    expect(hd2dOccludes({ x: 40, y: 50, w: 60, h: 100 }, player, 100)).toBe(false);
+    expect(hd2dOccludes({ x: 100, y: 50, w: 60, h: 100 }, player, 150)).toBe(false);
+    expect(hd2dOccludes({ x: 40, y: 110, w: 60, h: 100 }, player, 210)).toBe(false);
+  });
+
+  it('limita a cobertura acumulada a 32% mesmo com várias camadas', () => {
+    expect(hd2dOcclusionOpacity(0)).toBe(1);
+    for (const layers of [1, 2, 5, 20]) {
+      const alpha = hd2dOcclusionOpacity(layers);
+      expect(1 - (1 - alpha) ** layers).toBeCloseTo(0.32);
+    }
   });
 
   it('reduz a resolução de renderização só quando o estilo 2D-HD está ativo', () => {
