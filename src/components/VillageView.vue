@@ -1051,6 +1051,8 @@ const JOY_MAX = 44;
  */
 const joy = reactive({ active: false, pointerId: -1, cx: 0, cy: 0, x: 0, y: 0, lx: 0, ly: 0, downAt: 0, moved: false });
 let tapInteraction: ({ kind: 'point'; x: number; y: number } | { kind: 'mon'; id: string }) | null = null;
+/** Recalcular caminho custa busca no mapa; alvo móvel é atualizado no máximo duas vezes por segundo. */
+let lastTapRetargetAt = -Infinity;
 const TAP_MS = 320;
 const TAP_PX = 10;
 function applyStick(x: number, y: number): void {
@@ -1094,6 +1096,7 @@ function joyUp(e: PointerEvent): void {
     const object = game.interactionAtScreen(e.clientX, e.clientY);
     if (object) {
       tapInteraction = object.id ? { kind: 'mon', id: object.id } : { kind: 'point', x: object.x, y: object.y };
+      lastTapRetargetAt = performance.now();
       game.setInteractionMarker({ x: object.x, y: object.y });
       game.walkTo(object.x, object.y);
       return;
@@ -1884,9 +1887,13 @@ function checkTapInteraction(): void {
     game.facePoint(point.x, point.y);
     pressA();
   } else if (target.kind === 'mon') {
-    // O Pokémon pode continuar passeando: atualiza o destino a cada passo até alcançar o vizinho atual.
-    game.setInteractionMarker(point);
-    game.walkTo(point.x, point.y);
+    // O Pokémon pode continuar passeando, mas refazer a rota a cada passo pesa no celular.
+    const now = performance.now();
+    if (now - lastTapRetargetAt >= 500) {
+      lastTapRetargetAt = now;
+      game.setInteractionMarker(point);
+      game.walkTo(point.x, point.y);
+    }
   } else if (game.walking) {
     return;
   } else {
