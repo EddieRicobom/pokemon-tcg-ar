@@ -3115,7 +3115,16 @@ onMounted(async () => {
     if (!document.hidden && visual.sound && !dialog.value && !sheet.value && !legendaryScene.value && !hoOhWishScene.value && !cutsceneOpen.value && Date.now() >= nextAmbientSoundAt) {
       nextAmbientSoundAt = Date.now() + 18000 + Math.random() * 26000;
       const hour = new Date().getHours();
-      playSound(game?.weatherKind === 'chuva' ? 'village-water' : hour >= 20 || hour < 5 ? 'village-night' : Math.random() < 0.68 ? 'village-birds' : 'village-chime');
+      const ambient = game?.weatherKind === 'chuva'
+        ? 'village-water'
+        : hour >= 20 || hour < 5
+          ? 'village-night'
+          : Math.random() < 0.44
+            ? 'village-birds'
+            : Math.random() < 0.68
+              ? 'village-leaves'
+              : Math.random() < 0.84 ? 'village-market' : 'village-chime';
+      playSound(ambient);
     }
   }, 1000);
   if (tickCrops(state, Date.now(), effects().growthFactor) > 0) changed();
