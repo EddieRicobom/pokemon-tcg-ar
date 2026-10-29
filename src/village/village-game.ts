@@ -63,7 +63,7 @@ import { VillaAtlas, windowGlow, windowRects } from './tileset-art';
 import type { Rgba } from './tileset-art';
 import { HOME_LANTERN, HOME_WINDOWS, paintFountain, paintHome, paintLamp, paintLot, paintMuseum } from './town-art';
 import { COLISEU_GLOWS, paintColiseu } from './coliseu-art';
-import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dGroundProjection, hd2dNeedsCanvasFilter, hd2dPixelRatio } from '../core/village/hd2d';
+import { HD2D_GROUND_TILT, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, hd2dNeedsCanvasFilter, hd2dPixelRatio } from '../core/village/hd2d';
 
 /**
  * O jogo da Vila no navegador: canvas 2D em escala inteira (pixels nítidos), câmera que segue você, profundidade por
@@ -210,10 +210,9 @@ export class VillageGame {
    */
   private renderFps(): number {
     const configured = this.maxFps();
-    // O acabamento por objeto pede trabalho extra no canvas. Em automático,
-    // 30 FPS preserva a leitura 2D-HD sem virar custo de 60 FPS;
-    // uma escolha explícita de 30 ou 20 continua tendo prioridade.
-    if (this.hd2d() && !this.reducedMotion?.matches && (!Number.isFinite(configured) || configured <= 0)) return 30;
+    // Fora do Rotom, automático conserva a resposta de 60 FPS. Os limites
+    // explícitos de 30 ou 20 FPS continuam tendo prioridade.
+    if (this.hd2d() && !this.reducedMotion?.matches) return hd2dFrameRate(configured, true);
     return this.diorama && (!Number.isFinite(configured) || configured <= 0) ? 30 : configured;
   }
 
@@ -1436,10 +1435,18 @@ export class VillageGame {
     // árvore ou outro prédio à frente acabaria escondendo a coluna inteira.
     // Eles são desenhados depois dos elementos do mapa, antes das partículas.
     const towerFx: (() => void)[] = [];
-    const x0 = Math.floor(camX / T) - 2;
-    const y0 = Math.floor(camY / T) - 2;
-    const x1 = x0 + Math.ceil(W / T) + 4;
-    const y1 = y0 + Math.ceil(H / T) + 4;
+    // Só monta e desenha objetos no campo de visão, com uma faixa de 20% da
+    // tela em cada borda. A margem impede pop-in durante a caminhada, sem
+    // gastar CPU com itens que ainda estão longe demais para aparecer.
+    const overscanX = W * 0.2;
+    const overscanY = viewHeight * 0.2;
+    const x0 = Math.floor((camX - overscanX) / T);
+    const y0 = Math.floor((camY - overscanY) / T);
+    const x1 = Math.ceil((camX + W + overscanX) / T);
+    // O chão comprimido mostra mais linhas do mapa do que o canvas mede. O
+    // mesmo alcance precisa alimentar os objetos em pé, senão eles somem
+    // quando entram na área visível da projeção.
+    const y1 = Math.ceil((camY + viewHeight + overscanY) / T);
     const shadow = (cx: number, cy: number, rx: number, ry: number, a = 0.2) => {
       ctx.fillStyle = `rgba(0,0,0,${a})`;
       ctx.beginPath();

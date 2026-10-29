@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HD2D_GROUND_TILT, HD2D_MAX_DPR, hd2dDepthStyle, hd2dGroundProjection, hd2dNeedsCanvasFilter, hd2dPixelRatio } from './hd2d';
+import { HD2D_AUTO_FPS, HD2D_GROUND_TILT, HD2D_MAX_DPR, hd2dDepthStyle, hd2dFrameRate, hd2dGroundProjection, hd2dNeedsCanvasFilter, hd2dPixelRatio } from './hd2d';
 
 describe('acabamento 2D-HD da Vila', () => {
   it('mantém o objeto no plano de foco nítido e iluminado', () => {
@@ -19,6 +19,12 @@ describe('acabamento 2D-HD da Vila', () => {
     expect(hd2dPixelRatio(3, false)).toBe(2);
     expect(hd2dPixelRatio(3, true)).toBe(HD2D_MAX_DPR);
     expect(hd2dPixelRatio(1, true)).toBe(1);
+  });
+
+  it('mantém 60 FPS no automático, mas respeita o limite que a pessoa escolheu', () => {
+    expect(hd2dFrameRate(0, true)).toBe(HD2D_AUTO_FPS);
+    expect(hd2dFrameRate(30, true)).toBe(30);
+    expect(hd2dFrameRate(0, false)).toBe(0);
   });
 
   it('inclina o chão e conserva o caminho inverso do toque até o mapa', () => {
