@@ -435,7 +435,10 @@ export class BattleDirector {
       if (k === 0) return { x: side * rx * 0.42, z: 0 };
       const reserves = members.length - 1;
       const u = reserves === 1 ? 0.5 : (k - 1) / (reserves - 1);
-      return { x: side * rx * 0.95, z: (-0.75 + 1.5 * u) * rz };
+      // Banco bem aberto: os reservas não encobrem o titular nem parecem uma pilha na borda.
+      // A curvatura aproxima as pontas da linha lateral sem sair do disco da arena.
+      const zFactor = -0.9 + 1.8 * u;
+      return { x: side * rx * (0.8 + 0.12 * Math.abs(zFactor)), z: zFactor * rz };
     }
     const m = members.length;
     const z = m === 1 ? 0 : (-0.8 + (1.6 * k) / (m - 1)) * rz;

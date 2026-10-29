@@ -622,6 +622,9 @@ describe('modos de batalha na cena', () => {
     expect(hud0.banner?.text).toBe('3 contra 3!');
     expect(hud0.bars.filter((b) => b.reserve)).toHaveLength(4);
     expect(hud0.bars.filter((b) => !b.reserve).map((b) => b.team).sort()).toEqual([0, 1]);
+    const director = scene as unknown as { director: { homePosition(i: number): { x: number; z: number } } };
+    // Os dois reservas de cada lado usam o banco inteiro, em vez de se encobrirem perto do titular.
+    expect(Math.abs(director.director.homePosition(2).z - director.director.homePosition(4).z)).toBeGreaterThan(0.5);
     const enters = result.turns.filter((t) => t.kind === 'enter');
     run(scene, total);
     expect(cues.filter((c) => c.kind === 'enter')).toHaveLength(enters.length);
