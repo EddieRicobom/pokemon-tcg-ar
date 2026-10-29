@@ -12,6 +12,7 @@ import type { DecodedGif } from '../../src/core/gif';
 
 const params = new URLSearchParams(location.search);
 const N = Number(params.get('n') ?? 30);
+const hd2d = params.get('hd2d') === '1';
 const SEED = 20261014;
 const map = generateVillage(SEED);
 // Com `reactive=1` o estado é um proxy do Vue, como na Vila de verdade (`VillageView.vue` passa `reactive(...)`).
@@ -42,6 +43,7 @@ function gif(hue: number): DecodedGif {
 const mons: VillageMon[] = Array.from({ length: N }, (_, i) => ({ id: `m${i}`, name: `Pokémon ${i}`, shiny: false, gif: gif(i), dexId: 1 + (i % 150) }));
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 const game = new VillageGame(canvas, map, state, mons, 'trainer-1', null, null, null, Math.random);
+game.hd2d = () => hd2d;
 game.resize(390, 844);
 game.setTown(5, new Map(mons.slice(0, 8).map((m, i) => [m.id, i])));
 

@@ -176,7 +176,10 @@ let villageAr: RunningVillageAr | null = null;
 const arLook = ref<{ pointerId: number; x: number; y: number; moved: boolean } | null>(null);
 const reducedMotion = ref(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
 const reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-const syncReducedMotion = (event: MediaQueryListEvent) => { reducedMotion.value = event.matches; };
+const syncReducedMotion = (event: MediaQueryListEvent) => {
+  reducedMotion.value = event.matches;
+  if (wrapEl.value) game?.resize(wrapEl.value.clientWidth, wrapEl.value.clientHeight);
+};
 
 function placeVillageAr(): void {
   const result = villageAr?.recenter();
@@ -2992,6 +2995,11 @@ function thumbOf(gif: VillageMon['gif']): string {
 // Saldo único: com a Vila aberta, a carteira mexe no estado vivo dela (ver `app/wallet.ts`).
 attachLiveVillage(state, () => changed());
 watch(() => state.coins, (value) => syncCoins(value));
+// O 2D-HD usa uma resolução de renderização apropriada para pixel art. Recria
+// o canvas também ao ativar/desativar Rotom, que muda o efeito efetivo.
+watch(() => effectiveVisual.value.villageHd2d, () => {
+  if (wrapEl.value) game?.resize(wrapEl.value.clientWidth, wrapEl.value.clientHeight);
+});
 onBeforeUnmount(() => {
   detachLiveVillage(state);
   sound.dispose();

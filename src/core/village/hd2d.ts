@@ -11,6 +11,15 @@ export interface Hd2dDepthStyle {
  */
 export const HD2D_GROUND_TILT = 0.28;
 
+/** Pixel art continua nítida sem renderizar quatro vezes mais pixels em telas Retina. */
+export const HD2D_MAX_DPR = 1.25;
+
+/** A Vila normal preserva até 2×; o acabamento 2D-HD prioriza fluidez no celular. */
+export function hd2dPixelRatio(devicePixelRatio: number, enabled: boolean): number {
+  const safeDpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  return Math.min(enabled ? HD2D_MAX_DPR : 2, safeDpr);
+}
+
 /** Conversão entre o eixo do mapa e o chão projetado na tela. */
 export function hd2dGroundProjection(y: number, tilt = HD2D_GROUND_TILT): { screenY: number; mapY: number } {
   const safeTilt = Number.isFinite(tilt) && tilt > 0 ? tilt : HD2D_GROUND_TILT;
@@ -30,4 +39,9 @@ export function hd2dDepthStyle(objectDepth: number, focusDepth: number): Hd2dDep
     opacity: Math.max(0.78, 1 - beyondFocus * 0.018),
     brightness: Math.max(0.86, 1 - beyondFocus * 0.014),
   };
+}
+
+/** Desfoque de canvas só compensa quando ele será realmente perceptível. */
+export function hd2dNeedsCanvasFilter(style: Hd2dDepthStyle): boolean {
+  return style.blurPx >= 0.5;
 }
