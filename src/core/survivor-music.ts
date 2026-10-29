@@ -28,11 +28,17 @@ export function survivorMusicPath(region: number): string {
 
 export function survivorMusicTitle(elapsedMs: number, runSeed = 0): string { return SURVIVOR_TRACKS[survivorRegionAt(elapsedMs, runSeed).current]![1]; }
 
-export interface SurvivorMusicSettings { enabled: boolean; volume: number }
+export interface SurvivorMusicSettings {
+  enabled: boolean;
+  volume: number;
+  /** Sons curtos dos ataques automáticos; separados da música e do som geral. */
+  attackSounds: boolean;
+}
 export function normalizeSurvivorMusicSettings(raw: unknown): SurvivorMusicSettings {
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   return {
     enabled: data.enabled !== false,
     volume: typeof data.volume === 'number' && Number.isFinite(data.volume) ? Math.max(0, Math.min(100, data.volume)) : 35,
+    attackSounds: data.attackSounds !== false,
   };
 }

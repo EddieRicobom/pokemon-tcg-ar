@@ -488,6 +488,9 @@ interface PickOption {
 }
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
+/** Aviso breve de dano: fica fora do canvas para não acrescentar trabalho ao renderizador do jogo. */
+const damageFeedback = ref(false);
+let damageFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 const ready = ref(false);
 const failed = ref(false);
 const avatarName = ref('');
@@ -748,6 +751,27 @@ function unlockSound(): void {
 function playSound(cue: UiSound): void {
   sound.setEnabled(visual.sound);
   sound.play({ kind: 'ui', cue });
+}
+
+let lastAttackSoundAt = -Infinity;
+/** Uma tentativa de ataque por quadro basta: rajadas e aliados não viram ruído contínuo. */
+function playAttackSound(move: SurvivorMove, now: number): void {
+  if (!survivorAudio.attackSounds || now - lastAttackSoundAt < 70) return;
+  lastAttackSoundAt = now;
+  sound.setEnabled(visual.sound);
+  sound.play({ kind: 'survivor-attack', type: move.type, category: move.category });
+}
+
+/** Flash e tremor discretos, desligáveis junto com os impactos e ausentes no Modo Rotom. */
+function showDamageFeedback(): void {
+  if (!effectiveVisual.value.impactFx || reducedMotion) return;
+  if (damageFeedbackTimer) clearTimeout(damageFeedbackTimer);
+  damageFeedback.value = false;
+  requestAnimationFrame(() => { damageFeedback.value = true; });
+  damageFeedbackTimer = setTimeout(() => {
+    damageFeedback.value = false;
+    damageFeedbackTimer = null;
+  }, 500);
 }
 
 let ctx: CanvasRenderingContext2D | null = null;
@@ -1774,6 +1798,7 @@ function loop(ts: number): void {
   const s = toRaw(state.value!);
   preloadVisibleEnemyRegions(s.elapsedMs, s.runSeed);
   if (!s.over && !s.pendingUpgrade && !evolving.value) {
+    const attackTimerBefore = s.player.attackTimerMs;
     const projectilesBefore = s.projectiles.length;
     const hpBefore = s.player.hp;
     const xpBefore = s.player.xp;
@@ -1791,6 +1816,7 @@ function loop(ts: number): void {
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
     const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
+    if (s.player.attackTimerMs > attackTimerBefore) playAttackSound(s.player.move, ts);
     specialQueued = false;
     if (bonkRun.value && bonkPhysics.value && beforeBonkPosition) {
       stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, simulationDt);
@@ -1826,7 +1852,10 @@ function loop(ts: number): void {
     if (s.projectiles.length > projectilesBefore) playSound('survivor-shot');
     if (s.kills > killsBefore) playSound('survivor-hit');
     if (s.player.xp > xpBefore) playSound('survivor-pickup');
-    if (s.player.hp < hpBefore) playSound('survivor-hurt');
+    if (s.player.hp < hpBefore) {
+      playSound('survivor-hurt');
+      showDamageFeedback();
+    }
     for (const ev of events) {
       if (ev.type === 'levelup') playSound('survivor-level');
       else if (ev.type === 'bossSpawn') playSound('survivor-boss');
@@ -2351,6 +2380,7 @@ onBeforeUnmount(() => {
   resizer = null;
   if (toastTimer) clearTimeout(toastTimer);
   if (artifactNoticeTimer) clearTimeout(artifactNoticeTimer);
+  if (damageFeedbackTimer) clearTimeout(damageFeedbackTimer);
   clearTrainerPresentation();
   if (upgradeMenuLockTimer) clearTimeout(upgradeMenuLockTimer);
   upgradeMenuLockTimer = null;
@@ -2376,9 +2406,10 @@ onBeforeUnmount(() => {
         @pointercancel="joyCancel"
         @lostpointercapture="joyCancel"
       >
-        <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" :class="{ 'bonk-canvas': bonkRun }" :aria-label="bonkRun ? 'BONK: arraste para andar, toque ou clique duplo na tela para pular' : 'Torre: arraste em qualquer lugar para andar'"></canvas>
+        <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" :class="{ 'bonk-canvas': bonkRun, 'survivor-damage-shake': damageFeedback }" :aria-label="bonkRun ? 'BONK: arraste para andar, toque ou clique duplo na tela para pular' : 'Torre: arraste em qualquer lugar para andar'"></canvas>
 
         <div class="survivor-vignette" aria-hidden="true"></div>
+        <div v-if="damageFeedback" class="survivor-damage-flash" aria-hidden="true"></div>
 
         <div v-if="toast" class="survivor-toast" role="status" aria-live="polite">{{ toast }}</div>
         <div v-if="artifactNotice" class="survivor-artifact-notice" role="status" aria-live="polite">
@@ -2491,7 +2522,7 @@ onBeforeUnmount(() => {
         <div v-if="paused && !trainerPresentation && !typeAffinityOffer && !leaveConfirm" class="survivor-overlay" role="dialog" aria-label="Jogo pausado" aria-modal="true">
           <div class="card survivor-pause">
             <h2>Jogo pausado</h2>
-            <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
+            <MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" :track="survivorMusicTitle(state?.elapsedMs ?? 0, state?.runSeed ?? 0)" :unavailable="musicUnavailable" regional @unlock="unlockMusic" />
             <p class="note">O relógio, os inimigos e os projéteis estão parados.</p>
             <details class="survivor-help" :open="helpOpen" @toggle="helpOpen = ($event.target as HTMLDetailsElement).open">
               <summary>Como jogar · controles</summary>
@@ -2645,7 +2676,7 @@ onBeforeUnmount(() => {
             <p v-if="pickBusy" class="note" role="status">Preparando a corrida…</p>
             <details class="survivor-more">
               <summary>Mais opções e informações</summary>
-            <details><summary>Música da Torre</summary><MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" :unavailable="musicUnavailable" regional @unlock="unlockMusic" /><p class="hint">As nove regiões têm temas próprios: cinco arranjos GBA e quatro temas com tratamento sonoro retrô. A troca acompanha a transição do cenário.</p></details>
+            <details><summary>Música da Torre</summary><MusicControls v-model:enabled="survivorAudio.enabled" v-model:volume="survivorAudio.volume" v-model:attack-sounds="survivorAudio.attackSounds" :unavailable="musicUnavailable" regional @unlock="unlockMusic" /><p class="hint">As nove regiões têm temas próprios: cinco arranjos GBA e quatro temas com tratamento sonoro retrô. A troca acompanha a transição do cenário.</p></details>
             <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
             <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
             <details class="survivor-ledger">

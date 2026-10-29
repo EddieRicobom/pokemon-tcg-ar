@@ -1,6 +1,7 @@
 import type { Personality, StatusKind } from '../core/battle';
 import type { PokemonType } from '../core/pokemon-data';
 import type { PhysicalStyle, SpecialDelivery } from './effects';
+import type { MoveCategory } from '../core/survivor-moves';
 
 /**
  * Receitas dos sons da batalha. Nada de arquivo de áudio: cada som é sintetizado na hora (osciladores e ruído
@@ -23,6 +24,7 @@ export type SoundCue =
   | { kind: 'skip'; cause: StatusKind }
   | { kind: 'faint' }
   | { kind: 'victory'; personality: Personality }
+  | { kind: 'survivor-attack'; type: PokemonType; category: MoveCategory }
   // Pin Mode
   | { kind: 'pin-launch'; power: number; type: PokemonType | null }
   | { kind: 'pin-hit'; strength: number; edge: 'super' | 'weak' | 'none' | null }
@@ -249,6 +251,21 @@ function uiLayers(cue: Extract<SoundCue, { kind: 'ui' }>['cue']): Layer[] {
   }
 }
 
+/** Ataques da Torre: o elemento dá a cor sonora e a forma dá a articulação. */
+function survivorAttackLayers(cue: Extract<SoundCue, { kind: 'survivor-attack' }>): Layer[] {
+  const elemental = hitOf(cue.type, 0.48).map((layer) => ({ ...layer, gain: layer.gain * 0.3, dur: Math.min(layer.dur, 0.22) }));
+  const gesture = cue.category === 'aura'
+    ? [tone('sine', 360, 720, 0, 0.13, 0.07)]
+    : cue.category === 'area'
+      ? [tone('sine', 130, 55, 0, 0.14, 0.12)]
+      : cue.category === 'cone'
+        ? [noise({ type: 'bandpass', f0: 900, f1: 1800, q: 1 }, 0, 0.12, 0.08)]
+        : cue.category === 'orbit'
+          ? [tone('triangle', 540, 760, 0, 0.1, 0.055)]
+          : [tone('square', 680, 360, 0, 0.08, 0.06)];
+  return [...gesture, ...elemental];
+}
+
 /** Camadas de um sinal. Sempre finitas, com duração limitada e um número pequeno de camadas. */
 export function layersFor(cue: SoundCue): Layer[] {
   let layers: Layer[];
@@ -301,6 +318,9 @@ export function layersFor(cue: SoundCue): Layer[] {
       break;
     case 'victory':
       layers = victoryOf(cue.personality);
+      break;
+    case 'survivor-attack':
+      layers = survivorAttackLayers(cue);
       break;
     case 'ui':
       layers = uiLayers(cue.cue);

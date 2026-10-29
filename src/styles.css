@@ -6638,6 +6638,37 @@ body.no-scroll .reward-toasts {
   box-shadow: inset 0 36px 28px -28px rgba(0, 0, 0, 0.55), inset 0 -24px 20px -20px rgba(0, 0, 0, 0.45);
 }
 
+/* Aviso composto no navegador: não redesenha o canvas de jogo quando o jogador sofre dano. */
+.survivor-damage-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(235, 35, 35, 0.2);
+  animation: survivor-damage-flash 500ms ease-out forwards;
+}
+
+.survivor-canvas.survivor-damage-shake {
+  animation: survivor-damage-shake 180ms ease-out both;
+}
+
+@keyframes survivor-damage-flash {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes survivor-damage-shake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(-2px, 1px, 0); }
+  50% { transform: translate3d(2px, -1px, 0); }
+  75% { transform: translate3d(-1px, 1px, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .survivor-canvas.survivor-damage-shake { animation: none; }
+  .survivor-damage-flash { animation: none; opacity: 0.32; }
+}
+
 .survivor-canvas {
   display: block;
   width: 100%;
