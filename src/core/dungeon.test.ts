@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  attack, attackArea, attacker, attackTargets, beginEnemyTurn, BOSS_EVERY, BOSS_FLOOR_EVERY, chooseReward, damage, depthScale, eliteChance, endTurn,
-  enemyStep, equipGem, EXHAUST_ROUNDS, finishEnemyTurn, fuse, fusionName, fusionOrigins, GRID_H, GRID_W, isBossFloor, move, planEnemy,
+  adaptiveDifficulty, attack, attackArea, attacker, attackTargets, beginEnemyTurn, BOSS_EVERY, BOSS_FLOOR_EVERY, buildFloor, chooseReward, damage, depthScale, difficultyFloor, eliteChance, endTurn,
+  enemyStep, equipGem, EXHAUST_ROUNDS, finishEnemyTurn, fuse, fusionName, fusionOrigins, GRID_H, GRID_W, isBossFloor, isMiniBossFloor, MINI_BOSS_FLOOR_EVERY, move, planEnemy,
   polishGems, previewAttack, previewFusion, profileFor, reachable, retreat, START_AP, startDungeon, switchTo, threatenedCells, turnAp, typeFactor,
   addMember, unequipGem, usePotion, baseSpeciesDexId, evolveMember, hasCompleteWeaponTable, NATIONAL_DEX_LAST, weaponOfDex, weaponOfferAtFloor,
 } from './dungeon';
@@ -9,6 +9,7 @@ import { allFusions, ammoOptions, biomeOf, CATALOG_ORDER, evolveForDepth, floorG
 import type { DungeonState, EnemySpecies, MemberInput, WeaponId } from './dungeon';
 import type { Gem } from './dungeon-gems';
 import type { BaseStats } from './survivor-moves';
+import { generationOf } from './species-filter';
 
 const stats = (o: Partial<BaseStats> = {}): BaseStats => ({ hp: 60, attack: 80, defense: 60, spAttack: 50, spDefense: 60, speed: 90, ...o });
 const mon = (id: string, o: Partial<BaseStats> = {}, types: MemberInput['types'] = ['fire'], dexId = 68): MemberInput => ({ id, dexId, name: id, types, stats: stats(o) });
@@ -308,6 +309,33 @@ describe('descida sem fim', () => {
     expect(isBossFloor(BOSS_FLOOR_EVERY + 1)).toBe(false);
     expect(new Set(Array.from({ length: 9 }, (_, i) => floorGeneration(42, i + 1))).size).toBe(9);
     expect(new Set(Array.from({ length: 9 }, (_, i) => floorGeneration(42, i + 10))).size).toBe(9);
+    expect(isMiniBossFloor(MINI_BOSS_FLOOR_EVERY)).toBe(true);
+    expect(isMiniBossFloor(MINI_BOSS_FLOOR_EVERY + 1)).toBe(false);
+  });
+
+  it('gira uma geração por andar, põe mini-chefe a cada 6 e não mistura a sala', () => {
+    const regional: EnemySpecies[] = [19, 161, 261, 396, 504, 659, 731, 819, 915].map((dexId, i) => ({ dexId, name: `g${i + 1}`, types: ['normal'], stats: stats() }));
+    const s = startDungeon([mon('a')], regional, 11);
+    for (let floor = 1; floor <= 9; floor++) {
+      s.floor = floor;
+      buildFloor(s);
+      expect(s.enemies).not.toHaveLength(0);
+      expect(s.enemies.every((enemy) => generationOf(enemy.dexId) === s.biome + 1)).toBe(true);
+    }
+    s.floor = 6;
+    buildFloor(s);
+    expect(s.enemies.some((enemy) => enemy.miniBoss)).toBe(true);
+  });
+
+  it('acompanha aliados de pé e gemas sem punir quem já caiu', () => {
+    const s = arena([mon('a'), mon('b'), mon('c')]);
+    s.team[0]!.gems[0] = gem(1, 'rubi', 3);
+    s.team[1]!.gems[0] = gem(2, 'safira', 3);
+    expect(adaptiveDifficulty(s)).toBe(3); // dois aliados + seis graus de gema
+    expect(difficultyFloor(s)).toBe(s.floor + 3);
+    s.team[1]!.status = 'down';
+    s.team[2]!.status = 'down';
+    expect(adaptiveDifficulty(s)).toBe(0);
   });
 
   it('pegar o baú põe a gema na mochila', () => {

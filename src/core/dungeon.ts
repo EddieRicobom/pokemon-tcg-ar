@@ -1,4 +1,4 @@
-import { biomeOf, floorGeneration, HOME_BONUS, LAVA_BURN } from './dungeon-biomes';
+import { biomeOf, DUNGEON_BIOMES, floorGeneration, HOME_BONUS, LAVA_BURN } from './dungeon-biomes';
 import type { HazardKind } from './dungeon-biomes';
 import { generationOf, typesOfDex } from './species-filter';
 import { nextEvolutions, speciesName } from './survivor-evolution';
@@ -40,6 +40,8 @@ export const GRID_W = 7;
 export const GRID_H = 7;
 /** A cada quantos andares aparece um chefe. */
 export const BOSS_FLOOR_EVERY = 5;
+/** A cada quantos andares surge um mini-chefe, inclusive ao lado de um chefe no andar 30, 60 etc. */
+export const MINI_BOSS_FLOOR_EVERY = 6;
 export const FUSION_TURNS = 3;
 export const RESERVE_RECOVERY = 0.25;
 /** Rodadas de cooldown ao esgotar: a rodada em que a carga zera não conta (por isso 2 + 1). */
@@ -133,6 +135,8 @@ export interface Enemy {
   pos: Cell;
   weapon: WeaponId;
   boss: boolean;
+  /** Mini-chefe: mais resistente e com afixo, mas sem o golpe anunciado de um chefe. */
+  miniBoss: boolean;
   elite: boolean;
   profile: EnemyProfile;
   affixes: Affix[];
@@ -246,8 +250,9 @@ const isWall = (state: DungeonState, c: Cell): boolean => state.walls.some((w) =
 const DIRS: readonly Cell[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }];
 
 export const isBossFloor = (floor: number): boolean => floor % BOSS_FLOOR_EVERY === 0;
+export const isMiniBossFloor = (floor: number): boolean => floor % MINI_BOSS_FLOOR_EVERY === 0;
 
-export { biomeOf, DUNGEON_BIOMES, floorGeneration, HOME_BONUS, LAVA_BURN } from './dungeon-biomes';
+export { biomeOf, DUNGEON_BIOMES, floorGeneration, HOME_BONUS, LAVA_BURN };
 export type { DecorKind, DungeonBiome, HazardKind, ParticleKind } from './dungeon-biomes';
 
 /** A casa especial em `c`, se houver. */
@@ -273,6 +278,23 @@ export function depthScale(floor: number): { hp: number; atk: number; def: numbe
 
 export function eliteChance(floor: number): number {
   return Math.max(0, Math.min(0.55, 0.05 * (floor - 2)));
+}
+
+/**
+ * Acompanhamento da equipe: cada aliado de pé depois do primeiro vale 1 andar virtual; a cada 6 graus de gema
+ * equipados em aliados de pé vale mais 1. O ajuste é limitado a 8, para a montagem da equipe não criar um salto
+ * impossível, e só afeta atributos e elites — a quantidade de inimigos continua seguindo o andar real.
+ */
+export function adaptiveDifficulty(state: Pick<DungeonState, 'team'>): number {
+  const standing = state.team.filter((member) => member.status !== 'down');
+  const allies = Math.max(0, standing.length - 1);
+  const gemTiers = standing.reduce((sum, member) => sum + member.gems.reduce((tiers, gem) => tiers + (gem?.tier ?? 0), 0), 0);
+  return Math.min(8, allies + Math.floor(gemTiers / 6));
+}
+
+/** Andar efetivo usado nos atributos e elites: profundidade real mais o crescimento da equipe. */
+export function difficultyFloor(state: Pick<DungeonState, 'floor' | 'team'>): number {
+  return state.floor + adaptiveDifficulty(state);
 }
 
 export function createMember(input: MemberInput): Member {
@@ -382,15 +404,22 @@ function freeCell(state: DungeonState, rng: Rng, rows: readonly [number, number]
   return null;
 }
 
-function speciesFor(state: DungeonState, rng: Rng, boss: boolean): EnemySpecies {
+function speciesFor(state: DungeonState, rng: Rng, kind: 'normal' | 'elite' | 'miniBoss' | 'boss'): EnemySpecies {
   const depthOk = state.pool.filter((p) => (p.minDepth ?? 1) <= state.floor);
   const pick = (from: readonly EnemySpecies[]) => from[Math.floor(rng() * from.length)]!;
-  const inGen = (list: readonly EnemySpecies[]) => list.filter((p) => p.generation === state.biome);
+  const inBiome = (list: readonly EnemySpecies[]) => list.filter((p) => {
+    const generation = generationOf(p.dexId);
+    return p.generation === state.biome || (p.generation === undefined && generation !== undefined && generation - 1 === state.biome);
+  });
   const bosses = depthOk.filter((p) => p.boss);
   const regular = depthOk.filter((p) => !p.boss || (p.minDepth ?? 1) + 10 <= state.floor);
-  const candidates = boss ? (inGen(bosses).length ? inGen(bosses) : bosses) : (inGen(regular).length ? inGen(regular) : regular);
+  const biomeBosses = inBiome(bosses);
+  const biomeRegular = inBiome(regular);
+  const candidates = kind === 'boss'
+    ? (biomeBosses.length ? biomeBosses : biomeRegular.length ? biomeRegular : bosses.length ? bosses : regular)
+    : (biomeRegular.length ? biomeRegular : regular);
   const base = candidates.length ? pick(candidates) : pick(depthOk.length ? depthOk : state.pool);
-  return boss ? base : evolveForDepth(base, state.floor, rng);
+  return kind === 'boss' ? base : evolveForDepth(base, state.floor, rng);
 }
 
 /** Mais fundo, os selvagens aparecem evoluídos: um estágio a partir do andar 6 e dois a partir do 14 (só com dados reais). */
@@ -406,18 +435,19 @@ export function evolveForDepth(species: EnemySpecies, floor: number, rng: Rng): 
   return current;
 }
 
-function spawnEnemy(state: DungeonState, species: EnemySpecies, pos: Cell, kind: 'normal' | 'elite' | 'boss', rng: Rng): Enemy {
-  const scale = depthScale(state.floor);
+function spawnEnemy(state: DungeonState, species: EnemySpecies, pos: Cell, kind: 'normal' | 'elite' | 'miniBoss' | 'boss', rng: Rng): Enemy {
+  const effectiveFloor = difficultyFloor(state);
+  const scale = depthScale(effectiveFloor);
   const weapon = weaponOfDex(species.dexId);
   if (!weapon) throw new Error(`Sem arma catalogada para a espécie inimiga #${species.dexId}.`);
-  const affixCount = kind === 'boss' ? Math.floor(state.floor / 10) : kind === 'elite' ? (state.floor >= 15 ? 2 : 1) : 0;
+  const affixCount = kind === 'boss' ? Math.floor(effectiveFloor / 10) : kind === 'miniBoss' ? (effectiveFloor >= 18 ? 2 : 1) : kind === 'elite' ? (effectiveFloor >= 15 ? 2 : 1) : 0;
   const pool = [...AFFIX_IDS];
   const affixes: Affix[] = [];
   while (affixes.length < affixCount && pool.length) affixes.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]!);
-  const maxHp = Math.round((species.stats.hp * 0.8 + 25) * scale.hp * (kind === 'boss' ? 2.6 : kind === 'elite' ? 1.4 : 1));
+  const maxHp = Math.round((species.stats.hp * 0.8 + 25) * scale.hp * (kind === 'boss' ? 2.6 : kind === 'miniBoss' ? 1.75 : kind === 'elite' ? 1.4 : 1));
   return {
     uid: state.nextUid++, dexId: species.dexId, name: species.name, types: [...species.types], stats: { ...species.stats }, hp: maxHp, maxHp,
-    pos, weapon, boss: kind === 'boss', elite: kind === 'elite', profile: profileFor(weapon, species.stats, kind === 'boss'), affixes,
+    pos, weapon, boss: kind === 'boss', miniBoss: kind === 'miniBoss', elite: kind === 'elite', profile: profileFor(weapon, species.stats, kind === 'boss'), affixes,
     atkMul: scale.atk, defMul: scale.def, summoned: false, shaken: false, burn: null,
   };
 }
@@ -440,6 +470,7 @@ export function buildFloor(state: DungeonState): void {
   state.biome = floorGeneration(state.seed, state.floor);
   const biome = biomeOf(state.biome);
   const boss = isBossFloor(state.floor);
+  const miniBoss = isMiniBossFloor(state.floor);
   const pillars = 2 + Math.floor(rng() * 3) + Math.min(3, Math.floor(state.floor / 5));
   for (let tries = 0; state.walls.length < pillars && tries < 60; tries++) {
     const c = { x: Math.floor(rng() * GRID_W), y: 1 + Math.floor(rng() * (GRID_H - 3)) };
@@ -449,10 +480,10 @@ export function buildFloor(state: DungeonState): void {
   }
   const count = boss ? 1 + Math.min(3, 1 + Math.floor(state.floor / 10)) : Math.min(6, 2 + Math.floor((state.floor - 1) / 2));
   for (let i = 0; i < count; i++) {
-    const kind = boss && i === 0 ? 'boss' : rng() < eliteChance(state.floor) ? 'elite' : 'normal';
+    const kind = boss && i === 0 ? 'boss' : miniBoss && i === (boss ? 1 : 0) ? 'miniBoss' : rng() < eliteChance(difficultyFloor(state)) ? 'elite' : 'normal';
     const pos = freeCell(state, rng, [0, 1]) ?? freeCell(state, rng, [0, 3]);
     if (!pos) continue;
-    state.enemies.push(spawnEnemy(state, speciesFor(state, rng, kind === 'boss'), pos, kind, rng));
+    state.enemies.push(spawnEnemy(state, speciesFor(state, rng, kind), pos, kind, rng));
   }
   if (rng() < 0.5) {
     const pos = freeCell(state, rng, [2, 4]);
@@ -473,9 +504,10 @@ export function buildFloor(state: DungeonState): void {
   }
   const theme = `${biome.region} · ${biome.name}`;
   const elites = state.enemies.filter((e) => e.elite).length;
+  const mini = state.enemies.find((e) => e.miniBoss);
   state.log.push(boss
-    ? `Andar ${state.floor} · ${theme}: ${state.enemies[0]?.name ?? 'o chefe'} guarda a sala!`
-    : `Andar ${state.floor} · ${theme}: ${state.enemies.length} inimigo(s)${elites ? `, ${elites} de elite` : ''}.`);
+    ? `Andar ${state.floor} · Geração ${state.biome + 1} · ${theme}: ${state.enemies[0]?.name ?? 'o chefe'} guarda a sala${mini ? ` com o mini-chefe ${mini.name}` : ''}!`
+    : `Andar ${state.floor} · Geração ${state.biome + 1} · ${theme}: ${state.enemies.length} inimigo(s)${mini ? `, mini-chefe ${mini.name}` : ''}${elites ? `, ${elites} de elite` : ''}.`);
 }
 
 function newGem(state: DungeonState, rng: Rng, legendaryChance: number): Gem {
@@ -495,10 +527,11 @@ function dropAt(state: DungeonState, pos: Cell, items: LootItem[]): void {
   else state.loot.push({ pos: { ...pos }, items, chest: false });
 }
 
-/** O que um inimigo deixa ao cair: comuns às vezes, elites quase sempre, o chefe sempre uma lendária e uma comum. */
+/** O que um inimigo deixa ao cair: comuns às vezes, elites quase sempre, mini-chefes uma gema e chefes duas. */
 function enemyDrops(state: DungeonState, enemy: Enemy): LootItem[] {
   const rng = rollRng(state);
   if (enemy.boss) return [{ kind: 'gem', gem: newGem(state, rng, 1) }, { kind: 'gem', gem: newGem(state, rng, 0) }];
+  if (enemy.miniBoss) return [{ kind: 'gem', gem: newGem(state, rng, 0) }];
   const chance = enemy.elite ? 0.75 : 0.3;
   if (rng() >= chance) return rng() < 0.08 ? [{ kind: 'potion' }] : [];
   return [{ kind: 'gem', gem: newGem(state, rng, enemy.elite ? 0.06 + state.floor * 0.004 : 0.02) }];
@@ -1258,7 +1291,7 @@ function summon(state: DungeonState, boss: Enemy): void {
     if (n >= 2) break;
     const c = { x: boss.pos.x + d.x, y: boss.pos.y + d.y };
     if (blocked(state, c) || same(c, state.pos)) continue;
-    state.enemies.push(spawnEnemy(state, speciesFor(state, rng, false), c, 'normal', rng));
+    state.enemies.push(spawnEnemy(state, speciesFor(state, rng, 'normal'), c, 'normal', rng));
     n++;
   }
   state.log.push(n ? `${boss.name} chama ${n} reforço(s)!` : `${boss.name} chama reforços, mas não há espaço.`);
@@ -1446,7 +1479,7 @@ function clearFloor(state: DungeonState): void {
     if (!far || dist(c, state.pos) > dist(far, state.pos)) far = c;
   }
   state.stairs = far;
-  state.log.push(isBossFloor(state.floor) ? 'O chefe caiu! A escada para o fundo se abre.' : 'Sala limpa! Pegue o que caiu e siga para a escada.');
+  state.log.push(isBossFloor(state.floor) ? 'O chefe caiu! A escada para o fundo se abre.' : isMiniBossFloor(state.floor) ? 'O mini-chefe caiu! A escada para o fundo se abre.' : 'Sala limpa! Pegue o que caiu e siga para a escada.');
 }
 
 /** Pega a recompensa da escada e desce para o próximo andar (sempre mais difícil). */

@@ -26,7 +26,7 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 ### Combate
 - A sala é uma grade de 7×7 com pilares sorteados. Nenhuma casa fica isolada.
 - Cada turno tem 6 PA. Mover custa 1 por casa, trocar custa 1, a poção custa 2 e a fusão custa 1. O custo do ataque depende da arma.
-- Há 5 das 20 armas do catálogo, uma de cada ritmo: Lâminas duplas (rápida), Lança de combate (em linha), Martelo de impacto (pesado, abala a defesa), Emissor rápido (tiro reto) e Lançador balístico (área em cruz).
+- Há 20 armas do catálogo, cada uma com silhueta própria e um impacto breve na cor da munição ao confirmar o golpe.
 - Cada Pokémon tem a própria carga. A reserva recupera 25% por rodada. Quem esgota fica fora por 2 rodadas completas e volta com a carga cheia.
 - A troca é grátis quando o ativo cai ou esgota. Quando não sobra ninguém, a expedição termina com aviso explícito.
 - Tipos usam multiplicadores moderados: 1,25× na vantagem, 0,8× na resistência e 0,5× no lugar da imunidade. A munição mista divide o dano em 70%/30%, e só a parcela do tipo do próprio Pokémon ganha afinidade.
@@ -40,7 +40,6 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 - As 210 fusões seguem a regra do catálogo: formato e mecanismo da primeira arma (ordem do catálogo) mais o mecanismo da segunda; armas iguais aplicam o mecanismo duas vezes. Nome, número (1–190 diferentes, 191–210 iguais) e texto saem idênticos aos do documento de concepção.
 - No combate: armadilhas disparam em quem passa pela casa, barreiras duram 2 rodadas e contam como parede, bloqueio amortece o próximo golpe e revida de perto, queimadura tira HP no fim da rodada; inimigos podem morrer no turno deles. Inimigos usam só o formato da arma, sem mecanismos.
 - Pokémon de dois tipos escolhe a munição no painel do ativo (sem custo de PA): só o 1º tipo, só o 2º, ou mista 70/30 em qualquer ordem.
-- As 15 armas novas ainda usam um emblema genérico (hexágono com a orbe e o nome); a arte própria fica para depois.
 
 ### Andares por geração (cenário, inimigos e casas especiais)
 - Cada andar sorteia uma geração (`src/core/dungeon-biomes.ts`): as 9 aparecem uma vez a cada 9 andares antes de repetir, como na Torre. A geração decide os inimigos (os nativos da região, os mesmos da Torre, mais as espécies de caverna; a partir do andar 6 eles vêm evoluídos e a partir do 14, duas vezes, sempre com dados reais) e o cenário.
@@ -58,9 +57,10 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 ### Descida sem fim
 - Não existe último andar. A expedição só termina quando a equipe cai ou quando você escolhe **Sair com o espólio** na escada.
 - Com a sala limpa, a escada 🪜 aparece e dá para andar à vontade sem gastar PA para pegar o saque. Na escada, você escolhe uma recompensa para descer (buff de fusão, poção ou sala segura), abre a forja ou sai.
-- Os inimigos crescem a cada andar, sem teto: HP +20%, ataque +7% e defesas +4% por andar. O número de inimigos sobe até 6 e a chance de elite chega a 55%.
-- Há um chefe a cada 5 andares, com 2,6× de HP e afixos que se acumulam a cada 10 andares.
-- As espécies mudam com a profundidade: Pokémon de caverna no começo, as evoluções a partir do andar 5, formas finais no 10 e pseudolendários no 15. Os chefes mudam a cada degrau: Onix, Rhydon, Steelix, Tyranitar, Aggron, Metagross e Garchomp.
+- Cada andar usa uma única geração sorteada. A cada grupo de 9 andares, as gerações I–IX aparecem uma vez cada, em ordem embaralhada pela semente da expedição. Todos os inimigos sorteados naquela sala, inclusive chefe e mini-chefe, vêm da geração dela. Formas básicas entram desde o começo; as evoluções surgem com a profundidade, para os andares fáceis não parecerem povoados por evoluções finais.
+- **Regra de dificuldade progressiva:** o andar real é a base sem teto (HP +20%, ataque +7% e defesas +4% por andar). Ao montar a próxima sala, cada aliado de pé depois do primeiro soma 1 «andar virtual» e cada 6 graus de gemas equipadas em aliados de pé soma mais 1, até +8. Esse andar efetivo altera atributos e chance de elite, mas não aumenta a quantidade de inimigos; perder membros reduz o ajuste na sala seguinte. Assim, uma equipe maior ou bem engastada encontra resistência proporcional sem punir uma equipe que já caiu.
+- Há um chefe a cada 5 andares, com 2,6× de HP e afixos que se acumulam a cada 10 andares. A cada 6 andares também aparece um **mini-chefe**, com 1,75× de HP, um afixo (dois depois do andar efetivo 18) e uma gema garantida; nos múltiplos de 30 ele acompanha o chefe, em vez de substituir a luta maior.
+- O número de inimigos sobe até 6 e a chance de elite chega a 55%.
 - O recorde de andar fica guardado no aparelho (`localStorage`). O fim da expedição mostra um resumo: andar mais fundo, inimigos, elites, chefes, gemas e lendárias.
 
 ### Gemas
