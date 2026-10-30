@@ -1,26 +1,41 @@
 /**
- * Duelo por turnos da Arena, como nos jogos: um Pokémon de cada lado em campo, o jogador escolhe a cada turno um dos
- * (até) 4 golpes que montou ou troca de Pokémon; o oponente responde. Usa as mesmas contas do motor automático
- * (`battle.ts`: dano, STAB, tipos, crítico, condições, intimidade) e acrescenta PP. Puro e determinístico: o sorteio vem
- * de fora e cada turno devolve um estado novo e a lista de eventos para a tela narrar.
+ * Duelo por turnos da Arena, como nos jogos (regras da Gen VI em diante, simplificadas; ver `docs/ARENA_REGRAS.md`): um
+ * Pokémon de cada lado em campo, o jogador escolhe a cada turno um dos (até) 4 golpes que montou ou troca de Pokémon; o
+ * oponente responde. Prioridade, Velocidade, estágios de atributo (−6 a +6), crítico por estágio, condições (queimadura,
+ * veneno, paralisia, congelamento, sono e confusão), hesitar, dreno, recuo, cura, vários golpes por turno e PP. Os efeitos
+ * vêm dos dados da PokéAPI de cada golpe (`ChosenMove`). Puro e determinístico: o sorteio vem de fora e cada turno devolve
+ * um estado novo e a lista de eventos para a tela narrar.
  */
-import { calculateDamage, canGetStatus, effectivenessLabel, expectedDamage, PARALYSIS_SKIP_CHANCE, RESIDUAL_FRACTION, STATUS_CHANCE, THAW_CHANCE } from './battle';
-import type { BattleMove, Fighter, Rng, StatusKind } from './battle';
-import { toBattleMove } from './moveset';
-import type { ChosenMove } from './moveset';
+import { canGetStatus, effectivenessLabel, STATUS_LABELS_PT, typeEffectiveness } from './battle';
+import type { Fighter, Rng, StatusKind } from './battle';
+import { STAGE_LABELS_PT, STAGE_STATS } from './moveset';
+import type { ChosenMove, MoveAilment, StageStat } from './moveset';
+import type { PokemonType } from './pokemon-data';
 
 export type SideIndex = 0 | 1;
 
-/** Pokémon pronto para o duelo: `maxPp[i]` é o PP do golpe `fighter.moves[i]`. */
+/** Condições que ficam até o fim do duelo (uma por Pokémon). A confusão é à parte e some ao trocar. */
+export type DuelStatus = StatusKind | 'sleep';
+export const DUEL_STATUS_LABELS_PT: Record<DuelStatus, string> = { ...STATUS_LABELS_PT, sleep: 'Dormindo' };
+export const DUEL_STATUS_SHORT_PT: Record<DuelStatus, string> = { burn: 'QUE', poison: 'ENV', paralysis: 'PAR', freeze: 'CGL', sleep: 'DOR' };
+
+export type Stages = Record<StageStat, number>;
+
+/** Pokémon pronto para o duelo: atributos do jogo e os golpes escolhidos (com o PP de cada um). */
 export interface DuelMon {
   fighter: Fighter;
-  maxPp: number[];
+  moves: ChosenMove[];
 }
 
 export interface DuelMonState {
   hp: number;
   pp: number[];
-  status: StatusKind | null;
+  status: DuelStatus | null;
+  /** Turnos de sono que ainda faltam. */
+  sleepTurns: number;
+  /** Turnos de confusão que ainda faltam (0 = não está confuso). */
+  confusion: number;
+  stages: Stages;
   /** Já usou o "aguentou firme" (intimidade 4) neste duelo. */
   endured: boolean;
 }
@@ -43,44 +58,73 @@ export interface DuelState {
 /** Ação de um turno. `move: -1` é o Struggle, só quando nenhum golpe tem PP. */
 export type DuelAction = { kind: 'move'; move: number } | { kind: 'switch'; to: number };
 
+type Who = { side: SideIndex; mon: number };
 export type DuelEvent =
-  | { kind: 'switch'; side: SideIndex; from: number; to: number; forced: boolean }
-  | { kind: 'move'; side: SideIndex; mon: number; move: BattleMove; struggle: boolean }
-  | { kind: 'miss'; side: SideIndex; mon: number }
-  | { kind: 'hit'; side: SideIndex; mon: number; damage: number; critical: boolean; effectiveness: number; hpBefore: number; hpAfter: number; endured: boolean }
-  | { kind: 'immune'; side: SideIndex; mon: number }
-  | { kind: 'skip'; side: SideIndex; mon: number; cause: 'freeze' | 'paralysis' }
-  | { kind: 'thaw'; side: SideIndex; mon: number }
-  | { kind: 'status'; side: SideIndex; mon: number; status: StatusKind }
-  | { kind: 'residual'; side: SideIndex; mon: number; cause: 'burn' | 'poison'; damage: number; hpBefore: number; hpAfter: number }
-  | { kind: 'recoil'; side: SideIndex; mon: number; damage: number; hpBefore: number; hpAfter: number }
-  | { kind: 'faint'; side: SideIndex; mon: number }
+  | ({ kind: 'switch'; from: number; to: number; forced: boolean } & { side: SideIndex })
+  | ({ kind: 'move'; move: ChosenMove; struggle: boolean } & Who)
+  | ({ kind: 'miss' } & Who)
+  | ({ kind: 'hit'; damage: number; critical: boolean; effectiveness: number; hpBefore: number; hpAfter: number; endured: boolean } & Who)
+  | ({ kind: 'multi'; hits: number } & Who)
+  | ({ kind: 'immune' } & Who)
+  | ({ kind: 'fail' } & Who)
+  | ({ kind: 'skip'; cause: 'freeze' | 'paralysis' | 'sleep' | 'flinch' } & Who)
+  | ({ kind: 'thaw' } & Who)
+  | ({ kind: 'wake' } & Who)
+  | ({ kind: 'status'; status: MoveAilment } & Who)
+  | ({ kind: 'confused' } & Who)
+  | ({ kind: 'confusion-hit'; damage: number; hpBefore: number; hpAfter: number } & Who)
+  | ({ kind: 'confusion-end' } & Who)
+  | ({ kind: 'stage'; stat: StageStat; change: number; applied: number } & Who)
+  | ({ kind: 'heal'; cause: 'drain' | 'heal'; hpBefore: number; hpAfter: number } & Who)
+  | ({ kind: 'residual'; cause: 'burn' | 'poison'; damage: number; hpBefore: number; hpAfter: number } & Who)
+  | ({ kind: 'recoil'; damage: number; hpBefore: number; hpAfter: number } & Who)
+  | ({ kind: 'faint' } & Who)
   | { kind: 'end'; winner: SideIndex };
 
-/** Golpe de quem ficou sem PP em todos: fraco e machuca quem usa (1/4 dos PS), como nos jogos. */
-export const STRUGGLE: BattleMove = { name: 'Struggle', type: 'normal', power: 50, accuracy: 100, special: false, source: 'padrao' };
-export const STRUGGLE_RECOIL = 1 / 4;
+const NO_EFFECT = {
+  priority: 0, ailment: null, ailmentChance: 0, flinchChance: 0, statChanges: [], statChance: 0, drain: 0, healing: 0, critRate: 0, minHits: 1, maxHits: 1,
+} as const;
 
-/** Monta o Pokémon do duelo com os golpes escolhidos (o PP de cada um vem da PokéAPI). */
+/** Golpe de quem ficou sem PP em todos: sem tipo (sempre dano normal), nunca erra e machuca quem usa (1/4 dos PS). */
+export const STRUGGLE: ChosenMove = { slug: 'struggle', name: 'Struggle', type: 'normal', power: 50, accuracy: null, pp: 1, damageClass: 'physical', ...NO_EFFECT, statChanges: [] };
+export const STRUGGLE_RECOIL = 1 / 4;
+/** Golpe que o confuso dá em si mesmo. */
+const CONFUSION_POWER = 40;
+export const CONFUSION_SELF_HIT = 1 / 3;
+export const PARALYSIS_SKIP = 1 / 4;
+export const THAW = 1 / 5;
+export const RESIDUAL: Record<'burn' | 'poison', number> = { burn: 1 / 16, poison: 1 / 8 };
+/** Chance de crítico por estágio (0, +1, +2, +3 ou mais). */
+export const CRIT_BY_STAGE = [1 / 24, 1 / 8, 1 / 2, 1] as const;
+const LEVEL = 50;
+
+const emptyStages = (): Stages => ({ attack: 0, defense: 0, spAttack: 0, spDefense: 0, speed: 0, accuracy: 0, evasion: 0 });
+
+/** Multiplicador de um estágio de Atq./Def./Atq. Esp./Def. Esp./Vel.: +1 = ×1,5; −1 = ×2/3. */
+export function stageMultiplier(stage: number): number {
+  return stage >= 0 ? (2 + stage) / 2 : 2 / (2 - stage);
+}
+/** Multiplicador de precisão/evasão: +1 = ×4/3; −1 = ×3/4. */
+export function accuracyMultiplier(stage: number): number {
+  const s = Math.max(-6, Math.min(6, stage));
+  return s >= 0 ? (3 + s) / 3 : 3 / (3 - s);
+}
+
+/** Monta o Pokémon do duelo com os golpes escolhidos. */
 export function duelMonFrom(fighter: Fighter, moves: readonly ChosenMove[]): DuelMon {
   if (moves.length === 0) throw new Error(`${fighter.name} precisa de pelo menos 1 golpe.`);
   return {
-    fighter: { ...fighter, moves: moves.map(toBattleMove), notes: fighter.notes.filter((n) => !n.includes('ataques da carta') && !n.includes('sem golpes')) },
-    maxPp: moves.map((m) => m.pp),
+    fighter: { ...fighter, notes: fighter.notes.filter((n) => !n.includes('ataques da carta') && !n.includes('sem golpes')) },
+    moves: moves.map((m) => ({ ...m, statChanges: m.statChanges.map((c) => ({ ...c })) })),
   };
 }
 
+const freshMon = (m: DuelMon): DuelMonState => ({ hp: m.fighter.maxHp, pp: m.moves.map((x) => x.pp), status: null, sleepTurns: 0, confusion: 0, stages: emptyStages(), endured: false });
+
 function freshSide(name: string, mons: readonly DuelMon[]): DuelSide {
   if (mons.length === 0) throw new Error('Cada lado do duelo precisa de pelo menos 1 Pokémon.');
-  for (const mon of mons) {
-    if (mon.fighter.moves.length === 0 || mon.maxPp.length !== mon.fighter.moves.length) throw new Error(`${mon.fighter.name} está sem golpes válidos.`);
-  }
-  return {
-    name,
-    mons: [...mons],
-    state: mons.map((m) => ({ hp: m.fighter.maxHp, pp: [...m.maxPp], status: null, endured: false })),
-    active: 0,
-  };
+  for (const mon of mons) if (mon.moves.length === 0) throw new Error(`${mon.fighter.name} está sem golpes.`);
+  return { name, mons: [...mons], state: mons.map(freshMon), active: 0 };
 }
 
 export function createDuel(player: { name: string; mons: readonly DuelMon[] }, foe: { name: string; mons: readonly DuelMon[] }): DuelState {
@@ -88,7 +132,7 @@ export function createDuel(player: { name: string; mons: readonly DuelMon[] }, f
 }
 
 function cloneState(state: DuelState): DuelState {
-  const side = (s: DuelSide): DuelSide => ({ ...s, mons: s.mons, state: s.state.map((m) => ({ ...m, pp: [...m.pp] })) });
+  const side = (s: DuelSide): DuelSide => ({ ...s, state: s.state.map((m) => ({ ...m, pp: [...m.pp], stages: { ...m.stages } })) });
   return { ...state, sides: [side(state.sides[0]), side(state.sides[1])] };
 }
 
@@ -117,17 +161,116 @@ export function actionBlocker(state: DuelState, side: SideIndex, action: DuelAct
   if (action.kind === 'switch') return switchOptions(state, side).includes(action.to) ? null : 'Esse Pokémon não pode entrar agora.';
   const { mon, live } = activeMon(state, side);
   if (action.move === -1) return needsStruggle(state, side) ? null : 'Ainda há golpes com PP.';
-  if (!mon.fighter.moves[action.move]) return 'Golpe inexistente.';
+  if (!mon.moves[action.move]) return 'Golpe inexistente.';
   return (live.pp[action.move] ?? 0) > 0 ? null : 'Este golpe está sem PP.';
 }
 
-/** Ação do oponente: um golpe com PP, ponderado pelo dano esperado contra quem está em campo (nunca troca). */
+/** Velocidade em campo: estágio de Velocidade e paralisia (×0,5). */
+export function effectiveSpeed(state: DuelState, side: SideIndex): number {
+  const { mon, live } = activeMon(state, side);
+  return mon.fighter.speed * stageMultiplier(live.stages.speed) * (live.status === 'paralysis' ? 0.5 : 1);
+}
+
+/**
+ * Quem age primeiro se o seu usar este golpe e o oponente um golpe de prioridade 0 (só para a dica do menu: o oponente
+ * pode usar um golpe de prioridade). 'tie' = Velocidade igual, decidido no sorteio.
+ */
+export function orderHint(state: DuelState, moveIndex: number): 'first' | 'second' | 'tie' {
+  const move = moveIndex === -1 ? STRUGGLE : activeMon(state, 0).mon.moves[moveIndex];
+  const priority = move?.priority ?? 0;
+  if (priority !== 0) return priority > 0 ? 'first' : 'second';
+  const mine = effectiveSpeed(state, 0);
+  const theirs = effectiveSpeed(state, 1);
+  return mine === theirs ? 'tie' : mine > theirs ? 'first' : 'second';
+}
+
+function moveOf(state: DuelState, side: SideIndex, action: { move: number }): ChosenMove {
+  return action.move === -1 ? STRUGGLE : activeMon(state, side).mon.moves[action.move]!;
+}
+
+/** O golpe precisa acertar o alvo (dano, condição ou atributo do alvo)? Golpes só em si mesmo sempre funcionam. */
+function targetsFoe(move: ChosenMove): boolean {
+  return move.damageClass !== 'status' || move.ailment !== null || move.statChanges.some((c) => c.target === 'foe');
+}
+
+interface DamageResult { damage: number; critical: boolean; effectiveness: number }
+
+function computeDamage(att: DuelMon, attLive: DuelMonState, def: DuelMon, defLive: DuelMonState, move: ChosenMove, struggle: boolean, rng: Rng): DamageResult {
+  const effectiveness = struggle ? 1 : typeEffectiveness(move.type, def.fighter.types);
+  const critStage = Math.min(3, move.critRate + ((att.fighter.bond ?? 0) >= 3 ? 1 : 0));
+  const critical = rng() < CRIT_BY_STAGE[critStage]!;
+  const roll = 0.85 + rng() * 0.15;
+  if (effectiveness === 0) return { damage: 0, critical: false, effectiveness };
+  const physical = move.damageClass === 'physical';
+  let aStage = attLive.stages[physical ? 'attack' : 'spAttack'];
+  let dStage = defLive.stages[physical ? 'defense' : 'spDefense'];
+  if (critical) {
+    // Crítico ignora a queda de quem ataca e a alta de quem defende.
+    aStage = Math.max(0, aStage);
+    dStage = Math.min(0, dStage);
+  }
+  const a = (physical ? att.fighter.attack : att.fighter.spAttack) * stageMultiplier(aStage);
+  const d = (physical ? def.fighter.defense : def.fighter.spDefense) * stageMultiplier(dStage);
+  const base = (Math.floor((2 * LEVEL) / 5) + 2) * move.power * (a / d) / 50 + 2;
+  const stab = !struggle && att.fighter.types.includes(move.type) ? 1.5 : 1;
+  const burn = attLive.status === 'burn' && physical ? 0.5 : 1;
+  return { damage: Math.max(1, Math.floor(base * stab * effectiveness * (critical ? 1.5 : 1) * roll * burn)), critical, effectiveness };
+}
+
+/** Dano esperado por uso (sem crítico, variação média, ponderado pela precisão e pelo número médio de golpes). */
+export function expectedDuelDamage(state: DuelState, side: SideIndex, move: ChosenMove): number {
+  if (move.damageClass === 'status') return 0;
+  const me = activeMon(state, side);
+  const foe = activeMon(state, other(side));
+  const eff = typeEffectiveness(move.type, foe.mon.fighter.types);
+  if (eff === 0) return 0;
+  const physical = move.damageClass === 'physical';
+  const a = (physical ? me.mon.fighter.attack : me.mon.fighter.spAttack) * stageMultiplier(me.live.stages[physical ? 'attack' : 'spAttack']);
+  const d = (physical ? foe.mon.fighter.defense : foe.mon.fighter.spDefense) * stageMultiplier(foe.live.stages[physical ? 'defense' : 'spDefense']);
+  const base = (Math.floor((2 * LEVEL) / 5) + 2) * move.power * (a / d) / 50 + 2;
+  const stab = me.mon.fighter.types.includes(move.type) ? 1.5 : 1;
+  const burn = me.live.status === 'burn' && physical ? 0.5 : 1;
+  const accuracy = move.accuracy === null ? 1 : Math.min(1, (move.accuracy / 100) * accuracyMultiplier(me.live.stages.accuracy - foe.live.stages.evasion));
+  return base * stab * eff * 0.925 * burn * accuracy * ((move.minHits + move.maxHits) / 2);
+}
+
+/**
+ * Golpe de status barrado pelo tipo do alvo. Nos jogos, golpes de status ignoram a tabela de tipos; a exceção comum é a
+ * dos golpes elétricos que paralisam (Onda Trovão não afeta tipo Terra).
+ */
+export function statusBlockedByType(move: ChosenMove, types: readonly PokemonType[]): boolean {
+  return move.damageClass === 'status' && move.type === 'electric' && move.ailment !== null && typeEffectiveness(move.type, types) === 0;
+}
+
+function canInflict(target: DuelMon, live: DuelMonState, ailment: MoveAilment): boolean {
+  if (ailment === 'confusion') return live.confusion === 0;
+  if (live.status !== null) return false;
+  return ailment === 'sleep' || canGetStatus(ailment, target.fighter.types);
+}
+
+/**
+ * Ação do oponente: um golpe com PP, sorteado com peso pelo que ele rende agora — dano esperado, condição num alvo que
+ * ainda pode recebê-la, alta de atributo com os PS altos, queda no alvo, cura com os PS baixos. Nunca troca.
+ */
 export function chooseFoeAction(state: DuelState, rng: Rng, side: SideIndex = 1): DuelAction {
   if (needsStruggle(state, side)) return { kind: 'move', move: -1 };
   const me = activeMon(state, side);
-  const target = activeMon(state, other(side));
-  const options = me.mon.fighter.moves.map((m, i) => ({ m, i })).filter(({ i }) => (me.live.pp[i] ?? 0) > 0);
-  const weights = options.map(({ m }) => (expectedDamage(me.mon.fighter, target.mon.fighter, m, { burned: me.live.status === 'burn' }) + 1) ** 2);
+  const foe = activeMon(state, other(side));
+  const options = me.mon.moves.map((m, i) => ({ m, i })).filter(({ i }) => (me.live.pp[i] ?? 0) > 0);
+  const best = Math.max(30, ...me.mon.moves.map((m) => expectedDuelDamage(state, side, m)));
+  const hpFrac = me.live.hp / me.mon.fighter.maxHp;
+  const value = (m: ChosenMove): number => {
+    if (m.damageClass !== 'status') return expectedDuelDamage(state, side, m);
+    let v = 0;
+    if (m.ailment && !statusBlockedByType(m, foe.mon.fighter.types) && canInflict(foe.mon, foe.live, m.ailment)) v = Math.max(v, best * (m.ailment === 'confusion' ? 0.5 : 0.7));
+    for (const c of m.statChanges) {
+      if (c.target === 'self' && c.change > 0 && hpFrac > 0.6 && me.live.stages[c.stat] < 2) v = Math.max(v, best * 0.6);
+      if (c.target === 'foe' && c.change < 0 && foe.live.stages[c.stat] > -2) v = Math.max(v, best * 0.4);
+    }
+    if (m.healing > 0 && hpFrac < 0.5) v = Math.max(v, best * 0.9);
+    return v;
+  };
+  const weights = options.map(({ m }) => (value(m) + 1) ** 2);
   let r = rng() * weights.reduce((a, b) => a + b, 0);
   for (const [k, option] of options.entries()) {
     r -= weights[k]!;
@@ -138,10 +281,17 @@ export function chooseFoeAction(state: DuelState, rng: Rng, side: SideIndex = 1)
 
 const aliveCount = (side: DuelSide): number => side.state.filter((m) => m.hp > 0).length;
 
+/** Quem sai de campo perde os estágios e a confusão (a condição fica). */
+function leaveField(live: DuelMonState): void {
+  live.stages = emptyStages();
+  live.confusion = 0;
+}
+
 /**
- * Resolve um turno: trocas primeiro, depois os golpes por Velocidade (paralisia corta pela metade; empate por sorteio),
- * condições que impedem de agir, dano, condição causada, desmaios, dano de queimadura/veneno no fim do turno (sempre
- * sobra 1 PS) e a entrada do próximo Pokémon do oponente. Se o seu desmaiar e houver outro, `mustSwitch` fica ligado.
+ * Resolve um turno: trocas primeiro; depois os golpes por prioridade e, dentro dela, Velocidade (empate exato: sorteio);
+ * condições que impedem de agir, confusão, PP, precisão com estágios, dano (vários golpes), dreno, recuo, hesitar,
+ * condições e estágios causados, cura, desmaios, queimadura/veneno no fim do turno e a entrada do próximo Pokémon do
+ * oponente. Se o seu desmaiar e houver outro, `mustSwitch` fica ligado.
  */
 export function resolveTurn(state: DuelState, playerAction: DuelAction, foeAction: DuelAction, rng: Rng): { state: DuelState; events: DuelEvent[] } {
   const playerBlock = actionBlocker(state, 0, playerAction);
@@ -153,90 +303,208 @@ export function resolveTurn(state: DuelState, playerAction: DuelAction, foeActio
   next.turn++;
   const events: DuelEvent[] = [];
   const actions: Record<SideIndex, DuelAction> = { 0: playerAction, 1: foeAction };
+  const acted = new Set<SideIndex>();
+  const flinched = new Set<SideIndex>();
   let lastAttacker: SideIndex | null = null;
 
   for (const side of [0, 1] as const) {
     const action = actions[side];
     if (action.kind !== 'switch') continue;
     const s = next.sides[side];
+    leaveField(s.state[s.active]!);
     events.push({ kind: 'switch', side, from: s.active, to: action.to, forced: false });
     s.active = action.to;
+    acted.add(side);
   }
 
-  const speedOf = (side: SideIndex) => {
-    const { mon, live } = activeMon(next, side);
-    return mon.fighter.speed * (live.status === 'paralysis' ? 0.5 : 1) + rng() * 0.5;
-  };
   const movers = ([0, 1] as const).filter((side) => actions[side].kind === 'move');
-  const order = movers.map((side) => ({ side, key: speedOf(side) })).sort((a, b) => b.key - a.key).map((e) => e.side);
+  const prio = (side: SideIndex) => moveOf(next, side, actions[side] as { move: number }).priority;
+  let order = movers;
+  if (movers.length === 2) {
+    const [a, b] = movers as unknown as [SideIndex, SideIndex];
+    const byPriority = prio(a) - prio(b);
+    const bySpeed = effectiveSpeed(next, a) - effectiveSpeed(next, b);
+    const aFirst = byPriority !== 0 ? byPriority > 0 : bySpeed !== 0 ? bySpeed > 0 : rng() < 0.5;
+    order = aFirst ? [a, b] : [b, a];
+  }
+
+  const damageHp = (live: DuelMonState, amount: number): { before: number; after: number } => {
+    const before = live.hp;
+    live.hp = Math.max(0, before - amount);
+    return { before, after: live.hp };
+  };
+
+  const applyStage = (side: SideIndex, stat: StageStat, change: number) => {
+    const { live, index } = activeMon(next, side);
+    const before = live.stages[stat];
+    const after = Math.max(-6, Math.min(6, before + change));
+    live.stages[stat] = after;
+    events.push({ kind: 'stage', side, mon: index, stat, change, applied: after - before });
+    return after !== before;
+  };
+
+  const inflict = (side: SideIndex, ailment: MoveAilment): boolean => {
+    const { mon, live, index } = activeMon(next, side);
+    if (live.hp <= 0 || !canInflict(mon, live, ailment)) return false;
+    if (ailment === 'confusion') live.confusion = 2 + Math.floor(rng() * 4);
+    else {
+      live.status = ailment;
+      if (ailment === 'sleep') live.sleepTurns = 1 + Math.floor(rng() * 3);
+    }
+    events.push({ kind: 'status', side, mon: index, status: ailment });
+    return true;
+  };
 
   for (const side of order) {
     const action = actions[side] as { kind: 'move'; move: number };
     const me = activeMon(next, side);
-    if (me.live.hp <= 0) continue;
     const foeSide = other(side);
-    const foe = activeMon(next, foeSide);
-    if (foe.live.hp <= 0) continue;
+    if (me.live.hp <= 0) continue;
+    if (activeMon(next, foeSide).live.hp <= 0) continue;
+    acted.add(side);
 
-    if (me.live.status === 'freeze') {
-      if (rng() < THAW_CHANCE) {
+    if (me.live.status === 'sleep') {
+      if (me.live.sleepTurns <= 0) {
+        me.live.status = null;
+        events.push({ kind: 'wake', side, mon: me.index });
+      } else {
+        me.live.sleepTurns--;
+        events.push({ kind: 'skip', side, mon: me.index, cause: 'sleep' });
+        continue;
+      }
+    } else if (me.live.status === 'freeze') {
+      if (rng() < THAW) {
         me.live.status = null;
         events.push({ kind: 'thaw', side, mon: me.index });
       } else {
         events.push({ kind: 'skip', side, mon: me.index, cause: 'freeze' });
         continue;
       }
-    } else if (me.live.status === 'paralysis' && rng() < PARALYSIS_SKIP_CHANCE) {
+    }
+    if (flinched.has(side)) {
+      events.push({ kind: 'skip', side, mon: me.index, cause: 'flinch' });
+      continue;
+    }
+    if (me.live.status === 'paralysis' && rng() < PARALYSIS_SKIP) {
       events.push({ kind: 'skip', side, mon: me.index, cause: 'paralysis' });
       continue;
     }
+    if (me.live.confusion > 0) {
+      me.live.confusion--;
+      if (me.live.confusion === 0) {
+        events.push({ kind: 'confusion-end', side, mon: me.index });
+      } else {
+        events.push({ kind: 'confused', side, mon: me.index });
+        if (rng() < CONFUSION_SELF_HIT) {
+          const a = me.mon.fighter.attack * stageMultiplier(me.live.stages.attack);
+          const d = me.mon.fighter.defense * stageMultiplier(me.live.stages.defense);
+          const amount = Math.max(1, Math.floor(((Math.floor((2 * LEVEL) / 5) + 2) * CONFUSION_POWER * (a / d) / 50 + 2) * (0.85 + rng() * 0.15)));
+          const { before, after } = damageHp(me.live, amount);
+          events.push({ kind: 'confusion-hit', side, mon: me.index, damage: before - after, hpBefore: before, hpAfter: after });
+          if (after === 0) events.push({ kind: 'faint', side, mon: me.index });
+          continue;
+        }
+      }
+    }
 
     const struggle = action.move === -1;
-    const move = struggle ? STRUGGLE : me.mon.fighter.moves[action.move]!;
+    const move = moveOf(next, side, action);
     if (!struggle) me.live.pp[action.move] = Math.max(0, me.live.pp[action.move]! - 1);
     events.push({ kind: 'move', side, mon: me.index, move, struggle });
     lastAttacker = side;
+    const foe = activeMon(next, foeSide);
 
-    const roll = calculateDamage(me.mon.fighter, foe.mon.fighter, move, rng, { burned: me.live.status === 'burn' });
-    if (!roll.hit) {
-      events.push({ kind: 'miss', side, mon: me.index });
-    } else if (roll.effectiveness === 0) {
-      events.push({ kind: 'immune', side: foeSide, mon: foe.index });
-    } else {
-      const before = foe.live.hp;
-      let after = Math.max(0, before - roll.damage);
-      const endured = after === 0 && before > 1 && (foe.mon.fighter.bond ?? 0) >= 4 && !foe.live.endured;
-      if (endured) {
-        after = 1;
-        foe.live.endured = true;
+    if (targetsFoe(move) && move.accuracy !== null) {
+      const chance = (move.accuracy / 100) * accuracyMultiplier(me.live.stages.accuracy - foe.live.stages.evasion);
+      if (rng() >= chance) {
+        events.push({ kind: 'miss', side, mon: me.index });
+        continue;
       }
-      foe.live.hp = after;
-      events.push({ kind: 'hit', side: foeSide, mon: foe.index, damage: before - after, critical: roll.critical, effectiveness: roll.effectiveness, hpBefore: before, hpAfter: after, endured });
-      const effect = STATUS_CHANCE[move.type];
-      if (effect && !struggle && after > 0 && foe.live.status === null && canGetStatus(effect.status, foe.mon.fighter.types) && rng() < effect.chance) {
-        foe.live.status = effect.status;
-        events.push({ kind: 'status', side: foeSide, mon: foe.index, status: effect.status });
-      }
-      if (after === 0) events.push({ kind: 'faint', side: foeSide, mon: foe.index });
     }
 
-    if (struggle) {
+    if (move.damageClass !== 'status') {
+      const hits = move.minHits + Math.floor(rng() * (move.maxHits - move.minHits + 1));
+      let total = 0;
+      let landed = 0;
+      for (let h = 0; h < hits && foe.live.hp > 0; h++) {
+        const roll = computeDamage(me.mon, me.live, foe.mon, foe.live, move, struggle, rng);
+        if (roll.effectiveness === 0) {
+          events.push({ kind: 'immune', side: foeSide, mon: foe.index });
+          break;
+        }
+        const before = foe.live.hp;
+        let after = Math.max(0, before - roll.damage);
+        const endured = after === 0 && before > 1 && (foe.mon.fighter.bond ?? 0) >= 4 && !foe.live.endured;
+        if (endured) {
+          after = 1;
+          foe.live.endured = true;
+        }
+        foe.live.hp = after;
+        total += before - after;
+        landed++;
+        events.push({ kind: 'hit', side: foeSide, mon: foe.index, damage: before - after, critical: roll.critical, effectiveness: roll.effectiveness, hpBefore: before, hpAfter: after, endured });
+      }
+      if (hits > 1 && landed > 0) events.push({ kind: 'multi', side, mon: me.index, hits: landed });
+      if (landed > 0) {
+        if (foe.live.hp === 0) events.push({ kind: 'faint', side: foeSide, mon: foe.index });
+        if (foe.live.status === 'freeze' && move.type === 'fire' && foe.live.hp > 0) {
+          foe.live.status = null;
+          events.push({ kind: 'thaw', side: foeSide, mon: foe.index });
+        }
+        if (move.drain > 0 && me.live.hp < me.mon.fighter.maxHp) {
+          const before = me.live.hp;
+          me.live.hp = Math.min(me.mon.fighter.maxHp, before + Math.max(1, Math.floor((total * move.drain) / 100)));
+          events.push({ kind: 'heal', side, mon: me.index, cause: 'drain', hpBefore: before, hpAfter: me.live.hp });
+        }
+        const recoil = struggle ? Math.max(1, Math.floor(me.mon.fighter.maxHp * STRUGGLE_RECOIL)) : move.drain < 0 ? Math.max(1, Math.floor((total * -move.drain) / 100)) : 0;
+        if (recoil > 0) {
+          const { before, after } = damageHp(me.live, recoil);
+          events.push({ kind: 'recoil', side, mon: me.index, damage: before - after, hpBefore: before, hpAfter: after });
+          if (after === 0) events.push({ kind: 'faint', side, mon: me.index });
+        }
+        if (foe.live.hp > 0 && move.flinchChance > 0 && !acted.has(foeSide) && rng() < move.flinchChance / 100) flinched.add(foeSide);
+        if (move.ailment && foe.live.hp > 0 && rng() < move.ailmentChance / 100) inflict(foeSide, move.ailment);
+        if (move.statChanges.length > 0 && rng() < move.statChance / 100) {
+          for (const c of move.statChanges) {
+            const target = c.target === 'self' ? side : foeSide;
+            if (activeMon(next, target).live.hp > 0) applyStage(target, c.stat, c.change);
+          }
+        }
+      } else if (struggle) {
+        const { before, after } = damageHp(me.live, Math.max(1, Math.floor(me.mon.fighter.maxHp * STRUGGLE_RECOIL)));
+        events.push({ kind: 'recoil', side, mon: me.index, damage: before - after, hpBefore: before, hpAfter: after });
+        if (after === 0) events.push({ kind: 'faint', side, mon: me.index });
+      }
+      continue;
+    }
+
+    // Golpe de status.
+    let worked = false;
+    if (move.ailment) {
+      if (statusBlockedByType(move, foe.mon.fighter.types)) {
+        events.push({ kind: 'immune', side: foeSide, mon: foe.index });
+        continue;
+      }
+      if (rng() < move.ailmentChance / 100) worked = inflict(foeSide, move.ailment) || worked;
+    }
+    if (move.statChanges.length > 0 && rng() < move.statChance / 100) {
+      for (const c of move.statChanges) worked = applyStage(c.target === 'self' ? side : foeSide, c.stat, c.change) || worked;
+    }
+    if (move.healing > 0 && me.live.hp < me.mon.fighter.maxHp) {
       const before = me.live.hp;
-      const after = Math.max(0, before - Math.max(1, Math.floor(me.mon.fighter.maxHp * STRUGGLE_RECOIL)));
-      me.live.hp = after;
-      events.push({ kind: 'recoil', side, mon: me.index, damage: before - after, hpBefore: before, hpAfter: after });
-      if (after === 0) events.push({ kind: 'faint', side, mon: me.index });
+      me.live.hp = Math.min(me.mon.fighter.maxHp, before + Math.max(1, Math.floor((me.mon.fighter.maxHp * move.healing) / 100)));
+      events.push({ kind: 'heal', side, mon: me.index, cause: 'heal', hpBefore: before, hpAfter: me.live.hp });
+      worked = true;
     }
+    if (!worked && move.statChanges.length === 0) events.push({ kind: 'fail', side, mon: me.index });
   }
 
   for (const side of [0, 1] as const) {
     const { mon, live, index } = activeMon(next, side);
     if (live.hp <= 0 || (live.status !== 'burn' && live.status !== 'poison')) continue;
-    const before = live.hp;
-    const after = Math.max(1, before - Math.max(1, Math.floor(mon.fighter.maxHp * RESIDUAL_FRACTION[live.status])));
-    if (after === before) continue;
-    live.hp = after;
+    const { before, after } = damageHp(live, Math.max(1, Math.floor(mon.fighter.maxHp * RESIDUAL[live.status])));
     events.push({ kind: 'residual', side, mon: index, cause: live.status, damage: before - after, hpBefore: before, hpAfter: after });
+    if (after === 0) events.push({ kind: 'faint', side, mon: index });
   }
 
   settle(next, events, lastAttacker);
@@ -248,7 +516,7 @@ function settle(state: DuelState, events: DuelEvent[], lastAttacker: SideIndex |
   const left0 = aliveCount(state.sides[0]);
   const left1 = aliveCount(state.sides[1]);
   if (left0 === 0 || left1 === 0) {
-    // Os dois sem ninguém (o Struggle derrubou quem usou): vence quem deu o último golpe, como nos jogos mais novos.
+    // Os dois sem ninguém (recuo derrubou quem usou): vence quem deu o último golpe, como nos jogos mais novos.
     state.winner = left0 === 0 && left1 === 0 ? (lastAttacker ?? 1) : left0 === 0 ? 1 : 0;
     state.mustSwitch = false;
     events.push({ kind: 'end', winner: state.winner });
@@ -256,6 +524,7 @@ function settle(state: DuelState, events: DuelEvent[], lastAttacker: SideIndex |
   }
   const foe = state.sides[1];
   if (foe.state[foe.active]!.hp <= 0) {
+    leaveField(foe.state[foe.active]!);
     const to = foe.state.findIndex((m) => m.hp > 0);
     events.push({ kind: 'switch', side: 1, from: foe.active, to, forced: true });
     foe.active = to;
@@ -269,6 +538,7 @@ export function sendReplacement(state: DuelState, to: number): { state: DuelStat
   if (!switchOptions(state, 0).includes(to)) throw new Error('Esse Pokémon não pode entrar agora.');
   const next = cloneState(state);
   const from = next.sides[0].active;
+  leaveField(next.sides[0].state[from]!);
   next.sides[0].active = to;
   next.mustSwitch = false;
   return { state: next, events: [{ kind: 'switch', side: 0, from, to, forced: true }] };
@@ -285,9 +555,17 @@ export function forfeitDuel(state: DuelState): { state: DuelState; events: DuelE
 
 // ----------------------------------------------------------------------------- textos
 
-const STATUS_GAINED_PT: Record<StatusKind, string> = {
+const STATUS_GAINED_PT: Record<MoveAilment, string> = {
   burn: 'ficou queimado!', poison: 'foi envenenado!', paralysis: 'ficou paralisado! Pode não conseguir se mexer.', freeze: 'foi congelado!',
+  sleep: 'adormeceu!', confusion: 'ficou confuso!',
 };
+
+function stageVerb(change: number, applied: number): string {
+  if (applied === 0) return change > 0 ? 'não pode subir mais!' : 'não pode cair mais!';
+  const size = Math.abs(applied);
+  if (applied > 0) return size >= 3 ? 'subiu drasticamente!' : size === 2 ? 'subiu muito!' : 'subiu!';
+  return size >= 3 ? 'caiu drasticamente!' : size === 2 ? 'caiu muito!' : 'caiu!';
+}
 
 /** Nome como a narração usa: o seu pelo nome; o do oponente com "do oponente". */
 export function monLabel(state: DuelState, side: SideIndex, mon: number): string {
@@ -297,37 +575,48 @@ export function monLabel(state: DuelState, side: SideIndex, mon: number): string
 
 /** Frase da narração para um evento (null quando não há o que dizer além das barras). */
 export function describeDuelEvent(state: DuelState, event: DuelEvent): string | null {
+  if (event.kind === 'end') return event.winner === 0 ? `Você venceu ${state.sides[1].name}!` : `Você perdeu para ${state.sides[1].name}…`;
+  if (event.kind === 'switch') {
+    const to = state.sides[event.side].mons[event.to]?.fighter.name ?? '?';
+    if (event.side === 1) return `${state.sides[1].name} enviou ${to}!`;
+    if (event.forced) return `Vai, ${to}!`;
+    return `Volte, ${state.sides[0].mons[event.from]?.fighter.name ?? '?'}! Vai, ${to}!`;
+  }
+  const who = monLabel(state, event.side, event.mon);
   switch (event.kind) {
-    case 'switch': {
-      const to = state.sides[event.side].mons[event.to]?.fighter.name ?? '?';
-      if (event.side === 1) return `${state.sides[1].name} enviou ${to}!`;
-      if (event.forced) return `Vai, ${to}!`;
-      return `Volte, ${state.sides[0].mons[event.from]?.fighter.name ?? '?'}! Vai, ${to}!`;
-    }
-    case 'move':
-      return event.struggle
-        ? `${monLabel(state, event.side, event.mon)} está sem PP e usou ${event.move.name}!`
-        : `${monLabel(state, event.side, event.mon)} usou ${event.move.name}!`;
-    case 'miss': return 'Mas errou!';
-    case 'immune': return `Não afeta ${monLabel(state, event.side, event.mon)}…`;
+    case 'move': return event.struggle ? `${who} está sem PP e usou ${event.move.name}!` : `${who} usou ${event.move.name}!`;
+    case 'miss': return `${who} errou!`;
+    case 'immune': return `Não afeta ${who}…`;
+    case 'fail': return 'Mas não funcionou!';
+    case 'multi': return `Acertou ${event.hits} ${event.hits === 1 ? 'vez' : 'vezes'}!`;
     case 'hit': {
       const parts: string[] = [];
       if (event.critical) parts.push('Golpe crítico!');
       const eff = effectivenessLabel(event.effectiveness);
       if (eff) parts.push(eff);
-      if (event.endured) parts.push(`${monLabel(state, event.side, event.mon)} aguentou firme!`);
+      if (event.endured) parts.push(`${who} aguentou firme!`);
       return parts.length > 0 ? parts.join(' ') : null;
     }
     case 'skip':
-      return event.cause === 'freeze'
-        ? `${monLabel(state, event.side, event.mon)} está congelado e não se mexe!`
-        : `${monLabel(state, event.side, event.mon)} está paralisado e não consegue se mexer!`;
-    case 'thaw': return `${monLabel(state, event.side, event.mon)} descongelou!`;
-    case 'status': return `${monLabel(state, event.side, event.mon)} ${STATUS_GAINED_PT[event.status]}`;
-    case 'residual':
-      return `${monLabel(state, event.side, event.mon)} sofre com ${event.cause === 'burn' ? 'a queimadura' : 'o veneno'}.`;
-    case 'recoil': return `${monLabel(state, event.side, event.mon)} se machucou com o impacto.`;
-    case 'faint': return `${monLabel(state, event.side, event.mon)} desmaiou!`;
-    case 'end': return event.winner === 0 ? `Você venceu ${state.sides[1].name}!` : `Você perdeu para ${state.sides[1].name}…`;
+      if (event.cause === 'sleep') return `${who} está dormindo.`;
+      if (event.cause === 'freeze') return `${who} está congelado e não se mexe!`;
+      if (event.cause === 'flinch') return `${who} hesitou e não agiu!`;
+      return `${who} está paralisado e não consegue se mexer!`;
+    case 'thaw': return `${who} descongelou!`;
+    case 'wake': return `${who} acordou!`;
+    case 'status': return `${who} ${STATUS_GAINED_PT[event.status]}`;
+    case 'confused': return `${who} está confuso…`;
+    case 'confusion-hit': return `${who} se atingiu na confusão!`;
+    case 'confusion-end': return `${who} não está mais confuso!`;
+    case 'stage': return `${STAGE_LABELS_PT[event.stat]} de ${who} ${stageVerb(event.change, event.applied)}`;
+    case 'heal': return event.cause === 'drain' ? `${who} drenou energia do alvo.` : `${who} recuperou PS.`;
+    case 'residual': return `${who} sofre com ${event.cause === 'burn' ? 'a queimadura' : 'o veneno'}.`;
+    case 'recoil': return `${who} sofreu recuo.`;
+    case 'faint': return `${who} desmaiou!`;
   }
+}
+
+/** Estágios diferentes de zero, para os indicadores da tela ("Atq. +2"). */
+export function stageBadges(stages: Stages): { stat: StageStat; label: string; value: number }[] {
+  return STAGE_STATS.filter((s) => stages[s] !== 0).map((s) => ({ stat: s, label: `${STAGE_LABELS_PT[s]} ${stages[s] > 0 ? '+' : '−'}${Math.abs(stages[s])}`, value: stages[s] }));
 }

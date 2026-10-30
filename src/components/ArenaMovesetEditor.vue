@@ -5,10 +5,10 @@ import type { ArenaMember } from '../app/arena-members';
 import { cachedMoveData, loadLearnset, loadMoveData } from '../app/learnset-service';
 import { movesetBook, saveMoves, savedMoves } from '../app/moveset-store';
 import { loadProfile } from '../app/pokemon-data-service';
-import { compatibleMoves, LEARN_METHOD_LABELS_PT, MOVESET_SIZE, moveChosenMove, suggestMoveset, toChosenMove, toggleChosenMove, unusableReason } from '../core/moveset';
-import type { ChosenMove, LearnableMove, Learnset } from '../core/moveset';
+import { compatibleMoves, coverageGaps, effectSummary, LEARN_METHOD_LABELS_PT, MOVESET_SIZE, moveChosenMove, suggestMoveset, toChosenMove, toggleChosenMove, unusableReason } from '../core/moveset';
+import type { ChosenMove, LearnableMove, Learnset, MoveDetail } from '../core/moveset';
 import { DAMAGE_CLASS_LABELS_PT, POKEMON_TYPES, prettyMoveName, TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
-import type { GameMove, PokemonProfile, PokemonType } from '../core/pokemon-data';
+import type { DamageClass, PokemonProfile, PokemonType } from '../core/pokemon-data';
 
 const props = defineProps<{ members: ArenaMember[] }>();
 
@@ -23,13 +23,14 @@ function storage(): Storage | null {
 type LearnsetState = { state: 'loading' } | { state: 'ok'; value: Learnset } | { state: 'error'; message: string };
 const learnsets = reactive(new Map<number, LearnsetState>());
 const profiles = reactive(new Map<number, PokemonProfile | null>());
-const moveData = reactive<Record<string, GameMove>>(cachedMoveData(storage()));
+const moveData = reactive<Record<string, MoveDetail>>(cachedMoveData(storage()));
 const failedMoves = ref<string[]>([]);
 const loadingMoves = ref(false);
 const editing = ref<string | null>(null);
 const notice = ref('');
 const search = ref('');
 const typeFilter = ref<PokemonType | ''>('');
+const classFilter = ref<DamageClass | ''>('');
 const onlyUsable = ref(true);
 
 async function ensureLearnset(dexId: number): Promise<void> {
@@ -92,6 +93,7 @@ async function edit(member: ArenaMember): Promise<void> {
   editing.value = member.id;
   search.value = '';
   typeFilter.value = '';
+  classFilter.value = '';
   if (member.dexId === undefined) return;
   await ensureLearnset(member.dexId);
   if (!profiles.has(member.dexId)) void loadProfile(member.dexId, { storage: storage() }).then((p) => profiles.set(member.dexId!, p));
@@ -101,7 +103,7 @@ async function edit(member: ArenaMember): Promise<void> {
 
 interface Row {
   ref: LearnableMove;
-  data: GameMove | null;
+  data: MoveDetail | null;
   choice: ChosenMove | null;
   reason: string | null;
 }
@@ -115,6 +117,7 @@ const rows = computed<Row[]>(() => {
     const reason = data ? unusableReason(data) : null;
     if (onlyUsable.value && data && !choice) return [];
     if (typeFilter.value && data?.type !== typeFilter.value) return [];
+    if (classFilter.value && data?.damageClass !== classFilter.value) return [];
     if (q && !`${data?.name ?? ''} ${item.slug.replace(/-/g, ' ')}`.toLowerCase().includes(q)) return [];
     return [{ ref: item, data, choice, reason }];
   });
@@ -158,7 +161,7 @@ const editingProfile = computed(() => {
 function suggest(): void {
   const member = editingMember.value;
   if (!member) return;
-  const options = rows.value.length > 0 && !search.value && !typeFilter.value
+  const options = rows.value.length > 0 && !search.value && !typeFilter.value && !classFilter.value
     ? rows.value.flatMap((r) => (r.choice ? [r.choice] : []))
     : (editingLearnset.value?.state === 'ok' ? editingLearnset.value.value.moves : []).flatMap((item) => {
       const data = moveData[item.slug];
@@ -177,6 +180,13 @@ function suggest(): void {
 
 function methodText(lm: LearnableMove): string {
   return lm.methods.map((m) => (m === 'level-up' && lm.level ? `Nv. ${lm.level}` : LEARN_METHOD_LABELS_PT[m])).join(' · ');
+}
+
+/** Tipos que nenhum golpe de dano do conjunto acerta com super efetivo (só com 2 ou mais golpes de dano). */
+const gaps = computed(() => (chosen.value.filter((m) => m.damageClass !== 'status').length >= 2 ? coverageGaps(chosen.value) : []));
+
+function rowEffects(row: Row): string[] {
+  return row.data ? effectSummary(row.data.effect) : [];
 }
 
 function memberMoves(member: ArenaMember): ChosenMove[] {
@@ -215,7 +225,7 @@ function retry(): void {
             <template v-if="memberMoves(member)[slot - 1]">
               <span class="ms-type" :style="{ '--type': TYPE_COLORS[memberMoves(member)[slot - 1]!.type] }">{{ TYPE_LABELS_PT[memberMoves(member)[slot - 1]!.type] }}</span>
               <span class="ms-name">{{ memberMoves(member)[slot - 1]!.name }}</span>
-              <small>{{ memberMoves(member)[slot - 1]!.power }} · PP {{ memberMoves(member)[slot - 1]!.pp }}</small>
+              <small>{{ memberMoves(member)[slot - 1]!.damageClass === 'status' ? 'Status' : `Poder ${memberMoves(member)[slot - 1]!.power}` }} · PP {{ memberMoves(member)[slot - 1]!.pp }}</small>
             </template>
             <span v-else class="ms-name">— vazio —</span>
           </li>
@@ -238,12 +248,20 @@ function retry(): void {
                 <button type="button" :aria-label="`Tirar ${move.name}`" @click="remove(move.slug)">✕</button>
               </div>
             </div>
+            <p v-if="gaps.length > 0" class="ms-gaps"><strong>Cobertura:</strong> nenhum golpe acerta com super efetivo os tipos
+              <span v-for="t in gaps" :key="t" class="ms-type" :style="{ '--type': TYPE_COLORS[t] }">{{ TYPE_LABELS_PT[t] }}</span></p>
             <p class="note">Golpes que {{ member.name }} aprende em {{ prettyMoveName(learnsetOk.versionGroup) }} (PokéAPI): por nível, MT, ovo ou tutor. Toque para pôr ou tirar; salva na hora.</p>
             <div class="ms-tools">
               <input v-model="search" type="search" placeholder="Buscar golpe" aria-label="Buscar golpe" />
               <select v-model="typeFilter" aria-label="Filtrar por tipo">
                 <option value="">Todos os tipos</option>
                 <option v-for="t in POKEMON_TYPES" :key="t" :value="t">{{ TYPE_LABELS_PT[t] }}</option>
+              </select>
+              <select v-model="classFilter" aria-label="Filtrar por categoria">
+                <option value="">Todas as categorias</option>
+                <option value="physical">Físico</option>
+                <option value="special">Especial</option>
+                <option value="status">Status</option>
               </select>
               <label><input v-model="onlyUsable" type="checkbox" /> Só os que dá para usar</label>
               <button type="button" @click="suggest">Sugerir 4</button>
@@ -269,6 +287,8 @@ function retry(): void {
                   <span class="ms-row-main">
                     <span class="ms-name">{{ row.data?.name ?? prettyMoveName(row.ref.slug) }}</span>
                     <small>{{ methodText(row.ref) }}<template v-if="row.data?.damageClass"> · {{ DAMAGE_CLASS_LABELS_PT[row.data.damageClass] }}</template></small>
+                    <small v-if="rowEffects(row).length" class="ms-effect">{{ rowEffects(row).join(' · ') }}</small>
+                    <small v-if="row.choice && row.data && row.data.unsupported.length" class="warn">Não simulado: {{ row.data.unsupported.join(', ') }}.</small>
                     <small v-if="row.reason" class="warn">{{ row.reason }}</small>
                     <small v-else-if="!row.data" class="warn">Sem dados ainda.</small>
                   </span>
@@ -326,4 +346,6 @@ function retry(): void {
 .ms-stats { display: grid; grid-template-columns: repeat(3, 2.4rem); gap: .2rem; text-align: center; font-size: .85rem; font-weight: 700; }
 .ms-stats small { display: block; color: var(--muted); font-size: .62rem; font-weight: 600; }
 .ms-check { color: #68bd91; font-weight: 900; }
+.ms-effect { color: #9fd3ff !important; }
+.ms-gaps { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; margin: 0; padding: .45rem .55rem; border: 1px dashed #ffb36b; border-radius: .6rem; font-size: .82rem; }
 </style>

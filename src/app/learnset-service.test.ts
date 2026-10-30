@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { cachedMoveData, loadLearnset, loadMoveData } from './learnset-service';
 import { prepareFoeSide, preparePlayerSide } from './turn-duel-setup';
+import type { ChosenMove } from '../core/moveset';
 
 function memoryStorage(): Pick<Storage, 'getItem' | 'setItem'> & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -71,8 +72,8 @@ describe('preparo do duelo', () => {
     const storage = memoryStorage();
     const foe = await prepareFoeSide({ trainer: 'Treinador', role: 'Treino', dexIds: [4], power: 1 }, { storage, fetchImpl: fakeFetch() });
     expect(foe.failed).toEqual([]);
-    expect(foe.mons[0]!.fighter.moves.map((m) => m.name)).toEqual(['Ember']);
-    expect(foe.mons[0]!.maxPp).toEqual([25]);
+    expect(foe.mons[0]!.moves.map((m) => m.name)).toEqual(['Ember']);
+    expect(foe.mons[0]!.moves[0]!.pp).toBe(25);
   });
 
   it('espécie sem dados fica de fora do oponente, sem golpe inventado', async () => {
@@ -82,13 +83,16 @@ describe('preparo do duelo', () => {
   });
 
   it('seus Pokémon usam os golpes salvos e quem não tem fica de fora com aviso', async () => {
-    const flamethrower = { slug: 'flamethrower', name: 'Flamethrower', type: 'fire' as const, power: 90, accuracy: 100, pp: 15, damageClass: 'special' as const };
+    const flamethrower: ChosenMove = {
+      slug: 'flamethrower', name: 'Flamethrower', type: 'fire', power: 90, accuracy: 100, pp: 15, damageClass: 'special',
+      priority: 0, ailment: 'burn', ailmentChance: 10, flinchChance: 0, statChanges: [], statChance: 0, drain: 0, healing: 0, critRate: 0, minHits: 1, maxHits: 1,
+    };
     const side = await preparePlayerSide(
       [{ id: 'a', name: 'Charmander', dexId: 4, shiny: false, bond: 4 }, { id: 'b', name: 'Vulpix', dexId: 37, shiny: false, bond: 0 }],
       { storage: memoryStorage(), profileOf: async () => null, savedMovesOf: (m) => (m.id === 'a' ? [flamethrower] : []) },
     );
     expect(side.mons).toHaveLength(1);
-    expect(side.mons[0]!.fighter.moves[0]!.name).toBe('Flamethrower');
+    expect(side.mons[0]!.moves[0]!.name).toBe('Flamethrower');
     expect(side.mons[0]!.fighter.bond).toBe(4);
     expect(side.notes.some((n) => n.includes('Vulpix ficou de fora'))).toBe(true);
     expect(side.notes.some((n) => n.includes('valores médios'))).toBe(true);

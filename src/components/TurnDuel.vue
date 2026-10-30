@@ -7,15 +7,16 @@ import { pendingChallenge, recordLeagueResult } from '../app/league-store';
 import { savedMoves } from '../app/moveset-store';
 import { prepareFoeSide, preparePlayerSide } from '../app/turn-duel-setup';
 import type { DuelMonView, DuelOpponentSpec } from '../app/turn-duel-setup';
-import { effectivenessTone, seededRng, STATUS_LABELS_PT, typeEffectiveness } from '../core/battle';
-import type { StatusKind } from '../core/battle';
+import { effectivenessTone, seededRng, typeEffectiveness } from '../core/battle';
+import { effectSummary } from '../core/moveset';
+import type { ChosenMove } from '../core/moveset';
 import { challengeById } from '../core/league';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import {
-  actionBlocker, activeMon, chooseFoeAction, createDuel, describeDuelEvent, forfeitDuel, needsStruggle, resolveTurn, sendReplacement, STRUGGLE,
-  switchOptions,
+  actionBlocker, activeMon, chooseFoeAction, createDuel, describeDuelEvent, DUEL_STATUS_LABELS_PT, DUEL_STATUS_SHORT_PT, forfeitDuel, needsStruggle,
+  orderHint, resolveTurn, sendReplacement, stageBadges, statusBlockedByType, STRUGGLE, switchOptions,
 } from '../core/turn-battle';
-import type { DuelAction, DuelEvent, DuelState, SideIndex } from '../core/turn-battle';
+import type { DuelAction, DuelEvent, DuelState, DuelStatus, SideIndex, Stages } from '../core/turn-battle';
 
 const props = defineProps<{ members: ArenaMember[]; opponent: DuelOpponentSpec }>();
 const emit = defineEmits<{ close: [] }>();
@@ -35,7 +36,9 @@ const engine = shallowRef<DuelState | null>(null);
 const views = ref<[DuelMonView[], DuelMonView[]]>([[], []]);
 const shown = reactive({
   hp: [[], []] as [number[], number[]],
-  status: [[], []] as [(StatusKind | null)[], (StatusKind | null)[]],
+  status: [[], []] as [(DuelStatus | null)[], (DuelStatus | null)[]],
+  confused: [[], []] as [boolean[], boolean[]],
+  stages: [[], []] as [Stages[], Stages[]],
   active: [0, 0] as [number, number],
 });
 const fx = reactive({
@@ -60,6 +63,8 @@ function syncShown(state: DuelState): void {
   for (const side of [0, 1] as const) {
     shown.hp[side] = state.sides[side].state.map((m) => m.hp);
     shown.status[side] = state.sides[side].state.map((m) => m.status);
+    shown.confused[side] = state.sides[side].state.map((m) => m.confusion > 0);
+    shown.stages[side] = state.sides[side].state.map((m) => ({ ...m.stages }));
     shown.active[side] = state.sides[side].active;
     fx.faint[side] = (state.sides[side].state[state.sides[side].active]?.hp ?? 0) <= 0;
   }
@@ -138,10 +143,14 @@ function float(side: SideIndex, text: string, tone: string): void {
 
 function applyVisual(event: DuelEvent): void {
   switch (event.kind) {
-    case 'switch':
+    case 'switch': {
+      const old = shown.stages[event.side][event.from];
+      if (old) for (const key of Object.keys(old) as (keyof Stages)[]) old[key] = 0;
+      shown.confused[event.side][event.from] = false;
       shown.active[event.side] = event.to;
       fx.faint[event.side] = false;
       break;
+    }
     case 'move':
       pulse('lunge', event.side, 380);
       break;
@@ -163,13 +172,27 @@ function applyVisual(event: DuelEvent): void {
       float(event.side, 'Sem efeito', 'immune');
       break;
     case 'status':
-      shown.status[event.side][event.mon] = event.status;
+      if (event.status === 'confusion') shown.confused[event.side][event.mon] = true;
+      else shown.status[event.side][event.mon] = event.status;
       break;
     case 'thaw':
+    case 'wake':
       shown.status[event.side][event.mon] = null;
+      break;
+    case 'confusion-end':
+      shown.confused[event.side][event.mon] = false;
+      break;
+    case 'stage': {
+      const stages = shown.stages[event.side][event.mon];
+      if (stages) stages[event.stat] += event.applied;
+      break;
+    }
+    case 'heal':
+      shown.hp[event.side][event.mon] = event.hpAfter;
       break;
     case 'residual':
     case 'recoil':
+    case 'confusion-hit':
       shown.hp[event.side][event.mon] = event.hpAfter;
       pulse('hit', event.side, 300);
       break;
@@ -177,7 +200,12 @@ function applyVisual(event: DuelEvent): void {
       shown.hp[event.side][event.mon] = 0;
       fx.faint[event.side] = true;
       break;
+    case 'multi':
+      float(event.side === 0 ? 1 : 0, `${event.hits}×`, 'neutral');
+      break;
+    case 'fail':
     case 'skip':
+    case 'confused':
     case 'end':
       break;
   }
@@ -259,14 +287,26 @@ function hpPct(side: SideIndex, mon: number): number {
 }
 const hpTone = (pct: number) => (pct > 50 ? 'ok' : pct > 20 ? 'mid' : 'low');
 
-function effHint(type: Parameters<typeof typeEffectiveness>[0]): { text: string; tone: string } | null {
+function effHint(move: ChosenMove): { text: string; tone: string } | null {
   const target = foe.value;
-  if (!target) return null;
-  const mult = typeEffectiveness(type, target.mon.fighter.types);
+  if (!target || (move.damageClass === 'status' && !move.ailment)) return null;
+  const mult = typeEffectiveness(move.type, target.mon.fighter.types);
+  if (move.damageClass === 'status') return statusBlockedByType(move, target.mon.fighter.types) ? { text: 'Não afeta', tone: 'immune' } : null;
   if (mult === 0) return { text: 'Não afeta', tone: 'immune' };
   if (mult > 1) return { text: mult >= 4 ? 'Super efetivo ×4' : 'Super efetivo', tone: 'strong' };
   if (mult < 1) return { text: 'Pouco efetivo', tone: 'weak' };
   return null;
+}
+
+const CLASS_SHORT: Record<ChosenMove['damageClass'], string> = { physical: 'Fís.', special: 'Esp.', status: 'Status' };
+function orderText(i: number): string {
+  if (!engine.value) return '';
+  const hint = orderHint(engine.value, i);
+  return hint === 'first' ? 'Age primeiro' : hint === 'second' ? 'Age depois' : 'Empate de Velocidade';
+}
+function badgesOf(side: SideIndex): { stat: string; label: string; value: number }[] {
+  const stages = shown.stages[side][shown.active[side]];
+  return stages ? stageBadges(stages) : [];
 }
 
 function viewOf(side: SideIndex, mon: number): DuelMonView | null {
@@ -303,7 +343,9 @@ function backUrl(view: DuelMonView): string {
           <div class="hud-line"><strong>{{ foe.mon.fighter.name }}</strong><span>Nv. 50</span></div>
           <div class="hud-types">
             <span v-for="t in foe.mon.fighter.types" :key="t" class="type-chip" :style="{ '--type': TYPE_COLORS[t] }">{{ TYPE_LABELS_PT[t] }}</span>
-            <span v-if="shown.status[1][shown.active[1]]" class="status-chip" :class="shown.status[1][shown.active[1]]!">{{ STATUS_LABELS_PT[shown.status[1][shown.active[1]]!] }}</span>
+            <span v-if="shown.status[1][shown.active[1]]" class="status-chip" :class="shown.status[1][shown.active[1]]!" :title="DUEL_STATUS_LABELS_PT[shown.status[1][shown.active[1]]!]">{{ DUEL_STATUS_SHORT_PT[shown.status[1][shown.active[1]]!] }}</span>
+            <span v-if="shown.confused[1][shown.active[1]]" class="status-chip confusion">Confuso</span>
+            <span v-for="b in badgesOf(1)" :key="b.stat" class="stage-chip" :class="b.value > 0 ? 'up' : 'down'">{{ b.label }}</span>
           </div>
           <div class="hp"><span class="hp-label">PS</span><div class="hp-track"><div class="hp-fill" :class="hpTone(hpPct(1, shown.active[1]))" :style="{ width: `${hpPct(1, shown.active[1])}%` }"></div></div></div>
           <div class="pips" aria-label="Equipe do oponente"><i v-for="(hp, i) in shown.hp[1]" :key="i" :class="{ out: hp <= 0, on: i === shown.active[1] }"></i></div>
@@ -322,7 +364,9 @@ function backUrl(view: DuelMonView): string {
           <div class="hud-line"><strong>{{ mine.mon.fighter.name }}</strong><span>Nv. 50</span></div>
           <div class="hud-types">
             <span v-for="t in mine.mon.fighter.types" :key="t" class="type-chip" :style="{ '--type': TYPE_COLORS[t] }">{{ TYPE_LABELS_PT[t] }}</span>
-            <span v-if="shown.status[0][shown.active[0]]" class="status-chip" :class="shown.status[0][shown.active[0]]!">{{ STATUS_LABELS_PT[shown.status[0][shown.active[0]]!] }}</span>
+            <span v-if="shown.status[0][shown.active[0]]" class="status-chip" :class="shown.status[0][shown.active[0]]!" :title="DUEL_STATUS_LABELS_PT[shown.status[0][shown.active[0]]!]">{{ DUEL_STATUS_SHORT_PT[shown.status[0][shown.active[0]]!] }}</span>
+            <span v-if="shown.confused[0][shown.active[0]]" class="status-chip confusion">Confuso</span>
+            <span v-for="b in badgesOf(0)" :key="b.stat" class="stage-chip" :class="b.value > 0 ? 'up' : 'down'">{{ b.label }}</span>
           </div>
           <div class="hp"><span class="hp-label">PS</span><div class="hp-track"><div class="hp-fill" :class="hpTone(hpPct(0, shown.active[0]))" :style="{ width: `${hpPct(0, shown.active[0])}%` }"></div></div></div>
           <div class="hp-num">{{ shown.hp[0][shown.active[0]] }} / {{ mine.mon.fighter.maxHp }}</div>
@@ -354,8 +398,8 @@ function backUrl(view: DuelMonView): string {
             </button>
             <template v-else>
               <button
-                v-for="(move, i) in mine.mon.fighter.moves"
-                :key="move.name"
+                v-for="(move, i) in mine.mon.moves"
+                :key="move.slug"
                 type="button"
                 class="move"
                 :style="{ '--type': TYPE_COLORS[move.type] }"
@@ -365,11 +409,13 @@ function backUrl(view: DuelMonView): string {
                 <span class="move-name">{{ move.name }}</span>
                 <span class="move-meta">
                   <span class="type-chip" :style="{ '--type': TYPE_COLORS[move.type] }">{{ TYPE_LABELS_PT[move.type] }}</span>
-                  <small>{{ move.special ? 'Esp.' : 'Fís.' }} · Poder {{ move.power }}</small>
+                  <small>{{ CLASS_SHORT[move.damageClass] }}<template v-if="move.damageClass !== 'status'"> · Poder {{ move.power }}</template> · Prec. {{ move.accuracy ?? '—' }}</small>
                 </span>
+                <small v-if="effectSummary(move).length" class="move-effect">{{ effectSummary(move).join(' · ') }}</small>
                 <span class="move-meta">
-                  <small :class="{ lowpp: (mine.live.pp[i] ?? 0) <= Math.ceil((mine.mon.maxPp[i] ?? 1) / 4) }">PP {{ mine.live.pp[i] }}/{{ mine.mon.maxPp[i] }}</small>
-                  <small v-if="effHint(move.type)" class="eff" :class="effHint(move.type)!.tone">{{ effHint(move.type)!.text }}</small>
+                  <small :class="{ lowpp: (mine.live.pp[i] ?? 0) <= Math.ceil(move.pp / 4) }">PP {{ mine.live.pp[i] }}/{{ move.pp }}</small>
+                  <small v-if="effHint(move)" class="eff" :class="effHint(move)!.tone">{{ effHint(move)!.text }}</small>
+                  <small class="order">{{ orderText(i) }}</small>
                 </span>
               </button>
             </template>
@@ -423,6 +469,12 @@ function backUrl(view: DuelMonView): string {
 .hud-types { display: flex; flex-wrap: wrap; gap: .25rem; }
 .type-chip { display: inline-block; padding: .02rem .38rem; border-radius: 99px; background: var(--type, #666); color: #fff; font-size: .64rem; font-weight: 800; text-shadow: 0 1px 1px rgba(0, 0, 0, .45); }
 .status-chip { padding: .02rem .38rem; border-radius: 99px; color: #fff; font-size: .64rem; font-weight: 800; background: #777; }
+.status-chip.confusion { background: #c86fd8; } .status-chip.sleep { background: #6f7fa8; }
+.stage-chip { padding: .02rem .34rem; border-radius: 99px; font-size: .62rem; font-weight: 800; }
+.stage-chip.up { background: rgba(79, 209, 139, .25); color: #a7f0c6; }
+.stage-chip.down { background: rgba(239, 90, 90, .25); color: #ffb3b3; }
+.move-effect { color: #9fd3ff !important; }
+.move small.order { color: var(--gold) !important; }
 .status-chip.burn { background: #e5603b; } .status-chip.poison { background: #a05bc5; } .status-chip.paralysis { background: #d8b425; color: #222; } .status-chip.freeze { background: #5fc3e4; color: #123; }
 .hp { display: flex; align-items: center; gap: .35rem; }
 .hp-label { color: var(--gold); font-size: .62rem; font-weight: 900; }

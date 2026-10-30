@@ -38,8 +38,11 @@ export function saveMoves(id: string, dexId: number, moves: readonly ChosenMove[
   }
 }
 
-/** Golpes salvos no formato do motor automático (Caixa, Liga, corridas e PvP), ou undefined para os golpes de sempre. */
+/**
+ * Golpes de dano salvos no formato do motor automático (Caixa, Liga, corridas e PvP), ou undefined para os golpes de
+ * sempre. Os de status ficam de fora: o motor automático não simula os efeitos deles.
+ */
 export function savedBattleMoves(id: string, dexId: number | undefined): BattleMove[] | undefined {
-  const moves = savedMoves(id, dexId);
+  const moves = savedMoves(id, dexId).filter((m) => m.damageClass !== 'status');
   return moves.length > 0 ? moves.map(toBattleMove) : undefined;
 }
