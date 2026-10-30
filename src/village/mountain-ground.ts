@@ -75,16 +75,44 @@ function ground(b: PixelBuf, seed: number): void {
   }
 }
 
-/** Paredão: faixas verticais de rocha de 4 px, com luz à esquerda de cada faixa e juntas escuras. */
+const MOSS = { light: 0x8aa65a, dark: 0x5f7d3f } as const;
+
+/**
+ * Paredão em blocos de pedra de tamanhos variados (5 a 9 px de largura, fiadas desencontradas), cada um com luz em cima
+ * e à esquerda, junta escura embaixo e à direita e, de vez em quando, musgo na quina. Substitui as faixas verticais
+ * regulares, que de longe pareciam cerca. Desenha só dentro de x0..x1 e y0..y0+h.
+ */
+function faceRect(b: PixelBuf, x0: number, x1: number, y0: number, h: number, seed: number): void {
+  rect(b, x0, y0, x1 - x0, h, ROCK.deep);
+  const bottom = y0 + h;
+  let y = y0 - (seed % 3);
+  for (let row = 0; y < bottom; row++) {
+    const bh = 5 + ((seed + row) % 2);
+    let x = x0 - ((seed * 3 + row * 5) % 7);
+    for (let k = 0; x < x1; k++) {
+      const bw = 5 + Math.floor(hash(seed + row * 7, k) * 5);
+      const r = hash(seed + k * 13, row + 3);
+      const tone = r < 0.3 ? ROCK.light : r < 0.82 ? ROCK.mid : ROCK.dark;
+      const hi = tone === ROCK.light ? ROCK.lip : tone === ROCK.mid ? ROCK.light : ROCK.mid;
+      for (let yy = Math.max(y, y0); yy < Math.min(y + bh, bottom); yy++) {
+        for (let xx = Math.max(x, x0); xx < Math.min(x + bw, x1); xx++) {
+          const top = yy === y;
+          const left = xx === x;
+          const joint = yy === y + bh - 1 || xx === x + bw - 1;
+          if (joint) continue;
+          put(b, xx, yy, (top && left) ? ROCK.dark : top || left ? hi : tone);
+        }
+      }
+      // Musgo numa quina de cima de algumas pedras.
+      if (r > 0.88 && y >= y0) for (let i = 1; i < Math.min(4, bw - 1); i++) if (x + i >= x0 && x + i < x1) put(b, x + i, y, i % 2 ? MOSS.light : MOSS.dark);
+      x += bw;
+    }
+    y += bh;
+  }
+}
+
 function face(b: PixelBuf, y0: number, h: number, seed: number): void {
-  for (let x = 0; x < 16; x++) {
-    const col = (x + (seed % 3)) % 4;
-    const rgb = col === 0 ? ROCK.light : col === 3 ? ROCK.dark : ROCK.mid;
-    rect(b, x, y0, 1, h, rgb);
-  }
-  for (let y = y0; y < y0 + h; y++) {
-    if ((y + seed) % 5 === 0) for (let x = 0; x < 16; x += 4) put(b, x + ((seed + y) % 4), y, ROCK.deep);
-  }
+  faceRect(b, 0, 16, y0, h, seed);
 }
 
 /** Desenha um bloco do monte (16×16). \`x\` e \`y\` variam as pedrinhas e as faixas sem mudar o formato. */
@@ -116,11 +144,18 @@ export function paintMountainPiece(p: MountainPiece, x: number, y: number): Pixe
     const top = p.upper;
     if (top) {
       // Lábio de cima do paredão: a beira do patamar, iluminada, com o contorno escuro logo abaixo.
-      rect(b, 0, 0, 16, 2, ROCK.lip);
-      rect(b, 0, 2, 16, 1, ROCK.line);
+      // Lábio irregular: a beira sobe e desce um pixel, com tufos de musgo aqui e ali.
+      for (let x = 0; x < 16; x++) {
+        const lh = 1 + (hash(seed + 40, x) < 0.45 ? 1 : 0) + (hash(seed + 41, x) < 0.15 ? 1 : 0);
+        rect(b, x, 0, 1, lh, hash(seed + 42, x) < 0.12 ? MOSS.light : ROCK.lip);
+        put(b, x, lh, ROCK.line);
+      }
     } else {
       // Pé do paredão: sombra densa e uma linha de contorno encostando no chão.
-      rect(b, 0, 12, 16, 3, ROCK.deep);
+      for (let x = 0; x < 16; x++) {
+        const sh = 2 + Math.floor(hash(seed + 50, x) * 3);
+        rect(b, x, 15 - sh, 1, sh, ROCK.deep);
+      }
       rect(b, 0, 15, 16, 1, ROCK.line);
     }
     if (part === 'corner-left') { rect(b, 0, 0, 2, 16, ROCK.line); rect(b, 2, 0, 1, 16, ROCK.light); }
@@ -132,7 +167,7 @@ export function paintMountainPiece(p: MountainPiece, x: number, y: number): Pixe
   if (part === 'top') {
     // Beira de trás do patamar: o paredão do norte não aparece (está de costas), só a crista de pedra.
     rect(b, 0, 0, 16, 2, ROCK.line);
-    for (let x = 0; x < 16; x++) rect(b, x, 2, 1, 4, (x + seed) % 4 === 0 ? ROCK.light : ROCK.mid);
+    faceRect(b, 0, 16, 2, 4, seed);
     rect(b, 0, 2, 16, 1, ROCK.lip);
     rect(b, 0, 6, 16, 1, ROCK.dark);
     rect(b, 0, 7, 16, 1, GROUND.speck);
@@ -140,11 +175,7 @@ export function paintMountainPiece(p: MountainPiece, x: number, y: number): Pixe
     // Laterais: uma parede de rocha de 6 px caindo para o terraço de baixo, com o lábio claro em cima da beira.
     const left = part === 'side-left';
     const x0 = left ? 0 : 10;
-    for (let x = 0; x < 6; x++) {
-      const col = (x + seed) % 3;
-      rect(b, x0 + x, 0, 1, 16, col === 0 ? ROCK.light : col === 2 ? ROCK.dark : ROCK.mid);
-    }
-    for (let y = seed % 5; y < 16; y += 5) rect(b, x0 + 1, y, 4, 1, ROCK.deep);
+    faceRect(b, x0, x0 + 6, 0, 16, seed);
     rect(b, left ? 0 : 15, 0, 1, 16, ROCK.line);
     rect(b, left ? 6 : 9, 0, 1, 16, ROCK.lip);
     rect(b, left ? 7 : 8, 0, 1, 16, ROCK.dark);
