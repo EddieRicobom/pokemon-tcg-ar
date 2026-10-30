@@ -34,26 +34,25 @@ const showIosHint =
 /**
  * A barra de baixo tem só o essencial; "Várias" é modo do Escanear, e o Diagnóstico fica na engrenagem do topo. A Vila
  * tem aba própria (antes morava dentro da Caixa, atrás de um botão "Modo vida"). As lutas moram no Coliseu da Vila (o
- * diálogo do prédio oferece a Arena 3D, a Liga e as corridas 6×6): as telas `#/arena` e `#/caixa` continuam
- * existindo e abrindo por endereço e por link, mas não têm aba nem sub-aba, e a aba da Vila fica acesa nelas.
+ * diálogo do prédio oferece a Arena 3D, a Liga e as corridas 6×6). Pins também abre pela Vila: essas telas
+ * continuam existindo e abrindo por endereço e por link, mas não têm aba nem sub-aba, e a aba da Vila fica acesa.
  */
-const tabs: { name: 'escanear' | 'vila' | 'cartas' | 'pins' | 'treinador'; label: string }[] = [
+const tabs: { name: 'escanear' | 'vila' | 'cartas' | 'treinador'; label: string }[] = [
   { name: 'escanear', label: 'Escanear' },
   { name: 'vila', label: 'Vila' },
   { name: 'cartas', label: 'Cartas' },
-  { name: 'pins', label: 'Pins' },
   { name: 'treinador', label: 'Treinador' },
 ];
 const scanModes: { name: RouteName; label: string }[] = [
   { name: 'escanear', label: 'Uma carta' },
   { name: 'varias', label: 'Várias' },
 ];
-/** As telas das lutas, que moram no Coliseu da Vila: a aba da Vila fica acesa nelas. */
-const fightRoutes: readonly RouteName[] = ['arena', 'caixa', 'torre'];
+/** Modos que se acessam por prédios da Vila: a aba da Vila fica acesa neles. */
+const villageRoutes: readonly RouteName[] = ['arena', 'caixa', 'torre', 'pins'];
 const inScanGroup = computed(() => scanModes.some((m) => m.name === route.value.name));
 const subModes = computed(() => (inScanGroup.value ? scanModes : null));
 const tabActive = (name: RouteName): boolean =>
-  name === 'escanear' ? inScanGroup.value : name === 'vila' ? route.value.name === 'vila' || fightRoutes.includes(route.value.name) : route.value.name === name;
+  name === 'escanear' ? inScanGroup.value : name === 'vila' ? route.value.name === 'vila' || villageRoutes.includes(route.value.name) : route.value.name === name;
 const scanKey = computed(() => `scan-${route.value.cardId ?? 'novo'}`);
 /** Para onde o ✕ da Vila volta: a última tela fora dela (ou o Escanear, se a Vila foi a primeira). */
 const beforeVila = ref<string>(route.value.name === 'vila' ? '#/' : window.location.hash || '#/');

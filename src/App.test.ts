@@ -30,7 +30,7 @@ describe('App', () => {
     expect(text).toContain('Pokémon TCG AR');
     expect(text).toContain('Escanear carta');
     const tabs = [...(host?.querySelectorAll('nav.tabs a') ?? [])].map((a) => [a.textContent?.trim(), a.getAttribute('href')]);
-    expect(tabs).toEqual([['Escanear', '#/'], ['Vila', '#/vila'], ['Cartas', '#/cartas'], ['Pins', '#/pins'], ['Treinador', '#/treinador']]);
+    expect(tabs).toEqual([['Escanear', '#/'], ['Vila', '#/vila'], ['Cartas', '#/cartas'], ['Treinador', '#/treinador']]);
     expect(host?.querySelectorAll('nav.modes a')).toHaveLength(2);
     expect(host?.querySelector('a.header-gear')?.getAttribute('href')).toBe('#/diagnostico');
     expect(host?.querySelector('video')).not.toBeNull();
@@ -123,6 +123,8 @@ describe('App', () => {
     expect(text).toContain('energia');
     expect(text).toContain('Escolha os pins');
     expect(text).toContain('Como funciona o chão');
+    expect(host?.querySelector('nav.tabs a[href="#/vila"]')?.getAttribute('aria-current')).toBe('page');
+    expect(host?.querySelector('nav.tabs a[href="#/pins"]')).toBeNull();
   });
 
   it('Várias é modo do Escanear; Cartas não tem sub-abas; a Arena e a Caixa acendem a aba da Vila; o Diagnóstico vai para a engrenagem', async () => {
