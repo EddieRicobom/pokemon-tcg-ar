@@ -34,6 +34,13 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 - A fusão custa 1 PA e 1 buff e dura 3 turnos. Ela usa a média dos stats dos dois e divide o dano recebido entre eles. O nome vem do catálogo e a arte mostra as duas armas de origem. As gemas também se somam: a fusão pega a média dos bônus e os efeitos lendários dos dois.
 - Teclado no PC: 1–6 troca de Pokémon, M move, A ataca, E encerra o turno, G abre a forja, Enter confirma e Esc cancela.
 
+### Arsenal completo (20 armas, 210 fusões)
+- `src/core/dungeon-weapons.ts` traz as 20 armas do catálogo, cada uma com formato de ataque (adjacente, em linha, tiro reto, área em cruz, leque, em volta, teleguiado, armadilha) e um mecanismo próprio (cortes rápidos, estocada precisa, abalo, alcance em linha, sequência, bloqueio com revide, barreira, proteção orbital, golpe de escudo, rajada, estilhaços, ação sustentada/queimadura, carga, explosão, arco elétrico, perfuração, retorno, armadilha, corrente que puxa, enxame).
+- As 210 fusões seguem a regra do catálogo: formato e mecanismo da primeira arma (ordem do catálogo) mais o mecanismo da segunda; armas iguais aplicam o mecanismo duas vezes. Nome, número (1–190 diferentes, 191–210 iguais) e texto saem idênticos aos do documento de concepção.
+- No combate: armadilhas disparam em quem passa pela casa, barreiras duram 2 rodadas e contam como parede, bloqueio amortece o próximo golpe e revida de perto, queimadura tira HP no fim da rodada; inimigos podem morrer no turno deles. Inimigos usam só o formato da arma, sem mecanismos.
+- Pokémon de dois tipos escolhe a munição no painel do ativo (sem custo de PA): só o 1º tipo, só o 2º, ou mista 70/30 em qualquer ordem.
+- As 15 armas novas ainda usam um emblema genérico (hexágono com a orbe e o nome); a arte própria fica para depois.
+
 ### Descida sem fim
 - Não existe último andar. A expedição só termina quando a equipe cai ou quando você escolhe **Sair com o espólio** na escada.
 - Com a sala limpa, a escada 🪜 aparece e dá para andar à vontade sem gastar PA para pegar o saque. Na escada, você escolhe uma recompensa para descer (buff de fusão, poção ou sala segura), abre a forja ou sai.
@@ -93,8 +100,8 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 ## Falta (para deixar de ser protótipo)
 
 - **Validar no navegador e em celular.** Nada disso foi visto rodando: as sessões no PC do dono não têm Node, e a verificação depende do CI do PR. Falta abrir a tela, jogar alguns andares e conferir o layout em 375 px.
-- **Tabela de armas e munições.** Hoje a arma sai dos stats e a munição é o tipo principal (o que está rotulado como provisório). O documento diz que a associação entre Pokémon, armas e munições será definida separadamente.
-- **As outras 15 armas e as 210 fusões do catálogo.** Hoje as fusões usam uma regra genérica (formato da primeira arma, potência e alcance somados com desconto), e o efeito do componente secundário de cada fusão ainda não existe.
+- **Tabela Pokémon → arma escrita à mão** (pedido do dono: escolher pelo que combina com o Pokémon, sem fórmula de stats), cobrindo as 1025 espécies por linhagem; formas regionais e Mega usam a espécie base. Hoje a arma ainda sai dos stats (`weaponFor`, provisório).
+- **Arte própria das 15 armas novas** (hoje emblema genérico).
 - **Balanceamento.** Ver se 6 PA e os custos dão boas decisões, se a curva de dificuldade sem teto acompanha a das gemas (a dificuldade cresce em linha e as gemas também, mas a lapidação é exponencial no custo) e se o chefe e as elites ficam justos.
 - **Salvar a expedição.** Fechar a tela perde a descida atual, então falta guardar o estado (ele é serializável) e oferecer «continuar».
 - **Recompensa fora da masmorra.** Gemas e andares ainda não valem nada na Vila: falta decidir o que volta (moedas, XP de Treinador, um item, a Pokédex) sem quebrar a economia da Vila.

@@ -5,7 +5,8 @@ import {
   polishGems, previewAttack, previewFusion, profileFor, reachable, retreat, START_AP, startDungeon, switchTo, threatenedCells, turnAp, typeFactor,
   unequipGem, usePotion, weaponFor,
 } from './dungeon';
-import type { DungeonState, EnemySpecies, MemberInput } from './dungeon';
+import { allFusions, ammoOptions, CATALOG_ORDER, setAmmo, fusionDescription, fusionNumber, fusionWeapon } from './dungeon';
+import type { DungeonState, EnemySpecies, MemberInput, WeaponId } from './dungeon';
 import type { Gem } from './dungeon-gems';
 import type { BaseStats } from './survivor-moves';
 
@@ -45,12 +46,17 @@ function clear(s: DungeonState): void {
 const gem = (id: number, kind: Gem['kind'], tier = 1, legendary = false): Gem => ({ id, kind, tier, legendary });
 
 describe('armas e dano', () => {
-  it('a arma provisória sai dos stats: físico rápido, médio e lento; especial rápido e lento', () => {
-    expect(weaponFor(stats({ speed: 100 }))).toBe('laminas');
-    expect(weaponFor(stats({ speed: 70 }))).toBe('lanca');
-    expect(weaponFor(stats({ speed: 30 }))).toBe('martelo');
-    expect(weaponFor(stats({ attack: 40, spAttack: 100, speed: 90 }))).toBe('emissor');
-    expect(weaponFor(stats({ attack: 40, spAttack: 100, speed: 40 }))).toBe('lancador');
+  it('a regra provisória de stats alcança as 20 armas', () => {
+    const sp = (o: Partial<BaseStats>) => weaponFor(stats({ attack: 40, ...o }));
+    const tank = (o: Partial<BaseStats>) => weaponFor(stats({ attack: 40, spAttack: 40, defense: 120, spDefense: 80, ...o }));
+    const got = [
+      weaponFor(stats({ speed: 100 })), weaponFor(stats({ speed: 90 })), weaponFor(stats({ speed: 70, attack: 110 })), weaponFor(stats({ speed: 70 })),
+      weaponFor(stats({ speed: 60, hp: 80 })), weaponFor(stats({ speed: 60 })), weaponFor(stats({ speed: 30, attack: 110 })), weaponFor(stats({ speed: 30 })),
+      sp({ spAttack: 100, speed: 110 }), sp({ spAttack: 100, speed: 90 }), sp({ spAttack: 100, speed: 75 }), sp({ spAttack: 90, speed: 75 }),
+      sp({ spAttack: 90, speed: 60, hp: 80 }), sp({ spAttack: 90, speed: 60 }), sp({ spAttack: 110, speed: 30 }), sp({ spAttack: 90, speed: 30 }),
+      tank({ speed: 40 }), tank({ speed: 80 }), tank({ speed: 40, defense: 80, spDefense: 120 }), tank({ speed: 80, defense: 80, spDefense: 120 }),
+    ];
+    expect(new Set(got)).toEqual(new Set(CATALOG_ORDER));
   });
 
   it('usa multiplicadores moderados de tipo e troca imunidade por forte resistência', () => {
@@ -211,15 +217,16 @@ describe('fusão', () => {
     const s = arena([mon('lento', { speed: 70 }), mon('rapido', { speed: 100 }), mon('c')]);
     expect(fusionOrigins('lanca', 'laminas')).toEqual(['laminas', 'lanca']);
     fuse(s, 0, 1);
-    expect(s.fusion!.origins).toEqual(['laminas', 'lanca']);
+    expect(s.fusion!.origins).toEqual(['laminas', 'disco']);
     const who = attacker(s);
-    expect(who.origins).toEqual(['laminas', 'lanca']);
+    expect(who.origins).toEqual(['laminas', 'disco']);
     expect(who.orbs).toEqual([s.team[1]!.dexId, s.team[0]!.dexId]);
-    expect(who.weapon.name).toBe('Lâminas duplas + Lança de combate');
+    expect(who.weapon.name).toBe('Lâminas duplas + Disco retornável');
+    expect(who.weapon.mechanics).toEqual(['rapido', 'retorno']);
   });
 
   it('a área do lançador cobre a casa e as quatro vizinhas', () => {
-    const s = arena([mon('x', { attack: 30, spAttack: 120, speed: 30 })]);
+    const s = arena([mon('x', { attack: 30, spAttack: 90, speed: 30 })]);
     expect(attackArea(s, { x: 3, y: 3 })).toHaveLength(5);
     expect(attackArea(s, { x: 0, y: 0 })).toHaveLength(0);
   });
@@ -471,5 +478,98 @@ describe('inimigos', () => {
     finishEnemyTurn(s);
     expect(s.phase).toBe('player');
     expect(s.round).toBe(2);
+  });
+});
+
+describe('arsenal do catálogo', () => {
+  it('tem as 20 armas e as 210 fusões com nome, número e texto do catálogo', () => {
+    expect(CATALOG_ORDER).toHaveLength(20);
+    const all = allFusions();
+    expect(all).toHaveLength(210);
+    expect(new Set(all.map((f) => f.weapon.name)).size).toBe(210);
+    expect(all.map((f) => f.weapon.number)).toEqual(Array.from({ length: 210 }, (_, i) => i + 1));
+    expect(fusionNumber('espada', 'martelo')).toBe(20);
+    expect(fusionNumber('correntes', 'enxameador')).toBe(190);
+    expect(fusionNumber('laminas', 'laminas')).toBe(191);
+    expect(fusionNumber('enxameador', 'enxameador')).toBe(210);
+    expect(fusionDescription('espada', 'laminas')).toBe('Ataca rapidamente um inimigo adjacente. O componente espada longa acrescenta uma estocada curta e precisa.');
+    expect(fusionDescription('laminas', 'laminas')).toBe('Ataca rapidamente um inimigo adjacente. A segunda arma acrescenta cortes rápidos adjacentes, ampliando as possibilidades da ação.');
+    expect(fusionWeapon('emissor', 'martelo').mechanics).toEqual(['abalo', 'rajada']);
+    expect(fusionWeapon('martelo', 'martelo').mechanics).toEqual(['abalo', 'abalo']);
+  });
+});
+
+describe('formatos e mecanismos', () => {
+  const armed = (weapon: WeaponId, at = { x: 3, y: 3 }) => {
+    const s = arena();
+    s.team[0]!.weapon = weapon;
+    Object.assign(s.enemies[0]!, { pos: at, hp: 9999, maxHp: 9999 });
+    return s;
+  };
+
+  it('aura atinge as casas em volta e cone abre um leque à frente', () => {
+    expect(attackArea(armed('orbital'), { x: 3, y: 5 })).toHaveLength(5);
+    expect(attackArea(armed('dispersao'), { x: 3, y: 5 })).toHaveLength(4);
+  });
+
+  it('homing mira qualquer inimigo até o alcance, sem precisar de linha', () => {
+    const s = armed('enxameador', { x: 1, y: 4 });
+    expect(attackTargets(s)).toContainEqual({ x: 1, y: 4 });
+  });
+
+  it('armadilha vai para uma casa vazia e dispara em quem passa por ela', () => {
+    const s = armed('armadilhas', { x: 3, y: 2 });
+    expect(attack(s, { x: 3, y: 4 }).ok).toBe(true);
+    expect(s.traps).toHaveLength(1);
+    s.enemies[0]!.weapon = 'laminas';
+    endTurn(s);
+    expect(s.traps).toHaveLength(0);
+    expect(s.enemies[0]!.hp).toBeLessThan(9999);
+  });
+
+  it('bloqueio amortece o próximo golpe e revida quem bate de perto', () => {
+    const s = armed('escudo', { x: 3, y: 5 });
+    attack(s, { x: 3, y: 5 });
+    expect(s.guard.reduce).toBe(0.4);
+    const hp = s.enemies[0]!.hp;
+    endTurn(s);
+    expect(s.guard.reduce).toBe(0);
+    expect(s.enemies[0]!.hp).toBeLessThan(hp);
+  });
+
+  it('barreira fecha a casa à sua frente', () => {
+    const s = armed('barreira');
+    attack(s, { x: 3, y: 3 });
+    expect(s.barriers.map((b) => b.pos)).toContainEqual({ x: 3, y: 5 });
+    expect(reachable(s).has('3,5')).toBe(false);
+  });
+
+  it('ação sustentada queima o alvo no fim da rodada', () => {
+    const s = armed('continuo', { x: 3, y: 4 });
+    attack(s, { x: 3, y: 4 });
+    expect(s.enemies[0]!.burn).not.toBeNull();
+    s.enemies[0]!.pos = { x: 0, y: 0 };
+    const hp = s.enemies[0]!.hp;
+    endTurn(s);
+    expect(s.enemies[0]!.hp).toBeLessThan(hp);
+  });
+
+  it('a corrente puxa o alvo até encostar', () => {
+    const s = armed('correntes');
+    attack(s, { x: 3, y: 3 });
+    expect(s.enemies[0]!.pos).toEqual({ x: 3, y: 5 });
+  });
+});
+
+describe('munição', () => {
+  it('Pokémon de dois tipos escolhe tipo 1, tipo 2 ou mista; de um tipo só tem uma opção', () => {
+    const s = arena([mon('duplo', {}, ['water', 'electric']), mon('simples')]);
+    expect(ammoOptions(s.team[0]!)).toEqual([['water'], ['electric'], ['water', 'electric'], ['electric', 'water']]);
+    expect(ammoOptions(s.team[1]!)).toEqual([['fire']]);
+    expect(setAmmo(s, 0, ['electric']).ok).toBe(true);
+    expect(attacker(s).ammo).toEqual(['electric']);
+    expect(setAmmo(s, 0, ['electric', 'water']).ok).toBe(true);
+    expect(setAmmo(s, 0, ['fire']).ok).toBe(false);
+    expect(s.ap).toBe(START_AP);
   });
 });

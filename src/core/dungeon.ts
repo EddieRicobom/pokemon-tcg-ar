@@ -4,6 +4,10 @@ import type { PokemonType } from './pokemon-data';
 import type { BaseStats } from './survivor-moves';
 import { chestLegendaryChance, GEM_SLOTS, gemBonus, gemName, LEGENDARY_SLOT, mergeBonus, rollGem } from './dungeon-gems';
 import type { Gem, GemBonus, GemKind } from './dungeon-gems';
+import { FUSION_CHARGE, fusionOrigins, fusionWeapon, WEAPONS, weaponFor } from './dungeon-weapons';
+import type { Weapon, WeaponId } from './dungeon-weapons';
+
+export { FUSION_CHARGE };
 
 /**
  * Masmorra (protótipo): dungeon crawler tático em turnos baseado em `future project/IDEIAS_DO_JOGO.md`. Uma equipe de
@@ -18,46 +22,8 @@ import type { Gem, GemBonus, GemKind } from './dungeon-gems';
  * sai dos stats base dele (`weaponFor`) e a munição é o tipo principal da espécie.
  */
 
-export type WeaponId = 'laminas' | 'lanca' | 'martelo' | 'emissor' | 'lancador';
-export type WeaponPattern = 'adjacent' | 'line' | 'ranged' | 'area';
-
-export interface Weapon {
-  id: WeaponId;
-  name: string;
-  category: string;
-  /** Físico usa Attack/Defense; especial usa Special Attack/Special Defense. */
-  kind: 'physical' | 'special';
-  ap: number;
-  /** Carga gasta por ataque. */
-  cost: number;
-  /** Capacidade de carga da arma. */
-  capacity: number;
-  power: number;
-  pattern: WeaponPattern;
-  range: number;
-  description: string;
-}
-
-/** Cinco das 20 armas do catálogo, uma de cada ritmo: rápida, média, pesada, à distância e em área. */
-export const WEAPONS: Readonly<Record<WeaponId, Weapon>> = {
-  laminas: { id: 'laminas', name: 'Lâminas duplas', category: 'Corpo a corpo', kind: 'physical', ap: 1, cost: 1, capacity: 10, power: 28, pattern: 'adjacent', range: 1, description: 'Ataca rapidamente um inimigo adjacente.' },
-  lanca: { id: 'lanca', name: 'Lança de combate', category: 'Corpo a corpo', kind: 'physical', ap: 2, cost: 2, capacity: 10, power: 42, pattern: 'line', range: 2, description: 'Ataca em linha a até duas casas, atravessando quem estiver no caminho.' },
-  martelo: { id: 'martelo', name: 'Martelo de impacto', category: 'Corpo a corpo', kind: 'physical', ap: 3, cost: 3, capacity: 12, power: 80, pattern: 'adjacent', range: 1, description: 'Golpe lento que abala a defesa do alvo até o fim da rodada.' },
-  emissor: { id: 'emissor', name: 'Emissor rápido', category: 'Distância', kind: 'special', ap: 1, cost: 1, capacity: 10, power: 22, pattern: 'ranged', range: 4, description: 'Dispara um projétil preciso em linha reta, até quatro casas.' },
-  lancador: { id: 'lancador', name: 'Lançador balístico', category: 'Distância', kind: 'special', ap: 3, cost: 3, capacity: 9, power: 38, pattern: 'area', range: 3, description: 'Projétil em arco que explode na casa escolhida e nas quatro vizinhas.' },
-};
-
-/** Ordem do catálogo (nome da fusão segue esta ordem, como em «Lâminas duplas + Espada longa»). */
-const CATALOG_ORDER: readonly WeaponId[] = ['laminas', 'martelo', 'lanca', 'emissor', 'lancador'];
-
-/** PROVISÓRIO: a arma sai dos stats base (físico ou especial, e rápido ou lento). */
-export function weaponFor(stats: BaseStats): WeaponId {
-  if (stats.attack >= stats.spAttack) {
-    if (stats.speed >= 85) return 'laminas';
-    return stats.speed < 55 ? 'martelo' : 'lanca';
-  }
-  return stats.speed >= 70 ? 'emissor' : 'lancador';
-}
+export { CATALOG_ORDER, MECHANICS, WEAPONS, allFusions, fusionDescription, fusionName, fusionNumber, fusionOrigins, fusionWeapon, mechanicOf, weaponFor } from './dungeon-weapons';
+export type { MechanicId, Weapon, WeaponCategory, WeaponId, WeaponPattern } from './dungeon-weapons';
 
 export const START_AP = 6;
 export const COSTS = { move: 1, switch: 1, item: 2, fusion: 1 } as const;
@@ -66,7 +32,6 @@ export const GRID_H = 7;
 /** A cada quantos andares aparece um chefe. */
 export const BOSS_FLOOR_EVERY = 5;
 export const FUSION_TURNS = 3;
-export const FUSION_CHARGE = 12;
 export const RESERVE_RECOVERY = 0.25;
 /** Rodadas de cooldown ao esgotar: a rodada em que a carga zera não conta (por isso 2 + 1). */
 export const EXHAUST_ROUNDS = 2;
@@ -130,8 +95,10 @@ export const SUPPORT_HEAL = 0.2;
 /** Perfil pelo formato da arma e pelos stats: quem atira e aguenta muito vira suporte; corpo a corpo lento, guardião. */
 export function profileFor(weapon: WeaponId, stats: BaseStats, boss: boolean): EnemyProfile {
   if (boss) return 'chefe';
-  const pattern = WEAPONS[weapon].pattern;
-  if (pattern === 'ranged' || pattern === 'area') return stats.spDefense >= Math.max(stats.attack, stats.spAttack) ? 'suporte' : 'atirador';
+  const w = WEAPONS[weapon];
+  if (w.category === 'Defesa') return 'guardiao';
+  const far = w.range >= 3 || w.pattern === 'area' || w.pattern === 'homing' || w.pattern === 'trap';
+  if (far) return stats.spDefense >= Math.max(stats.attack, stats.spAttack) ? 'suporte' : 'atirador';
   return stats.speed < 60 ? 'guardiao' : 'bruto';
 }
 
@@ -165,9 +132,14 @@ export interface Enemy {
   defMul: number;
   /** O chefe já chamou reforços. */
   summoned: boolean;
-  /** Defesa abalada pelo martelo até o fim da rodada. */
+  /** Defesa abalada (mecanismo Abalo) até o fim da rodada. */
   shaken: boolean;
+  /** Dano por rodada do mecanismo Ação sustentada. */
+  burn: { amount: number; rounds: number } | null;
 }
+
+/** Armadilha instalada: guarda o golpe de quem instalou e dispara em quem passar pela casa. */
+export interface Trap { pos: Cell; power: number; atk: number; kind: 'physical' | 'special'; ammo: PokemonType[]; types: PokemonType[] }
 
 export interface Fusion {
   a: number;
@@ -243,12 +215,19 @@ export interface DungeonState {
   /** Espécies que podem aparecer (com dados reais), guardadas para os andares seguintes e os reforços do chefe. */
   pool: EnemySpecies[];
   stats: DungeonStats;
+  /** Bloqueio para o próximo golpe recebido: fração que some e dano de revide em quem bater de perto. */
+  guard: { reduce: number; counter: number };
+  barriers: { pos: Cell; rounds: number }[];
+  traps: Trap[];
+  /** Ataques já feitos neste turno (mecanismo Sequência). */
+  combo: number;
 }
 
 export const key = (c: Cell): string => `${c.x},${c.y}`;
 const same = (a: Cell, b: Cell): boolean => a.x === b.x && a.y === b.y;
 const dist = (a: Cell, b: Cell): number => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 const inside = (c: Cell): boolean => c.x >= 0 && c.y >= 0 && c.x < GRID_W && c.y < GRID_H;
+const isWall = (state: DungeonState, c: Cell): boolean => state.walls.some((w) => same(w, c)) || state.barriers.some((b) => same(b.pos, c));
 const DIRS: readonly Cell[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }];
 
 export const isBossFloor = (floor: number): boolean => floor % BOSS_FLOOR_EVERY === 0;
@@ -303,6 +282,7 @@ export function startDungeon(inputs: readonly MemberInput[], pool: readonly Enem
     enemies: [], walls: [], loot: [], stairs: null, bag: [], fusion: null, fusionCharges: 1, potions: 2, mustSwitch: false, log: [],
     nextUid: 1, nextGemId: 1, rollCount: 0, rewardOptions: [], bossThreat: null, turnQueue: [], pool: pool.map((p) => ({ ...p })),
     stats: { kills: 0, gems: 0, legendaries: 0, deepest: 1, elites: 0, bosses: 0 },
+    guard: { reduce: 0, counter: 0 }, barriers: [], traps: [], combo: 0,
   };
   buildFloor(state);
   return state;
@@ -323,7 +303,7 @@ function rollRng(state: DungeonState): Rng {
 }
 
 function occupied(state: DungeonState, c: Cell): boolean {
-  return state.walls.some((w) => same(w, c)) || state.enemies.some((e) => same(e.pos, c)) || same(state.pos, c) || state.loot.some((l) => same(l.pos, c));
+  return isWall(state, c) || state.enemies.some((e) => same(e.pos, c)) || same(state.pos, c) || state.loot.some((l) => same(l.pos, c));
 }
 
 function freeCell(state: DungeonState, rng: Rng, rows: readonly [number, number]): Cell | null {
@@ -353,7 +333,7 @@ function spawnEnemy(state: DungeonState, species: EnemySpecies, pos: Cell, kind:
   return {
     uid: state.nextUid++, dexId: species.dexId, name: species.name, types: [...species.types], stats: { ...species.stats }, hp: maxHp, maxHp,
     pos, weapon, boss: kind === 'boss', elite: kind === 'elite', profile: profileFor(weapon, species.stats, kind === 'boss'), affixes,
-    atkMul: scale.atk, defMul: scale.def, summoned: false, shaken: false,
+    atkMul: scale.atk, defMul: scale.def, summoned: false, shaken: false, burn: null,
   };
 }
 
@@ -367,11 +347,15 @@ export function buildFloor(state: DungeonState): void {
   state.bossThreat = null;
   state.enemies = [];
   state.turnQueue = [];
+  state.barriers = [];
+  state.traps = [];
+  state.guard = { reduce: 0, counter: 0 };
+  state.combo = 0;
   const boss = isBossFloor(state.floor);
   const pillars = 2 + Math.floor(rng() * 3) + Math.min(3, Math.floor(state.floor / 5));
   for (let tries = 0; state.walls.length < pillars && tries < 60; tries++) {
     const c = { x: Math.floor(rng() * GRID_W), y: 1 + Math.floor(rng() * (GRID_H - 3)) };
-    if (state.walls.some((w) => same(w, c))) continue;
+    if (isWall(state, c)) continue;
     state.walls.push(c);
     if (reachableAll(state).size !== GRID_W * GRID_H - state.walls.length) state.walls.pop();
   }
@@ -420,7 +404,7 @@ function enemyDrops(state: DungeonState, enemy: Enemy): LootItem[] {
 }
 
 function blocked(state: DungeonState, c: Cell, ignoreEnemies = false): boolean {
-  return !inside(c) || state.walls.some((w) => same(w, c)) || (!ignoreEnemies && state.enemies.some((e) => same(e.pos, c)));
+  return !inside(c) || isWall(state, c) || (!ignoreEnemies && state.enemies.some((e) => same(e.pos, c)));
 }
 
 function reachableAll(state: DungeonState): Set<string> {
@@ -535,41 +519,85 @@ function lineCells(from: Cell, to: Cell, range: number, state: DungeonState): Ce
   const out: Cell[] = [];
   for (let i = 1; i <= range; i++) {
     const c = { x: from.x + dx * i, y: from.y + dy * i };
-    if (!inside(c) || state.walls.some((w) => same(w, c))) break;
+    if (!inside(c) || isWall(state, c)) break;
     out.push(c);
   }
   return out;
 }
 
-/** Casas que a arma atinge mirando em `target` (vazio = mira inválida). */
-export function attackArea(state: DungeonState, target: Cell): Cell[] {
-  const w = attacker(state).weapon;
-  const d = dist(state.pos, target);
-  if (d === 0) return [];
+/** As 8 casas em volta. */
+function ring(c: Cell): Cell[] {
+  const out: Cell[] = [];
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) out.push({ x: c.x + dx, y: c.y + dy });
+  return out;
+}
+
+/** Direção principal (um eixo) de `from` para `to`. */
+function dirTo(from: Cell, to: Cell): Cell {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  return Math.abs(dx) >= Math.abs(dy) ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) };
+}
+
+/** Leque: 1 casa à frente e depois 3, na direção do alvo. */
+function coneCells(from: Cell, target: Cell): Cell[] {
+  const d = dirTo(from, target);
+  const side = { x: d.y, y: d.x };
+  const a = { x: from.x + d.x, y: from.y + d.y };
+  const b = { x: from.x + 2 * d.x, y: from.y + 2 * d.y };
+  return [a, b, { x: b.x + side.x, y: b.y + side.y }, { x: b.x - side.x, y: b.y - side.y }];
+}
+
+const chebyshev = (a: Cell, b: Cell): number => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+
+function weaponArea(state: DungeonState, w: Weapon, from: Cell, target: Cell): Cell[] {
+  const d = dist(from, target);
+  if (d === 0 || !inside(target)) return [];
+  const free = (c: Cell) => inside(c) && !isWall(state, c);
   switch (w.pattern) {
     case 'adjacent':
       return d === 1 ? [target] : [];
     case 'line': {
-      const cells = lineCells(state.pos, target, w.range, state);
+      const cells = lineCells(from, target, w.range, state);
       return cells.some((c) => same(c, target)) ? cells : [];
     }
     case 'ranged': {
-      const cells = lineCells(state.pos, target, w.range, state);
+      const cells = lineCells(from, target, w.range, state);
       const hit = cells.find((c) => state.enemies.some((e) => same(e.pos, c)));
       return cells.some((c) => same(c, target)) && hit ? [hit] : [];
     }
     case 'area':
-      if (d > w.range || state.walls.some((c) => same(c, target))) return [];
-      return [target, ...DIRS.map((o) => ({ x: target.x + o.x, y: target.y + o.y }))].filter((c) => inside(c) && !state.walls.some((x) => same(x, c)));
+      if (d > w.range || isWall(state, target)) return [];
+      return [target, ...DIRS.map((o) => ({ x: target.x + o.x, y: target.y + o.y }))].filter(free);
+    case 'cone': {
+      const cells = coneCells(from, target).filter(free);
+      return cells.some((c) => same(c, target)) ? cells : [];
+    }
+    case 'aura':
+      return chebyshev(from, target) === 1 ? ring(from).filter(free) : [];
+    case 'homing':
+      return d <= w.range && state.enemies.some((e) => same(e.pos, target)) ? [target] : [];
+    case 'trap':
+      return d <= w.range && free(target) && !same(target, from) ? [target] : [];
   }
 }
+
+/** Casas que a arma atinge mirando em `target` (vazio = mira inválida). */
+export function attackArea(state: DungeonState, target: Cell): Cell[] {
+  return weaponArea(state, attacker(state).weapon, state.pos, target);
+}
+
+const trapAt = (state: DungeonState, c: Cell) => state.traps.some((t) => same(t.pos, c));
 
 /** Casas onde dá para mirar e acertar ao menos um inimigo. */
 export function attackTargets(state: DungeonState): Cell[] {
   const out: Cell[] = [];
+  const trap = attacker(state).weapon.pattern === 'trap';
   for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
     const c = { x, y };
-    if (attackArea(state, c).some((a) => state.enemies.some((e) => same(e.pos, a)))) out.push(c);
+    const area = attackArea(state, c);
+    const placesTrap = trap && area.length > 0 && !trapAt(state, c);
+    if (placesTrap || area.some((a) => state.enemies.some((e) => same(e.pos, a)))) out.push(c);
   }
   return out;
 }
@@ -580,25 +608,48 @@ export function guarded(state: DungeonState, enemy: Enemy): boolean {
 }
 
 export interface AttackHit { enemy: Enemy; damage: number; parts: DamagePart[]; guarded: boolean }
-export interface AttackPreview { hits: AttackHit[]; ap: number; cost: number; reason: string | null }
+/** `trap`: a mira cai numa casa vazia e o ataque só instala a armadilha. */
+export interface AttackPreview { hits: AttackHit[]; ap: number; cost: number; reason: string | null; trap: boolean }
+
+/** O que os mecanismos mudam antes do golpe: poder, chance de crítico e defesa do alvo. */
+export function attackMods(state: DungeonState, who: Attacker): { power: number; crit: number; defMul: number } {
+  let power = 1;
+  let crit = 0;
+  let defMul = 1;
+  for (const m of who.weapon.mechanics) {
+    if (m === 'carga') power *= 1.35;
+    if (m === 'combo') power *= 1 + 0.15 * Math.min(3, state.combo);
+    if (m === 'precisao') crit += 0.15;
+    if (m === 'perfurar') defMul *= 0.75;
+  }
+  return { power, crit, defMul };
+}
+
+function damageAgainst(state: DungeonState, who: Attacker, enemy: Enemy): { total: number; parts: DamagePart[]; guarded: boolean } {
+  const w = who.weapon;
+  const mods = attackMods(state, who);
+  const raw = w.kind === 'physical' ? enemy.stats.defense * (enemy.shaken ? 0.75 : 1) : enemy.stats.spDefense;
+  const def = raw * enemy.defMul * (enemy.affixes.includes('blindado') ? 1.35 : 1) * mods.defMul;
+  const r = damage(who.power * mods.power, w.kind === 'physical' ? who.attack : who.spAttack, def, who.ammo, who.types, enemy.types);
+  const isGuarded = guarded(state, enemy);
+  return { total: Math.max(1, Math.round(r.total * (isGuarded ? GUARD_SHIELD : 1))), parts: r.parts, guarded: isGuarded };
+}
 
 export function previewAttack(state: DungeonState, target: Cell): AttackPreview {
   const who = attacker(state);
   const w = who.weapon;
   const area = attackArea(state, target);
   const hits = state.enemies.filter((e) => area.some((c) => same(c, e.pos))).map((enemy) => {
-    const raw = w.kind === 'physical' ? enemy.stats.defense * (enemy.shaken ? 0.75 : 1) : enemy.stats.spDefense;
-    const def = raw * enemy.defMul * (enemy.affixes.includes('blindado') ? 1.35 : 1);
-    const r = damage(who.power, w.kind === 'physical' ? who.attack : who.spAttack, def, who.ammo, who.types, enemy.types);
-    const isGuarded = guarded(state, enemy);
-    return { enemy, damage: Math.max(1, Math.round(r.total * (isGuarded ? GUARD_SHIELD : 1))), parts: r.parts, guarded: isGuarded };
+    const r = damageAgainst(state, who, enemy);
+    return { enemy, damage: r.total, parts: r.parts, guarded: r.guarded };
   });
+  const trap = w.pattern === 'trap' && hits.length === 0 && area.length > 0 && !trapAt(state, target);
   const reason = state.phase !== 'player' ? 'Não é o seu turno.'
     : state.mustSwitch ? 'Escolha quem assume a posição.'
     : state.ap < w.ap ? `Faltam PA (precisa de ${w.ap}).`
     : who.charge < w.cost ? `Falta carga (precisa de ${w.cost}).`
-    : hits.length === 0 ? 'Nenhum inimigo nessa mira.' : null;
-  return { hits, ap: w.ap, cost: w.cost, reason };
+    : hits.length === 0 && !trap ? 'Nenhum inimigo nessa mira.' : null;
+  return { hits, ap: w.ap, cost: w.cost, reason, trap };
 }
 
 export type ActionResult = { ok: true } | { ok: false; reason: string };
@@ -642,7 +693,7 @@ export function move(state: DungeonState, to: Cell): ActionResult {
 }
 
 function hurtEnemy(state: DungeonState, enemy: Enemy, amount: number, text: string): number {
-  const dealt = Math.min(enemy.hp, Math.max(1, amount));
+  const dealt = Math.min(enemy.hp, Math.max(enemy.hp > 0 ? 1 : 0, amount));
   enemy.hp -= dealt;
   state.log.push(`${text}: −${dealt} HP.`);
   return dealt;
@@ -669,21 +720,136 @@ function removeDead(state: DungeonState): void {
   state.enemies = state.enemies.filter((x) => x.hp > 0);
 }
 
+function makeTrap(state: DungeonState, who: Attacker, pos: Cell, fraction: number): Trap {
+  const w = who.weapon;
+  return { pos: { ...pos }, power: who.power * attackMods(state, who).power * fraction, atk: w.kind === 'physical' ? who.attack : who.spAttack, kind: w.kind, ammo: [...who.ammo], types: [...who.types] };
+}
+
+function springTrap(state: DungeonState, trap: Trap, enemy: Enemy): void {
+  state.traps = state.traps.filter((t) => t !== trap);
+  const raw = trap.kind === 'physical' ? enemy.stats.defense : enemy.stats.spDefense;
+  const def = raw * enemy.defMul * (enemy.affixes.includes('blindado') ? 1.35 : 1);
+  hurtEnemy(state, enemy, damage(trap.power, trap.atk, def, trap.ammo, trap.types, enemy.types).total, `${enemy.name} pisa numa armadilha`);
+}
+
+/** Puxa o inimigo em direção a você até encostar (no máximo 2 casas). */
+function pull(state: DungeonState, enemy: Enemy): void {
+  for (let i = 0; i < 2 && dist(enemy.pos, state.pos) > 1; i++) {
+    const d = dirTo(enemy.pos, state.pos);
+    const to = { x: enemy.pos.x + d.x, y: enemy.pos.y + d.y };
+    if (blocked(state, to) || same(to, state.pos)) break;
+    enemy.pos = to;
+  }
+  state.log.push(`A corrente puxa ${enemy.name}.`);
+}
+
 export function attack(state: DungeonState, target: Cell): ActionResult {
   const preview = previewAttack(state, target);
   if (preview.reason) return fail(preview.reason);
   const who = attacker(state);
   const legend = who.bonus.legendary;
+  const mods = attackMods(state, who);
   state.ap -= preview.ap;
+  if (preview.trap) {
+    state.traps.push(makeTrap(state, who, target, 1));
+    state.log.push(`${who.name} instala uma armadilha.`);
+    state.combo++;
+    spendCharge(state, preview.cost);
+    return { ok: true };
+  }
   const echo = legend.has('eco') && roll(state) < ECHO_CHANCE;
   const hitUids = new Set<number>();
+  const main = new Map<number, number>();
   let dealt = 0;
+  const enemyAtCell = (c: Cell) => state.enemies.find((e) => e.hp > 0 && same(e.pos, c));
+  /** Golpe extra de um mecanismo: uma fração do dano que esse inimigo levaria. */
+  const extra = (enemy: Enemy, fraction: number, text: string) => {
+    if (enemy.hp <= 0) return;
+    hitUids.add(enemy.uid);
+    dealt += hurtEnemy(state, enemy, Math.round(damageAgainst(state, who, enemy).total * fraction), text);
+  };
   for (const hit of preview.hits) {
-    const crit = roll(state) < who.bonus.crit;
+    const crit = roll(state) < who.bonus.crit + mods.crit;
     const amount = Math.round(hit.damage * (crit ? CRIT : 1) + (echo ? hit.damage * 0.5 : 0));
-    dealt += hurtEnemy(state, hit.enemy, amount, `${who.name} acerta ${hit.enemy.name}${crit ? ' (crítico!)' : ''}${echo ? ' (eco)' : ''}${hit.guarded ? ' (protegido)' : ''}`);
+    const d = hurtEnemy(state, hit.enemy, amount, `${who.name} acerta ${hit.enemy.name}${crit ? ' (crítico!)' : ''}${echo ? ' (eco)' : ''}${hit.guarded ? ' (protegido)' : ''}`);
+    dealt += d;
+    main.set(hit.enemy.uid, hit.damage);
     hitUids.add(hit.enemy.uid);
-    if (who.weapon.id === 'martelo') hit.enemy.shaken = true;
+  }
+  const targets = preview.hits.map((h) => h.enemy);
+  const first = targets[0];
+  const near = (c: Cell, r: number) => state.enemies.filter((e) => e.hp > 0 && !hitUids.has(e.uid) && dist(e.pos, c) <= r).sort((a, b) => dist(a.pos, c) - dist(b.pos, c));
+  const avgMain = main.size ? [...main.values()].reduce((a, b) => a + b, 0) / main.size : 0;
+  for (const m of who.weapon.mechanics) {
+    switch (m) {
+      case 'rapido': if (first) extra(first, 0.4, `Corte extra em ${first.name}`); break;
+      case 'rajada': for (const e of targets) extra(e, 0.25, `Rajada em ${e.name}`); break;
+      case 'abalo': for (const e of targets) e.shaken = true; break;
+      case 'estender':
+        for (const e of targets) {
+          const d = dirTo(state.pos, e.pos);
+          const behind = enemyAtCell({ x: e.pos.x + d.x, y: e.pos.y + d.y });
+          if (behind && !hitUids.has(behind.uid)) extra(behind, 0.6, `O golpe se estende até ${behind.name}`);
+        }
+        break;
+      case 'perfurar':
+        if (first) {
+          const d = dirTo(state.pos, first.pos);
+          for (let i = 1; i <= 3; i++) {
+            const c = { x: first.pos.x + d.x * i, y: first.pos.y + d.y * i };
+            if (!inside(c) || isWall(state, c)) break;
+            const e = enemyAtCell(c);
+            if (e && !hitUids.has(e.uid)) extra(e, 0.6, `O tiro atravessa até ${e.name}`);
+          }
+        }
+        break;
+      case 'bloqueio':
+        state.guard = { reduce: Math.max(state.guard.reduce, 0.4), counter: Math.max(state.guard.counter, Math.round(avgMain * 0.5)) };
+        state.log.push('Postura de bloqueio.');
+        break;
+      case 'barreira': {
+        const d = dirTo(state.pos, first?.pos ?? target);
+        const c = { x: state.pos.x + d.x, y: state.pos.y + d.y };
+        if (inside(c) && !occupied(state, c) && !trapAt(state, c)) { state.barriers.push({ pos: c, rounds: 2 }); state.log.push('Uma barreira se ergue.'); }
+        break;
+      }
+      case 'orbita':
+        state.guard = { ...state.guard, reduce: Math.max(state.guard.reduce, 0.2) };
+        for (const e of near(state.pos, 1)) extra(e, 0.25, `O guardião orbital atinge ${e.name}`);
+        break;
+      case 'escudada':
+        state.guard = { ...state.guard, reduce: Math.max(state.guard.reduce, 0.25) };
+        if (first && first.hp > 0) push(state, first);
+        break;
+      case 'estilhaco': for (const e of near(state.pos, 1)) extra(e, 0.3, `Estilhaços em ${e.name}`); break;
+      case 'queimar':
+        for (const e of targets) if (e.hp > 0) e.burn = { amount: Math.max(e.burn?.amount ?? 0, Math.max(1, Math.round((main.get(e.uid) ?? 0) * 0.2))), rounds: 2 };
+        break;
+      case 'explosao': for (const t of targets) for (const e of near(t.pos, 1)) extra(e, 0.4, `A explosão alcança ${e.name}`); break;
+      case 'arco':
+        if (first) {
+          let from = first.pos;
+          for (const fraction of [0.5, 0.3]) {
+            const next = near(from, 2)[0];
+            if (!next) break;
+            extra(next, fraction, `O arco salta para ${next.name}`);
+            from = next.pos;
+          }
+        }
+        break;
+      case 'retorno': for (const e of targets) if (e.hp > 0) extra(e, 0.3, `O disco volta e acerta ${e.name}`); break;
+      case 'armadilha':
+        if (first) {
+          const spot = DIRS.map((o) => ({ x: first.pos.x + o.x, y: first.pos.y + o.y }))
+            .filter((c) => inside(c) && !occupied(state, c) && !trapAt(state, c))
+            .sort((a, b) => dist(a, state.pos) - dist(b, state.pos))[0];
+          if (spot) { state.traps.push(makeTrap(state, who, spot, 0.6)); state.log.push('Uma armadilha fica para trás.'); }
+        }
+        break;
+      case 'puxar': if (first && first.hp > 0) pull(state, first); break;
+      case 'enxame': for (const e of near(state.pos, 4).slice(0, 2)) extra(e, 0.25, `O enxame persegue ${e.name}`); break;
+      default: break;
+    }
   }
   if (legend.has('corrente')) {
     for (const hit of preview.hits) {
@@ -699,6 +865,7 @@ export function attack(state: DungeonState, target: Cell): ActionResult {
     for (const m of fielded(state)) m.hp = Math.min(m.maxHp, m.hp + Math.ceil(heal / fielded(state).length));
     state.log.push(`A gema vampírica devolve ${heal} HP.`);
   }
+  state.combo++;
   removeDead(state);
   spendCharge(state, preview.cost);
   if (state.enemies.length === 0) clearFloor(state);
@@ -770,35 +937,6 @@ export function usePotion(state: DungeonState): ActionResult {
   return { ok: true };
 }
 
-/** As duas armas de uma fusão na ordem do catálogo (a ordem do par não importa). */
-export function fusionOrigins(a: WeaponId, b: WeaponId): [WeaponId, WeaponId] {
-  return CATALOG_ORDER.indexOf(a) <= CATALOG_ORDER.indexOf(b) ? [a, b] : [b, a];
-}
-
-/** Nome do catálogo para a fusão de duas armas. */
-export function fusionName(a: WeaponId, b: WeaponId): string {
-  const [first, second] = fusionOrigins(a, b);
-  return `${WEAPONS[first].name} + ${WEAPONS[second].name}`;
-}
-
-/** A arma híbrida: o formato da primeira, alcance e potência somados com desconto (proposta inicial do documento). */
-export function fusionWeapon(a: WeaponId, b: WeaponId): Weapon {
-  const [first, second] = fusionOrigins(a, b);
-  const wa = WEAPONS[first];
-  const wb = WEAPONS[second];
-  return {
-    ...wa,
-    name: fusionName(a, b),
-    category: 'Fusão',
-    ap: Math.min(wa.ap, wb.ap) + 1,
-    cost: Math.max(wa.cost, wb.cost),
-    capacity: FUSION_CHARGE,
-    power: Math.round((wa.power + wb.power) * 0.75),
-    range: Math.max(wa.range, wb.range),
-    description: `${wa.description} O componente ${wb.name.toLowerCase()} soma potência e alcance.`,
-  };
-}
-
 export function previewFusion(state: DungeonState, a: number, b: number): { ok: boolean; reason: string | null; name: string; weapon: Weapon; origins: [WeaponId, WeaponId]; ammo: PokemonType[] } | null {
   const ma = state.team[a];
   const mb = state.team[b];
@@ -858,11 +996,16 @@ function takeHit(state: DungeonState, enemy: Enemy, strength = 1): void {
   const types = [...new Set(defenders.flatMap((m) => m.types))];
   const atk = (w.kind === 'physical' ? enemy.stats.attack : enemy.stats.spAttack) * enemy.atkMul * (enemy.affixes.includes('furioso') ? 1.3 : 1);
   // Inimigos batem com uma fração do poder da arma: a equipe tem seis vidas, eles não.
-  const total = damage(w.power * 0.7 * strength, atk, def, enemy.types.slice(0, 1), enemy.types, types).total;
+  let total = damage(w.power * 0.7 * strength, atk, def, enemy.types.slice(0, 1), enemy.types, types).total;
+  const guard = state.guard;
+  state.guard = { reduce: 0, counter: 0 };
+  if (guard.reduce > 0) total = Math.max(1, Math.round(total * (1 - guard.reduce)));
   const each = Math.ceil(total / defenders.length);
   for (const m of defenders) m.hp = Math.max(0, m.hp - each);
   state.log.push(`${enemy.name} ${strength > 1 ? 'solta o golpe em área em' : 'ataca'} ${f ? f.name : defenders[0]!.name}: −${total} HP.`);
   if (enemy.affixes.includes('vampirico')) enemy.hp = Math.min(enemy.maxHp, enemy.hp + Math.round(total * 0.3));
+  if (guard.reduce > 0) state.log.push('O bloqueio amortece o golpe.');
+  if (guard.counter > 0 && dist(enemy.pos, state.pos) === 1) hurtEnemy(state, enemy, guard.counter, `Revide em ${enemy.name}`);
   for (const m of defenders) {
     if (m.hp > 0 || m.phoenixUsed || !gemBonus(m.gems).legendary.has('fenix')) continue;
     m.phoenixUsed = true;
@@ -880,7 +1023,9 @@ function enemyReach(enemy: Enemy, from: Cell, target: Cell, state: DungeonState)
   const w = WEAPONS[enemy.weapon];
   const d = dist(from, target);
   if (w.pattern === 'adjacent') return d === 1;
-  if (w.pattern === 'area') return d <= w.range;
+  if (w.pattern === 'aura') return chebyshev(from, target) === 1;
+  if (w.pattern === 'area' || w.pattern === 'homing' || w.pattern === 'trap') return d > 0 && d <= w.range;
+  if (w.pattern === 'cone') return d > 0 && coneCells(from, target).some((c) => same(c, target));
   return lineCells(from, target, w.range, state).some((c) => same(c, target));
 }
 
@@ -908,7 +1053,7 @@ function bossArea(state: DungeonState): Cell[] {
   const out: Cell[] = [];
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const c = { x: state.pos.x + dx, y: state.pos.y + dy };
-    if (inside(c) && !state.walls.some((w) => same(w, c))) out.push(c);
+    if (inside(c) && !isWall(state, c)) out.push(c);
   }
   return out;
 }
@@ -1023,7 +1168,12 @@ function enemyAct(state: DungeonState, enemy: Enemy): void {
     return;
   }
   if (plan.kind === 'summon') return summon(state, enemy);
-  if (plan.path.length) enemy.pos = { ...plan.to };
+  for (const step of plan.path) {
+    enemy.pos = { ...step };
+    const trap = state.traps.find((t) => same(t.pos, step));
+    if (trap) { springTrap(state, trap, enemy); break; }
+  }
+  if (enemy.hp <= 0) return;
   if (plan.kind === 'heal' && plan.healUid !== undefined) {
     const patient = state.enemies.find((e) => e.uid === plan.healUid);
     if (patient) {
@@ -1060,6 +1210,8 @@ export function enemyStep(state: DungeonState): number | null {
     if (!enemy) continue;
     enemyAct(state, enemy);
     if (state.mustSwitch && state.phase === 'enemy') autoCover(state);
+    removeDead(state);
+    if (state.enemies.length === 0 && state.phase === 'enemy') clearFloor(state);
     return uid;
   }
   return null;
@@ -1103,7 +1255,7 @@ export function threatenedCells(state: DungeonState): Set<string> {
     }
     for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
       const target = { x, y };
-      if (state.walls.some((w) => same(w, target))) continue;
+      if (isWall(state, target)) continue;
       // O guardião só sai do lugar se você parar a até 3 casas dele.
       if (enemy.profile === 'guardiao' && dist(enemy.pos, target) > GUARD_RADIUS) continue;
       if ([...spots.values()].some((from) => !same(from, target) && enemyReach(enemy, from, target, state))) out.add(key(target));
@@ -1129,6 +1281,10 @@ export function turnAp(state: DungeonState): number {
 function endRound(state: DungeonState): void {
   for (const e of state.enemies) {
     e.shaken = false;
+    if (e.burn) {
+      hurtEnemy(state, e, Math.min(e.hp, e.burn.amount), `${e.name} queima`);
+      if (--e.burn.rounds <= 0) e.burn = null;
+    }
     if (e.affixes.includes('regenerante') && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * 0.08));
   }
   state.team.forEach((m, i) => {
@@ -1142,7 +1298,12 @@ function endRound(state: DungeonState): void {
       m.charge = Math.min(m.maxCharge, m.charge + Math.ceil(m.maxCharge * RESERVE_RECOVERY));
     }
   });
+  state.barriers = state.barriers.filter((b) => --b.rounds > 0);
+  state.guard = { reduce: 0, counter: 0 };
+  state.combo = 0;
   state.round++;
+  removeDead(state);
+  if (state.enemies.length === 0) return clearFloor(state);
   state.phase = 'player';
   state.ap = turnAp(state);
 }
@@ -1232,6 +1393,26 @@ export function unequipGem(state: DungeonState, member: number, slot: number): A
   m.gems[slot] = null;
   state.bag.push(old);
   recomputeMember(m);
+  return { ok: true };
+}
+
+/**
+ * Munições que o Pokémon pode carregar: cada tipo dele sozinho e, com dois tipos, as duas misturas (70% do primeiro,
+ * 30% do segundo). Pokémon de um tipo só tem uma opção.
+ */
+export function ammoOptions(m: Pick<Member, 'types'>): PokemonType[][] {
+  const [a, b] = m.types;
+  if (!a) return [];
+  return b ? [[a], [b], [a, b], [b, a]] : [[a]];
+}
+
+/** Troca a munição do membro (sem custo de PA: é só escolher o que carregar). */
+export function setAmmo(state: DungeonState, member: number, ammo: readonly PokemonType[]): ActionResult {
+  const m = state.team[member];
+  if (!m) return fail('Membro inválido.');
+  const ok = ammoOptions(m).some((o) => o.length === ammo.length && o.every((t, i) => t === ammo[i]));
+  if (!ok) return fail('Essa munição não combina com os tipos desse Pokémon.');
+  m.ammo = [...ammo];
   return { ok: true };
 }
 

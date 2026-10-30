@@ -1,0 +1,32 @@
+# Masmorra: prompt de passagem para outra IA
+
+Copie o bloco abaixo como prompt. Ele cobre o gameplay e a lógica da Masmorra; a parte visual (arte das armas novas, tela do arsenal) fica para depois.
+
+```text
+Você vai continuar o modo Masmorra do repositório EddieRicobom/pokemon-tcg-ar (PWA Vue 3 + TypeScript + Vite). Leia antes: CLAUDE.md, docs/MASMORRA.md (estado do modo, o que falta, ideias) e future project/IDEIAS_DO_JOGO.md (documento de concepção com o catálogo de 20 armas e 210 fusões).
+
+Ponto de partida: branch `claude/masmorra-armas` (já contém a correção do deploy da branch `claude/corrige-deploy-masmorra`). Trabalhe numa branch `claude/...` e abra PR para `main`. Rode `npm run typecheck`, `npm test` e `npm run build` e só diga que funciona depois de passarem (o deploy da main já quebrou uma vez por código não verificado). Textos da interface em português do Brasil; identificadores em inglês; lógica pura em src/core com teste ao lado. Nunca invente dados: espécie sem stats/tipos aparece como «sem dados».
+
+JÁ FEITO (não refaça): tarefa 1 inteira (20 armas e mecanismos no combate, com testes) e a escolha de munição para Pokémon de dois tipos (ammoOptions/setAmmo). Comece pela tarefa 2.
+
+Tarefas, em ordem (foco em gameplay e sistemas; não precisa fazer arte):
+
+1. Integrar as 20 armas no combate. O catálogo novo está em src/core/dungeon-weapons.ts (formatos, mecanismos, as 210 fusões geradas por regra: formato e mecanismo da primeira arma na ordem do catálogo + mecanismo da segunda; armas iguais reforçam o mecanismo). Hoje src/core/dungeon.ts ainda define só 5 armas e o próprio weaponFor/fusões: troque para importar e reexportar de dungeon-weapons.ts e implemente no combate:
+   - formatos novos em attackArea/attackTargets/enemyReach: cone (1 casa à frente e depois 3), aura (8 casas em volta), homing (qualquer inimigo até o alcance, sem linha), trap (instala armadilha numa casa livre ou acerta quem estiver nela);
+   - cada mecanismo de MECHANICS (texto `effect` diz o que faz): rapido, precisao (+15% crítico), abalo (substitui o antigo `weapon.id === 'martelo'`), estender, combo (state.combo, zera no fim da rodada), bloqueio (state.guard { reduce, counter }: reduz o próximo golpe recebido e revida quem bateu de perto), barreira (state.barriers com rodadas; conta como parede em blocked/lineCells), orbita, escudada (empurrão já existe: push), rajada, estilhaco, queimar (enemy.burn { amount, rounds }, aplicado em endRound), carga (+35% poder), explosao, arco, perfurar (ignora 25% da defesa e atravessa até 3 casas atrás), retorno, armadilha (state.traps; inimigo que passa na casa para ali e leva o dano), puxar, enxame;
+   - inimigos podem morrer no turno inimigo (revide, armadilha, queimadura): depois de enemyStep e de endRound, chamar removeDead e, se não sobrar ninguém, clearFloor;
+   - inimigos usam só o formato da arma (sem mecanismos), para manter o protótipo simples; documente isso.
+   Ajuste os testes em src/core/dungeon.test.ts (weaponFor muda; os testes usam mon() com speed 90, o que vira 'manoplas') e acrescente: 20 armas, 210 fusões com nomes únicos, numeração do catálogo (fusionNumber: 1–190 diferentes, 191–210 iguais), descrição da fusão igual à do catálogo (ex.: #1 «Ataca rapidamente um inimigo adjacente. O componente espada longa acrescenta uma estocada curta e precisa.»), e um teste para cada formato novo e para bloqueio, barreira, armadilha, queimadura e puxar.
+
+2. Tabela Pokémon → arma, escrita à mão (pedido do dono: NADA de fórmula com stats para escolher a arma; escolher pelo que é «cool» e combina com o Pokémon: Scyther/Scizor lâminas, Machamp manoplas, Gallade espada longa, Aegislash espada e escudo, Blastoise canhão de carga, Electivire condutor de arco, Beedrill enxameador, Golurk martelo, Ariados armadilhas, Tangela lança-correntes, Bronzong guardião orbital, Mr. Mime projetor de barreira etc.). Crie src/core/data/pokemon-weapons.ts com faixas [primeiroDex, últimoDex, WeaponId] por linhagem (a família costuma dividir a arma; quebre a faixa quando uma evolução pede outra), com o nome das espécies em comentário para o dono revisar, cobrindo 1 a 1025 sem buraco nem sobreposição (teste isso). Exporte weaponOfDex(dexId): para formas (id > 10000) use a espécie base: REGION_FORM_IDS em src/core/dex-form.ts (inverter) e o campo `dex` de src/core/data/pokemon-megas.json. createMember e spawnEnemy passam a usar a tabela; remova weaponFor (ou deixe só como fallback documentado para forma desconhecida, mostrando na tela que é provisório).
+
+3. Munição pelo elemento: depois da arma, stats e elemento seguem como já são no dano. A munição passa a ser o(s) tipo(s) do Pokémon: um tipo = munição simples; dois tipos = munição mista 70% primeiro / 30% segundo (a regra de damage() já faz a divisão). A Gema Prismática hoje "vira mista com o 2º tipo": troque o efeito para algo que ainda faça sentido (ex.: munição tripla com o tipo do treinador ativo, ou +15% de poder para todos) e atualize o texto. Tire os rótulos «Provisório» de arma e munição em DungeonGame.vue e em docs/MASMORRA.md.
+
+4. Salvar a expedição: o DungeonState é serializável; guardar em localStorage (com try/catch, como o recorde em DungeonGame.vue) a cada fim de turno e oferecer «Continuar expedição» na tela de escolha; apagar ao perder ou sair.
+
+5. Se sobrar tempo: recompensa na Vila ao sair com o espólio (ver src/app/wallet.ts para moedas; não quebrar a economia: algo pequeno por andar), e efeitos de estado (queimado/envenenado/paralisado) para munições mistas, como o documento sugere.
+
+Em src/components/DungeonGame.vue, ajuste o mínimo para não quebrar: PATTERN_TEXT precisa dos formatos novos; mostre na grade armadilhas (ex.: ⚙️) e barreiras (casa com ▒), o bloqueio no HUD (🛡️ 40%) e 🔥 em inimigo queimando; mostre a lista de mecanismos da arma no painel do ativo e na prévia da fusão. src/components/WeaponArt.vue só desenha 5 armas; para as outras, deixe um desenho genérico (ícone + nome) sem tentar arte final — a arte será feita depois.
+
+Cuidados: no template Vue, evite arrow functions que indexam objetos importados (o vue-tsc quebrou com `TYPE_LABELS_PT[t]` dentro de `.map((t) => ...)`); preserve os fins de linha dos arquivos (o repositório usa LF; VillageView.vue tinha CRLF na cópia de trabalho). Atualize docs/MASMORRA.md (seções Feito / Falta / Pode ser feito) ao final.
+```
