@@ -129,6 +129,7 @@ function begin(): void {
 
 const sprite = (dexId: number): string => pokemonSpriteUrl(dexId);
 const typeStyle = (t: PokemonType) => ({ background: TYPE_COLORS[t] });
+const ammoLabel = (types: readonly PokemonType[]): string => types.map((t) => TYPE_LABELS_PT[t]).join(' / ');
 const pct = (v: number, max: number) => `${Math.max(0, Math.min(100, (v / Math.max(1, max)) * 100))}%`;
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -545,7 +546,7 @@ const pendingText = computed(() => {
             <p class="hint dg-center">{{ fusionPreview.name }}</p>
             <p class="hint">{{ fusionPreview.weapon.description }}</p>
             <ul class="dg-facts">
-              <li>Munição: {{ fusionPreview.ammo.map((t) => TYPE_LABELS_PT[t]).join(' / ') }}{{ fusionPreview.ammo.length > 1 ? ' (70% / 30%)' : '' }}</li>
+              <li>Munição: {{ ammoLabel(fusionPreview.ammo) }}{{ fusionPreview.ammo.length > 1 ? ' (70% / 30%)' : '' }}</li>
               <li>{{ fusionPreview.weapon.ap }} PA e {{ fusionPreview.weapon.cost }} carga por ataque · poder base {{ fusionPreview.weapon.power }} · alcance {{ fusionPreview.weapon.range }}</li>
               <li>Duração: {{ FUSION_TURNS }} turnos · Ativação: {{ COSTS.fusion }} PA + 1 buff · Carga temporária: {{ FUSION_CHARGE }}</li>
               <li>Gemas: média dos bônus dos dois, e os efeitos lendários de ambos valem juntos.</li>
