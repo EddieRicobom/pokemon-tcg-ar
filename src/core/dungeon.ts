@@ -744,6 +744,38 @@ export function attackTargets(state: DungeonState): Cell[] {
   return out;
 }
 
+/**
+ * Casas que a arma de quem está em campo alcança de onde ele está, com ou sem inimigo nelas: é o alcance desenhado
+ * no tabuleiro. Tiro reto e linha vão até a parede; teleguiado vale para qualquer casa livre dentro do alcance.
+ */
+export function attackReach(state: DungeonState): Cell[] {
+  const w = attacker(state).weapon;
+  const from = state.pos;
+  const out = new Map<string, Cell>();
+  const put = (c: Cell) => { if (!same(c, from) && inside(c) && !isWall(state, c)) out.set(key(c), c); };
+  if (w.pattern === 'line' || w.pattern === 'ranged') {
+    for (const d of DIRS) lineCells(from, { x: from.x + d.x, y: from.y + d.y }, w.range, state).forEach(put);
+  } else {
+    for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
+      const c = { x, y };
+      if (w.pattern === 'homing') { if (dist(from, c) <= w.range) put(c); }
+      else weaponArea(state, w, from, c).forEach(put);
+    }
+  }
+  return [...out.values()];
+}
+
+/**
+ * Quantos ataques da arma em campo ainda cabem neste turno, contando PA e carga, e qual dos dois limita primeiro
+ * (`ap` ou `charge`; empate conta como PA). Arma sem custo de carga só é limitada pelos PA.
+ */
+export function attacksLeft(state: DungeonState): { count: number; limit: 'ap' | 'charge' } {
+  const who = attacker(state);
+  const byAp = Math.floor(state.ap / Math.max(1, who.weapon.ap));
+  const byCharge = who.weapon.cost > 0 ? Math.floor(who.charge / who.weapon.cost) : Number.POSITIVE_INFINITY;
+  return byCharge < byAp ? { count: byCharge, limit: 'charge' } : { count: byAp, limit: 'ap' };
+}
+
 /** O inimigo tem um guardião vivo encostado (que não é ele mesmo). */
 export function guarded(state: DungeonState, enemy: Enemy): boolean {
   return state.enemies.some((g) => g.uid !== enemy.uid && g.profile === 'guardiao' && g.hp > 0 && dist(g.pos, enemy.pos) === 1);
