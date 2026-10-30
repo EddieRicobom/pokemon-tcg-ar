@@ -23,7 +23,7 @@ import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import {
-  AFFIXES, ammoOptions, attack, MECHANICS, setAmmo, attackArea, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
+  AFFIXES, ammoOptions, attack, MECHANICS, setAmmo, attackArea, attackReach, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
   biomeOf, fightingAtHome, floorGeneration, hazardAt, HOME_BONUS, typeFactor, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, INTENTS, intents, isBossFloor, isMiniBossFloor, key, move, polishGems, previewAttack,
   addMember, MAX_TEAM, previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponOfDex, weaponOfferAtFloor, evolveMember, WEAPONS,
 } from '../core/dungeon';
@@ -88,6 +88,8 @@ const forgeOpen = ref(false);
 const forgeGem = ref<number | null>(null);
 const brokenSprites = ref(new Set<number>());
 const showThreat = ref(true);
+/** Contorno do alcance da arma em campo: fraco enquanto você joga, forte no modo Atacar. */
+const showReach = ref(true);
 const inspected = ref<number | null>(null);
 const popups = ref<Popup[]>([]);
 const acting = ref<number | null>(null);
@@ -338,6 +340,7 @@ const particles = Array.from({ length: 16 }, (_, i) => ({ left: `${(i * 37) % 10
 const moveCosts = computed(() => (s.value && (mode.value === 'move' || exploring.value) ? reachable(s.value) : new Map<string, number>()));
 /** Mesmo sem abrir o comando Mover, um espaço livre pode ser selecionado e confirmado com outro toque. */
 const walkCosts = computed(() => (s.value && playing.value ? reachable(s.value) : new Map<string, number>()));
+const reachKeys = computed(() => new Set(s.value && playing.value && (mode.value === 'attack' || (showReach.value && !mode.value)) ? attackReach(s.value).map(key) : []));
 const targetKeys = computed(() => new Set(s.value && mode.value === 'attack' ? attackTargets(s.value).map(key) : []));
 const areaKeys = computed(() => new Set(s.value && mode.value === 'attack' && pending.value ? attackArea(s.value, pending.value).map(key) : []));
 const threatKeys = computed(() => (s.value && showThreat.value && playing.value ? threatenedCells(s.value) : new Set<string>()));
@@ -749,11 +752,12 @@ const pendingText = computed(() => {
         <span class="dg-pill dg-ap" :aria-label="`${s.ap} PA`">PA <i v-for="n in Math.max(START_AP, s.ap)" :key="n" :class="{ on: n <= s.ap }"></i></span>
         <span v-if="s.guard.reduce > 0" class="dg-pill" title="Bloqueio para o próximo golpe">🛡️ {{ Math.round(s.guard.reduce * 100) }}%</span>
         <label class="dg-toggle"><input v-model="showThreat" type="checkbox" /> ameaça</label>
+        <label class="dg-toggle"><input v-model="showReach" type="checkbox" /> alcance</label>
         <button type="button" class="dg-pill dg-icon" :aria-pressed="soundOn" :title="soundOn ? 'Desligar o som' : 'Ligar o som'" @click="toggleSound">{{ soundOn ? '🔊' : '🔇' }}</button>
         <button type="button" class="dg-pill dg-icon" :aria-pressed="ambientOn" title="Efeitos do cenário (partículas e brilhos)" @click="toggleAmbient">{{ ambientOn ? '✨' : '▫️' }}</button>
       </header>
 
-      <div class="dg-grid" :class="[`fx-${biome.particles}`, { 'enemy-turn': enemyTurn }]" :style="{ gridTemplateColumns: `repeat(${GRID_W}, 1fr)` }">
+      <div class="dg-grid" :class="[`fx-${biome.particles}`, { 'enemy-turn': enemyTurn, aiming: mode === 'attack' }]" :style="{ gridTemplateColumns: `repeat(${GRID_W}, 1fr)` }">
         <div v-if="ambientOn" class="dg-particles" aria-hidden="true">
           <i v-for="(pt, i) in particles" :key="i" :style="{ left: pt.left, top: pt.top, animationDelay: pt.delay, animationDuration: pt.dur }"></i>
         </div>
@@ -770,6 +774,7 @@ const pendingText = computed(() => {
             alt: cellHash(c) > 0.55,
             barrier: barrierAt(c),
             reach: (moveCosts.get(key(c)) ?? 0) > 0,
+            'in-range': reachKeys.has(key(c)),
             target: targetKeys.has(key(c)),
             area: areaKeys.has(key(c)),
             pending: pending && key(pending) === key(c),
@@ -1113,6 +1118,12 @@ button:disabled { opacity: 0.5; }
 .dg-floor.mini { border-color: #ff8a55; box-shadow: 0 0 8px #ff6b4a66; }
 .dg-ap i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 3px; border: 1px solid var(--gold); vertical-align: middle; }
 .dg-ap i.on { background: var(--gold); box-shadow: 0 0 4px var(--gold); }
+/* Alcance da arma: tracejado discreto durante o turno; no modo Atacar, casas acesas com borda cheia. */
+.dg-cell.in-range::before { content: ''; position: absolute; inset: 2px; border: 2px dashed #ffd76a8c; border-radius: 4px; pointer-events: none; }
+.dg-grid.aiming .dg-cell.in-range::before { inset: 1px; border: 2px solid #ffd76a; background: #ffd76a33; box-shadow: inset 0 0 10px #ffd76a80; animation: dg-reach 1.4s ease-in-out infinite; }
+@keyframes dg-reach { 50% { background: #ffd76a1a; box-shadow: inset 0 0 4px #ffd76a55; } }
+.dungeon.no-ambient .dg-cell.in-range::before { animation: none; }
+@media (prefers-reduced-motion: reduce) { .dg-grid.aiming .dg-cell.in-range::before { animation: none; } }
 .dg-toggle { margin-left: auto; font-weight: 400; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 
 /* Andar no jeito de Mystery Dungeon: piso contínuo, paredes de pedra com face frontal e uma borda de rocha em volta. */

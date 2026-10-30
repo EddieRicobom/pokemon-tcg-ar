@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  adaptiveDifficulty, attack, attackArea, attacker, attackTargets, beginEnemyTurn, BOSS_EVERY, BOSS_FLOOR_EVERY, buildFloor, chooseReward, damage, depthScale, difficultyFloor, eliteChance, endTurn,
+  adaptiveDifficulty, attack, attackArea, attacker, attackReach, attackTargets, beginEnemyTurn, BOSS_EVERY, BOSS_FLOOR_EVERY, buildFloor, chooseReward, damage, depthScale, difficultyFloor, eliteChance, endTurn,
   enemyStep, equipGem, EXHAUST_ROUNDS, finishEnemyTurn, fuse, fusionName, fusionOrigins, GRID_H, GRID_W, isBossFloor, isMiniBossFloor, MINI_BOSS_FLOOR_EVERY, move, planEnemy,
   polishGems, previewAttack, previewFusion, profileFor, reachable, retreat, START_AP, startDungeon, switchTo, threatenedCells, turnAp, typeFactor,
   addMember, unequipGem, usePotion, baseSpeciesDexId, evolveMember, hasCompleteWeaponTable, NATIONAL_DEX_LAST, weaponOfDex, weaponOfferAtFloor,
@@ -262,6 +262,18 @@ describe('fusão', () => {
     const s = arena([mon('x', {}, ['fire'], 692)]);
     expect(attackArea(s, { x: 3, y: 3 })).toHaveLength(5);
     expect(attackArea(s, { x: 0, y: 0 })).toHaveLength(0);
+  });
+
+  it('o alcance desenhado cobre todo alvo possível, sem a própria casa nem paredes', () => {
+    for (const dex of [68, 692, 714, 123]) {
+      const s = arena([mon('x', {}, ['fire'], dex)]);
+      s.walls = [{ x: 4, y: GRID_H - 1 }];
+      const reach = attackReach(s).map((c) => `${c.x},${c.y}`);
+      expect(reach.length).toBeGreaterThan(0);
+      expect(reach).not.toContain(`${s.pos.x},${s.pos.y}`);
+      expect(reach).not.toContain(`4,${GRID_H - 1}`);
+      for (const t of attackTargets(s)) expect(reach).toContain(`${t.x},${t.y}`);
+    }
   });
 });
 
