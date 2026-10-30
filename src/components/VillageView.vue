@@ -2070,7 +2070,7 @@ function openGameBuilding(b: Building): void {
   } else if (b.kind === 'masmorra') {
     dialog.value = {
       name: b.name,
-      text: 'Uma escada desce para o escuro. Lá embaixo, salas em grade: leve até seis Pokémon, gaste 6 PA por turno para mover, atacar, trocar e fundir dois deles, e derrote o chefe do 4º andar. É um protótipo: as regras e os números ainda vão mudar.',
+      text: 'Uma escada desce para o escuro, sem fundo conhecido. Leve até seis Pokémon, gaste 6 PA por turno para mover, atacar, trocar e fundir dois deles, junte gemas para as armas e desça o quanto aguentar: cada andar é mais duro, a cada 5 há um chefe, e você sai quando quiser pela escada. É um protótipo: as regras e os números ainda vão mudar.',
       actions: [{ label: 'Descer à Masmorra', run: () => { closeDialog(); sheet.value = 'masmorra'; } }, exit],
     };
   } else {
