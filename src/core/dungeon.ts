@@ -28,6 +28,8 @@ export type { MechanicId, Weapon, WeaponCategory, WeaponId, WeaponPattern } from
 export { baseSpeciesDexId, hasCompleteWeaponTable, NATIONAL_DEX_LAST, weaponOfDex } from './data/pokemon-weapons';
 
 export const START_AP = 6;
+/** Limite de armas/Pokémon ativos numa expedição; os atalhos 1–6 e a troca usam estes seis slots. */
+export const MAX_TEAM = 6;
 export const COSTS = { move: 1, switch: 1, item: 2, fusion: 1 } as const;
 export const GRID_W = 7;
 export const GRID_H = 7;
@@ -264,6 +266,49 @@ export function createMember(input: MemberInput): Member {
   };
 }
 
+/** Acrescenta uma arma escolhida na Pokébola à expedição já em curso. */
+export function addMember(state: DungeonState, input: MemberInput): ActionResult {
+  if (state.phase !== 'reward') return fail('A Pokébola só pode ser aberta na escada.');
+  if (state.team.length >= MAX_TEAM) return fail(`A equipe já tem ${MAX_TEAM} armas.`);
+  if (state.team.some((member) => member.id === input.id)) return fail('Esse Pokémon já está na equipe desta expedição.');
+  const member = createMember(input);
+  state.team.push(member);
+  state.log.push(`${member.name} entra na orbe de ${WEAPONS[member.weapon].name}.`);
+  return { ok: true };
+}
+
+/** Evolui uma arma/Pokémon durante a escolha da Pokébola, mantendo a fração de HP e as gemas da run. */
+export function evolveMember(state: DungeonState, memberIndex: number, next: Omit<MemberInput, 'id'>): ActionResult {
+  if (state.phase !== 'reward') return fail('A evolução só pode acontecer na escada.');
+  const member = state.team[memberIndex];
+  if (!member) return fail('Pokémon da equipe não encontrado.');
+  const weapon = weaponOfDex(next.dexId);
+  if (!weapon) return fail(`Sem arma catalogada para a espécie #${next.dexId}.`);
+  const hpFraction = member.maxHp > 0 ? member.hp / member.maxHp : 0;
+  const maxHp = Math.round(next.stats.hp * 1.2 + 40);
+  const maxCharge = WEAPONS[weapon].capacity;
+  member.dexId = next.dexId;
+  member.name = next.name;
+  member.types = [...next.types];
+  member.stats = { ...next.stats };
+  member.weapon = weapon;
+  member.ammo = next.types.slice(0, 1);
+  member.baseMaxHp = maxHp;
+  member.maxHp = maxHp;
+  member.hp = Math.max(1, Math.round(maxHp * hpFraction));
+  member.baseMaxCharge = maxCharge;
+  member.maxCharge = maxCharge;
+  member.charge = maxCharge;
+  recomputeMember(member);
+  state.log.push(`${member.name} evoluiu e agora empunha ${WEAPONS[weapon].name}.`);
+  return { ok: true };
+}
+
+/** A Pokébola aparece ao limpar o 1º andar e, depois, a cada terceiro andar. */
+export function weaponOfferAtFloor(floor: number): boolean {
+  return floor === 1 || (floor >= 3 && floor % 3 === 0);
+}
+
 /** Recalcula HP e carga máximos depois de trocar gemas, mantendo o que já foi perdido. */
 export function recomputeMember(m: Member): void {
   const bonus = gemBonus(m.gems);
@@ -277,7 +322,7 @@ export function recomputeMember(m: Member): void {
 
 /** Uma expedição nova: até seis membros, andar 1. Inimigos vêm de `pool` (espécies com dado real). */
 export function startDungeon(inputs: readonly MemberInput[], pool: readonly EnemySpecies[], seed: number): DungeonState {
-  const team = inputs.slice(0, 6).map(createMember);
+  const team = inputs.slice(0, MAX_TEAM).map(createMember);
   if (team.length === 0) throw new Error('A equipe precisa de ao menos um Pokémon.');
   if (pool.length === 0) throw new Error('Sem espécies de inimigos com dados.');
   const state: DungeonState = {

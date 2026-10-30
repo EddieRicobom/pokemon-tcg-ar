@@ -8,13 +8,13 @@ import { cardCompanion } from '../app/card-evolution-store';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { statsOfDex } from '../core/survivor-stats';
 import { typesOfDex } from '../core/species-filter';
-import { speciesName } from '../core/survivor-evolution';
+import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import {
   AFFIXES, ammoOptions, attack, MECHANICS, setAmmo, attackArea, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
   floorTheme, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, INTENTS, intents, isBossFloor, key, move, polishGems, previewAttack,
-  previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponOfDex, WEAPONS,
+  addMember, MAX_TEAM, previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponOfDex, weaponOfferAtFloor, evolveMember, WEAPONS,
 } from '../core/dungeon';
 import type { Cell, DungeonState, Enemy, EnemySpecies, Intent, MechanicId, MemberInput, RewardId, WeaponPattern } from '../core/dungeon';
 import { GEMS, gemName, LEGENDARY_SLOT as LEGENDARY_SLOT_INDEX, polishable, tierName } from '../core/dungeon-gems';
@@ -30,6 +30,9 @@ const emit = defineEmits<{ leave: [] }>();
 
 interface Candidate extends Partial<MemberInput> { id: string; dexId: number; name: string; origin: string; missing: boolean }
 interface Popup { id: number; cell: string; text: string; kind: 'hit' | 'hurt' | 'heal' | 'info' }
+interface EvolutionOffer { memberIndex: number; input: Omit<MemberInput, 'id'> }
+interface WeaponOffer { choices: Candidate[]; evolutions: EvolutionOffer[]; reward: RewardId }
+interface OrbAnimation { dexId: number; name: string; weapon: NonNullable<ReturnType<typeof weaponOfDex>>; message: string }
 
 /**
  * Selvagens da masmorra, por profundidade: espécies de caverna no começo, evoluções e pseudolendários mais fundo. Os
@@ -69,6 +72,10 @@ const inspected = ref<number | null>(null);
 const popups = ref<Popup[]>([]);
 const acting = ref<number | null>(null);
 const record = ref(readRecord());
+const weaponOffer = ref<WeaponOffer | null>(null);
+const chosenCandidateIds = new Set<string>();
+const offeredFloors = new Set<number>();
+const orbAnimation = ref<OrbAnimation | null>(null);
 let popupId = 0;
 let alive = true;
 
@@ -115,12 +122,17 @@ function togglePick(c: Candidate): void {
   if (c.missing) return;
   const i = picked.value.indexOf(c.id);
   if (i >= 0) picked.value.splice(i, 1);
-  else if (picked.value.length < 6) picked.value.push(c.id);
+  else if (picked.value.length < 1) picked.value.push(c.id);
 }
 
 function begin(): void {
   const team = picked.value.map((id) => candidates.value!.find((c) => c.id === id)!).map((c) => ({ id: c.id, dexId: c.dexId, name: c.name, types: c.types!, stats: c.stats! }));
   s.value = startDungeon(team, pool, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
+  chosenCandidateIds.clear();
+  for (const id of picked.value) chosenCandidateIds.add(id);
+  offeredFloors.clear();
+  weaponOffer.value = null;
+  orbAnimation.value = null;
   mode.value = null;
   pending.value = null;
   inspected.value = null;
@@ -303,6 +315,11 @@ function confirmFusion(): void {
 
 function pickReward(r: RewardId): void {
   if (!s.value) return;
+  if (!offeredFloors.has(s.value.floor) && weaponOfferAtFloor(s.value.floor)) {
+    offeredFloors.add(s.value.floor);
+    const offer = makeWeaponOffer(s.value, r);
+    if (offer) { weaponOffer.value = offer; return; }
+  }
   forgeOpen.value = false;
   result(chooseReward(s.value, r));
 }
@@ -325,6 +342,72 @@ function tapSlot(member: number, slot: number): void {
 
 function doPolish(kind: GemKind, tier: number): void {
   if (s.value) result(polishGems(s.value, kind, tier));
+}
+
+/** Sorteio determinístico por run: a mesma seed e o mesmo andar mostram as mesmas três alternativas. */
+function drawChoices<T>(items: readonly T[], count: number, seed: number): T[] {
+  const pool = [...items];
+  const out: T[] = [];
+  let value = seed >>> 0;
+  while (pool.length && out.length < count) {
+    value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
+    out.push(pool.splice(value % pool.length, 1)[0]!);
+  }
+  return out;
+}
+
+function inputOf(c: Candidate): MemberInput {
+  return { id: c.id, dexId: c.dexId, name: c.name, types: [...c.types!], stats: c.stats! };
+}
+
+function makeWeaponOffer(st: DungeonState, reward: RewardId): WeaponOffer | null {
+  const remaining = st.team.length >= MAX_TEAM ? [] : (candidates.value ?? []).filter((c) => !c.missing && !chosenCandidateIds.has(c.id));
+  const evolutions: EvolutionOffer[] = (st.fusion ? [] : st.team.flatMap((member, memberIndex) => nextEvolutions(member.dexId).flatMap((dexId) => {
+    const stats = statsOfDex(dexId);
+    const types = typesOfDex(dexId);
+    const weapon = weaponOfDex(dexId);
+    return stats && types.length && weapon ? [{ memberIndex, input: { dexId, name: speciesName(dexId) || `#${dexId}`, types: [...types], stats } }] : [];
+  })));
+  const choices = drawChoices(remaining, 3, st.seed ^ Math.imul(st.floor, 4099) ^ st.team.length);
+  return choices.length || evolutions.length ? { choices, evolutions, reward } : null;
+}
+
+async function playOrbAnimation(animation: OrbAnimation): Promise<void> {
+  orbAnimation.value = animation;
+  await wait(720);
+  if (alive) orbAnimation.value = null;
+}
+
+function finishWeaponOffer(offer: WeaponOffer): void {
+  weaponOffer.value = null;
+  pickReward(offer.reward);
+}
+
+async function chooseWeapon(c: Candidate): Promise<void> {
+  const st = s.value;
+  const offer = weaponOffer.value;
+  const weapon = weaponOfDex(c.dexId);
+  if (!st || !offer || !weapon) return;
+  await playOrbAnimation({ dexId: c.dexId, name: c.name, weapon, message: `${c.name} virou uma nova arma!` });
+  if (!alive) return;
+  const added = addMember(st, inputOf(c));
+  result(added);
+  if (!added.ok) return;
+  chosenCandidateIds.add(c.id);
+  finishWeaponOffer(offer);
+}
+
+async function chooseEvolution(evolution: EvolutionOffer): Promise<void> {
+  const st = s.value;
+  const offer = weaponOffer.value;
+  const weapon = weaponOfDex(evolution.input.dexId);
+  if (!st || !offer || !weapon) return;
+  await playOrbAnimation({ dexId: evolution.input.dexId, name: evolution.input.name, weapon, message: `${evolution.input.name} evoluiu na orbe!` });
+  if (!alive) return;
+  const evolved = evolveMember(st, evolution.memberIndex, evolution.input);
+  result(evolved);
+  if (!evolved.ok) return;
+  finishWeaponOffer(offer);
 }
 
 function onKey(e: KeyboardEvent): void {
@@ -373,7 +456,7 @@ const pendingText = computed(() => {
     <!-- Escolha da equipe -->
     <section v-if="!s" class="dg-pick">
       <h2>Masmorra · protótipo</h2>
-      <p class="hint">Desça andar após andar com até seis Pokémon da sua coleção. Cada andar é mais difícil, a cada 5 há um chefe, e baús e inimigos deixam gemas para encaixar nas armas. A expedição só acaba quando a equipe cai ou quando você decide sair pela escada.</p>
+      <p class="hint">Comece com um Pokémon da sua coleção. Ao limpar o 1º andar, a Pokébola oferece três novas armas; depois ela volta no 3º andar e a cada três andares. A expedição só acaba quando a equipe cai ou quando você decide sair pela escada.</p>
       <p class="hint">Cada turno tem {{ START_AP }} PA para mover, atacar, trocar, usar item ou fundir dois Pokémon. A orbe da arma guarda o Pokémon.</p>
       <p v-if="record > 0" class="dg-record">🏆 Seu recorde: andar {{ record }}</p>
       <p class="hint">A arma é inata da espécie: ao colocar na coleção um Pokémon que usa uma arma ainda inédita para você, ela fica disponível nas próximas expedições com aquele Pokémon. A munição ainda usa o tipo principal da espécie.</p>
@@ -383,7 +466,7 @@ const pendingText = computed(() => {
       <p v-else-if="pool.length === 0" role="alert">Sem dados das espécies selvagens no pacote: a masmorra não pode montar inimigos.</p>
       <ul v-if="candidates?.length" class="dg-candidates">
         <li v-for="c in candidates" :key="c.id">
-          <button type="button" :class="{ on: picked.includes(c.id) }" :disabled="c.missing || (!picked.includes(c.id) && picked.length >= 6)" @click="togglePick(c)">
+          <button type="button" :class="{ on: picked.includes(c.id) }" :disabled="c.missing || (!picked.includes(c.id) && picked.length >= 1)" @click="togglePick(c)">
             <small v-if="picked.includes(c.id)" class="dg-order">{{ picked.indexOf(c.id) + 1 }}</small>
             <template v-if="c.missing">
               <img v-if="!brokenSprites.has(c.dexId)" :src="sprite(c.dexId)" alt="" loading="lazy" class="dg-pick-sprite" @error="brokenSprites.add(c.dexId)" />
@@ -400,7 +483,7 @@ const pendingText = computed(() => {
         </li>
       </ul>
       <div class="dg-actions">
-        <button type="button" class="primary" :disabled="picked.length === 0 || pool.length === 0" @click="begin">Descer à masmorra ({{ picked.length }}/6)</button>
+        <button type="button" class="primary" :disabled="picked.length === 0 || pool.length === 0" @click="begin">Começar com esta arma</button>
         <button type="button" @click="emit('leave')">Voltar</button>
       </div>
     </section>
@@ -620,8 +703,41 @@ const pendingText = computed(() => {
         </div>
       </div>
 
+      <!-- Pokébola: nova arma ou evolução antes de descer -->
+      <div v-if="weaponOffer && s.phase === 'reward'" class="dg-modal" role="dialog" aria-label="Escolha da Pokébola">
+        <div class="dg-modal-box wide dg-weapon-offer">
+          <h3>🔴 Pokébola encontrada!</h3>
+          <p class="hint">Escolha uma arma nova para esta expedição ou evolua um Pokémon da equipe. A escolha entra na orbe e ocupa uma das {{ MAX_TEAM }} vagas da equipe.</p>
+          <div v-if="orbAnimation" class="dg-orb-animation" role="status" aria-live="polite">
+            <img :src="sprite(orbAnimation.dexId)" :alt="orbAnimation.name" />
+            <span class="dg-orb">◉</span>
+            <WeaponArt :weapon="orbAnimation.weapon" :dex-id="orbAnimation.dexId" :size="78" />
+            <strong>{{ orbAnimation.message }}</strong>
+          </div>
+          <template v-else>
+            <h4 v-if="weaponOffer.choices.length">Escolha uma arma nova</h4>
+            <div class="dg-draft-options">
+              <button v-for="c in weaponOffer.choices" :key="c.id" type="button" @click="void chooseWeapon(c)">
+                <WeaponArt :weapon="weaponOfDex(c.dexId)!" :dex-id="c.dexId" :ammo="c.types![0] ?? null" :size="58" />
+                <strong>{{ c.name }}</strong>
+                <small>{{ WEAPONS[weaponOfDex(c.dexId)!].name }}</small>
+              </button>
+            </div>
+            <template v-if="weaponOffer.evolutions.length">
+              <h4>Ou evolua uma arma</h4>
+              <div class="dg-evolve-options">
+                <button v-for="evolution in weaponOffer.evolutions" :key="`${evolution.memberIndex}:${evolution.input.dexId}`" type="button" @click="void chooseEvolution(evolution)">
+                  <span>✨ {{ s.team[evolution.memberIndex]!.name }} → {{ evolution.input.name }}</span>
+                  <small>{{ WEAPONS[weaponOfDex(evolution.input.dexId)!].name }}</small>
+                </button>
+              </div>
+            </template>
+          </template>
+        </div>
+      </div>
+
       <!-- Escada: recompensa e descer, ou sair -->
-      <div v-if="s.phase === 'reward' && !forgeOpen" class="dg-modal" role="dialog" aria-label="Escada">
+      <div v-if="s.phase === 'reward' && !forgeOpen && !weaponOffer" class="dg-modal" role="dialog" aria-label="Escada">
         <div class="dg-modal-box">
           <h3>🪜 Escada para o andar {{ s.floor + 1 }}</h3>
           <p class="hint">{{ isBossFloor(s.floor + 1) ? '👑 Lá embaixo espera um chefe.' : `Próxima região: ${floorTheme(s.floor + 1).name}.` }} Os inimigos ficam mais fortes a cada andar.</p>
@@ -793,6 +909,18 @@ button:disabled { opacity: 0.5; }
 .dg-facts { margin: 6px 0; padding-left: 18px; font-size: 0.8rem; color: var(--muted); }
 .dg-reward { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px; margin-top: 6px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; text-align: left; }
 .dg-reward small { color: var(--muted); }
+.dg-weapon-offer h4 { margin: 14px 0 6px; font-size: 0.9rem; }
+.dg-draft-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.dg-draft-options button, .dg-evolve-options button { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; color: inherit; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
+.dg-draft-options strong { font-size: 0.78rem; overflow-wrap: anywhere; }
+.dg-draft-options small, .dg-evolve-options small { color: var(--muted); font-size: 0.68rem; }
+.dg-evolve-options { display: grid; gap: 5px; }
+.dg-evolve-options button { align-items: flex-start; padding: 8px; text-align: left; }
+.dg-orb-animation { min-height: 180px; display: grid; place-items: center; justify-items: center; position: relative; overflow: hidden; }
+.dg-orb-animation > img { width: 76px; height: 76px; object-fit: contain; image-rendering: pixelated; animation: dg-orb-in 0.72s ease-in forwards; z-index: 2; }
+.dg-orb-animation .dg-orb { position: absolute; font-size: 5.2rem; line-height: 1; color: #f04949; text-shadow: 0 0 12px #fff, 0 0 22px #ffcf57; animation: dg-orb-flash 0.72s ease-out forwards; }
+.dg-orb-animation .weapon-art { position: absolute; opacity: 0; animation: dg-weapon-out 0.72s ease-in forwards; animation-delay: 0.2s; }
+.dg-orb-animation strong { margin-top: -8px; text-align: center; }
 .dg-forge-team { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .dg-forge-team li { display: flex; gap: 8px; align-items: center; padding: 6px; border-radius: 10px; background: var(--surface-2); }
 .dg-forge-team li.down { opacity: 0.6; }
@@ -817,5 +945,8 @@ button:disabled { opacity: 0.5; }
 @keyframes dg-bob { 50% { transform: translateY(-4%); } }
 @keyframes dg-act { 30% { transform: scale(1.18); } }
 @keyframes dg-glow { 50% { filter: drop-shadow(0 0 6px #ffe9a3); transform: scale(1.08); } }
-@media (prefers-reduced-motion: reduce) { .dg-popup, .dg-cell.doom, .dg-mon img, .dg-player img, .dg-loot, .dg-stairs, .dg-mon.acting { animation: none; } }
+@keyframes dg-orb-in { 0% { transform: translateY(-130px) scale(1.25); opacity: 1; } 75% { transform: translateY(0) scale(0.25); opacity: 1; } 100% { transform: translateY(0) scale(0); opacity: 0; } }
+@keyframes dg-orb-flash { 0%, 45% { transform: scale(0.55); opacity: 0; } 65% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(0.6); opacity: 0; } }
+@keyframes dg-weapon-out { 0%, 35% { transform: scale(0.3) rotate(-18deg); opacity: 0; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dg-popup, .dg-cell.doom, .dg-mon img, .dg-player img, .dg-loot, .dg-stairs, .dg-mon.acting, .dg-orb-animation > img, .dg-orb-animation .dg-orb, .dg-orb-animation .weapon-art { animation: none; } .dg-orb-animation > img, .dg-orb-animation .dg-orb { display: none; } .dg-orb-animation .weapon-art { position: static; opacity: 1; } }
 </style>

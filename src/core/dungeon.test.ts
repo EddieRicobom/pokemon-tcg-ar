@@ -3,7 +3,7 @@ import {
   attack, attackArea, attacker, attackTargets, beginEnemyTurn, BOSS_EVERY, BOSS_FLOOR_EVERY, chooseReward, damage, depthScale, eliteChance, endTurn,
   enemyStep, equipGem, EXHAUST_ROUNDS, finishEnemyTurn, floorTheme, fuse, fusionName, fusionOrigins, GRID_H, GRID_W, isBossFloor, move, planEnemy,
   polishGems, previewAttack, previewFusion, profileFor, reachable, retreat, START_AP, startDungeon, switchTo, threatenedCells, turnAp, typeFactor,
-  unequipGem, usePotion, baseSpeciesDexId, hasCompleteWeaponTable, NATIONAL_DEX_LAST, weaponOfDex,
+  addMember, unequipGem, usePotion, baseSpeciesDexId, evolveMember, hasCompleteWeaponTable, NATIONAL_DEX_LAST, weaponOfDex, weaponOfferAtFloor,
 } from './dungeon';
 import { allFusions, ammoOptions, CATALOG_ORDER, setAmmo, fusionDescription, fusionNumber, fusionWeapon } from './dungeon';
 import type { DungeonState, EnemySpecies, MemberInput, WeaponId } from './dungeon';
@@ -88,6 +88,30 @@ describe('armas e dano', () => {
 });
 
 describe('a sala', () => {
+  it('a Pokébola aparece no 1º andar e depois a cada três', () => {
+    expect([1, 3, 6, 9, 12].every(weaponOfferAtFloor)).toBe(true);
+    expect([2, 4, 5, 7, 8, 10].some(weaponOfferAtFloor)).toBe(false);
+  });
+
+  it('acrescenta uma arma escolhida na escada e rejeita uma repetida', () => {
+    const s = arena([mon('inicial')]);
+    s.phase = 'reward';
+    expect(addMember(s, mon('beedrill', {}, ['bug', 'poison'], 15)).ok).toBe(true);
+    expect(s.team).toHaveLength(2);
+    expect(s.team[1]!.weapon).toBe('enxameador');
+    expect(addMember(s, mon('beedrill', {}, ['bug', 'poison'], 15)).ok).toBe(false);
+  });
+
+  it('evolui uma arma na escada com dados reais, preservando suas gemas', () => {
+    const s = arena([mon('charmander', {}, ['fire'], 4)]);
+    s.phase = 'reward';
+    const carried = gem(1, 'rubi');
+    s.team[0]!.gems[0] = carried;
+    expect(evolveMember(s, 0, { dexId: 5, name: 'Charmeleon', types: ['fire'], stats: stats({ hp: 58, attack: 64, defense: 58, spAttack: 80, spDefense: 65, speed: 80 }) }).ok).toBe(true);
+    expect(s.team[0]).toMatchObject({ dexId: 5, name: 'Charmeleon', weapon: 'continuo' });
+    expect(s.team[0]!.gems[0]).toEqual(carried);
+  });
+
   it('começa com 6 PA, até seis membros, e nenhum pilar isola uma casa', () => {
     const s = startDungeon([1, 2, 3, 4, 5, 6, 7].map((i) => mon(`m${i}`)), pool, 7);
     expect(s.team).toHaveLength(6);
