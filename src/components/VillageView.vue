@@ -145,6 +145,8 @@ pruneHarvest(state, day.value);
 type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'masmorra' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
 let towerHistoryGuard = false;
+/** Só saímos da tela cheia que a própria Masmorra abriu; nunca da que o usuário já estava usando. */
+let dungeonFullscreenOwner = false;
 
 /**
  * A Torre é uma camada da Vila, não uma rota. A entrada de histórico duplicada
@@ -163,6 +165,19 @@ watch(sheet, (next, previous) => {
   } else if (previous === 'torre' && next !== 'torre' && towerHistoryGuard) {
     towerHistoryGuard = false;
     window.history.back();
+  }
+});
+
+/** A Masmorra substitui a Vila visualmente e também interrompe seus dois renderizadores enquanto está aberta. */
+watch(sheet, (next, previous) => {
+  if (next === 'masmorra' && previous !== 'masmorra') {
+    game?.stop();
+    if (miniTimer) clearInterval(miniTimer);
+    miniTimer = null;
+  } else if (previous === 'masmorra' && next !== 'masmorra') {
+    game?.start();
+    if (!miniTimer) startMini();
+    void nextTick(() => game?.resize(wrapEl.value?.clientWidth ?? 0, wrapEl.value?.clientHeight ?? 0));
   }
 });
 const cardEvolutionAtAltar = ref(false);
@@ -473,7 +488,7 @@ function syncMusic(): void {
   const [id, title] = villageMusicTrack(date.getHours(), game?.weatherKind ?? null, Math.floor(date.getTime() / 360_000));
   musicTransition = advanceMusicTransition(musicTransition, `audio/village/${id}.mp3`, performance.now());
   musicTitle.value = title;
-  const blocked = document.hidden || !!loading.value || sheet.value === 'torre' || sheet.value === 'arcade' || !!legendaryScene.value || !!hoOhWishScene.value || cutsceneOpen.value;
+  const blocked = document.hidden || !!loading.value || sheet.value === 'torre' || sheet.value === 'masmorra' || sheet.value === 'arcade' || !!legendaryScene.value || !!hoOhWishScene.value || cutsceneOpen.value;
   music.update(transitionMusicMix(musicTransition, performance.now()), !blocked, villageAudio.enabled ? villageAudio.volume / 100 : 0);
 }
 watch([() => villageAudio.enabled, () => villageAudio.volume, sheet, () => !!legendaryScene.value, () => !!hoOhWishScene.value, cutsceneOpen, loading], syncMusic);
@@ -1924,6 +1939,7 @@ function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.se
 }
 
 function closeVillageSheet(): void {
+  const leavingDungeon = sheet.value === 'masmorra';
   sheet.value = null;
   bookDialogId.value = null;
   if (askingMon) game?.clearBubble(askingMon.id);
@@ -1934,6 +1950,20 @@ function closeVillageSheet(): void {
   game?.setInteractionMarker(null);
   game?.setWaiting(null);
   game?.holdStick(null);
+  if (leavingDungeon && dungeonFullscreenOwner && document.fullscreenElement === wrapEl.value) {
+    void document.exitFullscreen().catch(() => undefined).finally(() => { dungeonFullscreenOwner = false; });
+  } else if (leavingDungeon) dungeonFullscreenOwner = false;
+}
+
+/** Abre a Masmorra no palco inteiro. Sem suporte/permite à API, a folha fixa continua cobrindo a Vila. */
+function openDungeon(): void {
+  closeDialog();
+  sheet.value = 'masmorra';
+  const stage = wrapEl.value;
+  if (!stage || document.fullscreenElement || typeof stage.requestFullscreen !== 'function') return;
+  void stage.requestFullscreen({ navigationUI: 'hide' })
+    .then(() => { dungeonFullscreenOwner = document.fullscreenElement === stage; })
+    .catch(() => { /* Alguns navegadores móveis não oferecem a API; a Masmorra já ocupa a janela por CSS. */ });
 }
 
 function openBookFromDialog(id: string): void {
@@ -2071,7 +2101,7 @@ function openGameBuilding(b: Building): void {
     dialog.value = {
       name: b.name,
       text: 'Uma escada desce para o escuro, sem fundo conhecido. Leve até seis Pokémon, gaste 6 PA por turno para mover, atacar, trocar e fundir dois deles, junte gemas para as armas e desça o quanto aguentar: cada andar é mais duro, a cada 5 há um chefe, e você sai quando quiser pela escada. É um protótipo: as regras e os números ainda vão mudar.',
-      actions: [{ label: 'Descer à Masmorra', run: () => { closeDialog(); sheet.value = 'masmorra'; } }, exit],
+      actions: [{ label: 'Descer à Masmorra', run: openDungeon }, exit],
     };
   } else {
     dialog.value = {
@@ -3503,9 +3533,9 @@ onBeforeUnmount(() => {
         <MinigameSobrevivencia ref="towerGameRef" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="sheet = null" />
       </div>
 
-      <div v-if="sheet === 'masmorra'" class="village-sheet torre-full" role="dialog" aria-label="Masmorra">
-        <header><strong>🗝️ Masmorra · protótipo</strong><button type="button" class="link village-sheet-back" aria-label="Sair da Masmorra" @click="sheet = null">Sair</button></header>
-        <DungeonGame :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name }))" @leave="sheet = null" />
+      <div v-if="sheet === 'masmorra'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Masmorra">
+        <header><strong>🗝️ Masmorra · protótipo</strong><button type="button" class="link village-sheet-back" aria-label="Sair da Masmorra" @click="closeVillageSheet">Sair</button></header>
+        <DungeonGame :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name }))" @leave="closeVillageSheet" />
       </div>
 
       <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">
