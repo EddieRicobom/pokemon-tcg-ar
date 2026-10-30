@@ -7,7 +7,7 @@ Você vai continuar o modo Masmorra do repositório EddieRicobom/pokemon-tcg-ar 
 
 Ponto de partida: branch `claude/masmorra-armas` (já contém a correção do deploy da branch `claude/corrige-deploy-masmorra`). Trabalhe numa branch `claude/...` e abra PR para `main`. Rode `npm run typecheck`, `npm test` e `npm run build` e só diga que funciona depois de passarem (o deploy da main já quebrou uma vez por código não verificado). Textos da interface em português do Brasil; identificadores em inglês; lógica pura em src/core com teste ao lado. Nunca invente dados: espécie sem stats/tipos aparece como «sem dados».
 
-JÁ FEITO (não refaça): tarefa 1 inteira (20 armas e mecanismos no combate, com testes) e a escolha de munição para Pokémon de dois tipos (ammoOptions/setAmmo). Comece pela tarefa 2.
+JÁ FEITO (não refaça): tarefa 1 inteira (20 armas e mecanismos no combate, com testes), a escolha de munição para Pokémon de dois tipos (`ammoOptions`/`setAmmo`) e a primeira versão da tarefa 2: uma tabela fixa para 1–1025 em `core/data/pokemon-weapons.ts`, incluindo formas regionais e Mega. A arma é inata da espécie: o jogador a passa a usar ao levar para a coleção um Pokémon daquela espécie; ela não é um item de saque ou compra. A tabela deve continuar sendo revisada por linhagem, sem voltar a usar fórmula de stats. Comece pela tarefa 3.
 
 Tarefas, em ordem (foco em gameplay e sistemas; não precisa fazer arte):
 

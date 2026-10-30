@@ -36,6 +36,7 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 
 ### Arsenal completo (20 armas, 210 fusões)
 - `src/core/dungeon-weapons.ts` traz as 20 armas do catálogo, cada uma com formato de ataque (adjacente, em linha, tiro reto, área em cruz, leque, em volta, teleguiado, armadilha) e um mecanismo próprio (cortes rápidos, estocada precisa, abalo, alcance em linha, sequência, bloqueio com revide, barreira, proteção orbital, golpe de escudo, rajada, estilhaços, ação sustentada/queimadura, carga, explosão, arco elétrico, perfuração, retorno, armadilha, corrente que puxa, enxame).
+- **Como obter armas:** elas não caem como itens separados e não há loja de armas. Cada espécie tem uma arma inata, definida pela tabela fixa `core/data/pokemon-weapons.ts`; colocar na coleção uma carta escaneada ou um Digital Pokémon de uma espécie que usa uma arma nova traz essa opção para a expedição com aquele Pokémon. Formas regionais e Mega mantêm a arma da espécie-base. Assim, novas armas vêm de ampliar a coleção real, sem números aleatórios, compra ou atribuição pelos atributos. A tabela cobre a Pokédex Nacional inteira (1–1025) e inclui, por exemplo, Beedrill → Enxameador, Machamp → Manoplas, Mr. Mime → Projetor de barreira, Scizor → Lâminas duplas, Gallade → Espada longa e Aegislash → Espada e escudo.
 - As 210 fusões seguem a regra do catálogo: formato e mecanismo da primeira arma (ordem do catálogo) mais o mecanismo da segunda; armas iguais aplicam o mecanismo duas vezes. Nome, número (1–190 diferentes, 191–210 iguais) e texto saem idênticos aos do documento de concepção.
 - No combate: armadilhas disparam em quem passa pela casa, barreiras duram 2 rodadas e contam como parede, bloqueio amortece o próximo golpe e revida de perto, queimadura tira HP no fim da rodada; inimigos podem morrer no turno deles. Inimigos usam só o formato da arma, sem mecanismos.
 - Pokémon de dois tipos escolhe a munição no painel do ativo (sem custo de PA): só o 1º tipo, só o 2º, ou mista 70/30 em qualquer ordem.
@@ -100,7 +101,7 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 ## Falta (para deixar de ser protótipo)
 
 - **Validar no navegador e em celular.** Nada disso foi visto rodando: as sessões no PC do dono não têm Node, e a verificação depende do CI do PR. Falta abrir a tela, jogar alguns andares e conferir o layout em 375 px.
-- **Tabela Pokémon → arma escrita à mão** (pedido do dono: escolher pelo que combina com o Pokémon, sem fórmula de stats), cobrindo as 1025 espécies por linhagem; formas regionais e Mega usam a espécie base. Hoje a arma ainda sai dos stats (`weaponFor`, provisório).
+- **Revisão da curadoria Pokémon → arma.** A tabela fixa cobre as 1025 espécies e não usa fórmula de stats; ainda falta o dono revisar, por linhagem, as associações menos emblemáticas do catálogo compactado.
 - **Arte própria das 15 armas novas** (hoje emblema genérico).
 - **Balanceamento.** Ver se 6 PA e os custos dão boas decisões, se a curva de dificuldade sem teto acompanha a das gemas (a dificuldade cresce em linha e as gemas também, mas a lapidação é exponencial no custo) e se o chefe e as elites ficam justos.
 - **Salvar a expedição.** Fechar a tela perde a descida atual, então falta guardar o estado (ele é serializável) e oferecer «continuar».

@@ -4,8 +4,9 @@ import type { PokemonType } from './pokemon-data';
 import type { BaseStats } from './survivor-moves';
 import { chestLegendaryChance, GEM_SLOTS, gemBonus, gemName, LEGENDARY_SLOT, mergeBonus, rollGem } from './dungeon-gems';
 import type { Gem, GemBonus, GemKind } from './dungeon-gems';
-import { FUSION_CHARGE, fusionOrigins, fusionWeapon, WEAPONS, weaponFor } from './dungeon-weapons';
+import { FUSION_CHARGE, fusionOrigins, fusionWeapon, WEAPONS } from './dungeon-weapons';
 import type { Weapon, WeaponId } from './dungeon-weapons';
+import { weaponOfDex } from './data/pokemon-weapons';
 
 export { FUSION_CHARGE };
 
@@ -18,12 +19,13 @@ export { FUSION_CHARGE };
  * a equipe cai ou quando você decide sair pela escada com o que juntou. Gemas (`dungeon-gems.ts`) achadas no caminho
  * fortalecem as armas. Visão geral, o que falta e ideias: `docs/MASMORRA.md`.
  *
- * Tudo aqui é número de protótipo. Duas regras são PROVISÓRIAS e estão marcadas assim na tela: a arma de cada Pokémon
- * sai dos stats base dele (`weaponFor`) e a munição é o tipo principal da espécie.
+ * Tudo aqui é número de protótipo. A munição ainda usa o tipo principal; a arma vem da tabela estática da espécie em
+ * `data/pokemon-weapons.ts`, nunca dos atributos.
  */
 
-export { CATALOG_ORDER, MECHANICS, WEAPONS, allFusions, fusionDescription, fusionName, fusionNumber, fusionOrigins, fusionWeapon, mechanicOf, weaponFor } from './dungeon-weapons';
+export { CATALOG_ORDER, MECHANICS, WEAPONS, allFusions, fusionDescription, fusionName, fusionNumber, fusionOrigins, fusionWeapon, mechanicOf } from './dungeon-weapons';
 export type { MechanicId, Weapon, WeaponCategory, WeaponId, WeaponPattern } from './dungeon-weapons';
+export { baseSpeciesDexId, hasCompleteWeaponTable, NATIONAL_DEX_LAST, weaponOfDex } from './data/pokemon-weapons';
 
 export const START_AP = 6;
 export const COSTS = { move: 1, switch: 1, item: 2, fusion: 1 } as const;
@@ -252,7 +254,8 @@ export function eliteChance(floor: number): number {
 }
 
 export function createMember(input: MemberInput): Member {
-  const weapon = weaponFor(input.stats);
+  const weapon = weaponOfDex(input.dexId);
+  if (!weapon) throw new Error(`Sem arma catalogada para a espécie #${input.dexId}.`);
   const maxHp = Math.round(input.stats.hp * 1.2 + 40);
   const maxCharge = WEAPONS[weapon].capacity;
   return {
@@ -324,7 +327,8 @@ function speciesFor(state: DungeonState, rng: Rng, boss: boolean): EnemySpecies 
 
 function spawnEnemy(state: DungeonState, species: EnemySpecies, pos: Cell, kind: 'normal' | 'elite' | 'boss', rng: Rng): Enemy {
   const scale = depthScale(state.floor);
-  const weapon = weaponFor(species.stats);
+  const weapon = weaponOfDex(species.dexId);
+  if (!weapon) throw new Error(`Sem arma catalogada para a espécie inimiga #${species.dexId}.`);
   const affixCount = kind === 'boss' ? Math.floor(state.floor / 10) : kind === 'elite' ? (state.floor >= 15 ? 2 : 1) : 0;
   const pool = [...AFFIX_IDS];
   const affixes: Affix[] = [];

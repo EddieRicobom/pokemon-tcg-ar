@@ -14,7 +14,7 @@ import type { PokemonType } from '../core/pokemon-data';
 import {
   AFFIXES, ammoOptions, attack, MECHANICS, setAmmo, attackArea, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
   floorTheme, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, INTENTS, intents, isBossFloor, key, move, polishGems, previewAttack,
-  previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponFor, WEAPONS,
+  previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponOfDex, WEAPONS,
 } from '../core/dungeon';
 import type { Cell, DungeonState, Enemy, EnemySpecies, Intent, MechanicId, MemberInput, RewardId, WeaponPattern } from '../core/dungeon';
 import { GEMS, gemName, LEGENDARY_SLOT as LEGENDARY_SLOT_INDEX, polishable, tierName } from '../core/dungeon-gems';
@@ -90,7 +90,7 @@ function saveRecord(floor: number): void {
 function describeMon(id: string, dexId: number, name: string, origin: string): Candidate {
   const stats = statsOfDex(dexId);
   const types = typesOfDex(dexId);
-  return stats && types.length ? { id, dexId, name, origin, stats, types, missing: false } : { id, dexId, name, origin, missing: true };
+  return stats && types.length && weaponOfDex(dexId) ? { id, dexId, name, origin, stats, types, missing: false } : { id, dexId, name, origin, missing: true };
 }
 
 onMounted(async () => {
@@ -376,7 +376,7 @@ const pendingText = computed(() => {
       <p class="hint">Desça andar após andar com até seis Pokémon da sua coleção. Cada andar é mais difícil, a cada 5 há um chefe, e baús e inimigos deixam gemas para encaixar nas armas. A expedição só acaba quando a equipe cai ou quando você decide sair pela escada.</p>
       <p class="hint">Cada turno tem {{ START_AP }} PA para mover, atacar, trocar, usar item ou fundir dois Pokémon. A orbe da arma guarda o Pokémon.</p>
       <p v-if="record > 0" class="dg-record">🏆 Seu recorde: andar {{ record }}</p>
-      <p class="hint dg-provisional">Provisório: a arma de cada Pokémon sai dos stats base dele e a munição é o tipo principal da espécie, até a tabela de armas e munições ser definida.</p>
+      <p class="hint">A arma é inata da espécie: ao colocar na coleção um Pokémon que usa uma arma ainda inédita para você, ela fica disponível nas próximas expedições com aquele Pokémon. A munição ainda usa o tipo principal da espécie.</p>
       <p v-if="loadError" role="alert">{{ loadError }}</p>
       <p v-if="candidates === null" class="hint">Lendo a sua coleção…</p>
       <p v-else-if="candidates.length === 0" class="hint">Nenhum Pokémon na coleção ainda. Escaneie uma carta ou invoque um Digital Pokémon na fonte da Vila.</p>
@@ -388,12 +388,12 @@ const pendingText = computed(() => {
             <template v-if="c.missing">
               <img v-if="!brokenSprites.has(c.dexId)" :src="sprite(c.dexId)" alt="" loading="lazy" class="dg-pick-sprite" @error="brokenSprites.add(c.dexId)" />
               <strong>{{ c.name }}</strong>
-              <small>sem dados de stats/tipos</small>
+              <small>sem dados de stats/tipos ou arma catalogada</small>
             </template>
             <template v-else>
-              <WeaponArt :weapon="weaponFor(c.stats!)" :dex-id="c.dexId" :ammo="c.types![0] ?? null" :size="72" />
+              <WeaponArt :weapon="weaponOfDex(c.dexId)!" :dex-id="c.dexId" :ammo="c.types![0] ?? null" :size="72" />
               <strong>{{ c.name }}</strong>
-              <small>{{ WEAPONS[weaponFor(c.stats!)].name }}</small>
+              <small>{{ WEAPONS[weaponOfDex(c.dexId)!].name }}</small>
               <span class="dg-types"><span v-for="t in c.types" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span></span>
             </template>
           </button>
