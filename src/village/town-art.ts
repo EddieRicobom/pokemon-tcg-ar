@@ -319,37 +319,87 @@ export function paintTorre(): PixelBuf {
   return b;
 }
 
-/** A fonte da praça: 32×40 (2×2 blocos; o jato sobe acima do chão). Dois quadros para a água brilhar. */
+/**
+ * A fonte da praça: 32×40 (2×2 blocos; o topo sobe acima do chão). Três andares de pedra — bacia larga com mureta,
+ * coluna e taça — com uma Pokébola no alto e a água caindo da taça. Dois quadros para a água brilhar.
+ */
 export function paintFountain(frame = 0): PixelBuf {
   const b = createBuf(32, 40);
-  disc(b, 16, 30, 15, 9, 0xb8b4aa);
-  disc(b, 16, 29, 13, 7, 0x4f8fe0);
-  disc(b, 16, 29, 11, 5, 0x6aaaf0);
-  for (let i = 0; i < 6; i++) put(b, 6 + ((i * 5 + frame * 3) % 20), 27 + (i % 3) * 2, 0xdff4ff);
-  rect(b, 14, 14, 4, 16, 0xc8c4ba);
-  disc(b, 16, 14, 5, 2, 0xc8c4ba);
-  disc(b, 16, 13, 4, 1.5, 0x6aaaf0);
-  for (let k = 0; k < 4; k++) {
-    const dy = (frame + k) % 4;
-    put(b, 16, 6 + dy, 0xdff4ff);
-    put(b, 12 - k, 12 + dy * 2, 0xb8e0ff);
-    put(b, 20 + k, 12 + dy * 2, 0xb8e0ff);
+  const stone = { dark: 0x8a8274, mid: 0xb4ac9c, light: 0xd6cebd, shine: 0xeee7d6 };
+  const water = { deep: 0x3a78c8, mid: 0x5b9be8, light: 0x8cc4f8, foam: 0xe4f4ff };
+  // Bacia: mureta (frente mais escura) com blocos de pedra, borda clara e o espelho d'água.
+  disc(b, 16, 34, 15.5, 5, stone.dark);
+  disc(b, 16, 32, 15.5, 6, stone.mid);
+  for (const x of [4, 9, 14, 19, 24, 28]) for (let y = 33; y <= 36; y++) put(b, x, y, stone.dark);
+  disc(b, 16, 29.5, 15, 6.2, stone.light);
+  disc(b, 16, 29.5, 14, 5.4, stone.shine);
+  disc(b, 16, 30, 12.5, 4.6, water.deep);
+  disc(b, 16, 29.6, 11, 3.6, water.mid);
+  for (let i = 0; i < 7; i++) put(b, 7 + ((i * 5 + frame * 3) % 19), 28 + (i % 3), water.foam);
+  // Coluna com colarinho na base e frisos de luz (luz vem da esquerda).
+  rect(b, 12, 26, 8, 2, stone.mid);
+  rect(b, 12, 26, 8, 1, stone.light);
+  rect(b, 14, 15, 4, 11, stone.mid);
+  rect(b, 14, 15, 1, 11, stone.shine);
+  rect(b, 17, 15, 1, 11, stone.dark);
+  rect(b, 13, 20, 6, 1, stone.light);
+  // Taça de cima, cheia, e a água escorrendo pelas bordas até a bacia.
+  disc(b, 16, 15, 8, 2.6, stone.dark);
+  disc(b, 16, 14.4, 7.5, 2.2, stone.light);
+  disc(b, 16, 14.6, 6, 1.6, water.mid);
+  for (let k = 0; k < 6; k++) {
+    const y = 16 + ((k * 2 + frame) % 12);
+    put(b, 8, y, k % 2 ? water.light : water.foam);
+    put(b, 24, y, k % 2 ? water.foam : water.light);
   }
-  put(b, 16, 5, 0xffffff);
-  outline(b, 0x3a3a46);
+  // Pedestal dourado e a Pokébola: metade vermelha, metade branca, faixa escura e botão.
+  rect(b, 15, 11, 2, 3, 0xd6a63a);
+  put(b, 15, 11, 0xf2d27a);
+  for (let y = 1; y <= 12; y++) for (let x = 10; x <= 22; x++) {
+    const d = (x - 16) ** 2 + (y - 6.5) ** 2;
+    if (d > 30) continue;
+    const top = y < 6.5;
+    const lit = (x - 14) ** 2 + (y - 4) ** 2 < 6;
+    put(b, x, y, top ? (lit ? 0xff7a6e : x > 18 ? 0xb82424 : 0xe03636) : x > 18 ? 0xc8ccd6 : 0xf4f6fa);
+  }
+  rect(b, 11, 6, 11, 1, 0x2a2d3c);
+  disc(b, 16, 6.5, 1.8, 1.8, 0x2a2d3c);
+  put(b, 16, 6, 0xffffff);
+  put(b, 17, 6, 0xdfe3ec);
+  put(b, 13, 3, 0xffd0c8);
+  outline(b, 0x353d5d);
   return b;
 }
 
-/** O poste de luz da rua: 16×32, com a lâmpada acesa à noite. */
+/**
+ * O poste de luz da rua: 16×32, lampião de ferro verde-escuro com detalhes dourados (no estilo das casas do atlas),
+ * aceso à noite.
+ */
 export function paintLamp(lit: boolean): PixelBuf {
   const b = createBuf(16, 32);
-  rect(b, 7, 10, 2, 20, 0x3a3a46);
-  rect(b, 5, 29, 6, 3, 0x2a2a34);
-  rect(b, 4, 4, 8, 7, lit ? 0xffe27a : 0xc8dcea);
-  rect(b, 5, 5, 3, 3, lit ? 0xfff4b0 : 0xe6f2fa);
-  rect(b, 3, 2, 10, 2, 0x3a3a46);
-  rect(b, 6, 0, 4, 2, 0x3a3a46);
-  rect(b, 3, 11, 10, 1, 0x3a3a46);
-  outline(b, 0x1a1a22);
+  const iron = 0x2f4a4c;
+  const ironLight = 0x4f7472;
+  const gold = 0xd6a63a;
+  // Base em degraus e poste com friso de luz.
+  rect(b, 4, 29, 8, 3, iron);
+  rect(b, 5, 27, 6, 2, iron);
+  rect(b, 5, 27, 6, 1, ironLight);
+  rect(b, 7, 11, 2, 16, iron);
+  rect(b, 7, 11, 1, 16, ironLight);
+  rect(b, 6, 19, 4, 1, gold);
+  rect(b, 6, 12, 4, 1, gold);
+  // Lampião: chapéu com ponteira dourada, vidro em quatro painéis e bandeja.
+  rect(b, 7, 0, 2, 1, gold);
+  rect(b, 6, 1, 4, 1, iron);
+  rect(b, 4, 2, 8, 1, iron);
+  rect(b, 3, 3, 10, 1, ironLight);
+  rect(b, 4, 4, 8, 6, lit ? 0xffd45e : 0xb6cedb);
+  rect(b, 5, 5, 6, 4, lit ? 0xfff3b8 : 0xd8e8f0);
+  rect(b, 7, 4, 2, 6, iron);
+  rect(b, 4, 4, 1, 6, iron);
+  rect(b, 11, 4, 1, 6, iron);
+  rect(b, 3, 10, 10, 1, iron);
+  rect(b, 5, 11, 6, 1, gold);
+  outline(b, 0x1e2a2c);
   return b;
 }
