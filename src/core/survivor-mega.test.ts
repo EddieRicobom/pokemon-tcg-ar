@@ -7,16 +7,16 @@ import { emptyVillage } from './village/life';
 import { ITEM_BY_ID, CRAFT_IDS } from './village/catalog';
 import {
   endSurvivorMega,
-  megaShardCount,
-  settleMegaShard,
+  omegaShardCount,
+  settleOmegaShard,
   survivorMegaCount,
   survivorMegaForm,
   survivorMegaForms,
   survivorMegaStatDelta,
   survivorPlayerStats,
-  SURVIVOR_MEGA_ITEM,
+  SURVIVOR_OMEGA_SHARD_ITEM,
   SURVIVOR_MEGA_REFUND_MS,
-  takeMegaShard,
+  takeOmegaShard,
 } from './survivor-mega';
 import type { SurvivorMegaForm } from './survivor-mega';
 
@@ -115,24 +115,24 @@ describe('Mega na corrida', () => {
   });
 });
 
-describe('Fragmento de Megapedra', () => {
+describe('Fragmento Ômega', () => {
   it('é um item da Vila com nome em português e receita de fabricar', () => {
-    const def = ITEM_BY_ID.get(SURVIVOR_MEGA_ITEM);
-    expect(def?.name).toBe('Fragmento de Megapedra');
-    expect(CRAFT_IDS).toContain(SURVIVOR_MEGA_ITEM);
+    const def = ITEM_BY_ID.get(SURVIVOR_OMEGA_SHARD_ITEM);
+    expect(def?.name).toBe('Fragmento Ômega');
+    expect(CRAFT_IDS).toContain(SURVIVOR_OMEGA_SHARD_ITEM);
     for (const part of Object.keys(def?.recipe ?? {})) expect(ITEM_BY_ID.has(part), part).toBe(true);
   });
 
   it('gasta 1 no começo e devolve em desistência logo no início', () => {
     const village = emptyVillage(1, { x: 0, y: 0 });
-    expect(takeMegaShard(village)).toBe(false);
-    village.inventory[SURVIVOR_MEGA_ITEM] = 2;
-    expect(takeMegaShard(village)).toBe(true);
-    expect(megaShardCount(village)).toBe(1);
-    expect(settleMegaShard(village, SURVIVOR_MEGA_REFUND_MS - 1)).toBe(true);
-    expect(megaShardCount(village)).toBe(2);
-    expect(takeMegaShard(village)).toBe(true);
-    expect(settleMegaShard(village, SURVIVOR_MEGA_REFUND_MS)).toBe(false);
-    expect(megaShardCount(village)).toBe(1);
+    expect(takeOmegaShard(village)).toBe(false);
+    village.inventory[SURVIVOR_OMEGA_SHARD_ITEM] = 2;
+    expect(takeOmegaShard(village)).toBe(true);
+    expect(omegaShardCount(village)).toBe(1);
+    expect(settleOmegaShard(village, SURVIVOR_MEGA_REFUND_MS - 1)).toBe(true);
+    expect(omegaShardCount(village)).toBe(2);
+    expect(takeOmegaShard(village)).toBe(true);
+    expect(settleOmegaShard(village, SURVIVOR_MEGA_REFUND_MS)).toBe(false);
+    expect(omegaShardCount(village)).toBe(1);
   });
 });

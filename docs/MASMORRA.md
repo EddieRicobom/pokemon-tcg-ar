@@ -50,7 +50,7 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 
 ### Masmorra e Vila
 - **Antes de descer** (tela de escolha, «🏡 Da Vila»): levar até 2 gemas do cofre (elas saem do cofre e se perdem se a equipe cair) e a marmita do Café, que vira +1 poção e +15% de HP máximo da equipe nesta expedição (consome a marmita, como na Torre).
-- **Ao sair com o espólio:** 5 moedas por andar alcançado (pela carteira, então o bônus de Zapdos vale), 1 Love Candy por chefe vencido (até 3) e 1 fragmento de Megapedra a cada 10 andares; as melhores gemas da expedição (lendárias primeiro, depois o grau) vão para o cofre, que guarda 12. Só as 3 primeiras expedições do dia são premiadas; as outras guardam gemas e recorde.
+- **Ao sair com o espólio:** 5 moedas por andar alcançado (pela carteira, então o bônus de Zapdos vale), 1 Love Candy por chefe vencido (até 3) e 1 fragmento Ômega a cada 10 andares; as melhores gemas da expedição (lendárias primeiro, depois o grau) vão para o cofre, que guarda 12. Só as 3 primeiras expedições do dia são premiadas; as outras guardam gemas e recorde.
 - **Quem cai** não leva prêmio e perde as gemas da expedição; o recorde fica.
 - Tudo fica no estado da Vila (`dungeon`: cofre, teto do dia e recorde), então entra no backup. Regras em `src/core/dungeon-village.ts`, com testes.
 

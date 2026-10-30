@@ -9,14 +9,14 @@ import type { SurvivorState } from './survivor-types';
 
 /**
  * Mega Evolução da Torre de Sobrevivência, válida por uma corrida. Na seleção, quem tem forma Mega na PokéAPI pode
- * megaevoluir gastando 1 Fragmento de Megapedra da mochila da Vila: a corrida começa na forma Mega, com os stats base
+ * megaevoluir gastando 1 Fragmento Ômega da mochila da Vila: a corrida começa na forma Mega, com os stats base
  * dessa forma (`data/pokemon-megas.json`, gerado por `scripts/build-megas.mjs`), e fica assim até a corrida acabar.
  * Sem limite de tempo; só a evolução encerra a Mega antes (a forma Mega é da espécie de agora).
  * Espécie sem forma Mega no dado não ganha a opção — nada é inventado.
  */
 
-/** Item da Vila gasto pela Mega (id antigo do catálogo; o nome mostrado é "Fragmento de Megapedra"). */
-export const SURVIVOR_MEGA_ITEM = 'mega-stone-shard';
+/** Item da Vila gasto pela Mega ("Fragmento Ômega"; saves antigos com `mega-stone-shard` são convertidos em `normalizeVillage`). */
+export const SURVIVOR_OMEGA_SHARD_ITEM = 'omega-shard';
 /** Corrida abandonada antes disto devolve o fragmento (o mesmo limite da marmita, `TOWER_RUN_MIN_MS`). */
 export const SURVIVOR_MEGA_REFUND_MS = 20_000;
 
@@ -170,20 +170,20 @@ export function survivorPlayerStats(player: { dexId: number; mega?: SurvivorMega
 }
 
 /** Fragmentos na mochila. */
-export function megaShardCount(village: VillageState): number {
-  return count(village, SURVIVOR_MEGA_ITEM);
+export function omegaShardCount(village: VillageState): number {
+  return count(village, SURVIVOR_OMEGA_SHARD_ITEM);
 }
 
 /** Tira 1 fragmento da mochila no começo da corrida; false se não houver. */
-export function takeMegaShard(village: VillageState): boolean {
-  if (megaShardCount(village) < 1) return false;
-  village.inventory[SURVIVOR_MEGA_ITEM] = megaShardCount(village) - 1;
+export function takeOmegaShard(village: VillageState): boolean {
+  if (omegaShardCount(village) < 1) return false;
+  village.inventory[SURVIVOR_OMEGA_SHARD_ITEM] = omegaShardCount(village) - 1;
   return true;
 }
 
 /** Fim da corrida: desistência logo no começo devolve o fragmento (true); senão ele foi gasto. */
-export function settleMegaShard(village: VillageState, survivedMs: number): boolean {
+export function settleOmegaShard(village: VillageState, survivedMs: number): boolean {
   if (survivedMs >= SURVIVOR_MEGA_REFUND_MS) return false;
-  add(village, SURVIVOR_MEGA_ITEM, 1);
+  add(village, SURVIVOR_OMEGA_SHARD_ITEM, 1);
   return true;
 }

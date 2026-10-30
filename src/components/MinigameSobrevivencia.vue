@@ -41,7 +41,7 @@ import {
   SURVIVOR_UPGRADE_FAMILIES,
   SURVIVOR_LOVE_CANDY_MS,
   SURVIVOR_TRUST_STONE_MS,
-  SURVIVOR_MEGA_SHARD_MS,
+  SURVIVOR_OMEGA_SHARD_MS,
   SURVIVOR_ARTIFACT_DETAILS,
   survivorProjectileOpacity,
   FAST_TIME_SCALE,
@@ -57,7 +57,7 @@ import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
 import { trainer } from '../app/trainer-store';
 import type { SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
-import { megaShardCount, settleMegaShard, survivorMegaForm, survivorMegaForms, survivorMegaStatDelta, takeMegaShard } from '../core/survivor-mega';
+import { omegaShardCount, settleOmegaShard, survivorMegaForm, survivorMegaForms, survivorMegaStatDelta, takeOmegaShard } from '../core/survivor-mega';
 import type { SurvivorMegaForm, SurvivorMegaSprite } from '../core/survivor-mega';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { DecodedGif } from '../core/gif';
@@ -373,41 +373,41 @@ let runLoadoutSettled = true;
 let lunchWasActive = false;
 
 // ----------------------------------------------------------------------------- Mega da corrida (core/survivor-mega.ts)
-// Na seleção, quem tem forma Mega na PokéAPI ganha o botão; a corrida começa na forma Mega gastando 1 Fragmento de
-// Megapedra da mochila da Vila e fica assim até o fim (sem tempo). Corrida pura não usa nada da Vila.
-const megaShards = ref(0);
+// Na seleção, quem tem forma Mega na PokéAPI ganha o botão; a corrida começa na forma Mega gastando 1 Fragmento
+// Ômega da mochila da Vila e fica assim até o fim (sem tempo). Corrida pura não usa nada da Vila.
+const omegaShards = ref(0);
 /** Mega marcada na seleção: qual Pokémon (id da opção) e qual forma. */
 const megaPick = ref<{ optId: string; formId: number } | null>(null);
 const megaPickForm = computed(() => (megaPick.value ? survivorMegaForm(megaPick.value.formId) : null));
 const megaPickOption = computed(() => pickOptions.value?.find((opt) => opt.id === megaPick.value?.optId) ?? null);
 let megaWasActive = false;
-let runMegaShardTaken = false;
+let runOmegaShardTaken = false;
 /** Sprites da forma normal, para voltar quando a Mega acabar. */
 let normalPlayerSprite: SpriteAsset | null = null;
 let normalPlayerBackSprite: Sprite | null = null;
-function refreshMegaShards(): void {
+function refreshOmegaShards(): void {
   let total = 0;
   try {
-    withVillage((village) => { total = megaShardCount(village); return false; });
+    withVillage((village) => { total = omegaShardCount(village); return false; });
   } catch { total = 0; }
-  megaShards.value = total;
+  omegaShards.value = total;
   if (total < 1 || pureWanted.value) megaPick.value = null;
 }
 function toggleMegaPick(opt: PickOption, form: SurvivorMegaForm): void {
-  if (megaShards.value < 1 || pureWanted.value) return;
+  if (omegaShards.value < 1 || pureWanted.value) return;
   megaPick.value = megaPick.value?.optId === opt.id && megaPick.value.formId === form.formId ? null : { optId: opt.id, formId: form.formId };
 }
-watch(pureWanted, () => refreshMegaShards());
+watch(pureWanted, () => refreshOmegaShards());
 const MEGA_SPRITE_NOTES: Record<SurvivorMegaSprite, string> = {
   animado: 'Sprite animado da forma Mega.',
   parado: 'Esta forma não tem GIF animado no repositório de sprites: aparece a imagem parada.',
   nenhum: 'Esta forma não tem sprite no repositório: o Pokémon mantém o sprite normal.',
 };
 /** Tira o fragmento da mochila para a corrida; false se não houver (a corrida sai na forma normal). */
-function takeRunMegaShard(): boolean {
+function takeRunOmegaShard(): boolean {
   let taken = false;
   try {
-    withVillage((village) => { taken = takeMegaShard(village); return taken; });
+    withVillage((village) => { taken = takeOmegaShard(village); return taken; });
   } catch { taken = false; }
   return taken;
 }
@@ -435,10 +435,10 @@ function settleRunLoadout(survivedMs: number): void {
       return village.tower.lunchbox !== before;
     });
   } catch { /* a Vila não gravou: a marmita continua reservada */ }
-  if (runMegaShardTaken) {
-    runMegaShardTaken = false;
+  if (runOmegaShardTaken) {
+    runOmegaShardTaken = false;
     try {
-      withVillage((village) => settleMegaShard(village, survivedMs));
+      withVillage((village) => settleOmegaShard(village, survivedMs));
     } catch { /* a Vila não gravou: o fragmento fica gasto */ }
   }
 }
@@ -1981,7 +1981,7 @@ function loop(ts: number): void {
           ? '🎁 Marco de 10 minutos! Love Candy assegurado — conclua a corrida para guardar.'
           : ev.id === 'fifteen-minutes'
             ? '💠 Marco de 15 minutos! Pedra da Confiança assegurada — conclua a corrida para guardar.'
-            : '💎 Marco de 20 minutos! Fragmento de Megapedra assegurado — conclua a corrida para guardar.', 6000);
+            : '💎 Marco de 20 minutos! Fragmento Ômega assegurado — conclua a corrida para guardar.', 6000);
       }
       else if (ev.type === 'shadowBallSpawn') {
         void preloadShadowBoss(ev.dexId);
@@ -2281,8 +2281,8 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     banMode.value = false;
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
     // A Mega só entra se o fragmento saiu mesmo da mochila; ele volta se a corrida for abandonada logo no começo.
-    runMegaShardTaken = mega !== null && !pureWanted.value && takeRunMegaShard();
-    const runMega = runMegaShardTaken ? mega : null;
+    runOmegaShardTaken = mega !== null && !pureWanted.value && takeRunOmegaShard();
+    const runMega = runOmegaShardTaken ? mega : null;
     state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
     megaWasActive = state.value.player.mega?.active === true;
     if (megaWasActive && megaSprite) {
@@ -2290,10 +2290,10 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
       // Não há pose de costas da forma Mega: no BONK a Mega aparece de frente em vez da costas da forma normal.
       playerBackSprite = null;
     }
-    refreshMegaShards();
+    refreshOmegaShards();
     const perks = runLoadout.summary.filter((line) => line.startsWith('Sorte') || line.startsWith('Marmita'));
     if (megaWasActive && runMega) perks.unshift(`💎 ${runMega.label} até o fim da corrida${megaSprite ? '' : ' (sem sprite da forma)'}`);
-    else if (mega) say('💎 Sem Fragmento de Megapedra na mochila: a corrida começou na forma normal.', 4200);
+    else if (mega) say('💎 Sem Fragmento Ômega na mochila: a corrida começou na forma normal.', 4200);
     if (perks.length > 0) say(`🍀 ${perks.join(' · ')}`, 4200);
     bonkRun.value = bonk;
     bonkPhysics.value = bonk ? createBonkPhysics(Math.PI / 2, state.value.runSeed) : null;
@@ -2363,7 +2363,7 @@ watch(pickOptions, (options) => {
   if (!options) return;
   refreshTowerPreview();
   if (megaPick.value && !options.some((opt) => opt.id === megaPick.value?.optId)) megaPick.value = null;
-  refreshMegaShards();
+  refreshOmegaShards();
 });
 const infiniteWanted = ref(false);
 const bonkWanted = ref(props.startBonk === true);
@@ -2743,9 +2743,9 @@ onBeforeUnmount(() => {
               <p v-else class="note">Nada da Vila entra por enquanto. Treinos do Dojô, a sorte do Carteiro e a marmita do Café aparecem aqui.</p>
             </section>
             <section class="survivor-preparations survivor-mega-panel" aria-label="Mega Evolução temporária">
-              <strong>💎 Mega Evolução · {{ megaShards }} Fragmento{{ megaShards === 1 ? '' : 's' }} de Megapedra</strong>
+              <strong>💎 Mega Evolução · {{ omegaShards }} Fragmento{{ omegaShards === 1 ? '' : 's' }} Ômega</strong>
               <p v-if="pureWanted" class="note">Corrida pura ligada: a Mega usa um item da Vila e fica de fora.</p>
-              <p v-else-if="megaShards < 1" class="note">Sem fragmentos. Ganhe 1 ao chegar aos 20 min numa corrida ou fabrique na bancada da Vila (2 Pedras da Confiança, 2 Cristais e 1 Pérola).</p>
+              <p v-else-if="omegaShards < 1" class="note">Sem fragmentos. Ganhe 1 ao chegar aos 20 min numa corrida ou fabrique na bancada da Vila (2 Pedras da Confiança, 2 Cristais e 1 Pérola).</p>
               <p v-else-if="!megaPickForm" class="note">Toque em «Mega» no Pokémon que tem forma Mega para começar a corrida megaevoluído. Gasta 1 fragmento e vale até o fim da corrida.</p>
               <div v-else class="survivor-mega-detail" role="status">
                 <p class="note"><strong>{{ megaPickForm.label }}</strong> para {{ megaPickOption?.name }}: a corrida começa na forma Mega, com os stats base dela, e fica assim até o fim da corrida (só uma evolução desfaz a Mega). Gasta 1 fragmento (devolvido se você desistir nos primeiros 20 s).</p>
@@ -2786,8 +2786,8 @@ onBeforeUnmount(() => {
                     class="survivor-mega-pick"
                     :class="{ active: megaPick?.optId === opt.id && megaPick.formId === form.formId }"
                     :aria-pressed="megaPick?.optId === opt.id && megaPick.formId === form.formId"
-                    :disabled="megaShards < 1 || pureWanted || pickBusy"
-                    :title="megaShards < 1 ? 'Precisa de 1 Fragmento de Megapedra' : `${form.label}: gasta 1 fragmento`"
+                    :disabled="omegaShards < 1 || pureWanted || pickBusy"
+                    :title="omegaShards < 1 ? 'Precisa de 1 Fragmento Ômega' : `${form.label}: gasta 1 fragmento`"
                     @click.stop="toggleMegaPick(opt, form)"
                     @keydown.enter.stop
                   >💎 {{ form.short }}</button>
@@ -3002,7 +3002,7 @@ onBeforeUnmount(() => {
              <p v-if="summary.survivedMs >= SURVIVOR_LOVE_CANDY_MS" class="survivor-cleared" role="status">🍬 Love Candy conquistado por alcançar 10 minutos.</p>
               <p v-if="summary.survivedMs >= SURVIVOR_TRUST_STONE_MS" class="survivor-cleared" role="status">💠 Pedra da Confiança conquistada por alcançar 15 minutos.</p>
              <p v-if="(summary.shadowTrustStones ?? 0) > 0" class="survivor-cleared" role="status">💠 {{ summary.shadowTrustStones }} Pedra{{ summary.shadowTrustStones === 1 ? '' : 's' }} da Confiança assegurada{{ summary.shadowTrustStones === 1 ? '' : 's' }} ao derrotar lendário{{ summary.shadowTrustStones === 1 ? '' : 's' }} sombrio{{ summary.shadowTrustStones === 1 ? '' : 's' }}.</p>
-             <p v-if="summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS" class="survivor-cleared" role="status">💎 Fragmento de Megapedra conquistado por alcançar 20 minutos.</p>
+             <p v-if="summary.survivedMs >= SURVIVOR_OMEGA_SHARD_MS" class="survivor-cleared" role="status">💎 Fragmento Ômega conquistado por alcançar 20 minutos.</p>
              <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
             <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>
             <p v-if="summary.trainersBeaten > 0 || summary.bossesBeaten > 0" class="note">Treinadores derrotados: {{ summary.trainersBeaten }}{{ summary.bossesBeaten > 0 ? ` · chefões: ${summary.bossesBeaten}` : '' }}.</p>

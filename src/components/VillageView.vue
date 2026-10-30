@@ -35,7 +35,7 @@ import type { DecodedGif } from '../core/gif';
 import MinigameHub from './MinigameHub.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import DungeonGame from './DungeonGame.vue';
-import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS } from '../core/survivor';
+import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
 import { personalityOf } from '../core/village/personality';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
@@ -1766,9 +1766,9 @@ async function recordSurvivalAdventure(summary: import('../core/survivor').Survi
     add(state, 'trust-stone');
     milestoneRewards.push('💠 Pedra da Confiança');
   }
-  if (summary.survivedMs >= SURVIVOR_MEGA_SHARD_MS) {
-    add(state, 'mega-stone-shard');
-    milestoneRewards.push('💎 Fragmento de Megapedra');
+  if (summary.survivedMs >= SURVIVOR_OMEGA_SHARD_MS) {
+    add(state, 'omega-shard');
+    milestoneRewards.push('💎 Fragmento Ômega');
   }
   const shadowTrustStones = Math.max(0, Math.floor(summary.shadowTrustStones ?? 0));
   for (let i = 0; i < shadowTrustStones; i++) add(state, 'trust-stone');
