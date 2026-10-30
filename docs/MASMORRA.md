@@ -49,6 +49,12 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 - **Em casa:** quem é da geração sorteada para o andar luta com +10% de poder (🏠 no topo).
 - Som (mesmo motor da Vila e da Torre): entrada no andar, chefe, golpe com o tipo da munição, inimigo derrotado, saque, dano recebido, sala limpa, escada, derrota e saída. Botões 🔊 (som) e ✨ (partículas e brilhos do cenário) ficam no topo e são lembrados no aparelho; `prefers-reduced-motion` desliga as animações.
 
+### Masmorra e Vila
+- **Antes de descer** (tela de escolha, «🏡 Da Vila»): levar até 2 gemas do cofre (elas saem do cofre e se perdem se a equipe cair) e a marmita do Café, que vira +1 poção e +15% de HP máximo da equipe nesta expedição (consome a marmita, como na Torre).
+- **Ao sair com o espólio:** 5 moedas por andar alcançado (pela carteira, então o bônus de Zapdos vale), 1 Love Candy por chefe vencido (até 3) e 1 fragmento de Megapedra a cada 10 andares; as melhores gemas da expedição (lendárias primeiro, depois o grau) vão para o cofre, que guarda 12. Só as 3 primeiras expedições do dia são premiadas; as outras guardam gemas e recorde.
+- **Quem cai** não leva prêmio e perde as gemas da expedição; o recorde fica.
+- Tudo fica no estado da Vila (`dungeon`: cofre, teto do dia e recorde), então entra no backup. Regras em `src/core/dungeon-village.ts`, com testes.
+
 ### Descida sem fim
 - Não existe último andar. A expedição só termina quando a equipe cai ou quando você escolhe **Sair com o espólio** na escada.
 - Com a sala limpa, a escada 🪜 aparece e dá para andar à vontade sem gastar PA para pegar o saque. Na escada, você escolhe uma recompensa para descer (buff de fusão, poção ou sala segura), abre a forja ou sai.
@@ -111,7 +117,6 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 - **Arte própria das 15 armas novas** (hoje emblema genérico).
 - **Balanceamento.** Ver se 6 PA e os custos dão boas decisões, se a curva de dificuldade sem teto acompanha a das gemas (a dificuldade cresce em linha e as gemas também, mas a lapidação é exponencial no custo) e se o chefe e as elites ficam justos.
 - **Salvar a expedição.** Fechar a tela perde a descida atual, então falta guardar o estado (ele é serializável) e oferecer «continuar».
-- **Recompensa fora da masmorra.** Gemas e andares ainda não valem nada na Vila: falta decidir o que volta (moedas, XP de Treinador, um item, a Pokédex) sem quebrar a economia da Vila.
 - **Efeitos de estado** (queimado, envenenado, paralisado), que o documento cita como estudo para as munições mistas.
 - **Opção para desligar as animações mais pesadas** (regra do projeto para efeitos que pesam na GPU), se o teste em celular mostrar custo.
 - **Acessibilidade:** foco do teclado na grade, leitura das intenções por leitor de tela e tamanho dos alvos de toque no celular.

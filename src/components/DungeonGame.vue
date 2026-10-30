@@ -8,6 +8,11 @@ import DungeonDecor from './DungeonDecor.vue';
 import { SoundEngine } from '../box/sound';
 import type { SoundCue } from '../box/sound-recipes';
 import { REGIONAL_ENCOUNTERS } from '../core/survivor-encounters';
+import { addCoins, withVillage } from '../app/wallet';
+import { bringGems, COINS_PER_FLOOR, DAILY_REWARDS, LUNCH_HP, packLunch, settleExpedition, SHARD_EVERY, takeFromVault, VAULT_TAKE } from '../core/dungeon-village';
+import type { ExpeditionRewards } from '../core/dungeon-village';
+import { lunchEffectFor } from '../core/survivor-lunch';
+import { dayKey } from '../core/trainer';
 import { getCache } from '../app/services';
 import { effectiveVisual } from '../app/visual-settings';
 import { cardCompanion } from '../app/card-evolution-store';
@@ -180,7 +185,42 @@ function describeMon(id: string, dexId: number, name: string, origin: string): C
   return stats && types.length && weaponOfDex(dexId) ? { id, dexId, name, origin, stats, types, missing: false } : { id, dexId, name, origin, missing: true };
 }
 
+/** O que vem da Vila (cofre de gemas e marmita do Café) e o que volta para ela ao fim da expedição. */
+const vaultGems = ref<Gem[]>([]);
+const takeIds = ref<number[]>([]);
+const lunchName = ref<string | null>(null);
+const bringLunch = ref(true);
+const rewards = ref<ExpeditionRewards | null>(null);
+let settled = false;
+function readVillage(): void {
+  withVillage((v) => {
+    vaultGems.value = v.dungeon.gems.map((g) => ({ ...g }));
+    lunchName.value = v.tower.lunchbox ? lunchEffectFor(v.tower.lunchbox)?.name ?? null : null;
+    return false;
+  });
+  takeIds.value = takeIds.value.filter((id) => vaultGems.value.some((g) => g.id === id));
+}
+function toggleTake(id: number): void {
+  const at = takeIds.value.indexOf(id);
+  if (at >= 0) takeIds.value.splice(at, 1);
+  else if (takeIds.value.length < VAULT_TAKE) takeIds.value.push(id);
+}
+/** Fim da expedição (saiu ou caiu): acerta tudo na Vila uma única vez. */
+function settleIfOver(): void {
+  const st = s.value;
+  if (!st || settled || (st.phase !== 'retired' && st.phase !== 'lost')) return;
+  settled = true;
+  let r: ExpeditionRewards | null = null;
+  withVillage((v) => { r = settleExpedition(v, st, dayKey(new Date())); return true; });
+  const got = r as ExpeditionRewards | null;
+  if (!got) return;
+  if (got.coins > 0) got.coins = addCoins(got.coins);
+  rewards.value = got;
+  readVillage();
+}
+
 onMounted(async () => {
+  readVillage();
   try {
     const cards = await (await getCache()).list();
     const out: Candidate[] = [];
@@ -208,6 +248,23 @@ function togglePick(c: Candidate): void {
 function begin(): void {
   const team = picked.value.map((id) => candidates.value!.find((c) => c.id === id)!).map((c) => ({ id: c.id, dexId: c.dexId, name: c.name, types: c.types!, stats: c.stats! }));
   s.value = startDungeon(team, pool, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
+  settled = false;
+  rewards.value = null;
+  let taken: Gem[] = [];
+  let lunch: ReturnType<typeof lunchEffectFor> = null;
+  withVillage((v) => {
+    taken = takeFromVault(v, takeIds.value);
+    if (bringLunch.value && v.tower.lunchbox) {
+      lunch = lunchEffectFor(v.tower.lunchbox);
+      if (lunch) v.tower.lunchbox = null;
+    }
+    return taken.length > 0 || lunch !== null;
+  });
+  bringGems(s.value, taken);
+  const packed = lunch as ReturnType<typeof lunchEffectFor>;
+  if (packed) packLunch(s.value, packed);
+  takeIds.value = [];
+  readVillage();
   sound.unlock();
   lastSnap = snapshot(s.value);
   cue(isBossFloor(s.value.floor) ? { kind: 'ui', cue: 'survivor-boss' } : { kind: 'enter' });
@@ -340,6 +397,7 @@ function result(r: { ok: boolean; reason?: string }): void {
   if (s.value) saveRecord(s.value.stats.deepest);
   if (r.ok) cueChanges();
   else cue({ kind: 'ui', cue: 'interact' });
+  settleIfOver();
 }
 
 function setMode(next: 'move' | 'attack'): void {
@@ -655,6 +713,16 @@ const pendingText = computed(() => {
           </button>
         </li>
       </ul>
+      <section v-if="vaultGems.length || lunchName" class="dg-from-village" aria-label="Da Vila">
+        <h3>🏡 Da Vila</h3>
+        <template v-if="vaultGems.length">
+          <p class="hint">Cofre de gemas: leve até {{ VAULT_TAKE }}. Elas saem do cofre; se a equipe cair, se perdem.</p>
+          <div class="dg-vault">
+            <button v-for="g in vaultGems" :key="g.id" type="button" :class="{ on: takeIds.includes(g.id) }" :disabled="!takeIds.includes(g.id) && takeIds.length >= VAULT_TAKE" @click="toggleTake(g.id)"><GemChip :gem="g" label :size="22" /></button>
+          </div>
+        </template>
+        <label v-if="lunchName" class="dg-lunch"><input v-model="bringLunch" type="checkbox" /> Levar a marmita do Café ({{ lunchName }}): +1 poção e +{{ Math.round(LUNCH_HP * 100) }}% de HP máximo nesta expedição.</label>
+      </section>
       <div class="dg-actions">
         <button type="button" class="primary" :disabled="picked.length === 0 || pool.length === 0" @click="begin">Começar com esta arma</button>
         <button type="button" @click="emit('leave')">Voltar</button>
@@ -972,7 +1040,18 @@ const pendingText = computed(() => {
             <li><strong>{{ s.stats.legendaries }}</strong><small>lendárias</small></li>
           </ul>
           <p v-if="s.stats.deepest >= record" class="dg-record">🏆 Novo recorde: andar {{ s.stats.deepest }}!</p>
-          <p class="hint">As gemas valem só nesta expedição: ainda não voltam para a Vila.</p>
+          <template v-if="rewards">
+            <h4 class="dg-rewards-title">{{ s.phase === 'retired' ? 'Levado para a Vila' : 'Perdido na queda' }}</h4>
+            <ul v-if="s.phase === 'retired'" class="dg-summary">
+              <li><strong>🪙 {{ rewards.coins }}</strong><small>moedas</small></li>
+              <li><strong>🍬 {{ rewards.loveCandy }}</strong><small>Love Candy</small></li>
+              <li><strong>💎 {{ rewards.megaShards }}</strong><small>fragmentos Mega</small></li>
+            </ul>
+            <p v-if="rewards.kept.length" class="hint">{{ rewards.kept.length }} gema(s) guardada(s) no cofre da Vila (cabem 12).</p>
+            <p v-if="rewards.capped" class="hint dg-provisional">Já foram {{ DAILY_REWARDS }} expedições premiadas hoje: desta vez só as gemas e o recorde voltam. Amanhã tem mais.</p>
+            <p v-if="s.phase === 'lost'" class="hint">Quem cai perde as gemas da expedição e não leva prêmio. Saia pela escada para garantir o espólio.</p>
+            <p class="hint">Prêmio ao sair: {{ COINS_PER_FLOOR }} moedas por andar, 1 Love Candy por chefe (até 3) e 1 fragmento Mega a cada {{ SHARD_EVERY }} andares.</p>
+          </template>
           <div class="dg-actions">
             <button type="button" class="primary" @click="s = null">Nova expedição</button>
             <button type="button" @click="emit('leave')">Sair</button>
@@ -1217,6 +1296,13 @@ button:disabled { opacity: 0.5; }
 .dg-bag-list button.on { border-color: var(--gold); box-shadow: 0 0 8px #ffcb0566; }
 .dg-polish { display: flex; flex-wrap: wrap; gap: 4px; }
 .dg-polish button { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font-size: 0.8rem; }
+.dg-from-village { margin: 10px 0; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
+.dg-from-village h3 { margin: 0 0 4px; font-size: 0.95rem; }
+.dg-vault { display: flex; flex-wrap: wrap; gap: 4px; }
+.dg-vault button { padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; }
+.dg-vault button.on { border-color: var(--gold); box-shadow: 0 0 6px #ffcb0566; }
+.dg-lunch { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; font-size: 0.85rem; }
+.dg-rewards-title { margin: 10px 0 0; font-size: 0.9rem; }
 .dg-summary { list-style: none; padding: 0; margin: 8px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .dg-summary li { display: flex; flex-direction: column; align-items: center; padding: 6px; border-radius: 10px; background: var(--surface-2); }
 .dg-summary strong { font-size: 1.3rem; }
