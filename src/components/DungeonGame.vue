@@ -76,6 +76,8 @@ const weaponOffer = ref<WeaponOffer | null>(null);
 const chosenCandidateIds = new Set<string>();
 const offeredFloors = new Set<number>();
 const orbAnimation = ref<OrbAnimation | null>(null);
+const weaponOfferView = ref<'weapons' | 'evolve'>('weapons');
+const evolutionPick = ref<number | null>(null);
 let popupId = 0;
 let alive = true;
 
@@ -133,6 +135,8 @@ function begin(): void {
   offeredFloors.clear();
   weaponOffer.value = null;
   orbAnimation.value = null;
+  weaponOfferView.value = 'weapons';
+  evolutionPick.value = null;
   mode.value = null;
   pending.value = null;
   inspected.value = null;
@@ -177,6 +181,17 @@ const inspectedEnemy = computed<Enemy | null>(() => s.value?.enemies.find((e) =>
 const bagSorted = computed(() => [...(s.value?.bag ?? [])].sort((a, b) => Number(b.legendary) - Number(a.legendary) || a.kind.localeCompare(b.kind) || b.tier - a.tier));
 const polishGroups = computed(() => polishable(s.value?.bag ?? []));
 const selectedGem = computed<Gem | null>(() => s.value?.bag.find((g) => g.id === forgeGem.value) ?? null);
+const evolutionMembers = computed(() => {
+  const offer = weaponOffer.value;
+  const st = s.value;
+  if (!offer || !st) return [];
+  return [...new Set(offer.evolutions.map((e) => e.memberIndex))].map((memberIndex) => ({
+    memberIndex,
+    member: st.team[memberIndex]!,
+    count: offer.evolutions.filter((e) => e.memberIndex === memberIndex).length,
+  }));
+});
+const shownEvolutions = computed(() => weaponOffer.value?.evolutions.filter((e) => e.memberIndex === evolutionPick.value) ?? []);
 
 const wallAt = (c: Cell) => s.value!.walls.some((w) => w.x === c.x && w.y === c.y);
 const barrierAt = (c: Cell) => s.value!.barriers.some((b) => b.pos.x === c.x && b.pos.y === c.y);
@@ -318,7 +333,12 @@ function pickReward(r: RewardId): void {
   if (!offeredFloors.has(s.value.floor) && weaponOfferAtFloor(s.value.floor)) {
     offeredFloors.add(s.value.floor);
     const offer = makeWeaponOffer(s.value, r);
-    if (offer) { weaponOffer.value = offer; return; }
+    if (offer) {
+      weaponOffer.value = offer;
+      weaponOfferView.value = offer.choices.length ? 'weapons' : 'evolve';
+      evolutionPick.value = null;
+      return;
+    }
   }
   forgeOpen.value = false;
   result(chooseReward(s.value, r));
@@ -380,6 +400,7 @@ async function playOrbAnimation(animation: OrbAnimation): Promise<void> {
 
 function finishWeaponOffer(offer: WeaponOffer): void {
   weaponOffer.value = null;
+  evolutionPick.value = null;
   pickReward(offer.reward);
 }
 
@@ -706,8 +727,8 @@ const pendingText = computed(() => {
       <!-- Pokébola: nova arma ou evolução antes de descer -->
       <div v-if="weaponOffer && s.phase === 'reward'" class="dg-modal" role="dialog" aria-label="Escolha da Pokébola">
         <div class="dg-modal-box wide dg-weapon-offer">
-          <h3>🔴 Pokébola encontrada!</h3>
-          <p class="hint">Escolha uma arma nova para esta expedição ou evolua um Pokémon da equipe. A escolha entra na orbe e ocupa uma das {{ MAX_TEAM }} vagas da equipe.</p>
+          <header class="dg-offer-head"><h3>🔴 Pokébola · andar {{ s.floor }}</h3><small>1 escolha nesta escada</small></header>
+          <p class="hint">Uma arma nova entra na equipe; ou evolua uma que já está nela. Tudo vale apenas nesta expedição.</p>
           <div v-if="orbAnimation" class="dg-orb-animation" role="status" aria-live="polite">
             <img :src="sprite(orbAnimation.dexId)" :alt="orbAnimation.name" />
             <span class="dg-orb">◉</span>
@@ -715,23 +736,34 @@ const pendingText = computed(() => {
             <strong>{{ orbAnimation.message }}</strong>
           </div>
           <template v-else>
-            <h4 v-if="weaponOffer.choices.length">Escolha uma arma nova</h4>
-            <div class="dg-draft-options">
+            <div class="dg-offer-tabs" role="tablist" aria-label="Tipo de escolha">
+              <button v-if="weaponOffer.choices.length" type="button" :class="{ on: weaponOfferView === 'weapons' }" role="tab" :aria-selected="weaponOfferView === 'weapons'" @click="weaponOfferView = 'weapons'; evolutionPick = null">⚔️ Armas ({{ weaponOffer.choices.length }})</button>
+              <button v-if="weaponOffer.evolutions.length" type="button" :class="{ on: weaponOfferView === 'evolve' }" role="tab" :aria-selected="weaponOfferView === 'evolve'" @click="weaponOfferView = 'evolve'; evolutionPick = null">✨ Evoluir ({{ evolutionMembers.length }})</button>
+            </div>
+            <div v-if="weaponOfferView === 'weapons'" class="dg-draft-options" role="tabpanel">
               <button v-for="c in weaponOffer.choices" :key="c.id" type="button" @click="void chooseWeapon(c)">
-                <WeaponArt :weapon="weaponOfDex(c.dexId)!" :dex-id="c.dexId" :ammo="c.types![0] ?? null" :size="58" />
+                <WeaponArt :weapon="weaponOfDex(c.dexId)!" :dex-id="c.dexId" :ammo="c.types![0] ?? null" :size="44" />
                 <strong>{{ c.name }}</strong>
                 <small>{{ WEAPONS[weaponOfDex(c.dexId)!].name }}</small>
               </button>
             </div>
-            <template v-if="weaponOffer.evolutions.length">
-              <h4>Ou evolua uma arma</h4>
-              <div class="dg-evolve-options">
-                <button v-for="evolution in weaponOffer.evolutions" :key="`${evolution.memberIndex}:${evolution.input.dexId}`" type="button" @click="void chooseEvolution(evolution)">
-                  <span>✨ {{ s.team[evolution.memberIndex]!.name }} → {{ evolution.input.name }}</span>
-                  <small>{{ WEAPONS[weaponOfDex(evolution.input.dexId)!].name }}</small>
+            <div v-else class="dg-evolve-panel" role="tabpanel">
+              <div v-if="evolutionPick === null" class="dg-evolve-members">
+                <button v-for="entry in evolutionMembers" :key="entry.memberIndex" type="button" @click="evolutionPick = entry.memberIndex">
+                  <img :src="sprite(entry.member.dexId)" alt="" />
+                  <span><strong>{{ entry.member.name }}</strong><small>{{ entry.count }} evolução{{ entry.count === 1 ? '' : 'ões' }}</small></span>
                 </button>
               </div>
-            </template>
+              <template v-else>
+                <button type="button" class="dg-back" @click="evolutionPick = null">← Escolher outro Pokémon</button>
+                <div class="dg-evolve-options">
+                  <button v-for="evolution in shownEvolutions" :key="`${evolution.memberIndex}:${evolution.input.dexId}`" type="button" @click="void chooseEvolution(evolution)">
+                    <span>✨ {{ s.team[evolution.memberIndex]!.name }} → <strong>{{ evolution.input.name }}</strong></span>
+                    <small>{{ WEAPONS[weaponOfDex(evolution.input.dexId)!].name }}</small>
+                  </button>
+                </div>
+              </template>
+            </div>
           </template>
         </div>
       </div>
@@ -896,8 +928,8 @@ button:disabled { opacity: 0.5; }
 .dg-log { font-size: 0.8rem; color: var(--muted); }
 .dg-log ol { margin: 4px 0; padding-left: 18px; }
 
-.dg-modal { position: fixed; inset: 0; z-index: 80; background: #000b; display: flex; align-items: center; justify-content: center; padding: 16px; }
-.dg-modal-box { width: min(460px, 100%); max-height: 90vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.dg-modal { position: fixed; inset: 0; z-index: 80; background: #000b; display: flex; align-items: center; justify-content: center; padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+.dg-modal-box { width: min(460px, 100%); max-height: calc(100dvh - 16px); overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
 .dg-modal-box.wide { width: min(560px, 100%); }
 .dg-modal-box h3 { margin: 0 0 8px; }
 .dg-modal-box h4 { margin: 12px 0 4px; }
@@ -909,14 +941,27 @@ button:disabled { opacity: 0.5; }
 .dg-facts { margin: 6px 0; padding-left: 18px; font-size: 0.8rem; color: var(--muted); }
 .dg-reward { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px; margin-top: 6px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; text-align: left; }
 .dg-reward small { color: var(--muted); }
-.dg-weapon-offer h4 { margin: 14px 0 6px; font-size: 0.9rem; }
-.dg-draft-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
-.dg-draft-options button, .dg-evolve-options button { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; color: inherit; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
-.dg-draft-options strong { font-size: 0.78rem; overflow-wrap: anywhere; }
-.dg-draft-options small, .dg-evolve-options small { color: var(--muted); font-size: 0.68rem; }
-.dg-evolve-options { display: grid; gap: 5px; }
-.dg-evolve-options button { align-items: flex-start; padding: 8px; text-align: left; }
-.dg-orb-animation { min-height: 180px; display: grid; place-items: center; justify-items: center; position: relative; overflow: hidden; }
+.dg-weapon-offer { max-height: calc(100dvh - 16px); overflow: hidden; display: flex; flex-direction: column; gap: 7px; padding: 10px; }
+.dg-offer-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dg-offer-head h3 { margin: 0; font-size: 1rem; }
+.dg-offer-head small, .dg-weapon-offer > .hint { font-size: 0.72rem; margin: 0; }
+.dg-offer-tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.dg-offer-tabs button, .dg-back { min-height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: inherit; font-size: 0.75rem; }
+.dg-offer-tabs button.on { border-color: var(--gold); color: var(--gold); box-shadow: inset 0 0 0 1px #ffcb0555; }
+.dg-draft-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.dg-draft-options button, .dg-evolve-options button { min-width: 0; min-height: 106px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 5px 3px; color: inherit; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
+.dg-draft-options strong { font-size: 0.74rem; overflow-wrap: anywhere; }
+.dg-draft-options small, .dg-evolve-options small, .dg-evolve-members small { color: var(--muted); font-size: 0.65rem; }
+.dg-evolve-panel { min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.dg-evolve-members { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.dg-evolve-members button { min-height: 52px; display: flex; align-items: center; gap: 5px; padding: 5px; text-align: left; color: inherit; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; }
+.dg-evolve-members img { width: 38px; height: 38px; object-fit: contain; image-rendering: pixelated; }
+.dg-evolve-members span { display: flex; flex-direction: column; min-width: 0; }
+.dg-evolve-members strong { font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dg-evolve-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.dg-evolve-options button { min-height: 56px; align-items: flex-start; padding: 7px; text-align: left; }
+.dg-back { align-self: flex-start; padding: 0 8px; }
+.dg-orb-animation { min-height: 150px; display: grid; place-items: center; justify-items: center; position: relative; overflow: hidden; }
 .dg-orb-animation > img { width: 76px; height: 76px; object-fit: contain; image-rendering: pixelated; animation: dg-orb-in 0.72s ease-in forwards; z-index: 2; }
 .dg-orb-animation .dg-orb { position: absolute; font-size: 5.2rem; line-height: 1; color: #f04949; text-shadow: 0 0 12px #fff, 0 0 22px #ffcf57; animation: dg-orb-flash 0.72s ease-out forwards; }
 .dg-orb-animation .weapon-art { position: absolute; opacity: 0; animation: dg-weapon-out 0.72s ease-in forwards; animation-delay: 0.2s; }
@@ -948,5 +993,6 @@ button:disabled { opacity: 0.5; }
 @keyframes dg-orb-in { 0% { transform: translateY(-130px) scale(1.25); opacity: 1; } 75% { transform: translateY(0) scale(0.25); opacity: 1; } 100% { transform: translateY(0) scale(0); opacity: 0; } }
 @keyframes dg-orb-flash { 0%, 45% { transform: scale(0.55); opacity: 0; } 65% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(0.6); opacity: 0; } }
 @keyframes dg-weapon-out { 0%, 35% { transform: scale(0.3) rotate(-18deg); opacity: 0; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+@media (max-height: 620px) { .dg-weapon-offer { gap: 4px; } .dg-weapon-offer > .hint { display: none; } .dg-draft-options button { min-height: 88px; } .dg-evolve-members button { min-height: 44px; } .dg-evolve-members img { width: 32px; height: 32px; } .dg-orb-animation { min-height: 108px; } .dg-orb-animation > img { width: 58px; height: 58px; } }
 @media (prefers-reduced-motion: reduce) { .dg-popup, .dg-cell.doom, .dg-mon img, .dg-player img, .dg-loot, .dg-stairs, .dg-mon.acting, .dg-orb-animation > img, .dg-orb-animation .dg-orb, .dg-orb-animation .weapon-art { animation: none; } .dg-orb-animation > img, .dg-orb-animation .dg-orb { display: none; } .dg-orb-animation .weapon-art { position: static; opacity: 1; } }
 </style>
