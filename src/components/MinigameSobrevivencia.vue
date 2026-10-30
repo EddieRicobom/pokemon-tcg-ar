@@ -2927,7 +2927,6 @@ onBeforeUnmount(() => {
 
         <p v-if="!ready && !pickOptions" class="hint survivor-loading">Carregando a Zona de Sobrevivência…</p>
       </div>
-      <p class="note">Arraste em qualquer lugar da tela para andar (ou WASD/setas); seu Pokémon ataca sozinho com o golpe do tipo dele: projétil, aura, área, cone frontal ou órbita. Evolua e escolha melhorias durante a corrida. Ondas cada vez maiores e um chefe de tempos em tempos. Chão e inimigos: créditos no rodapé do app.</p>
     </template>
   </div>
 </template>
