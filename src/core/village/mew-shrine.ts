@@ -1,11 +1,19 @@
 import { hash } from './personality';
 import type { PersonalityName } from './personality';
+import { MEW_STATUE } from './mountain';
 
 /**
- * O Monte Miragem e a Estátua do Mew, no topo. É um lugar só para contemplar: meditar ali não dá nada no jogo (nem
- * amizade, nem itens, nem sorte de verdade). Os textos daqui só descrevem a sensação do momento e nunca prometem efeito.
+ * O Monte Miragem e a Estátua do Mew, no topo. A meditação é só para contemplar: não dá amizade, itens ou sorte de
+ * verdade. Os textos dela só descrevem a sensação do momento e nunca prometem efeito.
  */
 export const MEW_SHRINE = { mountain: 'Monte Miragem', statue: 'Estátua do Mew', action: 'Meditar' } as const;
+/** Segredo único: espere atrás da estátua sem andar para receber a bênção. */
+export const MEW_BLESSING = { waitMs: 10_000, xp: 10_000, coins: 10_000 } as const;
+
+/** Os dois blocos logo atrás da estátua, no alto do monte. */
+export function behindMewStatue(point: { x: number; y: number }): boolean {
+  return point.y === MEW_STATUE.y - 1 && point.x >= MEW_STATUE.x && point.x < MEW_STATUE.x + MEW_STATUE.w;
+}
 
 const TITLES = [
   'Você medita diante da Estátua do Mew',

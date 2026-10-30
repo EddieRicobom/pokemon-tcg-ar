@@ -199,6 +199,8 @@ export type TrainerEvent =
   | { type: 'pvp'; won: boolean }
   /** Vida na Vila: `talk` = primeira conversa do dia com um Pokémon (`level` = amizade dele, 0 a 4); `answer` = respondeu a uma pergunta; `moment` = momento novo no Álbum; `nickname` = deu um apelido. */
   | { type: 'village'; /** `friend` só atualiza o melhor nível de amizade (subiu por presente, por exemplo). */ action: 'talk' | 'answer' | 'moment' | 'nickname' | 'friend'; level?: number }
+  /** Segredo da Estátua do Mew: prêmio único, sem contar como outro feito do jogo. */
+  | { type: 'mew-blessing' }
   /** Só o menu de Depuração no Diagnóstico: XP solto, sem contar como escaneamento, batalha ou minigame de verdade. */
   | { type: 'debug'; xp: number; label: string };
 
@@ -481,6 +483,9 @@ export function applyEvent(prev: TrainerState, event: TrainerEvent, day: string)
       rewards.push({ text: `+${xp} XP`, sub: event.action === 'talk' ? 'Primeira conversa de hoje com um Pokémon' : 'Pergunta respondida', tone: 'xp' });
     }
     if (xp > 0) s.today.life++;
+  } else if (event.type === 'mew-blessing') {
+    gain += 10_000;
+    rewards.push({ text: 'Bênção do Mew', sub: '+10000 XP', tone: 'xp' });
   } else if (event.type === 'debug') {
     const xp = Math.max(0, Math.round(event.xp));
     gain += xp;

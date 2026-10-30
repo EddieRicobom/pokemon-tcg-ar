@@ -66,7 +66,7 @@ import { FX_EMOJI, MAX_DIARY, MAX_SAVED, MOMENT_EMOJI, MOMENT_KINDS, MOMENT_LABE
 import { applyFollow, canAsk, markAsked, pickEcho, pickFollow, pickQuestion, QUESTION_BY_ID, recordAnswer, wordOf } from '../core/village/quiz';
 import type { Follow, Question } from '../core/village/quiz';
 import {
-  assignHomes, CAFE_PRICE, cafeVisit, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, knockDoor, LOTS, nextUnlock, paintRoof, PAINT_COST, residentsOf, ROOFS, roofIndex,
+  assignHomes, CAFE_PRICE, cafeVisit, CIVIC, HOME_DECORS, HOME_STAGES, homeComment, homeDecor, homeLevel, homeOf, knockDoor, LOTS, nextUnlock, paintRoof, PAINT_COST, residentsOf, ROOFS, roofIndex, TOWN_STAGES,
   HOME_EXTERIOR_STYLES, homeStyleOf, personalizeResidentHomes, setHomeStyle, toggleDecor, townStage, unlockedBetween, upgradeHome,
 } from '../core/village/town';
 import type { Building } from '../core/village/town';
@@ -93,7 +93,7 @@ import VillageDojo from './VillageDojo.vue';
 import { WORK_SITES } from '../core/village/town-layout';
 import { west } from '../core/village/west';
 import { MEW_STATUE_FRONT } from '../core/village/mountain';
-import { meditationMessage, MEW_SHRINE } from '../core/village/mew-shrine';
+import { behindMewStatue, meditationMessage, MEW_BLESSING, MEW_SHRINE } from '../core/village/mew-shrine';
 import type { WorksiteId } from '../core/village/town-layout';
 import { GUIDED_DESTINATIONS, guidedWalkArrived, guidedWalkProgress } from '../core/village/guided-walk';
 import type { Dir } from '../core/village/actors';
@@ -299,7 +299,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
     title: 'Fora da Vila',
     tiles: [
       { icon: '📷', label: 'Diorama AR', hint: 'temporariamente indisponível', disabled: true },
-      { href: routeHref('treinador'), icon: '🏅', label: 'Passaporte', hint: `Nv. ${level.value}` },
+      { href: routeHref('treinador'), icon: '🏅', label: 'Passaporte', hint: `Nv. ${trainerLevel.value}` },
     ],
   },
   {
@@ -1449,7 +1449,10 @@ const bookNote = ref('');
 
 
 // ---- a cidade: casas dos Pokémon, Café, Correio, Museu e a fonte
-const level = computed(() => levelOf(trainer.value.xp));
+/** A bênção do Mew leva a Vila ao maior estágio necessário para todos os prédios, sem alterar o nível exibido no Passaporte. */
+const BLESSED_TOWN_LEVEL = Math.max(...LOTS.map((lot) => lot.unlock), ...CIVIC.map((building) => building.unlock), ...TOWN_STAGES.map((town) => town.level));
+const trainerLevel = computed(() => levelOf(trainer.value.xp));
+const level = computed(() => state.mewBlessing ? BLESSED_TOWN_LEVEL : trainerLevel.value);
 const challengeExhibits = computed(() => completedChallengeExhibits(trainer.value.achievements));
 const stage = computed(() => townStage(level.value));
 let homes = new Map<string, number>();
@@ -1500,9 +1503,10 @@ function answerMail(id: string, action: MailAction): void {
   if (result.ok) changed();
 }
 
-/** Quantas vezes você meditou hoje diante da estátua (cada vez, outra mensagem; nada disso dá bônus). */
+/** Quantas vezes você meditou hoje diante da estátua (cada vez, outra mensagem contemplativa). */
 const meditations = { day: '', count: 0 };
-/** A Estátua do Mew, no topo do Monte Miragem: só «Meditar», puramente decorativo. */
+let mewWaitSince: number | null = null;
+/** A Estátua do Mew, no topo do Monte Miragem: meditação e um segredo sem pista na interface. */
 function openMewStatue(): void {
   dialog.value = {
     name: `⛰️ ${MEW_SHRINE.statue}`,
@@ -1517,6 +1521,22 @@ function openMewStatue(): void {
       { label: 'Voltar', run: closeDialog },
     ],
   };
+}
+
+/** O segredo conta apenas enquanto o treinador permanece parado atrás da estátua, fora de telas e diálogos. */
+function checkMewBlessing(now = Date.now()): void {
+  const waitingThere = !!game && !document.hidden && !dialog.value && !sheet.value && !cutsceneOpen.value && !loading.value && behindMewStatue(game.player);
+  if (state.mewBlessing || !waitingThere) { mewWaitSince = null; return; }
+  if (mewWaitSince === null) { mewWaitSince = now; return; }
+  if (now - mewWaitSince < MEW_BLESSING.waitMs) return;
+  mewWaitSince = null;
+  state.mewBlessing = true;
+  state.town.level = Math.max(state.town.level, BLESSED_TOWN_LEVEL);
+  recordEvent({ type: 'mew-blessing' });
+  refreshTown();
+  changed();
+  playSound('success');
+  say(`✨ A bênção do Mew concedeu ${MEW_BLESSING.xp.toLocaleString('pt-BR')} XP e ${MEW_BLESSING.coins.toLocaleString('pt-BR')} moedas. Todos os prédios da Vila chegaram ao máximo e todos os modos estão liberados!`, 8500);
 }
 
 /** Conversa social comum, compartilhada por todos os moradores, inclusive o carteiro. */
@@ -3157,7 +3177,7 @@ onMounted(async () => {
     props: dioramaPropsEl.value ?? undefined,
   });
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
-  game.onStep = () => { changed(); updateWorldProgress(); checkTapInteraction(); checkGuidedTrip(); };
+  game.onStep = () => { changed(); updateWorldProgress(); checkMewBlessing(); checkTapInteraction(); checkGuidedTrip(); };
   game.onResidentEconomyChange = changed;
   // Suicune: chuva fixa pelo resto do dia (se o clima não estiver desligado nas opções).
   game.weatherMode = () => (effectiveVisual.value.weather !== 'off' && (effects().rain || requestInfluence(state, refreshDay()).weather) ? (requestInfluence(state, refreshDay()).weather ?? 'chuva') : effectiveVisual.value.weather);
@@ -3193,6 +3213,7 @@ onMounted(async () => {
     syncMusic();
     tickScenes();
     tickQuestions();
+    checkMewBlessing();
     refreshLegendNearby();
     if (!document.hidden && visual.sound && !dialog.value && !sheet.value && !legendaryScene.value && !hoOhWishScene.value && !cutsceneOpen.value && Date.now() >= nextAmbientSoundAt) {
       nextAmbientSoundAt = Date.now() + 18000 + Math.random() * 26000;

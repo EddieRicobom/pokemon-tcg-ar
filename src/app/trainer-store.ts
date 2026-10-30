@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 import { applyEvent, dayKey, emptyTrainer, importHistory, normalizeTrainer } from '../core/trainer';
-import { addCoins } from './wallet';
+import { addCoins, addExactCoins } from './wallet';
+import { MEW_BLESSING } from '../core/village/mew-shrine';
 import type { Reward, TrainerEvent, TrainerState } from '../core/trainer';
 
 const KEY = 'tcg-ar-trainer-v1';
@@ -50,7 +51,9 @@ export function recordEvent(event: TrainerEvent, now: Date = new Date()): Reward
   trainer.value = state;
   write(state);
   // Saldo único: o que antes virava energia do Treinador (o XP ganho) agora vira moedas.
-  addCoins(state.xp - before);
+  // A bênção é um prêmio fixo e secreto: não recebe multiplicador temporário.
+  if (event.type === 'mew-blessing') addExactCoins(MEW_BLESSING.coins);
+  else addCoins(state.xp - before);
   // Mais de 4 avisos de uma vez viram bagunça: os mais importantes (nível, conquista, missão) vêm primeiro.
   const rank: Record<Reward['tone'], number> = { level: 0, achievement: 1, mission: 2, streak: 3, new: 4, xp: 5 };
   const shown = [...rewards].sort((a, b) => rank[a.tone] - rank[b.tone]).slice(0, 4);
