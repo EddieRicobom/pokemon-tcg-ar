@@ -765,6 +765,17 @@ export function attackReach(state: DungeonState): Cell[] {
   return [...out.values()];
 }
 
+/**
+ * Quantos ataques da arma em campo ainda cabem neste turno, contando PA e carga, e qual dos dois limita primeiro
+ * (`ap` ou `charge`; empate conta como PA). Arma sem custo de carga só é limitada pelos PA.
+ */
+export function attacksLeft(state: DungeonState): { count: number; limit: 'ap' | 'charge' } {
+  const who = attacker(state);
+  const byAp = Math.floor(state.ap / Math.max(1, who.weapon.ap));
+  const byCharge = who.weapon.cost > 0 ? Math.floor(who.charge / who.weapon.cost) : Number.POSITIVE_INFINITY;
+  return byCharge < byAp ? { count: byCharge, limit: 'charge' } : { count: byAp, limit: 'ap' };
+}
+
 /** O inimigo tem um guardião vivo encostado (que não é ele mesmo). */
 export function guarded(state: DungeonState, enemy: Enemy): boolean {
   return state.enemies.some((g) => g.uid !== enemy.uid && g.profile === 'guardiao' && g.hp > 0 && dist(g.pos, enemy.pos) === 1);

@@ -23,7 +23,7 @@ import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import {
-  AFFIXES, ammoOptions, attack, MECHANICS, setAmmo, attackArea, attackReach, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
+  AFFIXES, ammoOptions, attack, MECHANICS, setAmmo, attackArea, attackReach, attacksLeft, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
   biomeOf, fightingAtHome, floorGeneration, hazardAt, HOME_BONUS, typeFactor, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, INTENTS, intents, isBossFloor, isMiniBossFloor, key, move, polishGems, previewAttack,
   addMember, MAX_TEAM, previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponOfDex, weaponOfferAtFloor, evolveMember, WEAPONS,
 } from '../core/dungeon';
@@ -349,6 +349,23 @@ const plans = computed(() => (s.value && playing.value ? intents(s.value) : new 
 const preview = computed(() => (s.value && mode.value === 'attack' && pending.value ? previewAttack(s.value, pending.value) : null));
 const who = computed(() => (s.value ? attacker(s.value) : null));
 const activeMember = computed(() => (s.value ? s.value.team[s.value.active]! : null));
+const chargeMax = computed(() => (s.value?.fusion ? s.value.fusion.maxCharge : activeMember.value?.maxCharge ?? 0));
+const attacksNow = computed(() => (s.value ? attacksLeft(s.value) : { count: 0, limit: 'ap' as const }));
+/**
+ * O que a ação escolhida vai gastar, para acender os PA e as cargas que somem: o movimento marcado, o ataque mirado
+ * ou, no modo Atacar ainda sem mira, o custo de um golpe.
+ */
+const pendingSpend = computed(() => {
+  const st = s.value;
+  if (!st || !playing.value) return { ap: 0, charge: 0 };
+  if (mode.value === 'move' && pending.value) return { ap: (moveCosts.value.get(key(pending.value)) ?? 0) * COSTS.move, charge: 0 };
+  if (mode.value !== 'attack' || !who.value) return { ap: 0, charge: 0 };
+  const w = who.value.weapon;
+  if (pending.value) return preview.value && !preview.value.reason ? { ap: preview.value.ap, charge: preview.value.cost } : { ap: 0, charge: 0 };
+  return st.ap >= w.ap && who.value.charge >= w.cost ? { ap: w.ap, charge: w.cost } : { ap: 0, charge: 0 };
+});
+/** O ponto `n` (1 = o primeiro) some com a ação escolhida: os últimos `spend` dos `have` acesos. */
+const spends = (n: number, have: number, spend: number) => n <= have && n > have - spend;
 const fusionPreview = computed(() => (s.value && fusionPick.value.length === 2 ? previewFusion(s.value, fusionPick.value[0]!, fusionPick.value[1]!) : null));
 /** Pokémon de cada orbe na prévia da fusão, na ordem das armas de origem. */
 const fusionPreviewOrbs = computed(() => {
@@ -749,7 +766,13 @@ const pendingText = computed(() => {
         <span v-if="record > 0" class="dg-pill dg-small" title="Recorde">🏆 {{ record }}</span>
         <span class="dg-break"></span>
         <span class="dg-pill">Turno {{ s.round }}</span>
-        <span class="dg-pill dg-ap" :aria-label="`${s.ap} PA`">PA <i v-for="n in Math.max(START_AP, s.ap)" :key="n" :class="{ on: n <= s.ap }"></i></span>
+        <span class="dg-pill dg-ap" :class="{ empty: s.ap === 0 }" :aria-label="`${s.ap} de ${Math.max(START_AP, s.ap)} PA${pendingSpend.ap ? `, a ação gasta ${pendingSpend.ap}` : ''}`">
+          <b>PA</b><i v-for="n in Math.max(START_AP, s.ap)" :key="n" :class="{ on: n <= s.ap, spend: spends(n, s.ap, pendingSpend.ap) }"></i><small>{{ s.ap }}</small>
+        </span>
+        <span v-if="who" class="dg-pill dg-left" :class="{ none: attacksNow.count === 0 }"
+          :title="attacksNow.count === 0 ? (attacksNow.limit === 'ap' ? 'Sem PA para atacar: encerre o turno' : 'Sem carga: troque de Pokémon ou deixe recarregar') : `Ataques que ainda cabem neste turno (${attacksNow.limit === 'ap' ? 'limitado pelos PA' : 'limitado pela carga'})`">
+          ⚔ ×{{ attacksNow.count }}<small v-if="attacksNow.count === 0">{{ attacksNow.limit === 'ap' ? ' sem PA' : ' sem carga' }}</small>
+        </span>
         <span v-if="s.guard.reduce > 0" class="dg-pill" title="Bloqueio para o próximo golpe">🛡️ {{ Math.round(s.guard.reduce * 100) }}%</span>
         <label class="dg-toggle"><input v-model="showThreat" type="checkbox" /> ameaça</label>
         <label class="dg-toggle"><input v-model="showReach" type="checkbox" /> alcance</label>
@@ -805,6 +828,10 @@ const pendingText = computed(() => {
                 <img v-if="!brokenSprites.has(s.team[i]!.dexId)" :src="sprite(s.team[i]!.dexId)" :alt="s.team[i]!.name" @error="brokenSprites.add(s.team[i]!.dexId)" />
                 <span v-else class="dg-nosprite">{{ s.team[i]!.name }}</span>
               </template>
+              <span v-if="playing && who" class="dg-player-meter" aria-hidden="true">
+                <span class="pa"><i v-for="n in Math.max(START_AP, s.ap)" :key="n" :class="{ on: n <= s.ap, spend: spends(n, s.ap, pendingSpend.ap) }"></i></span>
+                <span class="dg-hp charge"><i :style="{ width: pct(who.charge, chargeMax) }"></i></span>
+              </span>
             </span>
           </template>
           <DungeonAttackFx v-if="attackFx?.cells.includes(key(c))" :key="`${attackFx.id}:${key(c)}`" :weapon="attackFx.weapon" :ammo="attackFx.ammo" />
@@ -846,7 +873,7 @@ const pendingText = computed(() => {
 
       <nav class="dg-commands" aria-label="Ações">
         <button type="button" :class="{ on: mode === 'move' }" :disabled="!playing || s.mustSwitch" @click="setMode('move')"><b>👣</b>Mover</button>
-        <button type="button" :class="{ on: mode === 'attack' }" :disabled="!playing || s.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar</button>
+        <button type="button" :class="{ on: mode === 'attack' }" :disabled="!playing || s.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar<template v-if="who"> · {{ who.weapon.ap }}</template></button>
         <button type="button" :disabled="!playing || s.mustSwitch || s.potions === 0 || s.ap < COSTS.item" @click="doPotion"><b>🧪</b>Poção · {{ COSTS.item }}</button>
         <button type="button" :disabled="!playing || s.mustSwitch || !!s.fusion || s.fusionCharges === 0" @click="openFusion"><b>💠</b>Fusão · {{ COSTS.fusion }}</button>
         <button type="button" class="primary" :disabled="!playing || s.mustSwitch" @click="doEnd"><b>⏭️</b>Encerrar</button>
@@ -868,7 +895,12 @@ const pendingText = computed(() => {
             <span>{{ s.fusion ? s.team[i]!.name : 'HP' }}</span><span class="dg-hp"><i :style="{ width: pct(s.team[i]!.hp, s.team[i]!.maxHp) }"></i></span><small>{{ s.team[i]!.hp }}/{{ s.team[i]!.maxHp }}</small>
           </div>
           <div class="dg-bar">
-            <span>Carga</span><span class="dg-hp charge"><i :style="{ width: pct(who.charge, s.fusion ? s.fusion.maxCharge : activeMember.maxCharge) }"></i></span><small>{{ who.charge }}/{{ s.fusion ? s.fusion.maxCharge : activeMember.maxCharge }}</small>
+            <span>Carga</span>
+            <span v-if="chargeMax <= 24" class="dg-charge-cells" :style="{ '--cells': chargeMax }" :aria-label="`Carga ${who.charge} de ${chargeMax}; cada ataque gasta ${who.weapon.cost}`">
+              <i v-for="n in chargeMax" :key="n" :class="{ on: n <= who.charge, spend: spends(n, who.charge, pendingSpend.charge), tick: who.weapon.cost > 1 && n % who.weapon.cost === 0 && n < chargeMax }"></i>
+            </span>
+            <span v-else class="dg-hp charge"><i :style="{ width: pct(who.charge, chargeMax) }"></i></span>
+            <small>{{ who.charge }}/{{ chargeMax }}</small>
           </div>
           <div class="dg-weapon">
             <span class="dg-weapon-summary"><strong>{{ who.weapon.name }}</strong> · poder {{ who.power }} · {{ who.weapon.ap }} PA · {{ who.weapon.cost }} carga</span>
@@ -1116,8 +1148,29 @@ button:disabled { opacity: 0.5; }
 .dg-theme { color: var(--accent); font-weight: 500; font-style: italic; }
 .dg-bag { cursor: pointer; }
 .dg-floor.mini { border-color: #ff8a55; box-shadow: 0 0 8px #ff6b4a66; }
-.dg-ap i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 3px; border: 1px solid var(--gold); vertical-align: middle; }
-.dg-ap i.on { background: var(--gold); box-shadow: 0 0 4px var(--gold); }
+/* PA em losangos: acesos em dourado; os que a ação escolhida vai gastar piscam em laranja. */
+.dg-ap { display: inline-flex; align-items: center; gap: 4px; }
+.dg-ap b { color: var(--gold); font-size: 0.85em; letter-spacing: 0.04em; }
+.dg-ap i { display: inline-block; width: 9px; height: 9px; margin: 0 1px; border-radius: 2px; border: 1px solid var(--gold); transform: rotate(45deg); transition: background 0.2s, box-shadow 0.2s; }
+.dg-ap i.on { background: linear-gradient(135deg, #fff2b0, var(--gold)); box-shadow: 0 0 5px var(--gold); }
+.dg-ap i.spend, .dg-charge-cells i.spend, .dg-player-meter .pa i.spend { background: #ff8a5c; border-color: #ffc2a6; box-shadow: 0 0 6px #ff6a3a; animation: dg-spend 0.7s ease-in-out infinite alternate; }
+.dg-ap small { min-width: 1.2ch; text-align: right; font-variant-numeric: tabular-nums; }
+.dg-ap.empty { border-color: #ff667088; color: #ffb3b3; }
+@keyframes dg-spend { to { opacity: 0.35; } }
+.dg-left { font-variant-numeric: tabular-nums; }
+.dg-left.none { color: #ffb3b3; border-color: #ff667088; background: #4a141c99; }
+/* Carga em segmentos (1 por carga); o vão maior separa o custo de cada ataque. */
+.dg-charge-cells { flex: 1; display: grid; grid-template-columns: repeat(var(--cells), 1fr); gap: 2px; height: 9px; }
+.dg-charge-cells i { border-radius: 2px; background: #0007; box-shadow: inset 0 0 0 1px #6fb6ff40; transition: background 0.2s; }
+.dg-charge-cells i.on { background: linear-gradient(180deg, #b8e0ff, #4c9cf0); box-shadow: 0 0 4px #6fb6ff80; }
+.dg-charge-cells i.tick { margin-right: 2px; }
+/* Mini medidor sob o Pokémon no mapa: PA em pontos e a carga em barra. */
+.dg-player-meter { position: absolute; left: 6%; right: 6%; bottom: -4px; z-index: 2; display: flex; flex-direction: column; gap: 1px; pointer-events: none; }
+.dg-player-meter .pa { display: flex; justify-content: center; gap: 1px; }
+.dg-player-meter .pa i { width: 4px; height: 4px; border-radius: 50%; background: #000a; box-shadow: 0 0 0 1px #0009; }
+.dg-player-meter .pa i.on { background: var(--gold); }
+.dg-player-meter .dg-hp { flex: none; height: 3px; box-shadow: 0 0 0 1px #0009; }
+@media (prefers-reduced-motion: reduce) { .dg-ap i.spend, .dg-charge-cells i.spend, .dg-player-meter .pa i.spend { animation: none; } }
 /* Alcance da arma: tracejado discreto durante o turno; no modo Atacar, casas acesas com borda cheia. */
 .dg-cell.in-range::before { content: ''; position: absolute; inset: 2px; border: 2px dashed #ffd76a8c; border-radius: 4px; pointer-events: none; }
 .dg-grid.aiming .dg-cell.in-range::before { inset: 1px; border: 2px solid #ffd76a; background: #ffd76a33; box-shadow: inset 0 0 10px #ffd76a80; animation: dg-reach 1.4s ease-in-out infinite; }
