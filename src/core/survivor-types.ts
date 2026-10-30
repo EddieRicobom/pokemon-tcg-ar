@@ -1,5 +1,6 @@
 import type { Rng } from './battle';
 import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
+import type { ChargeStyle, SurvivorChargeState } from './survivor-charge';
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorSpecialState } from './survivor-specials';
 import type { LunchEffect } from './survivor-lunch';
@@ -296,7 +297,8 @@ export interface SurvivorProjectile {
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
-  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal';
+  /** `beam`: feixe do Foco (de `fromX/fromY` a `toX/toY`, meia largura em `r`). `rush`: teleporte do Rápido. */
+  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal' | 'beam' | 'rush';
   x: number;
   y: number;
   r: number;
@@ -387,6 +389,8 @@ export interface SurvivorTypeAffinity {
 export interface SurvivorState {
   lastHit?: SurvivorFinalHit;
   special: SurvivorSpecialState;
+  /** Barra dos golpes de carga (Foco e Rápido, `core/survivor-charge.ts`); fica parada nos outros golpes. */
+  charge: SurvivorChargeState;
   rng: Rng;
   /** Semente original desta corrida, usada também para objetivos determinísticos. */
   runSeed: number;
@@ -491,6 +495,8 @@ export interface SurvivorEvolutionOption {
 export interface SurvivorInput {
   /** Ativação solicitada uma única vez pelo botão ou teclado. */
   special?: boolean;
+  /** Botão de carga apertado agora (segurar conta): Foco enche segurando e dispara ao soltar; Rápido ativa ao apertar. */
+  charge?: boolean;
   /** Vetor de direção do analógico/arraste; não precisa estar normalizado (0,0 = parado). */
   dx: number;
   dy: number;
@@ -573,6 +579,8 @@ export type SurvivorEvent =
   | { type: 'typeAffinityOffer'; types: PokemonType[] }
   | { type: 'evolve'; dexId: number; name: string }
   | { type: 'secondAttack'; name: string }
+  /** Golpe de carga solto: feixe do Foco (com o nome do nível) ou início dos teleportes do Rápido. */
+  | { type: 'chargeRelease'; style: ChargeStyle; name: string; level: number }
   /** Um apoio assumiu uma evolução real; ele continua sem vida, hitbox ou upgrades do protagonista. */
   | { type: 'supportEvolve'; dexId: number; name: string }
   /** Artefato do chão realmente alcançado pelo jogador; a UI explica o efeito aplicado. */

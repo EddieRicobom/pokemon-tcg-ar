@@ -125,6 +125,8 @@ const ATTACK_TREE_NAMES: Record<MoveCategory, readonly [string, string, string, 
   area: ['Ponto de impacto', 'Onda expansiva', 'Detonação veloz', 'Cratera total'],
   cone: ['Postura de cone', 'Arco crescente', 'Sequência ágil', 'Corte sísmico'],
   orbit: ['Orbital afiado', 'Órbita larga', 'Rotação veloz', 'Constelação ofensiva'],
+  foco: ['Mira firme', 'Linha longa', 'Respiração calma', 'Disparo colossal'],
+  rapido: ['Tiro ligeiro', 'Passo largo', 'Gatilho nervoso', 'Rajada relâmpago'],
 };
 
 function attackTree(category: MoveCategory): SurvivorUpgrade[] {
@@ -141,6 +143,14 @@ function attackTree(category: MoveCategory): SurvivorUpgrade[] {
 }
 
 const ATTACK_TREE_UPGRADES: readonly SurvivorUpgrade[] = (Object.keys(ATTACK_TREE_NAMES) as MoveCategory[]).flatMap(attackTree);
+
+/** Cartas da barra de carga (`core/survivor-charge.ts`). Só contam os níveis; o motor lê `upgradeLevels`. */
+export const CHARGE_FOCUS_RATE_ID = 'charge-focus-rate';
+export const CHARGE_RUSH_LENGTH_ID = 'charge-rush-length';
+const CHARGE_UPGRADES: readonly SurvivorUpgrade[] = [
+  { id: CHARGE_FOCUS_RATE_ID, family: 'ataque', rarity: 'raro', name: 'Concentração profunda', description: 'A barra do Foco enche 25% mais rápido enquanto você segura.', for: ['foco'], maxLevels: 2, apply: () => {} },
+  { id: CHARGE_RUSH_LENGTH_ID, family: 'ataque', rarity: 'raro', name: 'Fôlego de corrida', description: '+25% de duração dos teleportes do Rápido (quatro cartas dobram o tempo).', for: ['rapido'], maxLevels: 4, apply: () => {} },
+];
 
 /** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */
 function typeUpgrade(type: PokemonType, id: string, name: string, description: string, apply: (p: SurvivorPlayer) => void, forCategories?: readonly MoveCategory[]): SurvivorUpgrade {
@@ -264,6 +274,7 @@ export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   ...GENERIC_SURVIVOR_UPGRADES,
   ...DAMAGE_SURVIVOR_UPGRADES,
   ...ATTACK_TREE_UPGRADES,
+  ...CHARGE_UPGRADES,
   ...TYPE_SURVIVOR_UPGRADES.map((upgrade) => LEGENDARY_TYPE_UPGRADES.has(upgrade.id) ? { ...upgrade, rarity: 'lendario' as const } : upgrade),
   ...ELEMENT_TREE_UPGRADES,
   ...ANCESTRAL_SURVIVOR_UPGRADES,

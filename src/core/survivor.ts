@@ -33,7 +33,9 @@ import type { PokemonType } from './pokemon-data';
 export * from './survivor-types';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
-import { SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
+import { CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
+import { createSurvivorCharge, distanceToSegment, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, RUSH_HIT_RADIUS, RUSH_INVULN_MS, RUSH_REFERENCE_SPEED, RUSH_TELEPORT_DAMAGE_MULTIPLIER, RUSH_TELEPORT_EVERY_MS, RUSH_TELEPORT_RANGE, rushDamageTakenMultiplier, stepChargeMeter } from './survivor-charge';
+import type { ChargeStyle } from './survivor-charge';
 import { survivorProjectileLook } from './survivor-projectile-power';
 import { healersReaching, healShare, SUPPORT_HEAL_RADIUS } from './survivor-heal';
 export { SURVIVOR_UPGRADES };
@@ -295,6 +297,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
   };
   const state: SurvivorState = {
     special: createSurvivorSpecial(move.type),
+    charge: createSurvivorCharge(),
     rng: seededRng(seed),
     runSeed: Math.floor(seed) >>> 0,
     enemyDexId: options.enemyDexId ?? null,
@@ -931,6 +934,7 @@ export function survivorProjectileOpacity(distance: number): number {
   return survivorDirectDamageMultiplier(distance);
 }
 
+/** O golpe Rápido é feito de tiros fracos e frequentes: fica fora deste corte (ver `hitEnemy`). */
 export function survivorRapidAttackDamageMultiplier(player: Pick<SurvivorPlayer, 'attackCooldownMs'>): number {
   const attacksPerSecond = 1000 / Math.max(1, player.attackCooldownMs);
   if (attacksPerSecond > 3) return 0.25;
@@ -984,7 +988,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   }
   // Crítico: sorteado só quando a carta existe, para não consumir o RNG das corridas sem ela.
   if (move === p.move && (p.critChance ?? 0) > 0 && state.rng() < (p.critChance ?? 0)) upgradeMultiplier *= 2;
-  const environmentalDamage = damage * survivorDirectDamageMultiplier(distanceFromPlayer) * survivorRapidAttackDamageMultiplier(p) * upgradeMultiplier
+  const environmentalDamage = damage * survivorDirectDamageMultiplier(distanceFromPlayer) * (p.move.category === 'rapido' ? 1 : survivorRapidAttackDamageMultiplier(p)) * upgradeMultiplier
     * (synergy?.damageMultiplier ?? 1)
     * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
   const reducedDamage = e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
@@ -1111,6 +1115,83 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
   }
 }
 
+/** Foco: um disparo largo e lento em linha reta, que atravessa alguns inimigos. */
+function fireFocusShot(state: SurvivorState, target: SurvivorEnemy): void {
+  const p = state.player;
+  const move = p.move;
+  const angle = Math.atan2(target.y - p.y, target.x - p.x);
+  const speed = p.projectileSpeed * FOCUS_SHOT_SPEED_MULTIPLIER;
+  state.projectiles.push({
+    id: state.nextId++,
+    x: p.x,
+    y: p.y,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    damage: artifactDamage(state),
+    pierce: FOCUS_SHOT_PIERCE + p.pierce + (move.effect === 'atravessar' ? 1 : 0),
+    lifeMs: Math.round(1000 * p.attackRange * 1.4 / Math.max(1, speed)),
+    hit: [],
+    size: round1(p.projectileSize * FOCUS_SHOT_SIZE_MULTIPLIER),
+    move,
+    distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y),
+    look: survivorProjectileLook(p),
+  });
+}
+
+/** Foco: o feixe solto pela carga. Atravessa todo inimigo na linha; cheio, cruza a arena. */
+function fireFocusBeam(state: SurvivorState, level: number): string {
+  const p = state.player;
+  const beam = focusBeam(level, p.attackRange);
+  const [target] = nearestEnemies(state, beam.length, 1);
+  const angle = target ? Math.atan2(target.y - p.y, target.x - p.x) : survivorAimAngle(p);
+  const toX = p.x + Math.cos(angle) * beam.length;
+  const toY = p.y + Math.sin(angle) * beam.length;
+  const damage = artifactDamage(state) * beam.damageMultiplier;
+  let hits = 0;
+  for (const e of state.enemies) {
+    if (e.hp <= 0 || distanceToSegment(e.x, e.y, p.x, p.y, toX, toY) > beam.halfWidth + e.radius) continue;
+    // O feixe não perde força com a distância: o falloff é calculado como se o alvo estivesse colado.
+    hitEnemy(state, e, damage, p, p.move, true, 0);
+    if (beam.stunMs > 0) e.stunMs = Math.max(e.stunMs ?? 0, beam.stunMs);
+    if (beam.slowMs > 0) e.slowMs = Math.max(e.slowMs ?? 0, beam.slowMs);
+    hits++;
+  }
+  drain(state, hits, p.move);
+  state.fx.push({ kind: 'beam', x: p.x, y: p.y, r: beam.halfWidth, color: p.move.color, ageMs: 0, lifeMs: beam.tier === 3 ? 700 : 420, moveType: p.move.type, angle, fromX: p.x, fromY: p.y, toX, toY, count: beam.tier });
+  return beam.name;
+}
+
+/** Rápido, durante a troca: teleporta para o inimigo mais próximo, acerta quem está em volta e fica 2 s sem levar dano. */
+function rushTeleport(state: SurvivorState): boolean {
+  const p = state.player;
+  const [target] = nearestEnemies(state, RUSH_TELEPORT_RANGE, 1);
+  if (!target) return false;
+  const fromX = p.x;
+  const fromY = p.y;
+  const angle = Math.atan2(target.y - p.y, target.x - p.x);
+  const past = target.radius + PLAYER_RADIUS + 6;
+  p.x = clamp(target.x + Math.cos(angle) * past, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
+  p.y = clamp(target.y + Math.sin(angle) * past, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
+  if (Math.abs(Math.cos(angle)) > 0.01) p.facing = Math.cos(angle) < 0 ? -1 : 1;
+  p.aimAngle = angle;
+  const damage = artifactDamage(state) * RUSH_TELEPORT_DAMAGE_MULTIPLIER;
+  let hits = 0;
+  for (const e of state.enemies) {
+    if (e.hp <= 0 || Math.hypot(e.x - target.x, e.y - target.y) > RUSH_HIT_RADIUS + e.radius) continue;
+    hitEnemy(state, e, damage, { x: target.x, y: target.y }, p.move, true, 0);
+    hits++;
+  }
+  drain(state, hits, p.move);
+  p.invulnMs = Math.max(p.invulnMs, RUSH_INVULN_MS);
+  state.fx.push({ kind: 'rush', x: target.x, y: target.y, r: RUSH_HIT_RADIUS, color: p.move.color, ageMs: 0, lifeMs: 380, moveType: p.move.type, fromX, fromY, toX: p.x, toY: p.y });
+  return true;
+}
+
+function chargeStyleOf(state: SurvivorState): ChargeStyle | null {
+  const category = state.player.move.category;
+  return category === 'foco' || category === 'rapido' ? category : null;
+}
+
 /** Ataque de um apoio: nasce sempre no jogador e usa o perfil congelado do Pokémon escolhido. */
 function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean {
   const p = state.player;
@@ -1118,7 +1199,7 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
   const damage = round1(profile.damage * support.damageFactor);
   const range = profile.range;
   const radius = profile.radius;
-  if (move.category === 'projetil') {
+  if (move.category === 'projetil' || move.category === 'foco' || move.category === 'rapido') {
     const target = nearestEnemies(state, range, 1)[0];
     if (!target) return false;
     const angle = Math.atan2(target.y - p.y, target.x - p.x);
@@ -1160,7 +1241,13 @@ function attack(state: SurvivorState): boolean {
   const p = state.player;
   const move = p.move;
   const attackRange = state.typeAffinity?.effect === 'atravessar' ? p.attackRange * 1.12 : p.attackRange;
-  if (move.category === 'projetil') {
+  if (move.category === 'foco') {
+    const [target] = nearestEnemies(state, attackRange, 1);
+    if (!target) return false;
+    fireFocusShot(state, target);
+    return true;
+  }
+  if (move.category === 'projetil' || move.category === 'rapido') {
     const [target] = nearestEnemies(state, attackRange, 1);
     if (!target) return false;
     fireProjectiles(state, target);
@@ -1325,7 +1412,9 @@ export function survivorDefenseReduction(player: Pick<SurvivorPlayer, 'dexId' | 
 function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalHit['kind'], source: SurvivorHitSource): void {
   const p = state.player;
   const reduction = survivorDefenseReduction(p, kind);
-  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)))) : 0;
+  // Rápido: quanto mais rápido o Pokémon se move, mais dano recebe.
+  const speedPenalty = p.move.category === 'rapido' ? rushDamageTakenMultiplier(state.charge.moveRatio) : 1;
+  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * speedPenalty * (1 - (reduction ?? 0)))) : 0;
   state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
   p.hp = Math.max(0, p.hp - effectiveDamage);
 }
@@ -1585,19 +1674,35 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (dashPath) hitDashPath(state, dashPath);
 
   // Movimento do jogador, com a arena como cerca.
+  const chargeStyle = chargeStyleOf(state);
+  const focusSlow = chargeStyle === 'foco' && input.charge === true ? FOCUS_SLOW_MULTIPLIER : 1;
+  const beforeMoveX = p.x;
+  const beforeMoveY = p.y;
   const len = Math.hypot(input.dx, input.dy);
   if (len > 0.001 && !(state.special.selected === 'dash' && state.special.activeMs > 0)) {
     const ux = input.dx / len;
     const uy = input.dy / len;
     const terrainSpeed = survivorBiomeMovementMultiplier(state.elapsedMs, p.x, p.y);
     const artifactSpeed = (p.artifactSpeedMs > 0 ? BALANCE.artifactSpeedMultiplier : 1) * (1 + (p.lunchSpeedBonus ?? 0));
-    p.x = clamp(p.x + ux * p.speed * artifactSpeed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
-    p.y = clamp(p.y + uy * p.speed * artifactSpeed * terrainSpeed * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
+    p.x = clamp(p.x + ux * p.speed * artifactSpeed * terrainSpeed * focusSlow * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
+    p.y = clamp(p.y + uy * p.speed * artifactSpeed * terrainSpeed * focusSlow * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
     p.aimAngle = Math.atan2(uy, ux);
   }
   // No BONK a frente é a câmera: o cone sempre acerta o que está adiante na tela, nunca ao lado.
   if (input.aimAngle !== undefined && Number.isFinite(input.aimAngle)) p.aimAngle = input.aimAngle;
+  // Barra de carga: só anda com o golpe de Foco ou Rápido. A investida do especial não conta como corrida.
+  const movedPx = state.special.selected === 'dash' && state.special.activeMs > 0 ? 0 : Math.hypot(p.x - beforeMoveX, p.y - beforeMoveY);
+  state.charge.moveRatio = dt > 0 ? movedPx / dt / RUSH_REFERENCE_SPEED : 0;
+  const chargeBonus = chargeStyle === 'foco' ? (p.upgradeLevels[CHARGE_FOCUS_RATE_ID] ?? 0) : (p.upgradeLevels[CHARGE_RUSH_LENGTH_ID] ?? 0);
+  const chargeAction = stepChargeMeter(state.charge, chargeStyle, input.charge === true, movedPx, dtMs, chargeBonus);
+  if (chargeAction?.kind === 'focus-release') {
+    const name = fireFocusBeam(state, chargeAction.level);
+    events.push({ type: 'chargeRelease', style: 'foco', name, level: chargeAction.level });
+  } else if (chargeAction?.kind === 'rush-start') {
+    p.attackTimerMs = 0;
+    events.push({ type: 'chargeRelease', style: 'rapido', name: 'Teleportes', level: chargeAction.level });
+  }
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
   if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + (p.regenPerSec ?? 0) * dt);
   stepLunch(state, dt);
@@ -1702,7 +1807,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   // Autoataque com o golpe do tipo (projétil, aura ou área).
   p.attackTimerMs = Math.max(0, p.attackTimerMs - dtMs);
-  if (p.attackTimerMs <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
+  // Rápido com a barra solta: o golpe vira teleportes enquanto a troca durar.
+  if (chargeStyle === 'rapido' && state.charge.rushMs > 0) {
+    if (p.attackTimerMs <= 0 && rushTeleport(state)) p.attackTimerMs = RUSH_TELEPORT_EVERY_MS;
+  } else if (p.attackTimerMs <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
   if (p.move.category === 'orbit') stepOrbiters(state, dtMs);
   if (state.supports.length > 0) {
     // Formação visual: cada apoio tem uma posição própria e alcança o jogador
@@ -1741,7 +1849,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
     for (const e of state.enemies) {
       if (proj.hit.includes(e.id)) continue;
-      if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + 5) {
+      const focusShot = proj.move?.category === 'foco' && proj.source !== 'support';
+      if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + (focusShot ? Math.max(5, proj.size ?? 5) : 5)) {
+        if (focusShot) state.charge.level = Math.min(1, state.charge.level + FOCUS_HIT_CHARGE);
         hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move, true, proj.distanceFromPlayer ?? Math.hypot(e.x - p.x, e.y - p.y));
         drain(state, 1, proj.move ?? state.player.move);
         proj.hit.push(e.id);

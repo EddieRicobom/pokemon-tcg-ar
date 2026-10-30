@@ -1,4 +1,5 @@
 import type { PokemonType } from './pokemon-data';
+import { chargeStyleFor } from './survivor-charge';
 
 /**
  * Golpes da Torre de Sobrevivência (pedidos do dono): cada Pokémon ataca com um golpe próprio.
@@ -12,9 +13,12 @@ import type { PokemonType } from './pokemon-data';
  *   Ataque/Ataque Especial = dano, Velocidade = recarga, velocidade do disparo e do passo, HP = vida,
  *   Defesa = raio da aura/explosão e tamanho do disparo.
  *
+ * Antes disso, os stats podem dar um golpe de **carga** (`core/survivor-charge.ts`): **foco** (lento e de ataque alto)
+ * ou **rápido** (a Velocidade acima de tudo, ataques baixos). Esses valem mais que o tipo.
+ *
  * Sem stats (dado ausente), a forma é projétil e os números são os médios; `estimated` avisa a tela para dizer isso.
  */
-export type MoveCategory = 'projetil' | 'aura' | 'area' | 'cone' | 'orbit';
+export type MoveCategory = 'projetil' | 'aura' | 'area' | 'cone' | 'orbit' | 'foco' | 'rapido';
 export type MoveEffect = 'queimar' | 'lentidao' | 'empurrar' | 'saltar' | 'atordoar' | 'atravessar' | 'roubar' | 'nenhum';
 
 export interface BaseStats {
@@ -67,6 +71,8 @@ export const MOVE_CATEGORY_LABELS_PT: Record<MoveCategory, string> = {
   area: 'área',
   cone: 'cone',
   orbit: 'órbita',
+  foco: 'foco (carga)',
+  rapido: 'rápido (carga)',
 };
 
 export const MOVE_EFFECT_LABELS_PT: Record<MoveEffect, string> = {
@@ -92,9 +98,9 @@ export function categoryForStats(s: BaseStats): MoveCategory {
 /** O golpe de um Pokémon: elemento pelo 1º tipo (sem tipo, Normal) e forma pelos stats (sem stats, projétil). */
 export function moveFor(types: readonly PokemonType[], stats: BaseStats | null): SurvivorMove {
   const type = types[0] ?? 'normal';
-  const category: MoveCategory = type === 'fighting' ? 'cone'
+  const category: MoveCategory = chargeStyleFor(stats) ?? (type === 'fighting' ? 'cone'
     : type === 'grass' || type === 'bug' ? 'orbit'
-      : stats ? categoryForStats(stats) : 'projetil';
+      : stats ? categoryForStats(stats) : 'projetil');
   return { type, ...ELEMENTS[type], category, ...(stats ? {} : { estimated: true }) };
 }
 
@@ -119,6 +125,8 @@ export const CATEGORY_BASE: Record<MoveCategory, CategoryBase> = {
   area: { damage: 15, cooldownMs: 1100, range: 190, radius: 48 },
   cone: { damage: 11, cooldownMs: 720, range: 185, radius: 0 },
   orbit: { damage: 7, cooldownMs: 520, range: 0, radius: 82 },
+  foco: { damage: 17, cooldownMs: 1300, range: 230, radius: 26 },
+  rapido: { damage: 5, cooldownMs: 420, range: 150, radius: 0 },
 };
 
 /** Multiplicadores situacionais: golpes que exigem proximidade recebem mais retorno por exposição. */
@@ -128,6 +136,8 @@ export const CATEGORY_DAMAGE_FACTOR: Record<MoveCategory, number> = {
   area: 1,
   cone: 1.2,
   orbit: 1.32,
+  foco: 1,
+  rapido: 1,
 };
 
 /** Pequenas compensações para tipos que dependem de exposição ou controle para causar dano. */
@@ -169,6 +179,7 @@ function factor(stat: number, weight: number, lo: number, hi: number): number {
 function offenseOf(category: MoveCategory, s: BaseStats): number {
   if (category === 'projetil') return s.spAttack;
   if (category === 'area' || category === 'cone') return s.attack;
+  if (category === 'foco' || category === 'rapido') return Math.max(s.attack, s.spAttack);
   return (s.attack + s.spAttack) / 2;
 }
 
@@ -195,6 +206,8 @@ export function profileBars(move: SurvivorMove, p: AttackProfile): { label: stri
     ? { label: 'Alcance', value: p.projectileSpeed / (360 * 1.3) }
     : move.category === 'cone'
       ? { label: 'Alcance', value: p.range / 220 }
+      : move.category === 'foco' || move.category === 'rapido'
+        ? { label: 'Alcance', value: p.range / 260 }
       : { label: move.category === 'orbit' ? 'Órbita' : 'Raio', value: p.radius / (base.radius * 1.5 * 1.15) };
   return [
     { label: 'Dano', value: clamp(p.damage / (base.damage * 1.7), 0, 1) },
