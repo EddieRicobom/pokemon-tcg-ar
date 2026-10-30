@@ -76,11 +76,13 @@ describe('rotas por hash', () => {
 });
 
 describe('atalhos de jogo', () => {
-  it('cada atalho abre a Vila e é reconhecido pelo endereço', () => {
-    expect(gameHref('torre')).toBe('#/vila?torre=1');
+  it('a Torre abre sua rota própria; BONK e Coliseu continuam como atalhos da Vila', () => {
+    expect(gameHref('torre')).toBe('#/torre?vila=1');
     expect(gameHref('bonk')).toBe('#/vila?bonk=1');
     expect(gameHref('coliseu')).toBe('#/vila?coliseu=1');
-    for (const game of ['torre', 'bonk', 'coliseu'] as const) {
+    expect(parseRoute(gameHref('torre'))).toEqual({ name: 'torre' });
+    expect(gameShortcutOf(gameHref('torre'))).toBeNull();
+    for (const game of ['bonk', 'coliseu'] as const) {
       expect(parseRoute(gameHref(game))).toEqual({ name: 'vila' });
       expect(gameShortcutOf(gameHref(game))).toBe(game);
     }
@@ -92,8 +94,8 @@ describe('atalhos de jogo', () => {
     expect(gameShortcutOf('#/treinador?jogos=1')).toBeNull();
   });
 
-  it('o atalho não conta como «veio da Vila» para o ✕ voltar', () => {
-    expect(rememberBeforeVila(gameHref('torre'))).toBe(true);
+  it('a rota da Torre volta para a Vila, sem trocar o retorno anterior da Vila', () => {
+    expect(rememberBeforeVila(gameHref('torre'))).toBe(false);
   });
 });
 

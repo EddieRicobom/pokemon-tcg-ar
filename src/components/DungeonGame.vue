@@ -80,6 +80,8 @@ const chosenCandidateIds = new Set<string>();
 const offeredFloors = new Set<number>();
 const orbAnimation = ref<OrbAnimation | null>(null);
 const attackFx = ref<AttackFx | null>(null);
+const weaponOfferView = ref<'weapons' | 'evolve'>('weapons');
+const evolutionPick = ref<number | null>(null);
 let popupId = 0;
 let attackFxId = 0;
 let attackFxTimer: ReturnType<typeof setTimeout> | undefined;
@@ -139,6 +141,8 @@ function begin(): void {
   offeredFloors.clear();
   weaponOffer.value = null;
   orbAnimation.value = null;
+  weaponOfferView.value = 'weapons';
+  evolutionPick.value = null;
   mode.value = null;
   pending.value = null;
   inspected.value = null;
@@ -161,7 +165,10 @@ const exploring = computed(() => s.value?.phase === 'cleared');
 const enemyTurn = computed(() => s.value?.phase === 'enemy');
 const canForge = computed(() => s.value?.phase === 'cleared' || s.value?.phase === 'reward');
 const theme = computed(() => (s.value ? floorTheme(s.value.floor) : { index: 0, name: '' }));
+/** Alcance para desenhar o modo Mover e a sala limpa. */
 const moveCosts = computed(() => (s.value && (mode.value === 'move' || exploring.value) ? reachable(s.value) : new Map<string, number>()));
+/** Mesmo sem abrir o comando Mover, um espaço livre pode ser selecionado e confirmado com outro toque. */
+const walkCosts = computed(() => (s.value && playing.value ? reachable(s.value) : new Map<string, number>()));
 const targetKeys = computed(() => new Set(s.value && mode.value === 'attack' ? attackTargets(s.value).map(key) : []));
 const areaKeys = computed(() => new Set(s.value && mode.value === 'attack' && pending.value ? attackArea(s.value, pending.value).map(key) : []));
 const threatKeys = computed(() => (s.value && showThreat.value && playing.value ? threatenedCells(s.value) : new Set<string>()));
@@ -183,6 +190,17 @@ const inspectedEnemy = computed<Enemy | null>(() => s.value?.enemies.find((e) =>
 const bagSorted = computed(() => [...(s.value?.bag ?? [])].sort((a, b) => Number(b.legendary) - Number(a.legendary) || a.kind.localeCompare(b.kind) || b.tier - a.tier));
 const polishGroups = computed(() => polishable(s.value?.bag ?? []));
 const selectedGem = computed<Gem | null>(() => s.value?.bag.find((g) => g.id === forgeGem.value) ?? null);
+const evolutionMembers = computed(() => {
+  const offer = weaponOffer.value;
+  const st = s.value;
+  if (!offer || !st) return [];
+  return [...new Set(offer.evolutions.map((e) => e.memberIndex))].map((memberIndex) => ({
+    memberIndex,
+    member: st.team[memberIndex]!,
+    count: offer.evolutions.filter((e) => e.memberIndex === memberIndex).length,
+  }));
+});
+const shownEvolutions = computed(() => weaponOffer.value?.evolutions.filter((e) => e.memberIndex === evolutionPick.value) ?? []);
 
 const wallAt = (c: Cell) => s.value!.walls.some((w) => w.x === c.x && w.y === c.y);
 const barrierAt = (c: Cell) => s.value!.barriers.some((b) => b.pos.x === c.x && b.pos.y === c.y);
@@ -236,7 +254,27 @@ function tapCell(c: Cell): void {
   if (!mode.value) {
     // Sem ação escolhida, tocar num inimigo mostra quem ele é, como se comporta e o que pretende.
     const e = enemyAt(c);
-    inspected.value = e && inspected.value !== e.uid ? e.uid : null;
+    if (e) {
+      inspected.value = inspected.value !== e.uid ? e.uid : null;
+      pending.value = null;
+      return;
+    }
+    // Atalho de toque: selecionar uma casa livre alcançável e tocar nela outra vez anda até ela.
+    // Não aciona movimento em uma casa ocupada por inimigo, para manter a inspeção desse inimigo previsível.
+    const k = key(c);
+    if ((walkCosts.value.get(k) ?? 0) > 0) {
+      if (pending.value && key(pending.value) === k) {
+        result(move(st, c));
+        pending.value = null;
+      } else {
+        pending.value = c;
+        inspected.value = null;
+        flash.value = 'Toque novamente nesta casa para andar.';
+      }
+      return;
+    }
+    pending.value = null;
+    inspected.value = null;
     return;
   }
   const k = key(c);
@@ -335,7 +373,12 @@ function pickReward(r: RewardId): void {
   if (!offeredFloors.has(s.value.floor) && weaponOfferAtFloor(s.value.floor)) {
     offeredFloors.add(s.value.floor);
     const offer = makeWeaponOffer(s.value, r);
-    if (offer) { weaponOffer.value = offer; return; }
+    if (offer) {
+      weaponOffer.value = offer;
+      weaponOfferView.value = offer.choices.length ? 'weapons' : 'evolve';
+      evolutionPick.value = null;
+      return;
+    }
   }
   forgeOpen.value = false;
   result(chooseReward(s.value, r));
@@ -397,6 +440,7 @@ async function playOrbAnimation(animation: OrbAnimation): Promise<void> {
 
 function finishWeaponOffer(offer: WeaponOffer): void {
   weaponOffer.value = null;
+  evolutionPick.value = null;
   pickReward(offer.reward);
 }
 
@@ -469,7 +513,7 @@ const pendingText = computed(() => {
 </script>
 
 <template>
-  <div class="dungeon" :class="s ? `theme-${theme.index}` : ''">
+  <div class="dungeon" :class="[s ? `theme-${theme.index}` : '', { 'is-running': !!s }]">
     <!-- Escolha da equipe -->
     <section v-if="!s" class="dg-pick">
       <h2>Masmorra · protótipo</h2>
@@ -588,8 +632,24 @@ const pendingText = computed(() => {
           <small v-for="a in inspectedEnemy.affixes" :key="a">{{ AFFIXES[a].icon }} {{ AFFIXES[a].name }}: {{ AFFIXES[a].text }}</small>
           <small>{{ WEAPONS[inspectedEnemy.weapon].name }} ({{ PATTERN_TEXT[WEAPONS[inspectedEnemy.weapon].pattern] }}, alcance {{ WEAPONS[inspectedEnemy.weapon].range }}) · HP {{ inspectedEnemy.hp }}/{{ inspectedEnemy.maxHp }}{{ inspectedEnemy.shaken ? ' · defesa abalada' : '' }}</small>
           <small v-if="intentOf(inspectedEnemy)" class="dg-intent-text">{{ INTENTS[intentOf(inspectedEnemy)!.kind].icon }} Neste turno, {{ INTENTS[intentOf(inspectedEnemy)!.kind].text }}.</small>
+          <details class="dg-enemy-details">
+            <summary>Detalhes do inimigo</summary>
+            <div>
+              <span>{{ PROFILES[inspectedEnemy.profile].name }}: {{ PROFILES[inspectedEnemy.profile].text }}</span>
+              <span v-for="a in inspectedEnemy.affixes" :key="a">{{ AFFIXES[a].icon }} {{ AFFIXES[a].name }}: {{ AFFIXES[a].text }}</span>
+              <span>{{ WEAPONS[inspectedEnemy.weapon].name }} ({{ PATTERN_TEXT[WEAPONS[inspectedEnemy.weapon].pattern] }}, alcance {{ WEAPONS[inspectedEnemy.weapon].range }}) · HP {{ inspectedEnemy.hp }}/{{ inspectedEnemy.maxHp }}{{ inspectedEnemy.shaken ? ' · defesa abalada' : '' }}</span>
+            </div>
+          </details>
         </div>
       </div>
+
+      <nav class="dg-commands" aria-label="Ações">
+        <button type="button" :class="{ on: mode === 'move' }" :disabled="!playing || s.mustSwitch" @click="setMode('move')"><b>👣</b>Mover</button>
+        <button type="button" :class="{ on: mode === 'attack' }" :disabled="!playing || s.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar</button>
+        <button type="button" :disabled="!playing || s.mustSwitch || s.potions === 0 || s.ap < COSTS.item" @click="doPotion"><b>🧪</b>Poção · {{ COSTS.item }}</button>
+        <button type="button" :disabled="!playing || s.mustSwitch || !!s.fusion || s.fusionCharges === 0" @click="openFusion"><b>💠</b>Fusão · {{ COSTS.fusion }}</button>
+        <button type="button" class="primary" :disabled="!playing || s.mustSwitch" @click="doEnd"><b>⏭️</b>Encerrar</button>
+      </nav>
 
       <div v-if="activeMember && who" class="dg-active" :class="{ fused: !!s.fusion }">
         <FusionArt v-if="s.fusion" :origins="s.fusion.origins" :orbs="who.orbs" :ammo="who.ammo" :size="84" />
@@ -610,24 +670,21 @@ const pendingText = computed(() => {
             <span>Carga</span><span class="dg-hp charge"><i :style="{ width: pct(who.charge, s.fusion ? s.fusion.maxCharge : activeMember.maxCharge) }"></i></span><small>{{ who.charge }}/{{ s.fusion ? s.fusion.maxCharge : activeMember.maxCharge }}</small>
           </div>
           <div class="dg-weapon">
-            <span v-if="!s.fusion"><strong>{{ who.weapon.name }}</strong> · {{ who.weapon.category }}</span>
-            <span>{{ who.weapon.kind === 'physical' ? 'Físico' : 'Especial' }} · {{ who.weapon.ap }} PA · {{ who.weapon.cost }} carga · {{ PATTERN_TEXT[who.weapon.pattern] }}, alcance {{ who.weapon.range }} · poder {{ who.power }}<template v-if="who.bonus.crit > 0"> · crítico {{ Math.round(who.bonus.crit * 100) }}%</template></span>
+            <span class="dg-weapon-summary"><strong>{{ who.weapon.name }}</strong> · poder {{ who.power }} · {{ who.weapon.ap }} PA · {{ who.weapon.cost }} carga</span>
             <span>Munição: <span v-for="t in who.ammo" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span><template v-if="who.ammo.length > 1"> (70% / 30%)</template></span>
             <span v-if="!s.fusion && ammoOptions(activeMember).length > 1" class="dg-ammo">
               <button v-for="opt in ammoOptions(activeMember)" :key="ammoKey(opt)" type="button" :class="{ on: ammoKey(opt) === ammoKey(activeMember.ammo) }" :disabled="s.phase === 'enemy'" @click="chooseAmmo(opt)">{{ ammoLabel(opt) }}</button>
             </span>
-            <span v-for="(line, i) in mechanicList(who.weapon.mechanics)" :key="i" class="dg-mech">⚙ {{ line }}</span>
+            <details class="dg-weapon-details">
+              <summary>Detalhes da arma</summary>
+              <div>
+                <span>{{ who.weapon.kind === 'physical' ? 'Físico' : 'Especial' }} · {{ who.weapon.category }} · {{ PATTERN_TEXT[who.weapon.pattern] }}, alcance {{ who.weapon.range }}<template v-if="who.bonus.crit > 0"> · crítico {{ Math.round(who.bonus.crit * 100) }}%</template></span>
+                <span v-for="(line, i) in mechanicList(who.weapon.mechanics)" :key="i" class="dg-mech">⚙ {{ line }}</span>
+              </div>
+            </details>
           </div>
         </div>
       </div>
-
-      <nav class="dg-commands" aria-label="Ações">
-        <button type="button" :class="{ on: mode === 'move' }" :disabled="!playing || s.mustSwitch" @click="setMode('move')"><b>👣</b>Mover</button>
-        <button type="button" :class="{ on: mode === 'attack' }" :disabled="!playing || s.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar</button>
-        <button type="button" :disabled="!playing || s.mustSwitch || s.potions === 0 || s.ap < COSTS.item" @click="doPotion"><b>🧪</b>Poção · {{ COSTS.item }}</button>
-        <button type="button" :disabled="!playing || s.mustSwitch || !!s.fusion || s.fusionCharges === 0" @click="openFusion"><b>💠</b>Fusão · {{ COSTS.fusion }}</button>
-        <button type="button" class="primary" :disabled="!playing || s.mustSwitch" @click="doEnd"><b>⏭️</b>Encerrar</button>
-      </nav>
 
       <ol class="dg-team" aria-label="Equipe">
         <li v-for="(m, i) in s.team" :key="m.id">
@@ -724,8 +781,8 @@ const pendingText = computed(() => {
       <!-- Pokébola: nova arma ou evolução antes de descer -->
       <div v-if="weaponOffer && s.phase === 'reward'" class="dg-modal" role="dialog" aria-label="Escolha da Pokébola">
         <div class="dg-modal-box wide dg-weapon-offer">
-          <h3>🔴 Pokébola encontrada!</h3>
-          <p class="hint">Escolha uma arma nova para esta expedição ou evolua um Pokémon da equipe. A escolha entra na orbe e ocupa uma das {{ MAX_TEAM }} vagas da equipe.</p>
+          <header class="dg-offer-head"><h3>🔴 Pokébola · andar {{ s.floor }}</h3><small>1 escolha nesta escada</small></header>
+          <p class="hint">Uma arma nova entra na equipe; ou evolua uma que já está nela. Tudo vale apenas nesta expedição.</p>
           <div v-if="orbAnimation" class="dg-orb-animation" role="status" aria-live="polite">
             <img :src="sprite(orbAnimation.dexId)" :alt="orbAnimation.name" />
             <span class="dg-orb">◉</span>
@@ -733,23 +790,34 @@ const pendingText = computed(() => {
             <strong>{{ orbAnimation.message }}</strong>
           </div>
           <template v-else>
-            <h4 v-if="weaponOffer.choices.length">Escolha uma arma nova</h4>
-            <div class="dg-draft-options">
+            <div class="dg-offer-tabs" role="tablist" aria-label="Tipo de escolha">
+              <button v-if="weaponOffer.choices.length" type="button" :class="{ on: weaponOfferView === 'weapons' }" role="tab" :aria-selected="weaponOfferView === 'weapons'" @click="weaponOfferView = 'weapons'; evolutionPick = null">⚔️ Armas ({{ weaponOffer.choices.length }})</button>
+              <button v-if="weaponOffer.evolutions.length" type="button" :class="{ on: weaponOfferView === 'evolve' }" role="tab" :aria-selected="weaponOfferView === 'evolve'" @click="weaponOfferView = 'evolve'; evolutionPick = null">✨ Evoluir ({{ evolutionMembers.length }})</button>
+            </div>
+            <div v-if="weaponOfferView === 'weapons'" class="dg-draft-options" role="tabpanel">
               <button v-for="c in weaponOffer.choices" :key="c.id" type="button" @click="void chooseWeapon(c)">
-                <WeaponArt :weapon="weaponOfDex(c.dexId)!" :dex-id="c.dexId" :ammo="c.types![0] ?? null" :size="58" />
+                <WeaponArt :weapon="weaponOfDex(c.dexId)!" :dex-id="c.dexId" :ammo="c.types![0] ?? null" :size="44" />
                 <strong>{{ c.name }}</strong>
                 <small>{{ WEAPONS[weaponOfDex(c.dexId)!].name }}</small>
               </button>
             </div>
-            <template v-if="weaponOffer.evolutions.length">
-              <h4>Ou evolua uma arma</h4>
-              <div class="dg-evolve-options">
-                <button v-for="evolution in weaponOffer.evolutions" :key="`${evolution.memberIndex}:${evolution.input.dexId}`" type="button" @click="void chooseEvolution(evolution)">
-                  <span>✨ {{ s.team[evolution.memberIndex]!.name }} → {{ evolution.input.name }}</span>
-                  <small>{{ WEAPONS[weaponOfDex(evolution.input.dexId)!].name }}</small>
+            <div v-else class="dg-evolve-panel" role="tabpanel">
+              <div v-if="evolutionPick === null" class="dg-evolve-members">
+                <button v-for="entry in evolutionMembers" :key="entry.memberIndex" type="button" @click="evolutionPick = entry.memberIndex">
+                  <img :src="sprite(entry.member.dexId)" alt="" />
+                  <span><strong>{{ entry.member.name }}</strong><small>{{ entry.count }} evolução{{ entry.count === 1 ? '' : 'ões' }}</small></span>
                 </button>
               </div>
-            </template>
+              <template v-else>
+                <button type="button" class="dg-back" @click="evolutionPick = null">← Escolher outro Pokémon</button>
+                <div class="dg-evolve-options">
+                  <button v-for="evolution in shownEvolutions" :key="`${evolution.memberIndex}:${evolution.input.dexId}`" type="button" @click="void chooseEvolution(evolution)">
+                    <span>✨ {{ s.team[evolution.memberIndex]!.name }} → <strong>{{ evolution.input.name }}</strong></span>
+                    <small>{{ WEAPONS[weaponOfDex(evolution.input.dexId)!].name }}</small>
+                  </button>
+                </div>
+              </template>
+            </div>
           </template>
         </div>
       </div>
@@ -820,6 +888,15 @@ button.small { min-height: 30px; padding: 0 10px; border-radius: 8px; margin-lef
 button:disabled { opacity: 0.5; }
 
 .dg-run { display: flex; flex-direction: column; gap: 8px; max-width: 540px; margin: 0 auto; }
+.dungeon.is-running { display: flex; overflow: hidden; padding: 5px 8px calc(5px + env(safe-area-inset-bottom)); }
+.dungeon.is-running .dg-run { width: min(540px, 100%); height: 100%; min-height: 0; flex: 1; gap: 4px; }
+.dungeon.is-running .dg-hud { gap: 3px 4px; font-size: 0.76rem; line-height: 1.1; }
+.dungeon.is-running .dg-break { display: none; }
+.dungeon.is-running .dg-pill { padding: 3px 6px; }
+.dungeon.is-running .dg-floor { font-size: 0.88rem; }
+.dungeon.is-running .dg-small { display: none; }
+.dungeon.is-running .dg-theme { margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dungeon.is-running .dg-toggle { margin-left: 0; }
 .dg-hud { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.85rem; font-weight: 600; }
 .dg-break { flex-basis: 100%; height: 0; }
 .dg-pill { padding: 3px 9px; border-radius: 999px; background: #0007; border: 1px solid #ffffff22; color: inherit; font: inherit; }
@@ -833,6 +910,7 @@ button:disabled { opacity: 0.5; }
 .dg-toggle { margin-left: auto; font-weight: 400; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 
 .dg-grid { display: grid; gap: 3px; padding: 6px; background: linear-gradient(180deg, color-mix(in srgb, var(--tile-b) 70%, #000), #00000080); border: 2px solid var(--frame); border-radius: 12px; box-shadow: inset 0 0 22px #000c, 0 0 18px color-mix(in srgb, var(--frame) 40%, transparent); transition: border-color 0.6s; }
+.dungeon.is-running .dg-grid { width: clamp(230px, calc(100dvh - 440px), 390px); max-width: 100%; align-self: center; flex: none; }
 .dg-grid.enemy-turn { border-color: #b84a5a; }
 .dg-cell { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 5px; background: linear-gradient(135deg, var(--tile-a), var(--tile-b)); display: flex; align-items: center; justify-content: center; overflow: visible; }
 .dg-cell.barrier { background: repeating-linear-gradient(90deg, #7fe7ff55 0 3px, #1b2a40 3px 7px); box-shadow: inset 0 0 0 2px #7fe7ff99; }
@@ -876,6 +954,9 @@ button:disabled { opacity: 0.5; }
 .dg-popup.info { color: #ddd; }
 
 .dg-preview { min-height: 2.6em; margin: 0; font-size: 0.88rem; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.dungeon.is-running .dg-preview { min-height: 1.7em; font-size: 0.76rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex-wrap: nowrap; }
+.dungeon.is-running .dg-preview > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dungeon.is-running .dg-preview button { min-height: 26px; flex: none; }
 .dg-warn { color: var(--warn); }
 .dg-enemy-msg { color: #ffb3b3; }
 .dg-enemy-card { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 10px; background: #3a1d2a; border: 1px solid #7a3446; font-size: 0.82rem; }
@@ -885,6 +966,18 @@ button:disabled { opacity: 0.5; }
 .dg-enemy-card div { display: flex; flex-direction: column; gap: 2px; }
 .dg-enemy-card small { color: var(--muted); }
 .dg-intent-text { color: #ffb3b3 !important; }
+.dg-enemy-details { display: none; }
+.dungeon.is-running .dg-enemy-card { min-height: 48px; gap: 5px; padding: 4px 6px; font-size: 0.74rem; }
+.dungeon.is-running .dg-enemy-card img { width: 38px; height: 38px; }
+.dungeon.is-running .dg-enemy-card > div { min-width: 0; }
+.dungeon.is-running .dg-enemy-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dungeon.is-running .dg-enemy-card small:not(.dg-intent-text) { display: none; }
+.dungeon.is-running .dg-enemy-card .dg-intent-text { display: none; }
+.dungeon.is-running .dg-enemy-details { display: block; }
+.dungeon.is-running .dg-enemy-details:not([open]) { position: static; max-height: none; overflow: visible; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.dungeon.is-running .dg-enemy-details[open] { position: fixed; z-index: 85; inset: auto 12px calc(12px + env(safe-area-inset-bottom)); max-height: min(42dvh, 250px); overflow-y: auto; padding: 8px 10px; border: 1px solid #7a3446; border-radius: 10px; background: var(--surface); box-shadow: 0 10px 28px #000b; }
+.dungeon.is-running .dg-enemy-details summary { cursor: pointer; color: var(--gold); }
+.dungeon.is-running .dg-enemy-details > div { display: flex; flex-direction: column; gap: 3px; max-height: none; margin-top: 4px; overflow: visible; color: var(--muted); }
 .dg-active { display: flex; gap: 10px; align-items: center; background: linear-gradient(135deg, var(--surface-2), var(--surface)); border: 1px solid var(--line); border-radius: 12px; padding: 8px; font-size: 0.84rem; }
 .dg-active.fused { border-color: #b38cff; box-shadow: 0 0 12px #b38cff44; flex-direction: column; align-items: stretch; }
 .dg-active.fused :deep(.fusion-art) { align-self: center; }
@@ -895,11 +988,26 @@ button:disabled { opacity: 0.5; }
 .dg-bar > span:first-child { min-width: 3.4em; }
 .dg-weapon { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 0.8rem; }
 .dg-weapon strong { color: var(--text); }
+.dg-weapon-details { color: var(--muted); }
+.dg-weapon-details summary { cursor: pointer; color: var(--gold); }
+.dg-weapon-details > div { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.dungeon.is-running .dg-active { min-height: 76px; gap: 6px; padding: 5px 6px; font-size: 0.75rem; }
+.dungeon.is-running .dg-active .weapon-art { width: 60px !important; height: 60px !important; }
+.dungeon.is-running .dg-active-info { gap: 2px; }
+.dungeon.is-running .dg-bar { gap: 4px; }
+.dungeon.is-running .dg-bar > span:first-child { min-width: 2.9em; }
+.dungeon.is-running .dg-weapon { font-size: 0.72rem; gap: 1px; }
+.dungeon.is-running .dg-weapon-details { position: fixed; z-index: 85; inset: auto 12px calc(12px + env(safe-area-inset-bottom)); max-height: min(42dvh, 250px); overflow-y: auto; padding: 8px 10px; border: 1px solid var(--gold); border-radius: 10px; background: var(--surface); box-shadow: 0 10px 28px #000b; }
+.dungeon.is-running .dg-weapon-details:not([open]) { position: static; max-height: none; overflow: visible; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.dungeon.is-running .dg-weapon-details[open] summary { margin-bottom: 4px; }
 .dg-type { display: inline-block; padding: 0 6px; margin-left: 4px; border-radius: 999px; font-size: 0.7rem; color: #fff; text-shadow: 0 1px 1px #0008; }
 .dg-commands { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .dg-commands button { min-height: 52px; padding: 2px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font-size: 0.74rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
 .dg-commands button b { font-size: 1.05rem; font-weight: 400; }
 .dg-commands button.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+.dungeon.is-running .dg-commands { gap: 3px; }
+.dungeon.is-running .dg-commands button { min-height: 42px; font-size: 0.67rem; }
+.dungeon.is-running .dg-commands button b { font-size: 0.94rem; }
 
 .dg-team { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
 .dg-team button { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: inherit; position: relative; font-size: 0.68rem; }
@@ -913,9 +1021,25 @@ button:disabled { opacity: 0.5; }
 .dg-num { position: absolute; top: 2px; left: 4px; color: var(--muted); }
 .dg-log { font-size: 0.8rem; color: var(--muted); }
 .dg-log ol { margin: 4px 0; padding-left: 18px; }
+.dungeon.is-running .dg-team { gap: 3px; }
+.dungeon.is-running .dg-team button { min-height: 54px; gap: 1px; padding: 2px; font-size: 0.62rem; }
+.dungeon.is-running .dg-team img { width: 23px; height: 23px; }
+.dungeon.is-running .dg-team-weapon { transform: scale(0.75); transform-origin: top right; }
+.dungeon.is-running .dg-team button > small:last-child { display: none; }
+.dungeon.is-running .dg-team .dg-hp { height: 4px; }
+.dungeon.is-running .dg-log { min-height: 16px; font-size: 0.7rem; line-height: 1.1; }
+.dungeon.is-running .dg-log[open] { position: fixed; z-index: 85; inset: auto 12px calc(12px + env(safe-area-inset-bottom)); max-height: min(46dvh, 290px); overflow-y: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 10px 28px #000b; }
 
-.dg-modal { position: fixed; inset: 0; z-index: 80; background: #000b; display: flex; align-items: center; justify-content: center; padding: 16px; }
-.dg-modal-box { width: min(460px, 100%); max-height: 90vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+@media (max-height: 620px) and (orientation: portrait) {
+  .dungeon.is-running .dg-grid { width: clamp(210px, calc(100dvh - 410px), 310px); }
+  .dungeon.is-running .dg-enemy-card { display: none; }
+  .dungeon.is-running .dg-active { min-height: 64px; }
+  .dungeon.is-running .dg-active .weapon-art { width: 48px !important; height: 48px !important; }
+  .dungeon.is-running .dg-team button { min-height: 46px; }
+}
+
+.dg-modal { position: fixed; inset: 0; z-index: 80; background: #000b; display: flex; align-items: center; justify-content: center; padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+.dg-modal-box { width: min(460px, 100%); max-height: calc(100dvh - 16px); overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
 .dg-modal-box.wide { width: min(560px, 100%); }
 .dg-modal-box h3 { margin: 0 0 8px; }
 .dg-modal-box h4 { margin: 12px 0 4px; }
@@ -927,14 +1051,27 @@ button:disabled { opacity: 0.5; }
 .dg-facts { margin: 6px 0; padding-left: 18px; font-size: 0.8rem; color: var(--muted); }
 .dg-reward { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px; margin-top: 6px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; text-align: left; }
 .dg-reward small { color: var(--muted); }
-.dg-weapon-offer h4 { margin: 14px 0 6px; font-size: 0.9rem; }
-.dg-draft-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
-.dg-draft-options button, .dg-evolve-options button { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; color: inherit; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
-.dg-draft-options strong { font-size: 0.78rem; overflow-wrap: anywhere; }
-.dg-draft-options small, .dg-evolve-options small { color: var(--muted); font-size: 0.68rem; }
-.dg-evolve-options { display: grid; gap: 5px; }
-.dg-evolve-options button { align-items: flex-start; padding: 8px; text-align: left; }
-.dg-orb-animation { min-height: 180px; display: grid; place-items: center; justify-items: center; position: relative; overflow: hidden; }
+.dg-weapon-offer { max-height: calc(100dvh - 16px); overflow: hidden; display: flex; flex-direction: column; gap: 7px; padding: 10px; }
+.dg-offer-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dg-offer-head h3 { margin: 0; font-size: 1rem; }
+.dg-offer-head small, .dg-weapon-offer > .hint { font-size: 0.72rem; margin: 0; }
+.dg-offer-tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.dg-offer-tabs button, .dg-back { min-height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: inherit; font-size: 0.75rem; }
+.dg-offer-tabs button.on { border-color: var(--gold); color: var(--gold); box-shadow: inset 0 0 0 1px #ffcb0555; }
+.dg-draft-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.dg-draft-options button, .dg-evolve-options button { min-width: 0; min-height: 106px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 5px 3px; color: inherit; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
+.dg-draft-options strong { font-size: 0.74rem; overflow-wrap: anywhere; }
+.dg-draft-options small, .dg-evolve-options small, .dg-evolve-members small { color: var(--muted); font-size: 0.65rem; }
+.dg-evolve-panel { min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.dg-evolve-members { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.dg-evolve-members button { min-height: 52px; display: flex; align-items: center; gap: 5px; padding: 5px; text-align: left; color: inherit; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; }
+.dg-evolve-members img { width: 38px; height: 38px; object-fit: contain; image-rendering: pixelated; }
+.dg-evolve-members span { display: flex; flex-direction: column; min-width: 0; }
+.dg-evolve-members strong { font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dg-evolve-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+.dg-evolve-options button { min-height: 56px; align-items: flex-start; padding: 7px; text-align: left; }
+.dg-back { align-self: flex-start; padding: 0 8px; }
+.dg-orb-animation { min-height: 150px; display: grid; place-items: center; justify-items: center; position: relative; overflow: hidden; }
 .dg-orb-animation > img { width: 76px; height: 76px; object-fit: contain; image-rendering: pixelated; animation: dg-orb-in 0.72s ease-in forwards; z-index: 2; }
 .dg-orb-animation .dg-orb { position: absolute; font-size: 5.2rem; line-height: 1; color: #f04949; text-shadow: 0 0 12px #fff, 0 0 22px #ffcf57; animation: dg-orb-flash 0.72s ease-out forwards; }
 .dg-orb-animation .weapon-art { position: absolute; opacity: 0; animation: dg-weapon-out 0.72s ease-in forwards; animation-delay: 0.2s; }
@@ -966,5 +1103,6 @@ button:disabled { opacity: 0.5; }
 @keyframes dg-orb-in { 0% { transform: translateY(-130px) scale(1.25); opacity: 1; } 75% { transform: translateY(0) scale(0.25); opacity: 1; } 100% { transform: translateY(0) scale(0); opacity: 0; } }
 @keyframes dg-orb-flash { 0%, 45% { transform: scale(0.55); opacity: 0; } 65% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(0.6); opacity: 0; } }
 @keyframes dg-weapon-out { 0%, 35% { transform: scale(0.3) rotate(-18deg); opacity: 0; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+@media (max-height: 620px) { .dg-weapon-offer { gap: 4px; } .dg-weapon-offer > .hint { display: none; } .dg-draft-options button { min-height: 88px; } .dg-evolve-members button { min-height: 44px; } .dg-evolve-members img { width: 32px; height: 32px; } .dg-orb-animation { min-height: 108px; } .dg-orb-animation > img { width: 58px; height: 58px; } }
 @media (prefers-reduced-motion: reduce) { .dg-popup, .dg-cell.doom, .dg-mon img, .dg-player img, .dg-loot, .dg-stairs, .dg-mon.acting, .dg-orb-animation > img, .dg-orb-animation .dg-orb, .dg-orb-animation .weapon-art { animation: none; } .dg-orb-animation > img, .dg-orb-animation .dg-orb { display: none; } .dg-orb-animation .weapon-art { position: static; opacity: 1; } }
 </style>

@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref } from 'vue';
 
-export type RouteName = 'escanear' | 'varias' | 'vila' | 'cartas' | 'caixa' | 'arena' | 'pins' | 'treinador' | 'diagnostico';
+export type RouteName = 'escanear' | 'varias' | 'vila' | 'torre' | 'cartas' | 'caixa' | 'arena' | 'pins' | 'treinador' | 'diagnostico';
 
 export interface Route {
   name: RouteName;
@@ -30,6 +30,7 @@ export function parseRoute(hash: string): Route {
   const [first, ...rest] = path.split('/');
   if (first === 'varias') return { name: 'varias' };
   if (first === 'vila') return { name: 'vila' };
+  if (first === 'torre') return { name: 'torre' };
   if (first === 'cartas') return { name: 'cartas' };
   if (first === 'caixa') return { name: 'caixa' };
   if (first === 'arena') return { name: 'arena' };
@@ -50,8 +51,8 @@ export function parseRoute(hash: string): Route {
  * Fliperama para uma batalha. `formatacao`/`restauracao` levam o modo contínuo escolhido da Arena até o palco 3D;
  * `jogos` = o Treinador abre nos minigames, `autoiniciar` entra e começa uma batalha assim que a Arena estiver pronta.
  * `virtual` é mantido em links antigos, mas a Arena é sempre virtual.
- * `torre`, `bonk` e `coliseu` são atalhos de jogo: a Vila abre e já entra na Torre (Survival), na Torre em modo BONK ou
- * no Coliseu (Arena), sem andar até o prédio.
+ * `bonk` e `coliseu` são atalhos de jogo dentro da Vila. A Torre comum abre em `#/torre`, uma rota própria que volta
+ * para a Vila sem deixar seu mapa montado atrás da corrida.
  */
 export type RouteFlag = 'vila' | 'arena' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual' | 'autoiniciar' | GameShortcut;
 const FLAGS: readonly RouteFlag[] = ['vila', 'arena', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual', 'autoiniciar', 'torre', 'bonk', 'coliseu'];
@@ -62,7 +63,7 @@ const GAME_SHORTCUTS: readonly GameShortcut[] = ['torre', 'bonk', 'coliseu'];
 
 /** Endereço que abre a Vila já dentro do jogo. */
 export function gameHref(game: GameShortcut): string {
-  return routeHref('vila', undefined, [game]);
+  return game === 'torre' ? routeHref('torre', undefined, ['vila']) : routeHref('vila', undefined, [game]);
 }
 
 /** O atalho de jogo pedido pelo endereço, se houver (só o primeiro vale). */

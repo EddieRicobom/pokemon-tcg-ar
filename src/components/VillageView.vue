@@ -126,6 +126,8 @@ import type { ItemBrowserSort } from '../core/village/item-browser';
 /** `close` sai da Vila; com `'pvp'` a Caixa abre o PvP em seguida (a Vila mora dentro da Caixa, então não há troca de tela). */
 /** `then`: para onde ir ao sair (Arena, PvP ou desafio da Liga); sem nada, volta à tela anterior. */
 const emit = defineEmits<{ close: [then?: VilaExit] }>();
+/** A rota própria da Torre reutiliza as recompensas da Vila, mas não monta nem desenha o mapa. */
+const props = withDefaults(defineProps<{ towerOnly?: boolean }>(), { towerOnly: false });
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const dioramaFloorEl = ref<HTMLCanvasElement | null>(null);
@@ -138,31 +140,24 @@ const idleGuideDismissed = ref(false);
 const clock = ref('');
 const map = villageMap();
 const state = reactive(loadVillage());
-const towerGameRef = ref<{ requestBack: () => void; requestLeave: () => void } | null>(null);
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'masmorra' | 'gallery' | 'card-evolution' | 'farm';
+type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'masmorra' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
-let towerHistoryGuard = false;
+/** Só saímos da tela cheia que a própria Masmorra abriu; nunca da que o usuário já estava usando. */
+let dungeonFullscreenOwner = false;
 
-/**
- * A Torre é uma camada da Vila, não uma rota. A entrada de histórico duplicada
- * converte o Voltar físico do Android em um retorno interno, sem abandonar o modo.
- */
-function onTowerHistoryBack(): void {
-  if (sheet.value !== 'torre') return;
-  window.history.pushState({ tcgArTowerBackGuard: true }, '', window.location.href);
-  void nextTick(() => towerGameRef.value?.requestBack());
-}
-
+/** A Masmorra substitui a Vila visualmente e também interrompe seus dois renderizadores enquanto está aberta. */
 watch(sheet, (next, previous) => {
-  if (next === 'torre' && previous !== 'torre' && !towerHistoryGuard) {
-    window.history.pushState({ tcgArTowerBackGuard: true }, '', window.location.href);
-    towerHistoryGuard = true;
-  } else if (previous === 'torre' && next !== 'torre' && towerHistoryGuard) {
-    towerHistoryGuard = false;
-    window.history.back();
+  if (next === 'masmorra' && previous !== 'masmorra') {
+    game?.stop();
+    if (miniTimer) clearInterval(miniTimer);
+    miniTimer = null;
+  } else if (previous === 'masmorra' && next !== 'masmorra') {
+    game?.start();
+    if (!miniTimer) startMini();
+    void nextTick(() => game?.resize(wrapEl.value?.clientWidth ?? 0, wrapEl.value?.clientHeight ?? 0));
   }
 });
 const cardEvolutionAtAltar = ref(false);
@@ -262,7 +257,7 @@ function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: stri
     hint: open ? undefined : `🔒 nível ${b?.unlock ?? '?'}`,
     run: () => {
       if (!b || !open) return;
-      if (kind === 'torre') sheet.value = 'torre';
+      if (kind === 'torre') goToTower();
       else openGameBuilding(b);
     },
   };
@@ -473,7 +468,7 @@ function syncMusic(): void {
   const [id, title] = villageMusicTrack(date.getHours(), game?.weatherKind ?? null, Math.floor(date.getTime() / 360_000));
   musicTransition = advanceMusicTransition(musicTransition, `audio/village/${id}.mp3`, performance.now());
   musicTitle.value = title;
-  const blocked = document.hidden || !!loading.value || sheet.value === 'torre' || sheet.value === 'arcade' || !!legendaryScene.value || !!hoOhWishScene.value || cutsceneOpen.value;
+  const blocked = document.hidden || !!loading.value || sheet.value === 'masmorra' || sheet.value === 'arcade' || !!legendaryScene.value || !!hoOhWishScene.value || cutsceneOpen.value;
   music.update(transitionMusicMix(musicTransition, performance.now()), !blocked, villageAudio.enabled ? villageAudio.volume / 100 : 0);
 }
 watch([() => villageAudio.enabled, () => villageAudio.volume, sheet, () => !!legendaryScene.value, () => !!hoOhWishScene.value, cutsceneOpen, loading], syncMusic);
@@ -512,6 +507,8 @@ function icon(id: string): string {
 
 function changed(): void {
   dirty = true;
+  // Fora do mapa da Vila não existe o salvamento periódico dela; a Torre grava cada mudança relevante da corrida.
+  if (props.towerOnly) dirty = !saveVillage(state);
 }
 
 function say(text: string, ms = 2800): void {
@@ -1141,7 +1138,7 @@ function handleGamepadDirection(event: Event): void {
   const direction = custom.detail.direction;
   if (!direction || custom.detail.pressed === undefined || custom.detail.handled) return;
   // A Torre gerencia o direcional durante a corrida; escolhas e pausas passam ao foco dos diálogos.
-  if (sheet.value === 'torre') return;
+  if (props.towerOnly) return;
   if (sheet.value || dialog.value || quiz.value || quizOpen.value || legendaryScene.value) {
     if (custom.detail.pressed) moveVillageFocus(direction);
     custom.detail.handled = true;
@@ -1155,20 +1152,20 @@ function handleGamepadDirection(event: Event): void {
 function handleGamepadAction(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
   // A Torre tem seu próprio alvo: deixe o evento chegar ao minigame para A ativar o especial.
-  if (custom.detail.handled || sheet.value === 'torre') return;
+  if (custom.detail.handled) return;
   custom.detail.handled = true;
   pressA();
 }
 function handleGamepadBack(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
   // B pausa/retoma a Torre; não navegue para fora da Vila durante a corrida.
-  if (custom.detail.handled || sheet.value === 'torre') return;
+  if (custom.detail.handled) return;
   custom.detail.handled = true;
   pressB();
 }
 function handleGamepadMenu(event: Event): void {
   const custom = event as CustomEvent<{ handled: boolean }>;
-  if (custom.detail.handled || sheet.value === 'torre') return;
+  if (custom.detail.handled) return;
   custom.detail.handled = true;
   pressMenu();
 }
@@ -1228,7 +1225,7 @@ function pressAClick(event: MouseEvent): void {
 }
 function onKey(e: KeyboardEvent): void {
   // A Torre e a Masmorra têm teclado próprio; a Vila não deve capturar essas teclas por trás delas.
-  if (sheet.value === 'torre' || sheet.value === 'masmorra') return;
+  if (sheet.value === 'masmorra') return;
   if (recapScenes.value.length) {
     if (e.type === 'keydown' && e.key === 'Escape') { e.preventDefault(); finishRecap(); }
     return;
@@ -1924,6 +1921,7 @@ function startGuidedTrip(id: string, destination = GUIDED_DESTINATIONS[(state.se
 }
 
 function closeVillageSheet(): void {
+  const leavingDungeon = sheet.value === 'masmorra';
   sheet.value = null;
   bookDialogId.value = null;
   if (askingMon) game?.clearBubble(askingMon.id);
@@ -1934,6 +1932,20 @@ function closeVillageSheet(): void {
   game?.setInteractionMarker(null);
   game?.setWaiting(null);
   game?.holdStick(null);
+  if (leavingDungeon && dungeonFullscreenOwner && document.fullscreenElement === wrapEl.value) {
+    void document.exitFullscreen().catch(() => undefined).finally(() => { dungeonFullscreenOwner = false; });
+  } else if (leavingDungeon) dungeonFullscreenOwner = false;
+}
+
+/** Abre a Masmorra no palco inteiro. Sem suporte/permite à API, a folha fixa continua cobrindo a Vila. */
+function openDungeon(): void {
+  closeDialog();
+  sheet.value = 'masmorra';
+  const stage = wrapEl.value;
+  if (!stage || document.fullscreenElement || typeof stage.requestFullscreen !== 'function') return;
+  void stage.requestFullscreen({ navigationUI: 'hide' })
+    .then(() => { dungeonFullscreenOwner = document.fullscreenElement === stage; })
+    .catch(() => { /* Alguns navegadores móveis não oferecem a API; a Masmorra já ocupa a janela por CSS. */ });
 }
 
 function openBookFromDialog(id: string): void {
@@ -2007,6 +2019,12 @@ function goToPins(): void {
   window.location.hash = routeHref('pins', undefined, ['vila']);
 }
 
+/** A Torre é uma rota própria: assim a Vila desmonta em vez de continuar desenhando atrás da corrida. */
+function goToTower(): void {
+  closeDialog();
+  window.location.hash = routeHref('torre', undefined, ['vila']);
+}
+
 function goToPvp(): void {
   closeDialog();
   sheet.value = null;
@@ -2071,13 +2089,13 @@ function openGameBuilding(b: Building): void {
     dialog.value = {
       name: b.name,
       text: 'Uma escada desce para o escuro, sem fundo conhecido. Leve até seis Pokémon, gaste 6 PA por turno para mover, atacar, trocar e fundir dois deles, junte gemas para as armas e desça o quanto aguentar: cada andar é mais duro, a cada 5 há um chefe, e você sai quando quiser pela escada. É um protótipo: as regras e os números ainda vão mudar.',
-      actions: [{ label: 'Descer à Masmorra', run: () => { closeDialog(); sheet.value = 'masmorra'; } }, exit],
+      actions: [{ label: 'Descer à Masmorra', run: openDungeon }, exit],
     };
   } else {
     dialog.value = {
       name: b.name,
       text: 'A Torre de Sobrevivência: suba com o seu Pokémon enquanto ondas de inimigos selvagens ficam mais difíceis com o tempo. Ataque sozinho em quem chegar perto, suba de nível, escolha upgrades e veja até onde aguenta.',
-      actions: [{ label: 'Entrar na Torre', run: () => { closeDialog(); sheet.value = 'torre'; } }, exit],
+      actions: [{ label: 'Entrar na Torre', run: goToTower }, exit],
     };
   }
 }
@@ -2969,7 +2987,6 @@ function pressB(): void {
   else if (pendingChoice) decide(null);
   else if (dialog.value) dialog.value = null;
   else if (sheet.value === 'menu' && tab.value !== 'inicio') tab.value = 'inicio'; // B dentro de uma seção volta ao menu
-  else if (sheet.value === 'torre') towerGameRef.value?.requestBack();
   else if (sheet.value) closeVillageSheet(); // fecha pelo mesmo caminho do ✕ e libera o estado de interação da Vila
   else openMenu();
 }
@@ -3067,13 +3084,15 @@ onBeforeUnmount(() => {
   detachLiveVillage(state);
   sound.dispose();
   music.dispose();
-  window.removeEventListener('popstate', onTowerHistoryBack);
 });
 
 onMounted(async () => {
+  if (props.towerOnly) {
+    loading.value = '';
+    return;
+  }
   reducedMotionQuery?.addEventListener('change', syncReducedMotion);
   document.addEventListener('focusin', rememberVillageActionFocus);
-  window.addEventListener('popstate', onTowerHistoryBack);
   // Baixa o treinador enquanto cache e moradores são preparados, sem somar até 8 s à abertura.
   const trainerAtlasPromise = loadTrainerAtlas(profile.sprite);
   // Cutscene da primeira entrada (Fase 4): só na primeira vez de verdade, antes do aviso de controles.
@@ -3243,7 +3262,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="village" role="application" aria-label="Vila: modo vida da Caixa" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D Enter Space Z X Escape">
+  <div class="village" role="application" :aria-label="props.towerOnly ? 'Torre de Sobrevivência' : 'Vila: modo vida da Caixa'" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D Enter Space Z X Escape">
+    <section v-if="props.towerOnly" class="tower-route" aria-label="Torre de Sobrevivência">
+      <header class="tower-route-head"><strong>🗼 Torre de Sobrevivência</strong><button type="button" class="link" @click="emit('close')">Voltar à Vila</button></header>
+      <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="emit('close')" />
+    </section>
+    <template v-else>
     <div ref="wrapEl" class="village-stage" :class="{ 'village-diorama': arActive }" role="group" tabindex="-1" aria-label="Mapa da Vila">
       <video ref="arVideoEl" class="village-ar-video" :class="{ active: arActive }" muted playsinline aria-hidden="true"></video>
       <canvas
@@ -3260,7 +3284,7 @@ onBeforeUnmount(() => {
       <canvas ref="dioramaFloorEl" class="diorama-layer-source" aria-hidden="true"></canvas>
       <canvas ref="dioramaPropsEl" class="diorama-layer-source" aria-hidden="true"></canvas>
       <canvas ref="arCanvasEl" class="village-ar-canvas" :class="{ active: arActive }" aria-hidden="true"></canvas>
-      <div v-show="!loading && !welcome && sheet !== 'torre'" class="village-minimap" :class="{ big: miniBig }">
+      <div v-show="!loading && !welcome" class="village-minimap" :class="{ big: miniBig }">
         <div class="village-minimap-head">
           <strong>Mapa da Vila</strong>
           <button type="button" class="link" :aria-label="miniBig ? 'Fechar mapa grande' : 'Abrir mapa grande'" @click.stop="miniBig = !miniBig">{{ miniBig ? 'Fechar' : 'Abrir' }}</button>
@@ -3497,15 +3521,9 @@ onBeforeUnmount(() => {
         <FarmSeedBox :state="state" :name-of="nameOf" @change="changed" />
       </div>
 
-      <!-- A Torre ocupa a tela inteira (por cima da Vila e dos botões A/B): um controle só, o dela. -->
-      <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
-        <header><strong>Torre de Sobrevivência</strong><button type="button" class="link village-sheet-back" aria-label="Sair da Torre" @click="towerGameRef?.requestLeave()">Sair da Torre</button></header>
-        <MinigameSobrevivencia ref="towerGameRef" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="sheet = null" />
-      </div>
-
-      <div v-if="sheet === 'masmorra'" class="village-sheet torre-full" role="dialog" aria-label="Masmorra">
-        <header><strong>🗝️ Masmorra · protótipo</strong><button type="button" class="link village-sheet-back" aria-label="Sair da Masmorra" @click="sheet = null">Sair</button></header>
-        <DungeonGame :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name }))" @leave="sheet = null" />
+      <div v-if="sheet === 'masmorra'" class="village-sheet torre-full" role="dialog" aria-modal="true" aria-label="Masmorra">
+        <header><strong>🗝️ Masmorra · protótipo</strong><button type="button" class="link village-sheet-back" aria-label="Sair da Masmorra" @click="closeVillageSheet">Sair</button></header>
+        <DungeonGame :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name }))" @leave="closeVillageSheet" />
       </div>
 
       <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">
@@ -3858,6 +3876,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <BackpackView v-if="backpackOpen" :items="backpackItems" @close="backpackOpen = false" />
+    </template>
     <div v-if="survivalDigitalChoice" class="survival-digital-recruit" role="dialog" aria-modal="true" aria-label="Escolha de Digital Pokémon da Torre">
       <section class="survival-digital-recruit-card">
         <small class="survival-digital-kicker">★ POKÉBOLA DA TORRE · RECOMPENSA REAL</small>
