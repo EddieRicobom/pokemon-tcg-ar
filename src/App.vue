@@ -16,6 +16,7 @@ const CarregarView = lazyView(() => import('./views/CarregarView.vue'));
 const CaixaView = lazyView(() => import('./views/CaixaView.vue'));
 const ArenaView = lazyView(() => import('./views/ArenaView.vue'));
 const VilaView = lazyView(() => import('./views/VilaView.vue'));
+const TorreView = lazyView(() => import('./views/TorreView.vue'));
 const DiagnosticoView = lazyView(() => import('./views/DiagnosticoView.vue'));
 const PinsView = lazyView(() => import('./views/PinsView.vue'));
 const TreinadorView = lazyView(() => import('./views/TreinadorView.vue'));
@@ -48,7 +49,7 @@ const scanModes: { name: RouteName; label: string }[] = [
   { name: 'varias', label: 'Várias' },
 ];
 /** As telas das lutas, que moram no Coliseu da Vila: a aba da Vila fica acesa nelas. */
-const fightRoutes: readonly RouteName[] = ['arena', 'caixa'];
+const fightRoutes: readonly RouteName[] = ['arena', 'caixa', 'torre'];
 const inScanGroup = computed(() => scanModes.some((m) => m.name === route.value.name));
 const subModes = computed(() => (inScanGroup.value ? scanModes : null));
 const tabActive = (name: RouteName): boolean =>
@@ -118,6 +119,7 @@ watch(
     <ScanView v-if="route.name === 'escanear'" :key="scanKey" :card-id="route.cardId" />
     <VariasView v-else-if="route.name === 'varias'" />
     <VilaView v-else-if="route.name === 'vila'" :back="beforeVila" />
+    <TorreView v-else-if="route.name === 'torre'" />
     <CaixaView v-else-if="route.name === 'caixa'" />
     <ArenaView v-else-if="route.name === 'arena'" />
     <PinsView v-else-if="route.name === 'pins'" />

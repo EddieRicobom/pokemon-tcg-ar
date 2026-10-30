@@ -4915,6 +4915,13 @@ body.no-scroll .reward-toasts {
   overflow: hidden;
 }
 
+/* A Torre é rota própria: ocupa a mesma janela da Vila, sem montar seu mapa/canvas ao fundo. */
+.tower-route { min-height: 0; display: flex; flex-direction: column; background: #0b0f1a; color: #e8ecf8; }
+.tower-route-head { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: calc(6px + env(safe-area-inset-top)) 12px 6px; background: rgba(10, 14, 24, .92); }
+.tower-route-head .link { color: inherit; }
+.tower-route > .survivor { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tower-route .survivor-stage { flex: 1; height: auto; border-radius: 0; }
+
 .village-canvas {
   position: absolute;
   inset: 0;
