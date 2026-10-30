@@ -11,11 +11,12 @@ import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { statsOfDex } from '../core/survivor-stats';
 import { typesOfDex } from '../core/species-filter';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
+import { REGIONAL_ENCOUNTERS } from '../core/survivor-encounters';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import {
   AFFIXES, ammoOptions, attack, MECHANICS, setAmmo, attackArea, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
-  floorTheme, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, INTENTS, intents, isBossFloor, key, move, polishGems, previewAttack,
+  floorGeneration, floorTheme, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, INTENTS, intents, isBossFloor, isMiniBossFloor, key, move, polishGems, previewAttack,
   addMember, MAX_TEAM, previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponOfDex, weaponOfferAtFloor, evolveMember, WEAPONS,
 } from '../core/dungeon';
 import type { Cell, DungeonState, Enemy, EnemySpecies, Intent, MechanicId, MemberInput, RewardId, WeaponPattern } from '../core/dungeon';
@@ -38,21 +39,29 @@ interface OrbAnimation { dexId: number; name: string; weapon: NonNullable<Return
 interface AttackFx { id: number; weapon: NonNullable<ReturnType<typeof weaponOfDex>>; ammo: PokemonType | null; cells: string[] }
 
 /**
- * Selvagens da masmorra, por profundidade: espécies de caverna no começo, evoluções e pseudolendários mais fundo. Os
- * marcados como chefe guardam os andares múltiplos de 5. Só entram as que têm stats e tipos no pacote.
+ * Cada andar gira uma geração (I a IX). As listas regionais começam com formas básicas; as evoluções intermediárias
+ * só entram no 7º andar e as finais no 13º. Assim, os primeiros andares não parecem uma coleção de chefões pequenos.
+ * Os marcados como chefe só são escolhidos para o chefe da sala. Só entram espécies com stats e tipos no pacote.
  */
+const MID_STAGE_WILD = [
+  20, 42, 67, 75, 93, 105, 162, 164, 180, 188, 262, 264, 271, 294, 305, 397, 404, 407, 409,
+  507, 520, 525, 536, 552, 660, 662, 673, 680, 715, 732, 735, 737, 743, 752, 811, 814, 817, 822, 825, 832, 844,
+  907, 910, 913, 916, 920, 922, 927, 936,
+] as const;
+const FINAL_STAGE_WILD = [
+  68, 76, 94, 181, 195, 197, 306, 319, 334, 405, 445, 508, 530, 553, 663, 681, 730, 733, 738, 745,
+  812, 815, 818, 823, 908, 911, 914, 923, 937,
+] as const;
+/** Um chefe pequeno por geração no início; as versões finais só entram depois que a equipe já teve tempo de crescer. */
+const BOSS_WILD = [
+  27, 179, 304, 403, 524, 679, 736, 843, 935,
+  28, 181, 306, 405, 530, 681, 738, 844, 937,
+] as const;
 const WILD: readonly { dexId: number; minDepth: number; boss?: boolean }[] = [
-  ...[19, 41, 50, 66, 74, 92, 104, 109, 27, 46, 79].map((dexId) => ({ dexId, minDepth: 1 })),
-  ...[20, 42, 51, 67, 75, 93, 105, 110, 28, 47, 80].map((dexId) => ({ dexId, minDepth: 5 })),
-  ...[68, 76, 94, 169, 221, 302, 303].map((dexId) => ({ dexId, minDepth: 10 })),
-  ...[142, 246, 247, 443, 444, 371].map((dexId) => ({ dexId, minDepth: 15 })),
-  { dexId: 95, minDepth: 1, boss: true },
-  { dexId: 112, minDepth: 5, boss: true },
-  { dexId: 208, minDepth: 10, boss: true },
-  { dexId: 248, minDepth: 15, boss: true },
-  { dexId: 306, minDepth: 20, boss: true },
-  { dexId: 376, minDepth: 25, boss: true },
-  { dexId: 445, minDepth: 30, boss: true },
+  ...REGIONAL_ENCOUNTERS.flatMap((region) => region.wild.map((dexId) => ({ dexId, minDepth: 1 }))),
+  ...MID_STAGE_WILD.map((dexId) => ({ dexId, minDepth: 7 })),
+  ...FINAL_STAGE_WILD.map((dexId) => ({ dexId, minDepth: 13 })),
+  ...BOSS_WILD.map((dexId, index) => ({ dexId, minDepth: index < 9 ? 1 : 14, boss: true })),
 ];
 const PATTERN_TEXT: Readonly<Record<WeaponPattern, string>> = { adjacent: 'adjacente', line: 'em linha', ranged: 'tiro reto', area: 'área em cruz', cone: 'leque', aura: 'em volta', homing: 'teleguiado', trap: 'armadilha' };
 const RECORD_KEY = 'tcg-ar-masmorra-recorde-v1';
@@ -552,8 +561,8 @@ const pendingText = computed(() => {
     <!-- Expedição -->
     <section v-else class="dg-run">
       <header class="dg-hud">
-        <span class="dg-pill dg-floor" :class="{ boss: isBossFloor(s.floor) }">{{ isBossFloor(s.floor) ? '👑 ' : '' }}Andar {{ s.floor }}</span>
-        <span class="dg-theme">{{ theme.name }}</span>
+        <span class="dg-pill dg-floor" :class="{ boss: isBossFloor(s.floor), mini: isMiniBossFloor(s.floor) && !isBossFloor(s.floor) }">{{ isBossFloor(s.floor) ? '👑 ' : isMiniBossFloor(s.floor) ? '⚜️ ' : '' }}Andar {{ s.floor }}</span>
+        <span class="dg-theme" :title="`Geração ${floorGeneration(s.floor)}`">{{ theme.name }} · G{{ floorGeneration(s.floor) }}</span>
         <span v-if="record > 0" class="dg-pill dg-small" title="Recorde">🏆 {{ record }}</span>
         <span class="dg-break"></span>
         <span class="dg-pill">Turno {{ s.round }}</span>
@@ -589,7 +598,7 @@ const pendingText = computed(() => {
           <span v-if="trapAt(c)" class="dg-trap" title="Armadilha" aria-hidden="true">⚙️</span>
           <span v-if="lootAt(c) && !enemyAt(c)" class="dg-loot" :class="{ chest: lootAt(c)!.chest }" aria-hidden="true">{{ lootAt(c)!.chest ? '🧰' : lootAt(c)!.items.some((i) => i.kind === 'gem' && i.gem.legendary) ? '🌟' : '💎' }}</span>
           <template v-if="enemyAt(c)">
-            <span class="dg-mon" :class="{ acting: acting === enemyAt(c)!.uid, elite: enemyAt(c)!.elite, boss: enemyAt(c)!.boss }">
+            <span class="dg-mon" :class="{ acting: acting === enemyAt(c)!.uid, elite: enemyAt(c)!.elite, mini: enemyAt(c)!.miniBoss, boss: enemyAt(c)!.boss }">
               <img v-if="!brokenSprites.has(enemyAt(c)!.dexId)" :src="sprite(enemyAt(c)!.dexId)" :alt="enemyAt(c)!.name" @error="brokenSprites.add(enemyAt(c)!.dexId)" />
               <span v-else class="dg-nosprite">{{ enemyAt(c)!.name }}</span>
             </span>
@@ -623,10 +632,10 @@ const pendingText = computed(() => {
         <template v-else>{{ s.log[s.log.length - 1] }}</template>
       </p>
 
-      <div v-if="inspectedEnemy" class="dg-enemy-card" :class="{ elite: inspectedEnemy.elite, boss: inspectedEnemy.boss }">
+      <div v-if="inspectedEnemy" class="dg-enemy-card" :class="{ elite: inspectedEnemy.elite, mini: inspectedEnemy.miniBoss, boss: inspectedEnemy.boss }">
         <img v-if="!brokenSprites.has(inspectedEnemy.dexId)" :src="sprite(inspectedEnemy.dexId)" alt="" />
         <div>
-          <strong>{{ PROFILES[inspectedEnemy.profile].icon }} {{ inspectedEnemy.name }}<template v-if="inspectedEnemy.boss"> · Chefe</template><template v-else-if="inspectedEnemy.elite"> · Elite</template></strong>
+          <strong>{{ PROFILES[inspectedEnemy.profile].icon }} {{ inspectedEnemy.name }}<template v-if="inspectedEnemy.boss"> · Chefe</template><template v-else-if="inspectedEnemy.miniBoss"> · Mini-chefe</template><template v-else-if="inspectedEnemy.elite"> · Elite</template></strong>
           <span><span v-for="t in inspectedEnemy.types" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span></span>
           <small>{{ PROFILES[inspectedEnemy.profile].name }}: {{ PROFILES[inspectedEnemy.profile].text }}</small>
           <small v-for="a in inspectedEnemy.affixes" :key="a">{{ AFFIXES[a].icon }} {{ AFFIXES[a].name }}: {{ AFFIXES[a].text }}</small>
@@ -903,6 +912,7 @@ button:disabled { opacity: 0.5; }
 .dg-small { font-size: 0.75rem; }
 .dg-floor { font-size: 1rem; background: color-mix(in srgb, var(--frame) 70%, #000); }
 .dg-floor.boss { border-color: var(--gold); box-shadow: 0 0 8px #ffcb0566; }
+.dg-floor.mini { border-color: #ff8a55; box-shadow: 0 0 8px #ff6b4a66; }
 .dg-theme { color: var(--muted); font-weight: 500; font-style: italic; }
 .dg-bag { cursor: pointer; }
 .dg-ap i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 3px; border: 1px solid var(--gold); vertical-align: middle; }
@@ -930,6 +940,7 @@ button:disabled { opacity: 0.5; }
 .dg-mon, .dg-player { position: relative; z-index: 1; display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
 .dg-mon img, .dg-player img { width: 120%; height: 120%; object-fit: contain; image-rendering: pixelated; pointer-events: none; position: relative; top: -14%; animation: dg-bob 1.8s ease-in-out infinite; }
 .dg-mon.elite img { filter: drop-shadow(0 0 3px #ffcb05); }
+.dg-mon.mini img { width: 135%; height: 135%; top: -20%; filter: drop-shadow(0 0 5px #ff7955); }
 .dg-mon.boss img { width: 150%; height: 150%; top: -25%; filter: drop-shadow(0 0 5px #ff5a5a); }
 .dg-mon.acting { animation: dg-act 0.42s ease-out; }
 .dg-mon.acting::before { content: ''; position: absolute; inset: 6%; border-radius: 50%; box-shadow: 0 0 0 2px #ff7a7a, 0 0 12px #ff5a5a; }
@@ -961,6 +972,7 @@ button:disabled { opacity: 0.5; }
 .dg-enemy-msg { color: #ffb3b3; }
 .dg-enemy-card { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 10px; background: #3a1d2a; border: 1px solid #7a3446; font-size: 0.82rem; }
 .dg-enemy-card.elite { border-color: var(--gold); }
+.dg-enemy-card.mini { border-color: #ff8a55; box-shadow: 0 0 8px #ff6b4a44; }
 .dg-enemy-card.boss { border-color: #ff5a5a; box-shadow: 0 0 10px #ff5a5a55; }
 .dg-enemy-card img { width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; }
 .dg-enemy-card div { display: flex; flex-direction: column; gap: 2px; }
