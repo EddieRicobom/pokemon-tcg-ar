@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue';
+import { loadArenaMembers } from '../app/arena-members';
+import type { ArenaMember } from '../app/arena-members';
+import { movesetBook, savedMoves } from '../app/moveset-store';
+import type { DuelOpponentSpec } from '../app/turn-duel-setup';
 import { pendingChallenge } from '../app/league-store';
 import { league } from '../app/league-store';
 import { arenaFlags, routeHref } from '../app/route';
 import TeamPicker from '../components/TeamPicker.vue';
 import LeagueCard from '../components/LeagueCard.vue';
-import { ENDLESS_ARENA_LABELS } from '../core/endless-arena';
+import ArenaMovesetEditor from '../components/ArenaMovesetEditor.vue';
+import TurnDuel from '../components/TurnDuel.vue';
+import { seededRng } from '../core/battle';
+import { ENDLESS_ARENA_LABELS, nextEndlessOpponent } from '../core/endless-arena';
 import type { EndlessArenaMode } from '../core/endless-arena';
 import { challengeById, LEAGUE_REGIONS, nextChallenge } from '../core/league';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
@@ -17,9 +24,45 @@ const teamReady = computed(() => selectedCount.value === 6);
 /** A Liga aceita uma equipe incompleta; as corridas continuam pedindo os seis espaços. */
 const hasBattleTeam = computed(() => (selectedCount.value ?? 0) > 0);
 const selectedChallenge = computed(() => pendingChallenge.value ? challengeById(pendingChallenge.value) : null);
+const members = ref<ArenaMember[]>([]);
+const membersError = ref('');
+let membersToken = 0;
+async function refreshMembers(ids: string[]): Promise<void> {
+  const token = ++membersToken;
+  try {
+    const list = await loadArenaMembers(ids);
+    if (token !== membersToken) return;
+    members.value = list;
+    membersError.value = '';
+  } catch (error) {
+    if (token !== membersToken) return;
+    members.value = [];
+    membersError.value = `Não consegui abrir a equipe: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+/** Quem já tem golpes montados (o duelo por turnos usa só esses). */
+const armed = computed(() => {
+  void movesetBook.value;
+  return members.value.filter((m) => savedMoves(m.id, m.dexId).length > 0);
+});
+const unarmed = computed(() => members.value.filter((m) => !armed.value.includes(m)));
+const duelOpponent = ref<DuelOpponentSpec | null>(null);
+function startTraining(): void {
+  if (armed.value.length === 0) return;
+  const foe = nextEndlessOpponent(seededRng((Math.random() * 2 ** 32) >>> 0));
+  duelOpponent.value = { trainer: foe.trainer, role: 'Treino', dexIds: foe.dexIds.slice(0, Math.min(6, armed.value.length)), power: 1 };
+}
+function startLeagueDuel(): void {
+  const ch = selectedChallenge.value;
+  if (!ch || armed.value.length === 0) return;
+  duelOpponent.value = { trainer: ch.leader, role: ch.role, dexIds: ch.team, power: ch.power, challengeId: ch.id };
+}
+function goToMoves(): void { document.getElementById('arena-moves')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+
 function updateTeam(ids: string[]): void {
   const wasComplete = selectedCount.value === 6;
   selectedCount.value = ids.length;
+  void refreshMembers(ids);
   // Uma seleção de seis confirma que a equipe do desafio está fechada: segue sem pedir mais um botão.
   if (waitingChallenge.value && ids.length === 6 && !wasComplete) void nextTick(enterChallenge);
 }
@@ -48,7 +91,7 @@ onMounted(() => { if (waitingChallenge.value) void nextTick(goToTeam); });
 <template>
   <section class="card arena-view" aria-labelledby="arena-title">
     <h2 id="arena-title">Arena Digital</h2>
-    <p class="note">A batalha é automática: você prepara a equipe, assiste ao combate e pode encerrar quando quiser.</p>
+    <p class="note">Monte a equipe e escolha até 4 golpes para cada Pokémon. No <strong>duelo por turnos</strong> você escolhe o golpe a cada turno, como nos jogos; na Arena 3D a batalha é automática, mas também usa os golpes que você montou.</p>
     <section class="arena-route" aria-label="Próximo passo na Arena">
       <template v-if="nextLeader">
         <span class="arena-kicker">ROTA DA LIGA · {{ leagueRegion.name }}</span>
@@ -65,7 +108,7 @@ onMounted(() => { if (waitingChallenge.value) void nextTick(goToTeam); });
       <button type="button" @click="goToTeam"><span aria-hidden="true">👥</span>Corridas<small>time de 6</small></button>
       <a :href="routeHref('caixa', undefined, arenaBoxFlags())"><span aria-hidden="true">⚔️</span>Batalha livre<small>sem corrida</small></a>
     </nav>
-    <ol class="arena-steps" aria-label="Etapas para desafio da Liga"><li :class="{ done: waitingChallenge }"><b>{{ waitingChallenge ? '✓' : '1' }}</b>Escolha o líder</li><li :class="{ done: hasBattleTeam }"><b>{{ hasBattleTeam ? '✓' : '2' }}</b>Monte o time · {{ selectedCount ?? '…' }}/6</li><li><b>3</b>Entre na Arena 3D</li></ol>
+    <ol class="arena-steps" aria-label="Etapas para desafio da Liga"><li :class="{ done: waitingChallenge }"><b>{{ waitingChallenge ? '✓' : '1' }}</b>Escolha o líder</li><li :class="{ done: hasBattleTeam }"><b>{{ hasBattleTeam ? '✓' : '2' }}</b>Monte o time · {{ selectedCount ?? '…' }}/6</li><li :class="{ done: armed.length > 0 }"><b>{{ armed.length > 0 ? '✓' : '3' }}</b>Escolha os golpes</li><li><b>4</b>Batalhe</li></ol>
 
     <section id="arena-league" class="arena-section arena-league" aria-label="Liga Pokémon e líderes de ginásio">
       <header><span class="arena-kicker">1 · ENCONTRE UM LÍDER</span><h3>Liga Pokémon</h3><p class="note">Por região e em ordem. O próximo desafio aberto vem destacado e cada bloqueio diz o que falta.</p></header>
@@ -79,10 +122,32 @@ onMounted(() => { if (waitingChallenge.value) void nextTick(goToTeam); });
       <div v-if="waitingChallenge" class="arena-ready" role="status">
         <strong>{{ selectedChallenge ? `Desafio contra ${selectedChallenge.leader} pronto` : 'Desafio da Liga pronto' }}</strong>
         <span>Seu oponente espera esta equipe. Selecione pelo menos um Pokémon acima e comece quando estiver pronto.</span>
-        <button type="button" class="primary" :disabled="!hasBattleTeam" @click="enterChallenge">Começar desafio na Arena 3D</button>
+        <button type="button" class="primary" :disabled="armed.length === 0" @click="startLeagueDuel">Desafiar {{ selectedChallenge?.leader ?? 'o líder' }} por turnos</button>
+        <button type="button" :disabled="!hasBattleTeam" @click="enterChallenge">Começar desafio na Arena 3D</button>
+        <small v-if="hasBattleTeam && armed.length === 0" class="hint">Para o duelo por turnos, escolha os golpes abaixo.</small>
         <small v-if="!hasBattleTeam" class="hint">Escolha ao menos um Pokémon para começar.</small>
       </div>
     </section>
+
+    <section id="arena-moves" class="arena-section" aria-labelledby="arena-moves-title">
+      <h3 id="arena-moves-title">3 · Golpes da equipe</h3>
+      <p class="note">Até 4 golpes por Pokémon, só entre os que a espécie aprende de verdade (PokéAPI). Ficam salvos neste aparelho e entram no backup.</p>
+      <p v-if="membersError" class="hint" role="alert">{{ membersError }}</p>
+      <ArenaMovesetEditor :members="members" />
+    </section>
+
+    <section class="arena-section arena-duel" aria-labelledby="arena-duel-title">
+      <h3 id="arena-duel-title">4 · Duelo por turnos</h3>
+      <p class="note">Um Pokémon de cada lado; a cada turno você escolhe um dos seus golpes ou troca de Pokémon. Quem é mais rápido ataca primeiro e o PP de cada golpe acaba.</p>
+      <p v-if="unarmed.length > 0 && armed.length > 0" class="hint">Sem golpes, ficam de fora: {{ unarmed.map((m) => m.name).join(', ') }}.</p>
+      <div class="actions row">
+        <button type="button" class="primary" :disabled="armed.length === 0" @click="startTraining">Treinar contra um treinador sorteado</button>
+        <button v-if="waitingChallenge && selectedChallenge" type="button" :disabled="armed.length === 0" @click="startLeagueDuel">Desafiar {{ selectedChallenge.leader }}</button>
+        <button v-if="armed.length === 0 && members.length > 0" type="button" @click="goToMoves">Escolher golpes</button>
+      </div>
+    </section>
+
+    <TurnDuel v-if="duelOpponent" :members="armed" :opponent="duelOpponent" @close="duelOpponent = null" />
 
     <section v-if="selectedCount === 0" class="arena-first-run" aria-labelledby="arena-first-run-title">
       <span>ANTES DA ARENA</span>
@@ -134,7 +199,7 @@ onMounted(() => { if (waitingChallenge.value) void nextTick(goToTeam); });
 .arena-paths > * { display: grid; justify-items: center; align-content: center; gap: .1rem; min-height: 4.4rem; padding: .5rem .3rem; border: 1px solid var(--line); border-radius: .7rem; color: inherit; font: inherit; font-size: .92rem; font-weight: 700; line-height: 1.2; text-align: center; text-decoration: none; background: rgba(12, 17, 34, .55); }
 .arena-paths small { color: var(--muted); font-size: .72rem; font-weight: 500; }
 .arena-paths > *:hover, .arena-paths > *:focus-visible { border-color: var(--accent); }
-.arena-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.arena-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; margin: 0; padding: 0; list-style: none; }
 .arena-steps li { display: grid; justify-items: center; gap: .15rem; padding: .45rem .3rem; border: 1px solid var(--line); border-radius: .7rem; font-size: .78rem; line-height: 1.2; text-align: center; color: var(--muted); }
 .arena-steps b { display: grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--line); color: var(--text); font-size: .75rem; }
 .arena-steps .done b { background: #68bd91; color: #0c1122; }

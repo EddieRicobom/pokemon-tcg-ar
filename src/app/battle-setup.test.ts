@@ -18,6 +18,19 @@ describe('prepareFighters', () => {
     expect(fighters[0]?.quality).toBe('completo');
   });
 
+  it('golpes escolhidos na Arena entram no lugar dos golpes do jogo e da carta', async () => {
+    const load: BattleLoader = async (_id, dex, onPart) => {
+      onPart('profile', { state: 'ok', value: { dexId: dex ?? 0, types: ['fire'], stats } });
+      onPart('moves', { state: 'ok', value: [{ name: 'Brasa', type: 'fire', power: 40, accuracy: 100, pp: 25, damageClass: 'special' }] });
+      onPart('card', { state: 'error', message: 'offline' });
+    };
+    const flamethrower = { name: 'Lança-chamas', type: 'fire' as const, power: 90, accuracy: 100, special: true, source: 'jogo' as const };
+    const [chosen, plain] = await prepareFighters([{ id: 'a', name: 'Charmander', dexId: 4, moves: [flamethrower] }, { id: 'b', name: 'Vulpix', dexId: 37 }], load);
+    expect(chosen?.moves.map((m) => m.name)).toEqual(['Lança-chamas']);
+    expect(chosen?.notes.some((n) => n.includes('ataques da carta'))).toBe(false);
+    expect(plain?.moves.map((m) => m.name)).toEqual(['Brasa']);
+  });
+
   it('uma fonte que falha ou nunca responde não derruba a batalha', async () => {
     vi.useFakeTimers();
     const load: BattleLoader = (id, _dex, onPart) => {

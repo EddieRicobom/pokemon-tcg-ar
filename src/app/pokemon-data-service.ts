@@ -76,6 +76,8 @@ const isMoves = (v: unknown): v is GameMove[] => Array.isArray(v) && v.every((m:
   && typeof m.name === 'string' && m.name.length > 0 && (m.type === null || isPokemonType(m.type))
   && nullableNumber(m.power) && nullableNumber(m.accuracy) && nullableNumber(m.pp)
   && (m.damageClass === null || m.damageClass === 'physical' || m.damageClass === 'special' || m.damageClass === 'status'));
+/** Lista de golpes no formato guardado (também usada pelo learnset da Arena). */
+export const isGameMoves = isMoves;
 const isCardInfo = (v: unknown): v is CardBattleInfo => isRecord(v)
   && optionalNumber(v.hp) && optionalNumber(v.retreat) && isStrings(v.types)
   && Array.isArray(v.attacks) && v.attacks.every((a: unknown) => isRecord(a)
