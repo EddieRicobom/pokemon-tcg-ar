@@ -558,10 +558,7 @@ const pendingText = computed(() => {
         <span class="dg-break"></span>
         <span class="dg-pill">Turno {{ s.round }}</span>
         <span class="dg-pill dg-ap" :aria-label="`${s.ap} PA`">PA <i v-for="n in Math.max(START_AP, s.ap)" :key="n" :class="{ on: n <= s.ap }"></i></span>
-        <span class="dg-pill" title="Cargas de fusão">💠 {{ s.fusionCharges }}</span>
-        <span class="dg-pill" title="Poções">🧪 {{ s.potions }}</span>
         <span v-if="s.guard.reduce > 0" class="dg-pill" title="Bloqueio para o próximo golpe">🛡️ {{ Math.round(s.guard.reduce * 100) }}%</span>
-        <button type="button" class="dg-pill dg-bag" title="Mochila e forja (G)" @click="forgeOpen = true">💎 {{ s.bag.length }}</button>
         <label class="dg-toggle"><input v-model="showThreat" type="checkbox" /> ameaça</label>
       </header>
 
@@ -904,7 +901,6 @@ button:disabled { opacity: 0.5; }
 .dg-floor { font-size: 1rem; background: color-mix(in srgb, var(--frame) 70%, #000); }
 .dg-floor.boss { border-color: var(--gold); box-shadow: 0 0 8px #ffcb0566; }
 .dg-theme { color: var(--muted); font-weight: 500; font-style: italic; }
-.dg-bag { cursor: pointer; }
 .dg-ap i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 3px; border: 1px solid var(--gold); vertical-align: middle; }
 .dg-ap i.on { background: var(--gold); box-shadow: 0 0 4px var(--gold); }
 .dg-toggle { margin-left: auto; font-weight: 400; color: var(--muted); display: flex; align-items: center; gap: 4px; }
@@ -921,12 +917,13 @@ button:disabled { opacity: 0.5; }
 .dg-ammo button.on { border-color: var(--gold); color: var(--gold); }
 .dg-mech { font-size: 0.74rem; }
 .dg-cell.wall { background: linear-gradient(180deg, var(--wall-top) 0 32%, var(--wall-side) 32%); box-shadow: inset 0 -3px 0 #0008; }
-.dg-cell.danger::after { content: ''; position: absolute; inset: 0; border-radius: 5px; background: repeating-linear-gradient(45deg, #ff5a5a24 0 4px, transparent 4px 8px); pointer-events: none; }
 .dg-cell.doom { box-shadow: inset 0 0 0 2px #ff3d3d; animation: dg-doom 0.9s ease-in-out infinite; }
 .dg-cell.reach { background: linear-gradient(135deg, #2f6a80, #245468); }
 .dg-cell.target { box-shadow: inset 0 0 0 2px var(--warn); }
 .dg-cell.area { background: #8a3442; }
 .dg-cell.pending { box-shadow: inset 0 0 0 3px var(--gold); }
+.dg-cell.danger { background: linear-gradient(135deg, #a42b39, #581621); box-shadow: inset 0 0 0 2px #ff6670, 0 0 8px #ff344766; }
+.dg-cell.danger::after { content: ''; position: absolute; inset: 0; border-radius: 5px; background: repeating-linear-gradient(45deg, #ff566a8c 0 4px, #7e152566 4px 8px); pointer-events: none; }
 .dg-mon, .dg-player { position: relative; z-index: 1; display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
 .dg-mon img, .dg-player img { width: 120%; height: 120%; object-fit: contain; image-rendering: pixelated; pointer-events: none; position: relative; top: -14%; animation: dg-bob 1.8s ease-in-out infinite; }
 .dg-mon.elite img { filter: drop-shadow(0 0 3px #ffcb05); }
