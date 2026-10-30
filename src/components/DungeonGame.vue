@@ -4,19 +4,27 @@ import WeaponArt from './WeaponArt.vue';
 import FusionArt from './FusionArt.vue';
 import GemChip from './GemChip.vue';
 import DungeonAttackFx from './DungeonAttackFx.vue';
+import DungeonDecor from './DungeonDecor.vue';
+import { SoundEngine } from '../box/sound';
+import type { SoundCue } from '../box/sound-recipes';
+import { REGIONAL_ENCOUNTERS } from '../core/survivor-encounters';
+import { addCoins, withVillage } from '../app/wallet';
+import { bringGems, COINS_PER_FLOOR, DAILY_REWARDS, LUNCH_HP, packLunch, settleExpedition, SHARD_EVERY, takeFromVault, VAULT_TAKE } from '../core/dungeon-village';
+import type { ExpeditionRewards } from '../core/dungeon-village';
+import { lunchEffectFor } from '../core/survivor-lunch';
+import { dayKey } from '../core/trainer';
 import { getCache } from '../app/services';
 import { effectiveVisual } from '../app/visual-settings';
 import { cardCompanion } from '../app/card-evolution-store';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { statsOfDex } from '../core/survivor-stats';
-import { typesOfDex } from '../core/species-filter';
+import { generationOf, typesOfDex } from '../core/species-filter';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
-import { REGIONAL_ENCOUNTERS } from '../core/survivor-encounters';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import {
   AFFIXES, ammoOptions, attack, MECHANICS, setAmmo, attackArea, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
-  floorGeneration, floorTheme, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, INTENTS, intents, isBossFloor, isMiniBossFloor, key, move, polishGems, previewAttack,
+  biomeOf, fightingAtHome, floorGeneration, hazardAt, HOME_BONUS, typeFactor, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, INTENTS, intents, isBossFloor, isMiniBossFloor, key, move, polishGems, previewAttack,
   addMember, MAX_TEAM, previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponOfDex, weaponOfferAtFloor, evolveMember, WEAPONS,
 } from '../core/dungeon';
 import type { Cell, DungeonState, Enemy, EnemySpecies, Intent, MechanicId, MemberInput, RewardId, WeaponPattern } from '../core/dungeon';
@@ -96,11 +104,79 @@ let attackFxId = 0;
 let attackFxTimer: ReturnType<typeof setTimeout> | undefined;
 let alive = true;
 
-const pool: EnemySpecies[] = WILD.flatMap(({ dexId, minDepth, boss }) => {
-  const stats = statsOfDex(dexId);
-  const types = typesOfDex(dexId);
-  return stats && types.length ? [{ dexId, name: speciesName(dexId) || `#${dexId}`, stats, types, minDepth, boss }] : [];
-});
+/**
+ * Elenco de inimigos: os nativos de cada geração (os mesmos da Torre) mais as espécies de caverna da lista acima, cada
+ * um marcado com a geração dele. O andar prefere os da geração sorteada; só entram espécies com stats, tipos e arma.
+ */
+const pool: EnemySpecies[] = (() => {
+  const raw: { dexId: number; minDepth: number; boss?: boolean }[] = [
+    ...WILD,
+    ...REGIONAL_ENCOUNTERS.flatMap((r) => [...r.wild.map((dexId) => ({ dexId, minDepth: 1 })), { dexId: r.boss, minDepth: 1, boss: true }]),
+  ];
+  const seen = new Set<string>();
+  return raw.flatMap(({ dexId, minDepth, boss }) => {
+    const id = `${dexId}:${boss ? 1 : 0}`;
+    const stats = statsOfDex(dexId);
+    const types = typesOfDex(dexId);
+    const gen = generationOf(dexId);
+    if (seen.has(id) || !stats || !types.length || !weaponOfDex(dexId) || gen === undefined) return [];
+    seen.add(id);
+    return [{ dexId, name: speciesName(dexId) || `#${dexId}`, stats, types, minDepth, boss, generation: gen - 1 }];
+  });
+})();
+
+/** Som da Masmorra (mesmo motor da Vila e da Torre). Ligado/desligado e efeitos do cenário ficam no aparelho. */
+const SOUND_KEY = 'tcg-ar-masmorra-som-v1';
+const AMBIENT_KEY = 'tcg-ar-masmorra-cenario-v1';
+const sound = new SoundEngine();
+const soundOn = ref(readFlag(SOUND_KEY, true));
+const ambientOn = ref(readFlag(AMBIENT_KEY, true));
+sound.enabled = soundOn.value;
+sound.setVolume(0.7);
+function readFlag(keyName: string, fallback: boolean): boolean {
+  try { const v = localStorage.getItem(keyName); return v === null ? fallback : v === '1'; } catch { return fallback; }
+}
+function writeFlag(keyName: string, value: boolean): void {
+  try { localStorage.setItem(keyName, value ? '1' : '0'); } catch { /* sem armazenamento: vale só nesta sessão */ }
+}
+function toggleSound(): void {
+  soundOn.value = !soundOn.value;
+  sound.enabled = soundOn.value;
+  writeFlag(SOUND_KEY, soundOn.value);
+  if (soundOn.value) { sound.unlock(); cue({ kind: 'ui', cue: 'menu' }); }
+}
+function toggleAmbient(): void {
+  ambientOn.value = !ambientOn.value;
+  writeFlag(AMBIENT_KEY, ambientOn.value);
+}
+function cue(c: SoundCue): void {
+  if (soundOn.value) sound.play(c);
+}
+
+/** O que mudou desde a última ação, para tocar o som certo (andar, saque, dano, queda, fim). */
+interface Snapshot { floor: number; phase: string; items: number; teamHp: number; kills: number }
+let lastSnap: Snapshot | null = null;
+function snapshot(st: DungeonState): Snapshot {
+  return { floor: st.floor, phase: st.phase, items: st.bag.length + st.potions + st.fusionCharges, teamHp: st.team.reduce((sum, m) => sum + m.hp, 0), kills: st.stats.kills };
+}
+function cueChanges(): void {
+  const st = s.value;
+  if (!st) { lastSnap = null; return; }
+  const now = snapshot(st);
+  const before = lastSnap;
+  lastSnap = now;
+  if (!before) return;
+  if (now.floor > before.floor) cue(isBossFloor(now.floor) ? { kind: 'ui', cue: 'survivor-boss' } : { kind: 'enter' });
+  if (now.phase !== before.phase) {
+    if (now.phase === 'cleared') cue({ kind: 'ui', cue: 'survivor-level' });
+    else if (now.phase === 'reward') cue({ kind: 'ui', cue: 'success' });
+    else if (now.phase === 'lost') cue({ kind: 'ui', cue: 'survivor-gameover' });
+    else if (now.phase === 'retired') cue({ kind: 'ui', cue: 'village-coins' });
+  }
+  if (now.kills > before.kills) cue({ kind: 'faint' });
+  if (now.items > before.items && now.floor === before.floor) cue({ kind: 'ui', cue: 'survivor-pickup' });
+  if (now.teamHp < before.teamHp && now.floor === before.floor) cue({ kind: 'ui', cue: 'survivor-hurt' });
+}
 
 function readRecord(): number {
   try { return Math.max(0, Number(localStorage.getItem(RECORD_KEY)) || 0); } catch { return 0; }
@@ -117,7 +193,42 @@ function describeMon(id: string, dexId: number, name: string, origin: string): C
   return stats && types.length && weaponOfDex(dexId) ? { id, dexId, name, origin, stats, types, missing: false } : { id, dexId, name, origin, missing: true };
 }
 
+/** O que vem da Vila (cofre de gemas e marmita do Café) e o que volta para ela ao fim da expedição. */
+const vaultGems = ref<Gem[]>([]);
+const takeIds = ref<number[]>([]);
+const lunchName = ref<string | null>(null);
+const bringLunch = ref(true);
+const rewards = ref<ExpeditionRewards | null>(null);
+let settled = false;
+function readVillage(): void {
+  withVillage((v) => {
+    vaultGems.value = v.dungeon.gems.map((g) => ({ ...g }));
+    lunchName.value = v.tower.lunchbox ? lunchEffectFor(v.tower.lunchbox)?.name ?? null : null;
+    return false;
+  });
+  takeIds.value = takeIds.value.filter((id) => vaultGems.value.some((g) => g.id === id));
+}
+function toggleTake(id: number): void {
+  const at = takeIds.value.indexOf(id);
+  if (at >= 0) takeIds.value.splice(at, 1);
+  else if (takeIds.value.length < VAULT_TAKE) takeIds.value.push(id);
+}
+/** Fim da expedição (saiu ou caiu): acerta tudo na Vila uma única vez. */
+function settleIfOver(): void {
+  const st = s.value;
+  if (!st || settled || (st.phase !== 'retired' && st.phase !== 'lost')) return;
+  settled = true;
+  let r: ExpeditionRewards | null = null;
+  withVillage((v) => { r = settleExpedition(v, st, dayKey(new Date())); return true; });
+  const got = r as ExpeditionRewards | null;
+  if (!got) return;
+  if (got.coins > 0) got.coins = addCoins(got.coins);
+  rewards.value = got;
+  readVillage();
+}
+
 onMounted(async () => {
+  readVillage();
   try {
     const cards = await (await getCache()).list();
     const out: Candidate[] = [];
@@ -133,7 +244,7 @@ onMounted(async () => {
   }
   window.addEventListener('keydown', onKey);
 });
-onBeforeUnmount(() => { alive = false; window.removeEventListener('keydown', onKey); if (attackFxTimer) clearTimeout(attackFxTimer); });
+onBeforeUnmount(() => { alive = false; sound.dispose(); window.removeEventListener('keydown', onKey); if (attackFxTimer) clearTimeout(attackFxTimer); });
 
 function togglePick(c: Candidate): void {
   if (c.missing) return;
@@ -145,6 +256,26 @@ function togglePick(c: Candidate): void {
 function begin(): void {
   const team = picked.value.map((id) => candidates.value!.find((c) => c.id === id)!).map((c) => ({ id: c.id, dexId: c.dexId, name: c.name, types: c.types!, stats: c.stats! }));
   s.value = startDungeon(team, pool, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
+  settled = false;
+  rewards.value = null;
+  let taken: Gem[] = [];
+  let lunch: ReturnType<typeof lunchEffectFor> = null;
+  withVillage((v) => {
+    taken = takeFromVault(v, takeIds.value);
+    if (bringLunch.value && v.tower.lunchbox) {
+      lunch = lunchEffectFor(v.tower.lunchbox);
+      if (lunch) v.tower.lunchbox = null;
+    }
+    return taken.length > 0 || lunch !== null;
+  });
+  bringGems(s.value, taken);
+  const packed = lunch as ReturnType<typeof lunchEffectFor>;
+  if (packed) packLunch(s.value, packed);
+  takeIds.value = [];
+  readVillage();
+  sound.unlock();
+  lastSnap = snapshot(s.value);
+  cue(isBossFloor(s.value.floor) ? { kind: 'ui', cue: 'survivor-boss' } : { kind: 'enter' });
   chosenCandidateIds.clear();
   for (const id of picked.value) chosenCandidateIds.add(id);
   offeredFloors.clear();
@@ -173,7 +304,36 @@ const playing = computed(() => s.value?.phase === 'player');
 const exploring = computed(() => s.value?.phase === 'cleared');
 const enemyTurn = computed(() => s.value?.phase === 'enemy');
 const canForge = computed(() => s.value?.phase === 'cleared' || s.value?.phase === 'reward');
-const theme = computed(() => (s.value ? floorTheme(s.value.floor) : { index: 0, name: '' }));
+const biome = computed(() => biomeOf(s.value?.biome ?? 0));
+/** Cores do cenário do andar em variáveis CSS (piso, paredes, moldura, fundo e destaque). */
+const biomeStyle = computed(() => {
+  const p = biome.value.palette;
+  return {
+    '--floor-a': p.floorA, '--floor-b': p.floorB, '--speck': p.speck, '--wall-top': p.wallTop, '--wall-side': p.wallSide,
+    '--wall-edge': p.wallEdge, '--frame': p.frame, '--bg-a': p.bgA, '--bg-b': p.bgB, '--accent': p.accent,
+  };
+});
+const nextBiome = computed(() => (s.value ? biomeOf(floorGeneration(s.value.seed, s.value.floor + 1)) : biome.value));
+const atHome = computed(() => (s.value ? fightingAtHome(s.value) : false));
+/** Pseudoaleatório estável por casa (enfeites e variação do piso não mudam a cada redesenho). */
+const cellHash = (c: Cell): number => {
+  let h = Math.imul((c.x + 11) * 73856093 ^ (c.y + 7) * 19349663 ^ ((s.value?.seed ?? 0) + (s.value?.floor ?? 0) * 977), 2654435761) >>> 0;
+  h ^= h >>> 13;
+  return (Math.imul(h, 1274126177) >>> 0) / 4294967296;
+};
+const hazardKind = (c: Cell) => (s.value ? hazardAt(s.value, c) : null);
+/** Parede com a face de pedra à mostra (embaixo dela não há outra parede). */
+const wallFront = (c: Cell) => wallAt(c) && !(c.y + 1 < GRID_H && wallAt({ x: c.x, y: c.y + 1 }));
+/** Enfeite do cenário numa casa livre (12% das casas), escolhido entre os do bioma. */
+const decorAt = (c: Cell) => {
+  if (!s.value || wallAt(c) || hazardKind(c) || (c.x === s.value.pos.x && c.y === s.value.pos.y)) return null;
+  const h = cellHash(c);
+  if (h > 0.12) return null;
+  const list = biome.value.decor;
+  return list[Math.floor((h / 0.12) * list.length) % list.length] ?? null;
+};
+/** Partículas do ambiente (posição e atraso fixos por índice). */
+const particles = Array.from({ length: 16 }, (_, i) => ({ left: `${(i * 37) % 100}%`, top: `${(i * 53) % 100}%`, delay: `${-((i * 0.73) % 6).toFixed(2)}s`, dur: `${5 + (i % 5)}s` }));
 /** Alcance para desenhar o modo Mover e a sala limpa. */
 const moveCosts = computed(() => (s.value && (mode.value === 'move' || exploring.value) ? reachable(s.value) : new Map<string, number>()));
 /** Mesmo sem abrir o comando Mover, um espaço livre pode ser selecionado e confirmado com outro toque. */
@@ -243,6 +403,9 @@ function showAttackFx(weapon: AttackFx['weapon'], ammo: PokemonType | null, cell
 function result(r: { ok: boolean; reason?: string }): void {
   flash.value = r.ok ? '' : r.reason ?? '';
   if (s.value) saveRecord(s.value.stats.deepest);
+  if (r.ok) cueChanges();
+  else cue({ kind: 'ui', cue: 'interact' });
+  settleIfOver();
 }
 
 function setMode(next: 'move' | 'attack'): void {
@@ -304,6 +467,11 @@ function confirm(): void {
     const ammo = attacker(st).ammo[0] ?? null;
     const before = new Map(st.enemies.map((e) => [e.uid, { hp: e.hp, pos: e.pos }]));
     const r = attack(st, pending.value);
+    const first = hits.hits[0];
+    if (r.ok && first) {
+      const type = attacker(st).ammo[0] ?? 'normal';
+      cue({ kind: 'impact', type, strength: Math.min(1, first.damage / Math.max(1, first.enemy.maxHp)), critical: false, effectiveness: typeFactor(type, first.enemy.types), guarded: first.guarded });
+    }
     if (r.ok) showAttackFx(weapon, ammo, hits.trap ? [pending.value] : hits.hits.map((hit) => hit.enemy.pos));
     if (r.ok) for (const [uid, b] of before) {
       const now = st.enemies.find((e) => e.uid === uid);
@@ -346,6 +514,7 @@ async function doEnd(): Promise<void> {
     const uid = enemyStep(st);
     if (uid === null) break;
     acting.value = uid;
+    cueChanges();
     const lost = hpBefore - teamHp(st);
     if (lost > 0) popup(st.pos, `−${lost}`, 'hurt');
     for (const e of st.enemies) {
@@ -522,7 +691,7 @@ const pendingText = computed(() => {
 </script>
 
 <template>
-  <div class="dungeon" :class="[s ? `theme-${theme.index}` : '', { 'is-running': !!s }]">
+  <div class="dungeon" :class="{ 'is-running': !!s, 'no-ambient': !ambientOn }" :style="s ? biomeStyle : undefined">
     <!-- Escolha da equipe -->
     <section v-if="!s" class="dg-pick">
       <h2>Masmorra · protótipo</h2>
@@ -552,6 +721,16 @@ const pendingText = computed(() => {
           </button>
         </li>
       </ul>
+      <section v-if="vaultGems.length || lunchName" class="dg-from-village" aria-label="Da Vila">
+        <h3>🏡 Da Vila</h3>
+        <template v-if="vaultGems.length">
+          <p class="hint">Cofre de gemas: leve até {{ VAULT_TAKE }}. Elas saem do cofre; se a equipe cair, se perdem.</p>
+          <div class="dg-vault">
+            <button v-for="g in vaultGems" :key="g.id" type="button" :class="{ on: takeIds.includes(g.id) }" :disabled="!takeIds.includes(g.id) && takeIds.length >= VAULT_TAKE" @click="toggleTake(g.id)"><GemChip :gem="g" label :size="22" /></button>
+          </div>
+        </template>
+        <label v-if="lunchName" class="dg-lunch"><input v-model="bringLunch" type="checkbox" /> Levar a marmita do Café ({{ lunchName }}): +1 poção e +{{ Math.round(LUNCH_HP * 100) }}% de HP máximo nesta expedição.</label>
+      </section>
       <div class="dg-actions">
         <button type="button" class="primary" :disabled="picked.length === 0 || pool.length === 0" @click="begin">Começar com esta arma</button>
         <button type="button" @click="emit('leave')">Voltar</button>
@@ -562,16 +741,22 @@ const pendingText = computed(() => {
     <section v-else class="dg-run">
       <header class="dg-hud">
         <span class="dg-pill dg-floor" :class="{ boss: isBossFloor(s.floor), mini: isMiniBossFloor(s.floor) && !isBossFloor(s.floor) }">{{ isBossFloor(s.floor) ? '👑 ' : isMiniBossFloor(s.floor) ? '⚜️ ' : '' }}Andar {{ s.floor }}</span>
-        <span class="dg-theme" :title="`Geração ${floorGeneration(s.floor)}`">{{ theme.name }} · G{{ floorGeneration(s.floor) }}</span>
+        <span class="dg-theme" :title="biome.description">{{ biome.region }} · {{ biome.name }}</span>
+        <span v-if="atHome" class="dg-pill dg-small dg-home" :title="`Quem é de ${biome.region} luta em casa: +${Math.round(HOME_BONUS * 100)}% de poder`">🏠 +{{ Math.round(HOME_BONUS * 100) }}%</span>
         <span v-if="record > 0" class="dg-pill dg-small" title="Recorde">🏆 {{ record }}</span>
         <span class="dg-break"></span>
         <span class="dg-pill">Turno {{ s.round }}</span>
         <span class="dg-pill dg-ap" :aria-label="`${s.ap} PA`">PA <i v-for="n in Math.max(START_AP, s.ap)" :key="n" :class="{ on: n <= s.ap }"></i></span>
         <span v-if="s.guard.reduce > 0" class="dg-pill" title="Bloqueio para o próximo golpe">🛡️ {{ Math.round(s.guard.reduce * 100) }}%</span>
         <label class="dg-toggle"><input v-model="showThreat" type="checkbox" /> ameaça</label>
+        <button type="button" class="dg-pill dg-icon" :aria-pressed="soundOn" :title="soundOn ? 'Desligar o som' : 'Ligar o som'" @click="toggleSound">{{ soundOn ? '🔊' : '🔇' }}</button>
+        <button type="button" class="dg-pill dg-icon" :aria-pressed="ambientOn" title="Efeitos do cenário (partículas e brilhos)" @click="toggleAmbient">{{ ambientOn ? '✨' : '▫️' }}</button>
       </header>
 
-      <div class="dg-grid" :class="{ 'enemy-turn': enemyTurn }" :style="{ gridTemplateColumns: `repeat(${GRID_W}, 1fr)` }">
+      <div class="dg-grid" :class="[`fx-${biome.particles}`, { 'enemy-turn': enemyTurn }]" :style="{ gridTemplateColumns: `repeat(${GRID_W}, 1fr)` }">
+        <div v-if="ambientOn" class="dg-particles" aria-hidden="true">
+          <i v-for="(pt, i) in particles" :key="i" :style="{ left: pt.left, top: pt.top, animationDelay: pt.delay, animationDuration: pt.dur }"></i>
+        </div>
         <button
           v-for="c in cells"
           :key="key(c)"
@@ -579,6 +764,10 @@ const pendingText = computed(() => {
           class="dg-cell"
           :class="{
             wall: wallAt(c),
+            'wall-front': wallFront(c),
+            water: hazardKind(c) === 'agua',
+            lava: hazardKind(c) === 'lava',
+            alt: cellHash(c) > 0.55,
             barrier: barrierAt(c),
             reach: (moveCosts.get(key(c)) ?? 0) > 0,
             target: targetKeys.has(key(c)),
@@ -590,6 +779,7 @@ const pendingText = computed(() => {
           :aria-label="`Casa ${c.x + 1},${c.y + 1}${enemyAt(c) ? `: ${enemyAt(c)!.name}` : lootAt(c) ? ': saque' : stairsAt(c) ? ': escada' : ''}`"
           @click="tapCell(c)"
         >
+          <DungeonDecor v-if="decorAt(c)" :kind="decorAt(c)!" />
           <small v-if="mode === 'move' && (moveCosts.get(key(c)) ?? 0) > 0" class="dg-cost">{{ moveCosts.get(key(c)) }}</small>
           <span v-if="stairsAt(c)" class="dg-stairs" aria-hidden="true">🪜</span>
           <span v-if="trapAt(c)" class="dg-trap" title="Armadilha" aria-hidden="true">⚙️</span>
@@ -832,7 +1022,7 @@ const pendingText = computed(() => {
       <div v-if="s.phase === 'reward' && !forgeOpen && !weaponOffer" class="dg-modal" role="dialog" aria-label="Escada">
         <div class="dg-modal-box">
           <h3>🪜 Escada para o andar {{ s.floor + 1 }}</h3>
-          <p class="hint">{{ isBossFloor(s.floor + 1) ? '👑 Lá embaixo espera um chefe.' : `Próxima região: ${floorTheme(s.floor + 1).name}.` }} Os inimigos ficam mais fortes a cada andar.</p>
+          <p class="hint">{{ isBossFloor(s.floor + 1) ? '👑 Lá embaixo espera um chefe.' : `Próximo andar: ${nextBiome.region} · ${nextBiome.name}${nextBiome.hazard === 'lava' ? ' (cuidado com a lava)' : nextBiome.hazard === 'agua' ? ' (com água)' : ''}.` }} Os inimigos ficam mais fortes a cada andar.</p>
           <button v-for="r in s.rewardOptions" :key="r" type="button" class="dg-reward" @click="pickReward(r)"><strong>Descer com: {{ REWARDS[r].name }}</strong><small>{{ REWARDS[r].text }}</small></button>
           <div class="dg-actions">
             <button type="button" @click="forgeOpen = true">💎 Forja ({{ s.bag.length }})</button>
@@ -855,7 +1045,18 @@ const pendingText = computed(() => {
             <li><strong>{{ s.stats.legendaries }}</strong><small>lendárias</small></li>
           </ul>
           <p v-if="s.stats.deepest >= record" class="dg-record">🏆 Novo recorde: andar {{ s.stats.deepest }}!</p>
-          <p class="hint">As gemas valem só nesta expedição: ainda não voltam para a Vila.</p>
+          <template v-if="rewards">
+            <h4 class="dg-rewards-title">{{ s.phase === 'retired' ? 'Levado para a Vila' : 'Perdido na queda' }}</h4>
+            <ul v-if="s.phase === 'retired'" class="dg-summary">
+              <li><strong>🪙 {{ rewards.coins }}</strong><small>moedas</small></li>
+              <li><strong>🍬 {{ rewards.loveCandy }}</strong><small>Love Candy</small></li>
+              <li><strong>💎 {{ rewards.megaShards }}</strong><small>fragmentos Mega</small></li>
+            </ul>
+            <p v-if="rewards.kept.length" class="hint">{{ rewards.kept.length }} gema(s) guardada(s) no cofre da Vila (cabem 12).</p>
+            <p v-if="rewards.capped" class="hint dg-provisional">Já foram {{ DAILY_REWARDS }} expedições premiadas hoje: desta vez só as gemas e o recorde voltam. Amanhã tem mais.</p>
+            <p v-if="s.phase === 'lost'" class="hint">Quem cai perde as gemas da expedição e não leva prêmio. Saia pela escada para garantir o espólio.</p>
+            <p class="hint">Prêmio ao sair: {{ COINS_PER_FLOOR }} moedas por andar, 1 Love Candy por chefe (até 3) e 1 fragmento Mega a cada {{ SHARD_EVERY }} andares.</p>
+          </template>
           <div class="dg-actions">
             <button type="button" class="primary" @click="s = null">Nova expedição</button>
             <button type="button" @click="emit('leave')">Sair</button>
@@ -867,11 +1068,7 @@ const pendingText = computed(() => {
 </template>
 
 <style scoped>
-.dungeon { --tile-a: #43395c; --tile-b: #362d4c; --wall-top: #5a4e72; --wall-side: #2a2338; --frame: #3d3158; --bg-a: #251c3a; --bg-b: #0f0c18; flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); color: var(--text); background: radial-gradient(ellipse at top, var(--bg-a), var(--bg-b) 70%); transition: background 0.6s; }
-.theme-1 { --tile-a: #3e4646; --tile-b: #2e3434; --wall-top: #5d6762; --wall-side: #222827; --frame: #4a5552; --bg-a: #1d2826; --bg-b: #0b100f; }
-.theme-2 { --tile-a: #5a3427; --tile-b: #43241a; --wall-top: #7a4632; --wall-side: #2e150d; --frame: #8a3f22; --bg-a: #3a170b; --bg-b: #120604; }
-.theme-3 { --tile-a: #2f5552; --tile-b: #22403d; --wall-top: #5fa59a; --wall-side: #183230; --frame: #3f8a80; --bg-a: #12302d; --bg-b: #061210; }
-.theme-4 { --tile-a: #24285a; --tile-b: #181b40; --wall-top: #3d4290; --wall-side: #0f1130; --frame: #5a4fc0; --bg-a: #150f3a; --bg-b: #040312; }
+.dungeon { --floor-a: #43395c; --floor-b: #362d4c; --speck: #5a4e72; --wall-top: #5a4e72; --wall-side: #2a2338; --wall-edge: #17121f; --frame: #3d3158; --bg-a: #251c3a; --bg-b: #0f0c18; --accent: #d9e6ff; flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); color: var(--text); background: radial-gradient(ellipse at top, var(--bg-a), var(--bg-b) 70%); transition: background 0.6s; }
 .dg-pick h2 { margin: 0 0 6px; }
 .hint { color: var(--muted); font-size: 0.88rem; margin: 4px 0; }
 .dg-center { text-align: center; }
@@ -909,16 +1106,24 @@ button:disabled { opacity: 0.5; }
 .dg-small { font-size: 0.75rem; }
 .dg-floor { font-size: 1rem; background: color-mix(in srgb, var(--frame) 70%, #000); }
 .dg-floor.boss { border-color: var(--gold); box-shadow: 0 0 8px #ffcb0566; }
+.dg-home { border-color: #8fe0a0; color: #c8ffd2; }
+.dg-icon { cursor: pointer; padding: 3px 7px; }
+.dg-theme { color: var(--accent); font-weight: 500; font-style: italic; }
+.dg-bag { cursor: pointer; }
 .dg-floor.mini { border-color: #ff8a55; box-shadow: 0 0 8px #ff6b4a66; }
-.dg-theme { color: var(--muted); font-weight: 500; font-style: italic; }
 .dg-ap i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 3px; border: 1px solid var(--gold); vertical-align: middle; }
 .dg-ap i.on { background: var(--gold); box-shadow: 0 0 4px var(--gold); }
 .dg-toggle { margin-left: auto; font-weight: 400; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 
-.dg-grid { display: grid; gap: 3px; padding: 6px; background: linear-gradient(180deg, color-mix(in srgb, var(--tile-b) 70%, #000), #00000080); border: 2px solid var(--frame); border-radius: 12px; box-shadow: inset 0 0 22px #000c, 0 0 18px color-mix(in srgb, var(--frame) 40%, transparent); transition: border-color 0.6s; }
+/* Andar no jeito de Mystery Dungeon: piso contínuo, paredes de pedra com face frontal e uma borda de rocha em volta. */
+.dg-grid { position: relative; display: grid; gap: 0; padding: 7px; background: var(--wall-side); border: 2px solid var(--wall-edge); border-radius: 10px; box-shadow: inset 0 0 0 3px var(--wall-top), inset 0 0 26px #000d, 0 0 18px color-mix(in srgb, var(--frame) 45%, transparent); transition: border-color 0.6s; overflow: hidden; }
+.dg-grid::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 4; background: radial-gradient(ellipse at 50% 60%, transparent 55%, #0008 100%); }
 .dungeon.is-running .dg-grid { width: clamp(230px, calc(100dvh - 440px), 390px); max-width: 100%; align-self: center; flex: none; }
 .dg-grid.enemy-turn { border-color: #b84a5a; }
-.dg-cell { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 5px; background: linear-gradient(135deg, var(--tile-a), var(--tile-b)); display: flex; align-items: center; justify-content: center; overflow: visible; }
+.dg-cell { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 0; background-color: var(--floor-a); background-image: radial-gradient(circle at 22% 30%, var(--speck) 0 1.5px, transparent 2px), radial-gradient(circle at 70% 72%, var(--speck) 0 1px, transparent 1.5px), linear-gradient(135deg, var(--floor-a), var(--floor-b)); box-shadow: inset 0 0 0 0.5px #0000001f; display: flex; align-items: center; justify-content: center; overflow: visible; }
+.dg-cell.alt { background-image: radial-gradient(circle at 62% 24%, var(--speck) 0 1.2px, transparent 1.7px), radial-gradient(circle at 30% 78%, var(--speck) 0 1.5px, transparent 2px), linear-gradient(160deg, var(--floor-b), var(--floor-a)); }
+.dg-cell.water { background-image: radial-gradient(ellipse at 30% 35%, #ffffff55 0 8%, transparent 14%), linear-gradient(180deg, #4d8fd6, #2f62a8); background-size: 100% 100%; box-shadow: inset 0 2px 0 #9cd2ff88, inset 0 -2px 0 #1c3f75; animation: dg-water 3.2s ease-in-out infinite; }
+.dg-cell.lava { background-image: radial-gradient(circle at 35% 40%, #ffe08a 0 10%, transparent 22%), radial-gradient(circle at 70% 70%, #ffb347 0 8%, transparent 18%), linear-gradient(135deg, #ff6a1f, #b8260f); box-shadow: inset 0 0 6px #ffd27a, 0 0 8px #ff6a1f88; animation: dg-lava 1.8s ease-in-out infinite; }
 .dg-cell.barrier { background: repeating-linear-gradient(90deg, #7fe7ff55 0 3px, #1b2a40 3px 7px); box-shadow: inset 0 0 0 2px #7fe7ff99; }
 .dg-trap { position: absolute; bottom: 2px; right: 3px; font-size: 0.8rem; z-index: 2; }
 .dg-burn { position: absolute; bottom: 6px; left: -2px; font-size: 0.65rem; z-index: 2; }
@@ -926,7 +1131,9 @@ button:disabled { opacity: 0.5; }
 .dg-ammo button { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); background: #0004; color: inherit; font-size: 0.72rem; }
 .dg-ammo button.on { border-color: var(--gold); color: var(--gold); }
 .dg-mech { font-size: 0.74rem; }
-.dg-cell.wall { background: linear-gradient(180deg, var(--wall-top) 0 32%, var(--wall-side) 32%); box-shadow: inset 0 -3px 0 #0008; }
+.dg-cell.wall { background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--wall-top) 80%, #fff) 0 6%, transparent 9%), linear-gradient(135deg, var(--wall-top), color-mix(in srgb, var(--wall-top) 75%, var(--wall-side))); box-shadow: inset 0 0 0 1px var(--wall-edge); z-index: 1; }
+.dg-cell.wall-front { background: linear-gradient(180deg, var(--wall-top) 0 46%, var(--wall-edge) 46% 50%, var(--wall-side) 50% 100%), repeating-linear-gradient(90deg, transparent 0 6px, #0003 6px 7px); background-blend-mode: normal, multiply; box-shadow: inset 0 0 0 1px var(--wall-edge), 0 3px 4px #0007; }
+.dg-cell.danger::after { content: ''; position: absolute; inset: 0; border-radius: 5px; background: repeating-linear-gradient(45deg, #ff5a5a24 0 4px, transparent 4px 8px); pointer-events: none; }
 .dg-cell.doom { box-shadow: inset 0 0 0 2px #ff3d3d; animation: dg-doom 0.9s ease-in-out infinite; }
 .dg-cell.reach { background: linear-gradient(135deg, #2f6a80, #245468); }
 .dg-cell.target { box-shadow: inset 0 0 0 2px var(--warn); }
@@ -1100,11 +1307,37 @@ button:disabled { opacity: 0.5; }
 .dg-bag-list button.on { border-color: var(--gold); box-shadow: 0 0 8px #ffcb0566; }
 .dg-polish { display: flex; flex-wrap: wrap; gap: 4px; }
 .dg-polish button { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font-size: 0.8rem; }
+.dg-from-village { margin: 10px 0; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
+.dg-from-village h3 { margin: 0 0 4px; font-size: 0.95rem; }
+.dg-vault { display: flex; flex-wrap: wrap; gap: 4px; }
+.dg-vault button { padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; }
+.dg-vault button.on { border-color: var(--gold); box-shadow: 0 0 6px #ffcb0566; }
+.dg-lunch { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; font-size: 0.85rem; }
+.dg-rewards-title { margin: 10px 0 0; font-size: 0.9rem; }
 .dg-summary { list-style: none; padding: 0; margin: 8px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .dg-summary li { display: flex; flex-direction: column; align-items: center; padding: 6px; border-radius: 10px; background: var(--surface-2); }
 .dg-summary strong { font-size: 1.3rem; }
 .dg-summary small { color: var(--muted); font-size: 0.7rem; text-align: center; }
 
+.dg-particles { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+.dg-particles i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: var(--accent); opacity: 0; animation: dg-drift 7s linear infinite; }
+.fx-neve .dg-particles i { background: #fff; width: 4px; height: 4px; animation-name: dg-fall; }
+.fx-gotas .dg-particles i { background: #9cd2ff; width: 2px; height: 6px; border-radius: 1px; animation-name: dg-fall; animation-duration: 2.6s !important; }
+.fx-brasas .dg-particles i { background: #ffb347; box-shadow: 0 0 4px #ff6a1f; animation-name: dg-rise; }
+.fx-faiscas .dg-particles i { background: #9ff0ff; box-shadow: 0 0 6px #5fe3ff; animation-name: dg-blink; }
+.fx-brilho .dg-particles i, .fx-prisma .dg-particles i { box-shadow: 0 0 6px var(--accent); animation-name: dg-blink; }
+.fx-prisma .dg-particles i:nth-child(3n) { background: #8ef0c8; }
+.fx-prisma .dg-particles i:nth-child(3n + 1) { background: #ffe08a; }
+.fx-luz .dg-particles i { width: 18px; height: 60%; top: -10% !important; border-radius: 0; background: linear-gradient(180deg, #fff3c440, transparent); animation-name: dg-ray; }
+.fx-carvao .dg-particles i { background: #2b2018; animation-name: dg-fall; }
+.dungeon.no-ambient .dg-cell.water, .dungeon.no-ambient .dg-cell.lava { animation: none; }
+@keyframes dg-fall { 0% { transform: translateY(-120%); opacity: 0; } 10% { opacity: 0.85; } 100% { transform: translateY(420%); opacity: 0; } }
+@keyframes dg-rise { 0% { transform: translateY(120%); opacity: 0; } 15% { opacity: 0.9; } 100% { transform: translateY(-380%); opacity: 0; } }
+@keyframes dg-drift { 0% { transform: translate(0, 0); opacity: 0; } 30% { opacity: 0.5; } 100% { transform: translate(40px, -30px); opacity: 0; } }
+@keyframes dg-blink { 0%, 100% { opacity: 0; transform: scale(0.6); } 50% { opacity: 1; transform: scale(1.3); } }
+@keyframes dg-ray { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.55; } }
+@keyframes dg-water { 50% { filter: brightness(1.12); } }
+@keyframes dg-lava { 50% { filter: brightness(1.25) saturate(1.2); } }
 @keyframes dg-pop { from { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -28px); } }
 @keyframes dg-doom { 50% { background: #7a2a36; } }
 @keyframes dg-bob { 50% { transform: translateY(-4%); } }
@@ -1114,5 +1347,5 @@ button:disabled { opacity: 0.5; }
 @keyframes dg-orb-flash { 0%, 45% { transform: scale(0.55); opacity: 0; } 65% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(0.6); opacity: 0; } }
 @keyframes dg-weapon-out { 0%, 35% { transform: scale(0.3) rotate(-18deg); opacity: 0; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
 @media (max-height: 620px) { .dg-weapon-offer { gap: 4px; } .dg-weapon-offer > .hint { display: none; } .dg-draft-options button { min-height: 88px; } .dg-evolve-members button { min-height: 44px; } .dg-evolve-members img { width: 32px; height: 32px; } .dg-orb-animation { min-height: 108px; } .dg-orb-animation > img { width: 58px; height: 58px; } }
-@media (prefers-reduced-motion: reduce) { .dg-popup, .dg-cell.doom, .dg-mon img, .dg-player img, .dg-loot, .dg-stairs, .dg-mon.acting, .dg-orb-animation > img, .dg-orb-animation .dg-orb, .dg-orb-animation .weapon-art { animation: none; } .dg-orb-animation > img, .dg-orb-animation .dg-orb { display: none; } .dg-orb-animation .weapon-art { position: static; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dg-particles { display: none; } .dg-cell.water, .dg-cell.lava, .dg-popup, .dg-cell.doom, .dg-mon img, .dg-player img, .dg-loot, .dg-stairs, .dg-mon.acting, .dg-orb-animation > img, .dg-orb-animation .dg-orb, .dg-orb-animation .weapon-art { animation: none; } .dg-orb-animation > img, .dg-orb-animation .dg-orb { display: none; } .dg-orb-animation .weapon-art { position: static; opacity: 1; } }
 </style>

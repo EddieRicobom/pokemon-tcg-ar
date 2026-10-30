@@ -41,14 +41,26 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 - No combate: armadilhas disparam em quem passa pela casa, barreiras duram 2 rodadas e contam como parede, bloqueio amortece o próximo golpe e revida de perto, queimadura tira HP no fim da rodada; inimigos podem morrer no turno deles. Inimigos usam só o formato da arma, sem mecanismos.
 - Pokémon de dois tipos escolhe a munição no painel do ativo (sem custo de PA): só o 1º tipo, só o 2º, ou mista 70/30 em qualquer ordem.
 
+### Andares por geração (cenário, inimigos e casas especiais)
+- Cada andar sorteia uma geração (`src/core/dungeon-biomes.ts`): as 9 aparecem uma vez a cada 9 andares antes de repetir, como na Torre. A geração decide os inimigos (os nativos da região, os mesmos da Torre, mais as espécies de caverna; a partir do andar 6 eles vêm evoluídos e a partir do 14, duas vezes, sempre com dados reais) e o cenário.
+- Cenários no jeito de Pokémon Mystery Dungeon (piso contínuo, paredes de pedra com face frontal, borda de rocha, enfeites de chão e partículas): Kanto · Monte Lua (Pedras da Lua, poeira), Johto · Gruta União (água corrente, gotas), Hoenn · Monte Chaminé (lava, brasas), Sinnoh · Monte Coronet (gelo, neve), Unova · Caverna Eletropedra (cristais, faíscas), Kalos · Gruta Reflexo (espelhos, brilho), Alola · Colina Dez Quilates (areia, conchas, raios de sol), Galar · Mina de Galar (trilhos, lampiões, carvão), Paldea · Área Zero (prismas Terastal).
+- Casas especiais, como em Mystery Dungeon: **água** custa 2 PA para quem não é Água nem Voador; **lava** tira 8% do HP no fim da rodada de quem não é Fogo nem Voador (a equipe não cai por ela; inimigos sim) e os inimigos evitam pisar nela.
+- **Em casa:** quem é da geração sorteada para o andar luta com +10% de poder (🏠 no topo).
+- Som (mesmo motor da Vila e da Torre): entrada no andar, chefe, golpe com o tipo da munição, inimigo derrotado, saque, dano recebido, sala limpa, escada, derrota e saída. Botões 🔊 (som) e ✨ (partículas e brilhos do cenário) ficam no topo e são lembrados no aparelho; `prefers-reduced-motion` desliga as animações.
+
+### Masmorra e Vila
+- **Antes de descer** (tela de escolha, «🏡 Da Vila»): levar até 2 gemas do cofre (elas saem do cofre e se perdem se a equipe cair) e a marmita do Café, que vira +1 poção e +15% de HP máximo da equipe nesta expedição (consome a marmita, como na Torre).
+- **Ao sair com o espólio:** 5 moedas por andar alcançado (pela carteira, então o bônus de Zapdos vale), 1 Love Candy por chefe vencido (até 3) e 1 fragmento de Megapedra a cada 10 andares; as melhores gemas da expedição (lendárias primeiro, depois o grau) vão para o cofre, que guarda 12. Só as 3 primeiras expedições do dia são premiadas; as outras guardam gemas e recorde.
+- **Quem cai** não leva prêmio e perde as gemas da expedição; o recorde fica.
+- Tudo fica no estado da Vila (`dungeon`: cofre, teto do dia e recorde), então entra no backup. Regras em `src/core/dungeon-village.ts`, com testes.
+
 ### Descida sem fim
 - Não existe último andar. A expedição só termina quando a equipe cai ou quando você escolhe **Sair com o espólio** na escada.
 - Com a sala limpa, a escada 🪜 aparece e dá para andar à vontade sem gastar PA para pegar o saque. Na escada, você escolhe uma recompensa para descer (buff de fusão, poção ou sala segura), abre a forja ou sai.
-- Cada andar usa uma única geração: I no 1º, II no 2º, até IX no 9º; o ciclo recomeça pela I no 10º. Todos os inimigos sorteados naquela sala, inclusive chefe e mini-chefe, vêm da geração dela. Formas básicas entram desde o começo, intermediárias só no 7º andar e finais no 13º (chefes finais, no 14º), para os andares fáceis não parecerem povoados por evoluções finais.
+- Cada andar usa uma única geração sorteada. A cada grupo de 9 andares, as gerações I–IX aparecem uma vez cada, em ordem embaralhada pela semente da expedição. Todos os inimigos sorteados naquela sala, inclusive chefe e mini-chefe, vêm da geração dela. Formas básicas entram desde o começo; as evoluções surgem com a profundidade, para os andares fáceis não parecerem povoados por evoluções finais.
 - **Regra de dificuldade progressiva:** o andar real é a base sem teto (HP +20%, ataque +7% e defesas +4% por andar). Ao montar a próxima sala, cada aliado de pé depois do primeiro soma 1 «andar virtual» e cada 6 graus de gemas equipadas em aliados de pé soma mais 1, até +8. Esse andar efetivo altera atributos e chance de elite, mas não aumenta a quantidade de inimigos; perder membros reduz o ajuste na sala seguinte. Assim, uma equipe maior ou bem engastada encontra resistência proporcional sem punir uma equipe que já caiu.
 - Há um chefe a cada 5 andares, com 2,6× de HP e afixos que se acumulam a cada 10 andares. A cada 6 andares também aparece um **mini-chefe**, com 1,75× de HP, um afixo (dois depois do andar efetivo 18) e uma gema garantida; nos múltiplos de 30 ele acompanha o chefe, em vez de substituir a luta maior.
 - O número de inimigos sobe até 6 e a chance de elite chega a 55%.
-- A região muda a cada 5 andares (Caverna Úmida, Cripta Esquecida, Fornalha Profunda, Jardim Cristalino, Abismo Estelar), cada uma com a sua paleta, e depois dá a volta com «+N».
 - O recorde de andar fica guardado no aparelho (`localStorage`). O fim da expedição mostra um resumo: andar mais fundo, inimigos, elites, chefes, gemas e lendárias.
 
 ### Gemas
@@ -105,7 +117,6 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 - **Arte própria das 15 armas novas** (hoje emblema genérico).
 - **Balanceamento.** Ver se 6 PA e os custos dão boas decisões, se a curva de dificuldade sem teto acompanha a das gemas (a dificuldade cresce em linha e as gemas também, mas a lapidação é exponencial no custo) e se o chefe e as elites ficam justos.
 - **Salvar a expedição.** Fechar a tela perde a descida atual, então falta guardar o estado (ele é serializável) e oferecer «continuar».
-- **Recompensa fora da masmorra.** Gemas e andares ainda não valem nada na Vila: falta decidir o que volta (moedas, XP de Treinador, um item, a Pokédex) sem quebrar a economia da Vila.
 - **Efeitos de estado** (queimado, envenenado, paralisado), que o documento cita como estudo para as munições mistas.
 - **Opção para desligar as animações mais pesadas** (regra do projeto para efeitos que pesam na GPU), se o teste em celular mostrar custo.
 - **Acessibilidade:** foco do teclado na grade, leitura das intenções por leitor de tela e tamanho dos alvos de toque no celular.
