@@ -159,7 +159,10 @@ const exploring = computed(() => s.value?.phase === 'cleared');
 const enemyTurn = computed(() => s.value?.phase === 'enemy');
 const canForge = computed(() => s.value?.phase === 'cleared' || s.value?.phase === 'reward');
 const theme = computed(() => (s.value ? floorTheme(s.value.floor) : { index: 0, name: '' }));
+/** Alcance para desenhar o modo Mover e a sala limpa. */
 const moveCosts = computed(() => (s.value && (mode.value === 'move' || exploring.value) ? reachable(s.value) : new Map<string, number>()));
+/** Mesmo sem abrir o comando Mover, um espaço livre pode ser selecionado e confirmado com outro toque. */
+const walkCosts = computed(() => (s.value && playing.value ? reachable(s.value) : new Map<string, number>()));
 const targetKeys = computed(() => new Set(s.value && mode.value === 'attack' ? attackTargets(s.value).map(key) : []));
 const areaKeys = computed(() => new Set(s.value && mode.value === 'attack' && pending.value ? attackArea(s.value, pending.value).map(key) : []));
 const threatKeys = computed(() => (s.value && showThreat.value && playing.value ? threatenedCells(s.value) : new Set<string>()));
@@ -237,7 +240,27 @@ function tapCell(c: Cell): void {
   if (!mode.value) {
     // Sem ação escolhida, tocar num inimigo mostra quem ele é, como se comporta e o que pretende.
     const e = enemyAt(c);
-    inspected.value = e && inspected.value !== e.uid ? e.uid : null;
+    if (e) {
+      inspected.value = inspected.value !== e.uid ? e.uid : null;
+      pending.value = null;
+      return;
+    }
+    // Atalho de toque: selecionar uma casa livre alcançável e tocar nela outra vez anda até ela.
+    // Não aciona movimento em uma casa ocupada por inimigo, para manter a inspeção desse inimigo previsível.
+    const k = key(c);
+    if ((walkCosts.value.get(k) ?? 0) > 0) {
+      if (pending.value && key(pending.value) === k) {
+        result(move(st, c));
+        pending.value = null;
+      } else {
+        pending.value = c;
+        inspected.value = null;
+        flash.value = 'Toque novamente nesta casa para andar.';
+      }
+      return;
+    }
+    pending.value = null;
+    inspected.value = null;
     return;
   }
   const k = key(c);
@@ -602,6 +625,14 @@ const pendingText = computed(() => {
         </div>
       </div>
 
+      <nav class="dg-commands" aria-label="Ações">
+        <button type="button" :class="{ on: mode === 'move' }" :disabled="!playing || s.mustSwitch" @click="setMode('move')"><b>👣</b>Mover</button>
+        <button type="button" :class="{ on: mode === 'attack' }" :disabled="!playing || s.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar</button>
+        <button type="button" :disabled="!playing || s.mustSwitch || s.potions === 0 || s.ap < COSTS.item" @click="doPotion"><b>🧪</b>Poção · {{ COSTS.item }}</button>
+        <button type="button" :disabled="!playing || s.mustSwitch || !!s.fusion || s.fusionCharges === 0" @click="openFusion"><b>💠</b>Fusão · {{ COSTS.fusion }}</button>
+        <button type="button" class="primary" :disabled="!playing || s.mustSwitch" @click="doEnd"><b>⏭️</b>Encerrar</button>
+      </nav>
+
       <div v-if="activeMember && who" class="dg-active" :class="{ fused: !!s.fusion }">
         <FusionArt v-if="s.fusion" :origins="s.fusion.origins" :orbs="who.orbs" :ammo="who.ammo" :size="84" />
         <div v-else class="dg-weapon-col">
@@ -636,14 +667,6 @@ const pendingText = computed(() => {
           </div>
         </div>
       </div>
-
-      <nav class="dg-commands" aria-label="Ações">
-        <button type="button" :class="{ on: mode === 'move' }" :disabled="!playing || s.mustSwitch" @click="setMode('move')"><b>👣</b>Mover</button>
-        <button type="button" :class="{ on: mode === 'attack' }" :disabled="!playing || s.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar</button>
-        <button type="button" :disabled="!playing || s.mustSwitch || s.potions === 0 || s.ap < COSTS.item" @click="doPotion"><b>🧪</b>Poção · {{ COSTS.item }}</button>
-        <button type="button" :disabled="!playing || s.mustSwitch || !!s.fusion || s.fusionCharges === 0" @click="openFusion"><b>💠</b>Fusão · {{ COSTS.fusion }}</button>
-        <button type="button" class="primary" :disabled="!playing || s.mustSwitch" @click="doEnd"><b>⏭️</b>Encerrar</button>
-      </nav>
 
       <ol class="dg-team" aria-label="Equipe">
         <li v-for="(m, i) in s.team" :key="m.id">
