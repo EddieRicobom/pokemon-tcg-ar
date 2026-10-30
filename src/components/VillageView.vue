@@ -34,6 +34,7 @@ import { league } from '../app/league-store';
 import type { DecodedGif } from '../core/gif';
 import MinigameHub from './MinigameHub.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
+import DungeonGame from './DungeonGame.vue';
 import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
 import { personalityOf } from '../core/village/personality';
@@ -141,7 +142,7 @@ const towerGameRef = ref<{ requestBack: () => void; requestLeave: () => void } |
 const day = ref(dayKey(new Date()));
 pruneHarvest(state, day.value);
 
-type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'gallery' | 'card-evolution' | 'farm';
+type Sheet = null | 'menu' | 'build' | 'home' | 'shop' | 'dress' | 'arcade' | 'torre' | 'masmorra' | 'gallery' | 'card-evolution' | 'farm';
 const sheet = ref<Sheet>(null);
 let towerHistoryGuard = false;
 
@@ -1226,8 +1227,8 @@ function pressAClick(event: MouseEvent): void {
   if (performance.now() - lastPointerAPress > 180) pressA();
 }
 function onKey(e: KeyboardEvent): void {
-  // A Torre tem seu próprio teclado; a Vila não deve capturar essas teclas por trás dela.
-  if (sheet.value === 'torre') return;
+  // A Torre e a Masmorra têm teclado próprio; a Vila não deve capturar essas teclas por trás delas.
+  if (sheet.value === 'torre' || sheet.value === 'masmorra') return;
   if (recapScenes.value.length) {
     if (e.type === 'keydown' && e.key === 'Escape') { e.preventDefault(); finishRecap(); }
     return;
@@ -1958,7 +1959,7 @@ function openBuilding(b: Building): void {
     say('💠 Altar da Confiança: amizade máxima e 5 Pedras da Confiança evoluem uma carta sem as três provas.', 5200);
     return;
   }
-  if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena' || b.kind === 'torre') return openGameBuilding(b);
+  if (b.kind === 'arcade' || b.kind === 'pins' || b.kind === 'arena' || b.kind === 'torre' || b.kind === 'masmorra') return openGameBuilding(b);
   if (b.kind === 'dojo') return openDojoBuilding(b);
   if (b.kind === 'mail') return openMail();
   if (b.kind === 'cafe') {
@@ -2065,6 +2066,12 @@ function openGameBuilding(b: Building): void {
         { label: 'Batalhar com um amigo (PvP)', run: goToPvp },
         exit,
       ],
+    };
+  } else if (b.kind === 'masmorra') {
+    dialog.value = {
+      name: b.name,
+      text: 'Uma escada desce para o escuro, sem fundo conhecido. Leve até seis Pokémon, gaste 6 PA por turno para mover, atacar, trocar e fundir dois deles, junte gemas para as armas e desça o quanto aguentar: cada andar é mais duro, a cada 5 há um chefe, e você sai quando quiser pela escada. É um protótipo: as regras e os números ainda vão mudar.',
+      actions: [{ label: 'Descer à Masmorra', run: () => { closeDialog(); sheet.value = 'masmorra'; } }, exit],
     };
   } else {
     dialog.value = {
@@ -2661,7 +2668,7 @@ let miniTimer: ReturnType<typeof setInterval> | null = null;
 /** Pixels por bloco no minimapa (o grande é o mesmo desenho, só que maior na tela). */
 let MINI_K = 3;
 const minimapGuides = [
-  ...map.buildings.filter((b) => b.kind !== 'home').map((b) => ({ name: b.name, icon: ({ cafe: '☕', mail: '✉️', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', fountain: '⛲' } as Record<string, string>)[b.kind] ?? '📍', x: b.door.x, y: b.door.y })),
+  ...map.buildings.filter((b) => b.kind !== 'home').map((b) => ({ name: b.name, icon: ({ cafe: '☕', mail: '✉️', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', masmorra: '🗝️', fountain: '⛲' } as Record<string, string>)[b.kind] ?? '📍', x: b.door.x, y: b.door.y })),
   ...WORK_SITES.map((p) => ({ name: p.name, icon: p.icon, ...p.visit })),
   ...LEISURE_SPOTS,
 ];
@@ -2670,7 +2677,7 @@ const minimapSpeakerName = computed(() => minimapSpeakerId.value ? nameOf(minima
 const minimapRouteLabel = computed(() => minimapRoute.value);
 const guidedTripActive = computed(() => { guidedTripVersion.value; return !!guidedTrip; });
 const MINIMAP_BUILDING_ICONS: Record<string, string> = {
-  cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', fountain: '⛲',
+  cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', masmorra: '🗝️', fountain: '⛲',
 };
 const MINIMAP_WORKSITE_ICONS: Record<string, string> = { farm: '🌱', mine: '⛏️', lumber: '🪓', fishing: '🎣' };
 const guidedRouteStatus = computed(() => {
@@ -2746,7 +2753,7 @@ function drawMini(): void {
   };
   // Contornos dos lugares principais: a base continua sendo a leitura do terreno, e estes contornos ajudam a reconhecer
   // um prédio mesmo quando o minimapa está reduzido no celular.
-  const placeColors: Partial<Record<string, string>> = { arcade: '#ffb347', pins: '#e78cff', arena: '#ff6d7a', torre: '#bd9cff', museum: '#71d7ff', cafe: '#ffc66d', mail: '#f5f0db', fountain: '#7de7ff' };
+  const placeColors: Partial<Record<string, string>> = { arcade: '#ffb347', pins: '#e78cff', arena: '#ff6d7a', torre: '#bd9cff', masmorra: '#d08a5c', museum: '#71d7ff', cafe: '#ffc66d', mail: '#f5f0db', fountain: '#7de7ff' };
   for (const building of map.buildings) {
     if (building.kind === 'home') continue;
     const color = placeColors[building.kind] ?? '#ffffff';
@@ -3494,6 +3501,11 @@ onBeforeUnmount(() => {
       <div v-if="sheet === 'torre'" class="village-sheet torre-full" role="dialog" aria-label="Torre de Sobrevivência">
         <header><strong>Torre de Sobrevivência</strong><button type="button" class="link village-sheet-back" aria-label="Sair da Torre" @click="towerGameRef?.requestLeave()">Sair da Torre</button></header>
         <MinigameSobrevivencia ref="towerGameRef" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="sheet = null" />
+      </div>
+
+      <div v-if="sheet === 'masmorra'" class="village-sheet torre-full" role="dialog" aria-label="Masmorra">
+        <header><strong>🗝️ Masmorra · protótipo</strong><button type="button" class="link village-sheet-back" aria-label="Sair da Masmorra" @click="sheet = null">Sair</button></header>
+        <DungeonGame :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name }))" @leave="sheet = null" />
       </div>
 
       <div v-if="sheet === 'gallery'" class="village-sheet tall" role="dialog" aria-label="Vitrine de desafios do Museu">
