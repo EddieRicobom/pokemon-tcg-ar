@@ -473,7 +473,7 @@ const pendingText = computed(() => {
 </script>
 
 <template>
-  <div class="dungeon" :class="s ? `theme-${theme.index}` : ''">
+  <div class="dungeon" :class="[s ? `theme-${theme.index}` : '', { 'is-running': !!s }]">
     <!-- Escolha da equipe -->
     <section v-if="!s" class="dg-pick">
       <h2>Masmorra · protótipo</h2>
@@ -591,6 +591,14 @@ const pendingText = computed(() => {
           <small v-for="a in inspectedEnemy.affixes" :key="a">{{ AFFIXES[a].icon }} {{ AFFIXES[a].name }}: {{ AFFIXES[a].text }}</small>
           <small>{{ WEAPONS[inspectedEnemy.weapon].name }} ({{ PATTERN_TEXT[WEAPONS[inspectedEnemy.weapon].pattern] }}, alcance {{ WEAPONS[inspectedEnemy.weapon].range }}) · HP {{ inspectedEnemy.hp }}/{{ inspectedEnemy.maxHp }}{{ inspectedEnemy.shaken ? ' · defesa abalada' : '' }}</small>
           <small v-if="intentOf(inspectedEnemy)" class="dg-intent-text">{{ INTENTS[intentOf(inspectedEnemy)!.kind].icon }} Neste turno, {{ INTENTS[intentOf(inspectedEnemy)!.kind].text }}.</small>
+          <details class="dg-enemy-details">
+            <summary>Detalhes do inimigo</summary>
+            <div>
+              <span>{{ PROFILES[inspectedEnemy.profile].name }}: {{ PROFILES[inspectedEnemy.profile].text }}</span>
+              <span v-for="a in inspectedEnemy.affixes" :key="a">{{ AFFIXES[a].icon }} {{ AFFIXES[a].name }}: {{ AFFIXES[a].text }}</span>
+              <span>{{ WEAPONS[inspectedEnemy.weapon].name }} ({{ PATTERN_TEXT[WEAPONS[inspectedEnemy.weapon].pattern] }}, alcance {{ WEAPONS[inspectedEnemy.weapon].range }}) · HP {{ inspectedEnemy.hp }}/{{ inspectedEnemy.maxHp }}{{ inspectedEnemy.shaken ? ' · defesa abalada' : '' }}</span>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -613,13 +621,18 @@ const pendingText = computed(() => {
             <span>Carga</span><span class="dg-hp charge"><i :style="{ width: pct(who.charge, s.fusion ? s.fusion.maxCharge : activeMember.maxCharge) }"></i></span><small>{{ who.charge }}/{{ s.fusion ? s.fusion.maxCharge : activeMember.maxCharge }}</small>
           </div>
           <div class="dg-weapon">
-            <span v-if="!s.fusion"><strong>{{ who.weapon.name }}</strong> · {{ who.weapon.category }}</span>
-            <span>{{ who.weapon.kind === 'physical' ? 'Físico' : 'Especial' }} · {{ who.weapon.ap }} PA · {{ who.weapon.cost }} carga · {{ PATTERN_TEXT[who.weapon.pattern] }}, alcance {{ who.weapon.range }} · poder {{ who.power }}<template v-if="who.bonus.crit > 0"> · crítico {{ Math.round(who.bonus.crit * 100) }}%</template></span>
+            <span class="dg-weapon-summary"><strong>{{ who.weapon.name }}</strong> · poder {{ who.power }} · {{ who.weapon.ap }} PA · {{ who.weapon.cost }} carga</span>
             <span>Munição: <span v-for="t in who.ammo" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span><template v-if="who.ammo.length > 1"> (70% / 30%)</template></span>
             <span v-if="!s.fusion && ammoOptions(activeMember).length > 1" class="dg-ammo">
               <button v-for="opt in ammoOptions(activeMember)" :key="ammoKey(opt)" type="button" :class="{ on: ammoKey(opt) === ammoKey(activeMember.ammo) }" :disabled="s.phase === 'enemy'" @click="chooseAmmo(opt)">{{ ammoLabel(opt) }}</button>
             </span>
-            <span v-for="(line, i) in mechanicList(who.weapon.mechanics)" :key="i" class="dg-mech">⚙ {{ line }}</span>
+            <details class="dg-weapon-details">
+              <summary>Detalhes da arma</summary>
+              <div>
+                <span>{{ who.weapon.kind === 'physical' ? 'Físico' : 'Especial' }} · {{ who.weapon.category }} · {{ PATTERN_TEXT[who.weapon.pattern] }}, alcance {{ who.weapon.range }}<template v-if="who.bonus.crit > 0"> · crítico {{ Math.round(who.bonus.crit * 100) }}%</template></span>
+                <span v-for="(line, i) in mechanicList(who.weapon.mechanics)" :key="i" class="dg-mech">⚙ {{ line }}</span>
+              </div>
+            </details>
           </div>
         </div>
       </div>
@@ -834,6 +847,15 @@ button.small { min-height: 30px; padding: 0 10px; border-radius: 8px; margin-lef
 button:disabled { opacity: 0.5; }
 
 .dg-run { display: flex; flex-direction: column; gap: 8px; max-width: 540px; margin: 0 auto; }
+.dungeon.is-running { display: flex; overflow: hidden; padding: 5px 8px calc(5px + env(safe-area-inset-bottom)); }
+.dungeon.is-running .dg-run { width: min(540px, 100%); height: 100%; min-height: 0; flex: 1; gap: 4px; }
+.dungeon.is-running .dg-hud { gap: 3px 4px; font-size: 0.76rem; line-height: 1.1; }
+.dungeon.is-running .dg-break { display: none; }
+.dungeon.is-running .dg-pill { padding: 3px 6px; }
+.dungeon.is-running .dg-floor { font-size: 0.88rem; }
+.dungeon.is-running .dg-small { display: none; }
+.dungeon.is-running .dg-theme { margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dungeon.is-running .dg-toggle { margin-left: 0; }
 .dg-hud { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.85rem; font-weight: 600; }
 .dg-break { flex-basis: 100%; height: 0; }
 .dg-pill { padding: 3px 9px; border-radius: 999px; background: #0007; border: 1px solid #ffffff22; color: inherit; font: inherit; }
@@ -847,6 +869,7 @@ button:disabled { opacity: 0.5; }
 .dg-toggle { margin-left: auto; font-weight: 400; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 
 .dg-grid { display: grid; gap: 3px; padding: 6px; background: linear-gradient(180deg, color-mix(in srgb, var(--tile-b) 70%, #000), #00000080); border: 2px solid var(--frame); border-radius: 12px; box-shadow: inset 0 0 22px #000c, 0 0 18px color-mix(in srgb, var(--frame) 40%, transparent); transition: border-color 0.6s; }
+.dungeon.is-running .dg-grid { width: clamp(230px, calc(100dvh - 440px), 390px); max-width: 100%; align-self: center; flex: none; }
 .dg-grid.enemy-turn { border-color: #b84a5a; }
 .dg-cell { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 5px; background: linear-gradient(135deg, var(--tile-a), var(--tile-b)); display: flex; align-items: center; justify-content: center; overflow: visible; }
 .dg-cell.barrier { background: repeating-linear-gradient(90deg, #7fe7ff55 0 3px, #1b2a40 3px 7px); box-shadow: inset 0 0 0 2px #7fe7ff99; }
@@ -890,6 +913,9 @@ button:disabled { opacity: 0.5; }
 .dg-popup.info { color: #ddd; }
 
 .dg-preview { min-height: 2.6em; margin: 0; font-size: 0.88rem; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.dungeon.is-running .dg-preview { min-height: 1.7em; font-size: 0.76rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex-wrap: nowrap; }
+.dungeon.is-running .dg-preview > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dungeon.is-running .dg-preview button { min-height: 26px; flex: none; }
 .dg-warn { color: var(--warn); }
 .dg-enemy-msg { color: #ffb3b3; }
 .dg-enemy-card { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 10px; background: #3a1d2a; border: 1px solid #7a3446; font-size: 0.82rem; }
@@ -899,6 +925,18 @@ button:disabled { opacity: 0.5; }
 .dg-enemy-card div { display: flex; flex-direction: column; gap: 2px; }
 .dg-enemy-card small { color: var(--muted); }
 .dg-intent-text { color: #ffb3b3 !important; }
+.dg-enemy-details { display: none; }
+.dungeon.is-running .dg-enemy-card { min-height: 48px; gap: 5px; padding: 4px 6px; font-size: 0.74rem; }
+.dungeon.is-running .dg-enemy-card img { width: 38px; height: 38px; }
+.dungeon.is-running .dg-enemy-card > div { min-width: 0; }
+.dungeon.is-running .dg-enemy-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dungeon.is-running .dg-enemy-card small:not(.dg-intent-text) { display: none; }
+.dungeon.is-running .dg-enemy-card .dg-intent-text { display: none; }
+.dungeon.is-running .dg-enemy-details { display: block; }
+.dungeon.is-running .dg-enemy-details:not([open]) { position: static; max-height: none; overflow: visible; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.dungeon.is-running .dg-enemy-details[open] { position: fixed; z-index: 85; inset: auto 12px calc(12px + env(safe-area-inset-bottom)); max-height: min(42dvh, 250px); overflow-y: auto; padding: 8px 10px; border: 1px solid #7a3446; border-radius: 10px; background: var(--surface); box-shadow: 0 10px 28px #000b; }
+.dungeon.is-running .dg-enemy-details summary { cursor: pointer; color: var(--gold); }
+.dungeon.is-running .dg-enemy-details > div { display: flex; flex-direction: column; gap: 3px; max-height: none; margin-top: 4px; overflow: visible; color: var(--muted); }
 .dg-active { display: flex; gap: 10px; align-items: center; background: linear-gradient(135deg, var(--surface-2), var(--surface)); border: 1px solid var(--line); border-radius: 12px; padding: 8px; font-size: 0.84rem; }
 .dg-active.fused { border-color: #b38cff; box-shadow: 0 0 12px #b38cff44; flex-direction: column; align-items: stretch; }
 .dg-active.fused :deep(.fusion-art) { align-self: center; }
@@ -909,11 +947,26 @@ button:disabled { opacity: 0.5; }
 .dg-bar > span:first-child { min-width: 3.4em; }
 .dg-weapon { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 0.8rem; }
 .dg-weapon strong { color: var(--text); }
+.dg-weapon-details { color: var(--muted); }
+.dg-weapon-details summary { cursor: pointer; color: var(--gold); }
+.dg-weapon-details > div { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.dungeon.is-running .dg-active { min-height: 76px; gap: 6px; padding: 5px 6px; font-size: 0.75rem; }
+.dungeon.is-running .dg-active .weapon-art { width: 60px !important; height: 60px !important; }
+.dungeon.is-running .dg-active-info { gap: 2px; }
+.dungeon.is-running .dg-bar { gap: 4px; }
+.dungeon.is-running .dg-bar > span:first-child { min-width: 2.9em; }
+.dungeon.is-running .dg-weapon { font-size: 0.72rem; gap: 1px; }
+.dungeon.is-running .dg-weapon-details { position: fixed; z-index: 85; inset: auto 12px calc(12px + env(safe-area-inset-bottom)); max-height: min(42dvh, 250px); overflow-y: auto; padding: 8px 10px; border: 1px solid var(--gold); border-radius: 10px; background: var(--surface); box-shadow: 0 10px 28px #000b; }
+.dungeon.is-running .dg-weapon-details:not([open]) { position: static; max-height: none; overflow: visible; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.dungeon.is-running .dg-weapon-details[open] summary { margin-bottom: 4px; }
 .dg-type { display: inline-block; padding: 0 6px; margin-left: 4px; border-radius: 999px; font-size: 0.7rem; color: #fff; text-shadow: 0 1px 1px #0008; }
 .dg-commands { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .dg-commands button { min-height: 52px; padding: 2px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font-size: 0.74rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
 .dg-commands button b { font-size: 1.05rem; font-weight: 400; }
 .dg-commands button.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+.dungeon.is-running .dg-commands { gap: 3px; }
+.dungeon.is-running .dg-commands button { min-height: 42px; font-size: 0.67rem; }
+.dungeon.is-running .dg-commands button b { font-size: 0.94rem; }
 
 .dg-team { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
 .dg-team button { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: inherit; position: relative; font-size: 0.68rem; }
@@ -927,6 +980,22 @@ button:disabled { opacity: 0.5; }
 .dg-num { position: absolute; top: 2px; left: 4px; color: var(--muted); }
 .dg-log { font-size: 0.8rem; color: var(--muted); }
 .dg-log ol { margin: 4px 0; padding-left: 18px; }
+.dungeon.is-running .dg-team { gap: 3px; }
+.dungeon.is-running .dg-team button { min-height: 54px; gap: 1px; padding: 2px; font-size: 0.62rem; }
+.dungeon.is-running .dg-team img { width: 23px; height: 23px; }
+.dungeon.is-running .dg-team-weapon { transform: scale(0.75); transform-origin: top right; }
+.dungeon.is-running .dg-team button > small:last-child { display: none; }
+.dungeon.is-running .dg-team .dg-hp { height: 4px; }
+.dungeon.is-running .dg-log { min-height: 16px; font-size: 0.7rem; line-height: 1.1; }
+.dungeon.is-running .dg-log[open] { position: fixed; z-index: 85; inset: auto 12px calc(12px + env(safe-area-inset-bottom)); max-height: min(46dvh, 290px); overflow-y: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 10px 28px #000b; }
+
+@media (max-height: 620px) and (orientation: portrait) {
+  .dungeon.is-running .dg-grid { width: clamp(210px, calc(100dvh - 410px), 310px); }
+  .dungeon.is-running .dg-enemy-card { display: none; }
+  .dungeon.is-running .dg-active { min-height: 64px; }
+  .dungeon.is-running .dg-active .weapon-art { width: 48px !important; height: 48px !important; }
+  .dungeon.is-running .dg-team button { min-height: 46px; }
+}
 
 .dg-modal { position: fixed; inset: 0; z-index: 80; background: #000b; display: flex; align-items: center; justify-content: center; padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
 .dg-modal-box { width: min(460px, 100%); max-height: calc(100dvh - 16px); overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
