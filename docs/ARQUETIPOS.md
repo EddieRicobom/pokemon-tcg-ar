@@ -2,7 +2,7 @@
 
 101 arquétipos, gerados a partir de `src/core/archetypes.ts` (a fonte da verdade é o código). Os ids são estáveis: nunca renomeie, só acrescente.
 
-- **Fonte `carta`:** só para cartas escaneadas. Sai do nome impresso, da raridade e da coleção; alguns usam os detalhes do TCGdex (`traits`), que as cartas novas guardam e as antigas ganham quando forem escaneadas de novo.
+- **Fonte `carta`:** só para cartas escaneadas. Sai do nome impresso, da raridade e da coleção; alguns usam os detalhes do TCGdex (`traits`), que as cartas novas guardam ao serem escaneadas. As antigas são corrigidas sozinhas: ao abrir o app, `CardCache.backfillTraits` busca no TCGdex, uma carta por vez, os detalhes (e a raridade, se faltar) das cartas que ainda não os têm, sem precisar escanear de novo. Sem rede, tenta na próxima abertura; carta sem detalhes na fonte só é procurada de novo depois de 7 dias.
 - **Fonte `espécie` / `stats`:** vale para todos, inclusive Digital Pokémon.
 - **Uso futuro:** `teamArchetypes()` conta quantos membros de uma equipe dividem cada arquétipo, como base para bônus de sinergia nos modos de jogo (ainda não aplicados).
 

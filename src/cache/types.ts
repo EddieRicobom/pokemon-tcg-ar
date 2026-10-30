@@ -70,6 +70,8 @@ export interface CachedCard {
   mega?: boolean;
   /** Detalhes do TCGdex para os arquétipos (`core/card-traits.ts`). Ausente em cartas escaneadas antes; volta num novo escaneamento. */
   traits?: CardTraits;
+  /** Quando o app tentou buscar os detalhes desta carta no TCGdex sozinho (para não repetir a cada abertura). */
+  traitsCheckedAt?: number;
 }
 
 export interface AssetRecord {

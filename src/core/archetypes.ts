@@ -13,8 +13,8 @@ import type { CardTraits } from './card-traits';
  * ESTÁVEIS: nunca renomeie um id, só acrescente.
  *
  * Retrocompatível: a detecção usa só o que cada fonte tem. Cartas antigas (sem `traits`) ganham os arquétipos que saem
- * do nome, da raridade, da coleção e da espécie; os que dependem de `traits` aparecem quando a carta for escaneada de
- * novo. Digital Pokémon (sem carta) ganham os de espécie e de stats, mais «Digital». Nada é sorteado nem inventado.
+ * do nome, da raridade, da coleção e da espécie; os que dependem de `traits` aparecem assim que a correção automática
+ * (`CardCache.backfillTraits`, ao abrir o app) buscar os detalhes no TCGdex — sem escanear de novo. Digital Pokémon (sem carta) ganham os de espécie e de stats, mais «Digital». Nada é sorteado nem inventado.
  */
 
 export type ArchetypeGroup = 'mecanica' | 'raridade' | 'colecao' | 'tipo' | 'categoria' | 'estagio' | 'regiao' | 'estilo' | 'especial';

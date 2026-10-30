@@ -1,5 +1,5 @@
 import { TARGET_VERSION } from '../ar/target';
-import { normalizeTraits } from '../core/card-traits';
+import { normalizeTraits, traitsFromTcgdex } from '../core/card-traits';
 import { fetchSprite as defaultFetchSprite } from '../ar/sprite-source';
 import { formDexId, spriteKeyIsFor } from '../core/dex-form';
 import { isMegaName } from '../core/mega';
@@ -360,6 +360,37 @@ export class CardCache {
       if (next !== card) changed++;
     }
     return changed;
+  }
+
+  /**
+   * Corrige sozinho as cartas guardadas antes dos arquétipos, sem escanear de novo: busca no TCGdex os detalhes que
+   * faltam (`traits`, e a raridade se o save antigo não tiver) e grava. Roda em segundo plano ao abrir o app, uma carta
+   * por vez. Sem rede, para e tenta na próxima abertura; carta sem detalhes na fonte (Treinador, Energia, id que sumiu)
+   * fica marcada e só é procurada de novo depois de `recheckMs`. Devolve quantas cartas ganharam detalhes.
+   */
+  async backfillTraits(fetchCard: (id: string) => Promise<unknown>, options: { recheckMs?: number; gapMs?: number } = {}): Promise<number> {
+    const recheck = options.recheckMs ?? 7 * 24 * 60 * 60 * 1000;
+    let updated = 0;
+    for (const card of [...(await this.load()).values()]) {
+      if (card.pending !== undefined || card.traits) continue;
+      if (card.traitsCheckedAt !== undefined && this.now() - card.traitsCheckedAt < recheck) continue;
+      let raw: unknown;
+      try {
+        raw = await fetchCard(card.id);
+      } catch {
+        break;
+      }
+      // Pode ter sido apagada ou escaneada de novo enquanto a busca corria.
+      const current = (await this.load()).get(card.id);
+      if (!current || current.traits || current.pending !== undefined) continue;
+      const traits = traitsFromTcgdex(raw);
+      const rarityRaw = raw && typeof raw === 'object' ? (raw as { rarity?: unknown }).rarity : undefined;
+      const rarity = !current.rarity && typeof rarityRaw === 'string' && rarityRaw.trim() ? rarityRaw.trim().slice(0, 40) : undefined;
+      await this.save({ ...current, ...(traits ? { traits } : {}), ...(rarity ? { rarity } : {}), traitsCheckedAt: this.now() });
+      if (traits) updated++;
+      if (options.gapMs) await new Promise((resolve) => setTimeout(resolve, options.gapMs));
+    }
+    return updated;
   }
 
   /** A ficha do sprite guardado, com o que se sabe sobre a variante shiny. */

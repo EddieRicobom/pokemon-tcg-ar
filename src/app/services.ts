@@ -84,6 +84,8 @@ export function getCache(): Promise<CardCache> {
     void cache.requestPersistence();
     // Cartas shiny guardadas com o sprite normal (só o brilho) trocam pelo sprite shiny de verdade, em segundo plano.
     void cache.refreshShinySprites().catch(() => 0);
+    // Cartas guardadas antes dos arquétipos ganham os detalhes do TCGdex sozinhas, sem escanear de novo (uma por vez).
+    void cache.backfillTraits((id) => getTcgdex().getCard(id), { gapMs: 400 }).catch(() => 0);
     // As cartas que já estavam guardadas entram no Treinador sem XP.
     void cache.list().then((cards) => syncTrainerHistory(cards)).catch(() => undefined);
     return cache;

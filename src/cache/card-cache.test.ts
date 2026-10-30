@@ -792,3 +792,37 @@ async function storageBytes(): Promise<number> {
   for (const record of await db.getAll('assets')) total += record.bytes;
   return total;
 }
+
+describe('detalhes das cartas antigas (arquétipos) sem escanear de novo', () => {
+  it('busca sozinho os detalhes que faltam, grava e não repete a busca logo em seguida', async () => {
+    const cache = make();
+    await cache.recordRecognition({ card: pikachu });
+    const asked: string[] = [];
+    const fetchCard = async (id: string) => { asked.push(id); return { rarity: 'Common', stage: 'Basic', hp: 40, attacks: [{ damage: 30 }] }; };
+    expect(await cache.backfillTraits(fetchCard)).toBe(1);
+    const card = await cache.get(pikachu.id);
+    expect(card?.traits).toMatchObject({ stage: 'Basic', hp: 40, maxDamage: 30 });
+    expect(card?.rarity).toBe('Common');
+    expect(await cache.backfillTraits(fetchCard)).toBe(0);
+    expect(asked).toEqual([pikachu.id]);
+  });
+
+  it('sem rede, para sem marcar nada e tenta na próxima vez', async () => {
+    const cache = make();
+    await cache.recordRecognition({ card: pikachu });
+    expect(await cache.backfillTraits(async () => { throw new TypeError('offline'); })).toBe(0);
+    expect((await cache.get(pikachu.id))?.traitsCheckedAt).toBeUndefined();
+  });
+
+  it('carta sem detalhes na fonte fica marcada e só é procurada de novo depois do prazo', async () => {
+    const cache = make();
+    await cache.recordRecognition({ card: trainer });
+    let calls = 0;
+    const fetchCard = async () => { calls++; return null; };
+    await cache.backfillTraits(fetchCard);
+    await cache.backfillTraits(fetchCard);
+    expect(calls).toBe(1);
+    await cache.backfillTraits(fetchCard, { recheckMs: 0 });
+    expect(calls).toBe(2);
+  });
+});

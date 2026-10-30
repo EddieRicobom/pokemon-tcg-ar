@@ -1,7 +1,7 @@
 /**
  * Detalhes da carta física que o TCGdex informa e que o app passa a guardar no escaneamento (`CachedCard.traits`).
- * Cartas escaneadas antes disso não têm o campo: os arquétipos que dependem dele simplesmente não aparecem até a
- * carta ser escaneada de novo (o reescaneamento grava os detalhes sem apagar nada). Tudo opcional e validado: o que a
+ * Cartas escaneadas antes disso são corrigidas sozinhas ao abrir o app (`CardCache.backfillTraits` busca os detalhes
+ * no TCGdex, sem escanear de novo); até lá, os arquétipos que dependem deles só não aparecem. Tudo opcional e validado: o que a
  * fonte não mandar fica ausente, nunca inventado.
  */
 export interface CardTraits {
