@@ -3,7 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import WeaponArt from './WeaponArt.vue';
 import FusionArt from './FusionArt.vue';
 import GemChip from './GemChip.vue';
+import DungeonAttackFx from './DungeonAttackFx.vue';
 import { getCache } from '../app/services';
+import { effectiveVisual } from '../app/visual-settings';
 import { cardCompanion } from '../app/card-evolution-store';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { statsOfDex } from '../core/survivor-stats';
@@ -33,6 +35,7 @@ interface Popup { id: number; cell: string; text: string; kind: 'hit' | 'hurt' |
 interface EvolutionOffer { memberIndex: number; input: Omit<MemberInput, 'id'> }
 interface WeaponOffer { choices: Candidate[]; evolutions: EvolutionOffer[]; reward: RewardId }
 interface OrbAnimation { dexId: number; name: string; weapon: NonNullable<ReturnType<typeof weaponOfDex>>; message: string }
+interface AttackFx { id: number; weapon: NonNullable<ReturnType<typeof weaponOfDex>>; ammo: PokemonType | null; cells: string[] }
 
 /**
  * Selvagens da masmorra, por profundidade: espécies de caverna no começo, evoluções e pseudolendários mais fundo. Os
@@ -76,7 +79,10 @@ const weaponOffer = ref<WeaponOffer | null>(null);
 const chosenCandidateIds = new Set<string>();
 const offeredFloors = new Set<number>();
 const orbAnimation = ref<OrbAnimation | null>(null);
+const attackFx = ref<AttackFx | null>(null);
 let popupId = 0;
+let attackFxId = 0;
+let attackFxTimer: ReturnType<typeof setTimeout> | undefined;
 let alive = true;
 
 const pool: EnemySpecies[] = WILD.flatMap(({ dexId, minDepth, boss }) => {
@@ -116,7 +122,7 @@ onMounted(async () => {
   }
   window.addEventListener('keydown', onKey);
 });
-onBeforeUnmount(() => { alive = false; window.removeEventListener('keydown', onKey); });
+onBeforeUnmount(() => { alive = false; window.removeEventListener('keydown', onKey); if (attackFxTimer) clearTimeout(attackFxTimer); });
 
 function togglePick(c: Candidate): void {
   if (c.missing) return;
@@ -199,6 +205,14 @@ function popup(cell: Cell, text: string, kind: Popup['kind']): void {
   setTimeout(() => { popups.value = popups.value.filter((p) => p.id !== id); }, 1000);
 }
 
+/** O impacto usa a cor da munição e a silhueta da arma; só existe durante o golpe. */
+function showAttackFx(weapon: AttackFx['weapon'], ammo: PokemonType | null, cells: readonly Cell[]): void {
+  if (!effectiveVisual.value.impactFx) return;
+  if (attackFxTimer) clearTimeout(attackFxTimer);
+  attackFx.value = { id: ++attackFxId, weapon, ammo, cells: cells.map(key) };
+  attackFxTimer = setTimeout(() => { attackFx.value = null; }, 640);
+}
+
 function result(r: { ok: boolean; reason?: string }): void {
   flash.value = r.ok ? '' : r.reason ?? '';
   if (s.value) saveRecord(s.value.stats.deepest);
@@ -239,8 +253,11 @@ function confirm(): void {
   if (mode.value === 'move') result(move(st, pending.value));
   else if (mode.value === 'attack') {
     const hits = previewAttack(st, pending.value);
+    const weapon = attacker(st).weapon.id;
+    const ammo = attacker(st).ammo[0] ?? null;
     const before = new Map(st.enemies.map((e) => [e.uid, { hp: e.hp, pos: e.pos }]));
     const r = attack(st, pending.value);
+    if (r.ok) showAttackFx(weapon, ammo, hits.trap ? [pending.value] : hits.hits.map((hit) => hit.enemy.pos));
     if (r.ok) for (const [uid, b] of before) {
       const now = st.enemies.find((e) => e.uid === uid);
       const lost = b.hp - (now?.hp ?? 0);
@@ -545,6 +562,7 @@ const pendingText = computed(() => {
               </template>
             </span>
           </template>
+          <DungeonAttackFx v-if="attackFx?.cells.includes(key(c))" :key="`${attackFx.id}:${key(c)}`" :weapon="attackFx.weapon" :ammo="attackFx.ammo" />
           <span v-for="p in popupsAt(c)" :key="p.id" class="dg-popup" :class="p.kind">{{ p.text }}</span>
         </button>
       </div>
