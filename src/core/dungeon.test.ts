@@ -3,7 +3,7 @@ import {
   attack, attackArea, attacker, attackTargets, beginEnemyTurn, BOSS_EVERY, BOSS_FLOOR_EVERY, chooseReward, damage, depthScale, eliteChance, endTurn,
   enemyStep, equipGem, EXHAUST_ROUNDS, finishEnemyTurn, floorTheme, fuse, fusionName, fusionOrigins, GRID_H, GRID_W, isBossFloor, move, planEnemy,
   polishGems, previewAttack, previewFusion, profileFor, reachable, retreat, START_AP, startDungeon, switchTo, threatenedCells, turnAp, typeFactor,
-  unequipGem, usePotion, weaponFor,
+  addMember, unequipGem, usePotion, baseSpeciesDexId, evolveMember, hasCompleteWeaponTable, NATIONAL_DEX_LAST, weaponOfDex, weaponOfferAtFloor,
 } from './dungeon';
 import { allFusions, ammoOptions, CATALOG_ORDER, setAmmo, fusionDescription, fusionNumber, fusionWeapon } from './dungeon';
 import type { DungeonState, EnemySpecies, MemberInput, WeaponId } from './dungeon';
@@ -11,7 +11,7 @@ import type { Gem } from './dungeon-gems';
 import type { BaseStats } from './survivor-moves';
 
 const stats = (o: Partial<BaseStats> = {}): BaseStats => ({ hp: 60, attack: 80, defense: 60, spAttack: 50, spDefense: 60, speed: 90, ...o });
-const mon = (id: string, o: Partial<BaseStats> = {}, types: MemberInput['types'] = ['fire']): MemberInput => ({ id, dexId: 4, name: id, types, stats: stats(o) });
+const mon = (id: string, o: Partial<BaseStats> = {}, types: MemberInput['types'] = ['fire'], dexId = 68): MemberInput => ({ id, dexId, name: id, types, stats: stats(o) });
 const rattata = stats({ hp: 30, attack: 56, defense: 35, spAttack: 25, spDefense: 35, speed: 72 });
 const pool: EnemySpecies[] = [
   { dexId: 19, name: 'Rattata', types: ['normal'], stats: rattata },
@@ -46,17 +46,23 @@ function clear(s: DungeonState): void {
 const gem = (id: number, kind: Gem['kind'], tier = 1, legendary = false): Gem => ({ id, kind, tier, legendary });
 
 describe('armas e dano', () => {
-  it('a regra provisória de stats alcança as 20 armas', () => {
-    const sp = (o: Partial<BaseStats>) => weaponFor(stats({ attack: 40, ...o }));
-    const tank = (o: Partial<BaseStats>) => weaponFor(stats({ attack: 40, spAttack: 40, defense: 120, spDefense: 80, ...o }));
-    const got = [
-      weaponFor(stats({ speed: 100 })), weaponFor(stats({ speed: 90 })), weaponFor(stats({ speed: 70, attack: 110 })), weaponFor(stats({ speed: 70 })),
-      weaponFor(stats({ speed: 60, hp: 80 })), weaponFor(stats({ speed: 60 })), weaponFor(stats({ speed: 30, attack: 110 })), weaponFor(stats({ speed: 30 })),
-      sp({ spAttack: 100, speed: 110 }), sp({ spAttack: 100, speed: 90 }), sp({ spAttack: 100, speed: 75 }), sp({ spAttack: 90, speed: 75 }),
-      sp({ spAttack: 90, speed: 60, hp: 80 }), sp({ spAttack: 90, speed: 60 }), sp({ spAttack: 110, speed: 30 }), sp({ spAttack: 90, speed: 30 }),
-      tank({ speed: 40 }), tank({ speed: 80 }), tank({ speed: 40, defense: 80, spDefense: 120 }), tank({ speed: 80, defense: 80, spDefense: 120 }),
-    ];
+  it('a tabela fixa cobre a Pokédex inteira e alcança as 20 armas', () => {
+    expect(hasCompleteWeaponTable()).toBe(true);
+    const got = Array.from({ length: NATIONAL_DEX_LAST }, (_, i) => weaponOfDex(i + 1));
+    expect(got).not.toContain(null);
     expect(new Set(got)).toEqual(new Set(CATALOG_ORDER));
+  });
+
+  it('liga armas às espécies que as representam e mantém a espécie nas formas', () => {
+    expect(weaponOfDex(15)).toBe('enxameador'); // Beedrill
+    expect(weaponOfDex(68)).toBe('manoplas'); // Machamp
+    expect(weaponOfDex(122)).toBe('barreira'); // Mr. Mime
+    expect(weaponOfDex(212)).toBe('laminas'); // Scizor
+    expect(weaponOfDex(475)).toBe('espada'); // Gallade
+    expect(weaponOfDex(681)).toBe('espadaEscudo'); // Aegislash
+    expect(weaponOfDex(10033)).toBe(weaponOfDex(3)); // Mega Venusaur
+    expect(baseSpeciesDexId(10161)).toBe(52); // Meowth de Galar
+    expect(weaponOfDex(99999)).toBeNull();
   });
 
   it('usa multiplicadores moderados de tipo e troca imunidade por forte resistência', () => {
@@ -82,6 +88,30 @@ describe('armas e dano', () => {
 });
 
 describe('a sala', () => {
+  it('a Pokébola aparece no 1º andar e depois a cada três', () => {
+    expect([1, 3, 6, 9, 12].every(weaponOfferAtFloor)).toBe(true);
+    expect([2, 4, 5, 7, 8, 10].some(weaponOfferAtFloor)).toBe(false);
+  });
+
+  it('acrescenta uma arma escolhida na escada e rejeita uma repetida', () => {
+    const s = arena([mon('inicial')]);
+    s.phase = 'reward';
+    expect(addMember(s, mon('beedrill', {}, ['bug', 'poison'], 15)).ok).toBe(true);
+    expect(s.team).toHaveLength(2);
+    expect(s.team[1]!.weapon).toBe('enxameador');
+    expect(addMember(s, mon('beedrill', {}, ['bug', 'poison'], 15)).ok).toBe(false);
+  });
+
+  it('evolui uma arma na escada com dados reais, preservando suas gemas', () => {
+    const s = arena([mon('charmander', {}, ['fire'], 4)]);
+    s.phase = 'reward';
+    const carried = gem(1, 'rubi');
+    s.team[0]!.gems[0] = carried;
+    expect(evolveMember(s, 0, { dexId: 5, name: 'Charmeleon', types: ['fire'], stats: stats({ hp: 58, attack: 64, defense: 58, spAttack: 80, spDefense: 65, speed: 80 }) }).ok).toBe(true);
+    expect(s.team[0]).toMatchObject({ dexId: 5, name: 'Charmeleon', weapon: 'continuo' });
+    expect(s.team[0]!.gems[0]).toEqual(carried);
+  });
+
   it('começa com 6 PA, até seis membros, e nenhum pilar isola uma casa', () => {
     const s = startDungeon([1, 2, 3, 4, 5, 6, 7].map((i) => mon(`m${i}`)), pool, 7);
     expect(s.team).toHaveLength(6);
@@ -214,7 +244,7 @@ describe('fusão', () => {
   });
 
   it('guarda as duas armas de origem na ordem do catálogo e o Pokémon de cada orbe', () => {
-    const s = arena([mon('lento', { speed: 70 }), mon('rapido', { speed: 100 }), mon('c')]);
+    const s = arena([mon('lento', {}, ['fire'], 714), mon('rapido', {}, ['fire'], 123), mon('c')]);
     expect(fusionOrigins('lanca', 'laminas')).toEqual(['laminas', 'lanca']);
     fuse(s, 0, 1);
     expect(s.fusion!.origins).toEqual(['laminas', 'disco']);
@@ -226,7 +256,7 @@ describe('fusão', () => {
   });
 
   it('a área do lançador cobre a casa e as quatro vizinhas', () => {
-    const s = arena([mon('x', { attack: 30, spAttack: 90, speed: 30 })]);
+    const s = arena([mon('x', {}, ['fire'], 692)]);
     expect(attackArea(s, { x: 3, y: 3 })).toHaveLength(5);
     expect(attackArea(s, { x: 0, y: 0 })).toHaveLength(0);
   });

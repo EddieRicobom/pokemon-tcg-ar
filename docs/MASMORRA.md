@@ -21,7 +21,7 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 
 ### Acesso e equipe
 - O Portão da Masmorra usa a fachada de casa de tijolos do atlas, tem o emoji 🗝️ e aparece no minimapa. O diálogo dele leva à tela cheia, como a Torre.
-- A equipe tem até 6 Pokémon da coleção real: cartas escaneadas e Digital Pokémon. Uma espécie sem stats ou tipos no pacote de dados aparece como «sem dados» e não entra, porque nenhum número é inventado.
+- A expedição começa com **um** Pokémon da coleção real: carta escaneada ou Digital Pokémon. Uma espécie sem stats, tipos ou arma no pacote aparece como «sem dados» e não entra, porque nenhum número é inventado. As outras vagas da equipe vêm da Pokébola durante a descida, até o limite de 6.
 
 ### Combate
 - A sala é uma grade de 7×7 com pilares sorteados. Nenhuma casa fica isolada.
@@ -36,6 +36,7 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 
 ### Arsenal completo (20 armas, 210 fusões)
 - `src/core/dungeon-weapons.ts` traz as 20 armas do catálogo, cada uma com formato de ataque (adjacente, em linha, tiro reto, área em cruz, leque, em volta, teleguiado, armadilha) e um mecanismo próprio (cortes rápidos, estocada precisa, abalo, alcance em linha, sequência, bloqueio com revide, barreira, proteção orbital, golpe de escudo, rajada, estilhaços, ação sustentada/queimadura, carga, explosão, arco elétrico, perfuração, retorno, armadilha, corrente que puxa, enxame).
+- **Como obter armas no loop da Masmorra:** ao limpar o **1º andar**, a Pokébola oferece 3 Pokémon ainda não usados da coleção real do jogador. Escolher um põe aquele Pokémon na equipe e na orbe da arma correspondente; a animação mostra o Pokémon entrando nela. A oferta volta ao limpar o 3º andar e depois a cada 3 andares (6, 9…), enquanto ainda houver Pokémon disponíveis e vaga na equipe de 6. Em vez de uma das três armas, o jogador pode evoluir um membro elegível para uma próxima forma real da Pokédex; evolução e arma escolhida valem só para a expedição atual, sem alterar a carta ou o Digital Pokémon guardado. Não há compra, saque aleatório de arma ou atribuição pelos atributos. A tabela fixa `core/data/pokemon-weapons.ts` determina a arma da espécie; formas regionais e Mega usam a espécie-base.
 - As 210 fusões seguem a regra do catálogo: formato e mecanismo da primeira arma (ordem do catálogo) mais o mecanismo da segunda; armas iguais aplicam o mecanismo duas vezes. Nome, número (1–190 diferentes, 191–210 iguais) e texto saem idênticos aos do documento de concepção.
 - No combate: armadilhas disparam em quem passa pela casa, barreiras duram 2 rodadas e contam como parede, bloqueio amortece o próximo golpe e revida de perto, queimadura tira HP no fim da rodada; inimigos podem morrer no turno deles. Inimigos usam só o formato da arma, sem mecanismos.
 - Pokémon de dois tipos escolhe a munição no painel do ativo (sem custo de PA): só o 1º tipo, só o 2º, ou mista 70/30 em qualquer ordem.
@@ -100,7 +101,7 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 ## Falta (para deixar de ser protótipo)
 
 - **Validar no navegador e em celular.** Nada disso foi visto rodando: as sessões no PC do dono não têm Node, e a verificação depende do CI do PR. Falta abrir a tela, jogar alguns andares e conferir o layout em 375 px.
-- **Tabela Pokémon → arma escrita à mão** (pedido do dono: escolher pelo que combina com o Pokémon, sem fórmula de stats), cobrindo as 1025 espécies por linhagem; formas regionais e Mega usam a espécie base. Hoje a arma ainda sai dos stats (`weaponFor`, provisório).
+- **Revisão da curadoria Pokémon → arma.** A tabela fixa cobre as 1025 espécies e não usa fórmula de stats; ainda falta o dono revisar, por linhagem, as associações menos emblemáticas do catálogo compactado.
 - **Arte própria das 15 armas novas** (hoje emblema genérico).
 - **Balanceamento.** Ver se 6 PA e os custos dão boas decisões, se a curva de dificuldade sem teto acompanha a das gemas (a dificuldade cresce em linha e as gemas também, mas a lapidação é exponencial no custo) e se o chefe e as elites ficam justos.
 - **Salvar a expedição.** Fechar a tela perde a descida atual, então falta guardar o estado (ele é serializável) e oferecer «continuar».
