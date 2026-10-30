@@ -124,6 +124,8 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
   area: 'Explode no alvo e também atinge inimigos próximos.',
   cone: 'Acerte à frente e atravesse grupos em movimento.',
   orbit: 'Ataca ao redor. Fica melhor quando você se aproxima e se move.',
+  foco: 'Disparo largo e lento. Segure o botão de carga (ou R) para um feixe que atravessa todos; você fica lento enquanto carrega.',
+  rapido: 'Tiros pequenos e rápidos. Andar enche a barra; com ela pela metade, aperte para virar teleportes. Correndo, você leva mais dano.',
 };
 
 /**
@@ -515,6 +517,33 @@ const specialBlocked = computed(() => !state.value || state.value.over || paused
 const guardianSprite = ref<string | null>(null);
 const shadowBossSprite = ref<string | null>(null);
 let specialQueued = false;
+/** Botão de carga (Foco e Rápido) apertado agora; o motor lê se está segurado a cada passo. */
+const chargeHeld = ref(false);
+const chargeStyle = computed(() => {
+  const category = state.value?.player.move.category;
+  return category === 'foco' || category === 'rapido' ? category : null;
+});
+/** Barra do botão: os teleportes do Rápido esvaziam com o tempo; fora deles, o quanto a barra encheu. */
+const chargeMeter = computed(() => {
+  const charge = state.value?.charge;
+  if (!charge) return 0;
+  return charge.rushMs > 0 ? charge.rushMs / Math.max(1, charge.rushTotalMs) : charge.level;
+});
+const chargeLabel = computed(() => {
+  const charge = state.value?.charge;
+  if (!charge || !chargeStyle.value) return '';
+  if (chargeStyle.value === 'rapido') return charge.rushMs > 0 ? `${Math.ceil(charge.rushMs / 1000)}s` : charge.level >= 0.5 ? 'PRONTO' : `${Math.floor(charge.level * 100)}%`;
+  return charge.level >= 1 ? 'MÁXIMO' : charge.level > 0 || chargeHeld.value ? `${Math.floor(charge.level * 100)}%` : 'SEGURE';
+});
+function pressCharge(event?: PointerEvent): void {
+  if (!state.value || state.value.over || paused.value || !chargeStyle.value) return;
+  if (event?.currentTarget instanceof HTMLElement) event.currentTarget.setPointerCapture?.(event.pointerId);
+  unlockSound();
+  chargeHeld.value = true;
+}
+function releaseCharge(): void {
+  chargeHeld.value = false;
+}
 function queueSpecial(): void {
   if (specialBlocked.value || (state.value?.special.cooldownMs ?? 1) > 0) return;
   unlockSound();
@@ -522,13 +551,13 @@ function queueSpecial(): void {
 }
 function chooseSpecial(id: SurvivorSpecialId): void {
   if (!state.value || !chooseSurvivorSpecial(state.value, id)) return;
-  heldKeys.clear(); joyUp(); specialQueued = false;
+  heldKeys.clear(); joyUp(); specialQueued = false; chargeHeld.value = false;
   playSound('success');
   say(`${SURVIVOR_SPECIALS[id].name} pronto! Toque no botão à direita ou pressione E.`, 4500);
 }
 function chooseSpecialBranch(id: SurvivorSpecialBranchId): void {
   if (!state.value || !chooseSurvivorSpecialBranch(state.value, id)) return;
-  heldKeys.clear(); joyUp(); specialQueued = false;
+  heldKeys.clear(); joyUp(); specialQueued = false; chargeHeld.value = false;
   say('Ramo escolhido. O novo efeito está pronto.', 2200);
 }
 const paused = ref(false);
@@ -896,6 +925,12 @@ function onKey(e: KeyboardEvent): void {
     return;
   }
   if ((e.key === 'e' || e.key === 'E') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); queueSpecial(); return; }
+  if (e.key === 'r' || e.key === 'R') {
+    if (e.type === 'keyup') releaseCharge();
+    else if (!e.repeat) pressCharge();
+    if (chargeStyle.value) e.preventDefault();
+    return;
+  }
   if (bonkRun.value && (e.key === 'q' || e.key === 'Q' || e.key === ' ') && e.type === 'keydown' && !e.repeat && !(e.key === ' ' && document.activeElement instanceof HTMLButtonElement)) {
     queueBonkJump();
     if (bonkRun.value) e.preventDefault();
@@ -1515,6 +1550,7 @@ function draw(): void {
   if (move.category === 'aura') drawElementAuraField(ctx, s.player, move.type, flat, animMs, detailed);
   else if (move.category === 'cone') drawConeGuide(ctx, s.player, s.player.attackRange, move.type, flat, 1 - s.player.attackTimerMs / Math.max(1, s.player.attackCooldownMs));
   else if (move.category === 'orbit') drawOrbitPath(ctx, s.player, move.type, flat);
+  else if (move.category === 'foco' || move.category === 'rapido') drawChargeAura(ctx, s);
 
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
@@ -1715,6 +1751,40 @@ function draw(): void {
           ctx.restore();
         }
       }
+    } else if (f.kind === 'beam') {
+      // Feixe do Foco: entra rápido e se apaga; o nível (count) engrossa o brilho branco do miolo.
+      const fromX = f.fromX ?? f.x;
+      const fromY = (f.fromY ?? f.y) - 8;
+      const toX = f.toX ?? f.x;
+      const toY = (f.toY ?? f.y) - 8;
+      const grow = Math.min(1, t * 6);
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.5 * (1 - t);
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = f.r * 2 * (0.55 + 0.45 * grow);
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      ctx.lineTo(toX, toY);
+      ctx.stroke();
+      ctx.globalAlpha = 0.9 * (1 - t);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(2, f.r * (0.25 + 0.15 * (f.count ?? 1)) * (1 - t));
+      ctx.stroke();
+    } else if (f.kind === 'rush') {
+      // Teleporte do Rápido: um risco de onde saiu até onde chegou e um anel no impacto.
+      ctx.globalAlpha = 0.7 * (1 - t);
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.moveTo(f.fromX ?? f.x, (f.fromY ?? f.y) - 8);
+      ctx.lineTo(f.toX ?? f.x, (f.toY ?? f.y) - 8);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(f.x, f.y - 8, f.r * (0.35 + 0.65 * t), 0, Math.PI * 2);
+      ctx.stroke();
     } else if (f.kind === 'heal') {
       // Pulso rosa e coração subindo indicam explicitamente que um suporte recuperou este alvo.
       const rise = t * 24;
@@ -1758,6 +1828,29 @@ function draw(): void {
     ctx.restore();
   }
   ctx.restore();
+}
+
+/** Anel em volta do Pokémon: o Foco fecha o anel enquanto carrega; o Rápido pisca durante os teleportes. */
+function drawChargeAura(c: CanvasRenderingContext2D, s: SurvivorState): void {
+  const p = s.player;
+  const charge = s.charge;
+  c.save();
+  c.strokeStyle = p.move.color;
+  if (p.move.category === 'foco' && charge.holding && charge.level > 0) {
+    c.globalAlpha = 0.35 + 0.45 * charge.level;
+    c.lineWidth = 2 + 3 * charge.level;
+    c.beginPath();
+    c.arc(p.x, p.y - 8, 36 - 14 * charge.level + Math.sin(animMs / 90) * 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge.level);
+    c.stroke();
+  } else if (p.move.category === 'rapido' && charge.rushMs > 0) {
+    c.globalAlpha = 0.45 + 0.3 * Math.sin(animMs / 60);
+    c.lineWidth = 3;
+    c.setLineDash([5, 5]);
+    c.beginPath();
+    c.arc(p.x, p.y - 8, 26, 0, Math.PI * 2);
+    c.stroke();
+  }
+  c.restore();
 }
 
 /** Espécies de inimigos já registradas na Pokédex nesta corrida (cada espécie conta uma vez por corrida). */
@@ -1835,7 +1928,7 @@ function loop(ts: number): void {
     if (bonkRun.value && Math.abs(dx) > 0.15) bonkFacing = dx < 0 ? -1 : 1;
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
-    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
+    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
     if (s.player.attackTimerMs > attackTimerBefore) {
       playerAttackAt = animMs;
       playAttackSound(s.player.move, ts);
@@ -1902,6 +1995,11 @@ function loop(ts: number): void {
       else if (ev.type === 'shadowBossDefeated') {
         playSound('success');
         say(`💠 Pedra da Confiança assegurada (${ev.trustStones}/5). Conclua a corrida para guardá-la.`, 6500);
+      }
+      else if (ev.type === 'chargeRelease') {
+        playSound(ev.style === 'rapido' ? 'survivor-level' : 'survivor-shot');
+        if (ev.style === 'rapido') say(`» Teleportes por ${Math.round(s.charge.rushTotalMs / 1000)} s!`, 2200);
+        else if (ev.level >= 1) say(`◎ ${ev.name}!`, 1800);
       }
       else if (ev.type === 'artifactCollected') {
         playSound('survivor-pickup');
@@ -2035,7 +2133,7 @@ function requestLeave(): void {
     leaveNow();
     return;
   }
-  heldKeys.clear(); joyUp(); specialQueued = false;
+  heldKeys.clear(); joyUp(); specialQueued = false; chargeHeld.value = false;
   clearTrainerPresentation();
   wasPausedBeforeLeave = paused.value;
   paused.value = true;
@@ -2209,6 +2307,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     guardianSprite.value = null;
     shadowBossSprite.value = null;
     specialQueued = false;
+    chargeHeld.value = false;
     bonkJumpQueued = false;
     clearBonkTap();
     const runState = state.value;
@@ -2555,6 +2654,8 @@ onBeforeUnmount(() => {
                 <li><b>Atacar:</b> automático, em quem chegar perto.</li>
                 <li v-if="bonkRun"><b>Pular:</b> botão PULAR, toque duplo na tela, Q ou Espaço. Dá para pular de novo no ar enquanto sobrar bolinha no botão.</li>
                 <li><b>Especial:</b> botão do canto ou tecla E. Libera aos 3 minutos e recarrega sozinho.</li>
+                <li v-if="chargeStyle === 'foco'"><b>Foco:</b> segure o botão ◎ (ou R) para carregar, devagar e andando mais lento; solte para um feixe que atravessa todos. Cheio, vira um canhão que cruza a arena.</li>
+                <li v-if="chargeStyle === 'rapido'"><b>Rápido:</b> andar enche o botão » (ou R). Da metade em diante, aperte: o golpe vira teleportes de dano alto, cada um com 2 s sem levar dano. Correndo, você leva mais dano.</li>
                 <li><b>Pausar:</b> botão ⏸ ou Start no controle. O botão ? abre esta ajuda.</li>
               </ul>
             </details>
@@ -2755,6 +2856,16 @@ onBeforeUnmount(() => {
           <svg class="jump-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 20 12h-5v7.5H9V12H4z" /></svg>
           <strong>PULAR</strong>
           <span class="jump-pips" aria-hidden="true"><i v-for="(available, index) in bonkJumpPips" :key="index" :class="{ on: available }"></i></span>
+        </button>
+
+        <button v-if="ready && state && chargeStyle && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
+          type="button" class="survivor-charge-button" :class="{ 'is-held': chargeHeld, 'is-full': state.charge.level >= 1 || (chargeStyle === 'rapido' && state.charge.level >= 0.5), 'is-rush': state.charge.rushMs > 0 }"
+          :style="{ '--special-color': state.player.move.color, '--charge': `${chargeMeter * 100}%` }"
+          :aria-label="chargeStyle === 'foco' ? `Foco: segure para carregar, solte para disparar; carga ${Math.floor(state.charge.level * 100)}%; tecla R` : `Rápido: ${state.charge.rushMs > 0 ? 'teleportes ativos' : state.charge.level >= 0.5 ? 'pronto' : `carga ${Math.floor(state.charge.level * 100)}%, ande para encher`}; tecla R`"
+          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="releaseCharge" @lostpointercapture="releaseCharge">
+          <span class="special-icon" aria-hidden="true">{{ chargeStyle === 'foco' ? '◎' : '»' }}</span>
+          <strong>{{ chargeLabel }}</strong>
+          <small>{{ chargeStyle === 'foco' ? 'Foco' : 'Rápido' }}</small>
         </button>
 
         <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
