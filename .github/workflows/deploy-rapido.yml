@@ -1,0 +1,100 @@
+name: Deploy rápido (sem testes)
+
+# Só manual (aba Actions → «Deploy rápido» → Run workflow). Pula typecheck, testes e a conferência dos treinadores,
+# que o CI já roda em todo pull request; use para publicar algo que já passou no CI, ou para testar no celular sem
+# esperar. Se a branch escolhida não for a main, o ambiente github-pages pode recusar (regra de branches do Pages).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Um deploy por vez; não cancela um deploy em andamento.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      BASE_PATH: /${{ github.event.repository.name }}/
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/configure-pages@v6
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # Índice estático (só ids, nomes e contagens), gerado aqui e servido pelo Pages. Nenhum celular baixa o catálogo.
+      - name: Gerar índice do catálogo
+        run: npm run build:index
+
+      # Incorpora, no build publicado, as variantes PokéAPI derivadas do catálogo completo de espécies e formas.
+      # A revisão e os hashes ficam no manifesto gerado; o processo é reproduzível pelo script versionado.
+      # O script só baixa o que mudou: guardando a pasta entre execuções, ele vira uma conferência rápida.
+      - name: Restaurar o cache dos sprites PokéAPI
+        uses: actions/cache@v4
+        with:
+          path: |
+            public/sprites/pokeapi
+            public/data/pokeapi-sprite-manifest.json
+          key: pokeapi-sprites-v1-${{ hashFiles('scripts/sync-pokeapi-sprites.ts') }}-${{ github.run_id }}
+          restore-keys: pokeapi-sprites-v1-${{ hashFiles('scripts/sync-pokeapi-sprites.ts') }}-
+
+      - name: Incorporar sprites PokéAPI
+        run: npm run sync:sprites
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # Índice de ilustrações (opcional, experimental): 112 bytes por carta, calculados aqui a partir das imagens do TCGdex.
+      # Incremental (cache entre execuções) e com orçamento de tempo; se falhar, o deploy segue sem ele.
+      - name: Restaurar o cache do índice de ilustrações
+        uses: actions/cache@v4
+        with:
+          path: .cache/art-index
+          key: art-index-v1-${{ github.run_id }}
+          restore-keys: art-index-v1-
+
+      # No rápido, o índice de ilustrações vem só do cache (sem gastar até 14 minutos calculando mais cartas).
+      - name: Gerar índice de ilustrações (só o que está em cache)
+        run: npm run build:art-index
+        continue-on-error: true
+        env:
+          ART_BUDGET_MIN: '1'
+
+      - name: Build de produção
+        run: npm run build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_CLIENT_ID }}
+
+      - name: Conferir o build (base path, Service Worker, OCR, índice)
+        run: node scripts/verify-dist.mjs
+        env:
+          REQUIRE_INDEX: '1'
+          REQUIRE_SPRITE_PACK: '1'
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    name: Publicar
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
