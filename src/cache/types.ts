@@ -1,4 +1,5 @@
 import type { SpriteKind } from '../ar/sprite-source';
+import type { CardTraits } from '../core/card-traits';
 
 /** Mude quando o formato dos registros mudar; versões antigas são migradas ou invalidadas. */
 export const CACHE_SCHEMA_VERSION = 1;
@@ -67,6 +68,8 @@ export interface CachedCard {
   shiny?: boolean;
   /** Escaneada como carta Mega (marcado no primeiro escaneamento completo). */
   mega?: boolean;
+  /** Detalhes do TCGdex para os arquétipos (`core/card-traits.ts`). Ausente em cartas escaneadas antes; volta num novo escaneamento. */
+  traits?: CardTraits;
 }
 
 export interface AssetRecord {

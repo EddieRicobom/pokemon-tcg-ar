@@ -1,4 +1,6 @@
 import type { ArtIndex } from './art-index';
+import { traitsFromTcgdex } from '../core/card-traits';
+import type { CardTraits } from '../core/card-traits';
 import { CatalogLookup } from './catalog-index';
 import { detectCard } from './detect-card';
 import type { CardDetection } from './detect-card';
@@ -45,6 +47,8 @@ export interface CardRecordLike {
   setCode?: string;
   dexIds: number[];
   imageBase?: string;
+  /** Detalhes da carta (estágio, sufixo, HP…), usados pelos arquétipos. Ausente em cartas antigas. */
+  traits?: CardTraits;
 }
 
 export interface PipelineDeps {
@@ -285,6 +289,7 @@ export function recordFromTcgdex(card: TcgdexCard, fallback?: CandidateInfo): Ca
     setCode: fallback?.setCode,
     dexIds: Array.isArray(card.dexId) ? card.dexId.filter((n) => Number.isInteger(n) && n > 0) : [],
     imageBase: card.image,
+    ...(traitsFromTcgdex(card) ? { traits: traitsFromTcgdex(card) } : {}),
   };
 }
 

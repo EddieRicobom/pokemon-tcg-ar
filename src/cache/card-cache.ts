@@ -1,4 +1,5 @@
 import { TARGET_VERSION } from '../ar/target';
+import { normalizeTraits } from '../core/card-traits';
 import { fetchSprite as defaultFetchSprite } from '../ar/sprite-source';
 import { formDexId, spriteKeyIsFor } from '../core/dex-form';
 import { isMegaName } from '../core/mega';
@@ -214,6 +215,8 @@ export class CardCache {
     return {
       id: card.id, name: card.name, setId: card.setId, setName: card.setName, localId: card.localId, rarity: card.rarity,
       setOfficial: card.setOfficial, setTotal: card.setTotal, setCode: card.setCode, dexIds: card.dexIds, imageBase: card.imageBase,
+      // Sem detalhes na leitura nova (ex.: reconhecida pelo cache), o objeto não leva a chave e os detalhes já guardados ficam.
+      ...(normalizeTraits(card.traits) ? { traits: normalizeTraits(card.traits) } : {}),
     };
   }
 
