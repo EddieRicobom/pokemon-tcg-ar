@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   attack, attackArea, attacker, attackTargets, beginEnemyTurn, BOSS_EVERY, BOSS_FLOOR_EVERY, chooseReward, damage, depthScale, eliteChance, endTurn,
-  enemyStep, equipGem, EXHAUST_ROUNDS, finishEnemyTurn, floorTheme, fuse, fusionName, fusionOrigins, GRID_H, GRID_W, isBossFloor, move, planEnemy,
+  enemyStep, equipGem, EXHAUST_ROUNDS, finishEnemyTurn, fuse, fusionName, fusionOrigins, GRID_H, GRID_W, isBossFloor, move, planEnemy,
   polishGems, previewAttack, previewFusion, profileFor, reachable, retreat, START_AP, startDungeon, switchTo, threatenedCells, turnAp, typeFactor,
   addMember, unequipGem, usePotion, baseSpeciesDexId, evolveMember, hasCompleteWeaponTable, NATIONAL_DEX_LAST, weaponOfDex, weaponOfferAtFloor,
 } from './dungeon';
-import { allFusions, ammoOptions, CATALOG_ORDER, setAmmo, fusionDescription, fusionNumber, fusionWeapon } from './dungeon';
+import { allFusions, ammoOptions, biomeOf, CATALOG_ORDER, evolveForDepth, floorGeneration, hazardAt, HOME_BONUS, setAmmo, stepCost, fusionDescription, fusionNumber, fusionWeapon } from './dungeon';
 import type { DungeonState, EnemySpecies, MemberInput, WeaponId } from './dungeon';
 import type { Gem } from './dungeon-gems';
 import type { BaseStats } from './survivor-moves';
@@ -23,6 +23,7 @@ function arena(team: MemberInput[] = [mon('a'), mon('b'), mon('c')]): DungeonSta
   const s = startDungeon(team, pool.slice(0, 1), 42);
   s.walls = [];
   s.loot = [];
+  s.hazards = [];
   s.enemies = s.enemies.slice(0, 1);
   Object.assign(s.enemies[0]!, { pos: { x: 3, y: GRID_H - 2 }, elite: false, boss: false, affixes: [], profile: 'bruto', atkMul: 1, defMul: 1 });
   s.pos = { x: 3, y: GRID_H - 1 };
@@ -34,6 +35,7 @@ function clear(s: DungeonState): void {
   s.enemies = s.enemies.slice(0, 1);
   s.walls = [];
   s.loot = [];
+  s.hazards = [];
   s.phase = 'player';
   s.mustSwitch = false;
   s.enemies[0]!.pos = { x: s.pos.x, y: s.pos.y - 1 };
@@ -304,8 +306,8 @@ describe('descida sem fim', () => {
     expect(eliteChance(8)).toBeGreaterThan(eliteChance(4));
     expect(isBossFloor(BOSS_FLOOR_EVERY)).toBe(true);
     expect(isBossFloor(BOSS_FLOOR_EVERY + 1)).toBe(false);
-    expect(floorTheme(1).name).not.toBe(floorTheme(6).name);
-    expect(floorTheme(26).name).toContain('+1');
+    expect(new Set(Array.from({ length: 9 }, (_, i) => floorGeneration(42, i + 1))).size).toBe(9);
+    expect(new Set(Array.from({ length: 9 }, (_, i) => floorGeneration(42, i + 10))).size).toBe(9);
   });
 
   it('pegar o baú põe a gema na mochila', () => {
@@ -601,5 +603,60 @@ describe('munição', () => {
     expect(setAmmo(s, 0, ['electric', 'water']).ok).toBe(true);
     expect(setAmmo(s, 0, ['fire']).ok).toBe(false);
     expect(s.ap).toBe(START_AP);
+  });
+});
+
+describe('andares por geração', () => {
+  const gens: EnemySpecies[] = [
+    { dexId: 19, name: 'Rattata', types: ['normal'], stats: rattata, generation: 0 },
+    { dexId: 261, name: 'Poochyena', types: ['dark'], stats: rattata, generation: 2 },
+  ];
+
+  it('cada andar sorteia uma geração, que escolhe os inimigos e o cenário', () => {
+    const s = startDungeon([mon('a')], gens, 7);
+    expect(biomeOf(s.biome).gen).toBe(s.biome);
+    expect(s.log[s.log.length - 1]).toContain(biomeOf(s.biome).name);
+    const native = gens.find((g) => g.generation === s.biome);
+    if (native) expect(s.enemies.every((e) => e.dexId === native.dexId)).toBe(true);
+  });
+
+  it('mais fundo, os selvagens aparecem evoluídos (com dados reais)', () => {
+    const r = evolveForDepth(gens[0]!, 6, () => 0);
+    expect(r.dexId).toBe(20);
+    expect(evolveForDepth(gens[0]!, 1, () => 0).dexId).toBe(19);
+  });
+
+  it('água custa 2 PA para quem não nada nem voa', () => {
+    const s = arena();
+    s.hazards = [{ pos: { x: 2, y: GRID_H - 1 }, kind: 'agua' }];
+    expect(stepCost(s, { x: 2, y: GRID_H - 1 })).toBe(2);
+    expect(reachable(s).get(`2,${GRID_H - 1}`)).toBe(2);
+    s.team[0]!.types = ['water'];
+    expect(stepCost(s, { x: 2, y: GRID_H - 1 })).toBe(1);
+  });
+
+  it('lava queima quem termina a rodada nela, menos Fogo e Voador', () => {
+    const s = arena([mon('grama', {}, ['grass']), mon('fogo', {}, ['fire'])]);
+    s.enemies[0]!.pos = { x: 0, y: 0 };
+    s.hazards = [{ pos: { ...s.pos }, kind: 'lava' }];
+    expect(hazardAt(s, s.pos)).toBe('lava');
+    const hp = s.team[0]!.hp;
+    endTurn(s);
+    expect(s.team[0]!.hp).toBeLessThan(hp);
+    switchTo(s, 1);
+    const fireHp = s.team[1]!.hp;
+    s.enemies[0]!.pos = { x: 0, y: 0 };
+    endTurn(s);
+    expect(s.team[1]!.hp).toBe(fireHp);
+  });
+
+  it('quem é da geração do andar luta «em casa» e bate mais forte', () => {
+    const s = arena();
+    s.biome = 4;
+    const away = previewAttack(s, s.enemies[0]!.pos).hits[0]!.damage;
+    s.biome = 0;
+    const home = previewAttack(s, s.enemies[0]!.pos).hits[0]!.damage;
+    expect(home).toBeGreaterThan(away);
+    expect(HOME_BONUS).toBeGreaterThan(0);
   });
 });

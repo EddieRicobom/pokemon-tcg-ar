@@ -1,3 +1,8 @@
+import { biomeOf, floorGeneration, HOME_BONUS, LAVA_BURN } from './dungeon-biomes';
+import type { HazardKind } from './dungeon-biomes';
+import { generationOf, typesOfDex } from './species-filter';
+import { nextEvolutions, speciesName } from './survivor-evolution';
+import { statsOfDex } from './survivor-stats';
 import { seededRng, TYPE_CHART } from './battle';
 import type { Rng } from './battle';
 import type { PokemonType } from './pokemon-data';
@@ -184,6 +189,8 @@ export interface EnemySpecies {
   minDepth?: number;
   /** Pode ser chefe. */
   boss?: boolean;
+  /** Geração (0 = Kanto … 8 = Paldea): o andar prefere espécies da geração sorteada para ele. */
+  generation?: number;
 }
 
 export interface DungeonStats { kills: number; gems: number; legendaries: number; deepest: number; elites: number; bosses: number }
@@ -225,6 +232,10 @@ export interface DungeonState {
   traps: Trap[];
   /** Ataques já feitos neste turno (mecanismo Sequência). */
   combo: number;
+  /** Geração sorteada para o andar (0–8): decide inimigos, cenário e casas especiais (`dungeon-biomes.ts`). */
+  biome: number;
+  /** Casas especiais do andar: lava queima no fim da rodada; água custa 2 PA para quem não nada nem voa. */
+  hazards: { pos: Cell; kind: HazardKind }[];
 }
 
 export const key = (c: Cell): string => `${c.x},${c.y}`;
@@ -236,13 +247,22 @@ const DIRS: readonly Cell[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, 
 
 export const isBossFloor = (floor: number): boolean => floor % BOSS_FLOOR_EVERY === 0;
 
-/** Nome da região do andar (muda a cada 5 andares e dá a volta; depois do 25º ganha «+N»). */
-export const THEMES = ['Caverna Úmida', 'Cripta Esquecida', 'Fornalha Profunda', 'Jardim Cristalino', 'Abismo Estelar'] as const;
-export function floorTheme(floor: number): { index: number; name: string } {
-  const block = Math.floor((Math.max(1, floor) - 1) / BOSS_FLOOR_EVERY);
-  const index = block % THEMES.length;
-  const lap = Math.floor(block / THEMES.length);
-  return { index, name: lap > 0 ? `${THEMES[index]} +${lap}` : THEMES[index]! };
+export { biomeOf, DUNGEON_BIOMES, floorGeneration, HOME_BONUS, LAVA_BURN } from './dungeon-biomes';
+export type { DecorKind, DungeonBiome, HazardKind, ParticleKind } from './dungeon-biomes';
+
+/** A casa especial em `c`, se houver. */
+export function hazardAt(state: Pick<DungeonState, 'hazards'>, c: Cell): HazardKind | null {
+  return state.hazards.find((h) => same(h.pos, c))?.kind ?? null;
+}
+
+/** Quem nada ou voa atravessa a água sem gastar PA a mais. */
+export const isSwimmer = (types: readonly PokemonType[]): boolean => types.includes('water') || types.includes('flying');
+/** Quem é Fogo ou voa não se queima na lava. */
+export const lavaImmune = (types: readonly PokemonType[]): boolean => types.includes('fire') || types.includes('flying');
+
+/** Algum dos membros em campo é da geração sorteada para o andar («em casa»). */
+export function fightingAtHome(state: DungeonState): boolean {
+  return fielded(state).some((m) => generationOf(m.dexId) === state.biome + 1);
 }
 
 /** Quanto os inimigos crescem por andar (HP, ataque e defesas). Sem teto: a descida fica cada vez mais dura. */
@@ -330,7 +350,7 @@ export function startDungeon(inputs: readonly MemberInput[], pool: readonly Enem
     enemies: [], walls: [], loot: [], stairs: null, bag: [], fusion: null, fusionCharges: 1, potions: 2, mustSwitch: false, log: [],
     nextUid: 1, nextGemId: 1, rollCount: 0, rewardOptions: [], bossThreat: null, turnQueue: [], pool: pool.map((p) => ({ ...p })),
     stats: { kills: 0, gems: 0, legendaries: 0, deepest: 1, elites: 0, bosses: 0 },
-    guard: { reduce: 0, counter: 0 }, barriers: [], traps: [], combo: 0,
+    guard: { reduce: 0, counter: 0 }, barriers: [], traps: [], combo: 0, biome: 0, hazards: [],
   };
   buildFloor(state);
   return state;
@@ -364,10 +384,26 @@ function freeCell(state: DungeonState, rng: Rng, rows: readonly [number, number]
 
 function speciesFor(state: DungeonState, rng: Rng, boss: boolean): EnemySpecies {
   const depthOk = state.pool.filter((p) => (p.minDepth ?? 1) <= state.floor);
-  const list = boss ? depthOk.filter((p) => p.boss) : depthOk.filter((p) => !p.boss || (p.minDepth ?? 1) + 10 <= state.floor);
   const pick = (from: readonly EnemySpecies[]) => from[Math.floor(rng() * from.length)]!;
-  if (list.length) return pick(list);
-  return pick(depthOk.length ? depthOk : state.pool);
+  const inGen = (list: readonly EnemySpecies[]) => list.filter((p) => p.generation === state.biome);
+  const bosses = depthOk.filter((p) => p.boss);
+  const regular = depthOk.filter((p) => !p.boss || (p.minDepth ?? 1) + 10 <= state.floor);
+  const candidates = boss ? (inGen(bosses).length ? inGen(bosses) : bosses) : (inGen(regular).length ? inGen(regular) : regular);
+  const base = candidates.length ? pick(candidates) : pick(depthOk.length ? depthOk : state.pool);
+  return boss ? base : evolveForDepth(base, state.floor, rng);
+}
+
+/** Mais fundo, os selvagens aparecem evoluídos: um estágio a partir do andar 6 e dois a partir do 14 (só com dados reais). */
+export function evolveForDepth(species: EnemySpecies, floor: number, rng: Rng): EnemySpecies {
+  let current = species;
+  const stages = floor >= 14 ? 2 : floor >= 6 ? 1 : 0;
+  for (let i = 0; i < stages; i++) {
+    const next = nextEvolutions(current.dexId).filter((id) => statsOfDex(id) && typesOfDex(id).length && weaponOfDex(id));
+    if (!next.length) break;
+    const id = next[Math.floor(rng() * next.length)]!;
+    current = { ...current, dexId: id, name: speciesName(id) || `#${id}`, stats: statsOfDex(id)!, types: typesOfDex(id) };
+  }
+  return current;
 }
 
 function spawnEnemy(state: DungeonState, species: EnemySpecies, pos: Cell, kind: 'normal' | 'elite' | 'boss', rng: Rng): Enemy {
@@ -400,6 +436,9 @@ export function buildFloor(state: DungeonState): void {
   state.traps = [];
   state.guard = { reduce: 0, counter: 0 };
   state.combo = 0;
+  state.hazards = [];
+  state.biome = floorGeneration(state.seed, state.floor);
+  const biome = biomeOf(state.biome);
   const boss = isBossFloor(state.floor);
   const pillars = 2 + Math.floor(rng() * 3) + Math.min(3, Math.floor(state.floor / 5));
   for (let tries = 0; state.walls.length < pillars && tries < 60; tries++) {
@@ -419,7 +458,20 @@ export function buildFloor(state: DungeonState): void {
     const pos = freeCell(state, rng, [2, 4]);
     if (pos) state.loot.push({ pos, items: [chestItem(state, rng)], chest: true });
   }
-  const theme = floorTheme(state.floor).name;
+  // Casas especiais do cenário em manchas (poças, rios de lava), longe da entrada.
+  if (biome.hazard) {
+    const target = Math.round((GRID_W * GRID_H - state.walls.length) * biome.hazardDensity);
+    for (let tries = 0; state.hazards.length < target && tries < 40; tries++) {
+      const seedCell = freeCell(state, rng, [1, GRID_H - 3]);
+      if (!seedCell) break;
+      const patch = [seedCell, ...DIRS.map((d) => ({ x: seedCell.x + d.x, y: seedCell.y + d.y })).filter(() => rng() < 0.35)];
+      for (const c of patch) {
+        if (state.hazards.length >= target || !inside(c) || isWall(state, c) || hazardAt(state, c) || state.loot.some((l) => same(l.pos, c)) || dist(c, SPAWN) <= 1) continue;
+        state.hazards.push({ pos: c, kind: biome.hazard });
+      }
+    }
+  }
+  const theme = `${biome.region} · ${biome.name}`;
   const elites = state.enemies.filter((e) => e.elite).length;
   state.log.push(boss
     ? `Andar ${state.floor} · ${theme}: ${state.enemies[0]?.name ?? 'o chefe'} guarda a sala!`
@@ -471,22 +523,30 @@ function reachableAll(state: DungeonState): Set<string> {
   return seen;
 }
 
-/** Casas alcançáveis a pé (custo = passos). Em combate, limitado pelos PA; com a sala limpa, anda à vontade. */
+/** Custo para entrar na casa: 1 PA, ou 2 na água para quem não nada nem voa. */
+export function stepCost(state: DungeonState, c: Cell): number {
+  if (hazardAt(state, c) !== 'agua') return COSTS.move;
+  return fielded(state).some((m) => isSwimmer(m.types)) ? COSTS.move : COSTS.move + 1;
+}
+
+/** Casas alcançáveis a pé (custo em PA). Em combate, limitado pelos PA; com a sala limpa, anda à vontade. */
 export function reachable(state: DungeonState): Map<string, number> {
   const out = new Map<string, number>([[key(state.pos), 0]]);
   const exploring = state.phase === 'cleared';
   if (!exploring && (state.phase !== 'player' || state.mustSwitch)) return out;
   const limit = exploring ? Infinity : state.ap;
-  const queue: Cell[] = [state.pos];
+  const queue: { c: Cell; cost: number }[] = [{ c: state.pos, cost: 0 }];
   while (queue.length) {
-    const c = queue.shift()!;
-    const cost = out.get(key(c))!;
-    if (cost + COSTS.move > limit) continue;
+    queue.sort((a, b) => a.cost - b.cost);
+    const { c, cost } = queue.shift()!;
+    if (cost > (out.get(key(c)) ?? Infinity)) continue;
     for (const d of DIRS) {
       const n = { x: c.x + d.x, y: c.y + d.y };
-      if (out.has(key(n)) || blocked(state, n)) continue;
-      out.set(key(n), cost + COSTS.move);
-      queue.push(n);
+      if (blocked(state, n)) continue;
+      const next = cost + (exploring ? COSTS.move : stepCost(state, n));
+      if (next > limit || next >= (out.get(key(n)) ?? Infinity)) continue;
+      out.set(key(n), next);
+      queue.push({ c: n, cost: next });
     }
   }
   return out;
@@ -665,6 +725,7 @@ export function attackMods(state: DungeonState, who: Attacker): { power: number;
   let power = 1;
   let crit = 0;
   let defMul = 1;
+  if (fightingAtHome(state)) power *= 1 + HOME_BONUS;
   for (const m of who.weapon.mechanics) {
     if (m === 'carga') power *= 1.35;
     if (m === 'combo') power *= 1 + 0.15 * Math.min(3, state.combo);
@@ -1140,8 +1201,10 @@ export function planEnemy(state: DungeonState, enemy: Enemy): Intent {
   const allies = state.enemies.filter((e) => e.uid !== enemy.uid);
   const range = WEAPONS[enemy.weapon].range;
   const canHit = (c: Cell) => enemyReach(enemy, c, state.pos, state);
+  const burns = !lavaImmune(enemy.types);
+  const lava = (c: Cell) => (burns && hazardAt(state, c) === 'lava' ? 15 : 0);
   const pick = (score: (c: Cell) => number): { cell: Cell; path: Cell[] } =>
-    moves.reduce((best, m) => (score(m.cell) - m.path.length * 0.5 > score(best.cell) - best.path.length * 0.5 ? m : best), moves[0]!);
+    moves.reduce((best, m) => (score(m.cell) - m.path.length * 0.5 - lava(m.cell) > score(best.cell) - best.path.length * 0.5 - lava(best.cell) ? m : best), moves[0]!);
   const result = (kind: IntentKind, m: { cell: Cell; path: Cell[] }, extra: Partial<Intent> = {}): Intent => {
     const attacks = canHit(m.cell);
     const resolved = kind === 'approach' || kind === 'retreat' || kind === 'hold'
@@ -1347,6 +1410,14 @@ function endRound(state: DungeonState): void {
       m.charge = Math.min(m.maxCharge, m.charge + Math.ceil(m.maxCharge * RESERVE_RECOVERY));
     }
   });
+  if (hazardAt(state, state.pos) === 'lava') {
+    const team = fielded(state);
+    if (!team.some((m) => lavaImmune(m.types))) {
+      for (const m of team) m.hp = Math.max(1, m.hp - Math.ceil(m.maxHp * LAVA_BURN));
+      state.log.push('A lava queima quem está em campo.');
+    }
+  }
+  for (const e of state.enemies) if (hazardAt(state, e.pos) === 'lava' && !lavaImmune(e.types)) hurtEnemy(state, e, Math.ceil(e.maxHp * LAVA_BURN), `${e.name} se queima na lava`);
   state.barriers = state.barriers.filter((b) => --b.rounds > 0);
   state.guard = { reduce: 0, counter: 0 };
   state.combo = 0;

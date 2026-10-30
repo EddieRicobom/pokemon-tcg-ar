@@ -42,13 +42,19 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 - Pokémon de dois tipos escolhe a munição no painel do ativo (sem custo de PA): só o 1º tipo, só o 2º, ou mista 70/30 em qualquer ordem.
 - As 15 armas novas ainda usam um emblema genérico (hexágono com a orbe e o nome); a arte própria fica para depois.
 
+### Andares por geração (cenário, inimigos e casas especiais)
+- Cada andar sorteia uma geração (`src/core/dungeon-biomes.ts`): as 9 aparecem uma vez a cada 9 andares antes de repetir, como na Torre. A geração decide os inimigos (os nativos da região, os mesmos da Torre, mais as espécies de caverna; a partir do andar 6 eles vêm evoluídos e a partir do 14, duas vezes, sempre com dados reais) e o cenário.
+- Cenários no jeito de Pokémon Mystery Dungeon (piso contínuo, paredes de pedra com face frontal, borda de rocha, enfeites de chão e partículas): Kanto · Monte Lua (Pedras da Lua, poeira), Johto · Gruta União (água corrente, gotas), Hoenn · Monte Chaminé (lava, brasas), Sinnoh · Monte Coronet (gelo, neve), Unova · Caverna Eletropedra (cristais, faíscas), Kalos · Gruta Reflexo (espelhos, brilho), Alola · Colina Dez Quilates (areia, conchas, raios de sol), Galar · Mina de Galar (trilhos, lampiões, carvão), Paldea · Área Zero (prismas Terastal).
+- Casas especiais, como em Mystery Dungeon: **água** custa 2 PA para quem não é Água nem Voador; **lava** tira 8% do HP no fim da rodada de quem não é Fogo nem Voador (a equipe não cai por ela; inimigos sim) e os inimigos evitam pisar nela.
+- **Em casa:** quem é da geração sorteada para o andar luta com +10% de poder (🏠 no topo).
+- Som (mesmo motor da Vila e da Torre): entrada no andar, chefe, golpe com o tipo da munição, inimigo derrotado, saque, dano recebido, sala limpa, escada, derrota e saída. Botões 🔊 (som) e ✨ (partículas e brilhos do cenário) ficam no topo e são lembrados no aparelho; `prefers-reduced-motion` desliga as animações.
+
 ### Descida sem fim
 - Não existe último andar. A expedição só termina quando a equipe cai ou quando você escolhe **Sair com o espólio** na escada.
 - Com a sala limpa, a escada 🪜 aparece e dá para andar à vontade sem gastar PA para pegar o saque. Na escada, você escolhe uma recompensa para descer (buff de fusão, poção ou sala segura), abre a forja ou sai.
 - Os inimigos crescem a cada andar, sem teto: HP +20%, ataque +7% e defesas +4% por andar. O número de inimigos sobe até 6 e a chance de elite chega a 55%.
 - Há um chefe a cada 5 andares, com 2,6× de HP e afixos que se acumulam a cada 10 andares.
 - As espécies mudam com a profundidade: Pokémon de caverna no começo, as evoluções a partir do andar 5, formas finais no 10 e pseudolendários no 15. Os chefes mudam a cada degrau: Onix, Rhydon, Steelix, Tyranitar, Aggron, Metagross e Garchomp.
-- A região muda a cada 5 andares (Caverna Úmida, Cripta Esquecida, Fornalha Profunda, Jardim Cristalino, Abismo Estelar), cada uma com a sua paleta, e depois dá a volta com «+N».
 - O recorde de andar fica guardado no aparelho (`localStorage`). O fim da expedição mostra um resumo: andar mais fundo, inimigos, elites, chefes, gemas e lendárias.
 
 ### Gemas
