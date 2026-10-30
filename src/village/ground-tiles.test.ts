@@ -21,8 +21,13 @@ describe('chão da Vila com tileset (autotile por quartos)', () => {
   });
   it('usa o recorte próprio do tileset somente sobre os blocos de mato alto', () => {
     const pieces = groundPieces(tiny(['T']), 0, 0);
-    expect(pieces.map((piece) => piece.src)).toEqual(['grass', 'tall']);
+    expect(pieces.map((piece) => piece.src)).toEqual(['grass', 'tall', 'tall', 'tall', 'tall']);
     expect(ATLAS_SOURCES.find((source) => source.id === 'tall')?.sheet).toBe('Daisy Route.png');
+    // Bloco solto: os quatro quartos são cantos do tufo (nada de miolo quadrado).
+    expect(pieces.slice(1).map((p) => [p.sx, p.sy])).toEqual([[0, 0], [40, 0], [0, 56], [40, 56]]);
+    // No meio de uma mancha, todos os quartos são miolo.
+    const middle = groundPieces(tiny(['TTT', 'TTT', 'TTT']), 1, 1).slice(1);
+    expect(middle.every((p) => p.sx >= 16 && p.sx < 32 && p.sy >= 16 && p.sy < 48)).toBe(true);
   });
   it('quarto escolhe canto, borda ou miolo do bloco 3×3', () => {
     expect(quarterCell(0, 0, false, false)).toEqual({ cx: 0, cy: 0 });
