@@ -223,6 +223,8 @@ function normalizeRequests(raw: unknown): { day: string; items: VillageRequest[]
   return { day: typeof r.day === 'string' ? r.day.slice(0, 12) : '', items, story };
 }
 
+/** Itens que trocaram de id: o save antigo é lido com o id novo, para nada sumir da mochila. */
+const RENAMED_ITEMS: Readonly<Record<string, string>> = { 'mega-stone-shard': 'omega-shard' };
 
 export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number; y: number }): VillageState {
   const base = emptyVillage(seed, spawn);
@@ -230,7 +232,10 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
   const r = raw as Partial<VillageState>;
   if (r.v !== 1 || r.seed !== seed) return base;
   const inv: Partial<Record<ItemId, number>> = {};
-  for (const [k, n] of Object.entries(r.inventory ?? {})) if (isItem(k) && Number.isInteger(n) && (n as number) > 0) inv[k as ItemId] = Math.min(999, n as number);
+  for (const [key, n] of Object.entries(r.inventory ?? {})) {
+    const k = RENAMED_ITEMS[key] ?? key;
+    if (isItem(k) && Number.isInteger(n) && (n as number) > 0) inv[k as ItemId] = Math.min(999, (inv[k as ItemId] ?? 0) + (n as number));
+  }
   const p = r.player;
   return {
     ...base,

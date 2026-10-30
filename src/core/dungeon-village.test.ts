@@ -3,7 +3,7 @@ import { emptyVillage, normalizeVillage } from './village/life';
 import { startDungeon } from './dungeon';
 import type { DungeonState, EnemySpecies, MemberInput } from './dungeon';
 import { bringGems, COINS_PER_FLOOR, DAILY_REWARDS, expeditionRewards, LOVE_CANDY, packLunch, settleExpedition, takeFromVault } from './dungeon-village';
-import { SURVIVOR_MEGA_ITEM } from './survivor-mega';
+import { SURVIVOR_OMEGA_SHARD_ITEM } from './survivor-mega';
 import { VAULT_SIZE } from './village/dungeon-vault';
 import type { BaseStats } from './survivor-moves';
 
@@ -22,14 +22,14 @@ function run(phase: DungeonState['phase'], deepest: number, bosses: number): Dun
 }
 
 describe('Masmorra e Vila', () => {
-  it('sair com o espólio rende moedas por andar, Love Candy por chefe e fragmentos Mega, e guarda as gemas', () => {
+  it('sair com o espólio rende moedas por andar, Love Candy por chefe e fragmentos Ômega, e guarda as gemas', () => {
     const v = emptyVillage(1, spawn);
     const r = settleExpedition(v, run('retired', 23, 4), '2026-10-30');
     expect(r.coins).toBe(23 * COINS_PER_FLOOR);
     expect(r.loveCandy).toBe(3);
-    expect(r.megaShards).toBe(2);
+    expect(r.omegaShards).toBe(2);
     expect(v.inventory[LOVE_CANDY]).toBe(3);
-    expect(v.inventory[SURVIVOR_MEGA_ITEM]).toBe(2);
+    expect(v.inventory[SURVIVOR_OMEGA_SHARD_ITEM]).toBe(2);
     expect(v.dungeon.gems.map((g) => g.kind)).toEqual(['eco', 'rubi']);
     expect(v.dungeon.bestFloor).toBe(23);
   });
@@ -37,7 +37,7 @@ describe('Masmorra e Vila', () => {
   it('quem cai não ganha prêmio nem guarda gemas, mas o recorde fica', () => {
     const v = emptyVillage(1, spawn);
     const r = settleExpedition(v, run('lost', 12, 2), '2026-10-30');
-    expect([r.coins, r.loveCandy, r.megaShards, r.kept.length]).toEqual([0, 0, 0, 0]);
+    expect([r.coins, r.loveCandy, r.omegaShards, r.kept.length]).toEqual([0, 0, 0, 0]);
     expect(v.dungeon.bestFloor).toBe(12);
   });
 

@@ -1,7 +1,7 @@
 import { add } from './village/life';
 import type { VillageState } from './village/life';
 import { VAULT_SIZE } from './village/dungeon-vault';
-import { SURVIVOR_MEGA_ITEM } from './survivor-mega';
+import { SURVIVOR_OMEGA_SHARD_ITEM } from './survivor-mega';
 import { recomputeMember } from './dungeon';
 import type { DungeonState } from './dungeon';
 import type { Gem } from './dungeon-gems';
@@ -9,7 +9,7 @@ import type { LunchEffect } from './survivor-lunch';
 
 /**
  * A ponte entre a Masmorra e a Vila. Antes de descer: até 2 gemas do cofre e a marmita do Café. Ao sair com o espólio:
- * moedas por andar, Love Candy por chefe, fragmentos Mega por profundidade e as melhores gemas de volta ao cofre.
+ * moedas por andar, Love Candy por chefe, fragmentos Ômega por profundidade e as melhores gemas de volta ao cofre.
  * Quem cai perde as gemas que levou e não ganha prêmio — o risco da descida. Puro (só mexe nos objetos recebidos).
  */
 
@@ -19,7 +19,7 @@ export const VAULT_TAKE = 2;
 export const DAILY_REWARDS = 3;
 export const COINS_PER_FLOOR = 5;
 export const MAX_CANDY = 3;
-/** Um fragmento Mega a cada tantos andares alcançados. */
+/** Um fragmento Ômega a cada tantos andares alcançados. */
 export const SHARD_EVERY = 10;
 /** Marmita do Café na expedição: +1 poção e HP máximo da equipe +15%. */
 export const LUNCH_HP = 0.15;
@@ -27,7 +27,7 @@ export const LUNCH_HP = 0.15;
 export interface ExpeditionRewards {
   coins: number;
   loveCandy: number;
-  megaShards: number;
+  omegaShards: number;
   /** Gemas que entraram no cofre. */
   kept: Gem[];
   /** Já passou do teto diário: só cofre e recorde. */
@@ -54,7 +54,7 @@ export function expeditionRewards(state: DungeonState, village: Pick<VillageStat
   return {
     coins: paid ? state.stats.deepest * COINS_PER_FLOOR : 0,
     loveCandy: paid ? Math.min(MAX_CANDY, state.stats.bosses) : 0,
-    megaShards: paid ? Math.floor(state.stats.deepest / SHARD_EVERY) : 0,
+    omegaShards: paid ? Math.floor(state.stats.deepest / SHARD_EVERY) : 0,
     kept,
     capped: retired && capped,
     newRecord: state.stats.deepest > vault.bestFloor,
@@ -62,7 +62,7 @@ export function expeditionRewards(state: DungeonState, village: Pick<VillageStat
 }
 
 /**
- * Fecha a expedição na Vila: guarda gemas no cofre, Love Candy e fragmentos Mega na mochila, conta o teto do dia e o
+ * Fecha a expedição na Vila: guarda gemas no cofre, Love Candy e fragmentos Ômega na mochila, conta o teto do dia e o
  * recorde. As moedas voltam no resultado para entrarem pela carteira (que aplica bônus como o de Zapdos).
  */
 export function settleExpedition(village: VillageState, state: DungeonState, day: string): ExpeditionRewards {
@@ -73,7 +73,7 @@ export function settleExpedition(village: VillageState, state: DungeonState, day
   let nextId = Math.max(0, ...vault.gems.map((g) => g.id)) + 1;
   for (const g of r.kept) vault.gems.push({ ...g, id: nextId++ });
   if (r.loveCandy) add(village, LOVE_CANDY, r.loveCandy);
-  if (r.megaShards) add(village, SURVIVOR_MEGA_ITEM, r.megaShards);
+  if (r.omegaShards) add(village, SURVIVOR_OMEGA_SHARD_ITEM, r.omegaShards);
   vault.bestFloor = Math.max(vault.bestFloor, state.stats.deepest);
   return r;
 }

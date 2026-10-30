@@ -1050,12 +1050,12 @@ const pendingText = computed(() => {
             <ul v-if="s.phase === 'retired'" class="dg-summary">
               <li><strong>🪙 {{ rewards.coins }}</strong><small>moedas</small></li>
               <li><strong>🍬 {{ rewards.loveCandy }}</strong><small>Love Candy</small></li>
-              <li><strong>💎 {{ rewards.megaShards }}</strong><small>fragmentos Mega</small></li>
+              <li><strong>💎 {{ rewards.omegaShards }}</strong><small>fragmentos Ômega</small></li>
             </ul>
             <p v-if="rewards.kept.length" class="hint">{{ rewards.kept.length }} gema(s) guardada(s) no cofre da Vila (cabem 12).</p>
             <p v-if="rewards.capped" class="hint dg-provisional">Já foram {{ DAILY_REWARDS }} expedições premiadas hoje: desta vez só as gemas e o recorde voltam. Amanhã tem mais.</p>
             <p v-if="s.phase === 'lost'" class="hint">Quem cai perde as gemas da expedição e não leva prêmio. Saia pela escada para garantir o espólio.</p>
-            <p class="hint">Prêmio ao sair: {{ COINS_PER_FLOOR }} moedas por andar, 1 Love Candy por chefe (até 3) e 1 fragmento Mega a cada {{ SHARD_EVERY }} andares.</p>
+            <p class="hint">Prêmio ao sair: {{ COINS_PER_FLOOR }} moedas por andar, 1 Love Candy por chefe (até 3) e 1 fragmento Ômega a cada {{ SHARD_EVERY }} andares.</p>
           </template>
           <div class="dg-actions">
             <button type="button" class="primary" @click="s = null">Nova expedição</button>

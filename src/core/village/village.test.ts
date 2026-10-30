@@ -164,6 +164,12 @@ describe('salvar e dia/noite', () => {
     expect(normalizeVillage(null, 42, map.spawn).house).toBe(0);
   });
 
+  it('save antigo com Fragmento de Megapedra vira Fragmento Ômega, sem perder a quantidade', () => {
+    const s = emptyVillage(42, map.spawn);
+    const back = normalizeVillage(JSON.parse(JSON.stringify({ ...s, inventory: { 'mega-stone-shard': 3, 'omega-shard': 1 } })), 42, map.spawn);
+    expect(back.inventory).toEqual({ 'omega-shard': 4 });
+  });
+
   it('meio-dia é claro, meia-noite é escura, o fim de tarde é alaranjado', () => {
     expect(daylight(12).dark).toBe(0);
     expect(daylight(0).dark).toBeGreaterThan(0.5);

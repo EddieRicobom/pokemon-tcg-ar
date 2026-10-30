@@ -544,7 +544,7 @@ export const SURVIVOR_MIN_MS = 20_000;
 export const SURVIVOR_LOVE_CANDY_MS = 10 * 60_000;
 /** Marco de 15 min: concede uma Pedra da Confiança depois que a corrida termina. */
 export const SURVIVOR_TRUST_STONE_MS = 15 * 60_000;
-export const SURVIVOR_MEGA_SHARD_MS = 20 * 60_000;
+export const SURVIVOR_OMEGA_SHARD_MS = 20 * 60_000;
 /** A primeira Pokébola Sombria aparece aos 13 min; a mesma corrida pode ter até três encontros. */
 export const SURVIVOR_SHADOW_BALL_FIRST_MS = 13 * 60_000;
 export const SURVIVOR_SHADOW_BALL_EVERY_MS = 3 * 60_000;
@@ -566,7 +566,7 @@ export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 
 
 export type SurvivorEvent =
   | { type: 'levelup'; level: number }
-  | { type: 'milestone'; id: 'ten-minutes' | 'fifteen-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'trust-stone' | 'mega-stone-shard' }
+  | { type: 'milestone'; id: 'ten-minutes' | 'fifteen-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'trust-stone' | 'omega-shard' }
   | { type: 'bossSpawn' }
   | { type: 'shadowBallSpawn'; dexId: number; name: string }
   | { type: 'shadowBossArrival'; dexId: number; name: string }

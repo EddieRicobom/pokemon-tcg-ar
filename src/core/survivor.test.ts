@@ -1044,7 +1044,7 @@ describe('segundo golpe', () => {
     long.player.hp = 1_000_000;
     long.player.maxHp = 1_000_000;
     const twenty = stepSurvivor(long, { dx: 0, dy: 0 }, 1_200_000);
-    expect(twenty).toContainEqual({ type: 'milestone', id: 'twenty-minutes', reward: 'mega-stone-shard' });
+    expect(twenty).toContainEqual({ type: 'milestone', id: 'twenty-minutes', reward: 'omega-shard' });
   });
 
   it('sorteia uma Pokébola Sombria aos 13 minutos, pausa a chegada e assegura Pedra da Confiança ao vencer o lendário', () => {

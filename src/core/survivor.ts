@@ -31,7 +31,7 @@ import type { PokemonType } from './pokemon-data';
  */
 
 export * from './survivor-types';
-import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
+import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { createSurvivorCharge, distanceToSegment, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, RUSH_HIT_RADIUS, RUSH_INVULN_MS, RUSH_REFERENCE_SPEED, RUSH_TELEPORT_DAMAGE_MULTIPLIER, RUSH_TELEPORT_EVERY_MS, RUSH_TELEPORT_RANGE, rushDamageTakenMultiplier, stepChargeMeter } from './survivor-charge';
@@ -1659,8 +1659,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (previousElapsedMs < SURVIVOR_TRUST_STONE_MS && state.elapsedMs >= SURVIVOR_TRUST_STONE_MS) {
     events.push({ type: 'milestone', id: 'fifteen-minutes', reward: 'trust-stone' });
   }
-  if (previousElapsedMs < SURVIVOR_MEGA_SHARD_MS && state.elapsedMs >= SURVIVOR_MEGA_SHARD_MS) {
-    events.push({ type: 'milestone', id: 'twenty-minutes', reward: 'mega-stone-shard' });
+  if (previousElapsedMs < SURVIVOR_OMEGA_SHARD_MS && state.elapsedMs >= SURVIVOR_OMEGA_SHARD_MS) {
+    events.push({ type: 'milestone', id: 'twenty-minutes', reward: 'omega-shard' });
   }
   spawnShadowBallIfDue(state, events);
   if (advanceSpecialEncounter(state, 0)) return events;
