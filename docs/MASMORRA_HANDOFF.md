@@ -7,6 +7,8 @@ Você vai continuar o modo Masmorra do repositório EddieRicobom/pokemon-tcg-ar 
 
 Ponto de partida: branch `claude/masmorra-armas` (já contém a correção do deploy da branch `claude/corrige-deploy-masmorra`). Trabalhe numa branch `claude/...` e abra PR para `main`. Rode `npm run typecheck`, `npm test` e `npm run build` e só diga que funciona depois de passarem (o deploy da main já quebrou uma vez por código não verificado). Textos da interface em português do Brasil; identificadores em inglês; lógica pura em src/core com teste ao lado. Nunca invente dados: espécie sem stats/tipos aparece como «sem dados».
 
+JÁ FEITO (não refaça): tarefa 1 inteira (20 armas e mecanismos no combate, com testes) e a escolha de munição para Pokémon de dois tipos (ammoOptions/setAmmo). Comece pela tarefa 2.
+
 Tarefas, em ordem (foco em gameplay e sistemas; não precisa fazer arte):
 
 1. Integrar as 20 armas no combate. O catálogo novo está em src/core/dungeon-weapons.ts (formatos, mecanismos, as 210 fusões geradas por regra: formato e mecanismo da primeira arma na ordem do catálogo + mecanismo da segunda; armas iguais reforçam o mecanismo). Hoje src/core/dungeon.ts ainda define só 5 armas e o próprio weaponFor/fusões: troque para importar e reexportar de dungeon-weapons.ts e implemente no combate:

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { TYPE_COLORS } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
+import { WEAPONS } from '../core/dungeon';
 import type { WeaponId } from '../core/dungeon';
 
 /**
@@ -18,7 +19,7 @@ const props = withDefaults(defineProps<{ weapon: WeaponId; dexId?: number | null
 });
 
 /** Onde fica a orbe em cada arma (em % do quadro 100×100) e o tamanho dela. */
-const ORB: Readonly<Record<WeaponId, { x: number; y: number; r: number }>> = {
+const ORB: Readonly<Partial<Record<WeaponId, { x: number; y: number; r: number }>>> = {
   laminas: { x: 50, y: 61, r: 12 },
   lanca: { x: 64, y: 36, r: 11 },
   martelo: { x: 64, y: 30, r: 12 },
@@ -28,7 +29,10 @@ const ORB: Readonly<Record<WeaponId, { x: number; y: number; r: number }>> = {
 
 const broken = ref(false);
 watch(() => props.dexId, () => { broken.value = false; });
-const orbPos = computed(() => ORB[props.weapon]);
+/** Armas ainda sem desenho próprio usam o emblema genérico, com a orbe no centro. */
+const drawn = computed(() => props.weapon in ORB);
+const orbPos = computed(() => ORB[props.weapon] ?? { x: 50, y: 50, r: 16 });
+const label = computed(() => WEAPONS[props.weapon].name);
 const ring = computed(() => (props.ammo ? TYPE_COLORS[props.ammo] : '#c9b8ff'));
 const src = computed(() => (props.dexId ? pokemonSpriteUrl(props.dexId) : ''));
 /** Ids únicos de gradiente por instância (vários desenhos na mesma tela). */
@@ -101,7 +105,7 @@ const uid = `w${Math.random().toString(36).slice(2, 8)}`;
           <rect x="60" y="40" width="10" height="3" rx="1" fill="#7df0ff" stroke="none" />
         </template>
         <!-- Lançador balístico: tubo grosso no ombro; a orbe fica na culatra. -->
-        <template v-else>
+        <template v-else-if="weapon === 'lancador'">
           <g transform="rotate(-12 50 50)">
             <rect x="8" y="34" width="80" height="28" rx="12" :fill="`url(#${uid}-dark)`" />
             <rect x="82" y="29" width="12" height="38" rx="4" :fill="`url(#${uid}-gold)`" />
@@ -111,8 +115,14 @@ const uid = `w${Math.random().toString(36).slice(2, 8)}`;
             <path d="M50 40 h28" stroke="#ff9a4d" stroke-width="2" stroke-dasharray="4 3" />
           </g>
         </template>
+        <!-- Emblema genérico (arma do catálogo ainda sem desenho próprio): escudo hexagonal com a orbe no centro. -->
+        <template v-else>
+          <polygon points="50,6 88,28 88,72 50,94 12,72 12,28" :fill="`url(#${uid}-dark)`" />
+          <polygon points="50,16 79,33 79,67 50,84 21,67 21,33" fill="none" :stroke="`url(#${uid}-gold)`" stroke-width="3" />
+        </template>
       </g>
     </svg>
+    <span v-if="!drawn" class="weapon-generic-label">{{ label }}</span>
     <span
       v-if="orb"
       class="weapon-orb"
@@ -139,5 +149,6 @@ const uid = `w${Math.random().toString(36).slice(2, 8)}`;
   justify-content: center;
 }
 .weapon-orb img { width: 150%; height: 150%; object-fit: contain; image-rendering: pixelated; }
+.weapon-generic-label { position: absolute; left: 0; right: 0; bottom: -2px; font-size: 9px; line-height: 1.1; text-align: center; color: #fff; text-shadow: 0 1px 2px #000; pointer-events: none; }
 .weapon-orb-missing { color: #fff; font-weight: 700; font-size: 0.7em; }
 </style>

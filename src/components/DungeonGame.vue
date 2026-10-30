@@ -12,11 +12,11 @@ import { speciesName } from '../core/survivor-evolution';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import {
-  AFFIXES, attack, attackArea, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
+  AFFIXES, ammoOptions, attack, MECHANICS, setAmmo, attackArea, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
   floorTheme, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, INTENTS, intents, isBossFloor, key, move, polishGems, previewAttack,
   previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponFor, WEAPONS,
 } from '../core/dungeon';
-import type { Cell, DungeonState, Enemy, EnemySpecies, Intent, MemberInput, RewardId, WeaponPattern } from '../core/dungeon';
+import type { Cell, DungeonState, Enemy, EnemySpecies, Intent, MechanicId, MemberInput, RewardId, WeaponPattern } from '../core/dungeon';
 import { GEMS, gemName, LEGENDARY_SLOT as LEGENDARY_SLOT_INDEX, polishable, tierName } from '../core/dungeon-gems';
 import type { Gem, GemKind } from '../core/dungeon-gems';
 
@@ -48,7 +48,7 @@ const WILD: readonly { dexId: number; minDepth: number; boss?: boolean }[] = [
   { dexId: 376, minDepth: 25, boss: true },
   { dexId: 445, minDepth: 30, boss: true },
 ];
-const PATTERN_TEXT: Readonly<Record<WeaponPattern, string>> = { adjacent: 'adjacente', line: 'em linha', ranged: 'tiro reto', area: 'área em cruz' };
+const PATTERN_TEXT: Readonly<Record<WeaponPattern, string>> = { adjacent: 'adjacente', line: 'em linha', ranged: 'tiro reto', area: 'área em cruz', cone: 'leque', aura: 'em volta', homing: 'teleguiado', trap: 'armadilha' };
 const RECORD_KEY = 'tcg-ar-masmorra-recorde-v1';
 const STEP_MS = 420;
 
@@ -167,6 +167,13 @@ const polishGroups = computed(() => polishable(s.value?.bag ?? []));
 const selectedGem = computed<Gem | null>(() => s.value?.bag.find((g) => g.id === forgeGem.value) ?? null);
 
 const wallAt = (c: Cell) => s.value!.walls.some((w) => w.x === c.x && w.y === c.y);
+const barrierAt = (c: Cell) => s.value!.barriers.some((b) => b.pos.x === c.x && b.pos.y === c.y);
+const trapAt = (c: Cell) => s.value!.traps.some((t) => t.pos.x === c.x && t.pos.y === c.y);
+const ammoKey = (ammo: readonly PokemonType[]) => ammo.join('/');
+const mechanicList = (ids: readonly MechanicId[]) => ids.map((id) => `${MECHANICS[id].name}: ${MECHANICS[id].effect}`);
+function chooseAmmo(ammo: readonly PokemonType[]): void {
+  if (s.value) result(setAmmo(s.value, s.value.active, ammo));
+}
 const enemyAt = (c: Cell) => s.value!.enemies.find((e) => e.pos.x === c.x && e.pos.y === c.y);
 const lootAt = (c: Cell) => s.value!.loot.find((l) => l.pos.x === c.x && l.pos.y === c.y);
 const stairsAt = (c: Cell) => !!s.value!.stairs && s.value!.stairs.x === c.x && s.value!.stairs.y === c.y;
@@ -409,6 +416,7 @@ const pendingText = computed(() => {
         <span class="dg-pill dg-ap" :aria-label="`${s.ap} PA`">PA <i v-for="n in Math.max(START_AP, s.ap)" :key="n" :class="{ on: n <= s.ap }"></i></span>
         <span class="dg-pill" title="Cargas de fusão">💠 {{ s.fusionCharges }}</span>
         <span class="dg-pill" title="Poções">🧪 {{ s.potions }}</span>
+        <span v-if="s.guard.reduce > 0" class="dg-pill" title="Bloqueio para o próximo golpe">🛡️ {{ Math.round(s.guard.reduce * 100) }}%</span>
         <button type="button" class="dg-pill dg-bag" title="Mochila e forja (G)" @click="forgeOpen = true">💎 {{ s.bag.length }}</button>
         <label class="dg-toggle"><input v-model="showThreat" type="checkbox" /> ameaça</label>
       </header>
@@ -421,6 +429,7 @@ const pendingText = computed(() => {
           class="dg-cell"
           :class="{
             wall: wallAt(c),
+            barrier: barrierAt(c),
             reach: (moveCosts.get(key(c)) ?? 0) > 0,
             target: targetKeys.has(key(c)),
             area: areaKeys.has(key(c)),
@@ -433,6 +442,7 @@ const pendingText = computed(() => {
         >
           <small v-if="mode === 'move' && (moveCosts.get(key(c)) ?? 0) > 0" class="dg-cost">{{ moveCosts.get(key(c)) }}</small>
           <span v-if="stairsAt(c)" class="dg-stairs" aria-hidden="true">🪜</span>
+          <span v-if="trapAt(c)" class="dg-trap" title="Armadilha" aria-hidden="true">⚙️</span>
           <span v-if="lootAt(c) && !enemyAt(c)" class="dg-loot" :class="{ chest: lootAt(c)!.chest }" aria-hidden="true">{{ lootAt(c)!.chest ? '🧰' : lootAt(c)!.items.some((i) => i.kind === 'gem' && i.gem.legendary) ? '🌟' : '💎' }}</span>
           <template v-if="enemyAt(c)">
             <span class="dg-mon" :class="{ acting: acting === enemyAt(c)!.uid, elite: enemyAt(c)!.elite, boss: enemyAt(c)!.boss }">
@@ -441,6 +451,7 @@ const pendingText = computed(() => {
             </span>
             <span class="dg-profile" :title="PROFILES[enemyAt(c)!.profile].name">{{ PROFILES[enemyAt(c)!.profile].icon }}</span>
             <span v-if="intentOf(enemyAt(c)!)" class="dg-intent" :title="INTENTS[intentOf(enemyAt(c)!)!.kind].text">{{ INTENTS[intentOf(enemyAt(c)!)!.kind].icon }}</span>
+            <span v-if="enemyAt(c)!.burn" class="dg-burn" title="Queimando">🔥</span>
             <span class="dg-hp enemy"><i :style="{ width: pct(enemyAt(c)!.hp, enemyAt(c)!.maxHp) }"></i></span>
           </template>
           <template v-else-if="playerAt(c)">
@@ -501,6 +512,10 @@ const pendingText = computed(() => {
             <span v-if="!s.fusion"><strong>{{ who.weapon.name }}</strong> · {{ who.weapon.category }}</span>
             <span>{{ who.weapon.kind === 'physical' ? 'Físico' : 'Especial' }} · {{ who.weapon.ap }} PA · {{ who.weapon.cost }} carga · {{ PATTERN_TEXT[who.weapon.pattern] }}, alcance {{ who.weapon.range }} · poder {{ who.power }}<template v-if="who.bonus.crit > 0"> · crítico {{ Math.round(who.bonus.crit * 100) }}%</template></span>
             <span>Munição: <span v-for="t in who.ammo" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span><template v-if="who.ammo.length > 1"> (70% / 30%)</template></span>
+            <span v-if="!s.fusion && ammoOptions(activeMember).length > 1" class="dg-ammo">
+              <button v-for="opt in ammoOptions(activeMember)" :key="ammoKey(opt)" type="button" :class="{ on: ammoKey(opt) === ammoKey(activeMember.ammo) }" :disabled="s.phase === 'enemy'" @click="chooseAmmo(opt)">{{ ammoLabel(opt) }}</button>
+            </span>
+            <span v-for="(line, i) in mechanicList(who.weapon.mechanics)" :key="i" class="dg-mech">⚙ {{ line }}</span>
           </div>
         </div>
       </div>
@@ -546,6 +561,7 @@ const pendingText = computed(() => {
             <p class="hint dg-center">{{ fusionPreview.name }}</p>
             <p class="hint">{{ fusionPreview.weapon.description }}</p>
             <ul class="dg-facts">
+              <li v-for="(line, i) in mechanicList(fusionPreview.weapon.mechanics)" :key="`m${i}`">⚙ {{ line }}</li>
               <li>Munição: {{ ammoLabel(fusionPreview.ammo) }}{{ fusionPreview.ammo.length > 1 ? ' (70% / 30%)' : '' }}</li>
               <li>{{ fusionPreview.weapon.ap }} PA e {{ fusionPreview.weapon.cost }} carga por ataque · poder base {{ fusionPreview.weapon.power }} · alcance {{ fusionPreview.weapon.range }}</li>
               <li>Duração: {{ FUSION_TURNS }} turnos · Ativação: {{ COSTS.fusion }} PA + 1 buff · Carga temporária: {{ FUSION_CHARGE }}</li>
@@ -685,6 +701,13 @@ button:disabled { opacity: 0.5; }
 .dg-grid { display: grid; gap: 3px; padding: 6px; background: linear-gradient(180deg, color-mix(in srgb, var(--tile-b) 70%, #000), #00000080); border: 2px solid var(--frame); border-radius: 12px; box-shadow: inset 0 0 22px #000c, 0 0 18px color-mix(in srgb, var(--frame) 40%, transparent); transition: border-color 0.6s; }
 .dg-grid.enemy-turn { border-color: #b84a5a; }
 .dg-cell { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 5px; background: linear-gradient(135deg, var(--tile-a), var(--tile-b)); display: flex; align-items: center; justify-content: center; overflow: visible; }
+.dg-cell.barrier { background: repeating-linear-gradient(90deg, #7fe7ff55 0 3px, #1b2a40 3px 7px); box-shadow: inset 0 0 0 2px #7fe7ff99; }
+.dg-trap { position: absolute; bottom: 2px; right: 3px; font-size: 0.8rem; z-index: 2; }
+.dg-burn { position: absolute; bottom: 6px; left: -2px; font-size: 0.65rem; z-index: 2; }
+.dg-ammo { display: flex; flex-wrap: wrap; gap: 4px; }
+.dg-ammo button { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); background: #0004; color: inherit; font-size: 0.72rem; }
+.dg-ammo button.on { border-color: var(--gold); color: var(--gold); }
+.dg-mech { font-size: 0.74rem; }
 .dg-cell.wall { background: linear-gradient(180deg, var(--wall-top) 0 32%, var(--wall-side) 32%); box-shadow: inset 0 -3px 0 #0008; }
 .dg-cell.danger::after { content: ''; position: absolute; inset: 0; border-radius: 5px; background: repeating-linear-gradient(45deg, #ff5a5a24 0 4px, transparent 4px 8px); pointer-events: none; }
 .dg-cell.doom { box-shadow: inset 0 0 0 2px #ff3d3d; animation: dg-doom 0.9s ease-in-out infinite; }
