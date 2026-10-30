@@ -620,7 +620,7 @@ const pendingText = computed(() => {
       <p class="dg-preview" aria-live="polite">
         <template v-if="enemyTurn"><span class="dg-enemy-msg">Turno dos inimigos… {{ s.log[s.log.length - 1] }}</span></template>
         <template v-else-if="exploring">✨ Sala limpa: toque numa casa para andar, pegue o saque e vá até a 🪜 escada. <button type="button" class="small" @click="forgeOpen = true">Forja</button></template>
-        <template v-else-if="pendingText">{{ pendingText }} <button v-if="mode === 'attack' ? !preview?.reason : true" type="button" class="primary small" @click="confirm">Confirmar</button></template>
+        <template v-else-if="pendingText"><span class="dg-preview-text">{{ pendingText }}</span><button v-if="mode === 'attack' ? !preview?.reason : true" type="button" class="primary small" @click="confirm">Confirmar</button></template>
         <template v-else-if="flash"><span class="dg-warn">{{ flash }}</span></template>
         <template v-else-if="s.mustSwitch">Escolha quem assume a posição (troca grátis).</template>
         <template v-else-if="s.bossThreat && !mode"><span class="dg-warn">O chefe vai soltar o golpe nas casas marcadas: saia delas antes de encerrar.</span></template>
@@ -962,8 +962,9 @@ button:disabled { opacity: 0.5; }
 .dg-popup.info { color: #ddd; }
 
 .dg-preview { min-height: 2.6em; margin: 0; font-size: 0.88rem; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
-.dungeon.is-running .dg-preview { min-height: 1.7em; font-size: 0.76rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex-wrap: nowrap; }
-.dungeon.is-running .dg-preview > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dungeon.is-running .dg-preview { min-height: 1.7em; font-size: 0.76rem; flex-wrap: nowrap; }
+.dungeon.is-running .dg-preview > * { min-width: 0; }
+.dungeon.is-running .dg-preview-text { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .dungeon.is-running .dg-preview button { min-height: 26px; flex: none; }
 .dg-warn { color: var(--warn); }
 .dg-enemy-msg { color: #ffb3b3; }
