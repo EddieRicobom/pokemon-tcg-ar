@@ -53,6 +53,16 @@ jobs:
 
       # Incorpora, no build publicado, as variantes PokéAPI derivadas do catálogo completo de espécies e formas.
       # A revisão e os hashes ficam no manifesto gerado; o processo é reproduzível pelo script versionado.
+      # O script só baixa o que mudou: guardando a pasta entre execuções, ele vira uma conferência rápida.
+      - name: Restaurar o cache dos sprites PokéAPI
+        uses: actions/cache@v4
+        with:
+          path: |
+            public/sprites/pokeapi
+            public/data/pokeapi-sprite-manifest.json
+          key: pokeapi-sprites-v1-${{ hashFiles('scripts/sync-pokeapi-sprites.ts') }}-${{ github.run_id }}
+          restore-keys: pokeapi-sprites-v1-${{ hashFiles('scripts/sync-pokeapi-sprites.ts') }}-
+
       - name: Incorporar sprites PokéAPI
         run: npm run sync:sprites
         env:
