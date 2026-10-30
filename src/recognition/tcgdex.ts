@@ -20,6 +20,16 @@ export interface TcgdexCard {
   rarity?: string;
   set: { id: string; name: string; cardCount?: { official: number; total: number } };
   variants?: Record<string, boolean>;
+  /** Campos de detalhe do TCGdex, lidos por `traitsFromTcgdex` (todos opcionais; a fonte pode não mandar). */
+  hp?: number;
+  types?: string[];
+  stage?: string;
+  suffix?: string;
+  evolveFrom?: string;
+  attacks?: unknown[];
+  abilities?: unknown[];
+  regulationMark?: string;
+  illustrator?: string;
 }
 
 /** Resumo devolvido pelas buscas (sem dexId nem detalhes do set). */
