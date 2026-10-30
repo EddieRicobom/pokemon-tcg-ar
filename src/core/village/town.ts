@@ -15,7 +15,7 @@ import { findHomeFurnitureSlot } from './home-layout';
 export { homeLevel, homeDecor, homeRoof, homeValue } from './home-state';
 
 export { buildingAt } from './map';
-export { LOTS, TOWN_STAGES, townStage };
+export { CIVIC, LOTS, TOWN_STAGES, townStage };
 export { HOME_EXTERIOR_STYLES };
 export type { HomeExteriorStyle };
 export type { Building };

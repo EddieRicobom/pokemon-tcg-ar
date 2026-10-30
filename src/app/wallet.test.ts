@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadVillage, saveVillage, VILLAGE_KEY } from './village-store';
-import { addCoins, attachLiveVillage, coins, detachLiveVillage, spendCoins } from './wallet';
+import { addCoins, addExactCoins, attachLiveVillage, coins, detachLiveVillage, spendCoins } from './wallet';
 
 describe('carteira (saldo único de moedas)', () => {
   beforeEach(() => {
@@ -54,6 +54,14 @@ describe('carteira (saldo único de moedas)', () => {
     expect(addCoins(-5)).toBe(0);
     expect(addCoins(0.4)).toBe(0);
     expect(loadVillage().coins).toBe(100);
+  });
+
+  it('prêmio fixo não recebe multiplicador temporário', () => {
+    const v = loadVillage();
+    v.legendary = { ...v.legendary, history: [{ id: 'zapdos', at: new Date(Date.now() - 60_000).toISOString() }] };
+    saveVillage(v);
+    expect(addExactCoins(10_000)).toBe(10_000);
+    expect(loadVillage().coins).toBe(10_100);
   });
 
   it.each([NaN, Infinity, -Infinity])('rejeita valor não finito (%s) sem corromper o saldo guardado', (amount) => {

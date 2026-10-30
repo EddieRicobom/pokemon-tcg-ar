@@ -1,11 +1,21 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { dismissReward, recordEvent, resetTrainerForTests, rewardFeed, syncTrainerHistory, trainer } from './trainer-store';
+import { loadVillage, saveVillage, VILLAGE_KEY } from './village-store';
+import { attachLiveVillage, coins, detachLiveVillage } from './wallet';
 
 const scan = (n: number) => ({ type: 'scan' as const, cardId: `s-${n}`, setId: 's', setName: 'Coleção', setTotal: 50 });
 const noon = new Date(2026, 9, 14, 12);
 
 describe('armazém do Treinador', () => {
-  beforeEach(() => resetTrainerForTests());
+  beforeEach(() => {
+    resetTrainerForTests();
+    localStorage.removeItem(VILLAGE_KEY);
+    const village = loadVillage();
+    village.coins = 100;
+    saveVillage(village);
+    attachLiveVillage(village, () => {});
+    detachLiveVillage(village);
+  });
 
   it('registra, guarda no aparelho e avisa', () => {
     const rewards = recordEvent(scan(1), noon);
@@ -27,5 +37,11 @@ describe('armazém do Treinador', () => {
     const before = JSON.stringify(trainer.value);
     syncTrainerHistory(cards, noon);
     expect(JSON.stringify(trainer.value)).toBe(before);
+  });
+
+  it('a bênção do Mew entrega exatamente 10000 moedas', () => {
+    recordEvent({ type: 'mew-blessing' }, noon);
+    expect(trainer.value.xp).toBe(10_000);
+    expect(coins.value).toBe(10_100);
   });
 });

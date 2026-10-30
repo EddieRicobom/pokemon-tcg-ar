@@ -114,6 +114,8 @@ export interface VillageState {
   follower: string | null;
   /** Moedas (vendendo na loja; ganhas também com pedidos e colheitas). */
   coins: number;
+  /** Segredo da Estátua do Mew já revelado: mantém a Vila no estágio máximo. */
+  mewBlessing: boolean;
   /** Horta: o que está plantado em cada bloco. */
   crops: Crop[];
   farm: FarmState;
@@ -196,7 +198,7 @@ export interface Crop {
 export function emptyVillage(seed: number, spawn: { x: number; y: number }): VillageState {
   return {
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), homeInteriors: {}, friends: {}, harvested: {}, follower: null,
-    coins: 100, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
+    coins: 100, mewBlessing: false, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
     digital: emptyDigital(), fountainWishes: 0, hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), mail: emptyMail(), mailCarrierId: null, cafeWaiterId: null, instructorId: null, tower: emptyTower(), dungeon: emptyDungeonVault(), residentEconomy: {}, ...emptyWorldProgress(), homeStyles: {}, homeProjects: {},
   };
@@ -247,6 +249,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
     harvested: r.harvested && typeof r.harvested === 'object' ? r.harvested : {},
     follower: typeof r.follower === 'string' ? r.follower : null,
     coins: Number.isInteger(r.coins) ? Math.max(0, Math.min(999999, r.coins!)) : base.coins,
+    mewBlessing: r.mewBlessing === true,
     crops: Array.isArray(r.crops) ? r.crops.filter((c) => c && Number.isInteger(c.x) && Number.isInteger(c.y) && itemDef(c.seed)?.kind === 'seed' && Number.isInteger(c.stage)).slice(0, 200) : [],
     wear: {
       player: typeof r.wear?.player === 'string' && ACCESSORY_IDS.includes(r.wear.player) ? r.wear.player : null,

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng } from '../battle';
 import { emptyVillage } from './life';
-import { MEDITATION_VARIANTS, MEW_SHRINE, MOUNTAIN_REMARKS, MOUNTAIN_TALK_LINES, STATUE_REMARKS, meditationMessage } from './mew-shrine';
+import { behindMewStatue, MEDITATION_VARIANTS, MEW_BLESSING, MEW_SHRINE, MOUNTAIN_REMARKS, MOUNTAIN_TALK_LINES, STATUE_REMARKS, meditationMessage } from './mew-shrine';
+import { MEW_STATUE } from './mountain';
 import { MIRAGEM_MOMENTS } from './moments/miragem';
 import { PERSONALITIES } from './personality';
 import { makeEnv, pickMoment, TEMPLATE_BY_ID } from './social';
@@ -15,6 +16,13 @@ const days = (n: number): string[] => Array.from({ length: n }, (_, i) => new Da
 describe('Estátua do Mew: meditação', () => {
   it('tem os nomes do lugar e da ação', () => {
     expect(MEW_SHRINE).toEqual({ mountain: 'Monte Miragem', statue: 'Estátua do Mew', action: 'Meditar' });
+  });
+
+  it('revela uma única bênção ao esperar atrás da estátua', () => {
+    expect(MEW_BLESSING).toEqual({ waitMs: 10_000, xp: 10_000, coins: 10_000 });
+    expect(behindMewStatue({ x: MEW_STATUE.x, y: MEW_STATUE.y - 1 })).toBe(true);
+    expect(behindMewStatue({ x: MEW_STATUE.x + 1, y: MEW_STATUE.y - 1 })).toBe(true);
+    expect(behindMewStatue({ x: MEW_STATUE.x, y: MEW_STATUE.y + 1 })).toBe(false);
   });
 
   it('é a mesma o dia inteiro e muda com o sal', () => {

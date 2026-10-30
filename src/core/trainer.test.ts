@@ -308,6 +308,16 @@ describe('Vila, Liga e PvP no Treinador', () => {
     expect(applyEvent(before, { type: 'debug', xp: -50, label: 'x' }, day).state.xp).toBe(0);
   });
 
+  it('a bênção do Mew concede 10000 XP sem contar como outro feito', () => {
+    const before = emptyTrainer();
+    const { state, rewards } = applyEvent(before, { type: 'mew-blessing' }, day);
+    expect(state.xp).toBe(10_000);
+    expect(state.scans).toBe(before.scans);
+    expect(state.battles).toBe(before.battles);
+    expect(state.minigames).toBe(before.minigames);
+    expect(rewards).toContainEqual(expect.objectContaining({ text: 'Bênção do Mew', sub: '+10000 XP' }));
+  });
+
   it('a amizade mais alta fica guardada e destrava as conquistas de amizade', () => {
     let s = applyEvent(emptyTrainer(), talk(2), day).state;
     expect(s.bestFriend).toBe(2);

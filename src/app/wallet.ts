@@ -89,6 +89,21 @@ export function addCoins(amount: number): number {
   return changed ? added : 0;
 }
 
+/** Prêmio com valor fixo, sem bônus temporários como o do Zapdos. */
+export function addExactCoins(amount: number): number {
+  if (!Number.isFinite(amount)) return 0;
+  const base = Math.max(0, Math.floor(amount));
+  if (base === 0) return 0;
+  let added = 0;
+  const changed = withVillage((state) => {
+    const next = Math.min(MAX_COINS, state.coins + base);
+    added = next - state.coins;
+    state.coins = next;
+    return added > 0;
+  });
+  return changed ? added : 0;
+}
+
 /** Gasta moedas. Devolve false (e não muda nada) se faltar saldo. */
 export function spendCoins(amount: number): boolean {
   if (!Number.isFinite(amount) || amount < 0) return false;
