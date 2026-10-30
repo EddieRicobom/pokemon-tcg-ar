@@ -55,6 +55,22 @@ export function quarterCell(qx: 0 | 1, qy: 0 | 1, sameV: boolean, sameH: boolean
   return { cx: col, cy: row };
 }
 
+/**
+ * Mato alto em quartos de 8 px: o recorte do tileset é um tufo de 3×4 blocos (borda de cima, dois miolos, borda de
+ * baixo). Cada quarto pega borda onde não há mato vizinho e miolo onde há, então um bloco solto vira uma touceira
+ * arredondada em vez de um quadrado, e manchas maiores ganham contorno.
+ */
+function tallGrass(map: VillageMap, x: number, y: number): GroundPiece[] {
+  const tall = (dx: number, dy: number) => neighbor(map, x + dx, y + dy) === 'tall';
+  const out: GroundPiece[] = [];
+  for (const qy of [0, 1] as const) for (const qx of [0, 1] as const) {
+    const col = tall(qx === 0 ? -1 : 1, 0) ? 1 : qx === 0 ? 0 : 2;
+    const row = tall(0, qy === 0 ? -1 : 1) ? 1 + (y % 2) : qy === 0 ? 0 : 3;
+    out.push({ src: 'tall', sx: col * T + qx * Q, sy: row * T + qy * Q, w: Q, h: Q, dx: qx * Q, dy: qy * Q });
+  }
+  return out;
+}
+
 /** Os pedaços que formam o bloco (x, y) do chão, de baixo para cima. */
 export function groundPieces(map: VillageMap, x: number, y: number): GroundPiece[] {
   const tile = tileAt(map, x, y);
@@ -66,7 +82,7 @@ export function groundPieces(map: VillageMap, x: number, y: number): GroundPiece
     case 'pier':
       return [{ src: 'pier-deck', sx: 16, sy: 16, w: T, h: T, dx: 0, dy: 0 }];
     case 'tall':
-      return [grass, { src: 'tall', sx: T, sy: T + (y % 2) * T, w: T, h: T, dx: 0, dy: 0 }];
+      return [grass, ...tallGrass(map, x, y)];
     case 'flower':
       return [grass, { src: 'flowers-white', sx: ((x * 7 + y * 3) % 3) * T, sy: 0, w: T, h: T, dx: 0, dy: 0 }];
     case 'water':
