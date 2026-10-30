@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  attack, attackArea, attackTargets, chooseReward, damage, endTurn, EXHAUST_ROUNDS, fuse, fusionName, GRID_W, GRID_H, move, previewAttack,
-  previewFusion, reachable, START_AP, startDungeon, switchTo, typeFactor, usePotion, weaponFor,
+  attack, attackArea, attacker, attackTargets, BOSS_EVERY, chooseReward, damage, endTurn, EXHAUST_ROUNDS, fuse, fusionName, fusionOrigins, GRID_W, GRID_H, move,
+  previewAttack, previewFusion, profileFor, reachable, START_AP, startDungeon, switchTo, threatenedCells, typeFactor, usePotion, weaponFor,
 } from './dungeon';
 import type { DungeonState, EnemySpecies, MemberInput } from './dungeon';
 import type { BaseStats } from './survivor-moves';
@@ -204,5 +204,82 @@ describe('andares', () => {
     const s = arena([mon('x', { attack: 30, spAttack: 120, speed: 30 })]);
     expect(attackArea(s, { x: 3, y: 3 })).toHaveLength(5);
     expect(attackArea(s, { x: 0, y: 0 })).toHaveLength(0);
+  });
+});
+
+describe('inimigos', () => {
+  it('o perfil sai da arma: atirador para distância e área, guardião para corpo a corpo lento, chefe no último andar', () => {
+    expect(profileFor('emissor', 90, false)).toBe('atirador');
+    expect(profileFor('lancador', 30, false)).toBe('atirador');
+    expect(profileFor('martelo', 40, false)).toBe('guardiao');
+    expect(profileFor('laminas', 100, false)).toBe('bruto');
+    expect(profileFor('laminas', 100, true)).toBe('chefe');
+  });
+
+  it('o guardião não sai do lugar enquanto você estiver longe', () => {
+    const s = arena();
+    const e = s.enemies[0]!;
+    e.profile = 'guardiao';
+    e.pos = { x: 3, y: 0 };
+    endTurn(s);
+    expect(e.pos).toEqual({ x: 3, y: 0 });
+  });
+
+  it('o atirador recua quando você encosta', () => {
+    const s = arena();
+    const e = s.enemies[0]!;
+    e.profile = 'atirador';
+    e.weapon = 'emissor';
+    e.hp = 9999;
+    endTurn(s);
+    expect(Math.abs(e.pos.x - s.pos.x) + Math.abs(e.pos.y - s.pos.y)).toBeGreaterThan(1);
+  });
+
+  it('o chefe anuncia o golpe numa rodada e só acerta na seguinte, se você não sair das casas marcadas', () => {
+    const fresh = () => {
+      const s = arena();
+      const e = s.enemies[0]!;
+      e.profile = 'chefe';
+      e.pos = { x: 0, y: 0 };
+      e.hp = 9999;
+      s.round = BOSS_EVERY;
+      return s;
+    };
+    const dodge = fresh();
+    const hp = dodge.team[0]!.hp;
+    endTurn(dodge);
+    expect(dodge.bossThreat?.cells.length).toBeGreaterThan(0);
+    expect(threatenedCells(dodge).has(`${dodge.pos.x},${dodge.pos.y}`)).toBe(true);
+    expect(dodge.team[0]!.hp).toBe(hp);
+    move(dodge, { x: 6, y: GRID_H - 1 });
+    endTurn(dodge);
+    expect(dodge.bossThreat).toBeNull();
+    expect(dodge.team[0]!.hp).toBe(hp);
+
+    const stay = fresh();
+    endTurn(stay);
+    endTurn(stay);
+    expect(stay.team[0]!.hp).toBeLessThan(hp);
+  });
+
+  it('a área ameaçada inclui as casas ao alcance de um bruto depois dos passos dele', () => {
+    const s = arena();
+    const threat = threatenedCells(s);
+    expect(threat.has(`${s.pos.x},${s.pos.y}`)).toBe(true);
+    expect(threat.has(`${s.enemies[0]!.pos.x},${s.enemies[0]!.pos.y}`)).toBe(true);
+  });
+});
+
+describe('origens da fusão', () => {
+  it('guarda as duas armas de origem na ordem do catálogo e o Pokémon de cada orbe', () => {
+    const team = [mon('lento', { speed: 70 }), mon('rapido', { speed: 100 }), mon('c')];
+    const s = arena(team);
+    expect(fusionOrigins('lanca', 'laminas')).toEqual(['laminas', 'lanca']);
+    fuse(s, 0, 1);
+    expect(s.fusion!.origins).toEqual(['laminas', 'lanca']);
+    const who = attacker(s);
+    expect(who.origins).toEqual(['laminas', 'lanca']);
+    expect(who.orbs).toEqual([s.team[1]!.dexId, s.team[0]!.dexId]);
+    expect(who.weapon.name).toBe('Lâminas duplas + Lança de combate');
   });
 });

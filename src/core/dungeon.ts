@@ -93,6 +93,29 @@ export interface Member extends MemberInput {
   cooldown: number;
 }
 
+/**
+ * Como cada inimigo se comporta: o bruto avança e bate, o atirador mantém distância, o guardião segura a posição até
+ * você chegar perto e o chefe alterna ataques normais com um golpe anunciado em área.
+ */
+export type EnemyProfile = 'bruto' | 'atirador' | 'guardiao' | 'chefe';
+export const PROFILES: Readonly<Record<EnemyProfile, { name: string; icon: string; text: string }>> = {
+  bruto: { name: 'Bruto', icon: '⚔️', text: 'Avança até 2 casas e ataca quem estiver ao alcance.' },
+  atirador: { name: 'Atirador', icon: '🏹', text: 'Recua se você encostar e ataca de longe.' },
+  guardiao: { name: 'Guardião', icon: '🛡️', text: 'Segura a posição até você chegar a 3 casas.' },
+  chefe: { name: 'Chefe', icon: '👑', text: 'A cada 2 rodadas anuncia um golpe em área: saia das casas marcadas.' },
+};
+export const GUARD_RADIUS = 3;
+export const BOSS_EVERY = 2;
+export const BOSS_STRIKE = 1.8;
+
+/** Perfil pelo formato da arma: quem atira de longe recua; corpo a corpo lento segura posição; o resto avança. */
+export function profileFor(weapon: WeaponId, speed: number, boss: boolean): EnemyProfile {
+  if (boss) return 'chefe';
+  const pattern = WEAPONS[weapon].pattern;
+  if (pattern === 'ranged' || pattern === 'area') return 'atirador';
+  return speed < 60 ? 'guardiao' : 'bruto';
+}
+
 export interface Enemy {
   uid: number;
   dexId: number;
@@ -104,6 +127,7 @@ export interface Enemy {
   pos: Cell;
   weapon: WeaponId;
   boss: boolean;
+  profile: EnemyProfile;
   /** Defesa abalada pelo martelo até o fim da rodada. */
   shaken: boolean;
 }
@@ -111,6 +135,8 @@ export interface Enemy {
 export interface Fusion {
   a: number;
   b: number;
+  /** As duas armas de origem, na ordem do catálogo. */
+  origins: [WeaponId, WeaponId];
   name: string;
   weapon: Weapon;
   ammo: PokemonType[];
@@ -148,6 +174,8 @@ export interface DungeonState {
   log: string[];
   nextUid: number;
   rewardOptions: RewardId[];
+  /** Golpe anunciado pelo chefe: as casas atingidas no próximo turno inimigo. */
+  bossThreat: { uid: number; cells: Cell[] } | null;
 }
 
 export interface EnemySpecies {
@@ -177,7 +205,7 @@ export function startDungeon(inputs: readonly MemberInput[], pool: readonly Enem
   if (pool.length === 0) throw new Error('Sem espécies de inimigos com dados.');
   const state: DungeonState = {
     seed, floor: 1, round: 1, ap: START_AP, phase: 'player', team, active: 0, pos: { x: 3, y: GRID_H - 1 },
-    enemies: [], walls: [], fusion: null, fusionCharges: 1, potions: 2, mustSwitch: false, log: [], nextUid: 1, rewardOptions: [],
+    enemies: [], walls: [], fusion: null, fusionCharges: 1, potions: 2, mustSwitch: false, log: [], nextUid: 1, rewardOptions: [], bossThreat: null,
   };
   buildFloor(state, pool);
   return state;
@@ -192,6 +220,7 @@ export function buildFloor(state: DungeonState, pool: readonly EnemySpecies[]): 
   const rng = rngFor(state, 1);
   state.pos = { x: 3, y: GRID_H - 1 };
   state.walls = [];
+  state.bossThreat = null;
   const boss = state.floor === FLOORS;
   const pillars = 2 + Math.floor(rng() * 3);
   for (let tries = 0; state.walls.length < pillars && tries < 40; tries++) {
@@ -215,7 +244,8 @@ export function buildFloor(state: DungeonState, pool: readonly EnemySpecies[]): 
     if (!pos) continue;
     taken.add(key(pos));
     const maxHp = Math.round((species.stats.hp * 0.8 + 25) * scale * (isBoss ? 2.2 : 1));
-    state.enemies.push({ uid: state.nextUid++, ...species, types: [...species.types], stats: { ...species.stats }, hp: maxHp, maxHp, pos, weapon: weaponFor(species.stats), boss: isBoss, shaken: false });
+    const weapon = weaponFor(species.stats);
+    state.enemies.push({ uid: state.nextUid++, ...species, types: [...species.types], stats: { ...species.stats }, hp: maxHp, maxHp, pos, weapon, boss: isBoss, profile: profileFor(weapon, species.stats.speed, isBoss), shaken: false });
   }
   state.log.push(boss ? `Andar ${state.floor}: a sala do chefe!` : `Andar ${state.floor}: ${state.enemies.length} inimigo(s) à vista.`);
 }
@@ -259,17 +289,29 @@ export function reachable(state: DungeonState): Map<string, number> {
 }
 
 /** O que ataca agora: a fusão, se houver, ou o Pokémon ativo. */
-export interface Attacker { name: string; weapon: Weapon; ammo: PokemonType[]; types: PokemonType[]; attack: number; spAttack: number; charge: number }
+export interface Attacker {
+  name: string;
+  weapon: Weapon;
+  /** Armas de origem (duas na fusão) e o Pokémon de cada orbe, na mesma ordem. */
+  origins: WeaponId[];
+  orbs: number[];
+  ammo: PokemonType[];
+  types: PokemonType[];
+  attack: number;
+  spAttack: number;
+  charge: number;
+}
 
 export function attacker(state: DungeonState): Attacker {
   const f = state.fusion;
   if (f) {
     const a = state.team[f.a]!;
     const b = state.team[f.b]!;
-    return { name: f.name, weapon: f.weapon, ammo: f.ammo, types: [...new Set([...a.types, ...b.types])], attack: (a.stats.attack + b.stats.attack) / 2, spAttack: (a.stats.spAttack + b.stats.spAttack) / 2, charge: f.charge };
+    const [first, second]: [Member, Member] = f.origins[0] === a.weapon ? [a, b] : [b, a];
+    return { name: f.name, weapon: f.weapon, origins: [...f.origins], orbs: [first.dexId, second.dexId], ammo: f.ammo, types: [...new Set([...a.types, ...b.types])], attack: (a.stats.attack + b.stats.attack) / 2, spAttack: (a.stats.spAttack + b.stats.spAttack) / 2, charge: f.charge };
   }
   const m = state.team[state.active]!;
-  return { name: m.name, weapon: WEAPONS[m.weapon], ammo: m.ammo, types: m.types, attack: m.stats.attack, spAttack: m.stats.spAttack, charge: m.charge };
+  return { name: m.name, weapon: WEAPONS[m.weapon], origins: [m.weapon], orbs: [m.dexId], ammo: m.ammo, types: m.types, attack: m.stats.attack, spAttack: m.stats.spAttack, charge: m.charge };
 }
 
 /** Multiplicador moderado de tipo (1,25× vantagem, 0,8× resistência; imunidade vira forte resistência, 0,5×). */
@@ -449,16 +491,22 @@ export function usePotion(state: DungeonState): ActionResult {
   return { ok: true };
 }
 
-/** Nome do catálogo para a fusão de duas armas (a ordem do par não importa). */
+/** As duas armas de uma fusão na ordem do catálogo (a ordem do par não importa). */
+export function fusionOrigins(a: WeaponId, b: WeaponId): [WeaponId, WeaponId] {
+  return CATALOG_ORDER.indexOf(a) <= CATALOG_ORDER.indexOf(b) ? [a, b] : [b, a];
+}
+
+/** Nome do catálogo para a fusão de duas armas. */
 export function fusionName(a: WeaponId, b: WeaponId): string {
-  const [first, second] = [a, b].sort((x, y) => CATALOG_ORDER.indexOf(x) - CATALOG_ORDER.indexOf(y));
-  return `${WEAPONS[first!].name} + ${WEAPONS[second!].name}`;
+  const [first, second] = fusionOrigins(a, b);
+  return `${WEAPONS[first].name} + ${WEAPONS[second].name}`;
 }
 
 /** A arma híbrida: o formato da primeira, alcance e potência somados com desconto (proposta inicial do documento). */
 export function fusionWeapon(a: WeaponId, b: WeaponId): Weapon {
-  const wa = WEAPONS[a];
-  const wb = WEAPONS[b];
+  const [first, second] = fusionOrigins(a, b);
+  const wa = WEAPONS[first];
+  const wb = WEAPONS[second];
   return {
     ...wa,
     name: fusionName(a, b),
@@ -472,7 +520,7 @@ export function fusionWeapon(a: WeaponId, b: WeaponId): Weapon {
   };
 }
 
-export function previewFusion(state: DungeonState, a: number, b: number): { ok: boolean; reason: string | null; name: string; weapon: Weapon; ammo: PokemonType[] } | null {
+export function previewFusion(state: DungeonState, a: number, b: number): { ok: boolean; reason: string | null; name: string; weapon: Weapon; origins: [WeaponId, WeaponId]; ammo: PokemonType[] } | null {
   const ma = state.team[a];
   const mb = state.team[b];
   if (!ma || !mb || a === b) return null;
@@ -484,7 +532,7 @@ export function previewFusion(state: DungeonState, a: number, b: number): { ok: 
     : state.ap < COSTS.fusion ? 'Faltam PA.'
     : !available(state, a) ? `${ma.name} não está disponível.`
     : !available(state, b) ? `${mb.name} não está disponível.` : null;
-  return { ok: reason === null, reason, name: `${ma.name} + ${mb.name}`, weapon, ammo };
+  return { ok: reason === null, reason, name: `${ma.name} + ${mb.name}`, weapon, origins: fusionOrigins(ma.weapon, mb.weapon), ammo };
 }
 
 export function fuse(state: DungeonState, a: number, b: number): ActionResult {
@@ -493,7 +541,7 @@ export function fuse(state: DungeonState, a: number, b: number): ActionResult {
   if (p.reason) return fail(p.reason);
   state.ap -= COSTS.fusion;
   state.fusionCharges--;
-  state.fusion = { a, b, name: p.name, weapon: p.weapon, ammo: p.ammo, charge: FUSION_CHARGE, maxCharge: FUSION_CHARGE, turnsLeft: FUSION_TURNS };
+  state.fusion = { a, b, origins: p.origins, name: p.name, weapon: p.weapon, ammo: p.ammo, charge: FUSION_CHARGE, maxCharge: FUSION_CHARGE, turnsLeft: FUSION_TURNS };
   state.log.push(`Fusão! ${p.name} empunham ${p.weapon.name}.`);
   return { ok: true };
 }
@@ -527,7 +575,7 @@ function endFusion(state: DungeonState, why: string): void {
 }
 
 /** Dano recebido: a fusão usa a média das defesas e divide o dano entre os dois participantes. */
-function takeHit(state: DungeonState, enemy: Enemy): void {
+function takeHit(state: DungeonState, enemy: Enemy, strength = 1): void {
   const w = WEAPONS[enemy.weapon];
   const f = state.fusion;
   const defenders = f ? [state.team[f.a]!, state.team[f.b]!] : [state.team[state.active]!];
@@ -535,10 +583,10 @@ function takeHit(state: DungeonState, enemy: Enemy): void {
   const types = [...new Set(defenders.flatMap((m) => m.types))];
   const atk = w.kind === 'physical' ? enemy.stats.attack : enemy.stats.spAttack;
   // Inimigos batem com uma fração do poder da arma: a equipe tem seis vidas, eles não.
-  const total = damage(w.power * 0.7, atk, def, enemy.types.slice(0, 1), enemy.types, types).total;
+  const total = damage(w.power * 0.7 * strength, atk, def, enemy.types.slice(0, 1), enemy.types, types).total;
   const each = Math.ceil(total / defenders.length);
   for (const m of defenders) m.hp = Math.max(0, m.hp - each);
-  state.log.push(`${enemy.name} ataca ${f ? f.name : defenders[0]!.name}: −${total} HP.`);
+  state.log.push(`${enemy.name} ${strength > 1 ? 'solta o golpe em área em' : 'ataca'} ${f ? f.name : defenders[0]!.name}: −${total} HP.`);
   const fallen = defenders.filter((m) => m.hp === 0);
   for (const m of fallen) { m.status = 'down'; state.log.push(`${m.name} foi incapacitado.`); }
   if (fallen.length === 0) return;
@@ -575,7 +623,53 @@ function stepToward(state: DungeonState, enemy: Enemy): Cell | null {
   return null;
 }
 
-/** Encerra o turno: inimigos agem (até 2 passos e 1 ataque cada) e a rodada fecha com a recuperação da reserva. */
+/** Passo que afasta o atirador do jogador sem perder o alcance (ou só afasta, se nenhum mantiver). */
+function stepAway(state: DungeonState, enemy: Enemy): Cell | null {
+  const options = DIRS.map((d) => ({ x: enemy.pos.x + d.x, y: enemy.pos.y + d.y }))
+    .filter((c) => !blocked(state, c) && !same(c, state.pos) && dist(c, state.pos) > dist(enemy.pos, state.pos));
+  return options.find((c) => enemyReach(enemy, c, state.pos, state)) ?? options[0] ?? null;
+}
+
+/** Casas do golpe do chefe: o quadrado 3×3 em volta de onde você está agora. */
+function bossArea(state: DungeonState): Cell[] {
+  const out: Cell[] = [];
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const c = { x: state.pos.x + dx, y: state.pos.y + dy };
+    if (inside(c) && !state.walls.some((w) => same(w, c))) out.push(c);
+  }
+  return out;
+}
+
+/** Um inimigo age: chefe com golpe anunciado, atirador recuando, guardião parado até você chegar perto. */
+function enemyAct(state: DungeonState, enemy: Enemy): void {
+  if (enemy.profile === 'chefe') {
+    const threat = state.bossThreat;
+    if (threat && threat.uid === enemy.uid) {
+      state.bossThreat = null;
+      if (threat.cells.some((c) => same(c, state.pos))) takeHit(state, enemy, BOSS_STRIKE);
+      else state.log.push(`O golpe de ${enemy.name} acerta o chão vazio.`);
+      return;
+    }
+    if (state.round % BOSS_EVERY === 0) {
+      state.bossThreat = { uid: enemy.uid, cells: bossArea(state) };
+      state.log.push(`${enemy.name} prepara um golpe em área: saia das casas marcadas!`);
+      return;
+    }
+  }
+  if (enemy.profile === 'guardiao' && dist(enemy.pos, state.pos) > GUARD_RADIUS) return;
+  if (enemy.profile === 'atirador' && dist(enemy.pos, state.pos) <= 1) {
+    const away = stepAway(state, enemy);
+    if (away) enemy.pos = away;
+  }
+  for (let steps = 0; steps < 2 && !enemyReach(enemy, enemy.pos, state.pos, state); steps++) {
+    const next = stepToward(state, enemy);
+    if (!next) break;
+    enemy.pos = next;
+  }
+  if (enemyReach(enemy, enemy.pos, state.pos, state)) takeHit(state, enemy);
+}
+
+/** Encerra o turno: cada inimigo age conforme o perfil e a rodada fecha com a recuperação da reserva. */
 export function endTurn(state: DungeonState): ActionResult {
   if (state.phase !== 'player') return fail('Não é o seu turno.');
   if (state.mustSwitch) return fail('Escolha quem assume a posição.');
@@ -583,18 +677,42 @@ export function endTurn(state: DungeonState): ActionResult {
   if (state.mustSwitch) autoCover(state);
   for (const enemy of [...state.enemies]) {
     if (state.phase !== 'player') break;
-    for (let steps = 0; steps < 2 && !enemyReach(enemy, enemy.pos, state.pos, state); steps++) {
-      const next = stepToward(state, enemy);
-      if (!next) break;
-      enemy.pos = next;
-    }
-    if (enemyReach(enemy, enemy.pos, state.pos, state)) {
-      takeHit(state, enemy);
-      if (state.mustSwitch) autoCover(state);
-    }
+    enemyAct(state, enemy);
+    if (state.mustSwitch) autoCover(state);
   }
   if (state.phase === 'player') endRound(state);
   return { ok: true };
+}
+
+/**
+ * Casas onde você seria atingido se terminasse o turno ali (estimativa: cada inimigo como se agisse sozinho, com os
+ * passos do perfil dele). É a «área ameaçada» do esboço de interface.
+ */
+export function threatenedCells(state: DungeonState): Set<string> {
+  const out = new Set<string>(state.bossThreat?.cells.map(key) ?? []);
+  for (const enemy of state.enemies) {
+    if (enemy.profile === 'chefe' && state.bossThreat?.uid === enemy.uid) continue;
+    const spots = new Map<string, Cell>([[key(enemy.pos), enemy.pos]]);
+    let frontier = [enemy.pos];
+    for (let step = 0; step < 2; step++) {
+      const next: Cell[] = [];
+      for (const c of frontier) for (const d of DIRS) {
+        const n = { x: c.x + d.x, y: c.y + d.y };
+        if (spots.has(key(n)) || blocked(state, n)) continue;
+        spots.set(key(n), n);
+        next.push(n);
+      }
+      frontier = next;
+    }
+    for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
+      const target = { x, y };
+      if (state.walls.some((w) => same(w, target))) continue;
+      // O guardião só sai do lugar se você parar a até 3 casas dele.
+      if (enemy.profile === 'guardiao' && dist(enemy.pos, target) > GUARD_RADIUS) continue;
+      if ([...spots.values()].some((from) => !same(from, target) && enemyReach(enemy, from, target, state))) out.add(key(target));
+    }
+  }
+  return out;
 }
 
 /** Durante o turno inimigo, quem cai é coberto pelo próximo disponível (o jogador troca de novo no turno dele). */

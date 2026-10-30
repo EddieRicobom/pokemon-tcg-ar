@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import WeaponArt from './WeaponArt.vue';
+import FusionArt from './FusionArt.vue';
 import { getCache } from '../app/services';
 import { cardCompanion } from '../app/card-evolution-store';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
@@ -9,10 +11,10 @@ import { speciesName } from '../core/survivor-evolution';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import {
-  attack, attackArea, attackTargets, attacker, available, chooseReward, COSTS, endTurn, FLOORS, fuse, GRID_H, GRID_W, key, move, previewAttack,
-  previewFusion, reachable, REWARDS, START_AP, startDungeon, switchTo, usePotion, weaponFor, WEAPONS,
+  attack, attackArea, attackTargets, attacker, available, chooseReward, COSTS, endTurn, FLOORS, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, key, move,
+  previewAttack, previewFusion, PROFILES, reachable, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, usePotion, weaponFor, WEAPONS,
 } from '../core/dungeon';
-import type { Cell, DungeonState, EnemySpecies, MemberInput, RewardId } from '../core/dungeon';
+import type { Cell, DungeonState, Enemy, EnemySpecies, MemberInput, RewardId, WeaponPattern } from '../core/dungeon';
 
 /**
  * Masmorra (protótipo jogável do `future project/IDEIAS_DO_JOGO.md`): monta a equipe com Pokémon de verdade da coleção
@@ -23,9 +25,11 @@ const props = defineProps<{ digital?: { instanceId: string; dexId: number; name:
 const emit = defineEmits<{ leave: [] }>();
 
 interface Candidate extends Partial<MemberInput> { id: string; dexId: number; name: string; origin: string; missing: boolean }
+interface Popup { id: number; cell: string; text: string; kind: 'hit' | 'hurt' }
 
 /** Selvagens das salas (espécies comuns de caverna); só entram as que têm stats e tipos no pacote. */
 const WILD = [19, 41, 50, 66, 74, 92, 104, 109, 95];
+const PATTERN_TEXT: Readonly<Record<WeaponPattern, string>> = { adjacent: 'adjacente', line: 'em linha', ranged: 'tiro reto', area: 'área em cruz' };
 
 const candidates = ref<Candidate[] | null>(null);
 const picked = ref<string[]>([]);
@@ -37,6 +41,10 @@ const flash = ref('');
 const fusionOpen = ref(false);
 const fusionPick = ref<number[]>([]);
 const brokenSprites = ref(new Set<number>());
+const showThreat = ref(true);
+const inspected = ref<number | null>(null);
+const popups = ref<Popup[]>([]);
+let popupId = 0;
 
 const pool: EnemySpecies[] = WILD.flatMap((dexId) => {
   const stats = statsOfDex(dexId);
@@ -80,6 +88,7 @@ function begin(): void {
   s.value = startDungeon(team, pool, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
   mode.value = null;
   pending.value = null;
+  inspected.value = null;
   flash.value = '';
 }
 
@@ -95,15 +104,33 @@ const cells = computed(() => {
 const moveCosts = computed(() => (s.value && mode.value === 'move' ? reachable(s.value) : new Map<string, number>()));
 const targetKeys = computed(() => new Set(s.value && mode.value === 'attack' ? attackTargets(s.value).map(key) : []));
 const areaKeys = computed(() => new Set(s.value && mode.value === 'attack' && pending.value ? attackArea(s.value, pending.value).map(key) : []));
+const threatKeys = computed(() => (s.value && showThreat.value && s.value.phase === 'player' ? threatenedCells(s.value) : new Set<string>()));
+const doomKeys = computed(() => new Set(s.value?.bossThreat?.cells.map(key) ?? []));
 const preview = computed(() => (s.value && mode.value === 'attack' && pending.value ? previewAttack(s.value, pending.value) : null));
 const who = computed(() => (s.value ? attacker(s.value) : null));
 const activeMember = computed(() => (s.value ? s.value.team[s.value.active]! : null));
 const fusionPreview = computed(() => (s.value && fusionPick.value.length === 2 ? previewFusion(s.value, fusionPick.value[0]!, fusionPick.value[1]!) : null));
+/** Pokémon de cada orbe na prévia da fusão, na ordem das armas de origem. */
+const fusionPreviewOrbs = computed(() => {
+  const st = s.value;
+  const p = fusionPreview.value;
+  if (!st || !p) return [];
+  const [a, b] = fusionPick.value.map((i) => st.team[i]!);
+  return a && b ? (p.origins[0] === a.weapon ? [a.dexId, b.dexId] : [b.dexId, a.dexId]) : [];
+});
 const playing = computed(() => s.value?.phase === 'player');
+const inspectedEnemy = computed<Enemy | null>(() => s.value?.enemies.find((e) => e.uid === inspected.value) ?? null);
 
 const wallAt = (c: Cell) => s.value!.walls.some((w) => w.x === c.x && w.y === c.y);
 const enemyAt = (c: Cell) => s.value!.enemies.find((e) => e.pos.x === c.x && e.pos.y === c.y);
 const playerAt = (c: Cell) => s.value!.pos.x === c.x && s.value!.pos.y === c.y;
+const popupsAt = (c: Cell) => popups.value.filter((p) => p.cell === key(c));
+
+function popup(cell: Cell, text: string, kind: Popup['kind']): void {
+  const id = ++popupId;
+  popups.value.push({ id, cell: key(cell), text, kind });
+  setTimeout(() => { popups.value = popups.value.filter((p) => p.id !== id); }, 900);
+}
 
 function result(r: { ok: boolean; reason?: string }): void {
   flash.value = r.ok ? '' : r.reason ?? '';
@@ -112,11 +139,18 @@ function result(r: { ok: boolean; reason?: string }): void {
 function setMode(next: 'move' | 'attack'): void {
   mode.value = mode.value === next ? null : next;
   pending.value = null;
+  inspected.value = null;
 }
 
 function tapCell(c: Cell): void {
   const st = s.value;
-  if (!st || !playing.value || !mode.value) return;
+  if (!st || !playing.value) return;
+  if (!mode.value) {
+    // Sem ação escolhida, tocar num inimigo mostra quem ele é e como se comporta.
+    const e = enemyAt(c);
+    inspected.value = e && inspected.value !== e.uid ? e.uid : null;
+    return;
+  }
   const k = key(c);
   const valid = mode.value === 'move' ? (moveCosts.value.get(k) ?? 0) > 0 : targetKeys.value.has(k);
   if (!valid) { pending.value = null; return; }
@@ -129,7 +163,12 @@ function confirm(): void {
   const st = s.value;
   if (!st || !pending.value) return;
   if (mode.value === 'move') result(move(st, pending.value));
-  else if (mode.value === 'attack') result(attack(st, pending.value));
+  else if (mode.value === 'attack') {
+    const hits = previewAttack(st, pending.value);
+    const r = attack(st, pending.value);
+    if (r.ok) for (const h of hits.hits) popup(h.enemy.pos, `−${h.damage}`, 'hit');
+    result(r);
+  }
   pending.value = null;
   if (mode.value === 'move' || (mode.value === 'attack' && attackTargets(st).length === 0)) mode.value = null;
 }
@@ -146,10 +185,15 @@ function doPotion(): void {
 }
 
 function doEnd(): void {
-  if (!s.value) return;
+  const st = s.value;
+  if (!st) return;
   mode.value = null;
   pending.value = null;
-  result(endTurn(s.value));
+  inspected.value = null;
+  const before = st.team.reduce((sum, m) => sum + m.hp, 0);
+  result(endTurn(st));
+  const lost = before - st.team.reduce((sum, m) => sum + m.hp, 0);
+  if (lost > 0) popup(st.pos, `−${lost}`, 'hurt');
 }
 
 function openFusion(): void {
@@ -183,7 +227,7 @@ function onKey(e: KeyboardEvent): void {
   else if (e.key === 'a' || e.key === 'A') setMode('attack');
   else if (e.key === 'Enter' && pending.value) confirm();
   else if (e.key === 'e' || e.key === 'E') doEnd();
-  else if (e.key === 'Escape') { mode.value = null; pending.value = null; fusionOpen.value = false; }
+  else if (e.key === 'Escape') { mode.value = null; pending.value = null; fusionOpen.value = false; inspected.value = null; }
 }
 
 function statusLabel(i: number): string {
@@ -201,7 +245,8 @@ const pendingText = computed(() => {
   if (!pending.value || !s.value) return '';
   if (mode.value === 'move') {
     const cost = moveCosts.value.get(key(pending.value)) ?? 0;
-    return `Mover ${cost} casa(s) · ${cost * COSTS.move} PA`;
+    const danger = threatKeys.value.has(key(pending.value)) ? ' · casa ameaçada' : '';
+    return `Mover ${cost} casa(s) · ${cost * COSTS.move} PA${danger}`;
   }
   const p = preview.value;
   if (!p) return '';
@@ -216,7 +261,7 @@ const pendingText = computed(() => {
     <!-- Escolha da equipe -->
     <section v-if="!s" class="dg-pick">
       <h2>Masmorra · protótipo</h2>
-      <p class="hint">Dungeon crawler tático em turnos: monte uma equipe de até seis Pokémon da sua coleção, desça {{ FLOORS }} andares e derrote o chefe. Cada turno tem {{ START_AP }} PA para mover, atacar, trocar, usar item ou fundir dois Pokémon.</p>
+      <p class="hint">Dungeon crawler tático em turnos: monte uma equipe de até seis Pokémon da sua coleção, desça {{ FLOORS }} andares e derrote o chefe. Cada turno tem {{ START_AP }} PA para mover, atacar, trocar, usar item ou fundir dois Pokémon. Cada Pokémon luta com uma arma; a orbe dela guarda o Pokémon.</p>
       <p class="hint dg-provisional">Provisório: a arma de cada Pokémon sai dos stats base dele e a munição é o tipo principal da espécie, até a tabela de armas e munições ser definida.</p>
       <p v-if="loadError" role="alert">{{ loadError }}</p>
       <p v-if="candidates === null" class="hint">Lendo a sua coleção…</p>
@@ -225,11 +270,18 @@ const pendingText = computed(() => {
       <ul v-if="candidates?.length" class="dg-candidates">
         <li v-for="c in candidates" :key="c.id">
           <button type="button" :class="{ on: picked.includes(c.id) }" :disabled="c.missing || (!picked.includes(c.id) && picked.length >= 6)" @click="togglePick(c)">
-            <img v-if="!brokenSprites.has(c.dexId)" :src="sprite(c.dexId)" alt="" loading="lazy" @error="brokenSprites.add(c.dexId)" />
-            <span v-else class="dg-nosprite">sem sprite</span>
-            <strong>{{ c.name }}</strong>
-            <small v-if="c.missing">sem dados de stats/tipos</small>
-            <small v-else>{{ WEAPONS[weaponFor(c.stats!)].name }}</small>
+            <small v-if="picked.includes(c.id)" class="dg-order">{{ picked.indexOf(c.id) + 1 }}</small>
+            <template v-if="c.missing">
+              <img v-if="!brokenSprites.has(c.dexId)" :src="sprite(c.dexId)" alt="" loading="lazy" class="dg-pick-sprite" @error="brokenSprites.add(c.dexId)" />
+              <strong>{{ c.name }}</strong>
+              <small>sem dados de stats/tipos</small>
+            </template>
+            <template v-else>
+              <WeaponArt :weapon="weaponFor(c.stats!)" :dex-id="c.dexId" :ammo="c.types![0] ?? null" :size="72" />
+              <strong>{{ c.name }}</strong>
+              <small>{{ WEAPONS[weaponFor(c.stats!)].name }}</small>
+              <span class="dg-types"><span v-for="t in c.types" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span></span>
+            </template>
           </button>
         </li>
       </ul>
@@ -242,11 +294,12 @@ const pendingText = computed(() => {
     <!-- Combate -->
     <section v-else class="dg-run">
       <header class="dg-hud">
-        <span>Andar {{ s.floor }}/{{ FLOORS }}</span>
-        <span>Turno {{ s.round }}</span>
-        <span class="dg-ap" :aria-label="`${s.ap} de ${START_AP} PA`">PA <i v-for="n in START_AP" :key="n" :class="{ on: n <= s.ap }"></i></span>
-        <span title="Cargas de fusão">💠 {{ s.fusionCharges }}</span>
-        <span title="Poções">🧪 {{ s.potions }}</span>
+        <span class="dg-pill">Andar {{ s.floor }}/{{ FLOORS }}</span>
+        <span class="dg-pill">Turno {{ s.round }}</span>
+        <span class="dg-pill dg-ap" :aria-label="`${s.ap} de ${START_AP} PA`">PA <i v-for="n in START_AP" :key="n" :class="{ on: n <= s.ap }"></i></span>
+        <span class="dg-pill" title="Cargas de fusão">💠 {{ s.fusionCharges }}</span>
+        <span class="dg-pill" title="Poções">🧪 {{ s.potions }}</span>
+        <label class="dg-toggle"><input v-model="showThreat" type="checkbox" /> ameaça</label>
       </header>
 
       <div class="dg-grid" :style="{ gridTemplateColumns: `repeat(${GRID_W}, 1fr)` }">
@@ -261,14 +314,17 @@ const pendingText = computed(() => {
             target: targetKeys.has(key(c)),
             area: areaKeys.has(key(c)),
             pending: pending && key(pending) === key(c),
+            danger: threatKeys.has(key(c)) && !wallAt(c),
+            doom: doomKeys.has(key(c)),
           }"
-          :aria-label="`Casa ${c.x + 1},${c.y + 1}`"
+          :aria-label="`Casa ${c.x + 1},${c.y + 1}${enemyAt(c) ? `: ${enemyAt(c)!.name}` : ''}`"
           @click="tapCell(c)"
         >
           <small v-if="mode === 'move' && (moveCosts.get(key(c)) ?? 0) > 0" class="dg-cost">{{ moveCosts.get(key(c)) }}</small>
           <template v-if="enemyAt(c)">
             <img v-if="!brokenSprites.has(enemyAt(c)!.dexId)" :src="sprite(enemyAt(c)!.dexId)" :alt="enemyAt(c)!.name" :class="{ boss: enemyAt(c)!.boss }" @error="brokenSprites.add(enemyAt(c)!.dexId)" />
             <span v-else class="dg-nosprite">{{ enemyAt(c)!.name }}</span>
+            <span class="dg-profile" :title="PROFILES[enemyAt(c)!.profile].name">{{ PROFILES[enemyAt(c)!.profile].icon }}</span>
             <span class="dg-hp enemy"><i :style="{ width: pct(enemyAt(c)!.hp, enemyAt(c)!.maxHp) }"></i></span>
           </template>
           <template v-else-if="playerAt(c)">
@@ -279,6 +335,7 @@ const pendingText = computed(() => {
               </template>
             </span>
           </template>
+          <span v-for="p in popupsAt(c)" :key="p.id" class="dg-popup" :class="p.kind">{{ p.text }}</span>
         </button>
       </div>
 
@@ -286,40 +343,60 @@ const pendingText = computed(() => {
         <template v-if="pendingText">{{ pendingText }} <button v-if="mode === 'attack' ? !preview?.reason : true" type="button" class="primary small" @click="confirm">Confirmar</button></template>
         <template v-else-if="flash"><span class="dg-warn">{{ flash }}</span></template>
         <template v-else-if="s.mustSwitch">Escolha quem assume a posição (troca grátis).</template>
+        <template v-else-if="s.bossThreat && !mode"><span class="dg-warn">O chefe vai soltar o golpe nas casas marcadas: saia delas antes de encerrar.</span></template>
         <template v-else-if="mode === 'move'">Toque numa casa marcada para mover.</template>
         <template v-else-if="mode === 'attack'">{{ targetKeys.size ? 'Toque num alvo para ver o dano.' : 'Nenhum inimigo ao alcance desta arma.' }}</template>
         <template v-else>{{ s.log[s.log.length - 1] }}</template>
       </p>
 
-      <div v-if="activeMember && who" class="dg-active">
+      <div v-if="inspectedEnemy" class="dg-enemy-card">
+        <img v-if="!brokenSprites.has(inspectedEnemy.dexId)" :src="sprite(inspectedEnemy.dexId)" alt="" />
         <div>
-          <strong>{{ s.fusion ? s.fusion.name : activeMember.name }}</strong>
-          <span v-for="t in (s.fusion ? who.types : activeMember.types)" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span>
-          <template v-if="s.fusion"> · {{ s.fusion.turnsLeft }} turno(s)</template>
+          <strong>{{ PROFILES[inspectedEnemy.profile].icon }} {{ inspectedEnemy.name }}</strong>
+          <span v-for="t in inspectedEnemy.types" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span>
+          <small>{{ PROFILES[inspectedEnemy.profile].name }}: {{ PROFILES[inspectedEnemy.profile].text }}</small>
+          <small>{{ WEAPONS[inspectedEnemy.weapon].name }} ({{ PATTERN_TEXT[WEAPONS[inspectedEnemy.weapon].pattern] }}, alcance {{ WEAPONS[inspectedEnemy.weapon].range }}) · HP {{ inspectedEnemy.hp }}/{{ inspectedEnemy.maxHp }}{{ inspectedEnemy.shaken ? ' · defesa abalada' : '' }}</small>
         </div>
-        <div v-for="i in (s.fusion ? [s.fusion.a, s.fusion.b] : [s.active])" :key="i" class="dg-bar">
-          <span>{{ s.fusion ? s.team[i]!.name : 'HP' }}</span><span class="dg-hp"><i :style="{ width: pct(s.team[i]!.hp, s.team[i]!.maxHp) }"></i></span><small>{{ s.team[i]!.hp }}/{{ s.team[i]!.maxHp }}</small>
-        </div>
-        <div class="dg-weapon">
-          <span>{{ who.weapon.name }} <small>({{ who.weapon.kind === 'physical' ? 'físico' : 'especial' }}, {{ who.weapon.ap }} PA)</small></span>
-          <span>Munição: <span v-for="t in who.ammo" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span></span>
-          <span>Carga {{ who.charge }}/{{ s.fusion ? s.fusion.maxCharge : activeMember.maxCharge }}</span>
+      </div>
+
+      <div v-if="activeMember && who" class="dg-active" :class="{ fused: !!s.fusion }">
+        <FusionArt v-if="s.fusion" :origins="s.fusion.origins" :orbs="who.orbs" :ammo="who.ammo" :size="84" />
+        <WeaponArt v-else :weapon="activeMember.weapon" :dex-id="activeMember.dexId" :ammo="activeMember.ammo[0] ?? null" :size="84" />
+        <div class="dg-active-info">
+          <div>
+            <strong>{{ s.fusion ? s.fusion.name : activeMember.name }}</strong>
+            <span v-for="t in (s.fusion ? who.types : activeMember.types)" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span>
+            <template v-if="s.fusion"> · {{ s.fusion.turnsLeft }} turno(s)</template>
+          </div>
+          <div v-for="i in (s.fusion ? [s.fusion.a, s.fusion.b] : [s.active])" :key="i" class="dg-bar">
+            <span>{{ s.fusion ? s.team[i]!.name : 'HP' }}</span><span class="dg-hp"><i :style="{ width: pct(s.team[i]!.hp, s.team[i]!.maxHp) }"></i></span><small>{{ s.team[i]!.hp }}/{{ s.team[i]!.maxHp }}</small>
+          </div>
+          <div class="dg-bar">
+            <span>Carga</span><span class="dg-hp charge"><i :style="{ width: pct(who.charge, s.fusion ? s.fusion.maxCharge : activeMember.maxCharge) }"></i></span><small>{{ who.charge }}/{{ s.fusion ? s.fusion.maxCharge : activeMember.maxCharge }}</small>
+          </div>
+          <div class="dg-weapon">
+            <span v-if="!s.fusion"><strong>{{ who.weapon.name }}</strong> · {{ who.weapon.category }}</span>
+            <span>{{ who.weapon.kind === 'physical' ? 'Físico' : 'Especial' }} · {{ who.weapon.ap }} PA · {{ who.weapon.cost }} carga · {{ PATTERN_TEXT[who.weapon.pattern] }}, alcance {{ who.weapon.range }} · poder {{ who.weapon.power }}</span>
+            <span>Munição: <span v-for="t in who.ammo" :key="t" class="dg-type" :style="typeStyle(t)">{{ TYPE_LABELS_PT[t] }}</span><template v-if="who.ammo.length > 1"> (70% / 30%)</template></span>
+          </div>
         </div>
       </div>
 
       <nav class="dg-commands" aria-label="Ações">
-        <button type="button" :class="{ on: mode === 'move' }" :disabled="!playing || s.mustSwitch" @click="setMode('move')">Mover</button>
-        <button type="button" :class="{ on: mode === 'attack' }" :disabled="!playing || s.mustSwitch" @click="setMode('attack')">Atacar</button>
-        <button type="button" :disabled="!playing || s.mustSwitch || s.potions === 0 || s.ap < COSTS.item" @click="doPotion">Poção ({{ COSTS.item }})</button>
-        <button type="button" :disabled="!playing || s.mustSwitch || !!s.fusion || s.fusionCharges === 0" @click="openFusion">Fusão</button>
-        <button type="button" class="primary" :disabled="!playing || s.mustSwitch" @click="doEnd">Encerrar</button>
+        <button type="button" :class="{ on: mode === 'move' }" :disabled="!playing || s.mustSwitch" @click="setMode('move')"><b>👣</b>Mover</button>
+        <button type="button" :class="{ on: mode === 'attack' }" :disabled="!playing || s.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar</button>
+        <button type="button" :disabled="!playing || s.mustSwitch || s.potions === 0 || s.ap < COSTS.item" @click="doPotion"><b>🧪</b>Poção · {{ COSTS.item }}</button>
+        <button type="button" :disabled="!playing || s.mustSwitch || !!s.fusion || s.fusionCharges === 0" @click="openFusion"><b>💠</b>Fusão · {{ COSTS.fusion }}</button>
+        <button type="button" class="primary" :disabled="!playing || s.mustSwitch" @click="doEnd"><b>⏭️</b>Encerrar</button>
       </nav>
 
       <ol class="dg-team" aria-label="Equipe">
         <li v-for="(m, i) in s.team" :key="m.id">
-          <button type="button" :class="{ active: i === s.active && !s.fusion, out: !available(s, i) && i !== s.active }" :disabled="!playing || !!s.fusion || (i === s.active && !s.mustSwitch) || !available(s, i)" @click="doSwitch(i)">
+          <button type="button" :class="{ active: i === s.active && !s.fusion, fusing: !!s.fusion && (i === s.fusion.a || i === s.fusion.b), out: !available(s, i) && i !== s.active }" :disabled="!playing || !!s.fusion || (i === s.active && !s.mustSwitch) || !available(s, i)" @click="doSwitch(i)">
             <small class="dg-num">{{ i + 1 }}</small>
+            <WeaponArt class="dg-team-weapon" :weapon="m.weapon" :orb="false" :size="22" />
             <img v-if="!brokenSprites.has(m.dexId)" :src="sprite(m.dexId)" alt="" @error="brokenSprites.add(m.dexId)" />
+            <span v-else class="dg-nosprite">?</span>
             <span class="dg-name">{{ m.name }}</span>
             <span class="dg-hp"><i :style="{ width: pct(m.hp, m.maxHp) }"></i></span>
             <span class="dg-hp charge"><i :style="{ width: pct(m.charge, m.maxCharge) }"></i></span>
@@ -336,13 +413,21 @@ const pendingText = computed(() => {
           <h3>Escolher fusão</h3>
           <div class="dg-fusion-grid">
             <button v-for="(m, i) in s.team" :key="m.id" type="button" :class="{ on: fusionPick.includes(i) }" :disabled="!available(s, i)" @click="toggleFusion(i)">
-              {{ fusionPick.includes(i) ? '✓ ' : '' }}{{ m.name }}<small>{{ available(s, i) ? WEAPONS[m.weapon].name : statusLabel(i) }}</small>
+              <WeaponArt :weapon="m.weapon" :dex-id="m.dexId" :ammo="m.ammo[0] ?? null" :size="46" />
+              <span>{{ fusionPick.includes(i) ? '✓ ' : '' }}{{ m.name }}</span>
+              <small>{{ available(s, i) ? WEAPONS[m.weapon].name : statusLabel(i) }}</small>
             </button>
           </div>
           <template v-if="fusionPreview">
-            <p><strong>{{ fusionPreview.weapon.name }}</strong></p>
+            <FusionArt class="dg-fusion-preview" :origins="fusionPreview.origins" :orbs="fusionPreviewOrbs" :ammo="fusionPreview.ammo" :size="110" />
+            <p class="hint dg-center">{{ fusionPreview.name }}</p>
             <p class="hint">{{ fusionPreview.weapon.description }}</p>
-            <p class="hint">Munição: {{ fusionPreview.ammo.map((t) => TYPE_LABELS_PT[t]).join(' / ') }}{{ fusionPreview.ammo.length > 1 ? ' (70% / 30%)' : '' }} · Duração: 3 turnos · Ativação: 1 PA + 1 buff · Carga temporária: 12 · O dano recebido é dividido entre os dois.</p>
+            <ul class="dg-facts">
+              <li>Munição: {{ fusionPreview.ammo.map((t) => TYPE_LABELS_PT[t]).join(' / ') }}{{ fusionPreview.ammo.length > 1 ? ' (70% / 30%)' : '' }}</li>
+              <li>{{ fusionPreview.weapon.ap }} PA e {{ fusionPreview.weapon.cost }} carga por ataque · poder {{ fusionPreview.weapon.power }} · alcance {{ fusionPreview.weapon.range }}</li>
+              <li>Duração: {{ FUSION_TURNS }} turnos · Ativação: {{ COSTS.fusion }} PA + 1 buff · Carga temporária: {{ FUSION_CHARGE }}</li>
+              <li>O dano recebido é dividido entre os dois; depois, ambos descansam 1 rodada.</li>
+            </ul>
             <p v-if="fusionPreview.reason" class="dg-warn">{{ fusionPreview.reason }}</p>
           </template>
           <p v-else class="hint">Escolha dois membros (teclas 1 a 6 no PC).</p>
@@ -375,76 +460,104 @@ const pendingText = computed(() => {
 </template>
 
 <style scoped>
-.dungeon { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); color: var(--text); background: #12101c; }
+.dungeon { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); color: var(--text); background: radial-gradient(ellipse at top, #251c3a, #0f0c18 70%); }
 .dg-pick h2 { margin: 0 0 6px; }
 .hint { color: var(--muted); font-size: 0.88rem; margin: 4px 0; }
+.dg-center { text-align: center; }
 .dg-provisional { border-left: 3px solid var(--pending); padding-left: 8px; }
-.dg-candidates { list-style: none; padding: 0; margin: 10px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
-.dg-candidates button { width: 100%; min-height: 110px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; border-radius: 10px; border: 2px solid var(--line); background: var(--surface); color: inherit; }
-.dg-candidates button.on { border-color: var(--gold); background: var(--surface-2); }
+.dg-candidates { list-style: none; padding: 0; margin: 10px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
+.dg-candidates button { position: relative; width: 100%; min-height: 150px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; border-radius: 12px; border: 2px solid var(--line); background: linear-gradient(180deg, var(--surface-2), var(--surface)); color: inherit; }
+.dg-candidates button.on { border-color: var(--gold); box-shadow: 0 0 10px #ffcb0555; }
 .dg-candidates button:disabled { opacity: 0.45; }
-.dg-candidates img { width: 48px; height: 48px; object-fit: contain; image-rendering: pixelated; }
 .dg-candidates small { color: var(--muted); font-size: 0.72rem; text-align: center; }
+.dg-order { position: absolute; top: 4px; left: 6px; width: 18px; height: 18px; border-radius: 50%; background: var(--gold); color: #1a1400 !important; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.dg-pick-sprite { width: 48px; height: 48px; object-fit: contain; image-rendering: pixelated; }
+.dg-types { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
 .dg-nosprite { font-size: 0.6rem; color: var(--muted); line-height: 1; text-align: center; }
 .dg-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.dg-actions button, .dg-commands button { min-height: var(--ui-touch, 44px); padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; }
+.dg-actions button { min-height: var(--ui-touch, 44px); padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; }
 .primary { background: var(--accent) !important; color: var(--on-accent); border-color: transparent !important; }
 .primary.small { min-height: 30px; padding: 0 10px; border-radius: 8px; margin-left: 6px; }
 button:disabled { opacity: 0.5; }
 
-.dg-run { display: flex; flex-direction: column; gap: 8px; max-width: 520px; margin: 0 auto; }
-.dg-hud { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 0.9rem; font-weight: 600; }
-.dg-ap i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-left: 3px; border: 1px solid var(--gold); }
-.dg-ap i.on { background: var(--gold); }
+.dg-run { display: flex; flex-direction: column; gap: 8px; max-width: 540px; margin: 0 auto; }
+.dg-hud { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.85rem; font-weight: 600; }
+.dg-pill { padding: 3px 9px; border-radius: 999px; background: #0007; border: 1px solid #ffffff22; }
+.dg-ap i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 3px; border: 1px solid var(--gold); vertical-align: middle; }
+.dg-ap i.on { background: var(--gold); box-shadow: 0 0 4px var(--gold); }
+.dg-toggle { margin-left: auto; font-weight: 400; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 
-.dg-grid { display: grid; gap: 2px; padding: 4px; background: #241d33; border-radius: 10px; }
-.dg-cell { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 4px; background: #3a3150; display: flex; align-items: center; justify-content: center; overflow: visible; }
-.dg-cell.wall { background: repeating-linear-gradient(45deg, #1b1626 0 6px, #262036 6px 12px); }
-.dg-cell.reach { background: #2f5a6e; }
+.dg-grid { display: grid; gap: 3px; padding: 6px; background: linear-gradient(180deg, #2b2240, #1b1529); border: 2px solid #3d3158; border-radius: 12px; box-shadow: inset 0 0 18px #000a; }
+.dg-cell { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 5px; background: linear-gradient(135deg, #43395c, #362d4c); display: flex; align-items: center; justify-content: center; overflow: visible; }
+.dg-cell.wall { background: linear-gradient(180deg, #5a4e72 0 30%, #2a2338 30%); box-shadow: inset 0 -3px 0 #16111f; }
+.dg-cell.danger::after { content: ''; position: absolute; inset: 0; border-radius: 5px; background: repeating-linear-gradient(45deg, #ff5a5a22 0 4px, transparent 4px 8px); pointer-events: none; }
+.dg-cell.doom { box-shadow: inset 0 0 0 2px #ff3d3d; animation: dg-doom 0.9s ease-in-out infinite; }
+.dg-cell.reach { background: linear-gradient(135deg, #2f6a80, #245468); }
 .dg-cell.target { box-shadow: inset 0 0 0 2px var(--warn); }
-.dg-cell.area { background: #7a3340; }
+.dg-cell.area { background: #8a3442; }
 .dg-cell.pending { box-shadow: inset 0 0 0 3px var(--gold); }
-.dg-cell img { width: 120%; height: 120%; object-fit: contain; image-rendering: pixelated; pointer-events: none; position: relative; top: -14%; }
+.dg-cell img { width: 120%; height: 120%; object-fit: contain; image-rendering: pixelated; pointer-events: none; position: relative; top: -14%; z-index: 1; }
 .dg-cell img.boss { width: 150%; height: 150%; top: -25%; filter: drop-shadow(0 0 4px #ff5a5a); }
 .dg-cost { position: absolute; top: 2px; left: 4px; font-size: 0.65rem; color: #cde; }
+.dg-profile { position: absolute; top: -4px; right: -4px; z-index: 2; font-size: 0.7rem; background: #0009; border-radius: 50%; width: 1.35em; height: 1.35em; display: flex; align-items: center; justify-content: center; }
 .dg-player { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; border-radius: 50%; box-shadow: 0 0 0 2px var(--gold); }
 .dg-player.fused { box-shadow: 0 0 0 2px #b38cff, 0 0 10px #b38cff; }
 .dg-player.fused img { width: 70%; height: 70%; }
 .dg-hp { position: relative; display: block; height: 5px; background: #0006; border-radius: 3px; overflow: hidden; flex: 1; }
-.dg-hp i { position: absolute; inset: 0 auto 0 0; background: var(--ok); }
+.dg-hp i { position: absolute; inset: 0 auto 0 0; background: var(--ok); transition: width 0.3s; }
 .dg-hp.charge i { background: #6fb6ff; }
-.dg-cell .dg-hp.enemy { position: absolute; left: 10%; right: 10%; bottom: 3px; height: 4px; }
+.dg-cell .dg-hp.enemy { position: absolute; left: 10%; right: 10%; bottom: 3px; height: 4px; z-index: 2; }
 .dg-cell .dg-hp.enemy i { background: var(--warn); }
+.dg-popup { position: absolute; left: 50%; top: 10%; z-index: 3; transform: translateX(-50%); font-weight: 800; font-size: 0.9rem; pointer-events: none; text-shadow: 0 1px 2px #000, 0 0 4px #000; animation: dg-pop 0.9s ease-out forwards; }
+.dg-popup.hit { color: #ffe066; }
+.dg-popup.hurt { color: #ff6b6b; }
 
 .dg-preview { min-height: 2.6em; margin: 0; font-size: 0.88rem; display: flex; align-items: center; flex-wrap: wrap; }
 .dg-warn { color: var(--warn); }
-.dg-active { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 0.86rem; }
+.dg-enemy-card { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 10px; background: #3a1d2a; border: 1px solid #7a3446; font-size: 0.82rem; }
+.dg-enemy-card img { width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; }
+.dg-enemy-card div { display: flex; flex-direction: column; gap: 2px; }
+.dg-enemy-card small { color: var(--muted); }
+.dg-active { display: flex; gap: 10px; align-items: center; background: linear-gradient(135deg, var(--surface-2), var(--surface)); border: 1px solid var(--line); border-radius: 12px; padding: 8px; font-size: 0.84rem; }
+.dg-active.fused { border-color: #b38cff; box-shadow: 0 0 12px #b38cff44; flex-direction: column; align-items: stretch; }
+.dg-active.fused :deep(.fusion-art) { align-self: center; }
+.dg-active-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .dg-bar { display: flex; align-items: center; gap: 6px; }
-.dg-bar > span:first-child { min-width: 3em; }
-.dg-weapon { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); }
-.dg-type { display: inline-block; padding: 0 6px; margin-left: 4px; border-radius: 999px; font-size: 0.72rem; color: #fff; text-shadow: 0 1px 1px #0008; }
+.dg-bar > span:first-child { min-width: 3.4em; }
+.dg-weapon { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 0.8rem; }
+.dg-weapon strong { color: var(--text); }
+.dg-type { display: inline-block; padding: 0 6px; margin-left: 4px; border-radius: 999px; font-size: 0.7rem; color: #fff; text-shadow: 0 1px 1px #0008; }
 .dg-commands { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
-.dg-commands button { padding: 0 4px; font-size: 0.85rem; }
+.dg-commands button { min-height: 52px; padding: 2px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font-size: 0.74rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+.dg-commands button b { font-size: 1.05rem; font-weight: 400; }
 .dg-commands button.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
 
 .dg-team { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
-.dg-team button { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: inherit; position: relative; font-size: 0.7rem; }
-.dg-team button.active { border-color: var(--gold); }
+.dg-team button { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: inherit; position: relative; font-size: 0.68rem; }
+.dg-team button.active { border-color: var(--gold); box-shadow: 0 0 6px #ffcb0544; }
+.dg-team button.fusing { border-color: #b38cff; }
 .dg-team button.out { opacity: 0.55; }
-.dg-team button:disabled.active { opacity: 1; }
+.dg-team button:disabled.active, .dg-team button:disabled.fusing { opacity: 1; }
 .dg-team img { width: 32px; height: 32px; object-fit: contain; align-self: center; image-rendering: pixelated; }
+.dg-team-weapon { position: absolute; top: 2px; right: 2px; }
 .dg-team .dg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dg-num { position: absolute; top: 2px; left: 4px; color: var(--muted); }
 .dg-log { font-size: 0.8rem; color: var(--muted); }
 .dg-log ol { margin: 4px 0; padding-left: 18px; }
 
-.dg-modal { position: fixed; inset: 0; z-index: 80; background: #000a; display: flex; align-items: center; justify-content: center; padding: 16px; }
-.dg-modal-box { width: min(440px, 100%); max-height: 90vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.dg-modal { position: fixed; inset: 0; z-index: 80; background: #000b; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.dg-modal-box { width: min(460px, 100%); max-height: 90vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
 .dg-modal-box h3 { margin: 0 0 8px; }
 .dg-fusion-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.dg-fusion-grid button { min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 8px; border: 2px solid var(--line); background: var(--surface-2); color: inherit; font-size: 0.8rem; }
-.dg-fusion-grid button.on { border-color: #b38cff; }
-.dg-fusion-grid small { color: var(--muted); font-size: 0.68rem; }
+.dg-fusion-grid button { min-height: 92px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 10px; border: 2px solid var(--line); background: var(--surface-2); color: inherit; font-size: 0.78rem; }
+.dg-fusion-grid button.on { border-color: #b38cff; box-shadow: 0 0 8px #b38cff66; }
+.dg-fusion-grid small { color: var(--muted); font-size: 0.66rem; }
+.dg-fusion-preview { margin-top: 12px; }
+.dg-facts { margin: 6px 0; padding-left: 18px; font-size: 0.8rem; color: var(--muted); }
 .dg-reward { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px; margin-top: 6px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; text-align: left; }
 .dg-reward small { color: var(--muted); }
+
+@keyframes dg-pop { from { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -26px); } }
+@keyframes dg-doom { 50% { background: #7a2a36; } }
+@media (prefers-reduced-motion: reduce) { .dg-popup, .dg-cell.doom { animation: none; } }
 </style>
