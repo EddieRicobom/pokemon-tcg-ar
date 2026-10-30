@@ -29,8 +29,8 @@ function reach(from: { x: number; y: number }): Set<string> {
 describe('a cidade no mapa', () => {
   it('tem 14 terrenos de casa, os prédios da praça, o bairro dos jogos e a fonte, sem se sobrepor', () => {
     expect(map.buildings.filter((b) => b.kind === 'home')).toHaveLength(LOTS.length);
-    expect(map.buildings.map((b) => b.kind).filter((k) => k !== 'home').sort()).toEqual(['altar', 'arcade', 'arena', 'cafe', 'dojo', 'fountain', 'mail', 'museum', 'pins', 'torre']);
-    expect(CIVIC).toHaveLength(9);
+    expect(map.buildings.map((b) => b.kind).filter((k) => k !== 'home').sort()).toEqual(['altar', 'arcade', 'arena', 'cafe', 'dojo', 'fountain', 'mail', 'masmorra', 'museum', 'pins', 'torre']);
+    expect(CIVIC).toHaveLength(10);
     const cells = new Set<string>();
     for (const b of map.buildings) {
       for (let y = b.y; y < b.y + b.h; y++) {

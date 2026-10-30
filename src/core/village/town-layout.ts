@@ -12,7 +12,7 @@ import { WEST, west } from './west';
 
 export { WEST };
 
-export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'dojo' | 'fountain' | 'altar';
+export type BuildingKind = 'home' | 'cafe' | 'mail' | 'museum' | 'arcade' | 'pins' | 'arena' | 'torre' | 'dojo' | 'fountain' | 'altar' | 'masmorra';
 
 export interface Building {
   id: string;
@@ -92,6 +92,9 @@ export const BASE_CIVIC: readonly { kind: Exclude<BuildingKind, 'home' | 'founta
   // O Dojô da Torre, a oeste da Torre de Sobrevivência: o desenho muda com o nível da reforma (`state.tower.dojoLevel`).
   { kind: 'dojo', name: 'Dojô da Torre', x: 4, y: 22, w: 6, h: 2, unlock: 7 },
   { kind: 'altar', name: 'Altar da Confiança', x: 41, y: 83, w: 3, h: 2, unlock: 4 },
+  // Prédio genérico (casa de tijolos do atlas) que dá acesso à Masmorra, o protótipo de `core/dungeon.ts`; entre a Pista
+  // de Pins (até x = 37) e a avenida (x = 47). Aberto desde o nível 1 enquanto o modo é um esboço.
+  { kind: 'masmorra', name: 'Portão da Masmorra', x: 39, y: 22, w: 5, h: 2, unlock: 1 },
 ];
 export const CIVIC = BASE_CIVIC.map(west);
 

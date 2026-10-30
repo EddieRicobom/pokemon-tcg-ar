@@ -184,7 +184,7 @@ export const EMOJI_FONT = 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", "No
 export const CIVIC_ART: Partial<Record<BuildingKind, () => PixelBuf>> = { cafe: paintCafe, mail: paintMail, museum: paintMuseum, arcade: paintArcade, pins: paintPins, torre: paintTorre };
 export const atlasOpaqueBottoms = new WeakMap<HTMLCanvasElement, number>();
 /** Com o atlas: o desenho de cada prédio (recortes de tileset, ver `atlas-spec.ts`). */
-export const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'home-orange', museum: 'manor', arcade: 'arcade-shop', pins: 'pins-hall', torre: 'tower' };
+export const CIVIC_TILESET: Partial<Record<BuildingKind, string>> = { cafe: 'cabin', mail: 'home-orange', museum: 'manor', arcade: 'arcade-shop', pins: 'pins-hall', torre: 'tower', masmorra: 'house-brick' };
 /** Com o atlas: a casa de cada estágio (Cabana, Casa de madeira, Casa de tijolos, Sobrado — `HOME_STAGES`). */
 /** As que pegam a cor escolhida (o desenho tem partes coloridas para tingir). */
-export const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '🏟️', torre: '🗼', dojo: '🥋', altar: '💠' };
+export const CIVIC_EMOJI: Partial<Record<BuildingKind, string>> = { cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '🏟️', torre: '🗼', dojo: '🥋', altar: '💠', masmorra: '🗝️' };
