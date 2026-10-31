@@ -642,7 +642,14 @@ function showTrainerPresentation(event: { trainerId: number; count: number; fina
   trainerPresentation.value = event;
   trainerPresentationTimer = setTimeout(() => clearTrainerPresentation(true), event.final ? 3400 : 2800);
 }
-const minimap = ref({ markers: [] as ReturnType<typeof survivorMinimapSnapshot>['markers'], viewport: { x: 0, y: 0, width: ARENA_W, height: ARENA_H } });
+const minimap = ref({
+  markers: [] as ReturnType<typeof survivorMinimapSnapshot>['markers'],
+  bounds: { x: 0, y: 0, width: ARENA_W, height: ARENA_H },
+  viewport: { x: 0, y: 0, width: ARENA_W, height: ARENA_H },
+});
+
+function minimapX(x: number): number { return ((x - minimap.value.bounds.x) / minimap.value.bounds.width) * 100; }
+function minimapY(y: number): number { return ((y - minimap.value.bounds.y) / minimap.value.bounds.height) * 100; }
 const objectives = ref<ReturnType<typeof survivorObjectives>>([]);
 const pendingUpgrade = ref<SurvivorUpgradeOption[] | null>(null);
 const upgradeMenuLocked = ref(false);
@@ -2613,21 +2620,21 @@ onBeforeUnmount(() => {
           </section>
         </div>
 
-        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Minimapa da arena; o ponto azul é você, pontos vermelhos são chefes, pontos amarelos são elites e estrelas são Pokébolas">
-          <span class="survivor-minimap-title">Mapa</span>
-          <span v-if="!bonkRun" class="survivor-minimap-viewport" :style="{ left: `${(minimap.viewport.x / ARENA_W) * 100}%`, top: `${(minimap.viewport.y / ARENA_H) * 100}%`, width: `${(minimap.viewport.width / ARENA_W) * 100}%`, height: `${(minimap.viewport.height / ARENA_H) * 100}%` }"></span>
+        <div v-if="ready && state && minimapEnabled" class="survivor-minimap" role="img" aria-label="Mapa próximo da arena; o ponto azul é você, pontos vermelhos são chefes, pontos amarelos são elites e estrelas são Pokébolas">
+          <span class="survivor-minimap-title">Perto</span>
+          <span v-if="!bonkRun" class="survivor-minimap-viewport" :style="{ left: `${minimapX(minimap.viewport.x)}%`, top: `${minimapY(minimap.viewport.y)}%`, width: `${(minimap.viewport.width / minimap.bounds.width) * 100}%`, height: `${(minimap.viewport.height / minimap.bounds.height) * 100}%` }"></span>
           <template v-if="bonkRun && bonkPhysics">
             <!-- No BONK o mapa mostra o que bloqueia de verdade e um cone para onde a câmera olha. -->
             <span v-for="obstacle in bonkPhysics.obstacles" :key="obstacle.id" class="survivor-minimap-obstacle" :class="`kind-${obstacle.kind}`"
-              :style="{ left: `${(obstacle.x / ARENA_W) * 100}%`, top: `${(obstacle.y / ARENA_H) * 100}%`, width: `${(obstacle.w / ARENA_W) * 100}%`, height: `${(obstacle.h / ARENA_H) * 100}%` }"></span>
-            <span class="survivor-minimap-view" :style="{ left: `${(state.player.x / ARENA_W) * 100}%`, top: `${(state.player.y / ARENA_H) * 100}%`, transform: `rotate(${bonkPhysics.cameraYaw}rad)` }"></span>
+              :style="{ left: `${minimapX(obstacle.x)}%`, top: `${minimapY(obstacle.y)}%`, width: `${(obstacle.w / minimap.bounds.width) * 100}%`, height: `${(obstacle.h / minimap.bounds.height) * 100}%` }"></span>
+            <span class="survivor-minimap-view" :style="{ left: `${minimapX(state.player.x)}%`, top: `${minimapY(state.player.y)}%`, transform: `rotate(${bonkPhysics.cameraYaw}rad)` }"></span>
           </template>
           <span
             v-for="marker in minimap.markers"
             :key="`${marker.kind}-${marker.id}`"
             class="survivor-minimap-marker"
             :class="`kind-${marker.kind}`"
-            :style="{ left: `${(marker.x / ARENA_W) * 100}%`, top: `${(marker.y / ARENA_H) * 100}%` }"
+            :style="{ left: `${minimapX(marker.x)}%`, top: `${minimapY(marker.y)}%` }"
           ></span>
         </div>
 

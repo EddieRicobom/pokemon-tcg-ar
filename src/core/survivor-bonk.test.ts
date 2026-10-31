@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { seededRng } from './battle';
 import { createSurvivorState, rollUpgrades } from './survivor';
-import { BONK_LANDING_MS, BONK_STREAM, BONK_TURN_RATE, BONK_WATER_SPEED_FACTOR, bonkInputToWorld, bonkJumpsRemaining, bonkWaterAt, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics, tryBonkJump } from './survivor-bonk';
+import { BONK_CAMERA, BONK_LANDING_MS, BONK_STREAM, BONK_TURN_RATE, BONK_WATER_SPEED_FACTOR, bonkFocal, bonkInputToWorld, bonkJumpsRemaining, bonkWaterAt, createBonkPhysics, projectBonkPoint, resolveBonkPosition, stepBonkPhysics, tryBonkJump } from './survivor-bonk';
 
 function player() {
   return createSurvivorState(7, { kindCount: 1, bonk: true }).player;
 }
 
 describe('física do modo BONK', () => {
+  it('usa uma câmera distante com lente mais aberta para antecipar o terreno', () => {
+    expect(BONK_CAMERA.distance).toBe(340);
+    expect(BONK_CAMERA.height).toBe(160);
+    expect(bonkFocal({ height: 800 })).toBe(624);
+  });
+
   it('mantém Normal e Infinito fora da variante e sem cartas de pulo', () => {
     for (const state of [
       createSurvivorState(11, { kindCount: 1 }),

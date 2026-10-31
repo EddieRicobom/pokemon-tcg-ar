@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ARENA_H, ARENA_W, createSurvivorState } from './survivor';
-import { minimapMarkers, minimapViewport, survivorMinimapSnapshot } from './survivor-minimap';
+import { minimapBounds, minimapMarkers, minimapViewport, SURVIVOR_MINIMAP_WINDOW, survivorMinimapSnapshot } from './survivor-minimap';
 
 const player = createSurvivorState(1, { kindCount: 1 }).player;
 
@@ -25,15 +25,24 @@ describe('minimapa da Torre', () => {
       .toEqual({ x: ARENA_W - 400, y: ARENA_H - 300, width: 400, height: 300 });
   });
 
+  it('aproxima o mapa do jogador sem ultrapassar as bordas da arena', () => {
+    expect(minimapBounds({ x: ARENA_W / 2, y: ARENA_H / 2 }, { width: ARENA_W, height: ARENA_H }))
+      .toEqual({ x: (ARENA_W - SURVIVOR_MINIMAP_WINDOW.width) / 2, y: (ARENA_H - SURVIVOR_MINIMAP_WINDOW.height) / 2, ...SURVIVOR_MINIMAP_WINDOW });
+    expect(minimapBounds({ x: 1, y: 1 }, { width: ARENA_W, height: ARENA_H }))
+      .toEqual({ x: 0, y: 0, ...SURVIVOR_MINIMAP_WINDOW });
+  });
+
   it('produz uma fotografia estável para a interface', () => {
     const snapshot = survivorMinimapSnapshot({ player, enemies: [], artifacts: [] }, { width: ARENA_W, height: ARENA_H }, { width: 300, height: 200 });
     expect(snapshot.markers).toEqual([{ id: 0, x: player.x, y: player.y, kind: 'player' }]);
+    expect(snapshot.bounds).toEqual(minimapBounds(player, { width: ARENA_W, height: ARENA_H }));
     expect(snapshot.viewport.width).toBe(300);
     expect(snapshot.viewport.height).toBe(200);
   });
 
   it('marca Pokébolas encontradas como estrelas', () => {
-    const snapshot = survivorMinimapSnapshot({ player, enemies: [], artifacts: [{ id: 77, x: 500, y: 600, kind: 'pokeball' }] }, { width: ARENA_W, height: ARENA_H }, { width: 300, height: 200 });
-    expect(snapshot.markers).toContainEqual({ id: 77, x: 500, y: 600, kind: 'artifact' });
+    const artifact = { id: 77, x: player.x + 120, y: player.y + 80, kind: 'pokeball' as const };
+    const snapshot = survivorMinimapSnapshot({ player, enemies: [], artifacts: [artifact] }, { width: ARENA_W, height: ARENA_H }, { width: 300, height: 200 });
+    expect(snapshot.markers).toContainEqual({ ...artifact, kind: 'artifact' });
   });
 });
