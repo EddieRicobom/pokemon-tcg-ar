@@ -19,6 +19,7 @@ import type { FxLight } from './fx-lights';
 import { stepToward } from './wander';
 import type { Ground } from './ground';
 import type { GroundLayout } from '../core/terrain';
+import type { CrowdEvent } from './crowd';
 
 export type LabelTone = 'damage' | 'crit' | 'good' | 'bad' | 'miss' | 'info' | 'status';
 
@@ -317,6 +318,8 @@ export class BattleDirector {
   private readonly frames: Frame[];
   private screenFlash: { color: string; at: number; strength: number } | null = null;
   private finishedAt = 0;
+  /** Lances para a torcida da arquibancada (a cena esvazia a fila a cada quadro). */
+  readonly crowdEvents: CrowdEvent[] = [];
   private lastConfetti = 0;
   private lastBolt = 0;
   private cachedHud: BattleHud | null = null;
@@ -726,6 +729,7 @@ export class BattleDirector {
       this.phase = 'fight';
       this.turnClock = 0;
       this.shout('Já!', '#ffcb05');
+      this.crowdEvents.push({ kind: 'go', team: null });
       this.cue({ kind: 'go' });
       this.rings.emit(new Vector3(0, 0, 0), 0xffcb05, Math.max(this.o.rx, 0.5) * 1.3, 800);
       this.startTurn();
@@ -1095,6 +1099,7 @@ export class BattleDirector {
     if (turn.endured) {
       this.addLabel('Aguentou firme por você!', 'good', '#ffcb05', top.clone().add(new Vector3(0, lift, 0)));
       this.shout(`${this.o.fighters[target]!.name} aguentou firme por você!`, '#ffcb05');
+      this.crowdEvents.push({ kind: 'endure', team: this.teamOf[target] ?? null });
       lift += 0.12;
     }
     if (turn.fainted) {
@@ -1117,15 +1122,19 @@ export class BattleDirector {
   /** Tremor da imagem, parada rápida / câmera lenta e aviso grande, conforme a força do golpe. */
   private dramatize(turn: BattleTurn, frac: number, guarded: boolean): void {
     this.shake(Math.min(1, (0.2 + frac * 1.3) * (guarded ? 0.5 : 1) * (turn.critical ? 1.3 : 1) * (turn.fainted ? 1.3 : 1)));
+    const fans = this.teamOf[turn.attacker] ?? null;
     if (turn.fainted) {
+      this.crowdEvents.push({ kind: 'ko', team: fans });
       this.shout('Nocaute!', '#fb7185');
       this.slowMo(700, 0.3);
       this.rings.emit(this.world(turn.target), 0xffffff, 0.8, 800);
       emitBurst(this.particles, this.chest(turn.target), turn.move.type, 1.6, this.o.rng);
     } else if (turn.critical) {
+      this.crowdEvents.push({ kind: 'crit', team: fans });
       this.shout('Crítico!', '#fde047');
       this.slowMo(160, 0.08);
     } else if (turn.effectiveness >= 2) {
+      this.crowdEvents.push({ kind: 'super', team: fans });
       this.shout(turn.effectiveness >= 4 ? 'Super efetivo ×4!' : 'Super efetivo!', '#86efac');
       this.slowMo(110, 0.08);
     } else if (frac > 0.3) {
@@ -1243,6 +1252,7 @@ export class BattleDirector {
     this.shout('Vitória!', '#ffcb05');
     this.cue({ kind: 'victory', personality: this.personality(w) });
     this.slowMo(600, 0.4);
+    this.crowdEvents.push({ kind: 'win', team: this.o.result.winningTeam ?? null });
     const winTeam = this.o.result.winningTeam;
     const left = this.o.result.reason === 'ko' ? `Restaram ${this.o.result.hpLeft[w]} de ${fighter.maxHp} PS` : 'Fim do tempo: venceu quem tinha mais PS';
     this.banner = winTeam === undefined

@@ -1,8 +1,9 @@
 import {
   BufferGeometry, Float32BufferAttribute, Group, Line, LineBasicMaterial, LineLoop, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry,
-  Quaternion, Raycaster, Scene, Vector2, Vector3,
+  Quaternion, Raycaster, Scene, Sprite, SpriteMaterial, Vector2, Vector3,
 } from 'three';
-import { BoxCreature, frameCacheFor } from './creature';
+import type { DataTexture } from 'three';
+import { BoxCreature, frameCacheFor, neutralFx } from './creature';
 import type { CreatureInfo, CreatureSource } from './creature';
 import { intersectFloor, keepBoxAway } from './floor';
 import type { FloorResult } from './floor';
@@ -12,7 +13,9 @@ import { arenaFrame, arenaRadii } from './arena';
 import { BattleDirector } from './battle-director';
 import { FxLights } from './fx-lights';
 import { Ground } from './ground';
-import { ColiseuScenery } from './coliseu-scenery';
+import { ColiseuScenery, pennantTexture, standsPoint } from './coliseu-scenery';
+import { CrowdDirector, crowdSway, MAX_SPECTATORS, SPECTATOR_SCALE, seatLayout } from './crowd';
+import type { Seat } from './crowd';
 import { disposeBubbleTextures } from './emoji-bubble';
 import { SocialDirector } from './social';
 import type { SoundSink } from './sound-recipes';
@@ -66,6 +69,13 @@ export class BoxScene {
   private creatures: BoxCreature[] = [];
   /** Fora da luta (por exemplo, os que sobram no 3x3): ficam escondidos até a batalha acabar. */
   private benched = new Set<BoxCreature>();
+  /** Arena 3D: quem não luta assiste da arquibancada (cada um no seu assento) e torce. */
+  private spectators: { creature: BoxCreature; seat: Seat; flag: Sprite | null }[] = [];
+  /** Bandeirinhas vermelha e azul (criadas na primeira torcida, compartilhadas). */
+  private pennants: [DataTexture, DataTexture] | null = null;
+  private crowd: CrowdDirector | null = null;
+  private readonly seatPoint = new Vector3();
+  private readonly worldRight = new Vector3(1, 0, 0);
   private anchor: Vector3 | null = null;
   private half = DEFAULT_HALF_SIZE_M;
   private lastNow = 0;
@@ -148,6 +158,58 @@ export class BoxScene {
   setScenery(on: boolean): void {
     this.sceneryDetail = on;
     this.scenery?.setDetail(on);
+  }
+
+  /** Quem está na arquibancada agora (só no palco virtual, durante a batalha). */
+  get crowdList(): readonly BoxCreature[] {
+    return this.spectators.map((s) => s.creature);
+  }
+
+  /** A torcida só existe no palco virtual com a arquibancada ligada; sem ela, quem não luta fica escondido como antes. */
+  private seatSpectators(benched: readonly BoxCreature[]): void {
+    if (this.backdrop !== 'virtual' || !this.scenery) return;
+    const seats = seatLayout(benched.length);
+    this.pennants ??= [pennantTexture(0), pennantTexture(1)];
+    const pennants = this.pennants;
+    // Dois em cada três agitam uma bandeirinha da equipe do seu lado.
+    this.spectators = seats.map((seat, i) => {
+      let flag: Sprite | null = null;
+      if (i % 3 !== 2) {
+        flag = new Sprite(new SpriteMaterial({ map: pennants[seat.team], transparent: true, depthWrite: false }));
+        flag.center.set(0, 0);
+        flag.scale.set(0.11, 0.165, 1);
+        benched[i]!.group.add(flag);
+      }
+      return { creature: benched[i]!, seat, flag };
+    });
+    for (const { creature, seat } of this.spectators) {
+      creature.clearBubble();
+      creature.state.vx = 0;
+      creature.state.vz = 0;
+      creature.state.x = 0;
+      creature.state.z = 0;
+      creature.groundY = 0;
+      creature.group.scale.setScalar(SPECTATOR_SCALE);
+      // A arquibancada é inclinada: a sombra redonda atravessaria os degraus.
+      creature.shadow.visible = false;
+      // Olham para o centro da arena (o lado do espelho do sprite segue para onde estão virados).
+      creature.fx.facing = { x: -Math.sin(seat.angle), z: -Math.cos(seat.angle) };
+      this.benched.delete(creature);
+    }
+    this.crowd = this.spectators.length > 0 ? new CrowdDirector(seats, this.rng) : null;
+  }
+
+  private unseatSpectators(): void {
+    for (const { creature, flag } of this.spectators) {
+      flag?.removeFromParent();
+      flag?.material.dispose();
+      creature.clearBubble();
+      creature.group.scale.setScalar(1);
+      creature.shadow.visible = true;
+      Object.assign(creature.fx, neutralFx());
+    }
+    this.spectators = [];
+    this.crowd = null;
   }
 
   /** O cenário fica no chão, no centro da caixa colocada (escondido enquanto não há caixa). */
@@ -372,6 +434,7 @@ export class BoxScene {
     this.frameArena(rx);
     for (const creature of fighting) this.battleRoot.add(creature.group);
     this.benched = new Set(this.creatures.filter((c) => !fighting.includes(c)));
+    this.seatSpectators(this.creatures.filter((c) => !fighting.includes(c)).slice(0, MAX_SPECTATORS));
     this.floor.visible = false;
     this.director = new BattleDirector({
       fighters, creatures: fighting, result, root: this.battleRoot, camera: this.camera, rx, rz, rng, sound: this.sound ?? undefined, terrain: this.terrain,
@@ -408,6 +471,7 @@ export class BoxScene {
     const director = this.director;
     this.director?.dispose();
     this.director = null;
+    this.unseatSpectators();
     if (director) {
       // Os Pokémon voltam para a cena e para o passeio dentro da caixa.
       this.benched = new Set();
@@ -446,11 +510,18 @@ export class BoxScene {
     this.lastNow = nowMs;
     const placed = this.anchor;
     for (const creature of this.creatures) creature.group.visible = placed !== null && !this.benched.has(creature);
+    // Sem a arquibancada (opção do cenário desligada) a torcida some junto.
+    for (const { creature } of this.spectators) creature.group.visible = placed !== null && this.sceneryDetail && this.scenery !== null;
     if (!placed) return;
     // Na batalha tudo é medido dentro da arena (a origem dela é o centro).
     const base = this.director ? this.battleZero : placed;
     if (this.director) {
       this.director.update(dt);
+      const events = this.director.crowdEvents.splice(0);
+      if (this.crowd && this.sceneryDetail) {
+        for (const e of events) this.crowd.event(e);
+        this.crowd.update(dt, { bubble: (i, emoji, ms) => this.spectators[i]?.creature.say(emoji, ms), hop: (i) => this.spectators[i]?.creature.poke() });
+      }
     } else if (this.mode === 'formacao') {
       // Em fila de frente para a câmera: cada um anda até a sua vaga.
       const slots = formationSlots(this.creatures.length, this.half, -base.x, -base.z);
@@ -498,7 +569,21 @@ export class BoxScene {
     if (right.lengthSq() > 1e-6) right.normalize();
     const camera = this.director ? this.battleRoot.worldToLocal(this.battleCamera.copy(this.camera.position)) : this.camera.position;
     // O relevo só existe na caixa (a arena da batalha é lisa): cada Pokémon pisa na altura do terreno sob ele.
+    const seated = new Set(this.spectators.map((s) => s.creature));
+    this.spectators.forEach(({ creature, seat, flag }, i) => {
+      // Cada torcedor fica no seu degrau, em coordenadas do mundo (fora da raiz da arena, que é girada e encolhida).
+      const p = standsPoint(seat.angle, seat.row, this.scenery?.radius);
+      this.seatPoint.set(placed.x + p.x, placed.y + p.y, placed.z + p.z);
+      creature.fx.dx = crowdSway(i, nowMs, this.crowd?.excitement(i) ?? 0) * SPECTATOR_SCALE;
+      creature.update(nowMs, dt, this.seatPoint, this.camera.position, this.worldRight);
+      if (flag) {
+        // A bandeira acompanha o pulo e balança mais com a torcida empolgada.
+        flag.position.set(creature.width * 0.32, creature.mesh.position.y + creature.height * 0.5, 0.01);
+        flag.material.rotation = Math.sin(nowMs / 170 + i * 2.3) * (0.15 + 0.35 * (this.crowd?.excitement(i) ?? 0));
+      }
+    });
     for (const creature of this.creatures) {
+      if (seated.has(creature)) continue;
       creature.groundY = this.director ? 0 : (this.boxGround?.heightAt(creature.state.x, creature.state.z) ?? 0);
       // Pisando numa poça: o Pokémon aparece refletido nela.
       creature.setReflection(this.director || !weatherOn ? 0 : this.weatherFx.puddleStrengthAt(creature.state.x, creature.state.z));
@@ -519,6 +604,8 @@ export class BoxScene {
 
   dispose(): void {
     this.stopBattle();
+    for (const t of this.pennants ?? []) t.dispose();
+    this.pennants = null;
     this.scenery?.dispose();
     this.scenery = null;
     this.weatherFx.dispose();

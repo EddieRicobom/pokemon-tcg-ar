@@ -86,7 +86,7 @@ useDialogFocus(dialogEl);
         <button type="button" :class="{ active: !visual.scenery }" :aria-pressed="!visual.scenery" @click="visual.scenery = false">Desligado</button>
       </div>
       <p class="hint">
-        {{ visual.scenery ? 'Na Arena 3D (sem câmera): muro de arcadas, arquibancada com torcida e tochas que tremem em volta da arena.' : 'Na Arena 3D fica só a areia: mais leve para celulares fracos. Com a câmera como fundo nada muda.' }}
+        {{ visual.scenery ? 'Na Arena 3D (sem câmera): muro de arcadas, arquibancada com torcida e tochas que tremem em volta da arena. Na batalha, os moradores que não lutam assistem da arquibancada, com bandeirinhas e balões de torcida.' : 'Na Arena 3D fica só a areia (sem a torcida dos moradores): mais leve para celulares fracos. Com a câmera como fundo nada muda.' }}
       </p>
     </section>
     <section v-if="battle">

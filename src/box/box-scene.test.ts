@@ -439,6 +439,44 @@ describe('BoxScene com o palco virtual (Arena 3D)', () => {
     expect(run('camera').has('grass')).toBe(true);
   });
 
+  it('quem não luta assiste da arquibancada do fundo, maior e torcendo; ao parar, volta ao passeio', () => {
+    const scene = sceneLookingDown();
+    scene.setBackdrop('virtual');
+    scene.place(new Vector3(0, -1.3, -3.2));
+    scene.setCreatures([entry(0), entry(1), entry(2), entry(3), entry(4)]);
+    scene.startBattle(fighters(2), seeded(), { picks: [0, 1] });
+    const fans = scene.crowdList;
+    expect(fans.map((c) => c.info.id)).toEqual(['c2', 'c3', 'c4']);
+    for (let t = 0; t < 120; t++) scene.update(100 + t * 50);
+    const center = scene.center!;
+    for (const c of fans) {
+      expect(c.group.visible).toBe(true);
+      expect(c.group.scale.x).toBeGreaterThan(1);
+      const flat = Math.hypot(c.group.position.x - center.x, c.group.position.z - center.z);
+      expect(flat).toBeGreaterThan(scene.coliseu!.radius);
+      expect(c.group.position.z).toBeLessThan(center.z); // no fundo, além da arena
+      expect(c.group.position.y).toBeGreaterThan(center.y);
+    }
+    scene.setScenery(false);
+    scene.update(100 + 121 * 50);
+    expect(fans.every((c) => !c.group.visible)).toBe(true);
+    scene.stopBattle();
+    expect(scene.crowdList).toHaveLength(0);
+    expect(fans.every((c) => c.group.scale.x === 1 && c.shadow.visible)).toBe(true);
+    scene.dispose();
+  });
+
+  it('com a câmera de fundo (AR) não há arquibancada: quem não luta continua escondido', () => {
+    const scene = sceneLookingDown();
+    scene.place(new Vector3(0, -1.3, -3.2));
+    scene.setCreatures([entry(0), entry(1), entry(2)]);
+    scene.startBattle(fighters(2), seeded(), { picks: [0, 1] });
+    scene.update(100);
+    expect(scene.crowdList).toHaveLength(0);
+    expect(scene.creatureList[2]!.group.visible).toBe(false);
+    scene.dispose();
+  });
+
   it('o cenário acompanha a luz da cena e as tochas tremem a cada quadro, sem erro', () => {
     const scene = sceneLookingDown();
     scene.setBackdrop('virtual');
