@@ -54,8 +54,8 @@ export function parseRoute(hash: string): Route {
  * `bonk` e `coliseu` são atalhos de jogo dentro da Vila. A Torre comum abre em `#/torre`, uma rota própria que volta
  * para a Vila sem deixar seu mapa montado atrás da corrida.
  */
-export type RouteFlag = 'vila' | 'arena' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual' | 'autoiniciar' | GameShortcut;
-const FLAGS: readonly RouteFlag[] = ['vila', 'arena', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual', 'autoiniciar', 'torre', 'bonk', 'coliseu'];
+export type RouteFlag = 'vila' | 'arena' | 'golpes' | 'pvp' | 'batalha' | 'formatacao' | 'restauracao' | 'jogos' | 'virtual' | 'autoiniciar' | GameShortcut;
+const FLAGS: readonly RouteFlag[] = ['vila', 'arena', 'golpes', 'pvp', 'batalha', 'formatacao', 'restauracao', 'jogos', 'virtual', 'autoiniciar', 'torre', 'bonk', 'coliseu'];
 
 /** Jogos que a Vila abre direto pelo endereço. */
 export type GameShortcut = 'torre' | 'bonk' | 'coliseu';
