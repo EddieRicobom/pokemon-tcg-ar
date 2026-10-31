@@ -51,6 +51,9 @@ import { includeMember } from '../app/team';
 import { savedTeam, setSavedTeam } from '../app/team-store';
 import { loadVillage } from '../app/village-store';
 import { digitalCandidates } from '../app/digital-members';
+import { cardArchetypeIds } from '../app/card-archetypes';
+import { fxLabel, planArchetypeFx, planDurationMs } from '../core/archetype-fx';
+import type { FxLayer } from '../core/archetype-fx';
 
 const props = defineProps<{ cardId?: string }>();
 const teamAction = ref<'idle' | 'loading' | 'added' | 'already' | 'full' | 'unavailable' | 'error'>('idle');
@@ -93,6 +96,30 @@ const adjusting = ref(false);
 const moveNotice = ref('');
 const arActive = ref(false);
 const evolvedCaption = ref('');
+/** Arquétipos da carta no AR: as camadas da animação e os rótulos que aparecem junto, no mesmo ritmo. */
+const fxLayers = ref<FxLayer[]>([]);
+const fxRun = ref(0);
+const fxShowing = ref(false);
+let fxTimer: ReturnType<typeof setTimeout> | null = null;
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function onArchetypeFxStart(): void {
+  fxRun.value++;
+  fxShowing.value = true;
+  if (fxTimer) clearTimeout(fxTimer);
+  fxTimer = setTimeout(() => (fxShowing.value = false), planDurationMs(fxLayers.value) + 400);
+}
+
+function resetArchetypeFx(): void {
+  if (fxTimer) clearTimeout(fxTimer);
+  fxTimer = null;
+  fxShowing.value = false;
+  fxLayers.value = [];
+}
+
+function replayArchetypes(): void {
+  ar?.sprite.replayArchetypes();
+}
 const foilIntensity = ref(65);
 const hudVisible = ref(true);
 let hudHideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -518,6 +545,7 @@ async function switchCamera(): Promise<void> {
 
 async function startArFor(cardId: string): Promise<void> {
   evolvedCaption.value = '';
+  resetArchetypeFx();
   pendingArCardId.value = cardId;
   arError.value = '';
   if (!cameraOn.value || !videoEl.value || !canvasEl.value || !stageEl.value) {
@@ -559,6 +587,8 @@ async function startArFor(cardId: string): Promise<void> {
     const companion = companionCard(assets.card);
     const evolved = companion !== assets.card;
     evolvedCaption.value = evolved ? `${companion.name} · evoluiu da sua carta de ${assets.card.name}` : '';
+    const archetypeIds = cardArchetypeIds(assets.card);
+    fxLayers.value = planArchetypeFx(archetypeIds);
     const started = await startAr({
       video: videoEl.value,
       canvas: canvasEl.value,
@@ -567,7 +597,14 @@ async function startArFor(cardId: string): Promise<void> {
       dexId: spriteIdOf(companion),
       shiny: isShiny(assets.card),
       evolved,
-      evolutionFx: () => effectiveVisual.value.evolutionFx && !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      evolutionFx: () => effectiveVisual.value.evolutionFx && !reducedMotion(),
+      archetypes: {
+        ids: archetypeIds,
+        enabled: () => effectiveVisual.value.archetypeFx && !reducedMotion(),
+        onStart: () => {
+          if (run === arRun) onArchetypeFxStart();
+        },
+      },
       cachedSprite: evolved ? null : assets.cachedSprite,
       fetchSprite: (dexId, shiny) => fetchSprite(dexId, undefined, { shiny }),
       battle: {
@@ -984,6 +1021,7 @@ watch(
 );
 onBeforeUnmount(() => {
   if (scanClockTimer) clearInterval(scanClockTimer);
+  if (fxTimer) clearTimeout(fxTimer);
 });
 function cancelScan(): void {
   controller?.cancel();
@@ -1056,6 +1094,17 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
         <p v-if="evolvedCaption && arState.phase === 'tracking' && (spriteState?.kind === 'animated' || spriteState?.kind === 'static')" class="pill ok">
           <span class="pill-text">✦ Chamado do vínculo<small class="pill-sub">{{ evolvedCaption }}</small></span>
         </p>
+        <div v-if="fxShowing && fxLayers.length" :key="fxRun" class="pill archetype-fx" aria-label="Arquétipos da carta">
+          <span v-for="layer in fxLayers" :key="layer.id" class="fx-chip" :style="{ animationDelay: `${layer.startMs}ms` }">{{ fxLabel(layer.id) }}</span>
+        </div>
+        <button
+          v-else-if="fxLayers.length && arState.phase === 'tracking' && effectiveVisual.archetypeFx"
+          type="button"
+          class="pill archetype-replay"
+          @click.stop="replayArchetypes"
+        >
+          ✦ Rever arquétipos ({{ fxLayers.length }})
+        </button>
         <p v-if="cameraBusy" class="pill busy"><i class="dot"></i><span class="pill-text">Abrindo a câmera…</span></p>
         <div v-if="stepsNotice" class="pill steps">
           <span class="pill-text">Etapa {{ stepsNotice.position }} de {{ stepsNotice.total }}: {{ stepsNotice.label }}</span>

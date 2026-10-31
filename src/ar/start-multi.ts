@@ -27,6 +27,8 @@ export interface MultiCard {
   /** Carta shiny: halo dourado e estrelinhas em volta do Pokémon. */
   shiny?: boolean;
   evolved?: boolean;
+  /** Arquétipos da carta: cada um toca a sua animação quando o Pokémon aparece. */
+  archetypes?: readonly string[];
 }
 
 export interface StartMultiOptions {
@@ -38,6 +40,7 @@ export interface StartMultiOptions {
   onState: (state: MultiArState) => void;
   onSprite: (cardId: string, state: SpriteLoadState) => void;
   evolutionFx?: () => boolean;
+  archetypeFx?: () => boolean;
 }
 
 export interface RunningMulti {
@@ -54,6 +57,7 @@ export async function startMulti(options: StartMultiOptions): Promise<RunningMul
     const sprite = new CardSprite({ frameCacheBytes: SPRITE_FRAME_CACHE_BYTES });
     sprite.setShiny(card.shiny === true);
     sprite.setEvolved(card.evolved === true, options.evolutionFx);
+    if (card.archetypes) sprite.setArchetypes(card.archetypes, options.archetypeFx);
     return { cardId: card.cardId, name: card.name, sprite };
   });
   const session = new MultiArSession({

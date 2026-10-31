@@ -49,6 +49,16 @@ useDialogFocus(dialogEl);
         {{ visual.shadow ? 'Uma sombra suave e um brilho fino aparecem na carta, embaixo do Pokémon.' : 'Sem sombra nem brilho: mais leve para celulares fracos.' }}
       </p>
     </section>
+    <section v-if="!battle">
+      <h4>Animações dos arquétipos</h4>
+      <div class="chips" role="group" aria-label="Animações dos arquétipos">
+        <button type="button" :class="{ active: visual.archetypeFx }" :aria-pressed="visual.archetypeFx" @click="visual.archetypeFx = true">Ligadas</button>
+        <button type="button" :class="{ active: !visual.archetypeFx }" :aria-pressed="!visual.archetypeFx" @click="visual.archetypeFx = false">Desligadas</button>
+      </div>
+      <p class="hint">
+        {{ visual.archetypeFx ? 'Quando o Pokémon aparece, cada arquétipo da carta toca a sua animação (fogo, selo GX, raridade, região…), umas por cima das outras.' : 'Sem as animações dos arquétipos: mais leve para celulares fracos.' }}
+      </p>
+    </section>
     <section v-if="battle">
       <h4>Luz dos golpes</h4>
       <div class="chips" role="group" aria-label="Luz dos golpes">

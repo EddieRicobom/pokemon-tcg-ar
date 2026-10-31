@@ -23,6 +23,8 @@ export interface StartArOptions {
   shiny?: boolean;
   evolved?: boolean;
   evolutionFx?: () => boolean;
+  /** Arquétipos da carta: cada um toca a sua animação quando o Pokémon aparece (`enabled` lê a opção visual). */
+  archetypes?: { ids: readonly string[]; enabled: () => boolean; onStart?: () => void };
   /** Sprite já guardado no cache (se houver); senão busca na rede. */
   cachedSprite?: SpriteSource | null;
   /** `shiny`: a carta é shiny; tenta o sprite shiny (se não existir, o normal). */
@@ -51,6 +53,7 @@ export async function startAr(options: StartArOptions): Promise<RunningAr> {
   const sprite = new CardSprite();
   sprite.setShiny(options.shiny === true);
   sprite.setEvolved(options.evolved === true, options.evolutionFx);
+  if (options.archetypes) sprite.setArchetypes(options.archetypes.ids, options.archetypes.enabled, options.archetypes.onStart);
   const panel = options.battle ? new StatsPanel(options.battle.name, options.dexId) : null;
   const session = new ArSession({
     engine: new MindArEngine(),

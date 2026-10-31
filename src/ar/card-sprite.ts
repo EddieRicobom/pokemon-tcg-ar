@@ -16,6 +16,10 @@ import { makePlaceholder } from './placeholder';
 import { ShinyAura } from './shiny-aura';
 import { BondArrival } from './bond-arrival';
 import { bondArrivalAt } from '../core/bond-arrival';
+import { ArchetypeFx } from './archetype-fx';
+import type { FxAnchor } from './archetype-fx';
+import { planArchetypeFx } from '../core/archetype-fx';
+import type { FxLayer } from '../core/archetype-fx';
 import { adaptiveTauMs, smoothingAlpha } from './smoothing';
 
 
@@ -99,6 +103,12 @@ export class CardSprite {
   private arrivalEnabled: () => boolean = () => true;
   private readonly arrivalScale = new Vector3();
   private readonly arrivalShift = new Matrix4();
+  /** Animações dos arquétipos da carta: tocam uma vez, quando o Pokémon aparece (depois da chegada do evoluído). */
+  private fxPlan: FxLayer[] = [];
+  private fx: ArchetypeFx | null = null;
+  private fxStarted: number | null = null;
+  private fxEnabled: () => boolean = () => true;
+  private onFxStart: (() => void) | undefined;
   private gif: DecodedGif | null = null;
   private texture: DataTexture | null = null;
   private aspect = 1;
@@ -194,6 +204,56 @@ export class CardSprite {
     this.mesh.matrix.multiply(this.arrivalShift).scale(this.arrivalScale.set(f.scale, f.scale, 1));
     this.mesh.matrixWorldNeedsUpdate = true;
     this.arrivalDone = f.done;
+  }
+
+  /**
+   * Arquétipos da carta (ids de `core/archetypes`): cada um toca a sua animação, sobrepostas em sequência, na primeira
+   * vez que o Pokémon aparece sobre a carta. `onStart` avisa a interface quando a animação começa de fato.
+   */
+  setArchetypes(ids: readonly string[], enabled: () => boolean = () => true, onStart?: () => void): void {
+    this.stopArchetypes();
+    this.fxPlan = planArchetypeFx(ids);
+    this.fxEnabled = enabled;
+    this.onFxStart = onStart;
+  }
+
+  /** Toca de novo as animações dos arquétipos (começa assim que o Pokémon estiver na tela). */
+  replayArchetypes(): void {
+    this.stopArchetypes();
+  }
+
+  get archetypeCount(): number {
+    return this.fxPlan.length;
+  }
+
+  private stopArchetypes(): void {
+    this.fx?.dispose();
+    this.fx = null;
+    this.fxStarted = null;
+  }
+
+  private updateArchetypes(nowMs: number): void {
+    if (this.fxPlan.length === 0) return;
+    if (this.fxStarted === null) {
+      const ready = this.group.visible && (this.mode === 'animated' || this.mode === 'static') && (!this.arrival || this.arrivalDone);
+      if (!ready || !this.fxEnabled()) return;
+      this.fxStarted = nowMs;
+      this.fx = new ArchetypeFx(this.fxPlan);
+      this.group.add(this.fx.group);
+      this.onFxStart?.();
+    }
+    if (!this.fx) return;
+    if (this.fx.update(nowMs - this.fxStarted, this.fxAnchor())) {
+      this.fx.dispose();
+      this.fx = null;
+    }
+  }
+
+  /** Chão sob o Pokémon e o tamanho do desenho visível (sem a margem transparente do GIF). */
+  private fxAnchor(): FxAnchor {
+    const p = this.placement;
+    const height = p.heightRatio * this.contentFrac;
+    return { x: p.x, y: p.y, width: p.heightRatio * this.aspect, height };
   }
 
   setLayout(layout: SpriteLayout): void {
@@ -397,6 +457,7 @@ export class CardSprite {
   update(nowMs: number): boolean {
     this.smoothPose(nowMs);
     this.updateArrival(nowMs);
+    this.updateArchetypes(nowMs);
     this.aura?.update(nowMs);
     if (this.glow.visible) this.glow.material.opacity = this.glowBase * (0.75 + 0.25 * Math.sin(nowMs / 650));
     if (this.mode !== 'animated' || !this.gif || !this.texture) return false;
@@ -474,6 +535,8 @@ export class CardSprite {
     this.disposed = true;
     this.arrival?.dispose();
     this.arrival = null;
+    this.stopArchetypes();
+    this.fxPlan = [];
     this.setShiny(false);
     this.releaseTexture();
     this.mesh.geometry.dispose();
