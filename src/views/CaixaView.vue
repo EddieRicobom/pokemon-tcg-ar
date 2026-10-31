@@ -704,6 +704,7 @@ onBeforeUnmount(() => {
               <strong>Quem vai lutar · {{ rosterRows.filter((r) => slotOf(r.id) !== 'out').length }}/{{ rosterRows.length }}</strong>
               <button v-if="rosterCustom" type="button" class="link" @click="resetRoster">Tudo em sorteio</button>
             </div>
+            <p class="hint roster-moves">Os golpes de cada Pokémon (até 4) são montados na Arena Digital e valem aqui também. <a :href="routeHref('arena', undefined, ['golpes'])">Escolher golpes</a></p>
             <p class="hint">Escolha Vermelha ou Azul para cada Pokémon, ou Fora para deixá-lo só passeando na Caixa. Quem ficar em sorteio completa os lados. No 3x3 cada lado usa 3.</p>
             <ul class="roster-list">
               <li v-for="row in rosterRows" :key="row.id" :class="{ out: roster[row.id] === 'out' }">

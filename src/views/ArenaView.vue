@@ -6,7 +6,7 @@ import { movesetBook, savedMoves } from '../app/moveset-store';
 import type { DuelOpponentSpec } from '../app/turn-duel-setup';
 import { pendingChallenge } from '../app/league-store';
 import { league } from '../app/league-store';
-import { arenaFlags, routeHref } from '../app/route';
+import { arenaFlags, routeFlags, routeHref } from '../app/route';
 import TeamPicker from '../components/TeamPicker.vue';
 import LeagueCard from '../components/LeagueCard.vue';
 import ArenaMovesetEditor from '../components/ArenaMovesetEditor.vue';
@@ -85,7 +85,11 @@ function enterChallenge(): void {
   }
   window.location.hash = routeHref('caixa', undefined, arenaBoxFlags(['autoiniciar']));
 }
-onMounted(() => { if (waitingChallenge.value) void nextTick(goToTeam); });
+// `?golpes=1` vem do atalho da escalação da Arena 3D: abre direto nos golpes da equipe.
+onMounted(() => {
+  if (routeFlags(window.location.hash).has('golpes')) void nextTick(goToMoves);
+  else if (waitingChallenge.value) void nextTick(goToTeam);
+});
 </script>
 
 <template>
