@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Mesh, MeshBasicMaterial, Sprite } from 'three';
-import { ColiseuScenery, paintFlame, paintSand, paintStands, paintWallTile, SCENERY_RADIUS, STANDS_H, STANDS_W } from './coliseu-scenery';
+import { ColiseuScenery, paintFlame, paintPennant, paintSand, paintStands, paintWallTile, SCENERY_RADIUS, STANDS_H, STANDS_W, standsPoint } from './coliseu-scenery';
 import type { PixelBuf } from './ground-art';
 
 const px = (b: PixelBuf, x: number, y: number) => (b.data[(y * b.w + x) * 4]! << 16) | (b.data[(y * b.w + x) * 4 + 1]! << 8) | b.data[(y * b.w + x) * 4 + 2]!;
@@ -58,6 +58,27 @@ describe('texturas do Coliseu', () => {
     expect(alpha(flame, 0, 0)).toBe(0);
     expect(alpha(flame, 3, 15)).toBe(255);
     expect(alpha(flame, 0, 15)).toBe(0);
+  });
+});
+
+describe('torcida no Coliseu', () => {
+  it('o ponto da arquibancada sobe e se afasta com a fileira; π é o fundo, de frente para a câmera', () => {
+    const low = standsPoint(Math.PI, 0);
+    const high = standsPoint(Math.PI, 1);
+    expect(low.z).toBeCloseTo(-SCENERY_RADIUS, 6);
+    expect(Math.abs(low.x)).toBeLessThan(1e-9);
+    expect(high.y).toBeGreaterThan(low.y);
+    expect(Math.hypot(high.x, high.z)).toBeGreaterThan(Math.hypot(low.x, low.z));
+    expect(standsPoint(Math.PI, 7)).toEqual(high);
+  });
+
+  it('a bandeirinha tem mastro e flâmula na cor da equipe, com fundo transparente', () => {
+    const red = paintPennant(0);
+    const blue = paintPennant(1);
+    expect(redish(px(red, 2, 1))).toBe(true);
+    expect(blueish(px(blue, 2, 1))).toBe(true);
+    expect(alpha(red, 0, 10)).toBe(255);
+    expect(alpha(red, 6, 10)).toBe(0);
   });
 });
 

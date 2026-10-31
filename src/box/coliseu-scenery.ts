@@ -17,6 +17,16 @@ export const SCENERY_RADIUS = 5;
 const WALL_HEIGHT = 0.96;
 const STANDS_DEPTH = 3.2;
 const STANDS_RISE = 2.2;
+
+/**
+ * Ponto da arquibancada (relativo ao centro da arena, no chão) no ângulo `angle` (π = o fundo, de frente para a câmera)
+ * e na altura `row` (0 rente ao muro, 1 no topo): é onde a torcida se senta.
+ */
+export function standsPoint(angle: number, row: number, radius: number = SCENERY_RADIUS): { x: number; y: number; z: number } {
+  const t = Math.min(1, Math.max(0, row));
+  const r = radius + t * STANDS_DEPTH;
+  return { x: Math.sin(angle) * r, y: WALL_HEIGHT + t * STANDS_RISE, z: Math.cos(angle) * r };
+}
 const TORCHES = 12;
 
 const STONE = { light: 0xe0d4b2, mid: 0xc9bb96, dark: 0xa3956f, shade: 0x7a6e52, deep: 0x2a2218 } as const;
@@ -102,6 +112,26 @@ export function paintFlame(): PixelBuf {
   rect(b, 3, 14, 2, 1, STONE.shade);
   rect(b, 3, 15, 2, 1, STONE.deep);
   return b;
+}
+
+/** Bandeirinha da torcida (8×12): mastro claro e flâmula na cor da equipe (0 vermelha, 1 azul), com a ponta para a direita. */
+export function paintPennant(team: 0 | 1): PixelBuf {
+  const c = team === 0 ? RED : BLUE;
+  const b = createBuf(8, 12);
+  rect(b, 0, 0, 1, 12, STONE.light);
+  put(b, 0, 11, STONE.shade);
+  for (let y = 0; y < 7; y++) {
+    const w = 7 - y;
+    rect(b, 1, y, w, 1, c.main);
+    put(b, w, y, c.dark);
+  }
+  rect(b, 1, 6, 1, 1, c.dark);
+  return b;
+}
+
+/** Textura da bandeirinha (quem chama descarta). */
+export function pennantTexture(team: 0 | 1): DataTexture {
+  return texture(paintPennant(team));
 }
 
 /** Os buffers RGBA começam no topo e o UV tem a origem embaixo: `repeat.y = -1` desvira sem custo (como em `ground.ts`). */
