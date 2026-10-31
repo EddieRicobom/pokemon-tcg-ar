@@ -1082,6 +1082,52 @@ body.no-scroll {
   border-color: rgba(95, 211, 141, 0.7);
 }
 
+/* Arquétipos da carta no AR: rótulos que saltam no mesmo ritmo das animações (cel-shading: borda grossa, sombra dura). */
+.pill.archetype-fx {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  max-width: min(100%, 520px);
+  padding: 6px 8px;
+}
+
+.fx-chip {
+  padding: 2px 8px;
+  border: 2px solid #1d1b26;
+  border-radius: 999px;
+  background: #fff4b8;
+  color: #1d1b26;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-shadow: none;
+  box-shadow: 2px 2px 0 #1d1b26;
+  opacity: 0;
+  transform: scale(0.4) translateY(6px);
+  animation: fx-chip-pop 380ms steps(5, end) forwards;
+}
+
+@keyframes fx-chip-pop {
+  60% { opacity: 1; transform: scale(1.18) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.pill.archetype-replay {
+  pointer-events: auto;
+  cursor: pointer;
+  border-color: rgba(255, 214, 102, 0.75);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-chip {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .pill.warn {
   border-color: rgba(255, 209, 102, 0.8);
 }

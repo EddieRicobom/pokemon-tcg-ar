@@ -4,6 +4,7 @@
 
 - **Fonte `carta`:** só para cartas escaneadas. Sai do nome impresso, da raridade e da coleção; alguns usam os detalhes do TCGdex (`traits`), que as cartas novas guardam e as antigas ganham quando forem escaneadas de novo.
 - **Fonte `espécie` / `stats`:** vale para todos, inclusive Digital Pokémon.
+- **Animação ao escanear:** quando o Pokémon aparece sobre a carta (Escanear e Várias), cada arquétipo toca a sua animação, em sequência e sobrepostas (`src/core/archetype-fx.ts`: receita de cada id, plano e movimento; `src/ar/archetype-sprites.ts`: folhas de quadros em cel-shading pré-renderizadas no aparelho). Arquétipo novo precisa de receita em `ARCHETYPE_FX` (o teste confere). Desliga em Opções visuais › «Animações dos arquétipos» e no Modo Rotom.
 - **Uso futuro:** `teamArchetypes()` conta quantos membros de uma equipe dividem cada arquétipo, como base para bônus de sinergia nos modos de jogo (ainda não aplicados).
 
 ## Mecânica da carta (28)

@@ -3849,6 +3849,10 @@ onBeforeUnmount(() => {
             <span>Chegada especial dos companheiros evoluídos nas cartas (desligue em celular fraco)</span>
           </label>
           <label class="art-option">
+            <input v-model="visual.archetypeFx" type="checkbox" />
+            <span>Animações dos arquétipos ao aparecer o Pokémon sobre a carta (desligue em celular fraco)</span>
+          </label>
+          <label class="art-option">
             <input v-model="visual.villageFx" type="checkbox" />
             <span>Efeitos da Vila: ondas, respingos da fonte e raios de sol (desligue em celular fraco)</span>
           </label>

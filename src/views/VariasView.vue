@@ -19,6 +19,7 @@ import { CameraError, startRearCamera, stopCamera } from '../core/camera';
 import { loadChunk } from '../app/stale-build';
 import { spriteIdOf } from '../core/dex-form';
 import { isShiny } from '../core/shiny';
+import { cardArchetypeIds } from '../app/card-archetypes';
 
 type Phase = 'idle' | 'starting' | 'running';
 
@@ -110,9 +111,10 @@ async function open(): Promise<void> {
       cards: prepared.ready.map((r) => {
         const companion = companionCard(r.card);
         const evolved = companion !== r.card;
-        return { cardId: r.card.id, name: companion.name, dexId: spriteIdOf(companion), shiny: isShiny(r.card), target: r.target, cachedSprite: evolved ? null : r.cachedSprite, evolved };
+        return { cardId: r.card.id, name: companion.name, dexId: spriteIdOf(companion), shiny: isShiny(r.card), target: r.target, cachedSprite: evolved ? null : r.cachedSprite, evolved, archetypes: cardArchetypeIds(r.card) };
       }),
       evolutionFx: () => effectiveVisual.value.evolutionFx && !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      archetypeFx: () => effectiveVisual.value.archetypeFx && !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       fetchSprite: (dexId, shiny) => fetchSprite(dexId, undefined, { shiny }),
       onState: (s) => {
         if (mine === run) state.value = s;
