@@ -1,5 +1,5 @@
 import { buildFighter } from '../core/battle';
-import type { Fighter } from '../core/battle';
+import type { BattleMove, Fighter } from '../core/battle';
 import type { BattleData, PartName } from './pokemon-data-service';
 import { emptyBattleData } from './pokemon-data-service';
 
@@ -7,6 +7,8 @@ export interface FighterSeed {
   id: string;
   name: string;
   dexId?: number;
+  /** Golpes escolhidos na Arena: no lugar dos golpes do jogo e da carta. */
+  moves?: BattleMove[];
 }
 
 export type BattleLoader = (cardId: string, dexId: number | undefined, onPart: <K extends PartName>(part: K, result: BattleData[K]) => void) => Promise<void>;
@@ -53,12 +55,14 @@ export async function prepareFighters(seeds: readonly FighterSeed[], load: Battl
   );
   return seeds.map((seed, i) => {
     const data = loaded[i]!;
-    return buildFighter({
+    const fighter = buildFighter({
       id: seed.id,
       name: seed.name,
       profile: data.profile.state === 'ok' ? data.profile.value : null,
       card: data.card.state === 'ok' ? data.card.value : null,
       gameMoves: data.moves.state === 'ok' ? data.moves.value : [],
     });
+    if (!seed.moves || seed.moves.length === 0) return fighter;
+    return { ...fighter, moves: seed.moves.map((m) => ({ ...m })), notes: fighter.notes.filter((n) => !n.includes('ataques da carta') && !n.includes('sem golpes')) };
   });
 }

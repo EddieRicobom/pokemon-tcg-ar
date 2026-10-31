@@ -11,6 +11,9 @@ vi.mock('../components/TeamPicker.vue', () => ({
   }),
 }));
 
+// A equipe vem do cache de cartas (IndexedDB): aqui fica vazia, o que importa é o fluxo do desafio.
+vi.mock('../app/arena-members', () => ({ loadArenaMembers: vi.fn(async () => []) }));
+
 vi.mock('../components/LeagueCard.vue', async () => {
   const { pendingChallenge } = await import('../app/league-store');
   return {

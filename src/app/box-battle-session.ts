@@ -13,6 +13,7 @@ import { trainerSpriteUrl } from '../core/trainer-sprites';
 import type { CreatureEntry } from '../box/box-scene';
 import type { BattleResult } from '../core/battle';
 import { prepareFighters } from './battle-setup';
+import { savedBattleMoves } from './moveset-store';
 import { megaAwareLoader, planMegaBattle } from './mega-battle';
 import { rosterFor, slotOf } from './roster-store';
 import { battleMode } from './battle-mode-store';
@@ -228,7 +229,7 @@ export function createBattleSession(host: BattleSessionHost, ui: BattleSessionUi
     const key = mine.map((e) => e.info.id).join('|');
     if (key !== pvpTeamKey) {
       pvpTeamKey = key;
-      pvpFighters = withBond(await prepareFighters(mine.map((e) => ({ id: e.info.id, name: host.shown(e.info.id, e.info.name), dexId: e.info.dexId })), loadBattle));
+      pvpFighters = withBond(await prepareFighters(mine.map((e) => ({ id: e.info.id, name: host.shown(e.info.id, e.info.name), dexId: e.info.dexId, moves: savedBattleMoves(e.info.id, e.info.dexId) })), loadBattle));
       if (key !== pvpTeamKey) return;
     }
     const mons: BoxPvpMon[] = mine.map((e, i) => ({ id: e.info.id, name: host.shown(e.info.id, e.info.name), sprite: e.info.dexId ?? 1, shiny: e.info.shiny === true, fighter: pvpFighters[i]! }));
@@ -416,7 +417,7 @@ export function createBattleSession(host: BattleSessionHost, ui: BattleSessionUi
       current.setCreatures([...mine, ...leader.entries]);
       hint.value = 'Preparando a batalha: buscando atributos e golpes…';
       const creatures = current.scene.creatureList;
-      const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: host.shown(c.info.id, c.info.name), dexId: c.info.dexId })), leaderLoader(loadBattle));
+      const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: host.shown(c.info.id, c.info.name), dexId: c.info.dexId, moves: savedBattleMoves(c.info.id, c.info.dexId) })), leaderLoader(loadBattle));
       if (host.disposed() || host.box() !== current) return;
       const fighters = raw.map((f, i) => (i >= mine.length ? leaderFighter(f, ch.power) : withBond([f])[0]!));
       const plan = challengePlan(mine.length, leader.entries.length, ch, profile.name);
@@ -471,7 +472,7 @@ export function createBattleSession(host: BattleSessionHost, ui: BattleSessionUi
     error.value = '';
     hint.value = 'Conferindo a sua equipe de 6 para a Arena…';
     try {
-      const fighters = withBond(await prepareFighters(mine.map((c) => ({ id: c.info.id, name: host.shown(c.info.id, c.info.name), dexId: c.info.dexId })), loadBattle));
+      const fighters = withBond(await prepareFighters(mine.map((c) => ({ id: c.info.id, name: host.shown(c.info.id, c.info.name), dexId: c.info.dexId, moves: savedBattleMoves(c.info.id, c.info.dexId) })), loadBattle));
       if (host.disposed() || host.box() !== current) return;
       const run = startEndlessArena(mode, fighters);
       if (!run) throw new Error('a sua equipe precisa ter exatamente 6 Pokémon');
@@ -511,7 +512,7 @@ export function createBattleSession(host: BattleSessionHost, ui: BattleSessionUi
       hint.value = 'Preparando atributos e golpes da próxima equipe…';
       current.setCreatures([...endlessEntries, ...loaded.entries]);
       const creatures = current.scene.creatureList;
-      const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: host.shown(c.info.id, c.info.name), dexId: c.info.dexId })), leaderLoader(loadBattle));
+      const raw = await prepareFighters(creatures.map((c) => ({ id: c.info.id, name: host.shown(c.info.id, c.info.name), dexId: c.info.dexId, moves: savedBattleMoves(c.info.id, c.info.dexId) })), leaderLoader(loadBattle));
       if (host.disposed() || host.box() !== current || endlessRun.value !== run || run.stopped) return;
       if (raw.length !== MAX_CHALLENGE_TEAM * 2) throw new Error('a equipe adversária não ficou completa');
       const power = Math.min(1.72, 1.2 + run.wins * 0.035);
@@ -601,7 +602,7 @@ export function createBattleSession(host: BattleSessionHost, ui: BattleSessionUi
         energy.value,
         { prepare: prepareMegaFor, decode: decodeMegaSprite },
       );
-      const fighters = withBond(await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: host.shown(c.info.id, c.info.name), dexId: c.info.dexId })), megaAwareLoader(loadBattle, megaPlan.entries)));
+      const fighters = withBond(await prepareFighters(fighting.map((c) => ({ id: c.info.id, name: host.shown(c.info.id, c.info.name), dexId: c.info.dexId, moves: savedBattleMoves(c.info.id, c.info.dexId) })), megaAwareLoader(loadBattle, megaPlan.entries)));
       if (host.disposed() || host.box() !== current) return;
       battleCounted = false;
       for (const entry of megaPlan.entries) fighting.find((c) => c.info.id === entry.cardId)?.setForm(entry.source);

@@ -29,6 +29,12 @@ export function pokemonSpriteUrl(dexId: number, shiny = false): string {
   return `${POKEAPI_SHOWDOWN_BASE_URL}/${shiny ? 'shiny/' : ''}${dexId}.gif`;
 }
 
+/** GIF animado de costas (o seu lado no duelo por turnos). Nem toda espécie tem: quem usa cai no de frente se falhar. */
+export function pokemonBackSpriteUrl(dexId: number, shiny = false): string {
+  assertDexId(dexId);
+  return `${POKEAPI_SHOWDOWN_BASE_URL}/back/${shiny ? 'shiny/' : ''}${dexId}.gif`;
+}
+
 /**
  * Sprites estáticos transparentes, do mais leve ao mais pesado. Todos existiam
  * para 25, 1008 e 1009 na verificação de 2026-10-11.

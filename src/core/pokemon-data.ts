@@ -109,7 +109,7 @@ export const MOVE_LEVEL_CAP = 50;
 export const MOVES_SHOWN = 4;
 
 /** Grupos de versão do mais antigo ao mais novo (a resposta da PokéAPI não traz essa ordem). Legends: Arceus fica de fora (níveis de "maestria"). */
-const VERSION_GROUP_ORDER = [
+export const VERSION_GROUP_ORDER: readonly string[] = [
   'red-blue', 'yellow', 'gold-silver', 'crystal', 'ruby-sapphire', 'emerald', 'firered-leafgreen', 'diamond-pearl', 'platinum',
   'heartgold-soulsilver', 'black-white', 'black-2-white-2', 'x-y', 'omega-ruby-alpha-sapphire', 'sun-moon',
   'ultra-sun-ultra-moon', 'sword-shield', 'brilliant-diamond-and-shining-pearl', 'scarlet-violet',
