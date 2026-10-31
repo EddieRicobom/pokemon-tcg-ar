@@ -16,7 +16,7 @@ import { stopCamera } from '../core/camera';
 import type { RunningVillageAr } from '../ar/start-village';
 import { VILLAGE_SCALE_RANGE, normalizeVillageScale } from '../core/village/ar-diorama';
 import { canNickname, displayName, MAX_NICK_LEN, nickIdeas, nicknameOf, setNickname } from '../core/village/nickname';
-import { minimapPixels, minimapTileAt } from '../village/minimap';
+import { minimapBuildingGuides, minimapPixels, minimapTileAt, MINIMAP_BUILDING_ICONS } from '../village/minimap';
 import { loadTrainerAtlas } from '../village/trainer-atlas';
 import { recordEvent, trainer } from '../app/trainer-store';
 import { claimPrizes } from '../core/village/rewards';
@@ -37,6 +37,8 @@ import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 import DungeonGame from './DungeonGame.vue';
 import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_MEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
+import { VILLAGE_GAME_MENU } from '../core/village/mode-navigation';
+import type { VillageGamePlaceKind } from '../core/village/mode-navigation';
 import { personalityOf } from '../core/village/personality';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { ACCESSORY_IDS, COOK_IDS, CRAFT_IDS, FURNITURE_IDS, itemDef, ITEMS, shopToday } from '../core/village/catalog';
@@ -247,7 +249,7 @@ const MENU_TITLES: Record<Tab, string> = {
   album: 'Álbum de Memórias', colecao: 'Coleção de Móveis', livro: 'Livro dos Pokémon', visual: 'Visual e Acessórios', trabalhos: 'Trabalhos da Vila', dojo: 'Dojô da Torre', lendas: 'Caderno de Lendas',
 };
 /** Um lugar da Vila aberto direto pelo menu (ou trancado, com o nível que falta). */
-function placeTile(kind: 'arcade' | 'arena' | 'torre', icon: string, label: string): MenuTile {
+function placeTile(kind: VillageGamePlaceKind, icon: string, label: string): MenuTile {
   const b = map.buildings.find((x) => x.kind === kind);
   const open = !!b && level.value >= b.unlock;
   return {
@@ -293,7 +295,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   },
   {
     title: 'Lugares da Vila',
-    tiles: [{ icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, placeTile('arcade', '🕹️', 'Fliperama'), placeTile('arena', '⚔️', 'Arena'), placeTile('torre', '🗼', 'Torre')],
+    tiles: [{ icon: '📬', label: 'Correio', hint: mailUnread.value > 0 ? `${mailUnread.value} nova(s)` : 'cartas e momentos', badge: mailUnread.value || undefined, run: openMail }, ...VILLAGE_GAME_MENU.map((place) => placeTile(place.kind, place.icon, place.label))],
   },
   {
     title: 'Fora da Vila',
@@ -2706,7 +2708,7 @@ let miniTimer: ReturnType<typeof setInterval> | null = null;
 /** Pixels por bloco no minimapa (o grande é o mesmo desenho, só que maior na tela). */
 let MINI_K = 3;
 const minimapGuides = [
-  ...map.buildings.filter((b) => b.kind !== 'home').map((b) => ({ name: b.name, icon: ({ cafe: '☕', mail: '✉️', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', masmorra: '🗝️', fountain: '⛲' } as Record<string, string>)[b.kind] ?? '📍', x: b.door.x, y: b.door.y })),
+  ...minimapBuildingGuides(map),
   ...WORK_SITES.map((p) => ({ name: p.name, icon: p.icon, ...p.visit })),
   ...LEISURE_SPOTS,
 ];
@@ -2714,9 +2716,6 @@ function visitMapGuide(place: { name: string; x: number; y: number }): void { ga
 const minimapSpeakerName = computed(() => minimapSpeakerId.value ? nameOf(minimapSpeakerId.value) : '');
 const minimapRouteLabel = computed(() => minimapRoute.value);
 const guidedTripActive = computed(() => { guidedTripVersion.value; return !!guidedTrip; });
-const MINIMAP_BUILDING_ICONS: Record<string, string> = {
-  cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', masmorra: '🗝️', fountain: '⛲',
-};
 const MINIMAP_WORKSITE_ICONS: Record<string, string> = { farm: '🌱', mine: '⛏️', lumber: '🪓', fishing: '🎣' };
 const guidedRouteStatus = computed(() => {
   minimapTick.value;

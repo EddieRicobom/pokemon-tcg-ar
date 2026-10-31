@@ -1,5 +1,17 @@
 import type { Tile, VillageMap } from '../core/village/map';
 
+/** Ícones dos prédios no guia e sobreposição do minimapa. */
+export const MINIMAP_BUILDING_ICONS: Readonly<Partial<Record<VillageMap['buildings'][number]['kind'], string>>> = {
+  cafe: '☕', mail: '📬', museum: '🏛️', arcade: '🕹️', pins: '🎳', arena: '⚔️', torre: '🗼', masmorra: '🗝️', fountain: '⛲',
+};
+
+/** Lugares com porta que aparecem no guia expansível do minimapa. */
+export function minimapBuildingGuides(map: Pick<VillageMap, 'buildings'>): { name: string; icon: string; x: number; y: number }[] {
+  return map.buildings
+    .filter((building) => building.kind !== 'home')
+    .map((building) => ({ name: building.name, icon: MINIMAP_BUILDING_ICONS[building.kind] ?? '📍', x: building.door.x, y: building.door.y }));
+}
+
 /**
  * O minimapa da Vila: um pixel por bloco, com a cor de cada tipo de chão (as ruas e a praça claras, a água azul, as
  * matas escuras, os prédios marrons). Os pontos (você, os Pokémon, o sino) são desenhados por cima, a cada instante, em

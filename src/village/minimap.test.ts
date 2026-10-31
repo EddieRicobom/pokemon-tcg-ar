@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateVillage, TILES } from '../core/village/map';
-import { MINI_COLORS, minimapPixels, minimapTileAt } from './minimap';
+import { minimapBuildingGuides, MINI_COLORS, minimapPixels, minimapTileAt } from './minimap';
 
 describe('minimapa da Vila', () => {
   it('todo tipo de chão tem cor, e água, rua e mata se distinguem', () => {
@@ -24,5 +24,11 @@ describe('minimapa da Vila', () => {
     expect(minimapTileAt(map, 96, 72, 192, 144)).toEqual({ x: 48, y: 36 });
     expect(minimapTileAt(map, -1, 5, 192, 144)).toBeNull();
     expect(minimapTileAt(map, 5, 5, 0, 144)).toBeNull();
+  });
+
+  it('oferece o Portão da Masmorra no guia do mapa grande', () => {
+    const map = generateVillage(20261031);
+    const dungeon = map.buildings.find((building) => building.kind === 'masmorra')!;
+    expect(minimapBuildingGuides(map)).toContainEqual({ name: dungeon.name, icon: '🗝️', x: dungeon.door.x, y: dungeon.door.y });
   });
 });
