@@ -18,8 +18,17 @@ export interface SurvivorMinimapViewport {
 
 export interface SurvivorMinimapSnapshot {
   markers: SurvivorMinimapMarker[];
+  /** Recorte próximo do mundo desenhado no minimapa, centrado no jogador quando houver espaço. */
+  bounds: SurvivorMinimapViewport;
   viewport: SurvivorMinimapViewport;
 }
+
+/**
+ * O mapa inteiro mede 8640×5760: espremê-lo num canto transforma inimigos e
+ * obstáculos em subpixels. Esta janela mostra uma área jogável próxima, grande
+ * o bastante para antecipar chefes e saídas sem perder os detalhes úteis.
+ */
+export const SURVIVOR_MINIMAP_WINDOW = { width: 1800, height: 1200 } as const;
 
 /**
  * Escolhe os sinais que merecem espaço no mapa sem desenhar todos os inimigos vivos.
@@ -54,13 +63,34 @@ export function minimapViewport(
   };
 }
 
+/** Recorte local do minimapa. Nas bordas ele desliza para nunca mostrar fora da arena. */
+export function minimapBounds(
+  player: Pick<SurvivorState['player'], 'x' | 'y'>,
+  arena: { width: number; height: number },
+  size: { width: number; height: number } = SURVIVOR_MINIMAP_WINDOW,
+): SurvivorMinimapViewport {
+  const width = Math.min(arena.width, Math.max(1, size.width));
+  const height = Math.min(arena.height, Math.max(1, size.height));
+  return {
+    x: clamp(player.x - width / 2, 0, arena.width - width),
+    y: clamp(player.y - height / 2, 0, arena.height - height),
+    width,
+    height,
+  };
+}
+
 export function survivorMinimapSnapshot(
   state: Pick<SurvivorState, 'player' | 'enemies' | 'artifacts'>,
   arena: { width: number; height: number },
   view: { width: number; height: number },
   limit = 36,
 ): SurvivorMinimapSnapshot {
-  return { markers: minimapMarkers(state, limit), viewport: minimapViewport(state.player, arena, view) };
+  const bounds = minimapBounds(state.player, arena);
+  const markers = minimapMarkers(state, limit).filter((marker) => (
+    marker.x >= bounds.x && marker.x <= bounds.x + bounds.width
+    && marker.y >= bounds.y && marker.y <= bounds.y + bounds.height
+  ));
+  return { markers, bounds, viewport: minimapViewport(state.player, arena, view) };
 }
 
 function markerKind(enemy: SurvivorEnemy): SurvivorMinimapMarkerKind {

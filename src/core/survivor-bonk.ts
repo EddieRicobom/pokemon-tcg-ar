@@ -9,8 +9,8 @@ import type { SurvivorPlayer } from './survivor-types';
 
 export const BONK_GRAVITY = 1250;
 export const BONK_BASE_JUMP_POWER = 470;
-/** Câmera em terceira pessoa: atrás e acima do jogador, com o horizonte no terço de cima da tela. */
-export const BONK_CAMERA = { distance: 250, height: 120, horizonRatio: 0.3, focalRatio: 1, minFocal: 320, near: 20 } as const;
+/** Câmera em terceira pessoa: mais distante, alta e com lente aberta para antecipar obstáculos e inimigos. */
+export const BONK_CAMERA = { distance: 340, height: 160, horizonRatio: 0.3, focalRatio: 0.78, minFocal: 250, near: 20 } as const;
 /** Giro da câmera por segundo com o analógico todo para o lado. */
 export const BONK_TURN_RATE = 3.2;
 /** Um toque no Pular um pouco antes de pousar ainda vale: o salto fica guardado por esse tempo. */
