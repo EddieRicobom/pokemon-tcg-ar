@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { badgePolish, polishOf } from '../app/badge-polish-store';
 import { league, pendingChallenge } from '../app/league-store';
 import { routeHref } from '../app/route';
-import { LEAGUE_REGIONS, regionalProgress, nextChallenge, statusOf } from '../core/league';
+import { LEAGUE_REGIONS, leaguePerks, regionalProgress, nextChallenge, statusOf } from '../core/league';
 import type { Challenge, RegionId } from '../core/league';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
@@ -34,6 +34,7 @@ const sections = computed(() => [
   { title: region.value.champion.role, challenges: [region.value.champion] },
 ].map((section) => ({ ...section, rows: section.challenges.map((c) => ({ c, status: statusOf(league.value, c) })) })));
 const badgeCount = computed(() => progress.value.badges.length);
+const perks = computed(() => leaguePerks(league.value));
 
 /** `challenge` avisa que o desafio foi marcado (a tela da Arena mostra o atalho para a Caixa). */
 const emit = defineEmits<{ challenge: [] }>();
@@ -66,6 +67,11 @@ const doneOf = (rows: { status: string }[]): number => rows.filter((r) => r.stat
     </nav>
     <h3>{{ region.name }} · Geração {{ region.generation }}</h3>
     <p class="note">Equipes de exibição inspiradas nos jogos da região, com dificuldade própria do app.</p>
+    <p class="note league-perk" role="status">
+      <template v-if="perks.pinShotDiscount > 0">🎳 Bônus da Liga: -{{ perks.pinShotDiscount }} moeda{{ perks.pinShotDiscount === 1 ? '' : 's' }} por disparo no Pins. </template>
+      <template v-else>🎳 Conquiste 4 insígnias para reduzir o custo de cada disparo no Pins. </template>
+      Campos liberados: {{ perks.pinFields.map((field) => ({ natural: 'Jardim', ice: 'Geleira', toxic: 'Pântano', psy: 'Salão psíquico' })[field]).join(', ') }}.
+    </p>
     <ul class="badge-case" aria-label="Estojo de insígnias">
       <li v-for="d in designs" :key="d.order" :class="{ won: league.badges.includes(d.order) }" :title="d.name">
         <BadgeIcon :order="d.order" :won="league.badges.includes(d.order)" :polish="polishFor(d.order)" />

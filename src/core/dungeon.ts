@@ -585,6 +585,31 @@ export function reachable(state: DungeonState): Map<string, number> {
   return out;
 }
 
+/**
+ * Caminho mínimo até uma casa alcançável. A interface usa a sequência para animar cada casa, mas o motor também a
+ * expõe para que teclado, toque e futuras IAs não precisem fingir um teleporte. Retorna `null` fora do alcance.
+ */
+export function movementPath(state: DungeonState, to: Cell): Cell[] | null {
+  const costs = reachable(state);
+  let currentCost = costs.get(key(to));
+  if (currentCost === undefined || currentCost <= 0) return null;
+  const reverse: Cell[] = [{ ...to }];
+  let current = { ...to };
+  const exploring = state.phase === 'cleared';
+  while (!same(current, state.pos)) {
+    const enterCost = exploring ? COSTS.move : stepCost(state, current);
+    const previous = DIRS
+      .map((d) => ({ x: current.x - d.x, y: current.y - d.y }))
+      .find((candidate) => (costs.get(key(candidate)) ?? Infinity) + enterCost === currentCost);
+    if (!previous) return null; // estado mutado entre a busca e o caminho: nunca entrega uma rota falsa.
+    reverse.push(previous);
+    current = previous;
+    currentCost = costs.get(key(current))!;
+  }
+  reverse.pop(); // a posição atual não é um passo visível
+  return reverse.reverse();
+}
+
 /** O que ataca agora: a fusão, se houver, ou o Pokémon ativo, já com as gemas. */
 export interface Attacker {
   name: string;

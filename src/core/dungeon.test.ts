@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   adaptiveDifficulty, attack, attackArea, attacker, attackReach, attacksLeft, attackTargets, beginEnemyTurn, BOSS_EVERY, BOSS_FLOOR_EVERY, buildFloor, chooseReward, damage, depthScale, difficultyFloor, eliteChance, endTurn,
   enemyStep, equipGem, EXHAUST_ROUNDS, finishEnemyTurn, fuse, fusionName, fusionOrigins, GRID_H, GRID_W, isBossFloor, isMiniBossFloor, MINI_BOSS_FLOOR_EVERY, move, planEnemy,
-  polishGems, previewAttack, previewFusion, profileFor, reachable, retreat, START_AP, startDungeon, switchTo, threatenedCells, turnAp, typeFactor,
+  polishGems, previewAttack, previewFusion, profileFor, reachable, movementPath, retreat, START_AP, startDungeon, switchTo, threatenedCells, turnAp, typeFactor,
   addMember, unequipGem, usePotion, baseSpeciesDexId, evolveMember, hasCompleteWeaponTable, NATIONAL_DEX_LAST, weaponOfDex, weaponOfferAtFloor,
 } from './dungeon';
 import { allFusions, ammoOptions, biomeOf, CATALOG_ORDER, evolveForDepth, floorGeneration, hazardAt, HOME_BONUS, setAmmo, stepCost, fusionDescription, fusionNumber, fusionWeapon } from './dungeon';
@@ -685,6 +685,17 @@ describe('andares por geração', () => {
     expect(reachable(s).get(`2,${GRID_H - 1}`)).toBe(2);
     s.team[0]!.types = ['water'];
     expect(stepCost(s, { x: 2, y: GRID_H - 1 })).toBe(1);
+  });
+
+  it('devolve uma rota casa a casa com o mesmo custo que o alcance', () => {
+    const s = arena();
+    s.enemies = [];
+    s.hazards = [{ pos: { x: 2, y: GRID_H - 1 }, kind: 'agua' }];
+    const target = { x: 1, y: GRID_H - 1 };
+    const path = movementPath(s, target);
+    expect(path).toEqual([{ x: 2, y: GRID_H - 1 }, target]);
+    expect(path?.at(-1)).toEqual(target);
+    expect(movementPath(s, s.pos)).toBeNull();
   });
 
   it('lava queima quem termina a rodada nela, menos Fogo e Voador', () => {

@@ -5,7 +5,7 @@ import {
   launchSpeed, layoutPins, massOf, MAX_MOVES, MAX_PER_SIDE, MAX_PULL, MIN_PULL, outcomeOf, pinCoinReward, PIN_KO_COINS, PIN_LOSS_COINS_CAP, pinFromSpec, previewPath, scoreMatch, shotFromDrag, stepWorld, STOP_SPEED, typeKnockback,
   typesOf, weightMass,
 } from './pins';
-import { cellOfWorld, createArenaGrid, frictionOfCell, stampType, terrainAffinity, TYPE_FOR_TERRAIN } from './pin-terrain';
+import { applyPinField, cellOfWorld, createArenaGrid, frictionOfCell, stampType, terrainAffinity, TYPE_FOR_TERRAIN } from './pin-terrain';
 import type { Patch, Pin, PinEvent, PinSpec, PinWorld } from './pins';
 import { TERRAIN_FOR_TYPE, TERRAIN_KINDS } from './terrain';
 import type { TerrainGrid, TerrainKind } from './terrain';
@@ -74,6 +74,18 @@ describe('pin a partir do Pokémon', () => {
 });
 
 describe('chão e tipos', () => {
+  it('campos da Liga usam as mesmas marcas e afinidades da arena', () => {
+    const ice = createArenaGrid(1);
+    applyPinField(ice, 'ice');
+    const i = ice.index(11, 11);
+    expect(ice.overlayAt(i)).toBe('frost');
+    expect(frictionOfCell(ice, i, ['normal'])).toBeLessThan(0.2);
+    expect(frictionOfCell(ice, i, ['ice'])).toBe(1);
+    const swamp = createArenaGrid(1);
+    applyPinField(swamp, 'toxic');
+    expect(swamp.overlayAt(i)).toBe('toxic');
+    expect(frictionOfCell(swamp, i, ['poison'])).toBe(1);
+  });
   it('gelo escorrega, lama prende e o tipo certo ignora a marca', () => {
     const frost = flatGrid('frost');
     const toxic = flatGrid('toxic');

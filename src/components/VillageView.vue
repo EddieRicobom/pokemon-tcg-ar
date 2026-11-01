@@ -3639,7 +3639,8 @@ onBeforeUnmount(() => {
               <h5 id="community-council-title">🏛️ Conselho da Vila</h5>
               <p>{{ latestCommunityProject.cause }}</p>
               <template v-if="latestCommunityProject.status === 'proposto'">
-                <p>Se apoiar, a cozinha tentará usar estes ingredientes reais para preparar duas levas: {{ communityProjectCost }}. O estoque só muda quando um morador executar a tarefa.</p>
+                <p v-if="latestCommunityProject.kind === 'cozinha-reforco'">Se apoiar, a cozinha tentará usar estes ingredientes reais para preparar duas levas: {{ communityProjectCost }}. O estoque só muda quando um morador executar a tarefa.</p>
+                <p v-else>Se apoiar, um morador de manutenção usará estes materiais reais no mutirão: {{ communityProjectCost }}. O estoque só muda quando o reparo for executado; o resultado melhora confiança e bem-estar da Vila.</p>
                 <div class="summary-actions">
                   <button type="button" @click="chooseCouncilDecision('apoiar')">Apoiar projeto</button>
                   <button type="button" @click="chooseCouncilDecision('adiar')">Adiar</button>

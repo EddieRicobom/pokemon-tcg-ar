@@ -1,7 +1,7 @@
 import { parseCardDamage, typeEffectiveness } from './battle';
 import type { Rng } from './battle';
-import { createArenaGrid, frictionAt, seedMarks, stampKind, stampType } from './pin-terrain';
-import type { MarkResult, Spot } from './pin-terrain';
+import { applyPinField, createArenaGrid, frictionAt, seedMarks, stampKind, stampType } from './pin-terrain';
+import type { MarkResult, PinField, Spot } from './pin-terrain';
 import { energyLabelPt, energyType } from './pokemon-data';
 import type { BaseStats, CardAttack, PokemonType } from './pokemon-data';
 import type { TerrainGrid, TerrainKind, TerrainReaction } from './terrain';
@@ -399,6 +399,8 @@ export interface WorldOptions {
   marks?: boolean;
   /** A borda da arena encolhe a cada rodada depois do aquecimento. Padrão: não (o jogo liga pela opção). */
   shrink?: boolean;
+  /** Campo inicial da arena, liberado pela Liga. As marcas de golpes continuam se sobrepondo normalmente. */
+  field?: PinField;
 }
 
 export function createWorld(specs: { mine: PinSpec[]; enemy: PinSpec[] }, rng: Rng, options: WorldOptions = {}): PinWorld {
@@ -410,6 +412,7 @@ export function createWorld(specs: { mine: PinSpec[]; enemy: PinSpec[] }, rng: R
   const spots = pins.map((p) => ({ x: p.x, y: p.y, r: p.r }));
   const patches = buildPatches(rng, ARENA_RADIUS, spots);
   const terrain = createArenaGrid(Math.floor(rng() * 1e6));
+  applyPinField(terrain, options.field ?? 'natural');
   const marks = options.marks !== false;
   if (marks) seedMarks(terrain, ARENA_RADIUS, rng, [...spots, ...patches]);
   return { radius: ARENA_RADIUS, patches, pins, time: 0, terrain, markRng: marks ? rng : null, limit: ARENA_RADIUS, round: 0, shrinking: options.shrink === true };

@@ -27,7 +27,8 @@ export type CouncilProjectStatus = 'proposto' | 'apoiado' | 'adiado' | 'recusado
 
 export interface CommunityProject {
   id: string;
-  kind: 'cozinha-reforco';
+  /** Cozinha resolve a despensa; mutirão usa materiais reais para recuperar os serviços comuns. */
+  kind: 'cozinha-reforco' | 'mutirao-manutencao';
   output: string;
   createdDay: string;
   decisionDay: string;
@@ -162,12 +163,16 @@ export function normalizeCommunity(raw: unknown): CommunityState {
     }
   }
   const council: CommunityProject[] = Array.isArray(value.council) ? value.council
-    .filter((entry): entry is CommunityProject => !!entry && typeof entry === 'object' && typeof entry.id === 'string' && entry.kind === 'cozinha-reforco' && typeof entry.output === 'string' && !!itemDef(entry.output)?.recipe && typeof entry.createdDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.createdDay) && ['proposto', 'apoiado', 'adiado', 'recusado', 'concluido', 'expirado'].includes(entry.status) && Array.isArray(entry.ingredients) && entry.ingredients.length > 0)
+    .filter((entry): entry is CommunityProject => !!entry && typeof entry === 'object' && typeof entry.id === 'string'
+      && (entry.kind === 'cozinha-reforco' || entry.kind === 'mutirao-manutencao') && typeof entry.output === 'string'
+      && (entry.kind === 'cozinha-reforco' ? !!itemDef(entry.output)?.recipe : entry.output === '')
+      && typeof entry.createdDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.createdDay)
+      && ['proposto', 'apoiado', 'adiado', 'recusado', 'concluido', 'expirado'].includes(entry.status) && Array.isArray(entry.ingredients) && entry.ingredients.length > 0)
     .slice(-COMMUNITY_RULES.councilHistoryLimit)
     .map((entry) => ({
       id: entry.id.slice(0, 100),
-      kind: 'cozinha-reforco',
-      output: typeof entry.output === 'string' && itemDef(entry.output)?.kind === 'food' ? entry.output.slice(0, 60) : '',
+      kind: entry.kind,
+      output: entry.kind === 'cozinha-reforco' && typeof entry.output === 'string' && itemDef(entry.output)?.kind === 'food' ? entry.output.slice(0, 60) : '',
       createdDay: entry.createdDay,
       decisionDay: typeof entry.decisionDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.decisionDay) ? entry.decisionDay : '',
       cause: typeof entry.cause === 'string' ? entry.cause.slice(0, 180) : '',
@@ -277,6 +282,33 @@ function maybeProposeKitchenProject(state: VillageState, day: string, residents:
   state.community.council = [...state.community.council, proposal].slice(-COMMUNITY_RULES.councilHistoryLimit);
 }
 
+/** Segunda pauta do Conselho: quando os serviços perdem confiança, materiais da própria Vila podem virar um mutirão. */
+function maybeProposeMaintenanceProject(state: VillageState, day: string, residents: readonly CommunityResident[]): void {
+  if (state.community.trust > 60 || state.town.level < 2 || state.community.council.some((entry) => entry.status === 'proposto' || entry.status === 'apoiado')) return;
+  const age = state.community.council.at(-1)
+    ? Date.parse(`${day}T12:00:00Z`) - Date.parse(`${state.community.council.at(-1)!.createdDay}T12:00:00Z`)
+    : Infinity;
+  if (age < 7 * 86_400_000) return;
+  const hasKeeper = residents.some((resident) =>
+    (resident.types ?? []).some((type) => TYPE_AFFINITIES[type].includes('manutencao'))
+      || (state.community.residents[resident.id]?.interests.includes('manutencao') ?? false),
+  );
+  if (!hasKeeper || (state.inventory.madeira ?? 0) < 3 || (state.inventory.pedra ?? 0) < 2) return;
+  const proposal: CommunityProject = {
+    id: `conselho:mutirao:${day}`,
+    kind: 'mutirao-manutencao',
+    output: '',
+    createdDay: day,
+    decisionDay: '',
+    cause: 'A confiança nos serviços da Vila caiu. Há madeira e pedra reais para um mutirão de reparos na praça.',
+    status: 'proposto',
+    participants: [],
+    ingredients: [{ item: 'madeira', qty: 3 }, { item: 'pedra', qty: 2 }],
+    result: '',
+  };
+  state.community.council = [...state.community.council, proposal].slice(-COMMUNITY_RULES.councilHistoryLimit);
+}
+
 export function communityForecast(state: Pick<VillageState, 'inventory' | 'coins' | 'community'>, residentIds: readonly string[]): CommunityForecast {
   const residents = activeCount(residentIds);
   const foodTarget = Math.ceil(residents * COMMUNITY_RULES.mealsPerResident);
@@ -356,6 +388,7 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
   const canFish = affinityActivities.includes('pesca') || interests.includes('pesca');
   const canCook = affinityActivities.includes('culinaria') || interests.includes('culinaria');
   const kitchenProject = state.community.council.find((project) => project.kind === 'cozinha-reforco' && project.status === 'apoiado');
+  const maintenanceProject = state.community.council.find((project) => project.kind === 'mutirao-manutencao' && project.status === 'apoiado');
   const recipeMultiplier = kitchenProject ? 2 : 1;
   const reserved = reservedProjectIngredients(state);
   const cookable = canCook
@@ -370,10 +403,16 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
   const fishItem = itemDef('peixe');
   const fishAvailable = canFish && fishLimit.remaining > 0 && !!fishItem && (state.inventory.peixe ?? 0) < 999;
   const agricultureAvailable = !!(harvestCrop || waterCrop);
+  const advancedActivities = state.town.level >= 2
+    ? [...new Set(affinityActivities.filter((activity) => !['agricultura', 'pesca', 'culinaria', 'acolhimento', 'brincadeira', 'descanso'].includes(activity)))]
+    : [];
+  const canMaintainProject = !!maintenanceProject && (affinityActivities.includes('manutencao') || interests.includes('manutencao'));
   const available: VillageActivity[] = ['descanso'];
   if (agricultureAvailable) available.push('agricultura');
   if (fishAvailable) available.push('pesca');
   if (cookable) available.push('culinaria');
+  available.push(...advancedActivities);
+  if (canMaintainProject) available.push('manutencao');
   if (residentCount > 1) available.push('acolhimento', 'brincadeira');
   if (available.length === 1) available.push('exploracao', 'pesquisa');
   const shortageNeed = state.community.shortageDays > 0 ? 4 : 0;
@@ -384,6 +423,7 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
       ...(agricultureAvailable ? [{ activity: 'agricultura' as const, urgency: (harvestCrop ? 3 : 2) + shortageNeed }] : []),
       ...(fishAvailable ? [{ activity: 'pesca' as const, urgency: shortageNeed + 1 }] : []),
       ...(cookable ? [{ activity: 'culinaria' as const, urgency: shortageNeed + 1 }] : []),
+      ...(canMaintainProject ? [{ activity: 'manutencao' as const, urgency: 5 }] : []),
     ],
     recentActivity: progress.recentActivity ?? undefined,
     rememberedActivity: progress.rememberedActivity ?? undefined,
@@ -438,10 +478,77 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
         kitchenProject.result = `O projeto consumiu os ingredientes registrados e preparou ${qty} ${cookable.name}; o estoque produzido entrou na refeição comunitária.`;
       }
     }
+  } else if (choice.activity === 'mineracao') {
+    const found = rngFor(`${day}:${resident.id}:mineracao`)() < 0.2 ? 'ferro' : 'pedra';
+    qty = inventoryAdd(state, found, 1);
+    item = qty > 0 ? found : undefined;
+    result = qty ? `Trouxe ${itemDef(found)?.name ?? found} da mina para o estoque comum.` : 'Explorou a mina, mas o estoque desse material já está cheio.';
+  } else if (choice.activity === 'madeireira') {
+    qty = inventoryAdd(state, 'madeira', 1);
+    item = qty ? 'madeira' : undefined;
+    result = qty ? 'Separou Madeira para as construções e móveis da Vila.' : 'Organizou o depósito de madeira, que já está cheio.';
+  } else if (choice.activity === 'jardinagem') {
+    qty = inventoryAdd(state, 'flor', 1);
+    item = qty ? 'flor' : undefined;
+    result = qty ? 'Cultivou uma Flor para tintas, presentes e decoração.' : 'Cuidou dos canteiros de flores, que já estão cheios.';
+  } else if (choice.activity === 'exploracao') {
+    const found = rngFor(`${day}:${resident.id}:exploracao`)() < 0.5 ? 'oran' : 'champignon';
+    qty = inventoryAdd(state, found, 1);
+    item = qty ? found : undefined;
+    result = qty ? `Encontrou ${itemDef(found)?.name ?? found} numa rota conhecida.` : 'Mapeou uma rota, mas o achado não cabia no estoque.';
+  } else if (choice.activity === 'pesquisa') {
+    const found = rngFor(`${day}:${resident.id}:pesquisa`)() < 0.35 ? 'cristal' : 'pena';
+    qty = inventoryAdd(state, found, 1);
+    item = qty ? found : undefined;
+    result = qty ? `Catalogou ${itemDef(found)?.name ?? found} e o guardou para a Vila.` : 'Registrou descobertas no Livro, mas o armário de pesquisa já está cheio.';
+  } else if (choice.activity === 'reciclagem') {
+    const found = rngFor(`${day}:${resident.id}:reciclagem`)() < 0.5 ? 'argila' : 'areia';
+    qty = inventoryAdd(state, found, 1);
+    item = qty ? found : undefined;
+    result = qty ? `Recuperou ${itemDef(found)?.name ?? found} para fabricar na Vila.` : 'Separou materiais reaproveitáveis, mas o estoque já está cheio.';
+  } else if (choice.activity === 'conservacao') {
+    qty = inventoryAdd(state, 'alga', 1);
+    item = qty ? 'alga' : undefined;
+    result = qty ? 'Recolheu Alga sem esgotar o lago da Vila.' : 'Fez a ronda do lago; a coleta já está no limite do estoque.';
+  } else if (choice.activity === 'comercio') {
+    const earned = 5;
+    state.coins = Math.min(999999, state.coins + earned);
+    qty = earned;
+    result = `Organizou uma pequena feira e trouxe ${earned} moedas para o caixa comum.`;
+  } else if (choice.activity === 'vigilancia' || choice.activity === 'protecao') {
+    state.community.trust = Math.min(100, state.community.trust + 1);
+    qty = 1;
+    result = choice.activity === 'vigilancia' ? 'Fez uma ronda e aumentou a confiança nos caminhos da Vila.' : 'Protegeu a praça e reforçou a confiança coletiva.';
+  } else if (choice.activity === 'transporte') {
+    qty = inventoryAdd(state, 'tabua', 1);
+    item = qty ? 'tabua' : undefined;
+    result = qty ? 'Entregou uma Tábua pronta entre os depósitos da Vila.' : 'Organizou as rotas de entrega; a reserva de tábuas já está cheia.';
+  } else if (choice.activity === 'construcao') {
+    state.community.welfare = Math.min(100, state.community.welfare + 1);
+    qty = 1;
+    result = 'Reforçou um espaço comum e melhorou um pouco o bem-estar da Vila.';
+  } else if (choice.activity === 'manutencao' && maintenanceProject) {
+    const enough = maintenanceProject.ingredients.every(({ item, qty }) => (state.inventory[item as keyof typeof state.inventory] ?? 0) >= qty);
+    if (enough) {
+      for (const ingredient of maintenanceProject.ingredients) {
+        const key = ingredient.item as keyof typeof state.inventory;
+        const left = (state.inventory[key] ?? 0) - ingredient.qty;
+        if (left <= 0) delete state.inventory[key]; else state.inventory[key] = left;
+      }
+      maintenanceProject.status = 'concluido';
+      maintenanceProject.participants = [resident.id];
+      maintenanceProject.result = 'O mutirão usou os materiais reservados e recuperou serviços da praça (+6 confiança, +3 bem-estar).';
+      state.community.trust = Math.min(100, state.community.trust + 6);
+      state.community.welfare = Math.min(100, state.community.welfare + 3);
+      qty = 1;
+      result = 'Concluiu o mutirão de reparos com madeira e pedra que estavam reservadas.';
+    } else result = 'Foi iniciar o mutirão, mas os materiais reservados já não estavam completos.';
+  } else if (choice.activity === 'manutencao') {
+    state.community.trust = Math.min(100, state.community.trust + 1);
+    qty = 1;
+    result = 'Ajustou equipamentos da Vila e aumentou um pouco a confiança nos serviços.';
   } else if (choice.activity === 'acolhimento') result = 'Fez companhia aos outros moradores na praça.';
   else if (choice.activity === 'brincadeira') result = 'Brincou um pouco com a turma.';
-  else if (choice.activity === 'exploracao') result = 'Passeou por uma trilha conhecida da Vila.';
-  else if (choice.activity === 'pesquisa') result = 'Leu um livro e descansou a cabeça.';
 
   progress.energy = choice.activity === 'descanso'
     ? Math.min(100, progress.energy + COMMUNITY_RULES.restEnergyGain)
@@ -456,7 +563,8 @@ function recordActivity(state: VillageState, day: string, resident: CommunityRes
   if (learned) result += ' Essa atividade está virando um novo interesse.';
   const paidRole = choice.activity === 'agricultura' ? 'farm' : choice.activity === 'pesca' ? 'fishing' : choice.activity === 'culinaria' ? 'cafe' : null;
   if (paidRole && ((qty ?? 0) > 0 || choice.activity === 'agricultura' && x !== undefined)) payResidentWork(state, resident.id, paidRole, `comunidade:${day}`, day, 8);
-  return { residentId: resident.id, activity: choice.activity, icon: ACTIVITY_ICONS[choice.activity], result, ...(item ? { item } : {}), ...(qty !== undefined ? { qty } : {}), ...(x !== undefined ? { x } : {}), ...(y !== undefined ? { y } : {}), ...(kitchenProject?.status === 'concluido' && kitchenProject.participants.includes(resident.id) ? { projectId: kitchenProject.id } : {}) };
+  const completedProject = [kitchenProject, maintenanceProject].find((project) => project?.status === 'concluido' && project.participants.includes(resident.id));
+  return { residentId: resident.id, activity: choice.activity, icon: ACTIVITY_ICONS[choice.activity], result, ...(item ? { item } : {}), ...(qty !== undefined ? { qty } : {}), ...(x !== undefined ? { x } : {}), ...(y !== undefined ? { y } : {}), ...(completedProject ? { projectId: completedProject.id } : {}) };
 }
 
 function recordSharedActivities(state: VillageState, day: string, activities: readonly CommunityActivityRecord[]): void {
@@ -580,6 +688,7 @@ function settleDay(state: VillageState, day: string, residents: readonly Communi
     };
   }
   maybeProposeKitchenProject(state, day, residents);
+  maybeProposeMaintenanceProject(state, day, residents);
   const fishLimit = { remaining: 1 };
   const inventoryBefore = { ...state.inventory };
   const activities = residents.slice(0, COMMUNITY_RULES.residentLimit).map((resident) => recordActivity(state, day, resident, residentCount, fishLimit));

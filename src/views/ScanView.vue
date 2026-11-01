@@ -54,6 +54,8 @@ import { digitalCandidates } from '../app/digital-members';
 import { cardArchetypeIds } from '../app/card-archetypes';
 import { fxLabel, planArchetypeFx, planDurationMs } from '../core/archetype-fx';
 import type { FxLayer } from '../core/archetype-fx';
+import { SoundEngine } from '../box/sound';
+import type { SoundCue } from '../box/sound-recipes';
 
 const props = defineProps<{ cardId?: string }>();
 const teamAction = ref<'idle' | 'loading' | 'added' | 'already' | 'full' | 'unavailable' | 'error'>('idle');
@@ -102,8 +104,22 @@ const fxRun = ref(0);
 const fxShowing = ref(false);
 let fxTimer: ReturnType<typeof setTimeout> | null = null;
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const scanSound = new SoundEngine();
+type ScanSound = Extract<SoundCue, { kind: 'ui' }>['cue'];
+let appearedForRun = -1;
+
+/** O contexto WebAudio é liberado pelo toque de abrir a câmera; falhar em um navegador sem WebAudio só deixa a tela muda. */
+function unlockScanSound(): void {
+  scanSound.setEnabled(effectiveVisual.value.sound);
+  scanSound.unlock();
+}
+function playScanSound(cue: ScanSound): void {
+  scanSound.setEnabled(effectiveVisual.value.sound);
+  scanSound.play({ kind: 'ui', cue });
+}
 
 function onArchetypeFxStart(): void {
+  playScanSound('scan-archetype');
   fxRun.value++;
   fxShowing.value = true;
   if (fxTimer) clearTimeout(fxTimer);
@@ -471,6 +487,7 @@ async function ensureController(): Promise<ScanController> {
 async function openCamera(): Promise<void> {
   // iOS: a permissão dos sensores precisa ser pedida direto do toque, antes de qualquer espera.
   void requestOrientationPermission();
+  unlockScanSound();
   const video = videoEl.value;
   if (!video) return;
   cameraBusy.value = true;
@@ -555,6 +572,7 @@ async function startArFor(cardId: string): Promise<void> {
     return;
   }
   const run = ++arRun;
+  appearedForRun = -1;
   const arStartedAt = performance.now();
   stopAr();
   // Recria o elemento <canvas> para garantir contexto WebGL novo sem contaminação anterior — e devolve o contexto do
@@ -615,7 +633,15 @@ async function startArFor(cardId: string): Promise<void> {
         if (run !== arRun) return;
         arState.value = state;
         if (state.phase === 'searching' || state.phase === 'tracking' || state.phase === 'lost') arStage.value = state.phase;
-        if (state.phase === 'tracking') maybeGalladeSpeaks({ name: companion.name, shiny: isShiny(assets.card) });
+        if (state.phase === 'tracking') {
+          maybeGalladeSpeaks({ name: companion.name, shiny: isShiny(assets.card) });
+          if (appearedForRun !== run) {
+            appearedForRun = run;
+            playScanSound('scan-appear');
+            if (isShiny(assets.card)) window.setTimeout(() => { if (run === arRun) playScanSound('scan-shiny'); }, 170);
+            if (evolved) window.setTimeout(() => { if (run === arRun) playScanSound('scan-evolution'); }, 330);
+          }
+        }
         else if (state.phase === 'error') failAr(state.message ?? 'O rastreamento falhou.');
       },
       onSprite: (state) => {
@@ -849,6 +875,7 @@ onBeforeUnmount(() => {
   controller?.stop();
   stopAr();
   stopCamera(videoEl.value, stream);
+  scanSound.dispose();
 });
 
 type Tone = 'busy' | 'ok' | 'warn' | 'error';

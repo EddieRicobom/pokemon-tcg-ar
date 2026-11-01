@@ -119,6 +119,19 @@ export function makeWhoQuestions(pieces: readonly Piece[], rng: Rng, rounds = QU
 
 export const TYPE_ROUNDS = 6;
 
+/** Tipos e Memória usam a mesma ideia de dificuldade: mais pressão, nunca respostas inventadas. */
+export type ArcadeDifficulty = 'normal' | 'desafio';
+export const ARCADE_DIFFICULTIES: readonly ArcadeDifficulty[] = ['normal', 'desafio'];
+export const ARCADE_DIFFICULTY_LABELS_PT: Record<ArcadeDifficulty, string> = { normal: 'Normal', desafio: 'Desafio' };
+export const TYPE_RULES: Record<ArcadeDifficulty, { rounds: number; secondsPerQuestion: number }> = {
+  normal: { rounds: TYPE_ROUNDS, secondsPerQuestion: 12 },
+  desafio: { rounds: 9, secondsPerQuestion: 7 },
+};
+export const MEMORY_RULES: Record<ArcadeDifficulty, { pairs: number; seconds: number }> = {
+  normal: { pairs: 6, seconds: 100 },
+  desafio: { pairs: 8, seconds: 65 },
+};
+
 export interface TypeQuestion {
   attack: PokemonType;
   defend: PokemonType[];
@@ -191,8 +204,24 @@ export function gradeQuiz(correct: number, total: number): Grade {
   return { score, won: score >= 60 };
 }
 
+/** Acertar em sequência e responder cedo melhora o recorde, sem permitir que menos acertos virem vitória. */
+export function gradeTypeDuel(correct: number, total: number, bestCombo: number, secondsLeft: number, difficulty: ArcadeDifficulty): Grade {
+  const base = gradeQuiz(correct, total);
+  if (!base.won) return base;
+  const bonus = Math.min(20, Math.max(0, bestCombo - 1) * 3 + Math.floor(Math.max(0, secondsLeft) / 3) + (difficulty === 'desafio' ? 6 : 0));
+  return { score: Math.min(100, base.score + bonus), won: true };
+}
+
 /** Memória: 100 pontos com o mínimo de jogadas (uma por par); cada jogada extra tira 8; vence com 40 pontos ou mais. */
 export function gradeMemory(moves: number, pairs: number): Grade {
   const score = Math.max(0, 100 - Math.max(0, moves - pairs) * 8);
   return { score, won: score >= 40 };
+}
+
+/** Na Memória, velocidade e sequência de pares dão bônus, mas a eficiência continua sendo o critério principal. */
+export function gradeMemoryChallenge(moves: number, pairs: number, bestCombo: number, secondsLeft: number, difficulty: ArcadeDifficulty): Grade {
+  const base = gradeMemory(moves, pairs);
+  if (!base.won) return base;
+  const bonus = Math.min(18, Math.max(0, bestCombo - 1) * 2 + Math.floor(Math.max(0, secondsLeft) / 8) + (difficulty === 'desafio' ? 5 : 0));
+  return { score: Math.min(100, base.score + bonus), won: true };
 }
