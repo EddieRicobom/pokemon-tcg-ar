@@ -1798,6 +1798,24 @@ const optionsSummary = computed(() => {
   return on === rows.length ? 'tudo ligado' : on === 0 ? 'tudo desligado' : `${on} de ${rows.length} ligadas`;
 });
 
+/**
+ * O que fazer agora na sala de amigo, para cada papel: quem precisa tocar em quê e se é a sua vez ou a do outro. `mine` é a
+ * ação do próprio jogador (destaca o botão); `theirs` é quando só resta esperar o amigo, e a frase diz o que ele precisa fazer.
+ */
+const friendStep = computed<{ text: string; mine: boolean } | null>(() => {
+  if (mode.value !== 'friend' || !peer.value) return null;
+  const n = setup.value.mine.length;
+  const theirs = friend.specs.length;
+  if (n === 0) return { text: 'Passo 1: escolha de 1 a 6 pins na lista logo abaixo.', mine: true };
+  if (frame.value === 'guest') {
+    if (!myReady.value) return { text: `Passo 2: você escolheu ${n}. Toque em «Estou pronto» para avisar o anfitrião.`, mine: true };
+    return { text: 'Pronto! Agora é só esperar: o anfitrião toca em «Começar» (ele já vê que você está pronto).', mine: false };
+  }
+  if (!friend.ready) return { text: theirs > 0 ? `Esperando o amigo: ele escolheu ${theirs} e ainda vai tocar em «Estou pronto». Você não precisa fazer nada agora.` : 'Esperando o amigo escolher os pins e tocar em «Estou pronto». Você não precisa fazer nada agora.', mine: false };
+  if (theirs !== n) return { text: `O amigo está pronto com ${theirs} pin${theirs === 1 ? '' : 's'}; você tem ${n}. Ajuste os seus para o mesmo número.`, mine: true };
+  return { text: 'Tudo pronto! Toque em «Começar».', mine: true };
+});
+
 /** A frase ao lado do botão Começar: o que falta ou o que vai acontecer. */
 const startNote = computed(() => {
   if (mode.value === 'friend') {
@@ -1866,6 +1884,10 @@ function setMarks(on: boolean): void {
         <i class="pn-room-dot" aria-hidden="true"></i>
         Conectado com o amigo · você é {{ frame === 'host' ? 'o anfitrião' : 'o convidado' }}
         <button type="button" class="pn-link" @click="leaveRoom">Sair da sala</button>
+      </p>
+      <p v-if="friendStep && phase === 'setup'" class="pn-next" :class="{ mine: friendStep.mine }" role="status" aria-live="polite">
+        <strong>{{ friendStep.mine ? 'Sua vez de agir' : 'Aguarde um instante' }}</strong>
+        {{ friendStep.text }}
       </p>
 
       <section v-if="mode === 'cpu' || peer" class="pn-card pn-teams" aria-label="Equipes">
@@ -1959,8 +1981,8 @@ function setMarks(on: boolean): void {
       </div>
       <div v-else-if="peer" class="pn-start">
         <p class="pn-start-note" :class="{ warn: frame === 'host' && friendBlocker !== null }">{{ startNote }}</p>
-        <button v-if="frame === 'host'" type="button" class="primary" :disabled="phase === 'loading' || friendBlocker !== null" @click="startPvp">{{ phase === 'loading' ? 'Preparando a arena…' : 'Começar' }}</button>
-        <button v-else type="button" class="primary" :disabled="phase === 'loading' || setup.mine.length === 0" @click="setReady(!myReady)">{{ myReady ? 'Cancelar' : 'Estou pronto' }}</button>
+        <button v-if="frame === 'host'" type="button" class="primary" :class="{ 'pn-pulse': friendBlocker === null && phase !== 'loading' }" :disabled="phase === 'loading' || friendBlocker !== null" @click="startPvp">{{ phase === 'loading' ? 'Preparando a arena…' : 'Começar' }}</button>
+        <button v-else type="button" class="primary" :class="{ 'pn-pulse': !myReady && setup.mine.length > 0 }" :disabled="phase === 'loading' || setup.mine.length === 0" @click="setReady(!myReady)">{{ myReady ? 'Cancelar' : 'Estou pronto' }}</button>
       </div>
     </template>
 

@@ -179,3 +179,17 @@ describe('mira ao vivo (aim)', () => {
     expect(parseMessage(JSON.stringify({ t: 'aim', dirX: 0, dirY: 0, power: 0.5 }))).toBeNull();
   });
 });
+
+describe('largada em conjunto das runs do Survival', () => {
+  it('aceita sv-run-ready e sv-run-go com a run de 0 a 2', () => {
+    expect(parseMessage(JSON.stringify({ t: 'sv-run-ready', index: 0 }))).toEqual({ t: 'sv-run-ready', index: 0 });
+    expect(parseMessage(JSON.stringify({ t: 'sv-run-go', index: 2 }))).toEqual({ t: 'sv-run-go', index: 2 });
+  });
+
+  it('recusa run fora do intervalo ou não inteira', () => {
+    expect(parseMessage(JSON.stringify({ t: 'sv-run-go', index: 3 }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ t: 'sv-run-ready', index: -1 }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ t: 'sv-run-ready', index: 1.5 }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ t: 'sv-run-go' }))).toBeNull();
+  });
+});

@@ -17,6 +17,10 @@ export type SurvivalWireMessage =
   | { t: 'sv-progress'; done: number }
   /** Anfitrião → convidado: as duas equipes estão aqui, carreguem os sprites. */
   | { t: 'sv-start' }
+  /** Cada celular avisa que chegou à largada da run `index` (resultado da anterior visto, pronto para começar). */
+  | { t: 'sv-run-ready'; index: number }
+  /** Anfitrião → convidado: larguem a run `index` agora (os dois começam juntos, depois de uma contagem curta). */
+  | { t: 'sv-run-go'; index: number }
   /** Terminei de carregar (`ok: false` = faltou algum sprite, a luta segue com o nome no lugar). */
   | { t: 'sv-ready'; ok: boolean }
   /** Anfitrião → convidado: os dois estão prontos, a contagem começa. */
@@ -116,6 +120,10 @@ export function parseSurvivalMessage(v: Record<string, unknown>): SurvivalWireMe
       return isInt(v.done, 0, 3) ? { t: 'sv-progress', done: v.done } : null;
     case 'sv-start':
       return { t: 'sv-start' };
+    case 'sv-run-ready':
+      return isInt(v.index, 0, 2) ? { t: 'sv-run-ready', index: v.index } : null;
+    case 'sv-run-go':
+      return isInt(v.index, 0, 2) ? { t: 'sv-run-go', index: v.index } : null;
     case 'sv-go':
       return { t: 'sv-go' };
     case 'sv-ready':

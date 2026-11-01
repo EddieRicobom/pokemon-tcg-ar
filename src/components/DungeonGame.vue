@@ -1011,7 +1011,10 @@ const pendingText = computed(() => {
       <template v-if="pvp">
         <p class="hint">Conectado{{ pvp.role === 'host' ? ' (você criou a sala)' : '' }}. Escolha o seu Pokémon inicial e toque em «Estou pronto». Os dois descem {{ DUEL_FLOORS }} andares, cada um na sua tela, com a mesma semente; ao vencer o {{ DUEL_FLOORS }}º, quem terminar primeiro espera o outro e o duelo começa com as equipes que vocês montaram.</p>
         <p class="hint">Sem moedas, XP nem gemas no duelo, e nada do cofre ou da marmita da Vila: os dois começam iguais.</p>
-        <p class="dg-friend-status" role="status" aria-live="polite">{{ pvp.friendReady ? '✅ O amigo já está pronto.' : '⏳ O amigo ainda está escolhendo…' }}{{ pvp.ready ? ' Você está pronto: aguardando o início.' : '' }}</p>
+        <p class="dg-friend-status" role="status" aria-live="polite">
+          <strong>{{ pvp.ready ? 'Aguarde um instante:' : 'Sua vez de agir:' }}</strong>
+          {{ pvp.ready ? (pvp.friendReady ? 'os dois estão prontos, a descida começa sozinha.' : `você está pronto. ${friendLabel === 'Amigo' ? 'O amigo' : friendLabel} ainda está escolhendo; você não precisa tocar em nada.`) : `escolha o seu Pokémon inicial e toque em «Estou pronto». ${pvp.friendReady ? '✅ O amigo já está pronto e espera por você.' : '⏳ O amigo ainda está escolhendo.'}` }}
+        </p>
       </template>
       <template v-else>
         <p class="hint">Comece com um Pokémon da sua coleção. Ao limpar o 1º andar, a Pokébola oferece três novas armas; depois ela volta no 3º andar e a cada três andares. A expedição só acaba quando a equipe cai ou quando você decide sair pela escada.</p>
