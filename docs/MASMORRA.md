@@ -78,6 +78,12 @@ Na tela de escolha, **👥 Duelo com um amigo** abre o lobby público (`PvpLobby
 - Controles iguais aos da expedição (toque, ou teclas 1–6, M, A, E, Enter, Esc no PC). Tocar numa casa alcançável sem escolher ação seleciona-a e um segundo toque anda.
 - A equipe do amigo aparece em miniatura no alto (quem está em campo, quem caiu, vida de cada um).
 
+**Provocações e avisos de buff** (`PvpTauntFan.vue`, `pvp/taunts.ts`, na descida e no duelo)
+- O botão 💬 do cabeçalho abre um leque de um toque com 6 frases fixas («Boa sorte!», «Vem!», «Você consegue!», «Ops!», «Boa jogada!», «Calma aí…»); recarga de 3 s para quem envia. Dá para **silenciar o amigo** no mesmo leque (lembrado no aparelho).
+- Quando você pega uma gema, poção, buff de fusão ou arma nova, o amigo vê «Fulano pegou X.»; gema de grau 3+ aparece em roxo («raro») e gema **lendária** em dourado, mais demorada. A raridade e o id vêm das regras (`buffRarity`, tipo da gema, id da arma), no máximo 3 avisos por vez.
+- Os avisos ficam no canto superior esquerdo, pequenos, somem sozinhos em ~3–5 s, não recebem toque (`pointer-events: none`), não são modais e não cobrem a grade nem os comandos; `prefers-reduced-motion` desliga a entrada animada. Só o leque aberto cobre um pedaço da tela, e fecha sozinho em 6 s.
+- Mensagens `taunt` (id da lista fixa, nunca texto livre) e `buff-event` (tipo, id e raridade; combinações impossíveis, como gema comum «lendária», são recusadas). Quem recebe também ignora provocações mais próximas que 1,5 s. O módulo é genérico para o Survival reaproveitar.
+
 **O que não foi verificado**
 - Dois navegadores reais ligados pelo lobby, com a descida completa: nada foi visto rodando (a sessão que escreveu o modo não tinha Node; a verificação é o CI do pull request). Em aparelho real faltam: conexão WebRTC entre redes, toque e layout a 375 px, desempenho e a sensação de balanceamento.
 - Não há relógio de turno (um amigo parado trava a vez), nem som próprio do duelo, nem repetição da partida.

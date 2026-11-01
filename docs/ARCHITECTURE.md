@@ -291,6 +291,8 @@ A Masmorra vira um **duelo depois de 4 andares**, pelo mesmo lobby (`PvpLobby ga
 - **Divergência.** Os dois jogos rodam o mesmo código e o canal é ordenado e confiável, então não deveria acontecer; se acontecer (versões diferentes do app, por exemplo) o duelo é interrompido nos dois. Não há ressincronização por cópia do estado do anfitrião: um estado inteiro vindo do fio seria uma superfície de ataque maior, e a pior consequência aqui é uma partida de brincadeira terminar sem vencedor.
 - **Limites.** Não há proteção contra trapaça (cada um confia no que o outro manda: equipe e gemas finais não são reconferidas pela descida); sem relógio de turno (um amigo parado trava a vez; dá para desistir); armadilhas só disparam na casa final de um movimento; o balanceamento do duelo é um palpite. Nunca visto em dois aparelhos reais.
 
+**Provocações e avisos de buff** (`src/pvp/taunts.ts`, `components/PvpTauntFan.vue`): mensagens `taunt` (id de uma lista fixa de 6 frases) e `buff-event` (tipo `gem`/`potion`/`fusion`/`weapon`, id e raridade `comum`/`raro`/`lendario` calculados por `buffRarity` a partir da gema real), validadas em `parseTauntMessage` (ligado em `wire.ts` pelos casos `taunt` e `buff-event`) e independentes do Masmorra, para o Survival PvP reaproveitar. Recarga de 3 s no envio e 1,5 s mínimo no recebimento; o rival pode ser silenciado. A tela mostra avisos pequenos que somem sozinhos e não recebem toque.
+
 As mensagens novas (`dd-ready`, `dd-start`, `dd-prog`, `dd-team`, `dd-act`, `dd-desync`, `dd-forfeit`) ficam em `dungeon-wire.ts`, num bloco separado como o da Caixa, e entram em `wire.ts` só por `parseDungeonMessage`.
 
 ### Modo vida: a Vila (`src/core/village/`, `src/village/`, `src/components/VillageView.vue`, `src/app/village-store.ts`)

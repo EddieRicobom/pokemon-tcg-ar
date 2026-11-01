@@ -6,6 +6,9 @@ import GemChip from './GemChip.vue';
 import DungeonAttackFx from './DungeonAttackFx.vue';
 import DungeonDecor from './DungeonDecor.vue';
 import DungeonDuel from './DungeonDuel.vue';
+import PvpTauntFan from './PvpTauntFan.vue';
+import { buffRarity } from '../pvp/taunts';
+import type { BuffKind } from '../pvp/taunts';
 import PvpLobby from './PvpLobby.vue';
 import { profile } from '../app/profile-store';
 import { DUEL_FLOORS, startDuel } from '../core/dungeon-duel';
@@ -323,6 +326,12 @@ const duel = ref<DuelState | null>(null);
 const lobbyOpen = ref(false);
 const pickNotice = ref('');
 const confirmGiveUp = ref(false);
+const tauntFan = ref<InstanceType<typeof PvpTauntFan> | null>(null);
+/** O que a equipe já tinha na última conferência: o que passar disso é buff novo, avisado ao rival. */
+let seenGems = new Set<number>();
+let seenPotions = 0;
+let seenFusions = 0;
+let seenTeam = 0;
 let myRoster: DuelRoster | null = null;
 let theirRoster: DuelRoster | null = null;
 let lastProgress = '';
@@ -399,7 +408,29 @@ function enterDescent(): void {
   if (!pvp.value) return;
   pvp.value.stage = 'descent';
   lastProgress = '';
+  announceBuffs(false);
   pvpTick();
+}
+
+/** Compara a equipe com a última conferência e, se `send`, avisa o rival do que é novo (tipo, id e raridade das regras). */
+function announceBuffs(send: boolean): void {
+  const st = s.value;
+  const peer = pvpPeer.value;
+  if (!st) return;
+  const events: { kind: BuffKind; id: string; rarity: ReturnType<typeof buffRarity> }[] = [];
+  for (const gem of st.bag) {
+    if (!seenGems.has(gem.id)) { seenGems.add(gem.id); events.push({ kind: 'gem', id: gem.kind, rarity: buffRarity('gem', gem) }); }
+  }
+  if (st.potions > seenPotions) events.push({ kind: 'potion', id: '', rarity: 'comum' });
+  if (st.fusionCharges > seenFusions) events.push({ kind: 'fusion', id: '', rarity: 'comum' });
+  if (st.team.length > seenTeam && seenTeam > 0) events.push({ kind: 'weapon', id: st.team[st.team.length - 1]!.weapon, rarity: 'comum' });
+  seenPotions = st.potions;
+  seenFusions = st.fusionCharges;
+  seenTeam = st.team.length;
+  if (!send || !peer) return;
+  // Gemas lendárias primeiro; no máximo 3 avisos por vez, para nunca virar enxurrada.
+  events.sort((a, b) => Number(b.rarity === 'lendario') - Number(a.rarity === 'lendario'));
+  for (const ev of events.slice(0, 3)) peer.send({ t: 'buff-event', ...ev });
 }
 
 function toggleReady(): void {
@@ -428,6 +459,7 @@ function pvpTick(): void {
   const peer = pvpPeer.value;
   const st = s.value;
   if (!p || !peer || !st || p.result || p.stage === 'pick' || p.stage === 'duel') return;
+  announceBuffs(true);
   const state: DungeonProgressState = st.phase === 'lost' ? 'fallen' : (st.phase === 'cleared' || st.phase === 'reward') && st.floor >= DUEL_FLOORS ? 'cleared' : 'fighting';
   const sig = `${st.floor}:${state}:${st.enemies.length}`;
   if (sig !== lastProgress) {
@@ -454,6 +486,7 @@ function friendFell(): void {
 function onPvpMessage(msg: WireMessage): void {
   const p = pvp.value;
   if (!p || p.result) return;
+  if (tauntFan.value?.receive(msg)) return;
   if (p.stage === 'pick' && msg.t !== 'dd-ready' && msg.t !== 'dd-start') {
     // Antes de descer só importa «pronto» e «começar»; se o amigo desiste da sala, a sala se desfaz.
     if (msg.t === 'dd-forfeit') onPvpClosed();
@@ -1040,6 +1073,7 @@ const pendingText = computed(() => {
         <template v-if="pvp">
           <span class="dg-pill dg-small dg-duel-left" :title="`O duelo começa depois do ${DUEL_FLOORS}º andar`">⚔️ {{ floorsToDuel > 0 ? `faltam ${floorsToDuel} andar(es) p/ o duelo` : 'duelo liberado' }}</span>
           <span class="dg-pill dg-small dg-friend" :class="{ done: pvp.friend?.state === 'cleared' }" role="status" :title="`${friendLabel}: ${friendStatus}`">👥 {{ friendLabel }}: {{ friendStatus }}</span>
+          <PvpTauntFan v-if="pvpPeer && !pvp.result" ref="tauntFan" :peer="pvpPeer" :friend="friendLabel" />
           <button v-if="!pvp.result" type="button" class="dg-pill dg-small dg-giveup" :class="{ sure: confirmGiveUp }" @click="giveUp">{{ confirmGiveUp ? 'Toque de novo p/ desistir' : '🏳️ Desistir' }}</button>
         </template>
         <span class="dg-break"></span>

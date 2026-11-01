@@ -9,6 +9,8 @@ import type { BaseStats, CardAttack, PokemonType } from '../core/pokemon-data';
 import { MAX_BACKUP_TRANSFER_BYTES, MAX_BACKUP_TRANSFER_CHUNKS } from './backup-transfer';
 import { parseDungeonMessage } from './dungeon-wire';
 import type { DungeonWireMessage } from './dungeon-wire';
+import { parseTauntMessage } from './taunts';
+import type { TauntMessage } from './taunts';
 
 /**
  * PvP do Pin Mode: as mensagens entre os dois celulares e a tradução entre o mundo de cada um e o que vai pelo fio.
@@ -62,6 +64,7 @@ export interface WireInit extends WireWorld {
 export type WireMessage =
   | BoxWireMessage
   | DungeonWireMessage
+  | TauntMessage
   | { t: 'hello'; v: number }
   | { t: 'team'; ready: boolean; specs: WireSpec[] }
   | { t: 'options'; shrink: boolean; marks: boolean }
@@ -350,6 +353,9 @@ export function parseMessage(raw: unknown): WireMessage | null {
     case 'dd-desync':
     case 'dd-forfeit':
       return parseDungeonMessage(v);
+    case 'taunt':
+    case 'buff-event':
+      return parseTauntMessage(v);
     case 'bye':
     case 'ping':
     case 'pong':

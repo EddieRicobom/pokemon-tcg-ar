@@ -4,6 +4,7 @@ import WeaponArt from './WeaponArt.vue';
 import FusionArt from './FusionArt.vue';
 import GemChip from './GemChip.vue';
 import DungeonAttackFx from './DungeonAttackFx.vue';
+import PvpTauntFan from './PvpTauntFan.vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { effectiveVisual } from '../app/visual-settings';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
@@ -223,7 +224,10 @@ function receive(msg: Extract<WireMessage, { t: 'dd-act' }>): void {
   animate(before, fx);
 }
 
+const tauntFan = ref<InstanceType<typeof PvpTauntFan> | null>(null);
+
 function onMessage(msg: WireMessage): void {
+  if (tauntFan.value?.receive(msg)) return;
   if (over.value) return;
   if (msg.t === 'dd-act') receive(msg);
   else if (msg.t === 'dd-forfeit') concede(props.duel, other(props.side), 'forfeit');
@@ -382,6 +386,7 @@ onBeforeUnmount(() => {
       </span>
       <span v-if="myTurn" class="dd-pill" :class="{ none: attacksNow.count === 0 }" title="Ataques que ainda cabem neste turno">⚔ ×{{ attacksNow.count }}</span>
       <span v-if="me.guard.reduce > 0" class="dd-pill" title="Bloqueio para o próximo golpe">🛡️ {{ Math.round(me.guard.reduce * 100) }}%</span>
+      <PvpTauntFan ref="tauntFan" class="dd-taunt" :peer="peer" :friend="friend" />
     </header>
 
     <section class="dd-foe" aria-label="Seu adversário">
@@ -533,6 +538,7 @@ onBeforeUnmount(() => {
 .dd-turn { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0007; }
 .dd-turn.mine { border-color: #3fae5a; box-shadow: 0 0 10px #3fae5a55; }
 .dd-turn.theirs { border-color: #b84a5a; }
+.dd-taunt { margin-left: auto; }
 .dd-pill { padding: 3px 9px; border-radius: 999px; background: #0007; border: 1px solid #ffffff22; font-size: 0.78rem; }
 .dd-pill.none { color: #ffb3b3; border-color: #ff667088; }
 .dd-ap { display: inline-flex; align-items: center; gap: 4px; }
