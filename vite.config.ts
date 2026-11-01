@@ -18,10 +18,10 @@ export default defineConfig({
       includeAssets: ['icons/favicon.svg', 'icons/apple-touch-icon.png'],
       manifest: {
         id: base,
-        name: 'Pokémon TCG AR',
-        short_name: 'TCG AR',
+        name: 'Digital Holo',
+        short_name: 'Digital Holo',
         description:
-          'Aponte a câmera para uma carta de Pokémon TCG e veja o Pokémon animado em pé sobre ela, em realidade aumentada.',
+          'Aponte a câmera para uma carta colecionável e veja a criatura animada em pé sobre ela, em realidade aumentada.',
         lang: 'pt-BR',
         start_url: base,
         scope: base,

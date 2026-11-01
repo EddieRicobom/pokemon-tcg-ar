@@ -27,7 +27,7 @@ describe('App', () => {
 
   it('abre em "Escanear" com a câmera desligada e a navegação em português', async () => {
     const text = await mount();
-    expect(text).toContain('Pokémon TCG AR');
+    expect(text).toContain('Digital Holo');
     expect(text).toContain('Escanear carta');
     const tabs = [...(host?.querySelectorAll('nav.tabs a') ?? [])].map((a) => [a.textContent?.trim(), a.getAttribute('href')]);
     expect(tabs).toEqual([['Escanear', '#/'], ['Vila', '#/vila'], ['Cartas', '#/cartas'], ['Treinador', '#/treinador']]);
