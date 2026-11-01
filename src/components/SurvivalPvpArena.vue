@@ -53,6 +53,16 @@ interface Bullet {
   x: number;
   y: number;
   color: string;
+  size: string;
+}
+interface Marker {
+  id: number;
+  mine: boolean;
+  x: number;
+  y: number;
+  color: string;
+  size: string;
+  leftMs: number;
 }
 interface Hud {
   mine: Row[];
@@ -74,6 +84,7 @@ const clock = (ms: number): string => `${Math.floor(ms / 60000)}:${String(Math.f
 const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0 });
 const units = shallowRef<Unit[]>([]);
 const bullets = shallowRef<Bullet[]>([]);
+const markers = shallowRef<Marker[]>([]);
 const broken = ref<number[]>([]);
 const hurt = ref(false);
 const stale = ref(false);
@@ -136,6 +147,8 @@ function handleEvents(events: ArenaEvent[]): void {
       } else if (e.mult === 0) toast('Não afeta o alvo…', 'info', 1800, 'imune');
       else if (e.mult > 1) toast('Super efetivo!', 'good', 1500, 'super');
       else if (e.mult < 1) toast('Pouco efetivo…', 'info', 1500, 'pouco');
+    } else if (e.k === 'telegraph') {
+      if (e.side !== mySide) toast('Área marcada: saia do círculo!', 'bad', 1600, `mark:${e.side}`);
     } else if (e.k === 'faint') {
       const name = mons[e.index]?.name ?? 'Pokémon';
       toast(e.side === mySide ? `${name} desmaiou` : `${name} (${props.friendName}) desmaiou`, e.side === mySide ? 'bad' : 'good', 2600);
@@ -153,7 +166,11 @@ function toView(x: number, y: number): { x: number; y: number } {
 
 function buildScene(now: number): void {
   const view: ArenaView = hostLink
-    ? { sides: [{ x: state.sides[0].x, y: state.sides[0].y }, { x: state.sides[1].x, y: state.sides[1].y }], shots: state.shots.map((s) => ({ id: s.id, side: s.side, x: s.x, y: s.y, type: s.type })) }
+    ? {
+      sides: [{ x: state.sides[0].x, y: state.sides[0].y }, { x: state.sides[1].x, y: state.sides[1].y }],
+      shots: state.shots.map((s) => ({ id: s.id, side: s.side, x: s.x, y: s.y, type: s.type, radius: s.radius })),
+      markers: state.markers.map((m) => ({ id: m.id, side: m.side, x: m.x, y: m.y, radius: m.radius, type: m.type, leftMs: m.leftMs })),
+    }
     : (guestLink as SurvivalGuestLink).view(now);
   const out: Unit[] = [];
   for (const side of [mySide, foeSide] as const) {
@@ -166,7 +183,11 @@ function buildScene(now: number): void {
   units.value = out;
   bullets.value = view.shots.map((s) => {
     const p = toView(s.x, s.y);
-    return { id: s.id, mine: s.side === mySide, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, color: TYPE_COLORS[s.type] };
+    return { id: s.id, mine: s.side === mySide, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, color: TYPE_COLORS[s.type], size: `${Math.max(2.5, (s.radius * 2 / SV_ARENA_W) * 100)}%` };
+  });
+  markers.value = view.markers.map((m) => {
+    const p = toView(m.x, m.y);
+    return { id: m.id, mine: m.side === mySide, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, color: TYPE_COLORS[m.type], size: `${(m.radius * 2 / SV_ARENA_W) * 100}%`, leftMs: m.leftMs };
   });
 }
 
@@ -332,7 +353,15 @@ onBeforeUnmount(() => {
         :key="b.id"
         class="svp-shot"
         :class="{ mine: b.mine }"
-        :style="{ left: `${b.x}%`, top: `${b.y}%`, background: b.color }"
+        :style="{ left: `${b.x}%`, top: `${b.y}%`, background: b.color, width: b.size }"
+      ></span>
+      <span
+        v-for="m in markers"
+        :key="m.id"
+        class="svp-marker"
+        :class="{ mine: m.mine }"
+        :style="{ left: `${m.x}%`, top: `${m.y}%`, color: m.color, width: m.size, '--mark-pulse': `${Math.max(0.45, m.leftMs / 1500)}s` }"
+        aria-hidden="true"
       ></span>
       <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield }" :style="unitStyle(u)">
         <span class="svp-ring"></span>
@@ -491,8 +520,8 @@ onBeforeUnmount(() => {
 
 .svp-arena {
   position: relative;
-  width: min(100%, calc((100dvh - 250px) * 0.6667));
-  min-width: 220px;
+  width: min(100%, 430px, calc((100dvh - 190px) * 0.6667));
+  min-width: min(260px, calc(100vw - 32px));
   aspect-ratio: 2 / 3;
   margin: 0 auto;
   overflow: hidden;
@@ -569,6 +598,22 @@ onBeforeUnmount(() => {
 .svp-shot.mine {
   border-color: #fff;
 }
+
+.svp-marker {
+  position: absolute;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  box-shadow: inset 0 0 18px currentColor, 0 0 12px currentColor;
+  opacity: 0.78;
+  pointer-events: none;
+  animation: svp-marker var(--mark-pulse, 1s) ease-in-out infinite alternate;
+}
+
+.svp-marker.mine { color: #fff !important; }
+@keyframes svp-marker { to { opacity: 0.24; transform: translate(-50%, -50%) scale(0.82); } }
 
 .svp-joy {
   position: absolute;

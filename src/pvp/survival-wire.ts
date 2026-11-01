@@ -1,6 +1,7 @@
 import type { SurvivorUpgradeRarity } from '../core/survivor-types';
 import { POKEMON_TYPES } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
+import type { MoveCategory, MoveEffect } from '../core/survivor-moves';
 import { SV_ARENA_H, SV_ARENA_W, SV_LIMITS, SV_TEAM_SIZE } from '../core/survivor-pvp';
 import type { ArenaEvent, ArenaInput, ArenaSnapshot, ArenaWinner, SvMonSpec } from '../core/survivor-pvp';
 
@@ -38,6 +39,10 @@ const isInt = (v: unknown, lo: number, hi: number): v is number => isNum(v, lo, 
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 const TYPES = new Set<string>(POKEMON_TYPES);
 const isType = (v: unknown): v is PokemonType => typeof v === 'string' && TYPES.has(v);
+const CATEGORIES = new Set<MoveCategory>(['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido']);
+const EFFECTS = new Set<MoveEffect>(['queimar', 'lentidao', 'empurrar', 'saltar', 'atordoar', 'atravessar', 'roubar', 'nenhum']);
+const isCategory = (v: unknown): v is MoveCategory => typeof v === 'string' && CATEGORIES.has(v as MoveCategory);
+const isEffect = (v: unknown): v is MoveEffect => typeof v === 'string' && EFFECTS.has(v as MoveEffect);
 const RARITIES: readonly string[] = ['normal', 'raro', 'lendario', 'ancestral'];
 const isBuffRarity = (v: unknown): v is SurvivorUpgradeRarity => typeof v === 'string' && RARITIES.includes(v);
 /** Buff raro = qualquer raridade acima da normal. */
@@ -50,9 +55,30 @@ export function parseSvMon(v: unknown): SvMonSpec | null {
   if (!Array.isArray(v.types) || v.types.length > 2 || !v.types.every(isType) || !isType(v.attackType)) return null;
   if (!isNum(v.maxHp, ...SV_LIMITS.maxHp) || !isNum(v.power, ...SV_LIMITS.power) || !isNum(v.speed, ...SV_LIMITS.speed)) return null;
   if (!isNum(v.fireMs, ...SV_LIMITS.fireMs) || !isNum(v.score, ...SV_LIMITS.score)) return null;
-  return {
+  const base: SvMonSpec = {
     id: v.id, name: v.name, dexId: v.dexId, shiny: v.shiny, types: [...(v.types as PokemonType[])], attackType: v.attackType,
     maxHp: v.maxHp, power: v.power, speed: v.speed, fireMs: v.fireMs, score: v.score, estimated: v.estimated,
+  };
+  const supplied = ['moveName', 'moveCategory', 'moveEffect', 'projectileSpeed', 'projectileSize', 'shots', 'pierce', 'attackRange', 'attackRadius', 'critChance', 'buffs']
+    .some((key) => key in v);
+  if (!supplied) return base;
+  if (!isStr(v.moveName, 60) || !isCategory(v.moveCategory) || !isEffect(v.moveEffect)) return null;
+  if (!isNum(v.projectileSpeed, 120, 700) || !isNum(v.projectileSize, 3, 18) || !isInt(v.shots, 1, 5) || !isInt(v.pierce, 0, 4)) return null;
+  if (!isNum(v.attackRange, 40, 360) || !isNum(v.attackRadius, 18, 160) || !isNum(v.critChance, 0, 0.6)) return null;
+  if (!Array.isArray(v.buffs) || v.buffs.length > 24 || !v.buffs.every((buff) => isStr(buff, 80))) return null;
+  return {
+    ...base,
+    moveName: v.moveName,
+    moveCategory: v.moveCategory,
+    moveEffect: v.moveEffect,
+    projectileSpeed: v.projectileSpeed,
+    projectileSize: v.projectileSize,
+    shots: v.shots,
+    pierce: v.pierce,
+    attackRange: v.attackRange,
+    attackRadius: v.attackRadius,
+    critChance: v.critChance,
+    buffs: [...v.buffs],
   };
 }
 
@@ -83,17 +109,23 @@ function parseSideSnap(v: unknown): ArenaSnapshot['sides'][0] | null {
 export function parseSvSnapshot(v: unknown): ArenaSnapshot | null {
   if (!isObj(v) || !isInt(v.tick, 0, 1e9) || !isNum(v.timeMs, 0, 1e7) || !isNum(v.countdownMs, 0, 60000)) return null;
   const winner = parseWinner(v.winner);
-  if (winner === undefined || !Array.isArray(v.sides) || v.sides.length !== 2 || !Array.isArray(v.shots) || v.shots.length > 80) return null;
+  if (winner === undefined || !Array.isArray(v.sides) || v.sides.length !== 2 || !Array.isArray(v.shots) || v.shots.length > 80 || !Array.isArray(v.markers) || v.markers.length > 16) return null;
   const a = parseSideSnap(v.sides[0]);
   const b = parseSideSnap(v.sides[1]);
   if (!a || !b) return null;
   const shots: ArenaSnapshot['shots'] = [];
   for (const s of v.shots) {
     if (!isObj(s) || !isInt(s.id, 0, 1e9) || !isSide(s.side) || !isNum(s.x, -100, SV_ARENA_W + 100) || !isNum(s.y, -100, SV_ARENA_H + 100)) return null;
-    if (!isNum(s.vx, -1000, 1000) || !isNum(s.vy, -1000, 1000) || !isType(s.type)) return null;
-    shots.push({ id: s.id, side: s.side, x: s.x, y: s.y, vx: s.vx, vy: s.vy, type: s.type });
+    if (!isNum(s.vx, -1000, 1000) || !isNum(s.vy, -1000, 1000) || !isNum(s.radius, 3, 18) || !isType(s.type)) return null;
+    shots.push({ id: s.id, side: s.side, x: s.x, y: s.y, vx: s.vx, vy: s.vy, type: s.type, radius: s.radius });
   }
-  return { tick: v.tick, timeMs: v.timeMs, countdownMs: v.countdownMs, winner, sides: [a, b], shots };
+  const markers: ArenaSnapshot['markers'] = [];
+  for (const marker of v.markers) {
+    if (!isObj(marker) || !isInt(marker.id, 0, 1e9) || !isSide(marker.side) || !isNum(marker.x, 0, SV_ARENA_W) || !isNum(marker.y, 0, SV_ARENA_H)) return null;
+    if (!isNum(marker.radius, 18, 160) || !isType(marker.type) || !isNum(marker.leftMs, 0, 1500)) return null;
+    markers.push({ id: marker.id, side: marker.side, x: marker.x, y: marker.y, radius: marker.radius, type: marker.type, leftMs: marker.leftMs });
+  }
+  return { tick: v.tick, timeMs: v.timeMs, countdownMs: v.countdownMs, winner, sides: [a, b], shots, markers };
 }
 
 function parseEvents(v: unknown): ArenaEvent[] | null {
@@ -102,6 +134,7 @@ function parseEvents(v: unknown): ArenaEvent[] | null {
   for (const e of v) {
     if (!isObj(e) || !isSide(e.side)) return null;
     if (e.k === 'hit' && isNum(e.damage, 0, 5000) && isNum(e.mult, 0, 16)) out.push({ k: 'hit', side: e.side, damage: e.damage, mult: e.mult });
+    else if (e.k === 'telegraph' && isNum(e.x, 0, SV_ARENA_W) && isNum(e.y, 0, SV_ARENA_H) && isNum(e.radius, 18, 160) && isType(e.type)) out.push({ k: 'telegraph', side: e.side, x: e.x, y: e.y, radius: e.radius, type: e.type });
     else if (e.k === 'faint' && isInt(e.index, 0, SV_TEAM_SIZE - 1)) out.push({ k: 'faint', side: e.side, index: e.index });
     else if (e.k === 'switch' && isInt(e.index, 0, SV_TEAM_SIZE - 1) && typeof e.forced === 'boolean') out.push({ k: 'switch', side: e.side, index: e.index, forced: e.forced });
     else return null;

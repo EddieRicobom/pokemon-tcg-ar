@@ -222,3 +222,10 @@ Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, cic
 - Liga/Pins: insígnias e títulos passaram a liberar desconto real de energia e campos de jogo (Geleira, Pântano e Salão psíquico), todos implementados pelas regras existentes de atrito e tipo.
 - Testes focados dos motores modificados passaram localmente. Ainda pendem aparência, toque, som e desempenho em celular real; a execução global desta sessão não concluiu por dependências de desenvolvimento ausentes no ambiente (`@tensorflow/tfjs` e `@msgpack/msgpack`).
 
+## Masmorra e PvP do Survival no celular (01/11/2026)
+
+- Masmorra: a tela em execução deixa de esmagar o tabuleiro para caber junto de todos os cartões. O conteúdo passa a rolar dentro do painel, o mapa usa a largura disponível e os botões mantêm área de toque; no duelo, a fusão empilha arte e atributos sem vazar horizontalmente.
+- PvP do Survival: a arena recebe a ficha efetiva da corrida — atributos alterados por buffs, categoria/efeito do golpe, rajada, perfuração, tamanho e velocidade do projétil — em vez de reconstruir apenas números base da espécie. A arena ficou visualmente maior e o deslocamento foi acelerado proporcionalmente.
+- Justiça de combate: golpes de área prendem a posição atual do alvo, desenham o círculo no chão por 1,5 s e só então verificam se ele permaneceu ali. O marcador e o tamanho dos projéteis seguem também nos instantâneos do anfitrião para o convidado ver a mesma ameaça.
+- Cobertura: os testes puros cobrem transferência da ficha, telegráfico/escape da área e a sincronização; `typecheck`, esses testes focados, build com `BASE_PATH=/pokemon-tcg-ar/` e `verify-dist` passaram localmente. Nesta máquina, a suíte completa parou numa tentativa de conexão do happy-dom a `localhost:3000`, fora deste fluxo; o CI continua sendo a confirmação da suíte integral. Toque, tamanho visual e desempenho continuam pendentes de aparelho físico.
+

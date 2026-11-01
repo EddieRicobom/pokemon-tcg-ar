@@ -56,7 +56,8 @@ export class SurvivalHostLink {
 
 export interface ArenaView {
   sides: [{ x: number; y: number }, { x: number; y: number }];
-  shots: { id: number; side: 0 | 1; x: number; y: number; type: ArenaState['shots'][number]['type'] }[];
+  shots: { id: number; side: 0 | 1; x: number; y: number; type: ArenaState['shots'][number]['type']; radius: number }[];
+  markers: { id: number; side: 0 | 1; x: number; y: number; radius: number; type: ArenaState['markers'][number]['type']; leftMs: number }[];
 }
 
 export class SurvivalGuestLink {
@@ -110,7 +111,8 @@ export class SurvivalGuestLink {
     if (!cur) {
       return {
         sides: [{ x: this.state.sides[0].x, y: this.state.sides[0].y }, { x: this.state.sides[1].x, y: this.state.sides[1].y }],
-        shots: this.state.shots.map((s) => ({ id: s.id, side: s.side, x: s.x, y: s.y, type: s.type })),
+        shots: this.state.shots.map((s) => ({ id: s.id, side: s.side, x: s.x, y: s.y, type: s.type, radius: s.radius })),
+        markers: this.state.markers.map((m) => ({ id: m.id, side: m.side, x: m.x, y: m.y, radius: m.radius, type: m.type, leftMs: m.leftMs })),
       };
     }
     const prev = this.prev ?? cur;
@@ -124,8 +126,9 @@ export class SurvivalGuestLink {
       ],
       shots: cur.shots.map((s) => {
         const p = before.get(s.id);
-        return { id: s.id, side: s.side, x: p ? lerp(p.x, s.x) : s.x, y: p ? lerp(p.y, s.y) : s.y, type: s.type };
+        return { id: s.id, side: s.side, x: p ? lerp(p.x, s.x) : s.x, y: p ? lerp(p.y, s.y) : s.y, type: s.type, radius: s.radius };
       }),
+      markers: cur.markers,
     };
   }
 }
