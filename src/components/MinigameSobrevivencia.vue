@@ -525,6 +525,17 @@ const specialModalOpen = computed(() => {
   return phase === 'arrival' || phase === 'choice' || phase === 'branch-arrival' || phase === 'branch-choice';
 });
 const shadowCutsceneOpen = computed(() => state.value?.shadowEncounter.phase === 'arrival');
+const fieldEventHud = computed(() => {
+  const event = state.value?.fieldEvent;
+  const player = state.value?.player;
+  if (!event || !player) return null;
+  if (event.phase === 'hunt') return '⚔ Caçada: elimine os 2 elites';
+  const dx = event.x - player.x;
+  const dy = event.y - player.y;
+  const direction = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? '←' : '→') : (dy < 0 ? '↑' : '↓');
+  const label = event.kind === 'resonance' ? '✦ Ressonância' : '⚔ Caçada';
+  return `${label} ${direction} · ${Math.ceil(event.remainingMs / 1000)}s`;
+});
 const specialBranchOptions = computed(() => state.value?.special.selected ? SURVIVOR_SPECIAL_BRANCHES[state.value.special.selected] : []);
 const specialBlocked = computed(() => !state.value || state.value.over || paused.value || shadowCutsceneOpen.value || !!pendingUpgrade.value || !!evolving.value || state.value.special.phase !== 'ready');
 const guardianSprite = ref<string | null>(null);
@@ -1609,6 +1620,40 @@ function draw(): void {
   ctx.lineWidth = 4;
   ctx.strokeRect(2, 2, ARENA_W - 4, ARENA_H - 4);
 
+  // Baliza de encontro: chama o olhar para fora do círculo habitual de inimigos.
+  const fieldEvent = s.fieldEvent;
+  if (fieldEvent && !effectiveVisual.value.rotomMode) {
+    const isHunt = fieldEvent.kind === 'hunt';
+    const color = isHunt ? '#ff6674' : '#78e9ff';
+    const pulse = 1 + Math.sin(animMs / 160) * 0.12;
+    ctx.save();
+    ctx.globalAlpha = fieldEvent.phase === 'hunt' ? 0.78 : 0.58;
+    ctx.strokeStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = detailedSpecialEffects.value ? 18 : 0;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([7, 5]);
+    ctx.beginPath();
+    ctx.arc(fieldEvent.x, fieldEvent.y, 34 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(fieldEvent.x, fieldEvent.y, 22 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.92;
+    ctx.font = 'bold 19px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff9dd';
+    ctx.fillText(isHunt ? '⚔' : '✦', fieldEvent.x, fieldEvent.y);
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = color;
+    ctx.fillText(fieldEvent.phase === 'hunt' ? 'CAÇADA' : 'SINAL', fieldEvent.x, fieldEvent.y - 50);
+    ctx.restore();
+  }
+
   // Só o que cai na câmera (com folga para o desenho): fora da tela não há nada a pintar.
   const margin = 120;
   const left = camX - margin;
@@ -2141,6 +2186,20 @@ function loop(ts: number): void {
       else if (ev.type === 'artifactCollected') {
         playSound('survivor-pickup');
         showArtifactNotice(ev.kind);
+      }
+      else if (ev.type === 'fieldEventSpawn') {
+        playSound(ev.kind === 'hunt' ? 'survivor-boss' : 'survivor-level');
+        say(ev.kind === 'hunt'
+          ? '⚔ Caçada detectada: alcance a baliza para desafiar 2 elites e ganhar artefatos.'
+          : '✦ Sinal de ressonância: alcance a baliza para ganhar velocidade, poder e orbes.', 5200);
+      }
+      else if (ev.type === 'fieldEventStarted') {
+        playSound('survivor-boss');
+        say('⚔ Caçada iniciada: derrube os 2 elites para liberar 2 artefatos.', 4200);
+      }
+      else if (ev.type === 'fieldEventComplete') {
+        playSound('success');
+        say(ev.kind === 'hunt' ? '⚔ Caçada concluída: 2 artefatos liberados no local.' : '✦ Ressonância absorvida: poder e velocidade por 12 segundos.', 4200);
       }
       else if (ev.type === 'typeAffinityOffer') {
         paused.value = true;
@@ -2716,6 +2775,7 @@ onBeforeUnmount(() => {
             <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
             <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
             <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
+            <span v-if="fieldEventHud" class="chip survivor-field-chip" :class="{ hunt: state.fieldEvent?.kind === 'hunt' }" :title="state.fieldEvent?.phase === 'hunt' ? 'A caçada já começou; derrote os dois inimigos elite marcados.' : 'Encontro opcional de campo: siga a seta antes que a baliza desapareça.'">{{ fieldEventHud }}</span>
             <span v-if="pvpRun" class="chip survivor-pvp-chip" role="status" title="PvP: esta run rende um Pokémon para a sua equipe 3x3">⚔ Run {{ pvpRun.index + 1 }}/{{ pvpRun.total }} · ⏳ {{ formatTime(Math.max(0, pvpRun.limitMs - state.elapsedMs)) }}</span>
             <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
