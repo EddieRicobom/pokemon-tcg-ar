@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NO_INPUT, SV_COUNTDOWN_MS, SV_SNAPSHOT_MS, snapshotArena, createArena } from '../core/survivor-pvp';
 import type { SvMonSpec } from '../core/survivor-pvp';
 import { SurvivalGuestLink, SurvivalHostLink } from './survival-link';
+import { isRareBuff } from './survival-wire';
 import { encodeMessage, parseMessage } from './wire';
 import type { WireMessage } from './wire';
 
@@ -175,15 +176,18 @@ describe('survival pvp: validação do fio', () => {
   });
 });
 
-describe('survival pvp: provocações e avisos de buff no fio', () => {
-  it('aceita só ids da lista fixa e buffs com raridade conhecida', () => {
-    for (const id of ['boa-sorte', 'vem', 'consegue', 'ops']) expect(parseMessage(JSON.stringify({ t: 'taunt', id }))).toEqual({ t: 'taunt', id });
-    expect(parseMessage(JSON.stringify({ t: 'taunt', id: 'você é fraco' }))).toBeNull();
-    expect(parseMessage(JSON.stringify({ t: 'taunt' }))).toBeNull();
-    const buff = { t: 'buff-event', id: 'power', name: 'Garra afiada', rarity: 'raro' };
+describe('survival pvp: aviso de buff no fio', () => {
+  it('aceita buffs com raridade conhecida e recusa o resto', () => {
+    const buff = { t: 'sv-buff', id: 'power', name: 'Garra afiada', rarity: 'raro' };
     expect(parseMessage(JSON.stringify(buff))).toEqual(buff);
     expect(parseMessage(JSON.stringify({ ...buff, rarity: 'mítico' }))).toBeNull();
     expect(parseMessage(JSON.stringify({ ...buff, name: 'x'.repeat(41) }))).toBeNull();
     expect(parseMessage(JSON.stringify({ ...buff, id: '' }))).toBeNull();
+  });
+
+  it('raro é tudo acima de normal', () => {
+    expect(isRareBuff('normal')).toBe(false);
+    expect(isRareBuff('raro')).toBe(true);
+    expect(isRareBuff('ancestral')).toBe(true);
   });
 });

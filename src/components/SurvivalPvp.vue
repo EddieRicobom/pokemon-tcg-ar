@@ -8,8 +8,9 @@ import { profile } from '../app/profile-store';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import { SV_RUN_MS, SV_RUNS, svMonFromRun } from '../core/survivor-pvp';
 import type { SvMonSpec, SvRunResult } from '../core/survivor-pvp';
-import { acceptTaunt, isRareBuff, TAUNTS, tauntCooldownLeft, tauntLabel } from '../core/survivor-taunts';
-import type { TauntId } from '../core/survivor-taunts';
+import { acceptTaunt, canTaunt, TAUNTS, tauntText, tauntWait } from '../pvp/taunts';
+import type { TauntId } from '../pvp/taunts';
+import { isRareBuff } from '../pvp/survival-wire';
 import type { SurvivorUpgradeRarity } from '../core/survivor-types';
 import type { PvpPeer } from '../pvp/peer';
 import { SurvivalGuestLink, SurvivalHostLink } from '../pvp/survival-link';
@@ -52,8 +53,8 @@ const muted = ref(readMute());
 const fanOpen = ref(false);
 const tauntLeft = ref(0);
 const notices = ref<{ id: number; text: string; tone: 'taunt' | 'buff' | 'rare' }[]>([]);
-let lastTauntSent = -Infinity;
-let lastTauntShown = -Infinity;
+let lastTauntSent = 0;
+let lastTauntShown = 0;
 let noticeId = 0;
 let cooldownTimer: ReturnType<typeof setInterval> | null = null;
 let fanTimer: ReturnType<typeof setTimeout> | null = null;
@@ -100,15 +101,15 @@ function toggleMute(): void {
 
 function sendTaunt(id: TauntId): void {
   const now = performance.now();
-  if (tauntCooldownLeft(lastTauntSent, now) > 0) return;
+  if (!canTaunt(lastTauntSent, now)) return;
   lastTauntSent = now;
   send({ t: 'taunt', id });
-  notify(`Você: ${tauntLabel(id)}`, 'taunt', 1800);
+  notify(`Você: ${tauntText(id)}`, 'taunt', 1800);
   fanOpen.value = false;
-  tauntLeft.value = Math.ceil(tauntCooldownLeft(lastTauntSent, now) / 1000);
+  tauntLeft.value = tauntWait(lastTauntSent, now);
   if (cooldownTimer) clearInterval(cooldownTimer);
   cooldownTimer = setInterval(() => {
-    tauntLeft.value = Math.ceil(tauntCooldownLeft(lastTauntSent, performance.now()) / 1000);
+    tauntLeft.value = tauntWait(lastTauntSent, performance.now());
     if (tauntLeft.value <= 0 && cooldownTimer) {
       clearInterval(cooldownTimer);
       cooldownTimer = null;
@@ -118,7 +119,7 @@ function sendTaunt(id: TauntId): void {
 
 /** O buff que acabei de pegar na run vai para o rival. */
 function onBuff(buff: { id: string; name: string; rarity: SurvivorUpgradeRarity }): void {
-  send({ t: 'buff-event', id: buff.id, name: buff.name, rarity: buff.rarity });
+  send({ t: 'sv-buff', id: buff.id, name: buff.name, rarity: buff.rarity });
 }
 
 const send = (msg: WireMessage): void => {
@@ -165,10 +166,10 @@ function onMessage(msg: WireMessage): void {
       const now = performance.now();
       if (muted.value || !acceptTaunt(lastTauntShown, now)) break;
       lastTauntShown = now;
-      notify(`${friendName.value}: ${tauntLabel(msg.id)}`, 'taunt');
+      notify(`${friendName.value}: ${tauntText(msg.id)}`, 'taunt');
       break;
     }
-    case 'buff-event':
+    case 'sv-buff':
       notify(`${friendName.value} pegou ${msg.name}!`, isRareBuff(msg.rarity) ? 'rare' : 'buff', isRareBuff(msg.rarity) ? 4500 : 3000);
       break;
     case 'sv-input':
@@ -304,7 +305,7 @@ onBeforeUnmount(() => {
       </header>
 
       <div v-if="fanOpen" class="svpvp-fan" role="group" aria-label="Provocações">
-        <button v-for="t in TAUNTS" :key="t.id" type="button" :disabled="tauntLeft > 0" @click="sendTaunt(t.id)">{{ t.label }}</button>
+        <button v-for="t in TAUNTS" :key="t.id" type="button" :disabled="tauntLeft > 0" @click="sendTaunt(t.id)">{{ t.text }}</button>
         <button type="button" class="mute" :aria-pressed="muted" @click="toggleMute">{{ muted ? '🔇 Provocações do rival silenciadas' : '🔊 Silenciar provocações do rival' }}</button>
       </div>
       <ul class="svpvp-notices" aria-live="polite">

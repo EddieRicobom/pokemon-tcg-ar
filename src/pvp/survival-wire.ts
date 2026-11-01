@@ -1,5 +1,3 @@
-import { isBuffRarity, isTauntId } from '../core/survivor-taunts';
-import type { TauntId } from '../core/survivor-taunts';
 import type { SurvivorUpgradeRarity } from '../core/survivor-types';
 import { POKEMON_TYPES } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
@@ -27,10 +25,8 @@ export type SurvivalWireMessage =
   | { t: 'sv-input'; seq: number; dx: number; dy: number; switchTo: number }
   /** Anfitrião → convidado: o estado da arena e o que aconteceu desde o último. */
   | { t: 'sv-snap'; snap: ArenaSnapshot; events: ArenaEvent[] }
-  /** Provocação de uma lista fixa (nunca texto livre). */
-  | { t: 'taunt'; id: TauntId }
   /** Peguei uma carta de melhoria na run: id e raridade das regras reais, nome só para mostrar. */
-  | { t: 'buff-event'; id: string; name: string; rarity: SurvivorUpgradeRarity };
+  | { t: 'sv-buff'; id: string; name: string; rarity: SurvivorUpgradeRarity };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isNum = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
@@ -38,6 +34,10 @@ const isInt = (v: unknown, lo: number, hi: number): v is number => isNum(v, lo, 
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 const TYPES = new Set<string>(POKEMON_TYPES);
 const isType = (v: unknown): v is PokemonType => typeof v === 'string' && TYPES.has(v);
+const RARITIES: readonly string[] = ['normal', 'raro', 'lendario', 'ancestral'];
+const isBuffRarity = (v: unknown): v is SurvivorUpgradeRarity => typeof v === 'string' && RARITIES.includes(v);
+/** Buff raro = qualquer raridade acima da normal. */
+export const isRareBuff = (rarity: SurvivorUpgradeRarity): boolean => rarity !== 'normal';
 const isSide = (v: unknown): v is 0 | 1 => v === 0 || v === 1;
 
 export function parseSvMon(v: unknown): SvMonSpec | null {
@@ -129,11 +129,9 @@ export function parseSurvivalMessage(v: Record<string, unknown>): SurvivalWireMe
       const events = parseEvents(v.events);
       return snap && events ? { t: 'sv-snap', snap, events } : null;
     }
-    case 'taunt':
-      return isTauntId(v.id) ? { t: 'taunt', id: v.id } : null;
-    case 'buff-event':
+    case 'sv-buff':
       return isStr(v.id, 80) && v.id.length > 0 && isStr(v.name, 40) && v.name.length > 0 && isBuffRarity(v.rarity)
-        ? { t: 'buff-event', id: v.id, name: v.name, rarity: v.rarity }
+        ? { t: 'sv-buff', id: v.id, name: v.name, rarity: v.rarity }
         : null;
     default:
       return null;
