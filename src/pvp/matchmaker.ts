@@ -1,4 +1,5 @@
-import { PvpPeer } from './peer';
+import { HAS_TURN, PvpPeer } from './peer';
+import { pvpLog } from './pvp-log';
 import type { CloseReason, PeerState } from './peer';
 import { randomId, SIGNAL_ROOT } from './signal';
 import type { SignalData, SignalHub } from './signal';
@@ -81,6 +82,8 @@ export interface HostOptions {
 export interface HostHandlers<P> {
   onCode(code: string): void;
   onGuest?(name: string): void;
+  /** Etapas da conexão para a tela («Resposta recebida, abrindo a conexão…», «Aguardando um amigo entrar…»). */
+  onStatus?(text: string): void;
   onPeer(peer: P): void;
   onError(message: string): void;
 }
@@ -91,11 +94,23 @@ export interface JoinHandlers<P> {
   onError(message: string): void;
 }
 
-const MAX_OFFER = 24000;
+const MAX_OFFER = 20000;
+const MAX_ROOMS = 20;
+/** Quando a conexão direta não fecha: o texto muda se o build tem retransmissão (TURN) ou não. */
+const NETWORK_PROBLEM = HAS_TURN
+  ? 'Não conectou. A rede de um dos dois bloqueou a conexão. Tente de novo, ou os dois na mesma rede Wi-Fi.'
+  : 'Não conectou: as redes de vocês não deixaram os celulares se ligarem direto (comum no 4G). Tentem os dois na mesma rede Wi-Fi.';
 const WEBRTC_PROBLEM = 'Este navegador não conseguiu criar a conexão (WebRTC). Tente no Chrome ou no Safari atualizados.';
 
 function text(value: unknown, max: number): string {
   return typeof value === 'string' ? value.slice(0, max) : '';
+}
+
+const ROOM_CODE = /^[A-Z2-9]{4,6}$/;
+
+/** Nome vindo de um estranho: sem caracteres de controle ou de direção, espaços juntos, curto. */
+function cleanName(value: unknown): string {
+  return text(value, 40).replace(/\p{C}/gu, '').replace(/\s+/g, ' ').trim().slice(0, 24);
 }
 
 export class Matchmaker<P extends MatchPeer = PvpPeer> {
@@ -116,26 +131,37 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
 
   /** Salas abertas do modo, em tempo real. Devolve a função que para de ouvir. */
   watchRooms(onRooms: (rooms: OpenRoom[]) => void): () => void {
-    const rooms = new Map<string, OpenRoom>();
+    const rooms = new Map<string, OpenRoom & { hid: string; firstSeen: number }>();
     const emit = () => {
       const now = Date.now();
       for (const [code, room] of rooms) if (now - room.seenAt > this.timings.roomTtlMs) rooms.delete(code);
-      onRooms([...rooms.values()].sort((a, b) => b.seenAt - a.seenAt));
+      // Ordem pela chegada da sala (não pelo último anúncio): a lista não pula enquanto a pessoa vai tocar.
+      onRooms([...rooms.values()].sort((a, b) => b.firstSeen - a.firstSeen).map(({ code, name, note, seenAt }) => ({ code, name, note, seenAt })));
     };
     const off = this.hub.subscribe(this.lobbyTopic(), (m) => {
       if (m.r !== 'h') return;
       const code = text(m.code, 8);
-      if (!code) return;
-      if (m.t === 'closed') rooms.delete(code);
-      else if (m.t === 'open') rooms.set(code, { code, name: text(m.name, 24) || 'Treinador', note: text(m.note, 24), seenAt: Date.now() });
-      else return;
+      const hid = text(m.hid, 24);
+      if (!ROOM_CODE.test(code) || !hid) return;
+      const known = rooms.get(code);
+      if (m.t === 'closed') {
+        if (known?.hid !== hid) return;
+        rooms.delete(code);
+      } else if (m.t === 'open') {
+        if (!known && rooms.size >= MAX_ROOMS) return;
+        rooms.set(code, { code, hid, name: cleanName(m.name) || 'Treinador', note: cleanName(m.note), seenAt: Date.now(), firstSeen: known?.firstSeen ?? Date.now() });
+      } else return;
       emit();
     });
-    // Pede a quem já está esperando que se anuncie de novo, em vez de esperar o próximo ciclo.
-    this.hub.publish(this.lobbyTopic(), { r: 'g', t: 'who' });
+    // Pede a quem já está esperando que se anuncie de novo, em vez de esperar o próximo ciclo. O primeiro pedido costuma
+    // sair antes de algum broker ligar; por isso vai de novo quando o primeiro broker conecta.
+    const ask = () => this.hub.publish(this.lobbyTopic(), { r: 'g', t: 'who' });
+    ask();
+    const offOnline = this.hub.whenOnline(ask);
     const timer = setInterval(emit, 1500);
     return () => {
       off();
+      offOnline();
       clearInterval(timer);
     };
   }
@@ -157,6 +183,7 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
     let offWho: (() => void) | null = null;
 
     const send = (data: SignalData) => this.hub.publish(this.roomTopic(code), { r: 'h', hid, ...data });
+    const waiting = () => handlers.onStatus?.('Aguardando um amigo entrar…');
     const announce = () => {
       send({ t: 'here' });
       if (options.listed && !claimed) this.hub.publish(this.lobbyTopic(), { r: 'h', t: 'open', hid, code, name: options.name, note: options.note ?? '' });
@@ -175,9 +202,12 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
       unsubscribe = this.hub.subscribe(this.roomTopic(code), (m) => {
         if (!alive) return;
         if (m.r === 'h') {
-          // Outro anfitrião com o mesmo código (raro): quem ainda não tem convidado troca de código.
-          if (m.hid !== hid && !claimed && (m.t === 'here' || m.t === 'open')) {
+          // Outro anfitrião com o mesmo código (raro): só troca quem tem o `hid` menor e ainda não tem convidado, para os
+          // dois não trocarem juntos.
+          if (typeof m.hid === 'string' && m.hid !== hid && m.hid > hid && !claimed && m.t === 'here') {
+            if (options.listed) this.hub.publish(this.lobbyTopic(), { r: 'h', t: 'closed', hid, code });
             code = newRoomCode(length);
+            pvpLog('HC', code);
             listen();
             handlers.onCode(code);
             announce();
@@ -191,34 +221,46 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
           if (!ready) return;
           if (!claimed) {
             claimed = gid;
-            handlers.onGuest?.(text(m.name, 24) || 'Amigo');
+            const guest = cleanName(m.name) || 'Amigo';
+            pvpLog('H3', guest);
+            handlers.onGuest?.(guest);
             if (options.listed) this.hub.publish(this.lobbyTopic(), { r: 'h', t: 'closed', hid, code });
             claimTimer = setTimeout(() => {
               if (!alive || !claimed) return;
               // O convidado sumiu: a sala volta para a lista com o mesmo convite.
+              pvpLog('H9', 'convidado sumiu');
               clearClaim();
+              waiting();
               announce();
             }, this.timings.claimMs);
           }
           send({ t: 'offer', gid, offer: ready.offer });
+          pvpLog('H4');
         } else if (m.t === 'answer' && claimed === gid && ready) {
           const answer = text(m.answer, MAX_OFFER);
           // A resposta chega repetida (o convidado manda mais de uma vez por segurança): só a primeira vale.
           if (!answer || answerApplied) return;
           answerApplied = true;
+          pvpLog('H5', `${answer.length}c`);
+          handlers.onStatus?.('Resposta do amigo recebida. Abrindo a conexão direta…');
           const current = ready;
           if (claimTimer) clearTimeout(claimTimer);
           claimTimer = null;
           void current.peer.acceptAnswer(answer).then((problem) => {
             if (!alive || ready !== current) return;
             if (problem) {
+              pvpLog('H7', problem.slice(0, 30));
               clearClaim();
+              waiting();
               announce();
               return;
             }
+            pvpLog('H6');
             connectTimer ??= setTimeout(() => {
               if (!alive || ready !== current || current.peer.state === 'open') return;
               // A ligação direta não fechou (rede do amigo): descarta e prepara um convite novo para a próxima tentativa.
+              pvpLog('H9', 'tempo');
+              handlers.onStatus?.(`${NETWORK_PROBLEM} A sala continua aberta.`);
               current.peer.onState = null;
               current.peer.close();
               ready = null;
@@ -241,13 +283,18 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
         }
         const record = { peer: made.peer, offer: made.code };
         ready = record;
-        made.peer.onState = (state) => {
+        pvpLog('H2', `${made.code.length}c`);
+        made.peer.onState = (state, reason) => {
           if (!alive || ready !== record) return;
           if (state === 'open') {
+            pvpLog('H8');
             made.peer.onState = null;
             stop(false);
             handlers.onPeer(made.peer);
           } else if (state === 'closed') {
+            // A ligação falhou (rede): avisa e prepara um convite novo, com a sala ainda aberta.
+            pvpLog('H9', reason ?? 'fechou');
+            if (claimed) handlers.onStatus?.(`${NETWORK_PROBLEM} A sala continua aberta.`);
             ready = null;
             clearClaim();
             void prepare();
@@ -280,7 +327,9 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
     };
 
     listen();
+    pvpLog('H1', code);
     handlers.onCode(code);
+    waiting();
     announceTimer = setInterval(() => announce(), this.timings.announceMs);
     // Quem entra na lista pede a lista: responde logo, sem esperar o próximo ciclo.
     offWho = options.listed ? this.hub.subscribe(this.lobbyTopic(), (m) => { if (m.r === 'g' && m.t === 'who' && alive && !claimed) announce(); }) : null;
@@ -323,46 +372,62 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
     };
     const knock = () => {
       if (!alive || answered) return;
-      if (tries >= this.timings.joinTries) return fail(`Não achei a sala ${code}. Confira o código e se o anfitrião continua com a tela aberta.`);
+      // Sem nenhum broker ligado a tentativa não conta: a falha seria de conexão, não de código.
+      if (this.hub.online === 0) return handlers.onStatus('Sem ponto de encontro no momento. Tentando de novo…');
+      if (tries >= this.timings.joinTries) {
+        pvpLog('G8', code);
+        return fail(`Não achei a sala ${code}. Confira o código e se o anfitrião continua com a tela aberta.`);
+      }
       tries++;
       this.hub.publish(topic, { r: 'g', t: 'join', gid, name });
     };
     const off = this.hub.subscribe(topic, (m) => {
       if (!alive || m.r !== 'h' || text(m.gid, 24) !== gid) return;
+      if (m.t === 'busy') pvpLog('G7');
       if (m.t === 'busy') return fail('Essa sala já está com outro jogador. Peça para o anfitrião abrir outra, ou espere um instante.');
       if (m.t !== 'offer' || answered) return;
       const offer = text(m.offer, MAX_OFFER);
       if (!offer) return;
       answered = true;
       if (joinTimer) clearInterval(joinTimer);
-      handlers.onStatus('Sala encontrada. Conectando…');
+      pvpLog('G2', `${offer.length}c`);
+      handlers.onStatus('Sala encontrada. Preparando a resposta…');
       void this.api.join(offer).then((made) => {
         if (!alive) {
           if (made.ok) made.peer.close();
           return;
         }
         if (!made.ok) return fail(made.message);
+        pvpLog('G3', `${made.code.length}c`);
         peer = made.peer;
-        made.peer.onState = (state) => {
+        made.peer.onState = (state, reason) => {
           if (!alive) return;
           if (state === 'open') {
+            pvpLog('G5');
             made.peer.onState = null;
             peer = null;
             finish();
             handlers.onPeer(made.peer);
           } else if (state === 'closed') {
-            fail('A conexão caiu antes de começar. Tente entrar de novo.');
+            pvpLog('G6', reason ?? 'fechou');
+            fail(reason === 'failed' ? NETWORK_PROBLEM : 'A conexão caiu antes de começar. Tente entrar de novo.');
           }
         };
         // A resposta vai algumas vezes: um broker pode perder uma mensagem, e a repetida é descartada pelo anfitrião.
         const sendAnswer = () => alive && this.hub.publish(topic, { r: 'g', t: 'answer', gid, answer: made.code });
         sendAnswer();
+        pvpLog('G4');
+        handlers.onStatus('Resposta enviada. Abrindo a conexão direta com o anfitrião…');
         setTimeout(sendAnswer, 1200);
         setTimeout(sendAnswer, 3000);
-        connectTimer = setTimeout(() => fail('Não conectou. A rede de um dos dois pode estar bloqueando a conexão direta; tente na mesma rede Wi-Fi.'), this.timings.connectMs);
+        connectTimer = setTimeout(() => {
+          pvpLog('G9');
+          fail(NETWORK_PROBLEM);
+        }, this.timings.connectMs);
       }).catch(() => fail(WEBRTC_PROBLEM));
     });
     handlers.onStatus(`Procurando a sala ${code}…`);
+    pvpLog('G1', code);
     knock();
     joinTimer = setInterval(knock, this.timings.joinRetryMs);
     return () => {

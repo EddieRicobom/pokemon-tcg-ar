@@ -18,17 +18,17 @@ describe('MQTT mínimo', () => {
     joined.set(a, 0);
     joined.set(b, a.length);
     expect(reader.push(joined)).toEqual([
-      { kind: 'publish', topic: 't/a', payload: '{"x":1}' },
-      { kind: 'publish', topic: 't/b', payload: 'ola' },
+      { kind: 'publish', topic: 't/a', payload: '{"x":1}', retained: false },
+      { kind: 'publish', topic: 't/b', payload: 'ola', retained: false },
     ]);
     const half = Math.floor(a.length / 2);
     expect(reader.push(a.slice(0, half))).toEqual([]);
-    expect(reader.push(a.slice(half))).toEqual([{ kind: 'publish', topic: 't/a', payload: '{"x":1}' }]);
+    expect(reader.push(a.slice(half))).toEqual([{ kind: 'publish', topic: 't/a', payload: '{"x":1}', retained: false }]);
   });
 
   it('textos acima de 127 bytes usam o tamanho em mais de um byte', () => {
     const payload = 'á'.repeat(300);
-    expect(new MqttReader().push(publishPacket('t', payload))).toEqual([{ kind: 'publish', topic: 't', payload }]);
+    expect(new MqttReader().push(publishPacket('t', payload))).toEqual([{ kind: 'publish', topic: 't', payload, retained: false }]);
   });
 
   it('lê os pacotes de cliente usados pelo broker de teste', () => {

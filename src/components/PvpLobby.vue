@@ -6,6 +6,7 @@ import { SignalHub } from '../pvp/signal';
 import { Matchmaker, normalizeRoomCode } from '../pvp/matchmaker';
 import type { OpenRoom, PvpGame } from '../pvp/matchmaker';
 import { profile } from '../app/profile-store';
+import { onPvpLog, pvpLogReset, pvpLogTail, pvpLogText } from '../pvp/pvp-log';
 
 /**
  * Pareamento do PvP sem copiar código longo: o anfitrião cria uma sala com um código curto (ou a deixa na lista pública do
@@ -33,6 +34,10 @@ const typedCode = ref('');
 const rooms = ref<OpenRoom[]>([]);
 const online = ref(0);
 const copied = ref(false);
+/** Últimos códigos do diário de pareamento (`pvp-log.ts`), para depurar com quem está jogando. */
+const diag = ref('');
+const diagCopied = ref(false);
+let offLog: (() => void) | null = null;
 
 // Reserva por códigos manuais (o jeito antigo).
 const myCode = ref('');
@@ -52,6 +57,8 @@ const CONNECT_TIMEOUT_MS = 30000;
 const displayName = () => (profile.name || 'Treinador').slice(0, 16);
 
 function startMeeting(): void {
+  pvpLogReset();
+  offLog = onPvpLog(() => (diag.value = pvpLogTail()));
   hub = new SignalHub();
   hub.onOnline = (n) => (online.value = n);
   matchmaker = new Matchmaker(hub, gameKey.value);
@@ -60,6 +67,8 @@ function startMeeting(): void {
 }
 
 function stopMeeting(): void {
+  offLog?.();
+  offLog = null;
   stopWatch?.();
   stopWatch = null;
   hosting?.cancel();
@@ -114,7 +123,8 @@ function createRoom(): void {
     { listed: !backupPurpose.value, name: displayName(), note: props.note, codeLength: codeLength.value },
     {
       onCode: (code) => (roomCode.value = code),
-      onGuest: (name) => (status.value = `${name} entrou. Conectando…`),
+      onGuest: (name) => (status.value = `${name} entrou. Preparando a conexão…`),
+      onStatus: (text) => (status.value = text),
       onPeer: (p) => connectedWith(p, 'host'),
       onError: (message) => {
         reset();
@@ -210,6 +220,16 @@ async function manualAnswer(): Promise<void> {
   busy.value = '';
 }
 
+async function copyDiag(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(pvpLogText());
+    diagCopied.value = true;
+    setTimeout(() => (diagCopied.value = false), 1800);
+  } catch {
+    error.value = 'Não consegui copiar o diagnóstico sozinho.';
+  }
+}
+
 async function copy(text: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(text);
@@ -254,7 +274,7 @@ onBeforeUnmount(() => {
         <ul v-if="rooms.length" class="pn-rooms">
           <li v-for="room in rooms" :key="room.code">
             <button type="button" :disabled="online === 0" @click="joinCode(room.code)">
-              <strong>{{ room.name }}</strong>
+              <strong>{{ room.name }} <span class="pn-room-tag">{{ room.code }}</span></strong>
               <small>{{ room.note }}</small>
               <span class="pn-room-go">Entrar</span>
             </button>
@@ -360,6 +380,10 @@ onBeforeUnmount(() => {
     </template>
 
     <p v-if="error" class="message error" role="alert">{{ error }}</p>
+    <p v-if="diag && (step === 'host' || step === 'join' || error)" class="pn-diag">
+      <span>Diagnóstico: <code>{{ diag }}</code></span>
+      <button type="button" class="pn-link" @click="copyDiag">{{ diagCopied ? 'Copiado!' : 'Copiar diagnóstico' }}</button>
+    </p>
     <button v-if="step !== 'choose'" type="button" class="pn-link" @click="reset">Cancelar e voltar</button>
   </section>
 </template>
@@ -497,6 +521,29 @@ onBeforeUnmount(() => {
   letter-spacing: 0.25em;
   text-transform: uppercase;
   text-align: center;
+}
+
+.pn-room-tag {
+  margin-left: 6px;
+  font: 700 0.75rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.pn-diag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.pn-diag code {
+  font: 0.72rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
 }
 
 .pn-room-code {

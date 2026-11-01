@@ -1,6 +1,7 @@
 import { decodeCode, encodeCode } from './codec';
 import { encodeMessage, parseMessage } from './wire';
 import type { WireMessage } from './wire';
+import { candidateSummary, pvpLog } from './pvp-log';
 
 /**
  * A ligação direta entre os dois celulares (WebRTC, canal de dados). Não há servidor do app: o pareamento é feito
@@ -10,12 +11,26 @@ import type { WireMessage } from './wire';
  * Na mesma rede Wi-Fi nem são necessários. Em algumas operadoras (CGNAT) a ligação direta pode não fechar; a tela avisa.
  */
 
+/**
+ * Retransmissão (TURN) opcional, para as redes em que a ligação direta não fecha (4G com CGNAT, redes com NAT simétrico).
+ * Vem do build (`VITE_PVP_TURN_URLS` separados por vírgula, `VITE_PVP_TURN_USER`, `VITE_PVP_TURN_PASS`, definidos como
+ * variáveis do repositório no GitHub). Sem elas, só STUN: funciona na maioria das redes, mas não em todas. O jogo vai
+ * cifrado (DTLS) pela retransmissão; ela só repassa bytes. A retransmissão pública antiga (Open Relay) parou de responder
+ * e travava a coleta de candidatos por 4,5 s em cada lado, por isso saiu.
+ */
+function turnFromEnv(): RTCIceServer[] {
+  const urls = ((import.meta.env.VITE_PVP_TURN_URLS as string | undefined) ?? '').split(',').map((u) => u.trim()).filter((u) => /^turns?:/.test(u));
+  if (urls.length === 0) return [];
+  return [{ urls, username: (import.meta.env.VITE_PVP_TURN_USER as string | undefined) ?? '', credential: (import.meta.env.VITE_PVP_TURN_PASS as string | undefined) ?? '' }];
+}
+
 export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
-  // Retransmissão pública para as redes em que a ligação direta não fecha (operadoras com CGNAT). O jogo vai cifrado
-  // (DTLS) por ela: o servidor só repassa bytes. Só entra em ação se o caminho direto falhar.
-  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
+  ...turnFromEnv(),
 ];
+
+/** Há retransmissão configurada neste build (a tela usa para explicar a falha de rede). */
+export const HAS_TURN = DEFAULT_ICE_SERVERS.length > 1;
 
 /** Espera pelos candidatos de rede antes de gerar o código (o código leva todos: não há servidor para trocar candidatos depois). */
 const GATHER_TIMEOUT_MS = 4500;
@@ -51,6 +66,31 @@ export class PvpPeer {
       if (s === 'failed') this.finish('failed');
       else if (s === 'closed') this.finish('remote');
     };
+    this.pc.oniceconnectionstatechange = () => {
+      const s = this.pc.iceConnectionState;
+      pvpLog(`I:${s}`);
+      if (s === 'connected' || s === 'completed') void this.logPath();
+    };
+  }
+
+  /** Registra o caminho escolhido (ex.: «P:host-srflx»: candidato local host, remoto srflx). */
+  private async logPath(): Promise<void> {
+    try {
+      const stats = await this.pc.getStats();
+      let pairId = '';
+      stats.forEach((r: { type?: string; selectedCandidatePairId?: string }) => {
+        if (r.type === 'transport' && r.selectedCandidatePairId) pairId = r.selectedCandidatePairId;
+      });
+      let pair: { localCandidateId?: string; remoteCandidateId?: string; nominated?: boolean; state?: string } | undefined;
+      stats.forEach((r: { type?: string; id?: string; nominated?: boolean; state?: string }) => {
+        if (r.type === 'candidate-pair' && (r.id === pairId || (!pairId && r.nominated && r.state === 'succeeded'))) pair = r as typeof pair;
+      });
+      if (!pair) return;
+      const type = (id?: string) => (stats.get(id ?? '') as { candidateType?: string } | undefined)?.candidateType ?? '?';
+      pvpLog(`P:${type(pair.localCandidateId)}-${type(pair.remoteCandidateId)}`);
+    } catch {
+      /* navegador sem getStats completo */
+    }
   }
 
   /** O anfitrião: cria o convite. Mostre `code` ao amigo e depois chame `acceptAnswer` com o código que ele devolver. */
@@ -139,11 +179,17 @@ export class PvpPeer {
   }
 
   private gathered(): Promise<void> {
-    if (this.pc.iceGatheringState === 'complete') return Promise.resolve();
+    const started = Date.now();
+    const report = () => pvpLog(`C ${candidateSummary(this.pc.localDescription?.sdp ?? '')}`, `${Date.now() - started}ms`);
+    if (this.pc.iceGatheringState === 'complete') {
+      report();
+      return Promise.resolve();
+    }
     return new Promise((resolve) => {
       const done = () => {
         clearTimeout(timeout);
         this.pc.removeEventListener('icegatheringstatechange', check);
+        report();
         resolve();
       };
       const check = () => {
