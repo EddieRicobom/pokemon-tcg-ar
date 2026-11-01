@@ -1,4 +1,4 @@
-// Arena 3D com moradores digitais semeados. uso: node .claude/arena3d-shots.mjs <prefixo> [porta] [m|d]
+// Arena com moradores digitais semeados. uso: node .claude/arena3d-shots.mjs <prefixo> [porta] [m|d]
 import { chromium } from 'playwright';
 const [out, port = '5192', size = 'm'] = process.argv.slice(2);
 const base = `http://localhost:${port}/pokemon-tcg-ar/`;
@@ -22,7 +22,7 @@ await page.evaluate(() => {
 await page.goto(`${base}?r=4#/caixa?arena=1&virtual=1`);
 await page.waitForTimeout(2500);
 await page.screenshot({ path: `${out}-0-pre.png`, fullPage: true });
-await page.getByRole('button', { name: /Entrar na Arena 3D/ }).click();
+await page.getByRole('button', { name: /Entrar na Arena/ }).click();
 await page.waitForTimeout(15000);
 await page.screenshot({ path: `${out}-1-dentro.png` });
 console.log((await page.locator('[role=toolbar] button').allTextContents()).join(' | '));

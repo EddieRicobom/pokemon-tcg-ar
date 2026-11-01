@@ -17,7 +17,7 @@ export interface VisualSettings {
   social: boolean;
   /** Clima da Caixa: ciclo, um clima fixo ou desligado. Pesa na GPU (camadas e partículas). */
   weather: WeatherMode;
-  /** Muro, arquibancada e tochas do Coliseu na Arena 3D (palco virtual). Desligar deixa só a areia e poupa a GPU. */
+  /** Muro, arquibancada e tochas do Coliseu na Arena (palco virtual). Desligar deixa só a areia e poupa a GPU. */
   scenery: boolean;
   /** Sons dos golpes e da vitória na batalha (Caixa). */
   sound: boolean;

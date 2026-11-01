@@ -112,7 +112,7 @@ export function creatureHeightMeters(pixelHeight: number): number {
 }
 
 /**
- * Na Arena 3D, o desenho (sem a margem transparente) de um Pokémon de 1 m tem esta altura: Pikachu ≈ 0,18 m,
+ * Na Arena, o desenho (sem a margem transparente) de um Pokémon de 1 m tem esta altura: Pikachu ≈ 0,18 m,
  * Snorlax ≈ 0,35 m — próximos do tamanho antigo pelo desenho, mas agora comparáveis entre espécies.
  */
 export const BOX_METERS_PER_RELATIVE = 0.26;

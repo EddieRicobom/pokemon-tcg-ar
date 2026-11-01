@@ -378,7 +378,7 @@ describe('BoxScene: clima', () => {
   });
 });
 
-describe('BoxScene com o palco virtual (Arena 3D)', () => {
+describe('BoxScene com o palco virtual (Arena)', () => {
   const fighters = (n: number) => Array.from({ length: n }, (_, i) => buildFighter({ id: `c${i}`, name: `Mon ${i}`, profile: { dexId: i + 1, types: ['normal'], stats: { hp: 60, attack: 60, defense: 60, spAttack: 60, spDefense: 60, speed: 60 + i } }, card: null, gameMoves: [] }));
 
   it('o cenário do Coliseu só aparece com a caixa colocada e vai para o centro dela', () => {

@@ -4,7 +4,7 @@ import type { PixelBuf } from './ground-art';
 import { put, rect } from '../village/village-art';
 
 /**
- * O cenário do Coliseu para a Arena 3D (palco virtual, sem câmera): areia no chão, um muro de arcadas, a arquibancada
+ * O cenário do Coliseu para a Arena (palco virtual, sem câmera): areia no chão, um muro de arcadas, a arquibancada
  * em volta com torcida vermelha e azul (as duas equipes) e tochas que tremem. Tudo é código (texturas pixeladas
  * geradas aqui, sem imagens para baixar) e fica no chão ao redor do ponto onde a arena é colocada. O céu é um degradê
  * do próprio palco (CSS), atrás do canvas transparente.

@@ -1,7 +1,7 @@
 import type { Rng } from './wander';
 
 /**
- * Torcida da Arena 3D (palco virtual): os moradores da Caixa que não lutam vão para a arquibancada do fundo, cada um no
+ * Torcida da Arena (palco virtual): os moradores da Caixa que não lutam vão para a arquibancada do fundo, cada um no
  * lado da equipe que fica daquele lado (vermelha à esquerda da tela, azul à direita, como a pintura da arquibancada).
  * Eles comemoram, sofrem e puxam coro com balões de emoji e pulinhos, conforme o que acontece na luta. Lógica pura: os
  * assentos são ângulos e fileiras, e as reações saem por `hooks`, então é testável sem navegador.
