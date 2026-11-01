@@ -351,6 +351,8 @@ export function parseMessage(raw: unknown): WireMessage | null {
     case 'sv-team':
     case 'sv-progress':
     case 'sv-start':
+    case 'sv-run-ready':
+    case 'sv-run-go':
     case 'sv-ready':
     case 'sv-go':
     case 'sv-input':

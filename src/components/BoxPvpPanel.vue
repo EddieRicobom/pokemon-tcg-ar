@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { boxPvp, connectBoxPvp, leaveBoxPvp } from '../app/box-pvp-store';
 import { BOX_PVP_LABELS_PT, BOX_PVP_MODES } from '../pvp/box-wire';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
@@ -9,6 +10,19 @@ import PvpLobby from './PvpLobby.vue';
 function onConnected(peer: PvpPeer, role: 'host' | 'guest'): void {
   connectBoxPvp(peer, role);
 }
+
+/** O que fazer agora, por papel: quem precisa agir e quem só espera (e o que o outro precisa fazer). */
+const nextStep = computed<{ text: string; mine: boolean }>(() => {
+  const friend = boxPvp.friend?.name ?? 'O amigo';
+  if (boxPvp.role === 'host') {
+    if (!boxPvp.mine) return { text: 'a sua equipe ainda está sendo montada na Arena. Toque em «Entrar na Arena» no fim do menu e ela aparece aqui.', mine: true };
+    if (!boxPvp.friend) return { text: `${friend} ainda não mandou a equipe: ele precisa abrir a Arena. Você não precisa fazer nada agora.`, mine: false };
+    return { text: 'as duas equipes estão prontas. Escolha o modo acima, toque em «Entrar na Arena» e, lá dentro, em «Batalhar»: a luta começa nos dois celulares ao mesmo tempo.', mine: true };
+  }
+  if (!boxPvp.mine) return { text: 'a sua equipe ainda está sendo montada na Arena. Toque em «Entrar na Arena» no fim do menu e ela aparece aqui.', mine: true };
+  if (!boxPvp.friend) return { text: 'o anfitrião ainda não mandou a equipe dele. Você não precisa fazer nada agora.', mine: false };
+  return { text: 'tudo pronto. Fique na Arena: o anfitrião toca em «Batalhar» e a luta começa sozinha na sua tela, junto com a dele.', mine: false };
+});
 </script>
 
 <template>
@@ -41,7 +55,9 @@ function onConnected(peer: PvpPeer, role: 'host' | 'guest'): void {
           <small v-else>Esperando a equipe…</small>
         </div>
       </div>
-      <p class="hint">Os dois entram na Arena. {{ boxPvp.role === 'host' ? 'Depois toque em Batalhar.' : 'Quando o anfitrião começar, a luta aparece na sua Arena.' }}</p>
+      <p class="hint box-pvp-next" role="status" aria-live="polite">
+        <strong>{{ nextStep.mine ? 'Sua vez de agir:' : 'Aguarde um instante:' }}</strong> {{ nextStep.text }}
+      </p>
       <button type="button" class="link" @click="leaveBoxPvp">Sair do PvP</button>
     </template>
     <p v-if="boxPvp.notice" class="message error" role="alert">{{ boxPvp.notice }}</p>

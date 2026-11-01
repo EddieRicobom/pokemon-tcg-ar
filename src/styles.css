@@ -3718,6 +3718,58 @@ body.no-scroll .reward-toasts {
   color: #ffb35c;
 }
 
+/* Próximo passo da sala de amigo: destaca de quem é a vez de agir (você ou o amigo) sem cobrir nada nem bloquear toques. */
+.pn-next {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.pn-next strong {
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pn-next.mine {
+  border-color: var(--gold);
+  color: var(--text);
+}
+
+.pn-next.mine strong {
+  color: var(--gold);
+}
+
+.svpvp-next strong,
+.box-pvp-next strong,
+.dg-friend-status strong {
+  color: var(--gold);
+}
+
+/* O botão da vez pulsa devagar; quem pede menos movimento vê só o contorno. */
+.pn-pulse {
+  animation: pn-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 55%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--gold) 0%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pn-pulse {
+    animation: none;
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+}
+
 .pn-start .primary {
   flex: none;
   min-width: 118px;
@@ -4967,6 +5019,10 @@ body.no-scroll .reward-toasts {
 .tower-route-head .link { color: inherit; }
 .tower-route > .survivor { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tower-route .survivor-stage { flex: 1; height: auto; border-radius: 0; }
+/* Runs do PvP do Survival: a run mora dentro de `.svpvp` (faixa do PvP em cima), não direto na rota. Sem isto a fase caía na
+   altura padrão e ocupava só metade da tela, com um vazio enorme embaixo. */
+.tower-route > .svpvp > .survivor { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tower-route > .svpvp > .survivor .survivor-stage { flex: 1; min-height: 320px; height: auto; }
 
 .village-canvas {
   position: absolute;

@@ -22,6 +22,20 @@ const lobbyNote = computed(() => backupPurpose.value
   ? 'Crie uma sala para enviar uma cópia completa dos seus dados diretamente para outro aparelho. A sala não aparece na lista: só entra quem receber o código.'
   : 'Jogue com um amigo em tempo real. Crie uma sala e diga o código curto, ou toque numa sala aberta da lista.');
 const codeLength = computed(() => (backupPurpose.value ? 6 : 4));
+/** Onde o amigo abre o PvP deste modo, para o anfitrião poder dizer o caminho. */
+const whereToJoin = computed(() => ({ pins: 'Pins › Contra um amigo', box: 'Arena › PvP', survival: 'Torre › PvP com um amigo', dungeon: 'Masmorra › Duelo com um amigo', backup: 'Ajustes › Transferir backup' }[backupPurpose.value ? 'backup' : props.game]));
+/** Segundos desde que a tela de espera abriu: mostra que algo está acontecendo e quando vale tentar de novo. */
+const waitedSec = ref(0);
+let waitTick: ReturnType<typeof setInterval> | null = null;
+function startWaitClock(): void {
+  waitedSec.value = 0;
+  if (waitTick) clearInterval(waitTick);
+  waitTick = setInterval(() => waitedSec.value++, 1000);
+}
+function stopWaitClock(): void {
+  if (waitTick) clearInterval(waitTick);
+  waitTick = null;
+}
 const gameKey = computed<PvpGame>(() => (backupPurpose.value ? 'backup' : props.game));
 
 type Step = 'choose' | 'host' | 'join' | 'manual-host' | 'manual-guest';
@@ -67,6 +81,7 @@ function startMeeting(): void {
 }
 
 function stopMeeting(): void {
+  stopWaitClock();
   offLog?.();
   offLog = null;
   stopWatch?.();
@@ -92,6 +107,7 @@ function dropPeer(): void {
 }
 
 function reset(): void {
+  stopWaitClock();
   hosting?.cancel();
   hosting = null;
   stopJoin?.();
@@ -108,6 +124,7 @@ function reset(): void {
 }
 
 function connectedWith(p: PvpPeer, role: 'host' | 'guest'): void {
+  stopWaitClock();
   hosting = null;
   stopJoin = null;
   handedOver = true;
@@ -119,6 +136,7 @@ function createRoom(): void {
   error.value = '';
   status.value = 'Aguardando um amigo entrar…';
   step.value = 'host';
+  startWaitClock();
   hosting = matchmaker.host(
     { listed: !backupPurpose.value, name: displayName(), note: props.note, codeLength: codeLength.value },
     {
@@ -138,6 +156,7 @@ function joinCode(raw: string): void {
   if (!matchmaker) return;
   error.value = '';
   step.value = 'join';
+  startWaitClock();
   roomCode.value = normalizeRoomCode(raw);
   stopJoin = matchmaker.join(raw, displayName(), {
     onStatus: (text) => (status.value = text),
@@ -319,20 +338,24 @@ onBeforeUnmount(() => {
 
     <template v-else-if="step === 'host'">
       <h3>{{ backupPurpose ? 'Sala de transferência' : 'Sua sala' }}</h3>
-      <p class="pn-lobby-note">Diga este código ao seu amigo{{ backupPurpose ? '' : ' ou espere: a sala aparece na lista de salas abertas dele' }}.</p>
-      <p class="pn-room-code" aria-live="polite">{{ roomCode }}</p>
+      <p class="pn-room-code" aria-live="polite" :aria-label="`Código da sala: ${roomCode.split('').join(' ')}`">{{ roomCode }}</p>
+      <ol class="pn-lobby-steps pn-lobby-guide">
+        <li>Seu amigo abre <strong>{{ whereToJoin }}</strong>.</li>
+        <li>Ele toca na sua sala na lista{{ backupPurpose ? '' : ' (ou digita o código acima)' }}.</li>
+        <li><strong>Você não precisa tocar em nada:</strong> a conexão abre sozinha.</li>
+      </ol>
       <div class="pn-lobby-actions row">
         <button type="button" @click="copy(roomCode)">{{ copied ? 'Copiado!' : 'Copiar código' }}</button>
         <button v-if="canShare" type="button" @click="share(`Entre na minha sala ${roomCode}`)">Compartilhar</button>
       </div>
-      <p class="message" role="status">{{ status }}</p>
-      <p class="pn-lobby-note">Mantenha esta tela aberta. A partida começa sozinha quando a conexão fechar.</p>
+      <p class="message" role="status">{{ status }} <small class="pn-clock">({{ waitedSec }} s)</small></p>
+      <p class="pn-lobby-note">Mantenha esta tela aberta. Se ninguém entrar em um minuto, confira o código com o seu amigo.</p>
     </template>
 
     <template v-else-if="step === 'join'">
       <h3>Entrando na sala {{ roomCode }}</h3>
-      <p class="message" role="status">{{ status }}</p>
-      <p class="pn-lobby-note">Isso leva alguns segundos. Se não achar a sala, confira o código com o seu amigo.</p>
+      <p class="message" role="status">{{ status }} <small class="pn-clock">({{ waitedSec }} s)</small></p>
+      <p class="pn-lobby-note"><strong>Você não precisa tocar em nada:</strong> a conexão abre sozinha, em alguns segundos. Depois, escolha as suas opções. Se passar de 20 s, toque em «Cancelar e voltar» e tente de novo.</p>
     </template>
 
     <template v-else-if="step === 'manual-host'">
@@ -521,6 +544,14 @@ onBeforeUnmount(() => {
   letter-spacing: 0.25em;
   text-transform: uppercase;
   text-align: center;
+}
+
+.pn-lobby-guide {
+  color: var(--text);
+}
+
+.pn-clock {
+  color: var(--muted);
 }
 
 .pn-room-tag {
