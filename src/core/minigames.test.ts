@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { seededRng, typeEffectiveness } from './battle';
 import {
   cardsBlocker, distinctPieces, gameBlocker, gradeMemory, memoryUsesCards, gradeQuiz, makeMemoryBoard, makeTypeQuestions, makeWhoQuestions, MEMORY_PAIRS, MINIGAME_WIN_COINS, minigameCoinReward, multiplierLabel, QUIZ_ROUNDS, shuffle, TYPE_ROUNDS,
-  WHO_DIFFICULTIES, WHO_DIFFICULTY_LABELS_PT,
+  ARCADE_DIFFICULTIES, ARCADE_DIFFICULTY_LABELS_PT, gradeMemoryChallenge, gradeTypeDuel, MEMORY_RULES, TYPE_RULES, WHO_DIFFICULTIES, WHO_DIFFICULTY_LABELS_PT,
 } from './minigames';
 import type { Piece } from './minigames';
 
@@ -65,6 +65,12 @@ describe('Quem é esse Pokémon?', () => {
 });
 
 describe('Duelo de tipos', () => {
+  it('oferece dificuldade com mais perguntas e menos tempo sem alterar a tabela de tipos', () => {
+    expect(ARCADE_DIFFICULTIES).toEqual(['normal', 'desafio']);
+    expect(TYPE_RULES.desafio.rounds).toBeGreaterThan(TYPE_RULES.normal.rounds);
+    expect(TYPE_RULES.desafio.secondsPerQuestion).toBeLessThan(TYPE_RULES.normal.secondsPerQuestion);
+    for (const d of ARCADE_DIFFICULTIES) expect(ARCADE_DIFFICULTY_LABELS_PT[d]).toBeTruthy();
+  });
   it('a resposta certa é a da tabela da batalha e as opções são diferentes e crescentes', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const questions = makeTypeQuestions(seededRng(seed));
@@ -91,6 +97,10 @@ describe('Duelo de tipos', () => {
 });
 
 describe('Memória', () => {
+  it('a dificuldade aumenta pares e encurta o relógio', () => {
+    expect(MEMORY_RULES.desafio.pairs).toBeGreaterThan(MEMORY_RULES.normal.pairs);
+    expect(MEMORY_RULES.desafio.seconds).toBeLessThan(MEMORY_RULES.normal.seconds);
+  });
   it('monta pares completos', () => {
     const { tiles, pieces } = makeMemoryBoard(pool(10), seededRng(2));
     expect(pieces).toHaveLength(MEMORY_PAIRS);
@@ -118,5 +128,12 @@ describe('pontuação', () => {
     expect(gradeMemory(10, 6)).toEqual({ score: 68, won: true });
     expect(gradeMemory(14, 6)).toEqual({ score: 36, won: false });
     expect(gradeMemory(60, 6).score).toBe(0);
+  });
+
+  it('combo, tempo e desafio melhoram o recorde sem transformar uma derrota em vitória', () => {
+    expect(gradeTypeDuel(2, 5, 8, 60, 'desafio')).toEqual({ score: 40, won: false });
+    expect(gradeTypeDuel(5, 5, 4, 18, 'desafio').score).toBeGreaterThanOrEqual(gradeTypeDuel(5, 5, 1, 0, 'normal').score);
+    expect(gradeMemoryChallenge(14, 6, 8, 90, 'desafio').won).toBe(false);
+    expect(gradeMemoryChallenge(6, 6, 4, 40, 'desafio').score).toBeGreaterThanOrEqual(gradeMemoryChallenge(6, 6, 1, 0, 'normal').score);
   });
 });

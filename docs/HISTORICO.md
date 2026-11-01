@@ -207,3 +207,13 @@ Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, cic
 - O salvamento `tcg-ar-liga-v1` preserva IDs e índices de Sinnoh (0–7), reserva 8–15 para Kanto, 16–23 para Johto e 24–31 para Hoenn e guarda corridas/títulos regionais separadamente. O backup usa as mesmas chaves; o polimento aceita as 32 insígnias sem misturar encaixes.
 - Testes cobrem bloqueios, derrota/recomeço da Elite, primeira vitória/revanche, gravação e migração, títulos e seleção da interface. Conferência no Edge a 375 px: troca das quatro regiões e abertura das quatro maletas, sem erro de página nem rolagem horizontal. GPU, toque, sensores e fluidez em celular real continuam pendentes.
 
+## Gameplay: impacto, Fliperama, Vila, Masmorra e Pins (01/11/2026)
+
+- Survival: cada dano confirmado pelo motor passa a subir como número; o impacto congela a simulação visual por uma fração curta e chefões tremem. O efeito respeita Movimento reduzido, Modo Rotom e a opção de impactos, portanto não se apresenta como medição de desempenho móvel.
+- Escanear: o mesmo áudio sintetizado da Caixa agora avisa a primeira aparição rastreada, carta shiny, arquétipo e companheiro evoluído. O contexto de áudio só é liberado pelo toque que abre a câmera; sem WebAudio a tela continua funcional e silenciosa.
+- Fliperama: Tipos e Memória ganharam Normal/Desafio, relógio, combo, placar que considera a pressão e sinais sonoros. A tabela de tipos, cartas e sprites continuam sendo os dados reais do jogo.
+- Masmorra: o motor agora expõe a rota mínima e a interface percorre cada casa sem burlar PA ou colisão, removendo a leitura de teleporte.
+- Vila: tarefas que antes só narravam agora produzem materiais, moedas, confiança ou bem-estar; o Conselho ganhou mutirão de manutenção com madeira/pedra reservadas e resultado persistente.
+- Liga/Pins: insígnias e títulos passaram a liberar desconto real de energia e campos de jogo (Geleira, Pântano e Salão psíquico), todos implementados pelas regras existentes de atrito e tipo.
+- Testes focados dos motores modificados passaram localmente. Ainda pendem aparência, toque, som e desempenho em celular real; a execução global desta sessão não concluiu por dependências de desenvolvimento ausentes no ambiente (`@tensorflow/tfjs` e `@msgpack/msgpack`).
+

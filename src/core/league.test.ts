@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_CHALLENGES, LEAGUE_REGIONS, regionalProgress, applyLeagueResult, CHAMPION, challengeById, ELITE, emptyLeague, GYMS, nextChallenge, normalizeLeague, statusOf, TOTAL_BADGES } from './league';
+import { ALL_CHALLENGES, LEAGUE_REGIONS, leaguePerks, regionalProgress, applyLeagueResult, CHAMPION, challengeById, ELITE, emptyLeague, GYMS, nextChallenge, normalizeLeague, statusOf, TOTAL_BADGES } from './league';
 import type { LeagueProgress } from './league';
 
 const winAll = (p: LeagueProgress, list = GYMS) => list.reduce((acc, c) => applyLeagueResult(acc, c, true).progress, p);
 
 describe('a Liga', () => {
+  it('insígnias e título liberam vantagens jogáveis no Pins', () => {
+    expect(leaguePerks(emptyLeague())).toEqual({ pinShotDiscount: 0, pinFields: ['natural'] });
+    const four = { ...emptyLeague(), badges: [0, 1, 2, 3] };
+    expect(leaguePerks(four)).toEqual({ pinShotDiscount: 1, pinFields: ['natural', 'ice'] });
+    const eight = { ...emptyLeague(), badges: [0, 1, 2, 3, 4, 5, 6, 7] };
+    expect(leaguePerks(eight)).toEqual({ pinShotDiscount: 2, pinFields: ['natural', 'ice', 'toxic'] });
+    expect(leaguePerks({ ...eight, championWins: 1 })).toEqual({ pinShotDiscount: 3, pinFields: ['natural', 'ice', 'toxic', 'psy'] });
+  });
   it('8 Ginásios, 4 da Elite e a Campeã, todos com seis Pokémon e dificuldade crescente', () => {
     expect(GYMS).toHaveLength(8);
     expect(ELITE).toHaveLength(4);

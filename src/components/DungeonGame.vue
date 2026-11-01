@@ -37,7 +37,7 @@ import type { PokemonType } from '../core/pokemon-data';
 import {
   AFFIXES, ammoOptions, attack, MECHANICS, setAmmo, attackArea, attackReach, attacksLeft, attackTargets, attacker, available, beginEnemyTurn, chooseReward, COSTS, enemyStep, equipGem, finishEnemyTurn,
   biomeOf, fightingAtHome, floorGeneration, hazardAt, HOME_BONUS, typeFactor, fuse, FUSION_CHARGE, FUSION_TURNS, GRID_H, GRID_W, INTENTS, intents, isBossFloor, isMiniBossFloor, key, move, polishGems, previewAttack,
-  addMember, MAX_TEAM, previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponOfDex, weaponOfferAtFloor, evolveMember, WEAPONS,
+  addMember, MAX_TEAM, movementPath, previewFusion, PROFILES, reachable, retreat, REWARDS, START_AP, startDungeon, switchTo, threatenedCells, unequipGem, usePotion, weaponOfDex, weaponOfferAtFloor, evolveMember, WEAPONS,
 } from '../core/dungeon';
 import type { Cell, DungeonState, Enemy, EnemySpecies, Intent, MechanicId, MemberInput, RewardId, WeaponPattern } from '../core/dungeon';
 import { GEMS, gemName, LEGENDARY_SLOT as LEGENDARY_SLOT_INDEX, polishable, tierName } from '../core/dungeon-gems';
@@ -93,6 +93,8 @@ const loadError = ref('');
 const s = ref<DungeonState | null>(null);
 const mode = ref<'move' | 'attack' | null>(null);
 const pending = ref<Cell | null>(null);
+/** Durante uma rota, o Pokémon muda de casa em casa; outra ação não pode cortar a animação pela metade. */
+const walking = ref(false);
 const flash = ref('');
 const fusionOpen = ref(false);
 const fusionPick = ref<number[]>([]);
@@ -711,17 +713,37 @@ function result(r: { ok: boolean; reason?: string }): void {
 }
 
 function setMode(next: 'move' | 'attack'): void {
+  if (walking.value) return;
   mode.value = mode.value === next ? null : next;
   pending.value = null;
   inspected.value = null;
 }
 
+/** Executa a rota do motor um passo por vez. A posição e os PA continuam sendo alterados somente por `move`. */
+async function walkTo(st: DungeonState, target: Cell): Promise<void> {
+  if (walking.value) return;
+  const path = movementPath(st, target);
+  if (!path?.length) return;
+  walking.value = true;
+  mode.value = null;
+  pending.value = null;
+  for (const step of path) {
+    if (!alive || s.value !== st) break;
+    const r = move(st, step);
+    result(r);
+    if (!r.ok) break;
+    // O Vue redesenha a nova casa antes do próximo passo; no tabuleiro, a travessia deixa de parecer teleporte.
+    await wait(Math.max(110, Math.round(STEP_MS * 0.55)));
+  }
+  walking.value = false;
+}
+
 function tapCell(c: Cell): void {
   const st = s.value;
-  if (!st) return;
+  if (!st || walking.value) return;
   if (exploring.value) {
     // Sala limpa: um toque anda até a casa (pega o que houver; a escada abre a escolha de descer).
-    if ((moveCosts.value.get(key(c)) ?? 0) > 0) result(move(st, c));
+    if ((moveCosts.value.get(key(c)) ?? 0) > 0) void walkTo(st, c);
     return;
   }
   if (!playing.value) return;
@@ -738,7 +760,7 @@ function tapCell(c: Cell): void {
     const k = key(c);
     if ((walkCosts.value.get(k) ?? 0) > 0) {
       if (pending.value && key(pending.value) === k) {
-        result(move(st, c));
+        void walkTo(st, c);
         pending.value = null;
       } else {
         pending.value = c;
@@ -761,8 +783,8 @@ function tapCell(c: Cell): void {
 
 function confirm(): void {
   const st = s.value;
-  if (!st || !pending.value) return;
-  if (mode.value === 'move') result(move(st, pending.value));
+  if (!st || !pending.value || walking.value) return;
+  if (mode.value === 'move') void walkTo(st, pending.value);
   else if (mode.value === 'attack') {
     const hits = previewAttack(st, pending.value);
     const weapon = attacker(st).weapon.id;
@@ -788,14 +810,14 @@ function confirm(): void {
 }
 
 function doSwitch(i: number): void {
-  if (!s.value) return;
+  if (!s.value || walking.value) return;
   result(switchTo(s.value, i));
   mode.value = null;
   pending.value = null;
 }
 
 function doPotion(): void {
-  if (s.value) result(usePotion(s.value));
+  if (s.value && !walking.value) result(usePotion(s.value));
 }
 
 const teamHp = (st: DungeonState) => st.team.reduce((sum, m) => sum + m.hp, 0);
@@ -803,7 +825,7 @@ const teamHp = (st: DungeonState) => st.team.reduce((sum, m) => sum + m.hp, 0);
 /** Encerra o turno e anima os inimigos um por um (quem age pisca; dano e cura sobem em números). */
 async function doEnd(): Promise<void> {
   const st = s.value;
-  if (!st) return;
+  if (!st || walking.value) return;
   mode.value = null;
   pending.value = null;
   inspected.value = null;
@@ -1095,7 +1117,7 @@ const pendingText = computed(() => {
         <button type="button" class="dg-pill dg-icon" :aria-pressed="ambientOn" title="Efeitos do cenário (partículas e brilhos)" @click="toggleAmbient">{{ ambientOn ? '✨' : '▫️' }}</button>
       </header>
 
-      <div class="dg-grid" :class="[`fx-${biome.particles}`, { 'enemy-turn': enemyTurn, aiming: mode === 'attack' }]" :style="{ gridTemplateColumns: `repeat(${GRID_W}, 1fr)` }">
+      <div class="dg-grid" :class="[`fx-${biome.particles}`, { 'enemy-turn': enemyTurn, aiming: mode === 'attack', walking }]" :style="{ gridTemplateColumns: `repeat(${GRID_W}, 1fr)` }">
         <div v-if="ambientOn" class="dg-particles" aria-hidden="true">
           <i v-for="(pt, i) in particles" :key="i" :style="{ left: pt.left, top: pt.top, animationDelay: pt.delay, animationDuration: pt.dur }"></i>
         </div>
@@ -1103,6 +1125,7 @@ const pendingText = computed(() => {
           v-for="c in cells"
           :key="key(c)"
           type="button"
+          :disabled="walking"
           class="dg-cell"
           :class="{
             wall: wallAt(c),
@@ -1138,7 +1161,7 @@ const pendingText = computed(() => {
             <span class="dg-hp enemy"><i :style="{ width: pct(enemyAt(c)!.hp, enemyAt(c)!.maxHp) }"></i></span>
           </template>
           <template v-else-if="playerAt(c)">
-            <span class="dg-player" :class="{ fused: !!s.fusion }">
+            <span class="dg-player" :class="{ fused: !!s.fusion, walking }">
               <template v-for="i in (s.fusion ? [s.fusion.a, s.fusion.b] : [s.active])" :key="i">
                 <img v-if="!brokenSprites.has(s.team[i]!.dexId)" :src="sprite(s.team[i]!.dexId)" :alt="s.team[i]!.name" @error="brokenSprites.add(s.team[i]!.dexId)" />
                 <span v-else class="dg-nosprite">{{ s.team[i]!.name }}</span>
@@ -1195,11 +1218,11 @@ const pendingText = computed(() => {
       </div>
 
       <nav class="dg-commands" aria-label="Ações">
-        <button type="button" :class="{ on: mode === 'move' }" :disabled="!playing || s.mustSwitch" @click="setMode('move')"><b>👣</b>Mover</button>
-        <button type="button" :class="{ on: mode === 'attack' }" :disabled="!playing || s.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar<template v-if="who"> · {{ who.weapon.ap }}</template></button>
-        <button type="button" :disabled="!playing || s.mustSwitch || s.potions === 0 || s.ap < COSTS.item" @click="doPotion"><b>🧪</b>Poção · {{ COSTS.item }}</button>
-        <button type="button" :disabled="!playing || s.mustSwitch || !!s.fusion || s.fusionCharges === 0" @click="openFusion"><b>💠</b>Fusão · {{ COSTS.fusion }}</button>
-        <button type="button" class="primary" :disabled="!playing || s.mustSwitch" @click="doEnd"><b>⏭️</b>Encerrar</button>
+        <button type="button" :class="{ on: mode === 'move' }" :disabled="walking || !playing || s.mustSwitch" @click="setMode('move')"><b>👣</b>Mover</button>
+        <button type="button" :class="{ on: mode === 'attack' }" :disabled="walking || !playing || s.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar<template v-if="who"> · {{ who.weapon.ap }}</template></button>
+        <button type="button" :disabled="walking || !playing || s.mustSwitch || s.potions === 0 || s.ap < COSTS.item" @click="doPotion"><b>🧪</b>Poção · {{ COSTS.item }}</button>
+        <button type="button" :disabled="walking || !playing || s.mustSwitch || !!s.fusion || s.fusionCharges === 0" @click="openFusion"><b>💠</b>Fusão · {{ COSTS.fusion }}</button>
+        <button type="button" class="primary" :disabled="walking || !playing || s.mustSwitch" @click="doEnd"><b>⏭️</b>Encerrar</button>
       </nav>
 
       <div v-if="activeMember && who" class="dg-active" :class="{ fused: !!s.fusion }">
@@ -1577,6 +1600,8 @@ button:disabled { opacity: 0.5; }
 .dg-player { border-radius: 50%; box-shadow: 0 0 0 2px var(--gold); }
 .dg-player.fused { box-shadow: 0 0 0 2px #b38cff, 0 0 10px #b38cff; }
 .dg-player.fused img { width: 70%; height: 70%; }
+.dg-player.walking img { animation: dg-step .22s steps(2, end) infinite; filter: drop-shadow(0 3px 0 #12192799); }
+@keyframes dg-step { 0%, 100% { transform: translateY(-2px) scaleY(1.03); } 50% { transform: translateY(2px) scaleY(.96); } }
 .dg-hp { position: relative; display: block; height: 5px; background: #0006; border-radius: 3px; overflow: hidden; flex: 1; }
 .dg-hp i { position: absolute; inset: 0 auto 0 0; background: var(--ok); transition: width 0.3s; }
 .dg-hp.charge i { background: #6fb6ff; }

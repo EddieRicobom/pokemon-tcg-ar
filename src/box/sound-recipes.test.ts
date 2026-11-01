@@ -113,4 +113,12 @@ describe('receitas de som', () => {
       expect(Math.max(...layers.map((layer) => layer.at + layer.dur))).toBeLessThanOrEqual(MAX_LAYER_SECONDS);
     }
   });
+
+  it('dá assinaturas próprias para Escanear e para os eventos do Fliperama', () => {
+    const scan = ['scan-appear', 'scan-shiny', 'scan-archetype', 'scan-evolution'] as const;
+    const arcade = ['minigame-pick', 'minigame-right', 'minigame-wrong', 'minigame-combo', 'minigame-timeout', 'minigame-record'] as const;
+    for (const cue of [...scan, ...arcade]) expect(layersFor({ kind: 'ui', cue }).length).toBeGreaterThan(0);
+    expect(JSON.stringify(layersFor({ kind: 'ui', cue: 'scan-shiny' }))).not.toBe(JSON.stringify(layersFor({ kind: 'ui', cue: 'scan-appear' })));
+    expect(JSON.stringify(layersFor({ kind: 'ui', cue: 'minigame-right' }))).not.toBe(JSON.stringify(layersFor({ kind: 'ui', cue: 'minigame-wrong' })));
+  });
 });

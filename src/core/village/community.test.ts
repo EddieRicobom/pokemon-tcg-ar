@@ -102,6 +102,27 @@ describe('economia diária da comunidade', () => {
     expect(fishingCycle.activities.filter((entry) => entry.item === 'peixe').reduce((sum, entry) => sum + (entry.qty ?? 0), 0)).toBe(1);
   });
 
+  it('faz especialidades fora da horta, pesca e cozinha mudarem estoque, caixa ou confiança', () => {
+    const mine = fresh();
+    mine.town.level = 2;
+    mine.community.lastCycleDay = '2026-10-18';
+    mine.coins = 100;
+    mine.community.residents.geodude = { energy: 70, interests: ['mineracao'], experience: {}, recentActivity: null, rememberedActivity: null, completedActivities: 0 };
+    const mined = advanceCommunity(mine, '2026-10-19', population([{ id: 'geodude', types: ['rock'] }], 5)).cycles[0]!;
+    expect(mined.activities[0]).toMatchObject({ activity: 'mineracao', qty: 1 });
+    expect((mine.inventory.pedra ?? 0) + (mine.inventory.ferro ?? 0)).toBe(1);
+
+    const market = fresh();
+    market.town.level = 2;
+    market.community.lastCycleDay = '2026-10-18';
+    market.coins = 100;
+    market.community.residents.umbreon = { energy: 70, interests: ['comercio'], experience: {}, recentActivity: null, rememberedActivity: null, completedActivities: 0 };
+    const traded = advanceCommunity(market, '2026-10-19', [{ id: 'umbreon', types: ['dark'] }]).cycles[0]!;
+    expect(traded.activities[0]).toMatchObject({ activity: 'comercio', qty: 5 });
+    // A feira entra antes da manutenção, por isso o saldo final é cinco maior que 100 - 14.
+    expect(market.coins).toBe(91);
+  });
+
   it('escala até 50 residentes e não cobra população zero', () => {
     const state = fresh();
     state.community.lastCycleDay = '2026-10-18';
@@ -240,6 +261,27 @@ describe('economia diária da comunidade', () => {
     advanceCommunity(state, '2026-10-26', []);
     expect(state.community.council[0]).toMatchObject({ status: 'expirado', result: expect.stringContaining('sem gastar recursos') });
     expect(state.inventory.oran).toBe(4);
+  });
+
+  it('oferece e executa um segundo tipo de proposta do Conselho com materiais reais', () => {
+    const state = fresh();
+    state.town.level = 2;
+    state.community.lastCycleDay = '2026-10-18';
+    state.community.trust = 55;
+    state.coins = 100;
+    add(state, 'madeira', 3);
+    add(state, 'pedra', 2);
+    state.community.residents.charmander = { energy: 70, interests: ['manutencao'], experience: {}, recentActivity: null, rememberedActivity: null, completedActivities: 0 };
+    advanceCommunity(state, '2026-10-19', [{ id: 'charmander', types: ['fire'] }]);
+    const project = state.community.council[0]!;
+    expect(project).toMatchObject({ kind: 'mutirao-manutencao', status: 'proposto', ingredients: [{ item: 'madeira', qty: 3 }, { item: 'pedra', qty: 2 }] });
+    expect(decideCommunityProject(state, project.id, 'apoiar', '2026-10-19').ok).toBe(true);
+    state.coins = 100;
+    advanceCommunity(state, '2026-10-20', [{ id: 'charmander', types: ['fire'] }]);
+    expect(project).toMatchObject({ status: 'concluido', participants: ['charmander'] });
+    expect(state.inventory.madeira).toBeUndefined();
+    expect(state.inventory.pedra).toBeUndefined();
+    expect(project.result).toContain('+6 confiança');
   });
 
   it('preserva o aprendizado de um morador enquanto ele fica temporariamente fora da Vila', () => {

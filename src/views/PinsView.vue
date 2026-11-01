@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import { loadPinData, getCache } from '../app/services';
+import { league } from '../app/league-store';
 import { digitalBoxRows } from '../app/digital-members';
 import { cardCompanion, cardJourneys, cardJourneyError, companionCard, recordCardVictories } from '../app/card-evolution-store';
 import type { CardCompanion } from '../core/card-evolution';
@@ -14,14 +15,16 @@ import { recordSightings } from '../app/pokedex-store';
 import { seededRng } from '../core/battle';
 import { combatMotion } from '../core/combat-motion';
 import {
-  advanceRound, afterShot, affordable, aliveOf, arenaLimit, PIN_KO_COINS, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE, MAX_PULL,
+  advanceRound, afterShot, aliveOf, arenaLimit, PIN_KO_COINS, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE, MAX_PULL,
   nextLimit, outcomeOf, pinCoinReward, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
 } from '../core/pins';
 import { randomOpponents } from '../core/pin-opponents';
 import { pinRowInfo, pinSpecOf } from '../core/pin-card-info';
 import type { PinCardInfo } from '../core/pin-card-info';
 import { planEnemyShot } from '../core/pin-ai';
-import { MARK_HINT_PT, TYPE_FOR_TERRAIN } from '../core/pin-terrain';
+import { MARK_HINT_PT, PIN_FIELD_LABELS_PT, TYPE_FOR_TERRAIN } from '../core/pin-terrain';
+import type { PinField } from '../core/pin-terrain';
+import { leaguePerks } from '../core/league';
 import { ELEMENTAL_BURST_PROFILES, elementalBurstFrame } from '../core/pin-visual-effects';
 import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
@@ -71,7 +74,7 @@ let pendingSettled: { world: WireWorld; at: number } | null = null;
 const cards = ref<CachedCard[]>([]);
 const thumbs = ref<Record<string, string>>({});
 const infos = ref<Record<string, PinCardInfo>>({});
-const setup = ref<PinsSetup>({ mine: [], enemy: [], difficulty: 'normal', marks: true, shrink: true, sound: true, haptics: true, effects: true });
+const setup = ref<PinsSetup>({ mine: [], enemy: [], difficulty: 'normal', marks: true, shrink: true, sound: true, haptics: true, effects: true, field: 'natural' });
 /** Rodada em andamento (1, 2, …) e o aviso de que a borda vai avançar no fim dela. */
 const roundNo = ref(1);
 const borderWarn = ref(false);
@@ -190,6 +193,11 @@ const rng = seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0);
 const energy = computed(() => coins.value);
 /** O que vale na partida: no PvP não há custo (os dois jogam com os mesmos pins e sem gastar moedas). */
 const budget = computed(() => (pvpMatch.value ? Number.POSITIVE_INFINITY : coins.value));
+const leaguePins = computed(() => leaguePerks(league.value));
+const pinFieldChoices = computed(() => leaguePins.value.pinFields);
+const activeField = computed<PinField>(() => pinFieldChoices.value.includes(setup.value.field) ? setup.value.field : 'natural');
+const pinCost = (base: number): number => Math.max(1, base - leaguePins.value.pinShotDiscount);
+const affordablePins = (w: PinWorld, money: number) => w.pins.filter((pin) => pin.side === 0 && pin.alive && pin.fall === 0 && pinCost(pin.cost) <= money);
 const usable = computed(() => cards.value.filter((c) => c.sprite.state === 'ok' && c.dexIds.length > 0));
 const shown = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -329,7 +337,7 @@ async function start(): Promise<void> {
     return mon && !id.startsWith('dp_') ? [mon] : [];
   });
   recordSightings(setup.value.enemy.map((id) => byId(id).dexIds[0]), 'pins');
-  world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => { const spec = specOf(byId(id)); const enemyId = `cpu:${id}`; thumbs.value[enemyId] = thumbs.value[id] ?? ''; return { ...spec, id: enemyId }; }) }, rng, { marks: setup.value.marks, shrink: setup.value.shrink });
+  world = createWorld({ mine: setup.value.mine.map((id) => specOf(byId(id))), enemy: setup.value.enemy.map((id) => { const spec = specOf(byId(id)); const enemyId = `cpu:${id}`; thumbs.value[enemyId] = thumbs.value[id] ?? ''; return { ...spec, id: enemyId }; }) }, rng, { marks: setup.value.marks, shrink: setup.value.shrink, field: activeField.value });
   await beginMatch('aim');
 }
 
@@ -487,7 +495,7 @@ function mountSprites(): void {
 
 function pickDefaultPin(): void {
   if (!world) return;
-  const ok = affordable(world, budget.value);
+  const ok = affordablePins(world, budget.value);
   const current = ok.find((p) => p.id === selectedId.value);
   selectedId.value = (current ?? ok[0])?.id ?? null;
   if (selectedMove.value !== null) {
@@ -502,10 +510,10 @@ function refreshTray(): void {
   tray.value = mine.map((p) => ({
     id: p.id,
     name: p.name,
-    cost: p.cost,
+    cost: pinCost(p.cost),
     thumb: thumbs.value[p.id] ?? '',
     selected: p.id === selectedId.value && p.fall === 0,
-    affordable: p.cost <= budget.value && p.fall === 0,
+    affordable: pinCost(p.cost) <= budget.value && p.fall === 0,
     estimated: p.estimated,
     moves: p.moves.map((m, index) => ({
       index,
@@ -523,8 +531,8 @@ function selectPin(id: string): void {
   if (phase.value !== 'aim' || !world) return;
   const pin = world.pins.find((p) => p.id === id);
   if (!pin || pin.side !== 0 || !pin.alive || pin.fall > 0) return;
-  if (pin.cost > budget.value) {
-    message.value = `Sem moedas para ${pin.name} (custa ${pin.cost}). Ganhe moedas escaneando cartas, batalhando ou jogando minigames.`;
+  if (pinCost(pin.cost) > budget.value) {
+    message.value = `Sem moedas para ${pin.name} (custa ${pinCost(pin.cost)}). Ganhe moedas escaneando cartas, batalhando ou jogando minigames.`;
     return;
   }
   message.value = '';
@@ -846,7 +854,7 @@ function finishRoll(): void {
 
 function nextAim(): void {
   if (!world) return;
-  if (!pvpMatch.value && affordable(world, budget.value).length === 0) return endGame('energia');
+  if (!pvpMatch.value && affordablePins(world, budget.value).length === 0) return endGame('energia');
   phase.value = 'aim';
   message.value = '';
   pickDefaultPin();
@@ -912,8 +920,9 @@ function fireMine(shot: Shot): void {
     message.value = 'Esse golpe ainda está recarregando. Escolha outro ou o disparo normal.';
     return;
   }
-  if (!pvpMatch.value && !spendCoins(pin.cost)) {
-    message.value = `Sem moedas para ${pin.name} (custa ${pin.cost}).`;
+  const cost = pinCost(pin.cost);
+  if (!pvpMatch.value && !spendCoins(cost)) {
+    message.value = `Sem moedas para ${pin.name} (custa ${cost}).`;
     pickDefaultPin();
     refreshTray();
     return;
@@ -1854,6 +1863,13 @@ function setMarks(on: boolean): void {
   saveSetup(setup.value);
   sendOptions();
 }
+
+/** Campo é exclusivo da partida contra CPU: numa sala os dois aparelhos recebem um mundo idêntico do anfitrião. */
+function setField(field: PinField): void {
+  if (!pinFieldChoices.value.includes(field)) return;
+  setup.value = { ...setup.value, field };
+  saveSetup(setup.value);
+}
 </script>
 
 <template>
@@ -1917,6 +1933,13 @@ function setMarks(on: boolean): void {
         <div v-if="mode === 'cpu'" class="diff" role="group" aria-label="Dificuldade do adversário">
           <button v-for="d in DIFFICULTIES" :key="d" type="button" :class="{ on: setup.difficulty === d }" :aria-pressed="setup.difficulty === d" @click="setDifficulty(d)">{{ DIFFICULTY_LABELS_PT[d] }}</button>
         </div>
+        <div v-if="mode === 'cpu'" class="diff" role="group" aria-label="Campo inicial da arena">
+          <span class="pn-field-label">Campo da Liga</span>
+          <button v-for="field in pinFieldChoices" :key="field" type="button" :class="{ on: activeField === field }" :aria-pressed="activeField === field" :title="PIN_FIELD_LABELS_PT[field].hint" @click="setField(field)">
+            {{ PIN_FIELD_LABELS_PT[field].name }}
+          </button>
+        </div>
+        <p v-if="mode === 'cpu'" class="hint">{{ PIN_FIELD_LABELS_PT[activeField].hint }}<template v-if="leaguePins.pinShotDiscount > 0"> · Insígnias reduzem cada disparo em {{ leaguePins.pinShotDiscount }} moeda{{ leaguePins.pinShotDiscount === 1 ? '' : 's' }}.</template></p>
       </section>
 
       <section v-if="mode === 'cpu' || peer" class="pn-card pn-pick">

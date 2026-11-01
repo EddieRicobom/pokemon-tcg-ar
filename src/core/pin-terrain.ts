@@ -23,6 +23,23 @@ export function createArenaGrid(seed: number): TerrainGrid {
   return buildGrid(TERRAIN_COLS, TERRAIN_COLS, 'ellipse', seed);
 }
 
+/** Campos desbloqueados pela Liga. A marca ocupa apenas blocos dentro da arena, então a mureta continua neutra. */
+export type PinField = 'natural' | 'ice' | 'toxic' | 'psy';
+export const PIN_FIELD_LABELS_PT: Record<PinField, { name: string; hint: string }> = {
+  natural: { name: 'Jardim', hint: 'Grama, flores, mato e trilha em posições sorteadas.' },
+  ice: { name: 'Geleira', hint: 'O chão começa escorregadio; Pins de Gelo não sofrem o atrito.' },
+  toxic: { name: 'Pântano', hint: 'O lodo freia muito; Pins de Veneno atravessam sem ser presos.' },
+  psy: { name: 'Salão psíquico', hint: 'Símbolos psíquicos deixam o campo levemente mais rápido.' },
+};
+
+/** Aplica um campo de início sem inventar tipo: usa as mesmas marcas, afinidades e atrito dos golpes da partida. */
+export function applyPinField(grid: TerrainGrid, field: PinField): void {
+  if (field === 'natural') return;
+  const kind: TerrainKind = field === 'ice' ? 'frost' : field === 'toxic' ? 'toxic' : 'psy';
+  const code = 1 + (['scorch', 'puddle', 'thicket', 'frost', 'static', 'crack', 'rubble', 'toxic', 'psy', 'shade', 'bloom'] as const).indexOf(kind);
+  for (let i = 0; i < grid.over.length; i++) if (grid.inside[i]) grid.over[i] = code;
+}
+
 /** Bloco sob o ponto (x, y) do mundo, ou null fora do chão. */
 export function cellOfWorld(grid: TerrainGrid, radius: number, x: number, y: number): number | null {
   const half = terrainHalf(radius);

@@ -501,6 +501,12 @@ const canvasEl = ref<HTMLCanvasElement | null>(null);
 /** Aviso breve de dano: fica fora do canvas para não acrescentar trabalho ao renderizador do jogo. */
 const damageFeedback = ref(false);
 let damageFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
+/** Números de dano não fazem parte do motor: são só uma leitura curta do que acabou de acontecer. */
+interface DamageNumber { id: number; x: number; y: number; amount: number; bornAt: number; boss: boolean }
+const damageNumbers = ref<DamageNumber[]>([]);
+let nextDamageNumberId = 1;
+/** Pausa visual curtíssima no impacto. Não roda com movimento reduzido, modo Rotom ou impactos desligados. */
+let hitStopMs = 0;
 const ready = ref(false);
 const failed = ref(false);
 const avatarName = ref('');
@@ -818,6 +824,25 @@ function showDamageFeedback(): void {
   }, 500);
 }
 
+function showEnemyDamage(hits: readonly DamageNumber[]): void {
+  if (!effectiveVisual.value.impactFx || reducedMotion || hits.length === 0) return;
+  damageNumbers.value = [...damageNumbers.value, ...hits].slice(-28);
+  hitStopMs = Math.max(hitStopMs, hits.some((hit) => hit.boss) ? 72 : 42);
+}
+
+/** Compara a vida antes/depois de um passo. O motor continua a ser a fonte dos números; a tela só os torna legíveis. */
+function enemyDamageSince(before: ReadonlyMap<number, { hp: number; x: number; y: number; boss: boolean }>, s: SurvivorState): DamageNumber[] {
+  const now = animMs;
+  const out: DamageNumber[] = [];
+  for (const enemy of s.enemies) {
+    const prior = before.get(enemy.id);
+    if (!prior) continue;
+    const amount = Math.round(prior.hp - enemy.hp);
+    if (amount > 0) out.push({ id: nextDamageNumberId++, x: enemy.x, y: enemy.y, amount, bornAt: now, boss: enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss === true });
+  }
+  return out;
+}
+
 let ctx: CanvasRenderingContext2D | null = null;
 let groundPattern: CanvasPattern | null = null;
 let playerSprite: SpriteAsset | null = null;
@@ -1126,6 +1151,12 @@ function drawShadowFlames(x: number, y: number, radius: number): void {
 
 function drawEnemy(e: SurvivorEnemy): void {
   if (!ctx) return;
+  // Chefões dão um pequeno tranco quando o golpe conecta. O flash já existia; o deslocamento torna o impacto legível.
+  const shake = effectiveVisual.value.impactFx && !reducedMotion && (e.boss || e.grade === 'chefao' || e.shadowBoss) && e.hitFlashMs > 0
+    ? Math.sin((90 - e.hitFlashMs) * 0.72) * (e.hitFlashMs / 90) * 5
+    : 0;
+  ctx.save();
+  ctx.translate(shake, 0);
   const sprite = e.dexId === undefined ? null : (enemySprites.get(e.dexId) ?? null);
   // Grau: elite com anel dourado, chefão (do treinador) com anel vermelho — ajuda a reconhecer na correria.
   if (e.grade !== 'comum') {
@@ -1200,6 +1231,32 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.fillStyle = '#ff78b7';
     ctx.fillText('♥', e.x + (e.boss ? 26 : 17), e.y - (e.boss ? 48 : 27));
   }
+  ctx.restore();
+}
+
+function drawDamageNumbers(worldToScreen: WorldToScreen): void {
+  if (!ctx || damageNumbers.value.length === 0) return;
+  const now = animMs;
+  const live = damageNumbers.value.filter((hit) => now - hit.bornAt < 720);
+  if (live.length !== damageNumbers.value.length) damageNumbers.value = live;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const hit of live) {
+    const age = now - hit.bornAt;
+    const t = age / 720;
+    const p = worldToScreen(hit.x, hit.y - 20 - t * 30);
+    if (!p) continue;
+    const alpha = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88;
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.font = `bold ${hit.boss ? 17 : 13}px system-ui, sans-serif`;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#161b2b';
+    ctx.strokeText(`-${hit.amount}`, p.x, p.y);
+    ctx.fillStyle = hit.boss ? '#ffd86b' : '#fff4de';
+    ctx.fillText(`-${hit.amount}`, p.x, p.y);
+  }
+  ctx.restore();
 }
 
 /** Sprite 2D voltado para a câmera (billboard): a perspectiva vem da projeção, não de um modelo 3D inventado. */
@@ -1229,6 +1286,10 @@ function drawBonkBillboard(
 
 function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): void {
   if (!ctx) return;
+  const shake = effectiveVisual.value.impactFx && !reducedMotion && (e.boss || e.grade === 'chefao' || e.shadowBoss) && e.hitFlashMs > 0
+    ? Math.sin((90 - e.hitFlashMs) * 0.72) * (e.hitFlashMs / 90) * Math.max(2, scale * 4)
+    : 0;
+  x += shake;
   const sprite = e.dexId === undefined ? null : (enemySprites.get(e.dexId) ?? null);
   const size = (e.shadowBoss ? 1.7 : e.boss ? 1.2 : e.grade === 'chefao' ? 1.12 : e.grade === 'elite' ? 0.96 : 0.84) * scale;
   if (e.shadowBoss) drawShadowFlames(x, y, 20 * size);
@@ -1384,6 +1445,30 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     });
   }
   figures.sort((a, b) => b.depth - a.depth).forEach((figure) => figure.draw());
+
+  // Na câmera BONK a projeção depende da altura e pode recusar pontos atrás da câmera; os números seguem a mesma
+  // projeção dos inimigos e simplesmente não aparecem fora da vista.
+  const now = animMs;
+  const liveHits = damageNumbers.value.filter((hit) => now - hit.bornAt < 720);
+  if (liveHits.length !== damageNumbers.value.length) damageNumbers.value = liveHits;
+  c.save();
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  for (const hit of liveHits) {
+    const age = now - hit.bornAt;
+    const point = drawPoint(hit, 24);
+    if (!point) continue;
+    const t = age / 720;
+    const alpha = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88;
+    c.globalAlpha = Math.max(0, alpha);
+    c.font = `bold ${Math.max(11, (hit.boss ? 17 : 13) * point.scale)}px system-ui, sans-serif`;
+    c.lineWidth = Math.max(1.5, point.scale * 2.5);
+    c.strokeStyle = '#161b2b';
+    c.strokeText(`-${hit.amount}`, point.x, point.y - 16 - t * 20);
+    c.fillStyle = hit.boss ? '#ffd86b' : '#fff4de';
+    c.fillText(`-${hit.amount}`, point.x, point.y - 16 - t * 20);
+  }
+  c.restore();
 
   for (const projectile of s.projectiles) {
     const head = toScreen(projectile.x, projectile.y, 18);
@@ -1569,6 +1654,7 @@ function draw(): void {
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
   }
+  drawDamageNumbers(flat);
 
   // Os apoios são puramente visuais: o motor mantém suas posições separadas e
   // todos os golpes continuam surgindo no jogador, sem hitbox própria.
@@ -1949,6 +2035,11 @@ function loop(ts: number): void {
     return;
   }
   animMs += dt;
+  if (hitStopMs > 0) {
+    hitStopMs = Math.max(0, hitStopMs - dt);
+    draw();
+    return;
+  }
   // A corrida inteira muda o objeto a cada quadro: o motor trabalha no objeto cru (sem um proxy do Vue por campo e
   // por inimigo) e o `triggerRef` abaixo avisa a interface uma vez por quadro. As outras telas do componente continuam
   // reativas, porque as mudanças fora do laço passam pelo proxy como antes.
@@ -1960,6 +2051,7 @@ function loop(ts: number): void {
     const hpBefore = s.player.hp;
     const xpBefore = s.player.xp;
     const killsBefore = s.kills;
+    const enemyHpBefore = new Map(s.enemies.map((enemy) => [enemy.id, { hp: enemy.hp, x: enemy.x, y: enemy.y, boss: enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss === true }]));
     const kx = (heldKeys.has('right') ? 1 : 0) - (heldKeys.has('left') ? 1 : 0);
     const ky = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
     const dx = kx + (joystick.active ? joystick.dx : 0);
@@ -1973,6 +2065,7 @@ function loop(ts: number): void {
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
     const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
+    showEnemyDamage(enemyDamageSince(enemyHpBefore, s));
     if (s.player.attackTimerMs > attackTimerBefore) {
       playerAttackAt = animMs;
       playAttackSound(s.player.move, ts);

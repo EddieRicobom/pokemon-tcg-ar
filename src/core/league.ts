@@ -550,6 +550,30 @@ export function emptyLeague(): LeagueProgress {
   return { badges: [], eliteStreak: 0, championWins: 0, beaten: [] };
 }
 
+/** Recompensas que entram nos modos de jogo — não são moedas nem cosméticos. */
+export interface LeaguePerks {
+  /** Redução por disparo no Pins; as insígnias diminuem um custo que afeta cada decisão de campo. */
+  pinShotDiscount: number;
+  /** Campos iniciais do Pins liberados pelas vitórias da Liga. */
+  pinFields: readonly ('natural' | 'ice' | 'toxic' | 'psy')[];
+}
+
+/**
+ * As quatro primeiras insígnias já deixam a economia de Pins menos punitiva; cada ciclo de 8 amplia o desconto.
+ * Um título de Campeão libera o campo psíquico. Tudo é derivado do progresso salvo, portanto não existe prêmio
+ * duplicável nem compra escondida.
+ */
+export function leaguePerks(progress: LeagueProgress): LeaguePerks {
+  const badges = progress.badges.length;
+  const champions = progress.championWins + Object.values(progress.regions ?? {}).reduce((sum, region) => sum + (region?.championWins ?? 0), 0);
+  const pinShotDiscount = Math.min(6, Math.floor(badges / 4) + champions);
+  const fields: ('natural' | 'ice' | 'toxic' | 'psy')[] = ['natural'];
+  if (badges >= 4) fields.push('ice');
+  if (badges >= 8) fields.push('toxic');
+  if (champions > 0) fields.push('psy');
+  return { pinShotDiscount, pinFields: fields };
+}
+
 export function normalizeLeague(raw: unknown): LeagueProgress {
   const r = (raw ?? {}) as Partial<LeagueProgress>;
   const badges = Array.isArray(r.badges) ? [...new Set(r.badges.filter((b) => Number.isInteger(b) && b >= 0 && b < TOTAL_BADGES))].sort((a, b) => a - b) : [];
