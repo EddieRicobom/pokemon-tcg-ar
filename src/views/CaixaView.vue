@@ -21,7 +21,6 @@ import CardMarks from '../components/CardMarks.vue';
 import SmoothingSheet from '../components/SmoothingSheet.vue';
 import StageButton from '../components/StageButton.vue';
 import TeamPicker from '../components/TeamPicker.vue';
-import BoxPvpPanel from '../components/BoxPvpPanel.vue';
 import PokeBook from '../components/PokeBook.vue';
 import { loadVillage, saveVillage } from '../app/village-store';
 import { BATTLE_REWARDS_PER_DAY, battleRewardsLeft, dailyHelp, friendLevel, itemName } from '../core/village/life';
@@ -84,14 +83,12 @@ const SLOT_CHOICES: { slot: RosterSlot; label: string; title: string }[] = [
 ];
 const loadingCreatures = ref(false);
 /** Modo vida (a Vila, sem câmera). */
-/** Vindo da Vila (`#/caixa?vila=1`) a Vila abre direto; vindo da Arena (`?pvp=1`) o PvP já aparece aberto. */
+/** Vindo do menu da Arena (`#/arena`), o palco abre sozinho (`autoiniciar` começa a batalha; no PvP o anfitrião toca em Batalhar). */
 const arrival = routeFlags(window.location.hash);
-const pvpOpen = ref(arrival.has('pvp'));
 /** Fluxos confirmados na Arena entram no palco e iniciam a batalha sem uma terceira confirmação. */
 const autoStart = arrival.has('autoiniciar');
 const endlessModes: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
 const endlessShortcut = ref<EndlessArenaMode | null>(arrival.has('formatacao') ? 'formatacao' : arrival.has('restauracao') ? 'restauracao' : null);
-const pvpEl = ref<HTMLDetailsElement | null>(null);
 if (arrival.size > 0) window.history.replaceState(null, '', routeHref('caixa'));
 const bookNote = ref('');
 /** O Livro da Caixa também deixa dar o apelido (a Vila e a Caixa guardam no mesmo arquivo). */
@@ -110,13 +107,8 @@ function onBookNickname(id: string, text: string): void {
 const nickTick = ref(0);
 const bookNicks = computed(() => (nickTick.value >= 0 ? { ...village.nicks } : {}));
 
-function openPvp(): void {
-  pvpOpen.value = true;
-  void nextTick(() => pvpEl.value?.scrollIntoView({ block: 'start' }));
-}
-
 /**
- * Veio do Fliperama (`?batalha=1`): o botão principal destaca a batalha na Arena 3D.
+ * Veio do Fliperama por um endereço antigo (`?batalha=1`): o botão principal destaca a batalha.
  */
 const battleShortcut = ref(arrival.has('batalha'));
 /** Vindo do Coliseu da Vila (`?vila=1`): o botão «Voltar à Vila» fica na tela inicial. */
@@ -135,8 +127,12 @@ function onMotionPreferenceChange(): void {
 }
 
 onMounted(() => {
-  if (arrival.has('pvp')) openPvp();
-  if (autoStart) void nextTick(open);
+  // Endereço antigo do PvP (`#/caixa?pvp=1`): o lobby e a escolha da equipe moram no menu da Arena.
+  if (arrival.has('pvp') && !arrival.has('arena')) {
+    window.location.replace(routeHref('arena', undefined, ['pvp']));
+    return;
+  }
+  if (autoStart || (arrival.has('pvp') && arrival.has('arena'))) void nextTick(open);
 });
 const picked = ref<{ name: string; detail: string; dexId?: number; shiny?: boolean; mega?: boolean } | null>(null);
 const reducedMotion = ref(false);
@@ -319,7 +315,7 @@ function applyBoxSettings(running: RunningBox): void {
   running.setMode(boxMode.value);
 }
 
-/** Arena 3D: sem câmera, sem sensores e sem escolher o ponto no chão (a arena nasce de frente para a visão). */
+/** Arena: sem câmera, sem sensores e sem escolher o ponto no chão (a arena nasce de frente para a visão). */
 async function openVirtual(version: number): Promise<void> {
   const canvas = canvasEl.value;
   const stage = stageEl.value;
@@ -337,14 +333,14 @@ async function openVirtual(version: number): Promise<void> {
   } catch (e) {
     if (disposed || version !== sessionVersion) return;
     close();
-    error.value = `Não consegui montar a Arena 3D: ${e instanceof Error ? e.message : String(e)}`;
+    error.value = `Não consegui montar a Arena: ${e instanceof Error ? e.message : String(e)}`;
     return;
   }
   applyBoxSettings(box);
   const placed = box.placeAt(0, 0);
   if (!placed.ok) {
     close();
-    error.value = `Não consegui montar a Arena 3D: ${placed.message}`;
+    error.value = `Não consegui montar a Arena: ${placed.message}`;
     return;
   }
   phase.value = 'running';
@@ -482,17 +478,17 @@ const notices = computed<Notice[]>(() => {
     const friend = boxPvp.friend?.name ?? 'o amigo';
     const sub = boxPvp.role === 'host'
       ? boxPvp.friend ? `${BOX_PVP_LABELS_PT[boxPvp.mode].title} · toque em Batalhar${boxPvp.friendPlaced ? '' : ` (${friend} ainda não colocou a caixa)`}` : 'Esperando a equipe do amigo…'
-      : boxPvp.pending ? 'Aguarde a Arena 3D ser montada.' : 'Esperando o anfitrião começar.';
+      : boxPvp.pending ? 'Aguarde a Arena ser montada.' : 'Esperando o anfitrião começar.';
     list.push({ text: `PvP com ${friend}`, sub, tone: 'ok', gold: true });
   } else if (endlessShortcut.value && !preparing.value) {
     const mode = ENDLESS_ARENA_LABELS[endlessShortcut.value];
-    list.push({ text: `Arena Digital: ${mode.title}`, sub: 'Toque em Começar para a primeira batalha 6×6.', tone: 'ok', gold: true });
+    list.push({ text: `Arena: ${mode.title}`, sub: 'Toque em Começar para a primeira batalha 6×6.', tone: 'ok', gold: true });
   } else if (challenge.value && !preparing.value) {
     list.push({ text: `Desafio: ${challenge.value.role} ${challenge.value.leader}`, sub: 'Toque em Batalhar: até 6 da sua caixa contra a equipe do líder, um duelo por vez.', tone: 'ok', gold: true });
   } else if (battleShortcut.value && !preparing.value) {
     const left = battleRewardsLeft(village, dayKey(new Date()));
     list.push({
-      text: 'Fliperama: batalha na Arena 3D',
+      text: 'Fliperama: batalha na Arena',
       sub: `Toque em Batalhar · ${left > 0 ? `+100 moedas (${left} de ${BATTLE_REWARDS_PER_DAY} hoje)` : 'as moedas de hoje já saíram'}`,
       tone: 'ok',
       gold: true,
@@ -541,11 +537,11 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="card" aria-labelledby="box-title">
-    <h2 id="box-title">Arena 3D</h2>
+    <h2 id="box-title">Arena</h2>
     <p class="note">
-      Os moradores da Vila lutam num Coliseu virtual, sem câmera nem sensores: arraste na imagem para olhar em volta. Quem
-      aparece você escolhe em <a :href="routeHref('cartas')">Minhas cartas</a>; quem luta em cada batalha é escolhido na
-      escalação.
+      Os moradores da Vila lutam num Coliseu virtual, sem câmera nem sensores: arraste na imagem para olhar em volta.
+      Quer escolher equipe, formato, corrida, Liga ou PvP <strong>antes</strong> de entrar? Use o
+      <a :href="routeHref('arena')">menu da Arena</a>.
     </p>
 
     <div
@@ -704,7 +700,7 @@ onBeforeUnmount(() => {
               <strong>Quem vai lutar · {{ rosterRows.filter((r) => slotOf(r.id) !== 'out').length }}/{{ rosterRows.length }}</strong>
               <button v-if="rosterCustom" type="button" class="link" @click="resetRoster">Tudo em sorteio</button>
             </div>
-            <p class="hint roster-moves">Os golpes de cada Pokémon (até 4) são montados na Arena Digital e valem aqui também. <a :href="routeHref('arena', undefined, ['golpes'])">Escolher golpes</a></p>
+            <p class="hint roster-moves">Os golpes de cada Pokémon (até 4) são montados no menu da Arena e valem aqui também. <a :href="routeHref('arena', undefined, ['golpes'])">Escolher golpes</a></p>
             <p class="hint">Escolha Vermelha ou Azul para cada Pokémon, ou Fora para deixá-lo só passeando na Caixa. Quem ficar em sorteio completa os lados. No 3x3 cada lado usa 3.</p>
             <ul class="roster-list">
               <li v-for="row in rosterRows" :key="row.id" :class="{ out: roster[row.id] === 'out' }">
@@ -757,7 +753,7 @@ onBeforeUnmount(() => {
             <p class="meta">Arraste a Arena para olhar ao redor. Os efeitos visuais podem ser ajustados sem usar câmera ou sensores.</p>
           </div>
         </div>
-        <div v-if="arenaOn" class="stage-bar" role="toolbar" aria-label="Controles da Arena 3D">
+        <div v-if="arenaOn" class="stage-bar" role="toolbar" aria-label="Controles da Arena">
           <StageButton :icon="fullscreen ? 'exit-fullscreen' : 'fullscreen'" :label="fullscreen ? 'Sair' : 'Tela cheia'" @click="toggleFullscreen" />
           <StageButton icon="filters" label="Suavizar" :active="showFilters" @click="showFilters = !showFilters; showTeam = false; showAdjust = false; showModes = false" />
           <StageButton v-if="!battling" icon="team" label="Quem passeia" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false; showModes = false" />
@@ -786,9 +782,9 @@ onBeforeUnmount(() => {
 
     <div class="actions" :class="{ stack: battleShortcut || endlessShortcut || fromVila || fromArena }">
       <button ref="openButton" type="button" class="primary" :class="{ 'battle-cta': battleShortcut }" :disabled="phase !== 'idle'" @click="open">
-        {{ phase === 'starting' ? 'Abrindo…' : endlessShortcut ? `⚔️ Entrar na arena · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Entrar na arena e batalhar' : '🏟️ Entrar na Arena 3D' }}
+        {{ phase === 'starting' ? 'Abrindo…' : endlessShortcut ? `⚔️ Entrar na arena · ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : battleShortcut ? '⚔️ Entrar na arena e batalhar' : '🏟️ Entrar na Arena' }}
       </button>
-      <a v-if="battleShortcut || endlessShortcut || fromVila || fromArena" class="button" :href="routeHref(endlessShortcut || fromArena ? 'arena' : 'vila')">{{ endlessShortcut || fromArena ? 'Voltar à Arena' : 'Voltar à Vila' }}</a>
+      <a v-if="battleShortcut || endlessShortcut || fromVila || fromArena" class="button" :href="routeHref(endlessShortcut || fromArena ? 'arena' : 'vila')">{{ endlessShortcut || fromArena ? 'Voltar ao menu da Arena' : 'Voltar à Vila' }}</a>
     </div>
 
     <p v-if="error && !immersive" class="message error" role="alert">{{ error }}</p>
@@ -799,9 +795,5 @@ onBeforeUnmount(() => {
       <PokeBook v-else :mons="bookMons" :friends="village.friends" :nicks="bookNicks" :nick-note="bookNote" @nickname="onBookNickname" />
     </details>
 
-    <details v-if="!immersive" ref="pvpEl" class="layout" :open="pvpOn || pvpOpen" @toggle="(e: Event) => (pvpOpen = (e.target as HTMLDetailsElement).open)">
-      <summary>Batalhar com um amigo (PvP)</summary>
-      <BoxPvpPanel />
-    </details>
   </section>
 </template>
