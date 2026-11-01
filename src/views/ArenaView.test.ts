@@ -80,12 +80,14 @@ describe('ArenaView: desafio da Liga', () => {
     await nextTick();
     await nextTick();
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
-    expect(host.querySelector('#arena-step-4')!.textContent).toContain('Roark');
-    // Ainda sem Pokémon na equipe: não dá para entrar.
+    // Ainda sem Pokémon na equipe: o plano pede a equipe primeiro e não dá para entrar.
+    expect(host.querySelector('#arena-step-4')!.textContent).toContain('Escolha pelo menos 1 Pokémon');
     expect(go().disabled).toBe(true);
 
     host.querySelector<HTMLButtonElement>('.team-picker-stub')!.click();
     await nextTick();
+    // Com equipe e líder escolhido, o resumo nomeia o líder e o botão libera.
+    expect(host.querySelector('#arena-step-4')!.textContent).toContain('Roark');
     expect(go().disabled).toBe(false);
     go().click();
     expect(window.location.hash).toContain('/caixa');
