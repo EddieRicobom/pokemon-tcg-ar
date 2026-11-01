@@ -4,7 +4,7 @@ import { legendStoryOf } from './legendary-stories';
 
 /**
  * Os lendários de uma região só aparecem depois de conquistar as 8 insígnias dela e vencer o campeão da Liga
- * dessa região. Regiões sem Liga no app (Alola, Galar, Hisui, Paldea) continuam fechadas.
+ * dessa região. Regiões sem Liga no app (Hisui) continuam fechadas.
  */
 export function unlockedLegendRegions(league: LeagueProgress): ReadonlySet<string> {
   const open = new Set<string>();

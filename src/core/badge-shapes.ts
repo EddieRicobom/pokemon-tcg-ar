@@ -4,7 +4,7 @@ import {
 import type { BadgeLayer, Fill, Point } from './badge-geometry';
 
 /**
- * As 48 insígnias (Gerações I a VI) desenhadas como broches de metal esmaltado, no formato e nas cores das insígnias
+ * As 72 insígnias (Gerações I a IX) desenhadas como broches de metal esmaltado, no formato e nas cores das insígnias
  * dos jogos. Cada função devolve o contorno (a peça de metal, que ganha relevo na maleta 3D) e as camadas de esmalte
  * por cima, de baixo para cima.
  */
@@ -631,6 +631,281 @@ export function iceberg(): BadgeShape {
       L(inset(outline, 0.07), 'enamel2'), L([...frame, frame[0]!], 'metal', 0.04),
       L(poly(-0.6, -0.36, -0.26, 0.22, -0.08, 0, 0.2, 0.46, 0.6, -0.36), 'enamel3'), L(poly(0.2, 0.46, 0.6, -0.36, 0.24, -0.36), '#9fd2f5'),
       L(poly(-0.62, -0.4, 0.62, -0.4, 0, -0.72), 'enamel'), shine(-0.5, 0.42, 0.1, 0.04, deg(30)),
+    ],
+  };
+}
+
+const polarXY = (r: number, a: number): [number, number] => [r * Math.cos(a), r * Math.sin(a)];
+
+// ───────────────────────── Alola (VII) ─────────────────────────
+
+/** Normalium: cristal Z cinza, decágono lapidado. */
+export function normalium(): BadgeShape {
+  const outline = radial(10, () => 0.96, deg(18));
+  const rim = inset(outline, 0.09);
+  const table = radial(10, () => 0.5, deg(18));
+  return {
+    outline,
+    layers: [...facets(rim, table), L(table, 'enamel'), L(shrink(table, 0.55, -0.04, 0.05), 'enamel3'), ...rim.map((p, i) => L([p, table[i]!], 'dark', 0.018)), shine(-0.34, 0.4, 0.15, 0.06)],
+  };
+}
+
+/** Aquium: círculo de borda ondulada com três ondas. */
+export function tide(): BadgeShape {
+  const outline = radial(72, (a) => 0.84 + 0.1 * Math.cos(8 * a));
+  const wave = (y: number): Point[] => Array.from({ length: 21 }, (_, i) => pt(-0.56 + i * 0.056, y + 0.09 * Math.sin(i * 0.75)));
+  return {
+    outline,
+    layers: [L(inset(outline, 0.07), 'enamel'), L(arc(0.58, 0, 0, 40), 'enamel2'), L(wave(0.24), 'enamel3', 0.06), L(wave(0), 'shine', 0.05), L(wave(-0.24), 'enamel3', 0.06), shine(-0.36, 0.5, 0.14, 0.05)],
+  };
+}
+
+/** Pyrium: sol de sete pontas em brasa. */
+export function blaze(): BadgeShape {
+  const outline = star(7, 0.97, 0.64);
+  return {
+    outline,
+    layers: [L(inset(outline, 0.07), 'enamel'), L(star(7, 0.68, 0.44), 'enamel2'), L(arc(0.3, 0, 0, 28), 'enamel3'), L(arc(0.13, 0, 0, 16), 'metal'), shine(-0.3, 0.34, 0.13, 0.05)],
+  };
+}
+
+/** Florium: flor de cinco pétalas. */
+export function blossom(): BadgeShape {
+  const outline = radial(80, (a) => 0.5 + 0.47 * Math.abs(Math.cos(2.5 * (a - deg(90)))));
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.07), 'enamel'), ...[0, 1, 2, 3, 4].map((k) => L([pt(0, 0), polar(0.72, deg(90 + 72 * k))], 'enamel2', 0.045)),
+      L(arc(0.26, 0, 0, 28), 'enamel3'), L(arc(0.14, 0, 0, 20), 'metal'), shine(-0.2, 0.62, 0.1, 0.04, deg(70)),
+    ],
+  };
+}
+
+/** Electrium: esfera de dez espinhos com um raio de metal. */
+export function spark(): BadgeShape {
+  const outline = star(10, 0.97, 0.66);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.07), 'enamel'), L(star(10, 0.7, 0.5), 'enamel2'), L(arc(0.4, 0, 0, 28), 'enamel3'),
+      L(poly(0.1, 0.3, -0.2, -0.02, -0.02, -0.02, -0.1, -0.3, 0.2, 0.02, 0.02, 0.02), 'metal'), shine(-0.3, 0.4, 0.12, 0.05),
+    ],
+  };
+}
+
+/** Feérium: trevo de quatro pétalas rosa. */
+export function clover(): BadgeShape {
+  const outline = radial(96, (a) => 0.3 + 0.67 * Math.abs(Math.cos(2 * a)) ** 1.4);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.07), 'enamel'), ...[0, 1, 2, 3].map((k) => L(ellipse(0.2, 0.32, ...polarXY(0.52, deg(90 * k)), 24, deg(90 * k)), 'enamel3')),
+      L(arc(0.22, 0, 0, 24), 'enamel2'), L(arc(0.12, 0, 0, 16), 'metal'), shine(-0.3, 0.22, 0.12, 0.05),
+    ],
+  };
+}
+
+/** Terrium: bloco de terra de cantos cortados, em camadas. */
+export function strata(): BadgeShape {
+  const outline = poly(-0.9, -0.6, -0.6, -0.9, 0.6, -0.9, 0.9, -0.6, 0.9, 0.6, 0.6, 0.9, -0.6, 0.9, -0.9, 0.6);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.07), 'enamel'), L(rect(-0.72, 0.3, 0.72, 0.52), 'enamel3'), L(rect(-0.72, -0.08, 0.72, 0.14), 'enamel2'), L(rect(-0.72, -0.5, 0.72, -0.28), 'enamel3'),
+      L(arc(0.1, -0.35, 0.02, 12), 'enamel2'), L(arc(0.08, 0.3, -0.2, 12), 'enamel3'), shine(-0.5, 0.64, 0.14, 0.04, 0),
+    ],
+  };
+}
+
+/** Obscurium: lua crescente sobre fundo escuro. */
+export function crescent(): BadgeShape {
+  const outline = [...arc(0.95, 0, 0, 40, deg(60), deg(300)), ...arc(0.828, 0.38, 0, 30, deg(276.6), deg(83.4)).slice(1, -1)];
+  const inner = inset(outline, 0.07);
+  return {
+    outline,
+    layers: [L(inner, 'enamel'), L(shrink(inner, 0.78, -0.05, 0.02), 'enamel2'), L(star(4, 0.16, 0.06, deg(90), -0.66, 0.12), 'enamel3'), shine(-0.62, 0.5, 0.12, 0.04, deg(60))],
+  };
+}
+
+// ───────────────────────── Galar (VIII) ─────────────────────────
+
+/** Cultivo: trevo de três folhas. */
+export function sprout(): BadgeShape {
+  const outline = radial(90, (a) => 0.42 + 0.55 * Math.abs(Math.cos(1.5 * (a - deg(90)))) ** 1.2);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.07), 'enamel'), ...[0, 1, 2].map((k) => L([pt(0, 0), polar(0.78, deg(90 + 120 * k))], 'enamel2', 0.05)),
+      ...[0, 1, 2].map((k) => L(ellipse(0.12, 0.26, ...polarXY(0.5, deg(90 + 120 * k)), 20, deg(120 * k)), 'enamel3')), L(arc(0.12, 0, 0, 16), 'metal'),
+    ],
+  };
+}
+
+/** Maré: concha azul de nervuras. */
+export function pearl(): BadgeShape {
+  const outline = hull([ellipse(0.97, 0.72, 0, 0.12, 56), poly(-0.34, -0.5, 0, -0.96, 0.34, -0.5)], 160);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.07), 'enamel'), ...[-0.7, -0.35, 0, 0.35, 0.7].map((x) => L([pt(0, -0.62), pt(x, 0.6)], 'enamel2', 0.04)),
+      L(arc(0.12, 0, -0.62, 16), 'metal'), shine(-0.48, 0.5, 0.14, 0.05),
+    ],
+  };
+}
+
+/** Chama: chama de fornalha com o miolo amarelo. */
+export function furnace(): BadgeShape {
+  const outline = poly(0, 0.97, 0.3, 0.55, 0.62, 0.2, 0.7, -0.25, 0.5, -0.7, 0.1, -0.95, -0.35, -0.8, -0.68, -0.4, -0.68, 0.05, -0.4, 0.3, -0.3, 0.6);
+  const inner = inset(outline, 0.07);
+  return { outline, layers: [L(inner, 'enamel'), L(shrink(inner, 0.62, 0.02, -0.16), 'enamel2'), L(shrink(inner, 0.3, 0.02, -0.34), 'enamel3'), shine(-0.3, 0.1, 0.07, 0.16, deg(-20))] };
+}
+
+/** Máscara: fantasma de lençol com os olhos vazados. */
+export function shroud(): BadgeShape {
+  const outline = [...arc(0.8, 0, 0.1, 33, 0, Math.PI), ...poly(-0.8, -0.75, -0.53, -0.55, -0.27, -0.8, 0, -0.55, 0.27, -0.8, 0.53, -0.55, 0.8, -0.75)];
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.07), 'enamel'), L(ellipse(0.13, 0.2, -0.28, 0.14, 20), 'dark'), L(ellipse(0.13, 0.2, 0.28, 0.14, 20), 'dark'), L(ellipse(0.1, 0.13, 0, -0.2, 20), 'dark'),
+      L(arc(0.04, -0.3, 0.2, 8), 'shine'), L(arc(0.04, 0.26, 0.2, 8), 'shine'), shine(-0.45, 0.58, 0.14, 0.05),
+    ],
+  };
+}
+
+/** Laço: laço rosa com o nó dourado. */
+export function ribbon(): BadgeShape {
+  const outline = poly(0, 0.18, -0.95, 0.7, -0.95, -0.7, 0, -0.18, 0.95, -0.7, 0.95, 0.7);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.06), 'enamel'), L(poly(-0.1, 0.1, -0.84, 0.5, -0.84, 0.2), 'enamel3'), L(poly(0.1, 0.1, 0.84, 0.5, 0.84, 0.2), 'enamel3'),
+      L(poly(-0.1, -0.1, -0.84, -0.5, -0.84, -0.2), 'enamel2'), L(poly(0.1, -0.1, 0.84, -0.5, 0.84, -0.2), 'enamel2'), L(ellipse(0.17, 0.3, 0, 0, 24), 'metal'), L(ellipse(0.09, 0.2, 0, 0, 16), 'enamel3'),
+    ],
+  };
+}
+
+/** Geada: floco de neve de seis braços. */
+export function frostflake(): BadgeShape {
+  const outline = star(6, 0.97, 0.5);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.07), 'enamel'), ...[0, 1, 2, 3, 4, 5].map((k) => L([pt(0, 0), polar(0.82, deg(90 + 60 * k))], 'enamel3', 0.05)),
+      L(radial(6, () => 0.3, deg(30)), 'enamel2'), L(arc(0.12, 0, 0, 16), 'shine'), shine(-0.34, 0.42, 0.1, 0.04),
+    ],
+  };
+}
+
+/** Punk: estrela de cinco pontas, preta com um raio rosa. */
+export function punk(): BadgeShape {
+  const outline = star(5, 0.98, 0.46);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.07), 'enamel'), L(star(5, 0.64, 0.3), 'enamel2'), L(poly(0.08, 0.34, -0.2, -0.02, -0.02, -0.02, -0.08, -0.32, 0.2, 0.04, 0.02, 0.04), '#d81b8a'), shine(-0.26, 0.5, 0.1, 0.04),
+    ],
+  };
+}
+
+/** Escama: asa de dragão azul de bordas recortadas. */
+export function scale(): BadgeShape {
+  const outline = symmetric(poly(0, 0.55, 0.45, 0.9, 0.95, 0.7, 0.8, 0.2, 0.9, -0.3, 0.55, -0.1, 0.45, -0.6, 0.2, -0.2, 0, -0.5));
+  const inner = inset(outline, 0.06);
+  return {
+    outline,
+    layers: [L(inner, 'enamel'), L(shrink(inner, 0.62, 0, 0.06), 'enamel2'), L([pt(0, 0.45), pt(0, -0.38)], 'enamel3', 0.05), L([pt(0, 0.3), pt(0.62, 0.62)], 'enamel3', 0.03), L([pt(0, 0.3), pt(-0.62, 0.62)], 'enamel3', 0.03), L(arc(0.1, 0, 0.06, 12), 'metal')],
+  };
+}
+
+// ───────────────────────── Paldea (IX) ─────────────────────────
+
+/** Confeito: favo de mel com três células. */
+export function honeycomb(): BadgeShape {
+  const outline = radial(6, () => 0.97);
+  const cell = (cx: number, cy: number): Point[] => radial(6, () => 0.26, 0, cx, cy);
+  return {
+    outline,
+    layers: [L(inset(outline, 0.07), 'enamel'), L(cell(-0.3, 0.18), 'enamel3'), L(cell(0.3, 0.18), 'enamel2'), L(cell(0, -0.34), 'enamel3'), L(radial(6, () => 0.12, 0, 0, -0.34), 'metal'), shine(-0.5, 0.5, 0.12, 0.04)],
+  };
+}
+
+/** Tela: copa de árvore pintada num tronco. */
+export function canvas(): BadgeShape {
+  const outline = hull([arc(0.7, 0, 0.25, 56), rect(-0.15, -0.96, 0.15, 0)], 180);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.06), 'enamel'), L(arc(0.5, -0.04, 0.3, 36), 'enamel3'), L(rect(-0.09, -0.86, 0.09, -0.3), 'enamel2'),
+      L(arc(0.12, 0.3, 0.45, 12), 'enamel2'), L(arc(0.1, -0.3, 0.1, 12), 'enamel2'), L(arc(0.08, 0.2, 0.0, 10), 'enamel2'), shine(-0.34, 0.56, 0.13, 0.05),
+    ],
+  };
+}
+
+/** Transmissão: selo dentado com um raio. */
+export function stream(): BadgeShape {
+  const outline = star(12, 0.97, 0.84);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.06), 'enamel2'), L(arc(0.7, 0, 0, 48), 'enamel'), L(arc(0.58, 0, 0, 40), 'enamel3'),
+      L(poly(0.14, 0.5, -0.32, -0.04, -0.02, -0.04, -0.14, -0.5, 0.32, 0.06, 0.02, 0.06), 'metal'), shine(-0.34, 0.5, 0.12, 0.05),
+    ],
+  };
+}
+
+/** Mercado: peixe de escamas azuis. */
+export function market(): BadgeShape {
+  const outline = lens(pt(-0.95, 0), pt(0.95, 0), 0.6, 0.6, 28);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.06), 'enamel'), ...[-0.3, 0.05, 0.4].flatMap((x) => [L(arc(0.2, x, 0.14, 14, deg(180), deg(360)), 'enamel2', 0.04), L(arc(0.2, x, -0.16, 14, deg(180), deg(360)), 'enamel2', 0.04)]),
+      L(arc(0.07, -0.66, 0.08, 10), 'dark'), shine(-0.2, 0.36, 0.2, 0.04, deg(5)),
+    ],
+  };
+}
+
+/** Expediente: gravata de escritório. */
+export function necktie(): BadgeShape {
+  const outline = poly(-0.35, 0.95, 0.35, 0.95, 0.22, 0.55, 0.5, -0.55, 0, -0.97, -0.5, -0.55, -0.22, 0.55);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.06), 'enamel'), L(poly(-0.26, 0.86, 0.26, 0.86, 0.15, 0.58, -0.15, 0.58), 'enamel2'), L(poly(0, 0.4, 0.2, -0.5, 0, -0.76, -0.2, -0.5), 'enamel3'),
+      L([pt(-0.2, 0.1), pt(0.2, 0.1)], 'enamel2', 0.04), L([pt(-0.28, -0.2), pt(0.28, -0.2)], 'enamel2', 0.04), shine(-0.1, 0.78, 0.1, 0.03, 0),
+    ],
+  };
+}
+
+/** Rima: disco de vinil com selo. */
+export function vinyl(): BadgeShape {
+  const outline = arc(0.96, 0, 0, 56);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.06), 'enamel'), L(arc(0.8, 0, 0, 48), 'enamel2', 0.02), L(arc(0.66, 0, 0, 48), 'enamel2', 0.02), L(arc(0.52, 0, 0, 44), 'enamel2', 0.02),
+      L(arc(0.34, 0, 0, 32), 'enamel3'), L(arc(0.07, 0, 0, 10), 'metal'), shine(-0.5, 0.52, 0.18, 0.04),
+    ],
+  };
+}
+
+/** Cosmético: estrela de quatro pontas cintilante. */
+export function glam(): BadgeShape {
+  const outline = star(4, 0.97, 0.36);
+  return {
+    outline,
+    layers: [L(inset(outline, 0.07), 'enamel'), L(star(4, 0.64, 0.22), 'enamel3'), L(arc(0.16, 0, 0, 20), 'metal'), L(arc(0.07, 0, 0, 10), 'enamel2'), shine(-0.12, 0.36, 0.06, 0.12, deg(-10))],
+  };
+}
+
+/** Descida: montanha nevada. */
+export function slope(): BadgeShape {
+  const outline = poly(-0.95, -0.75, -0.42, 0.2, -0.15, -0.08, 0.3, 0.85, 0.95, -0.75);
+  return {
+    outline,
+    layers: [
+      L(inset(outline, 0.06), 'enamel'), L(poly(0.3, 0.8, 0.12, 0.4, 0.24, 0.3, 0.32, 0.46, 0.44, 0.3, 0.5, 0.42), 'enamel3'), L(poly(-0.42, 0.14, -0.58, -0.12, -0.46, -0.1, -0.4, -0.2, -0.32, -0.08, -0.26, -0.12), 'enamel3'),
+      L(poly(-0.8, -0.68, 0.8, -0.68, 0.7, -0.56, -0.7, -0.56), 'enamel2'), shine(-0.6, -0.3, 0.1, 0.04, deg(60)),
     ],
   };
 }

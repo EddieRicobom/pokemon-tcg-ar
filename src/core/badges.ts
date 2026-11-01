@@ -10,7 +10,7 @@ export { arc, counterClockwise, signedArea } from './badge-geometry';
 export type { BadgeLayer, Fill, Finish, Point } from './badge-geometry';
 
 /**
- * Desenho das insígnias da Liga (8 por região, das Gerações I a VI): cada uma é um broche de metal esmaltado no formato
+ * Desenho das insígnias da Liga (8 por região, das Gerações I a IX): cada uma é um broche de metal esmaltado no formato
  * e nas cores da insígnia dos jogos. As formas ficam em `badge-shapes.ts` (pontos num quadrado de -1 a 1, y para cima),
  * e a mesma descrição vira SVG na interface (`BadgeIcon.vue`) e peça em relevo na maleta 3D (`src/box/badge-case.ts`).
  */
@@ -122,6 +122,36 @@ const SPECS: Readonly<Record<RegionId, readonly BadgeSpec[]>> = {
     ['leque rosa', ROSE_GOLD, ['#f48fb1', '#c2577e', '#ffe0ec'], S.fairy],
     ['esfera dourada com espiral roxa', GOLD, ['#e8b84a', '#6a2c91', '#fff0b8'], S.psychic],
     ['iceberg num hexágono', GOLD, ['#5fb4ef', '#1a4f9c', '#f2fbff'], S.iceberg],
+  ],
+  alola: [
+    ['cristal Z cinza lapidado', SILVER, ['#c9c4b4', '#8a846f', '#f1ede0'], S.normalium],
+    ['círculo de ondas azuis', SILVER, ['#2f8fe8', '#17549a', '#a9d8ff'], S.tide],
+    ['sol de sete pontas em brasa', COPPER, ['#e8431c', '#9a2208', '#ffb27a'], S.blaze],
+    ['flor de cinco pétalas', BRASS, ['#6fcf5a', '#2c7a2a', '#c8f2a8'], S.blossom],
+    ['esfera de dez espinhos com raio', GOLD, ['#ffe033', '#c28a00', '#fff7b0'], S.spark],
+    ['trevo de quatro pétalas rosa', ROSE_GOLD, ['#f8a0cf', '#c2559a', '#ffe3f1'], S.clover],
+    ['bloco de terra em camadas', BRONZE, ['#c9964a', '#7a5421', '#efcf94'], S.strata],
+    ['lua crescente sobre fundo escuro', IRON, ['#4a4458', '#24202e', '#8c849e'], S.crescent],
+  ],
+  galar: [
+    ['trevo de três folhas', BRASS, ['#58b947', '#236b2c', '#b4ec9a'], S.sprout],
+    ['concha azul de nervuras', SILVER, ['#3ba0f0', '#1767b3', '#bfe4ff'], S.pearl],
+    ['chama de fornalha', COPPER, ['#ff6a1f', '#b2330a', '#ffc46b'], S.furnace],
+    ['fantasma de lençol de olhos vazados', IRON, ['#6c55a8', '#352a63', '#b7a6ea'], S.shroud],
+    ['laço rosa com nó dourado', GOLD, ['#f06fb0', '#b02a74', '#ffc9e3'], S.ribbon],
+    ['floco de neve de seis braços', SILVER, ['#8fe3f2', '#3aa6c0', '#e8fcff'], S.frostflake],
+    ['estrela negra com raio rosa', IRON, ['#2b2438', '#120f1a', '#c0309a'], S.punk],
+    ['asa de dragão azul recortada', GOLD, ['#2e6fd0', '#17387a', '#8fb5f5'], S.scale],
+  ],
+  paldea: [
+    ['favo de mel com três células', BRONZE, ['#d6c32a', '#8c7a0c', '#fff3a0'], S.honeycomb],
+    ['árvore pintada num tronco', OLD_GOLD, ['#7ac74c', '#2f7a24', '#c9f0a0'], S.canvas],
+    ['selo dentado com raio', STEEL, ['#9b5de5', '#5a22a8', '#ddc4ff'], S.stream],
+    ['peixe de escamas azuis', SILVER, ['#2aa7c9', '#136a85', '#a8e6f5'], S.market],
+    ['gravata de escritório', PLATINUM, ['#c4bfa6', '#7d775c', '#efecd8'], S.necktie],
+    ['disco de vinil com selo', IRON, ['#8a46c9', '#431a73', '#d3a6f5'], S.vinyl],
+    ['estrela cintilante de quatro pontas', ROSE_GOLD, ['#d84fa0', '#8e1f66', '#ffc2e6'], S.glam],
+    ['montanha nevada', SILVER, ['#6ec6f0', '#2d7fb8', '#eaf8ff'], S.slope],
   ],
 };
 
