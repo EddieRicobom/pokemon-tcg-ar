@@ -7302,6 +7302,8 @@ body.no-scroll .reward-toasts {
 @media (prefers-reduced-motion: reduce) { .guardian-gift img, .guardian-orb { animation: none; } }
 @media (max-height: 500px) { .survivor-guardian .guardian-gift { height: 60px; } .survivor-guardian .guardian-gift img { height: 48px; } .survivor-guardian .guardian-orb { top: 25px; } }
 .survivor-shadow-chip { border-color: #a66bff; background: #241438e8; color: #f0dfff; }
+.survivor-field-chip { border-color: #78e9ff; background: #123848e8; color: #dcfbff; box-shadow: 0 0 10px rgba(120, 233, 255, .24); }
+.survivor-field-chip.hunt { border-color: #ff7b83; background: #461b25e8; color: #fff0e9; box-shadow: 0 0 10px rgba(255, 102, 116, .28); }
 .survivor-shadow-cutscene { z-index: 10; background: radial-gradient(circle, #3d1766e8, #070810ee 68%); }
 .survivor-shadow-cutscene .card { width: min(100%, 360px); border: 2px solid #b575ff; box-shadow: 0 0 42px #7d35caaa; text-align: center; }
 .shadow-boss-arrival { position: relative; display: grid; min-height: 148px; place-items: center; isolation: isolate; }

@@ -5,6 +5,11 @@ O estado atual, as fases, as pendências e os riscos continuam no [plano](../IMP
 datadas (com o que foi e o que não foi validado em cada uma). A regra de validação do plano vale também para estas entradas:
 🔶 significa que **nada foi visto num celular real**.
 
+## Survival: encontros de campo (01/11/2026)
+
+- A Torre ganhou encontros opcionais de campo a cada 75 s. A Ressonância marca uma baliza por 22 s: chegar nela rende 12 s de poder e velocidade e quatro orbes reais. A Caçada marca outra baliza: ao alcançá-la, dois elites nascem; só depois que ambos caem, dois artefatos reais aparecem. Ignorar uma baliza não pune a corrida.
+- O mapa desenha anel pulsante, brilho e ícone da baliza; o HUD mostra seta e cronômetro, ou o estado da Caçada. Não há recompensa inventada: o pagamento reutiliza os buffs, orbes, elites e artefatos do motor. `survivor.test.ts` cobre ressonância, caçada e expiração. 🔶 Falta checar toque, leitura visual e custo de GPU em celular real.
+
 ## Janelas da Vila (25/10/2026)
 
 - Cabeçalhos compartilhados, fechamento com limpeza e navegação por Tab das folhas da Vila; menu em seção volta antes de fechar e a Torre conserva confirmação de saída. Conversas continuam com OK/Voltar. Não foi adicionado fechamento ao tocar fora.

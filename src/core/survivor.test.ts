@@ -1334,6 +1334,44 @@ describe('treinadores e chefão final', () => {
   });
 });
 
+describe('encontros de campo', () => {
+  it('a ressonância vira um objetivo de movimento e concede buffs e orbes reais ao ser alcançada', () => {
+    const s = quiet(run(14));
+    s.fieldEvent = { phase: 'beacon', kind: 'resonance', x: s.player.x, y: s.player.y, remainingMs: 1_000, enemyIds: [] };
+    const events = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+
+    expect(events).toContainEqual({ type: 'fieldEventComplete', kind: 'resonance' });
+    expect(s.fieldEvent).toBeNull();
+    expect(s.player.artifactSpeedMs).toBe(12_000);
+    expect(s.player.artifactPowerMs).toBe(12_000);
+    expect(s.player.xp).toBeGreaterThan(0);
+  });
+
+  it('a caçada só paga artefatos depois que os dois elites iniciados na baliza caem', () => {
+    const s = quiet(run(15));
+    s.fieldEvent = { phase: 'beacon', kind: 'hunt', x: s.player.x, y: s.player.y, remainingMs: 1_000, enemyIds: [] };
+    const started = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(started).toContainEqual({ type: 'fieldEventStarted', kind: 'hunt' });
+    expect(s.fieldEvent?.phase).toBe('hunt');
+    expect(s.fieldEvent?.enemyIds).toHaveLength(2);
+
+    for (const enemy of s.enemies) enemy.hp = 0;
+    const completed = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(completed).toContainEqual({ type: 'fieldEventComplete', kind: 'hunt' });
+    expect(s.fieldEvent).toBeNull();
+    // A proximidade do jogador pode recolher os dois imediatamente; o evento de coleta prova que os itens foram gerados.
+    expect(completed.filter((event) => event.type === 'artifactCollected')).toHaveLength(2);
+  });
+
+  it('deixa a baliza expirar sem punir a corrida', () => {
+    const s = quiet(run(16));
+    s.fieldEvent = { phase: 'beacon', kind: 'hunt', x: 0, y: 0, remainingMs: 1, enemyIds: [] };
+    const events = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(events).toContainEqual({ type: 'fieldEventExpired', kind: 'hunt' });
+    expect(s.fieldEvent).toBeNull();
+  });
+});
+
 describe('artefatos temporários', () => {
   it('coleta artefato real e aplica cura com proteção visual registrada', () => {
     const s = createSurvivorState(8, { kindCount: 1 });

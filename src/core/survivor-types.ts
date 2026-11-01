@@ -420,6 +420,9 @@ export interface SurvivorState {
   shadowBallsSpawned: number;
   /** Pedras asseguradas ao derrotar lendários; entram no inventário quando a corrida termina. */
   shadowTrustStones: number;
+  /** Sinal visível no mapa e sua próxima janela; encontros são opcionais, mas dão uma razão para explorar. */
+  fieldEvent: SurvivorFieldEvent | null;
+  nextFieldEventAtMs: number;
   fx: SurvivorFx[];
   kills: number;
   wave: number;
@@ -550,6 +553,26 @@ export const SURVIVOR_SHADOW_BALL_FIRST_MS = 13 * 60_000;
 export const SURVIVOR_SHADOW_BALL_EVERY_MS = 3 * 60_000;
 export const SURVIVOR_SHADOW_BALL_MAX_PER_RUN = 3;
 export const SURVIVOR_SHADOW_CUTSCENE_MS = 2_800;
+/** Encontros breves no mapa quebram a rota automática sem parar a corrida. */
+export const SURVIVOR_FIELD_EVENT_FIRST_MS = 75_000;
+export const SURVIVOR_FIELD_EVENT_EVERY_MS = 75_000;
+export const SURVIVOR_FIELD_EVENT_BEACON_MS = 22_000;
+export const SURVIVOR_FIELD_EVENT_REACH_RADIUS = 58;
+
+export type SurvivorFieldEventKind = 'resonance' | 'hunt';
+
+/**
+ * Objetivo opcional de campo. A baliza pode expirar sem penalidade; a Caçada,
+ * uma vez iniciada, só se conclui quando os elites marcados forem derrotados.
+ */
+export interface SurvivorFieldEvent {
+  phase: 'beacon' | 'hunt';
+  kind: SurvivorFieldEventKind;
+  x: number;
+  y: number;
+  remainingMs: number;
+  enemyIds: number[];
+}
 
 /** Prêmio por zerar a Torre (chefão final caído): só uma vez por dia (`today.clearedTorre`). */
 export const SURVIVOR_CLEAR_BONUS = 500;
@@ -571,6 +594,10 @@ export type SurvivorEvent =
   | { type: 'shadowBallSpawn'; dexId: number; name: string }
   | { type: 'shadowBossArrival'; dexId: number; name: string }
   | { type: 'shadowBossDefeated'; dexId: number; name: string; trustStones: number }
+  | { type: 'fieldEventSpawn'; kind: SurvivorFieldEventKind; x: number; y: number; remainingMs: number }
+  | { type: 'fieldEventStarted'; kind: SurvivorFieldEventKind }
+  | { type: 'fieldEventComplete'; kind: SurvivorFieldEventKind }
+  | { type: 'fieldEventExpired'; kind: SurvivorFieldEventKind }
   /** Treinador apareceu: solta um grupo de `count` Pokémon elite (3 no normal, 6 no chefão final e no infinito). */
   | { type: 'trainerSpawn'; count: number; final: boolean; trainerId: number; trigger?: 'digital-danger' }
   /** Treinador derrotado (todos os Pokémon dele caíram). */

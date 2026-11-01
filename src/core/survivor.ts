@@ -31,7 +31,7 @@ import type { PokemonType } from './pokemon-data';
  */
 
 export * from './survivor-types';
-import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
+import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { createSurvivorCharge, distanceToSegment, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, RUSH_HIT_RADIUS, RUSH_INVULN_MS, RUSH_REFERENCE_SPEED, RUSH_TELEPORT_DAMAGE_MULTIPLIER, RUSH_TELEPORT_EVERY_MS, RUSH_TELEPORT_RANGE, rushDamageTakenMultiplier, stepChargeMeter } from './survivor-charge';
@@ -315,6 +315,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     nextShadowBallAtMs: SURVIVOR_SHADOW_BALL_FIRST_MS,
     shadowBallsSpawned: 0,
     shadowTrustStones: 0,
+    fieldEvent: null,
+    nextFieldEventAtMs: SURVIVOR_FIELD_EVENT_FIRST_MS,
     fx: [],
     kills: 0,
     wave: 1,
@@ -466,8 +468,8 @@ function spawnEnemy(
   grade: SurvivorEnemyGrade = 'comum',
   trainerId?: number,
   options?: { shadowBoss?: boolean; dexId?: number },
-): void {
-  if (state.enemies.length >= ENEMY_BEHAVIOR_LIMITS.maxEnemies && !boss && grade === 'comum') return;
+): number | null {
+  if (state.enemies.length >= ENEMY_BEHAVIOR_LIMITS.maxEnemies && !boss && grade === 'comum') return null;
   const { x, y } = spawnPoint(state.rng, state.player, boss);
   const t = state.elapsedMs / 1000;
   if (boss) {
@@ -492,7 +494,7 @@ function spawnEnemy(
       specialTimerMs: shadow ? 1200 : 1800,
       ...(options?.dexId !== undefined ? { dexId: options.dexId } : {}),
     });
-    return;
+    return id;
   }
   const baseHp = (BALANCE.enemyHpBase + Math.floor(t / BALANCE.enemyHpEverySec) * BALANCE.enemyHpStep + state.wave * BALANCE.enemyHpPerWave)
     * earlyCurve(state.elapsedMs, BALANCE.earlyEnemyHpMultiplier);
@@ -529,6 +531,7 @@ function spawnEnemy(
     specialTimerMs: grade === 'chefao' ? 1800 : 2400,
     ...(archetype === 'suporte' ? { supportRole: supportRoleFor(id) } : {}),
   });
+  return id;
 }
 
 /** Chama um treinador: `count` Pokémon elite nascem juntos, com o mesmo `trainerId` (para marcarmos a derrota). */
@@ -1640,6 +1643,80 @@ function spawnShadowBallIfDue(state: SurvivorState, events: SurvivorEvent[]): vo
   events.push({ type: 'shadowBallSpawn', dexId: encounter.dexId, name: encounter.name });
 }
 
+/** Ponto fora da tela imediata, mas alcançável na janela curta do encontro. */
+function fieldEventPoint(state: SurvivorState): { x: number; y: number } {
+  const p = state.player;
+  const angle = state.rng() * Math.PI * 2;
+  const distance = 300 + state.rng() * 110;
+  return {
+    x: clamp(p.x + Math.cos(angle) * distance, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS),
+    y: clamp(p.y + Math.sin(angle) * distance, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS),
+  };
+}
+
+function spawnFieldEventIfDue(state: SurvivorState, events: SurvivorEvent[]): void {
+  if (state.fieldEvent || state.elapsedMs < state.nextFieldEventAtMs) return;
+  const kind = state.rng() < 0.5 ? 'resonance' : 'hunt';
+  const point = fieldEventPoint(state);
+  state.fieldEvent = { phase: 'beacon', kind, ...point, remainingMs: SURVIVOR_FIELD_EVENT_BEACON_MS, enemyIds: [] };
+  state.nextFieldEventAtMs = state.elapsedMs + SURVIVOR_FIELD_EVENT_EVERY_MS;
+  events.push({ type: 'fieldEventSpawn', kind, ...point, remainingMs: SURVIVOR_FIELD_EVENT_BEACON_MS });
+}
+
+/** Concluir a ressonância compensa desviar a rota com buffs curtos e orbes reais no local. */
+function completeResonance(state: SurvivorState, event: NonNullable<SurvivorState['fieldEvent']>): void {
+  const p = state.player;
+  p.artifactSpeedMs = Math.max(p.artifactSpeedMs, 12_000);
+  p.artifactPowerMs = Math.max(p.artifactPowerMs, 12_000);
+  for (let index = 0; index < 4; index++) {
+    const angle = (Math.PI * 2 * index) / 4;
+    state.orbs.push({ id: state.nextId++, x: event.x + Math.cos(angle) * 26, y: event.y + Math.sin(angle) * 26, value: 10, doubleXp: index === 0 });
+  }
+  state.fx.push({ kind: 'pulse', x: event.x, y: event.y, r: 96, color: '#7be6ff', ageMs: 0, lifeMs: 900 });
+  state.fx.push({ kind: 'pulse', x: event.x, y: event.y, r: 66, color: '#ffbd63', ageMs: 0, lifeMs: 720 });
+}
+
+/** Atualiza o desvio opcional de rota depois que o movimento e as mortes deste quadro já foram resolvidos. */
+function updateFieldEvent(state: SurvivorState, dtMs: number, events: SurvivorEvent[]): void {
+  const event = state.fieldEvent;
+  if (!event) return;
+  if (event.phase === 'beacon') {
+    if (Math.hypot(event.x - state.player.x, event.y - state.player.y) <= SURVIVOR_FIELD_EVENT_REACH_RADIUS) {
+      if (event.kind === 'resonance') {
+        completeResonance(state, event);
+        state.fieldEvent = null;
+        events.push({ type: 'fieldEventComplete', kind: 'resonance' });
+        return;
+      }
+      const enemyIds: number[] = [];
+      // Dois elites tornam a recompensa merecida sem competir com o grupo completo de treinador.
+      for (let index = 0; index < 2; index++) {
+        const id = spawnEnemy(state, false, 'elite');
+        if (id !== null) enemyIds.push(id);
+      }
+      event.phase = 'hunt';
+      event.enemyIds = enemyIds;
+      event.remainingMs = 0;
+      state.fx.push({ kind: 'blast', x: event.x, y: event.y, r: 72, color: '#ff6b72', ageMs: 0, lifeMs: 620 });
+      events.push({ type: 'fieldEventStarted', kind: 'hunt' });
+      return;
+    }
+    event.remainingMs = Math.max(0, event.remainingMs - dtMs);
+    if (event.remainingMs === 0) {
+      state.fieldEvent = null;
+      events.push({ type: 'fieldEventExpired', kind: event.kind });
+    }
+    return;
+  }
+  if (event.enemyIds.every((id) => !state.enemies.some((enemy) => enemy.id === id))) {
+    // A Caçada paga dois artefatos do mesmo sistema de itens da corrida; não há recompensa inventada fora dele.
+    for (const offset of [-22, 22]) state.artifacts.push({ id: state.nextId++, x: event.x + offset, y: event.y, kind: artifactKind(state.rng) });
+    state.fx.push({ kind: 'artifact', artifact: 'power', x: event.x, y: event.y, r: 46, color: '#ffcf5c', ageMs: 0, lifeMs: 800 });
+    state.fieldEvent = null;
+    events.push({ type: 'fieldEventComplete', kind: 'hunt' });
+  }
+}
+
 /**
  * Avança `dtMs` de jogo. Não faz nada (devolve `[]`) se `state.over` ou se há um upgrade pendente — quem chama
  * (o componente Vue) deve pausar o laço de desenho/tempo nesses casos e só retomar depois de `applyUpgrade`.
@@ -1663,6 +1740,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     events.push({ type: 'milestone', id: 'twenty-minutes', reward: 'omega-shard' });
   }
   spawnShadowBallIfDue(state, events);
+  spawnFieldEventIfDue(state, events);
   if (advanceSpecialEncounter(state, 0)) return events;
   const p = state.player;
   p.artifactSpeedMs = Math.max(0, p.artifactSpeedMs - dtMs);
@@ -1943,6 +2021,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       }
     }
   }
+
+  updateFieldEvent(state, dtMs, events);
 
   // Coleta de orbes de XP (e nível, se passou da marca).
   state.orbs = state.orbs.filter((orb) => {
