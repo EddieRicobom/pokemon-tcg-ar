@@ -100,29 +100,26 @@ describe('atalhos de jogo', () => {
   });
 });
 
-describe('saídas da Vila e da Arena Digital', () => {
-  it('cada saída da Vila leva à Arena 3D', () => {
-    expect(vilaExitHref('pvp')).toBe('#/caixa?pvp=1&virtual=1&vila=1');
-    expect(vilaExitHref('batalha')).toBe('#/caixa?batalha=1&virtual=1&vila=1');
-    expect(vilaExitHref('batalha3d')).toBe('#/caixa?batalha=1&virtual=1&vila=1');
-    expect(vilaExitHref('caixa')).toBe('#/caixa?virtual=1&vila=1');
-    expect(vilaExitHref('arena3d')).toBe('#/caixa?virtual=1&vila=1');
+describe('saídas da Vila e do menu da Arena', () => {
+  it('cada saída da Vila leva ao menu da Arena, já na opção certa', () => {
+    expect(vilaExitHref('pvp')).toBe('#/arena?pvp=1&vila=1');
+    expect(vilaExitHref('batalha')).toBe('#/arena?batalha=1&vila=1');
+    expect(vilaExitHref('batalha3d')).toBe('#/arena?batalha=1&vila=1');
+    expect(vilaExitHref('caixa')).toBe('#/arena?vila=1');
+    expect(vilaExitHref('arena3d')).toBe('#/arena?vila=1');
   });
 
-  it('todas as saídas da Vila usam a Arena 3D, sem câmera', () => {
-    const virtual = (then: Parameters<typeof vilaExitHref>[0]) => routeFlags(vilaExitHref(then)).has('virtual');
-    expect(virtual('arena3d')).toBe(true);
-    expect(virtual('batalha3d')).toBe(true);
-    expect(virtual('caixa')).toBe(true);
-    expect(virtual('batalha')).toBe(true);
-    expect(virtual('pvp')).toBe(true);
+  it('as saídas da Vila são lidas como a rota da Arena', () => {
+    for (const then of ['pvp', 'batalha', 'batalha3d', 'caixa', 'arena3d'] as const) expect(parseRoute(vilaExitHref(then))).toEqual({ name: 'arena' });
   });
 
-  it('as saídas da Vila voltam a ser lidas pelas mesmas funções da Caixa', () => {
-    for (const then of ['pvp', 'batalha', 'batalha3d', 'caixa', 'arena3d'] as const) expect(parseRoute(vilaExitHref(then))).toEqual({ name: 'caixa' });
+  it('os sinalizadores novos do menu (liga, corridas) são lidos; os antigos continuam valendo', () => {
+    expect([...routeFlags('#/arena?liga=1&vila=1')].sort()).toEqual(['liga', 'vila']);
+    expect([...routeFlags('#/arena?corridas=1&restauracao=1')].sort()).toEqual(['corridas', 'restauracao']);
+    expect(parseRoute('#/caixa?virtual=1&batalha=1')).toEqual({ name: 'caixa' });
   });
 
-  it('a Arena Digital sempre acrescenta o palco virtual, sem mexer na lista original', () => {
+  it('o menu da Arena sempre acrescenta o palco virtual, sem mexer na lista original', () => {
     const base = ['formatacao'] as const;
     expect(arenaFlags(base)).toEqual(['formatacao', 'virtual']);
     expect(arenaFlags([])).toEqual(['virtual']);
@@ -139,6 +136,6 @@ describe('para onde o ✕ da Vila volta', () => {
   });
 
   it('guarda as telas abertas de outro jeito (menu, links, endereço)', () => {
-    for (const hash of ['#/', '#/cartas', '#/caixa', '#/caixa?virtual=1', '#/arena?formatacao=1', '#/pins']) expect(rememberBeforeVila(hash)).toBe(true);
+    for (const hash of ['#/', '#/cartas', '#/caixa', '#/caixa?virtual=1', '#/arena', '#/arena?formatacao=1', '#/pins']) expect(rememberBeforeVila(hash)).toBe(true);
   });
 });
