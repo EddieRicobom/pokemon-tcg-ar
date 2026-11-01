@@ -8732,3 +8732,20 @@ body.no-scroll .reward-toasts {
   .survivor-choice-list { gap: 8px; }
   .survivor-overlay .survivor-upgrade-btn { padding: 10px; }
 }
+
+/* PvP do Survival: a escolha de quem joga a run fica enxuta (nada da Torre entra na run do PvP). */
+.survivor-pick.pvp-pick > .note:not(.pvp-note),
+.survivor-pick.pvp-pick .survivor-mode-bonk,
+.survivor-pick.pvp-pick .survivor-preparations,
+.survivor-pick.pvp-pick .survivor-ledger,
+.survivor-pick.pvp-pick .survivor-more,
+.survivor-pick.pvp-pick .survivor-mega-picks,
+.survivor-pick.pvp-pick .survivor-pick-tip {
+  display: none;
+}
+
+.survivor-pvp-chip {
+  background: rgba(255, 216, 74, 0.2);
+  border-color: rgba(255, 216, 74, 0.6);
+  font-weight: 800;
+}

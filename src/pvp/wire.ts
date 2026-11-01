@@ -1,4 +1,6 @@
 import { parseBoxMessage } from './box-wire';
+import { parseSurvivalMessage } from './survival-wire';
+import type { SurvivalWireMessage } from './survival-wire';
 import type { BoxWireMessage } from './box-wire';
 import type { Rng } from '../core/battle';
 import { ARENA_RADIUS, EFFECT_KINDS, MAX_MOVES, MAX_PER_SIDE, pinFromSpec } from '../core/pins';
@@ -59,6 +61,7 @@ export interface WireInit extends WireWorld {
 
 export type WireMessage =
   | BoxWireMessage
+  | SurvivalWireMessage
   | { t: 'hello'; v: number }
   | { t: 'team'; ready: boolean; specs: WireSpec[] }
   | { t: 'options'; shrink: boolean; marks: boolean }
@@ -339,6 +342,14 @@ export function parseMessage(raw: unknown): WireMessage | null {
     case 'cx-ready':
     case 'cx-go':
       return parseBoxMessage(v);
+    case 'sv-team':
+    case 'sv-progress':
+    case 'sv-start':
+    case 'sv-ready':
+    case 'sv-go':
+    case 'sv-input':
+    case 'sv-snap':
+      return parseSurvivalMessage(v);
     case 'bye':
     case 'ping':
     case 'pong':

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { getCache, getDigitalSprite, getLocalVillageSprite, getLocalVillageSpriteDirs, getVillageAtlas, getVillageGroundTile, loadPinData, resolveSpeciesByDexId } from '../app/services';
 import { resolveTeam } from '../app/team';
 import { savedTeam } from '../app/team-store';
@@ -34,6 +34,9 @@ import { league } from '../app/league-store';
 import type { DecodedGif } from '../core/gif';
 import MinigameHub from './MinigameHub.vue';
 import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
+// O PvP (lobby, WebRTC) só carrega quando alguém toca em «PvP com um amigo».
+const SurvivalPvp = defineAsyncComponent(() => import('./SurvivalPvp.vue'));
+const towerPvp = ref(false);
 import DungeonGame from './DungeonGame.vue';
 import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
@@ -3286,7 +3289,8 @@ onBeforeUnmount(() => {
   <div class="village" role="application" :aria-label="props.towerOnly ? 'Torre de Sobrevivência' : 'Vila: modo vida da Caixa'" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight W A S D Enter Space Z X Escape">
     <section v-if="props.towerOnly" class="tower-route" aria-label="Torre de Sobrevivência">
       <header class="tower-route-head"><strong>🗼 Torre de Sobrevivência</strong><button type="button" class="link" @click="emit('close')">Voltar à Vila</button></header>
-      <MinigameSobrevivencia :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="emit('close')" />
+      <SurvivalPvp v-if="towerPvp" :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @leave="towerPvp = false" />
+      <MinigameSobrevivencia v-else :digital="state.digital.instances.map((i) => ({ instanceId: i.instanceId, dexId: i.dexId, name: i.name, accessory: state.wear.mons[i.instanceId] ?? null }))" :accessories="state.wear.mons" @complete="recordSurvivalAdventure" @leave="emit('close')" @open-pvp="towerPvp = true" />
     </section>
     <template v-else>
     <div ref="wrapEl" class="village-stage" :class="{ 'village-diorama': arActive }" role="group" tabindex="-1" aria-label="Mapa da Vila">
