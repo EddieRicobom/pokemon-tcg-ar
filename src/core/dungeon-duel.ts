@@ -411,7 +411,8 @@ export function endDuelTurn(d: DuelState): ActionResult {
     hurtSide(d, next, amount, null, true);
   }
   checkOver(d);
-  if (d.phase === 'over') return { ok: true };
+  // `checkOver` pode ter mudado a fase (o TypeScript não enxerga a mudança feita dentro da função).
+  if ((d.phase as DuelState['phase']) === 'over') return { ok: true };
   d.turn = next;
   if (next === d.first) {
     d.round++;
