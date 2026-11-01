@@ -1162,25 +1162,20 @@ function endFusion(state: DungeonState, why: string): void {
   if (m.status === 'exhausted') requireSwitch(state);
 }
 
-/** Dano recebido: a fusão usa a média das defesas e divide o dano entre os dois participantes. */
-function takeHit(state: DungeonState, enemy: Enemy, strength = 1): void {
-  const w = WEAPONS[enemy.weapon];
+/**
+ * Tira `total` de HP de quem está em campo: o bloqueio (se houver) amortece, a fusão divide o dano entre os dois, a Fênix
+ * levanta quem caiu e os caídos pedem troca (ou encerram a fusão). `afterDamage` roda logo depois do dano, antes da Fênix,
+ * e recebe o dano efetivo e o bloqueio consumido (é onde o golpe registra o que aconteceu). Também serve ao duelo.
+ */
+export function hurtTeam(state: DungeonState, total: number, afterDamage?: (dealt: number, guard: DungeonState['guard']) => void): number {
   const f = state.fusion;
   const defenders = fielded(state);
-  const def = defenders.reduce((s, m) => s + (w.kind === 'physical' ? m.stats.defense : m.stats.spDefense) * (1 + gemBonus(m.gems).defense), 0) / defenders.length;
-  const types = [...new Set(defenders.flatMap((m) => m.types))];
-  const atk = (w.kind === 'physical' ? enemy.stats.attack : enemy.stats.spAttack) * enemy.atkMul * (enemy.affixes.includes('furioso') ? 1.3 : 1);
-  // Inimigos batem com uma fração do poder da arma: a equipe tem seis vidas, eles não.
-  let total = damage(w.power * 0.7 * strength, atk, def, enemy.types.slice(0, 1), enemy.types, types).total;
   const guard = state.guard;
   state.guard = { reduce: 0, counter: 0 };
   if (guard.reduce > 0) total = Math.max(1, Math.round(total * (1 - guard.reduce)));
   const each = Math.ceil(total / defenders.length);
   for (const m of defenders) m.hp = Math.max(0, m.hp - each);
-  state.log.push(`${enemy.name} ${strength > 1 ? 'solta o golpe em área em' : 'ataca'} ${f ? f.name : defenders[0]!.name}: −${total} HP.`);
-  if (enemy.affixes.includes('vampirico')) enemy.hp = Math.min(enemy.maxHp, enemy.hp + Math.round(total * 0.3));
-  if (guard.reduce > 0) state.log.push('O bloqueio amortece o golpe.');
-  if (guard.counter > 0 && dist(enemy.pos, state.pos) === 1) hurtEnemy(state, enemy, guard.counter, `Revide em ${enemy.name}`);
+  afterDamage?.(total, guard);
   for (const m of defenders) {
     if (m.hp > 0 || m.phoenixUsed || !gemBonus(m.gems).legendary.has('fenix')) continue;
     m.phoenixUsed = true;
@@ -1189,9 +1184,35 @@ function takeHit(state: DungeonState, enemy: Enemy, strength = 1): void {
   }
   const fallen = defenders.filter((m) => m.hp === 0);
   for (const m of fallen) { m.status = 'down'; state.log.push(`${m.name} foi incapacitado.`); }
-  if (fallen.length === 0) return;
+  if (fallen.length === 0) return total;
   if (f) endFusion(state, `${fallen[0]!.name} caiu.`);
   else requireSwitch(state);
+  return total;
+}
+
+/** Defesa média e tipos de quem está em campo (a fusão usa a média das defesas e a união dos tipos). */
+export function defenseOf(state: DungeonState, kind: 'physical' | 'special'): { def: number; types: PokemonType[] } {
+  const defenders = fielded(state);
+  const def = defenders.reduce((s, m) => s + (kind === 'physical' ? m.stats.defense : m.stats.spDefense) * (1 + gemBonus(m.gems).defense), 0) / defenders.length;
+  return { def, types: [...new Set(defenders.flatMap((m) => m.types))] };
+}
+
+/** Dano recebido: a fusão usa a média das defesas e divide o dano entre os dois participantes. */
+function takeHit(state: DungeonState, enemy: Enemy, strength = 1): void {
+  const w = WEAPONS[enemy.weapon];
+  const f = state.fusion;
+  const defenders = fielded(state);
+  const { def, types } = defenseOf(state, w.kind);
+  const atk = (w.kind === 'physical' ? enemy.stats.attack : enemy.stats.spAttack) * enemy.atkMul * (enemy.affixes.includes('furioso') ? 1.3 : 1);
+  // Inimigos batem com uma fração do poder da arma: a equipe tem seis vidas, eles não.
+  const total = damage(w.power * 0.7 * strength, atk, def, enemy.types.slice(0, 1), enemy.types, types).total;
+  const name = f ? f.name : defenders[0]!.name;
+  hurtTeam(state, total, (dealt, guard) => {
+    state.log.push(`${enemy.name} ${strength > 1 ? 'solta o golpe em área em' : 'ataca'} ${name}: −${dealt} HP.`);
+    if (enemy.affixes.includes('vampirico')) enemy.hp = Math.min(enemy.maxHp, enemy.hp + Math.round(dealt * 0.3));
+    if (guard.reduce > 0) state.log.push('O bloqueio amortece o golpe.');
+    if (guard.counter > 0 && dist(enemy.pos, state.pos) === 1) hurtEnemy(state, enemy, guard.counter, `Revide em ${enemy.name}`);
+  });
 }
 
 function enemyReach(enemy: Enemy, from: Cell, target: Cell, state: DungeonState): boolean {
@@ -1442,7 +1463,7 @@ export function threatenedCells(state: DungeonState): Set<string> {
 }
 
 /** Durante o turno inimigo, quem cai é coberto pelo próximo disponível (o jogador troca de novo no turno dele). */
-function autoCover(state: DungeonState): void {
+export function autoCover(state: DungeonState): void {
   const next = state.team.findIndex((_, i) => available(state, i));
   if (next < 0) return;
   state.active = next;
@@ -1455,15 +1476,8 @@ export function turnAp(state: DungeonState): number {
   return START_AP + (fielded(state).some((m) => gemBonus(m.gems).legendary.has('ampulheta')) ? 1 : 0);
 }
 
-function endRound(state: DungeonState): void {
-  for (const e of state.enemies) {
-    e.shaken = false;
-    if (e.burn) {
-      hurtEnemy(state, e, Math.min(e.hp, e.burn.amount), `${e.name} queima`);
-      if (--e.burn.rounds <= 0) e.burn = null;
-    }
-    if (e.affixes.includes('regenerante') && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * 0.08));
-  }
+/** Fim da rodada da equipe: quem esgotou ou se recupera conta uma rodada e a reserva recarrega 25%. */
+export function recoverTeam(state: DungeonState): void {
   state.team.forEach((m, i) => {
     const inFusion = state.fusion && (i === state.fusion.a || i === state.fusion.b);
     if ((m.status === 'exhausted' || m.status === 'recovering') && --m.cooldown <= 0) {
@@ -1475,6 +1489,24 @@ function endRound(state: DungeonState): void {
       m.charge = Math.min(m.maxCharge, m.charge + Math.ceil(m.maxCharge * RESERVE_RECOVERY));
     }
   });
+}
+
+/** Conta um turno da fusão (ela termina quando o tempo acaba) e cobre a posição se quem estava em campo caiu. */
+export function tickFusion(state: DungeonState): void {
+  if (state.fusion && --state.fusion.turnsLeft <= 0) endFusion(state, 'O tempo da fusão acabou.');
+  if (state.mustSwitch) autoCover(state);
+}
+
+function endRound(state: DungeonState): void {
+  for (const e of state.enemies) {
+    e.shaken = false;
+    if (e.burn) {
+      hurtEnemy(state, e, Math.min(e.hp, e.burn.amount), `${e.name} queima`);
+      if (--e.burn.rounds <= 0) e.burn = null;
+    }
+    if (e.affixes.includes('regenerante') && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * 0.08));
+  }
+  recoverTeam(state);
   if (hazardAt(state, state.pos) === 'lava') {
     const team = fielded(state);
     if (!team.some((m) => lavaImmune(m.types))) {

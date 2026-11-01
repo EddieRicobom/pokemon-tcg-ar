@@ -13,11 +13,13 @@ vi.mock('./services', () => ({
   prepareMegaFor: vi.fn(),
 }));
 vi.mock('../box/load-creatures', () => ({ browserDecoders: { gif: async () => ({ frames: [] }), image: async () => ({ data: new Uint8Array(4) }) } }));
+// A largada em conjunto espera o outro celular; aqui o amigo está sempre pronto (a espera tem teste próprio).
+vi.mock('./box-pvp-store', async (original) => ({ ...(await original<typeof import('./box-pvp-store')>()), syncPvpStart: vi.fn(async () => true) }));
 vi.mock('./trainer-store', async (original) => ({ ...(await original<typeof import('./trainer-store')>()), recordEvent: vi.fn() }));
 
 import { createBattleSession } from './box-battle-session';
 import type { BattleSessionHost, BattleSessionUi, StagePhase } from './box-battle-session';
-import { boxPvp } from './box-pvp-store';
+import { boxPvp, syncPvpStart } from './box-pvp-store';
 import { pendingChallenge } from './league-store';
 import { recordEvent } from './trainer-store';
 import { resetRoster, setSlot } from './roster-store';
@@ -399,6 +401,21 @@ describe('PvP da Caixa', () => {
     expect(guestResult.winner).toBe(direct.winner);
     expect(guestResult.turns).toHaveLength(direct.turns.length);
     expect(guestSide.session.versus.value?.me.name).toBe('Eu');
+  });
+
+  it('amigo que não fica pronto: a luta não começa, a equipe volta e o aviso diz o que fazer', async () => {
+    const { box, calls, ui, session } = setup(['a', 'b']);
+    boxPvp.peer = peer();
+    boxPvp.role = 'host';
+    boxPvp.mode = '1x1';
+    boxPvp.mine = team('Eu', ['a']);
+    boxPvp.friend = team('Ana', ['z']);
+    vi.mocked(syncPvpStart).mockResolvedValueOnce(false);
+    await session.startBattle();
+    expect(box.startBattleCalls).toHaveLength(0);
+    expect(ui.error.value).toContain('Ana não ficou pronto a tempo');
+    expect(ui.error.value).toContain('tocar em Batalhar de novo');
+    expect(calls.populate).toBeGreaterThan(0);
   });
 
   it('falha ao baixar o sprite do amigo: avisa e recarrega a sua equipe', async () => {

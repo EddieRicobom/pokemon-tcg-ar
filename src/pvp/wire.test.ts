@@ -165,3 +165,17 @@ describe('pvp: mensagens do fio', () => {
     expect(parseSpec({ id: 'h:x', name: 'X', types: [], stats: null, weightKg: null, sprite: 1 })).not.toBeNull();
   });
 });
+
+describe('mira ao vivo (aim)', () => {
+  it('aceita a mira de um pin e o aviso de que parou de mirar', () => {
+    expect(parseMessage(JSON.stringify({ t: 'aim', pinId: 'g:abc', dirX: 0.6, dirY: -0.8, power: 0.5 }))).toEqual({ t: 'aim', pinId: 'g:abc', dirX: 0.6, dirY: -0.8, power: 0.5 });
+    expect(parseMessage(JSON.stringify({ t: 'aim', pinId: null, dirX: 0, dirY: 0, power: 0 }))).toEqual({ t: 'aim', pinId: null, dirX: 0, dirY: 0, power: 0 });
+  });
+
+  it('recusa números fora dos limites e campos que faltam', () => {
+    expect(parseMessage(JSON.stringify({ t: 'aim', pinId: 'g:abc', dirX: 5, dirY: 0, power: 0.5 }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ t: 'aim', pinId: 'g:abc', dirX: 0, dirY: 0, power: 2 }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ t: 'aim', pinId: '', dirX: 0, dirY: 0, power: 0.5 }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ t: 'aim', dirX: 0, dirY: 0, power: 0.5 }))).toBeNull();
+  });
+});

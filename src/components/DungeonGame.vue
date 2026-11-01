@@ -1,10 +1,22 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import WeaponArt from './WeaponArt.vue';
 import FusionArt from './FusionArt.vue';
 import GemChip from './GemChip.vue';
 import DungeonAttackFx from './DungeonAttackFx.vue';
 import DungeonDecor from './DungeonDecor.vue';
+import DungeonDuel from './DungeonDuel.vue';
+import PvpTauntFan from './PvpTauntFan.vue';
+import { buffRarity } from '../pvp/taunts';
+import type { BuffKind } from '../pvp/taunts';
+import PvpLobby from './PvpLobby.vue';
+import { profile } from '../app/profile-store';
+import { DUEL_FLOORS, startDuel } from '../core/dungeon-duel';
+import type { DuelRoster, DuelState } from '../core/dungeon-duel';
+import { rosterFromWire, rosterToWire } from '../pvp/dungeon-roster';
+import type { DungeonProgressState } from '../pvp/dungeon-wire';
+import type { PvpPeer } from '../pvp/peer';
+import type { WireMessage } from '../pvp/wire';
 import { SoundEngine } from '../box/sound';
 import type { SoundCue } from '../box/sound-recipes';
 import { REGIONAL_ENCOUNTERS } from '../core/survivor-encounters';
@@ -218,7 +230,7 @@ function toggleTake(id: number): void {
 /** Fim da expedição (saiu ou caiu): acerta tudo na Vila uma única vez. */
 function settleIfOver(): void {
   const st = s.value;
-  if (!st || settled || (st.phase !== 'retired' && st.phase !== 'lost')) return;
+  if (!st || settled || pvp.value || (st.phase !== 'retired' && st.phase !== 'lost')) return;
   settled = true;
   let r: ExpeditionRewards | null = null;
   withVillage((v) => { r = settleExpedition(v, st, dayKey(new Date())); return true; });
@@ -246,7 +258,7 @@ onMounted(async () => {
   }
   window.addEventListener('keydown', onKey);
 });
-onBeforeUnmount(() => { alive = false; sound.dispose(); window.removeEventListener('keydown', onKey); if (attackFxTimer) clearTimeout(attackFxTimer); });
+onBeforeUnmount(() => { alive = false; sound.dispose(); window.removeEventListener('keydown', onKey); if (attackFxTimer) clearTimeout(attackFxTimer); if (giveUpTimer) clearTimeout(giveUpTimer); cleanupPvp(); });
 
 function togglePick(c: Candidate): void {
   if (c.missing) return;
@@ -255,26 +267,29 @@ function togglePick(c: Candidate): void {
   else if (picked.value.length < 1) picked.value.push(c.id);
 }
 
-function begin(): void {
+function begin(seed?: number): void {
   const team = picked.value.map((id) => candidates.value!.find((c) => c.id === id)!).map((c) => ({ id: c.id, dexId: c.dexId, name: c.name, types: c.types!, stats: c.stats! }));
-  s.value = startDungeon(team, pool, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
+  s.value = startDungeon(team, pool, seed ?? (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
   settled = false;
   rewards.value = null;
-  let taken: Gem[] = [];
-  let lunch: ReturnType<typeof lunchEffectFor> = null;
-  withVillage((v) => {
-    taken = takeFromVault(v, takeIds.value);
-    if (bringLunch.value && v.tower.lunchbox) {
-      lunch = lunchEffectFor(v.tower.lunchbox);
-      if (lunch) v.tower.lunchbox = null;
-    }
-    return taken.length > 0 || lunch !== null;
-  });
-  bringGems(s.value, taken);
-  const packed = lunch as ReturnType<typeof lunchEffectFor>;
-  if (packed) packLunch(s.value, packed);
-  takeIds.value = [];
-  readVillage();
+  // No duelo os dois começam iguais: nada do cofre nem da marmita da Vila.
+  if (!pvp.value) {
+    let taken: Gem[] = [];
+    let lunch: ReturnType<typeof lunchEffectFor> = null;
+    withVillage((v) => {
+      taken = takeFromVault(v, takeIds.value);
+      if (bringLunch.value && v.tower.lunchbox) {
+        lunch = lunchEffectFor(v.tower.lunchbox);
+        if (lunch) v.tower.lunchbox = null;
+      }
+      return taken.length > 0 || lunch !== null;
+    });
+    bringGems(s.value, taken);
+    const packed = lunch as ReturnType<typeof lunchEffectFor>;
+    if (packed) packLunch(s.value, packed);
+    takeIds.value = [];
+    readVillage();
+  }
   sound.unlock();
   lastSnap = snapshot(s.value);
   cue(isBossFloor(s.value.floor) ? { kind: 'ui', cue: 'survivor-boss' } : { kind: 'enter' });
@@ -291,6 +306,272 @@ function begin(): void {
   flash.value = '';
 }
 
+// ----------------------------------------------------------------------------- Duelo com um amigo (PvP)
+// Fluxo: lobby → cada um escolhe o Pokémon e toca «Estou pronto» → o anfitrião manda a semente → cada um desce os seus
+// DUEL_FLOORS andares na própria tela (mesma semente; só o progresso viaja) → ao vencer o último andar, a equipe final
+// é enviada e, com as duas equipes, começa o duelo (`DungeonDuel.vue`, regras em `core/dungeon-duel.ts`). Sem prêmios.
+
+interface PvpSession {
+  role: 'host' | 'guest';
+  friendName: string;
+  friendReady: boolean;
+  ready: boolean;
+  stage: 'pick' | 'descent' | 'prep' | 'waiting' | 'duel';
+  friend: { floor: number; state: DungeonProgressState; foes: number } | null;
+  result: { title: string; text: string } | null;
+}
+const pvp = ref<PvpSession | null>(null);
+const pvpPeer = shallowRef<PvpPeer | null>(null);
+const duel = ref<DuelState | null>(null);
+const lobbyOpen = ref(false);
+const pickNotice = ref('');
+const confirmGiveUp = ref(false);
+const tauntFan = ref<InstanceType<typeof PvpTauntFan> | null>(null);
+/** O que a equipe já tinha na última conferência: o que passar disso é buff novo, avisado ao rival. */
+let seenGems = new Set<number>();
+let seenPotions = 0;
+let seenFusions = 0;
+let seenTeam = 0;
+let myRoster: DuelRoster | null = null;
+let theirRoster: DuelRoster | null = null;
+let lastProgress = '';
+let giveUpTimer: ReturnType<typeof setTimeout> | undefined;
+
+const friendLabel = computed(() => pvp.value?.friendName || 'Amigo');
+const duelActive = computed(() => pvp.value?.stage === 'duel' && !!duel.value && !!pvpPeer.value);
+const floorsToDuel = computed(() => (s.value ? Math.max(0, DUEL_FLOORS - s.value.floor + (s.value.phase === 'cleared' || s.value.phase === 'reward' ? 0 : 1)) : DUEL_FLOORS));
+const friendStatus = computed(() => {
+  const f = pvp.value?.friend;
+  if (!f) return 'ainda não começou';
+  if (f.state === 'fallen') return `caiu no andar ${f.floor}`;
+  if (f.state === 'cleared') return 'pronto para o duelo ✅';
+  return `andar ${f.floor}/${DUEL_FLOORS} · ${f.foes} inimigo(s)`;
+});
+
+function onConnected(peer: PvpPeer, role: 'host' | 'guest'): void {
+  pvpPeer.value = peer;
+  pvp.value = { role, friendName: '', friendReady: false, ready: false, stage: 'pick', friend: null, result: null };
+  myRoster = null;
+  theirRoster = null;
+  lastProgress = '';
+  lobbyOpen.value = false;
+  pickNotice.value = '';
+  peer.onMessage = onPvpMessage;
+  peer.onState = (state) => { if (state === 'closed') onPvpClosed(); };
+}
+
+function cleanupPvp(): void {
+  const peer = pvpPeer.value;
+  if (peer) {
+    peer.onMessage = null;
+    peer.onState = null;
+    peer.close();
+  }
+  pvpPeer.value = null;
+  pvp.value = null;
+  duel.value = null;
+  myRoster = null;
+  theirRoster = null;
+  lastProgress = '';
+  confirmGiveUp.value = false;
+}
+
+/** Sai do duelo (resultado visto ou desistência na escolha) e volta à Vila. */
+function leavePvp(): void {
+  cleanupPvp();
+  emit('leave');
+}
+
+/** Ainda na escolha do Pokémon: desfaz a sala e volta ao modo solo, sem sair da tela. */
+function quitPvpPick(): void {
+  cleanupPvp();
+  picked.value = [];
+}
+
+function finishPvp(result: { title: string; text: string }): void {
+  if (pvp.value && !pvp.value.result) pvp.value.result = result;
+}
+
+function onPvpClosed(): void {
+  const p = pvp.value;
+  if (!p || p.stage === 'duel' || p.result) return;
+  if (p.stage === 'pick') {
+    cleanupPvp();
+    picked.value = [];
+    pickNotice.value = 'O amigo saiu da sala. Crie outra sala ou jogue sozinho.';
+    return;
+  }
+  finishPvp({ title: '🏆 Você venceu o duelo', text: `${friendLabel.value} saiu ou a conexão caiu antes do duelo. A vitória é sua por abandono.` });
+}
+
+function enterDescent(): void {
+  if (!pvp.value) return;
+  pvp.value.stage = 'descent';
+  lastProgress = '';
+  announceBuffs(false);
+  pvpTick();
+}
+
+/** Compara a equipe com a última conferência e, se `send`, avisa o rival do que é novo (tipo, id e raridade das regras). */
+function announceBuffs(send: boolean): void {
+  const st = s.value;
+  const peer = pvpPeer.value;
+  if (!st) return;
+  const events: { kind: BuffKind; id: string; rarity: ReturnType<typeof buffRarity> }[] = [];
+  for (const gem of st.bag) {
+    if (!seenGems.has(gem.id)) { seenGems.add(gem.id); events.push({ kind: 'gem', id: gem.kind, rarity: buffRarity('gem', gem) }); }
+  }
+  if (st.potions > seenPotions) events.push({ kind: 'potion', id: '', rarity: 'comum' });
+  if (st.fusionCharges > seenFusions) events.push({ kind: 'fusion', id: '', rarity: 'comum' });
+  if (st.team.length > seenTeam && seenTeam > 0) events.push({ kind: 'weapon', id: st.team[st.team.length - 1]!.weapon, rarity: 'comum' });
+  seenPotions = st.potions;
+  seenFusions = st.fusionCharges;
+  seenTeam = st.team.length;
+  if (!send || !peer) return;
+  // Gemas lendárias primeiro; no máximo 3 avisos por vez, para nunca virar enxurrada.
+  events.sort((a, b) => Number(b.rarity === 'lendario') - Number(a.rarity === 'lendario'));
+  for (const ev of events.slice(0, 3)) peer.send({ t: 'buff-event', ...ev });
+}
+
+function toggleReady(): void {
+  const p = pvp.value;
+  const peer = pvpPeer.value;
+  if (!p || !peer || picked.value.length !== 1) return;
+  p.ready = !p.ready;
+  peer.send({ t: 'dd-ready', ready: p.ready, name: (profile.name || 'Treinador').slice(0, 16) });
+  maybeStart();
+}
+
+/** Anfitrião: com os dois prontos, sorteia a semente da expedição, manda ao amigo e desce. */
+function maybeStart(): void {
+  const p = pvp.value;
+  const peer = pvpPeer.value;
+  if (!p || !peer || p.role !== 'host' || p.stage !== 'pick' || !p.ready || !p.friendReady) return;
+  const seed = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
+  peer.send({ t: 'dd-start', seed });
+  begin(seed);
+  enterDescent();
+}
+
+/** Acompanha a descida: avisa o amigo do andar, vê se a equipe caiu e abre o preparo no último andar. */
+function pvpTick(): void {
+  const p = pvp.value;
+  const peer = pvpPeer.value;
+  const st = s.value;
+  if (!p || !peer || !st || p.result || p.stage === 'pick' || p.stage === 'duel') return;
+  announceBuffs(true);
+  const state: DungeonProgressState = st.phase === 'lost' ? 'fallen' : (st.phase === 'cleared' || st.phase === 'reward') && st.floor >= DUEL_FLOORS ? 'cleared' : 'fighting';
+  const sig = `${st.floor}:${state}:${st.enemies.length}`;
+  if (sig !== lastProgress) {
+    lastProgress = sig;
+    peer.send({ t: 'dd-prog', floor: Math.min(99, st.floor), state, foes: Math.min(20, st.enemies.length) });
+  }
+  if (state === 'fallen') {
+    finishPvp(p.friend?.state === 'fallen'
+      ? { title: '🤝 Empate', text: 'As duas equipes caíram antes do duelo.' }
+      : { title: '💀 Sua equipe caiu', text: `Você caiu no andar ${st.floor}, antes do duelo. ${friendLabel.value} vence.` });
+  } else if (state === 'cleared' && p.stage === 'descent') {
+    p.stage = 'prep';
+  }
+}
+
+function friendFell(): void {
+  const p = pvp.value;
+  if (!p || p.result || p.stage === 'duel') return;
+  finishPvp(s.value?.phase === 'lost'
+    ? { title: '🤝 Empate', text: 'As duas equipes caíram antes do duelo.' }
+    : { title: '🏆 Você venceu o duelo', text: `A equipe de ${friendLabel.value} caiu no andar ${p.friend?.floor ?? '?'}, antes do duelo. Sem adversário, a vitória é sua.` });
+}
+
+function onPvpMessage(msg: WireMessage): void {
+  const p = pvp.value;
+  if (!p || p.result) return;
+  if (tauntFan.value?.receive(msg)) return;
+  if (p.stage === 'pick' && msg.t !== 'dd-ready' && msg.t !== 'dd-start') {
+    // Antes de descer só importa «pronto» e «começar»; se o amigo desiste da sala, a sala se desfaz.
+    if (msg.t === 'dd-forfeit') onPvpClosed();
+    return;
+  }
+  switch (msg.t) {
+    case 'dd-ready':
+      p.friendReady = msg.ready;
+      p.friendName = msg.name.trim().slice(0, 16) || p.friendName || 'Amigo';
+      maybeStart();
+      break;
+    case 'dd-start':
+      if (p.role === 'guest' && p.stage === 'pick' && p.ready && picked.value.length === 1) {
+        begin(msg.seed);
+        enterDescent();
+      }
+      break;
+    case 'dd-prog':
+      p.friend = { floor: msg.floor, state: msg.state, foes: msg.foes };
+      if (msg.state === 'fallen') friendFell();
+      break;
+    case 'dd-team': {
+      const roster = rosterFromWire(msg.roster);
+      if (!roster) {
+        pvpPeer.value?.send({ t: 'dd-desync' });
+        finishPvp({ title: '⚠️ Duelo cancelado', text: 'Não consegui validar a equipe do amigo (versão diferente do app?). Nada foi ganho ou perdido.' });
+        break;
+      }
+      theirRoster = roster;
+      tryStartDuel();
+      break;
+    }
+    case 'dd-forfeit':
+      finishPvp({ title: '🏆 Você venceu o duelo', text: `${friendLabel.value} desistiu.` });
+      break;
+    default:
+      break;
+  }
+}
+
+/** Fim do último andar: manda a equipe como está (a Forja vale até aqui) e espera a do amigo. */
+function readyForDuel(): void {
+  const p = pvp.value;
+  const peer = pvpPeer.value;
+  const st = s.value;
+  if (!p || !peer || !st || p.result || (p.stage !== 'prep' && p.stage !== 'descent')) return;
+  if ((st.phase !== 'cleared' && st.phase !== 'reward') || st.floor < DUEL_FLOORS) return;
+  forgeOpen.value = false;
+  const wire = rosterToWire(st.team, st.fusionCharges, st.potions);
+  myRoster = rosterFromWire(wire);
+  if (!myRoster) {
+    peer.send({ t: 'dd-desync' });
+    finishPvp({ title: '⚠️ Duelo cancelado', text: 'Não consegui montar a sua equipe para o duelo (faltam dados de alguma espécie). Nada foi ganho ou perdido.' });
+    return;
+  }
+  peer.send({ t: 'dd-team', roster: wire });
+  p.stage = 'waiting';
+  tryStartDuel();
+}
+
+function tryStartDuel(): void {
+  const p = pvp.value;
+  const st = s.value;
+  if (!p || !st || !myRoster || !theirRoster || duel.value || p.result) return;
+  try {
+    duel.value = startDuel((st.seed ^ 0x9e3779b9) >>> 0, p.role === 'host' ? myRoster : theirRoster, p.role === 'host' ? theirRoster : myRoster);
+    p.stage = 'duel';
+  } catch {
+    finishPvp({ title: '⚠️ Duelo cancelado', text: 'Uma das equipes chegou sem nenhum Pokémon de pé. Nada foi ganho ou perdido.' });
+  }
+}
+
+function giveUp(): void {
+  const p = pvp.value;
+  if (!p || p.result) return;
+  if (!confirmGiveUp.value) {
+    confirmGiveUp.value = true;
+    giveUpTimer = setTimeout(() => { confirmGiveUp.value = false; }, 4000);
+    return;
+  }
+  confirmGiveUp.value = false;
+  pvpPeer.value?.send({ t: 'dd-forfeit' });
+  finishPvp({ title: '🏳️ Você desistiu', text: `${friendLabel.value} vence o duelo.` });
+}
+
 const sprite = (dexId: number): string => pokemonSpriteUrl(dexId);
 const typeStyle = (t: PokemonType) => ({ background: TYPE_COLORS[t] });
 const ammoLabel = (types: readonly PokemonType[]): string => types.map((t) => TYPE_LABELS_PT[t]).join(' / ');
@@ -305,7 +586,7 @@ const cells = computed(() => {
 const playing = computed(() => s.value?.phase === 'player');
 const exploring = computed(() => s.value?.phase === 'cleared');
 const enemyTurn = computed(() => s.value?.phase === 'enemy');
-const canForge = computed(() => s.value?.phase === 'cleared' || s.value?.phase === 'reward');
+const canForge = computed(() => (s.value?.phase === 'cleared' || s.value?.phase === 'reward') && pvp.value?.stage !== 'waiting' && pvp.value?.stage !== 'duel');
 const biome = computed(() => biomeOf(s.value?.biome ?? 0));
 /** Cores do cenário do andar em variáveis CSS (piso, paredes, moldura, fundo e destaque). */
 const biomeStyle = computed(() => {
@@ -422,10 +703,11 @@ function showAttackFx(weapon: AttackFx['weapon'], ammo: PokemonType | null, cell
 
 function result(r: { ok: boolean; reason?: string }): void {
   flash.value = r.ok ? '' : r.reason ?? '';
-  if (s.value) saveRecord(s.value.stats.deepest);
+  if (s.value && !pvp.value) saveRecord(s.value.stats.deepest);
   if (r.ok) cueChanges();
   else cue({ kind: 'ui', cue: 'interact' });
   settleIfOver();
+  pvpTick();
 }
 
 function setMode(next: 'move' | 'attack'): void {
@@ -670,7 +952,7 @@ async function chooseEvolution(evolution: EvolutionOffer): Promise<void> {
 }
 
 function onKey(e: KeyboardEvent): void {
-  if (!s.value || e.target instanceof HTMLInputElement) return;
+  if (!s.value || duelActive.value || pvp.value?.result || e.target instanceof HTMLInputElement) return;
   const n = Number(e.key);
   if (n >= 1 && n <= 6) {
     if (fusionOpen.value) toggleFusion(n - 1);
@@ -712,12 +994,31 @@ const pendingText = computed(() => {
 
 <template>
   <div class="dungeon" :class="{ 'is-running': !!s, 'no-ambient': !ambientOn }" :style="s ? biomeStyle : undefined">
+    <!-- Duelo (PvP): a sala 7×7 com as duas equipes -->
+    <DungeonDuel v-if="duelActive" :duel="duel!" :side="pvp!.role === 'host' ? 0 : 1" :peer="pvpPeer!" :friend="friendLabel" @leave="leavePvp" />
+
+    <!-- Sala do duelo: o lobby público do PvP -->
+    <section v-else-if="lobbyOpen && !s" class="dg-pick">
+      <h2>Duelo da Masmorra</h2>
+      <p class="hint">Você e o amigo descem {{ DUEL_FLOORS }} andares com a mesma semente, cada um na sua tela, montando a própria equipe. Quem termina espera o outro e então começa um duelo em turnos, com as equipes que cada um montou.</p>
+      <PvpLobby game="dungeon" :note="`Masmorra · ${DUEL_FLOORS} andares e duelo`" @connected="onConnected" />
+      <div class="dg-actions"><button type="button" @click="lobbyOpen = false">Voltar</button></div>
+    </section>
+
     <!-- Escolha da equipe -->
-    <section v-if="!s" class="dg-pick">
-      <h2>Masmorra · protótipo</h2>
-      <p class="hint">Comece com um Pokémon da sua coleção. Ao limpar o 1º andar, a Pokébola oferece três novas armas; depois ela volta no 3º andar e a cada três andares. A expedição só acaba quando a equipe cai ou quando você decide sair pela escada.</p>
-      <p class="hint">Cada turno tem {{ START_AP }} PA para mover, atacar, trocar, usar item ou fundir dois Pokémon. A orbe da arma guarda o Pokémon.</p>
-      <p v-if="record > 0" class="dg-record">🏆 Seu recorde: andar {{ record }}</p>
+    <section v-else-if="!s" class="dg-pick">
+      <h2>{{ pvp ? `Duelo com ${friendLabel === 'Amigo' ? 'o amigo' : friendLabel}` : 'Masmorra · protótipo' }}</h2>
+      <template v-if="pvp">
+        <p class="hint">Conectado{{ pvp.role === 'host' ? ' (você criou a sala)' : '' }}. Escolha o seu Pokémon inicial e toque em «Estou pronto». Os dois descem {{ DUEL_FLOORS }} andares, cada um na sua tela, com a mesma semente; ao vencer o {{ DUEL_FLOORS }}º, quem terminar primeiro espera o outro e o duelo começa com as equipes que vocês montaram.</p>
+        <p class="hint">Sem moedas, XP nem gemas no duelo, e nada do cofre ou da marmita da Vila: os dois começam iguais.</p>
+        <p class="dg-friend-status" role="status" aria-live="polite">{{ pvp.friendReady ? '✅ O amigo já está pronto.' : '⏳ O amigo ainda está escolhendo…' }}{{ pvp.ready ? ' Você está pronto: aguardando o início.' : '' }}</p>
+      </template>
+      <template v-else>
+        <p class="hint">Comece com um Pokémon da sua coleção. Ao limpar o 1º andar, a Pokébola oferece três novas armas; depois ela volta no 3º andar e a cada três andares. A expedição só acaba quando a equipe cai ou quando você decide sair pela escada.</p>
+        <p class="hint">Cada turno tem {{ START_AP }} PA para mover, atacar, trocar, usar item ou fundir dois Pokémon. A orbe da arma guarda o Pokémon.</p>
+        <p v-if="pickNotice" class="dg-warn" role="status">{{ pickNotice }}</p>
+      </template>
+      <p v-if="record > 0 && !pvp" class="dg-record">🏆 Seu recorde: andar {{ record }}</p>
       <p class="hint">A arma é inata da espécie: ao colocar na coleção um Pokémon que usa uma arma ainda inédita para você, ela fica disponível nas próximas expedições com aquele Pokémon. A munição ainda usa o tipo principal da espécie.</p>
       <p v-if="loadError" role="alert">{{ loadError }}</p>
       <p v-if="candidates === null" class="hint">Lendo a sua coleção…</p>
@@ -725,7 +1026,7 @@ const pendingText = computed(() => {
       <p v-else-if="pool.length === 0" role="alert">Sem dados das espécies selvagens no pacote: a masmorra não pode montar inimigos.</p>
       <ul v-if="candidates?.length" class="dg-candidates">
         <li v-for="c in candidates" :key="c.id">
-          <button type="button" :class="{ on: picked.includes(c.id) }" :disabled="c.missing || (!picked.includes(c.id) && picked.length >= 1)" @click="togglePick(c)">
+          <button type="button" :class="{ on: picked.includes(c.id) }" :disabled="c.missing || !!pvp?.ready || (!picked.includes(c.id) && picked.length >= 1)" @click="togglePick(c)">
             <small v-if="picked.includes(c.id)" class="dg-order">{{ picked.indexOf(c.id) + 1 }}</small>
             <template v-if="c.missing">
               <img v-if="!brokenSprites.has(c.dexId)" :src="sprite(c.dexId)" alt="" loading="lazy" class="dg-pick-sprite" @error="brokenSprites.add(c.dexId)" />
@@ -741,7 +1042,7 @@ const pendingText = computed(() => {
           </button>
         </li>
       </ul>
-      <section v-if="vaultGems.length || lunchName" class="dg-from-village" aria-label="Da Vila">
+      <section v-if="!pvp && (vaultGems.length || lunchName)" class="dg-from-village" aria-label="Da Vila">
         <h3>🏡 Da Vila</h3>
         <template v-if="vaultGems.length">
           <p class="hint">Cofre de gemas: leve até {{ VAULT_TAKE }}. Elas saem do cofre; se a equipe cair, se perdem.</p>
@@ -751,8 +1052,13 @@ const pendingText = computed(() => {
         </template>
         <label v-if="lunchName" class="dg-lunch"><input v-model="bringLunch" type="checkbox" /> Levar a marmita do Café ({{ lunchName }}): +1 poção e +{{ Math.round(LUNCH_HP * 100) }}% de HP máximo nesta expedição.</label>
       </section>
-      <div class="dg-actions">
-        <button type="button" class="primary" :disabled="picked.length === 0 || pool.length === 0" @click="begin">Começar com esta arma</button>
+      <div v-if="pvp" class="dg-actions">
+        <button type="button" class="primary" :disabled="picked.length === 0 || pool.length === 0" @click="toggleReady">{{ pvp.ready ? '✅ Pronto · toque para desfazer' : 'Estou pronto' }}</button>
+        <button type="button" @click="quitPvpPick">Sair da sala</button>
+      </div>
+      <div v-else class="dg-actions">
+        <button type="button" class="primary" :disabled="picked.length === 0 || pool.length === 0" @click="begin()">Começar com esta arma</button>
+        <button type="button" :disabled="candidates === null || candidates.length === 0 || pool.length === 0" @click="lobbyOpen = true; pickNotice = ''">👥 Duelo com um amigo</button>
         <button type="button" @click="emit('leave')">Voltar</button>
       </div>
     </section>
@@ -763,7 +1069,13 @@ const pendingText = computed(() => {
         <span class="dg-pill dg-floor" :class="{ boss: isBossFloor(s.floor), mini: isMiniBossFloor(s.floor) && !isBossFloor(s.floor) }">{{ isBossFloor(s.floor) ? '👑 ' : isMiniBossFloor(s.floor) ? '⚜️ ' : '' }}Andar {{ s.floor }}</span>
         <span class="dg-theme" :title="biome.description">{{ biome.region }} · {{ biome.name }}</span>
         <span v-if="atHome" class="dg-pill dg-small dg-home" :title="`Quem é de ${biome.region} luta em casa: +${Math.round(HOME_BONUS * 100)}% de poder`">🏠 +{{ Math.round(HOME_BONUS * 100) }}%</span>
-        <span v-if="record > 0" class="dg-pill dg-small" title="Recorde">🏆 {{ record }}</span>
+        <span v-if="record > 0 && !pvp" class="dg-pill dg-small" title="Recorde">🏆 {{ record }}</span>
+        <template v-if="pvp">
+          <span class="dg-pill dg-small dg-duel-left" :title="`O duelo começa depois do ${DUEL_FLOORS}º andar`">⚔️ {{ floorsToDuel > 0 ? `faltam ${floorsToDuel} andar(es) p/ o duelo` : 'duelo liberado' }}</span>
+          <span class="dg-pill dg-small dg-friend" :class="{ done: pvp.friend?.state === 'cleared' }" role="status" :title="`${friendLabel}: ${friendStatus}`">👥 {{ friendLabel }}: {{ friendStatus }}</span>
+          <PvpTauntFan v-if="pvpPeer && !pvp.result" ref="tauntFan" :peer="pvpPeer" :friend="friendLabel" />
+          <button v-if="!pvp.result" type="button" class="dg-pill dg-small dg-giveup" :class="{ sure: confirmGiveUp }" @click="giveUp">{{ confirmGiveUp ? 'Toque de novo p/ desistir' : '🏳️ Desistir' }}</button>
+        </template>
         <span class="dg-break"></span>
         <span class="dg-pill">Turno {{ s.round }}</span>
         <span class="dg-pill dg-ap" :class="{ empty: s.ap === 0 }" :aria-label="`${s.ap} de ${Math.max(START_AP, s.ap)} PA${pendingSpend.ap ? `, a ação gasta ${pendingSpend.ap}` : ''}`">
@@ -841,6 +1153,14 @@ const pendingText = computed(() => {
 
       <p class="dg-preview" aria-live="polite">
         <template v-if="enemyTurn"><span class="dg-enemy-msg">Turno dos inimigos… {{ s.log[s.log.length - 1] }}</span></template>
+        <template v-else-if="pvp && exploring && s.floor >= DUEL_FLOORS">
+          <span v-if="pvp.stage === 'waiting'" class="dg-preview-text">⏳ Equipe enviada. Esperando {{ friendLabel }} terminar ({{ friendStatus }}).</span>
+          <template v-else>
+            <span class="dg-preview-text">🏁 Andar {{ DUEL_FLOORS }} vencido! Pegue o saque, ajuste as gemas na Forja e toque em «Ir ao duelo».</span>
+            <button type="button" class="small" @click="forgeOpen = true">Forja</button>
+            <button type="button" class="primary small" @click="readyForDuel">Ir ao duelo</button>
+          </template>
+        </template>
         <template v-else-if="exploring"><span class="dg-preview-text">✨ Sala limpa: toque numa casa para andar, pegue o saque e vá até a 🪜 escada.</span><button type="button" class="small" @click="forgeOpen = true">Forja</button></template>
         <template v-else-if="pendingText"><span class="dg-preview-text">{{ pendingText }}</span><button v-if="mode === 'attack' ? !preview?.reason : true" type="button" class="primary small dg-confirm" @click="confirm">{{ mode === 'attack' ? '⚔ Atacar' : 'Confirmar' }}</button></template>
         <template v-else-if="flash"><span class="dg-warn">{{ flash }}</span></template>
@@ -1056,20 +1376,48 @@ const pendingText = computed(() => {
       </div>
 
       <!-- Escada: recompensa e descer, ou sair -->
-      <div v-if="s.phase === 'reward' && !forgeOpen && !weaponOffer" class="dg-modal" role="dialog" aria-label="Escada">
+      <!-- Último andar do PvP: a escada vira o portão do duelo -->
+      <div v-if="pvp && !pvp.result && s.phase === 'reward' && s.floor >= DUEL_FLOORS && !forgeOpen" class="dg-modal" role="dialog" aria-label="Portão do duelo">
+        <div class="dg-modal-box">
+          <h3>⚔️ Portão do duelo</h3>
+          <template v-if="pvp.stage === 'waiting'">
+            <p class="hint">Equipe enviada. Esperando {{ friendLabel }} terminar ({{ friendStatus }}). O duelo começa sozinho quando ele chegar aqui.</p>
+          </template>
+          <template v-else>
+            <p class="hint">Você venceu os {{ DUEL_FLOORS }} andares. Ajuste as gemas na Forja se quiser e entre: o duelo usa a equipe, a vida e a carga como estão agora. Depois de entrar, não dá mais para mexer na equipe.</p>
+            <p class="hint">{{ friendLabel }}: {{ friendStatus }}.</p>
+            <div class="dg-actions">
+              <button type="button" @click="forgeOpen = true">💎 Forja ({{ s.bag.length }})</button>
+              <button type="button" class="primary" @click="readyForDuel">Ir ao duelo</button>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <div v-if="s.phase === 'reward' && !forgeOpen && !weaponOffer && !(pvp && s.floor >= DUEL_FLOORS)" class="dg-modal" role="dialog" aria-label="Escada">
         <div class="dg-modal-box">
           <h3>🪜 Escada para o andar {{ s.floor + 1 }}</h3>
           <p class="hint">{{ isBossFloor(s.floor + 1) ? '👑 Lá embaixo espera um chefe.' : `Próximo andar: ${nextBiome.region} · ${nextBiome.name}${nextBiome.hazard === 'lava' ? ' (cuidado com a lava)' : nextBiome.hazard === 'agua' ? ' (com água)' : ''}.` }} Os inimigos ficam mais fortes a cada andar.</p>
           <button v-for="r in s.rewardOptions" :key="r" type="button" class="dg-reward" @click="pickReward(r)"><strong>Descer com: {{ REWARDS[r].name }}</strong><small>{{ REWARDS[r].text }}</small></button>
           <div class="dg-actions">
             <button type="button" @click="forgeOpen = true">💎 Forja ({{ s.bag.length }})</button>
-            <button type="button" class="dg-leave" @click="leaveDungeon">Sair com o espólio</button>
+            <button v-if="!pvp" type="button" class="dg-leave" @click="leaveDungeon">Sair com o espólio</button>
           </div>
         </div>
       </div>
 
+      <!-- Fim do PvP antes do duelo (queda, desistência, abandono) -->
+      <div v-if="pvp?.result" class="dg-modal" role="dialog" aria-label="Fim do duelo">
+        <div class="dg-modal-box">
+          <h3>{{ pvp.result.title }}</h3>
+          <p class="hint">{{ pvp.result.text }}</p>
+          <p class="hint">Sem moedas, XP nem gemas no duelo: nada foi ganho ou perdido na Vila.</p>
+          <div class="dg-actions"><button type="button" class="primary" @click="leavePvp">Voltar</button></div>
+        </div>
+      </div>
+
       <!-- Fim da expedição -->
-      <div v-if="s.phase === 'lost' || s.phase === 'retired'" class="dg-modal" role="dialog" aria-label="Fim da expedição">
+      <div v-if="!pvp && (s.phase === 'lost' || s.phase === 'retired')" class="dg-modal" role="dialog" aria-label="Fim da expedição">
         <div class="dg-modal-box">
           <h3>{{ s.phase === 'retired' ? '🎒 Você saiu da masmorra' : '💀 A equipe caiu' }}</h3>
           <p class="hint">{{ s.log[s.log.length - 1] }}</p>
@@ -1120,6 +1468,11 @@ const pendingText = computed(() => {
 .dg-pick-sprite { width: 48px; height: 48px; object-fit: contain; image-rendering: pixelated; }
 .dg-types { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
 .dg-nosprite { font-size: 0.6rem; color: var(--muted); line-height: 1; text-align: center; }
+.dg-friend-status { margin: 6px 0; padding: 6px 10px; border-radius: 10px; background: #0006; border: 1px solid var(--line); font-size: 0.86rem; }
+.dg-friend.done { border-color: #3fae5a; color: #b9f5c8; }
+.dg-giveup { cursor: pointer; }
+.dg-giveup.sure { border-color: var(--warn); color: var(--warn); }
+.dg-duel-left { border-color: #b38cff88; }
 .dg-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .dg-actions button { min-height: var(--ui-touch, 44px); padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; }
 .dg-leave { border-color: var(--gold) !important; color: var(--gold) !important; }

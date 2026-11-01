@@ -120,6 +120,28 @@ let enemyPlan: { pinId: string; shot: Shot; moveIndex: number | null } | null = 
 let enemyTimer = 0;
 let shots = 0;
 let drag: { fromX: number; fromY: number; toX: number; toY: number } | null = null;
+/** Mira ao vivo do amigo (só desenho): some se ele parar de mandar por mais de 1,5 s. */
+let friendAim: { pinId: string; dirX: number; dirY: number; power: number; at: number } | null = null;
+let aimSentAt = 0;
+let aimShown = false;
+const AIM_EVERY_MS = 70;
+const AIM_STALE_MS = 1500;
+
+/** Mostra ao amigo, em tempo real, o pin que estou mirando e a força do arrasto. */
+function broadcastAim(force = false): void {
+  if (!pvpMatch.value || !peer.value) return;
+  const now = performance.now();
+  if (!force && now - aimSentAt < AIM_EVERY_MS) return;
+  const shot = drag && selectedId.value ? shotFromDrag(drag.fromX, drag.fromY, drag.toX, drag.toY) : null;
+  if (!shot || !selectedId.value) {
+    if (aimShown) peer.value.send({ t: 'aim', pinId: null, dirX: 0, dirY: 0, power: 0 });
+    aimShown = false;
+    return;
+  }
+  aimSentAt = now;
+  aimShown = true;
+  peer.value.send({ t: 'aim', pinId: selectedId.value, ...shotToWire(frame.value, shot) });
+}
 let virtualAimAngle = -Math.PI / 2;
 let popups: Popup[] = [];
 let terrainFx: TerrainFx[] = [];
@@ -525,6 +547,7 @@ function setVirtualAim(direction: 'up' | 'right' | 'down' | 'left'): void {
     toX: pin.x - Math.cos(virtualAimAngle) * pull,
     toY: pin.y - Math.sin(virtualAimAngle) * pull,
   };
+  broadcastAim();
 }
 
 function handleGamepadDirection(event: Event): void {
@@ -899,6 +922,7 @@ function fireMine(shot: Shot): void {
   launch(pin, shot, moveIndex);
   pinAttackAt.set(pin.id, performance.now());
   afterShot(world, 0, { pinId: pin.id, moveIndex });
+  aimShown = false;
   if (pvpMatch.value) peer.value?.send({ t: 'shot', pinId: pin.id, moveIndex, ...shotToWire(frame.value, shot) });
   recorder.start(world);
   cue({ kind: 'pin-launch', power: shot.power, type: pin.active?.kind === 'elemental' ? pin.active.type : null });
@@ -1037,6 +1061,8 @@ function onPeerMessage(msg: WireMessage): void {
       return onRemoteShot(msg);
     case 'settled':
       return onRemoteSettled(msg.world);
+    case 'aim':
+      return onRemoteAim(msg);
     default:
   }
 }
@@ -1120,6 +1146,7 @@ function pvpOutcome(): 'playing' | 'won' | 'lost' | 'empate' {
 function onRemoteShot(msg: Extract<WireMessage, { t: 'shot' }>): void {
   if (!world || !pvpMatch.value || phase.value !== 'enemy') return;
   const pin = world.pins.find((p) => p.id === msg.pinId && p.side === 1 && p.alive && p.fall === 0);
+  friendAim = null;
   if (!pin || !launch(pin, shotFromWire(frame.value, msg), msg.moveIndex)) return;
   pinAttackAt.set(pin.id, performance.now());
   afterShot(world, 1, { pinId: pin.id, moveIndex: msg.moveIndex });
@@ -1132,6 +1159,16 @@ function onRemoteShot(msg: Extract<WireMessage, { t: 'shot' }>): void {
   settledTime = 0;
   message.value = '';
   phase.value = 'rolling';
+}
+
+function onRemoteAim(msg: Extract<WireMessage, { t: 'aim' }>): void {
+  if (!pvpMatch.value || phase.value !== 'enemy') return;
+  if (msg.pinId === null) {
+    friendAim = null;
+    return;
+  }
+  const shot = shotFromWire(frame.value, msg);
+  friendAim = { pinId: msg.pinId, dirX: shot.dirX, dirY: shot.dirY, power: shot.power, at: performance.now() };
 }
 
 function onRemoteSettled(snap: WireWorld): void {
@@ -1223,12 +1260,14 @@ function onMove(ev: PointerEvent): void {
   if (p) {
     drag.toX = p.x;
     drag.toY = p.y;
+    broadcastAim();
   }
 }
 
 function onUp(): void {
   const d = drag;
   drag = null;
+  broadcastAim(true);
   if (!d || !world || phase.value !== 'aim') return;
   const shot = shotFromDrag(d.fromX, d.fromY, d.toX, d.toY);
   if (shot) return fireMine(shot);
@@ -1239,6 +1278,7 @@ function onUp(): void {
 
 function onCancel(): void {
   drag = null;
+  broadcastAim(true);
 }
 
 // ---------------------------------------------------------------- desenho
@@ -1620,6 +1660,29 @@ function draw(now: number): void {
     }
   }
 
+  // Mira do amigo, ao vivo: a direção e a força que ele está puxando agora.
+  if (friendAim && phase.value === 'enemy' && world && now - friendAim.at < AIM_STALE_MS) {
+    const pin = world.pins.find((p) => p.id === friendAim!.pinId && p.alive);
+    if (pin) {
+      const reach = MAX_PULL * (0.5 + friendAim.power * 1.3);
+      ctx.strokeStyle = 'rgba(255,120,120,0.85)';
+      ctx.lineWidth = 3 * dpr;
+      ctx.setLineDash([6 * dpr, 6 * dpr]);
+      ctx.beginPath();
+      ctx.moveTo(cx + pin.x * k, cx + pin.y * k);
+      ctx.lineTo(cx + (pin.x + friendAim.dirX * reach) * k, cx + (pin.y + friendAim.dirY * reach) * k);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const px = cx + pin.x * k;
+      const py = cx + pin.y * k;
+      const w = 44 * dpr;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(px - w / 2, py + pin.r * k * 1.7, w, 7 * dpr);
+      ctx.fillStyle = '#ff9b9b';
+      ctx.fillRect(px - w / 2, py + pin.r * k * 1.7, w * friendAim.power, 7 * dpr);
+    }
+  } else if (friendAim && now - friendAim.at >= AIM_STALE_MS) friendAim = null;
+
   // Avisos que sobem e somem.
   ctx.font = `700 ${14 * dpr}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
@@ -1797,7 +1860,7 @@ function setMarks(on: boolean): void {
       </div>
 
       <p v-if="mode === 'friend' && roomNotice && !peer" class="message error" role="alert">{{ roomNotice }}</p>
-      <PvpLobby v-if="mode === 'friend' && !peer" @connected="onConnected" />
+      <PvpLobby v-if="mode === 'friend' && !peer" game="pins" note="Pins · 1 a 6 pins" @connected="onConnected" />
 
       <p v-if="mode === 'friend' && peer" class="pn-room" role="status">
         <i class="pn-room-dot" aria-hidden="true"></i>

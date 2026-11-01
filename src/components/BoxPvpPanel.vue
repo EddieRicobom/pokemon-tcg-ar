@@ -13,7 +13,7 @@ function onConnected(peer: PvpPeer, role: 'host' | 'guest'): void {
 
 <template>
   <div class="box-pvp">
-    <PvpLobby v-if="!boxPvp.peer" @connected="onConnected" />
+    <PvpLobby v-if="!boxPvp.peer" game="box" note="Arena · batalha 1x1, 3x3 ou 6x6" @connected="onConnected" />
     <template v-else>
       <p class="box-pvp-state">
         <strong>Conectado com {{ boxPvp.friend?.name ?? 'o amigo' }}</strong>

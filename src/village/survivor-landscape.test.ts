@@ -23,16 +23,27 @@ describe('tilesets regionais da Torre', () => {
   });
 
   it('sobrepõe a pintura dos chunks para que copas e detalhes não formem emendas visíveis', () => {
-    expect(survivorLandscapeChunkPaintBounds(
-      { col: 1, row: 1, x: 512, y: 512, w: 512, h: 512 },
-      SURVIVOR_LANDSCAPE_TILE_W,
-      SURVIVOR_LANDSCAPE_TILE_H,
-    )).toEqual({ x: 448, y: 448, w: 640, h: 640 });
-    expect(survivorLandscapeChunkPaintBounds(
-      { col: 5, row: 3, x: 2_560, y: 1_536, w: 320, h: 384 },
-      SURVIVOR_LANDSCAPE_TILE_W,
-      SURVIVOR_LANDSCAPE_TILE_H,
-    )).toEqual({ x: 2_496, y: 1_472, w: 384, h: 448 });
+    expect(survivorLandscapeChunkPaintBounds({ col: 1, row: 1, x: 512, y: 512, w: 512, h: 512 }))
+      .toEqual({ x: 448, y: 448, w: 640, h: 640 });
+    // Na borda do setor a sobra continua: o setor se repete, e a copa de uma árvore da borda não pode ser cortada.
+    expect(survivorLandscapeChunkPaintBounds({ col: 5, row: 3, x: 2_560, y: 1_536, w: 320, h: 384 }))
+      .toEqual({ x: 2_496, y: 1_472, w: 448, h: 512 });
+    expect(survivorLandscapeChunkPaintBounds({ col: 0, row: 0, x: 0, y: 0, w: 512, h: 512 }).x).toBe(-64);
+  });
+
+  it('cada rota sai por uma borda na altura em que entra pela borda oposta, para a trilha continuar no setor vizinho', () => {
+    const width = SURVIVOR_LANDSCAPE_TILE_W, height = SURVIVOR_LANDSCAPE_TILE_H;
+    SURVIVOR_REGION_ROUTES.forEach((definition, index) => {
+      // Todos os pontos da rota (principal e ramificações) que ficam fora do setor, já presos à grade.
+      const outside: { x: number; y: number }[] = [];
+      for (const points of [definition.main, ...definition.branches]) {
+        for (const p of routePolyline(points, width, height)) if (p.x < 0 || p.x > width || p.y < 0 || p.y > height) outside.push(p);
+      }
+      const ys = (side: (x: number) => boolean) => new Set(outside.filter((p) => side(p.x)).map((p) => p.y));
+      const xs = (side: (y: number) => boolean) => new Set(outside.filter((p) => side(p.y)).map((p) => p.x));
+      expect([...ys((x) => x < 0)].sort(), `região ${index}: esquerda e direita`).toEqual([...ys((x) => x > width)].sort());
+      expect([...xs((y) => y < 0)].sort(), `região ${index}: cima e baixo`).toEqual([...xs((y) => y > height)].sort());
+    });
   });
 
   it('cada região tem recortes reais de terreno, trilha, detalhe e cobertura baixa no atlas', () => {

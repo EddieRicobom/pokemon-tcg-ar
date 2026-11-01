@@ -60,17 +60,21 @@ export interface SurvivorRouteDefinition {
   width: number;
 }
 
-/** Rotas desenhadas à mão; entre um ponto e o seguinte a trilha anda reta e vira em ângulo reto, como nas rotas. */
+/**
+ * Rotas desenhadas à mão. O setor se repete em todas as direções, então cada rota sai por uma borda na mesma altura (ou
+ * coluna) em que entra pela borda oposta: a trilha continua no setor vizinho em vez de bater numa parede de árvores.
+ * A rota diagonal da Paldea entra por cima e sai pela direita; duas ramificações dela completam a saída de baixo e a
+ * entrada da esquerda. Entre um ponto e o seguinte a trilha anda reta e vira em ângulo reto, como nas rotas. */
 export const SURVIVOR_REGION_ROUTES: readonly SurvivorRouteDefinition[] = [
-  { main: [[-0.06, 0.67], [0.2, 0.6], [0.47, 0.66], [0.73, 0.55], [1.06, 0.59]], branches: [[[0.5, 0.65], [0.53, 0.43], [0.62, 0.28]]], width: 112 },
-  { main: [[0.38, -0.06], [0.43, 0.19], [0.36, 0.45], [0.48, 0.68], [0.42, 1.06]], branches: [[[0.38, 0.46], [0.2, 0.5], [0.07, 0.62]]], width: 120 },
-  { main: [[-0.06, 0.74], [0.18, 0.7], [0.4, 0.59], [0.67, 0.49], [1.06, 0.43]], branches: [[[0.42, 0.59], [0.54, 0.77], [0.7, 0.9]]], width: 116 },
-  { main: [[0.63, -0.06], [0.6, 0.2], [0.69, 0.42], [0.58, 0.68], [0.64, 1.06]], branches: [[[0.6, 0.68], [0.42, 0.79], [0.25, 0.77]]], width: 124 },
-  { main: [[-0.06, 0.43], [0.2, 0.48], [0.45, 0.41], [0.72, 0.49], [1.06, 0.42]], branches: [[[0.45, 0.42], [0.47, 0.2], [0.59, 0.08]], [[0.72, 0.49], [0.84, 0.67]]], width: 118 },
-  { main: [[-0.06, 0.68], [0.2, 0.62], [0.42, 0.7], [0.67, 0.59], [1.06, 0.66]], branches: [[[0.42, 0.69], [0.39, 0.46], [0.27, 0.29]], [[0.67, 0.59], [0.81, 0.42], [0.91, 0.31]]], width: 106 },
-  { main: [[-0.06, 0.34], [0.2, 0.39], [0.43, 0.32], [0.69, 0.43], [1.06, 0.36]], branches: [[[0.69, 0.43], [0.78, 0.61], [0.88, 0.76]]], width: 112 },
-  { main: [[-0.06, 0.76], [0.2, 0.67], [0.41, 0.72], [0.66, 0.56], [1.06, 0.48]], branches: [[[0.41, 0.71], [0.35, 0.5], [0.23, 0.36]]], width: 128 },
-  { main: [[0.06, -0.06], [0.2, 0.18], [0.38, 0.34], [0.62, 0.5], [0.92, 0.66], [1.06, 0.78]], branches: [[[0.38, 0.34], [0.25, 0.43], [0.13, 0.56]]], width: 114 },
+  { main: [[-0.06, 0.67], [0.2, 0.6], [0.47, 0.66], [0.73, 0.55], [1.06, 0.67]], branches: [[[0.5, 0.65], [0.53, 0.43], [0.62, 0.28]]], width: 112 },
+  { main: [[0.38, -0.06], [0.43, 0.19], [0.36, 0.45], [0.48, 0.68], [0.38, 1.06]], branches: [[[0.38, 0.46], [0.2, 0.5], [0.07, 0.62]]], width: 120 },
+  { main: [[-0.06, 0.74], [0.18, 0.7], [0.4, 0.59], [0.67, 0.49], [1.06, 0.74]], branches: [[[0.42, 0.59], [0.54, 0.77], [0.7, 0.9]]], width: 116 },
+  { main: [[0.63, -0.06], [0.6, 0.2], [0.69, 0.42], [0.58, 0.68], [0.63, 1.06]], branches: [[[0.6, 0.68], [0.42, 0.79], [0.25, 0.77]]], width: 124 },
+  { main: [[-0.06, 0.43], [0.2, 0.48], [0.45, 0.41], [0.72, 0.49], [1.06, 0.43]], branches: [[[0.45, 0.42], [0.47, 0.2], [0.59, 0.08]], [[0.72, 0.49], [0.84, 0.67]]], width: 118 },
+  { main: [[-0.06, 0.68], [0.2, 0.62], [0.42, 0.7], [0.67, 0.59], [1.06, 0.68]], branches: [[[0.42, 0.69], [0.39, 0.46], [0.27, 0.29]], [[0.67, 0.59], [0.81, 0.42], [0.91, 0.31]]], width: 106 },
+  { main: [[-0.06, 0.34], [0.2, 0.39], [0.43, 0.32], [0.69, 0.43], [1.06, 0.34]], branches: [[[0.69, 0.43], [0.78, 0.61], [0.88, 0.76]]], width: 112 },
+  { main: [[-0.06, 0.76], [0.2, 0.67], [0.41, 0.72], [0.66, 0.56], [1.06, 0.76]], branches: [[[0.41, 0.71], [0.35, 0.5], [0.23, 0.36]]], width: 128 },
+  { main: [[0.06, -0.06], [0.2, 0.18], [0.38, 0.34], [0.62, 0.5], [0.92, 0.66], [1.06, 0.78]], branches: [[[0.38, 0.34], [0.25, 0.43], [0.13, 0.56]], [[-0.06, 0.78], [0.13, 0.78], [0.13, 0.56]], [[0.06, 1.06], [0.06, 0.82], [0.13, 0.78]]], width: 114 },
 ] as const;
 
 /**
@@ -332,9 +336,15 @@ interface RegionLayer {
 }
 
 interface LandscapeChunk {
+  /** Origem do `canvas` de cima (copas e pontas de mato), que passa da borda do chunk e do setor. */
   x: number;
   y: number;
+  /** Camada de cima, transparente: desenhada depois de todo o chão, para nenhum chunk vizinho cobrir o que passa da borda. */
   canvas: HTMLCanvasElement;
+  /** Chão opaco do chunk (só o retângulo dele). */
+  ground: HTMLCanvasElement;
+  groundX: number;
+  groundY: number;
   /** Por fileira: posição x e os dois quadros de cada canteiro. */
   flowers: { x: number; frames: readonly [HTMLCanvasElement, HTMLCanvasElement] }[][];
   /** Por fileira: colunas com água. */
@@ -348,18 +358,17 @@ const WATER_FRAME_MS = 260;
 export const SURVIVOR_LANDSCAPE_CHUNK_SIZE = 512;
 /** A sobra coberta pelos chunks vizinhos elimina cortes de copas e detalhes na borda. */
 const CHUNK_DRAW_BLEED = 64;
-// Cada canvas inclui a sobra acima; 18 preserva um teto de memória próximo ao cache anterior.
-const MAX_CACHED_LANDSCAPE_CHUNKS = 18;
+// Cada chunk tem duas camadas (chão e cobertura); 24 mantém o teto de memória perto do cache anterior.
+const MAX_CACHED_LANDSCAPE_CHUNKS = 24;
 
 export interface LandscapeChunkCoordinate { col: number; row: number; x: number; y: number; w: number; h: number }
 
-/** Área real pintada pelo canvas do chunk, com sobreposição aparada nas bordas do mundo. */
-export function survivorLandscapeChunkPaintBounds(bounds: LandscapeChunkCoordinate, width: number, height: number): { x: number; y: number; w: number; h: number } {
-  const x = Math.max(0, bounds.x - CHUNK_DRAW_BLEED);
-  const y = Math.max(0, bounds.y - CHUNK_DRAW_BLEED);
-  const right = Math.min(width, bounds.x + bounds.w + CHUNK_DRAW_BLEED);
-  const bottom = Math.min(height, bounds.y + bounds.h + CHUNK_DRAW_BLEED);
-  return { x, y, w: right - x, h: bottom - y };
+/**
+ * Área pintada pela camada de cima do chunk: o retângulo dele mais a sobra em volta. A sobra também vale nas bordas do
+ * setor, porque o setor se repete e a copa de uma árvore da borda precisa aparecer inteira sobre o setor vizinho.
+ */
+export function survivorLandscapeChunkPaintBounds(bounds: LandscapeChunkCoordinate): { x: number; y: number; w: number; h: number } {
+  return { x: bounds.x - CHUNK_DRAW_BLEED, y: bounds.y - CHUNK_DRAW_BLEED, w: bounds.w + CHUNK_DRAW_BLEED * 2, h: bounds.h + CHUNK_DRAW_BLEED * 2 };
 }
 
 /** Blocos da paisagem que cruzam o retângulo visível. */
@@ -488,13 +497,21 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
   }
 
   function buildChunk(index: number, regionLayer: RegionLayer, bounds: LandscapeChunkCoordinate): LandscapeChunk {
-    const paintBounds = survivorLandscapeChunkPaintBounds(bounds, width, height);
+    const paintBounds = survivorLandscapeChunkPaintBounds(bounds);
     const canvas = document.createElement('canvas');
     canvas.width = paintBounds.w;
     canvas.height = paintBounds.h;
-    const ctx = canvas.getContext('2d')!;
-    ctx.imageSmoothingEnabled = false;
-    ctx.translate(-paintBounds.x, -paintBounds.y);
+    const topCtx = canvas.getContext('2d')!;
+    topCtx.imageSmoothingEnabled = false;
+    topCtx.translate(-paintBounds.x, -paintBounds.y);
+    const ground = document.createElement('canvas');
+    ground.width = bounds.w;
+    ground.height = bounds.h;
+    const groundCtx = ground.getContext('2d')!;
+    groundCtx.imageSmoothingEnabled = false;
+    groundCtx.translate(-bounds.x, -bounds.y);
+    // O chão (passos 1 a 4) vai para a camada opaca; mato alto, árvores e objetos (o que passa da borda) para a de cima.
+    let ctx = groundCtx;
     const region = SURVIVOR_REGIONS[index]!;
     const tiles = SURVIVOR_REGION_TILESETS[index]!;
     const floor: SurvivorFloorKind = tiles.floor;
@@ -506,6 +523,9 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       x: paintBounds.x,
       y: paintBounds.y,
       canvas,
+      ground,
+      groundX: bounds.x,
+      groundY: bounds.y,
       flowers: Array.from({ length: rows }, () => []),
       water: Array.from({ length: rows }, () => []),
     };
@@ -630,7 +650,10 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       const edge = zoneSoft(c, r, kind);
       switch (kind) {
         case 'folhagem':
+          // As pontas das folhas sobem para o bloco de cima, que pode ser de outro chunk: vão para a camada de cima.
+          ctx = topCtx;
           tallCell(c, r, zoneTall);
+          ctx = groundCtx;
           break;
         case 'poça': {
           const wet = (dc: number, dr: number) => zoneIs(c + dc, r + dr, 'poça');
@@ -672,6 +695,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
       }
     }
 
+    ctx = topCtx;
     // 5. Cobertura baixa em manchas: mato alto encaixado na grade, arbustos, pinheirinhos ou canteiros de flores.
     const coverAt = (c: number, r: number) => cellIs(c, r, FLOOR_CELL.cover, false);
     for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) {
@@ -773,8 +797,26 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     return made;
   }
 
-  /** Desenha só os chunks do setor tocados pela câmera. */
-  function paint(ctx: CanvasRenderingContext2D, index: number, region: RegionLayer, view: LandscapeView | undefined, motion: LandscapeMotion): void {
+  /**
+   * Desenha um setor em duas passagens. O chão (opaco) cobre só o retângulo de cada chunk; a camada de cima (copas, mato
+   * alto, objetos) passa da borda do chunk e do setor e é desenhada depois do chão de todos os chunks e setores, então
+   * nenhum vizinho a cobre nem a corta.
+   */
+  function paint(ctx: CanvasRenderingContext2D, index: number, region: RegionLayer, view: LandscapeView | undefined, motion: LandscapeMotion, pass: 'ground' | 'top'): void {
+    if (pass === 'top') {
+      const raw = view ?? { x: 0, y: 0, w: width, h: height };
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(raw.x, raw.y, raw.w, raw.h);
+      ctx.clip();
+      const near = { x: raw.x - CHUNK_DRAW_BLEED, y: raw.y - CHUNK_DRAW_BLEED, w: raw.w + CHUNK_DRAW_BLEED * 2, h: raw.h + CHUNK_DRAW_BLEED * 2 };
+      for (const bounds of survivorLandscapeChunks(near, width, height)) {
+        const chunk = cachedChunk(index, region, bounds);
+        ctx.drawImage(chunk.canvas, chunk.x, chunk.y);
+      }
+      ctx.restore();
+      return;
+    }
     const { x, y, right, bottom } = viewRect(view);
     if (right <= x || bottom <= y) return;
     const visible = { x, y, w: right - x, h: bottom - y };
@@ -785,7 +827,7 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     ctx.clip();
     for (const bounds of visibleChunks) {
       const chunk = cachedChunk(index, region, bounds);
-      ctx.drawImage(chunk.canvas, chunk.x, chunk.y);
+      ctx.drawImage(chunk.ground, chunk.groundX, chunk.groundY);
     }
     const flowerFrame = motion.animate ? Math.floor(motion.timeMs / FLOWER_FRAME_MS) % 2 : 0;
     for (const bounds of visibleChunks) {
@@ -825,19 +867,24 @@ export function createSurvivorLandscape(width: number, height: number): Survivor
     // A arena pode ser maior que um único canvas de cenário. Repetir o setor
     // preserva tamanho de árvores/itens e evita uma textura de centenas de MB.
     const visible = view ?? { x: 0, y: 0, w: width, h: height };
-    const firstX = Math.floor(visible.x / width), lastX = Math.floor((visible.x + visible.w - 1) / width);
-    const firstY = Math.floor(visible.y / height), lastY = Math.floor((visible.y + visible.h - 1) / height);
-    for (let tileY = firstY; tileY <= lastY; tileY++) for (let tileX = firstX; tileX <= lastX; tileX++) {
-      const offsetX = tileX * width, offsetY = tileY * height;
-      const localView = { x: visible.x - offsetX, y: visible.y - offsetY, w: visible.w, h: visible.h };
-      ctx.save();
-      ctx.translate(offsetX, offsetY);
-      paint(ctx, current, layer(current), localView, motion);
-      if (blend > 0) {
-        ctx.globalAlpha = blend;
-        paint(ctx, next, layer(next), localView, motion);
+    // A sobra da camada de cima pode vir de um setor vizinho que a câmera ainda não toca.
+    const firstX = Math.floor((visible.x - CHUNK_DRAW_BLEED) / width), lastX = Math.floor((visible.x + visible.w - 1 + CHUNK_DRAW_BLEED) / width);
+    const firstY = Math.floor((visible.y - CHUNK_DRAW_BLEED) / height), lastY = Math.floor((visible.y + visible.h - 1 + CHUNK_DRAW_BLEED) / height);
+    for (const pass of ['ground', 'top'] as const) {
+      for (let tileY = firstY; tileY <= lastY; tileY++) for (let tileX = firstX; tileX <= lastX; tileX++) {
+        const offsetX = tileX * width, offsetY = tileY * height;
+        const localView = { x: visible.x - offsetX, y: visible.y - offsetY, w: visible.w, h: visible.h };
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        // Na troca de região, o chão e as copas das duas regiões se misturam juntos.
+        ctx.globalAlpha = pass === 'top' && blend > 0 ? 1 - blend : 1;
+        paint(ctx, current, layer(current), localView, motion, pass);
+        if (blend > 0) {
+          ctx.globalAlpha = blend;
+          paint(ctx, next, layer(next), localView, motion, pass);
+        }
+        ctx.restore();
       }
-      ctx.restore();
     }
     while (chunks.size > MAX_CACHED_LANDSCAPE_CHUNKS) chunks.delete(chunks.keys().next().value!);
   }) as SurvivorLandscapeRenderer;

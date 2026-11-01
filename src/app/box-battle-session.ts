@@ -21,7 +21,7 @@ import { recordEvent } from './trainer-store';
 import { coins, spendCoins, withVillage } from './wallet';
 import { BATTLE_REWARDS_PER_DAY, battleRewardsLeft, claimBattleReward } from '../core/village/life';
 import { dayKey } from '../core/trainer';
-import { boxPvp, sendTeam, startBoxPvp } from './box-pvp-store';
+import { boxPvp, sendTeam, startBoxPvp, syncPvpStart } from './box-pvp-store';
 import type { BoxPvpStart } from './box-pvp-store';
 import { boxPvpBattle, BOX_PVP_LABELS_PT, BOX_PVP_MAX } from '../pvp/box-wire';
 import type { BoxPvpMon, BoxPvpTeam } from '../pvp/box-wire';
@@ -277,6 +277,16 @@ export function createBattleSession(host: BattleSessionHost, ui: BattleSessionUi
       if (host.disposed() || host.box() !== current) return;
       current.setCreatures(entries);
       current.unlockAudio();
+      // Largada em conjunto: espera o amigo terminar de montar também e começa junto com ele.
+      hint.value = `Esperando ${friend.name} ficar pronto…`;
+      const together = await syncPvpStart(start.seed, true);
+      if (host.disposed() || host.box() !== current) return;
+      if (!together) {
+        error.value = `${friend.name} não ficou pronto a tempo (ou a conexão caiu). A luta não começou; ela não se perde, é só tocar em Batalhar de novo.`;
+        activePvp = null;
+        await host.populate();
+        return;
+      }
       battleCounted = false;
       activePvp = { myTeam: boxPvp.role === 'host' ? 0 : 1, friend: friend.name };
       const result = current.startBattle(battle.fighters, battle.plan, seededRng(start.seed));
@@ -297,6 +307,7 @@ export function createBattleSession(host: BattleSessionHost, ui: BattleSessionUi
     } catch (e) {
       error.value = `Não consegui montar a luta do PvP: ${e instanceof Error ? e.message : String(e)}`;
       activePvp = null;
+      void syncPvpStart(start.seed, false);
       await host.populate();
     } finally {
       preparing.value = false;

@@ -38,7 +38,8 @@ O job **"Tipos, testes e build"** é o que vale como porta de entrada para o mer
 | `src/components/QuizDialog.test.ts` | A conversa de perguntas: responder só com texto, sugestões, opções do seguimento e fala final |
 | `src/core/survivor*.test.ts` | Torre: simulação das ondas, combate, upgrades, golpes por tipo e atributos, evoluções, treinadores, chefão final, resumo e modo infinito; objetivos concluídos liberam no máximo uma segunda troca de Pokémon entre corridas. Critérios de ritmo, matriz de espécies e limites de interpretação ficam em [SURVIVOR_BALANCE_PRINCIPLES.md](SURVIVOR_BALANCE_PRINCIPLES.md). |
 | `src/core/pins.test.ts`, `pin-ai.test.ts`, `pin-replay.test.ts`, `src/app/pins-setup.test.ts` | Física dos Pins, decisões do computador, gravação/reprodução e normalização das opções guardadas |
-| `src/core/league.test.ts`, `src/pvp/*.test.ts` | Progressão da Liga, códigos de convite/resposta, compactação SDP e validação das mensagens dos Pins e da Caixa; não abre uma conexão WebRTC entre aparelhos |
+| `src/core/league.test.ts`, `src/pvp/*.test.ts` | Progressão da Liga, códigos de convite/resposta, compactação SDP e validação das mensagens dos Pins, da Caixa e da Masmorra; não abre uma conexão WebRTC entre aparelhos |
+| `src/core/dungeon-duel.test.ts`, `src/pvp/dungeon-wire.test.ts` | Duelo da Masmorra: tabuleiro espelhado, jogadas legais e ilegais, fim da partida, e **dois estados do duelo recebendo as mesmas jogadas até o fim com o mesmo resumo a cada passo**; mensagens `dd-*` com limites e a equipe recalculada pela espécie. Não cobre a tela nem a conexão entre dois navegadores |
 | `src/app/wallet.test.ts`, `pokemon-data-service.test.ts`, `backup.test.ts` | Saldo único de moedas, valores inválidos, recusa de gravação, cache de batalha corrompido, carregamento parcial e exportação/restauração do backup |
 | `src/cache/` | Cache de cartas (IndexedDB falso) e arquivos |
 | `src/App.test.ts` | Montagem da interface |

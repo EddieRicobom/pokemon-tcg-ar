@@ -7,6 +7,10 @@ import { createArenaGrid, TERRAIN_COLS } from '../core/pin-terrain';
 import { POKEMON_TYPES, STAT_ORDER } from '../core/pokemon-data';
 import type { BaseStats, CardAttack, PokemonType } from '../core/pokemon-data';
 import { MAX_BACKUP_TRANSFER_BYTES, MAX_BACKUP_TRANSFER_CHUNKS } from './backup-transfer';
+import { parseDungeonMessage } from './dungeon-wire';
+import type { DungeonWireMessage } from './dungeon-wire';
+import { parseTauntMessage } from './taunts';
+import type { TauntMessage } from './taunts';
 
 /**
  * PvP do Pin Mode: as mensagens entre os dois celulares e a tradução entre o mundo de cada um e o que vai pelo fio.
@@ -59,12 +63,16 @@ export interface WireInit extends WireWorld {
 
 export type WireMessage =
   | BoxWireMessage
+  | DungeonWireMessage
+  | TauntMessage
   | { t: 'hello'; v: number }
   | { t: 'team'; ready: boolean; specs: WireSpec[] }
   | { t: 'options'; shrink: boolean; marks: boolean }
   | { t: 'start'; hostSpecs: WireSpec[]; guestSpecs: WireSpec[]; init: WireInit }
   | { t: 'shot'; pinId: string; moveIndex: number | null; dirX: number; dirY: number; power: number }
   | { t: 'settled'; world: WireWorld }
+  /** Mira ao vivo enquanto o outro arrasta (várias por segundo); `pinId: null` limpa. Só desenho: nunca muda o jogo. */
+  | { t: 'aim'; pinId: string | null; dirX: number; dirY: number; power: number }
   | { t: 'backup-offer'; id: string; name: string; bytes: number; chunks: number }
   | { t: 'backup-chunk'; id: string; index: number; total: number; data: string }
   | { t: 'backup-end'; id: string }
@@ -306,6 +314,10 @@ export function parseMessage(raw: unknown): WireMessage | null {
       if (!isStr(v.pinId, 80) || !(v.moveIndex === null || (isNum(v.moveIndex, 0, MAX_MOVES) && Number.isInteger(v.moveIndex)))) return null;
       if (!isNum(v.dirX, -1.0001, 1.0001) || !isNum(v.dirY, -1.0001, 1.0001) || !isNum(v.power, 0, 1)) return null;
       return { t: 'shot', pinId: v.pinId, moveIndex: v.moveIndex as number | null, dirX: v.dirX, dirY: v.dirY, power: v.power };
+    case 'aim':
+      if (!(v.pinId === null || (isStr(v.pinId, 80) && v.pinId.length > 0))) return null;
+      if (!isNum(v.dirX, -1.0001, 1.0001) || !isNum(v.dirY, -1.0001, 1.0001) || !isNum(v.power, 0, 1)) return null;
+      return { t: 'aim', pinId: v.pinId as string | null, dirX: v.dirX, dirY: v.dirY, power: v.power };
     case 'backup-offer':
       return isStr(v.id, 80) && v.id.length > 0 && isStr(v.name, 160) && v.name.length > 0
         && isNum(v.bytes, 1, MAX_BACKUP_TRANSFER_BYTES) && Number.isInteger(v.bytes)
@@ -330,7 +342,20 @@ export function parseMessage(raw: unknown): WireMessage | null {
     }
     case 'cx-team':
     case 'cx-start':
+    case 'cx-ready':
+    case 'cx-go':
       return parseBoxMessage(v);
+    case 'dd-ready':
+    case 'dd-start':
+    case 'dd-prog':
+    case 'dd-team':
+    case 'dd-act':
+    case 'dd-desync':
+    case 'dd-forfeit':
+      return parseDungeonMessage(v);
+    case 'taunt':
+    case 'buff-event':
+      return parseTauntMessage(v);
     case 'bye':
     case 'ping':
     case 'pong':

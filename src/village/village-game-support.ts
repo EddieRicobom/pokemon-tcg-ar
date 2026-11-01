@@ -129,7 +129,7 @@ export interface Mote {
 
 /** Partículas no mundo (em blocos): poeira, folhas, fumaça, emojis flutuando. */
 export interface Particle {
-  kind: 'dust' | 'leaf' | 'smoke' | 'emoji' | 'poof';
+  kind: 'dust' | 'leaf' | 'smoke' | 'emoji' | 'poof' | 'sparkle';
   x: number;
   y: number;
   vx: number;
