@@ -28,7 +28,7 @@ function fakeBox(placeResult: { ok: true } | { ok: false; message: string } = { 
   return { box, calls };
 }
 
-describe('CaixaView: a Arena 3D (palco virtual) e o interruptor de fundo', () => {
+describe('CaixaView: o palco da Arena (virtual, sem câmera)', () => {
   let host: HTMLElement | null = null;
   let app: VueApp | null = null;
 
@@ -55,20 +55,38 @@ describe('CaixaView: a Arena 3D (palco virtual) e o interruptor de fundo', () =>
     window.location.hash = '';
   });
 
-  it('abre sempre na Arena 3D, sem escolher câmera ou fundo', async () => {
+  it('abre sempre na Arena, sem escolher câmera ou fundo, e aponta para o menu', async () => {
     const root = await mount('#/caixa');
-    expect(root.querySelector('h2')?.textContent).toBe('Arena 3D');
-    expect(button(root, 'Entrar na Arena 3D')).toBeTruthy();
+    expect(root.querySelector('h2')?.textContent).toBe('Arena');
+    expect(button(root, 'Entrar na Arena')).toBeTruthy();
     expect(root.querySelector('.virtual-sky')).not.toBeNull();
+    expect(startBox).not.toHaveBeenCalled();
+    // Equipe, formato e PvP são escolhidos antes, no menu da Arena.
+    expect([...root.querySelectorAll('a')].some((a) => a.getAttribute('href') === '#/arena')).toBe(true);
+    expect(root.textContent).not.toContain('Batalhar com um amigo (PvP)');
+  });
+
+  it('vindo do menu da Arena (autoiniciar), o palco abre sozinho', async () => {
+    const { box } = fakeBox();
+    startBox.mockResolvedValue(box);
+    const root = await mount('#/caixa?arena=1&virtual=1&autoiniciar=1');
+    await vi.waitFor(() => expect(root.querySelector('.stage-bar')).not.toBeNull());
+    expect(startBox).toHaveBeenCalledTimes(1);
+    expect([...root.querySelectorAll('a')].some((a) => a.textContent?.includes('Voltar ao menu da Arena'))).toBe(true);
+  });
+
+  it('um endereço antigo de PvP (#/caixa?pvp=1) leva ao menu da Arena', async () => {
+    await mount('#/caixa?pvp=1&virtual=1');
+    expect(window.location.hash).toBe('#/arena?pvp=1');
     expect(startBox).not.toHaveBeenCalled();
   });
 
-  it('entrar monta a Arena 3D e a arena nasce colocada', async () => {
+  it('entrar monta a Arena e a arena nasce colocada', async () => {
     const { box, calls } = fakeBox();
     startBox.mockResolvedValue(box);
     const root = await mount('#/caixa?virtual=1');
-    expect(root.querySelector('h2')?.textContent).toBe('Arena 3D');
-    button(root, 'Entrar na Arena 3D')!.click();
+    expect(root.querySelector('h2')?.textContent).toBe('Arena');
+    button(root, 'Entrar na Arena')!.click();
     await vi.waitFor(() => expect(root.querySelector('.stage-bar')).not.toBeNull());
     expect(startBox).toHaveBeenCalledTimes(1);
     const options = startBox.mock.calls[0]![0] as { virtual?: boolean; video?: unknown; canvas: unknown; container: unknown };
@@ -90,7 +108,7 @@ describe('CaixaView: a Arena 3D (palco virtual) e o interruptor de fundo', () =>
     const { box } = fakeBox();
     startBox.mockResolvedValue(box);
     const root = await mount('#/caixa?virtual=1');
-    button(root, 'Entrar na Arena 3D')!.click();
+    button(root, 'Entrar na Arena')!.click();
     await vi.waitFor(() => expect(root.querySelector('.stage-bar')).not.toBeNull());
     [...root.querySelectorAll<HTMLButtonElement>('.stage-bar button')].find((b) => b.textContent?.includes('Ajustes'))!.click();
     await nextTick();
@@ -102,9 +120,9 @@ describe('CaixaView: a Arena 3D (palco virtual) e o interruptor de fundo', () =>
   it('se a cena não monta, mostra o erro em português e volta à tela inicial', async () => {
     startBox.mockRejectedValue(new Error('WebGL indisponível'));
     const root = await mount('#/caixa?virtual=1');
-    button(root, 'Entrar na Arena 3D')!.click();
-    await vi.waitFor(() => expect(root.textContent).toContain('Não consegui montar a Arena 3D: WebGL indisponível'));
-    expect(button(root, 'Entrar na Arena 3D')).toBeTruthy();
+    button(root, 'Entrar na Arena')!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain('Não consegui montar a Arena: WebGL indisponível'));
+    expect(button(root, 'Entrar na Arena')).toBeTruthy();
     expect(root.querySelector('.stage-bar')).toBeNull();
   });
 
@@ -112,8 +130,8 @@ describe('CaixaView: a Arena 3D (palco virtual) e o interruptor de fundo', () =>
     const { box, calls } = fakeBox({ ok: false, message: 'sem chão' });
     startBox.mockResolvedValue(box);
     const root = await mount('#/caixa?virtual=1');
-    button(root, 'Entrar na Arena 3D')!.click();
-    await vi.waitFor(() => expect(root.textContent).toContain('Não consegui montar a Arena 3D: sem chão'));
+    button(root, 'Entrar na Arena')!.click();
+    await vi.waitFor(() => expect(root.textContent).toContain('Não consegui montar a Arena: sem chão'));
     expect(calls.stop).toBe(1);
     expect(root.querySelector('.stage-bar')).toBeNull();
   });

@@ -25,7 +25,7 @@ export interface StartBoxOptions {
   /** O vídeo da câmera atrás da cena (AR). Sem ele não há corte de imagem nem luz do ambiente real. */
   video?: HTMLVideoElement;
   /**
-   * Palco virtual (Arena 3D, sem câmera): o cenário do Coliseu fica em volta da caixa, a visão começa de frente para a
+   * Palco virtual (Arena, sem câmera): o cenário do Coliseu fica em volta da caixa, a visão começa de frente para a
    * arena e só gira se o jogador arrastar; não pede nem lê os sensores. O vídeo, se vier, é ignorado.
    */
   virtual?: boolean;

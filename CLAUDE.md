@@ -4,7 +4,7 @@ Orientações para sessões do Claude Code neste repositório.
 
 ## O projeto
 
-PWA móvel (Vue 3 + TypeScript + Vite + Three.js + MindAR) que reconhece cartas físicas de Pokémon TCG pela câmera e mostra o GIF animado do Pokémon (PokeAPI/sprites) em pé sobre a carta, em AR. Também tem a Caixa (equipe solta no chão, com batalha automática de exibição) e rastreio de várias cartas. Interface sempre em português do Brasil. Estado atual e roteiro: `IMPLEMENTATION_PLAN.md`. Arquitetura: `docs/ARCHITECTURE.md`. Testes: `docs/TESTING.md`. Histórico de entregas já concluídas: `docs/HISTORICO.md`. Modo Masmorra (feito, falta e ideias): `docs/MASMORRA.md`.
+PWA móvel (Vue 3 + TypeScript + Vite + Three.js + MindAR) que reconhece cartas físicas de Pokémon TCG pela câmera e mostra o GIF animado do Pokémon (PokeAPI/sprites) em pé sobre a carta, em AR. Também tem a Caixa (equipe solta no chão, com batalha automática de exibição) e rastreio de várias cartas. Interface sempre em português do Brasil. As lutas entram por um menu único, a «Arena» (`#/arena`, `src/core/arena-menu.ts`): escolher o que fazer, equipe e opções vêm antes de entrar no palco (`#/caixa`). Estado atual e roteiro: `IMPLEMENTATION_PLAN.md`. Arquitetura: `docs/ARCHITECTURE.md`. Testes: `docs/TESTING.md`. Histórico de entregas já concluídas: `docs/HISTORICO.md`. Modo Masmorra (feito, falta e ideias): `docs/MASMORRA.md`.
 
 ## Regras que não mudam
 

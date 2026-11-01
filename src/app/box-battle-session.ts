@@ -35,7 +35,7 @@ import type { EndlessArenaMode, EndlessArenaRun } from '../core/endless-arena';
 
 /**
  * A sessão de batalha da Caixa: tudo o que acontece entre tocar em «Batalhar» e a luta acabar (batalha comum, desafio da
- * Liga, corrida 6×6 da Arena e PvP), separado da tela. Quem hospeda (a Arena 3D) cuida da
+ * Liga, corrida 6×6 da Arena e PvP), separado da tela. Quem hospeda (a Arena) cuida da
  * câmera e da cena e entrega à sessão, por `BattleSessionHost`, só o que ela precisa: a cena em execução, os Pokémon
  * carregados, a tela cheia e as folhas abertas. Não toca em DOM, câmera nem WebGL.
  */

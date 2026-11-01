@@ -46,9 +46,9 @@ describe('App', () => {
 
   it('a tela Arena abre desligada e explica como usar', async () => {
     const text = await mount('#/caixa');
-    expect(text).toContain('Arena 3D');
+    expect(text).toContain('Arena');
     expect(text).toContain('Arena desligada');
-    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('🏟️ Entrar na Arena 3D');
+    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('🏟️ Entrar na Arena');
     // A Vila tem aba própria: a Caixa não esconde mais um "Modo vida" dentro dela.
     expect(text).not.toContain('Modo vida');
     // A escolha da turma mora em Minhas cartas; a Caixa só aponta para lá.
@@ -69,16 +69,35 @@ describe('App', () => {
     expect(text).toContain('nada é lido do texto');
   });
 
-  it('a Arena separa a equipe de seis, os modos contínuos e a caixa que exibe a luta', async () => {
+  it('a Arena é um menu único em passos: escolher, equipe e opções antes de entrar', async () => {
     const text = await mount('#/arena');
-    expect(text).toContain('Arena Digital');
-    expect(text).toContain('Monte seu time de batalha');
-    expect(text).toContain('Formatação digital');
-    expect(text).toContain('Restauração digital');
-    // A Arena é sempre 3D e todos os atalhos apontam para o palco virtual.
-    const hrefs = () => [...(host?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href'));
-    expect(hrefs()).toContain('#/caixa?arena=1&virtual=1');
-    expect(hrefs()).not.toContain('#/caixa');
+    expect(host?.querySelector('#arena-title')?.textContent).toBe('Arena');
+    expect(text).not.toContain('Arena 3D');
+    expect(text).not.toContain('Arena Digital');
+    for (const title of ['Batalha livre', 'Liga e desafios', 'Corridas 6×6', 'PvP com um amigo']) expect(text).toContain(title);
+    // Sem escolha, o botão principal existe mas está desligado e a tela diz o que fazer.
+    const go = host?.querySelector<HTMLButtonElement>('button.arena-go');
+    expect(go?.disabled).toBe(true);
+    expect(text).toContain('Escolha o que quer fazer na Arena');
+    // Escolher uma opção abre os passos seguintes (equipe e opções) na mesma tela.
+    [...host!.querySelectorAll<HTMLButtonElement>('button.arena-choice')].find((b) => b.textContent?.includes('Corridas'))!.click();
+    await nextTick();
+    expect(host?.textContent).toContain('Sua equipe');
+    expect(host?.textContent).toContain('Formatação digital');
+    expect(host?.textContent).toContain('Restauração digital');
+  });
+
+  it('vindo da Liga ou do Fliperama, o menu abre já na opção certa', async () => {
+    // (O PvP abre o lobby, que fala com a rede; ele é visto no e2e e em PvpLobby.)
+    await mount('#/arena?restauracao=1');
+    expect(host?.querySelector('button.arena-choice.on')?.textContent).toContain('Corridas 6×6');
+    expect(host?.querySelector('button.arena-mode.on')?.textContent).toContain('Restauração digital');
+    app?.unmount();
+    host?.remove();
+    await mount('#/arena?batalha=1&vila=1');
+    expect(host?.querySelector('button.arena-choice.on')?.textContent).toContain('Batalha livre');
+    expect(host?.textContent).toContain('Fliperama');
+    expect(host?.querySelector('.arena-view a[href="#/vila"]')?.textContent).toContain('Voltar à Vila');
   });
 
   it('a tela Treinador mostra nível, missões e conquistas, sem inventar progresso', async () => {
@@ -144,7 +163,7 @@ describe('App', () => {
       // As lutas moram no Coliseu da Vila: a aba da Vila fica acesa e não há aba nem sub-aba delas.
       expect([...(host?.querySelectorAll('nav.tabs a.active') ?? [])].map((a) => a.textContent?.trim())).toEqual(['Vila']);
       expect(host?.querySelector('nav.modes')).toBeNull();
-      expect(host?.textContent).not.toContain('Minhas cartasArena 3D');
+      expect(host?.textContent).not.toContain('Minhas cartasArena');
       app?.unmount();
       host?.remove();
     }

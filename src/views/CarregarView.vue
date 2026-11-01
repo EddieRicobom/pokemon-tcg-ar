@@ -283,7 +283,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
 
     <div v-else class="collection-shortcuts">
       <a class="button" :href="routeHref('vila')">Ir para a Vila</a>
-      <a class="button" :href="routeHref('caixa', undefined, ['virtual'])">Arena 3D</a>
+      <a class="button" :href="routeHref('arena')">Arena</a>
     </div>
     <details v-if="teamRows.length > 0" class="team-strip">
       <summary>Moradores da Vila · {{ teamRows.length }}/{{ TEAM_SIZE }}<small v-if="team.auto"> · automática</small></summary>
@@ -436,7 +436,7 @@ onBeforeUnmount(() => thumbUrls.splice(0).forEach((url) => URL.revokeObjectURL(u
     <details v-if="digital.length > 0" class="digital-list">
       <summary>Digital Pokémon · {{ digital.length }}</summary>
       <p class="note">
-        Vêm do presente inicial e da Fonte, não de uma carta física: moram na Vila, jogam na Torre e lutam na Arena 3D
+        Vêm do presente inicial e da Fonte, não de uma carta física: moram na Vila, jogam na Torre e lutam na Arena
         com a equipe. Como não têm carta, não são escaneados nem aparecem em Várias.
       </p>
       <ul class="card-list">

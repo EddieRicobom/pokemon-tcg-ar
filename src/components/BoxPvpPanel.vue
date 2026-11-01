@@ -15,11 +15,11 @@ function onConnected(peer: PvpPeer, role: 'host' | 'guest'): void {
 const nextStep = computed<{ text: string; mine: boolean }>(() => {
   const friend = boxPvp.friend?.name ?? 'O amigo';
   if (boxPvp.role === 'host') {
-    if (!boxPvp.mine) return { text: 'a sua equipe ainda está sendo montada na Arena. Entre na Arena 3D (botão de voltar à Arena) e ela aparece aqui.', mine: true };
+    if (!boxPvp.mine) return { text: 'a sua equipe ainda está sendo montada na Arena. Toque em «Entrar na Arena» no fim do menu e ela aparece aqui.', mine: true };
     if (!boxPvp.friend) return { text: `${friend} ainda não mandou a equipe: ele precisa abrir a Arena. Você não precisa fazer nada agora.`, mine: false };
-    return { text: 'as duas equipes estão prontas. Escolha o modo acima e toque em «Batalhar» na Arena: a luta começa nos dois celulares ao mesmo tempo.', mine: true };
+    return { text: 'as duas equipes estão prontas. Escolha o modo acima, toque em «Entrar na Arena» e, lá dentro, em «Batalhar»: a luta começa nos dois celulares ao mesmo tempo.', mine: true };
   }
-  if (!boxPvp.mine) return { text: 'a sua equipe ainda está sendo montada na Arena. Entre na Arena 3D e ela aparece aqui.', mine: true };
+  if (!boxPvp.mine) return { text: 'a sua equipe ainda está sendo montada na Arena. Toque em «Entrar na Arena» no fim do menu e ela aparece aqui.', mine: true };
   if (!boxPvp.friend) return { text: 'o anfitrião ainda não mandou a equipe dele. Você não precisa fazer nada agora.', mine: false };
   return { text: 'tudo pronto. Fique na Arena: o anfitrião toca em «Batalhar» e a luta começa sozinha na sua tela, junto com a dele.', mine: false };
 });

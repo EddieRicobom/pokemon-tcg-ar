@@ -34,7 +34,7 @@ const showIosHint =
 /**
  * A barra de baixo tem só o essencial; "Várias" é modo do Escanear, e o Diagnóstico fica na engrenagem do topo. A Vila
  * tem aba própria (antes morava dentro da Caixa, atrás de um botão "Modo vida"). As lutas moram no Coliseu da Vila (o
- * diálogo do prédio oferece a Arena 3D, a Liga e as corridas 6×6). Pins também abre pela Vila: essas telas
+ * diálogo do prédio oferece a Arena, a Liga e as corridas 6×6). Pins também abre pela Vila: essas telas
  * continuam existindo e abrindo por endereço e por link, mas não têm aba nem sub-aba, e a aba da Vila fica acesa.
  */
 const tabs: { name: 'escanear' | 'vila' | 'cartas' | 'treinador'; label: string }[] = [

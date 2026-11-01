@@ -69,7 +69,7 @@ export class BoxScene {
   private creatures: BoxCreature[] = [];
   /** Fora da luta (por exemplo, os que sobram no 3x3): ficam escondidos até a batalha acabar. */
   private benched = new Set<BoxCreature>();
-  /** Arena 3D: quem não luta assiste da arquibancada (cada um no seu assento) e torce. */
+  /** Arena: quem não luta assiste da arquibancada (cada um no seu assento) e torce. */
   private spectators: { creature: BoxCreature; seat: Seat; flag: Sprite | null }[] = [];
   /** Bandeirinhas vermelha e azul (criadas na primeira torcida, compartilhadas). */
   private pennants: [DataTexture, DataTexture] | null = null;

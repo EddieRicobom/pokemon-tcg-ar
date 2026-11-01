@@ -2078,7 +2078,7 @@ button.link {
   font-size: 0.95rem;
 }
 
-/* Arena 3D (palco virtual): o céu do Coliseu fica atrás do canvas transparente, no lugar do vídeo da câmera. */
+/* Arena (palco virtual): o céu do Coliseu fica atrás do canvas transparente, no lugar do vídeo da câmera. */
 .viewport .virtual-sky {
   position: absolute;
   inset: 0;
