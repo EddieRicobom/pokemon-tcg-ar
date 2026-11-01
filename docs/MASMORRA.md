@@ -11,6 +11,9 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 | `src/core/dungeon.ts` | Regras puras: grade, PA, armas, dano, carga, troca, fusão, inimigos e IA, andares sem fim, saque, escada, forja. |
 | `src/core/dungeon-gems.ts` | Gemas: tipos, graus, bônus, efeitos lendários, sorteio e lapidação. |
 | `src/core/dungeon.test.ts` | Testes das regras (vitest). |
+| `src/core/dungeon-duel.ts` | Duelo PvP: tabuleiro espelhado, turnos, aplicação das jogadas, fim da partida e resumo de conferência. Testes em `dungeon-duel.test.ts`. |
+| `src/pvp/dungeon-wire.ts`, `src/pvp/dungeon-roster.ts` | Mensagens `dd-*` validadas e a equipe final indo e voltando pelo fio. Testes em `dungeon-wire.test.ts`. |
+| `src/components/DungeonDuel.vue` | Tela do duelo (tabuleiro girado para o convidado, orientação, comandos, equipe do amigo, resultado). |
 | `src/components/DungeonGame.vue` | Tela: escolha da equipe, grade, turno inimigo animado, painéis, fusão, forja, escada e fim. |
 | `src/components/WeaponArt.vue` | Desenho em SVG de cada arma base, com a orbe do Pokémon de origem. |
 | `src/components/FusionArt.vue` | Arte genérica de fusão: as duas armas de origem sobrepostas, com nome e origens. |
@@ -53,6 +56,31 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 - **Ao sair com o espólio:** 5 moedas por andar alcançado (pela carteira, então o bônus de Zapdos vale), 1 Love Candy por chefe vencido (até 3) e 1 fragmento Ômega a cada 10 andares; as melhores gemas da expedição (lendárias primeiro, depois o grau) vão para o cofre, que guarda 12. Só as 3 primeiras expedições do dia são premiadas; as outras guardam gemas e recorde.
 - **Quem cai** não leva prêmio e perde as gemas da expedição; o recorde fica.
 - Tudo fica no estado da Vila (`dungeon`: cofre, teto do dia e recorde), então entra no backup. Regras em `src/core/dungeon-village.ts`, com testes.
+
+### Duelo com um amigo (PvP)
+Na tela de escolha, **👥 Duelo com um amigo** abre o lobby público (`PvpLobby game="dungeon"`): sala com código curto de 4 letras ou toque numa sala da lista. Arquitetura e mensagens: `docs/ARCHITECTURE.md` («PvP da Masmorra»). Regras em `src/core/dungeon-duel.ts` (puras, com `dungeon-duel.test.ts`), tela em `DungeonDuel.vue`.
+
+**Como é a partida**
+1. **Escolha.** Cada um escolhe o Pokémon inicial e toca em «Estou pronto». A tela mostra se o amigo já está pronto. Sem cofre nem marmita da Vila: os dois começam iguais.
+2. **Descida (4 andares).** O anfitrião sorteia a semente; cada um desce os seus 4 andares sozinho, na própria tela, com a Pokébola, as gemas, a Forja e as fusões de sempre (andares e inimigos saem iguais para os dois, mas cada equipe é diferente). O cabeçalho diz «faltam N andar(es) p/ o duelo» e, ao lado, o que o amigo está fazendo («👥 Ana: andar 3/4 · 2 inimigo(s)» ou «pronto para o duelo ✅»). Não existe «Sair com o espólio»: há **🏳️ Desistir** (dois toques). Quem cai antes do duelo perde na hora (o amigo vence; empate se caírem juntos).
+3. **Portão do duelo (4º andar).** Vencido o 4º andar, a escada vira o portão: ainda dá para pegar o saque e usar a Forja; «Ir ao duelo» envia a equipe (vida e carga como estão) e **trava a equipe**. Quem chega primeiro espera, vendo o andar do amigo.
+4. **Duelo em turnos** na mesma grade 7×7, com os mesmos pilares para os dois (em pares espelhados). A vez inicial sai da semente. Cada turno tem 6 PA (7 com a Ampulheta) para **mover, atacar, trocar, poção, fusão e escolher a munição**, com as armas, mecanismos, cargas, esgotamento, gemas e fusões da expedição; o Pokémon em campo do adversário é o alvo. Quem tem a vez vê «🟢 Sua vez» e os PA; fora da vez vê «⏳ Vez de …» e cada jogada do amigo aparece na hora (números de dano/cura e o impacto da arma). Quem fica sem Pokémon de pé perde; o limite é de 30 rodadas (vence quem tem mais vida em %, ou empate). **Desistir** (dois toques) e **desconexão** terminam com aviso claro: quem fica vence.
+5. **Sem prêmio.** Sem moedas, XP, gemas, recorde nem missão: o duelo não rende nada (como o PvP de Pins), para não virar fazenda.
+
+**Regras próprias do duelo (números de protótipo, sem balanceamento)**
+- O dano do duelo é `DUEL_DAMAGE` = 70% do da expedição (dá tempo de trocar e fundir antes de alguém cair). Cada ação gasta os mesmos PA e carga de sempre.
+- A troca é grátis para quem tem o ativo caído ou esgotado. Se o ativo do adversário cai no meio do seu turno, o próximo pronto assume sozinho (como na expedição) e você segue atacando. Esgotar a carga **não** derrota ninguém, como na expedição: o esgotado volta depois de 2 rodadas.
+- Bloqueio, barreiras, abalo, queimadura e armadilhas funcionam contra o adversário. O bloqueio dura até o fim do turno dele; a queimadura castiga no fim do turno de quem queimou, por 2 vezes; as armadilhas dele disparam quando você termina um movimento na casa (não nas casas do meio do caminho); armadilhas aparecem para os dois lados.
+- A casa especial (água/lava) não existe no duelo, e o cenário é só visual (a geração sorteia a paleta e o bônus «em casa»).
+
+**Orientação na tela**
+- Uma linha fixa sob o tabuleiro diz o que fazer agora (vez do amigo; escolher quem assume; «toque numa casa azul»; dano previsto e «toque de novo para atacar»; «sem PA: encerre o turno»…), sempre no mesmo lugar, nunca em janela por cima do jogo. O botão «Encerrar» pulsa quando os PA acabaram. A única janela do duelo é o resultado final.
+- Controles iguais aos da expedição (toque, ou teclas 1–6, M, A, E, Enter, Esc no PC). Tocar numa casa alcançável sem escolher ação seleciona-a e um segundo toque anda.
+- A equipe do amigo aparece em miniatura no alto (quem está em campo, quem caiu, vida de cada um).
+
+**O que não foi verificado**
+- Dois navegadores reais ligados pelo lobby, com a descida completa: nada foi visto rodando (a sessão que escreveu o modo não tinha Node; a verificação é o CI do pull request). Em aparelho real faltam: conexão WebRTC entre redes, toque e layout a 375 px, desempenho e a sensação de balanceamento.
+- Não há relógio de turno (um amigo parado trava a vez), nem som próprio do duelo, nem repetição da partida.
 
 ### Descida sem fim
 - Não existe último andar. A expedição só termina quando a equipe cai ou quando você escolhe **Sair com o espólio** na escada.

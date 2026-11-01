@@ -7,6 +7,8 @@ import { createArenaGrid, TERRAIN_COLS } from '../core/pin-terrain';
 import { POKEMON_TYPES, STAT_ORDER } from '../core/pokemon-data';
 import type { BaseStats, CardAttack, PokemonType } from '../core/pokemon-data';
 import { MAX_BACKUP_TRANSFER_BYTES, MAX_BACKUP_TRANSFER_CHUNKS } from './backup-transfer';
+import { parseDungeonMessage } from './dungeon-wire';
+import type { DungeonWireMessage } from './dungeon-wire';
 
 /**
  * PvP do Pin Mode: as mensagens entre os dois celulares e a tradução entre o mundo de cada um e o que vai pelo fio.
@@ -59,6 +61,7 @@ export interface WireInit extends WireWorld {
 
 export type WireMessage =
   | BoxWireMessage
+  | DungeonWireMessage
   | { t: 'hello'; v: number }
   | { t: 'team'; ready: boolean; specs: WireSpec[] }
   | { t: 'options'; shrink: boolean; marks: boolean }
@@ -339,6 +342,14 @@ export function parseMessage(raw: unknown): WireMessage | null {
     case 'cx-ready':
     case 'cx-go':
       return parseBoxMessage(v);
+    case 'dd-ready':
+    case 'dd-start':
+    case 'dd-prog':
+    case 'dd-team':
+    case 'dd-act':
+    case 'dd-desync':
+    case 'dd-forfeit':
+      return parseDungeonMessage(v);
     case 'bye':
     case 'ping':
     case 'pong':
