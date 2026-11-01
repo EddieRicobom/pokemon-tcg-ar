@@ -8,6 +8,9 @@ import { profile } from '../app/profile-store';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import { SV_RUN_MS, SV_RUNS, svMonFromRun } from '../core/survivor-pvp';
 import type { SvMonSpec, SvRunResult } from '../core/survivor-pvp';
+import { acceptTaunt, isRareBuff, TAUNTS, tauntCooldownLeft, tauntLabel } from '../core/survivor-taunts';
+import type { TauntId } from '../core/survivor-taunts';
+import type { SurvivorUpgradeRarity } from '../core/survivor-types';
 import type { PvpPeer } from '../pvp/peer';
 import { SurvivalGuestLink, SurvivalHostLink } from '../pvp/survival-link';
 import type { WireMessage } from '../pvp/wire';
@@ -36,6 +39,25 @@ const closed = ref(false);
 const notice = ref('');
 const leaveArmed = ref(false);
 
+// Provocações e avisos de buff: pequenos, nos cantos, somem sozinhos e nunca pedem toque.
+const MUTE_KEY = 'tcg-ar-svpvp-mute-v1';
+const readMute = (): boolean => {
+  try {
+    return localStorage.getItem(MUTE_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+const muted = ref(readMute());
+const fanOpen = ref(false);
+const tauntLeft = ref(0);
+const notices = ref<{ id: number; text: string; tone: 'taunt' | 'buff' | 'rare' }[]>([]);
+let lastTauntSent = -Infinity;
+let lastTauntShown = -Infinity;
+let noticeId = 0;
+let cooldownTimer: ReturnType<typeof setInterval> | null = null;
+let fanTimer: ReturnType<typeof setTimeout> | null = null;
+
 let peer: PvpPeer | null = null;
 let guestReady = false;
 let myPreloadDone = false;
@@ -56,6 +78,48 @@ const progress = computed(() => {
   if (phase.value === 'loading') return 'Preparando a arena…';
   return `Contra ${friendName.value}`;
 });
+
+function notify(text: string, tone: 'taunt' | 'buff' | 'rare', ms = 3500): void {
+  const id = ++noticeId;
+  notices.value = [{ id, text, tone }];
+  setTimeout(() => (notices.value = notices.value.filter((n) => n.id !== id)), ms);
+}
+
+function toggleFan(): void {
+  fanOpen.value = !fanOpen.value;
+  if (fanTimer) clearTimeout(fanTimer);
+  if (fanOpen.value) fanTimer = setTimeout(() => (fanOpen.value = false), 5000);
+}
+
+function toggleMute(): void {
+  muted.value = !muted.value;
+  try {
+    localStorage.setItem(MUTE_KEY, muted.value ? '1' : '0');
+  } catch { /* sem armazenamento: vale só nesta partida */ }
+}
+
+function sendTaunt(id: TauntId): void {
+  const now = performance.now();
+  if (tauntCooldownLeft(lastTauntSent, now) > 0) return;
+  lastTauntSent = now;
+  send({ t: 'taunt', id });
+  notify(`Você: ${tauntLabel(id)}`, 'taunt', 1800);
+  fanOpen.value = false;
+  tauntLeft.value = Math.ceil(tauntCooldownLeft(lastTauntSent, now) / 1000);
+  if (cooldownTimer) clearInterval(cooldownTimer);
+  cooldownTimer = setInterval(() => {
+    tauntLeft.value = Math.ceil(tauntCooldownLeft(lastTauntSent, performance.now()) / 1000);
+    if (tauntLeft.value <= 0 && cooldownTimer) {
+      clearInterval(cooldownTimer);
+      cooldownTimer = null;
+    }
+  }, 250);
+}
+
+/** O buff que acabei de pegar na run vai para o rival. */
+function onBuff(buff: { id: string; name: string; rarity: SurvivorUpgradeRarity }): void {
+  send({ t: 'buff-event', id: buff.id, name: buff.name, rarity: buff.rarity });
+}
 
 const send = (msg: WireMessage): void => {
   peer?.send(msg);
@@ -96,6 +160,16 @@ function onMessage(msg: WireMessage): void {
       break;
     case 'sv-go':
       if (role.value === 'guest' && phase.value === 'loading' && link.value) phase.value = 'arena';
+      break;
+    case 'taunt': {
+      const now = performance.now();
+      if (muted.value || !acceptTaunt(lastTauntShown, now)) break;
+      lastTauntShown = now;
+      notify(`${friendName.value}: ${tauntLabel(msg.id)}`, 'taunt');
+      break;
+    }
+    case 'buff-event':
+      notify(`${friendName.value} pegou ${msg.name}!`, isRareBuff(msg.rarity) ? 'rare' : 'buff', isRareBuff(msg.rarity) ? 4500 : 3000);
       break;
     case 'sv-input':
       if (link.value instanceof SurvivalHostLink) link.value.receive(msg);
@@ -213,6 +287,8 @@ function detach(): void {
 
 onBeforeUnmount(() => {
   if (leaveTimer) clearTimeout(leaveTimer);
+  if (fanTimer) clearTimeout(fanTimer);
+  if (cooldownTimer) clearInterval(cooldownTimer);
   detach();
 });
 </script>
@@ -223,8 +299,17 @@ onBeforeUnmount(() => {
     <template v-else>
       <header class="svpvp-strip">
         <span class="svpvp-progress" role="status">⚔ {{ progress }}</span>
+        <button type="button" class="link svpvp-taunt-btn" :aria-expanded="fanOpen" aria-label="Provocações para o rival" @click="toggleFan">💬{{ tauntLeft > 0 ? ` ${tauntLeft}` : '' }}</button>
         <button type="button" class="link svpvp-leave" @click="askLeave">{{ leaveArmed ? 'Toque de novo para sair' : 'Sair do PvP' }}</button>
       </header>
+
+      <div v-if="fanOpen" class="svpvp-fan" role="group" aria-label="Provocações">
+        <button v-for="t in TAUNTS" :key="t.id" type="button" :disabled="tauntLeft > 0" @click="sendTaunt(t.id)">{{ t.label }}</button>
+        <button type="button" class="mute" :aria-pressed="muted" @click="toggleMute">{{ muted ? '🔇 Provocações do rival silenciadas' : '🔊 Silenciar provocações do rival' }}</button>
+      </div>
+      <ul class="svpvp-notices" aria-live="polite">
+        <li v-for="n in notices" :key="n.id" :class="n.tone">{{ n.tone === 'rare' ? '✨ ' : '' }}{{ n.text }}</li>
+      </ul>
 
       <MinigameSobrevivencia
         v-if="phase === 'runs' && !closed"
@@ -233,6 +318,7 @@ onBeforeUnmount(() => {
         :accessories="accessories"
         :pvp-run="pvpRunProp"
         @pvp-run-done="onRunDone"
+        @pvp-buff="onBuff"
         @leave="leaveNow"
       />
 
@@ -357,5 +443,80 @@ onBeforeUnmount(() => {
 .svpvp-missing {
   margin: 0;
   text-align: center;
+}
+
+.svpvp {
+  position: relative;
+}
+
+.svpvp-taunt-btn {
+  min-height: 36px;
+  min-width: 44px;
+  color: inherit;
+}
+
+.svpvp-fan {
+  position: absolute;
+  right: 12px;
+  top: 44px;
+  z-index: 20;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(10, 14, 24, 0.94);
+  border: 1px solid var(--line);
+}
+
+.svpvp-fan button {
+  min-height: 40px;
+  padding: 4px 10px;
+  text-align: left;
+}
+
+.svpvp-fan .mute {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.svpvp-notices {
+  /* Uma faixa fixa sob a barra: o aviso nunca cobre o jogo nem muda o tamanho da tela. */
+  min-height: 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.svpvp-notices li {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  animation: svpvp-fade 3.5s ease-out both;
+}
+
+.svpvp-notices li.rare {
+  background: rgba(150, 100, 0, 0.9);
+  border: 1px solid #ffd84a;
+  font-size: 0.8rem;
+}
+
+@keyframes svpvp-fade {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .svpvp-notices li {
+    animation: none;
+  }
 }
 </style>

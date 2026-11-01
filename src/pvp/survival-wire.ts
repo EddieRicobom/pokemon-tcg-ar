@@ -1,3 +1,6 @@
+import { isBuffRarity, isTauntId } from '../core/survivor-taunts';
+import type { TauntId } from '../core/survivor-taunts';
+import type { SurvivorUpgradeRarity } from '../core/survivor-types';
 import { POKEMON_TYPES } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SV_ARENA_H, SV_ARENA_W, SV_LIMITS, SV_TEAM_SIZE } from '../core/survivor-pvp';
@@ -23,7 +26,11 @@ export type SurvivalWireMessage =
   /** Convidado → anfitrião: para onde andar e quem quer em campo. `seq` cresce a cada envio. */
   | { t: 'sv-input'; seq: number; dx: number; dy: number; switchTo: number }
   /** Anfitrião → convidado: o estado da arena e o que aconteceu desde o último. */
-  | { t: 'sv-snap'; snap: ArenaSnapshot; events: ArenaEvent[] };
+  | { t: 'sv-snap'; snap: ArenaSnapshot; events: ArenaEvent[] }
+  /** Provocação de uma lista fixa (nunca texto livre). */
+  | { t: 'taunt'; id: TauntId }
+  /** Peguei uma carta de melhoria na run: id e raridade das regras reais, nome só para mostrar. */
+  | { t: 'buff-event'; id: string; name: string; rarity: SurvivorUpgradeRarity };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isNum = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
@@ -122,6 +129,12 @@ export function parseSurvivalMessage(v: Record<string, unknown>): SurvivalWireMe
       const events = parseEvents(v.events);
       return snap && events ? { t: 'sv-snap', snap, events } : null;
     }
+    case 'taunt':
+      return isTauntId(v.id) ? { t: 'taunt', id: v.id } : null;
+    case 'buff-event':
+      return isStr(v.id, 80) && v.id.length > 0 && isStr(v.name, 40) && v.name.length > 0 && isBuffRarity(v.rarity)
+        ? { t: 'buff-event', id: v.id, name: v.name, rarity: v.rarity }
+        : null;
     default:
       return null;
   }

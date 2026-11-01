@@ -174,3 +174,16 @@ describe('survival pvp: validação do fio', () => {
     expect(parseMessage(JSON.stringify({ t: 'sv-snap', snap: JSON.parse(encodeMessage(good())).snap, events: [{ k: 'hit', side: 0, damage: -1, mult: 1 }] }))).toBeNull();
   });
 });
+
+describe('survival pvp: provocações e avisos de buff no fio', () => {
+  it('aceita só ids da lista fixa e buffs com raridade conhecida', () => {
+    for (const id of ['boa-sorte', 'vem', 'consegue', 'ops']) expect(parseMessage(JSON.stringify({ t: 'taunt', id }))).toEqual({ t: 'taunt', id });
+    expect(parseMessage(JSON.stringify({ t: 'taunt', id: 'você é fraco' }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ t: 'taunt' }))).toBeNull();
+    const buff = { t: 'buff-event', id: 'power', name: 'Garra afiada', rarity: 'raro' };
+    expect(parseMessage(JSON.stringify(buff))).toEqual(buff);
+    expect(parseMessage(JSON.stringify({ ...buff, rarity: 'mítico' }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ ...buff, name: 'x'.repeat(41) }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ ...buff, id: '' }))).toBeNull();
+  });
+});

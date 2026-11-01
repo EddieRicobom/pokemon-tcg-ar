@@ -349,6 +349,8 @@ export function parseMessage(raw: unknown): WireMessage | null {
     case 'sv-go':
     case 'sv-input':
     case 'sv-snap':
+    case 'taunt':
+    case 'buff-event':
       return parseSurvivalMessage(v);
     case 'bye':
     case 'ping':

@@ -140,7 +140,7 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
  * mesmo jeito que a Pista de Pins (`recordEvent({ type: 'minigame', game: 'sobrevivencia', ... })`), sem entrar
  * no catálogo de minigames do Fliperama (`core/minigames.ts`).
  */
-const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }, runId: string]; pvpRunDone: [result: SvRunResult]; openPvp: [] }>();
+const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }, runId: string]; pvpRunDone: [result: SvRunResult]; openPvp: []; pvpBuff: [buff: { id: string; name: string; rarity: SurvivorUpgradeRarity }] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
 const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string; shiny?: boolean; accessory?: string | null }[]; accessories?: Record<string, string | null | undefined>; /** Abre já com o modo BONK escolhido (atalho da Vila). */ startBonk?: boolean;
   /** Run do PvP do Survival: tempo limitado, nada da Vila entra, nada é gravado (moedas, recordes, Torre) e o fim vira `pvpRunDone`. */
@@ -2086,8 +2086,10 @@ function loop(ts: number): void {
 function chooseUpgrade(id: string): void {
   if (!state.value || upgradeMenuLocked.value) return;
   if (banMode.value) { banUpgradeCard(id); return; }
+  const pickedBuff = props.pvpRun ? pendingUpgrade.value?.find((option) => option.id === id) : undefined;
   const tierBefore = survivorProjectileTier(state.value.player);
   const events = applyUpgrade(state.value, id);
+  if (pickedBuff) emit('pvpBuff', { id: pickedBuff.id, name: pickedBuff.name.slice(0, 40), rarity: pickedBuff.rarity ?? 'normal' });
   playSound('success');
   const tierAfter = survivorProjectileTier(state.value.player);
   if (state.value.player.move.category === 'projetil' && tierAfter > tierBefore) {
