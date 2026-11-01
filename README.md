@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="public/icons/icon-512.png" width="128" alt="Pokémon TCG AR" />
+<img src="public/icons/icon-512.png" width="128" alt="Digital Holo" />
 
-# Pokémon TCG AR
+# Digital Holo
 
 **Uma carta física vira uma porta para uma pequena aventura.**
 
@@ -28,7 +28,7 @@ Escaneie cartas reais, veja o Pokémon em AR, cuide da sua Vila e leve sua cole�
 
 ## O que é
 
-Pokémon TCG AR é uma PWA mobile-first que combina coleção física, reconhecimento visual e uma Vila persistente. A carta precisa estar realmente na câmera: o app não simula reconhecimento, não sorteia uma carta e não coloca um Pokémon no espaço sem rastreamento.
+Digital Holo é uma PWA mobile-first que combina coleção física, reconhecimento visual e uma Vila persistente. A carta precisa estar realmente na câmera: o app não simula reconhecimento, não sorteia uma carta e não coloca um Pokémon no espaço sem rastreamento.
 
 O projeto é totalmente estático e roda no GitHub Pages. Não há servidor próprio, conta obrigatória ou banco remoto. O progresso fica no navegador e pode ser exportado para backup.
 

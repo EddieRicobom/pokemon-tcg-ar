@@ -74,7 +74,7 @@ watch(
   <main class="app">
     <header class="app-header">
       <span class="brand-mark" aria-hidden="true"></span>
-      <h1>Pokémon TCG AR</h1>
+      <h1>Digital Holo</h1>
       <a
         class="header-gear"
         :href="routeHref('diagnostico')"
