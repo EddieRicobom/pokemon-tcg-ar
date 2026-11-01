@@ -1,4 +1,4 @@
-import { HAS_TURN, PvpPeer } from './peer';
+import { HAS_TURN, NO_CANDIDATES_MESSAGE, NoCandidatesError, PvpPeer } from './peer';
 import { pvpLog } from './pvp-log';
 import type { CloseReason, PeerState } from './peer';
 import { randomId, SIGNAL_ROOT } from './signal';
@@ -301,8 +301,9 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
           }
         };
         announce();
-      } catch {
-        handlers.onError(WEBRTC_PROBLEM);
+      } catch (e) {
+        pvpLog('HX', e instanceof NoCandidatesError ? 'sem-candidatos' : 'erro');
+        handlers.onError(e instanceof NoCandidatesError ? NO_CANDIDATES_MESSAGE : WEBRTC_PROBLEM);
         stop(true);
       } finally {
         preparing = false;

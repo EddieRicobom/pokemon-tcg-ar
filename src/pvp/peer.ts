@@ -37,6 +37,21 @@ const GATHER_TIMEOUT_MS = 4500;
 const PING_EVERY_MS = 3500;
 const SILENCE_LIMIT_MS = 13000;
 
+/** O navegador terminou de coletar endereços de rede sem achar nenhum: não há por onde ligar os celulares. */
+export class NoCandidatesError extends Error {
+  constructor() {
+    super('sem candidatos de rede');
+  }
+}
+
+export const NO_CANDIDATES_MESSAGE =
+  'Este navegador não gerou nenhum endereço de rede para a conexão (WebRTC bloqueado). Desligue VPN, modo privado ou extensões de privacidade e tente no Chrome ou no Safari atualizados.';
+
+/** Quantos candidatos de rede há num SDP. */
+export function countCandidates(sdp: string): number {
+  return (sdp.match(/^a=candidate:/gm) ?? []).length;
+}
+
 export type PeerState = 'new' | 'connecting' | 'open' | 'closed';
 export type CloseReason = 'local' | 'remote' | 'timeout' | 'failed';
 
@@ -66,6 +81,16 @@ export class PvpPeer {
       if (s === 'failed') this.finish('failed');
       else if (s === 'closed') this.finish('remote');
     };
+    // Cada candidato que o navegador acha, em código curto: «K host/udp», «K srflx/udp», «K host/udp/m» (endereço oculto por mDNS).
+    this.pc.onicecandidate = (e) => {
+      const c = e.candidate;
+      if (c) pvpLog('K', `${c.type ?? '?'}/${c.protocol ?? '?'}${c.address?.endsWith('.local') ? '/m' : ''}`);
+    };
+    this.pc.onicecandidateerror = (e) => {
+      const ev = e as RTCPeerConnectionIceErrorEvent;
+      pvpLog('KE', `${ev.errorCode} ${(ev.url ?? '').slice(0, 24)}`);
+    };
+    pvpLog('UA', shortAgent());
     this.pc.oniceconnectionstatechange = () => {
       const s = this.pc.iceConnectionState;
       pvpLog(`I:${s}`);
@@ -74,6 +99,7 @@ export class PvpPeer {
   }
 
   /** Registra o caminho escolhido (ex.: «P:host-srflx»: candidato local host, remoto srflx). */
+  /** Estado de coleta e de conexão, para o diário. */
   private async logPath(): Promise<void> {
     try {
       const stats = await this.pc.getStats();
@@ -98,9 +124,14 @@ export class PvpPeer {
     const peer = new PvpPeer(options);
     peer.attach(peer.pc.createDataChannel('pins', { ordered: true }));
     peer.setState('connecting');
-    await peer.pc.setLocalDescription(await peer.pc.createOffer());
-    await peer.gathered();
-    return { peer, code: await encodeCode('offer', peer.pc.localDescription!.sdp) };
+    try {
+      await peer.pc.setLocalDescription(await peer.pc.createOffer());
+      await peer.gathered();
+      return { peer, code: await encodeCode('offer', peer.pc.localDescription!.sdp) };
+    } catch (e) {
+      peer.close();
+      throw e;
+    }
   }
 
   /** O convidado: lê o convite e gera a resposta (`code`) para o anfitrião colar. A conexão abre sozinha depois disso. */
@@ -114,8 +145,9 @@ export class PvpPeer {
       await peer.pc.setRemoteDescription({ type: 'offer', sdp: decoded.sdp });
       await peer.pc.setLocalDescription(await peer.pc.createAnswer());
       await peer.gathered();
-    } catch {
+    } catch (e) {
       peer.close();
+      if (e instanceof NoCandidatesError) return { ok: false, message: NO_CANDIDATES_MESSAGE };
       return { ok: false, message: 'Não consegui ler esse convite. Peça um código novo ao anfitrião.' };
     }
     return { ok: true, peer, code: await encodeCode('answer', peer.pc.localDescription!.sdp) };
@@ -180,17 +212,30 @@ export class PvpPeer {
 
   private gathered(): Promise<void> {
     const started = Date.now();
-    const report = () => pvpLog(`C ${candidateSummary(this.pc.localDescription?.sdp ?? '')}`, `${Date.now() - started}ms`);
+    const report = () => {
+      const sdp = this.pc.localDescription?.sdp ?? '';
+      pvpLog(`C ${candidateSummary(sdp)}`, `${Date.now() - started}ms`);
+      // Sem nenhum endereço o outro celular não tem para onde ligar: falha já, com a explicação, em vez de esperar 30 s.
+      if (countCandidates(sdp) === 0) throw new NoCandidatesError();
+    };
     if (this.pc.iceGatheringState === 'complete') {
-      report();
-      return Promise.resolve();
+      try {
+        report();
+        return Promise.resolve();
+      } catch (e) {
+        return Promise.reject(e);
+      }
     }
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const done = () => {
         clearTimeout(timeout);
         this.pc.removeEventListener('icegatheringstatechange', check);
-        report();
-        resolve();
+        try {
+          report();
+          resolve();
+        } catch (e) {
+          reject(e);
+        }
       };
       const check = () => {
         if (this.pc.iceGatheringState === 'complete') done();
@@ -260,4 +305,12 @@ export class PvpPeer {
       /* já fechado */
     }
   }
+}
+
+/** Navegador e sistema em poucas letras («Cr/And», «Sf/iOS»), só para o diário. */
+function shortAgent(): string {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+  const browser = /Edg\//.test(ua) ? 'Ed' : /Firefox\//.test(ua) ? 'Fx' : /(Chrome|CriOS)\//.test(ua) ? 'Cr' : /Safari\//.test(ua) ? 'Sf' : '?';
+  const os = /Android/.test(ua) ? 'And' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Win' : /Mac OS/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Lin' : '?';
+  return `${browser}/${os}`;
 }
