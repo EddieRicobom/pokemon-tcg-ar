@@ -1,5 +1,7 @@
 # Regras do duelo por turnos da Arena
 
+> **Menu da Arena** (`#/arena`): a entrada da Arena é um menu em quatro passos (o que fazer, equipe, opções, entrar), descrito em `docs/ARCHITECTURE.md` («O menu único da Arena»). O duelo por turnos abaixo fica em «Mais opções» do menu; a batalha livre, a Liga, as corridas 6×6 e o PvP abrem o palco depois das escolhas.
+
 Resumo das regras dos jogos (Gen VI em diante) que o duelo por turnos (`src/core/turn-battle.ts`) segue, do que ainda falta
 e de onde vêm os dados. Fontes: Bulbapedia (Damage, Critical hit, Stat), Smogon (prioridade, condições, armadilhas),
 Dragonfly Cave (mecânicas) e a documentação da PokéAPI (`Move`, `MoveMeta`).
@@ -77,7 +79,7 @@ num alvo que ainda pode recebê-la; alta de atributo com PS acima de 60%; queda 
 - Tóxico conta como veneno comum (a PokéAPI marca o ailment como `poison`); o veneno crescente ainda não existe.
 - Sem habilidades, itens, clima, campos, armadilhas de entrada, Proteger, golpes de vários turnos, carga ou recarga.
 - Ninguém troca de Pokémon automaticamente no lado do oponente, só quando um desmaia.
-- A batalha automática da Caixa / Arena 3D (`core/battle.ts`) usa só os golpes de dano do conjunto e continua com as
+- A batalha automática da Arena (`core/battle.ts`, escolhida no menu da Arena) usa só os golpes de dano do conjunto e continua com as
   regras dela (condições por tipo do golpe, crítico 1/16).
 
 Próximos passos sugeridos pela pesquisa, em ordem: Proteger (chance que cai se repetido), clima (Sol/Chuva ×1,5 em
