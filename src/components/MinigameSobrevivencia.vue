@@ -2057,6 +2057,23 @@ function checkPvpRun(s: SurvivorState): void {
     kills: s.kills,
     level: s.player.level,
     defeated: s.over,
+    combat: {
+      moveName: s.player.move.name,
+      category: s.player.move.category,
+      effect: s.player.move.effect,
+      maxHp: Math.round(s.player.maxHp),
+      power: Math.round(s.player.attackDamage),
+      speed: s.player.speed,
+      cooldownMs: Math.round(s.player.attackCooldownMs),
+      projectileSpeed: s.player.projectileSpeed,
+      projectileSize: s.player.projectileSize,
+      shots: s.player.shots,
+      pierce: s.player.pierce,
+      attackRange: s.player.attackRange,
+      attackRadius: s.player.attackRadius,
+      critChance: s.player.critChance ?? 0,
+      buffs: Object.keys(s.player.upgradeLevels).filter((id) => (s.player.upgradeLevels[id] ?? 0) > 0),
+    },
   });
 }
 

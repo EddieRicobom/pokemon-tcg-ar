@@ -47,6 +47,19 @@ describe('survival pvp: da run para o Pokémon', () => {
     expect(strong.power).toBeGreaterThanOrEqual(weak.power);
     expect(strong.maxHp / weak.maxHp).toBeLessThanOrEqual(1.31);
   });
+
+  it('leva os buffs e a forma real do golpe para a arena', () => {
+    const fromRun = svMonFromRun(run({
+      combat: {
+        moveName: 'Nuvem tóxica', category: 'area', effect: 'queimar', maxHp: 420, power: 84, speed: 160,
+        cooldownMs: 480, projectileSpeed: 510, projectileSize: 12, shots: 3, pierce: 2, attackRange: 230,
+        attackRadius: 92, critChance: 0.2, buffs: ['power', 'multishot', 'pierce'],
+      },
+    }), 'a');
+    expect(fromRun).toMatchObject({ maxHp: 420, power: 84, moveCategory: 'area', moveEffect: 'queimar', shots: 3, pierce: 2 });
+    expect(fromRun.speed).toBeGreaterThan(160);
+    expect(fromRun.buffs).toEqual(['power', 'multishot', 'pierce']);
+  });
 });
 
 describe('survival pvp: a arena', () => {
@@ -96,6 +109,32 @@ describe('survival pvp: a arena', () => {
     expect(lost(neutral)).toBeGreaterThan(0);
     expect(lost(weak)).toBeGreaterThan(lost(neutral));
     expect(lost(immune)).toBe(0);
+  });
+
+  it('avisa a área por 1,5 s e deixa o alvo sair antes do dano', () => {
+    const s = createArena(
+      [mon('a', { fireMs: 250, power: 40, moveCategory: 'area', attackRadius: 80 })],
+      [mon('x', { fireMs: 2000 })],
+    );
+    begin(s);
+    const warning = Array.from({ length: 13 }, () => stepArena(s, [NO_INPUT, NO_INPUT], 50)).flat();
+    expect(warning.some((event) => event.k === 'telegraph')).toBe(true);
+    expect(s.markers).toHaveLength(1);
+    const hp = s.sides[1].mons[0]!.hp;
+    run60(s, 1000);
+    expect(s.sides[1].mons[0]!.hp).toBe(hp);
+    run60(s, 600);
+    expect(s.sides[1].mons[0]!.hp).toBeLessThan(hp);
+
+    const dodge = createArena(
+      [mon('a', { fireMs: 250, power: 40, moveCategory: 'area', attackRadius: 80 })],
+      [mon('x', { fireMs: 2000 })],
+    );
+    begin(dodge);
+    run60(dodge, 650);
+    run60(dodge, 1400, NO_INPUT, { dx: 1, dy: 0, switchTo: -1 });
+    stepArena(dodge, [NO_INPUT, { dx: 1, dy: 0, switchTo: -1 }], 120);
+    expect(dodge.sides[1].mons[0]!.hp).toBe(dodge.sides[1].mons[0]!.maxHp);
   });
 
   it('a vida de cada Pokémon se mantém entre trocas', () => {

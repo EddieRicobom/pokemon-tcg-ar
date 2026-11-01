@@ -60,6 +60,8 @@ Este arquivo reúne três coisas: o que já está pronto, o que ainda falta para
 ### Duelo com um amigo (PvP)
 Na tela de escolha, **👥 Duelo com um amigo** abre o lobby público (`PvpLobby game="dungeon"`): sala com código curto de 4 letras ou toque numa sala da lista. Arquitetura e mensagens: `docs/ARCHITECTURE.md` («PvP da Masmorra»). Regras em `src/core/dungeon-duel.ts` (puras, com `dungeon-duel.test.ts`), tela em `DungeonDuel.vue`.
 
+Em telas estreitas, o tabuleiro conserva uma largura baseada na tela e o conteúdo restante rola dentro da Masmorra; ações e a ficha da arma não são comprimidas nem encobrem o mapa. A ficha de fusão passa a empilhar a arte e os atributos, para não deixar uma coluna escapar lateralmente. Ainda falta uma checagem em aparelhos físicos: os testes e o build não medem o toque, a barra do sistema ou a altura útil de cada navegador móvel.
+
 **Como é a partida**
 1. **Escolha.** Cada um escolhe o Pokémon inicial e toca em «Estou pronto». A tela mostra se o amigo já está pronto. Sem cofre nem marmita da Vila: os dois começam iguais.
 2. **Descida (4 andares).** O anfitrião sorteia a semente; cada um desce os seus 4 andares sozinho, na própria tela, com a Pokébola, as gemas, a Forja e as fusões de sempre (andares e inimigos saem iguais para os dois, mas cada equipe é diferente). O cabeçalho diz «faltam N andar(es) p/ o duelo» e, ao lado, o que o amigo está fazendo («👥 Ana: andar 3/4 · 2 inimigo(s)» ou «pronto para o duelo ✅»). Não existe «Sair com o espólio»: há **🏳️ Desistir** (dois toques). Quem cai antes do duelo perde na hora (o amigo vence; empate se caírem juntos).

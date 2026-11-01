@@ -1507,8 +1507,8 @@ button.small { min-height: 30px; padding: 0 10px; border-radius: 8px; margin-lef
 button:disabled { opacity: 0.5; }
 
 .dg-run { display: flex; flex-direction: column; gap: 8px; max-width: 540px; margin: 0 auto; }
-.dungeon.is-running { display: flex; overflow: hidden; padding: 5px 8px calc(5px + env(safe-area-inset-bottom)); }
-.dungeon.is-running .dg-run { width: min(540px, 100%); height: 100%; min-height: 0; flex: 1; gap: 4px; }
+.dungeon.is-running { display: flex; overflow-y: auto; overscroll-behavior: contain; padding: 5px 8px calc(12px + env(safe-area-inset-bottom)); }
+.dungeon.is-running .dg-run { width: min(540px, 100%); min-height: 100%; flex: 1; gap: 4px; }
 .dungeon.is-running .dg-hud { gap: 3px 4px; font-size: 0.76rem; line-height: 1.1; }
 .dungeon.is-running .dg-break { display: none; }
 .dungeon.is-running .dg-pill { padding: 3px 6px; }
@@ -1561,7 +1561,7 @@ button:disabled { opacity: 0.5; }
 /* Andar no jeito de Mystery Dungeon: piso contínuo, paredes de pedra com face frontal e uma borda de rocha em volta. */
 .dg-grid { position: relative; display: grid; gap: 0; padding: 7px; background: var(--wall-side); border: 2px solid var(--wall-edge); border-radius: 10px; box-shadow: inset 0 0 0 3px var(--wall-top), inset 0 0 26px #000d, 0 0 18px color-mix(in srgb, var(--frame) 45%, transparent); transition: border-color 0.6s; overflow: hidden; }
 .dg-grid::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 4; background: radial-gradient(ellipse at 50% 60%, transparent 55%, #0008 100%); }
-.dungeon.is-running .dg-grid { width: clamp(230px, calc(100dvh - 440px), 390px); max-width: 100%; align-self: center; flex: none; }
+.dungeon.is-running .dg-grid { width: min(390px, calc(100vw - 28px)); max-width: 100%; align-self: center; flex: none; }
 .dg-grid.enemy-turn { border-color: #b84a5a; }
 .dg-cell { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 0; background-color: var(--floor-a); background-image: radial-gradient(circle at 22% 30%, var(--speck) 0 1.5px, transparent 2px), radial-gradient(circle at 70% 72%, var(--speck) 0 1px, transparent 1.5px), linear-gradient(135deg, var(--floor-a), var(--floor-b)); box-shadow: inset 0 0 0 0.5px #0000001f; display: flex; align-items: center; justify-content: center; overflow: visible; }
 .dg-cell.alt { background-image: radial-gradient(circle at 62% 24%, var(--speck) 0 1.2px, transparent 1.7px), radial-gradient(circle at 30% 78%, var(--speck) 0 1.5px, transparent 2px), linear-gradient(160deg, var(--floor-b), var(--floor-a)); }
@@ -1654,6 +1654,8 @@ button:disabled { opacity: 0.5; }
 .dg-weapon-details summary { cursor: pointer; color: var(--gold); }
 .dg-weapon-details > div { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
 .dungeon.is-running .dg-active { min-height: 76px; gap: 6px; padding: 5px 6px; font-size: 0.75rem; }
+.dungeon.is-running .dg-active.fused { align-items: center; }
+.dungeon.is-running .dg-active.fused .dg-active-info { width: 100%; }
 .dungeon.is-running .dg-active .weapon-art { width: 60px !important; height: 60px !important; }
 .dungeon.is-running .dg-active-info { gap: 2px; }
 .dungeon.is-running .dg-bar { gap: 4px; }
@@ -1667,8 +1669,8 @@ button:disabled { opacity: 0.5; }
 .dg-commands button { min-height: 52px; padding: 2px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font-size: 0.74rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
 .dg-commands button b { font-size: 1.05rem; font-weight: 400; }
 .dg-commands button.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
-.dungeon.is-running .dg-commands { gap: 3px; }
-.dungeon.is-running .dg-commands button { min-height: 42px; font-size: 0.67rem; }
+.dungeon.is-running .dg-commands { gap: 3px; position: relative; z-index: 2; }
+.dungeon.is-running .dg-commands button { min-height: 46px; font-size: 0.67rem; touch-action: manipulation; }
 .dungeon.is-running .dg-commands button b { font-size: 0.94rem; }
 
 .dg-team { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
@@ -1693,7 +1695,7 @@ button:disabled { opacity: 0.5; }
 .dungeon.is-running .dg-log[open] { position: fixed; z-index: 85; inset: auto 12px calc(12px + env(safe-area-inset-bottom)); max-height: min(46dvh, 290px); overflow-y: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 10px 28px #000b; }
 
 @media (max-height: 620px) and (orientation: portrait) {
-  .dungeon.is-running .dg-grid { width: clamp(210px, calc(100dvh - 410px), 310px); }
+  .dungeon.is-running .dg-grid { width: min(310px, calc(100vw - 28px)); }
   .dungeon.is-running .dg-enemy-card { display: none; }
   .dungeon.is-running .dg-active { min-height: 64px; }
   .dungeon.is-running .dg-active .weapon-art { width: 48px !important; height: 48px !important; }

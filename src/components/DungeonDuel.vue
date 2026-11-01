@@ -534,7 +534,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.dd { --floor-a: #43395c; --floor-b: #362d4c; --speck: #5a4e72; --wall-top: #5a4e72; --wall-side: #2a2338; --wall-edge: #17121f; --frame: #3d3158; --bg-a: #251c3a; --bg-b: #0f0c18; --accent: #d9e6ff; position: relative; display: grid; gap: 8px; align-content: start; color: var(--text); }
+.dd { --floor-a: #43395c; --floor-b: #362d4c; --speck: #5a4e72; --wall-top: #5a4e72; --wall-side: #2a2338; --wall-edge: #17121f; --frame: #3d3158; --bg-a: #251c3a; --bg-b: #0f0c18; --accent: #d9e6ff; position: relative; display: grid; gap: 8px; align-content: start; width: min(540px, 100%); margin: 0 auto; padding-bottom: calc(12px + env(safe-area-inset-bottom)); color: var(--text); }
 .dd-turn { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0007; }
 .dd-turn.mine { border-color: #3fae5a; box-shadow: 0 0 10px #3fae5a55; }
 .dd-turn.theirs { border-color: #b84a5a; }
@@ -557,7 +557,7 @@ onBeforeUnmount(() => {
 .dd-hp { position: relative; display: block; height: 5px; width: 100%; background: #0006; border-radius: 3px; overflow: hidden; flex: 1; }
 .dd-hp i { position: absolute; inset: 0 auto 0 0; background: var(--ok); transition: width 0.3s; }
 .dd-hp.charge i { background: #6fb6ff; }
-.dd-grid { position: relative; display: grid; gap: 0; padding: 7px; background: var(--wall-side); border: 2px solid var(--wall-edge); border-radius: 10px; box-shadow: inset 0 0 0 3px var(--wall-top), inset 0 0 26px #000d, 0 0 18px color-mix(in srgb, var(--frame) 45%, transparent); overflow: hidden; }
+.dd-grid { position: relative; display: grid; gap: 0; width: min(390px, calc(100vw - 28px)); max-width: 100%; justify-self: center; padding: 7px; background: var(--wall-side); border: 2px solid var(--wall-edge); border-radius: 10px; box-shadow: inset 0 0 0 3px var(--wall-top), inset 0 0 26px #000d, 0 0 18px color-mix(in srgb, var(--frame) 45%, transparent); overflow: hidden; }
 .dd-grid.theirs { border-color: #b84a5a; }
 .dd-cell { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 0; background-color: var(--floor-a); background-image: radial-gradient(circle at 22% 30%, var(--speck) 0 1.5px, transparent 2px), radial-gradient(circle at 70% 72%, var(--speck) 0 1px, transparent 1.5px), linear-gradient(135deg, var(--floor-a), var(--floor-b)); box-shadow: inset 0 0 0 0.5px #0000001f; display: flex; align-items: center; justify-content: center; overflow: visible; touch-action: manipulation; }
 .dd-cell.alt { background-image: radial-gradient(circle at 62% 24%, var(--speck) 0 1.2px, transparent 1.7px), radial-gradient(circle at 30% 78%, var(--speck) 0 1.5px, transparent 2px), linear-gradient(160deg, var(--floor-b), var(--floor-a)); }
@@ -608,7 +608,9 @@ onBeforeUnmount(() => {
 .dd-hint { margin: 0; color: var(--muted); font-size: 0.8rem; }
 .dd-warn { margin: 0; color: var(--warn); font-size: 0.82rem; }
 .dd-active { display: flex; gap: 10px; align-items: center; background: linear-gradient(135deg, var(--surface-2), var(--surface)); border: 1px solid var(--line); border-radius: 12px; padding: 6px 8px; font-size: 0.76rem; }
-.dd-active.fused { border-color: #b38cff; }
+.dd-active.fused { border-color: #b38cff; flex-direction: column; align-items: stretch; }
+.dd-active.fused :deep(.fusion-art) { align-self: center; }
+.dd-active.fused .dd-active-info { width: 100%; }
 .dd-weapon-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .dd-sockets { display: flex; gap: 3px; }
 .dd-active-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -642,5 +644,13 @@ onBeforeUnmount(() => {
 @keyframes dd-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 @keyframes dd-pop { 0% { opacity: 0; transform: translate(-50%, 6px); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -22px); } }
 @keyframes dd-hot { from { box-shadow: 0 0 0 0 #ffcb0500; } to { box-shadow: 0 0 10px 2px #ffcb05aa; } }
+@media (max-width: 420px) {
+  .dd { gap: 6px; }
+  .dd-grid { width: min(350px, calc(100vw - 24px)); }
+  .dd-turn { padding: 5px 8px; }
+  .dd-foe-team { gap: 3px; }
+  .dd-foe-team li { width: 38px; }
+  .dd-commands button { min-height: 48px; font-size: 0.66rem; }
+}
 @media (prefers-reduced-motion: reduce) { .dd-mon img, .dd-commands button.hot { animation: none; } .dd-popup { animation-duration: 0.01s; } }
 </style>
