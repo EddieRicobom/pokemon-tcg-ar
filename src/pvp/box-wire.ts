@@ -38,7 +38,11 @@ export type BoxWireMessage =
   /** A minha equipe (já com os lutadores prontos). `placed`: a minha caixa já está no chão (dá para ver a luta). */
   | { t: 'cx-team'; team: BoxPvpTeam; placed: boolean }
   /** Anfitrião → convidado: começa. Os lutadores vão na ordem anfitrião, convidado. */
-  | { t: 'cx-start'; mode: BoxPvpMode; seed: number; host: number; guest: number };
+  | { t: 'cx-start'; mode: BoxPvpMode; seed: number; host: number; guest: number }
+  /** Cada celular avisa que terminou de montar a luta `seed` (sprites baixados, equipes na caixa); `ok: false` = não deu. */
+  | { t: 'cx-ready'; seed: number; ok: boolean }
+  /** Anfitrião → convidado: os dois estão prontos, comecem agora (o anfitrião espera meia viagem de ida e volta). */
+  | { t: 'cx-go'; seed: number };
 
 export const BOX_PVP_MAX = 6;
 
@@ -103,6 +107,8 @@ export function parseBoxMessage(v: Record<string, unknown>): BoxWireMessage | nu
     if (!isNum(v.host, 1, BOX_PVP_MAX) || !isNum(v.guest, 1, BOX_PVP_MAX) || !Number.isInteger(v.host) || !Number.isInteger(v.guest)) return null;
     return { t: 'cx-start', mode: v.mode as BoxPvpMode, seed: v.seed, host: v.host, guest: v.guest };
   }
+  if (v.t === 'cx-ready') return isNum(v.seed, 0, 2 ** 32) && Number.isInteger(v.seed) && typeof v.ok === 'boolean' ? { t: 'cx-ready', seed: v.seed, ok: v.ok } : null;
+  if (v.t === 'cx-go') return isNum(v.seed, 0, 2 ** 32) && Number.isInteger(v.seed) ? { t: 'cx-go', seed: v.seed } : null;
   return null;
 }
 

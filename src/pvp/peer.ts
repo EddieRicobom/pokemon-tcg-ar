@@ -10,7 +10,12 @@ import type { WireMessage } from './wire';
  * Na mesma rede Wi-Fi nem são necessários. Em algumas operadoras (CGNAT) a ligação direta pode não fechar; a tela avisa.
  */
 
-export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+  // Retransmissão pública para as redes em que a ligação direta não fecha (operadoras com CGNAT). O jogo vai cifrado
+  // (DTLS) por ela: o servidor só repassa bytes. Só entra em ação se o caminho direto falhar.
+  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
+];
 
 /** Espera pelos candidatos de rede antes de gerar o código (o código leva todos: não há servidor para trocar candidatos depois). */
 const GATHER_TIMEOUT_MS = 4500;
@@ -30,11 +35,14 @@ export class PvpPeer {
   onMessage: ((msg: WireMessage) => void) | null = null;
   /** Mensagens que chegaram e foram ignoradas por estarem fora do formato (para diagnóstico). */
   ignored = 0;
+  /** Ida e volta até o outro celular, em ms (medida pelo ping/pong; começa numa estimativa até a primeira medida). */
+  rtt = 150;
 
   private readonly pc: RTCPeerConnection;
   private channel: RTCDataChannel | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastHeard = 0;
+  private pingSentAt = 0;
 
   private constructor(options: PeerOptions) {
     this.pc = new RTCPeerConnection({ iceServers: options.iceServers ?? DEFAULT_ICE_SERVERS });
@@ -151,11 +159,17 @@ export class PvpPeer {
     channel.onopen = () => {
       this.lastHeard = Date.now();
       this.setState('open');
+      const ping = () => {
+        this.pingSentAt = performance.now();
+        this.send({ t: 'ping' });
+      };
       this.timer = setInterval(() => {
         if (Date.now() - this.lastHeard > SILENCE_LIMIT_MS) return this.finish('timeout');
-        this.send({ t: 'ping' });
+        ping();
       }, PING_EVERY_MS);
       this.send({ t: 'hello', v: 1 });
+      // Medida logo na abertura, para a sincronização do começo da partida já ter uma ida e volta real.
+      ping();
     };
     channel.onclose = () => this.finish('remote');
     channel.onmessage = (e) => {
@@ -169,7 +183,14 @@ export class PvpPeer {
         this.send({ t: 'pong' });
         return;
       }
-      if (msg.t === 'pong') return;
+      if (msg.t === 'pong') {
+        if (this.pingSentAt > 0) {
+          const sample = performance.now() - this.pingSentAt;
+          this.pingSentAt = 0;
+          if (sample >= 0 && sample < 5000) this.rtt = this.rtt === 150 ? sample : this.rtt * 0.6 + sample * 0.4;
+        }
+        return;
+      }
       if (msg.t === 'bye') return this.finish('remote');
       this.onMessage?.(msg);
     };
