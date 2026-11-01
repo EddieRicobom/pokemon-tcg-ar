@@ -58,26 +58,36 @@ describe('ArenaView: desafio da Liga', () => {
     window.location.hash = '';
   });
 
-  it('leva o desafio à montagem da equipe e só libera começar com um Pokémon', async () => {
+  it('no menu único, escolher a Liga e um líder só libera entrar com um Pokémon na equipe', async () => {
     host = document.createElement('div');
     document.body.append(host);
     app = createApp(ArenaView);
     app.mount(host);
     await nextTick();
 
+    // Passo 1: sem escolha, nada de Liga e o botão principal está travado.
+    expect(host.querySelector('.league-card-stub')).toBeNull();
+    const go = () => host!.querySelector<HTMLButtonElement>('.arena-go')!;
+    expect(go().disabled).toBe(true);
+
+    const liga = [...host.querySelectorAll<HTMLButtonElement>('.arena-choice')].find((b) => b.textContent?.includes('Liga e desafios'))!;
+    liga.click();
+    await nextTick();
+    await nextTick();
+
+    // Passos 2 e 3: a equipe e o líder aparecem; escolher o líder marca o desafio e leva ao passo de entrar.
     host.querySelector<HTMLButtonElement>('.league-card-stub')!.click();
     await nextTick();
+    await nextTick();
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
-
-    const team = host.querySelector<HTMLElement>('#arena-team')!;
-    expect(team.textContent).toContain('Desafio contra Roark pronto');
-    const start = [...team.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('Começar desafio'))!;
-    expect(start.disabled).toBe(true);
+    expect(host.querySelector('#arena-step-4')!.textContent).toContain('Roark');
+    // Ainda sem Pokémon na equipe: não dá para entrar.
+    expect(go().disabled).toBe(true);
 
     host.querySelector<HTMLButtonElement>('.team-picker-stub')!.click();
     await nextTick();
-    expect(start.disabled).toBe(false);
-    start.click();
+    expect(go().disabled).toBe(false);
+    go().click();
     expect(window.location.hash).toContain('/caixa');
   });
 });
