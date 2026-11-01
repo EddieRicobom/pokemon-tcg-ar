@@ -335,7 +335,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <p class="hint">Equipe até agora: {{ team.map((m) => m.name).join(', ') }}. {{ friendName }} já fez {{ friend.done }} de {{ SV_RUNS }} runs.</p>
-        <button type="button" class="primary" @click="nextRun">Run {{ runIndex + 2 }} de {{ SV_RUNS }}</button>
+        <p class="hint svpvp-next" role="status"><strong>Sua vez de agir:</strong> toque no botão abaixo quando quiser. Você não precisa esperar {{ friendName }}: cada um joga as suas runs no próprio ritmo, e a arena abre quando os dois terminarem.</p>
+        <button type="button" class="primary" @click="nextRun">Começar a run {{ runIndex + 2 }} de {{ SV_RUNS }}</button>
       </section>
 
       <section v-else-if="phase === 'waiting' && !closed" class="card svpvp-card" aria-label="Equipe pronta">
@@ -346,12 +347,15 @@ onBeforeUnmount(() => {
             <span><strong>{{ m.name }}</strong><small>Vida {{ m.maxHp }} · golpe {{ m.power }}</small></span>
           </li>
         </ul>
-        <p class="hint" role="status">{{ friend.done >= SV_RUNS ? 'Conectando as duas equipes…' : `Esperando ${friendName} terminar as runs (${friend.done}/${SV_RUNS}).` }}</p>
+        <p class="hint svpvp-next" role="status">
+          <strong>{{ friend.done >= SV_RUNS ? 'Quase lá:' : 'Aguarde um instante:' }}</strong>
+          {{ friend.done >= SV_RUNS ? 'conectando as duas equipes. A arena abre sozinha.' : `${friendName} ainda está nas runs (${friend.done}/${SV_RUNS}). Você não precisa tocar em nada: a arena abre sozinha quando ele terminar.` }}
+        </p>
       </section>
 
       <section v-else-if="phase === 'loading' && !closed" class="card svpvp-card" aria-label="Preparando a arena">
         <h3>Preparando a arena</h3>
-        <p class="hint" role="status">Baixando os sprites das duas equipes e esperando {{ friendName }}…</p>
+        <p class="hint svpvp-next" role="status"><strong>Quase lá:</strong> baixando os sprites das duas equipes e esperando {{ friendName }} ficar pronto. Você não precisa tocar em nada: a luta começa sozinha, nos dois celulares ao mesmo tempo.</p>
       </section>
 
       <SurvivalPvpArena v-else-if="phase === 'arena' && link" :link="link" :friend-name="friendName" :friend-left="closed" @leave="leaveNow" />
