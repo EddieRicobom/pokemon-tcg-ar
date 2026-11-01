@@ -104,7 +104,7 @@ describe('pareamento pelo ponto de encontro', () => {
     await vi.advanceTimersByTimeAsync(300);
     // A resposta do convidado chegou ao anfitrião.
     expect(t.hosts[0]!.answers).toEqual(['ANSWER-guest0']);
-    t.hosts[0]!.open();
+    t.hosts.at(-1)!.open();
     t.guests[0]!.open();
     expect(hostPeers).toHaveLength(1);
     expect(guestPeers).toHaveLength(1);
@@ -206,11 +206,12 @@ describe('pareamento pelo ponto de encontro', () => {
     const cancel = t.guest.join(code, 'Beto', { onStatus: () => undefined, onPeer: () => undefined, onError: () => undefined });
     await vi.advanceTimersByTimeAsync(50);
     cancel();
-    await vi.advanceTimersByTimeAsync(400);
+    // O convidado já tinha respondido: a sala só volta quando a ligação não fecha a tempo (connectMs) e o convite é refeito.
+    await vi.advanceTimersByTimeAsync(600);
     const second: FakePeer[] = [];
     t.guest.join(code, 'Caio', { onStatus: () => undefined, onPeer: (p) => second.push(p), onError: (m) => { throw new Error(m); } });
     await vi.advanceTimersByTimeAsync(300);
-    t.hosts[0]!.open();
+    t.hosts.at(-1)!.open();
     t.guests.at(-1)!.open();
     expect(hostPeers).toHaveLength(1);
     expect(second).toHaveLength(1);

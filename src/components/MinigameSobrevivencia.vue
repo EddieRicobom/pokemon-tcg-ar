@@ -57,6 +57,7 @@ import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
 import { trainer } from '../app/trainer-store';
 import type { SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
+import type { SvRunResult } from '../core/survivor-pvp';
 import { omegaShardCount, settleOmegaShard, survivorMegaForm, survivorMegaForms, survivorMegaStatDelta, takeOmegaShard } from '../core/survivor-mega';
 import type { SurvivorMegaForm, SurvivorMegaSprite } from '../core/survivor-mega';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
@@ -139,9 +140,11 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
  * mesmo jeito que a Pista de Pins (`recordEvent({ type: 'minigame', game: 'sobrevivencia', ... })`), sem entrar
  * no catálogo de minigames do Fliperama (`core/minigames.ts`).
  */
-const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }, runId: string] }>();
+const emit = defineEmits<{ leave: []; complete: [summary: SurvivorSummary, participant: { id: string; name: string }, runId: string]; pvpRunDone: [result: SvRunResult]; openPvp: []; pvpBuff: [buff: { id: string; name: string; rarity: SurvivorUpgradeRarity }] }>();
 /** Digital Pokémon (Fase 6: elegíveis como parceiro na Torre, igual a qualquer carta escaneada). */
-const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string; shiny?: boolean; accessory?: string | null }[]; accessories?: Record<string, string | null | undefined>; /** Abre já com o modo BONK escolhido (atalho da Vila). */ startBonk?: boolean }>();
+const props = defineProps<{ digital?: { instanceId?: string; dexId: number; name: string; shiny?: boolean; accessory?: string | null }[]; accessories?: Record<string, string | null | undefined>; /** Abre já com o modo BONK escolhido (atalho da Vila). */ startBonk?: boolean;
+  /** Run do PvP do Survival: tempo limitado, nada da Vila entra, nada é gravado (moedas, recordes, Torre) e o fim vira `pvpRunDone`. */
+  pvpRun?: { index: number; total: number; limitMs: number; excludeIds?: string[] } }>();
 
 /**
  * A Torre ocupa a tela inteira. O lado menor parte de `VIEW_SHORT` unidades e aproxima 1,5×, mantendo o formato do
@@ -339,6 +342,10 @@ let runCompanion: CardCompanion | null = null;
 let runParticipant = { id: 'survivor-pikachu', name: 'Pikachu' };
 let runParticipantDexId = 25;
 let runCounter = 0;
+// PvP: o que o jogador escolheu nesta run, e se o fim dela já foi entregue ao PvP.
+let pvpPick: { shiny: boolean; types: PokemonType[] } = { shiny: false, types: [] };
+let pvpFinished = false;
+let pvpWarned = 0;
 let activeRunId = '';
 const completedRunIds = new Set<string>();
 const selectedPreparation = ref<SurvivorPreparationId>('classica');
@@ -1892,6 +1899,36 @@ function visibleEnemyCountForDanger(s: SurvivorState): number {
   return s.enemies.filter((enemy) => enemy.hp > 0 && enemy.x >= camX && enemy.x <= camX + worldViewW && enemy.y >= camY && enemy.y <= camY + worldViewH).length;
 }
 
+/** Run do PvP: avisos curtos do tempo e, no fim (tempo esgotado ou Pokémon caído), entrega o resultado e para o laço. */
+function checkPvpRun(s: SurvivorState): void {
+  const pvp = props.pvpRun;
+  if (!pvp || pvpFinished) return;
+  const left = pvp.limitMs - s.elapsedMs;
+  if (!s.over && left > 0) {
+    if (left <= 10_000 && pvpWarned < 2) { pvpWarned = 2; say('⏳ Faltam 10 segundos', 2200); }
+    else if (left <= 30_000 && pvpWarned < 1) { pvpWarned = 1; say('⏳ Falta meio minuto', 2200); }
+    return;
+  }
+  pvpFinished = true;
+  cancelGameFrame(rafId);
+  rafId = 0;
+  heldKeys.clear();
+  const dexId = s.player.dexId > 0 ? s.player.dexId : runParticipantDexId;
+  const evolved = dexId !== runParticipantDexId;
+  emit('pvpRunDone', {
+    id: runParticipant.id,
+    dexId,
+    name: (evolved ? speciesName(dexId) : '') || runParticipant.name,
+    shiny: pvpPick.shiny,
+    types: survivorAttackOf(dexId).types,
+    attackType: s.player.move.type,
+    survivedMs: Math.min(s.elapsedMs, pvp.limitMs),
+    kills: s.kills,
+    level: s.player.level,
+    defeated: s.over,
+  });
+}
+
 function loop(ts: number): void {
   if (disposed) {
     rafId = 0;
@@ -2019,10 +2056,13 @@ function loop(ts: number): void {
       }
       if (ev.type === 'gameover') {
         playSound('survivor-gameover');
-        objectives.value = survivorObjectives(s);
-        summary.value = ev.summary;
-        settleRunLoadout(ev.summary.survivedMs);
-        recordRun(ev.summary);
+        // Na run do PvP nada é gravado nem mostrado aqui: o resultado segue para a equipe (`checkPvpRun`).
+        if (!props.pvpRun) {
+          objectives.value = survivorObjectives(s);
+          summary.value = ev.summary;
+          settleRunLoadout(ev.summary.survivedMs);
+          recordRun(ev.summary);
+        }
       }
       else if (ev.type === 'trainerSpawn') {
         say(ev.trigger === 'digital-danger' ? 'Você está atraindo treinadores!' : ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
@@ -2031,6 +2071,7 @@ function loop(ts: number): void {
       else if (ev.type === 'trainerDown') say(ev.final ? 'CHEFAO DERROTADO!' : 'Treinador derrotado!');
     }
   }
+  checkPvpRun(s);
   scanEnemySightings(s);
   updateMinimap(s);
   pendingUpgrade.value = s.pendingUpgrade;
@@ -2052,8 +2093,10 @@ function loop(ts: number): void {
 function chooseUpgrade(id: string): void {
   if (!state.value || upgradeMenuLocked.value) return;
   if (banMode.value) { banUpgradeCard(id); return; }
+  const pickedBuff = props.pvpRun ? pendingUpgrade.value?.find((option) => option.id === id) : undefined;
   const tierBefore = survivorProjectileTier(state.value.player);
   const events = applyUpgrade(state.value, id);
+  if (pickedBuff) emit('pvpBuff', { id: pickedBuff.id, name: pickedBuff.name.slice(0, 40), rarity: pickedBuff.rarity ?? 'normal' });
   playSound('success');
   const tierAfter = survivorProjectileTier(state.value.player);
   if (state.value.player.move.category === 'projetil' && tierAfter > tierBefore) {
@@ -2207,6 +2250,10 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   // Digital Pokémon entram no mesmo sorteio (Fase 6): não vêm de carta nenhuma, mas jogam igual a qualquer outro.
   for (const [i, d] of (props.digital ?? []).entries()) pool.push({ id: d.instanceId ?? `dp_torre_${i}`, dexId: d.dexId, name: d.name, shiny: d.shiny, accessory: d.accessory, digital: true, origin: 'Digital Pokémon' });
   if (pool.length === 0) return [];
+  // PvP: quem já rendeu um Pokémon à equipe só volta ao sorteio se não sobrar mais ninguém (coleção pequena).
+  const taken = new Set(props.pvpRun?.excludeIds ?? []);
+  const fresh = pool.filter((item) => !taken.has(item.id));
+  if (fresh.length > 0 && fresh.length < pool.length) pool.splice(0, pool.length, ...fresh);
   const ids = pool.map((item) => item.id);
   favoriteIds.value = readFavorites(ids);
   const chosen = selectSurvivorCandidates(pool, seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0), favoriteIds.value, 6, previousIds);
@@ -2282,8 +2329,11 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     const { move, profile, secondMove } = survivorAttackOf(dexId, picked);
     runSeenDex.clear();
     // A Vila entrega o loadout (e gasta a sorte do Carteiro) antes de a corrida existir; vale no Survival e no BONK.
-    runLoadout = takeRunLoadout(pureWanted.value);
-    runLoadoutSettled = false;
+    // No PvP nada da Vila entra (nem sorte, nem marmita, nem treino): as duas pessoas começam iguais.
+    runLoadout = props.pvpRun ? PURE_LOADOUT : takeRunLoadout(pureWanted.value);
+    runLoadoutSettled = props.pvpRun !== undefined;
+    pvpFinished = false;
+    pvpWarned = 0;
     lunchWasActive = runLoadout.lunch !== null;
     banMode.value = false;
     activeRunId = `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.floor(Math.random() * 0x1_0000_0000).toString(36)}`;
@@ -2349,10 +2399,13 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
     } satisfies SurvivorSupportCandidate));
   const primary = picked ?? opt.types[0] ?? opt.move.type;
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
-  const infinite = infiniteWanted.value && torre.value.infiniteUnlocked;
-  const mega = megaPick.value?.optId === opt.id && !pureWanted.value ? survivorMegaForm(megaPick.value.formId) : null;
+  const pvp = props.pvpRun !== undefined;
+  const infinite = !pvp && infiniteWanted.value && torre.value.infiniteUnlocked;
+  const mega = !pvp && megaPick.value?.optId === opt.id && !pureWanted.value ? survivorMegaForm(megaPick.value.formId) : null;
   megaPick.value = null;
-  void beginRun(opt.dexId, opt.name, picked, infinite, bonkWanted.value, opt.id.startsWith('dp_') ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, selectedPreparation.value, supportCandidates, typeAffinityChoices, fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null, mega?.dexId === opt.dexId ? mega : null);
+  pvpPick = { shiny: opt.shiny === true, types: opt.types };
+  // No PvP a run é sempre a normal, sem Mega, sem preparação e sem modificadores; nada conta para a Torre.
+  void beginRun(opt.dexId, opt.name, picked, infinite, !pvp && bonkWanted.value, opt.id.startsWith('dp_') || pvp ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, pvp ? 'classica' : selectedPreparation.value, supportCandidates, typeAffinityChoices, !pvp && fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null, mega?.dexId === opt.dexId ? mega : null);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
@@ -2570,6 +2623,7 @@ onBeforeUnmount(() => {
             <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
             <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
             <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
+            <span v-if="pvpRun" class="chip survivor-pvp-chip" role="status" title="PvP: esta run rende um Pokémon para a sua equipe 3x3">⚔ Run {{ pvpRun.index + 1 }}/{{ pvpRun.total }} · ⏳ {{ formatTime(Math.max(0, pvpRun.limitMs - state.elapsedMs)) }}</span>
             <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
             <span class="survivor-action-dock">
@@ -2693,9 +2747,11 @@ onBeforeUnmount(() => {
             </div>
             <button type="button" class="link survivor-back" @click="typeChoice = null">← Voltar aos Pokémon</button>
           </div>
-          <div v-else class="card survivor-pick">
-            <h2>Quem vai pra Torre dessa vez?</h2>
-            <p class="note" role="status">{{ nextTowerGoal }}</p>
+          <div v-else class="card survivor-pick" :class="{ 'pvp-pick': pvpRun }">
+            <h2>{{ pvpRun ? `PvP · run ${pvpRun.index + 1} de ${pvpRun.total}: quem joga?` : 'Quem vai pra Torre dessa vez?' }}</h2>
+            <p v-if="pvpRun" class="note pvp-note" role="status">Você tem {{ Math.round(pvpRun.limitMs / 60000) }} min. O Pokémon que escolher entra na sua equipe 3x3, mais forte quanto melhor for a run. Nada da Vila entra e nada vale para a Torre.</p>
+            <p v-else class="note" role="status">{{ nextTowerGoal }}</p>
+            <button v-if="!pvpRun" type="button" class="link survivor-pvp-entry" @click="emit('openPvp')">⚔ PvP com um amigo: 3 runs de 2 min e uma arena 3x3</button>
             <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · melhor tempo {{ formatTime(torre.bestMs) }} (corrida pura: {{ torre.bestPureMs > 0 ? formatTime(torre.bestPureMs) : '—' }}) · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
             <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
             <details class="survivor-ledger">
