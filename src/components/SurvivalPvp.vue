@@ -27,6 +27,7 @@ defineProps<{
 }>();
 const emit = defineEmits<{ leave: [] }>();
 
+/** `between` é a largada de cada run: resultado da anterior, espera curta pelo amigo e contagem; começa sozinha, sem toque. */
 type Phase = 'lobby' | 'runs' | 'between' | 'waiting' | 'loading' | 'arena';
 const phase = ref<Phase>('lobby');
 const role = ref<'host' | 'guest'>('host');
@@ -66,6 +67,18 @@ let started = false;
 let leaveTimer: ReturnType<typeof setTimeout> | null = null;
 let hostWait: ReturnType<typeof setTimeout> | null = null;
 const GUEST_WAIT_MS = 15_000;
+/** Largada em conjunto: tempo mínimo para ver o resultado, espera máxima pelo amigo e contagem final. */
+const GATE_MIN_MS = 5_000;
+const GATE_WAIT_MS = 20_000;
+const COUNTDOWN_S = 3;
+const gate = ref<{ index: number; countdown: number | null; friendHere: boolean }>({ index: 0, countdown: null, friendHere: false });
+let gateOpenedAt = 0;
+let gateTimer: ReturnType<typeof setInterval> | null = null;
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
+let countdownDelay: ReturnType<typeof setTimeout> | null = null;
+/** Última largada que o amigo anunciou e último `sv-run-go` recebido (guardados: o amigo pode chegar antes de mim). */
+let friendGateIndex = -1;
+let goReceived = -1;
 const PRELOAD_MS = 9_000;
 
 const friendName = computed(() => friend.value.name || 'Amigo');
@@ -74,7 +87,7 @@ const lastTypes = computed(() => lastMon.value?.types.map((t) => TYPE_LABELS_PT[
 /** Um objeto só por run: o jogo não é redesenhado a cada mudança no progresso do amigo. */
 const pvpRunProp = computed(() => ({ index: runIndex.value, total: SV_RUNS, limitMs: SV_RUN_MS, excludeIds: usedIds.value }));
 const progress = computed(() => {
-  if (phase.value === 'runs' || phase.value === 'between') return `Sua run ${Math.min(runIndex.value + 1, SV_RUNS)}/${SV_RUNS} · ${friendName.value}: ${friend.value.done}/${SV_RUNS} prontas`;
+  if (phase.value === 'runs' || phase.value === 'between') return `Run ${Math.min(runIndex.value + 1, SV_RUNS)}/${SV_RUNS} (juntos) · ${friendName.value}: ${friend.value.done}/${SV_RUNS} prontas`;
   if (phase.value === 'waiting') return `Equipe pronta · ${friendName.value}: ${friend.value.done}/${SV_RUNS} runs`;
   if (phase.value === 'loading') return 'Preparando a arena…';
   return `Contra ${friendName.value}`;
@@ -136,8 +149,8 @@ function onConnected(p: PvpPeer, r: 'host' | 'guest'): void {
       if (phase.value !== 'arena') notice.value = `${friendName.value} saiu da partida.`;
     }
   };
-  phase.value = 'runs';
   send({ t: 'sv-progress', done: 0 });
+  openGate(0);
 }
 
 function onMessage(msg: WireMessage): void {
@@ -148,6 +161,16 @@ function onMessage(msg: WireMessage): void {
     case 'sv-team':
       friend.value = { ...friend.value, name: msg.name || friend.value.name, team: msg.team, done: SV_RUNS };
       maybeStart();
+      break;
+    case 'sv-run-ready':
+      friendGateIndex = Math.max(friendGateIndex, msg.index);
+      if (phase.value === 'between') gate.value.friendHere = friendGateIndex >= gate.value.index;
+      break;
+    case 'sv-run-go':
+      // Só o convidado obedece: o anfitrião decide a largada. Se eu ainda não cheguei à largada, a contagem começa quando chegar.
+      if (role.value !== 'guest') break;
+      goReceived = Math.max(goReceived, msg.index);
+      if (phase.value === 'between' && gate.value.index === msg.index && gate.value.countdown === null) startCountdown(0);
       break;
     case 'sv-start':
       // Só o convidado recebe: o anfitrião já tem as duas equipes e só manda depois que o convidado terminou as runs.
@@ -189,7 +212,7 @@ function onRunDone(result: SvRunResult): void {
   usedIds.value = [...usedIds.value, result.id];
   send({ t: 'sv-progress', done: team.value.length });
   if (team.value.length < SV_RUNS) {
-    phase.value = 'between';
+    openGate(team.value.length);
     return;
   }
   phase.value = 'waiting';
@@ -197,9 +220,60 @@ function onRunDone(result: SvRunResult): void {
   maybeStart();
 }
 
-function nextRun(): void {
-  runIndex.value++;
-  phase.value = 'runs';
+/**
+ * Largada da run `index`: mostra o resultado da anterior, avisa o amigo que cheguei e espera. O anfitrião manda `sv-run-go`
+ * quando os dois chegaram (e passaram os 5 s de resultado) ou, no máximo, depois de 20 s; as duas contagens saem juntas.
+ * Ninguém precisa tocar em nada, e quem chega depois começa assim que chega.
+ */
+function openGate(index: number): void {
+  clearGateTimers();
+  runIndex.value = index;
+  phase.value = 'between';
+  gate.value = { index, countdown: null, friendHere: friendGateIndex >= index };
+  gateOpenedAt = performance.now();
+  send({ t: 'sv-run-ready', index });
+  if (role.value === 'host') gateTimer = setInterval(hostCheckGo, 250);
+  else if (goReceived >= index) startCountdown(0);
+}
+
+function hostCheckGo(): void {
+  if (role.value !== 'host' || phase.value !== 'between' || gate.value.countdown !== null) return;
+  const waited = performance.now() - gateOpenedAt;
+  const both = friendGateIndex >= gate.value.index && waited >= GATE_MIN_MS;
+  if (!both && waited < GATE_WAIT_MS) return;
+  if (gateTimer) clearInterval(gateTimer);
+  gateTimer = null;
+  send({ t: 'sv-run-go', index: gate.value.index });
+  // O convidado começa a contar ao receber; o anfitrião espera meia ida e volta para as duas contagens coincidirem.
+  startCountdown(Math.min(400, (peer?.rtt ?? 0) / 2));
+}
+
+function startCountdown(delayMs: number): void {
+  if (countdownTimer || countdownDelay) return;
+  const begin = () => {
+    countdownDelay = null;
+    gate.value.countdown = COUNTDOWN_S;
+    countdownTimer = setInterval(() => {
+      const next = (gate.value.countdown ?? 1) - 1;
+      if (next > 0) {
+        gate.value.countdown = next;
+        return;
+      }
+      clearGateTimers();
+      phase.value = 'runs';
+    }, 1000);
+  };
+  if (delayMs > 0) countdownDelay = setTimeout(begin, delayMs);
+  else begin();
+}
+
+function clearGateTimers(): void {
+  if (gateTimer) clearInterval(gateTimer);
+  if (countdownTimer) clearInterval(countdownTimer);
+  if (countdownDelay) clearTimeout(countdownDelay);
+  gateTimer = null;
+  countdownTimer = null;
+  countdownDelay = null;
 }
 
 /** O anfitrião começa quando as duas equipes estão aqui. */
@@ -276,6 +350,7 @@ function askLeave(): void {
 }
 
 function detach(): void {
+  clearGateTimers();
   if (hostWait) clearTimeout(hostWait);
   hostWait = null;
   if (peer) {
@@ -323,9 +398,10 @@ onBeforeUnmount(() => {
         @leave="leaveNow"
       />
 
-      <section v-else-if="phase === 'between' && lastMon && !closed" class="card svpvp-card" aria-label="Run concluída">
-        <h3>Run {{ runIndex + 1 }} concluída</h3>
-        <div class="svpvp-earned">
+      <section v-else-if="phase === 'between' && !closed" class="card svpvp-card" aria-label="Largada da run">
+        <h3 v-if="gate.countdown !== null" class="svpvp-count" aria-live="assertive">Run {{ gate.index + 1 }} começa em {{ gate.countdown }}…</h3>
+        <h3 v-else>{{ gate.index === 0 ? 'Prepare-se' : `Run ${gate.index} concluída` }}</h3>
+        <div v-if="lastMon && gate.index > 0" class="svpvp-earned">
           <img :src="pokemonSpriteUrl(lastMon.dexId, lastMon.shiny)" :alt="lastMon.name" height="64" />
           <div>
             <strong>{{ lastMon.name }} entrou na sua equipe</strong>
@@ -334,9 +410,15 @@ onBeforeUnmount(() => {
             <small v-if="lastMon.estimated">Sem os stats desta espécie: números médios.</small>
           </div>
         </div>
-        <p class="hint">Equipe até agora: {{ team.map((m) => m.name).join(', ') }}. {{ friendName }} já fez {{ friend.done }} de {{ SV_RUNS }} runs.</p>
-        <p class="hint svpvp-next" role="status"><strong>Sua vez de agir:</strong> toque no botão abaixo quando quiser. Você não precisa esperar {{ friendName }}: cada um joga as suas runs no próprio ritmo, e a arena abre quando os dois terminarem.</p>
-        <button type="button" class="primary" @click="nextRun">Começar a run {{ runIndex + 2 }} de {{ SV_RUNS }}</button>
+        <p v-if="gate.index > 0" class="hint">Equipe até agora: {{ team.map((m) => m.name).join(', ') }}.</p>
+        <p class="hint svpvp-next" role="status" aria-live="polite">
+          <strong>{{ gate.countdown !== null ? 'Já vai:' : gate.friendHere ? 'Quase lá:' : 'Aguarde um instante:' }}</strong>
+          {{ gate.countdown !== null
+            ? `a run ${gate.index + 1} de ${SV_RUNS} começa agora, ao mesmo tempo que a de ${friendName}. Escolha o seu Pokémon assim que ela abrir.`
+            : gate.friendHere
+              ? `os dois estão prontos: a run ${gate.index + 1} de ${SV_RUNS} começa em instantes, junto com ${friendName}. Você não precisa tocar em nada.`
+              : `${friendName} ainda está terminando a run ${gate.index || 1}. Você não precisa tocar em nada: a run ${gate.index + 1} de ${SV_RUNS} começa sozinha, ao mesmo tempo para os dois, em até ${GATE_WAIT_MS / 1000} s.` }}
+        </p>
       </section>
 
       <section v-else-if="phase === 'waiting' && !closed" class="card svpvp-card" aria-label="Equipe pronta">
@@ -406,6 +488,12 @@ onBeforeUnmount(() => {
 .svpvp-card h3,
 .svpvp-card p {
   margin: 0;
+}
+
+.svpvp-count {
+  font-size: 1.5rem;
+  text-align: center;
+  color: var(--gold);
 }
 
 .svpvp-earned {
