@@ -59,7 +59,7 @@ export type MqttIncoming =
   | { kind: 'connack'; ok: boolean }
   | { kind: 'suback' }
   | { kind: 'pingresp' }
-  | { kind: 'publish'; topic: string; payload: string }
+  | { kind: 'publish'; topic: string; payload: string; retained: boolean }
   | { kind: 'other' };
 
 /** Maior pacote aceito do servidor: o canal de encontro só leva mensagens curtas. */
@@ -131,5 +131,5 @@ function parseBody(first: number, body: Uint8Array): MqttIncoming | null {
   const qos = (first >> 1) & 3;
   if (qos > 0) at += 2;
   if (at > body.length) return null;
-  return { kind: 'publish', topic, payload: decoder.decode(body.subarray(at)) };
+  return { kind: 'publish', topic, payload: decoder.decode(body.subarray(at)), retained: (first & 1) === 1 };
 }

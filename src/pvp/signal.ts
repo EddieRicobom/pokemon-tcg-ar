@@ -1,3 +1,4 @@
+import { pvpLog } from './pvp-log';
 import { connectPacket, DISCONNECT_PACKET, MqttReader, PING_PACKET, publishPacket, subscribePacket, unsubscribePacket } from './mqtt-lite';
 
 /**
@@ -53,6 +54,7 @@ interface Link {
   retry: ReturnType<typeof setTimeout> | null;
   connack: ReturnType<typeof setTimeout> | null;
   ping: ReturnType<typeof setInterval> | null;
+  lastHeard: number;
 }
 
 const MAX_SEEN = 400;
@@ -80,13 +82,27 @@ export class SignalHub {
   private closed = false;
   /** Avisa quando muda quantos brokers estão ligados. */
   onOnline: ((online: number) => void) | null = null;
+  private readonly onlineWaiters = new Set<() => void>();
+
+  /** Chama `fn` toda vez que o hub passa de nenhum broker para pelo menos um. Devolve a função que para de avisar. */
+  whenOnline(fn: () => void): () => void {
+    this.onlineWaiters.add(fn);
+    return () => this.onlineWaiters.delete(fn);
+  }
+
+  private onlineChanged(): void {
+    const online = this.online;
+    pvpLog(`B${online}`);
+    this.onOnline?.(online);
+    if (online === 1) for (const fn of [...this.onlineWaiters]) fn();
+  }
 
   constructor(options: SignalOptions = {}) {
     this.factory = options.factory ?? defaultFactory;
     this.retryBaseMs = options.retryBaseMs ?? 1500;
     this.connackTimeoutMs = options.connackTimeoutMs ?? 8000;
     this.pingMs = options.pingMs ?? 25000;
-    this.links = (options.brokers ?? SIGNAL_BROKERS).map((url) => ({ url, socket: null, reader: new MqttReader(), ready: false, failures: 0, retry: null, connack: null, ping: null }));
+    this.links = (options.brokers ?? SIGNAL_BROKERS).map((url) => ({ url, socket: null, reader: new MqttReader(), ready: false, failures: 0, retry: null, connack: null, ping: null, lastHeard: 0 }));
   }
 
   /** Quantos brokers estão ligados agora (zero = sem ponto de encontro; use os códigos manuais). */
@@ -177,15 +193,17 @@ export class SignalHub {
     }
     link.socket = socket;
     socket.binaryType = 'arraybuffer';
+    // O prazo começa já ao abrir: numa rede que descarta pacotes, o WebSocket pode ficar «conectando» para sempre.
+    link.connack = setTimeout(() => this.drop(link), this.connackTimeoutMs);
     socket.onopen = () => {
       if (link.socket !== socket) return;
       socket.send(connectPacket(this.clientId));
-      link.connack = setTimeout(() => this.drop(link), this.connackTimeoutMs);
     };
     socket.onmessage = (event) => {
       if (link.socket !== socket || !(event.data instanceof ArrayBuffer)) return;
       const packets = link.reader.push(new Uint8Array(event.data));
       if (!packets) return this.drop(link);
+      link.lastHeard = Date.now();
       for (const incoming of packets) {
         if (incoming.kind === 'connack') {
           if (!incoming.ok) return this.drop(link);
@@ -194,9 +212,15 @@ export class SignalHub {
           link.ready = true;
           link.failures = 0;
           for (const topic of this.handlers.keys()) this.send(link, subscribePacket(this.packetId(), topic));
-          link.ping = setInterval(() => this.send(link, PING_PACKET), this.pingMs);
-          this.onOnline?.(this.online);
-        } else if (incoming.kind === 'publish') {
+          link.lastHeard = Date.now();
+          link.ping = setInterval(() => {
+            // Ligação meio-aberta (celular que congelou a página): sem nenhum pacote desde o último ping, recomeça.
+            if (Date.now() - link.lastHeard > this.pingMs * 2 + 5000) return this.drop(link);
+            this.send(link, PING_PACKET);
+          }, this.pingMs);
+          this.onlineChanged();
+        } else if (incoming.kind === 'publish' && !incoming.retained) {
+          // Mensagem retida pelo broker é velha (ou plantada por um estranho): nunca vale para o pareamento.
           this.deliver(incoming.topic, incoming.payload);
         }
       }
@@ -220,7 +244,7 @@ export class SignalHub {
     } catch {
       /* já fechado */
     }
-    if (wasReady) this.onOnline?.(this.online);
+    if (wasReady) this.onlineChanged();
     this.scheduleRetry(link);
   }
 

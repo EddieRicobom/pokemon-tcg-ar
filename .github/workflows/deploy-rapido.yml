@@ -77,6 +77,10 @@ jobs:
         run: npm run build
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_CLIENT_ID }}
+          # Retransmissão TURN opcional do PvP (variáveis do repositório; sem elas, só STUN).
+          VITE_PVP_TURN_URLS: ${{ vars.PVP_TURN_URLS }}
+          VITE_PVP_TURN_USER: ${{ vars.PVP_TURN_USER }}
+          VITE_PVP_TURN_PASS: ${{ vars.PVP_TURN_PASS }}
 
       - name: Conferir o build (base path, Service Worker, OCR, índice)
         run: node scripts/verify-dist.mjs
