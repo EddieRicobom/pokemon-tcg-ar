@@ -1,4 +1,4 @@
-import { drawWaterFx, drawFountainFx, drawSunRays, drawTowerDataFx } from './ambient-art';
+import { drawWaterFx, drawFountainFx, drawSunRays, drawTowerDataFx, drawSoftShadow, drawSparkle } from './ambient-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
 import { CafeService } from '../core/village/cafe';
 import { CAFE_TABLES } from '../core/village/cafe-layout';
@@ -126,6 +126,7 @@ export class VillageGame {
   private lastGreet = 0;
   private nextEmote = 0;
   private nextLeaf = 0;
+  private nextSparkle = 0;
   private nextSmoke = 0;
   private scene: Scene | null = null;
   private weather: WeatherState;
@@ -1320,6 +1321,11 @@ export class VillageGame {
       this.nextLeaf = now + 900 + this.rng() * 1500;
       this.particles.push({ kind: 'leaf', x: p.x + (this.rng() - 0.3) * 14, y: p.y - 8, vx: 0.5 + this.weather.windX * 2 + this.rng() * 0.4, vy: 0.9 + this.rng() * 0.5, born: now, life: 9000, color: ['#6cc85c', '#f8a8c8', '#e8b060', '#8ad878'][Math.floor(this.rng() * 4)] });
     }
+    // Brilhos de orvalho no dia claro e poeira mágica à noite, sempre perto do jogador.
+    if (this.ambientFx() && !this.reducedMotion?.matches && now > this.nextSparkle && this.weather.rain < 0.2) {
+      this.nextSparkle = now + 500 + this.rng() * 900;
+      this.particles.push({ kind: 'sparkle', x: p.x + (this.rng() - 0.5) * 12, y: p.y + (this.rng() - 0.5) * 9, vx: 0, vy: -0.08, born: now, life: 1100 + this.rng() * 700, color: new Date().getHours() >= 19 || new Date().getHours() < 6 ? '190,220,255' : '255,248,210' });
+    }
     // Fumaça da chaminé.
     if (this.state.house >= 3 && now > this.nextSmoke) {
       this.nextSmoke = now + 650;
@@ -1505,12 +1511,9 @@ export class VillageGame {
     // mesmo alcance precisa alimentar os objetos em pé, senão eles somem
     // quando entram na área visível da projeção.
     const y1 = Math.min(this.map.h - 1, Math.ceil((camY + viewHeight + overscanY) / T));
-    const shadow = (cx: number, cy: number, rx: number, ry: number, a = 0.2) => {
-      ctx.fillStyle = `rgba(0,0,0,${a})`;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-    };
+    // Sombra macia; à noite e na chuva fica mais curta e fraca, como a luz de verdade.
+    const shadowStrength = 1 - light.dark * 0.45 - wx.rain * 0.25;
+    const shadow = (cx: number, cy: number, rx: number, ry: number, a = 0.2) => drawSoftShadow(ctx, cx, cy, rx * 1.25, ry * 1.25, a * 1.5 * shadowStrength);
     const streetLamps: { x: number; y: number }[] = [];
     const homeGlows: { x: number; y: number; w: number; h: number; lantern?: boolean }[] = [];
     /** Janelas do tileset acesas à noite (o vidro do desenho vira luz) e o halo suave de cada uma, em px da tela. */
@@ -2250,14 +2253,26 @@ export class VillageGame {
         const s = (1 + age * 2) * scale;
         ctx.fillRect(x - s / 2, y - s / 2, s, s);
       } else if (q.kind === 'leaf') {
+        // Folha girando: um tom mais claro quando vira para a luz e uma sombrinha no chão.
+        const spin = Math.sin(age * 40 + q.x * 3);
+        const f = spin > 0;
+        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+        ctx.fillRect(x + scale, y + 5 * scale, 2 * scale, scale);
         ctx.fillStyle = q.color ?? '#6cc85c';
-        const f = Math.sin(age * 40) > 0;
         ctx.fillRect(x, y, (f ? 2 : 1) * scale, (f ? 1 : 2) * scale);
+        if (Math.abs(spin) > 0.8) {
+          ctx.fillStyle = 'rgba(255,255,255,0.45)';
+          ctx.fillRect(x, y, scale, scale);
+        }
       } else if (q.kind === 'smoke') {
-        ctx.fillStyle = `rgba(225,225,235,${((1 - age) * 0.5).toFixed(2)})`;
-        ctx.beginPath();
-        ctx.arc(x, y, (2 + age * 5) * scale, 0, Math.PI * 2);
-        ctx.fill();
+        // Baforada macia que cresce e some, com um leve tom quente perto da chaminé.
+        const r = (2 + age * 6) * scale;
+        const puff = ctx.createRadialGradient(x, y, 0, x, y, r);
+        const warm = Math.max(0, 1 - age * 2.5);
+        puff.addColorStop(0, `rgba(${235 + warm * 20 | 0},${232 + warm * 8 | 0},${236 - warm * 20 | 0},${((1 - age) * 0.55).toFixed(2)})`);
+        puff.addColorStop(1, 'rgba(225,225,235,0)');
+        ctx.fillStyle = puff;
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
       } else if (q.kind === 'poof') {
         ctx.fillStyle = `rgba(255,255,255,${((1 - age) * 0.8).toFixed(2)})`;
         for (let k = 0; k < 6; k++) {
@@ -2266,6 +2281,13 @@ export class VillageGame {
           ctx.arc(x + Math.cos(a) * age * 10 * scale, y + Math.sin(a) * age * 7 * scale, (3 - age * 2) * scale, 0, Math.PI * 2);
           ctx.fill();
         }
+        // Estrelinhas girando para fora do puf.
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI * 2 + age * 2.5;
+          drawSparkle(ctx, x + Math.cos(a) * (3 + age * 14) * scale, y - age * 6 * scale + Math.sin(a) * (2 + age * 8) * scale, (1.6 - age) * scale, (1 - age) * 0.9);
+        }
+      } else if (q.kind === 'sparkle') {
+        drawSparkle(ctx, x, y, (1.2 + Math.sin(age * Math.PI) * 1.4) * scale, Math.sin(age * Math.PI), q.color ?? '255,248,210');
       } else if (q.emoji) {
         ctx.globalAlpha = Math.min(1, (1 - age) * 2);
         ctx.font = `${Math.round(8 * scale)}px ${EMOJI_FONT}`;
@@ -2335,12 +2357,15 @@ export class VillageGame {
       const n = Math.round(wx.snow * 110);
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       for (let i = 0; i < n; i++) {
+        // Flocos mais perto caem mais rápido e mais opacos; os de longe ficam foscos.
+        ctx.globalAlpha = 0.5 + hashN(i * 11) * 0.5;
         const sp = 0.25 + hashN(i * 5) * 0.35;
         const fx = (hashN(i) * W + Math.sin(now / 900 + i) * 14 * scale + now * 0.02 * wx.windX * 6) % W;
         const fy = (hashN(i + 900) * H + now * 0.09 * sp * (scale / 3)) % H;
         const sz = (hashN(i + 3) > 0.7 ? 2 : 1) * scale;
         ctx.fillRect((fx + W) % W, fy, sz, sz);
       }
+      ctx.globalAlpha = 1;
     }
 
     // Dia e noite.
@@ -2414,6 +2439,15 @@ export class VillageGame {
     }
     if (layer !== 'props') {
       if (ambientFx && this.weatherMode() !== 'off') drawSunRays(ctx, W, H, now, (1 - light.dark) * (1 - wx.cloud) * (1 - wx.rain) * (1 - wx.snow));
+      // Névoa baixa no amanhecer, no fim da tarde e quando chove: um véu que sobe do chão.
+      const mistPower = Math.min(1, Math.max(wx.rain * 0.7, light.warm * 0.8));
+      if (ambientFx && mistPower > 0.05) {
+        const mist = ctx.createLinearGradient(0, H * 0.55, 0, H);
+        mist.addColorStop(0, 'rgba(225,235,248,0)');
+        mist.addColorStop(1, `rgba(225,235,248,${(mistPower * 0.16 * (0.85 + 0.15 * Math.sin(now / 3200))).toFixed(3)})`);
+        ctx.fillStyle = mist;
+        ctx.fillRect(0, H * 0.55, W, H * 0.45);
+      }
       // Vinheta: escurece de leve as bordas.
       const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.78);
       vg.addColorStop(0, 'rgba(0,0,0,0)');
