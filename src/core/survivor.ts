@@ -1,9 +1,10 @@
 import { seededRng } from './battle';
 import { statsOfDex } from './survivor-stats';
 import type { Rng } from './battle';
-import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
+import { BASIC_ATTACK_DAMAGE_FACTOR, type AttackProfile, type MoveCategory, type SurvivorMove } from './survivor-moves';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
+import { HYPOTHETICAL_TYPE_ACTIVATION_MS, hypotheticalSecondaryTypeFor, hypotheticalTypeRuleFor } from './survivor-type-mix';
 import { survivorPreparation } from './survivor-preparations';
 import { MAX_OFFER_CHOICES, PURE_LOADOUT } from './survivor-loadout';
 import type { TowerLoadout } from './survivor-loadout';
@@ -355,6 +356,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     typeAffinity: options.typeAffinity ?? null,
     typeAffinityChoices: [...(options.typeAffinityChoices ?? [])],
     typeAffinityOffered: false,
+    hypotheticalSecondaryType: hypotheticalSecondaryTypeFor(move.type, seed),
+    hypotheticalSecondaryActive: false,
   };
   if (options.mega) startSurvivorMega(state, options.mega);
   return state;
@@ -974,14 +977,49 @@ function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: numbe
   }
 }
 
+/** Aplica a propriedade tabelada do segundo tipo hipotético, depois que ele desperta aos nove minutos. */
+function applyHypotheticalTypeEffect(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }): void {
+  if (!state.hypotheticalSecondaryActive) return;
+  const rule = hypotheticalTypeRuleFor(state.player.move.type, state.hypotheticalSecondaryType);
+  switch (rule.effect) {
+    case 'queimar':
+      e.burnMs = Math.max(e.burnMs ?? 0, 1600);
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(damage * 0.16));
+      break;
+    case 'lentidao': e.slowMs = Math.max(e.slowMs ?? 0, 700); break;
+    case 'atordoar': applyStun(e, e.boss ? 70 : 160); break;
+    case 'empurrar': applyKnockback(e, from, e.boss ? 2 : 6); break;
+    case 'roubar': state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1); break;
+    case 'semente': e.seededMs = Math.max(e.seededMs ?? 0, 1500); break;
+    case 'saltar': {
+      const target = state.enemies.find((other) => other !== e && other.hp > 0 && Math.hypot(other.x - e.x, other.y - e.y) <= 130);
+      if (target) { target.hp -= damage * 0.3; target.hitFlashMs = 90; }
+      break;
+    }
+    case 'atravessar':
+    case 'precisao':
+      break;
+  }
+}
+
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
 function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true, distanceFromPlayer = Math.hypot(e.x - state.player.x, e.y - state.player.y)): void {
   const move = attackMove;
   const p = state.player;
   const wasSeeded = (e.seededMs ?? 0) > 0;
   const synergy = survivorSynergyFor(move.type, e);
+  const hypotheticalRule = move === p.move && state.hypotheticalSecondaryActive ? hypotheticalTypeRuleFor(move.type, state.hypotheticalSecondaryType) : null;
   let upgradeMultiplier = 1;
+  if (hypotheticalRule) upgradeMultiplier *= 1 + hypotheticalRule.damageBonus;
   if (move === p.move) {
+    const openingStrike = p.upgradeLevels['opening-strike'] ?? 0;
+    const lastStand = p.upgradeLevels['last-stand'] ?? 0;
+    const closeQuarters = p.upgradeLevels['close-quarters'] ?? 0;
+    const longShot = p.upgradeLevels['long-shot'] ?? 0;
+    if (openingStrike > 0 && e.hp >= e.maxHp) upgradeMultiplier *= 1 + openingStrike * 0.18;
+    if (lastStand > 0 && p.hp <= p.maxHp * 0.3) upgradeMultiplier *= 1 + lastStand * 0.22;
+    if (closeQuarters > 0 && distanceFromPlayer <= BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + closeQuarters * 0.12;
+    if (longShot > 0 && distanceFromPlayer > BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + longShot * 0.12;
     if (move.type === 'fire' && hasUpgrade(p, 'fire-combustion') && (e.burnMs ?? 0) > 0) upgradeMultiplier *= 1.12;
     if (move.type === 'electric' && hasUpgrade(p, 'electric-arc') && ((e.wetMs ?? 0) > 0 || (e.stunMs ?? 0) > 0)) upgradeMultiplier *= 1.1;
     if (move.type === 'ice' && hasUpgrade(p, 'ice-shatter') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.15;
@@ -1000,6 +1038,10 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   if (synergy?.consume) e[synergy.consume] = 0;
   if (synergy?.refreshSlowMs) e.slowMs = Math.max(e.slowMs ?? 0, synergy.refreshSlowMs);
   Object.assign(e, survivorElementalStatus(move.type));
+  if (move === p.move) {
+    const slowField = p.upgradeLevels['slow-field'] ?? 0;
+    if (slowField > 0) e.slowMs = Math.max(e.slowMs ?? 0, slowField * 250);
+  }
   if (move === p.move && move.type === 'grass' && hasUpgrade(p, 'grass-roots') && wasSeeded) {
     applyStun(e, e.boss ? 100 : 250);
   }
@@ -1034,6 +1076,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   if (move === p.move && state.typeAffinity?.type !== move.type) {
     applyTypeAffinity(state, e, environmentalDamage, from);
   }
+  if (hypotheticalRule) applyHypotheticalTypeEffect(state, e, environmentalDamage, from);
   // Inseto e Fantasma atacam em dupla: um único eco visual e de dano por impacto, sem efeitos, cura ou recursão.
   if (allowFollowUp && (move.type === 'bug' || move.type === 'ghost') && e.hp > 0) {
     const enhancedEcho = move === p.move && ((move.type === 'bug' && hasUpgrade(p, 'bug-formation')) || (move.type === 'ghost' && hasUpgrade(p, 'ghost-haunt')));
@@ -1096,6 +1139,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
   const baseAngle = Math.atan2(target.y - p.y, target.x - p.x);
   const spread = 0.26;
   const look = survivorProjectileLook(p);
+  const hypotheticalPierce = state.hypotheticalSecondaryActive && hypotheticalTypeRuleFor(move.type, state.hypotheticalSecondaryType).effect === 'atravessar' ? 1 : 0;
   for (let i = 0; i < p.shots; i++) {
     const offset = p.shots === 1 ? 0 : (i - (p.shots - 1) / 2) * spread;
     const angle = baseAngle + offset;
@@ -1106,7 +1150,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       vx: Math.cos(angle) * p.projectileSpeed,
       vy: Math.sin(angle) * p.projectileSpeed,
       damage: artifactDamage(state),
-      pierce: p.pierce + (move.effect === 'atravessar' ? 1 : 0),
+      pierce: p.pierce + (move.effect === 'atravessar' ? 1 : 0) + hypotheticalPierce,
       lifeMs: 1600,
       hit: [],
       canChain: move.effect === 'saltar',
@@ -1149,7 +1193,7 @@ function fireFocusBeam(state: SurvivorState, level: number): string {
   const angle = target ? Math.atan2(target.y - p.y, target.x - p.x) : survivorAimAngle(p);
   const toX = p.x + Math.cos(angle) * beam.length;
   const toY = p.y + Math.sin(angle) * beam.length;
-  const damage = artifactDamage(state) * beam.damageMultiplier;
+  const damage = artifactDamage(state) * beam.damageMultiplier / BASIC_ATTACK_DAMAGE_FACTOR;
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0 || distanceToSegment(e.x, e.y, p.x, p.y, toX, toY) > beam.halfWidth + e.radius) continue;
@@ -1177,7 +1221,7 @@ function rushTeleport(state: SurvivorState): boolean {
   p.y = clamp(target.y + Math.sin(angle) * past, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
   if (Math.abs(Math.cos(angle)) > 0.01) p.facing = Math.cos(angle) < 0 ? -1 : 1;
   p.aimAngle = angle;
-  const damage = artifactDamage(state) * RUSH_TELEPORT_DAMAGE_MULTIPLIER;
+  const damage = artifactDamage(state) * RUSH_TELEPORT_DAMAGE_MULTIPLIER / BASIC_ATTACK_DAMAGE_FACTOR;
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0 || Math.hypot(e.x - target.x, e.y - target.y) > RUSH_HIT_RADIUS + e.radius) continue;
@@ -1395,7 +1439,7 @@ function effectivePickupRadius(p: SurvivorPlayer): number {
 
 /** Janela de proteção depois de levar um golpe; a marmita de Fruta a alonga enquanto dura. */
 function hitInvulnerabilityMs(p: SurvivorPlayer): number {
-  return Math.round(BALANCE.hitInvulnerabilityMs * (1 + (p.lunchHitInvulnBonus ?? 0)));
+  return Math.round(BALANCE.hitInvulnerabilityMs * (1 + (p.lunchHitInvulnBonus ?? 0)) * (1 + (p.upgradeLevels['escape-window'] ?? 0) * 0.25));
 }
 
 function hitSource(enemy: SurvivorEnemy): SurvivorHitSource {
@@ -1415,11 +1459,23 @@ export function survivorDefenseReduction(player: Pick<SurvivorPlayer, 'dexId' | 
 function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalHit['kind'], source: SurvivorHitSource): void {
   const p = state.player;
   const reduction = survivorDefenseReduction(p, kind);
+  const contactGuard = kind === 'projétil' ? 0 : (p.upgradeLevels['contact-guard'] ?? 0) * 0.12;
+  const projectileGuard = kind === 'projétil' ? (p.upgradeLevels['projectile-guard'] ?? 0) * 0.12 : 0;
   // Rápido: quanto mais rápido o Pokémon se move, mais dano recebe.
   const speedPenalty = p.move.category === 'rapido' ? rushDamageTakenMultiplier(state.charge.moveRatio) : 1;
-  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * speedPenalty * (1 - (reduction ?? 0)))) : 0;
+  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * speedPenalty * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)))) : 0;
   state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
   p.hp = Math.max(0, p.hp - effectiveDamage);
+  const retaliation = p.upgradeLevels['retaliation-wave'] ?? 0;
+  if (effectiveDamage > 0 && retaliation > 0) {
+    const retaliationDamage = p.attackDamage * 0.3 * retaliation;
+    for (const enemy of state.enemies) {
+      if (enemy.hp > 0 && Math.hypot(enemy.x - p.x, enemy.y - p.y) <= PLAYER_RADIUS + enemy.radius + 54) {
+        enemy.hp -= retaliationDamage;
+        enemy.hitFlashMs = 90;
+      }
+    }
+  }
 }
 
 function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, target: SurvivorPlayer, damageMultiplier = 0.7): void {
@@ -1730,6 +1786,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   const dt = dtMs / 1000;
   const previousElapsedMs = state.elapsedMs;
   state.elapsedMs += dtMs;
+  if (!state.hypotheticalSecondaryActive && previousElapsedMs < HYPOTHETICAL_TYPE_ACTIVATION_MS && state.elapsedMs >= HYPOTHETICAL_TYPE_ACTIVATION_MS) {
+    state.hypotheticalSecondaryActive = true;
+    events.push({ type: 'hypotheticalTypeActivated', secondaryType: state.hypotheticalSecondaryType });
+  }
   if (previousElapsedMs < SURVIVOR_LOVE_CANDY_MS && state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS) {
     events.push({ type: 'milestone', id: 'ten-minutes', reward: 'love-candy' });
   }
@@ -1831,7 +1891,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (e.wetMs && e.wetMs > 0) e.wetMs = Math.max(0, e.wetMs - dtMs);
     if (e.seededMs && e.seededMs > 0) e.seededMs = Math.max(0, e.seededMs - dtMs);
     if (e.hastenedMs && e.hastenedMs > 0) e.hastenedMs = Math.max(0, e.hastenedMs - dtMs);
-    const stunned = !!e.stunMs && e.stunMs > 0;
+    const timeStopped = state.special.selected === 'stasis' && state.special.activeMs > 0;
+    const stunned = timeStopped || !!e.stunMs && e.stunMs > 0;
     if (stunned) e.stunMs = Math.max(0, (e.stunMs ?? 0) - dtMs);
     if ((e.stunCooldownMs ?? 0) > 0) e.stunCooldownMs = Math.max(0, (e.stunCooldownMs ?? 0) - dtMs);
     if ((e.knockbackCooldownMs ?? 0) > 0) e.knockbackCooldownMs = Math.max(0, (e.knockbackCooldownMs ?? 0) - dtMs);
@@ -1847,6 +1908,14 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const speed = stunned ? 0 : e.speed * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * rangedMultiplier * statusMultiplier * hasteMultiplier * dashMultiplier;
     e.x += (dx / d) * speed * dt;
     e.y += (dy / d) * speed * dt;
+    if (state.special.selected === 'gravity' && state.special.activeMs > 0) {
+      const gravityDx = p.x - e.x;
+      const gravityDy = p.y - e.y;
+      const gravityDistance = Math.hypot(gravityDx, gravityDy) || 1;
+      const direction = state.special.branch === 'gravity-repel' ? -1 : 1;
+      e.x += direction * gravityDx / gravityDistance * 220 * dt;
+      e.y += direction * gravityDy / gravityDistance * 220 * dt;
+    }
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
     // Espinhos: quem encosta em você apanha, mesmo durante a janela de invulnerabilidade do jogador.
     if ((p.thornsDamage ?? 0) > 0 && playerDistance < PLAYER_RADIUS + e.radius) e.hp -= (p.thornsDamage ?? 0) * dt;
@@ -1966,6 +2035,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (dead.length > 0) {
     state.enemies = state.enemies.filter((e) => e.hp > 0);
     state.kills += dead.length;
+    const trophyMedicine = p.upgradeLevels['trophy-medicine'] ?? 0;
+    if (trophyMedicine > 0) p.hp = Math.min(p.maxHp, p.hp + dead.length * trophyMedicine * 2);
     for (const e of dead) {
       const value = normalizeSurvivorXp(e.boss ? 48 : e.grade === 'chefao' ? 36 : e.grade === 'elite' ? 20 : 8);
       const doubleXp = state.rng() < BALANCE.doubleXpOrbChance;
@@ -2025,6 +2096,13 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   updateFieldEvent(state, dtMs, events);
 
   // Coleta de orbes de XP (e nível, se passou da marca).
+  if (state.special.selected === 'gravity' && state.special.branch === 'gravity-vacuum' && state.special.activeMs > 0) {
+    for (const orb of state.orbs) { orb.x = p.x; orb.y = p.y; }
+  }
+  if (p.artifactMagnetMs > 0) {
+    for (const orb of state.orbs) { orb.x = p.x; orb.y = p.y; }
+    for (const artifact of state.artifacts) { artifact.x = p.x; artifact.y = p.y; }
+  }
   state.orbs = state.orbs.filter((orb) => {
     if (Math.hypot(orb.x - p.x, orb.y - p.y) <= effectivePickupRadius(p)) {
       // A marmita de Peixe não multiplica o ritmo acelerado: vale o maior dos dois.
@@ -2034,6 +2112,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       const boostedValue = normalizeSurvivorXp(xpWithCarry);
       p.xpCarry = Math.max(0, xpWithCarry - boostedValue);
       p.xp = normalizeSurvivorXp(p.xp + boostedValue);
+      const orbMedicine = p.upgradeLevels['orb-medicine'] ?? 0;
+      if (orbMedicine > 0) p.hp = Math.min(p.maxHp, p.hp + orbMedicine);
       return false;
     }
     return true;

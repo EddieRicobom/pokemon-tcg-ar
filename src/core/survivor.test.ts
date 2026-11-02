@@ -23,7 +23,6 @@ import {
   DIGITAL_DANGER_COOLDOWN_MS,
   DIGITAL_DANGER_MAX,
   DIGITAL_DANGER_UNLOCK_MS,
-  MAGNET_PICKUP_RADIUS_CAP,
   normalizeSurvivorXp,
   survivorDirectDamageMultiplier,
   survivorProjectileOpacity,
@@ -39,6 +38,7 @@ import {
 import type { SurvivorEnemy, SurvivorState } from './survivor';
 import { seededRng } from './battle';
 import { attackProfile, moveFor } from './survivor-moves';
+import { HYPOTHETICAL_TYPE_ACTIVATION_MS, hypotheticalTypeRuleFor } from './survivor-type-mix';
 import type { MoveCategory, SurvivorMove } from './survivor-moves';
 import type { PokemonType } from './pokemon-data';
 
@@ -181,6 +181,17 @@ describe('stepSurvivor', () => {
     expect(chooseSurvivorTypeAffinity(s, 'ghost')).toBe(true);
     expect(s.typeAffinity).toEqual({ type: 'ghost', effect: 'lentidao' });
     expect(chooseSurvivorTypeAffinity(s, 'fire')).toBe(false);
+  });
+
+  it('define uma mistura ou exaltação no início e ativa aos nove minutos', () => {
+    const s = quiet(createSurvivorState(73, { kindCount: 1 }));
+    expect(s.hypotheticalSecondaryActive).toBe(false);
+    s.special.phase = 'ready';
+    s.elapsedMs = HYPOTHETICAL_TYPE_ACTIVATION_MS - 1;
+    const events = stepSurvivor(s, { dx: 0, dy: 0 }, 1);
+    expect(s.hypotheticalSecondaryActive).toBe(true);
+    expect(events).toContainEqual({ type: 'hypotheticalTypeActivated', secondaryType: s.hypotheticalSecondaryType });
+    expect(hypotheticalTypeRuleFor(s.player.move.type, s.hypotheticalSecondaryType).damageBonus).toBeGreaterThan(0);
   });
 
   it('anda na direção do analógico e fica preso dentro da arena', () => {
@@ -1433,13 +1444,15 @@ describe('artefatos temporários', () => {
     expect(s.player.attackTimerMs).toBe(800);
   });
 
-  it('limita o raio temporário do Ímã para manter alguma movimentação', () => {
+  it('Ímã ativo traz toda a XP, buffs e artefatos do mapa para o jogador', () => {
     const s = quiet(createSurvivorState(12, { kindCount: 1 }));
-    s.player.pickupRadius = 70;
     s.player.artifactMagnetMs = 8000;
-    s.orbs.push({ id: 906, x: s.player.x + MAGNET_PICKUP_RADIUS_CAP + 1, y: s.player.y, value: 8 });
+    s.orbs.push({ id: 906, x: s.player.x + 3000, y: s.player.y + 2000, value: 8 });
+    s.artifacts.push({ id: 907, x: s.player.x - 3000, y: s.player.y - 2000, kind: 'speed' });
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(s.orbs).toHaveLength(1);
-    expect(MAGNET_PICKUP_RADIUS_CAP).toBe(90);
+    expect(s.orbs).toHaveLength(0);
+    expect(s.artifacts).toHaveLength(0);
+    expect(s.player.xp).toBeGreaterThan(0);
+    expect(s.player.artifactSpeedMs).toBe(8000);
   });
 });

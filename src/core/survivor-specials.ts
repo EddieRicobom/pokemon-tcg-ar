@@ -1,8 +1,8 @@
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorInput, SurvivorState } from './survivor';
 
-export type SurvivorSpecialId = 'dash' | 'shield' | 'teleport';
-export type SurvivorSpecialBranchId = 'dash-clone' | 'dash-triple' | 'shield-permanent' | 'shield-heal' | 'teleport-infinite' | 'teleport-vacuum';
+export type SurvivorSpecialId = 'dash' | 'shield' | 'teleport' | 'stasis' | 'gravity';
+export type SurvivorSpecialBranchId = 'dash-clone' | 'dash-triple' | 'shield-permanent' | 'shield-heal' | 'teleport-infinite' | 'teleport-vacuum' | 'stasis-mend' | 'stasis-collapse' | 'gravity-repel' | 'gravity-vacuum';
 export const SPECIAL_UNLOCK_MS = 180_000;
 export const SPECIAL_BRANCH_UNLOCK_MS = 420_000;
 /** A investida atravessa inimigos e usa este múltiplo do dano atual do golpe principal. */
@@ -17,6 +17,8 @@ export const SURVIVOR_SPECIALS = {
   dash: { name: 'Investida elemental', icon: '➤', cooldownMs: 6500, durationMs: 300, description: 'Avance na última direção válida, protegido durante a investida e cause 2× o dano do golpe aos inimigos atravessados. Recarga: 6,5 s.' },
   shield: { name: 'Bastião elemental', icon: '⬡', cooldownMs: 12_000, durationMs: 3000, description: 'Bloqueie todo dano durante 3 s. Recarga: 12 s.' },
   teleport: { name: 'Salto de execução', icon: '✧', cooldownMs: 25_000, durationMs: 0, description: 'Teleporte na direção do movimento e elimine até 4 selvagens próximos ao destino. Não afeta chefes ou equipes de treinadores. Recarga: 25 s.' },
+  stasis: { name: 'Relógio parado', icon: '◷', cooldownMs: 18_000, durationMs: 3500, description: 'Para todos os inimigos por 3,5 s, sem interromper seus próprios ataques. Recarga: 18 s.' },
+  gravity: { name: 'Núcleo gravitacional', icon: '◉', cooldownMs: 16_000, durationMs: 4000, description: 'Dobra o campo: puxa inimigos para perto por 4 s. Recarga: 16 s.' },
 } as const;
 export const SURVIVOR_SPECIAL_BRANCHES: Record<SurvivorSpecialId, readonly { id: SurvivorSpecialBranchId; name: string; icon: string; description: string }[]> = {
   dash: [
@@ -30,6 +32,14 @@ export const SURVIVOR_SPECIAL_BRANCHES: Record<SurvivorSpecialId, readonly { id:
   teleport: [
     { id: 'teleport-infinite', name: 'Salto sem horizonte', icon: '∞', description: 'O teleporte alcança a borda da arena e elimina até 7 selvagens.' },
     { id: 'teleport-vacuum', name: 'Vácuo de experiência', icon: '✦', description: 'O teleporte puxa todos os orbes de experiência do mapa.' },
+  ],
+  stasis: [
+    { id: 'stasis-mend', name: 'Intervalo vital', icon: '♥', description: 'Ao parar o tempo, recupera 25% da vida máxima.' },
+    { id: 'stasis-collapse', name: 'Colapso temporal', icon: '⌛', description: 'A parada dura 5 s e, ao começar, atordoa os inimigos por mais 1 s.' },
+  ],
+  gravity: [
+    { id: 'gravity-repel', name: 'Inversão polar', icon: '↗', description: 'O núcleo repele inimigos em vez de puxá-los, abrindo espaço ao redor.' },
+    { id: 'gravity-vacuum', name: 'Coleta orbital', icon: '✦', description: 'Enquanto ativo, traz todos os orbes de XP para você.' },
   ],
 };
 
@@ -167,6 +177,11 @@ export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, 
       special.clone = { x: state.player.x, y: state.player.y, dx: dx / distance, dy: dy / distance, activeMs: DASH_CLONE_DURATION_MS };
     }
     if (special.selected === 'shield' && special.branch === 'shield-permanent') special.activeMs = Number.POSITIVE_INFINITY;
+    if (special.selected === 'stasis' && special.branch === 'stasis-mend') state.player.hp = Math.min(state.player.maxHp, state.player.hp + Math.round(state.player.maxHp * 0.25));
+    if (special.selected === 'stasis' && special.branch === 'stasis-collapse') {
+      special.activeMs = 5000;
+      for (const enemy of state.enemies) enemy.stunMs = Math.max(enemy.stunMs ?? 0, 1000);
+    }
     if (special.selected === 'teleport') {
       const teleportDistance = special.branch === 'teleport-infinite' ? Math.max(width, height) * 2 : 150;
       Object.assign(state.player, destination(teleportDistance));

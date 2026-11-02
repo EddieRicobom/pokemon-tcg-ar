@@ -477,6 +477,10 @@ export interface SurvivorState {
   typeAffinityChoices: PokemonType[];
   /** A oferta já apareceu; evita repetir a mesma escolha na corrida. */
   typeAffinityOffered: boolean;
+  /** Segundo tipo hipotético definido no início, sempre diferente do tipo principal. */
+  hypotheticalSecondaryType: PokemonType;
+  /** A mistura só passa a valer aos nove minutos de tempo de corrida. */
+  hypotheticalSecondaryActive: boolean;
   /** Banimentos que ainda restam e as cartas banidas desta corrida (a Vila entrega pelo Dojô). */
   bansLeft?: number;
   bannedUpgradeIds?: string[];
@@ -604,6 +608,7 @@ export type SurvivorEvent =
   | { type: 'trainerDown'; final: boolean }
   /** Primeiro treinador derrotado: oferece a afinidade do segundo tipo real da espécie. */
   | { type: 'typeAffinityOffer'; types: PokemonType[] }
+  | { type: 'hypotheticalTypeActivated'; secondaryType: PokemonType }
   | { type: 'evolve'; dexId: number; name: string }
   | { type: 'secondAttack'; name: string }
   /** Golpe de carga solto: feixe do Foco (com o nome do nível) ou início dos teleportes do Rápido. */

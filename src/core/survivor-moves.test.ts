@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { POKEMON_TYPES } from './pokemon-data';
-import { attackProfile, categoryForStats, CATEGORY_BASE, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from './survivor-moves';
+import { attackProfile, BASIC_ATTACK_DAMAGE_FACTOR, categoryForStats, CATEGORY_BASE, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
 
 describe('golpes da Torre: elemento pelo tipo, forma e números pelos stats', () => {
@@ -37,6 +37,14 @@ describe('golpes da Torre: elemento pelo tipo, forma e números pelos stats', ()
     expect(moveFor(['bug'], null).category).toBe('orbit');
     expect(CATEGORY_BASE.cone.damage).toBeLessThan(CATEGORY_BASE.area.damage);
     expect(CATEGORY_BASE.orbit.cooldownMs).toBeGreaterThan(CATEGORY_BASE.aura.cooldownMs);
+    expect(CATEGORY_BASE.foco.cooldownMs).toBe(3900); // um terço da cadência anterior
+  });
+
+  it('reduz pela metade o dano dos ataques automáticos', () => {
+    const stats = { hp: 75, attack: 75, defense: 75, spAttack: 75, spDefense: 75, speed: 75 };
+    const profile = attackProfile(moveFor(['normal'], stats), stats);
+    expect(BASIC_ATTACK_DAMAGE_FACTOR).toBe(0.5);
+    expect(profile.damage).toBe(CATEGORY_BASE.projetil.damage * 1.2 * BASIC_ATTACK_DAMAGE_FACTOR);
   });
 
   it('compara estilos nos mesmos stats e dá retorno compatível à exposição dos golpes próximos', () => {
@@ -82,7 +90,7 @@ describe('golpes da Torre: elemento pelo tipo, forma e números pelos stats', ()
       expect(p.maxHp).toBeGreaterThanOrEqual(80);
       expect(p.maxHp).toBeLessThanOrEqual(160);
       expect(p.cooldownMs).toBeGreaterThan(300);
-      expect(p.damage).toBeGreaterThan(3);
+      expect(p.damage).toBeGreaterThan(1.5);
     }
   });
 

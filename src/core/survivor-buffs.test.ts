@@ -37,6 +37,18 @@ describe('novas cartas de buff', () => {
     expect(new Set(ancestral.map((upgrade) => upgrade.id)).size).toBe(10);
   });
 
+  it('acrescenta onze buffs inéditos de nível Poké Ball', () => {
+    const ids = [
+      'opening-strike', 'last-stand', 'close-quarters', 'long-shot', 'slow-field', 'orb-medicine',
+      'trophy-medicine', 'contact-guard', 'projectile-guard', 'escape-window', 'retaliation-wave',
+    ];
+    const byId = new Map(SURVIVOR_UPGRADES.map((upgrade) => [upgrade.id, upgrade]));
+    expect(ids).toHaveLength(11);
+    expect(ids.every((id) => byId.get(id)?.rarity === 'normal')).toBe(true);
+    expect(ids.every((id) => (byId.get(id)?.maxLevels ?? 0) > 0)).toBe(true);
+  });
+
+
   it('monta quatro degraus para cada forma de ataque e elemento', () => {
     const categories: MoveCategory[] = ['projetil', 'aura', 'area', 'cone', 'orbit'];
     const types: PokemonType[] = ['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'];
