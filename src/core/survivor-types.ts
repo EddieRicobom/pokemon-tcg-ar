@@ -71,6 +71,8 @@ export interface SurvivorPlayer {
   projectileSpeed: number;
   /** Quantos inimigos extras um projétil atravessa antes de sumir. */
   pierce: number;
+  /** Prioridade escolhida no HUD para o próximo alvo automático. */
+  targetPriority?: SurvivorTargetPriority;
   /** Carta lendária: o golpe pode aparar um projétil inimigo por ataque. */
   projectileDeflection?: boolean;
   /** Moedas prometidas pelas cartas da corrida; entram na carteira só no resultado final. */
@@ -141,6 +143,9 @@ export interface SurvivorPlayer {
   /** Mega da corrida (`core/survivor-mega.ts`); fica ativa até o fim, e `active` só cai para false se o Pokémon evoluir. */
   mega?: SurvivorMegaState;
 }
+
+/** Prioridade opcional do autoataque; sem foco, a distância continua vencendo. */
+export type SurvivorTargetPriority = 'boss' | 'healer' | 'lowest-hp';
 
 /** Dados congelados do Pokémon de apoio. Ele acompanha apenas no desenho: não é um segundo alvo de combate. */
 export interface SurvivorSupport {
@@ -298,7 +303,7 @@ export interface SurvivorProjectile {
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
   /** `beam`: feixe do Foco (de `fromX/fromY` a `toX/toY`, meia largura em `r`). `rush`: teleporte do Rápido. */
-  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal' | 'beam' | 'rush';
+  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal' | 'beam' | 'rush' | 'defeat';
   x: number;
   y: number;
   r: number;

@@ -508,6 +508,8 @@ const damageNumbers = ref<DamageNumber[]>([]);
 let nextDamageNumberId = 1;
 /** Pausa visual curtíssima no impacto. Não roda com movimento reduzido, modo Rotom ou impactos desligados. */
 let hitStopMs = 0;
+/** Guarda se o menu abriu a pausa, para o fechamento retomar somente o que ele próprio interrompeu. */
+let menuPausedRun = false;
 const ready = ref(false);
 const failed = ref(false);
 const avatarName = ref('');
@@ -521,6 +523,21 @@ let bonkJumpQueued = false;
 let bonkFacing: -1 | 1 = 1;
 const guardian = computed(() => state.value ? SPECIAL_GUARDIANS[state.value.special.type] : null);
 const chosenSpecial = computed(() => state.value?.special.selected ? SURVIVOR_SPECIALS[state.value.special.selected] : null);
+const timeStopped = computed(() => state.value?.special.selected === 'stasis' && (state.value.special.activeMs ?? 0) > 0);
+const targetPriority = computed(() => state.value?.player.targetPriority ?? null);
+const TARGET_FOCUS = [
+  { id: 'boss', icon: '👑', label: 'Chefões', description: 'Prioriza chefões e Pokémon de treinadores.' },
+  { id: 'healer', icon: '♥', label: 'Curadores', description: 'Prioriza suportes que curam aliados.' },
+  { id: 'lowest-hp', icon: '▾', label: 'Menor vida', description: 'Prioriza o inimigo com menor porcentagem de vida.' },
+] as const;
+function setTargetPriority(priority: typeof TARGET_FOCUS[number]['id']): void {
+  const s = state.value;
+  if (!s) return;
+  s.player.targetPriority = s.player.targetPriority === priority ? undefined : priority;
+  triggerRef(state);
+  const selected = TARGET_FOCUS.find((option) => option.id === s.player.targetPriority);
+  say(selected ? `🎯 Foco: ${selected.label}.` : '🎯 Foco automático: inimigo mais próximo.', 1800);
+}
 const specialModalOpen = computed(() => {
   const phase = state.value?.special.phase;
   return phase === 'arrival' || phase === 'choice' || phase === 'branch-arrival' || phase === 'branch-choice';
@@ -880,6 +897,9 @@ let animMs = 0;
 let playerAttackAt = -Infinity;
 let lastMinimapMs = -Infinity;
 let announcedRegion = '';
+/** Rastro visual calculado pela velocidade real do quadro, comparada à velocidade de início da corrida. */
+let initialPlayerSpeed = 1;
+const footDust = { strength: 0, dx: 0, dy: 0 };
 const heldKeys = new Set<string>();
 /** Joystick flutuante: aparece onde o dedo encostou na tela da Torre (`lx`, `ly`, relativos à tela). */
 const joystick = reactive({ active: false, pointerId: null as number | null, cx: 0, cy: 0, dx: 0, dy: 0, lx: 0, ly: 0 });
@@ -1159,6 +1179,27 @@ function drawShadowFlames(x: number, y: number, radius: number): void {
     ctx.stroke();
   }
   ctx.restore();
+}
+
+/** Poeira leve atrás dos pés: só aparece ao passar da velocidade inicial e respeita Efeitos leves/Rotom. */
+function drawFootDust(c: CanvasRenderingContext2D, x: number, y: number, scale = 1): void {
+  if (!detailedSpecialEffects.value || footDust.strength <= 0.01) return;
+  const strength = clamp(footDust.strength, 0, 1.4);
+  const oppositeX = -footDust.dx;
+  const oppositeY = -footDust.dy;
+  const distance = (11 + strength * 13) * scale;
+  const px = x + oppositeX * distance;
+  const py = y + oppositeY * distance * 0.55 + 6 * scale;
+  c.save();
+  c.globalAlpha = 0.16 + strength * 0.23;
+  c.fillStyle = '#e8dfc7';
+  for (let i = 0; i < 3; i++) {
+    const spread = (i - 1) * (4 + strength * 2) * scale;
+    c.beginPath();
+    c.ellipse(px + oppositeY * spread, py - oppositeX * spread * 0.45, (2.5 + strength * 2) * scale, (1.4 + strength) * scale, 0, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.restore();
 }
 
 function drawEnemy(e: SurvivorEnemy): void {
@@ -1449,6 +1490,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.restore();
     } });
   }
+  if (playerGround) drawFootDust(c, playerGround.x, playerGround.y, playerGround.scale);
   if (move.category === 'orbit') {
     // Cada orbital entra na ordenação: o que passa atrás do Pokémon some atrás dele, o da frente cobre.
     survivorOrbiters(s.player).forEach((orbiter, index) => {
@@ -1497,16 +1539,24 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   }
   for (const fx of s.fx) {
     if (drawElementFx(c, fx, toScreen, animMs, detailed)) continue;
-    if (fx.kind !== 'blast' && fx.kind !== 'pulse') continue;
+    if (fx.kind !== 'blast' && fx.kind !== 'pulse' && fx.kind !== 'defeat') continue;
     const p = drawPoint(fx);
     if (!p) continue;
     const t = fx.ageMs / fx.lifeMs;
-    const size = bonkGroundEllipse(p, fx.r * (0.6 + t * 0.4));
+    const size = bonkGroundEllipse(p, fx.r * (fx.kind === 'defeat' ? 0.25 + t * 0.9 : 0.6 + t * 0.4));
     c.save();
-    c.globalAlpha = (1 - t) * 0.6;
+    c.globalAlpha = (1 - t) * (fx.kind === 'defeat' ? 0.75 : 0.6);
     c.strokeStyle = fx.color;
-    c.lineWidth = Math.max(1.5, p.scale * 2);
+    c.lineWidth = Math.max(1.5, p.scale * (fx.kind === 'defeat' ? 2.8 : 2));
     c.beginPath(); c.ellipse(p.x, p.y, size.rx, size.ry, 0, 0, Math.PI * 2); c.stroke();
+    if (fx.kind === 'defeat') {
+      c.globalAlpha *= 0.65;
+      c.fillStyle = '#fff8df';
+      for (let i = 0; i < 3; i++) {
+        const angle = (Math.PI * 2 * i) / 3 + t * 2;
+        c.beginPath(); c.arc(p.x + Math.cos(angle) * size.rx * 0.55, p.y + Math.sin(angle) * size.ry * 0.55, Math.max(1, p.scale * 1.6), 0, Math.PI * 2); c.fill();
+      }
+    }
     c.restore();
   }
   if (playerGround && s.special.activeMs > 0) {
@@ -1710,6 +1760,7 @@ function draw(): void {
     drawSprite(supportSprites.get(support.dexId) ?? null, support.x, support.y, s.player.facing < 0, 0.76, survivorSpriteDirection(s.player.x - support.x, s.player.y - support.y), supportAccessories.get(support.dexId));
     ctx.restore();
   }
+  drawFootDust(ctx, s.player.x, s.player.y);
   const blink = s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0;
   // Orbitais acima do Pokémon na tela passam por trás dele; os de baixo, pela frente.
   const orbiters = move.category === 'orbit' ? survivorOrbiters(s.player) : [];
@@ -1824,7 +1875,21 @@ function draw(): void {
     if (effectiveVisual.value.rotomMode) continue;
     const t = clamp(f.ageMs / f.lifeMs, 0, 1);
     ctx.save();
-    if (f.kind === 'pulse') {
+    if (f.kind === 'defeat') {
+      ctx.globalAlpha = 0.82 * (1 - t);
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r * (0.25 + 0.9 * t), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#fff8df';
+      for (let i = 0; i < 3; i++) {
+        const angle = (Math.PI * 2 * i) / 3 + t * 2;
+        ctx.beginPath();
+        ctx.arc(f.x + Math.cos(angle) * f.r * (0.18 + 0.6 * t), f.y + Math.sin(angle) * f.r * (0.18 + 0.6 * t), 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (f.kind === 'pulse') {
       ctx.globalAlpha = 0.55 * (1 - t);
       ctx.strokeStyle = f.color;
       ctx.lineWidth = 3;
@@ -2119,6 +2184,7 @@ function loop(ts: number): void {
     const ky = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
     const dx = kx + (joystick.active ? joystick.dx : 0);
     const dy = ky + (joystick.active ? joystick.dy : 0);
+    const beforePlayerPosition = { x: s.player.x, y: s.player.y };
     const beforeBonkPosition = bonkRun.value ? { x: s.player.x, y: s.player.y } : null;
     const beforeLandscapePosition = !bonkRun.value && regionScenery.value ? { x: s.player.x, y: s.player.y } : null;
     const previousSpecialPhase = s.special.phase;
@@ -2156,6 +2222,13 @@ function loop(ts: number): void {
       s.player.x = resolved.x;
       s.player.y = resolved.y;
     }
+    const movedX = s.player.x - beforePlayerPosition.x;
+    const movedY = s.player.y - beforePlayerPosition.y;
+    const moved = Math.hypot(movedX, movedY);
+    // A poeira compara a velocidade efetiva (já com colisão, terreno e buffs) com a de início da corrida.
+    footDust.strength = moved > 0.01 ? clamp(moved / Math.max(0.001, initialPlayerSpeed * simulationDt / 1000) - 1, 0, 1.4) : 0;
+    footDust.dx = moved > 0.01 ? movedX / moved : 0;
+    footDust.dy = moved > 0.01 ? movedY / moved : 0;
     bonkJumpQueued = false;
     const region = survivorRegionLabel(s.elapsedMs, s.runSeed);
     if (region !== announcedRegion) {
@@ -2323,6 +2396,7 @@ function rerollUpgradeSelection(): void {
 function togglePause(): void {
   if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value || trainerPresentation.value) return;
   paused.value = !paused.value;
+  menuPausedRun = false;
   if (!paused.value) helpOpen.value = false;
   joystick.active = false;
   joystick.pointerId = null;
@@ -2330,6 +2404,24 @@ function togglePause(): void {
   joystick.dy = 0;
   lastTs = performance.now();
   say(paused.value ? 'Jogo pausado.' : 'Jogo retomado.', 1600);
+}
+
+/** O menu interrompe a ação para não deixar a pessoa vulnerável enquanto lê as opções. */
+function toggleHudMenu(): void {
+  if (hudExpanded.value) {
+    hudExpanded.value = false;
+    if (menuPausedRun) {
+      paused.value = false;
+      menuPausedRun = false;
+      lastTs = performance.now();
+    }
+    return;
+  }
+  hudExpanded.value = true;
+  if (!paused.value) {
+    paused.value = true;
+    menuPausedRun = true;
+  }
 }
 
 /** Troca o sprite pela nova forma; o jogo espera (com o brilho) até carregar. Sem sprite, a forma neutra no lugar. */
@@ -2516,6 +2608,8 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     runOmegaShardTaken = mega !== null && !pureWanted.value && takeRunOmegaShard();
     const runMega = runOmegaShardTaken ? mega : null;
     state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
+    initialPlayerSpeed = Math.max(1, state.value.player.speed);
+    footDust.strength = 0;
     megaWasActive = state.value.player.mega?.active === true;
     if (megaWasActive && megaSprite) {
       playerSprite = megaSprite as SpriteAsset;
@@ -2763,10 +2857,17 @@ onBeforeUnmount(() => {
         @pointercancel="joyCancel"
         @lostpointercapture="joyCancel"
       >
-        <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" :class="{ 'bonk-canvas': bonkRun, 'survivor-damage-shake': damageFeedback }" :aria-label="bonkRun ? 'BONK: arraste para andar, toque ou clique duplo na tela para pular' : 'Torre: arraste em qualquer lugar para andar'"></canvas>
+        <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" :class="{ 'bonk-canvas': bonkRun, 'survivor-damage-shake': damageFeedback, 'survivor-time-stopped': timeStopped }" :aria-label="bonkRun ? 'BONK: arraste para andar, toque ou clique duplo na tela para pular' : 'Torre: arraste em qualquer lugar para andar'"></canvas>
 
         <div class="survivor-vignette" aria-hidden="true"></div>
         <div v-if="damageFeedback" class="survivor-damage-flash" aria-hidden="true"></div>
+        <div v-if="timeStopped" class="survivor-stasis-overlay" aria-hidden="true"><span>⏸ TEMPO PARADO</span></div>
+
+        <div v-if="ready && state && !summary && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen" class="survivor-focus-actions" role="group" aria-label="Foco do ataque automático">
+          <button v-for="option in TARGET_FOCUS" :key="option.id" type="button" :class="{ active: targetPriority === option.id }" :aria-pressed="targetPriority === option.id" :title="option.description" @pointerdown.stop.prevent @click.stop="setTargetPriority(option.id)">
+            <span aria-hidden="true">{{ option.icon }}</span><small>{{ option.label }}</small>
+          </button>
+        </div>
 
         <div v-if="toast" class="survivor-toast" role="status" aria-live="polite">{{ toast }}</div>
         <div v-if="artifactNotice" class="survivor-artifact-notice" role="status" aria-live="polite">
@@ -2804,7 +2905,7 @@ onBeforeUnmount(() => {
             <span class="chip survivor-run-stats" :title="`${state.kills} inimigos derrotados${state.fast ? ' · Ritmo acelerado' : ''}`">{{ state.fast ? '⚡ ' : '' }}⏱ {{ formatTime(state.elapsedMs) }} · ☠ {{ state.kills }}</span>
             <span v-if="missingEnemySprites" class="chip" role="status">{{ missingEnemySprites }} sprites indisponíveis: exibidos como formas neutras</span>
             <span class="survivor-action-dock">
-              <button type="button" class="chip survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre: pausa, informações e opções'" :title="hudExpanded ? 'Fechar menu da Torre' : 'Abrir menu da Torre: pausa, informações e opções'" :aria-expanded="hudExpanded" aria-controls="survivor-info-panel" @pointerdown.stop @click.stop="hudExpanded = !hudExpanded">{{ hudExpanded ? '✕ Fechar' : '☰ Menu' }}</button>
+              <button type="button" class="chip survivor-menu-btn" :aria-label="hudExpanded ? 'Fechar menu da Torre e retomar' : 'Abrir menu da Torre: pausa, informações e opções'" :title="hudExpanded ? 'Fechar menu da Torre e retomar' : 'Abrir menu da Torre: pausa, informações e opções'" :aria-expanded="hudExpanded" aria-controls="survivor-info-panel" @pointerdown.stop @click.stop="toggleHudMenu">{{ hudExpanded ? '✕ Fechar' : '☰ Menu' }}</button>
             </span>
           </div>
           <section v-if="hudExpanded" id="survivor-info-panel" class="survivor-info-panel" aria-label="Menu da Torre: pausa, informações e opções" @pointerdown.stop>
