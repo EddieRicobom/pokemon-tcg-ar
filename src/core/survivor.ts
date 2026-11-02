@@ -268,6 +268,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     attackCooldownMs: prof?.cooldownMs ?? BALANCE.playerCooldownMs,
     attackTimerMs: 0,
     projectileSpeed: prof?.projectileSpeed ?? 360,
+    ...(move.category === 'trilha' ? { trailCharge: 0, trailActiveMs: 0, trailPath: [] } : {}),
     pierce: 0,
     shots: 1,
     invulnMs: 0,
@@ -1132,6 +1133,43 @@ function drain(state: SurvivorState, hits: number, move: SurvivorMove): void {
   p.hp = Math.min(p.maxHp, p.hp + Math.min(strongerDrain ? 3 : 2, hits));
 }
 
+const TRAIL_DISTANCE_TO_CHARGE = 150 * 15;
+const TRAIL_DRAW_MS = 4000;
+const TRAIL_LIFE_MS = 3500;
+const TRAIL_POINT_SPACING = 12;
+const TRAIL_TICK_MS = 420;
+
+/** Atualiza a faixa contínua da Trilha e aplica no máximo um pulso por alvo a cada intervalo. */
+function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate: boolean): void {
+  const p = state.player;
+  if (p.move.category !== 'trilha') return;
+  p.trailPath ??= [];
+  p.trailCharge ??= 0;
+  p.trailActiveMs ??= 0;
+  for (const e of state.enemies) if (e.trailHitMs) e.trailHitMs = Math.max(0, e.trailHitMs - dtMs);
+  if (p.trailActiveMs <= 0) {
+    const bonus = 1 + 0.2 * (p.upgradeLevels['trail-charge-distance'] ?? 0);
+    p.trailCharge = Math.min(1, p.trailCharge + movedPx * bonus / TRAIL_DISTANCE_TO_CHARGE);
+    if (activate && p.trailCharge >= 1) { p.trailCharge = 0; p.trailActiveMs = TRAIL_DRAW_MS; }
+  }
+  p.trailPath = p.trailPath.filter((point) => state.elapsedMs - point.bornMs < TRAIL_LIFE_MS);
+  if (p.trailActiveMs <= 0) return;
+  p.trailActiveMs = Math.max(0, p.trailActiveMs - dtMs);
+  const last = p.trailPath[p.trailPath.length - 1];
+  if (!last || Math.hypot(last.x - p.x, last.y - p.y) >= TRAIL_POINT_SPACING) p.trailPath.push({ x: p.x, y: p.y, bornMs: state.elapsedMs });
+  const damage = artifactDamage(state) * 0.42;
+  let hits = 0;
+  for (const e of state.enemies) {
+    if (e.hp <= 0 || (e.trailHitMs ?? 0) > 0) continue;
+    const touching = p.trailPath.some((point) => Math.hypot(e.x - point.x, e.y - point.y) <= p.attackRadius + e.radius);
+    if (!touching) continue;
+    hitEnemy(state, e, e.boss || e.trainerId !== undefined ? damage * 0.5 : damage, { x: e.x, y: e.y }, p.move, true, 0);
+    e.trailHitMs = TRAIL_TICK_MS;
+    hits++;
+  }
+  drain(state, hits, p.move);
+}
+
 /** Os `count` inimigos mais próximos dentro de `range`, do mais perto ao mais longe. */
 function nearestEnemies(state: SurvivorState, range: number, count: number): SurvivorEnemy[] {
   const p = state.player;
@@ -1913,6 +1951,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (input.aimAngle !== undefined && Number.isFinite(input.aimAngle)) p.aimAngle = input.aimAngle;
   // Barra de carga: só anda com o golpe de Foco ou Rápido. A investida do especial não conta como corrida.
   const movedPx = state.special.selected === 'dash' && state.special.activeMs > 0 ? 0 : Math.hypot(p.x - beforeMoveX, p.y - beforeMoveY);
+  stepTrail(state, movedPx, dtMs, input.charge === true);
   state.charge.moveRatio = dt > 0 ? movedPx / dt / RUSH_REFERENCE_SPEED : 0;
   if (input.cancelCharge) cancelTeleportHold(state.charge);
   const chargeBonus = chargeStyle === 'foco' ? (p.upgradeLevels[CHARGE_FOCUS_RATE_ID] ?? 0) : chargeStyle === 'teleporte' ? (p.upgradeLevels[CHARGE_RUSH_LENGTH_ID] ?? 0) : 0;
@@ -2049,7 +2088,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       state.charge.rapidShotDelayMs += RAPID_BURST_SHOT_INTERVAL_MS;
     }
   }
-  if (p.attackTimerMs <= 0 && state.charge.rapidShotsPending <= 0 && attack(state)) {
+  if (p.attackTimerMs <= 0 && state.charge.rapidShotsPending <= 0 && p.move.category !== 'trilha' && attack(state)) {
     const cooldownMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
     p.attackTimerMs = p.move.category === 'rapido' ? Math.max(RAPID_BURST_MIN_CYCLE_MS, cooldownMs) : cooldownMs;
   }

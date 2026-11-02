@@ -47,7 +47,7 @@ describe('quem ganha golpe de carga', () => {
     expect(moveFor(['rock'], statsOfDex(76)).category).toBe('area');
     expect(moveFor(['electric'], statsOfDex(101)).category).toBe('rapido');
     expect(moveFor(['bug'], statsOfDex(291)).category).toBe('teleporte');
-    expect(moveFor(['electric'], statsOfDex(25)).category).toBe('teleporte');
+    expect(moveFor(['electric'], statsOfDex(25)).category).toBe('trilha');
     expect(moveFor(['psychic'], statsOfDex(65)).category).toBe('rapido');
     expect(categoryForStats(statsOfDex(143)!)).toBe('aura');
   });
@@ -303,8 +303,7 @@ describe('apoios com Rajada e Teleporte (política automática)', () => {
   function withSupport(category: 'rapido' | 'teleporte'): { state: SurvivorState; near: SurvivorEnemy; side: SurvivorEnemy } {
     const state = run('foco');
     const supportStats = category === 'rapido' ? stats({ speed: 150, attack: 60, spAttack: 60 }) : stats({ speed: 150, attack: 80, spAttack: 60 });
-    const move = moveFor(['normal'], supportStats);
-    expect(move.category).toBe(category);
+    const move = moveWith('normal', category, supportStats);
     const profile = attackProfile(move, supportStats);
     state.supports.push({ dexId: 291, name: 'Apoio', move, profile, x: state.player.x, y: state.player.y, attackTimerMs: 0, damageFactor: 1 });
     state.player.attackTimerMs = 1e9; // só o apoio ataca neste teste

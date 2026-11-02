@@ -74,6 +74,12 @@ const props = withDefaults(defineProps<{ category: MoveCategory; size?: number; 
       <circle cx="18.5" cy="15" r="3.4" fill="currentColor" stroke="none" />
       <path d="M6.5 8.5Q12 2 17.5 8.5M14.8 7.2l2.9 1.4-.6 3" />
     </template>
+    <!-- Trilha: faixa contínua que segue o caminho do jogador -->
+    <template v-else-if="props.category === 'trilha'">
+      <path d="M3 18c4-10 6 5 10-5s5 2 8-7" stroke-width="4" opacity=".32" />
+      <path d="M3 18c4-10 6 5 10-5s5 2 8-7" stroke-width="1.8" />
+      <circle cx="3" cy="18" r="1.5" fill="currentColor" stroke="none" />
+    </template>
   </svg>
 </template>
 

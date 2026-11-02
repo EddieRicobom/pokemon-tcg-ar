@@ -148,6 +148,7 @@ const ATTACK_TREE_NAMES: Record<MoveCategory, readonly [string, string, string, 
   foco: ['Mira firme', 'Linha longa', 'Respiração calma', 'Disparo colossal'],
   rapido: ['Tiro ligeiro', 'Passo largo', 'Gatilho nervoso', 'Rajada relâmpago'],
   teleporte: ['Salto preciso', 'Passo distante', 'Recarga ágil', 'Onda de choque'],
+  trilha: ['Passos elementais', 'Largura viva', 'Ritmo acumulado', 'Mapa incandescente'],
 };
 
 function attackTree(category: MoveCategory): SurvivorUpgrade[] {
@@ -168,9 +169,13 @@ const ATTACK_TREE_UPGRADES: readonly SurvivorUpgrade[] = (Object.keys(ATTACK_TRE
 /** Cartas da barra de carga (`core/survivor-charge.ts`). Só contam os níveis; o motor lê `upgradeLevels`. */
 export const CHARGE_FOCUS_RATE_ID = 'charge-focus-rate';
 export const CHARGE_RUSH_LENGTH_ID = 'charge-rush-length';
+export const CHARGE_RAPID_CADENCE_ID = 'charge-rapid-cadence';
+export const TRAIL_CHARGE_ID = 'trail-charge-distance';
 const CHARGE_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: CHARGE_FOCUS_RATE_ID, family: 'ataque', rarity: 'raro', name: 'Concentração profunda', description: 'A barra do Foco enche 25% mais rápido enquanto você segura.', for: ['foco'], maxLevels: 2, apply: () => {} },
   { id: CHARGE_RUSH_LENGTH_ID, family: 'ataque', rarity: 'raro', name: 'Passo preparado', description: '-17% na recarga do Teleporte carregado por carta.', for: ['teleporte'], maxLevels: 3, apply: () => {} },
+  { id: CHARGE_RAPID_CADENCE_ID, family: 'ataque', rarity: 'raro', name: 'Cadência de rajada', description: '+1 tiro na Rajada a cada instante da sequência.', for: ['rapido'], maxLevels: 1, apply: (p) => { p.shots = Math.min(5, p.shots + 1); } },
+  { id: TRAIL_CHARGE_ID, family: 'ataque', rarity: 'raro', name: 'Passos ressonantes', description: 'A Trilha enche 20% mais rápido enquanto você anda.', for: ['trilha'], maxLevels: 2, apply: () => {} },
 ];
 
 /** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */

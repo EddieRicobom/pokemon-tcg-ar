@@ -69,6 +69,10 @@ export interface SurvivorPlayer {
   attackCooldownMs: number;
   attackTimerMs: number;
   projectileSpeed: number;
+  /** Trilha: carrega pela distância percorrida; ao ativar, desenha por 4 s. */
+  trailCharge?: number;
+  trailActiveMs?: number;
+  trailPath?: { x: number; y: number; bornMs: number }[];
   /** Quantos inimigos extras um projétil atravessa antes de sumir. */
   pierce: number;
   /** Prioridade escolhida no HUD para o próximo alvo automático. */
@@ -222,6 +226,8 @@ export interface SurvivorEnemy {
   knockbackCooldownMs?: number;
   /** Ms até um orbital poder acertar este inimigo de novo. */
   orbitHitMs?: number;
+  /** Intervalo entre pulsos recebidos da mesma Trilha contínua. */
+  trailHitMs?: number;
   wetMs?: number;
   seededMs?: number;
   /** Acúmulos de frio. O congelamento é curto e tem intervalo por alvo. */
