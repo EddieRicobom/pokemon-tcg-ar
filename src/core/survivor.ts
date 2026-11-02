@@ -219,6 +219,8 @@ export interface CreateSurvivorOptions {
   preparation?: SurvivorPreparationId;
   /** O que a Vila entrega (Dojô, sorte do Carteiro, marmita). Sem isto a corrida é a de sempre; vale também no BONK. */
   loadout?: TowerLoadout;
+  /** Tipo da Mistura dos 9 minutos; sem isto, sai da semente. A troca de golpe na seleção usa o tipo do golpe antigo. */
+  hypotheticalSecondaryType?: PokemonType;
   /** Segundo tipo raro escolhido no início da corrida. */
   typeAffinity?: SurvivorTypeAffinity;
   /** Tipos secundários reais da espécie; a escolha só aparece após o primeiro líder derrotado. */
@@ -356,7 +358,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     typeAffinity: options.typeAffinity ?? null,
     typeAffinityChoices: [...(options.typeAffinityChoices ?? [])],
     typeAffinityOffered: false,
-    hypotheticalSecondaryType: hypotheticalSecondaryTypeFor(move.type, seed),
+    hypotheticalSecondaryType: options.hypotheticalSecondaryType ?? hypotheticalSecondaryTypeFor(move.type, seed),
     hypotheticalSecondaryActive: false,
   };
   if (options.mega) startSurvivorMega(state, options.mega);

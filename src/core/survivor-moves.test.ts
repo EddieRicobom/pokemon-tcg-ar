@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { POKEMON_TYPES } from './pokemon-data';
-import { attackProfile, BASIC_ATTACK_DAMAGE_FACTOR, categoryForStats, CATEGORY_BASE, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from './survivor-moves';
+import { alternativeMoveFor, attackProfile, BASIC_ATTACK_DAMAGE_FACTOR, categoryForStats, CATEGORY_BASE, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars, rankedCategories } from './survivor-moves';
+import type { MoveCategory } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
+import { typesOfDex } from './species-filter';
+import { survivorAttackChoices, survivorAttackOf } from './survivor-loadout';
+import { createSurvivorState } from './survivor';
 
 describe('golpes da Torre: elemento pelo tipo, forma e números pelos stats', () => {
   it('todo tipo tem um elemento com nome, efeito, cor e ícone', () => {
@@ -100,5 +104,79 @@ describe('golpes da Torre: elemento pelo tipo, forma e números pelos stats', ()
       expect(bar.value).toBeGreaterThanOrEqual(0);
       expect(bar.value).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe('ataque alternativo: a forma mais próxima depois de eliminar a principal', () => {
+  it('a primeira forma do ranking é sempre a que a classificação já escolhe, em todas as espécies', () => {
+    for (let dex = 1; dex <= 1025; dex++) {
+      const types = typesOfDex(dex);
+      const stats = statsOfDex(dex);
+      const ranking = rankedCategories(types[0] ?? 'normal', stats);
+      expect(ranking[0]).toBe(moveFor(types, stats).category);
+      expect(new Set(ranking).size).toBe(ranking.length);
+      expect(ranking.length).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('o alternativo nunca repete a forma principal e só troca de tipo quando há um segundo tipo', () => {
+    const seen = new Set<MoveCategory>();
+    for (let dex = 1; dex <= 1025; dex++) {
+      const types = typesOfDex(dex);
+      const stats = statsOfDex(dex);
+      const main = moveFor(types, stats);
+      const alternative = alternativeMoveFor(types, stats);
+      expect(alternative.category).not.toBe(main.category);
+      expect(alternative.type).toBe(types.find((type) => type !== (types[0] ?? 'normal')) ?? main.type);
+      seen.add(alternative.category);
+    }
+    // Todas as formas aparecem como alternativa em algum Pokémon, e cone/órbita nunca são sorteados fora do seu tipo.
+    expect(seen.has('aura') && seen.has('projetil') && seen.has('area')).toBe(true);
+  });
+
+  it('exemplos conhecidos: Snorlax (Foco) cai na Aura; Pikachu (Área) cai no Projétil; Hitmonlee (Cone) volta para os stats; Machamp (Foco) cai no Cone', () => {
+    expect(alternativeMoveFor(typesOfDex(143), statsOfDex(143)).category).toBe('aura');
+    expect(alternativeMoveFor(typesOfDex(25), statsOfDex(25)).category).toBe('projetil');
+    expect(moveFor(typesOfDex(106), statsOfDex(106)).category).toBe('cone');
+    expect(alternativeMoveFor(typesOfDex(106), statsOfDex(106)).category).toBe('area');
+    expect(moveFor(typesOfDex(68), statsOfDex(68)).category).toBe('foco');
+    expect(alternativeMoveFor(typesOfDex(68), statsOfDex(68)).category).toBe('cone');
+  });
+
+  it('sem stats a classificação cai em Projétil e o alternativo em Área', () => {
+    expect(rankedCategories('normal', null)).toEqual(['projetil', 'area', 'aura']);
+    expect(alternativeMoveFor(['fire'], null)).toMatchObject({ type: 'fire', category: 'area', estimated: true });
+  });
+
+  it('trocar: o alternativo vira o principal, o antigo vira o segundo ataque e a Mistura vem do tipo antigo', () => {
+    // Charizard: Fogo/Voador.
+    const kept = survivorAttackOf(6);
+    const swapped = survivorAttackOf(6, undefined, true);
+    const choices = survivorAttackChoices(6);
+    expect(swapped.move).toEqual(choices.alternative.move);
+    expect(swapped.profile).toEqual(choices.alternative.profile);
+    expect(kept.move).toEqual(choices.current.move);
+    expect(swapped.move.type).toBe('flying');
+    expect(swapped.secondMove).toEqual(kept.move);
+    expect(swapped.hypotheticalSecondaryType).toBe('fire');
+    const state = createSurvivorState(7, { kindCount: 1, move: swapped.move, profile: swapped.profile, ...(swapped.secondMove ? { secondMove: swapped.secondMove } : {}), ...(swapped.hypotheticalSecondaryType ? { hypotheticalSecondaryType: swapped.hypotheticalSecondaryType } : {}) });
+    expect(state.player.move.type).toBe('flying');
+    expect(state.hypotheticalSecondaryType).toBe('fire');
+    expect(state.secondMoveCandidate).toEqual(kept.move);
+  });
+
+  it('trocar num Pokémon de um tipo só muda a forma e mantém a Mistura da semente', () => {
+    // Snorlax: Normal.
+    const swapped = survivorAttackOf(143, undefined, true);
+    expect(swapped.move.type).toBe('normal');
+    expect(swapped.move.category).toBe('aura');
+    expect(swapped.hypotheticalSecondaryType).toBeUndefined();
+    expect(swapped.secondMove).toEqual(survivorAttackOf(143).move);
+  });
+
+  it('com o tipo escolhido na tela de dois tipos, o ranking parte do tipo escolhido', () => {
+    const flying = survivorAttackChoices(6, 'flying');
+    expect(flying.current.move.type).toBe('flying');
+    expect(flying.alternative.move.type).toBe('fire');
   });
 });

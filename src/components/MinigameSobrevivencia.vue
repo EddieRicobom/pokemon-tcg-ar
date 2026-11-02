@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, toRaw, triggerRef, watch } from 'vue';
 import MusicControls from './MusicControls.vue';
+import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
 import { survivorAudio } from '../app/survivor-audio-settings';
 import { survivorMusicMix, survivorMusicTitle } from '../core/survivor-music';
@@ -50,7 +51,7 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
-import { survivorAttackOf } from '../core/survivor-loadout';
+import { survivorAttackChoices, survivorAttackOf } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
@@ -2486,6 +2487,7 @@ function confirmLeave(): void {
 /** O caminho de Voltar fica dentro da Torre; sair exige a ação explícita de saída. */
 function requestBack(): void {
   if (leaveConfirm.value) { cancelLeave(); return; }
+  if (attackChoice.value) { attackChoice.value = null; return; }
   if (typeChoice.value) { typeChoice.value = null; return; }
   if (helpOpen.value) { helpOpen.value = false; return; }
   if (hudExpanded.value) { hudExpanded.value = false; return; }
@@ -2554,7 +2556,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null, swapped = false): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -2608,7 +2610,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     pendingUpgrade.value = null;
     clearTrainerPresentation();
     paused.value = false;
-    const { move, profile, secondMove } = survivorAttackOf(dexId, picked);
+    const { move, profile, secondMove, hypotheticalSecondaryType } = survivorAttackOf(dexId, picked, swapped);
     runSeenDex.clear();
     // A Vila entrega o loadout (e gasta a sorte do Carteiro) antes de a corrida existir; vale no Survival e no BONK.
     // No PvP nada da Vila entra (nem sorte, nem marmita, nem treino): as duas pessoas começam iguais.
@@ -2622,7 +2624,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     // A Mega só entra se o fragmento saiu mesmo da mochila; ele volta se a corrida for abandonada logo no começo.
     runOmegaShardTaken = mega !== null && !pureWanted.value && takeRunOmegaShard();
     const runMega = runOmegaShardTaken ? mega : null;
-    state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
+    state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
     initialPlayerSpeed = Math.max(1, state.value.player.speed);
     footDust.strength = 0;
     megaWasActive = state.value.player.mega?.active === true;
@@ -2665,7 +2667,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   }
 }
 
-function choosePlayer(opt: PickOption, picked?: PokemonType): void {
+function choosePlayer(opt: PickOption, picked?: PokemonType, swapped = false): void {
   unlockSound();
   runParticipant = { id: opt.id, name: opt.name };
   runParticipantDexId = opt.dexId;
@@ -2681,7 +2683,8 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
       accessory: support.accessory,
       digital: support.digital,
     } satisfies SurvivorSupportCandidate));
-  const primary = picked ?? opt.types[0] ?? opt.move.type;
+  // Trocando de ataque, o tipo principal pode mudar (quem tem dois tipos); a Afinidade passa a vir do tipo antigo.
+  const primary = swapped ? survivorAttackOf(opt.dexId, picked, true).move.type : picked ?? opt.types[0] ?? opt.move.type;
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
   const pvp = props.pvpRun !== undefined;
   const infinite = !pvp && infiniteWanted.value && torre.value.infiniteUnlocked;
@@ -2689,15 +2692,17 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
   megaPick.value = null;
   pvpPick = { shiny: opt.shiny === true, types: opt.types };
   // No PvP a run é sempre a normal, sem Mega, sem preparação e sem modificadores; nada conta para a Torre.
-  void beginRun(opt.dexId, opt.name, picked, infinite, !pvp && bonkWanted.value, opt.id.startsWith('dp_') || pvp ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, pvp ? 'classica' : selectedPreparation.value, supportCandidates, typeAffinityChoices, !pvp && fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null, mega?.dexId === opt.dexId ? mega : null);
+  void beginRun(opt.dexId, opt.name, picked, infinite, !pvp && bonkWanted.value, opt.id.startsWith('dp_') || pvp ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, pvp ? 'classica' : selectedPreparation.value, supportCandidates, typeAffinityChoices, !pvp && fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null, mega?.dexId === opt.dexId ? mega : null, swapped);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
 const typeChoice = ref<PickOption | null>(null);
+/** Tela "ataque atual ou secundário": vem depois de escolher o Pokémon (e o tipo, se tem dois). */
+const attackChoice = ref<{ opt: PickOption; picked: PokemonType | undefined } | null>(null);
 const typeAffinityOffer = ref<PokemonType[] | null>(null);
 
 watch(
-  [pickOptions, typeChoice, typeAffinityOffer, pendingUpgrade, paused, leaveConfirm, specialModalOpen],
+  [pickOptions, typeChoice, attackChoice, typeAffinityOffer, pendingUpgrade, paused, leaveConfirm, specialModalOpen],
   (next, previous) => {
     if (next.some((value, index) => Boolean(value) && !previous[index])) focusFirstSurvivorAction();
   },
@@ -2727,7 +2732,30 @@ const nextTowerGoal = computed(() => {
 function openTypeChoice(opt: PickOption): void { typeChoice.value = opt; }
 function chooseType(opt: PickOption, picked: PokemonType): void {
   typeChoice.value = null;
-  choosePlayer(opt, picked);
+  openAttackChoice(opt, picked);
+}
+
+const attackOptions = computed(() => {
+  const choice = attackChoice.value;
+  if (!choice) return [];
+  const { current, alternative } = survivorAttackChoices(choice.opt.dexId, choice.picked);
+  const typeChanged = alternative.move.type !== current.move.type;
+  return [
+    { key: 'current', swapped: false, title: 'Ficar com o atual', move: current.move, bars: profileBars(current.move, current.profile), note: 'O golpe que o Pokémon tem hoje.' },
+    {
+      key: 'alternative', swapped: true, title: 'Trocar pelo secundário', move: alternative.move, bars: profileBars(alternative.move, alternative.profile),
+      note: typeChanged
+        ? `Troca também o tipo: a Mistura (9 min) e a Afinidade passam a dar o efeito de ${TYPE_LABELS_PT[current.move.type]}, e o golpe atual vira o segundo ataque.`
+        : 'Mesmo tipo: a Mistura e a Afinidade continuam como estão, e o golpe atual vira o segundo ataque.',
+    },
+  ];
+});
+function openAttackChoice(opt: PickOption, picked?: PokemonType): void { attackChoice.value = { opt, picked }; }
+function confirmAttack(swapped: boolean): void {
+  const choice = attackChoice.value;
+  if (!choice || pickBusy.value) return;
+  attackChoice.value = null;
+  choosePlayer(choice.opt, choice.picked, swapped);
 }
 function acceptTypeAffinity(type: PokemonType): void {
   if (!state.value || !typeAffinityOffer.value || !chooseSurvivorTypeAffinity(state.value, type)) return;
@@ -2961,7 +2989,7 @@ onBeforeUnmount(() => {
               <small>Atacam a partir de você e não recebem upgrades.</small>
               <div v-for="support in state.supports" :key="`${support.dexId}-${support.name}`" class="survivor-support-line">
                 <b>{{ support.name }}</b>
-                <span>{{ support.move.icon }} {{ support.move.name }} · {{ MOVE_CATEGORY_LABELS_PT[support.move.category] }}</span>
+                <span>{{ support.move.icon }} {{ support.move.name }} · <AttackIcon :category="support.move.category" :size="14" /> {{ MOVE_CATEGORY_LABELS_PT[support.move.category] }}</span>
                 <small>{{ Math.round(support.profile.damage * support.damageFactor) }} dano · {{ Math.round(support.profile.cooldownMs) }} ms</small>
               </div>
             </div>
@@ -3030,7 +3058,27 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="pickOptions" class="survivor-overlay" role="dialog" aria-label="Escolha quem joga">
-          <div v-if="typeChoice" class="card survivor-pick survivor-type-choice">
+          <div v-if="attackChoice" class="card survivor-pick survivor-attack-choice" role="group" :aria-label="`Ataque de ${attackChoice.opt.name}`">
+            <h2>{{ attackChoice.opt.name }}: qual ataque?</h2>
+            <p class="note">Fique com o ataque atual ou troque pelo secundário: a forma de golpe mais próxima depois de tirar a principal.</p>
+            <div class="survivor-pick-grid">
+              <button v-for="option in attackOptions" :key="option.key" type="button" class="survivor-pick-btn survivor-attack-option" :class="{ disabled: pickBusy }" :style="{ '--move': option.move.color }" @click="confirmAttack(option.swapped)">
+                <span class="survivor-attack-head">
+                  <AttackIcon :category="option.move.category" :size="34" titled />
+                  <strong>{{ option.title }}</strong>
+                </span>
+                <small class="survivor-pick-move">{{ option.move.icon }} {{ option.move.name }}</small>
+                <small class="survivor-pick-kind">{{ MOVE_CATEGORY_LABELS_PT[option.move.category] }} · {{ TYPE_LABELS_PT[option.move.type] }} · {{ MOVE_EFFECT_LABELS_PT[option.move.effect] }}</small>
+                <small class="survivor-pick-tip">{{ MOVE_CATEGORY_HINTS_PT[option.move.category] }}</small>
+                <span class="survivor-pick-bars" :style="{ '--move': option.move.color }">
+                  <span v-for="b in option.bars" :key="b.label" class="survivor-pick-bar"><small>{{ b.label }}</small><i><b :style="{ width: Math.round(b.value * 100) + '%' }"></b></i></span>
+                </span>
+                <small class="survivor-attack-note">{{ option.note }}</small>
+              </button>
+            </div>
+            <button type="button" class="link survivor-back" @click="attackChoice = null">← Voltar aos Pokémon</button>
+          </div>
+          <div v-else-if="typeChoice" class="card survivor-pick survivor-type-choice">
             <h2>{{ typeChoice.name }} tem dois tipos</h2>
             <p class="note">Qual deles ataca na corrida?</p>
             <div class="survivor-pick-grid">
@@ -3121,8 +3169,8 @@ onBeforeUnmount(() => {
                  :class="{ disabled: pickBusy }"
                  role="button"
                  :tabindex="pickBusy ? -1 : 0"
-                 @keydown.enter.prevent="opt.types.length > 1 ? openTypeChoice(opt) : choosePlayer(opt, opt.types[0])"
-                 @click="opt.types.length > 1 ? openTypeChoice(opt) : choosePlayer(opt, opt.types[0])"
+                 @keydown.enter.prevent="opt.types.length > 1 ? openTypeChoice(opt) : openAttackChoice(opt, opt.types[0])"
+                 @click="opt.types.length > 1 ? openTypeChoice(opt) : openAttackChoice(opt, opt.types[0])"
               >
                  <button type="button" class="survivor-favorite" :aria-label="favoriteIds.has(opt.id) ? `Remover ${opt.name} dos favoritos` : `Favoritar ${opt.name}`" :aria-pressed="favoriteIds.has(opt.id)" @click.stop="toggleFavorite(opt.id)">{{ favoriteIds.has(opt.id) ? '★' : '☆' }}</button>
                 <img v-if="opt.thumb" :src="opt.thumb" :alt="opt.name" class="survivor-pick-thumb" />
@@ -3130,7 +3178,7 @@ onBeforeUnmount(() => {
                 <strong>{{ opt.name }}</strong>
                 <small>{{ opt.origin }}</small>
                 <small class="survivor-pick-move" :style="{ '--move': opt.move.color }">{{ opt.move.icon }} {{ opt.move.name }}</small>
-                <small class="survivor-pick-kind">{{ MOVE_CATEGORY_LABELS_PT[opt.move.category] }} · {{ MOVE_EFFECT_LABELS_PT[opt.move.effect] }}</small>
+                <small class="survivor-pick-kind"><AttackIcon :category="opt.move.category" :size="15" /> {{ MOVE_CATEGORY_LABELS_PT[opt.move.category] }} · {{ MOVE_EFFECT_LABELS_PT[opt.move.effect] }}</small>
                  <small class="survivor-pick-tip">{{ MOVE_CATEGORY_HINTS_PT[opt.move.category] }}</small>
                 <span class="survivor-pick-bars" :style="{ '--move': opt.move.color }">
                   <span v-for="b in opt.bars" :key="b.label" class="survivor-pick-bar"><small>{{ b.label }}</small><i><b :style="{ width: Math.round(b.value * 100) + '%' }"></b></i></span>

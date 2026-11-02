@@ -6761,6 +6761,45 @@ body.no-scroll .reward-toasts {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* Tela "ataque atual ou secundário": dois cartões lado a lado, com o ícone da forma em destaque. */
+.survivor-attack-choice .survivor-pick-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.survivor-attack-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--move, #1b2a41);
+}
+
+.survivor-attack-head {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.survivor-attack-head strong {
+  font-size: 0.78rem;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.survivor-attack-note {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(27, 42, 65, 0.25);
+  color: #4a5068;
+  font-size: 0.6rem;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.survivor-pick-kind .attack-icon {
+  vertical-align: -0.28em;
+  color: var(--move, currentColor);
+}
+
 .survivor-cleared {
   margin: 6px 0 0;
   font-weight: 700;

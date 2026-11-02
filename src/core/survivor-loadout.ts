@@ -2,7 +2,7 @@ import { TRAINING_DEFENSE_CAP, TRAINING_SPEED_CAP } from './survivor-lunch';
 import type { LunchEffect } from './survivor-lunch';
 import type { TowerState } from './village/tower-state';
 import { typesOfDex } from './species-filter';
-import { attackProfile, moveFor } from './survivor-moves';
+import { alternativeMoveFor, attackProfile, moveFor } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
 import type { PokemonType } from './pokemon-data';
 import type { AttackProfile, SurvivorMove } from './survivor-moves';
@@ -83,12 +83,42 @@ export function towerLoadout(tower: TowerState, options: TowerLoadoutOptions): T
   return loadout;
 }
 
-/** Monta os golpes da Torre a partir dos tipos e atributos reais da espécie. */
-export function survivorAttackOf(dexId: number, picked?: PokemonType): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove } {
+/** Um golpe da Torre com os números pelos stats da espécie (o que a tela de escolha mostra). */
+export interface SurvivorAttackChoice {
+  move: SurvivorMove;
+  profile: AttackProfile;
+}
+
+/** Os dois golpes que a tela de escolha oferece: o atual e o alternativo (a próxima forma pelos stats). */
+export function survivorAttackChoices(dexId: number, picked?: PokemonType): { current: SurvivorAttackChoice; alternative: SurvivorAttackChoice } {
+  const stats = statsOfDex(dexId);
+  const types = typesOfDex(dexId);
+  const ordered = picked ? [picked, ...types.filter((t) => t !== picked)] : types;
+  const alternative = alternativeMoveFor(ordered, stats);
+  const current = moveFor(ordered, stats);
+  return { current: { move: current, profile: attackProfile(current, stats) }, alternative: { move: alternative, profile: attackProfile(alternative, stats) } };
+}
+
+/**
+ * Monta os golpes da Torre a partir dos tipos e atributos reais da espécie.
+ * Com `swapped`, o golpe alternativo vira o principal e o antigo passa a ser o segundo ataque; a Mistura de tipo dos
+ * 9 minutos vem do tipo antigo (quando os dois golpes têm tipos diferentes), e a Afinidade é calculada em cima do novo tipo principal.
+ */
+export function survivorAttackOf(dexId: number, picked?: PokemonType, swapped = false): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove; hypotheticalSecondaryType?: PokemonType } {
   const stats = statsOfDex(dexId);
   const types = typesOfDex(dexId);
   const ordered = picked ? [picked, ...types.filter((t) => t !== picked)] : types;
   const move = moveFor(ordered, stats);
+  if (swapped) {
+    const alternative = alternativeMoveFor(ordered, stats);
+    return {
+      move: alternative,
+      profile: attackProfile(alternative, stats),
+      types,
+      secondMove: move,
+      ...(move.type !== alternative.type ? { hypotheticalSecondaryType: move.type } : {}),
+    };
+  }
   const secondType = types.find((type) => type !== picked && type !== move.type);
   return { move, profile: attackProfile(move, stats), types, ...(secondType ? { secondMove: moveFor([secondType], stats) } : {}) };
 }
