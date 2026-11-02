@@ -1252,14 +1252,16 @@ function fireFocusBeam(state: SurvivorState, level: number): string {
   return beam.name;
 }
 
-/** Rápido, durante a troca: teleporta para o inimigo mais próximo, acerta quem está em volta e fica 2 s sem levar dano. */
+/** Teleporte: busca o alvo priorizado (ou o mais próximo), pousa nele e ganha proteção curta. */
 function releaseTeleport(state: SurvivorState, action: Extract<NonNullable<ReturnType<typeof stepChargeMeter>>, { kind: 'teleport-release' }>): boolean {
   const p = state.player;
   const fromX = p.x;
   const fromY = p.y;
-  const angle = survivorAimAngle(p);
   const reach = teleportReach(p.attackRange, p.attackRadius, p.shots);
-  const distance = reach.range * (0.45 + 0.55 * action.level);
+  const target = nearestEnemies(state, reach.range, 1)[0];
+  const angle = target ? Math.atan2(target.y - p.y, target.x - p.x) : survivorAimAngle(p);
+  const chargedDistance = reach.range * (0.45 + 0.55 * action.level);
+  const distance = target ? Math.min(chargedDistance, Math.hypot(target.x - p.x, target.y - p.y)) : chargedDistance;
   p.x = clamp(p.x + Math.cos(angle) * distance, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
   p.y = clamp(p.y + Math.sin(angle) * distance, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
   if (Math.abs(Math.cos(angle)) > 0.01) p.facing = Math.cos(angle) < 0 ? -1 : 1;
@@ -1323,6 +1325,8 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
     return true;
   }
   if (move.category === 'cone') {
+    const [target] = nearestEnemies(state, attackRange, 1);
+    if (target) p.aimAngle = Math.atan2(target.y - p.y, target.x - p.x);
     let hits = 0;
     for (const enemy of state.enemies) {
       const distance = Math.hypot(enemy.x - p.x, enemy.y - p.y);
