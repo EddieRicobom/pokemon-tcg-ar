@@ -1138,15 +1138,15 @@ const TRAIL_DRAW_MS = 4000;
 const TRAIL_LIFE_MS = 3500;
 const TRAIL_POINT_SPACING = 12;
 const TRAIL_TICK_MS = 420;
+const TRAIL_BOSS_DAMAGE_MULTIPLIER = 0.8;
 
-/** Atualiza a faixa contínua da Trilha e aplica no máximo um pulso por alvo a cada intervalo. */
+/** Atualiza a faixa contínua da Trilha; quem toca a linha recebe dano contínuo proporcional ao tempo no contato. */
 function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate: boolean): void {
   const p = state.player;
   if (p.move.category !== 'trilha') return;
   p.trailPath ??= [];
   p.trailCharge ??= 0;
   p.trailActiveMs ??= 0;
-  for (const e of state.enemies) if (e.trailHitMs) e.trailHitMs = Math.max(0, e.trailHitMs - dtMs);
   if (p.trailActiveMs <= 0) {
     const bonus = 1 + 0.2 * (p.upgradeLevels['trail-charge-distance'] ?? 0);
     p.trailCharge = Math.min(1, p.trailCharge + movedPx * bonus / TRAIL_DISTANCE_TO_CHARGE);
@@ -1157,14 +1157,13 @@ function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate
   p.trailActiveMs = Math.max(0, p.trailActiveMs - dtMs);
   const last = p.trailPath[p.trailPath.length - 1];
   if (!last || Math.hypot(last.x - p.x, last.y - p.y) >= TRAIL_POINT_SPACING) p.trailPath.push({ x: p.x, y: p.y, bornMs: state.elapsedMs });
-  const damage = artifactDamage(state) * 0.42;
+  const damage = artifactDamage(state) * 0.9 * dtMs / TRAIL_TICK_MS;
   let hits = 0;
   for (const e of state.enemies) {
-    if (e.hp <= 0 || (e.trailHitMs ?? 0) > 0) continue;
+    if (e.hp <= 0) continue;
     const touching = p.trailPath.some((point) => Math.hypot(e.x - point.x, e.y - point.y) <= p.attackRadius + e.radius);
     if (!touching) continue;
-    hitEnemy(state, e, e.boss || e.trainerId !== undefined ? damage * 0.5 : damage, { x: e.x, y: e.y }, p.move, true, 0);
-    e.trailHitMs = TRAIL_TICK_MS;
+    hitEnemy(state, e, e.boss || e.trainerId !== undefined ? damage * TRAIL_BOSS_DAMAGE_MULTIPLIER : damage, { x: e.x, y: e.y }, p.move, true, 0);
     hits++;
   }
   drain(state, hits, p.move);

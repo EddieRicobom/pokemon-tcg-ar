@@ -226,8 +226,6 @@ export interface SurvivorEnemy {
   knockbackCooldownMs?: number;
   /** Ms até um orbital poder acertar este inimigo de novo. */
   orbitHitMs?: number;
-  /** Intervalo entre pulsos recebidos da mesma Trilha contínua. */
-  trailHitMs?: number;
   wetMs?: number;
   seededMs?: number;
   /** Acúmulos de frio. O congelamento é curto e tem intervalo por alvo. */
