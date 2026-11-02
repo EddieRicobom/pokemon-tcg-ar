@@ -4,7 +4,7 @@ import type { Rng } from './battle';
 import { BASIC_ATTACK_DAMAGE_FACTOR, type AttackProfile, type MoveCategory, type SurvivorMove } from './survivor-moves';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
-import { HYPOTHETICAL_TYPE_ACTIVATION_MS, HYPOTHETICAL_TYPE_EFFECTS, hypotheticalSecondaryTypeFor } from './survivor-type-mix';
+import { HYPOTHETICAL_TYPE_ACTIVATION_MS, hypotheticalSecondaryTypeFor, hypotheticalTypeRuleFor } from './survivor-type-mix';
 import { survivorPreparation } from './survivor-preparations';
 import { MAX_OFFER_CHOICES, PURE_LOADOUT } from './survivor-loadout';
 import type { TowerLoadout } from './survivor-loadout';
@@ -980,7 +980,7 @@ function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: numbe
 /** Aplica a propriedade tabelada do segundo tipo hipotético, depois que ele desperta aos nove minutos. */
 function applyHypotheticalTypeEffect(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }): void {
   if (!state.hypotheticalSecondaryActive) return;
-  const rule = HYPOTHETICAL_TYPE_EFFECTS[state.hypotheticalSecondaryType];
+  const rule = hypotheticalTypeRuleFor(state.player.move.type, state.hypotheticalSecondaryType);
   switch (rule.effect) {
     case 'queimar':
       e.burnMs = Math.max(e.burnMs ?? 0, 1600);
@@ -1008,7 +1008,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   const p = state.player;
   const wasSeeded = (e.seededMs ?? 0) > 0;
   const synergy = survivorSynergyFor(move.type, e);
-  const hypotheticalRule = move === p.move && state.hypotheticalSecondaryActive ? HYPOTHETICAL_TYPE_EFFECTS[state.hypotheticalSecondaryType] : null;
+  const hypotheticalRule = move === p.move && state.hypotheticalSecondaryActive ? hypotheticalTypeRuleFor(move.type, state.hypotheticalSecondaryType) : null;
   let upgradeMultiplier = 1;
   if (hypotheticalRule) upgradeMultiplier *= 1 + hypotheticalRule.damageBonus;
   if (move === p.move) {
@@ -1139,7 +1139,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
   const baseAngle = Math.atan2(target.y - p.y, target.x - p.x);
   const spread = 0.26;
   const look = survivorProjectileLook(p);
-  const hypotheticalPierce = state.hypotheticalSecondaryActive && HYPOTHETICAL_TYPE_EFFECTS[state.hypotheticalSecondaryType].effect === 'atravessar' ? 1 : 0;
+  const hypotheticalPierce = state.hypotheticalSecondaryActive && hypotheticalTypeRuleFor(move.type, state.hypotheticalSecondaryType).effect === 'atravessar' ? 1 : 0;
   for (let i = 0; i < p.shots; i++) {
     const offset = p.shots === 1 ? 0 : (i - (p.shots - 1) / 2) * spread;
     const angle = baseAngle + offset;

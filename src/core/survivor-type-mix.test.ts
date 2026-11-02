@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { POKEMON_TYPES } from './pokemon-data';
-import { HYPOTHETICAL_TYPE_EFFECTS, hypotheticalSecondaryTypeFor } from './survivor-type-mix';
+import { HYPOTHETICAL_TYPE_EFFECTS, hypotheticalSecondaryTypeFor, hypotheticalTypeRuleFor, isTypeExaltation, REPEATED_TYPE_EXALTATIONS } from './survivor-type-mix';
 
 describe('mistura hipotética de tipos', () => {
   it('tabela todos os tipos com efeito, bônus e explicação', () => {
@@ -12,10 +12,17 @@ describe('mistura hipotética de tipos', () => {
     }
   });
 
-  it('sorteia de forma estável um segundo tipo diferente do principal', () => {
+  it('sorteia de forma estável uma mistura ou exaltação quando há repetição', () => {
+    let sawExaltation = false;
     for (const type of POKEMON_TYPES) {
-      expect(hypotheticalSecondaryTypeFor(type, 123)).not.toBe(type);
       expect(hypotheticalSecondaryTypeFor(type, 123)).toBe(hypotheticalSecondaryTypeFor(type, 123));
+      for (let seed = 0; seed < 100; seed++) {
+        const secondary = hypotheticalSecondaryTypeFor(type, seed);
+        if (!isTypeExaltation(type, secondary)) continue;
+        sawExaltation = true;
+        expect(hypotheticalTypeRuleFor(type, secondary)).toEqual(REPEATED_TYPE_EXALTATIONS[type]);
+      }
     }
+    expect(sawExaltation).toBe(true);
   });
 });
