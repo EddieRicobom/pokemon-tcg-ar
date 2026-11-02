@@ -1291,14 +1291,20 @@ function chargeStyleOf(state: SurvivorState): ChargeStyle | null {
   return category === 'foco' || category === 'teleporte' ? category : null;
 }
 
-/** Ataque de um apoio: nasce sempre no jogador e usa o perfil congelado do Pokémon escolhido. */
+/**
+ * Ataque de um apoio: nasce sempre no jogador e usa o perfil congelado do Pokémon escolhido.
+ * Apoios não seguram botão, então o Foco, a Rajada e o Teleporte têm política própria e fixa:
+ * Foco e Rajada soltam um único projétil por ciclo (a Rajada, com o dano de um tiro cheio e sem a salva de três),
+ * e o Teleporte golpeia o inimigo mais próximo com um impacto em área do raio do perfil. O apoio não se move,
+ * não protege o jogador e não empurra ninguém.
+ */
 function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean {
   const p = state.player;
   const { move, profile } = support;
   const damage = round1(profile.damage * support.damageFactor);
   const range = profile.range;
   const radius = profile.radius;
-  if (move.category === 'projetil' || move.category === 'foco' || move.category === 'rapido' || move.category === 'teleporte') {
+  if (move.category === 'projetil' || move.category === 'foco' || move.category === 'rapido') {
     const target = nearestEnemies(state, range, 1)[0];
     if (!target) return false;
     const angle = Math.atan2(target.y - p.y, target.x - p.x);

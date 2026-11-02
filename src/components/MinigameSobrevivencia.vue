@@ -1551,11 +1551,11 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   }
   for (const fx of s.fx) {
     if (drawElementFx(c, fx, toScreen, animMs, detailed)) continue;
-    if (fx.kind !== 'blast' && fx.kind !== 'pulse' && fx.kind !== 'defeat') continue;
+    if (fx.kind !== 'blast' && fx.kind !== 'pulse' && fx.kind !== 'defeat' && fx.kind !== 'rush') continue;
     const p = drawPoint(fx);
     if (!p) continue;
     const t = fx.ageMs / fx.lifeMs;
-    const size = bonkGroundEllipse(p, fx.r * (fx.kind === 'defeat' ? 0.25 + t * 0.9 : 0.6 + t * 0.4));
+    const size = bonkGroundEllipse(p, fx.r * (fx.kind === 'defeat' ? 0.25 + t * 0.9 : fx.kind === 'rush' ? 0.35 + t * 0.65 : 0.6 + t * 0.4));
     c.save();
     c.globalAlpha = (1 - t) * (fx.kind === 'defeat' ? 0.75 : 0.6);
     c.strokeStyle = fx.color;
@@ -1994,7 +1994,7 @@ function draw(): void {
       ctx.lineWidth = Math.max(2, f.r * (0.25 + 0.15 * (f.count ?? 1)) * (1 - t));
       ctx.stroke();
     } else if (f.kind === 'rush') {
-      // Teleporte do Rápido: um risco de onde saiu até onde chegou e um anel no impacto.
+      // Teleporte carregado: um risco de onde saiu até onde chegou e um anel que cresce até o raio real do impacto ou da onda.
       ctx.globalAlpha = 0.7 * (1 - t);
       ctx.strokeStyle = f.color;
       ctx.lineWidth = 3;

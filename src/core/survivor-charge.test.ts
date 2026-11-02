@@ -299,3 +299,40 @@ describe('cartas e entrada do Teleporte e da Rajada', () => {
     expect(state.player.attackTimerMs).toBe(RAPID_BURST_MIN_CYCLE_MS);
   });
 });
+
+describe('apoios com Rajada e Teleporte (política automática)', () => {
+  function withSupport(category: 'rapido' | 'teleporte'): { state: SurvivorState; near: SurvivorEnemy; side: SurvivorEnemy } {
+    const state = run('foco');
+    const supportStats = category === 'rapido' ? stats({ speed: 150, attack: 60, spAttack: 60 }) : stats({ speed: 150, attack: 80, spAttack: 60 });
+    const move = moveFor(['normal'], supportStats);
+    expect(move.category).toBe(category);
+    const profile = attackProfile(move, supportStats);
+    state.supports.push({ dexId: 291, name: 'Apoio', move, profile, x: state.player.x, y: state.player.y, attackTimerMs: 0, damageFactor: 1 });
+    state.player.attackTimerMs = 1e9; // só o apoio ataca neste teste
+    const near = dummy(1, state.player.x + 100, state.player.y);
+    const side = dummy(2, state.player.x + 100, state.player.y + 30);
+    state.enemies.push(near, side);
+    return { state, near, side };
+  }
+
+  it('Teleporte de apoio golpeia em área o inimigo mais próximo: sem projétil, sem mover e sem proteger o jogador', () => {
+    const { state, near, side } = withSupport('teleporte');
+    const x = state.player.x;
+    const projectiles = state.projectiles.length;
+    stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    expect(near.hp).toBeLessThan(near.maxHp);
+    expect(side.hp).toBeLessThan(side.maxHp);
+    expect(state.projectiles.length).toBe(projectiles);
+    expect(state.fx.some((f) => f.kind === 'blast')).toBe(true);
+    expect(state.fx.some((f) => f.kind === 'rush')).toBe(false);
+    expect(state.player.x).toBe(x);
+    expect(state.player.invulnMs).toBe(0);
+  });
+
+  it('Rajada de apoio solta um único projétil por ciclo', () => {
+    const { state } = withSupport('rapido');
+    const before = state.projectiles.length;
+    stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    expect(state.projectiles.length).toBe(before + 1);
+  });
+});
