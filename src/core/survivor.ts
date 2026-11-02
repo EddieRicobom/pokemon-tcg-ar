@@ -1325,7 +1325,7 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
     return true;
   }
   if (move.category === 'cone') {
-    const [target] = nearestEnemies(state, attackRange, 1);
+    const [target] = nearestEnemies(state, range, 1);
     if (target) p.aimAngle = Math.atan2(target.y - p.y, target.x - p.x);
     let hits = 0;
     for (const enemy of state.enemies) {
