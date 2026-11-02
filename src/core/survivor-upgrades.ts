@@ -159,7 +159,7 @@ function attackTree(category: MoveCategory): SurvivorUpgrade[] {
     { id: root, family: 'ataque', rarity: 'normal', name: power, description: '+30% de dano nesta forma de golpe.', for: [category], maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 30); } },
     { id: second, family: 'ataque', rarity: 'raro', name: reach, description: '+15% de alcance ou raio nesta forma de golpe.', for: [category], requires: root, maxLevels: 1, apply: (p) => { improveReach(p, 1.15); } },
     { id: third, family: 'ataque', rarity: 'raro', name: cadence, description: '-12% no tempo entre ataques desta forma.', for: [category], requires: second, maxLevels: 1, apply: (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.88)); } },
-    { id: `attack-tree-${category}-4`, family: 'ataque', rarity: 'lendario', name: finale, description: '+60% de dano e +1 disparo/impacto desta forma.', for: [category], requires: third, maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 60); p.shots = Math.min(5, p.shots + 1); } },
+    { id: `attack-tree-${category}-4`, family: 'ataque', rarity: 'lendario', name: finale, description: category === 'teleporte' ? '+60% de dano e +20% no raio do impacto e da onda.' : category === 'rapido' ? '+60% de dano e +1 tiro em leque a cada instante da Rajada.' : '+60% de dano e +1 disparo/impacto desta forma.', for: [category], requires: third, maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 60); p.shots = Math.min(5, p.shots + 1); } },
   ];
 }
 

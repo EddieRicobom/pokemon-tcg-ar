@@ -54,6 +54,7 @@ import { survivorAttackOf } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
+import { TELEPORT_FULL_HOLD_MS } from '../core/survivor-charge';
 import { trainer } from '../app/trainer-store';
 import type { SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
@@ -591,6 +592,10 @@ function releaseCharge(): void {
 function cancelCharge(): void {
   chargeHeld.value = false;
   cancelChargeQueued = true;
+}
+/** `lostpointercapture` também vem logo depois de um `pointerup` normal: só cancela se o botão ainda estava apertado. */
+function lostChargeCapture(): void {
+  if (chargeHeld.value) cancelCharge();
 }
 function queueSpecial(): void {
   if (specialBlocked.value || (state.value?.special.cooldownMs ?? 1) > 0) return;
@@ -2047,7 +2052,7 @@ function draw(): void {
   ctx.restore();
 }
 
-/** Anel em volta do Pokémon: o Foco fecha o anel enquanto carrega; o Rápido pisca durante os teleportes. */
+/** Anel em volta do Pokémon: o Foco e o Teleporte fecham o anel enquanto a carga enche. */
 function drawChargeAura(c: CanvasRenderingContext2D, s: SurvivorState): void {
   const p = s.player;
   const charge = s.charge;
@@ -2059,12 +2064,13 @@ function drawChargeAura(c: CanvasRenderingContext2D, s: SurvivorState): void {
     c.beginPath();
     c.arc(p.x, p.y - 8, 36 - 14 * charge.level + Math.sin(animMs / 90) * 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge.level);
     c.stroke();
-  } else if (p.move.category === 'rapido' && charge.rushMs > 0) {
-    c.globalAlpha = 0.45 + 0.3 * Math.sin(animMs / 60);
-    c.lineWidth = 3;
-    c.setLineDash([5, 5]);
+  } else if (p.move.category === 'teleporte' && charge.holding && charge.teleportHoldMs > 0) {
+    const ratio = Math.min(1, charge.teleportHoldMs / TELEPORT_FULL_HOLD_MS);
+    c.globalAlpha = ratio >= 1 ? 0.55 + 0.3 * Math.sin(animMs / 60) : 0.35 + 0.4 * ratio;
+    c.lineWidth = 2 + 3 * ratio;
+    if (ratio < 1) c.setLineDash([5, 5]);
     c.beginPath();
-    c.arc(p.x, p.y - 8, 26, 0, Math.PI * 2);
+    c.arc(p.x, p.y - 8, 34 - 10 * ratio, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
     c.stroke();
   }
   c.restore();
@@ -2426,6 +2432,7 @@ function toggleHudMenu(): void {
     return;
   }
   hudExpanded.value = true;
+  cancelCharge();
   if (!paused.value) {
     paused.value = true;
     menuPausedRun = true;
@@ -2815,6 +2822,7 @@ function onVisibility(): void {
   syncMusic();
   if (document.hidden) {
     heldKeys.clear();
+    cancelCharge();
     joystick.active = false;
     joystick.pointerId = null;
     joystick.dx = 0;
@@ -3210,7 +3218,7 @@ onBeforeUnmount(() => {
           type="button" class="survivor-charge-button" :class="{ 'is-held': chargeHeld, 'is-full': state.charge.level >= 1 || (chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200), 'is-rush': chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200 }"
           :style="{ '--special-color': state.player.move.color, '--charge': `${chargeMeter * 100}%` }"
           :aria-label="chargeStyle === 'foco' ? `Foco: segure para carregar, solte para disparar; carga ${Math.floor(state.charge.level * 100)}%; tecla R` : `Teleporte: segure para carregar e solte para usar; ${chargeLabel}; tecla R`"
-          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelCharge" @lostpointercapture="cancelCharge">
+          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelCharge" @lostpointercapture="lostChargeCapture">
           <span class="special-icon" aria-hidden="true">{{ chargeStyle === 'foco' ? '◎' : '»' }}</span>
           <strong>{{ chargeLabel }}</strong>
           <small>{{ chargeStyle === 'foco' ? 'Foco' : 'Teleporte' }}</small>

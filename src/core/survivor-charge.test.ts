@@ -8,15 +8,20 @@ import {
   FOCUS_CHARGE_PER_SEC,
   focusBeam,
   RAPID_BURST_CYCLE_MS,
+  RAPID_BURST_MIN_CYCLE_MS,
   RAPID_BURST_SHOT_INTERVAL_MS,
   rapidBurstShotsBetween,
   TELEPORT_COOLDOWN_MS,
   TELEPORT_FULL_HOLD_MS,
   TELEPORT_MAX_INVULN_MS,
+  TELEPORT_MAX_RANGE,
+  TELEPORT_MIN_COOLDOWN_MS,
   TELEPORT_MIN_HOLD_MS,
   TELEPORT_MIN_INVULN_MS,
   cancelTeleportHold,
   stepChargeMeter,
+  teleportCooldownMs,
+  teleportReach,
   teleportRelease,
 } from './survivor-charge';
 import { attackProfile, categoryForStats, moveFor } from './survivor-moves';
@@ -197,5 +202,100 @@ describe('no jogo', () => {
     expect(before - target.hp).toBeLessThan(state.player.attackDamage * 10);
     expect(boss.x - bossBefore).toBeGreaterThan(0);
     expect(state.fx.some((f) => f.kind === 'rush')).toBe(true);
+  });
+});
+
+describe('cartas e entrada do Teleporte e da Rajada', () => {
+  it('teleportReach e teleportCooldownMs: padrões, teto, piso e alargamento por disparo extra', () => {
+    expect(teleportReach(240, 54, 1)).toEqual({ range: 240, hitRadius: 54, waveRadius: 150 });
+    expect(teleportReach(900, 54, 1).range).toBe(TELEPORT_MAX_RANGE);
+    expect(teleportReach(Number.NaN, 0, 3)).toMatchObject({ range: 240 });
+    expect(teleportReach(240, 54, 3).hitRadius).toBeCloseTo(54 * 1.4, 5);
+    expect(teleportReach(240, 54, 99).waveRadius).toBeCloseTo(150 * 1.8, 5);
+    expect(teleportCooldownMs(1500, 0)).toBe(1500);
+    expect(teleportCooldownMs(1500, 3)).toBe(938);
+    expect(teleportCooldownMs(240, 0)).toBe(TELEPORT_MIN_COOLDOWN_MS);
+    expect(teleportCooldownMs(Number.NaN, 0)).toBe(TELEPORT_COOLDOWN_MS);
+  });
+
+  it('soltar o botão dispara o Teleporte; soltar com cancelamento explícito não dispara', () => {
+    const released = (cancel: boolean): boolean => {
+      const state = run('teleporte');
+      state.player.aimAngle = 0;
+      hold(state, 500, { charge: true });
+      const events = stepSurvivor(state, { dx: 0, dy: 0, charge: false, ...(cancel ? { cancelCharge: true } : {}) }, 16);
+      return events.some((event) => event.type === 'chargeRelease');
+    };
+    expect(released(false)).toBe(true);
+    expect(released(true)).toBe(false);
+  });
+
+  it('a recarga do Teleporte vem da cadência do jogador, com piso', () => {
+    const cooldownAfterRelease = (attackCooldownMs: number): number => {
+      const state = run('teleporte');
+      state.player.attackCooldownMs = attackCooldownMs;
+      hold(state, 500, { charge: true });
+      stepSurvivor(state, { dx: 0, dy: 0, charge: false }, 1);
+      return state.charge.teleportCooldownMs;
+    };
+    expect(cooldownAfterRelease(1500)).toBe(1500);
+    expect(cooldownAfterRelease(1200)).toBe(1200);
+    expect(cooldownAfterRelease(240)).toBe(TELEPORT_MIN_COOLDOWN_MS);
+  });
+
+  it('alcance e disparos extras mudam onde o Teleporte cai e quem ele acerta', () => {
+    const landed = (range: number): number => {
+      const state = run('teleporte');
+      state.player.aimAngle = 0;
+      state.player.attackRange = range;
+      const x0 = state.player.x;
+      hold(state, TELEPORT_FULL_HOLD_MS, { charge: true });
+      stepSurvivor(state, { dx: 0, dy: 0, charge: false }, 1);
+      return state.player.x - x0;
+    };
+    expect(landed(240)).toBeCloseTo(240, 3);
+    expect(landed(360)).toBeCloseTo(360, 3);
+    expect(landed(900)).toBeCloseTo(TELEPORT_MAX_RANGE, 3);
+
+    const hitWith = (shots: number): boolean => {
+      const state = run('teleporte');
+      state.player.aimAngle = 0;
+      state.player.attackRange = 240;
+      state.player.attackRadius = 50;
+      state.player.shots = shots;
+      const side = dummy(1, state.player.x + 240, state.player.y + 70);
+      state.enemies.push(side);
+      hold(state, TELEPORT_FULL_HOLD_MS, { charge: true });
+      stepSurvivor(state, { dx: 0, dy: 0, charge: false }, 1);
+      return side.hp < side.maxHp;
+    };
+    expect(hitWith(1)).toBe(false);
+    expect(hitWith(3)).toBe(true);
+  });
+
+  it('o dano do Teleporte não cai quando as cartas encurtam a recarga do golpe', () => {
+    const damageWith = (attackCooldownMs: number): number => {
+      const state = run('teleporte');
+      state.player.aimAngle = 0;
+      state.player.attackCooldownMs = attackCooldownMs;
+      const target = dummy(1, state.player.x + 240, state.player.y);
+      state.enemies.push(target);
+      hold(state, TELEPORT_FULL_HOLD_MS, { charge: true });
+      stepSurvivor(state, { dx: 0, dy: 0, charge: false }, 1);
+      return target.maxHp - target.hp;
+    };
+    expect(damageWith(240)).toBeGreaterThan(0);
+    expect(damageWith(240)).toBeCloseTo(damageWith(1500), 5);
+  });
+
+  it('Rajada: disparos extras viram leque em cada instante e a cadência tem piso', () => {
+    const state = run('rapido');
+    state.player.shots = 3;
+    state.player.attackCooldownMs = 240;
+    state.enemies.push(dummy(1, state.player.x + 120, state.player.y));
+    const before = state.nextId;
+    stepSurvivor(state, { dx: 0, dy: 0 }, 16);
+    expect(state.nextId).toBe(before + 3);
+    expect(state.player.attackTimerMs).toBe(RAPID_BURST_MIN_CYCLE_MS);
   });
 });

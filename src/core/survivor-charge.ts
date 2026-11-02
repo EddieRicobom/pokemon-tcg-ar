@@ -80,6 +80,10 @@ export const RUSH_MAX_DAMAGE_TAKEN = 2;
 export const RAPID_BURST_SHOTS = 3;
 export const RAPID_BURST_SHOT_INTERVAL_MS = 90;
 export const RAPID_BURST_CYCLE_MS = 780;
+/** Nem a maior cadência encurta o ciclo a ponto de apagar a pausa (180 ms de tiros + 180 ms de respiro). */
+export const RAPID_BURST_MIN_CYCLE_MS = 360;
+/** Abertura do leque de cada instante quando cartas de disparo múltiplo aumentam `shots`. */
+export const RAPID_BURST_SPREAD = 0.2;
 
 /** Teleporte: só uma soltura deliberada ativa o golpe. */
 export const TELEPORT_MIN_HOLD_MS = 150;
@@ -92,6 +96,31 @@ export const TELEPORT_MAX_DAMAGE_MULTIPLIER = 4;
 export const TELEPORT_RANGE = 240;
 export const TELEPORT_HIT_RADIUS = 54;
 export const TELEPORT_FULL_WAVE_RADIUS = 150;
+/** Teto de alcance e piso de recarga: as cartas de alcance e cadência melhoram o Teleporte sem apagar a janela vulnerável. */
+export const TELEPORT_MAX_RANGE = 420;
+export const TELEPORT_MIN_COOLDOWN_MS = 900;
+/** Cada disparo/impacto extra (`shots`) alarga o impacto e a onda em 20%, até quatro extras. */
+export const TELEPORT_SHOT_WIDEN = 0.2;
+
+export interface TeleportReach {
+  range: number;
+  hitRadius: number;
+  waveRadius: number;
+}
+
+/** Alcance, raio do impacto e raio da onda do Teleporte a partir dos stats e das cartas do jogador (valores inválidos caem nos padrões). */
+export function teleportReach(attackRange: number, attackRadius: number, shots: number): TeleportReach {
+  const widen = 1 + TELEPORT_SHOT_WIDEN * Math.max(0, Math.min(4, Number.isFinite(shots) ? shots - 1 : 0));
+  const range = Number.isFinite(attackRange) && attackRange > 0 ? Math.min(TELEPORT_MAX_RANGE, attackRange) : TELEPORT_RANGE;
+  const radius = Number.isFinite(attackRadius) && attackRadius > 0 ? attackRadius : TELEPORT_HIT_RADIUS;
+  return { range, hitRadius: radius * widen, waveRadius: TELEPORT_FULL_WAVE_RADIUS * widen };
+}
+
+/** Recarga do Teleporte: parte da recarga do jogador (Velocidade e cartas), com as cartas de preparo e o piso. */
+export function teleportCooldownMs(baseCooldownMs: number, bonusLevels: number): number {
+  const base = Number.isFinite(baseCooldownMs) && baseCooldownMs > 0 ? baseCooldownMs : TELEPORT_COOLDOWN_MS;
+  return Math.max(TELEPORT_MIN_COOLDOWN_MS, Math.round(base / (1 + 0.2 * Math.max(0, Math.min(3, bonusLevels)))));
+}
 
 /**
  * O estilo de carga pelos stats reais, ou `null` (golpe comum).
@@ -195,7 +224,7 @@ export function teleportRelease(holdMs: number): TeleportRelease | null {
  * Foco: segurar enche, soltar dispara (com carga mínima) e zera. Rajada não
  * usa esta barra. Teleporte exige hold e só resolve uma vez na soltura.
  */
-export function stepChargeMeter(c: SurvivorChargeState, style: ChargeStyle | null, held: boolean, movedPx: number, dtMs: number, bonusLevels = 0): ChargeAction {
+export function stepChargeMeter(c: SurvivorChargeState, style: ChargeStyle | null, held: boolean, movedPx: number, dtMs: number, bonusLevels = 0, cooldownMs = TELEPORT_COOLDOWN_MS): ChargeAction {
   void movedPx;
   const released = !held && c.holding;
   c.holding = held;
@@ -215,7 +244,7 @@ export function stepChargeMeter(c: SurvivorChargeState, style: ChargeStyle | nul
     if (released) {
       const action = c.teleportCooldownMs === 0 ? teleportRelease(c.teleportHoldMs) : null;
       c.teleportHoldMs = 0;
-      if (action) c.teleportCooldownMs = Math.round(TELEPORT_COOLDOWN_MS / (1 + 0.2 * Math.max(0, Math.min(3, bonusLevels))));
+      if (action) c.teleportCooldownMs = teleportCooldownMs(cooldownMs, bonusLevels);
       return action;
     }
   }
