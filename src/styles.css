@@ -7633,6 +7633,25 @@ body.no-scroll .reward-toasts {
   margin-top: 8px;
 }
 
+.survivor-omega-tune {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #9375db;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f3efff, #e4dcff);
+  color: #37235f;
+  text-align: left;
+}
+.survivor-omega-tune > span:first-child { font-size: 1.5rem; }
+.survivor-omega-tune strong, .survivor-omega-tune small { display: block; }
+.survivor-omega-tune small { margin-top: 2px; color: #604b87; }
+.survivor-omega-tune:disabled { opacity: .55; }
+.survivor-omega-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
 .survivor-pick-btn {
   display: flex;
   flex-direction: column;

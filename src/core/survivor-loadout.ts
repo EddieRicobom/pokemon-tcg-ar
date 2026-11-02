@@ -5,7 +5,8 @@ import { typesOfDex } from './species-filter';
 import { alternativeMoveFor, attackProfile, moveFor } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
 import type { PokemonType } from './pokemon-data';
-import type { AttackProfile, SurvivorMove } from './survivor-moves';
+import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
+import { moveWith } from './survivor-moves';
 
 /**
  * O que a Vila entrega para uma corrida do Survival (clássico e BONK usam o mesmo `createSurvivorState`).
@@ -104,11 +105,15 @@ export function survivorAttackChoices(dexId: number, picked?: PokemonType): { cu
  * Com `swapped`, o golpe alternativo vira o principal e o antigo passa a ser o segundo ataque; a Mistura de tipo dos
  * 9 minutos vem do tipo antigo (quando os dois golpes têm tipos diferentes), e a Afinidade é calculada em cima do novo tipo principal.
  */
-export function survivorAttackOf(dexId: number, picked?: PokemonType, swapped = false): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove; hypotheticalSecondaryType?: PokemonType } {
+export function survivorAttackOf(dexId: number, picked?: PokemonType, swapped = false, categoryOverride?: MoveCategory): { move: SurvivorMove; profile: AttackProfile; types: PokemonType[]; secondMove?: SurvivorMove; hypotheticalSecondaryType?: PokemonType } {
   const stats = statsOfDex(dexId);
   const types = typesOfDex(dexId);
   const ordered = picked ? [picked, ...types.filter((t) => t !== picked)] : types;
   const move = moveFor(ordered, stats);
+  if (categoryOverride) {
+    const tuned = moveWith(ordered[0] ?? 'normal', categoryOverride, stats);
+    return { move: tuned, profile: attackProfile(tuned, stats), types, secondMove: move };
+  }
   if (swapped) {
     const alternative = alternativeMoveFor(ordered, stats);
     return {

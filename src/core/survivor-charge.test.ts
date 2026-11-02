@@ -24,7 +24,7 @@ import {
   teleportReach,
   teleportRelease,
 } from './survivor-charge';
-import { attackProfile, categoryForStats, moveFor } from './survivor-moves';
+import { attackProfile, categoryForStats, moveFor, moveWith } from './survivor-moves';
 import type { BaseStats } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
 
@@ -42,14 +42,13 @@ describe('quem ganha golpe de carga', () => {
     expect(chargeStyleFor(null)).toBeNull();
   });
 
-  it('com stats reais: Snorlax e Golem são Foco; Electrode é Rajada e Ninjask é Teleporte', () => {
-    expect(moveFor(['normal'], statsOfDex(143)).category).toBe('foco');
-    expect(moveFor(['rock'], statsOfDex(76)).category).toBe('foco');
+  it('com stats reais, cada categoria de carga vem da pontuação completa, não de um corte isolado', () => {
+    expect(moveFor(['normal'], statsOfDex(143)).category).toBe('aura');
+    expect(moveFor(['rock'], statsOfDex(76)).category).toBe('area');
     expect(moveFor(['electric'], statsOfDex(101)).category).toBe('rapido');
     expect(moveFor(['bug'], statsOfDex(291)).category).toBe('teleporte');
-    expect(moveFor(['electric'], statsOfDex(25)).category).toBe('area');
-    expect(moveFor(['psychic'], statsOfDex(65)).category).toBe('projetil');
-    // A forma pelos stats continua a mesma para quem lê só ela.
+    expect(moveFor(['electric'], statsOfDex(25)).category).toBe('teleporte');
+    expect(moveFor(['psychic'], statsOfDex(65)).category).toBe('rapido');
     expect(categoryForStats(statsOfDex(143)!)).toBe('aura');
   });
 
@@ -129,8 +128,8 @@ function run(category: 'foco' | 'rapido' | 'teleporte'): SurvivorState {
   const s = category === 'foco'
     ? stats({ speed: 30, attack: 120 })
     : category === 'rapido' ? stats({ speed: 150, attack: 60, spAttack: 60 }) : stats({ speed: 150, attack: 80, spAttack: 60 });
-  const move = moveFor(['normal'], s);
-  expect(move.category).toBe(category);
+  // A mecânica de carga é testada isoladamente da seleção estatística da espécie.
+  const move = moveWith('normal', category, s);
   const state = createSurvivorState(9, { kindCount: 1, move, profile: attackProfile(move, s) });
   state.nextBossAtMs = Number.POSITIVE_INFINITY;
   state.spawnAccumMs = -1e9;

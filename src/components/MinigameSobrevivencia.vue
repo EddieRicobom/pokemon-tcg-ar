@@ -50,14 +50,14 @@ import {
   SURVIVOR_LANDSCAPE_TILE_W,
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
-import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
+import { attackProfile, moveEffectForType, moveFor, moveWith, rankedCategories, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
 import { survivorAttackChoices, survivorAttackOf } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
 import { TELEPORT_FULL_HOLD_MS } from '../core/survivor-charge';
 import { trainer } from '../app/trainer-store';
-import type { SurvivorMove } from '../core/survivor-moves';
+import type { MoveCategory, SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
 import type { SvRunResult } from '../core/survivor-pvp';
 import { omegaShardCount, settleOmegaShard, survivorMegaForm, survivorMegaForms, survivorMegaStatDelta, takeOmegaShard } from '../core/survivor-mega';
@@ -2611,7 +2611,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null, swapped = false): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null, swapped = false, omegaCategory?: MoveCategory): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -2667,7 +2667,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     pendingUpgrade.value = null;
     clearTrainerPresentation();
     paused.value = false;
-    const { move, profile, secondMove, hypotheticalSecondaryType } = survivorAttackOf(dexId, picked, swapped);
+    const { move, profile, secondMove, hypotheticalSecondaryType } = survivorAttackOf(dexId, picked, swapped, omegaCategory);
     runSeenDex.clear();
     // A Vila entrega o loadout (e gasta a sorte do Carteiro) antes de a corrida existir; vale no Survival e no BONK.
     // No PvP nada da Vila entra (nem sorte, nem marmita, nem treino): as duas pessoas começam iguais.
@@ -2724,7 +2724,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   }
 }
 
-function choosePlayer(opt: PickOption, picked?: PokemonType, swapped = false): void {
+function choosePlayer(opt: PickOption, picked?: PokemonType, swapped = false, omegaCategory?: MoveCategory): void {
   unlockSound();
   runParticipant = { id: opt.id, name: opt.name };
   runParticipantDexId = opt.dexId;
@@ -2745,17 +2745,19 @@ function choosePlayer(opt: PickOption, picked?: PokemonType, swapped = false): v
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
   const pvp = props.pvpRun !== undefined;
   const infinite = !pvp && infiniteWanted.value && torre.value.infiniteUnlocked;
-  const mega = !pvp && megaPick.value?.optId === opt.id && !pureWanted.value ? survivorMegaForm(megaPick.value.formId) : null;
+  const mega = !omegaCategory && !pvp && megaPick.value?.optId === opt.id && !pureWanted.value ? survivorMegaForm(megaPick.value.formId) : null;
   megaPick.value = null;
+  if (omegaCategory && !pvp && !pureWanted.value) runOmegaShardTaken = takeRunOmegaShard();
   pvpPick = { shiny: opt.shiny === true, types: opt.types };
   // No PvP a run é sempre a normal, sem Mega, sem preparação e sem modificadores; nada conta para a Torre.
-  void beginRun(opt.dexId, opt.name, picked, infinite, !pvp && bonkWanted.value, opt.id.startsWith('dp_') || pvp ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, pvp ? 'classica' : selectedPreparation.value, supportCandidates, typeAffinityChoices, !pvp && fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null, mega?.dexId === opt.dexId ? mega : null, swapped);
+  void beginRun(opt.dexId, opt.name, picked, infinite, !pvp && bonkWanted.value, opt.id.startsWith('dp_') || pvp ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, pvp ? 'classica' : selectedPreparation.value, supportCandidates, typeAffinityChoices, !pvp && fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null, mega?.dexId === opt.dexId ? mega : null, swapped, omegaCategory);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
 const typeChoice = ref<PickOption | null>(null);
 /** Tela "ataque atual ou secundário": vem depois de escolher o Pokémon (e o tipo, se tem dois). */
 const attackChoice = ref<{ opt: PickOption; picked: PokemonType | undefined } | null>(null);
+const omegaAttackChoice = ref(false);
 const typeAffinityOffer = ref<PokemonType[] | null>(null);
 
 watch(
@@ -2807,12 +2809,29 @@ const attackOptions = computed(() => {
     },
   ];
 });
-function openAttackChoice(opt: PickOption, picked?: PokemonType): void { attackChoice.value = { opt, picked }; }
+const omegaAttackOptions = computed(() => {
+  const choice = attackChoice.value;
+  if (!choice) return [];
+  const stats = statsOfDex(choice.opt.dexId);
+  const type = choice.picked ?? choice.opt.types[0] ?? 'normal';
+  return rankedCategories(type, stats).slice(2).map((category) => {
+    const move = moveWith(type, category, stats);
+    return { key: category, category, move, bars: profileBars(move, attackProfile(move, stats)) };
+  });
+});
+function openAttackChoice(opt: PickOption, picked?: PokemonType): void { omegaAttackChoice.value = false; attackChoice.value = { opt, picked }; }
 function confirmAttack(swapped: boolean): void {
   const choice = attackChoice.value;
   if (!choice || pickBusy.value) return;
   attackChoice.value = null;
   choosePlayer(choice.opt, choice.picked, swapped);
+}
+function confirmOmegaAttack(category: MoveCategory): void {
+  const choice = attackChoice.value;
+  if (!choice || pickBusy.value || pureWanted.value || omegaShards.value < 1 || megaPick.value?.optId === choice.opt.id) return;
+  attackChoice.value = null;
+  omegaAttackChoice.value = false;
+  choosePlayer(choice.opt, choice.picked, false, category);
 }
 function acceptTypeAffinity(type: PokemonType): void {
   if (!state.value || !typeAffinityOffer.value || !chooseSurvivorTypeAffinity(state.value, type)) return;
@@ -3116,8 +3135,9 @@ onBeforeUnmount(() => {
 
         <div v-if="pickOptions" class="survivor-overlay" role="dialog" aria-label="Escolha quem joga">
           <div v-if="attackChoice" class="card survivor-pick survivor-attack-choice" role="group" :aria-label="`Ataque de ${attackChoice.opt.name}`">
+            <template v-if="!omegaAttackChoice">
             <h2>{{ attackChoice.opt.name }}: qual ataque?</h2>
-            <p class="note">Fique com o ataque atual ou troque pelo secundário: a forma de golpe mais próxima depois de tirar a principal.</p>
+            <p class="note">Fique com o ataque atual ou troque pelo secundário, calculado pelos atributos do Pokémon.</p>
             <div class="survivor-pick-grid">
               <button v-for="option in attackOptions" :key="option.key" type="button" class="survivor-pick-btn survivor-attack-option" :class="{ disabled: pickBusy }" :style="{ '--move': option.move.color }" @click="confirmAttack(option.swapped)">
                 <span class="survivor-attack-head">
@@ -3133,7 +3153,23 @@ onBeforeUnmount(() => {
                 <small class="survivor-attack-note">{{ option.note }}</small>
               </button>
             </div>
+            <button type="button" class="survivor-omega-tune" :disabled="omegaShards < 1 || pureWanted || megaPick?.optId === attackChoice.opt.id" @click="omegaAttackChoice = true">
+              <span>💎</span><span><strong>Sintonia Ômega · 1 Fragmento</strong><small>Escolha uma das seis formas que não foram oferecidas. Mantém o tipo e os stats reais; não pode combinar com Mega.</small></span>
+            </button>
             <button type="button" class="link survivor-back" @click="attackChoice = null">← Voltar aos Pokémon</button>
+            </template>
+            <template v-else>
+              <h2>Sintonia Ômega: escolha a forma</h2>
+              <p class="note">O tipo continua o escolhido; os stats continuam os de {{ attackChoice.opt.name }}. Gasta 1 Fragmento ao confirmar.</p>
+              <div class="survivor-pick-grid survivor-omega-grid">
+                <button v-for="option in omegaAttackOptions" :key="option.key" type="button" class="survivor-pick-btn survivor-attack-option" :style="{ '--move': option.move.color }" @click="confirmOmegaAttack(option.category)">
+                  <span class="survivor-attack-head"><AttackIcon :category="option.category" :size="34" titled /><strong>{{ MOVE_CATEGORY_LABELS_PT[option.category] }}</strong></span>
+                  <small class="survivor-pick-move">{{ option.move.icon }} {{ option.move.name }}</small>
+                  <span class="survivor-pick-bars" :style="{ '--move': option.move.color }"><span v-for="b in option.bars" :key="b.label" class="survivor-pick-bar"><small>{{ b.label }}</small><i><b :style="{ width: Math.round(b.value * 100) + '%' }"></b></i></span></span>
+                </button>
+              </div>
+              <button type="button" class="link survivor-back" @click="omegaAttackChoice = false">← Voltar aos ataques oferecidos</button>
+            </template>
           </div>
           <div v-else-if="typeChoice" class="card survivor-pick survivor-type-choice">
             <h2>{{ typeChoice.name }} tem dois tipos</h2>

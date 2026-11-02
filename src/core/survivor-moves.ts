@@ -1,20 +1,18 @@
 import type { PokemonType } from './pokemon-data';
-import { chargeStyleFor } from './survivor-charge';
 
 /**
  * Golpes da Torre de Sobrevivência (pedidos do dono): cada Pokémon ataca com um golpe próprio.
  *
  * - O **1º tipo** dá o **elemento**: nome, cor, ícone e efeito extra (queimar, deixar lento, empurrar, saltar,
  *   atordoar, ir mais longe, roubar vida). Os nomes são descritivos e próprios do app, não traduções dos golpes oficiais.
- * - Os **stats base reais** (PokéAPI, `core/survivor-stats.ts`) dão a **forma** do golpe e os números dele:
- *   - Defesas e HP mais altos que o ataque → **aura** (pulsos de dano em volta do Pokémon);
- *   - Ataque Especial maior ou igual ao Ataque → **projétil** (dispara no inimigo mais próximo);
- *   - Ataque maior → **área** (explosão em cima do inimigo mais próximo, que acerta quem está em volta).
+ * - Os **stats base reais** (PokéAPI, `core/survivor-stats.ts`) dão sozinhos a **forma** do golpe e os números dele.
+ *   Cada forma recebe uma pontuação que usa os seis stats normalizados contra as medianas do catálogo. O melhor
+ *   perfil é o golpe principal e o segundo é o opcional: não há um grande "resto" de Projétil/Área nem forma fixa por tipo.
  *   Ataque/Ataque Especial = dano, Velocidade = recarga, velocidade do disparo e do passo, HP = vida,
  *   Defesa = raio da aura/explosão e tamanho do disparo.
  *
- * Antes disso, os stats podem dar um golpe de **carga** (`core/survivor-charge.ts`): **foco** (lento e de ataque alto)
- * ou **rápido** (a Velocidade acima de tudo, ataques baixos). Esses valem mais que o tipo.
+ * O tipo nunca escolhe a forma: dá o elemento, o efeito e a identidade visual. Isso evita que o primeiro tipo de
+ * um Pokémon de dois tipos imponha Cone ou Órbita sobre seus atributos.
  *
  * Sem stats (dado ausente), a forma é projétil e os números são os médios; `estimated` avisa a tela para dizer isso.
  */
@@ -87,45 +85,77 @@ export const MOVE_EFFECT_LABELS_PT: Record<MoveEffect, string> = {
   nenhum: 'sem efeito extra',
 };
 
-/** Defesas e HP (a "parede"): média de HP, Defesa e Defesa Especial. */
-const bulkOf = (s: BaseStats): number => (s.hp + s.defense + s.spDefense) / 3;
+/** Medianas e distâncias interquartis das 1.025 espécies, congeladas para uma regra estável quando o catálogo crescer. */
+const STAT_CENTER = { hp: 68, attack: 75, defense: 70, spAttack: 65, spDefense: 67, speed: 65 } as const;
+const STAT_SPREAD = { hp: 35, attack: 45, defense: 40, spAttack: 43, spDefense: 36, speed: 43 } as const;
+const CATEGORY_ORDER: readonly MoveCategory[] = ['projetil', 'area', 'aura', 'orbit', 'cone', 'foco', 'rapido', 'teleporte'];
 
-/** A forma do golpe pelos stats (ver o comentário do arquivo). */
-export function categoryForStats(s: BaseStats): MoveCategory {
-  if (bulkOf(s) > Math.max(s.attack, s.spAttack)) return 'aura';
-  return s.spAttack >= s.attack ? 'projetil' : 'area';
+/** Pequeno viés calibrado no catálogo: Projétil/Área são só um pouco mais frequentes, sem quota em tempo de execução. */
+const CATEGORY_CALIBRATION: Record<MoveCategory, number> = {
+  projetil: 0.0425, area: 0.0715, aura: 0.003, orbit: 0.2485,
+  cone: 0.154, foco: -0.4095, rapido: -0.1015, teleporte: -0.0085,
+};
+
+const positive = (value: number): number => Math.max(0, value);
+
+interface CombatVector {
+  physical: number;
+  special: number;
+  bulk: number;
+  speed: number;
+  /** O ataque opcional/menos dominante: híbridos bons são reconhecidos, sem virar dano grátis. */
+  secondary: number;
+  primary: number;
 }
 
-/** O golpe de um Pokémon: elemento pelo 1º tipo (sem tipo, Normal) e forma pelos stats (sem stats, projétil). */
-export function moveFor(types: readonly PokemonType[], stats: BaseStats | null): SurvivorMove {
-  const type = types[0] ?? 'normal';
-  const category: MoveCategory = chargeStyleFor(stats) ?? (type === 'fighting' ? 'cone'
-    : type === 'grass' || type === 'bug' ? 'orbit'
-      : stats ? categoryForStats(stats) : 'projetil');
-  return { type, ...ELEMENTS[type], category, ...(stats ? {} : { estimated: true }) };
+function combatVector(s: BaseStats): CombatVector {
+  const physical = (s.attack - STAT_CENTER.attack) / STAT_SPREAD.attack;
+  const special = (s.spAttack - STAT_CENTER.spAttack) / STAT_SPREAD.spAttack;
+  return {
+    physical,
+    special,
+    bulk: ((s.hp - STAT_CENTER.hp) / STAT_SPREAD.hp + (s.defense - STAT_CENTER.defense) / STAT_SPREAD.defense + (s.spDefense - STAT_CENTER.spDefense) / STAT_SPREAD.spDefense) / 3,
+    speed: (s.speed - STAT_CENTER.speed) / STAT_SPREAD.speed,
+    secondary: Math.min(physical, special),
+    primary: Math.max(physical, special),
+  };
 }
 
 /**
- * As formas de golpe de um tipo, da que a classificação escolhe (a primeira) até a mais distante.
- * Segue a mesma ordem de `moveFor`: golpe de carga, forma fixa do tipo (Lutador/Planta/Inseto) e, por fim, Aura, Projétil e Área
- * pela distância entre os stats. A segunda forma é "o ataque mais próximo depois de eliminar o principal".
+ * Afinidade de cada forma. Todo coeficiente usa dados estatísticos, inclusive o ataque não dominante.
+ * O segundo maior valor é o golpe opcional, portanto ele também é escolhido pelos atributos em vez de uma lista fixa.
  */
-export function rankedCategories(type: PokemonType, stats: BaseStats | null): MoveCategory[] {
-  const ranking: MoveCategory[] = [];
-  const add = (category: MoveCategory): void => { if (!ranking.includes(category)) ranking.push(category); };
-  const charge = chargeStyleFor(stats);
-  if (charge) add(charge);
-  if (type === 'fighting') add('cone');
-  else if (type === 'grass' || type === 'bug') add('orbit');
-  if (stats) {
-    const aura = bulkOf(stats) - Math.max(stats.attack, stats.spAttack);
-    if (aura > 0) add('aura');
-    const scored: [MoveCategory, number][] = [['projetil', stats.spAttack - stats.attack], ['area', stats.attack - stats.spAttack], ['aura', aura]];
-    scored.sort((a, b) => b[1] - a[1]).forEach(([category]) => add(category));
-  } else {
-    add('projetil'); add('area'); add('aura');
-  }
-  return ranking;
+export function categoryScoresForStats(s: BaseStats): Record<MoveCategory, number> {
+  const { physical, special, bulk, speed, secondary, primary } = combatVector(s);
+  return {
+    projetil: 1.3 * special + 0.3 * physical + 0.2 * speed - 0.2 * bulk + CATEGORY_CALIBRATION.projetil,
+    area: 1.3 * physical + 0.3 * special - 0.1 * speed - 0.2 * bulk + CATEGORY_CALIBRATION.area,
+    aura: 0.75 * bulk + 0.45 * secondary - 0.45 * speed + CATEGORY_CALIBRATION.aura,
+    orbit: 0.75 * bulk + 0.45 * secondary + 0.55 * speed + CATEGORY_CALIBRATION.orbit,
+    cone: 1.05 * physical + 0.4 * special + 0.8 * speed - 0.15 * bulk + CATEGORY_CALIBRATION.cone,
+    foco: 1.4 * positive(primary) + 0.3 * secondary - 0.45 * speed + CATEGORY_CALIBRATION.foco,
+    rapido: 0.9 * special + 0.45 * physical + 1.2 * positive(speed) - 0.35 * bulk + CATEGORY_CALIBRATION.rapido,
+    teleporte: 0.9 * physical + 0.45 * special + 1.2 * positive(speed) - 0.35 * bulk + CATEGORY_CALIBRATION.teleporte,
+  };
+}
+
+/** Formas, da afinidade mais alta à mais baixa; empates são estáveis na ordem de `CATEGORY_ORDER`. */
+export function rankedCategories(_type: PokemonType, stats: BaseStats | null): MoveCategory[] {
+  if (!stats) return ['projetil', 'area', 'aura'];
+  const scores = categoryScoresForStats(stats);
+  return [...CATEGORY_ORDER].sort((left, right) => scores[right] - scores[left]);
+}
+
+/** A forma principal é a maior afinidade estatística. */
+export function categoryForStats(s: BaseStats): MoveCategory {
+  return rankedCategories('normal', s)[0]!;
+}
+
+/** O golpe de um Pokémon: elemento pelo 1º tipo (sem tipo, Normal) e forma somente pelos stats. */
+export function moveFor(types: readonly PokemonType[], stats: BaseStats | null): SurvivorMove {
+  const type = types[0] ?? 'normal';
+  const category: MoveCategory = stats ? categoryForStats(stats) : 'projetil';
+  return { type, ...ELEMENTS[type], category, ...(stats ? {} : { estimated: true }) };
 }
 
 /** O golpe de um tipo com uma forma escolhida (o elemento vem do tipo; a forma, de fora). */

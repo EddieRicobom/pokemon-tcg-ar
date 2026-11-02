@@ -357,3 +357,75 @@ a ~20 Hz em vez de a cada quadro. Não medi um celular: o crash dos 15 min é at
 **Limites:** o robô não tem reflexo nem toque de celular; o cenário de multidão usa
 inimigos sem dano e a política do Teleporte é simples. Nenhum destes números
 substitui sessões humanas.
+
+## Forma de ataque por perfil estatístico — 02/11/2026
+
+A forma não é consequência do tipo nem de uma cascata de cortes. Cada espécie recebe
+uma afinidade para as oito formas a partir dos seis stats-base reais; a maior vira o
+golpe principal e a segunda maior, o golpe opcional. O tipo continua a escolher
+elemento, efeito e identidade visual, nunca a geometria.
+
+### Referência do catálogo e normalização
+
+O catálogo local de **1.025 espécies** foi medido antes de definir a regra. Estes são
+os centros usados pelo código, com a distância entre os quartis 25 e 75 como escala:
+
+| Stat | Mediana | P25–P75 | Uso na identidade |
+| --- | ---: | ---: | --- |
+| HP | 68 | 50–85 | volume defensivo |
+| Ataque | 75 | 55–100 | canal físico |
+| Defesa | 70 | 50–90 | volume e raio |
+| Ataque Especial | 65 | 47–90 | canal especial |
+| Defesa Especial | 67 | 50–86 | volume defensivo |
+| Velocidade | 65 | 45–88 | cadência e mobilidade |
+
+Cada valor é comparado à mediana e dividido pela largura interquartil. Assim, +20 em
+Ataque não vale arbitrariamente o mesmo que +20 em Defesa Especial: vale segundo a
+dispersão real daquele stat. O volume é a média normalizada de HP, Defesa e Defesa
+Especial; os canais primário e secundário são o maior e o menor entre Ataque e Ataque
+Especial normalizados.
+
+### Identidade das oito formas
+
+| Forma | Perfil que sobe sua afinidade | Compensação |
+| --- | --- | --- |
+| Projétil | especial dominante, físico de apoio e alguma Velocidade | alcance seguro; pouca afinidade com volume |
+| Área | físico dominante, especial de apoio | impacto próximo; muita Velocidade favorece formas móveis |
+| Aura | volume alto, dois ataques úteis e pouca Velocidade | exposição compensada por pulsos |
+| Órbita | volume alto, dois ataques úteis e Velocidade | tanque móvel exige defesa e ritmo juntos |
+| Cone | físico, especial de apoio e Velocidade | linha direcional exige posicionamento |
+| Foco | maior canal ofensivo alto, segundo canal útil e pouca Velocidade | carga e mira compensam o pico |
+| Rajada | especial, físico de apoio e Velocidade acima da mediana | três tiros e pausa, não dano grátis |
+| Teleporte | físico, especial de apoio e Velocidade acima da mediana | aproximação e recarga compensam proteção curta |
+
+O **ataque secundário entra em todas as afinidades**. Não é desempate: ele melhora
+perfis híbridos e diferencia um Pokémon com dois canais ofensivos de outro que depende
+de apenas um. Ainda assim, não soma dano ao golpe ativo. O golpe opcional é a segunda
+maior afinidade, não uma conversão fixa entre formas.
+
+### Calibração e resultado completo
+
+Um viés mínimo, documentado em código, foi calibrado uma vez contra este catálogo. Ele
+não consulta a população em jogo nem aplica quota em tempo de execução: apenas evita
+que Projétil/Área sejam o destino padrão de qualquer perfil sem um corte especial.
+
+| Forma | Espécies | Participação |
+| --- | ---: | ---: |
+| Projétil | 155 | 15,1% |
+| Área | 154 | 15,0% |
+| Aura | 122 | 11,9% |
+| Órbita | 122 | 11,9% |
+| Cone | 122 | 11,9% |
+| Foco | 122 | 11,9% |
+| Rajada | 122 | 11,9% |
+| Teleporte | 106 | 10,3% |
+
+Projétil e Área ocupam juntos 30,1%, só cerca de três pontos percentuais acima de
+uma divisão perfeitamente uniforme. O teste em `src/core/survivor-moves.test.ts`
+percorre as 1.025 espécies, fixa esses números, verifica que o tipo não altera o
+resultado e confirma que o golpe opcional é o segundo perfil mais alto. Se entrar uma
+geração nova ou pesos forem alterados, a distribuição precisa ser medida novamente.
+
+Essas contagens validam variedade e determinismo, não equivalência de poder. Dano,
+recarga, alcance, controle e sobrevivência seguem precisando das simulações e de
+partidas humanas descritas nas seções anteriores.
