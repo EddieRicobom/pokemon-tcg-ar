@@ -45,10 +45,16 @@ export function createSurvivorCharge(): SurvivorChargeState {
   return { level: 0, holding: false, rushMs: 0, rushTotalMs: 0, moveRatio: 0, lastRelease: 0, teleportHoldMs: 0, teleportCooldownMs: 0, rapidShotsPending: 0, rapidShotDelayMs: 0 };
 }
 
-/** Foco: segurar o botão enche ~30% por segundo (pouco mais de 3 s até o máximo). */
-export const FOCUS_CHARGE_PER_SEC = 0.3;
+/** Foco: segurar o botão enche ~27% por segundo (menos de 4 s até o máximo). */
+export const FOCUS_CHARGE_PER_SEC = 0.27;
 /** Foco: cada acerto do disparo normal adianta um pouco a carga. */
 export const FOCUS_HIT_CHARGE = 0.02;
+/**
+ * Foco: escala do dano do feixe. Medido com stats iguais, o feixe cheio fazia 7 a 9 vezes o dano por segundo de um projétil
+ * (alvo único e multidão) e, nas corridas, vivia 15% a 30% mais que a média das formas com mais de 1.000 abates; com a escala
+ * (e a carga um pouco mais lenta) a sobrevivência fica no grupo e o golpe segue pesado e lento (ver `docs/SURVIVOR_BALANCE_PRINCIPLES.md`).
+ */
+export const FOCUS_BEAM_DAMAGE_SCALE = 0.22;
 /** Foco: velocidade do Pokémon enquanto segura a carga. */
 export const FOCUS_SLOW_MULTIPLIER = 0.45;
 /** Foco: abaixo disso, soltar o botão não dispara (a carga fica guardada). */
@@ -80,6 +86,10 @@ export const RUSH_MAX_DAMAGE_TAKEN = 2;
 export const RAPID_BURST_SHOTS = 3;
 export const RAPID_BURST_SHOT_INTERVAL_MS = 90;
 export const RAPID_BURST_CYCLE_MS = 780;
+/** Nem a maior cadência encurta o ciclo a ponto de apagar a pausa (180 ms de tiros + 180 ms de respiro). */
+export const RAPID_BURST_MIN_CYCLE_MS = 360;
+/** Abertura do leque de cada instante quando cartas de disparo múltiplo aumentam `shots`. */
+export const RAPID_BURST_SPREAD = 0.2;
 
 /** Teleporte: só uma soltura deliberada ativa o golpe. */
 export const TELEPORT_MIN_HOLD_MS = 150;
@@ -92,6 +102,31 @@ export const TELEPORT_MAX_DAMAGE_MULTIPLIER = 4;
 export const TELEPORT_RANGE = 240;
 export const TELEPORT_HIT_RADIUS = 54;
 export const TELEPORT_FULL_WAVE_RADIUS = 150;
+/** Teto de alcance e piso de recarga: as cartas de alcance e cadência melhoram o Teleporte sem apagar a janela vulnerável. */
+export const TELEPORT_MAX_RANGE = 420;
+export const TELEPORT_MIN_COOLDOWN_MS = 900;
+/** Cada disparo/impacto extra (`shots`) alarga o impacto e a onda em 20%, até quatro extras. */
+export const TELEPORT_SHOT_WIDEN = 0.2;
+
+export interface TeleportReach {
+  range: number;
+  hitRadius: number;
+  waveRadius: number;
+}
+
+/** Alcance, raio do impacto e raio da onda do Teleporte a partir dos stats e das cartas do jogador (valores inválidos caem nos padrões). */
+export function teleportReach(attackRange: number, attackRadius: number, shots: number): TeleportReach {
+  const widen = 1 + TELEPORT_SHOT_WIDEN * Math.max(0, Math.min(4, Number.isFinite(shots) ? shots - 1 : 0));
+  const range = Number.isFinite(attackRange) && attackRange > 0 ? Math.min(TELEPORT_MAX_RANGE, attackRange) : TELEPORT_RANGE;
+  const radius = Number.isFinite(attackRadius) && attackRadius > 0 ? attackRadius : TELEPORT_HIT_RADIUS;
+  return { range, hitRadius: radius * widen, waveRadius: TELEPORT_FULL_WAVE_RADIUS * widen };
+}
+
+/** Recarga do Teleporte: parte da recarga do jogador (Velocidade e cartas), com as cartas de preparo e o piso. */
+export function teleportCooldownMs(baseCooldownMs: number, bonusLevels: number): number {
+  const base = Number.isFinite(baseCooldownMs) && baseCooldownMs > 0 ? baseCooldownMs : TELEPORT_COOLDOWN_MS;
+  return Math.max(TELEPORT_MIN_COOLDOWN_MS, Math.round(base / (1 + 0.2 * Math.max(0, Math.min(3, bonusLevels)))));
+}
 
 /**
  * O estilo de carga pelos stats reais, ou `null` (golpe comum).
@@ -124,9 +159,9 @@ export interface FocusBeam {
 /** O feixe do Foco conforme a barra: curto e fino com pouca carga; cheio, um canhão que cruza a arena. */
 export function focusBeam(level: number, range: number): FocusBeam {
   const l = Math.max(0, Math.min(1, level));
-  if (l >= 1) return { tier: 3, name: 'Canhão total', damageMultiplier: 12, halfWidth: 46, length: 2400, stunMs: 900, slowMs: 2500 };
-  if (l >= 0.5) return { tier: 2, name: 'Feixe pesado', damageMultiplier: round1(3 + 5 * l), halfWidth: 28, length: round1(range * 2.2), stunMs: 0, slowMs: 1500 };
-  return { tier: 1, name: 'Raio curto', damageMultiplier: round1(1.5 + 3 * l), halfWidth: 16, length: round1(range * 1.5), stunMs: 0, slowMs: 0 };
+  if (l >= 1) return { tier: 3, name: 'Canhão total', damageMultiplier: round1(12 * FOCUS_BEAM_DAMAGE_SCALE), halfWidth: 46, length: 2400, stunMs: 900, slowMs: 2500 };
+  if (l >= 0.5) return { tier: 2, name: 'Feixe pesado', damageMultiplier: round1((3 + 5 * l) * FOCUS_BEAM_DAMAGE_SCALE), halfWidth: 28, length: round1(range * 2.2), stunMs: 0, slowMs: 1500 };
+  return { tier: 1, name: 'Raio curto', damageMultiplier: round1((1.5 + 3 * l) * FOCUS_BEAM_DAMAGE_SCALE), halfWidth: 16, length: round1(range * 1.5), stunMs: 0, slowMs: 0 };
 }
 
 /** Duração dos teleportes do Rápido: proporcional à barra (metade = 5 s) e aumentada pelas cartas até o dobro. */
@@ -195,7 +230,7 @@ export function teleportRelease(holdMs: number): TeleportRelease | null {
  * Foco: segurar enche, soltar dispara (com carga mínima) e zera. Rajada não
  * usa esta barra. Teleporte exige hold e só resolve uma vez na soltura.
  */
-export function stepChargeMeter(c: SurvivorChargeState, style: ChargeStyle | null, held: boolean, movedPx: number, dtMs: number, bonusLevels = 0): ChargeAction {
+export function stepChargeMeter(c: SurvivorChargeState, style: ChargeStyle | null, held: boolean, movedPx: number, dtMs: number, bonusLevels = 0, cooldownMs = TELEPORT_COOLDOWN_MS): ChargeAction {
   void movedPx;
   const released = !held && c.holding;
   c.holding = held;
@@ -215,7 +250,7 @@ export function stepChargeMeter(c: SurvivorChargeState, style: ChargeStyle | nul
     if (released) {
       const action = c.teleportCooldownMs === 0 ? teleportRelease(c.teleportHoldMs) : null;
       c.teleportHoldMs = 0;
-      if (action) c.teleportCooldownMs = Math.round(TELEPORT_COOLDOWN_MS / (1 + 0.2 * Math.max(0, Math.min(3, bonusLevels))));
+      if (action) c.teleportCooldownMs = teleportCooldownMs(cooldownMs, bonusLevels);
       return action;
     }
   }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, toRaw, triggerRef, watch } from 'vue';
 import MusicControls from './MusicControls.vue';
+import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
 import { survivorAudio } from '../app/survivor-audio-settings';
 import { survivorMusicMix, survivorMusicTitle } from '../core/survivor-music';
@@ -50,10 +51,11 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
-import { survivorAttackOf } from '../core/survivor-loadout';
+import { survivorAttackChoices, survivorAttackOf } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
+import { TELEPORT_FULL_HOLD_MS } from '../core/survivor-charge';
 import { trainer } from '../app/trainer-store';
 import type { SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
@@ -527,9 +529,9 @@ const chosenSpecial = computed(() => state.value?.special.selected ? SURVIVOR_SP
 const timeStopped = computed(() => state.value?.special.selected === 'stasis' && (state.value.special.activeMs ?? 0) > 0);
 const targetPriority = computed(() => state.value?.player.targetPriority ?? null);
 const TARGET_FOCUS = [
-  { id: 'boss', icon: '👑', label: 'Chefões', description: 'Prioriza chefões e Pokémon de treinadores.' },
-  { id: 'healer', icon: '♥', label: 'Curadores', description: 'Prioriza suportes que curam aliados.' },
-  { id: 'lowest-hp', icon: '▾', label: 'Menor vida', description: 'Prioriza o inimigo com menor porcentagem de vida.' },
+  { id: 'boss', icon: '👑', label: 'Chefões', short: 'Chefe', description: 'Prioriza chefões e Pokémon de treinadores.' },
+  { id: 'healer', icon: '♥', label: 'Curadores', short: 'Cura', description: 'Prioriza suportes que curam aliados.' },
+  { id: 'lowest-hp', icon: '▾', label: 'Menor vida', short: 'Fraco', description: 'Prioriza o inimigo com menor porcentagem de vida.' },
 ] as const;
 function setTargetPriority(priority: typeof TARGET_FOCUS[number]['id']): void {
   const s = state.value;
@@ -591,6 +593,10 @@ function releaseCharge(): void {
 function cancelCharge(): void {
   chargeHeld.value = false;
   cancelChargeQueued = true;
+}
+/** `lostpointercapture` também vem logo depois de um `pointerup` normal: só cancela se o botão ainda estava apertado. */
+function lostChargeCapture(): void {
+  if (chargeHeld.value) cancelCharge();
 }
 function queueSpecial(): void {
   if (specialBlocked.value || (state.value?.special.cooldownMs ?? 1) > 0) return;
@@ -863,6 +869,23 @@ function showEnemyDamage(hits: readonly DamageNumber[]): void {
   if (!effectiveVisual.value.impactFx || reducedMotion || hits.length === 0) return;
   damageNumbers.value = [...damageNumbers.value, ...hits].slice(-28);
   hitStopMs = Math.max(hitStopMs, hits.some((hit) => hit.boss) ? 72 : 42);
+}
+
+/** Vida dos inimigos antes do passo, reaproveitada entre quadros: sem alocar um Map e um objeto por inimigo a 60 quadros por segundo. */
+const enemyHpSnapshot = new Map<number, { hp: number; x: number; y: number; boss: boolean; stamp: number }>();
+let enemyHpStamp = 0;
+function snapshotEnemyHp(enemies: readonly SurvivorEnemy[]): void {
+  enemyHpStamp++;
+  for (const enemy of enemies) {
+    let entry = enemyHpSnapshot.get(enemy.id);
+    if (!entry) { entry = { hp: 0, x: 0, y: 0, boss: false, stamp: 0 }; enemyHpSnapshot.set(enemy.id, entry); }
+    entry.hp = enemy.hp;
+    entry.x = enemy.x;
+    entry.y = enemy.y;
+    entry.boss = enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss === true;
+    entry.stamp = enemyHpStamp;
+  }
+  if (enemyHpSnapshot.size > enemies.length) for (const [id, entry] of enemyHpSnapshot) if (entry.stamp !== enemyHpStamp) enemyHpSnapshot.delete(id);
 }
 
 /** Compara a vida antes/depois de um passo. O motor continua a ser a fonte dos números; a tela só os torna legíveis. */
@@ -1545,11 +1568,11 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   }
   for (const fx of s.fx) {
     if (drawElementFx(c, fx, toScreen, animMs, detailed)) continue;
-    if (fx.kind !== 'blast' && fx.kind !== 'pulse' && fx.kind !== 'defeat') continue;
+    if (fx.kind !== 'blast' && fx.kind !== 'pulse' && fx.kind !== 'defeat' && fx.kind !== 'rush') continue;
     const p = drawPoint(fx);
     if (!p) continue;
     const t = fx.ageMs / fx.lifeMs;
-    const size = bonkGroundEllipse(p, fx.r * (fx.kind === 'defeat' ? 0.25 + t * 0.9 : 0.6 + t * 0.4));
+    const size = bonkGroundEllipse(p, fx.r * (fx.kind === 'defeat' ? 0.25 + t * 0.9 : fx.kind === 'rush' ? 0.35 + t * 0.65 : 0.6 + t * 0.4));
     c.save();
     c.globalAlpha = (1 - t) * (fx.kind === 'defeat' ? 0.75 : 0.6);
     c.strokeStyle = fx.color;
@@ -1629,11 +1652,38 @@ async function preloadShadowBoss(dexId: number): Promise<void> {
   shadowBossSprite.value = firstSpriteFrame(enemySprites.get(dexId))?.toDataURL() ?? null;
 }
 
-function preloadVisibleEnemyRegions(elapsedMs: number, runSeed = 0): void {
+/**
+ * Libera os sprites decodificados (GIF em vários quadros) das regiões que já passaram e que não têm ninguém vivo em campo.
+ * Sem isto a memória crescia a cada região de 135 s e o aparelho travava depois de uns 15 min. Uma região volta a carregar
+ * normalmente se a corrida (infinita) passar por ela de novo.
+ */
+function evictPastEnemyRegions(current: number, next: number, enemies: readonly SurvivorEnemy[]): void {
+  const keep = new Set<number>(enemies.flatMap((enemy) => (enemy.dexId === undefined ? [] : [enemy.dexId])));
+  for (const index of [current, next]) {
+    const encounter = REGIONAL_ENCOUNTERS[index];
+    if (encounter) for (const id of [...encounter.wild, encounter.boss]) keep.add(id);
+  }
+  for (const index of [...requestedEnemyRegions]) {
+    if (index === current || index === next) continue;
+    const encounter = REGIONAL_ENCOUNTERS[index];
+    if (!encounter) { requestedEnemyRegions.delete(index); continue; }
+    for (const id of [...encounter.wild, encounter.boss]) {
+      if (keep.has(id) || enemySpriteLoads.has(id) || !enemySprites.delete(id)) continue;
+      spriteMemory.delete(`${id}:n:p`);
+      requestedEnemyRegions.delete(index);
+    }
+  }
+}
+let evictedForRegion = -1;
+function preloadVisibleEnemyRegions(elapsedMs: number, runSeed = 0, enemies: readonly SurvivorEnemy[] = []): void {
   const { current, next } = survivorRegionAt(elapsedMs, runSeed);
   void preloadEnemyRegion(current);
   // Antecipar a próxima região evita uma forma neutra durante a transição sem bloquear a primeira tela.
   void preloadEnemyRegion(next);
+  if (current !== evictedForRegion) {
+    evictedForRegion = current;
+    evictPastEnemyRegions(current, next, enemies);
+  }
 }
 
 function draw(): void {
@@ -1988,7 +2038,7 @@ function draw(): void {
       ctx.lineWidth = Math.max(2, f.r * (0.25 + 0.15 * (f.count ?? 1)) * (1 - t));
       ctx.stroke();
     } else if (f.kind === 'rush') {
-      // Teleporte do Rápido: um risco de onde saiu até onde chegou e um anel no impacto.
+      // Teleporte carregado: um risco de onde saiu até onde chegou e um anel que cresce até o raio real do impacto ou da onda.
       ctx.globalAlpha = 0.7 * (1 - t);
       ctx.strokeStyle = f.color;
       ctx.lineWidth = 3;
@@ -2047,7 +2097,7 @@ function draw(): void {
   ctx.restore();
 }
 
-/** Anel em volta do Pokémon: o Foco fecha o anel enquanto carrega; o Rápido pisca durante os teleportes. */
+/** Anel em volta do Pokémon: o Foco e o Teleporte fecham o anel enquanto a carga enche. */
 function drawChargeAura(c: CanvasRenderingContext2D, s: SurvivorState): void {
   const p = s.player;
   const charge = s.charge;
@@ -2059,12 +2109,13 @@ function drawChargeAura(c: CanvasRenderingContext2D, s: SurvivorState): void {
     c.beginPath();
     c.arc(p.x, p.y - 8, 36 - 14 * charge.level + Math.sin(animMs / 90) * 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge.level);
     c.stroke();
-  } else if (p.move.category === 'rapido' && charge.rushMs > 0) {
-    c.globalAlpha = 0.45 + 0.3 * Math.sin(animMs / 60);
-    c.lineWidth = 3;
-    c.setLineDash([5, 5]);
+  } else if (p.move.category === 'teleporte' && charge.holding && charge.teleportHoldMs > 0) {
+    const ratio = Math.min(1, charge.teleportHoldMs / TELEPORT_FULL_HOLD_MS);
+    c.globalAlpha = ratio >= 1 ? 0.55 + 0.3 * Math.sin(animMs / 60) : 0.35 + 0.4 * ratio;
+    c.lineWidth = 2 + 3 * ratio;
+    if (ratio < 1) c.setLineDash([5, 5]);
     c.beginPath();
-    c.arc(p.x, p.y - 8, 26, 0, Math.PI * 2);
+    c.arc(p.x, p.y - 8, 34 - 10 * ratio, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
     c.stroke();
   }
   c.restore();
@@ -2149,6 +2200,10 @@ function checkPvpRun(s: SurvivorState): void {
   });
 }
 
+/** Intervalo mínimo entre duas atualizações reativas da interface por cima do canvas. */
+const HUD_REFRESH_MS = 50;
+let lastHudTrigger = 0;
+
 function loop(ts: number): void {
   if (disposed) {
     rafId = 0;
@@ -2178,14 +2233,16 @@ function loop(ts: number): void {
   // por inimigo) e o `triggerRef` abaixo avisa a interface uma vez por quadro. As outras telas do componente continuam
   // reativas, porque as mudanças fora do laço passam pelo proxy como antes.
   const s = toRaw(state.value!);
-  preloadVisibleEnemyRegions(s.elapsedMs, s.runSeed);
+  preloadVisibleEnemyRegions(s.elapsedMs, s.runSeed, s.enemies);
   if (!s.over && !s.pendingUpgrade && !evolving.value) {
     const attackTimerBefore = s.player.attackTimerMs;
     const projectilesBefore = s.projectiles.length;
     const hpBefore = s.player.hp;
     const xpBefore = s.player.xp;
     const killsBefore = s.kills;
-    const enemyHpBefore = new Map(s.enemies.map((enemy) => [enemy.id, { hp: enemy.hp, x: enemy.x, y: enemy.y, boss: enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss === true }]));
+    // Os números de dano só existem com os impactos ligados; sem eles nem se guarda a vida dos inimigos.
+    const trackEnemyDamage = effectiveVisual.value.impactFx && !reducedMotion;
+    if (trackEnemyDamage) snapshotEnemyHp(s.enemies);
     const kx = (heldKeys.has('right') ? 1 : 0) - (heldKeys.has('left') ? 1 : 0);
     const ky = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
     const dx = kx + (joystick.active ? joystick.dx : 0);
@@ -2200,7 +2257,7 @@ function loop(ts: number): void {
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
     const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value, cancelCharge: cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
-    showEnemyDamage(enemyDamageSince(enemyHpBefore, s));
+    if (trackEnemyDamage) showEnemyDamage(enemyDamageSince(enemyHpSnapshot, s));
     if (s.player.attackTimerMs > attackTimerBefore) {
       playerAttackAt = animMs;
       playAttackSound(s.player.move, ts);
@@ -2341,7 +2398,12 @@ function loop(ts: number): void {
     playerBackSprite = normalPlayerBackSprite;
     say('💎 A evolução desfez a Mega.', 3600);
   }
-  triggerRef(state);
+  // A interface reativa (barras, cronômetro, botões) não precisa refazer a árvore inteira a cada quadro: ~20 Hz basta,
+  // e o desenho no canvas continua a cada quadro. Fim da corrida e pausas atualizam na hora.
+  if (ts - lastHudTrigger >= HUD_REFRESH_MS || s.over) {
+    lastHudTrigger = ts;
+    triggerRef(state);
+  }
   draw();
 }
 
@@ -2426,6 +2488,7 @@ function toggleHudMenu(): void {
     return;
   }
   hudExpanded.value = true;
+  cancelCharge();
   if (!paused.value) {
     paused.value = true;
     menuPausedRun = true;
@@ -2479,6 +2542,7 @@ function confirmLeave(): void {
 /** O caminho de Voltar fica dentro da Torre; sair exige a ação explícita de saída. */
 function requestBack(): void {
   if (leaveConfirm.value) { cancelLeave(); return; }
+  if (attackChoice.value) { attackChoice.value = null; return; }
   if (typeChoice.value) { typeChoice.value = null; return; }
   if (helpOpen.value) { helpOpen.value = false; return; }
   if (hudExpanded.value) { hudExpanded.value = false; return; }
@@ -2547,7 +2611,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
   });
 }
 
-async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null): Promise<void> {
+async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null, swapped = false): Promise<void> {
   runCompanion = companion;
   pickBusy.value = true;
   try {
@@ -2558,6 +2622,8 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     enemySprites.clear();
     enemySpriteLoads.clear();
     requestedEnemyRegions.clear();
+    enemyHpSnapshot.clear();
+    evictedForRegion = -1;
     // Sprite da forma Mega (GIF animado ou imagem parada); sem nenhum, a forma normal continua no desenho.
     const megaSpriteLoad = mega && mega.sprite !== 'nenhum' ? loadSpriteOrNull(mega.formId, shiny).catch(() => null) : Promise.resolve(null);
     const [player, back, megaSprite, ...supports] = await Promise.all([
@@ -2601,7 +2667,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     pendingUpgrade.value = null;
     clearTrainerPresentation();
     paused.value = false;
-    const { move, profile, secondMove } = survivorAttackOf(dexId, picked);
+    const { move, profile, secondMove, hypotheticalSecondaryType } = survivorAttackOf(dexId, picked, swapped);
     runSeenDex.clear();
     // A Vila entrega o loadout (e gasta a sorte do Carteiro) antes de a corrida existir; vale no Survival e no BONK.
     // No PvP nada da Vila entra (nem sorte, nem marmita, nem treino): as duas pessoas começam iguais.
@@ -2615,7 +2681,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     // A Mega só entra se o fragmento saiu mesmo da mochila; ele volta se a corrida for abandonada logo no começo.
     runOmegaShardTaken = mega !== null && !pureWanted.value && takeRunOmegaShard();
     const runMega = runOmegaShardTaken ? mega : null;
-    state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
+    state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
     initialPlayerSpeed = Math.max(1, state.value.player.speed);
     footDust.strength = 0;
     megaWasActive = state.value.player.mega?.active === true;
@@ -2658,7 +2724,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   }
 }
 
-function choosePlayer(opt: PickOption, picked?: PokemonType): void {
+function choosePlayer(opt: PickOption, picked?: PokemonType, swapped = false): void {
   unlockSound();
   runParticipant = { id: opt.id, name: opt.name };
   runParticipantDexId = opt.dexId;
@@ -2674,7 +2740,8 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
       accessory: support.accessory,
       digital: support.digital,
     } satisfies SurvivorSupportCandidate));
-  const primary = picked ?? opt.types[0] ?? opt.move.type;
+  // Trocando de ataque, o tipo principal pode mudar (quem tem dois tipos); a Afinidade passa a vir do tipo antigo.
+  const primary = swapped ? survivorAttackOf(opt.dexId, picked, true).move.type : picked ?? opt.types[0] ?? opt.move.type;
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
   const pvp = props.pvpRun !== undefined;
   const infinite = !pvp && infiniteWanted.value && torre.value.infiniteUnlocked;
@@ -2682,15 +2749,17 @@ function choosePlayer(opt: PickOption, picked?: PokemonType): void {
   megaPick.value = null;
   pvpPick = { shiny: opt.shiny === true, types: opt.types };
   // No PvP a run é sempre a normal, sem Mega, sem preparação e sem modificadores; nada conta para a Torre.
-  void beginRun(opt.dexId, opt.name, picked, infinite, !pvp && bonkWanted.value, opt.id.startsWith('dp_') || pvp ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, pvp ? 'classica' : selectedPreparation.value, supportCandidates, typeAffinityChoices, !pvp && fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null, mega?.dexId === opt.dexId ? mega : null);
+  void beginRun(opt.dexId, opt.name, picked, infinite, !pvp && bonkWanted.value, opt.id.startsWith('dp_') || pvp ? null : { id: opt.id, dexId: opt.dexId, name: opt.name, shiny: opt.shiny === true, accessory: opt.accessory }, pvp ? 'classica' : selectedPreparation.value, supportCandidates, typeAffinityChoices, !pvp && fastWanted.value && torre.value.infiniteUnlocked && !infinite, opt.shiny === true, opt.accessory ?? null, mega?.dexId === opt.dexId ? mega : null, swapped);
 }
 
 /** Tela "qual tipo?" aberta: a opcao clicada tem dois tipos. */
 const typeChoice = ref<PickOption | null>(null);
+/** Tela "ataque atual ou secundário": vem depois de escolher o Pokémon (e o tipo, se tem dois). */
+const attackChoice = ref<{ opt: PickOption; picked: PokemonType | undefined } | null>(null);
 const typeAffinityOffer = ref<PokemonType[] | null>(null);
 
 watch(
-  [pickOptions, typeChoice, typeAffinityOffer, pendingUpgrade, paused, leaveConfirm, specialModalOpen],
+  [pickOptions, typeChoice, attackChoice, typeAffinityOffer, pendingUpgrade, paused, leaveConfirm, specialModalOpen],
   (next, previous) => {
     if (next.some((value, index) => Boolean(value) && !previous[index])) focusFirstSurvivorAction();
   },
@@ -2720,7 +2789,30 @@ const nextTowerGoal = computed(() => {
 function openTypeChoice(opt: PickOption): void { typeChoice.value = opt; }
 function chooseType(opt: PickOption, picked: PokemonType): void {
   typeChoice.value = null;
-  choosePlayer(opt, picked);
+  openAttackChoice(opt, picked);
+}
+
+const attackOptions = computed(() => {
+  const choice = attackChoice.value;
+  if (!choice) return [];
+  const { current, alternative } = survivorAttackChoices(choice.opt.dexId, choice.picked);
+  const typeChanged = alternative.move.type !== current.move.type;
+  return [
+    { key: 'current', swapped: false, title: 'Ficar com o atual', move: current.move, bars: profileBars(current.move, current.profile), note: 'O golpe que o Pokémon tem hoje.' },
+    {
+      key: 'alternative', swapped: true, title: 'Trocar pelo secundário', move: alternative.move, bars: profileBars(alternative.move, alternative.profile),
+      note: typeChanged
+        ? `Troca também o tipo: a Mistura (9 min) e a Afinidade passam a dar o efeito de ${TYPE_LABELS_PT[current.move.type]}, e o golpe atual vira o segundo ataque.`
+        : 'Mesmo tipo: a Mistura e a Afinidade continuam como estão, e o golpe atual vira o segundo ataque.',
+    },
+  ];
+});
+function openAttackChoice(opt: PickOption, picked?: PokemonType): void { attackChoice.value = { opt, picked }; }
+function confirmAttack(swapped: boolean): void {
+  const choice = attackChoice.value;
+  if (!choice || pickBusy.value) return;
+  attackChoice.value = null;
+  choosePlayer(choice.opt, choice.picked, swapped);
 }
 function acceptTypeAffinity(type: PokemonType): void {
   if (!state.value || !typeAffinityOffer.value || !chooseSurvivorTypeAffinity(state.value, type)) return;
@@ -2815,6 +2907,7 @@ function onVisibility(): void {
   syncMusic();
   if (document.hidden) {
     heldKeys.clear();
+    cancelCharge();
     joystick.active = false;
     joystick.pointerId = null;
     joystick.dx = 0;
@@ -2872,8 +2965,8 @@ onBeforeUnmount(() => {
         <div v-if="timeStopped" class="survivor-stasis-overlay" aria-hidden="true"><span>⏸ TEMPO PARADO</span></div>
 
         <div v-if="ready && state && !summary && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen" class="survivor-focus-actions" role="group" aria-label="Foco do ataque automático">
-          <button v-for="option in TARGET_FOCUS" :key="option.id" type="button" :class="{ active: targetPriority === option.id }" :aria-pressed="targetPriority === option.id" :title="option.description" @pointerdown.stop.prevent @click.stop="setTargetPriority(option.id)">
-            <span aria-hidden="true">{{ option.icon }}</span><small>{{ option.label }}</small>
+          <button v-for="option in TARGET_FOCUS" :key="option.id" type="button" :class="{ active: targetPriority === option.id }" :aria-pressed="targetPriority === option.id" :aria-label="`Foco: ${option.label}. ${option.description}`" :title="option.description" @pointerdown.stop.prevent @click.stop="setTargetPriority(option.id)">
+            <span aria-hidden="true">{{ option.icon }}</span><small aria-hidden="true">{{ option.short }}</small>
           </button>
         </div>
 
@@ -2953,7 +3046,7 @@ onBeforeUnmount(() => {
               <small>Atacam a partir de você e não recebem upgrades.</small>
               <div v-for="support in state.supports" :key="`${support.dexId}-${support.name}`" class="survivor-support-line">
                 <b>{{ support.name }}</b>
-                <span>{{ support.move.icon }} {{ support.move.name }} · {{ MOVE_CATEGORY_LABELS_PT[support.move.category] }}</span>
+                <span>{{ support.move.icon }} {{ support.move.name }} · <AttackIcon :category="support.move.category" :size="14" /> {{ MOVE_CATEGORY_LABELS_PT[support.move.category] }}</span>
                 <small>{{ Math.round(support.profile.damage * support.damageFactor) }} dano · {{ Math.round(support.profile.cooldownMs) }} ms</small>
               </div>
             </div>
@@ -3022,7 +3115,27 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="pickOptions" class="survivor-overlay" role="dialog" aria-label="Escolha quem joga">
-          <div v-if="typeChoice" class="card survivor-pick survivor-type-choice">
+          <div v-if="attackChoice" class="card survivor-pick survivor-attack-choice" role="group" :aria-label="`Ataque de ${attackChoice.opt.name}`">
+            <h2>{{ attackChoice.opt.name }}: qual ataque?</h2>
+            <p class="note">Fique com o ataque atual ou troque pelo secundário: a forma de golpe mais próxima depois de tirar a principal.</p>
+            <div class="survivor-pick-grid">
+              <button v-for="option in attackOptions" :key="option.key" type="button" class="survivor-pick-btn survivor-attack-option" :class="{ disabled: pickBusy }" :style="{ '--move': option.move.color }" @click="confirmAttack(option.swapped)">
+                <span class="survivor-attack-head">
+                  <AttackIcon :category="option.move.category" :size="34" titled />
+                  <strong>{{ option.title }}</strong>
+                </span>
+                <small class="survivor-pick-move">{{ option.move.icon }} {{ option.move.name }}</small>
+                <small class="survivor-pick-kind">{{ MOVE_CATEGORY_LABELS_PT[option.move.category] }} · {{ TYPE_LABELS_PT[option.move.type] }} · {{ MOVE_EFFECT_LABELS_PT[option.move.effect] }}</small>
+                <small class="survivor-pick-tip">{{ MOVE_CATEGORY_HINTS_PT[option.move.category] }}</small>
+                <span class="survivor-pick-bars" :style="{ '--move': option.move.color }">
+                  <span v-for="b in option.bars" :key="b.label" class="survivor-pick-bar"><small>{{ b.label }}</small><i><b :style="{ width: Math.round(b.value * 100) + '%' }"></b></i></span>
+                </span>
+                <small class="survivor-attack-note">{{ option.note }}</small>
+              </button>
+            </div>
+            <button type="button" class="link survivor-back" @click="attackChoice = null">← Voltar aos Pokémon</button>
+          </div>
+          <div v-else-if="typeChoice" class="card survivor-pick survivor-type-choice">
             <h2>{{ typeChoice.name }} tem dois tipos</h2>
             <p class="note">Qual deles ataca na corrida?</p>
             <div class="survivor-pick-grid">
@@ -3113,8 +3226,8 @@ onBeforeUnmount(() => {
                  :class="{ disabled: pickBusy }"
                  role="button"
                  :tabindex="pickBusy ? -1 : 0"
-                 @keydown.enter.prevent="opt.types.length > 1 ? openTypeChoice(opt) : choosePlayer(opt, opt.types[0])"
-                 @click="opt.types.length > 1 ? openTypeChoice(opt) : choosePlayer(opt, opt.types[0])"
+                 @keydown.enter.prevent="opt.types.length > 1 ? openTypeChoice(opt) : openAttackChoice(opt, opt.types[0])"
+                 @click="opt.types.length > 1 ? openTypeChoice(opt) : openAttackChoice(opt, opt.types[0])"
               >
                  <button type="button" class="survivor-favorite" :aria-label="favoriteIds.has(opt.id) ? `Remover ${opt.name} dos favoritos` : `Favoritar ${opt.name}`" :aria-pressed="favoriteIds.has(opt.id)" @click.stop="toggleFavorite(opt.id)">{{ favoriteIds.has(opt.id) ? '★' : '☆' }}</button>
                 <img v-if="opt.thumb" :src="opt.thumb" :alt="opt.name" class="survivor-pick-thumb" />
@@ -3122,7 +3235,7 @@ onBeforeUnmount(() => {
                 <strong>{{ opt.name }}</strong>
                 <small>{{ opt.origin }}</small>
                 <small class="survivor-pick-move" :style="{ '--move': opt.move.color }">{{ opt.move.icon }} {{ opt.move.name }}</small>
-                <small class="survivor-pick-kind">{{ MOVE_CATEGORY_LABELS_PT[opt.move.category] }} · {{ MOVE_EFFECT_LABELS_PT[opt.move.effect] }}</small>
+                <small class="survivor-pick-kind"><AttackIcon :category="opt.move.category" :size="15" /> {{ MOVE_CATEGORY_LABELS_PT[opt.move.category] }} · {{ MOVE_EFFECT_LABELS_PT[opt.move.effect] }}</small>
                  <small class="survivor-pick-tip">{{ MOVE_CATEGORY_HINTS_PT[opt.move.category] }}</small>
                 <span class="survivor-pick-bars" :style="{ '--move': opt.move.color }">
                   <span v-for="b in opt.bars" :key="b.label" class="survivor-pick-bar"><small>{{ b.label }}</small><i><b :style="{ width: Math.round(b.value * 100) + '%' }"></b></i></span>
@@ -3210,7 +3323,7 @@ onBeforeUnmount(() => {
           type="button" class="survivor-charge-button" :class="{ 'is-held': chargeHeld, 'is-full': state.charge.level >= 1 || (chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200), 'is-rush': chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200 }"
           :style="{ '--special-color': state.player.move.color, '--charge': `${chargeMeter * 100}%` }"
           :aria-label="chargeStyle === 'foco' ? `Foco: segure para carregar, solte para disparar; carga ${Math.floor(state.charge.level * 100)}%; tecla R` : `Teleporte: segure para carregar e solte para usar; ${chargeLabel}; tecla R`"
-          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelCharge" @lostpointercapture="cancelCharge">
+          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelCharge" @lostpointercapture="lostChargeCapture">
           <span class="special-icon" aria-hidden="true">{{ chargeStyle === 'foco' ? '◎' : '»' }}</span>
           <strong>{{ chargeLabel }}</strong>
           <small>{{ chargeStyle === 'foco' ? 'Foco' : 'Teleporte' }}</small>

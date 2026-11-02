@@ -324,6 +324,10 @@ function remainingFraction(team: ArenaTeamState): number {
   return team.mons.reduce((sum, m) => sum + m.hp / m.maxHp, 0);
 }
 
+/**
+ * No duelo só Aura e Área têm mecânica própria; as demais formas (cone, órbita, foco, rajada e teleporte) disparam
+ * projéteis. É uma regra explícita do duelo, que não tem botão de carga: a categoria viaja no fio só para a tela.
+ */
 const categoryOf = (mon: ArenaMon): MoveCategory => mon.moveCategory ?? 'projetil';
 const arenaRadius = (mon: ArenaMon): number => mon.attackRadius ?? SV_MON_RADIUS * 2;
 const arenaShotRadius = (mon: ArenaMon): number => Math.max(SV_SHOT_RADIUS, mon.projectileSize ?? SV_SHOT_RADIUS);

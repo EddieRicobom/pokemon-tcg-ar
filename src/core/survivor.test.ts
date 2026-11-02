@@ -640,8 +640,23 @@ describe('golpes por tipo', () => {
     expect(survivorProjectileOpacity(BALANCE.defaultAttackDistance * 1.5)).toBeLessThan(1);
     expect(survivorProjectileOpacity(BALANCE.defaultAttackDistance * 2)).toBe(BALANCE.directDamageMinMultiplier);
     expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 600 })).toBe(1);
-    expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 400 })).toBe(0.5);
-    expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 300 })).toBe(0.25);
+    expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 500 })).toBe(1);
+    expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 400 })).toBeCloseTo(Math.pow(0.8, 0.7), 10);
+    expect(survivorRapidAttackDamageMultiplier({ attackCooldownMs: 300 })).toBeCloseTo(Math.pow(0.6, 0.7), 10);
+  });
+
+  it('uma recarga menor nunca reduz o dano por segundo (sem degraus na cadência)', () => {
+    let previousDps = 0;
+    let previousMultiplier = 0;
+    for (let cooldownMs = 2000; cooldownMs >= 240; cooldownMs -= 1) {
+      const multiplier = survivorRapidAttackDamageMultiplier({ attackCooldownMs: cooldownMs });
+      const dps = multiplier * (1000 / cooldownMs);
+      expect(dps).toBeGreaterThanOrEqual(previousDps - 1e-12);
+      // O dano por golpe só cai suavemente: nenhum salto entre ms vizinhos.
+      if (previousMultiplier > 0) expect(previousMultiplier - multiplier).toBeLessThan(0.01);
+      previousDps = dps;
+      previousMultiplier = multiplier;
+    }
   });
 
   it('separa o dano direto do dano em área e libera a trilha até 100%', () => {
@@ -723,9 +738,9 @@ describe('golpes por tipo', () => {
     }
     const all = Array.from({ length: 80 }, (_, seed) => rollUpgrades(seededRng(seed), 3, aura, player)).flat();
     const power = all.find((option) => option.id === 'power');
-    expect(power?.value).toBeGreaterThanOrEqual(48);
-    expect(power?.value).toBeLessThanOrEqual(72);
-    expect(power?.description).toBe(`Folhas cortantes: +${power?.value}% de dano, até 180.`);
+    expect(power?.value).toBeGreaterThanOrEqual(32);
+    expect(power?.value).toBeLessThanOrEqual(48);
+    expect(power?.description).toBe(`Folhas cortantes: +${power?.value}% de dano, até 120.`);
   });
 
   it('oferece especializações só para o tipo principal e não repete as já escolhidas', () => {

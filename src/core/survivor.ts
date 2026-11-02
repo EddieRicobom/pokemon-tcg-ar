@@ -35,7 +35,7 @@ export * from './survivor-types';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
-import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RUSH_REFERENCE_SPEED, stepChargeMeter, TELEPORT_FULL_WAVE_RADIUS, TELEPORT_HIT_RADIUS, TELEPORT_RANGE } from './survivor-charge';
+import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
 import type { ChargeStyle } from './survivor-charge';
 import { survivorProjectileLook } from './survivor-projectile-power';
 import { healersReaching, healShare, SUPPORT_HEAL_RADIUS } from './survivor-heal';
@@ -219,6 +219,8 @@ export interface CreateSurvivorOptions {
   preparation?: SurvivorPreparationId;
   /** O que a Vila entrega (Dojô, sorte do Carteiro, marmita). Sem isto a corrida é a de sempre; vale também no BONK. */
   loadout?: TowerLoadout;
+  /** Tipo da Mistura dos 9 minutos; sem isto, sai da semente. A troca de golpe na seleção usa o tipo do golpe antigo. */
+  hypotheticalSecondaryType?: PokemonType;
   /** Segundo tipo raro escolhido no início da corrida. */
   typeAffinity?: SurvivorTypeAffinity;
   /** Tipos secundários reais da espécie; a escolha só aparece após o primeiro líder derrotado. */
@@ -356,7 +358,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     typeAffinity: options.typeAffinity ?? null,
     typeAffinityChoices: [...(options.typeAffinityChoices ?? [])],
     typeAffinityOffered: false,
-    hypotheticalSecondaryType: hypotheticalSecondaryTypeFor(move.type, seed),
+    hypotheticalSecondaryType: options.hypotheticalSecondaryType ?? hypotheticalSecondaryTypeFor(move.type, seed),
     hypotheticalSecondaryActive: false,
   };
   if (options.mega) startSurvivorMega(state, options.mega);
@@ -940,12 +942,14 @@ export function survivorProjectileOpacity(distance: number): number {
   return survivorDirectDamageMultiplier(distance);
 }
 
-/** O golpe Rápido é feito de tiros fracos e frequentes: fica fora deste corte (ver `hitEnemy`). */
+/**
+ * Acima de 2 ataques por segundo, cada golpe perde dano de forma contínua (expoente 0,7): o dano por segundo continua
+ * subindo com a cadência, só com retornos decrescentes, e uma carta de recarga nunca piora o golpe.
+ * A Rajada (três tiros por ciclo) e o Teleporte (golpe de hold) ficam fora deste corte (ver `hitEnemy`).
+ */
 export function survivorRapidAttackDamageMultiplier(player: Pick<SurvivorPlayer, 'attackCooldownMs'>): number {
   const attacksPerSecond = 1000 / Math.max(1, player.attackCooldownMs);
-  if (attacksPerSecond > 3) return 0.25;
-  if (attacksPerSecond > 2) return 0.5;
-  return 1;
+  return attacksPerSecond <= 2 ? 1 : Math.pow(2 / attacksPerSecond, 0.7);
 }
 
 /** Aplica apenas o efeito do tipo secundário, com intensidade menor e sem upgrades do golpe principal. */
@@ -1019,22 +1023,22 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     const lastStand = p.upgradeLevels['last-stand'] ?? 0;
     const closeQuarters = p.upgradeLevels['close-quarters'] ?? 0;
     const longShot = p.upgradeLevels['long-shot'] ?? 0;
-    if (openingStrike > 0 && e.hp >= e.maxHp) upgradeMultiplier *= 1 + openingStrike * 0.54;
-    if (lastStand > 0 && p.hp <= p.maxHp * 0.3) upgradeMultiplier *= 1 + lastStand * 0.66;
-    if (closeQuarters > 0 && distanceFromPlayer <= BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + closeQuarters * 0.36;
-    if (longShot > 0 && distanceFromPlayer > BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + longShot * 0.36;
+    if (openingStrike > 0 && e.hp >= e.maxHp) upgradeMultiplier *= 1 + openingStrike * 0.36;
+    if (lastStand > 0 && p.hp <= p.maxHp * 0.3) upgradeMultiplier *= 1 + lastStand * 0.44;
+    if (closeQuarters > 0 && distanceFromPlayer <= BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + closeQuarters * 0.24;
+    if (longShot > 0 && distanceFromPlayer > BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + longShot * 0.24;
     const threatHunter = p.upgradeLevels['threat-hunter'] ?? 0;
-    if (threatHunter > 0 && (e.boss || e.trainerId !== undefined)) finalThreatHunterMultiplier = 1 + threatHunter * 0.3;
-    if (move.type === 'fire' && hasUpgrade(p, 'fire-combustion') && (e.burnMs ?? 0) > 0) upgradeMultiplier *= 1.36;
-    if (move.type === 'electric' && hasUpgrade(p, 'electric-arc') && ((e.wetMs ?? 0) > 0 || (e.stunMs ?? 0) > 0)) upgradeMultiplier *= 1.3;
-    if (move.type === 'ice' && hasUpgrade(p, 'ice-shatter') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.45;
-    if (move.type === 'ground' && hasUpgrade(p, 'ground-aftershock') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.45;
-    if (move.type === 'dragon' && hasUpgrade(p, 'dragon-pressure') && e.boss) upgradeMultiplier *= 1.45;
-    if (move.type === 'dark' && hasUpgrade(p, 'dark-predation') && e.hp <= e.maxHp * 0.5) upgradeMultiplier *= 1.36;
+    if (threatHunter > 0 && (e.boss || e.trainerId !== undefined)) finalThreatHunterMultiplier = 1 + threatHunter * 0.2;
+    if (move.type === 'fire' && hasUpgrade(p, 'fire-combustion') && (e.burnMs ?? 0) > 0) upgradeMultiplier *= 1.24;
+    if (move.type === 'electric' && hasUpgrade(p, 'electric-arc') && ((e.wetMs ?? 0) > 0 || (e.stunMs ?? 0) > 0)) upgradeMultiplier *= 1.2;
+    if (move.type === 'ice' && hasUpgrade(p, 'ice-shatter') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.3;
+    if (move.type === 'ground' && hasUpgrade(p, 'ground-aftershock') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.3;
+    if (move.type === 'dragon' && hasUpgrade(p, 'dragon-pressure') && e.boss) upgradeMultiplier *= 1.3;
+    if (move.type === 'dark' && hasUpgrade(p, 'dark-predation') && e.hp <= e.maxHp * 0.5) upgradeMultiplier *= 1.24;
   }
   // Crítico: sorteado só quando a carta existe, para não consumir o RNG das corridas sem ela.
   if (move === p.move && (p.critChance ?? 0) > 0 && state.rng() < (p.critChance ?? 0)) upgradeMultiplier *= 2;
-  const environmentalDamage = damage * survivorDirectDamageMultiplier(distanceFromPlayer) * (p.move.category === 'rapido' ? 1 : survivorRapidAttackDamageMultiplier(p)) * upgradeMultiplier
+  const environmentalDamage = damage * survivorDirectDamageMultiplier(distanceFromPlayer) * (p.move.category === 'rapido' || p.move.category === 'teleporte' ? 1 : survivorRapidAttackDamageMultiplier(p)) * upgradeMultiplier
     * (synergy?.damageMultiplier ?? 1)
     * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
   const reducedDamage = e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
@@ -1054,7 +1058,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   switch (move.effect) {
     case 'queimar':
       e.burnMs = EFFECT_MS.burn;
-      e.burnDps = Math.max(e.burnDps ?? 0, round1(finalDamage * (move === p.move && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.6125 : 0.35)));
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(finalDamage * (move === p.move && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.525 : 0.35)));
       break;
     case 'lentidao':
       e.slowMs = move === p.move && move.type === 'bug' && hasUpgrade(p, 'bug-web') ? EFFECT_MS.slow + 700 : EFFECT_MS.slow;
@@ -1086,7 +1090,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   // Inseto e Fantasma atacam em dupla: um único eco visual e de dano por impacto, sem efeitos, cura ou recursão.
   if (allowFollowUp && (move.type === 'bug' || move.type === 'ghost') && e.hp > 0) {
     const enhancedEcho = move === p.move && ((move.type === 'bug' && hasUpgrade(p, 'bug-formation')) || (move.type === 'ghost' && hasUpgrade(p, 'ghost-haunt')));
-    const echoDamage = finalDamage * (enhancedEcho ? 0.35 : 0.2);
+    const echoDamage = finalDamage * (enhancedEcho ? 0.3 : 0.2);
     e.hp -= echoDamage;
     state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: Math.max(10, e.radius * 1.8), color: move.color, ageMs: 0, lifeMs: 220 });
     state.fx.push({
@@ -1186,15 +1190,20 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
 /** Um dos três tiros da Rajada. A onda inteira preserva o DPS anterior, em vez de triplicá-lo. */
 function fireRapidShot(state: SurvivorState, target: SurvivorEnemy): void {
   const p = state.player;
-  const angle = Math.atan2(target.y - p.y, target.x - p.x);
-  state.projectiles.push({
-    id: state.nextId++, x: p.x, y: p.y,
-    vx: Math.cos(angle) * p.projectileSpeed, vy: Math.sin(angle) * p.projectileSpeed,
-    damage: artifactDamage(state) * 0.62,
-    pierce: p.pierce + (p.move.effect === 'atravessar' ? 1 : 0), lifeMs: 1600, hit: [],
-    canChain: p.move.effect === 'saltar', size: p.projectileSize, move: p.move,
-    distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y), look: survivorProjectileLook(p),
-  });
+  const baseAngle = Math.atan2(target.y - p.y, target.x - p.x);
+  const look = survivorProjectileLook(p);
+  // `shots` é a largura da salva: cada um dos três instantes lança o leque inteiro.
+  for (let i = 0; i < p.shots; i++) {
+    const angle = baseAngle + (p.shots === 1 ? 0 : (i - (p.shots - 1) / 2) * RAPID_BURST_SPREAD);
+    state.projectiles.push({
+      id: state.nextId++, x: p.x, y: p.y,
+      vx: Math.cos(angle) * p.projectileSpeed, vy: Math.sin(angle) * p.projectileSpeed,
+      damage: artifactDamage(state) * 0.62,
+      pierce: p.pierce + (p.move.effect === 'atravessar' ? 1 : 0), lifeMs: 1600, hit: [],
+      canChain: p.move.effect === 'saltar', size: p.projectileSize, move: p.move,
+      distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y), look,
+    });
+  }
 }
 
 /** Foco: um disparo largo e lento em linha reta, que atravessa alguns inimigos. */
@@ -1249,7 +1258,8 @@ function releaseTeleport(state: SurvivorState, action: Extract<NonNullable<Retur
   const fromX = p.x;
   const fromY = p.y;
   const angle = survivorAimAngle(p);
-  const distance = TELEPORT_RANGE * (0.45 + 0.55 * action.level);
+  const reach = teleportReach(p.attackRange, p.attackRadius, p.shots);
+  const distance = reach.range * (0.45 + 0.55 * action.level);
   p.x = clamp(p.x + Math.cos(angle) * distance, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
   p.y = clamp(p.y + Math.sin(angle) * distance, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
   if (Math.abs(Math.cos(angle)) > 0.01) p.facing = Math.cos(angle) < 0 ? -1 : 1;
@@ -1257,7 +1267,7 @@ function releaseTeleport(state: SurvivorState, action: Extract<NonNullable<Retur
   const damage = artifactDamage(state) * action.damageMultiplier / BASIC_ATTACK_DAMAGE_FACTOR;
   let hits = 0;
   for (const e of state.enemies) {
-    if (e.hp <= 0 || Math.hypot(e.x - p.x, e.y - p.y) > TELEPORT_HIT_RADIUS + e.radius) continue;
+    if (e.hp <= 0 || Math.hypot(e.x - p.x, e.y - p.y) > reach.hitRadius + e.radius) continue;
     hitEnemy(state, e, damage, { x: p.x, y: p.y }, p.move, true, 0);
     hits++;
   }
@@ -1265,7 +1275,7 @@ function releaseTeleport(state: SurvivorState, action: Extract<NonNullable<Retur
   p.invulnMs = Math.max(p.invulnMs, action.invulnMs);
   if (action.wave) {
     for (const e of state.enemies) {
-      if (e.hp <= 0 || Math.hypot(e.x - p.x, e.y - p.y) > TELEPORT_FULL_WAVE_RADIUS + e.radius) continue;
+      if (e.hp <= 0 || Math.hypot(e.x - p.x, e.y - p.y) > reach.waveRadius + e.radius) continue;
       const resistance = e.boss ? 0.25 : e.trainerId !== undefined ? 0.5 : 1;
       const dx = e.x - p.x;
       const dy = e.y - p.y;
@@ -1274,7 +1284,7 @@ function releaseTeleport(state: SurvivorState, action: Extract<NonNullable<Retur
       e.y = clamp(e.y + dy / length * 180 * resistance, e.radius, ARENA_H - e.radius);
     }
   }
-  state.fx.push({ kind: 'rush', x: p.x, y: p.y, r: action.wave ? TELEPORT_FULL_WAVE_RADIUS : TELEPORT_HIT_RADIUS, color: p.move.color, ageMs: 0, lifeMs: action.wave ? 520 : 380, moveType: p.move.type, fromX, fromY, toX: p.x, toY: p.y, ...(action.wave ? { count: 2 } : {}) });
+  state.fx.push({ kind: 'rush', x: p.x, y: p.y, r: action.wave ? reach.waveRadius : reach.hitRadius, color: p.move.color, ageMs: 0, lifeMs: action.wave ? 520 : 380, moveType: p.move.type, fromX, fromY, toX: p.x, toY: p.y, ...(action.wave ? { count: 2 } : {}) });
   return true;
 }
 
@@ -1283,14 +1293,20 @@ function chargeStyleOf(state: SurvivorState): ChargeStyle | null {
   return category === 'foco' || category === 'teleporte' ? category : null;
 }
 
-/** Ataque de um apoio: nasce sempre no jogador e usa o perfil congelado do Pokémon escolhido. */
+/**
+ * Ataque de um apoio: nasce sempre no jogador e usa o perfil congelado do Pokémon escolhido.
+ * Apoios não seguram botão, então o Foco, a Rajada e o Teleporte têm política própria e fixa:
+ * Foco e Rajada soltam um único projétil por ciclo (a Rajada, com o dano de um tiro cheio e sem a salva de três),
+ * e o Teleporte golpeia o inimigo mais próximo com um impacto em área do raio do perfil. O apoio não se move,
+ * não protege o jogador e não empurra ninguém.
+ */
 function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean {
   const p = state.player;
   const { move, profile } = support;
   const damage = round1(profile.damage * support.damageFactor);
   const range = profile.range;
   const radius = profile.radius;
-  if (move.category === 'projetil' || move.category === 'foco' || move.category === 'rapido' || move.category === 'teleporte') {
+  if (move.category === 'projetil' || move.category === 'foco' || move.category === 'rapido') {
     const target = nearestEnemies(state, range, 1)[0];
     if (!target) return false;
     const angle = Math.atan2(target.y - p.y, target.x - p.x);
@@ -1896,7 +1912,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   state.charge.moveRatio = dt > 0 ? movedPx / dt / RUSH_REFERENCE_SPEED : 0;
   if (input.cancelCharge) cancelTeleportHold(state.charge);
   const chargeBonus = chargeStyle === 'foco' ? (p.upgradeLevels[CHARGE_FOCUS_RATE_ID] ?? 0) : chargeStyle === 'teleporte' ? (p.upgradeLevels[CHARGE_RUSH_LENGTH_ID] ?? 0) : 0;
-  const chargeAction = stepChargeMeter(state.charge, chargeStyle, input.charge === true, movedPx, dtMs, chargeBonus);
+  const chargeAction = stepChargeMeter(state.charge, chargeStyle, input.charge === true, movedPx, dtMs, chargeBonus, p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1));
   if (chargeAction?.kind === 'focus-release') {
     const name = fireFocusBeam(state, chargeAction.level);
     events.push({ type: 'chargeRelease', style: 'foco', name, level: chargeAction.level });
@@ -2029,7 +2045,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       state.charge.rapidShotDelayMs += RAPID_BURST_SHOT_INTERVAL_MS;
     }
   }
-  if (p.attackTimerMs <= 0 && state.charge.rapidShotsPending <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
+  if (p.attackTimerMs <= 0 && state.charge.rapidShotsPending <= 0 && attack(state)) {
+    const cooldownMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
+    p.attackTimerMs = p.move.category === 'rapido' ? Math.max(RAPID_BURST_MIN_CYCLE_MS, cooldownMs) : cooldownMs;
+  }
   if (p.move.category === 'orbit') stepOrbiters(state, dtMs);
   if (state.supports.length > 0) {
     // Formação visual: cada apoio tem uma posição própria e alcança o jogador
