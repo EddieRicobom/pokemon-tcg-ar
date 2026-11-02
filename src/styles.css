@@ -6867,6 +6867,52 @@ body.no-scroll .reward-toasts {
   image-rendering: pixelated;
   background: #1a396c;
 }
+.survivor-canvas.survivor-time-stopped { filter: grayscale(1) contrast(.94) brightness(.82); }
+.survivor-stasis-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: rgba(4, 7, 13, .12);
+  color: rgba(255,255,255,.72);
+  text-shadow: 0 1px 3px #000;
+  font-size: .62rem;
+  font-weight: 900;
+  letter-spacing: .16em;
+}
+.survivor-stasis-overlay span { align-self: end; margin-bottom: 18%; padding: 4px 7px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; background: rgba(0,0,0,.32); }
+
+/* Três alvos pequenos e centrais: não ocupam os cantos reservados para joystick e especiais. */
+.survivor-focus-actions {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  gap: 4px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+.survivor-focus-actions button {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 36px;
+  min-height: 28px;
+  padding: 3px 5px;
+  border: 1px solid rgba(255,255,255,.4);
+  border-radius: 7px;
+  background: rgba(9, 15, 27, .72);
+  color: #f4f7ff;
+  box-shadow: 0 2px 5px rgba(0,0,0,.32);
+  font: inherit;
+}
+.survivor-focus-actions button.active { border-color: #ffe071; background: rgba(98, 73, 22, .88); box-shadow: 0 0 9px rgba(255,224,113,.55); }
+.survivor-focus-actions button small { font-size: .52rem; font-weight: 800; white-space: nowrap; }
+.survivor-focus-actions button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .survivor-canvas.survivor-time-stopped { filter: grayscale(1); } }
 
 .survivor-hud {
   position: absolute;

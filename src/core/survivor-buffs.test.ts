@@ -37,15 +37,36 @@ describe('novas cartas de buff', () => {
     expect(new Set(ancestral.map((upgrade) => upgrade.id)).size).toBe(10);
   });
 
-  it('acrescenta onze buffs inéditos de nível Poké Ball', () => {
+  it('mantém dez buffs inéditos de nível Poké Ball sem aumentar a invulnerabilidade', () => {
     const ids = [
       'opening-strike', 'last-stand', 'close-quarters', 'long-shot', 'slow-field', 'orb-medicine',
-      'trophy-medicine', 'contact-guard', 'projectile-guard', 'escape-window', 'retaliation-wave',
+      'trophy-medicine', 'contact-guard', 'projectile-guard', 'retaliation-wave',
     ];
     const byId = new Map(SURVIVOR_UPGRADES.map((upgrade) => [upgrade.id, upgrade]));
-    expect(ids).toHaveLength(11);
+    expect(ids).toHaveLength(10);
     expect(ids.every((id) => byId.get(id)?.rarity === 'normal')).toBe(true);
     expect(ids.every((id) => (byId.get(id)?.maxLevels ?? 0) > 0)).toBe(true);
+    expect(byId.has('escape-window')).toBe(false);
+    expect(byId.get('trophy-medicine')?.maxLevels).toBe(1);
+  });
+
+  it('Caçador de ameaças aumenta o dano contra chefões e Pokémon de treinadores', () => {
+    const aura = as('normal', 'aura');
+    const damageAgainst = (target: Partial<SurvivorEnemy>): number => {
+      const s = quiet(createSurvivorState(88, { kindCount: 1, move: aura.move, profile: aura.profile }));
+      s.player.attackDamage = 100;
+      pick(s, 'threat-hunter');
+      s.player.attackRadius = 100;
+      const targetEnemy = enemy(1, s.player.x + 30, s.player.y, target);
+      s.enemies.push(targetEnemy);
+      s.player.attackTimerMs = 0;
+      stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+      return 1000 - targetEnemy.hp;
+    };
+
+    const ordinary = damageAgainst({});
+    expect(damageAgainst({ boss: true })).toBeCloseTo(ordinary * 1.3, 5);
+    expect(damageAgainst({ trainerId: 42 })).toBeCloseTo(ordinary * 1.3, 5);
   });
 
 

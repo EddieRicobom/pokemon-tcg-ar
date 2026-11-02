@@ -63,6 +63,51 @@ function run(seed: number, kindCount = 4) {
 }
 
 describe('stepSurvivor', () => {
+  it('respeita o foco escolhido antes da distância no autoataque', () => {
+    const { move, profile } = as('normal', 'projetil');
+    const s = quiet(createSurvivorState(71, { kindCount: 1, move, profile }));
+    s.player.attackRange = 500;
+    s.player.targetPriority = 'boss';
+    s.enemies.push(
+      dummy(1, s.player.x + 60, s.player.y),
+      { ...dummy(2, s.player.x, s.player.y + 160), boss: true, grade: 'chefao' },
+    );
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.projectiles).toHaveLength(1);
+    expect(s.projectiles[0]!.vy).toBeGreaterThan(0);
+
+    s.projectiles = [];
+    s.player.attackTimerMs = 0;
+    s.player.targetPriority = 'healer';
+    s.enemies[0]!.archetype = 'suporte';
+    s.enemies[0]!.supportRole = 'cura';
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.projectiles[0]!.vx).toBeGreaterThan(0);
+
+    s.projectiles = [];
+    s.player.attackTimerMs = 0;
+    s.player.targetPriority = 'lowest-hp';
+    s.enemies[1]!.hp = 10;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.projectiles[0]!.vy).toBeGreaterThan(0);
+  });
+
+  it('não deixa a estase executar a IA ou criar novos projéteis inimigos', () => {
+    const s = quiet(run(72));
+    s.special.selected = 'stasis';
+    s.special.activeMs = 1_000;
+    s.enemies.push({ ...dummy(1, s.player.x + 200, s.player.y), archetype: 'atirador', specialTimerMs: 0, speed: 0 });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.hostileProjectiles).toHaveLength(0);
+  });
+
+  it('cria uma marca visual leve quando um inimigo é derrotado', () => {
+    const s = quiet(run(73));
+    s.enemies.push({ ...dummy(1, s.player.x, s.player.y, 0) });
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.fx).toContainEqual(expect.objectContaining({ kind: 'defeat', x: s.player.x, y: s.player.y }));
+  });
+
   it('usa a defesa adequada ao golpe, com retornos decrescentes e sem inventar dados', () => {
     // Pikachu: Defesa 40 e Defesa Especial 50.
     expect(survivorDefenseReduction({ dexId: 25 }, 'contato')).toBeCloseTo(40 / 240);
@@ -671,9 +716,9 @@ describe('golpes por tipo', () => {
     }
     const all = Array.from({ length: 80 }, (_, seed) => rollUpgrades(seededRng(seed), 3, aura, player)).flat();
     const power = all.find((option) => option.id === 'power');
-    expect(power?.value).toBeGreaterThanOrEqual(16);
-    expect(power?.value).toBeLessThanOrEqual(24);
-    expect(power?.description).toBe(`Folhas cortantes: +${power?.value}% de dano, até 60.`);
+    expect(power?.value).toBeGreaterThanOrEqual(48);
+    expect(power?.value).toBeLessThanOrEqual(72);
+    expect(power?.description).toBe(`Folhas cortantes: +${power?.value}% de dano, até 180.`);
   });
 
   it('oferece especializações só para o tipo principal e não repete as já escolhidas', () => {
@@ -728,18 +773,18 @@ describe('golpes por tipo', () => {
         applyUpgrade(s, id);
       }
     }
-    expect(s.player.attackDamage).toBe(60);
+    expect(s.player.attackDamage).toBe(180);
     expect(s.player.attackCooldownMs).toBe(240);
     expect(s.player.shots).toBe(5);
     expect(s.player.pierce).toBe(4);
 
-    s.player.attackDamage = 75;
+    s.player.attackDamage = 200;
     s.player.attackCooldownMs = 180;
     s.pendingUpgrade = [{ id: 'power', name: '', description: '' }];
     applyUpgrade(s, 'power');
     s.pendingUpgrade = [{ id: 'haste', name: '', description: '' }];
     applyUpgrade(s, 'haste');
-    expect(s.player.attackDamage).toBe(75);
+    expect(s.player.attackDamage).toBe(200);
     expect(s.player.attackCooldownMs).toBe(180);
   });
 

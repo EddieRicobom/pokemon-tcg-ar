@@ -1010,22 +1010,27 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   const synergy = survivorSynergyFor(move.type, e);
   const hypotheticalRule = move === p.move && state.hypotheticalSecondaryActive ? hypotheticalTypeRuleFor(move.type, state.hypotheticalSecondaryType) : null;
   let upgradeMultiplier = 1;
+  // Caçador de ameaças entra depois de todos os outros modificadores de dano.
+  // Isso mantém a carta explicitamente multiplicativa, inclusive sobre sinergias e terreno.
+  let finalThreatHunterMultiplier = 1;
   if (hypotheticalRule) upgradeMultiplier *= 1 + hypotheticalRule.damageBonus;
   if (move === p.move) {
     const openingStrike = p.upgradeLevels['opening-strike'] ?? 0;
     const lastStand = p.upgradeLevels['last-stand'] ?? 0;
     const closeQuarters = p.upgradeLevels['close-quarters'] ?? 0;
     const longShot = p.upgradeLevels['long-shot'] ?? 0;
-    if (openingStrike > 0 && e.hp >= e.maxHp) upgradeMultiplier *= 1 + openingStrike * 0.18;
-    if (lastStand > 0 && p.hp <= p.maxHp * 0.3) upgradeMultiplier *= 1 + lastStand * 0.22;
-    if (closeQuarters > 0 && distanceFromPlayer <= BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + closeQuarters * 0.12;
-    if (longShot > 0 && distanceFromPlayer > BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + longShot * 0.12;
-    if (move.type === 'fire' && hasUpgrade(p, 'fire-combustion') && (e.burnMs ?? 0) > 0) upgradeMultiplier *= 1.12;
-    if (move.type === 'electric' && hasUpgrade(p, 'electric-arc') && ((e.wetMs ?? 0) > 0 || (e.stunMs ?? 0) > 0)) upgradeMultiplier *= 1.1;
-    if (move.type === 'ice' && hasUpgrade(p, 'ice-shatter') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.15;
-    if (move.type === 'ground' && hasUpgrade(p, 'ground-aftershock') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.15;
-    if (move.type === 'dragon' && hasUpgrade(p, 'dragon-pressure') && e.boss) upgradeMultiplier *= 1.15;
-    if (move.type === 'dark' && hasUpgrade(p, 'dark-predation') && e.hp <= e.maxHp * 0.5) upgradeMultiplier *= 1.12;
+    if (openingStrike > 0 && e.hp >= e.maxHp) upgradeMultiplier *= 1 + openingStrike * 0.54;
+    if (lastStand > 0 && p.hp <= p.maxHp * 0.3) upgradeMultiplier *= 1 + lastStand * 0.66;
+    if (closeQuarters > 0 && distanceFromPlayer <= BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + closeQuarters * 0.36;
+    if (longShot > 0 && distanceFromPlayer > BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + longShot * 0.36;
+    const threatHunter = p.upgradeLevels['threat-hunter'] ?? 0;
+    if (threatHunter > 0 && (e.boss || e.trainerId !== undefined)) finalThreatHunterMultiplier = 1 + threatHunter * 0.3;
+    if (move.type === 'fire' && hasUpgrade(p, 'fire-combustion') && (e.burnMs ?? 0) > 0) upgradeMultiplier *= 1.36;
+    if (move.type === 'electric' && hasUpgrade(p, 'electric-arc') && ((e.wetMs ?? 0) > 0 || (e.stunMs ?? 0) > 0)) upgradeMultiplier *= 1.3;
+    if (move.type === 'ice' && hasUpgrade(p, 'ice-shatter') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.45;
+    if (move.type === 'ground' && hasUpgrade(p, 'ground-aftershock') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.45;
+    if (move.type === 'dragon' && hasUpgrade(p, 'dragon-pressure') && e.boss) upgradeMultiplier *= 1.45;
+    if (move.type === 'dark' && hasUpgrade(p, 'dark-predation') && e.hp <= e.maxHp * 0.5) upgradeMultiplier *= 1.36;
   }
   // Crítico: sorteado só quando a carta existe, para não consumir o RNG das corridas sem ela.
   if (move === p.move && (p.critChance ?? 0) > 0 && state.rng() < (p.critChance ?? 0)) upgradeMultiplier *= 2;
@@ -1033,7 +1038,8 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     * (synergy?.damageMultiplier ?? 1)
     * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
   const reducedDamage = e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
-  e.hp -= reducedDamage;
+  const finalDamage = reducedDamage * finalThreatHunterMultiplier;
+  e.hp -= finalDamage;
   e.hitFlashMs = 90;
   if (synergy?.consume) e[synergy.consume] = 0;
   if (synergy?.refreshSlowMs) e.slowMs = Math.max(e.slowMs ?? 0, synergy.refreshSlowMs);
@@ -1048,7 +1054,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   switch (move.effect) {
     case 'queimar':
       e.burnMs = EFFECT_MS.burn;
-      e.burnDps = Math.max(e.burnDps ?? 0, round1(environmentalDamage * (move === p.move && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.44 : 0.35)));
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(environmentalDamage * (move === p.move && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.6125 : 0.35)));
       break;
     case 'lentidao':
       e.slowMs = move === p.move && move.type === 'bug' && hasUpgrade(p, 'bug-web') ? EFFECT_MS.slow + 700 : EFFECT_MS.slow;
@@ -1080,7 +1086,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   // Inseto e Fantasma atacam em dupla: um único eco visual e de dano por impacto, sem efeitos, cura ou recursão.
   if (allowFollowUp && (move.type === 'bug' || move.type === 'ghost') && e.hp > 0) {
     const enhancedEcho = move === p.move && ((move.type === 'bug' && hasUpgrade(p, 'bug-formation')) || (move.type === 'ghost' && hasUpgrade(p, 'ghost-haunt')));
-    const echoDamage = reducedDamage * (enhancedEcho ? 0.25 : 0.2);
+    const echoDamage = reducedDamage * (enhancedEcho ? 0.35 : 0.2);
     e.hp -= echoDamage;
     state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: Math.max(10, e.radius * 1.8), color: move.color, ageMs: 0, lifeMs: 220 });
     state.fx.push({
@@ -1125,10 +1131,25 @@ function drain(state: SurvivorState, hits: number, move: SurvivorMove): void {
 /** Os `count` inimigos mais próximos dentro de `range`, do mais perto ao mais longe. */
 function nearestEnemies(state: SurvivorState, range: number, count: number): SurvivorEnemy[] {
   const p = state.player;
+  const priority = p.targetPriority;
   return state.enemies
     .map((e) => ({ e, d: Math.hypot(e.x - p.x, e.y - p.y) }))
     .filter((x) => x.d <= range)
-    .sort((a, b) => a.d - b.d)
+    .sort((a, b) => {
+      if (priority === 'boss') {
+        const aBoss = a.e.boss || a.e.grade === 'chefao' || a.e.trainerId !== undefined;
+        const bBoss = b.e.boss || b.e.grade === 'chefao' || b.e.trainerId !== undefined;
+        if (aBoss !== bBoss) return aBoss ? -1 : 1;
+      } else if (priority === 'healer') {
+        const aHealer = a.e.archetype === 'suporte' && (a.e.supportRole ?? 'cura') === 'cura';
+        const bHealer = b.e.archetype === 'suporte' && (b.e.supportRole ?? 'cura') === 'cura';
+        if (aHealer !== bHealer) return aHealer ? -1 : 1;
+      } else if (priority === 'lowest-hp') {
+        const hp = a.e.hp / Math.max(1, a.e.maxHp) - b.e.hp / Math.max(1, b.e.maxHp);
+        if (hp !== 0) return hp;
+      }
+      return a.d - b.d;
+    })
     .slice(0, count)
     .map((x) => x.e);
 }
@@ -1439,7 +1460,7 @@ function effectivePickupRadius(p: SurvivorPlayer): number {
 
 /** Janela de proteção depois de levar um golpe; a marmita de Fruta a alonga enquanto dura. */
 function hitInvulnerabilityMs(p: SurvivorPlayer): number {
-  return Math.round(BALANCE.hitInvulnerabilityMs * (1 + (p.lunchHitInvulnBonus ?? 0)) * (1 + (p.upgradeLevels['escape-window'] ?? 0) * 0.25));
+  return Math.round(BALANCE.hitInvulnerabilityMs * (1 + (p.lunchHitInvulnBonus ?? 0)));
 }
 
 function hitSource(enemy: SurvivorEnemy): SurvivorHitSource {
@@ -1479,6 +1500,9 @@ function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalH
 }
 
 function spawnHostileProjectile(state: SurvivorState, enemy: SurvivorEnemy, target: SurvivorPlayer, damageMultiplier = 0.7): void {
+  // Parar o tempo interrompe também a decisão de atirar: nenhum projétil novo
+  // nasce durante a estase.
+  if (state.special.selected === 'stasis' && state.special.activeMs > 0) return;
   if (state.hostileProjectiles.length >= ENEMY_BEHAVIOR_LIMITS.hostileProjectiles) return;
   const dx = target.x - enemy.x;
   const dy = target.y - enemy.y;
@@ -1897,7 +1921,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if ((e.stunCooldownMs ?? 0) > 0) e.stunCooldownMs = Math.max(0, (e.stunCooldownMs ?? 0) - dtMs);
     if ((e.knockbackCooldownMs ?? 0) > 0) e.knockbackCooldownMs = Math.max(0, (e.knockbackCooldownMs ?? 0) - dtMs);
     if ((e.orbitHitMs ?? 0) > 0) e.orbitHitMs = Math.max(0, (e.orbitHitMs ?? 0) - dtMs);
-    const target = updateEnemyBehavior(state, e, dtMs);
+    // Em estase, a IA não decide cura, proteção, investida ou novos tiros.
+    // O restante do quadro ainda reduz efeitos temporários de forma previsível.
+    const target = timeStopped ? { x: e.x, y: e.y } : updateEnemyBehavior(state, e, dtMs);
     const dx = target.x - e.x;
     const dy = target.y - e.y;
     const d = Math.hypot(dx, dy) || 1;
@@ -2038,6 +2064,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const trophyMedicine = p.upgradeLevels['trophy-medicine'] ?? 0;
     if (trophyMedicine > 0) p.hp = Math.min(p.maxHp, p.hp + dead.length * trophyMedicine * 2);
     for (const e of dead) {
+      state.fx.push({ kind: 'defeat', x: e.x, y: e.y, r: e.boss || e.grade === 'chefao' ? 26 : 14, color: e.archetype === 'suporte' ? '#ff78b7' : e.grade === 'elite' ? '#ffd84a' : '#e8f2ff', ageMs: 0, lifeMs: 360 });
       const value = normalizeSurvivorXp(e.boss ? 48 : e.grade === 'chefao' ? 36 : e.grade === 'elite' ? 20 : 8);
       const doubleXp = state.rng() < BALANCE.doubleXpOrbChance;
       state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value, ...(doubleXp ? { doubleXp: true } : {}) });
