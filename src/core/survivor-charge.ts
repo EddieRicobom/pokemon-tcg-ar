@@ -14,7 +14,11 @@ import type { BaseStats } from './survivor-moves';
  *
  * Aqui ficam só regras e números; o motor (`core/survivor.ts`) aplica o dano e o movimento.
  */
-export type ChargeStyle = 'foco' | 'rapido';
+/**
+ * `rapido` é a Rajada: três disparos automáticos e uma pausa curta.
+ * `teleporte` é o golpe de hold; ele nunca começa sozinho ao andar.
+ */
+export type ChargeStyle = 'foco' | 'rapido' | 'teleporte';
 
 export interface SurvivorChargeState {
   /** Quanto a barra está cheia, de 0 a 1. */
@@ -28,10 +32,17 @@ export interface SurvivorChargeState {
   moveRatio: number;
   /** Nível do último feixe do Foco (para o desenho e o aviso). */
   lastRelease: number;
+  /** Teleporte: tempo contínuo segurando o botão nesta tentativa. */
+  teleportHoldMs: number;
+  /** Teleporte: recarga iniciada apenas depois de uma soltura válida. */
+  teleportCooldownMs: number;
+  /** Rajada: disparos ainda pendentes nesta onda e tempo até o próximo. */
+  rapidShotsPending: number;
+  rapidShotDelayMs: number;
 }
 
 export function createSurvivorCharge(): SurvivorChargeState {
-  return { level: 0, holding: false, rushMs: 0, rushTotalMs: 0, moveRatio: 0, lastRelease: 0 };
+  return { level: 0, holding: false, rushMs: 0, rushTotalMs: 0, moveRatio: 0, lastRelease: 0, teleportHoldMs: 0, teleportCooldownMs: 0, rapidShotsPending: 0, rapidShotDelayMs: 0 };
 }
 
 /** Foco: segurar o botão enche ~30% por segundo (pouco mais de 3 s até o máximo). */
@@ -65,16 +76,35 @@ export const RUSH_REFERENCE_SPEED = 150;
 export const RUSH_DAMAGE_PER_SPEED = 0.5;
 export const RUSH_MAX_DAMAGE_TAKEN = 2;
 
+/** Rajada: três tiros em 180 ms e 600 ms de respiro até a próxima onda. */
+export const RAPID_BURST_SHOTS = 3;
+export const RAPID_BURST_SHOT_INTERVAL_MS = 90;
+export const RAPID_BURST_CYCLE_MS = 780;
+
+/** Teleporte: só uma soltura deliberada ativa o golpe. */
+export const TELEPORT_MIN_HOLD_MS = 150;
+export const TELEPORT_FULL_HOLD_MS = 1200;
+export const TELEPORT_COOLDOWN_MS = 1500;
+export const TELEPORT_MIN_INVULN_MS = 180;
+export const TELEPORT_MAX_INVULN_MS = 600;
+export const TELEPORT_MIN_DAMAGE_MULTIPLIER = 1.5;
+export const TELEPORT_MAX_DAMAGE_MULTIPLIER = 4;
+export const TELEPORT_RANGE = 240;
+export const TELEPORT_HIT_RADIUS = 54;
+export const TELEPORT_FULL_WAVE_RADIUS = 150;
+
 /**
  * O estilo de carga pelos stats reais, ou `null` (golpe comum).
  * Foco: Velocidade até 60 e Ataque ou Ataque Especial a partir de 100.
  * Rápido: Velocidade a partir de 100, pelo menos 15 acima de todo outro stat, e os dois ataques até 90.
+ * Entre os elegíveis, Ataque Especial maior ou igual ao Ataque recebe Rajada;
+ * Ataque maior recebe Teleporte. A regra não depende de tipo nem de dados aleatórios.
  */
 export function chargeStyleFor(s: BaseStats | null): ChargeStyle | null {
   if (!s) return null;
   if (s.speed <= 60 && Math.max(s.attack, s.spAttack) >= 100) return 'foco';
   const others = Math.max(s.hp, s.attack, s.defense, s.spAttack, s.spDefense);
-  if (s.speed >= 100 && s.speed >= others + 15 && Math.max(s.attack, s.spAttack) <= 90) return 'rapido';
+  if (s.speed >= 100 && s.speed >= others + 15 && Math.max(s.attack, s.spAttack) <= 90) return s.spAttack >= s.attack ? 'rapido' : 'teleporte';
   return null;
 }
 
@@ -113,15 +143,60 @@ export function rushDamageTakenMultiplier(moveRatio: number): number {
   return Math.min(RUSH_MAX_DAMAGE_TAKEN, 1 + ratio * RUSH_DAMAGE_PER_SPEED);
 }
 
-export type ChargeAction = { kind: 'focus-release'; level: number } | { kind: 'rush-start'; level: number; durationMs: number } | null;
+export interface TeleportRelease {
+  kind: 'teleport-release';
+  /** 0 no mínimo válido e 1 depois da carga completa. */
+  level: number;
+  invulnMs: number;
+  damageMultiplier: number;
+  /** Só a carga cheia emite a onda; o motor a aplica uma vez, sem dano extra. */
+  wave: boolean;
+}
+
+export type ChargeAction = { kind: 'focus-release'; level: number } | TeleportRelease | null;
+
+/** Cancela uma tentativa de teleporte sem converter a perda de foco em golpe. */
+export function cancelTeleportHold(c: SurvivorChargeState): void {
+  c.holding = false;
+  c.teleportHoldMs = 0;
+}
+
+/** Agenda dos três tiros da Rajada no ciclo; é estável inclusive em passos grandes. */
+export function rapidBurstShotsBetween(previousElapsedMs: number, dtMs: number): number[] {
+  const from = Math.max(0, previousElapsedMs);
+  const to = from + Math.max(0, dtMs);
+  const result: number[] = [];
+  const firstCycle = Math.floor(from / RAPID_BURST_CYCLE_MS);
+  const lastCycle = Math.floor(Math.max(from, to - Number.EPSILON) / RAPID_BURST_CYCLE_MS);
+  for (let cycle = firstCycle; cycle <= lastCycle; cycle++) {
+    for (let shot = 0; shot < RAPID_BURST_SHOTS; shot++) {
+      const at = cycle * RAPID_BURST_CYCLE_MS + shot * RAPID_BURST_SHOT_INTERVAL_MS;
+      if (at >= from && at < to) result.push(at - from);
+    }
+  }
+  return result;
+}
+
+/** Resultado da soltura do Teleporte já normalizado para o motor, sem posição nem alvo. */
+export function teleportRelease(holdMs: number): TeleportRelease | null {
+  if (!Number.isFinite(holdMs) || holdMs < TELEPORT_MIN_HOLD_MS) return null;
+  const level = Math.max(0, Math.min(1, (holdMs - TELEPORT_MIN_HOLD_MS) / (TELEPORT_FULL_HOLD_MS - TELEPORT_MIN_HOLD_MS)));
+  return {
+    kind: 'teleport-release',
+    level,
+    invulnMs: Math.round(TELEPORT_MIN_INVULN_MS + (TELEPORT_MAX_INVULN_MS - TELEPORT_MIN_INVULN_MS) * level),
+    damageMultiplier: round1(TELEPORT_MIN_DAMAGE_MULTIPLIER + (TELEPORT_MAX_DAMAGE_MULTIPLIER - TELEPORT_MIN_DAMAGE_MULTIPLIER) * level),
+    wave: level >= 1,
+  };
+}
 
 /**
  * Um passo da barra. `held` é o botão de carga agora; `movedPx`, quanto o Pokémon andou neste passo.
- * Foco: segurar enche, soltar dispara (com carga mínima) e zera. Rápido: andar enche (não durante os teleportes);
- * apertar com a barra a partir da metade inicia os teleportes e zera.
+ * Foco: segurar enche, soltar dispara (com carga mínima) e zera. Rajada não
+ * usa esta barra. Teleporte exige hold e só resolve uma vez na soltura.
  */
 export function stepChargeMeter(c: SurvivorChargeState, style: ChargeStyle | null, held: boolean, movedPx: number, dtMs: number, bonusLevels = 0): ChargeAction {
-  const pressed = held && !c.holding;
+  void movedPx;
   const released = !held && c.holding;
   c.holding = held;
   if (style === 'foco') {
@@ -134,19 +209,14 @@ export function stepChargeMeter(c: SurvivorChargeState, style: ChargeStyle | nul
     }
     return null;
   }
-  if (style === 'rapido') {
-    if (c.rushMs > 0) {
-      c.rushMs = Math.max(0, c.rushMs - dtMs);
-      return null;
-    }
-    if (Number.isFinite(movedPx) && movedPx > 0) c.level = Math.min(1, c.level + movedPx / RUSH_FILL_DISTANCE);
-    if (pressed && c.level >= RUSH_MIN_RELEASE) {
-      const level = c.level;
-      const durationMs = rushDurationMs(level, bonusLevels);
-      c.level = 0;
-      c.rushMs = durationMs;
-      c.rushTotalMs = durationMs;
-      return { kind: 'rush-start', level, durationMs };
+  if (style === 'teleporte') {
+    c.teleportCooldownMs = Math.max(0, c.teleportCooldownMs - Math.max(0, dtMs));
+    if (held && c.teleportCooldownMs === 0) c.teleportHoldMs = Math.min(TELEPORT_FULL_HOLD_MS, c.teleportHoldMs + Math.max(0, dtMs));
+    if (released) {
+      const action = c.teleportCooldownMs === 0 ? teleportRelease(c.teleportHoldMs) : null;
+      c.teleportHoldMs = 0;
+      if (action) c.teleportCooldownMs = Math.round(TELEPORT_COOLDOWN_MS / (1 + 0.2 * Math.max(0, Math.min(3, bonusLevels))));
+      return action;
     }
   }
   return null;

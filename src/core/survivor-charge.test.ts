@@ -7,11 +7,17 @@ import {
   distanceToSegment,
   FOCUS_CHARGE_PER_SEC,
   focusBeam,
-  RUSH_FILL_DISTANCE,
-  RUSH_INVULN_MS,
-  rushDamageTakenMultiplier,
-  rushDurationMs,
+  RAPID_BURST_CYCLE_MS,
+  RAPID_BURST_SHOT_INTERVAL_MS,
+  rapidBurstShotsBetween,
+  TELEPORT_COOLDOWN_MS,
+  TELEPORT_FULL_HOLD_MS,
+  TELEPORT_MAX_INVULN_MS,
+  TELEPORT_MIN_HOLD_MS,
+  TELEPORT_MIN_INVULN_MS,
+  cancelTeleportHold,
   stepChargeMeter,
+  teleportRelease,
 } from './survivor-charge';
 import { attackProfile, categoryForStats, moveFor } from './survivor-moves';
 import type { BaseStats } from './survivor-moves';
@@ -20,21 +26,22 @@ import { statsOfDex } from './survivor-stats';
 const stats = (over: Partial<BaseStats>): BaseStats => ({ hp: 75, attack: 75, defense: 75, spAttack: 75, spDefense: 75, speed: 75, ...over });
 
 describe('quem ganha golpe de carga', () => {
-  it('Foco: lento com um ataque alto; Rápido: Velocidade acima de tudo e ataques baixos', () => {
+  it('Foco: lento com um ataque alto; Rajada e Teleporte: Velocidade acima de tudo e ataques baixos', () => {
     expect(chargeStyleFor(stats({ speed: 30, attack: 110 }))).toBe('foco');
     expect(chargeStyleFor(stats({ speed: 45, spAttack: 120 }))).toBe('foco');
     expect(chargeStyleFor(stats({ speed: 150, attack: 50, spAttack: 80 }))).toBe('rapido');
+    expect(chargeStyleFor(stats({ speed: 150, attack: 80, spAttack: 50 }))).toBe('teleporte');
     expect(chargeStyleFor(stats({ speed: 120, spAttack: 135 }))).toBeNull(); // rápido, mas ataca forte
     expect(chargeStyleFor(stats({ speed: 100, hp: 95 }))).toBeNull(); // a Velocidade não se destaca
     expect(chargeStyleFor(stats({}))).toBeNull();
     expect(chargeStyleFor(null)).toBeNull();
   });
 
-  it('com stats reais: Snorlax e Golem são Foco, Electrode e Ninjask são Rápido, Pikachu e Alakazam não mudam', () => {
+  it('com stats reais: Snorlax e Golem são Foco; Electrode é Rajada e Ninjask é Teleporte', () => {
     expect(moveFor(['normal'], statsOfDex(143)).category).toBe('foco');
     expect(moveFor(['rock'], statsOfDex(76)).category).toBe('foco');
     expect(moveFor(['electric'], statsOfDex(101)).category).toBe('rapido');
-    expect(moveFor(['bug'], statsOfDex(291)).category).toBe('rapido');
+    expect(moveFor(['bug'], statsOfDex(291)).category).toBe('teleporte');
     expect(moveFor(['electric'], statsOfDex(25)).category).toBe('area');
     expect(moveFor(['psychic'], statsOfDex(65)).category).toBe('projetil');
     // A forma pelos stats continua a mesma para quem lê só ela.
@@ -45,7 +52,7 @@ describe('quem ganha golpe de carga', () => {
     for (let dex = 1; dex <= 1025; dex++) {
       const s = statsOfDex(dex);
       const move = moveFor(['normal'], s);
-      if (move.category !== 'foco' && move.category !== 'rapido') continue;
+      if (move.category !== 'foco' && move.category !== 'rapido' && move.category !== 'teleporte') continue;
       const p = attackProfile(move, s);
       expect(p.damage).toBeGreaterThan(1.5);
       expect(p.cooldownMs).toBeGreaterThan(300);
@@ -86,35 +93,24 @@ describe('regras da barra', () => {
     expect(full.stunMs).toBeGreaterThan(0);
   });
 
-  it('Rápido: andar enche, apertar da metade em diante inicia os teleportes; durante eles a barra não enche', () => {
-    expect(RUSH_FILL_DISTANCE).toBe(15_000);
+  it('Teleporte: só uma soltura após 150 ms ativa, entra em recarga e não deixa ação fantasma após cancelamento', () => {
     const c = createSurvivorCharge();
-    stepChargeMeter(c, 'rapido', false, RUSH_FILL_DISTANCE / 4, 16);
-    expect(stepChargeMeter(c, 'rapido', true, 0, 16)).toBeNull(); // só um quarto
-    stepChargeMeter(c, 'rapido', false, RUSH_FILL_DISTANCE, 16);
-    expect(c.level).toBe(1);
-    const action = stepChargeMeter(c, 'rapido', true, 0, 16);
-    expect(action).toEqual({ kind: 'rush-start', level: 1, durationMs: 10_000 });
-    expect(c.level).toBe(0);
-    stepChargeMeter(c, 'rapido', false, 500, 1000);
-    expect(c.level).toBe(0);
-    expect(c.rushMs).toBe(9000);
+    stepChargeMeter(c, 'teleporte', true, 0, TELEPORT_MIN_HOLD_MS - 1);
+    expect(stepChargeMeter(c, 'teleporte', false, 0, 1)).toBeNull();
+    stepChargeMeter(c, 'teleporte', true, 0, TELEPORT_MIN_HOLD_MS);
+    const action = stepChargeMeter(c, 'teleporte', false, 0, 0);
+    expect(action).toMatchObject({ kind: 'teleport-release', invulnMs: TELEPORT_MIN_INVULN_MS, wave: false });
+    expect(c.teleportCooldownMs).toBe(TELEPORT_COOLDOWN_MS);
+    cancelTeleportHold(c);
+    expect(stepChargeMeter(c, 'teleporte', false, 0, 100)).toBeNull();
   });
 
-  it('Rápido: dura 10 s cheio, metade com meia barra, e as cartas até dobram', () => {
-    expect(rushDurationMs(1, 0)).toBe(10_000);
-    expect(rushDurationMs(0.5, 0)).toBe(5000);
-    expect(rushDurationMs(0.4, 0)).toBe(0);
-    expect(rushDurationMs(1, 4)).toBe(20_000);
-    expect(rushDurationMs(1, 9)).toBe(20_000);
-  });
-
-  it('Rápido: quanto mais rápido se move, mais dano recebe (no máximo o dobro)', () => {
-    expect(rushDamageTakenMultiplier(0)).toBe(1);
-    expect(rushDamageTakenMultiplier(1)).toBeCloseTo(1.5);
-    expect(rushDamageTakenMultiplier(0.5)).toBeLessThan(rushDamageTakenMultiplier(1));
-    expect(rushDamageTakenMultiplier(10)).toBe(2);
-    expect(rushDamageTakenMultiplier(Number.NaN)).toBe(1);
+  it('Teleporte cheio ganha o máximo de proteção e uma única onda; Rajada agenda três tiros e depois pausa', () => {
+    expect(teleportRelease(TELEPORT_FULL_HOLD_MS)).toMatchObject({ invulnMs: TELEPORT_MAX_INVULN_MS, wave: true });
+    expect(teleportRelease(TELEPORT_MIN_HOLD_MS - 1)).toBeNull();
+    expect(rapidBurstShotsBetween(0, 181)).toEqual([0, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOT_INTERVAL_MS * 2]);
+    expect(rapidBurstShotsBetween(RAPID_BURST_SHOT_INTERVAL_MS * 2 + 1, RAPID_BURST_CYCLE_MS - RAPID_BURST_SHOT_INTERVAL_MS * 2 - 2)).toEqual([]);
+    expect(rapidBurstShotsBetween(RAPID_BURST_CYCLE_MS - 1, 2)).toEqual([1]);
   });
 
   it('distância ao segmento do feixe', () => {
@@ -124,8 +120,10 @@ describe('regras da barra', () => {
   });
 });
 
-function run(category: 'foco' | 'rapido'): SurvivorState {
-  const s = category === 'foco' ? stats({ speed: 30, attack: 120 }) : stats({ speed: 150, attack: 60, spAttack: 60 });
+function run(category: 'foco' | 'rapido' | 'teleporte'): SurvivorState {
+  const s = category === 'foco'
+    ? stats({ speed: 30, attack: 120 })
+    : category === 'rapido' ? stats({ speed: 150, attack: 60, spAttack: 60 }) : stats({ speed: 150, attack: 80, spAttack: 60 });
   const move = moveFor(['normal'], s);
   expect(move.category).toBe(category);
   const state = createSurvivorState(9, { kindCount: 1, move, profile: attackProfile(move, s) });
@@ -167,22 +165,37 @@ describe('no jogo', () => {
     expect(state.fx.some((f) => f.kind === 'beam')).toBe(true);
   });
 
-  it('Rápido: andar enche a barra; com ela cheia, o golpe vira teleportes que acertam forte e protegem por 2 s', () => {
+  it('Rajada: solta três tiros no tempo e espera antes da próxima onda', () => {
     const state = run('rapido');
-    hold(state, 1000, { dx: 1 });
-    expect(state.charge.level).toBeGreaterThan(0);
-    expect(state.charge.level).toBeLessThan(0.02);
-    expect(state.charge.moveRatio).toBeGreaterThan(0.5);
-
-    state.charge.level = 1;
-    const target = dummy(1, state.player.x + 200, state.player.y);
+    const target = dummy(1, state.player.x + 120, state.player.y);
     state.enemies.push(target);
-    const events = hold(state, 100, { charge: true });
-    expect(events).toContainEqual(expect.objectContaining({ type: 'chargeRelease', style: 'rapido' }));
-    expect(state.charge.rushMs).toBeGreaterThan(9000);
-    expect(Math.hypot(state.player.x - target.x, state.player.y - target.y)).toBeLessThan(60);
-    expect(state.player.invulnMs).toBeGreaterThan(RUSH_INVULN_MS - 200);
+    hold(state, 1, {});
+    const afterFirstShot = state.nextId;
+    stepSurvivor(state, { dx: 0, dy: 0 }, 89);
+    expect(state.nextId).toBe(afterFirstShot);
+    stepSurvivor(state, { dx: 0, dy: 0 }, 1);
+    expect(state.nextId).toBe(afterFirstShot + 1);
+    hold(state, 90, {});
+    expect(state.nextId).toBe(afterFirstShot + 2);
+    hold(state, 300, {});
+    expect(state.nextId).toBe(afterFirstShot + 2);
+  });
+
+  it('Teleporte: uma soltura válida causa um único dano; cheio dá proteção maior e onda sem segundo dano', () => {
+    const state = run('teleporte');
+    state.player.aimAngle = 0;
+    const target = dummy(1, state.player.x + 240, state.player.y);
+    const boss = { ...dummy(2, state.player.x + 300, state.player.y), boss: true };
+    state.enemies.push(target, boss);
+    hold(state, 1200, { charge: true });
+    const before = target.hp;
+    const bossBefore = boss.x;
+    const events = stepSurvivor(state, { charge: false, dx: 0, dy: 0 }, 1);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'chargeRelease', style: 'teleporte', name: 'Onda total' }));
+    expect(state.player.invulnMs).toBeGreaterThanOrEqual(TELEPORT_MAX_INVULN_MS - 1);
     expect(target.hp).toBeLessThan(target.maxHp);
+    expect(before - target.hp).toBeLessThan(state.player.attackDamage * 10);
+    expect(boss.x - bossBefore).toBeGreaterThan(0);
     expect(state.fx.some((f) => f.kind === 'rush')).toBe(true);
   });
 });

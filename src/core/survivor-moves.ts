@@ -18,7 +18,7 @@ import { chargeStyleFor } from './survivor-charge';
  *
  * Sem stats (dado ausente), a forma é projétil e os números são os médios; `estimated` avisa a tela para dizer isso.
  */
-export type MoveCategory = 'projetil' | 'aura' | 'area' | 'cone' | 'orbit' | 'foco' | 'rapido';
+export type MoveCategory = 'projetil' | 'aura' | 'area' | 'cone' | 'orbit' | 'foco' | 'rapido' | 'teleporte';
 export type MoveEffect = 'queimar' | 'lentidao' | 'empurrar' | 'saltar' | 'atordoar' | 'atravessar' | 'roubar' | 'nenhum';
 
 export interface BaseStats {
@@ -72,7 +72,8 @@ export const MOVE_CATEGORY_LABELS_PT: Record<MoveCategory, string> = {
   cone: 'cone',
   orbit: 'órbita',
   foco: 'foco (carga)',
-  rapido: 'rápido (carga)',
+  rapido: 'rajada rápida',
+  teleporte: 'teleporte (carga)',
 };
 
 export const MOVE_EFFECT_LABELS_PT: Record<MoveEffect, string> = {
@@ -126,7 +127,9 @@ export const CATEGORY_BASE: Record<MoveCategory, CategoryBase> = {
   cone: { damage: 11, cooldownMs: 720, range: 185, radius: 0 },
   orbit: { damage: 7, cooldownMs: 520, range: 0, radius: 82 },
   foco: { damage: 17, cooldownMs: 3900, range: 230, radius: 26 },
-  rapido: { damage: 5, cooldownMs: 420, range: 150, radius: 0 },
+  // Três tiros em 0/90/180 ms, depois 600 ms de respiro: ciclo de 780 ms.
+  rapido: { damage: 5, cooldownMs: 780, range: 150, radius: 0 },
+  teleporte: { damage: 12, cooldownMs: 1500, range: 240, radius: 54 },
 };
 
 /** Multiplicadores situacionais: golpes que exigem proximidade recebem mais retorno por exposição. */
@@ -138,6 +141,7 @@ export const CATEGORY_DAMAGE_FACTOR: Record<MoveCategory, number> = {
   orbit: 1.32,
   foco: 1,
   rapido: 1,
+  teleporte: 1,
 };
 
 /** Pequenas compensações para tipos que dependem de exposição ou controle para causar dano. */
@@ -181,7 +185,7 @@ function factor(stat: number, weight: number, lo: number, hi: number): number {
 function offenseOf(category: MoveCategory, s: BaseStats): number {
   if (category === 'projetil') return s.spAttack;
   if (category === 'area' || category === 'cone') return s.attack;
-  if (category === 'foco' || category === 'rapido') return Math.max(s.attack, s.spAttack);
+  if (category === 'foco' || category === 'rapido' || category === 'teleporte') return Math.max(s.attack, s.spAttack);
   return (s.attack + s.spAttack) / 2;
 }
 
@@ -208,7 +212,7 @@ export function profileBars(move: SurvivorMove, p: AttackProfile): { label: stri
     ? { label: 'Alcance', value: p.projectileSpeed / (360 * 1.3) }
     : move.category === 'cone'
       ? { label: 'Alcance', value: p.range / 220 }
-      : move.category === 'foco' || move.category === 'rapido'
+      : move.category === 'foco' || move.category === 'rapido' || move.category === 'teleporte'
         ? { label: 'Alcance', value: p.range / 260 }
       : { label: move.category === 'orbit' ? 'Órbita' : 'Raio', value: p.radius / (base.radius * 1.5 * 1.15) };
   return [

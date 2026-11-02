@@ -127,7 +127,8 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
   cone: 'Acerte à frente e atravesse grupos em movimento.',
   orbit: 'Ataca ao redor. Fica melhor quando você se aproxima e se move.',
   foco: 'Disparo largo e lento. Segure o botão de carga (ou R) para um feixe que atravessa todos; você fica lento enquanto carrega.',
-  rapido: 'Tiros pequenos e rápidos. Andar enche a barra; com ela pela metade, aperte para virar teleportes. Correndo, você leva mais dano.',
+  rapido: 'Dispara três tiros rápidos e então faz uma breve pausa. Mantenha-se em movimento durante a pausa.',
+  teleporte: 'Segure o botão de carga (ou R) e solte para se teletransportar. A carga máxima cria uma onda que afasta inimigos.',
 };
 
 /**
@@ -559,22 +560,23 @@ const specialBlocked = computed(() => !state.value || state.value.over || paused
 const guardianSprite = ref<string | null>(null);
 const shadowBossSprite = ref<string | null>(null);
 let specialQueued = false;
-/** Botão de carga (Foco e Rápido) apertado agora; o motor lê se está segurado a cada passo. */
+/** Botão de carga (Foco e Teleporte) apertado agora; o motor lê se está segurado a cada passo. */
 const chargeHeld = ref(false);
+let cancelChargeQueued = false;
 const chargeStyle = computed(() => {
   const category = state.value?.player.move.category;
-  return category === 'foco' || category === 'rapido' ? category : null;
+  return category === 'foco' || category === 'teleporte' ? category : null;
 });
-/** Barra do botão: os teleportes do Rápido esvaziam com o tempo; fora deles, o quanto a barra encheu. */
+/** Barra do botão: Foco usa sua barra; Teleporte mostra o hold atual. */
 const chargeMeter = computed(() => {
   const charge = state.value?.charge;
   if (!charge) return 0;
-  return charge.rushMs > 0 ? charge.rushMs / Math.max(1, charge.rushTotalMs) : charge.level;
+  return chargeStyle.value === 'teleporte' ? charge.teleportHoldMs / 1200 : charge.level;
 });
 const chargeLabel = computed(() => {
   const charge = state.value?.charge;
   if (!charge || !chargeStyle.value) return '';
-  if (chargeStyle.value === 'rapido') return charge.rushMs > 0 ? `${Math.ceil(charge.rushMs / 1000)}s` : charge.level >= 0.5 ? 'PRONTO' : `${Math.floor(charge.level * 100)}%`;
+  if (chargeStyle.value === 'teleporte') return charge.teleportCooldownMs > 0 ? `${Math.ceil(charge.teleportCooldownMs / 1000)}s` : charge.teleportHoldMs >= 1200 ? 'ONDA' : chargeHeld.value ? `${Math.floor(chargeMeter.value * 100)}%` : 'SEGURE';
   return charge.level >= 1 ? 'MÁXIMO' : charge.level > 0 || chargeHeld.value ? `${Math.floor(charge.level * 100)}%` : 'SEGURE';
 });
 function pressCharge(event?: PointerEvent): void {
@@ -586,6 +588,10 @@ function pressCharge(event?: PointerEvent): void {
 function releaseCharge(): void {
   chargeHeld.value = false;
 }
+function cancelCharge(): void {
+  chargeHeld.value = false;
+  cancelChargeQueued = true;
+}
 function queueSpecial(): void {
   if (specialBlocked.value || (state.value?.special.cooldownMs ?? 1) > 0) return;
   unlockSound();
@@ -593,13 +599,13 @@ function queueSpecial(): void {
 }
 function chooseSpecial(id: SurvivorSpecialId): void {
   if (!state.value || !chooseSurvivorSpecial(state.value, id)) return;
-  heldKeys.clear(); joyUp(); specialQueued = false; chargeHeld.value = false;
+  heldKeys.clear(); joyUp(); specialQueued = false; cancelCharge();
   playSound('success');
   say(`${SURVIVOR_SPECIALS[id].name} pronto! Toque no botão à direita ou pressione E.`, 4500);
 }
 function chooseSpecialBranch(id: SurvivorSpecialBranchId): void {
   if (!state.value || !chooseSurvivorSpecialBranch(state.value, id)) return;
-  heldKeys.clear(); joyUp(); specialQueued = false; chargeHeld.value = false;
+  heldKeys.clear(); joyUp(); specialQueued = false; cancelCharge();
   say('Ramo escolhido. O novo efeito está pronto.', 2200);
 }
 const paused = ref(false);
@@ -2193,13 +2199,14 @@ function loop(ts: number): void {
     if (bonkRun.value && Math.abs(dx) > 0.15) bonkFacing = dx < 0 ? -1 : 1;
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
-    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
+    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value, cancelCharge: cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
     showEnemyDamage(enemyDamageSince(enemyHpBefore, s));
     if (s.player.attackTimerMs > attackTimerBefore) {
       playerAttackAt = animMs;
       playAttackSound(s.player.move, ts);
     }
     specialQueued = false;
+    cancelChargeQueued = false;
     if (bonkRun.value && bonkPhysics.value && beforeBonkPosition) {
       stepBonkPhysics(bonkPhysics.value, s.player, beforeBonkPosition, { dx, dy, jump: bonkJumpQueued }, simulationDt);
       // Inimigos também respeitam rochas e paredes; a altura do jogador não deve abrir a parede para eles.
@@ -2271,7 +2278,7 @@ function loop(ts: number): void {
       }
       else if (ev.type === 'chargeRelease') {
         playSound(ev.style === 'rapido' ? 'survivor-level' : 'survivor-shot');
-        if (ev.style === 'rapido') say(`» Teleportes por ${Math.round(s.charge.rushTotalMs / 1000)} s!`, 2200);
+        if (ev.style === 'teleporte') say(ev.level >= 1 ? '» Onda total: inimigos afastados!' : '» Teleporte carregado!', 2200);
         else if (ev.level >= 1) say(`◎ ${ev.name}!`, 1800);
       }
       else if (ev.type === 'artifactCollected') {
@@ -2396,6 +2403,7 @@ function rerollUpgradeSelection(): void {
 function togglePause(): void {
   if (!state.value || state.value.over || summary.value || pendingUpgrade.value || evolving.value || trainerPresentation.value) return;
   paused.value = !paused.value;
+  if (paused.value) cancelCharge();
   menuPausedRun = false;
   if (!paused.value) helpOpen.value = false;
   joystick.active = false;
@@ -2450,7 +2458,7 @@ function requestLeave(): void {
     leaveNow();
     return;
   }
-  heldKeys.clear(); joyUp(); specialQueued = false; chargeHeld.value = false;
+  heldKeys.clear(); joyUp(); specialQueued = false; cancelCharge();
   clearTrainerPresentation();
   wasPausedBeforeLeave = paused.value;
   paused.value = true;
@@ -2970,9 +2978,9 @@ onBeforeUnmount(() => {
           ></span>
         </div>
 
-        <div v-if="ready && state && !summary" class="survivor-danger-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(state.digitalDanger)" :aria-label="state.digitalDanger >= 60 ? 'Você está atraindo treinadores!' : 'Perigo digital'">
+        <div v-if="ready && state && !summary" class="survivor-danger-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(state.digitalDanger)" :aria-label="state.digitalDangerCooldownMs > 0 ? 'Perigo digital em recarga' : state.digitalDanger >= 60 ? 'Você está atraindo treinadores!' : 'Perigo digital'">
           <div class="survivor-danger-fill" :style="{ width: `${state.digitalDanger}%` }"></div>
-          <span>{{ state.digitalDanger >= 60 ? 'Você está atraindo treinadores!' : 'Perigo digital' }}</span>
+          <span>{{ state.digitalDangerCooldownMs > 0 ? `Perigo em recarga · ${Math.ceil(state.digitalDangerCooldownMs / 60000)} min` : state.digitalDanger >= 60 ? 'Você está atraindo treinadores!' : 'Perigo digital' }}</span>
         </div>
 
         <div v-if="ready && !summary && joystick.active" class="survivor-joy-base active" :style="{ left: `${joystick.lx}px`, top: `${joystick.ly}px` }" aria-hidden="true">
@@ -2992,7 +3000,8 @@ onBeforeUnmount(() => {
                 <li v-if="bonkRun"><b>Pular:</b> botão PULAR, toque duplo na tela, Q ou Espaço. Dá para pular de novo no ar enquanto sobrar bolinha no botão.</li>
                 <li><b>Especial:</b> botão do canto ou tecla E. Libera aos 3 minutos e recarrega sozinho.</li>
                 <li v-if="chargeStyle === 'foco'"><b>Foco:</b> segure o botão ◎ (ou R) para carregar, devagar e andando mais lento; solte para um feixe que atravessa todos. Cheio, vira um canhão que cruza a arena.</li>
-                <li v-if="chargeStyle === 'rapido'"><b>Rápido:</b> andar enche o botão » (ou R). Da metade em diante, aperte: o golpe vira teleportes de dano alto, cada um com 2 s sem levar dano. Correndo, você leva mais dano.</li>
+                <li v-if="state?.player.move.category === 'rapido'"><b>Rajada:</b> dispara três tiros rápidos e faz uma breve pausa antes da próxima onda.</li>
+                <li v-if="chargeStyle === 'teleporte'"><b>Teleporte:</b> segure » (ou R) e solte. A carga máxima dá mais proteção e empurra inimigos com uma onda.</li>
                 <li><b>Pausar:</b> botão ⏸ ou Start no controle. O botão ? abre esta ajuda.</li>
               </ul>
             </details>
@@ -3198,13 +3207,13 @@ onBeforeUnmount(() => {
         </button>
 
         <button v-if="ready && state && chargeStyle && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
-          type="button" class="survivor-charge-button" :class="{ 'is-held': chargeHeld, 'is-full': state.charge.level >= 1 || (chargeStyle === 'rapido' && state.charge.level >= 0.5), 'is-rush': state.charge.rushMs > 0 }"
+          type="button" class="survivor-charge-button" :class="{ 'is-held': chargeHeld, 'is-full': state.charge.level >= 1 || (chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200), 'is-rush': chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200 }"
           :style="{ '--special-color': state.player.move.color, '--charge': `${chargeMeter * 100}%` }"
-          :aria-label="chargeStyle === 'foco' ? `Foco: segure para carregar, solte para disparar; carga ${Math.floor(state.charge.level * 100)}%; tecla R` : `Rápido: ${state.charge.rushMs > 0 ? 'teleportes ativos' : state.charge.level >= 0.5 ? 'pronto' : `carga ${Math.floor(state.charge.level * 100)}%, ande para encher`}; tecla R`"
-          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="releaseCharge" @lostpointercapture="releaseCharge">
+          :aria-label="chargeStyle === 'foco' ? `Foco: segure para carregar, solte para disparar; carga ${Math.floor(state.charge.level * 100)}%; tecla R` : `Teleporte: segure para carregar e solte para usar; ${chargeLabel}; tecla R`"
+          @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelCharge" @lostpointercapture="cancelCharge">
           <span class="special-icon" aria-hidden="true">{{ chargeStyle === 'foco' ? '◎' : '»' }}</span>
           <strong>{{ chargeLabel }}</strong>
-          <small>{{ chargeStyle === 'foco' ? 'Foco' : 'Rápido' }}</small>
+          <small>{{ chargeStyle === 'foco' ? 'Foco' : 'Teleporte' }}</small>
         </button>
 
         <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"

@@ -6883,34 +6883,35 @@ body.no-scroll .reward-toasts {
 }
 .survivor-stasis-overlay span { align-self: end; margin-bottom: 18%; padding: 4px 7px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; background: rgba(0,0,0,.32); }
 
-/* Três alvos pequenos e centrais: não ocupam os cantos reservados para joystick e especiais. */
+/* Foco fica na faixa inferior: longe da área de combate e com a mesma leitura das barras do HUD. */
 .survivor-focus-actions {
   position: absolute;
   z-index: 3;
   left: 50%;
-  top: 50%;
+  bottom: calc(10px + env(safe-area-inset-bottom));
   display: flex;
-  gap: 4px;
-  transform: translate(-50%, -50%);
+  gap: 5px;
+  max-width: calc(100% - 188px);
+  transform: translateX(-50%);
   pointer-events: auto;
 }
 .survivor-focus-actions button {
   display: grid;
   grid-template-columns: auto auto;
   align-items: center;
-  gap: 2px;
-  min-width: 36px;
-  min-height: 28px;
-  padding: 3px 5px;
-  border: 1px solid rgba(255,255,255,.4);
-  border-radius: 7px;
-  background: rgba(9, 15, 27, .72);
+  gap: 3px;
+  min-width: 48px;
+  min-height: 24px;
+  padding: 3px 7px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 11px;
+  background: rgba(10, 14, 24, .72);
   color: #f4f7ff;
-  box-shadow: 0 2px 5px rgba(0,0,0,.32);
+  box-shadow: inset 0 1px 2px rgba(255,255,255,.08), 0 2px 5px rgba(0,0,0,.32);
   font: inherit;
 }
-.survivor-focus-actions button.active { border-color: #ffe071; background: rgba(98, 73, 22, .88); box-shadow: 0 0 9px rgba(255,224,113,.55); }
-.survivor-focus-actions button small { font-size: .52rem; font-weight: 800; white-space: nowrap; }
+.survivor-focus-actions button.active { border-color: #ffe071; background: linear-gradient(90deg, rgba(98, 73, 22, .92), rgba(10, 14, 24, .9)); box-shadow: inset 3px 0 0 #ffe071, 0 0 9px rgba(255,224,113,.35); }
+.survivor-focus-actions button small { font-size: .56rem; font-weight: 800; white-space: nowrap; }
 .survivor-focus-actions button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .survivor-canvas.survivor-time-stopped { filter: grayscale(1); } }
 

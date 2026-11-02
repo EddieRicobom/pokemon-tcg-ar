@@ -147,6 +147,7 @@ const ATTACK_TREE_NAMES: Record<MoveCategory, readonly [string, string, string, 
   orbit: ['Orbital afiado', 'Órbita larga', 'Rotação veloz', 'Constelação ofensiva'],
   foco: ['Mira firme', 'Linha longa', 'Respiração calma', 'Disparo colossal'],
   rapido: ['Tiro ligeiro', 'Passo largo', 'Gatilho nervoso', 'Rajada relâmpago'],
+  teleporte: ['Salto preciso', 'Passo distante', 'Recarga ágil', 'Onda de choque'],
 };
 
 function attackTree(category: MoveCategory): SurvivorUpgrade[] {
@@ -169,7 +170,7 @@ export const CHARGE_FOCUS_RATE_ID = 'charge-focus-rate';
 export const CHARGE_RUSH_LENGTH_ID = 'charge-rush-length';
 const CHARGE_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: CHARGE_FOCUS_RATE_ID, family: 'ataque', rarity: 'raro', name: 'Concentração profunda', description: 'A barra do Foco enche 25% mais rápido enquanto você segura.', for: ['foco'], maxLevels: 2, apply: () => {} },
-  { id: CHARGE_RUSH_LENGTH_ID, family: 'ataque', rarity: 'raro', name: 'Fôlego de corrida', description: '+25% de duração dos teleportes do Rápido (quatro cartas dobram o tempo).', for: ['rapido'], maxLevels: 4, apply: () => {} },
+  { id: CHARGE_RUSH_LENGTH_ID, family: 'ataque', rarity: 'raro', name: 'Passo preparado', description: '-17% na recarga do Teleporte carregado por carta.', for: ['teleporte'], maxLevels: 3, apply: () => {} },
 ];
 
 /** Especializações enxutas por tipo. Todas têm limite de uma escolha para não soterrar as builds em bônus lineares. */
