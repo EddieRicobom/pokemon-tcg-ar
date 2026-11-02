@@ -23,7 +23,6 @@ import {
   DIGITAL_DANGER_COOLDOWN_MS,
   DIGITAL_DANGER_MAX,
   DIGITAL_DANGER_UNLOCK_MS,
-  MAGNET_PICKUP_RADIUS_CAP,
   normalizeSurvivorXp,
   survivorDirectDamageMultiplier,
   survivorProjectileOpacity,
@@ -1433,13 +1432,15 @@ describe('artefatos temporários', () => {
     expect(s.player.attackTimerMs).toBe(800);
   });
 
-  it('limita o raio temporário do Ímã para manter alguma movimentação', () => {
+  it('Ímã ativo traz toda a XP, buffs e artefatos do mapa para o jogador', () => {
     const s = quiet(createSurvivorState(12, { kindCount: 1 }));
-    s.player.pickupRadius = 70;
     s.player.artifactMagnetMs = 8000;
-    s.orbs.push({ id: 906, x: s.player.x + MAGNET_PICKUP_RADIUS_CAP + 1, y: s.player.y, value: 8 });
+    s.orbs.push({ id: 906, x: s.player.x + 3000, y: s.player.y + 2000, value: 8 });
+    s.artifacts.push({ id: 907, x: s.player.x - 3000, y: s.player.y - 2000, kind: 'speed' });
     stepSurvivor(s, { dx: 0, dy: 0 }, 16);
-    expect(s.orbs).toHaveLength(1);
-    expect(MAGNET_PICKUP_RADIUS_CAP).toBe(90);
+    expect(s.orbs).toHaveLength(0);
+    expect(s.artifacts).toHaveLength(0);
+    expect(s.player.xp).toBeGreaterThan(0);
+    expect(s.player.artifactSpeedMs).toBe(8000);
   });
 });

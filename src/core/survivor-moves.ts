@@ -125,7 +125,7 @@ export const CATEGORY_BASE: Record<MoveCategory, CategoryBase> = {
   area: { damage: 15, cooldownMs: 1100, range: 190, radius: 48 },
   cone: { damage: 11, cooldownMs: 720, range: 185, radius: 0 },
   orbit: { damage: 7, cooldownMs: 520, range: 0, radius: 82 },
-  foco: { damage: 17, cooldownMs: 1300, range: 230, radius: 26 },
+  foco: { damage: 17, cooldownMs: 3900, range: 230, radius: 26 },
   rapido: { damage: 5, cooldownMs: 420, range: 150, radius: 0 },
 };
 
@@ -166,6 +166,8 @@ export const AVERAGE_STAT = 75;
 const AVERAGE: BaseStats = { hp: AVERAGE_STAT, attack: AVERAGE_STAT, defense: AVERAGE_STAT, spAttack: AVERAGE_STAT, spDefense: AVERAGE_STAT, speed: AVERAGE_STAT };
 /** Ajuste de ritmo do modo: mantém as proporções dos stats reais sem deixar as ondas iniciais sufocarem os golpes mais fracos. */
 export const SURVIVOR_DAMAGE_FACTOR = 1.2;
+/** Ataques automáticos normais causam metade do dano base; golpes de carga compensam esse corte ao serem liberados. */
+export const BASIC_ATTACK_DAMAGE_FACTOR = 0.5;
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
 const round1 = (n: number): number => Math.round(n * 10) / 10;
@@ -188,7 +190,7 @@ export function attackProfile(move: SurvivorMove, stats: BaseStats | null): Atta
   const base = CATEGORY_BASE[move.category];
   const farther = move.effect === 'atravessar' && move.category !== 'projetil' ? 1.15 : 1;
   return {
-    damage: round1(base.damage * factor(offenseOf(move.category, s), 0.6, 0.65, 1.7) * SURVIVOR_DAMAGE_FACTOR * CATEGORY_DAMAGE_FACTOR[move.category] * (TYPE_DAMAGE_FACTOR[move.type] ?? 1)),
+    damage: round1(base.damage * factor(offenseOf(move.category, s), 0.6, 0.65, 1.7) * SURVIVOR_DAMAGE_FACTOR * BASIC_ATTACK_DAMAGE_FACTOR * CATEGORY_DAMAGE_FACTOR[move.category] * (TYPE_DAMAGE_FACTOR[move.type] ?? 1)),
     cooldownMs: Math.round(base.cooldownMs / factor(s.speed, 0.35, 0.75, 1.35)),
     range: round1(base.range * farther),
     radius: round1(base.radius * factor(s.defense, 0.35, 0.8, 1.5) * farther),

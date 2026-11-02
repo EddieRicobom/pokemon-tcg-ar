@@ -47,7 +47,7 @@ describe('quem ganha golpe de carga', () => {
       const move = moveFor(['normal'], s);
       if (move.category !== 'foco' && move.category !== 'rapido') continue;
       const p = attackProfile(move, s);
-      expect(p.damage).toBeGreaterThan(3);
+      expect(p.damage).toBeGreaterThan(1.5);
       expect(p.cooldownMs).toBeGreaterThan(300);
       expect(p.range).toBeGreaterThan(100);
     }
@@ -87,6 +87,7 @@ describe('regras da barra', () => {
   });
 
   it('Rápido: andar enche, apertar da metade em diante inicia os teleportes; durante eles a barra não enche', () => {
+    expect(RUSH_FILL_DISTANCE).toBe(15_000);
     const c = createSurvivorCharge();
     stepChargeMeter(c, 'rapido', false, RUSH_FILL_DISTANCE / 4, 16);
     expect(stepChargeMeter(c, 'rapido', true, 0, 16)).toBeNull(); // só um quarto
@@ -169,7 +170,8 @@ describe('no jogo', () => {
   it('Rápido: andar enche a barra; com ela cheia, o golpe vira teleportes que acertam forte e protegem por 2 s', () => {
     const state = run('rapido');
     hold(state, 1000, { dx: 1 });
-    expect(state.charge.level).toBeGreaterThan(0.05);
+    expect(state.charge.level).toBeGreaterThan(0);
+    expect(state.charge.level).toBeLessThan(0.02);
     expect(state.charge.moveRatio).toBeGreaterThan(0.5);
 
     state.charge.level = 1;

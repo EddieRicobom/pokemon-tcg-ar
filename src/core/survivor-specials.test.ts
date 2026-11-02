@@ -218,4 +218,25 @@ describe('orbe e especiais da Torre', () => {
     expect(vacuum.orbs).toHaveLength(0);
     expect(vacuum.player.xp).toBeGreaterThan(0);
   });
+
+  it('oferece Relógio parado e Núcleo gravitacional, cada um com duas especializações próprias', () => {
+    expect(Object.keys(SURVIVOR_SPECIALS)).toEqual(expect.arrayContaining(['stasis', 'gravity']));
+
+    const stasis = armed('stasis');
+    const frozen = enemy(1, stasis.player.x + 80, stasis.player.y, { speed: 100 });
+    stasis.enemies = [frozen];
+    stepSurvivor(stasis, { ...idle, special: true }, 100);
+    expect(stasis.special.activeMs).toBeGreaterThan(3000);
+    expect(frozen.x).toBe(stasis.player.x + 80);
+    stasis.special.phase = 'branch-choice';
+    expect(chooseSurvivorSpecialBranch(stasis, 'stasis-collapse')).toBe(true);
+
+    const gravity = armed('gravity');
+    gravity.special.phase = 'branch-choice';
+    expect(chooseSurvivorSpecialBranch(gravity, 'gravity-repel')).toBe(true);
+    const pushed = enemy(2, gravity.player.x + 80, gravity.player.y, { speed: 0 });
+    gravity.enemies = [pushed];
+    stepSurvivor(gravity, { ...idle, special: true }, 100);
+    expect(pushed.x).toBeGreaterThan(gravity.player.x + 80);
+  });
 });

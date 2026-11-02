@@ -48,7 +48,7 @@ export const FOCUS_SHOT_SPEED_MULTIPLIER = 0.5;
 export const FOCUS_SHOT_PIERCE = 2;
 
 /** Rápido: distância andada (px do jogo) para encher a barra do zero. */
-export const RUSH_FILL_DISTANCE = 1500;
+export const RUSH_FILL_DISTANCE = 15_000;
 /** Rápido: a troca só ativa com a barra a partir da metade. */
 export const RUSH_MIN_RELEASE = 0.5;
 export const RUSH_BASE_MS = 10_000;

@@ -104,6 +104,21 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'bonk-feather-fall', family: 'movimento', rarity: 'lendario', name: 'Queda de pluma', description: 'A gravidade do salto cai 22%.', bonkOnly: true, maxLevels: 1, apply: (p) => { p.bonkGravityFactor = Math.min(p.bonkGravityFactor ?? 1, 0.78); } },
 ] as const;
 
+/** Opções extras da Poké Ball: mecânicas próprias, sem repetir versões menores de buffs de outras raridades. */
+const POKE_BALL_EXTRA_UPGRADES: readonly SurvivorUpgrade[] = [
+  { id: 'opening-strike', family: 'ataque', rarity: 'normal', name: 'Abertura precisa', description: 'O primeiro acerto em cada inimigo causa +18% de dano.', maxLevels: 2, apply: () => {} },
+  { id: 'last-stand', family: 'ataque', rarity: 'normal', name: 'Último esforço', description: 'Abaixo de 30% de vida, seu golpe causa +22% de dano.', maxLevels: 2, apply: () => {} },
+  { id: 'close-quarters', family: 'ataque', rarity: 'normal', name: 'Combate aproximado', description: 'Contra inimigos próximos, seu golpe causa +12% de dano.', maxLevels: 2, apply: () => {} },
+  { id: 'long-shot', family: 'ataque', rarity: 'normal', name: 'Tiro distante', description: 'Contra inimigos longe, seu golpe causa +12% de dano.', maxLevels: 2, apply: () => {} },
+  { id: 'slow-field', family: 'elemento', rarity: 'normal', name: 'Campo pegajoso', description: 'Todo acerto deixa o inimigo lento por 0,25 s.', maxLevels: 2, apply: () => {} },
+  { id: 'orb-medicine', family: 'defesa', rarity: 'normal', name: 'Orbes medicinais', description: 'Cada orbe de XP coletado recupera 1 de vida.', maxLevels: 2, apply: () => {} },
+  { id: 'trophy-medicine', family: 'defesa', rarity: 'normal', name: 'Tropeço curativo', description: 'Cada inimigo derrotado recupera 2 de vida.', maxLevels: 2, apply: () => {} },
+  { id: 'contact-guard', family: 'defesa', rarity: 'normal', name: 'Guarda de impacto', description: 'Recebe 12% menos dano de contato e explosões.', icon: '🛡', maxLevels: 2, apply: () => {} },
+  { id: 'projectile-guard', family: 'defesa', rarity: 'normal', name: 'Guarda de disparo', description: 'Recebe 12% menos dano de projéteis inimigos.', icon: '🛡', maxLevels: 2, apply: () => {} },
+  { id: 'escape-window', family: 'movimento', rarity: 'normal', name: 'Janela de fuga', description: 'Depois de sofrer dano, fica invulnerável 25% mais tempo.', maxLevels: 2, apply: () => {} },
+  { id: 'retaliation-wave', family: 'ataque', rarity: 'normal', name: 'Onda de resposta', description: 'Ao sofrer dano, fere inimigos bem próximos.', maxLevels: 1, apply: () => {} },
+];
+
 /** Dez opções de dano direto: as seis especializadas só aparecem para a forma de golpe compatível. */
 const DAMAGE_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'damage-spark', family: 'ataque', rarity: 'normal', name: 'Faísca ofensiva', description: '+8% de dano no golpe principal.', maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.08)); } },
@@ -272,6 +287,7 @@ const ANCESTRAL_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
 
 export const SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   ...GENERIC_SURVIVOR_UPGRADES,
+  ...POKE_BALL_EXTRA_UPGRADES,
   ...DAMAGE_SURVIVOR_UPGRADES,
   ...ATTACK_TREE_UPGRADES,
   ...CHARGE_UPGRADES,
