@@ -45,10 +45,16 @@ export function createSurvivorCharge(): SurvivorChargeState {
   return { level: 0, holding: false, rushMs: 0, rushTotalMs: 0, moveRatio: 0, lastRelease: 0, teleportHoldMs: 0, teleportCooldownMs: 0, rapidShotsPending: 0, rapidShotDelayMs: 0 };
 }
 
-/** Foco: segurar o botão enche ~30% por segundo (pouco mais de 3 s até o máximo). */
-export const FOCUS_CHARGE_PER_SEC = 0.3;
+/** Foco: segurar o botão enche ~27% por segundo (menos de 4 s até o máximo). */
+export const FOCUS_CHARGE_PER_SEC = 0.27;
 /** Foco: cada acerto do disparo normal adianta um pouco a carga. */
 export const FOCUS_HIT_CHARGE = 0.02;
+/**
+ * Foco: escala do dano do feixe. Medido com stats iguais, o feixe cheio fazia 7 a 9 vezes o dano por segundo de um projétil
+ * (alvo único e multidão) e, nas corridas, vivia 15% a 30% mais que a média das formas com mais de 1.000 abates; com a escala
+ * (e a carga um pouco mais lenta) a sobrevivência fica no grupo e o golpe segue pesado e lento (ver `docs/SURVIVOR_BALANCE_PRINCIPLES.md`).
+ */
+export const FOCUS_BEAM_DAMAGE_SCALE = 0.22;
 /** Foco: velocidade do Pokémon enquanto segura a carga. */
 export const FOCUS_SLOW_MULTIPLIER = 0.45;
 /** Foco: abaixo disso, soltar o botão não dispara (a carga fica guardada). */
@@ -153,9 +159,9 @@ export interface FocusBeam {
 /** O feixe do Foco conforme a barra: curto e fino com pouca carga; cheio, um canhão que cruza a arena. */
 export function focusBeam(level: number, range: number): FocusBeam {
   const l = Math.max(0, Math.min(1, level));
-  if (l >= 1) return { tier: 3, name: 'Canhão total', damageMultiplier: 12, halfWidth: 46, length: 2400, stunMs: 900, slowMs: 2500 };
-  if (l >= 0.5) return { tier: 2, name: 'Feixe pesado', damageMultiplier: round1(3 + 5 * l), halfWidth: 28, length: round1(range * 2.2), stunMs: 0, slowMs: 1500 };
-  return { tier: 1, name: 'Raio curto', damageMultiplier: round1(1.5 + 3 * l), halfWidth: 16, length: round1(range * 1.5), stunMs: 0, slowMs: 0 };
+  if (l >= 1) return { tier: 3, name: 'Canhão total', damageMultiplier: round1(12 * FOCUS_BEAM_DAMAGE_SCALE), halfWidth: 46, length: 2400, stunMs: 900, slowMs: 2500 };
+  if (l >= 0.5) return { tier: 2, name: 'Feixe pesado', damageMultiplier: round1((3 + 5 * l) * FOCUS_BEAM_DAMAGE_SCALE), halfWidth: 28, length: round1(range * 2.2), stunMs: 0, slowMs: 1500 };
+  return { tier: 1, name: 'Raio curto', damageMultiplier: round1((1.5 + 3 * l) * FOCUS_BEAM_DAMAGE_SCALE), halfWidth: 16, length: round1(range * 1.5), stunMs: 0, slowMs: 0 };
 }
 
 /** Duração dos teleportes do Rápido: proporcional à barra (metade = 5 s) e aumentada pelas cartas até o dobro. */

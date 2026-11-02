@@ -160,7 +160,7 @@ describe('no jogo', () => {
     const far = dummy(2, x + 900, y);
     const aside = dummy(3, x + 100, y + 220);
     state.enemies.push(near, far, aside);
-    hold(state, 4000, { charge: true });
+    hold(state, 5000, { charge: true });
     expect(state.charge.level).toBe(1);
     expect(far.hp).toBe(far.maxHp); // o disparo normal não chega tão longe
     const events = hold(state, 50, { charge: false });

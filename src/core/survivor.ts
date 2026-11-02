@@ -942,12 +942,14 @@ export function survivorProjectileOpacity(distance: number): number {
   return survivorDirectDamageMultiplier(distance);
 }
 
-/** O golpe Rápido é feito de tiros fracos e frequentes: fica fora deste corte (ver `hitEnemy`). */
+/**
+ * Acima de 2 ataques por segundo, cada golpe perde dano de forma contínua (expoente 0,7): o dano por segundo continua
+ * subindo com a cadência, só com retornos decrescentes, e uma carta de recarga nunca piora o golpe.
+ * A Rajada (três tiros por ciclo) e o Teleporte (golpe de hold) ficam fora deste corte (ver `hitEnemy`).
+ */
 export function survivorRapidAttackDamageMultiplier(player: Pick<SurvivorPlayer, 'attackCooldownMs'>): number {
   const attacksPerSecond = 1000 / Math.max(1, player.attackCooldownMs);
-  if (attacksPerSecond > 3) return 0.25;
-  if (attacksPerSecond > 2) return 0.5;
-  return 1;
+  return attacksPerSecond <= 2 ? 1 : Math.pow(2 / attacksPerSecond, 0.7);
 }
 
 /** Aplica apenas o efeito do tipo secundário, com intensidade menor e sem upgrades do golpe principal. */

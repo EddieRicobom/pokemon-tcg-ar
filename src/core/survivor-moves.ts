@@ -172,21 +172,27 @@ export const CATEGORY_BASE: Record<MoveCategory, CategoryBase> = {
   teleporte: { damage: 12, cooldownMs: 1500, range: 240, radius: 54 },
 };
 
-/** Multiplicadores situacionais: golpes que exigem proximidade recebem mais retorno por exposição. */
+/**
+ * Multiplicadores situacionais: golpes que exigem proximidade recebem mais retorno por exposição.
+ * Calibrados com `scripts/survivor-forms.eval.ts` (stats iguais, sobrevivência primeiro); ver `docs/SURVIVOR_BALANCE_PRINCIPLES.md`.
+ */
 export const CATEGORY_DAMAGE_FACTOR: Record<MoveCategory, number> = {
   projetil: 1,
-  aura: 1.22,
+  aura: 1.6,
   area: 1,
   cone: 1.2,
   orbit: 1.32,
   foco: 1,
-  rapido: 1,
+  rapido: 1.35,
   teleporte: 1,
 };
 
-/** Pequenas compensações para tipos que dependem de exposição ou controle para causar dano. */
+/**
+ * Pequenas compensações para tipos que dependem de exposição ou controle para causar dano.
+ * Inseto não tem fator: o eco de enxame já soma 20% e, com o fator antigo de 1,14, o tipo liderava cinco das oito formas
+ * na matriz tipo × forma (1,35× a 2,4× a mediana dos 18 tipos).
+ */
 export const TYPE_DAMAGE_FACTOR: Partial<Record<PokemonType, number>> = {
-  bug: 1.14,
   grass: 1.06,
   fighting: 1.12,
   ice: 1.10,

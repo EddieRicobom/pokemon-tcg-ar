@@ -66,13 +66,17 @@ describe('golpes da Torre: elemento pelo tipo, forma e números pelos stats', ()
     expect(dps('area')).toBeLessThan(dps('projetil'));
   });
 
-  it('compensa inseto, gelo e lutador sem ultrapassar o dano de área', () => {
+  it('compensa grama, gelo e lutador; inseto não leva fator porque o eco de enxame já o compensa', () => {
     const stats = { hp: 75, attack: 75, defense: 75, spAttack: 75, spDefense: 75, speed: 75 };
     const normal = attackProfile(moveFor(['normal'], stats), stats).damage;
-    expect(attackProfile(moveFor(['bug'], stats), stats).damage).toBeGreaterThan(attackProfile(moveFor(['grass'], stats), stats).damage);
+    const orbitNormal = attackProfile({ ...moveFor(['normal'], stats), category: 'orbit' }, stats).damage;
+    expect(attackProfile(moveFor(['bug'], stats), stats).damage).toBe(orbitNormal);
+    expect(attackProfile(moveFor(['grass'], stats), stats).damage).toBeGreaterThan(attackProfile(moveFor(['bug'], stats), stats).damage);
     expect(attackProfile(moveFor(['ice'], stats), stats).damage).toBeGreaterThan(normal);
     expect(attackProfile(moveFor(['fighting'], stats), stats).damage).toBeGreaterThan(normal);
-    expect(attackProfile(moveFor(['fighting'], stats), stats).damage).toBeLessThan(attackProfile({ ...moveFor(['normal'], stats), category: 'area' }, stats).damage);
+    // O cone acerta uma linha e a área só 15% nos alvos secundários: o golpe do cone pode passar um pouco do da área, mas não 20%.
+    const area = attackProfile({ ...moveFor(['normal'], stats), category: 'area' }, stats).damage;
+    expect(attackProfile(moveFor(['fighting'], stats), stats).damage).toBeLessThan(area * 1.2);
   });
 
   it('os números seguem os stats: rápido recarrega antes, Atq. Esp. alto bate mais, HP alto tem mais vida', () => {
