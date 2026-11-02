@@ -529,9 +529,9 @@ const chosenSpecial = computed(() => state.value?.special.selected ? SURVIVOR_SP
 const timeStopped = computed(() => state.value?.special.selected === 'stasis' && (state.value.special.activeMs ?? 0) > 0);
 const targetPriority = computed(() => state.value?.player.targetPriority ?? null);
 const TARGET_FOCUS = [
-  { id: 'boss', icon: '👑', label: 'Chefões', description: 'Prioriza chefões e Pokémon de treinadores.' },
-  { id: 'healer', icon: '♥', label: 'Curadores', description: 'Prioriza suportes que curam aliados.' },
-  { id: 'lowest-hp', icon: '▾', label: 'Menor vida', description: 'Prioriza o inimigo com menor porcentagem de vida.' },
+  { id: 'boss', icon: '👑', label: 'Chefões', short: 'Chefe', description: 'Prioriza chefões e Pokémon de treinadores.' },
+  { id: 'healer', icon: '♥', label: 'Curadores', short: 'Cura', description: 'Prioriza suportes que curam aliados.' },
+  { id: 'lowest-hp', icon: '▾', label: 'Menor vida', short: 'Fraco', description: 'Prioriza o inimigo com menor porcentagem de vida.' },
 ] as const;
 function setTargetPriority(priority: typeof TARGET_FOCUS[number]['id']): void {
   const s = state.value;
@@ -2908,8 +2908,8 @@ onBeforeUnmount(() => {
         <div v-if="timeStopped" class="survivor-stasis-overlay" aria-hidden="true"><span>⏸ TEMPO PARADO</span></div>
 
         <div v-if="ready && state && !summary && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen" class="survivor-focus-actions" role="group" aria-label="Foco do ataque automático">
-          <button v-for="option in TARGET_FOCUS" :key="option.id" type="button" :class="{ active: targetPriority === option.id }" :aria-pressed="targetPriority === option.id" :title="option.description" @pointerdown.stop.prevent @click.stop="setTargetPriority(option.id)">
-            <span aria-hidden="true">{{ option.icon }}</span><small>{{ option.label }}</small>
+          <button v-for="option in TARGET_FOCUS" :key="option.id" type="button" :class="{ active: targetPriority === option.id }" :aria-pressed="targetPriority === option.id" :aria-label="`Foco: ${option.label}. ${option.description}`" :title="option.description" @pointerdown.stop.prevent @click.stop="setTargetPriority(option.id)">
+            <span aria-hidden="true">{{ option.icon }}</span><small aria-hidden="true">{{ option.short }}</small>
           </button>
         </div>
 
