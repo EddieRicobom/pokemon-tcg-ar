@@ -229,3 +229,8 @@ Revisão do fluxo Escanear → AR (câmera, alvo, rastreamento, liberação, cic
 - Justiça de combate: golpes de área prendem a posição atual do alvo, desenham o círculo no chão por 1,5 s e só então verificam se ele permaneceu ali. O marcador e o tamanho dos projéteis seguem também nos instantâneos do anfitrião para o convidado ver a mesma ameaça.
 - Cobertura: os testes puros cobrem transferência da ficha, telegráfico/escape da área e a sincronização; `typecheck`, esses testes focados, build com `BASE_PATH=/pokemon-tcg-ar/` e `verify-dist` passaram localmente. Nesta máquina, a suíte completa parou numa tentativa de conexão do happy-dom a `localhost:3000`, fora deste fluxo; o CI continua sendo a confirmação da suíte integral. Toque, tamanho visual e desempenho continuam pendentes de aparelho físico.
 
+## Ligas de Alola, Galar e Paldea (01/11/2026)
+
+- Alola (VII), Galar (VIII) e Paldea (IX) entram na Liga, completando as nove gerações: oito Ginásios, Elite 4 e Campeão com 6 Pokémon cada (Alola: capitães e kahunas, Elite com Hala, Olivia, Acerola e Kahili, Campeão Kukui; Galar: Milo a Raihan, Bea, Marnie, Bede e Gordie, Campeão Leon; Paldea: Katy a Grusha, Rika, Poppy, Larry e Hassel, Campeã Geeta). Insígnias 48–71, `TOTAL_BADGES` = 72; nada salvo antes muda.
+- As 24 insígnias novas têm forma, metal e esmalte próprios (`badge-shapes.ts`) e entram na maleta 3D e no SVG sem código novo.
+- Pendente: conferir fora do sandbox se os sprites dos 39 treinadores novos existem em `play.pokemonshowdown.com/sprites/trainers/` (o proxy bloqueia o Showdown); typecheck e testes só rodaram no CI.

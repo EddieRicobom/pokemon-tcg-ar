@@ -349,6 +349,126 @@ export const SPECIES_NAMES: Readonly<Record<number, string>> = {
   692: 'Clauncher',
   708: 'Phantump',
   714: 'Noibat',
+  // Alola, Galar e Paldea.
+  20: 'Raticate',
+  38: 'Ninetales',
+  53: 'Persian',
+  73: 'Tentacruel',
+  105: 'Marowak',
+  128: 'Tauros',
+  143: 'Snorlax',
+  171: 'Lanturn',
+  184: 'Azumarill',
+  210: 'Granbull',
+  213: 'Shuckle',
+  216: 'Teddiursa',
+  217: 'Ursaring',
+  232: 'Donphan',
+  235: 'Smeargle',
+  369: 'Relicanth',
+  398: 'Staraptor',
+  435: 'Skuntank',
+  454: 'Toxicroak',
+  526: 'Gigalith',
+  537: 'Seismitoad',
+  549: 'Lilligant',
+  555: 'Darmanitan',
+  628: 'Braviary',
+  671: 'Florges',
+  676: 'Furfrou',
+  687: 'Malamar',
+  727: 'Incineroar',
+  730: 'Primarina',
+  733: 'Toucannon',
+  734: 'Yungoos',
+  735: 'Gumshoos',
+  737: 'Charjabug',
+  738: 'Vikavolt',
+  739: 'Crabrawler',
+  740: 'Crabominable',
+  741: 'Oricorio',
+  743: 'Ribombee',
+  745: 'Lycanroc',
+  746: 'Wishiwashi',
+  748: 'Toxapex',
+  750: 'Mudsdale',
+  752: 'Araquanid',
+  754: 'Lurantis',
+  756: 'Shiinotic',
+  757: 'Salandit',
+  758: 'Salazzle',
+  760: 'Bewear',
+  761: 'Bounsweet',
+  762: 'Steenee',
+  763: 'Tsareena',
+  764: 'Comfey',
+  770: 'Palossand',
+  771: 'Pyukumuku',
+  775: 'Komala',
+  776: 'Turtonator',
+  777: 'Togedemaru',
+  778: 'Mimikyu',
+  781: 'Dhelmise',
+  812: 'Rillaboom',
+  823: 'Corviknight',
+  829: 'Gossifleur',
+  830: 'Eldegoss',
+  833: 'Chewtle',
+  834: 'Drednaw',
+  838: 'Carkol',
+  839: 'Coalossal',
+  840: 'Applin',
+  841: 'Flapple',
+  842: 'Appletun',
+  844: 'Sandaconda',
+  845: 'Cramorant',
+  846: 'Arrokuda',
+  847: 'Barraskewda',
+  849: 'Toxtricity',
+  850: 'Sizzlipede',
+  851: 'Centiskorch',
+  853: 'Grapploct',
+  855: 'Polteageist',
+  858: 'Hatterene',
+  861: 'Grimmsnarl',
+  862: 'Obstagoon',
+  865: "Sirfetch'd",
+  866: 'Mr. Rime',
+  867: 'Runerigus',
+  869: 'Alcremie',
+  873: 'Frosmoth',
+  874: 'Stonjourner',
+  875: 'Eiscue',
+  877: 'Morpeko',
+  879: 'Copperajah',
+  884: 'Duraludon',
+  887: 'Dragapult',
+  917: 'Tarountula',
+  918: 'Spidops',
+  919: 'Nymble',
+  920: 'Lokix',
+  928: 'Smoliv',
+  929: 'Dolliv',
+  930: 'Arboliva',
+  939: 'Bellibolt',
+  940: 'Wattrel',
+  941: 'Kilowattrel',
+  956: 'Espathra',
+  959: 'Tinkaton',
+  960: 'Wiglett',
+  961: 'Wugtrio',
+  970: 'Glimmora',
+  971: 'Greavard',
+  972: 'Houndstone',
+  973: 'Flamigo',
+  974: 'Cetoddle',
+  975: 'Cetitan',
+  976: 'Veluza',
+  980: 'Clodsire',
+  981: 'Farigiraf',
+  982: 'Dudunsparce',
+  983: 'Kingambit',
+  998: 'Baxcalibur',
 };
 
 export const speciesName = (dex: number): string => SPECIES_NAMES[dex] ?? `Pokémon nº ${dex}`;
@@ -404,7 +524,7 @@ export const CHAMPION: Challenge = {
   defeat: 'Você é o novo Campeão! Seu nome e o de seus Pokémon vão para o Hall da Fama.',
 };
 
-export type RegionId = 'sinnoh' | 'kanto' | 'johto' | 'hoenn' | 'unova' | 'kalos';
+export type RegionId = 'sinnoh' | 'kanto' | 'johto' | 'hoenn' | 'unova' | 'kalos' | 'alola' | 'galar' | 'paldea';
 export interface LeagueRegion {
   id: RegionId;
   name: string;
@@ -415,7 +535,8 @@ export interface LeagueRegion {
   champion: Challenge;
 }
 
-// Equipes de exibição inspiradas em FireRed/LeafGreen, HeartGold/SoulSilver, Ruby/Sapphire, Black/White e X/Y.
+// Equipes de exibição inspiradas em FireRed/LeafGreen, HeartGold/SoulSilver, Ruby/Sapphire, Black/White, X/Y, Sun/Moon,
+// Sword/Shield e Scarlet/Violet (Alola e Galar não têm Elite 4 nos jogos: o app usa kahunas/capitães e o Campeonato).
 // Todos os treinadores levam 6 Pokémon; a progressão e a dificuldade são próprias do app, como em Sinnoh.
 type LeaderData = readonly [string, PokemonType, readonly number[], string?, string?];
 function makeRegion(id: RegionId, name: string, generation: string, badgeOffset: number, spriteBase: string, gyms: readonly LeaderData[], elite: readonly LeaderData[], champion: LeaderData, championRole = 'Campeão'): LeagueRegion {
@@ -435,10 +556,11 @@ function makeRegion(id: RegionId, name: string, generation: string, badgeOffset:
 }
 
 /**
- * Kalos não tem sprites de treinador no repositório da Smogon: usa os do servidor do Pokémon Showdown (endereço
- * completo; `trainerSpriteUrl` aceita os dois). Conferidos em 2026-10-24.
+ * Kalos, Alola, Galar e Paldea não têm sprites de treinador no repositório da Smogon: usam os do servidor do Pokémon
+ * Showdown (endereço completo; `trainerSpriteUrl` aceita os dois). Kalos conferido em 2026-10-24; Alola, Galar e Paldea
+ * ainda precisam ser conferidos fora do sandbox (o proxy bloqueia o Showdown).
  */
-const KALOS_SPRITES = 'https://play.pokemonshowdown.com/sprites/trainers/';
+const SHOWDOWN_SPRITES = 'https://play.pokemonshowdown.com/sprites/trainers/';
 
 export const LEAGUE_REGIONS: readonly LeagueRegion[] = [
   { id: 'sinnoh', name: 'Sinnoh', generation: 'IV', badgeOffset: 0, gyms: GYMS, elite: ELITE, champion: CHAMPION },
@@ -502,7 +624,7 @@ export const LEAGUE_REGIONS: readonly LeagueRegion[] = [
     ['Caitlin', 'psychic', [518, 561, 576, 606, 579, 282]],
     ['Marshal', 'fighting', [533, 538, 539, 560, 620, 534]],
   ], ['Alder', 'bug', [617, 626, 621, 584, 589, 637]]),
-  makeRegion('kalos', 'Kalos', 'VI', 40, KALOS_SPRITES, [
+  makeRegion('kalos', 'Kalos', 'VI', 40, SHOWDOWN_SPRITES, [
     ['Viola', 'bug', [283, 664, 665, 284, 12, 666], 'Besouro', 'viola'],
     ['Grant', 'rock', [703, 688, 696, 698, 689, 697], 'Penhasco', 'grant'],
     ['Korrina', 'fighting', [619, 674, 67, 675, 701, 448], 'Estrondo', 'korrina'],
@@ -517,6 +639,51 @@ export const LEAGUE_REGIONS: readonly LeagueRegion[] = [
     ['Wikstrom', 'steel', [679, 680, 476, 212, 707, 681], undefined, 'wikstrom'],
     ['Drasna', 'dragon', [714, 334, 621, 691, 706, 715], undefined, 'drasna'],
   ], ['Diantha', 'fairy', [701, 697, 699, 711, 706, 282], undefined, 'diantha'], 'Campeã'),
+  makeRegion('alola', 'Alola', 'VII', 48, SHOWDOWN_SPRITES, [
+    ['Ilima', 'normal', [734, 735, 235, 775, 20, 676], 'Normalium', 'ilima'],
+    ['Lana', 'water', [171, 771, 746, 748, 752, 730], 'Aquium', 'lana'],
+    ['Kiawe', 'fire', [757, 758, 105, 776, 663, 59], 'Pyrium', 'kiawe'],
+    ['Mallow', 'grass', [761, 762, 763, 754, 756, 764], 'Florium', 'mallow'],
+    ['Sophocles', 'electric', [777, 737, 738, 26, 702, 125], 'Electrium', 'sophocles'],
+    ['Mina', 'fairy', [743, 468, 707, 210, 184, 700], 'Feérium', 'mina'],
+    ['Hapu', 'ground', [750, 423, 450, 330, 623, 770], 'Terrium', 'hapu'],
+    ['Nanu', 'dark', [53, 262, 229, 553, 625, 359], 'Obscurium', 'nanu'],
+  ], [
+    ['Hala', 'fighting', [57, 62, 297, 740, 760, 68], undefined, 'hala'],
+    ['Olivia', 'rock', [369, 703, 476, 526, 76, 745], undefined, 'olivia'],
+    ['Acerola', 'ghost', [302, 354, 426, 781, 778, 442], undefined, 'acerola'],
+    ['Kahili', 'flying', [227, 169, 628, 630, 741, 733], undefined, 'kahili'],
+  ], ['Kukui', 'normal', [745, 38, 143, 462, 628, 727], undefined, 'kukui']),
+  makeRegion('galar', 'Galar', 'VIII', 56, SHOWDOWN_SPRITES, [
+    ['Milo', 'grass', [829, 830, 840, 841, 842, 812], 'Cultivo', 'milo'],
+    ['Nessa', 'water', [833, 834, 846, 847, 279, 119], 'Maré', 'nessa'],
+    ['Kabu', 'fire', [850, 851, 38, 59, 839, 324], 'Chama', 'kabu'],
+    ['Allister', 'ghost', [867, 563, 94, 855, 778, 477], 'Máscara', 'allister'],
+    ['Opal', 'fairy', [869, 110, 303, 858, 468, 683], 'Laço', 'opal'],
+    ['Melony', 'ice', [875, 873, 555, 866, 131, 460], 'Geada', 'melony'],
+    ['Piers', 'dark', [560, 687, 435, 862, 849, 510], 'Punk', 'piers'],
+    ['Raihan', 'dragon', [526, 330, 844, 884, 706, 334], 'Escama', 'raihan'],
+  ], [
+    ['Bea', 'fighting', [237, 675, 865, 853, 68, 701], undefined, 'bea'],
+    ['Marnie', 'dark', [877, 510, 560, 454, 861, 845], undefined, 'marnie'],
+    ['Bede', 'fairy', [303, 78, 282, 858, 700, 683], undefined, 'bede'],
+    ['Gordie', 'rock', [688, 689, 213, 874, 838, 839], undefined, 'gordie'],
+  ], ['Leon', 'fire', [681, 887, 612, 537, 866, 6], undefined, 'leon']),
+  makeRegion('paldea', 'Paldea', 'IX', 64, SHOWDOWN_SPRITES, [
+    ['Katy', 'bug', [919, 920, 917, 918, 216, 217], 'Confeito', 'katy'],
+    ['Brassius', 'grass', [928, 929, 930, 548, 185, 549], 'Tela', 'brassius'],
+    ['Iono', 'electric', [940, 941, 939, 404, 405, 429], 'Transmissão', 'iono'],
+    ['Kofu', 'water', [960, 961, 976, 739, 740, 73], 'Mercado', 'kofu'],
+    ['Larry', 'normal', [775, 982, 128, 143, 241, 531], 'Expediente', 'larry'],
+    ['Ryme', 'ghost', [971, 972, 778, 849, 354, 94], 'Rima', 'ryme'],
+    ['Tulip', 'psychic', [981, 956, 282, 671, 65, 196], 'Cosmético', 'tulip'],
+    ['Grusha', 'ice', [974, 975, 614, 873, 615, 362], 'Descida', 'grusha'],
+  ], [
+    ['Rika', 'ground', [340, 323, 232, 51, 980, 473], undefined, 'rika'],
+    ['Poppy', 'steel', [879, 437, 823, 462, 959, 707], undefined, 'poppy'],
+    ['Larry', 'flying', [973, 398, 334, 227, 630, 823], undefined, 'larry'],
+    ['Hassel', 'dragon', [715, 691, 612, 841, 998, 445], undefined, 'hassel'],
+  ], ['Geeta', 'normal', [956, 673, 976, 713, 983, 970], undefined, 'geeta'], 'Campeã'),
 ];
 /** Quantas insígnias existem ao todo (8 por região). */
 export const TOTAL_BADGES = LEAGUE_REGIONS.length * 8;
@@ -534,7 +701,7 @@ export function challengeById(id: string): Challenge | null {
 }
 
 export interface LeagueProgress {
-  /** Insígnias globais: Sinnoh 0–7, Kanto 8–15, Johto 16–23, Hoenn 24–31, Unova 32–39, Kalos 40–47. */
+  /** Insígnias globais: Sinnoh 0–7, Kanto 8–15, Johto 16–23, Hoenn 24–31, Unova 32–39, Kalos 40–47, Alola 48–55, Galar 56–63, Paldea 64–71. */
   badges: number[];
   /** Corridas e títulos das regiões novas; os campos antigos abaixo continuam sendo Sinnoh. */
   regions?: Partial<Record<RegionId, { eliteStreak: number; championWins: number }>>;

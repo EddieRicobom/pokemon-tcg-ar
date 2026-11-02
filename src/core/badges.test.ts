@@ -121,7 +121,7 @@ describe('geometria das insígnias', () => {
 });
 
 describe('maletas regionais', () => {
-  it('48 insígnias ligadas aos ginásios, com índices e encaixes isolados', () => {
+  it('72 insígnias ligadas aos ginásios, com índices e encaixes isolados', () => {
     expect(ALL_BADGE_DESIGNS).toHaveLength(TOTAL_BADGES);
     for (const r of LEAGUE_REGIONS) {
       const designs = ALL_BADGE_DESIGNS.slice(r.badgeOffset, r.badgeOffset + 8);

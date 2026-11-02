@@ -6,8 +6,8 @@
 
 import { SURVIVOR_OBJECTIVE_IDS } from './survivor-objectives';
 
-/** Insígnias da Liga ao todo: 8 por região, das Gerações I a VI (`TOTAL_BADGES` em `league.ts`). */
-const MAX_BADGES = 48;
+/** Insígnias da Liga ao todo: 8 por região, das Gerações I a IX (`TOTAL_BADGES` em `league.ts`). */
+const MAX_BADGES = 72;
 
 export const TRAINER_VERSION = 1;
 
