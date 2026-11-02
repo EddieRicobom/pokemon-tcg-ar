@@ -9,15 +9,20 @@ import type { SurvivorUpgrade } from './survivor-types';
 
 export const round1 = (n: number): number => Math.round(n * 10) / 10;
 export const SURVIVOR_RARITY_ORDER: readonly SurvivorUpgradeRarity[] = ['normal', 'raro', 'lendario', 'ancestral'];
+/** O teto acompanha os bônus ofensivos, que passaram a conceder o triplo do dano percentual. */
+export const SURVIVOR_ATTACK_DAMAGE_CAP = 180;
+
+function addAttackDamagePercent(player: SurvivorPlayer, percent: number): void {
+  player.attackDamage = Math.min(SURVIVOR_ATTACK_DAMAGE_CAP, round1(player.attackDamage * (1 + percent / 100)));
+}
 
 const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   {
-    id: 'power', family: 'ataque', rarity: 'raro', name: 'Golpe mais forte', description: '+20% de dano no ataque.', valueRange: [16, 24],
-    describeValue: (m, value) => ({ name: 'Golpe mais forte', description: `${m.name}: +${value}% de dano, até 60.` }),
-    apply: (p, value = 20) => {
-      // teto absoluto em 60 para o dano (o teste espera 60)
-      if (p.attackDamage >= 60) return;
-      p.attackDamage = Math.min(60, round1(p.attackDamage * (1 + value / 100)));
+    id: 'power', family: 'ataque', rarity: 'raro', name: 'Golpe mais forte', description: '+60% de dano no ataque.', valueRange: [48, 72],
+    describeValue: (m, value) => ({ name: 'Golpe mais forte', description: `${m.name}: +${value}% de dano, até 180.` }),
+    apply: (p, value = 60) => {
+      if (p.attackDamage >= SURVIVOR_ATTACK_DAMAGE_CAP) return;
+      addAttackDamagePercent(p, value);
     },
   },
   {
@@ -81,7 +86,7 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'velocity', family: 'ataque', rarity: 'normal', name: 'Velocidade de saída', description: '+18% na velocidade dos projéteis.', for: ['projetil'], maxLevels: 1, valueRange: [15, 21], describeValue: (_m, value) => ({ name: 'Velocidade de saída', description: `+${value}% na velocidade dos projéteis.` }), apply: (p, value = 18) => { p.projectileSpeed = round1(p.projectileSpeed * (1 + value / 100)); } },
   { id: 'renewal', family: 'defesa', rarity: 'normal', name: 'Renovação', description: '+15 de vida máxima e cura 15.', maxLevels: 1, valueRange: [12, 18], describeValue: (_m, value) => ({ name: 'Renovação', description: `+${value} de vida máxima e cura ${value}.` }), apply: (p, value = 15) => { p.maxHp += value; p.hp = Math.min(p.maxHp, p.hp + value); } },
   { id: 'tempo', family: 'movimento', rarity: 'normal', name: 'Passo cadenciado', description: '+8% de velocidade de movimento.', maxLevels: 1, valueRange: [6, 10], describeValue: (_m, value) => ({ name: 'Passo cadenciado', description: `+${value}% de velocidade de movimento.` }), apply: (p, value = 8) => { p.speed = round1(p.speed * (1 + value / 100)); } },
-  { id: 'resonance', family: 'ataque', rarity: 'normal', name: 'Ressonância', description: '+10% de dano no golpe principal.', maxLevels: 1, valueRange: [8, 12], describeValue: (_m, value) => ({ name: 'Ressonância', description: `+${value}% de dano no golpe principal, até 60.` }), apply: (p, value = 10) => { p.attackDamage = Math.min(60, round1(p.attackDamage * (1 + value / 100))); } },
+  { id: 'resonance', family: 'ataque', rarity: 'normal', name: 'Ressonância', description: '+30% de dano no golpe principal.', maxLevels: 1, valueRange: [24, 36], describeValue: (_m, value) => ({ name: 'Ressonância', description: `+${value}% de dano no golpe principal, até 180.` }), apply: (p, value = 30) => { addAttackDamagePercent(p, value); } },
   { id: 'area-damage-30', family: 'ataque', rarity: 'normal', name: 'Estilhaço amplo', description: 'Aumenta o dano em área secundário para 30%.', for: ['area'], maxLevels: 1, apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.30); } },
   { id: 'area-damage-50', family: 'ataque', rarity: 'raro', name: 'Onda expandida', description: 'Aumenta o dano em área secundário para 50%.', for: ['area'], maxLevels: 1, requires: 'area-damage-30', apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.50); } },
   { id: 'area-damage-75', family: 'ataque', rarity: 'lendario', name: 'Campo devastador', description: 'Aumenta o dano em área secundário para 75%.', for: ['area'], maxLevels: 1, requires: 'area-damage-50', apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.75); } },
@@ -106,31 +111,31 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
 
 /** Opções extras da Poké Ball: mecânicas próprias, sem repetir versões menores de buffs de outras raridades. */
 const POKE_BALL_EXTRA_UPGRADES: readonly SurvivorUpgrade[] = [
-  { id: 'opening-strike', family: 'ataque', rarity: 'normal', name: 'Abertura precisa', description: 'O primeiro acerto em cada inimigo causa +18% de dano.', maxLevels: 2, apply: () => {} },
-  { id: 'last-stand', family: 'ataque', rarity: 'normal', name: 'Último esforço', description: 'Abaixo de 30% de vida, seu golpe causa +22% de dano.', maxLevels: 2, apply: () => {} },
-  { id: 'close-quarters', family: 'ataque', rarity: 'normal', name: 'Combate aproximado', description: 'Contra inimigos próximos, seu golpe causa +12% de dano.', maxLevels: 2, apply: () => {} },
-  { id: 'long-shot', family: 'ataque', rarity: 'normal', name: 'Tiro distante', description: 'Contra inimigos longe, seu golpe causa +12% de dano.', maxLevels: 2, apply: () => {} },
+  { id: 'opening-strike', family: 'ataque', rarity: 'normal', name: 'Abertura precisa', description: 'O primeiro acerto em cada inimigo causa +54% de dano.', maxLevels: 2, apply: () => {} },
+  { id: 'last-stand', family: 'ataque', rarity: 'normal', name: 'Último esforço', description: 'Abaixo de 30% de vida, seu golpe causa +66% de dano.', maxLevels: 2, apply: () => {} },
+  { id: 'close-quarters', family: 'ataque', rarity: 'normal', name: 'Combate aproximado', description: 'Contra inimigos próximos, seu golpe causa +36% de dano.', maxLevels: 2, apply: () => {} },
+  { id: 'long-shot', family: 'ataque', rarity: 'normal', name: 'Tiro distante', description: 'Contra inimigos longe, seu golpe causa +36% de dano.', maxLevels: 2, apply: () => {} },
+  { id: 'threat-hunter', family: 'ataque', rarity: 'raro', name: 'Caçador de ameaças', description: 'Contra Chefões e Pokémon de treinadores, seu golpe causa +30% de dano.', maxLevels: 2, apply: () => {} },
   { id: 'slow-field', family: 'elemento', rarity: 'normal', name: 'Campo pegajoso', description: 'Todo acerto deixa o inimigo lento por 0,25 s.', maxLevels: 2, apply: () => {} },
   { id: 'orb-medicine', family: 'defesa', rarity: 'normal', name: 'Orbes medicinais', description: 'Cada orbe de XP coletado recupera 1 de vida.', maxLevels: 2, apply: () => {} },
-  { id: 'trophy-medicine', family: 'defesa', rarity: 'normal', name: 'Tropeço curativo', description: 'Cada inimigo derrotado recupera 2 de vida.', maxLevels: 2, apply: () => {} },
+  { id: 'trophy-medicine', family: 'defesa', rarity: 'normal', name: 'Tropeço curativo', description: 'Cada inimigo derrotado recupera 2 de vida.', maxLevels: 1, apply: () => {} },
   { id: 'contact-guard', family: 'defesa', rarity: 'normal', name: 'Guarda de impacto', description: 'Recebe 12% menos dano de contato e explosões.', icon: '🛡', maxLevels: 2, apply: () => {} },
   { id: 'projectile-guard', family: 'defesa', rarity: 'normal', name: 'Guarda de disparo', description: 'Recebe 12% menos dano de projéteis inimigos.', icon: '🛡', maxLevels: 2, apply: () => {} },
-  { id: 'escape-window', family: 'movimento', rarity: 'normal', name: 'Janela de fuga', description: 'Depois de sofrer dano, fica invulnerável 25% mais tempo.', maxLevels: 2, apply: () => {} },
   { id: 'retaliation-wave', family: 'ataque', rarity: 'normal', name: 'Onda de resposta', description: 'Ao sofrer dano, fere inimigos bem próximos.', maxLevels: 1, apply: () => {} },
 ];
 
 /** Dez opções de dano direto: as seis especializadas só aparecem para a forma de golpe compatível. */
 const DAMAGE_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
-  { id: 'damage-spark', family: 'ataque', rarity: 'normal', name: 'Faísca ofensiva', description: '+8% de dano no golpe principal.', maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.08)); } },
-  { id: 'damage-pressure', family: 'ataque', rarity: 'raro', name: 'Pressão ofensiva', description: '+12% de dano no golpe principal.', maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.12)); } },
-  { id: 'damage-momentum', family: 'ataque', rarity: 'raro', name: 'Momento de impacto', description: '+16% de dano no golpe principal.', maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.16)); } },
-  { id: 'damage-projectile', family: 'ataque', rarity: 'normal', name: 'Ponta de projétil', description: '+13% de dano de projéteis.', for: ['projetil'], maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.13)); } },
-  { id: 'damage-aura', family: 'ataque', rarity: 'normal', name: 'Pulso concentrado', description: '+14% de dano dos pulsos de aura.', for: ['aura'], maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.14)); } },
-  { id: 'damage-area', family: 'ataque', rarity: 'normal', name: 'Centro da explosão', description: '+15% de dano de explosões.', for: ['area'], maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.15)); } },
-  { id: 'damage-cone', family: 'ataque', rarity: 'normal', name: 'Fio do cone', description: '+15% de dano de golpes em cone.', for: ['cone'], maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.15)); } },
-  { id: 'damage-orbit', family: 'ataque', rarity: 'normal', name: 'Órbita cortante', description: '+16% de dano dos orbitais.', for: ['orbit'], maxLevels: 2, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.16)); } },
-  { id: 'damage-precision', family: 'ataque', rarity: 'raro', name: 'Precisão letal', description: '+18% de dano no golpe principal.', maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.18)); } },
-  { id: 'damage-overdrive', family: 'ataque', rarity: 'lendario', name: 'Sobrecarga de poder', description: '+22% de dano no golpe principal.', maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.22)); } },
+  { id: 'damage-spark', family: 'ataque', rarity: 'normal', name: 'Faísca ofensiva', description: '+24% de dano no golpe principal.', maxLevels: 2, apply: (p) => { addAttackDamagePercent(p, 24); } },
+  { id: 'damage-pressure', family: 'ataque', rarity: 'raro', name: 'Pressão ofensiva', description: '+36% de dano no golpe principal.', maxLevels: 2, apply: (p) => { addAttackDamagePercent(p, 36); } },
+  { id: 'damage-momentum', family: 'ataque', rarity: 'raro', name: 'Momento de impacto', description: '+48% de dano no golpe principal.', maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 48); } },
+  { id: 'damage-projectile', family: 'ataque', rarity: 'normal', name: 'Ponta de projétil', description: '+39% de dano de projéteis.', for: ['projetil'], maxLevels: 2, apply: (p) => { addAttackDamagePercent(p, 39); } },
+  { id: 'damage-aura', family: 'ataque', rarity: 'normal', name: 'Pulso concentrado', description: '+42% de dano dos pulsos de aura.', for: ['aura'], maxLevels: 2, apply: (p) => { addAttackDamagePercent(p, 42); } },
+  { id: 'damage-area', family: 'ataque', rarity: 'normal', name: 'Centro da explosão', description: '+45% de dano de explosões.', for: ['area'], maxLevels: 2, apply: (p) => { addAttackDamagePercent(p, 45); } },
+  { id: 'damage-cone', family: 'ataque', rarity: 'normal', name: 'Fio do cone', description: '+45% de dano de golpes em cone.', for: ['cone'], maxLevels: 2, apply: (p) => { addAttackDamagePercent(p, 45); } },
+  { id: 'damage-orbit', family: 'ataque', rarity: 'normal', name: 'Órbita cortante', description: '+48% de dano dos orbitais.', for: ['orbit'], maxLevels: 2, apply: (p) => { addAttackDamagePercent(p, 48); } },
+  { id: 'damage-precision', family: 'ataque', rarity: 'raro', name: 'Precisão letal', description: '+54% de dano no golpe principal.', maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 54); } },
+  { id: 'damage-overdrive', family: 'ataque', rarity: 'lendario', name: 'Sobrecarga de poder', description: '+66% de dano no golpe principal.', maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 66); } },
 ];
 
 /** Cada forma de ataque tem uma árvore de quatro degraus: poder, alcance, ritmo e finalização. */
@@ -150,10 +155,10 @@ function attackTree(category: MoveCategory): SurvivorUpgrade[] {
   const second = `attack-tree-${category}-2`;
   const third = `attack-tree-${category}-3`;
   return [
-    { id: root, family: 'ataque', rarity: 'normal', name: power, description: '+10% de dano nesta forma de golpe.', for: [category], maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.1)); } },
+    { id: root, family: 'ataque', rarity: 'normal', name: power, description: '+30% de dano nesta forma de golpe.', for: [category], maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 30); } },
     { id: second, family: 'ataque', rarity: 'raro', name: reach, description: '+15% de alcance ou raio nesta forma de golpe.', for: [category], requires: root, maxLevels: 1, apply: (p) => { improveReach(p, 1.15); } },
     { id: third, family: 'ataque', rarity: 'raro', name: cadence, description: '-12% no tempo entre ataques desta forma.', for: [category], requires: second, maxLevels: 1, apply: (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.88)); } },
-    { id: `attack-tree-${category}-4`, family: 'ataque', rarity: 'lendario', name: finale, description: '+20% de dano e +1 disparo/impacto desta forma.', for: [category], requires: third, maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.2)); p.shots = Math.min(5, p.shots + 1); } },
+    { id: `attack-tree-${category}-4`, family: 'ataque', rarity: 'lendario', name: finale, description: '+60% de dano e +1 disparo/impacto desta forma.', for: [category], requires: third, maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 60); p.shots = Math.min(5, p.shots + 1); } },
   ];
 }
 
@@ -179,38 +184,38 @@ function improveReach(p: SurvivorPlayer, factor: number): void {
 const TYPE_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   typeUpgrade('normal', 'normal-rhythm', 'Ritmo constante', '-10% na recarga do golpe principal.', (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.9)); }),
   typeUpgrade('normal', 'normal-adapt', 'Ataque adaptável', '+12% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.12); }),
-  typeUpgrade('fire', 'fire-brasa', 'Brasa viajante', 'Queimaduras do golpe principal causam +25% de dano.', (p) => { p.upgradeLevels['fire-brasa'] = 0; }),
-  typeUpgrade('fire', 'fire-combustion', 'Combustão controlada', '+12% de dano contra inimigos já queimando.', (p) => { p.upgradeLevels['fire-combustion'] = 0; }),
+  typeUpgrade('fire', 'fire-brasa', 'Brasa viajante', 'Queimaduras do golpe principal causam +75% de dano.', (p) => { p.upgradeLevels['fire-brasa'] = 0; }),
+  typeUpgrade('fire', 'fire-combustion', 'Combustão controlada', '+36% de dano contra inimigos já queimando.', (p) => { p.upgradeLevels['fire-combustion'] = 0; }),
   typeUpgrade('water', 'water-tide', 'Maré de retorno', 'Empurrões do golpe principal ficam 50% mais fortes.', (p) => { p.upgradeLevels['water-tide'] = 0; }),
   typeUpgrade('water', 'water-current', 'Corrente favorável', '+10% de velocidade de movimento.', (p) => { p.speed = round1(p.speed * 1.1); }),
-  typeUpgrade('electric', 'electric-arc', 'Arco residual', '+10% de dano contra inimigos molhados ou atordoados.', (p) => { p.upgradeLevels['electric-arc'] = 0; }),
-  typeUpgrade('electric', 'electric-capacitor', 'Capacitor', '+12% de dano do golpe principal.', (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.12)); }),
+  typeUpgrade('electric', 'electric-arc', 'Arco residual', '+30% de dano contra inimigos molhados ou atordoados.', (p) => { p.upgradeLevels['electric-arc'] = 0; }),
+  typeUpgrade('electric', 'electric-capacitor', 'Capacitor', '+36% de dano do golpe principal.', (p) => { addAttackDamagePercent(p, 36); }),
   typeUpgrade('grass', 'grass-roots', 'Raízes oportunistas', 'Acertos em inimigos semeados os atordoam por um instante.', (p) => { p.upgradeLevels['grass-roots'] = 0; }),
   typeUpgrade('grass', 'grass-harvest', 'Folhas amplas', '+18% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.18); }),
   typeUpgrade('ice', 'ice-deep-cold', 'Frio profundo', 'Congela com 2 acúmulos de frio, mantendo o intervalo por alvo.', (p) => { p.upgradeLevels['ice-deep-cold'] = 0; }),
-  typeUpgrade('ice', 'ice-shatter', 'Estilhaçar', '+15% de dano contra inimigos congelados.', (p) => { p.upgradeLevels['ice-shatter'] = 0; }),
+  typeUpgrade('ice', 'ice-shatter', 'Estilhaçar', '+45% de dano contra inimigos congelados.', (p) => { p.upgradeLevels['ice-shatter'] = 0; }),
   typeUpgrade('fighting', 'fighting-impact', 'Impacto firme', 'Empurrões do golpe principal ficam 50% mais fortes.', (p) => { p.upgradeLevels['fighting-impact'] = 0; }),
   typeUpgrade('fighting', 'fighting-stride', 'Passo de luta', '+12% de velocidade de movimento.', (p) => { p.speed = round1(p.speed * 1.12); }),
-  typeUpgrade('poison', 'poison-dose', 'Dose concentrada', 'Dano por veneno do golpe principal aumenta 25%.', (p) => { p.upgradeLevels['poison-dose'] = 0; }),
+  typeUpgrade('poison', 'poison-dose', 'Dose concentrada', 'Dano por veneno do golpe principal aumenta 75%.', (p) => { p.upgradeLevels['poison-dose'] = 0; }),
   typeUpgrade('poison', 'poison-cloud', 'Nuvem persistente', '+18% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.18); }),
-  typeUpgrade('ground', 'ground-aftershock', 'Abalo secundário', '+15% de dano contra inimigos atordoados.', (p) => { p.upgradeLevels['ground-aftershock'] = 0; }),
+  typeUpgrade('ground', 'ground-aftershock', 'Abalo secundário', '+45% de dano contra inimigos atordoados.', (p) => { p.upgradeLevels['ground-aftershock'] = 0; }),
   typeUpgrade('ground', 'ground-firm', 'Solo firme', '+20 de vida máxima e cura imediatamente.', (p) => { p.maxHp += 20; p.hp = Math.min(p.maxHp, p.hp + 20); }),
   typeUpgrade('flying', 'flying-tailwind', 'Vento de cauda', '+12% de velocidade de movimento.', (p) => { p.speed = round1(p.speed * 1.12); }),
   typeUpgrade('flying', 'flying-gust', 'Rajada de abertura', '+15% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.15); }),
-  typeUpgrade('psychic', 'psychic-focus', 'Foco mental', '+12% de dano do golpe principal.', (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.12)); }),
+  typeUpgrade('psychic', 'psychic-focus', 'Foco mental', '+36% de dano do golpe principal.', (p) => { addAttackDamagePercent(p, 36); }),
   typeUpgrade('psychic', 'psychic-field', 'Campo de distorção', 'Projéteis inimigos próximos ficam 10% mais lentos.', (p) => { p.upgradeLevels['psychic-field'] = 0; }),
-  typeUpgrade('bug', 'bug-formation', 'Formação de enxame', 'Ecos de enxame passam de 20% para 25% do dano.', (p) => { p.upgradeLevels['bug-formation'] = 0; }),
+  typeUpgrade('bug', 'bug-formation', 'Formação de enxame', 'Ecos de enxame passam de 20% para 35% do dano.', (p) => { p.upgradeLevels['bug-formation'] = 0; }),
   typeUpgrade('bug', 'bug-web', 'Teia de contenção', 'Inimigos atingidos ficam lentos por mais tempo.', (p) => { p.upgradeLevels['bug-web'] = 0; }),
-  typeUpgrade('rock', 'rock-fragment', 'Fragmentação', '+15% de dano do golpe principal.', (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.15)); }),
+  typeUpgrade('rock', 'rock-fragment', 'Fragmentação', '+45% de dano do golpe principal.', (p) => { addAttackDamagePercent(p, 45); }),
   typeUpgrade('rock', 'rock-armor', 'Pele rochosa', '+20 de vida máxima e cura imediatamente.', (p) => { p.maxHp += 20; p.hp = Math.min(p.maxHp, p.hp + 20); }),
-  typeUpgrade('ghost', 'ghost-haunt', 'Assombração', 'Ecos espectrais passam de 20% para 25% do dano.', (p) => { p.upgradeLevels['ghost-haunt'] = 0; }),
+  typeUpgrade('ghost', 'ghost-haunt', 'Assombração', 'Ecos espectrais passam de 20% para 35% do dano.', (p) => { p.upgradeLevels['ghost-haunt'] = 0; }),
   typeUpgrade('ghost', 'ghost-phase', 'Travessia espectral', '+15% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.15); }),
-  typeUpgrade('dragon', 'dragon-pressure', 'Pressão dracônica', '+15% de dano contra chefes.', (p) => { p.upgradeLevels['dragon-pressure'] = 0; }),
+  typeUpgrade('dragon', 'dragon-pressure', 'Pressão dracônica', '+45% de dano contra chefes.', (p) => { p.upgradeLevels['dragon-pressure'] = 0; }),
   typeUpgrade('dragon', 'dragon-cadence', 'Cadência ancestral', '-10% na recarga do golpe principal.', (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.9)); }),
-  typeUpgrade('dark', 'dark-predation', 'Predação', '+12% de dano contra inimigos abaixo de metade da vida.', (p) => { p.upgradeLevels['dark-predation'] = 0; }),
+  typeUpgrade('dark', 'dark-predation', 'Predação', '+36% de dano contra inimigos abaixo de metade da vida.', (p) => { p.upgradeLevels['dark-predation'] = 0; }),
   typeUpgrade('dark', 'dark-thirst', 'Sede disciplinada', 'Roubo de vida cura até 3 por ativação.', (p) => { p.upgradeLevels['dark-thirst'] = 0; }),
   typeUpgrade('steel', 'steel-plate', 'Placa reativa', 'Reduz 12% do dano recebido.', (p) => { p.upgradeLevels['steel-plate'] = 0; }),
-  typeUpgrade('steel', 'steel-precision', 'Precisão de aço', '+12% de dano do golpe principal.', (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.12)); }),
+  typeUpgrade('steel', 'steel-precision', 'Precisão de aço', '+36% de dano do golpe principal.', (p) => { addAttackDamagePercent(p, 36); }),
   typeUpgrade('fairy', 'fairy-charm', 'Encanto protetor', '+15 de vida máxima e cura imediatamente.', (p) => { p.maxHp += 15; p.hp = Math.min(p.maxHp, p.hp + 15); }),
   typeUpgrade('fairy', 'fairy-pulse', 'Pulso reconfortante', 'Roubo de vida cura até 3 por ativação.', (p) => { p.upgradeLevels['fairy-pulse'] = 0; }),
 ];
@@ -227,10 +232,10 @@ function elementTree(type: PokemonType): SurvivorUpgrade[] {
   const second = `element-tree-${type}-2`;
   const third = `element-tree-${type}-3`;
   return [
-    { id: root, type, family: 'elemento', rarity: 'normal', name: `${name} sintonizado`, description: `+9% de dano para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.09)); } },
+    { id: root, type, family: 'elemento', rarity: 'normal', name: `${name} sintonizado`, description: `+27% de dano para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 27); } },
     { id: second, type, family: 'elemento', rarity: 'raro', name: `${name} expansivo`, description: `+14% de alcance ou raio para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, requires: root, maxLevels: 1, apply: (p) => { improveReach(p, 1.14); } },
     { id: third, type, family: 'elemento', rarity: 'raro', name: `${name} acelerado`, description: `-10% no tempo entre ataques de ${name.toLocaleLowerCase('pt-BR')}.`, requires: second, maxLevels: 1, apply: (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.9)); } },
-    { id: `element-tree-${type}-4`, type, family: 'elemento', rarity: 'lendario', name: `Ápice de ${name}`, description: `+18% de dano e +1 impacto para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, requires: third, maxLevels: 1, apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.18)); p.shots = Math.min(5, p.shots + 1); } },
+    { id: `element-tree-${type}-4`, type, family: 'elemento', rarity: 'lendario', name: `Ápice de ${name}`, description: `+54% de dano e +1 impacto para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, requires: third, maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 54); p.shots = Math.min(5, p.shots + 1); } },
   ];
 }
 
@@ -250,8 +255,8 @@ const ANCESTRAL_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   },
   {
     id: 'ancestral-strike', family: 'ataque', rarity: 'ancestral', name: 'Golpe ancestral',
-    description: '+25% de dano (até 60) e +12% de alcance ou raio.', maxLevels: 1,
-    apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.25)); improveReach(p, 1.12); },
+    description: '+75% de dano (até 180) e +12% de alcance ou raio.', maxLevels: 1,
+    apply: (p) => { addAttackDamagePercent(p, 75); improveReach(p, 1.12); },
   },
   {
     id: 'ancestral-flow', family: 'movimento', rarity: 'ancestral', name: 'Fluxo ancestral',
@@ -280,8 +285,8 @@ const ANCESTRAL_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   },
   {
     id: 'ancestral-precision', family: 'ataque', rarity: 'ancestral', name: 'Precisão ancestral',
-    description: '+20% de dano e +25% de chance de crítico.', maxLevels: 1,
-    apply: (p) => { p.attackDamage = Math.min(60, round1(p.attackDamage * 1.2)); p.critChance = Math.min(0.4, (p.critChance ?? 0) + 0.25); },
+    description: '+60% de dano e +25% de chance de crítico.', maxLevels: 1,
+    apply: (p) => { addAttackDamagePercent(p, 60); p.critChance = Math.min(0.4, (p.critChance ?? 0) + 0.25); },
   },
 ];
 
