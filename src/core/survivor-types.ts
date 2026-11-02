@@ -179,10 +179,11 @@ export const SURVIVOR_SUPPORT_RARE_OFFER_CHANCE = 0.3;
 export const SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE = 0.18;
 /** No máximo três Pokébolas digitais podem ser encontradas em uma corrida. */
 export const MAX_DIGITAL_POKEBALLS_PER_RUN = 3;
-/** A ameaça só começa depois que a corrida já tem ritmo e o jogador teve tempo de aprender o mapa. */
-export const DIGITAL_DANGER_UNLOCK_MS = 180_000;
+/** Só uma corrida esmagadoramente fácil depois de 10 min pode atrair o Perigo Digital. */
+export const DIGITAL_DANGER_UNLOCK_MS = 600_000;
 export const DIGITAL_DANGER_MAX = 100;
-export const DIGITAL_DANGER_COOLDOWN_MS = 90_000;
+/** Depois da convocação, há seis minutos completos para a corrida respirar. */
+export const DIGITAL_DANGER_COOLDOWN_MS = 360_000;
 export const DIGITAL_DANGER_VISIBLE_RADIUS = 520;
 
 /** Grau do inimigo: `comum` (os de sempre), `elite` (do treinador do minuto 5+) e `chefao` (do 20º minuto e do infinito). */
@@ -302,7 +303,7 @@ export interface SurvivorProjectile {
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
-  /** `beam`: feixe do Foco (de `fromX/fromY` a `toX/toY`, meia largura em `r`). `rush`: teleporte do Rápido. */
+  /** `beam`: feixe do Foco (de `fromX/fromY` a `toX/toY`, meia largura em `r`). `rush`: teleporte carregado. */
   kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal' | 'beam' | 'rush' | 'defeat';
   x: number;
   y: number;
@@ -394,7 +395,7 @@ export interface SurvivorTypeAffinity {
 export interface SurvivorState {
   lastHit?: SurvivorFinalHit;
   special: SurvivorSpecialState;
-  /** Barra dos golpes de carga (Foco e Rápido, `core/survivor-charge.ts`); fica parada nos outros golpes. */
+  /** Estado de Foco, Rajada e Teleporte (`core/survivor-charge.ts`); fica parado nos outros golpes. */
   charge: SurvivorChargeState;
   rng: Rng;
   /** Semente original desta corrida, usada também para objetivos determinísticos. */
@@ -507,8 +508,10 @@ export interface SurvivorEvolutionOption {
 export interface SurvivorInput {
   /** Ativação solicitada uma única vez pelo botão ou teclado. */
   special?: boolean;
-  /** Botão de carga apertado agora (segurar conta): Foco enche segurando e dispara ao soltar; Rápido ativa ao apertar. */
+  /** Botão de carga apertado agora: Foco e Teleporte resolvem ao soltar; Rajada é automática. */
   charge?: boolean;
+  /** Cancela um hold de Teleporte sem transformá-lo em soltura. */
+  cancelCharge?: boolean;
   /** Vetor de direção do analógico/arraste; não precisa estar normalizado (0,0 = parado). */
   dx: number;
   dy: number;
@@ -616,7 +619,7 @@ export type SurvivorEvent =
   | { type: 'hypotheticalTypeActivated'; secondaryType: PokemonType }
   | { type: 'evolve'; dexId: number; name: string }
   | { type: 'secondAttack'; name: string }
-  /** Golpe de carga solto: feixe do Foco (com o nome do nível) ou início dos teleportes do Rápido. */
+  /** Golpe de carga solto: feixe do Foco ou um único Teleporte carregado. */
   | { type: 'chargeRelease'; style: ChargeStyle; name: string; level: number }
   /** Um apoio assumiu uma evolução real; ele continua sem vida, hitbox ou upgrades do protagonista. */
   | { type: 'supportEvolve'; dexId: number; name: string }

@@ -35,7 +35,7 @@ export * from './survivor-types';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
-import { createSurvivorCharge, distanceToSegment, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, RUSH_HIT_RADIUS, RUSH_INVULN_MS, RUSH_REFERENCE_SPEED, RUSH_TELEPORT_DAMAGE_MULTIPLIER, RUSH_TELEPORT_EVERY_MS, RUSH_TELEPORT_RANGE, rushDamageTakenMultiplier, stepChargeMeter } from './survivor-charge';
+import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RUSH_REFERENCE_SPEED, stepChargeMeter, TELEPORT_FULL_WAVE_RADIUS, TELEPORT_HIT_RADIUS, TELEPORT_RANGE } from './survivor-charge';
 import type { ChargeStyle } from './survivor-charge';
 import { survivorProjectileLook } from './survivor-projectile-power';
 import { healersReaching, healShare, SUPPORT_HEAL_RADIUS } from './survivor-heal';
@@ -1054,7 +1054,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   switch (move.effect) {
     case 'queimar':
       e.burnMs = EFFECT_MS.burn;
-      e.burnDps = Math.max(e.burnDps ?? 0, round1(environmentalDamage * (move === p.move && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.6125 : 0.35)));
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(finalDamage * (move === p.move && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.6125 : 0.35)));
       break;
     case 'lentidao':
       e.slowMs = move === p.move && move.type === 'bug' && hasUpgrade(p, 'bug-web') ? EFFECT_MS.slow + 700 : EFFECT_MS.slow;
@@ -1086,7 +1086,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   // Inseto e Fantasma atacam em dupla: um único eco visual e de dano por impacto, sem efeitos, cura ou recursão.
   if (allowFollowUp && (move.type === 'bug' || move.type === 'ghost') && e.hp > 0) {
     const enhancedEcho = move === p.move && ((move.type === 'bug' && hasUpgrade(p, 'bug-formation')) || (move.type === 'ghost' && hasUpgrade(p, 'ghost-haunt')));
-    const echoDamage = reducedDamage * (enhancedEcho ? 0.35 : 0.2);
+    const echoDamage = finalDamage * (enhancedEcho ? 0.35 : 0.2);
     e.hp -= echoDamage;
     state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: Math.max(10, e.radius * 1.8), color: move.color, ageMs: 0, lifeMs: 220 });
     state.fx.push({
@@ -1183,6 +1183,20 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
   }
 }
 
+/** Um dos três tiros da Rajada. A onda inteira preserva o DPS anterior, em vez de triplicá-lo. */
+function fireRapidShot(state: SurvivorState, target: SurvivorEnemy): void {
+  const p = state.player;
+  const angle = Math.atan2(target.y - p.y, target.x - p.x);
+  state.projectiles.push({
+    id: state.nextId++, x: p.x, y: p.y,
+    vx: Math.cos(angle) * p.projectileSpeed, vy: Math.sin(angle) * p.projectileSpeed,
+    damage: artifactDamage(state) * 0.62,
+    pierce: p.pierce + (p.move.effect === 'atravessar' ? 1 : 0), lifeMs: 1600, hit: [],
+    canChain: p.move.effect === 'saltar', size: p.projectileSize, move: p.move,
+    distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y), look: survivorProjectileLook(p),
+  });
+}
+
 /** Foco: um disparo largo e lento em linha reta, que atravessa alguns inimigos. */
 function fireFocusShot(state: SurvivorState, target: SurvivorEnemy): void {
   const p = state.player;
@@ -1230,34 +1244,43 @@ function fireFocusBeam(state: SurvivorState, level: number): string {
 }
 
 /** Rápido, durante a troca: teleporta para o inimigo mais próximo, acerta quem está em volta e fica 2 s sem levar dano. */
-function rushTeleport(state: SurvivorState): boolean {
+function releaseTeleport(state: SurvivorState, action: Extract<NonNullable<ReturnType<typeof stepChargeMeter>>, { kind: 'teleport-release' }>): boolean {
   const p = state.player;
-  const [target] = nearestEnemies(state, RUSH_TELEPORT_RANGE, 1);
-  if (!target) return false;
   const fromX = p.x;
   const fromY = p.y;
-  const angle = Math.atan2(target.y - p.y, target.x - p.x);
-  const past = target.radius + PLAYER_RADIUS + 6;
-  p.x = clamp(target.x + Math.cos(angle) * past, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
-  p.y = clamp(target.y + Math.sin(angle) * past, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
+  const angle = survivorAimAngle(p);
+  const distance = TELEPORT_RANGE * (0.45 + 0.55 * action.level);
+  p.x = clamp(p.x + Math.cos(angle) * distance, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
+  p.y = clamp(p.y + Math.sin(angle) * distance, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
   if (Math.abs(Math.cos(angle)) > 0.01) p.facing = Math.cos(angle) < 0 ? -1 : 1;
   p.aimAngle = angle;
-  const damage = artifactDamage(state) * RUSH_TELEPORT_DAMAGE_MULTIPLIER / BASIC_ATTACK_DAMAGE_FACTOR;
+  const damage = artifactDamage(state) * action.damageMultiplier / BASIC_ATTACK_DAMAGE_FACTOR;
   let hits = 0;
   for (const e of state.enemies) {
-    if (e.hp <= 0 || Math.hypot(e.x - target.x, e.y - target.y) > RUSH_HIT_RADIUS + e.radius) continue;
-    hitEnemy(state, e, damage, { x: target.x, y: target.y }, p.move, true, 0);
+    if (e.hp <= 0 || Math.hypot(e.x - p.x, e.y - p.y) > TELEPORT_HIT_RADIUS + e.radius) continue;
+    hitEnemy(state, e, damage, { x: p.x, y: p.y }, p.move, true, 0);
     hits++;
   }
   drain(state, hits, p.move);
-  p.invulnMs = Math.max(p.invulnMs, RUSH_INVULN_MS);
-  state.fx.push({ kind: 'rush', x: target.x, y: target.y, r: RUSH_HIT_RADIUS, color: p.move.color, ageMs: 0, lifeMs: 380, moveType: p.move.type, fromX, fromY, toX: p.x, toY: p.y });
+  p.invulnMs = Math.max(p.invulnMs, action.invulnMs);
+  if (action.wave) {
+    for (const e of state.enemies) {
+      if (e.hp <= 0 || Math.hypot(e.x - p.x, e.y - p.y) > TELEPORT_FULL_WAVE_RADIUS + e.radius) continue;
+      const resistance = e.boss ? 0.25 : e.trainerId !== undefined ? 0.5 : 1;
+      const dx = e.x - p.x;
+      const dy = e.y - p.y;
+      const length = Math.hypot(dx, dy) || 1;
+      e.x = clamp(e.x + dx / length * 180 * resistance, e.radius, ARENA_W - e.radius);
+      e.y = clamp(e.y + dy / length * 180 * resistance, e.radius, ARENA_H - e.radius);
+    }
+  }
+  state.fx.push({ kind: 'rush', x: p.x, y: p.y, r: action.wave ? TELEPORT_FULL_WAVE_RADIUS : TELEPORT_HIT_RADIUS, color: p.move.color, ageMs: 0, lifeMs: action.wave ? 520 : 380, moveType: p.move.type, fromX, fromY, toX: p.x, toY: p.y, ...(action.wave ? { count: 2 } : {}) });
   return true;
 }
 
 function chargeStyleOf(state: SurvivorState): ChargeStyle | null {
   const category = state.player.move.category;
-  return category === 'foco' || category === 'rapido' ? category : null;
+  return category === 'foco' || category === 'teleporte' ? category : null;
 }
 
 /** Ataque de um apoio: nasce sempre no jogador e usa o perfil congelado do Pokémon escolhido. */
@@ -1267,7 +1290,7 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
   const damage = round1(profile.damage * support.damageFactor);
   const range = profile.range;
   const radius = profile.radius;
-  if (move.category === 'projetil' || move.category === 'foco' || move.category === 'rapido') {
+  if (move.category === 'projetil' || move.category === 'foco' || move.category === 'rapido' || move.category === 'teleporte') {
     const target = nearestEnemies(state, range, 1)[0];
     if (!target) return false;
     const angle = Math.atan2(target.y - p.y, target.x - p.x);
@@ -1315,12 +1338,22 @@ function attack(state: SurvivorState): boolean {
     fireFocusShot(state, target);
     return true;
   }
-  if (move.category === 'projetil' || move.category === 'rapido') {
+  if (move.category === 'projetil') {
     const [target] = nearestEnemies(state, attackRange, 1);
     if (!target) return false;
     fireProjectiles(state, target);
     return true;
   }
+  if (move.category === 'rapido') {
+    const [target] = nearestEnemies(state, attackRange, 1);
+    if (!target) return false;
+    fireRapidShot(state, target);
+    state.charge.rapidShotsPending = RAPID_BURST_SHOTS - 1;
+    state.charge.rapidShotDelayMs = RAPID_BURST_SHOT_INTERVAL_MS;
+    return true;
+  }
+  // Teleporte não tem autoataque: a única ofensiva é a soltura deliberada do hold.
+  if (move.category === 'teleporte') return false;
   if (move.category === 'aura') {
     // A aura pulsa sempre (dá para ver o raio), mesmo sem ninguém dentro.
     const pulseRadius = p.attackRadius * 0.8;
@@ -1482,9 +1515,7 @@ function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalH
   const reduction = survivorDefenseReduction(p, kind);
   const contactGuard = kind === 'projétil' ? 0 : (p.upgradeLevels['contact-guard'] ?? 0) * 0.12;
   const projectileGuard = kind === 'projétil' ? (p.upgradeLevels['projectile-guard'] ?? 0) * 0.12 : 0;
-  // Rápido: quanto mais rápido o Pokémon se move, mais dano recebe.
-  const speedPenalty = p.move.category === 'rapido' ? rushDamageTakenMultiplier(state.charge.moveRatio) : 1;
-  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * speedPenalty * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)))) : 0;
+  const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)))) : 0;
   state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
   p.hp = Math.max(0, p.hp - effectiveDamage);
   const retaliation = p.upgradeLevels['retaliation-wave'] ?? 0;
@@ -1655,10 +1686,18 @@ function nearbyVisibleEnemyCount(state: SurvivorState): number {
   return state.enemies.filter((enemy) => enemy.hp > 0 && Math.hypot(enemy.x - p.x, enemy.y - p.y) <= DIGITAL_DANGER_VISIBLE_RADIUS).length;
 }
 
+/** Uma corrida dominante limpa a pressão sem perder vida nem ficar sem níveis. */
+function isOverwhelmingRun(state: SurvivorState, visibleEnemies: number): boolean {
+  const p = state.player;
+  const minutes = state.elapsedMs / 60_000;
+  const expectedKills = 100 + Math.floor(Math.max(0, minutes - 10) * 12);
+  return p.hp >= p.maxHp * 0.9 && p.level >= 12 && state.kills >= expectedKills && visibleEnemies <= 2;
+}
+
 /**
- * O medidor só pune uma espera segura: se há inimigos visíveis, o jogador pode
- * parar para mirar; se a tela fica vazia, a Torre chama atenção para impedir
- * que a corrida vire uma espera sem risco.
+ * O Perigo Digital é resposta a uma corrida muito fácil, não punição por parar.
+ * Depois de 10 min, HP alto, nível forte, muitas derrotas e tela limpa precisam
+ * permanecer juntos por tempo suficiente; qualquer pressão real drena a barra.
  */
 function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: number, trainerSpawnedThisStep: boolean, events: SurvivorEvent[]): void {
   if (state.over) return;
@@ -1668,16 +1707,15 @@ function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: n
     return;
   }
   const visibleEnemies = input.visibleEnemies ?? nearbyVisibleEnemyCount(state);
-  const moving = Math.hypot(input.dx, input.dy) > 0.15;
   const trainerActive = state.enemies.some((enemy) => enemy.hp > 0 && enemy.trainerId !== undefined);
   if (state.digitalDangerCooldownMs > 0 || trainerSpawnedThisStep || trainerActive) {
     state.digitalDanger = Math.max(0, state.digitalDanger - (dtMs / 1000) * 4);
     return;
   }
-  if (!moving && visibleEnemies === 0) {
-    state.digitalDanger = Math.min(DIGITAL_DANGER_MAX, state.digitalDanger + (dtMs / 1000) * 2.5);
+  if (isOverwhelmingRun(state, visibleEnemies)) {
+    state.digitalDanger = Math.min(DIGITAL_DANGER_MAX, state.digitalDanger + (dtMs / 1000) * 1.2);
   } else {
-    state.digitalDanger = Math.max(0, state.digitalDanger - (dtMs / 1000) * (moving ? 4 : 1.5));
+    state.digitalDanger = Math.max(0, state.digitalDanger - (dtMs / 1000) * 2.5);
   }
   if (state.digitalDanger < DIGITAL_DANGER_MAX) return;
 
@@ -1856,14 +1894,15 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   // Barra de carga: só anda com o golpe de Foco ou Rápido. A investida do especial não conta como corrida.
   const movedPx = state.special.selected === 'dash' && state.special.activeMs > 0 ? 0 : Math.hypot(p.x - beforeMoveX, p.y - beforeMoveY);
   state.charge.moveRatio = dt > 0 ? movedPx / dt / RUSH_REFERENCE_SPEED : 0;
-  const chargeBonus = chargeStyle === 'foco' ? (p.upgradeLevels[CHARGE_FOCUS_RATE_ID] ?? 0) : (p.upgradeLevels[CHARGE_RUSH_LENGTH_ID] ?? 0);
+  if (input.cancelCharge) cancelTeleportHold(state.charge);
+  const chargeBonus = chargeStyle === 'foco' ? (p.upgradeLevels[CHARGE_FOCUS_RATE_ID] ?? 0) : chargeStyle === 'teleporte' ? (p.upgradeLevels[CHARGE_RUSH_LENGTH_ID] ?? 0) : 0;
   const chargeAction = stepChargeMeter(state.charge, chargeStyle, input.charge === true, movedPx, dtMs, chargeBonus);
   if (chargeAction?.kind === 'focus-release') {
     const name = fireFocusBeam(state, chargeAction.level);
     events.push({ type: 'chargeRelease', style: 'foco', name, level: chargeAction.level });
-  } else if (chargeAction?.kind === 'rush-start') {
+  } else if (chargeAction?.kind === 'teleport-release') {
     p.attackTimerMs = 0;
-    events.push({ type: 'chargeRelease', style: 'rapido', name: 'Teleportes', level: chargeAction.level });
+    if (releaseTeleport(state, chargeAction)) events.push({ type: 'chargeRelease', style: 'teleporte', name: chargeAction.wave ? 'Onda total' : 'Teleporte', level: chargeAction.level });
   }
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
   if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + (p.regenPerSec ?? 0) * dt);
@@ -1980,10 +2019,17 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   // Autoataque com o golpe do tipo (projétil, aura ou área).
   p.attackTimerMs = Math.max(0, p.attackTimerMs - dtMs);
-  // Rápido com a barra solta: o golpe vira teleportes enquanto a troca durar.
-  if (chargeStyle === 'rapido' && state.charge.rushMs > 0) {
-    if (p.attackTimerMs <= 0 && rushTeleport(state)) p.attackTimerMs = RUSH_TELEPORT_EVERY_MS;
-  } else if (p.attackTimerMs <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
+  // Rajada: os dois tiros seguintes acontecem no tempo certo, sem duplicar p.shots no mesmo quadro.
+  if (p.move.category === 'rapido' && state.charge.rapidShotsPending > 0) {
+    state.charge.rapidShotDelayMs -= dtMs;
+    while (state.charge.rapidShotsPending > 0 && state.charge.rapidShotDelayMs <= 0) {
+      const [target] = nearestEnemies(state, p.attackRange, 1);
+      if (target) fireRapidShot(state, target);
+      state.charge.rapidShotsPending--;
+      state.charge.rapidShotDelayMs += RAPID_BURST_SHOT_INTERVAL_MS;
+    }
+  }
+  if (p.attackTimerMs <= 0 && state.charge.rapidShotsPending <= 0 && attack(state)) p.attackTimerMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
   if (p.move.category === 'orbit') stepOrbiters(state, dtMs);
   if (state.supports.length > 0) {
     // Formação visual: cada apoio tem uma posição própria e alcança o jogador

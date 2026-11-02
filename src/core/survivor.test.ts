@@ -179,22 +179,26 @@ describe('stepSurvivor', () => {
     expect(ARENA_H).toBe(5760);
   });
 
-  it('enche o Digital Danger apenas parado e sem inimigos visíveis', () => {
+  it('enche o Digital Danger só em uma corrida esmagadoramente fácil depois de dez minutos', () => {
     const s = quiet(createSurvivorState(101, { kindCount: 1 }));
     s.elapsedMs = DIGITAL_DANGER_UNLOCK_MS;
     s.special.phase = 'ready';
     s.nextTrainerAtMs = Number.POSITIVE_INFINITY;
     s.finalBossAtMs = Number.POSITIVE_INFINITY;
+    // Só estar com a tela limpa não é facilidade extrema.
     stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 10_000);
-    expect(s.digitalDanger).toBeCloseTo(25, 5);
+    expect(s.digitalDanger).toBe(0);
 
-    const beforeMoving = s.digitalDanger;
+    s.player.hp = s.player.maxHp;
+    s.player.level = 12;
+    s.kills = 200;
     stepSurvivor(s, { dx: 1, dy: 0, visibleEnemies: 0 }, 1_000);
-    expect(s.digitalDanger).toBeLessThan(beforeMoving);
+    expect(s.digitalDanger).toBeCloseTo(1.2, 5); // andar não pune uma boa corrida
 
-    const beforeVisible = s.digitalDanger;
-    stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 1 }, 1_000);
-    expect(s.digitalDanger).toBeLessThan(beforeVisible);
+    const beforePressure = s.digitalDanger;
+    s.player.hp = s.player.maxHp * 0.7;
+    stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 1_000);
+    expect(s.digitalDanger).toBeLessThan(beforePressure);
   });
 
   it('convoca dois Pokémon quando o Digital Danger chega ao máximo e entra em recarga', () => {
@@ -203,6 +207,9 @@ describe('stepSurvivor', () => {
     s.special.phase = 'ready';
     s.nextTrainerAtMs = Number.POSITIVE_INFINITY;
     s.finalBossAtMs = Number.POSITIVE_INFINITY;
+    s.player.hp = s.player.maxHp;
+    s.player.level = 12;
+    s.kills = 200;
     s.digitalDanger = DIGITAL_DANGER_MAX - 1;
     const events = stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 1_000);
     expect(events).toContainEqual(expect.objectContaining({ type: 'trainerSpawn', count: 2, trigger: 'digital-danger' }));

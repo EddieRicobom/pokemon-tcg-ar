@@ -39,7 +39,7 @@ const isInt = (v: unknown, lo: number, hi: number): v is number => isNum(v, lo, 
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 const TYPES = new Set<string>(POKEMON_TYPES);
 const isType = (v: unknown): v is PokemonType => typeof v === 'string' && TYPES.has(v);
-const CATEGORIES = new Set<MoveCategory>(['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido']);
+const CATEGORIES = new Set<MoveCategory>(['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte']);
 const EFFECTS = new Set<MoveEffect>(['queimar', 'lentidao', 'empurrar', 'saltar', 'atordoar', 'atravessar', 'roubar', 'nenhum']);
 const isCategory = (v: unknown): v is MoveCategory => typeof v === 'string' && CATEGORIES.has(v as MoveCategory);
 const isEffect = (v: unknown): v is MoveEffect => typeof v === 'string' && EFFECTS.has(v as MoveEffect);
