@@ -16,7 +16,7 @@ import type { PokemonType } from './pokemon-data';
  *
  * Sem stats (dado ausente), a forma é projétil e os números são os médios; `estimated` avisa a tela para dizer isso.
  */
-export type MoveCategory = 'projetil' | 'aura' | 'area' | 'cone' | 'orbit' | 'foco' | 'rapido' | 'teleporte';
+export type MoveCategory = 'projetil' | 'aura' | 'area' | 'cone' | 'orbit' | 'foco' | 'rapido' | 'teleporte' | 'trilha';
 export type MoveEffect = 'queimar' | 'lentidao' | 'empurrar' | 'saltar' | 'atordoar' | 'atravessar' | 'roubar' | 'nenhum';
 
 export interface BaseStats {
@@ -72,6 +72,7 @@ export const MOVE_CATEGORY_LABELS_PT: Record<MoveCategory, string> = {
   foco: 'foco (carga)',
   rapido: 'rajada rápida',
   teleporte: 'teleporte (carga)',
+  trilha: 'trilha elemental',
 };
 
 export const MOVE_EFFECT_LABELS_PT: Record<MoveEffect, string> = {
@@ -88,12 +89,12 @@ export const MOVE_EFFECT_LABELS_PT: Record<MoveEffect, string> = {
 /** Medianas e distâncias interquartis das 1.025 espécies, congeladas para uma regra estável quando o catálogo crescer. */
 const STAT_CENTER = { hp: 68, attack: 75, defense: 70, spAttack: 65, spDefense: 67, speed: 65 } as const;
 const STAT_SPREAD = { hp: 35, attack: 45, defense: 40, spAttack: 43, spDefense: 36, speed: 43 } as const;
-const CATEGORY_ORDER: readonly MoveCategory[] = ['projetil', 'area', 'aura', 'orbit', 'cone', 'foco', 'rapido', 'teleporte'];
+const CATEGORY_ORDER: readonly MoveCategory[] = ['projetil', 'area', 'aura', 'orbit', 'cone', 'foco', 'rapido', 'teleporte', 'trilha'];
 
 /** Pequeno viés calibrado no catálogo: Projétil/Área são só um pouco mais frequentes, sem quota em tempo de execução. */
 const CATEGORY_CALIBRATION: Record<MoveCategory, number> = {
-  projetil: 0.0425, area: 0.0715, aura: 0.003, orbit: 0.2485,
-  cone: 0.154, foco: -0.4095, rapido: -0.1015, teleporte: -0.0085,
+  projetil: -0.0525, area: -0.0125, aura: -0.0755, orbit: 0.276,
+  cone: 0.0995, foco: -0.4915, rapido: -0.1635, teleporte: -0.0495, trilha: 0.3895,
 };
 
 const positive = (value: number): number => Math.max(0, value);
@@ -136,6 +137,7 @@ export function categoryScoresForStats(s: BaseStats): Record<MoveCategory, numbe
     foco: 1.4 * positive(primary) + 0.3 * secondary - 0.45 * speed + CATEGORY_CALIBRATION.foco,
     rapido: 0.9 * special + 0.45 * physical + 1.2 * positive(speed) - 0.35 * bulk + CATEGORY_CALIBRATION.rapido,
     teleporte: 0.9 * physical + 0.45 * special + 1.2 * positive(speed) - 0.35 * bulk + CATEGORY_CALIBRATION.teleporte,
+    trilha: 0.85 * speed + 0.7 * secondary + 0.25 * bulk - 0.2 * Math.abs(physical - special) + CATEGORY_CALIBRATION.trilha,
   };
 }
 
@@ -200,6 +202,7 @@ export const CATEGORY_BASE: Record<MoveCategory, CategoryBase> = {
   // Três tiros em 0/90/180 ms, depois 600 ms de respiro: ciclo de 780 ms.
   rapido: { damage: 5, cooldownMs: 780, range: 150, radius: 0 },
   teleporte: { damage: 12, cooldownMs: 1500, range: 240, radius: 54 },
+  trilha: { damage: 7, cooldownMs: 1000, range: 0, radius: 30 },
 };
 
 /**
@@ -215,6 +218,7 @@ export const CATEGORY_DAMAGE_FACTOR: Record<MoveCategory, number> = {
   foco: 1,
   rapido: 1.35,
   teleporte: 1,
+  trilha: 1.15,
 };
 
 /**

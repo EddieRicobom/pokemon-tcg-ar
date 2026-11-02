@@ -131,6 +131,7 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
   foco: 'Disparo largo e lento. Segure o botão de carga (ou R) para um feixe que atravessa todos; você fica lento enquanto carrega.',
   rapido: 'Dispara três tiros rápidos e então faz uma breve pausa. Mantenha-se em movimento durante a pausa.',
   teleporte: 'Segure o botão de carga (ou R) e solte para se teletransportar. A carga máxima cria uma onda que afasta inimigos.',
+  trilha: 'Caminhe para carregar. Ao ativar, desenhe uma faixa elemental contínua no chão por 4 segundos.',
 };
 
 /**
@@ -567,17 +568,19 @@ const chargeHeld = ref(false);
 let cancelChargeQueued = false;
 const chargeStyle = computed(() => {
   const category = state.value?.player.move.category;
-  return category === 'foco' || category === 'teleporte' ? category : null;
+  return category === 'foco' || category === 'teleporte' || category === 'trilha' ? category : null;
 });
 /** Barra do botão: Foco usa sua barra; Teleporte mostra o hold atual. */
 const chargeMeter = computed(() => {
   const charge = state.value?.charge;
   if (!charge) return 0;
+  if (chargeStyle.value === 'trilha') return state.value?.player.trailCharge ?? 0;
   return chargeStyle.value === 'teleporte' ? charge.teleportHoldMs / 1200 : charge.level;
 });
 const chargeLabel = computed(() => {
   const charge = state.value?.charge;
   if (!charge || !chargeStyle.value) return '';
+  if (chargeStyle.value === 'trilha') return (state.value?.player.trailActiveMs ?? 0) > 0 ? 'DESENHE' : chargeMeter.value >= 1 ? 'PRONTA' : `${Math.floor(chargeMeter.value * 100)}%`;
   if (chargeStyle.value === 'teleporte') return charge.teleportCooldownMs > 0 ? `${Math.ceil(charge.teleportCooldownMs / 1000)}s` : charge.teleportHoldMs >= 1200 ? 'ONDA' : chargeHeld.value ? `${Math.floor(chargeMeter.value * 100)}%` : 'SEGURE';
   return charge.level >= 1 ? 'MÁXIMO' : charge.level > 0 || chargeHeld.value ? `${Math.floor(charge.level * 100)}%` : 'SEGURE';
 });
@@ -1802,6 +1805,7 @@ function draw(): void {
   else if (move.category === 'cone') drawConeGuide(ctx, s.player, s.player.attackRange, move.type, flat, 1 - s.player.attackTimerMs / Math.max(1, s.player.attackCooldownMs));
   else if (move.category === 'orbit') drawOrbitPath(ctx, s.player, move.type, flat);
   else if (move.category === 'foco' || move.category === 'rapido') drawChargeAura(ctx, s);
+  if (move.category === 'trilha') drawElementTrail(ctx, s, detailed);
 
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
@@ -2095,6 +2099,31 @@ function draw(): void {
     ctx.restore();
   }
   ctx.restore();
+}
+
+/** Faixa contínua: pontos internos são só geometria; na tela ela sempre é uma linha conectada que perde a cauda suavemente. */
+function drawElementTrail(c: CanvasRenderingContext2D, s: SurvivorState, detailed: boolean): void {
+  const path = s.player.trailPath ?? [];
+  if (path.length < 2 || effectiveVisual.value.rotomMode) return;
+  const life = 3500;
+  c.save();
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1]!;
+    const b = path[i]!;
+    const age = Math.max(0, s.elapsedMs - a.bornMs);
+    if (age >= life) continue;
+    const alpha = Math.pow(1 - age / life, 1.35);
+    c.globalAlpha = alpha * 0.5;
+    c.strokeStyle = s.player.move.color;
+    c.lineWidth = s.player.attackRadius * 1.35;
+    if (detailed) { c.shadowColor = s.player.move.color; c.shadowBlur = 12; }
+    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+    c.globalAlpha = alpha * 0.85;
+    c.strokeStyle = '#fff8df'; c.lineWidth = Math.max(2, s.player.attackRadius * 0.34);
+    c.shadowBlur = 0; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+  }
+  c.restore();
 }
 
 /** Anel em volta do Pokémon: o Foco e o Teleporte fecham o anel enquanto a carga enche. */
@@ -3358,11 +3387,11 @@ onBeforeUnmount(() => {
         <button v-if="ready && state && chargeStyle && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
           type="button" class="survivor-charge-button" :class="{ 'is-held': chargeHeld, 'is-full': state.charge.level >= 1 || (chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200), 'is-rush': chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200 }"
           :style="{ '--special-color': state.player.move.color, '--charge': `${chargeMeter * 100}%` }"
-          :aria-label="chargeStyle === 'foco' ? `Foco: segure para carregar, solte para disparar; carga ${Math.floor(state.charge.level * 100)}%; tecla R` : `Teleporte: segure para carregar e solte para usar; ${chargeLabel}; tecla R`"
+          :aria-label="chargeStyle === 'foco' ? `Foco: segure para carregar, solte para disparar; carga ${Math.floor(state.charge.level * 100)}%; tecla R` : chargeStyle === 'trilha' ? `Trilha: ande para carregar; ${chargeLabel}; toque para desenhar` : `Teleporte: segure para carregar e solte para usar; ${chargeLabel}; tecla R`"
           @pointerdown.stop.prevent="pressCharge" @pointerup.stop.prevent="releaseCharge" @pointercancel="cancelCharge" @lostpointercapture="lostChargeCapture">
-          <span class="special-icon" aria-hidden="true">{{ chargeStyle === 'foco' ? '◎' : '»' }}</span>
+          <span class="special-icon" aria-hidden="true">{{ chargeStyle === 'foco' ? '◎' : chargeStyle === 'trilha' ? '〰' : '»' }}</span>
           <strong>{{ chargeLabel }}</strong>
-          <small>{{ chargeStyle === 'foco' ? 'Foco' : 'Teleporte' }}</small>
+          <small>{{ chargeStyle === 'foco' ? 'Foco' : chargeStyle === 'trilha' ? 'Trilha' : 'Teleporte' }}</small>
         </button>
 
         <button v-if="ready && state && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"

@@ -429,3 +429,14 @@ geração nova ou pesos forem alterados, a distribuição precisa ser medida nov
 Essas contagens validam variedade e determinismo, não equivalência de poder. Dano,
 recarga, alcance, controle e sobrevivência seguem precisando das simulações e de
 partidas humanas descritas nas seções anteriores.
+
+### Trilha elemental
+
+**Trilha** é a nona forma: favorece Velocidade, o menor entre Ataque e Ataque Especial
+e um pouco de volume defensivo; uma diferença muito grande entre os dois ataques reduz
+sua afinidade. Ela ocupa o perfil móvel híbrido, separado de Rajada (especial rápida)
+e Teleporte (físico rápido). A carga vem da distância real percorrida: 2.250 px, ou
+15 segundos caminhando na velocidade-base 150. Cheia, ela permite quatro segundos de
+desenho contínuo; a faixa se apaga suavemente após 3,5 s. Seu dano usa a média dos dois
+ataques. Como todas as formas, recebe cinco buffs específicos: quatro degraus da árvore
+e **Passos ressonantes**, que reduz a distância necessária para carregar.
