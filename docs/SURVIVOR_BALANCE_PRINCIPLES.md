@@ -265,3 +265,95 @@ O robô não chegou ao encontro sombrio opcional nem reproduziu uma morte de
 vida cheia por golpe único. Portanto esses números não justificam concluir
 que o relato do jogador foi resolvido. A tela de derrota agora fornece o
 dano e a origem necessários para uma sessão humana investigar esse caso.
+
+## Justiça entre formas de ataque e tipos — 02/11/2026
+
+Hipótese: com a Rajada e o Teleporte separados (PR #367), as oito formas de golpe
+(Projétil, Aura, Área, Cone, Órbita, Foco, Rajada e Teleporte) e os 18 tipos
+precisam de uma medição própria. Igualar a quantidade de espécies por forma não
+mede força, e liderar em abates não basta: **a sobrevivência vem primeiro**.
+
+**Método** (`scripts/survivor-forms.eval.ts`, motor real, fora do `npm test`):
+`FORMS_SECONDS=60 FORMS_RUNS=8 FORMS_RUN_MIN=12 npx vitest run -c vitest.eval.config.ts scripts/survivor-forms.eval.ts --silent=false`.
+Cenários controlados forçam a forma com stats e tipo iguais (só no harness; não é
+reconhecimento nem AR); os naturais usam espécies reais nos quantis 10/30/50/70/90
+da soma de stats de cada forma. Medem: dano por segundo em alvo parado e contra uma
+multidão reposta (14 inimigos de 300 de vida), e corridas com o spawn real do motor
+(8 sementes por espécie, teto de 12 min, política de alcance que mantém a distância
+da forma e foge do cerco, política evasiva de referência, cartas escolhidas só entre
+as ofertas reais). A sobrevivência é **censurada pelo teto** (chegar a 12 min não é
+vitória): por isso o relatório traz p10, mediana, a **média restrita ao teto**
+(cada corrida vale no máximo 720 s) e a fração que chega ao teto. Foco e Teleporte
+são jogados com hold e soltura de verdade (mira no grupo mais denso).
+
+**Resultado na amostra natural (média restrita de sobrevivência, s, antes → depois)**
+
+| Forma | Antes | Depois |
+| --- | ---: | ---: |
+| Projétil | 601 | 603 |
+| Aura | 513 | 515 |
+| Área | 579 | 579 |
+| Cone | 526 | 526 |
+| Órbita | 526 | 520 |
+| Foco | 690 | 561 |
+| Rajada | 546 | 605 |
+| Teleporte | 508 | 508 |
+
+A diferença entre a melhor e a pior forma caiu de 1,36× para 1,19×. Em stats iguais
+(cenário controlado) ela ficou em 1,40× → 1,49×: sem Ataque alto o Foco, que foi
+desenhado para espécies de Ataque a partir de 100, agora é o mais fraco (417 s);
+com as espécies reais ele fica no grupo. As médias de uma forma entre amostras
+variam cerca de ±10% com 8 sementes; diferenças menores que isso não são sinal.
+
+**O que mudou**
+- O corte de cadência (`survivorRapidAttackDamageMultiplier`) era degrau: de 510
+  para 490 ms o dano por segundo caía para 52%. Agora é contínuo (expoente 0,7
+  acima de 2 ataques/s) e há teste de monotonicidade de 240 a 2.000 ms.
+- Foco: o feixe cheio fazia 7 a 9× o dano por segundo de um projétil e a forma liderava a
+  sobrevivência em 15% a 30%. A escala do feixe vai a 22% (`FOCUS_BEAM_DAMAGE_SCALE`)
+  e a carga a 27% por segundo; o atordoamento e a lentidão ficam como estavam.
+  Dano por segundo em alvo parado (espécies reais): 106 → 24.
+- Aura 1,22 → 1,6 e Rajada 1 → 1,35 (`CATEGORY_DAMAGE_FACTOR`): eram as mais fracas em
+  dano (Aura 3 e Rajada 8,5 contra 12 do projétil) e a Aura também em sobrevivência.
+  A Rajada passa a render o mesmo dano por segundo do projétil (9,5 contra 10).
+- Inseto perde o fator de dano 1,14: o eco de enxame já soma 20% e o tipo liderava
+  cinco das oito formas na matriz tipo × forma (1,35× a 2,4× a mediana).
+- O Teleporte usa alcance, raio, recarga e disparos do jogador, com piso de recarga
+  de 900 ms e teto de alcance de 420; o botão de carga soltava sem disparar por um
+  `lostpointercapture` que cancelava a carga (corrigido).
+
+**O que não mudou, e por quê:** Teleporte, Órbita e Cone já estavam em paridade de
+sobrevivência; só os abates divergiam (Foco, Teleporte e Órbita ainda fazem de 2 a
+10× os abates do Projétil na amostra natural, por bola de neve de XP). Um corte
+de dano do Teleporte testado nesta rodada derrubou a sobrevivência para 322 s
+(morte aos ~80 s sem nenhum golpe automático) e foi revertido. O Teleporte é
+bimodal: espécies fracas morrem cedo (p10 de 81 s), as fortes chegam ao teto.
+
+**Tipos (alvo único e multidão, 18 tipos):** Fogo e Veneno lideram a Área, o Cone e o
+Foco em 1,36× a 1,73× a mediana por causa da queimadura (35% do golpe por segundo);
+Dragão e Aço levam Projétil e Rajada em multidão (1,7×) pela perfuração; Inseto
+cai de 1,35× para 1,2× depois do ajuste acima. A queimadura não foi alterada neste
+passo porque o PR #366 acabou de recalibrá-la. Os valores muito baixos (Gelo na
+Aura, Dragão no Cone) vêm do sorteio de cartas durante a corrida do cenário de
+multidão e não foram tratados como sinal.
+
+**Cartas de dano cortadas em 1/3:** todo bônus percentual de dano das cartas
+(Golpe mais forte, Ressonância, árvores de forma e de elemento, cartas por tipo,
+Abertura precisa, Último esforço, Combate aproximado, Tiro distante e Caçador de
+ameaças) passa do triplo para dois terços do triplo, isto é, o dobro do valor
+original (por exemplo +60% → +40%). O teto de dano base vai de 180 para 120. As
+medições acima são anteriores a este corte e não o incluem.
+
+**Desempenho depois de 7 min:** o motor custa 0,01 a 0,08 ms por passo mesmo com 130
+inimigos e 300 orbes aos 16 min (`scripts/survivor-longrun.eval.ts`), então o peso
+estava na tela. As regiões de 135 s carregavam os sprites animados do elenco e
+nunca liberavam os anteriores (cerca de 140 sprites no total, mais de 100 aos 15 min):
+agora só a região atual, a próxima e quem ainda está vivo ficam na memória (cerca de 34,
+estável por mais de 50 minutos simulados). A vida dos inimigos para os números de dano
+deixou de alocar um Map por quadro, e a interface reativa por cima do canvas atualiza
+a ~20 Hz em vez de a cada quadro. Não medi um celular: o crash dos 15 min é atribuído
+à memória por leitura do código e deve ser confirmado em aparelho real.
+
+**Limites:** o robô não tem reflexo nem toque de celular; o cenário de multidão usa
+inimigos sem dano e a política do Teleporte é simples. Nenhum destes números
+substitui sessões humanas.

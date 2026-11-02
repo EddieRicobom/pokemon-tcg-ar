@@ -871,6 +871,23 @@ function showEnemyDamage(hits: readonly DamageNumber[]): void {
   hitStopMs = Math.max(hitStopMs, hits.some((hit) => hit.boss) ? 72 : 42);
 }
 
+/** Vida dos inimigos antes do passo, reaproveitada entre quadros: sem alocar um Map e um objeto por inimigo a 60 quadros por segundo. */
+const enemyHpSnapshot = new Map<number, { hp: number; x: number; y: number; boss: boolean; stamp: number }>();
+let enemyHpStamp = 0;
+function snapshotEnemyHp(enemies: readonly SurvivorEnemy[]): void {
+  enemyHpStamp++;
+  for (const enemy of enemies) {
+    let entry = enemyHpSnapshot.get(enemy.id);
+    if (!entry) { entry = { hp: 0, x: 0, y: 0, boss: false, stamp: 0 }; enemyHpSnapshot.set(enemy.id, entry); }
+    entry.hp = enemy.hp;
+    entry.x = enemy.x;
+    entry.y = enemy.y;
+    entry.boss = enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss === true;
+    entry.stamp = enemyHpStamp;
+  }
+  if (enemyHpSnapshot.size > enemies.length) for (const [id, entry] of enemyHpSnapshot) if (entry.stamp !== enemyHpStamp) enemyHpSnapshot.delete(id);
+}
+
 /** Compara a vida antes/depois de um passo. O motor continua a ser a fonte dos números; a tela só os torna legíveis. */
 function enemyDamageSince(before: ReadonlyMap<number, { hp: number; x: number; y: number; boss: boolean }>, s: SurvivorState): DamageNumber[] {
   const now = animMs;
@@ -1635,11 +1652,38 @@ async function preloadShadowBoss(dexId: number): Promise<void> {
   shadowBossSprite.value = firstSpriteFrame(enemySprites.get(dexId))?.toDataURL() ?? null;
 }
 
-function preloadVisibleEnemyRegions(elapsedMs: number, runSeed = 0): void {
+/**
+ * Libera os sprites decodificados (GIF em vários quadros) das regiões que já passaram e que não têm ninguém vivo em campo.
+ * Sem isto a memória crescia a cada região de 135 s e o aparelho travava depois de uns 15 min. Uma região volta a carregar
+ * normalmente se a corrida (infinita) passar por ela de novo.
+ */
+function evictPastEnemyRegions(current: number, next: number, enemies: readonly SurvivorEnemy[]): void {
+  const keep = new Set<number>(enemies.flatMap((enemy) => (enemy.dexId === undefined ? [] : [enemy.dexId])));
+  for (const index of [current, next]) {
+    const encounter = REGIONAL_ENCOUNTERS[index];
+    if (encounter) for (const id of [...encounter.wild, encounter.boss]) keep.add(id);
+  }
+  for (const index of [...requestedEnemyRegions]) {
+    if (index === current || index === next) continue;
+    const encounter = REGIONAL_ENCOUNTERS[index];
+    if (!encounter) { requestedEnemyRegions.delete(index); continue; }
+    for (const id of [...encounter.wild, encounter.boss]) {
+      if (keep.has(id) || enemySpriteLoads.has(id) || !enemySprites.delete(id)) continue;
+      spriteMemory.delete(`${id}:n:p`);
+      requestedEnemyRegions.delete(index);
+    }
+  }
+}
+let evictedForRegion = -1;
+function preloadVisibleEnemyRegions(elapsedMs: number, runSeed = 0, enemies: readonly SurvivorEnemy[] = []): void {
   const { current, next } = survivorRegionAt(elapsedMs, runSeed);
   void preloadEnemyRegion(current);
   // Antecipar a próxima região evita uma forma neutra durante a transição sem bloquear a primeira tela.
   void preloadEnemyRegion(next);
+  if (current !== evictedForRegion) {
+    evictedForRegion = current;
+    evictPastEnemyRegions(current, next, enemies);
+  }
 }
 
 function draw(): void {
@@ -2156,6 +2200,10 @@ function checkPvpRun(s: SurvivorState): void {
   });
 }
 
+/** Intervalo mínimo entre duas atualizações reativas da interface por cima do canvas. */
+const HUD_REFRESH_MS = 50;
+let lastHudTrigger = 0;
+
 function loop(ts: number): void {
   if (disposed) {
     rafId = 0;
@@ -2185,14 +2233,16 @@ function loop(ts: number): void {
   // por inimigo) e o `triggerRef` abaixo avisa a interface uma vez por quadro. As outras telas do componente continuam
   // reativas, porque as mudanças fora do laço passam pelo proxy como antes.
   const s = toRaw(state.value!);
-  preloadVisibleEnemyRegions(s.elapsedMs, s.runSeed);
+  preloadVisibleEnemyRegions(s.elapsedMs, s.runSeed, s.enemies);
   if (!s.over && !s.pendingUpgrade && !evolving.value) {
     const attackTimerBefore = s.player.attackTimerMs;
     const projectilesBefore = s.projectiles.length;
     const hpBefore = s.player.hp;
     const xpBefore = s.player.xp;
     const killsBefore = s.kills;
-    const enemyHpBefore = new Map(s.enemies.map((enemy) => [enemy.id, { hp: enemy.hp, x: enemy.x, y: enemy.y, boss: enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss === true }]));
+    // Os números de dano só existem com os impactos ligados; sem eles nem se guarda a vida dos inimigos.
+    const trackEnemyDamage = effectiveVisual.value.impactFx && !reducedMotion;
+    if (trackEnemyDamage) snapshotEnemyHp(s.enemies);
     const kx = (heldKeys.has('right') ? 1 : 0) - (heldKeys.has('left') ? 1 : 0);
     const ky = (heldKeys.has('down') ? 1 : 0) - (heldKeys.has('up') ? 1 : 0);
     const dx = kx + (joystick.active ? joystick.dx : 0);
@@ -2207,7 +2257,7 @@ function loop(ts: number): void {
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
     const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value, cancelCharge: cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
-    showEnemyDamage(enemyDamageSince(enemyHpBefore, s));
+    if (trackEnemyDamage) showEnemyDamage(enemyDamageSince(enemyHpSnapshot, s));
     if (s.player.attackTimerMs > attackTimerBefore) {
       playerAttackAt = animMs;
       playAttackSound(s.player.move, ts);
@@ -2348,7 +2398,12 @@ function loop(ts: number): void {
     playerBackSprite = normalPlayerBackSprite;
     say('💎 A evolução desfez a Mega.', 3600);
   }
-  triggerRef(state);
+  // A interface reativa (barras, cronômetro, botões) não precisa refazer a árvore inteira a cada quadro: ~20 Hz basta,
+  // e o desenho no canvas continua a cada quadro. Fim da corrida e pausas atualizam na hora.
+  if (ts - lastHudTrigger >= HUD_REFRESH_MS || s.over) {
+    lastHudTrigger = ts;
+    triggerRef(state);
+  }
   draw();
 }
 
@@ -2567,6 +2622,8 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     enemySprites.clear();
     enemySpriteLoads.clear();
     requestedEnemyRegions.clear();
+    enemyHpSnapshot.clear();
+    evictedForRegion = -1;
     // Sprite da forma Mega (GIF animado ou imagem parada); sem nenhum, a forma normal continua no desenho.
     const megaSpriteLoad = mega && mega.sprite !== 'nenhum' ? loadSpriteOrNull(mega.formId, shiny).catch(() => null) : Promise.resolve(null);
     const [player, back, megaSprite, ...supports] = await Promise.all([
