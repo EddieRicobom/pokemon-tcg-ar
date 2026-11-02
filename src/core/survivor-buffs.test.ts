@@ -65,8 +65,8 @@ describe('novas cartas de buff', () => {
     };
 
     const ordinary = damageAgainst({});
-    expect(damageAgainst({ boss: true })).toBeCloseTo(ordinary * 1.3, 5);
-    expect(damageAgainst({ trainerId: 42 })).toBeCloseTo(ordinary * 1.3, 5);
+    expect(damageAgainst({ boss: true })).toBeCloseTo(ordinary * 1.2, 5);
+    expect(damageAgainst({ trainerId: 42 })).toBeCloseTo(ordinary * 1.2, 5);
   });
 
 

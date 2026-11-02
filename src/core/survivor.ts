@@ -1023,18 +1023,18 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     const lastStand = p.upgradeLevels['last-stand'] ?? 0;
     const closeQuarters = p.upgradeLevels['close-quarters'] ?? 0;
     const longShot = p.upgradeLevels['long-shot'] ?? 0;
-    if (openingStrike > 0 && e.hp >= e.maxHp) upgradeMultiplier *= 1 + openingStrike * 0.54;
-    if (lastStand > 0 && p.hp <= p.maxHp * 0.3) upgradeMultiplier *= 1 + lastStand * 0.66;
-    if (closeQuarters > 0 && distanceFromPlayer <= BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + closeQuarters * 0.36;
-    if (longShot > 0 && distanceFromPlayer > BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + longShot * 0.36;
+    if (openingStrike > 0 && e.hp >= e.maxHp) upgradeMultiplier *= 1 + openingStrike * 0.36;
+    if (lastStand > 0 && p.hp <= p.maxHp * 0.3) upgradeMultiplier *= 1 + lastStand * 0.44;
+    if (closeQuarters > 0 && distanceFromPlayer <= BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + closeQuarters * 0.24;
+    if (longShot > 0 && distanceFromPlayer > BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + longShot * 0.24;
     const threatHunter = p.upgradeLevels['threat-hunter'] ?? 0;
-    if (threatHunter > 0 && (e.boss || e.trainerId !== undefined)) finalThreatHunterMultiplier = 1 + threatHunter * 0.3;
-    if (move.type === 'fire' && hasUpgrade(p, 'fire-combustion') && (e.burnMs ?? 0) > 0) upgradeMultiplier *= 1.36;
-    if (move.type === 'electric' && hasUpgrade(p, 'electric-arc') && ((e.wetMs ?? 0) > 0 || (e.stunMs ?? 0) > 0)) upgradeMultiplier *= 1.3;
-    if (move.type === 'ice' && hasUpgrade(p, 'ice-shatter') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.45;
-    if (move.type === 'ground' && hasUpgrade(p, 'ground-aftershock') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.45;
-    if (move.type === 'dragon' && hasUpgrade(p, 'dragon-pressure') && e.boss) upgradeMultiplier *= 1.45;
-    if (move.type === 'dark' && hasUpgrade(p, 'dark-predation') && e.hp <= e.maxHp * 0.5) upgradeMultiplier *= 1.36;
+    if (threatHunter > 0 && (e.boss || e.trainerId !== undefined)) finalThreatHunterMultiplier = 1 + threatHunter * 0.2;
+    if (move.type === 'fire' && hasUpgrade(p, 'fire-combustion') && (e.burnMs ?? 0) > 0) upgradeMultiplier *= 1.24;
+    if (move.type === 'electric' && hasUpgrade(p, 'electric-arc') && ((e.wetMs ?? 0) > 0 || (e.stunMs ?? 0) > 0)) upgradeMultiplier *= 1.2;
+    if (move.type === 'ice' && hasUpgrade(p, 'ice-shatter') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.3;
+    if (move.type === 'ground' && hasUpgrade(p, 'ground-aftershock') && (e.stunMs ?? 0) > 0) upgradeMultiplier *= 1.3;
+    if (move.type === 'dragon' && hasUpgrade(p, 'dragon-pressure') && e.boss) upgradeMultiplier *= 1.3;
+    if (move.type === 'dark' && hasUpgrade(p, 'dark-predation') && e.hp <= e.maxHp * 0.5) upgradeMultiplier *= 1.24;
   }
   // Crítico: sorteado só quando a carta existe, para não consumir o RNG das corridas sem ela.
   if (move === p.move && (p.critChance ?? 0) > 0 && state.rng() < (p.critChance ?? 0)) upgradeMultiplier *= 2;
@@ -1058,7 +1058,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   switch (move.effect) {
     case 'queimar':
       e.burnMs = EFFECT_MS.burn;
-      e.burnDps = Math.max(e.burnDps ?? 0, round1(finalDamage * (move === p.move && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.6125 : 0.35)));
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(finalDamage * (move === p.move && (move.type === 'fire' && hasUpgrade(p, 'fire-brasa') || move.type === 'poison' && hasUpgrade(p, 'poison-dose')) ? 0.525 : 0.35)));
       break;
     case 'lentidao':
       e.slowMs = move === p.move && move.type === 'bug' && hasUpgrade(p, 'bug-web') ? EFFECT_MS.slow + 700 : EFFECT_MS.slow;
@@ -1090,7 +1090,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   // Inseto e Fantasma atacam em dupla: um único eco visual e de dano por impacto, sem efeitos, cura ou recursão.
   if (allowFollowUp && (move.type === 'bug' || move.type === 'ghost') && e.hp > 0) {
     const enhancedEcho = move === p.move && ((move.type === 'bug' && hasUpgrade(p, 'bug-formation')) || (move.type === 'ghost' && hasUpgrade(p, 'ghost-haunt')));
-    const echoDamage = finalDamage * (enhancedEcho ? 0.35 : 0.2);
+    const echoDamage = finalDamage * (enhancedEcho ? 0.3 : 0.2);
     e.hp -= echoDamage;
     state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: Math.max(10, e.radius * 1.8), color: move.color, ageMs: 0, lifeMs: 220 });
     state.fx.push({
