@@ -4,6 +4,7 @@ import type { Rng } from './battle';
 import { BASIC_ATTACK_DAMAGE_FACTOR, type AttackProfile, type MoveCategory, type SurvivorMove } from './survivor-moves';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
+import { HYPOTHETICAL_TYPE_ACTIVATION_MS, HYPOTHETICAL_TYPE_EFFECTS, hypotheticalSecondaryTypeFor } from './survivor-type-mix';
 import { survivorPreparation } from './survivor-preparations';
 import { MAX_OFFER_CHOICES, PURE_LOADOUT } from './survivor-loadout';
 import type { TowerLoadout } from './survivor-loadout';
@@ -355,6 +356,8 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     typeAffinity: options.typeAffinity ?? null,
     typeAffinityChoices: [...(options.typeAffinityChoices ?? [])],
     typeAffinityOffered: false,
+    hypotheticalSecondaryType: hypotheticalSecondaryTypeFor(move.type, seed),
+    hypotheticalSecondaryActive: false,
   };
   if (options.mega) startSurvivorMega(state, options.mega);
   return state;
@@ -974,13 +977,40 @@ function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: numbe
   }
 }
 
+/** Aplica a propriedade tabelada do segundo tipo hipotético, depois que ele desperta aos nove minutos. */
+function applyHypotheticalTypeEffect(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }): void {
+  if (!state.hypotheticalSecondaryActive) return;
+  const rule = HYPOTHETICAL_TYPE_EFFECTS[state.hypotheticalSecondaryType];
+  switch (rule.effect) {
+    case 'queimar':
+      e.burnMs = Math.max(e.burnMs ?? 0, 1600);
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(damage * 0.16));
+      break;
+    case 'lentidao': e.slowMs = Math.max(e.slowMs ?? 0, 700); break;
+    case 'atordoar': applyStun(e, e.boss ? 70 : 160); break;
+    case 'empurrar': applyKnockback(e, from, e.boss ? 2 : 6); break;
+    case 'roubar': state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1); break;
+    case 'semente': e.seededMs = Math.max(e.seededMs ?? 0, 1500); break;
+    case 'saltar': {
+      const target = state.enemies.find((other) => other !== e && other.hp > 0 && Math.hypot(other.x - e.x, other.y - e.y) <= 130);
+      if (target) { target.hp -= damage * 0.3; target.hitFlashMs = 90; }
+      break;
+    }
+    case 'atravessar':
+    case 'precisao':
+      break;
+  }
+}
+
 /** Dano de um golpe num inimigo, com o efeito do tipo. `from` é de onde o golpe veio (para empurrar). */
 function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, attackMove = state.player.move, allowFollowUp = true, distanceFromPlayer = Math.hypot(e.x - state.player.x, e.y - state.player.y)): void {
   const move = attackMove;
   const p = state.player;
   const wasSeeded = (e.seededMs ?? 0) > 0;
   const synergy = survivorSynergyFor(move.type, e);
+  const hypotheticalRule = move === p.move && state.hypotheticalSecondaryActive ? HYPOTHETICAL_TYPE_EFFECTS[state.hypotheticalSecondaryType] : null;
   let upgradeMultiplier = 1;
+  if (hypotheticalRule) upgradeMultiplier *= 1 + hypotheticalRule.damageBonus;
   if (move === p.move) {
     const openingStrike = p.upgradeLevels['opening-strike'] ?? 0;
     const lastStand = p.upgradeLevels['last-stand'] ?? 0;
@@ -1046,6 +1076,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   if (move === p.move && state.typeAffinity?.type !== move.type) {
     applyTypeAffinity(state, e, environmentalDamage, from);
   }
+  if (hypotheticalRule) applyHypotheticalTypeEffect(state, e, environmentalDamage, from);
   // Inseto e Fantasma atacam em dupla: um único eco visual e de dano por impacto, sem efeitos, cura ou recursão.
   if (allowFollowUp && (move.type === 'bug' || move.type === 'ghost') && e.hp > 0) {
     const enhancedEcho = move === p.move && ((move.type === 'bug' && hasUpgrade(p, 'bug-formation')) || (move.type === 'ghost' && hasUpgrade(p, 'ghost-haunt')));
@@ -1108,6 +1139,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
   const baseAngle = Math.atan2(target.y - p.y, target.x - p.x);
   const spread = 0.26;
   const look = survivorProjectileLook(p);
+  const hypotheticalPierce = state.hypotheticalSecondaryActive && HYPOTHETICAL_TYPE_EFFECTS[state.hypotheticalSecondaryType].effect === 'atravessar' ? 1 : 0;
   for (let i = 0; i < p.shots; i++) {
     const offset = p.shots === 1 ? 0 : (i - (p.shots - 1) / 2) * spread;
     const angle = baseAngle + offset;
@@ -1118,7 +1150,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       vx: Math.cos(angle) * p.projectileSpeed,
       vy: Math.sin(angle) * p.projectileSpeed,
       damage: artifactDamage(state),
-      pierce: p.pierce + (move.effect === 'atravessar' ? 1 : 0),
+      pierce: p.pierce + (move.effect === 'atravessar' ? 1 : 0) + hypotheticalPierce,
       lifeMs: 1600,
       hit: [],
       canChain: move.effect === 'saltar',
@@ -1754,6 +1786,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   const dt = dtMs / 1000;
   const previousElapsedMs = state.elapsedMs;
   state.elapsedMs += dtMs;
+  if (!state.hypotheticalSecondaryActive && previousElapsedMs < HYPOTHETICAL_TYPE_ACTIVATION_MS && state.elapsedMs >= HYPOTHETICAL_TYPE_ACTIVATION_MS) {
+    state.hypotheticalSecondaryActive = true;
+    events.push({ type: 'hypotheticalTypeActivated', secondaryType: state.hypotheticalSecondaryType });
+  }
   if (previousElapsedMs < SURVIVOR_LOVE_CANDY_MS && state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS) {
     events.push({ type: 'milestone', id: 'ten-minutes', reward: 'love-candy' });
   }

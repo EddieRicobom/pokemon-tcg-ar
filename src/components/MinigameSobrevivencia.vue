@@ -95,6 +95,7 @@ import { PROJECTILE_TIER_NAMES, survivorProjectileTier } from '../core/survivor-
 import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
 import type { WorldToScreen } from '../village/survivor-attack-art';
 import { survivorOrbiters } from '../core/survivor-shapes';
+import { HYPOTHETICAL_TYPE_EFFECTS } from '../core/survivor-type-mix';
 import { survivorSpriteDirection, survivorSpriteDirectionFromAngle } from '../core/survivor-sprite-direction';
 import type { SurvivorSpriteDirection } from '../core/survivor-sprite-direction';
 import { paintAccessory } from '../village/item-art';
@@ -2223,6 +2224,10 @@ function loop(ts: number): void {
         typeAffinityOffer.value = ev.types;
         say('O primeiro líder caiu. Escolha a afinidade do segundo tipo.', 4200);
       }
+      else if (ev.type === 'hypotheticalTypeActivated') {
+        const rule = HYPOTHETICAL_TYPE_EFFECTS[ev.secondaryType];
+        say(`✦ Tipo hipotético ${TYPE_LABELS_PT[ev.secondaryType]} ativado: ${rule.description}`, 5200);
+      }
       if (ev.type === 'gameover') {
         playSound('survivor-gameover');
         // Na run do PvP nada é gravado nem mostrado aqui: o resultado segue para a equipe (`checkPvpRun`).
@@ -2786,6 +2791,7 @@ onBeforeUnmount(() => {
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
             <span v-if="state.player.mega?.active" class="chip survivor-mega-chip" role="status" title="Stats base da forma Mega (PokéAPI) até o fim da corrida.">💎 {{ state.player.mega.label }}</span>
             <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
+            <span class="chip survivor-move-chip affinity" :class="{ active: state.hypotheticalSecondaryActive }" :style="{ '--move': moveFor([state.hypotheticalSecondaryType], null).color }" :title="state.hypotheticalSecondaryActive ? `Mistura ativa: ${HYPOTHETICAL_TYPE_EFFECTS[state.hypotheticalSecondaryType].description}` : 'Segundo tipo hipotético: ativa aos 9 min.'">{{ state.hypotheticalSecondaryActive ? '✦' : '○' }} {{ TYPE_LABELS_PT[state.hypotheticalSecondaryType] }} · hipótese</span>
             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
             </span>

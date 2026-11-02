@@ -38,6 +38,7 @@ import {
 import type { SurvivorEnemy, SurvivorState } from './survivor';
 import { seededRng } from './battle';
 import { attackProfile, moveFor } from './survivor-moves';
+import { HYPOTHETICAL_TYPE_ACTIVATION_MS, HYPOTHETICAL_TYPE_EFFECTS } from './survivor-type-mix';
 import type { MoveCategory, SurvivorMove } from './survivor-moves';
 import type { PokemonType } from './pokemon-data';
 
@@ -180,6 +181,18 @@ describe('stepSurvivor', () => {
     expect(chooseSurvivorTypeAffinity(s, 'ghost')).toBe(true);
     expect(s.typeAffinity).toEqual({ type: 'ghost', effect: 'lentidao' });
     expect(chooseSurvivorTypeAffinity(s, 'fire')).toBe(false);
+  });
+
+  it('define um segundo tipo diferente no início e ativa a mistura aos nove minutos', () => {
+    const s = quiet(createSurvivorState(73, { kindCount: 1 }));
+    expect(s.hypotheticalSecondaryType).not.toBe(s.player.move.type);
+    expect(s.hypotheticalSecondaryActive).toBe(false);
+    s.special.phase = 'ready';
+    s.elapsedMs = HYPOTHETICAL_TYPE_ACTIVATION_MS - 1;
+    const events = stepSurvivor(s, { dx: 0, dy: 0 }, 1);
+    expect(s.hypotheticalSecondaryActive).toBe(true);
+    expect(events).toContainEqual({ type: 'hypotheticalTypeActivated', secondaryType: s.hypotheticalSecondaryType });
+    expect(HYPOTHETICAL_TYPE_EFFECTS[s.hypotheticalSecondaryType].damageBonus).toBeGreaterThan(0);
   });
 
   it('anda na direção do analógico e fica preso dentro da arena', () => {
