@@ -80,7 +80,7 @@ export const MOVE_EFFECT_LABELS_PT: Record<MoveEffect, string> = {
   lentidao: 'deixa lento',
   empurrar: 'empurra para longe',
   saltar: 'salta para mais um inimigo',
-  atordoar: 'atordoa por um instante',
+  atordoar: 'deixa terreno que causa dano em três pulsos',
   atravessar: 'vai mais longe',
   roubar: 'recupera um pouco de vida',
   nenhum: 'sem efeito extra',

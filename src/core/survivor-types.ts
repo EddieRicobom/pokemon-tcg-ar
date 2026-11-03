@@ -194,6 +194,8 @@ export const DIGITAL_DANGER_VISIBLE_RADIUS = 520;
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
 
 export interface SurvivorEnemy {
+  /** Próximo pulso da Trilha neste inimigo, no relógio da corrida. */
+  trailNextHitMs?: number;
   id: number;
   /** Espécie fixada no nascimento, independente dos atributos de combate. */
   dexId?: number;
@@ -396,6 +398,17 @@ export interface SurvivorTypeAffinity {
   effect: SurvivorMove['effect'];
 }
 
+/** Marca de Pedra/Terra no chão: pulsa três vezes e então desaparece. */
+export interface SurvivorElementalTerrain {
+  x: number;
+  y: number;
+  radius: number;
+  damage: number;
+  ticksLeft: number;
+  nextTickMs: number;
+  move: SurvivorMove;
+}
+
 export interface SurvivorState {
   lastHit?: SurvivorFinalHit;
   special: SurvivorSpecialState;
@@ -413,6 +426,7 @@ export interface SurvivorState {
   hostileProjectiles: SurvivorHostileProjectile[];
   orbs: SurvivorOrb[];
   artifacts: SurvivorArtifact[];
+  elementalTerrain: SurvivorElementalTerrain[];
   /** Pokébolas especiais recolhidas nesta corrida; cada uma amplia a seleção no fim. */
   digitalPokeballs: number;
   /** Medidor que pune ficar parado quando a tela está sem inimigos visíveis. */
