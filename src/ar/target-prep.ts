@@ -15,21 +15,41 @@ export function toLumaGray(rgba: Uint8ClampedArray): void {
   }
 }
 
-/** Converte a referência em cinza de luminância; devolve a própria imagem se o navegador não puder desenhar. */
-export async function prepareReference(reference: Blob): Promise<ImageBitmap> {
+/** Retângulo em pixels (arredondado, dentro da imagem) de um recorte dado em frações [x0, y0, x1, y1]. */
+export function cropRect(width: number, height: number, box: readonly [number, number, number, number]): { x: number; y: number; w: number; h: number } {
+  const x = Math.max(0, Math.round(box[0] * width));
+  const y = Math.max(0, Math.round(box[1] * height));
+  const w = Math.max(1, Math.min(width, Math.round(box[2] * width)) - x);
+  const h = Math.max(1, Math.min(height, Math.round(box[3] * height)) - y);
+  return { x, y, w, h };
+}
+
+/**
+ * Converte a referência em cinza de luminância, recortada em `crop` (a ilustração: é nela que o rastreador se apoia).
+ * Sem canvas o recorte não é possível e a função falha: um alvo da carta inteira daria um tracking deslocado em silêncio.
+ */
+export async function prepareReference(reference: Blob, crop?: readonly [number, number, number, number]): Promise<ImageBitmap> {
   const bitmap = await createImageBitmap(reference);
   try {
-    const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(bitmap.width, bitmap.height) : null;
+    const rect = crop ? cropRect(bitmap.width, bitmap.height, crop) : { x: 0, y: 0, w: bitmap.width, h: bitmap.height };
+    const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(rect.w, rect.h) : null;
     const ctx = canvas?.getContext('2d', { willReadFrequently: true });
-    if (!canvas || !ctx) return bitmap;
-    ctx.drawImage(bitmap, 0, 0);
-    const data = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+    if (!canvas || !ctx) {
+      if (crop) throw new Error('Este navegador não consegue preparar o alvo de rastreamento (sem OffscreenCanvas).');
+      return bitmap;
+    }
+    ctx.drawImage(bitmap, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
+    const data = ctx.getImageData(0, 0, rect.w, rect.h);
     toLumaGray(data.data);
     ctx.putImageData(data, 0, 0);
     const prepared = await createImageBitmap(canvas);
     bitmap.close();
     return prepared;
-  } catch {
+  } catch (error) {
+    if (crop) {
+      bitmap.close();
+      throw error;
+    }
     return bitmap;
   }
 }

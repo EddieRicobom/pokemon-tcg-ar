@@ -1,3 +1,4 @@
+import { TRACKING_CROP } from './anchor';
 import { prepareReference } from './target-prep';
 
 interface MindArCompiler {
@@ -12,8 +13,9 @@ interface MindArCompiler {
  * alvos guardados com versão diferente são descartados e recompilados (ver CardCache.prepareCard).
  * v1: imagem `low` (245 px de largura). v2: imagem `high` (600 px), com limite de tempo.
  * v3: referência em cinza de luminância, o mesmo critério do quadro da câmera (ver target-prep.ts).
+ * v4: alvo recortado na ilustração (`TRACKING_CROP`), não na carta inteira; a pose usa `cropPostMatrix`.
  */
-export const TARGET_VERSION = 3;
+export const TARGET_VERSION = 4;
 
 /** O compilador roda num worker do MindAR que não avisa erros: sem limite de tempo, a tela ficaria esperando para sempre. */
 export const COMPILE_TIMEOUT_MS = 120_000;
@@ -24,7 +26,7 @@ export const COMPILE_TIMEOUT_MS = 120_000;
  */
 export async function compileTarget(reference: Blob, onProgress?: (percent: number) => void): Promise<Blob> {
   const { Compiler } = await import('mind-ar/src/image-target/compiler.js');
-  const bitmap = await prepareReference(reference);
+  const bitmap = await prepareReference(reference, TRACKING_CROP);
   try {
     const compiler = new Compiler() as MindArCompiler;
     let timer: ReturnType<typeof setTimeout> | undefined;

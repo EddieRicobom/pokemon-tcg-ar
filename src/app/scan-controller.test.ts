@@ -387,6 +387,32 @@ describe('ScanController (foto temporária)', () => {
     expect(controller.current.phase).toBe('ready');
   });
 
+  it('o print aparece ANTES da leitura e a leitura roda nele; sem leitura útil, o print some', async () => {
+    const base = setup([]);
+    let photoDuringRead: unknown;
+    let reads = 0;
+    const controller: ScanController = new ScanController({
+      grabFrame: () => frame,
+      recognize: vi.fn(async () => {
+        reads++;
+        if (reads === 1) photoDuringRead = controller.current.photo?.frame;
+        return result({ status: 'not-found' });
+      }),
+      locate: () => ({ detection: det, quality: { brightness: 120, sharpness: 5 } }),
+      sameCard: () => 0.95,
+      cache: base.cache,
+      onState: (s) => base.states.push(s),
+      sleep: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    });
+    controller.start();
+    await waitFor(() => reads >= 2);
+    controller.stop();
+    expect(photoDuringRead).toBe(frame);
+    expect(base.states.some((s) => s.photo && s.message.includes('Lendo a foto'))).toBe(true);
+    const shown = base.states.findIndex((s) => s.photo && s.message.includes('Lendo a foto'));
+    expect(base.states.slice(shown + 1).some((s) => !s.photo)).toBe(true);
+  });
+
   it('cancelar descarta a foto', async () => {
     const medium = result({ status: 'identified', card: card('base1-58'), confidence: 0.85, margin: 0.12, features, quad });
     // A foto continua valendo (mesma carta) e precisa de muitas confirmações: fica na tela até o cancelamento.

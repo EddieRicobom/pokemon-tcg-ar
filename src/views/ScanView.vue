@@ -1156,7 +1156,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
           <canvas ref="photoCanvasEl" aria-label="Foto temporária da carta"></canvas>
           <figcaption>
             📸 Foto temporária<template v-if="scan.photo.cardName">: {{ scan.photo.cardName }}</template>
-            <small>só na memória · confirmando sem ler de novo</small>
+            <small>{{ scan.photo.cardName ? 'só na memória · confirmando sem ler de novo' : 'só na memória · lendo esta foto, não o vídeo' }}</small>
           </figcaption>
         </figure>
         <p v-if="mainNotice" class="pill" :class="mainNotice.tone">

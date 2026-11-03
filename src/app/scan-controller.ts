@@ -286,6 +286,11 @@ export class ScanController {
         recognitionFrame = best?.frame ?? frame;
         detection = best?.detection ?? located.detection;
         this.set({ stability, qualityHint: located.quality ? qualityWarning(located.quality) : null });
+        // O «print»: assim que há uma boa imagem da carta parada, ela é congelada e mostrada NA HORA. A leitura
+        // (OCR, candidatas) roda só nesse quadro, não no vídeo ao vivo, e o app diz isso.
+        if (best && this.deps.sameCard && !this.photoResult) {
+          this.set({ photo: { frame: best.frame, matches: 0, need: this.deps.photoMatches ?? 1 }, stage: undefined, message: '📸 Foto tirada. Lendo a foto da carta…' });
+        }
         // Foto temporária: em vez de ler de novo, confere se é a mesma carta da foto (barato) e confirma.
         const photo = this.photoResult;
         if (photo?.features && this.deps.sameCard && this.state.photo) {
@@ -415,6 +420,9 @@ export class ScanController {
         frameSize: { width: recognitionFrame.width, height: recognitionFrame.height },
       };
       if (!reused) this.deps.onAttempt?.(last);
+      const keepsPhoto = !reused && !!detection && !!this.deps.sameCard && !!result.features && (result.status === 'identified' || result.status === 'ambiguous') && !!result.card;
+      // A leitura da foto não deu em nada: o print some e o app volta a procurar uma imagem melhor.
+      if (!keepsPhoto && !this.photoResult && this.state.photo) this.set({ photo: undefined });
 
       if (result.status === 'identified' && result.card && temporal?.confirmedId === result.card.id) {
         this.running = false;
@@ -425,7 +433,7 @@ export class ScanController {
       }
       // Foto temporária: a primeira leitura boa (identificada ou entre impressões parecidas) fica guardada e a
       // confirmação segue comparando quadros com ela, sem rodar o OCR de novo.
-      if (!reused && detection && this.deps.sameCard && result.features && (result.status === 'identified' || result.status === 'ambiguous') && result.card) {
+      if (keepsPhoto && result.card) {
         this.photoResult = result;
         this.lastAmbiguous = result.status === 'ambiguous' ? result : this.lastAmbiguous;
         this.set({

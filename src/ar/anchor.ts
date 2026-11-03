@@ -9,6 +9,9 @@
  *   +X      = direita da carta, +Y = topo da carta, +Z = para fora da carta (na direção de quem olha).
  * A carta fica no plano XY. Um sprite "em pé" fica no plano XZ, com a base encostada na carta.
  */
+import { ARTWORK_BOX } from '../recognition/layout';
+import type { FractionBox } from '../recognition/types';
+
 
 import { DEFAULT_SMOOTHING, normalizeSmoothing } from '../core/pixel-upscale';
 import type { SmoothingMode } from '../core/pixel-upscale';
@@ -147,9 +150,31 @@ export function mindArPostMatrix(markerWidth: number, markerHeight: number): Mat
   return [markerWidth, 0, 0, 0, 0, markerWidth, 0, 0, 0, 0, markerWidth, 0, markerWidth / 2, markerHeight / 2, 0, 1];
 }
 
-/** Matriz do espaço da carta no espaço da câmera: worldMatrix · postMatrix. */
-export function cardSpaceMatrix(worldMatrix: ArrayLike<number>, markerWidth: number, markerHeight: number): Mat4 {
-  return multiply(Array.from(worldMatrix), mindArPostMatrix(markerWidth, markerHeight));
+/** Altura/largura da imagem de referência do TCGdex (600×825): a mesma proporção usada ao recortar o alvo. */
+export const REFERENCE_ASPECT = 825 / 600;
+
+/**
+ * Parte da carta (frações da largura/altura) que vira o alvo de rastreamento: a ilustração. O contorno inteiro da
+ * carta tem pouco detalhe (borda lisa, texto repetido) e o rastreador se perdia; a arte tem textura de sobra.
+ */
+export const TRACKING_CROP: FractionBox = ARTWORK_BOX;
+
+/**
+ * postMatrix de um alvo compilado só de um RECORTE da carta (`crop`). Pontos do espaço da carta (origem no centro da
+ * carta inteira, unidade = largura da carta) viram pixels do alvo recortado: m = c + S·(p − a), onde S é a largura
+ * do alvo dividida pela fração recortada e `a` é o centro do recorte no espaço da carta.
+ */
+export function cropPostMatrix(markerWidth: number, markerHeight: number, crop: FractionBox): Mat4 {
+  const [x0, y0, x1, y1] = crop;
+  const scale = markerWidth / (x1 - x0);
+  const ax = (x0 + x1) / 2 - 0.5;
+  const ay = ((y0 + y1) / 2 - 0.5) * REFERENCE_ASPECT;
+  return [scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, scale, 0, markerWidth / 2 - scale * ax, markerHeight / 2 - scale * ay, 0, 1];
+}
+
+/** Matriz do espaço da carta no espaço da câmera: worldMatrix · postMatrix (ou a do recorte, se o alvo é um recorte). */
+export function cardSpaceMatrix(worldMatrix: ArrayLike<number>, markerWidth: number, markerHeight: number, crop?: FractionBox): Mat4 {
+  return multiply(Array.from(worldMatrix), crop ? cropPostMatrix(markerWidth, markerHeight, crop) : mindArPostMatrix(markerWidth, markerHeight));
 }
 
 /** Altura da carta no espaço da carta (largura = 1). */

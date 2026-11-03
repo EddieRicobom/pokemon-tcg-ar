@@ -1,5 +1,5 @@
 import { PerspectiveCamera, Quaternion, Scene } from 'three';
-import { cameraParamsFromProjection, cardSpaceMatrix, DEFAULT_LAYOUT } from './anchor';
+import { cameraParamsFromProjection, cardSpaceMatrix, DEFAULT_LAYOUT, TRACKING_CROP } from './anchor';
 import type { SpriteLayout } from './anchor';
 import type { CardSprite } from './card-sprite';
 import type { TrackingEngine, TrackingInfo, TrackingUpdate } from './engine';
@@ -155,7 +155,7 @@ export class MultiArSession {
     // Pose velha repetida pelo rastreador depois de perder a carta: conta como perda (não move nem renova o Pokémon).
     if (update.worldMatrix && update.fresh !== false) {
       const poseOrientation = gyro ? this.deps.orientation!.at(update.capturedAt ?? nowMs - DEFAULT_TRACKER_LAG_MS) : null;
-      slot.sprite.setCardMatrix(cardSpaceMatrix(update.worldMatrix, marker.width, marker.height), poseOrientation);
+      slot.sprite.setCardMatrix(cardSpaceMatrix(update.worldMatrix, marker.width, marker.height, TRACKING_CROP), poseOrientation);
       slot.sprite.setTracked(true);
       this.lastPoseAt[index] = nowMs;
       this.lostAt[index] = null;
