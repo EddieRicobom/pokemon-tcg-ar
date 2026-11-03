@@ -132,7 +132,7 @@ const MOVE_CATEGORY_HINTS_PT: Record<SurvivorMove['category'], string> = {
   foco: 'Disparo largo e lento. Segure o botão de carga (ou R) para um feixe que atravessa todos; você fica lento enquanto carrega.',
   rapido: 'Dispara três tiros rápidos e então faz uma breve pausa. Mantenha-se em movimento durante a pausa.',
   teleporte: 'Segure o botão de carga (ou R) e solte para se teletransportar. A carga máxima cria uma onda que afasta inimigos.',
-  trilha: 'Caminhe para carregar. Ao ativar, desenhe uma faixa elemental contínua no chão por 4 segundos.',
+  trilha: 'Caminhe para carregar. Ao ativar, desenhe uma faixa elemental contínua no chão por 4 segundos, andando 25% mais rápido.',
 };
 
 /**

@@ -41,7 +41,7 @@ export class SurvivalHostLink {
   step(dtMs: number, local: ArenaInput): ArenaEvent[] {
     const events = stepArena(this.state, [local, this.guestInput], dtMs);
     // A troca pedida vale uma vez só: se foi recusada, o convidado vê o motivo na própria tela e pede de novo.
-    this.guestInput = { ...this.guestInput, switchTo: -1 };
+    this.guestInput = { ...this.guestInput, switchTo: -1, shield: false };
     this.pending.push(...events);
     this.sinceSnapshot += Math.min(Math.max(dtMs, 0), 1000);
     const over = this.state.winner !== null;
@@ -99,10 +99,10 @@ export class SurvivalGuestLink {
   /** Manda a entrada quando mudou (ou quando há troca pedida). A direção segue no mundo do anfitrião: quem chama já desvirou. */
   sendInput(input: ArenaInput, nowMs: number): void {
     const changed = input.dx !== this.lastSent.dx || input.dy !== this.lastSent.dy;
-    if (input.switchTo < 0 && (!changed || nowMs - this.lastSentAt < 33)) return;
+    if (input.switchTo < 0 && !input.shield && (!changed || nowMs - this.lastSentAt < 33)) return;
     this.lastSentAt = nowMs;
     this.lastSent = { dx: input.dx, dy: input.dy, switchTo: -1 };
-    this.tx.send({ t: 'sv-input', seq: this.seq++, dx: input.dx, dy: input.dy, switchTo: input.switchTo });
+    this.tx.send({ t: 'sv-input', seq: this.seq++, dx: input.dx, dy: input.dy, switchTo: input.switchTo, shield: input.shield === true });
   }
 
   /** Posições suavizadas entre o instantâneo anterior e o atual. */

@@ -368,3 +368,18 @@ it('Trilha atinge o chefe em pulsos e continua causando dano após parar de desen
   stepSurvivor(state, { dx: 0, dy: 0 }, 420);
   expect(boss.maxHp - boss.hp).toBeGreaterThan(firstDamage);
 });
+
+
+it('Trilha ativa: anda 25% mais rapido enquanto desenha e volta ao normal ao acabar', () => {
+  const walk = (activeMs: number) => {
+    const state = run('teleporte');
+    state.player.move = moveWith('normal', 'trilha', stats({ speed: 150, attack: 80, spAttack: 60 }));
+    state.player.trailActiveMs = activeMs;
+    const startX = state.player.x;
+    stepSurvivor(state, { dx: 1, dy: 0 }, 100);
+    return state.player.x - startX;
+  };
+  const normal = walk(0);
+  expect(normal).toBeGreaterThan(0);
+  expect(walk(4000) / normal).toBeCloseTo(1.25, 2);
+});
