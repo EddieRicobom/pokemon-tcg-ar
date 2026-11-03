@@ -9,10 +9,7 @@
  *   +X      = direita da carta, +Y = topo da carta, +Z = para fora da carta (na direção de quem olha).
  * A carta fica no plano XY. Um sprite "em pé" fica no plano XZ, com a base encostada na carta.
  */
-import { ARTWORK_BOX } from '../recognition/layout';
 import type { FractionBox } from '../recognition/types';
-
-
 import { DEFAULT_SMOOTHING, normalizeSmoothing } from '../core/pixel-upscale';
 import type { SmoothingMode } from '../core/pixel-upscale';
 import { ARTWORK_BOX } from '../recognition/layout';
