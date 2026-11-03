@@ -6,7 +6,7 @@ import { POKEMON_TYPES, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { attackProfile, moveWith, MOVE_CATEGORY_LABELS_PT } from '../core/survivor-moves';
 import type { MoveCategory } from '../core/survivor-moves';
-import { createSurvivorCharge } from '../core/survivor-charge';
+import { autoChargeHeld, createSurvivorCharge } from '../core/survivor-charge';
 import { drawElementAuraField, drawConeGuide, drawOrbitPath, drawElementOrbiter, drawElementProjectile, drawElementFx } from '../village/survivor-attack-art';
 import { survivorOrbiters } from '../core/survivor-shapes';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
@@ -31,6 +31,7 @@ const code = ref('');
 const copied = ref(false);
 const canvas = ref<HTMLCanvasElement | null>(null);
 const charge = ref(false);
+const autoCharge = ref(false);
 const direction = ref({ dx: 0, dy: 0 });
 const keys = new Set<string>();
 let special = false, frame = 0, last = 0;
@@ -75,7 +76,7 @@ function report(): void {
   const payload = { version: 1, mode: 'laboratorio', seed: s.runSeed, answers: answers.value,
     player: s.player, special: s.special, charge: s.charge, affinity: s.typeAffinity,
     hypotheticalType: s.hypotheticalSecondaryType, hypotheticalActive: s.hypotheticalSecondaryActive,
-    elapsedMs: s.elapsedMs, supports: s.supports, infiniteTargets: lab.value.infinite, targets: s.enemies, targetTimers: lab.value.targets.map(t => ({ id: t.template.id, respawnMs: t.respawnMs })),
+    autoCharge: autoCharge.value, elapsedMs: s.elapsedMs, supports: s.supports, infiniteTargets: lab.value.infinite, targets: s.enemies, targetTimers: lab.value.targets.map(t => ({ id: t.template.id, respawnMs: t.respawnMs })),
     projectiles: s.projectiles, hostileProjectiles: s.hostileProjectiles, effects: s.fx,
     damage: lab.value.damage, damageElapsedMs: lab.value.damageElapsedMs };
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
@@ -102,7 +103,9 @@ function loop(ts: number): void {
   if (!panel.value && !reporting.value && !s.pendingUpgrade && dt > 0) {
     const dx = direction.value.dx + Number(keys.has('d') || keys.has('arrowright')) - Number(keys.has('a') || keys.has('arrowleft'));
     const dy = direction.value.dy + Number(keys.has('s') || keys.has('arrowdown')) - Number(keys.has('w') || keys.has('arrowup'));
-    stepSurvivorDebug(lab.value, { dx, dy, charge: charge.value, special }, dt); special = false;
+    const chargeStyle = s.player.move.category;
+    const automatic = autoCharge.value && (chargeStyle === 'foco' || chargeStyle === 'teleporte' || chargeStyle === 'trilha') && autoChargeHeld(chargeStyle, s.charge);
+    stepSurvivorDebug(lab.value, { dx, dy, charge: charge.value || automatic, special }, dt); special = false;
     for (const hit of s.criticalHits) floating.push({ x: hit.x, y: hit.y, damage: hit.damage, at: ts });
     if (s.criticalHits.length && survivorAudio.attackSounds && ts - lastCriticalSound >= 200) { sound.setEnabled(visual.sound); sound.play({ kind: 'ui', cue: 'survivor-critical' }); lastCriticalSound = ts; }
     triggerRef(lab);
@@ -156,6 +159,7 @@ onBeforeUnmount(() => { sound.dispose(); cancelAnimationFrame(frame); window.rem
       <label>Forma <select v-model="category" @change="changeAttack"><option v-for="c in categories" :key="c" :value="c">{{ MOVE_CATEGORY_LABELS_PT[c] }}</option></select></label>
       <label>Bênção <select v-model="blessing" @change="branch = ''; changeBlessing()"><option value="">Nenhuma</option><option v-for="(item, id) in SURVIVOR_SPECIALS" :key="id" :value="id">{{ item.name }}</option></select></label>
       <label v-if="blessing">Ramificação <select v-model="branch" @change="changeBlessing"><option value="">Nenhuma</option><option v-for="item in SURVIVOR_SPECIAL_BRANCHES[blessing]" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+      <label><input v-model="autoCharge" type="checkbox"> Carga automática (Foco, Teleporte e Trilha)</label>
       <label><input :checked="lab.infinite" type="checkbox" @change="setDebugInfinite(lab, ($event.target as HTMLInputElement).checked)"> Vida infinita dos alvos</label>
       <p>Vida finita: os alvos reaparecem após 5 segundos. DPS é a média desde o último reset.</p>
       <button @click="resetDps">Zerar DPS</button>
