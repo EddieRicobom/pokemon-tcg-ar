@@ -55,7 +55,7 @@ import { survivorAttackChoices, survivorAttackOf } from '../core/survivor-loadou
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
-import { TELEPORT_FULL_HOLD_MS } from '../core/survivor-charge';
+import { autoChargeHeld, TELEPORT_FULL_HOLD_MS } from '../core/survivor-charge';
 import { trainer } from '../app/trainer-store';
 import type { MoveCategory, SurvivorMove } from '../core/survivor-moves';
 import { statsOfDex } from '../core/survivor-stats';
@@ -512,6 +512,7 @@ const damageNumbers = ref<DamageNumber[]>([]);
 let nextDamageNumberId = 1;
 /** Pausa visual curtíssima no impacto. Não roda com movimento reduzido, modo Rotom ou impactos desligados. */
 let hitStopMs = 0;
+let lastHitStopAt = -Infinity;
 /** Guarda se o menu abriu a pausa, para o fechamento retomar somente o que ele próprio interrompeu. */
 let menuPausedRun = false;
 const ready = ref(false);
@@ -565,6 +566,7 @@ const shadowBossSprite = ref<string | null>(null);
 let specialQueued = false;
 /** Botão de carga (Foco e Teleporte) apertado agora; o motor lê se está segurado a cada passo. */
 const chargeHeld = ref(false);
+const autoCharge = ref(false);
 let cancelChargeQueued = false;
 const chargeStyle = computed(() => {
   const category = state.value?.player.move.category;
@@ -871,7 +873,10 @@ function showDamageFeedback(): void {
 function showEnemyDamage(hits: readonly DamageNumber[]): void {
   if (!effectiveVisual.value.impactFx || reducedMotion || hits.length === 0) return;
   damageNumbers.value = [...damageNumbers.value, ...hits].slice(-28);
-  hitStopMs = Math.max(hitStopMs, hits.some((hit) => hit.boss) ? 72 : 42);
+  if (animMs - lastHitStopAt >= 500) {
+    hitStopMs = hits.some((hit) => hit.boss) ? 72 : 42;
+    lastHitStopAt = animMs;
+  }
 }
 
 /** Vida dos inimigos antes do passo, reaproveitada entre quadros: sem alocar um Map e um objeto por inimigo a 60 quadros por segundo. */
@@ -2285,7 +2290,7 @@ function loop(ts: number): void {
     if (bonkRun.value && Math.abs(dx) > 0.15) bonkFacing = dx < 0 ? -1 : 1;
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
-    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value, cancelCharge: cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
+    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), cancelCharge: cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
     if (trackEnemyDamage) showEnemyDamage(enemyDamageSince(enemyHpSnapshot, s));
     if (s.player.attackTimerMs > attackTimerBefore) {
       playerAttackAt = animMs;
@@ -3383,6 +3388,11 @@ onBeforeUnmount(() => {
           <strong>PULAR</strong>
           <span class="jump-pips" aria-hidden="true"><i v-for="(available, index) in bonkJumpPips" :key="index" :class="{ on: available }"></i></span>
         </button>
+
+        <button v-if="ready && state && chargeStyle && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
+          type="button" class="survivor-auto-charge" :class="{ 'is-on': autoCharge }" :aria-pressed="autoCharge"
+          :aria-label="autoCharge ? 'Desativar carga automática' : 'Ativar carga automática'"
+          @click.stop="autoCharge = !autoCharge">AUTO {{ autoCharge ? '●' : '○' }}</button>
 
         <button v-if="ready && state && chargeStyle && !summary && !pickOptions && !pendingUpgrade && !evolving && !leaveConfirm && !specialModalOpen"
           type="button" class="survivor-charge-button" :class="{ 'is-held': chargeHeld, 'is-full': state.charge.level >= 1 || (chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200), 'is-rush': chargeStyle === 'teleporte' && state.charge.teleportHoldMs >= 1200 }"
