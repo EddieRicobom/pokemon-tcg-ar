@@ -16,4 +16,27 @@ describe('painel do laboratório', () => {
     exit.click(); await nextTick(); expect(onExit).toHaveBeenCalledOnce();
     app.unmount();
   });
+  it('troca formas de raio e alcance sem gerar valores inválidos no relatório', async () => {
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const root = document.createElement('div'); document.body.append(root);
+    const app = createApp(Debug); app.mount(root);
+    const selects = root.querySelectorAll('select');
+    const category = selects[1]!;
+    category.value = 'aura'; category.dispatchEvent(new Event('change')); await nextTick();
+    category.value = 'projetil'; category.dispatchEvent(new Event('change')); await nextTick();
+    [...root.querySelectorAll('button')].find(b => b.textContent?.includes('Reportar bug'))!.click(); await nextTick();
+    for (const group of root.querySelectorAll('fieldset')) (group.querySelector('button') as HTMLButtonElement).click();
+    await nextTick();
+    [...root.querySelectorAll('button')].find(b => b.textContent?.includes('Gerar código'))!.click(); await nextTick();
+    const code = (root.querySelector('textarea[readonly]') as HTMLTextAreaElement).value;
+    const encoded = code.slice('SVDEBUG1.'.length).replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(encoded + '='.repeat((4 - encoded.length % 4) % 4));
+    const payload = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, c => c.charCodeAt(0))));
+    expect(payload.player.move.category).toBe('projetil');
+    expect(Number.isFinite(payload.player.attackRange)).toBe(true);
+    expect(payload.player.attackRange).toBeGreaterThan(0);
+    app.unmount();
+  });
+
 });

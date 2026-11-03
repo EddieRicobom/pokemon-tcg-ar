@@ -35,8 +35,8 @@ import type { PokemonType } from './pokemon-data';
 export * from './survivor-types';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
-import { CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
-import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
+import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
+import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
 import type { ChargeStyle } from './survivor-charge';
 import { survivorProjectileLook } from './survivor-projectile-power';
 import { healersReaching, healShare, SUPPORT_HEAL_RADIUS } from './survivor-heal';
@@ -607,9 +607,11 @@ export function rollUpgrades(
     && (!u.requires || (player?.upgradeLevels[u.requires] ?? 0) > 0)
     && (u.rarity !== 'ancestral' || !alreadyAncestral)
     && (player?.upgradeLevels[u.id] ?? 0) < (u.maxLevels ?? Number.POSITIVE_INFINITY)
-    && (!player || (u.id !== 'power' && u.id !== 'resonance' || player.attackDamage < 60))
-    && (!player || u.id !== 'haste' || player.attackCooldownMs > 240)
-    && (!player || u.id !== 'multishot' || player.shots < (move.category === 'orbit' ? 1 + SURVIVOR_ORBIT_MAX - SURVIVOR_ORBIT_BASE : 5))
+    && (!player || (u.id !== 'power' && u.id !== 'resonance' || player.attackDamage < SURVIVOR_ATTACK_DAMAGE_CAP))
+    && (!player || u.id !== 'haste' || cadenceCanImprove(player))
+    && (!player || u.id !== 'multishot' || !['projetil', 'area', 'orbit', 'rapido', 'teleporte'].includes(move.category) || player.shots < (move.category === 'orbit' ? 1 + SURVIVOR_ORBIT_MAX - SURVIVOR_ORBIT_BASE : 5))
+    && (!player || u.id !== 'patient-shooter' && u.id !== CHARGE_RUSH_LENGTH_ID || cadenceCanImprove(player))
+    && (!player || u.id !== 'range' || move.category !== 'teleporte' || player.attackRange < TELEPORT_MAX_RANGE)
     && (!player || u.id !== 'pierce' || player.pierce < 4)
     && (!player || u.id !== 'heal-30' || player.hp < player.maxHp)
     && (!player || u.id !== 'jirachi-reroll' || player.upgradeRerolls < MAX_STARTING_REROLLS_STOCK)
@@ -1064,8 +1066,9 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     const longShot = p.upgradeLevels['long-shot'] ?? 0;
     if (openingStrike > 0 && e.hp >= e.maxHp) upgradeMultiplier *= 1 + openingStrike * 0.36;
     if (lastStand > 0 && p.hp <= p.maxHp * 0.3) upgradeMultiplier *= 1 + lastStand * 0.44;
-    if (closeQuarters > 0 && distanceFromPlayer <= BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + closeQuarters * 0.24;
-    if (longShot > 0 && distanceFromPlayer > BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + longShot * 0.24;
+    const upgradeDistance = Math.hypot(e.x - p.x, e.y - p.y);
+    if (closeQuarters > 0 && upgradeDistance <= BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + closeQuarters * 0.24;
+    if (longShot > 0 && upgradeDistance > BALANCE.defaultAttackDistance) upgradeMultiplier *= 1 + longShot * 0.24;
     const threatHunter = p.upgradeLevels['threat-hunter'] ?? 0;
     if (threatHunter > 0 && (e.boss || e.trainerId !== undefined)) finalThreatHunterMultiplier = 1 + threatHunter * 0.2;
     if (move.type === 'fire' && hasUpgrade(p, 'fire-combustion') && (e.burnMs ?? 0) > 0) upgradeMultiplier *= 1.24;
@@ -1180,7 +1183,7 @@ const TRAIL_LIFE_MS = 3500;
 const TRAIL_POINT_SPACING = 12;
 const TRAIL_TICK_MS = 420;
 
-/** Atualiza a faixa contínua da Trilha; quem toca a linha recebe dano contínuo proporcional ao tempo no contato. */
+/** Atualiza a faixa da Trilha; inimigos em contato recebem pulsos conforme a cadência. */
 function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate: boolean): void {
   const p = state.player;
   if (p.move.category !== 'trilha') return;
@@ -1199,12 +1202,13 @@ function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate
     if (!last || Math.hypot(last.x - p.x, last.y - p.y) >= TRAIL_POINT_SPACING) p.trailPath.push({ x: p.x, y: p.y, bornMs: state.elapsedMs });
   }
   const damage = artifactDamage(state) * 0.9 / BASIC_ATTACK_DAMAGE_FACTOR;
+  const tickMs = Math.max(160, TRAIL_TICK_MS * (p.trailCadenceFactor ?? 1) * (p.artifactFocusMs > 0 ? 0.8 : 1));
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0) continue;
     const touching = p.trailPath.some((point) => Math.hypot(e.x - point.x, e.y - point.y) <= p.attackRadius + e.radius);
     if (!touching || state.elapsedMs < (e.trailNextHitMs ?? 0)) continue;
-    e.trailNextHitMs = state.elapsedMs + TRAIL_TICK_MS;
+    e.trailNextHitMs = state.elapsedMs + tickMs;
     hitEnemy(state, e, damage, { x: e.x, y: e.y }, p.move, true, 0);
     hits++;
   }
@@ -1255,10 +1259,10 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       vy: Math.sin(angle) * p.projectileSpeed,
       damage: artifactDamage(state),
       pierce: p.pierce + (move.effect === 'atravessar' ? 1 : 0) + hypotheticalPierce,
-      lifeMs: 1600,
+      lifeMs: Math.max(1600, Math.ceil((p.attackRange + 30) / Math.max(1, p.projectileSpeed) * 1000) + 50),
       hit: [],
       canChain: move.effect === 'saltar',
-      size: p.projectileSize,
+      size: p.projectileSize, collisionRadius: 5 * (p.projectileHitRadiusFactor ?? 1),
       move,
       distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y),
       look,
@@ -1278,8 +1282,8 @@ function fireRapidShot(state: SurvivorState, target: SurvivorEnemy): void {
       id: state.nextId++, x: p.x, y: p.y,
       vx: Math.cos(angle) * p.projectileSpeed, vy: Math.sin(angle) * p.projectileSpeed,
       damage: artifactDamage(state) * 0.62,
-      pierce: p.pierce + (p.move.effect === 'atravessar' ? 1 : 0), lifeMs: 1600, hit: [],
-      canChain: p.move.effect === 'saltar', size: p.projectileSize, move: p.move,
+      pierce: p.pierce + (p.move.effect === 'atravessar' ? 1 : 0), lifeMs: Math.max(1600, Math.ceil((p.attackRange + 30) / Math.max(1, p.projectileSpeed) * 1000) + 50), hit: [],
+      canChain: p.move.effect === 'saltar', size: p.projectileSize, collisionRadius: 5 * (p.projectileHitRadiusFactor ?? 1), move: p.move,
       distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y), look,
     });
   }
@@ -1312,6 +1316,7 @@ function fireFocusShot(state: SurvivorState, target: SurvivorEnemy): void {
 function fireFocusBeam(state: SurvivorState, level: number): string {
   const p = state.player;
   const beam = focusBeam(level, p.attackRange);
+  beam.halfWidth *= p.focusBeamWidthFactor ?? 1;
   const [target] = nearestEnemies(state, beam.length, 1);
   const angle = target ? Math.atan2(target.y - p.y, target.x - p.x) : survivorAimAngle(p);
   const toX = p.x + Math.cos(angle) * beam.length;
@@ -2174,7 +2179,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     for (const e of state.enemies) {
       if (proj.hit.includes(e.id)) continue;
       const focusShot = proj.move?.category === 'foco' && proj.source !== 'support';
-      if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + (focusShot ? Math.max(5, proj.size ?? 5) : 5)) {
+      if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + (focusShot ? Math.max(5, proj.size ?? 5) : proj.collisionRadius ?? 5)) {
         if (focusShot) state.charge.level = Math.min(1, state.charge.level + FOCUS_HIT_CHARGE);
         hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move, true, proj.distanceFromPlayer ?? Math.hypot(e.x - p.x, e.y - p.y));
         drain(state, 1, proj.move ?? state.player.move);
@@ -2188,7 +2193,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           if (next) {
             const ang = Math.atan2(next.y - e.y, next.x - e.x);
             const speed = Math.hypot(proj.vx, proj.vy);
-            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size, move: proj.move, source: proj.source, distanceFromPlayer: proj.distanceFromPlayer, look: proj.look });
+            chained.push({ id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, damage: round1(proj.damage * 0.7), pierce: 0, lifeMs: 600, hit: [...proj.hit], canChain: false, size: proj.size, collisionRadius: proj.collisionRadius, move: proj.move, source: proj.source, distanceFromPlayer: proj.distanceFromPlayer, look: proj.look });
           }
         }
         if (proj.pierce <= 0) return false;

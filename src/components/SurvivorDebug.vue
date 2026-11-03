@@ -49,9 +49,16 @@ const dps = computed(() => lab.value.damageElapsedMs ? lab.value.damage * 1000 /
 function changeAttack(): void {
   const s = lab.value.state, p = s.player;
   const old = attackProfile(p.move, null), move = moveWith(type.value, category.value, null), next = attackProfile(move, null);
-  p.attackDamage *= next.damage / old.damage; p.attackCooldownMs *= next.cooldownMs / old.cooldownMs;
-  p.attackRange *= next.range / old.range; p.attackRadius = next.radius; p.projectileSpeed = next.projectileSpeed;
-  p.projectileSize = next.projectileSize; p.areaDamageMultiplier = category.value === 'area' ? .15 : 1;
+  const cadence = p.move.category === 'trilha' ? (p.trailCadenceFactor ?? 1) : p.attackCooldownMs / old.cooldownMs;
+  p.attackDamage *= next.damage / old.damage;
+  if (category.value === 'trilha') { p.trailCadenceFactor = Math.max(0.4, cadence); p.attackCooldownMs = next.cooldownMs; }
+  else p.attackCooldownMs = Math.max(240, next.cooldownMs * cadence);
+  const oldUsesRadius = ['aura', 'orbit', 'trilha'].includes(p.move.category);
+  const reachFactor = oldUsesRadius ? p.attackRadius / Math.max(1, old.radius) : p.attackRange / Math.max(1, old.range);
+  const radiusFactor = old.radius > 0 ? p.attackRadius / old.radius : reachFactor;
+  const sizeFactor = p.projectileSize / Math.max(1, old.projectileSize);
+  p.attackRange = next.range * reachFactor; p.attackRadius = next.radius * radiusFactor; p.projectileSpeed *= next.projectileSpeed / old.projectileSpeed;
+  p.projectileSize = next.projectileSize * sizeFactor; p.areaDamageMultiplier = category.value === 'area' ? .15 : 1;
   p.move = move; p.attackTimerMs = 0; s.charge = createSurvivorCharge(); s.projectiles = [];
   p.trailCharge = 0; p.trailActiveMs = 0; p.trailPath = [];
   s.special.type = type.value; triggerRef(lab);

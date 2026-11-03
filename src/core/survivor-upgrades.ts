@@ -1,4 +1,5 @@
 import type { MoveCategory } from './survivor-moves';
+import { RAPID_BURST_MIN_CYCLE_MS, TELEPORT_MAX_RANGE, TELEPORT_MIN_COOLDOWN_MS, teleportCooldownMs } from './survivor-charge';
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorPlayer, SurvivorUpgradeRarity } from './survivor-types';
 import type { SurvivorUpgrade } from './survivor-types';
@@ -13,13 +14,95 @@ export const SURVIVOR_RARITY_ORDER: readonly SurvivorUpgradeRarity[] = ['normal'
 export const SURVIVOR_ATTACK_DAMAGE_CAP = 180;
 
 function addAttackDamagePercent(player: SurvivorPlayer, percent: number): void {
+  if (player.attackDamage >= SURVIVOR_ATTACK_DAMAGE_CAP) return;
   player.attackDamage = Math.min(SURVIVOR_ATTACK_DAMAGE_CAP, round1(player.attackDamage * (1 + percent / 100)));
+}
+
+/** Cada forma converte cadência no próprio ritmo, com piso para evitar ataques por quadro. */
+export function improveCadence(p: SurvivorPlayer, factor: number): void {
+  if (!cadenceCanImprove(p)) {
+    if (p.attackDamage >= SURVIVOR_ATTACK_DAMAGE_CAP) p.speed = round1(p.speed * 1.05);
+    else addAttackDamagePercent(p, 10);
+    return;
+  }
+  if (p.move.category === 'trilha') p.trailCadenceFactor = Math.max(0.4, (p.trailCadenceFactor ?? 1) * factor);
+  else p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * factor));
+}
+
+export function cadenceCanImprove(p: SurvivorPlayer): boolean {
+  if (p.move.category === 'trilha') return (p.trailCadenceFactor ?? 1) > 0.4 + 1e-9;
+  if (p.move.category === 'teleporte') return teleportCooldownMs(p.attackCooldownMs, p.upgradeLevels['charge-rush-length'] ?? 0) > TELEPORT_MIN_COOLDOWN_MS;
+  if (p.move.category === 'rapido') return p.attackCooldownMs > RAPID_BURST_MIN_CYCLE_MS;
+  return p.attackCooldownMs > 240;
+}
+
+function cadenceText(category: MoveCategory, percent: number): string {
+  if (category === 'orbit') return `-${percent}% no tempo de rotação dos orbitais.`;
+  if (category === 'teleporte') return `-${percent}% na recarga do Teleporte, até o limite de 0,9 s.`;
+  if (category === 'trilha') return `-${percent}% no intervalo entre pulsos de dano da Trilha.`;
+  if (category === 'rapido') return `-${percent}% no intervalo entre rajadas, respeitando a pausa mínima.`;
+  if (category === 'foco') return `-${percent}% no intervalo dos disparos automáticos do Foco.`;
+  return `-${percent}% no tempo entre ataques.`;
+}
+
+function impactText(category: MoveCategory): string {
+  switch (category) {
+    case 'aura': return '+20% no raio da Aura';
+    case 'cone': return '+20% no alcance do Cone';
+    case 'foco': return '+20% na largura do disparo e do feixe';
+    case 'trilha': return '+20% na largura da Trilha';
+    case 'teleporte': return '+20% no raio do impacto e da onda';
+    case 'orbit': return '+1 orbital, até 6';
+    case 'area': return '+1 explosão em outro inimigo';
+    case 'rapido': return '+1 tiro em cada instante da Rajada';
+    case 'projetil': return '+1 projétil por disparo';
+  }
+}
+
+function improveImpact(p: SurvivorPlayer): void {
+  switch (p.move.category) {
+    case 'aura': case 'trilha': p.attackRadius = round1(p.attackRadius * 1.2); break;
+    case 'cone': p.attackRange = round1(p.attackRange * 1.2); break;
+    case 'foco': improveWidth(p, 1.2); break;
+    default: {
+      const max = p.move.category === 'orbit' ? 4 : 5;
+      if (p.shots >= max) improveWidth(p, 1.1);
+      else p.shots++;
+    }
+  }
+}
+
+function improveWidth(p: SurvivorPlayer, factor: number): void {
+  if (p.move.category === 'cone') p.attackRange = round1(p.attackRange * factor);
+  else if (p.move.category === 'projetil' || p.move.category === 'rapido' || p.move.category === 'foco') {
+    p.projectileSize = round1(p.projectileSize * factor);
+    if (p.move.category === 'foco') p.focusBeamWidthFactor = (p.focusBeamWidthFactor ?? 1) * factor;
+    else p.projectileHitRadiusFactor = (p.projectileHitRadiusFactor ?? 1) * factor;
+  } else p.attackRadius = round1(p.attackRadius * factor);
+}
+
+function widthText(category: MoveCategory): string {
+  if (category === 'cone') return 'alcance do Cone';
+  if (category === 'foco') return 'largura do disparo e do feixe';
+  if (category === 'projetil' || category === 'rapido') return 'raio dos projéteis';
+  if (category === 'trilha') return 'largura da Trilha';
+  return 'raio do golpe';
+}
+
+function cappedImpactText(category: MoveCategory): string {
+  const extra = ['projetil', 'area', 'orbit', 'rapido', 'teleporte'].includes(category) ? '; no limite de impactos, +10% no tamanho' : '';
+  return impactText(category) + extra;
+}
+
+function arsenalText(category: MoveCategory): string {
+  const projectile = category === 'projetil' || category === 'rapido' || category === 'foco';
+  return `${cappedImpactText(category)}, ${projectile ? '+1 perfuração' : '+15% de dano'} e +15% de alcance ou raio.`;
 }
 
 const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   {
     id: 'power', family: 'ataque', rarity: 'raro', name: 'Golpe mais forte', description: '+40% de dano no ataque.', valueRange: [32, 48],
-    describeValue: (m, value) => ({ name: 'Golpe mais forte', description: `${m.name}: +${value}% de dano, até 120.` }),
+    describeValue: (m, value) => ({ name: 'Golpe mais forte', description: `${m.name}: +${value}% de dano, até 180.` }),
     apply: (p, value = 40) => {
       if (p.attackDamage >= SURVIVOR_ATTACK_DAMAGE_CAP) return;
       addAttackDamagePercent(p, value);
@@ -27,11 +110,9 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   },
   {
     id: 'haste', family: 'ataque', rarity: 'raro', name: 'Recarga menor', description: '-15% no tempo entre ataques.', valueRange: [12, 18],
-    describeValue: (m, value) => ({ name: 'Recarga menor', description: `${m.name}: -${value}% no tempo entre ${m.category === 'aura' ? 'os pulsos' : 'ataques'}.` }),
+    describeValue: (m, value) => ({ name: 'Recarga menor', description: `${m.name}: ${cadenceText(m.category, value)} No limite: +10% de dano; se o dano também estiver no teto, +5% de movimento.` }),
     apply: (p, value = 15) => {
-      // não deixa cair abaixo de 240 ms (o teste espera 240)
-      if (p.attackCooldownMs <= 240) return;
-      p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * (1 - value / 100)));
+      improveCadence(p, 1 - value / 100);
     },
   },
   { id: 'legs', family: 'movimento', rarity: 'normal', name: 'Passo mais rápido', description: '+12% de velocidade ao andar.', valueRange: [9, 14], describeValue: (_m, value) => ({ name: 'Passo mais rápido', description: `+${value}% de velocidade ao andar.` }), apply: (p, value = 12) => { p.speed = round1(p.speed * (1 + value / 100)); } },
@@ -41,9 +122,9 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'guard-special', family: 'defesa', rarity: 'normal', name: 'Manto especial', description: '+25 de Defesa Especial contra projéteis (até 2 cartas).', icon: '✨', maxLevels: 2, apply: (p) => { p.spDefenseBonus = (p.spDefenseBonus ?? 0) + 25; } },
   { id: 'guard-balanced', family: 'defesa', rarity: 'raro', name: 'Postura defensiva', description: '+20 de Defesa e Defesa Especial (uma vez por corrida).', icon: '🛡', maxLevels: 1, apply: (p) => { p.defenseBonus = (p.defenseBonus ?? 0) + 20; p.spDefenseBonus = (p.spDefenseBonus ?? 0) + 20; } },
   {
-    id: 'range', family: 'ataque', rarity: 'raro', name: 'Alcance maior', description: '+20% no alcance do golpe.', for: ['projetil', 'area', 'cone'], valueRange: [16, 24],
-    describeValue: (_m, value) => ({ name: 'Alcance maior', description: `+${value}% no alcance do golpe.` }),
-    apply: (p, value = 20) => { p.attackRange = round1(p.attackRange * (1 + value / 100)); },
+    id: 'range', family: 'ataque', rarity: 'raro', name: 'Alcance maior', description: '+20% no alcance ou raio do golpe.', valueRange: [16, 24],
+    describeValue: (m, value) => ({ name: 'Alcance maior', description: `+${value}% no ${m.category === 'trilha' ? 'raio da Trilha' : m.category === 'aura' || m.category === 'orbit' ? 'raio do golpe' : 'alcance do golpe'}.` }),
+    apply: (p, value = 20) => { improveReach(p, 1 + value / 100); },
   },
   {
     id: 'more-upgrade-choices', family: 'progresso', rarity: 'raro', name: 'Mochila de escolhas',
@@ -60,16 +141,12 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'xp-boost-35', family: 'progresso', rarity: 'lendario', name: 'Rota de experiência III', description: '+35% de XP recebido dos orbes.', maxLevels: 1, requires: 'xp-boost-25', apply: (p) => { p.xpMultiplier = Math.max(p.xpMultiplier ?? 1, 1.35); } },
   { id: 'xp-boost-50', family: 'progresso', rarity: 'ancestral', name: 'Rota de experiência IV', description: '+50% de XP recebido dos orbes.', maxLevels: 1, requires: 'xp-boost-35', apply: (p) => { p.xpMultiplier = Math.max(p.xpMultiplier ?? 1, 1.5); } },
   {
-    id: 'multishot', family: 'ataque', rarity: 'lendario', name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.', for: ['projetil', 'area', 'orbit'],
-    describe: (m) => (m.category === 'area'
-      ? { name: 'Explosão extra', description: `${m.name}: +1 explosão por ataque, em outro inimigo.` }
-      : m.category === 'orbit'
-        ? { name: 'Orbital extra', description: `${m.name}: +1 orbital girando em volta (até 6).` }
-        : { name: 'Disparo múltiplo', description: '+1 projétil por disparo, em leque.' }),
-    apply: (p) => { p.shots = Math.min(5, p.shots + 1); },
+    id: 'multishot', family: 'ataque', rarity: 'lendario', name: 'Impacto múltiplo', description: 'Amplia o golpe conforme sua forma.', maxLevels: 4,
+    describe: (m) => ({ name: m.category === 'orbit' ? 'Orbital extra' : 'Impacto múltiplo', description: `${impactText(m.category)}.` }),
+    apply: (p) => { improveImpact(p); },
   },
   {
-    id: 'pierce', family: 'ataque', rarity: 'lendario', name: 'Golpe perfurante', description: 'O golpe atravessa +1 inimigo antes de sumir.', for: ['projetil'],
+    id: 'pierce', family: 'ataque', rarity: 'lendario', name: 'Golpe perfurante', description: 'O golpe atravessa +1 inimigo antes de sumir.', for: ['projetil', 'rapido', 'foco'],
     apply: (p) => { p.pierce = Math.min(4, p.pierce + 1); },
   },
   {
@@ -78,15 +155,15 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
     apply: (p) => { p.projectileDeflection = true; },
   },
   {
-    id: 'radius', family: 'ataque', rarity: 'raro', name: 'Golpe maior', description: '+20% no raio do golpe.', for: ['aura', 'area', 'orbit'], valueRange: [16, 24],
-    describeValue: (m, value) => ({ name: 'Golpe maior', description: `${m.name}: +${value}% no ${m.category === 'aura' ? 'raio da aura' : 'raio do golpe'}.` }),
-    apply: (p, value = 20) => { p.attackRadius = round1(p.attackRadius * (1 + value / 100)); },
+    id: 'radius', family: 'ataque', rarity: 'raro', name: 'Golpe maior', description: '+20% no tamanho do golpe.', valueRange: [16, 24],
+    describeValue: (m, value) => ({ name: 'Golpe maior', description: `${m.name}: +${value}% no ${widthText(m.category)}.` }),
+    apply: (p, value = 20) => { improveWidth(p, 1 + value / 100); },
   },
   { id: 'magnet', family: 'progresso', rarity: 'normal', name: 'Ímã de XP', description: '+30% no alcance para coletar orbes de XP.', valueRange: [24, 36], describeValue: (_m, value) => ({ name: 'Ímã de XP', description: `+${value}% no alcance para coletar orbes de XP.` }), apply: (p, value = 30) => { p.pickupRadius = round1(p.pickupRadius * (1 + value / 100)); } },
-  { id: 'velocity', family: 'ataque', rarity: 'normal', name: 'Velocidade de saída', description: '+18% na velocidade dos projéteis.', for: ['projetil'], maxLevels: 1, valueRange: [15, 21], describeValue: (_m, value) => ({ name: 'Velocidade de saída', description: `+${value}% na velocidade dos projéteis.` }), apply: (p, value = 18) => { p.projectileSpeed = round1(p.projectileSpeed * (1 + value / 100)); } },
+  { id: 'velocity', family: 'ataque', rarity: 'normal', name: 'Velocidade de saída', description: '+18% na velocidade dos projéteis.', for: ['projetil', 'rapido', 'foco'], maxLevels: 1, valueRange: [15, 21], describeValue: (_m, value) => ({ name: 'Velocidade de saída', description: `+${value}% na velocidade dos projéteis.` }), apply: (p, value = 18) => { p.projectileSpeed = round1(p.projectileSpeed * (1 + value / 100)); } },
   { id: 'renewal', family: 'defesa', rarity: 'normal', name: 'Renovação', description: '+15 de vida máxima e cura 15.', maxLevels: 1, valueRange: [12, 18], describeValue: (_m, value) => ({ name: 'Renovação', description: `+${value} de vida máxima e cura ${value}.` }), apply: (p, value = 15) => { p.maxHp += value; p.hp = Math.min(p.maxHp, p.hp + value); } },
   { id: 'tempo', family: 'movimento', rarity: 'normal', name: 'Passo cadenciado', description: '+8% de velocidade de movimento.', maxLevels: 1, valueRange: [6, 10], describeValue: (_m, value) => ({ name: 'Passo cadenciado', description: `+${value}% de velocidade de movimento.` }), apply: (p, value = 8) => { p.speed = round1(p.speed * (1 + value / 100)); } },
-  { id: 'resonance', family: 'ataque', rarity: 'normal', name: 'Ressonância', description: '+20% de dano no golpe principal.', maxLevels: 1, valueRange: [16, 24], describeValue: (_m, value) => ({ name: 'Ressonância', description: `+${value}% de dano no golpe principal, até 120.` }), apply: (p, value = 20) => { addAttackDamagePercent(p, value); } },
+  { id: 'resonance', family: 'ataque', rarity: 'normal', name: 'Ressonância', description: '+20% de dano no golpe principal.', maxLevels: 1, valueRange: [16, 24], describeValue: (_m, value) => ({ name: 'Ressonância', description: `+${value}% de dano no golpe principal, até 180.` }), apply: (p, value = 20) => { addAttackDamagePercent(p, value); } },
   { id: 'area-damage-30', family: 'ataque', rarity: 'normal', name: 'Estilhaço amplo', description: 'Aumenta o dano em área secundário para 30%.', for: ['area'], maxLevels: 1, apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.30); } },
   { id: 'area-damage-50', family: 'ataque', rarity: 'raro', name: 'Onda expandida', description: 'Aumenta o dano em área secundário para 50%.', for: ['area'], maxLevels: 1, requires: 'area-damage-30', apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.50); } },
   { id: 'area-damage-75', family: 'ataque', rarity: 'lendario', name: 'Campo devastador', description: 'Aumenta o dano em área secundário para 75%.', for: ['area'], maxLevels: 1, requires: 'area-damage-50', apply: (p) => { p.areaDamageMultiplier = Math.max(p.areaDamageMultiplier, 0.75); } },
@@ -102,7 +179,7 @@ const GENERIC_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'coins-500', family: 'progresso', rarity: 'lendario', name: 'Tesouro da Torre', description: 'Ganha 500 moedas quando a corrida terminar.', icon: '🪙', maxLevels: 1, apply: (p) => { p.bonusCoins = (p.bonusCoins ?? 0) + 500; } },
   { id: 'difficulty', family: 'progresso', rarity: 'normal', name: 'Dificuldade', description: '+15% densidade e +12% de velocidade e dano dos inimigos. Pode acumular.', icon: '☠', apply: (p) => { p.difficultyStacks = (p.difficultyStacks ?? 0) + 1; } },
   { id: 'crit', family: 'ataque', rarity: 'raro', name: 'Golpe certeiro', description: '+10% de chance de o golpe principal causar dano dobrado (até 3 cartas).', maxLevels: 3, apply: (p) => { p.critChance = Math.min(0.4, (p.critChance ?? 0) + 0.1); } },
-  { id: 'patient-shooter', family: 'ataque', rarity: 'raro', for: ['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte'], name: 'Atirador paciente', description: 'Metade da velocidade de movimento; +50% de cadência de ataque, respeitando os limites da forma.', maxLevels: 1, apply: (p) => { p.speed *= 0.5; p.attackCooldownMs = Math.max(240, p.attackCooldownMs / 1.5); } },
+  { id: 'patient-shooter', family: 'ataque', rarity: 'raro', name: 'Atirador paciente', description: 'Metade da velocidade de movimento; +50% de cadência de ataque, respeitando os limites da forma.', describe: (m) => ({ name: 'Atirador paciente', description: `Metade da velocidade de movimento; +50% de cadência. ${cadenceText(m.category, 33)} Respeita os limites da forma.` }), maxLevels: 1, apply: (p) => { p.speed *= 0.5; improveCadence(p, 1 / 1.5); } },
   { id: 'light-footwork', family: 'movimento', rarity: 'raro', name: 'Passos leves', description: '+20% de velocidade de movimento; -10% de dano do ataque.', maxLevels: 1, apply: (p) => { p.speed *= 1.2; p.attackDamage *= 0.9; } },
   { id: 'crit-power', family: 'ataque', rarity: 'raro', name: 'Impacto certeiro', description: 'Críticos causam +25% do dano base (até 2 cartas).', maxLevels: 2, apply: () => {} },
   { id: 'crit-finish', family: 'ataque', rarity: 'raro', name: 'Golpe final', description: '+5 pontos de chance de crítico contra inimigos com até 30% de vida (até 2 cartas; teto 40%).', maxLevels: 2, apply: () => {} },
@@ -163,8 +240,8 @@ function attackTree(category: MoveCategory): SurvivorUpgrade[] {
   return [
     { id: root, family: 'ataque', rarity: 'normal', name: power, description: '+20% de dano nesta forma de golpe.', for: [category], maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 20); } },
     { id: second, family: 'ataque', rarity: 'raro', name: reach, description: '+15% de alcance ou raio nesta forma de golpe.', for: [category], requires: root, maxLevels: 1, apply: (p) => { improveReach(p, 1.15); } },
-    { id: third, family: 'ataque', rarity: 'raro', name: cadence, description: '-12% no tempo entre ataques desta forma.', for: [category], requires: second, maxLevels: 1, apply: (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.88)); } },
-    { id: `attack-tree-${category}-4`, family: 'ataque', rarity: 'lendario', name: finale, description: category === 'teleporte' ? '+40% de dano e +20% no raio do impacto e da onda.' : category === 'rapido' ? '+40% de dano e +1 tiro em leque a cada instante da Rajada.' : '+40% de dano e +1 disparo/impacto desta forma.', for: [category], requires: third, maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 40); p.shots = Math.min(5, p.shots + 1); } },
+    { id: third, family: 'ataque', rarity: 'raro', name: cadence, description: `${cadenceText(category, 12)} No limite: +10% de dano; se o dano também estiver no teto, +5% de movimento.`, for: [category], requires: second, maxLevels: 1, apply: (p) => { improveCadence(p, 0.88); } },
+    { id: `attack-tree-${category}-4`, family: 'ataque', rarity: 'lendario', name: finale, description: `+40% de dano e ${cappedImpactText(category)}.`, for: [category], requires: third, maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 40); improveImpact(p); } },
   ];
 }
 
@@ -177,7 +254,7 @@ export const CHARGE_RAPID_CADENCE_ID = 'charge-rapid-cadence';
 export const TRAIL_CHARGE_ID = 'trail-charge-distance';
 const CHARGE_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: CHARGE_FOCUS_RATE_ID, family: 'ataque', rarity: 'raro', name: 'Concentração profunda', description: 'A barra do Foco enche 25% mais rápido enquanto você segura.', for: ['foco'], maxLevels: 2, apply: () => {} },
-  { id: CHARGE_RUSH_LENGTH_ID, family: 'ataque', rarity: 'raro', name: 'Passo preparado', description: '-17% na recarga do Teleporte carregado por carta.', for: ['teleporte'], maxLevels: 3, apply: () => {} },
+  { id: CHARGE_RUSH_LENGTH_ID, family: 'ataque', rarity: 'raro', name: 'Passo preparado', description: 'Divide a recarga do Teleporte por 1 + 20% por carta, até o mínimo de 0,9 s.', for: ['teleporte'], maxLevels: 3, apply: () => {} },
   { id: CHARGE_RAPID_CADENCE_ID, family: 'ataque', rarity: 'raro', name: 'Cadência de rajada', description: '+1 tiro na Rajada a cada instante da sequência.', for: ['rapido'], maxLevels: 1, apply: (p) => { p.shots = Math.min(5, p.shots + 1); } },
   { id: TRAIL_CHARGE_ID, family: 'ataque', rarity: 'raro', name: 'Passos ressonantes', description: 'A Trilha enche 20% mais rápido enquanto você anda.', for: ['trilha'], maxLevels: 2, apply: () => {} },
 ];
@@ -187,12 +264,12 @@ function typeUpgrade(type: PokemonType, id: string, name: string, description: s
   return { id, type, name, description, family: 'elemento', rarity: 'raro', maxLevels: 1, ...(forCategories ? { for: forCategories } : {}), apply };
 }
 function improveReach(p: SurvivorPlayer, factor: number): void {
-  if (p.move.category === 'aura' || p.move.category === 'orbit') p.attackRadius = round1(p.attackRadius * factor);
+  if (p.move.category === 'aura' || p.move.category === 'orbit' || p.move.category === 'trilha' || (p.move.category === 'teleporte' && p.attackRange >= TELEPORT_MAX_RANGE)) p.attackRadius = round1(p.attackRadius * factor);
   else p.attackRange = round1(p.attackRange * factor);
 }
 
 const TYPE_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
-  typeUpgrade('normal', 'normal-rhythm', 'Ritmo constante', '-10% na recarga do golpe principal.', (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.9)); }),
+  typeUpgrade('normal', 'normal-rhythm', 'Ritmo constante', '-10% na recarga do golpe principal; no limite: +10% de dano ou, se também estiver no teto, +5% de movimento.', (p) => { improveCadence(p, 0.9); }),
   typeUpgrade('normal', 'normal-adapt', 'Ataque adaptável', '+12% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.12); }),
   typeUpgrade('fire', 'fire-brasa', 'Brasa viajante', 'Queimaduras do golpe principal causam +50% de dano.', (p) => { p.upgradeLevels['fire-brasa'] = 0; }),
   typeUpgrade('fire', 'fire-combustion', 'Combustão controlada', '+24% de dano contra inimigos já queimando.', (p) => { p.upgradeLevels['fire-combustion'] = 0; }),
@@ -221,7 +298,7 @@ const TYPE_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   typeUpgrade('ghost', 'ghost-haunt', 'Assombração', 'Ecos espectrais passam de 20% para 30% do dano.', (p) => { p.upgradeLevels['ghost-haunt'] = 0; }),
   typeUpgrade('ghost', 'ghost-phase', 'Travessia espectral', '+15% de alcance ou raio do golpe principal.', (p) => { improveReach(p, 1.15); }),
   typeUpgrade('dragon', 'dragon-pressure', 'Pressão dracônica', '+30% de dano contra chefes.', (p) => { p.upgradeLevels['dragon-pressure'] = 0; }),
-  typeUpgrade('dragon', 'dragon-cadence', 'Cadência ancestral', '-10% na recarga do golpe principal.', (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.9)); }),
+  typeUpgrade('dragon', 'dragon-cadence', 'Cadência ancestral', '-10% na recarga do golpe principal; no limite: +10% de dano ou, se também estiver no teto, +5% de movimento.', (p) => { improveCadence(p, 0.9); }),
   typeUpgrade('dark', 'dark-predation', 'Predação', '+24% de dano contra inimigos abaixo de metade da vida.', (p) => { p.upgradeLevels['dark-predation'] = 0; }),
   typeUpgrade('dark', 'dark-thirst', 'Sede disciplinada', 'Roubo de vida cura até 3 por ativação.', (p) => { p.upgradeLevels['dark-thirst'] = 0; }),
   typeUpgrade('steel', 'steel-plate', 'Placa reativa', 'Reduz 12% do dano recebido.', (p) => { p.upgradeLevels['steel-plate'] = 0; }),
@@ -244,8 +321,8 @@ function elementTree(type: PokemonType): SurvivorUpgrade[] {
   return [
     { id: root, type, family: 'elemento', rarity: 'normal', name: `${name} sintonizado`, description: `+18% de dano para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 18); } },
     { id: second, type, family: 'elemento', rarity: 'raro', name: `${name} expansivo`, description: `+14% de alcance ou raio para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, requires: root, maxLevels: 1, apply: (p) => { improveReach(p, 1.14); } },
-    { id: third, type, family: 'elemento', rarity: 'raro', name: `${name} acelerado`, description: `-10% no tempo entre ataques de ${name.toLocaleLowerCase('pt-BR')}.`, requires: second, maxLevels: 1, apply: (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.9)); } },
-    { id: `element-tree-${type}-4`, type, family: 'elemento', rarity: 'lendario', name: `Ápice de ${name}`, description: `+36% de dano e +1 impacto para o golpe de ${name.toLocaleLowerCase('pt-BR')}.`, requires: third, maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 36); p.shots = Math.min(5, p.shots + 1); } },
+    { id: third, type, family: 'elemento', rarity: 'raro', name: `${name} acelerado`, description: `-10% no tempo entre ataques de ${name.toLocaleLowerCase('pt-BR')}.`, describe: (m) => ({ name: `${name} acelerado`, description: `${cadenceText(m.category, 10)} No limite: +10% de dano; se o dano também estiver no teto, +5% de movimento.` }), requires: second, maxLevels: 1, apply: (p) => { improveCadence(p, 0.9); } },
+    { id: `element-tree-${type}-4`, type, family: 'elemento', rarity: 'lendario', name: `Ápice de ${name}`, description: `+36% de dano e melhora a forma do golpe.`, describe: (m) => ({ name: `Ápice de ${name}`, description: `+36% de dano e ${cappedImpactText(m.category)}.` }), requires: third, maxLevels: 1, apply: (p) => { addAttackDamagePercent(p, 36); improveImpact(p); } },
   ];
 }
 
@@ -265,18 +342,19 @@ const ANCESTRAL_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   },
   {
     id: 'ancestral-strike', family: 'ataque', rarity: 'ancestral', name: 'Golpe ancestral',
-    description: '+50% de dano (até 120) e +12% de alcance ou raio.', maxLevels: 1,
+    description: '+50% de dano (até 180) e +12% de alcance ou raio.', maxLevels: 1,
     apply: (p) => { addAttackDamagePercent(p, 50); improveReach(p, 1.12); },
   },
   {
     id: 'ancestral-flow', family: 'movimento', rarity: 'ancestral', name: 'Fluxo ancestral',
-    description: '-18% no tempo entre ataques (mínimo 240 ms) e +12% de velocidade.', maxLevels: 1,
-    apply: (p) => { p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.82)); p.speed = round1(p.speed * 1.12); },
+    description: '-18% no intervalo de ataque e +12% de velocidade; no limite de cadência, +10% de dano ou +5% de movimento se o dano também estiver no teto.', describe: (m) => ({ name: 'Fluxo ancestral', description: `${cadenceText(m.category, 18)} +12% de movimento; no limite, +10% de dano ou +5% de movimento se o dano também estiver no teto.` }), maxLevels: 1,
+    apply: (p) => { improveCadence(p, 0.82); p.speed = round1(p.speed * 1.12); },
   },
   {
     id: 'ancestral-arsenal', family: 'ataque', rarity: 'ancestral', name: 'Arsenal ancestral',
     description: '+1 disparo/impacto, +1 perfuração e +15% de alcance ou raio.', maxLevels: 1,
-    apply: (p) => { p.shots = Math.min(5, p.shots + 1); p.pierce = Math.min(4, p.pierce + 1); improveReach(p, 1.15); },
+    describe: (m) => ({ name: 'Arsenal ancestral', description: arsenalText(m.category) }),
+    apply: (p) => { improveImpact(p); if (p.move.category === 'projetil' || p.move.category === 'rapido' || p.move.category === 'foco') p.pierce = Math.min(4, p.pierce + 1); else addAttackDamagePercent(p, 15); improveReach(p, 1.15); },
   },
   {
     id: 'ancestral-bastion', family: 'defesa', rarity: 'ancestral', name: 'Bastião ancestral',
@@ -285,8 +363,8 @@ const ANCESTRAL_SURVIVOR_UPGRADES: readonly SurvivorUpgrade[] = [
   },
   {
     id: 'ancestral-tempest', family: 'movimento', rarity: 'ancestral', name: 'Tempestade ancestral',
-    description: '+18% de velocidade e -15% no tempo entre ataques.', maxLevels: 1,
-    apply: (p) => { p.speed = round1(p.speed * 1.18); p.attackCooldownMs = Math.max(240, Math.round(p.attackCooldownMs * 0.85)); },
+    description: '+18% de velocidade e -15% no intervalo de ataque; no limite de cadência, +10% de dano ou +5% de movimento se o dano também estiver no teto.', describe: (m) => ({ name: 'Tempestade ancestral', description: `+18% de movimento. ${cadenceText(m.category, 15)} No limite, +10% de dano ou +5% de movimento se o dano também estiver no teto.` }), maxLevels: 1,
+    apply: (p) => { p.speed = round1(p.speed * 1.18); improveCadence(p, 0.85); },
   },
   {
     id: 'ancestral-revival', family: 'defesa', rarity: 'ancestral', name: 'Renascimento ancestral',

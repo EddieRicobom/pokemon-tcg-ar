@@ -735,13 +735,13 @@ describe('golpes por tipo', () => {
     player.level = 8;
     for (let seed = 1; seed < 30; seed++) {
       const picks = rollUpgrades(seededRng(seed), 3, aura, player);
-      for (const p of picks) expect(['multishot', 'pierce', 'range']).not.toContain(p.id);
+      for (const p of picks) expect(p.id).not.toBe('pierce');
     }
     const all = Array.from({ length: 80 }, (_, seed) => rollUpgrades(seededRng(seed), 3, aura, player)).flat();
     const power = all.find((option) => option.id === 'power');
     expect(power?.value).toBeGreaterThanOrEqual(32);
     expect(power?.value).toBeLessThanOrEqual(48);
-    expect(power?.description).toBe(`Folhas cortantes: +${power?.value}% de dano, até 120.`);
+    expect(power?.description).toBe(`Folhas cortantes: +${power?.value}% de dano, até 180.`);
   });
 
   it('oferece especializações só para o tipo principal e não repete as já escolhidas', () => {
