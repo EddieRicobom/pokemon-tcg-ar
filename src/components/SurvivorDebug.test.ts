@@ -11,6 +11,8 @@ describe('painel do laboratório', () => {
     const onExit = vi.fn(); const app = createApp(Debug, { onExit }); app.mount(root);
     expect(root.textContent).toContain('Laboratório do Ditto');
     expect(root.textContent).toContain('Vida infinita dos alvos');
+    const auto = [...root.querySelectorAll('label')].find(label => label.textContent?.includes('Carga automática'))?.querySelector('input');
+    expect(auto?.checked).toBe(true);
     expect(root.textContent).toContain('Ganhar XP para 10 níveis');
     const exit = [...root.querySelectorAll('button')].find(b => b.textContent?.includes('Sair'))!;
     exit.click(); await nextTick(); expect(onExit).toHaveBeenCalledOnce();
