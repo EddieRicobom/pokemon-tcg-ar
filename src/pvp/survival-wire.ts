@@ -27,7 +27,7 @@ export type SurvivalWireMessage =
   /** Anfitrião → convidado: os dois estão prontos, a contagem começa. */
   | { t: 'sv-go' }
   /** Convidado → anfitrião: para onde andar e quem quer em campo. `seq` cresce a cada envio. */
-  | { t: 'sv-input'; seq: number; dx: number; dy: number; switchTo: number }
+  | { t: 'sv-input'; seq: number; dx: number; dy: number; switchTo: number; shield?: boolean }
   /** Anfitrião → convidado: o estado da arena e o que aconteceu desde o último. */
   | { t: 'sv-snap'; snap: ArenaSnapshot; events: ArenaEvent[] }
   /** Peguei uma carta de melhoria na run: id e raridade das regras reais, nome só para mostrar. */
@@ -39,7 +39,7 @@ const isInt = (v: unknown, lo: number, hi: number): v is number => isNum(v, lo, 
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 const TYPES = new Set<string>(POKEMON_TYPES);
 const isType = (v: unknown): v is PokemonType => typeof v === 'string' && TYPES.has(v);
-const CATEGORIES = new Set<MoveCategory>(['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte']);
+const CATEGORIES = new Set<MoveCategory>(['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte', 'trilha']);
 const EFFECTS = new Set<MoveEffect>(['queimar', 'lentidao', 'empurrar', 'saltar', 'atordoar', 'atravessar', 'roubar', 'nenhum']);
 const isCategory = (v: unknown): v is MoveCategory => typeof v === 'string' && CATEGORIES.has(v as MoveCategory);
 const isEffect = (v: unknown): v is MoveEffect => typeof v === 'string' && EFFECTS.has(v as MoveEffect);
@@ -103,7 +103,24 @@ function parseSideSnap(v: unknown): ArenaSnapshot['sides'][0] | null {
   if (!isObj(v) || !Array.isArray(v.hp) || v.hp.length === 0 || v.hp.length > SV_TEAM_SIZE || !v.hp.every((n) => isNum(n, 0, SV_LIMITS.maxHp[1]))) return null;
   if (!isInt(v.active, 0, SV_TEAM_SIZE - 1) || !isNum(v.x, 0, SV_ARENA_W) || !isNum(v.y, 0, SV_ARENA_H)) return null;
   if (!isNum(v.fireMs, 0, 5000) || !isNum(v.switchCdMs, 0, 60000) || !isNum(v.shieldMs, 0, 10000)) return null;
-  return { hp: v.hp as number[], active: v.active, x: v.x, y: v.y, fireMs: v.fireMs, switchCdMs: v.switchCdMs, shieldMs: v.shieldMs };
+  const side: ArenaSnapshot['sides'][0] = { hp: v.hp as number[], active: v.active, x: v.x, y: v.y, fireMs: v.fireMs, switchCdMs: v.switchCdMs, shieldMs: v.shieldMs };
+  // Escudo, órbita, Trilha e efeitos: opcionais (um anfitrião mais antigo não manda), mas se vierem têm de estar nos limites.
+  const optional: [keyof ArenaSnapshot['sides'][0], number][] = [['guardMs', 3000], ['guardCdMs', 20000], ['orbitAngle', 7], ['trailCharge', 1], ['trailMs', 6000], ['burnMs', 5000], ['slowMs', 5000], ['stunMs', 5000]];
+  for (const [key, max] of optional) {
+    if (v[key] === undefined) continue;
+    if (!isNum(v[key], 0, max)) return null;
+    (side as unknown as Record<string, number>)[key] = v[key] as number;
+  }
+  if (v.trail !== undefined) {
+    if (!Array.isArray(v.trail) || v.trail.length > 60) return null;
+    const trail: { x: number; y: number }[] = [];
+    for (const p of v.trail) {
+      if (!isObj(p) || !isNum(p.x, 0, SV_ARENA_W) || !isNum(p.y, 0, SV_ARENA_H)) return null;
+      trail.push({ x: p.x, y: p.y });
+    }
+    side.trail = trail;
+  }
+  return side;
 }
 
 export function parseSvSnapshot(v: unknown): ArenaSnapshot | null {
@@ -137,6 +154,11 @@ function parseEvents(v: unknown): ArenaEvent[] | null {
     else if (e.k === 'telegraph' && isNum(e.x, 0, SV_ARENA_W) && isNum(e.y, 0, SV_ARENA_H) && isNum(e.radius, 18, 160) && isType(e.type)) out.push({ k: 'telegraph', side: e.side, x: e.x, y: e.y, radius: e.radius, type: e.type });
     else if (e.k === 'faint' && isInt(e.index, 0, SV_TEAM_SIZE - 1)) out.push({ k: 'faint', side: e.side, index: e.index });
     else if (e.k === 'switch' && isInt(e.index, 0, SV_TEAM_SIZE - 1) && typeof e.forced === 'boolean') out.push({ k: 'switch', side: e.side, index: e.index, forced: e.forced });
+    else if (e.k === 'guard') out.push({ k: 'guard', side: e.side });
+    else if (e.k === 'block') out.push({ k: 'block', side: e.side });
+    else if (e.k === 'cone' && isNum(e.angle, -7, 7) && isNum(e.range, 0, 600)) out.push({ k: 'cone', side: e.side, angle: e.angle, range: e.range });
+    else if (e.k === 'pulse' && isNum(e.radius, 0, 400)) out.push({ k: 'pulse', side: e.side, radius: e.radius });
+    else if (e.k === 'blink' && isNum(e.x0, 0, SV_ARENA_W) && isNum(e.y0, 0, SV_ARENA_H) && isNum(e.x1, 0, SV_ARENA_W) && isNum(e.y1, 0, SV_ARENA_H)) out.push({ k: 'blink', side: e.side, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1 });
     else return null;
   }
   return out;
@@ -163,7 +185,7 @@ export function parseSurvivalMessage(v: Record<string, unknown>): SurvivalWireMe
       return typeof v.ok === 'boolean' ? { t: 'sv-ready', ok: v.ok } : null;
     case 'sv-input':
       return isInt(v.seq, 0, 1e9) && isNum(v.dx, -1.0001, 1.0001) && isNum(v.dy, -1.0001, 1.0001) && isInt(v.switchTo, -1, SV_TEAM_SIZE - 1)
-        ? { t: 'sv-input', seq: v.seq, dx: v.dx, dy: v.dy, switchTo: v.switchTo }
+        ? { t: 'sv-input', seq: v.seq, dx: v.dx, dy: v.dy, switchTo: v.switchTo, ...(v.shield === true ? { shield: true } : {}) }
         : null;
     case 'sv-snap': {
       const snap = parseSvSnapshot(v.snap);
@@ -179,4 +201,4 @@ export function parseSurvivalMessage(v: Record<string, unknown>): SurvivalWireMe
   }
 }
 
-export const inputOf = (m: { dx: number; dy: number; switchTo: number }): ArenaInput => ({ dx: m.dx, dy: m.dy, switchTo: m.switchTo });
+export const inputOf = (m: { dx: number; dy: number; switchTo: number; shield?: boolean }): ArenaInput => ({ dx: m.dx, dy: m.dy, switchTo: m.switchTo, shield: m.shield === true });

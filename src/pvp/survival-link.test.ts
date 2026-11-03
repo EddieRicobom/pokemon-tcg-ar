@@ -191,3 +191,36 @@ describe('survival pvp: aviso de buff no fio', () => {
     expect(isRareBuff('ancestral')).toBe(true);
   });
 });
+
+describe('survival pvp: escudo e golpes no fio', () => {
+  it('o convidado manda o escudo uma vez e o anfitrião o aplica', () => {
+    const toGuest = pipe();
+    const toHost = pipe();
+    const host = new SurvivalHostLink(toGuest.tx, [mon('a')], [mon('x')]);
+    const guest = new SurvivalGuestLink(toHost.tx, [mon('a')], [mon('x')]);
+    for (let i = 0; i < SV_COUNTDOWN_MS / 16 + 5; i++) host.step(16, NO_INPUT);
+    guest.sendInput({ dx: 0, dy: 0, switchTo: -1, shield: true }, 0);
+    for (const m of toHost.take()) host.receive(m);
+    host.step(16, NO_INPUT);
+    expect(host.state.sides[1].guardMs).toBeGreaterThan(0);
+    for (let i = 0; i < 8; i++) host.step(16, NO_INPUT); // passa de um instantâneo (66 ms)
+    expect(host.state.sides[1].guardCdMs).toBeGreaterThan(9000);
+    for (const m of toGuest.take()) guest.receive(m, 1);
+    expect(guest.state.sides[1].guardMs).toBeGreaterThan(0);
+  });
+
+  it('valida escudo, trilha e efeitos novos: dentro dos limites passa, fora recusa', () => {
+    const snap = JSON.parse(encodeMessage({ t: 'sv-snap', snap: snapshotArena(createArena([mon('a')], [mon('x')]), 1), events: [] }));
+    const ok = { ...snap, snap: { ...snap.snap, sides: [{ ...snap.snap.sides[0], guardMs: 1500, trail: [{ x: 10, y: 20 }] }, snap.snap.sides[1]] } };
+    expect(parseMessage(JSON.stringify(ok))).not.toBeNull();
+    const bad = { ...snap, snap: { ...snap.snap, sides: [{ ...snap.snap.sides[0], guardMs: 99_999 }, snap.snap.sides[1]] } };
+    expect(parseMessage(JSON.stringify(bad))).toBeNull();
+    const events = [{ k: 'guard', side: 0 }, { k: 'block', side: 1 }, { k: 'cone', side: 0, angle: 1.2, range: 180 }, { k: 'pulse', side: 1, radius: 80 }, { k: 'blink', side: 0, x0: 1, y0: 2, x1: 3, y1: 4 }];
+    expect(parseMessage(JSON.stringify({ ...snap, events }))).not.toBeNull();
+    expect(parseMessage(JSON.stringify({ ...snap, events: [{ k: 'cone', side: 0, angle: 99, range: 180 }] }))).toBeNull();
+  });
+
+  it('aceita um Pokémon de golpe Trilha (antes a categoria era recusada)', () => {
+    expect(parseMessage(JSON.stringify({ t: 'sv-team', name: 'Ash', team: [mon('a', { moveCategory: 'trilha' })] }))).not.toBeNull();
+  });
+});

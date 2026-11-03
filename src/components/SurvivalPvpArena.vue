@@ -3,8 +3,9 @@ import { onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
 import { TYPE_COLORS } from '../core/pokemon-data';
 import {
-  aliveCount, SV_ARENA_H, SV_ARENA_W, SV_SUDDEN_DEATH_MS, SV_SWITCH_COOLDOWN_MS, switchBlockReason,
+  aliveCount, guardBlockReason, SV_ARENA_H, SV_ARENA_W, SV_GUARD_COOLDOWN_MS, SV_MON_RADIUS, SV_SUDDEN_DEATH_MS, SV_SWITCH_COOLDOWN_MS, switchBlockReason,
 } from '../core/survivor-pvp';
+import { SURVIVOR_CONE_HALF_ANGLE, survivorOrbiterHitRadius, survivorOrbiters } from '../core/survivor-shapes';
 import type { ArenaEvent, ArenaSide, ArenaState, ArenaTeamState } from '../core/survivor-pvp';
 import { SurvivalGuestLink, SurvivalHostLink } from '../pvp/survival-link';
 import type { ArenaView } from '../pvp/survival-link';
@@ -46,6 +47,25 @@ interface Unit {
   name: string;
   hpPct: number;
   shield: boolean;
+  /** Escudo do botão (a bolha dourada). */
+  guard: boolean;
+  /** Efeitos do golpe do rival em andamento. */
+  status: string;
+}
+interface Orb {
+  key: string;
+  mine: boolean;
+  x: number;
+  y: number;
+  color: string;
+  size: string;
+}
+interface Fx {
+  id: number;
+  kind: 'cone' | 'pulse' | 'blink';
+  mine: boolean;
+  color: string;
+  style: Record<string, string>;
 }
 interface Bullet {
   id: number;
@@ -72,6 +92,9 @@ interface Hud {
   count: number;
   switchPct: number;
   switchSec: number;
+  guardPct: number;
+  guardSec: number;
+  guardOn: boolean;
 }
 
 const rowsOf = (team: ArenaTeamState): Row[] => team.mons.map((m, index) => ({
@@ -81,8 +104,11 @@ const rowsOf = (team: ArenaTeamState): Row[] => team.mons.map((m, index) => ({
 
 const clock = (ms: number): string => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 
-const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0 });
+const hud = shallowRef<Hud>({ mine: [], foe: [], summary: '', hint: '', count: 0, switchPct: 0, switchSec: 0, guardPct: 0, guardSec: 0, guardOn: false });
 const units = shallowRef<Unit[]>([]);
+const orbs = shallowRef<Orb[]>([]);
+const trailDots = shallowRef<Orb[]>([]);
+const fx = shallowRef<Fx[]>([]);
 const bullets = shallowRef<Bullet[]>([]);
 const markers = shallowRef<Marker[]>([]);
 const broken = ref<number[]>([]);
@@ -99,6 +125,8 @@ let joyVx = 0;
 let joyVy = 0;
 const keys = { up: false, down: false, left: false, right: false };
 let queuedSwitch = -1;
+let queuedGuard = false;
+let fxId = 0;
 let raf = 0;
 let last = 0;
 let lastHud = -Infinity;
@@ -129,6 +157,22 @@ function requestSwitch(index: number): void {
   queuedSwitch = index;
 }
 
+function requestGuard(): void {
+  const reason = guardBlockReason(state, mySide);
+  if (reason) {
+    toast(reason, 'info', 1800, `guard:${reason}`);
+    return;
+  }
+  queuedGuard = true;
+}
+
+/** Efeito curto na arena (corte do cone, pulso da aura, rastro do teleporte): some sozinho. */
+function addFx(kind: Fx['kind'], mine: boolean, color: string, style: Record<string, string>, ms = 380): void {
+  const id = ++fxId;
+  fx.value = [...fx.value.slice(-8), { id, kind, mine, color, style }];
+  setTimeout(() => (fx.value = fx.value.filter((f) => f.id !== id)), ms);
+}
+
 function inputVector(): { dx: number; dy: number } {
   const dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + joyVx;
   const dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0) + joyVy;
@@ -152,11 +196,45 @@ function handleEvents(events: ArenaEvent[]): void {
     } else if (e.k === 'faint') {
       const name = mons[e.index]?.name ?? 'Pokémon';
       toast(e.side === mySide ? `${name} desmaiou` : `${name} (${props.friendName}) desmaiou`, e.side === mySide ? 'bad' : 'good', 2600);
-    } else {
+    } else if (e.k === 'switch') {
       const name = mons[e.index]?.name ?? 'Pokémon';
       if (e.side === mySide) toast(e.forced ? `Entrou ${name}` : `Você trocou para ${name}`, 'info', 1800, `sw:${name}`);
       else toast(`${props.friendName} trocou para ${name}`, 'info', 1800, `fsw:${name}`);
+    } else if (e.k === 'guard') {
+      toast(e.side === mySide ? 'Escudo ativo!' : `${props.friendName} ativou o escudo`, e.side === mySide ? 'good' : 'info', 1600, `guard:${e.side}`);
+    } else if (e.k === 'block') {
+      toast(e.side === mySide ? 'O escudo bloqueou o golpe!' : 'Golpe bloqueado pelo escudo', e.side === mySide ? 'good' : 'info', 1200, `block:${e.side}`);
+    } else {
+      showFx(e);
     }
+  }
+}
+
+/** Efeitos de golpe de quem ataca: o desenho usa a geometria real (cone, raio da aura, caminho do teleporte). */
+function showFx(e: Extract<ArenaEvent, { k: 'cone' | 'pulse' | 'blink' }>): void {
+  const team = state.sides[e.side];
+  const mon = team.mons[team.active];
+  const color = mon ? TYPE_COLORS[mon.attackType] : '#fff';
+  const mine = e.side === mySide;
+  const cqw = (length: number): string => `${(length / SV_ARENA_W) * 100}cqw`;
+  if (e.k === 'pulse') {
+    const p = toView(team.x, team.y);
+    addFx('pulse', mine, color, { left: `${(p.x / SV_ARENA_W) * 100}%`, top: `${(p.y / SV_ARENA_H) * 100}%`, width: cqw(e.radius * 2) });
+  } else if (e.k === 'cone') {
+    const p = toView(team.x, team.y);
+    const angle = flip ? e.angle + Math.PI : e.angle;
+    addFx('cone', mine, color, {
+      left: `${(p.x / SV_ARENA_W) * 100}%`, top: `${(p.y / SV_ARENA_H) * 100}%`, width: cqw(e.range),
+      height: cqw(2 * e.range * Math.tan(SURVIVOR_CONE_HALF_ANGLE)), transform: `translate(0, -50%) rotate(${angle}rad)`,
+    }, 300);
+  } else {
+    const a = toView(e.x0, e.y0);
+    const b = toView(e.x1, e.y1);
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    addFx('blink', mine, color, {
+      left: `${(a.x / SV_ARENA_W) * 100}%`, top: `${(a.y / SV_ARENA_H) * 100}%`, width: cqw(len),
+      transform: `translate(0, -50%) rotate(${Math.atan2(b.y - a.y, b.x - a.x)}rad)`,
+    }, 350);
   }
 }
 
@@ -178,9 +256,37 @@ function buildScene(now: number): void {
     const mon = team.mons[team.active];
     if (!mon || mon.hp <= 0) continue;
     const p = toView(view.sides[side].x, view.sides[side].y);
-    out.push({ key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0 });
+    const status = `${team.burnMs > 0 ? '🔥' : ''}${team.slowMs > 0 ? '🐌' : ''}${team.stunMs > 0 ? '💫' : ''}`;
+    out.push({ key: side === mySide ? 'me' : 'foe', mine: side === mySide, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, dexId: mon.dexId, shiny: mon.shiny, name: mon.name, hpPct: Math.round((100 * mon.hp) / mon.maxHp), shield: team.shieldMs > 0, guard: team.guardMs > 0, status });
   }
   units.value = out;
+  // Orbitais e faixa da Trilha: as mesmas posições que decidem o dano.
+  const orbOut: Orb[] = [];
+  const dots: Orb[] = [];
+  for (const side of [mySide, foeSide] as const) {
+    const team = state.sides[side];
+    const mon = team.mons[team.active];
+    if (!mon || mon.hp <= 0) continue;
+    const mine = side === mySide;
+    const color = TYPE_COLORS[mon.attackType];
+    if (mon.moveCategory === 'orbit') {
+      const shape = { x: view.sides[side].x, y: view.sides[side].y, shots: Math.max(1, mon.shots ?? 1), attackRadius: mon.attackRadius ?? SV_MON_RADIUS * 2, orbitAngle: team.orbitAngle };
+      const size = `${((survivorOrbiterHitRadius(shape) * 1.4) / SV_ARENA_W) * 100}%`;
+      survivorOrbiters(shape).forEach((o, i) => {
+        const p = toView(o.x, o.y);
+        orbOut.push({ key: `${side}-o${i}`, mine, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, color, size });
+      });
+    }
+    if (mon.moveCategory === 'trilha') {
+      const size = `${((Math.min(mon.attackRadius ?? SV_MON_RADIUS * 2, 36) * 2) / SV_ARENA_W) * 100}%`;
+      team.trail.forEach((t, i) => {
+        const p = toView(t.x, t.y);
+        dots.push({ key: `${side}-t${i}`, mine, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, color, size });
+      });
+    }
+  }
+  orbs.value = orbOut;
+  trailDots.value = dots;
   bullets.value = view.shots.map((s) => {
     const p = toView(s.x, s.y);
     return { id: s.id, mine: s.side === mySide, x: (p.x / SV_ARENA_W) * 100, y: (p.y / SV_ARENA_H) * 100, color: TYPE_COLORS[s.type], size: `${Math.max(2.5, (s.radius * 2 / SV_ARENA_W) * 100)}%` };
@@ -206,6 +312,7 @@ function buildHud(): void {
     summary: `Você ${aliveCount(mine)}/${mine.mons.length} de pé · ${props.friendName} ${aliveCount(foe)}/${foe.mons.length}${state.countdownMs > 0 ? '' : ` · ${clock(state.timeMs)}`}`,
     hint, count: Math.ceil(state.countdownMs / 1000),
     switchPct: cd > 0 ? Math.round((100 * cd) / SV_SWITCH_COOLDOWN_MS) : 0, switchSec: Math.ceil(cd / 1000),
+    guardPct: mine.guardCdMs > 0 ? Math.round((100 * mine.guardCdMs) / SV_GUARD_COOLDOWN_MS) : 0, guardSec: Math.ceil(mine.guardCdMs / 1000), guardOn: mine.guardMs > 0,
   };
 }
 
@@ -230,11 +337,13 @@ function frame(ts: number): void {
   const v = inputVector();
   const world = flip ? { dx: -v.dx, dy: -v.dy } : v;
   const switchTo = queuedSwitch;
+  const shield = queuedGuard;
   queuedSwitch = -1;
+  queuedGuard = false;
   let events: ArenaEvent[] = [];
-  if (hostLink) events = hostLink.step(dt, { dx: world.dx, dy: world.dy, switchTo });
+  if (hostLink) events = hostLink.step(dt, { dx: world.dx, dy: world.dy, switchTo, shield });
   else if (guestLink) {
-    guestLink.sendInput({ dx: world.dx, dy: world.dy, switchTo }, ts);
+    guestLink.sendInput({ dx: world.dx, dy: world.dy, switchTo, shield }, ts);
     events = guestLink.events.splice(0);
     stale.value = state.winner === null && guestLink.received > 0 && ts - guestLink.lastAt > 2500;
   }
@@ -298,6 +407,10 @@ function onKey(e: KeyboardEvent): void {
     return;
   }
   if (down && !e.repeat && e.key >= '1' && e.key <= '3') requestSwitch(Number(e.key) - 1);
+  if (down && !e.repeat && (e.key === ' ' || e.key === 'e' || e.key === 'E')) {
+    e.preventDefault();
+    requestGuard();
+  }
 }
 
 function onBlur(): void {
@@ -356,6 +469,14 @@ onBeforeUnmount(() => {
         :style="{ left: `${b.x}%`, top: `${b.y}%`, background: b.color, width: b.size }"
       ></span>
       <span
+        v-for="d in trailDots"
+        :key="d.key"
+        class="svp-trail"
+        :class="{ mine: d.mine }"
+        :style="{ left: `${d.x}%`, top: `${d.y}%`, width: d.size, color: d.color }"
+        aria-hidden="true"
+      ></span>
+      <span
         v-for="m in markers"
         :key="m.id"
         class="svp-marker"
@@ -363,12 +484,31 @@ onBeforeUnmount(() => {
         :style="{ left: `${m.x}%`, top: `${m.y}%`, color: m.color, width: m.size, '--mark-pulse': `${Math.max(0.45, m.leftMs / 1500)}s` }"
         aria-hidden="true"
       ></span>
-      <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield }" :style="unitStyle(u)">
+      <span
+        v-for="o in orbs"
+        :key="o.key"
+        class="svp-orb"
+        :class="{ mine: o.mine }"
+        :style="{ left: `${o.x}%`, top: `${o.y}%`, width: o.size, color: o.color }"
+        aria-hidden="true"
+      ></span>
+      <div v-for="u in units" :key="u.key" class="svp-unit" :class="{ mine: u.mine, shield: u.shield, guard: u.guard }" :style="unitStyle(u)">
+        <span class="svp-bubble" aria-hidden="true"></span>
         <span class="svp-ring"></span>
+        <span v-if="u.status" class="svp-status" aria-hidden="true">{{ u.status }}</span>
         <img v-if="!broken.includes(u.dexId)" class="svp-sprite" :src="pokemonSpriteUrl(u.dexId, u.shiny)" :alt="u.name" draggable="false" @error="markBroken(u.dexId)" />
         <span v-else class="svp-fallback big" role="img" :aria-label="`${u.name} (sem sprite)`">{{ u.name.slice(0, 2) }}</span>
         <i class="svp-bar floating"><b :style="{ width: `${u.hpPct}%` }"></b></i>
       </div>
+
+      <span
+        v-for="f in fx"
+        :key="f.id"
+        class="svp-fx"
+        :class="[f.kind, { mine: f.mine }]"
+        :style="{ ...f.style, color: f.color }"
+        aria-hidden="true"
+      ></span>
 
       <div v-if="joy.active" class="svp-joy" :style="{ left: `${joy.ox}px`, top: `${joy.oy}px` }" aria-hidden="true">
         <span class="knob" :style="{ transform: `translate(${joy.kx}px, ${joy.ky}px)` }"></span>
@@ -384,6 +524,18 @@ onBeforeUnmount(() => {
     </div>
 
     <footer class="svp-bottom">
+      <button
+        type="button"
+        class="svp-guard"
+        :class="{ on: hud.guardOn, wait: hud.guardPct > 0 && !hud.guardOn }"
+        :aria-label="hud.guardOn ? 'Escudo ativo' : hud.guardPct > 0 ? `Escudo recarregando, ${hud.guardSec} segundos` : 'Escudo: toque para ficar imune por 2 segundos'"
+        @pointerdown.stop
+        @click="requestGuard"
+      >
+        <span class="svp-guard-icon" aria-hidden="true">🛡</span>
+        <small>{{ hud.guardOn ? 'Ativo' : hud.guardPct > 0 ? `${hud.guardSec} s` : 'Escudo' }}</small>
+        <span v-if="hud.guardPct > 0 && !hud.guardOn" class="svp-cd" :style="{ height: `${hud.guardPct}%` }" aria-hidden="true"></span>
+      </button>
       <div class="svp-team mine" role="group" aria-label="Sua equipe: toque para trocar de Pokémon">
         <button
           v-for="r in hud.mine"
@@ -529,14 +681,43 @@ onBeforeUnmount(() => {
   container-type: inline-size;
   border-radius: var(--radius-sm);
   border: 2px solid var(--line);
+  /* Estádio: gramado listrado, linha do meio, círculo central e uma luz da cor de cada lado. */
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.07) 0 22%, transparent 23%),
-    linear-gradient(to bottom, rgba(224, 82, 79, 0.16) 0 50%, rgba(79, 140, 224, 0.16) 50% 100%),
-    #1d2a22;
+    radial-gradient(circle at 50% 50%, transparent 0 17.6%, rgba(255, 255, 255, 0.5) 17.6% 18.4%, transparent 18.4%),
+    linear-gradient(to bottom, transparent calc(50% - 1px), rgba(255, 255, 255, 0.5) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)),
+    radial-gradient(ellipse at 50% 100%, rgba(79, 140, 224, 0.34), transparent 58%),
+    radial-gradient(ellipse at 50% 0%, rgba(224, 82, 79, 0.34), transparent 58%),
+    repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 0 8.33%, transparent 8.33% 16.66%),
+    linear-gradient(to bottom, #2e5a3c, #1f4130);
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.12), inset 0 0 46px rgba(0, 0, 0, 0.55);
+}
+
+/* Áreas de cada lado, como num campo de verdade. */
+.svp-arena::before,
+.svp-arena::after {
+  content: '';
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  height: 12%;
+  border: 2px solid rgba(255, 255, 255, 0.32);
+  pointer-events: none;
+}
+
+.svp-arena::before {
+  top: -2px;
+  border-top: 0;
+  border-radius: 0 0 14px 14px;
+}
+
+.svp-arena::after {
+  bottom: -2px;
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
 }
 
 .svp-arena.hurt {
-  box-shadow: inset 0 0 0 4px rgba(224, 82, 79, 0.75);
+  box-shadow: inset 0 0 0 4px rgba(224, 82, 79, 0.75), inset 0 0 46px rgba(0, 0, 0, 0.55);
 }
 
 .svp-unit {
@@ -563,6 +744,99 @@ onBeforeUnmount(() => {
 .svp-unit.shield .svp-ring {
   border-color: #ffd84a;
   box-shadow: 0 0 10px 2px rgba(255, 216, 74, 0.8);
+}
+
+/* Escudo do botão: bolha dourada em volta do Pokémon enquanto durar. */
+.svp-bubble {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 19cqw;
+  aspect-ratio: 1;
+  transform: translate(-50%, -58%);
+  border-radius: 50%;
+  border: 3px solid rgba(255, 224, 120, 0.95);
+  background: radial-gradient(circle, rgba(255, 240, 170, 0.12), rgba(255, 210, 80, 0.38));
+  box-shadow: 0 0 16px 4px rgba(255, 210, 80, 0.7);
+  pointer-events: none;
+  animation: svp-bubble 0.5s ease-in-out infinite alternate;
+}
+
+.svp-unit.guard .svp-bubble {
+  display: block;
+}
+
+@keyframes svp-bubble {
+  to { opacity: 0.7; transform: translate(-50%, -58%) scale(1.06); }
+}
+
+.svp-status {
+  position: absolute;
+  left: 0;
+  top: -19cqw;
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+
+.svp-orb,
+.svp-trail {
+  position: absolute;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.svp-orb {
+  background: radial-gradient(circle, #fff 0 22%, currentColor 55%, transparent 72%);
+  box-shadow: 0 0 10px currentColor;
+}
+
+.svp-trail {
+  background: color-mix(in srgb, currentColor 38%, transparent);
+  box-shadow: 0 0 8px currentColor;
+  opacity: 0.8;
+}
+
+.svp-fx {
+  position: absolute;
+  pointer-events: none;
+}
+
+.svp-fx.pulse {
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 3px solid currentColor;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  animation: svp-fx-pulse 0.38s ease-out forwards;
+}
+
+.svp-fx.cone {
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, color-mix(in srgb, currentColor 80%, transparent), transparent);
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+  animation: svp-fx-fade 0.3s ease-out forwards;
+}
+
+.svp-fx.blink {
+  height: 4px;
+  transform-origin: 0 50%;
+  background: currentColor;
+  box-shadow: 0 0 12px currentColor;
+  animation: svp-fx-fade 0.35s ease-out forwards;
+}
+
+@keyframes svp-fx-pulse {
+  from { opacity: 0.95; scale: 0.3; }
+  to { opacity: 0; scale: 1; }
+}
+
+@keyframes svp-fx-fade {
+  from { opacity: 0.95; }
+  to { opacity: 0; }
 }
 
 .svp-sprite {
@@ -716,8 +990,52 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.svp-bottom .svp-team {
+.svp-bottom {
+  display: flex;
+  align-items: stretch;
   gap: 8px;
+}
+
+.svp-bottom .svp-team {
+  flex: 1;
+  gap: 8px;
+}
+
+.svp-guard {
+  position: relative;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  min-width: 64px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  border: 2px solid #d8b84a;
+  background: rgba(216, 184, 74, 0.18);
+  color: var(--text);
+  font: inherit;
+  touch-action: manipulation;
+}
+
+.svp-guard-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.svp-guard small {
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.svp-guard.on {
+  background: rgba(255, 216, 74, 0.5);
+  box-shadow: 0 0 12px rgba(255, 216, 74, 0.8);
+}
+
+.svp-guard.wait {
+  border-color: var(--line);
+  background: var(--surface-2);
+  opacity: 0.85;
 }
 
 .svp-swap {

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  aliveCount, applyArenaSnapshot, canSwitch, createArena, NO_INPUT, SV_ARENA_H, SV_ARENA_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_MAX_MS,
-  SV_SUDDEN_DEATH_MS, SV_SWITCH_COOLDOWN_MS, snapshotArena, stepArena, svMonFromRun, svRunScore, switchBlockReason,
+  aliveCount, applyArenaSnapshot, canSwitch, createArena, guardBlockReason, NO_INPUT, SV_ARENA_H, SV_ARENA_W, SV_COUNTDOWN_MS, SV_ENTRY_SHIELD_MS, SV_GUARD_COOLDOWN_MS,
+  SV_GUARD_MS, SV_MAX_MS, SV_SUDDEN_DEATH_MS, SV_SWITCH_COOLDOWN_MS, snapshotArena, stepArena, svMonFromRun, svRunScore, switchBlockReason,
 } from './survivor-pvp';
-import type { ArenaInput, ArenaState, SvMonSpec, SvRunResult } from './survivor-pvp';
+import type { ArenaEvent, ArenaInput, ArenaState, SvMonSpec, SvRunResult } from './survivor-pvp';
 
 const run = (extra: Partial<SvRunResult> = {}): SvRunResult => ({
   id: 'c1', dexId: 25, name: 'Pikachu', shiny: false, types: ['electric'], attackType: 'electric', survivedMs: 120_000, kills: 40, level: 6, defeated: false, ...extra,
@@ -249,5 +249,170 @@ describe('survival pvp: instantâneo', () => {
     const before = JSON.stringify(guest);
     expect(applyArenaSnapshot(guest, snapshotArena(host, 1))).toBe(false);
     expect(JSON.stringify(guest)).toBe(before);
+  });
+});
+
+describe('survival pvp: escudo', () => {
+  const press: ArenaInput = { dx: 0, dy: 0, switchTo: -1, shield: true };
+  const collect = (s: ArenaState, ms: number, a: ArenaInput = NO_INPUT): ArenaEvent[] => {
+    const out: ArenaEvent[] = [];
+    for (let t = 0; t < ms && s.winner === null; t += 20) out.push(...stepArena(s, [a, NO_INPUT], 20));
+    return out;
+  };
+
+  it('cancela qualquer dano por 2 s e só recarrega 10 s depois de ativado', () => {
+    const s = createArena([mon('a', { fireMs: 2000, maxHp: 100_000 })], [mon('x', { fireMs: 250, power: 30, maxHp: 100_000 })]);
+    begin(s);
+    const first = stepArena(s, [press, NO_INPUT], 20);
+    expect(first.some((e) => e.k === 'guard' && e.side === 0)).toBe(true);
+    expect(s.sides[0].guardMs).toBeGreaterThan(SV_GUARD_MS - 100);
+    expect(s.sides[0].guardCdMs).toBeGreaterThan(SV_GUARD_COOLDOWN_MS - 100);
+    const hp = s.sides[0].mons[0]!.hp;
+    const during = collect(s, 1900);
+    expect(during.some((e) => e.k === 'block' && e.side === 0)).toBe(true);
+    expect(during.some((e) => e.k === 'hit' && e.side === 0)).toBe(false);
+    expect(s.sides[0].mons[0]!.hp).toBe(hp);
+    collect(s, 800); // o escudo acabou: os golpes voltam a entrar
+    expect(s.sides[0].mons[0]!.hp).toBeLessThan(hp);
+  });
+
+  it('não ativa de novo durante a recarga e volta depois dos 10 s', () => {
+    const s = createArena([mon('a', { fireMs: 2000, maxHp: 100_000 })], [mon('x', { fireMs: 5000, maxHp: 100_000 })]);
+    begin(s);
+    stepArena(s, [press, NO_INPUT], 20);
+    expect(guardBlockReason(s, 0)).toBe('O escudo já está ativo.');
+    collect(s, 3000);
+    expect(guardBlockReason(s, 0)).toMatch(/Escudo em \d+ s/);
+    expect(stepArena(s, [press, NO_INPUT], 20).some((e) => e.k === 'guard')).toBe(false);
+    collect(s, SV_GUARD_COOLDOWN_MS);
+    expect(guardBlockReason(s, 0)).toBeNull();
+    expect(stepArena(s, [press, NO_INPUT], 20).some((e) => e.k === 'guard')).toBe(true);
+  });
+
+  it('não vale antes da luta começar nem depois dela acabar', () => {
+    const s = createArena([mon('a')], [mon('x')]);
+    expect(stepArena(s, [press, NO_INPUT], 20).some((e) => e.k === 'guard')).toBe(false);
+    expect(guardBlockReason(s, 0)).toBe('A luta ainda não começou.');
+  });
+
+  it('cancela também o efeito do golpe (lentidão) e vai no instantâneo do convidado', () => {
+    const s = createArena([mon('a', { fireMs: 2000, maxHp: 100_000 })], [mon('x', { fireMs: 250, power: 30, moveEffect: 'lentidao' })]);
+    begin(s);
+    stepArena(s, [press, NO_INPUT], 20);
+    collect(s, 1900);
+    expect(s.sides[0].slowMs).toBe(0);
+    const guest = createArena([mon('a', { fireMs: 2000, maxHp: 100_000 })], [mon('x')]);
+    expect(applyArenaSnapshot(guest, snapshotArena(s, 1))).toBe(true);
+    expect(guest.sides[0].guardCdMs).toBe(Math.round(s.sides[0].guardCdMs));
+  });
+});
+
+describe('survival pvp: golpes iguais aos da corrida', () => {
+  const place = (s: ArenaState, foeY: number): void => {
+    s.sides[1].y = foeY;
+  };
+  const events = (s: ArenaState, ms: number): ArenaEvent[] => {
+    const out: ArenaEvent[] = [];
+    for (let t = 0; t < ms && s.winner === null; t += 20) out.push(...stepArena(s, [NO_INPUT, NO_INPUT], 20));
+    return out;
+  };
+  const foeLost = (s: ArenaState): number => s.sides[1].mons[0]!.maxHp - s.sides[1].mons[0]!.hp;
+  // O rival parado: a Trilha não dispara nada e só anda se mandarem.
+  const idle: Partial<SvMonSpec> = { moveCategory: 'trilha', fireMs: 60_000 };
+
+  it('cone: acerta só quem está no alcance, e o desenho recebe o ângulo', () => {
+    const near = createArena([mon('a', { moveCategory: 'cone', attackRange: 200, fireMs: 400 })], [mon('x', idle)]);
+    begin(near);
+    place(near, 250);
+    const seen = events(near, 800);
+    expect(seen.some((e) => e.k === 'cone' && e.side === 0 && e.range === 200)).toBe(true);
+    expect(foeLost(near)).toBeGreaterThan(0);
+    const far = createArena([mon('a', { moveCategory: 'cone', attackRange: 200, fireMs: 400 })], [mon('x', idle)]);
+    begin(far);
+    events(far, 800);
+    expect(foeLost(far)).toBe(0);
+  });
+
+  it('aura: pulsa com 80% do raio do golpe', () => {
+    const s = createArena([mon('a', { moveCategory: 'aura', attackRadius: 100, fireMs: 400 })], [mon('x', idle)]);
+    begin(s);
+    place(s, 390 - 90); // 90 <= 80 + 18: o rival está dentro do pulso
+    const seen = events(s, 800);
+    expect(seen.find((e) => e.k === 'pulse')).toMatchObject({ radius: 80 });
+    expect(foeLost(s)).toBeGreaterThan(0);
+    const out = createArena([mon('a', { moveCategory: 'aura', attackRadius: 100, fireMs: 400 })], [mon('x', idle)]);
+    begin(out);
+    place(out, 390 - 140);
+    events(out, 800);
+    expect(foeLost(out)).toBe(0);
+  });
+
+  it('órbita: os orbitais giram e acertam quem encosta', () => {
+    const s = createArena([mon('a', { moveCategory: 'orbit', attackRadius: 60, fireMs: 500 })], [mon('x', idle)]);
+    begin(s);
+    place(s, 340);
+    events(s, 2000);
+    expect(s.sides[0].orbitAngle).toBeGreaterThan(0);
+    expect(foeLost(s)).toBeGreaterThan(0);
+  });
+
+  it('rajada: três salvas seguidas por golpe', () => {
+    const s = createArena([mon('a', { moveCategory: 'rapido', fireMs: 1000, shots: 1 })], [mon('x', idle)]);
+    begin(s);
+    events(s, 900);
+    expect(s.nextShotId - 1).toBe(3);
+  });
+
+  it('foco: um tiro largo e lento que atravessa', () => {
+    const s = createArena([mon('a', { moveCategory: 'foco', fireMs: 1000, projectileSpeed: 400, projectileSize: 8 })], [mon('x', idle)]);
+    begin(s);
+    events(s, 650);
+    const shot = s.shots[0]!;
+    expect(s.shots).toHaveLength(1);
+    expect(shot.radius).toBeCloseTo(8 * 2.4);
+    expect(Math.hypot(shot.vx, shot.vy)).toBeCloseTo(200);
+    expect(shot.pierce).toBeGreaterThanOrEqual(2);
+  });
+
+  it('teleporte: salta até o rival e acerta quem está no caminho', () => {
+    const s = createArena([mon('a', { moveCategory: 'teleporte', attackRange: 240, fireMs: 1000 })], [mon('x', idle)]);
+    begin(s);
+    place(s, 200);
+    const seen = events(s, 700);
+    expect(seen.some((e) => e.k === 'blink' && e.side === 0)).toBe(true);
+    expect(s.sides[0].y).toBeLessThan(390);
+    expect(foeLost(s)).toBeGreaterThan(0);
+  });
+
+  it('trilha: andar enche a carga, desenha a faixa por 4 s e anda 25% mais rápido', () => {
+    const s = createArena([mon('a', { moveCategory: 'trilha', speed: 220, fireMs: 1000, attackRadius: 30 })], [mon('x', idle)]);
+    begin(s);
+    for (let t = 0; t < 4600 && s.sides[0].trailMs <= 0; t += 20) {
+      stepArena(s, [{ dx: Math.floor(t / 1000) % 2 === 0 ? 1 : -1, dy: 0, switchTo: -1 }, NO_INPUT], 20);
+    }
+    expect(s.sides[0].trailMs).toBeGreaterThan(0);
+    const before = s.sides[0].x;
+    stepArena(s, [{ dx: 1, dy: 0, switchTo: -1 }, NO_INPUT], 60);
+    const sprint = Math.abs(s.sides[0].x - before);
+    expect(s.sides[0].trail.length).toBeGreaterThan(0);
+    expect(sprint).toBeCloseTo(220 * 1.25 * 0.06, 0);
+  });
+
+  it('efeitos: lentidão, atordoamento e queimadura vêm do golpe', () => {
+    for (const [effect, key] of [['lentidao', 'slowMs'], ['atordoar', 'stunMs'], ['queimar', 'burnMs']] as const) {
+      const s = createArena([mon('a', { moveEffect: effect, fireMs: 400, projectileSpeed: 500 })], [mon('x', idle)]);
+      begin(s);
+      place(s, 300);
+      events(s, 850);
+      expect(s.sides[1][key], effect).toBeGreaterThan(0);
+    }
+  });
+
+  it('atravessar: o tiro continua depois de acertar, sem acertar duas vezes', () => {
+    const s = createArena([mon('a', { pierce: 1, fireMs: 60_000, projectileSpeed: 500 })], [mon('x', idle)]);
+    begin(s);
+    place(s, 300);
+    events(s, 1500);
+    expect(foeLost(s)).toBe(20);
   });
 });
