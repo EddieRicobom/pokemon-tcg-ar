@@ -23,7 +23,8 @@ export const DEBUG_TARGETS: readonly { label: string; archetype?: SurvivorEnemyA
 export const DEBUG_HP = 10000;
 export const DEBUG_INFINITE_HP = 1_000_000_000;
 export interface DebugTarget { template: SurvivorEnemy; respawnMs: number; }
-export interface SurvivorDebug { state: SurvivorState; targets: DebugTarget[]; infinite: boolean; damage: number; damageElapsedMs: number; }
+export interface DebugDamageHit { x: number; y: number; amount: number; critical: boolean }
+export interface SurvivorDebug { state: SurvivorState; targets: DebugTarget[]; infinite: boolean; damage: number; damageElapsedMs: number; damageHits: DebugDamageHit[]; }
 
 export function createSurvivorDebug(type: PokemonType = 'normal', category: MoveCategory = 'projetil'): SurvivorDebug {
   // attackProfile com null usa 75 em todos os atributos, sem usar os stats reais do Ditto.
@@ -39,27 +40,32 @@ export function createSurvivorDebug(type: PokemonType = 'normal', category: Move
     const template: SurvivorEnemy = { id: 10000 + index, kind: 0, boss: def.boss ?? false, grade: def.grade,
       ...(def.archetype ? { archetype: def.archetype } : {}), ...(def.supportRole ? { supportRole: def.supportRole } : {}),
       ...(def.trainer ? { trainerId: 20000 + index } : {}), ...(def.shadowBoss ? { shadowBoss: true } : {}), ...(def.digitalThreat ? { digitalThreat: true } : {}), x: ARENA_W / 2 + (index % 5 - 2) * 150,
-      y: ARENA_H / 2 + (Math.floor(index / 5) - 1) * 230, hp: DEBUG_HP, maxHp: DEBUG_HP,
+      y: ARENA_H / 2 + (Math.floor(index / 5) === 0 ? -230 : Math.floor(index / 5) === 1 ? 110 : 340), hp: DEBUG_HP, maxHp: DEBUG_HP,
       speed: 0, damage: 0, specialTimerMs: 1e12, radius: def.boss ? 28 : 16, hitFlashMs: 0 };
     return { template, respawnMs: 0 };
   });
   state.enemies = targets.map(({ template }) => ({ ...template, hp: DEBUG_INFINITE_HP, maxHp: DEBUG_INFINITE_HP }));
-  return { state, targets, infinite: true, damage: 0, damageElapsedMs: 0 };
+  return { state, targets, infinite: true, damage: 0, damageElapsedMs: 0, damageHits: [] };
 }
 
 /** Calcula DPS a partir da variação real de vida; mortes finitas reaparecem depois de cinco segundos. */
 export function stepSurvivorDebug(debug: SurvivorDebug, input: SurvivorInput, dtMs: number): void {
   if (!Number.isFinite(dtMs) || dtMs <= 0 || debug.state.pendingUpgrade) return;
   const s = debug.state;
-  const before = new Map(s.enemies.map(e => [e.id, e.hp]));
+  const before = new Map(s.enemies.map(e => [e.id, { hp: e.hp, x: e.x, y: e.y }]));
   s.player.invulnMs = 1000;
   stepSurvivor(s, input, dtMs);
   debug.damageElapsedMs += dtMs;
+  debug.damageHits = [];
   for (const target of debug.targets) {
     const enemy = s.enemies.find(e => e.id === target.template.id);
-    const oldHp = before.get(target.template.id);
-    if (oldHp !== undefined) {
-      debug.damage += Math.max(0, oldHp - Math.max(0, enemy?.hp ?? 0));
+    const prior = before.get(target.template.id);
+    if (prior !== undefined) {
+      const dealt = Math.max(0, prior.hp - Math.max(0, enemy?.hp ?? 0));
+      debug.damage += dealt;
+      const critical = s.criticalHits.filter(hit => hit.enemyId === target.template.id).reduce((sum, hit) => sum + hit.damage, 0);
+      const normal = Math.max(0, dealt - critical);
+      if (normal > 0) debug.damageHits.push({ x: enemy?.x ?? prior.x, y: enemy?.y ?? prior.y, amount: normal, critical: false });
       if (!enemy) {
         if (debug.infinite) s.enemies.push({ ...target.template, hp: DEBUG_INFINITE_HP, maxHp: DEBUG_INFINITE_HP });
         else target.respawnMs = 5000;
@@ -69,6 +75,7 @@ export function stepSurvivorDebug(debug: SurvivorDebug, input: SurvivorInput, dt
       if (target.respawnMs === 0) s.enemies.push({ ...target.template, ...(debug.infinite ? { hp: DEBUG_INFINITE_HP, maxHp: DEBUG_INFINITE_HP } : {}) });
     }
   }
+  for (const hit of s.criticalHits) debug.damageHits.push({ x: hit.x, y: hit.y, amount: hit.damage, critical: true });
   // Mortes no laboratório não geram recompensas ou progresso persistente.
   s.orbs = []; s.artifacts = []; s.kills = 0;
   if ((s.player.healBlockMs ?? 0) <= 0) s.player.hp = s.player.maxHp;

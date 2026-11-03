@@ -6,7 +6,7 @@ import { POKEMON_TYPES, TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { attackProfile, moveWith, MOVE_CATEGORY_LABELS_PT } from '../core/survivor-moves';
 import type { MoveCategory } from '../core/survivor-moves';
-import { autoChargeHeld, createSurvivorCharge } from '../core/survivor-charge';
+import { autoChargeHeld, createSurvivorCharge, TELEPORT_FULL_HOLD_MS } from '../core/survivor-charge';
 import { drawElementAuraField, drawConeGuide, drawOrbitPath, drawElementOrbiter, drawElementProjectile, drawElementFx } from '../village/survivor-attack-art';
 import { survivorOrbiters } from '../core/survivor-shapes';
 import { pokemonSpriteUrl } from '../ar/sprite-url';
@@ -31,14 +31,14 @@ const code = ref('');
 const copied = ref(false);
 const canvas = ref<HTMLCanvasElement | null>(null);
 const charge = ref(false);
-const autoCharge = ref(false);
+const autoCharge = ref(true);
 const direction = ref({ dx: 0, dy: 0 });
 const keys = new Set<string>();
 let special = false, frame = 0, last = 0;
 let dittoSprite: HTMLImageElement | null = null;
 const sound = new SoundEngine();
 let lastCriticalSound = -Infinity;
-const floating: { x: number; y: number; damage: number; at: number }[] = [];
+const floating: { x: number; y: number; damage: number; at: number; critical: boolean }[] = [];
 function unlockAudio(): void { sound.setEnabled(visual.sound); sound.unlock(); }
 const categories = Object.keys(MOVE_CATEGORY_LABELS_PT) as MoveCategory[];
 const questions: { key: FeedbackRatingKey; label: string }[] = [
@@ -46,6 +46,13 @@ const questions: { key: FeedbackRatingKey; label: string }[] = [
   { key: 'clarity', label: 'Clareza' }, { key: 'fairness', label: 'Equilíbrio' }, { key: 'replay', label: 'Vontade de jogar novamente' },
 ];
 const dps = computed(() => lab.value.damageElapsedMs ? lab.value.damage * 1000 / lab.value.damageElapsedMs : 0);
+const chargeStatus = computed(() => {
+  const { player, charge: meter } = lab.value.state;
+  if (player.move.category === 'trilha') return (player.trailActiveMs ?? 0) > 0 ? 'Desenhe a Trilha andando' : `Trilha ${Math.floor((player.trailCharge ?? 0) * 100)}% · ande para carregar`;
+  if (player.move.category === 'teleporte') return meter.teleportCooldownMs > 0 ? `Teleporte recarregando · ${Math.ceil(meter.teleportCooldownMs / 1000)}s` : `Teleporte ${Math.floor(meter.teleportHoldMs / TELEPORT_FULL_HOLD_MS * 100)}%`;
+  if (player.move.category === 'foco') return `Foco ${Math.floor(meter.level * 100)}%`;
+  return '';
+});
 function changeAttack(): void {
   const s = lab.value.state, p = s.player;
   const old = attackProfile(p.move, null), move = moveWith(type.value, category.value, null), next = attackProfile(move, null);
@@ -113,7 +120,8 @@ function loop(ts: number): void {
     const chargeStyle = s.player.move.category;
     const automatic = autoCharge.value && (chargeStyle === 'foco' || chargeStyle === 'teleporte' || chargeStyle === 'trilha') && autoChargeHeld(chargeStyle, s.charge);
     stepSurvivorDebug(lab.value, { dx, dy, charge: charge.value || automatic, special }, dt); special = false;
-    for (const hit of s.criticalHits) floating.push({ x: hit.x, y: hit.y, damage: hit.damage, at: ts });
+    for (const hit of lab.value.damageHits) floating.push({ x: hit.x, y: hit.y, damage: hit.amount, at: ts, critical: hit.critical });
+    if (floating.length > 48) floating.splice(0, floating.length - 48);
     if (s.criticalHits.length && survivorAudio.attackSounds && ts - lastCriticalSound >= 200) { sound.setEnabled(visual.sound); sound.play({ kind: 'ui', cue: 'survivor-critical' }); lastCriticalSound = ts; }
     triggerRef(lab);
   }
@@ -137,14 +145,14 @@ function loop(ts: number): void {
   if (trail.length) { ctx.strokeStyle = move.color; ctx.lineWidth = Math.max(2, s.player.attackRadius * 2); ctx.globalAlpha = .45; ctx.lineCap = 'round'; ctx.beginPath(); trail.forEach((point, i) => i ? ctx.lineTo(x(point.x), y(point.y)) : ctx.moveTo(x(point.x), y(point.y))); ctx.stroke(); ctx.globalAlpha = 1; }
   for (const e of s.enemies) {
     const i = lab.value.targets.findIndex(t => t.template.id === e.id);
-    ctx.beginPath(); ctx.fillStyle = e.boss ? '#d65d65' : e.grade === 'elite' ? '#e6c55e' : '#a4baba'; ctx.arc(x(e.x), y(e.y), e.radius, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.fillStyle = e.hitFlashMs > 0 ? '#fff8df' : e.boss ? '#d65d65' : e.grade === 'elite' ? '#e6c55e' : '#a4baba'; ctx.arc(x(e.x), y(e.y), e.radius, 0, Math.PI * 2); ctx.fill();
     ctx.textAlign = 'center'; ctx.font = 'bold 13px sans-serif'; ctx.fillStyle = 'white'; ctx.fillText(DEBUG_TARGETS[i]?.label ?? 'Alvo', x(e.x), y(e.y) - e.radius - 8);
     if (!lab.value.infinite) { ctx.fillStyle = '#172419'; ctx.fillRect(x(e.x) - 22, y(e.y) + e.radius + 4, 44, 5); ctx.fillStyle = '#8be06a'; ctx.fillRect(x(e.x) - 22, y(e.y) + e.radius + 4, 44 * Math.max(0, e.hp / e.maxHp), 5); }
   }
   lab.value.targets.forEach((target, i) => { if (target.respawnMs <= 0) return; ctx.textAlign = 'center'; ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = '#ffdcaf'; ctx.fillText(`${DEBUG_TARGETS[i]?.label ?? 'Alvo'} · ${Math.ceil(target.respawnMs / 1000)}s`, x(target.template.x), y(target.template.y)); });
   for (const p of s.projectiles) drawElementProjectile(ctx, p.move?.type ?? move.type, map(p.x, p.y), map(p.x - p.vx * .05, p.y - p.vy * .05), p.size ?? 4, 1, ts, true, p.id, p.look);
   for (const f of s.fx) if (!drawElementFx(ctx, f, map, ts, true)) { ctx.globalAlpha = Math.max(0, 1 - f.ageMs / f.lifeMs); ctx.strokeStyle = f.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x(f.x), y(f.y), Math.max(1, f.r), 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1; }
-  for (let i = floating.length - 1; i >= 0; i--) { const hit = floating[i]!; const age = ts - hit.at; if (age >= 720) { floating.splice(i, 1); continue; } ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = '#201727'; ctx.fillStyle = '#ffbf28'; const label = `${Math.round(hit.damage)}!`; ctx.strokeText(label, x(hit.x), y(hit.y) - 20 - age / 25); ctx.fillText(label, x(hit.x), y(hit.y) - 20 - age / 25); }
+  for (let i = floating.length - 1; i >= 0; i--) { const hit = floating[i]!; const age = ts - hit.at; if (age >= 720) { floating.splice(i, 1); continue; } ctx.font = hit.critical ? 'bold 22px sans-serif' : 'bold 15px sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = '#201727'; ctx.fillStyle = hit.critical ? '#ffbf28' : '#fff4de'; const value = hit.damage < 1 ? hit.damage.toFixed(1) : Math.round(hit.damage).toString(); const label = `${value}${hit.critical ? '!' : ''}`; ctx.strokeText(label, x(hit.x), y(hit.y) - 20 - age / 25); ctx.fillText(label, x(hit.x), y(hit.y) - 20 - age / 25); }
   if (dittoSprite?.complete && dittoSprite.naturalWidth > 0) ctx.drawImage(dittoSprite, w / 2 - 24, h / 2 - 30, 48, 48);
   else { ctx.fillStyle = '#cc9be2'; ctx.beginPath(); ctx.arc(w / 2, h / 2, 15, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#25142c'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Ditto', w / 2, h / 2 + 4); }
 }
@@ -156,6 +164,9 @@ onBeforeUnmount(() => { sound.dispose(); cancelAnimationFrame(frame); window.rem
   <div class="debug-lab" @pointerdown="unlockAudio">
     <canvas ref="canvas" width="900" height="600" aria-label="Mapa do laboratório de combate" />
     <div class="debug-top"><strong>Laboratório · DPS {{ dps.toFixed(1) }}</strong><button @click="panel = !panel">{{ panel ? 'Fechar painel' : 'Configurar' }}</button><button @click="emit('exit')">🚪 Sair</button></div>
+    <div v-if="!panel && !reporting && !lab.state.pendingUpgrade" class="debug-hint" role="status">
+      {{ chargeStatus ? `${chargeStatus} · ${autoCharge ? 'automático' : category === 'trilha' ? 'aperte a carga quando cheia' : 'segure e solte a carga'}` : category === 'aura' || category === 'orbit' || category === 'cone' ? 'Aproxime-se dos alvos para acertar.' : 'Ataque automático: aproxime-se de um alvo.' }}
+    </div>
     <div v-if="!panel && !reporting" class="debug-controls">
       <div class="debug-pad"><button @pointerdown.prevent="capture($event); direction.dy = -1" @pointerup="direction.dy = 0" @pointercancel="direction.dy = 0" @lostpointercapture="direction.dy = 0">↑</button><div><button @pointerdown.prevent="capture($event); direction.dx = -1" @pointerup="direction.dx = 0" @pointercancel="direction.dx = 0" @lostpointercapture="direction.dx = 0">←</button><button @pointerdown.prevent="capture($event); direction.dy = 1" @pointerup="direction.dy = 0" @pointercancel="direction.dy = 0" @lostpointercapture="direction.dy = 0">↓</button><button @pointerdown.prevent="capture($event); direction.dx = 1" @pointerup="direction.dx = 0" @pointercancel="direction.dx = 0" @lostpointercapture="direction.dx = 0">→</button></div></div>
       <div><button @pointerdown.prevent="capture($event); charge = true" @pointerup="charge = false" @pointercancel="charge = false" @lostpointercapture="charge = false">Segurar carga</button><button @click="special = true">Especial</button></div>
@@ -187,5 +198,5 @@ onBeforeUnmount(() => { sound.dispose(); cancelAnimationFrame(frame); window.rem
 </template>
 
 <style scoped>
-.debug-lab{position:fixed;inset:0;z-index:1000;background:#18281e;color:white;overflow:hidden}.debug-lab canvas{width:100%;height:100%;object-fit:contain}.debug-top{position:absolute;top:env(safe-area-inset-top);left:8px;right:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.debug-top strong{background:#15251ce8;padding:8px;border-radius:8px}.debug-lab button,.debug-lab select,.debug-lab textarea{font:inherit;padding:8px;border-radius:8px}.debug-panel{position:absolute;inset:50px 8px 8px;overflow:auto;background:#f8f5e7;color:#202b28;border-radius:14px;padding:16px;max-width:650px;margin:auto}.debug-panel label{display:block;margin:10px 0}.debug-panel button{margin:4px}.debug-panel textarea{display:block;width:100%;box-sizing:border-box}.debug-controls{position:absolute;bottom:calc(12px + env(safe-area-inset-bottom));left:12px;right:12px;display:flex;justify-content:space-between;align-items:end}.debug-controls button{touch-action:none;min-width:48px;min-height:48px}.debug-pad{text-align:center}.debug-pad div{display:flex}.debug-panel [aria-pressed=true]{background:#72d48d}
+.debug-lab{position:fixed;inset:0;z-index:1000;background:#18281e;color:white;overflow:hidden}.debug-lab canvas{width:100%;height:100%;object-fit:contain}.debug-top{position:absolute;top:env(safe-area-inset-top);left:8px;right:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.debug-top strong{background:#15251ce8;padding:8px;border-radius:8px}.debug-lab button,.debug-lab select,.debug-lab textarea{font:inherit;padding:8px;border-radius:8px}.debug-panel{position:absolute;inset:50px 8px 8px;overflow:auto;background:#f8f5e7;color:#202b28;border-radius:14px;padding:16px;max-width:650px;margin:auto}.debug-panel label{display:block;margin:10px 0}.debug-panel button{margin:4px}.debug-panel textarea{display:block;width:100%;box-sizing:border-box}.debug-hint{position:absolute;top:calc(50px + env(safe-area-inset-top));left:8px;max-width:80%;padding:6px 9px;background:#15251ce8;color:#fff;border-radius:8px;font-size:13px}.debug-controls{position:absolute;bottom:calc(12px + env(safe-area-inset-bottom));left:12px;right:12px;display:flex;justify-content:space-between;align-items:end}.debug-controls button{touch-action:none;min-width:48px;min-height:48px}.debug-pad{text-align:center}.debug-pad div{display:flex}.debug-panel [aria-pressed=true]{background:#72d48d}
 </style>
