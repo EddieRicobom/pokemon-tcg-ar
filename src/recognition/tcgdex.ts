@@ -74,6 +74,8 @@ export function cardImageUrl(imageBase: string, quality: ImageQuality = 'low', e
 
 /** Idiomas do CDN de imagens do TCGdex tentados quando a imagem do idioma original não responde (a arte é a mesma). */
 const FALLBACK_IMAGE_LANGUAGES = ['pt', 'fr', 'en'];
+/** Idioma consultado quando a carta não existe no idioma do cliente (coleções exclusivas do Japão). */
+const FALLBACK_CARD_LANGUAGE = 'ja';
 
 /**
  * Endereços para baixar a imagem de referência, do mais provável ao menos: a base como veio (baixa resolução WebP,
@@ -130,7 +132,10 @@ export class TcgdexClient {
     }
     let pending = this.memory.get(id);
     if (!pending) {
-      pending = this.fetchJson<TcgdexCard>(`${this.baseUrl}/${this.language}/cards/${encodeURIComponent(id)}`);
+      pending = this.fetchJson<TcgdexCard>(`${this.baseUrl}/${this.language}/cards/${encodeURIComponent(id)}`).then((card) =>
+        // Coleções que só existem em japonês (ex.: Terastal Fest ex, SV8a) não têm página em inglês: tenta o japonês.
+        card ?? (this.language === FALLBACK_CARD_LANGUAGE ? null : this.fetchJson<TcgdexCard>(`${this.baseUrl}/${FALLBACK_CARD_LANGUAGE}/cards/${encodeURIComponent(id)}`)),
+      );
       pending.then(() => this.failedCards.delete(id), (error: unknown) => {
         this.memory.delete(id);
         if (this.failureCooldownMs > 0 && error instanceof Error) {

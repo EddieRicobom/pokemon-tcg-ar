@@ -30,6 +30,8 @@ export interface CandidateInfo {
   setOfficial: number;
   setTotal: number;
   setCode?: string;
+  /** Espécie (Pokédex nacional) conhecida pelo índice; usada quando o TCGdex não traz `dexId` (cartas japonesas). */
+  dexId?: number;
   features?: CardFeatures;
   /**
    * Candidata vinda de uma variação plausível de dígitos mal lidos pelo OCR (6↔8, 1↔7…). O número impresso

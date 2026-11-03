@@ -355,6 +355,9 @@ async function pickManual(id: string): Promise<void> {
   // Esconde a lista e o contador ("Mostrando 0 de 243" ficava na tela depois de escolher).
   manualResults.value = [];
   manualTotal.value = 0;
+  // Fecha a folha de busca: aberta, ela ficava por cima do resultado e da carta em AR.
+  sheet.value = null;
+  manualOpen.value = false;
   await (await ensureController()).chooseManual(id);
 }
 
@@ -452,7 +455,8 @@ async function ensureController(): Promise<ScanController> {
     cache,
     loadCardRecord: async (id) => {
       const card = await getTcgdex().getCard(id);
-      return card ? recordFromTcgdex(card) : null;
+      // O índice sabe a espécie das cartas japonesas, que o TCGdex costuma não informar (ex.: Terapagos ex).
+      return card ? recordFromTcgdex(card, (await getCatalog())?.byId(id) ?? undefined) : null;
     },
     onState: (state) => {
       scan.value = state;

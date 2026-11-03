@@ -97,6 +97,16 @@ describe('TcgdexClient', () => {
     expect(c.stats.requests).toBe(3);
   });
 
+  it('carta que só existe em japonês (404 em inglês) é buscada em /ja/', async () => {
+    const urls: string[] = [];
+    const c = client((url) => {
+      urls.push(url);
+      return url.includes('/en/') ? new Response('{}', { status: 404 }) : new Response(JSON.stringify({ ...card, id: 'SV8a-136', name: 'テラパゴスex' }));
+    });
+    expect((await c.getCard('SV8a-136'))?.name).toBe('テラパゴスex');
+    expect(urls).toEqual([expect.stringContaining('/en/cards/SV8a-136'), expect.stringContaining('/ja/cards/SV8a-136')]);
+  });
+
   it('404 vira null', async () => {
     expect(await client(() => new Response('{}', { status: 404 })).getCard('zzz-1')).toBeNull();
   });

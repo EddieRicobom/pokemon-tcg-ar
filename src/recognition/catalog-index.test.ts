@@ -70,6 +70,28 @@ describe('CatalogLookup', () => {
   });
 });
 
+describe('coleções japonesas (ex.: SV8a 136/187)', () => {
+  const ja = new CatalogLookup({
+    version: 1,
+    generatedAt: '2026-11-03T00:00:00Z',
+    sets: [
+      { id: 'SV8a', name: 'テラスタルフェスex', lang: 'ja', official: 187, total: 237, release: '2024-12-06', code: 'SV8a', serie: 'SV', cards: [['136', 'テラパゴスex', 'Terapagos ex', 1024], ['001', 'スボミー', 'Budew', 406]] },
+    ],
+  });
+
+  it('"136/187" chega à carta japonesa, com a espécie do índice', () => {
+    const [best] = ja.candidates(parseBottomText('136/187'), []);
+    expect(best).toMatchObject({ id: 'SV8a-136', dexId: 1024, altNames: ['Terapagos ex'] });
+    expect(ja.byId('SV8a-136')?.dexId).toBe(1024);
+  });
+
+  it('busca manual pelo nome em inglês, com miniatura do idioma japonês', () => {
+    const [match] = ja.search('terapagos');
+    expect(match).toMatchObject({ id: 'SV8a-136', name: 'テラパゴスex' });
+    expect(match?.thumb).toBe('https://assets.tcgdex.net/ja/SV/SV8a/136/low.webp');
+  });
+});
+
 describe('loadCatalogIndex', () => {
   it('devolve null quando o arquivo não existe (índice é opcional)', async () => {
     const fake = (async () => new Response('nope', { status: 404 })) as typeof fetch;

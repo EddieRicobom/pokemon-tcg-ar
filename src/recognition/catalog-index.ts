@@ -18,8 +18,13 @@ export interface IndexSet {
   code?: string;
   /** Série da coleção no TCGdex (índices antigos não trazem: a busca manual fica sem miniatura). */
   serie?: string;
-  /** [localId, nome em inglês, nome em português (se diferente)] */
-  cards: [string, string, string?][];
+  /** Idioma da coleção quando não é a inglesa (`ja`: só existe no Japão; nomes em japonês). Ausente = inglês. */
+  lang?: string;
+  /**
+   * [localId, nome, nome alternativo (português; ou inglês nas coleções japonesas), dexId].
+   * O dexId só vem nas coleções japonesas, onde o TCGdex muitas vezes não informa a espécie (cartas ex).
+   */
+  cards: [string, string, string?, number?][];
 }
 
 export interface CatalogIndexData {
@@ -119,7 +124,7 @@ export class CatalogLookup {
       }
       if (bottom.setCode && set.code && set.code.toUpperCase() === bottom.setCode.toUpperCase()) setPrior += 0.2;
 
-      for (const [localId, name, ptName] of set.cards) {
+      for (const [localId, name, ptName, dexId] of set.cards) {
         let prior = setPrior;
         let numberMatched = false;
         if (number) {
@@ -161,6 +166,7 @@ export class CatalogLookup {
           setTotal: set.total,
           setCode: set.code,
           release: set.release,
+          ...(dexId ? { dexId } : {}),
           prior,
         });
       }
@@ -193,7 +199,7 @@ export class CatalogLookup {
         if (penalty === undefined) continue;
         changed += penalty;
       }
-      for (const [localId, name, ptName] of set.cards) {
+      for (const [localId, name, ptName, dexId] of set.cards) {
         const local = parseLocalId(localId);
         if (!local || local.prefix !== number.prefix.toUpperCase()) continue;
         const numberPenalty = numberValues.get(local.value);
@@ -209,7 +215,7 @@ export class CatalogLookup {
         }
         result.push({
           id, setId: set.id, localId, name, altNames: ptName ? [ptName] : undefined, setOfficial: set.official,
-          setTotal: set.total, setCode: set.code, release: set.release, prior, viaVariant: true,
+          setTotal: set.total, setCode: set.code, release: set.release, ...(dexId ? { dexId } : {}), prior, viaVariant: true,
         });
       }
     }
@@ -239,7 +245,7 @@ export class CatalogLookup {
           exact = names.includes(q);
           if (!exact && !names.some((n) => n.includes(q)) && !names.some((n) => nameSimilarity(query, n) >= 0.85)) continue;
         }
-        const thumb = set.serie ? cardImageUrl(`${TCGDEX_ASSETS}/en/${set.serie}/${set.id}/${localId}`, 'low', 'webp') : undefined;
+        const thumb = set.serie ? cardImageUrl(`${TCGDEX_ASSETS}/${set.lang ?? 'en'}/${set.serie}/${set.id}/${localId}`, 'low', 'webp') : undefined;
         out.push({ id: `${set.id}-${localId}`, name, setName: set.name, localId, setOfficial: set.official, release: set.release, ...(thumb ? { thumb } : {}), exact });
       }
     }
@@ -254,10 +260,10 @@ export class CatalogLookup {
     if (!this.byIdMap) {
       this.byIdMap = new Map();
       for (const set of this.data.sets) {
-        for (const [localId, name, ptName] of set.cards) {
+        for (const [localId, name, ptName, dexId] of set.cards) {
           this.byIdMap.set(`${set.id}-${localId}`, {
             id: `${set.id}-${localId}`, setId: set.id, localId, name, altNames: ptName ? [ptName] : undefined,
-            setOfficial: set.official, setTotal: set.total, setCode: set.code, release: set.release, prior: 0.2,
+            setOfficial: set.official, setTotal: set.total, setCode: set.code, release: set.release, ...(dexId ? { dexId } : {}), prior: 0.2,
           });
         }
       }
