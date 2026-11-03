@@ -71,6 +71,12 @@ export interface SurvivorPlayer {
   projectileSpeed: number;
   /** Trilha: carrega pela distância percorrida; ao ativar, desenha por 4 s. */
   trailCharge?: number;
+  /** Multiplicador do intervalo de dano da Trilha, reduzido pelas cartas de cadência. */
+  trailCadenceFactor?: number;
+  /** Bônus de largura do feixe carregado de Foco. */
+  focusBeamWidthFactor?: number;
+  /** Aumento da área de contato dos projéteis comuns e da Rajada. */
+  projectileHitRadiusFactor?: number;
   trailActiveMs?: number;
   trailPath?: { x: number; y: number; bornMs: number }[];
   /** Quantos inimigos extras um projétil atravessa antes de sumir. */
@@ -301,6 +307,8 @@ export interface SurvivorProjectile {
   canChain?: boolean;
   /** Raio do desenho (a Pedrada é maior). */
   size?: number;
+  /** Raio de colisão de projéteis normais, quando ampliado por cartas. */
+  collisionRadius?: number;
   /** Identidade visual/efeito do golpe que criou o projétil. */
   move?: SurvivorMove;
   /** O apoio só muda a apresentação e a atribuição; continua saindo da posição do jogador. */
