@@ -612,7 +612,7 @@ describe('golpes por tipo', () => {
     expect(s.enemies[0]!.hp).toBeLessThan(afterHit);
   });
 
-  it('área (Terra) explode no inimigo mais próximo, acerta quem está colado nele e atordoa', () => {
+  it('área (Terra) explode no inimigo mais próximo e deixa terreno pulsante', () => {
     const s = quiet(createSurvivorState(1, { kindCount: 1, ...as('ground', 'area') }));
     const near = dummy(1, s.player.x + 100, s.player.y);
     const glued = dummy(2, s.player.x + 120, s.player.y);
@@ -622,7 +622,7 @@ describe('golpes por tipo', () => {
     expect(near.hp).toBeLessThan(1000);
     expect(glued.hp).toBeLessThan(1000);
     expect(far.hp).toBe(1000);
-    expect(near.stunMs).toBeGreaterThan(0);
+    expect(s.elementalTerrain.length).toBeGreaterThan(0);
     expect(s.fx.some((f) => f.kind === 'blast')).toBe(true);
   });
 

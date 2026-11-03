@@ -8923,3 +8923,14 @@ body.no-scroll .reward-toasts {
   font-weight: 800;
 }
 .survivor-heal-block { background: #65185f; color: #fff; border: 2px solid #ff82f3; font-weight: 900; box-shadow: 0 0 8px #db51ed; }
+
+.survivor-auto-charge {
+  position: absolute; z-index: 4; right: calc(var(--sv-edge) + env(safe-area-inset-right));
+  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) * 1.82 + var(--sv-gap) + 5px + env(safe-area-inset-bottom));
+  min-width: 56px; min-height: 32px; border: 2px solid #555b58; border-radius: 12px;
+  background: #f5f3dc; color: #252d30; font-weight: bold; touch-action: manipulation;
+}
+.survivor-auto-charge.is-on { background: #b4e589; }
+.survivor-stage.btn-pilha .survivor-auto-charge {
+  bottom: calc(var(--sv-sp-b) + var(--sv-sp) * var(--sv-s) * 1.82 + var(--sv-ju) * var(--sv-s) + var(--sv-gap) * 2 + 5px + env(safe-area-inset-bottom));
+}

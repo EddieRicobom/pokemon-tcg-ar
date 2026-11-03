@@ -269,3 +269,9 @@ export function distanceToSegment(px: number, py: number, ax: number, ay: number
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
+
+/** O automático mantém o botão e o solta por um passo ao atingir a carga máxima. */
+export function autoChargeHeld(style: 'foco' | 'teleporte' | 'trilha', charge: SurvivorChargeState): boolean {
+  if (style === 'trilha') return true;
+  return style === 'foco' ? charge.level < 1 : charge.teleportHoldMs < TELEPORT_FULL_HOLD_MS;
+}

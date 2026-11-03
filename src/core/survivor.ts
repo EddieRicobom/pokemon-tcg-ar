@@ -316,6 +316,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     hostileProjectiles: [],
     orbs: [],
     artifacts: [],
+    elementalTerrain: [],
     digitalPokeballs: 0,
     digitalDanger: 0,
     digitalDangerCooldownMs: 0,
@@ -923,6 +924,31 @@ function applyStun(e: SurvivorEnemy, ms: number): void {
   e.stunMs = Math.max(e.stunMs ?? 0, ms);
   e.stunCooldownMs = STUN_COOLDOWN_MS;
 }
+
+/** Pedra/Terra não paralisa: deixa um terreno que pulsa três vezes com metade do dano do golpe. */
+function leaveElementalTerrain(state: SurvivorState, e: SurvivorEnemy, damage: number, move: SurvivorMove): void {
+  state.elementalTerrain.push({ x: e.x, y: e.y, radius: Math.max(28, e.radius * 2), damage, ticksLeft: 3, nextTickMs: 0, move });
+  // Evita centenas de marcas quando uma Trilha ou Rajada encontra uma multidão.
+  if (state.elementalTerrain.length > 48) state.elementalTerrain.splice(0, state.elementalTerrain.length - 48);
+}
+
+function stepElementalTerrain(state: SurvivorState, dtMs: number): void {
+  for (const terrain of state.elementalTerrain) {
+    terrain.nextTickMs -= dtMs;
+    while (terrain.ticksLeft > 0 && terrain.nextTickMs <= 0) {
+      const pulseDamage = terrain.damage * 0.5;
+      for (const enemy of state.enemies) {
+        if (enemy.hp <= 0 || Math.hypot(enemy.x - terrain.x, enemy.y - terrain.y) > terrain.radius + enemy.radius) continue;
+        enemy.hp -= pulseDamage;
+        enemy.hitFlashMs = 90;
+      }
+      state.fx.push({ kind: 'blast', x: terrain.x, y: terrain.y, r: terrain.radius, color: terrain.move.color, ageMs: 0, lifeMs: 240, moveType: terrain.move.type });
+      terrain.ticksLeft--;
+      terrain.nextTickMs += 420;
+    }
+  }
+  state.elementalTerrain = state.elementalTerrain.filter((terrain) => terrain.ticksLeft > 0);
+}
 /** Depois de um empurrão, o inimigo só pode ser empurrado de novo daqui a 5 s (golpes de área não o mandam longe sem parar). */
 export const KNOCKBACK_COOLDOWN_MS = 5_000;
 /** Empurra `e` para longe de `from` em `push` unidades, se a recarga permitir; devolve se empurrou. */
@@ -978,7 +1004,7 @@ function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: numbe
       e.slowMs = Math.max(e.slowMs ?? 0, 900);
       break;
     case 'atordoar':
-      applyStun(e, e.boss ? 90 : 220);
+      leaveElementalTerrain(state, e, damage, state.player.move);
       break;
     case 'empurrar':
       applyKnockback(e, from, e.boss ? 1.5 : 5);
@@ -1004,7 +1030,7 @@ function applyHypotheticalTypeEffect(state: SurvivorState, e: SurvivorEnemy, dam
       e.burnDps = Math.max(e.burnDps ?? 0, round1(damage * 0.16));
       break;
     case 'lentidao': e.slowMs = Math.max(e.slowMs ?? 0, 700); break;
-    case 'atordoar': applyStun(e, e.boss ? 70 : 160); break;
+    case 'atordoar': leaveElementalTerrain(state, e, damage, state.player.move); break;
     case 'empurrar': applyKnockback(e, from, e.boss ? 2 : 6); break;
     case 'roubar': healSurvivor(state.player, 1); break;
     case 'semente': e.seededMs = Math.max(e.seededMs ?? 0, 1500); break;
@@ -1089,7 +1115,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
       }
       break;
     case 'atordoar':
-      applyStun(e, e.boss ? EFFECT_MS.bossStun : EFFECT_MS.stun);
+      leaveElementalTerrain(state, e, finalDamage, move);
       break;
     case 'empurrar': {
       const strongerPush = move === p.move && ((move.type === 'water' && hasUpgrade(p, 'water-tide')) || (move.type === 'fighting' && hasUpgrade(p, 'fighting-impact')));
@@ -1153,7 +1179,6 @@ const TRAIL_DRAW_MS = 4000;
 const TRAIL_LIFE_MS = 3500;
 const TRAIL_POINT_SPACING = 12;
 const TRAIL_TICK_MS = 420;
-const TRAIL_BOSS_DAMAGE_MULTIPLIER = 0.8;
 
 /** Atualiza a faixa contínua da Trilha; quem toca a linha recebe dano contínuo proporcional ao tempo no contato. */
 function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate: boolean): void {
@@ -1168,17 +1193,19 @@ function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate
     if (activate && p.trailCharge >= 1) { p.trailCharge = 0; p.trailActiveMs = TRAIL_DRAW_MS; }
   }
   p.trailPath = p.trailPath.filter((point) => state.elapsedMs - point.bornMs < TRAIL_LIFE_MS);
-  if (p.trailActiveMs <= 0) return;
-  p.trailActiveMs = Math.max(0, p.trailActiveMs - dtMs);
-  const last = p.trailPath[p.trailPath.length - 1];
-  if (!last || Math.hypot(last.x - p.x, last.y - p.y) >= TRAIL_POINT_SPACING) p.trailPath.push({ x: p.x, y: p.y, bornMs: state.elapsedMs });
-  const damage = artifactDamage(state) * 0.9 * dtMs / TRAIL_TICK_MS;
+  if (p.trailActiveMs > 0) {
+    p.trailActiveMs = Math.max(0, p.trailActiveMs - dtMs);
+    const last = p.trailPath[p.trailPath.length - 1];
+    if (!last || Math.hypot(last.x - p.x, last.y - p.y) >= TRAIL_POINT_SPACING) p.trailPath.push({ x: p.x, y: p.y, bornMs: state.elapsedMs });
+  }
+  const damage = artifactDamage(state) * 0.9 / BASIC_ATTACK_DAMAGE_FACTOR;
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0) continue;
     const touching = p.trailPath.some((point) => Math.hypot(e.x - point.x, e.y - point.y) <= p.attackRadius + e.radius);
-    if (!touching) continue;
-    hitEnemy(state, e, e.boss || e.trainerId !== undefined ? damage * TRAIL_BOSS_DAMAGE_MULTIPLIER : damage, { x: e.x, y: e.y }, p.move, true, 0);
+    if (!touching || state.elapsedMs < (e.trailNextHitMs ?? 0)) continue;
+    e.trailNextHitMs = state.elapsedMs + TRAIL_TICK_MS;
+    hitEnemy(state, e, damage, { x: e.x, y: e.y }, p.move, true, 0);
     hits++;
   }
   drain(state, hits, p.move);
@@ -1921,6 +1948,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   const healBlockBeforeStep = state.player.healBlockMs ?? 0;
   const previousElapsedMs = state.elapsedMs;
   state.elapsedMs += dtMs;
+  stepElementalTerrain(state, dtMs);
   if (!state.hypotheticalSecondaryActive && previousElapsedMs < HYPOTHETICAL_TYPE_ACTIVATION_MS && state.elapsedMs >= HYPOTHETICAL_TYPE_ACTIVATION_MS) {
     state.hypotheticalSecondaryActive = true;
     events.push({ type: 'hypotheticalTypeActivated', secondaryType: state.hypotheticalSecondaryType });

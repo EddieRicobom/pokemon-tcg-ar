@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createSurvivorState, stepSurvivor } from './survivor';
 import type { SurvivorEnemy, SurvivorEvent, SurvivorState } from './survivor';
 import {
+  autoChargeHeld,
   chargeStyleFor,
   createSurvivorCharge,
   distanceToSegment,
@@ -333,4 +334,37 @@ describe('apoios com Rajada e Teleporte (polÃ­tica automÃ¡tica)', () => {
     stepSurvivor(state, { dx: 0, dy: 0 }, 16);
     expect(state.projectiles.length).toBe(before + 1);
   });
+});
+
+
+describe('carga automática', () => {
+  it.each(['foco', 'teleporte'] as const)('%s solta ao encher e volta a carregar', (style) => {
+    const charge = createSurvivorCharge();
+    let releases = 0;
+    for (let i = 0; i < 300; i++) {
+      const action = stepChargeMeter(charge, style, autoChargeHeld(style, charge), 0, 50);
+      if (action) { releases++; expect(action.level).toBe(1); }
+    }
+    expect(releases).toBeGreaterThan(1);
+  });
+  it('mantém a Trilha pronta para ativar quando a distância encher', () => {
+    expect(autoChargeHeld('trilha', createSurvivorCharge())).toBe(true);
+  });
+});
+
+
+it('Trilha atinge o chefe em pulsos e continua causando dano após parar de desenhar', () => {
+  const state = run('teleporte');
+  state.player.move = moveWith('normal', 'trilha', stats({ speed: 150, attack: 80, spAttack: 60 }));
+  state.player.trailCharge = 1;
+  const boss = { ...dummy(1, state.player.x, state.player.y), boss: true };
+  state.enemies.push(boss);
+  stepSurvivor(state, { dx: 0, dy: 0, charge: true }, 50);
+  const firstDamage = boss.maxHp - boss.hp;
+  expect(firstDamage).toBeGreaterThan(state.player.attackDamage);
+  stepSurvivor(state, { dx: 0, dy: 0 }, 50);
+  expect(boss.maxHp - boss.hp).toBeCloseTo(firstDamage);
+  state.player.trailActiveMs = 0;
+  stepSurvivor(state, { dx: 0, dy: 0 }, 420);
+  expect(boss.maxHp - boss.hp).toBeGreaterThan(firstDamage);
 });
