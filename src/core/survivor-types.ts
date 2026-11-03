@@ -122,6 +122,8 @@ export interface SurvivorPlayer {
   artifactLuck?: number;
   /** Chance de cada golpe do tipo principal causar dano dobrado. */
   critChance?: number;
+  /** Tempo restante sem receber cura após golpe da ameaça digital. */
+  healBlockMs?: number;
   /** Segundo fôlego pronto: revive com parte da vida na primeira vez que a vida cai até 25%. */
   secondWindReady?: boolean;
   /** Só no BONK: força vertical inicial de cada salto. */
@@ -194,6 +196,7 @@ export const DIGITAL_DANGER_VISIBLE_RADIUS = 520;
 export type SurvivorEnemyGrade = 'comum' | 'elite' | 'chefao';
 
 export interface SurvivorEnemy {
+  digitalThreat?: boolean;
   id: number;
   /** Espécie fixada no nascimento, independente dos atributos de combate. */
   dexId?: number;
@@ -253,6 +256,7 @@ export type SurvivorEnemyArchetype = 'perseguidor' | 'flanqueador' | 'atirador' 
 export type SurvivorSupportRole = 'cura' | 'impulso' | 'disparo';
 
 export interface SurvivorHitSource {
+  digitalThreat?: boolean;
   dexId?: number;
   boss: boolean;
   shadowBoss?: boolean;
@@ -397,6 +401,11 @@ export interface SurvivorTypeAffinity {
 }
 
 export interface SurvivorState {
+  /** Desativa encontros automáticos no laboratório isolado. */
+  debugLaboratory?: boolean;
+  /** Acertos críticos ocorridos no último passo, para apresentação. */
+  critRng: Rng;
+  criticalHits: { enemyId: number; x: number; y: number; damage: number; boss: boolean }[];
   lastHit?: SurvivorFinalHit;
   special: SurvivorSpecialState;
   /** Estado de Foco, Rajada e Teleporte (`core/survivor-charge.ts`); fica parado nos outros golpes. */

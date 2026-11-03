@@ -159,6 +159,30 @@ describe('novas cartas de buff', () => {
     expect(hitFor(1)).toBeLessThan(hitFor(0));
   });
 
+  it('Atirador paciente troca movimento por cadência uma única vez', () => {
+    const s = quiet(createSurvivorState(21, { kindCount: 1 }));
+    const speed = s.player.speed, cooldown = s.player.attackCooldownMs;
+    pick(s, 'patient-shooter');
+    expect(s.player.speed).toBeCloseTo(speed / 2);
+    expect(s.player.attackCooldownMs).toBeCloseTo(Math.max(240, cooldown / 1.5));
+    pick(s, 'patient-shooter');
+    expect(s.player.speed).toBeCloseTo(speed / 2);
+  });
+  it('crítico básico usa o limiar de 5% e registra o dano real', () => {
+    const run = (roll: number) => {
+      const a = as('normal', 'aura');
+      const s = quiet(createSurvivorState(21, { kindCount: 1, move: a.move, profile: a.profile }));
+      s.critRng = () => roll; s.player.attackRadius = 100; s.player.attackTimerMs = 0;
+      s.enemies.push(enemy(1, s.player.x + 30, s.player.y));
+      stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+      return s;
+    };
+    const critical = run(.049), normal = run(.05);
+    expect(critical.criticalHits).toHaveLength(1);
+    expect(normal.criticalHits).toHaveLength(0);
+    expect(critical.criticalHits[0]!.damage).toBeCloseTo((1000 - normal.enemies[0]!.hp) * 2);
+  });
+
   it('faro de artefatos soma chance de drop e tem teto de cartas', () => {
     const s = quiet(createSurvivorState(44, { kindCount: 1 }));
     pick(s, 'artifact-luck');

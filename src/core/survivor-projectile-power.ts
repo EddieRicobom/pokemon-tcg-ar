@@ -60,7 +60,7 @@ export function survivorProjectileLook(player: Pick<SurvivorPlayer, 'upgradeLeve
   return {
     tier: survivorProjectileTier(player),
     piercing: player.pierce > 0,
-    critical: (player.critChance ?? 0) > 0,
+    critical: (player.critChance ?? 0) > 0.05,
   };
 }
 

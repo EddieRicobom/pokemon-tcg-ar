@@ -1,3 +1,4 @@
+import { healSurvivor } from './survivor-healing';
 import type { PokemonType } from './pokemon-data';
 import type { SurvivorInput, SurvivorState } from './survivor';
 
@@ -125,7 +126,7 @@ export function breakSurvivorShield(state: SurvivorState): boolean {
   if (!shieldBreaksOnContact(state) || state.special.activeMs <= 0) return false;
   state.special.activeMs = 0;
   state.special.shieldBroken = true;
-  if (state.special.branch === 'shield-heal') state.player.hp = Math.min(state.player.maxHp, state.player.hp + Math.max(1, Math.round(state.player.maxHp * 0.25)));
+  if (state.special.branch === 'shield-heal') healSurvivor(state.player, Math.max(1, Math.round(state.player.maxHp * 0.25)));
   state.special.fxMs = 800;
   return true;
 }
@@ -139,7 +140,7 @@ export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, 
   special.activeMs = Math.max(0, special.activeMs - dtMs);
   if (wasShieldActive && special.activeMs === 0 && special.branch === 'shield-heal' && !special.shieldBroken) {
     special.shieldBroken = true;
-    state.player.hp = Math.min(state.player.maxHp, state.player.hp + Math.max(1, Math.round(state.player.maxHp * 0.25)));
+    healSurvivor(state.player, Math.max(1, Math.round(state.player.maxHp * 0.25)));
     special.fxMs = 800;
   }
   if (special.clone) {
@@ -177,7 +178,7 @@ export function stepSurvivorSpecial(state: SurvivorState, input: SurvivorInput, 
       special.clone = { x: state.player.x, y: state.player.y, dx: dx / distance, dy: dy / distance, activeMs: DASH_CLONE_DURATION_MS };
     }
     if (special.selected === 'shield' && special.branch === 'shield-permanent') special.activeMs = Number.POSITIVE_INFINITY;
-    if (special.selected === 'stasis' && special.branch === 'stasis-mend') state.player.hp = Math.min(state.player.maxHp, state.player.hp + Math.round(state.player.maxHp * 0.25));
+    if (special.selected === 'stasis' && special.branch === 'stasis-mend') healSurvivor(state.player, Math.round(state.player.maxHp * 0.25));
     if (special.selected === 'stasis' && special.branch === 'stasis-collapse') {
       special.activeMs = 5000;
       for (const enemy of state.enemies) enemy.stunMs = Math.max(enemy.stunMs ?? 0, 1000);

@@ -74,7 +74,7 @@ describe('espécies regionais da Torre', () => {
 });
 
 function combatSnapshot(s: SurvivorState) {
-  const { rng: _rng, enemyDexId: _appearance, evolutions: _evolutions, enemies, ...rest } = s;
+  const { rng: _rng, critRng: _critRng, enemyDexId: _appearance, evolutions: _evolutions, enemies, ...rest } = s;
   return {
     ...rest,
     enemies: enemies.map(({ dexId: _dex, kind: _kind, ...enemy }) => enemy),

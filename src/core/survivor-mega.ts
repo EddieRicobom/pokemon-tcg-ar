@@ -139,9 +139,10 @@ export function startSurvivorMega(state: SurvivorState, form: SurvivorMegaForm):
 
 function scalePlayer(state: SurvivorState, r: SurvivorMegaState['ratios'], projectileSize: number): void {
   const p = state.player;
+  const hpBefore = p.hp;
   const fraction = p.maxHp > 0 ? p.hp / p.maxHp : 1;
   p.maxHp = Math.max(1, Math.round(p.maxHp * r.maxHp));
-  p.hp = Math.min(p.maxHp, Math.max(p.hp > 0 ? 1 : 0, Math.round(p.maxHp * fraction)));
+  p.hp = Math.min(p.maxHp, Math.max(p.hp > 0 ? 1 : 0, Math.round(p.maxHp * fraction)), (p.healBlockMs ?? 0) > 0 ? hpBefore : Infinity);
   p.attackDamage = round1(p.attackDamage * r.damage);
   p.attackCooldownMs = Math.max(120, Math.round(p.attackCooldownMs * r.cooldownMs));
   p.attackRadius = round1(p.attackRadius * r.radius);
