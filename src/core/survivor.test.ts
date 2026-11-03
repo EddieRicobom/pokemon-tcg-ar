@@ -201,7 +201,7 @@ describe('stepSurvivor', () => {
     expect(s.digitalDanger).toBeLessThan(beforePressure);
   });
 
-  it('convoca dois Pokémon quando o Digital Danger chega ao máximo e entra em recarga', () => {
+  it('convoca três Pokémon quando o Digital Danger chega ao máximo e entra em recarga', () => {
     const s = quiet(createSurvivorState(102, { kindCount: 1 }));
     s.elapsedMs = DIGITAL_DANGER_UNLOCK_MS;
     s.special.phase = 'ready';
@@ -212,10 +212,11 @@ describe('stepSurvivor', () => {
     s.kills = 200;
     s.digitalDanger = DIGITAL_DANGER_MAX - 1;
     const events = stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 1_000);
-    expect(events).toContainEqual(expect.objectContaining({ type: 'trainerSpawn', count: 2, trigger: 'digital-danger' }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'trainerSpawn', count: 3, trigger: 'digital-danger' }));
     expect(s.digitalDanger).toBe(0);
     expect(s.digitalDangerCooldownMs).toBe(DIGITAL_DANGER_COOLDOWN_MS);
-    expect(s.enemies.filter((enemy) => enemy.trainerId !== undefined)).toHaveLength(2);
+    expect(s.enemies.filter((enemy) => enemy.trainerId !== undefined)).toHaveLength(3);
+    expect(s.enemies.every((enemy) => enemy.digitalThreat)).toBe(true);
 
     const dangerAfterTrigger = s.digitalDanger;
     stepSurvivor(s, { dx: 0, dy: 0, visibleEnemies: 0 }, 10_000);

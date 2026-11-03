@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, toRaw, triggerRef, watch } from 'vue';
 import MusicControls from './MusicControls.vue';
+import SurvivorDebug from './SurvivorDebug.vue';
 import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
 import { survivorAudio } from '../app/survivor-audio-settings';
@@ -507,12 +508,13 @@ const canvasEl = ref<HTMLCanvasElement | null>(null);
 const damageFeedback = ref(false);
 let damageFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 /** Números de dano não fazem parte do motor: são só uma leitura curta do que acabou de acontecer. */
-interface DamageNumber { id: number; x: number; y: number; amount: number; bornAt: number; boss: boolean }
+interface DamageNumber { id: number; x: number; y: number; amount: number; bornAt: number; boss: boolean; critical?: boolean }
 const damageNumbers = ref<DamageNumber[]>([]);
 let nextDamageNumberId = 1;
 /** Pausa visual curtíssima no impacto. Não roda com movimento reduzido, modo Rotom ou impactos desligados. */
 let hitStopMs = 0;
 let lastHitStopAt = -Infinity;
+let lastCriticalSoundAt = -Infinity;
 /** Guarda se o menu abriu a pausa, para o fechamento retomar somente o que ele próprio interrompeu. */
 let menuPausedRun = false;
 const ready = ref(false);
@@ -679,7 +681,7 @@ function queueBonkJump(): void {
   bonkJumpPressTimer = setTimeout(() => { bonkJumpPressed.value = false; bonkJumpPressTimer = null; }, 160);
 }
 let wasPausedBeforeLeave = false;
-const trainerPresentation = ref<null | { trainerId: number; count: number; final: boolean }>(null);
+const trainerPresentation = ref<null | { trainerId: number; count: number; final: boolean; trigger?: 'digital-danger' }>(null);
 let trainerPresentationTimer: ReturnType<typeof setTimeout> | null = null;
 function clearTrainerPresentation(resume = false): void {
   if (trainerPresentationTimer) clearTimeout(trainerPresentationTimer);
@@ -690,7 +692,7 @@ function clearTrainerPresentation(resume = false): void {
     lastTs = performance.now();
   }
 }
-function showTrainerPresentation(event: { trainerId: number; count: number; final: boolean }): void {
+function showTrainerPresentation(event: { trainerId: number; count: number; final: boolean; trigger?: 'digital-danger' }): void {
   clearTrainerPresentation();
   heldKeys.clear();
   joyUp();
@@ -799,6 +801,13 @@ const runUnlocks = ref<string[]>([]);
 const pickOptions = ref<PickOption[] | null>(null);
 /** A Torre nunca inventa um protagonista: sem parceiro, explica como conseguir um antes de iniciar. */
 const noCompanion = ref(false);
+const debugOpen = ref(false);
+let debugTaps = 0;
+function secretDebug(): void {
+  debugTaps++;
+  if (debugTaps >= 5) { debugTaps = 0; debugOpen.value = true; }
+}
+
 const pickBusy = ref(false);
 const rerollsUsed = ref(0);
 const previousPickIds = ref<string[]>([]);
@@ -900,10 +909,12 @@ function snapshotEnemyHp(enemies: readonly SurvivorEnemy[]): void {
 function enemyDamageSince(before: ReadonlyMap<number, { hp: number; x: number; y: number; boss: boolean }>, s: SurvivorState): DamageNumber[] {
   const now = animMs;
   const out: DamageNumber[] = [];
+  for (const hit of s.criticalHits) out.push({ id: nextDamageNumberId++, x: hit.x, y: hit.y, amount: Math.max(1, Math.round(hit.damage)), bornAt: now, boss: hit.boss, critical: true });
   for (const enemy of s.enemies) {
     const prior = before.get(enemy.id);
     if (!prior) continue;
-    const amount = Math.round(prior.hp - enemy.hp);
+    const criticalDamage = s.criticalHits.filter((hit) => hit.enemyId === enemy.id).reduce((sum, hit) => sum + hit.damage, 0);
+    const amount = Math.round(prior.hp - enemy.hp - criticalDamage);
     if (amount > 0) out.push({ id: nextDamageNumberId++, x: enemy.x, y: enemy.y, amount, bornAt: now, boss: enemy.boss || enemy.grade === 'chefao' || enemy.shadowBoss === true });
   }
   return out;
@@ -1250,7 +1261,7 @@ function drawEnemy(e: SurvivorEnemy): void {
   const sprite = e.dexId === undefined ? null : (enemySprites.get(e.dexId) ?? null);
   // Grau: elite com anel dourado, chefão (do treinador) com anel vermelho — ajuda a reconhecer na correria.
   if (e.grade !== 'comum') {
-    ctx.strokeStyle = e.grade === 'chefao' ? '#e8453c' : '#ffd84a';
+    ctx.strokeStyle = e.digitalThreat ? '#d35cff' : e.grade === 'chefao' ? '#e8453c' : '#ffd84a';
     ctx.lineWidth = e.grade === 'chefao' ? 3 : 2;
     ctx.beginPath();
     ctx.arc(e.x, e.y, (e.grade === 'chefao' ? 22 : 18), 0, Math.PI * 2);
@@ -1339,12 +1350,14 @@ function drawDamageNumbers(worldToScreen: WorldToScreen): void {
     if (!p) continue;
     const alpha = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88;
     ctx.globalAlpha = Math.max(0, alpha);
-    ctx.font = `bold ${hit.boss ? 17 : 13}px system-ui, sans-serif`;
+    ctx.font = `bold ${hit.critical ? 22 : hit.boss ? 17 : 13}px system-ui, sans-serif`;
+    if (hit.critical) { ctx.shadowColor = '#ff9f1a'; ctx.shadowBlur = 12; }
     ctx.lineWidth = 3;
     ctx.strokeStyle = '#161b2b';
-    ctx.strokeText(`-${hit.amount}`, p.x, p.y);
-    ctx.fillStyle = hit.boss ? '#ffd86b' : '#fff4de';
-    ctx.fillText(`-${hit.amount}`, p.x, p.y);
+    ctx.strokeText(`-${hit.amount}${hit.critical ? '!' : ''}`, p.x, p.y);
+    ctx.fillStyle = hit.critical ? '#ffbf28' : hit.boss ? '#ffd86b' : '#fff4de';
+    ctx.fillText(`-${hit.amount}${hit.critical ? '!' : ''}`, p.x, p.y);
+    ctx.shadowBlur = 0;
   }
   ctx.restore();
 }
@@ -1385,7 +1398,7 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
   if (e.shadowBoss) drawShadowFlames(x, y, 20 * size);
   if (e.grade !== 'comum') {
     ctx.save();
-    ctx.strokeStyle = e.grade === 'chefao' ? '#ff6e73' : '#ffd84a';
+    ctx.strokeStyle = e.digitalThreat ? '#d35cff' : e.grade === 'chefao' ? '#ff6e73' : '#ffd84a';
     ctx.lineWidth = Math.max(1, scale * 1.8);
     ctx.beginPath();
     ctx.ellipse(x, y, 16 * size, 5 * size, 0, 0, Math.PI * 2);
@@ -1552,12 +1565,14 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     const t = age / 720;
     const alpha = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88;
     c.globalAlpha = Math.max(0, alpha);
-    c.font = `bold ${Math.max(11, (hit.boss ? 17 : 13) * point.scale)}px system-ui, sans-serif`;
+    c.font = `bold ${Math.max(11, (hit.critical ? 22 : hit.boss ? 17 : 13) * point.scale)}px system-ui, sans-serif`;
+    if (hit.critical) { c.shadowColor = '#ff9f1a'; c.shadowBlur = 12; }
     c.lineWidth = Math.max(1.5, point.scale * 2.5);
     c.strokeStyle = '#161b2b';
-    c.strokeText(`-${hit.amount}`, point.x, point.y - 16 - t * 20);
-    c.fillStyle = hit.boss ? '#ffd86b' : '#fff4de';
-    c.fillText(`-${hit.amount}`, point.x, point.y - 16 - t * 20);
+    c.strokeText(`-${hit.amount}${hit.critical ? '!' : ''}`, point.x, point.y - 16 - t * 20);
+    c.fillStyle = hit.critical ? '#ffbf28' : hit.boss ? '#ffd86b' : '#fff4de';
+    c.fillText(`-${hit.amount}${hit.critical ? '!' : ''}`, point.x, point.y - 16 - t * 20);
+    c.shadowBlur = 0;
   }
   c.restore();
 
@@ -2292,6 +2307,10 @@ function loop(ts: number): void {
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
     const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), cancelCharge: cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
     if (trackEnemyDamage) showEnemyDamage(enemyDamageSince(enemyHpSnapshot, s));
+    if (survivorAudio.attackSounds && s.criticalHits.length > 0 && animMs - lastCriticalSoundAt >= 200) {
+      lastCriticalSoundAt = animMs;
+      playSound('survivor-critical');
+    }
     if (s.player.attackTimerMs > attackTimerBefore) {
       playerAttackAt = animMs;
       playAttackSound(s.player.move, ts);
@@ -2411,7 +2430,8 @@ function loop(ts: number): void {
         }
       }
       else if (ev.type === 'trainerSpawn') {
-        say(ev.trigger === 'digital-danger' ? 'Você está atraindo treinadores!' : ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
+        say(ev.trigger === 'digital-danger' ? 'AMEAÇA DIGITAL! Golpes bloqueiam toda cura por 8 segundos!' : ev.final ? 'CHEFAO FINAL! 6 Pokemon!' : 'Um treinador! 3 Pokemon mais fortes.');
+        if (ev.trigger === 'digital-danger') playSound('survivor-boss');
         showTrainerPresentation(ev);
       }
       else if (ev.type === 'trainerDown') say(ev.final ? 'CHEFAO DERROTADO!' : 'Treinador derrotado!');
@@ -2998,6 +3018,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="survivor" :class="{ 'survivor-gameplay': ready && state && !summary }">
+    <SurvivorDebug v-if="debugOpen" @exit="debugOpen = false" />
     <p v-if="failed" class="hint">Não deu para carregar a Zona de Sobrevivência agora. Tente de novo mais tarde.</p>
     <template v-else>
       <div
@@ -3030,8 +3051,9 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="trainerPresentation" class="survivor-trainer-intro" :class="{ final: trainerPresentation.final, 'reduced-motion': !detailedSpecialEffects }" role="status" aria-live="assertive">
           <span class="survivor-trainer-kicker">ATENÇÃO · NOVO DESAFIO</span>
-          <strong>{{ trainerPresentation.final ? 'CHEFÃO FINAL' : 'TREINADOR NA ARENA' }}</strong>
-          <small>{{ trainerPresentation.count }} Pokémon reforçados aguardam a batalha</small>
+          <strong>{{ trainerPresentation.trigger === 'digital-danger' ? 'AMEAÇA DIGITAL' : trainerPresentation.final ? 'CHEFÃO FINAL' : 'TREINADOR NA ARENA' }}</strong>
+          <small v-if="trainerPresentation.trigger === 'digital-danger'">Golpes digitais bloqueiam toda cura por 8 segundos!</small>
+          <small v-else>{{ trainerPresentation.count }} Pokémon reforçados aguardam a batalha</small>
         </div>
         <div v-if="ready && state" class="survivor-hud">
           <div class="survivor-hp" :class="{ low: state.player.hp / state.player.maxHp < 0.3, medium: state.player.hp / state.player.maxHp >= 0.3 && state.player.hp / state.player.maxHp < 0.5 }">
@@ -3044,6 +3066,7 @@ onBeforeUnmount(() => {
             <span>XP {{ state.player.xp }}/{{ state.player.xpToNext }}</span>
           </div>
           <div class="survivor-stats">
+            <span v-if="(state.player.healBlockMs ?? 0) > 0" class="chip survivor-heal-block" role="status">🚫 CURA BLOQUEADA · {{ Math.ceil((state.player.healBlockMs ?? 0) / 1000) }}s</span>
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
             <span v-if="state.player.mega?.active" class="chip survivor-mega-chip" role="status" title="Stats base da forma Mega (PokéAPI) até o fim da corrida.">💎 {{ state.player.mega.label }}</span>
             <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
@@ -3218,7 +3241,7 @@ onBeforeUnmount(() => {
             <button type="button" class="link survivor-back" @click="typeChoice = null">← Voltar aos Pokémon</button>
           </div>
           <div v-else class="card survivor-pick" :class="{ 'pvp-pick': pvpRun }">
-            <h2>{{ pvpRun ? `PvP · run ${pvpRun.index + 1} de ${pvpRun.total}: quem joga?` : 'Quem vai pra Torre dessa vez?' }}</h2>
+            <h2>{{ pvpRun ? `PvP · run ${pvpRun.index + 1} de ${pvpRun.total}: quem joga?` : 'Quem vai pra Torre dessa vez?' }} <button v-if="!pvpRun" type="button" class="link" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
             <p v-if="pvpRun" class="note pvp-note" role="status">Você tem {{ Math.round(pvpRun.limitMs / 60000) }} min. O Pokémon que escolher entra na sua equipe 3x3, mais forte quanto melhor for a run. Nada da Vila entra e nada vale para a Torre.</p>
             <p v-else class="note" role="status">{{ nextTowerGoal }}</p>
             <button v-if="!pvpRun" type="button" class="link survivor-pvp-entry" @click="emit('openPvp')">⚔ PvP com um amigo: 3 runs de 2 min e uma arena 3x3</button>
@@ -3358,7 +3381,7 @@ onBeforeUnmount(() => {
 
         <div v-else-if="noCompanion" class="survivor-overlay" role="dialog" aria-modal="true" aria-label="Você precisa de um companheiro">
           <div class="card survivor-pick">
-            <h2>Você precisa de um companheiro</h2>
+            <h2>Você precisa de um companheiro <button type="button" class="link" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
             <p class="note">A Torre usa Pokémon da sua coleção ou Digital Pokémon da Vila. Escaneie uma carta ou conclua o questionário inicial da Vila para receber seu primeiro companheiro.</p>
             <button type="button" class="primary survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
           </div>

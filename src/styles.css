@@ -8922,6 +8922,7 @@ body.no-scroll .reward-toasts {
   border-color: rgba(255, 216, 74, 0.6);
   font-weight: 800;
 }
+.survivor-heal-block { background: #65185f; color: #fff; border: 2px solid #ff82f3; font-weight: 900; box-shadow: 0 0 8px #db51ed; }
 
 .survivor-auto-charge {
   position: absolute; z-index: 4; right: calc(var(--sv-edge) + env(safe-area-inset-right));

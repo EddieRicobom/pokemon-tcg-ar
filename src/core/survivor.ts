@@ -1,3 +1,4 @@
+import { healSurvivor } from './survivor-healing';
 import { seededRng } from './battle';
 import { statsOfDex } from './survivor-stats';
 import type { Rng } from './battle';
@@ -297,9 +298,12 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     bonkGravityFactor: 1,
     bonkMode: options.bonk === true,
     upgradeLevels: {},
+    critChance: 0.05,
     ...options.player,
   };
   const state: SurvivorState = {
+    criticalHits: [],
+    critRng: seededRng((seed ^ 0x5a17c9e3) >>> 0),
     special: createSurvivorSpecial(move.type),
     charge: createSurvivorCharge(),
     rng: seededRng(seed),
@@ -545,7 +549,13 @@ function spawnEnemy(
 function spawnTrainer(state: SurvivorState, count: number, final: boolean, events: SurvivorEvent[], trigger?: 'digital-danger'): void {
   const trainerId = state.nextId++;
   const grade: SurvivorEnemyGrade = final ? 'chefao' : 'elite';
-  for (let i = 0; i < count; i++) spawnEnemy(state, false, grade, trainerId);
+  for (let i = 0; i < count; i++) {
+    const id = spawnEnemy(state, false, grade, trainerId);
+    if (trigger === 'digital-danger') {
+      const enemy = state.enemies.find((entry) => entry.id === id);
+      if (enemy) { enemy.digitalThreat = true; enemy.maxHp = Math.round(enemy.maxHp * 1.5); enemy.hp = enemy.maxHp; enemy.damage = Math.round(enemy.damage * 1.25); enemy.speed *= 1.2; }
+    }
+  }
   events.push({ type: 'trainerSpawn', count, final, trainerId, ...(trigger ? { trigger } : {}) });
 }
 
@@ -802,6 +812,7 @@ function consumeSupportCandidate(state: SurvivorState, candidate: SurvivorSuppor
  */
 export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] {
   const events: SurvivorEvent[] = [];
+  const hpBeforeUpgrade = state.player.hp;
   const offeredOption = state.pendingUpgrade?.find((option) => option.id === id);
   const offered = !!offeredOption;
   if (id.startsWith(EVOLVE_PREFIX)) {
@@ -860,6 +871,7 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
       state.player.upgradeLevels[id] = (state.player.upgradeLevels[id] ?? 0) + 1;
     }
   }
+  if ((state.player.healBlockMs ?? 0) > 0) state.player.hp = Math.min(state.player.hp, hpBeforeUpgrade);
   const offeredSupport = state.supportCandidate;
   if (offeredSupport && id !== 'second-attack' && state.supportCandidateGuaranteed) consumeSupportCandidate(state, offeredSupport);
   if (offeredSupport && id !== 'second-attack') state.supportCandidate = null;
@@ -896,7 +908,7 @@ function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void
     p.attackRadius = round1(p.attackRadius * 1.15);
     p.attackRange = round1(p.attackRange * 1.1);
   }
-  p.hp = p.maxHp;
+  healSurvivor(p, p.maxHp);
   state.fx.push({ kind: 'evolve', x: p.x, y: p.y, r: 60, color: '#ffffff', ageMs: 0, lifeMs: 900 });
 }
 
@@ -998,7 +1010,7 @@ function applyTypeAffinity(state: SurvivorState, e: SurvivorEnemy, damage: numbe
       applyKnockback(e, from, e.boss ? 1.5 : 5);
       break;
     case 'roubar':
-      state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1);
+      healSurvivor(state.player, 1);
       break;
     case 'atravessar':
       // O tipo já foi escolhido como afinidade; atravessar não precisa de estado no inimigo.
@@ -1020,7 +1032,7 @@ function applyHypotheticalTypeEffect(state: SurvivorState, e: SurvivorEnemy, dam
     case 'lentidao': e.slowMs = Math.max(e.slowMs ?? 0, 700); break;
     case 'atordoar': leaveElementalTerrain(state, e, damage, state.player.move); break;
     case 'empurrar': applyKnockback(e, from, e.boss ? 2 : 6); break;
-    case 'roubar': state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1); break;
+    case 'roubar': healSurvivor(state.player, 1); break;
     case 'semente': e.seededMs = Math.max(e.seededMs ?? 0, 1500); break;
     case 'saltar': {
       const target = state.enemies.find((other) => other !== e && other.hp > 0 && Math.hypot(other.x - e.x, other.y - e.y) <= 130);
@@ -1063,13 +1075,16 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
     if (move.type === 'dragon' && hasUpgrade(p, 'dragon-pressure') && e.boss) upgradeMultiplier *= 1.3;
     if (move.type === 'dark' && hasUpgrade(p, 'dark-predation') && e.hp <= e.maxHp * 0.5) upgradeMultiplier *= 1.24;
   }
-  // Crítico: sorteado só quando a carta existe, para não consumir o RNG das corridas sem ela.
-  if (move === p.move && (p.critChance ?? 0) > 0 && state.rng() < (p.critChance ?? 0)) upgradeMultiplier *= 2;
+  const baseChance = Math.max(0, Math.min(1, p.critChance ?? 0.05));
+  const chance = Math.min(Math.max(0.4, baseChance), baseChance + (e.hp <= e.maxHp * 0.3 ? (p.upgradeLevels['crit-finish'] ?? 0) * 0.05 : 0));
+  const critical = move === p.move && chance > 0 && state.critRng() < chance;
+  if (critical) upgradeMultiplier *= 2 + (p.upgradeLevels['crit-power'] ?? 0) * 0.25;
   const environmentalDamage = damage * survivorDirectDamageMultiplier(distanceFromPlayer) * (p.move.category === 'rapido' || p.move.category === 'teleporte' ? 1 : survivorRapidAttackDamageMultiplier(p)) * upgradeMultiplier
     * (synergy?.damageMultiplier ?? 1)
     * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
   const reducedDamage = e.protectedMs && e.protectedMs > 0 ? environmentalDamage * 0.75 : environmentalDamage;
   const finalDamage = reducedDamage * finalThreatHunterMultiplier;
+  if (critical && state.criticalHits.length < 64) state.criticalHits.push({ enemyId: e.id, x: e.x, y: e.y, damage: finalDamage, boss: e.boss || e.grade === 'chefao' || e.shadowBoss === true });
   e.hp -= finalDamage;
   e.hitFlashMs = 90;
   if (synergy?.consume) e[synergy.consume] = 0;
@@ -1156,7 +1171,7 @@ function drain(state: SurvivorState, hits: number, move: SurvivorMove): void {
   if (move.effect !== 'roubar' || hits <= 0) return;
   const p = state.player;
   const strongerDrain = move === p.move && ((move.type === 'dark' && hasUpgrade(p, 'dark-thirst')) || (move.type === 'fairy' && hasUpgrade(p, 'fairy-pulse')));
-  p.hp = Math.min(p.maxHp, p.hp + Math.min(strongerDrain ? 3 : 2, hits));
+  healSurvivor(p, Math.min(strongerDrain ? 3 : 2, hits));
 }
 
 const TRAIL_DISTANCE_TO_CHARGE = 150 * 15;
@@ -1566,8 +1581,7 @@ function stepLunch(state: SurvivorState, dt: number): void {
   if (lunch.effect.regenPerSec <= 0 || p.hp <= 0) return;
   const room = Math.max(0, p.maxHp * LUNCH_HEAL_CAP_FRACTION - lunch.healed);
   const heal = Math.min(lunch.effect.regenPerSec * dt, room, Math.max(0, p.maxHp - p.hp));
-  p.hp += heal;
-  lunch.healed += heal;
+  lunch.healed += healSurvivor(p, heal);
 }
 
 /** Alcance de coleta com a marmita de Grão (enquanto dura). */
@@ -1581,7 +1595,7 @@ function hitInvulnerabilityMs(p: SurvivorPlayer): number {
 }
 
 function hitSource(enemy: SurvivorEnemy): SurvivorHitSource {
-  return { ...(enemy.dexId !== undefined ? { dexId: enemy.dexId } : {}), boss: enemy.boss, grade: enemy.grade, ...(enemy.shadowBoss ? { shadowBoss: true } : {}) };
+  return { ...(enemy.dexId !== undefined ? { dexId: enemy.dexId } : {}), ...(enemy.digitalThreat ? { digitalThreat: true } : {}), boss: enemy.boss, grade: enemy.grade, ...(enemy.shadowBoss ? { shadowBoss: true } : {}) };
 }
 
 /** Contato e explosão são físicos; projéteis são especiais. Cada defesa dá retornos decrescentes. */
@@ -1602,6 +1616,7 @@ function damagePlayer(state: SurvivorState, damage: number, kind: SurvivorFinalH
   const effectiveDamage = damage > 0 ? Math.max(1, Math.ceil(damage * (1 - (reduction ?? 0)) * (1 - Math.min(0.5, contactGuard + projectileGuard)))) : 0;
   state.lastHit = { ...source, kind, damage: effectiveDamage, hpBefore: p.hp };
   p.hp = Math.max(0, p.hp - effectiveDamage);
+  if (effectiveDamage > 0 && source.digitalThreat) p.healBlockMs = 8000;
   const retaliation = p.upgradeLevels['retaliation-wave'] ?? 0;
   if (effectiveDamage > 0 && retaliation > 0) {
     const retaliationDamage = p.attackDamage * 0.3 * retaliation;
@@ -1805,8 +1820,7 @@ function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   state.digitalDanger = 0;
   state.digitalDangerCooldownMs = DIGITAL_DANGER_COOLDOWN_MS;
-  // Dois Pokémon mantêm a convocação ameaçadora sem antecipar o grupo normal de três.
-  spawnTrainer(state, 2, false, events, 'digital-danger');
+  spawnTrainer(state, 3, false, events, 'digital-danger');
 }
 
 function shadowBallPoint(state: SurvivorState): { x: number; y: number } {
@@ -1925,11 +1939,13 @@ function updateFieldEvent(state: SurvivorState, dtMs: number, events: SurvivorEv
  */
 export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: number): SurvivorEvent[] {
   const events: SurvivorEvent[] = [];
+  state.criticalHits = [];
   if (state.over || state.pendingUpgrade) return events;
   if (!Number.isFinite(dtMs) || dtMs <= 0) return events;
-  if (advanceSpecialEncounter(state, dtMs)) return events;
-  if (advanceShadowEncounter(state, dtMs, events)) return events;
+  if (!state.debugLaboratory && advanceSpecialEncounter(state, dtMs)) return events;
+  if (!state.debugLaboratory && advanceShadowEncounter(state, dtMs, events)) return events;
   const dt = dtMs / 1000;
+  const healBlockBeforeStep = state.player.healBlockMs ?? 0;
   const previousElapsedMs = state.elapsedMs;
   state.elapsedMs += dtMs;
   stepElementalTerrain(state, dtMs);
@@ -1948,7 +1964,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   }
   spawnShadowBallIfDue(state, events);
   spawnFieldEventIfDue(state, events);
-  if (advanceSpecialEncounter(state, 0)) return events;
+  if (!state.debugLaboratory && advanceSpecialEncounter(state, 0)) return events;
   const p = state.player;
   p.artifactSpeedMs = Math.max(0, p.artifactSpeedMs - dtMs);
   p.artifactPowerMs = Math.max(0, p.artifactPowerMs - dtMs);
@@ -1991,7 +2007,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (releaseTeleport(state, chargeAction)) events.push({ type: 'chargeRelease', style: 'teleporte', name: chargeAction.wave ? 'Onda total' : 'Teleporte', level: chargeAction.level });
   }
   if (p.invulnMs > 0) p.invulnMs = Math.max(0, p.invulnMs - dtMs);
-  if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) p.hp = Math.min(p.maxHp, p.hp + (p.regenPerSec ?? 0) * dt);
+  if ((p.regenPerSec ?? 0) > 0 && p.hp > 0) healSurvivor(p, (p.regenPerSec ?? 0) * dt);
   stepLunch(state, dt);
 
   // Nascimento de inimigos (onda cresce com o tempo) e do chefe periódico.
@@ -2191,13 +2207,15 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.fx = state.fx.filter((f) => f.ageMs < f.lifeMs);
   }
 
+  // No laboratório, alvos não concedem recompensas nem encerram a corrida.
+  if (state.debugLaboratory) state.enemies = state.enemies.filter((e) => e.hp > 0);
   // Inimigos derrotados viram orbe de XP e contam na pontuação.
   const dead = state.enemies.filter((e) => e.hp <= 0);
   if (dead.length > 0) {
     state.enemies = state.enemies.filter((e) => e.hp > 0);
     state.kills += dead.length;
     const trophyMedicine = p.upgradeLevels['trophy-medicine'] ?? 0;
-    if (trophyMedicine > 0) p.hp = Math.min(p.maxHp, p.hp + dead.length * trophyMedicine * 2);
+    if (trophyMedicine > 0) healSurvivor(p, dead.length * trophyMedicine * 2);
     for (const e of dead) {
       state.fx.push({ kind: 'defeat', x: e.x, y: e.y, r: e.boss || e.grade === 'chefao' ? 26 : 14, color: e.archetype === 'suporte' ? '#ff78b7' : e.grade === 'elite' ? '#ffd84a' : '#e8f2ff', ageMs: 0, lifeMs: 360 });
       const value = normalizeSurvivorXp(e.boss ? 48 : e.grade === 'chefao' ? 36 : e.grade === 'elite' ? 20 : 8);
@@ -2275,7 +2293,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       p.xpCarry = Math.max(0, xpWithCarry - boostedValue);
       p.xp = normalizeSurvivorXp(p.xp + boostedValue);
       const orbMedicine = p.upgradeLevels['orb-medicine'] ?? 0;
-      if (orbMedicine > 0) p.hp = Math.min(p.maxHp, p.hp + orbMedicine);
+      if (orbMedicine > 0) healSurvivor(p, orbMedicine);
       return false;
     }
     return true;
@@ -2292,7 +2310,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     else if (artifact.kind === 'magnet') p.artifactMagnetMs = Math.max(p.artifactMagnetMs, BALANCE.artifactDurationMs);
     else if (artifact.kind === 'focus') p.artifactFocusMs = Math.max(p.artifactFocusMs, BALANCE.artifactDurationMs);
     else if (artifact.kind === 'heal') {
-      p.hp = Math.min(p.maxHp, p.hp + Math.max(18, Math.round(p.maxHp * 0.28)));
+      healSurvivor(p, Math.max(18, Math.round(p.maxHp * 0.28)));
       p.artifactShieldMs = 3_000;
     }
     state.fx.push({ kind: 'artifact', artifact: artifact.kind, x: p.x, y: p.y, r: artifact.kind === 'pokeball' || artifact.kind === 'shadow-ball' ? 30 : 24, color: artifact.kind === 'shadow-ball' ? '#a66bff' : artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb', ageMs: 0, lifeMs: artifact.kind === 'pokeball' || artifact.kind === 'shadow-ball' ? 900 : 620 });
@@ -2302,10 +2320,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   levelUp(state, events);
 
   // Segundo fôlego: uma vez por corrida, ao cair até 25% de vida, o jogador volta com 35% do máximo.
-  if (p.secondWindReady && p.hp <= p.maxHp * 0.25) {
+  if (p.secondWindReady && (p.healBlockMs ?? 0) <= 0 && p.hp <= p.maxHp * 0.25) {
     p.secondWindReady = false;
     const healed = Math.round(p.maxHp * 0.35);
-    p.hp = Math.min(p.maxHp, p.hp + healed);
+    healSurvivor(p, healed);
     p.invulnMs = Math.max(p.invulnMs, BALANCE.hitInvulnerabilityMs);
     state.fx.push({ kind: 'heal', x: p.x, y: p.y, r: 34, color: '#7bdcff', ageMs: 0, lifeMs: 850, count: healed });
   }
@@ -2320,7 +2338,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     });
   }
 
-  updateDigitalDanger(state, input, dtMs, trainerSpawnedThisStep, events);
+  if (!state.debugLaboratory) updateDigitalDanger(state, input, dtMs, trainerSpawnedThisStep, events);
+  if ((p.healBlockMs ?? 0) > 0 && (p.healBlockMs ?? 0) <= healBlockBeforeStep) p.healBlockMs = Math.max(0, (p.healBlockMs ?? 0) - dtMs);
 
   return events;
 }

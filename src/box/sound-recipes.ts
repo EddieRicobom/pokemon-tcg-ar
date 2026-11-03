@@ -36,7 +36,7 @@ export type SoundCue =
   | { kind: 'pin-shrink' }
   | { kind: 'pin-win' }
   | { kind: 'pin-lose' }
-  | { kind: 'ui'; cue: 'menu' | 'interact' | 'talk' | 'collect' | 'gift' | 'success' | 'bell' | 'village-water' | 'village-birds' | 'village-door' | 'village-chime' | 'village-night' | 'village-leaves' | 'village-market' | 'village-mine' | 'village-chop' | 'village-plant' | 'village-coins' | 'survivor-shot' | 'survivor-hit' | 'survivor-pickup' | 'survivor-hurt' | 'survivor-level' | 'survivor-boss' | 'survivor-gameover' | 'scan-appear' | 'scan-shiny' | 'scan-archetype' | 'scan-evolution' | 'minigame-pick' | 'minigame-right' | 'minigame-wrong' | 'minigame-combo' | 'minigame-timeout' | 'minigame-record' };
+  | { kind: 'ui'; cue: 'menu' | 'interact' | 'talk' | 'collect' | 'gift' | 'success' | 'bell' | 'village-water' | 'village-birds' | 'village-door' | 'village-chime' | 'village-night' | 'village-leaves' | 'village-market' | 'village-mine' | 'village-chop' | 'village-plant' | 'village-coins' | 'survivor-shot' | 'survivor-hit' | 'survivor-critical' | 'survivor-pickup' | 'survivor-hurt' | 'survivor-level' | 'survivor-boss' | 'survivor-gameover' | 'scan-appear' | 'scan-shiny' | 'scan-archetype' | 'scan-evolution' | 'minigame-pick' | 'minigame-right' | 'minigame-wrong' | 'minigame-combo' | 'minigame-timeout' | 'minigame-record' };
 
 export interface SoundSink {
   play(cue: SoundCue): void;
@@ -255,6 +255,7 @@ function uiLayers(cue: Extract<SoundCue, { kind: 'ui' }>['cue']): Layer[] {
     case 'village-plant': return [noise({ type: 'lowpass', f0: 500 }, 0, 0.18, 0.06), tone('sine', 420, 620, 0.12, 0.12, 0.05)];
     case 'village-coins': return [tone('sine', 1320, 1320, 0, 0.14, 0.07), tone('sine', 1760, 1760, 0.1, 0.18, 0.06)];
     case 'survivor-shot': return [tone('square', 680, 300, 0, 0.09, 0.08)];
+    case 'survivor-critical': return [tone('triangle', 1120, 620, 0, 0.09, 0.13), noise({ type: 'highpass', f0: 2800 }, 0, 0.06, 0.08)];
     case 'survivor-hit': return [tone('triangle', 180, 90, 0, 0.12, 0.18), noise({ type: 'lowpass', f0: 1100 }, 0, 0.08, 0.12)];
     case 'survivor-pickup': return [tone('sine', 760, 1160, 0, 0.12, 0.1)];
     case 'survivor-hurt': return [tone('sawtooth', 180, 80, 0, 0.2, 0.2, { filter: { type: 'lowpass', f0: 700 } })];
