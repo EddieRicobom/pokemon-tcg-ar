@@ -1,5 +1,5 @@
 import { Matrix4, PerspectiveCamera, Quaternion, Raycaster, Scene, Vector2, Vector3 } from 'three';
-import { cameraParamsFromProjection, cardSpaceMatrix, DEFAULT_LAYOUT, panelPlacement } from './anchor';
+import { cameraParamsFromProjection, cardSpaceMatrix, DEFAULT_LAYOUT, panelPlacement, TRACKING_CROP } from './anchor';
 import type { SpriteLayout } from './anchor';
 import { CardSprite } from './card-sprite';
 import { PANEL_ASPECT } from './stats-panel';
@@ -172,7 +172,7 @@ export class ArSession {
     if (update.worldMatrix && update.fresh !== false) {
       // Com giroscópio, a pose é guardada no mundo (orientação da câmera no instante do quadro).
       const poseOrientation = gyro ? this.deps.orientation!.at(update.capturedAt ?? nowMs - DEFAULT_TRACKER_LAG_MS) : null;
-      sprite.setCardMatrix(cardSpaceMatrix(update.worldMatrix, this.info.markerWidth, this.info.markerHeight), poseOrientation);
+      sprite.setCardMatrix(cardSpaceMatrix(update.worldMatrix, this.info.markerWidth, this.info.markerHeight, TRACKING_CROP), poseOrientation);
       sprite.setTracked(true);
       this.missedFrames = 0;
       this.lastPoseAt = nowMs;

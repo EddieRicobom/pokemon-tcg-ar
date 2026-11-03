@@ -287,7 +287,9 @@ export function recordFromTcgdex(card: TcgdexCard, fallback?: CandidateInfo): Ca
     setOfficial: card.set.cardCount?.official ?? fallback?.setOfficial ?? 0,
     setTotal: card.set.cardCount?.total ?? fallback?.setTotal ?? 0,
     setCode: fallback?.setCode,
-    dexIds: Array.isArray(card.dexId) ? card.dexId.filter((n) => Number.isInteger(n) && n > 0) : [],
+    dexIds: Array.isArray(card.dexId) && card.dexId.length > 0
+      ? card.dexId.filter((n) => Number.isInteger(n) && n > 0)
+      : fallback?.dexId ? [fallback.dexId] : [],
     imageBase: card.image,
     ...(traitsFromTcgdex(card) ? { traits: traitsFromTcgdex(card) } : {}),
   };

@@ -63,7 +63,7 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
 }
 
 interface CatalogFile {
-  sets: { id: string; cards: [string, string, string?][] }[];
+  sets: { id: string; lang?: string; cards: [string, string, string?, number?][] }[];
 }
 
 if (!existsSync(CATALOG)) throw new Error(`Índice do catálogo não encontrado (${CATALOG}). Rode "npm run build:index" antes.`);
@@ -90,10 +90,13 @@ const reused = records.size;
 // Base da imagem de cada carta (a lista de cartas do set traz `image`).
 const setBriefs = await getJson<{ id: string }[]>(`${API}/en/sets`);
 const images = new Map<string, string>();
-await mapLimit(setBriefs, 8, async (brief) => {
-  const detail = await getJson<{ id: string; cards?: { localId: string; image?: string }[] }>(`${API}/en/sets/${encodeURIComponent(brief.id)}`);
+type SetImages = { id: string; cards?: { localId: string; image?: string }[] };
+const collectImages = (detail: SetImages) => {
   for (const card of detail.cards ?? []) if (card.image) images.set(`${detail.id}-${card.localId}`, card.image);
-});
+};
+await mapLimit(setBriefs, 8, async (brief) => collectImages(await getJson<SetImages>(`${API}/en/sets/${encodeURIComponent(brief.id)}`)));
+// Coleções japonesas do catálogo: as imagens vêm do TCGdex em japonês (`.../ja/SV/SV8a/136`).
+await mapLimit(catalog.sets.filter((set) => set.lang === 'ja'), 8, async (set) => collectImages(await getJson<SetImages>(`${API}/ja/sets/${encodeURIComponent(set.id)}`)));
 
 const todo = [...wanted].filter((id) => !records.has(id) && images.has(id)).slice(0, LIMIT);
 const noImage = [...wanted].filter((id) => !images.has(id)).length;

@@ -121,6 +121,67 @@ const sets = enDetails.map((detail) => {
   };
 });
 
+// Coleções do Japão (ex.: SV8a «Terastal Fest ex», 136/187): o TCGdex em inglês/português não as tem, então sem
+// elas uma carta japonesa nunca vira candidata. Só a era moderna (números impressos «136/187»), para o índice não inchar.
+const JA_SINCE = '2016-01-01';
+const SPECIES_CSV = 'https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/pokemon_species_names.csv';
+const JA_SUFFIXES: [RegExp, string][] = [
+  [/VSTAR$/, ' VSTAR'], [/VMAX$/, ' VMAX'], [/V-UNION$/, ' V-UNION'], [/GX$/, '-GX'], [/EX$/, '-EX'], [/ex$/, ' ex'], [/V$/, ' V'],
+];
+
+/** Nome em japonês (katakana) → { dexId, inglês }, a partir da lista oficial de espécies do PokéAPI (1 arquivo). */
+async function loadSpeciesNames(): Promise<Map<string, { dexId: number; en: string }>> {
+  const text = await (await fetch(SPECIES_CSV)).text();
+  const ja = new Map<number, string>();
+  const en = new Map<number, string>();
+  for (const line of text.split('
+').slice(1)) {
+    const [id, language, name] = line.split(',');
+    if (!id || !name) continue;
+    if (language === '11') ja.set(Number(id), name);
+    if (language === '9') en.set(Number(id), name);
+  }
+  const out = new Map<string, { dexId: number; en: string }>();
+  for (const [dexId, jaName] of ja) {
+    const enName = en.get(dexId);
+    if (enName) out.set(jaName, { dexId, en: enName });
+  }
+  return out;
+}
+
+const speciesNames = await loadSpeciesNames().catch((error: unknown) => {
+  console.warn(`Lista de espécies indisponível (${error instanceof Error ? error.message : String(error)}); cartas japonesas ficam sem nome em inglês.`);
+  return new Map<string, { dexId: number; en: string }>();
+});
+
+function jaCard(c: { localId: string; name: string }): [string, string, string?, number?] {
+  for (const [pattern, suffix] of JA_SUFFIXES) {
+    if (!pattern.test(c.name)) continue;
+    const species = speciesNames.get(c.name.replace(pattern, ''));
+    return species ? [c.localId, c.name, species.en + suffix, species.dexId] : [c.localId, c.name];
+  }
+  const species = speciesNames.get(c.name);
+  return species ? [c.localId, c.name, species.en, species.dexId] : [c.localId, c.name];
+}
+
+const jaSetBriefs = await getJson<SetBrief[]>(`${API}/ja/sets`);
+const jaDetails = await mapLimit(jaSetBriefs, CONCURRENCY, (s) => getJson<SetDetail>(`${API}/ja/sets/${encodeURIComponent(s.id)}`));
+const jaSets = jaDetails
+  .filter((detail) => (detail.releaseDate ?? '') >= JA_SINCE && (detail.cards?.length ?? 0) > 0)
+  .map((detail) => ({
+    id: detail.id,
+    name: detail.name,
+    lang: 'ja',
+    official: detail.cardCount?.official ?? detail.cards?.length ?? 0,
+    total: detail.cardCount?.total ?? detail.cards?.length ?? 0,
+    release: detail.releaseDate,
+    // O código impresso na carta («sv8a») é o próprio id do TCGdex nas coleções japonesas.
+    code: detail.abbreviation?.official ?? detail.id,
+    serie: detail.serie?.id,
+    cards: (detail.cards ?? []).map(jaCard),
+  }));
+sets.push(...(jaSets as unknown as (typeof sets)[number][]));
+
 const index = { version: 1, generatedAt: new Date().toISOString(), source: 'tcgdex v2', sets };
 const json = JSON.stringify(index);
 mkdirSync(dirname(OUT), { recursive: true });

@@ -20,6 +20,10 @@ describe('metadados da carta', () => {
     expect(recordFromTcgdex(raw)).toMatchObject({ rarity: 'Rara', localId: '58', setName: 'Base Set' });
     const unknown = { ...raw, rarity: undefined };
     expect(recordFromTcgdex(unknown)).not.toHaveProperty('rarity');
+    // Carta japonesa sem dexId no TCGdex: usa a espécie do índice (só quando o TCGdex não informa).
+    const noDex = { ...raw, dexId: undefined };
+    expect(recordFromTcgdex(noDex, { id: 'x', setId: 's', localId: '1', name: 'n', setOfficial: 1, setTotal: 1, dexId: 1024 }).dexIds).toEqual([1024]);
+    expect(recordFromTcgdex(raw, { id: 'x', setId: 's', localId: '1', name: 'n', setOfficial: 1, setTotal: 1, dexId: 1024 }).dexIds).toEqual(raw.dexId);
   });
 });
 

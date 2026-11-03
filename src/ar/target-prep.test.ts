@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { toLumaGray } from './target-prep';
+import { cropRect, toLumaGray } from './target-prep';
+
+describe('cropRect', () => {
+  it('recorta em pixels inteiros dentro da imagem', () => {
+    expect(cropRect(600, 825, [0.06, 0.1, 0.94, 0.56])).toEqual({ x: 36, y: 83, w: 528, h: 379 });
+    expect(cropRect(100, 100, [-0.5, -0.5, 2, 2])).toEqual({ x: 0, y: 0, w: 100, h: 100 });
+  });
+});
 
 describe('toLumaGray', () => {
   it('usa luminância e não mexe no alfa', () => {

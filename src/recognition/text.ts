@@ -7,6 +7,20 @@ export function normalizeName(value: string): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
+/**
+ * Normalização da BUSCA manual (diferente da do OCR): além de letras e dígitos mantém kana e kanji, para dar para
+ * digitar o nome em japonês. Hiragana vira katakana (nomes de Pokémon são em katakana) e formas largas viram normais.
+ */
+export function normalizeSearch(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '') // acentos latinos (a marca de dakuten do kana, U+3099, fica)
+    .normalize('NFKC')
+    .replace(/[\u3041-\u3096]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60))
+    .toLowerCase()
+    .replace(/[^a-z0-9\u30a1-\u30fa\u30fc\u4e00-\u9fff]/g, '');
+}
+
 export function levenshtein(a: string, b: string): number {
   if (a === b) return 0;
   if (a.length === 0) return b.length;

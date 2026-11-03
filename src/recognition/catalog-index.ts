@@ -1,6 +1,6 @@
 import type { ParsedBottom } from './parse-ocr';
 import type { CandidateInfo } from './ranking';
-import { nameSimilarity, normalizeName } from './text';
+import { nameSimilarity, normalizeName, normalizeSearch } from './text';
 import { cardImageUrl, TCGDEX_ASSETS } from './tcgdex';
 
 /**
@@ -18,8 +18,13 @@ export interface IndexSet {
   code?: string;
   /** Série da coleção no TCGdex (índices antigos não trazem: a busca manual fica sem miniatura). */
   serie?: string;
-  /** [localId, nome em inglês, nome em português (se diferente)] */
-  cards: [string, string, string?][];
+  /** Idioma da coleção quando não é a inglesa (`ja`: só existe no Japão; nomes em japonês). Ausente = inglês. */
+  lang?: string;
+  /**
+   * [localId, nome, nome alternativo (português; ou inglês nas coleções japonesas), dexId].
+   * O dexId só vem nas coleções japonesas, onde o TCGdex muitas vezes não informa a espécie (cartas ex).
+   */
+  cards: [string, string, string?, number?][];
 }
 
 export interface CatalogIndexData {
@@ -63,6 +68,8 @@ function parseLocalId(localId: string): { prefix: string; value: number } | null
 export interface ManualMatch {
   id: string;
   name: string;
+  /** Nome em outro idioma (inglês nas cartas japonesas, português nas demais): a busca "traduz" o nome. */
+  altName?: string;
   setName: string;
   localId: string;
   setOfficial: number;
@@ -119,7 +126,7 @@ export class CatalogLookup {
       }
       if (bottom.setCode && set.code && set.code.toUpperCase() === bottom.setCode.toUpperCase()) setPrior += 0.2;
 
-      for (const [localId, name, ptName] of set.cards) {
+      for (const [localId, name, ptName, dexId] of set.cards) {
         let prior = setPrior;
         let numberMatched = false;
         if (number) {
@@ -161,6 +168,7 @@ export class CatalogLookup {
           setTotal: set.total,
           setCode: set.code,
           release: set.release,
+          ...(dexId ? { dexId } : {}),
           prior,
         });
       }
@@ -193,7 +201,7 @@ export class CatalogLookup {
         if (penalty === undefined) continue;
         changed += penalty;
       }
-      for (const [localId, name, ptName] of set.cards) {
+      for (const [localId, name, ptName, dexId] of set.cards) {
         const local = parseLocalId(localId);
         if (!local || local.prefix !== number.prefix.toUpperCase()) continue;
         const numberPenalty = numberValues.get(local.value);
@@ -209,7 +217,7 @@ export class CatalogLookup {
         }
         result.push({
           id, setId: set.id, localId, name, altNames: ptName ? [ptName] : undefined, setOfficial: set.official,
-          setTotal: set.total, setCode: set.code, release: set.release, prior, viaVariant: true,
+          setTotal: set.total, setCode: set.code, release: set.release, ...(dexId ? { dexId } : {}), prior, viaVariant: true,
         });
       }
     }
@@ -225,26 +233,55 @@ export class CatalogLookup {
     return this.searchPage(query, number, limit).matches;
   }
 
-  /** Busca manual com o total de resultados: a lista mostra os primeiros `limit` e diz quantos existem ("mostrar mais"). */
+  /**
+   * Busca manual com o total de resultados: a lista mostra os primeiros `limit` e diz quantos existem ("mostrar mais").
+   * O nome pode ser digitado em inglês, português ou japonês (kana/kanji). Digitar em japonês também acha as cartas em
+   * inglês da mesma espécie: o índice sabe, pelas cartas japonesas, qual é o nome em inglês de cada espécie.
+   */
   searchPage(query: string, number?: number, limit = 30): { matches: ManualMatch[]; total: number } {
-    const q = normalizeName(query);
+    const q = normalizeSearch(query);
     if (!q && number === undefined) return { matches: [], total: 0 };
+    const queries = q ? [q, ...this.translations(q)] : [];
     const out: (ManualMatch & { exact: boolean })[] = [];
     for (const set of this.data.sets) {
-      for (const [localId, name, ptName] of set.cards) {
+      for (const [localId, name, altName] of set.cards) {
         if (number !== undefined && parseLocalId(localId)?.value !== number) continue;
         let exact = false;
         if (q) {
-          const names = [name, ...(ptName ? [ptName] : [])].map(normalizeName);
-          exact = names.includes(q);
-          if (!exact && !names.some((n) => n.includes(q)) && !names.some((n) => nameSimilarity(query, n) >= 0.85)) continue;
+          const names = [name, ...(altName ? [altName] : [])].map(normalizeSearch);
+          exact = queries.some((x) => names.includes(x));
+          if (!exact && !queries.some((x) => names.some((n) => n.includes(x))) && !names.some((n) => nameSimilarity(query, n) >= 0.85)) continue;
         }
-        const thumb = set.serie ? cardImageUrl(`${TCGDEX_ASSETS}/en/${set.serie}/${set.id}/${localId}`, 'low', 'webp') : undefined;
-        out.push({ id: `${set.id}-${localId}`, name, setName: set.name, localId, setOfficial: set.official, release: set.release, ...(thumb ? { thumb } : {}), exact });
+        const thumb = set.serie ? cardImageUrl(`${TCGDEX_ASSETS}/${set.lang ?? 'en'}/${set.serie}/${set.id}/${localId}`, 'low', 'webp') : undefined;
+        out.push({ id: `${set.id}-${localId}`, name, ...(altName && altName !== name ? { altName } : {}), setName: set.name, localId, setOfficial: set.official, release: set.release, ...(thumb ? { thumb } : {}), exact });
       }
     }
     out.sort((a, b) => Number(b.exact) - Number(a.exact) || (b.release ?? '').localeCompare(a.release ?? ''));
     return { matches: out.slice(0, limit).map(({ exact: _exact, ...match }) => match), total: out.length };
+  }
+
+  private jaToEn: Map<string, string> | null = null;
+
+  /** Nomes em inglês (sem o sufixo ex/V/VMAX…) das cartas japonesas cujo nome contém `q`; vazio se `q` não é japonês. */
+  private translations(q: string): string[] {
+    if (!/[\u30a0-\u30ff\u4e00-\u9fff]/.test(q)) return [];
+    if (!this.jaToEn) {
+      this.jaToEn = new Map();
+      for (const set of this.data.sets) {
+        if (set.lang !== 'ja') continue;
+        for (const [, name, altName] of set.cards) {
+          if (!altName) continue;
+          const en = normalizeSearch(altName).replace(/(vstar|vmax|vunion|ex|gx|v)$/, '');
+          if (en.length >= 3) this.jaToEn.set(normalizeSearch(name), en);
+        }
+      }
+    }
+    const out = new Set<string>();
+    for (const [ja, en] of this.jaToEn) {
+      if (ja.includes(q)) out.add(en);
+      if (out.size >= 12) break;
+    }
+    return [...out];
   }
 
   private byIdMap: Map<string, IndexCandidate> | null = null;
@@ -254,10 +291,10 @@ export class CatalogLookup {
     if (!this.byIdMap) {
       this.byIdMap = new Map();
       for (const set of this.data.sets) {
-        for (const [localId, name, ptName] of set.cards) {
+        for (const [localId, name, ptName, dexId] of set.cards) {
           this.byIdMap.set(`${set.id}-${localId}`, {
             id: `${set.id}-${localId}`, setId: set.id, localId, name, altNames: ptName ? [ptName] : undefined,
-            setOfficial: set.official, setTotal: set.total, setCode: set.code, release: set.release, prior: 0.2,
+            setOfficial: set.official, setTotal: set.total, setCode: set.code, release: set.release, ...(dexId ? { dexId } : {}), prior: 0.2,
           });
         }
       }

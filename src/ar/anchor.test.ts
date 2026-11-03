@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   cameraParamsFromProjection, cardHeightUnits, panelPlacement, cardSpaceMatrix, clampLayout, DEFAULT_LAYOUT, mindArPostMatrix, multiply,
-  frontReach, ILLUSTRATION_CENTER_Y, speciesLayout, spriteCorners, spriteMatrix, transformPoint, cameraPositionInCardSpace, yawTowardCamera,
+  cropPostMatrix, REFERENCE_ASPECT, TRACKING_CROP, frontReach, ILLUSTRATION_CENTER_Y, speciesLayout, spriteCorners, spriteMatrix, transformPoint, cameraPositionInCardSpace, yawTowardCamera,
 } from './anchor';
 import type { SpriteLayout } from './anchor';
 
@@ -17,6 +17,23 @@ describe('espaço da carta do MindAR', () => {
     close(transformPoint(post, [0.5, 0, 0]), [600, 412.5, 0]); // meia largura à direita = borda direita
     close(transformPoint(post, [0, 825 / 600 / 2, 0]), [300, 825, 0]); // metade da altura = borda de baixo (y do marcador cresce para baixo)
     expect(cardHeightUnits(600, 825)).toBeCloseTo(1.375, 6);
+  });
+
+  it('alvo recortado na ilustração: os cantos do recorte caem nos cantos do alvo', () => {
+    const [x0, y0, x1, y1] = TRACKING_CROP;
+    // Referência 600×825; a ilustração recortada tem (x1−x0)·600 × (y1−y0)·825 px.
+    const w = (x1 - x0) * 600;
+    const h = (y1 - y0) * 825;
+    const post = cropPostMatrix(w, h, TRACKING_CROP);
+    // Canto superior esquerdo da ilustração, no espaço da carta (origem no centro da carta, unidade = largura).
+    close(transformPoint(post, [x0 - 0.5, (y0 - 0.5) * REFERENCE_ASPECT, 0]), [0, 0, 0], 4);
+    close(transformPoint(post, [x1 - 0.5, (y1 - 0.5) * REFERENCE_ASPECT, 0]), [w, h, 0], 4);
+    // O centro da carta inteira NÃO é o centro do alvo: a ilustração fica acima dele.
+    expect(transformPoint(post, [0, 0, 0])[1]).toBeGreaterThan(h / 2);
+  });
+
+  it('com recorte tela cheia, cropPostMatrix é a postMatrix de sempre', () => {
+    close(cropPostMatrix(600, 825, [0, 0, 1, 1]), mindArPostMatrix(600, 825));
   });
 
   it('com mundo = identidade, cardSpaceMatrix é a própria postMatrix', () => {

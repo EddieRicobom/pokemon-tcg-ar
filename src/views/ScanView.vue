@@ -341,7 +341,7 @@ async function searchManual(more = false): Promise<void> {
   const page = catalog.searchPage(manualName.value, digits ? Number.parseInt(digits, 10) : undefined, manualLimit.value);
   manualResults.value = page.matches;
   manualTotal.value = page.total;
-  if (page.total === 0) manualMessage.value = 'Nenhuma carta encontrada. Confira o nome (em inglês) ou o número.';
+  if (page.total === 0) manualMessage.value = 'Nenhuma carta encontrada. Confira o nome (inglês, português ou japonês) ou o número.';
 }
 /** Leu um número que bate em mais cartas do que as baixadas: abre a busca à mão já com esse número. */
 function searchReadNumber(value: number): void {
@@ -355,6 +355,9 @@ async function pickManual(id: string): Promise<void> {
   // Esconde a lista e o contador ("Mostrando 0 de 243" ficava na tela depois de escolher).
   manualResults.value = [];
   manualTotal.value = 0;
+  // Fecha a folha de busca: aberta, ela ficava por cima do resultado e da carta em AR.
+  sheet.value = null;
+  manualOpen.value = false;
   await (await ensureController()).chooseManual(id);
 }
 
@@ -452,7 +455,8 @@ async function ensureController(): Promise<ScanController> {
     cache,
     loadCardRecord: async (id) => {
       const card = await getTcgdex().getCard(id);
-      return card ? recordFromTcgdex(card) : null;
+      // O índice sabe a espécie das cartas japonesas, que o TCGdex costuma não informar (ex.: Terapagos ex).
+      return card ? recordFromTcgdex(card, (await getCatalog())?.byId(id) ?? undefined) : null;
     },
     onState: (state) => {
       scan.value = state;
@@ -1152,7 +1156,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
           <canvas ref="photoCanvasEl" aria-label="Foto temporária da carta"></canvas>
           <figcaption>
             📸 Foto temporária<template v-if="scan.photo.cardName">: {{ scan.photo.cardName }}</template>
-            <small>só na memória · confirmando sem ler de novo</small>
+            <small>{{ scan.photo.cardName ? 'só na memória · confirmando sem ler de novo' : 'só na memória · lendo esta foto, não o vídeo' }}</small>
           </figcaption>
         </figure>
         <p v-if="mainNotice" class="pill" :class="mainNotice.tone">
@@ -1446,7 +1450,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
         v-bind="immersive ? {} : { open: manualOpen, onToggle: (e: Event) => (manualOpen = (e.target as HTMLDetailsElement).open) }"
       >
         <summary v-if="!immersive">Não está lendo? Buscar a carta à mão</summary>
-        <label>Nome da carta (em inglês, ex.: Pikachu)
+        <label>Nome da carta (inglês, português ou japonês, ex.: Pikachu)
           <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual()" />
         </label>
         <label>Número da carta (opcional, ex.: 58)
@@ -1459,7 +1463,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
           <CardArtwork v-if="match.thumb" :src="match.thumb" :alt="`Carta ${match.name}, ${match.setName}`" />
           <span v-else class="thumb-missing" aria-hidden="true">sem imagem</span>
           <span class="manual-result-text">
-            <strong>{{ match.name }}</strong>
+            <strong>{{ match.name }}<template v-if="match.altName"> · {{ match.altName }}</template></strong>
             <small>{{ match.setName }} · {{ match.localId }}/{{ match.setOfficial }}{{ match.release ? ` · ${match.release.slice(0, 4)}` : '' }}</small>
           </span>
         </button>
