@@ -1,6 +1,6 @@
 import type { ParsedBottom } from './parse-ocr';
 import type { CandidateInfo } from './ranking';
-import { nameSimilarity, normalizeName } from './text';
+import { nameSimilarity, normalizeName, normalizeSearch } from './text';
 import { cardImageUrl, TCGDEX_ASSETS } from './tcgdex';
 
 /**
@@ -68,6 +68,8 @@ function parseLocalId(localId: string): { prefix: string; value: number } | null
 export interface ManualMatch {
   id: string;
   name: string;
+  /** Nome em outro idioma (inglês nas cartas japonesas, português nas demais): a busca "traduz" o nome. */
+  altName?: string;
   setName: string;
   localId: string;
   setOfficial: number;
@@ -231,26 +233,55 @@ export class CatalogLookup {
     return this.searchPage(query, number, limit).matches;
   }
 
-  /** Busca manual com o total de resultados: a lista mostra os primeiros `limit` e diz quantos existem ("mostrar mais"). */
+  /**
+   * Busca manual com o total de resultados: a lista mostra os primeiros `limit` e diz quantos existem ("mostrar mais").
+   * O nome pode ser digitado em inglês, português ou japonês (kana/kanji). Digitar em japonês também acha as cartas em
+   * inglês da mesma espécie: o índice sabe, pelas cartas japonesas, qual é o nome em inglês de cada espécie.
+   */
   searchPage(query: string, number?: number, limit = 30): { matches: ManualMatch[]; total: number } {
-    const q = normalizeName(query);
+    const q = normalizeSearch(query);
     if (!q && number === undefined) return { matches: [], total: 0 };
+    const queries = q ? [q, ...this.translations(q)] : [];
     const out: (ManualMatch & { exact: boolean })[] = [];
     for (const set of this.data.sets) {
-      for (const [localId, name, ptName] of set.cards) {
+      for (const [localId, name, altName] of set.cards) {
         if (number !== undefined && parseLocalId(localId)?.value !== number) continue;
         let exact = false;
         if (q) {
-          const names = [name, ...(ptName ? [ptName] : [])].map(normalizeName);
-          exact = names.includes(q);
-          if (!exact && !names.some((n) => n.includes(q)) && !names.some((n) => nameSimilarity(query, n) >= 0.85)) continue;
+          const names = [name, ...(altName ? [altName] : [])].map(normalizeSearch);
+          exact = queries.some((x) => names.includes(x));
+          if (!exact && !queries.some((x) => names.some((n) => n.includes(x))) && !names.some((n) => nameSimilarity(query, n) >= 0.85)) continue;
         }
         const thumb = set.serie ? cardImageUrl(`${TCGDEX_ASSETS}/${set.lang ?? 'en'}/${set.serie}/${set.id}/${localId}`, 'low', 'webp') : undefined;
-        out.push({ id: `${set.id}-${localId}`, name, setName: set.name, localId, setOfficial: set.official, release: set.release, ...(thumb ? { thumb } : {}), exact });
+        out.push({ id: `${set.id}-${localId}`, name, ...(altName && altName !== name ? { altName } : {}), setName: set.name, localId, setOfficial: set.official, release: set.release, ...(thumb ? { thumb } : {}), exact });
       }
     }
     out.sort((a, b) => Number(b.exact) - Number(a.exact) || (b.release ?? '').localeCompare(a.release ?? ''));
     return { matches: out.slice(0, limit).map(({ exact: _exact, ...match }) => match), total: out.length };
+  }
+
+  private jaToEn: Map<string, string> | null = null;
+
+  /** Nomes em inglês (sem o sufixo ex/V/VMAX…) das cartas japonesas cujo nome contém `q`; vazio se `q` não é japonês. */
+  private translations(q: string): string[] {
+    if (!/[\u30a0-\u30ff\u4e00-\u9fff]/.test(q)) return [];
+    if (!this.jaToEn) {
+      this.jaToEn = new Map();
+      for (const set of this.data.sets) {
+        if (set.lang !== 'ja') continue;
+        for (const [, name, altName] of set.cards) {
+          if (!altName) continue;
+          const en = normalizeSearch(altName).replace(/(vstar|vmax|vunion|ex|gx|v)$/, '');
+          if (en.length >= 3) this.jaToEn.set(normalizeSearch(name), en);
+        }
+      }
+    }
+    const out = new Set<string>();
+    for (const [ja, en] of this.jaToEn) {
+      if (ja.includes(q)) out.add(en);
+      if (out.size >= 12) break;
+    }
+    return [...out];
   }
 
   private byIdMap: Map<string, IndexCandidate> | null = null;

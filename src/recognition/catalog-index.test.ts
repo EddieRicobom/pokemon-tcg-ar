@@ -92,6 +92,34 @@ describe('coleções japonesas (ex.: SV8a 136/187)', () => {
   });
 });
 
+describe('busca manual em japonês (traduz o nome)', () => {
+  const multi = new CatalogLookup({
+    version: 1,
+    generatedAt: '2026-11-03T00:00:00Z',
+    sets: [
+      { id: 'sv08.5', name: 'Prismatic Evolutions', official: 131, total: 180, release: '2025-01-17', cards: [['092', 'Terapagos ex'], ['093', 'Pikachu']] },
+      { id: 'SV8a', name: 'テラスタルフェスex', lang: 'ja', official: 187, total: 237, release: '2024-12-06', serie: 'SV', cards: [['136', 'テラパゴスex', 'Terapagos ex', 1024]] },
+    ],
+  });
+
+  it('acha a carta japonesa digitando em japonês (katakana ou hiragana) e mostra o nome em inglês', () => {
+    for (const query of ['テラパゴス', 'てらぱごす']) {
+      const match = multi.search(query).find((m) => m.id === 'SV8a-136');
+      expect(match).toMatchObject({ name: 'テラパゴスex', altName: 'Terapagos ex' });
+    }
+  });
+
+  it('o nome em japonês também acha as cartas em inglês da mesma espécie', () => {
+    expect(multi.search('テラパゴス').map((m) => m.id)).toEqual(expect.arrayContaining(['sv08.5-092', 'SV8a-136']));
+    expect(multi.search('テラパゴス').map((m) => m.id)).not.toContain('sv08.5-093');
+  });
+
+  it('nome em inglês acha a carta japonesa; busca em japonês sem tradução só acha o próprio nome', () => {
+    expect(multi.search('terapagos').map((m) => m.id)).toContain('SV8a-136');
+    expect(multi.search('ピカチュウ')).toEqual([]);
+  });
+});
+
 describe('loadCatalogIndex', () => {
   it('devolve null quando o arquivo não existe (índice é opcional)', async () => {
     const fake = (async () => new Response('nope', { status: 404 })) as typeof fetch;

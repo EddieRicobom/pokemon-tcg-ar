@@ -341,7 +341,7 @@ async function searchManual(more = false): Promise<void> {
   const page = catalog.searchPage(manualName.value, digits ? Number.parseInt(digits, 10) : undefined, manualLimit.value);
   manualResults.value = page.matches;
   manualTotal.value = page.total;
-  if (page.total === 0) manualMessage.value = 'Nenhuma carta encontrada. Confira o nome (em inglês) ou o número.';
+  if (page.total === 0) manualMessage.value = 'Nenhuma carta encontrada. Confira o nome (inglês, português ou japonês) ou o número.';
 }
 /** Leu um número que bate em mais cartas do que as baixadas: abre a busca à mão já com esse número. */
 function searchReadNumber(value: number): void {
@@ -1450,7 +1450,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
         v-bind="immersive ? {} : { open: manualOpen, onToggle: (e: Event) => (manualOpen = (e.target as HTMLDetailsElement).open) }"
       >
         <summary v-if="!immersive">Não está lendo? Buscar a carta à mão</summary>
-        <label>Nome da carta (em inglês, ex.: Pikachu)
+        <label>Nome da carta (inglês, português ou japonês, ex.: Pikachu)
           <input v-model="manualName" type="text" autocomplete="off" @keyup.enter="searchManual()" />
         </label>
         <label>Número da carta (opcional, ex.: 58)
@@ -1463,7 +1463,7 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
           <CardArtwork v-if="match.thumb" :src="match.thumb" :alt="`Carta ${match.name}, ${match.setName}`" />
           <span v-else class="thumb-missing" aria-hidden="true">sem imagem</span>
           <span class="manual-result-text">
-            <strong>{{ match.name }}</strong>
+            <strong>{{ match.name }}<template v-if="match.altName"> · {{ match.altName }}</template></strong>
             <small>{{ match.setName }} · {{ match.localId }}/{{ match.setOfficial }}{{ match.release ? ` · ${match.release.slice(0, 4)}` : '' }}</small>
           </span>
         </button>
