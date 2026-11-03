@@ -1182,6 +1182,8 @@ const TRAIL_DRAW_MS = 4000;
 const TRAIL_LIFE_MS = 3500;
 const TRAIL_POINT_SPACING = 12;
 const TRAIL_TICK_MS = 420;
+/** Enquanto a Trilha esta sendo desenhada, o jogador anda 25% mais rapido (ate acabar e voltar a carregar). */
+const TRAIL_SPEED_MULTIPLIER = 1.25;
 
 /** Atualiza a faixa da Trilha; inimigos em contato recebem pulsos conforme a cadência. */
 function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate: boolean): void {
@@ -1989,7 +1991,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const ux = input.dx / len;
     const uy = input.dy / len;
     const terrainSpeed = survivorBiomeMovementMultiplier(state.elapsedMs, p.x, p.y);
-    const artifactSpeed = (p.artifactSpeedMs > 0 ? BALANCE.artifactSpeedMultiplier : 1) * (1 + (p.lunchSpeedBonus ?? 0));
+    const artifactSpeed = (p.artifactSpeedMs > 0 ? BALANCE.artifactSpeedMultiplier : 1) * (1 + (p.lunchSpeedBonus ?? 0)) * ((p.trailActiveMs ?? 0) > 0 ? TRAIL_SPEED_MULTIPLIER : 1);
     p.x = clamp(p.x + ux * p.speed * artifactSpeed * terrainSpeed * focusSlow * dt, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
     p.y = clamp(p.y + uy * p.speed * artifactSpeed * terrainSpeed * focusSlow * dt, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
