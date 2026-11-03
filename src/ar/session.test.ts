@@ -67,11 +67,11 @@ describe('ArSession', () => {
     engine.onUpdate!({ worldMatrix: pose });
     expect(session.currentState).toMatchObject({ phase: 'tracking', foundCount: 1 });
     expect(sprite.group.visible).toBe(true);
-    // Origem do espaço da carta = centro do marcador: (300, 412.5, 0) em unidades do marcador, vezes a pose.
+    // A origem é o centro da carta inteira, extrapolado a partir do alvo recortado na ilustração.
     expect(sprite.group.matrix.elements[12]).toBeCloseTo(300, 6);
-    expect(sprite.group.matrix.elements[13]).toBeCloseTo(412.5, 6);
+    expect(sprite.group.matrix.elements[13]).toBeCloseTo(571.875, 6);
     expect(sprite.group.matrix.elements[14]).toBeCloseTo(-500, 6);
-    expect(sprite.group.matrix.elements[0]).toBeCloseTo(600, 6); // escala = largura do marcador
+    expect(sprite.group.matrix.elements[0]).toBeCloseTo(600 / 0.88, 6); // largura da carta, a partir do recorte
 
     engine.onUpdate!({ worldMatrix: null });
     expect(sprite.group.visible).toBe(false);
@@ -210,9 +210,9 @@ describe('ArSession', () => {
     expect(session.pointOnCardPlane(0, 0)).toBeNull(); // carta ainda não rastreada
     engine.onUpdate!({ worldMatrix: pose });
     const p = session.pointOnCardPlane(0, 0)!;
-    // Centro da tela = origem do mundo; o centro da carta está em (300, 412,5) → no espaço da carta fica (−0,5, −0,6875).
-    expect(p.x).toBeCloseTo(-0.5, 3);
-    expect(p.y).toBeCloseTo(-0.6875, 3);
+    // A origem do alvo recortado corresponde ao canto da ilustração no espaço da carta.
+    expect(p.x).toBeCloseTo(-0.44, 3);
+    expect(p.y).toBeCloseTo(-0.83875, 3);
     const right = session.pointOnCardPlane(0.2, 0)!;
     expect(right.x).toBeGreaterThan(p.x);
     expect(Math.abs(right.y - p.y)).toBeLessThan(1e-6);

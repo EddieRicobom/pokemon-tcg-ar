@@ -75,13 +75,13 @@ describe('MultiArSession', () => {
     expect(slots[0]!.sprite.group.visible).toBe(false);
     expect(slots[1]!.sprite.group.visible).toBe(true);
     expect(slots[2]!.sprite.group.visible).toBe(false);
-    // Centro do marcador 1 (300×420): (150, 210), escala = 300.
+    // Centro da carta extrapolado a partir do alvo recortado 1 (300×420).
     expect(slots[1]!.sprite.group.matrix.elements[12]).toBeCloseTo(150, 6);
-    expect(slots[1]!.sprite.group.matrix.elements[13]).toBeCloseTo(210, 6);
-    expect(slots[1]!.sprite.group.matrix.elements[0]).toBeCloseTo(300, 6);
+    expect(slots[1]!.sprite.group.matrix.elements[13]).toBeCloseTo(289.6875, 6);
+    expect(slots[1]!.sprite.group.matrix.elements[0]).toBeCloseTo(300 / 0.88, 6);
     engine.onUpdate!({ worldMatrix: pose(-900), targetIndex: 2 });
     expect(slots[2]!.sprite.group.matrix.elements[14]).toBeCloseTo(-900, 6);
-    expect(slots[2]!.sprite.group.matrix.elements[0]).toBeCloseTo(500, 6);
+    expect(slots[2]!.sprite.group.matrix.elements[0]).toBeCloseTo(500 / 0.88, 6);
     expect(session.currentState.visible).toEqual(['c1', 'c2']);
     expect(session.currentState.phase).toBe('tracking');
   });

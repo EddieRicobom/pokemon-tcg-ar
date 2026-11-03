@@ -221,6 +221,6 @@ describe('survival pvp: escudo e golpes no fio', () => {
   });
 
   it('aceita um Pokémon de golpe Trilha (antes a categoria era recusada)', () => {
-    expect(parseMessage(JSON.stringify({ t: 'sv-team', name: 'Ash', team: [mon('a', { moveCategory: 'trilha' })] }))).not.toBeNull();
+    expect(parseMessage(JSON.stringify({ t: 'sv-team', name: 'Ash', team: [mon('a', { moveName: 'Trilha', moveCategory: 'trilha', moveEffect: 'nenhum', projectileSpeed: 300, projectileSize: 8, shots: 1, pierce: 0, attackRange: 120, attackRadius: 40, critChance: 0, buffs: [] })] }))).not.toBeNull();
   });
 });
