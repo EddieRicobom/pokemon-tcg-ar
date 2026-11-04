@@ -54,14 +54,14 @@ function run(category: MoveCategory, items: HeldItemId[]): { s: SurvivorState; s
   return { s, seen };
 }
 
-const SIGNATURE: Record<HeldItemId, (seen: Seen, category: MoveCategory) => boolean> = {
+const SIGNATURE: Partial<Record<HeldItemId, (seen: Seen, category: MoveCategory) => boolean>> = {
   'orbe-adamante': (seen) => seen.bubbles || seen.fx.has('bubble-pop'),
   'orbe-lustroso': (seen) => seen.fx.has('portal'),
   'orbe-grisea': (seen) => seen.fx.has('distort') || seen.mirrorOrbit || seen.mirrorTrail,
   'laco-destino': (seen) => seen.linked,
   'bola-ferro': (seen, category) => seen.wells || seen.fx.has('implode') || ((category === 'aura' || category === 'orbit' || category === 'trilha') && seen.moved),
   'erva-poderosa': (seen, category) => seen.charges > 0 || seen.queue || seen.fx.has('implode') || (category === 'orbit' && seen.projectiles),
-} as Record<HeldItemId, (seen: Seen, category: MoveCategory) => boolean>;
+};
 
 describe('transformadores', () => {
   it('são 6, raros no baú, com teto de 2 cópias e valendo para todas as formas', () => {
@@ -104,7 +104,7 @@ describe('transformadores', () => {
     for (const category of CATEGORIES) {
       it(`${item} deixa sua marca em ${category}, sem números quebrados`, () => {
         const { s, seen } = run(category, [item]);
-        expect(SIGNATURE[item](seen, category)).toBe(true);
+        expect(SIGNATURE[item]?.(seen, category)).toBe(true);
         expect(Number.isFinite(s.player.x) && Number.isFinite(s.player.y)).toBe(true);
         for (const e of s.enemies) expect(Number.isFinite(e.x) && Number.isFinite(e.y) && Number.isFinite(e.hp)).toBe(true);
         // Nada cresce sem teto.

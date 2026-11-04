@@ -700,7 +700,7 @@ export const SURVIVOR_CLEAR_BONUS = 500;
  *  - +40 por treinador comum derrotado, +80 por chefão (6 Pokémon).
  */
 export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 'level' | 'trainersBeaten' | 'bossesBeaten' | 'bonusCoins' | 'fast'>): number {
-  const base = (s.kills === 0 && s.survivedMs < SURVIVOR_MIN_MS) ? 0 : Math.max(5, Math.round(survivorScore({ ...s, survivedMs: survivorProgressMs(s) }) / 2));
+  const base = (s.kills === 0 && survivorProgressMs(s) < SURVIVOR_MIN_MS) ? 0 : Math.max(5, Math.round(survivorScore({ ...s, survivedMs: survivorProgressMs(s) }) / 2));
   const trainerCoins = (s.trainersBeaten - s.bossesBeaten) * 40 * (s.fast === true ? SURVIVOR_FAST_TRAINER_COIN_SCALE : 1);
   return base + trainerCoins + s.bossesBeaten * 80 + Math.max(0, Math.round(s.bonusCoins ?? 0));
 }

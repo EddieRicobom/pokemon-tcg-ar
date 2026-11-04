@@ -1152,7 +1152,7 @@ function queueHeldShards(state: SurvivorState, e: SurvivorEnemy, damage: number,
       id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
       damage: round1(damage * 0.35), pierce: 0, lifeMs: 420, hit: [e.id], size: Math.max(3, p.projectileSize * 0.7), collisionRadius: 6,
       move: p.move, distanceFromPlayer: 0, noHeld: true,
-      look: { tier: 0, piercing: false, critical: false, held: { colors: [HELD_ITEM_BY_ID['fragmento-estrela'].color], spikes: false, crown: false, sparks: false, star: true, wings: false, heavy: 0 } },
+      look: { tier: 0, piercing: false, critical: false, held: { colors: [HELD_ITEM_BY_ID['po-prateado'].color], spikes: false, crown: false, sparks: false, star: true, wings: false, heavy: 0 } },
     });
   }
   heldShardQueues.set(state, queue);
