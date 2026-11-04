@@ -177,12 +177,19 @@ describe('baús, chaves e efeitos na corrida', () => {
   it('itens de cópia somam números do jogador na hora', () => {
     const s = quiet(createSurvivorState(6, { kindCount: 1, ...as('fire', 'projetil') }));
     const shots = s.player.shots;
-    const radius = s.player.attackRadius;
     give(s, 'lente-ampla');
     give(s, 'lente-ampla');
     expect(s.player.shots).toBe(shots + 2);
-    expect(s.player.attackRadius).toBeGreaterThan(radius);
     expect(s.player.held?.['lente-ampla']).toBe(2);
+
+    // Projéteis não usam raio de ataque; a aura usa e cresce a cada cópia.
+    const aura = quiet(createSurvivorState(6, { kindCount: 1, ...as('fire', 'aura') }));
+    const radius = aura.player.attackRadius;
+    give(aura, 'lente-ampla');
+    const firstRadius = aura.player.attackRadius;
+    give(aura, 'lente-ampla');
+    expect(firstRadius).toBeGreaterThan(radius);
+    expect(aura.player.attackRadius).toBeGreaterThan(firstRadius);
   });
 
   it('Pedra do Rei atordoa, Bola de Luz salta e o Pó Prateado solta estilhaços, sem reação infinita', () => {
@@ -194,8 +201,13 @@ describe('baús, chaves e efeitos na corrida', () => {
     const near = dummy(1, s.player.x + 10, s.player.y);
     const far = dummy(2, s.player.x + 110, s.player.y);
     s.enemies.push(near, far);
-    steps(s, 40);
-    expect(near.stunMs ?? 0).toBeGreaterThan(0);
+    let maxStun = 0;
+    for (let i = 0; i < 40; i++) {
+      steps(s, 1);
+      maxStun = Math.max(maxStun, near.stunMs ?? 0);
+    }
+    // O atordoamento dura 450 ms, menos que os 640 ms da simulação.
+    expect(maxStun).toBeGreaterThan(0);
     expect(far.hp).toBeLessThan(far.maxHp);
     expect(s.fx.some((f) => f.kind === 'chain') || s.projectiles.some((p) => p.noHeld)).toBe(true);
     expect(s.fx.some((f) => f.kind === 'held-hit')).toBe(true);
