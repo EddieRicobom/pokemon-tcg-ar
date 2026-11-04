@@ -171,6 +171,14 @@ export interface SurvivorSupport {
   attackTimerMs: number;
   /** Fator deliberadamente abaixo do protagonista: apoio complementa, não duplica uma build. */
   damageFactor: number;
+  /** Foco: carga automática (0 a 1); cheia, o apoio solta o feixe sozinho. */
+  focusCharge?: number;
+  /** Trilha: carga pela distância andada (0 a 1); cheia, o apoio desenha a própria faixa sozinho. */
+  trailCharge?: number;
+  trailActiveMs?: number;
+  trailPath?: { x: number; y: number; bornMs: number }[];
+  /** Trilha: próximo pulso permitido por inimigo (id → ms da corrida), separado da faixa do jogador. */
+  trailNextHitMs?: Record<number, number>;
 }
 
 export interface SurvivorSupportCandidate {
@@ -595,6 +603,23 @@ export const SURVIVOR_LOVE_CANDY_MS = 10 * 60_000;
 /** Marco de 15 min: concede uma Pedra da Confiança depois que a corrida termina. */
 export const SURVIVOR_TRUST_STONE_MS = 15 * 60_000;
 export const SURVIVOR_OMEGA_SHARD_MS = 20 * 60_000;
+/**
+ * Ritmo acelerado: o relógio da corrida vai até 10 min (o normal, até 20). Para as recompensas seguirem a mesma
+ * proporção do percurso, os marcos chegam na mesma fração (5, 7,5 e 10 min) e o tempo vale em dobro nas moedas.
+ */
+export const SURVIVOR_FAST_PROGRESS_SCALE = 2;
+/** Treinadores comuns que cabem antes do chefão: 3 no normal (5, 10 e 15 min) e 1 no acelerado (5 min). */
+export const SURVIVOR_FAST_TRAINER_COIN_SCALE = 3;
+
+/** Tempo equivalente numa corrida normal: é ele que decide marcos e moedas. */
+export function survivorProgressMs(s: { survivedMs: number; fast?: boolean }): number {
+  return s.fast === true ? s.survivedMs * SURVIVOR_FAST_PROGRESS_SCALE : s.survivedMs;
+}
+
+/** Quando um marco (dado no relógio normal) chega no relógio desta corrida. */
+export function survivorMilestoneMs(normalMs: number, fast: boolean | undefined): number {
+  return fast === true ? normalMs / SURVIVOR_FAST_PROGRESS_SCALE : normalMs;
+}
 /** A primeira Pokébola Sombria aparece aos 13 min; a mesma corrida pode ter até três encontros. */
 export const SURVIVOR_SHADOW_BALL_FIRST_MS = 13 * 60_000;
 export const SURVIVOR_SHADOW_BALL_EVERY_MS = 3 * 60_000;
@@ -629,9 +654,10 @@ export const SURVIVOR_CLEAR_BONUS = 500;
  *  - metade da pontuação, de 5 a 50, se durou/derrotou algo (como antes);
  *  - +40 por treinador comum derrotado, +80 por chefão (6 Pokémon).
  */
-export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 'level' | 'trainersBeaten' | 'bossesBeaten' | 'bonusCoins'>): number {
-  const base = (s.kills === 0 && s.survivedMs < SURVIVOR_MIN_MS) ? 0 : Math.max(5, Math.round(survivorScore(s) / 2));
-  return base + (s.trainersBeaten - s.bossesBeaten) * 40 + s.bossesBeaten * 80 + Math.max(0, Math.round(s.bonusCoins ?? 0));
+export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 'level' | 'trainersBeaten' | 'bossesBeaten' | 'bonusCoins' | 'fast'>): number {
+  const base = (s.kills === 0 && s.survivedMs < SURVIVOR_MIN_MS) ? 0 : Math.max(5, Math.round(survivorScore({ ...s, survivedMs: survivorProgressMs(s) }) / 2));
+  const trainerCoins = (s.trainersBeaten - s.bossesBeaten) * 40 * (s.fast === true ? SURVIVOR_FAST_TRAINER_COIN_SCALE : 1);
+  return base + trainerCoins + s.bossesBeaten * 80 + Math.max(0, Math.round(s.bonusCoins ?? 0));
 }
 
 export type SurvivorEvent =

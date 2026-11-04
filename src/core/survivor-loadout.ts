@@ -2,7 +2,7 @@ import { TRAINING_DEFENSE_CAP, TRAINING_SPEED_CAP } from './survivor-lunch';
 import type { LunchEffect } from './survivor-lunch';
 import type { TowerState } from './village/tower-state';
 import { typesOfDex } from './species-filter';
-import { alternativeMoveFor, attackProfile, moveFor } from './survivor-moves';
+import { alternativeMoveFor, attackProfile, moveFor, rankedCategories } from './survivor-moves';
 import { statsOfDex } from './survivor-stats';
 import type { PokemonType } from './pokemon-data';
 import type { AttackProfile, MoveCategory, SurvivorMove } from './survivor-moves';
@@ -126,4 +126,16 @@ export function survivorAttackOf(dexId: number, picked?: PokemonType, swapped = 
   }
   const secondType = types.find((type) => type !== picked && type !== move.type);
   return { move, profile: attackProfile(move, stats), types, ...(secondType ? { secondMove: moveFor([secondType], stats) } : {}) };
+}
+
+/**
+ * Golpe de um Pokémon chamado como apoio. Apoio não segura botão nem se move sozinho, então Teleporte nunca chega a
+ * um apoio: vira o golpe alternativo da espécie (a próxima forma pelos stats, no outro tipo quando houver dois).
+ */
+export function survivorSupportMove(dexId: number, move: SurvivorMove): SurvivorMove {
+  if (move.category !== 'teleporte') return move;
+  const stats = statsOfDex(dexId);
+  const category = rankedCategories(move.type, stats).find((candidate) => candidate !== 'teleporte') ?? 'projetil';
+  const type = typesOfDex(dexId).find((candidate) => candidate !== move.type) ?? move.type;
+  return moveWith(type, category, stats);
 }

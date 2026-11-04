@@ -44,6 +44,8 @@ import {
   SURVIVOR_LOVE_CANDY_MS,
   SURVIVOR_TRUST_STONE_MS,
   SURVIVOR_OMEGA_SHARD_MS,
+  survivorMilestoneMs,
+  survivorProgressMs,
   SURVIVOR_ARTIFACT_DETAILS,
   survivorProjectileOpacity,
   FAST_TIME_SCALE,
@@ -52,7 +54,7 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, moveWith, rankedCategories, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
-import { survivorAttackChoices, survivorAttackOf } from '../core/survivor-loadout';
+import { survivorAttackChoices, survivorAttackOf, survivorSupportMove } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
@@ -437,6 +439,14 @@ function takeRunLoadout(pure: boolean): TowerLoadout {
   return loadout;
 }
 /** Fim ou abandono: a marmita é gasta se a corrida contou e volta para a mochila se foi desistência logo no começo. */
+/** Marcos da Torre: alcançado pelo tempo equivalente (o Ritmo acelerado conta em dobro) e o minuto mostrado no relógio desta corrida. */
+function milestoneReached(summary: { survivedMs: number; fast?: boolean }, normalMs: number): boolean {
+  return survivorProgressMs(summary) >= normalMs;
+}
+function milestoneMinutes(summary: { fast?: boolean }, normalMs: number): string {
+  return (survivorMilestoneMs(normalMs, summary.fast) / 60_000).toLocaleString('pt-BR');
+}
+
 function settleRunLoadout(survivedMs: number): void {
   if (runLoadoutSettled) return;
   runLoadoutSettled = true;
@@ -947,7 +957,8 @@ let lastMinimapMs = -Infinity;
 let announcedRegion = '';
 /** Rastro visual calculado pela velocidade real do quadro, comparada à velocidade de início da corrida. */
 let initialPlayerSpeed = 1;
-const footDust = { strength: 0, dx: 0, dy: 0 };
+interface DustPuff { ox: number; oy: number; vx: number; vy: number; ageMs: number; lifeMs: number; size: number }
+const footDust = { strength: 0, ratio: 0, dx: 0, dy: 0, step: 1, spawnAcc: 0, puffs: [] as DustPuff[] };
 const heldKeys = new Set<string>();
 /** Joystick flutuante: aparece onde o dedo encostou na tela da Torre (`lx`, `ly`, relativos à tela). */
 const joystick = reactive({ active: false, pointerId: null as number | null, cx: 0, cy: 0, dx: 0, dy: 0, lx: 0, ly: 0 });
@@ -1229,23 +1240,76 @@ function drawShadowFlames(x: number, y: number, radius: number): void {
   ctx.restore();
 }
 
-/** Poeira leve atrás dos pés: só aparece ao passar da velocidade inicial e respeita Efeitos leves/Rotom. */
-function drawFootDust(c: CanvasRenderingContext2D, x: number, y: number, scale = 1): void {
-  if (!detailedSpecialEffects.value || footDust.strength <= 0.01) return;
+/**
+ * Poeira da corrida: nuvens soltas a cada passo ficam para trás no chão, crescem e somem; acima da velocidade inicial
+ * saem mais, maiores e mais longe, e aparecem riscos de vento atrás do Pokémon. Só desenho, com Efeitos leves/Rotom desligada.
+ */
+function stepFootDust(movedX: number, movedY: number, dtMs: number): void {
+  const puffs = footDust.puffs;
+  // As nuvens guardam a posição relativa ao jogador; descontar o passo as deixa paradas no mundo.
+  for (const puff of puffs) {
+    puff.ageMs += dtMs;
+    puff.ox += puff.vx * dtMs / 1000 - movedX;
+    puff.oy += puff.vy * dtMs / 1000 - movedY;
+    puff.vx *= 0.9;
+    puff.vy *= 0.9;
+  }
+  for (let i = puffs.length - 1; i >= 0; i--) if (puffs[i]!.ageMs >= puffs[i]!.lifeMs) puffs.splice(i, 1);
+  if (!detailedSpecialEffects.value || footDust.ratio < 0.35) { footDust.spawnAcc = 0; return; }
   const strength = clamp(footDust.strength, 0, 1.4);
-  const oppositeX = -footDust.dx;
-  const oppositeY = -footDust.dy;
-  const distance = (11 + strength * 13) * scale;
-  const px = x + oppositeX * distance;
-  const py = y + oppositeY * distance * 0.55 + 6 * scale;
+  // Um passo a cada ~170 ms andando normal; correndo, quase o dobro.
+  footDust.spawnAcc += dtMs * (0.0055 + 0.006 * strength) * Math.min(1, footDust.ratio);
+  while (footDust.spawnAcc >= 1 && puffs.length < 36) {
+    footDust.spawnAcc -= 1;
+    footDust.step = -footDust.step;
+    const side = footDust.step * (3 + Math.random() * 3);
+    const back = 6 + Math.random() * 4;
+    const kick = 22 + 55 * strength;
+    puffs.push({
+      ox: -footDust.dx * back - footDust.dy * side,
+      oy: -footDust.dy * back + footDust.dx * side,
+      vx: -footDust.dx * kick + (Math.random() - 0.5) * 18,
+      vy: -footDust.dy * kick + (Math.random() - 0.5) * 18,
+      ageMs: 0,
+      lifeMs: 320 + 260 * strength + Math.random() * 120,
+      size: 2.2 + 2.4 * strength + Math.random() * 1.2,
+    });
+  }
+  if (footDust.spawnAcc > 1) footDust.spawnAcc = 1;
+}
+
+function drawFootDust(c: CanvasRenderingContext2D, x: number, y: number, scale = 1): void {
+  if (!detailedSpecialEffects.value) return;
+  const strength = clamp(footDust.strength, 0, 1.4);
   c.save();
-  c.globalAlpha = 0.16 + strength * 0.23;
   c.fillStyle = '#e8dfc7';
-  for (let i = 0; i < 3; i++) {
-    const spread = (i - 1) * (4 + strength * 2) * scale;
+  for (const puff of footDust.puffs) {
+    const t = puff.ageMs / puff.lifeMs;
+    const grow = 1 + 1.6 * t;
+    c.globalAlpha = (0.42 + 0.18 * strength) * (1 - t) * (1 - t);
     c.beginPath();
-    c.ellipse(px + oppositeY * spread, py - oppositeX * spread * 0.45, (2.5 + strength * 2) * scale, (1.4 + strength) * scale, 0, 0, Math.PI * 2);
+    c.ellipse(x + puff.ox * scale, y + 6 * scale + puff.oy * 0.55 * scale - 4 * t * scale, puff.size * grow * scale, puff.size * 0.6 * grow * scale, 0, 0, Math.PI * 2);
     c.fill();
+  }
+  // Riscos de vento só acima da velocidade de início: a sensação de disparada.
+  if (strength > 0.25 && (footDust.dx !== 0 || footDust.dy !== 0)) {
+    const lines = strength > 0.8 ? 4 : 3;
+    c.strokeStyle = '#ffffff';
+    c.lineCap = 'round';
+    c.lineWidth = 1.5 * scale;
+    for (let i = 0; i < lines; i++) {
+      const lane = (i - (lines - 1) / 2) * 9;
+      const flicker = (animMs / 70 + i * 0.37) % 1;
+      const start = 14 + 6 * flicker;
+      const length = (12 + 26 * strength) * (0.6 + 0.4 * (1 - flicker));
+      const baseX = x - footDust.dy * lane * scale;
+      const baseY = y - 12 * scale + footDust.dx * lane * 0.55 * scale;
+      c.globalAlpha = (0.15 + 0.3 * Math.min(1, strength)) * (1 - flicker * 0.6);
+      c.beginPath();
+      c.moveTo(baseX - footDust.dx * start * scale, baseY - footDust.dy * start * 0.55 * scale);
+      c.lineTo(baseX - footDust.dx * (start + length) * scale, baseY - footDust.dy * (start + length) * 0.55 * scale);
+      c.stroke();
+    }
   }
   c.restore();
 }
@@ -1824,8 +1888,9 @@ function draw(): void {
   if (move.category === 'aura') drawElementAuraField(ctx, s.player, move.type, flat, animMs, detailed);
   else if (move.category === 'cone') drawConeGuide(ctx, s.player, s.player.attackRange, move.type, flat, 1 - s.player.attackTimerMs / Math.max(1, s.player.attackCooldownMs));
   else if (move.category === 'orbit') drawOrbitPath(ctx, s.player, move.type, flat);
-  else if (move.category === 'foco' || move.category === 'rapido') drawChargeAura(ctx, s);
+  else if (move.category === 'foco' || move.category === 'teleporte') drawChargeAura(ctx, s, detailed);
   if (move.category === 'trilha') drawElementTrail(ctx, s, detailed);
+  drawSupportTrails(ctx, s, detailed);
 
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
@@ -2043,39 +2108,9 @@ function draw(): void {
         }
       }
     } else if (f.kind === 'beam') {
-      // Feixe do Foco: entra rápido e se apaga; o nível (count) engrossa o brilho branco do miolo.
-      const fromX = f.fromX ?? f.x;
-      const fromY = (f.fromY ?? f.y) - 8;
-      const toX = f.toX ?? f.x;
-      const toY = (f.toY ?? f.y) - 8;
-      const grow = Math.min(1, t * 6);
-      ctx.lineCap = 'round';
-      ctx.globalAlpha = 0.5 * (1 - t);
-      ctx.strokeStyle = f.color;
-      ctx.lineWidth = f.r * 2 * (0.55 + 0.45 * grow);
-      ctx.beginPath();
-      ctx.moveTo(fromX, fromY);
-      ctx.lineTo(toX, toY);
-      ctx.stroke();
-      ctx.globalAlpha = 0.9 * (1 - t);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = Math.max(2, f.r * (0.25 + 0.15 * (f.count ?? 1)) * (1 - t));
-      ctx.stroke();
+      drawFocusBeamFx(ctx, f, t, detailed);
     } else if (f.kind === 'rush') {
-      // Teleporte carregado: um risco de onde saiu até onde chegou e um anel que cresce até o raio real do impacto ou da onda.
-      ctx.globalAlpha = 0.7 * (1 - t);
-      ctx.strokeStyle = f.color;
-      ctx.lineWidth = 3;
-      ctx.setLineDash([4, 6]);
-      ctx.beginPath();
-      ctx.moveTo(f.fromX ?? f.x, (f.fromY ?? f.y) - 8);
-      ctx.lineTo(f.toX ?? f.x, (f.toY ?? f.y) - 8);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.strokeStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(f.x, f.y - 8, f.r * (0.35 + 0.65 * t), 0, Math.PI * 2);
-      ctx.stroke();
+      drawTeleportFx(ctx, f, t, detailed);
     } else if (f.kind === 'heal') {
       // Pulso rosa e coração subindo indicam explicitamente que um suporte recuperou este alvo.
       const rise = t * 24;
@@ -2123,7 +2158,17 @@ function draw(): void {
 
 /** Faixa contínua: pontos internos são só geometria; na tela ela sempre é uma linha conectada que perde a cauda suavemente. */
 function drawElementTrail(c: CanvasRenderingContext2D, s: SurvivorState, detailed: boolean): void {
-  const path = s.player.trailPath ?? [];
+  drawTrailPath(c, s, s.player.trailPath ?? [], s.player.move.color, s.player.attackRadius, detailed);
+}
+
+/** Faixas dos apoios de Trilha, que carregam e desenham sozinhos. */
+function drawSupportTrails(c: CanvasRenderingContext2D, s: SurvivorState, detailed: boolean): void {
+  for (const support of s.supports) {
+    if (support.move.category === 'trilha' && support.trailPath) drawTrailPath(c, s, support.trailPath, support.move.color, support.profile.radius, detailed);
+  }
+}
+
+function drawTrailPath(c: CanvasRenderingContext2D, s: SurvivorState, path: readonly { x: number; y: number; bornMs: number }[], color: string, radius: number, detailed: boolean): void {
   if (path.length < 2 || effectiveVisual.value.rotomMode) return;
   const life = 3500;
   c.save();
@@ -2135,37 +2180,244 @@ function drawElementTrail(c: CanvasRenderingContext2D, s: SurvivorState, detaile
     if (age >= life) continue;
     const alpha = Math.pow(1 - age / life, 1.35);
     c.globalAlpha = alpha * 0.5;
-    c.strokeStyle = s.player.move.color;
-    c.lineWidth = s.player.attackRadius * 1.35;
-    if (detailed) { c.shadowColor = s.player.move.color; c.shadowBlur = 12; }
+    c.strokeStyle = color;
+    c.lineWidth = radius * 1.35;
+    if (detailed) { c.shadowColor = color; c.shadowBlur = 12; }
     c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
     c.globalAlpha = alpha * 0.85;
-    c.strokeStyle = '#fff8df'; c.lineWidth = Math.max(2, s.player.attackRadius * 0.34);
+    c.strokeStyle = '#fff8df'; c.lineWidth = Math.max(2, radius * 0.34);
     c.shadowBlur = 0; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
   }
   c.restore();
 }
 
-/** Anel em volta do Pokémon: o Foco e o Teleporte fecham o anel enquanto a carga enche. */
-function drawChargeAura(c: CanvasRenderingContext2D, s: SurvivorState): void {
+type SurvivorFxMark = SurvivorState['fx'][number];
+
+/** Feixe do Foco: a ponta corre da boca até o fim, o corpo pulsa e se estreita ao sumir; o nível (count) engrossa o miolo e acende o clarão nas pontas. */
+function drawFocusBeamFx(c: CanvasRenderingContext2D, f: SurvivorFxMark, t: number, detailed: boolean): void {
+  const fromX = f.fromX ?? f.x;
+  const fromY = (f.fromY ?? f.y) - 8;
+  const toX = f.toX ?? f.x;
+  const toY = (f.toY ?? f.y) - 8;
+  const tier = f.count ?? 1;
+  const reach = 1 - Math.pow(1 - Math.min(1, t * 5), 3);
+  const headX = fromX + (toX - fromX) * reach;
+  const headY = fromY + (toY - fromY) * reach;
+  const fade = t < 0.2 ? 1 : 1 - (t - 0.2) / 0.8;
+  const thin = 1 - 0.55 * Math.max(0, (t - 0.25) / 0.75);
+  const flicker = 1 + 0.08 * Math.sin(animMs / 24);
+  const width = f.r * 2 * thin * flicker;
+  c.lineCap = 'round';
+  // Halo largo do elemento.
+  if (detailed) { c.shadowColor = f.color; c.shadowBlur = 18 + 6 * tier; }
+  c.globalAlpha = 0.28 * fade;
+  c.strokeStyle = f.color;
+  c.lineWidth = width * 1.7;
+  c.beginPath(); c.moveTo(fromX, fromY); c.lineTo(headX, headY); c.stroke();
+  // Corpo.
+  c.globalAlpha = 0.7 * fade;
+  c.lineWidth = width;
+  c.stroke();
+  c.shadowBlur = 0;
+  // Miolo branco.
+  c.globalAlpha = 0.95 * fade;
+  c.strokeStyle = '#ffffff';
+  c.lineWidth = Math.max(1.5, f.r * (0.22 + 0.14 * tier) * thin);
+  c.stroke();
+  // Anéis que deslizam pelo feixe mostram a direção do disparo.
+  const length = Math.hypot(toX - fromX, toY - fromY) * reach;
+  if (detailed && length > 20) {
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+    const spacing = 46;
+    const offset = (animMs * 0.6) % spacing;
+    c.globalAlpha = 0.55 * fade;
+    c.strokeStyle = '#ffffff';
+    c.lineWidth = 1.5;
+    for (let d = offset; d < length; d += spacing) {
+      c.save();
+      c.translate(fromX + Math.cos(angle) * d, fromY + Math.sin(angle) * d);
+      c.rotate(angle);
+      c.beginPath();
+      c.ellipse(0, 0, Math.max(2, width * 0.18), width * 0.62, 0, 0, Math.PI * 2);
+      c.stroke();
+      c.restore();
+    }
+  }
+  // Clarão na boca e faísca na ponta.
+  const flash = Math.max(0, 1 - t * 2.2);
+  c.fillStyle = '#ffffff';
+  c.globalAlpha = 0.85 * flash;
+  c.beginPath(); c.arc(fromX, fromY, f.r * (0.7 + 0.25 * tier) * (1 + t), 0, Math.PI * 2); c.fill();
+  c.globalAlpha = 0.6 * fade;
+  c.fillStyle = f.color;
+  c.beginPath(); c.arc(headX, headY, f.r * (0.55 + 0.2 * tier), 0, Math.PI * 2); c.fill();
+  c.globalAlpha = 0.9 * fade;
+  c.fillStyle = '#ffffff';
+  c.beginPath(); c.arc(headX, headY, f.r * 0.3, 0, Math.PI * 2); c.fill();
+  // Canhão cheio: um anel de choque sai da boca.
+  if (tier >= 3) {
+    c.globalAlpha = 0.6 * (1 - t);
+    c.strokeStyle = f.color;
+    c.lineWidth = 3;
+    c.beginPath(); c.arc(fromX, fromY, f.r * (1 + 2.2 * t), 0, Math.PI * 2); c.stroke();
+  }
+}
+
+/** Teleporte: implosão onde saiu, rastro afilado com ecos no caminho e anel de chegada; a onda (count 2) soma um segundo anel e raios. */
+function drawTeleportFx(c: CanvasRenderingContext2D, f: SurvivorFxMark, t: number, detailed: boolean): void {
+  const fromX = f.fromX ?? f.x;
+  const fromY = (f.fromY ?? f.y) - 8;
+  const toX = f.toX ?? f.x;
+  const toY = (f.toY ?? f.y) - 8;
+  const wave = (f.count ?? 0) >= 2;
+  const ease = 1 - Math.pow(1 - t, 3);
+  const fade = 1 - t;
+  // Saída: anel que se fecha e some.
+  c.globalAlpha = 0.75 * fade;
+  c.strokeStyle = f.color;
+  c.lineWidth = 2.5;
+  c.beginPath(); c.arc(fromX, fromY, 26 * (1 - ease) + 2, 0, Math.PI * 2); c.stroke();
+  // Rastro afilado: largo na chegada, fino na saída, sumindo de trás para frente.
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  const dist = Math.hypot(dx, dy);
+  if (dist > 4) {
+    const nx = -dy / dist;
+    const ny = dx / dist;
+    const tail = Math.min(1, t * 1.6);
+    const sx = fromX + dx * tail;
+    const sy = fromY + dy * tail;
+    const half = 11 * fade;
+    const gradient = c.createLinearGradient(sx, sy, toX, toY);
+    gradient.addColorStop(0, 'rgba(255,255,255,0)');
+    gradient.addColorStop(1, f.color);
+    c.globalAlpha = 0.7 * fade;
+    c.fillStyle = gradient;
+    c.beginPath();
+    c.moveTo(sx, sy);
+    c.lineTo(toX + nx * half, toY + ny * half);
+    c.lineTo(toX - nx * half, toY - ny * half);
+    c.closePath();
+    c.fill();
+    // Ecos (pós-imagens) ao longo do caminho.
+    if (detailed) {
+      for (let i = 1; i <= 3; i++) {
+        const k = i / 4;
+        if (k < tail) continue;
+        c.globalAlpha = 0.45 * fade * k;
+        c.strokeStyle = f.color;
+        c.lineWidth = 2;
+        c.beginPath(); c.arc(fromX + dx * k, fromY + dy * k, 9 + 5 * k, 0, Math.PI * 2); c.stroke();
+      }
+    }
+  }
+  // Chegada: clarão e anel até o raio real do impacto (ou da onda).
+  c.globalAlpha = 0.8 * Math.max(0, 1 - t * 2.5);
+  c.fillStyle = '#ffffff';
+  c.beginPath(); c.arc(toX, toY, 18 * (1 + t), 0, Math.PI * 2); c.fill();
+  if (detailed) { c.shadowColor = f.color; c.shadowBlur = 14; }
+  c.globalAlpha = 0.85 * fade;
+  c.strokeStyle = f.color;
+  c.lineWidth = wave ? 5 * fade + 1 : 3;
+  c.beginPath(); c.arc(f.x, f.y - 8, f.r * (0.3 + 0.7 * ease), 0, Math.PI * 2); c.stroke();
+  c.shadowBlur = 0;
+  c.strokeStyle = '#ffffff';
+  c.lineWidth = 1.5;
+  c.beginPath(); c.arc(f.x, f.y - 8, f.r * (0.2 + 0.7 * ease) * 0.82, 0, Math.PI * 2); c.stroke();
+  if (wave) {
+    // Onda total: segundo anel atrasado e raios que empurram para fora.
+    const late = clamp((t - 0.15) / 0.85, 0, 1);
+    c.globalAlpha = 0.6 * (1 - late);
+    c.strokeStyle = f.color;
+    c.lineWidth = 2;
+    c.beginPath(); c.arc(f.x, f.y - 8, f.r * (0.15 + 0.85 * late), 0, Math.PI * 2); c.stroke();
+    c.globalAlpha = 0.75 * fade;
+    c.strokeStyle = '#ffffff';
+    c.lineWidth = 2;
+    c.lineCap = 'round';
+    const rays = 10;
+    for (let i = 0; i < rays; i++) {
+      const a = (Math.PI * 2 * i) / rays + 0.3;
+      const inner = f.r * (0.25 + 0.6 * ease);
+      const outer = inner + 14 * fade + 4;
+      c.beginPath();
+      c.moveTo(f.x + Math.cos(a) * inner, f.y - 8 + Math.sin(a) * inner);
+      c.lineTo(f.x + Math.cos(a) * outer, f.y - 8 + Math.sin(a) * outer);
+      c.stroke();
+    }
+  }
+}
+
+/** Carga em volta do Pokémon. Foco: anel que fecha e faíscas sugadas para dentro. Teleporte: anel tracejado girando que trava e brilha quando cheio. */
+function drawChargeAura(c: CanvasRenderingContext2D, s: SurvivorState, detailed: boolean): void {
   const p = s.player;
   const charge = s.charge;
+  const cx = p.x;
+  const cy = p.y - 8;
   c.save();
   c.strokeStyle = p.move.color;
+  c.lineCap = 'round';
   if (p.move.category === 'foco' && charge.holding && charge.level > 0) {
-    c.globalAlpha = 0.35 + 0.45 * charge.level;
-    c.lineWidth = 2 + 3 * charge.level;
-    c.beginPath();
-    c.arc(p.x, p.y - 8, 36 - 14 * charge.level + Math.sin(animMs / 90) * 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge.level);
-    c.stroke();
+    const level = Math.min(1, charge.level);
+    const full = level >= 1;
+    const radius = 36 - 12 * level + Math.sin(animMs / 90) * 2;
+    // Trilho apagado e arco aceso.
+    c.globalAlpha = 0.18;
+    c.lineWidth = 2;
+    c.beginPath(); c.arc(cx, cy, radius, 0, Math.PI * 2); c.stroke();
+    if (detailed && full) { c.shadowColor = p.move.color; c.shadowBlur = 16; }
+    c.globalAlpha = full ? 0.7 + 0.25 * Math.sin(animMs / 70) : 0.4 + 0.45 * level;
+    c.lineWidth = 2 + 3 * level;
+    c.beginPath(); c.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * level); c.stroke();
+    c.shadowBlur = 0;
+    // Faíscas convergindo para o centro, mais numerosas com a carga.
+    const sparks = detailed ? 4 + Math.round(6 * level) : 3;
+    c.fillStyle = full ? '#ffffff' : p.move.color;
+    for (let i = 0; i < sparks; i++) {
+      const phase = ((animMs / 520) + i / sparks) % 1;
+      const a = i * 2.399 + Math.floor((animMs / 520) + i / sparks) * 1.3;
+      const d = radius + 22 * (1 - phase);
+      c.globalAlpha = 0.85 * phase;
+      c.beginPath(); c.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 1.5 + 1.5 * phase, 0, Math.PI * 2); c.fill();
+    }
+    // Mira em cruz que aperta junto com a carga.
+    c.globalAlpha = 0.35 + 0.5 * level;
+    c.strokeStyle = full ? '#ffffff' : p.move.color;
+    c.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const a = (Math.PI / 2) * i + Math.PI / 4;
+      const r0 = radius + 4;
+      c.beginPath();
+      c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+      c.lineTo(cx + Math.cos(a) * (r0 + 7), cy + Math.sin(a) * (r0 + 7));
+      c.stroke();
+    }
   } else if (p.move.category === 'teleporte' && charge.holding && charge.teleportHoldMs > 0) {
     const ratio = Math.min(1, charge.teleportHoldMs / TELEPORT_FULL_HOLD_MS);
-    c.globalAlpha = ratio >= 1 ? 0.55 + 0.3 * Math.sin(animMs / 60) : 0.35 + 0.4 * ratio;
+    const full = ratio >= 1;
+    const radius = 34 - 8 * ratio;
+    const spin = animMs / (full ? 140 : 260);
+    // Anel tracejado girando; cheio, vira um anel sólido pulsando.
+    if (detailed && full) { c.shadowColor = p.move.color; c.shadowBlur = 18; }
+    c.globalAlpha = full ? 0.6 + 0.3 * Math.sin(animMs / 60) : 0.3 + 0.45 * ratio;
     c.lineWidth = 2 + 3 * ratio;
-    if (ratio < 1) c.setLineDash([5, 5]);
-    c.beginPath();
-    c.arc(p.x, p.y - 8, 34 - 10 * ratio, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
-    c.stroke();
+    if (!full) { c.setLineDash([6, 6]); c.lineDashOffset = -spin * 10; }
+    c.beginPath(); c.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio); c.stroke();
+    c.setLineDash([]);
+    c.shadowBlur = 0;
+    // Três marcas girando por fora, como um portal se abrindo.
+    c.strokeStyle = full ? '#ffffff' : p.move.color;
+    c.lineWidth = 2;
+    c.globalAlpha = 0.3 + 0.55 * ratio;
+    const outer = radius + 6 + 4 * ratio;
+    for (let i = 0; i < 3; i++) {
+      const a = spin + (Math.PI * 2 * i) / 3;
+      c.beginPath(); c.arc(cx, cy, outer, a, a + 0.5 + 0.4 * ratio); c.stroke();
+    }
+    // Sombra no chão que some à medida que o Pokémon "se desfaz".
+    c.globalAlpha = 0.25 * ratio;
+    c.fillStyle = p.move.color;
+    c.beginPath(); c.ellipse(p.x, p.y + 4, 18 + 6 * ratio, 6 + 2 * ratio, 0, 0, Math.PI * 2); c.fill();
   }
   c.restore();
 }
@@ -2343,9 +2595,11 @@ function loop(ts: number): void {
     const movedY = s.player.y - beforePlayerPosition.y;
     const moved = Math.hypot(movedX, movedY);
     // A poeira compara a velocidade efetiva (já com colisão, terreno e buffs) com a de início da corrida.
-    footDust.strength = moved > 0.01 ? clamp(moved / Math.max(0.001, initialPlayerSpeed * simulationDt / 1000) - 1, 0, 1.4) : 0;
+    footDust.ratio = moved > 0.01 ? moved / Math.max(0.001, initialPlayerSpeed * simulationDt / 1000) : 0;
+    footDust.strength = clamp(footDust.ratio - 1, 0, 1.4);
     footDust.dx = moved > 0.01 ? movedX / moved : 0;
     footDust.dy = moved > 0.01 ? movedY / moved : 0;
+    stepFootDust(movedX, movedY, simulationDt);
     bonkJumpQueued = false;
     const region = survivorRegionLabel(s.elapsedMs, s.runSeed);
     if (region !== announcedRegion) {
@@ -2367,11 +2621,13 @@ function loop(ts: number): void {
       else if (ev.type === 'bossSpawn') playSound('survivor-boss');
       else if (ev.type === 'milestone') {
         playSound('success');
+        const fastRun = s.fast === true;
+        const at = (normalMs: number) => milestoneMinutes({ fast: fastRun }, normalMs);
         say(ev.id === 'ten-minutes'
-          ? '🎁 Marco de 10 minutos! Love Candy assegurado — conclua a corrida para guardar.'
+          ? `🎁 Marco de ${at(SURVIVOR_LOVE_CANDY_MS)} minutos! Love Candy assegurado — conclua a corrida para guardar.`
           : ev.id === 'fifteen-minutes'
-            ? '💠 Marco de 15 minutos! Pedra da Confiança assegurada — conclua a corrida para guardar.'
-            : '💎 Marco de 20 minutos! Fragmento Ômega assegurado — conclua a corrida para guardar.', 6000);
+            ? `💠 Marco de ${at(SURVIVOR_TRUST_STONE_MS)} minutos! Pedra da Confiança assegurada — conclua a corrida para guardar.`
+            : `💎 Marco de ${at(SURVIVOR_OMEGA_SHARD_MS)} minutos! Fragmento Ômega assegurado — conclua a corrida para guardar.`, 6000);
       }
       else if (ev.type === 'shadowBallSpawn') {
         void preloadShadowBoss(ev.dexId);
@@ -2737,7 +2993,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     const runMega = runOmegaShardTaken ? mega : null;
     state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
     initialPlayerSpeed = Math.max(1, state.value.player.speed);
-    footDust.strength = 0;
+    footDust.strength = 0; footDust.ratio = 0; footDust.puffs.length = 0;
     megaWasActive = state.value.player.mega?.active === true;
     if (megaWasActive && megaSprite) {
       playerSprite = megaSprite as SpriteAsset;
@@ -2785,15 +3041,19 @@ function choosePlayer(opt: PickOption, picked?: PokemonType, swapped = false, om
   const supportCandidates = (pickOptions.value ?? [])
     .filter((candidate) => candidate.id !== opt.id)
     .slice(0, 5)
-    .map((support) => ({
-      dexId: support.dexId,
-      name: support.name,
-      move: support.move,
-      profile: attackProfile(support.move, statsOfDex(support.dexId)),
-      shiny: support.shiny,
-      accessory: support.accessory,
-      digital: support.digital,
-    } satisfies SurvivorSupportCandidate));
+    .map((support) => {
+      // Teleporte nunca vem num apoio: troca pelo golpe alternativo da espécie.
+      const move = survivorSupportMove(support.dexId, support.move);
+      return {
+        dexId: support.dexId,
+        name: support.name,
+        move,
+        profile: attackProfile(move, statsOfDex(support.dexId)),
+        shiny: support.shiny,
+        accessory: support.accessory,
+        digital: support.digital,
+      } satisfies SurvivorSupportCandidate;
+    });
   // Trocando de ataque, o tipo principal pode mudar (quem tem dois tipos); a Afinidade passa a vir do tipo antigo.
   const primary = swapped ? survivorAttackOf(opt.dexId, picked, true).move.type : picked ?? opt.types[0] ?? opt.move.type;
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
@@ -3552,7 +3812,7 @@ onBeforeUnmount(() => {
               <strong>Da Vila nesta corrida</strong>
               <ul><li v-for="line in state.towerSummary" :key="line">{{ line }}</li></ul>
             </div>
-            <p v-if="summary.fast" class="survivor-cleared" role="status">⚡ Ritmo acelerado: relógio 2× e orbes com 1,75× XP.</p>
+            <p v-if="summary.fast" class="survivor-cleared" role="status">⚡ Ritmo acelerado: relógio 2×, orbes com 1,75× XP e recompensas na mesma proporção da corrida normal.</p>
             <p v-if="objectives.length" class="survivor-objectives-summary" role="status">
               Objetivos opcionais: {{ objectives.filter((objective) => objective.complete).length }}/{{ objectives.length }} concluídos.
             </p>
@@ -3560,10 +3820,10 @@ onBeforeUnmount(() => {
               {{ runCoins > 0 ? `🪙 +${runCoins} moedas` : 'Sem moedas desta vez: dure 20 segundos ou derrote alguém.' }}
               <small v-if="runClearBonus > 0"> (inclui o bônus de {{ runClearBonus }} por zerar, 1× por dia)</small>
             </p>
-             <p v-if="summary.survivedMs >= SURVIVOR_LOVE_CANDY_MS" class="survivor-cleared" role="status">🍬 Love Candy conquistado por alcançar 10 minutos.</p>
-              <p v-if="summary.survivedMs >= SURVIVOR_TRUST_STONE_MS" class="survivor-cleared" role="status">💠 Pedra da Confiança conquistada por alcançar 15 minutos.</p>
+             <p v-if="milestoneReached(summary, SURVIVOR_LOVE_CANDY_MS)" class="survivor-cleared" role="status">🍬 Love Candy conquistado por alcançar {{ milestoneMinutes(summary, SURVIVOR_LOVE_CANDY_MS) }} minutos.</p>
+              <p v-if="milestoneReached(summary, SURVIVOR_TRUST_STONE_MS)" class="survivor-cleared" role="status">💠 Pedra da Confiança conquistada por alcançar {{ milestoneMinutes(summary, SURVIVOR_TRUST_STONE_MS) }} minutos.</p>
              <p v-if="(summary.shadowTrustStones ?? 0) > 0" class="survivor-cleared" role="status">💠 {{ summary.shadowTrustStones }} Pedra{{ summary.shadowTrustStones === 1 ? '' : 's' }} da Confiança assegurada{{ summary.shadowTrustStones === 1 ? '' : 's' }} ao derrotar lendário{{ summary.shadowTrustStones === 1 ? '' : 's' }} sombrio{{ summary.shadowTrustStones === 1 ? '' : 's' }}.</p>
-             <p v-if="summary.survivedMs >= SURVIVOR_OMEGA_SHARD_MS" class="survivor-cleared" role="status">💎 Fragmento Ômega conquistado por alcançar 20 minutos.</p>
+             <p v-if="milestoneReached(summary, SURVIVOR_OMEGA_SHARD_MS)" class="survivor-cleared" role="status">💎 Fragmento Ômega conquistado por alcançar {{ milestoneMinutes(summary, SURVIVOR_OMEGA_SHARD_MS) }} minutos.</p>
              <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
             <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>
             <p v-if="summary.trainersBeaten > 0 || summary.bossesBeaten > 0" class="note">Treinadores derrotados: {{ summary.trainersBeaten }}{{ summary.bossesBeaten > 0 ? ` · chefões: ${summary.bossesBeaten}` : '' }}.</p>

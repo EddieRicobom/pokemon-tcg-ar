@@ -33,10 +33,10 @@ import type { PokemonType } from './pokemon-data';
  */
 
 export * from './survivor-types';
-import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
+import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, survivorMilestoneMs } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
-import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
+import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
 import type { ChargeStyle } from './survivor-charge';
 import { survivorProjectileLook } from './survivor-projectile-power';
 import { healersReaching, healShare, SUPPORT_HEAL_RADIUS } from './survivor-heal';
@@ -1383,10 +1383,11 @@ function chargeStyleOf(state: SurvivorState): ChargeStyle | null {
 
 /**
  * Ataque de um apoio: nasce sempre no jogador e usa o perfil congelado do Pokémon escolhido.
- * Apoios não seguram botão, então o Foco, a Rajada e o Teleporte têm política própria e fixa:
- * Foco e Rajada soltam um único projétil por ciclo (a Rajada, com o dano de um tiro cheio e sem a salva de três),
- * e o Teleporte golpeia o inimigo mais próximo com um impacto em área do raio do perfil. O apoio não se move,
- * não protege o jogador e não empurra ninguém.
+ * Apoios não seguram botão, então os golpes de carga têm política própria e fixa:
+ * Foco e Rajada soltam um único projétil por ciclo (a Rajada, com o dano de um tiro cheio e sem a salva de três);
+ * o Foco ainda carrega sozinho e solta o feixe cheio (`stepSupportFocus`), e a Trilha não passa por aqui
+ * (`stepSupportTrail`). Teleporte não chega a apoio: a tela troca o golpe pelo alternativo da espécie
+ * (`survivorSupportMove`); se chegar, golpeia o inimigo mais próximo com um impacto em área do raio do perfil.
  */
 function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean {
   const p = state.player;
@@ -1431,6 +1432,69 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
   drain(state, hits, move);
   state.fx.push({ kind: 'blast', x: target.x, y: target.y, r: radius, color: move.color, ageMs: 0, lifeMs: 320, moveType: move.type });
   return true;
+}
+
+/**
+ * Foco de um apoio: a carga enche sozinha no mesmo ritmo do jogador e, cheia, solta o feixe na direção do inimigo
+ * mais próximo assim que houver alvo na linha. Nasce no jogador, como os outros golpes de apoio.
+ */
+function stepSupportFocus(state: SurvivorState, support: SurvivorSupport, dtMs: number): void {
+  support.focusCharge = Math.min(1, (support.focusCharge ?? 0) + FOCUS_CHARGE_PER_SEC * dtMs / 1000);
+  if (support.focusCharge < 1) return;
+  const p = state.player;
+  const beam = focusBeam(1, support.profile.range);
+  const [target] = nearestEnemies(state, Math.min(beam.length, support.profile.range * 2.2), 1);
+  if (!target) return;
+  support.focusCharge = 0;
+  const angle = Math.atan2(target.y - p.y, target.x - p.x);
+  const toX = p.x + Math.cos(angle) * beam.length;
+  const toY = p.y + Math.sin(angle) * beam.length;
+  const damage = round1(support.profile.damage * support.damageFactor * beam.damageMultiplier / BASIC_ATTACK_DAMAGE_FACTOR);
+  let hits = 0;
+  for (const e of state.enemies) {
+    if (e.hp <= 0 || distanceToSegment(e.x, e.y, p.x, p.y, toX, toY) > beam.halfWidth + e.radius) continue;
+    hitEnemy(state, e, damage, p, support.move, true, 0);
+    if (beam.stunMs > 0) e.stunMs = Math.max(e.stunMs ?? 0, beam.stunMs);
+    if (beam.slowMs > 0) e.slowMs = Math.max(e.slowMs ?? 0, beam.slowMs);
+    hits++;
+  }
+  drain(state, hits, support.move);
+  state.fx.push({ kind: 'beam', x: p.x, y: p.y, r: beam.halfWidth, color: support.move.color, ageMs: 0, lifeMs: 700, moveType: support.move.type, angle, fromX: p.x, fromY: p.y, toX, toY, count: beam.tier });
+}
+
+/**
+ * Trilha de um apoio: carrega com a distância que ele anda seguindo o jogador e, cheia, desenha a própria faixa
+ * por onde passa. Os pulsos têm cadência própria por inimigo, sem disputar com a faixa do jogador.
+ */
+function stepSupportTrail(state: SurvivorState, support: SurvivorSupport, movedPx: number, dtMs: number): void {
+  support.trailPath ??= [];
+  support.trailCharge ??= 0;
+  support.trailActiveMs ??= 0;
+  support.trailNextHitMs ??= {};
+  if (support.trailActiveMs <= 0) {
+    support.trailCharge = Math.min(1, support.trailCharge + movedPx / TRAIL_DISTANCE_TO_CHARGE);
+    if (support.trailCharge >= 1) { support.trailCharge = 0; support.trailActiveMs = TRAIL_DRAW_MS; }
+  }
+  support.trailPath = support.trailPath.filter((point) => state.elapsedMs - point.bornMs < TRAIL_LIFE_MS);
+  if (support.trailActiveMs > 0) {
+    support.trailActiveMs = Math.max(0, support.trailActiveMs - dtMs);
+    const last = support.trailPath[support.trailPath.length - 1];
+    if (!last || Math.hypot(last.x - support.x, last.y - support.y) >= TRAIL_POINT_SPACING) support.trailPath.push({ x: support.x, y: support.y, bornMs: state.elapsedMs });
+  }
+  if (support.trailPath.length === 0) return;
+  const damage = round1(support.profile.damage * support.damageFactor * 0.9 / BASIC_ATTACK_DAMAGE_FACTOR);
+  const radius = support.profile.radius;
+  const nextHit = support.trailNextHitMs;
+  let hits = 0;
+  for (const e of state.enemies) {
+    if (e.hp <= 0 || state.elapsedMs < (nextHit[e.id] ?? 0)) continue;
+    if (!support.trailPath.some((point) => Math.hypot(e.x - point.x, e.y - point.y) <= radius + e.radius)) continue;
+    nextHit[e.id] = state.elapsedMs + TRAIL_TICK_MS;
+    hitEnemy(state, e, damage, { x: e.x, y: e.y }, support.move, true, 0);
+    hits++;
+  }
+  for (const id of Object.keys(nextHit)) if (nextHit[Number(id)]! <= state.elapsedMs) delete nextHit[Number(id)];
+  drain(state, hits, support.move);
 }
 
 /** Um ataque do golpe de quem joga; devolve false se não havia alvo (o tempo de recarga não começa). */
@@ -1960,13 +2024,17 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.hypotheticalSecondaryActive = true;
     events.push({ type: 'hypotheticalTypeActivated', secondaryType: state.hypotheticalSecondaryType });
   }
-  if (previousElapsedMs < SURVIVOR_LOVE_CANDY_MS && state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS) {
+  // No Ritmo acelerado os marcos chegam na mesma fração da corrida (metade do relógio).
+  const loveCandyMs = survivorMilestoneMs(SURVIVOR_LOVE_CANDY_MS, state.fast);
+  const trustStoneMs = survivorMilestoneMs(SURVIVOR_TRUST_STONE_MS, state.fast);
+  const omegaShardMs = survivorMilestoneMs(SURVIVOR_OMEGA_SHARD_MS, state.fast);
+  if (previousElapsedMs < loveCandyMs && state.elapsedMs >= loveCandyMs) {
     events.push({ type: 'milestone', id: 'ten-minutes', reward: 'love-candy' });
   }
-  if (previousElapsedMs < SURVIVOR_TRUST_STONE_MS && state.elapsedMs >= SURVIVOR_TRUST_STONE_MS) {
+  if (previousElapsedMs < trustStoneMs && state.elapsedMs >= trustStoneMs) {
     events.push({ type: 'milestone', id: 'fifteen-minutes', reward: 'trust-stone' });
   }
-  if (previousElapsedMs < SURVIVOR_OMEGA_SHARD_MS && state.elapsedMs >= SURVIVOR_OMEGA_SHARD_MS) {
+  if (previousElapsedMs < omegaShardMs && state.elapsedMs >= omegaShardMs) {
     events.push({ type: 'milestone', id: 'twenty-minutes', reward: 'omega-shard' });
   }
   spawnShadowBallIfDue(state, events);
@@ -2162,6 +2230,9 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       const distance = Math.hypot(dxSupport, dySupport);
       const follow = Math.min(distance, p.speed * dt);
       if (distance > 0.01) { support.x += dxSupport / distance * follow; support.y += dySupport / distance * follow; }
+      // Trilha e Foco não esperam botão: o apoio carrega e usa o golpe sozinho.
+      if (support.move.category === 'trilha') { stepSupportTrail(state, support, distance > 0.01 ? follow : 0, dtMs); continue; }
+      if (support.move.category === 'foco') stepSupportFocus(state, support, dtMs);
       support.attackTimerMs = Math.max(0, support.attackTimerMs - dtMs);
       if (support.attackTimerMs <= 0 && attackSupport(state, support)) support.attackTimerMs = Math.max(500, Math.round(support.profile.cooldownMs * 1.45));
     }
@@ -2238,7 +2309,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           ? BALANCE.digitalPokeballDropChance.elite
           : BALANCE.digitalPokeballDropChance.comum;
       if (
-        state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS
+        state.elapsedMs >= survivorMilestoneMs(SURVIVOR_LOVE_CANDY_MS, state.fast)
         && state.digitalPokeballs + pokeballsOnGround < MAX_DIGITAL_POKEBALLS_PER_RUN
         && state.rng() < pokeballChance
       ) {
