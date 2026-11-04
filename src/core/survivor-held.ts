@@ -388,7 +388,8 @@ export function rollHeldOffer(rng: () => number, stacks: HeldStacks, count = 2, 
 /** Texto da carta do baú: o efeito geral e, quando houver, o que muda na forma de ataque de quem joga. */
 export function heldItemText(id: HeldItemId, category: MoveCategory, copies: number): string {
   const item = HELD_ITEM_BY_ID[id];
-  const specific = item.perCategory?.[category];
+  // Transformador: a tela mostra a versão da forma de ataque num destaque à parte.
+  const specific = item.transformer ? undefined : item.perCategory?.[category];
   const stack = copies > 0 ? ` Você já tem ${copies}: esta soma mais uma.` : '';
   return `${item.description}${specific ? ` ${specific}` : ''}${stack}`;
 }

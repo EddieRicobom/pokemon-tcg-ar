@@ -474,7 +474,20 @@ function heldIdOfOption(option: SurvivorUpgradeOption): HeldItemId | null {
   return isHeldItemId(id) ? id : null;
 }
 function heldOwned(held: HeldStacks | undefined): { id: HeldItemId; copies: number }[] {
-  return Object.entries(held ?? {}).filter(([id, copies]) => isHeldItemId(id) && (copies ?? 0) > 0).map(([id, copies]) => ({ id: id as HeldItemId, copies: copies ?? 0 }));
+  // Transformadores primeiro: são os que mudam o jeito de jogar.
+  return Object.entries(held ?? {}).filter(([id, copies]) => isHeldItemId(id) && (copies ?? 0) > 0)
+    .map(([id, copies]) => ({ id: id as HeldItemId, copies: copies ?? 0 }))
+    .sort((a, b) => Number(!!HELD_ITEM_BY_ID[b.id].transformer) - Number(!!HELD_ITEM_BY_ID[a.id].transformer));
+}
+function isTransformerOption(option: SurvivorUpgradeOption): boolean {
+  const id = heldIdOfOption(option);
+  return !!id && !!HELD_ITEM_BY_ID[id].transformer;
+}
+/** O que o transformador faz na forma de ataque de quem joga agora. */
+function heldFormText(option: SurvivorUpgradeOption): string {
+  const id = heldIdOfOption(option);
+  const category = state.value?.player.move.category;
+  return id && category ? HELD_ITEM_BY_ID[id].perCategory?.[category] ?? '' : '';
 }
 function onHeldSpriteError(id: HeldItemId): void {
   heldSpriteFailed.value = new Set([...heldSpriteFailed.value, id]);
@@ -2851,7 +2864,11 @@ function chooseUpgrade(id: string): void {
       });
       say(`${ev.name} evoluiu e fortaleceu o seu apoio!`, 2600);
     }
-    if (ev.type === 'heldItem') say(`🎒 ${ev.name}${ev.copies > 1 ? ` ×${ev.copies}` : ''}: o efeito já vale nos seus golpes.`, 2600);
+    if (ev.type === 'heldItem') {
+      const def = HELD_ITEM_BY_ID[ev.id];
+      const form = state.value ? def.perCategory?.[state.value.player.move.category] : undefined;
+      say(def.transformer ? `✦ ${ev.name}${ev.copies > 1 ? ` ×${ev.copies}` : ''} transformou o seu golpe!${form ? ` ${form}` : ''}` : `🎒 ${ev.name}${ev.copies > 1 ? ` ×${ev.copies}` : ''}: o efeito já vale nos seus golpes.`, def.transformer ? 4200 : 2600);
+    }
   }
 }
 
@@ -3450,7 +3467,7 @@ onBeforeUnmount(() => {
             </span>
             <span v-if="(state.keys ?? 0) > 0 || (state.chests?.length ?? 0) > 0" class="chip survivor-key-chip" role="status" title="Chaves caem dos elites; encoste num baú com chave para escolher um item segurado.">🗝 {{ state.keys ?? 0 }}<template v-if="state.chests?.length"> · 🧰 {{ state.chests.length }} no mapa</template></span>
             <span v-if="heldSummary(state.player.held)" class="chip survivor-held-chip" role="status" :title="heldTitle(state.player.held)" :aria-label="`Itens segurados: ${heldTitle(state.player.held)}`">🎒
-              <span v-for="item in heldOwned(state.player.held)" :key="item.id" class="survivor-held-entry">
+              <span v-for="item in heldOwned(state.player.held)" :key="item.id" class="survivor-held-entry" :class="{ transformer: HELD_ITEM_BY_ID[item.id].transformer }" :title="HELD_ITEM_BY_ID[item.id].transformer ? `${HELD_ITEM_BY_ID[item.id].name}: transforma o golpe` : HELD_ITEM_BY_ID[item.id].name">
                 <img v-if="!heldSpriteFailed.has(item.id)" class="survivor-held-sprite small" :src="heldItemSpriteUrl(item.id)" alt="" width="20" height="20" @error="onHeldSpriteError(item.id)"><template v-else>{{ HELD_ITEM_BY_ID[item.id].icon }}</template><small v-if="item.copies > 1">×{{ item.copies }}</small>
               </span>
             </span>
@@ -3871,7 +3888,7 @@ onBeforeUnmount(() => {
         <div v-if="pendingUpgrade" class="survivor-overlay" role="dialog" aria-label="Escolha um upgrade">
           <div class="card survivor-upgrades survivor-levelup" @click.self="banMode = false">
             <template v-if="pendingUpgrade.some((u) => u.id.startsWith('held:'))">
-              <p class="survivor-kicker">🧰 Baú aberto</p>
+              <p class="survivor-kicker">🧰 Baú aberto<template v-if="pendingUpgrade.some((u) => isTransformerOption(u))"> · ✦ com transformador!</template></p>
               <h2>Escolha um item segurado</h2>
               <p class="survivor-rarity-hint">Itens valem até o fim da corrida e se somam: pegar o mesmo de novo empilha o efeito e muda o visual dos golpes.</p>
             </template>
@@ -3882,18 +3899,20 @@ onBeforeUnmount(() => {
             </template>
             <p v-if="upgradeMenuLocked" class="survivor-upgrade-delay" role="status" aria-live="polite">Escolha liberada em instantes…</p>
             <div class="survivor-choice-list">
-              <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" :disabled="upgradeMenuLocked || (banMode && !!banBlock(u.id))" :title="banMode ? (banBlock(u.id) ?? 'Banir esta carta') : undefined" @pointerdown.stop @click="chooseUpgrade(u.id)">
+              <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:'), 'held-item': !!heldIdOfOption(u), 'held-transformer': isTransformerOption(u) }]" :disabled="upgradeMenuLocked || (banMode && !!banBlock(u.id))" :title="banMode ? (banBlock(u.id) ?? 'Banir esta carta') : undefined" @pointerdown.stop @click="chooseUpgrade(u.id)">
                 <span class="survivor-upgrade-icon" aria-hidden="true">
-                  <img v-if="heldIdOfOption(u) && !heldSpriteFailed.has(heldIdOfOption(u)!)" class="survivor-held-sprite" :src="heldItemSpriteUrl(heldIdOfOption(u)!)" alt="" width="32" height="32" @error="onHeldSpriteError(heldIdOfOption(u)!)">
+                  <img v-if="heldIdOfOption(u) && !heldSpriteFailed.has(heldIdOfOption(u)!)" class="survivor-held-sprite card" :src="heldItemSpriteUrl(heldIdOfOption(u)!)" alt="" width="48" height="48" @error="onHeldSpriteError(heldIdOfOption(u)!)">
                   <template v-else>{{ upgradeIcon(u) }}</template>
                 </span>
                 <span class="survivor-upgrade-text">
+                  <span v-if="isTransformerOption(u)" class="survivor-transformer-badge">✦ Transforma o golpe</span>
                   <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
                     <img class="survivor-rarity-ball" :src="RARITY_BALL_IMAGE[u.rarity]" alt="" />
                     <span>{{ SURVIVOR_UPGRADE_RARITIES[u.rarity].label }}</span>
                   </span>
                   <span v-if="u.family" class="survivor-upgrade-family">{{ SURVIVOR_UPGRADE_FAMILIES[u.family].icon }} {{ SURVIVOR_UPGRADE_FAMILIES[u.family].label }}</span>
                   <strong>{{ u.name }}</strong><small>{{ u.description }}</small>
+                  <small v-if="isTransformerOption(u) && heldFormText(u)" class="survivor-transformer-form"><b>No seu golpe ({{ MOVE_CATEGORY_LABELS_PT[state?.player.move.category ?? 'projetil'] }}):</b> {{ heldFormText(u) }}</small>
                   <small v-if="banMode && banBlock(u.id)" class="survivor-ban-reason">Não dá para banir: {{ banBlock(u.id) }}</small>
                 </span>
               </button>
