@@ -134,8 +134,7 @@ async function loadSpeciesNames(): Promise<Map<string, { dexId: number; en: stri
   const text = await (await fetch(SPECIES_CSV)).text();
   const ja = new Map<number, string>();
   const en = new Map<number, string>();
-  for (const line of text.split('
-').slice(1)) {
+  for (const line of text.split('\n').slice(1)) {
     const [id, language, name] = line.split(',');
     if (!id || !name) continue;
     if (language === '11') ja.set(Number(id), name);

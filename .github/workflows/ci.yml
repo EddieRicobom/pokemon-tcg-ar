@@ -36,6 +36,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+      - name: Verificar sintaxe do gerador de catálogo
+        run: node --check scripts/build-catalog-index.ts
+
       - name: Verificar tipos
         run: npm run typecheck
 
