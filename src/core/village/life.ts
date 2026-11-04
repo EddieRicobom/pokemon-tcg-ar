@@ -161,6 +161,8 @@ export interface VillageState {
   digital: DigitalState;
   /** Quantas moedas já foram lançadas na Fonte. */
   fountainWishes: number;
+  /** Último dia local em que a Fonte entregou uma Pedra da Confiança. */
+  fountainTrustStoneDay: string;
   /** A cena única do Ho-Oh já começou; retrocompatível com saves anteriores. */
   hoOhWishSeen: boolean;
   /** Encontros lendários raríssimos na Vila (ver `legendary.ts`). */
@@ -200,7 +202,7 @@ export function emptyVillage(seed: number, spawn: { x: number; y: number }): Vil
     v: 1, seed, layout: MAP_LAYOUT, player: { ...spawn, dir: 'down' }, inventory: {}, house: 0, placed: [], homeInterior: emptyHomeInterior(), homeInteriors: {}, friends: {}, harvested: {}, follower: null,
     coins: 100, mewBlessing: false, crops: [], farm: emptyFarm(), wear: { player: null, mons: {} }, collected: [], helped: {}, rareGift: {},
     claimed: [], ...emptySocial(), fishing: { day: '', casts: 0 }, battleCoins: { day: '', count: 0 }, homes: {}, town: { level: 1, mailDay: '', cafeDay: '' }, requests: { day: '', items: [], story: [] },
-    digital: emptyDigital(), fountainWishes: 0, hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), mail: emptyMail(), mailCarrierId: null, cafeWaiterId: null, instructorId: null, tower: emptyTower(), dungeon: emptyDungeonVault(), residentEconomy: {}, ...emptyWorldProgress(), homeStyles: {}, homeProjects: {},
+    digital: emptyDigital(), fountainWishes: 0, fountainTrustStoneDay: '', hoOhWishSeen: false, legendary: emptyLegendary(), recap: { day: '', at: 0 }, community: emptyCommunity(), mail: emptyMail(), mailCarrierId: null, cafeWaiterId: null, instructorId: null, tower: emptyTower(), dungeon: emptyDungeonVault(), residentEconomy: {}, ...emptyWorldProgress(), homeStyles: {}, homeProjects: {},
   };
 }
 
@@ -276,6 +278,7 @@ export function normalizeVillage(raw: unknown, seed: number, spawn: { x: number;
       : { day: '', count: 0 },
     digital: normalizeDigital(r.digital),
     fountainWishes: r.hoOhWishSeen === true ? 3 : (Number.isInteger(r.fountainWishes) ? Math.max(0, Math.min(3, r.fountainWishes ?? 0)) : 0),
+    fountainTrustStoneDay: typeof r.fountainTrustStoneDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.fountainTrustStoneDay) ? r.fountainTrustStoneDay : '',
     hoOhWishSeen: r.hoOhWishSeen === true,
     legendary: normalizeLegendary(r.legendary),
     recap: { day: typeof r.recap?.day === 'string' ? r.recap.day : '', at: typeof r.recap?.at === 'number' && Number.isFinite(r.recap.at) && r.recap.at >= 0 ? r.recap.at : 0 },
