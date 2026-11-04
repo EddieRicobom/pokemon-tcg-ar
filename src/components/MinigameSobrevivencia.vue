@@ -98,8 +98,8 @@ import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround
 import type { BonkArt } from '../village/survivor-bonk-landscape';
 import { PROJECTILE_TIER_NAMES, survivorProjectileTier } from '../core/survivor-projectile-power';
 import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
-import { drawChainFx, drawChest, drawChestOpenFx, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawKey } from '../village/survivor-held-art';
-import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldGems, heldItemSpriteUrl, isHeldItemId } from '../core/survivor-held';
+import { drawBubblePopFx, drawChainFx, drawChest, drawChestOpenFx, drawDestinyChains, drawDistortFx, drawGravityWell, drawHeldChargeOrb, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawImplodeFx, drawKey, drawMirrorOrbiter, drawPortalFx, drawSuctionField, drawTimeBubble } from '../village/survivor-held-art';
+import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldGems, heldItemSpriteUrl, isHeldItemId, mirrorOrbiters } from '../core/survivor-held';
 import type { HeldItemId, HeldStacks } from '../core/survivor-held';
 import type { WorldToScreen } from '../village/survivor-attack-art';
 import { survivorOrbiters } from '../core/survivor-shapes';
@@ -478,6 +478,18 @@ function heldOwned(held: HeldStacks | undefined): { id: HeldItemId; copies: numb
 }
 function onHeldSpriteError(id: HeldItemId): void {
   heldSpriteFailed.value = new Set([...heldSpriteFailed.value, id]);
+}
+
+/** Laço do Destino: inimigos agrupados pela corrente (o primeiro segura o laço). */
+function destinyGroups(s: SurvivorState): { x: number; y: number }[][] {
+  const groups = new Map<number, { x: number; y: number }[]>();
+  for (const e of s.enemies) {
+    if (e.linkId === undefined || e.hp <= 0) continue;
+    const group = groups.get(e.linkId) ?? [];
+    group.push({ x: e.x, y: e.y });
+    groups.set(e.linkId, group);
+  }
+  return [...groups.values()].filter((group) => group.length > 1);
 }
 
 /** Itens segurados no HUD: ícones com o número de cópias; o título lista os nomes. */
@@ -1946,10 +1958,20 @@ function draw(): void {
   else if (move.category === 'foco' || move.category === 'teleporte') drawChargeAura(ctx, s, detailed);
   if (move.category === 'trilha') drawElementTrail(ctx, s, detailed);
   drawSupportTrails(ctx, s, detailed);
+  if (move.category === 'trilha' && s.player.trailMirrorPath?.length) drawTrailPath(ctx, s, s.player.trailMirrorPath, HELD_ITEM_BY_ID['orbe-grisea'].color, s.player.attackRadius, detailed);
+  // Transformadores no chão: buracos negros e bolhas de tempo ficam por baixo dos Pokémon.
+  if (!effectiveVisual.value.rotomMode && (s.player.heldMods?.gravity ?? 0) > 0) {
+    if (move.category === 'aura') drawSuctionField(ctx, s.player.x, s.player.y + 8, s.player.attackRadius * 2.2, animMs, detailed);
+    else if (move.category === 'orbit') for (const orbiter of survivorOrbiters(s.player)) drawSuctionField(ctx, orbiter.x, orbiter.y + 8, 70, animMs, detailed);
+    else if (move.category === 'trilha' && s.player.trailPath?.length) drawTrailPath(ctx, s, s.player.trailPath, HELD_ITEM_BY_ID['bola-ferro'].color, s.player.attackRadius * 1.8, false);
+  }
+  for (const well of s.gravityWells ?? []) drawGravityWell(ctx, well.x, well.y, well.radius, well.ageMs / Math.max(1, well.lifeMs), animMs, detailed);
+  for (const bubble of s.timeBubbles ?? []) drawTimeBubble(ctx, bubble.x, bubble.y, bubble.radius, bubble.ageMs / Math.max(1, bubble.lifeMs), animMs, detailed);
 
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
   }
+  if (!effectiveVisual.value.rotomMode && s.enemies.some((e) => e.linkId !== undefined)) drawDestinyChains(ctx, destinyGroups(s), animMs, detailed);
   drawDamageNumbers(flat);
 
   // Os apoios são puramente visuais: o motor mantém suas posições separadas e
@@ -1980,6 +2002,11 @@ function draw(): void {
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
   // Gemas dos itens segurados orbitam o Pokémon: cada cópia é uma gema da cor do item.
   if (!effectiveVisual.value.rotomMode) drawHeldGems(ctx, s.player.x, s.player.y, heldGems(s.player.held ?? {}).map((item) => ({ ...item, image: heldSpriteImage(item.id) })), animMs, detailed);
+  if (move.category === 'orbit' && (s.player.heldMods?.mirror ?? 0) > 0) for (const orbiter of mirrorOrbiters(s.player, s.player.heldMods?.mirror ?? 1)) drawMirrorOrbiter(ctx, orbiter.x, orbiter.y, animMs);
+  for (const charge of s.heldCharges ?? []) {
+    const pos = heldChargePosition(s.player, charge, s.elapsedMs);
+    drawHeldChargeOrb(ctx, pos.x, pos.y, move.color, animMs, charge.slot);
+  }
   drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
 
   for (const proj of s.projectiles) {
@@ -2182,6 +2209,14 @@ function draw(): void {
       drawChainFx(ctx, f.fromX ?? f.x, f.fromY ?? f.y, f.toX ?? f.x, f.toY ?? f.y, f.color, t, f.x + f.y);
     } else if (f.kind === 'chest') {
       drawChestOpenFx(ctx, f.x, f.y, f.r, t);
+    } else if (f.kind === 'portal') {
+      drawPortalFx(ctx, f.x, f.y, f.r, t, animMs);
+    } else if (f.kind === 'distort') {
+      drawDistortFx(ctx, f.x, f.y, f.r, t, animMs);
+    } else if (f.kind === 'bubble-pop') {
+      drawBubblePopFx(ctx, f.x, f.y, f.r, t, f.count ?? 1);
+    } else if (f.kind === 'implode') {
+      drawImplodeFx(ctx, f.x, f.y, f.r, f.color, t);
     } else if (f.kind === 'held-hit') {
       drawHeldHitFx(ctx, f.x, f.y, f.r, f.color, f.count ?? 1, t, f.x * 0.13 + f.y * 0.07);
     } else if (f.kind === 'heal') {

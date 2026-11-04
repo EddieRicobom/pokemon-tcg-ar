@@ -128,6 +128,15 @@ export interface SurvivorPlayer {
   heldLeechBudget?: number;
   /** Orbe da Vida: quando cobrou vida pela última vez (relógio da corrida). */
   heldLifeCostAtMs?: number;
+  /** Transformadores: relógios internos (bolha, poço, portal da órbita e da trilha, pulsos e orbitais da Erva). */
+  heldBubbleAtMs?: number;
+  heldWellAtMs?: number;
+  heldPortalOrbitMs?: number;
+  heldPortalTrailMs?: number;
+  heldPowerPulses?: number;
+  heldPowerOrbitMs?: number;
+  /** Orbe Grísea na trilha: a faixa sombra que corre ao lado. */
+  trailMirrorPath?: { x: number; y: number; bornMs: number }[];
   /** Regeneração por segundo, somada pelas cartas "Regeneração lenta". */
   regenPerSec?: number;
   /** Dano por segundo que cada inimigo sofre ao encostar em você (cartas "Espinhos"). */
@@ -224,6 +233,13 @@ export interface SurvivorEnemy {
   /** Metrônomo: acertos seguidos neste inimigo e quando foi o último. */
   heldHits?: number;
   heldLastHitMs?: number;
+  /** Orbe Adamante: parado no tempo até zerar. */
+  timeFrozenMs?: number;
+  /** Laço do Destino: grupo de inimigos ligados e quanto tempo a corrente ainda dura. */
+  linkId?: number;
+  linkMs?: number;
+  /** Orbe Grísea: intervalo entre toques do anel espelhado da órbita. */
+  mirrorOrbitHitMs?: number;
   id: number;
   /** Espécie fixada no nascimento, independente dos atributos de combate. */
   dexId?: number;
@@ -345,7 +361,7 @@ export interface SurvivorProjectile {
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
   /** `beam`: feixe do Foco (de `fromX/fromY` a `toX/toY`, meia largura em `r`). `rush`: teleporte carregado. */
-  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal' | 'beam' | 'rush' | 'defeat' | 'chain' | 'chest' | 'held-hit';
+  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal' | 'beam' | 'rush' | 'defeat' | 'chain' | 'chest' | 'held-hit' | 'portal' | 'distort' | 'bubble-pop' | 'implode';
   x: number;
   y: number;
   r: number;
@@ -524,6 +540,11 @@ export interface SurvivorState {
   nextChestAtMs?: number;
   /** Farpas grudadas em inimigos, esperando para explodir. */
   heldMines?: SurvivorHeldMine[];
+  /** Transformadores: bolhas de tempo, buracos negros, golpes enfileirados e disparos carregados flutuando. */
+  timeBubbles?: SurvivorTimeBubble[];
+  gravityWells?: SurvivorGravityWell[];
+  heldQueue?: SurvivorHeldStrike[];
+  heldCharges?: SurvivorHeldCharge[];
   /** Níveis ganhos que ainda vão virar escolha de upgrade (subir 2 níveis de uma vez dá 2 escolhas, uma depois da outra). */
   upgradesOwed: number;
   nextId: number;
@@ -765,4 +786,53 @@ export interface SurvivorHeldMine {
   timerMs: number;
   damage: number;
   radius: number;
+}
+
+export interface SurvivorTimeBubble {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  ageMs: number;
+  lifeMs: number;
+  /** Dano repetido em todos que estão dentro quando a bolha estoura, `repeats` vezes. */
+  damage: number;
+  repeats: number;
+}
+
+export interface SurvivorGravityWell {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  ageMs: number;
+  lifeMs: number;
+  /** Velocidade do puxão (px/s) no centro. */
+  pull: number;
+  /** Dano da implosão no fim. */
+  damage: number;
+}
+
+export interface SurvivorHeldStrike {
+  id: number;
+  kind: 'blast' | 'cone' | 'beam' | 'jump';
+  atMs: number;
+  x: number;
+  y: number;
+  /** Raio (bomba, salto), alcance (cone) ou comprimento (feixe). */
+  radius: number;
+  damage: number;
+  /** Meia largura do feixe. */
+  width: number;
+  tier: number;
+}
+
+export interface SurvivorHeldCharge {
+  id: number;
+  slot: number;
+  total: number;
+  releaseAtMs: number;
+  damage: number;
+  /** `gun`: sai um de cada vez (rajada); `volley`: todos juntos num leque (projétil). */
+  mode: 'gun' | 'volley';
 }

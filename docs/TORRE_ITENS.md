@@ -13,7 +13,7 @@ Itens segurados (*held items*) são recompensas que valem só durante a corrida 
 | Desenho: marcas, itens girando, baú, chave, raio, faíscas | `src/village/survivor-held-art.ts` |
 | Tela: escolha do baú, HUD, sprites, avisos | `src/components/MinigameSobrevivencia.vue` |
 | Minimapa (baús e chaves) | `src/core/survivor-minimap.ts` |
-| Testes | `src/core/survivor-held.test.ts` |
+| Testes | `src/core/survivor-held.test.ts`, `src/core/survivor-held-transformers.test.ts` |
 
 ## Chaves e baús
 
@@ -26,7 +26,7 @@ Itens segurados (*held items*) são recompensas que valem só durante a corrida 
 
 - Cada item pode ser pego até **4 vezes**. Cada cópia soma o efeito; as chances têm teto.
 - O sorteio pesa a raridade: normal 10, raro 6, lendário 2.
-- **Só são oferecidos itens que mudam o golpe da forma de ataque de quem joga** (`appliesTo`; `heldItemAppliesTo`). Toda forma tem pelo menos 21 dos 24 itens disponíveis, e há um teste que garante pelo menos 18.
+- **Só são oferecidos itens que mudam o golpe da forma de ataque de quem joga** (`appliesTo`; `heldItemAppliesTo`). Toda forma tem pelo menos 21 dos 24 itens comuns disponíveis, e há um teste que garante pelo menos 18. Os 6 transformadores valem para todas as formas.
 - Acertos criados por itens (raio, estilhaço, farpa) não disparam itens de novo, então não há reação em cadeia infinita. Os estilhaços param quando há 220 projéteis em campo, e as farpas param em 16 ao mesmo tempo.
 
 ## Os 24 itens
@@ -59,6 +59,39 @@ Itens segurados (*held items*) são recompensas que valem só durante a corrida 
 | Placa Pingente | Icicle Plate (4) | placa de Arceus, Gelo +20% | golpes de Gelo +20% por cópia; +25% de dano de Gelo com o efeito do Gelo | todas | anel e eco azuis |
 | Restos | Leftovers (2) | recupera vida aos poucos | +0,6 de vida por segundo por cópia | todas | — |
 | Argila Luminosa | Light Clay (4) | barreiras duram mais | queimadura, veneno, atordoamento e raízes dos itens duram 40% mais por cópia | todas | — |
+
+## Transformadores
+
+Os transformadores são itens lendários que trocam a mecânica do golpe em vez de somar números, como os itens grandes do Isaac. São 6, todos referenciando itens até a 4ª geração:
+
+- **Raridade no baú:** a segunda carta tem 30% de chance de ser um transformador (`HELD_TRANSFORMER_SLOT_CHANCE`). A primeira carta é sempre um item comum.
+- **Peso:** dentro dessa vaga, Bola de Ferro e Erva Poderosa têm peso 2; os Orbes e o Laço, peso 1.
+- **Teto:** 2 cópias de cada. A segunda amplia o efeito: bolha maior que repete mais uma vez, golpe do portal e do espelho mais forte, mais elos e mais dano espalhado, buraco maior e mais puxão, mais carga.
+- **Combinação:** valem juntos. Golpes criados por um transformador não disparam itens de novo (`heldGuard`).
+- **Visual:** original e abstrato, sem desenhar os lendários: bolha de relógio, portal rosa, anel distorcido roxo, correntes rosa, buraco negro e orbes de energia verdes.
+
+| Forma | Orbe Adamante (adamant-orb) | Orbe Lustroso (lustrous-orb) | Orbe Grísea (griseous-orb) | Laço do Destino (destiny-knot) | Bola de Ferro (iron-ball) | Erva Poderosa (power-herb) |
+|---|---|---|---|---|---|---|
+| Tema | tempo | espaço | distorção | correntes | gravidade | carga |
+| Projétil | bolha pequena no impacto | gêmeo sai de um portal atrás do alvo | disparo espelhado para trás | liga o alvo a 4; 40% se espalha | mini buraco negro no impacto | disparos flutuam e saem juntos num leque |
+| Rajada | bolhas nos alvos | cada tiro também sai de um portal | rajada para os dois lados | 40% se espalha | mini buracos que juntam o grupo | 6 tiros flutuando, soltos como metralhadora |
+| Área | bolha do tamanho da área | a explosão se repete num portal atrás do grupo | explosão no ponto espelhado | liga 2 vizinhos; 25% se espalha | buraco negro com o triplo da área, puxa e implode | 3 bombas pairam e chovem |
+| Aura | a cada 1,2 s congela tudo em volta | segunda aura no grupo mais denso | anel distorcido fora da aura | 25% se espalha | suga inimigos até o dobro do raio | a cada 3 pulsos, um estouro quase 2× maior |
+| Cone | congela o fim do leque | leque invertido de um portal à frente | leque para trás também | liga a 4; 40% se espalha | vácuo que arrasta para a sua frente | segundo leque mais longo |
+| Órbita | orbitais deixam bolhas | um orbital atravessa um portal até um inimigo longe | segundo anel girando ao contrário | 25% se espalha | orbitais viram poços que prendem | orbitais se soltam em disparo |
+| Foco | congela cada inimigo da linha | gêmeo do disparo; o feixe vira uma cruz | disparo e feixe também para trás | 40% se espalha | mini buracos e buraco negro no fim do feixe | o feixe sai mais 2 vezes |
+| Teleporte | congela o pouso e repete o golpe | segundo impacto num portal além do pouso | impacto espelhado do outro lado da partida | liga a 4; 40% se espalha | implosão que puxa para o pouso | salta em cadeia para mais 2 inimigos |
+| Trilha | trechos viram poças de tempo parado | portais deixam terreno pulsante sob inimigos longe | faixa sombra ao lado | 25% se espalha | puxa inimigos para cima da faixa | a faixa explode inteira ao terminar |
+
+Números principais, ajustáveis em `src/core/survivor.ts`, `timeBubbleRule` e `destinyLinkRule`:
+
+- **Bolha de tempo:** dura 1,4 s e repete 60% do acerto ao estourar. No máximo 10 bolhas ao mesmo tempo. Chefões não congelam, só ficam lentos.
+- **Portal:** o golpe copiado tem 50% do dano (+25% com a 2ª cópia). **Espelho:** 60% (+20%).
+- **Laço do Destino:** a corrente dura 3 s e alcança 170 px. A parte espalhada tem teto de 80%.
+- **Buraco negro:** no máximo 8 ao mesmo tempo. Implode com o dano do golpe na metade do raio. Chefões resistem a 80% do puxão; treinadores, a 50%.
+- **Golpes enfileirados da Erva:** no máximo 24 ao mesmo tempo.
+
+Testes: `src/core/survivor-held-transformers.test.ts`. Cada transformador roda em cada uma das 9 formas e precisa deixar sua marca sem números quebrados. Os seis juntos, com 2 cópias cada, também são testados em todas as formas.
 
 ## Visual em todas as formas de ataque
 

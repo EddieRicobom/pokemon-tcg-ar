@@ -3,7 +3,7 @@ import { seededRng } from './battle';
 import { statsOfDex } from './survivor-stats';
 import type { Rng } from './battle';
 import { BASIC_ATTACK_DAMAGE_FACTOR, moveWith, type AttackProfile, type MoveCategory, type SurvivorMove } from './survivor-moves';
-import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldItemText, heldMods, isHeldItemId, rollHeldOffer } from './survivor-held';
+import { destinyLinkRule, HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldItemText, heldMods, isHeldItemId, mirrorOrbiters, rollHeldOffer, timeBubbleRule } from './survivor-held';
 import type { HeldItemId } from './survivor-held';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
@@ -36,7 +36,7 @@ import type { PokemonType } from './pokemon-data';
 
 export * from './survivor-types';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
-import type { SurvivorArtifactKind, SurvivorChest, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
+import type { SurvivorArtifactKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
 import type { ChargeStyle } from './survivor-charge';
@@ -1124,11 +1124,13 @@ function applyHeldOnHit(state: SurvivorState, e: SurvivorEnemy, damage: number, 
       }
     }
     if (mods.shards > 0) queueHeldShards(state, e, damage, from, mods.shards);
+    if (mods.time > 0) maybeTimeBubble(state, e, damage, from, mods.time);
+    if (mods.gravity > 0) maybeImpactWell(state, e, damage, mods.gravity);
+    if (mods.destiny > 0) applyDestinyKnot(state, e, damage, mods.destiny, duration);
     // Faísca da cor de um dos itens em todo acerto: toda forma de ataque mostra que está carregando itens.
-    if (state.fx.length < 160) {
-      const colors = p.held ? Object.keys(p.held).filter((id) => (p.held?.[id as HeldItemId] ?? 0) > 0) : [];
-      const pick = colors[state.nextId % Math.max(1, colors.length)] as HeldItemId | undefined;
-      if (pick) state.fx.push({ kind: 'held-hit', x: e.x, y: e.y, r: Math.max(8, e.radius), color: HELD_ITEM_BY_ID[pick].color, ageMs: 0, lifeMs: 260, count: Math.min(4, colors.length) });
+    if (state.fx.length < 160 && mods.ids.length > 0) {
+      const pick = mods.ids[state.nextId % mods.ids.length]!;
+      state.fx.push({ kind: 'held-hit', x: e.x, y: e.y, r: Math.max(8, e.radius), color: HELD_ITEM_BY_ID[pick].color, ageMs: 0, lifeMs: 260, count: Math.min(4, mods.ids.length) });
     }
   } finally {
     heldGuard--;
@@ -1199,6 +1201,658 @@ function heldAfterAttack(state: SurvivorState): void {
 
 function dropKey(state: SurvivorState, x: number, y: number): void {
   (state.keyDrops ??= []).push({ id: state.nextId++, x: clamp(x, 20, ARENA_W - 20), y: clamp(y, 20, ARENA_H - 20) });
+}
+
+
+// ----------------------------------------------------------------------------- transformadores (Orbes e Laço do Destino)
+
+const TIME_BUBBLE_LIFE_MS = 1400;
+const MAX_TIME_BUBBLES = 10;
+const PORTAL_OFFSET = 80;
+const DESTINY_LINK_RANGE = 170;
+const DESTINY_LINK_MS = 3000;
+
+const portalFactor = (copies: number): number => 0.5 + 0.25 * Math.max(0, copies - 1);
+const mirrorFactor = (copies: number): number => 0.6 + 0.2 * Math.max(0, copies - 1);
+
+function unitFrom(ax: number, ay: number, bx: number, by: number, fallback: number): { x: number; y: number } {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const length = Math.hypot(dx, dy);
+  return length > 0.001 ? { x: dx / length, y: dy / length } : { x: Math.cos(fallback), y: Math.sin(fallback) };
+}
+
+/** Acerto em área criado por um transformador: não dispara itens de novo. */
+function heldAreaStrike(state: SurvivorState, x: number, y: number, radius: number, damage: number): number {
+  let hits = 0;
+  heldGuard++;
+  try {
+    for (const e of state.enemies) {
+      if (e.hp <= 0 || Math.hypot(e.x - x, e.y - y) > radius + e.radius) continue;
+      hitEnemy(state, e, damage, { x, y }, state.player.move, false, 0);
+      hits++;
+    }
+  } finally {
+    heldGuard--;
+  }
+  return hits;
+}
+
+/** Leque em qualquer ponto e direção (o cone do jogador só sai dele). */
+function heldConeStrike(state: SurvivorState, x: number, y: number, angle: number, range: number, damage: number): number {
+  let hits = 0;
+  heldGuard++;
+  try {
+    for (const e of state.enemies) {
+      if (e.hp <= 0) continue;
+      const d = Math.hypot(e.x - x, e.y - y);
+      if (d > range + e.radius) continue;
+      let diff = Math.atan2(e.y - y, e.x - x) - angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      if (Math.abs(diff) > SURVIVOR_CONE_HALF_ANGLE + Math.atan2(e.radius, Math.max(1, d))) continue;
+      hitEnemy(state, e, damage, { x, y }, state.player.move, false, 0);
+      hits++;
+    }
+  } finally {
+    heldGuard--;
+  }
+  return hits;
+}
+
+function heldLineStrike(state: SurvivorState, ax: number, ay: number, bx: number, by: number, halfWidth: number, damage: number): number {
+  let hits = 0;
+  heldGuard++;
+  try {
+    for (const e of state.enemies) {
+      if (e.hp <= 0 || distanceToSegment(e.x, e.y, ax, ay, bx, by) > halfWidth + e.radius) continue;
+      hitEnemy(state, e, damage, { x: ax, y: ay }, state.player.move, false, 0);
+      hits++;
+    }
+  } finally {
+    heldGuard--;
+  }
+  return hits;
+}
+
+function portalFx(state: SurvivorState, x: number, y: number, r = 26): void {
+  state.fx.push({ kind: 'portal', x, y, r, color: HELD_ITEM_BY_ID['orbe-lustroso'].color, ageMs: 0, lifeMs: 520 });
+}
+function distortFx(state: SurvivorState, x: number, y: number, r: number): void {
+  state.fx.push({ kind: 'distort', x, y, r, color: HELD_ITEM_BY_ID['orbe-grisea'].color, ageMs: 0, lifeMs: 420 });
+}
+
+/** Disparo extra de um transformador (gêmeo do portal ou espelho): mesmo tamanho e velocidade, sem disparar itens. */
+function spawnHeldShot(state: SurvivorState, x: number, y: number, angle: number, damage: number, speedFactor = 1, trigger = false): void {
+  // Teto de projéteis: portal, espelho, carga e estilhaços juntos nunca enchem a arena além disso.
+  if (state.projectiles.length >= MAX_HELD_PROJECTILES) return;
+  const p = state.player;
+  const speed = p.projectileSpeed * speedFactor;
+  state.projectiles.push({
+    id: state.nextId++, x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+    damage: round1(damage), pierce: p.pierce, lifeMs: Math.max(900, Math.ceil((p.attackRange + 60) / Math.max(1, speed) * 1000)), hit: [],
+    size: p.projectileSize, collisionRadius: 5 * (p.projectileHitRadiusFactor ?? 1), move: p.move, distanceFromPlayer: 0, ...(trigger ? {} : { noHeld: true }),
+    look: survivorProjectileLook(p),
+    ...(trigger ? heldHoming(p) : {}),
+  });
+}
+
+/** Projétil, rajada e disparo do Foco: gêmeo saindo de um portal atrás do alvo e/ou cópia espelhada para trás. */
+function heldShotCopies(state: SurvivorState, target: SurvivorEnemy, damage: number, speedFactor = 1): void {
+  const mods = state.player.heldMods;
+  if (!mods || (mods.portal <= 0 && mods.mirror <= 0)) return;
+  const p = state.player;
+  const angle = Math.atan2(target.y - p.y, target.x - p.x);
+  if (mods.portal > 0) {
+    const px = clamp(target.x + Math.cos(angle) * PORTAL_OFFSET, 10, ARENA_W - 10);
+    const py = clamp(target.y + Math.sin(angle) * PORTAL_OFFSET, 10, ARENA_H - 10);
+    spawnHeldShot(state, px, py, angle + Math.PI, damage * portalFactor(mods.portal), speedFactor);
+    portalFx(state, px, py);
+  }
+  if (mods.mirror > 0) {
+    spawnHeldShot(state, p.x, p.y, angle + Math.PI, damage * mirrorFactor(mods.mirror), speedFactor);
+    distortFx(state, p.x, p.y, 20);
+  }
+}
+
+/** Área: a explosão se repete num portal atrás do grupo e/ou no ponto espelhado do outro lado do Pokémon. */
+function heldAreaCopies(state: SurvivorState, center: { x: number; y: number }, damage: number): void {
+  const mods = state.player.heldMods;
+  if (!mods || (mods.portal <= 0 && mods.mirror <= 0)) return;
+  const p = state.player;
+  const dir = unitFrom(p.x, p.y, center.x, center.y, survivorAimAngle(p));
+  if (mods.portal > 0) {
+    const px = clamp(center.x + dir.x * PORTAL_OFFSET * 1.1, 20, ARENA_W - 20);
+    const py = clamp(center.y + dir.y * PORTAL_OFFSET * 1.1, 20, ARENA_H - 20);
+    heldAreaStrike(state, px, py, p.attackRadius, damage * portalFactor(mods.portal));
+    state.fx.push({ kind: 'blast', x: px, y: py, r: p.attackRadius, color: p.move.color, ageMs: 0, lifeMs: 420, moveType: p.move.type });
+    portalFx(state, px, py, p.attackRadius * 0.7);
+  }
+  if (mods.mirror > 0) {
+    const mx = clamp(2 * p.x - center.x, 20, ARENA_W - 20);
+    const my = clamp(2 * p.y - center.y, 20, ARENA_H - 20);
+    heldAreaStrike(state, mx, my, p.attackRadius, damage * mirrorFactor(mods.mirror));
+    state.fx.push({ kind: 'blast', x: mx, y: my, r: p.attackRadius, color: p.move.color, ageMs: 0, lifeMs: 420, moveType: p.move.type });
+    distortFx(state, mx, my, p.attackRadius);
+  }
+}
+
+/** Aura: segunda aura num portal sobre o grupo mais denso e/ou anel distorcido do lado de fora. */
+function heldAuraCopies(state: SurvivorState, radius: number, damage: number): void {
+  const mods = state.player.heldMods;
+  if (!mods || (mods.portal <= 0 && mods.mirror <= 0)) return;
+  const p = state.player;
+  if (mods.portal > 0) {
+    let best: SurvivorEnemy | undefined;
+    let bestCount = 0;
+    for (const e of state.enemies) {
+      const d = Math.hypot(e.x - p.x, e.y - p.y);
+      if (e.hp <= 0 || d <= radius || d > 340) continue;
+      let count = 0;
+      for (const o of state.enemies) if (o.hp > 0 && Math.hypot(o.x - e.x, o.y - e.y) <= radius) count++;
+      if (count > bestCount) { bestCount = count; best = e; }
+    }
+    if (best) {
+      heldAreaStrike(state, best.x, best.y, radius, damage * portalFactor(mods.portal));
+      state.fx.push({ kind: 'pulse', x: best.x, y: best.y, r: radius, color: p.move.color, ageMs: 0, lifeMs: 360, moveType: p.move.type });
+      portalFx(state, best.x, best.y, radius * 0.6);
+    }
+  }
+  if (mods.mirror > 0) {
+    const outer = radius * (1.8 + 0.4 * Math.max(0, mods.mirror - 1));
+    heldGuard++;
+    try {
+      for (const e of state.enemies) {
+        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        if (e.hp <= 0 || d <= radius + e.radius || d > outer + e.radius) continue;
+        hitEnemy(state, e, damage * mirrorFactor(mods.mirror) * 0.85, p, p.move, false, d);
+      }
+    } finally {
+      heldGuard--;
+    }
+    distortFx(state, p.x, p.y, outer);
+  }
+}
+
+/** Cone: leque invertido saindo de um portal à frente e/ou leque espelhado para trás. */
+function heldConeCopies(state: SurvivorState, range: number, damage: number): void {
+  const mods = state.player.heldMods;
+  if (!mods || (mods.portal <= 0 && mods.mirror <= 0)) return;
+  const p = state.player;
+  const aim = survivorAimAngle(p);
+  if (mods.portal > 0) {
+    const px = clamp(p.x + Math.cos(aim) * (range + 40), 10, ARENA_W - 10);
+    const py = clamp(p.y + Math.sin(aim) * (range + 40), 10, ARENA_H - 10);
+    heldConeStrike(state, px, py, aim + Math.PI, range * 0.75, damage * portalFactor(mods.portal));
+    state.fx.push({ kind: 'cone', x: px, y: py, r: range * 0.75, color: p.move.color, ageMs: 0, lifeMs: 300, moveType: p.move.type, angle: aim + Math.PI, spread: SURVIVOR_CONE_HALF_ANGLE });
+    portalFx(state, px, py);
+  }
+  if (mods.mirror > 0) {
+    heldConeStrike(state, p.x, p.y, aim + Math.PI, range, damage * mirrorFactor(mods.mirror));
+    state.fx.push({ kind: 'cone', x: p.x, y: p.y, r: range, color: p.move.color, ageMs: 0, lifeMs: 300, moveType: p.move.type, angle: aim + Math.PI, spread: SURVIVOR_CONE_HALF_ANGLE });
+    distortFx(state, p.x, p.y, 24);
+  }
+}
+
+/** Feixe carregado do Foco: segundo feixe em cruz saindo de um portal e/ou feixe espelhado para trás. */
+function heldBeamCopies(state: SurvivorState, angle: number, length: number, halfWidth: number, damage: number, tier: number): void {
+  const mods = state.player.heldMods;
+  if (!mods || (mods.portal <= 0 && mods.mirror <= 0)) return;
+  const p = state.player;
+  if (mods.portal > 0) {
+    const reach = Math.min(length, p.attackRange);
+    const cx = p.x + Math.cos(angle) * reach;
+    const cy = p.y + Math.sin(angle) * reach;
+    const cross = angle + Math.PI / 2;
+    const half = Math.min(length, p.attackRange * 1.5) / 2;
+    const ax = cx - Math.cos(cross) * half;
+    const ay = cy - Math.sin(cross) * half;
+    const bx = cx + Math.cos(cross) * half;
+    const by = cy + Math.sin(cross) * half;
+    heldLineStrike(state, ax, ay, bx, by, halfWidth, damage * portalFactor(mods.portal));
+    state.fx.push({ kind: 'beam', x: ax, y: ay, r: halfWidth, color: p.move.color, ageMs: 0, lifeMs: 520, moveType: p.move.type, angle: cross, fromX: ax, fromY: ay, toX: bx, toY: by, count: tier });
+    portalFx(state, ax, ay);
+    portalFx(state, bx, by);
+  }
+  if (mods.mirror > 0) {
+    const back = angle + Math.PI;
+    const bx = p.x + Math.cos(back) * length;
+    const by = p.y + Math.sin(back) * length;
+    heldLineStrike(state, p.x, p.y, bx, by, halfWidth, damage * mirrorFactor(mods.mirror));
+    state.fx.push({ kind: 'beam', x: p.x, y: p.y, r: halfWidth, color: p.move.color, ageMs: 0, lifeMs: 520, moveType: p.move.type, angle: back, fromX: p.x, fromY: p.y, toX: bx, toY: by, count: tier });
+    distortFx(state, p.x, p.y, 28);
+  }
+}
+
+/** Teleporte: segundo impacto num portal além do pouso e/ou impacto espelhado do outro lado da partida. */
+function heldTeleportCopies(state: SurvivorState, fromX: number, fromY: number, radius: number, damage: number): void {
+  const mods = state.player.heldMods;
+  if (!mods || (mods.portal <= 0 && mods.mirror <= 0)) return;
+  const p = state.player;
+  const dir = unitFrom(fromX, fromY, p.x, p.y, survivorAimAngle(p));
+  if (mods.portal > 0) {
+    const px = clamp(p.x + dir.x * PORTAL_OFFSET, 20, ARENA_W - 20);
+    const py = clamp(p.y + dir.y * PORTAL_OFFSET, 20, ARENA_H - 20);
+    heldAreaStrike(state, px, py, radius * 0.8, damage * portalFactor(mods.portal));
+    state.fx.push({ kind: 'blast', x: px, y: py, r: radius * 0.8, color: p.move.color, ageMs: 0, lifeMs: 380, moveType: p.move.type });
+    portalFx(state, px, py, radius * 0.6);
+  }
+  if (mods.mirror > 0) {
+    const mx = clamp(2 * fromX - p.x, 20, ARENA_W - 20);
+    const my = clamp(2 * fromY - p.y, 20, ARENA_H - 20);
+    heldAreaStrike(state, mx, my, radius, damage * mirrorFactor(mods.mirror));
+    state.fx.push({ kind: 'blast', x: mx, y: my, r: radius, color: p.move.color, ageMs: 0, lifeMs: 380, moveType: p.move.type });
+    distortFx(state, mx, my, radius);
+  }
+}
+
+/** Órbita: anel espelhado girando ao contrário e/ou um orbital que atravessa um portal até um inimigo longe. */
+function heldOrbitCopies(state: SurvivorState, dtMs: number, damage: number, hitRadius: number, intervalMs: number): void {
+  const mods = state.player.heldMods;
+  if (!mods || (mods.portal <= 0 && mods.mirror <= 0)) return;
+  const p = state.player;
+  if (mods.mirror > 0) {
+    const mirrored = mirrorOrbiters(p, mods.mirror);
+    heldGuard++;
+    try {
+      for (const e of state.enemies) {
+        if (e.hp <= 0 || (e.mirrorOrbitHitMs ?? 0) > 0) continue;
+        const orbiter = mirrored.find((candidate) => Math.hypot(e.x - candidate.x, e.y - candidate.y) <= hitRadius + e.radius);
+        if (!orbiter) continue;
+        e.mirrorOrbitHitMs = intervalMs;
+        hitEnemy(state, e, damage * mirrorFactor(mods.mirror), p, p.move, false, Math.hypot(e.x - p.x, e.y - p.y));
+        state.fx.push({ kind: 'orbit-hit', x: e.x, y: e.y, r: Math.max(10, e.radius), color: HELD_ITEM_BY_ID['orbe-grisea'].color, ageMs: 0, lifeMs: 220, moveType: p.move.type });
+      }
+    } finally {
+      heldGuard--;
+    }
+  }
+  if (mods.portal > 0) {
+    p.heldPortalOrbitMs = (p.heldPortalOrbitMs ?? 0) - dtMs;
+    if (p.heldPortalOrbitMs <= 0) {
+      p.heldPortalOrbitMs = Math.round(1100 / mods.portal);
+      const ring = p.attackRadius * 1.2;
+      const far = state.enemies
+        .filter((e) => e.hp > 0)
+        .map((e) => ({ e, d: Math.hypot(e.x - p.x, e.y - p.y) }))
+        .filter((x) => x.d > ring && x.d <= 340)
+        .sort((a, b) => a.d - b.d)[0]?.e;
+      if (far) {
+        heldAreaStrike(state, far.x, far.y, hitRadius * 1.6, damage * 1.2 * (1 + 0.25 * (mods.portal - 1)));
+        state.fx.push({ kind: 'orbit-hit', x: far.x, y: far.y, r: hitRadius * 1.6, color: p.move.color, ageMs: 0, lifeMs: 300, moveType: p.move.type });
+        portalFx(state, far.x, far.y);
+      }
+    }
+  }
+}
+
+/** Trilha: faixa sombra ao lado (espelho) e portais que deixam terreno pulsante sob inimigos distantes. */
+function heldTrailCopies(state: SurvivorState, dtMs: number, newPoint: { x: number; y: number } | null, previous: { x: number; y: number } | undefined, damage: number): void {
+  const mods = state.player.heldMods;
+  const p = state.player;
+  if (mods && mods.mirror > 0) {
+    p.trailMirrorPath ??= [];
+    if (newPoint && previous) {
+      const dir = unitFrom(previous.x, previous.y, newPoint.x, newPoint.y, 0);
+      const offset = 56 * (1 + 0.2 * Math.max(0, mods.mirror - 1));
+      p.trailMirrorPath.push({ x: clamp(newPoint.x - dir.y * offset, 0, ARENA_W), y: clamp(newPoint.y + dir.x * offset, 0, ARENA_H), bornMs: state.elapsedMs });
+    }
+    p.trailMirrorPath = p.trailMirrorPath.filter((point) => state.elapsedMs - point.bornMs < TRAIL_LIFE_MS);
+  }
+  if (mods && mods.portal > 0 && (p.trailActiveMs ?? 0) > 0) {
+    p.heldPortalTrailMs = (p.heldPortalTrailMs ?? 0) - dtMs;
+    if (p.heldPortalTrailMs <= 0) {
+      p.heldPortalTrailMs = Math.round(700 / mods.portal);
+      const candidates = state.enemies.filter((e) => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= 320 && Math.hypot(e.x - p.x, e.y - p.y) > p.attackRadius * 2);
+      const target = candidates[Math.floor(state.rng() * candidates.length)];
+      if (target) {
+        leaveElementalTerrain(state, target, damage * portalFactor(mods.portal) * 2, p.move);
+        portalFx(state, target.x, target.y, 30);
+      }
+    }
+  }
+}
+
+/** Orbe Adamante: bolha de tempo que congela quem está dentro e repete o acerto ao estourar. */
+function maybeTimeBubble(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, copies: number): void {
+  const p = state.player;
+  const rule = timeBubbleRule(p.move.category, p.attackRadius, copies);
+  if (state.elapsedMs - (p.heldBubbleAtMs ?? -Infinity) < rule.cooldownMs) return;
+  const x = rule.atSource ? from.x : e.x;
+  const y = rule.atSource ? from.y : e.y;
+  const bubbles = (state.timeBubbles ??= []);
+  if (bubbles.length >= MAX_TIME_BUBBLES) return;
+  // Uma explosão acerta vários de uma vez: uma bolha só por centro.
+  if (bubbles.some((b) => b.ageMs < 100 && Math.hypot(b.x - x, b.y - y) < 6)) return;
+  p.heldBubbleAtMs = state.elapsedMs;
+  bubbles.push({ id: state.nextId++, x, y, radius: rule.radius, ageMs: 0, lifeMs: TIME_BUBBLE_LIFE_MS, damage: round1(damage * 0.6), repeats: copies });
+}
+
+function stepTimeBubbles(state: SurvivorState, dtMs: number): void {
+  const bubbles = state.timeBubbles;
+  if (!bubbles || bubbles.length === 0) return;
+  const popped: SurvivorTimeBubble[] = [];
+  for (const bubble of bubbles) {
+    bubble.ageMs += dtMs;
+    const remaining = Math.max(0, bubble.lifeMs - bubble.ageMs);
+    for (const e of state.enemies) {
+      if (e.hp <= 0 || Math.hypot(e.x - bubble.x, e.y - bubble.y) > bubble.radius + e.radius) continue;
+      // Chefões não param: só ficam bem mais lentos dentro da bolha.
+      if (e.boss || e.grade === 'chefao') e.slowMs = Math.max(e.slowMs ?? 0, 300);
+      else e.timeFrozenMs = Math.max(e.timeFrozenMs ?? 0, remaining);
+    }
+    if (bubble.ageMs >= bubble.lifeMs) popped.push(bubble);
+  }
+  if (popped.length === 0) return;
+  state.timeBubbles = bubbles.filter((b) => !popped.includes(b));
+  for (const bubble of popped) {
+    for (let i = 0; i < bubble.repeats; i++) heldAreaStrike(state, bubble.x, bubble.y, bubble.radius, bubble.damage);
+    state.fx.push({ kind: 'bubble-pop', x: bubble.x, y: bubble.y, r: bubble.radius, color: HELD_ITEM_BY_ID['orbe-adamante'].color, ageMs: 0, lifeMs: 420, count: bubble.repeats });
+  }
+}
+
+/** Laço do Destino: liga o alvo aos vizinhos e espalha parte do dano pelos ligados. Roda dentro do `heldGuard`. */
+function applyDestinyKnot(state: SurvivorState, e: SurvivorEnemy, damage: number, copies: number, duration: number): void {
+  const p = state.player;
+  const rule = destinyLinkRule(p.move.category, copies);
+  if (e.linkId === undefined || (e.linkMs ?? 0) <= 0) {
+    const partners = heldNeighbors(state, e, DESTINY_LINK_RANGE, 12).filter((o) => o.linkId === undefined || (o.linkMs ?? 0) <= 0).slice(0, rule.links);
+    if (partners.length === 0) return;
+    const linkId = state.nextId++;
+    const linkMs = Math.round(DESTINY_LINK_MS * duration);
+    for (const member of [e, ...partners]) { member.linkId = linkId; member.linkMs = linkMs; }
+  }
+  if (damage <= 0) return;
+  for (const other of state.enemies) {
+    if (other === e || other.hp <= 0 || other.linkId !== e.linkId || (other.linkMs ?? 0) <= 0) continue;
+    hitEnemy(state, other, damage * rule.share, { x: e.x, y: e.y }, p.move, false, 0);
+  }
+}
+
+const MAX_GRAVITY_WELLS = 8;
+const MAX_HELD_PROJECTILES = 300;
+const MAX_HELD_QUEUE = 24;
+
+/** Bola de Ferro: poço de gravidade que puxa os inimigos para o centro e implode no fim. */
+function createGravityWell(state: SurvivorState, x: number, y: number, radius: number, lifeMs: number, pull: number, damage: number): void {
+  const wells = (state.gravityWells ??= []);
+  if (wells.length >= MAX_GRAVITY_WELLS) return;
+  if (wells.some((w) => w.ageMs < 100 && Math.hypot(w.x - x, w.y - y) < 6)) return;
+  wells.push({ id: state.nextId++, x: clamp(x, 10, ARENA_W - 10), y: clamp(y, 10, ARENA_H - 10), radius, ageMs: 0, lifeMs, pull, damage: round1(damage) });
+}
+
+/** Puxa um inimigo em direção a um ponto (chefões resistem), sem passar do ponto. */
+function pullEnemy(e: SurvivorEnemy, x: number, y: number, amount: number): void {
+  if (amount <= 0) return;
+  const resistance = e.boss || e.grade === 'chefao' ? 0.2 : e.trainerId !== undefined ? 0.5 : 1;
+  const dx = x - e.x;
+  const dy = y - e.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 2) return;
+  const step = Math.min(d - 1, amount * resistance);
+  e.x = clamp(e.x + dx / d * step, e.radius, ARENA_W - e.radius);
+  e.y = clamp(e.y + dy / d * step, e.radius, ARENA_H - e.radius);
+}
+
+function stepGravityWells(state: SurvivorState, dt: number, dtMs: number): void {
+  const wells = state.gravityWells;
+  if (!wells || wells.length === 0) return;
+  const done: SurvivorGravityWell[] = [];
+  for (const well of wells) {
+    well.ageMs += dtMs;
+    for (const e of state.enemies) {
+      if (e.hp <= 0) continue;
+      const d = Math.hypot(e.x - well.x, e.y - well.y);
+      if (d > well.radius + e.radius) continue;
+      pullEnemy(e, well.x, well.y, well.pull * dt * (1.2 - 0.6 * d / Math.max(1, well.radius)));
+    }
+    if (well.ageMs >= well.lifeMs) done.push(well);
+  }
+  if (done.length === 0) return;
+  state.gravityWells = wells.filter((w) => !done.includes(w));
+  for (const well of done) {
+    heldAreaStrike(state, well.x, well.y, well.radius * 0.45, well.damage);
+    state.fx.push({ kind: 'implode', x: well.x, y: well.y, r: well.radius, color: HELD_ITEM_BY_ID['bola-ferro'].color, ageMs: 0, lifeMs: 380 });
+  }
+}
+
+/** Gravidade contínua: aura que suga, órbita que prende e trilha que arrasta para cima dela. */
+function stepGravityFields(state: SurvivorState, dt: number): void {
+  const p = state.player;
+  const copies = p.heldMods?.gravity ?? 0;
+  if (copies <= 0) return;
+  const strength = 1 + 0.3 * (copies - 1);
+  const category = p.move.category;
+  if (category === 'aura') {
+    const reach = p.attackRadius * 2.2 * (1 + 0.2 * (copies - 1));
+    for (const e of state.enemies) {
+      const d = Math.hypot(e.x - p.x, e.y - p.y);
+      if (e.hp > 0 && d <= reach && d > p.attackRadius * 0.35) pullEnemy(e, p.x, p.y, 70 * strength * dt);
+    }
+  } else if (category === 'orbit') {
+    const orbiters = survivorOrbiters(p);
+    const reach = 70 * (1 + 0.2 * (copies - 1));
+    for (const e of state.enemies) {
+      if (e.hp <= 0) continue;
+      let best: { x: number; y: number } | undefined;
+      let bestD = reach;
+      for (const o of orbiters) {
+        const d = Math.hypot(e.x - o.x, e.y - o.y);
+        if (d < bestD) { bestD = d; best = o; }
+      }
+      if (best) pullEnemy(e, best.x, best.y, 60 * strength * dt);
+    }
+  } else if (category === 'trilha') {
+    const path = p.trailPath ?? [];
+    if (path.length === 0) return;
+    const reach = 80 * (1 + 0.2 * (copies - 1));
+    for (const e of state.enemies) {
+      if (e.hp <= 0) continue;
+      let best: { x: number; y: number } | undefined;
+      let bestD = reach;
+      for (let i = 0; i < path.length; i += 3) {
+        const point = path[i]!;
+        const d = Math.hypot(e.x - point.x, e.y - point.y);
+        if (d < bestD) { bestD = d; best = point; }
+      }
+      if (best) pullEnemy(e, best.x, best.y, 90 * strength * dt);
+    }
+  }
+}
+
+/** Ataques e golpes enfileirados pela Erva Poderosa (bombas que caem, leque duplo, feixes em série, saltos em cadeia). */
+function queueHeldStrike(state: SurvivorState, strike: Omit<SurvivorHeldStrike, 'id'>): void {
+  const queue = (state.heldQueue ??= []);
+  if (queue.length >= MAX_HELD_QUEUE) return;
+  queue.push({ id: state.nextId++, ...strike });
+}
+
+function stepHeldQueue(state: SurvivorState): void {
+  const queue = state.heldQueue;
+  if (!queue || queue.length === 0) return;
+  const due = queue.filter((s) => s.atMs <= state.elapsedMs);
+  if (due.length === 0) return;
+  state.heldQueue = queue.filter((s) => s.atMs > state.elapsedMs);
+  const p = state.player;
+  for (const strike of due) {
+    if (strike.kind === 'blast') {
+      heldAreaStrike(state, strike.x, strike.y, strike.radius, strike.damage);
+      state.fx.push({ kind: 'blast', x: strike.x, y: strike.y, r: strike.radius, color: p.move.color, ageMs: 0, lifeMs: 420, moveType: p.move.type });
+    } else if (strike.kind === 'cone') {
+      const aim = survivorAimAngle(p);
+      heldConeStrike(state, p.x, p.y, aim, strike.radius, strike.damage);
+      state.fx.push({ kind: 'cone', x: p.x, y: p.y, r: strike.radius, color: p.move.color, ageMs: 0, lifeMs: 320, moveType: p.move.type, angle: aim, spread: SURVIVOR_CONE_HALF_ANGLE });
+    } else if (strike.kind === 'beam') {
+      const [target] = nearestEnemies(state, strike.radius, 1);
+      const angle = target ? Math.atan2(target.y - p.y, target.x - p.x) : survivorAimAngle(p);
+      const toX = p.x + Math.cos(angle) * strike.radius;
+      const toY = p.y + Math.sin(angle) * strike.radius;
+      heldLineStrike(state, p.x, p.y, toX, toY, strike.width, strike.damage);
+      state.fx.push({ kind: 'beam', x: p.x, y: p.y, r: strike.width, color: p.move.color, ageMs: 0, lifeMs: 420, moveType: p.move.type, angle, fromX: p.x, fromY: p.y, toX, toY, count: strike.tier });
+    } else if (strike.kind === 'jump') {
+      // Salto em cadeia: pousa no próximo inimigo perto e golpeia em volta, com proteção curta.
+      const next = state.enemies
+        .filter((e) => e.hp > 0)
+        .map((e) => ({ e, d: Math.hypot(e.x - p.x, e.y - p.y) }))
+        .filter((x) => x.d > 20 && x.d <= 260)
+        .sort((a, b) => a.d - b.d)[0]?.e;
+      if (!next) continue;
+      const fromX = p.x;
+      const fromY = p.y;
+      p.x = clamp(next.x, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
+      p.y = clamp(next.y, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
+      p.invulnMs = Math.max(p.invulnMs, 250);
+      heldAreaStrike(state, p.x, p.y, strike.radius, strike.damage);
+      state.fx.push({ kind: 'rush', x: p.x, y: p.y, r: strike.radius, color: p.move.color, ageMs: 0, lifeMs: 360, moveType: p.move.type, fromX, fromY, toX: p.x, toY: p.y });
+    }
+  }
+}
+
+/**
+ * Erva Poderosa na rajada e no projétil: os disparos ficam flutuando em volta do Pokémon e depois saem.
+ * Rajada: em sequência, como metralhadora. Projétil: todos juntos, num leque.
+ */
+function chargeHeldShots(state: SurvivorState, count: number, damage: number, mode: 'gun' | 'volley', holdMs: number): void {
+  const charges = (state.heldCharges ??= []);
+  if (charges.length > 0) return;
+  for (let i = 0; i < count; i++) {
+    charges.push({ id: state.nextId++, slot: i, total: count, releaseAtMs: state.elapsedMs + holdMs + (mode === 'gun' ? i * 70 : 0), damage: round1(damage), mode });
+  }
+}
+
+function stepHeldCharges(state: SurvivorState): void {
+  const charges = state.heldCharges;
+  if (!charges || charges.length === 0) return;
+  const due = charges.filter((c) => c.releaseAtMs <= state.elapsedMs);
+  if (due.length === 0) return;
+  state.heldCharges = charges.filter((c) => c.releaseAtMs > state.elapsedMs);
+  const p = state.player;
+  const [target] = nearestEnemies(state, p.attackRange * 1.2, 1);
+  const base = target ? Math.atan2(target.y - p.y, target.x - p.x) : survivorAimAngle(p);
+  for (const charge of due) {
+    const pos = heldChargePosition(p, charge, state.elapsedMs);
+    const spread = charge.mode === 'volley' && charge.total > 1 ? (charge.slot / (charge.total - 1) - 0.5) * 0.9 : (state.rng() - 0.5) * 0.12;
+    spawnHeldShot(state, pos.x, pos.y, base + spread, charge.damage, 1.15, true);
+  }
+  if (target && state.heldCharges.length === 0) heldShotCopies(state, target, due[0]?.damage ?? 0);
+}
+
+/** Área, cone, feixe e teleporte com gravidade ou carga: chamados depois do golpe normal. */
+function heldAreaExtras(state: SurvivorState, center: { x: number; y: number }, damage: number): void {
+  const mods = state.player.heldMods;
+  if (!mods) return;
+  const p = state.player;
+  if (mods.gravity > 0) {
+    // O buraco negro: três vezes a área, puxa todo mundo para o centro e implode.
+    createGravityWell(state, center.x, center.y, p.attackRadius * 3 * (1 + 0.25 * (mods.gravity - 1)), 900, 260 * (1 + 0.3 * (mods.gravity - 1)), damage);
+  }
+  if (mods.power > 0) {
+    const drops = 3 + (mods.power - 1);
+    for (let i = 0; i < drops; i++) {
+      const a = state.rng() * Math.PI * 2;
+      const r = state.rng() * p.attackRadius;
+      queueHeldStrike(state, { kind: 'blast', atMs: state.elapsedMs + 180 * (i + 1), x: center.x + Math.cos(a) * r, y: center.y + Math.sin(a) * r, radius: p.attackRadius * 0.8, damage: damage * 0.6, width: 0, tier: 1 });
+    }
+  }
+}
+
+function heldConeExtras(state: SurvivorState, range: number, damage: number): void {
+  const mods = state.player.heldMods;
+  if (!mods) return;
+  const p = state.player;
+  const aim = survivorAimAngle(p);
+  if (mods.gravity > 0) {
+    // Vácuo: quem está no leque (um pouco além do alcance) é arrastado para a frente do Pokémon.
+    const fx = p.x + Math.cos(aim) * 28;
+    const fy = p.y + Math.sin(aim) * 28;
+    const reach = range * 1.3;
+    for (const e of state.enemies) {
+      if (e.hp <= 0) continue;
+      const d = Math.hypot(e.x - p.x, e.y - p.y);
+      if (d > reach + e.radius) continue;
+      let diff = Math.atan2(e.y - p.y, e.x - p.x) - aim;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      if (Math.abs(diff) <= SURVIVOR_CONE_HALF_ANGLE * 1.15) pullEnemy(e, fx, fy, 45 * (1 + 0.3 * (mods.gravity - 1)));
+    }
+    state.fx.push({ kind: 'implode', x: fx, y: fy, r: range * 0.5, color: HELD_ITEM_BY_ID['bola-ferro'].color, ageMs: 0, lifeMs: 300 });
+  }
+  if (mods.power > 0) {
+    for (let i = 0; i < mods.power; i++) queueHeldStrike(state, { kind: 'cone', atMs: state.elapsedMs + 200 * (i + 1), x: p.x, y: p.y, radius: range * 1.5, damage: damage * 0.8, width: 0, tier: 1 });
+  }
+}
+
+function heldBeamExtras(state: SurvivorState, angle: number, length: number, halfWidth: number, damage: number, tier: number): void {
+  const mods = state.player.heldMods;
+  if (!mods) return;
+  const p = state.player;
+  if (mods.gravity > 0) {
+    const reach = Math.min(length, p.attackRange * 1.4);
+    createGravityWell(state, p.x + Math.cos(angle) * reach, p.y + Math.sin(angle) * reach, 140 * (1 + 0.25 * (mods.gravity - 1)), 700, 300, damage * 0.6);
+  }
+  if (mods.power > 0) {
+    for (let i = 0; i < 2 * mods.power; i++) queueHeldStrike(state, { kind: 'beam', atMs: state.elapsedMs + 260 * (i + 1), x: p.x, y: p.y, radius: Math.min(length, p.attackRange * 2.2), damage: damage * 0.6, width: halfWidth, tier });
+  }
+}
+
+function heldTeleportExtras(state: SurvivorState, radius: number, damage: number): void {
+  const mods = state.player.heldMods;
+  if (!mods) return;
+  const p = state.player;
+  if (mods.gravity > 0) createGravityWell(state, p.x, p.y, 200 * (1 + 0.25 * (mods.gravity - 1)), 600, 320, damage * 0.8);
+  if (mods.power > 0) {
+    for (let i = 0; i < 2 * mods.power; i++) queueHeldStrike(state, { kind: 'jump', atMs: state.elapsedMs + 240 * (i + 1), x: p.x, y: p.y, radius: radius * 0.8, damage: damage * 0.6, width: 0, tier: 1 });
+  }
+}
+
+/** Aura com Erva Poderosa: a cada 3 pulsos, um estouro maior. */
+function heldAuraExtras(state: SurvivorState, radius: number, damage: number): void {
+  const mods = state.player.heldMods;
+  if (!mods || mods.power <= 0) return;
+  const p = state.player;
+  p.heldPowerPulses = (p.heldPowerPulses ?? 0) + 1;
+  if (p.heldPowerPulses < 3) return;
+  p.heldPowerPulses = 0;
+  const burst = radius * (1.8 + 0.3 * (mods.power - 1));
+  heldAreaStrike(state, p.x, p.y, burst, damage * (2 + 0.5 * (mods.power - 1)));
+  state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: burst, color: p.move.color, ageMs: 0, lifeMs: 460, moveType: p.move.type });
+  state.fx.push({ kind: 'implode', x: p.x, y: p.y, r: burst, color: HELD_ITEM_BY_ID['erva-poderosa'].color, ageMs: 0, lifeMs: 320 });
+}
+
+/** Órbita com Erva Poderosa: os orbitais se soltam em disparo para fora de tempos em tempos (e voltam a girar). */
+function heldOrbitExtras(state: SurvivorState, dtMs: number, damage: number): void {
+  const mods = state.player.heldMods;
+  if (!mods || mods.power <= 0) return;
+  const p = state.player;
+  p.heldPowerOrbitMs = (p.heldPowerOrbitMs ?? 1600) - dtMs;
+  if (p.heldPowerOrbitMs > 0) return;
+  p.heldPowerOrbitMs = Math.round(1600 / mods.power);
+  if (!state.enemies.some((e) => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) <= p.attackRange + p.attackRadius)) return;
+  for (const orbiter of survivorOrbiters(p)) spawnHeldShot(state, orbiter.x, orbiter.y, orbiter.angle, damage * 1.5, 1, true);
+}
+
+/** Trilha com Erva Poderosa: quando a faixa acaba, ela explode inteira de uma vez. */
+function heldTrailRelease(state: SurvivorState, damage: number): void {
+  const mods = state.player.heldMods;
+  if (!mods || mods.power <= 0) return;
+  const p = state.player;
+  const path = p.trailPath ?? [];
+  if (path.length === 0) return;
+  const step = Math.max(1, Math.ceil(path.length / (10 + 4 * (mods.power - 1))));
+  for (let i = 0; i < path.length; i += step) {
+    const point = path[i]!;
+    queueHeldStrike(state, { kind: 'blast', atMs: state.elapsedMs + (i / step) * 40, x: point.x, y: point.y, radius: p.attackRadius * 1.4, damage: damage * (0.9 + 0.3 * (mods.power - 1)), width: 0, tier: 1 });
+  }
+}
+
+/** Gravidade no golpe que acerta um alvo só (projétil, rajada, disparo do foco): mini buraco no impacto. */
+function maybeImpactWell(state: SurvivorState, e: SurvivorEnemy, damage: number, copies: number): void {
+  const p = state.player;
+  const category = p.move.category;
+  if (category !== 'projetil' && category !== 'rapido' && category !== 'foco') return;
+  if (state.elapsedMs - (p.heldWellAtMs ?? -Infinity) < 250) return;
+  p.heldWellAtMs = state.elapsedMs;
+  createGravityWell(state, e.x, e.y, 80 * (1 + 0.25 * (copies - 1)), 450, 200, damage * 0.4);
 }
 
 /** Baús surgem com o tempo; chaves são coletadas como orbes; encostar num baú com chave abre a escolha de itens. */
@@ -1488,17 +2142,28 @@ function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate
     if (activate && p.trailCharge >= 1) { p.trailCharge = 0; p.trailActiveMs = TRAIL_DRAW_MS; }
   }
   p.trailPath = p.trailPath.filter((point) => state.elapsedMs - point.bornMs < TRAIL_LIFE_MS);
+  const damage = artifactDamage(state) * 0.9 / BASIC_ATTACK_DAMAGE_FACTOR;
+  let newPoint: { x: number; y: number } | null = null;
+  let previousPoint: { x: number; y: number } | undefined;
   if (p.trailActiveMs > 0) {
     p.trailActiveMs = Math.max(0, p.trailActiveMs - dtMs);
     const last = p.trailPath[p.trailPath.length - 1];
-    if (!last || Math.hypot(last.x - p.x, last.y - p.y) >= TRAIL_POINT_SPACING) p.trailPath.push({ x: p.x, y: p.y, bornMs: state.elapsedMs });
+    if (!last || Math.hypot(last.x - p.x, last.y - p.y) >= TRAIL_POINT_SPACING) {
+      previousPoint = last;
+      newPoint = { x: p.x, y: p.y };
+      p.trailPath.push({ x: p.x, y: p.y, bornMs: state.elapsedMs });
+    }
+    // Erva Poderosa: a faixa explode inteira quando termina de ser desenhada.
+    if (p.trailActiveMs === 0) heldTrailRelease(state, damage);
   }
-  const damage = artifactDamage(state) * 0.9 / BASIC_ATTACK_DAMAGE_FACTOR;
+  heldTrailCopies(state, dtMs, newPoint, previousPoint, damage);
+  const mirrorPath = p.trailMirrorPath ?? [];
   const tickMs = Math.max(160, TRAIL_TICK_MS * (p.trailCadenceFactor ?? 1) * (p.artifactFocusMs > 0 ? 0.8 : 1));
   let hits = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0) continue;
-    const touching = p.trailPath.some((point) => Math.hypot(e.x - point.x, e.y - point.y) <= p.attackRadius + e.radius);
+    const touching = p.trailPath.some((point) => Math.hypot(e.x - point.x, e.y - point.y) <= p.attackRadius + e.radius)
+      || mirrorPath.some((point) => Math.hypot(e.x - point.x, e.y - point.y) <= p.attackRadius + e.radius);
     if (!touching || state.elapsedMs < (e.trailNextHitMs ?? 0)) continue;
     e.trailNextHitMs = state.elapsedMs + tickMs;
     hitEnemy(state, e, damage, { x: e.x, y: e.y }, p.move, true, 0);
@@ -1535,6 +2200,11 @@ function nearestEnemies(state: SurvivorState, range: number, count: number): Sur
 
 function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
   const p = state.player;
+  // Erva Poderosa: os disparos ficam flutuando em volta e saem todos juntos.
+  if ((p.heldMods?.power ?? 0) > 0) {
+    chargeHeldShots(state, p.shots + 2 + 2 * ((p.heldMods?.power ?? 1) - 1), artifactDamage(state), 'volley', 380);
+    return;
+  }
   const move = p.move;
   const baseAngle = Math.atan2(target.y - p.y, target.x - p.x);
   const spread = 0.26;
@@ -1561,6 +2231,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       ...heldHoming(p),
     });
   }
+  heldShotCopies(state, target, artifactDamage(state));
 }
 
 /** Um dos três tiros da Rajada. A onda inteira preserva o DPS anterior, em vez de triplicá-lo. */
@@ -1581,6 +2252,7 @@ function fireRapidShot(state: SurvivorState, target: SurvivorEnemy): void {
       ...heldHoming(p),
     });
   }
+  heldShotCopies(state, target, artifactDamage(state) * 0.62);
 }
 
 /** Foco: um disparo largo e lento em linha reta, que atravessa alguns inimigos. */
@@ -1605,6 +2277,7 @@ function fireFocusShot(state: SurvivorState, target: SurvivorEnemy): void {
     look: survivorProjectileLook(p),
     ...heldHoming(p),
   });
+  heldShotCopies(state, target, artifactDamage(state), FOCUS_SHOT_SPEED_MULTIPLIER);
 }
 
 /** Foco: o feixe solto pela carga. Atravessa todo inimigo na linha; cheio, cruza a arena. */
@@ -1628,6 +2301,8 @@ function fireFocusBeam(state: SurvivorState, level: number): string {
   }
   drain(state, hits, p.move);
   state.fx.push({ kind: 'beam', x: p.x, y: p.y, r: beam.halfWidth, color: p.move.color, ageMs: 0, lifeMs: beam.tier === 3 ? 700 : 420, moveType: p.move.type, angle, fromX: p.x, fromY: p.y, toX, toY, count: beam.tier });
+  heldBeamCopies(state, angle, beam.length, beam.halfWidth, damage, beam.tier);
+  heldBeamExtras(state, angle, beam.length, beam.halfWidth, damage, beam.tier);
   return beam.name;
 }
 
@@ -1666,6 +2341,8 @@ function releaseTeleport(state: SurvivorState, action: Extract<NonNullable<Retur
     }
   }
   state.fx.push({ kind: 'rush', x: p.x, y: p.y, r: action.wave ? reach.waveRadius : reach.hitRadius, color: p.move.color, ageMs: 0, lifeMs: action.wave ? 520 : 380, moveType: p.move.type, fromX, fromY, toX: p.x, toY: p.y, ...(action.wave ? { count: 2 } : {}) });
+  heldTeleportCopies(state, fromX, fromY, reach.hitRadius, damage);
+  heldTeleportExtras(state, reach.hitRadius, damage);
   return true;
 }
 
@@ -1810,6 +2487,11 @@ function attack(state: SurvivorState): boolean {
   if (move.category === 'rapido') {
     const [target] = nearestEnemies(state, attackRange, 1);
     if (!target) return false;
+    // Erva Poderosa: junta 6 tiros flutuando em volta e solta como metralhadora, no lugar da salva de 3.
+    if ((p.heldMods?.power ?? 0) > 0) {
+      chargeHeldShots(state, 6 + 3 * ((p.heldMods?.power ?? 1) - 1), artifactDamage(state) * 0.62, 'gun', 450);
+      return true;
+    }
     fireRapidShot(state, target);
     state.charge.rapidShotsPending = RAPID_BURST_SHOTS - 1;
     state.charge.rapidShotDelayMs = RAPID_BURST_SHOT_INTERVAL_MS;
@@ -1830,6 +2512,8 @@ function attack(state: SurvivorState): boolean {
     }
     drain(state, hits, move);
     state.fx.push({ kind: 'pulse', x: p.x, y: p.y, r: pulseRadius, color: move.color, ageMs: 0, lifeMs: 360, moveType: move.type });
+    heldAuraCopies(state, pulseRadius, damage);
+    heldAuraExtras(state, pulseRadius, damage);
     return true;
   }
   if (move.category === 'orbit') {
@@ -1861,6 +2545,8 @@ function attack(state: SurvivorState): boolean {
       if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
     }
     state.fx.push({ kind: 'cone', x: p.x, y: p.y, r: attackRange, color: move.color, ageMs: 0, lifeMs: 300, moveType: move.type, angle: survivorAimAngle(p), spread: SURVIVOR_CONE_HALF_ANGLE });
+    heldConeCopies(state, attackRange, artifactDamage(state));
+    heldConeExtras(state, attackRange, artifactDamage(state));
     return true;
   }
   const targets = nearestEnemies(state, attackRange, p.shots);
@@ -1877,6 +2563,8 @@ function attack(state: SurvivorState): boolean {
       }
     }
     state.fx.push({ kind: 'blast', x: center.x, y: center.y, r: p.attackRadius, color: move.color, ageMs: 0, lifeMs: 420, moveType: move.type });
+    heldAreaCopies(state, center, artifactDamage(state));
+    heldAreaExtras(state, center, artifactDamage(state));
   }
   drain(state, hits, move);
   return true;
@@ -1906,6 +2594,8 @@ function stepOrbiters(state: SurvivorState, dtMs: number): void {
     hits++;
   }
   drain(state, Math.min(2, hits), p.move);
+  heldOrbitCopies(state, dtMs, damage, hitRadius, intervalMs);
+  heldOrbitExtras(state, dtMs, damage);
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -2426,7 +3116,14 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (e.wetMs && e.wetMs > 0) e.wetMs = Math.max(0, e.wetMs - dtMs);
     if (e.seededMs && e.seededMs > 0) e.seededMs = Math.max(0, e.seededMs - dtMs);
     if (e.hastenedMs && e.hastenedMs > 0) e.hastenedMs = Math.max(0, e.hastenedMs - dtMs);
-    const timeStopped = state.special.selected === 'stasis' && state.special.activeMs > 0;
+    if ((e.timeFrozenMs ?? 0) > 0) e.timeFrozenMs = Math.max(0, (e.timeFrozenMs ?? 0) - dtMs);
+    if ((e.mirrorOrbitHitMs ?? 0) > 0) e.mirrorOrbitHitMs = Math.max(0, (e.mirrorOrbitHitMs ?? 0) - dtMs);
+    if (e.linkId !== undefined) {
+      e.linkMs = Math.max(0, (e.linkMs ?? 0) - dtMs);
+      if (e.linkMs === 0) { delete e.linkId; delete e.linkMs; }
+    }
+    // Orbe Adamante: o inimigo dentro de uma bolha fica parado no tempo, como na estase.
+    const timeStopped = (state.special.selected === 'stasis' && state.special.activeMs > 0) || (e.timeFrozenMs ?? 0) > 0;
     const stunned = timeStopped || !!e.stunMs && e.stunMs > 0;
     if (stunned) e.stunMs = Math.max(0, (e.stunMs ?? 0) - dtMs);
     if ((e.stunCooldownMs ?? 0) > 0) e.stunCooldownMs = Math.max(0, (e.stunCooldownMs ?? 0) - dtMs);
@@ -2538,6 +3235,11 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
 
   // Projéteis: avançam, somem com o tempo/fora da arena, acertam o inimigo mais próximo no caminho.
   stepHeldMines(state, dtMs);
+  stepTimeBubbles(state, dtMs);
+  stepGravityWells(state, dt, dtMs);
+  stepGravityFields(state, dt);
+  stepHeldQueue(state);
+  stepHeldCharges(state);
   const chained: SurvivorProjectile[] = [];
   state.projectiles = state.projectiles.filter((proj) => {
     if (proj.homing) steerHomingProjectile(state, proj, dt);

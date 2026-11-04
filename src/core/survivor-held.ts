@@ -5,8 +5,10 @@
  * escrita à mão para cada par.
  */
 import type { MoveCategory } from './survivor-moves';
+import { survivorOrbiters } from './survivor-shapes';
+import type { SurvivorOrbiter } from './survivor-shapes';
 import type { PokemonType } from './pokemon-data';
-import type { SurvivorPlayer, SurvivorUpgradeRarity } from './survivor-types';
+import type { SurvivorHeldCharge, SurvivorPlayer, SurvivorUpgradeRarity } from './survivor-types';
 
 export type HeldItemId =
   | 'orbe-vida' | 'sino-concha' | 'cinto-expert' | 'faixa-muscular'
@@ -14,7 +16,9 @@ export type HeldItemId =
   | 'farpa-grudenta' | 'garra-rapida' | 'metronomo' | 'raiz-grande'
   | 'bola-luz' | 'pedra-dura' | 'po-prateado' | 'po-rapido'
   | 'pedra-rei' | 'orbe-chama' | 'orbe-toxico' | 'placa-chama'
-  | 'placa-zap' | 'placa-gelo' | 'restos' | 'argila-luminosa';
+  | 'placa-zap' | 'placa-gelo' | 'restos' | 'argila-luminosa'
+  | 'orbe-adamante' | 'orbe-lustroso' | 'orbe-grisea' | 'laco-destino'
+  | 'bola-ferro' | 'erva-poderosa';
 
 export interface HeldItemDef {
   id: HeldItemId;
@@ -39,6 +43,13 @@ export interface HeldItemDef {
   appliesTo?: readonly MoveCategory[];
   /** Mudanças diretas nos números do jogador, aplicadas a cada cópia pega. */
   applyStats?: (p: SurvivorPlayer) => void;
+  /**
+   * Transformador: em vez de somar números, troca a mecânica do golpe (tempo, espaço, distorção, laço). Cada forma de
+   * ataque tem uma versão própria, descrita em `perCategory`. Raro no baú e com teto de 2 cópias.
+   */
+  transformer?: boolean;
+  /** Peso do transformador na vaga especial do baú (Bola de Ferro e Erva Poderosa saem mais que os outros). */
+  transformerWeight?: number;
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -80,6 +91,96 @@ export const HELD_ITEMS: readonly HeldItemDef[] = [
   { id: 'placa-gelo', slug: 'icicle-plate', generation: 4, name: 'Placa Pingente', icon: '🟦', color: '#8fe8ff', rarity: 'raro', description: 'Placa de Arceus: golpes de Gelo +20% por cópia, e todo acerto soma +25% de dano de Gelo, com o efeito do Gelo.' },
   { id: 'restos', slug: 'leftovers', generation: 2, name: 'Restos', icon: '🍎', color: '#ff8f8f', rarity: 'normal', description: 'Como nos jogos, recupera vida aos poucos: 0,6 por segundo por cópia.', applyStats: (p) => { p.regenPerSec = round2((p.regenPerSec ?? 0) + 0.6); } },
   { id: 'argila-luminosa', slug: 'light-clay', generation: 4, name: 'Argila Luminosa', icon: '🧱', color: '#ffe9a8', rarity: 'normal', description: 'Nos jogos, faz as barreiras durarem mais; aqui, queimadura, veneno, atordoamento e raízes dos itens duram 40% mais por cópia.' },
+  {
+    id: 'orbe-adamante', slug: 'adamant-orb', generation: 4, name: 'Orbe Adamante', icon: '⏳', color: '#7fd4ff', rarity: 'lendario', transformer: true,
+    description: 'O orbe de Dialga, senhor do tempo: os golpes deixam bolhas que congelam os inimigos e, ao estourar, repetem o acerto em todos que estão dentro. A segunda cópia aumenta a bolha e repete mais uma vez.',
+    perCategory: {
+      projetil: 'Cada impacto prende o alvo numa bolha pequena.',
+      rapido: 'Os tiros da rajada deixam bolhas no caminho dos alvos.',
+      area: 'A explosão vira uma bolha do tamanho da área, que congela o grupo inteiro.',
+      aura: 'A cada 1,2 s, a aura congela tudo em volta e repete o pulso.',
+      cone: 'O fim do leque congela quem foi atingido.',
+      orbit: 'Os orbitais deixam bolhas por onde batem.',
+      foco: 'O disparo e o feixe congelam cada inimigo da linha.',
+      teleporte: 'A chegada congela a área do impacto e repete o golpe.',
+      trilha: 'Trechos da faixa viram poças de tempo parado.',
+    },
+  },
+  {
+    id: 'orbe-lustroso', slug: 'lustrous-orb', generation: 4, name: 'Orbe Lustroso', icon: '🌀', color: '#ff9ad5', rarity: 'lendario', transformer: true,
+    description: 'O orbe de Palkia, senhor do espaço: os golpes abrem portais e uma cópia sai por trás dos inimigos. A segunda cópia deixa o golpe do portal mais forte.',
+    perCategory: {
+      projetil: 'Cada disparo ganha um gêmeo que sai de um portal atrás do alvo, vindo na direção contrária.',
+      rapido: 'Cada tiro da rajada também sai de um portal atrás do alvo.',
+      area: 'Cada explosão se repete num portal atrás do grupo.',
+      aura: 'Uma segunda aura pulsa num portal sobre o grupo de inimigos mais denso por perto.',
+      cone: 'Um leque invertido sai de um portal à frente e prende o grupo entre os dois.',
+      orbit: 'De tempos em tempos, um orbital atravessa um portal e acerta um inimigo longe.',
+      foco: 'O disparo ganha gêmeo do portal; o feixe carregado forma uma cruz com um segundo feixe.',
+      teleporte: 'Além do pouso, um segundo impacto explode num portal atrás do alvo.',
+      trilha: 'Enquanto desenha, a faixa abre portais que deixam um terreno pulsante sob inimigos distantes.',
+    },
+  },
+  {
+    id: 'orbe-grisea', slug: 'griseous-orb', generation: 4, name: 'Orbe Grísea', icon: '🪞', color: '#b48cff', rarity: 'lendario', transformer: true,
+    description: 'O orbe de Giratina, senhor da distorção: cada golpe ganha uma cópia espelhada do outro lado. A segunda cópia deixa o espelho mais forte e maior.',
+    perCategory: {
+      projetil: 'Cada disparo sai também para trás, espelhado.',
+      rapido: 'A rajada dispara para os dois lados.',
+      area: 'Cada explosão se repete no ponto espelhado, do outro lado do Pokémon.',
+      aura: 'Um anel distorcido bate do lado de fora da aura, onde ela não alcança.',
+      cone: 'O leque sai para a frente e para trás.',
+      orbit: 'Um segundo anel de orbitais gira ao contrário, mais aberto.',
+      foco: 'O disparo e o feixe carregado saem também para trás.',
+      teleporte: 'O impacto se repete espelhado, do outro lado do ponto de partida.',
+      trilha: 'Uma faixa sombra corre ao lado da sua.',
+    },
+  },
+  {
+    id: 'laco-destino', slug: 'destiny-knot', generation: 4, name: 'Laço do Destino', icon: '🎀', color: '#ff6f9e', rarity: 'lendario', transformer: true,
+    description: 'Como nos jogos, o laço liga um destino ao outro: o acerto prende o alvo aos vizinhos com correntes por 3 s, e o dano em um se espalha para os ligados. A segunda cópia liga mais inimigos e espalha mais dano.',
+    perCategory: {
+      projetil: 'Um disparo liga o alvo a 4 vizinhos; 40% do dano se espalha.',
+      rapido: 'Cada tiro reforça a corrente; 40% do dano se espalha.',
+      area: 'A explosão liga 2 vizinhos de cada atingido; 25% se espalha, para não multiplicar demais.',
+      aura: 'A aura amarra quem está dentro aos de fora; 25% se espalha.',
+      cone: 'O leque liga cada atingido a 4 vizinhos; 40% se espalha.',
+      orbit: 'Cada toque de orbital liga 2 vizinhos; 25% se espalha.',
+      foco: 'O feixe amarra a linha inteira; 40% se espalha.',
+      teleporte: 'O pouso liga o grupo do impacto a 4 vizinhos; 40% se espalha.',
+      trilha: 'Cada pulso da faixa liga 2 vizinhos; 25% se espalha.',
+    },
+  },
+  {
+    id: 'bola-ferro', slug: 'iron-ball', generation: 4, name: 'Bola de Ferro', icon: '⚫', color: '#6c6f86', rarity: 'raro', transformer: true, transformerWeight: 2,
+    description: 'Nos jogos, prende quem segura ao chão; aqui, a gravidade vira arma: os golpes abrem buracos negros que puxam os inimigos para o centro e implodem. A segunda cópia aumenta o puxão e o tamanho.',
+    perCategory: {
+      projetil: 'Cada impacto abre um mini buraco negro que puxa os vizinhos.',
+      rapido: 'Os tiros abrem mini buracos que juntam o grupo.',
+      area: 'A explosão vira um buraco negro com o triplo da área: puxa todo mundo para o centro e implode.',
+      aura: 'A aura suga: inimigos até o dobro do raio são puxados para dentro dela.',
+      cone: 'O leque vira um vácuo que arrasta os inimigos para a sua frente.',
+      orbit: 'Os orbitais viram poços de gravidade que prendem quem passa perto.',
+      foco: 'Os disparos abrem mini buracos e o feixe deixa um buraco negro no fim da linha.',
+      teleporte: 'A chegada implode e puxa todo mundo em volta para o ponto do pouso.',
+      trilha: 'A faixa puxa os inimigos próximos para cima dela.',
+    },
+  },
+  {
+    id: 'erva-poderosa', slug: 'power-herb', generation: 4, name: 'Erva Poderosa', icon: '🌿', color: '#7be07b', rarity: 'raro', transformer: true, transformerWeight: 2,
+    description: 'Nos jogos, carrega na hora os golpes de dois turnos; aqui, os golpes acumulam energia e soltam tudo de uma vez ou em sequência. A segunda cópia acumula ainda mais.',
+    perCategory: {
+      projetil: 'Os disparos flutuam em volta do Pokémon e saem todos juntos num leque.',
+      rapido: 'Junta 6 tiros flutuando em volta e solta em sequência, como metralhadora.',
+      area: 'Depois da explosão, 3 bombas pairam e chovem sobre o grupo.',
+      aura: 'A cada 3 pulsos, a aura solta um estouro quase duas vezes maior.',
+      cone: 'Depois do leque, sai um segundo leque mais longo.',
+      orbit: 'De tempos em tempos, os orbitais se soltam em disparo para fora.',
+      foco: 'O feixe carregado sai mais 2 vezes em seguida.',
+      teleporte: 'Depois do pouso, salta em cadeia para mais 2 inimigos próximos.',
+      trilha: 'Quando a faixa acaba, ela explode inteira de uma vez.',
+    },
+  },
 ];
 
 export const HELD_ITEM_BY_ID: Readonly<Record<HeldItemId, HeldItemDef>> = Object.fromEntries(HELD_ITEMS.map((item) => [item.id, item])) as Record<HeldItemId, HeldItemDef>;
@@ -121,6 +222,15 @@ export interface HeldMods {
   typeBoost: Partial<Record<PokemonType, number>>;
   /** Bola de Luz: com golpe Elétrico, a chance do raio dobra. */
   electricChainBonus: boolean;
+  /** Transformadores: cópias de cada um (0 = não tem). */
+  time: number;
+  portal: number;
+  mirror: number;
+  destiny: number;
+  gravity: number;
+  power: number;
+  /** Itens pegos, na ordem do catálogo (para a faísca de cor em cada acerto, sem recalcular a cada golpe). */
+  ids: HeldItemId[];
 }
 
 const chance = (perCopy: number, copies: number, cap: number): number => Math.min(cap, 1 - Math.pow(1 - perCopy, copies));
@@ -155,6 +265,13 @@ export function heldMods(stacks: HeldStacks): HeldMods {
       .filter(([, id]) => n(id) > 0)
       .map(([type, id]) => [type, round2(1 + 0.2 * n(id))])),
     electricChainBonus: n('bola-luz') > 0,
+    time: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('orbe-adamante')),
+    portal: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('orbe-lustroso')),
+    mirror: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('orbe-grisea')),
+    destiny: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('laco-destino')),
+    gravity: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('bola-ferro')),
+    power: Math.min(HELD_TRANSFORMER_MAX_COPIES, n('erva-poderosa')),
+    ids: HELD_ITEMS.filter((item) => n(item.id) > 0).map((item) => item.id),
   };
 }
 
@@ -174,6 +291,13 @@ export interface HeldProjectileLook {
   wings: boolean;
   /** Pedra Dura: casca de pedra (cópias deixam mais grossa). */
   heavy: number;
+  /** Transformadores: ponteiro de relógio (tempo), redemoinho (portal), fantasma espelhado (distorção), fita (laço). */
+  time?: boolean;
+  portal?: boolean;
+  mirror?: boolean;
+  knot?: boolean;
+  /** Bola de Ferro: núcleo escuro com anel de acreção. */
+  gravity?: boolean;
 }
 
 export function heldProjectileLook(stacks: HeldStacks): HeldProjectileLook | null {
@@ -190,8 +314,13 @@ export function heldProjectileLook(stacks: HeldStacks): HeldProjectileLook | nul
     star: has('po-prateado') > 0,
     wings: has('po-rapido') > 0,
     heavy: has('pedra-dura'),
+    ...(has('orbe-adamante') > 0 ? { time: true } : {}),
+    ...(has('orbe-lustroso') > 0 ? { portal: true } : {}),
+    ...(has('orbe-grisea') > 0 ? { mirror: true } : {}),
+    ...(has('laco-destino') > 0 ? { knot: true } : {}),
+    ...(has('bola-ferro') > 0 ? { gravity: true } : {}),
   };
-  const any = colors.length > 0 || look.spikes || look.crown || look.sparks || look.star || look.wings || look.heavy > 0;
+  const any = colors.length > 0 || look.spikes || look.crown || look.sparks || look.star || look.wings || look.heavy > 0 || !!look.time || !!look.portal || !!look.mirror || !!look.knot || !!look.gravity;
   return any ? look : null;
 }
 
@@ -204,8 +333,15 @@ export function heldGems(stacks: HeldStacks): HeldItemDef[] {
 
 /** Peso no sorteio do baú: itens lendários são mais raros. */
 const RARITY_WEIGHT: Record<SurvivorUpgradeRarity, number> = { normal: 10, raro: 6, lendario: 2, ancestral: 1 };
-/** Teto de cópias de um mesmo item, para nenhum efeito virar absurdo. */
+/** Teto de cópias de um mesmo item, para nenhum efeito virar absurdo. Transformadores: 2. */
 export const HELD_MAX_COPIES = 4;
+export const HELD_TRANSFORMER_MAX_COPIES = 2;
+/** Chance de a segunda carta do baú ser um transformador (quando ainda houver algum para pegar). */
+export const HELD_TRANSFORMER_SLOT_CHANCE = 0.3;
+
+export function heldMaxCopies(id: HeldItemId): number {
+  return HELD_ITEM_BY_ID[id].transformer ? HELD_TRANSFORMER_MAX_COPIES : HELD_MAX_COPIES;
+}
 
 /** O item muda algo no golpe desta forma de ataque? */
 export function heldItemAppliesTo(id: HeldItemId, category: MoveCategory): boolean {
@@ -218,9 +354,14 @@ export function heldItemAppliesTo(id: HeldItemId, category: MoveCategory): boole
  * mudam o golpe da forma de ataque de quem joga.
  */
 export function rollHeldOffer(rng: () => number, stacks: HeldStacks, count = 2, category?: MoveCategory): HeldItemId[] {
-  const pool = HELD_ITEMS.filter((item) => (stacks[item.id] ?? 0) < HELD_MAX_COPIES && (!category || heldItemAppliesTo(item.id, category)));
+  const pool = HELD_ITEMS.filter((item) => (stacks[item.id] ?? 0) < heldMaxCopies(item.id) && (!category || heldItemAppliesTo(item.id, category)));
   const picked: HeldItemId[] = [];
-  while (picked.length < count && pool.length > 0) {
+  // A última carta pode ser um transformador; as outras vêm do sorteio comum (que exclui transformadores).
+  const transformers = pool.filter((item) => item.transformer);
+  const transformerSlot = count >= 2 && transformers.length > 0 && rng() < HELD_TRANSFORMER_SLOT_CHANCE;
+  for (let i = pool.length - 1; i >= 0; i--) if (pool[i]!.transformer) pool.splice(i, 1);
+  const regularCount = transformerSlot ? count - 1 : count;
+  while (picked.length < regularCount && pool.length > 0) {
     const total = pool.reduce((sum, item) => sum + RARITY_WEIGHT[item.rarity], 0);
     let roll = rng() * total;
     let index = pool.length - 1;
@@ -230,6 +371,16 @@ export function rollHeldOffer(rng: () => number, stacks: HeldStacks, count = 2, 
     }
     picked.push(pool[index]!.id);
     pool.splice(index, 1);
+  }
+  if (transformerSlot) {
+    const total = transformers.reduce((sum, item) => sum + (item.transformerWeight ?? 1), 0);
+    let roll = rng() * total;
+    let chosen = transformers[transformers.length - 1]!;
+    for (const item of transformers) {
+      roll -= item.transformerWeight ?? 1;
+      if (roll < 0) { chosen = item; break; }
+    }
+    picked.push(chosen.id);
   }
   return picked;
 }
@@ -250,4 +401,40 @@ export const HELD_SPRITE_MIRROR_URL = 'https://cdn.jsdelivr.net/gh/PokeAPI/sprit
 
 export function heldItemSpriteUrl(id: HeldItemId, mirror = false): string {
   return `${mirror ? HELD_SPRITE_MIRROR_URL : HELD_SPRITE_BASE_URL}/${HELD_ITEM_BY_ID[id].slug}.png`;
+}
+
+/** Laço do Destino: quantos vizinhos cada acerto liga e quanto do dano se espalha, por forma de ataque. */
+export function destinyLinkRule(category: MoveCategory, copies: number): { links: number; share: number } {
+  const multi = category === 'aura' || category === 'area' || category === 'orbit' || category === 'trilha';
+  const extra = Math.max(0, copies - 1);
+  return { links: (multi ? 2 : 4) + extra, share: Math.min(0.8, (multi ? 0.25 : 0.4) + 0.2 * extra) };
+}
+
+/** Orbe Adamante: raio da bolha e intervalo mínimo entre bolhas, por forma de ataque. */
+export function timeBubbleRule(category: MoveCategory, attackRadius: number, copies: number): { radius: number; cooldownMs: number; atSource: boolean } {
+  const grow = 1 + 0.25 * Math.max(0, copies - 1);
+  const rules: Record<MoveCategory, { radius: number; cooldownMs: number; atSource: boolean }> = {
+    projetil: { radius: 46, cooldownMs: 450, atSource: false },
+    rapido: { radius: 40, cooldownMs: 380, atSource: false },
+    area: { radius: Math.max(50, attackRadius * 1.2), cooldownMs: 0, atSource: true },
+    aura: { radius: Math.max(50, attackRadius * 0.8), cooldownMs: 1200, atSource: true },
+    cone: { radius: 58, cooldownMs: 600, atSource: false },
+    orbit: { radius: 36, cooldownMs: 650, atSource: false },
+    foco: { radius: 44, cooldownMs: 160, atSource: false },
+    teleporte: { radius: Math.max(60, attackRadius * 1.1), cooldownMs: 0, atSource: true },
+    trilha: { radius: 44, cooldownMs: 800, atSource: false },
+  };
+  const rule = rules[category];
+  return { ...rule, radius: Math.round(rule.radius * grow) };
+}
+
+/** Orbe Grísea na órbita: um segundo anel, mais aberto, girando ao contrário. */
+export function mirrorOrbiters(p: Pick<SurvivorPlayer, 'x' | 'y' | 'shots' | 'attackRadius' | 'orbitAngle'>, copies: number): SurvivorOrbiter[] {
+  return survivorOrbiters({ ...p, attackRadius: p.attackRadius * (1.45 + 0.15 * Math.max(0, copies - 1)), orbitAngle: -(p.orbitAngle ?? 0) });
+}
+
+/** Erva Poderosa: onde cada disparo carregado flutua em volta do Pokémon (o anel gira devagar enquanto espera). */
+export function heldChargePosition(p: { x: number; y: number }, charge: Pick<SurvivorHeldCharge, 'slot' | 'total'>, nowMs: number): { x: number; y: number } {
+  const angle = (Math.PI * 2 * charge.slot) / Math.max(1, charge.total) + nowMs / 300;
+  return { x: p.x + Math.cos(angle) * 34, y: p.y - 10 + Math.sin(angle) * 22 };
 }

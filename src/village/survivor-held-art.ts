@@ -98,6 +98,48 @@ export function drawHeldProjectileOverlay(c: CanvasRenderingContext2D, head: Scr
     c.stroke();
     c.restore();
   }
+  // Transformadores: marcas originais e abstratas de cada tema.
+  if (held.gravity) {
+    c.fillStyle = '#05030a';
+    c.globalAlpha = 0.9;
+    c.beginPath(); c.arc(0, 0, r * 0.45, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#c9a6ff';
+    c.lineWidth = 1.4;
+    c.beginPath(); c.ellipse(0, 0, r * 1.5, r * 0.55, timeMs / 300 + seed, 0, Math.PI * 2); c.stroke();
+  }
+  if (held.time) {
+    c.strokeStyle = '#7fd4ff';
+    c.lineWidth = 1.2;
+    c.globalAlpha = 0.9;
+    c.beginPath(); c.arc(0, 0, r * 1.7, 0, Math.PI * 2); c.stroke();
+    const hand = timeMs / 200 + seed;
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.cos(hand) * r * 1.5, Math.sin(hand) * r * 1.5); c.stroke();
+  }
+  if (held.portal) {
+    c.strokeStyle = '#ff9ad5';
+    c.lineWidth = 1.4;
+    c.globalAlpha = 0.85;
+    for (let i = 0; i < 2; i++) {
+      const a = timeMs / 110 + seed + i * Math.PI;
+      c.beginPath(); c.arc(0, 0, r * (1.25 + i * 0.35), a, a + 1.6); c.stroke();
+    }
+  }
+  if (held.mirror) {
+    c.save();
+    c.rotate(angle);
+    c.globalAlpha = 0.35;
+    c.fillStyle = '#b48cff';
+    c.beginPath(); c.arc(-r * 2.4, 0, r * 0.9, 0, Math.PI * 2); c.fill();
+    c.restore();
+  }
+  if (held.knot) {
+    c.fillStyle = '#ff6f9e';
+    c.globalAlpha = 0.95;
+    c.beginPath();
+    c.ellipse(-r * 0.7, -r * 1.3, r * 0.6, r * 0.35, -0.5, 0, Math.PI * 2);
+    c.ellipse(r * 0.7, -r * 1.3, r * 0.6, r * 0.35, 0.5, 0, Math.PI * 2);
+    c.fill();
+  }
   if (held.sparks && detailed) {
     c.strokeStyle = '#fff27a';
     c.lineWidth = 1.2;
@@ -281,6 +323,265 @@ export function drawHeldHitFx(c: CanvasRenderingContext2D, x: number, y: number,
     c.moveTo(sx, sy - k); c.lineTo(sx + k * 0.7, sy); c.lineTo(sx, sy + k); c.lineTo(sx - k * 0.7, sy);
     c.closePath();
     c.fill();
+  }
+  c.restore();
+}
+
+// ----------------------------------------------------------------------------- transformadores
+
+/** Bolha de tempo (Orbe Adamante): esfera azul translúcida com marcas de relógio e um ponteiro que fecha a volta. */
+export function drawTimeBubble(c: CanvasRenderingContext2D, x: number, y: number, radius: number, t: number, timeMs: number, detailed: boolean): void {
+  c.save();
+  const gradient = c.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
+  gradient.addColorStop(0, 'rgba(220,245,255,0.35)');
+  gradient.addColorStop(1, 'rgba(90,180,255,0.18)');
+  c.fillStyle = gradient;
+  c.beginPath(); c.arc(x, y, radius, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = '#7fd4ff';
+  c.globalAlpha = 0.85;
+  c.lineWidth = 2;
+  if (detailed) { c.shadowColor = '#7fd4ff'; c.shadowBlur = 10; }
+  c.beginPath(); c.arc(x, y, radius, 0, Math.PI * 2); c.stroke();
+  c.shadowBlur = 0;
+  // Marcas de hora.
+  c.lineWidth = 1.5;
+  for (let i = 0; i < 12; i++) {
+    const a = (Math.PI * 2 * i) / 12;
+    const inner = radius * (i % 3 === 0 ? 0.8 : 0.88);
+    c.beginPath();
+    c.moveTo(x + Math.cos(a) * inner, y + Math.sin(a) * inner);
+    c.lineTo(x + Math.cos(a) * radius * 0.96, y + Math.sin(a) * radius * 0.96);
+    c.stroke();
+  }
+  // Arco que se fecha até estourar.
+  c.strokeStyle = '#ffffff';
+  c.lineWidth = 3;
+  c.beginPath(); c.arc(x, y, radius * 0.7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t); c.stroke();
+  // Ponteiro girando devagar.
+  const hand = -Math.PI / 2 + Math.PI * 2 * t;
+  c.lineWidth = 2;
+  c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(hand) * radius * 0.55, y + Math.sin(hand) * radius * 0.55); c.stroke();
+  if (detailed) {
+    c.fillStyle = '#e8f8ff';
+    for (let i = 0; i < 4; i++) {
+      const a = timeMs / 900 + i * 1.6;
+      c.globalAlpha = 0.6;
+      c.beginPath(); c.arc(x + Math.cos(a) * radius * 0.45, y + Math.sin(a * 1.3) * radius * 0.45, 1.6, 0, Math.PI * 2); c.fill();
+    }
+  }
+  c.restore();
+}
+
+/** Buraco negro (Bola de Ferro): núcleo escuro, anel de acreção girando e riscos sendo sugados. */
+export function drawGravityWell(c: CanvasRenderingContext2D, x: number, y: number, radius: number, t: number, timeMs: number, detailed: boolean): void {
+  c.save();
+  const core = Math.max(6, radius * 0.16 * (1 + 0.4 * t));
+  const halo = c.createRadialGradient(x, y, core * 0.6, x, y, radius);
+  halo.addColorStop(0, 'rgba(40,20,70,0.55)');
+  halo.addColorStop(0.5, 'rgba(90,60,140,0.18)');
+  halo.addColorStop(1, 'rgba(90,60,140,0)');
+  c.fillStyle = halo;
+  c.beginPath(); c.arc(x, y, radius, 0, Math.PI * 2); c.fill();
+  // Anel de acreção (elipse inclinada) girando.
+  const spin = timeMs / 160;
+  c.strokeStyle = '#c9a6ff';
+  c.lineWidth = 3;
+  c.globalAlpha = 0.85;
+  if (detailed) { c.shadowColor = '#b48cff'; c.shadowBlur = 14; }
+  c.beginPath(); c.ellipse(x, y, core * 2.4, core * 0.9, spin * 0.2, spin, spin + Math.PI * 1.5); c.stroke();
+  c.shadowBlur = 0;
+  // Riscos espiralando para dentro.
+  const streaks = detailed ? 10 : 5;
+  c.strokeStyle = '#e6dcff';
+  c.lineWidth = 1.4;
+  for (let i = 0; i < streaks; i++) {
+    const phase = ((timeMs / 700) + i / streaks) % 1;
+    const a = (Math.PI * 2 * i) / streaks + phase * 2.4;
+    const r0 = radius * (1 - phase);
+    const r1 = Math.max(core, r0 - radius * 0.18);
+    c.globalAlpha = 0.6 * phase;
+    c.beginPath();
+    c.moveTo(x + Math.cos(a) * r0, y + Math.sin(a) * r0);
+    c.lineTo(x + Math.cos(a + 0.5) * r1, y + Math.sin(a + 0.5) * r1);
+    c.stroke();
+  }
+  // Núcleo.
+  c.globalAlpha = 1;
+  c.fillStyle = '#05030a';
+  c.beginPath(); c.arc(x, y, core, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = '#ffffff';
+  c.lineWidth = 1;
+  c.globalAlpha = 0.7;
+  c.beginPath(); c.arc(x, y, core + 1.5, 0, Math.PI * 2); c.stroke();
+  c.restore();
+}
+
+/** Portal (Orbe Lustroso): oval rosa com redemoinho, abrindo e fechando. */
+export function drawPortalFx(c: CanvasRenderingContext2D, x: number, y: number, r: number, t: number, timeMs: number): void {
+  const open = t < 0.25 ? t / 0.25 : 1 - (t - 0.25) / 0.75;
+  const rx = Math.max(6, r * 0.7) * open;
+  const ry = Math.max(9, r) * open;
+  if (rx <= 0.5) return;
+  c.save();
+  c.translate(x, y - 8);
+  c.globalAlpha = 0.9;
+  c.fillStyle = 'rgba(40,10,50,0.55)';
+  c.beginPath(); c.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = '#ff9ad5';
+  c.lineWidth = 3;
+  c.beginPath(); c.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); c.stroke();
+  c.strokeStyle = '#ffe3f4';
+  c.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    const a = timeMs / 120 + i * 2.1;
+    c.beginPath(); c.ellipse(0, 0, rx * (0.35 + i * 0.2), ry * (0.35 + i * 0.2), 0, a, a + 2.2); c.stroke();
+  }
+  c.restore();
+}
+
+/** Distorção (Orbe Grísea): anel ondulado escuro e roxo, como o espaço dobrando. */
+export function drawDistortFx(c: CanvasRenderingContext2D, x: number, y: number, r: number, t: number, timeMs: number): void {
+  c.save();
+  c.globalAlpha = 0.75 * (1 - t);
+  c.strokeStyle = '#b48cff';
+  c.lineWidth = 3;
+  const radius = r * (0.85 + 0.25 * t);
+  c.beginPath();
+  const points = 36;
+  for (let i = 0; i <= points; i++) {
+    const a = (Math.PI * 2 * i) / points;
+    const wave = Math.sin(a * 6 + timeMs / 80) * 4 * (1 - t);
+    const px = x + Math.cos(a) * (radius + wave);
+    const py = y - 6 + Math.sin(a) * (radius + wave);
+    if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+  }
+  c.stroke();
+  c.strokeStyle = '#1a0f2e';
+  c.lineWidth = 1.5;
+  c.globalAlpha = 0.6 * (1 - t);
+  c.beginPath(); c.arc(x, y - 6, radius * 0.9, 0, Math.PI * 2); c.stroke();
+  c.restore();
+}
+
+/** Estouro da bolha de tempo: anel azul que se expande com estilhaços de vidro. */
+export function drawBubblePopFx(c: CanvasRenderingContext2D, x: number, y: number, r: number, t: number, repeats: number): void {
+  c.save();
+  for (let k = 0; k < Math.max(1, repeats); k++) {
+    const tt = Math.min(1, t * (1 + k * 0.4));
+    c.globalAlpha = 0.85 * (1 - tt);
+    c.strokeStyle = k === 0 ? '#ffffff' : '#7fd4ff';
+    c.lineWidth = 3;
+    c.beginPath(); c.arc(x, y, r * (0.8 + 0.5 * tt), 0, Math.PI * 2); c.stroke();
+  }
+  c.fillStyle = '#d8f3ff';
+  for (let i = 0; i < 8; i++) {
+    const a = (Math.PI * 2 * i) / 8 + 0.3;
+    const d = r * (0.8 + 0.7 * t);
+    c.globalAlpha = 0.8 * (1 - t);
+    c.beginPath();
+    c.moveTo(x + Math.cos(a) * d, y + Math.sin(a) * d);
+    c.lineTo(x + Math.cos(a + 0.12) * (d - 6), y + Math.sin(a + 0.12) * (d - 6));
+    c.lineTo(x + Math.cos(a - 0.12) * (d - 6), y + Math.sin(a - 0.12) * (d - 6));
+    c.closePath();
+    c.fill();
+  }
+  c.restore();
+}
+
+/** Implosão (Bola de Ferro, estouro da Erva na aura): anel que se fecha rápido para o centro. */
+export function drawImplodeFx(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, t: number): void {
+  c.save();
+  c.globalAlpha = 0.9 * (1 - t);
+  c.strokeStyle = color;
+  c.lineWidth = 4 * (1 - t) + 1;
+  c.beginPath(); c.arc(x, y - 6, Math.max(2, r * (1 - t)), 0, Math.PI * 2); c.stroke();
+  c.fillStyle = '#ffffff';
+  c.globalAlpha = 0.7 * Math.max(0, 1 - t * 2);
+  c.beginPath(); c.arc(x, y - 6, 6 + 10 * t, 0, Math.PI * 2); c.fill();
+  c.restore();
+}
+
+/** Correntes do Laço do Destino: elos rosa entre os inimigos ligados, com um brilho correndo pela corrente. */
+export function drawDestinyChains(c: CanvasRenderingContext2D, groups: readonly (readonly { x: number; y: number }[])[], timeMs: number, detailed: boolean): void {
+  c.save();
+  c.lineCap = 'round';
+  for (const group of groups) {
+    const anchor = group[0];
+    if (!anchor) continue;
+    for (let i = 1; i < group.length; i++) {
+      const other = group[i]!;
+      const ax = anchor.x; const ay = anchor.y - 10;
+      const bx = other.x; const by = other.y - 10;
+      c.globalAlpha = 0.75;
+      c.strokeStyle = '#ff6f9e';
+      c.lineWidth = 2;
+      c.setLineDash([5, 4]);
+      c.lineDashOffset = -timeMs / 40;
+      c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+      c.setLineDash([]);
+      if (detailed) {
+        const k = ((timeMs / 600) + i * 0.3) % 1;
+        c.fillStyle = '#ffd1e1';
+        c.globalAlpha = 0.9;
+        c.beginPath(); c.arc(ax + (bx - ax) * k, ay + (by - ay) * k, 2.5, 0, Math.PI * 2); c.fill();
+      }
+    }
+    // Laço no inimigo que segura o grupo.
+    c.globalAlpha = 0.95;
+    c.fillStyle = '#ff6f9e';
+    c.beginPath();
+    c.ellipse(anchor.x - 4, anchor.y - 24, 4, 2.6, -0.5, 0, Math.PI * 2);
+    c.ellipse(anchor.x + 4, anchor.y - 24, 4, 2.6, 0.5, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.restore();
+}
+
+/** Disparo carregado da Erva Poderosa, flutuando em volta do Pokémon antes de sair. */
+export function drawHeldChargeOrb(c: CanvasRenderingContext2D, x: number, y: number, color: string, timeMs: number, seed: number): void {
+  c.save();
+  const pulse = 1 + 0.2 * Math.sin(timeMs / 70 + seed);
+  c.globalAlpha = 0.45;
+  c.fillStyle = '#7be07b';
+  c.beginPath(); c.arc(x, y, 7 * pulse, 0, Math.PI * 2); c.fill();
+  c.globalAlpha = 1;
+  c.fillStyle = color;
+  c.beginPath(); c.arc(x, y, 4 * pulse, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#ffffff';
+  c.beginPath(); c.arc(x - 1, y - 1, 1.5, 0, Math.PI * 2); c.fill();
+  c.restore();
+}
+
+/** Orbital espelhado (Orbe Grísea): esfera escura de contorno roxo, girando ao contrário. */
+export function drawMirrorOrbiter(c: CanvasRenderingContext2D, x: number, y: number, timeMs: number): void {
+  c.save();
+  c.globalAlpha = 0.9;
+  c.fillStyle = '#1a0f2e';
+  c.strokeStyle = '#b48cff';
+  c.lineWidth = 2;
+  c.beginPath(); c.arc(x, y, 8, 0, Math.PI * 2); c.fill(); c.stroke();
+  c.strokeStyle = '#e4d6ff';
+  c.lineWidth = 1;
+  c.beginPath(); c.arc(x, y, 4, timeMs / 90, timeMs / 90 + Math.PI); c.stroke();
+  c.restore();
+}
+
+/** Bola de Ferro em aura e órbita: riscos escuros sendo sugados para o centro (o puxão contínuo fica visível). */
+export function drawSuctionField(c: CanvasRenderingContext2D, x: number, y: number, reach: number, timeMs: number, detailed: boolean): void {
+  c.save();
+  c.strokeStyle = '#c9a6ff';
+  c.lineWidth = 1.3;
+  const streaks = detailed ? 12 : 6;
+  for (let i = 0; i < streaks; i++) {
+    const phase = ((timeMs / 900) + i / streaks) % 1;
+    const a = (Math.PI * 2 * i) / streaks + phase * 1.2;
+    const r0 = reach * (1 - phase * 0.6);
+    const r1 = r0 - reach * 0.12;
+    c.globalAlpha = 0.45 * phase;
+    c.beginPath();
+    c.moveTo(x + Math.cos(a) * r0, y - 8 + Math.sin(a) * r0);
+    c.lineTo(x + Math.cos(a + 0.35) * r1, y - 8 + Math.sin(a + 0.35) * r1);
+    c.stroke();
   }
   c.restore();
 }
