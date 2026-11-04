@@ -4,6 +4,8 @@ import {
   HELD_MAX_COPIES,
   HELD_OFFER_PREFIX,
   heldGems,
+  heldItemAppliesTo,
+  heldItemSpriteUrl,
   heldItemText,
   heldMods,
   heldProjectileLook,
@@ -60,7 +62,7 @@ describe('catálogo de itens segurados', () => {
 
   it('cópias se somam: multiplicadores crescem e chances têm teto', () => {
     expect(heldMods({ 'orbe-vida': 2 }).damageMul).toBeCloseTo(1.69, 2);
-    expect(heldMods({ 'fragmento-estrela': 3 }).shards).toBe(6);
+    expect(heldMods({ 'po-prateado': 3 }).shards).toBe(6);
     expect(heldMods({ 'placa-chama': 2, 'placa-gelo': 1 }).plates).toEqual(['fire', 'fire', 'ice']);
     expect(heldMods({ 'pedra-rei': 4 }).stunChance).toBeLessThanOrEqual(0.4);
     expect(heldMods({ 'garra-rapida': 10 }).recastChance).toBe(0.45);
@@ -68,7 +70,7 @@ describe('catálogo de itens segurados', () => {
   });
 
   it('o visual dos disparos soma os traços de cada item', () => {
-    const look = heldProjectileLook({ 'placa-chama': 1, 'farpa-grudenta': 1, 'pedra-rei': 1, 'pena-rapida': 1 });
+    const look = heldProjectileLook({ 'placa-chama': 1, 'farpa-grudenta': 1, 'pedra-rei': 1, 'po-rapido': 1 });
     expect(look).toMatchObject({ spikes: true, crown: true, wings: true, star: false });
     expect(look?.colors).toHaveLength(1);
     expect(heldGems({ 'restos': 2, 'lente-mira': 1 })).toHaveLength(3);
@@ -83,6 +85,39 @@ describe('catálogo de itens segurados', () => {
       expect(new Set(offer).size).toBe(2);
       expect(offer).not.toContain('orbe-vida');
     }
+  });
+
+  it('todo item referencia um item real até a 4ª geração, com sprite do PokeAPI', () => {
+    for (const item of HELD_ITEMS) {
+      expect(item.generation).toBeLessThanOrEqual(4);
+      expect(item.slug).toMatch(/^[a-z-]+$/);
+      expect(heldItemSpriteUrl(item.id)).toBe(`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${item.slug}.png`);
+    }
+    expect(new Set(HELD_ITEMS.map((item) => item.slug)).size).toBe(HELD_ITEMS.length);
+  });
+
+  it('toda forma de ataque tem pelo menos 18 itens que mudam o golpe, e o baú só oferece esses', () => {
+    const categories: MoveCategory[] = ['projetil', 'aura', 'area', 'cone', 'orbit', 'foco', 'rapido', 'teleporte', 'trilha'];
+    let seed = 7;
+    const rng = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    for (const category of categories) {
+      const usable = HELD_ITEMS.filter((item) => heldItemAppliesTo(item.id, category));
+      expect(usable.length).toBeGreaterThanOrEqual(18);
+      for (let i = 0; i < 30; i++) {
+        for (const id of rollHeldOffer(rng, {}, 2, category)) expect(heldItemAppliesTo(id, category)).toBe(true);
+      }
+    }
+    expect(heldItemAppliesTo('po-rapido', 'aura')).toBe(false);
+    expect(heldItemAppliesTo('garra-rapida', 'trilha')).toBe(false);
+  });
+
+  it('placas, Pedra Dura e Pó Prateado reforçam o próprio tipo, como nos jogos', () => {
+    const mods = heldMods({ 'placa-chama': 2, 'pedra-dura': 1, 'po-prateado': 1 });
+    expect(mods.typeBoost.fire).toBeCloseTo(1.4, 5);
+    expect(mods.typeBoost.rock).toBeCloseTo(1.2, 5);
+    expect(mods.typeBoost.bug).toBeCloseTo(1.2, 5);
+    expect(mods.typeBoost.water).toBeUndefined();
+    expect(heldMods({ 'sino-concha': 1, 'raiz-grande': 1 }).leech).toBeGreaterThan(heldMods({ 'sino-concha': 1 }).leech);
   });
 
   it('o texto da carta explica a forma de ataque de quem joga', () => {
@@ -150,12 +185,12 @@ describe('baús, chaves e efeitos na corrida', () => {
     expect(s.player.held?.['lente-ampla']).toBe(2);
   });
 
-  it('Pedra do Rei atordoa, Bola de Luz salta e o Fragmento solta estilhaços, sem reação infinita', () => {
+  it('Pedra do Rei atordoa, Bola de Luz salta e o Pó Prateado solta estilhaços, sem reação infinita', () => {
     const s = quiet(createSurvivorState(7, { kindCount: 1, ...as('normal', 'aura') }));
     s.rng = () => 0;
     give(s, 'pedra-rei');
     give(s, 'bola-luz');
-    give(s, 'fragmento-estrela');
+    give(s, 'po-prateado');
     const near = dummy(1, s.player.x + 10, s.player.y);
     const far = dummy(2, s.player.x + 110, s.player.y);
     s.enemies.push(near, far);
@@ -163,6 +198,7 @@ describe('baús, chaves e efeitos na corrida', () => {
     expect(near.stunMs ?? 0).toBeGreaterThan(0);
     expect(far.hp).toBeLessThan(far.maxHp);
     expect(s.fx.some((f) => f.kind === 'chain') || s.projectiles.some((p) => p.noHeld)).toBe(true);
+    expect(s.fx.some((f) => f.kind === 'held-hit')).toBe(true);
     expect(s.projectiles.filter((p) => p.noHeld).length).toBeLessThanOrEqual(220);
   });
 
@@ -177,7 +213,7 @@ describe('baús, chaves e efeitos na corrida', () => {
     expect(s.fx.some((f) => f.kind === 'blast') || (s.heldMines ?? []).length > 0).toBe(true);
   });
 
-  it('Orbe da Vida custa vida a cada ataque, mas nunca abaixo de 25%', () => {
+  it('Orbe da Vida custa vida ao acertar, mas nunca abaixo de 25%', () => {
     const s = quiet(createSurvivorState(9, { kindCount: 1, ...as('normal', 'aura') }));
     give(s, 'orbe-vida');
     give(s, 'orbe-vida');

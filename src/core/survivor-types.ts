@@ -124,11 +124,10 @@ export interface SurvivorPlayer {
   /** Itens segurados pegos nos baús (cópias por item) e a ficha derivada deles. */
   held?: HeldStacks;
   heldMods?: HeldMods;
-  /** Metrônomo: último alvo acertado e quantos acertos seguidos nele. */
-  heldStreakTarget?: number;
-  heldStreak?: number;
   /** Sino Concha: cura ainda disponível neste segundo. */
   heldLeechBudget?: number;
+  /** Orbe da Vida: quando cobrou vida pela última vez (relógio da corrida). */
+  heldLifeCostAtMs?: number;
   /** Regeneração por segundo, somada pelas cartas "Regeneração lenta". */
   regenPerSec?: number;
   /** Dano por segundo que cada inimigo sofre ao encostar em você (cartas "Espinhos"). */
@@ -222,6 +221,9 @@ export interface SurvivorEnemy {
   digitalThreat?: boolean;
   /** Próximo pulso da Trilha neste inimigo, no relógio da corrida. */
   trailNextHitMs?: number;
+  /** Metrônomo: acertos seguidos neste inimigo e quando foi o último. */
+  heldHits?: number;
+  heldLastHitMs?: number;
   id: number;
   /** Espécie fixada no nascimento, independente dos atributos de combate. */
   dexId?: number;
@@ -343,7 +345,7 @@ export interface SurvivorProjectile {
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
   /** `beam`: feixe do Foco (de `fromX/fromY` a `toX/toY`, meia largura em `r`). `rush`: teleporte carregado. */
-  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal' | 'beam' | 'rush' | 'defeat' | 'chain' | 'chest';
+  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal' | 'beam' | 'rush' | 'defeat' | 'chain' | 'chest' | 'held-hit';
   x: number;
   y: number;
   r: number;

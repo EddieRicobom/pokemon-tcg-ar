@@ -115,8 +115,11 @@ export function drawHeldProjectileOverlay(c: CanvasRenderingContext2D, head: Scr
   c.restore();
 }
 
-/** Gemas dos itens girando em volta do Pokémon: o visual dele muda conforme a coleção cresce, como no Isaac. */
-export function drawHeldGems(c: CanvasRenderingContext2D, x: number, y: number, gems: readonly { color: string; icon: string }[], timeMs: number, detailed: boolean): void {
+/**
+ * Itens girando em volta do Pokémon: o sprite do item (PokeAPI) quando já carregou, ou uma gema da cor dele enquanto
+ * carrega ou se a rede falhar. O visual muda conforme a coleção cresce, como no Isaac.
+ */
+export function drawHeldGems(c: CanvasRenderingContext2D, x: number, y: number, gems: readonly { color: string; icon: string; image?: CanvasImageSource | null }[], timeMs: number, detailed: boolean): void {
   if (gems.length === 0) return;
   c.save();
   const ring = 30 + Math.min(14, gems.length * 1.2);
@@ -124,6 +127,16 @@ export function drawHeldGems(c: CanvasRenderingContext2D, x: number, y: number, 
     const a = timeMs / 900 + (Math.PI * 2 * index) / gems.length;
     const gx = x + Math.cos(a) * ring;
     const gy = y - 10 + Math.sin(a) * ring * 0.45;
+    if (gem.image) {
+      c.globalAlpha = 1;
+      const smoothing = c.imageSmoothingEnabled;
+      c.imageSmoothingEnabled = false;
+      if (detailed) { c.shadowColor = gem.color; c.shadowBlur = 6; }
+      c.drawImage(gem.image, gx - 9, gy - 9, 18, 18);
+      c.shadowBlur = 0;
+      c.imageSmoothingEnabled = smoothing;
+      return;
+    }
     c.globalAlpha = 0.9;
     c.fillStyle = gem.color;
     if (detailed) { c.shadowColor = gem.color; c.shadowBlur = 8; }
@@ -248,6 +261,26 @@ export function drawChestOpenFx(c: CanvasRenderingContext2D, x: number, y: numbe
     const a = i * 1.05 + 0.3;
     const d = r * 0.9 * t;
     c.beginPath(); c.arc(x + Math.cos(a) * d, y - 6 - 30 * t + Math.sin(a) * d * 0.5 + 40 * t * t, 2.5, 0, Math.PI * 2); c.fill();
+  }
+  c.restore();
+}
+
+/** Faísca de item em cada acerto: losangos da cor de um item saltando do alvo (mais itens, mais faíscas). */
+export function drawHeldHitFx(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, count: number, t: number, seed: number): void {
+  c.save();
+  c.globalAlpha = 0.95 * (1 - t);
+  c.fillStyle = color;
+  const sparks = Math.max(1, count) + 1;
+  for (let i = 0; i < sparks; i++) {
+    const a = seed * 0.7 + (Math.PI * 2 * i) / sparks;
+    const d = r * (0.4 + 1.1 * t);
+    const sx = x + Math.cos(a) * d;
+    const sy = y - 8 + Math.sin(a) * d * 0.8 - 6 * t;
+    const k = 3 * (1 - t) + 1;
+    c.beginPath();
+    c.moveTo(sx, sy - k); c.lineTo(sx + k * 0.7, sy); c.lineTo(sx, sy + k); c.lineTo(sx - k * 0.7, sy);
+    c.closePath();
+    c.fill();
   }
   c.restore();
 }

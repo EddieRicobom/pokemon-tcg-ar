@@ -1018,12 +1018,14 @@ function refillHeldLeech(p: SurvivorPlayer, dtMs: number): void {
 function heldDamageFactor(state: SurvivorState, e: SurvivorEnemy): number {
   const p = state.player;
   const mods = p.heldMods!;
-  let factor = mods.damageMul;
+  let factor = mods.damageMul * (mods.typeBoost[p.move.type] ?? 1);
   if (e.boss || e.grade !== 'comum' || e.trainerId !== undefined) factor *= mods.eliteMul;
   if (mods.metronomeStep > 0) {
-    if (p.heldStreakTarget === e.id) p.heldStreak = Math.min(5, (p.heldStreak ?? 0) + 1);
-    else { p.heldStreakTarget = e.id; p.heldStreak = 0; }
-    factor *= 1 + mods.metronomeStep * (p.heldStreak ?? 0);
+    // Sequência por inimigo: vale igual para quem acerta um alvo só (projétil) e para quem acerta vários (aura, trilha).
+    const fresh = state.elapsedMs - (e.heldLastHitMs ?? -Infinity) > 1500;
+    e.heldHits = fresh ? 0 : Math.min(5, (e.heldHits ?? 0) + 1);
+    e.heldLastHitMs = state.elapsedMs;
+    factor *= 1 + mods.metronomeStep * e.heldHits;
   }
   return factor;
 }
@@ -1071,6 +1073,11 @@ function applyHeldOnHit(state: SurvivorState, e: SurvivorEnemy, damage: number, 
   heldGuard++;
   try {
     const duration = mods.statusDurationMul;
+    if (mods.selfDamagePerAttack > 0 && state.elapsedMs - (p.heldLifeCostAtMs ?? -Infinity) >= 400) {
+      p.heldLifeCostAtMs = state.elapsedMs;
+      const floor = p.maxHp * 0.25;
+      if (p.hp > floor) p.hp = Math.max(floor, p.hp - mods.selfDamagePerAttack);
+    }
     if (mods.leech > 0) {
       const heal = Math.min(p.heldLeechBudget ?? 0, damage * mods.leech);
       if (heal > 0) { healSurvivor(p, heal); p.heldLeechBudget = (p.heldLeechBudget ?? 0) - heal; }
@@ -1103,7 +1110,8 @@ function applyHeldOnHit(state: SurvivorState, e: SurvivorEnemy, damage: number, 
     if (e.hp > 0 && mods.stickyChance > 0 && (state.heldMines?.length ?? 0) < MAX_HELD_MINES && state.rng() < mods.stickyChance) {
       (state.heldMines ??= []).push({ id: state.nextId++, enemyId: e.id, x: e.x, y: e.y, timerMs: 1000, damage: round1(damage * 1.2), radius: 48 });
     }
-    if (mods.chainChance > 0 && state.rng() < mods.chainChance) {
+    const chainChance = mods.electricChainBonus && p.move.type === 'electric' ? Math.min(0.9, mods.chainChance * 2) : mods.chainChance;
+    if (chainChance > 0 && state.rng() < chainChance) {
       for (const other of heldNeighbors(state, e, 150, 2)) {
         hitEnemy(state, other, damage * 0.4, { x: e.x, y: e.y }, p.move, false, 0);
         state.fx.push({ kind: 'chain', x: other.x, y: other.y, r: 6, color: HELD_ITEM_BY_ID['bola-luz'].color, ageMs: 0, lifeMs: 260, fromX: e.x, fromY: e.y, toX: other.x, toY: other.y });
@@ -1116,6 +1124,12 @@ function applyHeldOnHit(state: SurvivorState, e: SurvivorEnemy, damage: number, 
       }
     }
     if (mods.shards > 0) queueHeldShards(state, e, damage, from, mods.shards);
+    // Faísca da cor de um dos itens em todo acerto: toda forma de ataque mostra que está carregando itens.
+    if (state.fx.length < 160) {
+      const colors = p.held ? Object.keys(p.held).filter((id) => (p.held?.[id as HeldItemId] ?? 0) > 0) : [];
+      const pick = colors[state.nextId % Math.max(1, colors.length)] as HeldItemId | undefined;
+      if (pick) state.fx.push({ kind: 'held-hit', x: e.x, y: e.y, r: Math.max(8, e.radius), color: HELD_ITEM_BY_ID[pick].color, ageMs: 0, lifeMs: 260, count: Math.min(4, colors.length) });
+    }
   } finally {
     heldGuard--;
   }
@@ -1175,13 +1189,11 @@ function stepHeldMines(state: SurvivorState, dtMs: number): void {
   }
 }
 
-/** Depois de cada ataque: o Orbe da Vida cobra vida e a Garra Rápida pode atacar de novo na hora. */
+/** Depois de cada ataque: a Garra Rápida pode atacar de novo na hora. */
 function heldAfterAttack(state: SurvivorState): void {
   const p = state.player;
   const mods = p.heldMods;
   if (!mods) return;
-  const floor = p.maxHp * 0.25;
-  if (mods.selfDamagePerAttack > 0 && p.hp > floor) p.hp = Math.max(floor, p.hp - mods.selfDamagePerAttack);
   if (mods.recastChance > 0 && state.rng() < mods.recastChance) p.attackTimerMs = Math.min(p.attackTimerMs, 90);
 }
 
@@ -1229,7 +1241,7 @@ function stepChests(state: SurvivorState, events: SurvivorEvent[]): void {
 
 function openChest(state: SurvivorState, chest: SurvivorChest, events: SurvivorEvent[]): void {
   const p = state.player;
-  const offer = rollHeldOffer(state.rng, p.held ?? {}, 2);
+  const offer = rollHeldOffer(state.rng, p.held ?? {}, 2, p.move.category);
   if (offer.length === 0) return;
   state.keys = Math.max(0, (state.keys ?? 0) - 1);
   state.chests = (state.chests ?? []).filter((c) => c !== chest);
@@ -1591,6 +1603,7 @@ function fireFocusShot(state: SurvivorState, target: SurvivorEnemy): void {
     move,
     distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y),
     look: survivorProjectileLook(p),
+    ...heldHoming(p),
   });
 }
 

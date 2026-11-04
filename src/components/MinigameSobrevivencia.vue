@@ -98,9 +98,9 @@ import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround
 import type { BonkArt } from '../village/survivor-bonk-landscape';
 import { PROJECTILE_TIER_NAMES, survivorProjectileTier } from '../core/survivor-projectile-power';
 import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
-import { drawChainFx, drawChest, drawChestOpenFx, drawHeldGems, drawHeldProjectileOverlay, drawKey } from '../village/survivor-held-art';
-import { HELD_ITEM_BY_ID, heldGems } from '../core/survivor-held';
-import type { HeldStacks } from '../core/survivor-held';
+import { drawChainFx, drawChest, drawChestOpenFx, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawKey } from '../village/survivor-held-art';
+import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldGems, heldItemSpriteUrl, isHeldItemId } from '../core/survivor-held';
+import type { HeldItemId, HeldStacks } from '../core/survivor-held';
 import type { WorldToScreen } from '../village/survivor-attack-art';
 import { survivorOrbiters } from '../core/survivor-shapes';
 import { hypotheticalTypeRuleFor, isTypeExaltation } from '../core/survivor-type-mix';
@@ -448,6 +448,36 @@ function milestoneReached(summary: { survivedMs: number; fast?: boolean }, norma
 }
 function milestoneMinutes(summary: { fast?: boolean }, normalMs: number): string {
   return (survivorMilestoneMs(normalMs, summary.fast) / 60_000).toLocaleString('pt-BR');
+}
+
+/**
+ * Sprites dos itens (PokeAPI/sprites, como os GIFs dos Pokémon): carregados uma vez; se o servidor principal falhar,
+ * tenta o espelho. Sem imagem, o desenho usa a gema da cor do item, e a interface mostra o ícone de reserva.
+ */
+const heldSpriteCache = new Map<HeldItemId, HTMLImageElement | null>();
+const heldSpriteFailed = ref(new Set<HeldItemId>());
+function heldSpriteImage(id: HeldItemId): HTMLImageElement | null {
+  if (heldSpriteCache.has(id)) return heldSpriteCache.get(id) ?? null;
+  heldSpriteCache.set(id, null);
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => heldSpriteCache.set(id, img);
+  img.onerror = () => {
+    if (img.src !== heldItemSpriteUrl(id, true)) { img.src = heldItemSpriteUrl(id, true); return; }
+    heldSpriteFailed.value = new Set([...heldSpriteFailed.value, id]);
+  };
+  img.src = heldItemSpriteUrl(id);
+  return null;
+}
+function heldIdOfOption(option: SurvivorUpgradeOption): HeldItemId | null {
+  const id = option.id.startsWith(HELD_OFFER_PREFIX) ? option.id.slice(HELD_OFFER_PREFIX.length) : '';
+  return isHeldItemId(id) ? id : null;
+}
+function heldOwned(held: HeldStacks | undefined): { id: HeldItemId; copies: number }[] {
+  return Object.entries(held ?? {}).filter(([id, copies]) => isHeldItemId(id) && (copies ?? 0) > 0).map(([id, copies]) => ({ id: id as HeldItemId, copies: copies ?? 0 }));
+}
+function onHeldSpriteError(id: HeldItemId): void {
+  heldSpriteFailed.value = new Set([...heldSpriteFailed.value, id]);
 }
 
 /** Itens segurados no HUD: ícones com o número de cópias; o título lista os nomes. */
@@ -1949,7 +1979,7 @@ function draw(): void {
   }
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
   // Gemas dos itens segurados orbitam o Pokémon: cada cópia é uma gema da cor do item.
-  if (!effectiveVisual.value.rotomMode) drawHeldGems(ctx, s.player.x, s.player.y, heldGems(s.player.held ?? {}), animMs, detailed);
+  if (!effectiveVisual.value.rotomMode) drawHeldGems(ctx, s.player.x, s.player.y, heldGems(s.player.held ?? {}).map((item) => ({ ...item, image: heldSpriteImage(item.id) })), animMs, detailed);
   drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
 
   for (const proj of s.projectiles) {
@@ -2152,6 +2182,8 @@ function draw(): void {
       drawChainFx(ctx, f.fromX ?? f.x, f.fromY ?? f.y, f.toX ?? f.x, f.toY ?? f.y, f.color, t, f.x + f.y);
     } else if (f.kind === 'chest') {
       drawChestOpenFx(ctx, f.x, f.y, f.r, t);
+    } else if (f.kind === 'held-hit') {
+      drawHeldHitFx(ctx, f.x, f.y, f.r, f.color, f.count ?? 1, t, f.x * 0.13 + f.y * 0.07);
     } else if (f.kind === 'heal') {
       // Pulso rosa e coração subindo indicam explicitamente que um suporte recuperou este alvo.
       const rise = t * 24;
@@ -3382,7 +3414,11 @@ onBeforeUnmount(() => {
               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
             </span>
             <span v-if="(state.keys ?? 0) > 0 || (state.chests?.length ?? 0) > 0" class="chip survivor-key-chip" role="status" title="Chaves caem dos elites; encoste num baú com chave para escolher um item segurado.">🗝 {{ state.keys ?? 0 }}<template v-if="state.chests?.length"> · 🧰 {{ state.chests.length }} no mapa</template></span>
-            <span v-if="heldSummary(state.player.held)" class="chip survivor-held-chip" role="status" :title="heldTitle(state.player.held)">🎒 {{ heldSummary(state.player.held) }}</span>
+            <span v-if="heldSummary(state.player.held)" class="chip survivor-held-chip" role="status" :title="heldTitle(state.player.held)" :aria-label="`Itens segurados: ${heldTitle(state.player.held)}`">🎒
+              <span v-for="item in heldOwned(state.player.held)" :key="item.id" class="survivor-held-entry">
+                <img v-if="!heldSpriteFailed.has(item.id)" class="survivor-held-sprite small" :src="heldItemSpriteUrl(item.id)" alt="" width="20" height="20" @error="onHeldSpriteError(item.id)"><template v-else>{{ HELD_ITEM_BY_ID[item.id].icon }}</template><small v-if="item.copies > 1">×{{ item.copies }}</small>
+              </span>
+            </span>
             <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
             <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
             <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
@@ -3812,7 +3848,10 @@ onBeforeUnmount(() => {
             <p v-if="upgradeMenuLocked" class="survivor-upgrade-delay" role="status" aria-live="polite">Escolha liberada em instantes…</p>
             <div class="survivor-choice-list">
               <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" :disabled="upgradeMenuLocked || (banMode && !!banBlock(u.id))" :title="banMode ? (banBlock(u.id) ?? 'Banir esta carta') : undefined" @pointerdown.stop @click="chooseUpgrade(u.id)">
-                <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u) }}</span>
+                <span class="survivor-upgrade-icon" aria-hidden="true">
+                  <img v-if="heldIdOfOption(u) && !heldSpriteFailed.has(heldIdOfOption(u)!)" class="survivor-held-sprite" :src="heldItemSpriteUrl(heldIdOfOption(u)!)" alt="" width="32" height="32" @error="onHeldSpriteError(heldIdOfOption(u)!)">
+                  <template v-else>{{ upgradeIcon(u) }}</template>
+                </span>
                 <span class="survivor-upgrade-text">
                   <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
                     <img class="survivor-rarity-ball" :src="RARITY_BALL_IMAGE[u.rarity]" alt="" />
