@@ -98,6 +98,9 @@ import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround
 import type { BonkArt } from '../village/survivor-bonk-landscape';
 import { PROJECTILE_TIER_NAMES, survivorProjectileTier } from '../core/survivor-projectile-power';
 import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
+import { drawBubblePopFx, drawChainFx, drawChest, drawChestOpenFx, drawDestinyChains, drawDistortFx, drawGravityWell, drawHeldChargeOrb, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawImplodeFx, drawKey, drawMirrorOrbiter, drawPortalFx, drawSuctionField, drawTimeBubble } from '../village/survivor-held-art';
+import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldGems, heldItemSpriteUrl, isHeldItemId, mirrorOrbiters } from '../core/survivor-held';
+import type { HeldItemId, HeldStacks } from '../core/survivor-held';
 import type { WorldToScreen } from '../village/survivor-attack-art';
 import { survivorOrbiters } from '../core/survivor-shapes';
 import { hypotheticalTypeRuleFor, isTypeExaltation } from '../core/survivor-type-mix';
@@ -445,6 +448,71 @@ function milestoneReached(summary: { survivedMs: number; fast?: boolean }, norma
 }
 function milestoneMinutes(summary: { fast?: boolean }, normalMs: number): string {
   return (survivorMilestoneMs(normalMs, summary.fast) / 60_000).toLocaleString('pt-BR');
+}
+
+/**
+ * Sprites dos itens (PokeAPI/sprites, como os GIFs dos Pokémon): carregados uma vez; se o servidor principal falhar,
+ * tenta o espelho. Sem imagem, o desenho usa a gema da cor do item, e a interface mostra o ícone de reserva.
+ */
+const heldSpriteCache = new Map<HeldItemId, HTMLImageElement | null>();
+const heldSpriteFailed = ref(new Set<HeldItemId>());
+function heldSpriteImage(id: HeldItemId): HTMLImageElement | null {
+  if (heldSpriteCache.has(id)) return heldSpriteCache.get(id) ?? null;
+  heldSpriteCache.set(id, null);
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => heldSpriteCache.set(id, img);
+  img.onerror = () => {
+    if (img.src !== heldItemSpriteUrl(id, true)) { img.src = heldItemSpriteUrl(id, true); return; }
+    heldSpriteFailed.value = new Set([...heldSpriteFailed.value, id]);
+  };
+  img.src = heldItemSpriteUrl(id);
+  return null;
+}
+function heldIdOfOption(option: SurvivorUpgradeOption): HeldItemId | null {
+  const id = option.id.startsWith(HELD_OFFER_PREFIX) ? option.id.slice(HELD_OFFER_PREFIX.length) : '';
+  return isHeldItemId(id) ? id : null;
+}
+function heldOwned(held: HeldStacks | undefined): { id: HeldItemId; copies: number }[] {
+  // Transformadores primeiro: são os que mudam o jeito de jogar.
+  return Object.entries(held ?? {}).filter(([id, copies]) => isHeldItemId(id) && (copies ?? 0) > 0)
+    .map(([id, copies]) => ({ id: id as HeldItemId, copies: copies ?? 0 }))
+    .sort((a, b) => Number(!!HELD_ITEM_BY_ID[b.id].transformer) - Number(!!HELD_ITEM_BY_ID[a.id].transformer));
+}
+function isTransformerOption(option: SurvivorUpgradeOption): boolean {
+  const id = heldIdOfOption(option);
+  return !!id && !!HELD_ITEM_BY_ID[id].transformer;
+}
+/** O que o transformador faz na forma de ataque de quem joga agora. */
+function heldFormText(option: SurvivorUpgradeOption): string {
+  const id = heldIdOfOption(option);
+  const category = state.value?.player.move.category;
+  return id && category ? HELD_ITEM_BY_ID[id].perCategory?.[category] ?? '' : '';
+}
+function onHeldSpriteError(id: HeldItemId): void {
+  heldSpriteFailed.value = new Set([...heldSpriteFailed.value, id]);
+}
+
+/** Laço do Destino: inimigos agrupados pela corrente (o primeiro segura o laço). */
+function destinyGroups(s: SurvivorState): { x: number; y: number }[][] {
+  const groups = new Map<number, { x: number; y: number }[]>();
+  for (const e of s.enemies) {
+    if (e.linkId === undefined || e.hp <= 0) continue;
+    const group = groups.get(e.linkId) ?? [];
+    group.push({ x: e.x, y: e.y });
+    groups.set(e.linkId, group);
+  }
+  return [...groups.values()].filter((group) => group.length > 1);
+}
+
+/** Itens segurados no HUD: ícones com o número de cópias; o título lista os nomes. */
+function heldSummary(held: HeldStacks | undefined): string {
+  return Object.entries(held ?? {}).filter(([, copies]) => (copies ?? 0) > 0)
+    .map(([id, copies]) => `${HELD_ITEM_BY_ID[id as keyof typeof HELD_ITEM_BY_ID]?.icon ?? '•'}${(copies ?? 0) > 1 ? `×${copies}` : ''}`).join(' ');
+}
+function heldTitle(held: HeldStacks | undefined): string {
+  return Object.entries(held ?? {}).filter(([, copies]) => (copies ?? 0) > 0)
+    .map(([id, copies]) => `${HELD_ITEM_BY_ID[id as keyof typeof HELD_ITEM_BY_ID]?.name ?? id}${(copies ?? 0) > 1 ? ` ×${copies}` : ''}`).join(', ');
 }
 
 function settleRunLoadout(survivedMs: number): void {
@@ -1542,6 +1610,17 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.restore();
     } });
   }
+  for (const chest of s.chests ?? []) {
+    const ground = drawPoint(chest);
+    if (!ground) continue;
+    figures.push({ depth: ground.depth, draw: () => drawChest(c, ground.x, ground.y - 10 * ground.scale, ground.scale, animMs, (s.keys ?? 0) > 0) });
+  }
+  for (const key of s.keyDrops ?? []) {
+    const ground = drawPoint(key);
+    const lifted = drawPoint(key, 12);
+    if (!ground || !lifted) continue;
+    figures.push({ depth: ground.depth, draw: () => drawKey(c, lifted.x, lifted.y, lifted.scale, animMs) });
+  }
   for (const artifact of s.artifacts) {
     const ground = drawPoint(artifact);
     const p = drawPoint(artifact, 16 + Math.sin(animMs / 260 + artifact.id) * 4);
@@ -1646,6 +1725,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     if (!head || !tail) continue;
     const support = projectile.source === 'support';
     drawElementProjectile(c, projectile.move?.type ?? move.type, head, tail, clamp((projectile.size ?? 4) * head.s * 0.7, 1.5, 12), support ? 0.75 : 1, animMs, detailed && !support, projectile.id, projectile.look);
+    if (projectile.look?.held) drawHeldProjectileOverlay(c, head, tail, clamp((projectile.size ?? 4) * head.s * 0.7, 1.5, 12), projectile.look.held, animMs, detailed, projectile.id);
   }
   for (const projectile of s.hostileProjectiles) {
     const p = drawPoint(projectile, 16);
@@ -1891,10 +1971,20 @@ function draw(): void {
   else if (move.category === 'foco' || move.category === 'teleporte') drawChargeAura(ctx, s, detailed);
   if (move.category === 'trilha') drawElementTrail(ctx, s, detailed);
   drawSupportTrails(ctx, s, detailed);
+  if (move.category === 'trilha' && s.player.trailMirrorPath?.length) drawTrailPath(ctx, s, s.player.trailMirrorPath, HELD_ITEM_BY_ID['orbe-grisea'].color, s.player.attackRadius, detailed);
+  // Transformadores no chão: buracos negros e bolhas de tempo ficam por baixo dos Pokémon.
+  if (!effectiveVisual.value.rotomMode && (s.player.heldMods?.gravity ?? 0) > 0) {
+    if (move.category === 'aura') drawSuctionField(ctx, s.player.x, s.player.y + 8, s.player.attackRadius * 2.2, animMs, detailed);
+    else if (move.category === 'orbit') for (const orbiter of survivorOrbiters(s.player)) drawSuctionField(ctx, orbiter.x, orbiter.y + 8, 70, animMs, detailed);
+    else if (move.category === 'trilha' && s.player.trailPath?.length) drawTrailPath(ctx, s, s.player.trailPath, HELD_ITEM_BY_ID['bola-ferro'].color, s.player.attackRadius * 1.8, false);
+  }
+  for (const well of s.gravityWells ?? []) drawGravityWell(ctx, well.x, well.y, well.radius, well.ageMs / Math.max(1, well.lifeMs), animMs, detailed);
+  for (const bubble of s.timeBubbles ?? []) drawTimeBubble(ctx, bubble.x, bubble.y, bubble.radius, bubble.ageMs / Math.max(1, bubble.lifeMs), animMs, detailed);
 
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
   }
+  if (!effectiveVisual.value.rotomMode && s.enemies.some((e) => e.linkId !== undefined)) drawDestinyChains(ctx, destinyGroups(s), animMs, detailed);
   drawDamageNumbers(flat);
 
   // Os apoios são puramente visuais: o motor mantém suas posições separadas e
@@ -1923,6 +2013,13 @@ function draw(): void {
     ctx.restore();
   }
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
+  // Gemas dos itens segurados orbitam o Pokémon: cada cópia é uma gema da cor do item.
+  if (!effectiveVisual.value.rotomMode) drawHeldGems(ctx, s.player.x, s.player.y, heldGems(s.player.held ?? {}).map((item) => ({ ...item, image: heldSpriteImage(item.id) })), animMs, detailed);
+  if (move.category === 'orbit' && (s.player.heldMods?.mirror ?? 0) > 0) for (const orbiter of mirrorOrbiters(s.player, s.player.heldMods?.mirror ?? 1)) drawMirrorOrbiter(ctx, orbiter.x, orbiter.y, animMs);
+  for (const charge of s.heldCharges ?? []) {
+    const pos = heldChargePosition(s.player, charge, s.elapsedMs);
+    drawHeldChargeOrb(ctx, pos.x, pos.y, move.color, animMs, charge.slot);
+  }
   drawSurvivorSpecial(ctx, s, detailedSpecialEffects.value);
 
   for (const proj of s.projectiles) {
@@ -1934,6 +2031,7 @@ function draw(): void {
     const support = proj.source === 'support';
     drawElementProjectile(ctx, type, { x: proj.x, y: proj.y, s: 1 }, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05, s: 1 },
       (proj.size ?? 4) * (support ? 0.85 : 1), (support ? 0.72 : 1) * distanceOpacity, animMs, detailed && !support, proj.id, proj.look);
+    if (proj.look?.held && !effectiveVisual.value.rotomMode) drawHeldProjectileOverlay(ctx, { x: proj.x, y: proj.y, s: 1 }, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05, s: 1 }, proj.size ?? 4, proj.look.held, animMs, detailed, proj.id);
   }
 
   for (const proj of s.hostileProjectiles) {
@@ -1960,6 +2058,15 @@ function draw(): void {
     ctx.restore();
   }
 
+  // Baús e chaves ficam visíveis até no Modo Rotom: são recompensas, não enfeite.
+  for (const chest of s.chests ?? []) {
+    if (chest.x < left - 40 || chest.x > right + 40 || chest.y < top - 40 || chest.y > bottom + 40) continue;
+    drawChest(ctx, chest.x, chest.y, 1, animMs, (s.keys ?? 0) > 0);
+  }
+  for (const key of s.keyDrops ?? []) {
+    if (key.x < left || key.x > right || key.y < top || key.y > bottom) continue;
+    drawKey(ctx, key.x, key.y, 1, animMs);
+  }
   for (const artifact of s.artifacts) {
     // A Pokébola é uma recompensa importante e continua visível no Modo Rotom; os artefatos temporários podem ser ocultados para economizar GPU.
     if (effectiveVisual.value.rotomMode && artifact.kind !== 'pokeball' && artifact.kind !== 'shadow-ball') continue;
@@ -2111,6 +2218,20 @@ function draw(): void {
       drawFocusBeamFx(ctx, f, t, detailed);
     } else if (f.kind === 'rush') {
       drawTeleportFx(ctx, f, t, detailed);
+    } else if (f.kind === 'chain') {
+      drawChainFx(ctx, f.fromX ?? f.x, f.fromY ?? f.y, f.toX ?? f.x, f.toY ?? f.y, f.color, t, f.x + f.y);
+    } else if (f.kind === 'chest') {
+      drawChestOpenFx(ctx, f.x, f.y, f.r, t);
+    } else if (f.kind === 'portal') {
+      drawPortalFx(ctx, f.x, f.y, f.r, t, animMs);
+    } else if (f.kind === 'distort') {
+      drawDistortFx(ctx, f.x, f.y, f.r, t, animMs);
+    } else if (f.kind === 'bubble-pop') {
+      drawBubblePopFx(ctx, f.x, f.y, f.r, t, f.count ?? 1);
+    } else if (f.kind === 'implode') {
+      drawImplodeFx(ctx, f.x, f.y, f.r, f.color, t);
+    } else if (f.kind === 'held-hit') {
+      drawHeldHitFx(ctx, f.x, f.y, f.r, f.color, f.count ?? 1, t, f.x * 0.13 + f.y * 0.07);
     } else if (f.kind === 'heal') {
       // Pulso rosa e coração subindo indicam explicitamente que um suporte recuperou este alvo.
       const rise = t * 24;
@@ -2619,6 +2740,11 @@ function loop(ts: number): void {
     for (const ev of events) {
       if (ev.type === 'levelup') playSound('survivor-level');
       else if (ev.type === 'bossSpawn') playSound('survivor-boss');
+      else if (ev.type === 'keyPicked') say(`🗝 Chave! Você tem ${ev.keys}. Encoste num baú para abrir.`, 2400);
+      else if (ev.type === 'chestSpawn') say('🧰 Um baú apareceu no mapa.', 2400);
+      else if (ev.type === 'chestLocked') say('🔒 Baú trancado: derrote elites para ganhar chaves.', 2600);
+      else if (ev.type === 'chestOpened') playSound('success');
+      else if (ev.type === 'heldItem') say(`🎒 ${ev.name}${ev.copies > 1 ? ` ×${ev.copies}` : ''}!`, 2400);
       else if (ev.type === 'milestone') {
         playSound('success');
         const fastRun = s.fast === true;
@@ -2737,6 +2863,11 @@ function chooseUpgrade(id: string): void {
         if (!disposed) supportSprites.set(ev.dexId, sprite);
       });
       say(`${ev.name} evoluiu e fortaleceu o seu apoio!`, 2600);
+    }
+    if (ev.type === 'heldItem') {
+      const def = HELD_ITEM_BY_ID[ev.id];
+      const form = state.value ? def.perCategory?.[state.value.player.move.category] : undefined;
+      say(def.transformer ? `✦ ${ev.name}${ev.copies > 1 ? ` ×${ev.copies}` : ''} transformou o seu golpe!${form ? ` ${form}` : ''}` : `🎒 ${ev.name}${ev.copies > 1 ? ` ×${ev.copies}` : ''}: o efeito já vale nos seus golpes.`, def.transformer ? 4200 : 2600);
     }
   }
 }
@@ -3334,6 +3465,12 @@ onBeforeUnmount(() => {
             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
             </span>
+            <span v-if="(state.keys ?? 0) > 0 || (state.chests?.length ?? 0) > 0" class="chip survivor-key-chip" role="status" title="Chaves caem dos elites; encoste num baú com chave para escolher um item segurado.">🗝 {{ state.keys ?? 0 }}<template v-if="state.chests?.length"> · 🧰 {{ state.chests.length }} no mapa</template></span>
+            <span v-if="heldSummary(state.player.held)" class="chip survivor-held-chip" role="status" :title="heldTitle(state.player.held)" :aria-label="`Itens segurados: ${heldTitle(state.player.held)}`">🎒
+              <span v-for="item in heldOwned(state.player.held)" :key="item.id" class="survivor-held-entry" :class="{ transformer: HELD_ITEM_BY_ID[item.id].transformer }" :title="HELD_ITEM_BY_ID[item.id].transformer ? `${HELD_ITEM_BY_ID[item.id].name}: transforma o golpe` : HELD_ITEM_BY_ID[item.id].name">
+                <img v-if="!heldSpriteFailed.has(item.id)" class="survivor-held-sprite small" :src="heldItemSpriteUrl(item.id)" alt="" width="20" height="20" @error="onHeldSpriteError(item.id)"><template v-else>{{ HELD_ITEM_BY_ID[item.id].icon }}</template><small v-if="item.copies > 1">×{{ item.copies }}</small>
+              </span>
+            </span>
             <span v-if="state.shadowEncounter.phase === 'available'" class="chip survivor-shadow-chip" title="Ache a Pokébola Sombria para iniciar o confronto opcional">◉ {{ state.shadowEncounter.name }} aguarda</span>
             <span v-else-if="state.shadowEncounter.phase === 'battle'" class="chip survivor-shadow-chip" title="Lendário sombrio em combate">🔥 {{ state.shadowEncounter.name }}</span>
             <span v-if="state.shadowTrustStones > 0" class="chip survivor-shadow-chip" :title="`${state.shadowTrustStones} Pedra(s) da Confiança assegurada(s); entram no inventário ao concluir a corrida`">💠 {{ state.shadowTrustStones }} Pedra{{ state.shadowTrustStones === 1 ? '' : 's' }} assegurada{{ state.shadowTrustStones === 1 ? '' : 's' }}</span>
@@ -3750,20 +3887,32 @@ onBeforeUnmount(() => {
 
         <div v-if="pendingUpgrade" class="survivor-overlay" role="dialog" aria-label="Escolha um upgrade">
           <div class="card survivor-upgrades survivor-levelup" @click.self="banMode = false">
-            <p class="survivor-kicker">Nível {{ state?.player.level }}</p>
-            <h2>Subiu de nível!</h2>
-            <p class="survivor-rarity-hint">Cada carta tem uma raridade e um efeito próprio. O Especial continua disponível após o encontro com o guardião.</p>
+            <template v-if="pendingUpgrade.some((u) => u.id.startsWith('held:'))">
+              <p class="survivor-kicker">🧰 Baú aberto<template v-if="pendingUpgrade.some((u) => isTransformerOption(u))"> · ✦ com transformador!</template></p>
+              <h2>Escolha um item segurado</h2>
+              <p class="survivor-rarity-hint">Itens valem até o fim da corrida e se somam: pegar o mesmo de novo empilha o efeito e muda o visual dos golpes.</p>
+            </template>
+            <template v-else>
+              <p class="survivor-kicker">Nível {{ state?.player.level }}</p>
+              <h2>Subiu de nível!</h2>
+              <p class="survivor-rarity-hint">Cada carta tem uma raridade e um efeito próprio. O Especial continua disponível após o encontro com o guardião.</p>
+            </template>
             <p v-if="upgradeMenuLocked" class="survivor-upgrade-delay" role="status" aria-live="polite">Escolha liberada em instantes…</p>
             <div class="survivor-choice-list">
-              <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:') }]" :disabled="upgradeMenuLocked || (banMode && !!banBlock(u.id))" :title="banMode ? (banBlock(u.id) ?? 'Banir esta carta') : undefined" @pointerdown.stop @click="chooseUpgrade(u.id)">
-                <span class="survivor-upgrade-icon" aria-hidden="true">{{ upgradeIcon(u) }}</span>
+              <button v-for="u in pendingUpgrade" :key="u.id" type="button" class="survivor-upgrade-btn" :class="[u.rarity ? `rarity-${u.rarity}` : '', { evolve: u.id.startsWith('evolve:'), 'held-item': !!heldIdOfOption(u), 'held-transformer': isTransformerOption(u) }]" :disabled="upgradeMenuLocked || (banMode && !!banBlock(u.id))" :title="banMode ? (banBlock(u.id) ?? 'Banir esta carta') : undefined" @pointerdown.stop @click="chooseUpgrade(u.id)">
+                <span class="survivor-upgrade-icon" aria-hidden="true">
+                  <img v-if="heldIdOfOption(u) && !heldSpriteFailed.has(heldIdOfOption(u)!)" class="survivor-held-sprite card" :src="heldItemSpriteUrl(heldIdOfOption(u)!)" alt="" width="48" height="48" @error="onHeldSpriteError(heldIdOfOption(u)!)">
+                  <template v-else>{{ upgradeIcon(u) }}</template>
+                </span>
                 <span class="survivor-upgrade-text">
+                  <span v-if="isTransformerOption(u)" class="survivor-transformer-badge">✦ Transforma o golpe</span>
                   <span v-if="u.rarity" class="survivor-rarity-label" :title="`${SURVIVOR_UPGRADE_RARITIES[u.rarity].label}: ${SURVIVOR_UPGRADE_RARITIES[u.rarity].impact}`">
                     <img class="survivor-rarity-ball" :src="RARITY_BALL_IMAGE[u.rarity]" alt="" />
                     <span>{{ SURVIVOR_UPGRADE_RARITIES[u.rarity].label }}</span>
                   </span>
                   <span v-if="u.family" class="survivor-upgrade-family">{{ SURVIVOR_UPGRADE_FAMILIES[u.family].icon }} {{ SURVIVOR_UPGRADE_FAMILIES[u.family].label }}</span>
                   <strong>{{ u.name }}</strong><small>{{ u.description }}</small>
+                  <small v-if="isTransformerOption(u) && heldFormText(u)" class="survivor-transformer-form"><b>No seu golpe ({{ MOVE_CATEGORY_LABELS_PT[state?.player.move.category ?? 'projetil'] }}):</b> {{ heldFormText(u) }}</small>
                   <small v-if="banMode && banBlock(u.id)" class="survivor-ban-reason">Não dá para banir: {{ banBlock(u.id) }}</small>
                 </span>
               </button>

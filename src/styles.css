@@ -7469,6 +7469,25 @@ body.no-scroll .reward-toasts {
 .survivor-minimap-marker.kind-elite { background: #ffd84a; }
 .survivor-minimap-marker.kind-artifact { width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #fff1a8; color: #ffcf4d; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 0 7px #ffd84a; }
 .survivor-minimap-marker.kind-artifact::after { content: '★'; position: absolute; inset: -5px 0 0; color: #ffd84a; font-size: 15px; line-height: 10px; text-align: center; text-shadow: 0 1px 2px #121827; }
+.survivor-minimap-marker.kind-chest { width: 10px; height: 8px; margin: -4px 0 0 -5px; border-radius: 2px; background: #a56e36; box-shadow: 0 0 0 1px #ffcf3a, 0 0 7px #ffd84a; }
+.survivor-minimap-marker.kind-key { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: #ffcf3a; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 0 6px #ffcf3a; }
+.chip.survivor-held-chip { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.survivor-held-entry { display: inline-flex; align-items: center; gap: 1px; }
+.survivor-held-sprite { image-rendering: pixelated; width: 32px; height: 32px; object-fit: contain; }
+.survivor-held-sprite.small { width: 20px; height: 20px; }
+.survivor-held-sprite.card { width: 48px; height: 48px; }
+.survivor-upgrade-btn.held-item .survivor-upgrade-icon { display: grid; place-items: center; min-width: 52px; min-height: 52px; border-radius: 12px; background: radial-gradient(circle, rgba(255,255,255,.95) 40%, rgba(220,230,255,.6)); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+/* Transformador: carta escura com borda em arco-íris pulsando, selo e a versão do golpe em destaque. */
+.survivor-upgrade-btn.held-transformer { border: 3px solid transparent; border-left-width: 3px; background: linear-gradient(135deg, #1e1436, #2a1a48) padding-box, linear-gradient(120deg, #ff9ad5, #b48cff, #7fd4ff, #7be07b, #ffd84a, #ff9ad5) border-box; color: #f5efff; animation: survivor-transformer-glow 1.8s ease-in-out infinite; }
+.survivor-upgrade-btn.held-transformer strong { color: #ffffff; font-size: 1.08em; }
+.survivor-upgrade-btn.held-transformer small, .survivor-upgrade-btn.held-transformer .survivor-rarity-label, .survivor-upgrade-btn.held-transformer .survivor-upgrade-family { color: #e3d8ff; }
+.survivor-upgrade-btn.held-transformer .survivor-upgrade-icon { background: radial-gradient(circle, #ffffff 30%, #c9a6ff 75%, rgba(180,140,255,0)); box-shadow: 0 0 14px rgba(201,166,255,.9); }
+.survivor-transformer-badge { display: inline-block; margin-bottom: 3px; padding: 2px 9px; border-radius: 999px; background: linear-gradient(90deg, #ff9ad5, #b48cff, #7fd4ff); color: #160d26; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.survivor-transformer-form { display: block; margin-top: 5px; padding: 5px 7px; border-radius: 7px; background: rgba(255,255,255,.12); border-left: 3px solid #7be07b; color: #ffffff !important; }
+@keyframes survivor-transformer-glow { 0%, 100% { box-shadow: 0 0 10px rgba(180,140,255,.55); } 50% { box-shadow: 0 0 22px rgba(255,154,213,.85), 0 0 4px #ffffff; } }
+@media (prefers-reduced-motion: reduce) { .survivor-upgrade-btn.held-transformer { animation: none; box-shadow: 0 0 14px rgba(180,140,255,.7); } }
+.survivor-held-entry.transformer { padding: 1px 3px; border-radius: 999px; background: linear-gradient(90deg, rgba(255,154,213,.35), rgba(127,212,255,.35)); box-shadow: 0 0 0 1px rgba(180,140,255,.8), 0 0 8px rgba(180,140,255,.7); }
+.survivor-held-entry.transformer .survivor-held-sprite { filter: drop-shadow(0 0 3px #ffffff); }
 /* BONK: obstáculos reais no mapa e o cone da câmera (aponta para onde "para cima" leva). */
 .survivor-minimap-obstacle { position: absolute; min-width: 2px; min-height: 2px; border-radius: 1px; background: rgba(206, 192, 222, .7); pointer-events: none; }
 .survivor-minimap-obstacle.kind-tree { background: rgba(92, 172, 102, .85); border-radius: 50%; }
