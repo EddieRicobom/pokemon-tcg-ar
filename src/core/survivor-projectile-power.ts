@@ -1,5 +1,7 @@
 import type { SurvivorPlayer, SurvivorUpgradeRarity } from './survivor-types';
 import { SURVIVOR_UPGRADES } from './survivor-upgrades';
+import { heldProjectileLook } from './survivor-held';
+import type { HeldProjectileLook } from './survivor-held';
 
 /**
  * Evolução visual dos projéteis: as cartas de ataque e de elemento que servem para disparos somam "poder", e o poder
@@ -54,13 +56,17 @@ export interface SurvivorProjectileLook {
   piercing: boolean;
   /** Tem chance de crítico: brilhos em cruz piscam na cabeça. */
   critical: boolean;
+  /** Marcas dos itens segurados (espinhos, coroa, faíscas, cores das placas...). Ausente sem itens. */
+  held?: HeldProjectileLook;
 }
 
-export function survivorProjectileLook(player: Pick<SurvivorPlayer, 'upgradeLevels' | 'stage' | 'pierce' | 'critChance'>): SurvivorProjectileLook {
+export function survivorProjectileLook(player: Pick<SurvivorPlayer, 'upgradeLevels' | 'stage' | 'pierce' | 'critChance' | 'held'>): SurvivorProjectileLook {
+  const held = heldProjectileLook(player.held ?? {});
   return {
     tier: survivorProjectileTier(player),
     piercing: player.pierce > 0,
     critical: (player.critChance ?? 0) > 0.05,
+    ...(held ? { held } : {}),
   };
 }
 

@@ -7469,6 +7469,9 @@ body.no-scroll .reward-toasts {
 .survivor-minimap-marker.kind-elite { background: #ffd84a; }
 .survivor-minimap-marker.kind-artifact { width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #fff1a8; color: #ffcf4d; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 0 7px #ffd84a; }
 .survivor-minimap-marker.kind-artifact::after { content: '★'; position: absolute; inset: -5px 0 0; color: #ffd84a; font-size: 15px; line-height: 10px; text-align: center; text-shadow: 0 1px 2px #121827; }
+.survivor-minimap-marker.kind-chest { width: 10px; height: 8px; margin: -4px 0 0 -5px; border-radius: 2px; background: #a56e36; box-shadow: 0 0 0 1px #ffcf3a, 0 0 7px #ffd84a; }
+.survivor-minimap-marker.kind-key { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: #ffcf3a; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 0 6px #ffcf3a; }
+.chip.survivor-held-chip { letter-spacing: .04em; }
 /* BONK: obstáculos reais no mapa e o cone da câmera (aponta para onde "para cima" leva). */
 .survivor-minimap-obstacle { position: absolute; min-width: 2px; min-height: 2px; border-radius: 1px; background: rgba(206, 192, 222, .7); pointer-events: none; }
 .survivor-minimap-obstacle.kind-tree { background: rgba(92, 172, 102, .85); border-radius: 50%; }

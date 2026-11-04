@@ -6,6 +6,7 @@ import type { SurvivorSpecialState } from './survivor-specials';
 import type { LunchEffect } from './survivor-lunch';
 import type { SurvivorMegaState } from './survivor-mega';
 import type { SurvivorProjectileLook } from './survivor-projectile-power';
+import type { HeldItemId, HeldMods, HeldStacks } from './survivor-held';
 
 /**
  * Tipos, constantes e pontuação do modo Sobrevivência (movidos de `survivor.ts` sem mudar o texto, em 2026-10-23).
@@ -120,6 +121,14 @@ export interface SurvivorPlayer {
   secondAttackRadius?: number;
   /** Especializações escolhidas na corrida, indexadas pelo id para limitar ofertas repetidas. */
   upgradeLevels: Record<string, number>;
+  /** Itens segurados pegos nos baús (cópias por item) e a ficha derivada deles. */
+  held?: HeldStacks;
+  heldMods?: HeldMods;
+  /** Metrônomo: último alvo acertado e quantos acertos seguidos nele. */
+  heldStreakTarget?: number;
+  heldStreak?: number;
+  /** Sino Concha: cura ainda disponível neste segundo. */
+  heldLeechBudget?: number;
   /** Regeneração por segundo, somada pelas cartas "Regeneração lenta". */
   regenPerSec?: number;
   /** Dano por segundo que cada inimigo sofre ao encostar em você (cartas "Espinhos"). */
@@ -325,12 +334,16 @@ export interface SurvivorProjectile {
   distanceFromPlayer?: number;
   /** Aparência evoluída pelas cartas coletadas até o disparo (só desenho; ausente nos apoios). */
   look?: SurvivorProjectileLook;
+  /** Pena Rápida: quanto o disparo curva por segundo (rad/s) atrás do inimigo mais perto. */
+  homing?: number;
+  /** Estilhaço de item: acerta, mas não dispara de novo os efeitos dos itens (evita reação em cadeia infinita). */
+  noHeld?: boolean;
 }
 
 /** Marcas visuais de um instante (pulso da aura, explosão da área, brilho da evolução): só para o desenho. */
 export interface SurvivorFx {
   /** `beam`: feixe do Foco (de `fromX/fromY` a `toX/toY`, meia largura em `r`). `rush`: teleporte carregado. */
-  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal' | 'beam' | 'rush' | 'defeat';
+  kind: 'pulse' | 'blast' | 'cone' | 'orbit-hit' | 'evolve' | 'echo' | 'follow-up' | 'artifact' | 'heal' | 'beam' | 'rush' | 'defeat' | 'chain' | 'chest';
   x: number;
   y: number;
   r: number;
@@ -396,7 +409,7 @@ export interface SurvivorUpgradeOption {
 }
 
 export type SurvivorUpgradeRarity = 'normal' | 'raro' | 'lendario' | 'ancestral';
-export type SurvivorUpgradeFamily = 'ataque' | 'elemento' | 'defesa' | 'movimento' | 'progresso' | 'aliado';
+export type SurvivorUpgradeFamily = 'ataque' | 'elemento' | 'defesa' | 'movimento' | 'progresso' | 'aliado' | 'item';
 export const SURVIVOR_UPGRADE_FAMILIES: Record<SurvivorUpgradeFamily, { label: string; icon: string }> = {
   ataque: { label: 'Ataque', icon: '⚔' },
   elemento: { label: 'Elemento', icon: '✦' },
@@ -404,6 +417,7 @@ export const SURVIVOR_UPGRADE_FAMILIES: Record<SurvivorUpgradeFamily, { label: s
   movimento: { label: 'Movimento', icon: '➜' },
   progresso: { label: 'Progresso', icon: '◈' },
   aliado: { label: 'Aliado', icon: '✦' },
+  item: { label: 'Item segurado', icon: '🎒' },
 };
 export const SURVIVOR_UPGRADE_RARITIES: Record<SurvivorUpgradeRarity, { label: string; icon: string; weight: number; minLevel: number; impact: string }> = {
   normal: { label: 'Poké Ball', icon: '⚪', weight: 74, minLevel: 1, impact: 'Ajuste pequeno e útil' },
@@ -500,6 +514,14 @@ export interface SurvivorState {
   infiniteScale: number;
   /** Não-nulo pausa o avanço (ver `stepSurvivor`): espera `applyUpgrade`. */
   pendingUpgrade: SurvivorUpgradeOption[] | null;
+  /** Chaves na mochila (caem dos elites) e as que ainda estão no chão. */
+  keys?: number;
+  keyDrops?: SurvivorKeyDrop[];
+  /** Baús no mapa: abrem ao encostar com uma chave e oferecem itens segurados. */
+  chests?: SurvivorChest[];
+  nextChestAtMs?: number;
+  /** Farpas grudadas em inimigos, esperando para explodir. */
+  heldMines?: SurvivorHeldMine[];
   /** Níveis ganhos que ainda vão virar escolha de upgrade (subir 2 níveis de uma vez dá 2 escolhas, uma depois da outra). */
   upgradesOwed: number;
   nextId: number;
@@ -662,6 +684,11 @@ export function survivorCoins(s: Pick<SurvivorSummary, 'survivedMs' | 'kills' | 
 
 export type SurvivorEvent =
   | { type: 'levelup'; level: number }
+  | { type: 'keyPicked'; keys: number }
+  | { type: 'chestSpawn' }
+  | { type: 'chestLocked' }
+  | { type: 'chestOpened'; keys: number }
+  | { type: 'heldItem'; id: HeldItemId; name: string; copies: number }
   | { type: 'milestone'; id: 'ten-minutes' | 'fifteen-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'trust-stone' | 'omega-shard' }
   | { type: 'bossSpawn' }
   | { type: 'shadowBallSpawn'; dexId: number; name: string }
@@ -712,4 +739,28 @@ export interface SurvivorUpgrade {
   /** Nome e texto falando do golpe de quem joga (ex.: "Bola de fogo mais forte"). */
   describe?: (move: SurvivorMove) => { name: string; description: string };
   apply: (p: SurvivorPlayer, value?: number) => void;
+}
+
+export interface SurvivorKeyDrop {
+  id: number;
+  x: number;
+  y: number;
+}
+
+export interface SurvivorChest {
+  id: number;
+  x: number;
+  y: number;
+  /** Já avisou que está trancado (sem chave), para não repetir o aviso a cada quadro. */
+  lockedNotified?: boolean;
+}
+
+export interface SurvivorHeldMine {
+  id: number;
+  enemyId: number;
+  x: number;
+  y: number;
+  timerMs: number;
+  damage: number;
+  radius: number;
 }

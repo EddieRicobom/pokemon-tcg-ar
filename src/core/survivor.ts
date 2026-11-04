@@ -2,7 +2,9 @@ import { healSurvivor } from './survivor-healing';
 import { seededRng } from './battle';
 import { statsOfDex } from './survivor-stats';
 import type { Rng } from './battle';
-import { BASIC_ATTACK_DAMAGE_FACTOR, type AttackProfile, type MoveCategory, type SurvivorMove } from './survivor-moves';
+import { BASIC_ATTACK_DAMAGE_FACTOR, moveWith, type AttackProfile, type MoveCategory, type SurvivorMove } from './survivor-moves';
+import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldItemText, heldMods, isHeldItemId, rollHeldOffer } from './survivor-held';
+import type { HeldItemId } from './survivor-held';
 import { survivorBiomeDamageMultiplier, survivorBiomeMovementMultiplier, survivorBiomeProjectileSpeedMultiplier } from './survivor-biomes';
 import { survivorElementalStatus, survivorSynergyFor } from './survivor-synergies';
 import { HYPOTHETICAL_TYPE_ACTIVATION_MS, hypotheticalSecondaryTypeFor, hypotheticalTypeRuleFor } from './survivor-type-mix';
@@ -33,8 +35,8 @@ import type { PokemonType } from './pokemon-data';
  */
 
 export * from './survivor-types';
-import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, survivorMilestoneMs } from './survivor-types';
-import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
+import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
+import type { SurvivorArtifactKind, SurvivorChest, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
 import type { ChargeStyle } from './survivor-charge';
@@ -298,6 +300,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     bonkGravityFactor: 1,
     bonkMode: options.bonk === true,
     upgradeLevels: {},
+    held: {},
     critChance: 0.05,
     ...options.player,
   };
@@ -344,6 +347,11 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     bonk: options.bonk === true,
     infiniteScale: options.infinite === true ? 1.15 : 1,
     pendingUpgrade: null,
+    keys: 0,
+    keyDrops: [],
+    chests: [],
+    nextChestAtMs: survivorMilestoneMs(CHEST_FIRST_MS, fast),
+    heldMines: [],
     upgradesOwed: 0,
     bansLeft: loadout.bans,
     bannedUpgradeIds: [],
@@ -655,6 +663,8 @@ function rerollMinimumRarity(player: SurvivorPlayer, currentFloor: SurvivorUpgra
 export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
   const current = state.pendingUpgrade;
   if (!current || current.length === 0 || state.player.upgradeRerolls <= 0) return false;
+  // A escolha do baú é um sorteio próprio: trocar as cartas viraria upgrades comuns no lugar dos itens.
+  if (current.some((option) => option.id.startsWith(HELD_OFFER_PREFIX))) return false;
 
   state.player.upgradeRerolls -= 1;
   const nonRare = current.filter((option) => (option.rarity ? SURVIVOR_RARITY_ORDER.indexOf(option.rarity) : 0) < 1);
@@ -841,6 +851,9 @@ export function applyUpgrade(state: SurvivorState, id: string): SurvivorEvent[] 
       state.fx.push({ kind: 'evolve', x: support.x, y: support.y, r: 42, color: '#cba6ff', ageMs: 0, lifeMs: 700 });
       events.push({ type: 'supportEvolve', dexId: next.dexId, name: next.name });
     }
+  } else if (id.startsWith(HELD_OFFER_PREFIX)) {
+    const heldId = id.slice(HELD_OFFER_PREFIX.length);
+    if (offered && isHeldItemId(heldId)) grantHeldItem(state, heldId, events);
   } else if (id === 'second-attack') {
     const candidate = state.supportCandidate ?? state.supportCandidates[0];
     if (offered && candidate && state.supports.length < MAX_SURVIVOR_SUPPORTS) {
@@ -966,6 +979,268 @@ function applyKnockback(e: SurvivorEnemy, from: { x: number; y: number }, push: 
 }
 const hasUpgrade = (player: SurvivorPlayer, id: string): boolean => (player.upgradeLevels[id] ?? 0) > 0;
 
+// ----------------------------------------------------------------------------- itens segurados, chaves e baús
+
+/** Baús: o primeiro aos 2:30 e depois a cada 2:30 (no Ritmo acelerado, na mesma fração da corrida); no máximo 2 no chão. */
+export const CHEST_FIRST_MS = 150_000;
+export const CHEST_EVERY_MS = 150_000;
+export const MAX_CHESTS_ON_FIELD = 2;
+/** Chance de um elite solto (fora de time de treinador) derrubar uma chave. */
+export const LOOSE_ELITE_KEY_CHANCE = 0.35;
+const CHEST_OPEN_REACH = PLAYER_RADIUS + 26;
+const MAX_HELD_MINES = 16;
+const MAX_PROJECTILES_FOR_SHARDS = 220;
+const HELD_GRASS_MOVE = moveWith('grass', 'area', null);
+
+/** Acertos disparados por um item (raio, estilhaço, farpa) não disparam os itens de novo. */
+let heldGuard = 0;
+const heldShardQueues = new WeakMap<SurvivorState, SurvivorProjectile[]>();
+
+function grantHeldItem(state: SurvivorState, id: HeldItemId, events: SurvivorEvent[]): void {
+  const p = state.player;
+  p.held ??= {};
+  const copies = (p.held[id] ?? 0) + 1;
+  p.held[id] = copies;
+  HELD_ITEM_BY_ID[id].applyStats?.(p);
+  p.heldMods = heldMods(p.held);
+  p.heldLeechBudget ??= 0;
+  state.fx.push({ kind: 'evolve', x: p.x, y: p.y, r: 38, color: HELD_ITEM_BY_ID[id].color, ageMs: 0, lifeMs: 600 });
+  events.push({ type: 'heldItem', id, name: HELD_ITEM_BY_ID[id].name, copies });
+}
+
+function refillHeldLeech(p: SurvivorPlayer, dtMs: number): void {
+  const cap = p.heldMods?.leechCapPerSec ?? 0;
+  if (cap <= 0) return;
+  p.heldLeechBudget = Math.min(cap, (p.heldLeechBudget ?? 0) + cap * dtMs / 1000);
+}
+
+/** Multiplicador de dano dos itens: Orbe da Vida e Faixa, Cinto Expert contra os fortes e a sequência do Metrônomo. */
+function heldDamageFactor(state: SurvivorState, e: SurvivorEnemy): number {
+  const p = state.player;
+  const mods = p.heldMods!;
+  let factor = mods.damageMul;
+  if (e.boss || e.grade !== 'comum' || e.trainerId !== undefined) factor *= mods.eliteMul;
+  if (mods.metronomeStep > 0) {
+    if (p.heldStreakTarget === e.id) p.heldStreak = Math.min(5, (p.heldStreak ?? 0) + 1);
+    else { p.heldStreakTarget = e.id; p.heldStreak = 0; }
+    factor *= 1 + mods.metronomeStep * (p.heldStreak ?? 0);
+  }
+  return factor;
+}
+
+function heldHoming(p: SurvivorPlayer): { homing?: number } {
+  const homing = p.heldMods?.homing ?? 0;
+  return homing > 0 ? { homing } : {};
+}
+
+/** Pena Rápida: o disparo vira aos poucos para o inimigo mais perto que ainda não acertou. */
+function steerHomingProjectile(state: SurvivorState, proj: SurvivorProjectile, dt: number): void {
+  let best: SurvivorEnemy | undefined;
+  let bestD = 240;
+  for (const e of state.enemies) {
+    if (e.hp <= 0 || proj.hit.includes(e.id)) continue;
+    const d = Math.hypot(e.x - proj.x, e.y - proj.y);
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  if (!best) return;
+  const speed = Math.hypot(proj.vx, proj.vy);
+  const current = Math.atan2(proj.vy, proj.vx);
+  let diff = Math.atan2(best.y - proj.y, best.x - proj.x) - current;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  const limit = (proj.homing ?? 0) * dt;
+  const turn = Math.max(-limit, Math.min(limit, diff));
+  proj.vx = Math.cos(current + turn) * speed;
+  proj.vy = Math.sin(current + turn) * speed;
+}
+
+function heldNeighbors(state: SurvivorState, origin: SurvivorEnemy, range: number, count: number): SurvivorEnemy[] {
+  return state.enemies
+    .filter((o) => o !== origin && o.hp > 0 && Math.hypot(o.x - origin.x, o.y - origin.y) <= range)
+    .sort((a, b) => Math.hypot(a.x - origin.x, a.y - origin.y) - Math.hypot(b.x - origin.x, b.y - origin.y))
+    .slice(0, count);
+}
+
+const PLATE_ITEM: Partial<Record<string, HeldItemId>> = { fire: 'placa-chama', electric: 'placa-zap', ice: 'placa-gelo' };
+
+/** Efeitos de cada acerto do golpe de quem joga, somando todos os itens. Os acertos extras não disparam itens de novo. */
+function applyHeldOnHit(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, critical: boolean): void {
+  const p = state.player;
+  const mods = p.heldMods;
+  if (!mods) return;
+  heldGuard++;
+  try {
+    const duration = mods.statusDurationMul;
+    if (mods.leech > 0) {
+      const heal = Math.min(p.heldLeechBudget ?? 0, damage * mods.leech);
+      if (heal > 0) { healSurvivor(p, heal); p.heldLeechBudget = (p.heldLeechBudget ?? 0) - heal; }
+    }
+    if (mods.knockback > 0 && !e.boss && e.grade === 'comum') applyKnockback(e, from, mods.knockback);
+    for (const type of mods.plates) {
+      e.hp -= damage * 0.25;
+      Object.assign(e, survivorElementalStatus(type));
+    }
+    const firstPlate = mods.plates[0] ? PLATE_ITEM[mods.plates[0]] : undefined;
+    if (firstPlate) state.fx.push({ kind: 'echo', x: e.x, y: e.y, r: Math.max(10, e.radius * 1.6), color: HELD_ITEM_BY_ID[firstPlate].color, ageMs: 0, lifeMs: 220 });
+    if (e.hp > 0 && mods.stunChance > 0 && state.rng() < mods.stunChance) {
+      applyStun(e, Math.round((e.boss || e.grade === 'chefao' ? 120 : 450) * duration));
+      state.fx.push({ kind: 'echo', x: e.x, y: e.y - 6, r: e.radius * 1.4, color: HELD_ITEM_BY_ID['pedra-rei'].color, ageMs: 0, lifeMs: 320 });
+    }
+    if (e.hp > 0 && mods.burnChance > 0 && state.rng() < mods.burnChance) {
+      e.burnMs = Math.max(e.burnMs ?? 0, Math.round(2000 * duration));
+      e.burnDps = Math.max(e.burnDps ?? 0, round1(damage * 0.3));
+    }
+    if (e.hp > 0 && mods.poisonChance > 0 && state.rng() < mods.poisonChance) {
+      // O veneno acumula: cada aplicação soma ao que já corre, até 1,5× o acerto.
+      e.burnMs = Math.max(e.burnMs ?? 0, Math.round(3000 * duration));
+      e.burnDps = round1(Math.min(damage * 1.5, (e.burnDps ?? 0) + damage * 0.12));
+    }
+    if (mods.rootChance > 0 && state.rng() < mods.rootChance) {
+      leaveElementalTerrain(state, e, damage, HELD_GRASS_MOVE);
+      const root = state.elementalTerrain[state.elementalTerrain.length - 1];
+      if (root) root.ticksLeft = Math.max(1, Math.round(3 * duration));
+    }
+    if (e.hp > 0 && mods.stickyChance > 0 && (state.heldMines?.length ?? 0) < MAX_HELD_MINES && state.rng() < mods.stickyChance) {
+      (state.heldMines ??= []).push({ id: state.nextId++, enemyId: e.id, x: e.x, y: e.y, timerMs: 1000, damage: round1(damage * 1.2), radius: 48 });
+    }
+    if (mods.chainChance > 0 && state.rng() < mods.chainChance) {
+      for (const other of heldNeighbors(state, e, 150, 2)) {
+        hitEnemy(state, other, damage * 0.4, { x: e.x, y: e.y }, p.move, false, 0);
+        state.fx.push({ kind: 'chain', x: other.x, y: other.y, r: 6, color: HELD_ITEM_BY_ID['bola-luz'].color, ageMs: 0, lifeMs: 260, fromX: e.x, fromY: e.y, toX: other.x, toY: other.y });
+      }
+    }
+    if (critical && mods.critBounces > 0) {
+      for (const other of heldNeighbors(state, e, 180, mods.critBounces)) {
+        hitEnemy(state, other, damage * 0.6, { x: e.x, y: e.y }, p.move, false, 0);
+        state.fx.push({ kind: 'chain', x: other.x, y: other.y, r: 4, color: HELD_ITEM_BY_ID['garra-afiada'].color, ageMs: 0, lifeMs: 200, fromX: e.x, fromY: e.y, toX: other.x, toY: other.y });
+      }
+    }
+    if (mods.shards > 0) queueHeldShards(state, e, damage, from, mods.shards);
+  } finally {
+    heldGuard--;
+  }
+}
+
+/** Fragmento de Estrela: estilhaços saem do alvo para longe de onde veio o golpe, num leque. */
+function queueHeldShards(state: SurvivorState, e: SurvivorEnemy, damage: number, from: { x: number; y: number }, count: number): void {
+  const queue = heldShardQueues.get(state) ?? [];
+  if (state.projectiles.length + queue.length + count > MAX_PROJECTILES_FOR_SHARDS) return;
+  const p = state.player;
+  const dx = e.x - from.x;
+  const dy = e.y - from.y;
+  const base = dx === 0 && dy === 0 ? state.rng() * Math.PI * 2 : Math.atan2(dy, dx);
+  const speed = 300;
+  for (let i = 0; i < count; i++) {
+    const angle = base + (count === 1 ? 0 : (i / (count - 1) - 0.5) * 1.8);
+    queue.push({
+      id: state.nextId++, x: e.x, y: e.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      damage: round1(damage * 0.35), pierce: 0, lifeMs: 420, hit: [e.id], size: Math.max(3, p.projectileSize * 0.7), collisionRadius: 6,
+      move: p.move, distanceFromPlayer: 0, noHeld: true,
+      look: { tier: 0, piercing: false, critical: false, held: { colors: [HELD_ITEM_BY_ID['fragmento-estrela'].color], spikes: false, crown: false, sparks: false, star: true, wings: false, heavy: 0 } },
+    });
+  }
+  heldShardQueues.set(state, queue);
+}
+
+function flushHeldShards(state: SurvivorState): void {
+  const queue = heldShardQueues.get(state);
+  if (!queue || queue.length === 0) return;
+  state.projectiles.push(...queue);
+  heldShardQueues.set(state, []);
+}
+
+/** Farpas: seguem o inimigo em que grudaram e explodem em volta dele depois de 1 s. */
+function stepHeldMines(state: SurvivorState, dtMs: number): void {
+  const mines = state.heldMines;
+  if (!mines || mines.length === 0) return;
+  for (const mine of mines) {
+    const host = state.enemies.find((e) => e.id === mine.enemyId && e.hp > 0);
+    if (host) { mine.x = host.x; mine.y = host.y; }
+    mine.timerMs -= dtMs;
+  }
+  const ready = mines.filter((mine) => mine.timerMs <= 0);
+  state.heldMines = mines.filter((mine) => mine.timerMs > 0);
+  if (ready.length === 0) return;
+  heldGuard++;
+  try {
+    for (const mine of ready) {
+      for (const e of state.enemies) {
+        if (e.hp <= 0 || Math.hypot(e.x - mine.x, e.y - mine.y) > mine.radius + e.radius) continue;
+        hitEnemy(state, e, mine.damage, { x: mine.x, y: mine.y }, state.player.move, false, 0);
+      }
+      state.fx.push({ kind: 'blast', x: mine.x, y: mine.y, r: mine.radius, color: HELD_ITEM_BY_ID['farpa-grudenta'].color, ageMs: 0, lifeMs: 320, moveType: 'grass' });
+    }
+  } finally {
+    heldGuard--;
+  }
+}
+
+/** Depois de cada ataque: o Orbe da Vida cobra vida e a Garra Rápida pode atacar de novo na hora. */
+function heldAfterAttack(state: SurvivorState): void {
+  const p = state.player;
+  const mods = p.heldMods;
+  if (!mods) return;
+  const floor = p.maxHp * 0.25;
+  if (mods.selfDamagePerAttack > 0 && p.hp > floor) p.hp = Math.max(floor, p.hp - mods.selfDamagePerAttack);
+  if (mods.recastChance > 0 && state.rng() < mods.recastChance) p.attackTimerMs = Math.min(p.attackTimerMs, 90);
+}
+
+function dropKey(state: SurvivorState, x: number, y: number): void {
+  (state.keyDrops ??= []).push({ id: state.nextId++, x: clamp(x, 20, ARENA_W - 20), y: clamp(y, 20, ARENA_H - 20) });
+}
+
+/** Baús surgem com o tempo; chaves são coletadas como orbes; encostar num baú com chave abre a escolha de itens. */
+function stepChests(state: SurvivorState, events: SurvivorEvent[]): void {
+  if (state.debugLaboratory || state.over) return;
+  const p = state.player;
+  state.chests ??= [];
+  state.keyDrops ??= [];
+  state.keys ??= 0;
+  state.nextChestAtMs ??= survivorMilestoneMs(CHEST_FIRST_MS, state.fast);
+  if (state.elapsedMs >= state.nextChestAtMs) {
+    state.nextChestAtMs += survivorMilestoneMs(CHEST_EVERY_MS, state.fast);
+    if (state.chests.length < MAX_CHESTS_ON_FIELD) {
+      const angle = state.rng() * Math.PI * 2;
+      const distance = 260 + state.rng() * 160;
+      state.chests.push({ id: state.nextId++, x: clamp(p.x + Math.cos(angle) * distance, 60, ARENA_W - 60), y: clamp(p.y + Math.sin(angle) * distance, 60, ARENA_H - 60) });
+      events.push({ type: 'chestSpawn' });
+    }
+  }
+  const reach = Math.min(MAGNET_PICKUP_RADIUS_CAP, effectivePickupRadius(p) * (p.artifactMagnetMs > 0 ? 1.7 : 1));
+  if (state.keyDrops.length > 0) {
+    state.keyDrops = state.keyDrops.filter((key) => {
+      if (Math.hypot(key.x - p.x, key.y - p.y) > reach) return true;
+      state.keys = (state.keys ?? 0) + 1;
+      events.push({ type: 'keyPicked', keys: state.keys });
+      return false;
+    });
+  }
+  if (state.pendingUpgrade) return;
+  for (const chest of state.chests) {
+    if (Math.hypot(chest.x - p.x, chest.y - p.y) > CHEST_OPEN_REACH) continue;
+    if (state.keys <= 0) {
+      if (!chest.lockedNotified) { chest.lockedNotified = true; events.push({ type: 'chestLocked' }); }
+      continue;
+    }
+    openChest(state, chest, events);
+    break;
+  }
+}
+
+function openChest(state: SurvivorState, chest: SurvivorChest, events: SurvivorEvent[]): void {
+  const p = state.player;
+  const offer = rollHeldOffer(state.rng, p.held ?? {}, 2);
+  if (offer.length === 0) return;
+  state.keys = Math.max(0, (state.keys ?? 0) - 1);
+  state.chests = (state.chests ?? []).filter((c) => c !== chest);
+  state.fx.push({ kind: 'chest', x: chest.x, y: chest.y, r: 46, color: '#ffd84a', ageMs: 0, lifeMs: 700 });
+  state.pendingUpgrade = offer.map((id) => {
+    const item = HELD_ITEM_BY_ID[id];
+    return { id: `${HELD_OFFER_PREFIX}${id}`, name: item.name, icon: item.icon, rarity: item.rarity, family: 'item' as const, description: heldItemText(id, p.move.category, p.held?.[id] ?? 0) };
+  });
+  events.push({ type: 'chestOpened', keys: state.keys });
+}
+
 export function survivorDirectDamageMultiplier(distance: number): number {
   const normalized = Math.max(0, Math.min(1, (distance - BALANCE.defaultAttackDistance) / BALANCE.defaultAttackDistance));
   return 1 - (1 - BALANCE.directDamageMinMultiplier) * normalized;
@@ -1082,6 +1357,8 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
   const chance = Math.min(Math.max(0.4, baseChance), baseChance + (e.hp <= e.maxHp * 0.3 ? (p.upgradeLevels['crit-finish'] ?? 0) * 0.05 : 0));
   const critical = move === p.move && chance > 0 && state.critRng() < chance;
   if (critical) upgradeMultiplier *= 2 + (p.upgradeLevels['crit-power'] ?? 0) * 0.25;
+  const heldActive = move === p.move && heldGuard === 0 && p.heldMods !== undefined;
+  if (heldActive) upgradeMultiplier *= heldDamageFactor(state, e);
   const environmentalDamage = damage * survivorDirectDamageMultiplier(distanceFromPlayer) * (p.move.category === 'rapido' || p.move.category === 'teleporte' ? 1 : survivorRapidAttackDamageMultiplier(p)) * upgradeMultiplier
     * (synergy?.damageMultiplier ?? 1)
     * survivorBiomeDamageMultiplier(state.elapsedMs, from.x, from.y, move.type);
@@ -1143,6 +1420,7 @@ function hitEnemy(state: SurvivorState, e: SurvivorEnemy, damage: number, from: 
       element: move.type, fromX: p.x, fromY: p.y, toX: e.x, toY: e.y, delayMs: 85, count: move.type === 'bug' ? 4 : 3,
     });
   }
+  if (heldActive) applyHeldOnHit(state, e, finalDamage, from, critical);
 }
 
 /** Distância mínima de um inimigo ao trecho percorrido pela investida. */
@@ -1268,6 +1546,7 @@ function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
       move,
       distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y),
       look,
+      ...heldHoming(p),
     });
   }
 }
@@ -1287,6 +1566,7 @@ function fireRapidShot(state: SurvivorState, target: SurvivorEnemy): void {
       pierce: p.pierce + (p.move.effect === 'atravessar' ? 1 : 0), lifeMs: Math.max(1600, Math.ceil((p.attackRange + 30) / Math.max(1, p.projectileSpeed) * 1000) + 50), hit: [],
       canChain: p.move.effect === 'saltar', size: p.projectileSize, collisionRadius: 5 * (p.projectileHitRadiusFactor ?? 1), move: p.move,
       distanceFromPlayer: Math.hypot(target.x - p.x, target.y - p.y), look,
+      ...heldHoming(p),
     });
   }
 }
@@ -2019,6 +2299,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   const healBlockBeforeStep = state.player.healBlockMs ?? 0;
   const previousElapsedMs = state.elapsedMs;
   state.elapsedMs += dtMs;
+  flushHeldShards(state);
+  refillHeldLeech(state.player, dtMs);
   stepElementalTerrain(state, dtMs);
   if (!state.hypotheticalSecondaryActive && previousElapsedMs < HYPOTHETICAL_TYPE_ACTIVATION_MS && state.elapsedMs >= HYPOTHETICAL_TYPE_ACTIVATION_MS) {
     state.hypotheticalSecondaryActive = true;
@@ -2209,6 +2491,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (p.attackTimerMs <= 0 && state.charge.rapidShotsPending <= 0 && p.move.category !== 'trilha' && attack(state)) {
     const cooldownMs = p.attackCooldownMs * (p.artifactFocusMs > 0 ? 0.8 : 1);
     p.attackTimerMs = p.move.category === 'rapido' ? Math.max(RAPID_BURST_MIN_CYCLE_MS, cooldownMs) : cooldownMs;
+    heldAfterAttack(state);
   }
   if (p.move.category === 'orbit') stepOrbiters(state, dtMs);
   if (state.supports.length > 0) {
@@ -2241,8 +2524,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   }
 
   // Projéteis: avançam, somem com o tempo/fora da arena, acertam o inimigo mais próximo no caminho.
+  stepHeldMines(state, dtMs);
   const chained: SurvivorProjectile[] = [];
   state.projectiles = state.projectiles.filter((proj) => {
+    if (proj.homing) steerHomingProjectile(state, proj, dt);
     const terrainSpeed = survivorBiomeProjectileSpeedMultiplier(state.elapsedMs, proj.x, proj.y);
     proj.x += proj.vx * terrainSpeed * dt;
     proj.y += proj.vy * terrainSpeed * dt;
@@ -2254,7 +2539,12 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       const focusShot = proj.move?.category === 'foco' && proj.source !== 'support';
       if (Math.hypot(e.x - proj.x, e.y - proj.y) < e.radius + (focusShot ? Math.max(5, proj.size ?? 5) : proj.collisionRadius ?? 5)) {
         if (focusShot) state.charge.level = Math.min(1, state.charge.level + FOCUS_HIT_CHARGE);
-        hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move, true, proj.distanceFromPlayer ?? Math.hypot(e.x - p.x, e.y - p.y));
+        if (proj.noHeld) heldGuard++;
+        try {
+          hitEnemy(state, e, proj.damage, { x: proj.x - proj.vx * 0.05, y: proj.y - proj.vy * 0.05 }, proj.move, true, proj.distanceFromPlayer ?? Math.hypot(e.x - p.x, e.y - p.y));
+        } finally {
+          if (proj.noHeld) heldGuard--;
+        }
         drain(state, 1, proj.move ?? state.player.move);
         proj.hit.push(e.id);
         if (proj.canChain) {
@@ -2278,6 +2568,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   });
 
   state.projectiles.push(...chained);
+  flushHeldShards(state);
 
   // Marcas visuais envelhecem e somem.
   if (state.fx.length > 0) {
@@ -2301,6 +2592,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       state.orbs.push({ id: state.nextId++, x: e.x, y: e.y, value, ...(doubleXp ? { doubleXp: true } : {}) });
       const dropChance = (e.boss ? BALANCE.artifactBossDropChance : e.grade === 'chefao' || e.grade === 'elite' ? BALANCE.artifactEliteDropChance : BALANCE.artifactDropChance) * (1 + (p.artifactLuck ?? 0));
       if (state.rng() < dropChance) state.artifacts.push({ id: state.nextId++, x: e.x, y: e.y, kind: artifactKind(state.rng) });
+      // Elites soltos (caçadas) às vezes derrubam uma chave; os de treinador entregam a chave quando o time cai.
+      if (e.grade === 'elite' && e.trainerId === undefined && !state.debugLaboratory && state.rng() < LOOSE_ELITE_KEY_CHANCE) dropKey(state, e.x, e.y);
       if (e.archetype === 'explosivo') explodeOnDeath(state, e);
       const pokeballsOnGround = state.artifacts.reduce((total, artifact) => total + (artifact.kind === 'pokeball' ? 1 : 0), 0);
       const pokeballChance = e.boss || e.grade === 'chefao'
@@ -2333,6 +2626,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
       if (final) state.bossesBeaten += 1;
       if (final && !state.infinite) state.finalBossBeaten = true;
       events.push({ type: 'trainerDown', final });
+      // Treinador comum derrotado deixa chave para os baús; no Ritmo acelerado, na mesma proporção da corrida normal.
+      if (!final && sample && !state.debugLaboratory) {
+        for (let k = 0; k < (state.fast ? SURVIVOR_FAST_TRAINER_COIN_SCALE : 1); k++) dropKey(state, sample.x + k * 14, sample.y);
+      }
       if (!final && state.trainersBeaten === 1 && !state.typeAffinityOffered && state.typeAffinityChoices.length > 0) {
         state.typeAffinityOffered = true;
         events.push({ type: 'typeAffinityOffer', types: [...state.typeAffinityChoices] });
@@ -2352,6 +2649,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   }
 
   updateFieldEvent(state, dtMs, events);
+  stepChests(state, events);
 
   // Coleta de orbes de XP (e nível, se passou da marca).
   if (state.special.selected === 'gravity' && state.special.branch === 'gravity-vacuum' && state.special.activeMs > 0) {
