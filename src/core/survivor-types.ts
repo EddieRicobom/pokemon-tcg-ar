@@ -171,6 +171,14 @@ export interface SurvivorSupport {
   attackTimerMs: number;
   /** Fator deliberadamente abaixo do protagonista: apoio complementa, não duplica uma build. */
   damageFactor: number;
+  /** Foco: carga automática (0 a 1); cheia, o apoio solta o feixe sozinho. */
+  focusCharge?: number;
+  /** Trilha: carga pela distância andada (0 a 1); cheia, o apoio desenha a própria faixa sozinho. */
+  trailCharge?: number;
+  trailActiveMs?: number;
+  trailPath?: { x: number; y: number; bornMs: number }[];
+  /** Trilha: próximo pulso permitido por inimigo (id → ms da corrida), separado da faixa do jogador. */
+  trailNextHitMs?: Record<number, number>;
 }
 
 export interface SurvivorSupportCandidate {

@@ -1524,3 +1524,42 @@ describe('artefatos temporários', () => {
     expect(s.player.artifactSpeedMs).toBe(8000);
   });
 });
+
+describe('apoios de carga', () => {
+  function withSupport(category: MoveCategory) {
+    const own = as('normal', 'trilha');
+    const s = quiet(createSurvivorState(91, { kindCount: 1, move: own.move, profile: own.profile }));
+    const { move, profile } = as('fire', category);
+    s.supports.push({ dexId: 4, name: 'Apoio', move, profile, x: s.player.x + s.player.facing * -28, y: s.player.y + 22, attackTimerMs: 0, damageFactor: 0.45 });
+    return s;
+  }
+
+  it('o apoio de Foco carrega sozinho e solta o feixe cheio', () => {
+    const s = withSupport('foco');
+    s.enemies.push(dummy(1, s.player.x + 200, s.player.y, 1e6));
+    let beam = false;
+    for (let i = 0; i < 300 && !beam; i++) {
+      stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+      beam = s.fx.some((f) => f.kind === 'beam');
+    }
+    expect(beam).toBe(true);
+    expect(s.supports[0]!.focusCharge).toBeLessThan(0.1);
+    expect(s.enemies[0]!.hp).toBeLessThan(1e6);
+  });
+
+  it('o apoio de Trilha carrega andando e desenha a própria faixa sozinho', () => {
+    const s = withSupport('trilha');
+    for (let i = 0; i < 60; i++) stepSurvivor(s, { dx: 1, dy: 0 }, 16);
+    expect(s.supports[0]!.trailCharge).toBeGreaterThan(0);
+
+    const support = s.supports[0]!;
+    support.x = s.player.x + s.player.facing * -28;
+    support.y = s.player.y + 22;
+    support.trailCharge = 1;
+    s.enemies.push(dummy(2, support.x, support.y, 1e6));
+    for (let i = 0; i < 10; i++) stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(support.trailActiveMs).toBeGreaterThan(0);
+    expect(support.trailPath?.length).toBeGreaterThan(0);
+    expect(s.enemies.find((e) => e.id === 2)!.hp).toBeLessThan(1e6);
+  });
+});

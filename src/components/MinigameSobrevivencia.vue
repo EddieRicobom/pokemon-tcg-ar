@@ -52,7 +52,7 @@ import {
 } from '../core/survivor';
 import type { SurvivorEnemy, SurvivorEvolutionOption, SurvivorState, SurvivorSummary, SurvivorSupportCandidate, SurvivorUpgradeOption, SurvivorUpgradeRarity } from '../core/survivor';
 import { attackProfile, moveEffectForType, moveFor, moveWith, rankedCategories, MOVE_CATEGORY_LABELS_PT, MOVE_EFFECT_LABELS_PT, profileBars } from '../core/survivor-moves';
-import { survivorAttackChoices, survivorAttackOf } from '../core/survivor-loadout';
+import { survivorAttackChoices, survivorAttackOf, survivorSupportMove } from '../core/survivor-loadout';
 import { TYPE_LABELS_PT } from '../core/pokemon-data';
 import type { PokemonType } from '../core/pokemon-data';
 import { SURVIVOR_CLEAR_BONUS } from '../core/survivor';
@@ -947,7 +947,8 @@ let lastMinimapMs = -Infinity;
 let announcedRegion = '';
 /** Rastro visual calculado pela velocidade real do quadro, comparada à velocidade de início da corrida. */
 let initialPlayerSpeed = 1;
-const footDust = { strength: 0, dx: 0, dy: 0 };
+interface DustPuff { ox: number; oy: number; vx: number; vy: number; ageMs: number; lifeMs: number; size: number }
+const footDust = { strength: 0, ratio: 0, dx: 0, dy: 0, step: 1, spawnAcc: 0, puffs: [] as DustPuff[] };
 const heldKeys = new Set<string>();
 /** Joystick flutuante: aparece onde o dedo encostou na tela da Torre (`lx`, `ly`, relativos à tela). */
 const joystick = reactive({ active: false, pointerId: null as number | null, cx: 0, cy: 0, dx: 0, dy: 0, lx: 0, ly: 0 });
@@ -1229,23 +1230,76 @@ function drawShadowFlames(x: number, y: number, radius: number): void {
   ctx.restore();
 }
 
-/** Poeira leve atrás dos pés: só aparece ao passar da velocidade inicial e respeita Efeitos leves/Rotom. */
-function drawFootDust(c: CanvasRenderingContext2D, x: number, y: number, scale = 1): void {
-  if (!detailedSpecialEffects.value || footDust.strength <= 0.01) return;
+/**
+ * Poeira da corrida: nuvens soltas a cada passo ficam para trás no chão, crescem e somem; acima da velocidade inicial
+ * saem mais, maiores e mais longe, e aparecem riscos de vento atrás do Pokémon. Só desenho, com Efeitos leves/Rotom desligada.
+ */
+function stepFootDust(movedX: number, movedY: number, dtMs: number): void {
+  const puffs = footDust.puffs;
+  // As nuvens guardam a posição relativa ao jogador; descontar o passo as deixa paradas no mundo.
+  for (const puff of puffs) {
+    puff.ageMs += dtMs;
+    puff.ox += puff.vx * dtMs / 1000 - movedX;
+    puff.oy += puff.vy * dtMs / 1000 - movedY;
+    puff.vx *= 0.9;
+    puff.vy *= 0.9;
+  }
+  for (let i = puffs.length - 1; i >= 0; i--) if (puffs[i]!.ageMs >= puffs[i]!.lifeMs) puffs.splice(i, 1);
+  if (!detailedSpecialEffects.value || footDust.ratio < 0.35) { footDust.spawnAcc = 0; return; }
   const strength = clamp(footDust.strength, 0, 1.4);
-  const oppositeX = -footDust.dx;
-  const oppositeY = -footDust.dy;
-  const distance = (11 + strength * 13) * scale;
-  const px = x + oppositeX * distance;
-  const py = y + oppositeY * distance * 0.55 + 6 * scale;
+  // Um passo a cada ~170 ms andando normal; correndo, quase o dobro.
+  footDust.spawnAcc += dtMs * (0.0055 + 0.006 * strength) * Math.min(1, footDust.ratio);
+  while (footDust.spawnAcc >= 1 && puffs.length < 36) {
+    footDust.spawnAcc -= 1;
+    footDust.step = -footDust.step;
+    const side = footDust.step * (3 + Math.random() * 3);
+    const back = 6 + Math.random() * 4;
+    const kick = 22 + 55 * strength;
+    puffs.push({
+      ox: -footDust.dx * back - footDust.dy * side,
+      oy: -footDust.dy * back + footDust.dx * side,
+      vx: -footDust.dx * kick + (Math.random() - 0.5) * 18,
+      vy: -footDust.dy * kick + (Math.random() - 0.5) * 18,
+      ageMs: 0,
+      lifeMs: 320 + 260 * strength + Math.random() * 120,
+      size: 2.2 + 2.4 * strength + Math.random() * 1.2,
+    });
+  }
+  if (footDust.spawnAcc > 1) footDust.spawnAcc = 1;
+}
+
+function drawFootDust(c: CanvasRenderingContext2D, x: number, y: number, scale = 1): void {
+  if (!detailedSpecialEffects.value) return;
+  const strength = clamp(footDust.strength, 0, 1.4);
   c.save();
-  c.globalAlpha = 0.16 + strength * 0.23;
   c.fillStyle = '#e8dfc7';
-  for (let i = 0; i < 3; i++) {
-    const spread = (i - 1) * (4 + strength * 2) * scale;
+  for (const puff of footDust.puffs) {
+    const t = puff.ageMs / puff.lifeMs;
+    const grow = 1 + 1.6 * t;
+    c.globalAlpha = (0.42 + 0.18 * strength) * (1 - t) * (1 - t);
     c.beginPath();
-    c.ellipse(px + oppositeY * spread, py - oppositeX * spread * 0.45, (2.5 + strength * 2) * scale, (1.4 + strength) * scale, 0, 0, Math.PI * 2);
+    c.ellipse(x + puff.ox * scale, y + 6 * scale + puff.oy * 0.55 * scale - 4 * t * scale, puff.size * grow * scale, puff.size * 0.6 * grow * scale, 0, 0, Math.PI * 2);
     c.fill();
+  }
+  // Riscos de vento só acima da velocidade de início: a sensação de disparada.
+  if (strength > 0.25 && (footDust.dx !== 0 || footDust.dy !== 0)) {
+    const lines = strength > 0.8 ? 4 : 3;
+    c.strokeStyle = '#ffffff';
+    c.lineCap = 'round';
+    c.lineWidth = 1.5 * scale;
+    for (let i = 0; i < lines; i++) {
+      const lane = (i - (lines - 1) / 2) * 9;
+      const flicker = (animMs / 70 + i * 0.37) % 1;
+      const start = 14 + 6 * flicker;
+      const length = (12 + 26 * strength) * (0.6 + 0.4 * (1 - flicker));
+      const baseX = x - footDust.dy * lane * scale;
+      const baseY = y - 12 * scale + footDust.dx * lane * 0.55 * scale;
+      c.globalAlpha = (0.15 + 0.3 * Math.min(1, strength)) * (1 - flicker * 0.6);
+      c.beginPath();
+      c.moveTo(baseX - footDust.dx * start * scale, baseY - footDust.dy * start * 0.55 * scale);
+      c.lineTo(baseX - footDust.dx * (start + length) * scale, baseY - footDust.dy * (start + length) * 0.55 * scale);
+      c.stroke();
+    }
   }
   c.restore();
 }
@@ -1826,6 +1880,7 @@ function draw(): void {
   else if (move.category === 'orbit') drawOrbitPath(ctx, s.player, move.type, flat);
   else if (move.category === 'foco' || move.category === 'teleporte') drawChargeAura(ctx, s, detailed);
   if (move.category === 'trilha') drawElementTrail(ctx, s, detailed);
+  drawSupportTrails(ctx, s, detailed);
 
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
@@ -2093,7 +2148,17 @@ function draw(): void {
 
 /** Faixa contínua: pontos internos são só geometria; na tela ela sempre é uma linha conectada que perde a cauda suavemente. */
 function drawElementTrail(c: CanvasRenderingContext2D, s: SurvivorState, detailed: boolean): void {
-  const path = s.player.trailPath ?? [];
+  drawTrailPath(c, s, s.player.trailPath ?? [], s.player.move.color, s.player.attackRadius, detailed);
+}
+
+/** Faixas dos apoios de Trilha, que carregam e desenham sozinhos. */
+function drawSupportTrails(c: CanvasRenderingContext2D, s: SurvivorState, detailed: boolean): void {
+  for (const support of s.supports) {
+    if (support.move.category === 'trilha' && support.trailPath) drawTrailPath(c, s, support.trailPath, support.move.color, support.profile.radius, detailed);
+  }
+}
+
+function drawTrailPath(c: CanvasRenderingContext2D, s: SurvivorState, path: readonly { x: number; y: number; bornMs: number }[], color: string, radius: number, detailed: boolean): void {
   if (path.length < 2 || effectiveVisual.value.rotomMode) return;
   const life = 3500;
   c.save();
@@ -2105,12 +2170,12 @@ function drawElementTrail(c: CanvasRenderingContext2D, s: SurvivorState, detaile
     if (age >= life) continue;
     const alpha = Math.pow(1 - age / life, 1.35);
     c.globalAlpha = alpha * 0.5;
-    c.strokeStyle = s.player.move.color;
-    c.lineWidth = s.player.attackRadius * 1.35;
-    if (detailed) { c.shadowColor = s.player.move.color; c.shadowBlur = 12; }
+    c.strokeStyle = color;
+    c.lineWidth = radius * 1.35;
+    if (detailed) { c.shadowColor = color; c.shadowBlur = 12; }
     c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
     c.globalAlpha = alpha * 0.85;
-    c.strokeStyle = '#fff8df'; c.lineWidth = Math.max(2, s.player.attackRadius * 0.34);
+    c.strokeStyle = '#fff8df'; c.lineWidth = Math.max(2, radius * 0.34);
     c.shadowBlur = 0; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
   }
   c.restore();
@@ -2520,9 +2585,11 @@ function loop(ts: number): void {
     const movedY = s.player.y - beforePlayerPosition.y;
     const moved = Math.hypot(movedX, movedY);
     // A poeira compara a velocidade efetiva (já com colisão, terreno e buffs) com a de início da corrida.
-    footDust.strength = moved > 0.01 ? clamp(moved / Math.max(0.001, initialPlayerSpeed * simulationDt / 1000) - 1, 0, 1.4) : 0;
+    footDust.ratio = moved > 0.01 ? moved / Math.max(0.001, initialPlayerSpeed * simulationDt / 1000) : 0;
+    footDust.strength = clamp(footDust.ratio - 1, 0, 1.4);
     footDust.dx = moved > 0.01 ? movedX / moved : 0;
     footDust.dy = moved > 0.01 ? movedY / moved : 0;
+    stepFootDust(movedX, movedY, simulationDt);
     bonkJumpQueued = false;
     const region = survivorRegionLabel(s.elapsedMs, s.runSeed);
     if (region !== announcedRegion) {
@@ -2914,7 +2981,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     const runMega = runOmegaShardTaken ? mega : null;
     state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
     initialPlayerSpeed = Math.max(1, state.value.player.speed);
-    footDust.strength = 0;
+    footDust.strength = 0; footDust.ratio = 0; footDust.puffs.length = 0;
     megaWasActive = state.value.player.mega?.active === true;
     if (megaWasActive && megaSprite) {
       playerSprite = megaSprite as SpriteAsset;
@@ -2962,15 +3029,19 @@ function choosePlayer(opt: PickOption, picked?: PokemonType, swapped = false, om
   const supportCandidates = (pickOptions.value ?? [])
     .filter((candidate) => candidate.id !== opt.id)
     .slice(0, 5)
-    .map((support) => ({
-      dexId: support.dexId,
-      name: support.name,
-      move: support.move,
-      profile: attackProfile(support.move, statsOfDex(support.dexId)),
-      shiny: support.shiny,
-      accessory: support.accessory,
-      digital: support.digital,
-    } satisfies SurvivorSupportCandidate));
+    .map((support) => {
+      // Teleporte nunca vem num apoio: troca pelo golpe alternativo da espécie.
+      const move = survivorSupportMove(support.dexId, support.move);
+      return {
+        dexId: support.dexId,
+        name: support.name,
+        move,
+        profile: attackProfile(move, statsOfDex(support.dexId)),
+        shiny: support.shiny,
+        accessory: support.accessory,
+        digital: support.digital,
+      } satisfies SurvivorSupportCandidate;
+    });
   // Trocando de ataque, o tipo principal pode mudar (quem tem dois tipos); a Afinidade passa a vir do tipo antigo.
   const primary = swapped ? survivorAttackOf(opt.dexId, picked, true).move.type : picked ?? opt.types[0] ?? opt.move.type;
   const typeAffinityChoices = opt.types.filter((type) => type !== primary);
