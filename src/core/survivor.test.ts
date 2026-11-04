@@ -1588,7 +1588,9 @@ describe('recompensas do Ritmo acelerado', () => {
   });
 
   it('os marcos chegam na mesma fração da corrida', () => {
+    // Laboratório: sem o encontro do guardião (aos 3 min), que pausa a corrida esperando uma escolha.
     const fast = quiet(createSurvivorState(5, { kindCount: 1, fast: true }));
+    fast.debugLaboratory = true;
     fast.elapsedMs = SURVIVOR_LOVE_CANDY_MS / SURVIVOR_FAST_PROGRESS_SCALE - 10;
     const candy = stepSurvivor(fast, { dx: 0, dy: 0 }, 16);
     expect(candy.some((ev) => ev.type === 'milestone' && ev.reward === 'love-candy')).toBe(true);
@@ -1597,6 +1599,7 @@ describe('recompensas do Ritmo acelerado', () => {
     expect(shard.some((ev) => ev.type === 'milestone' && ev.reward === 'omega-shard')).toBe(true);
 
     const normal = quiet(createSurvivorState(5, { kindCount: 1 }));
+    normal.debugLaboratory = true;
     normal.elapsedMs = SURVIVOR_LOVE_CANDY_MS / SURVIVOR_FAST_PROGRESS_SCALE - 10;
     expect(stepSurvivor(normal, { dx: 0, dy: 0 }, 16).some((ev) => ev.type === 'milestone')).toBe(false);
   });
