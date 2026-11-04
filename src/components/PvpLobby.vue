@@ -45,6 +45,9 @@ const error = ref('');
 const status = ref('');
 const roomCode = ref('');
 const typedCode = ref('');
+const roomName = ref('');
+const hostPassword = ref('');
+const joinPassword = ref('');
 const rooms = ref<OpenRoom[]>([]);
 const online = ref(0);
 const copied = ref(false);
@@ -61,7 +64,7 @@ const waiting = ref(false);
 let hub: SignalHub | null = null;
 let matchmaker: Matchmaker | null = null;
 let stopWatch: (() => void) | null = null;
-let hosting: { cancel(): void } | null = null;
+let hosting: { cancel(): void; setName(name: string): void } | null = null;
 let stopJoin: (() => void) | null = null;
 let peer: PvpPeer | null = null;
 let handedOver = false;
@@ -138,7 +141,7 @@ function createRoom(): void {
   step.value = 'host';
   startWaitClock();
   hosting = matchmaker.host(
-    { listed: !backupPurpose.value, name: displayName(), note: props.note, codeLength: codeLength.value },
+    { listed: !backupPurpose.value, name: roomName.value.trim() || displayName(), password: hostPassword.value, note: props.note, codeLength: codeLength.value },
     {
       onCode: (code) => (roomCode.value = code),
       onGuest: (name) => (status.value = `${name} entrou. Preparando a conexão…`),
@@ -165,7 +168,7 @@ function joinCode(raw: string): void {
       reset();
       error.value = message;
     },
-  }, codeLength.value);
+  }, codeLength.value, joinPassword.value);
 }
 
 const typedReady = computed(() => normalizeRoomCode(typedCode.value).length === codeLength.value);
@@ -284,16 +287,23 @@ onBeforeUnmount(() => {
         <span class="dot" aria-hidden="true"></span>
         {{ online > 0 ? 'Ponto de encontro conectado' : 'Conectando ao ponto de encontro… se demorar, use os códigos manuais lá embaixo.' }}
       </p>
+      <label class="pn-code-label" for="pvp-room-name">Nome da sua sala</label>
+      <input id="pvp-room-name" v-model="roomName" class="pn-room-input pn-room-field" maxlength="24" :placeholder="displayName()" />
+      <label class="pn-code-label" for="pvp-host-password">Senha da sua sala (opcional)</label>
+      <input id="pvp-host-password" v-model="hostPassword" class="pn-room-input pn-room-field" type="password" maxlength="64" autocomplete="new-password" />
+      <p class="pn-lobby-note">A senha limita a entrada pelo aplicativo. Como o ponto de encontro é público, não use uma senha pessoal nem envie dados sensíveis.</p>
       <div class="pn-lobby-actions">
         <button type="button" class="primary" :disabled="online === 0" @click="createRoom">{{ backupPurpose ? 'Criar sala de transferência' : 'Criar sala' }}</button>
       </div>
 
+      <label class="pn-code-label" for="pvp-join-password">Senha para entrar (se a sala pedir)</label>
+      <input id="pvp-join-password" v-model="joinPassword" class="pn-room-input pn-room-field" type="password" maxlength="64" autocomplete="off" />
       <template v-if="!backupPurpose">
         <h4 class="pn-lobby-sub">Salas abertas</h4>
         <ul v-if="rooms.length" class="pn-rooms">
           <li v-for="room in rooms" :key="room.code">
             <button type="button" :disabled="online === 0" @click="joinCode(room.code)">
-              <strong>{{ room.name }} <span class="pn-room-tag">{{ room.code }}</span></strong>
+              <strong>{{ room.name }} <span class="pn-room-tag">{{ room.code }}</span> <span v-if="room.protected">🔒 Com senha</span></strong>
               <small>{{ room.note }}</small>
               <span class="pn-room-go">Entrar</span>
             </button>
@@ -338,6 +348,9 @@ onBeforeUnmount(() => {
 
     <template v-else-if="step === 'host'">
       <h3>{{ backupPurpose ? 'Sala de transferência' : 'Sua sala' }}</h3>
+      <label class="pn-code-label" for="pvp-edit-name">Nome da sala</label>
+      <input id="pvp-edit-name" v-model="roomName" class="pn-room-input pn-room-field" maxlength="24" :placeholder="displayName()" @input="hosting?.setName(roomName.trim() || displayName())" />
+      <p v-if="hostPassword" class="pn-lobby-note">Sala com senha. Passe a senha ao seu amigo por outro meio.</p>
       <p class="pn-room-code" aria-live="polite" :aria-label="`Código da sala: ${roomCode.split('').join(' ')}`">{{ roomCode }}</p>
       <ol class="pn-lobby-steps pn-lobby-guide">
         <li>Seu amigo abre <strong>{{ whereToJoin }}</strong>.</li>
@@ -544,6 +557,13 @@ onBeforeUnmount(() => {
   letter-spacing: 0.25em;
   text-transform: uppercase;
   text-align: center;
+}
+
+.pn-room-field {
+  font: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  text-align: left;
 }
 
 .pn-lobby-guide {

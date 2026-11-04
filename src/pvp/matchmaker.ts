@@ -38,6 +38,7 @@ export interface OpenRoom {
   code: string;
   name: string;
   note: string;
+  protected: boolean;
   /** Quando o último anúncio chegou (ms). */
   seenAt: number;
 }
@@ -77,6 +78,7 @@ export interface HostOptions {
   /** Texto curto na lista («3x3», «3 pins»…). */
   note?: string;
   codeLength?: number;
+  password?: string;
 }
 
 export interface HostHandlers<P> {
@@ -113,6 +115,13 @@ function cleanName(value: unknown): string {
   return text(value, 40).replace(/\p{C}/gu, '').replace(/\s+/g, ' ').trim().slice(0, 24);
 }
 
+/** A prova não expõe a senha diretamente nos anúncios públicos. */
+async function passwordProof(password: string, code: string, gid: string): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify([password, code, gid]));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 export class Matchmaker<P extends MatchPeer = PvpPeer> {
   constructor(
     private readonly hub: SignalHub,
@@ -136,7 +145,7 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
       const now = Date.now();
       for (const [code, room] of rooms) if (now - room.seenAt > this.timings.roomTtlMs) rooms.delete(code);
       // Ordem pela chegada da sala (não pelo último anúncio): a lista não pula enquanto a pessoa vai tocar.
-      onRooms([...rooms.values()].sort((a, b) => b.firstSeen - a.firstSeen).map(({ code, name, note, seenAt }) => ({ code, name, note, seenAt })));
+      onRooms([...rooms.values()].sort((a, b) => b.firstSeen - a.firstSeen).map(({ code, name, note, protected: locked, seenAt }) => ({ code, name, note, protected: locked, seenAt })));
     };
     const off = this.hub.subscribe(this.lobbyTopic(), (m) => {
       if (m.r !== 'h') return;
@@ -149,7 +158,7 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
         rooms.delete(code);
       } else if (m.t === 'open') {
         if (!known && rooms.size >= MAX_ROOMS) return;
-        rooms.set(code, { code, hid, name: cleanName(m.name) || 'Treinador', note: cleanName(m.note), seenAt: Date.now(), firstSeen: known?.firstSeen ?? Date.now() });
+        rooms.set(code, { code, hid, name: cleanName(m.name) || 'Treinador', note: cleanName(m.note), protected: m.protected === true, seenAt: Date.now(), firstSeen: known?.firstSeen ?? Date.now() });
       } else return;
       emit();
     });
@@ -167,8 +176,10 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
   }
 
   /** Cria a sala. A conexão se prepara sozinha; `onPeer` é chamado quando o amigo entrar e o canal abrir. */
-  host(options: HostOptions, handlers: HostHandlers<P>): { cancel(): void; code: () => string } {
+  host(options: HostOptions, handlers: HostHandlers<P>): { cancel(): void; code: () => string; setName(name: string): void } {
     const hid = randomId(10);
+    let roomName = cleanName(options.name) || 'Treinador';
+    const password = options.password?.slice(0, 64) ?? '';
     const length = options.codeLength ?? 4;
     let code = newRoomCode(length);
     let alive = true;
@@ -186,7 +197,7 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
     const waiting = () => handlers.onStatus?.('Aguardando um amigo entrar…');
     const announce = () => {
       send({ t: 'here' });
-      if (options.listed && !claimed) this.hub.publish(this.lobbyTopic(), { r: 'h', t: 'open', hid, code, name: options.name, note: options.note ?? '' });
+      if (options.listed && !claimed) this.hub.publish(this.lobbyTopic(), { r: 'h', t: 'open', hid, code, name: roomName, note: options.note ?? '', protected: !!password });
     };
     const clearClaim = () => {
       claimed = null;
@@ -195,6 +206,28 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
       if (connectTimer) clearTimeout(connectTimer);
       claimTimer = null;
       connectTimer = null;
+    };
+
+    const acceptJoin = (gid: string, m: SignalData) => {
+      if (!alive) return;
+      if (claimed && claimed !== gid) return send({ t: 'busy', gid });
+      if (!ready) return;
+      if (!claimed) {
+        claimed = gid;
+        const guest = cleanName(m.name) || 'Amigo';
+        pvpLog('H3', guest);
+        handlers.onGuest?.(guest);
+        if (options.listed) this.hub.publish(this.lobbyTopic(), { r: 'h', t: 'closed', hid, code });
+        claimTimer = setTimeout(() => {
+          if (!alive || !claimed) return;
+          pvpLog('H9', 'convidado sumiu');
+          clearClaim();
+          waiting();
+          announce();
+        }, this.timings.claimMs);
+      }
+      send({ t: 'offer', gid, offer: ready.offer });
+      pvpLog('H4');
     };
 
     const listen = () => {
@@ -217,25 +250,15 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
         const gid = text(m.gid, 24);
         if (!gid) return;
         if (m.t === 'join') {
-          if (claimed && claimed !== gid) return send({ t: 'busy', gid });
-          if (!ready) return;
-          if (!claimed) {
-            claimed = gid;
-            const guest = cleanName(m.name) || 'Amigo';
-            pvpLog('H3', guest);
-            handlers.onGuest?.(guest);
-            if (options.listed) this.hub.publish(this.lobbyTopic(), { r: 'h', t: 'closed', hid, code });
-            claimTimer = setTimeout(() => {
-              if (!alive || !claimed) return;
-              // O convidado sumiu: a sala volta para a lista com o mesmo convite.
-              pvpLog('H9', 'convidado sumiu');
-              clearClaim();
-              waiting();
-              announce();
-            }, this.timings.claimMs);
-          }
-          send({ t: 'offer', gid, offer: ready.offer });
-          pvpLog('H4');
+          if (!password) return acceptJoin(gid, m);
+          const proof = text(m.proof, 64);
+          if (!proof) return send({ t: 'password', gid });
+          const checkedCode = code;
+          void passwordProof(password, checkedCode, gid).then((expected) => {
+            if (!alive || code !== checkedCode) return;
+            if (expected !== proof) return send({ t: 'wrong-password', gid });
+            acceptJoin(gid, m);
+          }).catch(() => { if (alive) send({ t: 'wrong-password', gid }); });
         } else if (m.t === 'answer' && claimed === gid && ready) {
           const answer = text(m.answer, MAX_OFFER);
           // A resposta chega repetida (o convidado manda mais de uma vez por segurança): só a primeira vale.
@@ -338,11 +361,12 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
     return {
       code: () => code,
       cancel: () => stop(true),
+      setName: (name) => { roomName = cleanName(name) || 'Treinador'; if (alive) announce(); },
     };
   }
 
   /** Entra na sala `rawCode`. Devolve a função que cancela a tentativa. */
-  join(rawCode: string, name: string, handlers: JoinHandlers<P>, codeLength = 4): () => void {
+  join(rawCode: string, name: string, handlers: JoinHandlers<P>, codeLength = 4, password = ''): () => void {
     const code = normalizeRoomCode(rawCode);
     if (!isRoomCode(code, codeLength)) {
       handlers.onError(`O código da sala tem ${codeLength} letras ou números. Confira com o seu amigo.`);
@@ -380,10 +404,15 @@ export class Matchmaker<P extends MatchPeer = PvpPeer> {
         return fail(`Não achei a sala ${code}. Confira o código e se o anfitrião continua com a tela aberta.`);
       }
       tries++;
-      this.hub.publish(topic, { r: 'g', t: 'join', gid, name });
+      if (!password) this.hub.publish(topic, { r: 'g', t: 'join', gid, name });
+      else void passwordProof(password.slice(0, 64), code, gid).then((proof) => {
+        if (alive && !answered) this.hub.publish(topic, { r: 'g', t: 'join', gid, name, proof });
+      }).catch(() => fail('Não foi possível verificar a senha neste navegador.'));
     };
     const off = this.hub.subscribe(topic, (m) => {
       if (!alive || m.r !== 'h' || text(m.gid, 24) !== gid) return;
+      if (m.t === 'password') return fail('Esta sala pede senha. Informe a senha e tente novamente.');
+      if (m.t === 'wrong-password') return fail('Senha incorreta. Confira e tente novamente.');
       if (m.t === 'busy') pvpLog('G7');
       if (m.t === 'busy') return fail('Essa sala já está com outro jogador. Peça para o anfitrião abrir outra, ou espere um instante.');
       if (m.t !== 'offer' || answered) return;
