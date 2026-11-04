@@ -38,7 +38,7 @@ import MinigameSobrevivencia from './MinigameSobrevivencia.vue';
 const SurvivalPvp = defineAsyncComponent(() => import('./SurvivalPvp.vue'));
 const towerPvp = ref(false);
 import DungeonGame from './DungeonGame.vue';
-import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS } from '../core/survivor';
+import { SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_TRUST_STONE_MS, survivorProgressMs } from '../core/survivor';
 import { dayKey, levelOf } from '../core/trainer';
 import { personalityOf } from '../core/village/personality';
 import { trainerSpriteUrl } from '../core/trainer-sprites';
@@ -1781,15 +1781,17 @@ async function recordSurvivalAdventure(summary: import('../core/survivor').Survi
   const time = `${Math.floor(summary.survivedMs / 60000)}:${String(Math.floor(summary.survivedMs / 1000) % 60).padStart(2, '0')}`;
   const won = summary.finalBossBeaten ? 'A Torre foi vencida!' : `Chegou até a onda ${summary.wave}.`;
   const milestoneRewards: string[] = [];
-  if (summary.survivedMs >= SURVIVOR_LOVE_CANDY_MS) {
+  // Ritmo acelerado: os marcos chegam na mesma fração da corrida (o tempo conta em dobro).
+  const progressMs = survivorProgressMs(summary);
+  if (progressMs >= SURVIVOR_LOVE_CANDY_MS) {
     add(state, 'love-candy');
     milestoneRewards.push('🍬 Love Candy');
   }
-  if (summary.survivedMs >= SURVIVOR_TRUST_STONE_MS) {
+  if (progressMs >= SURVIVOR_TRUST_STONE_MS) {
     add(state, 'trust-stone');
     milestoneRewards.push('💠 Pedra da Confiança');
   }
-  if (summary.survivedMs >= SURVIVOR_OMEGA_SHARD_MS) {
+  if (progressMs >= SURVIVOR_OMEGA_SHARD_MS) {
     add(state, 'omega-shard');
     milestoneRewards.push('💎 Fragmento Ômega');
   }

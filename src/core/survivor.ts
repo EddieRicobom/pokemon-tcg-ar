@@ -33,7 +33,7 @@ import type { PokemonType } from './pokemon-data';
  */
 
 export * from './survivor-types';
-import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES } from './survivor-types';
+import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, survivorMilestoneMs } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
@@ -2024,13 +2024,17 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     state.hypotheticalSecondaryActive = true;
     events.push({ type: 'hypotheticalTypeActivated', secondaryType: state.hypotheticalSecondaryType });
   }
-  if (previousElapsedMs < SURVIVOR_LOVE_CANDY_MS && state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS) {
+  // No Ritmo acelerado os marcos chegam na mesma fração da corrida (metade do relógio).
+  const loveCandyMs = survivorMilestoneMs(SURVIVOR_LOVE_CANDY_MS, state.fast);
+  const trustStoneMs = survivorMilestoneMs(SURVIVOR_TRUST_STONE_MS, state.fast);
+  const omegaShardMs = survivorMilestoneMs(SURVIVOR_OMEGA_SHARD_MS, state.fast);
+  if (previousElapsedMs < loveCandyMs && state.elapsedMs >= loveCandyMs) {
     events.push({ type: 'milestone', id: 'ten-minutes', reward: 'love-candy' });
   }
-  if (previousElapsedMs < SURVIVOR_TRUST_STONE_MS && state.elapsedMs >= SURVIVOR_TRUST_STONE_MS) {
+  if (previousElapsedMs < trustStoneMs && state.elapsedMs >= trustStoneMs) {
     events.push({ type: 'milestone', id: 'fifteen-minutes', reward: 'trust-stone' });
   }
-  if (previousElapsedMs < SURVIVOR_OMEGA_SHARD_MS && state.elapsedMs >= SURVIVOR_OMEGA_SHARD_MS) {
+  if (previousElapsedMs < omegaShardMs && state.elapsedMs >= omegaShardMs) {
     events.push({ type: 'milestone', id: 'twenty-minutes', reward: 'omega-shard' });
   }
   spawnShadowBallIfDue(state, events);
@@ -2305,7 +2309,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
           ? BALANCE.digitalPokeballDropChance.elite
           : BALANCE.digitalPokeballDropChance.comum;
       if (
-        state.elapsedMs >= SURVIVOR_LOVE_CANDY_MS
+        state.elapsedMs >= survivorMilestoneMs(SURVIVOR_LOVE_CANDY_MS, state.fast)
         && state.digitalPokeballs + pokeballsOnGround < MAX_DIGITAL_POKEBALLS_PER_RUN
         && state.rng() < pokeballChance
       ) {

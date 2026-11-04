@@ -33,6 +33,13 @@ import {
   FAST_FINAL_BOSS_MS,
   FAST_TIME_SCALE,
   FAST_XP_MULTIPLIER,
+  FINAL_BOSS_MS,
+  SURVIVOR_FAST_PROGRESS_SCALE,
+  SURVIVOR_FAST_TRAINER_COIN_SCALE,
+  SURVIVOR_LOVE_CANDY_MS,
+  SURVIVOR_OMEGA_SHARD_MS,
+  TRAINER_EVERY_MS,
+  TRAINER_FIRST_MS,
   xpForLevel,
 } from './survivor';
 import type { SurvivorEnemy, SurvivorState } from './survivor';
@@ -1561,5 +1568,36 @@ describe('apoios de carga', () => {
     expect(support.trailActiveMs).toBeGreaterThan(0);
     expect(support.trailPath?.length).toBeGreaterThan(0);
     expect(s.enemies.find((e) => e.id === 2)!.hp).toBeLessThan(1e6);
+  });
+});
+
+describe('recompensas do Ritmo acelerado', () => {
+  it('as escalas saem da duração das corridas e da agenda dos treinadores', () => {
+    expect(SURVIVOR_FAST_PROGRESS_SCALE).toBe(FINAL_BOSS_MS / FAST_FINAL_BOSS_MS);
+    const trainersBefore = (endMs: number) => Math.ceil((endMs - TRAINER_FIRST_MS) / TRAINER_EVERY_MS);
+    expect(SURVIVOR_FAST_TRAINER_COIN_SCALE).toBe(trainersBefore(FINAL_BOSS_MS) / trainersBefore(FAST_FINAL_BOSS_MS));
+  });
+
+  it('uma corrida acelerada completa paga as mesmas moedas de uma normal completa', () => {
+    const normal = survivorCoins({ survivedMs: FINAL_BOSS_MS, kills: 400, level: 30, trainersBeaten: 4, bossesBeaten: 1 });
+    const fast = survivorCoins({ survivedMs: FAST_FINAL_BOSS_MS, kills: 200, level: 25, trainersBeaten: 2, bossesBeaten: 1, fast: true });
+    expect(fast).toBe(normal);
+    // No começo, o tempo conta em dobro: 15 s acelerados valem 30 s normais.
+    expect(survivorCoins({ survivedMs: 15_000, kills: 0, level: 1, trainersBeaten: 0, bossesBeaten: 0, fast: true }))
+      .toBe(survivorCoins({ survivedMs: 30_000, kills: 0, level: 1, trainersBeaten: 0, bossesBeaten: 0 }));
+  });
+
+  it('os marcos chegam na mesma fração da corrida', () => {
+    const fast = quiet(createSurvivorState(5, { kindCount: 1, fast: true }));
+    fast.elapsedMs = SURVIVOR_LOVE_CANDY_MS / SURVIVOR_FAST_PROGRESS_SCALE - 10;
+    const candy = stepSurvivor(fast, { dx: 0, dy: 0 }, 16);
+    expect(candy.some((ev) => ev.type === 'milestone' && ev.reward === 'love-candy')).toBe(true);
+    fast.elapsedMs = SURVIVOR_OMEGA_SHARD_MS / SURVIVOR_FAST_PROGRESS_SCALE - 10;
+    const shard = stepSurvivor(fast, { dx: 0, dy: 0 }, 16);
+    expect(shard.some((ev) => ev.type === 'milestone' && ev.reward === 'omega-shard')).toBe(true);
+
+    const normal = quiet(createSurvivorState(5, { kindCount: 1 }));
+    normal.elapsedMs = SURVIVOR_LOVE_CANDY_MS / SURVIVOR_FAST_PROGRESS_SCALE - 10;
+    expect(stepSurvivor(normal, { dx: 0, dy: 0 }, 16).some((ev) => ev.type === 'milestone')).toBe(false);
   });
 });

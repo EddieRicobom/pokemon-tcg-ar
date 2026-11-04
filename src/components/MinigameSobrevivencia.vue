@@ -44,6 +44,8 @@ import {
   SURVIVOR_LOVE_CANDY_MS,
   SURVIVOR_TRUST_STONE_MS,
   SURVIVOR_OMEGA_SHARD_MS,
+  survivorMilestoneMs,
+  survivorProgressMs,
   SURVIVOR_ARTIFACT_DETAILS,
   survivorProjectileOpacity,
   FAST_TIME_SCALE,
@@ -437,6 +439,14 @@ function takeRunLoadout(pure: boolean): TowerLoadout {
   return loadout;
 }
 /** Fim ou abandono: a marmita é gasta se a corrida contou e volta para a mochila se foi desistência logo no começo. */
+/** Marcos da Torre: alcançado pelo tempo equivalente (o Ritmo acelerado conta em dobro) e o minuto mostrado no relógio desta corrida. */
+function milestoneReached(summary: { survivedMs: number; fast?: boolean }, normalMs: number): boolean {
+  return survivorProgressMs(summary) >= normalMs;
+}
+function milestoneMinutes(summary: { fast?: boolean }, normalMs: number): string {
+  return (survivorMilestoneMs(normalMs, summary.fast) / 60_000).toLocaleString('pt-BR');
+}
+
 function settleRunLoadout(survivedMs: number): void {
   if (runLoadoutSettled) return;
   runLoadoutSettled = true;
@@ -2611,11 +2621,13 @@ function loop(ts: number): void {
       else if (ev.type === 'bossSpawn') playSound('survivor-boss');
       else if (ev.type === 'milestone') {
         playSound('success');
+        const fastRun = s.fast === true;
+        const at = (normalMs: number) => milestoneMinutes({ fast: fastRun }, normalMs);
         say(ev.id === 'ten-minutes'
-          ? '🎁 Marco de 10 minutos! Love Candy assegurado — conclua a corrida para guardar.'
+          ? `🎁 Marco de ${at(SURVIVOR_LOVE_CANDY_MS)} minutos! Love Candy assegurado — conclua a corrida para guardar.`
           : ev.id === 'fifteen-minutes'
-            ? '💠 Marco de 15 minutos! Pedra da Confiança assegurada — conclua a corrida para guardar.'
-            : '💎 Marco de 20 minutos! Fragmento Ômega assegurado — conclua a corrida para guardar.', 6000);
+            ? `💠 Marco de ${at(SURVIVOR_TRUST_STONE_MS)} minutos! Pedra da Confiança assegurada — conclua a corrida para guardar.`
+            : `💎 Marco de ${at(SURVIVOR_OMEGA_SHARD_MS)} minutos! Fragmento Ômega assegurado — conclua a corrida para guardar.`, 6000);
       }
       else if (ev.type === 'shadowBallSpawn') {
         void preloadShadowBoss(ev.dexId);
@@ -3800,7 +3812,7 @@ onBeforeUnmount(() => {
               <strong>Da Vila nesta corrida</strong>
               <ul><li v-for="line in state.towerSummary" :key="line">{{ line }}</li></ul>
             </div>
-            <p v-if="summary.fast" class="survivor-cleared" role="status">⚡ Ritmo acelerado: relógio 2× e orbes com 1,75× XP.</p>
+            <p v-if="summary.fast" class="survivor-cleared" role="status">⚡ Ritmo acelerado: relógio 2×, orbes com 1,75× XP e recompensas na mesma proporção da corrida normal.</p>
             <p v-if="objectives.length" class="survivor-objectives-summary" role="status">
               Objetivos opcionais: {{ objectives.filter((objective) => objective.complete).length }}/{{ objectives.length }} concluídos.
             </p>
@@ -3808,10 +3820,10 @@ onBeforeUnmount(() => {
               {{ runCoins > 0 ? `🪙 +${runCoins} moedas` : 'Sem moedas desta vez: dure 20 segundos ou derrote alguém.' }}
               <small v-if="runClearBonus > 0"> (inclui o bônus de {{ runClearBonus }} por zerar, 1× por dia)</small>
             </p>
-             <p v-if="summary.survivedMs >= SURVIVOR_LOVE_CANDY_MS" class="survivor-cleared" role="status">🍬 Love Candy conquistado por alcançar 10 minutos.</p>
-              <p v-if="summary.survivedMs >= SURVIVOR_TRUST_STONE_MS" class="survivor-cleared" role="status">💠 Pedra da Confiança conquistada por alcançar 15 minutos.</p>
+             <p v-if="milestoneReached(summary, SURVIVOR_LOVE_CANDY_MS)" class="survivor-cleared" role="status">🍬 Love Candy conquistado por alcançar {{ milestoneMinutes(summary, SURVIVOR_LOVE_CANDY_MS) }} minutos.</p>
+              <p v-if="milestoneReached(summary, SURVIVOR_TRUST_STONE_MS)" class="survivor-cleared" role="status">💠 Pedra da Confiança conquistada por alcançar {{ milestoneMinutes(summary, SURVIVOR_TRUST_STONE_MS) }} minutos.</p>
              <p v-if="(summary.shadowTrustStones ?? 0) > 0" class="survivor-cleared" role="status">💠 {{ summary.shadowTrustStones }} Pedra{{ summary.shadowTrustStones === 1 ? '' : 's' }} da Confiança assegurada{{ summary.shadowTrustStones === 1 ? '' : 's' }} ao derrotar lendário{{ summary.shadowTrustStones === 1 ? '' : 's' }} sombrio{{ summary.shadowTrustStones === 1 ? '' : 's' }}.</p>
-             <p v-if="summary.survivedMs >= SURVIVOR_OMEGA_SHARD_MS" class="survivor-cleared" role="status">💎 Fragmento Ômega conquistado por alcançar 20 minutos.</p>
+             <p v-if="milestoneReached(summary, SURVIVOR_OMEGA_SHARD_MS)" class="survivor-cleared" role="status">💎 Fragmento Ômega conquistado por alcançar {{ milestoneMinutes(summary, SURVIVOR_OMEGA_SHARD_MS) }} minutos.</p>
              <p v-if="summary.finalBossBeaten" class="survivor-cleared" role="status">🏆 Chefão final derrotado!<small v-if="runUnlockedInfinite"> Modo infinito destravado.</small></p>
             <p v-if="runUnlocks.length" class="survivor-cleared" role="status">Desbloqueios desta corrida: {{ runUnlocks.join(' · ') }}.</p>
             <p v-if="summary.trainersBeaten > 0 || summary.bossesBeaten > 0" class="note">Treinadores derrotados: {{ summary.trainersBeaten }}{{ summary.bossesBeaten > 0 ? ` · chefões: ${summary.bossesBeaten}` : '' }}.</p>
