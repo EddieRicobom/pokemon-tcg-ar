@@ -140,6 +140,37 @@ describe('pareamento pelo ponto de encontro', () => {
     t.close();
   });
 
+  it('atualiza o nome da sala na lista sem trocar o código', async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    await vi.advanceTimersByTimeAsync(20);
+    let rooms: OpenRoom[] = [];
+    const stop = t.guest.watchRooms((list) => (rooms = list));
+    const session = t.host.host({ listed: true, name: 'Ana' }, { onCode: () => undefined, onPeer: () => undefined, onError: () => undefined });
+    await vi.advanceTimersByTimeAsync(100);
+    const code = session.code();
+    session.setName('  Sala da Ana  ');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(rooms).toMatchObject([{ code, name: 'Sala da Ana', protected: false }]);
+    session.cancel(); stop(); t.close();
+  });
+
+  it('anuncia a senha, recusa senha incorreta e permite outra tentativa correta', async () => {
+    const t = setup();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    let rooms: OpenRoom[] = [];
+    const stop = t.guest.watchRooms((list) => (rooms = list));
+    const session = t.host.host({ listed: true, name: 'Ana', password: 'segredo' }, { onCode: () => undefined, onPeer: () => undefined, onError: () => undefined });
+    await vi.waitFor(() => expect(rooms).toMatchObject([{ protected: true }]));
+    const errors: string[] = [];
+    t.guest.join(session.code(), 'Beto', { onStatus: () => undefined, onPeer: () => undefined, onError: (m) => errors.push(m) }, 4, 'errada');
+    await vi.waitFor(() => expect(errors).toContain('Senha incorreta. Confira e tente novamente.'));
+    expect(t.guests).toHaveLength(0);
+    t.guest.join(session.code(), 'Beto', { onStatus: () => undefined, onPeer: () => undefined, onError: (m) => { throw new Error(m); } }, 4, 'segredo');
+    await vi.waitFor(() => expect(t.hosts[0]!.answers).toEqual(['ANSWER-guest0']));
+    session.cancel(); stop(); t.close();
+  });
+
   it('sala privada (backup) não entra na lista', async () => {
     vi.useFakeTimers();
     const t = setup();
