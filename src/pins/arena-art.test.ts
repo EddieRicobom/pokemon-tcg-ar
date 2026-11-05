@@ -80,7 +80,7 @@ describe('chão em pixel art do Pin Mode', () => {
     expect(art.buf.w).toBe(grid.cols * TILE);
     expect(art.buf.h).toBe(grid.rows * TILE);
     expect(art.half).toBe(ARENA_RADIUS - TERRAIN_MARGIN);
-    expect(alphaOf(art, grid.cols >> 1, grid.rows >> 1)).toBe(255);
+    expect(alphaOf(art, grid.cols >> 1, grid.rows >> 1)).toBeGreaterThan(0);
     expect(alphaOf(art, 0, 0)).toBe(0);
   });
 

@@ -167,7 +167,7 @@ export function candidatePlans(world: PinWorld, me: Side = 1): EnemyPlan[] {
         const d = Math.hypot(dx, dy);
         if (d < 1) continue;
         for (const moveIndex of moveOptions) {
-          for (const extra of [60, 180, 420]) {
+          for (const extra of [120, 360, 840]) {
             plans.push({ pinId: pin.id, shot: { dirX: dx / d, dirY: dy / d, power: powerFor(pin, d, moveIndex, extra) }, moveIndex });
           }
         }

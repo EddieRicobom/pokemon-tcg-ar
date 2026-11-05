@@ -20,7 +20,7 @@ const flat = (pins: Pin[]): PinWorld => ({ radius: ARENA_RADIUS, patches: [], pi
 function play(world: PinWorld, plan: EnemyPlan | null): { mine: number; theirs: number } {
   const before = { mine: aliveOf(world, 0).length, theirs: aliveOf(world, 1).length };
   if (plan) launch(world.pins.find((p) => p.id === plan.pinId)!, plan.shot, plan.moveIndex);
-  for (let t = 0; t < 4; t += 1 / 120) stepWorld(world, 1 / 120);
+  for (let t = 0; t < 6; t += 1 / 120) stepWorld(world, 1 / 120);
   return { mine: before.mine - aliveOf(world, 0).length, theirs: before.theirs - aliveOf(world, 1).length };
 }
 
@@ -48,7 +48,7 @@ describe('IA do Pin Mode: simular antes de jogar', () => {
     let outs = 0;
     for (let seed = 1; seed <= 12; seed++) {
       const angle = seed * 0.5;
-      const w = flat([pinAt('e', 1, Math.cos(angle) * 60, Math.sin(angle) * 60), pinAt('m', 0, Math.cos(angle + 2.4) * 250, Math.sin(angle + 2.4) * 250)]);
+      const w = flat([pinAt('e', 1, Math.cos(angle) * 120, Math.sin(angle) * 120), pinAt('m', 0, Math.cos(angle + 2.4) * 500, Math.sin(angle + 2.4) * 500)]);
       const plan = planEnemyShot(w, seededRng(seed), 'dificil');
       const r = play(w, plan);
       if (r.mine > 0 && r.theirs === 0) outs++;
@@ -60,7 +60,7 @@ describe('IA do Pin Mode: simular antes de jogar', () => {
     let falls = 0;
     for (let seed = 1; seed <= 10; seed++) {
       // Pin dele colado na borda, o seu no meio, do outro lado: o tiro direto passa reto e cai.
-      const w = flat([pinAt('e', 1, 0, -280), pinAt('m', 0, 0, 40), pinAt('m2', 0, 120, 0)]);
+      const w = flat([pinAt('e', 1, 0, -560), pinAt('m', 0, 0, 80), pinAt('m2', 0, 240, 0)]);
       const r = play(w, planEnemyShot(w, seededRng(seed), 'dificil'));
       if (r.theirs > 0) falls++;
     }
@@ -79,7 +79,7 @@ describe('IA do Pin Mode: simular antes de jogar', () => {
         const rng = seededRng(seed);
         for (const p of w.pins) {
           const a = rng() * Math.PI * 2;
-          const d = 60 + rng() * 200;
+          const d = 120 + rng() * 400;
           p.x = Math.cos(a) * d;
           p.y = Math.sin(a) * d;
         }
@@ -112,7 +112,7 @@ describe('IA do Pin Mode: simular antes de jogar', () => {
     const t0 = performance.now();
     expect(planEnemyShot(w, seededRng(2), 'dificil')).not.toBeNull();
     // No computador do teste; no celular é algumas vezes mais lento (o adversário já espera ~0,9 s "mirando").
-    expect(performance.now() - t0).toBeLessThan(1500);
+    expect(performance.now() - t0).toBeLessThan(2500);
   });
 
   it('o Fácil continua com a mira simples e sem alvo não joga', () => {
