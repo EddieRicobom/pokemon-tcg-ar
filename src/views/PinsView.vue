@@ -83,12 +83,9 @@ const setup = ref<PinsSetup>({ mine: [], enemy: [], difficulty: 'normal', marks:
 /** Rodada em andamento (1, 2, …) e o aviso de que a borda vai avançar no fim dela. */
 const roundNo = ref(1);
 const borderWarn = ref(false);
-const borderNote = ref('');
 /** Repetição em câmera lenta do disparo decisivo. */
 const replaying = ref(false);
 const canReplay = ref(false);
-/** Marcas que existem no chão agora (para a legenda da partida). */
-const floorMarks = ref<TerrainKind[]>([]);
 const search = ref('');
 const notice = ref('');
 const loadingCards = ref(true);
@@ -172,6 +169,8 @@ function readZoom(): number {
   }
 }
 const zoomLevel = ref<number>(readZoom());
+/** O zoom fica recolhido num selo; tocar abre o slider, e soltar ou tocar na arena fecha. */
+const zoomOpen = ref(false);
 const zoomLabel = computed(() => String(zoomLevel.value).replace('.', ','));
 function setZoom(level: number): void {
   zoomLevel.value = normalizePinZoom(level);
@@ -204,6 +203,8 @@ let koCount = 0;
 let motionQuery: MediaQueryList | null = null;
 let disposed = false;
 let cssSize = 0;
+/** Altura do palco sobre a largura: o tabuleiro continua quadrado, e o palco mostra mais dele na vertical. */
+let stageAspect = 1;
 let dpr = 1;
 const rng = seededRng((Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0);
 
@@ -422,7 +423,6 @@ function refreshRound(): void {
   roundNo.value = (world.round ?? 0) + 1;
   const next = nextLimit(world);
   borderWarn.value = next !== null;
-  borderNote.value = !world.shrinking ? '' : next !== null ? 'A borda avança no fim desta rodada.' : 'A borda começa a avançar na rodada 2.';
 }
 
 function canvasOf(art: { w: number; h: number; data: Uint8Array | Uint8ClampedArray }): HTMLCanvasElement {
@@ -445,7 +445,6 @@ function buildArt(w: PinWorld): void {
   terrainArt = w.terrain ? new ArenaTerrainArt(w.terrain, w.radius, Math.floor(rng() * 1e6)) : null;
   terrainCanvas = terrainArt ? canvasOf(terrainArt.buf) : null;
   terrainShown = terrainArt ? terrainArt.version : -1;
-  refreshFloorMarks();
 }
 
 /** Copia o chão em pixel art para o canvas só quando algum bloco mudou. */
@@ -456,11 +455,6 @@ function syncTerrain(): void {
   const { buf } = terrainArt;
   ctx.putImageData(new ImageData(new Uint8ClampedArray(buf.data), buf.w, buf.h), 0, 0);
   terrainShown = terrainArt.version;
-}
-
-function refreshFloorMarks(): void {
-  const counts = world?.terrain?.counts() ?? {};
-  floorMarks.value = TERRAIN_KINDS.filter((k) => (counts[k] ?? 0) > 0);
 }
 
 /** Pequena animação persistente no centro dos blocos marcados, sem repintar a textura pixelada. */
@@ -693,7 +687,8 @@ function updateCamera(dt: number): void {
     // O limite é a borda da arte: a câmera nunca mostra o vazio fora do tabuleiro.
     const max = (artSize(world.radius) * UNITS_PER_PIXEL / 2) * (1 - 1 / z);
     camTargetX = Math.max(-max, Math.min(max, focus.x));
-    camTargetY = Math.max(-max, Math.min(max, focus.y));
+    const maxY = Math.max(0, (artSize(world.radius) * UNITS_PER_PIXEL / 2) * (1 - stageAspect / z));
+    camTargetY = Math.max(-maxY, Math.min(maxY, focus.y));
   }
   const ease = reducedMotion.value ? 1 : 1 - Math.exp(-dt * 4.5);
   camX += (camTargetX - camX) * ease;
@@ -787,7 +782,6 @@ function handleEvents(events: PinEvent[]): void {
   if (!world) return;
   let added = 0;
   let reactions = 0;
-  let marksChanged = false;
   let loudest = 0;
   let loudestEdge: 'super' | 'weak' | 'none' | null = null;
   let hitsMine = false;
@@ -838,7 +832,6 @@ function handleEvents(events: PinEvent[]): void {
       if (p) popups.push({ text: 'Onda!', x: p.x, y: p.y - 30, age: 0, color: '#8ec5ff' });
     } else if (e.type === 'mark') {
       terrainArt?.repaint(e.cells);
-      marksChanged = true;
       terrainFx.push({ kind: e.kind, x: e.x, y: e.y, age: 0, life: e.reaction ? 1.25 : 0.72, reaction: Boolean(e.reaction) });
       if (terrainFx.length > 24) terrainFx.splice(0, terrainFx.length - 24);
       if (e.reaction && reactions < 2) {
@@ -876,7 +869,6 @@ function handleEvents(events: PinEvent[]): void {
       }
     }
   }
-  if (marksChanged) refreshFloorMarks();
   if (loudest >= 0.45 && juiceOn()) {
     hitStopUntil = performance.now() + 25 + 65 * loudest;
     shake = Math.max(shake, 34 * loudest);
@@ -926,7 +918,7 @@ function finishRoll(): void {
     enemyPlan = plan;
     enemyTimer = 0.9;
     phase.value = 'enemy';
-    message.value = 'O adversário está mirando…';
+    message.value = '';
     return;
   }
   clearEffects(world, false);
@@ -1288,7 +1280,6 @@ function applySettled(snap: WireWorld): void {
   const applied = applyWorld(world, snap, frame.value);
   if (applied.changedCells.length > 0) {
     terrainArt?.repaint(applied.changedCells);
-    refreshFloorMarks();
   }
   if (applied.limitChanged || applied.patchesChanged) bumperCanvas = canvasOf(paintBumpers(world.radius, world.patches));
   if (applied.limitChanged) {
@@ -1358,6 +1349,7 @@ function onMiniDown(ev: PointerEvent): void {
 }
 
 function onDown(ev: PointerEvent): void {
+  zoomOpen.value = false;
   if (phase.value !== 'aim' || !world) return;
   const p = toWorld(ev.clientX, ev.clientY);
   if (!p) return;
@@ -1400,9 +1392,10 @@ function resize(): void {
   const canvas = canvasEl.value;
   if (!el || !canvas) return;
   cssSize = el.clientWidth;
+  stageAspect = cssSize > 0 ? el.clientHeight / cssSize : 1;
   dpr = Math.min(2, window.devicePixelRatio || 1);
   canvas.width = Math.round(cssSize * dpr);
-  canvas.height = Math.round(cssSize * dpr);
+  canvas.height = Math.round(el.clientHeight * dpr);
 }
 
 function drawElementalBursts(ctx: CanvasRenderingContext2D, cx: number, k: number): void {
@@ -1655,7 +1648,7 @@ function drawMinimap(): void {
   const half = ((artSize(world.radius) * UNITS_PER_PIXEL) / zoomLevel.value / 2) * scale;
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(c + camX * scale - half, c + camY * scale - half, half * 2, half * 2);
+  ctx.strokeRect(c + camX * scale - half, c + camY * scale - half * stageAspect, half * 2, half * 2 * stageAspect);
 }
 
 function draw(now: number): void {
@@ -1668,20 +1661,21 @@ function draw(now: number): void {
   const units = artSize(world.radius) * UNITS_PER_PIXEL;
   const k = canvas.width / units;
   const cx = canvas.width / 2;
+  const viewCy = canvas.height / 2;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   // Câmera: o desenho do mundo inteiro passa por uma única transformação (aproxima e acompanha a ação).
   const z = zoomLevel.value;
   ctx.save();
-  ctx.setTransform(z, 0, 0, z, cx - z * (cx + (camX + shakeX) * k), cx - z * (cx + (camY + shakeY) * k));
+  ctx.setTransform(z, 0, 0, z, cx - z * (cx + (camX + shakeX) * k), viewCy - z * (cx + (camY + shakeY) * k));
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(artCanvas, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(artCanvas, 0, 0, canvas.width, canvas.width);
   if (terrainCanvas && terrainArt) {
     syncTerrain();
     const half = terrainArt.half * k;
     ctx.drawImage(terrainCanvas, cx - half, cx - half, half * 2, half * 2);
   }
-  if (linesCanvas) ctx.drawImage(linesCanvas, 0, 0, canvas.width, canvas.height);
+  if (linesCanvas) ctx.drawImage(linesCanvas, 0, 0, canvas.width, canvas.width);
 
   // O chão reage por alguns instantes ao golpe. A textura continua pixelada, mas o pulso
   // deixa claro onde nasceu a marca e torna as combinações elementais legíveis.
@@ -1760,7 +1754,7 @@ function draw(now: number): void {
     ctx.setLineDash([]);
   }
   if (world.walls) drawWalls(ctx, cx, k, limit);
-  if (bumperCanvas) ctx.drawImage(bumperCanvas, 0, 0, canvas.width, canvas.height);
+  if (bumperCanvas) ctx.drawImage(bumperCanvas, 0, 0, canvas.width, canvas.width);
 
   const selected = world.pins.find((p) => p.id === selectedId.value);
   if (!frame && trails.size > 0) {
@@ -1837,7 +1831,7 @@ function draw(now: number): void {
     if (token) {
       const size = pin.r * PIN_VISUAL_SCALE * 2 * (k / dpr) * scale * z;
       const sx = z * (x - cx - (camX + shakeX) * k) + cx;
-      const sy = z * (y - cx - (camY + shakeY) * k) + cx;
+      const sy = z * (y - cx - (camY + shakeY) * k) + viewCy;
       const wobble = depthWobble(pin.id, now);
       const depth = setup.value.effects && !effectiveVisual.value.rotomMode;
       const speed = Math.min(1, Math.hypot(pin.vx, pin.vy) / 900);
@@ -1979,21 +1973,34 @@ onBeforeUnmount(() => {
 
 /** Direcional e A só existem no teclado, no controle e nos botões da tela grande; no toque, a mira é arrastar. */
 const aimHint = window.matchMedia?.('(pointer: coarse)').matches
-  ? 'Sua vez: arraste para trás na arena e solte para disparar.'
-  : 'Sua vez: use o direcional e A para mirar e disparar, ou arraste para trás na arena.';
+  ? 'Puxe para trás e solte'
+  : 'Direcional e A, ou arraste para trás';
 
-const phaseHint = computed(() => {
-  if (phase.value === 'aim') return selectedId.value ? aimHint : 'Escolha um pin abaixo.';
-  if (phase.value === 'rolling') return rollOwner === 'me' ? 'Seu pin está rolando…' : pvpMatch.value ? 'O amigo disparou…' : 'O adversário disparou…';
-  if (phase.value === 'over' && result.value) return result.value.won ? 'Partida encerrada: você venceu.' : 'Partida encerrada.';
-  return message.value;
+/** A vez em poucas palavras, na linha do placar. */
+const turnLabel = computed(() => {
+  if (phase.value === 'aim') return 'Sua vez';
+  if (phase.value === 'rolling') return rollOwner === 'me' ? 'Rolando…' : pvpMatch.value ? 'Amigo disparou' : 'Adversário disparou';
+  if (phase.value === 'enemy') {
+    if (pvpMatch.value) return 'Aguarde';
+    const style = enemyStyle.value && enemyStyle.value !== 'equilibrado' && setup.value.difficulty !== 'facil' ? ENEMY_STYLE_LABELS_PT[enemyStyle.value].split(':')[0] : 'Adversário';
+    return `${style} mirando`;
+  }
+  return '';
+});
+
+/** Aviso sobre a arena: só o que é preciso agora, e a instrução de mira até o primeiro disparo. */
+const stageNote = computed(() => {
+  if (phase.value === 'over' || replaying.value) return '';
+  if (message.value) return message.value;
+  if (phase.value !== 'aim') return '';
+  if (!selectedId.value) return 'Escolha um pin abaixo.';
+  return shotCount.value === 0 ? aimHint : '';
 });
 
 const legend = [
   ...TERRAIN_KINDS.map((k) => ({ key: k as string, name: TERRAIN_LABELS_PT[k], hint: MARK_HINT_PT[k] })),
   ...(Object.keys(PATCH_LABELS_PT) as (keyof typeof PATCH_LABELS_PT)[]).map((k) => ({ key: k as string, ...PATCH_LABELS_PT[k] })),
 ];
-const floorLegend = computed(() => floorMarks.value.map((k) => ({ key: k, name: TERRAIN_LABELS_PT[k], hint: MARK_HINT_PT[k] })));
 
 const MAX_MINE = MAX_PER_SIDE[0];
 const MAX_ENEMY = MAX_PER_SIDE[1];
@@ -2264,12 +2271,11 @@ function setField(field: PinField): void {
             <span class="sides mine"><i></i>{{ counts.mine }}</span>
             <span class="sides enemy"><i></i>{{ counts.enemy }}</span>
           </span>
-          <span class="pn-meta sides" :class="{ warn: borderWarn }">{{ setup.shrink ? `Rodada ${roundNo} · ` : '' }}{{ shotCount }} disparo{{ shotCount === 1 ? '' : 's' }}</span>
-        </p>
-        <p class="hud-hint pn-banner" :class="turnTone" role="status">
-          <span>{{ message || phaseHint }}</span>
-          <small v-if="borderNote && phase !== 'over'" class="hud-note" :class="{ warn: borderWarn }">{{ borderWarn ? '⚠ ' : '' }}{{ borderNote }}</small>
-          <small v-if="enemyStyle && !pvpMatch && setup.difficulty !== 'facil' && phase !== 'over'" class="hud-note">Adversário · {{ ENEMY_STYLE_LABELS_PT[enemyStyle] }}</small>
+          <span class="pn-meta">
+            <strong v-if="turnLabel" class="pn-turn" :class="turnTone" role="status">{{ turnLabel }}</strong>
+            <span v-if="borderWarn" class="pn-border-warn">⚠ Borda avança</span>
+            <span v-else>{{ setup.shrink ? `Rodada ${roundNo}` : `${shotCount} disparo${shotCount === 1 ? '' : 's'}` }}</span>
+          </span>
         </p>
       </div>
 
@@ -2286,10 +2292,11 @@ function setField(field: PinField): void {
         <canvas ref="canvasEl" role="img" aria-label="Arena vista de cima com os pins"></canvas>
         <canvas v-show="phase !== 'over'" ref="miniEl" class="pin-minimap" width="192" height="192" role="img" aria-label="Minimapa da arena: toque para olhar aquele ponto" @pointerdown.stop="onMiniDown" @pointerup.stop @pointermove.stop></canvas>
         <div ref="spriteLayer" class="pin-sprites" aria-hidden="true"></div>
-        <label class="pin-zoom" @pointerdown.stop @pointermove.stop @pointerup.stop @pointercancel.stop>
-          <span class="pin-zoom-value" aria-hidden="true">{{ zoomLabel }}×</span>
-          <input type="range" :min="PIN_ZOOM.min" :max="PIN_ZOOM.max" :step="PIN_ZOOM.step" :value="zoomLevel" aria-label="Zoom da câmera" :aria-valuetext="`${zoomLabel} vezes`" @input="setZoom(Number(($event.target as HTMLInputElement).value))" />
-        </label>
+        <div v-show="phase !== 'over'" class="pin-zoom" :class="{ open: zoomOpen }" @pointerdown.stop @pointermove.stop @pointerup.stop @pointercancel.stop>
+          <button type="button" class="pin-zoom-value" :aria-expanded="zoomOpen" :aria-label="`Zoom ${zoomLabel} vezes. Ajustar`" @click.stop="zoomOpen = !zoomOpen">{{ zoomLabel }}×</button>
+          <input v-if="zoomOpen" type="range" :min="PIN_ZOOM.min" :max="PIN_ZOOM.max" :step="PIN_ZOOM.step" :value="zoomLevel" aria-label="Zoom da câmera" :aria-valuetext="`${zoomLabel} vezes`" @input="setZoom(Number(($event.target as HTMLInputElement).value))" @change="zoomOpen = false" />
+        </div>
+        <p v-show="stageNote" class="pin-note" role="status">{{ stageNote }}</p>
         <button v-if="replaying" type="button" class="pin-skip" @click.stop="stopReplay">Pular repetição</button>
         <div v-if="phase === 'over' && result?.won && result.coins > 0 && replaying" class="pin-ko-reward" role="status">
           <span aria-hidden="true">✦</span>
@@ -2321,10 +2328,6 @@ function setField(field: PinField): void {
           </div>
         </div>
       </div>
-
-      <p v-if="floorLegend.length > 0" class="floor-legend" aria-label="Marcas no chão agora">
-        <span v-for="l in floorLegend" :key="l.key" :title="l.hint">{{ l.name }}</span>
-      </p>
 
       <div class="pins-tray">
         <ul class="tray" aria-label="Seus pins">

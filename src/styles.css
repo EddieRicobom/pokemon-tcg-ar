@@ -3953,11 +3953,20 @@ body.no-scroll .reward-toasts {
 }
 
 .pn-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   margin-left: auto;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 600;
+  white-space: nowrap;
 }
+
+.pn-turn.mine { color: var(--mine); }
+.pn-turn.enemy { color: var(--enemy); }
+.pn-border-warn { color: #ffb35c; }
 
 .sides {
   display: inline-flex;
@@ -3982,73 +3991,45 @@ body.no-scroll .reward-toasts {
   background: currentColor;
 }
 
-.pn-banner {
-  margin: 0;
-  min-height: 3.2em;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 1px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  border-left: 4px solid var(--line);
-  background: var(--surface);
-  font-size: 0.9rem;
-  line-height: 1.3;
-}
-
-.pn-banner.mine {
-  border-left-color: var(--mine);
-  background: color-mix(in srgb, var(--mine) 12%, var(--surface));
-}
-
-.pn-banner.enemy {
-  border-left-color: var(--enemy);
-  background: color-mix(in srgb, var(--enemy) 12%, var(--surface));
-}
-
-.hud-note {
-  font-size: 0.76rem;
-  color: var(--muted);
-}
-
-.hud-note.warn {
-  color: #ffb35c;
-}
-
-/* Zoom da câmera: slider no canto da arena, ao lado do minimapa (o toque aqui não puxa o pin). */
+/* Zoom da câmera: selo pequeno no canto; o slider só aparece ao tocar nele (o toque aqui não puxa o pin). */
 .pin-zoom {
   position: absolute;
   z-index: 5;
-  left: 6px;
-  top: 8px;
+  left: 2px;
+  top: 2px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: min(190px, calc(100% - 118px));
-  min-height: 44px;
-  padding: 0 12px 0 10px;
-  border: 1px solid rgb(255 255 255 / 22%);
+  width: max-content;
+  max-width: calc(100% - 92px);
   border-radius: 999px;
-  background: rgb(8 13 26 / 72%);
-  backdrop-filter: blur(3px);
   touch-action: none;
+}
+.pin-zoom.open {
+  width: min(190px, calc(100% - 92px));
+  background: rgb(8 13 26 / 72%);
 }
 .pin-zoom-value {
   flex: none;
-  min-width: 2.2em;
-  color: var(--gold);
-  font-size: .78rem;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: .72rem;
   font-weight: 800;
-  text-align: center;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 80%);
+  opacity: .8;
 }
+.pin-zoom.open .pin-zoom-value { color: var(--gold); opacity: 1; }
 .pin-zoom input[type='range'] {
   flex: 1;
   min-width: 0;
   width: auto;
   height: 40px;
-  margin: 0;
+  margin: 0 12px 0 0;
   padding: 0;
   border: 0;
   background: transparent;
@@ -4056,8 +4037,27 @@ body.no-scroll .reward-toasts {
   touch-action: none;
   cursor: pointer;
 }
+/* Aviso curto sobre a arena; não pega o toque. */
+.pin-note {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 10px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgb(8 13 26 / 70%);
+  color: #fff;
+  font-size: .78rem;
+  line-height: 1.3;
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
 /* Minimapa: a arena inteira no canto; tocar leva a câmera até lá. */
-.pin-minimap { position: absolute; top: 8px; right: 8px; z-index: 12; width: 96px; height: 96px; border-radius: 50%; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); touch-action: none; cursor: pointer; }
+.pin-minimap { position: absolute; top: 6px; right: 6px; z-index: 12; width: 72px; height: 72px; border-radius: 50%; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); touch-action: none; cursor: pointer; }
 .pn-formations { display: grid; gap: 8px; }
 .pn-formations h3, .pn-formations .hint { margin: 0; }
 .pn-formation-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
@@ -4067,7 +4067,7 @@ body.no-scroll .reward-toasts {
 .pn-formation-row small { color: inherit; font-size: 0.72rem; font-weight: 700; }
 .pn-formation-field { fill: #4f9a45; }
 .pn-formation-dot { fill: #6fb1ff; stroke: #0d162e; stroke-width: 2; }
-.pin-zoom:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 1px; }
+.pin-zoom-value:focus-visible { outline: 2px solid #fff; outline-offset: -4px; border-radius: 999px; }
 
 /* Vinheta suave nas bordas: dá foco ao centro quando a câmera aproxima e esconde o corte da arte. */
 .pin-stage::after {
@@ -4142,12 +4142,13 @@ body.no-scroll .reward-toasts {
   .pin-ko-reward { animation: none; }
 }
 
-/* A arena é quadrada e nunca passa da altura que sobra na tela, para o dock caber junto. */
+/* De ponta a ponta no celular e mais alto que largo: o que sobra da tela depois do placar e do dock vai para o jogo. */
 .pin-stage {
+  --pin-stage-w: min(100vw, 560px);
   position: relative;
-  width: min(100%, 560px, max(300px, calc(100dvh - 400px)));
-  aspect-ratio: 1;
-  margin: 0 auto;
+  width: var(--pin-stage-w);
+  height: clamp(300px, calc(100dvh - 376px), calc(var(--pin-stage-w) * 1.3));
+  margin-left: calc(50% - var(--pin-stage-w) / 2);
   border-radius: var(--radius);
   overflow: hidden;
   touch-action: none;
@@ -4175,19 +4176,7 @@ body.no-scroll .reward-toasts {
     inset 0 -16px 24px rgb(0 0 0 / 28%);
 }
 
-/* A moldura e o brilho superior dão ao tabuleiro a leitura de brinquedo físico
-   sem outra camada WebGL. O pseudo-elemento fica atrás dos pins e não captura toque. */
-.pin-stage.pin-depth::before {
-  content: '';
-  position: absolute;
-  z-index: 0;
-  inset: 1.5%;
-  border: 2px solid rgb(255 255 255 / 17%);
-  border-radius: 50%;
-  pointer-events: none;
-  box-shadow: inset 0 4px 0 rgb(255 255 255 / 14%), inset 0 -12px 0 rgb(0 0 0 / 25%);
-}
-
+/* O brilho superior dá ao tabuleiro a leitura de brinquedo físico sem outra camada WebGL. */
 .pin-stage.pin-depth::after {
   content: '';
   position: absolute;
@@ -4201,13 +4190,9 @@ body.no-scroll .reward-toasts {
 
 .pin-stage.pin-depth canvas:not(.pin-minimap),
 .pin-stage.pin-depth .pin-sprites {
-  transform: rotateX(13deg) scale(0.98) translateY(-1.8%);
+  transform: rotateX(13deg) scale(1.12);
   transform-origin: center 61%;
   backface-visibility: hidden;
-}
-
-.pin-stage.pin-depth canvas:not(.pin-minimap) {
-  border-radius: 50%;
 }
 
 .pin-stage.pin-depth .pin-sprites {
@@ -4386,27 +4371,6 @@ body.no-scroll .reward-toasts {
   min-height: 42px;
   padding: 0 8px;
   font-size: 0.85rem;
-}
-
-.floor-legend {
-  display: flex;
-  gap: 6px;
-  margin: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  font-size: 0.72rem;
-}
-
-.floor-legend::-webkit-scrollbar {
-  display: none;
-}
-
-.floor-legend span {
-  flex: none;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--muted);
 }
 
 /* O dock: os seus pins numa fileira e, abaixo, os golpes do pin escolhido. Rolam para o lado. */
