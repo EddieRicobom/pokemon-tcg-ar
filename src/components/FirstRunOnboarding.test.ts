@@ -34,7 +34,7 @@ describe('primeira abertura', () => {
     await nextTick();
 
     const village = [...host.querySelectorAll<HTMLButtonElement>('button')]
-      .find((button) => button.textContent?.includes('Não tenho cartas agora'));
+      .find((button) => button.textContent?.includes('Ainda sem cartas'));
     expect(village).toBeDefined();
     village!.click();
 
