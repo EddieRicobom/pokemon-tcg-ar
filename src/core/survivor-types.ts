@@ -599,6 +599,8 @@ export interface SurvivorEvolutionOption {
 }
 
 export interface SurvivorInput {
+  /** BONK: alto o bastante para desviar de contato e tiros. */
+  airborne?: boolean;
   /** Ativação solicitada uma única vez pelo botão ou teclado. */
   special?: boolean;
   /** Botão de carga apertado agora: Foco e Teleporte resolvem ao soltar; Rajada é automática. */

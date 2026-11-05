@@ -319,9 +319,19 @@ export function createBonkArt(ctx: CanvasRenderingContext2D, atlas: CanvasImageS
  * pixel da textura em cada eixo. Em pedaços pequenos (um ladrilho, um trecho de muro) a diferença para a perspectiva
  * verdadeira não aparece.
  */
+let patternMatrix: DOMMatrix | null = null;
+
 function fillTextured(ctx: CanvasRenderingContext2D, texture: BonkTexture, origin: Point, u: Point, v: Point, points: readonly Point[], alpha = 1): void {
   if (alpha <= 0.02) return;
-  texture.pattern.setTransform(new DOMMatrix([u.x, u.y, v.x, v.y, origin.x, origin.y]));
+  // Uma matriz só: criar uma por bloco, a cada quadro, gerava milhares de objetos por segundo.
+  const matrix = (patternMatrix ??= new DOMMatrix());
+  matrix.a = u.x;
+  matrix.b = u.y;
+  matrix.c = v.x;
+  matrix.d = v.y;
+  matrix.e = origin.x;
+  matrix.f = origin.y;
+  texture.pattern.setTransform(matrix);
   const previous = ctx.globalAlpha;
   ctx.globalAlpha = previous * alpha;
   ctx.fillStyle = texture.pattern;
