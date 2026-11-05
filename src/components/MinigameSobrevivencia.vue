@@ -2031,7 +2031,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   }
   if (!effectiveVisual.value.rotomMode) drawBonkPointers(c, s, physics, drawPoint, viewport);
   const look = cinemaOn.value && !effectiveVisual.value.rotomMode
-    ? cinemaLook(cinemaPower({ progressMs: survivorProgressMs(s), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3)
+    ? cinemaLook(cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3)
     : null;
   if (look && playerPoint) {
     const screen = { x: 0, y: 0, w: viewport.width, h: viewport.height };
@@ -2274,7 +2274,7 @@ function draw(): void {
 
   // Luz cinematográfica: só na visão de cima, e os limites caem sozinhos se o aparelho sofrer (`renderScaleCap`).
   const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode
-    ? cinemaLook(cinemaPower({ progressMs: survivorProgressMs(s), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3)
+    ? cinemaLook(cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3)
     : null;
   if (cinema) {
     const power = cinema.dark > 0.14 ? (cinema.dark - 0.14) / 0.56 : 0;

@@ -93,15 +93,6 @@ const RUN_KEY = 'tcg-ar-masmorra-descida-v1';
 const FAST_KEY = 'tcg-ar-masmorra-rapido-v1';
 const GUIDE_KEY = 'tcg-ar-masmorra-guia-v1';
 
-function readFlag(key: string): boolean {
-  try { return localStorage.getItem(key) === '1'; } catch { return false; }
-}
-function writeFlag(key: string, on: boolean): void {
-  try {
-    if (on) localStorage.setItem(key, '1');
-    else localStorage.removeItem(key);
-  } catch { /* sem armazenamento: vale só nesta sessão */ }
-}
 function readRun(): DungeonRunSave | null {
   try { return parseRunSave(localStorage.getItem(RUN_KEY)); } catch { return null; }
 }
@@ -116,7 +107,7 @@ const s = ref<DungeonState | null>(null);
 /** Descida guardada que pode ser retomada na tela de escolha. */
 const savedRun = ref<DungeonRunSave | null>(readRun());
 /** Turno inimigo acelerado (a escolha fica guardada). */
-const fastEnemies = ref(readFlag(FAST_KEY));
+const fastEnemies = ref(readFlag(FAST_KEY, false));
 /** Guia da primeira descida. */
 const guideOpen = ref(false);
 /** Tremor curto quando a equipe apanha. */
@@ -421,7 +412,7 @@ function begin(seed?: number): void {
   inspected.value = null;
   flash.value = '';
   persistRun();
-  if (!pvp.value && !readFlag(GUIDE_KEY)) guideOpen.value = true;
+  if (!pvp.value && !readFlag(GUIDE_KEY, false)) guideOpen.value = true;
 }
 
 // ----------------------------------------------------------------------------- Duelo com um amigo (PvP)
