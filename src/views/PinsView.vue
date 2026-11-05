@@ -2285,7 +2285,7 @@ function setField(field: PinField): void {
         @pointercancel="onCancel"
       >
         <canvas ref="canvasEl" role="img" aria-label="Arena vista de cima com os pins"></canvas>
-        <canvas ref="miniEl" class="pin-minimap" width="192" height="192" role="img" aria-label="Minimapa da arena: toque para olhar aquele ponto" @pointerdown.stop="onMiniDown" @pointerup.stop @pointermove.stop></canvas>
+        <canvas v-show="phase !== 'over'" ref="miniEl" class="pin-minimap" width="192" height="192" role="img" aria-label="Minimapa da arena: toque para olhar aquele ponto" @pointerdown.stop="onMiniDown" @pointerup.stop @pointermove.stop></canvas>
         <div ref="spriteLayer" class="pin-sprites" aria-hidden="true"></div>
         <div class="pin-zoom" role="group" aria-label="Zoom da câmera" @pointerdown.stop @pointerup.stop>
           <button v-for="level in ZOOM_LEVELS" :key="level" type="button" :class="{ on: zoomLevel === level }" :aria-pressed="zoomLevel === level" :aria-label="`Zoom ${String(level).replace('.', ',')} vezes`" @click.stop="setZoom(level)">{{ String(level).replace('.', ',') }}×</button>

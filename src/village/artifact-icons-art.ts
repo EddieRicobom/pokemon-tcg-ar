@@ -168,7 +168,7 @@ export function artifactIcon(kind: SurvivorArtifactKind): HTMLCanvasElement | nu
   canvas.width = ICON_SIZE;
   canvas.height = ICON_SIZE;
   const c = canvas.getContext('2d');
-  if (c) c.putImageData(new ImageData(paintArtifactIcon(kind), ICON_SIZE, ICON_SIZE), 0, 0);
+  if (c) c.putImageData(new ImageData(new Uint8ClampedArray(paintArtifactIcon(kind)), ICON_SIZE, ICON_SIZE), 0, 0);
   const ready = c ? canvas : null;
   canvases.set(kind, ready);
   return ready;
