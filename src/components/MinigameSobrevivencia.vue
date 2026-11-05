@@ -4,9 +4,10 @@ import MusicControls from './MusicControls.vue';
 import SurvivorDebug from './SurvivorDebug.vue';
 import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
-import { addCrater, cinemaLook, cinemaPower } from '../core/survivor-cinema';
-import type { Crater } from '../core/survivor-cinema';
-import { drawCastShadows, drawCraters, drawDarkness, drawLights } from '../village/survivor-cinema-art';
+import { cinemaLook, cinemaPower } from '../core/survivor-cinema';
+import { flashAlpha, moveLight, scarFromFx } from '../core/survivor-scars';
+import { drawCastShadows, drawLights, drawNight } from '../village/survivor-cinema-art';
+import { ScarField, ScarSparks } from '../village/survivor-scars-art';
 import type { CinemaLight } from '../village/survivor-cinema-art';
 import { routeHref } from '../app/route';
 import { survivorAudio } from '../app/survivor-audio-settings';
@@ -2035,20 +2036,18 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     : null;
   if (look && playerPoint) {
     const screen = { x: 0, y: 0, w: viewport.width, h: viewport.height };
-    drawDarkness(c, look, playerPoint.x, playerPoint.y - 14, screen, animMs);
     const lights = cinemaLights;
     lights.length = 0;
-    lights.push({ x: playerPoint.x, y: playerPoint.y - 16, r: 46, color: move.color, alpha: 0.22 });
     for (const proj of s.projectiles) {
       if (lights.length >= look.glows) break;
       const p = drawPoint(proj, 14);
-      if (p) lights.push({ x: p.x, y: p.y, r: clamp((14 + (proj.size ?? 4) * 2.4) * p.scale, 6, 60), color: proj.move?.color ?? move.color, alpha: 0.55 });
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp((16 + (proj.size ?? 4) * 2.4) * p.scale, 6, 60), color: proj.move?.color ?? move.color, alpha: 0.6 * moveLight(proj.move?.type) });
     }
     for (const f of s.fx) {
       if (lights.length >= look.glows) break;
       if (f.kind !== 'blast' && f.kind !== 'pulse') continue;
       const p = drawPoint(f, 10);
-      if (p) lights.push({ x: p.x, y: p.y, r: clamp(f.r * 1.5 * p.scale, 10, 150), color: f.color, alpha: 0.5 * (1 - f.ageMs / Math.max(1, f.lifeMs)) });
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp(f.r * 1.5 * p.scale, 10, 150), color: f.color, alpha: 0.8 * moveLight(f.moveType) * flashAlpha(f.ageMs, f.lifeMs) });
     }
     for (const e of s.enemies) {
       if (lights.length >= look.glows) break;
@@ -2056,7 +2055,8 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       const p = drawPoint(e, 14);
       if (p) lights.push({ x: p.x, y: p.y, r: clamp((e.boss || e.grade === 'chefao' ? 80 : 46) * p.scale, 12, 130), color: e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', alpha: 0.32 });
     }
-    drawLights(c, look, lights, { x: playerPoint.x, y: playerPoint.y, color: move.color }, screen, animMs, !reducedMotion);
+    drawNight(c, look, lights, screen, animMs);
+    drawLights(c, lights);
   }
   if (physics.collisionFlashMs > 0 && playerPoint) {
     c.save();
@@ -2137,9 +2137,10 @@ function preloadVisibleEnemyRegions(elapsedMs: number, runSeed = 0, enemies: rea
 
 const cinemaCasters: SurvivorEnemy[] = [];
 const cinemaLights: CinemaLight[] = [];
-/** Chão destruído: só desenho, a física e o caminho dos inimigos não mudam. */
-const cinemaCraters: Crater[] = [];
-let seenBlasts = new WeakSet<object>();
+/** Marcas e partículas dos golpes: só desenho, a física e o caminho dos inimigos não mudam. */
+const scarField = new ScarField();
+const scarSparks = new ScarSparks();
+let seenScarFx = new WeakSet<object>();
 
 function draw(): void {
   if (!ctx || !canvasEl.value || !state.value) return;
@@ -2273,23 +2274,53 @@ function draw(): void {
   for (const bubble of s.timeBubbles ?? []) drawTimeBubble(ctx, bubble.x, bubble.y, bubble.radius, bubble.ageMs / Math.max(1, bubble.lifeMs), animMs, detailed);
 
   // Luz cinematográfica: só na visão de cima, e os limites caem sozinhos se o aparelho sofrer (`renderScaleCap`).
-  const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode
-    ? cinemaLook(cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3)
-    : null;
+  const cinemaStrength = cinemaPower({ progressMs: survivorProgressMs({ survivedMs: s.elapsedMs, fast: s.fast }), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') });
+  const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode ? cinemaLook(cinemaStrength, renderScaleCap.value < 3) : null;
   if (cinema) {
-    const power = cinema.dark > 0.14 ? (cinema.dark - 0.14) / 0.56 : 0;
+    const lights = cinemaLights;
+    lights.length = 0;
     for (const f of s.fx) {
-      if (f.kind !== 'blast' || f.r < 34 || seenBlasts.has(f)) continue;
-      seenBlasts.add(f);
-      addCrater(cinemaCraters, f.x, f.y, f.r, power, animMs);
+      if (!seenScarFx.has(f)) {
+        seenScarFx.add(f);
+        const scar = scarFromFx(f, cinemaStrength);
+        if (scar) {
+          scarField.add(scar);
+          if (!reducedMotion) scarSparks.burst(scar);
+        }
+      }
+      if (lights.length >= cinema.glows) continue;
+      if (f.kind !== 'blast' && f.kind !== 'pulse' && f.kind !== 'beam' && f.kind !== 'cone' && f.kind !== 'rush') continue;
+      const alpha = 0.85 * moveLight(f.moveType) * flashAlpha(f.ageMs, f.lifeMs);
+      if (f.kind === 'beam' && f.toX !== undefined && f.toY !== undefined) {
+        // O feixe clareia ao longo do caminho, não só na ponta.
+        const fromX = f.fromX ?? f.x;
+        const fromY = f.fromY ?? f.y;
+        for (const t of [0.15, 0.5, 0.85]) lights.push({ x: fromX + (f.toX - fromX) * t, y: fromY + (f.toY - fromY) * t, r: 60 + f.r * 2, color: f.color, alpha });
+      } else if (f.kind === 'cone' && f.angle !== undefined) {
+        lights.push({ x: f.x + Math.cos(f.angle) * f.r * 0.55, y: f.y + Math.sin(f.angle) * f.r * 0.55, r: f.r * 0.95, color: f.color, alpha });
+      } else {
+        lights.push({ x: f.x, y: f.y, r: Math.min(190, f.r * 1.7), color: f.color, alpha });
+      }
     }
-    drawCraters(ctx, cinemaCraters, { x: camX, y: camY, w: worldViewW, h: worldViewH });
+    for (const proj of s.projectiles) {
+      if (lights.length >= cinema.glows) break;
+      if (proj.x < left || proj.x > right || proj.y < top || proj.y > bottom) continue;
+      const type = proj.move?.type;
+      lights.push({ x: proj.x, y: proj.y, r: 26 + (proj.size ?? 4) * 3, color: proj.move?.color ?? move.color, alpha: 0.55 * moveLight(type) });
+    }
+    for (const e of s.enemies) {
+      if (lights.length >= cinema.glows) break;
+      if (!e.boss && e.grade !== 'chefao') continue;
+      if (e.x < left || e.x > right || e.y < top || e.y > bottom) continue;
+      lights.push({ x: e.x, y: e.y - 14, r: 90, color: '#ff3b2f', alpha: 0.4 });
+    }
+    scarField.draw(ctx, { x: camX, y: camY, w: worldViewW, h: worldViewH }, s.player.x, s.player.y);
     cinemaCasters.length = 0;
     for (const e of s.enemies) {
       if (cinemaCasters.length >= cinema.shadows) break;
       if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) cinemaCasters.push(e);
     }
-    drawCastShadows(ctx, [...cinemaCasters, { x: s.player.x, y: s.player.y, radius: 14 }], cinema);
+    drawCastShadows(ctx, [...cinemaCasters, { x: s.player.x, y: s.player.y, radius: 14 }], cinemaLights, cinema);
   }
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
@@ -2608,27 +2639,9 @@ function draw(): void {
   }
   if (cinema) {
     const view = { x: camX, y: camY, w: worldViewW, h: worldViewH };
-    drawDarkness(ctx, cinema, s.player.x, s.player.y - 10, view, animMs);
-    const lights = cinemaLights;
-    lights.length = 0;
-    lights.push({ x: s.player.x, y: s.player.y - 12, r: 46, color: move.color, alpha: 0.22 });
-    for (const proj of s.projectiles) {
-      if (lights.length >= cinema.glows) break;
-      if (proj.x < left || proj.x > right || proj.y < top || proj.y > bottom) continue;
-      lights.push({ x: proj.x, y: proj.y, r: 10 + (proj.size ?? 4) * 1.6, color: proj.move?.color ?? move.color, alpha: 0.35 });
-    }
-    for (const f of s.fx) {
-      if (lights.length >= cinema.glows) break;
-      if (f.kind !== 'blast' && f.kind !== 'pulse' && f.kind !== 'beam') continue;
-      lights.push({ x: f.x, y: f.y, r: Math.min(150, f.r * 1.5), color: f.color, alpha: 0.5 * (1 - f.ageMs / Math.max(1, f.lifeMs)) });
-    }
-    for (const e of s.enemies) {
-      if (lights.length >= cinema.glows) break;
-      if (!e.boss && e.grade === 'comum') continue;
-      if (e.x < left || e.x > right || e.y < top || e.y > bottom) continue;
-      lights.push({ x: e.x, y: e.y - 14, r: e.boss || e.grade === 'chefao' ? 80 : 46, color: e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', alpha: 0.32 });
-    }
-    drawLights(ctx, cinema, lights, { x: s.player.x, y: s.player.y, color: move.color }, view, animMs, !reducedMotion);
+    drawNight(ctx, cinema, cinemaLights, view, animMs);
+    scarSparks.draw(ctx, animMs);
+    drawLights(ctx, cinemaLights);
   }
   ctx.restore();
 }
@@ -3432,8 +3445,9 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
   runCompanion = companion;
   runShiny = shiny;
   runEpoch++;
-  cinemaCraters.length = 0;
-  seenBlasts = new WeakSet<object>();
+  scarField.clear();
+  scarSparks.clear();
+  seenScarFx = new WeakSet<object>();
   pickBusy.value = true;
   try {
     avatarName.value = name;
