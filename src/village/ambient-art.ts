@@ -73,14 +73,6 @@ export function drawFountainFx(ctx: CanvasRenderingContext2D, x: number, bottom:
   ctx.restore();
 }
 
-/**
- * Coluna de dados da Torre de Sobrevivência.
- *
- * O efeito é feito só com retângulos pequenos, sem blur nem criação de
- * partículas. Assim ele mantém o acabamento pixel art, sobe muito acima do
- * prédio e continua barato para a GPU. O ciclo é determinístico para não
- * causar mudanças bruscas quando a câmera é redesenhada.
- */
 /** Cor do estandarte de cada prédio de modo de jogo: mesma peça, mesma madeira, só o pano muda. */
 const GAME_BANNERS: Readonly<Record<string, string>> = { arcade: '#e8743b', pins: '#3fa66a', arena: '#c94a4a', torre: '#4a7fd0', masmorra: '#8a5fc0' };
 
