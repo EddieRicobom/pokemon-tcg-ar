@@ -3,7 +3,7 @@ import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES, intersectFloor } from '../box/f
 import { visibleVerticalFov } from '../box/orientation';
 import { OrientationSource } from '../box/orientation-source';
 import type { OrientationMode } from '../box/orientation-source';
-import { VILLAGE_AR_TILT_DEG, VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M, villageDioramaBandBounds, normalizeVillageScale } from '../core/village/ar-diorama';
+import { VILLAGE_AR_TILT_DEG, VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_RENDER_FPS, VILLAGE_DIORAMA_WIDTH_M, villageDioramaBandBounds, villageDioramaFps, normalizeVillageScale } from '../core/village/ar-diorama';
 import { createWebglBackend } from './webgl-backend';
 import { maxVisualFps } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
@@ -19,6 +19,7 @@ export interface StartVillageArOptions {
   villageFloorCanvas: HTMLCanvasElement;
   villagePropsCanvas: HTMLCanvasElement;
   villageBandCanvases: HTMLCanvasElement[];
+  getCanvasVersions: () => { floor: number; scene: number };
   onModeChange?: (mode: OrientationMode) => void;
 }
 
@@ -53,6 +54,7 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     texture.magFilter = NearestFilter;
     texture.minFilter = NearestFilter;
     texture.colorSpace = 'srgb';
+    texture.generateMipmaps = false;
     return texture;
   };
   const floorTexture = textureFor(options.villageFloorCanvas);
@@ -89,7 +91,7 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     const bounds = villageDioramaBandBounds(index, height);
     const mesh = new Mesh(
       new PlaneGeometry(VILLAGE_DIORAMA_WIDTH_M, (bounds.bottom - bounds.top) / height * VILLAGE_DIORAMA_DEPTH_M),
-      new MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.1, depthWrite: true, side: DoubleSide }),
+      new MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.1, depthWrite: true, side: DoubleSide, forceSinglePass: true }),
     );
     mesh.position.set(0, (bounds.anchor - (bounds.top + bounds.bottom) / 2) / height * VILLAGE_DIORAMA_DEPTH_M + 0.012,
       (bounds.anchor / height - 0.5) * VILLAGE_DIORAMA_DEPTH_M);
@@ -98,7 +100,7 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
   root.add(base, floor, ...bands.map((band) => band.mesh), props);
   scene.add(root);
 
-  const renderer = createWebglBackend(options.canvas);
+  const renderer = createWebglBackend(options.canvas, 1);
   const orientation = new OrientationSource();
   await orientation.requestPermission();
   orientation.start(options.onModeChange);
@@ -147,13 +149,10 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
   setScale(scale);
 
   let lastFrameAt = 0;
-  // O canvas da Vila é uma textura grande atualizada junto da câmera. Em
-  // automático, 30 fps mantém o diorama fluido sem disputar 60 fps com o
-  // vídeo e sem recarregar a textura inteira a cada frame da tela.
-  const renderFps = (): number => {
-    const configured = maxVisualFps();
-    return configured > 0 ? configured : 30;
-  };
+  // A orientação segue mais suave que a atualização das texturas da Vila.
+  const renderFps = (): number => villageDioramaFps(maxVisualFps(), VILLAGE_DIORAMA_RENDER_FPS);
+  let floorVersion = -1;
+  let sceneVersion = -1;
   const tick = (now: number) => {
     if (!running) return;
     handle = requestGameFrame(tick, renderFps);
@@ -163,9 +162,16 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     camera.quaternion.copy(orientation.read(now));
     camera.updateMatrixWorld(true);
     if (root.visible) {
-      floorTexture.needsUpdate = true;
-      propsTexture.needsUpdate = true;
-      for (const band of bands) band.texture.needsUpdate = true;
+      const versions = options.getCanvasVersions();
+      if (versions.floor !== floorVersion) {
+        floorTexture.needsUpdate = true;
+        floorVersion = versions.floor;
+      }
+      if (versions.scene !== sceneVersion) {
+        propsTexture.needsUpdate = true;
+        for (const band of bands) band.texture.needsUpdate = true;
+        sceneVersion = versions.scene;
+      }
     }
     renderer.render(scene, camera);
   };

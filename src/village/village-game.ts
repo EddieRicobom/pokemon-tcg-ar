@@ -1,4 +1,4 @@
-import { VILLAGE_DIORAMA_BANDS, villageDioramaBand, villageDioramaBandBounds } from '../core/village/ar-diorama';
+import { VILLAGE_DIORAMA_BANDS, VILLAGE_DIORAMA_FLOOR_INTERVAL_MS, VILLAGE_DIORAMA_SCENE_FPS, VILLAGE_DIORAMA_TEXTURE_SCALE, villageDioramaBand, villageDioramaBandBounds, villageDioramaFps } from '../core/village/ar-diorama';
 import { drawWaterFx, drawFountainFx, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
 import { GAME_BUILDINGS } from './game-buildings-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
@@ -119,6 +119,14 @@ export class VillageGame {
   private scale = 3;
   /** A Vila em AR usa este mesmo canvas como textura de um diorama completo. */
   private diorama = false;
+  private dioramaFloorAt = -Infinity;
+  private dioramaFloorVersion = 0;
+  private dioramaSceneVersion = 0;
+
+  /** Indica quais canvases mudaram desde o último envio à GPU. */
+  getDioramaVersions(): { floor: number; scene: number } {
+    return { floor: this.dioramaFloorVersion, scene: this.dioramaSceneVersion };
+  }
   private bubbles = new Map<string, { emoji: string; until: number }>();
   private speech = new Map<string, { text: string; name: string; start: number; until: number; tint: string }>();
   /** Áreas dos balões no último quadro: permitem tocar numa fala sem confundir com o chão. */
@@ -222,18 +230,11 @@ export class VillageGame {
   /** Canvas de trabalho do brilho (um só, reaproveitado: o brilho é desenhado na hora, quadro a quadro). */
   private sheenCanvas: HTMLCanvasElement | null = null;
 
-  /**
-   * O diorama AR redesenha o mapa inteiro como textura da câmera. Quando o
-   * jogador deixa a taxa em automático, 30 fps constantes evitam a disputa
-   * entre esse mapa grande e o vídeo, sem alterar a Vila normal. Uma taxa
-   * escolhida nas opções continua tendo prioridade.
-   */
   private renderFps(): number {
     const configured = this.maxFps();
-    // Fora do Rotom, automático conserva a resposta de 60 FPS. Os limites
-    // explícitos de 30 ou 20 FPS continuam tendo prioridade.
+    if (this.diorama) return villageDioramaFps(configured, VILLAGE_DIORAMA_SCENE_FPS);
     if (this.hd2d() && !this.reducedMotion?.matches) return hd2dFrameRate(configured, true);
-    return this.diorama && (!Number.isFinite(configured) || configured <= 0) ? 30 : configured;
+    return configured;
   }
 
   constructor(
@@ -761,9 +762,10 @@ export class VillageGame {
     if (this.diorama === on) return;
     this.diorama = on;
     if (on) {
+      this.dioramaFloorAt = -Infinity;
       // A textura usa a proporção real do mapa (4:3), sem faixas vazias de uma tela de celular em pé.
-      const width = this.map.w * TILE;
-      const height = this.map.h * TILE;
+      const width = Math.round(this.map.w * TILE * VILLAGE_DIORAMA_TEXTURE_SCALE);
+      const height = Math.round(this.map.h * TILE * VILLAGE_DIORAMA_TEXTURE_SCALE);
       this.canvas.width = width;
       this.canvas.height = height;
       if (this.dioramaLayers?.floor) {
@@ -779,7 +781,7 @@ export class VillageGame {
         canvas.width = width;
         canvas.height = bounds.bottom - bounds.top;
       });
-      this.scale = 1;
+      this.scale = VILLAGE_DIORAMA_TEXTURE_SCALE;
     }
   }
 
@@ -1403,6 +1405,7 @@ export class VillageGame {
   }
 
   resize(width: number, height: number): void {
+    if (this.diorama) return;
     // Três vezes a densidade pinta mais de nove vezes os pixels de um celular
     // comum. A Vila é pixel art e já usa `image-rendering: pixelated`, então
     // limitar a 2× mantém a leitura nítida sem transformar cada quadro do mapa
@@ -1424,12 +1427,17 @@ export class VillageGame {
     const sceneCanvas = this.canvas;
     const sceneCtx = this.ctx;
     try {
-      this.canvas = this.dioramaLayers.floor;
-      this.ctx = this.canvas.getContext('2d')!;
-      this.drawLayer(now, 'floor');
+      if (now - this.dioramaFloorAt >= VILLAGE_DIORAMA_FLOOR_INTERVAL_MS) {
+        this.canvas = this.dioramaLayers.floor;
+        this.ctx = this.canvas.getContext('2d')!;
+        this.drawLayer(now, 'floor');
+        this.dioramaFloorAt = now;
+        this.dioramaFloorVersion++;
+      }
       this.canvas = this.dioramaLayers.props;
       this.ctx = this.canvas.getContext('2d')!;
       this.drawLayer(now, 'props');
+      this.dioramaSceneVersion++;
     } finally {
       this.canvas = sceneCanvas;
       this.ctx = sceneCtx;

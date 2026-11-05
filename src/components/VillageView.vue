@@ -204,7 +204,7 @@ async function toggleArBeta(): Promise<void> {
     arActive.value = true;
     const { startVillageAr } = await loadChunk(() => import('../ar/start-village'));
     if (generation !== arGeneration) return;
-    const running = await startVillageAr({ video, canvas, container: wrap, villageFloorCanvas: floor, villagePropsCanvas: props, villageBandCanvases: dioramaBands });
+    const running = await startVillageAr({ video, canvas, container: wrap, villageFloorCanvas: floor, villagePropsCanvas: props, villageBandCanvases: dioramaBands, getCanvasVersions: () => game!.getDioramaVersions() });
     if (generation !== arGeneration) { running.stop(); return; }
     villageAr = running;
     villageAr.setScale(arScale.value);
@@ -2797,6 +2797,7 @@ function buildMiniBase(): void {
 }
 
 function drawMini(): void {
+  if (arActive.value) return;
   const el = miniEl.value;
   if (!el || !game) return;
   if (!miniBase) buildMiniBase();
