@@ -592,7 +592,7 @@ button.danger {
 .meta,
 small {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
 }
 
 .meta {
@@ -1187,7 +1187,7 @@ body.no-scroll {
 .viewport.hud-hidden .stage-bar { pointer-events: none; }
 @media (max-width: 520px) {
   .ar-radar { top: 0; right: 0; padding: 6px 8px; }
-  .scan-card-badge { font-size: .64rem; }
+  .scan-card-badge { font-size: .7rem; }
   .viewport .stage-bar { justify-content: flex-start; }
 }
 
@@ -1669,7 +1669,7 @@ button.link {
 }
 
 .card-tech { margin-top: 2px; }
-.card-tech > summary { min-height: 32px; display: flex; align-items: center; cursor: pointer; font-size: 0.78rem; color: var(--muted); }
+.card-tech > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 0.78rem; color: var(--muted); }
 .card-tech small { display: block; }
 
 .manual-result {
@@ -2435,7 +2435,7 @@ button.link {
 }
 
 .level-ring small {
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   color: var(--muted);
 }
 
@@ -2686,7 +2686,7 @@ button.link {
 .trainer-sections button {
   position: relative;
   flex: 1 1 auto;
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 8px;
   font-size: 0.9rem;
   border: 0;
@@ -2766,7 +2766,7 @@ input[type='file']::file-selector-button {
 }
 
 .badges small {
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   color: var(--muted);
 }
 
@@ -4703,7 +4703,7 @@ body.no-scroll .reward-toasts {
 }
 
 .tr-picker button small {
-  font-size: 0.66rem;
+  font-size: 0.74rem;
   line-height: 1.2;
   text-align: center;
 }
@@ -4735,7 +4735,7 @@ body.no-scroll .reward-toasts {
 }
 
 .badge-case li small {
-  font-size: 0.66rem;
+  font-size: 0.74rem;
   line-height: 1.15;
   color: #f0d488;
   text-align: center;
@@ -6594,6 +6594,9 @@ body.no-scroll .reward-toasts {
 }
 
 .modes a {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
   padding: 8px 6px;
   border-radius: 999px;
   text-align: center;
@@ -8873,7 +8876,7 @@ body.no-scroll .reward-toasts {
   .app-header { min-height: 36px; }
   .app-header h1 { font-size: 1rem; }
   .tabs { position: static; width: 100%; max-width: none; padding: 2px 8px; border: 1px solid var(--line); border-radius: 12px; }
-  .tabs a { min-height: 42px; padding: 2px 4px; font-size: .7rem; }
+  .tabs a { min-height: 46px; padding: 2px 4px; font-size: .76rem; }
   .tabs a svg { width: 20px; height: 20px; }
   .app-footer { display: none; }
   .universal-controls { inset: auto max(14px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
@@ -8899,7 +8902,7 @@ body.no-scroll .reward-toasts {
 .pokedex .dex-bar b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--gold)); }
 .dex-gens { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
 .dex-gens button { display: grid; flex: 0 0 auto; min-width: 56px; min-height: 44px; padding: 4px 8px; gap: 0; border-radius: 12px; font-weight: 800; }
-.dex-gens button small { color: var(--ui-muted); font-size: .62rem; font-weight: 600; }
+.dex-gens button small { color: var(--ui-muted); font-size: .7rem; font-weight: 600; }
 .dex-only { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; color: var(--ui-muted); font-size: .85rem; }
 .dex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
 .dex-grid button { display: grid; place-items: center; width: 100%; min-height: 84px; padding: 4px 2px; gap: 0; border: 1px solid var(--ui-border); border-radius: 12px; background: rgb(255 255 255 / 4%); color: var(--ui-muted); }
@@ -8907,14 +8910,14 @@ body.no-scroll .reward-toasts {
 .dex-grid button.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
 .dex-grid button:disabled { opacity: 1; cursor: default; }
 .dex-grid img { width: 56px; height: 56px; object-fit: contain; image-rendering: pixelated; }
-.dex-grid small { font-size: .62rem; font-variant-numeric: tabular-nums; }
+.dex-grid small { font-size: .7rem; font-variant-numeric: tabular-nums; }
 .dex-unknown { display: grid; place-items: center; width: 56px; height: 56px; color: rgb(255 255 255 / 22%); font-size: 1.6rem; font-weight: 800; }
 .dex-detail { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--gold); border-radius: 14px; background: rgb(255 203 5 / 8%); }
 .dex-detail img { flex: 0 0 auto; width: 96px; height: 96px; object-fit: contain; image-rendering: pixelated; }
 .dex-detail p { margin: 4px 0 0; }
 .dex-detail small { color: var(--ui-muted); font-weight: 600; }
 .dex-types { display: flex; flex-wrap: wrap; gap: 4px; }
-.dex-type { padding: 1px 9px; border-radius: 999px; background: rgb(255 255 255 / 14%); font-size: .72rem; font-weight: 800; }
+.dex-type { padding: 1px 9px; border-radius: 999px; background: rgb(255 255 255 / 14%); font-size: .78rem; font-weight: 800; }
 
 
 /* Fonte fornecida para a opção global; símbolos e emojis usam a fonte de reserva. */
