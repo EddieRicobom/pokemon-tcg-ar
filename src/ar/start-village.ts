@@ -1,9 +1,9 @@
-import { BoxGeometry, CanvasTexture, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Scene, Vector2, Vector3, NearestFilter, Raycaster } from 'three';
+import { BoxGeometry, CanvasTexture, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Scene, Vector2, Vector3, NearestFilter, Raycaster, DoubleSide } from 'three';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES, intersectFloor } from '../box/floor';
 import { visibleVerticalFov } from '../box/orientation';
 import { OrientationSource } from '../box/orientation-source';
 import type { OrientationMode } from '../box/orientation-source';
-import { VILLAGE_AR_TILT_DEG, VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M, normalizeVillageScale } from '../core/village/ar-diorama';
+import { VILLAGE_AR_TILT_DEG, VILLAGE_DIORAMA_DEPTH_M, VILLAGE_DIORAMA_WIDTH_M, villageDioramaBandBounds, normalizeVillageScale } from '../core/village/ar-diorama';
 import { createWebglBackend } from './webgl-backend';
 import { maxVisualFps } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
@@ -18,6 +18,7 @@ export interface StartVillageArOptions {
   /** Chão e recortes são renderizados separadamente para formar o diorama. */
   villageFloorCanvas: HTMLCanvasElement;
   villagePropsCanvas: HTMLCanvasElement;
+  villageBandCanvases: HTMLCanvasElement[];
   onModeChange?: (mode: OrientationMode) => void;
 }
 
@@ -80,7 +81,21 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
   );
   props.rotation.x = -propsLean;
   props.position.y = Math.cos(propsLean) * propsHeight / 2 + 0.012;
-  root.add(base, floor, props);
+  // Cada faixa reúne os objetos por posição dos pés. Assim há paralaxe real
+  // entre ruas, sem criar um mesh nem uma textura para cada Pokémon ou casa.
+  const bands = options.villageBandCanvases.map((canvas, index) => {
+    const texture = textureFor(canvas);
+    const height = options.villageFloorCanvas.height;
+    const bounds = villageDioramaBandBounds(index, height);
+    const mesh = new Mesh(
+      new PlaneGeometry(VILLAGE_DIORAMA_WIDTH_M, (bounds.bottom - bounds.top) / height * VILLAGE_DIORAMA_DEPTH_M),
+      new MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.1, depthWrite: true, side: DoubleSide }),
+    );
+    mesh.position.set(0, (bounds.anchor - (bounds.top + bounds.bottom) / 2) / height * VILLAGE_DIORAMA_DEPTH_M + 0.012,
+      (bounds.anchor / height - 0.5) * VILLAGE_DIORAMA_DEPTH_M);
+    return { texture, mesh };
+  });
+  root.add(base, floor, ...bands.map((band) => band.mesh), props);
   scene.add(root);
 
   const renderer = createWebglBackend(options.canvas);
@@ -147,8 +162,11 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
     lastFrameAt = now;
     camera.quaternion.copy(orientation.read(now));
     camera.updateMatrixWorld(true);
-    floorTexture.needsUpdate = true;
-    propsTexture.needsUpdate = true;
+    if (root.visible) {
+      floorTexture.needsUpdate = true;
+      propsTexture.needsUpdate = true;
+      for (const band of bands) band.texture.needsUpdate = true;
+    }
     renderer.render(scene, camera);
   };
   handle = requestGameFrame(tick, renderFps);
@@ -174,6 +192,11 @@ export async function startVillageAr(options: StartVillageArOptions): Promise<Ru
        (base.material as MeshBasicMaterial).dispose();
       floor.geometry.dispose();
        (floor.material as MeshBasicMaterial).dispose();
+      for (const band of bands) {
+        band.texture.dispose();
+        band.mesh.geometry.dispose();
+        band.mesh.material.dispose();
+      }
       props.geometry.dispose();
        (props.material as MeshBasicMaterial).dispose();
       renderer.dispose();
