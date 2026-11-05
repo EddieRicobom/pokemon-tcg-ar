@@ -325,8 +325,8 @@ function statusLabel(i: number): string {
   if (st.fusion && (i === st.fusion.a || i === st.fusion.b)) return 'fusão';
   if (i === st.active) return 'ativo';
   if (m.status === 'down' || m.hp <= 0) return 'caído';
-  if (m.status === 'exhausted') return `CD:${m.cooldown}`;
-  if (m.status === 'recovering') return `rec.:${m.cooldown}`;
+  if (m.status === 'exhausted') return `recarga ${m.cooldown}`;
+  if (m.status === 'recovering') return `repouso ${m.cooldown}`;
   return 'pronto';
 }
 
@@ -457,13 +457,13 @@ onBeforeUnmount(() => {
     <nav class="dd-commands" aria-label="Ações">
       <button type="button" :class="{ on: mode === 'move' }" :disabled="!myTurn || me.mustSwitch" @click="setMode('move')"><b>👣</b>Mover</button>
       <button type="button" :class="{ on: mode === 'attack' }" :disabled="!myTurn || me.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar · {{ who.weapon.ap }}</button>
-      <button type="button" :disabled="!myTurn || me.mustSwitch || me.potions === 0 || duel.ap < COSTS.item" @click="doPotion"><b>🧪</b>Poção · {{ COSTS.item }}<small>×{{ me.potions }}</small></button>
+      <button type="button" :disabled="!myTurn || me.mustSwitch || me.potions === 0 || duel.ap < COSTS.item" @click="doPotion"><b>🧪</b><template v-if="me.potions === 0">Sem poção</template><template v-else-if="duel.ap < COSTS.item">Sem PA</template><template v-else>Poção · {{ COSTS.item }}<small>×{{ me.potions }}</small></template></button>
       <button type="button" :class="{ on: fusionOpen }" :disabled="!myTurn || me.mustSwitch || !!me.fusion || me.fusionCharges === 0" @click="openFusion"><b>💠</b>Fusão · {{ COSTS.fusion }}<small>×{{ me.fusionCharges }}</small></button>
       <button type="button" class="primary" :class="{ hot: idle }" :disabled="!myTurn || me.mustSwitch" @click="doEnd"><b>⏭️</b>Encerrar</button>
     </nav>
 
     <section v-if="fusionOpen" class="dd-fusion" aria-label="Escolher fusão">
-      <p class="dd-hint">Escolha dois Pokémon da equipe (teclas 1–6 no PC). A fusão dura {{ FUSION_TURNS }} turnos, usa a média dos stats e divide o dano entre os dois.</p>
+      <p class="dd-hint">Escolha dois Pokémon da equipe<span class="pc-only"> (teclas 1–6)</span>. A fusão dura {{ FUSION_TURNS }} turnos, usa a média dos stats e divide o dano entre os dois.</p>
       <div class="dd-fusion-pick">
         <button v-for="(m, i) in me.team" :key="m.id" type="button" :class="{ on: fusionPick.includes(i) }" :disabled="!pickable(m)" @click="toggleFusion(i)">
           <WeaponArt :weapon="m.weapon" :dex-id="m.dexId" :ammo="m.ammo[0] ?? null" :size="38" />
@@ -553,7 +553,7 @@ onBeforeUnmount(() => {
 .dd-foe-team li.field { opacity: 1; outline: 1px solid #ff9aa8; border-radius: 6px; }
 .dd-foe-team li.down { opacity: 0.4; filter: grayscale(1); }
 .dd-foe-team img { width: 30px; height: 30px; object-fit: contain; image-rendering: pixelated; }
-.dd-foe-team small { font-size: 0.58rem; color: var(--muted); }
+.dd-foe-team small { font-size: 0.7rem; color: var(--muted); }
 .dd-hp { position: relative; display: block; height: 5px; width: 100%; background: #0006; border-radius: 3px; overflow: hidden; flex: 1; }
 .dd-hp i { position: absolute; inset: 0 auto 0 0; background: var(--ok); transition: width 0.3s; }
 .dd-hp.charge i { background: #6fb6ff; }
@@ -592,7 +592,7 @@ onBeforeUnmount(() => {
 .dd-guide.hot { border-color: #3fae5a; }
 .dd-guide.wait { border-color: #b84a5a; color: #ffd0d6; }
 .dd-guide-text { flex: 1; min-width: 0; }
-.dd-guide button { min-width: 84px; min-height: 40px; }
+.dd-guide button { min-width: 84px; min-height: 44px; }
 .dd-last { margin: 0; font-size: 0.74rem; color: var(--muted); }
 .dd-commands { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .dd-commands button { min-height: 50px; padding: 2px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font-size: 0.7rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; touch-action: manipulation; }
@@ -623,7 +623,7 @@ onBeforeUnmount(() => {
 .dd-ammo button.on { border-color: var(--gold); }
 .dd-type { display: inline-block; padding: 0 6px; margin-left: 4px; border-radius: 999px; font-size: 0.68rem; color: #fff; text-shadow: 0 1px 1px #0008; }
 .dd-team { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
-.dd-team button { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: inherit; position: relative; font-size: 0.66rem; touch-action: manipulation; }
+.dd-team button { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: inherit; position: relative; font-size: 0.72rem; touch-action: manipulation; }
 .dd-team button.active { border-color: var(--gold); box-shadow: 0 0 6px #ffcb0544; }
 .dd-team button.fusing { border-color: #b38cff; }
 .dd-team button.out { opacity: 0.55; }
@@ -650,7 +650,7 @@ onBeforeUnmount(() => {
   .dd-turn { padding: 5px 8px; }
   .dd-foe-team { gap: 3px; }
   .dd-foe-team li { width: 38px; }
-  .dd-commands button { min-height: 48px; font-size: 0.66rem; }
+  .dd-commands button { min-height: 48px; font-size: 0.74rem; }
 }
 @media (prefers-reduced-motion: reduce) { .dd-mon img, .dd-commands button.hot { animation: none; } .dd-popup { animation-duration: 0.01s; } }
 </style>

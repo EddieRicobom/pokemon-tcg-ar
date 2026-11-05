@@ -450,7 +450,7 @@ function backUrl(view: DuelMonView): string {
 .duel-top > span:first-child { display: grid; flex: 1; line-height: 1.15; }
 .duel-top small { color: var(--muted); font-size: .75rem; }
 .duel-turn { color: var(--gold); font-size: .8rem; font-weight: 800; }
-.duel-quit { padding: .35rem .7rem; font-size: .85rem; }
+.duel-quit { min-height: 44px; padding: .35rem .7rem; font-size: .85rem; }
 .duel-quit.armed { border-color: var(--accent); color: var(--accent); }
 .duel-center { display: grid; place-content: center; justify-items: center; gap: .8rem; padding: 1rem; text-align: center; }
 .duel-spinner { width: 2.4rem; height: 2.4rem; border: 4px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
@@ -467,17 +467,17 @@ function backUrl(view: DuelMonView): string {
 .hud-line strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hud-line span { color: var(--muted); font-size: .75rem; }
 .hud-types { display: flex; flex-wrap: wrap; gap: .25rem; }
-.type-chip { display: inline-block; padding: .02rem .38rem; border-radius: 99px; background: var(--type, #666); color: #fff; font-size: .64rem; font-weight: 800; text-shadow: 0 1px 1px rgba(0, 0, 0, .45); }
-.status-chip { padding: .02rem .38rem; border-radius: 99px; color: #fff; font-size: .64rem; font-weight: 800; background: #777; }
+.type-chip { display: inline-block; padding: .02rem .38rem; border-radius: 99px; background: var(--type, #666); color: #fff; font-size: .72rem; font-weight: 800; text-shadow: 0 1px 1px rgba(0, 0, 0, .45); }
+.status-chip { padding: .02rem .38rem; border-radius: 99px; color: #fff; font-size: .72rem; font-weight: 800; background: #777; }
 .status-chip.confusion { background: #c86fd8; } .status-chip.sleep { background: #6f7fa8; }
-.stage-chip { padding: .02rem .34rem; border-radius: 99px; font-size: .62rem; font-weight: 800; }
+.stage-chip { padding: .02rem .34rem; border-radius: 99px; font-size: .72rem; font-weight: 800; }
 .stage-chip.up { background: rgba(79, 209, 139, .25); color: #a7f0c6; }
 .stage-chip.down { background: rgba(239, 90, 90, .25); color: #ffb3b3; }
 .move-effect { color: #9fd3ff !important; }
 .move small.order { color: var(--gold) !important; }
 .status-chip.burn { background: #e5603b; } .status-chip.poison { background: #a05bc5; } .status-chip.paralysis { background: #d8b425; color: #222; } .status-chip.freeze { background: #5fc3e4; color: #123; }
 .hp { display: flex; align-items: center; gap: .35rem; }
-.hp-label { color: var(--gold); font-size: .62rem; font-weight: 900; }
+.hp-label { color: var(--gold); font-size: .72rem; font-weight: 900; }
 .hp-track { position: relative; display: block; flex: 1; height: .5rem; border-radius: 99px; background: rgba(255, 255, 255, .15); overflow: hidden; }
 .hp-track.small { height: .4rem; }
 .hp-fill { display: block; height: 100%; border-radius: inherit; transition: width .6s ease, background-color .3s; }
