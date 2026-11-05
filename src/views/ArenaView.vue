@@ -46,12 +46,16 @@ const selectedChallenge = computed(() => (pendingChallenge.value ? challengeById
 const modeBlocker = computed(() => battleModeBlocker(battleMode.value, teamCount.value ?? 0));
 const pvpConnected = computed(() => boxPvp.peer !== null);
 
+/** Contra quem é o duelo: um treinador sorteado (treino) ou um líder da Liga. */
+const duelRival = ref<'treino' | 'liga'>(pendingChallenge.value ? 'liga' : 'treino');
+
 const plan = computed(() => arenaPlan({
   choice: choice.value,
   teamCount: teamCount.value ?? 0,
   mode: battleMode.value,
   endless: endless.value,
   leader: selectedChallenge.value?.leader ?? null,
+  duelLeague: duelRival.value === 'liga',
   pvpConnected: pvpConnected.value,
   friend: boxPvp.friend?.name ?? null,
   modeBlocker: modeBlocker.value,
@@ -80,23 +84,22 @@ async function refreshMembers(ids: string[]): Promise<void> {
   }
 }
 
-/** Quem já tem golpes montados (o duelo por turnos usa só esses). */
-const armed = computed(() => {
+/** Quem ainda não tem golpes montados: no duelo, entra com os sugeridos. */
+const unarmed = computed(() => {
   void movesetBook.value;
-  return members.value.filter((m) => savedMoves(m.id, m.dexId).length > 0);
+  return members.value.filter((m) => savedMoves(m.id, m.dexId).length === 0);
 });
-const unarmed = computed(() => members.value.filter((m) => !armed.value.includes(m)));
 const duelOpponent = ref<DuelOpponentSpec | null>(null);
 const moreOpen = ref(arrival.has('golpes'));
 
 function startTraining(): void {
-  if (armed.value.length === 0) return;
+  if (members.value.length === 0) return;
   const foe = nextEndlessOpponent(seededRng((Math.random() * 2 ** 32) >>> 0));
-  duelOpponent.value = { trainer: foe.trainer, role: 'Treino', dexIds: foe.dexIds.slice(0, Math.min(6, armed.value.length)), power: 1 };
+  duelOpponent.value = { trainer: foe.trainer, role: 'Treino', dexIds: foe.dexIds.slice(0, Math.min(6, members.value.length)), power: 1 };
 }
 function startLeagueDuel(): void {
   const ch = selectedChallenge.value;
-  if (!ch || armed.value.length === 0) return;
+  if (!ch || members.value.length === 0) return;
   duelOpponent.value = { trainer: ch.leader, role: ch.role, dexIds: ch.team, power: ch.power, challengeId: ch.id };
 }
 
@@ -118,6 +121,11 @@ function pick(next: ArenaChoice): void {
 /** Entra no palco com tudo já escolhido aqui. PvP não começa sozinho: o anfitrião toca em Batalhar lá dentro. */
 function enter(): void {
   if (!plan.value.ready || !choice.value) return;
+  if (choice.value === 'duelo') {
+    if (duelRival.value === 'liga') startLeagueDuel();
+    else startTraining();
+    return;
+  }
   const extra: RouteFlag[] = choice.value === 'pvp' ? ['pvp'] : choice.value === 'corridas' ? [endless.value, 'autoiniciar'] : ['autoiniciar'];
   window.location.hash = routeHref('caixa', undefined, ['arena', ...arenaFlags(extra)]);
 }
@@ -127,7 +135,7 @@ watch(() => boxPvp.pending, (pending) => {
   if (pending && boxPvp.peer && choice.value === 'pvp') window.location.hash = routeHref('caixa', undefined, ['arena', ...arenaFlags(['pvp'])]);
 });
 // Escolher um líder na Liga marca o desafio: leva para o passo seguinte.
-watch(() => pendingChallenge.value, (id) => { if (id && choice.value === 'liga') scrollTo('arena-step-4'); });
+watch(() => pendingChallenge.value, (id) => { if (id && (choice.value === 'liga' || choice.value === 'duelo')) scrollTo('arena-step-4'); });
 
 onMounted(() => {
   if (arrival.has('golpes')) scrollTo('arena-moves');
@@ -223,6 +231,24 @@ onMounted(() => {
         <p class="hint">Dentro da Arena ainda dá para escalar quem fica no lado Vermelho ou Azul.</p>
       </section>
 
+      <section v-else-if="choice === 'duelo'" id="arena-step-3" class="arena-section arena-league" aria-labelledby="arena-step-3-title">
+        <h3 id="arena-step-3-title">3 · Contra quem</h3>
+        <div class="arena-modes" role="group" aria-label="Rival do duelo">
+          <button type="button" class="arena-mode" :class="{ on: duelRival === 'treino' }" :aria-pressed="duelRival === 'treino'" @click="duelRival = 'treino'">
+            <strong>Treinador sorteado</strong>
+            <small>Treino: não muda a Liga.</small>
+          </button>
+          <button type="button" class="arena-mode" :class="{ on: duelRival === 'liga' }" :aria-pressed="duelRival === 'liga'" @click="duelRival = 'liga'">
+            <strong>Líder da Liga</strong>
+            <small>Vencer vale a insígnia.</small>
+          </button>
+        </div>
+        <template v-if="duelRival === 'liga'">
+          <p v-if="selectedChallenge" class="hint" role="status">Líder escolhido: <strong>{{ selectedChallenge.leader }}</strong> ({{ selectedChallenge.role }}).</p>
+          <LeagueCard embedded />
+        </template>
+      </section>
+
       <section v-else-if="choice === 'liga'" id="arena-step-3" class="arena-section arena-league" aria-labelledby="arena-step-3-title">
         <h3 id="arena-step-3-title">3 · Escolha o líder</h3>
         <p class="note">Por região e em ordem. O próximo desafio aberto vem destacado e cada bloqueio diz o que falta.</p>
@@ -262,19 +288,14 @@ onMounted(() => {
     </template>
 
     <details id="arena-moves" class="arena-section arena-more" :open="moreOpen" @toggle="(e: Event) => (moreOpen = (e.target as HTMLDetailsElement).open)">
-      <summary>Mais opções · golpes e duelo por turnos</summary>
+      <summary>Golpes da equipe</summary>
       <p class="note">Escolha até 4 golpes para cada Pokémon da equipe (só os que a espécie aprende de verdade, pela PokéAPI). Na batalha automática eles também valem. No <strong>duelo por turnos</strong> você escolhe o golpe a cada turno, como nos jogos.</p>
       <p v-if="membersError" class="hint" role="alert">{{ membersError }}</p>
       <ArenaMovesetEditor :members="members" />
-      <p v-if="unarmed.length > 0 && armed.length > 0" class="hint">Sem golpes, ficam de fora do duelo: {{ unarmed.map((m) => m.name).join(', ') }}.</p>
-      <div class="actions row">
-        <button type="button" class="primary" :disabled="armed.length === 0" @click="startTraining">Treinar contra um treinador sorteado</button>
-        <button v-if="selectedChallenge" type="button" :disabled="armed.length === 0" @click="startLeagueDuel">Desafiar {{ selectedChallenge.leader }} por turnos</button>
-      </div>
-      <p v-if="armed.length === 0" class="hint">Escolha os golpes de pelo menos um Pokémon para liberar o duelo por turnos.</p>
+      <p v-if="unarmed.length > 0 && members.length > 0" class="hint">Sem golpes montados, entram no duelo com os sugeridos: {{ unarmed.map((m) => m.name).join(', ') }}.</p>
     </details>
 
-    <TurnDuel v-if="duelOpponent" :members="armed" :opponent="duelOpponent" @close="duelOpponent = null" />
+    <TurnDuel v-if="duelOpponent" :members="members" :opponent="duelOpponent" @close="duelOpponent = null" />
 
     <!-- Passo 4: o resumo e o botão principal ficam sempre à mão, no pé da tela. -->
     <section id="arena-step-4" class="arena-enter" :class="{ waiting: !chosen }" aria-labelledby="arena-step-4-title">
@@ -282,6 +303,7 @@ onMounted(() => {
       <p v-if="chosen" class="arena-summary"><span aria-hidden="true">{{ chosen.icon }}</span> {{ plan.summary }}</p>
       <p v-if="!plan.ready && plan.blocker" class="arena-blocker" role="status">{{ plan.blocker }}</p>
       <button type="button" class="primary arena-go" :disabled="!plan.ready" @click="enter">{{ plan.cta }}</button>
+      <button v-if="choice === 'liga' && plan.ready" type="button" class="arena-duel-alt" @click="startLeagueDuel">🎯 Enfrentar por turnos, escolhendo cada golpe</button>
       <p v-if="plan.ready" class="hint">Você pode parar a luta a qualquer momento com o botão Parar, e fechar a Arena para voltar aqui.</p>
     </section>
   </section>
@@ -323,6 +345,7 @@ onMounted(() => {
 .arena-enter { position: sticky; bottom: calc(var(--nav-height) + 18px + env(safe-area-inset-bottom)); z-index: 5; display: grid; gap: .5rem; padding: .85rem; border: 1px solid var(--gold); border-radius: .95rem; background: rgba(12, 17, 34, .96); box-shadow: 0 -6px 24px rgba(0, 0, 0, .45); scroll-margin-top: .75rem; }
 .arena-enter > * { margin: 0; }
 .arena-blocker { color: var(--gold); }
+.arena-duel-alt { min-height: 2.75rem; font-size: .92rem; font-weight: 700; }
 .arena-go { min-height: 3.4rem; font-size: 1.05rem; font-weight: 800; }
 .arena-go:disabled { opacity: .55; }
 /* Antes de escolher o modo, o pé fica fino: só o botão, sem cobrir as opções. */

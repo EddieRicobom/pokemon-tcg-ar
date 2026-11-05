@@ -114,7 +114,7 @@ const rows = computed<Row[]>(() => {
   return ls.value.moves.flatMap((item) => {
     const data = moveData[item.slug] ?? null;
     const choice = data ? toChosenMove(item.slug, data) : null;
-    const reason = data ? unusableReason(data) : null;
+    const reason = data ? unusableReason(data, item.slug) : null;
     if (onlyUsable.value && data && !choice) return [];
     if (typeFilter.value && data?.type !== typeFilter.value) return [];
     if (classFilter.value && data?.damageClass !== classFilter.value) return [];

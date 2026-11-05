@@ -386,3 +386,9 @@ As 72 insígnias seguem o formato e as cores das insígnias dos jogos: `core/bad
 ### Backup opcional no Google Drive
 
 `app/drive-login.ts` carrega o Google Identity Services sob gesto do usuário e mantém autorização apenas em memória. `app/drive-backup.ts` usa REST com `drive.appdata`, lista até 20 cópias recentes e cria snapshots ZIP independentes pelo protocolo resumable. Não há backend do app, sincronização automática, atualização ou exclusão das cópias anteriores. `CloudBackup.vue` integra com a confirmação de restauração existente do Treinador. O build de deploy lê `GOOGLE_DRIVE_CLIENT_ID` das variables do GitHub; sem configuração, somente backup local permanece ativo. [Configuração e limites](BACKUP_NUVEM.md).
+
+### Arena: duelo por turnos em destaque
+- O duelo é a primeira opção do menu (`arena-menu.ts`, escolha `duelo`), contra um treinador sorteado ou um líder da Liga. Na Liga, o pé da tela também oferece enfrentar o líder por turnos.
+- Quem não tem golpes montados entra com os sugeridos (`suggestMissing` em `turn-duel-setup.ts`): os mesmos golpes reais por nível que o oponente usa. Sem dados da PokéAPI, o Pokémon fica de fora com aviso, sem golpe inventado.
+- `TurnDuel.vue` guarda o histórico da luta, mostra os PS do inimigo em número e encena golpe, impacto, entrada e KO em CSS; a parte mais forte segue a opção de efeitos e Movimento reduzido.
+- Efeitos dos golpes: o que a PokéAPI descreve em números vem dela; o resto está em `core/move-specials.ts`, pelo nome oficial do golpe (Proteger, golpes de dois turnos, recarga, dano fixo, nocaute direto, autodestruição, clima, Refletir e Tela de Luz, Drenagem, Tóxico, prender e Descansar). Golpes de dano fixo e nocaute direto só valem no duelo: a batalha automática não os usa. A mesma tabela escolhe a animação de cada golpe (`moveVisual`).

@@ -43,6 +43,7 @@ export function saveMoves(id: string, dexId: number, moves: readonly ChosenMove[
  * sempre. Os de status ficam de fora: o motor automático não simula os efeitos deles.
  */
 export function savedBattleMoves(id: string, dexId: number | undefined): BattleMove[] | undefined {
-  const moves = savedMoves(id, dexId).filter((m) => m.damageClass !== 'status');
+  // Dano fixo e nocaute direto (poder 1) também ficam de fora: dependem de regras que só o duelo simula.
+  const moves = savedMoves(id, dexId).filter((m) => m.damageClass !== 'status' && m.power > 1);
   return moves.length > 0 ? moves.map(toBattleMove) : undefined;
 }

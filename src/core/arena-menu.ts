@@ -4,9 +4,10 @@ import { ENDLESS_ARENA_LABELS } from './endless-arena';
 import type { EndlessArenaMode } from './endless-arena';
 
 /** O que a pessoa quer fazer na Arena: a primeira escolha do menu, antes de montar equipe e opções. */
-export type ArenaChoice = 'livre' | 'liga' | 'corridas' | 'pvp';
+export type ArenaChoice = 'duelo' | 'livre' | 'liga' | 'corridas' | 'pvp';
 
 export const ARENA_CHOICES: readonly { id: ArenaChoice; icon: string; title: string; hint: string }[] = [
+  { id: 'duelo', icon: '🎯', title: 'Duelo por turnos', hint: 'Você escolhe cada golpe, como num jogo Pokémon.' },
   { id: 'livre', icon: '⚔️', title: 'Batalha livre', hint: 'Seus Pokémon lutam sozinhos no Coliseu, sem desafio.' },
   { id: 'liga', icon: '🏅', title: 'Liga e desafios', hint: 'Enfrente líderes de ginásio e ganhe insígnias.' },
   { id: 'corridas', icon: '🏁', title: 'Corridas 6×6', hint: 'Batalhas em sequência, valendo pontos.' },
@@ -41,6 +42,8 @@ export interface ArenaPlanInput {
   endless: EndlessArenaMode;
   /** Líder do desafio da Liga já escolhido, se houver. */
   leader: string | null;
+  /** Duelo: enfrentar um líder da Liga em vez de um treinador sorteado. */
+  duelLeague?: boolean;
   /** PvP: já conectado com o amigo? */
   pvpConnected: boolean;
   /** PvP: nome do amigo conectado. */
@@ -71,6 +74,13 @@ export function arenaPlan(input: ArenaPlanInput): ArenaPlan {
   const { choice, teamCount } = input;
   if (!choice) return { ready: false, blocker: 'Escolha o que quer fazer na Arena.', summary: '', cta: 'Escolha uma opção acima', step: 1 };
   const modeName = BATTLE_MODE_LABELS_PT[input.mode];
+  if (choice === 'duelo') {
+    const pitch = 'Duelo um contra um: você escolhe cada golpe e quando trocar de Pokémon.';
+    if (teamCount < 1) return { ready: false, blocker: 'Escolha pelo menos 1 Pokémon para o duelo.', summary: pitch, cta: 'Escolha a equipe primeiro', step: 2 };
+    if (input.duelLeague && !input.leader) return { ready: false, blocker: 'Escolha um líder para desafiar.', summary: pitch, cta: 'Escolha um líder primeiro', step: 3 };
+    const rival = input.duelLeague ? `contra ${input.leader}, valendo a Liga` : 'contra um treinador sorteado';
+    return { ready: true, blocker: null, summary: `${plural(teamCount)} ${rival}. Quem não tem golpes montados usa os sugeridos.`, cta: '🎯 Começar o duelo', step: 4 };
+  }
   if (choice === 'pvp') {
     if (!input.pvpConnected) {
       return { ready: false, blocker: 'Conecte com o amigo (código da sala) para continuar.', summary: 'Você e um amigo lutam cada um no seu aparelho, com a equipe que cada um montou.', cta: 'Conecte com um amigo primeiro', step: 2 };

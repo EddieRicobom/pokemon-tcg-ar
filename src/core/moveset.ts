@@ -5,6 +5,7 @@
  * poder, precisão, PP, prioridade e efeitos vindos de `GET /move/{id}` (`meta`, `stat_changes`). Golpe cujo efeito o
  * duelo não simula não pode ser escolhido, e a interface diz por quê. Nada aqui inventa golpe: sem dado, a lista fica vazia.
  */
+import { moveSpecial, specialHint } from './move-specials';
 import { typeEffectiveness } from './battle';
 import type { BattleMove } from './battle';
 import type { DamageClass, GameMove, PokemonType } from './pokemon-data';
@@ -138,6 +139,7 @@ const nameOf = (v: unknown): string => (isObject(v) && typeof v.name === 'string
 export function parseMoveDetail(json: unknown): MoveDetail | null {
   const base = parseGameMove(json);
   if (!base || !isObject(json)) return null;
+  const special = typeof json.name === 'string' ? moveSpecial(json.name) : null;
   const meta = isObject(json.meta) ? json.meta : null;
   const category = meta ? nameOf(meta.category) : '';
   const target = nameOf(json.target);
@@ -196,8 +198,8 @@ export function parseMoveDetail(json: unknown): MoveDetail | null {
   }
   if (effect.statChanges.length > 0) effect.statChance = chance > 0 ? chance : 100;
 
-  const noSimulatedEffect = base.damageClass === 'status' && !simulated;
-  return { ...base, effect, unsupported: [...new Set(unsupported)], noSimulatedEffect };
+  const noSimulatedEffect = base.damageClass === 'status' && !simulated && !special;
+  return { ...base, effect, unsupported: special ? [] : [...new Set(unsupported)], noSimulatedEffect };
 }
 
 /** Golpe escolhido, com os números guardados junto: a batalha funciona mesmo sem rede depois. */
@@ -214,22 +216,25 @@ export interface ChosenMove extends MoveEffect {
 }
 
 /** Por que o golpe não pode ser escolhido (ou null se pode). */
-export function unusableReason(move: MoveDetail): string | null {
+export function unusableReason(move: MoveDetail, slug = ''): string | null {
   if (move.type === null) return 'A PokéAPI não informou o tipo.';
   if (move.damageClass === null) return 'A PokéAPI não informou a categoria.';
   if (move.pp === null || move.pp <= 0) return 'A PokéAPI não informou o PP.';
+  // Dados guardados antes da tabela de efeitos: a tabela vale mais que a marca antiga.
+  if (moveSpecial(slug)) return null;
   if (move.damageClass === 'status') return move.noSimulatedEffect ? 'Efeito não simulado na Arena.' : null;
   if (move.power === null || move.power <= 0) return 'Dano especial (sem poder fixo): não simulado na Arena.';
   return null;
 }
 
 export function toChosenMove(slug: string, move: MoveDetail): ChosenMove | null {
-  if (unusableReason(move) !== null) return null;
+  if (unusableReason(move, slug) !== null) return null;
   return {
     slug,
     name: move.name,
     type: move.type!,
-    power: move.damageClass === 'status' ? 0 : move.power!,
+    // Dano fixo e nocaute direto não têm poder: o 1 marca isso (a regra vem de `moveSpecial`).
+    power: move.damageClass === 'status' ? 0 : move.power ?? 1,
     accuracy: move.accuracy,
     pp: move.pp!,
     damageClass: move.damageClass!,
@@ -241,8 +246,10 @@ export function toChosenMove(slug: string, move: MoveDetail): ChosenMove | null 
 const signed = (n: number): string => (n > 0 ? `+${n}` : `−${Math.abs(n)}`);
 
 /** Frases curtas do efeito, para o editor e o menu de batalha. */
-export function effectSummary(move: MoveEffect): string[] {
+export function effectSummary(move: MoveEffect & { slug?: string }): string[] {
   const out: string[] = [];
+  const hint = move.slug ? specialHint(moveSpecial(move.slug)) : null;
+  if (hint) out.push(hint);
   if (move.priority !== 0) out.push(`Prioridade ${signed(move.priority)}`);
   if (move.maxHits > 1) out.push(move.minHits === move.maxHits ? `${move.maxHits} golpes` : `${move.minHits}–${move.maxHits} golpes`);
   if (move.ailment) out.push(`${AILMENT_VERB_PT[move.ailment]}${move.ailmentChance < 100 ? ` (${move.ailmentChance}%)` : ''}`);
