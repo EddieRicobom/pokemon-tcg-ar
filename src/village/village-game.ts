@@ -95,6 +95,9 @@ export class VillageGame {
   private readonly mountainTiles = new Map<string, HTMLCanvasElement>();
   /** O chão foi montado sem o mato alto e as flores, que balançam ao vento por cima (opção «Mato alto e flores»). */
   private groundWind = false;
+  /** Peças de mato e flor de cada bloco com vento (o chão é estático: calcula uma vez, não a cada quadro). */
+  private readonly windPieces = new Map<number, ReturnType<typeof groundPieces>>();
+  private readonly speechLayouts = new Map<string, { full: string[]; boxW: number }>();
   private windArt: { sheet: HTMLCanvasElement; tall: HTMLCanvasElement | null } | null = null;
   /** Janelas de cada desenho do tileset (px do recorte), achadas uma vez junto com a luz delas. */
   private readonly windowRectCache = new Map<string, { x: number; y: number; w: number; h: number }[]>();
@@ -635,6 +638,7 @@ export class VillageGame {
 
   /** O chão inteiro pré-desenhado (3 quadros, por causa da água). */
   private buildGround(): void {
+    this.windPieces.clear();
     if (this.atlas) {
       this.groundFrames = [this.buildTilesetGround(this.atlas)];
       return;
@@ -1616,13 +1620,19 @@ export class VillageGame {
         const t = tileAt(this.map, x, y);
         if (this.groundWind && atlas && this.windArt && (t === 'tall' || t === 'flower')) {
           const art = this.windArt;
-          const pieces = groundPieces(this.map, x, y).filter((p) => p.src !== 'grass');
+          const key = y * this.map.w + x;
+          let pieces = this.windPieces.get(key);
+          if (!pieces) {
+            pieces = groundPieces(this.map, x, y).filter((p) => p.src !== 'grass');
+            this.windPieces.set(key, pieces);
+          }
+          const tufts = pieces;
           // A base fica presa ao chão e a ponta das folhas vai e volta com o vento (mais forte no mato alto).
           const k = sway(x, y, t === 'tall' ? 0.11 : 0.07);
           list.push({
             y: y + 0.9,
             draw: () => {
-              for (const p of pieces) {
+              for (const p of tufts) {
                 const r = atlas.rect(p.src);
                 const src = p.src === 'tall' && art.tall ? art.tall : art.sheet;
                 const ox = src === art.sheet && r ? r.x : 0;
@@ -2610,9 +2620,17 @@ export class VillageGame {
     const shown = s.text.slice(0, Math.max(1, Math.floor((now - s.start) / 22)));
     const maxW = Math.min(canvas.width - 24, 90 * scale);
     // A caixa se dimensiona pelo texto inteiro (não pula enquanto escreve).
-    const full = wrapSpeech(s.text, maxW - 14 * scale, (text) => ctx.measureText(text).width);
-    const lines = wrapSpeech(shown, maxW - 14 * scale, (text) => ctx.measureText(text).width);
-    const boxW = Math.min(maxW, Math.max(...full.map((l) => ctx.measureText(l).width), ctx.measureText(s.name).width) + 14 * scale);
+    // O tamanho da caixa só muda com o texto, o nome ou a escala: medido uma vez e guardado.
+    const layoutKey = `${fs}|${maxW}|${s.name}|${s.text}`;
+    let layout = this.speechLayouts.get(layoutKey);
+    if (!layout) {
+      const wrapped = wrapSpeech(s.text, maxW - 14 * scale, (text) => ctx.measureText(text).width);
+      layout = { full: wrapped, boxW: Math.min(maxW, Math.max(...wrapped.map((l) => ctx.measureText(l).width), ctx.measureText(s.name).width) + 14 * scale) };
+      if (this.speechLayouts.size > 64) this.speechLayouts.clear();
+      this.speechLayouts.set(layoutKey, layout);
+    }
+    const { full, boxW } = layout;
+    const lines = shown.length >= s.text.length ? full : wrapSpeech(shown, maxW - 14 * scale, (text) => ctx.measureText(text).width);
     const lh = fs * 1.3;
     const boxH = lh * (full.length + 1) + 10 * scale;
     let x = cx - boxW / 2;
