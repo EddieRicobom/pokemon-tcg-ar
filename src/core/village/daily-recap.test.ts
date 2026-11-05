@@ -19,7 +19,11 @@ describe('abertura diária', () => {
     expect(dailyRecap(state, 400, 400)).toHaveLength(2);
   });
   it('sem novidades, não inventa acontecimentos', () => {
-    expect(dailyRecap(emptyVillage(1, { x: 0, y: 0 }), 0, 100)[0]?.text).toContain('Ainda não há acontecimentos novos');
+    const empty = emptyVillage(1, { x: 0, y: 0 });
+    expect(dailyRecap(empty, 0, 100)[0]?.title).toBe('Começa a sua história');
+    expect(dailyRecap(empty, 0, 100)).toHaveLength(2);
+    empty.diary.push({ t: 50, title: 'Antes', cast: [], lines: [], result: [] } as unknown as (typeof empty.diary)[number]);
+    expect(dailyRecap(empty, 100, 200)[0]?.text).toContain('Ainda não há acontecimentos novos');
   });
   it('preserva o dia após salvar e migra salvamentos antigos', () => {
     const state = emptyVillage(1, { x: 0, y: 0 });

@@ -35,7 +35,7 @@ function joins(tile: Tile, other: Tile | null): boolean {
     case 'plaza':
       return other === 'path' || other === 'shop' || other === 'plaza' || other === 'trail';
     case 'trail':
-      return other === 'trail' || other === 'path' || other === 'plaza';
+      return other === 'trail' || other === 'path' || other === 'plaza' || other === 'shop';
     default:
       return other === tile;
   }

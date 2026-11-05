@@ -4,6 +4,7 @@ import MusicControls from './MusicControls.vue';
 import SurvivorDebug from './SurvivorDebug.vue';
 import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
+import { routeHref } from '../app/route';
 import { survivorAudio } from '../app/survivor-audio-settings';
 import { survivorMusicMix, survivorMusicTitle } from '../core/survivor-music';
 import { assetUrl, getCache, getDigitalSprite, getLocalVillageSprite, getLocalVillageSpriteDirs } from '../app/services';
@@ -98,7 +99,7 @@ import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround
 import type { BonkArt } from '../village/survivor-bonk-landscape';
 import { PROJECTILE_TIER_NAMES, survivorProjectileTier } from '../core/survivor-projectile-power';
 import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
-import { drawBubblePopFx, drawChainFx, drawChest, drawChestOpenFx, drawDestinyChains, drawDistortFx, drawGravityWell, drawHeldChargeOrb, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawImplodeFx, drawKey, drawMirrorOrbiter, drawPortalFx, drawSuctionField, drawTimeBubble } from '../village/survivor-held-art';
+import { drawBubblePopFx, drawChainFx, drawChest, drawChestOpenFx, drawDestinyChains, drawDistortFx, drawGravityWell, drawHeldChargeOrb, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawImplodeFx, drawKey, drawMirrorOrbiter, drawPortalFx, drawStickyBarb, drawSuctionField, drawTimeBubble } from '../village/survivor-held-art';
 import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldGems, heldItemSpriteUrl, isHeldItemId, mirrorOrbiters } from '../core/survivor-held';
 import type { HeldItemId, HeldStacks } from '../core/survivor-held';
 import type { WorldToScreen } from '../village/survivor-attack-art';
@@ -358,6 +359,8 @@ let pvpPick: { shiny: boolean; types: PokemonType[] } = { shiny: false, types: [
 let pvpFinished = false;
 let pvpWarned = 0;
 let activeRunId = '';
+/** Muda a cada corrida nova: carregamentos assíncronos de uma corrida anterior não tocam na próxima. */
+let runEpoch = 0;
 const completedRunIds = new Set<string>();
 const selectedPreparation = ref<SurvivorPreparationId>('classica');
 
@@ -632,7 +635,7 @@ const fieldEventHud = computed(() => {
   const event = state.value?.fieldEvent;
   const player = state.value?.player;
   if (!event || !player) return null;
-  if (event.phase === 'hunt') return '⚔ Caçada: elimine os 2 elites';
+  if (event.phase === 'hunt') return `⚔ Caçada: elimine os 2 elites · ${Math.ceil(event.remainingMs / 1000)}s`;
   const dx = event.x - player.x;
   const dy = event.y - player.y;
   const direction = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? '←' : '→') : (dy < 0 ? '↑' : '↓');
@@ -1985,6 +1988,8 @@ function draw(): void {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
   }
   if (!effectiveVisual.value.rotomMode && s.enemies.some((e) => e.linkId !== undefined)) drawDestinyChains(ctx, destinyGroups(s), animMs, detailed);
+  // Farpa Grudenta: o espinho fica no inimigo até explodir (1 s).
+  if (!effectiveVisual.value.rotomMode) for (const mine of s.heldMines ?? []) drawStickyBarb(ctx, mine.x, mine.y - 10, 1 - mine.timerMs / 1000, animMs);
   drawDamageNumbers(flat);
 
   // Os apoios são puramente visuais: o motor mantém suas posições separadas e
@@ -2289,26 +2294,37 @@ function drawSupportTrails(c: CanvasRenderingContext2D, s: SurvivorState, detail
   }
 }
 
+const TRAIL_ALPHA_STEPS = 6;
+
 function drawTrailPath(c: CanvasRenderingContext2D, s: SurvivorState, path: readonly { x: number; y: number; bornMs: number }[], color: string, radius: number, detailed: boolean): void {
   if (path.length < 2 || effectiveVisual.value.rotomMode) return;
   const life = 3500;
-  c.save();
-  c.lineCap = 'round'; c.lineJoin = 'round';
+  // Os trechos são agrupados em faixas de transparência: no máximo TRAIL_ALPHA_STEPS traços com brilho
+  // (shadowBlur) em vez de um por trecho, que pesava na GPU com vários rastros na tela.
+  const outer: Path2D[] = [];
+  const inner: Path2D[] = [];
   for (let i = 1; i < path.length; i++) {
     const a = path[i - 1]!;
     const b = path[i]!;
     const age = Math.max(0, s.elapsedMs - a.bornMs);
     if (age >= life) continue;
     const alpha = Math.pow(1 - age / life, 1.35);
-    c.globalAlpha = alpha * 0.5;
-    c.strokeStyle = color;
-    c.lineWidth = radius * 1.35;
-    if (detailed) { c.shadowColor = color; c.shadowBlur = 12; }
-    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
-    c.globalAlpha = alpha * 0.85;
-    c.strokeStyle = '#fff8df'; c.lineWidth = Math.max(2, radius * 0.34);
-    c.shadowBlur = 0; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+    const step = Math.min(TRAIL_ALPHA_STEPS - 1, Math.floor(alpha * TRAIL_ALPHA_STEPS));
+    const o = (outer[step] ??= new Path2D());
+    o.moveTo(a.x, a.y); o.lineTo(b.x, b.y);
+    const n = (inner[step] ??= new Path2D());
+    n.moveTo(a.x, a.y); n.lineTo(b.x, b.y);
   }
+  c.save();
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = color;
+  c.lineWidth = radius * 1.35;
+  if (detailed) { c.shadowColor = color; c.shadowBlur = 12; }
+  outer.forEach((p, step) => { if (p) { c.globalAlpha = ((step + 0.5) / TRAIL_ALPHA_STEPS) * 0.5; c.stroke(p); } });
+  c.shadowBlur = 0;
+  c.strokeStyle = '#fff8df';
+  c.lineWidth = Math.max(2, radius * 0.34);
+  inner.forEach((p, step) => { if (p) { c.globalAlpha = ((step + 0.5) / TRAIL_ALPHA_STEPS) * 0.85; c.stroke(p); } });
   c.restore();
 }
 
@@ -2744,6 +2760,7 @@ function loop(ts: number): void {
       else if (ev.type === 'chestSpawn') say('🧰 Um baú apareceu no mapa.', 2400);
       else if (ev.type === 'chestLocked') say('🔒 Baú trancado: derrote elites para ganhar chaves.', 2600);
       else if (ev.type === 'chestOpened') playSound('success');
+      else if (ev.type === 'chestEmpty') { playSound('survivor-pickup'); say('🧰 Seus itens já estão no máximo: o baú virou orbes e a chave continua com você.', 3200); }
       else if (ev.type === 'heldItem') say(`🎒 ${ev.name}${ev.copies > 1 ? ` ×${ev.copies}` : ''}!`, 2400);
       else if (ev.type === 'milestone') {
         playSound('success');
@@ -2786,6 +2803,9 @@ function loop(ts: number): void {
       else if (ev.type === 'fieldEventStarted') {
         playSound('survivor-boss');
         say('⚔ Caçada iniciada: derrube os 2 elites para liberar 2 artefatos.', 4200);
+      }
+      else if (ev.type === 'fieldEventExpired') {
+        say(ev.kind === 'hunt' ? '⚔ A Caçada acabou: os elites seguem por aí, mas sem os artefatos.' : '✦ A baliza se apagou. Outro encontro aparece mais tarde.', 3200);
       }
       else if (ev.type === 'fieldEventComplete') {
         playSound('success');
@@ -2859,11 +2879,13 @@ function chooseUpgrade(id: string): void {
   for (const ev of events) {
     if (ev.type === 'evolve') void evolveTo(ev.dexId, ev.name);
     if (ev.type === 'supportEvolve') {
+      const epoch = runEpoch;
       void loadSpriteOrNull(ev.dexId).then((sprite) => {
-        if (!disposed) supportSprites.set(ev.dexId, sprite);
+        if (!disposed && epoch === runEpoch) supportSprites.set(ev.dexId, sprite);
       });
       say(`${ev.name} evoluiu e fortaleceu o seu apoio!`, 2600);
     }
+    if (ev.type === 'secondAttack') say(`⚔ ${ev.name} entrou na luta: agora você tem um segundo ataque automático!`, 3200);
     if (ev.type === 'heldItem') {
       const def = HELD_ITEM_BY_ID[ev.id];
       const form = state.value ? def.perCategory?.[state.value.player.move.category] : undefined;
@@ -2939,8 +2961,9 @@ function toggleHudMenu(): void {
 /** Troca o sprite pela nova forma; o jogo espera (com o brilho) até carregar. Sem sprite, a forma neutra no lugar. */
 async function evolveTo(dexId: number, name: string): Promise<void> {
   evolving.value = `${avatarName.value} evoluiu para ${name}!`;
+  const epoch = runEpoch;
   const [sprite, back] = await Promise.all([loadSpriteOrNull(dexId), bonkRun.value ? loadBackSpriteOrNull(dexId) : Promise.resolve(null), new Promise((r) => setTimeout(r, 900))]);
-  if (disposed) return;
+  if (disposed || epoch !== runEpoch) return;
   normalPlayerSprite = sprite;
   normalPlayerBackSprite = back;
   playerSprite = sprite;
@@ -3054,6 +3077,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
 
 async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null, swapped = false, omegaCategory?: MoveCategory): Promise<void> {
   runCompanion = companion;
+  runEpoch++;
   pickBusy.value = true;
   try {
     avatarName.value = name;
@@ -3383,6 +3407,7 @@ document.addEventListener('visibilitychange', onVisibility);
 
 onBeforeUnmount(() => {
   disposed = true;
+  if (bonkJumpPressTimer) clearTimeout(bonkJumpPressTimer);
   cancelGameFrame(rafId);
   rafId = 0;
   window.removeEventListener('keydown', onKey);
@@ -3461,7 +3486,7 @@ onBeforeUnmount(() => {
             <span v-if="bonkRun" class="chip survivor-bonk-chip" title="Câmera em terceira pessoa, terreno físico e salto">💥 BONK</span>
             <span v-if="state.player.mega?.active" class="chip survivor-mega-chip" role="status" title="Stats base da forma Mega (PokéAPI) até o fim da corrida.">💎 {{ state.player.mega.label }}</span>
             <span v-if="state.typeAffinity" class="chip survivor-move-chip affinity" :style="{ '--move': moveFor([state.typeAffinity.type], null).color }" :title="`Afinidade rara: ${MOVE_EFFECT_LABELS_PT[state.typeAffinity.effect]}`">✨ {{ TYPE_LABELS_PT[state.typeAffinity.type] }} · afinidade</span>
-            <span class="chip survivor-move-chip affinity" :class="{ active: state.hypotheticalSecondaryActive }" :style="{ '--move': moveFor([state.hypotheticalSecondaryType], null).color }" :title="state.hypotheticalSecondaryActive ? hypotheticalTypeRuleFor(state.player.move.type, state.hypotheticalSecondaryType).description : 'Segundo tipo hipotético: ativa aos 9 min.'">{{ state.hypotheticalSecondaryActive ? '✦' : '○' }} {{ TYPE_LABELS_PT[state.hypotheticalSecondaryType] }} · {{ isTypeExaltation(state.player.move.type, state.hypotheticalSecondaryType) ? 'exaltação' : 'hipótese' }}</span>
+            <span class="chip survivor-move-chip affinity" :class="{ active: state.hypotheticalSecondaryActive }" :style="{ '--move': moveFor([state.hypotheticalSecondaryType], null).color }" :title="state.hypotheticalSecondaryActive ? hypotheticalTypeRuleFor(state.player.move.type, state.hypotheticalSecondaryType).description : 'Segundo tipo hipotético: ativa aos 9 min.'">{{ state.hypotheticalSecondaryActive ? '✦' : '○' }} {{ TYPE_LABELS_PT[state.hypotheticalSecondaryType] }} · {{ !state.hypotheticalSecondaryActive ? 'chega aos 9 min' : isTypeExaltation(state.player.move.type, state.hypotheticalSecondaryType) ? 'exaltação' : '2º tipo' }}</span>
             <span v-if="state.artifacts.length || state.player.artifactSpeedMs > 0 || state.player.artifactPowerMs > 0 || state.player.artifactShieldMs > 0 || state.player.artifactMagnetMs > 0 || state.player.artifactFocusMs > 0" class="chip survivor-artifact-chip" role="status">
               {{ state.player.artifactSpeedMs > 0 ? '⚡ Velocidade' : state.player.artifactPowerMs > 0 ? '✦ Poder' : state.player.artifactShieldMs > 0 ? '♥ Cura' : state.player.artifactMagnetMs > 0 ? '🧲 Ímã' : state.player.artifactFocusMs > 0 ? '◈ Foco' : `✦ ${state.artifacts.length} artefato${state.artifacts.length === 1 ? '' : 's'}` }}
             </span>
@@ -3638,12 +3663,24 @@ onBeforeUnmount(() => {
             <button type="button" class="link survivor-back" @click="typeChoice = null">← Voltar aos Pokémon</button>
           </div>
           <div v-else class="card survivor-pick" :class="{ 'pvp-pick': pvpRun }">
-            <h2>{{ pvpRun ? `PvP · run ${pvpRun.index + 1} de ${pvpRun.total}: quem joga?` : 'Quem vai pra Torre dessa vez?' }} <button v-if="!pvpRun" type="button" class="link" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
+            <h2>{{ pvpRun ? `PvP · run ${pvpRun.index + 1} de ${pvpRun.total}: quem joga?` : 'Quem vai pra Torre dessa vez?' }} <button v-if="!pvpRun" type="button" class="survivor-secret-star" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
             <p v-if="pvpRun" class="note pvp-note" role="status">Você tem {{ Math.round(pvpRun.limitMs / 60000) }} min. O Pokémon que escolher entra na sua equipe 3x3, mais forte quanto melhor for a run. Nada da Vila entra e nada vale para a Torre.</p>
             <p v-else class="note" role="status">{{ nextTowerGoal }}</p>
             <button v-if="!pvpRun" type="button" class="link survivor-pvp-entry" @click="emit('openPvp')">⚔ PvP com um amigo: 3 runs de 2 min e uma arena 3x3</button>
             <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · melhor tempo {{ formatTime(torre.bestMs) }} (corrida pura: {{ torre.bestPureMs > 0 ? formatTime(torre.bestPureMs) : '—' }}) · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
-            <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
+            <div class="survivor-mode survivor-mode-bonk" role="group" aria-label="Modo da Torre">
+              <button type="button" :class="{ active: !infiniteWanted && !bonkWanted }" @click="infiniteWanted = false; bonkWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
+              <button type="button" class="bonk-mode-button" :class="{ active: bonkWanted }" @click="bonkWanted = true; infiniteWanted = false">💥 BONK<small>3D, física e pulo</small></button>
+              <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true; bonkWanted = false; fastWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
+            </div>
+            <p v-if="bonkWanted" class="note bonk-picker-note">💥 BONK é um teste opcional: câmera em terceira pessoa, mapa amplo com ruínas, ponte e bosque físicos. Pedras e muretas bloqueiam; use o botão Pular (ou Q/Espaço) para atravessar obstáculos baixos.</p>
+            <details class="survivor-ledger survivor-howto">
+              <summary>Como funciona a Torre</summary>
+              <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
+              <p class="note">Até 6 Pokémon são sorteados da sua caixa: 1 protagonista e até 5 apoios para recrutar durante a corrida. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
+              <p v-if="!bonkWanted" class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
+              <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
+            </details>
             <details class="survivor-ledger">
               <summary>Trilha dos desafios · {{ recordedObjectiveCount }}/{{ SURVIVOR_OBJECTIVE_IDS.length }} concluídos</summary>
               <ul>
@@ -3653,16 +3690,6 @@ onBeforeUnmount(() => {
                 </li>
               </ul>
             </details>
-             <p class="note">Até 6 Pokémon são sorteados da sua caixa: 1 protagonista e até 5 apoios para recrutar durante a corrida. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
-            <p v-if="!bonkWanted" class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
-            <p v-else class="note bonk-picker-note">💥 BONK é um teste opcional: câmera em terceira pessoa, mapa amplo com ruínas, ponte e bosque físicos. Pedras e muretas bloqueiam; use o botão Pular ou Q/Espaço para atravessar obstáculos baixos.</p>
-            <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
-            <div class="survivor-mode survivor-mode-bonk" role="group" aria-label="Modo da Torre">
-              <button type="button" :class="{ active: !infiniteWanted && !bonkWanted }" @click="infiniteWanted = false; bonkWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
-              <button type="button" class="bonk-mode-button" :class="{ active: bonkWanted }" @click="bonkWanted = true; infiniteWanted = false">💥 BONK<small>3D, física e pulo</small></button>
-              <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true; bonkWanted = false; fastWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
-            </div>
-            <p v-if="bonkWanted" class="note bonk-picker-note">💥 BONK: câmera em terceira pessoa e física. Use o botão Pular (ou Q/Espaço) para atravessar obstáculos baixos.</p>
             <section v-if="torre.infiniteUnlocked" class="survivor-preparations" aria-label="Modificadores da corrida">
               <strong>Modificadores</strong>
               <div class="survivor-mode" role="group" aria-label="Ritmo da corrida">
@@ -3778,9 +3805,12 @@ onBeforeUnmount(() => {
 
         <div v-else-if="noCompanion" class="survivor-overlay" role="dialog" aria-modal="true" aria-label="Você precisa de um companheiro">
           <div class="card survivor-pick">
-            <h2>Você precisa de um companheiro <button type="button" class="link" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
+            <h2>Você precisa de um companheiro <button type="button" class="survivor-secret-star" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
             <p class="note">A Torre usa Pokémon da sua coleção ou Digital Pokémon da Vila. Escaneie uma carta ou conclua o questionário inicial da Vila para receber seu primeiro companheiro.</p>
-            <button type="button" class="primary survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
+            <div class="survivor-nocomp-actions">
+              <a class="button primary" :href="routeHref('escanear')">📷 Escanear uma carta</a>
+              <button type="button" class="survivor-exit" @pointerdown.stop @click.stop="requestLeave">Voltar à Vila</button>
+            </div>
           </div>
         </div>
 

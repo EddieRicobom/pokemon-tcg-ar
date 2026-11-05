@@ -12,6 +12,8 @@ import LeagueCard from '../components/LeagueCard.vue';
 import PokedexView from '../components/PokedexView.vue';
 import MinigameHub from '../components/MinigameHub.vue';
 import TrainerAvatar from '../components/TrainerAvatar.vue';
+import { profile } from '../app/profile-store';
+import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { itemDef } from '../core/village/catalog';
 import { prizeOf } from '../core/village/rewards';
 import { ACHIEVEMENTS, dayKey, levelProgress, missionsFor, previousDay, XP } from '../core/trainer';
@@ -195,6 +197,7 @@ function cancelImport(): void {
         <span><small>Nível</small><strong>{{ progress.level }}</strong></span>
       </div>
       <div class="trainer-who">
+        <p class="trainer-name"><img :src="trainerSpriteUrl(profile.sprite)" alt="" width="40" height="40" /><span>{{ profile.name.trim() || 'Treinador' }}</span></p>
         <p class="trainer-title">{{ progress.title }}</p>
         <p class="trainer-xp">{{ trainer.xp }} XP · faltam {{ progress.span - progress.into }} para o nível {{ progress.level + 1 }}</p>
         <p class="trainer-xp"><span class="coin-mark" aria-hidden="true"></span>{{ coins }} moedas · <a :href="routeHref('vila')">use na Pista de Pins da Vila</a>, na Fonte e na loja</p>

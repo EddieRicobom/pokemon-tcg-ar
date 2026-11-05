@@ -216,6 +216,8 @@ const lunchName = ref<string | null>(null);
 const bringLunch = ref(true);
 const rewards = ref<ExpeditionRewards | null>(null);
 let settled = false;
+/** O que saiu da Vila nesta descida (gemas do cofre e marmita): volta se a tela fechar no meio, sem queda nem saída. */
+let broughtFromVillage: { gems: Gem[]; lunchbox: unknown } | null = null;
 function readVillage(): void {
   withVillage((v) => {
     vaultGems.value = v.dungeon.gems.map((g) => ({ ...g }));
@@ -260,7 +262,21 @@ onMounted(async () => {
   }
   window.addEventListener('keydown', onKey);
 });
-onBeforeUnmount(() => { alive = false; sound.dispose(); window.removeEventListener('keydown', onKey); if (attackFxTimer) clearTimeout(attackFxTimer); if (giveUpTimer) clearTimeout(giveUpTimer); cleanupPvp(); });
+onBeforeUnmount(() => { refundIfAbandoned(); alive = false; sound.dispose(); window.removeEventListener('keydown', onKey); if (attackFxTimer) clearTimeout(attackFxTimer); if (giveUpTimer) clearTimeout(giveUpTimer); cleanupPvp(); });
+
+/** Fechar a Masmorra no meio da descida não é cair: as gemas do cofre e a marmita voltam para a Vila. */
+function refundIfAbandoned(): void {
+  const st = s.value;
+  const brought = broughtFromVillage;
+  broughtFromVillage = null;
+  if (!st || !brought || settled || pvp.value || st.phase === 'retired' || st.phase === 'lost') return;
+  if (brought.gems.length === 0 && brought.lunchbox == null) return;
+  withVillage((v) => {
+    v.dungeon.gems.push(...brought.gems);
+    if (brought.lunchbox != null && v.tower.lunchbox == null) v.tower.lunchbox = brought.lunchbox as typeof v.tower.lunchbox;
+    return true;
+  });
+}
 
 function togglePick(c: Candidate): void {
   if (c.missing) return;
@@ -278,15 +294,17 @@ function begin(seed?: number): void {
   if (!pvp.value) {
     let taken: Gem[] = [];
     let lunch: ReturnType<typeof lunchEffectFor> = null;
+    let lunchbox: unknown = null;
     withVillage((v) => {
       taken = takeFromVault(v, takeIds.value);
       if (bringLunch.value && v.tower.lunchbox) {
         lunch = lunchEffectFor(v.tower.lunchbox);
-        if (lunch) v.tower.lunchbox = null;
+        if (lunch) { lunchbox = v.tower.lunchbox; v.tower.lunchbox = null; }
       }
       return taken.length > 0 || lunch !== null;
     });
     bringGems(s.value, taken);
+    broughtFromVillage = { gems: [...taken], lunchbox };
     const packed = lunch as ReturnType<typeof lunchEffectFor>;
     if (packed) packLunch(s.value, packed);
     takeIds.value = [];

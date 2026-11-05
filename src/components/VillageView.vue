@@ -1120,6 +1120,8 @@ const KEYS: Record<string, Dir> = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
 };
 const heldKeys = new Set<Dir>();
+/** Pescaria em andamento: se a Vila fechar antes do peixe, o lance é cancelado sem gastar tentativa. */
+let fishTimer: ReturnType<typeof setTimeout> | null = null;
 const gamepadKeys = new Set<Dir>();
 const dpadPointers = new Map<number, Dir>();
 let lastPointerAPress = -Infinity;
@@ -1231,6 +1233,13 @@ function pressAClick(event: MouseEvent): void {
   // second interaction while preserving keyboard/assistive-technology clicks.
   if (performance.now() - lastPointerAPress > 180) pressA();
 }
+/** Trocar de janela com uma seta apertada perde o keyup: sem isto, o treinador seguiria andando sozinho. */
+function releaseHeldKeys(): void {
+  if (heldKeys.size === 0) return;
+  heldKeys.clear();
+  applyKeys();
+}
+
 function onKey(e: KeyboardEvent): void {
   // A Torre e a Masmorra têm teclado próprio; a Vila não deve capturar essas teclas por trás delas.
   if (sheet.value === 'masmorra') return;
@@ -2675,7 +2684,8 @@ function pressA(): void {
     fishing = true;
     game.castLine(t.x, t.y, 1600);
     say('🎣 Lançou a linha…');
-    setTimeout(() => {
+    fishTimer = setTimeout(() => {
+      fishTimer = null;
       fishing = false;
       const r = fish(state, map, t.x, t.y, today, Math.random);
       say(r.message);
@@ -3135,6 +3145,7 @@ onMounted(async () => {
   onBeforeUnmount(() => clearInterval(prizeTimer));
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
+  window.addEventListener('blur', releaseHeldKeys);
   window.addEventListener('tcg-gamepad-direction', handleGamepadDirection);
   window.addEventListener('tcg-gamepad-action', handleGamepadAction);
   window.addEventListener('tcg-gamepad-back', handleGamepadBack);
@@ -3224,6 +3235,8 @@ onMounted(async () => {
     tickScenes();
     tickQuestions();
     checkMewBlessing();
+    // O companheiro pode chegar depois de você parar no destino: confere também a cada segundo, não só a cada passo.
+    checkGuidedTrip();
     refreshLegendNearby();
     if (!document.hidden && visual.sound && !dialog.value && !sheet.value && !legendaryScene.value && !hoOhWishScene.value && !cutsceneOpen.value && Date.now() >= nextAmbientSoundAt) {
       nextAmbientSoundAt = Date.now() + 18000 + Math.random() * 26000;
@@ -3271,6 +3284,7 @@ onBeforeUnmount(() => {
   stopArBeta();
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKey);
+  window.removeEventListener('blur', releaseHeldKeys);
   window.removeEventListener('tcg-gamepad-direction', handleGamepadDirection);
   window.removeEventListener('tcg-gamepad-action', handleGamepadAction);
   window.removeEventListener('tcg-gamepad-back', handleGamepadBack);
@@ -3288,6 +3302,8 @@ onBeforeUnmount(() => {
   if (saveTimer) clearInterval(saveTimer);
   if (cropTimer) clearInterval(cropTimer);
   if (toastTimer) clearTimeout(toastTimer);
+  // Saiu antes do peixe morder: o lance não acontece (nem gasta tentativa do dia).
+  if (fishTimer) { clearTimeout(fishTimer); fishTimer = null; fishing = false; }
   saveVillage(state);
 });
 </script>
