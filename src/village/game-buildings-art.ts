@@ -73,10 +73,10 @@ export function paintPinsHall(): PixelBuf {
   roof(b, 4, 12, 72, 18, 0x3fa66a, 0x7bd29a, 0x2a7a4c);
   wall(b, 6, 30, 68, 41, 0xe8ecd8, 0xfbfdf0, 0xb8c0a4);
   // Pino gigante no telhado: bola branca com a faixa vermelha.
-  disc(b, 40, 11, 10, NAVY);
-  disc(b, 40, 11, 9, 0xf4f6ec);
+  disc(b, 40, 11, 10, 10, NAVY);
+  disc(b, 40, 11, 9, 9, 0xf4f6ec);
   rect(b, 31, 9, 18, 4, 0xc94a4a);
-  disc(b, 37, 8, 2, 0xffffff);
+  disc(b, 37, 8, 2, 2, 0xffffff);
   // Faixa da pista correndo pela fachada.
   rect(b, 6, 33, 68, 3, 0xc94a4a);
   rect(b, 6, 36, 68, 1, 0xfff3c9);
@@ -98,9 +98,9 @@ export function paintDungeonGate(): PixelBuf {
   for (let x = 6; x < 74; x += 14) rect(b, x, 12, 9, 7, stones[2]);
   rect(b, 6, 65, 68, 6, 0x4f4860);
   // Arco e escada que desce para o escuro.
-  disc(b, 40, 40, 19, 0x4f4860);
+  disc(b, 40, 40, 19, 19, 0x4f4860);
   rect(b, 21, 40, 38, 31, 0x4f4860);
-  disc(b, 40, 41, 16, 0x0e0a18);
+  disc(b, 40, 41, 16, 16, 0x0e0a18);
   rect(b, 24, 41, 32, 30, 0x0e0a18);
   for (let step = 0; step < 4; step++) rect(b, 26 + step * 2, 60 + step * 3, 28 - step * 4, 2, 0x3a3448 - step * 0x050505);
   // Pedra-chave roxa e duas tochas.
@@ -142,9 +142,9 @@ export function paintDigitalTower(): PixelBuf {
     rect(b, cx - half + 2, y + 4, half * 2 - 4, 1, 0x182c50);
   }
   // Topo: domo, antena e farol.
-  disc(b, cx, 20, 9, 0x3f6aa8);
-  disc(b, cx, 19, 6, 0x53dcff);
-  disc(b, cx - 2, 17, 2, GLASS_LIGHT);
+  disc(b, cx, 20, 9, 9, 0x3f6aa8);
+  disc(b, cx, 19, 6, 6, 0x53dcff);
+  disc(b, cx - 2, 17, 2, 2, GLASS_LIGHT);
   rect(b, cx - 1, 2, 2, 11, 0x8fa0c8);
   rect(b, cx - 5, 7, 10, 1, 0x8fa0c8);
   rect(b, cx - 2, 0, 4, 3, 0xff5a5a);
