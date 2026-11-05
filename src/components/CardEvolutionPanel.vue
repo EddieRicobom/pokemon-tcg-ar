@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { cardCompanion, cardJourneys, cardJourneyError, commitCardEvolution } from '../app/card-evolution-store';
 import { getCache, getDigitalSprite, resolveSpeciesByDexId } from '../app/services';
 import { canEvolveCard, journeyFor } from '../core/card-evolution';
@@ -14,6 +14,18 @@ const selected = ref('');
 const busy = ref(false);
 const note = ref('');
 const loading = ref(true);
+/** No Altar, só aparece quem ainda tem uma próxima forma; na Fonte, a lista continua completa. */
+const options = computed(() => {
+  if (!props.altar) return cards.value;
+  return cards.value.filter((card) => {
+    const mon = cardCompanion(card);
+    return mon !== null && nextEvolutions(journeyFor(cardJourneys.value, mon).dexId).length > 0;
+  });
+});
+// Quem chega à forma final sai da lista: a seleção passa para o próximo, sem apagar o aviso da evolução.
+watch(options, (list) => {
+  if (!list.some((card) => card.id === selected.value)) selected.value = list[0]?.id ?? '';
+}, { immediate: true });
 const current = computed(() => {
   const card = cards.value.find((c) => c.id === selected.value);
   const mon = card && cardCompanion(card);
@@ -60,9 +72,10 @@ async function evolve(nextDexId: number): Promise<void> {
     <p>O Pokémon da sua carta também pode evoluir. Chegue à amizade máxima e vença com ele nos três modos. A evolução é gratuita.</p>
     <p v-if="loading" role="status">Lendo suas cartas…</p>
     <p v-else-if="!cards.length">Escaneie uma carta de Pokémon para começar.</p>
+    <p v-else-if="!options.length">Nenhuma das suas cartas tem uma próxima evolução.</p>
     <label v-else>Seu companheiro
       <select v-model="selected" :disabled="busy">
-        <option v-for="card in cards" :key="card.id" :value="card.id">{{ cardCompanion(card)?.name }} · {{ card.setName }} {{ card.localId }}</option>
+        <option v-for="card in options" :key="card.id" :value="card.id">{{ cardCompanion(card)?.name }} · {{ card.setName }} {{ card.localId }}</option>
       </select>
     </label>
     <template v-if="current">
