@@ -1,4 +1,4 @@
-import { add, count, friendOf, gainFriendship, itemName, pay } from './life';
+import { add, availableCount, friendOf, gainFriendship, itemName, pay } from './life';
 import type { ItemId, VillageState } from './life';
 
 export type VillageRequestKind = 'collect' | 'talk' | 'deliver';
@@ -82,7 +82,8 @@ export function requestStatus(state: VillageState, request: VillageRequest, day:
     const target = request.targetId ? friendOf(state, request.targetId) : null;
     return target?.lastTalk === day ? { ready: true, text: 'Pronto para receber' } : { ready: false, text: `Converse com ${request.targetName ?? 'o Pokémon'}` };
   }
-  const have = count(state, request.item ?? '');
+  // Material reservado pelo Conselho não conta: a entrega não teria como pagar.
+  const have = availableCount(state, request.item ?? '');
   const need = request.qty ?? 1;
   return have >= need ? { ready: true, text: 'Pronto para entregar' } : { ready: false, text: `${have}/${need} ${itemName(request.item ?? '')}` };
 }
