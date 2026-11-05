@@ -543,6 +543,8 @@ export interface SurvivorState {
   nextChestAtMs?: number;
   /** Farpas grudadas em inimigos, esperando para explodir. */
   heldMines?: SurvivorHeldMine[];
+  /** Sem baús, chaves e itens (runs do PvP). */
+  heldDisabled?: boolean;
   /** Transformadores: bolhas de tempo, buracos negros, golpes enfileirados e disparos carregados flutuando. */
   timeBubbles?: SurvivorTimeBubble[];
   gravityWells?: SurvivorGravityWell[];

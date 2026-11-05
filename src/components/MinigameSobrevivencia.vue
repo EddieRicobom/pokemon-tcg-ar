@@ -3146,7 +3146,7 @@ async function beginRun(dexId: number, name: string, picked?: PokemonType, infin
     // A Mega só entra se o fragmento saiu mesmo da mochila; ele volta se a corrida for abandonada logo no começo.
     runOmegaShardTaken = mega !== null && !pureWanted.value && takeRunOmegaShard();
     const runMega = runOmegaShardTaken ? mega : null;
-    state.value = createSurvivorState(runSeed, { kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
+    state.value = createSurvivorState(runSeed, { ...(props.pvpRun ? { noHeld: true } : {}), kindCount: REGIONAL_KIND_COUNT, enemyDexId: regionalEnemyDexId, move, profile, secondMove, ...(hypotheticalSecondaryType ? { hypotheticalSecondaryType } : {}), supportCandidates, dexId, evolutions: evolutionsFor, infinite, bonk, preparation, typeAffinityChoices, fast, loadout: runLoadout, ...(runMega ? { mega: runMega } : {}) });
     initialPlayerSpeed = Math.max(1, state.value.player.speed);
     footDust.strength = 0; footDust.ratio = 0; footDust.puffs.length = 0;
     megaWasActive = state.value.player.mega?.active === true;

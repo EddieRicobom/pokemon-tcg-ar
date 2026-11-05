@@ -35,6 +35,7 @@ import type { PokemonType } from './pokemon-data';
  */
 
 export * from './survivor-types';
+import { createBonkObstacles } from './survivor-bonk';
 import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
@@ -188,6 +189,8 @@ export function xpForLevel(level: number): number {
 }
 
 export interface CreateSurvivorOptions {
+  /** Runs do PvP: sem baús, chaves nem itens segurados, para os dois lados começarem iguais. */
+  noHeld?: boolean;
   /** Resolve apenas a espécie visual, preservando os números da onda e do grau. */
   enemyDexId?: (enemy: Readonly<SurvivorEnemy>, elapsedMs: number, runSeed: number) => number;
   /** Perfil interno do inimigo. Se omitido, os quatro tipos comuns alternam por `kind`. */
@@ -324,7 +327,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     digitalDanger: 0,
     digitalDangerCooldownMs: 0,
     shadowEncounter: { phase: 'idle', dexId: shadowGuardian.dexId, name: shadowGuardian.name, arrivalMs: 0 },
-    nextShadowBallAtMs: SURVIVOR_SHADOW_BALL_FIRST_MS,
+    nextShadowBallAtMs: survivorMilestoneMs(SURVIVOR_SHADOW_BALL_FIRST_MS, fast),
     shadowBallsSpawned: 0,
     shadowTrustStones: 0,
     fieldEvent: null,
@@ -352,6 +355,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
     chests: [],
     nextChestAtMs: survivorMilestoneMs(CHEST_FIRST_MS, fast),
     heldMines: [],
+    heldDisabled: options.noHeld === true,
     upgradesOwed: 0,
     bansLeft: loadout.bans,
     bannedUpgradeIds: [],
@@ -669,7 +673,10 @@ export function rerollSurvivorUpgradeOffer(state: SurvivorState): boolean {
   state.player.upgradeRerolls -= 1;
   const nonRare = current.filter((option) => (option.rarity ? SURVIVOR_RARITY_ORDER.indexOf(option.rarity) : 0) < 1);
   const allRareOrBetter = nonRare.length === 0;
-  const preserved = allRareOrBetter ? current.slice(0, Math.max(0, current.length - 1)) : current.filter((option) => option.rarity !== undefined && SURVIVOR_RARITY_ORDER.indexOf(option.rarity) >= 1);
+  // Tudo raro ou melhor: troca a última carta comum da oferta, nunca evolução nem o apoio garantido.
+  const guaranteedCard = (id: string): boolean => id.startsWith('evolve') || id === 'support-evolve' || id === 'second-attack';
+  const swapIndex = current.reduce((found, option, index) => (guaranteedCard(option.id) ? found : index), current.length - 1);
+  const preserved = allRareOrBetter ? current.filter((_, index) => index !== swapIndex) : current.filter((option) => option.rarity !== undefined && SURVIVOR_RARITY_ORDER.indexOf(option.rarity) >= 1);
   const rerollCount = Math.max(1, current.length - preserved.length);
   const floor = current.reduce<SurvivorUpgradeRarity>((lowest, option) => {
     const rarity = option.rarity ?? 'normal';
@@ -924,6 +931,7 @@ function evolvePlayer(state: SurvivorState, next: SurvivorEvolutionOption): void
     p.attackRange = round1(p.attackRange * 1.1);
   }
   healSurvivor(p, p.maxHp);
+  p.hp = Math.min(p.hp, p.maxHp);
   state.fx.push({ kind: 'evolve', x: p.x, y: p.y, r: 60, color: '#ffffff', ageMs: 0, lifeMs: 900 });
 }
 
@@ -1222,6 +1230,7 @@ function heldAfterAttack(state: SurvivorState): void {
 }
 
 function dropKey(state: SurvivorState, x: number, y: number): void {
+  if (state.heldDisabled) return;
   (state.keyDrops ??= []).push({ id: state.nextId++, x: clamp(x, 20, ARENA_W - 20), y: clamp(y, 20, ARENA_H - 20) });
 }
 
@@ -1877,9 +1886,24 @@ function maybeImpactWell(state: SurvivorState, e: SurvivorEnemy, damage: number,
   createGravityWell(state, e.x, e.y, 80 * (1 + 0.25 * (copies - 1)), 450, 200, damage * 0.4);
 }
 
+/** Ponto de um baú novo; no BONK, nunca dentro de pedras e muretas (o jogador não alcançaria). */
+function chestSpawnPoint(state: SurvivorState): { x: number; y: number } {
+  const p = state.player;
+  const obstacles = state.bonk ? createBonkObstacles(state.runSeed) : [];
+  let point = { x: p.x, y: p.y };
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const angle = state.rng() * Math.PI * 2;
+    const distance = 260 + state.rng() * 160;
+    point = { x: clamp(p.x + Math.cos(angle) * distance, 60, ARENA_W - 60), y: clamp(p.y + Math.sin(angle) * distance, 60, ARENA_H - 60) };
+    const blocked = obstacles.some((o) => o.kind !== 'bridge' && point.x >= o.x - 30 && point.x <= o.x + o.w + 30 && point.y >= o.y - 30 && point.y <= o.y + o.h + 30);
+    if (!blocked) break;
+  }
+  return point;
+}
+
 /** Baús surgem com o tempo; chaves são coletadas como orbes; encostar num baú com chave abre a escolha de itens. */
 function stepChests(state: SurvivorState, events: SurvivorEvent[]): void {
-  if (state.debugLaboratory || state.over) return;
+  if (state.debugLaboratory || state.over || state.heldDisabled) return;
   const p = state.player;
   state.chests ??= [];
   state.keyDrops ??= [];
@@ -1887,12 +1911,13 @@ function stepChests(state: SurvivorState, events: SurvivorEvent[]): void {
   state.nextChestAtMs ??= survivorMilestoneMs(CHEST_FIRST_MS, state.fast);
   if (state.elapsedMs >= state.nextChestAtMs) {
     state.nextChestAtMs += survivorMilestoneMs(CHEST_EVERY_MS, state.fast);
-    if (state.chests.length < MAX_CHESTS_ON_FIELD) {
-      const angle = state.rng() * Math.PI * 2;
-      const distance = 260 + state.rng() * 160;
-      state.chests.push({ id: state.nextId++, x: clamp(p.x + Math.cos(angle) * distance, 60, ARENA_W - 60), y: clamp(p.y + Math.sin(angle) * distance, 60, ARENA_H - 60) });
-      events.push({ type: 'chestSpawn' });
+    // Campo cheio: o baú mais distante dá lugar ao novo, para dois baús esquecidos não encerrarem a oferta da corrida.
+    if (state.chests.length >= MAX_CHESTS_ON_FIELD) {
+      const farthest = state.chests.reduce((a, b) => (Math.hypot(b.x - p.x, b.y - p.y) > Math.hypot(a.x - p.x, a.y - p.y) ? b : a));
+      state.chests = state.chests.filter((chest) => chest !== farthest);
     }
+    state.chests.push({ id: state.nextId++, ...chestSpawnPoint(state) });
+    events.push({ type: 'chestSpawn' });
   }
   const reach = Math.min(MAGNET_PICKUP_RADIUS_CAP, effectivePickupRadius(p) * (p.artifactMagnetMs > 0 ? 1.7 : 1));
   if (state.keyDrops.length > 0) {
@@ -2887,7 +2912,7 @@ function isOverwhelmingRun(state: SurvivorState, visibleEnemies: number): boolea
 function updateDigitalDanger(state: SurvivorState, input: SurvivorInput, dtMs: number, trainerSpawnedThisStep: boolean, events: SurvivorEvent[]): void {
   if (state.over) return;
   state.digitalDangerCooldownMs = Math.max(0, state.digitalDangerCooldownMs - dtMs);
-  if (state.elapsedMs < DIGITAL_DANGER_UNLOCK_MS) {
+  if (state.elapsedMs < survivorMilestoneMs(DIGITAL_DANGER_UNLOCK_MS, state.fast)) {
     state.digitalDanger = 0;
     return;
   }
@@ -3192,7 +3217,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     const playerDistance = Math.hypot(p.x - e.x, p.y - e.y);
     // Espinhos: quem encosta em você apanha, mesmo durante a janela de invulnerabilidade do jogador.
     if ((p.thornsDamage ?? 0) > 0 && playerDistance < PLAYER_RADIUS + e.radius) e.hp -= (p.thornsDamage ?? 0) * dt;
-    if (playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
+    // Congelado no tempo não ataca: a bolha do Orbe Adamante e a Estase protegem de verdade.
+    if (!timeStopped && playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
       if (specialProtects(state)) {
         breakSurvivorShield(state);
         continue;

@@ -159,6 +159,34 @@ describe('baús, chaves e efeitos na corrida', () => {
     expect(granted.some((ev) => ev.type === 'heldItem' && ev.id === id)).toBe(true);
   });
 
+  it('run do PvP não tem baú nem chave', () => {
+    const s = quiet(createSurvivorState(21, { kindCount: 1, noHeld: true }));
+    s.elapsedMs = CHEST_FIRST_MS + 1;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.chests ?? []).toHaveLength(0);
+  });
+
+  it('com dois baús esquecidos, o mais distante dá lugar ao novo', () => {
+    const s = quiet(createSurvivorState(22, { kindCount: 1 }));
+    s.chests = [{ id: 901, x: s.player.x + 300, y: s.player.y }, { id: 902, x: s.player.x - 900, y: s.player.y }];
+    s.elapsedMs = CHEST_FIRST_MS + 1;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.chests).toHaveLength(2);
+    expect(s.chests.map((chest) => chest.id)).toContain(901);
+    expect(s.chests.map((chest) => chest.id)).not.toContain(902);
+  });
+
+  it('inimigo congelado no tempo não causa dano de contato', () => {
+    const s = quiet(createSurvivorState(23, { kindCount: 1 }));
+    const frozen = dummy(950, s.player.x, s.player.y);
+    frozen.damage = 10;
+    frozen.timeFrozenMs = 1000;
+    s.enemies.push(frozen);
+    const hp = s.player.hp;
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.player.hp).toBe(hp);
+  });
+
   it('item fora da escolha aberta não é concedido', () => {
     const s = quiet(createSurvivorState(4, { kindCount: 1 }));
     applyUpgrade(s, `${HELD_OFFER_PREFIX}orbe-vida`);
