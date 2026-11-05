@@ -6989,12 +6989,10 @@ body.no-scroll .reward-toasts {
   display: block;
   width: 100%;
   height: 100%;
-  image-rendering: pixelated;
 }
-.survivor-canvas.bonk-canvas {
-  image-rendering: pixelated;
-  background: #1a396c;
-}
+/* Só a resolução mínima usa pontos duros; acima dela, a ampliação suave evita pixels de tamanhos diferentes. */
+.survivor-canvas.canvas-chunky { image-rendering: pixelated; }
+.survivor-canvas.bonk-canvas { background: #1a396c; }
 .survivor-canvas.survivor-time-stopped { filter: grayscale(1) contrast(.94) brightness(.82); }
 .survivor-stasis-overlay {
   position: absolute;
