@@ -4044,6 +4044,17 @@ body.no-scroll .reward-toasts {
   font-weight: 800;
 }
 .pin-zoom button.on { background: var(--gold); color: #1b2036; }
+/* Minimapa: a arena inteira no canto; tocar leva a câmera até lá. */
+.pin-minimap { position: absolute; top: 8px; right: 8px; z-index: 12; width: 96px; height: 96px; border-radius: 50%; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); touch-action: none; cursor: pointer; }
+.pn-formations { display: grid; gap: 8px; }
+.pn-formations h3, .pn-formations .hint { margin: 0; }
+.pn-formation-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.pn-formation-row button { display: grid; justify-items: center; gap: 2px; min-width: 0; min-height: 74px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.04); color: var(--text); font-size: 0.75rem; }
+.pn-formation-row button.on { border-color: var(--gold); background: rgba(255, 216, 74, 0.14); }
+.pn-formation-row svg { width: 100%; max-width: 56px; height: auto; }
+.pn-formation-row small { color: inherit; font-size: 0.72rem; font-weight: 700; }
+.pn-formation-field { fill: #4f9a45; }
+.pn-formation-dot { fill: #6fb1ff; stroke: #0d162e; stroke-width: 2; }
 .pin-zoom button:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 
 /* Vinheta suave nas bordas: dá foco ao centro quando a câmera aproxima e esconde o corte da arte. */
@@ -4222,7 +4233,8 @@ body.no-scroll .reward-toasts {
   border-radius: 50%;
   box-sizing: border-box;
   background: radial-gradient(circle at 50% 40%, #f4f8ff, #b8c6e0);
-  box-shadow: 0 4px 0 rgba(20, 28, 48, 0.55), 0 7px 10px rgba(0, 0, 0, 0.38);
+  /* Aro fino na cor do tipo por fora da borda da equipe. */
+  box-shadow: 0 0 0 2px var(--pin-type, transparent), 0 4px 0 rgba(20, 28, 48, 0.55), 0 7px 10px rgba(0, 0, 0, 0.38);
   transform-style: preserve-3d;
   will-change: transform;
 }
@@ -4241,7 +4253,7 @@ body.no-scroll .reward-toasts {
   width: 88%;
   height: 88%;
   object-fit: contain;
-  image-rendering: pixelated;
+  image-rendering: auto;
   pointer-events: none;
 }
 

@@ -41,9 +41,7 @@ const C = {
   wallTopA: [0xe6, 0xdf, 0xcf], wallTopB: [0xcf, 0xc6, 0xb2], wallMortar: [0x9b, 0x90, 0x7c], wallEdge: [0xfb, 0xf7, 0xea],
   wallInnerA: [0x8e, 0x84, 0x70], wallInnerB: [0x7c, 0x72, 0x60], wallInnerShadow: [0x2f, 0x5e, 0x2c],
   wallOuterA: [0x6f, 0x66, 0x55], wallOuterB: [0x5a, 0x52, 0x44],
-  grassA: [0x5f, 0xb0, 0x4c], grassB: [0x58, 0xa8, 0x47], grassDark: [0x3f, 0x8a, 0x3a], grassLight: [0x82, 0xd0, 0x65],
-  mowA: [0x66, 0xb8, 0x52], mowB: [0x54, 0xa2, 0x44],
-  flowerWhite: [0xf6, 0xf2, 0xe4], flowerYellow: [0xf2, 0xd1, 0x52],
+  mowA: [0x5f, 0xb0, 0x4c], mowB: [0x56, 0xa4, 0x45],
   bumperBody: [0xe2, 0x3b, 0x3b], bumperRing: [0x9c, 0x22, 0x22], bumperTop: [0xff, 0xe9, 0xe9], bumperShadow: [0x1f, 0x4a, 0x1c],
 } as const;
 type Rgb = readonly [number, number, number];
@@ -67,6 +65,9 @@ function paintBumper(patch: Patch, dx: number, dy: number): Rgb | null {
   if (edge < 0.42) return C.bumperTop;
   return edge > 0.82 ? C.bumperRing : C.bumperBody;
 }
+
+/** Largura (unidades) de cada faixa do gramado. */
+const MOW_BAND = 130;
 
 /** Tamanho (unidades) de cada pedra da mureta, medido no arco do topo. */
 const STONE = 36;
@@ -110,13 +111,8 @@ export function paintArena(radius: number, seed = 1): ArtBuf {
         if (out < -INNER_FACE + 4.5) color = C.wallInnerShadow;
         else color = Math.floor(((Math.atan2(wy, wx) + Math.PI) * radius) / STONE) % 2 === 0 ? C.wallInnerA : C.wallInnerB;
       } else {
-        // Gramado cortado em faixas (anéis) e quadradinhos, com tufos e flores esparsas.
-        const mow = Math.floor(d / 56) % 2 === 0;
-        color = Math.floor(px / 3 + py / 3) % 2 === 0 ? (mow ? C.mowA : C.grassA) : mow ? C.grassB : C.mowB;
-        const n = hash(px, py, seed);
-        if (n < 0.035) color = C.grassDark;
-        else if (n > 0.975) color = C.grassLight;
-        else if (n > 0.9965) color = hash(px, py, seed + 7) < 0.5 ? C.flowerWhite : C.flowerYellow;
+        // Gramado de campo de futebol: faixas largas e lisas, sem ruído, para a leitura ficar com as marcas e os pins.
+        color = Math.floor((wy + radius) / MOW_BAND) % 2 === 0 ? C.mowA : C.mowB;
       }
       put(buf, px, py, color);
     }
@@ -128,7 +124,7 @@ export function paintArena(radius: number, seed = 1): ArtBuf {
 const FLOOR_EDGE = INNER_FACE;
 /** Cada lado começa além desta fração do raio do chão, medida a partir da linha do meio. */
 const START_ZONE = 0.34;
-const CENTER_RING = 120;
+const CENTER_RING = 240;
 
 const ZONE_ME: Rgb = [0x4f, 0x9b, 0xff];
 const ZONE_FOE: Rgb = [0xff, 0x6a, 0x5a];
