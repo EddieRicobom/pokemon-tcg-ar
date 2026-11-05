@@ -4,6 +4,10 @@ import MusicControls from './MusicControls.vue';
 import SurvivorDebug from './SurvivorDebug.vue';
 import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
+import { addCrater, cinemaLook, cinemaPower, dropOldCraters } from '../core/survivor-cinema';
+import type { Crater } from '../core/survivor-cinema';
+import { drawCastShadows, drawCraters, drawDarkness, drawLights } from '../village/survivor-cinema-art';
+import type { CinemaLight } from '../village/survivor-cinema-art';
 import { routeHref } from '../app/route';
 import { survivorAudio } from '../app/survivor-audio-settings';
 import { survivorMusicMix, survivorMusicTitle } from '../core/survivor-music';
@@ -184,6 +188,16 @@ const JOY_MAX = 42;
 const regionScenery = ref(true);
 const minimapEnabled = ref(true);
 const specialEffects = ref(true);
+const CINEMA_KEY = 'tcg-ar-torre-luz-v1';
+function readCinema(): boolean {
+  try { return localStorage.getItem(CINEMA_KEY) !== '0'; } catch { return true; }
+}
+/** Luz cinematográfica: escuridão, sombras e brilhos que crescem com a corrida. */
+const cinemaOn = ref(readCinema());
+function toggleCinema(): void {
+  cinemaOn.value = !cinemaOn.value;
+  try { localStorage.setItem(CINEMA_KEY, cinemaOn.value ? '1' : '0'); } catch { /* vale só nesta sessão */ }
+}
 const hudExpanded = ref(false);
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 const detailedSpecialEffects = computed(() => specialEffects.value && !reducedMotion && !effectiveVisual.value.rotomMode);
@@ -2021,6 +2035,12 @@ function preloadVisibleEnemyRegions(elapsedMs: number, runSeed = 0, enemies: rea
   }
 }
 
+const cinemaCasters: SurvivorEnemy[] = [];
+const cinemaLights: CinemaLight[] = [];
+/** Chão destruído: só desenho, a física e o caminho dos inimigos não mudam. */
+const cinemaCraters: Crater[] = [];
+let seenBlasts = new WeakSet<object>();
+
 function draw(): void {
   if (!ctx || !canvasEl.value || !state.value) return;
   // O motor escreve no objeto cru (ver `loop`); o proxy do Vue só custava leituras e escritas a mais no desenho.
@@ -2152,6 +2172,26 @@ function draw(): void {
   for (const well of s.gravityWells ?? []) drawGravityWell(ctx, well.x, well.y, well.radius, well.ageMs / Math.max(1, well.lifeMs), animMs, detailed);
   for (const bubble of s.timeBubbles ?? []) drawTimeBubble(ctx, bubble.x, bubble.y, bubble.radius, bubble.ageMs / Math.max(1, bubble.lifeMs), animMs, detailed);
 
+  // Luz cinematográfica: só na visão de cima, e os limites caem sozinhos se o aparelho sofrer (`renderScaleCap`).
+  const cinema = cinemaOn.value && !effectiveVisual.value.rotomMode
+    ? cinemaLook(cinemaPower({ progressMs: survivorProgressMs(s), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3)
+    : null;
+  if (cinema) {
+    const power = cinema.dark > 0.14 ? (cinema.dark - 0.14) / 0.56 : 0;
+    for (const f of s.fx) {
+      if (f.kind !== 'blast' || f.r < 34 || seenBlasts.has(f)) continue;
+      seenBlasts.add(f);
+      addCrater(cinemaCraters, f.x, f.y, f.r, power, animMs);
+    }
+    dropOldCraters(cinemaCraters, animMs);
+    drawCraters(ctx, cinemaCraters, animMs);
+    cinemaCasters.length = 0;
+    for (const e of s.enemies) {
+      if (cinemaCasters.length >= cinema.shadows) break;
+      if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) cinemaCasters.push(e);
+    }
+    drawCastShadows(ctx, cinemaCasters, s.player.x, s.player.y, cinema);
+  }
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
   }
@@ -2466,6 +2506,30 @@ function draw(): void {
       }
     }
     ctx.restore();
+  }
+  if (cinema) {
+    const view = { x: camX, y: camY, w: worldViewW, h: worldViewH };
+    drawDarkness(ctx, cinema, s.player.x, s.player.y - 10, view, animMs);
+    const lights = cinemaLights;
+    lights.length = 0;
+    lights.push({ x: s.player.x, y: s.player.y - 12, r: 70 + 40 * cinema.dark, color: move.color, alpha: 0.5 });
+    for (const proj of s.projectiles) {
+      if (lights.length >= cinema.glows) break;
+      if (proj.x < left || proj.x > right || proj.y < top || proj.y > bottom) continue;
+      lights.push({ x: proj.x, y: proj.y, r: 14 + (proj.size ?? 4) * 2.4, color: proj.move?.color ?? move.color, alpha: 0.55 });
+    }
+    for (const f of s.fx) {
+      if (lights.length >= cinema.glows) break;
+      if (f.kind !== 'blast' && f.kind !== 'pulse' && f.kind !== 'beam') continue;
+      lights.push({ x: f.x, y: f.y, r: Math.min(150, f.r * 1.5), color: f.color, alpha: 0.5 * (1 - f.ageMs / Math.max(1, f.lifeMs)) });
+    }
+    for (const e of s.enemies) {
+      if (lights.length >= cinema.glows) break;
+      if (!e.boss && e.grade === 'comum') continue;
+      if (e.x < left || e.x > right || e.y < top || e.y > bottom) continue;
+      lights.push({ x: e.x, y: e.y - 14, r: e.boss || e.grade === 'chefao' ? 80 : 46, color: e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', alpha: 0.32 });
+    }
+    drawLights(ctx, cinema, lights, { x: s.player.x, y: s.player.y, color: move.color }, view, animMs, !reducedMotion);
   }
   ctx.restore();
 }
@@ -3267,6 +3331,8 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
 async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null, swapped = false, omegaCategory?: MoveCategory): Promise<void> {
   runCompanion = companion;
   runEpoch++;
+  cinemaCraters.length = 0;
+  seenBlasts = new WeakSet<object>();
   pickBusy.value = true;
   try {
     avatarName.value = name;
@@ -3718,6 +3784,7 @@ onBeforeUnmount(() => {
               <strong>Exibição</strong>
               <button type="button" class="chip" :aria-pressed="minimapEnabled" @click.stop="minimapEnabled = !minimapEnabled">Mapa: {{ minimapEnabled ? 'ligado' : 'desligado' }}</button>
               <button type="button" class="chip" :aria-pressed="regionScenery" @click.stop="regionScenery = !regionScenery">Cenário: {{ regionScenery ? 'ligado' : 'desligado' }}</button>
+              <button type="button" class="chip" :aria-pressed="cinemaOn" @click.stop="toggleCinema">Luz: {{ cinemaOn ? 'cinema' : 'simples' }}</button>
               <button type="button" class="chip" :aria-pressed="specialEffects" @click.stop="specialEffects = !specialEffects">Efeitos: {{ specialEffects ? 'completos' : 'leves' }}</button>
             </div>
             <div v-if="objectives.length" class="survivor-objectives" aria-label="Objetivos opcionais da corrida">
