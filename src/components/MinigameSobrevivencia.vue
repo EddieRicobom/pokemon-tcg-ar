@@ -391,6 +391,8 @@ let pvpWarned = 0;
 let activeRunId = '';
 /** Muda a cada corrida nova: carregamentos assíncronos de uma corrida anterior não tocam na próxima. */
 let runEpoch = 0;
+/** O Pokémon da corrida é brilhante: a evolução também é. */
+let runShiny = false;
 const completedRunIds = new Set<string>();
 const selectedPreparation = ref<SurvivorPreparationId>('classica');
 
@@ -1661,7 +1663,21 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
     ctx.restore();
   }
   const player = state.value?.player;
+  const aiming = e.archetype === 'atirador' && player && !e.stunMs && (e.specialTimerMs ?? 9999) < ATTACK_WINDUP_MS && Math.hypot(player.x - e.x, player.y - e.y) <= 420;
+  const windup = aiming ? 1 - Math.max(0, e.specialTimerMs ?? 0) / ATTACK_WINDUP_MS : e.chargeMs ? 1 - e.chargeMs / 500 : 0;
+  if (e.archetype === 'explosivo' && e.hp < e.maxHp * 0.4 && Math.sin(animMs / 110) > -0.2) {
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = '#ff8c3a';
+    ctx.lineWidth = Math.max(1.5, 2 * scale);
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    ctx.ellipse(x, y, 70 * scale, 24 * scale, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
   drawBonkBillboard(sprite, x, y, size, false, 1, null, 0, player ? survivorSpriteDirection(player.x - e.x, player.y - e.y) : 'down');
+  if (windup > 0) drawAlertMark(ctx, x, y - Math.max(34, 58 * scale), windup);
   if (e.hp < e.maxHp) {
     const width = Math.max(14, 28 * scale);
     const barY = y - Math.max(22, 38 * scale);
@@ -1706,6 +1722,47 @@ function drawBonkHeldFx(c: CanvasRenderingContext2D, fx: SurvivorState['fx'][num
   else drawChestOpenFx(c, p.x, p.y, r, t);
   c.restore();
   return true;
+}
+
+/** Setas na borda da visão: quem ameaça fora da tela e os pontos que valem a viagem. */
+function drawBonkPointers(c: CanvasRenderingContext2D, s: SurvivorState, physics: BonkPhysics, project: (point: { x: number; y: number }, z?: number) => { x: number; y: number; scale: number } | null, viewport: { width: number; height: number }): void {
+  const cos = Math.cos(physics.cameraYaw);
+  const sin = Math.sin(physics.cameraYaw);
+  const middleX = viewport.width / 2;
+  const middleY = viewport.height / 2;
+  const reachX = viewport.width * 0.42;
+  const reachY = viewport.height * 0.3;
+  const pointAt = (x: number, y: number, color: string, size: number): void => {
+    const p = project({ x, y });
+    if (p && p.x > 0 && p.x < viewport.width && p.y > 0 && p.y < viewport.height) return;
+    const dx = x - s.player.x;
+    const dy = y - s.player.y;
+    const forward = dx * cos + dy * sin;
+    const side = -dx * sin + dy * cos;
+    const angle = Math.atan2(-forward, side);
+    const ax = middleX + Math.cos(angle) * reachX;
+    const ay = middleY + Math.sin(angle) * reachY;
+    c.fillStyle = color;
+    c.beginPath();
+    c.moveTo(ax + Math.cos(angle) * size, ay + Math.sin(angle) * size);
+    c.lineTo(ax + Math.cos(angle + 2.5) * size, ay + Math.sin(angle + 2.5) * size);
+    c.lineTo(ax + Math.cos(angle - 2.5) * size, ay + Math.sin(angle - 2.5) * size);
+    c.closePath();
+    c.fill();
+  };
+  c.save();
+  c.globalAlpha = 0.85;
+  let near = 0;
+  for (const e of s.enemies) {
+    if (e.boss || e.grade !== 'comum') pointAt(e.x, e.y, e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', 9);
+    else if (near < 4 && Math.hypot(e.x - s.player.x, e.y - s.player.y) < 150) {
+      near++;
+      pointAt(e.x, e.y, '#ffffff', 6);
+    }
+  }
+  if (s.fieldEvent) pointAt(s.fieldEvent.x, s.fieldEvent.y, s.fieldEvent.kind === 'hunt' ? '#ff6b72' : '#7be6ff', 10);
+  if ((s.keys ?? 0) > 0) for (const chest of s.chests ?? []) pointAt(chest.x, chest.y, '#7ee8a2', 10);
+  c.restore();
 }
 
 function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
@@ -1761,8 +1818,6 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.save();
       c.globalAlpha = 0.92;
       c.fillStyle = color;
-      c.shadowColor = color;
-      c.shadowBlur = Math.min(16, 8 * p.scale);
       c.beginPath();
       c.arc(p.x, p.y, clamp(4 * p.scale, 1.4, 10), 0, Math.PI * 2);
       c.fill();
@@ -1794,8 +1849,6 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.beginPath(); c.ellipse(ground.x, ground.y, ring.rx, ring.ry, 0, 0, Math.PI * 2); c.stroke();
       c.globalAlpha = 1;
       c.fillStyle = color;
-      c.shadowColor = color;
-      c.shadowBlur = Math.min(18, 10 * p.scale);
       c.beginPath();
       c.arc(p.x, p.y, clamp(8 * p.scale, 3, 15), 0, Math.PI * 2);
       c.fill();
@@ -1890,6 +1943,10 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     const p = drawPoint(projectile, 16);
     if (!p) continue;
     c.fillStyle = projectile.effect === 'stun' ? '#e6b6ff' : projectile.effect === 'slow' ? '#7bdcff' : '#ff6c64';
+    // Halo em volta do tiro: dá para ver de longe o que vem na sua direção.
+    c.globalAlpha = 0.35;
+    c.beginPath(); c.arc(p.x, p.y, clamp(projectile.size * p.scale * 1.5, 3, 22), 0, Math.PI * 2); c.fill();
+    c.globalAlpha = 1;
     c.beginPath(); c.arc(p.x, p.y, clamp(projectile.size * p.scale * 0.65, 1.5, 10), 0, Math.PI * 2); c.fill();
   }
   if (!effectiveVisual.value.rotomMode) {
@@ -1957,6 +2014,49 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     c.lineWidth = Math.max(1.5, playerGround.scale * 1.4 * (1 - t));
     c.beginPath(); c.ellipse(playerGround.x, playerGround.y, dust.rx, dust.ry, 0, 0, Math.PI * 2); c.stroke();
     c.restore();
+  }
+  // Baliza dos encontros: uma coluna de luz no chão, para achar de longe.
+  if (s.fieldEvent) {
+    const base = drawPoint(s.fieldEvent);
+    const tip = drawPoint(s.fieldEvent, 160);
+    if (base && tip) {
+      c.save();
+      c.strokeStyle = s.fieldEvent.kind === 'hunt' ? '#ff6b72' : '#7be6ff';
+      c.globalAlpha = 0.55 + 0.25 * Math.sin(animMs / 200);
+      c.lineWidth = Math.max(3, 12 * base.scale);
+      c.lineCap = 'round';
+      c.beginPath(); c.moveTo(base.x, base.y); c.lineTo(tip.x, tip.y); c.stroke();
+      c.restore();
+    }
+  }
+  if (!effectiveVisual.value.rotomMode) drawBonkPointers(c, s, physics, drawPoint, viewport);
+  const look = cinemaOn.value && !effectiveVisual.value.rotomMode
+    ? cinemaLook(cinemaPower({ progressMs: survivorProgressMs(s), level: s.player.level, bossOnField: s.enemies.some((e) => e.boss || e.grade === 'chefao') }), renderScaleCap.value < 3)
+    : null;
+  if (look && playerPoint) {
+    const screen = { x: 0, y: 0, w: viewport.width, h: viewport.height };
+    drawDarkness(c, look, playerPoint.x, playerPoint.y - 14, screen, animMs);
+    const lights = cinemaLights;
+    lights.length = 0;
+    lights.push({ x: playerPoint.x, y: playerPoint.y - 16, r: 70 + 40 * look.dark, color: move.color, alpha: 0.5 });
+    for (const proj of s.projectiles) {
+      if (lights.length >= look.glows) break;
+      const p = drawPoint(proj, 14);
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp((14 + (proj.size ?? 4) * 2.4) * p.scale, 6, 60), color: proj.move?.color ?? move.color, alpha: 0.55 });
+    }
+    for (const f of s.fx) {
+      if (lights.length >= look.glows) break;
+      if (f.kind !== 'blast' && f.kind !== 'pulse') continue;
+      const p = drawPoint(f, 10);
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp(f.r * 1.5 * p.scale, 10, 150), color: f.color, alpha: 0.5 * (1 - f.ageMs / Math.max(1, f.lifeMs)) });
+    }
+    for (const e of s.enemies) {
+      if (lights.length >= look.glows) break;
+      if (!e.boss && e.grade === 'comum') continue;
+      const p = drawPoint(e, 14);
+      if (p) lights.push({ x: p.x, y: p.y, r: clamp((e.boss || e.grade === 'chefao' ? 80 : 46) * p.scale, 12, 130), color: e.grade === 'elite' ? '#ffd84a' : '#ff3b2f', alpha: 0.32 });
+    }
+    drawLights(c, look, lights, { x: playerPoint.x, y: playerPoint.y, color: move.color }, screen, animMs, !reducedMotion);
   }
   if (physics.collisionFlashMs > 0 && playerPoint) {
     c.save();
@@ -2947,7 +3047,7 @@ function loop(ts: number): void {
     if (bonkRun.value && Math.abs(dx) > 0.15) bonkFacing = dx < 0 ? -1 : 1;
     // O Ritmo acelerado comprime a partida, mas não a animação: somente o relógio e o motor avançam 2×.
     const simulationDt = s.fast ? dt * FAST_TIME_SCALE : dt;
-    const events = stepSurvivor(s, { dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), cancelCharge: cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
+    const events = stepSurvivor(s, { airborne: bonkRun.value && (bonkPhysics.value?.z ?? 0) > 34, dx: move.dx, dy: move.dy, special: specialQueued, charge: chargeHeld.value || (autoCharge.value && !!chargeStyle.value && autoChargeHeld(chargeStyle.value, s.charge)), cancelCharge: cancelChargeQueued, visibleEnemies: visibleEnemyCountForDanger(s), ...(bonkRun.value && bonkPhysics.value ? { aimAngle: bonkPhysics.value.cameraYaw } : {}) }, simulationDt);
     if (trackEnemyDamage) showEnemyDamage(enemyDamageSince(enemyHpSnapshot, s));
     if (survivorAudio.attackSounds && s.criticalHits.length > 0 && animMs - lastCriticalSoundAt >= 200) {
       lastCriticalSoundAt = animMs;
@@ -3215,7 +3315,8 @@ function toggleHudMenu(): void {
 async function evolveTo(dexId: number, name: string): Promise<void> {
   evolving.value = `${avatarName.value} evoluiu para ${name}!`;
   const epoch = runEpoch;
-  const [sprite, back] = await Promise.all([loadSpriteOrNull(dexId), bonkRun.value ? loadBackSpriteOrNull(dexId) : Promise.resolve(null), new Promise((r) => setTimeout(r, 900))]);
+  const shiny = runShiny;
+  const [sprite, back] = await Promise.all([loadSpriteOrNull(dexId, shiny), bonkRun.value ? loadBackSpriteOrNull(dexId, shiny) : Promise.resolve(null), new Promise((r) => setTimeout(r, 900))]);
   if (disposed || epoch !== runEpoch) return;
   normalPlayerSprite = sprite;
   normalPlayerBackSprite = back;
@@ -3330,6 +3431,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
 
 async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null, swapped = false, omegaCategory?: MoveCategory): Promise<void> {
   runCompanion = companion;
+  runShiny = shiny;
   runEpoch++;
   cinemaCraters.length = 0;
   seenBlasts = new WeakSet<object>();

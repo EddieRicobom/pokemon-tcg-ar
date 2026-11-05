@@ -380,8 +380,11 @@ export function projectBonkPoint(
 }
 
 /** Distância focal em pixels: acompanha a altura da tela para o jogador ficar no mesmo lugar em qualquer aparelho. */
-export function bonkFocal(viewport: { height: number }): number {
-  return Math.max(BONK_CAMERA.minFocal, viewport.height * BONK_CAMERA.focalRatio);
+export function bonkFocal(viewport: { height: number; width?: number }): number {
+  const byHeight = viewport.height * BONK_CAMERA.focalRatio;
+  // Celular em pé: a altura sozinha daria um campo de visão estreito demais; a largura limita o zoom.
+  const focal = viewport.width === undefined ? byHeight : Math.min(byHeight, viewport.width * 1.15);
+  return Math.max(BONK_CAMERA.minFocal, focal);
 }
 
 /** Converte coordenadas locais da câmera em mundo, útil para desenhar o terreno em perspectiva. */

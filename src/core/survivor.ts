@@ -298,7 +298,7 @@ export function createSurvivorState(seed: number, options: CreateSurvivorOptions
       lunchPickupBonus: lunch.pickupBonus,
       lunchHitInvulnBonus: lunch.hitInvulnBonus,
     } : {}),
-    bonkJumpPower: 470,
+    bonkJumpPower: 540,
     bonkAirJumps: 0,
     bonkGravityFactor: 1,
     bonkMode: options.bonk === true,
@@ -3218,7 +3218,8 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     // Espinhos: quem encosta em você apanha, mesmo durante a janela de invulnerabilidade do jogador.
     if ((p.thornsDamage ?? 0) > 0 && playerDistance < PLAYER_RADIUS + e.radius) e.hp -= (p.thornsDamage ?? 0) * dt;
     // Congelado no tempo não ataca: a bolha do Orbe Adamante e a Estase protegem de verdade.
-    if (!timeStopped && playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
+    // No BONK, quem está no alto passa por cima de quem encosta.
+    if (!timeStopped && !input.airborne && playerDistance < PLAYER_RADIUS + e.radius && p.invulnMs <= 0) {
       if (specialProtects(state)) {
         breakSurvivorShield(state);
         continue;
@@ -3240,7 +3241,7 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     proj.y += proj.vy * speedMultiplier * dt;
     proj.lifeMs -= dtMs;
     if (proj.lifeMs <= 0 || proj.x < -40 || proj.x > ARENA_W + 40 || proj.y < -40 || proj.y > ARENA_H + 40) return false;
-    if (Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size) {
+    if (!input.airborne && Math.hypot(proj.x - p.x, proj.y - p.y) <= PLAYER_RADIUS + proj.size) {
       if (p.invulnMs <= 0 && !specialProtects(state)) {
           const incoming = Math.ceil((hasUpgrade(p, 'steel-plate') ? proj.damage * 0.88 : proj.damage) * survivorDifficultyEnemyMultiplier(p.difficultyStacks ?? 0) * closeRangeDamageMultiplier(state) * (p.artifactShieldMs > 0 ? 0.65 : 1));
         damagePlayer(state, incoming, 'projétil', proj.source ?? { boss: false, grade: proj.grade ?? 'comum' });
