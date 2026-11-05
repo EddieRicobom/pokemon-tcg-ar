@@ -4187,14 +4187,14 @@ body.no-scroll .reward-toasts {
   opacity: 0.8;
 }
 
-.pin-stage.pin-depth canvas,
+.pin-stage.pin-depth canvas:not(.pin-minimap),
 .pin-stage.pin-depth .pin-sprites {
   transform: rotateX(13deg) scale(0.98) translateY(-1.8%);
   transform-origin: center 61%;
   backface-visibility: hidden;
 }
 
-.pin-stage.pin-depth canvas {
+.pin-stage.pin-depth canvas:not(.pin-minimap) {
   border-radius: 50%;
 }
 
@@ -4206,7 +4206,8 @@ body.no-scroll .reward-toasts {
   cursor: crosshair;
 }
 
-.pin-stage canvas {
+/* O minimapa também é canvas: sem o :not, ele se esticaria por cima da arena inteira. */
+.pin-stage canvas:not(.pin-minimap) {
   position: absolute;
   inset: 0;
   width: 100%;
