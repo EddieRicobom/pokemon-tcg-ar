@@ -109,7 +109,8 @@ export class FarmSession {
         : task.kind === 'mine' ? tile === 'rock' && state.harvested[`${task.x},${task.y}`] !== localDay(now)
           : task.kind === 'lumber' ? tile === 'tree' && state.harvested[`${task.x},${task.y}`] !== localDay(now)
             : task.kind === 'fish' ? tile === 'water' && (state.fishing.day !== localDay(now) || state.fishing.casts < FISH_PER_DAY) : !crop;
-      if (!worker?.available || !valid || population !== undefined && !workActivityActive(activityOf(task.kind), population) || now - task.createdAt > FARM_RULES.travelMs || now < task.createdAt) {
+      if (!worker?.available || !valid || population !== undefined && !workActivityActive(activityOf(task.kind), population) || (task.workingSince == null && now - task.createdAt > FARM_RULES.travelMs) || now < task.createdAt) {
+        // O prazo de viagem só vale até chegar: quem já está trabalhando termina o serviço.
         this.tasks.splice(i, 1);
         continue;
       }

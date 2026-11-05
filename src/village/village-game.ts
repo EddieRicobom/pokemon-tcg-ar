@@ -75,6 +75,9 @@ import { DepthSpriteCache } from './depth-sprite-cache';
  * momentos entre os Pokémon. A lógica (andar, coletar, amizade, momentos) é a de `core/village`; aqui é só cola com o navegador.
  */
 
+/** Tempo máximo do carteiro tentando chegar a uma porta antes de pular para a próxima. */
+const MAIL_DOOR_DEADLINE_MS = 90_000;
+
 export class VillageGame {
   readonly player: Walker;
   readonly villagers = new Map<string, Walker>();
@@ -154,7 +157,8 @@ export class VillageGame {
   private readonly communityWork = new Map<string, { activity: CommunityActivityRecord['activity']; target: { x: number; y: number }; until: number }>();
   private farmTasks = new Map<string, FarmTask>();
   /** O carteiro percorre as portas dos envolvidos numa carta, em ordem, para que a entrega seja visível. */
-  private readonly mailRoutes = new Map<string, { targets: string[]; index: number; pauseUntil: number }>();
+  /** `targetSince`: quando o carteiro começou a ir até a porta atual (0 = ainda não saiu); passa do prazo, pula a porta. */
+  private readonly mailRoutes = new Map<string, { targets: string[]; index: number; pauseUntil: number; targetSince: number }>();
   private mailCarrierId: string | null = null;
   private cafeWaiterId: string | null = null;
   private instructorId: string | null = null;
@@ -411,8 +415,14 @@ export class VillageGame {
     if (!carrier || !this.villagers.has(carrier)) return false;
     const targets = [...new Set(targetIds)].filter((id) => id !== carrier && this.villagers.has(id) && this.homeDoor(id) !== null);
     if (targets.length === 0) return false;
-    if (this.mailRoutes.has(carrier)) return true;
-    this.mailRoutes.set(carrier, { targets, index: 0, pauseUntil: 0 });
+    const current = this.mailRoutes.get(carrier);
+    if (current) {
+      // Carta nova no meio da entrega: as portas que faltam entram no fim da rota em vez de serem esquecidas.
+      const pending = new Set(current.targets.slice(current.index));
+      for (const id of targets) if (!pending.has(id)) current.targets.push(id);
+      return true;
+    }
+    this.mailRoutes.set(carrier, { targets, index: 0, pauseUntil: 0, targetSince: 0 });
     this.bubble(carrier, '📬', 5_000);
     return true;
   }
@@ -1237,11 +1247,20 @@ export class VillageGame {
           continue;
         }
         if (now < mailRoute.pauseUntil) continue;
+        mailRoute.targetSince ||= now;
+        if (now - mailRoute.targetSince > MAIL_DOOR_DEADLINE_MS) {
+          // Porta inalcançável (caminho fechado por obra ou enfeite): pula para a próxima em vez de travar o carteiro.
+          mailRoute.index += 1;
+          mailRoute.targetSince = 0;
+          if (mailRoute.index >= mailRoute.targets.length) this.mailRoutes.delete(id);
+          continue;
+        }
         if (!moving(w) && Math.abs(door.x - w.x) + Math.abs(door.y - w.y) <= 1) {
           this.bubble(id, '📬', 1_800);
           this.bubble(targetId, '✉️', 2_400);
           if (payResidentWork(this.state, id, 'mail', `porta:${targetId}`, this.localDay(), 6)) this.onResidentEconomyChange?.();
           mailRoute.index += 1;
+          mailRoute.targetSince = 0;
           mailRoute.pauseUntil = now + 1_250;
           if (mailRoute.index >= mailRoute.targets.length) this.mailRoutes.delete(id);
         } else {
