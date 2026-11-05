@@ -4,6 +4,7 @@ import MusicControls from './MusicControls.vue';
 import SurvivorDebug from './SurvivorDebug.vue';
 import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
+import { routeHref } from '../app/route';
 import { survivorAudio } from '../app/survivor-audio-settings';
 import { survivorMusicMix, survivorMusicTitle } from '../core/survivor-music';
 import { assetUrl, getCache, getDigitalSprite, getLocalVillageSprite, getLocalVillageSpriteDirs } from '../app/services';
@@ -3778,9 +3779,12 @@ onBeforeUnmount(() => {
 
         <div v-else-if="noCompanion" class="survivor-overlay" role="dialog" aria-modal="true" aria-label="Você precisa de um companheiro">
           <div class="card survivor-pick">
-            <h2>Você precisa de um companheiro <button type="button" class="link" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
+            <h2>Você precisa de um companheiro <button type="button" class="survivor-secret-star" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
             <p class="note">A Torre usa Pokémon da sua coleção ou Digital Pokémon da Vila. Escaneie uma carta ou conclua o questionário inicial da Vila para receber seu primeiro companheiro.</p>
-            <button type="button" class="primary survivor-exit" @pointerdown.stop @click.stop="requestLeave">Sair da Torre</button>
+            <div class="survivor-nocomp-actions">
+              <a class="button primary" :href="routeHref('escanear')">📷 Escanear uma carta</a>
+              <button type="button" class="survivor-exit" @pointerdown.stop @click.stop="requestLeave">Voltar à Vila</button>
+            </div>
           </div>
         </div>
 
