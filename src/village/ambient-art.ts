@@ -76,8 +76,6 @@ export function drawFountainFx(ctx: CanvasRenderingContext2D, x: number, bottom:
 /** Cor do estandarte de cada prédio de modo de jogo: mesma peça, mesma madeira, só o pano muda. */
 const GAME_BANNERS: Readonly<Record<string, string>> = { arcade: '#e8743b', pins: '#3fa66a', arena: '#c94a4a', torre: '#4a7fd0', masmorra: '#8a5fc0' };
 
-export const isGameBuilding = (kind: string): boolean => kind in GAME_BANNERS;
-
 /**
  * Fachada comum da Rua dos Jogos: degrau de pedra sob o prédio e dois postes com lanterna e estandarte. Os prédios vêm de
  * folhas diferentes; esta moldura igual é o que os amarra à Vila. Blocos cheios, no pixel da arte, sem brilho caro.
@@ -113,9 +111,10 @@ export function drawGameFrontage(ctx: CanvasRenderingContext2D, kind: string, cx
     ctx.fillRect(px - 2 * u, base - 31 * u, 4 * u, 5 * u);
     ctx.fillStyle = night ? '#ffe9a8' : '#c9a45a';
     ctx.fillRect(px - u, base - 30 * u, 2 * u, 3 * u);
-    // Estandarte para o lado de fora, balançando um pixel com o vento.
+    // Estandarte balançando um pixel com o vento.
     const sway = animate ? Math.round(Math.sin(now / 620 + side)) * u : 0;
-    const bx = side < 0 ? px - 8 * u : px + u;
+    // Para dentro da fachada: há só um bloco entre um prédio e o vizinho.
+    const bx = side < 0 ? px + u : px - 8 * u;
     ctx.fillStyle = '#1f2a44';
     ctx.fillRect(bx - u, base - 25 * u, 9 * u, 12 * u);
     ctx.fillStyle = cloth;

@@ -1,4 +1,5 @@
-import { drawWaterFx, drawFountainFx, drawGameFrontage, drawSunRays, drawSoftShadow, drawSparkle, isGameBuilding } from './ambient-art';
+import { drawWaterFx, drawFountainFx, drawGameFrontage, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
+import { GAME_BUILDINGS } from './game-buildings-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
 import { CafeService } from '../core/village/cafe';
 import { CAFE_TABLES } from '../core/village/cafe-layout';
@@ -1991,18 +1992,35 @@ export class VillageGame {
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, level === 0 ? 'Terreno do Dojô' : b.name));
         continue;
       }
+      // Prédios dos modos de jogo: arte própria, na mesma família, com ou sem atlas.
+      const gameArt = GAME_BUILDINGS[b.kind];
+      if (gameArt) {
+        const img = this.sprite(`jogo:${b.kind}`, gameArt.paint);
+        const gw = img.width * scale;
+        const gh = img.height * scale;
+        const gx = Math.round(mid - gw / 2);
+        list.push({
+          y: buildingGroundY(b),
+          bounds: { x: gx, y: spriteBase - gh, w: gw, h: gh },
+          draw: () => {
+            drawDioramaTilted(mid, spriteBase, gw, () => drawDepthSprite(img, gx, spriteBase - gh, gw, gh));
+            drawGameFrontage(ctx, b.kind, mid, spriteBase, gw, scale, now, night, ambientFx);
+            this.drawTag(mid, spriteBase - gh - 2 * scale + Math.sin(now / 350) * scale, emoji);
+          },
+        });
+        if (night) for (const [wx0, wy0, ww, wh] of gameArt.windows) homeGlows.push({ x: gx + wx0 * scale, y: spriteBase - gh + wy0 * scale, w: ww * scale, h: wh * scale });
+        if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
+        continue;
+      }
       const civicId = CIVIC_TILESET[b.kind];
       const civicArt = atlas && civicId ? this.art(civicId) : null;
       if (civicArt && civicId) {
-        // A Torre sai 20% menor: com 144 px de altura, ela sumia com a rua e destoava dos vizinhos.
-        const maxWidth = b.kind === 'torre' ? wpx * 0.8 : wpx;
         list.push({
           y: buildingGroundY(b),
-          bounds: standBounds(civicArt, mid, spriteBase, maxWidth),
+          bounds: standBounds(civicArt, mid, spriteBase, wpx),
           draw: () => {
-            const at = stand(civicArt, mid, spriteBase, maxWidth);
+            const at = stand(civicArt, mid, spriteBase, wpx);
             if (night) lightUp(civicId, civicId, at);
-            if (isGameBuilding(b.kind)) drawGameFrontage(ctx, b.kind, mid, spriteBase, at.w, scale, now, night, ambientFx);
             this.drawTag(mid, at.y - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
         });
