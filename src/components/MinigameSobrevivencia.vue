@@ -1570,6 +1570,34 @@ function drawBonkEnemy(e: SurvivorEnemy, x: number, y: number, scale: number): v
 }
 
 /** Renderizador BONK: perspectiva suave, profundidade e sprites em billboard; o motor de combate é o mesmo da Torre. */
+/** Efeitos de golpe e de item no BONK: projeta os pontos na câmera e reaproveita a arte da visão de cima. */
+function drawBonkHeldFx(c: CanvasRenderingContext2D, fx: SurvivorState['fx'][number], project: (point: { x: number; y: number }, z?: number) => { x: number; y: number; scale: number } | null, detailed: boolean): boolean {
+  const t = fx.ageMs / Math.max(1, fx.lifeMs);
+  if (fx.kind === 'beam' || fx.kind === 'chain') {
+    const from = project({ x: fx.fromX ?? fx.x, y: fx.fromY ?? fx.y }, 16);
+    const to = project({ x: fx.toX ?? fx.x, y: fx.toY ?? fx.y }, 16);
+    if (!from || !to) return true;
+    c.save();
+    if (fx.kind === 'beam') drawFocusBeamFx(c, { ...fx, x: from.x, y: from.y, fromX: from.x, fromY: from.y + 8, toX: to.x, toY: to.y + 8, r: fx.r * ((from.scale + to.scale) / 2) }, t, detailed);
+    else drawChainFx(c, from.x, from.y, to.x, to.y, fx.color, t, fx.x + fx.y);
+    c.restore();
+    return true;
+  }
+  if (fx.kind !== 'portal' && fx.kind !== 'distort' && fx.kind !== 'bubble-pop' && fx.kind !== 'implode' && fx.kind !== 'held-hit' && fx.kind !== 'chest') return false;
+  const p = project(fx, 12);
+  if (!p) return true;
+  const r = fx.r * p.scale;
+  c.save();
+  if (fx.kind === 'portal') drawPortalFx(c, p.x, p.y, r, t, animMs);
+  else if (fx.kind === 'distort') drawDistortFx(c, p.x, p.y, r, t, animMs);
+  else if (fx.kind === 'bubble-pop') drawBubblePopFx(c, p.x, p.y, r, t, fx.count ?? 1);
+  else if (fx.kind === 'implode') drawImplodeFx(c, p.x, p.y, r, fx.color, t);
+  else if (fx.kind === 'held-hit') drawHeldHitFx(c, p.x, p.y, r, fx.color, fx.count ?? 1, t, fx.x * 0.13 + fx.y * 0.07);
+  else drawChestOpenFx(c, p.x, p.y, r, t);
+  c.restore();
+  return true;
+}
+
 function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   if (!ctx) return;
   const c = ctx;
@@ -1591,6 +1619,24 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
   if (move.category === 'aura') drawElementAuraField(c, s.player, move.type, toScreen, animMs, detailed);
   else if (move.category === 'cone') drawConeGuide(c, s.player, s.player.attackRange, move.type, toScreen, 1 - s.player.attackTimerMs / Math.max(1, s.player.attackCooldownMs));
   else if (move.category === 'orbit') drawOrbitPath(c, s.player, move.type, toScreen);
+  // Marcas dos transformadores no chão: a arte é a da visão de cima, deitada na perspectiva da câmera.
+  const onGround = (point: { x: number; y: number }, paint: () => void): void => {
+    const ground = drawPoint(point);
+    if (!ground) return;
+    c.save();
+    c.translate(ground.x, ground.y);
+    c.scale(ground.scale, ground.scale * 0.55);
+    paint();
+    c.restore();
+  };
+  if (!effectiveVisual.value.rotomMode) {
+    for (const well of s.gravityWells ?? []) onGround(well, () => drawGravityWell(c, 0, 0, well.radius, well.ageMs / Math.max(1, well.lifeMs), animMs, detailed));
+    for (const bubble of s.timeBubbles ?? []) onGround(bubble, () => drawTimeBubble(c, 0, 0, bubble.radius, bubble.ageMs / Math.max(1, bubble.lifeMs), animMs, detailed));
+    if ((s.player.heldMods?.gravity ?? 0) > 0) {
+      if (move.category === 'aura') onGround(s.player, () => drawSuctionField(c, 0, 0, s.player.attackRadius * 2.2, animMs, detailed));
+      else if (move.category === 'orbit') for (const orbiter of survivorOrbiters(s.player)) onGround(orbiter, () => drawSuctionField(c, 0, 0, 70, animMs, detailed));
+    }
+  }
   // Tudo que tem altura entra numa só ordenação: obstáculo na frente cobre o inimigo atrás, e vice-versa.
   const figures = bonkObstacleDrawables(c, physics, s.player, viewport, s.elapsedMs, art, nextArt, region.blend);
   for (const orb of s.orbs) {
@@ -1736,8 +1782,31 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     c.fillStyle = projectile.effect === 'stun' ? '#e6b6ff' : projectile.effect === 'slow' ? '#7bdcff' : '#ff6c64';
     c.beginPath(); c.arc(p.x, p.y, clamp(projectile.size * p.scale * 0.65, 1.5, 10), 0, Math.PI * 2); c.fill();
   }
+  if (!effectiveVisual.value.rotomMode) {
+    const lifted = (point: { x: number; y: number }, z: number): { x: number; y: number } | null => {
+      const p = drawPoint(point, z);
+      return p ? { x: p.x, y: p.y } : null;
+    };
+    const groups = destinyGroups(s).map((group) => group.map((e) => lifted(e, 18)).filter((p): p is { x: number; y: number } => p !== null)).filter((group) => group.length > 1);
+    if (groups.length > 0) drawDestinyChains(c, groups, animMs, detailed);
+    for (const mine of s.heldMines ?? []) {
+      const p = drawPoint(mine, 26);
+      if (p) drawStickyBarb(c, p.x, p.y, 1 - mine.timerMs / 1000, animMs);
+    }
+    if (move.category === 'orbit' && (s.player.heldMods?.mirror ?? 0) > 0) {
+      for (const orbiter of mirrorOrbiters(s.player, s.player.heldMods?.mirror ?? 1)) {
+        const p = drawPoint(orbiter, 16);
+        if (p) drawMirrorOrbiter(c, p.x, p.y, animMs);
+      }
+    }
+    for (const charge of s.heldCharges ?? []) {
+      const p = drawPoint(heldChargePosition(s.player, charge, s.elapsedMs), 22);
+      if (p) drawHeldChargeOrb(c, p.x, p.y, move.color, animMs, charge.slot);
+    }
+  }
   for (const fx of s.fx) {
     if (drawElementFx(c, fx, toScreen, animMs, detailed)) continue;
+    if (drawBonkHeldFx(c, fx, drawPoint, detailed)) continue;
     if (fx.kind !== 'blast' && fx.kind !== 'pulse' && fx.kind !== 'defeat' && fx.kind !== 'rush') continue;
     const p = drawPoint(fx);
     if (!p) continue;

@@ -35,7 +35,7 @@ Itens segurados (*held items*) são recompensas que valem só durante a corrida 
 
 | Item | Original (geração) | Referência ao jogo | Efeito na Torre | Formas | Visual próprio |
 |---|---|---|---|---|---|
-| Orbe da Vida | Life Orb (4) | força em troca de vida | +30% de dano por cópia; acertar custa 0,7 de vida por cópia, no máximo a cada 0,4 s, nunca abaixo de 25% | todas | anel roxo nos disparos |
+| Orbe da Vida | Life Orb (4) | força em troca de vida | ×1,3 de dano por cópia (multiplica: 2 cópias dão ×1,69); acertar custa 0,7 de vida por cópia, no máximo a cada 0,4 s, nunca abaixo de 25% | todas | anel roxo nos disparos |
 | Sino Concha | Shell Bell (3) | cura com o dano | cura 4% do dano por cópia, até 3 de vida por segundo por cópia | todas | — |
 | Cinto Expert | Expert Belt (4) | reforça golpes super efetivos | +25% de dano por cópia contra elites, treinadores e chefões | todas | — |
 | Faixa Muscular | Muscle Band (4) | golpes mais fortes | +12% de dano por cópia e empurrão em inimigos comuns | todas | empurrão |
@@ -121,4 +121,4 @@ Brilhos e faíscas seguem a opção «efeitos detalhados». O Modo Rotom esconde
 
 - O equilíbrio não foi medido em corrida real. Orbe da Vida e Pó Prateado empilhados são os candidatos a ficar fortes demais; os números estão em `HELD_ITEMS` e `heldMods`.
 - Os apoios (aliados) não usam os itens: os itens valem só para o golpe de quem joga.
-- No modo BONK, baús, chaves e as marcas nos disparos aparecem, mas os itens girando em volta do Pokémon só aparecem na vista de cima.
+- No modo BONK, baús, chaves, marcas nos disparos, buracos negros, bolhas de tempo, correntes, farpas, orbes da Erva Poderosa e os efeitos de acerto aparecem, projetados na câmera. Ainda só na vista de cima: os itens girando em volta do Pokémon, o rastro espelhado da Trilha e a aura de carga do Foco e do Teleporte.
