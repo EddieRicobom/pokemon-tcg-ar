@@ -42,6 +42,7 @@ import {
 import type { Cell, DungeonState, Enemy, EnemySpecies, Intent, MechanicId, MemberInput, RewardId, WeaponPattern } from '../core/dungeon';
 import { GEMS, gemName, LEGENDARY_SLOT as LEGENDARY_SLOT_INDEX, polishable, tierName } from '../core/dungeon-gems';
 import type { Gem, GemKind } from '../core/dungeon-gems';
+import type { VillageState } from '../core/village/life';
 
 /**
  * Masmorra (protótipo jogável do `future project/IDEIAS_DO_JOGO.md`): monta a equipe com Pokémon de verdade da coleção
@@ -217,7 +218,7 @@ const bringLunch = ref(true);
 const rewards = ref<ExpeditionRewards | null>(null);
 let settled = false;
 /** O que saiu da Vila nesta descida (gemas do cofre e marmita): volta se a tela fechar no meio, sem queda nem saída. */
-let broughtFromVillage: { gems: Gem[]; lunchbox: unknown } | null = null;
+let broughtFromVillage: { gems: Gem[]; lunchbox: VillageState['tower']['lunchbox'] } | null = null;
 function readVillage(): void {
   withVillage((v) => {
     vaultGems.value = v.dungeon.gems.map((g) => ({ ...g }));
@@ -273,7 +274,7 @@ function refundIfAbandoned(): void {
   if (brought.gems.length === 0 && brought.lunchbox == null) return;
   withVillage((v) => {
     v.dungeon.gems.push(...brought.gems);
-    if (brought.lunchbox != null && v.tower.lunchbox == null) v.tower.lunchbox = brought.lunchbox as typeof v.tower.lunchbox;
+    if (brought.lunchbox != null && v.tower.lunchbox == null) v.tower.lunchbox = brought.lunchbox;
     return true;
   });
 }
@@ -294,7 +295,7 @@ function begin(seed?: number): void {
   if (!pvp.value) {
     let taken: Gem[] = [];
     let lunch: ReturnType<typeof lunchEffectFor> = null;
-    let lunchbox: unknown = null;
+    let lunchbox: VillageState['tower']['lunchbox'] = null;
     withVillage((v) => {
       taken = takeFromVault(v, takeIds.value);
       if (bringLunch.value && v.tower.lunchbox) {
