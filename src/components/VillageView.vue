@@ -12,9 +12,10 @@ import { browserDecoders, loadCreatureEntries } from '../box/load-creatures';
 import { routeHref } from '../app/route';
 import type { VilaExit } from '../app/route';
 import { handleDialogEscape, isGameKeyboardControl } from '../app/game-keyboard';
-import { stopCamera } from '../core/camera';
+import { CameraError, startRearCamera, stopCamera } from '../core/camera';
+import { loadChunk } from '../app/stale-build';
 import type { RunningVillageAr } from '../ar/start-village';
-import { VILLAGE_SCALE_RANGE, normalizeVillageScale } from '../core/village/ar-diorama';
+import { VILLAGE_DIORAMA_BANDS, VILLAGE_SCALE_RANGE, normalizeVillageScale } from '../core/village/ar-diorama';
 import { canNickname, displayName, MAX_NICK_LEN, nickIdeas, nicknameOf, setNickname } from '../core/village/nickname';
 import { minimapPixels, minimapTileAt } from '../village/minimap';
 import { loadTrainerAtlas } from '../village/trainer-atlas';
@@ -135,7 +136,9 @@ const props = withDefaults(defineProps<{ towerOnly?: boolean }>(), { towerOnly: 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const dioramaFloorEl = ref<HTMLCanvasElement | null>(null);
 const dioramaPropsEl = ref<HTMLCanvasElement | null>(null);
+const dioramaBands = Array.from({ length: VILLAGE_DIORAMA_BANDS }, () => document.createElement('canvas'));
 const arVideoEl = ref<HTMLVideoElement | null>(null);
+const arCanvasEl = ref<HTMLCanvasElement | null>(null);
 const wrapEl = ref<HTMLElement | null>(null);
 const loading = ref('Abrindo a sua Vila…');
 const toast = ref('');
@@ -179,6 +182,40 @@ const syncReducedMotion = (event: MediaQueryListEvent) => {
   reducedMotion.value = event.matches;
   if (wrapEl.value) game?.resize(wrapEl.value.clientWidth, wrapEl.value.clientHeight);
 };
+
+let arStarting = false;
+let arGeneration = 0;
+async function toggleArBeta(): Promise<void> {
+  if (arActive.value) { stopArBeta(); sheet.value = null; return; }
+  if (arStarting) return;
+  const video = arVideoEl.value;
+  const canvas = arCanvasEl.value;
+  const wrap = wrapEl.value;
+  const floor = dioramaFloorEl.value;
+  const props = dioramaPropsEl.value;
+  if (!video || !canvas || !wrap || !game || !floor || !props) return;
+  arStarting = true;
+  const generation = ++arGeneration;
+  try {
+    const stream = await startRearCamera(video);
+    if (generation !== arGeneration) { stopCamera(video, stream); return; }
+    arStream = stream;
+    game.setDioramaView(true);
+    arActive.value = true;
+    const { startVillageAr } = await loadChunk(() => import('../ar/start-village'));
+    if (generation !== arGeneration) return;
+    const running = await startVillageAr({ video, canvas, container: wrap, villageFloorCanvas: floor, villagePropsCanvas: props, villageBandCanvases: dioramaBands });
+    if (generation !== arGeneration) { running.stop(); return; }
+    villageAr = running;
+    villageAr.setScale(arScale.value);
+    sheet.value = null;
+    say('Aponte para baixo e toque na tela para posicionar a Vila no chão estimado.', 7000);
+  } catch (error) {
+    if (generation !== arGeneration) return;
+    stopArBeta();
+    say(error instanceof CameraError ? error.message : 'Não foi possível abrir a câmera.', 5000);
+  } finally { arStarting = false; }
+}
 
 function placeVillageAr(): void {
   const result = villageAr?.recenter();
@@ -229,6 +266,7 @@ function setVillageArScale(value: number): void {
 }
 
 function stopArBeta(): void {
+  arGeneration++;
   villageAr?.stop();
   villageAr = null;
   stopCamera(arVideoEl.value, arStream);
@@ -301,7 +339,7 @@ const menuGroups = computed<{ title: string; desc?: string; tiles: MenuTile[] }[
   {
     title: 'Fora da Vila',
     tiles: [
-      { icon: '📷', label: 'Diorama AR', hint: 'temporariamente indisponível', disabled: true },
+      { icon: '📷', label: arActive.value ? 'Sair do diorama AR' : 'Diorama AR experimental', hint: 'posição estimada pelos sensores', run: () => { void toggleArBeta(); } },
       { href: routeHref('treinador'), icon: '🏅', label: 'Passaporte', hint: `Nv. ${trainerLevel.value}` },
     ],
   },
@@ -3205,6 +3243,7 @@ onMounted(async () => {
   game = new VillageGame(canvasEl.value, map, state, villagers, profile.sprite, groundTile, atlas, trainerAtlas, undefined, {
     floor: dioramaFloorEl.value ?? undefined,
     props: dioramaPropsEl.value ?? undefined,
+    bands: dioramaBands,
   });
   game.harvestedToday = (x, y) => state.harvested[`${x},${y}`] === day.value;
   game.onStep = () => { changed(); updateWorldProgress(); checkMewBlessing(); checkTapInteraction(); checkGuidedTrip(); };

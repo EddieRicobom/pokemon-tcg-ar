@@ -1,3 +1,4 @@
+import { VILLAGE_DIORAMA_BANDS, villageDioramaBand, villageDioramaBandBounds } from '../core/village/ar-diorama';
 import { drawWaterFx, drawFountainFx, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
 import { GAME_BUILDINGS } from './game-buildings-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
@@ -248,7 +249,7 @@ export class VillageGame {
     trainerAtlas?: TrainerAtlas | null,
     private readonly rng: Rng = Math.random,
     /** No AR, o piso e os recortes são texturas distintas: evita uma placa opaca sobre a câmera. */
-    private readonly dioramaLayers?: { floor?: HTMLCanvasElement; props?: HTMLCanvasElement },
+    private readonly dioramaLayers?: { floor?: HTMLCanvasElement; props?: HTMLCanvasElement; bands?: HTMLCanvasElement[] },
   ) {
     this.ctx = canvas.getContext('2d')!;
     let atlas: VillaAtlas | null = null;
@@ -773,6 +774,11 @@ export class VillageGame {
         this.dioramaLayers.props.width = width;
         this.dioramaLayers.props.height = height;
       }
+      this.dioramaLayers?.bands?.forEach((canvas, index) => {
+        const bounds = villageDioramaBandBounds(index, height);
+        canvas.width = width;
+        canvas.height = bounds.bottom - bounds.top;
+      });
       this.scale = 1;
     }
   }
@@ -1432,7 +1438,8 @@ export class VillageGame {
 
   /** Uma única simulação, renderizada em camadas quando o Diorama AR está aberto. */
   private drawLayer(now: number, layer: 'scene' | 'floor' | 'props'): void {
-    const { ctx, canvas } = this;
+    const canvas = this.canvas;
+    let ctx = this.ctx;
     const W = canvas.width;
     const H = canvas.height;
     const scale = this.scale;
@@ -2269,10 +2276,27 @@ export class VillageGame {
     const playerBounds = hd2dPerspectiveBounds({ x: sx(pp.x + 0.5) - 6 * scale, y: playerBase - PLAYER_H * scale, w: 12 * scale, h: PLAYER_H * scale }, playerBase, hd2d ? hd2dPerspectiveScale(playerBase, H) : 1);
     const blockers = hd2d ? new Set(list.filter((d) => d.bounds && hd2dOccludes(hd2dPerspectiveBounds(d.bounds, sy(d.y), hd2dPerspectiveScale(sy(d.y), H)), playerBounds, sy(d.y)))) : null;
     const occlusionAlpha = hd2dOcclusionOpacity(blockers?.size ?? 0);
+    const bandContexts = layer === 'props' && this.dioramaLayers?.bands?.length === VILLAGE_DIORAMA_BANDS
+      ? this.dioramaLayers.bands.map((band, index) => {
+          const context = band.getContext('2d')!;
+          context.setTransform(1, 0, 0, 1, 0, 0);
+          context.clearRect(0, 0, band.width, band.height);
+          context.imageSmoothingEnabled = false;
+          context.translate(0, -villageDioramaBandBounds(index, H).top);
+          return context;
+        }) : null;
+    const effectsContext = ctx;
     for (const d of list) {
+      if (bandContexts) ctx = bandContexts[villageDioramaBand(sy(d.y), H)]!;
       depthBand = hd2d ? hd2dDepthBand(d.y, focusDepth) : 0;
       if (!hd2d) {
-        d.draw();
+        if (bandContexts) {
+          const bounds = villageDioramaBandBounds(villageDioramaBand(sy(d.y), H), H);
+          ctx.save();
+          ctx.translate(0, bounds.anchor - sy(d.y));
+          d.draw();
+          ctx.restore();
+        } else d.draw();
         continue;
       }
       // A projeção e a ordem dos pés mantêm o volume. Opacidade por item
@@ -2285,6 +2309,7 @@ export class VillageGame {
         ctx.globalAlpha = previousAlpha;
       } else d.draw();
     }
+    ctx = effectsContext;
     depthBand = 0;
 
     // Partículas do mundo (poeira, folhas, fumaça, puf) e borboletas.

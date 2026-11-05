@@ -16,3 +16,17 @@ export function normalizeVillageScale(value: unknown): number {
   return Math.min(VILLAGE_SCALE_RANGE.max, Math.max(VILLAGE_SCALE_RANGE.min, number));
 }
 
+
+/** Faixas de profundidade agrupam sprites sem um mesh ou textura por objeto. */
+export const VILLAGE_DIORAMA_BANDS = 6;
+export const VILLAGE_DIORAMA_BAND_PADDING = 160;
+
+export function villageDioramaBand(y: number, height: number): number {
+  return Math.max(0, Math.min(VILLAGE_DIORAMA_BANDS - 1, Math.floor(y / height * VILLAGE_DIORAMA_BANDS)));
+}
+
+export function villageDioramaBandBounds(index: number, height: number): { top: number; bottom: number; anchor: number } {
+  const start = Math.floor(index * height / VILLAGE_DIORAMA_BANDS);
+  const end = Math.floor((index + 1) * height / VILLAGE_DIORAMA_BANDS);
+  return { top: start - VILLAGE_DIORAMA_BAND_PADDING, bottom: end + 32, anchor: (start + end) / 2 };
+}
