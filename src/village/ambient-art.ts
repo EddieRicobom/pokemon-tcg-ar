@@ -73,59 +73,6 @@ export function drawFountainFx(ctx: CanvasRenderingContext2D, x: number, bottom:
   ctx.restore();
 }
 
-/** Cor do estandarte de cada prédio de modo de jogo: mesma peça, mesma madeira, só o pano muda. */
-const GAME_BANNERS: Readonly<Record<string, string>> = { arcade: '#e8743b', pins: '#3fa66a', arena: '#c94a4a', torre: '#4a7fd0', masmorra: '#8a5fc0' };
-
-/**
- * Fachada comum da Rua dos Jogos: degrau de pedra sob o prédio e dois postes com lanterna e estandarte. Os prédios vêm de
- * folhas diferentes; esta moldura igual é o que os amarra à Vila. Blocos cheios, no pixel da arte, sem brilho caro.
- */
-export function drawGameFrontage(ctx: CanvasRenderingContext2D, kind: string, cx: number, base: number, width: number, scale: number, now: number, night: boolean, animate: boolean): void {
-  const cloth = GAME_BANNERS[kind];
-  if (!cloth) return;
-  const u = scale;
-  const half = width / 2;
-  const left = Math.round(cx - half - 4 * u);
-  const span = Math.round(width + 8 * u);
-  ctx.save();
-  ctx.fillStyle = '#5f5d57';
-  ctx.fillRect(left, base + u, span, u);
-  ctx.fillStyle = '#8d8a80';
-  ctx.fillRect(left, base - u, span, 2 * u);
-  ctx.fillStyle = '#b5b1a4';
-  ctx.fillRect(left, base - u, span, u);
-  for (const side of [-1, 1] as const) {
-    const px = Math.round(cx + side * (half + 3 * u));
-    ctx.fillStyle = '#2b2f3f';
-    ctx.fillRect(px - u, base - 26 * u, 2 * u, 26 * u);
-    ctx.fillRect(px - 2 * u, base - 2 * u, 4 * u, 2 * u);
-    if (night) {
-      ctx.globalAlpha = 0.28;
-      ctx.fillStyle = '#ffd98a';
-      ctx.beginPath();
-      ctx.arc(px, base - 28 * u, 11 * u, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    ctx.fillStyle = '#2b2f3f';
-    ctx.fillRect(px - 2 * u, base - 31 * u, 4 * u, 5 * u);
-    ctx.fillStyle = night ? '#ffe9a8' : '#c9a45a';
-    ctx.fillRect(px - u, base - 30 * u, 2 * u, 3 * u);
-    // Estandarte balançando um pixel com o vento.
-    const sway = animate ? Math.round(Math.sin(now / 620 + side)) * u : 0;
-    // Para dentro da fachada: há só um bloco entre um prédio e o vizinho.
-    const bx = side < 0 ? px + u : px - 8 * u;
-    ctx.fillStyle = '#1f2a44';
-    ctx.fillRect(bx - u, base - 25 * u, 9 * u, 12 * u);
-    ctx.fillStyle = cloth;
-    ctx.fillRect(bx, base - 24 * u, 7 * u, 9 * u);
-    ctx.fillRect(bx + 2 * u + sway, base - 15 * u, 3 * u, 2 * u);
-    ctx.fillStyle = '#fff3c9';
-    ctx.fillRect(bx, base - 24 * u, 7 * u, u);
-  }
-  ctx.restore();
-}
-
 export function drawSunRays(ctx: CanvasRenderingContext2D, width: number, height: number, now: number, strength: number): void {
   if (strength <= 0.01) return;
   ctx.save();
