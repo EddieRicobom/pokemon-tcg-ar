@@ -14,7 +14,7 @@ Os comandos e arquivos abaixo descrevem a cobertura disponível. O resultado de 
 
 ## O que roda a cada pull request e a cada deploy
 
-`ci.yml` (pull requests e `main`) e `deploy.yml` (antes de publicar):
+`deploy.yml` (antes de publicar; `ci.yml` está desativado no GitHub, então pull request não roda nada):
 
 | Verificação | Comando | O que cobre |
 | --- | --- | --- |

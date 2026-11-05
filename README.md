@@ -6,9 +6,8 @@
 
 **Uma carta física vira uma porta para uma pequena aventura.**
 
-Escaneie cartas reais, veja o Pokémon em AR, cuide da sua Vila e leve sua coleção para a Caixa, Arena, Pins e Torre de Sobrevivência.
+Escaneie cartas reais, veja o Pokémon em AR, cuide da sua Vila e leve sua coleção para a Caixa, Arena, Pins, Torre de Sobrevivência e Masmorra.
 
-[![CI](https://github.com/EddieRicobom/pokemon-tcg-ar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/EddieRicobom/pokemon-tcg-ar/actions/workflows/ci.yml)
 [![Deploy](https://github.com/EddieRicobom/pokemon-tcg-ar/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/EddieRicobom/pokemon-tcg-ar/actions/workflows/deploy.yml)
 [![Licença MIT](https://img.shields.io/badge/código-MIT-2f855a)](LICENSE)
 [![Vue 3](https://img.shields.io/badge/Vue%203-TypeScript-42b883?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
@@ -32,6 +31,8 @@ Digital Holo é uma PWA mobile-first que combina coleção física, reconhecimen
 
 O projeto é totalmente estático e roda no GitHub Pages. Não há servidor próprio, conta obrigatória ou banco remoto. O progresso fica no navegador e pode ser exportado para backup.
 
+**Câmera e AR pedem um celular de verdade**, com câmera traseira e HTTPS. Os modos sem câmera (Vila, Arena, Pins, Torre e Masmorra) funcionam também no computador.
+
 ## A experiência em uma tela
 
 | Modo | Experiência |
@@ -39,9 +40,10 @@ O projeto é totalmente estático e roda no GitHub Pages. Não há servidor pró
 | **Escanear** | Corrige a perspectiva, usa OCR e confirma a impressão no catálogo antes de mostrar o sprite 2D rastreado sobre a carta. Também há rastreamento de até quatro cartas. |
 | **Vila** | Hub narrativo com exploração, moradores, amizade, histórias, Diário, casas, móveis, roupas, fazenda, mina, madeireira, pescaria, festivais e descobertas. |
 | **Caixa em AR** | Coloca sua equipe no espaço com câmera e orientação. A batalha é uma apresentação automática para ver os Pokémon juntos, não um RPG manual completo. |
-| **Arena** | Liga, Ginásios, Elite 4, Campeã e partidas ligadas à equipe da Caixa. |
-| **Pins** | Disputas sem câmera com física, efeitos elementais e partidas PvP. |
-| **Torre** | Survival com ondas, treinadores, regiões, escolhas de buffs, artefatos, meta-progressão e recompensas persistentes para corridas concluídas. |
+| **Arena** | Duelo por turnos em que você escolhe cada golpe, com os efeitos dos jogos, além de Liga, Corridas 6×6 e PvP. A batalha livre é automática. |
+| **Pins** | Disputas sem câmera numa arena com paredes e aberturas: escolha a formação, mire de tabela e empurre os adversários para fora. Tem PvP. |
+| **Torre** | Survival com ondas, treinadores, regiões, baús com itens segurados, artefatos, meta-progressão e recompensas persistentes para corridas concluídas. |
+| **Masmorra** | Descida tática por turnos em andares sem fim, com armas, gemas e fusões. A descida fica guardada no aparelho. |
 | **Cartas** | Box local, filtros, seleção de Vila/equipe, evolução de companheiros e entrada para a Caixa. |
 | **Treinador** | Perfil, XP, missões, moedas, conquistas, minigames e backup local ou opcional no Google Drive. |
 
@@ -179,20 +181,20 @@ npm run verify:sprite-pack
 npm run preview
 ```
 
-O CI roda tipos, testes, verificação dos atlas, build e conferência do `dist/`. Testes automatizados usam câmera falsa e WebGL por software; eles não medem bateria, calor, sensores ou GPU de celular. Consulte [docs/TESTING.md](docs/TESTING.md) e [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
+O deploy na `main` roda tipos, testes, verificação dos atlas, build e conferência do `dist/`, e só publica se tudo passar. Os workflows de CI em pull request e de testes ponta a ponta estão desativados: rode os comandos acima antes de mesclar. Testes automatizados usam câmera falsa e WebGL por software; eles não medem bateria, calor, sensores ou GPU de celular. Consulte [docs/TESTING.md](docs/TESTING.md) e [docs/TESTE_NO_CELULAR.md](docs/TESTE_NO_CELULAR.md).
 
 ## Limites atuais e próximos passos
 
-- A batalha da Caixa continua sendo uma exibição automática; controle manual de golpes, itens e trocas é parte do plano futuro.
+- A batalha da Caixa continua sendo uma exibição automática. O controle de golpes e trocas fica no duelo por turnos da Arena.
 - AR real depende de câmera, carta, iluminação, sensores e navegador compatíveis.
 - O catálogo e os sprites são carregados sob demanda para não transformar a primeira abertura em um download enorme.
 - O estado detalhado do roteiro fica em [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 ## Documentação e créditos
 
-- [Arquitetura](docs/ARCHITECTURE.md) · [Testes](docs/TESTING.md) · [Teste no celular](docs/TESTE_NO_CELULAR.md)
+- [Índice da documentação](docs/README.md) · [Arquitetura](docs/ARCHITECTURE.md) · [Testes](docs/TESTING.md) · [Teste no celular](docs/TESTE_NO_CELULAR.md)
 - [Atlas de treinadores](docs/TRAINER_ART.md) · [Backup no Google Drive](docs/BACKUP_NUVEM.md)
 - [Histórico de mudanças](CHANGELOG.md) · [Avisos de terceiros](THIRD_PARTY_NOTICES.md)
 - [Créditos de áudio](public/audio/CREDITS.md)
 
-Contribuições devem usar uma branch `Codex/...`, commits pequenos em português e pull request. A `main` recebe mudanças depois do CI verde.
+Contribuições devem usar uma branch `claude/...` ou `codex/...`, commits pequenos em português e pull request. A `main` só é publicada quando o deploy passa.

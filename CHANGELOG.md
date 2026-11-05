@@ -4,6 +4,15 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). 
 
 ## [Não lançado]
 
+### Lapidação geral (2026-11-05)
+
+- Arena: duelo por turnos como primeira opção, com golpes sugeridos, histórico, os efeitos dos jogos (proteger, dois turnos, recarga, dano fixo, clima, telas e outros) e animação por golpe.
+- Pins: arena com o dobro do raio, minimapa, paredes e aberturas sorteadas, gramado legível, 5 formações, impacto nos choques, combos e estilos de adversário.
+- Torre: imagem nítida, aviso antes dos ataques, Pokémon do jogador caprichado, baús com itens segurados e transformadores, menus alinhados.
+- Masmorra: descida guardada com «continuar», inimigos rápidos, guia na primeira descida e tremor ao apanhar.
+- Vila: correções de fazenda, carteiro, loja, mochila cheia e pedidos.
+- Interface: tamanhos maiores no celular e alvos de toque de 44 px.
+
 ### Biomas mecânicos na Torre (2026-10-19)
 
 - Kanto, Hoenn e Sinnoh ganharam zonas ambientais visíveis e determinísticas: folhagem desacelera o passo e projéteis, poças desaceleram e amplificam golpes Elétricos, e neve reduz mais a velocidade.
