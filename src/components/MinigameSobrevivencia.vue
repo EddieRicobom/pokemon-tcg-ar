@@ -68,7 +68,7 @@ import { omegaShardCount, settleOmegaShard, survivorMegaForm, survivorMegaForms,
 import type { SurvivorMegaForm, SurvivorMegaSprite } from '../core/survivor-mega';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { DecodedGif } from '../core/gif';
-import { firstSpriteFrame, frameIndex, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
+import { firstSpriteFrame, frameIndex, polishedFrame, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
 import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
@@ -1245,7 +1245,7 @@ function joyCancel(e: PointerEvent): void {
   joyUp(e);
 }
 
-function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down', accessory?: string | null): void {
+function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down', accessory?: string | null, polished = false): void {
   if (!ctx) return;
   if (!asset) {
     ctx.fillStyle = 'rgba(110,116,130,0.92)';
@@ -1269,7 +1269,18 @@ function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boole
   const fit = accessory ? accessoryFit(accessory, sprite, x, y + top, w, h, scale, facing, mirror) : null;
   if (fit?.behind) drawAccessoryOverlay(fit);
   // Sem espelho, a posição entra direto no desenho: sem `save`/`restore` por inimigo (são a parte mais cara aqui).
-  if (!mirror) ctx.drawImage(frame, x + left, y + top, w, h);
+  const smoothing = effectiveVisual.value.smoothing;
+  const fine = polished && renderScale.value > 1 && smoothing !== 'nitido' ? polishedFrame(frame, smoothing) : null;
+  if (fine) {
+    const pad = fine.pad * (w / sprite.w);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.translate(x, y);
+    if (mirror) ctx.scale(-1, 1);
+    ctx.drawImage(fine.canvas, left - pad, top - pad, w + pad * 2, h + pad * 2);
+    ctx.restore();
+  } else if (!mirror) ctx.drawImage(frame, x + left, y + top, w, h);
   else {
     ctx.save();
     ctx.translate(x, y);
@@ -1331,7 +1342,14 @@ function drawShadowFlames(x: number, y: number, radius: number): void {
  * Poeira da corrida: nuvens soltas a cada passo ficam para trás no chão, crescem e somem; acima da velocidade inicial
  * saem mais, maiores e mais longe, e aparecem riscos de vento atrás do Pokémon. Só desenho, com Efeitos leves/Rotom desligada.
  */
+/** 0 (parado) a 1 (correndo) e o lado da corrida, suavizados para o corpo não dar trancos. */
+let playerStepping = 0;
+let playerLean = 0;
 function stepFootDust(movedX: number, movedY: number, dtMs: number): void {
+  const pace = Math.min(1, Math.hypot(movedX, movedY) / Math.max(1, dtMs) / 0.12);
+  const ease = Math.min(1, dtMs / 90);
+  playerStepping += (pace - playerStepping) * ease;
+  playerLean += (Math.sign(movedX) - playerLean) * ease;
   const puffs = footDust.puffs;
   // As nuvens guardam a posição relativa ao jogador; descontar o passo as deixa paradas no mundo.
   for (const puff of puffs) {
@@ -1578,7 +1596,7 @@ function drawDamageNumbers(worldToScreen: WorldToScreen): void {
 /** Sprite 2D voltado para a câmera (billboard): a perspectiva vem da projeção, não de um modelo 3D inventado. */
 function drawBonkBillboard(
   sprite: SpriteAsset | null, x: number, y: number, scale: number, flip = false, alpha = 1,
-  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0, direction: SurvivorSpriteDirection = 'down', accessory?: string | null,
+  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0, direction: SurvivorSpriteDirection = 'down', accessory?: string | null, polished = false,
 ): void {
   if (!ctx) return;
   ctx.save();
@@ -1593,9 +1611,9 @@ function drawBonkBillboard(
     // Achatado ao pousar (squash > 0), esticado ao subir (squash < 0), sempre com os pés no mesmo ponto.
     ctx.translate(x, y);
     ctx.scale(1 + squash * 0.7, 1 - squash);
-    drawSprite(sprite, 0, 0, flip, scale, direction, accessory);
+    drawSprite(sprite, 0, 0, flip, scale, direction, accessory, polished);
   } else {
-    drawSprite(sprite, x, y, flip, scale, direction, accessory);
+    drawSprite(sprite, x, y, flip, scale, direction, accessory, polished);
   }
   ctx.restore();
 }
@@ -1806,7 +1824,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.scale(motion.scaleX, motion.scaleY);
       drawBonkBillboard(playerBackSprite ?? playerSprite, motion.lunge * 18 * scale, 0, scale, bonkFacing < 0,
         s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0 ? 0.45 : 1,
-        { x: playerGround.x - playerPoint.x, y: playerGround.y - playerPoint.y, rx: shadow.rx, ry: shadow.ry }, squash, 'down', playerAccessory);
+        { x: playerGround.x - playerPoint.x, y: playerGround.y - playerPoint.y, rx: shadow.rx, ry: shadow.ry }, squash, 'down', playerAccessory, true);
       c.restore();
     } });
   }
@@ -2155,6 +2173,19 @@ function draw(): void {
   // Orbitais acima do Pokémon na tela passam por trás dele; os de baixo, pela frente.
   const orbiters = move.category === 'orbit' ? survivorOrbiters(s.player) : [];
   orbiters.forEach((orbiter, index) => { if (orbiter.y < s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
+  // Sombra e aro na cor do golpe: acham você no meio da multidão, mesmo piscando depois de um golpe.
+  if (!effectiveVisual.value.rotomMode) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(13, 23, 43, 0.3)';
+    ctx.beginPath();
+    ctx.ellipse(s.player.x, s.player.y, 15, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = move.color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
   if (!blink) {
     const motion = effectiveVisual.value.impactFx && !reducedMotion ? combatMotion(animMs - playerAttackAt) : combatMotion(-1);
     const aimAngle = s.player.aimAngle ?? (s.player.facing < 0 ? Math.PI : 0);
@@ -2164,7 +2195,14 @@ function draw(): void {
     ctx.translate(s.player.x, s.player.y);
     ctx.rotate(motion.rotation * s.player.facing);
     ctx.scale(motion.scaleX, motion.scaleY);
-    drawSprite(playerSprite, motion.lunge * 18 * aimX, motion.lunge * 12 * aimY, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(aimAngle, s.player.facing), playerAccessory);
+    // Vivo mesmo parado: respira de leve; andando, dá passinhos e inclina para onde vai.
+    const lively = !reducedMotion && !effectiveVisual.value.rotomMode;
+    const walking = lively && playerStepping > 0.15;
+    const hop = walking ? Math.abs(Math.sin(animMs / 105)) * 2.2 * playerStepping : 0;
+    const breath = lively && !walking ? Math.sin(animMs / 430) * 0.022 : 0;
+    if (walking) ctx.rotate(playerLean * 0.07 * playerStepping);
+    ctx.scale(1 - breath, 1 + breath);
+    drawSprite(playerSprite, motion.lunge * 18 * aimX, motion.lunge * 12 * aimY - hop, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(aimAngle, s.player.facing), playerAccessory, true);
     ctx.restore();
   }
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
