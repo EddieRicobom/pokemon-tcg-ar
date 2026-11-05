@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addCrater, cinemaLook, cinemaPower, CRATER_LIFE_MS, dropOldCraters, MAX_CRATERS } from './survivor-cinema';
+import { addCrater, cinemaLook, cinemaPower, MAX_CRATERS } from './survivor-cinema';
 import type { Crater } from './survivor-cinema';
 
 describe('luz cinematográfica da Torre', () => {
@@ -14,7 +14,7 @@ describe('luz cinematográfica da Torre', () => {
     expect(cinemaPower({ progressMs: 90 * 60_000, level: 99, bossOnField: true })).toBe(1);
   });
 
-  it('as crateras têm teto, crescem com a corrida e somem com o tempo', () => {
+  it('as crateras ficam, têm teto e crescem com a corrida', () => {
     const list: Crater[] = [];
     for (let i = 0; i < MAX_CRATERS + 10; i++) addCrater(list, i, 0, 60, 0, i);
     expect(list).toHaveLength(MAX_CRATERS);
@@ -22,8 +22,6 @@ describe('luz cinematográfica da Torre', () => {
     const late: Crater[] = [];
     addCrater(late, 0, 0, 60, 1, 0);
     expect(late[0]!.r).toBeGreaterThan(list[0]!.r);
-    dropOldCraters(late, CRATER_LIFE_MS + 1);
-    expect(late).toHaveLength(0);
   });
 
   it('chefão em campo pesa a cena', () => {

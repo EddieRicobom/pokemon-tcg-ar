@@ -1,4 +1,3 @@
-import { CRATER_LIFE_MS } from '../core/survivor-cinema';
 import type { CinemaLook, Crater } from '../core/survivor-cinema';
 
 /**
@@ -38,19 +37,19 @@ export interface CinemaLight {
   alpha: number;
 }
 
-/** Sombras longas, saindo do Pokémon para fora, todas num traço só. */
-export function drawCastShadows(c: CanvasRenderingContext2D, casters: readonly { x: number; y: number; radius: number }[], fromX: number, fromY: number, look: CinemaLook): void {
+/** Sombras na direção do sol, a mesma para todos, coladas nos pés e num traço só. */
+export function drawCastShadows(c: CanvasRenderingContext2D, casters: readonly { x: number; y: number; radius: number }[], look: CinemaLook): void {
   if (casters.length === 0) return;
   c.save();
-  c.fillStyle = 'rgba(4, 6, 18, 0.3)';
+  const angle = 0.5;
+  c.fillStyle = 'rgba(8, 10, 24, 0.38)';
   c.beginPath();
   for (const e of casters) {
-    const angle = Math.atan2(e.y - fromY, e.x - fromX);
     const reach = look.shadowLength + e.radius;
     const cx = e.x + Math.cos(angle) * reach * 0.7;
     const cy = e.y + Math.sin(angle) * reach * 0.7;
     const rx = reach;
-    const ry = Math.max(4, e.radius * 0.55);
+    const ry = Math.max(3, e.radius * 0.42);
     c.moveTo(cx + Math.cos(angle) * rx, cy + Math.sin(angle) * rx);
     c.ellipse(cx, cy, rx, ry, angle, 0, Math.PI * 2);
   }
@@ -58,33 +57,41 @@ export function drawCastShadows(c: CanvasRenderingContext2D, casters: readonly {
   c.restore();
 }
 
-/** Chão destruído: buraco escuro, borda clara e rachaduras. Em 3 faixas de idade, para cada uma ser um traço só. */
-export function drawCraters(c: CanvasRenderingContext2D, craters: readonly Crater[], nowMs: number): void {
-  if (craters.length === 0) return;
-  c.save();
-  c.lineCap = 'round';
-  for (let band = 0; band < 3; band++) {
-    c.globalAlpha = 0.75 - band * 0.25;
+/** Chão destruído para o resto da corrida: buraco de borda irregular, terra revirada e pedras soltas, em poucos traços. */
+export function drawCraters(c: CanvasRenderingContext2D, craters: readonly Crater[], view: { x: number; y: number; w: number; h: number }): void {
+  const visible = craters.filter((k) => k.x > view.x - 100 && k.x < view.x + view.w + 100 && k.y > view.y - 100 && k.y < view.y + view.h + 100);
+  if (visible.length === 0) return;
+  const outline = (grow: number): void => {
     c.beginPath();
-    const rims = new Path2D();
-    for (const crater of craters) {
-      if (Math.min(2, Math.floor(((nowMs - crater.bornMs) / CRATER_LIFE_MS) * 3)) !== band) continue;
-      const { x, y, r } = crater;
-      c.moveTo(x + r, y);
-      c.ellipse(x, y, r, r * 0.62, 0, 0, Math.PI * 2);
-      rims.moveTo(x + r, y - 2);
-      rims.ellipse(x, y - 2, r, r * 0.62, 0, 0, Math.PI);
-      for (let i = 0; i < 5; i++) {
-        const angle = i * 1.257 + x * 0.01;
-        rims.moveTo(x + Math.cos(angle) * r, y + Math.sin(angle) * r * 0.62);
-        rims.lineTo(x + Math.cos(angle) * r * 1.5, y + Math.sin(angle) * r * 0.93);
+    for (const { x, y, r } of visible) {
+      for (let i = 0; i <= 11; i++) {
+        const angle = (i % 11) * 0.5712;
+        const jag = 1 + 0.22 * Math.sin((i % 11) * 2.7 + x * 0.13 + y * 0.07);
+        const px = x + Math.cos(angle) * r * jag * grow;
+        const py = y + Math.sin(angle) * r * 0.66 * jag * grow;
+        if (i === 0) c.moveTo(px, py);
+        else c.lineTo(px, py);
       }
     }
-    c.fillStyle = 'rgba(16, 12, 14, 0.72)';
-    c.fill();
-    c.strokeStyle = 'rgba(40, 30, 28, 0.8)';
-    c.lineWidth = 1.5;
-    c.stroke(rims);
+  };
+  c.save();
+  // Terra revirada em volta, buraco escuro e fundo ainda mais fundo.
+  c.fillStyle = 'rgba(92, 66, 44, 0.75)';
+  outline(1.28);
+  c.fill();
+  c.fillStyle = 'rgba(34, 24, 22, 0.92)';
+  outline(1);
+  c.fill();
+  c.fillStyle = 'rgba(12, 9, 12, 0.9)';
+  outline(0.55);
+  c.fill();
+  // Pedras soltas na borda.
+  c.fillStyle = '#a89a86';
+  for (const { x, y, r } of visible) {
+    for (let i = 0; i < 6; i++) {
+      const angle = i * 1.1 + x * 0.05;
+      c.fillRect(Math.round(x + Math.cos(angle) * r * 1.2), Math.round(y + Math.sin(angle) * r * 0.8), 3, 2);
+    }
   }
   c.restore();
 }

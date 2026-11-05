@@ -1,4 +1,4 @@
-import { drawWaterFx, drawFountainFx, drawGameFrontage, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
+import { drawWaterFx, drawFountainFx, drawSunRays, drawSoftShadow, drawSparkle } from './ambient-art';
 import { GAME_BUILDINGS } from './game-buildings-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
 import { CafeService } from '../core/village/cafe';
@@ -1965,7 +1965,6 @@ export class VillageGame {
           bounds: { x: cx0, y: spriteBase - ch, w: cw, h: ch },
           draw: () => {
             drawDioramaTilted(mid, spriteBase, cw, () => drawDepthSprite(img, cx0, spriteBase - ch, cw, ch));
-            drawGameFrontage(ctx, b.kind, mid, spriteBase, cw, scale, now, night, ambientFx);
             this.drawTag(mid, spriteBase - ch - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
         });
@@ -2004,7 +2003,6 @@ export class VillageGame {
           bounds: { x: gx, y: spriteBase - gh, w: gw, h: gh },
           draw: () => {
             drawDioramaTilted(mid, spriteBase, gw, () => drawDepthSprite(img, gx, spriteBase - gh, gw, gh));
-            drawGameFrontage(ctx, b.kind, mid, spriteBase, gw, scale, now, night, ambientFx);
             this.drawTag(mid, spriteBase - gh - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
         });

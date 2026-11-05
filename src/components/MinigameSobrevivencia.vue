@@ -4,7 +4,7 @@ import MusicControls from './MusicControls.vue';
 import SurvivorDebug from './SurvivorDebug.vue';
 import AttackIcon from './AttackIcon.vue';
 import { MusicPlayer } from '../app/music-player';
-import { addCrater, cinemaLook, cinemaPower, dropOldCraters } from '../core/survivor-cinema';
+import { addCrater, cinemaLook, cinemaPower } from '../core/survivor-cinema';
 import type { Crater } from '../core/survivor-cinema';
 import { drawCastShadows, drawCraters, drawDarkness, drawLights } from '../village/survivor-cinema-art';
 import type { CinemaLight } from '../village/survivor-cinema-art';
@@ -2038,7 +2038,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     drawDarkness(c, look, playerPoint.x, playerPoint.y - 14, screen, animMs);
     const lights = cinemaLights;
     lights.length = 0;
-    lights.push({ x: playerPoint.x, y: playerPoint.y - 16, r: 70 + 40 * look.dark, color: move.color, alpha: 0.5 });
+    lights.push({ x: playerPoint.x, y: playerPoint.y - 16, r: 46, color: move.color, alpha: 0.22 });
     for (const proj of s.projectiles) {
       if (lights.length >= look.glows) break;
       const p = drawPoint(proj, 14);
@@ -2283,14 +2283,13 @@ function draw(): void {
       seenBlasts.add(f);
       addCrater(cinemaCraters, f.x, f.y, f.r, power, animMs);
     }
-    dropOldCraters(cinemaCraters, animMs);
-    drawCraters(ctx, cinemaCraters, animMs);
+    drawCraters(ctx, cinemaCraters, { x: camX, y: camY, w: worldViewW, h: worldViewH });
     cinemaCasters.length = 0;
     for (const e of s.enemies) {
       if (cinemaCasters.length >= cinema.shadows) break;
       if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) cinemaCasters.push(e);
     }
-    drawCastShadows(ctx, cinemaCasters, s.player.x, s.player.y, cinema);
+    drawCastShadows(ctx, [...cinemaCasters, { x: s.player.x, y: s.player.y, radius: 14 }], cinema);
   }
   for (const e of s.enemies) {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
@@ -2612,11 +2611,11 @@ function draw(): void {
     drawDarkness(ctx, cinema, s.player.x, s.player.y - 10, view, animMs);
     const lights = cinemaLights;
     lights.length = 0;
-    lights.push({ x: s.player.x, y: s.player.y - 12, r: 70 + 40 * cinema.dark, color: move.color, alpha: 0.5 });
+    lights.push({ x: s.player.x, y: s.player.y - 12, r: 46, color: move.color, alpha: 0.22 });
     for (const proj of s.projectiles) {
       if (lights.length >= cinema.glows) break;
       if (proj.x < left || proj.x > right || proj.y < top || proj.y > bottom) continue;
-      lights.push({ x: proj.x, y: proj.y, r: 14 + (proj.size ?? 4) * 2.4, color: proj.move?.color ?? move.color, alpha: 0.55 });
+      lights.push({ x: proj.x, y: proj.y, r: 10 + (proj.size ?? 4) * 1.6, color: proj.move?.color ?? move.color, alpha: 0.35 });
     }
     for (const f of s.fx) {
       if (lights.length >= cinema.glows) break;

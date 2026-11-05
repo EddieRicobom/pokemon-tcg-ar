@@ -32,19 +32,12 @@ export interface Crater {
 }
 
 /** No máximo tantas crateras ao mesmo tempo; a mais antiga dá lugar à nova. */
-export const MAX_CRATERS = 36;
-/** Quanto tempo a marca fica no chão. */
-export const CRATER_LIFE_MS = 24_000;
+export const MAX_CRATERS = 120;
 
-/** Marca o chão: o tamanho cresce com a força da corrida, e a lista nunca passa do teto. */
+/** Marca o chão para o resto da corrida: o tamanho cresce com a força da corrida, e a lista nunca passa do teto. */
 export function addCrater(list: Crater[], x: number, y: number, blastRadius: number, power: number, nowMs: number): void {
   if (list.length >= MAX_CRATERS) list.shift();
-  list.push({ x, y, r: Math.min(70, blastRadius * (0.3 + 0.3 * clamp01(power))), bornMs: nowMs });
-}
-
-/** Tira do começo da lista o que já sumiu (a lista está em ordem de criação). */
-export function dropOldCraters(list: Crater[], nowMs: number): void {
-  while (list.length > 0 && nowMs - list[0]!.bornMs > CRATER_LIFE_MS) list.shift();
+  list.push({ x, y, r: Math.min(90, blastRadius * (0.45 + 0.45 * clamp01(power))), bornMs: nowMs });
 }
 
 export interface CinemaLook {
@@ -77,8 +70,8 @@ export function cinemaLook(power: number, lite: boolean): CinemaLook {
   const budget = lite ? 0.5 : 1;
   const blood = clamp01((p - 0.5) / 0.5);
   return {
-    dark: 0.14 + 0.56 * p,
-    lightRadius: 210 - 70 * p,
+    dark: 0.12 + 0.3 * p,
+    lightRadius: 230 - 50 * p,
     tint: [
       Math.round(NIGHT[0] + (BLOOD[0] - NIGHT[0]) * blood),
       Math.round(NIGHT[1] + (BLOOD[1] - NIGHT[1]) * blood),
@@ -86,9 +79,9 @@ export function cinemaLook(power: number, lite: boolean): CinemaLook {
     ],
     glows: Math.round((10 + 26 * p) * budget),
     shadows: Math.round((12 + 28 * p) * budget),
-    shadowLength: 8 + 30 * p,
-    rays: p < 0.4 ? 0 : lite ? 4 : 8,
-    rayAlpha: p < 0.4 ? 0 : (p - 0.4) * 0.3,
+    shadowLength: 6 + 14 * p,
+    rays: p < 0.85 ? 0 : lite ? 2 : 4,
+    rayAlpha: p < 0.85 ? 0 : 0.06,
     embers: Math.round(30 * clamp01((p - 0.2) / 0.8) * budget),
     finale: p >= 0.92,
   };
