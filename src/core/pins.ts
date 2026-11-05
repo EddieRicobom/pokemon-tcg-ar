@@ -21,6 +21,15 @@ export type { Spot };
 export const ARENA_RADIUS = 1320;
 /** Distância de arrasto (em unidades) que dá a força máxima. */
 export const MAX_PULL = 300;
+/** Zoom da câmera: o mais longe mostra metade do lado da arte, sem revelar o vazio em volta do tabuleiro. */
+export const PIN_ZOOM = { min: 2, max: 6, step: 0.5, initial: 4 } as const;
+
+/** Traz um zoom qualquer (slider ou valor guardado) para a faixa e o passo do slider. */
+export function normalizePinZoom(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return PIN_ZOOM.initial;
+  const snapped = Math.round(value / PIN_ZOOM.step) * PIN_ZOOM.step;
+  return Math.max(PIN_ZOOM.min, Math.min(PIN_ZOOM.max, snapped));
+}
 /** Arrasto menor que isso cancela o disparo. */
 export const MIN_PULL = 28;
 /** Velocidade de saída do disparo com força máxima e `shot` = 1. */

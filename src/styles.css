@@ -4017,33 +4017,45 @@ body.no-scroll .reward-toasts {
   color: #ffb35c;
 }
 
-/* Zoom da câmera: três níveis fixos, no canto da arena (o toque aqui não puxa o pin). */
+/* Zoom da câmera: slider no canto da arena, ao lado do minimapa (o toque aqui não puxa o pin). */
 .pin-zoom {
   position: absolute;
   z-index: 5;
-  left: 4px;
-  top: 4px;
+  left: 6px;
+  top: 8px;
   display: flex;
-  gap: 1px;
-  padding: 2px;
+  align-items: center;
+  gap: 6px;
+  width: min(190px, calc(100% - 118px));
+  min-height: 44px;
+  padding: 0 12px 0 10px;
   border: 1px solid rgb(255 255 255 / 22%);
   border-radius: 999px;
   background: rgb(8 13 26 / 72%);
   backdrop-filter: blur(3px);
+  touch-action: none;
 }
-.pin-zoom button {
-  min-width: 40px;
-  min-height: 40px;
-  padding: 0 5px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: #cfd8f2;
-  font: inherit;
+.pin-zoom-value {
+  flex: none;
+  min-width: 2.2em;
+  color: var(--gold);
   font-size: .78rem;
   font-weight: 800;
+  text-align: center;
 }
-.pin-zoom button.on { background: var(--gold); color: #1b2036; }
+.pin-zoom input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--gold);
+  touch-action: none;
+  cursor: pointer;
+}
 /* Minimapa: a arena inteira no canto; tocar leva a câmera até lá. */
 .pin-minimap { position: absolute; top: 8px; right: 8px; z-index: 12; width: 96px; height: 96px; border-radius: 50%; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); touch-action: none; cursor: pointer; }
 .pn-formations { display: grid; gap: 8px; }
@@ -4055,7 +4067,7 @@ body.no-scroll .reward-toasts {
 .pn-formation-row small { color: inherit; font-size: 0.72rem; font-weight: 700; }
 .pn-formation-field { fill: #4f9a45; }
 .pn-formation-dot { fill: #6fb1ff; stroke: #0d162e; stroke-width: 2; }
-.pin-zoom button:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.pin-zoom:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 1px; }
 
 /* Vinheta suave nas bordas: dá foco ao centro quando a câmera aproxima e esconde o corte da arte. */
 .pin-stage::after {

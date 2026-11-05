@@ -16,7 +16,7 @@ import { seededRng } from '../core/battle';
 import { combatMotion } from '../core/combat-motion';
 import {
   aboutToFall, advanceRound, afterShot, aliveOf, arenaLimit, nearFalls, POST_RADIUS, PIN_KO_COINS, ARENA_RADIUS, canUse, clearEffects, createWorld, DIFFICULTIES, DIFFICULTY_LABELS_PT, EFFECT_INFO, effectLabel, isSettled, launch, MAX_PER_SIDE, MAX_PULL,
-  nextLimit, outcomeOf, pinCoinReward, PATCH_LABELS_PT, previewPath, scoreMatch, shotFromDrag, stepWorld,
+  nextLimit, normalizePinZoom, outcomeOf, pinCoinReward, PATCH_LABELS_PT, PIN_ZOOM, previewPath, scoreMatch, shotFromDrag, stepWorld,
 } from '../core/pins';
 import { randomOpponents } from '../core/pin-opponents';
 import { pinRowInfo, pinSpecOf } from '../core/pin-card-info';
@@ -161,22 +161,21 @@ const cameraFxScale = ref(1);
 const cameraFxRotate = ref(0);
 let koImpactAt = 0;
 /** Câmera: quanto aproxima (escolha do jogador, guardada) e para onde olha, em unidades do mundo. */
-const ZOOM_LEVELS = [3, 4, 5, 6] as const;
 /** Os pins são desenhados um pouco maiores que o corpo físico, para ler bem no celular (a colisão não muda). */
 const PIN_VISUAL_SCALE = 1.3;
 const ZOOM_KEY = 'tcg-ar-pins-zoom-v1';
 function readZoom(): number {
   try {
-    const saved = Number(localStorage.getItem(ZOOM_KEY));
-    return ZOOM_LEVELS.includes(saved as (typeof ZOOM_LEVELS)[number]) ? saved : 4;
+    return normalizePinZoom(Number(localStorage.getItem(ZOOM_KEY)));
   } catch {
-    return 4;
+    return PIN_ZOOM.initial;
   }
 }
 const zoomLevel = ref<number>(readZoom());
+const zoomLabel = computed(() => String(zoomLevel.value).replace('.', ','));
 function setZoom(level: number): void {
-  zoomLevel.value = level;
-  try { localStorage.setItem(ZOOM_KEY, String(level)); } catch { /* sem armazenamento: vale só nesta partida */ }
+  zoomLevel.value = normalizePinZoom(level);
+  try { localStorage.setItem(ZOOM_KEY, String(zoomLevel.value)); } catch { /* sem armazenamento: vale só nesta partida */ }
 }
 let camX = 0;
 let camY = 0;
@@ -2287,9 +2286,10 @@ function setField(field: PinField): void {
         <canvas ref="canvasEl" role="img" aria-label="Arena vista de cima com os pins"></canvas>
         <canvas v-show="phase !== 'over'" ref="miniEl" class="pin-minimap" width="192" height="192" role="img" aria-label="Minimapa da arena: toque para olhar aquele ponto" @pointerdown.stop="onMiniDown" @pointerup.stop @pointermove.stop></canvas>
         <div ref="spriteLayer" class="pin-sprites" aria-hidden="true"></div>
-        <div class="pin-zoom" role="group" aria-label="Zoom da câmera" @pointerdown.stop @pointerup.stop>
-          <button v-for="level in ZOOM_LEVELS" :key="level" type="button" :class="{ on: zoomLevel === level }" :aria-pressed="zoomLevel === level" :aria-label="`Zoom ${String(level).replace('.', ',')} vezes`" @click.stop="setZoom(level)">{{ String(level).replace('.', ',') }}×</button>
-        </div>
+        <label class="pin-zoom" @pointerdown.stop @pointermove.stop @pointerup.stop @pointercancel.stop>
+          <span class="pin-zoom-value" aria-hidden="true">{{ zoomLabel }}×</span>
+          <input type="range" :min="PIN_ZOOM.min" :max="PIN_ZOOM.max" :step="PIN_ZOOM.step" :value="zoomLevel" aria-label="Zoom da câmera" :aria-valuetext="`${zoomLabel} vezes`" @input="setZoom(Number(($event.target as HTMLInputElement).value))" />
+        </label>
         <button v-if="replaying" type="button" class="pin-skip" @click.stop="stopReplay">Pular repetição</button>
         <div v-if="phase === 'over' && result?.won && result.coins > 0 && replaying" class="pin-ko-reward" role="status">
           <span aria-hidden="true">✦</span>

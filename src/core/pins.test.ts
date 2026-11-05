@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { seededRng } from './battle';
 import {
   advanceRound, afterShot, affordable, arenaLimit, limitForRound, MIN_LIMIT, nextLimit, SHRINK_AFTER_ROUND, SHRINK_STEP, ARENA_RADIUS, aliveOf, buildPatches, canUse, chooseEnemyShot, clearEffects, cooldownFor, createWorld, effectForAttack, isSettled, launch,
-  launchSpeed, layoutPins, massOf, MAX_MOVES, MAX_PER_SIDE, MAX_PULL, MIN_PULL, outcomeOf, pinCoinReward, PIN_KO_COINS, PIN_LOSS_COINS_CAP, pinFromSpec, previewPath, scoreMatch, shotFromDrag, stepWorld, STOP_SPEED, typeKnockback,
+  launchSpeed, layoutPins, massOf, normalizePinZoom, PIN_ZOOM, MAX_MOVES, MAX_PER_SIDE, MAX_PULL, MIN_PULL, outcomeOf, pinCoinReward, PIN_KO_COINS, PIN_LOSS_COINS_CAP, pinFromSpec, previewPath, scoreMatch, shotFromDrag, stepWorld, STOP_SPEED, typeKnockback,
   typesOf, weightMass,
 } from './pins';
 import { applyPinField, cellOfWorld, createArenaGrid, frictionOfCell, stampType, terrainAffinity, TYPE_FOR_TERRAIN } from './pin-terrain';
@@ -775,5 +775,24 @@ describe('borda que encolhe', () => {
     expect(w.shrinking).toBe(true);
     expect(arenaLimit(w)).toBe(ARENA_RADIUS);
     expect(w.round).toBe(0);
+  });
+});
+
+describe('normalizePinZoom', () => {
+  it('aceita a faixa do slider, de 2x a 6x, em passos de meio', () => {
+    expect(normalizePinZoom(2)).toBe(2);
+    expect(normalizePinZoom(2.5)).toBe(2.5);
+    expect(normalizePinZoom(6)).toBe(6);
+  });
+
+  it('prende fora da faixa e arredonda para o passo', () => {
+    expect(normalizePinZoom(1)).toBe(2);
+    expect(normalizePinZoom(9)).toBe(6);
+    expect(normalizePinZoom(3.3)).toBe(3.5);
+  });
+
+  it('sem valor guardado ou com lixo, usa o zoom inicial', () => {
+    expect(normalizePinZoom(0)).toBe(PIN_ZOOM.initial);
+    expect(normalizePinZoom(Number.NaN)).toBe(PIN_ZOOM.initial);
   });
 });
