@@ -1,7 +1,7 @@
 import { seededRng } from './battle';
 import type { Rng } from './battle';
 import {
-  aliveOf, arenaLimit, chooseEnemyShot, GROUND_DECEL, isSettled, launch, launchSpeed, stepWorld, typesOf,
+  aliveOf, chooseEnemyShot, edgeRisk, exitDirection, GROUND_DECEL, isSettled, launch, launchSpeed, stepWorld, typesOf,
 } from './pins';
 import type { Difficulty, Pin, PinWorld, Shot, Side } from './pins';
 import { frictionAt } from './pin-terrain';
@@ -13,6 +13,23 @@ import { TerrainGrid } from './terrain';
  * com a que deixa a mesa melhor para ele: derrubar os seus, não cair junto e deixar os dele longe da borda e os seus perto.
  * Só depois disso a pontaria erra um pouco, conforme a dificuldade. O Fácil continua com a mira por regra simples.
  */
+
+/** Jeito de jogar do adversário: muda o que ele valoriza ao comparar jogadas (no Fácil, a mira por regra não muda). */
+export type EnemyStyle = 'equilibrado' | 'agressivo' | 'defensivo' | 'cacador';
+export const ENEMY_STYLES: readonly EnemyStyle[] = ['agressivo', 'defensivo', 'cacador'];
+export const ENEMY_STYLE_LABELS_PT: Record<EnemyStyle, string> = {
+  equilibrado: 'Equilibrado',
+  agressivo: 'Agressivo: aceita riscos para bater',
+  defensivo: 'Defensivo: protege os pins dele',
+  cacador: 'Caçador: empurra você para as aberturas',
+};
+
+const STYLE_WEIGHTS: Record<EnemyStyle, { knock: number; lost: number; theirRisk: number; myRisk: number }> = {
+  equilibrado: { knock: 100, lost: 135, theirRisk: 22, myRisk: 28 },
+  agressivo: { knock: 135, lost: 95, theirRisk: 22, myRisk: 14 },
+  defensivo: { knock: 90, lost: 190, theirRisk: 14, myRisk: 52 },
+  cacador: { knock: 100, lost: 130, theirRisk: 58, myRisk: 24 },
+};
 
 export interface EnemyPlan {
   pinId: string;
@@ -28,7 +45,7 @@ const AIM_ERROR: Record<Difficulty, number> = { facil: 0.5, normal: 0.06, difici
 const POWER_ERROR: Record<Difficulty, number> = { facil: 0.3, normal: 0.05, dificil: 0.015 };
 
 const SIM_DT = 1 / 60;
-const SIM_SECONDS = 4.5;
+const SIM_SECONDS = 6;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const bell = (rng: Rng) => (rng() + rng() + rng()) / 1.5 - 1;
 
@@ -58,6 +75,7 @@ export function cloneWorld(world: PinWorld, seed = 0x51a7e): PinWorld {
     limit: world.limit,
     round: world.round,
     shrinking: world.shrinking,
+    ...(world.walls ? { walls: world.walls } : {}),
   };
 }
 
@@ -83,20 +101,20 @@ export function simulate(world: PinWorld, plan: EnemyPlan): PinWorld {
  * Nota de uma mesa para o lado `me` (o adversário é `1`): cada pin derrubado do outro lado vale muito, perder um dos seus
  * custa ainda mais, e a distância até a borda pesa (perto da borda = em perigo na próxima jogada).
  */
-export function evaluate(before: PinWorld, after: PinWorld, me: Side = 1): number {
+export function evaluate(before: PinWorld, after: PinWorld, me: Side = 1, style: EnemyStyle = 'equilibrado'): number {
   const other: Side = me === 1 ? 0 : 1;
-  const limit = arenaLimit(before);
+  const w = STYLE_WEIGHTS[style];
   const count = (w: PinWorld, side: Side) => w.pins.filter((p) => p.side === side && standing(p)).length;
   const knocked = count(before, other) - count(after, other);
   const lost = count(before, me) - count(after, me);
-  let score = 100 * knocked - 135 * lost;
+  let score = w.knock * knocked - w.lost * lost;
   // Todos os de um lado caíram: fim de jogo.
   if (count(after, other) === 0) score += 400;
   if (count(after, me) === 0) score -= 600;
   for (const p of after.pins) {
     if (!standing(p)) continue;
-    const risk = clamp((Math.hypot(p.x, p.y) + p.r) / limit, 0, 1.2);
-    score += (p.side === other ? 22 : -28) * risk * risk;
+    const risk = edgeRisk(after, p);
+    score += (p.side === other ? w.theirRisk : -w.myRisk) * risk * risk;
     if (after.terrain) {
       // Gelo e flores deixam o pin escorregar; mato, pedras e lodo dão segurança perto da borda.
       // A IA passa a considerar isso depois de simular as próprias marcas e reações.
@@ -135,8 +153,7 @@ export function candidatePlans(world: PinWorld, me: Side = 1): EnemyPlan[] {
       if ((pin.cooldowns[i] ?? 0) === 0) moveOptions.push(i);
     });
     for (const target of targets) {
-      const cd = Math.hypot(target.x, target.y) || 1e-6;
-      const out = { x: target.x / cd, y: target.y / cd };
+      const out = exitDirection(world, target.x, target.y);
       const aims: { x: number; y: number }[] = [{ x: target.x, y: target.y }];
       for (const turn of [0, 0.5, -0.5]) {
         const ux = out.x * Math.cos(turn) - out.y * Math.sin(turn);
@@ -172,11 +189,11 @@ function pickBudget(plans: EnemyPlan[], budget: number, _rng: Rng): EnemyPlan[] 
 }
 
 /** A melhor jogada pela simulação (sem o erro de mira), ou null se não há o que jogar. */
-export function bestPlan(world: PinWorld, rng: Rng, budget: number, me: Side = 1): { plan: EnemyPlan; score: number } | null {
+export function bestPlan(world: PinWorld, rng: Rng, budget: number, me: Side = 1, style: EnemyStyle = 'equilibrado'): { plan: EnemyPlan; score: number } | null {
   const plans = pickBudget(candidatePlans(world, me), budget, rng);
   let best: { plan: EnemyPlan; score: number } | null = null;
   for (const plan of plans) {
-    const score = evaluate(world, simulate(world, plan), me) + (rng() - 0.5) * 2;
+    const score = evaluate(world, simulate(world, plan), me, style) + (rng() - 0.5) * 2;
     if (!best || score > best.score) best = { plan, score };
   }
   return best;
@@ -186,10 +203,10 @@ export function bestPlan(world: PinWorld, rng: Rng, budget: number, me: Side = 1
  * O disparo do adversário. No Fácil, a mira por regra (`chooseEnemyShot`); no Normal e no Difícil, simula as jogadas e
  * escolhe a melhor, e só então aplica o erro de mira e de força da dificuldade.
  */
-export function planEnemyShot(world: PinWorld, rng: Rng, difficulty: Difficulty): EnemyPlan | null {
+export function planEnemyShot(world: PinWorld, rng: Rng, difficulty: Difficulty, style: EnemyStyle = 'equilibrado'): EnemyPlan | null {
   if (aliveOf(world, 0).length === 0 || aliveOf(world, 1).length === 0) return null;
   if (SIM_BUDGET[difficulty] === 0) return chooseEnemyShot(world, rng, difficulty);
-  const found = bestPlan(world, rng, SIM_BUDGET[difficulty]);
+  const found = bestPlan(world, rng, SIM_BUDGET[difficulty], 1, style);
   if (!found) return chooseEnemyShot(world, rng, difficulty);
   const { plan } = found;
   const angle = Math.atan2(plan.shot.dirY, plan.shot.dirX) + bell(rng) * AIM_ERROR[difficulty];

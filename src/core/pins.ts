@@ -2,6 +2,8 @@ import { parseCardDamage, typeEffectiveness } from './battle';
 import type { Rng } from './battle';
 import { applyPinField, createArenaGrid, frictionAt, seedMarks, stampKind, stampType } from './pin-terrain';
 import type { MarkResult, PinField, Spot } from './pin-terrain';
+import { DEFAULT_FORMATION, formationSlots } from './pin-formations';
+import type { FormationId } from './pin-formations';
 import { energyLabelPt, energyType } from './pokemon-data';
 import type { BaseStats, CardAttack, PokemonType } from './pokemon-data';
 import type { TerrainGrid, TerrainKind, TerrainReaction } from './terrain';
@@ -16,14 +18,14 @@ export type { Spot };
  * canvas). Você começa embaixo (lado 0) e os adversários em cima (lado 1).
  */
 
-export const ARENA_RADIUS = 660;
+export const ARENA_RADIUS = 1320;
 /** Distância de arrasto (em unidades) que dá a força máxima. */
 export const MAX_PULL = 300;
 /** Arrasto menor que isso cancela o disparo. */
 export const MIN_PULL = 28;
 /** Velocidade de saída do disparo com força máxima e `shot` = 1. */
-export const BASE_SPEED = 1075;
-export const MAX_SPEED = 1910;
+export const BASE_SPEED = 1520;
+export const MAX_SPEED = 2700;
 /** Desaceleração do chão comum (unidades/s²). */
 export const GROUND_DECEL = 420;
 const RESTITUTION = 0.86;
@@ -285,6 +287,14 @@ export interface PinWorld {
   round?: number;
   /** A borda encolhe com as rodadas. */
   shrinking?: boolean;
+  /** Paredes da borda, em ângulos: entre elas ficam as aberturas por onde os pins caem. Sem elas, cai-se por toda a borda. */
+  walls?: PinWall[];
+}
+
+/** Trecho de parede: vai do ângulo `from` ao `to` (radianos, `to` > `from`), sempre sobre a borda que vale agora. */
+export interface PinWall {
+  from: number;
+  to: number;
 }
 
 /** Raio onde o pin cai agora. */
@@ -294,11 +304,12 @@ export type PinEvent =
   | { type: 'hit'; a: string; b: string; strength: number; /** Vantagem de tipos de quem acertou a favor de quem apanhou. */ edge: 'super' | 'weak' | 'none' | null }
   | { type: 'out'; id: string }
   | { type: 'bumper'; id: string }
+  | { type: 'wall'; id: string; strength: number }
   | { type: 'wave'; id: string }
   | { type: 'shrink'; limit: number }
   | { type: 'mark'; kind: TerrainKind; x: number; y: number; cells: number[]; reaction: TerrainReaction | null };
 
-const PATCH_SPECS: { kind: PatchKind; count: number; min: number; max: number }[] = [{ kind: 'bumper', count: 4, min: 24, max: 30 }];
+const PATCH_SPECS: { kind: PatchKind; count: number; min: number; max: number }[] = [{ kind: 'bumper', count: 8, min: 24, max: 30 }];
 
 /**
  * Sorteia os obstáculos dentro da arena, sem cobrir quem começa (`avoid`) e sem se sobrepor. Com muitos pins a
@@ -328,9 +339,21 @@ export function buildPatches(rng: Rng, radius = ARENA_RADIUS, avoid: readonly Sp
  * Põe os pins nas posições iniciais: os seus embaixo, os adversários em cima, em fileiras que começam perto da borda
  * e seguem para o centro. Cada fileira leva quantos couberem na corda do círculo.
  */
-export function layoutPins(pins: Pin[], radius = ARENA_RADIUS): void {
+export function layoutPins(pins: Pin[], radius = ARENA_RADIUS, formations?: Partial<Record<Side, FormationId>>): void {
   for (const side of [0, 1] as const) {
     const group = pins.filter((p) => p.side === side);
+    if (formations) {
+      const slots = formationSlots(formations[side] ?? DEFAULT_FORMATION, group.length);
+      group.forEach((pin, i) => {
+        const slot = slots[i]!;
+        // O lado de cima é o mesmo desenho girado: quem é da esquerda de um lado é da direita do outro.
+        pin.x = slot.x * radius * (side === 0 ? 1 : -1);
+        pin.y = slot.y * radius * (side === 0 ? 1 : -1);
+        pin.vx = 0;
+        pin.vy = 0;
+      });
+      continue;
+    }
     const rmax = Math.max(0, ...group.map((p) => p.r));
     const spacing = 2 * rmax + 8;
     let placed = 0;
@@ -356,8 +379,8 @@ export function layoutPins(pins: Pin[], radius = ARENA_RADIUS): void {
 /** Primeira rodada completa depois da qual a borda começa a avançar (as 2 primeiras são de aquecimento). */
 export const SHRINK_AFTER_ROUND = 2;
 /** Quanto a borda avança a cada rodada (unidades) e o menor raio que ela chega a ter. */
-export const SHRINK_STEP = 56;
-export const MIN_LIMIT = 340;
+export const SHRINK_STEP = 112;
+export const MIN_LIMIT = 680;
 
 /** Raio da arena depois de `round` rodadas completas. */
 export function limitForRound(radius: number, round: number): number {
@@ -386,12 +409,150 @@ export function advanceRound(world: PinWorld, events: PinEvent[] = []): PinEvent
     if (Math.hypot(patch.x, patch.y) + patch.r > next) world.patches.splice(i, 1);
   }
   for (const pin of world.pins) {
-    if (pin.alive && pin.fall === 0 && Math.hypot(pin.x, pin.y) > next) {
-      pin.fall = 1e-4;
-      events.push({ type: 'out', id: pin.id });
+    const d = Math.hypot(pin.x, pin.y);
+    if (!pin.alive || pin.fall !== 0 || d <= next) continue;
+    if (onWall(world, Math.atan2(pin.y, pin.x))) {
+      // A parede avança junto com a borda e empurra quem está na frente dela para dentro.
+      const k = Math.max(0, next - pin.r) / d;
+      pin.x *= k;
+      pin.y *= k;
+      continue;
     }
+    pin.fall = 1e-4;
+    events.push({ type: 'out', id: pin.id });
   }
   return events;
+}
+
+// ----------------------------------------------------------------------------- paredes e aberturas
+
+const TAU = Math.PI * 2;
+/** Quantas paredes e, portanto, quantas aberturas a borda tem. */
+export const WALL_COUNT = 4;
+/** Largura de cada abertura, em radianos (de 26° a 38°). */
+const GAP_MIN = (26 * Math.PI) / 180;
+const GAP_MAX = (38 * Math.PI) / 180;
+/** Cada abertura sai até este tanto do seu lugar regular, para o mapa não ser sempre uma cruz. */
+const GAP_JITTER = (16 * Math.PI) / 180;
+const WALL_BOUNCE = 0.72;
+/** Pilar em cada ponta de parede: a quina tem corpo, em vez de o pin atravessar pela lateral. */
+export const POST_RADIUS = 18;
+const POST_BOUNCE = 0.8;
+
+/** Paredes e aberturas alternadas até fechar o círculo, nas posições que o sorteio do mapa decidir. */
+export function buildWalls(rng: Rng, count = WALL_COUNT): PinWall[] {
+  const turn = rng() * TAU;
+  const gaps = Array.from({ length: count }, (_, i) => {
+    const center = turn + (i * TAU) / count + (rng() * 2 - 1) * GAP_JITTER;
+    return { center, half: (GAP_MIN + rng() * (GAP_MAX - GAP_MIN)) / 2 };
+  });
+  return gaps.map((gap, i) => {
+    const next = gaps[(i + 1) % count]!;
+    const nextCenter = i === count - 1 ? next.center + TAU : next.center;
+    return { from: gap.center + gap.half, to: nextCenter - next.half };
+  });
+}
+
+/** O ângulo cai sobre uma parede? (sem paredes, nunca) */
+export function onWall(world: Pick<PinWorld, 'walls'>, angle: number): boolean {
+  for (const wall of world.walls ?? []) {
+    const along = (((angle - wall.from) % TAU) + TAU) % TAU;
+    if (along <= wall.to - wall.from) return true;
+  }
+  return false;
+}
+
+/** Centro de cada abertura, na borda que vale agora (sem paredes, nenhuma). */
+export function gapCenters(world: PinWorld): { x: number; y: number }[] {
+  const walls = world.walls ?? [];
+  const limit = arenaLimit(world);
+  return walls.map((wall, i) => {
+    const next = walls[(i + 1) % walls.length]!;
+    const nextFrom = i === walls.length - 1 ? next.from + TAU : next.from;
+    const middle = (wall.to + nextFrom) / 2;
+    return { x: Math.cos(middle) * limit, y: Math.sin(middle) * limit };
+  });
+}
+
+/** Para onde empurrar quem está em (x, y) para ele sair: a abertura mais perto ou, sem paredes, direto para a borda. */
+export function exitDirection(world: PinWorld, x: number, y: number): { x: number; y: number } {
+  let best: { x: number; y: number; d: number } | null = null;
+  for (const gap of gapCenters(world)) {
+    const d = Math.hypot(gap.x - x, gap.y - y);
+    if (!best || d < best.d) best = { ...gap, d };
+  }
+  if (best && best.d > 1) return { x: (best.x - x) / best.d, y: (best.y - y) / best.d };
+  const d = Math.hypot(x, y) || 1e-6;
+  return { x: x / d, y: y / d };
+}
+
+/** O quanto este pin está perto de cair, de 0 (seguro) a 1,2: conta a distância até a abertura, não até a parede. */
+export function edgeRisk(world: PinWorld, pin: Pick<Pin, 'x' | 'y' | 'r'>): number {
+  const limit = arenaLimit(world);
+  const gaps = gapCenters(world);
+  if (gaps.length === 0) return clamp((Math.hypot(pin.x, pin.y) + pin.r) / limit, 0, 1.2);
+  const nearest = Math.min(...gaps.map((gap) => Math.hypot(gap.x - pin.x, gap.y - pin.y)));
+  return clamp(1.2 - nearest / limit, 0, 1.2);
+}
+
+/** Até onde, a partir da borda, um pin parado numa abertura conta como "quase caiu". */
+export const NEAR_FALL_REACH = 90;
+
+/** Pins parados à beira de uma abertura (o aviso de "quase caiu"). */
+export function nearFalls(world: PinWorld): Pin[] {
+  const limit = arenaLimit(world);
+  return world.pins.filter((p) => p.alive && p.fall === 0 && Math.hypot(p.x, p.y) > limit - NEAR_FALL_REACH && !onWall(world, Math.atan2(p.y, p.x)));
+}
+
+/** Este pin sai da arena no próximo instante, se nada o desviar? (a câmera lenta usa isto) */
+export function aboutToFall(world: PinWorld, pin: Pin, seconds = 0.22): boolean {
+  if (!pin.alive || pin.fall !== 0) return false;
+  const x = pin.x + pin.vx * seconds;
+  const y = pin.y + pin.vy * seconds;
+  return Math.hypot(x, y) > arenaLimit(world) && !onWall(world, Math.atan2(y, x));
+}
+
+/** Parede e pilares: o pin rebate na borda, menos onde há abertura. */
+function collideWalls(world: PinWorld, pin: Pin, events: PinEvent[]): void {
+  const walls = world.walls;
+  if (!walls || walls.length === 0) return;
+  const limit = arenaLimit(world);
+  const d = Math.hypot(pin.x, pin.y);
+  if (d + pin.r + POST_RADIUS < limit) return;
+  if (onWall(world, Math.atan2(pin.y, pin.x)) && d > limit - pin.r) {
+    const nx = pin.x / (d || 1e-6);
+    const ny = pin.y / (d || 1e-6);
+    pin.x = nx * (limit - pin.r);
+    pin.y = ny * (limit - pin.r);
+    const vn = pin.vx * nx + pin.vy * ny;
+    if (vn > 0) {
+      pin.vx -= (1 + WALL_BOUNCE) * vn * nx;
+      pin.vy -= (1 + WALL_BOUNCE) * vn * ny;
+      if (vn > 60) events.push({ type: 'wall', id: pin.id, strength: clamp(vn / 900, 0, 1) });
+    }
+    return;
+  }
+  for (const wall of walls) {
+    for (const end of [wall.from, wall.to]) {
+      const px = Math.cos(end) * limit;
+      const py = Math.sin(end) * limit;
+      const dx = pin.x - px;
+      const dy = pin.y - py;
+      const gap = Math.hypot(dx, dy) || 1e-6;
+      const min = POST_RADIUS + pin.r;
+      if (gap >= min) continue;
+      const nx = dx / gap;
+      const ny = dy / gap;
+      pin.x = px + nx * min;
+      pin.y = py + ny * min;
+      const vn = pin.vx * nx + pin.vy * ny;
+      if (vn < 0) {
+        pin.vx -= (1 + POST_BOUNCE) * vn * nx;
+        pin.vy -= (1 + POST_BOUNCE) * vn * ny;
+        if (vn < -60) events.push({ type: 'wall', id: pin.id, strength: clamp(-vn / 900, 0, 1) });
+      }
+    }
+  }
 }
 
 export interface WorldOptions {
@@ -401,6 +562,10 @@ export interface WorldOptions {
   shrink?: boolean;
   /** Campo inicial da arena, liberado pela Liga. As marcas de golpes continuam se sobrepondo normalmente. */
   field?: PinField;
+  /** Borda com paredes e aberturas sorteadas. Padrão: não (sem elas, cai-se por toda a borda). */
+  walls?: boolean;
+  /** Onde cada lado começa. Sem isto, os pins saem nas fileiras automáticas. */
+  formations?: Partial<Record<Side, FormationId>>;
 }
 
 export function createWorld(specs: { mine: PinSpec[]; enemy: PinSpec[] }, rng: Rng, options: WorldOptions = {}): PinWorld {
@@ -408,14 +573,15 @@ export function createWorld(specs: { mine: PinSpec[]; enemy: PinSpec[] }, rng: R
     ...specs.mine.slice(0, MAX_PER_SIDE[0]).map((s) => pinFromSpec(s, 0)),
     ...specs.enemy.slice(0, MAX_PER_SIDE[1]).map((s) => pinFromSpec(s, 1)),
   ];
-  layoutPins(pins);
+  layoutPins(pins, ARENA_RADIUS, options.formations);
   const spots = pins.map((p) => ({ x: p.x, y: p.y, r: p.r }));
   const patches = buildPatches(rng, ARENA_RADIUS, spots);
   const terrain = createArenaGrid(Math.floor(rng() * 1e6));
   applyPinField(terrain, options.field ?? 'natural');
   const marks = options.marks !== false;
   if (marks) seedMarks(terrain, ARENA_RADIUS, rng, [...spots, ...patches]);
-  return { radius: ARENA_RADIUS, patches, pins, time: 0, terrain, markRng: marks ? rng : null, limit: ARENA_RADIUS, round: 0, shrinking: options.shrink === true };
+  const walls = options.walls === true ? buildWalls(rng) : undefined;
+  return { radius: ARENA_RADIUS, patches, pins, time: 0, terrain, markRng: marks ? rng : null, limit: ARENA_RADIUS, round: 0, shrinking: options.shrink === true, ...(walls ? { walls } : {}) };
 }
 
 const standing = (pin: Pin) => pin.alive && pin.fall === 0;
@@ -559,6 +725,7 @@ export function stepWorld(world: PinWorld, dt: number, events: PinEvent[] = []):
         events.push({ type: 'bumper', id: pin.id });
       }
     }
+    collideWalls(world, pin, events);
     leaveTrail(world, pin, events);
   }
 
@@ -708,19 +875,20 @@ export interface PathPoint {
  * Trajetória prevista do disparo (só este pin, com o chão da arena e sem os outros pins): é o que a mira desenha.
  * `falls` diz se o pin sairia sozinho da arena.
  */
-export function previewPath(world: PinWorld, pin: Pin, shot: Shot, moveIndex: number | null = null, maxSeconds = 2.2): { points: PathPoint[]; falls: boolean } {
+export function previewPath(world: PinWorld, pin: Pin, shot: Shot, moveIndex: number | null = null, maxSeconds = 3.2): { points: PathPoint[]; falls: boolean; bounces: number } {
   const ghost: Pin = { ...pin, types: [...pin.types], active: null, lastMark: null };
   launch(ghost, shot, moveIndex);
-  const sim: PinWorld = { radius: world.radius, patches: world.patches, pins: [ghost], time: 0, terrain: world.terrain ?? null, markRng: null, limit: world.limit };
+  const sim: PinWorld = { radius: world.radius, patches: world.patches, pins: [ghost], time: 0, terrain: world.terrain ?? null, markRng: null, limit: world.limit, ...(world.walls ? { walls: world.walls } : {}) };
+  let bounces = 0;
   const points: PathPoint[] = [{ x: ghost.x, y: ghost.y }];
   const dt = 1 / 60;
   for (let t = 0, n = 0; t < maxSeconds; t += dt, n++) {
-    stepWorld(sim, dt);
+    for (const event of stepWorld(sim, dt)) if (event.type === 'wall' || event.type === 'bumper') bounces++;
     if (n % 3 === 0) points.push({ x: ghost.x, y: ghost.y });
     if (ghost.fall > 0 || Math.hypot(ghost.vx, ghost.vy) < STOP_SPEED) break;
   }
   points.push({ x: ghost.x, y: ghost.y });
-  return { points, falls: ghost.fall > 0 || !ghost.alive };
+  return { points, falls: ghost.fall > 0 || !ghost.alive, bounces };
 }
 
 // ----------------------------------------------------------------------------- adversário
@@ -746,10 +914,10 @@ export function chooseEnemyShot(world: PinWorld, rng: Rng, difficulty: Difficult
       const dx = target.x - pin.x;
       const dy = target.y - pin.y;
       const d = Math.hypot(dx, dy) || 1e-6;
-      const cd = Math.hypot(target.x, target.y) || 1e-6;
-      // 1 = o empurrão leva o alvo direto para fora.
-      const outward = (dx / d) * (target.x / cd) + (dy / d) * (target.y / cd);
-      const score = 1.2 * outward + 0.7 * (cd / arenaLimit(world)) - 0.4 * (d / (2 * arenaLimit(world))) + (rng() - 0.5) * 0.5;
+      const out = exitDirection(world, target.x, target.y);
+      // 1 = o empurrão leva o alvo direto para a saída.
+      const outward = (dx / d) * out.x + (dy / d) * out.y;
+      const score = 1.2 * outward + 0.7 * Math.min(1, edgeRisk(world, target)) - 0.4 * (d / (2 * arenaLimit(world))) + (rng() - 0.5) * 0.5;
       if (!best || score > best.score) best = { score, pin, target };
     }
   }
@@ -783,7 +951,7 @@ export function scoreMatch(won: boolean, shots: number, enemies: number): number
  * A nota já desconta disparos desperdiçados; a dificuldade e o tamanho do desafio entram separadamente para que uma
  * vitória difícil e eficiente pague mais, sem transformar uma partida longa em uma fonte infinita de moedas.
  */
-export function pinCoinReward(won: boolean, difficulty: Difficulty, score: number, enemies: number, solo: boolean, knockouts = 0): number {
+export function pinCoinReward(won: boolean, difficulty: Difficulty, score: number, enemies: number, solo: boolean, knockouts = 0, combos = 0): number {
   if (!solo) return 0;
   const kos = clamp(Math.floor(knockouts), 0, 12);
   // Derrota: quem derrubou adversários leva um consolo pequeno (limitado), para a partida nunca pagar zero por nada.
@@ -791,11 +959,13 @@ export function pinCoinReward(won: boolean, difficulty: Difficulty, score: numbe
   const base = { facil: 12, normal: 20, dificil: 32 }[difficulty];
   const quality = clamp(Math.round(score * 0.18), 0, 18);
   const challenge = clamp(Math.max(0, Math.floor(enemies) - 1) * 3, 0, 12);
-  return base + quality + challenge + kos * PIN_KO_COINS;
+  return base + quality + challenge + kos * PIN_KO_COINS + clamp(Math.floor(combos), 0, 4) * PIN_COMBO_COINS;
 }
 
 /** Moedas por adversário derrubado da arena (pagas no fim da partida contra o computador). */
 export const PIN_KO_COINS = 3;
+/** Moedas por combo (dois ou mais adversários derrubados com um disparo só), na vitória. */
+export const PIN_COMBO_COINS = 5;
 /** Teto do consolo por derrota. */
 export const PIN_LOSS_COINS_CAP = 9;
 

@@ -13,20 +13,23 @@ import type { GroundKind, TerrainGrid, TerrainKind, TerrainReaction } from './te
  */
 
 /** Blocos na largura da arena. */
-export const TERRAIN_COLS = 22;
+export const TERRAIN_COLS = 44;
 /** O chão marcável termina antes da mureta. */
 export const TERRAIN_MARGIN = 20;
 
 export const terrainHalf = (radius: number): number => radius - TERRAIN_MARGIN;
 
+/** Gramado uniforme: o atrito só muda onde há marca, então o que se vê no chão é o que o pin sente. */
 export function createArenaGrid(seed: number): TerrainGrid {
-  return buildGrid(TERRAIN_COLS, TERRAIN_COLS, 'ellipse', seed);
+  const grid = buildGrid(TERRAIN_COLS, TERRAIN_COLS, 'ellipse', seed);
+  grid.base.fill(0);
+  return grid;
 }
 
 /** Campos desbloqueados pela Liga. A marca ocupa apenas blocos dentro da arena, então a mureta continua neutra. */
 export type PinField = 'natural' | 'ice' | 'toxic' | 'psy';
 export const PIN_FIELD_LABELS_PT: Record<PinField, { name: string; hint: string }> = {
-  natural: { name: 'Jardim', hint: 'Grama, flores, mato e trilha em posições sorteadas.' },
+  natural: { name: 'Gramado', hint: 'Campo limpo: só as marcas coloridas mudam o atrito.' },
   ice: { name: 'Geleira', hint: 'O chão começa escorregadio; Pins de Gelo não sofrem o atrito.' },
   toxic: { name: 'Pântano', hint: 'O lodo freia muito; Pins de Veneno atravessam sem ser presos.' },
   psy: { name: 'Salão psíquico', hint: 'Símbolos psíquicos deixam o campo levemente mais rápido.' },
@@ -157,7 +160,7 @@ export function stampType(grid: TerrainGrid, radius: number, type: PokemonType, 
 }
 
 /** Marcas com que a arena começa (cada uma vira uma região pequena), longe de quem começa. */
-const START_MARKS: readonly TerrainKind[] = ['frost', 'puddle', 'thicket', 'toxic', 'rubble', 'frost', 'puddle', 'thicket', 'toxic'];
+const START_MARKS: readonly TerrainKind[] = ['frost', 'puddle', 'thicket', 'toxic', 'rubble'];
 
 export interface Spot {
   x: number;
@@ -178,11 +181,14 @@ export function seedMarks(grid: TerrainGrid, radius: number, rng: Rng, avoid: re
       const y = Math.sin(a) * d;
       if (avoid.some((s) => Math.hypot(s.x - x, s.y - y) < s.r + 3.2 * cell)) continue;
       if (centers.some((c) => Math.hypot(c.x - x, c.y - y) < 3 * cell)) continue;
-      const hit = stampKind(grid, radius, kind, x, y, 0.55 + rng() * 0.45, rng);
-      if (hit) {
-        out.push(hit);
-        centers.push({ x, y });
-      }
+      // Cada marca tem a sua gêmea no lado oposto do campo: nenhum lado começa com o terreno melhor.
+      if (avoid.some((s) => Math.hypot(s.x + x, s.y + y) < s.r + 3.2 * cell)) continue;
+      const power = 0.7 + rng() * 0.3;
+      const hit = stampKind(grid, radius, kind, x, y, power, rng);
+      const twin = stampKind(grid, radius, kind, -x, -y, power, rng);
+      if (hit) out.push(hit);
+      if (twin) out.push(twin);
+      if (hit || twin) centers.push({ x, y }, { x: -x, y: -y });
       break;
     }
   }

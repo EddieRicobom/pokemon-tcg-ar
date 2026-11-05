@@ -46,13 +46,13 @@ describe('arte da arena', () => {
     expect(layer.w).toBe(artSize(ARENA_RADIUS));
     // Fora do chão e entre o círculo central e a zona de saída nada é pintado.
     expect(at(layer, 0, ARENA_RADIUS + 40)[3]).toBe(0);
-    expect(at(layer, 180, 40)[3]).toBe(0);
+    expect(at(layer, 340, 40)[3]).toBe(0);
     // Giz no centro, véu azul embaixo (seu lado) e vermelho em cima.
     expect(at(layer, 0, 0)[3]).toBeGreaterThan(100);
-    const [, , blue, blueA] = at(layer, 40, 400);
+    const [, , blue, blueA] = at(layer, 40, 800);
     expect(blueA).toBeGreaterThan(0);
     expect(blue).toBeGreaterThan(200);
-    const [red, , , redA] = at(layer, 40, -400);
+    const [red, , , redA] = at(layer, 40, -800);
     expect(redA).toBeGreaterThan(0);
     expect(red).toBeGreaterThan(200);
     // A sombra escurece o gramado junto da mureta.
@@ -73,8 +73,9 @@ describe('arte da arena', () => {
 describe('chão em pixel art do Pin Mode', () => {
   const alphaOf = (art: ArenaTerrainArt, c: number, r: number) => art.buf.data[((r * TILE + 8) * art.buf.w + c * TILE + 8) * 4 + 3]!;
 
-  it('o buffer tem um bloco de 16 px por célula e só pinta dentro do círculo', () => {
+  it('o buffer tem um bloco de 16 px por célula e só pinta as marcas dentro do círculo', () => {
     const grid = createArenaGrid(5);
+    grid.over.fill(1);
     const art = new ArenaTerrainArt(grid, ARENA_RADIUS, 5);
     expect(art.buf.w).toBe(grid.cols * TILE);
     expect(art.buf.h).toBe(grid.rows * TILE);

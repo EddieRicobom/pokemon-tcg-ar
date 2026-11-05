@@ -4,8 +4,10 @@ import type { SurvivalWireMessage } from './survival-wire';
 import type { BoxWireMessage } from './box-wire';
 import type { Rng } from '../core/battle';
 import { ARENA_RADIUS, EFFECT_KINDS, MAX_MOVES, MAX_PER_SIDE, pinFromSpec } from '../core/pins';
-import type { Patch, PinSpec, PinWorld, Shot, ShotEffect } from '../core/pins';
+import type { Patch, PinSpec, PinWall, PinWorld, Shot, ShotEffect } from '../core/pins';
 import { createArenaGrid, TERRAIN_COLS } from '../core/pin-terrain';
+import { isFormationId } from '../core/pin-formations';
+import type { FormationId } from '../core/pin-formations';
 import { POKEMON_TYPES, STAT_ORDER } from '../core/pokemon-data';
 import type { BaseStats, CardAttack, PokemonType } from '../core/pokemon-data';
 import { MAX_BACKUP_TRANSFER_BYTES, MAX_BACKUP_TRANSFER_CHUNKS } from './backup-transfer';
@@ -59,6 +61,8 @@ export interface WireWorld {
 export interface WireInit extends WireWorld {
   /** Chão base por bloco, no ponto de vista do anfitrião. */
   base: number[];
+  /** Paredes da borda, no ponto de vista do anfitrião. */
+  walls?: PinWall[];
   shrink: boolean;
   marks: boolean;
 }
@@ -69,7 +73,7 @@ export type WireMessage =
   | DungeonWireMessage
   | TauntMessage
   | { t: 'hello'; v: number }
-  | { t: 'team'; ready: boolean; specs: WireSpec[] }
+  | { t: 'team'; ready: boolean; specs: WireSpec[]; formation?: FormationId }
   | { t: 'options'; shrink: boolean; marks: boolean }
   | { t: 'start'; hostSpecs: WireSpec[]; guestSpecs: WireSpec[]; init: WireInit }
   | { t: 'shot'; pinId: string; moveIndex: number | null; dirX: number; dirY: number; power: number }
@@ -134,7 +138,7 @@ export function snapshotWorld(world: PinWorld, frame: Frame): WireWorld {
 }
 
 export function snapshotInit(world: PinWorld, options: { shrink: boolean; marks: boolean }): WireInit {
-  return { ...snapshotWorld(world, 'host'), base: Array.from(world.terrain?.base ?? []), shrink: options.shrink, marks: options.marks };
+  return { ...snapshotWorld(world, 'host'), base: Array.from(world.terrain?.base ?? []), shrink: options.shrink, marks: options.marks, ...(world.walls ? { walls: world.walls } : {}) };
 }
 
 export interface AppliedWorld {
@@ -197,6 +201,8 @@ export function buildPvpWorld(init: WireInit, hostSpecs: WireSpec[], guestSpecs:
     limit: ARENA_RADIUS,
     round: 0,
     shrinking: init.shrink,
+    // O convidado vê o campo girado 180°: as paredes giram junto.
+    ...(init.walls ? { walls: init.walls.map((wall) => (frame === 'host' ? wall : { from: wall.from + Math.PI, to: wall.to + Math.PI })) } : {}),
   };
   applyWorld(world, init, frame);
   return world;
@@ -264,7 +270,7 @@ function parseEffect(v: unknown): ShotEffect | null | undefined {
 function parseWorld(v: unknown): WireWorld | null {
   if (!isObj(v) || !Array.isArray(v.pins) || v.pins.length > PVP_MAX_PINS * 2 || !Array.isArray(v.patches) || v.patches.length > 8) return null;
   if (!Array.isArray(v.over) || v.over.length !== CELLS || !v.over.every((n) => isNum(n, 0, 20) && Number.isInteger(n))) return null;
-  if (!isNum(v.limit, 100, 1000) || !isNum(v.round, 0, 10000) || !Number.isInteger(v.round)) return null;
+  if (!isNum(v.limit, 100, 2000) || !isNum(v.round, 0, 10000) || !Number.isInteger(v.round)) return null;
   const pins: WirePin[] = [];
   for (const p of v.pins) {
     if (!isObj(p) || !isStr(p.id, 80) || !isNum(p.x, -3000, 3000) || !isNum(p.y, -3000, 3000) || typeof p.alive !== 'boolean' || !isNum(p.fall, 0, 1)) return null;
@@ -285,7 +291,15 @@ function parseInit(v: unknown): WireInit | null {
   const world = parseWorld(v);
   if (!world || !isObj(v) || !Array.isArray(v.base) || v.base.length !== CELLS || !v.base.every((n) => isNum(n, 0, 20) && Number.isInteger(n))) return null;
   if (typeof v.shrink !== 'boolean' || typeof v.marks !== 'boolean') return null;
-  return { ...world, base: v.base as number[], shrink: v.shrink, marks: v.marks };
+  const walls: PinWall[] = [];
+  if (v.walls !== undefined) {
+    if (!Array.isArray(v.walls) || v.walls.length > 8) return null;
+    for (const wall of v.walls) {
+      if (!isObj(wall) || !isNum(wall.from, -20, 20) || !isNum(wall.to, -20, 20) || wall.to <= wall.from) return null;
+      walls.push({ from: wall.from, to: wall.to });
+    }
+  }
+  return { ...world, base: v.base as number[], shrink: v.shrink, marks: v.marks, ...(walls.length ? { walls } : {}) };
 }
 
 /** Lê uma mensagem do fio (texto JSON). Devolve null para qualquer coisa fora do formato. */
@@ -303,7 +317,7 @@ export function parseMessage(raw: unknown): WireMessage | null {
       return isNum(v.v, 0, 1000) ? { t: 'hello', v: v.v } : null;
     case 'team': {
       const specs = parseSpecs(v.specs);
-      return specs && typeof v.ready === 'boolean' ? { t: 'team', ready: v.ready, specs } : null;
+      return specs && typeof v.ready === 'boolean' ? { t: 'team', ready: v.ready, specs, ...(isFormationId(v.formation) ? { formation: v.formation } : {}) } : null;
     }
     case 'options':
       return typeof v.shrink === 'boolean' && typeof v.marks === 'boolean' ? { t: 'options', shrink: v.shrink, marks: v.marks } : null;
