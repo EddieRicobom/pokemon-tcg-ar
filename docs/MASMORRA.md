@@ -152,7 +152,7 @@ Em telas estreitas, o tabuleiro conserva uma largura baseada na tela e o conteú
 - **Revisão da curadoria Pokémon → arma.** A tabela fixa cobre as 1025 espécies e não usa fórmula de stats; ainda falta o dono revisar, por linhagem, as associações menos emblemáticas do catálogo compactado.
 - **Arte própria das 15 armas novas** (hoje emblema genérico).
 - **Balanceamento.** Ver se 6 PA e os custos dão boas decisões, se a curva de dificuldade sem teto acompanha a das gemas (a dificuldade cresce em linha e as gemas também, mas a lapidação é exponencial no custo) e se o chefe e as elites ficam justos.
-- **Salvar a expedição.** Fechar a tela perde a descida atual, então falta guardar o estado (ele é serializável) e oferecer «continuar».
+- **Salvar a expedição.** Fechar a tela perde a descida atual, então falta guardar o estado (ele é serializável) e oferecer «continuar». As gemas tiradas do cofre e a marmita voltam para a Vila nesse caso (só quem cai as perde).
 - **Efeitos de estado** (queimado, envenenado, paralisado), que o documento cita como estudo para as munições mistas.
 - **Opção para desligar as animações mais pesadas** (regra do projeto para efeitos que pesam na GPU), se o teste em celular mostrar custo.
 - **Acessibilidade:** foco do teclado na grade, leitura das intenções por leitor de tela e tamanho dos alvos de toque no celular.
