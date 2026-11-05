@@ -55,18 +55,25 @@ const areaOf = (scar: Scar): number => {
   return Math.PI * scar.r * scar.r * 0.72;
 };
 
+/** Mancha em três passadas: quase nada na borda e mais densa no miolo, para o chão continuar aparecendo por baixo. */
 function blotches(c: CanvasRenderingContext2D, scar: Scar, rng: Rng, color: string, grow: number): void {
   const size = Math.max(4, Math.min(11, scar.r * 0.2)) * grow;
   const count = Math.min(170, Math.ceil(areaOf(scar) / (size * size * 0.6)));
+  const before = c.globalAlpha;
   c.fillStyle = color;
-  c.beginPath();
-  for (let i = 0; i < count; i++) {
-    const s = spotIn(scar, rng);
-    const rx = size * (0.7 + rng() * 0.6);
-    c.moveTo(s.x + rx, s.y);
-    c.ellipse(s.x, s.y, rx, rx * 0.72, 0, 0, Math.PI * 2);
+  for (const [limit, alpha] of [[1.1, 0.34], [0.72, 0.4], [0.42, 0.46]] as const) {
+    c.globalAlpha = before * alpha;
+    c.beginPath();
+    for (let i = 0; i < count; i++) {
+      const s = spotIn(scar, rng);
+      if (s.edge > limit) continue;
+      const rx = size * (0.7 + rng() * 0.6);
+      c.moveTo(s.x + rx, s.y);
+      c.ellipse(s.x, s.y, rx, rx * 0.72, 0, 0, Math.PI * 2);
+    }
+    c.fill();
   }
-  c.fill();
+  c.globalAlpha = before;
 }
 
 /** Rachadura em zigue-zague, com galhos curtos. */
