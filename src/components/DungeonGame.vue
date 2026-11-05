@@ -42,6 +42,8 @@ import {
 import type { Cell, DungeonState, Enemy, EnemySpecies, Intent, MechanicId, MemberInput, RewardId, WeaponPattern } from '../core/dungeon';
 import { GEMS, gemName, LEGENDARY_SLOT as LEGENDARY_SLOT_INDEX, polishable, tierName } from '../core/dungeon-gems';
 import type { Gem, GemKind } from '../core/dungeon-gems';
+import { canSaveRun, DUNGEON_SAVE_VERSION, parseRunSave } from '../core/dungeon-save';
+import type { DungeonRunSave } from '../core/dungeon-save';
 import type { VillageState } from '../core/village/life';
 
 /**
@@ -87,11 +89,47 @@ const WILD: readonly { dexId: number; minDepth: number; boss?: boolean }[] = [
 const PATTERN_TEXT: Readonly<Record<WeaponPattern, string>> = { adjacent: 'adjacente', line: 'em linha', ranged: 'tiro reto', area: 'área em cruz', cone: 'leque', aura: 'em volta', homing: 'teleguiado', trap: 'armadilha' };
 const RECORD_KEY = 'tcg-ar-masmorra-recorde-v1';
 const STEP_MS = 420;
+const RUN_KEY = 'tcg-ar-masmorra-descida-v1';
+const FAST_KEY = 'tcg-ar-masmorra-rapido-v1';
+const GUIDE_KEY = 'tcg-ar-masmorra-guia-v1';
+
+function readFlag(key: string): boolean {
+  try { return localStorage.getItem(key) === '1'; } catch { return false; }
+}
+function writeFlag(key: string, on: boolean): void {
+  try {
+    if (on) localStorage.setItem(key, '1');
+    else localStorage.removeItem(key);
+  } catch { /* sem armazenamento: vale só nesta sessão */ }
+}
+function readRun(): DungeonRunSave | null {
+  try { return parseRunSave(localStorage.getItem(RUN_KEY)); } catch { return null; }
+}
+function clearRun(): void {
+  try { localStorage.removeItem(RUN_KEY); } catch { /* nada guardado */ }
+}
 
 const candidates = ref<Candidate[] | null>(null);
 const picked = ref<string[]>([]);
 const loadError = ref('');
 const s = ref<DungeonState | null>(null);
+/** Descida guardada que pode ser retomada na tela de escolha. */
+const savedRun = ref<DungeonRunSave | null>(readRun());
+/** Turno inimigo acelerado (a escolha fica guardada). */
+const fastEnemies = ref(readFlag(FAST_KEY));
+/** Guia da primeira descida. */
+const guideOpen = ref(false);
+/** Tremor curto quando a equipe apanha. */
+const shaking = ref(false);
+const stepMs = (): number => (fastEnemies.value ? Math.round(STEP_MS * 0.3) : STEP_MS);
+function toggleFast(): void {
+  fastEnemies.value = !fastEnemies.value;
+  writeFlag(FAST_KEY, fastEnemies.value);
+}
+function closeGuide(): void {
+  guideOpen.value = false;
+  writeFlag(GUIDE_KEY, true);
+}
 const mode = ref<'move' | 'attack' | null>(null);
 const pending = ref<Cell | null>(null);
 /** Durante uma rota, o Pokémon muda de casa em casa; outra ação não pode cortar a animação pela metade. */
@@ -217,6 +255,8 @@ const lunchName = ref<string | null>(null);
 const bringLunch = ref(true);
 const rewards = ref<ExpeditionRewards | null>(null);
 let settled = false;
+/** A descida atual está guardada no aparelho (fechar a tela não perde nada). */
+let runStored = false;
 /** O que saiu da Vila nesta descida (gemas do cofre e marmita): volta se a tela fechar no meio, sem queda nem saída. */
 let broughtFromVillage: { gems: Gem[]; lunchbox: VillageState['tower']['lunchbox'] } | null = null;
 function readVillage(): void {
@@ -265,18 +305,71 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => { refundIfAbandoned(); alive = false; sound.dispose(); window.removeEventListener('keydown', onKey); if (attackFxTimer) clearTimeout(attackFxTimer); if (giveUpTimer) clearTimeout(giveUpTimer); cleanupPvp(); });
 
-/** Fechar a Masmorra no meio da descida não é cair: as gemas do cofre e a marmita voltam para a Vila. */
-function refundIfAbandoned(): void {
+/** Guarda a descida na vez do jogador e entre andares. Devolve false se o aparelho não deixou guardar. */
+function persistRun(): boolean {
   const st = s.value;
-  const brought = broughtFromVillage;
-  broughtFromVillage = null;
-  if (!st || !brought || settled || pvp.value || st.phase === 'retired' || st.phase === 'lost') return;
-  if (brought.gems.length === 0 && brought.lunchbox == null) return;
+  if (!st || pvp.value) return false;
+  if (st.phase === 'lost' || st.phase === 'retired') {
+    clearRun();
+    return false;
+  }
+  if (!canSaveRun(st.phase)) return runStored;
+  const data: DungeonRunSave = { v: DUNGEON_SAVE_VERSION, state: st, chosen: [...chosenCandidateIds], offered: [...offeredFloors], brought: broughtFromVillage };
+  try {
+    localStorage.setItem(RUN_KEY, JSON.stringify(data));
+    runStored = true;
+  } catch {
+    runStored = false;
+  }
+  return runStored;
+}
+
+function refund(brought: { gems: Gem[]; lunchbox: VillageState['tower']['lunchbox'] } | null): void {
+  if (!brought || (brought.gems.length === 0 && brought.lunchbox == null)) return;
   withVillage((v) => {
     v.dungeon.gems.push(...brought.gems);
     if (brought.lunchbox != null && v.tower.lunchbox == null) v.tower.lunchbox = brought.lunchbox;
     return true;
   });
+}
+
+/** Fechar a Masmorra no meio da descida não é cair: ela fica guardada; se o aparelho não deixou guardar, o cofre e a marmita voltam. */
+function refundIfAbandoned(): void {
+  const st = s.value;
+  const brought = broughtFromVillage;
+  broughtFromVillage = null;
+  if (!st || settled || pvp.value || st.phase === 'retired' || st.phase === 'lost' || runStored) return;
+  refund(brought);
+}
+
+/** Volta para a descida guardada, no ponto em que parou. */
+function continueRun(): void {
+  const run = savedRun.value;
+  if (!run) return;
+  s.value = run.state;
+  settled = false;
+  rewards.value = null;
+  broughtFromVillage = run.brought as typeof broughtFromVillage;
+  runStored = true;
+  chosenCandidateIds.clear();
+  for (const id of run.chosen) chosenCandidateIds.add(id);
+  offeredFloors.clear();
+  for (const floor of run.offered) offeredFloors.add(floor);
+  savedRun.value = null;
+  sound.unlock();
+  lastSnap = snapshot(run.state);
+  mode.value = null;
+  pending.value = null;
+  flash.value = 'Descida retomada de onde parou.';
+}
+
+/** Desiste da descida guardada: nada de prêmio, e o que saiu da Vila volta para ela. */
+function dropSavedRun(): void {
+  const run = savedRun.value;
+  savedRun.value = null;
+  clearRun();
+  if (run?.brought) refund(run.brought as Parameters<typeof refund>[0]);
+  readVillage();
 }
 
 function togglePick(c: Candidate): void {
@@ -287,6 +380,8 @@ function togglePick(c: Candidate): void {
 }
 
 function begin(seed?: number): void {
+  if (savedRun.value && !pvp.value) dropSavedRun();
+  runStored = false;
   const team = picked.value.map((id) => candidates.value!.find((c) => c.id === id)!).map((c) => ({ id: c.id, dexId: c.dexId, name: c.name, types: c.types!, stats: c.stats! }));
   s.value = startDungeon(team, pool, seed ?? (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0);
   settled = false;
@@ -325,6 +420,8 @@ function begin(seed?: number): void {
   pending.value = null;
   inspected.value = null;
   flash.value = '';
+  persistRun();
+  if (!pvp.value && !readFlag(GUIDE_KEY)) guideOpen.value = true;
 }
 
 // ----------------------------------------------------------------------------- Duelo com um amigo (PvP)
@@ -728,6 +825,7 @@ function result(r: { ok: boolean; reason?: string }): void {
   if (r.ok) cueChanges();
   else cue({ kind: 'ui', cue: 'interact' });
   settleIfOver();
+  persistRun();
   pvpTick();
 }
 
@@ -752,7 +850,7 @@ async function walkTo(st: DungeonState, target: Cell): Promise<void> {
     result(r);
     if (!r.ok) break;
     // O Vue redesenha a nova casa antes do próximo passo; no tabuleiro, a travessia deixa de parecer teleporte.
-    await wait(Math.max(110, Math.round(STEP_MS * 0.55)));
+    await wait(Math.max(110, Math.round(stepMs() * 0.55)));
   }
   walking.value = false;
 }
@@ -859,12 +957,16 @@ async function doEnd(): Promise<void> {
     acting.value = uid;
     cueChanges();
     const lost = hpBefore - teamHp(st);
-    if (lost > 0) popup(st.pos, `−${lost}`, 'hurt');
+    if (lost > 0) {
+      popup(st.pos, `−${lost}`, 'hurt');
+      shaking.value = true;
+      setTimeout(() => { shaking.value = false; }, 260);
+    }
     for (const e of st.enemies) {
       const gained = e.hp - (enemyHp.get(e.uid) ?? e.hp);
       if (gained > 0) popup(e.pos, `+${gained}`, 'heal');
     }
-    await wait(STEP_MS);
+    await wait(stepMs());
     if (!alive) return;
   }
   acting.value = null;
@@ -1034,7 +1136,7 @@ const pendingText = computed(() => {
 </script>
 
 <template>
-  <div class="dungeon" :class="{ 'is-running': !!s, 'no-ambient': !ambientOn }" :style="s ? biomeStyle : undefined">
+  <div class="dungeon" :class="{ 'is-running': !!s, 'no-ambient': !ambientOn, shaking }" :style="s ? biomeStyle : undefined">
     <!-- Duelo (PvP): a sala 7×7 com as duas equipes -->
     <DungeonDuel v-if="duelActive" :duel="duel!" :side="pvp!.role === 'host' ? 0 : 1" :peer="pvpPeer!" :friend="friendLabel" @leave="leavePvp" />
 
@@ -1048,7 +1150,7 @@ const pendingText = computed(() => {
 
     <!-- Escolha da equipe -->
     <section v-else-if="!s" class="dg-pick">
-      <h2>{{ pvp ? `Duelo com ${friendLabel === 'Amigo' ? 'o amigo' : friendLabel}` : 'Masmorra · protótipo' }}</h2>
+      <h2>{{ pvp ? `Duelo com ${friendLabel === 'Amigo' ? 'o amigo' : friendLabel}` : 'Masmorra' }}</h2>
       <template v-if="pvp">
         <p class="hint">Conectado{{ pvp.role === 'host' ? ' (você criou a sala)' : '' }}. Escolha o seu Pokémon inicial e toque em «Estou pronto». Os dois descem {{ DUEL_FLOORS }} andares, cada um na sua tela, com a mesma semente; ao vencer o {{ DUEL_FLOORS }}º, quem terminar primeiro espera o outro e o duelo começa com as equipes que vocês montaram.</p>
         <p class="hint">Sem moedas, XP nem gemas no duelo, e nada do cofre ou da marmita da Vila: os dois começam iguais.</p>
@@ -1058,6 +1160,14 @@ const pendingText = computed(() => {
         </p>
       </template>
       <template v-else>
+        <div v-if="savedRun" class="dg-saved" role="status">
+          <strong>🎒 Descida guardada: andar {{ savedRun.state.floor }}</strong>
+          <p class="hint">Continue de onde parou, ou abandone: o que veio do cofre e a marmita voltam para a Vila, sem prêmio.</p>
+          <div class="dg-saved-actions">
+            <button type="button" class="primary" @click="continueRun">Continuar a descida</button>
+            <button type="button" @click="dropSavedRun">Abandonar</button>
+          </div>
+        </div>
         <p class="hint">Comece com um Pokémon da sua coleção. Ao limpar o 1º andar, a Pokébola oferece três novas armas; depois ela volta no 3º andar e a cada três andares. A expedição só acaba quando a equipe cai ou quando você decide sair pela escada.</p>
         <p class="hint">Cada turno tem {{ START_AP }} PA para mover, atacar, trocar, usar item ou fundir dois Pokémon. A orbe da arma guarda o Pokémon.</p>
         <p v-if="pickNotice" class="dg-warn" role="status">{{ pickNotice }}</p>
@@ -1236,6 +1346,7 @@ const pendingText = computed(() => {
         </div>
       </div>
 
+      <button type="button" class="dg-speed" :class="{ on: fastEnemies }" :aria-pressed="fastEnemies" @click="toggleFast">⏩ Inimigos {{ fastEnemies ? 'rápidos' : 'no ritmo normal' }}</button>
       <nav class="dg-commands" aria-label="Ações">
         <button type="button" :class="{ on: mode === 'move' }" :disabled="walking || !playing || s.mustSwitch" @click="setMode('move')"><b>👣</b>Mover</button>
         <button type="button" :class="{ on: mode === 'attack' }" :disabled="walking || !playing || s.mustSwitch" @click="setMode('attack')"><b>⚔️</b>Atacar<template v-if="who"> · {{ who.weapon.ap }}</template></button>
@@ -1462,6 +1573,18 @@ const pendingText = computed(() => {
       </div>
 
       <!-- Fim da expedição -->
+      <div v-if="guideOpen" class="dg-modal" role="dialog" aria-label="Como jogar a Masmorra">
+        <div class="dg-modal-box">
+          <h3>Sua primeira descida</h3>
+          <ul class="dg-guide">
+            <li><strong>{{ START_AP }} PA por turno:</strong> mover, atacar, trocar e usar item gastam PA. Toque em Encerrar para os inimigos agirem.</li>
+            <li><strong>Veja a intenção:</strong> cada inimigo mostra o que vai fazer. Saia das casas marcadas.</li>
+            <li><strong>Sair vale mais que cair:</strong> a escada paga as moedas e guarda as gemas. Quem cai perde as gemas da expedição.</li>
+            <li><strong>Pode fechar:</strong> a descida fica guardada e continua de onde parou.</li>
+          </ul>
+          <button type="button" class="primary" @click="closeGuide">Entendi</button>
+        </div>
+      </div>
       <div v-if="!pvp && (s.phase === 'lost' || s.phase === 'retired')" class="dg-modal" role="dialog" aria-label="Fim da expedição">
         <div class="dg-modal-box">
           <h3>{{ s.phase === 'retired' ? '🎒 Você saiu da masmorra' : '💀 A equipe caiu' }}</h3>
@@ -1685,6 +1808,15 @@ button:disabled { opacity: 0.5; }
 .dungeon.is-running .dg-weapon-details[open] summary { margin-bottom: 4px; }
 .dg-type { display: inline-block; padding: 0 6px; margin-left: 4px; border-radius: 999px; font-size: 0.74rem; color: #fff; text-shadow: 0 1px 1px #0008; }
 .dg-commands { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.dg-speed { justify-self: end; min-height: 36px; padding: 0 10px; font-size: .78rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: inherit; }
+.dg-speed.on { border-color: var(--gold); }
+.dg-saved { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--gold); border-radius: 10px; background: rgba(255, 216, 74, .1); }
+.dg-saved .hint { margin: 0; }
+.dg-saved-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.dg-guide { display: grid; gap: 8px; margin: 8px 0 12px; padding: 0; list-style: none; text-align: left; }
+.dungeon.shaking .dg-grid { animation: dg-shake .26s; }
+@keyframes dg-shake { 25% { transform: translate(-4px, 2px); } 60% { transform: translate(4px, -2px); } 100% { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dungeon.shaking .dg-grid { animation: none; } }
 .dg-commands button { min-height: 52px; padding: 2px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font-size: 0.74rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
 .dg-commands button b { font-size: 1.05rem; font-weight: 400; }
 .dg-commands button.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
