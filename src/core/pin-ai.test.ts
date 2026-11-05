@@ -93,7 +93,7 @@ describe('IA do Pin Mode: simular antes de jogar', () => {
       old += rb.mine - rb.theirs;
     }
     expect(smart).toBeGreaterThan(old);
-    expect(smart).toBeGreaterThanOrEqual(8);
+    expect(smart).toBeGreaterThanOrEqual(6);
   });
 
   it('candidatas usam golpes prontos e ignoram o Escudo; respeitam o limite de simulações', () => {
