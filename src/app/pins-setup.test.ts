@@ -49,8 +49,8 @@ describe('escolha dos pins', () => {
   });
 
   it('lembra a escolha e volta ao padrão se as cartas sumiram', () => {
-    saveSetup({ mine: ['c1'], enemy: ['c2', 'c3'], difficulty: 'facil', marks: false, shrink: false, sound: false, haptics: true, effects: true, field: 'ice' });
-    expect(loadSetup(ids, cards)).toEqual({ mine: ['c1'], enemy: ['c2', 'c3'], difficulty: 'facil', marks: false, shrink: false, sound: false, haptics: true, effects: true, field: 'ice' });
+    saveSetup({ mine: ['c1'], enemy: ['c2', 'c3'], difficulty: 'facil', marks: false, shrink: false, sound: false, haptics: true, effects: true, field: 'ice', formation: 'cunha' });
+    expect(loadSetup(ids, cards)).toEqual({ mine: ['c1'], enemy: ['c2', 'c3'], difficulty: 'facil', marks: false, shrink: false, sound: false, haptics: true, effects: true, field: 'ice', formation: 'cunha' });
     expect(loadSetup(new Set(['c5', 'c6']), cards.slice(5, 7)).mine).toEqual(['c6', 'c5']);
     localStorage.setItem('tcg-ar-pins-setup-v1', '{quebrado');
     expect(loadSetup(ids, cards)).toEqual(defaultSetup(cards));

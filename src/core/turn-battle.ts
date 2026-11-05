@@ -644,7 +644,8 @@ export function resolveTurn(state: DuelState, playerAction: DuelAction, foeActio
       continue;
     }
     if (special?.kind === 'rest') {
-      if (me.live.hp >= me.mon.fighter.maxHp || me.live.status === 'sleep') events.push({ kind: 'fail', side, mon: me.index });
+      // Quem está dormindo nem chega aqui: o sono impede de agir antes de escolher o golpe.
+      if (me.live.hp >= me.mon.fighter.maxHp) events.push({ kind: 'fail', side, mon: me.index });
       else {
         const before = me.live.hp;
         me.live.hp = me.mon.fighter.maxHp;
