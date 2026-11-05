@@ -697,7 +697,7 @@ async function pickQuizOption(optionId: string): Promise<void> {
   const species = await resolveSpeciesByDexId(dexId).catch(() => null);
   loading.value = '';
   if (!species) {
-    say('Não consegui confirmar essa espécie agora (sem conexão?). Você pode tentar de novo mais tarde, pela Fonte.');
+    say('Não consegui confirmar essa espécie agora (sem conexão?). Tente de novo ao voltar à Vila.');
     return;
   }
   const next = grantStarter(state.digital, species, new Date().toISOString());
@@ -3042,6 +3042,15 @@ function pressMenu(): void {
   openMenu();
 }
 
+let lastShopTapAt = 0;
+/** Toque duplo na loja não vira duas compras: a tela continua aberta entre um toque e outro. */
+function shopTap(run: () => { ok: boolean; message: string }): void {
+  const now = performance.now();
+  if (now - lastShopTapAt < 350) return;
+  lastShopTapAt = now;
+  act(run(), false, 'village-coins');
+}
+
 function act(result: { ok: boolean; message: string }, close = false, cue: UiSound = 'success'): void {
   say(result.message);
   if (result.ok) {
@@ -3525,7 +3534,7 @@ onBeforeUnmount(() => {
           <li v-for="i in shopItems" :key="i.id">
             <img :src="icon(i.id)" alt="" width="40" height="40" />
             <span>{{ i.name }}<small>{{ i.price }} moedas</small></span>
-            <button type="button" :disabled="state.coins < i.price" @click="act(buy(state, i.id, day), false, 'village-coins')">Comprar</button>
+            <button type="button" :disabled="state.coins < i.price || (i.kind === 'accessory' && (state.inventory[i.id] ?? 0) > 0)" @click="shopTap(() => buy(state, i.id, day))">{{ i.kind === 'accessory' && (state.inventory[i.id] ?? 0) > 0 ? 'Já tem' : 'Comprar' }}</button>
           </li>
         </ul>
         <ul v-else class="item-grid">
@@ -3533,8 +3542,8 @@ onBeforeUnmount(() => {
             <img :src="icon(i.id)" alt="" width="40" height="40" />
             <span>{{ i.name }} ×{{ count(state, i.id) }}<small>{{ i.sell }} cada</small></span>
             <span class="sell-btns">
-              <button type="button" @click="act(sell(state, i.id), false, 'village-coins')">Vender 1</button>
-              <button v-if="count(state, i.id) > 1" type="button" @click="act(sell(state, i.id, count(state, i.id)), false, 'village-coins')">Todos ({{ count(state, i.id) }})</button>
+              <button type="button" @click="shopTap(() => sell(state, i.id))">Vender 1</button>
+              <button v-if="count(state, i.id) > 1" type="button" @click="shopTap(() => sell(state, i.id, count(state, i.id)))">Todos ({{ count(state, i.id) }})</button>
             </span>
           </li>
           <li v-if="sellable.length === 0" class="hint">Nada para vender ainda.</li>

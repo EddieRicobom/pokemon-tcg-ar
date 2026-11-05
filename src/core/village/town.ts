@@ -1,5 +1,5 @@
 import type { Rng } from '../battle';
-import { add, canAfford, friendOf, itemName, pay } from './life';
+import { add, availableCount, canAfford, friendOf, itemName, pay } from './life';
 import type { Interaction, ItemId, VillageState } from './life';
 import { FURNITURE_IDS, itemDef } from './catalog';
 import { emptyHomeInterior, normalizeHomeInterior } from './home-interior';
@@ -103,7 +103,7 @@ export function upgradeHome(s: VillageState, lot: number, residents: readonly st
   const next = HOME_STAGES[lvl + 1];
   if (!next) return { ok: false, message: 'Esta casa já completou todas as reformas!' };
   if (!canAfford(s, next.cost)) {
-    const lack = Object.entries(next.cost).filter(([k, n]) => (s.inventory[k as ItemId] ?? 0) < (n ?? 0)).map(([k, n]) => `${itemName(k as ItemId)} ${Math.min(s.inventory[k as ItemId] ?? 0, n ?? 0)}/${n}`);
+    const lack = Object.entries(next.cost).filter(([k, n]) => availableCount(s, k as ItemId) < (n ?? 0)).map(([k, n]) => `${itemName(k as ItemId)} ${Math.min(availableCount(s, k as ItemId), n ?? 0)}/${n}`);
     return { ok: false, message: `Para a ${next.name} faltam: ${lack.join(', ')}.` };
   }
   pay(s, next.cost);

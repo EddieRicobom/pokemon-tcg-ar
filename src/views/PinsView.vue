@@ -1748,8 +1748,13 @@ onBeforeUnmount(() => {
   Object.values(thumbs.value).forEach((url) => URL.revokeObjectURL(url));
 });
 
+/** Direcional e A só existem no teclado, no controle e nos botões da tela grande; no toque, a mira é arrastar. */
+const aimHint = window.matchMedia?.('(pointer: coarse)').matches
+  ? 'Sua vez: arraste para trás na arena e solte para disparar.'
+  : 'Sua vez: use o direcional e A para mirar e disparar, ou arraste para trás na arena.';
+
 const phaseHint = computed(() => {
-  if (phase.value === 'aim') return selectedId.value ? 'Sua vez: use o direcional e A para mirar e disparar, ou arraste para trás na arena.' : 'Escolha um pin abaixo.';
+  if (phase.value === 'aim') return selectedId.value ? aimHint : 'Escolha um pin abaixo.';
   if (phase.value === 'rolling') return rollOwner === 'me' ? 'Seu pin está rolando…' : pvpMatch.value ? 'O amigo disparou…' : 'O adversário disparou…';
   if (phase.value === 'over' && result.value) return result.value.won ? 'Partida encerrada: você venceu.' : 'Partida encerrada.';
   return message.value;
@@ -1889,8 +1894,8 @@ function setField(field: PinField): void {
       </header>
 
       <div class="diff pn-mode" role="group" aria-label="Contra quem jogar">
-        <button type="button" :class="{ on: mode === 'cpu' }" :aria-pressed="mode === 'cpu'" :disabled="phase === 'loading'" @click="mode = 'cpu'">Contra o computador</button>
-        <button type="button" :class="{ on: mode === 'friend' }" :aria-pressed="mode === 'friend'" :disabled="phase === 'loading'" @click="mode = 'friend'">Contra um amigo</button>
+        <button type="button" :class="{ on: mode === 'cpu' }" :aria-pressed="mode === 'cpu'" :disabled="phase === 'loading'" aria-label="Jogar contra o computador" @click="mode = 'cpu'">Computador</button>
+        <button type="button" :class="{ on: mode === 'friend' }" :aria-pressed="mode === 'friend'" :disabled="phase === 'loading'" aria-label="Jogar contra um amigo" @click="mode = 'friend'">Com um amigo</button>
       </div>
 
       <p v-if="mode === 'friend' && roomNotice && !peer" class="message error" role="alert">{{ roomNotice }}</p>

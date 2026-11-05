@@ -87,6 +87,8 @@ export function homePlace(s: VillageState, item: string, x: number, y: number): 
 export function homePickUp(s: VillageState, x: number, y: number): HomeInteraction {
   const index = s.homeInterior.placed.findIndex((p) => p.x === x && p.y === y);
   if (index < 0) return { ok: false, message: 'Não há móvel nesse espaço.' };
+  const placed = s.homeInterior.placed[index];
+  if (placed && (s.inventory[placed.item] ?? 0) >= 999) return { ok: false, message: 'A mochila já está cheia desse móvel.' };
   const [item] = s.homeInterior.placed.splice(index, 1);
   if (!item) return { ok: false, message: 'Não há móvel nesse espaço.' };
   s.inventory[item.item] = Math.min(999, (s.inventory[item.item] ?? 0) + 1);

@@ -200,37 +200,68 @@ export function drawHeldGems(c: CanvasRenderingContext2D, x: number, y: number, 
 /** Baú de madeira com ferragens douradas; trancado mostra cadeado, com chave na mochila brilha. */
 export function drawChest(c: CanvasRenderingContext2D, x: number, y: number, scale: number, timeMs: number, canOpen: boolean): void {
   const s = Math.max(0.4, scale);
-  const bob = Math.sin(timeMs / 420) * 1.5 * s;
+  // Desenhado em blocos de "pixel" para combinar com os sprites: 18 blocos de largura por 17 de altura.
+  const u = 2 * s;
+  const px = (bx: number, by: number, w: number, h: number, color: string): void => {
+    c.fillStyle = color;
+    c.fillRect(bx * u, by * u, w * u, h * u);
+  };
+  const OUTLINE = '#12332a';
+  const SHADE = '#1e7a55';
+  const BASE = '#2fae6c';
+  const LIGHT = '#7ee8a2';
+  const STRIPE = '#e6fff0';
+  const GOLD = '#ffd24a';
+  const GOLD_DARK = '#b9851f';
   c.save();
-  c.translate(x, y + bob);
-  // Sombra no chão.
-  c.globalAlpha = 0.3;
+  c.translate(x, y + Math.round(Math.sin(timeMs / 520) * 1.2) * s);
+  c.globalAlpha = 0.28;
   c.fillStyle = '#000000';
-  c.beginPath(); c.ellipse(0, 12 * s, 16 * s, 5 * s, 0, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(0, 7.5 * u, 10 * u, 2.4 * u, 0, 0, Math.PI * 2); c.fill();
   if (canOpen) {
-    c.globalAlpha = 0.35 + 0.25 * Math.sin(timeMs / 160);
-    c.fillStyle = '#ffd84a';
-    c.beginPath(); c.arc(0, 0, 24 * s, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = 0.22 + 0.16 * Math.sin(timeMs / 180);
+    c.fillStyle = '#b9ffd0';
+    c.beginPath(); c.ellipse(0, -2 * u, 13 * u, 11 * u, 0, 0, Math.PI * 2); c.fill();
   }
   c.globalAlpha = 1;
-  // Corpo e tampa.
-  c.fillStyle = '#8a5a2b';
-  c.strokeStyle = '#3b2412';
-  c.lineWidth = 1.5 * s;
-  c.beginPath(); c.rect(-14 * s, -4 * s, 28 * s, 16 * s); c.fill(); c.stroke();
-  c.fillStyle = '#a56e36';
-  c.beginPath();
-  c.moveTo(-14 * s, -4 * s);
-  c.quadraticCurveTo(0, -18 * s, 14 * s, -4 * s);
-  c.closePath();
-  c.fill(); c.stroke();
-  // Ferragens.
-  c.fillStyle = '#ffcf3a';
-  c.fillRect(-15 * s, -5 * s, 3 * s, 17 * s);
-  c.fillRect(12 * s, -5 * s, 3 * s, 17 * s);
-  c.fillRect(-3 * s, -6 * s, 6 * s, 9 * s);
-  c.fillStyle = '#3b2412';
-  c.beginPath(); c.arc(0, -1 * s, 1.4 * s, 0, Math.PI * 2); c.fill();
+  // Contorno arredondado: a tampa é um pouco mais larga que o corpo.
+  px(-7, -10, 14, 1, OUTLINE);
+  px(-8, -9, 16, 1, OUTLINE);
+  px(-9, -8, 18, 7, OUTLINE);
+  px(-8, -1, 16, 8, OUTLINE);
+  // Tampa com faixas claras.
+  px(-7, -9, 14, 1, LIGHT);
+  px(-8, -8, 16, 6, BASE);
+  px(-8, -8, 16, 1, LIGHT);
+  px(-8, -6, 16, 1, STRIPE);
+  px(-8, -4, 16, 1, STRIPE);
+  px(-8, -3, 16, 1, SHADE);
+  // Aro dourado entre a tampa e o corpo.
+  px(-9, -2, 18, 1, GOLD);
+  px(-9, -1, 18, 1, GOLD_DARK);
+  // Corpo com faixas verticais e base mais escura.
+  px(-7, 0, 14, 6, SHADE);
+  for (const bx of [-6, -3, 2, 5]) px(bx, 0, 1, 6, BASE);
+  px(-7, 5, 14, 1, OUTLINE);
+  // Cantoneiras douradas.
+  px(-8, -1, 1, 2, GOLD); px(7, -1, 1, 2, GOLD);
+  // Fecho com buraco de fechadura.
+  px(-2, -4, 4, 6, OUTLINE);
+  px(-1, -3, 2, 4, GOLD);
+  px(-1, -3, 1, 1, '#fff3b8');
+  px(-0.5, -1.5, 1, 1.5, OUTLINE);
+  // Com chave na mão, dois brilhos em cruz piscam na tampa.
+  if (canOpen) {
+    const sparkle = (bx: number, by: number, phase: number): void => {
+      const t = (timeMs / 900 + phase) % 1;
+      if (t > 0.5) return;
+      c.globalAlpha = 1 - t * 2;
+      px(bx - 1, by, 3, 1, '#ffffff');
+      px(bx, by - 1, 1, 3, '#ffffff');
+    };
+    sparkle(-6, -9, 0);
+    sparkle(6, -6, 0.5);
+  }
   c.restore();
 }
 

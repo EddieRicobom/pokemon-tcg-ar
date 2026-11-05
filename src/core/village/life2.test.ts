@@ -67,6 +67,11 @@ describe('loja e moedas', () => {
     expect(buy(s, 'sem-oran', '2026-10-14').ok).toBe(true);
     expect(s.coins).toBe(80);
     expect(buy(s, 'nao-existe', '2026-10-14').ok).toBe(false);
+    // Mochila cheia: recusa antes de cobrar.
+    s.inventory['sem-oran'] = 999;
+    const before = s.coins;
+    expect(buy(s, 'sem-oran', '2026-10-14').ok).toBe(false);
+    expect(s.coins).toBe(before);
     add(s, 'concha', 3);
     expect(sell(s, 'concha', 3).ok).toBe(true);
     expect(s.coins).toBe(80 + 36);

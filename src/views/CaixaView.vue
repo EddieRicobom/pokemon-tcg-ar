@@ -525,7 +525,22 @@ function toggleMode(): void {
   box?.setMode(boxMode.value);
 }
 
+/** Na Arena sem fim, desistir encerra a corrida: pede um segundo toque, como na Masmorra e no duelo. */
+const confirmQuit = ref(false);
+let confirmQuitTimer: ReturnType<typeof setTimeout> | null = null;
+function requestStop(): void {
+  if (confirmQuitTimer) { clearTimeout(confirmQuitTimer); confirmQuitTimer = null; }
+  if (endlessRun.value && !confirmQuit.value && battleHud.value?.phase !== 'finished') {
+    confirmQuit.value = true;
+    confirmQuitTimer = setTimeout(() => { confirmQuit.value = false; confirmQuitTimer = null; }, 3000);
+    return;
+  }
+  confirmQuit.value = false;
+  stopBattle();
+}
+
 onBeforeUnmount(() => {
+  if (confirmQuitTimer) clearTimeout(confirmQuitTimer);
   disposed = true;
   clearInterval(heartTimer);
   session.dispose();
@@ -764,7 +779,7 @@ onBeforeUnmount(() => {
           <StageButton class="stage-primary" v-if="battling && battleHud?.phase === 'finished' && !endlessRun" icon="battle" label="De novo" @click="startBattle" />
           <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />
           <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
-          <StageButton class="stage-primary" v-if="battling" icon="stop" :label="endlessRun ? `Desistir · ${endlessRun.score}` : 'Parar'" @click="stopBattle" />
+          <StageButton class="stage-primary" v-if="battling" icon="stop" :label="!endlessRun ? 'Parar' : confirmQuit ? 'Toque de novo' : `Desistir · ${endlessRun.score}`" :attention="confirmQuit" @click="requestStop" />
           <StageButton v-if="challenge && !battling" icon="close" label="Sem desafio" @click="cancelChallenge" />
           <StageButton icon="close" label="Fechar" @click="close" />
         </div>

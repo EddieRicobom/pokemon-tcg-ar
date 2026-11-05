@@ -314,6 +314,11 @@ export function pay(s: VillageState, cost: Partial<Record<ItemId, number>>): voi
   for (const [k, n] of Object.entries(cost)) s.inventory[k as ItemId] = count(s, k as ItemId) - (n ?? 0);
 }
 
+/** A mochila guarda até 999 de cada item: acima disso, a ação é recusada antes de gastar qualquer coisa. */
+export function bagFull(s: VillageState, item: ItemId, n = 1): boolean {
+  return count(s, item) + n > 999;
+}
+
 export function add(s: VillageState, item: ItemId, n = 1): void {
   s.inventory[item] = Math.min(999, count(s, item) + n);
   if (itemDef(item)?.kind === 'furniture' && !s.collected.includes(item)) s.collected.push(item);
@@ -470,6 +475,7 @@ export function craft(s: VillageState, item: ItemId): Interaction {
   const cost = RECIPES[item];
   if (!cost || itemDef(item)?.kind === 'food') return { ok: false, message: 'Isso não dá para fabricar.' };
   if (!canAfford(s, cost)) return { ok: false, message: `Faltam materiais: ${describeCost(s, cost)}.` };
+  if (bagFull(s, item)) return { ok: false, message: `A mochila já está cheia de ${itemName(item)}.` };
   pay(s, cost);
   add(s, item);
   return { ok: true, message: `Você fez: ${itemName(item)}!` };
@@ -480,6 +486,7 @@ export function cook(s: VillageState, item: ItemId): Interaction {
   const cost = RECIPES[item];
   if (!cost || itemDef(item)?.kind !== 'food') return { ok: false, message: 'Isso não dá para cozinhar.' };
   if (!canAfford(s, cost)) return { ok: false, message: `Faltam ingredientes: ${describeCost(s, cost)}.` };
+  if (bagFull(s, item)) return { ok: false, message: `A mochila já está cheia de ${itemName(item)}.` };
   pay(s, cost);
   add(s, item);
   return { ok: true, message: `Você cozinhou: ${itemName(item)}!` };
@@ -514,6 +521,7 @@ export function place(s: VillageState, map: VillageMap, item: FurnitureId, x: nu
 export function pickUp(s: VillageState, x: number, y: number): Interaction {
   const i = s.placed.findIndex((f) => f.x === x && f.y === y);
   if (i < 0) return { ok: false, message: '' };
+  if (bagFull(s, s.placed[i]!.item)) return { ok: false, message: `A mochila já está cheia de ${itemName(s.placed[i]!.item)}.` };
   const [f] = s.placed.splice(i, 1);
   add(s, f!.item);
   return { ok: true, message: `${itemName(f!.item)} guardado.` };
@@ -862,7 +870,9 @@ export function daylight(hour: number, minute = 0): { dark: number; warm: number
 export function buy(s: VillageState, id: ItemId, day: string): Interaction {
   const def = shopToday(day).find((i) => i.id === id);
   if (!def) return { ok: false, message: 'Isso não está à venda hoje.' };
+  if (def.kind === 'accessory' && count(s, id) > 0) return { ok: false, message: `Você já tem ${def.name}.` };
   if (s.coins < def.price) return { ok: false, message: `Faltam ${def.price - s.coins} moedas para ${def.name}.` };
+  if (bagFull(s, id)) return { ok: false, message: `A mochila já está cheia de ${def.name}.` };
   s.coins -= def.price;
   add(s, id);
   return { ok: true, message: `Você comprou: ${def.name}!` };
