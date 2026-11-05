@@ -1654,9 +1654,14 @@ function drawMinimap(): void {
     ctx.stroke();
   }
   const half = ((artSize(world.radius) * UNITS_PER_PIXEL) / zoomLevel.value / 2) * scale;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(c, c, c, 0, Math.PI * 2);
+  ctx.clip();
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 3;
   ctx.strokeRect(c + camX * scale - half, c + camY * scale - half, half * 2, half * 2);
+  ctx.restore();
 }
 
 function draw(now: number): void {
