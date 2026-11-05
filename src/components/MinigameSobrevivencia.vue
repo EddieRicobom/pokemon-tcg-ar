@@ -8,6 +8,7 @@ import { cinemaLook, cinemaPower } from '../core/survivor-cinema';
 import { flashAlpha, moveLight, scarFromFx } from '../core/survivor-scars';
 import { drawCastShadows, drawLights, drawNight } from '../village/survivor-cinema-art';
 import { ScarField, ScarSparks } from '../village/survivor-scars-art';
+import { ARTIFACT_ICONS, artifactIconUrl, drawArtifactIcon } from '../village/artifact-icons-art';
 import type { CinemaLight } from '../village/survivor-cinema-art';
 import { routeHref } from '../app/route';
 import { survivorAudio } from '../app/survivor-audio-settings';
@@ -291,10 +292,10 @@ function say(text: string, ms = 3000): void {
 }
 
 /** Item do chão fica no centro e separado dos avisos de região, para o efeito não passar despercebido. */
-const artifactNotice = ref<null | { icon: string; name: string; description: string }>(null);
+const artifactNotice = ref<null | { icon: string; name: string; description: string; image: string }>(null);
 let artifactNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 function showArtifactNotice(kind: keyof typeof SURVIVOR_ARTIFACT_DETAILS): void {
-  artifactNotice.value = SURVIVOR_ARTIFACT_DETAILS[kind];
+  artifactNotice.value = { ...SURVIVOR_ARTIFACT_DETAILS[kind], image: artifactIconUrl(kind) };
   if (artifactNoticeTimer) clearTimeout(artifactNoticeTimer);
   artifactNoticeTimer = setTimeout(() => (artifactNotice.value = null), 2600);
 }
@@ -1840,7 +1841,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
     const ground = drawPoint(artifact);
     const p = drawPoint(artifact, 16 + Math.sin(animMs / 260 + artifact.id) * 4);
     if (!p || !ground) continue;
-    const color = artifact.kind === 'shadow-ball' ? '#a66bff' : artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb';
+    const color = ARTIFACT_ICONS[artifact.kind].color;
     figures.push({ depth: ground.depth, draw: () => {
       const ring = bonkGroundEllipse(ground, 14);
       c.save();
@@ -1849,10 +1850,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.lineWidth = Math.max(1, ground.scale * 0.8);
       c.beginPath(); c.ellipse(ground.x, ground.y, ring.rx, ring.ry, 0, 0, Math.PI * 2); c.stroke();
       c.globalAlpha = 1;
-      c.fillStyle = color;
-      c.beginPath();
-      c.arc(p.x, p.y, clamp(8 * p.scale, 3, 15), 0, Math.PI * 2);
-      c.fill();
+      drawArtifactIcon(c, artifact.kind, p.x, p.y, clamp(22 * p.scale, 10, 44));
       c.restore();
     } });
   }
@@ -2434,51 +2432,24 @@ function draw(): void {
     // A Pokébola é uma recompensa importante e continua visível no Modo Rotom; os artefatos temporários podem ser ocultados para economizar GPU.
     if (effectiveVisual.value.rotomMode && artifact.kind !== 'pokeball' && artifact.kind !== 'shadow-ball') continue;
     const ball = artifact.kind === 'pokeball' || artifact.kind === 'shadow-ball';
-    const shadowBall = artifact.kind === 'shadow-ball';
-    const color = shadowBall ? '#a66bff' : artifact.kind === 'pokeball' ? '#ff5b5b' : artifact.kind === 'speed' ? '#7bdcff' : artifact.kind === 'power' ? '#ffb35c' : artifact.kind === 'magnet' ? '#d68cff' : artifact.kind === 'focus' ? '#ffe071' : '#ff8fbb';
-    const icon = ball ? '★' : artifact.kind === 'speed' ? '⚡' : artifact.kind === 'power' ? '✦' : artifact.kind === 'magnet' ? '🧲' : artifact.kind === 'focus' ? '◈' : '♥';
-    const pulse = 1 + (effectiveVisual.value.rotomMode ? 0 : Math.sin(animMs / 180 + artifact.id) * 0.12);
-    const wobble = ball && !effectiveVisual.value.rotomMode
-      ? Math.sin(animMs / 220 + artifact.id) * 0.12
-      : 0;
+    const rotom = effectiveVisual.value.rotomMode;
+    const bob = rotom ? 0 : Math.sin(animMs / 300 + artifact.id) * 3;
+    const pulse = 1 + (rotom ? 0 : Math.sin(animMs / 180 + artifact.id) * 0.1);
     ctx.save();
     ctx.translate(artifact.x, artifact.y);
-    ctx.rotate(wobble);
-    ctx.globalAlpha = ball ? 0.38 : 0.28;
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = effectiveVisual.value.rotomMode ? 0 : 16;
+    // Sombra no chão e halo na cor do artefato: é assim que ele se destaca do terreno.
+    ctx.globalAlpha = 0.34;
+    ctx.fillStyle = '#10142a';
     ctx.beginPath();
-    ctx.arc(0, 0, (ball ? 20 : 15) * pulse, 0, Math.PI * 2);
+    ctx.ellipse(0, 13, 11, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = ball ? 0.34 : 0.26;
+    ctx.fillStyle = ARTIFACT_ICONS[artifact.kind].color;
+    ctx.beginPath();
+    ctx.arc(0, bob - 2, (ball ? 21 : 18) * pulse, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
-    if (ball) {
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#f5f5f5';
-      ctx.beginPath();
-      ctx.arc(0, 0, 13 * pulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(0, 0, 13 * pulse, Math.PI, 0);
-      ctx.clip();
-      ctx.fillStyle = shadowBall ? '#4c2069' : '#ef4b57';
-      ctx.fillRect(-15, -15, 30, 15);
-      ctx.restore();
-      ctx.strokeStyle = '#1d2433';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(-13 * pulse, 0); ctx.lineTo(13 * pulse, 0); ctx.stroke();
-      ctx.fillStyle = '#fff8df';
-      ctx.beginPath(); ctx.arc(0, 0, 4 * pulse, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#1d2433';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-    ctx.font = 'bold 18px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    if (!ball) ctx.fillText(icon, 0, 0);
+    drawArtifactIcon(ctx, artifact.kind, 0, bob - 2, ball ? 30 : 28);
     ctx.restore();
   }
 
@@ -2621,10 +2592,7 @@ function draw(): void {
       ctx.arc(f.x, f.y - 8, f.r * (0.45 + t), 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1 - t;
-      ctx.font = 'bold 20px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = color;
-      ctx.fillText(f.artifact === 'pokeball' || f.artifact === 'shadow-ball' ? '★' : f.artifact === 'speed' ? '⚡' : f.artifact === 'power' ? '✦' : f.artifact === 'magnet' ? '🧲' : f.artifact === 'focus' ? '◈' : '♥', f.x, f.y - 8 - t * 24);
+      if (f.artifact) drawArtifactIcon(ctx, f.artifact, f.x, f.y - 8 - t * 24, 26);
     } else {
       for (let k = 0; k < 3; k++) {
         ctx.globalAlpha = 0.7 * (1 - t);
@@ -3832,7 +3800,7 @@ onBeforeUnmount(() => {
 
         <div v-if="toast" class="survivor-toast" role="status" aria-live="polite">{{ toast }}</div>
         <div v-if="artifactNotice" class="survivor-artifact-notice" role="status" aria-live="polite">
-          <span class="survivor-artifact-notice-icon" aria-hidden="true">{{ artifactNotice.icon }}</span>
+          <span class="survivor-artifact-notice-icon" aria-hidden="true"><img v-if="artifactNotice.image" :src="artifactNotice.image" alt="" /><template v-else>{{ artifactNotice.icon }}</template></span>
           <span><b>{{ artifactNotice.name }}</b><small>{{ artifactNotice.description }}</small></span>
         </div>
         <div v-if="trainerPresentation" class="survivor-trainer-intro" :class="{ final: trainerPresentation.final, 'reduced-motion': !detailedSpecialEffects }" role="status" aria-live="assertive">

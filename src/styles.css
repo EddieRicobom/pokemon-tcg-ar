@@ -6771,6 +6771,12 @@ body.no-scroll .reward-toasts {
   animation: survivor-artifact-in 160ms ease-out;
 }
 
+.survivor-artifact-notice-icon img {
+  width: 30px;
+  height: 30px;
+  image-rendering: pixelated;
+}
+
 .survivor-artifact-notice-icon {
   display: grid;
   flex: 0 0 38px;
