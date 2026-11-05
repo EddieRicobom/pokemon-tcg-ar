@@ -3663,12 +3663,24 @@ onBeforeUnmount(() => {
             <button type="button" class="link survivor-back" @click="typeChoice = null">← Voltar aos Pokémon</button>
           </div>
           <div v-else class="card survivor-pick" :class="{ 'pvp-pick': pvpRun }">
-            <h2>{{ pvpRun ? `PvP · run ${pvpRun.index + 1} de ${pvpRun.total}: quem joga?` : 'Quem vai pra Torre dessa vez?' }} <button v-if="!pvpRun" type="button" class="link" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
+            <h2>{{ pvpRun ? `PvP · run ${pvpRun.index + 1} de ${pvpRun.total}: quem joga?` : 'Quem vai pra Torre dessa vez?' }} <button v-if="!pvpRun" type="button" class="survivor-secret-star" aria-label="Estrela da Torre" @click="secretDebug">✦</button></h2>
             <p v-if="pvpRun" class="note pvp-note" role="status">Você tem {{ Math.round(pvpRun.limitMs / 60000) }} min. O Pokémon que escolher entra na sua equipe 3x3, mais forte quanto melhor for a run. Nada da Vila entra e nada vale para a Torre.</p>
             <p v-else class="note" role="status">{{ nextTowerGoal }}</p>
             <button v-if="!pvpRun" type="button" class="link survivor-pvp-entry" @click="emit('openPvp')">⚔ PvP com um amigo: 3 runs de 2 min e uma arena 3x3</button>
             <p v-if="torre.runs > 0" class="note">{{ torre.runs }} corridas concluídas · melhor onda {{ torre.bestWave }} · melhor nível {{ torre.bestLevel }} · melhor tempo {{ formatTime(torre.bestMs) }} (corrida pura: {{ torre.bestPureMs > 0 ? formatTime(torre.bestPureMs) : '—' }}) · {{ recordedObjectiveCount }} desafio(s) distinto(s) registrados.</p>
-            <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
+            <div class="survivor-mode survivor-mode-bonk" role="group" aria-label="Modo da Torre">
+              <button type="button" :class="{ active: !infiniteWanted && !bonkWanted }" @click="infiniteWanted = false; bonkWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
+              <button type="button" class="bonk-mode-button" :class="{ active: bonkWanted }" @click="bonkWanted = true; infiniteWanted = false">💥 BONK<small>3D, física e pulo</small></button>
+              <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true; bonkWanted = false; fastWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
+            </div>
+            <p v-if="bonkWanted" class="note bonk-picker-note">💥 BONK é um teste opcional: câmera em terceira pessoa, mapa amplo com ruínas, ponte e bosque físicos. Pedras e muretas bloqueiam; use o botão Pular (ou Q/Espaço) para atravessar obstáculos baixos.</p>
+            <details class="survivor-ledger survivor-howto">
+              <summary>Como funciona a Torre</summary>
+              <p class="note">Cada corrida traz 3 desafios opcionais, escolhidos entre 12 pelo sorteio da própria corrida. Só contam quando ela termina.</p>
+              <p class="note">Até 6 Pokémon são sorteados da sua caixa: 1 protagonista e até 5 apoios para recrutar durante a corrida. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
+              <p v-if="!bonkWanted" class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
+              <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
+            </details>
             <details class="survivor-ledger">
               <summary>Trilha dos desafios · {{ recordedObjectiveCount }}/{{ SURVIVOR_OBJECTIVE_IDS.length }} concluídos</summary>
               <ul>
@@ -3678,16 +3690,6 @@ onBeforeUnmount(() => {
                 </li>
               </ul>
             </details>
-             <p class="note">Até 6 Pokémon são sorteados da sua caixa: 1 protagonista e até 5 apoios para recrutar durante a corrida. Você pode marcar favoritos para aumentar a chance de vê-los.</p>
-            <p v-if="!bonkWanted" class="note">Viaje pelas nove regiões durante a corrida. Trilhas, árvores e lagoas são decorativas: você pode atravessar tudo.</p>
-            <p v-else class="note bonk-picker-note">💥 BONK é um teste opcional: câmera em terceira pessoa, mapa amplo com ruínas, ponte e bosque físicos. Pedras e muretas bloqueiam; use o botão Pular ou Q/Espaço para atravessar obstáculos baixos.</p>
-            <p class="note">Novos inimigos acompanham a região; os que já estão na arena mantêm a espécie. A dificuldade continua seguindo o tempo e a onda.</p>
-            <div class="survivor-mode survivor-mode-bonk" role="group" aria-label="Modo da Torre">
-              <button type="button" :class="{ active: !infiniteWanted && !bonkWanted }" @click="infiniteWanted = false; bonkWanted = false">🗼 Normal<small>Chefão aos 20 min</small></button>
-              <button type="button" class="bonk-mode-button" :class="{ active: bonkWanted }" @click="bonkWanted = true; infiniteWanted = false">💥 BONK<small>3D, física e pulo</small></button>
-              <button v-if="torre.infiniteUnlocked" type="button" :class="{ active: infiniteWanted }" @click="infiniteWanted = true; bonkWanted = false; fastWanted = false">♾️ Infinito<small>Mais difícil, sem fim</small></button>
-            </div>
-            <p v-if="bonkWanted" class="note bonk-picker-note">💥 BONK: câmera em terceira pessoa e física. Use o botão Pular (ou Q/Espaço) para atravessar obstáculos baixos.</p>
             <section v-if="torre.infiniteUnlocked" class="survivor-preparations" aria-label="Modificadores da corrida">
               <strong>Modificadores</strong>
               <div class="survivor-mode" role="group" aria-label="Ritmo da corrida">
