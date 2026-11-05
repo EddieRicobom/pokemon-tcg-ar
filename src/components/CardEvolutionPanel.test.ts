@@ -42,6 +42,25 @@ describe('Fonte: evolução das cartas', () => {
     expect(host.textContent).toContain('Charmander evoluiu para Charmeleon');
     expect(friends[card.id]!.points).toBe(100);
   });
+  it('no Altar, só lista quem ainda pode evoluir', async () => {
+    const mewtwo = { id: 'base1-10', name: 'Mewtwo', dexIds: [150], setName: 'Base', localId: '10', shiny: false } as CachedCard;
+    mocks.list.mockResolvedValue([mewtwo, card]);
+    app = createApp({ render: () => h(CardEvolutionPanel, { friends, altar: true, trustStones: 5 }) });
+    app.mount(host); await flush();
+    const names = [...host.querySelectorAll('option')].map((option) => option.textContent ?? '');
+    expect(names).toHaveLength(1);
+    expect(names[0]).toContain('Charmander');
+    expect(host.querySelector('h3')?.textContent).toBe('Charmander');
+  });
+
+  it('no Altar, sem ninguém para evoluir, diz isso em vez de mostrar uma lista vazia', async () => {
+    mocks.list.mockResolvedValue([{ id: 'base1-10', name: 'Mewtwo', dexIds: [150], setName: 'Base', localId: '10', shiny: false } as CachedCard]);
+    app = createApp({ render: () => h(CardEvolutionPanel, { friends, altar: true }) });
+    app.mount(host); await flush();
+    expect(host.querySelector('select')).toBeNull();
+    expect(host.textContent).toContain('Nenhuma das suas cartas tem uma próxima evolução');
+  });
+
   it('sem sprite não confirma evolução nem apaga as vitórias', async () => {
     mocks.sprite.mockResolvedValue(null);
     const button = await mount(); button.click(); await flush();
