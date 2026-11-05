@@ -39,7 +39,7 @@ describe('escolha dos pins', () => {
 
   it('limpa o que veio do armazenamento', () => {
     const s = normalizeSetup({ mine: ['c1', 'c1', 'gone', 7, 'c2'], enemy: ['c2', 'c3'], difficulty: 'dificil' }, ids);
-    expect(s).toEqual({ mine: ['c1', 'c2'], enemy: ['c3'], difficulty: 'dificil', marks: true, shrink: true, sound: true, haptics: true, effects: true, field: 'natural' });
+    expect(s).toEqual({ mine: ['c1', 'c2'], enemy: ['c3'], difficulty: 'dificil', marks: true, shrink: true, sound: true, haptics: true, effects: true, field: 'natural', formation: 'linha' });
     expect(normalizeSetup({ marks: false, shrink: false, sound: false, haptics: false }, ids)).toMatchObject({ marks: false, shrink: false, sound: false, haptics: false });
     expect(normalizeSetup({ mine: ['c1'], enemy: ['c2'] }, ids).effects).toBe(true); // saves antigos ganham a preferência nova por padrão
     expect(normalizeSetup({ effects: false }, ids).effects).toBe(false);
