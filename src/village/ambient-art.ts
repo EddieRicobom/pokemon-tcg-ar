@@ -81,43 +81,57 @@ export function drawFountainFx(ctx: CanvasRenderingContext2D, x: number, bottom:
  * prédio e continua barato para a GPU. O ciclo é determinístico para não
  * causar mudanças bruscas quando a câmera é redesenhada.
  */
-export function drawTowerDataFx(ctx: CanvasRenderingContext2D, x: number, bottom: number, scale: number, now: number): void {
+/** Cor do estandarte de cada prédio de modo de jogo: mesma peça, mesma madeira, só o pano muda. */
+const GAME_BANNERS: Readonly<Record<string, string>> = { arcade: '#e8743b', pins: '#3fa66a', arena: '#c94a4a', torre: '#4a7fd0', masmorra: '#8a5fc0' };
+
+export const isGameBuilding = (kind: string): boolean => kind in GAME_BANNERS;
+
+/**
+ * Fachada comum da Rua dos Jogos: degrau de pedra sob o prédio e dois postes com lanterna e estandarte. Os prédios vêm de
+ * folhas diferentes; esta moldura igual é o que os amarra à Vila. Blocos cheios, no pixel da arte, sem brilho caro.
+ */
+export function drawGameFrontage(ctx: CanvasRenderingContext2D, kind: string, cx: number, base: number, width: number, scale: number, now: number, night: boolean, animate: boolean): void {
+  const cloth = GAME_BANNERS[kind];
+  if (!cloth) return;
+  const u = scale;
+  const half = width / 2;
+  const left = Math.round(cx - half - 4 * u);
+  const span = Math.round(width + 8 * u);
   ctx.save();
-  const height = 132 * scale;
-  const base = bottom - 22 * scale;
-  const phase = now / 1450;
-  const streams = [
-    { dx: -12, width: 2, speed: 0.88, color: 'rgba(83,220,255,0.72)' },
-    { dx: -5, width: 1, speed: 1.18, color: 'rgba(138,160,255,0.72)' },
-    { dx: 3, width: 2, speed: 0.72, color: 'rgba(103,248,207,0.68)' },
-    { dx: 10, width: 1, speed: 1.06, color: 'rgba(196,133,255,0.72)' },
-  ] as const;
-
-  // Trilhas verticais interrompidas simulam dados subindo, sem uma camada
-  // contínua que esconda a fachada da Torre.
-  for (let i = 0; i < streams.length; i++) {
-    const stream = streams[i]!;
-    const drift = Math.sin(phase * 0.7 + i * 1.8) * 2.4 * scale;
-    ctx.fillStyle = stream.color;
-    for (let j = 0; j < 7; j++) {
-      const progress = (phase * stream.speed + j * 0.17 + i * 0.23) % 1;
-      const y = base - progress * height;
-      const size = Math.max(1, Math.round((j % 3 === 0 ? 3 : 2) * scale));
-      const xOffset = (stream.dx + drift / scale + Math.sin(j * 2.7 + phase) * 1.2) * scale;
-      const alpha = 0.22 + (1 - progress) * 0.66;
-      ctx.globalAlpha = alpha;
-      ctx.fillRect(Math.round(x + xOffset), Math.round(y), stream.width * scale, size);
+  ctx.fillStyle = '#5f5d57';
+  ctx.fillRect(left, base + u, span, u);
+  ctx.fillStyle = '#8d8a80';
+  ctx.fillRect(left, base - u, span, 2 * u);
+  ctx.fillStyle = '#b5b1a4';
+  ctx.fillRect(left, base - u, span, u);
+  for (const side of [-1, 1] as const) {
+    const px = Math.round(cx + side * (half + 3 * u));
+    ctx.fillStyle = '#2b2f3f';
+    ctx.fillRect(px - u, base - 26 * u, 2 * u, 26 * u);
+    ctx.fillRect(px - 2 * u, base - 2 * u, 4 * u, 2 * u);
+    if (night) {
+      ctx.globalAlpha = 0.28;
+      ctx.fillStyle = '#ffd98a';
+      ctx.beginPath();
+      ctx.arc(px, base - 28 * u, 11 * u, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
+    ctx.fillStyle = '#2b2f3f';
+    ctx.fillRect(px - 2 * u, base - 31 * u, 4 * u, 5 * u);
+    ctx.fillStyle = night ? '#ffe9a8' : '#c9a45a';
+    ctx.fillRect(px - u, base - 30 * u, 2 * u, 3 * u);
+    // Estandarte para o lado de fora, balançando um pixel com o vento.
+    const sway = animate ? Math.round(Math.sin(now / 620 + side)) * u : 0;
+    const bx = side < 0 ? px - 8 * u : px + u;
+    ctx.fillStyle = '#1f2a44';
+    ctx.fillRect(bx - u, base - 25 * u, 9 * u, 12 * u);
+    ctx.fillStyle = cloth;
+    ctx.fillRect(bx, base - 24 * u, 7 * u, 9 * u);
+    ctx.fillRect(bx + 2 * u + sway, base - 15 * u, 3 * u, 2 * u);
+    ctx.fillStyle = '#fff3c9';
+    ctx.fillRect(bx, base - 24 * u, 7 * u, u);
   }
-
-  // Um fio central e o núcleo no topo dão a leitura de uma torre de dados.
-  ctx.globalAlpha = 0.5 + Math.sin(phase * 1.7) * 0.16;
-  ctx.fillStyle = '#b6f4ff';
-  ctx.fillRect(Math.round(x - scale), Math.round(base - height), Math.max(1, scale), Math.round(height));
-  ctx.globalAlpha = 0.9;
-  ctx.fillRect(Math.round(x - 2 * scale), Math.round(base - height - 2 * scale), 4 * scale, 2 * scale);
-  ctx.fillStyle = '#d9b6ff';
-  ctx.fillRect(Math.round(x - scale), Math.round(base - height - 4 * scale), 2 * scale, 2 * scale);
   ctx.restore();
 }
 

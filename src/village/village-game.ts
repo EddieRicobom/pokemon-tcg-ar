@@ -1,4 +1,4 @@
-import { drawWaterFx, drawFountainFx, drawSunRays, drawTowerDataFx, drawSoftShadow, drawSparkle } from './ambient-art';
+import { drawWaterFx, drawFountainFx, drawGameFrontage, drawSunRays, drawSoftShadow, drawSparkle, isGameBuilding } from './ambient-art';
 import { BenchVisits, benchesFor } from '../core/village/benches';
 import { CafeService } from '../core/village/cafe';
 import { CAFE_TABLES } from '../core/village/cafe-layout';
@@ -1521,7 +1521,6 @@ export class VillageGame {
     // Efeitos altos não podem ficar presos ao z-order dos pés do prédio: uma
     // árvore ou outro prédio à frente acabaria escondendo a coluna inteira.
     // Eles são desenhados depois dos elementos do mapa, antes das partículas.
-    const towerFx: (() => void)[] = [];
     // Só monta e desenha objetos no campo de visão, com uma faixa de 20% da
     // tela em cada borda. A margem impede pop-in durante a caminhada, sem
     // gastar CPU com itens que ainda estão longe demais para aparecer.
@@ -1965,6 +1964,7 @@ export class VillageGame {
           bounds: { x: cx0, y: spriteBase - ch, w: cw, h: ch },
           draw: () => {
             drawDioramaTilted(mid, spriteBase, cw, () => drawDepthSprite(img, cx0, spriteBase - ch, cw, ch));
+            drawGameFrontage(ctx, b.kind, mid, spriteBase, cw, scale, now, night, ambientFx);
             this.drawTag(mid, spriteBase - ch - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
         });
@@ -1994,16 +1994,18 @@ export class VillageGame {
       const civicId = CIVIC_TILESET[b.kind];
       const civicArt = atlas && civicId ? this.art(civicId) : null;
       if (civicArt && civicId) {
+        // A Torre sai 20% menor: com 144 px de altura, ela sumia com a rua e destoava dos vizinhos.
+        const maxWidth = b.kind === 'torre' ? wpx * 0.8 : wpx;
         list.push({
           y: buildingGroundY(b),
-          bounds: standBounds(civicArt, mid, spriteBase, wpx),
+          bounds: standBounds(civicArt, mid, spriteBase, maxWidth),
           draw: () => {
-            const at = stand(civicArt, mid, spriteBase, wpx);
+            const at = stand(civicArt, mid, spriteBase, maxWidth);
             if (night) lightUp(civicId, civicId, at);
+            if (isGameBuilding(b.kind)) drawGameFrontage(ctx, b.kind, mid, spriteBase, at.w, scale, now, night, ambientFx);
             this.drawTag(mid, at.y - 2 * scale + Math.sin(now / 350) * scale, emoji);
           },
         });
-        if (b.kind === 'torre' && ambientFx) towerFx.push(() => drawTowerDataFx(ctx, mid, spriteBase, scale, now));
         if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
         continue;
       }
@@ -2016,7 +2018,6 @@ export class VillageGame {
           this.drawTag(mid, spriteBase - 50 * scale + Math.sin(now / 350) * scale, emoji);
         },
       });
-      if (b.kind === 'torre' && ambientFx) towerFx.push(() => drawTowerDataFx(ctx, mid, spriteBase, scale, now));
       // Sem o atlas: duas janelinhas acesas, não uma faixa de luz pela fachada inteira.
       if (night) for (const k of [0.25, 0.75]) homeGlows.push({ x: left + wpx * k - 3 * scale, y: bottom - 20 * scale, w: 6 * scale, h: 6 * scale });
       if (nearDoor) overlays.push(() => this.drawLabel(mid, bottom + 2 * scale, b.name));
@@ -2269,7 +2270,6 @@ export class VillageGame {
       } else d.draw();
     }
     depthBand = 0;
-    for (const fx of towerFx) fx();
 
     // Partículas do mundo (poeira, folhas, fumaça, puf) e borboletas.
     for (const q of this.particles) {
