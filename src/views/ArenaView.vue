@@ -277,7 +277,7 @@ onMounted(() => {
     <TurnDuel v-if="duelOpponent" :members="armed" :opponent="duelOpponent" @close="duelOpponent = null" />
 
     <!-- Passo 4: o resumo e o botão principal ficam sempre à mão, no pé da tela. -->
-    <section id="arena-step-4" class="arena-enter" aria-labelledby="arena-step-4-title">
+    <section id="arena-step-4" class="arena-enter" :class="{ waiting: !chosen }" aria-labelledby="arena-step-4-title">
       <h3 id="arena-step-4-title">4 · Entrar</h3>
       <p v-if="chosen" class="arena-summary"><span aria-hidden="true">{{ chosen.icon }}</span> {{ plan.summary }}</p>
       <p v-if="!plan.ready && plan.blocker" class="arena-blocker" role="status">{{ plan.blocker }}</p>
@@ -316,11 +316,15 @@ onMounted(() => {
 .arena-toggle { display: flex; align-items: center; gap: .7rem; min-height: 2.75rem; }
 .arena-toggle input { width: 1.4rem; height: 1.4rem; flex: none; }
 .arena-toggle small { display: block; color: var(--muted); }
-.arena-enter { position: sticky; bottom: .5rem; z-index: 5; display: grid; gap: .5rem; padding: .85rem; border: 1px solid var(--gold); border-radius: .95rem; background: rgba(12, 17, 34, .96); box-shadow: 0 -6px 24px rgba(0, 0, 0, .45); scroll-margin-top: .75rem; }
+.arena-enter { position: sticky; bottom: calc(var(--nav-height) + 18px + env(safe-area-inset-bottom)); z-index: 5; display: grid; gap: .5rem; padding: .85rem; border: 1px solid var(--gold); border-radius: .95rem; background: rgba(12, 17, 34, .96); box-shadow: 0 -6px 24px rgba(0, 0, 0, .45); scroll-margin-top: .75rem; }
 .arena-enter > * { margin: 0; }
 .arena-blocker { color: var(--gold); }
 .arena-go { min-height: 3.4rem; font-size: 1.05rem; font-weight: 800; }
 .arena-go:disabled { opacity: .55; }
+/* Antes de escolher o modo, o pé fica fino: só o botão, sem cobrir as opções. */
+.arena-enter.waiting { gap: 0; padding: .45rem; border-color: var(--line); }
+.arena-enter.waiting h3, .arena-enter.waiting .arena-blocker { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.arena-enter.waiting .arena-go { min-height: 2.8rem; font-size: .95rem; }
 @media (prefers-reduced-motion: reduce) {
   .arena-view * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }

@@ -39,7 +39,7 @@ function finish(destination: 'scan' | 'vila'): void {
             <span>{{ entry.label }}</span>
           </button>
         </div>
-        <button type="button" class="primary" @click="saveProfile">Continuar</button>
+        <button type="button" class="primary first-run-continue" @click="saveProfile">Continuar</button>
       </template>
       <template v-else>
         <p class="first-run-kicker">PRIMEIROS PASSOS</p>
@@ -47,7 +47,7 @@ function finish(destination: 'scan' | 'vila'): void {
         <p class="note">Aponte a câmera para uma carta física. O app só guarda a carta quando o reconhecimento real terminar.</p>
         <div class="first-run-actions">
           <button type="button" class="primary" @click="finish('scan')">📷 Escanear minha primeira carta</button>
-          <button type="button" class="button" @click="finish('vila')">Não tenho cartas agora — ir para a Vila</button>
+          <button type="button" class="button" @click="finish('vila')">Ainda sem cartas? Ir para a Vila</button>
         </div>
         <p class="hint">Você pode escanear depois. A Vila entrega um companheiro digital para começar a explorar.</p>
       </template>

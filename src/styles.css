@@ -234,6 +234,12 @@ body {
   color: var(--muted);
   pointer-events: none;
 }
+/* Câmera desligada: a própria tela vira o botão, com um alvo pulsando no meio. */
+.viewport .placeholder.camera-wake { place-content: center; gap: 10px; width: 100%; padding: 0; border: 0; border-radius: inherit; background: radial-gradient(circle at 50% 45%, rgba(255, 216, 74, .08), transparent 60%); font: inherit; font-weight: 700; color: var(--text); pointer-events: auto; cursor: pointer; }
+.viewport .placeholder.camera-wake small { color: var(--muted); font-weight: 500; }
+.camera-wake-ring { display: grid; place-items: center; justify-self: center; width: 76px; height: 76px; border-radius: 50%; border: 2px solid var(--gold); font-size: 2rem; box-shadow: 0 0 0 0 rgba(255, 216, 74, .45); animation: camera-wake-pulse 2.2s ease-out infinite; }
+@keyframes camera-wake-pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 216, 74, .45); } 70%, 100% { box-shadow: 0 0 0 18px rgba(255, 216, 74, 0); } }
+@media (prefers-reduced-motion: reduce) { .camera-wake-ring { animation: none; } }
 
 .actions {
   margin-top: 12px;
@@ -481,7 +487,9 @@ a:focus-visible {
 .first-run-card > * { margin: 0; }
 .first-run-name { display: grid; gap: 6px; font-weight: 700; }
 .first-run-name input { width: 100%; box-sizing: border-box; }
-.first-run-sprites { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
+.first-run-sprites { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+/* Continuar sempre visível no pé do cartão, sem rolar os 40 treinadores. */
+.first-run-continue { position: sticky; bottom: 0; z-index: 1; min-height: 3rem; box-shadow: 0 -16px 16px 4px var(--surface), 0 0 0 4px var(--surface); }
 .first-run-sprites button { display: grid; justify-items: center; gap: 3px; padding: 8px 4px; color: var(--text); background: rgb(14 20 34 / 80%); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
 .first-run-sprites button.selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgb(255 216 74 / 22%); }
 .first-run-sprites img { image-rendering: pixelated; }
@@ -510,6 +518,23 @@ a.button {
   color: var(--text);
   font-weight: 600;
   text-decoration: none;
+}
+
+/* Links com cara de botão principal (Escanear, Começar…): mesma cor e peso do button.primary. */
+a.button.primary,
+a.primary.link-button {
+  display: inline-grid;
+  place-items: center;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--on-accent);
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%), 0 2px 0 #9e2f28;
 }
 
 button.danger {
@@ -2435,6 +2460,33 @@ button.link {
   font-weight: 700;
 }
 
+/* Nome e treinador escolhido no topo do cartão: o cartão é seu. */
+.trainer-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--gold);
+  font-size: .8rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.trainer-name img {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  margin: -10px -4px -8px -6px;
+  image-rendering: pixelated;
+}
+
+.trainer-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .trainer-xp {
   color: var(--muted);
   font-size: 0.85rem;
@@ -2442,7 +2494,7 @@ button.link {
 
 .streak {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   font-size: 0.85rem;
@@ -2462,15 +2514,21 @@ button.link {
   color: var(--pending);
 }
 
+/* Chama em gota: ponta para cima, nunca quebra de linha sozinha. */
 .flame {
-  width: 12px;
-  height: 16px;
-  border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
-  background: linear-gradient(to top, var(--accent), var(--gold));
+  flex: none;
+  width: 11px;
+  height: 11px;
+  margin: 4px 3px 0;
+  border-radius: 50% 0 50% 50%;
+  transform: rotate(-45deg);
+  background: linear-gradient(45deg, var(--accent), var(--gold));
+  box-shadow: 0 0 8px rgba(255, 196, 70, .55);
 }
 
 .streak.parada .flame {
   background: var(--line);
+  box-shadow: none;
 }
 
 .missions,
@@ -3709,7 +3767,7 @@ body.no-scroll .reward-toasts {
 /* O botão Começar fica sempre à mão, logo acima da barra de abas. */
 .pn-start {
   position: sticky;
-  bottom: calc(var(--nav-height) + 10px + env(safe-area-inset-bottom));
+  bottom: calc(var(--nav-height) + 18px + env(safe-area-inset-bottom));
   z-index: 5;
   display: flex;
   align-items: center;

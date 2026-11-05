@@ -1108,7 +1108,11 @@ const VERDICT_PT = { aceita: 'aceita', duvida: 'em dúvida', rejeitada: 'rejeita
       <video ref="videoEl" class="feed" playsinline muted></video>
       <canvas :key="arCanvasKey" ref="canvasEl" class="overlay" aria-label="Camada de realidade aumentada"></canvas>
       <canvas ref="debugCanvasEl" class="overlay debug-quad" aria-hidden="true"></canvas>
-      <p v-if="!cameraOn && !cameraBusy" class="placeholder">Câmera desligada</p>
+      <button v-if="!cameraOn && !cameraBusy" type="button" class="placeholder camera-wake" @click="openCamera">
+        <span class="camera-wake-ring" aria-hidden="true">📷</span>
+        <span>Câmera desligada</span>
+        <small>Toque para mirar numa carta</small>
+      </button>
       <div
         v-if="adjusting"
         class="gesture-layer"
