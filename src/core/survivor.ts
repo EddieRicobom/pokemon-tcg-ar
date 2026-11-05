@@ -97,7 +97,7 @@ export const BALANCE = {
   shadowBossSpeed: 88,
   enemyHpBase: 16,
   /** Vida extra a cada `enemyHpEverySec` segundos; a simulação agora usa os golpes reais das espécies. */
-  enemyHpStep: 2,
+  enemyHpStep: 2.5,
   enemyHpEverySec: 30,
   enemyHpPerWave: 2,
   enemyDamageBase: 6,
@@ -3364,8 +3364,6 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
   if (dead.length > 0) {
     state.enemies = state.enemies.filter((e) => e.hp > 0);
     state.kills += dead.length;
-    const trophyMedicine = p.upgradeLevels['trophy-medicine'] ?? 0;
-    if (trophyMedicine > 0) healSurvivor(p, dead.length * trophyMedicine * 2);
     for (const e of dead) {
       state.fx.push({ kind: 'defeat', x: e.x, y: e.y, r: e.boss || e.grade === 'chefao' ? 26 : 14, color: e.archetype === 'suporte' ? '#ff78b7' : e.grade === 'elite' ? '#ffd84a' : '#e8f2ff', ageMs: 0, lifeMs: 360 });
       const value = normalizeSurvivorXp(e.boss ? 48 : e.grade === 'chefao' ? 36 : e.grade === 'elite' ? 20 : 8);

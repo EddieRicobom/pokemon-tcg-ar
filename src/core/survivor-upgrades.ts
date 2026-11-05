@@ -199,7 +199,6 @@ const POKE_BALL_EXTRA_UPGRADES: readonly SurvivorUpgrade[] = [
   { id: 'threat-hunter', family: 'ataque', rarity: 'raro', name: 'Caçador de ameaças', description: 'Contra Chefões e Pokémon de treinadores, seu golpe causa +20% de dano.', maxLevels: 2, apply: () => {} },
   { id: 'slow-field', family: 'elemento', rarity: 'normal', name: 'Campo pegajoso', description: 'Todo acerto deixa o inimigo lento por 0,25 s.', maxLevels: 2, apply: () => {} },
   { id: 'orb-medicine', family: 'defesa', rarity: 'normal', name: 'Orbes medicinais', description: 'Cada orbe de XP coletado recupera 1 de vida.', maxLevels: 2, apply: () => {} },
-  { id: 'trophy-medicine', family: 'defesa', rarity: 'normal', name: 'Tropeço curativo', description: 'Cada inimigo derrotado recupera 2 de vida.', maxLevels: 1, apply: () => {} },
   { id: 'contact-guard', family: 'defesa', rarity: 'normal', name: 'Guarda de impacto', description: 'Recebe 12% menos dano de contato e explosões.', icon: '🛡', maxLevels: 2, apply: () => {} },
   { id: 'projectile-guard', family: 'defesa', rarity: 'normal', name: 'Guarda de disparo', description: 'Recebe 12% menos dano de projéteis inimigos.', icon: '🛡', maxLevels: 2, apply: () => {} },
   { id: 'retaliation-wave', family: 'ataque', rarity: 'normal', name: 'Onda de resposta', description: 'Ao sofrer dano, fere inimigos bem próximos.', maxLevels: 1, apply: () => {} },

@@ -37,17 +37,27 @@ describe('novas cartas de buff', () => {
     expect(new Set(ancestral.map((upgrade) => upgrade.id)).size).toBe(10);
   });
 
-  it('mantém dez buffs inéditos de nível Poké Ball sem aumentar a invulnerabilidade', () => {
+  it('mantém nove buffs inéditos de nível Poké Ball sem aumentar a invulnerabilidade', () => {
     const ids = [
       'opening-strike', 'last-stand', 'close-quarters', 'long-shot', 'slow-field', 'orb-medicine',
-      'trophy-medicine', 'contact-guard', 'projectile-guard', 'retaliation-wave',
+      'contact-guard', 'projectile-guard', 'retaliation-wave',
     ];
     const byId = new Map(SURVIVOR_UPGRADES.map((upgrade) => [upgrade.id, upgrade]));
-    expect(ids).toHaveLength(10);
+    expect(ids).toHaveLength(9);
     expect(ids.every((id) => byId.get(id)?.rarity === 'normal')).toBe(true);
     expect(ids.every((id) => (byId.get(id)?.maxLevels ?? 0) > 0)).toBe(true);
     expect(byId.has('escape-window')).toBe(false);
-    expect(byId.get('trophy-medicine')?.maxLevels).toBe(1);
+    expect(byId.has('trophy-medicine')).toBe(false);
+  });
+
+  it('não cura ao derrotar inimigos mesmo com o buff antigo na corrida', () => {
+    const s = quiet(createSurvivorState(1, { kindCount: 1 }));
+    s.player.hp = 10;
+    s.player.upgradeLevels['trophy-medicine'] = 1;
+    s.enemies.push(enemy(1, s.player.x + 200, s.player.y, { hp: 0 }));
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.kills).toBe(1);
+    expect(s.player.hp).toBe(10);
   });
 
   it('Caçador de ameaças aumenta o dano contra chefões e Pokémon de treinadores', () => {
