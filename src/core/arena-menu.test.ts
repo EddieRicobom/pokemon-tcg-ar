@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arenaPlan, choiceFromFlags, endlessFromFlags, isArenaChoice } from './arena-menu';
+import { ARENA_CHOICES, arenaPlan, choiceFromFlags, endlessFromFlags, isArenaChoice } from './arena-menu';
 import type { ArenaPlanInput } from './arena-menu';
 
 const base: ArenaPlanInput = { choice: 'livre', teamCount: 3, mode: 'royale', endless: 'formatacao', leader: null, pvpConnected: false };
@@ -34,6 +34,22 @@ describe('endlessFromFlags e isArenaChoice', () => {
   it('reconhece só opções conhecidas', () => {
     expect(isArenaChoice('liga')).toBe(true);
     expect(isArenaChoice('torneio')).toBe(false);
+  });
+});
+
+describe('arenaPlan: duelo por turnos', () => {
+  const duel: ArenaPlanInput = { ...base, choice: 'duelo' };
+  it('é a primeira opção da Arena', () => {
+    expect(ARENA_CHOICES[0]!.id).toBe('duelo');
+    expect(isArenaChoice('duelo')).toBe(true);
+  });
+  it('precisa de equipe e, valendo a Liga, de um líder', () => {
+    expect(arenaPlan({ ...duel, teamCount: 0 }).step).toBe(2);
+    expect(arenaPlan(duel).ready).toBe(true);
+    const noLeader = arenaPlan({ ...duel, duelLeague: true });
+    expect(noLeader.ready).toBe(false);
+    expect(noLeader.step).toBe(3);
+    expect(arenaPlan({ ...duel, duelLeague: true, leader: 'Roark' }).summary).toContain('Roark');
   });
 });
 

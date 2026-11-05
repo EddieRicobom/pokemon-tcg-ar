@@ -82,6 +82,24 @@ describe('preparo do duelo', () => {
     expect(foe.failed).toHaveLength(1);
   });
 
+  it('com suggestMissing, quem não tem golpes entra com os sugeridos e o aviso diz isso', async () => {
+    const side = await preparePlayerSide(
+      [{ id: 'a', name: 'Charmander', dexId: 4, shiny: false, bond: 0 }],
+      { storage: memoryStorage(), fetchImpl: fakeFetch(), suggestMissing: true, savedMovesOf: () => [] },
+    );
+    expect(side.mons[0]!.moves.map((m) => m.name)).toEqual(['Ember']);
+    expect(side.notes.some((n) => n.includes('golpes sugeridos'))).toBe(true);
+  });
+
+  it('sem dados, a sugestão não inventa golpe: o Pokémon fica de fora', async () => {
+    const side = await preparePlayerSide(
+      [{ id: 'a', name: 'Charmander', dexId: 4, shiny: false, bond: 0 }],
+      { storage: memoryStorage(), fetchImpl: fakeFetch(new Set(['/pokemon/'])), timeoutMs: 50, suggestMissing: true, savedMovesOf: () => [] },
+    );
+    expect(side.mons).toEqual([]);
+    expect(side.notes.some((n) => n.includes('ficou de fora'))).toBe(true);
+  });
+
   it('seus Pokémon usam os golpes salvos e quem não tem fica de fora com aviso', async () => {
     const flamethrower: ChosenMove = {
       slug: 'flamethrower', name: 'Flamethrower', type: 'fire', power: 90, accuracy: 100, pp: 15, damageClass: 'special',

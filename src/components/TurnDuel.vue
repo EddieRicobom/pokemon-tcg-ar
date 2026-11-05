@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 
 import { pokemonBackSpriteUrl, pokemonSpriteUrl } from '../ar/sprite-url';
 import type { ArenaMember } from '../app/arena-members';
 import { loadDexNames } from '../app/dex-names';
+import { effectiveVisual } from '../app/visual-settings';
 import { pendingChallenge, recordLeagueResult } from '../app/league-store';
 import { savedMoves } from '../app/moveset-store';
 import { prepareFoeSide, preparePlayerSide } from '../app/turn-duel-setup';
@@ -47,8 +48,17 @@ const fx = reactive({
   faint: [false, false] as [boolean, boolean],
   flash: false,
   float: null as { side: SideIndex; text: string; tone: string; key: number } | null,
+  /** Golpe voando de quem usou até o alvo. `side` é quem usou. */
+  shot: null as { side: SideIndex; color: string; kind: 'physical' | 'special' | 'status'; key: number } | null,
+  /** Explosão de impacto em quem apanhou. */
+  burst: null as { side: SideIndex; color: string; big: boolean; key: number } | null,
+  shake: false,
+  enter: [false, false] as [boolean, boolean],
 });
 const message = ref('Preparando o duelo…');
+/** Tudo o que aconteceu na luta, do mais novo para o mais antigo. */
+const log = ref<{ key: number; turn: number; text: string }[]>([]);
+let logKey = 0;
 const busy = ref(false);
 const menu = ref<'main' | 'fight' | 'party'>('main');
 const confirmForfeit = ref(false);
@@ -75,13 +85,13 @@ onMounted(async () => {
     const deps = { storage: storage() };
     const names = await loadDexNames().catch(() => null);
     const [mine, foe] = await Promise.all([
-      preparePlayerSide(props.members, { ...deps, savedMovesOf: (m) => savedMoves(m.id, m.dexId) }),
+      preparePlayerSide(props.members, { ...deps, suggestMissing: true, savedMovesOf: (m) => savedMoves(m.id, m.dexId) }),
       prepareFoeSide(props.opponent, { ...deps, nameOf: (dex) => names?.get(dex) }),
     ]);
     if (disposed) return;
     notes.value = [...mine.notes, ...(foe.failed.length > 0 ? [`Sem dados da PokéAPI, ficaram de fora do oponente: ${foe.failed.join(', ')}.`] : [])];
     if (mine.mons.length === 0) {
-      errorMessage.value = 'Nenhum Pokémon da equipe tem golpes montados. Escolha os golpes antes do duelo.';
+      errorMessage.value = 'Não consegui montar golpes para a sua equipe: a PokéAPI não respondeu e não há cópia guardada. Tente de novo com internet.';
       phase.value = 'error';
       return;
     }
@@ -141,6 +151,15 @@ function float(side: SideIndex, text: string, tone: string): void {
   fx.float = { side, text, tone, key: ++floatKey };
 }
 
+/** Golpes animados seguem a opção de efeitos: o Modo Rotom e "Faíscas" desligado deixam só o tremor do sprite. */
+const showFx = (): boolean => effectiveVisual.value.impactFx;
+
+function shakeField(ms: number): void {
+  if (!showFx()) return;
+  fx.shake = true;
+  setTimeout(() => { fx.shake = false; }, ms);
+}
+
 function applyVisual(event: DuelEvent): void {
   switch (event.kind) {
     case 'switch': {
@@ -149,19 +168,24 @@ function applyVisual(event: DuelEvent): void {
       shown.confused[event.side][event.from] = false;
       shown.active[event.side] = event.to;
       fx.faint[event.side] = false;
+      fx.enter[event.side] = true;
+      setTimeout(() => { fx.enter[event.side] = false; }, 520);
       break;
     }
     case 'move':
       pulse('lunge', event.side, 380);
+      if (showFx()) fx.shot = { side: event.side, color: TYPE_COLORS[event.move.type], kind: event.move.damageClass, key: ++floatKey };
       break;
     case 'hit': {
       shown.hp[event.side][event.mon] = event.hpAfter;
       pulse('hit', event.side, 450);
       const tone = effectivenessTone(event.effectiveness);
       float(event.side, `-${event.damage}`, event.critical ? 'crit' : tone);
+      if (showFx()) fx.burst = { side: event.side, color: fx.shot?.color ?? '#ffffff', big: event.critical || tone === 'strong', key: ++floatKey };
       if (event.critical || tone === 'strong') {
         fx.flash = true;
         setTimeout(() => { fx.flash = false; }, 220);
+        shakeField(420);
       }
       break;
     }
@@ -199,6 +223,7 @@ function applyVisual(event: DuelEvent): void {
     case 'faint':
       shown.hp[event.side][event.mon] = 0;
       fx.faint[event.side] = true;
+      shakeField(520);
       break;
     case 'multi':
       float(event.side === 0 ? 1 : 0, `${event.hits}×`, 'neutral');
@@ -219,6 +244,7 @@ async function play(events: DuelEvent[]): Promise<void> {
     const text = describeDuelEvent(engine.value!, event);
     if (text) {
       message.value = text;
+      log.value.unshift({ key: ++logKey, turn: engine.value!.turn, text });
       await wait(event.kind === 'end' ? 1400 : 1150);
     } else {
       await wait(520);
@@ -338,7 +364,7 @@ function backUrl(view: DuelMonView): string {
     </div>
 
     <template v-else-if="engine && mine && foe">
-      <section class="duel-field" :class="{ flash: fx.flash }" @click="advance">
+      <section class="duel-field" :class="{ flash: fx.flash, shaking: fx.shake }" @click="advance">
         <div class="duel-hud foe-hud">
           <div class="hud-line"><strong>{{ foe.mon.fighter.name }}</strong><span>Nv. 50</span></div>
           <div class="hud-types">
@@ -348,14 +374,17 @@ function backUrl(view: DuelMonView): string {
             <span v-for="b in badgesOf(1)" :key="b.stat" class="stage-chip" :class="b.value > 0 ? 'up' : 'down'">{{ b.label }}</span>
           </div>
           <div class="hp"><span class="hp-label">PS</span><div class="hp-track"><div class="hp-fill" :class="hpTone(hpPct(1, shown.active[1]))" :style="{ width: `${hpPct(1, shown.active[1])}%` }"></div></div></div>
+          <div class="hp-num">{{ shown.hp[1][shown.active[1]] }} / {{ foe.mon.fighter.maxHp }}</div>
           <div class="pips" aria-label="Equipe do oponente"><i v-for="(hp, i) in shown.hp[1]" :key="i" :class="{ out: hp <= 0, on: i === shown.active[1] }"></i></div>
         </div>
-        <div class="duel-mon foe-mon" :class="{ hit: fx.hit[1], lunge: fx.lunge[1], faint: fx.faint[1] }">
+        <span v-if="fx.shot" :key="`shot${fx.shot.key}`" class="duel-shot" :class="[fx.shot.kind, fx.shot.side === 0 ? 'from-me' : 'from-foe']" :style="{ '--type': fx.shot.color }" aria-hidden="true"></span>
+        <span v-if="fx.burst" :key="`burst${fx.burst.key}`" class="duel-burst" :class="[fx.burst.side === 0 ? 'on-me' : 'on-foe', { big: fx.burst.big }]" :style="{ '--type': fx.burst.color }" aria-hidden="true"></span>
+        <div class="duel-mon foe-mon" :class="{ hit: fx.hit[1], lunge: fx.lunge[1], faint: fx.faint[1], entering: fx.enter[1] }">
           <img v-if="viewOf(1, shown.active[1])" :key="`f${shown.active[1]}`" :src="pokemonSpriteUrl(viewOf(1, shown.active[1])!.dexId)" :alt="foe.mon.fighter.name" />
           <span class="platform" aria-hidden="true"></span>
           <span v-if="fx.float && fx.float.side === 1" :key="fx.float.key" class="float" :class="fx.float.tone">{{ fx.float.text }}</span>
         </div>
-        <div class="duel-mon my-mon" :class="{ hit: fx.hit[0], lunge: fx.lunge[0], faint: fx.faint[0] }">
+        <div class="duel-mon my-mon" :class="{ hit: fx.hit[0], lunge: fx.lunge[0], faint: fx.faint[0], entering: fx.enter[0] }">
           <img v-if="viewOf(0, shown.active[0])" :key="`m${shown.active[0]}`" :src="backUrl(viewOf(0, shown.active[0])!)" :alt="mine.mon.fighter.name" @error="backFailed.add(viewOf(0, shown.active[0])!.dexId)" />
           <span class="platform" aria-hidden="true"></span>
           <span v-if="fx.float && fx.float.side === 0" :key="fx.float.key" class="float" :class="fx.float.tone">{{ fx.float.text }}</span>
@@ -439,6 +468,12 @@ function backUrl(view: DuelMonView): string {
           </div>
         </template>
         <ul v-if="notes.length && engine.turn === 0" class="duel-notes"><li v-for="n in notes" :key="n">{{ n }}</li></ul>
+        <details v-if="log.length" class="duel-log">
+          <summary>Histórico da luta · {{ log.length }}</summary>
+          <ol>
+            <li v-for="entry in log" :key="entry.key"><small>T{{ entry.turn }}</small>{{ entry.text }}</li>
+          </ol>
+        </details>
       </section>
     </template>
   </div>
@@ -526,8 +561,30 @@ function backUrl(view: DuelMonView): string {
 .party-row { display: grid; grid-template-columns: 40px 1fr 6rem; align-items: center; gap: .5rem; padding: .35rem .55rem; border: 1px solid var(--line); border-radius: .6rem; color: inherit; font: inherit; text-align: left; background: rgba(255, 255, 255, .04); }
 .party-row img { width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }
 .party-name small { color: var(--muted); }
+/* Histórico: fechado por padrão, para o menu de golpes continuar à mão. */
+.duel-log { border: 1px solid var(--line); border-radius: .6rem; padding: 0 .6rem; }
+.duel-log summary { display: flex; align-items: center; min-height: 40px; color: var(--muted); font-size: .85rem; font-weight: 700; cursor: pointer; }
+.duel-log ol { display: grid; gap: .25rem; max-height: 28vh; margin: 0 0 .5rem; padding: 0; overflow-y: auto; list-style: none; font-size: .85rem; }
+.duel-log small { display: inline-block; min-width: 2rem; color: var(--gold); font-weight: 800; }
+/* Encenação: o golpe voa, explode no alvo e o campo treme nos momentos fortes. */
+.duel-field.shaking { animation: field-shake .42s; }
+@keyframes field-shake { 0%, 100% { transform: none; } 20% { transform: translate(-5px, 2px) scale(1.012); } 45% { transform: translate(5px, -3px) scale(1.012); } 70% { transform: translate(-3px, 1px); } }
+.duel-shot { position: absolute; z-index: 3; width: 26px; height: 26px; margin: -13px; border-radius: 50%; background: radial-gradient(circle, #fff 18%, var(--type) 55%, transparent 72%); box-shadow: 0 0 16px var(--type); pointer-events: none; animation: .5s ease-in forwards; }
+.duel-shot.physical { display: none; }
+.duel-shot.from-me { animation-name: shot-up; }
+.duel-shot.from-foe { animation-name: shot-down; }
+.duel-shot.status { width: 44px; height: 44px; margin: -22px; background: none; border: 3px solid var(--type); }
+@keyframes shot-up { from { left: 26%; top: 74%; transform: scale(.5); } to { left: 74%; top: 30%; transform: scale(1.3); opacity: .9; } }
+@keyframes shot-down { from { left: 74%; top: 30%; transform: scale(.5); } to { left: 26%; top: 74%; transform: scale(1.3); opacity: .9; } }
+.duel-burst { position: absolute; z-index: 3; width: 110px; height: 110px; margin: -55px; border-radius: 50%; background: radial-gradient(circle, #fff 8%, var(--type) 34%, transparent 68%); pointer-events: none; animation: burst .42s ease-out forwards; }
+.duel-burst.big { width: 170px; height: 170px; margin: -85px; }
+.duel-burst.on-foe { left: 74%; top: 30%; }
+.duel-burst.on-me { left: 26%; top: 74%; }
+@keyframes burst { from { opacity: .95; transform: scale(.25); } to { opacity: 0; transform: scale(1.15); } }
+.duel-mon.entering img { animation: mon-enter .5s cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes mon-enter { from { opacity: 0; transform: scale(.2); filter: brightness(3); } to { opacity: 1; transform: none; filter: none; } }
 .duel-over { display: grid; justify-items: center; gap: .4rem; text-align: center; }
 .duel-over h3 { margin: 0; font-size: 1.4rem; }
 .duel-over p { margin: 0; }
-@media (prefers-reduced-motion: reduce) { .duel-mon img, .hp-fill { transition: none; } .duel-mon.hit img, .float, .duel-next { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .duel-mon img, .hp-fill { transition: none; } .duel-mon.hit img, .float, .duel-next, .duel-field.shaking, .duel-mon.entering img { animation: none; } .duel-shot, .duel-burst { display: none; } }
 </style>

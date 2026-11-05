@@ -256,6 +256,11 @@ A mesma tela da Caixa (`CaixaView`, a mesma sessão de batalha) abre sem câmera
 
 Na folha do modo de batalha, "Escalação" deixa escolher para cada Pokémon da caixa: **Sorteio** (entra e o lado é sorteado), **V** (Vermelha), **A** (Azul) ou **Fora**. Guardada em `tcg-ar-roster-v1`. `planBattle(mode, count, rng, roster?)` respeita as equipes fixas, completa os lados com os "Sorteio" embaralhados (equilibrando) e, no 3×3, usa no máximo 3 por lado; `rosterBlocker` explica por que uma escalação não dá (por exemplo, um lado vazio). Sem escolhas (tudo em Sorteio) o caminho e o consumo de sorteio são os de antes. Com mais de 12 lutadores o HUD vira só um traço de vida por Pokémon e o nome aparece em quem está agindo (`.battle-hud.dense`).
 
+### Arena: duelo por turnos em destaque
+- O duelo é a primeira opção do menu (`arena-menu.ts`, escolha `duelo`), contra um treinador sorteado ou um líder da Liga. Na Liga, o pé da tela também oferece enfrentar o líder por turnos.
+- Quem não tem golpes montados entra com os sugeridos (`suggestMissing` em `turn-duel-setup.ts`): os mesmos golpes reais por nível que o oponente usa. Sem dados da PokéAPI, o Pokémon fica de fora com aviso, sem golpe inventado.
+- `TurnDuel.vue` guarda o histórico da luta, mostra os PS do inimigo em número e encena golpe, impacto, entrada e KO em CSS; a parte mais forte segue a opção de efeitos e Movimento reduzido.
+
 ### Pin Mode (`src/core/pins.ts`, `src/core/pin-terrain.ts`, `src/pins/arena-art.ts`, `src/pins/terrain-paint.ts`, `src/app/pins-setup.ts`, `src/views/PinsView.vue`)
 
 Aba **Pins**, **sem câmera e sem Three.js**: os Pokémon viram pins redondos numa arena vista de cima; o objetivo é derrubar todos os adversários para fora dela. Arrastar para trás carrega e mira (estilingue), soltar dispara; cada disparo seu é seguido por **um disparo de um adversário** (por turnos).
