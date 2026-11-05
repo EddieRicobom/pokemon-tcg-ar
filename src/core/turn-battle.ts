@@ -8,6 +8,8 @@
  */
 import { canGetStatus, effectivenessLabel, STATUS_LABELS_PT, typeEffectiveness } from './battle';
 import type { Fighter, Rng, StatusKind } from './battle';
+import { hasOwnDamage, moveSpecial } from './move-specials';
+import type { MoveSpecial, ScreenKind, WeatherKind } from './move-specials';
 import { STAGE_LABELS_PT, STAGE_STATS } from './moveset';
 import type { ChosenMove, MoveAilment, StageStat } from './moveset';
 import type { PokemonType } from './pokemon-data';
@@ -38,6 +40,20 @@ export interface DuelMonState {
   stages: Stages;
   /** Já usou o "aguentou firme" (intimidade 4) neste duelo. */
   endured: boolean;
+  /** Golpe de dois turnos em preparo (índice); enquanto isso o Pokémon não escolhe outra ação. */
+  charging: number | null;
+  /** Fora de alcance enquanto prepara (Voar, Cavar). */
+  semi: boolean;
+  /** Fica o próximo turno sem agir (Hiperraio e afins). */
+  recharge: boolean;
+  protecting: boolean;
+  /** Proteções seguidas: cada uma a mais funciona 3 vezes menos. */
+  protectStreak: number;
+  seeded: boolean;
+  /** Turnos presos que faltam (Enrolar e afins): perde PS e não pode trocar. */
+  trapTurns: number;
+  /** Veneno grave: quantas partes de 16 tira no próximo fim de turno (0 = veneno comum). */
+  toxicTurns: number;
 }
 
 export interface DuelSide {
@@ -45,6 +61,8 @@ export interface DuelSide {
   mons: DuelMon[];
   state: DuelMonState[];
   active: number;
+  /** Turnos que faltam de Refletir e Tela de Luz. */
+  screens: Record<ScreenKind, number>;
 }
 
 export interface DuelState {
@@ -53,6 +71,7 @@ export interface DuelState {
   winner: SideIndex | null;
   /** O seu Pokémon em campo desmaiou e você precisa escolher quem entra. */
   mustSwitch: boolean;
+  weather: { kind: WeatherKind; turns: number } | null;
 }
 
 /** Ação de um turno. `move: -1` é o Struggle, só quando nenhum golpe tem PP. */
@@ -67,7 +86,7 @@ export type DuelEvent =
   | ({ kind: 'multi'; hits: number } & Who)
   | ({ kind: 'immune' } & Who)
   | ({ kind: 'fail' } & Who)
-  | ({ kind: 'skip'; cause: 'freeze' | 'paralysis' | 'sleep' | 'flinch' } & Who)
+  | ({ kind: 'skip'; cause: 'freeze' | 'paralysis' | 'sleep' | 'flinch' | 'recharge' } & Who)
   | ({ kind: 'thaw' } & Who)
   | ({ kind: 'wake' } & Who)
   | ({ kind: 'status'; status: MoveAilment } & Who)
@@ -76,9 +95,16 @@ export type DuelEvent =
   | ({ kind: 'confusion-end' } & Who)
   | ({ kind: 'stage'; stat: StageStat; change: number; applied: number } & Who)
   | ({ kind: 'heal'; cause: 'drain' | 'heal'; hpBefore: number; hpAfter: number } & Who)
-  | ({ kind: 'residual'; cause: 'burn' | 'poison'; damage: number; hpBefore: number; hpAfter: number } & Who)
+  | ({ kind: 'residual'; cause: 'burn' | 'poison' | 'leech' | 'trap' | 'weather'; damage: number; hpBefore: number; hpAfter: number } & Who)
   | ({ kind: 'recoil'; damage: number; hpBefore: number; hpAfter: number } & Who)
   | ({ kind: 'faint' } & Who)
+  | ({ kind: 'charge'; move: ChosenMove; semi: boolean } & Who)
+  | ({ kind: 'protect' } & Who)
+  | ({ kind: 'protected' } & Who)
+  | ({ kind: 'seeded' } & Who)
+  | ({ kind: 'trapped' } & Who)
+  | { kind: 'weather'; weather: WeatherKind | null }
+  | { kind: 'screen'; side: SideIndex; screen: ScreenKind; ended: boolean }
   | { kind: 'end'; winner: SideIndex };
 
 const NO_EFFECT = {
@@ -119,20 +145,20 @@ export function duelMonFrom(fighter: Fighter, moves: readonly ChosenMove[]): Due
   };
 }
 
-const freshMon = (m: DuelMon): DuelMonState => ({ hp: m.fighter.maxHp, pp: m.moves.map((x) => x.pp), status: null, sleepTurns: 0, confusion: 0, stages: emptyStages(), endured: false });
+const freshMon = (m: DuelMon): DuelMonState => ({ hp: m.fighter.maxHp, pp: m.moves.map((x) => x.pp), status: null, sleepTurns: 0, confusion: 0, stages: emptyStages(), endured: false, charging: null, semi: false, recharge: false, protecting: false, protectStreak: 0, seeded: false, trapTurns: 0, toxicTurns: 0 });
 
 function freshSide(name: string, mons: readonly DuelMon[]): DuelSide {
   if (mons.length === 0) throw new Error('Cada lado do duelo precisa de pelo menos 1 Pokémon.');
   for (const mon of mons) if (mon.moves.length === 0) throw new Error(`${mon.fighter.name} está sem golpes.`);
-  return { name, mons: [...mons], state: mons.map(freshMon), active: 0 };
+  return { name, mons: [...mons], state: mons.map(freshMon), active: 0, screens: { reflect: 0, light: 0 } };
 }
 
 export function createDuel(player: { name: string; mons: readonly DuelMon[] }, foe: { name: string; mons: readonly DuelMon[] }): DuelState {
-  return { sides: [freshSide(player.name, player.mons), freshSide(foe.name, foe.mons)], turn: 0, winner: null, mustSwitch: false };
+  return { sides: [freshSide(player.name, player.mons), freshSide(foe.name, foe.mons)], turn: 0, winner: null, mustSwitch: false, weather: null };
 }
 
 function cloneState(state: DuelState): DuelState {
-  const side = (s: DuelSide): DuelSide => ({ ...s, state: s.state.map((m) => ({ ...m, pp: [...m.pp], stages: { ...m.stages } })) });
+  const side = (s: DuelSide): DuelSide => ({ ...s, state: s.state.map((m) => ({ ...m, pp: [...m.pp], stages: { ...m.stages } })), screens: { ...s.screens } });
   return { ...state, sides: [side(state.sides[0]), side(state.sides[1])] };
 }
 
@@ -151,13 +177,25 @@ export function needsStruggle(state: DuelState, side: SideIndex): boolean {
 /** Quem pode entrar em campo (de pé e fora de campo). */
 export function switchOptions(state: DuelState, side: SideIndex): number[] {
   const s = state.sides[side];
+  const here = s.state[s.active];
+  if (here && here.hp > 0 && here.trapTurns > 0) return [];
   return s.state.flatMap((m, i) => (m.hp > 0 && i !== s.active ? [i] : []));
+}
+
+/** Preso a um golpe de dois turnos ou à recarga: o turno já está decidido, não há o que escolher. */
+export function lockedAction(state: DuelState, side: SideIndex): DuelAction | null {
+  const { live } = activeMon(state, side);
+  if (live.hp <= 0) return null;
+  if (live.charging !== null) return { kind: 'move', move: live.charging };
+  return live.recharge ? { kind: 'move', move: 0 } : null;
 }
 
 /** Por que a ação não vale agora (ou null se vale). */
 export function actionBlocker(state: DuelState, side: SideIndex, action: DuelAction): string | null {
   if (state.winner !== null) return 'O duelo já acabou.';
   if (side === 0 && state.mustSwitch && action.kind !== 'switch') return 'Escolha quem entra no lugar do Pokémon que desmaiou.';
+  const locked = lockedAction(state, side);
+  if (locked) return action.kind === 'move' && action.move === (locked as { move: number }).move ? null : 'Este Pokémon não pode fazer outra coisa neste turno.';
   if (action.kind === 'switch') return switchOptions(state, side).includes(action.to) ? null : 'Esse Pokémon não pode entrar agora.';
   const { mon, live } = activeMon(state, side);
   if (action.move === -1) return needsStruggle(state, side) ? null : 'Ainda há golpes com PP.';
@@ -190,13 +228,33 @@ function moveOf(state: DuelState, side: SideIndex, action: { move: number }): Ch
 
 /** O golpe precisa acertar o alvo (dano, condição ou atributo do alvo)? Golpes só em si mesmo sempre funcionam. */
 function targetsFoe(move: ChosenMove): boolean {
-  return move.damageClass !== 'status' || move.ailment !== null || move.statChanges.some((c) => c.target === 'foe');
+  return move.damageClass !== 'status' || move.ailment !== null || move.statChanges.some((c) => c.target === 'foe') || moveSpecial(move.slug)?.kind === 'leech';
+}
+
+/** O clima muda o dano de Fogo e de Água. */
+function weatherMultiplier(weather: DuelState['weather'], type: PokemonType): number {
+  if (weather?.kind === 'sun') return type === 'fire' ? 1.5 : type === 'water' ? 0.5 : 1;
+  if (weather?.kind === 'rain') return type === 'water' ? 1.5 : type === 'fire' ? 0.5 : 1;
+  return 1;
+}
+
+/** Dano de golpes com regra própria (sem poder), ou null para a conta normal. */
+function ownDamage(special: MoveSpecial | null, defLive: DuelMonState): number | null {
+  if (special?.kind === 'fixed') return special.damage;
+  if (special?.kind === 'half') return Math.max(1, Math.floor(defLive.hp / 2));
+  if (special?.kind === 'ohko') return defLive.hp;
+  return null;
 }
 
 interface DamageResult { damage: number; critical: boolean; effectiveness: number }
 
-function computeDamage(att: DuelMon, attLive: DuelMonState, def: DuelMon, defLive: DuelMonState, move: ChosenMove, struggle: boolean, rng: Rng): DamageResult {
+function computeDamage(att: DuelMon, attLive: DuelMonState, def: DuelMon, defLive: DuelMonState, move: ChosenMove, struggle: boolean, rng: Rng, field: { weather: DuelState['weather']; screens: DuelSide['screens'] }): DamageResult {
   const effectiveness = struggle ? 1 : typeEffectiveness(move.type, def.fighter.types);
+  const special = struggle ? null : moveSpecial(move.slug);
+  if (hasOwnDamage(special)) {
+    if (effectiveness === 0) return { damage: 0, critical: false, effectiveness };
+    return { damage: ownDamage(special, defLive) ?? 1, critical: false, effectiveness: 1 };
+  }
   const critStage = Math.min(3, move.critRate + ((att.fighter.bond ?? 0) >= 3 ? 1 : 0));
   const critical = rng() < CRIT_BY_STAGE[critStage]!;
   const roll = 0.85 + rng() * 0.15;
@@ -210,11 +268,14 @@ function computeDamage(att: DuelMon, attLive: DuelMonState, def: DuelMon, defLiv
     dStage = Math.min(0, dStage);
   }
   const a = (physical ? att.fighter.attack : att.fighter.spAttack) * stageMultiplier(aStage);
-  const d = (physical ? def.fighter.defense : def.fighter.spDefense) * stageMultiplier(dStage);
+  const sandGuard = field.weather?.kind === 'sand' && !physical && def.fighter.types.includes('rock') ? 1.5 : 1;
+  const d = (physical ? def.fighter.defense : def.fighter.spDefense) * stageMultiplier(dStage) * sandGuard;
   const base = (Math.floor((2 * LEVEL) / 5) + 2) * move.power * (a / d) / 50 + 2;
   const stab = !struggle && att.fighter.types.includes(move.type) ? 1.5 : 1;
   const burn = attLive.status === 'burn' && physical ? 0.5 : 1;
-  return { damage: Math.max(1, Math.floor(base * stab * effectiveness * (critical ? 1.5 : 1) * roll * burn)), critical, effectiveness };
+  // Crítico atravessa Refletir e Tela de Luz.
+  const screen = !critical && field.screens[physical ? 'reflect' : 'light'] > 0 ? 0.5 : 1;
+  return { damage: Math.max(1, Math.floor(base * stab * effectiveness * (critical ? 1.5 : 1) * roll * burn * screen * weatherMultiplier(field.weather, move.type))), critical, effectiveness };
 }
 
 /** Dano esperado por uso (sem crítico, variação média, ponderado pela precisão e pelo número médio de golpes). */
@@ -224,6 +285,8 @@ export function expectedDuelDamage(state: DuelState, side: SideIndex, move: Chos
   const foe = activeMon(state, other(side));
   const eff = typeEffectiveness(move.type, foe.mon.fighter.types);
   if (eff === 0) return 0;
+  const own = ownDamage(moveSpecial(move.slug), foe.live);
+  if (own !== null) return own * ((move.accuracy ?? 100) / 100);
   const physical = move.damageClass === 'physical';
   const a = (physical ? me.mon.fighter.attack : me.mon.fighter.spAttack) * stageMultiplier(me.live.stages[physical ? 'attack' : 'spAttack']);
   const d = (physical ? foe.mon.fighter.defense : foe.mon.fighter.spDefense) * stageMultiplier(foe.live.stages[physical ? 'defense' : 'spDefense']);
@@ -253,6 +316,8 @@ function canInflict(target: DuelMon, live: DuelMonState, ailment: MoveAilment): 
  * ainda pode recebê-la, alta de atributo com os PS altos, queda no alvo, cura com os PS baixos. Nunca troca.
  */
 export function chooseFoeAction(state: DuelState, rng: Rng, side: SideIndex = 1): DuelAction {
+  const locked = lockedAction(state, side);
+  if (locked) return locked;
   if (needsStruggle(state, side)) return { kind: 'move', move: -1 };
   const me = activeMon(state, side);
   const foe = activeMon(state, other(side));
@@ -268,6 +333,12 @@ export function chooseFoeAction(state: DuelState, rng: Rng, side: SideIndex = 1)
       if (c.target === 'foe' && c.change < 0 && foe.live.stages[c.stat] > -2) v = Math.max(v, best * 0.4);
     }
     if (m.healing > 0 && hpFrac < 0.5) v = Math.max(v, best * 0.9);
+    const special = moveSpecial(m.slug);
+    if (special?.kind === 'protect' && me.live.protectStreak === 0) v = Math.max(v, best * 0.25);
+    if (special?.kind === 'rest' && hpFrac < 0.35) v = Math.max(v, best * 0.9);
+    if (special?.kind === 'weather' && state.weather?.kind !== special.weather) v = Math.max(v, best * 0.3);
+    if (special?.kind === 'screen' && state.sides[side].screens[special.screen] === 0) v = Math.max(v, best * 0.4);
+    if (special?.kind === 'leech' && !foe.live.seeded && !foe.mon.fighter.types.includes('grass')) v = Math.max(v, best * 0.55);
     return v;
   };
   const weights = options.map(({ m }) => (value(m) + 1) ** 2);
@@ -285,6 +356,14 @@ const aliveCount = (side: DuelSide): number => side.state.filter((m) => m.hp > 0
 function leaveField(live: DuelMonState): void {
   live.stages = emptyStages();
   live.confusion = 0;
+  live.charging = null;
+  live.semi = false;
+  live.recharge = false;
+  live.protecting = false;
+  live.protectStreak = 0;
+  live.seeded = false;
+  live.trapTurns = 0;
+  if (live.toxicTurns > 0) live.toxicTurns = 1;
 }
 
 /**
@@ -362,6 +441,11 @@ export function resolveTurn(state: DuelState, playerAction: DuelAction, foeActio
     if (me.live.hp <= 0) continue;
     if (activeMon(next, foeSide).live.hp <= 0) continue;
     acted.add(side);
+    if (me.live.recharge) {
+      me.live.recharge = false;
+      events.push({ kind: 'skip', side, mon: me.index, cause: 'recharge' });
+      continue;
+    }
 
     if (me.live.status === 'sleep') {
       if (me.live.sleepTurns <= 0) {
@@ -409,15 +493,63 @@ export function resolveTurn(state: DuelState, playerAction: DuelAction, foeActio
 
     const struggle = action.move === -1;
     const move = moveOf(next, side, action);
-    if (!struggle) me.live.pp[action.move] = Math.max(0, me.live.pp[action.move]! - 1);
+    const special = struggle ? null : moveSpecial(move.slug);
+    const releasing = me.live.charging !== null;
+    if (special?.kind !== 'protect') me.live.protectStreak = 0;
+    if (special?.kind === 'charge' && !releasing && !(special.sunSkips && next.weather?.kind === 'sun')) {
+      // Primeiro turno: gasta o PP e prepara; o golpe sai no turno seguinte, sem gastar de novo.
+      me.live.pp[action.move] = Math.max(0, me.live.pp[action.move]! - 1);
+      me.live.charging = action.move;
+      me.live.semi = special.semi;
+      events.push({ kind: 'charge', side, mon: me.index, move, semi: special.semi });
+      continue;
+    }
+    if (releasing) {
+      me.live.charging = null;
+      me.live.semi = false;
+    } else if (!struggle) {
+      me.live.pp[action.move] = Math.max(0, me.live.pp[action.move]! - 1);
+    }
     events.push({ kind: 'move', side, mon: me.index, move, struggle });
     lastAttacker = side;
     const foe = activeMon(next, foeSide);
+
+    const selfFaint = (): void => {
+      if (special?.kind !== 'self-faint' || me.live.hp <= 0) return;
+      me.live.hp = 0;
+      events.push({ kind: 'faint', side, mon: me.index });
+    };
+
+    if (special?.kind === 'protect') {
+      if (rng() < 1 / 3 ** me.live.protectStreak) {
+        me.live.protecting = true;
+        me.live.protectStreak++;
+        events.push({ kind: 'protect', side, mon: me.index });
+      } else {
+        me.live.protectStreak = 0;
+        events.push({ kind: 'fail', side, mon: me.index });
+      }
+      continue;
+    }
+
+    if (targetsFoe(move)) {
+      if (foe.live.protecting) {
+        events.push({ kind: 'protected', side: foeSide, mon: foe.index });
+        selfFaint();
+        continue;
+      }
+      if (foe.live.semi) {
+        events.push({ kind: 'miss', side, mon: me.index });
+        selfFaint();
+        continue;
+      }
+    }
 
     if (targetsFoe(move) && move.accuracy !== null) {
       const chance = (move.accuracy / 100) * accuracyMultiplier(me.live.stages.accuracy - foe.live.stages.evasion);
       if (rng() >= chance) {
         events.push({ kind: 'miss', side, mon: me.index });
+        selfFaint();
         continue;
       }
     }
@@ -427,7 +559,7 @@ export function resolveTurn(state: DuelState, playerAction: DuelAction, foeActio
       let total = 0;
       let landed = 0;
       for (let h = 0; h < hits && foe.live.hp > 0; h++) {
-        const roll = computeDamage(me.mon, me.live, foe.mon, foe.live, move, struggle, rng);
+        const roll = computeDamage(me.mon, me.live, foe.mon, foe.live, move, struggle, rng, { weather: next.weather, screens: next.sides[foeSide].screens });
         if (roll.effectiveness === 0) {
           events.push({ kind: 'immune', side: foeSide, mon: foe.index });
           break;
@@ -462,6 +594,11 @@ export function resolveTurn(state: DuelState, playerAction: DuelAction, foeActio
           events.push({ kind: 'recoil', side, mon: me.index, damage: before - after, hpBefore: before, hpAfter: after });
           if (after === 0) events.push({ kind: 'faint', side, mon: me.index });
         }
+        if (special?.kind === 'recharge') me.live.recharge = true;
+        if (special?.kind === 'trap' && foe.live.hp > 0 && foe.live.trapTurns === 0) {
+          foe.live.trapTurns = 4 + Math.floor(rng() * 2);
+          events.push({ kind: 'trapped', side: foeSide, mon: foe.index });
+        }
         if (foe.live.hp > 0 && move.flinchChance > 0 && !acted.has(foeSide) && rng() < move.flinchChance / 100) flinched.add(foeSide);
         if (move.ailment && foe.live.hp > 0 && rng() < move.ailmentChance / 100) inflict(foeSide, move.ailment);
         if (move.statChanges.length > 0 && rng() < move.statChance / 100) {
@@ -475,6 +612,48 @@ export function resolveTurn(state: DuelState, playerAction: DuelAction, foeActio
         events.push({ kind: 'recoil', side, mon: me.index, damage: before - after, hpBefore: before, hpAfter: after });
         if (after === 0) events.push({ kind: 'faint', side, mon: me.index });
       }
+      selfFaint();
+      continue;
+    }
+
+    // Golpe de status com regra própria.
+    if (special?.kind === 'weather') {
+      if (next.weather?.kind === special.weather) events.push({ kind: 'fail', side, mon: me.index });
+      else {
+        next.weather = { kind: special.weather, turns: 5 };
+        events.push({ kind: 'weather', weather: special.weather });
+      }
+      continue;
+    }
+    if (special?.kind === 'screen') {
+      const screens = next.sides[side].screens;
+      if (screens[special.screen] > 0) events.push({ kind: 'fail', side, mon: me.index });
+      else {
+        screens[special.screen] = 5;
+        events.push({ kind: 'screen', side, screen: special.screen, ended: false });
+      }
+      continue;
+    }
+    if (special?.kind === 'leech') {
+      if (foe.mon.fighter.types.includes('grass')) events.push({ kind: 'immune', side: foeSide, mon: foe.index });
+      else if (foe.live.seeded) events.push({ kind: 'fail', side, mon: me.index });
+      else {
+        foe.live.seeded = true;
+        events.push({ kind: 'seeded', side: foeSide, mon: foe.index });
+      }
+      continue;
+    }
+    if (special?.kind === 'rest') {
+      if (me.live.hp >= me.mon.fighter.maxHp || me.live.status === 'sleep') events.push({ kind: 'fail', side, mon: me.index });
+      else {
+        const before = me.live.hp;
+        me.live.hp = me.mon.fighter.maxHp;
+        me.live.status = 'sleep';
+        me.live.sleepTurns = 2;
+        me.live.toxicTurns = 0;
+        events.push({ kind: 'heal', side, mon: me.index, cause: 'heal', hpBefore: before, hpAfter: me.live.hp });
+        events.push({ kind: 'status', side, mon: me.index, status: 'sleep' });
+      }
       continue;
     }
 
@@ -486,6 +665,7 @@ export function resolveTurn(state: DuelState, playerAction: DuelAction, foeActio
         continue;
       }
       if (rng() < move.ailmentChance / 100) worked = inflict(foeSide, move.ailment) || worked;
+      if (worked && special?.kind === 'toxic') foe.live.toxicTurns = 1;
     }
     if (move.statChanges.length > 0 && rng() < move.statChance / 100) {
       for (const c of move.statChanges) worked = applyStage(c.target === 'self' ? side : foeSide, c.stat, c.change) || worked;
@@ -502,9 +682,53 @@ export function resolveTurn(state: DuelState, playerAction: DuelAction, foeActio
   for (const side of [0, 1] as const) {
     const { mon, live, index } = activeMon(next, side);
     if (live.hp <= 0 || (live.status !== 'burn' && live.status !== 'poison')) continue;
-    const { before, after } = damageHp(live, Math.max(1, Math.floor(mon.fighter.maxHp * RESIDUAL[live.status])));
+    const fraction = live.status === 'poison' && live.toxicTurns > 0 ? live.toxicTurns / 16 : RESIDUAL[live.status];
+    if (live.status === 'poison' && live.toxicTurns > 0) live.toxicTurns = Math.min(15, live.toxicTurns + 1);
+    const { before, after } = damageHp(live, Math.max(1, Math.floor(mon.fighter.maxHp * fraction)));
     events.push({ kind: 'residual', side, mon: index, cause: live.status, damage: before - after, hpBefore: before, hpAfter: after });
     if (after === 0) events.push({ kind: 'faint', side, mon: index });
+  }
+
+  // Perdas de fim de turno que não são condição: preso, semente e clima.
+  const lose = (side: SideIndex, cause: 'trap' | 'leech' | 'weather', fraction: number): number => {
+    const { mon, live, index } = activeMon(next, side);
+    const { before, after } = damageHp(live, Math.max(1, Math.floor(mon.fighter.maxHp * fraction)));
+    events.push({ kind: 'residual', side, mon: index, cause, damage: before - after, hpBefore: before, hpAfter: after });
+    if (after === 0) events.push({ kind: 'faint', side, mon: index });
+    return before - after;
+  };
+  for (const side of [0, 1] as const) {
+    const { live } = activeMon(next, side);
+    if (live.hp > 0 && live.trapTurns > 0) {
+      live.trapTurns--;
+      lose(side, 'trap', 1 / 8);
+    }
+    if (live.hp > 0 && live.seeded) {
+      const taken = lose(side, 'leech', 1 / 8);
+      const healer = activeMon(next, other(side));
+      if (healer.live.hp > 0 && healer.live.hp < healer.mon.fighter.maxHp) {
+        const before = healer.live.hp;
+        healer.live.hp = Math.min(healer.mon.fighter.maxHp, before + taken);
+        events.push({ kind: 'heal', side: other(side), mon: healer.index, cause: 'drain', hpBefore: before, hpAfter: healer.live.hp });
+      }
+    }
+    const { mon } = activeMon(next, side);
+    const safe = next.weather?.kind === 'sand' ? mon.fighter.types.some((t) => t === 'rock' || t === 'ground' || t === 'steel') : mon.fighter.types.includes('ice');
+    if (live.hp > 0 && (next.weather?.kind === 'sand' || next.weather?.kind === 'hail') && !safe) lose(side, 'weather', 1 / 16);
+  }
+  if (next.weather) {
+    const turns = next.weather.turns - 1;
+    next.weather = turns > 0 ? { kind: next.weather.kind, turns } : null;
+    if (!next.weather) events.push({ kind: 'weather', weather: null });
+  }
+  for (const side of [0, 1] as const) {
+    const screens = next.sides[side].screens;
+    for (const screen of ['reflect', 'light'] as const) {
+      if (screens[screen] <= 0) continue;
+      screens[screen]--;
+      if (screens[screen] === 0) events.push({ kind: 'screen', side, screen, ended: true });
+    }
+    for (const live of next.sides[side].state) live.protecting = false;
   }
 
   settle(next, events, lastAttacker);
@@ -560,6 +784,11 @@ const STATUS_GAINED_PT: Record<MoveAilment, string> = {
   sleep: 'adormeceu!', confusion: 'ficou confuso!',
 };
 
+const WEATHER_STARTED_PT: Record<WeatherKind, string> = {
+  sun: 'O sol ficou forte!', rain: 'Começou a chover!', sand: 'Uma tempestade de areia começou!', hail: 'Começou a cair granizo!',
+};
+const RESIDUAL_LABELS_PT = { burn: 'a queimadura', poison: 'o veneno', leech: 'a semente', trap: 'a armadilha', weather: 'o clima' } as const;
+
 function stageVerb(change: number, applied: number): string {
   if (applied === 0) return change > 0 ? 'não pode subir mais!' : 'não pode cair mais!';
   const size = Math.abs(applied);
@@ -576,6 +805,12 @@ export function monLabel(state: DuelState, side: SideIndex, mon: number): string
 /** Frase da narração para um evento (null quando não há o que dizer além das barras). */
 export function describeDuelEvent(state: DuelState, event: DuelEvent): string | null {
   if (event.kind === 'end') return event.winner === 0 ? `Você venceu ${state.sides[1].name}!` : `Você perdeu para ${state.sides[1].name}…`;
+  if (event.kind === 'weather') return event.weather === null ? 'O clima voltou ao normal.' : WEATHER_STARTED_PT[event.weather];
+  if (event.kind === 'screen') {
+    const name = event.screen === 'reflect' ? 'Refletir' : 'Tela de Luz';
+    const owner = event.side === 0 ? 'da sua equipe' : 'do oponente';
+    return event.ended ? `${name} ${owner} acabou.` : `${name} protege a equipe ${event.side === 0 ? 'sua' : 'do oponente'}.`;
+  }
   if (event.kind === 'switch') {
     const to = state.sides[event.side].mons[event.to]?.fighter.name ?? '?';
     if (event.side === 1) return `${state.sides[1].name} enviou ${to}!`;
@@ -601,6 +836,7 @@ export function describeDuelEvent(state: DuelState, event: DuelEvent): string | 
       if (event.cause === 'sleep') return `${who} está dormindo.`;
       if (event.cause === 'freeze') return `${who} está congelado e não se mexe!`;
       if (event.cause === 'flinch') return `${who} hesitou e não agiu!`;
+      if (event.cause === 'recharge') return `${who} precisa recarregar!`;
       return `${who} está paralisado e não consegue se mexer!`;
     case 'thaw': return `${who} descongelou!`;
     case 'wake': return `${who} acordou!`;
@@ -610,7 +846,12 @@ export function describeDuelEvent(state: DuelState, event: DuelEvent): string | 
     case 'confusion-end': return `${who} não está mais confuso!`;
     case 'stage': return `${STAGE_LABELS_PT[event.stat]} de ${who} ${stageVerb(event.change, event.applied)}`;
     case 'heal': return event.cause === 'drain' ? `${who} drenou energia do alvo.` : `${who} recuperou PS.`;
-    case 'residual': return `${who} sofre com ${event.cause === 'burn' ? 'a queimadura' : 'o veneno'}.`;
+    case 'residual': return `${who} sofre com ${RESIDUAL_LABELS_PT[event.cause]}.`;
+    case 'charge': return event.semi ? `${who} saiu de alcance!` : `${who} está se preparando!`;
+    case 'protect': return `${who} se protegeu!`;
+    case 'protected': return `${who} bloqueou o golpe!`;
+    case 'seeded': return `${who} foi semeado!`;
+    case 'trapped': return `${who} ficou preso!`;
     case 'recoil': return `${who} sofreu recuo.`;
     case 'faint': return `${who} desmaiou!`;
   }

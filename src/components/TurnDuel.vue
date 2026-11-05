@@ -9,12 +9,14 @@ import { savedMoves } from '../app/moveset-store';
 import { prepareFoeSide, preparePlayerSide } from '../app/turn-duel-setup';
 import type { DuelMonView, DuelOpponentSpec } from '../app/turn-duel-setup';
 import { effectivenessTone, seededRng, typeEffectiveness } from '../core/battle';
+import { moveVisual } from '../core/move-specials';
+import type { MoveVisual } from '../core/move-specials';
 import { effectSummary } from '../core/moveset';
 import type { ChosenMove } from '../core/moveset';
 import { challengeById } from '../core/league';
 import { TYPE_COLORS, TYPE_LABELS_PT } from '../core/pokemon-data';
 import {
-  actionBlocker, activeMon, chooseFoeAction, createDuel, describeDuelEvent, DUEL_STATUS_LABELS_PT, DUEL_STATUS_SHORT_PT, forfeitDuel, needsStruggle,
+  actionBlocker, activeMon, chooseFoeAction, createDuel, describeDuelEvent, DUEL_STATUS_LABELS_PT, DUEL_STATUS_SHORT_PT, forfeitDuel, lockedAction, needsStruggle,
   orderHint, resolveTurn, sendReplacement, stageBadges, statusBlockedByType, STRUGGLE, switchOptions,
 } from '../core/turn-battle';
 import type { DuelAction, DuelEvent, DuelState, DuelStatus, SideIndex, Stages } from '../core/turn-battle';
@@ -49,7 +51,10 @@ const fx = reactive({
   flash: false,
   float: null as { side: SideIndex; text: string; tone: string; key: number } | null,
   /** Golpe voando de quem usou até o alvo. `side` é quem usou. */
-  shot: null as { side: SideIndex; color: string; kind: 'physical' | 'special' | 'status'; key: number } | null,
+  shot: null as { side: SideIndex; color: string; visual: MoveVisual; key: number } | null,
+  /** Fora de alcance (Voar, Cavar): o sprite some até o golpe sair. */
+  semi: [false, false] as [boolean, boolean],
+  weather: null as string | null,
   /** Explosão de impacto em quem apanhou. */
   burst: null as { side: SideIndex; color: string; big: boolean; key: number } | null,
   shake: false,
@@ -174,7 +179,8 @@ function applyVisual(event: DuelEvent): void {
     }
     case 'move':
       pulse('lunge', event.side, 380);
-      if (showFx()) fx.shot = { side: event.side, color: TYPE_COLORS[event.move.type], kind: event.move.damageClass, key: ++floatKey };
+      fx.semi[event.side] = false;
+      if (showFx()) fx.shot = { side: event.side, color: TYPE_COLORS[event.move.type], visual: moveVisual(event.move.slug, event.move.damageClass), key: ++floatKey };
       break;
     case 'hit': {
       shown.hp[event.side][event.mon] = event.hpAfter;
@@ -228,6 +234,21 @@ function applyVisual(event: DuelEvent): void {
     case 'multi':
       float(event.side === 0 ? 1 : 0, `${event.hits}×`, 'neutral');
       break;
+    case 'charge':
+      fx.semi[event.side] = event.semi;
+      break;
+    case 'weather':
+      fx.weather = event.weather;
+      break;
+    case 'protect':
+      float(event.side, 'Proteção', 'neutral');
+      break;
+    case 'protected':
+      float(event.side, 'Bloqueou', 'weak');
+      break;
+    case 'seeded':
+    case 'trapped':
+    case 'screen':
     case 'fail':
     case 'skip':
     case 'confused':
@@ -304,6 +325,7 @@ function forfeit(): void {
 
 const mine = computed(() => (engine.value ? activeMon(engine.value, 0) : null));
 const foe = computed(() => (engine.value ? activeMon(engine.value, 1) : null));
+const locked = computed(() => (engine.value ? lockedAction(engine.value, 0) : null));
 const struggleOnly = computed(() => (engine.value ? needsStruggle(engine.value, 0) : false));
 const partyOptions = computed(() => (engine.value ? switchOptions(engine.value, 0) : []));
 
@@ -364,7 +386,7 @@ function backUrl(view: DuelMonView): string {
     </div>
 
     <template v-else-if="engine && mine && foe">
-      <section class="duel-field" :class="{ flash: fx.flash, shaking: fx.shake }" @click="advance">
+      <section class="duel-field" :class="[{ flash: fx.flash, shaking: fx.shake }, fx.weather ? `sky-${fx.weather}` : '']" @click="advance">
         <div class="duel-hud foe-hud">
           <div class="hud-line"><strong>{{ foe.mon.fighter.name }}</strong><span>Nv. 50</span></div>
           <div class="hud-types">
@@ -377,14 +399,17 @@ function backUrl(view: DuelMonView): string {
           <div class="hp-num">{{ shown.hp[1][shown.active[1]] }} / {{ foe.mon.fighter.maxHp }}</div>
           <div class="pips" aria-label="Equipe do oponente"><i v-for="(hp, i) in shown.hp[1]" :key="i" :class="{ out: hp <= 0, on: i === shown.active[1] }"></i></div>
         </div>
-        <span v-if="fx.shot" :key="`shot${fx.shot.key}`" class="duel-shot" :class="[fx.shot.kind, fx.shot.side === 0 ? 'from-me' : 'from-foe']" :style="{ '--type': fx.shot.color }" aria-hidden="true"></span>
+        <svg v-if="fx.shot && fx.shot.visual === 'beam'" :key="`beam${fx.shot.key}`" class="duel-beam" viewBox="0 0 100 100" preserveAspectRatio="none" :style="{ '--type': fx.shot.color }" aria-hidden="true">
+          <line :x1="fx.shot.side === 0 ? 26 : 74" :y1="fx.shot.side === 0 ? 74 : 30" :x2="fx.shot.side === 0 ? 74 : 26" :y2="fx.shot.side === 0 ? 30 : 74" />
+        </svg>
+        <span v-else-if="fx.shot" :key="`shot${fx.shot.key}`" class="duel-shot" :class="[`v-${fx.shot.visual}`, fx.shot.side === 0 ? 'from-me' : 'from-foe']" :style="{ '--type': fx.shot.color }" aria-hidden="true"></span>
         <span v-if="fx.burst" :key="`burst${fx.burst.key}`" class="duel-burst" :class="[fx.burst.side === 0 ? 'on-me' : 'on-foe', { big: fx.burst.big }]" :style="{ '--type': fx.burst.color }" aria-hidden="true"></span>
-        <div class="duel-mon foe-mon" :class="{ hit: fx.hit[1], lunge: fx.lunge[1], faint: fx.faint[1], entering: fx.enter[1] }">
+        <div class="duel-mon foe-mon" :class="{ hit: fx.hit[1], lunge: fx.lunge[1], faint: fx.faint[1], entering: fx.enter[1], gone: fx.semi[1] }">
           <img v-if="viewOf(1, shown.active[1])" :key="`f${shown.active[1]}`" :src="pokemonSpriteUrl(viewOf(1, shown.active[1])!.dexId)" :alt="foe.mon.fighter.name" />
           <span class="platform" aria-hidden="true"></span>
           <span v-if="fx.float && fx.float.side === 1" :key="fx.float.key" class="float" :class="fx.float.tone">{{ fx.float.text }}</span>
         </div>
-        <div class="duel-mon my-mon" :class="{ hit: fx.hit[0], lunge: fx.lunge[0], faint: fx.faint[0], entering: fx.enter[0] }">
+        <div class="duel-mon my-mon" :class="{ hit: fx.hit[0], lunge: fx.lunge[0], faint: fx.faint[0], entering: fx.enter[0], gone: fx.semi[0] }">
           <img v-if="viewOf(0, shown.active[0])" :key="`m${shown.active[0]}`" :src="backUrl(viewOf(0, shown.active[0])!)" :alt="mine.mon.fighter.name" @error="backFailed.add(viewOf(0, shown.active[0])!.dexId)" />
           <span class="platform" aria-hidden="true"></span>
           <span v-if="fx.float && fx.float.side === 0" :key="fx.float.key" class="float" :class="fx.float.tone">{{ fx.float.text }}</span>
@@ -416,7 +441,11 @@ function backUrl(view: DuelMonView): string {
         </div>
 
         <template v-else-if="!busy">
-          <div v-if="menu === 'main'" class="duel-actions">
+          <div v-if="locked" class="duel-actions">
+            <button type="button" class="act fight locked" @click="act(locked)">Continuar</button>
+          </div>
+
+          <div v-else-if="menu === 'main'" class="duel-actions">
             <button type="button" class="act fight" @click="menu = 'fight'">Lutar</button>
             <button type="button" class="act party" :disabled="partyOptions.length === 0" @click="menu = 'party'">Pokémon</button>
           </div>
@@ -438,7 +467,7 @@ function backUrl(view: DuelMonView): string {
                 <span class="move-name">{{ move.name }}</span>
                 <span class="move-meta">
                   <span class="type-chip" :style="{ '--type': TYPE_COLORS[move.type] }">{{ TYPE_LABELS_PT[move.type] }}</span>
-                  <small>{{ CLASS_SHORT[move.damageClass] }}<template v-if="move.damageClass !== 'status'"> · Poder {{ move.power }}</template> · Prec. {{ move.accuracy ?? '—' }}</small>
+                  <small>{{ CLASS_SHORT[move.damageClass] }}<template v-if="move.damageClass !== 'status' && move.power > 1"> · Poder {{ move.power }}</template> · Prec. {{ move.accuracy ?? '—' }}</small>
                 </span>
                 <small v-if="effectSummary(move).length" class="move-effect">{{ effectSummary(move).join(' · ') }}</small>
                 <span class="move-meta">
@@ -570,10 +599,37 @@ function backUrl(view: DuelMonView): string {
 .duel-field.shaking { animation: field-shake .42s; }
 @keyframes field-shake { 0%, 100% { transform: none; } 20% { transform: translate(-5px, 2px) scale(1.012); } 45% { transform: translate(5px, -3px) scale(1.012); } 70% { transform: translate(-3px, 1px); } }
 .duel-shot { position: absolute; z-index: 3; width: 26px; height: 26px; margin: -13px; border-radius: 50%; background: radial-gradient(circle, #fff 18%, var(--type) 55%, transparent 72%); box-shadow: 0 0 16px var(--type); pointer-events: none; animation: .5s ease-in forwards; }
-.duel-shot.physical { display: none; }
 .duel-shot.from-me { animation-name: shot-up; }
 .duel-shot.from-foe { animation-name: shot-down; }
-.duel-shot.status { width: 44px; height: 44px; margin: -22px; background: none; border: 3px solid var(--type); }
+/* Golpes de contato: nada voa, a marca aparece em cima do alvo. */
+.duel-shot.v-punch, .duel-shot.v-kick, .duel-shot.v-bite, .duel-shot.v-slash, .duel-shot.v-slam { width: 96px; height: 96px; margin: -48px; border-radius: 0; background: none; box-shadow: none; animation: strike .5s ease-out forwards; }
+.duel-shot.from-me.v-punch, .duel-shot.from-me.v-kick, .duel-shot.from-me.v-bite, .duel-shot.from-me.v-slash, .duel-shot.from-me.v-slam { left: 74%; top: 30%; }
+.duel-shot.from-foe.v-punch, .duel-shot.from-foe.v-kick, .duel-shot.from-foe.v-bite, .duel-shot.from-foe.v-slash, .duel-shot.from-foe.v-slam { left: 26%; top: 74%; }
+.duel-shot.v-punch { background: var(--type); clip-path: polygon(50% 0, 62% 30%, 98% 22%, 72% 50%, 98% 78%, 62% 70%, 50% 100%, 38% 70%, 2% 78%, 28% 50%, 2% 22%, 38% 30%); }
+.duel-shot.v-kick { background: var(--type); clip-path: polygon(50% 0, 58% 38%, 100% 50%, 58% 62%, 50% 100%, 42% 62%, 0 50%, 42% 38%); }
+.duel-shot.v-bite { background: linear-gradient(var(--type), var(--type)) top / 100% 38% no-repeat, linear-gradient(var(--type), var(--type)) bottom / 100% 38% no-repeat; clip-path: polygon(0 0, 100% 0, 100% 30%, 83% 46%, 66% 30%, 50% 46%, 33% 30%, 17% 46%, 0 30%, 0 70%, 17% 54%, 33% 70%, 50% 54%, 66% 70%, 83% 54%, 100% 70%, 100% 100%, 0 100%); }
+.duel-shot.v-slash { background: repeating-linear-gradient(120deg, transparent 0 16px, #fff 16px 20px, var(--type) 20px 26px, transparent 26px 34px); }
+.duel-shot.v-slam { border-radius: 50%; border: 8px solid var(--type); box-shadow: 0 0 14px var(--type); }
+@keyframes strike { 0% { opacity: 0; transform: scale(.4) rotate(-12deg); } 35% { opacity: 1; transform: scale(1.1); } 100% { opacity: 0; transform: scale(1.3) rotate(6deg); } }
+/* Status: anel que abre em volta de quem usa. */
+.duel-shot.v-aura { width: 90px; height: 90px; margin: -45px; background: none; border: 3px solid var(--type); box-shadow: 0 0 14px var(--type); animation: strike .6s ease-out forwards; }
+.duel-shot.from-me.v-aura { left: 26%; top: 74%; }
+.duel-shot.from-foe.v-aura { left: 74%; top: 30%; }
+/* Onda e tempestade cobrem o campo inteiro. */
+.duel-shot.v-wave, .duel-shot.v-storm { left: 50%; top: 50%; width: 100%; height: 100%; margin: 0; border-radius: 0; box-shadow: none; transform: translate(-50%, -50%); animation: sweep .62s ease-out forwards; }
+.duel-shot.v-wave { background: repeating-radial-gradient(ellipse at 50% 100%, transparent 0 26px, var(--type) 26px 34px); }
+.duel-shot.v-storm { background: repeating-linear-gradient(100deg, transparent 0 14px, var(--type) 14px 16px); }
+@keyframes sweep { 0% { opacity: 0; } 30% { opacity: .75; } 100% { opacity: 0; } }
+.duel-beam { position: absolute; inset: 0; z-index: 3; width: 100%; height: 100%; pointer-events: none; animation: beam .5s ease-out forwards; }
+.duel-beam line { stroke: var(--type); stroke-width: 14px; stroke-linecap: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 6px var(--type)); }
+@keyframes beam { 0% { opacity: 0; } 20% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
+.duel-mon.gone img { opacity: 0; transform: translateY(-30%) scale(.7); }
+/* Clima: o céu do campo muda enquanto dura. */
+.duel-field.sky-sun { box-shadow: inset 0 0 90px rgba(255, 196, 70, .55); }
+.duel-field.sky-rain { box-shadow: inset 0 0 90px rgba(70, 130, 230, .6); }
+.duel-field.sky-sand { box-shadow: inset 0 0 90px rgba(190, 150, 90, .65); }
+.duel-field.sky-hail { box-shadow: inset 0 0 90px rgba(190, 230, 255, .6); }
+.act.locked { grid-column: 1 / -1; }
 @keyframes shot-up { from { left: 26%; top: 74%; transform: scale(.5); } to { left: 74%; top: 30%; transform: scale(1.3); opacity: .9; } }
 @keyframes shot-down { from { left: 74%; top: 30%; transform: scale(.5); } to { left: 26%; top: 74%; transform: scale(1.3); opacity: .9; } }
 .duel-burst { position: absolute; z-index: 3; width: 110px; height: 110px; margin: -55px; border-radius: 50%; background: radial-gradient(circle, #fff 8%, var(--type) 34%, transparent 68%); pointer-events: none; animation: burst .42s ease-out forwards; }
@@ -586,5 +642,5 @@ function backUrl(view: DuelMonView): string {
 .duel-over { display: grid; justify-items: center; gap: .4rem; text-align: center; }
 .duel-over h3 { margin: 0; font-size: 1.4rem; }
 .duel-over p { margin: 0; }
-@media (prefers-reduced-motion: reduce) { .duel-mon img, .hp-fill { transition: none; } .duel-mon.hit img, .float, .duel-next, .duel-field.shaking, .duel-mon.entering img { animation: none; } .duel-shot, .duel-burst { display: none; } }
+@media (prefers-reduced-motion: reduce) { .duel-mon img, .hp-fill { transition: none; } .duel-mon.hit img, .float, .duel-next, .duel-field.shaking, .duel-mon.entering img { animation: none; } .duel-shot, .duel-burst, .duel-beam { display: none; } }
 </style>

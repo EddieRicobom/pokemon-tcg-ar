@@ -89,11 +89,11 @@ describe('efeitos vindos da PokéAPI', () => {
   });
 
   it('efeito que o duelo não simula: status bloqueado, dano especial bloqueado, dano com aviso', () => {
-    const protect = parsed(apiMove('protect', { power: null, accuracy: null, damageClass: 'status', priority: 4, meta: { category: { name: 'unique' } } }));
+    const protect = parsed(apiMove('splash', { power: null, accuracy: null, damageClass: 'status', priority: 4, meta: { category: { name: 'unique' } } }));
     expect(unusableReason(protect)).toContain('não simulado');
-    expect(toChosenMove('protect', protect)).toBeNull();
+    expect(toChosenMove('splash', protect)).toBeNull();
     expect(unusableReason(parsed(apiMove('growl', { power: null, damageClass: 'status', meta: null })))).toContain('não simulado');
-    expect(unusableReason(parsed(apiMove('seismic-toss', { power: null, meta: { category: { name: 'unique' } } })))).toContain('Dano especial');
+    expect(unusableReason(parsed(apiMove('psywave', { power: null, meta: { category: { name: 'unique' } } })))).toContain('Dano especial');
     const outrage = parsed(apiMove('outrage', { type: 'dragon', power: 120, meta: { min_turns: 2, max_turns: 3 } }));
     expect(unusableReason(outrage)).toBeNull();
     expect(outrage.unsupported).toContain('efeito por vários turnos');
