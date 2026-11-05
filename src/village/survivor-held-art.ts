@@ -585,3 +585,43 @@ export function drawSuctionField(c: CanvasRenderingContext2D, x: number, y: numb
   }
   c.restore();
 }
+
+/**
+ * Farpa Grudenta: um espinho verde preso no inimigo, com o miolo piscando cada vez mais rápido
+ * até explodir (t vai de 0, recém-grudada, a 1, explosão). Desenho original e abstrato.
+ */
+export function drawStickyBarb(c: CanvasRenderingContext2D, x: number, y: number, t: number, timeMs: number): void {
+  const clamped = Math.min(1, Math.max(0, t));
+  const blink = 0.5 + 0.5 * Math.sin(timeMs / (90 - clamped * 60));
+  const r = 7 + clamped * 2;
+  c.save();
+  c.translate(x, y);
+  c.rotate(timeMs / 600);
+  c.fillStyle = '#5fa83a';
+  c.strokeStyle = '#1f3d14';
+  c.lineWidth = 1.5;
+  c.beginPath();
+  for (let i = 0; i < 12; i++) {
+    const a = (Math.PI * 2 * i) / 12;
+    const rr = i % 2 === 0 ? r : r * 0.5;
+    if (i === 0) c.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    else c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+  }
+  c.closePath();
+  c.fill();
+  c.stroke();
+  c.globalAlpha = 0.45 + blink * 0.55;
+  c.fillStyle = clamped > 0.7 ? '#ff4b3a' : '#ffd84a';
+  c.beginPath();
+  c.arc(0, 0, r * 0.38, 0, Math.PI * 2);
+  c.fill();
+  if (clamped > 0.6) {
+    c.globalAlpha = (clamped - 0.6) * 1.6 * blink;
+    c.strokeStyle = '#ff4b3a';
+    c.lineWidth = 1.5;
+    c.beginPath();
+    c.arc(0, 0, r + 4 + clamped * 4, 0, Math.PI * 2);
+    c.stroke();
+  }
+  c.restore();
+}

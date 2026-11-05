@@ -35,7 +35,7 @@ import type { PokemonType } from './pokemon-data';
  */
 
 export * from './survivor-types';
-import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
+import { ARENA_H, ARENA_W, DIGITAL_DANGER_COOLDOWN_MS, DIGITAL_DANGER_MAX, DIGITAL_DANGER_UNLOCK_MS, DIGITAL_DANGER_VISIBLE_RADIUS, MAGNET_PICKUP_RADIUS_CAP, MAX_DIGITAL_POKEBALLS_PER_RUN, MAX_SURVIVOR_SUPPORTS, PICKUP_RADIUS, PLAYER_RADIUS, SPAWN_MARGIN, SURVIVOR_FIELD_EVENT_BEACON_MS, SURVIVOR_FIELD_EVENT_EVERY_MS, SURVIVOR_FIELD_EVENT_FIRST_MS, SURVIVOR_FIELD_EVENT_HUNT_MS, SURVIVOR_FIELD_EVENT_REACH_RADIUS, SURVIVOR_LOVE_CANDY_MS, SURVIVOR_OMEGA_SHARD_MS, SURVIVOR_SHADOW_BALL_EVERY_MS, SURVIVOR_SHADOW_BALL_FIRST_MS, SURVIVOR_SHADOW_BALL_MAX_PER_RUN, SURVIVOR_SHADOW_CUTSCENE_MS, SURVIVOR_SPAWN_DISTANCE, SURVIVOR_SUPPORT_EVOLUTION_OFFER_CHANCE, SURVIVOR_SUPPORT_RARE_OFFER_CHANCE, SURVIVOR_TRUST_STONE_MS, SURVIVOR_UPGRADE_RARITIES, SURVIVOR_FAST_TRAINER_COIN_SCALE, survivorMilestoneMs } from './survivor-types';
 import type { SurvivorArtifactKind, SurvivorChest, SurvivorGravityWell, SurvivorHeldStrike, SurvivorTimeBubble, SurvivorFinalHit, SurvivorHitSource, SurvivorEnemy, SurvivorEnemyArchetype, SurvivorEnemyGrade, SurvivorEvent, SurvivorEvolutionOption, SurvivorInput, SurvivorPlayer, SurvivorProjectile, SurvivorState, SurvivorSupport, SurvivorSupportCandidate, SurvivorSupportRole, SurvivorTypeAffinity, SurvivorUpgrade, SurvivorUpgradeOption, SurvivorUpgradeRarity } from './survivor-types';
 import { cadenceCanImprove, CHARGE_FOCUS_RATE_ID, CHARGE_RUSH_LENGTH_ID, SURVIVOR_ATTACK_DAMAGE_CAP, SURVIVOR_UPGRADES, SURVIVOR_RARITY_ORDER, round1 } from './survivor-upgrades';
 import { cancelTeleportHold, createSurvivorCharge, distanceToSegment, FOCUS_CHARGE_PER_SEC, FOCUS_HIT_CHARGE, FOCUS_SHOT_PIERCE, FOCUS_SHOT_SIZE_MULTIPLIER, FOCUS_SHOT_SPEED_MULTIPLIER, FOCUS_SLOW_MULTIPLIER, focusBeam, TELEPORT_MAX_RANGE, RAPID_BURST_MIN_CYCLE_MS, RAPID_BURST_SHOT_INTERVAL_MS, RAPID_BURST_SHOTS, RAPID_BURST_SPREAD, RUSH_REFERENCE_SPEED, stepChargeMeter, teleportReach } from './survivor-charge';
@@ -1036,13 +1036,27 @@ function heldHoming(p: SurvivorPlayer): { homing?: number } {
 }
 
 /** Pena Rápida: o disparo vira aos poucos para o inimigo mais perto que ainda não acertou. */
+const HOMING_RANGE = 240;
+const HOMING_RETARGET_MS = 120;
+
 function steerHomingProjectile(state: SurvivorState, proj: SurvivorProjectile, dt: number): void {
+  // Mantém o alvo por alguns quadros; só procura de novo quando o tempo vence ou o alvo some.
+  proj.homingRetargetMs = (proj.homingRetargetMs ?? 0) - dt * 1000;
   let best: SurvivorEnemy | undefined;
-  let bestD = 240;
-  for (const e of state.enemies) {
-    if (e.hp <= 0 || proj.hit.includes(e.id)) continue;
-    const d = Math.hypot(e.x - proj.x, e.y - proj.y);
-    if (d < bestD) { bestD = d; best = e; }
+  if (proj.homingTargetId !== undefined && proj.homingRetargetMs > 0) {
+    best = state.enemies.find((e) => e.id === proj.homingTargetId && e.hp > 0 && !proj.hit.includes(e.id));
+  }
+  if (!best) {
+    let bestD2 = HOMING_RANGE * HOMING_RANGE;
+    for (const e of state.enemies) {
+      if (e.hp <= 0) continue;
+      const dx = e.x - proj.x;
+      const dy = e.y - proj.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2 && !proj.hit.includes(e.id)) { bestD2 = d2; best = e; }
+    }
+    proj.homingTargetId = best?.id;
+    proj.homingRetargetMs = HOMING_RETARGET_MS;
   }
   if (!best) return;
   const speed = Math.hypot(proj.vx, proj.vy);
@@ -1057,10 +1071,18 @@ function steerHomingProjectile(state: SurvivorState, proj: SurvivorProjectile, d
 }
 
 function heldNeighbors(state: SurvivorState, origin: SurvivorEnemy, range: number, count: number): SurvivorEnemy[] {
-  return state.enemies
-    .filter((o) => o !== origin && o.hp > 0 && Math.hypot(o.x - origin.x, o.y - origin.y) <= range)
-    .sort((a, b) => Math.hypot(a.x - origin.x, a.y - origin.y) - Math.hypot(b.x - origin.x, b.y - origin.y))
-    .slice(0, count);
+  // Distância calculada uma vez por inimigo (antes era refeita a cada comparação da ordenação).
+  const range2 = range * range;
+  const near: { e: SurvivorEnemy; d2: number }[] = [];
+  for (const o of state.enemies) {
+    if (o === origin || o.hp <= 0) continue;
+    const dx = o.x - origin.x;
+    const dy = o.y - origin.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= range2) near.push({ e: o, d2 });
+  }
+  near.sort((a, b) => a.d2 - b.d2);
+  return near.slice(0, count).map((entry) => entry.e);
 }
 
 const PLATE_ITEM: Partial<Record<string, HeldItemId>> = { fire: 'placa-chama', electric: 'placa-zap', ice: 'placa-gelo' };
@@ -1896,7 +1918,17 @@ function stepChests(state: SurvivorState, events: SurvivorEvent[]): void {
 function openChest(state: SurvivorState, chest: SurvivorChest, events: SurvivorEvent[]): void {
   const p = state.player;
   const offer = rollHeldOffer(state.rng, p.held ?? {}, 2, p.move.category);
-  if (offer.length === 0) return;
+  if (offer.length === 0) {
+    // Todos os itens que servem para o seu golpe já estão no teto: o baú vira orbes e a chave fica com você.
+    state.chests = (state.chests ?? []).filter((c) => c !== chest);
+    for (let index = 0; index < 6; index++) {
+      const angle = (Math.PI * 2 * index) / 6;
+      state.orbs.push({ id: state.nextId++, x: chest.x + Math.cos(angle) * 24, y: chest.y + Math.sin(angle) * 24, value: 10, doubleXp: false });
+    }
+    state.fx.push({ kind: 'chest', x: chest.x, y: chest.y, r: 46, color: '#ffd84a', ageMs: 0, lifeMs: 700 });
+    events.push({ type: 'chestEmpty' });
+    return;
+  }
   state.keys = Math.max(0, (state.keys ?? 0) - 1);
   state.chests = (state.chests ?? []).filter((c) => c !== chest);
   state.fx.push({ kind: 'chest', x: chest.x, y: chest.y, r: 46, color: '#ffd84a', ageMs: 0, lifeMs: 700 });
@@ -2966,7 +2998,7 @@ function updateFieldEvent(state: SurvivorState, dtMs: number, events: SurvivorEv
       }
       event.phase = 'hunt';
       event.enemyIds = enemyIds;
-      event.remainingMs = 0;
+      event.remainingMs = SURVIVOR_FIELD_EVENT_HUNT_MS;
       state.fx.push({ kind: 'blast', x: event.x, y: event.y, r: 72, color: '#ff6b72', ageMs: 0, lifeMs: 620 });
       events.push({ type: 'fieldEventStarted', kind: 'hunt' });
       return;
@@ -2984,6 +3016,13 @@ function updateFieldEvent(state: SurvivorState, dtMs: number, events: SurvivorEv
     state.fx.push({ kind: 'artifact', artifact: 'power', x: event.x, y: event.y, r: 46, color: '#ffcf5c', ageMs: 0, lifeMs: 800 });
     state.fieldEvent = null;
     events.push({ type: 'fieldEventComplete', kind: 'hunt' });
+    return;
+  }
+  // Os elites seguem na arena como inimigos comuns; só o encontro (e o prêmio) acaba.
+  event.remainingMs = Math.max(0, event.remainingMs - dtMs);
+  if (event.remainingMs === 0) {
+    state.fieldEvent = null;
+    events.push({ type: 'fieldEventExpired', kind: 'hunt' });
   }
 }
 

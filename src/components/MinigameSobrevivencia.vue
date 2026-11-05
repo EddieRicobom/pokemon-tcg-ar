@@ -99,7 +99,7 @@ import { bonkGroundEllipse, bonkObstacleDrawables, createBonkArt, drawBonkGround
 import type { BonkArt } from '../village/survivor-bonk-landscape';
 import { PROJECTILE_TIER_NAMES, survivorProjectileTier } from '../core/survivor-projectile-power';
 import { drawConeGuide, drawElementAuraField, drawElementFx, drawElementOrbiter, drawElementProjectile, drawOrbitPath } from '../village/survivor-attack-art';
-import { drawBubblePopFx, drawChainFx, drawChest, drawChestOpenFx, drawDestinyChains, drawDistortFx, drawGravityWell, drawHeldChargeOrb, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawImplodeFx, drawKey, drawMirrorOrbiter, drawPortalFx, drawSuctionField, drawTimeBubble } from '../village/survivor-held-art';
+import { drawBubblePopFx, drawChainFx, drawChest, drawChestOpenFx, drawDestinyChains, drawDistortFx, drawGravityWell, drawHeldChargeOrb, drawHeldGems, drawHeldHitFx, drawHeldProjectileOverlay, drawImplodeFx, drawKey, drawMirrorOrbiter, drawPortalFx, drawStickyBarb, drawSuctionField, drawTimeBubble } from '../village/survivor-held-art';
 import { HELD_ITEM_BY_ID, HELD_OFFER_PREFIX, heldChargePosition, heldGems, heldItemSpriteUrl, isHeldItemId, mirrorOrbiters } from '../core/survivor-held';
 import type { HeldItemId, HeldStacks } from '../core/survivor-held';
 import type { WorldToScreen } from '../village/survivor-attack-art';
@@ -359,6 +359,8 @@ let pvpPick: { shiny: boolean; types: PokemonType[] } = { shiny: false, types: [
 let pvpFinished = false;
 let pvpWarned = 0;
 let activeRunId = '';
+/** Muda a cada corrida nova: carregamentos assíncronos de uma corrida anterior não tocam na próxima. */
+let runEpoch = 0;
 const completedRunIds = new Set<string>();
 const selectedPreparation = ref<SurvivorPreparationId>('classica');
 
@@ -633,7 +635,7 @@ const fieldEventHud = computed(() => {
   const event = state.value?.fieldEvent;
   const player = state.value?.player;
   if (!event || !player) return null;
-  if (event.phase === 'hunt') return '⚔ Caçada: elimine os 2 elites';
+  if (event.phase === 'hunt') return `⚔ Caçada: elimine os 2 elites · ${Math.ceil(event.remainingMs / 1000)}s`;
   const dx = event.x - player.x;
   const dy = event.y - player.y;
   const direction = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? '←' : '→') : (dy < 0 ? '↑' : '↓');
@@ -1986,6 +1988,8 @@ function draw(): void {
     if (e.x >= left && e.x <= right && e.y >= top && e.y <= bottom) drawEnemy(e);
   }
   if (!effectiveVisual.value.rotomMode && s.enemies.some((e) => e.linkId !== undefined)) drawDestinyChains(ctx, destinyGroups(s), animMs, detailed);
+  // Farpa Grudenta: o espinho fica no inimigo até explodir (1 s).
+  if (!effectiveVisual.value.rotomMode) for (const mine of s.heldMines ?? []) drawStickyBarb(ctx, mine.x, mine.y - 10, 1 - mine.timerMs / 1000, animMs);
   drawDamageNumbers(flat);
 
   // Os apoios são puramente visuais: o motor mantém suas posições separadas e
@@ -2290,26 +2294,37 @@ function drawSupportTrails(c: CanvasRenderingContext2D, s: SurvivorState, detail
   }
 }
 
+const TRAIL_ALPHA_STEPS = 6;
+
 function drawTrailPath(c: CanvasRenderingContext2D, s: SurvivorState, path: readonly { x: number; y: number; bornMs: number }[], color: string, radius: number, detailed: boolean): void {
   if (path.length < 2 || effectiveVisual.value.rotomMode) return;
   const life = 3500;
-  c.save();
-  c.lineCap = 'round'; c.lineJoin = 'round';
+  // Os trechos são agrupados em faixas de transparência: no máximo TRAIL_ALPHA_STEPS traços com brilho
+  // (shadowBlur) em vez de um por trecho, que pesava na GPU com vários rastros na tela.
+  const outer: Path2D[] = [];
+  const inner: Path2D[] = [];
   for (let i = 1; i < path.length; i++) {
     const a = path[i - 1]!;
     const b = path[i]!;
     const age = Math.max(0, s.elapsedMs - a.bornMs);
     if (age >= life) continue;
     const alpha = Math.pow(1 - age / life, 1.35);
-    c.globalAlpha = alpha * 0.5;
-    c.strokeStyle = color;
-    c.lineWidth = radius * 1.35;
-    if (detailed) { c.shadowColor = color; c.shadowBlur = 12; }
-    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
-    c.globalAlpha = alpha * 0.85;
-    c.strokeStyle = '#fff8df'; c.lineWidth = Math.max(2, radius * 0.34);
-    c.shadowBlur = 0; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+    const step = Math.min(TRAIL_ALPHA_STEPS - 1, Math.floor(alpha * TRAIL_ALPHA_STEPS));
+    const o = (outer[step] ??= new Path2D());
+    o.moveTo(a.x, a.y); o.lineTo(b.x, b.y);
+    const n = (inner[step] ??= new Path2D());
+    n.moveTo(a.x, a.y); n.lineTo(b.x, b.y);
   }
+  c.save();
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = color;
+  c.lineWidth = radius * 1.35;
+  if (detailed) { c.shadowColor = color; c.shadowBlur = 12; }
+  outer.forEach((p, step) => { if (p) { c.globalAlpha = ((step + 0.5) / TRAIL_ALPHA_STEPS) * 0.5; c.stroke(p); } });
+  c.shadowBlur = 0;
+  c.strokeStyle = '#fff8df';
+  c.lineWidth = Math.max(2, radius * 0.34);
+  inner.forEach((p, step) => { if (p) { c.globalAlpha = ((step + 0.5) / TRAIL_ALPHA_STEPS) * 0.85; c.stroke(p); } });
   c.restore();
 }
 
@@ -2745,6 +2760,7 @@ function loop(ts: number): void {
       else if (ev.type === 'chestSpawn') say('🧰 Um baú apareceu no mapa.', 2400);
       else if (ev.type === 'chestLocked') say('🔒 Baú trancado: derrote elites para ganhar chaves.', 2600);
       else if (ev.type === 'chestOpened') playSound('success');
+      else if (ev.type === 'chestEmpty') { playSound('survivor-pickup'); say('🧰 Seus itens já estão no máximo: o baú virou orbes e a chave continua com você.', 3200); }
       else if (ev.type === 'heldItem') say(`🎒 ${ev.name}${ev.copies > 1 ? ` ×${ev.copies}` : ''}!`, 2400);
       else if (ev.type === 'milestone') {
         playSound('success');
@@ -2787,6 +2803,9 @@ function loop(ts: number): void {
       else if (ev.type === 'fieldEventStarted') {
         playSound('survivor-boss');
         say('⚔ Caçada iniciada: derrube os 2 elites para liberar 2 artefatos.', 4200);
+      }
+      else if (ev.type === 'fieldEventExpired') {
+        say(ev.kind === 'hunt' ? '⚔ A Caçada acabou: os elites seguem por aí, mas sem os artefatos.' : '✦ A baliza se apagou. Outro encontro aparece mais tarde.', 3200);
       }
       else if (ev.type === 'fieldEventComplete') {
         playSound('success');
@@ -2860,11 +2879,13 @@ function chooseUpgrade(id: string): void {
   for (const ev of events) {
     if (ev.type === 'evolve') void evolveTo(ev.dexId, ev.name);
     if (ev.type === 'supportEvolve') {
+      const epoch = runEpoch;
       void loadSpriteOrNull(ev.dexId).then((sprite) => {
-        if (!disposed) supportSprites.set(ev.dexId, sprite);
+        if (!disposed && epoch === runEpoch) supportSprites.set(ev.dexId, sprite);
       });
       say(`${ev.name} evoluiu e fortaleceu o seu apoio!`, 2600);
     }
+    if (ev.type === 'secondAttack') say(`⚔ ${ev.name} entrou na luta: agora você tem um segundo ataque automático!`, 3200);
     if (ev.type === 'heldItem') {
       const def = HELD_ITEM_BY_ID[ev.id];
       const form = state.value ? def.perCategory?.[state.value.player.move.category] : undefined;
@@ -2940,8 +2961,9 @@ function toggleHudMenu(): void {
 /** Troca o sprite pela nova forma; o jogo espera (com o brilho) até carregar. Sem sprite, a forma neutra no lugar. */
 async function evolveTo(dexId: number, name: string): Promise<void> {
   evolving.value = `${avatarName.value} evoluiu para ${name}!`;
+  const epoch = runEpoch;
   const [sprite, back] = await Promise.all([loadSpriteOrNull(dexId), bonkRun.value ? loadBackSpriteOrNull(dexId) : Promise.resolve(null), new Promise((r) => setTimeout(r, 900))]);
-  if (disposed) return;
+  if (disposed || epoch !== runEpoch) return;
   normalPlayerSprite = sprite;
   normalPlayerBackSprite = back;
   playerSprite = sprite;
@@ -3055,6 +3077,7 @@ async function rollPickOptions(previousIds: readonly string[] = []): Promise<Pic
 
 async function beginRun(dexId: number, name: string, picked?: PokemonType, infinite = false, bonk = false, companion: CardCompanion | null = null, preparation: SurvivorPreparationId = 'classica', supportCandidates: readonly SurvivorSupportCandidate[] = [], typeAffinityChoices: readonly PokemonType[] = [], fast = false, shiny = false, accessory: string | null = null, mega: SurvivorMegaForm | null = null, swapped = false, omegaCategory?: MoveCategory): Promise<void> {
   runCompanion = companion;
+  runEpoch++;
   pickBusy.value = true;
   try {
     avatarName.value = name;
@@ -3384,6 +3407,7 @@ document.addEventListener('visibilitychange', onVisibility);
 
 onBeforeUnmount(() => {
   disposed = true;
+  if (bonkJumpPressTimer) clearTimeout(bonkJumpPressTimer);
   cancelGameFrame(rafId);
   rafId = 0;
   window.removeEventListener('keydown', onKey);

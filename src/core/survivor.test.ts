@@ -1449,6 +1449,18 @@ describe('encontros de campo', () => {
     expect(completed.filter((event) => event.type === 'artifactCollected')).toHaveLength(2);
   });
 
+  it('a caçada acaba sozinha se os elites não caírem, liberando os próximos encontros', () => {
+    const s = quiet(run(17));
+    s.fieldEvent = { phase: 'beacon', kind: 'hunt', x: s.player.x, y: s.player.y, remainingMs: 1_000, enemyIds: [] };
+    stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(s.fieldEvent?.phase).toBe('hunt');
+    expect(s.fieldEvent?.remainingMs).toBeGreaterThan(0);
+    s.fieldEvent!.remainingMs = 10;
+    const events = stepSurvivor(s, { dx: 0, dy: 0 }, 16);
+    expect(events).toContainEqual({ type: 'fieldEventExpired', kind: 'hunt' });
+    expect(s.fieldEvent).toBeNull();
+  });
+
   it('deixa a baliza expirar sem punir a corrida', () => {
     const s = quiet(run(16));
     s.fieldEvent = { phase: 'beacon', kind: 'hunt', x: 0, y: 0, remainingMs: 1, enemyIds: [] };

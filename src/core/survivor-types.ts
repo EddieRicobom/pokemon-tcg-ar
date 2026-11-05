@@ -354,6 +354,9 @@ export interface SurvivorProjectile {
   look?: SurvivorProjectileLook;
   /** Pena Rápida: quanto o disparo curva por segundo (rad/s) atrás do inimigo mais perto. */
   homing?: number;
+  /** Alvo atual da Pena Rápida e quanto falta para procurar outro (evita varrer todos os inimigos a cada quadro). */
+  homingTargetId?: number;
+  homingRetargetMs?: number;
   /** Estilhaço de item: acerta, mas não dispara de novo os efeitos dos itens (evita reação em cadeia infinita). */
   noHeld?: boolean;
 }
@@ -674,6 +677,8 @@ export const SURVIVOR_SHADOW_CUTSCENE_MS = 2_800;
 export const SURVIVOR_FIELD_EVENT_FIRST_MS = 75_000;
 export const SURVIVOR_FIELD_EVENT_EVERY_MS = 75_000;
 export const SURVIVOR_FIELD_EVENT_BEACON_MS = 22_000;
+/** A Caçada termina sozinha se os elites não caírem: um elite preso não pode travar os próximos encontros. */
+export const SURVIVOR_FIELD_EVENT_HUNT_MS = 70_000;
 export const SURVIVOR_FIELD_EVENT_REACH_RADIUS = 58;
 
 export type SurvivorFieldEventKind = 'resonance' | 'hunt';
@@ -711,6 +716,7 @@ export type SurvivorEvent =
   | { type: 'chestSpawn' }
   | { type: 'chestLocked' }
   | { type: 'chestOpened'; keys: number }
+  | { type: 'chestEmpty' }
   | { type: 'heldItem'; id: HeldItemId; name: string; copies: number }
   | { type: 'milestone'; id: 'ten-minutes' | 'fifteen-minutes' | 'twenty-minutes'; reward: 'love-candy' | 'trust-stone' | 'omega-shard' }
   | { type: 'bossSpawn' }
