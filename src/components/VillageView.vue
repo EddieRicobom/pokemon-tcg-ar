@@ -54,7 +54,7 @@ import {
   canAffordSummon, canEvolve, COIN_SUMMON_COST, COIN_SUMMON_ENABLED, evolve, EVOLVE_COST, grantStarter, grantSurvival, instanceOf, LAST_DEX_ID, pickAnySpecies,
   pickFonteSpecies, summon, SUMMON_COST, summonWithCoins,
 } from '../core/village/digital';
-import { wishAtFountain } from '../core/village/fountain';
+import { makeFountainWish } from '../core/village/fountain';
 import type { DigitalPokemonInstance, SpeciesRef } from '../core/village/digital';
 import { celebiDiaryPage, dismissActive, legendaryEffects, legendaryOf, rollLegendary } from '../core/village/legendary';
 import type { LegendaryEffects } from '../core/village/legendary';
@@ -418,7 +418,12 @@ const INTRO_LINES: readonly string[] = [
 ];
 const cutsceneOpen = ref(false);
 const cutsceneLine = ref(0);
-const hoOhWishScene = ref<{ spriteUrl: string } | null>(null);
+const hoOhWishScene = ref<{ spriteUrl: string; trustStone: boolean } | null>(null);
+function finishHoOhWish(): void {
+  const trustStone = hoOhWishScene.value?.trustStone;
+  hoOhWishScene.value = null;
+  if (trustStone) say('💠 Você recebeu a Pedra da Confiança de hoje!');
+}
 const legendaryScene = ref<{ story: LegendStory; gif: DecodedGif | null; loading: boolean; replay: boolean } | null>(null);
 const legendarySceneRef = ref<InstanceType<typeof LegendaryCutscene> | null>(null);
 const legendaryDefinition = computed(() => legendaryScene.value && legendaryOf(legendaryScene.value.story.id));
@@ -1243,7 +1248,7 @@ function onKey(e: KeyboardEvent): void {
   if (hoOhWishScene.value) {
     if (e.type === 'keydown' && (e.key === 'Escape' || e.key === 'x' || e.key === 'X')) {
       e.preventDefault();
-      hoOhWishScene.value = null;
+      finishHoOhWish();
     }
     return;
   }
@@ -2132,16 +2137,14 @@ function openFountain(b: Building): void {
   const open = LOTS.filter((l) => level.value >= l.unlock).length;
   dialog.value = {
     name: `${b.name} · ${stage.value.name}`,
-    text: `Nível ${level.value} de Treinador: ${open} de ${LOTS.length} terrenos liberados. ${next ? `No nível ${next.level}: ${next.text}.` : 'A cidade já está completa!'} Jogue uma moeda para fazer um pedido, ou use as suas moedas (${state.coins}) pra invocar ou evoluir um Digital Pokémon.`,
+    text: `Nível ${level.value} de Treinador: ${open} de ${LOTS.length} terrenos liberados. ${next ? `No nível ${next.level}: ${next.text}.` : 'A cidade já está completa!'} Jogue uma moeda para fazer um pedido e receber uma Pedra da Confiança por dia, ou use suas moedas (${state.coins}) para invocar ou evoluir um Digital Pokémon.`,
     actions: [
       {
         label: 'Jogar uma moeda',
         disabled: state.coins < 1,
         run: () => {
-          const wish = wishAtFountain(state.coins, state.fountainWishes);
+          const wish = makeFountainWish(state, refreshDay());
           if (!wish) return;
-          state.coins = wish.coinsAfter;
-          state.fountainWishes = wish.wishesAfter;
           playSound('bell');
           changed();
           closeDialog();
@@ -2150,7 +2153,7 @@ function openFountain(b: Building): void {
             state.hoOhWishSeen = true;
             changed();
             persist();
-            hoOhWishScene.value = { spriteUrl: '' };
+            hoOhWishScene.value = { spriteUrl: '', trustStone: wish.trustStone };
             void getLocalVillageSprite(250, false, 'Walk').then(async (sprite) => {
               const flight = sprite ?? (await getDigitalSprite(250, false))?.gif;
               if (flight && hoOhWishScene.value) hoOhWishScene.value.spriteUrl = thumbOf(flight);
@@ -2159,8 +2162,9 @@ function openFountain(b: Building): void {
           }
           if (Math.random() < 0.06) {
             state.coins += 5;
-            say('✨ A fonte brilhou e devolveu 5 moedas!');
-          } else say('✨ Você fez um pedido…');
+            say(wish.trustStone ? '✨ A fonte devolveu 5 moedas e entregou a Pedra da Confiança de hoje!' : '✨ A fonte brilhou e devolveu 5 moedas!');
+          } else say(wish.trustStone ? '💠 Você fez um pedido e recebeu a Pedra da Confiança de hoje!' : '✨ Você fez um pedido…');
+          persist();
         },
       },
       {
@@ -3372,7 +3376,7 @@ onBeforeUnmount(() => {
         <small>O Zoom muda o tamanho sem deslocar a âncora. A Vila fica no ponto escolhido enquanto esta câmera estiver aberta; a escala é lembrada neste aparelho.</small>
       </section>
       <p v-if="loading" class="village-loading">{{ loading }}</p>
-      <HoOhWishCutscene v-else-if="hoOhWishScene" :sprite-url="hoOhWishScene.spriteUrl" @finish="hoOhWishScene = null" />
+      <HoOhWishCutscene v-else-if="hoOhWishScene" :sprite-url="hoOhWishScene.spriteUrl" @finish="finishHoOhWish" />
       <LegendaryCutscene v-else-if="legendaryScene && legendaryDefinition" ref="legendarySceneRef" :key="legendaryScene.story.id" :story="legendaryScene.story" :definition="legendaryDefinition" :gif="legendaryScene.gif" :loading="legendaryScene.loading" :replay="legendaryScene.replay" :effects="effectiveVisual.villageFx" :max-fps="effectiveVisual.frameRate === 'auto' ? 0 : Number(effectiveVisual.frameRate)" @finish="finishLegendaryCutscene" />
       <div v-else-if="recapScene" class="village-recap" role="dialog" aria-modal="true" aria-label="Capítulo diário da Vila">
         <article :key="recapIndex" class="village-recap-card">
