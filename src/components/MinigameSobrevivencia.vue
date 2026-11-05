@@ -68,7 +68,7 @@ import { omegaShardCount, settleOmegaShard, survivorMegaForm, survivorMegaForms,
 import type { SurvivorMegaForm, SurvivorMegaSprite } from '../core/survivor-mega';
 import { nextEvolutions, speciesName } from '../core/survivor-evolution';
 import type { DecodedGif } from '../core/gif';
-import { firstSpriteFrame, frameIndex, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
+import { firstSpriteFrame, frameIndex, polishedFrame, SURVIVOR_TILE_PX, toSprite } from '../village/survivor-sprite';
 import type { Sprite, SpriteAsset } from '../village/survivor-sprite';
 import { SoundEngine } from '../box/sound';
 import { survivorRegionLabel } from '../core/survivor-regions';
@@ -187,6 +187,22 @@ const specialEffects = ref(true);
 const hudExpanded = ref(false);
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 const detailedSpecialEffects = computed(() => specialEffects.value && !reducedMotion && !effectiveVisual.value.rotomMode);
+/**
+ * Pixels do canvas por unidade do mundo. O mundo visível tem cerca de 240 unidades de largura num celular: com 1 pixel
+ * por unidade, a tela ampliava cada ponto em escala quebrada e os sprites ficavam irregulares. Três vezes mais pixels
+ * deixam sprites, traços e números limpos; Modo Rotom e efeitos simples usam menos, e o teto cai se o aparelho sofrer.
+ */
+const renderScaleCap = ref(3);
+const renderScale = computed(() => Math.min(renderScaleCap.value, effectiveVisual.value.rotomMode ? 1 : detailedSpecialEffects.value ? 3 : 2));
+let slowFrames = 0;
+/** Mais de 2 s seguidos abaixo do ritmo pedido baixam a resolução um degrau (sem voltar nesta sessão). */
+function watchFrameCost(dtMs: number, fps: number): void {
+  const budget = fps > 0 ? 1600 / fps : 40;
+  slowFrames = dtMs > budget ? slowFrames + 1 : Math.max(0, slowFrames - 2);
+  if (slowFrames < 60 || renderScale.value <= 1) return;
+  renderScaleCap.value = renderScale.value - 1;
+  slowFrames = 0;
+}
 // A arte é um setor repetível: o mundo cresce sem ampliar árvores, itens ou a textura de cada canvas.
 const drawLandscape = createSurvivorLandscape(SURVIVOR_LANDSCAPE_TILE_W, SURVIVOR_LANDSCAPE_TILE_H);
 const collisionPlans = new Map<number, ReturnType<typeof planSurvivorFloor>>();
@@ -1229,7 +1245,7 @@ function joyCancel(e: PointerEvent): void {
   joyUp(e);
 }
 
-function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down', accessory?: string | null): void {
+function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boolean, scale: number, direction: SurvivorSpriteDirection = 'down', accessory?: string | null, polished = false): void {
   if (!ctx) return;
   if (!asset) {
     ctx.fillStyle = 'rgba(110,116,130,0.92)';
@@ -1253,7 +1269,18 @@ function drawSprite(asset: SpriteAsset | null, x: number, y: number, flip: boole
   const fit = accessory ? accessoryFit(accessory, sprite, x, y + top, w, h, scale, facing, mirror) : null;
   if (fit?.behind) drawAccessoryOverlay(fit);
   // Sem espelho, a posição entra direto no desenho: sem `save`/`restore` por inimigo (são a parte mais cara aqui).
-  if (!mirror) ctx.drawImage(frame, x + left, y + top, w, h);
+  const smoothing = effectiveVisual.value.smoothing;
+  const fine = polished && renderScale.value > 1 && smoothing !== 'nitido' ? polishedFrame(frame, smoothing) : null;
+  if (fine) {
+    const pad = fine.pad * (w / sprite.w);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.translate(x, y);
+    if (mirror) ctx.scale(-1, 1);
+    ctx.drawImage(fine.canvas, left - pad, top - pad, w + pad * 2, h + pad * 2);
+    ctx.restore();
+  } else if (!mirror) ctx.drawImage(frame, x + left, y + top, w, h);
   else {
     ctx.save();
     ctx.translate(x, y);
@@ -1315,7 +1342,14 @@ function drawShadowFlames(x: number, y: number, radius: number): void {
  * Poeira da corrida: nuvens soltas a cada passo ficam para trás no chão, crescem e somem; acima da velocidade inicial
  * saem mais, maiores e mais longe, e aparecem riscos de vento atrás do Pokémon. Só desenho, com Efeitos leves/Rotom desligada.
  */
+/** 0 (parado) a 1 (correndo) e o lado da corrida, suavizados para o corpo não dar trancos. */
+let playerStepping = 0;
+let playerLean = 0;
 function stepFootDust(movedX: number, movedY: number, dtMs: number): void {
+  const pace = Math.min(1, Math.hypot(movedX, movedY) / Math.max(1, dtMs) / 0.12);
+  const ease = Math.min(1, dtMs / 90);
+  playerStepping += (pace - playerStepping) * ease;
+  playerLean += (Math.sign(movedX) - playerLean) * ease;
   const puffs = footDust.puffs;
   // As nuvens guardam a posição relativa ao jogador; descontar o passo as deixa paradas no mundo.
   for (const puff of puffs) {
@@ -1385,6 +1419,29 @@ function drawFootDust(c: CanvasRenderingContext2D, x: number, y: number, scale =
   c.restore();
 }
 
+/** Tempo do aviso antes do tiro do atirador; só desenho, o motor segue com a mesma recarga. */
+const ATTACK_WINDUP_MS = 550;
+
+/** "!" em balão sobre quem vai atacar: entra crescendo e fica vermelho perto do golpe. */
+function drawAlertMark(c: CanvasRenderingContext2D, x: number, y: number, t: number): void {
+  const pop = Math.min(1, t * 4);
+  const r = 8 * (0.6 + 0.4 * pop);
+  c.save();
+  c.fillStyle = '#fffdf2';
+  c.strokeStyle = '#1b2737';
+  c.lineWidth = 1.5;
+  c.beginPath();
+  c.arc(x, y, r, 0, Math.PI * 2);
+  c.fill();
+  c.stroke();
+  c.fillStyle = t > 0.6 ? '#e8332b' : '#1b2737';
+  c.font = `bold ${Math.round(r * 1.6)}px sans-serif`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.fillText('!', x, y + 0.5);
+  c.restore();
+}
+
 function drawEnemy(e: SurvivorEnemy): void {
   if (!ctx) return;
   // Chefões dão um pequeno tranco quando o golpe conecta. O flash já existia; o deslocamento torna o impacto legível.
@@ -1415,6 +1472,34 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.stroke();
     ctx.restore();
   }
+  // Preparo do ataque (0 a 1): atirador mirando ou investida carregando encolhem o corpo e mostram "!" antes de agir.
+  const target = state.value?.player;
+  const aiming = e.archetype === 'atirador' && target && !e.stunMs && (e.specialTimerMs ?? 9999) < ATTACK_WINDUP_MS && Math.hypot(target.x - e.x, target.y - e.y) <= 420;
+  const windup = aiming ? 1 - Math.max(0, e.specialTimerMs ?? 0) / ATTACK_WINDUP_MS : e.chargeMs ? 1 - e.chargeMs / 500 : 0;
+  if (aiming && target) {
+    ctx.save();
+    ctx.globalAlpha = 0.25 + 0.45 * windup;
+    ctx.strokeStyle = '#ff5a5a';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    ctx.moveTo(e.x, e.y - 10);
+    ctx.lineTo(target.x, target.y - 10);
+    ctx.stroke();
+    ctx.restore();
+  }
+  if (e.archetype === 'explosivo' && e.hp < e.maxHp * 0.4 && Math.sin(animMs / 110) > -0.2) {
+    // Quase caindo: o anel mostra até onde a explosão alcança.
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = '#ff8c3a';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 70, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
   if (e.chargeMs) {
     // Aviso da investida: o anel vermelho se fecha até o avanço, para dar tempo de sair do caminho.
     ctx.strokeStyle = '#ff5a5a';
@@ -1431,7 +1516,18 @@ function drawEnemy(e: SurvivorEnemy): void {
     ctx.fill();
   }
   const player = state.value?.player;
-  drawSprite(sprite, e.x, e.y, false, scale, player ? survivorSpriteDirection(player.x - e.x, player.y - e.y) : 'down');
+  const facing = player ? survivorSpriteDirection(player.x - e.x, player.y - e.y) : 'down';
+  if (windup > 0 && !reducedMotion) {
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.scale(1 + 0.14 * windup, 1 - 0.18 * windup);
+    ctx.translate(-e.x, -e.y);
+    drawSprite(sprite, e.x, e.y, false, scale, facing);
+    ctx.restore();
+  } else {
+    drawSprite(sprite, e.x, e.y, false, scale, facing);
+  }
+  if (windup > 0) drawAlertMark(ctx, e.x, e.y - (e.boss ? 62 : 40), windup);
   // Efeitos do golpe no inimigo: um pontinho colorido em cima (queimando, lento, atordoado).
   const marks: string[] = [];
   if (e.burnMs) marks.push(state.value?.player.move.color ?? '#ff7a2f');
@@ -1500,7 +1596,7 @@ function drawDamageNumbers(worldToScreen: WorldToScreen): void {
 /** Sprite 2D voltado para a câmera (billboard): a perspectiva vem da projeção, não de um modelo 3D inventado. */
 function drawBonkBillboard(
   sprite: SpriteAsset | null, x: number, y: number, scale: number, flip = false, alpha = 1,
-  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0, direction: SurvivorSpriteDirection = 'down', accessory?: string | null,
+  shadow: { x: number; y: number; rx: number; ry: number } | null = null, squash = 0, direction: SurvivorSpriteDirection = 'down', accessory?: string | null, polished = false,
 ): void {
   if (!ctx) return;
   ctx.save();
@@ -1515,9 +1611,9 @@ function drawBonkBillboard(
     // Achatado ao pousar (squash > 0), esticado ao subir (squash < 0), sempre com os pés no mesmo ponto.
     ctx.translate(x, y);
     ctx.scale(1 + squash * 0.7, 1 - squash);
-    drawSprite(sprite, 0, 0, flip, scale, direction, accessory);
+    drawSprite(sprite, 0, 0, flip, scale, direction, accessory, polished);
   } else {
-    drawSprite(sprite, x, y, flip, scale, direction, accessory);
+    drawSprite(sprite, x, y, flip, scale, direction, accessory, polished);
   }
   ctx.restore();
 }
@@ -1728,7 +1824,7 @@ function drawBonkScene(s: SurvivorState, physics: BonkPhysics): void {
       c.scale(motion.scaleX, motion.scaleY);
       drawBonkBillboard(playerBackSprite ?? playerSprite, motion.lunge * 18 * scale, 0, scale, bonkFacing < 0,
         s.player.invulnMs > 0 && Math.floor(animMs / 80) % 2 === 0 ? 0.45 : 1,
-        { x: playerGround.x - playerPoint.x, y: playerGround.y - playerPoint.y, rx: shadow.rx, ry: shadow.ry }, squash, 'down', playerAccessory);
+        { x: playerGround.x - playerPoint.x, y: playerGround.y - playerPoint.y, rx: shadow.rx, ry: shadow.ry }, squash, 'down', playerAccessory, true);
       c.restore();
     } });
   }
@@ -1929,6 +2025,9 @@ function draw(): void {
   if (!ctx || !canvasEl.value || !state.value) return;
   // O motor escreve no objeto cru (ver `loop`); o proxy do Vue só custava leituras e escritas a mais no desenho.
   const s = toRaw(state.value);
+  // Trocar o tamanho do canvas zera a transformação: ela é refeita a cada quadro.
+  ctx.setTransform(renderScale.value, 0, 0, renderScale.value, 0, 0);
+  ctx.imageSmoothingEnabled = false;
   if (bonkRun.value && bonkPhysics.value) {
     drawBonkScene(s, bonkPhysics.value);
     return;
@@ -2074,6 +2173,19 @@ function draw(): void {
   // Orbitais acima do Pokémon na tela passam por trás dele; os de baixo, pela frente.
   const orbiters = move.category === 'orbit' ? survivorOrbiters(s.player) : [];
   orbiters.forEach((orbiter, index) => { if (orbiter.y < s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
+  // Sombra e aro na cor do golpe: acham você no meio da multidão, mesmo piscando depois de um golpe.
+  if (!effectiveVisual.value.rotomMode) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(13, 23, 43, 0.3)';
+    ctx.beginPath();
+    ctx.ellipse(s.player.x, s.player.y, 15, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = move.color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
   if (!blink) {
     const motion = effectiveVisual.value.impactFx && !reducedMotion ? combatMotion(animMs - playerAttackAt) : combatMotion(-1);
     const aimAngle = s.player.aimAngle ?? (s.player.facing < 0 ? Math.PI : 0);
@@ -2083,7 +2195,14 @@ function draw(): void {
     ctx.translate(s.player.x, s.player.y);
     ctx.rotate(motion.rotation * s.player.facing);
     ctx.scale(motion.scaleX, motion.scaleY);
-    drawSprite(playerSprite, motion.lunge * 18 * aimX, motion.lunge * 12 * aimY, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(aimAngle, s.player.facing), playerAccessory);
+    // Vivo mesmo parado: respira de leve; andando, dá passinhos e inclina para onde vai.
+    const lively = !reducedMotion && !effectiveVisual.value.rotomMode;
+    const walking = lively && playerStepping > 0.15;
+    const hop = walking ? Math.abs(Math.sin(animMs / 105)) * 2.2 * playerStepping : 0;
+    const breath = lively && !walking ? Math.sin(animMs / 430) * 0.022 : 0;
+    if (walking) ctx.rotate(playerLean * 0.07 * playerStepping);
+    ctx.scale(1 - breath, 1 + breath);
+    drawSprite(playerSprite, motion.lunge * 18 * aimX, motion.lunge * 12 * aimY - hop, s.player.facing < 0, 1, survivorSpriteDirectionFromAngle(aimAngle, s.player.facing), playerAccessory, true);
     ctx.restore();
   }
   orbiters.forEach((orbiter, index) => { if (orbiter.y >= s.player.y) drawElementOrbiter(ctx!, s.player, move.type, flat, index, animMs, detailed); });
@@ -2725,6 +2844,7 @@ function loop(ts: number): void {
   const dt = Math.min(60, Math.max(1, ts - lastTs || 16));
   lastTs = ts;
   if (document.hidden || !state.value) return;
+  if (!paused.value) watchFrameCost(dt, fps);
   if (paused.value) {
     if (trainerPresentation.value) animMs += dt;
     draw();
@@ -3517,7 +3637,7 @@ onBeforeUnmount(() => {
         @pointercancel="joyCancel"
         @lostpointercapture="joyCancel"
       >
-        <canvas ref="canvasEl" :width="view.w" :height="view.h" class="survivor-canvas" :class="{ 'bonk-canvas': bonkRun, 'survivor-damage-shake': damageFeedback, 'survivor-time-stopped': timeStopped }" :aria-label="bonkRun ? 'BONK: arraste para andar, toque ou clique duplo na tela para pular' : 'Torre: arraste em qualquer lugar para andar'"></canvas>
+        <canvas ref="canvasEl" :width="view.w * renderScale" :height="view.h * renderScale" class="survivor-canvas" :class="{ 'canvas-chunky': renderScale === 1, 'bonk-canvas': bonkRun, 'survivor-damage-shake': damageFeedback, 'survivor-time-stopped': timeStopped }" :aria-label="bonkRun ? 'BONK: arraste para andar, toque ou clique duplo na tela para pular' : 'Torre: arraste em qualquer lugar para andar'"></canvas>
 
         <div class="survivor-vignette" aria-hidden="true"></div>
         <div v-if="damageFeedback" class="survivor-damage-flash" aria-hidden="true"></div>

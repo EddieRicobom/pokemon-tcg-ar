@@ -6989,12 +6989,10 @@ body.no-scroll .reward-toasts {
   display: block;
   width: 100%;
   height: 100%;
-  image-rendering: pixelated;
 }
-.survivor-canvas.bonk-canvas {
-  image-rendering: pixelated;
-  background: #1a396c;
-}
+/* Só a resolução mínima usa pontos duros; acima dela, a ampliação suave evita pixels de tamanhos diferentes. */
+.survivor-canvas.canvas-chunky { image-rendering: pixelated; }
+.survivor-canvas.bonk-canvas { background: #1a396c; }
 .survivor-canvas.survivor-time-stopped { filter: grayscale(1) contrast(.94) brightness(.82); }
 .survivor-stasis-overlay {
   position: absolute;
@@ -8999,6 +8997,26 @@ body.no-scroll .reward-toasts {
   .survivor-hp .survivor-hp-heading span, .survivor-hp .survivor-hp-value { font-size: .65rem; }
 }
 
+
+/* Alinhamento da Torre: textos corridos à esquerda, ações em largura total e a mesma altura de toque. */
+.survivor-overlay .survivor-pick:not(.survivor-type-choice) { text-align: left; }
+.survivor-overlay .survivor-pick:not(.survivor-type-choice) .survivor-pick-grid { text-align: center; }
+.survivor-preparations > strong { display: block; text-align: left; }
+.survivor-pvp-entry { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin: 2px 0 8px; text-align: center; }
+.survivor-back, .survivor-exit { min-height: 44px; width: 100%; }
+.survivor-mode { align-items: stretch; }
+.survivor-mode button { justify-content: center; min-height: 62px; }
+/* HUD: tudo na mesma margem de cima; Menu encostado no fim da linha, sob o painel de vida. */
+.survivor-stats .survivor-action-dock { margin-left: auto; }
+.survivor-gameplay .survivor-xp-bar { height: 13px; }
+.survivor-gameplay .survivor-xp-bar span { font-size: .6rem; line-height: 9px; }
+.survivor-focus-actions button small { font-size: .62rem; }
+@media (max-width: 480px) {
+  .survivor-minimap { top: calc(8px + env(safe-area-inset-top)); }
+  .survivor-danger-meter { top: calc(88px + env(safe-area-inset-top)); }
+  .survivor-stats .chip { font-size: .7rem; }
+  .survivor-hp .survivor-hp-heading span, .survivor-hp .survivor-hp-value { font-size: .72rem; }
+}
 
 /* Colecao: o essencial fica junto da grade; ferramentas e detalhes extras podem ser abertos. */
 .collection-shortcuts { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
