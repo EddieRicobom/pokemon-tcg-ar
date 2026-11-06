@@ -163,13 +163,24 @@ Tela "Caixa": os Pokémon da equipe (até 40; sem escolha, as 6 cartas mais rece
 - Dados (`load-creatures.ts`): lê o cache de cartas, decodifica o GIF (ou PNG de reserva) de cada carta com sprite. Uma carta com defeito entra na lista de falhas e não impede as outras.
 - Limitações honestas: a caixa acompanha o **giro** do celular, mas não a **caminhada** (sem paralaxe: ao andar, ela parece deslizar); a altura do celular e o campo de visão são estimativas; nada disso foi validado em aparelho real. A batalha automática está descrita abaixo.
 
+### A luta 6x6 da Arena (`src/components/ArenaFight.vue`, `src/core/arena-prep.ts`, `src/core/arena-bot.ts`)
+
+Todas as opções do menu da Arena usam a mesma luta: a arena em tempo real do fim do PvP do Survivor (`core/survivor-pvp.ts`, `components/SurvivalPvpArena.vue`), com 6 Pokémon de cada lado. Substituiu o duelo por turnos e a batalha automática do Coliseu no menu.
+
+- **10 níveis antes da luta** (`arena-prep.ts`): cada Pokémon recebe 10 cartas da Torre, pelo mesmo motor da corrida (`rollUpgrades`, `applyUpgrade`). Só entram cartas que mudam um número da luta (`arenaIdleUpgrades` testa cada uma numa cópia do jogador): ímã, XP e apoio não existem na arena. A tela oferece escolher por um Pokémon ou por todos.
+- **Dois ataques**: `SvMonSpec.alt` guarda o segundo ataque, o golpe alternativo da espécie (`survivorAttackChoices`): o outro tipo para quem tem dois, outra forma do mesmo tipo para quem tem um. O botão ⇄ (ou Q) troca com 1,5 s de recarga, e cada Pokémon guarda o próprio ataque ao sair de campo. As cartas valem no segundo ataque na mesma proporção em que mudaram o principal.
+- **Rival** (`arena-bot.ts`): usa os mesmos controles de uma pessoa e não tem sorteio. A equipe são 6 Pokémon com 10 cartas automáticas (`arenaRivalTeam`); uma lista menor se repete até 6. Na Liga, `power` multiplica vida e dano e acelera a reação; nas corridas, o rival fica mais forte a cada vitória.
+- **Contra o jogo**, `SurvivalHostLink` roda localmente com `LOCAL_TRANSPORT` e o bot. **Contra um amigo**, o `PvpLobby game="box"` conecta, cada um prepara a equipe e a luta roda no anfitrião, com as mensagens `sv-*`.
+- **Resultado** (`app/arena-fight-result.ts`): a Liga grava o resultado e marca o próximo líder; as demais somam vitórias às cartas e rendem as moedas do dia. PvP não grava nada. As equipes têm tempo proporcional ao tamanho (`suddenDeathMs`, `maxMs`).
+- **Limitação**: o efeito «saltar» (encadear em outro alvo) não faz nada na arena, porque só há um alvo em campo.
+
 ### O menu único da Arena (`src/views/ArenaView.vue`, `src/core/arena-menu.ts`, rota `#/arena`)
 
 Tudo que antes ficava espalhado (entrar no palco e só depois configurar) agora se decide **antes de entrar**, numa tela só com quatro passos e um botão principal sempre à vista no pé da tela:
 
-1. **O que fazer** (`ARENA_CHOICES`): **Batalha livre**, **Liga e desafios**, **Corridas 6×6** e **PvP com um amigo**.
-2. **Equipe** (`TeamPicker`, até 6) — no PvP este passo é **conectar com o amigo** (`BoxPvpPanel` → `PvpLobby game="box"`, com o passo a passo «Sua vez de agir» / «Aguarde um instante» do lobby) e a equipe vem no passo 3.
-3. **Opções da opção**: formato da batalha livre (Todos contra todos, Equipes, 3 contra 3, `battle-mode-store`), líder da Liga (`LeagueCard`), tipo de corrida (Formatação ou Restauração digital). Recolhidas em «Opções avançadas»: Luz dos golpes, faíscas, som e cenário do Coliseu (as mesmas opções de `visual-settings`, com desligar para poupar a GPU). Golpes e duelo por turnos ficam em «Mais opções».
+1. **O que fazer** (`ARENA_CHOICES`): **Luta 6×6**, **Liga e desafios**, **Corridas 6×6** e **PvP com um amigo**. O pedido do endereço vale mais que um desafio guardado; sem pedido, o desafio abre na Liga.
+2. **Equipe** (`TeamPicker`): exatamente 6 Pokémon, com número da Pokédex.
+3. **Opções da opção**: líder da Liga (`LeagueCard`, que não sai da tela quando está embutido) ou tipo de corrida.
 4. **Entrar**: um resumo do que vai acontecer, o motivo de ainda não poder (o próximo toque) e o botão grande. `arenaPlan` (`core/arena-menu.ts`, testada) calcula `ready`, o bloqueio, o resumo, o texto do botão e o passo atual; a tela não decide regra nenhuma sozinha. Uma linha «Agora: …» no topo (`role="status"`) repete o que tocar.
 
 Quem chega de outro lugar cai na opção certa (`choiceFromFlags`): `vilaExitHref` leva o Coliseu da Vila ao menu, o PvP a `#/arena?pvp=1&vila=1`, o Fliperama a `?batalha=1` (com as moedas do dia) e «Liga e desafios» a `?liga=1`; um desafio da Liga já escolhido no Treinador abre na Liga; `?formatacao=1`/`?restauracao=1` abrem nas Corridas. Os sinalizadores são lidos uma vez e saem do endereço (só `vila` fica, para o ✕ da Vila e o «Voltar à Vila»). Os endereços antigos do palco (`#/caixa?virtual=1`, `?batalha=1`, `?formatacao=1`…) continuam abrindo o palco; `#/caixa?pvp=1` sem `arena=1` é redirecionado ao menu. «Entrar» abre o palco em `#/caixa?arena=1&virtual=1[&autoiniciar=1]`: a batalha livre, a Liga e as corridas começam sozinhas (o toque em «Entrar» é a confirmação); o PvP abre o palco e o anfitrião toca em Batalhar. Um convidado que ainda está no menu quando o anfitrião começa (`boxPvp.pending`) é levado ao palco sozinho. Dentro da luta não há modal novo: só a barra de controles e o resumo ao fim.
@@ -234,6 +245,8 @@ A mesma tela da Caixa (`CaixaView`, a mesma sessão de batalha) abre sem câmera
 - **Ambiente real**: `start-box.ts` desenha o vídeo em 8×6 a cada 500 ms e `ambientFromSample` calcula brilho (0,8–1,06) e um tom (35 % do desvio da cor) que multiplicam os sprites, suavizado em ~600 ms.
 - "Suavizar" → "Luz dos golpes: Ligada/Desligada" (`visual.lighting`, padrão ligada) para celulares fracos. Desligada: sem luzes nos sprites, no chão e no vídeo (o escurecimento de cinema fica).
 - Batalhar entra em tela cheia (e sai ao parar, se foi a batalha que entrou); o resumo da luta virou o botão "Resumo" (folha dentro do visor, para aparecer também em tela cheia); a barra de quem está agindo tem destaque e há um indicador de rodada.
+
+> A tela do duelo por turnos e a montagem de golpes saíram do menu da Arena; o motor `turn-battle.ts` e o que segue ficam como referência.
 
 ### Golpes da Arena e duelo por turnos (`src/core/moveset.ts`, `src/core/turn-battle.ts`, `src/app/learnset-service.ts`, `src/components/ArenaMovesetEditor.vue`, `src/components/TurnDuel.vue`)
 

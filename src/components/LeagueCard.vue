@@ -24,7 +24,7 @@ const polishFor = (order: number): number => {
   return polishOf(order);
 };
 
-/** Liga: estojo de insígnias, os Ginásios em ordem, a Elite 4 e a Campeã. O desafio é preparado na Arena e exibido na Caixa. */
+/** Liga: estojo de insígnias, os Ginásios em ordem, a Elite 4 e a Campeã. O desafio é preparado e lutado na Arena. */
 const next = computed(() => nextChallenge(league.value, selected.value));
 // Ordem cronológica, sem alterar os índices persistidos de Sinnoh.
 const regionTabs = ['kanto', 'johto', 'hoenn', 'sinnoh', 'unova', 'kalos', 'alola', 'galar', 'paldea'].map((id) => LEAGUE_REGIONS.find((r) => r.id === id)!);
@@ -36,14 +36,15 @@ const sections = computed(() => [
 const badgeCount = computed(() => progress.value.badges.length);
 const perks = computed(() => leaguePerks(league.value));
 
-/** `challenge` avisa que o desafio foi marcado (a tela da Arena mostra o atalho para a Caixa). */
+/** `challenge` avisa que o desafio foi marcado: dentro da Arena, a tela leva ao passo de entrar. */
 const emit = defineEmits<{ challenge: [] }>();
 /** Dentro da Arena o título e o cartão vêm da própria seção; no Treinador a Liga é um cartão. */
-defineProps<{ embedded?: boolean }>();
+const props = defineProps<{ embedded?: boolean }>();
 
+/** Fora da Arena, leva para ela já na Liga; dentro, fica onde está (e preserva o «Voltar à Vila» do endereço). */
 function challenge(c: Challenge): void {
   pendingChallenge.value = c.id;
-  window.location.hash = routeHref('arena');
+  if (!props.embedded) window.location.hash = routeHref('arena', undefined, ['liga']);
   emit('challenge');
 }
 

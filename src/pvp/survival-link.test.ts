@@ -157,14 +157,14 @@ describe('survival pvp: validação do fio', () => {
     expect(parseMessage(JSON.stringify(bad({ dexId: 0 })))).toBeNull();
     expect(parseMessage(JSON.stringify(bad({ attackType: 'sombra' as never })))).toBeNull();
     expect(parseMessage(JSON.stringify({ ...ok, team: [mon('a'), mon('a')] }))).toBeNull();
-    expect(parseMessage(JSON.stringify({ ...ok, team: [mon('a'), mon('b'), mon('c'), mon('d')] }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ ...ok, team: ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => mon(id)) }))).toBeNull();
     expect(parseMessage(JSON.stringify({ ...ok, team: [] }))).toBeNull();
     expect(parseMessage(JSON.stringify({ ...ok, name: 'N'.repeat(40) }))).toBeNull();
   });
 
   it('recusa entrada e instantâneo fora dos limites', () => {
     expect(parseMessage(JSON.stringify({ t: 'sv-input', seq: 1, dx: 5, dy: 0, switchTo: -1 }))).toBeNull();
-    expect(parseMessage(JSON.stringify({ t: 'sv-input', seq: 1, dx: 0, dy: 0, switchTo: 3 }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ t: 'sv-input', seq: 1, dx: 0, dy: 0, switchTo: 6 }))).toBeNull();
     expect(parseMessage(JSON.stringify({ t: 'sv-input', seq: -1, dx: 0, dy: 0, switchTo: 0 }))).toBeNull();
     const snap = JSON.parse(encodeMessage(good())) as { snap: { sides: { x: number }[]; shots: unknown[] } };
     snap.snap.sides[0]!.x = 99999;

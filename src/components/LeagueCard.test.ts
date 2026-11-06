@@ -52,7 +52,8 @@ describe('seções regionais da Liga', () => {
     await nextTick();
     el.querySelector<HTMLButtonElement>('.league-list button')!.click();
     expect(pendingChallenge.value).toBe('hoenn-gym-0');
-    expect(window.location.hash).toBe('#/arena');
+    expect(window.location.hash).toContain('/arena');
+    expect(window.location.hash).toContain('liga');
     expect(onChallenge).toHaveBeenCalledOnce();
   });
 });

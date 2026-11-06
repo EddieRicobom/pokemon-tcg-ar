@@ -6,7 +6,6 @@ import { createBattleSession, decodeSprite } from '../app/box-battle-session';
 import { digitalCandidates } from '../app/digital-members';
 import { loadCardCompanionEntry } from '../app/companion-creatures';
 import { MAX_CHALLENGE_TEAM } from '../app/challenge-battle';
-import { trainerSpriteUrl } from '../core/trainer-sprites';
 import { routeFlags, routeHref } from '../app/route';
 import { displayName, setNickname } from '../core/village/nickname';
 import type { CreatureEntry } from '../box/box-scene';
@@ -23,7 +22,7 @@ import StageButton from '../components/StageButton.vue';
 import TeamPicker from '../components/TeamPicker.vue';
 import PokeBook from '../components/PokeBook.vue';
 import { loadVillage, saveVillage } from '../app/village-store';
-import { BATTLE_REWARDS_PER_DAY, battleRewardsLeft, dailyHelp, friendLevel, itemName } from '../core/village/life';
+import { dailyHelp, friendLevel, itemName } from '../core/village/life';
 import type { VillageState } from '../core/village/life';
 import { paintAccessory } from '../village/item-art';
 import { itemDef } from '../core/village/catalog';
@@ -83,9 +82,8 @@ const SLOT_CHOICES: { slot: RosterSlot; label: string; title: string }[] = [
 ];
 const loadingCreatures = ref(false);
 /** Modo vida (a Vila, sem câmera). */
-/** Vindo do menu da Arena (`#/arena`), o palco abre sozinho (`autoiniciar` começa a batalha; no PvP o anfitrião toca em Batalhar). */
+/** Endereços antigos de luta só abrem o palco: as lutas moram no menu da Arena (`#/arena`). */
 const arrival = routeFlags(window.location.hash);
-/** Fluxos confirmados na Arena entram no palco e iniciam a batalha sem uma terceira confirmação. */
 const autoStart = arrival.has('autoiniciar');
 const endlessModes: readonly EndlessArenaMode[] = ['formatacao', 'restauracao'];
 const endlessShortcut = ref<EndlessArenaMode | null>(arrival.has('formatacao') ? 'formatacao' : arrival.has('restauracao') ? 'restauracao' : null);
@@ -269,8 +267,8 @@ const session = createBattleSession({
 }, { error, hint, phase, endlessShortcut, battleShortcut });
 const {
   battleHud, preparing, battleFighters, battleSummary, megaPicks, megaNotes, versus, stageSpeech, endlessRun, endlessLabel,
-  challenge, pvpOn, battling, endlessTeam, energy,
-  toggleMega, showMegaNotes, cancelChallenge, startBattle, startSelectedBattle, startEndless, stopBattle,
+  pvpOn, battling, endlessTeam, energy,
+  toggleMega, showMegaNotes, startBattle, startEndless, stopBattle,
 } = session;
 const megaWanted = computed(() => megaPicks.value.length);
 const megaAffordable = computed(() => Math.floor(energy.value / MEGA_ENERGY_COST));
@@ -293,7 +291,6 @@ async function populate(): Promise<void> {
     population.value = { shown: loaded.entries.length, available: loaded.available, failed: loaded.failed.length };
     rosterRows.value = loaded.entries.map((e) => ({ id: e.info.id, name: shown(e.info.id, e.info.name), shiny: e.info.shiny === true, mega: e.info.mega === true }));
     megaPicks.value = megaPicks.value.filter((id) => rosterRows.value.some((r) => r.id === id && r.mega));
-    if (autoStart && phase.value === 'running') void nextTick(startSelectedBattle);
   } catch (e) {
     if (disposed || box !== current || version !== populationVersion) return;
     error.value = `Não consegui ler as cartas guardadas: ${e instanceof Error ? e.message : String(e)}`;
@@ -416,7 +413,6 @@ watch(() => effectiveVisual.value.social, (on) => box?.setSocial(on));
 watch(() => effectiveVisual.value.weather, (mode) => box?.setWeather(mode));
 watch(() => effectiveVisual.value.sound, (on) => box?.setSound(on));
 
-const canBattle = computed(() => phase.value === 'running' && population.value.shown >= (challenge.value || pvpOn.value ? 1 : 2) && !loadingCreatures.value && !preparing.value);
 /** A Arena usa deliberadamente os seis marcados como Vermelha: a escalação deixa de ser um detalhe escondido. */
 // A lista da equipe não é reativa: os sinais reativos vêm antes dela, para o botão ser reavaliado quando a equipe terminar de carregar.
 const canStartEndless = computed(() => phase.value === 'running' && !loadingCreatures.value && !preparing.value && !pvpOn.value && endlessTeam().length === MAX_CHALLENGE_TEAM);
@@ -480,19 +476,6 @@ const notices = computed<Notice[]>(() => {
       ? boxPvp.friend ? `${BOX_PVP_LABELS_PT[boxPvp.mode].title} · toque em Batalhar${boxPvp.friendPlaced ? '' : ` (${friend} ainda não colocou a caixa)`}` : 'Esperando a equipe do amigo…'
       : boxPvp.pending ? 'Aguarde a Arena ser montada.' : 'Esperando o anfitrião começar.';
     list.push({ text: `PvP com ${friend}`, sub, tone: 'ok', gold: true });
-  } else if (endlessShortcut.value && !preparing.value) {
-    const mode = ENDLESS_ARENA_LABELS[endlessShortcut.value];
-    list.push({ text: `Arena: ${mode.title}`, sub: 'Toque em Começar para a primeira batalha 6×6.', tone: 'ok', gold: true });
-  } else if (challenge.value && !preparing.value) {
-    list.push({ text: `Desafio: ${challenge.value.role} ${challenge.value.leader}`, sub: 'Toque em Batalhar: até 6 da sua caixa contra a equipe do líder, um duelo por vez.', tone: 'ok', gold: true });
-  } else if (battleShortcut.value && !preparing.value) {
-    const left = battleRewardsLeft(village, dayKey(new Date()));
-    list.push({
-      text: 'Fliperama: batalha na Arena',
-      sub: `Toque em Batalhar · ${left > 0 ? `+100 moedas (${left} de ${BATTLE_REWARDS_PER_DAY} hoje)` : 'as moedas de hoje já saíram'}`,
-      tone: 'ok',
-      gold: true,
-    });
   }
   if (picked.value) {
     list.push({ text: `${picked.value.name}${picked.value.dexId ? ` · Nº ${picked.value.dexId}` : ''}${picked.value.shiny ? ' · Shiny' : ''}${picked.value.mega ? ' · Mega' : ''}`, sub: picked.value.detail, tone: 'ok', gold: true });
@@ -774,25 +757,13 @@ onBeforeUnmount(() => {
           <StageButton v-if="!battling" icon="team" label="Quem passeia" :active="showTeam" @click="showTeam = !showTeam; showFilters = false; showAdjust = false; showModes = false" />
           <StageButton v-if="!battling" icon="sliders" label="Ajustes" :active="showAdjust" @click="showAdjust = !showAdjust; showFilters = false; showTeam = false; showModes = false" />
           <StageButton v-if="!battling" :icon="boxMode === 'passeio' ? 'formation' : 'wander'" :label="boxMode === 'passeio' ? 'Formação' : 'Passeio'" @click="toggleMode" />
-          <StageButton v-if="!battling" icon="modes" :label="BATTLE_MODE_LABELS_PT[battleMode]" :active="showModes" @click="showModes = !showModes; showFilters = false; showTeam = false; showAdjust = false" />
-          <StageButton class="stage-primary" v-if="!battling && phase === 'running'" icon="battle" :label="preparing ? 'Preparando…' : endlessShortcut ? `Começar ${ENDLESS_ARENA_LABELS[endlessShortcut].title}` : 'Batalhar'" :disabled="endlessShortcut ? !canStartEndless : !canBattle" :attention="endlessShortcut ? canStartEndless && !preparing : battleShortcut && canBattle && !preparing" @click="startSelectedBattle" />
           <StageButton class="stage-primary" v-if="battling && battleHud?.phase === 'finished' && !endlessRun" icon="battle" label="De novo" @click="startBattle" />
           <StageButton v-if="battling && battleHud?.phase === 'finished' && battleSummary" icon="panel" label="Resumo" :active="showSummary" @click="showSummary = !showSummary" />
           <StageButton v-if="battling" icon="adjust" label="Centrar" @click="box?.recenterBattle()" />
           <StageButton class="stage-primary" v-if="battling" icon="stop" :label="!endlessRun ? 'Parar' : confirmQuit ? 'Toque de novo' : `Desistir · ${endlessRun.score}`" :attention="confirmQuit" @click="requestStop" />
-          <StageButton v-if="challenge && !battling" icon="close" label="Sem desafio" @click="cancelChallenge" />
           <StageButton icon="close" label="Fechar" @click="close" />
         </div>
       </div>
-    </div>
-
-    <div v-if="challenge && !immersive" class="challenge-card">
-      <img :src="trainerSpriteUrl(challenge.sprite)" alt="" width="72" height="72" />
-      <span>
-        <strong>Desafio: {{ challenge.role }} {{ challenge.leader }}</strong>
-        <small>Entre na Arena e toque em Batalhar. Até 6 Pokémon da sua equipe lutam contra a equipe do líder, um duelo por vez.</small>
-        <button type="button" class="link" @click="cancelChallenge">Cancelar desafio</button>
-      </span>
     </div>
 
     <div class="actions" :class="{ stack: battleShortcut || endlessShortcut || fromVila || fromArena }">

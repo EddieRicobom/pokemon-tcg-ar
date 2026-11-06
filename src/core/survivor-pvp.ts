@@ -13,11 +13,16 @@ import { inSurvivorCone, survivorOrbiterHitRadius, survivorOrbitAngularSpeed, su
  * Tudo aqui é puro e determinístico (sem relógio, sem sorteio): o anfitrião roda `stepArena` com as entradas dos dois e
  * o convidado só adota os instantâneos (`applyArenaSnapshot`). Dado que falta aparece como falta: sem stats da espécie
  * o Pokémon entra com números médios e `estimated: true` (a tela avisa).
+ *
+ * A mesma arena serve à luta 6x6 da Arena (`core/arena-prep.ts`, `core/arena-bot.ts`): lá cada Pokémon também traz um
+ * segundo ataque (`alt`), trocado com um botão.
  */
 
 export const SV_RUNS = 3;
 export const SV_RUN_MS = 120_000;
 export const SV_TEAM_SIZE = 3;
+/** Maior equipe que a arena aceita: os 6 da luta da Arena. */
+export const SV_MAX_TEAM = 6;
 
 export const SV_ARENA_W = 320;
 export const SV_ARENA_H = 480;
@@ -30,6 +35,8 @@ export const SV_SHOT_LIFE_MS = 1600;
 export const SV_TELEGRAPH_MS = 1500;
 /** Recarga entre trocas voluntárias (a troca forçada por desmaio não paga recarga). */
 export const SV_SWITCH_COOLDOWN_MS = 5000;
+/** Recarga entre duas trocas de ataque, para o botão não virar dois golpes de graça. */
+export const SV_ATTACK_SWAP_CD_MS = 1500;
 /** Quem entra fica protegido por um instante, para a troca nunca virar uma armadilha. */
 export const SV_ENTRY_SHIELD_MS = 1200;
 /** Escudo: cancela qualquer dano recebido por 2 s e só volta 10 s depois de ativado. */
@@ -135,6 +142,27 @@ export interface SvMonSpec {
   attackRadius?: number;
   critChance?: number;
   buffs?: string[];
+  /** O outro ataque do Pokémon, trocado com o botão. Fora da luta da Arena não existe. */
+  alt?: SvAttackForm;
+  /** Vida com que entra na luta, quando não entra cheio (corrida de Formatação). */
+  startHp?: number;
+}
+
+/** Tudo o que muda ao trocar de ataque. A vida e a velocidade de andar são do Pokémon e não mudam. */
+export interface SvAttackForm {
+  attackType: PokemonType;
+  power: number;
+  fireMs: number;
+  moveName: string;
+  moveCategory: MoveCategory;
+  moveEffect: MoveEffect;
+  projectileSpeed: number;
+  projectileSize: number;
+  shots: number;
+  pierce: number;
+  attackRange: number;
+  attackRadius: number;
+  critChance: number;
 }
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
@@ -202,6 +230,8 @@ export type ArenaWinner = ArenaSide | 'draw';
 
 export interface ArenaMon extends SvMonSpec {
   hp: number;
+  /** Está usando o segundo ataque. */
+  altOn?: boolean;
 }
 
 export interface ArenaTrailPoint {
@@ -220,6 +250,8 @@ export interface ArenaTeamState {
   fireMs: number;
   /** Tempo até poder trocar de novo por vontade própria. */
   switchCdMs: number;
+  /** Tempo até poder trocar de ataque de novo. */
+  attackSwapCdMs: number;
   /** Proteção de quem acabou de entrar. */
   shieldMs: number;
   /** Escudo do botão: enquanto durar, nenhum dano entra. */
@@ -285,6 +317,9 @@ export interface ArenaState {
   markers: ArenaMarker[];
   nextShotId: number;
   winner: ArenaWinner | null;
+  /** Limites de tempo: equipes maiores precisam de mais tempo (ver `createArena`). */
+  suddenDeathMs: number;
+  maxMs: number;
 }
 
 export interface ArenaInput {
@@ -295,6 +330,8 @@ export interface ArenaInput {
   switchTo: number;
   /** Tocou no botão de escudo neste quadro. */
   shield?: boolean;
+  /** Tocou no botão de trocar de ataque neste quadro. */
+  swapAttack?: boolean;
 }
 
 export const NO_INPUT: ArenaInput = { dx: 0, dy: 0, switchTo: -1 };
@@ -304,6 +341,8 @@ export type ArenaEvent =
   | { k: 'telegraph'; side: ArenaSide; x: number; y: number; radius: number; type: PokemonType }
   | { k: 'faint'; side: ArenaSide; index: number }
   | { k: 'switch'; side: ArenaSide; index: number; forced: boolean }
+  /** `side` trocou o ataque do Pokémon em campo. */
+  | { k: 'attack'; side: ArenaSide; index: number }
   /** `side` = quem se protegeu. */
   | { k: 'guard'; side: ArenaSide }
   /** `side` = quem foi atacado e não levou o dano por causa do escudo. */
@@ -316,8 +355,9 @@ const startPosition = (side: ArenaSide): { x: number; y: number } => ({ x: SV_AR
 
 function teamState(side: ArenaSide, specs: readonly SvMonSpec[]): ArenaTeamState {
   const { x, y } = startPosition(side);
+  const mons: ArenaMon[] = specs.map((s) => ({ ...s, types: [...s.types], ...(s.alt ? { alt: { ...s.alt } } : {}), hp: clamp(s.startHp ?? s.maxHp, 0, s.maxHp) }));
   return {
-    mons: specs.map((s) => ({ ...s, types: [...s.types], hp: s.maxHp })), active: 0, x, y, fireMs: 600, switchCdMs: 0, shieldMs: 0,
+    mons, active: Math.max(0, mons.findIndex((m) => m.hp > 0)), x, y, fireMs: 600, switchCdMs: 0, attackSwapCdMs: 0, shieldMs: 0,
     guardMs: 0, guardCdMs: 0, orbitAngle: 0, orbitCdMs: 0, rapidPending: 0, rapidDelayMs: 0, trailCharge: 0, trailMs: 0, trail: [], trailTickMs: 0,
     burnMs: 0, burnDps: 0, slowMs: 0, stunMs: 0, stunCdMs: 0, pushCdMs: 0,
   };
@@ -325,7 +365,12 @@ function teamState(side: ArenaSide, specs: readonly SvMonSpec[]): ArenaTeamState
 
 /** Lado 0 = anfitrião (embaixo), lado 1 = convidado (em cima). */
 export function createArena(host: readonly SvMonSpec[], guest: readonly SvMonSpec[]): ArenaState {
-  return { timeMs: 0, countdownMs: SV_COUNTDOWN_MS, sides: [teamState(0, host), teamState(1, guest)], shots: [], markers: [], nextShotId: 1, winner: null };
+  // A morte súbita apressa o Pokémon em campo: seis de cada lado precisam do dobro do tempo de três.
+  const scale = Math.max(1, Math.max(host.length, guest.length) / SV_TEAM_SIZE);
+  return {
+    timeMs: 0, countdownMs: SV_COUNTDOWN_MS, sides: [teamState(0, host), teamState(1, guest)], shots: [], markers: [], nextShotId: 1, winner: null,
+    suddenDeathMs: SV_SUDDEN_DEATH_MS * scale, maxMs: SV_MAX_MS * scale,
+  };
 }
 
 export const aliveCount = (team: ArenaTeamState): number => team.mons.filter((m) => m.hp > 0).length;
@@ -368,9 +413,39 @@ export function guardBlockReason(state: ArenaState, side: ArenaSide): string | n
   return null;
 }
 
+/** Pode trocar o ataque do Pokémon em campo agora? */
+export function canSwapAttack(state: ArenaState, side: ArenaSide): boolean {
+  const team = state.sides[side];
+  const mon = team.mons[team.active];
+  return state.winner === null && state.countdownMs <= 0 && !!mon && mon.hp > 0 && !!mon.alt && team.attackSwapCdMs <= 0;
+}
+
+/** Por que a troca de ataque não vale agora; null quando vale. */
+export function attackSwapBlockReason(state: ArenaState, side: ArenaSide): string | null {
+  const team = state.sides[side];
+  if (state.winner !== null) return 'A luta acabou.';
+  if (state.countdownMs > 0) return 'A luta ainda não começou.';
+  if (!team.mons[team.active]?.alt) return 'Este Pokémon só tem um ataque.';
+  if (team.attackSwapCdMs > 0) return `Troca de ataque em ${Math.ceil(team.attackSwapCdMs / 1000)} s.`;
+  return null;
+}
+
+/** Troca os números do ataque em uso pelos do outro: todo o resto do motor lê só os do ataque em uso. */
+function swapForm(mon: ArenaMon): void {
+  if (!mon.alt) return;
+  const next = mon.alt;
+  mon.alt = {
+    attackType: mon.attackType, power: mon.power, fireMs: mon.fireMs, moveName: mon.moveName ?? 'Golpe', moveCategory: mon.moveCategory ?? 'projetil',
+    moveEffect: mon.moveEffect ?? 'nenhum', projectileSpeed: mon.projectileSpeed ?? SV_SHOT_SPEED, projectileSize: mon.projectileSize ?? SV_SHOT_RADIUS,
+    shots: mon.shots ?? 1, pierce: mon.pierce ?? 0, attackRange: mon.attackRange ?? 200, attackRadius: mon.attackRadius ?? SV_MON_RADIUS * 2, critChance: mon.critChance ?? 0,
+  };
+  Object.assign(mon, next);
+  mon.altOn = !mon.altOn;
+}
+
 function sanitize(input: ArenaInput | undefined): ArenaInput {
   const num = (v: number): number => (Number.isFinite(v) ? clamp(v, -1, 1) : 0);
-  return { dx: num(input?.dx ?? 0), dy: num(input?.dy ?? 0), switchTo: Number.isInteger(input?.switchTo) ? (input as ArenaInput).switchTo : -1, shield: input?.shield === true };
+  return { dx: num(input?.dx ?? 0), dy: num(input?.dy ?? 0), switchTo: Number.isInteger(input?.switchTo) ? (input as ArenaInput).switchTo : -1, shield: input?.shield === true, swapAttack: input?.swapAttack === true };
 }
 
 function nextAlive(team: ArenaTeamState): number {
@@ -641,7 +716,7 @@ function decideWinner(state: ArenaState): ArenaWinner | null {
   if (a === 0 && b === 0) return 'draw';
   if (a === 0) return 1;
   if (b === 0) return 0;
-  if (state.timeMs >= SV_MAX_MS) {
+  if (state.timeMs >= state.maxMs) {
     if (a !== b) return a > b ? 0 : 1;
     const ra = remainingFraction(state.sides[0]);
     const rb = remainingFraction(state.sides[1]);
@@ -666,6 +741,7 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
     const team = state.sides[side];
     const input = sanitize(inputs[side]);
     team.switchCdMs = Math.max(0, team.switchCdMs - dt);
+    team.attackSwapCdMs = Math.max(0, team.attackSwapCdMs - dt);
     team.shieldMs = Math.max(0, team.shieldMs - dt);
     team.guardMs = Math.max(0, team.guardMs - dt);
     team.guardCdMs = Math.max(0, team.guardCdMs - dt);
@@ -675,6 +751,17 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
       enter(team, input.switchTo);
       team.switchCdMs = SV_SWITCH_COOLDOWN_MS;
       events.push({ k: 'switch', side, index: input.switchTo, forced: false });
+    }
+    if (input.swapAttack && canSwapAttack(state, side)) {
+      const current = team.mons[team.active] as ArenaMon;
+      swapForm(current);
+      team.attackSwapCdMs = SV_ATTACK_SWAP_CD_MS;
+      // Rajada e faixa são do ataque que saiu; o novo começa em seguida, sem disparar no mesmo quadro.
+      team.rapidPending = 0;
+      team.trailCharge = team.trailMs = 0;
+      team.trail = [];
+      team.fireMs = Math.min(Math.max(team.fireMs, 250), current.fireMs);
+      events.push({ k: 'attack', side, index: team.active });
     }
     if (input.shield && canGuard(state, side)) {
       team.guardMs = SV_GUARD_MS;
@@ -764,7 +851,7 @@ export function stepArena(state: ArenaState, inputs: readonly [ArenaInput | unde
   }
   state.shots = kept;
 
-  if (state.timeMs > SV_SUDDEN_DEATH_MS) {
+  if (state.timeMs > state.suddenDeathMs) {
     for (const side of [0, 1] as const) {
       const team = state.sides[side];
       const mon = team.mons[team.active];
@@ -798,6 +885,9 @@ export interface ArenaTeamSnap {
   burnMs?: number;
   slowMs?: number;
   stunMs?: number;
+  /** Quem está usando o segundo ataque e a recarga do botão. */
+  alt?: boolean[];
+  attackSwapCdMs?: number;
 }
 
 export interface ArenaShotSnap {
@@ -841,6 +931,7 @@ export function snapshotArena(state: ArenaState, tick: number): ArenaSnapshot {
     trailCharge: Math.round(t.trailCharge * 100) / 100, trailMs: Math.round(t.trailMs),
     trail: t.trail.slice(-SV_TRAIL_MAX_POINTS).map((p) => ({ x: round1(p.x), y: round1(p.y) })),
     burnMs: Math.round(t.burnMs), slowMs: Math.round(t.slowMs), stunMs: Math.round(t.stunMs),
+    ...(t.mons.some((m) => m.alt) ? { alt: t.mons.map((m) => m.altOn === true), attackSwapCdMs: Math.round(t.attackSwapCdMs) } : {}),
   });
   return {
     tick, timeMs: Math.round(state.timeMs), countdownMs: Math.round(state.countdownMs), winner: state.winner,
@@ -860,7 +951,11 @@ export function applyArenaSnapshot(state: ArenaState, snap: ArenaSnapshot): bool
   for (const side of [0, 1] as const) {
     const team = state.sides[side];
     const s = snap.sides[side];
-    team.mons.forEach((m, i) => (m.hp = clamp(s.hp[i] ?? 0, 0, m.maxHp)));
+    team.mons.forEach((m, i) => {
+      m.hp = clamp(s.hp[i] ?? 0, 0, m.maxHp);
+      if (s.alt && (s.alt[i] === true) !== (m.altOn === true)) swapForm(m);
+    });
+    team.attackSwapCdMs = s.attackSwapCdMs ?? 0;
     team.active = s.active;
     team.x = s.x;
     team.y = s.y;
