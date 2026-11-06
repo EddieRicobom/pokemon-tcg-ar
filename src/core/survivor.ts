@@ -2230,12 +2230,12 @@ function stepTrail(state: SurvivorState, movedPx: number, dtMs: number, activate
 }
 
 /** Os `count` inimigos mais próximos dentro de `range`, do mais perto ao mais longe. */
-function nearestEnemies(state: SurvivorState, range: number, count: number): SurvivorEnemy[] {
+function nearestEnemies(state: SurvivorState, range: number, count: number, countBody = false): SurvivorEnemy[] {
   const p = state.player;
   const priority = p.targetPriority;
   return state.enemies
     .map((e) => ({ e, d: Math.hypot(e.x - p.x, e.y - p.y) }))
-    .filter((x) => x.d <= range)
+    .filter((x) => x.d <= range + (countBody ? x.e.radius : 0))
     .sort((a, b) => {
       if (priority === 'boss') {
         const aBoss = a.e.boss || a.e.grade === 'chefao' || a.e.trainerId !== undefined;
@@ -2253,6 +2253,17 @@ function nearestEnemies(state: SurvivorState, range: number, count: number): Sur
     })
     .slice(0, count)
     .map((x) => x.e);
+}
+
+/**
+ * Vira o cone para o inimigo mais próximo, como os outros golpes escolhem o alvo. O corpo conta no alcance, igual ao
+ * acerto (`inSurvivorCone`): um chefão grande com o centro fora do alcance ainda é alvo. Sem alvo, a frente não muda.
+ */
+function aimConeAtNearest(state: SurvivorState, range: number): SurvivorEnemy | undefined {
+  const p = state.player;
+  const [target] = nearestEnemies(state, range, 1, true);
+  if (target) p.aimAngle = Math.atan2(target.y - p.y, target.x - p.x);
+  return target;
 }
 
 function fireProjectiles(state: SurvivorState, target: SurvivorEnemy): void {
@@ -2439,8 +2450,7 @@ function attackSupport(state: SurvivorState, support: SurvivorSupport): boolean 
     return true;
   }
   if (move.category === 'cone') {
-    const [target] = nearestEnemies(state, range, 1);
-    if (target) p.aimAngle = Math.atan2(target.y - p.y, target.x - p.x);
+    aimConeAtNearest(state, range);
     let hits = 0;
     for (const enemy of state.enemies) {
       const distance = Math.hypot(enemy.x - p.x, enemy.y - p.y);
@@ -2524,11 +2534,13 @@ function stepSupportTrail(state: SurvivorState, support: SurvivorSupport, movedP
   drain(state, hits, support.move);
 }
 
+const playerAttackRange = (state: SurvivorState): number => (state.typeAffinity?.effect === 'atravessar' ? state.player.attackRange * 1.12 : state.player.attackRange);
+
 /** Um ataque do golpe de quem joga; devolve false se não havia alvo (o tempo de recarga não começa). */
 function attack(state: SurvivorState): boolean {
   const p = state.player;
   const move = p.move;
-  const attackRange = state.typeAffinity?.effect === 'atravessar' ? p.attackRange * 1.12 : p.attackRange;
+  const attackRange = playerAttackRange(state);
   if (move.category === 'foco') {
     const [target] = nearestEnemies(state, attackRange, 1);
     if (!target) return false;
@@ -2588,6 +2600,11 @@ function attack(state: SurvivorState): boolean {
     return true;
   }
   if (move.category === 'cone') {
+    const target = aimConeAtNearest(state, attackRange);
+    // A carta lendária pode aparar só um projétil por ataque, sem limpar ondas inteiras.
+    const projectileIndex = p.projectileDeflection ? state.hostileProjectiles.findIndex((projectile) => inSurvivorCone(p, projectile.x, projectile.y, attackRange, projectile.size)) : -1;
+    if (!target && projectileIndex < 0) return false;
+    if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
     let hits = 0;
     for (const e of state.enemies) {
       if (inSurvivorCone(p, e.x, e.y, attackRange, e.radius)) {
@@ -2596,11 +2613,6 @@ function attack(state: SurvivorState): boolean {
       }
     }
     drain(state, hits, move);
-    // A carta lendária pode aparar só um projétil por ataque, sem limpar ondas inteiras.
-    if (p.projectileDeflection) {
-      const projectileIndex = state.hostileProjectiles.findIndex((projectile) => inSurvivorCone(p, projectile.x, projectile.y, attackRange, projectile.size));
-      if (projectileIndex >= 0) state.hostileProjectiles.splice(projectileIndex, 1);
-    }
     state.fx.push({ kind: 'cone', x: p.x, y: p.y, r: attackRange, color: move.color, ageMs: 0, lifeMs: 300, moveType: move.type, angle: survivorAimAngle(p), spread: SURVIVOR_CONE_HALF_ANGLE });
     heldConeCopies(state, attackRange, artifactDamage(state));
     heldConeExtras(state, attackRange, artifactDamage(state));
@@ -3114,8 +3126,10 @@ export function stepSurvivor(state: SurvivorState, input: SurvivorInput, dtMs: n
     if (Math.abs(ux) > 0.01) p.facing = ux < 0 ? -1 : 1;
     p.aimAngle = Math.atan2(uy, ux);
   }
-  // No BONK a frente é a câmera: o cone sempre acerta o que está adiante na tela, nunca ao lado.
+  // No BONK a frente é a câmera.
   if (input.aimAngle !== undefined && Number.isFinite(input.aimAngle)) p.aimAngle = input.aimAngle;
+  // Todo quadro, não só no ataque: o guia do leque e o sprite já apontam para quem vai levar o golpe.
+  if (p.move.category === 'cone') aimConeAtNearest(state, playerAttackRange(state));
   // Barra de carga: só anda com o golpe de Foco ou Rápido. A investida do especial não conta como corrida.
   const movedPx = state.special.selected === 'dash' && state.special.activeMs > 0 ? 0 : Math.hypot(p.x - beforeMoveX, p.y - beforeMoveY);
   stepTrail(state, movedPx, dtMs, input.charge === true);
