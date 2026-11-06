@@ -111,3 +111,10 @@ export async function loadCreatureEntries(
   }
   return { entries, available: order.length, failed };
 }
+
+/** Decodifica o sprite baixado para a cena da Caixa. */
+export async function decodeSprite(sprite: { kind: 'gif' | 'static'; blob: Blob }) {
+  return sprite.kind === 'gif'
+    ? ({ kind: 'gif', gif: await browserDecoders.gif(sprite.blob) } as const)
+    : ({ kind: 'image', image: await browserDecoders.image(sprite.blob) } as const);
+}

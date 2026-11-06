@@ -4,7 +4,6 @@ import { BoxScene, MAX_CREATURES } from './box-scene';
 import type { CreatureEntry } from './box-scene';
 import { minBoxDistance } from './floor';
 import { lookQuaternion } from './orientation';
-import { buildFighter } from '../core/battle';
 
 function entry(i: number, size = 8): CreatureEntry {
   const data = new Uint8ClampedArray(size * size * 4);
@@ -268,7 +267,7 @@ describe('BoxScene: relevo e vida social', () => {
     expect(scene.creatureList.some((c) => c.bubbleEmoji)).toBe(false);
   });
 
-  it('na formação e na batalha não há balões', () => {
+  it('na formação não há balões', () => {
     const scene = placed(5, 3);
     let t = 0;
     while (t < 60_000 && !scene.creatureList.some((c) => c.bubbleEmoji)) scene.update((t += 50));
@@ -379,8 +378,6 @@ describe('BoxScene: clima', () => {
 });
 
 describe('BoxScene com o palco virtual (Arena)', () => {
-  const fighters = (n: number) => Array.from({ length: n }, (_, i) => buildFighter({ id: `c${i}`, name: `Mon ${i}`, profile: { dexId: i + 1, types: ['normal'], stats: { hp: 60, attack: 60, defense: 60, spAttack: 60, spDefense: 60, speed: 60 + i } }, card: null, gameMoves: [] }));
-
   it('o cenário do Coliseu só aparece com a caixa colocada e vai para o centro dela', () => {
     const scene = sceneLookingDown();
     expect(scene.coliseu).toBeNull();
@@ -419,61 +416,6 @@ describe('BoxScene com o palco virtual (Arena)', () => {
     expect(scene.coliseu!.detail).toBe(false);
     scene.setScenery(true);
     expect(scene.coliseu!.detail).toBe(true);
-    scene.dispose();
-  });
-
-  it('na batalha a arena é de areia de ponta a ponta; com a câmera continua o jardim de antes', () => {
-    const run = (backdrop: 'camera' | 'virtual') => {
-      const scene = sceneLookingDown();
-      scene.setBackdrop(backdrop);
-      scene.place(new Vector3(0, -1.3, -3.2));
-      scene.setCreatures([entry(0), entry(1)]);
-      scene.startBattle(fighters(2), seeded());
-      const grid = scene.battleGround!.grid;
-      const kinds = new Set<string>();
-      for (let i = 0; i < grid.cols * grid.rows; i++) kinds.add(grid.groundAt(i));
-      scene.dispose();
-      return kinds;
-    };
-    expect([...run('virtual')]).toEqual(['path']);
-    expect(run('camera').has('grass')).toBe(true);
-  });
-
-  it('quem não luta assiste da arquibancada do fundo, maior e torcendo; ao parar, volta ao passeio', () => {
-    const scene = sceneLookingDown();
-    scene.setBackdrop('virtual');
-    scene.place(new Vector3(0, -1.3, -3.2));
-    scene.setCreatures([entry(0), entry(1), entry(2), entry(3), entry(4)]);
-    scene.startBattle(fighters(2), seeded(), { picks: [0, 1] });
-    const fans = scene.crowdList;
-    expect(fans.map((c) => c.info.id)).toEqual(['c2', 'c3', 'c4']);
-    for (let t = 0; t < 120; t++) scene.update(100 + t * 50);
-    const center = scene.center!;
-    for (const c of fans) {
-      expect(c.group.visible).toBe(true);
-      expect(c.group.scale.x).toBeGreaterThan(1);
-      const flat = Math.hypot(c.group.position.x - center.x, c.group.position.z - center.z);
-      expect(flat).toBeGreaterThan(scene.coliseu!.radius);
-      expect(c.group.position.z).toBeLessThan(center.z); // no fundo, além da arena
-      expect(c.group.position.y).toBeGreaterThan(center.y);
-    }
-    scene.setScenery(false);
-    scene.update(100 + 121 * 50);
-    expect(fans.every((c) => !c.group.visible)).toBe(true);
-    scene.stopBattle();
-    expect(scene.crowdList).toHaveLength(0);
-    expect(fans.every((c) => c.group.scale.x === 1 && c.shadow.visible)).toBe(true);
-    scene.dispose();
-  });
-
-  it('com a câmera de fundo (AR) não há arquibancada: quem não luta continua escondido', () => {
-    const scene = sceneLookingDown();
-    scene.place(new Vector3(0, -1.3, -3.2));
-    scene.setCreatures([entry(0), entry(1), entry(2)]);
-    scene.startBattle(fighters(2), seeded(), { picks: [0, 1] });
-    scene.update(100);
-    expect(scene.crowdList).toHaveLength(0);
-    expect(scene.creatureList[2]!.group.visible).toBe(false);
     scene.dispose();
   });
 

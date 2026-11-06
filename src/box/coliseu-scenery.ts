@@ -129,11 +129,6 @@ export function paintPennant(team: 0 | 1): PixelBuf {
   return b;
 }
 
-/** Textura da bandeirinha (quem chama descarta). */
-export function pennantTexture(team: 0 | 1): DataTexture {
-  return texture(paintPennant(team));
-}
-
 /** Os buffers RGBA começam no topo e o UV tem a origem embaixo: `repeat.y = -1` desvira sem custo (como em `ground.ts`). */
 function texture(buf: PixelBuf, repeatX = 1): DataTexture {
   const t = new DataTexture(buf.data, buf.w, buf.h, RGBAFormat, UnsignedByteType);

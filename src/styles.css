@@ -1775,80 +1775,6 @@ button.link {
   }
 }
 
-.battle-hud {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.battle-top {
-  position: absolute;
-  top: max(8px, env(safe-area-inset-top));
-  left: 0;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-}
-
-.battle-turn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: rgba(10, 14, 26, 0.6);
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  border: 1px solid rgba(255, 216, 74, 0.38);
-  box-shadow: 0 0 12px rgba(255, 216, 74, 0.16);
-}
-
-.battle-turn i {
-  display: block;
-  width: 54px;
-  height: 4px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.25);
-  overflow: hidden;
-}
-
-.battle-turn b {
-  display: block;
-  height: 100%;
-  background: var(--gold, #ffcb05);
-  transition: width 300ms ease-out;
-}
-
-.battle-banner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  width: max-content;
-  max-width: 92%;
-  padding: 5px 12px;
-  border-radius: 16px;
-  border: 2px solid var(--fx, #ffcb05);
-  background: rgba(10, 14, 26, 0.74);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--fx, #ffcb05) 55%, transparent);
-  text-align: center;
-  animation: banner-pop 260ms ease-out;
-}
-
-.battle-banner strong {
-  font-size: 0.92rem;
-}
-
-.battle-banner span {
-  font-size: 0.68rem;
-  opacity: 0.85;
-}
-
 @keyframes banner-pop {
   from {
     transform: scale(0.85);
@@ -1856,206 +1782,9 @@ button.link {
   }
 }
 
-.battle-summary p {
-  margin: 4px 0;
-  font-size: 0.85rem;
-}
-
-.battle-summary p.hint {
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
-.hp-bar {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  display: grid;
-  gap: 2px;
-  min-width: 72px;
-  padding: 3px 7px 4px;
-  border-radius: 10px;
-  background: rgba(10, 14, 26, 0.7);
-  font-size: 0.7rem;
-  line-height: 1.15;
-  text-align: center;
-  white-space: nowrap;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.26);
-}
-
-.battle-hud.compact .hp-bar {
-  min-width: 56px;
-  padding: 2px 5px 3px;
-  font-size: 0.62rem;
-}
-
-.battle-hud.compact .hp-num {
-  display: none;
-}
-
-.hp-bar.down {
-  opacity: 0.5;
-}
-
-/* Muitos lutadores (até 40): só o traço de vida; o nome aparece em quem está agindo. */
-.battle-hud.dense .hp-bar {
-  min-width: 30px;
-  padding: 2px 3px;
-  gap: 0;
-}
-
-.battle-hud.dense .hp-bar .hp-name,
-.battle-hud.dense .hp-bar .hp-badges {
-  display: none;
-}
-
-.battle-hud.dense .hp-bar.acting {
-  z-index: 2;
-}
-
-.battle-hud.dense .hp-bar.acting .hp-name {
-  display: inline-flex;
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 3px);
-  transform: translateX(-50%);
-  padding: 2px 7px;
-  border-radius: 8px;
-  background: rgba(30, 38, 66, 0.92);
-  box-shadow: 0 0 0 1.5px var(--gold, #ffcb05);
-}
-
-.hp-bar.teamed {
-  border-bottom: 3px solid var(--team);
-}
-
-.hp-bar.reserve {
-  opacity: 0.88;
-  transform: translate(-50%, -100%) scale(0.86);
-  border-style: dashed;
-}
-
-.hp-bar.acting {
-  z-index: 3;
-  border-color: var(--gold, #ffcb05);
-  box-shadow: 0 0 0 2px rgba(255, 203, 5, 0.28), 0 0 20px rgba(255, 203, 5, 0.42);
-  animation: battle-active-pulse 780ms ease-in-out infinite alternate;
-}
-
-.battle-role {
-  justify-self: center;
-  margin-top: -1px;
-  padding: 1px 4px;
-  border-radius: 999px;
-  background: var(--gold, #ffcb05);
-  color: #171208;
-  font-size: 0.47rem;
-  font-weight: 950;
-  letter-spacing: .08em;
-}
-
-.battle-role.waiting {
-  background: rgba(205, 220, 255, 0.78);
-  color: #14213b;
-}
-
 @keyframes battle-active-pulse {
   from { transform: translate(-50%, -100%) scale(1); }
   to { transform: translate(-50%, -100%) scale(1.045); }
-}
-
-.battle-score {
-  display: flex;
-  gap: 6px;
-}
-
-.battle-score span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: rgba(10, 14, 26, 0.7);
-  border: 1.5px solid var(--team);
-  font-size: 0.68rem;
-  font-weight: 800;
-}
-
-.battle-score strong { font-size: 0.64rem; }
-
-.team-pips {
-  display: inline-flex;
-  gap: 2px;
-  font-style: normal;
-}
-
-.team-pips b {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--team);
-  box-shadow: 0 0 5px var(--team);
-}
-
-.team-pips b.out {
-  opacity: 0.23;
-  box-shadow: none;
-}
-
-.battle-score i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--team);
-}
-
-.mode-list {
-  display: grid;
-  gap: 6px;
-}
-
-.mode-option {
-  display: grid;
-  gap: 2px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  border: 1.5px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.06);
-  color: inherit;
-  text-align: left;
-  font: inherit;
-}
-
-.mode-option span {
-  font-size: 0.76rem;
-  opacity: 0.85;
-}
-
-.mode-option small {
-  font-size: 0.7rem;
-  color: #ffb4a8;
-}
-
-.mode-option.on {
-  border-color: var(--gold, #ffcb05);
-  background: rgba(255, 203, 5, 0.14);
-}
-
-.mode-option:disabled {
-  opacity: 0.55;
-}
-
-.hp-bar.acting {
-  background: rgba(30, 38, 66, 0.88);
-  box-shadow: 0 0 0 1.5px var(--gold, #ffcb05), 0 0 12px rgba(255, 203, 5, 0.55);
-}
-
-.hp-name {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  font-weight: 700;
 }
 
 .type-dot {
@@ -2088,32 +1817,6 @@ button.link {
   background: #f87171;
 }
 
-.hp-num {
-  font-variant-numeric: tabular-nums;
-  opacity: 0.85;
-}
-
-.float-label {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  font-weight: 800;
-  font-size: 1.05rem;
-  white-space: nowrap;
-  text-shadow: 0 0 3px #000, 0 1px 4px #000, 0 0 10px #000;
-}
-
-.float-label.damage {
-  font-size: calc(1.35rem * var(--size, 1));
-}
-
-.float-label.crit {
-  font-size: calc(1.2rem * var(--size, 1));
-}
-
-.float-label.status {
-  font-size: 0.95rem;
-}
-
 /* Arena (palco virtual): o céu do Coliseu fica atrás do canvas transparente, no lugar do vídeo da câmera. */
 .viewport .virtual-sky {
   position: absolute;
@@ -2139,41 +1842,6 @@ button.link {
   font-weight: 700;
 }
 
-/* Fica entre o vídeo e os sprites: escurece e ilumina o ambiente sem apagar os Pokémon. */
-.battle-env {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.battle-env .vignette {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at 50% 55%, rgba(0, 0, 8, 0.05) 0%, rgba(0, 0, 8, 0.6) 100%);
-}
-
-.battle-env .lights {
-  position: absolute;
-  inset: 0;
-  mix-blend-mode: screen;
-}
-
-.battle-callout {
-  position: absolute;
-  left: 50%;
-  top: 30%;
-  transform: translate(-50%, -50%);
-  font-size: clamp(1.5rem, 7.4vw, 2.3rem);
-  font-weight: 900;
-  font-style: italic;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.55), 0 0 22px currentColor;
-  -webkit-text-stroke: 1.5px rgba(0, 0, 0, 0.6);
-  animation: callout-pop 950ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
-}
-
 @keyframes callout-pop {
   0% {
     transform: translate(-50%, -50%) scale(2.4) rotate(-6deg);
@@ -2186,44 +1854,10 @@ button.link {
   }
 }
 
-.battle-flash {
-  position: absolute;
-  inset: 0;
-  mix-blend-mode: screen;
-}
-
-/* Um único quadro de alto contraste no crítico, antes da câmera lenta continuar. */
-.critical-impact-frame {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  overflow: hidden;
-  border: clamp(4px, 1vw, 10px) solid var(--impact, #fff3a6);
-  background:
-    radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.94) 0 4%, rgb(255 243 166 / 0.78) 8%, transparent 34%),
-    repeating-conic-gradient(from 12deg at 50% 50%, rgb(255 255 255 / 0.72) 0 2deg, transparent 2deg 13deg);
-  box-shadow: inset 0 0 0 2px rgb(8 12 25 / 0.85), inset 0 0 42px 9px var(--impact, #fff3a6), 0 0 28px 7px var(--impact, #fff3a6);
-  mix-blend-mode: screen;
-  animation: critical-impact-frame 120ms steps(2, end) both;
-}
-
-.critical-impact-frame::after {
-  content: '';
-  position: absolute;
-  inset: -35%;
-  background: linear-gradient(120deg, transparent 44%, rgb(8 12 25 / 0.76) 46% 51%, transparent 53%);
-}
-
 @keyframes critical-impact-frame {
   0% { opacity: 0; transform: scale(1.12); }
   18% { opacity: 1; transform: scale(1); }
   100% { opacity: 0.25; transform: scale(1); }
-}
-
-.hp-badges {
-  display: inline-flex;
-  gap: 3px;
-  justify-content: center;
 }
 
 .badge {
@@ -2238,30 +1872,6 @@ button.link {
 .badge-poison { background: #c084fc; }
 .badge-paralysis { background: #fde047; }
 .badge-freeze { background: #7dd3fc; }
-.badge-guard { background: #7fd4ff; }
-
-.hp-bar.guarding {
-  box-shadow: 0 0 0 1px #7fd4ff, 0 0 10px rgba(127, 212, 255, 0.6);
-}
-
-.float-label.good,
-.float-label.bad,
-.float-label.info,
-.float-label.miss {
-  font-size: 0.86rem;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .battle-banner,
-  .battle-callout,
-  .hp-bar.acting {
-    animation: none;
-  }
-
-  .critical-impact-frame {
-    display: none;
-  }
-}
 
 /* ---------- Várias cartas ---------- */
 .multi-chips {
@@ -3251,29 +2861,6 @@ body.no-scroll .reward-toasts {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-}
-
-.mega-toggle {
-  min-height: 30px;
-  max-width: 100%;
-  padding: 0 10px;
-  border-radius: 8px;
-  border: 1.5px solid var(--line);
-  background: var(--surface-2);
-  color: var(--text);
-  font: inherit;
-  font-size: 0.72rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.mega-toggle.on {
-  border-color: #a78bfa;
-  background: linear-gradient(120deg, color-mix(in srgb, #5eead4 35%, var(--surface-2)), color-mix(in srgb, #a78bfa 40%, var(--surface-2)));
-}
-
-.mega-hint {
-  margin: 4px 0 0;
 }
 
 .roster-list li.out .roster-name {
@@ -4931,40 +4518,6 @@ body.no-scroll .reward-toasts {
   font-weight: 600;
 }
 
-/* Caixa: treinadores da batalha (desafio/PvP) e fala dentro do visor. */
-.vs-trainers {
-  position: absolute;
-  inset: auto 8px 132px 8px;
-  display: flex;
-  justify-content: space-between;
-  pointer-events: none;
-  z-index: 4;
-}
-
-.vs-trainer {
-  display: grid;
-  justify-items: center;
-  gap: 0;
-  padding: 4px 8px 6px;
-  border-radius: 12px;
-  background: rgb(14 19 34 / 0.62);
-  color: var(--text);
-  font-size: 0.72rem;
-}
-
-.vs-trainer.me {
-  box-shadow: inset 0 -3px 0 #e05252;
-}
-
-.vs-trainer.them {
-  box-shadow: inset 0 -3px 0 #4d8dff;
-}
-
-.vs-trainer small {
-  color: var(--muted);
-  font-size: 0.62rem;
-}
-
 .speech.in-stage {
   position: absolute;
   inset: auto 10px 128px 10px;
@@ -4975,37 +4528,6 @@ body.no-scroll .reward-toasts {
   width: 80px;
   height: 80px;
   filter: none;
-}
-
-.challenge-card {
-  display: grid;
-  grid-template-columns: 72px 1fr;
-  gap: 12px;
-  align-items: center;
-  margin: 10px 0;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid var(--gold);
-  background: color-mix(in srgb, var(--gold) 10%, var(--surface));
-}
-
-.challenge-card img {
-  image-rendering: pixelated;
-  object-fit: contain;
-}
-
-.challenge-card span {
-  display: grid;
-  gap: 2px;
-}
-
-.challenge-card small {
-  color: var(--muted);
-}
-
-.challenge-card .link {
-  justify-self: start;
-  padding: 0;
 }
 
 /* Caixa: PvP */

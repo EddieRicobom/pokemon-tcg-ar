@@ -93,7 +93,7 @@ export type VilaExit = 'pvp' | 'batalha' | 'batalha3d' | 'caixa' | 'arena3d';
 
 /**
  * Endereço do menu da Arena para cada saída da Vila (`#/arena`): a pessoa escolhe equipe e opções ali, antes de entrar
- * no palco 3D (`#/caixa`, sem câmera ou sensores). Os endereços antigos `#/caixa?...` continuam abrindo o palco.
+ * na luta. Os endereços antigos `#/caixa?...` continuam abrindo o Coliseu.
  * Todas levam `vila`: o menu oferece «Voltar à Vila» e o ✕ da Vila não volta para ele (`rememberBeforeVila`).
  */
 export function vilaExitHref(then: VilaExit): string {

@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { visibleVerticalFov } from './orientation';
-import { backdropAspect, stageVerticalFov, VIRTUAL_MAX_HALF_M, VIRTUAL_YAW_RAD, virtualHalfSize, virtualPitchRad } from './stage-view';
+import { backdropAspect, stageVerticalFov, VIRTUAL_MAX_HALF_M, VIRTUAL_YAW_RAD, virtualHalfSize, virtualPitchRad, ARENA_MAX_DISTANCE } from './stage-view';
 import { minBoxDistance } from './floor';
 import { Vector3 } from 'three';
-import { ARENA_MAX_DISTANCE } from './arena';
 import { DEFAULT_PHONE_HEIGHT_M, intersectFloor } from './floor';
 import { lookQuaternion } from './orientation';
 

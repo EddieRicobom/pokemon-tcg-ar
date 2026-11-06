@@ -1,18 +1,14 @@
-import { stageVerticalFov, VIRTUAL_YAW_RAD, virtualHalfSize, virtualPitchRad } from './stage-view';
-import { ARENA_MAX_DISTANCE } from './arena';
+import { ARENA_MAX_DISTANCE, stageVerticalFov, VIRTUAL_YAW_RAD, virtualHalfSize, virtualPitchRad } from './stage-view';
 import { OrientationSource } from './orientation-source';
 import type { OrientationMode } from './orientation-source';
 import { BoxScene, DEFAULT_HALF_SIZE_M } from './box-scene';
-import type { BattlePlanLike, BoxMode, CreatureEntry } from './box-scene';
+import type { BoxMode, CreatureEntry } from './box-scene';
 import type { SmoothingMode } from '../core/pixel-upscale';
 import type { WeatherMode } from '../core/weather';
 import type { BoxCreature } from './creature';
-import type { BattleHud } from './battle-director';
-import type { BattleResult, Fighter } from '../core/battle';
 import { DEFAULT_PHONE_HEIGHT_M, FLOOR_MESSAGES } from './floor';
 import { createWebglBackend } from '../ar/webgl-backend';
 import { ambientFromSample } from './fx-lights';
-import { SoundEngine } from './sound';
 import { sensorSettings } from '../app/sensor-settings';
 import { effectiveVisual, maxVisualFps } from '../app/visual-settings';
 import { isFrameDue } from '../core/frame-rate';
@@ -32,8 +28,6 @@ export interface StartBoxOptions {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
   onModeChange?: (mode: OrientationMode) => void;
-  /** Chamado a cada quadro durante uma batalha (e uma vez com null quando acaba). */
-  onBattleHud?: (hud: BattleHud | null) => void;
 }
 
 export type PlaceResult = { ok: true; /** A caixa foi afastada da câmera para não ficar colada. */ moved?: boolean } | { ok: false; message: string };
@@ -47,26 +41,15 @@ export interface RunningBox {
   setCreatures(entries: CreatureEntry[]): void;
   setMode(mode: BoxMode): void;
   setSmoothing(mode: SmoothingMode): void;
-  /** Luz dos golpes e do ambiente. */
+  /** Luz do ambiente nos sprites e no chão. */
   setLighting(on: boolean): void;
-  /** Partículas e ondas de choque intensas nos impactos elementais. */
-  setImpactEffects(on: boolean): void;
-  /** Chão em pixel art e golpes que mudam o terreno. */
+  /** Chão em pixel art. */
   setTerrain(on: boolean): void;
   /** Muro, arquibancada e tochas do Coliseu (palco virtual); desligado fica só a areia. */
   setScenery(on: boolean): void;
   setSocial(on: boolean): void;
   /** Clima da caixa (ciclo, fixo ou desligado). */
   setWeather(mode: WeatherMode): void;
-  /** Liga ou desliga os sons da batalha. */
-  setSound(on: boolean): void;
-  /** Libera o áudio do navegador: chame direto de um toque do usuário (ex.: no clique de Batalhar). */
-  unlockAudio(): void;
-  /** `plan` escolhe quem luta e as equipes (modos Equipes e 3x3); sem ele, todos da caixa lutam entre si. */
-  startBattle(fighters: readonly Fighter[], plan?: BattlePlanLike, rng?: () => number): BattleResult;
-  stopBattle(): void;
-  /** Traz a arena da batalha de volta para a frente do olhar. */
-  recenterBattle(): void;
   setPhoneHeight(meters: number): void;
   setHalfSize(meters: number): void;
   setVideoFov(deg: number): void;
@@ -77,11 +60,9 @@ export interface RunningBox {
 /** Ponto de entrada da Caixa: tudo que usa Three.js passa por aqui (import dinâmico). */
 export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   const scene = new BoxScene();
-  const sound = new SoundEngine();
-  scene.setSound(sound);
   const renderer = (() => {
     try { return createWebglBackend(options.canvas); }
-    catch (error) { scene.dispose(); sound.dispose(); throw error; }
+    catch (error) { scene.dispose(); throw error; }
   })();
   const virtual = options.virtual === true;
   const video = virtual ? undefined : options.video;
@@ -91,7 +72,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     orientation.startFixed(VIRTUAL_YAW_RAD, virtualPitchRad(DEFAULT_PHONE_HEIGHT_M, ARENA_MAX_DISTANCE), options.onModeChange);
   } else {
     try { await orientation.requestPermission(); }
-    catch (error) { orientation.stop(); renderer.dispose(); scene.dispose(); sound.dispose(); throw error; }
+    catch (error) { orientation.stop(); renderer.dispose(); scene.dispose(); throw error; }
     orientation.start(options.onModeChange);
   }
 
@@ -99,9 +80,7 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
   let videoFov = DEFAULT_VIDEO_VFOV_DEG;
   let running = true;
   let handle = 0;
-  let lastHudAt = 0;
   let lastFrameAt = 0;
-  let hudShown = false;
 
   const resize = () => {
     const width = options.container.clientWidth;
@@ -148,22 +127,11 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     orientation.latencyMs = sensorSettings.latencyMs;
     scene.setCameraQuaternion(orientation.read(performance.now()));
     scene.update(now);
-    if (scene.battling) {
-      // A interface redesenha ~30 vezes por segundo: o suficiente para barras e números sem pesar.
-      if (now - lastHudAt >= 33) {
-        lastHudAt = now;
-        options.onBattleHud?.(scene.battleHud);
-      }
-    } else if (hudShown) {
-      options.onBattleHud?.(null);
-    }
-    hudShown = scene.battling;
     renderer.render(scene.scene, scene.camera);
   };
   const onVisibility = () => {
     scene.resetClock();
     lastFrameAt = 0;
-    sound.setPaused(document.hidden);
   };
   document.addEventListener('visibilitychange', onVisibility);
   handle = requestGameFrame(tick, maxVisualFps);
@@ -183,16 +151,10 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
     setMode: (mode) => scene.setMode(mode),
     setSmoothing: (mode) => scene.setSmoothing(mode),
     setLighting: (on) => scene.setLighting(on),
-    setImpactEffects: (on) => scene.setImpactEffects(on),
     setTerrain: (on) => scene.setTerrain(on),
     setScenery: (on) => scene.setScenery(on),
     setSocial: (on) => scene.setSocial(on),
     setWeather: (mode) => scene.setWeather(mode),
-    setSound: (on) => sound.setEnabled(on),
-    unlockAudio: () => sound.unlock(),
-    startBattle: (fighters, plan, rng) => scene.startBattle(fighters, rng, plan),
-    stopBattle: () => scene.stopBattle(),
-    recenterBattle: () => scene.recenterBattle(),
     setPhoneHeight(meters) {
       // No palco virtual a câmera tem uma altura só (a pose da visão e o cenário dependem dela).
       if (!virtual) phoneHeight = meters;
@@ -212,7 +174,6 @@ export async function startBox(options: StartBoxOptions): Promise<RunningBox> {
       document.removeEventListener('visibilitychange', onVisibility);
       video?.removeEventListener('loadedmetadata', resize);
       orientation.stop();
-      sound.dispose();
       scene.dispose();
       renderer.dispose();
     },

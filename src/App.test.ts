@@ -44,11 +44,12 @@ describe('App', () => {
     expect(text).not.toContain('Escolhida por você');
   });
 
-  it('a tela Arena abre desligada e explica como usar', async () => {
+  it('o Coliseu abre fechado e aponta para as lutas no menu da Arena', async () => {
     const text = await mount('#/caixa');
-    expect(text).toContain('Arena');
-    expect(text).toContain('Arena desligada');
-    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('🏟️ Entrar na Arena');
+    expect(text).toContain('Coliseu fechado');
+    expect(text).toContain('menu da Arena');
+    expect(text).not.toContain('Batalhar');
+    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('Entrar no Coliseu');
     // A Vila tem aba própria: a Caixa não esconde mais um "Modo vida" dentro dela.
     expect(text).not.toContain('Modo vida');
     // A escolha da turma mora em Minhas cartas; a Caixa só aponta para lá.
@@ -56,10 +57,10 @@ describe('App', () => {
     expect([...(host?.querySelectorAll('a') ?? [])].some((a) => a.getAttribute('href') === '#/cartas')).toBe(true);
   });
 
-  it('vindo da batalha do Fliperama, a Arena oferece entrada direta para batalhar', async () => {
+  it('um endereço antigo de batalha leva ao menu da Arena', async () => {
     await mount('#/caixa?batalha=1');
-    expect(host?.querySelector('button.primary')?.textContent?.trim()).toBe('⚔️ Entrar na arena e batalhar');
-    expect([...(host?.querySelectorAll('a') ?? [])].some((a) => a.getAttribute('href') === '#/vila')).toBe(true);
+    await nextTick();
+    expect(window.location.hash).toContain('/arena');
   });
 
   it('a tela Várias cartas abre com a câmera desligada e explica o limite de cartas', async () => {
